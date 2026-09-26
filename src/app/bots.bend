@@ -164,19 +164,30 @@ def Bv.warm.go(rs: List<&2, BU.BRow>, c: Map<&2, CA.CatF>, +clock: Nat) -> Map<&
 def Bv.warm(+u: U.Ui, c: Map<&2, CA.CatF>, +clock: Nat) -> Map<&2, CA.CatF>:
   Bv.warm.go(BU.BU.rows(u), c, clock)
 
-# frames for the cats: while a shown cat moves and the window has the keys
-def Bv.moving(+n: S.Nui) -> Bool:
-  Bool.and(Bool.and(S.Nui.has_focus(n), Bool.not(S.Lbx.on(n))), BU.BU.moving(S.Nui.ui(n)))
-
 def Bv.info.nat(+n: S.Nui, +k: String) -> Nat:
   Maybe.default(&2, Nat, Nat.read(U.Ui.info(S.Nui.ui(n), k)), 0n)
+
+# how long cats go on moving after the person last touched the window
+def Bv.idle() -> Nat:
+  60000n
+
+# someone is at the window: input ("act.at", main.bend's Shell.acted)
+# within Bv.idle. A focused window on an unattended desktop keeps the keys
+# for hours, and a cat drawn 30 times a second there starves the hub.
+def Bv.present(+n: S.Nui, +ms: Nat) -> Bool:
+  Nat.is_le(Nat.sub(ms, Bv.info.nat(n, "act.at")), Bv.idle())
+
+# frames for the cats: while a shown cat moves, the window has the keys
+# and someone is there
+def Bv.moving(+n: S.Nui, +ms: Nat) -> Bool:
+  Bool.and(Bool.and(Bool.and(S.Nui.has_focus(n), Bool.not(S.Lbx.on(n))), Bv.present(n, ms)), BU.BU.moving(S.Nui.ui(n)))
 
 # the cats' clock ("cat.clock"): a frame at or past the next cat frame
 # ("cat.due", main.bend's Shell.cats) while a cat moves sets it to its
 # time; any other frame (a key typed) keeps it, so the cats' ops stay as
 # they were and no tile of them is drawn again
 def Bv.clock(+n: S.Nui, +ms: Nat) -> Nat:
-  Bool.pick(Nat, Bool.and(Bv.moving(n), Nat.is_ge(ms, Bv.info.nat(n, "cat.due"))), ms, Bv.info.nat(n, "cat.clock"))
+  Bool.pick(Nat, Bool.and(Bv.moving(n, ms), Nat.is_ge(ms, Bv.info.nat(n, "cat.due"))), ms, Bv.info.nat(n, "cat.clock"))
 
 def Bv.stamp(+n: S.Nui, +ms: Nat) -> S.Nui:
   S.Nui.with_ui(n, U.Ui.info_set(S.Nui.ui(n), "cat.clock", Nat.show(Bv.clock(n, ms))))
