@@ -210,7 +210,7 @@ def Shell.cats.k(go: Bool, +n: N.Nui, +q: Chan(ShellMsg), +ms: Nat) -> IO(N.Nui)
       IO.pure(N.Nui, n)
 
 def Shell.cats(+n: N.Nui, +q: Chan(ShellMsg), +ms: Nat) -> IO(N.Nui):
-  Shell.cats.k(Bool.and(BV.Bv.moving(n), Nat.is_le(Maybe.default(&2, Nat, Nat.read(U.Ui.info(N.Nui.ui(n), "cat.due")), 0n), ms)), n, q, ms)
+  Shell.cats.k(Bool.and(BV.Bv.moving(n, ms), Nat.is_le(Maybe.default(&2, Nat, Nat.read(U.Ui.info(N.Nui.ui(n), "cat.due")), 0n), ms)), n, q, ms)
 
 def Shell.blink(+n: N.Nui, +q: Chan(ShellMsg), +ms: Nat) -> IO(N.Nui):
   Shell.blink.k(Bool.and(Nat.is_gt(N.Blink.wait(n, ms), 0n), Nat.is_le(Maybe.default(&2, Nat, Nat.read(U.Ui.info(N.Nui.ui(n), "caret.due")), 0n), ms)),
@@ -795,12 +795,23 @@ def Shell.event(a: Shell, e: W.WinEv) -> IO(Shell):
     case Shell{+n, w, d, qd, q, i, +wa} _:
       Shell.step(Shell{n, w, d, qd, q, i, wa}, L.Comp.pend(Aux.ty(wa), N.Nui.event.lb(N.Lbx.on(n), n, e)))
 
-def Shell.events(es: List<&2, W.WinEv>, a: Shell) -> IO(Shell):
+def Shell.events.go(es: List<&2, W.WinEv>, a: Shell) -> IO(Shell):
   match es:
     case Nil{}:
       IO.pure(Shell, a)
     case e <> t:
-      IO.bind(Shell, Shell, Shell.event(a, e), a2 => Shell.events(t, a2))
+      IO.bind(Shell, Shell, Shell.event(a, e), a2 => Shell.events.go(t, a2))
+
+# the person was at the window just now ("act.at", BV.Bv.present)
+def Shell.acted(a: Shell, +ms: Nat) -> Shell:
+  match a:
+    case Shell{+n, w, d, qd, q, i, wa}:
+      Shell{N.Nui.with_ui(n, U.Ui.info_set(N.Nui.ui(n), "act.at", Nat.show(ms))), w, d, qd, q, i, wa}
+
+def Shell.events(es: List<&2, W.WinEv>, a: Shell) -> IO(Shell):
+  do IO<Shell>:
+    ms : Nat <- IO.now()
+    Shell.events.go(es, Shell.acted(a, ms))
 
 def Aux.with_tie(a: Aux, ti: Tie) -> Aux:
   match a:
