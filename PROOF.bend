@@ -5371,3 +5371,31 @@ def Laws.sum_not_due_asks_nothing(s, id, kind):
 
 def Laws.sum_not_due_stamps_nothing(id, now):
   {==}
+
+def Laws.bg_start_progress_end():
+  {==}
+
+def Laws.bg_added_once():
+  {==}
+
+def Laws.bg_progress_unlisted():
+  {==}
+
+def Laws.bg_doing():
+  {==}
+
+def Laws.status_waits_on_subagents(q):
+  match q:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.status_work_before_waiting(q):
+  {==}
+
+def Laws.status_input_before_waiting(t, q):
+  {==}
+
+def Laws.status_no_subagents_same(s):
+  {==}

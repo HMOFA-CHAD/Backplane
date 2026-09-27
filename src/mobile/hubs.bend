@@ -653,7 +653,8 @@ def Hubs.rows(ss: List<&2, Shown>) -> List<&2, J.Json>:
     case Nil{}:
       Nil{}
     case Shown{+k, +n, +j} <> t:
-      J.Json.obj([J.KV{"key", J.Json.str(k)}, J.KV{"name", J.Json.str(n)}, J.KV{"online", J.Json.bool(J.Json.get_bool(j, "online", False{}))}]) <> Hubs.rows(t)
+      J.Json.obj([J.KV{"key", J.Json.str(k)}, J.KV{"name", J.Json.str(n)}, J.KV{"online", J.Json.bool(J.Json.get_bool(j, "online", False{}))},
+        J.KV{"version", J.Json.str(J.Json.get_str(j, "version", ""))}, J.KV{"changes", J.Json.nat(J.Json.get_nat(j, "seq", 0n))}]) <> Hubs.rows(t)
 
 # the host:port of a hub's url (http://host:3787 -> host:3787)
 def Hubs.auth(+url: String) -> String:

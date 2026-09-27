@@ -131,6 +131,56 @@ function cbor(b) {
     return { $: "Null" };
   }
 }
+// The client state as flat text and back, with no recursion: Bend lists
+// are chains of cells ({head, tail}) tens of thousands deep, and
+// JSON.parse with a reviver recursed once per cell, overflowed the
+// engine's stack on a real log and lost the kept state at every launch.
+// Every object is a node in one array, named by its index; in a node a
+// value [i] is node i, ["<digits>"] a BigInt, anything else itself.
+// Shared parts are written once.
+function flat(root) {
+  const ids = new Map();
+  const nodes = [];
+  const ref = (v) => {
+    if (typeof v === "bigint") return [v.toString()];
+    if (v === null || typeof v !== "object") return v;
+    let i = ids.get(v);
+    if (i === undefined) {
+      i = nodes.length;
+      ids.set(v, i);
+      nodes.push(v);
+    }
+    return [i];
+  };
+  const top = ref(root);
+  const out = [];
+  for (let k = 0; k < nodes.length; k += 1) {
+    const v = nodes[k];
+    if (Array.isArray(v)) out.push(v.map(ref));
+    else {
+      const o = {};
+      for (const key in v) {
+        const x = v[key];
+        if (x !== undefined && typeof x !== "function") o[key] = ref(x);
+      }
+      out.push(o);
+    }
+  }
+  return JSON.stringify({ flat: 1, top, nodes: out });
+}
+
+function unflat(text) {
+  const d = JSON.parse(text);
+  if (!d || d.flat !== 1) throw new Error("state");
+  const nodes = d.nodes;
+  const val = (x) => (Array.isArray(x) ? (typeof x[0] === "number" ? nodes[x[0]] : BigInt(x[0])) : x);
+  for (const n of nodes) {
+    if (Array.isArray(n)) for (let i = 0; i < n.length; i += 1) n[i] = val(n[i]);
+    else for (const key in n) n[key] = val(n[key]);
+  }
+  return val(d.top);
+}
+
 let hubs = null;
 // the drafts kept on this phone, {"<hub>|<thread>": text}
 let kept = {};
@@ -241,13 +291,13 @@ globalThis.Backplane = {
   // foreground: the next launch load()s it instead of folding every event
   // again (on QuickJS a few thousand took seconds), and resume() then asks
   // each hub only for what came since. The state is plain data (objects,
-  // strings, booleans, BigInt naturals, written as {"\u0000n": "<digits>"}).
+  // strings, booleans, BigInt naturals), written flat (flat()).
   save() {
-    return JSON.stringify(hubs, (_, v) => (typeof v === "bigint" ? { "\u0000n": v.toString() } : v));
+    return flat(hubs);
   },
   load(text) {
     try {
-      hubs = JSON.parse(text, (_, v) => (v && typeof v === "object" && "\u0000n" in v ? BigInt(v["\u0000n"]) : v));
+      hubs = unflat(text);
     } catch {
       return "";
     }

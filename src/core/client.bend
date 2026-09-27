@@ -1940,9 +1940,9 @@ def Asks.kind(as: List<&2, M.Ask>, +k: String) -> Bool:
 def Side.status(+st: M.State, t: M.Thread) -> M.Status:
   match t:
     case M.Thread{+id, _, _, _, _, turn, +pending, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      M.Status.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(Asks.open(st, id), "approval")),
+      M.Status.wait(Bool.not(List.is_empty(&2, String, M.Bg.of(st, id))), M.Status.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(Asks.open(st, id), "approval")),
         Bool.or(Asks.kind(Asks.open(st, id), "input"), Asks.kind(Asks.open(st, id), "plan")), turn,
-        M.Queue.waiting(st, id))
+        M.Queue.waiting(st, id)))
 
 # how many of a thread's child tasks are not finished
 def Side.live(ts: List<&2, M.Task>) -> Nat:
@@ -1957,7 +1957,7 @@ def Side.phase(+st: M.State, t: M.Thread) -> M.Phase:
   match t:
     case M.Thread{+id, _, _, _, _, turn, +pending, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       M.Phase.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(Asks.open(st, id), "approval")),
-        Bool.or(Asks.kind(Asks.open(st, id), "input"), Asks.kind(Asks.open(st, id), "plan")), Side.live(Tasks.of(st, id)), turn,
+        Bool.or(Asks.kind(Asks.open(st, id), "input"), Asks.kind(Asks.open(st, id), "plan")), Nat.add(Side.live(Tasks.of(st, id)), List.length(&2, String, M.Bg.of(st, id))), turn,
         M.Queue.waiting(st, id))
 
 # when a thread's snooze ends (0: not snoozed)

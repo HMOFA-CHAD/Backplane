@@ -43,6 +43,10 @@ def Th.input() -> U32:
 def Th.queued() -> U32:
   5226953
 
+# a thread whose subagents are at work after its turn
+def Th.waiting() -> U32:
+  14711760
+
 # body text (the web's text at 80% over the background)
 def Th.soft() -> U32:
   11579834
@@ -84,12 +88,13 @@ def Th.light(+c: U32) -> U32:
   Th.swap.to(U32.is_eq(c, Th.bad()), 13186100,
   Th.swap.to(U32.is_eq(c, Th.input()), 7620304,
   Th.swap.to(U32.is_eq(c, Th.queued()), 1211524,
+  Th.swap.to(U32.is_eq(c, Th.waiting()), 10697114,
   Th.swap.to(U32.is_eq(c, Th.soft()), 3619393,
   Th.swap.to(U32.is_eq(c, Th.sel()), 14083575,
   Th.swap.to(U32.is_eq(c, Th.focus()), 7053274,
   Th.swap.to(U32.is_eq(c, Th.code()), 15658472,
   Th.swap.to(U32.is_eq(c, 1127459), 14676964,
-  Th.swap.to(U32.is_eq(c, 3279380), 16508134, c)))))))))))))))))))
+  Th.swap.to(U32.is_eq(c, 3279380), 16508134, c))))))))))))))))))))
 
 # a colour in the theme asked for
 def Th.of(light: Bool, +c: U32) -> U32:

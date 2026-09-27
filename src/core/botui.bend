@@ -34,6 +34,8 @@ def Mood.of(s: M.Status, talked: Bool, idle: Bool) -> String:
       Bool.pick(String, talked, "talk", "work")
     case M.StQueued{}:
       "think"
+    case M.StWaiting{}:
+      Bool.pick(String, talked, "talk", "work")
     case M.StFailed{}:
       "error"
     case M.StReady{}:

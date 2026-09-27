@@ -13,12 +13,8 @@ struct RootView: View {
         } else if let s = model.screen {
             NavigationStack(path: Binding(get: { model.path }, set: { model.navigate($0) })) {
                 ProjectsView(model: model, screen: s, pairing: $pairing)
-                    .navigationDestination(for: String.self) { _ in
-                        if let b = model.screen?.bot {
-                            BotDestination(model: model, bot: b)
-                        } else if let t = model.screen?.thread {
-                            ThreadScreen(model: model, thread: t)
-                        }
+                    .navigationDestination(for: String.self) { id in
+                        ThreadDestination(model: model, id: id)
                     }
             }
             .alert(s.error, isPresented: Binding(get: { !s.error.isEmpty }, set: { if !$0 { model.act("dismiss") } })) {
@@ -91,12 +87,17 @@ struct HubsView: View {
         Form {
             Section("Paired") {
                 ForEach(screen.hubs, id: \.key) { h in
-                    HStack {
-                        Image(systemName: h.online ? "circle.fill" : "circle.dotted")
-                            .font(.caption).foregroundStyle(h.online ? .green : .secondary)
-                        Text(h.name)
-                        Spacer()
-                        Text(h.key).font(.caption).foregroundStyle(.secondary)
+                    let c = model.conn[h.key] ?? HubConn()
+                    HStack(alignment: .firstTextBaseline) {
+                        HubDot(phase: c.phase).font(.caption)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(h.name)
+                                Spacer()
+                                Text(HubDot.word(c.phase)).font(.caption).foregroundStyle(HubDot.tint(c.phase))
+                            }
+                            Text(HubsView.detail(h, c)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        }
                     }
                     .swipeActions { Button("Unpair", role: .destructive) { model.unpair(h.key) } }
                 }
@@ -127,6 +128,66 @@ struct HubsView: View {
             }
         }
         .navigationTitle("Hubs")
+    }
+
+    // host:port · version · changes held · when it last said anything
+    static func detail(_ h: HubRow, _ c: HubConn) -> String {
+        var parts = [h.key]
+        if let v = h.version, !v.isEmpty { parts.append(v) }
+        if c.phase == .syncing, c.bytes > 0 {
+            parts.append("catching up, " + ByteCountFormatter.string(fromByteCount: Int64(c.bytes), countStyle: .file))
+        } else if let n = h.changes, n > 0 {
+            parts.append("\(n.formatted()) changes")
+        }
+        if let t = c.heard { parts.append("heard " + t.formatted(.relative(presentation: .named))) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+// a hub's socket as a dot: green online, orange catching up, grey otherwise
+struct HubDot: View {
+    let phase: HubConn.Phase
+
+    var body: some View {
+        Image(systemName: phase == .online ? "circle.fill" : phase == .syncing ? "circle.lefthalf.filled" : "circle.dotted")
+            .foregroundStyle(Self.tint(phase))
+    }
+
+    static func tint(_ p: HubConn.Phase) -> Color {
+        switch p {
+        case .online: .green
+        case .syncing: .orange
+        case .offline: .red
+        case .connecting: .secondary
+        }
+    }
+
+    static func word(_ p: HubConn.Phase) -> String {
+        switch p {
+        case .online: "Connected"
+        case .syncing: "Catching up"
+        case .offline: "Offline, retrying"
+        case .connecting: "Connecting"
+        }
+    }
+}
+
+// every paired hub at a glance, in the list's toolbar: one dot each (up to
+// four), and a tap opens the hubs
+struct HubsPill: View {
+    let model: AppModel
+    let hubs: [HubRow]
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 3) {
+                ForEach(hubs.prefix(4), id: \.key) { h in HubDot(phase: model.conn[h.key]?.phase ?? .connecting) }
+                if hubs.count > 4 { Text("+\(hubs.count - 4)") }
+            }
+            .font(.system(size: 9))
+        }
+        .accessibilityLabel(hubs.map { $0.name + ": " + HubDot.word(model.conn[$0.key]?.phase ?? .connecting) }.joined(separator: ", "))
     }
 }
 
@@ -247,16 +308,21 @@ struct ProjectsView: View {
         }
         .overlay {
             if screen.projects.isEmpty && screen.bots.isEmpty && screen.rooms.isEmpty {
-                ContentUnavailableView(screen.empty, systemImage: "folder")
+                // a hub still catching up has not said what there is yet
+                if let h = screen.hubs.first(where: { (model.conn[$0.key]?.phase ?? .connecting) != .online }), !screen.online {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text(HubDot.word(model.conn[h.key]?.phase ?? .connecting) + " to " + h.name).foregroundStyle(.secondary)
+                    }
+                } else {
+                    ContentUnavailableView(screen.empty, systemImage: "folder")
+                }
             }
         }
         .navigationTitle("Backplane")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Label(screen.online ? "Connected" : "Connecting", systemImage: screen.online ? "circle.fill" : "circle.dotted")
-                    .labelStyle(.iconOnly)
-                    .foregroundStyle(screen.online ? .green : .secondary)
-                    .font(.caption)
+                HubsPill(model: model, hubs: screen.hubs) { pairing = true }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 // with several hubs, the picker opens on the one chosen
@@ -378,9 +444,65 @@ private struct FoldersSheet: View {
     }
 }
 
+// What a pushed id shows. The screen's own thread (or bot) once the client
+// has selected it; until then the same thread as it was last shown, or its
+// title from the list. Never another thread: the screen may still hold the
+// one before for a moment after a tap.
+struct ThreadDestination: View {
+    let model: AppModel
+    let id: String
+
+    private var selected: Bool { model.screen.map { AppModel.nav($0) == id } ?? false }
+
+    var body: some View {
+        if selected, let b = model.screen?.bot {
+            BotDestination(model: model, bot: b)
+        } else if let t = selected ? model.screen?.thread : model.seen[id] {
+            ThreadScreen(model: model, thread: t, live: selected).id(id)
+        } else {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    // the row's title in the list, while nothing of the thread is known
+    private var title: String {
+        for p in model.screen?.projects ?? [] {
+            for r in p.threads + p.snoozed + p.settled + (p.archived ?? []) where r.id == id { return r.title }
+        }
+        return ""
+    }
+}
+
+// a message on its way: at once when sent, until the hub has it
+private struct SendingBubble: View {
+    let text: String
+    let note: String
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Text(text)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(Color.accentColor.opacity(0.08), in: .rect(cornerRadius: 18))
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.mini)
+                Text(note)
+            }
+            .font(.caption2).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .opacity(0.7)
+    }
+}
+
 struct ThreadScreen: View {
     @Bindable var model: AppModel
     let thread: ThreadView
+    // the client has this thread selected (else it shows as last seen,
+    // for the moment the select takes, and takes no input)
+    var live = true
     @FocusState private var focused: Bool
     // the image open in the lightbox
     @State private var shown: Shown?
@@ -388,7 +510,11 @@ struct ThreadScreen: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                // not lazy: a page is at most a few dozen entries, and with
+                // every height known on the first frame the view opens at the
+                // bottom and stays there (a lazy stack measured rows as they
+                // came and the text jumped)
+                VStack(alignment: .leading, spacing: 14) {
                     if let p = thread.parent { EntryRow(model: model, entry: p) { shown = $0 } }
                     if let ts = thread.tasks, !ts.isEmpty { TasksView(model: model, tasks: ts) }
                     if let n = thread.earlier, n > 0 {
@@ -396,15 +522,11 @@ struct ThreadScreen: View {
                             .font(.footnote).frame(maxWidth: .infinity).padding(.vertical, 4)
                     }
                     ForEach(thread.entries) { EntryRow(model: model, entry: $0) { shown = $0 }.id($0.id) }
-                    ForEach(Array(thread.sending.enumerated()), id: \.offset) { _, text in
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(text)
-                                .padding(.horizontal, 14).padding(.vertical, 10)
-                                .background(Color.accentColor.opacity(0.08), in: .rect(cornerRadius: 18))
-                            Text("Sending…").font(.caption2).foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .opacity(0.7)
+                    // the client's sending rows, then those tapped here it has
+                    // not answered yet, by place: one handed over keeps its place
+                    ForEach(Array(sending.enumerated()), id: \.offset) { _, text in
+                        SendingBubble(text: text, note: sendNote)
+                            .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
                     }
                     if !thread.live.isEmpty {
                         MarkdownView(blocks: thread.live)
@@ -415,14 +537,32 @@ struct ThreadScreen: View {
                         }
                         .font(thread.state == "run" ? .body : .caption)
                     }
+                    if let ag = thread.agents, !ag.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(ag.enumerated()), id: \.offset) { _, a in
+                                HStack(spacing: 8) {
+                                    ProgressView().controlSize(.mini)
+                                    Text(a.isEmpty ? "Subagent" : a).lineLimit(2)
+                                }
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding()
+                .animation(.spring(duration: 0.3), value: sending)
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: model.scrolls) { proxy.scrollTo("end", anchor: .bottom) }
-            .onChange(of: thread.entries.count) { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+            .onChange(of: mine.count) { old, new in
+                if new > old { withAnimation(.spring(duration: 0.3)) { proxy.scrollTo("end", anchor: .bottom) } }
+            }
+            // held at the bottom with no animation: a scroll animated from
+            // wherever the old content left it read as the text snapping
+            .onChange(of: thread.entries.last?.id) { proxy.scrollTo("end", anchor: .bottom) }
         }
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {
@@ -507,16 +647,17 @@ struct ThreadScreen: View {
                 Image(systemName: stop ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: 32))
                     .foregroundStyle(stop ? Color.red : blank ? Color.secondary : Color.accentColor)
                     .onTapGesture {
-                        if stop { model.act("interrupt") } else if !blank { model.act("send") }
+                        if stop { model.act("interrupt") } else if !blank { model.send() }
                     }
                     .onLongPressGesture {
-                        if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.act("send-alt") }
+                        if !model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.send("send-alt") }
                     }
                     .accessibilityLabel(thread.send)
                     .accessibilityAddTraits(.isButton)
             }
             .padding(.horizontal).padding(.vertical, 8)
           }
+          .disabled(!live)
           .background(.bar)
         }
         .navigationTitle(thread.title)
@@ -580,6 +721,18 @@ struct ThreadScreen: View {
                 }
             }
         }
+    }
+
+    // this thread's messages tapped here and not yet answered
+    private var mine: [Outgoing] { model.outgoing.filter { $0.thread == thread.id } }
+
+    private var sending: [String] { thread.sending + mine.map(\.text) }
+
+    // what a message on its way waits for
+    private var sendNote: String {
+        guard let s = model.screen else { return "Sending…" }
+        let c = model.conn[s.hub]?.phase ?? .connecting
+        return c == .online || c == .syncing ? "Sending…" : "Waiting for " + (s.hubs.first { $0.key == s.hub }?.name ?? "the hub") + "…"
     }
 
     static func icon(_ action: String) -> String {

@@ -241,6 +241,8 @@ def Lay.status(s: M.Status) -> U32:
       T.Th.queued()
     case M.StReady{}:
       T.Th.faint()
+    case M.StWaiting{}:
+      T.Th.waiting()
 
 # a thread's row; the selected one is raised, with its project's colour
 # (tint) down its left edge
@@ -1154,7 +1156,7 @@ def Lay.phase(p: M.Phase) -> U32:
     case M.PhWorking{}:
       T.Th.accent()
     case M.PhMonitoring{_}:
-      T.Th.accent()
+      T.Th.waiting()
     case M.PhFailed{}:
       T.Th.bad()
     case M.PhQueued{}:

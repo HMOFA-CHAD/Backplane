@@ -1764,6 +1764,8 @@ type Status is Data:
   StFailed{}
   StQueued{}
   StReady{}
+  # the agent's turn is over and its subagents are still at work
+  StWaiting{}
 
 def Status.of.q(queued: Bool) -> Status:
   match queued:
@@ -1810,6 +1812,8 @@ def Status.rank(s: Status) -> Nat:
       1n
     case StReady{}:
       0n
+    case StWaiting{}:
+      3n
 
 def Status.name(s: Status) -> String:
   match s:
@@ -1825,6 +1829,21 @@ def Status.name(s: Status) -> String:
       "queued"
     case StReady{}:
       "ready"
+    case StWaiting{}:
+      "waiting"
+
+# a thread whose subagents are at work (any) waits on them, unless it
+# already asks for more (approval, input, a turn working)
+def Status.wait(any: Bool, s: Status) -> Status:
+  match any s:
+    case True{} StFailed{}:
+      StWaiting{}
+    case True{} StQueued{}:
+      StWaiting{}
+    case True{} StReady{}:
+      StWaiting{}
+    case _ _:
+      s
 
 # Thread phase
 # ------------
@@ -1926,3 +1945,102 @@ def Phase.label(p: Phase) -> String:
       "Stopped"
     case PhIdle{}:
       ""
+
+# Subagents
+# ---------
+# The subagents an agent has at work (Claude's task_started, task_progress
+# and task_notification lines), kept as the setting "bg.<thread>": one
+# "id\tdoing" line each. They can run on after the agent's own turn ends,
+# so the thread still shows them working.
+
+def Bg.key(+th: String) -> String:
+  "bg." ++ th
+
+# a subagent's id or what it does, on one line with no tab
+def Bg.clean(+t: String) -> String:
+  String.join(String.split(String.join(String.split(t, '\t'), " "), '\n'), " ")
+
+def Bg.line(+id: String, +doing: String) -> String:
+  Bg.clean(id) ++ "\t" ++ Bg.clean(doing)
+
+def Bg.keep(empty: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
+  match empty:
+    case True{}:
+      rest
+    case False{}:
+      l <> rest
+
+def Bg.nonempty(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Bg.keep(String.is_empty(l), l, Bg.nonempty(t))
+
+def Bg.lines(+text: String) -> List<&2, String>:
+  Bg.nonempty(String.split(text, '\n'))
+
+def Bg.is(+l: String, +id: String) -> Bool:
+  String.starts_with(l, Bg.clean(id) ++ "\t")
+
+def Bg.has(ls: List<&2, String>, +id: String) -> Bool:
+  match ls:
+    case Nil{}:
+      False{}
+    case +l <> t:
+      Bool.or(Bg.is(l, id), Bg.has(t, id))
+
+def Bg.drop.k(hit: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
+  Bg.keep(hit, l, rest)
+
+# the lines without subagent id
+def Bg.drop(ls: List<&2, String>, +id: String) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Bg.drop.k(Bg.is(l, id), l, Bg.drop(t, id))
+
+def Bg.set.k(hit: Bool, +l: String, +id: String, +doing: String) -> String:
+  match hit:
+    case True{}:
+      Bg.line(id, doing)
+    case False{}:
+      l
+
+# what subagent id does now (a subagent not listed stays out)
+def Bg.set(ls: List<&2, String>, +id: String, +doing: String) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Bg.set.k(Bg.is(l, id), l, id, doing) <> Bg.set(t, id, doing)
+
+def Bg.add.k(has: Bool, +ls: List<&2, String>, +id: String, +doing: String) -> List<&2, String>:
+  match has:
+    case True{}:
+      ls
+    case False{}:
+      List.append(&2, String, ls, [Bg.line(id, doing)])
+
+# a subagent started (listed once, last)
+def Bg.add(+ls: List<&2, String>, +id: String, +doing: String) -> List<&2, String>:
+  Bg.add.k(Bg.has(ls, id), ls, id, doing)
+
+def Bg.show(ls: List<&2, String>) -> String:
+  String.join(ls, "\n")
+
+def Bg.doing.of(ls: List<&2, String>) -> String:
+  match ls:
+    case Nil{}:
+      ""
+    case +l <> _:
+      l
+
+# what a line's subagent does (the text after its tab)
+def Bg.doing(+l: String) -> String:
+  Bg.doing.of(List.drop(&2, String, String.split(l, '\t'), 1n))
+
+# a thread's subagents at work
+def Bg.of(+s: State, +th: String) -> List<&2, String>:
+  Bg.lines(Setting.get(s, Bg.key(th), ""))

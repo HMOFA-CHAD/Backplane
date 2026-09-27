@@ -505,6 +505,14 @@ def Mob.tasks(ts: List<&2, M.Task>, +st: M.State) -> List<&2, J.Json>:
     case t <> rest:
       Mob.task(t, st) <> Mob.tasks(rest, st)
 
+# the agent's own subagents at work: what each does now
+def Mob.bgs(ls: List<&2, String>) -> List<&2, J.Json>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      J.Json.str(M.Bg.doing(l)) <> Mob.bgs(t)
+
 def Mob.parent(none: Bool, +st: M.State, +p: String) -> J.Json:
   match none:
     case True{}:
@@ -656,6 +664,7 @@ def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: 
         J.KV{"menu", J.Json.arr(Mob.menu(id, M.Snooze.on(now, U.Side.until(st, id))))},
         J.KV{"parent", Mob.parent(String.is_empty(U.Tasks.parent(st, id)), st, U.Tasks.parent(st, id))},
         J.KV{"tasks", J.Json.arr(Mob.tasks(U.Tasks.of(st, id), st))},
+        J.KV{"agents", J.Json.arr(Mob.bgs(M.Bg.of(st, id)))},
         J.KV{"entries", J.Json.arr(Mob.paged.es(pg, st, id, nf, drafts, V.View.running(turn)))},
         J.KV{"earlier", J.Json.nat(U.Win.hidden(pg))},
         J.KV{"sending", J.Json.arr(Mob.strs(pend))},
@@ -793,7 +802,7 @@ def Mob.find(open: Bool, +u: U.Ui) -> J.Json:
 def Mob.screen(+u: U.Ui) -> J.Json:
   match u:
     case U.Ui{+st, +sel, +dr, _, +o, +on, +now, _, _, +v, _, _, +e, +note, _, _, _}:
-      J.Json.obj([J.KV{"online", J.Json.bool(on)}, J.KV{"version", J.Json.str(v)}, J.KV{"error", J.Json.str(e)},
+      J.Json.obj([J.KV{"online", J.Json.bool(on)}, J.KV{"version", J.Json.str(v)}, J.KV{"seq", J.Json.nat(U.Ui.seq(u))}, J.KV{"error", J.Json.str(e)},
         J.KV{"note", J.Json.str(note)}, J.KV{"sel", J.Json.str(sel)}, J.KV{"theme", J.Json.str(M.Setting.get(st, "ui.theme", ""))},
         J.KV{"empty", J.Json.str(Mob.empty(List.length(&2, M.Project, U.Ui.projects(st))))},
         J.KV{"projects", J.Json.arr(Mob.projects(U.Side.shown(st, now, U.Find.q(o, dr)), o, st, now))},
