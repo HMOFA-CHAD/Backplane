@@ -122,6 +122,16 @@ def changes.show(cs: List<&2, M.Change>) -> String:
     case c <> t:
       J.Json.show(CD.Change.encode(c)) ++ changes.show(t)
 
+def res.step(r: MC.Res) -> B.Step:
+  match r:
+    case MC.Res{_, _, st}:
+      st
+
+def res.body(r: MC.Res) -> J.Json:
+  match r:
+    case MC.Res{_, b, _}:
+      b
+
 def proj() -> M.State:
   run(two(), B.Step{[M.ProjectCreated{"p1", "Power board", "/tmp/power", 1000n}, M.ThreadCreated{"t-pb", "p1", "Rev C review", M.Local{}, "", "", "claude", "", 1000n}], Nil{}})
 
@@ -352,3 +362,12 @@ def main() -> IO(Unit):
     C.Check.str("bot delegate shown", Nat.show(hidden(dj)), "0")
     +tj : M.State = run(pj, call.step(pj, 1600n, "t-pb", "delegate_task", "{\"prompt\":\"x\"}"))
     C.Check.str("thread delegate still under it", Nat.show(hidden(tj)), "1")
+    # new projects: only with the person's yes (the server asks; these are its pure parts)
+    C.Check.str("project_create listed", yes(String.contains(out.reply(BH.Bots.mcp(pj, 1600n, th.of(pj, "Miso"), J.Null{}, "t", J.Json.arr(Nil{}), Nil{}, "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/list\"}")), "project_create")), "yes")
+    C.Check.str("project_create is the hub's", yes(BH.Bots.newproj.is(Maybe.default(&2, J.Json, J.Json.parse("{\"method\":\"tools/call\",\"params\":{\"name\":\"project_create\"}}"), J.Null{}))), "yes")
+    C.Check.str("project_create asks", yes(BH.Bots.newproj.asks(M.Asks.all(pj), th.of(pj, "Miso"))), "yes")
+    C.Check.str("project_create card", BH.Bots.newproj.detail(Maybe.default(&2, J.Json, J.Json.parse("{\"path\":\"~/boards/fan\",\"name\":\"Fan\"}"), J.Null{})), "New project Fan\nFolder: ~/boards/fan (made when missing)")
+    C.Check.str("project_create adds", st.tags(res.step(BH.Bots.newproj.made(pj, 1700n, "/tmp/fan/", ""))), "ProjectCreated | ")
+    C.Check.str("project_create names by folder", yes(String.contains(changes.show(tags.cs(res.step(BH.Bots.newproj.made(pj, 1700n, "/tmp/fan", "")))), "\"title\":\"fan\"")), "yes")
+    C.Check.str("project_create again", st.tags(res.step(BH.Bots.newproj.made(pj, 1700n, "/tmp/power", "x"))), "| ")
+    C.Check.str("project_create again answers it", yes(String.contains(J.Json.show(res.body(BH.Bots.newproj.made(pj, 1700n, "/tmp/power", "x"))), "\"id\":\"p1\"")), "yes")

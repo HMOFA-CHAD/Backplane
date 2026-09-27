@@ -105,6 +105,9 @@ type Msg is Data:
   BotVerified{kind: String, arg: String, key: String, body: String, me: String, reply: Chan(List<&2, U32>)}
   # a browser page has a new frame: {"t":"shot",...} for every client
   Shot{text: String}
+  # a bot's new project, approved by the person, its folder made and
+  # resolved: the hub adds it and answers the tool call (`id` as JSON)
+  NewProject{thread: String, root: String, name: String, id: String, reply: Chan(String)}
 
 # remote access: also listen on the tailnet, serve HTTPS through
 # `tailscale serve`, and the token remote clients must present
@@ -3793,6 +3796,13 @@ def Hub.mcp.hub(h: Hub, +thread: String, +body: String, +reply: Chan(String), +n
           Maybe.default(&2, J.Json, J.Json.parse(BN.Bn.dir(Cfg.bn(cfg))), J.Json.arr(Nil{})), GG.Google.tool_defs(), body),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, body)
 
+# the approved folder, resolved: added (or found) and the tool answered
+def Hub.newproj.made(h: Hub, +root: String, +name: String, +id: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.parse(id), J.Null{}), BH.Bots.newproj.made(st, now, root, name)),
+        Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, "")
+
 def Hub.mcp.w(secs: Nat, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match secs h:
     case 0n _:
@@ -4454,12 +4464,76 @@ def Hub.google(bot: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(Stri
         Gg.say(reply, J.Json.get_obj(o, "id"), False{}, "only bots have this tool")
         return h
 
+# A bot's new project (project_create)
+# ------------------------------------
+# The hub asks the person first (BH.Bots.newproj.asks); once they accept,
+# the folder is made when missing and resolved off the hub, and comes back
+# as NewProject, where BH.Bots.newproj.made adds it.
+
+# the folder from $1 (never empty), made when missing, printed resolved
+def Np.sh() -> String:
+  "exec 2>&1; set -e; [ -n \"$1\" ] || { echo \"name a folder\"; exit 2; }; " ++ FsJob.path.sh() ++
+    "[ -e \"$d\" ] || [ -L \"$d\" ] || mkdir -p -- \"$d\"; " ++ FsJob.dir.sh() ++ "echo \"$d\""
+
+def Np.ran(r: P.Ran, +inbox: Chan(Msg), +thread: String, +name: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  match r:
+    case P.Ran{0, out}:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(Msg, inbox, NewProject{thread, FsJob.last(String.lines(String.trim(out))), name, J.Json.show(id), reply})
+        return Unit{}
+    case P.Ran{_, out}:
+      Gg.say(reply, id, False{}, "error: " ++ String.trim(out))
+
+def Np.run(+inbox: Chan(Msg), +thread: String, +a: J.Json, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(P.Ran, Unit, FsJob.sh(Np.sh(), String.trim(J.Json.get_str(a, "path", ""))), r => Np.ran(r, inbox, thread, J.Json.get_str(a, "name", ""), id, reply))
+
+def Np.wait.k(m: Maybe<&1, String>, +inbox: Chan(Msg), +thread: String, +a: J.Json, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  match m:
+    case Some{+answer}:
+      Bool.pick(IO(Unit), BH.Bots.newproj.yes(answer), Np.run(inbox, thread, a, id, reply),
+        Gg.say(reply, id, False{}, "The person declined this."))
+    case None{}:
+      IO.pure(Unit, Unit{})
+
+def Np.wait(+r2: Chan(String), +inbox: Chan(Msg), +thread: String, +a: J.Json, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(Maybe<&1, String>, Unit, Chan.recv(String, r2), m => Np.wait.k(m, inbox, thread, a, id, reply))
+
+def Hub.newproj.k(ask: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match ask h:
+    case False{} Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Np.run(inbox, thread, Gg.args(o), J.Json.get_obj(o, "id"), reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case True{} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
+        +r2 : Chan(String) <- Chan.new(String, 1)
+        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
+        IO.spawn(Unit, Np.wait(r2, inbox, thread, Gg.args(o), J.Json.get_obj(o, "id"), reply))
+        Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", "project_create", BH.Bots.newproj.detail(Gg.args(o)), "", now}], Nil{}})
+
+def Hub.newproj(bot: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match bot h:
+    case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.newproj.k(BH.Bots.newproj.asks(M.Asks.all(st), thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
+    case False{} _:
+      do IO<Hub>:
+        Gg.say(reply, J.Json.get_obj(o, "id"), False{}, "only bots have this tool")
+        return h
+
+def Hub.mcp.np(np: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match np h:
+    case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.newproj(BO.World.is_bot_thread(M.State.bots(st), thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
+    case False{} _:
+      Hub.mcp.w(MC.Wait.secs(o), h, thread, o, body, reply, now)
+
 def Hub.mcp.gg(g: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match g h:
     case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.google(BO.World.is_bot_thread(M.State.bots(st), thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
     case False{} _:
-      Hub.mcp.w(MC.Wait.secs(o), h, thread, o, body, reply, now)
+      Hub.mcp.np(BH.Bots.newproj.is(o), h, thread, o, body, reply, now)
 
 def Hub.mcp.route(pv: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match pv:
@@ -4525,6 +4599,8 @@ def Msg.kind(m: Msg) -> String:
       "bot_verified"
     case Shot{_}:
       "shot"
+    case NewProject{_, _, _, _, _}:
+      "new_project"
 
 def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
   match m:
@@ -4578,6 +4654,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.bot_http(h, kind, arg, peer, ts, sig, gh, dl, body, ct, raw, reply, now)
     case BotVerified{kind, arg, key, body, me, reply}:
       Hub.bot_verified(h, kind, arg, key, body, me, reply, now)
+    case NewProject{_, root, name, id, reply}:
+      Hub.newproj.made(h, root, name, id, reply, now)
     case Shot{text}:
       Hub.broadcast(h, text)
 
