@@ -255,7 +255,8 @@ struct FlowButtons: View {
 }
 
 // what the next message attaches (× takes one off), what is uploading,
-// and the skills a `$` being typed completes to
+// and what the word being typed completes to: a `$` skill, an `@` bot,
+// a `>` thread, a `%` project or a `#` room, each with its summary
 struct ComposerExtras: View {
     let model: AppModel
     let thread: ThreadView
@@ -278,21 +279,24 @@ struct ComposerExtras: View {
             .padding(.horizontal).padding(.top, 8)
         }
         if !skills.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(skills, id: \.self) { k in
-                        Button { model.act("skill", k.name) } label: {
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text("$" + k.name).font(.caption.bold())
-                                Text(k.desc).font(.caption2).lineLimit(1).frame(maxWidth: 200, alignment: .leading)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(skills.enumerated()), id: \.element) { i, k in
+                    Button { model.act("skill", k.name) } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(k.name).font(.subheadline.bold()).lineLimit(1)
+                            if !k.desc.isEmpty {
+                                Text(k.desc).font(.caption).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(i == 0 ? Color.secondary.opacity(0.15) : Color.clear)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal)
             }
-            .padding(.top, 8)
+            .padding(.vertical, 4)
         }
         if !atts.isEmpty || !up.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {

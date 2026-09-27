@@ -11,6 +11,7 @@ import ./todo.bend as TD
 import ./bot.bend as BT
 import ./voice.bend as VC
 import ./space.bend as SPC
+import ./refs.bend as RF
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -1384,19 +1385,23 @@ def Ui.mention(u: Ui, +path: String) -> Act:
     case Ui{st, +sel, +dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
       Ui.also(Ui.draft.set(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, Str.get(dr, sel) ++ Ui.mention.sep(Str.get(dr, sel)) ++ "@" ++ path ++ " "), [Focus{"composer"}])
 
-# Skills in the composer
-# ----------------------
+# Skills and references in the composer
+# -------------------------------------
 # Typing `$` asks the server for the thread's skills (user and project,
 # once per thread); the composer then offers those whose name starts with
-# what follows the `$`, and Tab or Enter completes the first (or a
-# clicked one).
+# what follows the `$`. Typing `@`, `>`, `%` or `#` offers bots, threads,
+# projects or group chats (refs.bend's Refs.offer, ranked), worked out
+# once per edit of the draft and kept in the info map ("refs.for", "refs"),
+# so a frame or a phone's screen only reads them. Tab or Enter completes
+# the first (or a clicked one). A row's name is the whole word it puts in,
+# sigil and all.
 
 type SkillRow is Data:
   SkillRow{name: String, description: String}
 
 # the draft's last word
 def Skills.token(+draft: String) -> String:
-  Maybe.default(&2, String, List.last(&2, String, String.split(Maybe.default(&2, String, List.last(&2, String, String.lines(draft)), ""), ' ')), "")
+  RF.Refs.token(draft)
 
 # whether the draft ends in a `$name` being typed
 def Skills.typing(+draft: String) -> Bool:
@@ -1414,7 +1419,7 @@ def Skills.rows(xs: List<&2, J.Json>, +q: String) -> List<&2, SkillRow>:
     case Nil{}:
       Nil{}
     case +x <> t:
-      Skills.rows.k(String.starts_with(J.Json.get_str(x, "name", ""), q), SkillRow{J.Json.get_str(x, "name", ""), J.Json.get_str(x, "description", "")}, Skills.rows(t, q))
+      Skills.rows.k(String.starts_with(J.Json.get_str(x, "name", ""), q), SkillRow{"$" ++ J.Json.get_str(x, "name", ""), J.Json.get_str(x, "description", "")}, Skills.rows(t, q))
 
 def Skills.offer(on: Bool, +list: String, +q: String) -> List<&2, SkillRow>:
   match on:
@@ -1424,8 +1429,55 @@ def Skills.offer(on: Bool, +list: String, +q: String) -> List<&2, SkillRow>:
       Nil{}
 
 # the skills the composer offers now (none unless a `$name` is being typed)
-def Skills.of(+sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
+def Skills.only(+sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
   Skills.offer(Bool.and(Skills.typing(Str.get(dr, sel)), String.eq(Str.get(nf, "skills.for"), sel)), Str.get(nf, "skills"), String.drop(Skills.token(Str.get(dr, sel)), 1n))
+
+# References: the cache's key, and its rows as lines of "word\tabout"
+def Refs.for(+sel: String, +draft: String) -> String:
+  sel ++ "\n" ++ Skills.token(draft)
+
+def Refs.flat(+s: String) -> String:
+  String.join(String.split(String.join(String.split(s, '\n'), " "), '\t'), " ")
+
+def Refs.show(cs: List<&2, RF.Cand>) -> List<&2, String>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case RF.Cand{w, a, _, _} <> t:
+      (w ++ "\t" ++ Refs.flat(a)) <> Refs.show(t)
+
+def Refs.row(+l: String) -> SkillRow:
+  SkillRow{Maybe.default(&2, String, List.head(&2, String, String.split(l, '\t')), ""), String.join(List.drop(&2, String, String.split(l, '\t'), 1n), " ")}
+
+def Refs.rows(ls: List<&2, String>) -> List<&2, SkillRow>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Skills.rows.k(Bool.not(String.is_empty(l)), Refs.row(l), Refs.rows(t))
+
+def Refs.kept(same: Bool, +nf: Map<&2, String>) -> List<&2, SkillRow>:
+  match same:
+    case True{}:
+      Refs.rows(String.split(Str.get(nf, "refs"), '\n'))
+    case False{}:
+      Nil{}
+
+# the references offered now: the kept rows, while they are for this
+# thread's draft as it is
+def Refs.of(+sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
+  Refs.kept(Bool.and(RF.Refs.typing(Skills.token(Str.get(dr, sel))), String.eq(Str.get(nf, "refs.for"), Refs.for(sel, Str.get(dr, sel)))), nf)
+
+def Skills.of.k(dollar: Bool, +sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
+  match dollar:
+    case True{}:
+      Skills.only(sel, dr, nf)
+    case False{}:
+      Refs.of(sel, dr, nf)
+
+# what the composer offers now: skills after `$`, references after a sigil
+def Skills.of(+sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
+  Skills.of.k(String.starts_with(Skills.token(Str.get(dr, sel)), "$"), sel, dr, nf)
 
 def Ui.skills(u: Ui) -> List<&2, SkillRow>:
   match u:
@@ -1446,17 +1498,18 @@ def Skills.first(rs: List<&2, SkillRow>) -> String:
     case Nil{}:
       ""
 
-# the name a completion puts in: the one clicked, else the first offered
+# the word a completion puts in: the one clicked, else the first offered
 def Skills.pick(+rs: List<&2, SkillRow>, +v: String) -> String:
   Bool.pick(String, Skills.named(rs, v), v, Skills.first(rs))
 
-def Skills.complete(+draft: String, +name: String) -> String:
-  String.take(draft, Nat.sub(String.length(draft), String.length(Skills.token(draft)))) ++ "$" ++ name ++ " "
+# the draft with its last word replaced by a completion
+def Skills.complete(+draft: String, +word: String) -> String:
+  String.take(draft, Nat.sub(String.length(draft), String.length(Skills.token(draft)))) ++ word ++ " "
 
-def Ui.skill.k(+name: String, +u: Ui) -> Act:
-  Bool.pick(Act, String.is_empty(name), Act{u, Nil{}}, Ui.draft.set(u, Skills.complete(Ui.draft_text(u), name)))
+def Ui.skill.k(+word: String, +u: Ui) -> Act:
+  Bool.pick(Act, String.is_empty(word), Act{u, Nil{}}, Ui.draft.set(u, Skills.complete(Ui.draft_text(u), word)))
 
-# complete the `$name` being typed
+# complete the word being typed
 def Ui.skill(+u: Ui, +v: String) -> Act:
   Ui.skill.k(Skills.pick(Ui.skills(u), v), u)
 
@@ -2051,9 +2104,23 @@ def Skills.want(a: Act) -> Act:
     case Act{+u, cs}:
       Skills.fetch(Skills.need(u), Act{u, cs})
 
-# the selected thread's draft; typing a `$` fetches its skills once
+def Refs.fill(on: Bool, u: Ui) -> Ui:
+  match on u:
+    case True{} Ui{+st, +sel, +dr, live, op, on2, +now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Ui{st, sel, dr, live, op, on2, now, ad, pa, v, rid, w, er, note,
+        Map.set(&2, String, Map.set(&2, String, nf, "refs", String.join(Refs.show(RF.Refs.offer(st, sel, now, Skills.token(Str.get(dr, sel)))), "\n")), "refs.for", Refs.for(sel, Str.get(dr, sel))), ob, tr}
+    case False{} _:
+      u
+
+def Refs.want(a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Act{Refs.fill(RF.Refs.typing(Skills.token(Ui.draft_text(u))), u), cs}
+
+# the selected thread's draft; typing a `$` fetches its skills once, a
+# reference being typed is looked up
 def Ui.draft(u: Ui, text: String) -> Act:
-  Skills.want(Ui.draft.set(u, text))
+  Refs.want(Skills.want(Ui.draft.set(u, text)))
 
 # What the machine says about a provider: its CLI version ("" when it is
 # not installed) and a label per model

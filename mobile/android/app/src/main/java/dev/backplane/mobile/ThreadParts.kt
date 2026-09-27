@@ -355,7 +355,8 @@ fun AskCard(m: AppModel, a: Ask) {
 }
 
 // what the next message attaches (× takes one off), what is uploading,
-// and the skills a `$` being typed completes to
+// and what the word being typed completes to: a `$` skill, an `@` bot,
+// a `>` thread, a `%` project or a `#` room, each with its summary
 @Composable
 fun ComposerExtras(m: AppModel, t: ThreadView) {
     t.btw?.let { b ->
@@ -372,13 +373,15 @@ fun ComposerExtras(m: AppModel, t: ThreadView) {
             }
         }
     }
-    if (t.skills.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (k in t.skills) Surface(onClick = { m.act("skill", k.name) }, shape = corner,
-            color = MaterialTheme.colorScheme.secondaryContainer) {
-            Column(Modifier.widthIn(max = 220.dp).padding(horizontal = 10.dp, vertical = 6.dp)) {
-                Text("$" + k.name, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                Text(k.desc, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    if (t.skills.isNotEmpty()) Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        t.skills.forEachIndexed { i, k ->
+            Surface(onClick = { m.act("skill", k.name) }, shape = corner, modifier = Modifier.fillMaxWidth(),
+                color = if (i == 0) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                    Text(k.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1)
+                    if (k.desc.isNotEmpty()) Text(k.desc, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }

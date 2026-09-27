@@ -163,6 +163,40 @@ A hub counts only its own bots' posts (it pushes only for its own threads). A
 phone paired with several hubs counts every bot, so only the hub whose bot
 answered first raises the alert. A held push is logged as
 `backplane: push alert held for <thread>`.
+## Mentions in threads
+
+In any thread's composer (web, window, phones) a word that starts with a
+sigil names something, and a menu offers matches with their summaries as
+you type:
+
+| sigil | names | when sent |
+|---|---|---|
+| `@name` | a bot | the bot is woken (hop 0) with the message and the thread it came from; it can `thread_read` it and answer with `thread_send` |
+| `>slug` | a thread | the agent is told the thread's id, project and summary |
+| `%slug` | a project | the agent is told the project's id, folder and summary |
+| `#slug` | a group chat | the message is posted in the room |
+
+`@Miso look at >fix-perf-lag` points a bot at a thread. A slug is the
+title in lower case with every other run of characters one `-`; a thread
+whose slug another shares is `slug-<n>`, the number its id ends with. The
+thread's own agent gets the message as typed plus a `<references>` block
+naming each (`Refs.agent`); the timeline keeps it as typed. A bot is never
+woken by a mention in its own thread (law `refs_own_bot_never`), and a
+message resent after a dropped connection wakes nothing twice
+(`bot_mention_once`). Bots on linked machines (`name@peer`) are not
+offered yet.
+
+The menu (`Refs.offer` in `src/core/refs.bend`) ranks by how well the
+query matches the slug or name (fuzzy), a query of three or more letters
+found in the summary, then nearness: the same project, recent work, pinned
+or running threads. It is worked out once per edit of the draft and kept
+in the client's info map, so frames and phone screens only read it.
+
+Summaries come from the text generation model (the one that titles
+threads): a thread's when a turn ends, at most every ten minutes
+(`summary.<thread>`), and its project's after it, from the project's
+newest threads (`summary.<project>`). A bot's is its thread's; before its
+first turn the menu shows its persona's first line.
 
 ## Machines and people
 

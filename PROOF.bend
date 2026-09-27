@@ -9,6 +9,7 @@ import ./src/core/board.bend as B
 import ./src/core/semver.bend as SV
 import ./src/app/nui.bend as N
 import ./src/core/hub.bend as H
+import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
 import ./src/core/acp.bend as AC
 import ./src/core/mcp.bend as MC
@@ -5341,4 +5342,32 @@ def Laws.bot_newproj_decline():
   {==}
 
 def Laws.bot_newproj_no_answer():
+  {==}
+
+def Laws.refs_plain_offers_nothing(s, sel, now):
+  {==}
+
+def Laws.refs_plain_not_typing():
+  {==}
+
+def Laws.refs_agent_plain(s, sel):
+  {==}
+
+def Laws.refs_own_bot_never(named, id, name):
+  match named:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.bot_mention_once(s, now, p):
+  {==}
+
+def Laws.sum_never_made_due(now):
+  {==}
+
+def Laws.sum_not_due_asks_nothing(s, id, kind):
+  {==}
+
+def Laws.sum_not_due_stamps_nothing(id, now):
   {==}
