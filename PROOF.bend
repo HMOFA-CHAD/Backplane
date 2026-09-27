@@ -895,7 +895,7 @@ def Laws.device_drop_never_sent(tok, at):
 
 def Laws.device_blank_ignored(s, p, k, th, e, b, at):
   match s:
-    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix}:
       {==}
 
 def Laws.device_register_once(tok, h, p, k, th, e, b, at, p2, k2, th2, e2, b2, at2):
@@ -4417,12 +4417,12 @@ def Laws.tl_memos_bounded(m, ms):
 
 def Laws.window_state_private(s):
   match s:
-    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix}:
       {==}
 
 def Laws.window_state_seq(s):
   match s:
-    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix}:
       {==}
 
 def Laws.window_adopt(u, st):
@@ -5408,4 +5408,36 @@ def Laws.status_input_before_waiting(t, q):
   {==}
 
 def Laws.status_no_subagents_same(s):
+  {==}
+
+def Laws.shows_other_delta(u, th, text, h):
+  match u:
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      %Equal.sym(Bool, String.eq(th, sel), False{}, h) : {_ == False{} : Bool}
+      {==}
+
+def Laws.shows_own_delta(u, text):
+  match u:
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Laws.string_eq_refl(sel)
+
+def Laws.shows_changes(u, items):
+  {==}
+
+def Laws.idx_page_own():
+  {==}
+
+def Laws.idx_page_sent():
+  {==}
+
+def Laws.idx_sent_filed():
+  {==}
+
+def Laws.idx_page_short():
+  {==}
+
+def Laws.idx_links():
+  {==}
+
+def Laws.idx_links_found():
   {==}

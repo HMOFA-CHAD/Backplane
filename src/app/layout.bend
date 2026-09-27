@@ -3253,7 +3253,7 @@ def Lay.memo.es(none: Bool, +n: S.Nui) -> List<&2, M.Entry>:
     case True{}:
       Nil{}
     case False{}:
-      TL.newest(U.Ui.entries(U.Ui.state(S.Nui.ui(n))), U.Ui.sel(S.Nui.ui(n)), TL.created(U.Ui.thread(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n)))), NW{U.Page.shown(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n))), Nil{}})
+      TL.newest(M.State.mine(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n))), U.Ui.sel(S.Nui.ui(n)), TL.created(U.Ui.thread(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n)))), NW{U.Page.shown(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n))), Nil{}})
 
 # (only the newest page of a thread, core's Page: a long thread laid out
 # whole cost every frame 15 ms on a real log; "earlier" shows another page)

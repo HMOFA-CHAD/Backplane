@@ -1033,14 +1033,15 @@ def Hear.to(here: Bool, +n: Nui) -> Nui:
 def Hear.kept(+n: Nui, +th: String) -> Step:
   Step{n, [NKeep{th, U.Ui.scratch(Nui.ui(n), th)}], True{}}
 
-def Hear.k(text: Bool, +here: Bool, n: Nui, +o: J.Json) -> Step:
+def Hear.k(text: Bool, +here: Bool, +n: Nui, +o: J.Json) -> Step:
   match text:
     case True{}:
       Hear.kept(Hear.to(here, Nui.recv(Hear.at(here, n), o)), J.Json.get_str(o, "thread", ""))
     case False{}:
-      Step{Nui.recv(n, o), Nil{}, True{}}
+      Step{Nui.recv(n, o), Nil{}, U.Ui.shows(Nui.ui(n), o)}
 
-# a message from the hub
+# a message from the hub (another thread's streamed text draws nothing,
+# U.Ui.shows)
 def Nui.hear(+n: Nui, +o: J.Json) -> Step:
   Hear.k(Hear.is(o), Hear.here(n, o), n, o)
 

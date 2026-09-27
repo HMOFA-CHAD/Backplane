@@ -226,7 +226,7 @@ def Sum.last.go(es: List<&2, M.Entry>, hit: Bool, +th: String, +user: Bool) -> S
 
 def Sum.last(s: M.State, +th: String, +user: Bool) -> String:
   match s:
-    case M.State{_, _, +es, _, _, _, _, _, _, _, _}:
+    case M.State{_, _, +es, _, _, _, _, _, _, _, _, _}:
       Sum.last.go(es, Sum.last.hit(es, th, user), th, user)
 
 def Refs.got.t(r: Map<&2, M.Thread> & M.Thread) -> M.Thread:
@@ -235,7 +235,7 @@ def Refs.got.t(r: Map<&2, M.Thread> & M.Thread) -> M.Thread:
 
 def Sum.thread.of(s: M.State, +id: String) -> M.Thread:
   match s:
-    case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
+    case M.State{_, ts, _, _, _, _, _, _, _, _, _, _}:
       Refs.got.t(Map.get(M.Thread, M.Thread.blank(id), ts, id))
 
 def Refs.got.p(r: Map<&2, M.Project> & M.Project) -> M.Project:
@@ -244,7 +244,7 @@ def Refs.got.p(r: Map<&2, M.Project> & M.Project) -> M.Project:
 
 def Sum.project.of(s: M.State, +id: String) -> M.Project:
   match s:
-    case M.State{ps, _, _, _, _, _, _, _, _, _, _}:
+    case M.State{ps, _, _, _, _, _, _, _, _, _, _, _}:
       Refs.got.p(Map.get(M.Project, M.Project{id, "", "", 0n, True{}}, ps, id))
 
 def Refs.t.title(t: M.Thread) -> String:
@@ -299,7 +299,7 @@ def Sum.newest(a: M.Thread, b: M.Thread) -> Bool:
 
 def Sum.threads(s: M.State) -> List<&2, M.Thread>:
   match s:
-    case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
+    case M.State{_, ts, _, _, _, _, _, _, _, _, _, _}:
       List.sort(~M.Thread, ~Sum.newest, Map.values(&2, M.Thread, ts))
 
 # what the writer reads about a project: its folder and newest threads
@@ -411,7 +411,7 @@ def Refs.threads.go(ts: List<&2, M.Thread>, +s: M.State, +m: Map<&2, Nat>, +sel:
 
 def Refs.threads(+s: M.State, +sel: String, +now: Nat, +q: String) -> List<&2, Cand>:
   match s:
-    case M.State{_, +ts, _, _, _, _, _, _, _, _, _}:
+    case M.State{_, +ts, _, _, _, _, _, _, _, _, _, _}:
       Refs.threads.go(Map.values(&2, M.Thread, ts), s, Refs.counts(Map.values(&2, M.Thread, ts), Map.new(&2, Nat)), sel,
         Refs.t.project(Sum.thread.of(s, sel)), now, q)
 
@@ -465,7 +465,7 @@ def Refs.projects.go(ps: List<&2, M.Project>, +s: M.State, +here: String, +q: St
 
 def Refs.projects(+s: M.State, +sel: String, +q: String) -> List<&2, Cand>:
   match s:
-    case M.State{ps, _, _, _, _, _, _, _, _, _, _}:
+    case M.State{ps, _, _, _, _, _, _, _, _, _, _, _}:
       Refs.projects.go(Map.values(&2, M.Project, ps), s, Refs.t.project(Sum.thread.of(s, sel)), q)
 
 def Refs.r.cand(+q: String, r: BT.Room, rest: List<&2, Cand>) -> List<&2, Cand>:
@@ -539,7 +539,7 @@ def Refs.hit.of(+kind: String, +word: String, m: Maybe<&2, Cand>) -> List<&2, Hi
 
 def Refs.find.thread(+s: M.State, +sel: String, +w: String) -> List<&2, Hit>:
   match s:
-    case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
+    case M.State{_, ts, _, _, _, _, _, _, _, _, _, _}:
       Refs.hit.of("thread", ">" ++ w, List.head(&2, Cand, List.sort(~Cand, ~Cand.before, Refs.t.hits(Map.values(&2, M.Thread, ts), w, Refs.t.project(Sum.thread.of(s, sel))))))
 
 # a bot the word names, unless it is the bot whose thread it is said in
@@ -570,7 +570,7 @@ def Refs.p.hits(ps: List<&2, M.Project>, +w: String) -> List<&2, Hit>:
 
 def Refs.find.project(+s: M.State, +w: String) -> List<&2, Hit>:
   match s:
-    case M.State{ps, _, _, _, _, _, _, _, _, _, _}:
+    case M.State{ps, _, _, _, _, _, _, _, _, _, _, _}:
       Refs.p.hits(Map.values(&2, M.Project, ps), w)
 
 def Refs.r.hits(rs: List<&2, BT.Room>, +w: String) -> List<&2, Hit>:
