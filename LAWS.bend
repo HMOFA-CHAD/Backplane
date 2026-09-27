@@ -2001,6 +2001,22 @@ law recover_empty_nothing:
   for now: Nat
   {H.Hub.recover(M.State.empty(), now) == H.Step{[], []} : H.Step}
 
+# with "restart.continue" on (the default) a turn the restart cut short
+# runs again; an idle thread stays idle; with it off nothing carries on;
+# a thread whose newest entry is already the continue message stays
+# stopped, so a turn that takes the hub down never loops
+law carry_continues:
+  {H.Hub.running(H.Hub.thread(H.Carry.after(H.Rec.demo(M.Running{}), 10n), "t1")) == True{} : Bool}
+
+law carry_leaves_idle:
+  {H.Hub.running(H.Hub.thread(H.Carry.after(H.Rec.demo(M.Completed{}), 10n), "t1")) == False{} : Bool}
+
+law carry_off_nothing:
+  {H.Hub.running(H.Hub.thread(H.Carry.after(H.Carry.demo([M.SettingSet{"restart.continue", "off", 4n}]), 10n), "t1")) == False{} : Bool}
+
+law carry_once:
+  {H.Hub.running(H.Hub.thread(H.Carry.after(H.Carry.demo([M.MessagePosted{"t1", "c1", M.User{}, M.Carry.text(), 4n}]), 10n), "t1")) == False{} : Bool}
+
 # an open ask makes its thread pending (so it never auto-settles); the
 # answer clears it
 law ask_makes_pending:

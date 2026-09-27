@@ -1099,6 +1099,15 @@ def Setting.get(s: State, +k: String, d: String) -> String:
     case State{_, _, _, _, _, sg, qu, ak, _, _, _}:
       State.get.k(Map.get(String, d, sg, k))
 
+# The "restart.continue" setting: after a restart, a turn the restart cut
+# short goes on by itself (on unless "off"; hub.bend's Carry)
+def Carry.on(+s: State) -> Bool:
+  Bool.not(String.eq(Setting.get(s, "restart.continue", "on"), "off"))
+
+# what such a thread is told
+def Carry.text() -> String:
+  "Backplane restarted while you were working. Continue where you left off."
+
 # Providers in turn
 # -----------------
 # A thread may go on with another provider between turns (V2's provider

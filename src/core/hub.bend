@@ -1969,7 +1969,7 @@ def Pend.fix(+s: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
 # as interrupted (a delegated child's task fails, and its parent hears of
 # it) and every open ask closes unanswered (laws recover_*). Queued
 # messages stay held until the user resumes them (queue.resume) or sends
-# another.
+# another, unless the turn carries on (Carry, below).
 
 type Rec is Data:
   Rec{s: M.State, cs: List<&2, M.Change>, os: List<&2, Out>}
@@ -2049,6 +2049,54 @@ def Bg.clear.all(ids: List<&2, String>, +s: M.State, +now: Nat) -> List<&2, M.Ch
 def Hub.recover(+s: M.State, +now: Nat) -> Step:
   Step.after(Rec.step(Rec.turns(Rec.ids(Rec.threads(s)), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), now)), Bg.clear.all(Rec.ids(Rec.threads(s)), s, now))
 
+# Carrying on
+# -----------
+# With the "restart.continue" setting on (M.Carry.on), every turn the
+# restart interrupted goes on: the thread is told to continue (with any
+# message held in its queue), and its agent resumes its session. A thread
+# whose newest entry is already that message made no progress since the
+# last restart and is left stopped, so a turn that brings the hub down
+# never loops (laws carry_*). Runs after Hub.recover, over the state from
+# before it.
+
+def Carry.fresh(es: List<&2, M.Entry>) -> Bool:
+  match es:
+    case M.Msg{_, _, _, +text, _} <> _:
+      Bool.not(String.eq(text, M.Carry.text()))
+    case _:
+      True{}
+
+def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  match go:
+    case True{}:
+      Step.after(Hub.post(s, now, th, Hub.id("c", now, Hub.seq(s)), M.User{}, M.Carry.text()),
+        [M.ActivityLogged{th, Hub.id("r", now, 1n+Hub.seq(s)), "info", "restart", "Continuing after the restart", now}])
+    case False{}:
+      Step.none()
+
+def Carry.one(r: Rec, +before: M.State, +now: Nat, +th: String) -> Rec:
+  match r:
+    case Rec{+s, cs, os}:
+      Rec.add(Rec{s, cs, os}, Carry.k(Bool.and(Hub.running(Hub.thread(before, th)), Carry.fresh(M.State.mine(before, th))), s, now, th))
+
+def Carry.all(ts: List<&2, String>, r: Rec, +before: M.State, +now: Nat) -> Rec:
+  match ts:
+    case Nil{}:
+      r
+    case +th <> t:
+      Carry.all(t, Carry.one(r, before, now, th), before, now)
+
+def Carry.go(on: Bool, +before: M.State, +after: M.State, +now: Nat) -> Step:
+  match on:
+    case True{}:
+      Rec.step(Carry.all(Rec.ids(Rec.threads(before)), Rec{after, Nil{}, Nil{}}, before, now))
+    case False{}:
+      Step.none()
+
+# before: the state Hub.recover started from; after: once its step applied
+def Hub.carry(+before: M.State, +after: M.State, +now: Nat) -> Step:
+  Carry.go(M.Carry.on(after), before, after, now)
+
 # Turn processes
 # --------------
 # A Codex or Grok turn is a process of its own. Its lines reach the hub
@@ -2126,6 +2174,17 @@ def Rec.demo(+st: M.TurnState) -> M.State:
 
 def Rec.after(+s: M.State, +now: Nat) -> M.State:
   M.State.replay(Queue.changes(Hub.recover(s, now)), s)
+
+def Carry.after.k(+before: M.State, +after: M.State, +now: Nat) -> M.State:
+  M.State.replay(Queue.changes(Hub.carry(before, after, now)), after)
+
+# the recovery scenario carried on: the state after both steps
+def Carry.after(+s: M.State, +now: Nat) -> M.State:
+  Carry.after.k(s, Rec.after(s, now), now)
+
+# the running scenario with more changes on top (for the carry laws)
+def Carry.demo(cs: List<&2, M.Change>) -> M.State:
+  M.State.replay(cs, Rec.demo(M.Running{}))
 
 # a thread "t1" on `provider` whose turn is in state st (for laws)
 def Demo.state(+provider: String, +st: M.TurnState) -> M.State:

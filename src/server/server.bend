@@ -3919,10 +3919,19 @@ def Hub.tagged(h: Hub, +tag: String, line: String, +now: Nat) -> IO(Hub):
     case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
       Hub.tagged.k(B.Tag.heard(B.Tag.pid(tag), Agent.pid_of(Agents.get(as, B.Tag.thread(tag)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Tag.thread(tag), line, now)
 
+# then turns the restart cut short carry on (B.Hub.carry)
+def Hub.recover.carry(h: Hub, +before: M.State, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.carry(before, st, now))
+
+def Hub.recover.go(h: Hub, st: B.Step, before: M.State, +now: Nat) -> IO(Hub):
+  IO.bind(Hub, Hub, Hub.step(h, st), h2 => Hub.recover.carry(h2, before, now))
+
 def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.recover(st, now))
+      Hub.recover.go(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.recover(st, now), st, now)
 
 # The minute
 # ----------
