@@ -138,3 +138,16 @@ def main() -> IO(Unit):
     C.Check.str("tools", String.join(G.Google.tool_names(), ","), "gmail_search,gmail_read,gmail_send,calendar_events,calendar_create")
     C.Check.str("tool defs", Nat.show(List.length(&2, J.Json, G.Google.tool_defs())), "5")
     C.Check.str("asks", show.bool(Bool.and(G.Google.asks("gmail_send"), Bool.not(G.Google.asks("gmail_read")))), "true")
+    C.Check.str("own client wins", G.Client.id(G.Google.client(G.Client{"mine", "s"}, G.Client{"shared", "t"})), "mine")
+    C.Check.str("shared client stands in", G.Client.id(G.Google.client(G.Client{"", ""}, G.Client{"shared", "t"})), "shared")
+    C.Check.str("half a client is none", G.Client.id(G.Google.client(G.Client{"mine", ""}, G.Client{"shared", "t"})), "shared")
+    C.Check.str("shared auth url", G.Google.auth_url("cid", "http://127.0.0.1:3787/oauth/google", "CHAL", "st8", G.Google.scopes_for(False{})),
+      "https://accounts.google.com/o/oauth2/v2/auth?client_id=cid&redirect_uri=http%3A%2F%2F127.0.0.1%3A3787%2Foauth%2Fgoogle&response_type=code&scope=openid%20email%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.events&code_challenge=CHAL&code_challenge_method=S256&state=st8&access_type=offline&prompt=consent")
+    C.Check.str("is shared", show.bool(Bool.and(G.Google.is_shared("x", "x"), Bool.not(Bool.or(G.Google.is_shared("", ""), G.Google.is_shared("y", "x"))))), "true")
+    C.Check.str("shared covers", show.bool(Bool.and(G.Google.covers(True{}, "calendar_events"), Bool.not(G.Google.covers(True{}, "gmail_read")))), "true")
+    C.Check.str("note shared", G.Google.note(True{}, False{}, True{}, "a@x.org", True{}), "Connected as a@x.org (Calendar).")
+    C.Check.str("note own", G.Google.note(True{}, False{}, True{}, "", False{}), "Connected (Gmail and Calendar).")
+    C.Check.str("note pending", G.Google.note(False{}, True{}, True{}, "", True{}), "Waiting for Google: allow access in the tab that opened, or paste where it landed.")
+    C.Check.str("note idle", G.Google.note(False{}, False{}, True{}, "", True{}), "Not connected.")
+    C.Check.str("note no client", G.Google.note(False{}, False{}, False{}, "", True{}),
+      "Not connected. This build has no shared Google client: add your own OAuth client (Desktop app) below.")

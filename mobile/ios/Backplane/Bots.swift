@@ -463,13 +463,15 @@ private struct SettingsTab: View {
             }
             Section {
                 if !settings.google.status.isEmpty { Text(settings.google.status).font(.subheadline) }
-                TextField("Client ID", text: $gid)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    .onChange(of: gid) { _, t in model.field("gid", t) }
-                SecureField("Client secret", text: $gsecret)
-                    .onChange(of: gsecret) { _, t in model.field("gsecret", t) }
-                Button("Save client") { model.act("google", "configure") }
-                Button("Sign in") { model.act("google", "begin") }
+                Button("Connect Google") { model.act("google", "connect") }
+                DisclosureGroup("Own client (for Gmail)") {
+                    TextField("Client ID (Desktop app)", text: $gid)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .onChange(of: gid) { _, t in model.field("gid", t) }
+                    SecureField("Client secret", text: $gsecret)
+                        .onChange(of: gsecret) { _, t in model.field("gsecret", t) }
+                    Button("Save client") { model.act("google", "configure") }
+                }
                 if let u = URL(string: settings.google.url), !settings.google.url.isEmpty {
                     Link("Open Google sign-in", destination: u)
                     TextField("Redirected URL", text: $gpaste)

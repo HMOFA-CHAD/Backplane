@@ -2448,6 +2448,29 @@ law google_expiring_not_fresh:
   for +now: Nat
   {GO.Google.fresh(now, now) == False{} : Bool}
 
+# a client of the user's own is always the one a sign-in uses; the shared
+# client only stands in when there is none
+law google_own_client_wins:
+  for +mine: GO.Client
+  for sh: GO.Client
+  for h: {GO.Client.has(mine) == True{} : Bool}
+  {GO.Google.client(mine, sh) == mine : GO.Client}
+
+# the shared client asks for Calendar and who signed in, never Gmail
+law google_shared_calendar_only:
+  {GO.Google.scopes_for(False{}) == ["openid", "email", "https://www.googleapis.com/auth/calendar.events"] : List<&2, String>}
+
+# a link through the shared client runs no Gmail tool
+law google_shared_no_gmail:
+  for +tool: String
+  for h: {String.starts_with(tool, "gmail_") == True{} : Bool}
+  {GO.Google.covers(True{}, tool) == False{} : Bool}
+
+# the user's own client runs every tool
+law google_own_covers_all:
+  for +tool: String
+  {GO.Google.covers(False{}, tool) == True{} : Bool}
+
 # Bots
 # ----
 

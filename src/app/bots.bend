@@ -450,18 +450,34 @@ def Bv.gurl.k(none: Bool, +ty: L.Ty, +s: String, +c: D.Clip, +x: U32, +w: U32, +
           F.Fm.button(ty, c, (x + w - cw : U32), y, "Copy", T.Th.soft(), "copy", s)]),
         (y + 36 : U32)}
 
+# the user's own OAuth client (for Gmail), shown on asking
+def Bv.gown(open: Bool, +ty: L.Ty, +f: F.FS, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+  match open:
+    case False{}:
+      L.Col{L.Out.none(), y}
+    case True{}:
+      +hw = U32.shr((w - 8 : U32))
+      L.Col{L.Out.all([
+          F.Fm.field(ty, f, c, x, y, hw, "gid", "google", "connect", "Client id (Desktop app)"),
+          F.Fm.field(ty, f, c, (x + hw + 8 : U32), y, hw, "gsecret", "google", "connect", "Client secret"),
+          F.Fm.button(ty, c, x, (y + 36 : U32), "Save client", T.Th.soft(), "google", "config"),
+          F.Fm.button(ty, c, (x + L.Lay.button.w(ty, "Save client") + 8 : U32), (y + 36 : U32), "Hide", T.Th.soft(), "bfield", "gown" ++ Bv.sep())]),
+        (y + 74 : U32)}
+
+# connect with the shared client (Calendar) or the user's own (Gmail too)
 def Bv.google(+ty: L.Ty, +f: F.FS, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   +u = F.FS.ui(f)
   +st = U.Ui.scratch(u, "@google")
-  +hw = U32.shr((w - 8 : U32))
-  L.Lay.col.cat(L.Out.all([Bv.h2(ty, c, "Google", x, y),
-      Bv.faint(ty, c, Bool.pick(String, String.is_empty(st), "Gmail and Calendar through Google's APIs. Needs an OAuth client (Desktop app) id and secret.", st), x, w, (y + 30 : U32)),
-      F.Fm.field(ty, f, c, x, (y + 58 : U32), hw, "gid", "google", "connect", "Client id"),
-      F.Fm.field(ty, f, c, (x + hw + 8 : U32), (y + 58 : U32), hw, "gsecret", "google", "connect", "Client secret"),
-      F.Fm.button(ty, c, x, (y + 94 : U32), "Sign in", T.Th.accent(), "google", "connect"),
-      F.Fm.button(ty, c, (x + L.Lay.button.w(ty, "Sign in") + 8 : U32), (y + 94 : U32), "Sign out", T.Th.soft(), "google", "disconnect")]),
-    L.Lay.col.then(Bv.gurl.k(String.is_empty(U.Ui.scratch(u, "@google.url")), ty, U.Ui.scratch(u, "@google.url"), c, x, w, (y + 132 : U32)), +y2 =>
-      L.Col{Bv.row2(ty, f, "gpaste", "google", "Browser on another device? Paste where it landed", "Finish", "paste", c, x, w, y2), (y2 + 40 : U32)}))
+  +cw = L.Lay.button.w(ty, "Connect Google")
+  +sw = L.Lay.button.w(ty, "Sign out")
+  L.Lay.col.then(L.Col{L.Out.all([Bv.h2(ty, c, "Google", x, y),
+      Bv.faint(ty, c, Bool.pick(String, String.is_empty(st), "Google Calendar for bots: connect, then allow access. Gmail needs a client of your own.", st), x, w, (y + 30 : U32)),
+      F.Fm.button(ty, c, x, (y + 58 : U32), "Connect Google", T.Th.accent(), "google", "connect"),
+      F.Fm.button(ty, c, (x + cw + 8 : U32), (y + 58 : U32), "Sign out", T.Th.soft(), "google", "disconnect"),
+      F.Fm.button(ty, c, (x + cw + sw + 16 : U32), (y + 58 : U32), "Own client", T.Th.soft(), "bfield", "gown" ++ Bv.sep() ++ "1")]), (y + 96 : U32)}, +y1 =>
+    L.Lay.col.then(Bv.gown(String.eq(F.Fm.text(f, "gown"), "1"), ty, f, c, x, w, y1), +y2 =>
+      L.Lay.col.then(Bv.gurl.k(String.is_empty(U.Ui.scratch(u, "@google.url")), ty, U.Ui.scratch(u, "@google.url"), c, x, w, y2), +y3 =>
+        L.Col{Bv.row2(ty, f, "gpaste", "google", "Browser on another device? Paste where it landed", "Finish", "paste", c, x, w, y3), (y3 + 40 : U32)})))
 
 def Bv.stab(+ty: L.Ty, +f: F.FS, b: BT.Bot, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   match b:
