@@ -56,6 +56,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -69,6 +70,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -91,10 +96,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Folder
@@ -166,18 +168,26 @@ fun App(m: AppModel) {
     s.find?.let { FindSheet(m, it) }
 }
 
-// the project search's field: typing filters the list ("proj-find-q"),
-// Go goes to the first project shown ("proj-go"), the x shuts it
+// the list's search field, always shown, never focused on its own:
+// typing filters the list ("proj-find-q"), Go goes to the first project
+// shown ("proj-go"), the x empties it
 @Composable
 private fun SearchField(m: AppModel, f: Search, first: String?) {
     var text by remember { mutableStateOf(f.query) }
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
-    OutlinedTextField(text, { t -> text = t; if (t != f.query) m.act("proj-find-q", t) },
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).focusRequester(focus),
+    // what was typed here: a screen still echoing it never overwrites the field
+    val typed = remember { mutableSetOf<String>() }
+    LaunchedEffect(f.query) {
+        if (f.query !in typed) { typed.clear(); text = f.query }
+    }
+    OutlinedTextField(text, { t -> text = t; if (t != f.query) { typed.add(t); m.act("proj-find-q", t) } },
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         singleLine = true, placeholder = { Text(f.hint) },
         leadingIcon = { Icon(Icons.Filled.Search, null) },
-        trailingIcon = { IconButton(onClick = { m.act("proj-find", "off") }) { Icon(Icons.Filled.Close, "Close search") } },
+        trailingIcon = {
+            if (text.isNotEmpty()) IconButton(onClick = { text = ""; typed.clear(); m.act("proj-find-q", "") }) {
+                Icon(Icons.Filled.Close, "Clear search")
+            }
+        },
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, imeAction = ImeAction.Go),
         keyboardActions = KeyboardActions(onGo = { first?.let { m.act("proj-go", it) } }))
 }
@@ -286,6 +296,7 @@ private fun swipeColor(s: Swipe?): Color = when (s?.tone) {
 @Composable
 private fun ThreadRow(m: AppModel, r: Row) {
     var menu by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
     val lead = r.lead.firstOrNull()
     val state = rememberSwipeToDismissBoxState(confirmValueChange = {
         when (it) {
@@ -311,6 +322,9 @@ private fun ThreadRow(m: AppModel, r: Row) {
         ) {
             ListItem(
                 headlineContent = { Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                supportingContent = if (r.project.isEmpty()) null else {
+                    { Text(r.project, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                },
                 leadingContent = { StatusDot(r.state, r.status) },
                 trailingContent = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -318,7 +332,11 @@ private fun ThreadRow(m: AppModel, r: Row) {
                         Text(r.ago, style = MaterialTheme.typography.labelMedium)
                     }
                 },
-                modifier = Modifier.combinedClickableCompat { m.act("select", r.id) },
+                // a long press asks for the row's menu (the screen's rowMenu)
+                modifier = Modifier.alpha(if (r.faded) 0.45f else 1f).combinedClickableCompat(onLong = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    m.act("row-menu", r.id)
+                }) { m.act("select", r.id) },
             )
         }
         Box(Modifier.align(Alignment.TopEnd)) {
@@ -374,9 +392,6 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
                             })
                         }
                     }
-                    IconButton(onClick = { m.act("proj-find", if (s.search?.open == true) "off" else "on") }) {
-                        Icon(Icons.Filled.Search, "Find a project")
-                    }
                     IconButton(onClick = onPair) { Icon(Icons.Filled.Link, "Hubs") }
                     Box {
                         IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, "More") }
@@ -398,68 +413,120 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
             }
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
-            s.search?.takeIf { it.open }?.let { f -> item(key = "find") { SearchField(m, f, s.projects.firstOrNull()?.id) } }
-            for (p in s.projects) {
-                item(key = "p:" + p.id) {
-                    // a long press offers to remove the project
-                    var menu by remember { mutableStateOf(false) }
-                    Box {
-                    ListItem(
-                        headlineContent = { Text(p.title, style = MaterialTheme.typography.titleMedium) },
-                        supportingContent = {
-                            Text(if (p.machine.isEmpty()) p.root else p.machine + ": " + p.root,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        },
-                        trailingContent = {
-                            IconButton(onClick = { m.act("new-thread", p.id) }) { Icon(Icons.Filled.Add, "New thread") }
-                        },
-                        modifier = Modifier.combinedClickableCompat(onLong = { menu = true }) {},
-                    )
-                    DropdownMenu(menu, { menu = false }) {
-                        DropdownMenuItem(text = { Text("Remove project") }, leadingIcon = { Icon(Icons.Filled.Delete, null) },
-                            onClick = { menu = false; m.act("proj-remove", p.id) })
+            // the search is always the list's first row (projects, or in the
+            // active view threads by title or project)
+            s.search?.let { f -> item(key = "find") { SearchField(m, f, s.projects.firstOrNull()?.id) } }
+            if (s.view == "active") {
+                if (s.active.isEmpty()) {
+                    if (s.projects.isNotEmpty() && s.search?.query.isNullOrEmpty()) item(key = "none") {
+                        Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
+                            Text("Nothing active", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
+                        }
                     }
-                    }
+                } else {
+                    items(s.active, key = { "t:" + it.id }) { ThreadRow(m, it) }
+                    item(key = "d:active") { HorizontalDivider() }
                 }
-                items(p.threads, key = { "t:" + it.id }) { ThreadRow(m, it) }
-                if (p.snoozed.isNotEmpty()) {
-                    item(key = "z:" + p.id) {
-                        ListItem(headlineContent = { Text(p.snoozedShelf, style = MaterialTheme.typography.labelLarge) })
-                    }
-                    items(p.snoozed, key = { "t:" + it.id }) { ThreadRow(m, it) }
-                }
-                if (p.settled.isNotEmpty()) {
-                    item(key = "s:" + p.id) {
+            } else {
+                for (p in s.projects) {
+                    item(key = "p:" + p.id) {
+                        // a long press asks for the project's menu (the screen's rowMenu)
+                        val haptic = LocalHapticFeedback.current
                         ListItem(
-                            headlineContent = { Text(p.shelf, style = MaterialTheme.typography.labelLarge) },
-                            trailingContent = {
-                                Icon(if (p.open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
+                            headlineContent = { Text(p.title, style = MaterialTheme.typography.titleMedium) },
+                            supportingContent = {
+                                Text(if (p.machine.isEmpty()) p.root else p.machine + ": " + p.root,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                             },
-                            modifier = Modifier.combinedClickableCompat { m.act("toggle-settled", p.id) },
+                            trailingContent = {
+                                IconButton(onClick = { m.act("new-thread", p.id) }) { Icon(Icons.Filled.Add, "New thread") }
+                            },
+                            modifier = Modifier.combinedClickableCompat(onLong = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                m.act("proj-menu", p.id)
+                            }) {},
+                            // quiet (no live thread): faded, as on iOS
+                            colors = if (p.quiet) ListItemDefaults.colors(
+                                headlineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                supportingColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            ) else ListItemDefaults.colors(),
                         )
                     }
-                    if (p.open) items(p.settled, key = { "t:" + it.id }) { ThreadRow(m, it) }
+                    items(p.threads, key = { "t:" + it.id }) { ThreadRow(m, it) }
+                    if (p.snoozed.isNotEmpty()) {
+                        item(key = "z:" + p.id) {
+                            ListItem(headlineContent = { Text(p.snoozedShelf, style = MaterialTheme.typography.labelLarge) })
+                        }
+                        items(p.snoozed, key = { "t:" + it.id }) { ThreadRow(m, it) }
+                    }
+                    if (p.settled.isNotEmpty()) {
+                        item(key = "s:" + p.id) {
+                            ListItem(
+                                headlineContent = { Text(p.shelf, style = MaterialTheme.typography.labelLarge) },
+                                trailingContent = {
+                                    Icon(if (p.open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
+                                },
+                                modifier = Modifier.combinedClickableCompat { m.act("toggle-settled", p.id) },
+                            )
+                        }
+                        if (p.open) items(p.settled, key = { "t:" + it.id }) { ThreadRow(m, it) }
+                    }
+                    if (p.archived.isNotEmpty() && p.value.isNotEmpty()) {
+                        item(key = "a:" + p.id) {
+                            ListItem(
+                                headlineContent = { Text("Archived ${p.archived.size}", style = MaterialTheme.typography.labelLarge) },
+                                trailingContent = {
+                                    Icon(if (p.archOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
+                                },
+                                modifier = Modifier.combinedClickableCompat { m.act("toggle-settled", p.value) },
+                            )
+                        }
+                        if (p.archOpen) items(p.archived, key = { "t:" + it.id }) { ThreadRow(m, it) }
+                    }
+                    item(key = "d:" + p.id) { HorizontalDivider() }
                 }
-                if (p.archived.isNotEmpty() && p.value.isNotEmpty()) {
-                    item(key = "a:" + p.id) {
+                // the folded shelf of older projects, at the end
+                s.older?.let { o ->
+                    item(key = "older") {
                         ListItem(
-                            headlineContent = { Text("Archived ${p.archived.size}", style = MaterialTheme.typography.labelLarge) },
-                            trailingContent = {
-                                Icon(if (p.archOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
-                            },
-                            modifier = Modifier.combinedClickableCompat { m.act("toggle-settled", p.value) },
+                            headlineContent = { Text("Older ${o.count}", style = MaterialTheme.typography.labelLarge) },
+                            trailingContent = { Icon(if (o.open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null) },
+                            modifier = Modifier.combinedClickableCompat { m.act("side-older", "") },
                         )
                     }
-                    if (p.archOpen) items(p.archived, key = { "t:" + it.id }) { ThreadRow(m, it) }
+                    item(key = "d:older") { HorizontalDivider() }
                 }
-                item(key = "d:" + p.id) { HorizontalDivider() }
             }
             if (s.hubs.isNotEmpty()) botsSection(m, s)
         }
     }
+    s.rowMenu?.let { RowMenuSheet(m, it) }
     s.folders?.let { FolderPicker(m, it) }
     s.newBot?.let { NewBotDialog(m, it) }
     s.newRoom?.let { NewRoomDialog(m, it) }
+}
+
+// a long-pressed row's or project's menu: an item sends its action (Delete
+// and Remove then ask through the deleting/removing dialogs); let go
+// without a choice, the menu is closed ("menu-close")
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RowMenuSheet(m: AppModel, menu: RowMenu) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = { m.act("menu-close", "") }, sheetState = state) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
+            Text(menu.title, Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            for (i in menu.items) ListItem(
+                headlineContent = {
+                    Text(i.label, color = if (i.tone == "danger") MaterialTheme.colorScheme.error else Color.Unspecified)
+                },
+                modifier = Modifier.combinedClickableCompat { m.act(i.action, i.value) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+        }
+    }
 }
 
 // the project picker: a path field over the listed folder's rows

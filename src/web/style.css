@@ -296,7 +296,7 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 .prow.act { color: var(--accent); }
 .prow.off { color: var(--faint, var(--dim)); cursor: default; }
 
-.machines { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+.machines { display: flex; flex-direction: column; gap: 4px; padding: 6px 12px; }
 .machines .machine { background: none; border: 1px solid var(--line); padding: 2px 8px; color: var(--dim); }
 .machines .machine.on { color: var(--text); border-color: var(--accent); }
 
@@ -439,3 +439,18 @@ button.mic.starting, button.mic.stopping { border-color: var(--bad); color: var(
 .voice-note.bad { border-color: var(--bad); }
 .voice-ask { border-color: var(--warn); flex-wrap: wrap; }
 .voice-ask .field { flex: 1; min-width: 12em; }
+
+/* the simpler sidebar: quiet projects and settled rows fade; the footer
+   holds Settings and the machine shown; a row's menu opens at the pointer */
+.project.quiet .project-head { opacity: 0.55; }
+.thread.faded { opacity: 0.5; }
+.project.active .thread .ago { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.foot { display: flex; align-items: center; border-top: 1px solid var(--line); margin-top: 16px; flex-wrap: wrap; }
+.foot .settings-link { border-top: 0; margin-top: 0; width: auto; flex: 1; }
+.foot .machine-pick { background: none; border: 0; color: var(--faint); font-size: 11px; display: flex; align-items: center; gap: 4px; padding: 12px; }
+.foot .machine-pick:hover { color: var(--dim); }
+.foot .machines { width: 100%; order: -1; border-bottom: 1px solid var(--line); }
+.rowmenu { position: fixed; left: var(--mx, 40px); top: var(--my, 80px); z-index: 31; min-width: 200px; background: var(--raise); border: 1px solid var(--line); padding: 4px 0; display: flex; flex-direction: column; }
+.rowmenu .mi { background: none; border: 0; text-align: left; padding: 6px 12px; color: var(--soft, var(--text)); }
+.rowmenu .mi:hover { background: var(--sel, var(--panel)); }
+.rowmenu .mi.danger { color: var(--bad); }

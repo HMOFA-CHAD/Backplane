@@ -13,7 +13,9 @@ def log() -> List<&2, M.Change>:
   [M.ProjectCreated{"p1", "board", "/tmp/board", 100n},
    M.ThreadCreated{"a", "p1", "Power sequencing", M.Local{}, "", "", "claude", "", 300n},
    M.ProjectCreated{"p2", "enclosure", "/tmp/enclosure", 400n},
-   M.ProjectCreated{"p3", "firmware", "/tmp/firmware", 500n}]
+   M.ThreadCreated{"x", "p2", "Wall bracket", M.Local{}, "", "", "claude", "", 400n},
+   M.ProjectCreated{"p3", "firmware", "/tmp/firmware", 500n},
+   M.ThreadCreated{"y", "p3", "Boot loader", M.Local{}, "", "", "claude", "", 500n}]
 
 def hits(o: L.Out) -> List<&2, N.Hit>:
   match o:
