@@ -67,8 +67,13 @@ export function reset() {
   plots.clear();
 }
 
-export function got(o) {
+// how each plot came: its size on the wire and how long after it was asked for
+const stats = new Map();
+const mb = (n) => (n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+export function got(o, at = { bytes: 0, t: performance.now() }) {
   const key = typeof o.key === "string" ? o.key : "";
+  if (view && view.key === key && view.asked && !stats.has(key)) stats.set(key, { bytes: at.bytes, waited: (at.t - view.asked) / 1000 });
   if (typeof o.none === "string") {
     held = [];
     plots.set(key, { none: o.none });
@@ -189,7 +194,11 @@ class View {
       g.fillStyle = "#8a8f98";
       g.font = `${13 * dpr}px system-ui, sans-serif`;
       g.textAlign = "center";
-      g.fillText(p && p.none ? p.none : "Loading…", w / 2, h / 2);
+      // while the hub reads the file, the seconds count (a large board is a
+      // few seconds the first time)
+      const s = this.asked ? Math.floor((performance.now() - this.asked) / 1000) : 0;
+      g.fillText(p && p.none ? p.none : `Reading the file on the hub · ${s} s`, w / 2, h / 2);
+      if (!(p && p.none) && !this.tick) this.tick = setInterval(() => { if (this.plot && (this.plot.chunks || this.plot.none)) { clearInterval(this.tick); this.tick = null; } this.later(); }, 1000);
       return;
     }
     g.setTransform(this.scale * dpr, 0, 0, this.scale * dpr, this.ox * dpr, this.oy * dpr);
@@ -204,6 +213,15 @@ class View {
       // a line never thinner than a pixel, however far out the view is
       g.lineWidth = Math.max(k.r * 2, 1 / this.scale);
       g.stroke(k.line);
+    }
+    // how it came, small in a corner
+    const st = stats.get(this.key);
+    if (st) {
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.fillStyle = "rgba(138,143,152,0.9)";
+      g.font = `${11 * dpr}px system-ui, sans-serif`;
+      g.textAlign = "left";
+      g.fillText(`${mb(st.bytes)}` + (st.waited > 0.5 ? ` · came after ${st.waited.toFixed(1)} s` : ""), 8 * dpr, h - 8 * dpr);
     }
   }
 }
@@ -227,6 +245,7 @@ export function mount(canvas) {
   const key = canvas.dataset.key || "";
   if (key !== view.key) {
     view.key = key;
+    view.asked = performance.now();
     view.plot = null;
     view.fitted = false;
     if (plots.has(key)) view.show(plots.get(key)); else view.later();

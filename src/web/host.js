@@ -684,10 +684,11 @@ function connect() {
     // ("2|", "3|" or "4|...") to solid.js, a board or schematic to plot2d.js
     const bytes = new Uint8Array(e.data);
     if (Solid.isPlot(bytes)) {
+      const at = { bytes: bytes.length, t: performance.now() };
       const o = Solid.cbor(bytes);
       const key = typeof o?.key === "string" ? o.key : "";
-      if (key.startsWith("2|") || key.startsWith("3|") || key.startsWith("4|")) Solid.got(o);
-      else if (o) Plot2d.got(o);
+      if (key.startsWith("2|") || key.startsWith("3|") || key.startsWith("4|")) Solid.got(o, at);
+      else if (o) Plot2d.got(o, at);
       return;
     }
     const j = App.wire_in(toList(bytes));

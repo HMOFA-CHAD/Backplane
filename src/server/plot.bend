@@ -377,8 +377,25 @@ def Pv.glb.flags(+bare: Bool, +full: Bool, +out: String, +path: String) -> List<
 
 # a STEP's GLB is written beside and moved in whole: a reader never meets
 # half of one
+def Pv.step.ran.to(r: PR.Ran, +from: String, +out: String) -> IO(PR.Ran):
+  IO.bind(Result<&1, &1, U32 & String, Unit>, PR.Ran, H.FS.rename(from, out), m => IO.pure(PR.Ran, r))
+
 def Pv.step.ran(r: PR.Ran, +out: String) -> IO(PR.Ran):
-  IO.bind(Result<&1, &1, U32 & String, Unit>, PR.Ran, H.FS.rename(out ++ ".part", out), m => IO.pure(PR.Ran, r))
+  Pv.step.ran.to(r, out ++ ".part", out)
+
+# a board's GLB is written beside and moved in whole only when KiCad
+# succeeded, so a half-written export is never taken for a cached one
+def Pv.board.ran.k(ok: Bool, r: PR.Ran, +out: String) -> IO(PR.Ran):
+  match ok:
+    case True{}:
+      Pv.step.ran.to(r, out ++ ".part.glb", out)
+    case False{}:
+      IO.pure(PR.Ran, r)
+
+def Pv.board.ran(r: PR.Ran, +out: String) -> IO(PR.Ran):
+  match r:
+    case PR.Ran{+c, +log}:
+      Pv.board.ran.k(U32.is_eq(c, 0), PR.Ran{c, log}, out)
 
 def Pv.glb.run(glb: Bool, step: Bool, +bare: Bool, +full: Bool, +path: String, +out: String) -> IO(PR.Ran):
   match glb step:
@@ -387,7 +404,7 @@ def Pv.glb.run(glb: Bool, step: Bool, +bare: Bool, +full: Bool, +path: String, +
     case False{} True{}:
       IO.bind(String, PR.Ran, Pv.step2glb(), x => IO.bind(PR.Ran, PR.Ran, PR.Proc.run(x, [path, out ++ ".part"], "/"), r => Pv.step.ran(r, out)))
     case False{} False{}:
-      IO.bind(String, PR.Ran, Pv.cli(), c => K.KiCad.run(c, Pv.glb.flags(bare, full, out, path)))
+      IO.bind(String, PR.Ran, Pv.cli(), c => IO.bind(PR.Ran, PR.Ran, K.KiCad.run(c, Pv.glb.flags(bare, full, out ++ ".part.glb", path)), r => Pv.board.ran(r, out)))
 
 # how many parts kicad-cli found no 3D model for ("Could not add 3D model
 # for R1."): the phone says so, else a bare board looks like a bug
@@ -452,8 +469,17 @@ def Pv.step.out(+path: String) -> IO(String):
     st : Result<&1, &1, U32 & String, U32 & U32 & U32> <- H.FS.stat(path)
     return dir ++ "/" ++ U32.show(P.Key.hash(path ++ "|" ++ Pv.ver(st), 2166136261)) ++ ".glb"
 
-# where a model's GLB comes from: a .glb is its own; a STEP's is cached; a
-# board's is exported for this view
+# a board's model, cached per version of the board file (its size and
+# time) and per export (with its parts or bare): KiCad's export takes half a
+# minute on a full board, so it runs once per change, not on every view
+def Pv.board.out(+path: String, +bare: Bool) -> IO(String):
+  do IO<String>:
+    +dir : String <- Pv.cache()
+    st : Result<&1, &1, U32 & String, U32 & U32 & U32> <- H.FS.stat(path)
+    return dir ++ "/board-" ++ U32.show(P.Key.hash(Bool.pick(String, bare, "bare2|", "parts2|") ++ path ++ "|" ++ Pv.ver(st), 2166136261)) ++ ".glb"
+
+# where a model's GLB comes from: a .glb is its own; a STEP's and a board's
+# are cached per version
 def Pv.solid.out(isglb: Bool, step: Bool, +bare: Bool, +full: Bool, +path: String) -> IO(String):
   match isglb step:
     case True{} _:
@@ -461,14 +487,14 @@ def Pv.solid.out(isglb: Bool, step: Bool, +bare: Bool, +full: Bool, +path: Strin
     case False{} True{}:
       Pv.step.out(path)
     case False{} False{}:
-      IO.pure(String, "/tmp/backplane-solid-" ++ U32.show(P.Key.hash(Bool.pick(String, bare, "bare|", Bool.pick(String, full, "full|", "")) ++ path, 2166136261)) ++ ".glb")
+      Pv.board.out(path, bare)
 
 def Pv.child.solid(+bare: Bool, +full: Bool, +path: String, +note: String) -> IO(Unit):
   do IO<Unit>:
     +isglb : Bool = String.ends_with(path, ".glb")
     +out : String <- Pv.solid.out(isglb, Pv.is_step(path), bare, full, path)
     have : Bool <- K.Io.is_file(out)
-    r : PR.Ran <- Pv.glb.run(Bool.or(isglb, Bool.and(have, Pv.is_step(path))), Pv.is_step(path), bare, full, path, out)
+    r : PR.Ran <- Pv.glb.run(Bool.or(isglb, have), Pv.is_step(path), bare, full, path, out)
     Pv.solid.done(r, out, note, Pv.is_step(path))
 
 def Pv.child.plot(+kind: U32, +path: String, +infos: String) -> IO(Unit):

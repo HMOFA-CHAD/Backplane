@@ -1131,7 +1131,7 @@ def View.solid(+u: U.Ui) -> List<&2, D.Node>:
   View.bar(View.solid.what(U.Mpage.onpart(u), u), "drag to turn · shift-drag to pan · wheel to zoom")
     <> List.append(&2, D.Node, D.Dom.when(Bool.not(String.is_empty(U.Ui.info(u, "plotnote:" ++ U.Solid.want(u)))), D.Dom.span("viewer-say", U.Ui.info(u, "plotnote:" ++ U.Solid.want(u)))),
       [D.El{"div", "", [D.At{"class", "viewer-stage"}], [D.El{"canvas", "solid", [D.At{"id", "solid"}, D.At{"data-key", U.Solid.want(u)}], Nil{}},
-        D.El{"div", "", [D.At{"class", "viewer-note"}], Nil{}}]}])
+        D.El{"div", "", [D.At{"class", "viewer-note"}], Nil{}}, D.El{"div", "", [D.At{"class", "viewer-stat"}], Nil{}}]}])
 
 # The viewer pane: a tab for each thing it shows (the one on show lit),
 # Close, then that thing

@@ -105,8 +105,15 @@ const models = new Map();
 // why a source has no model ("" while it may yet come)
 const nones = new Map();
 
-// a 3D source's plot (key "2|..." or "3|..."): its model, or why there is none
-export function got(o) {
+// how each model came: its size on the wire, how long after it was asked
+// for, how long it took to build here, its triangles
+const stats = new Map();
+
+const mb = (n) => (n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+// a 3D source's plot (key "2|..." or "3|..."): its model, or why there is
+// none. at: the size of the frame and when it arrived (host.js)
+export function got(o, at = { bytes: 0, t: performance.now() }) {
   if (!o || typeof o.key !== "string") return;
   if (typeof o.none === "string") {
     nones.set(o.key, o.none);
@@ -115,8 +122,18 @@ export function got(o) {
   }
   if (!o.mesh) return; // a note about the model, not the model
   nones.delete(o.key);
-  models.set(o.key, mesh(o));
-  if (view && view.key === o.key) view.show(models.get(o.key));
+  const key = o.key;
+  const waited = view && view.key === key && view.asked ? (at.t - view.asked) / 1000 : 0;
+  // say it came, and let the page paint that, before building (a big model
+  // takes a moment here too)
+  if (view && view.key === key) view.say(`Received ${mb(at.bytes)}, building the model…`);
+  setTimeout(() => {
+    const t0 = performance.now();
+    const m = mesh(o);
+    models.set(key, m);
+    stats.set(key, { bytes: at.bytes, waited, build: (performance.now() - t0) / 1000, tris: m.count / 3 });
+    if (view && view.key === key) view.show(m);
+  }, 30);
 }
 
 export function reset() {
@@ -244,6 +261,8 @@ class View {
   }
 
   show(m) {
+    this.saying = false;
+    this.ticking(false);
     if (!this.gl || !m) return;
     const gl = this.gl;
     [m.pos, m.nrm, m.col].forEach((d, k) => { gl.bindBuffer(gl.ARRAY_BUFFER, this.bufs[k].b); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW); });
@@ -269,7 +288,8 @@ class View {
     gl.viewport(0, 0, w, h);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    if (this.note) this.note.textContent = this.count ? "" : nones.get(this.key) || "Loading the model…";
+    if (this.note && !this.saying) this.note.textContent = this.count ? "" : nones.get(this.key) || this.waiting();
+    if (this.stat) this.stat.textContent = this.count && stats.has(this.key) ? this.statLine(stats.get(this.key)) : "";
     if (!this.count) return;
     gl.enable(gl.DEPTH_TEST);
     gl.useProgram(this.prog);
@@ -287,6 +307,30 @@ class View {
   }
 }
 
+// Progress: while the hub prepares a model (a board's export, a STEP's
+// meshing: the long part, and it has no progress to report) the note counts
+// the seconds; when it comes, its size; once drawn, a line says how it came
+View.prototype.waiting = function () {
+  const s = this.asked ? Math.floor((performance.now() - this.asked) / 1000) : 0;
+  return `Preparing the model on the hub · ${s} s` + (s >= 15 ? " (a board with its parts or a large assembly takes a while the first time; after that it is cached)" : "");
+};
+
+View.prototype.statLine = function (st) {
+  const k = st.tris >= 1000 ? `${Math.round(st.tris / 1000)}k` : `${st.tris}`;
+  return `${mb(st.bytes)} · ${k} triangles` + (st.waited > 0.5 ? ` · came after ${st.waited.toFixed(1)} s` : "") + ` · built in ${st.build.toFixed(1)} s`;
+};
+
+View.prototype.say = function (text) {
+  this.saying = true;
+  if (this.note) this.note.textContent = text;
+};
+
+// the seconds tick while a model is awaited, and stop once it is in
+View.prototype.ticking = function (on) {
+  if (on && !this.tick) this.tick = setInterval(() => { if (!this.count && !nones.has(this.key)) this.later(); else this.ticking(false); }, 1000);
+  if (!on && this.tick) { clearInterval(this.tick); this.tick = null; }
+};
+
 let view = null;
 
 // after each render: the canvas on the page (if any) shows the model its
@@ -295,12 +339,15 @@ export function mount(canvas) {
   if (!canvas) { view = null; return; }
   if (!view || view.canvas !== canvas) view = new View(canvas);
   view.note = canvas.parentElement?.querySelector(".viewer-note") ?? null;
+  view.stat = canvas.parentElement?.querySelector(".viewer-stat") ?? null;
   const key = canvas.dataset.key || "";
   if (key !== view.key) {
     view.key = key;
     view.count = 0;
+    view.saying = false;
+    view.asked = performance.now();
     if (models.has(key)) view.show(models.get(key));
-    else view.later();
+    else { view.ticking(true); view.later(); }
   } else {
     view.later();
   }
