@@ -182,11 +182,19 @@ def MBots.str(+u: U.Ui, +k: String) -> J.KV:
 
 # Google's sign-in: its state as the hub said it, the link to open, the
 # OAuth client's fields ("bfield" gid, gsecret) and the pasted redirect
-# (gpaste); "google" sends an op (status, configure, begin, connect, finish,
-# disconnect)
+# (gpaste), and the accounts signed in, the default first; "google" sends
+# an op (status, configure, begin, connect, finish, disconnect, and
+# "signout:<address>" for one account)
+def MBots.strs(xs: List<&2, String>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      J.Json.str(x) <> MBots.strs(t)
+
 def MBots.google(+u: U.Ui) -> J.Json:
   J.Json.obj([J.KV{"status", J.Json.str(U.Ui.scratch(u, "@google"))}, J.KV{"url", J.Json.str(U.Ui.scratch(u, "@google.url"))},
-    MBots.str(u, "gid"), MBots.str(u, "gsecret"), MBots.str(u, "gpaste")])
+    MBots.str(u, "gid"), MBots.str(u, "gsecret"), MBots.str(u, "gpaste"), J.KV{"accounts", J.Json.arr(MBots.strs(U.Bots.google.accts(u)))}])
 
 # the persona (and the field that changes it, "bfield" persona then
 # "bot-edit"), Google, and the linked machines ("peer-invite" with purl,

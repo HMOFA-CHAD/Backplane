@@ -97,8 +97,9 @@ def Gf.nonce(n: Nat) -> IO(String):
 # The secrets file
 # ----------------
 
-# client, tokens, and a sign-in in flight (its PKCE verifier, state and
-# redirect); expiry in epoch seconds
+# the client, a sign-in in flight (its PKCE verifier, state and redirect),
+# and one account's tokens (G.Acct; the file keeps every account in
+# "accounts"); expiry in epoch seconds
 type GSec is Data:
   GSec{id: String, secret: String, refresh: String, access: String, expiry: Nat, email: String, verifier: String, state: String, redirect: String}
 
@@ -108,41 +109,84 @@ def Gs.dir(+home: String) -> String:
 def Gs.path(+home: String) -> String:
   Gs.dir(home) ++ "/google.json"
 
+# the client and the sign-in in flight, no account
 def Gs.of(+j: J.Json) -> GSec:
-  GSec{J.Json.get_str(j, "client_id", ""), J.Json.get_str(j, "client_secret", ""), J.Json.get_str(j, "refresh_token", ""),
-    J.Json.get_str(j, "access_token", ""), J.Json.get_nat(j, "expiry", 0n), J.Json.get_str(j, "email", ""),
+  GSec{J.Json.get_str(j, "client_id", ""), J.Json.get_str(j, "client_secret", ""), "", "", 0n, "",
     J.Json.get_str(j, "pending_verifier", ""), J.Json.get_str(j, "pending_state", ""), J.Json.get_str(j, "redirect", "")}
 
-def Gs.show(s: GSec) -> String:
+def Gs.show(s: GSec, accts: List<&2, G.Acct>) -> String:
   match s:
-    case GSec{id, secret, refresh, access, expiry, email, verifier, state, redirect}:
+    case GSec{id, secret, _, _, _, _, verifier, state, redirect}:
       J.Json.show(J.Json.obj([J.KV{"client_id", J.Str{id}}, J.KV{"client_secret", J.Str{secret}},
-        J.KV{"refresh_token", J.Str{refresh}}, J.KV{"access_token", J.Str{access}}, J.KV{"expiry", J.Json.nat(expiry)},
-        J.KV{"email", J.Str{email}}, J.KV{"pending_verifier", J.Str{verifier}}, J.KV{"pending_state", J.Str{state}},
-        J.KV{"redirect", J.Str{redirect}}]))
+        J.KV{"pending_verifier", J.Str{verifier}}, J.KV{"pending_state", J.Str{state}},
+        J.KV{"redirect", J.Str{redirect}}, J.KV{"accounts", G.Accts.json(accts)}]))
+
+def Gs.file(+home: String) -> IO(J.Json):
+  do IO<J.Json>:
+    t : String <- Gf.text(Gs.path(home))
+    return Maybe.default(&2, J.Json, J.Json.parse(t), J.Null{})
 
 def Gs.load(+home: String) -> IO(GSec):
-  do IO<GSec>:
-    t : String <- Gf.text(Gs.path(home))
-    return Gs.of(Maybe.default(&2, J.Json, J.Json.parse(t), J.Null{}))
+  IO.bind(J.Json, GSec, Gs.file(home), j => IO.pure(GSec, Gs.of(j)))
 
-# written whole to a 0600 file beside it, then renamed over it
-def Gs.save(+home: String, s: GSec) -> IO(Unit):
+def Gs.accts(+home: String) -> IO(List<&2, G.Acct>):
+  IO.bind(J.Json, List<&2, G.Acct>, Gs.file(home), j => IO.pure(List<&2, G.Acct>, G.Accts.of(j)))
+
+# the client, the sign-in and the accounts, written whole to a 0600 file
+# beside it, then renamed over it
+def Gs.write(+home: String, s: GSec, accts: List<&2, G.Acct>) -> IO(Unit):
   do IO<Unit>:
     mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(Gs.dir(home))
     m : Result<&1, &1, U32 & String, Unit> <- H.FS.chmod(Gs.dir(home), 448)
-    Gf.write(Gs.path(home) ++ ".new", Gs.show(s))
+    Gf.write(Gs.path(home) ++ ".new", Gs.show(s, accts))
     r : Result<&1, &1, U32 & String, Unit> <- H.FS.rename(Gs.path(home) ++ ".new", Gs.path(home))
     return Unit{}
 
-# what the UI may know: {configured, connected, email, pending, client}
-# (Google.say turns it into a line)
-def Gs.status(s: GSec) -> String:
+def Gs.acct(s: GSec) -> G.Acct:
   match s:
-    case GSec{+id, _, refresh, _, _, email, _, state, _}:
+    case GSec{_, _, refresh, access, expiry, email, _, _, _}:
+      G.Acct{email, refresh, access, expiry}
+
+def Gs.linked(s: GSec) -> Bool:
+  match s:
+    case GSec{_, _, refresh, _, _, _, _, _, _}:
+      Bool.not(String.is_empty(refresh))
+
+def Gs.put(linked: Bool, +accts: List<&2, G.Acct>, +s: GSec) -> List<&2, G.Acct>:
+  match linked:
+    case True{}:
+      G.Accts.put(accts, Gs.acct(s))
+    case False{}:
+      accts
+
+# the client and the sign-in, and s's account when it has one (put by its
+# address among the others)
+def Gs.save(+home: String, +s: GSec) -> IO(Unit):
+  do IO<Unit>:
+    +accts : List<&2, G.Acct> <- Gs.accts(home)
+    Gs.write(home, s, Gs.put(Gs.linked(s), accts, s))
+
+# s with one account's tokens (none: empty)
+def Gs.with.acct(s: GSec, m: Maybe<&2, G.Acct>) -> GSec:
+  match s m:
+    case GSec{id, secret, _, _, _, _, v, st, r} Some{G.Acct{email, refresh, access, expiry}}:
+      GSec{id, secret, refresh, access, expiry, email, v, st, r}
+    case GSec{id, secret, _, _, _, _, v, st, r} None{}:
+      GSec{id, secret, "", "", 0n, "", v, st, r}
+
+# what the UI may know: {configured, connected, email (every address, the
+# default first), accounts, pending, client} (Google.say turns it into a line)
+def Gs.status(s: GSec, +accts: List<&2, G.Acct>) -> String:
+  match s:
+    case GSec{+id, _, _, _, _, _, _, state, _}:
       J.Json.show(J.Json.obj([J.KV{"configured", J.Flag{Bool.not(String.is_empty(id))}},
-        J.KV{"connected", J.Flag{Bool.not(String.is_empty(refresh))}}, J.KV{"email", J.Str{email}},
+        J.KV{"connected", J.Flag{Bool.not(List.is_empty(&2, G.Acct, accts))}},
+        J.KV{"email", J.Str{String.join(G.Accts.emails(accts), ", ")}},
+        J.KV{"accounts", J.Json.arr(G.Tool.strs(G.Accts.emails(accts)))},
         J.KV{"pending", J.Flag{Bool.not(String.is_empty(state))}}, J.KV{"client", J.Str{id}}]))
+
+def Google.status(+home: String) -> IO(String):
+  IO.bind(J.Json, String, Gs.file(home), +j => IO.pure(String, Gs.status(Gs.of(j), G.Accts.of(j))))
 
 def Gs.id(s: GSec) -> String:
   match s:
@@ -359,9 +403,6 @@ def Gh.json(+token: String) -> List<&2, String>:
 # Setup
 # -----
 
-def Google.status(+home: String) -> IO(String):
-  IO.bind(GSec, String, Gs.load(home), s => IO.pure(String, Gs.status(s)))
-
 def Gs.config.k(same: Bool, s: GSec, +id: String, +secret: String) -> GSec:
   match same s:
     case True{} GSec{_, _, refresh, access, expiry, email, verifier, state, redirect}:
@@ -369,15 +410,25 @@ def Gs.config.k(same: Bool, s: GSec, +id: String, +secret: String) -> GSec:
     case False{} _:
       GSec{id, secret, "", "", 0n, "", "", "", ""}
 
+# the same client keeps its accounts; another forgets them (their tokens
+# were the old client's)
+def Gs.configure.w(same: Bool, +home: String, s2: GSec) -> IO(Unit):
+  match same:
+    case True{}:
+      Gs.save(home, s2)
+    case False{}:
+      Gs.write(home, s2, Nil{})
+
 def Gs.configure.k(empty: Bool, +home: String, s: GSec, +id: String, +secret: String) -> IO(String):
   match empty s:
     case True{} _:
       IO.pure(String, "error: a Google OAuth client id and secret are both needed")
     case False{} GSec{+old, a, b, c, d, e, f, g, h}:
       do IO<String>:
-        +s2 : GSec = Gs.config.k(String.eq(old, id), GSec{old, a, b, c, d, e, f, g, h}, id, secret)
-        Gs.save(home, s2)
-        return Gs.status(s2)
+        +same : Bool = String.eq(old, id)
+        Gs.configure.w(same, home, Gs.config.k(same, GSec{old, a, b, c, d, e, f, g, h}, id, secret))
+        st : String <- Google.status(home)
+        return st
 
 # the OAuth client (a Google Cloud "Desktop app" client); a different
 # client forgets the tokens of the old one
@@ -470,9 +521,9 @@ def Gs.finish.done(has: Bool, +home: String, s2: GSec) -> IO(String):
   match has:
     case True{}:
       do IO<String>:
-        +s3 : GSec = s2
-        Gs.save(home, s3)
-        return Gs.status(s3)
+        Gs.save(home, s2)
+        st : String <- Google.status(home)
+        return st
     case False{}:
       IO.pure(String, "error: Google sent no refresh token; remove Backplane's access at https://myaccount.google.com/permissions and connect again")
 
@@ -480,11 +531,6 @@ def Gs.finish.keep(s: GSec, +access: String, +expiry: Nat, +refresh: String, +em
   match s:
     case GSec{id, secret, oldr, _, _, olde, _, _, redirect}:
       GSec{id, secret, G.Str.or(refresh, oldr), access, expiry, G.Str.or(email, olde), "", "", redirect}
-
-def Gs.linked(s: GSec) -> Bool:
-  match s:
-    case GSec{_, _, refresh, _, _, _, _, _, _}:
-      Bool.not(String.is_empty(refresh))
 
 def Gs.finish.tok(m: Maybe<&2, G.Tok>, +home: String, s: GSec, r: GResp, +e: GEnds) -> IO(String):
   match m:
@@ -558,23 +604,30 @@ def Gs.refresh(+home: String, s: GSec, +now: Nat) -> IO(GAccess):
         +r : GResp <- Gc.req(Gs.dir(home), Ge.token(e), Gh.form(), G.Google.refresh_body(id, secret, refresh))
         Gs.refreshed(G.Google.tokens(Gc.bodyof(r), now), home, GSec{id, secret, refresh, a, b, c, d, f, g}, r)
 
-def Gs.token.k(fresh: Bool, linked: Bool, +home: String, s: GSec, +now: Nat) -> IO(GAccess):
+# why no account answered: none connected, or none with that address
+def Gs.missing(+email: String, +accts: List<&2, G.Acct>) -> String:
+  Bool.pick(String, List.is_empty(&2, G.Acct, accts), "error: Google is not connected (connect it in Settings)",
+    "error: no connected Google account " ++ email ++ "; connected: " ++ String.join(G.Accts.emails(accts), ", "))
+
+def Gs.token.k(fresh: Bool, linked: Bool, +home: String, s: GSec, +now: Nat, +why: String) -> IO(GAccess):
   match fresh linked:
     case True{} _:
       IO.pure(GAccess, GOk{Gs.access(s)})
     case False{} False{}:
-      IO.pure(GAccess, GErr{"error: Google is not connected (connect it in Settings)"})
+      IO.pure(GAccess, GErr{why})
     case False{} True{}:
       Gs.refresh(home, s, now)
 
-# an access token good for a minute more, refreshed (and stored) when the
-# one kept is not
-def Google.token(+home: String) -> IO(GAccess):
+# an access token for the account with address email ("" is the first),
+# good for a minute more, refreshed (and stored) when the one kept is not
+def Google.token(+home: String, +email: String) -> IO(GAccess):
   do IO<GAccess>:
-    +s : GSec <- Gs.load(home)
+    +j : J.Json <- Gs.file(home)
+    +accts : List<&2, G.Acct> = G.Accts.of(j)
+    +s : GSec = Gs.with.acct(Gs.of(j), G.Accts.pick(accts, email))
     t : U32 <- H.Clock.epoch()
     +now : Nat = U32.to_nat(t)
-    Gs.token.k(Gs.fresh(s, now), Gs.linked(s), home, s, now)
+    Gs.token.k(Gs.fresh(s, now), Gs.linked(s), home, s, now, Gs.missing(email, accts))
 
 def Gs.revoke(none: Bool, +home: String, +e: GEnds, +refresh: String) -> IO(Unit):
   match none:
@@ -585,20 +638,53 @@ def Gs.revoke(none: Bool, +home: String, +e: GEnds, +refresh: String) -> IO(Unit
         r : GResp <- Gc.req(Gs.dir(home), Ge.revoke(e), Gh.form(), G.Url.pair("token", refresh))
         return Unit{}
 
-def Gs.disconnect.k(s: GSec, +home: String) -> IO(String):
-  match s:
-    case GSec{id, secret, +refresh, _, _, _, _, _, _}:
-      do IO<String>:
-        e : GEnds <- Ge.get()
-        Gs.revoke(String.is_empty(refresh), home, e, refresh)
-        +s2 : GSec = GSec{id, secret, "", "", 0n, "", "", "", ""}
-        Gs.save(home, s2)
-        return Gs.status(s2)
+def Gs.revoke.acct(a: G.Acct, +home: String, +e: GEnds) -> IO(Unit):
+  match a:
+    case G.Acct{_, +refresh, _, _}:
+      Gs.revoke(String.is_empty(refresh), home, e, refresh)
 
-# revokes the refresh token (best effort) and forgets every token; the
+def Gs.revoke.all(xs: List<&2, G.Acct>, +home: String, +e: GEnds) -> IO(Unit):
+  match xs:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case x <> t:
+      IO.bind(Unit, Unit, Gs.revoke.acct(x, home, e), u => Gs.revoke.all(t, home, e))
+
+def Gs.opt(m: Maybe<&2, G.Acct>) -> List<&2, G.Acct>:
+  match m:
+    case None{}:
+      Nil{}
+    case Some{a}:
+      [a]
+
+# the accounts a sign-out ends: every one for "", else the one named
+def Gs.ending(all: Bool, +accts: List<&2, G.Acct>, +email: String) -> List<&2, G.Acct>:
+  match all:
+    case True{}:
+      accts
+    case False{}:
+      Gs.opt(G.Accts.pick(accts, email))
+
+def Gs.left(all: Bool, +accts: List<&2, G.Acct>, +email: String) -> List<&2, G.Acct>:
+  match all:
+    case True{}:
+      Nil{}
+    case False{}:
+      G.Accts.drop(accts, email)
+
+# signs out the account with address email, or every account for "":
+# revokes each refresh token (best effort) and forgets its tokens; the
 # client id and secret stay
-def Google.disconnect(+home: String) -> IO(String):
-  IO.bind(GSec, String, Gs.load(home), s => Gs.disconnect.k(s, home))
+def Google.disconnect(+home: String, +email: String) -> IO(String):
+  do IO<String>:
+    +j : J.Json <- Gs.file(home)
+    +accts : List<&2, G.Acct> = G.Accts.of(j)
+    +all : Bool = String.is_empty(email)
+    e : GEnds <- Ge.get()
+    Gs.revoke.all(Gs.ending(all, accts, email), home, e)
+    Gs.write(home, Gs.of(j), Gs.left(all, accts, email))
+    st : String <- Google.status(home)
+    return st
 
 # Tools
 # -----
@@ -766,23 +852,21 @@ def Gs.call.k(a: GAccess, +home: String, +tool: String, +args: J.Json) -> IO(Str
         t : U32 <- H.Clock.epoch()
         Gt.run(Gt.id(tool), tool, args, tok, Gs.dir(home), e, U32.to_nat(t))
 
-# one MCP tool call (gmail_search, gmail_read, gmail_send, calendar_events,
-# calendar_create): compact text for the agent, or "error: ...". The hub
-# asks the user before gmail_send and calendar_create (G.Google.asks).
-def Google.call.k(covers: Bool, +home: String, +tool: String, +args: J.Json) -> IO(String):
-  match covers:
+def Google.call.k(list: Bool, +home: String, +tool: String, +args: J.Json) -> IO(String):
+  match list:
     case True{}:
-      do IO<String>:
-        a : GAccess <- Google.token(home)
-        Gs.call.k(a, home, tool, args)
+      IO.bind(List<&2, G.Acct>, String, Gs.accts(home), xs => IO.pure(String, G.Accts.text(G.Accts.emails(xs))))
     case False{}:
-      IO.pure(String, "error: Gmail is not linked; Backplane's shared Google client connects Calendar only. Add your own OAuth client in Settings, then connect again, to use Gmail.")
+      do IO<String>:
+        a : GAccess <- Google.token(home, String.trim(J.Json.get_str(args, "account", "")))
+        Gs.call.k(a, home, tool, args)
 
+# one MCP tool call (gmail_search, gmail_read, gmail_send, calendar_events,
+# calendar_create, google_accounts) as the account its "account" names
+# (default the first): compact text for the agent, or "error: ...". The
+# hub asks the user before gmail_send and calendar_create (G.Google.asks).
 def Google.call(+home: String, +tool: String, +args: J.Json) -> IO(String):
-  do IO<String>:
-    s : GSec <- Gs.load(home)
-    sh : G.Client <- Gs.shared()
-    Google.call.k(G.Google.covers(G.Google.is_shared(Gs.id(s), G.Client.id(sh)), tool), home, tool, args)
+  Google.call.k(String.eq(tool, "google_accounts"), home, tool, args)
 
 def Gs.say.k(obj: Bool, +text: String, +sh: G.Client) -> String:
   match obj:

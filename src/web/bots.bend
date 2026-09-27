@@ -419,16 +419,25 @@ def WB.gown.k(open: Bool, +u: U.Ui) -> List<&2, D.Node>:
     case False{}:
       Nil{}
 
-# Google: connect (sign in in a new tab with the shared client, Calendar;
-# or with the user's own, Gmail too; paste the page it lands on when that
-# tab is on another device), status, disconnect
+# one signed-in account and its own sign-out
+def WB.gaccts(xs: List<&2, String>) -> List<&2, D.Node>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +e <> t:
+      D.El{"div", "gacct:" ++ e, [D.At{"class", "item"}], [WB.div("item-main", [D.Dom.span("item-key", e)]),
+        WB.div("item-btns", [D.Dom.button("", "google", "signout:" ++ e, "Sign out " ++ e, "Sign out")])]} <> WB.gaccts(t)
+
+# Google: connect (sign in in a new tab; again for another account; paste
+# the page it lands on when that tab is on another device), status, and
+# every account signed in with its own sign-out
 def WB.google(+u: U.Ui) -> D.Node:
   WB.set("Google", List.concat(&2, D.Node, [
     Bool.pick(List<&2, D.Node>, String.is_empty(U.Ui.scratch(u, "@google")), Nil{}, [D.Dom.span("set-note", U.Ui.scratch(u, "@google"))]),
-    [WB.btns([D.Dom.button("primary", "google", "connect", "Sign in with Google", "Connect Google"),
+    [WB.btns([D.Dom.button("primary", "google", "connect", "Sign in with Google", Bool.pick(String, List.is_empty(&2, String, U.Bots.google.accts(u)), "Connect Google", "Add account")),
        D.Dom.button("", "google", "status", "Check the connection", "Status"),
-       D.Dom.button("", "google", "disconnect", "Forget the Google account", "Disconnect"),
        D.Dom.button("", "bfield", WB.bf("gown", "1"), "Use an OAuth client of your own", "Own client")])],
+    WB.gaccts(U.Bots.google.accts(u)),
     WB.gown.k(Bool.not(String.is_empty(BI.BU.field(u, "gown"))), u),
     WB.gurl(U.Ui.scratch(u, "@google.url")),
     Bool.pick(List<&2, D.Node>, String.is_empty(U.Ui.scratch(u, "@google.url")), Nil{}, [

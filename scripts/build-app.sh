@@ -14,6 +14,7 @@
 # The Google OAuth client "Connect Google" signs in with is baked in from
 # BACKPLANE_GOOGLE_CLIENT_ID and _SECRET: the environment's (CI secrets), else
 # a git-ignored .env here or in the main checkout (src/server/effects/google.c).
+# BACKPLANE_GOOGLE_BAKE=0 bakes none (test/tools/google_e2e.ts).
 set -eu
 # (a caller already inside `flock /tmp/bp-wt-build.lock ...` holds it)
 held() {
@@ -63,7 +64,7 @@ envval() {
 gid=${BACKPLANE_GOOGLE_CLIENT_ID:-$(envval BACKPLANE_GOOGLE_CLIENT_ID)}
 gsec=${BACKPLANE_GOOGLE_CLIENT_SECRET:-$(envval BACKPLANE_GOOGLE_CLIENT_SECRET)}
 rm -f "$work/bp_google.h"
-if [ -n "$gid" ] && [ -n "$gsec" ]; then
+if [ "${BACKPLANE_GOOGLE_BAKE:-1}" != 0 ] && [ -n "$gid" ] && [ -n "$gsec" ]; then
   case "$gid$gsec" in
     *[!A-Za-z0-9._-]*) echo "BACKPLANE_GOOGLE_CLIENT_ID/_SECRET: unexpected characters" >&2; exit 1 ;;
   esac

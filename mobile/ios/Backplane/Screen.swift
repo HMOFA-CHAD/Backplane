@@ -401,6 +401,7 @@ struct BotPeer: Decodable, Hashable {
 // Google's sign-in state and the OAuth client's fields ("google" op)
 struct BotGoogle: Decodable {
     let status, url, gid, gsecret, gpaste: String
+    let accounts: [String]
 }
 
 struct BotSettings: Decodable {

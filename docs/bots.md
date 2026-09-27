@@ -360,7 +360,18 @@ Gmail and Calendar through Google's APIs, not the browser: OAuth 2.0 for
 installed apps with PKCE and a loopback redirect to the hub
 (`/oauth/google`), or paste the redirected URL when the browser is on
 another device. Tools: `gmail_search`, `gmail_read`, `gmail_send`
-(asks you first), `calendar_events`, `calendar_create` (asks you first).
+(asks you first), `calendar_events`, `calendar_create` (asks you first),
+`google_accounts`.
+
+Several accounts: each sign-in adds one (Google shows its account
+chooser; signing in to an address already there replaces it). They live
+in `<home>/secrets/google.json` under `accounts`, the default first (a
+file from before keeps its one account at its top and is read as the
+first). Every tool takes an optional `account` address; without it, the
+first. Settings lists the accounts, each with its own Sign out (the
+`google` action `signout:<address>`; `disconnect` with no address signs
+out all). Pure half: `Acct`/`Accts.*` in `src/core/google.bend`, laws
+`google_accts_*`.
 
 Connect Google in Settings signs in with Backplane's shared OAuth client,
 so nobody pastes anything. The client is baked in at build time:

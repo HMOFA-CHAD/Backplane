@@ -499,8 +499,14 @@ private fun SettingsTab(m: AppModel, b: BotView, st: BotSettings) {
 
         SectionLabel("Google")
         if (st.google.status.isNotEmpty()) Text(st.google.status, style = MaterialTheme.typography.bodyMedium)
+        st.google.accounts.forEach { a ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(a, Modifier.weight(1f), maxLines = 1)
+                TextButton(onClick = { m.act("google", "signout:$a") }) { Text("Sign out", color = MaterialTheme.colorScheme.error) }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { m.act("google", "connect") }, shape = square) { Text("Connect Google") }
+            OutlinedButton(onClick = { m.act("google", "connect") }, shape = square) { Text(if (st.google.accounts.isEmpty()) "Connect Google" else "Add account") }
             TextButton(onClick = { gown = !gown }) { Text(if (gown) "Hide own client" else "Own client") }
         }
         if (gown) {
@@ -515,7 +521,6 @@ private fun SettingsTab(m: AppModel, b: BotView, st: BotSettings) {
                 TextButton(onClick = { m.act("google", "finish") }) { Text("Finish") }
             }
         }
-        TextButton(onClick = { m.act("google", "disconnect") }) { Text("Disconnect", color = MaterialTheme.colorScheme.error) }
 
         SectionLabel("Machines")
         for (p in st.peers) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

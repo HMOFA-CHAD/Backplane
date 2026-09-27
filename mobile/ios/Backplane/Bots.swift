@@ -463,7 +463,15 @@ private struct SettingsTab: View {
             }
             Section {
                 if !settings.google.status.isEmpty { Text(settings.google.status).font(.subheadline) }
-                Button("Connect Google") { model.act("google", "connect") }
+                ForEach(settings.google.accounts, id: \.self) { a in
+                    HStack {
+                        Text(a).lineLimit(1)
+                        Spacer()
+                        Button("Sign out", role: .destructive) { model.act("google", "signout:" + a) }
+                            .buttonStyle(.borderless)
+                    }
+                }
+                Button(settings.google.accounts.isEmpty ? "Connect Google" : "Add account") { model.act("google", "connect") }
                 DisclosureGroup("Own client") {
                     TextField("Client ID (Desktop app)", text: $gid)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -479,7 +487,6 @@ private struct SettingsTab: View {
                         .onChange(of: gpaste) { _, t in model.field("gpaste", t) }
                     Button("Finish") { model.act("google", "finish") }
                 }
-                Button("Disconnect", role: .destructive) { model.act("google", "disconnect") }
             } header: {
                 Text("Google")
             }

@@ -540,7 +540,7 @@ def Google.auth_url.at(+base: String, +client_id: String, +redirect: String, +ch
   base ++ "?" ++ String.join([Url.pair("client_id", client_id), Url.pair("redirect_uri", redirect),
     "response_type=code", Url.pair("scope", String.join(scopes, " ")),
     Url.pair("code_challenge", challenge), "code_challenge_method=S256", Url.pair("state", state),
-    "access_type=offline", "prompt=consent"], "&")
+    "access_type=offline", "prompt=select_account%20consent"], "&")
 
 # the URL the user opens to allow access (a refresh token comes back
 # because of access_type=offline and prompt=consent)
@@ -628,6 +628,151 @@ def Google.note.k(connected: Bool, pending: Bool, ready: Bool, +email: String, s
 # (own or shared) is there to sign in with
 def Google.note(connected: Bool, pending: Bool, ready: Bool, +email: String, shared: Bool) -> String:
   Google.note.k(connected, pending, ready, email, shared)
+
+# Accounts
+# --------
+# Every Google account a hub signed in to, in the order they were added
+# (secrets/google.json's "accounts"). A sign-in to an address already
+# there replaces it; the first is the one a tool uses when it names none.
+
+type Acct is Data:
+  Acct{email: String, refresh: String, access: String, expiry: Nat}
+
+def Acct.email(a: Acct) -> String:
+  match a:
+    case Acct{e, _, _, _}:
+      e
+
+# an account as the secrets file keeps it (a file from before accounts
+# kept its one account's fields at its top, under the same names)
+def Acct.of(+j: J.Json) -> Acct:
+  Acct{J.Json.get_str(j, "email", ""), J.Json.get_str(j, "refresh_token", ""), J.Json.get_str(j, "access_token", ""), J.Json.get_nat(j, "expiry", 0n)}
+
+def Acct.json(a: Acct) -> J.Json:
+  match a:
+    case Acct{e, r, x, t}:
+      J.Json.obj([J.KV{"email", J.Str{e}}, J.KV{"refresh_token", J.Str{r}}, J.KV{"access_token", J.Str{x}}, J.KV{"expiry", J.Json.nat(t)}])
+
+def Accts.of.go(xs: List<&2, J.Json>) -> List<&2, Acct>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      Acct.of(x) <> Accts.of.go(t)
+
+def Accts.legacy(none: Bool, +j: J.Json) -> List<&2, Acct>:
+  match none:
+    case True{}:
+      Nil{}
+    case False{}:
+      [Acct.of(j)]
+
+def Accts.or_legacy(xs: List<&2, Acct>, +j: J.Json) -> List<&2, Acct>:
+  match xs:
+    case Nil{}:
+      Accts.legacy(String.is_empty(J.Json.get_str(j, "refresh_token", "")), j)
+    case x <> t:
+      x <> t
+
+# the accounts a secrets file holds
+def Accts.of(+j: J.Json) -> List<&2, Acct>:
+  Accts.or_legacy(Accts.of.go(J.Json.elems(J.Json.get_obj(j, "accounts"))), j)
+
+def Accts.json.go(xs: List<&2, Acct>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      Acct.json(x) <> Accts.json.go(t)
+
+def Accts.json(xs: List<&2, Acct>) -> J.Json:
+  J.Json.arr(Accts.json.go(xs))
+
+def Accts.emails(xs: List<&2, Acct>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      Acct.email(x) <> Accts.emails(t)
+
+# the head has address e
+def Accts.hit(xs: List<&2, Acct>, +e: String) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case x <> _:
+      String.eq(Acct.email(x), e)
+
+def Accts.put.go(xs: List<&2, Acct>, hit: Bool, a: Acct, +e: String) -> List<&2, Acct>:
+  match xs hit:
+    case Nil{} _:
+      [a]
+    case +x <> +t True{}:
+      a <> t
+    case +x <> +t False{}:
+      x <> Accts.put.go(t, Accts.hit(t, e), a, e)
+
+# an account signed in: it replaces the one with its address, else goes last
+def Accts.put(+xs: List<&2, Acct>, +a: Acct) -> List<&2, Acct>:
+  Accts.put.go(xs, Accts.hit(xs, Acct.email(a)), a, Acct.email(a))
+
+def Accts.drop.go(xs: List<&2, Acct>, hit: Bool, +e: String) -> List<&2, Acct>:
+  match xs hit:
+    case Nil{} _:
+      Nil{}
+    case +x <> +t True{}:
+      Accts.drop.go(t, Accts.hit(t, e), e)
+    case +x <> +t False{}:
+      x <> Accts.drop.go(t, Accts.hit(t, e), e)
+
+# every account but the one with address e
+def Accts.drop(+xs: List<&2, Acct>, +e: String) -> List<&2, Acct>:
+  Accts.drop.go(xs, Accts.hit(xs, e), e)
+
+def Accts.first(xs: List<&2, Acct>) -> Maybe<&2, Acct>:
+  match xs:
+    case Nil{}:
+      None{}
+    case x <> _:
+      Some{x}
+
+def Accts.pick.go(xs: List<&2, Acct>, hit: Bool, +e: String) -> Maybe<&2, Acct>:
+  match xs hit:
+    case Nil{} _:
+      None{}
+    case +x <> +t True{}:
+      Some{x}
+    case +x <> +t False{}:
+      Accts.pick.go(t, Accts.hit(t, e), e)
+
+def Accts.pick.k(empty: Bool, +xs: List<&2, Acct>, +e: String) -> Maybe<&2, Acct>:
+  match empty:
+    case True{}:
+      Accts.first(xs)
+    case False{}:
+      Accts.pick.go(xs, Accts.hit(xs, e), e)
+
+# the account a tool names by address; "" names the first
+def Accts.pick(+xs: List<&2, Acct>, +e: String) -> Maybe<&2, Acct>:
+  Accts.pick.k(String.is_empty(e), xs, e)
+
+def Accts.strs(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case J.Str{s} <> t:
+      s <> Accts.strs(t)
+    case _ <> t:
+      Accts.strs(t)
+
+# a status answer's addresses, one a line, for the Settings screens
+def Accts.line(+status: String) -> String:
+  String.join(Accts.strs(J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(status), J.Null{}), "accounts"))), "\n")
+
+# google_accounts' answer
+def Accts.text(+emails: List<&2, String>) -> String:
+  Bool.pick(String, List.is_empty(&2, String, emails), "No Google account is connected (Settings, Google).",
+    "Connected Google accounts (the first is the default):\n" ++ String.join(emails, "\n"))
 
 # what the redirect carried; bare when the user pasted only the code
 type CodeState is Data:
@@ -1099,7 +1244,10 @@ def Tool.def(name: String, desc: String, props: List<&2, J.KV>, req: List<&2, St
     J.KV{"inputSchema", J.Json.obj([J.KV{"type", J.Str{"object"}}, J.KV{"properties", J.Json.obj(props)}, J.KV{"required", J.Json.arr(Tool.strs(req))}])}])
 
 def Google.tool_names() -> List<&2, String>:
-  ["gmail_search", "gmail_read", "gmail_send", "calendar_events", "calendar_create"]
+  ["gmail_search", "gmail_read", "gmail_send", "calendar_events", "calendar_create", "google_accounts"]
+
+def Tool.account() -> J.KV:
+  Tool.prop("account", "string", "Which connected Google account, by address (see google_accounts); default the first.")
 
 # the tools that act for the user; the hub asks the user before each call
 def Google.asks(+tool: String) -> Bool:
@@ -1107,16 +1255,16 @@ def Google.asks(+tool: String) -> Bool:
 
 def Google.tool_defs() -> List<&2, J.Json>:
   [Tool.def("gmail_search", "Search the user's Gmail (Gmail search syntax, e.g. 'from:alice is:unread newer_than:7d'). Lists id, date, from, subject and snippet; read one with gmail_read.",
-     [Tool.prop("query", "string", "Gmail search query; empty lists the newest mail."), Tool.prop("max", "number", "How many (default 10, at most 25).")], Nil{}),
+     [Tool.prop("query", "string", "Gmail search query; empty lists the newest mail."), Tool.prop("max", "number", "How many (default 10, at most 25)."), Tool.account()], Nil{}),
    Tool.def("gmail_read", "Read one Gmail message by id: headers, attachment names and its text (at most 20 KB).",
-     [Tool.prop("id", "string", "A message id from gmail_search.")], ["id"]),
+     [Tool.prop("id", "string", "A message id from gmail_search."), Tool.account()], ["id"]),
    Tool.def("gmail_send", "Send a plain-text email from the user's Gmail. The user is asked to approve every send first.",
      [Tool.prop("to", "string", "Recipients, comma-separated."), Tool.prop("subject", "string", "Subject."),
-      Tool.prop("body", "string", "Plain-text body."), Tool.prop("cc", "string", "Cc recipients, comma-separated (optional).")], ["to", "subject", "body"]),
+      Tool.prop("body", "string", "Plain-text body."), Tool.prop("cc", "string", "Cc recipients, comma-separated (optional)."), Tool.account()], ["to", "subject", "body"]),
    Tool.def("calendar_events", "List events on the user's primary Google Calendar, recurring ones expanded, soonest first.",
      [Tool.prop("from", "string", "Start, RFC 3339 (e.g. 2026-09-24T09:00:00-07:00) or a date; default now."),
       Tool.prop("to", "string", "End, RFC 3339 or a date; default a week after from."),
-      Tool.prop("max", "number", "How many (default 20, at most 50)."), Tool.prop("query", "string", "Free-text filter (optional).")], Nil{}),
+      Tool.prop("max", "number", "How many (default 20, at most 50)."), Tool.prop("query", "string", "Free-text filter (optional)."), Tool.account()], Nil{}),
    Tool.def("calendar_create", "Create an event on the user's primary Google Calendar; attendees get invitations. The user is asked to approve it first.",
      [Tool.prop("summary", "string", "Title."),
       Tool.prop("start", "string", "Start, RFC 3339 with an offset (e.g. 2026-09-24T09:00:00-07:00), or YYYY-MM-DD when all_day."),
@@ -1124,8 +1272,9 @@ def Google.tool_defs() -> List<&2, J.Json>:
       Tool.prop("description", "string", "Details (optional)."),
       J.KV{"attendees", J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"string"}}])}, J.KV{"description", J.Str{"Attendee emails (optional)."}}])},
       Tool.prop("all_day", "boolean", "An all-day event (optional)."),
-      Tool.prop("timeZone", "string", "IANA time zone, e.g. America/Los_Angeles, for times without an offset (optional).")],
-     ["summary", "start", "end"])]
+      Tool.prop("timeZone", "string", "IANA time zone, e.g. America/Los_Angeles, for times without an offset (optional)."), Tool.account()],
+     ["summary", "start", "end"]),
+   Tool.def("google_accounts", "List the Google accounts connected in Settings, by address; the first is the default the other tools use.", Nil{}, Nil{})]
 
 # The loopback page
 # -----------------

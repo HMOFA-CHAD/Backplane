@@ -2505,6 +2505,33 @@ law google_own_covers_all:
   for +tool: String
   {GO.Google.covers(False{}, tool) == True{} : Bool}
 
+# a tool that names no account uses the first one signed in
+law google_accts_pick_first:
+  for +a: GO.Acct
+  for +t: List<&2, GO.Acct>
+  {GO.Accts.pick(a <> t, "") == Some{a} : Maybe<&2, GO.Acct>}
+
+# signing in to an address already there replaces it where it stands
+law google_accts_put_replaces:
+  for +a: GO.Acct
+  for +t: List<&2, GO.Acct>
+  for +b: GO.Acct
+  for h: {String.eq(GO.Acct.email(a), GO.Acct.email(b)) == True{} : Bool}
+  {GO.Accts.put(a <> t, b) == b <> t : List<&2, GO.Acct>}
+
+# a new address goes last
+law google_accts_put_new:
+  for +b: GO.Acct
+  {GO.Accts.put(Nil{}, b) == [b] : List<&2, GO.Acct>}
+
+# signing one account out keeps none with its address
+law google_accts_drop_named:
+  for +a: GO.Acct
+  for +t: List<&2, GO.Acct>
+  for +e: String
+  for h: {String.eq(GO.Acct.email(a), e) == True{} : Bool}
+  {GO.Accts.drop(a <> t, e) == GO.Accts.drop(t, e) : List<&2, GO.Acct>}
+
 # Bots
 # ----
 
