@@ -213,9 +213,9 @@ def Cam.of_box.at(b: Box3, +px: F32, +py: F32, +pz: F32, c: Cam) -> Cam:
       +dy = Box3.reach(y0, y1, py)
       +dz = Box3.reach(z0, z1, pz)
       +r = F32.max(F32.sqrt(F32.add(F32.mul(dx, dx), F32.add(F32.mul(dy, dy), F32.mul(dz, dz)))), 0.000001)
-      Cam{rx, ry, rz, ux, uy, uz, px, py, pz, F32.div(r, F32.sin(F32.mul(fov, 0.5))), 0.0, 0.0, fov}
+      Cam{rx, ry, rz, ux, uy, uz, px, py, pz, F32.mul(1.15, F32.div(r, F32.sin(F32.mul(fov, 0.5)))), 0.0, 0.0, fov}
 
-# the camera c turned as it is, showing the whole box, centred on it (its
+# the camera c turned as it is, showing the whole box with a margin, centred on it (its
 # centre is the pivot)
 def Cam.of_box(b: Box3, c: Cam) -> Cam:
   match b:

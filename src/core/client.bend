@@ -2843,12 +2843,16 @@ def Ui.view_put.at(u: Ui, +th: String, +kind: String, +path: String) -> Ui:
     case Ui{st, +sel, dr, live, op, on, now, ad, +pa, v, rid, w, er, note, +nf, ob, tr}:
       Ui{st, sel, dr, live, op, on, now, ad, Bool.or(pa, String.eq(th, sel)), v, rid, w, er, note, Map.set(&2, String, Viewer.put(nf, th, kind, path), "panel:" ++ th, "1"), ob, tr}
 
-def Mpage.first(ps: List<&2, MC.MPart>, +root: String) -> String:
-  match ps:
-    case MC.MPart{+p, _, _} <> _:
+def Mpage.first.k(m: Maybe<&2, MC.MPart>, +root: String) -> String:
+  match m:
+    case Some{MC.MPart{+p, _, _}}:
       MC.Mech.abs(root, p)
-    case Nil{}:
+    case None{}:
       ""
+
+# the part Mech opens on: the assembly, else the first (MC.Mech.default)
+def Mpage.first(+ps: List<&2, MC.MPart>, +root: String) -> String:
+  Mpage.first.k(MC.Mech.default(ps), root)
 
 # Mech opened before the parts were known: once they are, the first shows
 # in 3D ("@mech.to3d:<t>"); with none, the page says so
@@ -2909,10 +2913,20 @@ def Mpage.cur.path(+u: Ui) -> String:
 def Mpage.base(+u: Ui) -> String:
   Bool.pick(String, String.is_empty(Mpage.root(u)), Ui.root(u), Mpage.root(u))
 
-# the viewer shows one of the thread's parts in 3D (a model in mech/)
+# the viewer shows a model in 3D: a STEP or GLB, one of the thread's parts
+# or any other an agent showed. That is Mech; the 3D tab is the board's own
 def Mpage.onpart(+u: Ui) -> Bool:
-  Bool.and(String.eq(Ui.view_get(u, "view.kind"), "3d"), Bool.and(MC.Mech.is_model(Ui.view_get(u, "view.path")),
-    String.starts_with(Ui.view_get(u, "view.path"), Mpage.base(u) ++ "/" ++ MC.Mech.dir() ++ "/")))
+  Bool.and(String.eq(Ui.view_get(u, "view.kind"), "3d"), MC.Mech.is_model(Ui.view_get(u, "view.path")))
+
+# the model on show, from the project root when it is under it
+def Mpage.shown(+u: Ui) -> String:
+  Bool.pick(String, String.starts_with(Ui.view_get(u, "view.path"), Mpage.base(u) ++ "/"),
+    String.drop(Ui.view_get(u, "view.path"), 1n+String.length(Mpage.base(u))), Ui.view_get(u, "view.path"))
+
+# the model on show is one of the thread's parts (its chip is lit, and it
+# has Renders); another model is named on its own
+def Mpage.listed(+u: Ui) -> Bool:
+  Bool.not(Maybe.is_none(&2, MC.MPart, MC.Mech.pick.k(Mpage.parts(u), Mpage.shown(u))))
 
 # a render job running for the part shown (its path), and why the last failed
 def Mpage.busy(+u: Ui) -> String:

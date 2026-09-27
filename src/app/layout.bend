@@ -1251,8 +1251,11 @@ def Lay.fit_or_none(+ty: Ty, +k: Nat, +s: String, +px: U32) -> String:
 
 # the thread's project badge (its icon in its colour), then the title and
 # branch in what the buttons leave
+# (the title keeps at least its first 160 px: buttons that would cover it
+# are left out, as buttons that do not fit are)
 def Lay.header.k(+ty: Ty, +title: String, +branch: String, +icon: String, +tint: U32, +bs: List<&2, S.Hit>, +x0: U32, +x1: U32, +hy: U32) -> Out:
-  +room = {U32.dim(U32.dim((x1 - x0 : U32), Lay.buttons.w(ty, bs)), 80) : U32}
+  +keep = {U32.min(Ty.width(ty, 0n, title), 160) : U32}
+  +room = {U32.max(U32.dim(U32.dim((x1 - x0 : U32), Lay.buttons.w(ty, bs)), 80), keep) : U32}
   +t = Ty.fit(ty, 0n, title, room)
   +tw = Ty.width(ty, 0n, t)
   Out.all([
@@ -1260,7 +1263,7 @@ def Lay.header.k(+ty: Ty, +title: String, +branch: String, +icon: String, +tint:
     Out.ops(Lay.icon(ty, icon, D.Clip.all(), (x0 + 24 : U32), (hy + 18 : U32), tint)),
     Out.ops(Ty.text(ty, 0n, t, D.Clip.all(), (x0 + 48 : U32), hy, 52, T.Th.text())),
     Out.ops(Ty.text(ty, 2n, Lay.fit_or_none(ty, 2n, branch, U32.dim(room, (tw + 12 : U32))), D.Clip.all(), (x0 + 60 + tw : U32), hy, 52, T.Th.faint())),
-    Lay.buttons(ty, bs, (hy + 12 : U32), (x1 - 16 : U32), (x0 + 48 : U32))])
+    Lay.buttons(ty, bs, (hy + 12 : U32), (x1 - 16 : U32), (x0 + 60 + tw : U32))])
 
 def Lay.header(+ty: Ty, t: M.Thread, +st: M.State, +x0: U32, +x1: U32, panel: Bool, +snoozed: Bool, del: Bool, +hy: U32) -> Out:
   match t:
@@ -2676,13 +2679,22 @@ def Mech.page.k(state: Nat, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> O
 
 # over a part in 3D: the thread's parts (a click shows another in 3D) and
 # Renders, its pictures
+# after the parts: Renders for one of them, or the name of another model
+# an agent showed
+def Mech.bar.more(listed: Bool, +ty: Ty, +u: U.Ui, +x1: U32, +rw: U32) -> Out:
+  match listed:
+    case True{}:
+      Lay.button(ty, D.Clip.all(), (x1 - 60 - rw : U32), 64, "Renders", T.Th.text(), "mech-renders", U.Ui.view_get(u, "view.path"))
+    case False{}:
+      Lay.chip(ty, (x1 - 60 - Lay.button.w(ty, Ty.fit(ty, 2n, MC.Mech.last(U.Ui.view_get(u, "view.path")), 220)) : U32), 64, Ty.fit(ty, 2n, MC.Mech.last(U.Ui.view_get(u, "view.path")), 220), True{}, "", "")
+
 def Mech.bar.if(on: Bool, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32) -> Out:
   match on:
     case True{}:
       +rw = Lay.button.w(ty, "Renders")
       Out.all([
-        Mech.chips(U.Mpage.parts(u), ty, U.Mpage.cur.path(u), (x0 + 16 : U32), (x1 - 68 - rw : U32), (x0 + 16 : U32), 64),
-        Lay.button(ty, D.Clip.all(), (x1 - 60 - rw : U32), 64, "Renders", T.Th.text(), "mech-renders", U.Ui.view_get(u, "view.path"))])
+        Mech.chips(U.Mpage.parts(u), ty, U.Mpage.shown(u), (x0 + 16 : U32), (x1 - 68 - U32.max(rw, U32.min((Ty.width(ty, 2n, MC.Mech.last(U.Ui.view_get(u, "view.path"))) + 20 : U32), 240)) : U32), (x0 + 16 : U32), 64),
+        Mech.bar.more(U.Mpage.listed(u), ty, u, x1, rw)])
     case False{}:
       Out.none()
 

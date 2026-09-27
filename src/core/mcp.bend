@@ -108,8 +108,8 @@ def Mcp.tools() -> J.Json:
     Tool.def("thread_interrupt", "Stop the running turn of a thread in this project.",
       [Tool.prop("threadId", "string", "The thread.")], ["threadId"]),
     Tool.def("viewer_show",
-      "Show a file in the user's Backplane viewer panel: a .kicad_pcb (board), .kicad_sch (schematic), .step/.stp or .glb (3D), or a part on the Mech page (kind mech: the part in 3D, the project's other parts beside it, its renders a tap away). Use it after changing a design so the user sees the result; the viewer also follows the file live.",
-      [Tool.prop("path", "string", "Absolute path of the file."), Tool.prop("kind", "string", "board, schematic, 3d, step or mech (default: from the extension).")], ["path"])]
+      "Show a file in the user's Backplane viewer panel: a .kicad_pcb on the Board tab (kind 3d: the board in 3D), a .kicad_sch on the Schematic tab, and any .step/.stp or .glb on the Mech tab, the 3D design tab (the model turned in 3D, the project's parts in mech/ beside it, their renders a tap away), wherever the file is. Use it after changing a design so the user sees the result; the viewer also follows the file live.",
+      [Tool.prop("path", "string", "Absolute path of the file."), Tool.prop("kind", "string", "board, schematic, 3d (a board in 3D) or mech (a STEP or GLB); default from the extension.")], ["path"])]
     , List.append(&2, J.Json, Mcp.preview_tools(), [Tool.def("permission_prompt", "Internal to Backplane: asks the user before a tool runs. Do not call it yourself.",
       [Tool.prop("tool_name", "string", "The tool."), Tool.prop("input", "object", "Its input."), Tool.prop("tool_use_id", "string", "The call.")], ["tool_name", "input"])])))}])
 

@@ -172,6 +172,28 @@ def Mech.part.shots.of(ps: List<&2, MPart>) -> List<&2, MFile>:
     case Nil{}:
       Nil{}
 
+def Mech.is_asm(+name: String) -> Bool:
+  Bool.or(String.contains(String.to_lower(name), "assembl"), String.ends_with(String.to_lower(name), "-asm"))
+
+def Mech.asm(ps: List<&2, MPart>) -> Maybe<&2, MPart>:
+  match ps:
+    case Nil{}:
+      None{}
+    case MPart{+p, +n, +s} <> t:
+      Bool.pick(Maybe<&2, MPart>, Mech.is_asm(n), Some{MPart{p, n, s}}, Mech.asm(t))
+
+def Mech.default.k(m: Maybe<&2, MPart>, +ps: List<&2, MPart>) -> Maybe<&2, MPart>:
+  match m:
+    case Some{p}:
+      Some{p}
+    case None{}:
+      List.head(&2, MPart, ps)
+
+# the part Mech shows when none was asked for: the assembly (a name with
+# "assembly" in it, or ending "-asm"), else the first
+def Mech.default(+ps: List<&2, MPart>) -> Maybe<&2, MPart>:
+  Mech.default.k(Mech.asm(ps), ps)
+
 def Mech.part.path(p: MPart) -> String:
   match p:
     case MPart{q, _, _}:

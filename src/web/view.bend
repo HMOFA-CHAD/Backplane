@@ -1049,6 +1049,11 @@ def View.mech(+u: U.Ui) -> List<&2, D.Node>:
   [D.El{"div", "", [D.At{"class", "mech-page"}],
     List.append(&2, D.Node, View.mech.k(U.Mpage.state(u), u), D.Dom.when(Bool.not(String.is_empty(U.Mpage.note(u))), D.Dom.span("mech-note", U.Mpage.note(u))))}]
 
+# Open in KiCad: the project opens in KiCad on the hub's machine, as the
+# window's button does
+def View.kicad() -> D.Node:
+  D.Dom.button("", "kicad-open", "", "Open this project in KiCad on the hub's machine", "Open in KiCad")
+
 # A fit button: host.js fits the board, schematic or model on show
 def View.fit() -> D.Node:
   D.El{"button", "", [D.At{"class", "fit"}, D.At{"title", "Show the whole thing (or double-click it)"}, D.At{"data-view", "fit"}], [D.Txt{"Fit"}]}
@@ -1103,13 +1108,21 @@ def View.plot(+u: U.Ui, +what: List<&2, D.Node>) -> List<&2, D.Node>:
    D.El{"div", "", [D.At{"class", "viewer-stage"}], [D.El{"canvas", "plot", [D.At{"id", "plot"}, D.At{"data-key", U.Solid.want(u)}, D.At{"data-off", U32.show(U.Solid.off(u))}], Nil{}}]}]
 
 # over a part in 3D: the thread's parts and Renders; the board: its name
+# after the parts: Renders for one of them, or the name of another model
+# an agent showed (its path on hover)
+def View.solid.more(listed: Bool, +u: U.Ui) -> List<&2, D.Node>:
+  match listed:
+    case True{}:
+      [D.Dom.button("", "mech-renders", U.Ui.view_get(u, "view.path"), "The part's pictures, and drawing them", "Renders")]
+    case False{}:
+      [D.El{"span", "", [D.At{"class", "what on"}, D.At{"title", U.Ui.view_get(u, "view.path")}], [D.Txt{MC.Mech.last(U.Ui.view_get(u, "view.path"))}]}]
+
 def View.solid.what(on: Bool, +u: U.Ui) -> List<&2, D.Node>:
   match on:
     case True{}:
-      List.append(&2, D.Node, View.mech.chips(U.Mpage.parts(u), U.Mpage.cur.path(u)),
-        [D.Dom.button("", "mech-renders", U.Ui.view_get(u, "view.path"), "The part's pictures, and drawing them", "Renders")])
+      List.append(&2, D.Node, View.mech.chips(U.Mpage.parts(u), U.Mpage.shown(u)), View.solid.more(U.Mpage.listed(u), u))
     case False{}:
-      [D.Dom.span("what", Bool.pick(String, String.is_empty(U.Ui.view_get(u, "view.path")), "The board with its parts", MC.Mech.stem(U.Ui.view_get(u, "view.path"))))]
+      [D.Dom.span("what", "The board in 3D")]
 
 # a model turned in 3D: host.js (solid.js) draws the hub's model (a "plot"
 # with a mesh, as the phones get) on the canvas whose data-key it carries,
@@ -1147,9 +1160,9 @@ def View.aside.k(i: Nat, +u: U.Ui) -> List<&2, D.Node>:
     case 3n:
       View.solid(u)
     case 4n:
-      View.plot(u, View.sheets(u))
+      View.plot(u, List.append(&2, D.Node, View.sheets(u), [View.kicad()]))
     case _:
-      View.plot(u, [D.Dom.span("what", "The project's board")])
+      View.plot(u, [D.Dom.span("what", "The project's board"), View.kicad()])
 
 def View.aside.n(+kind: String) -> Nat:
   Bool.pick(Nat, String.eq(kind, "diff"), 0n, Bool.pick(Nat, String.eq(kind, "browser"), 1n, Bool.pick(Nat, String.eq(kind, "mech"), 2n,

@@ -408,10 +408,19 @@ def Hit.find(+hs: List<&2, Hit>, +x: U32, +y: U32) -> Maybe<&2, Hit>:
   Hit.go(hs, Hit.first(hs, x, y), x, y)
 
 # show another kind of view: the scene starts empty and refits
+# (another kind or file starts its 3D scene over, so the next model is
+# fitted; the same file shown again keeps its scene and camera)
+def Vw.scene.k(same: Bool, t: FA.Scene3) -> FA.Scene3:
+  match same:
+    case True{}:
+      t
+    case False{}:
+      FA.Scene3.none()
+
 def Vw.kind_set(v: V.Vw, +k: U32, +path: String) -> V.Vw:
   match v:
-    case V.Vw{_, vi, _, r, d, lx, ly, b, _, cu, V.Vx{_, _, t, c, sh, bu, px, py, _, se, bm}}:
-      V.Vw{Nil{}, V.View{1.0, 0.0, 0.0}, False{}, "", d, lx, ly, b, False{}, cu, V.Vx{k, "", t, c, sh, bu, px, py, path, se, bm}}
+    case V.Vw{_, vi, _, r, d, lx, ly, b, _, cu, V.Vx{+k0, _, t, c, sh, bu, px, py, +p0, se, bm}}:
+      V.Vw{Nil{}, V.View{1.0, 0.0, 0.0}, False{}, "", d, lx, ly, b, False{}, cu, V.Vx{k, "", Vw.scene.k(Bool.and(U32.is_eq(k, k0), String.eq(path, p0)), t), c, sh, bu, px, py, path, se, bm}}
 
 def Vw.pick_set(v: V.Vw, +key: String) -> V.Vw:
   match v:

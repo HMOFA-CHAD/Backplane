@@ -204,6 +204,7 @@ button.fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowra
 .viewer-tabs .icon { margin-bottom: 4px; }
 .viewer-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--line); flex: none; }
 .viewer-bar .what { color: var(--dim); }
+.viewer-bar .what.on { color: var(--text); border: 1px solid var(--accent); padding: 3px 10px; }
 .viewer-bar .hint { color: var(--faint); font-size: 12px; margin-left: auto; }
 .viewer-bar button.on { border-color: var(--accent); color: var(--text); }
 .viewer-stage { position: relative; flex: 1; min-height: 0; }

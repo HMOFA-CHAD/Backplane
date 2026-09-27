@@ -1363,6 +1363,21 @@ law mech_part_renders:
 law mech_key_path:
   {MCH.Mech.key.path("v:123:/p/mech/renders/a.iso.png") == "/p/mech/renders/a.iso.png" : String}
 
+# Mech opens on the assembly when there is one, else the first part
+law mech_default_assembly:
+  {MCH.Mech.part.path(Maybe.default(&2, MCH.MPart, MCH.Mech.default(MCH.Mech.parts("1 9 mech/bracket.step\n2 9 mech/case-assembly.step\n3 9 mech/lid.step")), MCH.MPart{"", "", Nil{}})) == "mech/case-assembly.step" : String}
+
+law mech_default_first:
+  {MCH.Mech.part.path(Maybe.default(&2, MCH.MPart, MCH.Mech.default(MCH.Mech.parts("1 9 mech/bracket.step\n3 9 mech/lid.step")), MCH.MPart{"", "", Nil{}})) == "mech/bracket.step" : String}
+
+# agents are pointed at FreeCAD's GUI beside its console build (the only
+# one that writes a STEP's colours), on Linux and in the macOS app
+law mech_gui_linux:
+  {PM.Prompt.mech.gui("/usr/bin/freecadcmd") == "/usr/bin/freecad" : String}
+
+law mech_gui_mac:
+  {PM.Prompt.mech.gui("/Applications/FreeCAD.app/Contents/Resources/bin/freecadcmd") == "/Applications/FreeCAD.app/Contents/MacOS/FreeCAD" : String}
+
 # PNG chunks carry the standard CRC-32 (IEND's is AE426082)
 law png_crc_iend:
   {PNG.Png.crc(PNG.Png.ascii("IEND")) == 2923585666 : U32}

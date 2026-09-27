@@ -4100,6 +4100,18 @@ def Laws.mech_part_renders():
 def Laws.mech_key_path():
   {==}
 
+def Laws.mech_default_assembly():
+  {==}
+
+def Laws.mech_default_first():
+  {==}
+
+def Laws.mech_gui_linux():
+  {==}
+
+def Laws.mech_gui_mac():
+  {==}
+
 def Laws.png_crc_iend():
   {==}
 
