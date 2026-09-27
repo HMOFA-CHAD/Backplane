@@ -4719,11 +4719,10 @@ def Laws.google_own_client_wins(mine, sh, h):
   %Equal.sym(Bool, GO.Client.has(mine), True{}, h) : {GO.Google.client.k(_, mine, sh) == mine : GO.Client}
   {==}
 
-def Laws.google_shared_calendar_only():
+def Laws.google_shared_scopes_all():
   {==}
 
-def Laws.google_shared_no_gmail(tool, h):
-  %Equal.sym(Bool, String.starts_with(tool, "gmail_"), True{}, h) : {Bool.or(False{}, Bool.not(_)) == False{} : Bool}
+def Laws.google_shared_covers_all(tool):
   {==}
 
 def Laws.google_own_covers_all(tool):

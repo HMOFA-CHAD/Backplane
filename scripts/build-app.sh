@@ -11,6 +11,9 @@
 #   BACKPLANE_JOBS  parallel compiles (default 4)
 #   BACKPLANE_CPUS  the cores builds may use (default 0-3; "" for any)
 #   BACKPLANE_CFLAGS  (default: -O3, as bend -o)
+# The Google OAuth client "Connect Google" signs in with is baked in from
+# BACKPLANE_GOOGLE_CLIENT_ID and _SECRET: the environment's (CI secrets), else
+# a git-ignored .env here or in the main checkout (src/server/effects/google.c).
 set -eu
 # (a caller already inside `flock /tmp/bp-wt-build.lock ...` holds it)
 held() {
@@ -49,6 +52,24 @@ mkdir -p "$work"
 nice -n 19 $pin bend "$src" -o "$work/all.c" >/dev/null
 n=$(nice -n 19 python3 scripts/cc-split.py "$work/all.c" "$work" "$(( jobs * 2 ))")
 rm -f "$work"/u*.o
+# the baked Google client, read from .env without running it
+envval() {
+  for f in .env "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/../.env"; do
+    [ -f "$f" ] || continue
+    v=$(sed -n "s/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}$1=//p" "$f" | tail -n1 | tr -d "\"'\r")
+    [ -n "$v" ] && { printf %s "$v"; return; }
+  done
+}
+gid=${BACKPLANE_GOOGLE_CLIENT_ID:-$(envval BACKPLANE_GOOGLE_CLIENT_ID)}
+gsec=${BACKPLANE_GOOGLE_CLIENT_SECRET:-$(envval BACKPLANE_GOOGLE_CLIENT_SECRET)}
+rm -f "$work/bp_google.h"
+if [ -n "$gid" ] && [ -n "$gsec" ]; then
+  case "$gid$gsec" in
+    *[!A-Za-z0-9._-]*) echo "BACKPLANE_GOOGLE_CLIENT_ID/_SECRET: unexpected characters" >&2; exit 1 ;;
+  esac
+  printf '#define BP_GOOGLE_CLIENT_ID "%s"\n#define BP_GOOGLE_CLIENT_SECRET "%s"\n' "$gid" "$gsec" > "$work/bp_google.h"
+  echo "baked Google client ${gid%%-*}-..."
+fi
 ls "$work"/u*.c | nice -n 19 $pin xargs -P "$jobs" -I{} sh -c \
   '"$CC" -std=c11 '"$cflags"' -w -c "$1" -o "${1%.c}.o" || { echo "cc failed: $1" >&2; exit 255; }' _ {}
 # the libraries bend -o links: X11 and ALSA when an effect includes them

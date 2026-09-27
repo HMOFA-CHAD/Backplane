@@ -77,6 +77,10 @@ jobs:
           sudo apt-get install -y clang-19 libx11-dev
           sudo ln -sf /usr/bin/clang-19 /usr/local/bin/clang
       - run: BACKPLANE_VERSION="$TAG" scripts/build.sh
+        env:
+          # the Google client "Connect Google" signs in with (scripts/build-app.sh)
+          BACKPLANE_GOOGLE_CLIENT_ID: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_ID }}
+          BACKPLANE_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_SECRET }}
       - run: scripts/smoke.sh
       - run: scripts/package.sh "$TAG" "${{ matrix.target }}"
       - run: scripts/package-linux.sh "$TAG" "${{ matrix.target }}"

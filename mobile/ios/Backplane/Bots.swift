@@ -464,7 +464,7 @@ private struct SettingsTab: View {
             Section {
                 if !settings.google.status.isEmpty { Text(settings.google.status).font(.subheadline) }
                 Button("Connect Google") { model.act("google", "connect") }
-                DisclosureGroup("Own client (for Gmail)") {
+                DisclosureGroup("Own client") {
                     TextField("Client ID (Desktop app)", text: $gid)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .onChange(of: gid) { _, t in model.field("gid", t) }

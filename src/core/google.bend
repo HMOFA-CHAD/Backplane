@@ -553,9 +553,10 @@ def Google.auth_url(+client_id: String, +redirect: String, +challenge: String, +
 # connecting is one button (sign in, allow). An installed app's secret is
 # not a secret (RFC 8252 8.5); PKCE is what protects the code. Empty until
 # one is registered; BACKPLANE_GOOGLE_CLIENT_ID and _SECRET replace it.
-# It links Calendar only: Gmail's scopes are restricted, and a client
-# anyone can use needs a yearly security assessment to ask for them. A
-# client of the user's own (pasted in Settings) links Gmail too.
+# It links Gmail and Calendar. Gmail's scopes are restricted: until Google
+# verifies the client (a yearly security assessment), people click past an
+# unverified-app warning and at most 100 accounts can sign in. A client of
+# the user's own (pasted in Settings) always wins over it.
 
 type Client is Data:
   Client{id: String, secret: String}
@@ -589,31 +590,28 @@ def Google.client.k(own: Bool, mine: Client, shared: Client) -> Client:
 def Google.client(+mine: Client, shared: Client) -> Client:
   Google.client.k(Client.has(mine), mine, shared)
 
-# who signed in, and Calendar
-def Google.cal_scopes() -> List<&2, String>:
-  ["openid", "email", "https://www.googleapis.com/auth/calendar.events"]
-
+# the scopes a sign-in asks for: every one, through either client
 def Google.scopes_for(own: Bool) -> List<&2, String>:
   match own:
     case True{}:
       Google.scopes()
     case False{}:
-      Google.cal_scopes()
+      Google.scopes()
 
-# the client is the shared one: the link covers Calendar only
+# the client is the shared one
 def Google.is_shared(+id: String, +shared: String) -> Bool:
   Bool.and(Bool.not(String.is_empty(id)), String.eq(id, shared))
 
 def Google.gmail(+tool: String) -> Bool:
   String.starts_with(tool, "gmail_")
 
-# a tool the link can do
+# a tool the link can do: every one, through either client
 def Google.covers(shared: Bool, +tool: String) -> Bool:
-  Bool.or(Bool.not(shared), Bool.not(Google.gmail(tool)))
+  True{}
 
 def Google.note.who(+email: String, shared: Bool) -> String:
   Bool.pick(String, String.is_empty(email), "Connected", "Connected as " ++ email)
-    ++ Bool.pick(String, shared, " (Calendar).", " (Gmail and Calendar).")
+    ++ " (Gmail and Calendar)."
 
 def Google.note.k(connected: Bool, pending: Bool, ready: Bool, +email: String, shared: Bool) -> String:
   match connected pending ready:

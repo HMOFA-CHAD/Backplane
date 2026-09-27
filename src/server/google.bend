@@ -13,7 +13,8 @@ import ./proc.bend as P
 # directory, never its command line. Base URLs can be moved for tests with
 # BACKPLANE_GOOGLE_OAUTH (token and revoke endpoints) and
 # BACKPLANE_GOOGLE_API (Gmail and Calendar), and the shared client (see
-# G.Google.shared) with BACKPLANE_GOOGLE_CLIENT_ID and _SECRET.
+# G.Google.shared) with BACKPLANE_GOOGLE_CLIENT_ID and _SECRET, at run
+# time or baked in at build time (Gf.baked).
 
 # Files
 # -----
@@ -153,11 +154,24 @@ def Gs.client(s: GSec) -> G.Client:
     case GSec{id, secret, _, _, _, _, _, _, _}:
       G.Client{id, secret}
 
-# the client every install shares, or the one the environment names
+# a value scripts/build-app.sh baked in from .env, or "" (effects/google.c)
+def Gf.baked(name: String) -> IO(String):
+  import "./effects/google.c"
+  import "./effects/google.js"
+
+# the environment's value, else the baked one, else d
+def Gf.env.baked(+name: String, +d: String) -> IO(String):
+  do IO<String>:
+    b : String <- Gf.baked(name)
+    v : String <- Gf.env(name, G.Str.or(b, d))
+    return v
+
+# the client every install shares: the environment's, the one baked into
+# this build, or G.Google.shared
 def Gs.shared() -> IO(G.Client):
   do IO<G.Client>:
-    i : String <- Gf.env("BACKPLANE_GOOGLE_CLIENT_ID", G.Client.id(G.Google.shared()))
-    x : String <- Gf.env("BACKPLANE_GOOGLE_CLIENT_SECRET", G.Client.secret(G.Google.shared()))
+    i : String <- Gf.env.baked("BACKPLANE_GOOGLE_CLIENT_ID", G.Client.id(G.Google.shared()))
+    x : String <- Gf.env.baked("BACKPLANE_GOOGLE_CLIENT_SECRET", G.Client.secret(G.Google.shared()))
     return G.Client{i, x}
 
 # HTTP through curl

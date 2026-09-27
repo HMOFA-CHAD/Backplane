@@ -2492,14 +2492,13 @@ law google_own_client_wins:
   {GO.Google.client(mine, sh) == mine : GO.Client}
 
 # the shared client asks for Calendar and who signed in, never Gmail
-law google_shared_calendar_only:
-  {GO.Google.scopes_for(False{}) == ["openid", "email", "https://www.googleapis.com/auth/calendar.events"] : List<&2, String>}
+law google_shared_scopes_all:
+  {GO.Google.scopes_for(False{}) == GO.Google.scopes() : List<&2, String>}
 
-# a link through the shared client runs no Gmail tool
-law google_shared_no_gmail:
+# a link through the shared client runs every tool, Gmail's too
+law google_shared_covers_all:
   for +tool: String
-  for h: {String.starts_with(tool, "gmail_") == True{} : Bool}
-  {GO.Google.covers(True{}, tool) == False{} : Bool}
+  {GO.Google.covers(True{}, tool) == True{} : Bool}
 
 # the user's own client runs every tool
 law google_own_covers_all:

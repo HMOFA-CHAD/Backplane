@@ -450,7 +450,7 @@ def Bv.gurl.k(none: Bool, +ty: L.Ty, +s: String, +c: D.Clip, +x: U32, +w: U32, +
           F.Fm.button(ty, c, (x + w - cw : U32), y, "Copy", T.Th.soft(), "copy", s)]),
         (y + 36 : U32)}
 
-# the user's own OAuth client (for Gmail), shown on asking
+# the user's own OAuth client, shown on asking
 def Bv.gown(open: Bool, +ty: L.Ty, +f: F.FS, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   match open:
     case False{}:
@@ -464,7 +464,7 @@ def Bv.gown(open: Bool, +ty: L.Ty, +f: F.FS, +c: D.Clip, +x: U32, +w: U32, +y: U
           F.Fm.button(ty, c, (x + L.Lay.button.w(ty, "Save client") + 8 : U32), (y + 36 : U32), "Hide", T.Th.soft(), "bfield", "gown" ++ Bv.sep())]),
         (y + 74 : U32)}
 
-# connect with the shared client (Calendar) or the user's own (Gmail too)
+# connect with the shared client or the user's own
 def Bv.google(+ty: L.Ty, +f: F.FS, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   +u = F.FS.ui(f)
   +st = U.Ui.scratch(u, "@google")

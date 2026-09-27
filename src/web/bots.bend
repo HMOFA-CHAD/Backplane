@@ -408,7 +408,7 @@ def WB.gurl(+url: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, String.is_empty(url), Nil{}, [
     WB.div("bform-btns", [D.El{"a", "", [D.At{"class", "link"}, D.At{"href", url}, D.At{"target", "_blank"}, D.At{"rel", "noopener noreferrer"}], [D.Txt{"Open Google sign-in"}]}])])
 
-# the user's own OAuth client (for Gmail), shown on asking
+# the user's own OAuth client, shown on asking
 def WB.gown.k(open: Bool, +u: U.Ui) -> List<&2, D.Node>:
   match open:
     case True{}:
@@ -428,7 +428,7 @@ def WB.google(+u: U.Ui) -> D.Node:
     [WB.btns([D.Dom.button("primary", "google", "connect", "Sign in with Google", "Connect Google"),
        D.Dom.button("", "google", "status", "Check the connection", "Status"),
        D.Dom.button("", "google", "disconnect", "Forget the Google account", "Disconnect"),
-       D.Dom.button("", "bfield", WB.bf("gown", "1"), "Use an OAuth client of your own (needed for Gmail)", "Own client")])],
+       D.Dom.button("", "bfield", WB.bf("gown", "1"), "Use an OAuth client of your own", "Own client")])],
     WB.gown.k(Bool.not(String.is_empty(BI.BU.field(u, "gown"))), u),
     WB.gurl(U.Ui.scratch(u, "@google.url")),
     Bool.pick(List<&2, D.Node>, String.is_empty(U.Ui.scratch(u, "@google.url")), Nil{}, [
