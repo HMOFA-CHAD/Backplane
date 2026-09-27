@@ -309,9 +309,12 @@ globalThis.Backplane = {
   act(action, value) {
     return step(App.act(hubs, action, value));
   },
-  // an action whose screen the native side already shows (typing a draft)
+  // an action whose screen the native side already shows (typing a draft),
+  // unless it changed what the composer offers (app.bend's offer)
   quiet(action, value) {
-    return step(App.act(hubs, action, value), true);
+    const was = App.offer(hubs);
+    const r = App.act(hubs, action, value);
+    return step(r, App.offer(r.hubs) === was);
   },
   // hub k's socket opened or closed; a new connection re-asks for the
   // viewer's plot

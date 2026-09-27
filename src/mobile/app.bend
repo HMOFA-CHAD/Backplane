@@ -118,6 +118,19 @@ def online.is(u: U.Ui, b: Bool) -> Bool:
 def online_same(+hs: H.Hubs, +key: String, b: Bool) -> Bool:
   online.is(H.Hubs.ui(hs, key), b)
 
+def offer.go(rs: List<&2, U.SkillRow>) -> String:
+  match rs:
+    case Nil{}:
+      ""
+    case U.SkillRow{n, d} <> t:
+      n ++ "\t" ++ d ++ "\n" ++ offer.go(t)
+
+# what the composer of the hub in focus offers (skills after `$`; bots,
+# threads, projects and rooms after `@`, `>`, `%` or `#`) as one string: a
+# typed draft is quiet (no screen), unless it changes this
+def offer(+hs: H.Hubs) -> String:
+  offer.go(U.Ui.skills(H.Hubs.ui(hs, H.Hubs.cur(hs))))
+
 def online(+hs: H.Hubs, +key: String, b: Bool) -> H.HAct:
   H.Hubs.online(hs, key, b)
 
