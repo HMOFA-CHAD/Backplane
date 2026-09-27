@@ -47,12 +47,19 @@ def act.k(a: U.Act) -> U.Ui:
     case U.Act{u, _}:
       u
 
+# a step: "action=value", or "@key=value" to set the scratch (what a hub's
+# answer would, e.g. the Google accounts); "|" in a value is a line break
+def step.k(scratch: Bool, +p: String, +u: U.Ui) -> U.Ui:
+  +k = String.join(List.take(&2, String, String.split(p, '='), 1n), "")
+  +v = String.join(String.split(String.join(List.drop(&2, String, String.split(p, '='), 1n), "="), '|'), "\n")
+  Bool.pick(U.Ui, scratch, U.Ui.scratch_set(u, k, v), act.k(U.Ui.act(u, k, v)))
+
 def acts(ps: List<&2, String>, u: U.Ui) -> U.Ui:
   match ps:
     case Nil{}:
       u
     case +p <> t:
-      acts(t, act.k(U.Ui.act(u, String.join(List.take(&2, String, String.split(p, '='), 1n), ""), String.join(List.drop(&2, String, String.split(p, '='), 1n), "="))))
+      acts(t, step.k(String.starts_with(p, "@"), p, u))
 
 def ops(o: L.Out) -> List<&2, R.Op>:
   match o:
@@ -143,6 +150,7 @@ def main() -> IO(Unit):
     shot(ty, dir, "routines", "bot=b0;bot-tab=routines", "")
     shot(ty, dir, "hooks", "bot=b0;bot-tab=hooks", "")
     shot(ty, dir, "settings", "bot=b0;bot-tab=settings;bfield=persona" ++ sep() ++ "Watches the repo and the fab queue.", "")
+    shot(ty, dir, "google", "bot=b0;bot-tab=settings;@google=Connected as cat@example.com, dog@example.com (Gmail and Calendar).;@google.accts=cat@example.com|dog@example.com", "")
     shot(ty, dir, "room", "room=r0", N.Fld.id("rpost", "room-post", ""))
     shot(ty, dir, "rform", "room-new=;bfield=rname" ++ sep() ++ "night shift;room-pick=b0;room-pick=b2", "")
     +u : U.Ui = base()

@@ -450,7 +450,7 @@ def Bv.gurl.k(none: Bool, +ty: L.Ty, +s: String, +c: D.Clip, +x: U32, +w: U32, +
           F.Fm.button(ty, c, (x + w - cw : U32), y, "Copy", T.Th.soft(), "copy", s)]),
         (y + 36 : U32)}
 
-# the user's own OAuth client (for Gmail), shown on asking
+# the user's own OAuth client, shown on asking
 def Bv.gown(open: Bool, +ty: L.Ty, +f: F.FS, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   match open:
     case False{}:
@@ -464,20 +464,36 @@ def Bv.gown(open: Bool, +ty: L.Ty, +f: F.FS, +c: D.Clip, +x: U32, +w: U32, +y: U
           F.Fm.button(ty, c, (x + L.Lay.button.w(ty, "Save client") + 8 : U32), (y + 36 : U32), "Hide", T.Th.soft(), "bfield", "gown" ++ Bv.sep())]),
         (y + 74 : U32)}
 
-# connect with the shared client (Calendar) or the user's own (Gmail too)
+# one signed-in account and its own sign-out
+def Bv.gacct(+ty: L.Ty, +e: String, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+  +bw = L.Lay.button.w(ty, "Sign out")
+  L.Col{L.Out.all([
+      L.Out.ops(L.Ty.text(ty, 2n, L.Ty.fit(ty, 2n, e, (w - bw - 12 : U32)), c, x, y, 28, T.Th.text())),
+      F.Fm.button(ty, c, (x + w - bw : U32), y, "Sign out", T.Th.soft(), "google", "signout:" ++ e)]),
+    (y + 36 : U32)}
+
+def Bv.gaccts(xs: List<&2, String>, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+  match xs:
+    case Nil{}:
+      L.Col{L.Out.none(), y}
+    case e <> t:
+      L.Lay.col.then(Bv.gacct(ty, e, c, x, w, y), y2 => Bv.gaccts(t, ty, c, x, w, y2))
+
+# connect with the shared client or the user's own; every account signed
+# in, each with its own sign-out
 def Bv.google(+ty: L.Ty, +f: F.FS, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   +u = F.FS.ui(f)
   +st = U.Ui.scratch(u, "@google")
-  +cw = L.Lay.button.w(ty, "Connect Google")
-  +sw = L.Lay.button.w(ty, "Sign out")
+  +add = Bool.pick(String, List.is_empty(&2, String, U.Bots.google.accts(u)), "Connect Google", "Add account")
+  +cw = L.Lay.button.w(ty, add)
   L.Lay.col.then(L.Col{L.Out.all([Bv.h2(ty, c, "Google", x, y),
-      Bv.faint(ty, c, Bool.pick(String, String.is_empty(st), "Google Calendar for bots: connect, then allow access. Gmail needs a client of your own.", st), x, w, (y + 30 : U32)),
-      F.Fm.button(ty, c, x, (y + 58 : U32), "Connect Google", T.Th.accent(), "google", "connect"),
-      F.Fm.button(ty, c, (x + cw + 8 : U32), (y + 58 : U32), "Sign out", T.Th.soft(), "google", "disconnect"),
-      F.Fm.button(ty, c, (x + cw + sw + 16 : U32), (y + 58 : U32), "Own client", T.Th.soft(), "bfield", "gown" ++ Bv.sep() ++ "1")]), (y + 96 : U32)}, +y1 =>
+      Bv.faint(ty, c, Bool.pick(String, String.is_empty(st), "Gmail and Calendar for bots: connect, then allow access. Connect again for another account.", st), x, w, (y + 30 : U32)),
+      F.Fm.button(ty, c, x, (y + 58 : U32), add, T.Th.accent(), "google", "connect"),
+      F.Fm.button(ty, c, (x + cw + 8 : U32), (y + 58 : U32), "Own client", T.Th.soft(), "bfield", "gown" ++ Bv.sep() ++ "1")]), (y + 96 : U32)}, +y0 =>
+    L.Lay.col.then(Bv.gaccts(U.Bots.google.accts(u), ty, c, x, w, y0), +y1 =>
     L.Lay.col.then(Bv.gown(String.eq(F.Fm.text(f, "gown"), "1"), ty, f, c, x, w, y1), +y2 =>
       L.Lay.col.then(Bv.gurl.k(String.is_empty(U.Ui.scratch(u, "@google.url")), ty, U.Ui.scratch(u, "@google.url"), c, x, w, y2), +y3 =>
-        L.Col{Bv.row2(ty, f, "gpaste", "google", "Browser on another device? Paste where it landed", "Finish", "paste", c, x, w, y3), (y3 + 40 : U32)})))
+        L.Col{Bv.row2(ty, f, "gpaste", "google", "Browser on another device? Paste where it landed", "Finish", "paste", c, x, w, y3), (y3 + 40 : U32)}))))
 
 def Bv.stab(+ty: L.Ty, +f: F.FS, b: BT.Bot, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   match b:

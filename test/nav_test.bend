@@ -52,9 +52,11 @@ def base() -> List<&2, M.Change>:
    M.ThreadCreated{"b", "p1", "B", M.Local{}, "", "", "claude", "", 200n},
    M.ThreadCreated{"c", "p1", "C", M.Local{}, "", "", "claude", "", 300n}]
 
-# base() and two empty projects made at 400 and 500
+# base() and two projects made at 400 and 500, each with a thread (so all
+# three are live, and only their order keys and activity place them)
 def three() -> List<&2, M.Change>:
-  List.append(&2, M.Change, base(), [M.ProjectCreated{"p2", "Q", "/tmp/q", 400n}, M.ProjectCreated{"p3", "R", "/tmp/r", 500n}])
+  List.append(&2, M.Change, base(), [M.ProjectCreated{"p2", "Q", "/tmp/q", 400n}, M.ThreadCreated{"x", "p2", "X", M.Local{}, "", "", "claude", "", 400n},
+    M.ProjectCreated{"p3", "R", "/tmp/r", 500n}, M.ThreadCreated{"y", "p3", "Y", M.Local{}, "", "", "claude", "", 500n}])
 
 def pside(es: List<&2, M.Change>) -> String:
   String.join(U.Side.projects(U.Ui.fold(es, U.Ui.init(1000n))), ",")

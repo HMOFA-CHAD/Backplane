@@ -421,19 +421,20 @@ def Hubs.register(hs: Hubs, p: String, t: String, k: String, th: String, e: Stri
 # picker's, the bot's and the forms' own actions follow it
 def Hubs.routed(+action: String) -> Nat:
   C.Codec.pos(["select", "new-thread", "picker-open", "bot", "room", "remote", "bot-new", "room-new", "proj-go",
-    "row-settle", "row-unsettle", "row-snooze", "row-delete", "toggle-settled", "add-project", "proj-remove"], action)
+    "row-settle", "row-unsettle", "row-snooze", "row-delete", "toggle-settled", "add-project", "proj-remove",
+    "row-menu", "proj-menu", "row-pin", "row-unpin", "row-archive", "row-unarchive"], action)
 
 def Hubs.moves() -> Nat:
   9n
 
 def Hubs.routes() -> Nat:
-  16n
+  22n
 
 # answers to what any hub may be showing (its error, a delete or remove
 # to confirm); the project search is every hub's at once, since the list
 # it filters spans them all ("proj-find", "proj-find-q", unrouted, go to all)
 def Hubs.everywhere(+action: String) -> Bool:
-  Nat.is_lt(C.Codec.pos(["dismiss", "delete-no", "proj-keep", "proj-find", "proj-find-q"], action), 5n)
+  Nat.is_lt(C.Codec.pos(["dismiss", "delete-no", "proj-keep", "proj-find", "proj-find-q", "menu-close", "side-older"], action), 7n)
 
 # of what the hub let go says, only what it sends (its viewer's watch
 # ends); its focus and scroll are for a screen no longer shown
@@ -614,12 +615,107 @@ def Hubs.machines(ps: List<&2, J.Json>, +name: String) -> List<&2, J.Json>:
     case p <> t:
       Hubs.machine(p, name) <> Hubs.machines(t, name)
 
-def Hubs.projects(ss: List<&2, Shown>, +many: Bool) -> List<&2, J.Json>:
+def Hubs.projects.all(ss: List<&2, Shown>, +many: Bool) -> List<&2, J.Json>:
   match ss:
     case Nil{}:
       Nil{}
     case Shown{_, +n, +j} <> t:
-      List.append(&2, J.Json, Hubs.machines(J.Json.elems(J.Json.get_obj(j, "projects")), Bool.pick(String, many, n, "")), Hubs.projects(t, many))
+      List.append(&2, J.Json, Hubs.machines(J.Json.elems(J.Json.get_obj(j, "projects")), Bool.pick(String, many, n, "")), Hubs.projects.all(t, many))
+
+# the projects of every hub are one list: the live ones of all first, then
+# the quiet ones, each hub's own order kept; a project is named by its
+# machine only when another has the same name
+def Hubs.titles(ps: List<&2, J.Json>) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      J.Json.get_str(p, "title", "") <> Hubs.titles(t)
+
+def Hubs.count(ts: List<&2, String>, +x: String) -> Nat:
+  match ts:
+    case Nil{}:
+      0n
+    case +h <> t:
+      Nat.add(Bool.pick(Nat, String.eq(h, x), 1n, 0n), Hubs.count(t, x))
+
+def Hubs.dup(p: J.Json, +keep: Bool) -> J.Json:
+  match p keep:
+    case J.Obj{fs} False{}:
+      J.Obj{J.Field{"machine", J.Str{""}, fs}}
+    case x _:
+      x
+
+def Hubs.same(a: Bool, b: Bool) -> Bool:
+  match a b:
+    case True{} True{}:
+      True{}
+    case False{} False{}:
+      True{}
+    case _ _:
+      False{}
+
+def Hubs.part.k(keep: Bool, p: J.Json, rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match keep:
+    case True{}:
+      p <> rest
+    case False{}:
+      rest
+
+def Hubs.part(ps: List<&2, J.Json>, +quiet: Bool, +ts: List<&2, String>) -> List<&2, J.Json>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      Hubs.part.k(Hubs.same(J.Json.get_bool(p, "quiet", False{}), quiet), Hubs.dup(p, Nat.is_gt(Hubs.count(ts, J.Json.get_str(p, "title", "")), 1n)), Hubs.part(t, quiet, ts))
+
+def Hubs.projects.p(+ps: List<&2, J.Json>) -> List<&2, J.Json>:
+  List.append(&2, J.Json, Hubs.part(ps, False{}, Hubs.titles(ps)), Hubs.part(ps, True{}, Hubs.titles(ps)))
+
+def Hubs.projects(ss: List<&2, Shown>, +many: Bool) -> List<&2, J.Json>:
+  Hubs.projects.p(Hubs.projects.all(ss, many))
+
+# every hub's folded shelf of older projects as one: how many in all, and
+# open when any hub's is ("side-older" goes to every hub)
+def Hubs.older.n(ss: List<&2, Shown>, +acc: Nat) -> Nat:
+  match ss:
+    case Nil{}:
+      acc
+    case Shown{_, _, +j} <> t:
+      Hubs.older.n(t, Nat.add(acc, J.Json.get_nat(J.Json.get_obj(j, "older"), "count", 0n)))
+
+def Hubs.older.open(ss: List<&2, Shown>) -> Bool:
+  match ss:
+    case Nil{}:
+      False{}
+    case Shown{_, _, +j} <> t:
+      Bool.or(J.Json.get_bool(J.Json.get_obj(j, "older"), "open", False{}), Hubs.older.open(t))
+
+def Hubs.older(+ss: List<&2, Shown>) -> J.Json:
+  Bool.pick(J.Json, Nat.is_eq(Hubs.older.n(ss, 0n), 0n), J.Null{},
+    J.Json.obj([J.KV{"count", J.Json.nat(Hubs.older.n(ss, 0n))}, J.KV{"open", J.Json.bool(Hubs.older.open(ss))}]))
+
+# every hub's active rows as one list, in core's order (Active.rows): live
+# rows first, by how much they wait on the person, then newest
+def Hubs.arow.cmp(+a: J.Json, +b: J.Json) -> Bool:
+  +fa = J.Json.get_bool(a, "faded", False{})
+  +fb = J.Json.get_bool(b, "faded", False{})
+  +ua = J.Json.get_nat(a, "urg", 0n)
+  +ub = J.Json.get_nat(b, "urg", 0n)
+  Bool.pick(Bool, Hubs.same(fa, fb), Bool.pick(Bool, Nat.is_eq(ua, ub), Nat.is_ge(J.Json.get_nat(a, "at", 0n), J.Json.get_nat(b, "at", 0n)), Nat.is_gt(ua, ub)), fb)
+
+def Hubs.arow.before(a: J.Json, b: J.Json) -> Bool:
+  Hubs.arow.cmp(a, b)
+
+def Hubs.active.all(ss: List<&2, Shown>) -> List<&2, J.Json>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case Shown{_, _, +j} <> t:
+      List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(j, "active")), Hubs.active.all(t))
+
+def Hubs.active(ss: List<&2, Shown>) -> List<&2, J.Json>:
+  List.sort(~J.Json, ~Hubs.arow.before, Hubs.active.all(ss))
 
 # every hub's list at k (bots, rooms), named by machine when there are several
 def Hubs.all(ss: List<&2, Shown>, +k: String, +many: Bool) -> List<&2, J.Json>:
@@ -819,6 +915,10 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
     J.KV{"theme", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "theme", ""))},
     J.KV{"empty", J.Json.str(Hubs.empty(List.length(&2, J.Json, Hubs.projects(ss, False{})), List.length(&2, Shown, ss), J.Json.get_bool(Hubs.first_obj(ss, "search"), "open", False{})))},
     J.KV{"projects", J.Json.arr(Hubs.projects(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},
+    J.KV{"older", Hubs.older(ss)},
+    J.KV{"view", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "view", "projects"))},
+    J.KV{"active", J.Json.arr(Hubs.active(ss))},
+    J.KV{"rowMenu", Hubs.first_obj(ss, "rowMenu")},
     J.KV{"deleting", Hubs.first_obj(ss, "deleting")},
     J.KV{"removing", Hubs.first_obj(ss, "removing")},
     J.KV{"search", Hubs.first_obj(ss, "search")},

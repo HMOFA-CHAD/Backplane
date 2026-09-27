@@ -104,12 +104,95 @@ def Mob.project(r: U.SRow, +open: Map<&2, Bool>, +st: M.State, +now: Nat) -> J.J
         J.KV{"value", J.Json.str("arch:" ++ id)}, J.KV{"archOpen", J.Json.bool(U.Flag.get(open, "arch:" ++ id))},
         J.KV{"archived", J.Json.arr(Mob.rows(M.Archive.of(hidden), st, now, 3n))}])
 
-def Mob.projects(rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +st: M.State, +now: Nat) -> List<&2, J.Json>:
+def Mob.quiet(p: J.Json, q: Bool) -> J.Json:
+  match p:
+    case J.Obj{fs}:
+      J.Obj{J.Field{"quiet", J.Json.bool(q), fs}}
+    case x:
+      x
+
+def Mob.projects(rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +st: M.State, +now: Nat, +q: Bool) -> List<&2, J.Json>:
   match rs:
     case Nil{}:
       Nil{}
     case r <> t:
-      Mob.project(r, open, st, now) <> Mob.projects(t, open, st, now)
+      Mob.quiet(Mob.project(r, open, st, now), q) <> Mob.projects(t, open, st, now, q)
+
+# the projects as the sidebar groups them (core's Side.groups): live ones,
+# then the quiet ones ("quiet": shown faded), then the older ones, only
+# while their shelf is open or a search is on
+def Mob.older.k(show: Bool, rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +st: M.State, +now: Nat) -> List<&2, J.Json>:
+  match show:
+    case True{}:
+      Mob.projects(rs, open, st, now, True{})
+    case False{}:
+      Nil{}
+
+def Mob.grouped(g: U.SGroups, +open: Map<&2, Bool>, +st: M.State, +now: Nat, +q: String) -> List<&2, J.Json>:
+  match g:
+    case U.SGroups{l, qs, o}:
+      List.concat(&2, J.Json, [Mob.projects(l, open, st, now, False{}), Mob.projects(qs, open, st, now, True{}),
+        Mob.older.k(Bool.or(U.Flag.get(open, "old-projects"), Bool.not(String.is_empty(q))), o, open, st, now)])
+
+# the folded shelf of older projects: how many and whether it is open
+# ("side-older" flips it); null while there are none or a search shows them
+def Mob.older.j(+n: Nat, +open: Bool, +q: String) -> J.Json:
+  Bool.pick(J.Json, Bool.or(Nat.is_eq(n, 0n), Bool.not(String.is_empty(q))), J.Null{},
+    J.Json.obj([J.KV{"count", J.Json.nat(n)}, J.KV{"open", J.Json.bool(open)}]))
+
+def Mob.older(g: U.SGroups, +open: Map<&2, Bool>, +q: String) -> J.Json:
+  match g:
+    case U.SGroups{_, _, o}:
+      Mob.older.j(List.length(&2, U.SRow, o), U.Flag.get(open, "old-projects"), q)
+
+# the active view's rows (core's Active.rows): a thread row with its
+# project's name, "faded" for one settled lately, and "urg"/"at", which
+# order rows merged from several hubs the same way
+def Mob.arow.k(j: J.Json, +urg: Nat, +at: Nat, +pt: String, +faded: Bool) -> J.Json:
+  match j:
+    case J.Obj{fs}:
+      J.Obj{J.Field{"project", J.Json.str(pt), J.Field{"faded", J.Json.bool(faded), J.Field{"urg", J.Json.nat(urg), J.Field{"at", J.Json.nat(at), fs}}}}}
+    case x:
+      x
+
+def Mob.arow(r: U.ARow, +st: M.State, +now: Nat) -> J.Json:
+  match r:
+    case U.ARow{+urg, +at, +t, _, +pt, +faded}:
+      Mob.arow.k(Mob.row(t, M.Phase.name(U.Side.phase(st, t)), st, now, Bool.pick(Nat, faded, 1n, 0n)), urg, at, pt, faded)
+
+def Mob.arows(rs: List<&2, U.ARow>, +st: M.State, +now: Nat) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      Mob.arow(r, st, now) <> Mob.arows(t, st, now)
+
+def Mob.active(on: Bool, +st: M.State, +now: Nat, +q: String) -> List<&2, J.Json>:
+  match on:
+    case True{}:
+      Mob.arows(U.Active.rows(st, now, q), st, now)
+    case False{}:
+      Nil{}
+
+# a row's or project's menu (core's Menu): its title and items, each
+# sending its action with its value; null while none is open, or while a
+# delete or remove it armed asks through "deleting"/"removing"
+def Mob.mitems(xs: List<&2, U.MItem>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case U.MItem{l, a, v, t} <> r:
+      J.Json.obj([J.KV{"label", J.Json.str(l)}, J.KV{"action", J.Json.str(a)}, J.KV{"value", J.Json.str(v)}, J.KV{"tone", J.Json.str(t)}]) <> Mob.mitems(r)
+
+def Mob.rmenu.k(none: Bool, +u: U.Ui) -> J.Json:
+  match none:
+    case True{}:
+      J.Null{}
+    case False{}:
+      J.Json.obj([J.KV{"title", J.Json.str(U.Menu.title(u))}, J.KV{"items", J.Json.arr(Mob.mitems(U.Menu.items(u, False{})))}])
+
+def Mob.rmenu(+u: U.Ui) -> J.Json:
+  Mob.rmenu.k(Bool.or(String.is_empty(U.Menu.open(u)), Bool.not(String.is_empty(U.Ui.scratch(u, "@del") ++ U.Ui.scratch(u, "@rm")))), u)
 
 # markdown blocks from the same Md.render the web page uses; built onto a
 # reversed accumulator so a long reply's many blocks cost no stack (only
@@ -644,7 +727,7 @@ def Mob.count(+more: Nat) -> Nat:
 # the newest page of a thread's entries (core's Page): "earlier" says how
 # many are left out, and the action "earlier" shows another page
 def Mob.page(+drafts: Map<&2, String>, +id: String, +st: M.State) -> U.Win:
-  U.Page.newest.from(U.Ui.entries(st), id, U.Page.since(st, id), Mob.count(Maybe.default(&2, Nat, Nat.read(U.Str.get(drafts, "@more." ++ id)), 0n)))
+  U.Page.newest.from(M.State.mine(st, id), id, U.Page.since(st, id), Mob.count(Maybe.default(&2, Nat, Nat.read(U.Str.get(drafts, "@more." ++ id)), 0n)))
 
 def Mob.paged.es(w: U.Win, +st: M.State, +sel: String, +info: Map<&2, String>, +dr: Map<&2, String>, +running: Bool) -> List<&2, J.Json>:
   Mob.entries(U.Win.shown(w), st, sel, info, dr, running)
@@ -728,9 +811,11 @@ def Mob.removing.k(none: Bool, +st: M.State, +id: String) -> J.Json:
 def Mob.removing(+u: U.Ui) -> J.Json:
   Mob.removing.k(String.is_empty(U.Ui.scratch(u, "@rm")), Mob.st(u), U.Ui.scratch(u, "@rm"))
 
-# the project search: open ("proj-find" on/off), its query ("proj-find-q")
+# the list's search: always shown at the top of the list (open stays true
+# for older apps), its query ("proj-find-q"); it finds projects, or in the
+# active view threads by their title or project
 def Mob.search(+u: U.Ui) -> J.Json:
-  J.Json.obj([J.KV{"open", J.Json.bool(U.Ui.flag(u, "psearch"))}, J.KV{"query", J.Json.str(U.Ui.scratch(u, "@f.pq"))}, J.KV{"hint", J.Json.str("Find a project")}])
+  J.Json.obj([J.KV{"open", J.Json.bool(True{})}, J.KV{"query", J.Json.str(U.Ui.scratch(u, "@f.pq"))}, J.KV{"hint", J.Json.str("Search")}])
 
 # Settings, as the web's: rows of a label, a note and buttons, each sending
 # its action with its value ("on" marks the current choice)
@@ -768,6 +853,7 @@ def Mob.settings.of(+st: M.State, +nf: Map<&2, String>, +v: String, +note: Strin
     Mob.set.row(U.FreeCAD.label(nf), U.FreeCAD.note(nf), Nil{}),
     Mob.set.row(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, J.Json>, U.KiCad.ipc.ready(nf), Mob.set.chips(["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{})),
     Mob.set.row("Theme", "Unset, the phone follows its own system.", Mob.set.chips(["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme")),
+    Mob.set.row("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", Mob.set.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
     Mob.set.row("Tailscale: " ++ U.Str.get(nf, "tailnet"), "Listening on " ++ U.Str.get(nf, "listen"), Nil{}),
     Mob.set.row("Pairing link", U.Pair.note(U.Pair.link(nf)), Bool.pick(List<&2, J.Json>, String.is_empty(U.Pair.link(nf)), Nil{}, [Mob.set.btn("Copy", "copy", U.Pair.link(nf), False{})])),
     Mob.set.row("Update channel", "Stable takes releases; nightly also takes the daily builds.", Mob.set.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
@@ -807,7 +893,11 @@ def Mob.screen(+u: U.Ui) -> J.Json:
       J.Json.obj([J.KV{"online", J.Json.bool(on)}, J.KV{"version", J.Json.str(v)}, J.KV{"seq", J.Json.nat(U.Ui.seq(u))}, J.KV{"error", J.Json.str(e)},
         J.KV{"note", J.Json.str(note)}, J.KV{"sel", J.Json.str(sel)}, J.KV{"theme", J.Json.str(M.Setting.get(st, "ui.theme", ""))},
         J.KV{"empty", J.Json.str(Mob.empty(List.length(&2, M.Project, U.Ui.projects(st))))},
-        J.KV{"projects", J.Json.arr(Mob.projects(U.Side.shown(st, now, U.Find.q(o, dr)), o, st, now))},
+        J.KV{"projects", J.Json.arr(Mob.grouped(U.Side.groups(U.Side.shown(st, now, U.Find.q(o, dr)), now), o, st, now, U.Find.q(o, dr)))},
+        J.KV{"older", Mob.older(U.Side.groups(U.Side.shown(st, now, U.Find.q(o, dr)), now), o, U.Find.q(o, dr))},
+        J.KV{"view", J.Json.str(U.Side.view(st))},
+        J.KV{"active", J.Json.arr(Mob.active(String.eq(U.Side.view(st), "active"), st, now, U.Find.q(o, dr)))},
+        J.KV{"rowMenu", Mob.rmenu(u)},
         J.KV{"search", Mob.search(u)},
         J.KV{"deleting", Mob.deleting(u)},
         J.KV{"removing", Mob.removing(u)},

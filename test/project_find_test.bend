@@ -8,7 +8,8 @@ import ../src/core/client.bend as U
 
 # Finding and removing projects: the sidebar's search keeps the projects
 # whose name matches, Enter goes to the first; Remove takes two clicks and
-# re-adding the folder brings the project back with its threads.
+# re-adding the folder brings the project back with its threads. A project
+# with a live thread (p1) sits above the quiet ones.
 
 def log() -> List<&2, M.Change>:
   [M.ProjectCreated{"p1", "board", "/tmp/board", 100n},
@@ -88,17 +89,17 @@ def fresh() -> List<&2, M.Change>:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    C.Check.str("all shown", pids(base()), "p3,p2,p1")
+    C.Check.str("all shown", pids(base()), "p1,p3,p2")
     C.Check.str("search focuses", focus(U.Ui.act(base(), "proj-find", "")), "proj-find")
-    C.Check.str("empty query keeps all", pids(typed("")), "p3,p2,p1")
+    C.Check.str("empty query keeps all", pids(typed("")), "p1,p3,p2")
     C.Check.str("query filters", pids(typed("bo")), "p1")
     C.Check.str("fuzzy", pids(typed("frw")), "p3")
     C.Check.str("any case", pids(typed("ENC")), "p2")
     C.Check.str("no match", pids(typed("zzz")), "")
-    C.Check.str("shut shows all", pids(act(typed("bo"), "proj-find", "")), "p3,p2,p1")
+    C.Check.str("shut shows all", pids(act(typed("bo"), "proj-find", "")), "p1,p3,p2")
     C.Check.str("shut clears", U.Ui.scratch(act(typed("bo"), "proj-find", ""), "@f.pq"), "")
     C.Check.str("enter goes to top thread", U.Ui.sel(act(typed("bo"), "proj-go", "")), "a")
-    C.Check.str("enter shuts", pids(act(typed("bo"), "proj-go", "")), "p3,p2,p1")
+    C.Check.str("enter shuts", pids(act(typed("bo"), "proj-go", "")), "p1,p3,p2")
     C.Check.str("first click arms", sent(U.Ui.act(base(), "proj-remove", "p1")), "")
     C.Check.str("armed", U.Ui.scratch(act(base(), "proj-remove", "p1"), "@rm"), "p1")
     C.Check.str("second click removes", sent(U.Ui.act(act(base(), "proj-remove", "p1"), "proj-remove", "p1")), "{\"id\":0,\"m\":\"project.remove\",\"p\":{\"project\":\"p1\"}}")

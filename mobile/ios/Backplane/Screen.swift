@@ -20,6 +20,9 @@ struct Row: Decodable, Identifiable, Hashable {
     let status: String?
     let pinned: Bool
     let lead, trail: [Swipe]
+    // the active view's rows: the project's name, and faded (settled lately)
+    let project: String?
+    let faded: Bool?
 }
 
 struct Project: Decodable, Identifiable {
@@ -35,6 +38,24 @@ struct Project: Decodable, Identifiable {
     let value: String?
     let archOpen: Bool?
     let archived: [Row]?
+    // no live thread: its header shows faded, after the live ones
+    let quiet: Bool?
+}
+
+// the folded shelf of older projects at the end of the list ("side-older")
+struct Older: Decodable, Equatable {
+    let count: Int
+    let open: Bool
+}
+
+// a row's or project's menu (a long press): each item sends action with value
+struct MenuItem: Decodable, Hashable {
+    let label, action, value, tone: String
+}
+
+struct RowMenu: Decodable, Equatable {
+    let title: String
+    let items: [MenuItem]
 }
 
 // a toolbar or menu item: it sends action with value, or (a snooze)
@@ -301,7 +322,7 @@ struct Deleting: Decodable, Equatable {
     let id, title, body, yes, no: String
 }
 
-// the project search over the list: open, its query ("proj-find-q"), the hint
+// the list's search, always at its top: its query ("proj-find-q"), the hint
 struct Search: Decodable, Equatable {
     let open: Bool
     let query, hint: String
@@ -425,6 +446,7 @@ struct BotPeer: Decodable, Hashable {
 // Google's sign-in state and the OAuth client's fields ("google" op)
 struct BotGoogle: Decodable {
     let status, url, gid, gsecret, gpaste: String
+    let accounts: [String]
 }
 
 struct BotSettings: Decodable {
@@ -469,6 +491,11 @@ struct Screen: Decodable {
     let hubs: [HubRow]
     let found: [Found]
     let projects: [Project]
+    // "projects" (sections) or "active" (one flat list of rows, active)
+    let view: String?
+    let active: [Row]?
+    let older: Older?
+    let rowMenu: RowMenu?
     let bots: [BotRow]
     let rooms: [RoomRow]
     let newBot: NewBot?

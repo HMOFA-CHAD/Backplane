@@ -188,17 +188,22 @@ let socket = null;
 let queued = false;
 let scroll = false;
 let focus = null;
+let earlierAsked = false;
 
 function render() {
   queued = false;
   const tl = document.getElementById("timeline");
   const pinned = tl ? tl.scrollHeight - tl.scrollTop - tl.clientHeight < 40 : true;
+  const fromEnd = tl ? tl.scrollHeight - tl.scrollTop : 0;
   patch(root, { $: "El", tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: App.view(ui), tail: { $: "Nil" } } });
   const tl2 = document.getElementById("timeline");
   if (tl2 && (scroll || pinned)) tl2.scrollTop = tl2.scrollHeight;
+  // earlier entries added above keep the view where it was
+  else if (tl2 && tl === tl2) tl2.scrollTop = tl2.scrollHeight - fromEnd;
   scroll = false;
   Solid.mount(document.getElementById("solid"));
   Plot2d.mount(document.getElementById("plot"));
+  earlierAsked = false;
   if (focus) {
     document.getElementById(focus)?.focus();
     focus = null;
@@ -431,7 +436,13 @@ for (const ev of EVENTS) {
     const el = e.target.closest?.(`[data-on-${ev}]`);
     if (!el) return;
     const action = el.getAttribute(`data-on-${ev}`);
-    if (ev === "contextmenu") e.preventDefault();
+    // a row's menu opens where the pointer was (view.bend's View.rmenu
+    // reads these)
+    if (ev === "contextmenu") {
+      e.preventDefault();
+      document.documentElement.style.setProperty("--mx", Math.min(e.clientX, innerWidth - 216) + "px");
+      document.documentElement.style.setProperty("--my", e.clientY + "px");
+    }
     dispatch(action, ev === "input" ? inputValue(el) : valueOf(el));
   });
 }
@@ -590,6 +601,16 @@ document.addEventListener("click", (e) => {
   Plot2d.fit();
   Solid.fit();
 });
+// the timeline scrolled within two screens of its top while earlier
+// entries are left out (view.bend's mark): ask for them, once a render
+document.addEventListener("scroll", (e) => {
+  const tl = e.target;
+  if (earlierAsked || !(tl instanceof Element) || tl.id !== "timeline") return;
+  const mark = tl.querySelector("[data-earlier]");
+  if (!mark || tl.scrollTop > tl.clientHeight * 2) return;
+  earlierAsked = true;
+  dispatch("earlier", mark.getAttribute("data-earlier") ?? "");
+}, true);
 
 document.addEventListener("click", (e) => {
   if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return;

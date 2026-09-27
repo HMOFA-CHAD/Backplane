@@ -223,21 +223,38 @@ private struct SwipeButton: View {
     }
 }
 
+// A tap opens the thread; a long press asks for its menu ("row-menu"),
+// which the screen then carries as rowMenu. Tap and long press are plain
+// gestures (not a NavigationLink) so a long press never also opens it.
 private struct ThreadRow: View {
     let model: AppModel
     let row: Row
     let choose: (Swipe) -> Void
 
     var body: some View {
-        NavigationLink(value: row.id) {
-            HStack(spacing: 10) {
-                StatusDot(state: row.state, status: row.status).frame(width: 18)
+        HStack(spacing: 10) {
+            StatusDot(state: row.state, status: row.status).frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
                 Text(row.title).lineLimit(1)
-                Spacer()
-                if row.pinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary) }
-                Text(row.ago).font(.caption).foregroundStyle(.secondary)
+                if let p = row.project, !p.isEmpty {
+                    Text(p).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
+            Spacer()
+            if row.pinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary) }
+            Text(row.ago).font(.caption).foregroundStyle(.secondary)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
         }
+        .contentShape(Rectangle())
+        .opacity(row.faded == true ? 0.45 : 1)
+        .onTapGesture { model.navigate([row.id]) }
+        .onLongPressGesture(minimumDuration: 0.4) {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            model.act("row-menu", row.id)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Menu") { model.act("row-menu", row.id) }
         .swipeActions(edge: .leading) {
             ForEach(row.lead, id: \.self) { SwipeButton(model: model, swipe: $0, choose: choose) }
         }
@@ -253,54 +270,40 @@ struct ProjectsView: View {
     @Binding var pairing: Bool
     // a swipe whose choices are up (a snooze)
     @State private var choosing: Swipe?
+    // the row menu this dialog let go of: it stays down until the screen drops it
+    @State private var shutMenu: RowMenu?
 
     var body: some View {
         List {
-            if let f = screen.search, f.open {
+            // the search is always the list's first row (projects, or in the
+            // active view threads by title or project)
+            if let f = screen.search {
                 Section { SearchField(model: model, search: f, first: screen.projects.first?.id) }
             }
-            ForEach(screen.projects) { p in
-                Section {
-                    ForEach(p.threads) { ThreadRow(model: model, row: $0) { choosing = $0 } }
-                    if !p.snoozed.isEmpty {
-                        Text(p.snoozedShelf).font(.subheadline).foregroundStyle(.secondary)
-                        ForEach(p.snoozed) { ThreadRow(model: model, row: $0) { choosing = $0 } }
+            if screen.view == "active" {
+                let rows = screen.active ?? []
+                if rows.isEmpty {
+                    if !screen.projects.isEmpty && (screen.search?.query ?? "").isEmpty {
+                        ContentUnavailableView("Nothing active", systemImage: "tray")
+                            .listRowBackground(Color.clear)
                     }
-                    if !p.settled.isEmpty {
-                        Button { model.act("toggle-settled", p.id) } label: {
+                } else {
+                    Section {
+                        ForEach(rows) { ThreadRow(model: model, row: $0) { choosing = $0 } }
+                    }
+                }
+            } else {
+                ForEach(screen.projects) { p in projectSection(p) }
+                if let o = screen.older {
+                    Section {
+                        Button { model.act("side-older", "") } label: {
                             HStack {
-                                Text(p.shelf).font(.subheadline)
+                                Text("Older \(o.count)").font(.subheadline)
                                 Spacer()
-                                Image(systemName: p.open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                                Image(systemName: o.open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
                             }
                         }
                         .tint(.secondary)
-                        if p.open { ForEach(p.settled) { ThreadRow(model: model, row: $0) { choosing = $0 } } }
-                    }
-                    if let arch = p.archived, !arch.isEmpty, let v = p.value {
-                        Button { model.act("toggle-settled", v) } label: {
-                            HStack {
-                                Text("Archived \(arch.count)").font(.subheadline)
-                                Spacer()
-                                Image(systemName: p.archOpen == true ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                            }
-                        }
-                        .tint(.secondary)
-                        if p.archOpen == true { ForEach(arch) { ThreadRow(model: model, row: $0) { choosing = $0 } } }
-                    }
-                } header: {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(p.title)
-                            Text(p.machine.isEmpty ? p.root : p.machine + ": " + p.root)
-                                .font(.caption2).textCase(nil).lineLimit(1).truncationMode(.head)
-                        }
-                        Spacer()
-                        Button { model.act("new-thread", p.id) } label: { Image(systemName: "square.and.pencil") }
-                            .accessibilityLabel("New thread")
-                    }
-                    .contextMenu {
-                        Button("Remove project", systemImage: "trash", role: .destructive) { model.act("proj-remove", p.id) }
                     }
                 }
             }
@@ -334,8 +337,6 @@ struct ProjectsView: View {
                 } else {
                     Button { model.act("picker-open") } label: { Image(systemName: "folder.badge.plus") }.accessibilityLabel("Add project")
                 }
-                Button { model.act("proj-find", screen.search?.open == true ? "off" : "on") } label: { Image(systemName: "magnifyingglass") }
-                    .accessibilityLabel("Find a project")
                 Button { pairing = true } label: { Image(systemName: "link") }.accessibilityLabel("Hubs")
                 Menu {
                     Button("Search threads", systemImage: "magnifyingglass") { model.act("find-open", "search") }
@@ -348,6 +349,16 @@ struct ProjectsView: View {
                             titleVisibility: .visible, presenting: choosing) { s in
             ForEach(s.options, id: \.self) { o in Button(o.label) { model.act(s.action, o.value) } }
         }
+        // a long-pressed row's or project's menu: an item sends its action
+        // (Delete and Remove then ask through the deleting/removing alerts);
+        // let go without a choice, the menu is closed ("menu-close")
+        .confirmationDialog(screen.rowMenu?.title ?? "", isPresented: menuUp, titleVisibility: .visible, presenting: screen.rowMenu) { m in
+            ForEach(m.items, id: \.self) { i in
+                Button(i.label, role: i.tone == "danger" ? .destructive : nil) { pick(m, i) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .onChange(of: screen.rowMenu) { _, m in if m == nil { shutMenu = nil } }
         .sheet(isPresented: Binding(get: { screen.folders != nil }, set: { if !$0 { model.act("proj-close") } })) {
             if let f = screen.folders { FoldersSheet(model: model, folders: f) }
         }
@@ -358,16 +369,93 @@ struct ProjectsView: View {
             if let f = model.screen?.newRoom { NewRoomSheet(model: model, form: f) }
         }
     }
+
+    // the row menu shows while the screen has one this dialog has not let go of
+    private var menuUp: Binding<Bool> {
+        Binding(get: { screen.rowMenu.map { $0 != shutMenu } ?? false }, set: { up in if !up { letGo() } })
+    }
+
+    private func pick(_ m: RowMenu, _ i: MenuItem) {
+        shutMenu = m
+        model.act(i.action, i.value)
+    }
+
+    // let go of: an item picked has closed or changed the menu by now; if
+    // not, none was, and the menu is closed
+    private func letGo() {
+        guard let m = screen.rowMenu else { return }
+        shutMenu = m
+        let model = self.model
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            let still: RowMenu? = model.screen?.rowMenu
+            if still == m { model.act("menu-close", "") }
+        }
+    }
+
+    // a project: its threads, the snoozed and settled shelves, the archived
+    // one; its header (faded when quiet) takes a long press for its menu
+    @ViewBuilder
+    private func projectSection(_ p: Project) -> some View {
+        Section {
+            ForEach(p.threads) { ThreadRow(model: model, row: $0) { choosing = $0 } }
+            if !p.snoozed.isEmpty {
+                Text(p.snoozedShelf).font(.subheadline).foregroundStyle(.secondary)
+                ForEach(p.snoozed) { ThreadRow(model: model, row: $0) { choosing = $0 } }
+            }
+            if !p.settled.isEmpty {
+                Button { model.act("toggle-settled", p.id) } label: {
+                    HStack {
+                        Text(p.shelf).font(.subheadline)
+                        Spacer()
+                        Image(systemName: p.open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                .tint(.secondary)
+                if p.open { ForEach(p.settled) { ThreadRow(model: model, row: $0) { choosing = $0 } } }
+            }
+            if let arch = p.archived, !arch.isEmpty, let v = p.value {
+                Button { model.act("toggle-settled", v) } label: {
+                    HStack {
+                        Text("Archived \(arch.count)").font(.subheadline)
+                        Spacer()
+                        Image(systemName: p.archOpen == true ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                .tint(.secondary)
+                if p.archOpen == true { ForEach(arch) { ThreadRow(model: model, row: $0) { choosing = $0 } } }
+            }
+        } header: {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(p.title)
+                    Text(p.machine.isEmpty ? p.root : p.machine + ": " + p.root)
+                        .font(.caption2).textCase(nil).lineLimit(1).truncationMode(.head)
+                }
+                .opacity(p.quiet == true ? 0.5 : 1)
+                Spacer()
+                Button { model.act("new-thread", p.id) } label: { Image(systemName: "square.and.pencil") }
+                    .accessibilityLabel("New thread")
+            }
+            .contentShape(Rectangle())
+            .onLongPressGesture(minimumDuration: 0.4) {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                model.act("proj-menu", p.id)
+            }
+            .accessibilityAction(named: "Menu") { model.act("proj-menu", p.id) }
+        }
+    }
 }
 
-// the project search's field: typing filters the list ("proj-find-q"),
-// return goes to the first project shown ("proj-go"), the x shuts it
+// the list's search field, always shown, never focused on its own:
+// typing filters the list ("proj-find-q"), return goes to the first
+// project shown ("proj-go"), the x empties it
 private struct SearchField: View {
     let model: AppModel
     let search: Search
     let first: String?
     @State private var text = ""
-    @FocusState private var focused: Bool
+    // what was typed here: a screen still echoing it never overwrites the field
+    @State private var typed: Set<String> = []
 
     var body: some View {
         HStack {
@@ -375,15 +463,23 @@ private struct SearchField: View {
             TextField(search.hint, text: $text)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .focused($focused)
                 .submitLabel(.go)
-                .onChange(of: text) { _, t in if t != search.query { model.act("proj-find-q", t) } }
+                .onChange(of: text) { _, t in
+                    guard t != search.query else { return }
+                    typed.insert(t)
+                    model.act("proj-find-q", t)
+                }
                 .onSubmit { if let f = first { model.act("proj-go", f) } }
-            Button { model.act("proj-find", "off") } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close search")
+            if !text.isEmpty {
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+            }
         }
-        .onAppear { text = search.query; focused = true }
+        .onAppear { text = search.query }
+        .onChange(of: search.query) { _, q in
+            if !typed.contains(q) { typed = []; text = q }
+        }
     }
 }
 
@@ -472,6 +568,7 @@ struct ThreadDestination: View {
         for p in model.screen?.projects ?? [] {
             for r in p.threads + p.snoozed + p.settled + (p.archived ?? []) where r.id == id { return r.title }
         }
+        for r in model.screen?.active ?? [] where r.id == id { return r.title }
         return ""
     }
 }
@@ -506,6 +603,8 @@ struct ThreadScreen: View {
     @FocusState private var focused: Bool
     // the image open in the lightbox
     @State private var shown: Shown?
+    // the entry that was first when earlier ones were asked for
+    @State private var keepAt: String?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -517,9 +616,18 @@ struct ThreadScreen: View {
                 VStack(alignment: .leading, spacing: 14) {
                     if let p = thread.parent { EntryRow(model: model, entry: p) { shown = $0 } }
                     if let ts = thread.tasks, !ts.isEmpty { TasksView(model: model, tasks: ts) }
+                    // scrolled up to the top while earlier entries are left
+                    // out: they are shown, no button, and the view stays on
+                    // the entry that was first
                     if let n = thread.earlier, n > 0 {
-                        Button("Show earlier") { model.act("earlier", "") }
-                            .font(.footnote).frame(maxWidth: .infinity).padding(.vertical, 4)
+                        Color.clear.frame(height: 1).background(GeometryReader { g in
+                            Color.clear.onChange(of: g.frame(in: .named("timeline")).minY) { _, y in
+                                if y > -400 && keepAt == nil {
+                                    keepAt = thread.entries.first?.id
+                                    model.act("earlier", "")
+                                }
+                            }
+                        })
                     }
                     ForEach(thread.entries) { EntryRow(model: model, entry: $0) { shown = $0 }.id($0.id) }
                     // the client's sending rows, then those tapped here it has
@@ -555,6 +663,7 @@ struct ThreadScreen: View {
                 .padding()
                 .animation(.spring(duration: 0.3), value: sending)
             }
+            .coordinateSpace(name: "timeline")
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: model.scrolls) { proxy.scrollTo("end", anchor: .bottom) }
@@ -564,6 +673,9 @@ struct ThreadScreen: View {
             // held at the bottom with no animation: a scroll animated from
             // wherever the old content left it read as the text snapping
             .onChange(of: thread.entries.last?.id) { proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: thread.entries.first?.id) {
+                if let k = keepAt { proxy.scrollTo(k, anchor: .top); keepAt = nil }
+            }
         }
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {

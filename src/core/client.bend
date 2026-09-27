@@ -507,7 +507,7 @@ def Pending.go(xs: List<&2, String>, +thread: String, +es: List<&2, M.Entry>) ->
 def Ui.pending(u: Ui, +thread: String) -> List<&2, String>:
   match u:
     case Ui{st, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ob, tr}:
-      Pending.go(Map.values(&2, String, ob), thread, Ui.entries(st))
+      Pending.go(Map.values(&2, String, ob), thread, M.State.mine(st, thread))
 
 # (a new connection has answered nothing: what the Mechanical page and a
 # part in 3D asked for is asked again)
@@ -1123,10 +1123,67 @@ def Side.rows.go(ps: List<&2, M.Project>, +ts: List<&2, M.Thread>, +navs: Map<&2
     case M.Project{+id, ti, r, +c, +rm} <> t:
       Side.rows.k(rm, M.Project{id, ti, r, c, rm}, M.Thread.filter_project(ts, id), c, navs, now, M.Nav.project_key(navs, id), Side.rows.go(t, ts, navs, now))
 
-# the sidebar's projects in order, their threads on shelves (delegated
-# child threads live under their parent instead)
-def Side.rows(+st: M.State, +now: Nat) -> List<&2, SRow>:
+# the projects by order key, then latest activity, their threads on
+# shelves (delegated child threads live under their parent instead)
+def Side.sorted(+st: M.State, +now: Nat) -> List<&2, SRow>:
   PSlot.rows(List.sort(~PSlot, ~PSlot.before, Side.rows.go(Ui.projects(st), Kids.keep(Ui.threads(st), Kids.set(st)), M.State.navs(st), now)))
+
+# Quiet projects
+# --------------
+# A project is live while it has a thread on a shelf of its own (pinned,
+# active, snoozed). The others are quiet: they sink under the live ones,
+# faded, and once they have gone Quiet.days without activity they fall
+# into the folded "Older" shelf at the end (flag "old-projects"; a search
+# shows them too). Each group keeps the order it had (laws side_groups_*).
+
+def Quiet.days() -> Nat:
+  259200n
+
+# something at `at` is still recent at now
+def Quiet.recent(+now: Nat, +at: Nat) -> Bool:
+  Nat.is_gt(Nat.add(at, Quiet.days()), now)
+
+def SRow.live(r: SRow) -> Bool:
+  match r:
+    case SRow{_, _, M.Shelves{p, a, _, _, sn}}:
+      Bool.not(Bool.and(List.is_empty(&2, M.Thread, p), Bool.and(List.is_empty(&2, M.Thread, a), List.is_empty(&2, M.Thread, sn))))
+
+def SRow.rank(r: SRow) -> Nat:
+  match r:
+    case SRow{k, _, _}:
+      k
+
+# 0 live, 1 quiet, 2 older
+def SRow.group(+now: Nat, +r: SRow) -> Nat:
+  Bool.pick(Nat, SRow.live(r), 0n, Bool.pick(Nat, Quiet.recent(now, SRow.rank(r)), 1n, 2n))
+
+type SGroups is Data:
+  SGroups{live: List<&2, SRow>, quiet: List<&2, SRow>, old: List<&2, SRow>}
+
+def SGroups.put(i: Nat, r: SRow, g: SGroups) -> SGroups:
+  match i g:
+    case 0n SGroups{l, q, o}:
+      SGroups{r <> l, q, o}
+    case 1n SGroups{l, q, o}:
+      SGroups{l, r <> q, o}
+    case _ SGroups{l, q, o}:
+      SGroups{l, q, r <> o}
+
+def Side.groups(rs: List<&2, SRow>, +now: Nat) -> SGroups:
+  match rs:
+    case Nil{}:
+      SGroups{Nil{}, Nil{}, Nil{}}
+    case +r <> t:
+      SGroups.put(SRow.group(now, r), r, Side.groups(t, now))
+
+def SGroups.all(g: SGroups) -> List<&2, SRow>:
+  match g:
+    case SGroups{l, q, o}:
+      List.append(&2, SRow, l, List.append(&2, SRow, q, o))
+
+# the sidebar's projects in order: live, quiet, older
+def Side.rows(+st: M.State, +now: Nat) -> List<&2, SRow>:
+  SGroups.all(Side.groups(Side.sorted(st, now), now))
 
 # Finding a project: while the sidebar's search is open (the "psearch"
 # flag) it shows only the projects whose name fuzzy-matches the query, form
@@ -1153,8 +1210,10 @@ def Find.q.k(on: Bool, +dr: Map<&2, String>) -> String:
     case False{}:
       ""
 
+# the field sits in the sidebar all the time now, so its query holds
+# whether or not "psearch" (the phones' old toggle) is on
 def Find.q(+op: Map<&2, Bool>, +dr: Map<&2, String>) -> String:
-  Find.q.k(Flag.get(op, "psearch"), dr)
+  Find.q.k(True{}, dr)
 
 # the projects the sidebar shows, in order
 def Side.shown(+st: M.State, +now: Nat, +q: String) -> List<&2, SRow>:
@@ -1182,11 +1241,23 @@ def Side.visible.go(rs: List<&2, SRow>, +open: Map<&2, Bool>) -> List<&2, String
       List.concat(&2, String, [Side.ids(p), Side.ids(a), Side.ids(sn), Side.when(Flag.get(open, id), Side.ids(st)),
         Side.when(Flag.get(open, "arch:" ++ id), Side.ids(M.Archive.of(h))), Side.visible.go(t, open)])
 
+# the projects shown with the Older shelf folded unless it is open or a
+# search is on
+def Side.fold.k(show: Bool, g: SGroups) -> List<&2, SRow>:
+  match show g:
+    case True{} x:
+      SGroups.all(x)
+    case False{} SGroups{l, q, _}:
+      List.append(&2, SRow, l, q)
+
+def Side.unfolded(rs: List<&2, SRow>, +op: Map<&2, Bool>, +q: String, +now: Nat) -> List<&2, SRow>:
+  Side.fold.k(Bool.or(Flag.get(op, "old-projects"), Bool.not(String.is_empty(q))), Side.groups(rs, now))
+
 # the threads the sidebar shows, top to bottom (collapsed shelves left out)
 def Side.visible(u: Ui) -> List<&2, String>:
   match u:
     case Ui{+st, _, +dr, _, +op, _, +now, _, _, _, _, _, _, _, _, _, _}:
-      Side.visible.go(Side.shown(st, now, Find.q(op, dr)), op)
+      Side.visible.go(Side.unfolded(Side.shown(st, now, Find.q(op, dr)), op, Find.q(op, dr), now), op)
 
 def Side.nth(xs: List<&2, String>, i: Nat) -> String:
   match xs i:
@@ -1267,7 +1338,7 @@ def Side.pids(rs: List<&2, SRow>) -> List<&2, String>:
 def Side.projects(u: Ui) -> List<&2, String>:
   match u:
     case Ui{+st, _, +dr, _, +op, _, +now, _, _, _, _, _, _, _, _, _, _}:
-      Side.pids(Side.shown(st, now, Find.q(op, dr)))
+      Side.pids(Side.unfolded(Side.shown(st, now, Find.q(op, dr)), op, Find.q(op, dr), now))
 
 def Side.only.k(keep: Bool, r: SRow, rest: List<&2, SRow>) -> List<&2, SRow>:
   match keep:
@@ -1690,7 +1761,7 @@ def Links.recent.go(es: List<&2, M.Entry>, +now: Nat, live: Bool) -> List<&2, Li
 
 # messages between threads in the last 15 minutes (the sidebar draws them)
 def Links.recent(s: M.State, +now: Nat) -> List<&2, Link2>:
-  Links.recent.go(Ui.entries(s), now, True{})
+  Links.recent.go(M.State.links(s), now, True{})
 
 # Terminals
 # ---------
@@ -2056,6 +2127,275 @@ def Ui.scratch_set(u: Ui, +k: String, v: String) -> Ui:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
       Ui{st, sel, Map.set(&2, String, dr, k, v), live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
 
+# The active view
+# ---------------
+# The "sidebar.view" setting: "projects" (the default) or "active". The
+# active view lists every thread on a live shelf of any project, those
+# that need the person first (Urg.rank: an approval or a question, then a
+# failure, then a finished or stopped turn, then work in progress, then
+# idle; pinned ahead within each), newest first within each; then the
+# threads settled in the last Quiet.days, faded, newest settled first,
+# for bringing back. Snoozed threads return when they wake. A search
+# keeps the threads whose title or project's name matches.
+
+def Side.view(+st: M.State) -> String:
+  Bool.pick(String, String.eq(M.Setting.get(st, "sidebar.view", ""), "active"), "active", "projects")
+
+# how much a thread waits on the person (higher first)
+def Urg.rank(p: M.Phase) -> Nat:
+  match p:
+    case M.PhApproval{}:
+      8n
+    case M.PhInput{}:
+      7n
+    case M.PhFailed{}:
+      6n
+    case M.PhComplete{}:
+      5n
+    case M.PhStopped{}:
+      4n
+    case M.PhQueued{}:
+      4n
+    case M.PhWorking{}:
+      2n
+    case M.PhMonitoring{_}:
+      2n
+    case M.PhIdle{}:
+      0n
+
+# a row's key: its phase's rank, pinned ahead of unpinned
+def Urg.key(p: M.Phase, pinned: Bool) -> Nat:
+  Nat.add(Nat.mul(Urg.rank(p), 2n), Bool.pick(Nat, pinned, 1n, 0n))
+
+# urg: Urg.key (0 for a faded row); at: its last activity, or when it
+# settled; faded: settled, shown to bring back
+type ARow is Data:
+  ARow{urg: Nat, at: Nat, thread: M.Thread, project: String, title: String, faded: Bool}
+
+def ARow.before(a: ARow, b: ARow) -> Bool:
+  match a b:
+    case ARow{+ua, +aa, _, _, _, _} ARow{+ub, +ab, _, _, _, _}:
+      Bool.pick(Bool, Nat.is_eq(ua, ub), Nat.is_ge(aa, ab), Nat.is_gt(ua, ub))
+
+def ARow.faded(r: ARow) -> Bool:
+  match r:
+    case ARow{_, _, _, _, _, f}:
+      f
+
+def Active.pinned(t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, _, _, _, _, p, _, _, _, _, _, _, _, _, _}:
+      p
+
+def Active.activity(t: M.Thread) -> Nat:
+  match t:
+    case M.Thread{_, _, _, _, a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      a
+
+def Active.settled_at(t: M.Thread) -> Nat:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, _, _, sa, _, _, _, _, _, _, _, _, _, _, _}:
+      sa
+
+def Active.title(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, _, ti, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      ti
+
+def Active.live(ts: List<&2, M.Thread>, +st: M.State, +pid: String, +pt: String, acc: List<&2, ARow>) -> List<&2, ARow>:
+  match ts:
+    case Nil{}:
+      acc
+    case +t <> r:
+      Active.live(r, st, pid, pt, ARow{Urg.key(Side.phase(st, t), Active.pinned(t)), Active.activity(t), t, pid, pt, False{}} <> acc)
+
+def Active.keep(keep: Bool, r: ARow, acc: List<&2, ARow>) -> List<&2, ARow>:
+  match keep:
+    case True{}:
+      r <> acc
+    case False{}:
+      acc
+
+def Active.settled(ts: List<&2, M.Thread>, +now: Nat, +pid: String, +pt: String, acc: List<&2, ARow>) -> List<&2, ARow>:
+  match ts:
+    case Nil{}:
+      acc
+    case +t <> r:
+      Active.settled(r, now, pid, pt, Active.keep(Quiet.recent(now, Active.settled_at(t)), ARow{0n, Active.settled_at(t), t, pid, pt, True{}}, acc))
+
+type AParts is Data:
+  AParts{live: List<&2, ARow>, faded: List<&2, ARow>}
+
+def Active.gather(rs: List<&2, SRow>, +st: M.State, +now: Nat, acc: AParts) -> AParts:
+  match rs:
+    case Nil{}:
+      acc
+    case SRow{_, M.Project{+id, +ti, _, _, _}, M.Shelves{p, a, se, _, _}} <> t:
+      match acc:
+        case AParts{l, f}:
+          Active.gather(t, st, now, AParts{Active.live(p, st, id, ti, Active.live(a, st, id, ti, l)), Active.settled(se, now, id, ti, f)})
+
+def Active.match(+q: String, r: ARow) -> Bool:
+  match r:
+    case ARow{_, _, +t, _, +pt, _}:
+      Bool.or(Nat.is_gt(FZ.Fuzzy.score(Active.title(t), q), 0n), Nat.is_gt(FZ.Fuzzy.score(pt, q), 0n))
+
+def Active.find(rs: List<&2, ARow>, +q: String) -> List<&2, ARow>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      Active.keep(Active.match(q, r), r, Active.find(t, q))
+
+def Active.all(g: AParts) -> List<&2, ARow>:
+  match g:
+    case AParts{l, f}:
+      List.append(&2, ARow, List.sort(~ARow, ~ARow.before, l), List.sort(~ARow, ~ARow.before, f))
+
+# the active view's rows, top to bottom (laws active_*)
+def Active.rows(+st: M.State, +now: Nat, +q: String) -> List<&2, ARow>:
+  Active.find(Active.all(Active.gather(Side.rows(st, now), st, now, AParts{Nil{}, Nil{}})), q)
+
+def Active.ids(rs: List<&2, ARow>) -> List<&2, String>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case ARow{_, _, t, _, _, _} <> r:
+      M.Thread.id(t) <> Active.ids(r)
+
+# Row menus
+# ---------
+# A right-click on a thread's row or a project's name (a long press on a
+# phone) opens its menu: "row-menu id" or "proj-menu id" (the same again
+# shuts it), kept as "@menu" ("t:<id>" or "p:<id>") in the scratch.
+# Picking an item takes its action and shuts the menu, except Delete and
+# Remove, which ask first: their first pick arms them and the menu stays
+# open saying so (law menu_delete_asks). Anything else shuts it.
+
+# what an item says, what it sends and its tone ("danger" or "")
+type MItem is Data:
+  MItem{label: String, action: String, value: String, tone: String}
+
+def Menu.snoozes(+id: String) -> List<&2, MItem>:
+  [MItem{"Snooze 1 hour", "row-snooze", id ++ "|1h", ""}, MItem{"Snooze until tomorrow", "row-snooze", id ++ "|tomorrow", ""},
+   MItem{"Snooze 1 week", "row-snooze", id ++ "|1w", ""}]
+
+def Menu.del(+id: String, armed: Bool) -> MItem:
+  MItem{Bool.pick(String, armed, "Click again to delete", "Delete"), "row-delete", id, "danger"}
+
+def Menu.pin(pinned: Bool, +id: String) -> MItem:
+  match pinned:
+    case True{}:
+      MItem{"Unpin", "row-unpin", id, ""}
+    case False{}:
+      MItem{"Pin", "row-pin", id, ""}
+
+def Menu.thread.k(sh: M.Shelf, pinned: Bool, +id: String, armed: Bool) -> List<&2, MItem>:
+  match sh:
+    case M.Settled{}:
+      [MItem{"Bring back", "row-unsettle", id, ""}, MItem{"Archive", "row-archive", id, ""}, Menu.del(id, armed)]
+    case M.Snoozed{}:
+      [MItem{"Wake", "row-snooze", id ++ "|off", ""}, MItem{"Settle", "row-settle", id, ""}, MItem{"Archive", "row-archive", id, ""}, Menu.del(id, armed)]
+    case M.Hidden{}:
+      [MItem{"Unarchive", "row-unarchive", id, ""}, Menu.del(id, armed)]
+    case _:
+      List.concat(&2, MItem, [[Menu.pin(pinned, id), MItem{"Settle", "row-settle", id, ""}], Menu.snoozes(id),
+        [MItem{"Archive", "row-archive", id, ""}, Menu.del(id, armed)]])
+
+# a thread's menu (armed: its Delete was picked once)
+def Menu.thread(+st: M.State, +now: Nat, +id: String, armed: Bool) -> List<&2, MItem>:
+  Menu.thread.k(M.Shelf.at(Ui.thread(st, id), Side.until(st, id), now), Active.pinned(Ui.thread(st, id)), id, armed)
+
+def Menu.look(rich: Bool, +id: String) -> List<&2, MItem>:
+  match rich:
+    case True{}:
+      [MItem{"Colour and icon", "look", id, ""}]
+    case False{}:
+      Nil{}
+
+# a project's menu (rich: the window and the web, which have the badge
+# editor; armed: Remove was picked once)
+def Menu.project(+id: String, armed: Bool, rich: Bool) -> List<&2, MItem>:
+  List.concat(&2, MItem, [[MItem{"New thread", "new-thread", id, ""}], Menu.look(rich, id),
+    [MItem{Bool.pick(String, armed, "Click again to remove", "Remove project"), "proj-remove", id, "danger"}]])
+
+# the menu open ("" for none), its kind ("t" or "p") and its id
+def Menu.open(+u: Ui) -> String:
+  Ui.scratch(u, "@menu")
+
+def Menu.kind(+m: String) -> String:
+  String.take(m, 1n)
+
+def Menu.id(+m: String) -> String:
+  String.drop(m, 2n)
+
+def Menu.items.k(thread: Bool, +u: Ui, +id: String, rich: Bool) -> List<&2, MItem>:
+  match thread:
+    case True{}:
+      Menu.thread(Side.st(u), Side.now(u), id, String.eq(Ui.scratch(u, "@del"), id))
+    case False{}:
+      Menu.project(id, String.eq(Ui.scratch(u, "@rm"), id), rich)
+
+# the open menu's items (none while shut)
+def Menu.items(+u: Ui, rich: Bool) -> List<&2, MItem>:
+  Bool.pick(List<&2, MItem>, String.is_empty(Menu.open(u)), Nil{}, Menu.items.k(String.eq(Menu.kind(Menu.open(u)), "t"), u, Menu.id(Menu.open(u)), rich))
+
+# its heading: the thread's title or the project's name
+def Menu.title(+u: Ui) -> String:
+  Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "t"), Active.title(Ui.thread(Side.st(u), Menu.id(Menu.open(u)))),
+    Ui.project_title(Side.st(u), Menu.id(Menu.open(u))))
+
+# opening one disarms any delete or remove; the same again shuts it
+def Menu.set(+u: Ui, +m: String) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@del", ""), "@rm", ""), "@menu", Bool.pick(String, String.eq(Menu.open(u), m), "", m))
+
+def Menu.actions() -> List<&2, String>:
+  ["row-menu", "proj-menu", "menu-close", "row-pin", "row-unpin", "row-archive", "row-unarchive", "side-older"]
+
+def Menu.shut(a: Act) -> Act:
+  match a:
+    case Act{u, cs}:
+      Act{Ui.scratch_set(u, "@menu", ""), cs}
+
+def Menu.act.k(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n:
+      Act{Menu.set(u, "t:" ++ value), Nil{}}
+    case 1n:
+      Act{Menu.set(u, "p:" ++ value), Nil{}}
+    case 2n:
+      Act{Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@menu", ""), "@del", ""), "@rm", ""), Nil{}}
+    case 3n:
+      Menu.shut(Ui.rpc(u, "thread.pin", [J.KV{"thread", J.Str{value}}]))
+    case 4n:
+      Menu.shut(Ui.rpc(u, "thread.unpin", [J.KV{"thread", J.Str{value}}]))
+    case 5n:
+      Menu.shut(Ui.rpc(u, "thread.archive", [J.KV{"thread", J.Str{value}}]))
+    # the folded shelf of older projects opened or shut
+    case 7n:
+      Ui.toggle_settled(u, "old-projects")
+    case _:
+      Menu.shut(Ui.rpc(u, "thread.unarchive", [J.KV{"thread", J.Str{value}}]))
+
+# after any other action: the menu stays open only while shut already, or
+# while a Delete or Remove it armed waits for its second pick
+def Menu.keep(+action: String, +u: Ui) -> Bool:
+  Bool.or(String.is_empty(Menu.open(u)),
+    Bool.or(Bool.and(String.eq(action, "row-delete"), Bool.not(String.is_empty(Ui.scratch(u, "@del")))),
+      Bool.and(String.eq(action, "proj-remove"), Bool.not(String.is_empty(Ui.scratch(u, "@rm"))))))
+
+def Menu.after.k(keep: Bool, a: Act) -> Act:
+  match keep:
+    case True{}:
+      a
+    case False{}:
+      Menu.shut(a)
+
+def Menu.after(+action: String, a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Menu.after.k(Menu.keep(action, u), Act{u, cs})
+
 # A project's badge editor ("@look" is the project whose editor is open):
 # "look" opens it for a project, or closes it when it is open for that
 # one (or for ""); "look-set" sets project.color.<id> or project.icon.<id>
@@ -2103,8 +2443,24 @@ def Find.go.k(none: Bool, +u: Ui, +pid: String, +home: String) -> Act:
 def Find.go.p(+u: Ui, +pid: String) -> Act:
   Bool.pick(Act, String.is_empty(pid), Act{u, Nil{}}, Find.go.k(String.is_empty(Side.home(u, pid)), u, pid, Side.home(u, pid)))
 
-def Find.go(+u: Ui, +v: String) -> Act:
+def Find.go.projects(+u: Ui, +v: String) -> Act:
   Find.go.p(Ui.scratch_set(Ui.flag_off(u, "psearch"), "@f.pq", ""), Bool.pick(String, String.is_empty(v), Side.first(Side.projects(u)), v))
+
+# in the active view Enter opens the first thread the search kept
+def Find.go.active(+u: Ui) -> Act:
+  Bool.pick(Act, List.is_empty(&2, String, Active.ids(Active.rows(Side.st(u), Side.now(u), Ui.scratch(u, "@f.pq")))), Act{u, Nil{}},
+    Ui.select(Ui.scratch_set(Ui.flag_off(u, "psearch"), "@f.pq", ""), Side.first(Active.ids(Active.rows(Side.st(u), Side.now(u), Ui.scratch(u, "@f.pq"))))))
+
+def Find.go.k2(active: Bool, +u: Ui, +v: String) -> Act:
+  match active:
+    case True{}:
+      Find.go.active(u)
+    case False{}:
+      Find.go.projects(u, v)
+
+# (a phone names the project it means: v)
+def Find.go(+u: Ui, +v: String) -> Act:
+  Find.go.k2(Bool.and(String.is_empty(v), String.eq(Side.view(Side.st(u)), "active")), u, v)
 
 def Ui.info_set(u: Ui, +k: String, +v: String) -> Ui:
   match u:
@@ -3718,9 +4074,39 @@ def Bots.token.clear(u: Ui) -> Ui:
 def Bots.token(u: Ui, +hook: String, +op: String) -> Act:
   Ui.rpc(Bots.token.clear(u), "bots.hook_token", [J.KV{"hook", J.Str{hook}}, J.KV{"op", J.Str{op}}])
 
-def Bots.google(+u: Ui, +op: String) -> Act:
+def Bots.google.rpc(+u: Ui, +op: String, +account: String) -> Act:
   Ui.rpc(u, "bots.google", [J.KV{"op", J.Str{op}}, J.KV{"clientId", J.Str{Bots.field(u, "gid")}}, J.KV{"clientSecret", J.Str{Bots.field(u, "gsecret")}},
-    J.KV{"pasted", J.Str{Bots.field(u, "gpaste")}}])
+    J.KV{"pasted", J.Str{Bots.field(u, "gpaste")}}, J.KV{"account", J.Str{account}}])
+
+# "signout:<address>" signs one account out; "disconnect" signs out every one
+def Bots.google.k(one: Bool, +u: Ui, +op: String) -> Act:
+  match one:
+    case True{}:
+      Bots.google.rpc(u, "disconnect", String.drop(op, 8n))
+    case False{}:
+      Bots.google.rpc(u, op, "")
+
+def Bots.google(+u: Ui, +op: String) -> Act:
+  Bots.google.k(String.starts_with(op, "signout:"), u, op)
+
+def Bots.google.keep(empty: Bool, x: String, rest: List<&2, String>) -> List<&2, String>:
+  match empty:
+    case True{}:
+      rest
+    case False{}:
+      x <> rest
+
+def Bots.google.full(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      Bots.google.keep(String.is_empty(x), x, Bots.google.full(t))
+
+# the addresses signed in, the default first (the hub's "googleAccounts",
+# one a line)
+def Bots.google.accts(+u: Ui) -> List<&2, String>:
+  Bots.google.full(String.split(Ui.scratch(u, "@google.accts"), '\n'))
 
 # Voice
 # -----
@@ -4038,10 +4424,18 @@ def Bots.reply.bot(+o: J.Json, u: Ui) -> Ui:
 def Bots.reply.put(+o: J.Json, +key: String, +into: String, +u: Ui) -> Ui:
   Bool.pick(Ui, String.is_empty(J.Json.get_str(o, key, "")), u, Ui.scratch_set(u, into, J.Json.get_str(o, key, "")))
 
+# a key the answer has, even when empty (no account left is news)
+def Bots.reply.has(m: Maybe<&2, J.Json>, +into: String, +u: Ui) -> Ui:
+  match m:
+    case Some{J.Str{s}}:
+      Ui.scratch_set(u, into, s)
+    case _:
+      u
+
 def Bots.reply(+o: J.Json, +u: Ui) -> Ui:
-  Voice.reply(o, Bots.reply.put(o, "googleUrl", "@google.url", Bots.reply.put(o, "google", "@google", Bots.reply.put(o, "invite", "@peer.invite",
+  Voice.reply(o, Bots.reply.has(J.Json.get(o, "googleAccounts"), "@google.accts", Bots.reply.put(o, "googleUrl", "@google.url", Bots.reply.put(o, "google", "@google", Bots.reply.put(o, "invite", "@peer.invite",
     Bots.reply.put(o, "secret", "@hook.secret", Bots.reply.put(o, "hook", "@hook.id",
-      Bots.reply.put(o, "token", "@hook.token", Bots.reply.put(o, "tokenHook", "@hook.tokfor", Bots.reply.put(o, "tokenUrl", "@hook.tokurl", Bots.reply.bot(o, u))))))))))
+      Bots.reply.put(o, "token", "@hook.token", Bots.reply.put(o, "tokenHook", "@hook.tokfor", Bots.reply.put(o, "tokenUrl", "@hook.tokurl", Bots.reply.bot(o, u)))))))))))
 
 # an answer: its request leaves the outbox; a diff opens the diff view
 def Ui.reply(u: Ui, +o: J.Json) -> Ui:
@@ -4093,6 +4487,21 @@ def Bots.wanted(+u: Ui) -> Ui:
 def Ui.recv(+u: Ui, +o: J.Json) -> Ui:
   Ui.reselect(Ui.sel(u), Bots.wanted(Ui.recv.k(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice"], J.Json.get_str(o, "t", "")), u, o)))
 
+def Ui.shows.k(delta: Bool, +sel: String, +o: J.Json) -> Bool:
+  match delta:
+    case True{}:
+      String.eq(J.Json.get_str(o, "thread", ""), sel)
+    case False{}:
+      True{}
+
+# whether a message from the server can change what the window shows: a
+# thread's streamed text is drawn only while that thread is open, so
+# another thread's delta asks for no frame (with fifty agents streaming,
+# a frame per delta kept the window drawing all the time; laws
+# shows_other_delta, shows_own_delta, shows_changes)
+def Ui.shows(+u: Ui, +o: J.Json) -> Bool:
+  Ui.shows.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), Ui.sel(u), o)
+
 # a message from the server, with what to send: a (re)connection (the
 # server's log arrives first on each) sends the outbox again, so nothing
 # the user sent is lost to a dropped link
@@ -4127,12 +4536,26 @@ def Page.earlier.k(+u: Ui, +thread: String) -> Ui:
 def Page.earlier(+u: Ui, +value: String) -> Ui:
   Page.earlier.k(u, Bool.pick(String, String.is_empty(value), Ui.sel.of(u), value))
 
+def Bots.tab.with(a: Act) -> Act:
+  match a:
+    case Act{u, cs}:
+      Act{u, Scroll{} <> cs}
+
+# a bot's tab; Settings asks Google's status too, so the accounts signed
+# in (perhaps in a browser since) are the hub's
+def Bots.tab.k(settings: Bool, u: Ui) -> Act:
+  match settings:
+    case True{}:
+      Bots.tab.with(Bots.google.rpc(u, "status", ""))
+    case False{}:
+      Act{u, [Scroll{}]}
+
 def Bots.act(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 0n:
       Bots.select(u, value)
     case 1n:
-      Act{Ui.scratch_set(u, "@btab", value), [Scroll{}]}
+      Bots.tab.k(String.eq(value, "settings"), Ui.scratch_set(u, "@btab", value))
     case 2n:
       Act{Bots.flag(u, "@bnew"), [Focus{"bot-name"}]}
     case 3n:
@@ -4362,8 +4785,15 @@ def Ui.act.k(i: Nat, u: Ui, +value: String) -> Act:
       Bots.act(Nat.sub(i, 77n), u, value)
 
 # a user action with its value
+def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Act:
+  match menu:
+    case True{}:
+      Menu.act.k(i, u, value)
+    case False{}:
+      Menu.after(action, Ui.reselect.act(Ui.sel(u), Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)))
+
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Mpage.sync(Ui.reselect.act(Ui.sel(u), Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)))
+  Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 8n), C.Codec.pos(Menu.actions(), action), u, action, value))
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

@@ -16,6 +16,8 @@ data class Swipe(val label: String, val action: String, val value: String, val t
 data class Row(
     val id: String, val title: String, val state: String, val ago: String, val pinned: Boolean,
     val lead: List<Swipe>, val trail: List<Swipe>, val status: String = "",
+    // the active view's rows: the project's name, and faded (settled lately)
+    val project: String = "", val faded: Boolean = false,
 )
 
 // machine: the hub it is on, named when the phone has several
@@ -25,12 +27,21 @@ data class Project(
     val shelf: String, val settled: List<Row>,
     // the Archived shelf: "toggle-settled" with value opens or shuts it
     val value: String = "", val archOpen: Boolean = false, val archived: List<Row> = emptyList(),
+    // no live thread: its header shows faded, after the live ones
+    val quiet: Boolean = false,
 )
+
+// the folded shelf of older projects at the end of the list ("side-older")
+data class Older(val count: Int, val open: Boolean)
+
+// a row's or project's menu (a long press): each item sends action with value
+data class RowMenuItem(val label: String, val action: String, val value: String, val tone: String)
+data class RowMenu(val title: String, val items: List<RowMenuItem>)
 
 // a delete a row asked for, waiting for yes ("row-delete" id) or no
 data class Deleting(val id: String, val title: String, val body: String, val yes: String, val no: String)
 
-// the project search over the list: open, its query ("proj-find-q"), the hint
+// the list's search, always at its top: its query ("proj-find-q"), the hint
 data class Search(val open: Boolean, val query: String, val hint: String)
 
 // the project picker: its path field, the field's hint, an error, and the
@@ -227,7 +238,7 @@ data class RoutineForm(val open: Boolean, val id: String, val name: String, val 
 data class BotHook(val id: String, val name: String, val path: String, val last: String, val count: Int)
 data class BotPeer(val id: String, val name: String, val url: String)
 // Google's sign-in state and the OAuth client's fields ("google" op)
-data class BotGoogle(val status: String, val url: String, val gid: String, val gsecret: String, val gpaste: String)
+data class BotGoogle(val status: String, val url: String, val gid: String, val gsecret: String, val gpaste: String, val accounts: List<String>)
 data class BotSettings(
     val persona: String, val personaField: String, val invite: String, val purl: String, val join: String,
     val google: BotGoogle, val peers: List<BotPeer>,
@@ -260,6 +271,9 @@ data class Screen(
     val removing: Deleting? = null, val search: Search? = null,
     // the hub's theme ("light", "dark"; "" follows the phone's)
     val theme: String = "",
+    // "projects" (sections) or "active" (one flat list of rows, active)
+    val view: String = "projects", val active: List<Row> = emptyList(),
+    val older: Older? = null, val rowMenu: RowMenu? = null,
 )
 
 data class Cmd(
@@ -291,6 +305,7 @@ private fun swipe(o: JSONObject) = Swipe(
 private fun row(o: JSONObject) = Row(
     o.optString("id"), o.optString("title"), o.optString("state"), o.optString("ago"), o.optBoolean("pinned"),
     o.optJSONArray("lead").map(::swipe), o.optJSONArray("trail").map(::swipe), o.optString("status"),
+    o.optString("project"), o.optBoolean("faded"),
 )
 
 private fun chips(a: JSONArray?) =
@@ -421,7 +436,7 @@ private fun botView(o: JSONObject) = BotView(
         val g = st.optJSONObject("google") ?: JSONObject()
         BotSettings(st.optString("persona"), st.optString("personaField"), st.optString("invite"), st.optString("purl"),
             st.optString("join"),
-            BotGoogle(g.optString("status"), g.optString("url"), g.optString("gid"), g.optString("gsecret"), g.optString("gpaste")),
+            BotGoogle(g.optString("status"), g.optString("url"), g.optString("gid"), g.optString("gsecret"), g.optString("gpaste"), strs(g.optJSONArray("accounts"))),
             st.optJSONArray("peers").map { BotPeer(it.optString("id"), it.optString("name"), it.optString("url")) })
     },
     o.optJSONArray("posts").map {
@@ -436,7 +451,7 @@ fun parseScreen(o: JSONObject) = Screen(
         Project(it.optString("id"), it.optString("title"), it.optString("root"), it.optString("machine"), it.optBoolean("open"),
             it.optJSONArray("threads").map(::row), it.optString("snoozedShelf"), it.optJSONArray("snoozed").map(::row),
             it.optString("shelf"), it.optJSONArray("settled").map(::row),
-            it.optString("value"), it.optBoolean("archOpen"), it.optJSONArray("archived").map(::row))
+            it.optString("value"), it.optBoolean("archOpen"), it.optJSONArray("archived").map(::row), it.optBoolean("quiet"))
     },
     o.optJSONObject("thread")?.let(::thread),
     island(o.optJSONObject("island")),
@@ -477,6 +492,14 @@ fun parseScreen(o: JSONObject) = Screen(
     },
     o.optJSONObject("search")?.let { Search(it.optBoolean("open"), it.optString("query"), it.optString("hint")) },
     o.optString("theme"),
+    view = o.optString("view").ifEmpty { "projects" },
+    active = o.optJSONArray("active").map(::row),
+    older = o.optJSONObject("older")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
+    rowMenu = o.optJSONObject("rowMenu")?.let { mn ->
+        RowMenu(mn.optString("title"), mn.optJSONArray("items").map {
+            RowMenuItem(it.optString("label"), it.optString("action"), it.optString("value"), it.optString("tone"))
+        })
+    },
 )
 
 fun parseCmds(o: JSONObject): List<Cmd> =

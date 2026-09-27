@@ -540,7 +540,7 @@ def Google.auth_url.at(+base: String, +client_id: String, +redirect: String, +ch
   base ++ "?" ++ String.join([Url.pair("client_id", client_id), Url.pair("redirect_uri", redirect),
     "response_type=code", Url.pair("scope", String.join(scopes, " ")),
     Url.pair("code_challenge", challenge), "code_challenge_method=S256", Url.pair("state", state),
-    "access_type=offline", "prompt=consent"], "&")
+    "access_type=offline", "prompt=select_account%20consent"], "&")
 
 # the URL the user opens to allow access (a refresh token comes back
 # because of access_type=offline and prompt=consent)
@@ -553,9 +553,10 @@ def Google.auth_url(+client_id: String, +redirect: String, +challenge: String, +
 # connecting is one button (sign in, allow). An installed app's secret is
 # not a secret (RFC 8252 8.5); PKCE is what protects the code. Empty until
 # one is registered; BACKPLANE_GOOGLE_CLIENT_ID and _SECRET replace it.
-# It links Calendar only: Gmail's scopes are restricted, and a client
-# anyone can use needs a yearly security assessment to ask for them. A
-# client of the user's own (pasted in Settings) links Gmail too.
+# It links Gmail and Calendar. Gmail's scopes are restricted: until Google
+# verifies the client (a yearly security assessment), people click past an
+# unverified-app warning and at most 100 accounts can sign in. A client of
+# the user's own (pasted in Settings) always wins over it.
 
 type Client is Data:
   Client{id: String, secret: String}
@@ -589,31 +590,28 @@ def Google.client.k(own: Bool, mine: Client, shared: Client) -> Client:
 def Google.client(+mine: Client, shared: Client) -> Client:
   Google.client.k(Client.has(mine), mine, shared)
 
-# who signed in, and Calendar
-def Google.cal_scopes() -> List<&2, String>:
-  ["openid", "email", "https://www.googleapis.com/auth/calendar.events"]
-
+# the scopes a sign-in asks for: every one, through either client
 def Google.scopes_for(own: Bool) -> List<&2, String>:
   match own:
     case True{}:
       Google.scopes()
     case False{}:
-      Google.cal_scopes()
+      Google.scopes()
 
-# the client is the shared one: the link covers Calendar only
+# the client is the shared one
 def Google.is_shared(+id: String, +shared: String) -> Bool:
   Bool.and(Bool.not(String.is_empty(id)), String.eq(id, shared))
 
 def Google.gmail(+tool: String) -> Bool:
   String.starts_with(tool, "gmail_")
 
-# a tool the link can do
+# a tool the link can do: every one, through either client
 def Google.covers(shared: Bool, +tool: String) -> Bool:
-  Bool.or(Bool.not(shared), Bool.not(Google.gmail(tool)))
+  True{}
 
 def Google.note.who(+email: String, shared: Bool) -> String:
   Bool.pick(String, String.is_empty(email), "Connected", "Connected as " ++ email)
-    ++ Bool.pick(String, shared, " (Calendar).", " (Gmail and Calendar).")
+    ++ " (Gmail and Calendar)."
 
 def Google.note.k(connected: Bool, pending: Bool, ready: Bool, +email: String, shared: Bool) -> String:
   match connected pending ready:
@@ -630,6 +628,151 @@ def Google.note.k(connected: Bool, pending: Bool, ready: Bool, +email: String, s
 # (own or shared) is there to sign in with
 def Google.note(connected: Bool, pending: Bool, ready: Bool, +email: String, shared: Bool) -> String:
   Google.note.k(connected, pending, ready, email, shared)
+
+# Accounts
+# --------
+# Every Google account a hub signed in to, in the order they were added
+# (secrets/google.json's "accounts"). A sign-in to an address already
+# there replaces it; the first is the one a tool uses when it names none.
+
+type Acct is Data:
+  Acct{email: String, refresh: String, access: String, expiry: Nat}
+
+def Acct.email(a: Acct) -> String:
+  match a:
+    case Acct{e, _, _, _}:
+      e
+
+# an account as the secrets file keeps it (a file from before accounts
+# kept its one account's fields at its top, under the same names)
+def Acct.of(+j: J.Json) -> Acct:
+  Acct{J.Json.get_str(j, "email", ""), J.Json.get_str(j, "refresh_token", ""), J.Json.get_str(j, "access_token", ""), J.Json.get_nat(j, "expiry", 0n)}
+
+def Acct.json(a: Acct) -> J.Json:
+  match a:
+    case Acct{e, r, x, t}:
+      J.Json.obj([J.KV{"email", J.Str{e}}, J.KV{"refresh_token", J.Str{r}}, J.KV{"access_token", J.Str{x}}, J.KV{"expiry", J.Json.nat(t)}])
+
+def Accts.of.go(xs: List<&2, J.Json>) -> List<&2, Acct>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      Acct.of(x) <> Accts.of.go(t)
+
+def Accts.legacy(none: Bool, +j: J.Json) -> List<&2, Acct>:
+  match none:
+    case True{}:
+      Nil{}
+    case False{}:
+      [Acct.of(j)]
+
+def Accts.or_legacy(xs: List<&2, Acct>, +j: J.Json) -> List<&2, Acct>:
+  match xs:
+    case Nil{}:
+      Accts.legacy(String.is_empty(J.Json.get_str(j, "refresh_token", "")), j)
+    case x <> t:
+      x <> t
+
+# the accounts a secrets file holds
+def Accts.of(+j: J.Json) -> List<&2, Acct>:
+  Accts.or_legacy(Accts.of.go(J.Json.elems(J.Json.get_obj(j, "accounts"))), j)
+
+def Accts.json.go(xs: List<&2, Acct>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      Acct.json(x) <> Accts.json.go(t)
+
+def Accts.json(xs: List<&2, Acct>) -> J.Json:
+  J.Json.arr(Accts.json.go(xs))
+
+def Accts.emails(xs: List<&2, Acct>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      Acct.email(x) <> Accts.emails(t)
+
+# the head has address e
+def Accts.hit(xs: List<&2, Acct>, +e: String) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case x <> _:
+      String.eq(Acct.email(x), e)
+
+def Accts.put.go(xs: List<&2, Acct>, hit: Bool, a: Acct, +e: String) -> List<&2, Acct>:
+  match xs hit:
+    case Nil{} _:
+      [a]
+    case +x <> +t True{}:
+      a <> t
+    case +x <> +t False{}:
+      x <> Accts.put.go(t, Accts.hit(t, e), a, e)
+
+# an account signed in: it replaces the one with its address, else goes last
+def Accts.put(+xs: List<&2, Acct>, +a: Acct) -> List<&2, Acct>:
+  Accts.put.go(xs, Accts.hit(xs, Acct.email(a)), a, Acct.email(a))
+
+def Accts.drop.go(xs: List<&2, Acct>, hit: Bool, +e: String) -> List<&2, Acct>:
+  match xs hit:
+    case Nil{} _:
+      Nil{}
+    case +x <> +t True{}:
+      Accts.drop.go(t, Accts.hit(t, e), e)
+    case +x <> +t False{}:
+      x <> Accts.drop.go(t, Accts.hit(t, e), e)
+
+# every account but the one with address e
+def Accts.drop(+xs: List<&2, Acct>, +e: String) -> List<&2, Acct>:
+  Accts.drop.go(xs, Accts.hit(xs, e), e)
+
+def Accts.first(xs: List<&2, Acct>) -> Maybe<&2, Acct>:
+  match xs:
+    case Nil{}:
+      None{}
+    case x <> _:
+      Some{x}
+
+def Accts.pick.go(xs: List<&2, Acct>, hit: Bool, +e: String) -> Maybe<&2, Acct>:
+  match xs hit:
+    case Nil{} _:
+      None{}
+    case +x <> +t True{}:
+      Some{x}
+    case +x <> +t False{}:
+      Accts.pick.go(t, Accts.hit(t, e), e)
+
+def Accts.pick.k(empty: Bool, +xs: List<&2, Acct>, +e: String) -> Maybe<&2, Acct>:
+  match empty:
+    case True{}:
+      Accts.first(xs)
+    case False{}:
+      Accts.pick.go(xs, Accts.hit(xs, e), e)
+
+# the account a tool names by address; "" names the first
+def Accts.pick(+xs: List<&2, Acct>, +e: String) -> Maybe<&2, Acct>:
+  Accts.pick.k(String.is_empty(e), xs, e)
+
+def Accts.strs(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case J.Str{s} <> t:
+      s <> Accts.strs(t)
+    case _ <> t:
+      Accts.strs(t)
+
+# a status answer's addresses, one a line, for the Settings screens
+def Accts.line(+status: String) -> String:
+  String.join(Accts.strs(J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(status), J.Null{}), "accounts"))), "\n")
+
+# google_accounts' answer
+def Accts.text(+emails: List<&2, String>) -> String:
+  Bool.pick(String, List.is_empty(&2, String, emails), "No Google account is connected (Settings, Google).",
+    "Connected Google accounts (the first is the default):\n" ++ String.join(emails, "\n"))
 
 # what the redirect carried; bare when the user pasted only the code
 type CodeState is Data:
@@ -1101,7 +1244,10 @@ def Tool.def(name: String, desc: String, props: List<&2, J.KV>, req: List<&2, St
     J.KV{"inputSchema", J.Json.obj([J.KV{"type", J.Str{"object"}}, J.KV{"properties", J.Json.obj(props)}, J.KV{"required", J.Json.arr(Tool.strs(req))}])}])
 
 def Google.tool_names() -> List<&2, String>:
-  ["gmail_search", "gmail_read", "gmail_send", "calendar_events", "calendar_create"]
+  ["gmail_search", "gmail_read", "gmail_send", "calendar_events", "calendar_create", "google_accounts"]
+
+def Tool.account() -> J.KV:
+  Tool.prop("account", "string", "Which connected Google account, by address (see google_accounts); default the first.")
 
 # the tools that act for the user; the hub asks the user before each call
 def Google.asks(+tool: String) -> Bool:
@@ -1109,16 +1255,16 @@ def Google.asks(+tool: String) -> Bool:
 
 def Google.tool_defs() -> List<&2, J.Json>:
   [Tool.def("gmail_search", "Search the user's Gmail (Gmail search syntax, e.g. 'from:alice is:unread newer_than:7d'). Lists id, date, from, subject and snippet; read one with gmail_read.",
-     [Tool.prop("query", "string", "Gmail search query; empty lists the newest mail."), Tool.prop("max", "number", "How many (default 10, at most 25).")], Nil{}),
+     [Tool.prop("query", "string", "Gmail search query; empty lists the newest mail."), Tool.prop("max", "number", "How many (default 10, at most 25)."), Tool.account()], Nil{}),
    Tool.def("gmail_read", "Read one Gmail message by id: headers, attachment names and its text (at most 20 KB).",
-     [Tool.prop("id", "string", "A message id from gmail_search.")], ["id"]),
+     [Tool.prop("id", "string", "A message id from gmail_search."), Tool.account()], ["id"]),
    Tool.def("gmail_send", "Send a plain-text email from the user's Gmail. The user is asked to approve every send first.",
      [Tool.prop("to", "string", "Recipients, comma-separated."), Tool.prop("subject", "string", "Subject."),
-      Tool.prop("body", "string", "Plain-text body."), Tool.prop("cc", "string", "Cc recipients, comma-separated (optional).")], ["to", "subject", "body"]),
+      Tool.prop("body", "string", "Plain-text body."), Tool.prop("cc", "string", "Cc recipients, comma-separated (optional)."), Tool.account()], ["to", "subject", "body"]),
    Tool.def("calendar_events", "List events on the user's primary Google Calendar, recurring ones expanded, soonest first.",
      [Tool.prop("from", "string", "Start, RFC 3339 (e.g. 2026-09-24T09:00:00-07:00) or a date; default now."),
       Tool.prop("to", "string", "End, RFC 3339 or a date; default a week after from."),
-      Tool.prop("max", "number", "How many (default 20, at most 50)."), Tool.prop("query", "string", "Free-text filter (optional).")], Nil{}),
+      Tool.prop("max", "number", "How many (default 20, at most 50)."), Tool.prop("query", "string", "Free-text filter (optional)."), Tool.account()], Nil{}),
    Tool.def("calendar_create", "Create an event on the user's primary Google Calendar; attendees get invitations. The user is asked to approve it first.",
      [Tool.prop("summary", "string", "Title."),
       Tool.prop("start", "string", "Start, RFC 3339 with an offset (e.g. 2026-09-24T09:00:00-07:00), or YYYY-MM-DD when all_day."),
@@ -1126,8 +1272,9 @@ def Google.tool_defs() -> List<&2, J.Json>:
       Tool.prop("description", "string", "Details (optional)."),
       J.KV{"attendees", J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"string"}}])}, J.KV{"description", J.Str{"Attendee emails (optional)."}}])},
       Tool.prop("all_day", "boolean", "An all-day event (optional)."),
-      Tool.prop("timeZone", "string", "IANA time zone, e.g. America/Los_Angeles, for times without an offset (optional).")],
-     ["summary", "start", "end"])]
+      Tool.prop("timeZone", "string", "IANA time zone, e.g. America/Los_Angeles, for times without an offset (optional)."), Tool.account()],
+     ["summary", "start", "end"]),
+   Tool.def("google_accounts", "List the Google accounts connected in Settings, by address; the first is the default the other tools use.", Nil{}, Nil{})]
 
 # The loopback page
 # -----------------
@@ -1160,3 +1307,58 @@ def Html.esc(s: String) -> String:
 def Google.page(msg: String) -> String:
   "<!doctype html><meta charset=\"utf-8\"><title>Backplane</title><body style=\"font:14px system-ui,sans-serif;margin:40px\"><p>"
     ++ Html.esc(msg) ++ "</p></body>"
+
+# Which hub started a sign-in
+# ---------------------------
+# Google always sends the browser back to http://127.0.0.1:<port>, so a
+# sign-in started on another machine's hub lands on the hub of the machine
+# the browser runs on. The state names the hub that started it (its
+# tailnet address, base64url, after a '.'; the nonce is base64url, which
+# has no '.'), and a hub whose sign-in it is not sends the browser there.
+
+# the state for a sign-in: the nonce, and the hub's address when it has one
+def Google.state(+nonce: String, +home: String) -> String:
+  Bool.pick(String, String.is_empty(home), nonce, nonce ++ "." ++ Gb64.encode_url(U.Utf8.encode(home)))
+
+def Google.state.home.k(ps: List<&2, String>) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case b <> _:
+      U.Utf8.decode(Gb64.decode(b))
+
+# the hub a state names ("" for none)
+def Google.state.home(s: String) -> String:
+  Google.state.home.k(List.drop(&2, String, String.split(s, '.'), 1n))
+
+def Google.hop.rest(+url: String) -> String:
+  Bool.pick(String, String.starts_with(url, "https://"), String.drop(url, 8n),
+    Bool.pick(String, String.starts_with(url, "http://"), String.drop(url, 7n), ""))
+
+def Google.hop.host(+rest: String) -> String:
+  Maybe.default(&2, String, List.head(&2, String, String.split(rest, ':')), "")
+
+def Google.hop.plain(+rest: String) -> Bool:
+  Bool.not(Bool.or(String.contains(rest, "/"), Bool.or(String.contains(rest, "@"),
+    Bool.or(String.contains(rest, "?"), Bool.or(String.contains(rest, "#"), String.contains(rest, "\\"))))))
+
+# a hub the browser may be sent to: a machine on a tailnet
+# (http(s)://<name>.ts.net[:port], nothing after)
+def Google.hop.ok(+url: String) -> Bool:
+  Bool.and(String.ends_with(Google.hop.host(Google.hop.rest(url)), ".ts.net"), Google.hop.plain(Google.hop.rest(url)))
+
+def Google.hop.k(go: Bool, +home: String, +query: String) -> String:
+  match go:
+    case True{}:
+      home ++ "/oauth/google?" ++ query ++ "&hop=1"
+    case False{}:
+      ""
+
+# where to send the browser Google sent back (query: the redirect's) when
+# the sign-in in flight here (mine: its state) is not the one it names:
+# the hub its state names, on the tailnet, and only once (hop=1); "" to
+# finish here
+def Google.hop(+query: String, +mine: String) -> String:
+  Google.hop.k(Bool.and(Bool.not(String.eq(Url.param(query, "state"), mine)),
+      Bool.and(Bool.not(String.eq(Url.param(query, "hop"), "1")), Google.hop.ok(Google.state.home(Url.param(query, "state"))))),
+    Google.state.home(Url.param(query, "state")), query)

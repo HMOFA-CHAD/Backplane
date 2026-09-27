@@ -1146,6 +1146,76 @@ def Laws.find_empty_keeps(rs):
 def Laws.find_shut_shows_all(st, now, dr):
   Laws.find_empty_keeps(U.Side.rows(st, now))
 
+def Laws.find_always_on(op, dr):
+  {==}
+
+def Laws.urg_approval_top(p):
+  match p:
+    case M.PhApproval{}:
+      {==}
+    case M.PhInput{}:
+      {==}
+    case M.PhWorking{}:
+      {==}
+    case M.PhMonitoring{n}:
+      {==}
+    case M.PhFailed{}:
+      {==}
+    case M.PhQueued{}:
+      {==}
+    case M.PhComplete{}:
+      {==}
+    case M.PhStopped{}:
+      {==}
+    case M.PhIdle{}:
+      {==}
+
+def Laws.urg_input_over_working(a, b):
+  match a b:
+    case True{} True{}:
+      {==}
+    case True{} False{}:
+      {==}
+    case False{} True{}:
+      {==}
+    case False{} False{}:
+      {==}
+
+def Laws.urg_done_over_working(a, b):
+  match a b:
+    case True{} True{}:
+      {==}
+    case True{} False{}:
+      {==}
+    case False{} True{}:
+      {==}
+    case False{} False{}:
+      {==}
+
+def Laws.urg_pin_within(p):
+  match p:
+    case M.PhApproval{}:
+      {==}
+    case M.PhInput{}:
+      {==}
+    case M.PhWorking{}:
+      {==}
+    case M.PhMonitoring{n}:
+      {==}
+    case M.PhFailed{}:
+      {==}
+    case M.PhQueued{}:
+      {==}
+    case M.PhComplete{}:
+      {==}
+    case M.PhStopped{}:
+      {==}
+    case M.PhIdle{}:
+      {==}
+
+def Laws.menu_settled_brings_back(p, id, armed):
+  {==}
+
 def Laws.caret_shows_when_moved():
   {==}
 
@@ -2764,6 +2834,64 @@ law tl_of_k:
   for +h: {Bool.and(U32.is_eq(px0, px), Q.Eq.str(sel0, sel)) == s : Bool}
   {L.TL.memo.of.k(s, ty, es, px, sel, L.TL.memo.make(ty, old, px0, sel0)) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
 
+law tl_skip_make:
+  for d: Nat
+  for +ty: L.Ty
+  for old: List<&2, M.Entry>
+  for +px: U32
+  for +sel: String
+  {L.TL.skip(d, L.TL.memo.make(ty, old, px, sel)) == L.TL.memo.make(ty, L.TL.eskip(d, old), px, sel) : List<&2, L.TLE>}
+
+def tl_skip_make(d, ty, old, px, sel):
+  match d:
+    case 0n:
+      {==}
+    case 1n+k:
+      match old:
+        case Nil{}:
+          {==}
+        case +e <> +t:
+          tl_skip_make(k, ty, t, px, sel)
+
+law tl_cat_make:
+  for +ty: L.Ty
+  for a: List<&2, M.Entry>
+  for +b: List<&2, M.Entry>
+  for +px: U32
+  for +sel: String
+  {L.TL.cat(L.TL.memo.make(ty, a, px, sel), L.TL.memo.make(ty, b, px, sel)) == L.TL.memo.make(ty, L.TL.ecat(a, b), px, sel) : List<&2, L.TLE>}
+
+def tl_cat_make(ty, a, b, px, sel):
+  match a:
+    case Nil{}:
+      {==}
+    case +e <> +t:
+      Equal.cong(List<&2, L.TLE>, List<&2, L.TLE>, x => L.TL.memo.item(ty, e, px, sel) <> x, L.TL.cat(L.TL.memo.make(ty, t, px, sel), L.TL.memo.make(ty, b, px, sel)), L.TL.memo.make(ty, L.TL.ecat(t, b), px, sel), tl_cat_make(ty, t, b, px, sel))
+
+def Laws.tl_align(c, es, ty, old, px, sel):
+  match c:
+    case L.TLSame{}:
+      {==}
+    case L.TLDrop{+d}:
+      tl_skip_make(d, ty, old, px, sel)
+    case L.TLPad{+k}:
+      tl_cat_make(ty, L.TL.etake(k, es), old, px, sel)
+
+# the aligned memo brought up to date is the memo made from scratch
+law tl_again_aligned:
+  for +es: List<&2, M.Entry>
+  for +ty: L.Ty
+  for +old: List<&2, M.Entry>
+  for +px: U32
+  for +sel: String
+  {L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, px, sel))) == L.TL.memo.make(ty, es, px, sel) : List<&2, L.TLE>}
+
+def tl_again_aligned(es, ty, old, px, sel):
+  +c = L.TL.align.of(es, L.TL.memo.make(ty, old, px, sel))
+  +ea = Equal.sym(List<&2, L.TLE>, L.TL.memo.apply(c, es, L.TL.memo.make(ty, old, px, sel), ty, px, sel), L.TL.memo.make(ty, L.TL.memo.apply.es(c, es, old), px, sel), Laws.tl_align(c, es, ty, old, px, sel))
+  %ea : {L.TL.memo.again(es, ty, px, sel, _) == L.TL.memo.make(ty, es, px, sel) : List<&2, L.TLE>}
+  Laws.tl_again_exact(es, ty, L.TL.memo.apply.es(c, es, old), px, sel)
+
 def tl_of_k(s, ty, es, old, px0, sel0, px, sel, h):
   match s:
     case False{}:
@@ -2771,9 +2899,9 @@ def tl_of_k(s, ty, es, old, px0, sel0, px, sel, h):
     case True{}:
       ep = u32_eq_sound(px0, px, and_l(U32.is_eq(px0, px), Q.Eq.str(sel0, sel), h))
       el = eq_str_sound(sel0, sel, and_r(U32.is_eq(px0, px), Q.Eq.str(sel0, sel), h))
-      %Equal.sym(U32, px0, px, ep) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.make(ty, old, _, sel0))} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
-      %Equal.sym(String, sel0, sel, el) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.make(ty, old, px, _))} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
-      Equal.cong(List<&2, L.TLE>, L.TLMemo, x => L.TLMemo{px, sel, x}, L.TL.memo.again(es, ty, px, sel, L.TL.memo.make(ty, old, px, sel)), L.TL.memo.make(ty, es, px, sel), Laws.tl_again_exact(es, ty, old, px, sel))
+      %Equal.sym(U32, px0, px, ep) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, _, sel0)))} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
+      %Equal.sym(String, sel0, sel, el) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, px, _)))} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
+      Equal.cong(List<&2, L.TLE>, L.TLMemo, x => L.TLMemo{px, sel, x}, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, px, sel))), L.TL.memo.make(ty, es, px, sel), tl_again_aligned(es, ty, old, px, sel))
 
 def Laws.tl_memo_exact(ty, es, old, px0, sel0, px, sel):
   tl_of_k(Bool.and(U32.is_eq(px0, px), Q.Eq.str(sel0, sel)), ty, es, old, px0, sel0, px, sel, {==})
@@ -4687,18 +4815,49 @@ def Laws.google_expiring_not_fresh(now):
   %google_add60_gt(now) : {Cmp.is_lt(_) == False{} : Bool}
   {==}
 
+def Laws.google_state_home_example():
+  {==}
+
+def Laws.google_hop_other():
+  {==}
+
+def Laws.google_hop_mine():
+  {==}
+
+def Laws.google_hop_once():
+  {==}
+
+def Laws.google_hop_tailnet_only():
+  {==}
+
+def Laws.google_hop_no_path():
+  {==}
+
 def Laws.google_own_client_wins(mine, sh, h):
   %Equal.sym(Bool, GO.Client.has(mine), True{}, h) : {GO.Google.client.k(_, mine, sh) == mine : GO.Client}
   {==}
 
-def Laws.google_shared_calendar_only():
+def Laws.google_shared_scopes_all():
   {==}
 
-def Laws.google_shared_no_gmail(tool, h):
-  %Equal.sym(Bool, String.starts_with(tool, "gmail_"), True{}, h) : {Bool.or(False{}, Bool.not(_)) == False{} : Bool}
+def Laws.google_shared_covers_all(tool):
   {==}
 
 def Laws.google_own_covers_all(tool):
+  {==}
+
+def Laws.google_accts_pick_first(a, t):
+  {==}
+
+def Laws.google_accts_put_replaces(a, t, b, h):
+  %Equal.sym(Bool, String.eq(GO.Acct.email(a), GO.Acct.email(b)), True{}, h) : {GO.Accts.put.go(a <> t, _, b, GO.Acct.email(b)) == b <> t : List<&2, GO.Acct>}
+  {==}
+
+def Laws.google_accts_put_new(b):
+  {==}
+
+def Laws.google_accts_drop_named(a, t, e, h):
+  %Equal.sym(Bool, String.eq(GO.Acct.email(a), e), True{}, h) : {GO.Accts.drop.go(a <> t, _, e) == GO.Accts.drop(t, e) : List<&2, GO.Acct>}
   {==}
 
 # Bots
@@ -5441,4 +5600,36 @@ def Laws.status_input_before_waiting(t, q):
   {==}
 
 def Laws.status_no_subagents_same(s):
+  {==}
+
+def Laws.shows_other_delta(u, th, text, h):
+  match u:
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      %Equal.sym(Bool, String.eq(th, sel), False{}, h) : {_ == False{} : Bool}
+      {==}
+
+def Laws.shows_own_delta(u, text):
+  match u:
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Laws.string_eq_refl(sel)
+
+def Laws.shows_changes(u, items):
+  {==}
+
+def Laws.idx_page_own():
+  {==}
+
+def Laws.idx_page_sent():
+  {==}
+
+def Laws.idx_sent_filed():
+  {==}
+
+def Laws.idx_page_short():
+  {==}
+
+def Laws.idx_links():
+  {==}
+
+def Laws.idx_links_found():
   {==}

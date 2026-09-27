@@ -893,6 +893,43 @@ law find_shut_shows_all:
   for dr: Map<&2, String>
   {U.Side.shown(st, now, U.Find.q.k(False{}, dr)) == U.Side.rows(st, now) : List<&2, U.SRow>}
 
+# the sidebar's search field is always there now: its query holds whether
+# or not the phones' old toggle ("psearch") is on
+law find_always_on:
+  for op: Map<&2, Bool>
+  for dr: Map<&2, String>
+  {U.Find.q(op, dr) == U.Str.get(dr, "@f.pq") : String}
+
+# the active view puts what waits on the person first: nothing ranks over
+# an approval, and a question or a finished turn sorts above work in
+# progress, pinned or not
+law urg_approval_top:
+  for p: M.Phase
+  {Nat.is_ge(U.Urg.rank(M.PhApproval{}), U.Urg.rank(p)) == True{} : Bool}
+
+law urg_input_over_working:
+  for a: Bool
+  for b: Bool
+  {Nat.is_gt(U.Urg.key(M.PhInput{}, a), U.Urg.key(M.PhWorking{}, b)) == True{} : Bool}
+
+law urg_done_over_working:
+  for a: Bool
+  for b: Bool
+  {Nat.is_gt(U.Urg.key(M.PhComplete{}, a), U.Urg.key(M.PhWorking{}, b)) == True{} : Bool}
+
+# within a phase, a pinned thread comes first
+law urg_pin_within:
+  for p: M.Phase
+  {Nat.is_gt(U.Urg.key(p, True{}), U.Urg.key(p, False{})) == True{} : Bool}
+
+# a settled thread's menu leads with bringing it back, and ends with a
+# Delete that asks first (menu_delete_asks in test/sidebar_test.bend)
+law menu_settled_brings_back:
+  for p: Bool
+  for id: String
+  for armed: Bool
+  {List.head(&2, U.MItem, U.Menu.thread.k(M.Settled{}, p, id, armed)) == Some{U.MItem{"Bring back", "row-unsettle", id, ""}} : Maybe<&2, U.MItem>}
+
 # a caret that just moved (or a field just focused) is shown
 law caret_shows_when_moved:
   {N.Blink.shown(0n) == True{} : Bool}
@@ -1052,6 +1089,18 @@ law tl_memo_exact:
   for +px: U32
   for +sel: String
   {L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
+
+# a memo lined up with the entries (an item dropped in front, or entries
+# made in front: TL.align.of's guess, whatever it is) is still exactly the
+# memo made for some entries, so bringing it up to date stays exact
+law tl_align:
+  for c: L.TLAlign
+  for +es: List<&2, M.Entry>
+  for +ty: L.Ty
+  for old: List<&2, M.Entry>
+  for +px: U32
+  for +sel: String
+  {L.TL.memo.apply(c, es, L.TL.memo.make(ty, old, px, sel), ty, px, sel) == L.TL.memo.make(ty, L.TL.memo.apply.es(c, es, old), px, sel) : List<&2, L.TLE>}
 
 # the timeline drawn from a memo is the timeline drawn from scratch
 law tl_lines_exact:
@@ -1654,7 +1703,7 @@ law menu_right_press_first:
   for +n: N.Nui
   for +x: U32
   for +y: U32
-  {N.Nui.event(n, W.WButton{x, y, 3, True{}}) == N.Row.menu(N.Hit.find(N.Nui.hits(n), x, y), N.Menu.press(N.Hit.find(N.Nui.hits(n), x, y), n), x) : N.Step}
+  {N.Nui.event(n, W.WButton{x, y, 3, True{}}) == N.Row.menu(N.Hit.find(N.Nui.hits(n), x, y), N.Menu.press(N.Hit.find(N.Nui.hits(n), x, y), n), x, y) : N.Step}
 
 # a press on nothing is outside
 law menu_press_nothing:
@@ -2495,6 +2544,30 @@ law google_code_of_example:
 law google_denied_no_code:
   {GO.Google.code_of("http://127.0.0.1:3787/oauth/google?error=access_denied&state=st8") == None{} : Maybe<&2, GO.CodeState>}
 
+# a sign-in's state names the hub that started it
+law google_state_home_example:
+  {GO.Google.state.home(GO.Google.state("n0Ab-_", "http://box.tail1.ts.net:3787")) == "http://box.tail1.ts.net:3787" : String}
+
+# Google's redirect for another hub's sign-in goes on to that hub, once
+law google_hop_other:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "http://box.tail1.ts.net:3787") ++ "&code=4%2F0Ab", "n9")
+    == "http://box.tail1.ts.net:3787/oauth/google?state=" ++ GO.Google.state("n0", "http://box.tail1.ts.net:3787") ++ "&code=4%2F0Ab&hop=1" : String}
+
+# this hub's own sign-in finishes here
+law google_hop_mine:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "http://box.tail1.ts.net:3787") ++ "&code=c", GO.Google.state("n0", "http://box.tail1.ts.net:3787")) == "" : String}
+
+# a browser already sent on is never sent again (no loop)
+law google_hop_once:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "http://box.tail1.ts.net:3787") ++ "&code=c&hop=1", "") == "" : String}
+
+# only to a machine on a tailnet
+law google_hop_tailnet_only:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "https://evil.example.com") ++ "&code=c", "") == "" : String}
+
+law google_hop_no_path:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "https://evil.example.com/x.ts.net") ++ "&code=c", "") == "" : String}
+
 # a To, Cc or Subject cannot start a header of its own
 law google_header_no_newline_example:
   {GO.Mail.clean("a@x.org\r\nBcc: e@x.org") == "a@x.org  Bcc: e@x.org" : String}
@@ -2520,19 +2593,45 @@ law google_own_client_wins:
   {GO.Google.client(mine, sh) == mine : GO.Client}
 
 # the shared client asks for Calendar and who signed in, never Gmail
-law google_shared_calendar_only:
-  {GO.Google.scopes_for(False{}) == ["openid", "email", "https://www.googleapis.com/auth/calendar.events"] : List<&2, String>}
+law google_shared_scopes_all:
+  {GO.Google.scopes_for(False{}) == GO.Google.scopes() : List<&2, String>}
 
-# a link through the shared client runs no Gmail tool
-law google_shared_no_gmail:
+# a link through the shared client runs every tool, Gmail's too
+law google_shared_covers_all:
   for +tool: String
-  for h: {String.starts_with(tool, "gmail_") == True{} : Bool}
-  {GO.Google.covers(True{}, tool) == False{} : Bool}
+  {GO.Google.covers(True{}, tool) == True{} : Bool}
 
 # the user's own client runs every tool
 law google_own_covers_all:
   for +tool: String
   {GO.Google.covers(False{}, tool) == True{} : Bool}
+
+# a tool that names no account uses the first one signed in
+law google_accts_pick_first:
+  for +a: GO.Acct
+  for +t: List<&2, GO.Acct>
+  {GO.Accts.pick(a <> t, "") == Some{a} : Maybe<&2, GO.Acct>}
+
+# signing in to an address already there replaces it where it stands
+law google_accts_put_replaces:
+  for +a: GO.Acct
+  for +t: List<&2, GO.Acct>
+  for +b: GO.Acct
+  for h: {String.eq(GO.Acct.email(a), GO.Acct.email(b)) == True{} : Bool}
+  {GO.Accts.put(a <> t, b) == b <> t : List<&2, GO.Acct>}
+
+# a new address goes last
+law google_accts_put_new:
+  for +b: GO.Acct
+  {GO.Accts.put(Nil{}, b) == [b] : List<&2, GO.Acct>}
+
+# signing one account out keeps none with its address
+law google_accts_drop_named:
+  for +a: GO.Acct
+  for +t: List<&2, GO.Acct>
+  for +e: String
+  for h: {String.eq(GO.Acct.email(a), e) == True{} : Bool}
+  {GO.Accts.drop(a <> t, e) == GO.Accts.drop(t, e) : List<&2, GO.Acct>}
 
 # Bots
 # ----
@@ -3054,3 +3153,48 @@ law status_input_before_waiting:
 law status_no_subagents_same:
   for s: M.Status
   {M.Status.wait(False{}, s) == s : M.Status}
+
+# Many agents at once
+# -------------------
+# The window draws a thread's streamed text only while that thread is
+# open: another thread's delta asks for no frame, the open thread's does,
+# and every other message still does (U.Ui.shows).
+
+law shows_other_delta:
+  for u: U.Ui
+  for +th: String
+  for +text: String
+  for h: {String.eq(th, U.Ui.sel(u)) == False{} : Bool}
+  {U.Ui.shows(u, J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
+
+law shows_own_delta:
+  for u: U.Ui
+  for +text: String
+  {U.Ui.shows(u, J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{U.Ui.sel(u)}}, J.KV{"text", J.Str{text}}])) == True{} : Bool}
+
+law shows_changes:
+  for u: U.Ui
+  for +items: J.Json
+  {U.Ui.shows(u, J.Json.obj([J.KV{"t", J.Str{"changes"}}, J.KV{"items", items}])) == True{} : Bool}
+
+# Each thread's entries are filed as they are posted (M.Idx), so a frame
+# reads the open thread's page and the sidebar's links without walking
+# every thread's log. What is filed is what the walk finds: a thread's
+# page, the messages it sent included, and the links.
+law idx_page_own:
+  {L.TL.newest(M.State.mine(M.Idx.demo(), "t2"), "t2", 0n, L.NW{60n, []}) == L.TL.newest(U.Ui.entries(M.Idx.demo()), "t2", 0n, L.NW{60n, []}) : List<&2, M.Entry>}
+
+law idx_page_sent:
+  {L.TL.newest(M.State.mine(M.Idx.demo(), "t1"), "t1", 0n, L.NW{60n, []}) == L.TL.newest(U.Ui.entries(M.Idx.demo()), "t1", 0n, L.NW{60n, []}) : List<&2, M.Entry>}
+
+law idx_sent_filed:
+  {List.length(&2, M.Entry, M.State.mine(M.Idx.demo(), "t1")) == 3n : Nat}
+
+law idx_page_short:
+  {L.TL.newest(M.State.mine(M.Idx.demo(), "t2"), "t2", 0n, L.NW{2n, []}) == L.TL.newest(U.Ui.entries(M.Idx.demo()), "t2", 0n, L.NW{2n, []}) : List<&2, M.Entry>}
+
+law idx_links:
+  {U.Links.recent(M.Idx.demo(), 10n) == U.Links.recent.go(U.Ui.entries(M.Idx.demo()), 10n, True{}) : List<&2, U.Link2>}
+
+law idx_links_found:
+  {List.length(&2, U.Link2, U.Links.recent(M.Idx.demo(), 10n)) == 1n : Nat}

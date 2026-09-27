@@ -439,17 +439,26 @@ def Nui.hits(n: Nui) -> List<&2, Hit>:
     case Nui{_, _, _, _, _, _, _, _, _, _, hi, _, vw}:
       hi
 
-def Hits.is_line(hs: List<&2, Hit>) -> Bool:
-  match hs:
-    case Hit{_, _, _, _, +a, _} <> _:
+# a line of the thread (side False: "tl-line") or a thread's row in the
+# sidebar (side True: "select" left of 264)
+def Hits.kind(side: Bool, +x0: U32, +a: String) -> Bool:
+  match side:
+    case True{}:
+      Bool.and(String.eq(a, "select"), U32.is_lt(x0, 264))
+    case False{}:
       String.eq(a, "tl-line")
+
+def Hits.is_line(hs: List<&2, Hit>, +side: Bool) -> Bool:
+  match hs:
+    case Hit{+x0, _, _, _, +a, _} <> _:
+      Hits.kind(side, x0, a)
     case Nil{}:
       False{}
 
-def Hits.same_line(hs: List<&2, Hit>, +v: String) -> Bool:
+def Hits.same_line(hs: List<&2, Hit>, +side: Bool, +v: String) -> Bool:
   match hs:
-    case Hit{_, _, _, _, +a, +hv} <> _:
-      Bool.and(String.eq(a, "tl-line"), String.eq(hv, v))
+    case Hit{+x0, _, _, _, +a, +hv} <> _:
+      Bool.and(Hits.kind(side, x0, a), String.eq(hv, v))
     case Nil{}:
       False{}
 
@@ -471,24 +480,24 @@ def Hits.v(hs: List<&2, Hit>) -> String:
 type Seen is Data:
   Seen{found: Bool, y: U32}
 
-def Hits.find(hs: List<&2, Hit>, hit: Bool, +v: String) -> Seen:
+def Hits.find(hs: List<&2, Hit>, hit: Bool, +side: Bool, +v: String) -> Seen:
   match hs hit:
     case Nil{} _:
       Seen{False{}, 0}
     case +h <> +r True{}:
       Seen{True{}, Hits.y([h])}
     case _ <> t False{}:
-      Hits.find(t, Hits.same_line(t, v), v)
+      Hits.find(t, Hits.same_line(t, side, v), side, v)
 
-# hits from the first thread line on
-def Hits.first(hs: List<&2, Hit>, hit: Bool) -> List<&2, Hit>:
+# hits from the first line (or row) on
+def Hits.first(hs: List<&2, Hit>, hit: Bool, +side: Bool) -> List<&2, Hit>:
   match hs hit:
     case Nil{} _:
       Nil{}
     case +h <> +r True{}:
       h <> r
     case _ <> t False{}:
-      Hits.first(t, Hits.is_line(t))
+      Hits.first(t, Hits.is_line(t, side), side)
 
 def Hits.slide.k(a: Seen, b: Seen, +ya: U32, +yb: U32) -> U32:
   match a b:
@@ -499,38 +508,101 @@ def Hits.slide.k(a: Seen, b: Seen, +ya: U32, +yb: U32) -> U32:
     case _ _:
       0
 
-# how far the thread's lines moved down since the last frame, modulo 2^32:
-# a line on screen in both frames (the new frame's first, else the old
-# one's), where it was and is. A hint for the tiles (TI.Frame.again),
-# which check what they reuse
+# how far the thread's lines (or the sidebar's rows) moved down since the
+# last frame, modulo 2^32: a line on screen in both frames (the new
+# frame's first, else the old one's), where it was and is
+def Hits.slide.of(+new: List<&2, Hit>, +old: List<&2, Hit>, +side: Bool) -> U32:
+  +fn = Hits.first(new, Hits.is_line(new, side), side)
+  +fo = Hits.first(old, Hits.is_line(old, side), side)
+  Hits.slide.k(Hits.find(old, Hits.same_line(old, side, Hits.v(fn)), side, Hits.v(fn)), Hits.find(new, Hits.same_line(new, side, Hits.v(fo)), side, Hits.v(fo)), Hits.y(fn), Hits.y(fo))
+
+def Hits.slide.or.k(still: Bool, +dy: U32, +new: List<&2, Hit>, +old: List<&2, Hit>) -> U32:
+  match still:
+    case True{}:
+      Hits.slide.of(new, old, True{})
+    case False{}:
+      dy
+
+def Hits.slide.or(+dy: U32, +new: List<&2, Hit>, +old: List<&2, Hit>) -> U32:
+  Hits.slide.or.k(U32.is_eq(dy, 0), dy, new, old)
+
+# how far the content moved down since the last frame: the thread's, else
+# the sidebar's (one scrolls at a time). A hint for the tiles
+# (TI.Frame.again), which check what they reuse
 def Hits.slide(+new: List<&2, Hit>, +old: List<&2, Hit>) -> U32:
-  +fn = Hits.first(new, Hits.is_line(new))
-  +fo = Hits.first(old, Hits.is_line(old))
-  Hits.slide.k(Hits.find(old, Hits.same_line(old, Hits.v(fn)), Hits.v(fn)), Hits.find(new, Hits.same_line(new, Hits.v(fo)), Hits.v(fo)), Hits.y(fn), Hits.y(fo))
+  Hits.slide.or(Hits.slide.of(new, old, False{}), new, old)
 
 # a wheel notch moves the thread one tile (TI.Frame.tile): the frame
 # after it slides the tiles it has instead of drawing them again
 def Nui.notch() -> U32:
   64
 
-def Nui.wheel.k(side: Bool, up: Bool, down: Bool, n: Nui, +sd: U32, +sc: U32) -> Step:
+# the value of the first hit with this action, wherever it is ("" for none)
+def Hit.value(hs: List<&2, Hit>, +action: String) -> String:
+  match hs:
+    case Nil{}:
+      ""
+    case Hit{_, _, _, _, +a, +v} <> t:
+      Bool.pick(String, String.eq(a, action), v, Hit.value(t, action))
+
+# how far the sidebar may scroll: its hit "side-most" (none: no limit)
+def Side.most(hs: List<&2, Hit>) -> U32:
+  Maybe.default(&2, U32, U32.read(Hit.value(hs, "side-most")), 4294967295)
+
+# a notch down the sidebar, no further than most (a scroll left past the
+# end, as the list shrank, comes back to it)
+def Side.down(+sd: U32, +most: U32) -> U32:
+  U32.min((sd + Nui.notch() : U32), Bool.pick(U32, U32.is_gt(sd, most), sd, most))
+
+def Hit.has(hs: List<&2, Hit>, +action: String) -> Bool:
+  match hs:
+    case Nil{}:
+      False{}
+    case Hit{_, _, _, _, +a, _} <> t:
+      Bool.or(String.eq(a, action), Hit.has(t, action))
+
+# how far up the thread's timeline scrolls (its hit "tl-most"; none: no limit)
+def Tl.most(hs: List<&2, Hit>) -> U32:
+  Maybe.default(&2, U32, U32.read(Hit.value(hs, "tl-most")), 4294967295)
+
+# a notch up the thread: within two screens of its top, while earlier
+# entries exist (the hit "tl-more"), they are shown too, so the wheel
+# keeps going back without a button (the view keeps its place: the
+# timeline scrolls from the bottom)
+def Tl.up(near: Bool, +n: Nui) -> Step:
+  match near:
+    case True{}:
+      Nui.act(n, "earlier", "")
+    case False{}:
+      Step{n, Nil{}, True{}}
+
+# a notch down the thread: back at the bottom, the pages the wheel added
+# go (a frame lays out only the newest page again)
+def Tl.down(above: Bool, n: Nui) -> Step:
+  match above n:
+    case True{} _:
+      Step{n, Nil{}, True{}}
+    case False{} Nui{+u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}:
+      Step{Nui{U.Ui.scratch_set(u, "@more." ++ U.Ui.sel(u), ""), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}, Nil{}, True{}}
+
+def Nui.wheel.k(side: Bool, up: Bool, down: Bool, n: Nui, +sd: U32, +sc: U32, +most: U32, +tmost: U32, +more: Bool) -> Step:
   match side up down n:
     case True{} True{} _ Nui{u, w, h, mx, my, _, sc2, ca, fo, pa, hi, ms, vw}:
-      Step{Nui{u, w, h, mx, my, Bool.pick(U32, U32.is_ge(sd, 48), (sd - 48 : U32), 0), sc2, ca, fo, pa, hi, ms, vw}, Nil{}, True{}}
+      Step{Nui{u, w, h, mx, my, Bool.pick(U32, U32.is_ge(sd, Nui.notch()), (sd - Nui.notch() : U32), 0), sc2, ca, fo, pa, hi, ms, vw}, Nil{}, U32.is_ne(sd, 0)}
     case True{} False{} True{} Nui{u, w, h, mx, my, _, sc2, ca, fo, pa, hi, ms, vw}:
-      Step{Nui{u, w, h, mx, my, (sd + 48 : U32), sc2, ca, fo, pa, hi, ms, vw}, Nil{}, True{}}
-    case False{} True{} _ Nui{u, w, h, mx, my, sd2, _, ca, fo, pa, hi, ms, vw}:
-      Step{Nui{u, w, h, mx, my, sd2, (sc + Nui.notch() : U32), ca, fo, pa, hi, ms, vw}, Nil{}, True{}}
+      Step{Nui{u, w, h, mx, my, Side.down(sd, most), sc2, ca, fo, pa, hi, ms, vw}, Nil{}, U32.is_ne(Side.down(sd, most), sd)}
+    case False{} True{} _ Nui{u, w, +h, mx, my, sd2, _, ca, fo, pa, hi, ms, vw}:
+      Tl.up(Bool.and(more, U32.is_ge((sc + Nui.notch() + (h * 2 : U32) : U32), tmost)), Nui{u, w, h, mx, my, sd2, U32.min((sc + Nui.notch() : U32), tmost), ca, fo, pa, hi, ms, vw})
     case False{} False{} True{} Nui{u, w, h, mx, my, sd2, _, ca, fo, pa, hi, ms, vw}:
-      Step{Nui{u, w, h, mx, my, sd2, Bool.pick(U32, U32.is_ge(sc, Nui.notch()), (sc - Nui.notch() : U32), 0), ca, fo, pa, hi, ms, vw}, Nil{}, True{}}
+      Tl.down(U32.is_gt(sc, Nui.notch()), Nui{u, w, h, mx, my, sd2, Bool.pick(U32, U32.is_ge(sc, Nui.notch()), (sc - Nui.notch() : U32), 0), ca, fo, pa, hi, ms, vw})
     case _ _ _ _:
       Step{n, Nil{}, False{}}
 
-# the wheel moves the sidebar 48 px a notch, the timeline Nui.notch()
+# the wheel moves the sidebar and the timeline Nui.notch() a notch
 def Nui.wheel(n: Nui, +x: U32, +dir: U32) -> Step:
   match n:
-    case Nui{u, w, h, mx, my, +sd, +sc, ca, fo, pa, hi, ms, vw}:
-      Nui.wheel.k(U32.is_lt(x, 264), U32.is_eq(dir, 0), U32.is_eq(dir, 1), Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}, sd, sc)
+    case Nui{u, w, h, mx, my, +sd, +sc, ca, fo, +pa, +hi, ms, vw}:
+      Nui.wheel.k(U32.is_lt(x, 264), U32.is_eq(dir, 0), U32.is_eq(dir, 1), Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}, sd, sc, Side.most(hi), Tl.most(hi), Hit.has(hi, "tl-more"))
 
 def Nui.resize(n: Nui, +w: U32, +h: U32) -> Step:
   match n:
@@ -916,6 +988,16 @@ def Nui.sync.k(a: U.Act, n: Nui) -> Step:
 def Nui.sync(+n: Nui) -> Step:
   Nui.sync.k(U.Mpage.sync(U.Act{Nui.ui(n), Nil{}}), n)
 
+# the same, drawing a frame only when d (a message another thread's
+# stream sent shows nothing: U.Ui.shows)
+def Nui.sync.kd(a: U.Act, n: Nui, +d: Bool) -> Step:
+  match a:
+    case U.Act{u, +cs}:
+      Step{Nui.with_ui(n, u), Nui.cmds(cs), Bool.or(d, Bool.not(List.is_empty(&2, U.Cmd, cs)))}
+
+def Nui.sync.d(+n: Nui, +d: Bool) -> Step:
+  Nui.sync.kd(U.Mpage.sync(U.Act{Nui.ui(n), Nil{}}), n, d)
+
 def Undo.put(+n: Nui, +w: String, v: String) -> Nui:
   Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Undo.key(n, w), v))
 
@@ -1052,14 +1134,15 @@ def Hear.to(here: Bool, +n: Nui) -> Nui:
 def Hear.kept(+n: Nui, +th: String) -> Step:
   Step{n, [NKeep{th, U.Ui.scratch(Nui.ui(n), th)}], True{}}
 
-def Hear.k(text: Bool, +here: Bool, n: Nui, +o: J.Json) -> Step:
+def Hear.k(text: Bool, +here: Bool, +n: Nui, +o: J.Json) -> Step:
   match text:
     case True{}:
       Hear.kept(Hear.to(here, Nui.recv(Hear.at(here, n), o)), J.Json.get_str(o, "thread", ""))
     case False{}:
-      Nui.sync(Nui.recv(n, o))
+      Nui.sync.d(Nui.recv(n, o), U.Ui.shows(Nui.ui(n), o))
 
-# a message from the hub
+# a message from the hub (another thread's streamed text draws nothing,
+# U.Ui.shows)
 def Nui.hear(+n: Nui, +o: J.Json) -> Step:
   Hear.k(Hear.is(o), Hear.here(n, o), n, o)
 
@@ -1538,7 +1621,8 @@ def Pick.click(+n: Nui, +v: String) -> Step:
 def Menu.own(+a: String, +v: String) -> Bool:
   Bool.or(Bool.or(Bool.or(Bool.or(String.eq(a, "model"), String.eq(a, "effort")), Bool.or(String.eq(a, "machine"), String.eq(a, "menu"))),
     Bool.and(String.eq(a, "flag"), Bool.or(String.eq(v, "models"), String.eq(v, "machines")))),
-    Bool.or(Bool.or(String.eq(a, "look"), String.eq(a, "look-set")), String.eq(a, "look-bg")))
+    Bool.or(Bool.or(Bool.or(String.eq(a, "look"), String.eq(a, "look-set")), String.eq(a, "look-bg")),
+      Bool.or(String.eq(a, "row-delete"), String.eq(a, "proj-remove"))))
 
 def Menu.inside(m: Maybe<&2, Hit>) -> Bool:
   match m:
@@ -1552,7 +1636,7 @@ def Menu.shut(inside: Bool, +n: Nui) -> Nui:
     case True{}:
       n
     case False{}:
-      Nui.with_ui(n, U.Ui.scratch_set(U.Ui.flag_off(U.Ui.flag_off(Nui.ui(n), "models"), "machines"), "@look", ""))
+      Nui.with_ui(n, U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.flag_off(U.Ui.flag_off(Nui.ui(n), "models"), "machines"), "@look", ""), "@menu", ""))
 
 # the picker keeps where it was scrolled only while presses stay in it
 def Menu.keeps_off(m: Maybe<&2, Hit>) -> Bool:
@@ -2365,7 +2449,8 @@ def Nui.key.menu(menu: Bool, +n: Nui, +code: U32, +text: U32, +mods: U32) -> Ste
       Nui.key.go(Keys.name(code, mods, String.eq(Nui.focus_of(n), "terminal")), n, code, text, mods)
 
 def Nui.key.m(+n: Nui, +code: U32, +text: U32, +mods: U32) -> Step:
-  Nui.key.menu(Bool.and(U32.is_eq(code, Key.escape()), Bool.or(Bool.or(U.Ui.flag(Nui.ui(n), "models"), U.Ui.flag(Nui.ui(n), "machines")), Bool.not(String.is_empty(U.Ui.scratch(Nui.ui(n), "@look"))))), n, code, text, mods)
+  Nui.key.menu(Bool.and(U32.is_eq(code, Key.escape()), Bool.or(Bool.or(U.Ui.flag(Nui.ui(n), "models"), U.Ui.flag(Nui.ui(n), "machines")),
+    Bool.not(String.is_empty(U.Ui.scratch(Nui.ui(n), "@look") ++ U.Ui.scratch(Nui.ui(n), "@menu"))))), n, code, text, mods)
 
 # Selecting thread text
 # ---------------------
@@ -2490,18 +2575,26 @@ def Nui.press.k(drag: Bool, +n: Nui, +x: U32, +y: U32) -> Step:
     case False{}:
       Row.press(Hit.find(Nui.hits(n), x, y), n, x, y)
 
-# a right-click on a sidebar row settles it, or brings a settled one back
-def Row.menu.k(row: Bool, +n: Nui, +value: String) -> Step:
-  match row:
-    case True{}:
-      Nui.act(n, "row-toggle", value)
-    case False{}:
+# a right-click on a sidebar row opens its menu where the pointer is
+# (core's Menu: "row-menu"), on a project's name or badge the project's
+# ("proj-menu"); it never acts on the row by itself
+def Row.menu.at(+n: Nui, +x: U32, +y: U32) -> Nui:
+  Nui.with_ui(n, U.Ui.scratch_set(U.Ui.scratch_set(Nui.ui(n), "@menu.x", U32.show(x)), "@menu.y", U32.show(y)))
+
+def Row.menu.k(row: Bool, proj: Bool, +n: Nui, +value: String, +x: U32, +y: U32) -> Step:
+  match row proj:
+    case True{} _:
+      Nui.act(Row.menu.at(n, x, y), "row-menu", value)
+    case False{} True{}:
+      Nui.act(Row.menu.at(n, x, y), "proj-menu", value)
+    case False{} False{}:
       Step{n, Nil{}, False{}}
 
-def Row.menu(m: Maybe<&2, Hit>, +n: Nui, +x: U32) -> Step:
+def Row.menu(m: Maybe<&2, Hit>, +n: Nui, +x: U32, +y: U32) -> Step:
   match m:
     case Some{Hit{_, _, _, _, +action, +value}}:
-      Row.menu.k(Bool.and(String.eq(action, "select"), U32.is_lt(x, 264)), n, value)
+      Row.menu.k(Bool.and(String.eq(action, "select"), U32.is_lt(x, 264)),
+        Bool.and(Bool.or(String.eq(action, "project"), String.eq(action, "look")), U32.is_lt(x, 264)), n, value, x, y)
     case None{}:
       Step{n, Nil{}, False{}}
 
@@ -2587,7 +2680,7 @@ def Nui.event(+n: Nui, e: W.WinEv) -> Step:
     case W.WButton{+x, +y, 1, False{}}:
       Sel.end(Row.release(Bool.not(String.is_empty(Row.id(n))), n, x, y))
     case W.WButton{+x, +y, 3, True{}}:
-      Row.menu(Hit.find(Nui.hits(n), x, y), Menu.press(Hit.find(Nui.hits(n), x, y), n), x)
+      Row.menu(Hit.find(Nui.hits(n), x, y), Menu.press(Hit.find(Nui.hits(n), x, y), n), x, y)
     case W.WButton{+x, +y, 2, True{}}:
       Nui.mpress(Nui.in_viewer(n, x), n, x, y)
     case W.WButton{+x, +y, 2, False{}}:
