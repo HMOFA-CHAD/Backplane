@@ -7,6 +7,7 @@
 // only when its def is used (#ifdef CID_...), as Base's own effects do.
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <spawn.h>
 #include <sys/socket.h>
@@ -118,6 +119,65 @@ Term sock_recv_bytes_run(Env e, Term* f, IoWork* w) {
 
 static void __attribute__((constructor)) sock_recv_bytes_use(void) {
   io_eff(CID_SOCK_RECV_BYTES, sock_recv_bytes_run, IO_READ);
+}
+
+#endif
+
+#ifdef CID_SOCK_SAVE
+
+// Copies what is left (w->size bytes) from the socket to the file w->made,
+// a piece at a time, parking while the socket has nothing.
+static Term sock_save_more(Env e, IoWork* w) {
+  int fd  = (int)w->hand;
+  int out = (int)w->made;
+  while (w->code == 0 && w->size > 0) {
+    ssize_t n = host_read(fd, w->data, w->size < 65536 ? (size_t)w->size : 65536);
+    if (n < 0 && errno == EAGAIN) {
+      return io_wait_on(w, fd, POLLIN, 0, sock_save_more);
+    }
+    if (n <= 0) {
+      w->code = n == 0 ? EPIPE : (u32)errno;
+      break;
+    }
+    ssize_t off = 0;
+    while (w->code == 0 && off < n) {
+      ssize_t k = write(out, w->data + off, (size_t)(n - off));
+      if (k < 0 && errno == EINTR) {
+        continue;
+      }
+      w->code = k < 0 ? (u32)errno : 0;
+      off += k < 0 ? 0 : k;
+    }
+    w->size -= (u64)n;
+  }
+  close(out);
+  free(w->data);
+  Term r = w->code ? io_fail(e, w->code, NULL) : io_done(e, host_unit());
+  return io_tup(e, io_hand(w->hand), r);
+}
+
+// The next n bytes of the socket appended to the file at path, never held
+// as terms: the body of an upload goes straight to disk. A peer that
+// closes before n bytes fails with EPIPE.
+Term sock_save_run(Env e, Term* f, IoWork* w) {
+  w->hand = (intptr_t)io_hand_v(f[0]);
+  u64 n = 0;
+  char* p = io_cstr(e, f[1], &n);
+  int out = io_nul(p, n) ? -1 : open(p, O_WRONLY | O_APPEND | O_CREAT, 0600);
+  int code = out < 0 ? (io_nul(p, n) ? EILSEQ : errno) : 0;
+  free(p);
+  if (code) {
+    return io_tup(e, io_hand(w->hand), io_fail(e, code, NULL));
+  }
+  w->made = out;
+  w->size = (u64)(uint32_t)f[2];
+  w->code = 0;
+  w->data = io_mem(malloc(65536));
+  return sock_save_more(e, w);
+}
+
+static void __attribute__((constructor)) sock_save_use(void) {
+  io_eff(CID_SOCK_SAVE, sock_save_run, IO_READ);
 }
 
 #endif

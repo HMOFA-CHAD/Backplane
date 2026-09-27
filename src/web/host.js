@@ -304,26 +304,26 @@ function inputValue(el) {
   return f === null ? el.value : f + "\u001f" + el.value;
 }
 
-// Files: read, cut into the pieces app.bend asks for, base64, and hand
-// each piece to the `attach` action (which decides what to send)
-function base64(u8) {
-  let s = "";
-  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
-  return btoa(s);
-}
-
+// Files: each goes whole as the body of one POST /attach to the hub (the
+// pairing cookie carries the token); "attach-up" and "attach-end" tell
+// app.bend it started and what the hub answered, and it decides the rest
 async function upload(action, file) {
   const key = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, "0")).join("");
-  const size = Number(App.chunk());
   const name = file.name || "pasted." + ((file.type || "").split("/")[1] || "bin");
   if (file.size === 0) return;
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  for (let i = 0, off = 0; off < bytes.length; i += 1, off += size) {
-    const last = off + size >= bytes.length;
-    const piece = JSON.stringify({ key, name, size: bytes.length, i, last, data: base64(bytes.subarray(off, off + size)) });
-    dispatch(action, piece);
-    await new Promise((r) => setTimeout(r, 0));
+  const thread = App.sel(ui);
+  dispatch("attach-up", JSON.stringify({ name, size: file.size }));
+  if (App.uploading(ui, thread) !== name) return;
+  const q = new URLSearchParams({ thread, key, name });
+  let answer = "";
+  try {
+    const r = await fetch(`/attach?${q}`, { method: "POST", body: file, credentials: "same-origin" });
+    answer = await r.text();
+    JSON.parse(answer);
+  } catch {
+    answer = JSON.stringify({ text: "the upload did not reach the hub", thread, upload: true });
   }
+  dispatch("attach-end", answer);
 }
 
 document.addEventListener("change", (e) => {

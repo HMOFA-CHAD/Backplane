@@ -54,6 +54,43 @@ function sock_recv_bytes_need() {
   return { read: true };
 }
 
+// the next n bytes of the socket appended to the file at path
+function sock_save(socket, path, n, k) {
+  const sys = io_sys();
+  const fs = require("fs");
+  const b = new Uint8Array(65536);
+  const again = sys.mac ? 35 : 11;
+  let left = Number(n);
+  let out;
+  try {
+    out = fs.openSync(path, "a", 0o600);
+  } catch (err) {
+    return io_tup(socket, io_fail(host_errno(err)));
+  }
+  const go = () => {
+    while (left > 0) {
+      const got = Number(sys.recv(socket, sys.ptr(b), Math.min(left, b.length), 0));
+      if (got < 0 && sys.errno() === again) {
+        io_park_on(socket, false, k, go);
+        return undefined;
+      }
+      if (got <= 0) {
+        fs.closeSync(out);
+        return io_tup(socket, io_fail(got === 0 ? 32 : sys.errno()));
+      }
+      fs.writeSync(out, b.subarray(0, got));
+      left -= got;
+    }
+    fs.closeSync(out);
+    return io_tup(socket, io_done({ $: "Unit" }));
+  };
+  return go();
+}
+
+function sock_save_need() {
+  return { read: true };
+}
+
 function host_send(socket, b) {
   const sys = io_sys();
   let at = 0;

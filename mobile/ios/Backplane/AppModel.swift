@@ -239,25 +239,36 @@ final class AppModel {
         return Pairing.web(l, path)
     }
 
-    // a file for the next message, sent to the thread's hub in the pieces
-    // the screen asks for ("attach" decides what goes out)
+    // a file for the next message: one POST /attach to the thread's hub with
+    // the file as the body (no base64, no pieces through the engine); the
+    // hub's answer goes back as "attach-end", as an attach.put's would
     func attach(_ data: Data, name: String) {
-        guard !data.isEmpty else { return }
-        let size = max(screen?.thread?.chunk ?? 196_608, 1024)
+        guard !data.isEmpty, let s = screen, let thread = s.thread?.id,
+              let l = links.first(where: { Pairing.key($0) == s.hub }) ?? links.first else { return }
         let key = String(format: "%08x", UInt32.random(in: 0 ... UInt32.max))
-        let e = engine
+        guard let url = Pairing.http(l, path: "/attach", query: [URLQueryItem(name: "thread", value: thread),
+                                                                 URLQueryItem(name: "key", value: key), URLQueryItem(name: "name", value: name)]) else { return }
+        var req = URLRequest(url: url, timeoutInterval: 600)
+        req.httpMethod = "POST"
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        // the engine decides: one over the cap it refuses, and nothing goes
+        let up = (try? JSONSerialization.data(withJSONObject: ["name": name, "size": data.count] as [String: Any])).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        act("attach-up", up)
+        guard data.count <= s.thread?.cap ?? 10_485_760 else { return }
         Task {
-            var i = 0, off = 0
-            while off < data.count {
-                let end = min(off + size, data.count)
-                let piece: [String: Any] = ["key": key, "name": name, "size": data.count, "i": i, "last": end >= data.count,
-                                            "data": data.subdata(in: off ..< end).base64EncodedString()]
-                if let j = try? JSONSerialization.data(withJSONObject: piece), let text = String(data: j, encoding: .utf8) {
-                    apply(await e.act("attach", text))
-                }
-                i += 1
-                off = end
+            var answer = ""
+            do {
+                let (body, _) = try await URLSession.shared.upload(for: req, from: data)
+                answer = String(data: body, encoding: .utf8) ?? ""
+            } catch {
+                answer = ""
             }
+            let answered = (try? JSONSerialization.jsonObject(with: Data(answer.utf8))) is [String: Any]
+            if !answered {
+                let o: [String: Any] = ["text": "the upload did not reach the hub", "thread": thread, "upload": true]
+                answer = (try? JSONSerialization.data(withJSONObject: o)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            }
+            act("attach-end", answer)
         }
     }
 

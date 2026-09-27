@@ -1492,6 +1492,15 @@ law plot_hidden_not_sent:
 law plot_courtyard_hidden:
   {PL.Piece.alpha(0, 17) == 0 : U32}
 
+# a schematic's coloured box goes to the phones in its own colour, as the
+# window draws it (a tint's code is its fill chunk's width), and a tint
+# once packed packs again the same
+law plot_tint_own_colour:
+  {PL.Chunk.tint(True{}, 1, PL.Rank.of(1, 0, B.Tint.code(12386304, 16), 0)) == (12386304, 16) : U32 & U32}
+
+law tint_code_again:
+  {B.Tint.code(B.Tint.color(1523716), B.Tint.alpha(1523716)) == 1523716 : U32}
+
 # numbers survive the wire exactly: small and large, and negatives as
 # two's complement
 law plot_numbers_exact:
@@ -3214,3 +3223,13 @@ law idx_links:
 
 law idx_links_found:
   {List.length(&2, U.Link2, U.Links.recent(M.Idx.demo(), 10n)) == 1n : Nat}
+
+# Settings
+# --------
+
+# choosing a thread, a bot or a room while Settings is open leaves it
+law select_leaves_settings:
+  {U.Ui.flag(U.Act.ui(U.Ui.select(U.Ui.flag_on(U.Ui.init(0n), "settings"), "t1")), "settings") == False{} : Bool}
+
+law room_leaves_settings:
+  {U.Ui.flag(U.Act.ui(U.Bots.room.select(U.Ui.flag_on(U.Ui.init(0n), "settings"), "r1")), "settings") == False{} : Bool}

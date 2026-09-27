@@ -203,6 +203,8 @@ def View.box.prim(p: B.Prim, b: D.Box) -> D.Box:
       View.box.pt(c, b)
     case B.PPoly{ps, _, _}:
       View.box.pts(ps, b)
+    case B.PTint{ps, _, _}:
+      View.box.pts(ps, b)
 
 # the scene's extent in mm
 def View.box(ss: List<&2, Seen>, b: D.Box) -> D.Box:
@@ -279,6 +281,8 @@ def Ops.prim(p: B.Prim, +v: View, +c: D.Clip, +color: U32, +alpha: U32) -> List<
       [D.Draw.poly(c, View.ps(ps, v), color, alpha)]
     case B.PPoly{+ps, +w, False{}}:
       Ops.line(List.append(&2, D.P2, View.ps(ps, v), [View.p(v, Maybe.default(&2, B.Pt, List.head(&2, B.Pt, ps), B.Pt{0.0, 0.0}))]), c, View.w(v, w), color, alpha)
+    case B.PTint{+ps, _, _}:
+      [D.Draw.poly(c, View.ps(ps, v), color, alpha)]
 
 def Ops.item.show(hidden: Bool, p: B.Prim, +v: View, +c: D.Clip, +color: U32, +alpha: U32, rest: List<&2, R.Op>) -> List<&2, R.Op>:
   match hidden:
@@ -287,9 +291,23 @@ def Ops.item.show(hidden: Bool, p: B.Prim, +v: View, +c: D.Clip, +color: U32, +a
     case False{}:
       List.append(&2, R.Op, Ops.prim(p, v, c, color, alpha), rest)
 
+# a tint keeps its own colour and opacity; everything else takes its layer's
+def Ops.item.own(p: B.Prim, hidden: Bool, +v: View, +c: D.Clip, +color: U32, +alpha: U32, +fade: U32, rest: List<&2, R.Op>) -> List<&2, R.Op>:
+  match p:
+    case B.PTint{ps, +tc, +ta}:
+      Ops.item.show(hidden, B.PTint{ps, tc, ta}, v, c, tc, ((ta * fade : U32) / 255 : U32), rest)
+    case B.PSeg{a, b, w}:
+      Ops.item.show(hidden, B.PSeg{a, b, w}, v, c, color, alpha, rest)
+    case B.PLine{ps, w}:
+      Ops.item.show(hidden, B.PLine{ps, w}, v, c, color, alpha, rest)
+    case B.PCirc{m, r, w, f}:
+      Ops.item.show(hidden, B.PCirc{m, r, w, f}, v, c, color, alpha, rest)
+    case B.PPoly{ps, w, f}:
+      Ops.item.show(hidden, B.PPoly{ps, w, f}, v, c, color, alpha, rest)
+
 def Ops.item.k(look: U32 & U32, p: B.Prim, +v: View, +c: D.Clip, +fade: U32, rest: List<&2, R.Op>) -> List<&2, R.Op>:
   (color, +base) = look
-  Ops.item.show(U32.is_eq(base, 0), p, v, c, color, ((base * fade : U32) / 255 : U32), rest)
+  Ops.item.own(p, U32.is_eq(base, 0), v, c, color, ((base * fade : U32) / 255 : U32), fade, rest)
 
 # a layer's colour and opacity in a board (kind 0) or a schematic (kind 1)
 def Look.of(+kind: U32, +layer: U32) -> U32 & U32:
@@ -490,6 +508,8 @@ def Cull.box(p: B.Prim) -> D.Box:
       Cull.pt(c, F32.add(r, F32.mul(w, 0.5)), Pick.big())
     case B.PPoly{ps, +w, _}:
       Cull.pts(ps, F32.mul(w, 0.5), Pick.big())
+    case B.PTint{ps, _, _}:
+      Cull.pts(ps, 0.0, Pick.big())
 
 def Cull.in(+p: B.Prim, +v: View, +c: D.Clip) -> Bool:
   Cull.meets(Cull.box(p), v, c)
@@ -541,6 +561,8 @@ def Pick.hit(p: B.Prim, +x: F32, +y: F32, +tol: F32) -> Bool & F32:
       (Pick.inside(View.box.pts(ps, Pick.big()), x, y), Pick.area(View.box.pts(ps, Pick.big())))
     case B.PPoly{+ps, +w, False{}}:
       (F32.is_le(Pick.path(ps, x, y, 1000000.0), F32.add(F32.mul(w, 0.5), tol)), Pick.area(View.box.pts(ps, Pick.big())))
+    case B.PTint{+ps, _, _}:
+      (Pick.inside(View.box.pts(ps, Pick.big()), x, y), Pick.area(View.box.pts(ps, Pick.big())))
 
 def Pick.better.k(take: Bool, +key: String, +area: F32, bk: String, +ba: F32) -> String & F32:
   match take:

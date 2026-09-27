@@ -60,6 +60,11 @@ def Act.cmds(a: Act) -> List<&2, Cmd>:
     case Act{_, cs}:
       cs
 
+def Act.ui(a: Act) -> Ui:
+  match a:
+    case Act{u, _}:
+      u
+
 # (the clock goes in the info map from the start, as Ui.tick puts it)
 def Ui.init(+now: Nat) -> Ui:
   Ui{M.State.empty(), "", Map.new(&2, String), Map.new(&2, String), Map.new(&2, Bool), False{}, now, False{}, False{}, "", 0n, False{}, "", "",
@@ -783,6 +788,17 @@ def Ui.flag(u: Ui, +k: String) -> Bool:
     case Ui{_, _, _, _, op, _, _, _, _, _, _, _, _, _, _, ob, tr}:
       Flag.get(op, k)
 
+# the ui with flag k on
+def Ui.flag_on(u: Ui, +k: String) -> Ui:
+  match u:
+    case Ui{st, sel, dr, live, +op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
+      Ui{st, sel, dr, live, Map.set(&2, Bool, op, k, True{}), on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
+
+def Ui.flag_off(u: Ui, +k: String) -> Ui:
+  match u:
+    case Ui{st, sel, dr, live, +op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
+      Ui{st, sel, dr, live, Map.set(&2, Bool, op, k, False{}), on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
+
 def Ui.dismiss(u: Ui) -> Act:
   match u:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, _, note, nf, ob, tr}:
@@ -803,7 +819,8 @@ def Ui.actions() -> List<&2, String>:
    "hook-token", "hook-retoken", "hook-untoken",
    "voice", "voice-key", "voice-unkey", "voice-dict", "voice-use", "voice-add", "voice-fix", "voice-fixed", "voice-skip", "voice-err", "voice-term", "voice-unterm",
    "btw-close", "vw-light", "proj-pick", "proj-found", "proj-browse", "proj-back", "space-link", "skill-move",
-   "mech", "mech-part", "mech-3d", "mech-refresh", "mech-renders", "mech-render", "view-kind", "view-sheet", "view-layer"]
+   "mech", "mech-part", "mech-3d", "mech-refresh", "mech-renders", "mech-render", "view-kind", "view-sheet", "view-layer",
+   "attach-up", "attach-end"]
 
 # Reading the client state
 # ------------------------
@@ -817,9 +834,9 @@ def Ui.sel(u: Ui) -> String:
 def Ui.reselect(+old: String, +u: Ui) -> Ui:
   Ui.reselect.k(String.eq(old, Ui.sel(u)), u, old)
 
-# (Ui.act brings the thread's own panel)
+# (Ui.act brings the thread's own panel); a thread chosen leaves Settings
 def Ui.select(u: Ui, +id: String) -> Act:
-  Act{Ui.select.k(u, id), [Focus{"composer"}, Scroll{}]}
+  Act{Ui.flag_off(Ui.select.k(u, id), "settings"), [Focus{"composer"}, Scroll{}]}
 
 def Ui.reselect.act(+old: String, a: Act) -> Act:
   match a:
@@ -1850,12 +1867,6 @@ def Ui.state(u: Ui) -> M.State:
 def Ui.page(+u: Ui) -> String:
   BT.World.page(M.State.bots(Ui.state(u)), Ui.sel(u))
 
-# the ui with flag k on
-def Ui.flag_on(u: Ui, +k: String) -> Ui:
-  match u:
-    case Ui{st, sel, dr, live, +op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
-      Ui{st, sel, dr, live, Map.set(&2, Bool, op, k, True{}), on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
-
 # Command palette
 # ---------------
 # ctrl+k: threads and actions, filtered by what was typed. Its query and
@@ -1943,11 +1954,6 @@ def Palette.at(ps: List<&2, PItem>, i: Nat) -> PItem:
       Palette.at(t, j)
     case Nil{} _:
       PItem{"", "", ""}
-
-def Ui.flag_off(u: Ui, +k: String) -> Ui:
-  match u:
-    case Ui{st, sel, dr, live, +op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
-      Ui{st, sel, dr, live, Map.set(&2, Bool, op, k, False{}), on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
 
 # Thread search (ctrl+shift+f)
 # ----------------------------
@@ -3828,7 +3834,7 @@ def Bots.views(u: Ui, +bot: String, +room: String, +remote: String) -> Ui:
 def Bots.select.k(m: Maybe<&2, BT.Bot>, u: Ui) -> Act:
   match m:
     case Some{BT.Bot{+i, _, +th, _, _, _, _}}:
-      Act{Bots.views(Bots.sel.set(u, th), i, "", ""), [Focus{"composer"}, Scroll{}]}
+      Act{Ui.flag_off(Bots.views(Bots.sel.set(u, th), i, "", ""), "settings"), [Focus{"composer"}, Scroll{}]}
     case None{}:
       Act{u, Nil{}}
 
@@ -3836,7 +3842,7 @@ def Bots.select(+u: Ui, +id: String) -> Act:
   Bots.select.k(BT.World.find.id(BT.World.bot(M.State.bots(Ui.state.of(u)), id)), u)
 
 def Bots.room.select(u: Ui, +id: String) -> Act:
-  Act{Bots.views(u, "", id, ""), [Focus{"room-post"}, Scroll{}]}
+  Act{Ui.flag_off(Bots.views(u, "", id, ""), "settings"), [Focus{"room-post"}, Scroll{}]}
 
 # A bot elsewhere on one of the owner's machines opens there: the window
 # switches to that machine's hub and shows the bot with all its tabs (its
@@ -4335,14 +4341,55 @@ def Voice.fixed.k(none: Bool, +u: Ui, +x: VC.Unsure, +r: String) -> Act:
 def Voice.fixed(+u: Ui) -> Act:
   Voice.fixed.k(String.is_empty(String.trim(Ui.scratch(u, "@f.vfix"))), u, Voice.at(Voice.unsure(u), Ui.scratch(u, "@voice.fix")), String.trim(Ui.scratch(u, "@f.vfix")))
 
+# Uploads over HTTP
+# -----------------
+# The phones send a file as the body of one POST /attach to the thread's
+# hub (server.bend's Upload); the answer comes back here as "attach-end":
+# the path joins the thread's attachments, or the failure shows
+
+def Upload.fail(failed: Bool, +o: J.Json, u: Ui) -> Ui:
+  match failed:
+    case True{}:
+      Ui.error_set(u, J.Json.get_str(o, "text", "the upload failed"))
+    case False{}:
+      u
+
+def Upload.end.k(+o: J.Json, +u: Ui) -> Act:
+  Act{Upload.fail(J.Json.get_bool(o, "upload", False{}), o, Ui.reply.att(o, Bool.not(J.Json.get_bool(o, "upload", False{})), u)), Nil{}}
+
+def Upload.start.k(big: Bool, +u: Ui, +name: String) -> Act:
+  match big:
+    case True{}:
+      Act{Ui.error_set(u, "attachments are limited to " ++ Nat.show(Nat.div(AT.Att.cap(), 1048576n)) ++ " MB"), Nil{}}
+    case False{}:
+      Act{Ui.up_set(u, Ui.sel(u), name), Nil{}}
+
+def Upload.start(+u: Ui, +o: J.Json) -> Act:
+  Upload.start.k(Nat.is_gt(J.Json.get_nat(o, "size", 0n), AT.Att.cap()), u, J.Json.get_str(o, "name", "file"))
+
+def Upload.end(+u: Ui, +v: String) -> Act:
+  Upload.end.k(Maybe.default(&2, J.Json, J.Json.parse(v), J.Json.obj([J.KV{"text", J.Str{"the upload failed"}}, J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"upload", J.Flag{True{}}}])), u)
+
+# a phone's upload over HTTP: it starts (value: {"name", "size"}; one over
+# the cap is refused here, and the phone sends nothing, as the screen's
+# "cap" says), and the hub answered (value: its JSON, as an attach.put's)
+def Upload.act(+i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 29n:
+      Upload.start(u, Maybe.default(&2, J.Json, J.Json.parse(value), J.Null{}))
+    case 30n:
+      Upload.end(u, value)
+    case _:
+      Mpage.act(Nat.sub(i, 20n), u, value)
+
 # past the table's own: the project picker's (14-17), then the Mechanical
-# page's (20 on; client.bend's Mpage.act)
+# page's (20-28; client.bend's Mpage.act), then a phone's upload (29, 30)
 def Voice.act.tail.k(picker: Bool, +i: Nat, +u: Ui, +value: String) -> Act:
   match picker:
     case True{}:
       Proj.run.k(Nat.add(Nat.sub(i, 14n), 4n), u, value)
     case False{}:
-      Mpage.act(Nat.sub(i, 20n), u, value)
+      Upload.act(i, u, value)
 
 def Voice.act.tail(+i: Nat, +u: Ui, +value: String) -> Act:
   Voice.act.tail.k(Nat.is_lt(i, 19n), i, u, value)

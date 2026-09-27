@@ -384,14 +384,15 @@ class PlotRenderer : GLSurfaceView.Renderer {
         while (i < chunks.size) {
             val first = chunks[i]
             var j = i
-            while (j < chunks.size && chunks[j].layer == first.layer) j++
+            while (j < chunks.size && chunks[j].layer == first.layer && chunks[j].own == first.own &&
+                (!first.own || (chunks[j].color == first.color && chunks[j].alpha == first.alpha))) j++
             val c0 = caps.size / 5
             val t0 = tris.size / 2
             for (k in i until j) if (k !in fresh) { caps.addAll(chunks[k].caps); tris.addAll(chunks[k].tris) }
             val c1 = caps.size / 5
             val t1 = tris.size / 2
             for (k in i until j) if (k in fresh) { caps.addAll(chunks[k].caps); tris.addAll(chunks[k].tris) }
-            val rgb = if (first.layer in look.indices) look[first.layer] else first.color
+            val rgb = if (!first.own && first.layer in look.indices) look[first.layer] else first.color
             out.add(Layer(first.layer, floatArrayOf(((rgb shr 16) and 255) / 255f, ((rgb shr 8) and 255) / 255f, (rgb and 255) / 255f, first.alpha),
                 c0 until c1, c1 until caps.size / 5, t0 until t1, t1 until tris.size / 2))
             i = j

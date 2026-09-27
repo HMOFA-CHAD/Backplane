@@ -468,14 +468,14 @@ def Sch.shape.text(+x: S.Sx, +t: Xf, +key: String, +sig: U32, +layer: U32, +info
   Sch.text.items(S.Sx.arg(x, 0n), Pt.x(p), Pt.y(p), Sch.readable(Bool.xor(Sch.vertical(S.Sx.f(at, 2n)), Xf.quarter(t))),
     Tx.of(x), key, sig, layer, info, Nil{})
 
-def Sch.shape.k(i: Nat, +x: S.Sx, +t: Xf, +key: String, +sig: U32, +ll: U32, +lf: U32, +info: String, +w: F32) -> List<&2, B.Item>:
+def Sch.shape.k(i: Nat, +x: S.Sx, +t: Xf, +key: String, +sig: U32, +ll: U32, +lf: U32, +info: String, +w: F32, +fk: Nat) -> List<&2, B.Item>:
   match i:
     case 0n:
-      Sch.poly(Sch.pts(S.Sx.args(S.Sx.get(x, "pts")), t), False{}, w, Sch.fill(x), key, sig, ll, lf, info)
+      Sch.poly(Sch.pts(S.Sx.args(S.Sx.get(x, "pts")), t), False{}, w, fk, key, sig, ll, lf, info)
     case 1n:
-      Sch.poly(Sch.rect.lib(t, Sch.pt(x, "start"), Sch.pt(x, "end")), True{}, w, Sch.fill(x), key, sig, ll, lf, info)
+      Sch.poly(Sch.rect.lib(t, Sch.pt(x, "start"), Sch.pt(x, "end")), True{}, w, fk, key, sig, ll, lf, info)
     case 2n:
-      Sch.circ(Xf.get(t, x, "center"), S.Sx.f(S.Sx.get(x, "radius"), 0n), w, Sch.fill(x), key, sig, ll, lf, info)
+      Sch.circ(Xf.get(t, x, "center"), S.Sx.f(S.Sx.get(x, "radius"), 0n), w, fk, key, sig, ll, lf, info)
     case 3n:
       [B.Item{key, sig, ll, B.PLine{B.Arc.points(Xf.get(t, x, "start"), Xf.get(t, x, "mid"), Xf.get(t, x, "end")), w}, info}]
     case 4n:
@@ -487,7 +487,67 @@ def Sch.shape.k(i: Nat, +x: S.Sx, +t: Xf, +key: String, +sig: U32, +ll: U32, +lf
 
 # a graphic form placed by t: outline on ll, fill on lf
 def Sch.shape(+x: S.Sx, +t: Xf, +key: String, +sig: U32, +ll: U32, +lf: U32, +info: String) -> List<&2, B.Item>:
-  Sch.shape.k(Sch.index(Sch.shapes(), S.Sx.name(x)), x, t, key, sig, ll, lf, info, Sch.width(x, 0.1524))
+  Sch.shape.k(Sch.index(Sch.shapes(), S.Sx.name(x)), x, t, key, sig, ll, lf, info, Sch.width(x, 0.1524), Sch.fill(x))
+
+# Coloured boxes
+# --------------
+# A sheet's own shape or text box filled with a colour, (fill (type color)
+# (color r g b a)), is a tint of that colour at its opacity under
+# everything on the sheet (on "sheet fill"), as KiCad draws it, and its
+# outline stays a graphic. No other fill of a sheet's own shapes hides
+# what is under it: only "outline" fills with the line's colour.
+
+def Tint.rgb(+c: S.Sx) -> U32:
+  U32.or(U32.or(U32.shln(F32.to_u32(F32.round(S.Sx.f(c, 0n))), 16n), U32.shln(F32.to_u32(F32.round(S.Sx.f(c, 1n))), 8n)), F32.to_u32(F32.round(S.Sx.f(c, 2n))))
+
+def Tint.a8(+c: S.Sx) -> U32:
+  F32.to_u32(F32.round(F32.mul(F32.min(S.Sx.f(c, 3n), 1.0), 255.0)))
+
+# whether a form's fill is a colour that shows
+def Tint.on(+x: S.Sx) -> Bool:
+  Bool.and(String.eq(S.Sx.attr(S.Sx.get(x, "fill"), "type"), "color"), F32.is_gt(S.Sx.f(S.Sx.get(S.Sx.get(x, "fill"), "color"), 3n), 0.0))
+
+def Tint.ring.at(+i: Nat, +cx: F32, +cy: F32, +r: F32) -> B.Pt:
+  +a = F32.mul(F32.div(F32.from_nat(i), 32.0), F32.mul(2.0, F32.pi()))
+  B.Pt{F32.add(cx, F32.mul(r, F32.cos(a))), F32.add(cy, F32.mul(r, F32.sin(a)))}
+
+def Tint.ring(n: Nat, +i: Nat, +cx: F32, +cy: F32, +r: F32) -> List<&2, B.Pt>:
+  match n:
+    case 0n:
+      Nil{}
+    case 1n+m:
+      Tint.ring.at(i, cx, cy, r) <> Tint.ring(m, 1n+i, cx, cy, r)
+
+def Tint.circle(c: B.Pt, +r: F32) -> List<&2, B.Pt>:
+  match c:
+    case B.Pt{+cx, +cy}:
+      Tint.ring(32n, 0n, cx, cy, r)
+
+# the area a sheet's shape i (Sch.shapes) fills
+def Tint.pts(i: Nat, +x: S.Sx) -> List<&2, B.Pt>:
+  match i:
+    case 0n:
+      Sch.pts(S.Sx.args(S.Sx.get(x, "pts")), Xf.home())
+    case 1n:
+      Sch.rect(Sch.pt(x, "start"), Sch.pt(x, "end"))
+    case 2n:
+      Tint.circle(Sch.pt(x, "center"), S.Sx.f(S.Sx.get(x, "radius"), 0n))
+    case _:
+      Nil{}
+
+def Tint.items(on: Bool, +ps: List<&2, B.Pt>, +x: S.Sx, +key: String, +sig: U32, +info: String) -> List<&2, B.Item>:
+  match on:
+    case True{}:
+      [B.Item{key ++ "/tint", sig, L.sheet_fill(), B.Tint.of(ps, Tint.rgb(S.Sx.get(S.Sx.get(x, "fill"), "color")), Tint.a8(S.Sx.get(S.Sx.get(x, "fill"), "color"))), info}]
+    case False{}:
+      Nil{}
+
+# a sheet's own shape: its tint, then its outline (filled only by "outline")
+def Sch.top(+x: S.Sx, +key: String, +sig: U32) -> List<&2, B.Item>:
+  +i = Sch.index(Sch.shapes(), S.Sx.name(x))
+  List.append(&2, B.Item, Tint.items(Tint.on(x), Tint.pts(i, x), x, key, sig, "graphic"),
+    Sch.shape.k(i, x, Xf.home(), key, sig, L.graphic(), L.graphic(), "graphic", Sch.width(x, 0.1524),
+      Bool.pick(Nat, String.eq(S.Sx.attr(S.Sx.get(x, "fill"), "type"), "outline"), 1n, 0n)))
 
 # Library symbols
 # ---------------
@@ -809,6 +869,8 @@ def Bb.prim(p: B.Prim, b: Bb) -> Bb:
       Bb.pt(c, r, b)
     case B.PPoly{ps, _, _}:
       Bb.pts(ps, b)
+    case B.PTint{ps, _, _}:
+      Bb.pts(ps, b)
 
 # the extent of a symbol's drawing and pins (not their texts)
 def Bb.items(xs: List<&2, B.Item>, +b: Bb) -> Bb:
@@ -990,10 +1052,11 @@ def Sch.textbox(+x: S.Sx, +key: String, +sig: U32) -> List<&2, B.Item>:
   +x1 = F32.sub(Pt.x(b), Box.margin(x, 2n, d))
   +y1 = F32.sub(Pt.y(b), Box.margin(x, 3n, d))
   +w = Sch.width(x, 0.1524)
+  List.append(&2, B.Item, Tint.items(Tint.on(x), Sch.rect(a, b), x, key, sig, "text box"),
   List.append(&2, B.Item, Bool.pick(List<&2, B.Item>, F32.is_lt(S.Sx.f(S.Sx.get(S.Sx.get(x, "stroke"), "width"), 0n), 0.0), Nil{},
     [B.Item{key, sig, L.note(), B.PPoly{Sch.rect(a, b), w, False{}}, "text box"}]),
     Sch.text.items(ST.Stroke.wrap(S.Sx.arg(x, 0n), Tx.w(tx), F32.sub(x1, x0)), Box.pick(Sch.tx.hj(tx), x0, F32.div(F32.add(x0, x1), 2.0), x1),
-      Box.pick(Sch.tx.vj(tx), y0, F32.div(F32.add(y0, y1), 2.0), y1), 0.0, tx, key ++ "/t", sig, L.note(), "text box", Nil{}))
+      Box.pick(Sch.tx.vj(tx), y0, F32.div(F32.add(y0, y1), 2.0), y1), 0.0, tx, key ++ "/t", sig, L.note(), "text box", Nil{})))
 
 # Sheets
 # ------
@@ -1270,7 +1333,7 @@ def Sch.form.k(i: Nat, +x: S.Sx, +key: String, +sig: U32, +lib: List<&2, Lib>) -
     case 99n:
       Nil{}
     case _:
-      Sch.shape(x, Xf.home(), key, sig, L.graphic(), L.graphic(), "graphic")
+      Sch.top(x, key, sig)
 
 def Sch.form.go(skip: Bool, +i: Nat, +bs: List<&2, U32>, +n: Nat, +lib: List<&2, Lib>, +lsig: U32) -> List<&2, B.Item>:
   match skip:

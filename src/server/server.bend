@@ -110,6 +110,8 @@ type Msg is Data:
   # a bot's new project, approved by the person, its folder made and
   # resolved: the hub adds it and answers the tool call (`id` as JSON)
   NewProject{thread: String, root: String, name: String, id: String, reply: Chan(String)}
+  # a phone's upload (POST /attach) asks where a thread's attachments go
+  AttDir{thread: String, reply: Chan(String)}
 
 # remote access: also listen on the tailnet, serve HTTPS through
 # `tailscale serve`, and the token remote clients must present
@@ -2310,6 +2312,14 @@ def Hub.link(h: Hub, +lk: String) -> IO(Hub):
     case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
       Hub.models.k(Hub{st, f, ls, cl, as, inbox, Cfg.with_link(cfg, lk), note})
 
+# where a thread's attachments go (the upload itself runs off the hub)
+def Hub.att_dir(h: Hub, +thread: String, +reply: Chan(String)) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        ok : Bool <- Chan.send(String, reply, AT.Att.dir(Cfg.home(cfg), thread))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
 # the owner's other machines changed: every client hears
 def Hub.machines(h: Hub, +mc: String) -> IO(Hub):
   match h:
@@ -4392,6 +4402,99 @@ def Conn.bot.own(ok: Bool, s: Socket, rq: BotReq, +inbox: Chan(Msg)) -> IO(Unit)
     case False{}:
       Conn.finish(s, W.Http.text("401 Unauthorized", "this Backplane needs its pairing token"))
 
+# Uploads over HTTP
+# -----------------
+# POST /attach?thread=<id>&key=<key>&name=<name> with the file as the body: the
+# phones' way to attach (no base64, no pieces through the hub). The hub
+# only names the folder; the bytes after the head go straight from the
+# socket to the file (H.Sock.save) off the hub. The answer is what an
+# attach.put answers: {"attached", "thread"}, or {"text", "thread",
+# "upload"} when it failed.
+
+def Conn.is_att(req: W.Request) -> Bool:
+  match req:
+    case W.Request{m, p, _}:
+      Bool.and(String.eq(m, "POST"), String.eq(W.Http.route(p), "/attach"))
+
+def Upload.json(+status: String, +ok: Bool, +thread: String, +v: String) -> List<&2, U32>:
+  W.Http.response(status, "application/json", U.Utf8.encode(J.Json.show(J.Json.obj(Bool.pick(List<&2, J.KV>, ok,
+    [J.KV{"attached", J.Str{v}}, J.KV{"thread", J.Str{thread}}],
+    [J.KV{"text", J.Str{v}}, J.KV{"thread", J.Str{thread}}, J.KV{"upload", J.Flag{True{}}}])))), "")
+
+def Upload.saved(r: Socket & Result<&1, &1, U32 & String, Unit>, +thread: String, +path: String) -> IO(Unit):
+  (s, res) = r
+  match res:
+    case Done{_}:
+      Conn.finish(s, Upload.json("200 OK", True{}, thread, path))
+    case Fail{_}:
+      do IO<Unit>:
+        rm : Result<&1, &1, U32 & String, Unit> <- H.FS.remove(path)
+        Conn.finish(s, Upload.json("400 Bad Request", False{}, thread, "the upload did not arrive whole"))
+
+# the head's leftover (the body's start) is written; the rest is copied
+# (a body that came whole with the head has nothing left to copy: the copy
+# would wait for bytes that never come)
+def Upload.rest(none: Bool, s: Socket, +left: Nat, +thread: String, +path: String) -> IO(Unit):
+  match none:
+    case True{}:
+      Conn.finish(s, Upload.json("200 OK", True{}, thread, path))
+    case False{}:
+      IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.save(s, path, U32.from_nat(left)), r => Upload.saved(r, thread, path))
+
+def Upload.wrote.k(ok: Bool, s: Socket, +err: String, +left: Nat, +thread: String, +path: String) -> IO(Unit):
+  match ok:
+    case True{}:
+      Upload.rest(Nat.is_eq(left, 0n), s, left, thread, path)
+    case False{}:
+      Conn.finish(s, Upload.json("500 Internal Server Error", False{}, thread, err))
+
+def Upload.wrote(+err: String, s: Socket, +left: Nat, +thread: String, +path: String) -> IO(Unit):
+  Upload.wrote.k(String.is_empty(err), s, err, left, thread, path)
+
+def Upload.into(m: Maybe<&1, String>, s: Socket, +thread: String, +name: String, +len: Nat, rest: List<&2, U32>) -> IO(Unit):
+  match m:
+    case Some{+dir}:
+      do IO<Unit>:
+        mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir)
+        +head : List<&2, U32> = List.take(&2, U32, rest, len)
+        +path : String = dir ++ "/" ++ name
+        e : String <- Media.put.file(path, "w", head)
+        Upload.wrote(e, s, Nat.sub(len, List.length(&2, U32, head)), thread, path)
+    case None{}:
+      Conn.finish(s, W.Http.text("503 Service Unavailable", "the hub is gone"))
+
+# a client that waits for leave to send the body (Expect: 100-continue) is
+# told to go on
+def Upload.go(cont: Bool, s: Socket) -> IO(Socket):
+  match cont:
+    case True{}:
+      Conn.send(s, U.Utf8.encode("HTTP/1.1 100 Continue\r\n\r\n"))
+    case False{}:
+      IO.pure(Socket, s)
+
+def Upload.gate(ok: Bool, big: Bool, s: Socket, +cont: Bool, +thread: String, +name: String, +len: Nat, +rest: List<&2, U32>, +inbox: Chan(Msg)) -> IO(Unit):
+  match ok big:
+    case False{} _:
+      Conn.finish(s, W.Http.text("401 Unauthorized", "this Backplane needs its pairing token"))
+    case True{} True{}:
+      Conn.finish(s, Upload.json("413 Payload Too Large", False{}, thread, "attachments are limited to " ++ Nat.show(Nat.div(AT.Att.cap(), 1048576n)) ++ " MB"))
+    case True{} False{}:
+      do IO<Unit>:
+        +reply : Chan(String) <- Chan.new(String, 1)
+        sent : Bool <- Chan.send(Msg, inbox, AttDir{thread, reply})
+        m : Maybe<&1, String> <- Chan.recv(String, reply)
+        s2 : Socket <- Upload.go(Bool.and(cont, List.is_empty(&2, U32, rest)), s)
+        Upload.into(m, s2, thread, name, len, rest)
+
+def Conn.route.att(att: Bool, s: Socket, +req: W.Request, rest: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
+  match att req:
+    case True{} W.Request{_, +p, +hs}:
+      Upload.gate(Conn.allowed(trusted, hs, p, token), Nat.is_gt(Conn.bot.len(hs), AT.Att.cap()), s,
+        String.contains(String.to_lower(W.Http.header_of(hs, "expect")), "100-continue"),
+        AT.Att.unpct(W.Http.param(p, "thread")), AT.Att.stored(AT.Att.unpct(W.Http.param(p, "key")), AT.Att.unpct(W.Http.param(p, "name"))), Conn.bot.len(hs), rest, inbox)
+    case False{} _:
+      Conn.route.mcp(Conn.is_mcp(req), s, req, rest, web, id, inbox, trusted, token)
+
 def Conn.route.bot(k: Nat, s: Socket, +req: W.Request, rest: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
   match k req:
     case 1n W.Request{_, +p, +hs}:
@@ -4409,7 +4512,7 @@ def Conn.route.bot(k: Nat, s: Socket, +req: W.Request, rest: List<&2, U32>, +web
     case 7n W.Request{_, +p, +hs}:
       Conn.bot.own(Conn.allowed(trusted, hs, p, token), s, BotReq{"page", Conn.bot.page_id(W.Http.route(p)), "", "", "", "", ""}, inbox)
     case _ _:
-      Conn.route.mcp(Conn.is_mcp(req), s, req, rest, web, id, inbox, trusted, token)
+      Conn.route.att(Conn.is_att(req), s, req, rest, web, id, inbox, trusted, token)
 
 def Conn.route(s: Socket, +req: W.Request, rest: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
   Conn.route.bot(Conn.bot.kind(req), s, req, rest, web, id, inbox, trusted, token)
@@ -4714,6 +4817,8 @@ def Msg.kind(m: Msg) -> String:
       "shot"
     case NewProject{_, _, _, _, _}:
       "new_project"
+    case AttDir{_, _}:
+      "att_dir"
 
 def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
   match m:
@@ -4771,6 +4876,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.newproj.made(h, root, name, id, reply, now)
     case Shot{text}:
       Hub.broadcast(h, text)
+    case AttDir{thread, reply}:
+      Hub.att_dir(h, thread, reply)
 
 # each message's handling is timed as hub.<kind> (docs/perf.md)
 def Hub.got(m: Maybe<&1, Msg>, h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):

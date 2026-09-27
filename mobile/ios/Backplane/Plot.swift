@@ -109,19 +109,23 @@ final class PlotChunk: @unchecked Sendable {
     let layer: Int
     let color: UInt32
     let alpha: Float
+    // a tint (fills with a width): drawn in its own colour, not its layer's
+    let own: Bool
     var caps: [Float] = []
     var tris: [Float] = []
     var pieces: [Piece] = []
 
-    init(layer: Int, color: UInt32, alpha: Float) {
+    init(layer: Int, color: UInt32, alpha: Float, own: Bool = false) {
         self.layer = layer
         self.color = color
         self.alpha = alpha
+        self.own = own
     }
 
     static func decode(_ o: [String: Any]) -> PlotChunk {
-        let c = PlotChunk(layer: o["l"] as? Int ?? 0, color: UInt32(o["c"] as? Int ?? 0), alpha: Float(o["a"] as? Int ?? 255) / 255)
         let mode = o["m"] as? Int ?? 1
+        let c = PlotChunk(layer: o["l"] as? Int ?? 0, color: UInt32(o["c"] as? Int ?? 0), alpha: Float(o["a"] as? Int ?? 255) / 255,
+                          own: mode == 0 && (o["w"] as? Int ?? 0) != 0)
         let r = Float(o["w"] as? Int ?? 0) / 2
         var v = Varints(o["d"] as? Data ?? Data())
         var px: Int32 = 0, py: Int32 = 0
