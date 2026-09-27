@@ -8,6 +8,7 @@ import ./bot.bend as BT
 import ./cron.bend as CR
 import ./ring.bend as RG
 import ./space.bend as SP
+import ./refs.bend as RF
 
 # Bots, as a decider (docs/bots.md). Client requests ("bots.*"), the bots'
 # own MCP tools, messages between bots, routines, webhooks and messages
@@ -321,6 +322,81 @@ def Bots.room.live(r: BT.Room) -> Maybe<&2, BT.Room>:
 
 def Bots.room.get(+s: M.State, +id: String) -> Maybe<&2, BT.Room>:
   Bots.room.live(BT.World.room(M.State.bots(s), id))
+
+# Mentions in a thread
+# --------------------
+# A person's message in a thread that names bots (`@name`, refs.bend) wakes
+# each at hop 0 with where it was said (never the thread's own bot); one
+# that names group chats (`#room`) is posted in each. The message's id
+# names the thread, so the link visuals draw thread to bot.
+
+def Bots.place.k(+pid: String, +pname: String) -> String:
+  Bool.pick(String, String.is_empty(pid), "", ", project \"" ++ pname ++ "\"")
+
+def Bots.place(+s: M.State, +thread: String) -> String:
+  "\"" ++ RF.Refs.t.title(RF.Sum.thread.of(s, thread)) ++ "\" (thread id " ++ thread ++
+    Bots.place.k(RF.Refs.t.project(RF.Sum.thread.of(s, thread)), RF.Refs.proj.title(s, RF.Refs.t.project(RF.Sum.thread.of(s, thread)))) ++ ")"
+
+def Bots.mention.note(+place: String, +text: String) -> String:
+  "[the person mentioned you in the thread " ++ place ++ ". Read it with thread_read, and answer there with thread_send when the message asks something of you]\n" ++ text
+
+def Bots.mention.bot(+b: BT.Bot, +s: M.State, +now: Nat, +i: Nat, +thread: String, +place: String, +text: String) -> B.Step:
+  Bool.pick(B.Step, String.eq(BT.Bot.thread(b), thread), B.Step.none(),
+    Bots.wake(s, now, thread, b, Bots.msg(now, B.Hub.seq(s), i), Bots.mention.note(place, text), 0n))
+
+def Bots.mention.room(m: Maybe<&2, BT.Room>, +s: M.State, +now: Nat, +thread: String, +place: String, +text: String) -> B.Step:
+  match m:
+    case Some{r}:
+      Bots.post(s, now, thread, "you", "", r, "[from the thread " ++ place ++ "]\n" ++ text, 0n)
+    case None{}:
+      B.Step.none()
+
+def Bots.mention.k(k: Nat, +s: M.State, +now: Nat, +i: Nat, +thread: String, +place: String, +text: String, +id: String) -> B.Step:
+  match k:
+    case 0n:
+      Bots.mention.bot(Bots.bot(s, id), s, now, i, thread, place, text)
+    case 3n:
+      Bots.mention.room(Bots.room.get(s, id), s, now, thread, place, text)
+    case _:
+      B.Step.none()
+
+def Bots.mention.one(h: RF.Hit, +s: M.State, +now: Nat, +i: Nat, +thread: String, +place: String, +text: String) -> B.Step:
+  match h:
+    case RF.Hit{+kind, +id, _, _}:
+      Bots.mention.k(RF.Refs.kind.pos(kind), s, now, i, thread, place, text, id)
+
+def Bots.mentions.go(hs: List<&2, RF.Hit>, +i: Nat, +s: M.State, +now: Nat, +thread: String, +place: String, +text: String) -> B.Step:
+  match hs:
+    case Nil{}:
+      B.Step.none()
+    case h <> t:
+      Step.cat(Bots.mention.one(h, s, now, i, thread, place, text), Bots.mentions.go(t, 1n+i, s, now, thread, place, text))
+
+# what a person's message in a thread sets off for the bots and rooms it names
+def Bots.mentions(+s: M.State, +now: Nat, +thread: String, +text: String) -> B.Step:
+  Bots.mentions.go(RF.Refs.found(s, thread, text), 0n, s, now, thread, Bots.place(s, thread), text)
+
+def Bots.mentions.k(dup: Bool, +s: M.State, +now: Nat, +p: J.Json) -> B.Step:
+  match dup:
+    case True{}:
+      B.Step.none()
+    case False{}:
+      Bots.mentions(s, now, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "text", ""))
+
+# a message sent again (a dropped connection) sets nothing off twice
+def Bots.mentions.p(+s: M.State, +now: Nat, +p: J.Json) -> B.Step:
+  Bots.mentions.k(Bool.and(Bool.not(String.is_empty(J.Json.get_str(p, "msg", ""))), B.Hub.has_msg(B.Hub.entries(s), J.Json.get_str(p, "msg", ""))), s, now, p)
+
+def Bots.hub.k(turn: Bool, +s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
+  match turn:
+    case True{}:
+      Step.cat(B.Hub.request(s, now, client, o), Bots.mentions.p(s, now, J.Json.get_obj(o, "p")))
+    case False{}:
+      B.Hub.request(s, now, client, o)
+
+# a request for the hub's decider; a sent message's mentions come after it
+def Bots.hub(+s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
+  Bots.hub.k(Bool.and(String.eq(J.Json.get_str(o, "m", ""), "turn.start"), RF.Refs.maybe(J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""))), s, now, client, o)
 
 def Bots.routine.id(+s: M.State, +now: Nat, +id: String) -> String:
   Bool.pick(String, String.is_empty(id), B.Hub.id("o", now, B.Hub.seq(s)), id)
@@ -1583,7 +1659,8 @@ def Bots.prompt(+s: M.State, +thread: String, +home: String) -> String:
 def Bots.turn.b(+block: String, +text: String) -> String:
   Bool.pick(String, String.is_empty(block), text, block ++ "\n\n" ++ text)
 
-# the text a bot's turn starts with: its memory block, then the message
+# the text a turn starts with: a bot's memory block first, then the
+# message with what it references (refs.bend's Refs.agent)
 def Bots.turn.k(m: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +text: String) -> String:
   match m:
     case Some{b}:
@@ -1592,4 +1669,4 @@ def Bots.turn.k(m: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +text: String) -> 
       text
 
 def Bots.turn(+s: M.State, +now: Nat, +thread: String, text: String) -> String:
-  Bots.turn.k(BT.World.of_thread(M.State.bots(s), thread), s, now, text)
+  Bots.turn.k(BT.World.of_thread(M.State.bots(s), thread), s, now, RF.Refs.agent(s, thread, text))

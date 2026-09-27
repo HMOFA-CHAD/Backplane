@@ -33,6 +33,7 @@ import ./botnet.bend as BN
 import ../core/bothub.bend as BH
 import ../core/bot.bend as BO
 import ../core/space.bend as SPC
+import ../core/refs.bend as RF
 import ../core/sign.bend as SG
 import ./google.bend as GS
 import ../core/google.bend as GG
@@ -1152,6 +1153,13 @@ def BtwJob.run(+tx: AG.Tx, +inbox: Chan(Msg), +client: U32, +id: String, +thread
   IO.bind(String, Unit, OneShot.run(tx, AG.Btw.system(), input), a =>
     GitJob.reply(inbox, client, id, True{}, J.Json.obj([J.KV{"thread", J.Str{thread}}, J.KV{"q", J.Str{q}}, J.KV{"btw", J.Str{a}}])))
 
+# a summary for the composer's reference menu (refs.bend's Sum.*): of a
+# thread (kind "thread") or a project ("project"); the hub keeps it
+# (summary.set {id, kind, text})
+def SumJob.run(+tx: AG.Tx, +inbox: Chan(Msg), +id: String, +kind: String, +input: String) -> IO(Unit):
+  IO.bind(String, Unit, OneShot.run(tx, RF.Sum.system(), input), a =>
+    GitJob.say(inbox, "summary.set", [J.KV{"id", J.Str{id}}, J.KV{"kind", J.Str{kind}}, J.KV{"text", J.Str{a}}]))
+
 def AgentJob.named(+r: String, +inbox: Chan(Msg), +thread: String) -> IO(Unit):
   Bool.pick(IO(Unit), GT.Git.failed(r), GitJob.note(inbox, thread, "error", "branch name: " ++ r),
     GitJob.say(inbox, "thread.branch", [J.KV{"thread", J.Str{thread}}, J.KV{"branch", J.Str{r}}]))
@@ -1336,12 +1344,14 @@ def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U
       TitleJob.run(tx, inbox, thread, a, b)
     case 7n:
       BtwJob.run(tx, inbox, client, id, thread, a, b)
+    case 8n:
+      SumJob.run(tx, inbox, thread, a, b)
     case _:
       GitJob.run.git(tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # a job the hub asked for: a git job, or one of the sidebar's
 def GitJob.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
-  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
+  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # Grok (grok agent stdio, ACP)
 # ----------------------------
@@ -3244,7 +3254,7 @@ def Bot.request.k(bots: Bool, +o: J.Json, +st: M.State, +now: Nat, +client: U32)
     case True{}:
       BH.Bots.request(st, now, client, o)
     case False{}:
-      B.Hub.request(st, now, client, o)
+      BH.Bots.hub(st, now, client, o)
 
 def Bot.request(m: Maybe<&2, J.Json>, +st: M.State, +now: Nat, +client: U32, +text: String) -> B.Step:
   match m:
@@ -3678,7 +3688,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     case Hub{+st, f, ls, cl, +as, inbox, cfg, note} B.AgentSend{+thread, +line}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        +l2 : String = Bot.line(BO.World.is_bot_thread(M.State.bots(st), thread), st, now, thread, line)
+        +l2 : String = Bot.line(Bool.or(BO.World.is_bot_thread(M.State.bots(st), thread), RF.Refs.maybe(line)), st, now, thread, line)
         Hub.agent_send.k(String.contains(l2, "$"), Agents.get(as, thread), l2, B.Hub.cwd(st, B.Hub.thread(st, thread)))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, +as, inbox, cfg, note} B.AgentStop{+thread}:

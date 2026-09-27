@@ -9,6 +9,7 @@ import ./src/core/semver.bend as SV
 import ./src/app/nui.bend as N
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
+import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
 import ./src/core/acp.bend as AC
 import ./src/core/mcp.bend as MC
@@ -2900,3 +2901,53 @@ law bot_newproj_decline:
 
 law bot_newproj_no_answer:
   {BHS.Bots.newproj.yes("") == False{} : Bool}
+
+# References in a message
+# -----------------------
+
+# a word with no sigil is offered nothing
+law refs_plain_offers_nothing:
+  for +s: M.State
+  for +sel: String
+  for +now: Nat
+  {RF.Refs.offer(s, sel, now, "hello") == [] : List<&2, RF.Cand>}
+
+law refs_plain_not_typing:
+  {RF.Refs.typing("hello") == False{} : Bool}
+
+# a message that names nothing reaches its agent as it was sent
+law refs_agent_plain:
+  for +s: M.State
+  for +sel: String
+  {RF.Refs.agent(s, sel, "hello") == "hello" : String}
+
+# a bot is never woken by a mention in its own thread
+law refs_own_bot_never:
+  for named: Bool
+  for +id: String
+  for +name: String
+  {RF.Refs.b.one(named, True{}, id, name) == [] : List<&2, RF.Hit>}
+
+# a message sent again (a dropped connection) wakes no bot twice
+law bot_mention_once:
+  for +s: M.State
+  for +now: Nat
+  for +p: J.Json
+  {BHS.Bots.mentions.k(True{}, s, now, p) == H.Step.none() : H.Step}
+
+# a summary never made is due; one not due is neither asked for nor stamped
+law sum_never_made_due:
+  for +now: Nat
+  {RF.Sum.due.k("", now) == True{} : Bool}
+
+law sum_not_due_asks_nothing:
+  for +s: M.State
+  for +id: String
+  for +kind: String
+  {H.Sum.out(False{}, s, id, kind) == [] : List<&2, H.Out>}
+
+law sum_not_due_stamps_nothing:
+  for +id: String
+  for +now: Nat
+  {H.Sum.at(False{}, id, now) == [] : List<&2, M.Change>}
+

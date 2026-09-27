@@ -1413,9 +1413,9 @@ def Lay.picker(open: Bool, +ty: Ty, +ms: List<&2, String>, +cur: String, +info: 
       Out.none()
 
 def Skills.row(+ty: Ty, +n: String, +d: String, +x: U32, +y: U32, +w: U32, first: Bool) -> Out:
-  +nw = Ty.width(ty, 2n, "$" ++ n)
+  +nw = Ty.width(ty, 2n, n)
   Out{List.concat(&2, R.Op, [Bool.pick(List<&2, R.Op>, first, Lay.round(D.Clip.all(), (x + 4 : U32), y, (w - 8 : U32), 28, 5, T.Th.sel()), Nil{}),
-      Ty.text(ty, 2n, "$" ++ n, D.Clip.all(), (x + 14 : U32), y, 28, T.Th.text()),
+      Ty.text(ty, 2n, n, D.Clip.all(), (x + 14 : U32), y, 28, T.Th.text()),
       Ty.text(ty, 2n, Lay.fit_or_none(ty, 2n, d, U32.dim(w, (nw + 48 : U32))), D.Clip.all(), (x + 30 + nw : U32), y, 28, T.Th.dim())]),
     [Lay.hit(x, y, w, 28, "skill", n)]}
 
@@ -1426,8 +1426,9 @@ def Skills.rows(+ty: Ty, rs: List<&2, U.SkillRow>, +x: U32, +y: U32, +w: U32, fi
     case U.SkillRow{+n, +d} <> t:
       Out.cat(Skills.row(ty, n, d, x, y, w, first), Skills.rows(ty, t, x, (y + 28 : U32), w, False{}))
 
-# the skills a `$` being typed may complete to, above the composer (Tab
-# or Enter takes the first, highlighted)
+# the skills a `$` being typed may complete to, or the bots, threads,
+# projects and rooms a `@`, `>`, `%` or `#` may, above the composer with
+# their summaries (Tab or Enter takes the first, highlighted)
 def Lay.skills(+ty: Ty, +rs: List<&2, U.SkillRow>, +x0: U32, +x1: U32, +bottom: U32) -> Out:
   +n = {U32.from_nat(List.length(&2, U.SkillRow, rs)) : U32}
   +h = {(n * 28 + 8 : U32) : U32}
@@ -1514,7 +1515,7 @@ def Lay.composer(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String, 
     Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), (100 + eh : U32), 10, T.Th.panel(), Bool.pick(U32, focused, T.Th.focus(), T.Th.line()))),
     Comp.sel(Bool.and(focused, Bool.not(Nat.is_eq(caret, mark))), ty, shown, top, draft, ss, ED.Edit.lo(caret, mark), ED.Edit.hi(caret, mark), (x0 + 16 : U32), (y + 12 : U32)),
     Bool.pick(Out, String.is_empty(draft),
-      Out.ops(Ty.text(ty, 3n, Ty.fit(ty, 3n, "Ask anything, @tag files, $skill, /btw a side question", tw), D.Clip.all(), (x0 + 16 : U32), (y + 10 : U32), 23, T.Th.faint())),
+      Out.ops(Ty.text(ty, 3n, Ty.fit(ty, 3n, "Ask anything: @bot, >thread, %project, #room, $skill, /btw", tw), D.Clip.all(), (x0 + 16 : U32), (y + 10 : U32), 23, T.Th.faint())),
       Lay.lines(ty, shown, D.Clip{(x0 + 1 : U32), (y + 1 : U32), (x1 - 1 : U32), (y + 60 + eh : U32)}, (x0 + 16 : U32), (y + 10 : U32))),
     Bool.pick(Out, Bool.and(Bool.and(focused, blink), Bool.and(Nat.is_ge(crow, top), Nat.is_lt(row, v))), Out.ops([D.Draw.rect(D.Clip.all(), (x0 + 16 + cx : U32), (y + 14 + (U32.from_nat(row) * 23 : U32) : U32), 1, 16, T.Th.accent(), 255)]), Out.none()),
     Comp.bar(Nat.is_gt(n, v), n, v, top, (x1 - 12 : U32), (y + 12 : U32), (U32.from_nat(v) * 23 - 4 : U32)),

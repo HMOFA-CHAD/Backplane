@@ -6,6 +6,7 @@ import ./attach.bend as AT
 import ./agent.bend as AG
 import ./handoff.bend as HD
 import ./todo.bend as TD
+import ./refs.bend as RF
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -477,9 +478,48 @@ def Reorder.projects(ks: List<&2, M.OKey>, +now: Nat) -> List<&2, M.Change>:
 def Hub.reorder_projects(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
   Step.reply(client, id, Reorder.projects(M.Order.plan(Reorder.pkeys(J.Json.elems(J.Json.get_obj(p, "ids")), M.State.navs(s)), J.Json.get_str(p, "project", "")), now))
 
+# Summaries (refs.bend's Sum.*): the text generation model writes one
+# when a thread's turn ends and one is due; the time it was asked for is
+# kept (summary.at.<id>) so a failed answer is not asked for again at once.
+# A thread's summary makes its project's when that is due too.
+
+def Sum.at(due: Bool, +id: String, +now: Nat) -> List<&2, M.Change>:
+  match due:
+    case True{}:
+      [M.SettingSet{RF.Sum.at.key(id), Nat.show(now), now}]
+    case False{}:
+      Nil{}
+
+def Sum.input(+kind: String, +s: M.State, +id: String) -> String:
+  Bool.pick(String, String.eq(kind, "project"), RF.Sum.project.input(s, id), RF.Sum.thread.input(s, id))
+
+def Sum.out(due: Bool, +s: M.State, +id: String, +kind: String) -> List<&2, Out>:
+  match due:
+    case True{}:
+      [Git{0, "", "summary", id, "", kind, Sum.input(kind, s, id)}]
+    case False{}:
+      Nil{}
+
+def Sum.keep(+id: String, +text: String, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, String.is_empty(text), Nil{}, [M.SettingSet{RF.Sum.key(id), text, now}])
+
+# a thread's project summarized next, when it has one and it is due
+def Sum.next(thread: Bool, +s: M.State, +now: Nat, +pid: String) -> Step:
+  match thread:
+    case True{}:
+      Step{Sum.at(RF.Sum.due(s, pid, now), pid, now), Sum.out(RF.Sum.due(s, pid, now), s, pid, "project")}
+    case False{}:
+      Step{Nil{}, Nil{}}
+
+# the writer's summary of a thread or project ({id, kind, text})
+def Sum.got(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
+  Step.before(Sum.keep(J.Json.get_str(p, "id", ""), RF.Sum.clean(J.Json.get_str(p, "text", "")), now), [Reply.ok(client, id)],
+    Sum.next(Bool.and(String.eq(J.Json.get_str(p, "kind", ""), "thread"), Bool.not(String.is_empty(RF.Refs.t.project(RF.Sum.thread.of(s, J.Json.get_str(p, "id", "")))))),
+      s, now, RF.Refs.t.project(RF.Sum.thread.of(s, J.Json.get_str(p, "id", "")))))
+
 # agent features (skills, effort, naming)
 def Hub.methods.agent() -> List<&2, String>:
-  ["thread.branch", "skills.list", "thread.effort", "thread.local", "thread.merged", "thread.unrooted", "thread.titled", "thread.btw"]
+  ["thread.branch", "skills.list", "thread.effort", "thread.local", "thread.merged", "thread.unrooted", "thread.titled", "thread.btw", "summary.set"]
 
 # a side question (/btw {thread, q}): the writing model answers it off
 # the hub (Git job "btw": a is the question, b what it reads), only to the
@@ -894,6 +934,8 @@ def Hub.agentm(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.
       Title.got(s, now, client, id, J.Json.get_str(p, "thread", ""), p)
     case 7n:
       Hub.btw(s, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "q", ""))
+    case 8n:
+      Sum.got(s, now, client, id, p)
     case _:
       Hub.media(C.Codec.pos(Hub.methods.media(), m), s, now, client, id, p, m)
 
@@ -1610,19 +1652,21 @@ def Ended.state(cs: List<&2, M.Change>, +thread: String) -> String:
     case _ <> t:
       Ended.state(t, thread)
 
-def Ended.out.k(none: Bool, +state: String, +thread: String, +cwd: String, st: Step) -> Step:
+def Ended.out.k(none: Bool, +s: M.State, +now: Nat, +state: String, +thread: String, +cwd: String, st: Step) -> Step:
   match none st:
     case True{} _:
       st
     case False{} Step{cs, os}:
-      Step{cs, List.append(&2, Out, os, [TurnEnded{thread, state}, Git{0, "", "checkpoint", thread, cwd, "", ""}])}
+      Step{List.append(&2, M.Change, cs, Sum.at(RF.Sum.due(s, thread, now), thread, now)),
+        List.append(&2, Out, os, TurnEnded{thread, state} <> Git{0, "", "checkpoint", thread, cwd, "", ""} <> Sum.out(RF.Sum.due(s, thread, now), s, thread, "thread"))}
 
-def Ended.out.s(+state: String, +thread: String, +cwd: String, st: Step) -> Step:
-  Ended.out.k(String.is_empty(state), state, thread, cwd, st)
+def Ended.out.s(+s: M.State, +now: Nat, +state: String, +thread: String, +cwd: String, st: Step) -> Step:
+  Ended.out.k(String.is_empty(state), s, now, state, thread, cwd, st)
 
-# a turn that ends tells the server (phone notifications hang off this)
-def Ended.out(+s: M.State, +thread: String, +st: Step) -> Step:
-  Ended.out.s(Ended.state(Queue.changes(st), thread), thread, Hub.cwd(s, Hub.thread(s, thread)), st)
+# a turn that ends tells the server (phone notifications hang off this),
+# and has the thread summarized when its summary is due
+def Ended.out(+s: M.State, +now: Nat, +thread: String, +st: Step) -> Step:
+  Ended.out.s(s, now, Ended.state(Queue.changes(st), thread), thread, Hub.cwd(s, Hub.thread(s, thread)), st)
 
 def Queue.drain(+s: M.State, +now: Nat, +thread: String, +st: Step) -> Step:
   Queue.drain.k(Bool.and(Queue.ended(Queue.changes(st), thread), M.Queue.waiting(s, thread)), st,
@@ -1759,11 +1803,11 @@ def Task.finish(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
 
 # one line of an agent's stdout
 def Hub.agent_line(+s: M.State, +now: Nat, +thread: String, line: String) -> Step:
-  Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, thread, Hub.agent_line.k(Bool.not(String.eq(Hub.provider(Hub.thread(s, thread)), "claude")), s, now, thread, line))))
+  Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_line.k(Bool.not(String.eq(Hub.provider(Hub.thread(s, thread)), "claude")), s, now, thread, line))))
 
 # an agent process ended; a turn still running ends with it
 def Hub.agent_gone(+s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:
-  Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code))))
+  Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code))))
 
 def Step.outs_of(st: Step) -> List<&2, Out>:
   match st:
