@@ -238,23 +238,26 @@ def Lay.ibutton(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +name: String, +color: U3
 # Sidebar
 # -------
 
-# the dot's color for a thread's status (M.Status.of orders them)
-def Lay.status(s: M.Status) -> U32:
-  match s:
-    case M.StApproval{}:
+# the dot's color for a thread's phase, in the sidebar and on the line at
+# the end of its timeline (M.Phase.of orders the phases)
+def Lay.phase(p: M.Phase) -> U32:
+  match p:
+    case M.PhApproval{}:
       T.Th.warn()
-    case M.StInput{}:
+    case M.PhInput{}:
       T.Th.input()
-    case M.StWorking{}:
+    case M.PhWorking{}:
       T.Th.accent()
-    case M.StFailed{}:
-      T.Th.bad()
-    case M.StQueued{}:
-      T.Th.queued()
-    case M.StReady{}:
-      T.Th.faint()
-    case M.StWaiting{}:
+    case M.PhMonitoring{_}:
       T.Th.waiting()
+    case M.PhFailed{}:
+      T.Th.bad()
+    case M.PhQueued{}:
+      T.Th.queued()
+    case M.PhComplete{}:
+      T.Th.ok()
+    case _:
+      T.Th.faint()
 
 # a thread's row; the selected one is raised, with its project's colour
 # (tint) down its left edge
@@ -271,7 +274,7 @@ def Lay.row.k(+ty: Ty, +on: Bool, id: String, title: String, +ago: String, +dot:
 def Lay.row.on(+ty: Ty, +t: M.Thread, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
   match t:
     case M.Thread{+id, +p, title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      Lay.row.k(ty, String.eq(id, sel), id, title, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), Lay.status(U.Side.status(st, t)), BG.Badge.rgb_of(st, p), c, y)
+      Lay.row.k(ty, String.eq(id, sel), id, title, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), Lay.phase(U.Side.phase(st, t)), BG.Badge.rgb_of(st, p), c, y)
 
 # whether a row at y (32 tall) shows in c at all (one scrolled above the
 # top sits at y modulo 2^32, past the bottom)
@@ -1189,26 +1192,6 @@ def TL.draw_all(+ty: Ty, ls: List<&2, TLine>, more: Bool, +c: D.Clip, +x0: U32, 
     case _ _:
       Out.none()
 
-# the phase line's dot color (M.Phase.of orders the phases)
-def Lay.phase(p: M.Phase) -> U32:
-  match p:
-    case M.PhApproval{}:
-      T.Th.warn()
-    case M.PhInput{}:
-      T.Th.input()
-    case M.PhWorking{}:
-      T.Th.accent()
-    case M.PhMonitoring{_}:
-      T.Th.waiting()
-    case M.PhFailed{}:
-      T.Th.bad()
-    case M.PhQueued{}:
-      T.Th.queued()
-    case M.PhComplete{}:
-      T.Th.ok()
-    case _:
-      T.Th.faint()
-
 def TL.phase.k(idle: Bool, +label: String, +dot: U32) -> List<&2, TLine>:
   match idle:
     case True{}:
@@ -1457,29 +1440,29 @@ def Lay.picker(open: Bool, +ty: Ty, +ms: List<&2, String>, +cur: String, +info: 
     case False{}:
       Out.none()
 
-def Skills.row(+ty: Ty, +n: String, +d: String, +x: U32, +y: U32, +w: U32, first: Bool) -> Out:
+def Skills.row(+ty: Ty, +n: String, +d: String, +x: U32, +y: U32, +w: U32, on: Bool) -> Out:
   +nw = Ty.width(ty, 2n, n)
-  Out{List.concat(&2, R.Op, [Bool.pick(List<&2, R.Op>, first, Lay.round(D.Clip.all(), (x + 4 : U32), y, (w - 8 : U32), 28, 5, T.Th.sel()), Nil{}),
+  Out{List.concat(&2, R.Op, [Bool.pick(List<&2, R.Op>, on, Lay.round(D.Clip.all(), (x + 4 : U32), y, (w - 8 : U32), 28, 5, T.Th.sel()), Nil{}),
       Ty.text(ty, 2n, n, D.Clip.all(), (x + 14 : U32), y, 28, T.Th.text()),
       Ty.text(ty, 2n, Lay.fit_or_none(ty, 2n, d, U32.dim(w, (nw + 48 : U32))), D.Clip.all(), (x + 30 + nw : U32), y, 28, T.Th.dim())]),
     [Lay.hit(x, y, w, 28, "skill", n)]}
 
-def Skills.rows(+ty: Ty, rs: List<&2, U.SkillRow>, +x: U32, +y: U32, +w: U32, first: Bool) -> Out:
+def Skills.rows(+ty: Ty, rs: List<&2, U.SkillRow>, +x: U32, +y: U32, +w: U32) -> Out:
   match rs:
     case Nil{}:
       Out.none()
-    case U.SkillRow{+n, +d} <> t:
-      Out.cat(Skills.row(ty, n, d, x, y, w, first), Skills.rows(ty, t, x, (y + 28 : U32), w, False{}))
+    case U.SkillRow{+n, +d, on} <> t:
+      Out.cat(Skills.row(ty, n, d, x, y, w, on), Skills.rows(ty, t, x, (y + 28 : U32), w))
 
 # the skills a `$` being typed may complete to, or the bots, threads,
 # projects and rooms a `@`, `>`, `%` or `#` may, above the composer with
-# their summaries (Tab or Enter takes the first, highlighted)
+# their summaries (the arrow keys move the highlight, Tab or Enter takes it)
 def Lay.skills(+ty: Ty, +rs: List<&2, U.SkillRow>, +x0: U32, +x1: U32, +bottom: U32) -> Out:
   +n = {U32.from_nat(List.length(&2, U.SkillRow, rs)) : U32}
   +h = {(n * 28 + 8 : U32) : U32}
   Out.when(U32.is_gt(n, 0),
     Out.cat(Out.ops(Lay.box(D.Clip.all(), x0, (bottom - h : U32), (x1 - x0 : U32), h, 8, T.Th.panel(), T.Th.line())),
-      Skills.rows(ty, rs, x0, (bottom - h + 4 : U32), (x1 - x0 : U32), True{})))
+      Skills.rows(ty, rs, x0, (bottom - h + 4 : U32), (x1 - x0 : U32))))
 
 # where position p of the draft sits: its wrapped line and x
 # the shown line position p is on, and how far into it (ss: where each

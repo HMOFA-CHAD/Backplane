@@ -543,7 +543,8 @@ struct ThreadScreen: View {
                         MarkdownView(blocks: thread.live)
                     } else if !thread.working.isEmpty {
                         HStack(spacing: 8) {
-                            if thread.state == "run" { ProgressView().controlSize(.small) }
+                            if thread.state == "run" { ProgressView().controlSize(.small).tint(PhaseColor.accent) }
+                            else { StatusDot(state: thread.state, status: thread.phase) }
                             Text(thread.working).foregroundStyle(.secondary)
                         }
                         .font(thread.state == "run" ? .body : .caption)

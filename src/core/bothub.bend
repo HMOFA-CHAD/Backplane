@@ -351,10 +351,31 @@ def Bots.mention.room(m: Maybe<&2, BT.Room>, +s: M.State, +now: Nat, +thread: St
     case None{}:
       B.Step.none()
 
+# a bot on a linked machine ("name@machine") hears it as the person's
+# message (Bots.tell), with the thread it came from, which it cannot read;
+# it answers in the person's conversation with it
+def Bots.mention.far.note(+place: String, +text: String) -> String:
+  "[the person mentioned you in the thread " ++ place ++ " on their machine; you cannot read that thread, and your answer reaches them in your conversation]\n" ++ text
+
+def Bots.mention.far(m: Maybe<&2, BT.Peer>, +s: M.State, +now: Nat, +i: Nat, +to: String, +place: String, +text: String) -> B.Step:
+  match m:
+    case Some{p}:
+      B.Step{[M.RoomPosted{B.Hub.id("p", now, B.Hub.seq(s)) ++ "." ++ Nat.show(i), BT.Room.dm("you", to), "you", Bots.mention.far.note(place, text), 0n, now}],
+        [B.BotFx{"send", Bots.peer.id(p), "/bots/deliver", Bots.remote.body("person", Bots.at.name(to), "", "", Bots.mention.far.note(place, text), 0n)}]}
+    case None{}:
+      B.Step.none()
+
+def Bots.mention.b(remote: Bool, +s: M.State, +now: Nat, +i: Nat, +thread: String, +place: String, +text: String, +id: String) -> B.Step:
+  match remote:
+    case True{}:
+      Bots.mention.far(Bots.peer(s, Bots.at.peer(id)), s, now, i, id, place, text)
+    case False{}:
+      Bots.mention.bot(Bots.bot(s, id), s, now, i, thread, place, text)
+
 def Bots.mention.k(k: Nat, +s: M.State, +now: Nat, +i: Nat, +thread: String, +place: String, +text: String, +id: String) -> B.Step:
   match k:
     case 0n:
-      Bots.mention.bot(Bots.bot(s, id), s, now, i, thread, place, text)
+      Bots.mention.b(Bots.remote(id), s, now, i, thread, place, text, id)
     case 3n:
       Bots.mention.room(Bots.room.get(s, id), s, now, thread, place, text)
     case _:

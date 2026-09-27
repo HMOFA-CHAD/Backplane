@@ -148,24 +148,38 @@ private val corner = RoundedCornerShape(4.dp)
 private val orange = Color(0xFFF57C00)
 private val mono = FontFamily.Monospace
 
-// a thread's dot: what most needs the user (row.status), else its turn
+// the hub's palette for a thread's phase (src/web/style.css, src/app/theme.bend)
+object PhaseColor {
+    val accent = Color(0xFF5FB3FF)
+    val ok = Color(0xFF58C28A)
+    val warn = Color(0xFFE3B341)
+    val bad = Color(0xFFF06A6A)
+    val input = Color(0xFFB48CFF)
+    val queued = Color(0xFF4FC1C9)
+    val waiting = Color(0xFFE07BD0)
+    val faint = Color(0xFF5C6473)
+}
+
+// a thread's dot: its phase (row.status, src/core/model.bend's Phase.name),
+// in the same colors as the desktop and web; else its turn
 @Composable
 fun StatusDot(state: String, status: String) {
     Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
         when (status) {
-            "approval" -> Icon(Icons.Filled.PanTool, "Waits for approval", Modifier.size(16.dp), tint = orange)
-            "input" -> Icon(Icons.Filled.QuestionAnswer, "Waits for an answer", Modifier.size(16.dp), tint = Color(0xFF1E88E5))
-            "working" -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            "failed" -> Icon(Icons.Filled.Error, "Failed", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
-            "queued" -> Icon(Icons.Filled.Schedule, "Queued", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
-            // the turn is over, its subagents still at work
-            "waiting" -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color(0xFFE07BD0))
-            "ready" -> Dot(MaterialTheme.colorScheme.outlineVariant)
+            "approval" -> Icon(Icons.Filled.PanTool, "Waits for approval", Modifier.size(16.dp), tint = PhaseColor.warn)
+            "input" -> Icon(Icons.Filled.QuestionAnswer, "Waits for an answer", Modifier.size(16.dp), tint = PhaseColor.input)
+            "working" -> CircularProgressIndicator(Modifier.size(16.dp), color = PhaseColor.accent, strokeWidth = 2.dp)
+            // the turn is over, its subagents still at work ("waiting" from an older hub)
+            "monitoring", "waiting" -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = PhaseColor.waiting)
+            "failed" -> Icon(Icons.Filled.Error, "Failed", Modifier.size(18.dp), tint = PhaseColor.bad)
+            "queued" -> Icon(Icons.Filled.Schedule, "Queued", Modifier.size(16.dp), tint = PhaseColor.queued)
+            "complete" -> Dot(PhaseColor.ok)
+            "stopped", "idle", "ready" -> Dot(PhaseColor.faint)
             else -> when (state) {
-                "run" -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                "fail" -> Icon(Icons.Filled.Error, "Failed", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
-                "stop" -> Dot(MaterialTheme.colorScheme.tertiary)
-                else -> Dot(MaterialTheme.colorScheme.outlineVariant)
+                "run" -> CircularProgressIndicator(Modifier.size(16.dp), color = PhaseColor.accent, strokeWidth = 2.dp)
+                "fail" -> Icon(Icons.Filled.Error, "Failed", Modifier.size(18.dp), tint = PhaseColor.bad)
+                "stop" -> Dot(PhaseColor.warn)
+                else -> Dot(PhaseColor.faint)
             }
         }
     }
@@ -378,7 +392,7 @@ fun ComposerExtras(m: AppModel, t: ThreadView) {
     if (t.skills.isNotEmpty()) Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         t.skills.forEachIndexed { i, k ->
             Surface(onClick = { m.act("skill", k.name) }, shape = corner, modifier = Modifier.fillMaxWidth(),
-                color = if (i == 0) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface) {
+                color = if (k.on) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                     Text(k.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1)
                     if (k.desc.isNotEmpty()) Text(k.desc, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,

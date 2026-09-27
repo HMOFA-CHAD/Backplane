@@ -88,7 +88,7 @@ def Mob.rows(ts: List<&2, M.Thread>, +st: M.State, +now: Nat, +shelf: Nat) -> Li
     case Nil{}:
       Nil{}
     case +t <> rest:
-      Mob.row(t, M.Status.name(U.Side.status(st, t)), st, now, shelf) <> Mob.rows(rest, st, now, shelf)
+      Mob.row(t, M.Phase.name(U.Side.phase(st, t)), st, now, shelf) <> Mob.rows(rest, st, now, shelf)
 
 # snoozed threads sit on their own shelf, soonest to wake first
 def Mob.project(r: U.SRow, +open: Map<&2, Bool>, +st: M.State, +now: Nat) -> J.Json:
@@ -525,8 +525,8 @@ def Mob.skills(rs: List<&2, U.SkillRow>) -> List<&2, J.Json>:
   match rs:
     case Nil{}:
       Nil{}
-    case U.SkillRow{n, d} <> t:
-      J.Json.obj([J.KV{"name", J.Json.str(n)}, J.KV{"desc", J.Json.str(d)}]) <> Mob.skills(t)
+    case U.SkillRow{n, d, on} <> t:
+      J.Json.obj([J.KV{"name", J.Json.str(n)}, J.KV{"desc", J.Json.str(d)}, J.KV{"on", J.Json.bool(on)}]) <> Mob.skills(t)
 
 # Diff: what the thread changed, file by file, lines on a reversed
 # accumulator (a diff can run to thousands of lines)
@@ -654,7 +654,7 @@ def Mob.btw(+u: U.Ui) -> J.Json:
   Bool.pick(J.Json, String.is_empty(U.Btw.question(u)), J.Null{},
     J.Json.obj([J.KV{"q", J.Json.str(U.Btw.question(u))}, J.KV{"a", J.Json.str(U.Btw.text(U.Btw.reply.of(u)))}]))
 
-def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: List<&2, String>, +up: String, term: J.Json, skills: List<&2, J.Json>, +phase: String, btw: J.Json) -> J.Json:
+def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: List<&2, String>, +up: String, term: J.Json, skills: List<&2, J.Json>, +ph: M.Phase, btw: J.Json) -> J.Json:
   match u t:
     case U.Ui{+st, +sel, +drafts, +live, _, _, +now, _, pa, _, _, _, _, _, +nf, _, _} M.Thread{+id, _, title, _, _, +turn, _, archived, o, +sa, +ua, pinned, _, branch, _, +pr, +mo, _, _, _, _}:
       +pg = Mob.page(drafts, id, st)
@@ -673,7 +673,8 @@ def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: 
         J.KV{"queue", J.Json.arr(Mob.queue(M.Queue.items(st, id), True{}, V.View.running(turn)))},
         J.KV{"todos", Mob.todos(U.Todos.shown(st, id, V.View.running(turn)))},
         J.KV{"live", J.Json.arr(Mob.nodes(D.Md.render(U.Str.get(live, id))))},
-        J.KV{"working", J.Json.str(Bool.pick(String, String.is_empty(U.Str.get(live, id)), phase, ""))},
+        J.KV{"working", J.Json.str(Bool.pick(String, String.is_empty(U.Str.get(live, id)), M.Phase.label(ph), ""))},
+        J.KV{"phase", J.Json.str(M.Phase.name(ph))},
         J.KV{"draft", J.Json.str(U.Str.get(drafts, sel))},
         J.KV{"send", J.Json.str(U.Follow.button(st, sel, V.View.running(turn), U.Follow.stop(V.View.running(turn), U.Str.get(drafts, sel), atts), U.Str.get(drafts, sel)))},
         J.KV{"sendAct", J.Json.str(U.Follow.act(U.Follow.stop(V.View.running(turn), U.Str.get(drafts, sel), atts)))},
@@ -691,7 +692,7 @@ def Mob.main(none: Bool, +u: U.Ui, +sel: String) -> J.Json:
       J.Null{}
     case False{}:
       Mob.thread(u, U.Ui.thread(Mob.st(u), sel), U.Ui.pending(u, sel), VW.View.json(u), U.Ui.atts(u, sel), U.Ui.uploading(u, sel),
-        Mob.term(U.Ui.flag(u, "term"), u, sel), Mob.skills(U.Ui.skills(u)), M.Phase.label(U.Side.phase(Mob.st(u), U.Ui.thread(Mob.st(u), sel))), Mob.btw(u))
+        Mob.term(U.Ui.flag(u, "term"), u, sel), Mob.skills(U.Ui.skills(u)), U.Side.phase(Mob.st(u), U.Ui.thread(Mob.st(u), sel)), Mob.btw(u))
 
 def Mob.empty(n: Nat) -> String:
   Bool.pick(String, Nat.is_eq(n, 0n), "Add a project to start.", "Pick a thread, or start one in a project.")

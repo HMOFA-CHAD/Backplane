@@ -63,7 +63,7 @@ def View.row.k(+id: String, +title: String, +ago: String, +dot: String, +sel: St
 def View.row(+t: M.Thread, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> D.Node:
   match t:
     case M.Thread{+id, _, +title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      View.row.k(id, title, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), M.Status.name(U.Side.status(st, t)), sel, movable)
+      View.row.k(id, title, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), M.Phase.name(U.Side.phase(st, t)), sel, movable)
 
 def View.rows_in(ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> List<&2, D.Node>:
   match ts:
@@ -366,13 +366,14 @@ def View.menu(open: Bool, +ms: List<&2, String>, +cur: String, +info: String, +p
       Nil{}
 
 # the skills a `$` being typed may complete to, or the bots, threads,
-# projects and rooms a `@`, `>`, `%` or `#` may (Tab or Enter takes the first)
+# projects and rooms a `@`, `>`, `%` or `#` may (the arrow keys move the
+# highlight, Tab or Enter takes it)
 def View.skills.go(rs: List<&2, U.SkillRow>) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       Nil{}
-    case U.SkillRow{+n, +d} <> t:
-      D.El{"button", "", [D.At{"class", "skill"}, D.At{"data-value", n}, D.At{"title", d}, D.On{"click", "skill"}], [D.Dom.span("name", n), D.Dom.span("desc", d)]} <> View.skills.go(t)
+    case U.SkillRow{+n, +d, on} <> t:
+      D.El{"button", "", [D.At{"class", Bool.pick(String, on, "skill on", "skill")}, D.At{"data-value", n}, D.At{"title", d}, D.On{"click", "skill"}], [D.Dom.span("name", n), D.Dom.span("desc", d)]} <> View.skills.go(t)
 
 def View.skills(+rs: List<&2, U.SkillRow>) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, List.is_empty(&2, U.SkillRow, rs), Nil{}, [D.El{"div", "", [D.At{"class", "skills"}], View.skills.go(rs)}])
@@ -918,7 +919,7 @@ def View.composer(+draft: String, +send: String, +act: String, +label: String, +
   D.El{"div", "", [D.At{"class", "composer"}], D.Dom.cat(
     View.menu(picking, ms, model, info, prov, es, effort), D.Dom.cat(View.skills(rs), D.Dom.cat(vo, D.Dom.cat(View.attaching(atts, up), [
     D.El{"textarea", "composer", [D.At{"id", "composer"}, D.At{"rows", "3"}, D.At{"placeholder", "Ask anything: @bot, >thread, %project, #room, $skill, /btw"}, D.At{"value", draft}, D.On{"input", "draft"},
-      D.At{"data-enter", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "send", "skill")}, D.At{"data-enter-alt", "send-alt"}, D.At{"data-tab", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill")}, D.At{"data-paste", "attach"}], Nil{}},
+      D.At{"data-enter", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "send", "skill")}, D.At{"data-enter-alt", "send-alt"}, D.At{"data-tab", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill")}, D.At{"data-arrows", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-move")}, D.At{"data-paste", "attach"}], Nil{}},
     D.El{"div", "", [D.At{"class", "composer-foot"}], [
       WI.WIcon.after("model-chip", "flag", "models", "Choose the model and effort", U.Effort.label(label, effort) ++ ctx, "chevron-down", 14),
       D.El{"label", "", [D.At{"class", "attach"}, D.At{"title", "Attach files or images (or paste an image)"}], [WI.WIcon.svg("paperclip", 16),

@@ -414,10 +414,32 @@ def Git.thread_wt.carry(carry: Bool, +top: String, +path: String, +cwd: String) 
     case False{}:
       Git.done(cwd)
 
+# Where a new thread starts: origin's default branch (origin/main), fetched
+# first (30 s at most; offline, the last fetched one), so a thread never
+# starts behind upstream. "" (HEAD) when there is no origin, or when the
+# folder's uncommitted work is carried over (it belongs on the HEAD it was
+# made against; copied onto a newer tree it would undo upstream's edits).
+def Git.upstream.sh() -> String:
+  "[ \"$1\" = 1 ] && git ls-files -m -o -d --exclude-standard | grep -v -e '-backups/' -e '\\.lck$' -e 'fp-info-cache$' -e '_autosave-' | grep -q . && exit 0; git remote get-url origin >/dev/null 2>&1 || exit 0; b=$(git symbolic-ref -q --short refs/remotes/origin/HEAD); b=${b:-origin/main}; t=; command -v timeout >/dev/null 2>&1 && t='timeout 30'; GIT_TERMINAL_PROMPT=0 $t git fetch -q origin \"${b#origin/}\" </dev/null >/dev/null 2>&1; git rev-parse -q --verify \"refs/remotes/$b\" >/dev/null && printf %s \"$b\"; exit 0"
+
+def Git.upstream.of(r: P.Ran) -> String:
+  match r:
+    case P.Ran{0, out}:
+      String.trim(out)
+    case _:
+      ""
+
+def Git.upstream(+carry: Bool, +top: String) -> IO(String):
+  IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Git.upstream.sh(), "sh", Bool.pick(String, carry, "1", "0")], top), r => IO.pure(String, Git.upstream.of(r)))
+
+# --no-track: the thread's branch is its own; a push never goes to main
+def Git.thread_wt.add(+base: String, +carry: Bool, +top: String, +prefix: String, +b: String) -> IO(String):
+  Git.seq(Git.run(top, List.append(&2, String, ["worktree", "add", "--no-track", "-b", b, Git.thread_wt.path(top, b)], Git.base_args(base))),
+    _ => Git.thread_wt.carry(carry, top, Git.thread_wt.path(top, b), Git.thread_wt.cwd(Git.thread_wt.path(top, b), prefix)))
+
 def Git.thread_wt.made(+carry: Bool, +top: String, +prefix: String, +b: String) -> IO(String):
   Git.and(Git.exclude(top), _ =>
-    Git.seq(Git.run(top, ["worktree", "add", "-b", b, Git.thread_wt.path(top, b)]),
-      _ => Git.thread_wt.carry(carry, top, Git.thread_wt.path(top, b), Git.thread_wt.cwd(Git.thread_wt.path(top, b), prefix))))
+    IO.bind(String, String, Git.upstream(carry, top), base => Git.thread_wt.add(base, carry, top, prefix, b)))
 
 def Git.thread_wt.head(r: P.Ran, +carry: Bool, +top: String, +prefix: String, +b: String) -> IO(String):
   match r:
@@ -431,7 +453,7 @@ def Git.thread_wt.top(+top: String, +cwd: String, +carry: Bool, +b: String) -> I
     Git.and(Git.seq.raw(Git.run(cwd, ["rev-parse", "--show-prefix"]), p => Git.done(String.trim(p))),
       +prefix => IO.bind(P.Ran, String, Git.run(cwd, ["rev-parse", "--verify", "-q", "HEAD"]), r => Git.thread_wt.head(r, carry, top, prefix, b))))
 
-# a new thread's worktree on a new branch from HEAD, for the project folder
+# a new thread's worktree on a new branch from upstream (Git.upstream), for the project folder
 # cwd; carry: bring the folder's uncommitted work along. Answers the
 # thread's directory, "skip: <why>" when there is no repository to branch
 # (the thread then works in the folder), or "error: ...".

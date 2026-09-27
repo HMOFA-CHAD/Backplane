@@ -11,7 +11,8 @@ data class SwipeChoice(val label: String, val value: String)
 
 data class Swipe(val label: String, val action: String, val value: String, val tone: String, val options: List<SwipeChoice>)
 
-// status: what its dot says (approval, input, working, failed, queued, ready)
+// status: what its dot says (approval, input, working, monitoring, failed,
+// queued, complete, stopped, idle)
 data class Row(
     val id: String, val title: String, val state: String, val ago: String, val pinned: Boolean,
     val lead: List<Swipe>, val trail: List<Swipe>, val status: String = "",
@@ -74,7 +75,7 @@ data class Ask(val id: String, val kind: String, val head: String, val detail: S
 data class TaskRow(val id: String, val who: String, val title: String, val state: String)
 
 // a skill the `$` being typed may complete to ("skill" with its name)
-data class Skill(val name: String, val desc: String)
+data class Skill(val name: String, val desc: String, val on: Boolean = false)
 
 // what the thread changed: k 0 context, 1 added, 2 removed, 3 meta, 4 a hunk head
 data class DiffLine(val k: Int, val t: String, val o: String, val n: String)
@@ -162,6 +163,8 @@ data class ThreadView(
     val chunk: Int = 196_608,
     val diff: Diff? = null,
     val term: Term? = null,
+    // the phase the working line's dot shows (as a row's status)
+    val phase: String = "",
 )
 
 data class Btw(val q: String, val a: String)
@@ -312,7 +315,7 @@ private fun thread(o: JSONObject) = threadOf(o).copy(
         Ask(a.optString("id"), a.optString("kind"), a.optString("head"), a.optString("detail"), blocks(a.optJSONArray("blocks")),
             a.optJSONArray("buttons").map { AskButton(it.optString("label"), it.optString("value"), it.optBoolean("primary")) })
     },
-    skills = o.optJSONArray("skills").map { Skill(it.optString("name"), it.optString("desc")) },
+    skills = o.optJSONArray("skills").map { Skill(it.optString("name"), it.optString("desc"), it.optBoolean("on")) },
     btw = o.optJSONObject("btw")?.let { Btw(it.optString("q"), it.optString("a")) },
     attaching = chips(o.optJSONArray("attaching")),
     uploading = o.optString("uploading"),
@@ -324,6 +327,7 @@ private fun thread(o: JSONObject) = threadOf(o).copy(
         })
     },
     term = o.optJSONObject("term")?.let(::term),
+    phase = o.optString("phase"),
 )
 
 private fun threadOf(o: JSONObject) = ThreadView(

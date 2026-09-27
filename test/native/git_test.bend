@@ -247,7 +247,16 @@ def thread_wt_checks(+root: String) -> IO(Bool):
     rv : String <- G.Git.checkpoint.revert(p2, "tw-thread", 0n)
     p3 : String <- cat(p2 ++ "/board.kicad_pcb")
     b7 : Bool <- chk("state restored", rv ++ p3, "v3")
-    return all([a1, a2, a3, a4, a5, a6, a7, a8, a9, b1, b2, b3, b4, b5, b6, b7])
+    s2 : P.Ran <- sh(root, "git init -q --bare twr.git && git -C tw remote add origin ../twr.git && git -C tw push -q origin main && git clone -q twr.git twc && cd twc && git config user.email t@t && git config user.name t && printf 'u\\n' > up.txt && git add up.txt && git commit -q -m up && git push -q origin main")
+    +up : String <- G.Git.thread_wt(repo, False{}, "backplane/up")
+    uf : String <- exists(up ++ "/up.txt")
+    c1 : Bool <- chk("starts from upstream main", uf, "True")
+    ut : P.Ran <- sh(up, "git rev-parse -q --verify @{u} || echo none")
+    c2 : Bool <- chk("tracks nothing", out(ut), "none")
+    +hc : String <- G.Git.thread_wt(hw, True{}, "backplane/hc")
+    hf : String <- exists(hc ++ "/../up.txt")
+    c3 : Bool <- chk("carried work stays on HEAD", hf, "False")
+    return all([a1, a2, a3, a4, a5, a6, a7, a8, a9, b1, b2, b3, b4, b5, b6, b7, c1, c2, c3])
 
 def act_checks(+root: String) -> IO(Bool):
   +repo = root ++ "/repo"

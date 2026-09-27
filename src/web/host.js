@@ -458,6 +458,16 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
+  // up and down move the highlight in a menu the field offers (the
+  // composer's completions)
+  if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const arrows = e.target.getAttribute?.("data-arrows");
+    if (arrows) {
+      e.preventDefault();
+      dispatch(arrows, e.key === "ArrowDown" ? "down" : "up");
+    }
+    return;
+  }
   if (e.key === "Tab" && !e.shiftKey) {
     const tab = e.target.getAttribute?.("data-tab");
     if (tab) {

@@ -714,8 +714,11 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
             if (t.live.isNotEmpty()) item(key = "live") { Markdown(t.live) }
             else if (t.working.isNotEmpty()) item(key = "live") {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(t.working, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.outline)
-                    if (t.state == "run") LinearProgressIndicator(Modifier.width(120.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (t.state != "run") StatusDot(t.state, t.phase)
+                        Text(t.working, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.outline)
+                    }
+                    if (t.state == "run") LinearProgressIndicator(Modifier.width(120.dp), color = PhaseColor.accent)
                 }
             }
         }
