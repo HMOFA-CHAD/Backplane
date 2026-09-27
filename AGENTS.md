@@ -132,6 +132,7 @@ Headless UI checks: start Xvfb on `:77`, run `DISPLAY=:77 BACKPLANE_SNAP=/tmp/sn
 - In the JS build (web, phones) a Bend `String` is a JS string: matching `SCon` is `codePointAt` + `slice`, and `String.eq`/`String.cmp` rebuild both strings as they go. Comparing or walking long text char by char is quadratic on QuickJS (Android). Don't compare message texts per screen; find cheaper keys or keep the walk out of the per-screen path.
 - An equality over a quadtree (`Eq.image`) guarded by `Bool.and` walked the viewer's whole base at every tile level each frame, changed or not. Compare the cheap part first and the image only when it matches (`Eq.tile`), and carry the verdict down the tree (`Eq.image.go`).
 - Shifting a quadtree image by a few pixels (to reuse a panned base) cost more than drawing it again: every node moves off its grid. Draw again in parallel instead.
+- In JS, a Bend value is objects nested once per list cell (tens of thousands deep for a log). Anything recursive over it overflows the engine's stack: `JSON.parse` with a reviver lost the phones' kept state at every launch. bridge.js writes the state flat (`flat`/`unflat`, no recursion); time a launch with `test/tools/launch_bench.ts` (`BUN_JSC_useJIT=0`).
 - `Bool.and(a, b)` in a recursive equality walks everything even after a mismatch. Carry the verdict as a parameter so the walk stops (`Eq.ops.go` in tiles.bend) and prove it once (`ops_go_sound`).
 
 ## House rules
