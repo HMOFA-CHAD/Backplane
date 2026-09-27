@@ -469,6 +469,43 @@ def Box.pieces(ps: List<&2, Piece>, b: Box) -> Box:
 def Box.empty() -> Box:
   Box{2147483647, 2147483647, 2147483648, 2147483648}
 
+# The board's rectangle: the box round its outline (Edge.Cuts) points, a
+# circle to its radius, stroke widths left out. The phones' 3D view turns
+# about its centre, as the window's does (face.bend's Outline.box).
+
+def Edge.pts(ps: List<&2, B.Pt>, +r: F32, b: Box) -> Box:
+  match ps:
+    case Nil{}:
+      b
+    case B.Pt{+x, +y} <> t:
+      Edge.pts(t, r, Box.pt(Num.um(F32.add(x, r)), Num.um(F32.add(y, r)), Box.pt(Num.um(F32.sub(x, r)), Num.um(F32.sub(y, r)), b)))
+
+def Edge.prim(p: B.Prim, b: Box) -> Box:
+  match p:
+    case B.PSeg{a, c, _}:
+      Edge.pts([a, c], 0.0, b)
+    case B.PLine{ps, _}:
+      Edge.pts(ps, 0.0, b)
+    case B.PCirc{c, +r, _, _}:
+      Edge.pts([c], r, b)
+    case B.PPoly{ps, _, _}:
+      Edge.pts(ps, 0.0, b)
+
+def Edge.put(on: Bool, p: B.Prim, b: Box) -> Box:
+  match on:
+    case True{}:
+      Edge.prim(p, b)
+    case False{}:
+      b
+
+# the box round the items on layer edge
+def Edge.box(its: List<&2, B.Item>, +edge: U32, b: Box) -> Box:
+  match its:
+    case Nil{}:
+      b
+    case B.Item{_, _, +layer, p, _} <> t:
+      Edge.box(t, edge, Edge.put(U32.is_eq(layer, edge), p, b))
+
 # Sorting in parallel
 # -------------------
 # Items are dealt into 2^d hands; each hand becomes pieces and is sorted
@@ -581,44 +618,51 @@ def Solid.of(ts: List<&2, G.Tri3>) -> Solid:
 # ------
 
 # thick is the board's thickness in micrometres (the phones' 3D view);
-# solid is set when the plot is a 3D model's
+# solid is set when the plot is a 3D model's; edge is the board's
+# rectangle (Edge.box), empty for a schematic
 type Plot is Data:
-  Plot{cs: List<&2, Chunk>, box: Box, thick: U32, solid: Solid}
+  Plot{cs: List<&2, Chunk>, box: Box, thick: U32, solid: Solid, edge: Box}
 
-def Plot.of.k(+ps: List<&2, Piece>, +kind: U32) -> Plot:
-  Plot{Ix.chunks(List.sort(~Ix, ~Ix.le, Group.par(6n, Group.go(ps, GS{0n, 0, Nil{}, Nil{}}), kind))), Box.pieces(ps, Box.empty()), 1600, Solid.none()}
+def Plot.of.k(+ps: List<&2, Piece>, +kind: U32, edge: Box) -> Plot:
+  Plot{Ix.chunks(List.sort(~Ix, ~Ix.le, Group.par(6n, Group.go(ps, GS{0n, 0, Nil{}, Nil{}}), kind))), Box.pieces(ps, Box.empty()), 1600, Solid.none(), edge}
 
-# the chunks of some items, in paint order, and their extent
-def Plot.of(its: List<&2, B.Item>, +kind: U32) -> Plot:
-  Plot.of.k(Piece.psort(5n, its, kind), kind)
+# the chunks of some items, in paint order, their extent and the board's
+# rectangle
+def Plot.of(+its: List<&2, B.Item>, +kind: U32) -> Plot:
+  Plot.of.k(Piece.psort(5n, its, kind), kind, Edge.box(its, Bool.pick(U32, U32.is_eq(kind, 0), B.Layer.id("Edge.Cuts"), 4294967295), Box.empty()))
 
 def Plot.of.solid(so: Solid) -> Plot:
-  Plot{Nil{}, Box.empty(), 0, so}
+  Plot{Nil{}, Box.empty(), 0, so, Box.empty()}
 
 def Plot.chunks(p: Plot) -> List<&2, Chunk>:
   match p:
-    case Plot{cs, _, _, _}:
+    case Plot{cs, _, _, _, _}:
       cs
 
 def Plot.box(p: Plot) -> Box:
   match p:
-    case Plot{_, b, _, _}:
+    case Plot{_, b, _, _, _}:
       b
 
 def Plot.thick(p: Plot) -> U32:
   match p:
-    case Plot{_, _, t, _}:
+    case Plot{_, _, t, _, _}:
       t
 
 def Plot.solid(p: Plot) -> Solid:
   match p:
-    case Plot{_, _, _, so}:
+    case Plot{_, _, _, so, _}:
       so
+
+def Plot.edge(p: Plot) -> Box:
+  match p:
+    case Plot{_, _, _, _, e}:
+      e
 
 def Plot.with_thick(p: Plot, +t: U32) -> Plot:
   match p:
-    case Plot{cs, b, _, so}:
-      Plot{cs, b, t, so}
+    case Plot{cs, b, _, so, e}:
+      Plot{cs, b, t, so, e}
 
 # Deltas
 # ------
@@ -732,8 +776,8 @@ def Plot.quiet(rs: List<&2, Ref>, +i: Nat, +n: Nat) -> Bool:
 # -----------
 # One CBOR map in the hub's dialect (core/cbor.bend: "t" and "key" go as
 # their dictionary indexes 1 and 31): {"t": "plot", "key", "box":
-# [x0, y0, x1, y1], "thick", "cs": [...]}, each of cs an unsigned number
-# (keep that chunk of the last plot) or {"l", "c", "a", "m", "w": numbers,
+# [x0, y0, x1, y1], "thick", "edge": [x0, y0, x1, y1], "cs": [...]},
+# each of cs an unsigned number (keep that chunk of the last plot) or {"l", "c", "a", "m", "w": numbers,
 # "d": the geometry bytes}. A chunk's info table stays on the hub: a phone
 # asks for one piece's info when it inspects a tap (Plot.info). Written as bytes
 # straight onto the frame, back to front with tail calls only, so a big
@@ -841,9 +885,9 @@ def Out.box(b: Box, acc: List<&2, U32>) -> List<&2, U32>:
       Cb.head(128, 4, Cb.int(x0, Cb.int(y0, Cb.int(x1, Cb.int(y1, acc)))))
 
 # a plot for one phone: the CBOR bytes of one frame
-def Plot.msg(+key: String, b: Box, +thick: U32, +rs: List<&2, Ref>) -> List<&2, U32>:
-  Cb.head(160, 5, Cb.uint(1, Cb.key("plot", Cb.uint(31, Cb.text(String.reverse(key), Cb.key("box", Out.box(b,
-    Cb.key("thick", Cb.uint(thick, Cb.key("cs", Cb.head(128, U32.from_nat(List.length(&2, Ref, rs)), Out.refs(List.reverse(&2, Ref, rs), Nil{}))))))))))))
+def Plot.msg(+key: String, b: Box, +thick: U32, e: Box, +rs: List<&2, Ref>) -> List<&2, U32>:
+  Cb.head(160, 6, Cb.uint(1, Cb.key("plot", Cb.uint(31, Cb.text(String.reverse(key), Cb.key("box", Out.box(b,
+    Cb.key("thick", Cb.uint(thick, Cb.key("edge", Out.box(e, Cb.key("cs", Cb.head(128, U32.from_nat(List.length(&2, Ref, rs)), Out.refs(List.reverse(&2, Ref, rs), Nil{}))))))))))))))
 
 # s in front of acc, given s backwards
 def Out.pre(rs: String, acc: String) -> String:
@@ -920,8 +964,8 @@ def Infos.strip(cs: List<&2, Chunk>) -> List<&2, Chunk>:
 # a plot without its info tables (what the hub keeps; sigs unchanged)
 def Plot.bare(p: Plot) -> Plot:
   match p:
-    case Plot{cs, b, t, so}:
-      Plot{Infos.strip(cs), b, t, so}
+    case Plot{cs, b, t, so, e}:
+      Plot{Infos.strip(cs), b, t, so, e}
 
 # looking up: the state is which field (0 sig, 1 count, 2 table), the
 # number read, the sig, the chars left, the table so far (backwards), and
@@ -978,8 +1022,8 @@ def Infos.find(t: String, +sig: U32, idx: Nat) -> String:
 # Plots between processes
 # ----------------------
 # The hub reads each file in a child process (src/server/plot.bend: a
-# fresh heap every time) that prints the plot as lines: "b" and the box
-# and thickness, then "c" and each chunk's sig, layer, colour, alpha, mode,
+# fresh heap every time) that prints the plot as lines: "b" and the box,
+# thickness and the board's rectangle, then "c" and each chunk's sig, layer, colour, alpha, mode,
 # width and the lengths of its bytes and info, a space, then exactly those
 # bytes and info chars (any char may be among them) and a newline. Numbers
 # are U32 decimals, the first right after its letter. Tail calls only.
@@ -992,10 +1036,11 @@ def Line.chunks(cs: List<&2, Chunk>, acc: String) -> String:
       Line.chunks(t, Out.put("c" ++ U32.show(s) ++ " " ++ U32.show(l) ++ " " ++ U32.show(c) ++ " " ++ U32.show(a) ++ " " ++ U32.show(m) ++ " " ++ U32.show(w)
         ++ " " ++ U32.show(Cb.count(d, 0)) ++ " " ++ U32.show(Cb.count(i, 0)) ++ " ", Out.pre(d, Out.pre(i, Out.put("\n", acc)))))
 
-def Line.box(b: Box, +thick: U32) -> String:
-  match b:
-    case Box{x0, y0, x1, y1}:
-      "b" ++ U32.show(x0) ++ " " ++ U32.show(y0) ++ " " ++ U32.show(x1) ++ " " ++ U32.show(y1) ++ " " ++ U32.show(thick) ++ "\n"
+def Line.box(b: Box, +thick: U32, e: Box) -> String:
+  match b e:
+    case Box{x0, y0, x1, y1} Box{ex0, ey0, ex1, ey1}:
+      "b" ++ U32.show(x0) ++ " " ++ U32.show(y0) ++ " " ++ U32.show(x1) ++ " " ++ U32.show(y1) ++ " " ++ U32.show(thick)
+        ++ " " ++ U32.show(ex0) ++ " " ++ U32.show(ey0) ++ " " ++ U32.show(ex1) ++ " " ++ U32.show(ey1) ++ "\n"
 
 def Line.nums(xs: List<&2, U32>) -> String:
   match xs:
@@ -1012,22 +1057,26 @@ def Line.solid(so: Solid) -> String:
 
 def Line.plot(p: Plot) -> String:
   match p:
-    case Plot{cs, b, +t, so}:
-      Out.put(Line.box(b, t), Line.chunks(List.reverse(&2, Chunk, cs), Line.solid(so)))
+    case Plot{cs, b, +t, so, e}:
+      Out.put(Line.box(b, t, e), Line.chunks(List.reverse(&2, Chunk, cs), Line.solid(so)))
 
 # the scan's state: the line's letter (0 at a line's start), its numbers
 # so far (backwards), the number being read, which field it is, how many
 # raw chars were read, the chunk's bytes and info (built backwards, as a
 # chunk keeps them), and what is done
 type Sc is Data:
-  Sc{tag: U32, nums: List<&2, U32>, n: U32, f: U32, k: U32, rev: String, info: String, cs: List<&2, Chunk>, box: Box, thick: U32, solid: Solid}
+  Sc{tag: U32, nums: List<&2, U32>, n: U32, f: U32, k: U32, rev: String, info: String, cs: List<&2, Chunk>, box: Box, thick: U32, solid: Solid, edge: Box}
 
-def Scan.box(ns: List<&2, U32>, b: Box, +t: U32) -> Box & U32:
+# a box line: the box, thickness and board rectangle
+type BL is Data:
+  BL{box: Box, thick: U32, edge: Box}
+
+def Scan.box(ns: List<&2, U32>, b: Box, +t: U32, e: Box) -> BL:
   match ns:
-    case th <> y1 <> x1 <> y0 <> x0 <> _:
-      (Box{x0, y0, x1, y1}, th)
+    case ey1 <> ex1 <> ey0 <> ex0 <> th <> y1 <> x1 <> y0 <> x0 <> _:
+      BL{Box{x0, y0, x1, y1}, th, Box{ex0, ey0, ex1, ey1}}
     case _:
-      (b, t)
+      BL{b, t, e}
 
 def Scan.chunk(ns: List<&2, U32>, rev: String, info: String, cs: List<&2, Chunk>) -> List<&2, Chunk>:
   match ns:
@@ -1036,9 +1085,10 @@ def Scan.chunk(ns: List<&2, U32>, rev: String, info: String, cs: List<&2, Chunk>
     case _:
       cs
 
-def Scan.boxed(r: Box & U32, cs: List<&2, Chunk>, so: Solid) -> Sc:
-  (b, t) = r
-  Sc{0, Nil{}, 0, 0, 0, SNil{}, SNil{}, cs, b, t, so}
+def Scan.boxed(r: BL, cs: List<&2, Chunk>, so: Solid) -> Sc:
+  match r:
+    case BL{b, t, e}:
+      Sc{0, Nil{}, 0, 0, 0, SNil{}, SNil{}, cs, b, t, so, e}
 
 # a solid's line: n, the box's six numbers, the byte count
 def Scan.solid(ns: List<&2, U32>, rev: String, so: Solid) -> Solid:
@@ -1050,21 +1100,21 @@ def Scan.solid(ns: List<&2, U32>, rev: String, so: Solid) -> Solid:
 
 def Scan.line.k(box: Bool, mesh: Bool, s: Sc) -> Sc:
   match box mesh s:
-    case True{} _ Sc{_, ns, +n, _, _, _, _, cs, b, t, so}:
-      Scan.boxed(Scan.box(n <> ns, b, t), cs, so)
-    case False{} True{} Sc{_, ns, _, _, _, rev, _, cs, b, t, so}:
-      Sc{0, Nil{}, 0, 0, 0, SNil{}, SNil{}, cs, b, t, Scan.solid(ns, rev, so)}
-    case False{} False{} Sc{_, ns, _, _, _, rev, info, cs, b, t, so}:
-      Sc{0, Nil{}, 0, 0, 0, SNil{}, SNil{}, Scan.chunk(ns, rev, info, cs), b, t, so}
+    case True{} _ Sc{_, ns, +n, _, _, _, _, cs, b, t, so, e}:
+      Scan.boxed(Scan.box(n <> ns, b, t, e), cs, so)
+    case False{} True{} Sc{_, ns, _, _, _, rev, _, cs, b, t, so, e}:
+      Sc{0, Nil{}, 0, 0, 0, SNil{}, SNil{}, cs, b, t, Scan.solid(ns, rev, so), e}
+    case False{} False{} Sc{_, ns, _, _, _, rev, info, cs, b, t, so, e}:
+      Sc{0, Nil{}, 0, 0, 0, SNil{}, SNil{}, Scan.chunk(ns, rev, info, cs), b, t, so, e}
 
 def Sc.tag(s: Sc) -> U32:
   match s:
-    case Sc{t, _, _, _, _, _, _, _, _, _, _}:
+    case Sc{t, _, _, _, _, _, _, _, _, _, _, _}:
       t
 
 def Sc.f(s: Sc) -> U32:
   match s:
-    case Sc{_, _, _, f, _, _, _, _, _, _, _}:
+    case Sc{_, _, _, f, _, _, _, _, _, _, _, _}:
       f
 
 # the chunk's byte count, and bytes plus info count, once all 8 numbers
@@ -1085,24 +1135,24 @@ def Sc.raw.k(r: U32 & U32, +k: U32) -> Bool & Bool:
 # whether the next char is raw, and whether it is one of the bytes
 def Sc.raw(+s: Sc) -> Bool & Bool:
   match s:
-    case Sc{+t, +ns, _, +f, +k, _, _, _, _, _, _}:
+    case Sc{+t, +ns, _, +f, +k, _, _, _, _, _, _, _}:
       Bool.pick(Bool & Bool, Bool.and(Bool.or(U32.is_eq(t, 99), U32.is_eq(t, 109)), U32.is_ge(f, 8)), Sc.raw.k(Sc.lens(U32.is_eq(t, 109), ns), k), (False{}, False{}))
 
 def Scan.step.k(raw: Bool & Bool, nl: Bool, start: Bool, sp: Bool, +c: U32, +s: Sc) -> Sc:
   (r, byte) = raw
   match r byte nl start sp s:
-    case True{} True{} _ _ _ Sc{t, ns, n, f, +k, rev, info, cs, b, th, so}:
-      Sc{t, ns, n, f, (k + 1 : U32), SCon{Chr{c}, rev}, info, cs, b, th, so}
-    case True{} False{} _ _ _ Sc{t, ns, n, f, +k, rev, info, cs, b, th, so}:
-      Sc{t, ns, n, f, (k + 1 : U32), rev, SCon{Chr{c}, info}, cs, b, th, so}
+    case True{} True{} _ _ _ Sc{t, ns, n, f, +k, rev, info, cs, b, th, so, e}:
+      Sc{t, ns, n, f, (k + 1 : U32), SCon{Chr{c}, rev}, info, cs, b, th, so, e}
+    case True{} False{} _ _ _ Sc{t, ns, n, f, +k, rev, info, cs, b, th, so, e}:
+      Sc{t, ns, n, f, (k + 1 : U32), rev, SCon{Chr{c}, info}, cs, b, th, so, e}
     case False{} _ True{} _ _ _:
       Scan.line.k(U32.is_eq(Sc.tag(s), 98), U32.is_eq(Sc.tag(s), 109), s)
-    case False{} _ False{} True{} _ Sc{_, ns, n, f, k, rev, info, cs, b, th, so}:
-      Sc{c, ns, n, f, k, rev, info, cs, b, th, so}
-    case False{} _ False{} False{} True{} Sc{t, ns, +n, +f, k, rev, info, cs, b, th, so}:
-      Sc{t, n <> ns, 0, (f + 1 : U32), k, rev, info, cs, b, th, so}
-    case False{} _ False{} False{} False{} Sc{t, ns, +n, f, k, rev, info, cs, b, th, so}:
-      Sc{t, ns, ((n * 10 : U32) + (c - 48 : U32) : U32), f, k, rev, info, cs, b, th, so}
+    case False{} _ False{} True{} _ Sc{_, ns, n, f, k, rev, info, cs, b, th, so, e}:
+      Sc{c, ns, n, f, k, rev, info, cs, b, th, so, e}
+    case False{} _ False{} False{} True{} Sc{t, ns, +n, +f, k, rev, info, cs, b, th, so, e}:
+      Sc{t, n <> ns, 0, (f + 1 : U32), k, rev, info, cs, b, th, so, e}
+    case False{} _ False{} False{} False{} Sc{t, ns, +n, f, k, rev, info, cs, b, th, so, e}:
+      Sc{t, ns, ((n * 10 : U32) + (c - 48 : U32) : U32), f, k, rev, info, cs, b, th, so, e}
 
 def Scan.step(+c: U32, +s: Sc) -> Sc:
   Scan.step.k(Sc.raw(s), U32.is_eq(c, 10), U32.is_eq(Sc.tag(s), 0), U32.is_eq(c, 32), c, s)
@@ -1116,12 +1166,12 @@ def Scan.go(t: String, s: Sc) -> Sc:
 
 def Scan.fin(s: Sc) -> Plot:
   match s:
-    case Sc{_, _, _, _, _, _, _, cs, b, t, so}:
-      Plot{List.reverse(&2, Chunk, cs), b, t, so}
+    case Sc{_, _, _, _, _, _, _, cs, b, t, so, e}:
+      Plot{List.reverse(&2, Chunk, cs), b, t, so, e}
 
 # the plot a child printed (Line.plot)
 def Scan.plot(t: String) -> Plot:
-  Scan.fin(Scan.go(t, Sc{0, Nil{}, 0, 0, 0, SNil{}, SNil{}, Nil{}, Box.empty(), 1600, Solid.none()}))
+  Scan.fin(Scan.go(t, Sc{0, Nil{}, 0, 0, 0, SNil{}, SNil{}, Nil{}, Box.empty(), 1600, Solid.none(), Box.empty()}))
 
 # no plot for the source (yet): why, for the phone to show
 def Plot.none(+key: String, +why: String) -> String:

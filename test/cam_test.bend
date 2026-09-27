@@ -2,9 +2,13 @@ import Base
 import ./check.bend as C
 import ../src/gfx/mesh.bend as M
 import ../src/app/nui.bend as N
+import ../src/gfx/face.bend as FA
+import ../src/core/board.bend as B
+import ../src/core/pcb3d.bend as P3
+import ../src/core/glb.bend as G
 
 # The 3D viewer's camera moves like SolidWorks': it turns about the model's
-# centre wherever that sits on screen, zooms at the pointer, and nothing is
+# centre (a board's: its rectangle's centre) wherever that sits on screen, zooms at the pointer, and nothing is
 # locked to the world's up. Points are checked where they land on an
 # 800 x 600 view, to the nearest pixel.
 
@@ -75,6 +79,19 @@ def square(c: M.Cam) -> String:
       Bool.pick(String, Bool.and(F32.is_lt(F32.abs(F32.sub(dot(rx, ry, rz, rx, ry, rz), 1.0)), 0.0001),
         Bool.and(F32.is_lt(F32.abs(F32.sub(dot(ux, uy, uz, ux, uy, uz), 1.0)), 0.0001), F32.is_lt(F32.abs(dot(rx, ry, rz, ux, uy, uz)), 0.0001))), "yes", "no")
 
+# a 10 x 4 board, 1.6 thick, with a part hanging far off one corner
+def board() -> FA.Scene3:
+  FA.Scene3.add(FA.Scene3.board(FA.Face3{1.6, P3.Look.default(), [B.PPoly{[B.Pt{0.0, 0.0}, B.Pt{10.0, 0.0}, B.Pt{10.0, 4.0}, B.Pt{0.0, 4.0}], 0.1, False{}}], FA.L4.none(), FA.L4.none()}, 0n),
+    [G.Tri3{30.0, 5.0, 20.0, 31.0, 5.0, 20.0, 30.0, 6.0, 20.0, 255}], 0n)
+
+def bare() -> FA.Scene3:
+  FA.Scene3.board(FA.Face3{1.6, P3.Look.default(), [B.PPoly{[B.Pt{0.0, 0.0}, B.Pt{10.0, 0.0}, B.Pt{10.0, 4.0}, B.Pt{0.0, 4.0}], 0.1, False{}}], FA.L4.none(), FA.L4.none()}, 0n)
+
+def box.show(b: FA.PBox) -> String:
+  match b:
+    case FA.PBox{+x0, +y0, +x1, +y1}:
+      px(x0) ++ "," ++ px(y0) ++ "," ++ px(x1) ++ "," ++ px(y1)
+
 def main() -> IO(Unit):
   +c0 = cam(0.3, 0.95)
   +s = unit(c0)
@@ -82,6 +99,11 @@ def main() -> IO(Unit):
   +front = cam(0.0, 0.0)
   do IO<Unit>:
     C.Check.str("pivot at the centre", pivot(c0), "400,300")
+    C.Check.str("a board's rectangle is its outline's", box.show(FA.Outline.box([B.PPoly{[B.Pt{1.0, 2.0}, B.Pt{11.0, 2.0}, B.Pt{11.0, 6.0}, B.Pt{1.0, 6.0}], 0.4, False{}}], FA.PBox.none())), "1,2,11,6")
+    C.Check.str("a board turns about its rectangle's centre", at(FA.Scene3.fit(board()), 5.0, 0.8, 2.0), "400,300")
+    C.Check.str("a turned board stays about its centre", at(M.Cam.orbit(FA.Scene3.fit(board()), 0.9, 0.5), 5.0, 0.8, 2.0), "400,300")
+    C.Check.str("fit (F) turns about the board's centre", at(FA.Scene3.refit(board(), M.Cam.orbit(M.Cam.first(), 0.7, 0.3)), 5.0, 0.8, 2.0), "400,300")
+    C.Check.str("fit shows the part too", Bool.pick(String, F32.is_gt(M.Cam.unit(FA.Scene3.fit(board()), W(), H()), F32.mul(4.0, M.Cam.unit(FA.Scene3.fit(bare()), W(), H()))), "far", "near"), "far")
     C.Check.str("pan: the model follows the pointer", pivot(panned), "450,280")
     C.Check.str("turn about the pivot where it is", pivot(M.Cam.orbit(panned, 0.7, F32.neg(0.4))), "450,280")
     C.Check.str("roll about the pivot where it is", pivot(M.Cam.roll(panned, 1.1)), "450,280")

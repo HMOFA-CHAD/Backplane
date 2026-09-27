@@ -33,7 +33,7 @@ def go(r: File & Result<&1, &1, U32 & String, List<&2, U32>>, +sch: Bool) -> IO(
     +cs : List<&2, P.Chunk> = P.Plot.chunks(pl)
     +m : Nat = List.length(&2, P.Chunk, cs)
     +t2 : Nat <- IO.now()
-    +msg : List<&2, U32> = P.Plot.msg("k", P.Plot.box(pl), P.Plot.thick(pl), P.Plot.delta(cs, Nil{}))
+    +msg : List<&2, U32> = P.Plot.msg("k", P.Plot.box(pl), P.Plot.thick(pl), P.Plot.edge(pl), P.Plot.delta(cs, Nil{}))
     +len : Nat = List.length(&2, U32, msg)
     +t3 : Nat <- IO.now()
     +again : Nat = P.Plot.fresh(P.Plot.delta(cs, cs))

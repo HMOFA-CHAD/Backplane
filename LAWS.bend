@@ -1516,6 +1516,28 @@ law scene3_fade_ends:
 law scene3_stale_parts_dropped:
   {MS.Model.size(FA.Scene3.model(FA.Scene3.add_if(FA.Scene3.board(FA.FNone{}, 5000n), 4000n, [G.Tri3{0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 255}], 7000n)))
     == 0n : Nat}
+
+# a camera fitted about a point turns about that point, whatever it shows
+law cam_fit_turns_about:
+  for b: MS.Box3
+  for +px: F32
+  for +py: F32
+  for +pz: F32
+  for c: MS.Cam
+  {MS.Cam.pivot(MS.Cam.of_box.at(b, px, py, pz, c)) == (px, py, pz) : F32 & F32 & F32}
+
+# a board turns about the centre of its bounding rectangle, halfway
+# through its thickness, wherever its parts are
+law scene3_board_pivot:
+  for +x0: F32
+  for +y0: F32
+  for +x1: F32
+  for +y1: F32
+  for +thick: F32
+  for m: MS.Model
+  for c: MS.Cam
+  {MS.Cam.pivot(FA.Face3.refit.q(True{}, x0, y0, x1, y1, thick, m, c))
+    == (F32.mul(0.5, F32.add(x0, x1)), F32.mul(0.5, thick), F32.mul(0.5, F32.add(y0, y1))) : F32 & F32 & F32}
 # The model picker
 # ----------------
 # Its pieces come from core/menu.bend for whatever models and effort

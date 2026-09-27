@@ -3420,6 +3420,16 @@ def Laws.scene3_fade_ends():
 
 def Laws.scene3_stale_parts_dropped():
   {==}
+
+def Laws.cam_fit_turns_about(b, px, py, pz, c):
+  match b c:
+    case MS.Box3{x0, y0, z0, x1, y1, z1} MS.Cam{rx, ry, rz, ux, uy, uz, qx, qy, qz, d, sx, sy, fov}:
+      {==}
+
+def Laws.scene3_board_pivot(x0, y0, x1, y1, thick, m, c):
+  match m c:
+    case MS.Model{n, MS.Box3{a0, b0, c0, a1, b1, c1}, cs, t, l} MS.Cam{rx, ry, rz, ux, uy, uz, qx, qy, qz, d, sx, sy, fov}:
+      {==}
 # The model picker
 # ----------------
 

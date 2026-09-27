@@ -13,6 +13,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.exp
@@ -190,7 +191,7 @@ private fun turned(v: FloatArray, k: FloatArray, a: Float): FloatArray {
     return FloatArray(3) { v[it] * c + kv[it] * s + k[it] * d }
 }
 
-// a 3D camera turning freely about a pivot (the model's centre), like
+// a 3D camera turning freely about a pivot (a board's rectangle's centre), like
 // SolidWorks, in a right-handed world where the board's y is flipped
 // (KiCad's y points down the screen), micrometres. r, u, f: the view's
 // right, up and forward; sx, sy: the pan in the view plane; dist: from the
@@ -610,6 +611,8 @@ class PlotRenderer : GLSurfaceView.Renderer {
 class PlotSurface(context: Context) : GLSurfaceView(context) {
     val renderer = PlotRenderer()
     var box = FloatArray(0)
+    // the board's rectangle: the 3D view turns about its centre
+    var edge = FloatArray(0)
     var margin = 0.9f
     var zmin = 0.5f
     var zmax = 0.5f
@@ -651,11 +654,15 @@ class PlotSurface(context: Context) : GLSurfaceView(context) {
         renderer.offX = width / 2f - (box[0] + box[2]) / 2 * s
         renderer.offY = height / 2f - (box[1] + box[3]) / 2 * s
         val o = renderer.orbit
-        val diag = hypot(box[2] - box[0], box[3] - box[1])
+        val e = if (edge.size == 4) edge else box
+        val cx = (e[0] + e[2]) / 2
+        val cy = (e[1] + e[3]) / 2
+        // far enough to show the whole box round the pivot
+        val reach = hypot(max(abs(box[0] - cx), abs(box[2] - cx)), max(abs(box[1] - cy), abs(box[3] - cy)))
         // the narrower of the two fields of view takes the whole board
         val half = tan(o.fov * Math.PI.toFloat() / 360f)
-        renderer.orbit = Orbit(floatArrayOf((box[0] + box[2]) / 2, -(box[1] + box[3]) / 2, renderer.thick / 2),
-            dist = diag / 2 / (half * min(width.toFloat() / max(height, 1), 1f)) * 1.1f, fov = o.fov).aim(0.5f, 0.75f)
+        renderer.orbit = Orbit(floatArrayOf(cx, -cy, renderer.thick / 2),
+            dist = reach / (half * min(width.toFloat() / max(height, 1), 1f)) * 1.1f, fov = o.fov).aim(0.5f, 0.75f)
         fitted = true
         requestRender()
     }
@@ -678,11 +685,13 @@ class PlotSurface(context: Context) : GLSurfaceView(context) {
         renderer.bg = floatArrayOf(((bg shr 16) and 255) / 255f, ((bg shr 8) and 255) / 255f, (bg and 255) / 255f)
         renderer.look = look
         renderer.thick = if (f.thick > 0) f.thick else 1600f
-        queueEvent { renderer.load(f.chunks, f.fresh); renderer.slab(f.box, slab) }
+        val e = if (f.edge.size == 4 && f.edge[0] <= f.edge[2]) f.edge else f.box
+        queueEvent { renderer.load(f.chunks, f.fresh); renderer.slab(e, slab) }
         // a new source (board to schematic, another sheet) fits anew
         val first = box.isEmpty() || !fitted || f.key != shownKey
         shownKey = f.key
         box = f.box
+        edge = e
         if (first) { fitted = false; refit() }
         fadeFrom = if (f.fresh.isEmpty()) 0 else f.at
         renderer.fade = if (f.fresh.isEmpty()) 1f else 0f

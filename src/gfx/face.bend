@@ -65,17 +65,6 @@ def Scene3.fading(s: Scene3, +now: Nat) -> Bool:
     case Scene3{m, _, _, _}:
       MS.Model.fading(m, now)
 
-def Scene3.fit(s: Scene3) -> MS.Cam:
-  match s:
-    case Scene3{m, _, _, _}:
-      MS.Model.fit(m)
-
-# zoom to fit, turned as c is
-def Scene3.refit(s: Scene3, c: MS.Cam) -> MS.Cam:
-  match s:
-    case Scene3{m, _, _, _}:
-      MS.Model.refit(m, c)
-
 # Sorting items
 # -------------
 
@@ -149,6 +138,63 @@ def PBox.any(bs: List<&2, PBox>, +b: PBox) -> Bool:
       False{}
     case +x <> t:
       Bool.or(PBox.meets(x, b), PBox.any(t, b))
+
+# Fitting the view
+# ----------------
+
+# the board's bounding rectangle: its outline's points, a circle to its
+# radius, stroke widths left out
+def Outline.prim(p: B.Prim, b: PBox) -> PBox:
+  match p:
+    case B.PSeg{a, c, _}:
+      PBox.pts([a, c], 0.0, b)
+    case B.PLine{ps, _}:
+      PBox.pts(ps, 0.0, b)
+    case B.PCirc{c, +r, _, _}:
+      PBox.pts([c], r, b)
+    case B.PPoly{ps, _, _}:
+      PBox.pts(ps, 0.0, b)
+
+def Outline.box(ps: List<&2, B.Prim>, b: PBox) -> PBox:
+  match ps:
+    case Nil{}:
+      b
+    case p <> t:
+      Outline.box(t, Outline.prim(p, b))
+
+def Face3.refit.q(has: Bool, +x0: F32, +y0: F32, +x1: F32, +y1: F32, +thick: F32, m: MS.Model, c: MS.Cam) -> MS.Cam:
+  match has:
+    case True{}:
+      MS.Model.refit.at(m, F32.mul(0.5, F32.add(x0, x1)), F32.mul(0.5, thick), F32.mul(0.5, F32.add(y0, y1)), c)
+    case False{}:
+      MS.Model.refit(m, c)
+
+def Face3.refit.k(b: PBox, +thick: F32, m: MS.Model, c: MS.Cam) -> MS.Cam:
+  match b:
+    case PBox{+x0, +y0, +x1, +y1}:
+      Face3.refit.q(F32.is_le(x0, x1), x0, y0, x1, y1, thick, m, c)
+
+# a board turns about the centre of its bounding rectangle, halfway
+# through its thickness (the outline's x and y are the world's x and z);
+# a board with no outline, about the whole model's centre
+def Face3.refit(f: Face3, m: MS.Model, c: MS.Cam) -> MS.Cam:
+  match f:
+    case FNone{}:
+      MS.Model.refit(m, c)
+    case Face3{+thick, _, o, _, _}:
+      Face3.refit.k(Outline.box(o, PBox.none()), thick, m, c)
+
+# zoom to fit, turned as c is
+def Scene3.refit(s: Scene3, c: MS.Cam) -> MS.Cam:
+  match s:
+    case Scene3{m, Nil{}, _, _}:
+      MS.Model.refit(m, c)
+    case Scene3{m, f <> _, _, _}:
+      Face3.refit(f, m, c)
+
+# a new scene, seen from the first side
+def Scene3.fit(s: Scene3) -> MS.Cam:
+  Scene3.refit(s, MS.Cam.first())
 
 def Cand.keep(hit: Bool, +p: B.Prim, rest: List<&2, B.Prim>) -> List<&2, B.Prim>:
   match hit:

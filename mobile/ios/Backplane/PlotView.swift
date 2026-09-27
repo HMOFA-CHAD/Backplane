@@ -30,7 +30,7 @@ private struct LayerDraw {
     var freshTris: Range<Int>
 }
 
-// a 3D camera turning freely about a pivot (the model's centre), like
+// a 3D camera turning freely about a pivot (a board's rectangle's centre), like
 // SolidWorks, in a right-handed world where the board's y is flipped
 // (KiCad's y points down the screen), micrometres. r, u, f: the view's
 // right, up and forward; pan: in the view plane; dist: from the eye to the
@@ -484,6 +484,8 @@ final class PlotRenderer: NSObject, MTKViewDelegate {
 final class PlotCanvas: MTKView {
     var renderer: PlotRenderer!
     var box: [Float] = []
+    // the board's rectangle: the 3D view turns about its centre
+    var edge: [Float] = []
     var margin: Float = 0.9
     var zmin: Float = 0.5
     var zmax: Float = 0.5
@@ -544,12 +546,15 @@ final class PlotCanvas: MTKView {
         renderer.scale = s
         renderer.off = SIMD2(Float(bounds.width) / 2 - (box[0] + box[2]) / 2 * s, Float(bounds.height) / 2 - (box[1] + box[3]) / 2 * s)
         var o = Orbit(fov: renderer.orbit.fov)
-        o.pivot = SIMD3((box[0] + box[2]) / 2, -(box[1] + box[3]) / 2, renderer.thick / 2)
+        let e = edge.count == 4 ? edge : box
+        let cx = (e[0] + e[2]) / 2, cy = (e[1] + e[3]) / 2
+        o.pivot = SIMD3(cx, -cy, renderer.thick / 2)
         o.aim(yaw: 0.5, pitch: 0.75)
-        let diag = simd_length(SIMD2(box[2] - box[0], box[3] - box[1]))
+        // far enough to show the whole box round the pivot
+        let reach = simd_length(SIMD2(max(abs(box[0] - cx), abs(box[2] - cx)), max(abs(box[1] - cy), abs(box[3] - cy))))
         // the narrower of the two fields of view takes the whole board
         let half = tan(o.fov * .pi / 360), aspect = Float(bounds.width) / Float(max(bounds.height, 1))
-        o.dist = diag / 2 / (half * min(aspect, 1)) * 1.1
+        o.dist = reach / (half * min(aspect, 1)) * 1.1
         renderer.orbit = o
         fitted = true
         setNeedsDisplay()
@@ -570,7 +575,8 @@ final class PlotCanvas: MTKView {
         let first = box.isEmpty || !fitted || f.key != shownKey
         shownKey = f.key
         box = f.box
-        renderer.slab(f.box, color: slab)
+        edge = f.edge.count == 4 && f.edge[0] <= f.edge[2] ? f.edge : f.box
+        renderer.slab(edge, color: slab)
         if first { fitted = false; setNeedsLayout() }
         fadeFrom = f.fresh.isEmpty ? nil : f.at
         renderer.fade = f.fresh.isEmpty ? 1 : 0

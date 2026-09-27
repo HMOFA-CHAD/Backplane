@@ -200,17 +200,33 @@ def Box3.go(ts: List<&2, G.Tri3>, b: Box3) -> Box3:
     case G.Tri3{ax, ay, az, bx, by, bz, cx, cy, cz, _} <> t:
       Box3.go(t, Box3.put(Box3.put(Box3.put(b, ax, ay, az), bx, by, bz), cx, cy, cz))
 
+# the larger of a box side's two distances from the pivot's coordinate
+def Box3.reach(+a0: F32, +a1: F32, +p: F32) -> F32:
+  F32.max(F32.abs(F32.sub(a0, p)), F32.abs(F32.sub(a1, p)))
+
+# the camera c turned as it is, turning about (px, py, pz), far enough
+# back to show the whole box round it
+def Cam.of_box.at(b: Box3, +px: F32, +py: F32, +pz: F32, c: Cam) -> Cam:
+  match b c:
+    case Box3{+x0, +y0, +z0, +x1, +y1, +z1} Cam{rx, ry, rz, ux, uy, uz, _, _, _, _, _, _, +fov}:
+      +dx = Box3.reach(x0, x1, px)
+      +dy = Box3.reach(y0, y1, py)
+      +dz = Box3.reach(z0, z1, pz)
+      +r = F32.max(F32.sqrt(F32.add(F32.mul(dx, dx), F32.add(F32.mul(dy, dy), F32.mul(dz, dz)))), 0.000001)
+      Cam{rx, ry, rz, ux, uy, uz, px, py, pz, F32.div(r, F32.sin(F32.mul(fov, 0.5))), 0.0, 0.0, fov}
+
 # the camera c turned as it is, showing the whole box, centred on it (its
 # centre is the pivot)
 def Cam.of_box(b: Box3, c: Cam) -> Cam:
-  match b c:
-    case Box3{+x0, +y0, +z0, +x1, +y1, +z1} Cam{rx, ry, rz, ux, uy, uz, _, _, _, _, _, _, +fov}:
-      +dx = F32.sub(x1, x0)
-      +dy = F32.sub(y1, y0)
-      +dz = F32.sub(z1, z0)
-      +r = F32.max(F32.mul(0.5, F32.sqrt(F32.add(F32.mul(dx, dx), F32.add(F32.mul(dy, dy), F32.mul(dz, dz))))), 0.000001)
-      Cam{rx, ry, rz, ux, uy, uz, F32.mul(0.5, F32.add(x0, x1)), F32.mul(0.5, F32.add(y0, y1)), F32.mul(0.5, F32.add(z0, z1)),
-        F32.div(r, F32.sin(F32.mul(fov, 0.5))), 0.0, 0.0, fov}
+  match b:
+    case Box3{+x0, +y0, +z0, +x1, +y1, +z1}:
+      Cam.of_box.at(Box3{x0, y0, z0, x1, y1, z1}, F32.mul(0.5, F32.add(x0, x1)), F32.mul(0.5, F32.add(y0, y1)), F32.mul(0.5, F32.add(z0, z1)), c)
+
+# the point the camera turns about
+def Cam.pivot(c: Cam) -> F32 & F32 & F32:
+  match c:
+    case Cam{_, _, _, _, _, _, px, py, pz, _, _, _, _}:
+      (px, py, pz)
 
 # a camera that shows every triangle, from the first side (Cam.first)
 def Cam.fit(ts: List<&2, G.Tri3>) -> Cam:
@@ -309,6 +325,12 @@ def Model.refit(m: Model, c: Cam) -> Cam:
   match m:
     case Model{_, box, _, _, _}:
       Cam.of_box(box, c)
+
+# zoom to fit, turned as c is, turning about (px, py, pz)
+def Model.refit.at(m: Model, +px: F32, +py: F32, +pz: F32, c: Cam) -> Cam:
+  match m:
+    case Model{_, box, _, _, _}:
+      Cam.of_box.at(box, px, py, pz, c)
 
 def Model.fit(m: Model) -> Cam:
   Model.refit(m, Cam.first())
