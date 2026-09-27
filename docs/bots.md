@@ -352,7 +352,7 @@ MagicDNS name on the tailnet (same port), else its listen address.
 Every minute the hub runs due routines (`date +%z` for the time zone)
 and asks each linked machine for its bots; the merged list is the info
 key `bots.remote` (a machine that does not answer keeps its bots, away).
-`test/tools/bots_e2e.ts` runs two hubs against each other.
+`test/tools/bots_e2e.ts` runs two hubs against each other; `test/tools/newproj_e2e.ts` runs project_create on one.
 
 Each bot is listed once (`src/core/once.bend`; laws `bot_rows_once`,
 `bot_picks_once`, `hubs_bots_once`). A bot here is keyed by its id, a bot
