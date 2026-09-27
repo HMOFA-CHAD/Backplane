@@ -525,8 +525,8 @@ def Mob.skills(rs: List<&2, U.SkillRow>) -> List<&2, J.Json>:
   match rs:
     case Nil{}:
       Nil{}
-    case U.SkillRow{n, d} <> t:
-      J.Json.obj([J.KV{"name", J.Json.str(n)}, J.KV{"desc", J.Json.str(d)}]) <> Mob.skills(t)
+    case U.SkillRow{n, d, on} <> t:
+      J.Json.obj([J.KV{"name", J.Json.str(n)}, J.KV{"desc", J.Json.str(d)}, J.KV{"on", J.Json.bool(on)}]) <> Mob.skills(t)
 
 # Diff: what the thread changed, file by file, lines on a reversed
 # accumulator (a diff can run to thousands of lines)

@@ -94,8 +94,17 @@ def rows(rs: List<&2, U.SkillRow>) -> String:
   match rs:
     case Nil{}:
       ""
-    case U.SkillRow{n, _} <> t:
+    case U.SkillRow{n, _, _} <> t:
       n ++ "," ++ rows(t)
+
+def lit(rs: List<&2, U.SkillRow>) -> String:
+  match rs:
+    case Nil{}:
+      ""
+    case U.SkillRow{n, _, True{}} <> t:
+      "[" ++ n ++ "]," ++ lit(t)
+    case U.SkillRow{n, _, False{}} <> t:
+      n ++ "," ++ lit(t)
 
 def names(cs: List<&2, RF.Cand>) -> String:
   match cs:
@@ -196,6 +205,14 @@ def main() -> IO(Unit):
     C.Check.str("completed offers none", rows(U.Ui.skills(u3)), "")
     C.Check.str("composer threads", rows(U.Ui.skills(ui(U.Ui.act(u0, "draft", "see >")))), ">fix-perf-lag-7,>fix-perf-lag-9,")
     C.Check.str("complete ref", U.Skills.complete("ask @mi", "@Miso"), "ask @Miso ")
+    # the arrow keys move the highlight; Enter or Tab takes it
+    C.Check.str("first lit", lit(U.Ui.skills(u1)), "[@Tofu],@Miso,")
+    C.Check.str("down", lit(U.Ui.skills(ui(U.Ui.act(u1, "skill-move", "down")))), "@Tofu,[@Miso],")
+    C.Check.str("down wraps", lit(U.Ui.skills(ui(U.Ui.act(ui(U.Ui.act(u1, "skill-move", "down")), "skill-move", "down")))), "[@Tofu],@Miso,")
+    C.Check.str("up wraps", lit(U.Ui.skills(ui(U.Ui.act(u1, "skill-move", "up")))), "@Tofu,[@Miso],")
+    C.Check.str("takes the lit one", U.Ui.draft_text(ui(U.Ui.act(ui(U.Ui.act(u1, "skill-move", "down")), "skill", ""))), "ask @Miso ")
+    C.Check.str("a click still wins", U.Ui.draft_text(ui(U.Ui.act(ui(U.Ui.act(u1, "skill-move", "down")), "skill", "@Tofu"))), "ask @Tofu ")
+    C.Check.str("typing starts over", lit(U.Ui.skills(ui(U.Ui.act(ui(U.Ui.act(u1, "skill-move", "down")), "draft", "ask @t")))), "[@Tofu],")
     # bots on linked machines: `@name@machine`
     C.Check.str("typing far", yes(RF.Refs.typing("@kit@la")), "yes")
     C.Check.str("typing far, machine to come", yes(RF.Refs.typing("@kit@")), "yes")

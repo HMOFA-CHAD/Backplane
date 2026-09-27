@@ -122,8 +122,8 @@ def offer.go(rs: List<&2, U.SkillRow>) -> String:
   match rs:
     case Nil{}:
       ""
-    case U.SkillRow{n, d} <> t:
-      n ++ "\t" ++ d ++ "\n" ++ offer.go(t)
+    case U.SkillRow{n, d, on} <> t:
+      n ++ "\t" ++ d ++ Bool.pick(String, on, "\t*", "") ++ "\n" ++ offer.go(t)
 
 # what the composer of the hub in focus offers (skills after `$`; bots,
 # threads, projects and rooms after `@`, `>`, `%` or `#`) as one string: a

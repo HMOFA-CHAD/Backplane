@@ -30,7 +30,7 @@ def names(rs: List<&2, U.SkillRow>) -> String:
   match rs:
     case Nil{}:
       ""
-    case U.SkillRow{n, _} <> t:
+    case U.SkillRow{n, _, _} <> t:
       n ++ "," ++ names(t)
 
 def reply() -> J.Json:

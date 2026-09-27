@@ -293,7 +293,7 @@ struct ComposerExtras: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(i == 0 ? Color.secondary.opacity(0.15) : Color.clear)
+                        .background(k.on ?? (i == 0) ? Color.secondary.opacity(0.15) : Color.clear)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
