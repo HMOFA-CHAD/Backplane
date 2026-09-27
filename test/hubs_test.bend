@@ -74,6 +74,10 @@ def obj(+h: H.Hubs, +key: String, +field: String) -> String:
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("first hub is current", H.Hubs.cur(two()), "100.1.1.1:3787")
+    # a typed draft builds no screen unless what the composer offers changes
+    C.Check.str("nothing offered", A.offer(act(two(), "select", "box:3787|t2")), "")
+    C.Check.str("plain draft offers nothing", A.offer(act(act(two(), "select", "box:3787|t2"), "draft", "hi")), "")
+    C.Check.str("% offers projects", yes(String.starts_with(A.offer(act(act(two(), "select", "box:3787|t2"), "draft", "hi %")), "%")), "yes")
     # a socket that keeps failing says offline again: no screen for that
     C.Check.str("online again is the same", yes(A.online_same(two(), "box:3787", True{})), "yes")
     C.Check.str("offline is a change", yes(A.online_same(two(), "box:3787", False{})), "no")
