@@ -506,6 +506,8 @@ struct ThreadScreen: View {
     @FocusState private var focused: Bool
     // the image open in the lightbox
     @State private var shown: Shown?
+    // the entry that was first when earlier ones were asked for
+    @State private var keepAt: String?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -517,9 +519,18 @@ struct ThreadScreen: View {
                 VStack(alignment: .leading, spacing: 14) {
                     if let p = thread.parent { EntryRow(model: model, entry: p) { shown = $0 } }
                     if let ts = thread.tasks, !ts.isEmpty { TasksView(model: model, tasks: ts) }
+                    // scrolled up to the top while earlier entries are left
+                    // out: they are shown, no button, and the view stays on
+                    // the entry that was first
                     if let n = thread.earlier, n > 0 {
-                        Button("Show earlier") { model.act("earlier", "") }
-                            .font(.footnote).frame(maxWidth: .infinity).padding(.vertical, 4)
+                        Color.clear.frame(height: 1).background(GeometryReader { g in
+                            Color.clear.onChange(of: g.frame(in: .named("timeline")).minY) { _, y in
+                                if y > -400 && keepAt == nil {
+                                    keepAt = thread.entries.first?.id
+                                    model.act("earlier", "")
+                                }
+                            }
+                        })
                     }
                     ForEach(thread.entries) { EntryRow(model: model, entry: $0) { shown = $0 }.id($0.id) }
                     // the client's sending rows, then those tapped here it has
@@ -554,6 +565,7 @@ struct ThreadScreen: View {
                 .padding()
                 .animation(.spring(duration: 0.3), value: sending)
             }
+            .coordinateSpace(name: "timeline")
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: model.scrolls) { proxy.scrollTo("end", anchor: .bottom) }
@@ -563,6 +575,9 @@ struct ThreadScreen: View {
             // held at the bottom with no animation: a scroll animated from
             // wherever the old content left it read as the text snapping
             .onChange(of: thread.entries.last?.id) { proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: thread.entries.first?.id) {
+                if let k = keepAt { proxy.scrollTo(k, anchor: .top); keepAt = nil }
+            }
         }
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {

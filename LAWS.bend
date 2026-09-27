@@ -1051,6 +1051,18 @@ law tl_memo_exact:
   for +sel: String
   {L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
 
+# a memo lined up with the entries (an item dropped in front, or entries
+# made in front: TL.align.of's guess, whatever it is) is still exactly the
+# memo made for some entries, so bringing it up to date stays exact
+law tl_align:
+  for c: L.TLAlign
+  for +es: List<&2, M.Entry>
+  for +ty: L.Ty
+  for old: List<&2, M.Entry>
+  for +px: U32
+  for +sel: String
+  {L.TL.memo.apply(c, es, L.TL.memo.make(ty, old, px, sel), ty, px, sel) == L.TL.memo.make(ty, L.TL.memo.apply.es(c, es, old), px, sel) : List<&2, L.TLE>}
+
 # the timeline drawn from a memo is the timeline drawn from scratch
 law tl_lines_exact:
   for +ty: L.Ty

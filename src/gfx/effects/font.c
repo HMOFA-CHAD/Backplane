@@ -18,7 +18,10 @@
 //   Font.glyph(face, cp)      [found, advance, left + 32768, top + 32768,
 //                             w, h, coverage...] advance in 26.6; coverage
 //                             is w*h bytes row-major, four per word, first
-//                             pixel in the low byte; [] on error
+//                             pixel in the low byte; [] on error. A code
+//                             point the face lacks (Greek, CJK, symbols in
+//                             a Latin-only face) comes from the font
+//                             fontconfig picks for it at the same size
 //   Font.kern(face, a, b)     kerning between two code points, 26.6,
 //                             biased by 32768
 
@@ -96,6 +99,13 @@ typedef struct {
   void*          charmap;
 } FxFace;
 
+// fontconfig's FcFontSet
+typedef struct {
+  int    nfont;
+  int    sfont;
+  void** fonts;
+} FxFontSet;
+
 #define FX_LOAD_NO_BITMAP     0x8
 #define FX_LOAD_TARGET_LIGHT  0x10000
 #define FX_RENDER_MODE_NORMAL 0
@@ -119,7 +129,19 @@ typedef struct {
   X(FcFontMatch, void*, (void*, void*, int*)) \
   X(FcPatternGetString, int, (void*, const char*, int, unsigned char**)) \
   X(FcPatternGetInteger, int, (void*, const char*, int, int*)) \
-  X(FcPatternDestroy, void, (void*))
+  X(FcPatternDestroy, void, (void*)) \
+  X(FcPatternCreate, void*, (void)) \
+  X(FcPatternAddString, int, (void*, const char*, const unsigned char*)) \
+  X(FcPatternAddInteger, int, (void*, const char*, int)) \
+  X(FcPatternAddCharSet, int, (void*, const char*, void*)) \
+  X(FcPatternGetCharSet, int, (void*, const char*, int, void**)) \
+  X(FcPatternGetBool, int, (void*, const char*, int, int*)) \
+  X(FcCharSetCreate, void*, (void)) \
+  X(FcCharSetAddChar, int, (void*, u32)) \
+  X(FcCharSetHasChar, int, (void*, u32)) \
+  X(FcCharSetDestroy, void, (void*)) \
+  X(FcFontSort, FxFontSet*, (void*, void*, int, void**, int*)) \
+  X(FcFontSetDestroy, void, (FxFontSet*))
 
 #define FX_PTR(name, ret, args) static __attribute__((unused)) ret (*fx_##name) args;
 FX_FT_FNS(FX_PTR)
@@ -288,6 +310,114 @@ static void __attribute__((constructor)) font_metrics_use(void) {
 
 #ifdef CID_FONT_GLYPH
 
+// Fallback faces
+// --------------
+// Faces opened for code points the UI's faces lack, kept for the rest of
+// the run: a glyph first tries the ones already open at its size and
+// style, then asks fontconfig (FcFontSort over a pattern that wants the
+// code point) and opens the first outline font that has it.
+
+#define FX_FB_MAX 48
+#define FX_STYLE_ITALIC 1
+#define FX_STYLE_BOLD 2
+#define FX_FACE_FIXED_WIDTH 4
+
+typedef struct {
+  FxFace* face;
+  u32     px;
+  long    style;
+} FxFallback;
+
+static FxFallback fx_fb[FX_FB_MAX];
+static u32        fx_nfb = 0;
+
+// the glyph index of cp in f when it loads as an outline (0: it does not)
+static unsigned fx_has(FxFace* f, u32 cp) {
+  unsigned gi = fx_FT_Get_Char_Index(f, cp);
+  if (gi == 0 || fx_FT_Load_Glyph(f, gi, FX_LOAD_TARGET_LIGHT | FX_LOAD_NO_BITMAP) != 0) {
+    return 0;
+  }
+  return gi;
+}
+
+static FxFace* fx_fb_open(void* pat, u32 cp, u32 px, long style) {
+  unsigned char* file = NULL;
+  int index = 0;
+  int color = 0;
+  void* cs = NULL;
+  if (fx_FcPatternGetBool(pat, "color", 0, &color) == 0 && color) {
+    return NULL;
+  }
+  if (fx_FcPatternGetCharSet(pat, "charset", 0, &cs) != 0 || cs == NULL || !fx_FcCharSetHasChar(cs, cp)) {
+    return NULL;
+  }
+  if (fx_FcPatternGetString(pat, "file", 0, &file) != 0 || file == NULL) {
+    return NULL;
+  }
+  fx_FcPatternGetInteger(pat, "index", 0, &index);
+  FxFace* f = NULL;
+  if (fx_FT_New_Face(fx_lib, (const char*)file, index, &f) != 0 || f == NULL) {
+    return NULL;
+  }
+  if (fx_FT_Set_Pixel_Sizes(f, 0, px) != 0 || fx_has(f, cp) == 0 || fx_nfb >= FX_FB_MAX) {
+    return NULL;
+  }
+  fx_fb[fx_nfb].face = f;
+  fx_fb[fx_nfb].px = px;
+  fx_fb[fx_nfb].style = style;
+  fx_nfb += 1;
+  return f;
+}
+
+// a face that has cp, for text set in face (NULL: none on this machine)
+static FxFace* fx_fallback(FxFace* face, u32 cp) {
+  u32 px = face->size->metrics.y_ppem;
+  long style = face->style_flags & (FX_STYLE_ITALIC | FX_STYLE_BOLD);
+  for (u32 i = 0; i < fx_nfb; i += 1) {
+    if (fx_fb[i].px == px && fx_fb[i].style == style && fx_has(fx_fb[i].face, cp) != 0) {
+      return fx_fb[i].face;
+    }
+  }
+  void* config = fx_fc_load();
+  if (config == NULL || fx_nfb >= FX_FB_MAX) {
+    return NULL;
+  }
+  void* p = fx_FcPatternCreate();
+  void* cs = fx_FcCharSetCreate();
+  if (p == NULL || cs == NULL) {
+    if (p) {
+      fx_FcPatternDestroy(p);
+    }
+    if (cs) {
+      fx_FcCharSetDestroy(cs);
+    }
+    return NULL;
+  }
+  fx_FcCharSetAddChar(cs, cp);
+  fx_FcPatternAddCharSet(p, "charset", cs);
+  fx_FcPatternAddString(p, "family", (const unsigned char*)((face->face_flags & FX_FACE_FIXED_WIDTH) ? "monospace" : "sans-serif"));
+  if (style & FX_STYLE_BOLD) {
+    fx_FcPatternAddInteger(p, "weight", 200);
+  }
+  if (style & FX_STYLE_ITALIC) {
+    fx_FcPatternAddInteger(p, "slant", 100);
+  }
+  fx_FcConfigSubstitute(config, p, 0);
+  fx_FcDefaultSubstitute(p);
+  int res = 0;
+  FxFontSet* fs = fx_FcFontSort(config, p, 1, NULL, &res);
+  FxFace* found = NULL;
+  if (fs != NULL) {
+    for (int i = 0; i < fs->nfont && i < 24 && found == NULL; i += 1) {
+      found = fx_fb_open(fs->fonts[i], cp, px, style);
+    }
+    fx_FcFontSetDestroy(fs);
+  }
+  fx_FcPatternDestroy(p);
+  fx_FcCharSetDestroy(cs);
+  return found;
+}
+
 // FreeType's coverage is linear, and the rasterizer blends in sRGB, so
 // light text on a dark ground comes out thin. Browsers correct for it
 // (Skia's contrast / gamma hack); this lifts mid coverage the same way,
@@ -305,6 +435,13 @@ Term font_glyph_run(Env e, Term* f, IoWork* w) {
     return fx_list(e, NULL, 0);
   }
   unsigned gi = fx_FT_Get_Char_Index(face, cp);
+  if (gi == 0 && cp >= 128) {
+    FxFace* fb = fx_fallback(face, cp);
+    if (fb != NULL) {
+      face = fb;
+      gi = fx_FT_Get_Char_Index(face, cp);
+    }
+  }
   if (fx_FT_Load_Glyph(face, gi, FX_LOAD_TARGET_LIGHT | FX_LOAD_NO_BITMAP) != 0
     || fx_FT_Render_Glyph(face->glyph, FX_RENDER_MODE_NORMAL) != 0) {
     return fx_list(e, NULL, 0);

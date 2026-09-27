@@ -7,13 +7,18 @@ import ../../src/app/layout.bend as L
 import ../../src/app/theme.bend as T
 import ../../src/gfx/raster.bend as R
 import ../../src/gfx/tiles.bend as TI
+import ../../src/server/server.bend as S
+import ../../src/core/store.bend as ST
+import ../../src/core/json.bend as J
 
 # Scrolling the timeline, timed: each wheel notch goes through the same
 # steps as in the app (the event, the timeline memo, layout, the tiles
-# slid or redrawn) with no window, 30 notches up then 30 down, each frame
+# slid or redrawn) with no window, 30 notches up then 30 down, then the
+# same in the sidebar, each frame
 # checked against the frame drawn from scratch. The log is type_bench's.
 #   scripts/build-app.sh test/native/scroll_bench.bend build/scroll_bench
 #   build/scroll_bench
+#   build/scroll_bench EVENTS.jsonl   (the sidebar of a real log; only reads it)
 
 def para(+i: Nat) -> String:
   "Message " ++ Nat.show(i) ++ ": the regulator's enable pin is pulled up through R12 to VBAT, so the output comes up before the MCU "
@@ -103,7 +108,7 @@ def same(+w: U32, +h: U32, +os: List<&2, R.Op>, +tiles: TI.Tiles) -> Bool:
 
 # one wheel notch (dir 0 up, 1 down) and the frame after it, timed; ok
 # stays true while every frame is exactly the one drawn from scratch
-def notch(n: Nat, +dir: U32, +ty: L.Ty, k: Kept, t: Times, ok: Bool, sh: String) -> IO(Times & Kept):
+def notch(n: Nat, +x: U32, +dir: U32, +ty: L.Ty, k: Kept, t: Times, ok: Bool, sh: String) -> IO(Times & Kept):
   match n k:
     case 0n _:
       do IO<Times & Kept>:
@@ -112,7 +117,7 @@ def notch(n: Nat, +dir: U32, +ty: L.Ty, k: Kept, t: Times, ok: Bool, sh: String)
     case 1n+rest Kept{+n0, memo0, fr0}:
       do IO<Times & Kept>:
         +t0 : Nat <- IO.now()
-        +n1 : N.Nui = prepared(step_nui(N.Nui.event(n0, W.WWheel{800, 400, dir})), t0)
+        +n1 : N.Nui = prepared(step_nui(N.Nui.event(n0, W.WWheel{x, 400, dir})), t0)
         +t1 : Nat <- IO.now()
         +memo : L.TLMemo = L.Lay.memo(ty, n1, memo0)
         +t2 : Nat <- IO.now()
@@ -123,7 +128,7 @@ def notch(n: Nat, +dir: U32, +ty: L.Ty, k: Kept, t: Times, ok: Bool, sh: String)
         +tiles : TI.Tiles = TI.Frame.par(N.Nui.width(n1), N.Nui.height(n1), ops(o), Pix{T.Th.bg()}, fr0, dy)
         +img : Image = TI.Tiles.image(tiles)
         +t4 : Nat <- IO.now()
-        notch(rest, dir, ty, Kept{with_hits(n1, hits(o), t4), memo, TI.FSome{N.Nui.width(n1), N.Nui.height(n1), tiles}},
+        notch(rest, x, dir, ty, Kept{with_hits(n1, hits(o), t4), memo, TI.FSome{N.Nui.width(n1), N.Nui.height(n1), tiles}},
           Times.add(t, Nat.sub(t1, t0), Nat.sub(t2, t1), Nat.sub(t3, t2), Nat.sub(t4, t3)),
           Bool.and(ok, same(N.Nui.width(n1), N.Nui.height(n1), ops(o), tiles)), sh ++ " " ++ U32.show(dy))
 
@@ -140,13 +145,58 @@ def report(r: Times & Kept, +label: String) -> IO(Kept):
     IO.print(label ++ Times.show(t, 30n))
     return k
 
-def main() -> IO(Unit):
+# the last argument, when it names a .jsonl log
+def path(xs: List<String>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case +p <> Nil{}:
+      Bool.pick(String, String.ends_with(p, ".jsonl"), p, "")
+    case _ <> t:
+      path(t)
+
+# a real log as the window gets it (boot_bench's steps)
+def real(+file: String) -> IO(U.Ui):
+  do IO<U.Ui>:
+    +bs : List<&2, U32> <- S.Files.read(file)
+    +ld : ST.Loaded = ST.Store.load(S.Store.lines(bs), ST.Loaded{M.State.empty(), Nil{}})
+    +msg : String = "{\"t\":\"log\",\"since\":0,\"origin\":\"x\",\"version\":\"0\",\"info\":{},\"items\":[" ++ String.join(List.reverse(&2, String, ST.Loaded.wire(ld)), ",") ++ "]}"
+    +now : Nat <- IO.now()
+    return U.Ui.recv(U.Ui.init(Nat.div(now, 1000n)), Maybe.default(&2, J.Json, J.Json.parse(msg), J.Null{}))
+
+def sidebar(+ty: L.Ty, +u: U.Ui) -> IO(Unit):
   do IO<Unit>:
-    +ty : L.Ty <- L.Ty.load()
+    +k : Kept = warm(ty, N.Nui.init(u, 1400, 900))
+    r3 : Times & Kept <- notch(30n, 100, 1, ty, k, Times{0n, 0n, 0n, 0n, 0n, ""}, True{}, "")
+    k3 : Kept <- report(r3, "side down ")
+    r4 : Times & Kept <- notch(30n, 100, 0, ty, k3, Times{0n, 0n, 0n, 0n, 0n, ""}, True{}, "")
+    k4 : Kept <- report(r4, "side up   ")
+    return Unit{}
+
+def synthetic(+ty: L.Ty) -> IO(Unit):
+  do IO<Unit>:
     +u : U.Ui = ui_sel(U.Ui.act(U.Ui.fold(log(1790000000n), U.Ui.init(1790000100n)), "select", "t0"))
     +k : Kept = warm(ty, N.Nui.init(u, 1400, 900))
-    r1 : Times & Kept <- notch(30n, 0, ty, k, Times{0n, 0n, 0n, 0n, 0n, ""}, True{}, "")
+    r1 : Times & Kept <- notch(30n, 800, 0, ty, k, Times{0n, 0n, 0n, 0n, 0n, ""}, True{}, "")
     k1 : Kept <- report(r1, "up   ")
-    r2 : Times & Kept <- notch(30n, 1, ty, k1, Times{0n, 0n, 0n, 0n, 0n, ""}, True{}, "")
+    r2 : Times & Kept <- notch(30n, 800, 1, ty, k1, Times{0n, 0n, 0n, 0n, 0n, ""}, True{}, "")
     k2 : Kept <- report(r2, "down ")
+    r3 : Times & Kept <- notch(30n, 100, 1, ty, k2, Times{0n, 0n, 0n, 0n, 0n, ""}, True{}, "")
+    k3 : Kept <- report(r3, "side down ")
+    r4 : Times & Kept <- notch(30n, 100, 0, ty, k3, Times{0n, 0n, 0n, 0n, 0n, ""}, True{}, "")
+    k4 : Kept <- report(r4, "side up   ")
     return Unit{}
+
+def main.k(none: Bool, +file: String, +ty: L.Ty) -> IO(Unit):
+  match none:
+    case True{}:
+      synthetic(ty)
+    case False{}:
+      IO.bind(U.Ui, Unit, real(file), u => sidebar(ty, u))
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    args : List<String> <- IO.args()
+    +file : String = path(args)
+    +ty : L.Ty <- L.Ty.load()
+    main.k(String.is_empty(file), file, ty)

@@ -413,8 +413,7 @@ textarea.field { resize: vertical; min-height: 56px; }
 .bot-screen img { max-height: calc(100vh - 180px); object-fit: contain; }
 .item .ago:empty { display: none; }
 
-.earlier { display: flex; justify-content: center; padding: 6px 0 12px; }
-.earlier-btn { font-size: 12px; opacity: 0.8; }
+.earlier { height: 1px; }
 
 /* a side question (View.btw) */
 .btw { background: var(--panel); border: 1px solid var(--line); padding: 6px 10px; }

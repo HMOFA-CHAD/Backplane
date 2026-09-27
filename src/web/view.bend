@@ -691,11 +691,12 @@ def View.entries.r(es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st: M.State, +
     case e <> t Nil{}:
       List.append(&2, D.Node, View.entry(e, st, sel), View.entries.r(t, Nil{}, st, sel))
 
-# the newest page of a thread's entries (core's Page), with a button for
-# the earlier ones when some are left out
+# the newest page of a thread's entries (core's Page), with a mark at
+# the top when earlier ones are left out: scrolled near it, the page asks
+# for them ("earlier", host.js), no button
 def View.earlier(+hidden: Nat, +id: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, Nat.is_eq(hidden, 0n), Nil{},
-    [D.Dom.div("earlier", [D.Dom.button("earlier-btn", "earlier", id, "Show earlier messages", "Show earlier")])])
+    [D.Dom.el("div", [D.At{"class", "earlier"}, D.At{"data-earlier", id}], Nil{})])
 
 # a thread's entries, its runs of tool calls folded (the last stays open
 # while its turn runs)

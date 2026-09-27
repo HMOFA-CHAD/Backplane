@@ -542,6 +542,15 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
     val count = (if (t.parent != null) 1 else 0) + (if (t.tasks.isNotEmpty()) 1 else 0) +
         (if (t.earlier > 0) 1 else 0) + t.entries.size + t.sending.size + (if (t.live.isNotEmpty() || t.working.isNotEmpty()) 1 else 0)
     LaunchedEffect(t.id, m.scrolls) { if (count > 0) list.scrollToItem(count - 1) }
+    // earlier entries shown: the view goes back to the entry that was first
+    var keepAt by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(t.entries.firstOrNull()?.id) {
+        val k = keepAt ?: return@LaunchedEffect
+        keepAt = null
+        val i = t.entries.indexOfFirst { it.id == k }
+        val head = (if (t.parent != null) 1 else 0) + (if (t.tasks.isNotEmpty()) 1 else 0) + (if (t.earlier > 0) 1 else 0)
+        if (i >= 0) list.scrollToItem(head + i)
+    }
     LaunchedEffect(count, t.live) {
         val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
         if (count > 0 && last >= count - 3) list.animateScrollToItem(count - 1)
@@ -691,10 +700,14 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             t.parent?.let { p -> item(key = "parent") { EntryRow(m, p) { shown = it } } }
             if (t.tasks.isNotEmpty()) item(key = "tasks") { TasksView(m, t.tasks) }
-            if (t.earlier > 0) item(key = "earlier") {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    TextButton(onClick = { m.act("earlier", "") }) { Text("Show earlier") }
+            // scrolled up to the top while earlier entries are left out: they
+            // are shown, no button (the list keeps its place by entry key)
+            if (t.earlier > 0) item(key = "earlier:" + (t.entries.firstOrNull()?.id ?: "")) {
+                // only when the person scrolled here (not as the list opens)
+                LaunchedEffect(Unit) {
+                    if (list.isScrollInProgress) { keepAt = t.entries.firstOrNull()?.id; m.act("earlier", "") }
                 }
+                Spacer(Modifier.size(1.dp))
             }
             items(t.entries, key = { it.id }) { EntryRow(m, it) { u -> shown = u } }
             itemsIndexed(t.sending, key = { i, _ -> "sending:$i" }) { _, text -> SendingView(text) }

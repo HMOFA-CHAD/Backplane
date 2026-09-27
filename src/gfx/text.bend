@@ -19,6 +19,10 @@ import ./fontfx.bend as FX
 type TG is Data:
   TG{adv: U32, left: U32, top: U32, w: U32, h: U32, d: Nat, m: R.Mask}
 
+# a glyph a frame wants fetched: face, code point, miss advance (Text.wants)
+type Want is Data:
+  Want{id: U32, cp: U32, miss: U32}
+
 # the face's ASCII glyphs (code points 0-127) as a tree of 2^7 leaves, so
 # the glyphs text draws most are found without the cache's string keys; a
 # leaf not filled (ok False) is looked up in the cache
@@ -113,6 +117,16 @@ def Mask.of(d: Nat, +xs: List<&2, U32>) -> R.Mask:
 def TG.blank(+miss: U32) -> TG:
   TG{miss, 32768, 32768, 0, 0, 0n, R.MWord{0}}
 
+# a glyph not in the cache yet (a fetched one's corner is biased by 32768,
+# so never 0)
+def TG.none(+miss: U32) -> TG:
+  TG{miss, 0, 0, 0, 0, 0n, R.MWord{0}}
+
+def TG.missing(g: TG) -> Bool:
+  match g:
+    case TG{_, +l, +t, _, _, _, _}:
+      Bool.and(U32.is_eq(l, 0), U32.is_eq(t, 0))
+
 # Font.glyph's words as a glyph
 def TG.decode(ws: List<&2, U32>, +miss: U32) -> TG:
   match ws:
@@ -130,7 +144,7 @@ def Text.got(r: Map<&2, TG> & TG) -> TG:
   g
 
 def Text.get.map(+cache: Map<&2, TG>, +id: U32, +cp: U32, +miss: U32) -> TG:
-  Text.got(Map.get(TG, TG.blank(miss), cache, Text.key(id, cp)))
+  Text.got(Map.get(TG, TG.none(miss), cache, Text.key(id, cp)))
 
 def GTab.leaf(g: GTab, +cache: Map<&2, TG>, +id: U32, +cp: U32, +miss: U32) -> TG:
   match g:
@@ -249,6 +263,15 @@ def Text.one.k(r: Map<&2, TG> & Bool, +id: U32, +cp: U32, +miss: U32) -> IO(Map<
 
 def Text.one(cache: Map<&2, TG>, +id: U32, +cp: U32, +miss: U32) -> IO(Map<&2, TG>):
   Text.one.k(Map.has(&2, TG, cache, Text.key(id, cp)), id, cp, miss)
+
+# the cache with the wanted glyphs fetched (each once: a glyph no font
+# has is kept blank, so it is not wanted again)
+def Text.fill(ws: List<&2, Want>, cache: Map<&2, TG>) -> IO(Map<&2, TG>):
+  match ws:
+    case Nil{}:
+      IO.pure(Map<&2, TG>, cache)
+    case Want{+id, +cp, +miss} <> t:
+      IO.bind(Map<&2, TG>, Map<&2, TG>, Text.one(cache, id, cp, miss), c2 => Text.fill(t, c2))
 
 def Text.ensure.go(s: String, cache: Map<&2, TG>, +id: U32, +miss: U32) -> IO(Map<&2, TG>):
   match s:
@@ -454,13 +477,63 @@ def Text.op(g: TG, +c: D.Clip, +x: U32, +base: U32, +color: U32, rest: List<&2, 
     case TG{_, +l, +t, +w, +h, d, m}:
       Text.op.k(Bool.or(U32.is_eq((w * h : U32), 0), U32.is_lt((x + l : U32), 32768)), c, (x + l - 32768 : U32), (base + 32768 - t : U32), w, h, d, m, color, rest)
 
+# Glyphs wanted
+# -------------
+# A glyph not in the cache draws nothing and leaves a want in its place:
+# an op with an empty box far off the frame (no region keeps it) whose
+# colour is the code point and whose mask names the face (gx) and its
+# miss advance (gy), with no width. The window gathers them after layout
+# (Text.wants), fetches those glyphs (Text.fill) and lays out again.
+
+def Want.op(+id: U32, +cp: U32, +miss: U32) -> R.Op:
+  R.Op{4294967295, 4294967295, 4294967295, 4294967295, cp, 0, R.SMask{id, miss, 0, 0n, R.MWord{0}}}
+
+def Want.k(missing: Bool, +id: U32, +cp: U32, +miss: U32, rest: List<&2, R.Op>) -> List<&2, R.Op>:
+  match missing:
+    case True{}:
+      Want.op(id, cp, miss) <> rest
+    case False{}:
+      rest
+
+def Face.id(f: Face) -> U32:
+  match f:
+    case Face{id, _, _, _, _, _, _, _, _}:
+      id
+
+def Face.miss(f: Face) -> U32:
+  match f:
+    case Face{_, _, _, _, _, _, miss, _, _}:
+      miss
+
 def Text.run(s: String, +cache: Map<&2, TG>, +f: Face, +c: D.Clip, +x: U32, +pen: U32, +base: U32, +color: U32) -> List<&2, R.Op>:
   match s:
     case SNil{}:
       Nil{}
     case SCon{Chr{+cp}, t}:
       +g = Text.get(cache, f, cp)
-      Text.op(g, c, (x + Text.px(pen) : U32), base, color, Text.run(t, cache, f, c, x, (pen + TG.adv(g) : U32), base, color))
+      Want.k(TG.missing(g), Face.id(f), cp, Face.miss(f), Text.op(g, c, (x + Text.px(pen) : U32), base, color, Text.run(t, cache, f, c, x, (pen + TG.adv(g) : U32), base, color)))
+
+def Want.of.k(want: Bool, +id: U32, +cp: U32, +miss: U32, acc: List<&2, Want>) -> List<&2, Want>:
+  match want:
+    case True{}:
+      Want{id, cp, miss} <> acc
+    case False{}:
+      acc
+
+def Want.of(o: R.Op, acc: List<&2, Want>) -> List<&2, Want>:
+  match o:
+    case R.Op{_, _, _, _, +cp, +a, R.SMask{+id, +miss, +w, _, _}}:
+      Want.of.k(Bool.and(U32.is_eq(w, 0), U32.is_eq(a, 0)), id, cp, miss, acc)
+    case _:
+      acc
+
+# the glyphs a frame's ops want (tail recursive: frames have many ops)
+def Text.wants(ops: List<&2, R.Op>, acc: List<&2, Want>) -> List<&2, Want>:
+  match ops:
+    case Nil{}:
+      acc
+    case o <> t:
+      Text.wants(t, Want.of(o, acc))
 
 def Text.draw.k(ft: Bool, s: String, +cache: Map<&2, TG>, +f: Face, +c: D.Clip, +x: U32, +base: U32, +color: U32) -> List<&2, R.Op>:
   match ft:
