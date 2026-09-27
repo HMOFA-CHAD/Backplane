@@ -63,7 +63,7 @@ dist/backplane        # run it (opens http://127.0.0.1:3787)
 Trying a branch without CI or a release (use this, not a release, whenever the user wants to see or try a change):
 - `scripts/dev.sh` builds the app and web client into `build/dev` (about 5 min) and runs them beside the installed Backplane: port 3788, home `~/.backplane-dev`, no tailnet, no self-update. It never touches `~/.backplane-bend`. Its window opens next to the user's. `scripts/dev.sh run --no-build` runs the last build again. For a headless check: `DISPLAY= BACKPLANE_DEV_HOME=$(mktemp -d) scripts/dev.sh run --no-build &`, capture the PID, probe `127.0.0.1:3788`, kill that PID.
 - `scripts/dev.sh web` rebuilds only the web client (seconds); reload the page, no restart.
-- `scripts/dev.sh install [user@host]` puts a full build over `~/.local/share/backplane` (here, or on that host over ssh) and restarts the service. Only when the user asks: the restart ends every session in the app, yours included. The build is stamped `<next patch>-dev.<date>.<time>`, so the next real release replaces it and the updater never rolls it back.
+- `scripts/dev.sh install [user@host]` puts a full build over `~/.local/share/backplane` (here, or on that host over ssh) and restarts the service. The restart ends every session in the app, yours included, so update this machine last. The build is stamped `<next patch>-dev.<date>.<time>`, so the next real release replaces it and the updater never rolls it back.
 
 Releases: `scripts/package.sh` makes the tarball the updater and install.sh use; `scripts/package-linux.sh` turns it into the AppImage and the `.deb`; `deploy/aur/PKGBUILD.in` is filled in by `release.yml`. A packaged install (`BACKPLANE_NO_UPDATE`, `$APPIMAGE`: `SV.Chan.managed`, laws `update_*_managed`) never updates itself; Settings says so (`U.Update.line`).
 
@@ -135,6 +135,7 @@ Headless UI checks: start Xvfb on `:77`, run `DISPLAY=:77 BACKPLANE_SNAP=/tmp/sn
 
 ## House rules
 
+- Developing (anything that gets compiled) ends the same way every time: test it (`scripts/check.sh`, the tests and e2e checks it touches), open a PR, merge it, then update every development server in use from the merged `main` (`scripts/dev.sh install h@backplane`, then `scripts/dev.sh install` here, last), and if the phone apps changed (`src/mobile/`, `mobile/`, anything bridge.js is built from), put a new build on TestFlight (`scripts/build-ios.sh archive`, `mobile/README.md`). Check each server reports the new version (`/hello`) and is listening. Never cut a release (a `v*` tag) for this; releases happen only when the user asks for one.
 - Every feature matches everywhere: the native window, the web client, and both phone apps (iOS and Android). A feature is not done until all four have it, driven by the same Bend defs, and each is built (and tried where a device or simulator is at hand).
 
 - Never kill processes by name or pattern; only PIDs you captured.
