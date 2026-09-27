@@ -800,6 +800,34 @@ def Idx.post(ix: Map<&2, List<&2, Entry>>, +e: Entry) -> Map<&2, List<&2, Entry>
 type QItem is Data:
   QItem{msg: String, text: String}
 
+# what the read model keeps behind its last field: the bots' world, and
+# the entries filed by thread (Idx)
+type Ext is Data:
+  Ext{world: BT.World, by: Map<&2, List<&2, Entry>>}
+
+def Ext.of(bw: List<&2, Ext>) -> Ext:
+  Maybe.default(&2, Ext, List.head(&2, Ext, bw), Ext{BT.World.empty(), Map.new(&2, List<&2, Entry>)})
+
+def Ext.world(x: Ext) -> BT.World:
+  match x:
+    case Ext{w, _}:
+      w
+
+def Ext.by(x: Ext) -> Map<&2, List<&2, Entry>>:
+  match x:
+    case Ext{_, by}:
+      by
+
+def Ext.with_world(f: BT.World -> BT.World, x: Ext) -> Ext:
+  match x:
+    case Ext{w, by}:
+      Ext{f(w), by}
+
+def Ext.post(x: Ext, +e: Entry) -> Ext:
+  match x:
+    case Ext{w, by}:
+      Ext{w, Idx.post(by, e)}
+
 type State is Data:
   State{
     projects: Map<&2, Project>,
@@ -813,64 +841,63 @@ type State is Data:
     devices: Map<&2, Device>,
     nav: Map<&2, Nav>,
     # behind a List: the native window holds the State in its own, and a
-    # World record flattened into it passes the C emitter's 255 arguments
-    bots: List<&2, BT.World>,
-    # each thread's entries and the messages it sent, newest first, and
-    # under Idx.links() every message between threads (Idx.post)
-    by: Map<&2, List<&2, Entry>>
+    # record flattened into it passes the C emitter's 255 arguments (one
+    # more field of any kind does too): the bots' world and each thread's
+    # entries filed by thread (Ext, Idx.post)
+    bots: List<&2, Ext>
   }
 
 def State.empty() -> State:
-  State{Map.new(&2, Project), Map.new(&2, Thread), Nil{}, 0n, Map.new(&2, Task), Map.new(&2, String), Map.new(&2, List<&2, QItem>), Map.new(&2, Ask), Map.new(&2, Device), Map.new(&2, Nav), [BT.World.empty()], Map.new(&2, List<&2, Entry>)}
+  State{Map.new(&2, Project), Map.new(&2, Thread), Nil{}, 0n, Map.new(&2, Task), Map.new(&2, String), Map.new(&2, List<&2, QItem>), Map.new(&2, Ask), Map.new(&2, Device), Map.new(&2, Nav), [Ext{BT.World.empty(), Map.new(&2, List<&2, Entry>)}]}
 
 # apply f to the thread at `id` (a blank, hidden thread when absent)
-def State.thread.fin(f: Thread -> Thread, ps: Map<&2, Project>, es: List<&2, Entry>, n: Nat, tk: Map<&2, Task>, sg: Map<&2, String>, qu: Map<&2, List<&2, QItem>>, ak: Map<&2, Ask>, dv: Map<&2, Device>, nv: Map<&2, Nav>, bw: List<&2, BT.World>, ix: Map<&2, List<&2, Entry>>, id: String, r: Map<&2, Thread> & Thread) -> State:
+def State.thread.fin(f: Thread -> Thread, ps: Map<&2, Project>, es: List<&2, Entry>, n: Nat, tk: Map<&2, Task>, sg: Map<&2, String>, qu: Map<&2, List<&2, QItem>>, ak: Map<&2, Ask>, dv: Map<&2, Device>, nv: Map<&2, Nav>, bw: List<&2, Ext>, id: String, r: Map<&2, Thread> & Thread) -> State:
   (ts, t) = r
-  State{ps, Map.set(&2, Thread, ts, id, f(t)), es, n, tk, sg, qu, ak, dv, nv, bw, ix}
+  State{ps, Map.set(&2, Thread, ts, id, f(t)), es, n, tk, sg, qu, ak, dv, nv, bw}
 
 def State.thread(f: Thread -> Thread, s: State, +id: String) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
-  State.thread.fin(f, ps, es, n, tk, sg, qu, ak, dv, nv, bw, ix, id, Map.get(Thread, Thread.blank(id), ts, id))
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
+  State.thread.fin(f, ps, es, n, tk, sg, qu, ak, dv, nv, bw, id, Map.get(Thread, Thread.blank(id), ts, id))
 
 def State.put_thread(s: State, t: Thread) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
   Thread{+id, p, ti, c, a, tu, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de} = t
-  State{ps, Map.set(&2, Thread, ts, id, Thread{id, p, ti, c, a, tu, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}), es, n, tk, sg, qu, ak, dv, nv, bw, ix}
+  State{ps, Map.set(&2, Thread, ts, id, Thread{id, p, ti, c, a, tu, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}), es, n, tk, sg, qu, ak, dv, nv, bw}
 
 def State.put_project(s: State, p: Project) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
   Project{+id, ti, r, c, rm} = p
-  State{Map.set(&2, Project, ps, id, Project{id, ti, r, c, rm}), ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix}
+  State{Map.set(&2, Project, ps, id, Project{id, ti, r, c, rm}), ts, es, n, tk, sg, qu, ak, dv, nv, bw}
 
-def State.remove_project.fin(ts: Map<&2, Thread>, es: List<&2, Entry>, n: Nat, tk: Map<&2, Task>, sg: Map<&2, String>, qu: Map<&2, List<&2, QItem>>, ak: Map<&2, Ask>, dv: Map<&2, Device>, nv: Map<&2, Nav>, bw: List<&2, BT.World>, ix: Map<&2, List<&2, Entry>>, id: String, r: Map<&2, Project> & Project) -> State:
+def State.remove_project.fin(ts: Map<&2, Thread>, es: List<&2, Entry>, n: Nat, tk: Map<&2, Task>, sg: Map<&2, String>, qu: Map<&2, List<&2, QItem>>, ak: Map<&2, Ask>, dv: Map<&2, Device>, nv: Map<&2, Nav>, bw: List<&2, Ext>, id: String, r: Map<&2, Project> & Project) -> State:
   (ps, p) = r
   Project{i, ti, rt, c, _} = p
-  State{Map.set(&2, Project, ps, id, Project{i, ti, rt, c, True{}}), ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix}
+  State{Map.set(&2, Project, ps, id, Project{i, ti, rt, c, True{}}), ts, es, n, tk, sg, qu, ak, dv, nv, bw}
 
 def State.remove_project(s: State, +id: String) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
-  State.remove_project.fin(ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix, id, Map.get(Project, Project.blank(id), ps, id))
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
+  State.remove_project.fin(ts, es, n, tk, sg, qu, ak, dv, nv, bw, id, Map.get(Project, Project.blank(id), ps, id))
 
 def State.post(s: State, +e: Entry) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
-  State{ps, ts, e <> es, n, tk, sg, qu, ak, dv, nv, bw, Idx.post(ix, e)}
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
+  State{ps, ts, e <> es, n, tk, sg, qu, ak, dv, nv, [Ext.post(Ext.of(bw), e)]}
 
 # a thread's entries and the messages it sent, newest first: what walking
 # the whole log for that thread finds, without the walk (Idx)
 def State.mine(s: State, +th: String) -> List<&2, Entry>:
   match s:
-    case State{_, _, _, _, _, _, _, _, _, _, _, ix}:
-      Idx.get(ix, th)
+    case State{_, _, _, _, _, _, _, _, _, _, bw}:
+      Idx.get(Ext.by(Ext.of(bw)), th)
 
 # every message between threads, newest first
 def State.links(s: State) -> List<&2, Entry>:
   match s:
-    case State{_, _, _, _, _, _, _, _, _, _, _, ix}:
-      Idx.get(ix, Idx.links())
+    case State{_, _, _, _, _, _, _, _, _, _, bw}:
+      Idx.get(Ext.by(Ext.of(bw)), Idx.links())
 
 def State.tick(s: State) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
-  State{ps, ts, es, 1n+n, tk, sg, qu, ak, dv, nv, bw, ix}
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
+  State{ps, ts, es, 1n+n, tk, sg, qu, ak, dv, nv, bw}
 
 def State.message(s: State, +thread: String, msg: String, role: Role, text: String, +at: Nat) -> State:
   match role:
@@ -879,31 +906,31 @@ def State.message(s: State, +thread: String, msg: String, role: Role, text: Stri
     case _:
       State.post(s, Msg{msg, thread, role, text, at})
 
-def State.task.fin(f: Task -> Task, ps: Map<&2, Project>, ts: Map<&2, Thread>, es: List<&2, Entry>, n: Nat, sg: Map<&2, String>, qu: Map<&2, List<&2, QItem>>, ak: Map<&2, Ask>, dv: Map<&2, Device>, nv: Map<&2, Nav>, bw: List<&2, BT.World>, ix: Map<&2, List<&2, Entry>>, id: String, r: Map<&2, Task> & Task) -> State:
+def State.task.fin(f: Task -> Task, ps: Map<&2, Project>, ts: Map<&2, Thread>, es: List<&2, Entry>, n: Nat, sg: Map<&2, String>, qu: Map<&2, List<&2, QItem>>, ak: Map<&2, Ask>, dv: Map<&2, Device>, nv: Map<&2, Nav>, bw: List<&2, Ext>, id: String, r: Map<&2, Task> & Task) -> State:
   (tk, t) = r
-  State{ps, ts, es, n, Map.set(&2, Task, tk, id, f(t)), sg, qu, ak, dv, nv, bw, ix}
+  State{ps, ts, es, n, Map.set(&2, Task, tk, id, f(t)), sg, qu, ak, dv, nv, bw}
 
 # apply f to the task at `id` (a blank, settled task when absent)
 def State.task(f: Task -> Task, s: State, +id: String) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
-  State.task.fin(f, ps, ts, es, n, sg, qu, ak, dv, nv, bw, ix, id, Map.get(Task, Task.blank(id), tk, id))
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
+  State.task.fin(f, ps, ts, es, n, sg, qu, ak, dv, nv, bw, id, Map.get(Task, Task.blank(id), tk, id))
 
 def State.put_task(s: State, t: Task) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
   Task{+id, p, c, d, st, su, dl, pr, mo} = t
-  State{ps, ts, es, n, Map.set(&2, Task, tk, id, Task{id, p, c, d, st, su, dl, pr, mo}), sg, qu, ak, dv, nv, bw, ix}
+  State{ps, ts, es, n, Map.set(&2, Task, tk, id, Task{id, p, c, d, st, su, dl, pr, mo}), sg, qu, ak, dv, nv, bw}
 
 def State.setting(s: State, k: String, v: String) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
-  State{ps, ts, es, n, tk, Map.set(&2, String, sg, k, v), qu, ak, dv, nv, bw, ix}
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
+  State{ps, ts, es, n, tk, Map.set(&2, String, sg, k, v), qu, ak, dv, nv, bw}
 
 def Ask.blank(id: String) -> Ask:
   Ask{id, "", "", "", "", "", False{}, ""}
 
 def State.ask(s: State, a: Ask) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
   Ask{+id, th, k, tool, d, o, op, an} = a
-  State{ps, ts, es, n, tk, sg, qu, Map.set(&2, Ask, ak, id, Ask{id, th, k, tool, d, o, op, an}), dv, nv, bw, ix}
+  State{ps, ts, es, n, tk, sg, qu, Map.set(&2, Ask, ak, id, Ask{id, th, k, tool, d, o, op, an}), dv, nv, bw}
 
 def Ask.close.set(m: Map<&2, Ask>, +id: String, x: Ask, a: String) -> Map<&2, Ask>:
   match x:
@@ -918,12 +945,12 @@ def Ask.close.k(r: Map<&2, Ask> & Ask, +id: String, a: String) -> Map<&2, Ask>:
 
 # the answer closes an ask for good (a second answer changes nothing)
 def State.ask.close(s: State, +id: String, a: String) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
-  State{ps, ts, es, n, tk, sg, qu, Ask.close.k(Map.get(Ask, Ask.blank(id), ak, id), id, a), dv, nv, bw, ix}
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
+  State{ps, ts, es, n, tk, sg, qu, Ask.close.k(Map.get(Ask, Ask.blank(id), ak, id), id, a), dv, nv, bw}
 
 def Asks.all(s: State) -> List<&2, Ask>:
   match s:
-    case State{_, _, _, _, _, _, _, ak, _, _, _, _}:
+    case State{_, _, _, _, _, _, _, ak, _, _, _}:
       Map.values(&2, Ask, ak)
 
 # Queued turns
@@ -1026,8 +1053,8 @@ def State.queue.k(f: List<&2, QItem> -> List<&2, QItem>, r: Map<&2, List<&2, QIt
 
 # apply f to a thread's queue
 def State.queue(f: List<&2, QItem> -> List<&2, QItem>, s: State, +th: String) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
-  State{ps, ts, es, n, tk, sg, State.queue.k(f, Map.get(List<&2, QItem>, Nil{}, qu, th), th), ak, dv, nv, bw, ix}
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
+  State{ps, ts, es, n, tk, sg, State.queue.k(f, Map.get(List<&2, QItem>, Nil{}, qu, th), th), ak, dv, nv, bw}
 
 def State.enqueue(s: State, +th: String, +msg: String, +text: String) -> State:
   State.queue((qs => List.append(&2, QItem, qs, [QItem{msg, text}])), s, th)
@@ -1042,7 +1069,7 @@ def Queue.items.k(r: Map<&2, List<&2, QItem>> & List<&2, QItem>) -> List<&2, QIt
 # a thread's waiting messages, next first
 def Queue.items(s: State, +th: String) -> List<&2, QItem>:
   match s:
-    case State{_, _, _, _, _, _, qu, _, _, _, _, _}:
+    case State{_, _, _, _, _, _, qu, _, _, _, _}:
       Queue.items.k(Map.get(List<&2, QItem>, Nil{}, qu, th))
 
 # a setting's value, or d when unset
@@ -1069,7 +1096,7 @@ def Queue.of(s: State, +th: String) -> String:
 
 def Setting.get(s: State, +k: String, d: String) -> String:
   match s:
-    case State{_, _, _, _, _, sg, qu, ak, _, _, _, _}:
+    case State{_, _, _, _, _, sg, qu, ak, _, _, _}:
       State.get.k(Map.get(String, d, sg, k))
 
 # Providers in turn
@@ -1125,7 +1152,7 @@ def Switch.set(p: String, m: String, se: String, t: Thread) -> Thread:
 
 def State.entries.all(s: State) -> List<&2, Entry>:
   match s:
-    case State{_, _, es, _, _, _, _, _, _, _, _, _}:
+    case State{_, _, es, _, _, _, _, _, _, _, _}:
       es
 
 def State.thread.get.k(r: Map<&2, Thread> & Thread) -> Thread:
@@ -1134,7 +1161,7 @@ def State.thread.get.k(r: Map<&2, Thread> & Thread) -> Thread:
 
 def State.thread.get(s: State, +id: String) -> Thread:
   match s:
-    case State{_, ts, _, _, _, _, _, _, _, _, _, _}:
+    case State{_, ts, _, _, _, _, _, _, _, _, _}:
       State.thread.get.k(Map.get(Thread, Thread.blank(id), ts, id))
 
 def State.switch.k(+s: State, +th: String, +old: String, +oldse: String, +p: String, m: String) -> State:
@@ -1238,26 +1265,26 @@ def State.register.k(empty: Bool, s: State, +tok: String, p: String, k: String, 
     case True{}:
       s
     case False{}:
-      State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
-      State{ps, ts, es, n, tk, sg, qu, ak, Map.set(&2, Device, dv, tok, Device{tok, p, k, th, e, b, at}), nv, bw, ix}
+      State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
+      State{ps, ts, es, n, tk, sg, qu, ak, Map.set(&2, Device, dv, tok, Device{tok, p, k, th, e, b, at}), nv, bw}
 
 def State.register(s: State, +tok: String, p: String, k: String, th: String, e: String, b: String, at: Nat) -> State:
   State.register.k(String.is_empty(tok), s, tok, p, k, th, e, b, at)
 
 def State.unregister(s: State, tok: String) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
-  State{ps, ts, es, n, tk, sg, qu, ak, Map.del(&2, Device, dv, tok), nv, bw, ix}
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
+  State{ps, ts, es, n, tk, sg, qu, ak, Map.del(&2, Device, dv, tok), nv, bw}
 
 # every registered device
 # the read model as the window may hold it: no devices (their tokens stay
 # in the hub, as the wire leaves them out; law window_state_private)
 def State.private(s: State) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, _, nv, bw, ix} = s
-  State{ps, ts, es, n, tk, sg, qu, ak, Map.new(&2, Device), nv, bw, ix}
+  State{ps, ts, es, n, tk, sg, qu, ak, _, nv, bw} = s
+  State{ps, ts, es, n, tk, sg, qu, ak, Map.new(&2, Device), nv, bw}
 
 def State.devices(s: State) -> Map<&2, Device>:
   match s:
-    case State{_, _, _, _, _, _, _, _, dv, _, _, _}:
+    case State{_, _, _, _, _, _, _, _, dv, _, _}:
       dv
 
 def State.nav.k(f: Nav -> Nav, r: Map<&2, Nav> & Nav, +id: String) -> Map<&2, Nav>:
@@ -1266,22 +1293,22 @@ def State.nav.k(f: Nav -> Nav, r: Map<&2, Nav> & Nav, +id: String) -> Map<&2, Na
 
 # apply f to a thread's sidebar extension
 def State.nav(f: Nav -> Nav, s: State, +id: String) -> State:
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix} = s
-  State{ps, ts, es, n, tk, sg, qu, ak, dv, State.nav.k(f, Map.get(Nav, Nav.blank(), nv, id), id), bw, ix}
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
+  State{ps, ts, es, n, tk, sg, qu, ak, dv, State.nav.k(f, Map.get(Nav, Nav.blank(), nv, id), id), bw}
 
 # every thread's sidebar extension
 def State.navs(s: State) -> Map<&2, Nav>:
   match s:
-    case State{_, _, _, _, _, _, _, _, _, nv, bw, ix}:
+    case State{_, _, _, _, _, _, _, _, _, nv, bw}:
       nv
 
-def State.bots.k(bw: List<&2, BT.World>) -> BT.World:
-  Maybe.default(&2, BT.World, List.head(&2, BT.World, bw), BT.World.empty())
+def State.bots.k(bw: List<&2, Ext>) -> BT.World:
+  Ext.world(Ext.of(bw))
 
 def State.world(f: BT.World -> BT.World, s: State) -> State:
   match s:
-    case State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw, ix}:
-      State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, [f(State.bots.k(bw))], ix}
+    case State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}:
+      State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, [Ext.with_world(f, Ext.of(bw))]}
 
 def State.apply.go(s: State, e: Change) -> State:
   match e:
@@ -1400,7 +1427,7 @@ def State.apply.go(s: State, e: Change) -> State:
 
 def State.bots(s: State) -> BT.World:
   match s:
-    case State{_, _, _, _, _, _, _, _, _, _, bw, ix}:
+    case State{_, _, _, _, _, _, _, _, _, _, bw}:
       State.bots.k(bw)
 
 # one event folded into the read model; every event bumps the sequence
@@ -1536,7 +1563,7 @@ def Thread.filter_project(ts: List<&2, Thread>, +pid: String) -> List<&2, Thread
 # how many changes have been folded in
 def State.seq(s: State) -> Nat:
   match s:
-    case State{_, _, _, n, _, _, _, ak, _, _, _, _}:
+    case State{_, _, _, n, _, _, _, ak, _, _, _}:
       n
 
 # Order keys

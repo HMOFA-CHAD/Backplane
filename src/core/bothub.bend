@@ -1273,7 +1273,7 @@ def Bots.projects.go(ps: List<&2, M.Project>) -> List<&2, J.Json>:
 
 def Bots.projects.json(+s: M.State) -> List<&2, J.Json>:
   match s:
-    case M.State{ps, _, _, _, _, _, _, _, _, _, _, _}:
+    case M.State{ps, _, _, _, _, _, _, _, _, _, _}:
       Bots.projects.go(Map.values(&2, M.Project, ps))
 
 # New projects (project_create)

@@ -259,7 +259,7 @@ def Ask.any(xs: List<&2, M.Ask>, +thread: String) -> Bool:
 
 def Ask.open(s: M.State, +thread: String) -> Bool:
   match s:
-    case M.State{_, _, _, _, _, _, _, ak, _, _, _, _}:
+    case M.State{_, _, _, _, _, _, _, ak, _, _, _}:
       Ask.any(Map.values(&2, M.Ask, ak), thread)
 
 # The decision
