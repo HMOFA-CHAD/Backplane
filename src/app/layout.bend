@@ -117,6 +117,18 @@ def Theme.ground(+flip: U32) -> U32:
 type Ty is Data:
   Ty{cache: Map<&2, X.TG>, ui: X.Face, bold: X.Face, meta: X.Face, body: X.Face, code: X.Face}
 
+# the type with glyphs added to its cache (the faces' ASCII tables stay)
+def Ty.with_cache(t: Ty, c: Map<&2, X.TG>) -> Ty:
+  match t:
+    case Ty{_, ui, bold, meta, body, code}:
+      Ty{c, ui, bold, meta, body, code}
+
+# a frame's missing glyphs fetched (X.Text.wants); the next layout draws them
+def Ty.fill(t: Ty, ws: List<&2, X.Want>) -> IO(Ty):
+  match t:
+    case Ty{c, ui, bold, meta, body, code}:
+      IO.bind(Map<&2, X.TG>, Ty, X.Text.fill(ws, c), c2 => IO.pure(Ty, Ty{c2, ui, bold, meta, body, code}))
+
 def Ty.cache(t: Ty) -> Map<&2, X.TG>:
   match t:
     case Ty{c, _, _, _, _, _}:
@@ -259,10 +271,34 @@ def Lay.row.k(+ty: Ty, +on: Bool, id: String, title: String, +ago: String, +dot:
     [Lay.hit(0, y, 264, 32, "select", id)]}
 
 # a sidebar row; a snoozed one shows the time left instead of its age
-def Lay.row(+ty: Ty, +t: M.Thread, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
+def Lay.row.on(+ty: Ty, +t: M.Thread, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
   match t:
     case M.Thread{+id, +p, title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       Lay.row.k(ty, String.eq(id, sel), id, title, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), Lay.phase(U.Side.phase(st, t)), BG.Badge.rgb_of(st, p), c, y)
+
+# whether a row at y (32 tall) shows in c at all (one scrolled above the
+# top sits at y modulo 2^32, past the bottom)
+def Lay.row.seen(c: D.Clip, +y: U32) -> Bool:
+  match c:
+    case D.Clip{_, +cy0, _, +cy1}:
+      Bool.and(U32.is_lt(y, cy1), U32.is_gt((y + 32 : U32), cy0))
+
+def Lay.row.id(t: M.Thread) -> String:
+  match t:
+    case M.Thread{id, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      id
+
+# a row out of sight draws nothing (a long sidebar lays out only what
+# shows); its hit stays, for the links, hints and slide that read rows
+def Lay.row.k2(seen: Bool, +ty: Ty, +t: M.Thread, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
+  match seen:
+    case True{}:
+      Lay.row.on(ty, t, st, sel, now, snoozed, c, y)
+    case False{}:
+      Out{Nil{}, [Lay.hit(0, y, 264, 32, "select", Lay.row.id(t))]}
+
+def Lay.row(+ty: Ty, +t: M.Thread, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
+  Lay.row.k2(Lay.row.seen(c, y), ty, t, st, sel, now, snoozed, c, y)
 
 # rows from y down; answers the output and the next y
 type Col is Data:
@@ -577,6 +613,13 @@ def Lay.finding(+ty: Ty, find: Bool, +y: U32, +q: String, +focus: String, +caret
     case False{}:
       Out.none()
 
+# the sidebar's rows, and how far they may scroll (nui.bend's Side.most):
+# until the end of the list, scrolled up by sd, meets the bottom
+def Side.most(c: Col, +sd: U32, +bottom: U32) -> Out:
+  match c:
+    case Col{o, +y}:
+      Out.cat(o, Out{Nil{}, [Lay.hit(0, 0, 0, 0, "side-most", U32.show(U32.dim((y + sd + 8 : U32), bottom)))]})
+
 def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, +adding: Bool, +v: String,
     +sd: U32, +caret: Nat, +mark: Nat, +focus: String, +path: String, +h: U32, +settings: Bool, +ms: List<&2, U.MRow>, +hint: String, +ids: List<&2, String>, +look: String, +rm: String, +find: Bool, +q: String, more: D.Clip -> U32 -> Col) -> Out:
   +top = {D.Clip{0, 0, 264, 52} : D.Clip}
@@ -593,8 +636,8 @@ def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +sel: String, +open: Map<&2
     Out{Lay.icon(ty, "plus", top, 234, 18, T.Th.dim()), [Lay.hit(228, 12, 28, 28, "vw-projo", "")]},
     Lay.adding(ty, adding, path, String.eq(focus, "project-path"), caret, mark),
     Lay.finding(ty, find, yf, q, focus, caret, mark),
-    Links.over(Lay.hints(hint, Lay.col.out(Lay.col.then(Lay.projects(ty, U.Side.shown(st, now, Bool.pick(String, find, q, "")), open, st, sel, now, look, rm,
-      D.Clip{0, y0, 264, (h - 48 : U32)}, U32.sub(y0, sd)), more(D.Clip{0, y0, 264, (h - 48 : U32)}))), ty, D.Clip{0, y0, 264, (h - 48 : U32)}, ids), U.Links.recent(st, now), now, D.Clip{0, y0, 264, (h - 48 : U32)}),
+    Links.over(Lay.hints(hint, Side.most(Lay.col.then(Lay.projects(ty, U.Side.shown(st, now, Bool.pick(String, find, q, "")), open, st, sel, now, look, rm,
+      D.Clip{0, y0, 264, (h - 48 : U32)}, U32.sub(y0, sd)), more(D.Clip{0, y0, 264, (h - 48 : U32)})), sd, (h - 48 : U32)), ty, D.Clip{0, y0, 264, (h - 48 : U32)}, ids), U.Links.recent(st, now), now, D.Clip{0, y0, 264, (h - 48 : U32)}),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), 0, (h - 48 : U32), 263, 48, T.Th.panel(), 255), D.Draw.rect(D.Clip.all(), 0, (h - 48 : U32), 263, 1, T.Th.line(), 255)],
         List.append(&2, R.Op, Lay.icon(ty, "settings", D.Clip.all(), 16, (h - 32 : U32), Bool.pick(U32, settings, T.Th.text(), T.Th.dim())), Ty.text(ty, 2n, "Settings", D.Clip.all(), 40, (h - 48 : U32), 48, Bool.pick(U32, settings, T.Th.text(), T.Th.dim())))),
       [Lay.hit(0, (h - 48 : U32), 263, 48, "flag", "settings")]},
@@ -1689,7 +1732,8 @@ def Lay.timeline(+ty: Ty, +ls: List<&2, TLine>, +x0: U32, +x1: U32, +top: U32, +
   +acc = TL.drop.acc(ls, TL.drop.more(ls, 0, off), 0, off)
   +ry = {((top + 16 + acc : U32) - off : U32) : U32}
   Out.all([TL.draw_all(ty, rest, TL.more(rest, ry, bot), D.Clip{x0, top, x1, bot}, x0, x1, ry, bot,
-    Nat.sub(List.length(&2, TLine, ls), List.length(&2, TLine, rest)), sel), TL.sel.hit(ty, ls, sel, x0, x1), chrome])
+    Nat.sub(List.length(&2, TLine, ls), List.length(&2, TLine, rest)), sel), TL.sel.hit(ty, ls, sel, x0, x1), chrome,
+    Out{Nil{}, [Lay.hit(0, 0, 0, 0, "tl-most", U32.show(over))]}])
 
 # Subagents
 # ---------
@@ -2931,10 +2975,163 @@ def TL.memo.again(es: List<&2, M.Entry>, +ty: Ty, +px: U32, +sel: String, prev: 
     case +e <> t Nil{}:
       TL.memo.item(ty, e, px, sel) <> TL.memo.make(ty, t, px, sel)
 
-def TL.memo.of.k(same: Bool, +ty: Ty, es: List<&2, M.Entry>, +px: U32, +sel: String, prev: List<&2, TLE>) -> TLMemo:
+# Aligning a memo
+# ---------------
+# The page shown moves: a new entry pushes the oldest out of a full page,
+# and scrolling to the top adds a page in front. Paired place by place,
+# every item would then meet another entry and be laid out again. So the
+# last memo is lined up with the entries first (by entry id; TL.memo.one
+# still checks the whole entry, so a wrong guess costs only a layout): the
+# items before the first entry's are dropped, or the entries before the
+# first item's are made. Law tl_align: an aligned memo is still a memo.
+
+type TLAlign is Data:
+  TLSame{}
+  TLDrop{d: Nat}
+  TLPad{k: Nat}
+
+def TL.eid(e: M.Entry) -> String:
+  match e:
+    case M.Msg{i, _, _, _, _}:
+      i
+    case M.Act{i, _, _, _, _, _}:
+      i
+
+def TL.align.hit(its: List<&2, TLE>, +id: String) -> Bool:
+  match its:
+    case TLE{e, _} <> _:
+      Q.Eq.str(TL.eid(e), id)
+    case Nil{}:
+      False{}
+
+# where the item for entry id is among its
+def TL.align.at(its: List<&2, TLE>, hit: Bool, +id: String, +d: Nat) -> Maybe<&2, Nat>:
+  match its hit:
+    case Nil{} _:
+      None{}
+    case +h <> +r True{}:
+      Some{d}
+    case +h <> t False{}:
+      TL.align.at(t, TL.align.hit(t, id), id, 1n+d)
+
+def TL.align.ehit(es: List<&2, M.Entry>, +id: String) -> Bool:
+  match es:
+    case e <> _:
+      Q.Eq.str(TL.eid(e), id)
+    case Nil{}:
+      False{}
+
+# where entry id is among es
+def TL.align.eat(es: List<&2, M.Entry>, hit: Bool, +id: String, +k: Nat) -> Maybe<&2, Nat>:
+  match es hit:
+    case Nil{} _:
+      None{}
+    case +h <> +r True{}:
+      Some{k}
+    case +h <> t False{}:
+      TL.align.eat(t, TL.align.ehit(t, id), id, 1n+k)
+
+def TL.align.first(its: List<&2, TLE>) -> String:
+  match its:
+    case TLE{e, _} <> _:
+      TL.eid(e)
+    case Nil{}:
+      ""
+
+def TL.align.efirst(es: List<&2, M.Entry>) -> String:
+  match es:
+    case e <> _:
+      TL.eid(e)
+    case Nil{}:
+      ""
+
+def TL.align.pad(m: Maybe<&2, Nat>) -> TLAlign:
+  match m:
+    case Some{k}:
+      TLPad{k}
+    case None{}:
+      TLSame{}
+
+def TL.align.k(m: Maybe<&2, Nat>, +es: List<&2, M.Entry>, +its: List<&2, TLE>) -> TLAlign:
+  match m:
+    case Some{d}:
+      TLDrop{d}
+    case None{}:
+      TL.align.pad(TL.align.eat(es, TL.align.ehit(es, TL.align.first(its)), TL.align.first(its), 0n))
+
+# how the items line up with the entries: the first entry's item found
+# some places in (dropped before it), else the first item's entry found
+# some places in (those before it made), else as they are
+def TL.align.of(+es: List<&2, M.Entry>, +its: List<&2, TLE>) -> TLAlign:
+  TL.align.k(TL.align.at(its, TL.align.hit(its, TL.align.efirst(es)), TL.align.efirst(es), 0n), es, its)
+
+def TL.skip(d: Nat, its: List<&2, TLE>) -> List<&2, TLE>:
+  match d its:
+    case 0n +xs:
+      xs
+    case 1n+k Nil{}:
+      Nil{}
+    case 1n+k +x <> t:
+      TL.skip(k, t)
+
+def TL.eskip(d: Nat, es: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match d es:
+    case 0n +xs:
+      xs
+    case 1n+k Nil{}:
+      Nil{}
+    case 1n+k +x <> t:
+      TL.eskip(k, t)
+
+def TL.etake(k: Nat, es: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match k es:
+    case 0n +xs:
+      Nil{}
+    case 1n+j Nil{}:
+      Nil{}
+    case 1n+j +e <> t:
+      e <> TL.etake(j, t)
+
+def TL.cat(xs: List<&2, TLE>, ys: List<&2, TLE>) -> List<&2, TLE>:
+  match xs:
+    case Nil{}:
+      ys
+    case +x <> t:
+      x <> TL.cat(t, ys)
+
+def TL.ecat(xs: List<&2, M.Entry>, ys: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match xs:
+    case Nil{}:
+      ys
+    case +x <> t:
+      x <> TL.ecat(t, ys)
+
+def TL.memo.apply(c: TLAlign, +es: List<&2, M.Entry>, its: List<&2, TLE>, +ty: Ty, +px: U32, +sel: String) -> List<&2, TLE>:
+  match c:
+    case TLSame{}:
+      its
+    case TLDrop{d}:
+      TL.skip(d, its)
+    case TLPad{k}:
+      TL.cat(TL.memo.make(ty, TL.etake(k, es), px, sel), its)
+
+# the entries an aligned memo was made for (tl_align)
+def TL.memo.apply.es(c: TLAlign, +es: List<&2, M.Entry>, old: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match c:
+    case TLSame{}:
+      old
+    case TLDrop{d}:
+      TL.eskip(d, old)
+    case TLPad{k}:
+      TL.ecat(TL.etake(k, es), old)
+
+def TL.memo.aligned(+es: List<&2, M.Entry>, +ty: Ty, +px: U32, +sel: String, +its: List<&2, TLE>) -> List<&2, TLE>:
+  TL.memo.apply(TL.align.of(es, its), es, its, ty, px, sel)
+
+def TL.memo.of.k(same: Bool, +ty: Ty, +es: List<&2, M.Entry>, +px: U32, +sel: String, prev: List<&2, TLE>) -> TLMemo:
   match same:
     case True{}:
-      TLMemo{px, sel, TL.memo.again(es, ty, px, sel, prev)}
+      TLMemo{px, sel, TL.memo.again(es, ty, px, sel, TL.memo.aligned(es, ty, px, sel, prev))}
     case False{}:
       TLMemo{px, sel, TL.memo.make(ty, es, px, sel)}
 
@@ -3102,8 +3299,8 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +cx0 = {(x0 + U32.shr((x1 - x0 - cw : U32)) : U32) : U32}
       +cx1 = {(cx0 + cw : U32) : U32}
       +ts = U.Tasks.of(st, sel)
-      # the row under the header: the parent's link, "Show earlier"
-      +pl = {Bool.pick(U32, Bool.and(String.is_empty(U.Tasks.parent(st, sel)), Bool.not(more)), 0, 32) : U32}
+      # the row under the header: the parent's link
+      +pl = {Bool.pick(U32, String.is_empty(U.Tasks.parent(st, sel)), 0, 32) : U32}
       +top = {(52 + hy + pl + Tasks.height(ts) : U32) : U32}
       +asks = U.Asks.open(st, sel)
       +ah = Asks.h(ty, asks, (cw - 32 : U32))
@@ -3146,24 +3343,14 @@ def Lay.drop_mark(on: Bool, +ty: Ty, +draft: String, +x0: U32, +x1: U32, +h: U32
     case False{}:
       Out.none()
 
-# laid over the timeline, on a ground of its own: under the lines' hits
-# only a strip of it took clicks
-def Lay.earlier.at(+ty: Ty, +label: String, +x: U32, +y: U32, +w: U32) -> Out:
-  Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), (x - 8 : U32), y, (w + 8 : U32), 28, T.Th.bg(), 255)], Ty.text(ty, 2n, label, D.Clip.all(), x, y, 28, T.Th.accent())), [Lay.hit((x - 8 : U32), y, (w + 8 : U32), 28, "earlier", "")]}
-
-def Lay.earlier.b(+ty: Ty, +label: String, +x1: U32, +y: U32) -> Out:
-  Lay.earlier.at(ty, label, (x1 - Ty.width(ty, 2n, label) - 16 : U32), y, (Ty.width(ty, 2n, label) + 8 : U32))
-
-# "Show earlier" at the timeline's top right, while the page is full
-def Lay.earlier.k(more: Bool, +ty: Ty, +x1: U32, +y: U32) -> Out:
+# while the page is full, a hit (no area) says earlier entries exist:
+# the wheel near the timeline's top shows them (nui.bend's Tl.up)
+def Lay.earlier(more: Bool) -> Out:
   match more:
     case True{}:
-      Lay.earlier.b(ty, "Show earlier", x1, y)
+      Out{Nil{}, [Lay.hit(0, 0, 0, 0, "tl-more", "")]}
     case False{}:
       Out.none()
-
-def Lay.earlier(+ty: Ty, more: Bool, +x0: U32, +x1: U32, +hy: U32) -> Out:
-  Lay.earlier.k(more, ty, (x0 + U32.shr((x1 - x0 - U32.min((x1 - x0 - 64 : U32), 780) : U32)) + U32.min((x1 - x0 - 64 : U32), 780) : U32), (58 + hy : U32))
 
 def Lay.viewer.if(open: Bool, +ty: Ty, +n: S.Nui, +x0: U32, +w: U32, +h: U32) -> Out:
   match open:
@@ -3236,7 +3423,7 @@ def Lay.memo.es(none: Bool, +n: S.Nui) -> List<&2, M.Entry>:
     case True{}:
       Nil{}
     case False{}:
-      TL.newest(U.Ui.entries(U.Ui.state(S.Nui.ui(n))), U.Ui.sel(S.Nui.ui(n)), TL.created(U.Ui.thread(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n)))), NW{U.Page.shown(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n))), Nil{}})
+      TL.newest(M.State.mine(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n))), U.Ui.sel(S.Nui.ui(n)), TL.created(U.Ui.thread(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n)))), NW{U.Page.shown(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n))), Nil{}})
 
 # (only the newest page of a thread, core's Page: a long thread laid out
 # whole cost every frame 15 ms on a real log; "earlier" shows another page)
@@ -3408,7 +3595,7 @@ def Lay.thread.at(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U3
       Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, U.Ui.draft_text(S.Nui.ui(n)), x0, x1, h), Lay.thread.k(ty, memo, U.Ui.thread(st, sel), U.Ui.draft_text(S.Nui.ui(n)), S.Cs.held(n), st, sel, U.Str.get(live, sel), caret, S.Nui.mark(n), focus, S.Blink.on(n), x0, x1, h, sc, pa,
         U.Str.get(nf, "models"), U.Flag.get(op, "models"), U.Ui.pending(S.Nui.ui(n), sel), U.Ui.skills(S.Nui.ui(n)), U.Side.now(S.Nui.ui(n)),
         U.Ui.atts(S.Nui.ui(n), sel), U.Ui.uploading(S.Nui.ui(n), sel), path, nf, U.Ui.deleting(S.Nui.ui(n)), TSel.of(U.Ui.scratch(S.Nui.ui(n), "@ts"), sel), U.Ui.scratch(S.Nui.ui(n), "@menu.off"), U.Side.phase(st, U.Ui.thread(st, sel)), hy, Lay.more(memo, n, sel), U.Btw.question(S.Nui.ui(n)), U.Btw.reply.of(S.Nui.ui(n)))),
-        Vx.view(ty, n, st, sel, x0, x1, h)), Lay.earlier(ty, Lay.more(memo, n, sel), x0, x1, hy))
+        Vx.view(ty, n, st, sel, x0, x1, h)), Lay.earlier(Lay.more(memo, n, sel)))
 
 # the thread view with its header at the top
 def Lay.thread(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32) -> Out:

@@ -1538,6 +1538,35 @@ def Lay.nops(o: L.Out) -> Nat:
     case L.Out{os, _}:
       List.length(&2, R.Op, os)
 
+def Lay.ops(o: L.Out) -> List<&2, R.Op>:
+  match o:
+    case L.Out{os, _}:
+      os
+
+def Aux.with_ty(a: Aux, t: L.Ty) -> Aux:
+  match a:
+    case Aux{ws, _, ti, k}:
+      Aux{ws, t, ti, k}
+
+# the frame again with the glyphs it wanted in the cache: the timeline's
+# memos are made again (their lines were measured without them)
+def Shell.paint.again(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t2: U32) -> IO(Shell):
+  do IO<Shell>:
+    +memos : List<&2, L.TLMemo> = L.Lay.memos(ty, n, Nil{})
+    +o : L.Out = BV.Bv.frame(ty, L.TL.memos.now(memos), cats, n)
+    +k : Nat = Lay.nops(o)
+    +t3 : U32 <- PS.Perf.lap("ui.glyphs", t2)
+    Shell.paint.out(o, oh, n, w, q, i, Aux.with_cats(Aux.with_memos(Aux.with_ty(wa, ty), memos), cats), epoch, ms, t0, t3)
+
+# glyphs the layout found missing (text in a script the cache has not
+# seen: Greek, CJK, symbols) are fetched, and the frame laid out again
+def Shell.paint.want(ws: List<&2, X.Want>, o: L.Out, +cats: Map<&2, CA.CatF>, +memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t2: U32) -> IO(Shell):
+  match ws:
+    case Nil{}:
+      Shell.paint.out(o, oh, n, w, q, i, Aux.with_cats(Aux.with_memos(wa, memos), cats), epoch, ms, t0, t2)
+    case +h <> +t:
+      IO.bind(L.Ty, Shell, L.Ty.fill(Aux.ty(wa), h <> t), ty => Shell.paint.again(ty, cats, oh, n, w, q, i, wa, epoch, ms, t0, t2))
+
 # the cats the frame shows are posed into the cache first; the layout is
 # timed from t1 (ui.layout, with the ops it made as ui.ops)
 def Shell.paint.c(+cats: Map<&2, CA.CatF>, +memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t1: U32) -> IO(Shell):
@@ -1546,7 +1575,7 @@ def Shell.paint.c(+cats: Map<&2, CA.CatF>, +memos: List<&2, L.TLMemo>, +oh: List
     +k : Nat = Lay.nops(o)
     +t2 : U32 <- PS.Perf.lap("ui.layout", t1)
     PS.Perf.add("ui.ops", U32.from_nat(k))
-    Shell.paint.out(o, oh, n, w, q, i, Aux.with_cats(Aux.with_memos(wa, memos), cats), epoch, ms, t0, t2)
+    Shell.paint.want(X.Text.wants(Lay.ops(o), Nil{}), o, cats, memos, oh, n, w, q, i, wa, epoch, ms, t0, t2)
 
 def Shell.paint.m(+memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t1: U32) -> IO(Shell):
   Shell.paint.c(BV.Bv.warm(N.Nui.ui(n), Aux.cats(wa), BV.Bv.clock.of(n)), memos, oh, n, w, q, i, wa, epoch, ms, t0, t1)

@@ -644,7 +644,7 @@ def Mob.count(+more: Nat) -> Nat:
 # the newest page of a thread's entries (core's Page): "earlier" says how
 # many are left out, and the action "earlier" shows another page
 def Mob.page(+drafts: Map<&2, String>, +id: String, +st: M.State) -> U.Win:
-  U.Page.newest.from(U.Ui.entries(st), id, U.Page.since(st, id), Mob.count(Maybe.default(&2, Nat, Nat.read(U.Str.get(drafts, "@more." ++ id)), 0n)))
+  U.Page.newest.from(M.State.mine(st, id), id, U.Page.since(st, id), Mob.count(Maybe.default(&2, Nat, Nat.read(U.Str.get(drafts, "@more." ++ id)), 0n)))
 
 def Mob.paged.es(w: U.Win, +st: M.State, +sel: String, +info: Map<&2, String>, +dr: Map<&2, String>, +running: Bool) -> List<&2, J.Json>:
   Mob.entries(U.Win.shown(w), st, sel, info, dr, running)

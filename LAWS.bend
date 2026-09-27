@@ -1051,6 +1051,18 @@ law tl_memo_exact:
   for +sel: String
   {L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
 
+# a memo lined up with the entries (an item dropped in front, or entries
+# made in front: TL.align.of's guess, whatever it is) is still exactly the
+# memo made for some entries, so bringing it up to date stays exact
+law tl_align:
+  for c: L.TLAlign
+  for +es: List<&2, M.Entry>
+  for +ty: L.Ty
+  for old: List<&2, M.Entry>
+  for +px: U32
+  for +sel: String
+  {L.TL.memo.apply(c, es, L.TL.memo.make(ty, old, px, sel), ty, px, sel) == L.TL.memo.make(ty, L.TL.memo.apply.es(c, es, old), px, sel) : List<&2, L.TLE>}
+
 # the timeline drawn from a memo is the timeline drawn from scratch
 law tl_lines_exact:
   for +ty: L.Ty
@@ -3014,3 +3026,48 @@ law status_input_before_waiting:
 law status_no_subagents_same:
   for s: M.Status
   {M.Status.wait(False{}, s) == s : M.Status}
+
+# Many agents at once
+# -------------------
+# The window draws a thread's streamed text only while that thread is
+# open: another thread's delta asks for no frame, the open thread's does,
+# and every other message still does (U.Ui.shows).
+
+law shows_other_delta:
+  for u: U.Ui
+  for +th: String
+  for +text: String
+  for h: {String.eq(th, U.Ui.sel(u)) == False{} : Bool}
+  {U.Ui.shows(u, J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
+
+law shows_own_delta:
+  for u: U.Ui
+  for +text: String
+  {U.Ui.shows(u, J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{U.Ui.sel(u)}}, J.KV{"text", J.Str{text}}])) == True{} : Bool}
+
+law shows_changes:
+  for u: U.Ui
+  for +items: J.Json
+  {U.Ui.shows(u, J.Json.obj([J.KV{"t", J.Str{"changes"}}, J.KV{"items", items}])) == True{} : Bool}
+
+# Each thread's entries are filed as they are posted (M.Idx), so a frame
+# reads the open thread's page and the sidebar's links without walking
+# every thread's log. What is filed is what the walk finds: a thread's
+# page, the messages it sent included, and the links.
+law idx_page_own:
+  {L.TL.newest(M.State.mine(M.Idx.demo(), "t2"), "t2", 0n, L.NW{60n, []}) == L.TL.newest(U.Ui.entries(M.Idx.demo()), "t2", 0n, L.NW{60n, []}) : List<&2, M.Entry>}
+
+law idx_page_sent:
+  {L.TL.newest(M.State.mine(M.Idx.demo(), "t1"), "t1", 0n, L.NW{60n, []}) == L.TL.newest(U.Ui.entries(M.Idx.demo()), "t1", 0n, L.NW{60n, []}) : List<&2, M.Entry>}
+
+law idx_sent_filed:
+  {List.length(&2, M.Entry, M.State.mine(M.Idx.demo(), "t1")) == 3n : Nat}
+
+law idx_page_short:
+  {L.TL.newest(M.State.mine(M.Idx.demo(), "t2"), "t2", 0n, L.NW{2n, []}) == L.TL.newest(U.Ui.entries(M.Idx.demo()), "t2", 0n, L.NW{2n, []}) : List<&2, M.Entry>}
+
+law idx_links:
+  {U.Links.recent(M.Idx.demo(), 10n) == U.Links.recent.go(U.Ui.entries(M.Idx.demo()), 10n, True{}) : List<&2, U.Link2>}
+
+law idx_links_found:
+  {List.length(&2, U.Link2, U.Links.recent(M.Idx.demo(), 10n)) == 1n : Nat}
