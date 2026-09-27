@@ -5355,6 +5355,23 @@ def Laws.refs_agent_plain(s, sel):
 
 def Laws.refs_own_bot_never(named, id, name):
   match named:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.bot_mention_once(s, now, p):
+  {==}
+
+def Laws.sum_never_made_due(now):
+  {==}
+
+def Laws.sum_not_due_asks_nothing(s, id, kind):
+  {==}
+
+def Laws.sum_not_due_stamps_nothing(id, now):
+  {==}
+
 def Laws.bg_start_progress_end():
   {==}
 
@@ -5374,16 +5391,6 @@ def Laws.status_waits_on_subagents(q):
     case False{}:
       {==}
 
-def Laws.bot_mention_once(s, now, p):
-  {==}
-
-def Laws.sum_never_made_due(now):
-  {==}
-
-def Laws.sum_not_due_asks_nothing(s, id, kind):
-  {==}
-
-def Laws.sum_not_due_stamps_nothing(id, now):
 def Laws.status_work_before_waiting(q):
   {==}
 
