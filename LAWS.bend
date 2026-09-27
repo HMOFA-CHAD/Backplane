@@ -2937,6 +2937,10 @@ law refs_plain_offers_nothing:
 law refs_plain_not_typing:
   {RF.Refs.typing("hello") == False{} : Bool}
 
+# a bot on a linked machine is a reference as it is typed
+law refs_far_typing:
+  {RF.Refs.typing("@kit@box") == True{} : Bool}
+
 # a message that names nothing reaches its agent as it was sent
 law refs_agent_plain:
   for +s: M.State

@@ -118,6 +118,36 @@ def hits(hs: List<&2, RF.Hit>) -> String:
     case RF.Hit{k, i, _, w} <> t:
       k ++ ":" ++ i ++ ":" ++ w ++ " " ++ hits(t)
 
+# a linked machine, "laptop", and the bots it reports
+def dir() -> String:
+  "[{\"name\":\"Kit\",\"peer\":\"pk\",\"peerName\":\"laptop\",\"state\":\"idle\",\"seen\":1009},{\"name\":\"Old Bot\",\"peer\":\"pk\",\"peerName\":\"laptop\"}]"
+
+def linked(+s: M.State) -> M.State:
+  M.State.replay([M.PeerSet{"pk", "laptop", "http://laptop:3787", False{}, 1000n}], s)
+
+def fars(+s: M.State) -> List<&2, RF.Far>:
+  RF.Refs.fars(dir(), BT.World.peers(M.State.bots(s)))
+
+def far.offer(+s: M.State, +w: String) -> List<&2, RF.Cand>:
+  RF.Refs.offer.with(s, "t100-8", 1010n, w, fars(s))
+
+def fx(os: List<&2, B.Out>) -> String:
+  match os:
+    case Nil{}:
+      ""
+    case B.BotFx{k, a, b, c} <> t:
+      k ++ ":" ++ a ++ ":" ++ b ++ ":" ++ J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(c), J.Null{}), "to", "") ++ " " ++ fx(t)
+    case _ <> t:
+      fx(t)
+
+def st.fx(st: B.Step) -> String:
+  match st:
+    case B.Step{_, os}:
+      fx(os)
+
+def info(+k: String, +v: String) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Json.str("info")}, J.KV{"info", J.Json.obj([J.KV{k, J.Json.str(v)}])}])
+
 def offer(+s: M.State, +w: String) -> List<&2, RF.Cand>:
   RF.Refs.offer(s, "t100-8", 1010n, w)
 
@@ -166,3 +196,24 @@ def main() -> IO(Unit):
     C.Check.str("completed offers none", rows(U.Ui.skills(u3)), "")
     C.Check.str("composer threads", rows(U.Ui.skills(ui(U.Ui.act(u0, "draft", "see >")))), ">fix-perf-lag-7,>fix-perf-lag-9,")
     C.Check.str("complete ref", U.Skills.complete("ask @mi", "@Miso"), "ask @Miso ")
+    # bots on linked machines: `@name@machine`
+    C.Check.str("typing far", yes(RF.Refs.typing("@kit@la")), "yes")
+    C.Check.str("typing far, machine to come", yes(RF.Refs.typing("@kit@")), "yes")
+    C.Check.str("typing far, not a path", yes(RF.Refs.typing("@kit@la/x")), "no")
+    C.Check.str("typing two @", yes(RF.Refs.typing("@kit@la@b")), "no")
+    C.Check.str("far bots offered with ours", names(far.offer(linked(s), "@")), "@Kit@laptop,@Tofu,@Miso,")
+    C.Check.str("far bot by prefix", names(far.offer(linked(s), "@ki")), "@Kit@laptop,")
+    C.Check.str("far bot by machine", names(far.offer(linked(s), "@kit@la")), "@Kit@laptop,")
+    C.Check.str("far bot about", abouts(far.offer(linked(s), "@ki")), "bot on laptop|")
+    C.Check.str("far bots only after @", names(far.offer(linked(s), ">ki")), "")
+    C.Check.str("far found", hits(RF.Refs.found(linked(s), "t100-8", "ask @Kit@laptop, and @kit@nowhere")), "bot:Kit@laptop:@Kit@laptop ")
+    C.Check.str("far by link id", hits(RF.Refs.found(linked(s), "t100-8", "@Kit@pk")), "bot:Kit@pk:@Kit@pk ")
+    C.Check.str("far agent block", yes(String.contains(RF.Refs.agent(linked(s), "t100-8", "ask @Kit@laptop"), "@Kit@laptop is the bot \"Kit\" on the linked machine laptop")), "yes")
+    C.Check.str("far mention logged", ch.tags(BH.Bots.hub(linked(s), 1020n, 1, req("turn.start", "{\"thread\":\"t100-8\",\"text\":\"@Kit@laptop look\",\"msg\":\"m2\"}"))),
+      "MessagePosted TurnChanged RoomPosted | ")
+    C.Check.str("far mention delivered", st.fx(BH.Bots.hub(linked(s), 1020n, 1, req("turn.start", "{\"thread\":\"t100-8\",\"text\":\"@Kit@laptop look\",\"msg\":\"m2\"}"))),
+      "send:pk:/bots/deliver:Kit ")
+    C.Check.str("composer offers far bots",
+      rows(U.Ui.skills(ui(U.Ui.act(U.Ui.recv(U.Ui.fold([M.PeerSet{"pk", "laptop", "http://laptop:3787", False{}, 1000n}], u0), info("bots.remote", dir())), "draft", "ask @k")))),
+      "@Kit@laptop,")
+    C.Check.str("complete far", U.Skills.complete("ask @k", "@Kit@laptop"), "ask @Kit@laptop ")

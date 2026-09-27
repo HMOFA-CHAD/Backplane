@@ -5360,6 +5360,9 @@ def Laws.refs_plain_offers_nothing(s, sel, now):
 def Laws.refs_plain_not_typing():
   {==}
 
+def Laws.refs_far_typing():
+  {==}
+
 def Laws.refs_agent_plain(s, sel):
   {==}
 

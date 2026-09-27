@@ -2106,9 +2106,10 @@ def Skills.want(a: Act) -> Act:
 
 def Refs.fill(on: Bool, u: Ui) -> Ui:
   match on u:
-    case True{} Ui{+st, +sel, +dr, live, op, on2, +now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+    case True{} Ui{+st, +sel, +dr, live, op, on2, +now, ad, pa, v, rid, w, er, note, +nf, ob, tr}:
       Ui{st, sel, dr, live, op, on2, now, ad, pa, v, rid, w, er, note,
-        Map.set(&2, String, Map.set(&2, String, nf, "refs", String.join(Refs.show(RF.Refs.offer(st, sel, now, Skills.token(Str.get(dr, sel)))), "\n")), "refs.for", Refs.for(sel, Str.get(dr, sel))), ob, tr}
+        Map.set(&2, String, Map.set(&2, String, nf, "refs", String.join(Refs.show(RF.Refs.offer.with(st, sel, now, Skills.token(Str.get(dr, sel)),
+          RF.Refs.fars.if(String.starts_with(Skills.token(Str.get(dr, sel)), "@"), Str.get(nf, "bots.remote"), BT.World.peers(M.State.bots(st))))), "\n")), "refs.for", Refs.for(sel, Str.get(dr, sel))), ob, tr}
     case False{} _:
       u
 
