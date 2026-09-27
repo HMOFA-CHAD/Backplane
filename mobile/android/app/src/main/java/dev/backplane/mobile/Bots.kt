@@ -486,6 +486,7 @@ private fun SettingsTab(m: AppModel, b: BotView, st: BotSettings) {
     var gid by remember(b.id) { mutableStateOf(st.google.gid) }
     var gsecret by remember(b.id) { mutableStateOf(st.google.gsecret) }
     var gpaste by remember(b.id) { mutableStateOf("") }
+    var gown by remember(b.id) { mutableStateOf(false) }
     var purl by remember(b.id) { mutableStateOf(st.purl) }
     var join by remember(b.id) { mutableStateOf("") }
     var deleting by remember { mutableStateOf(false) }
@@ -498,11 +499,14 @@ private fun SettingsTab(m: AppModel, b: BotView, st: BotSettings) {
 
         SectionLabel("Google")
         if (st.google.status.isNotEmpty()) Text(st.google.status, style = MaterialTheme.typography.bodyMedium)
-        Field(gid, "Client ID", { gid = it; m.field("gid", it) })
-        Field(gsecret, "Client secret", { gsecret = it; m.field("gsecret", it) }, secret = true)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { m.act("google", "connect") }, shape = square) { Text("Connect Google") }
+            TextButton(onClick = { gown = !gown }) { Text(if (gown) "Hide own client" else "Own client") }
+        }
+        if (gown) {
+            Field(gid, "Client ID (Desktop app)", { gid = it; m.field("gid", it) })
+            Field(gsecret, "Client secret", { gsecret = it; m.field("gsecret", it) }, secret = true)
             OutlinedButton(onClick = { m.act("google", "configure") }, shape = square) { Text("Save client") }
-            OutlinedButton(onClick = { m.act("google", "begin") }, shape = square) { Text("Sign in") }
         }
         if (st.google.url.isNotEmpty()) {
             TextButton(onClick = { runCatching { uri.openUri(st.google.url) } }) { Text("Open Google sign-in") }

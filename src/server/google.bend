@@ -12,7 +12,8 @@ import ./proc.bend as P
 # refresh tokens) come from a config file (-K) and data files in that
 # directory, never its command line. Base URLs can be moved for tests with
 # BACKPLANE_GOOGLE_OAUTH (token and revoke endpoints) and
-# BACKPLANE_GOOGLE_API (Gmail and Calendar).
+# BACKPLANE_GOOGLE_API (Gmail and Calendar), and the shared client (see
+# G.Google.shared) with BACKPLANE_GOOGLE_CLIENT_ID and _SECRET.
 
 # Files
 # -----
@@ -133,13 +134,31 @@ def Gs.save(+home: String, s: GSec) -> IO(Unit):
     r : Result<&1, &1, U32 & String, Unit> <- H.FS.rename(Gs.path(home) ++ ".new", Gs.path(home))
     return Unit{}
 
-# what the UI may know: {configured, connected, email, pending}
+# what the UI may know: {configured, connected, email, pending, client}
+# (Google.say turns it into a line)
 def Gs.status(s: GSec) -> String:
   match s:
-    case GSec{id, _, refresh, _, _, email, _, state, _}:
+    case GSec{+id, _, refresh, _, _, email, _, state, _}:
       J.Json.show(J.Json.obj([J.KV{"configured", J.Flag{Bool.not(String.is_empty(id))}},
         J.KV{"connected", J.Flag{Bool.not(String.is_empty(refresh))}}, J.KV{"email", J.Str{email}},
-        J.KV{"pending", J.Flag{Bool.not(String.is_empty(state))}}]))
+        J.KV{"pending", J.Flag{Bool.not(String.is_empty(state))}}, J.KV{"client", J.Str{id}}]))
+
+def Gs.id(s: GSec) -> String:
+  match s:
+    case GSec{id, _, _, _, _, _, _, _, _}:
+      id
+
+def Gs.client(s: GSec) -> G.Client:
+  match s:
+    case GSec{id, secret, _, _, _, _, _, _, _}:
+      G.Client{id, secret}
+
+# the client every install shares, or the one the environment names
+def Gs.shared() -> IO(G.Client):
+  do IO<G.Client>:
+    i : String <- Gf.env("BACKPLANE_GOOGLE_CLIENT_ID", G.Client.id(G.Google.shared()))
+    x : String <- Gf.env("BACKPLANE_GOOGLE_CLIENT_SECRET", G.Client.secret(G.Google.shared()))
+    return G.Client{i, x}
 
 # HTTP through curl
 # -----------------
@@ -360,19 +379,19 @@ def Gs.challenge(+dir: String, +verifier: String) -> IO(String):
     r : P.Ran <- P.Proc.run("sh", ["-c", "printf '%s' \"$1\" | openssl dgst -sha256 -binary | openssl base64 -A | tr '+/' '-_' | tr -d '='", "sh", verifier], dir)
     return String.trim(Gc.ran(r))
 
-def Gs.begin.go(ok: Bool, +home: String, s: GSec, +verifier: String, +state: String, +challenge: String, +redirect: String) -> IO(String):
+def Gs.begin.go(ok: Bool, +home: String, s: GSec, +verifier: String, +state: String, +challenge: String, +redirect: String, own: Bool) -> IO(String):
   match ok s:
     case False{} _:
       IO.pure(String, "error: could not make the PKCE challenge (is openssl installed?)")
     case True{} GSec{+id, secret, refresh, access, expiry, email, _, _, _}:
       do IO<String>:
         Gs.save(home, GSec{id, secret, refresh, access, expiry, email, verifier, state, redirect})
-        return G.Google.auth_url(id, redirect, challenge, state, G.Google.scopes())
+        return G.Google.auth_url(id, redirect, challenge, state, G.Google.scopes_for(own))
 
-def Gs.begin.k(ok: Bool, +home: String, s: GSec, +redirect: String) -> IO(String):
+def Gs.begin.k(ok: Bool, +home: String, s: GSec, +redirect: String, own: Bool) -> IO(String):
   match ok:
     case False{}:
-      IO.pure(String, "error: set the Google OAuth client id and secret first")
+      IO.pure(String, "error: this build has no shared Google client; add your own OAuth client (Desktop app) id and secret first")
     case True{}:
       do IO<String>:
         mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(Gs.dir(home))
@@ -380,20 +399,31 @@ def Gs.begin.k(ok: Bool, +home: String, s: GSec, +redirect: String) -> IO(String
         +verifier : String <- Gf.nonce(12n)
         +state : String <- Gf.nonce(4n)
         +challenge : String <- Gs.challenge(Gs.dir(home), verifier)
-        Gs.begin.go(Nat.is_eq(String.length(challenge), 43n), home, s, verifier, state, challenge, redirect)
+        Gs.begin.go(Nat.is_eq(String.length(challenge), 43n), home, s, verifier, state, challenge, redirect, own)
 
 def Gs.configured(s: GSec) -> Bool:
   match s:
     case GSec{id, secret, _, _, _, _, _, _, _}:
       Bool.not(Bool.or(String.is_empty(id), String.is_empty(secret)))
 
+# the secrets with the client a sign-in uses
+def Gs.with(s: GSec, c: G.Client) -> GSec:
+  match s c:
+    case GSec{_, _, refresh, access, expiry, email, verifier, state, redirect} G.Client{id, secret}:
+      GSec{id, secret, refresh, access, expiry, email, verifier, state, redirect}
+
+def Gs.begin.with(+home: String, +s: GSec, +sh: String, +redirect: String) -> IO(String):
+  Gs.begin.k(Gs.configured(s), home, s, redirect, Bool.not(G.Google.is_shared(Gs.id(s), sh)))
+
 # starts a sign-in: keeps a fresh PKCE verifier and state, and answers the
 # URL the user opens (or "error: ..."). redirect is where Google sends the
-# browser back: http://127.0.0.1:<port>/oauth/google.
+# browser back: http://127.0.0.1:<port>/oauth/google. The user's own
+# client when there is one, else the shared one (Calendar only).
 def Google.begin(+home: String, +redirect: String) -> IO(String):
   do IO<String>:
     +s : GSec <- Gs.load(home)
-    Gs.begin.k(Gs.configured(s), home, s, redirect)
+    +sh : G.Client <- Gs.shared()
+    Gs.begin.with(home, Gs.with(s, G.Google.client(Gs.client(s), sh)), G.Client.id(sh), redirect)
 
 def Gs.email.k(ok: Bool, +body: String) -> String:
   match ok:
@@ -725,10 +755,35 @@ def Gs.call.k(a: GAccess, +home: String, +tool: String, +args: J.Json) -> IO(Str
 # one MCP tool call (gmail_search, gmail_read, gmail_send, calendar_events,
 # calendar_create): compact text for the agent, or "error: ...". The hub
 # asks the user before gmail_send and calendar_create (G.Google.asks).
+def Google.call.k(covers: Bool, +home: String, +tool: String, +args: J.Json) -> IO(String):
+  match covers:
+    case True{}:
+      do IO<String>:
+        a : GAccess <- Google.token(home)
+        Gs.call.k(a, home, tool, args)
+    case False{}:
+      IO.pure(String, "error: Gmail is not linked; Backplane's shared Google client connects Calendar only. Add your own OAuth client in Settings, then connect again, to use Gmail.")
+
 def Google.call(+home: String, +tool: String, +args: J.Json) -> IO(String):
   do IO<String>:
-    a : GAccess <- Google.token(home)
-    Gs.call.k(a, home, tool, args)
+    s : GSec <- Gs.load(home)
+    sh : G.Client <- Gs.shared()
+    Google.call.k(G.Google.covers(G.Google.is_shared(Gs.id(s), G.Client.id(sh)), tool), home, tool, args)
+
+def Gs.say.k(obj: Bool, +text: String, +sh: G.Client) -> String:
+  match obj:
+    case False{}:
+      text
+    case True{}:
+      +j = Gc.json(text)
+      G.Google.note(J.Json.get_bool(j, "connected", False{}), J.Json.get_bool(j, "pending", False{}),
+        Bool.or(J.Json.get_bool(j, "configured", False{}), G.Client.has(sh)), J.Json.get_str(j, "email", ""),
+        G.Google.is_shared(J.Json.get_str(j, "client", ""), G.Client.id(sh)))
+
+# a status answer as the line the Settings screens show; anything else
+# (a sign-in URL, an error) as it is
+def Google.say(+text: String) -> IO(String):
+  IO.bind(G.Client, String, Gs.shared(), sh => IO.pure(String, Gs.say.k(String.starts_with(text, "{"), text, sh)))
 
 # the MCP tool definitions, a JSON array shaped as tools/list's
 def Google.tools() -> J.Json:

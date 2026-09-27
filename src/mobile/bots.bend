@@ -182,7 +182,7 @@ def MBots.str(+u: U.Ui, +k: String) -> J.KV:
 
 # Google's sign-in: its state as the hub said it, the link to open, the
 # OAuth client's fields ("bfield" gid, gsecret) and the pasted redirect
-# (gpaste); "google" sends an op (status, configure, begin, finish,
+# (gpaste); "google" sends an op (status, configure, begin, connect, finish,
 # disconnect)
 def MBots.google(+u: U.Ui) -> J.Json:
   J.Json.obj([J.KV{"status", J.Json.str(U.Ui.scratch(u, "@google"))}, J.KV{"url", J.Json.str(U.Ui.scratch(u, "@google.url"))},

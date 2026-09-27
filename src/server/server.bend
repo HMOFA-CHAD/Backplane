@@ -3435,9 +3435,23 @@ def BotJob.close(m: Maybe<&2, Chan(BR.BMsg)>, +bot: String) -> IO(Unit):
 def Bot.redirect(+port: U32) -> String:
   "http://127.0.0.1:" ++ U32.show(port) ++ "/oauth/google"
 
-# "configure" (phones) and "config" are the same op
+# "configure" (phones) and "config" are the same op, and so are "paste"
+# (the window) and "finish"; "connect" saves the client when one was typed,
+# then begins
 def BotJob.google.pos(+op: String) -> Nat:
-  Bool.pick(Nat, String.eq(op, "configure"), 0n, C.Codec.pos(["config", "begin", "finish", "status", "disconnect"], op))
+  Bool.pick(Nat, String.eq(op, "configure"), 0n,
+    Bool.pick(Nat, String.eq(op, "paste"), 2n, C.Codec.pos(["config", "begin", "finish", "status", "disconnect", "connect"], op)))
+
+def BotJob.google.then(+text: String, +home: String, +redirect: String) -> IO(String):
+  Bool.pick(IO(String), String.starts_with(text, "error"), IO.pure(String, text), GS.Google.begin(home, redirect))
+
+def BotJob.google.connect(typed: Bool, +home: String, +p: J.Json, +redirect: String) -> IO(String):
+  match typed:
+    case False{}:
+      GS.Google.begin(home, redirect)
+    case True{}:
+      IO.bind(String, String, GS.Google.configure(home, J.Json.get_str(p, "clientId", ""), J.Json.get_str(p, "clientSecret", "")),
+        t => BotJob.google.then(t, home, redirect))
 
 def BotJob.google.op(i: Nat, +home: String, +p: J.Json, +redirect: String) -> IO(String):
   match i:
@@ -3451,6 +3465,8 @@ def BotJob.google.op(i: Nat, +home: String, +p: J.Json, +redirect: String) -> IO
       GS.Google.status(home)
     case 4n:
       GS.Google.disconnect(home)
+    case 5n:
+      BotJob.google.connect(Bool.not(String.is_empty(String.trim(J.Json.get_str(p, "clientId", "")))), home, p, redirect)
     case _:
       IO.pure(String, "error: unknown Google request")
 
@@ -3463,8 +3479,9 @@ def BotJob.google(+inbox: Chan(Msg), +home: String, +port: U32, +params: String,
   do IO<Unit>:
     +p : J.Json = Maybe.default(&2, J.Json, J.Json.parse(params), J.Null{})
     +i : Nat = BotJob.google.pos(J.Json.get_str(p, "op", ""))
-    +text : String <- BotJob.google.op(i, home, p, Bot.redirect(port))
-    BotJob.google.done(text, Nat.is_eq(i, 1n), inbox, client, id)
+    raw : String <- BotJob.google.op(i, home, p, Bot.redirect(port))
+    +text : String <- GS.Google.say(raw)
+    BotJob.google.done(text, Bool.or(Nat.is_eq(i, 1n), Nat.is_eq(i, 5n)), inbox, client, id)
 
 def Bot.ran(r: P.Ran) -> String:
   match r:

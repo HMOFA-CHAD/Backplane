@@ -321,9 +321,26 @@ when a new one is ready, and only clients showing that tab fetch it.
 Gmail and Calendar through Google's APIs, not the browser: OAuth 2.0 for
 installed apps with PKCE and a loopback redirect to the hub
 (`/oauth/google`), or paste the redirected URL when the browser is on
-another device. Needs a Google Cloud OAuth client (Desktop app) id and
-secret in Settings. Tools: `gmail_search`, `gmail_read`, `gmail_send`
+another device. Tools: `gmail_search`, `gmail_read`, `gmail_send`
 (asks you first), `calendar_events`, `calendar_create` (asks you first).
+
+Connect Google in Settings signs in with Backplane's shared OAuth client
+(`Google.shared` in `src/core/google.bend`; `BACKPLANE_GOOGLE_CLIENT_ID`
+and `BACKPLANE_GOOGLE_CLIENT_SECRET` replace it), so nobody pastes
+anything. The shared client asks for Calendar only: Gmail's scopes are
+restricted, and a client anyone can use needs Google's yearly security
+assessment to ask for them. For Gmail, open Own client and paste a Google
+Cloud OAuth client (Desktop app) of your own; it always wins over the
+shared one (laws `google_own_client_wins`, `google_shared_*`).
+
+Registering the shared client: a Google Cloud project with the Calendar
+API on, an OAuth consent screen (External, In production, scope
+`calendar.events`, submitted for verification), and an OAuth client of
+type Desktop app. Its id and secret go in `Google.shared`; an installed
+app's secret is not secret (RFC 8252 8.5), PKCE protects the code. Until
+Google verifies it, people see an unverified-app warning and at most 100
+can sign in; while the consent screen is in Testing, sign-ins expire
+after 7 days.
 
 ## Server
 

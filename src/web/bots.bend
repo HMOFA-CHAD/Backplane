@@ -408,17 +408,28 @@ def WB.gurl(+url: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, String.is_empty(url), Nil{}, [
     WB.div("bform-btns", [D.El{"a", "", [D.At{"class", "link"}, D.At{"href", url}, D.At{"target", "_blank"}, D.At{"rel", "noopener noreferrer"}], [D.Txt{"Open Google sign-in"}]}])])
 
-# Google: the OAuth client, connect (sign in in a new tab; paste the page
-# it lands on when that tab is on another device), status, disconnect
+# the user's own OAuth client (for Gmail), shown on asking
+def WB.gown.k(open: Bool, +u: U.Ui) -> List<&2, D.Node>:
+  match open:
+    case True{}:
+      [WB.input("google-id", "gid", BI.BU.field(u, "gid"), "OAuth client id (Desktop app)", ""),
+       WB.secret("google-secret", "gsecret", BI.BU.field(u, "gsecret"), "Client secret"),
+       WB.btns([D.Dom.button("", "google", "config", "Save the client id and secret", "Save client"),
+         D.Dom.button("", "bfield", WB.bf("gown", ""), "Hide the client fields", "Hide")])]
+    case False{}:
+      Nil{}
+
+# Google: connect (sign in in a new tab with the shared client, Calendar;
+# or with the user's own, Gmail too; paste the page it lands on when that
+# tab is on another device), status, disconnect
 def WB.google(+u: U.Ui) -> D.Node:
   WB.set("Google", List.concat(&2, D.Node, [
     Bool.pick(List<&2, D.Node>, String.is_empty(U.Ui.scratch(u, "@google")), Nil{}, [D.Dom.span("set-note", U.Ui.scratch(u, "@google"))]),
-    [WB.input("google-id", "gid", BI.BU.field(u, "gid"), "OAuth client id (Desktop app)", ""),
-     WB.secret("google-secret", "gsecret", BI.BU.field(u, "gsecret"), "Client secret"),
-     WB.btns([D.Dom.button("", "google", "config", "Save the client id and secret", "Save client"),
-       D.Dom.button("primary", "google", "begin", "Sign in with Google", "Connect Google"),
+    [WB.btns([D.Dom.button("primary", "google", "connect", "Sign in with Google", "Connect Google"),
        D.Dom.button("", "google", "status", "Check the connection", "Status"),
-       D.Dom.button("", "google", "disconnect", "Forget the Google account", "Disconnect")])],
+       D.Dom.button("", "google", "disconnect", "Forget the Google account", "Disconnect"),
+       D.Dom.button("", "bfield", WB.bf("gown", "1"), "Use an OAuth client of your own (needed for Gmail)", "Own client")])],
+    WB.gown.k(Bool.not(String.is_empty(BI.BU.field(u, "gown"))), u),
     WB.gurl(U.Ui.scratch(u, "@google.url")),
     Bool.pick(List<&2, D.Node>, String.is_empty(U.Ui.scratch(u, "@google.url")), Nil{}, [
       WB.div("bform wide row", [WB.input("google-paste", "gpaste", BI.BU.field(u, "gpaste"), "Or paste the address the sign-in ended on", "google"),

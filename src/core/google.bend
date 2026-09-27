@@ -547,6 +547,90 @@ def Google.auth_url.at(+base: String, +client_id: String, +redirect: String, +ch
 def Google.auth_url(+client_id: String, +redirect: String, +challenge: String, +state: String, scopes: List<&2, String>) -> String:
   Google.auth_url.at(Google.auth_base(), client_id, redirect, challenge, state, scopes)
 
+# The shared client
+# -----------------
+# One Google Cloud "Desktop app" client that every install ships, so
+# connecting is one button (sign in, allow). An installed app's secret is
+# not a secret (RFC 8252 8.5); PKCE is what protects the code. Empty until
+# one is registered; BACKPLANE_GOOGLE_CLIENT_ID and _SECRET replace it.
+# It links Calendar only: Gmail's scopes are restricted, and a client
+# anyone can use needs a yearly security assessment to ask for them. A
+# client of the user's own (pasted in Settings) links Gmail too.
+
+type Client is Data:
+  Client{id: String, secret: String}
+
+def Google.shared() -> Client:
+  Client{"", ""}
+
+def Client.has(c: Client) -> Bool:
+  match c:
+    case Client{id, secret}:
+      Bool.not(Bool.or(String.is_empty(id), String.is_empty(secret)))
+
+def Client.id(c: Client) -> String:
+  match c:
+    case Client{id, _}:
+      id
+
+def Client.secret(c: Client) -> String:
+  match c:
+    case Client{_, secret}:
+      secret
+
+def Google.client.k(own: Bool, mine: Client, shared: Client) -> Client:
+  match own:
+    case True{}:
+      mine
+    case False{}:
+      shared
+
+# the client a sign-in uses: the user's own when set, else the shared one
+def Google.client(+mine: Client, shared: Client) -> Client:
+  Google.client.k(Client.has(mine), mine, shared)
+
+# who signed in, and Calendar
+def Google.cal_scopes() -> List<&2, String>:
+  ["openid", "email", "https://www.googleapis.com/auth/calendar.events"]
+
+def Google.scopes_for(own: Bool) -> List<&2, String>:
+  match own:
+    case True{}:
+      Google.scopes()
+    case False{}:
+      Google.cal_scopes()
+
+# the client is the shared one: the link covers Calendar only
+def Google.is_shared(+id: String, +shared: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(id)), String.eq(id, shared))
+
+def Google.gmail(+tool: String) -> Bool:
+  String.starts_with(tool, "gmail_")
+
+# a tool the link can do
+def Google.covers(shared: Bool, +tool: String) -> Bool:
+  Bool.or(Bool.not(shared), Bool.not(Google.gmail(tool)))
+
+def Google.note.who(+email: String, shared: Bool) -> String:
+  Bool.pick(String, String.is_empty(email), "Connected", "Connected as " ++ email)
+    ++ Bool.pick(String, shared, " (Calendar).", " (Gmail and Calendar).")
+
+def Google.note.k(connected: Bool, pending: Bool, ready: Bool, +email: String, shared: Bool) -> String:
+  match connected pending ready:
+    case True{} _ _:
+      Google.note.who(email, shared)
+    case False{} True{} _:
+      "Waiting for Google: allow access in the tab that opened, or paste where it landed."
+    case False{} False{} True{}:
+      "Not connected."
+    case False{} False{} False{}:
+      "Not connected. This build has no shared Google client: add your own OAuth client (Desktop app) below."
+
+# the connection in one line for the Settings screens. ready: a client
+# (own or shared) is there to sign in with
+def Google.note(connected: Bool, pending: Bool, ready: Bool, +email: String, shared: Bool) -> String:
+  Google.note.k(connected, pending, ready, email, shared)
+
 # what the redirect carried; bare when the user pasted only the code
 type CodeState is Data:
   CodeState{code: String, state: String, bare: Bool}
