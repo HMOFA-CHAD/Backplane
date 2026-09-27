@@ -211,7 +211,7 @@ data class RoutineForm(val open: Boolean, val id: String, val name: String, val 
 data class BotHook(val id: String, val name: String, val path: String, val last: String, val count: Int)
 data class BotPeer(val id: String, val name: String, val url: String)
 // Google's sign-in state and the OAuth client's fields ("google" op)
-data class BotGoogle(val status: String, val url: String, val gid: String, val gsecret: String, val gpaste: String)
+data class BotGoogle(val status: String, val url: String, val gid: String, val gsecret: String, val gpaste: String, val accounts: List<String>)
 data class BotSettings(
     val persona: String, val personaField: String, val invite: String, val purl: String, val join: String,
     val google: BotGoogle, val peers: List<BotPeer>,
@@ -400,7 +400,7 @@ private fun botView(o: JSONObject) = BotView(
         val g = st.optJSONObject("google") ?: JSONObject()
         BotSettings(st.optString("persona"), st.optString("personaField"), st.optString("invite"), st.optString("purl"),
             st.optString("join"),
-            BotGoogle(g.optString("status"), g.optString("url"), g.optString("gid"), g.optString("gsecret"), g.optString("gpaste")),
+            BotGoogle(g.optString("status"), g.optString("url"), g.optString("gid"), g.optString("gsecret"), g.optString("gpaste"), strs(g.optJSONArray("accounts"))),
             st.optJSONArray("peers").map { BotPeer(it.optString("id"), it.optString("name"), it.optString("url")) })
     },
     o.optJSONArray("posts").map {

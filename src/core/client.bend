@@ -3435,9 +3435,39 @@ def Bots.token.clear(u: Ui) -> Ui:
 def Bots.token(u: Ui, +hook: String, +op: String) -> Act:
   Ui.rpc(Bots.token.clear(u), "bots.hook_token", [J.KV{"hook", J.Str{hook}}, J.KV{"op", J.Str{op}}])
 
-def Bots.google(+u: Ui, +op: String) -> Act:
+def Bots.google.rpc(+u: Ui, +op: String, +account: String) -> Act:
   Ui.rpc(u, "bots.google", [J.KV{"op", J.Str{op}}, J.KV{"clientId", J.Str{Bots.field(u, "gid")}}, J.KV{"clientSecret", J.Str{Bots.field(u, "gsecret")}},
-    J.KV{"pasted", J.Str{Bots.field(u, "gpaste")}}])
+    J.KV{"pasted", J.Str{Bots.field(u, "gpaste")}}, J.KV{"account", J.Str{account}}])
+
+# "signout:<address>" signs one account out; "disconnect" signs out every one
+def Bots.google.k(one: Bool, +u: Ui, +op: String) -> Act:
+  match one:
+    case True{}:
+      Bots.google.rpc(u, "disconnect", String.drop(op, 8n))
+    case False{}:
+      Bots.google.rpc(u, op, "")
+
+def Bots.google(+u: Ui, +op: String) -> Act:
+  Bots.google.k(String.starts_with(op, "signout:"), u, op)
+
+def Bots.google.keep(empty: Bool, x: String, rest: List<&2, String>) -> List<&2, String>:
+  match empty:
+    case True{}:
+      rest
+    case False{}:
+      x <> rest
+
+def Bots.google.full(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      Bots.google.keep(String.is_empty(x), x, Bots.google.full(t))
+
+# the addresses signed in, the default first (the hub's "googleAccounts",
+# one a line)
+def Bots.google.accts(+u: Ui) -> List<&2, String>:
+  Bots.google.full(String.split(Ui.scratch(u, "@google.accts"), '\n'))
 
 # Voice
 # -----
@@ -3743,10 +3773,18 @@ def Bots.reply.bot(+o: J.Json, u: Ui) -> Ui:
 def Bots.reply.put(+o: J.Json, +key: String, +into: String, +u: Ui) -> Ui:
   Bool.pick(Ui, String.is_empty(J.Json.get_str(o, key, "")), u, Ui.scratch_set(u, into, J.Json.get_str(o, key, "")))
 
+# a key the answer has, even when empty (no account left is news)
+def Bots.reply.has(m: Maybe<&2, J.Json>, +into: String, +u: Ui) -> Ui:
+  match m:
+    case Some{J.Str{s}}:
+      Ui.scratch_set(u, into, s)
+    case _:
+      u
+
 def Bots.reply(+o: J.Json, +u: Ui) -> Ui:
-  Voice.reply(o, Bots.reply.put(o, "googleUrl", "@google.url", Bots.reply.put(o, "google", "@google", Bots.reply.put(o, "invite", "@peer.invite",
+  Voice.reply(o, Bots.reply.has(J.Json.get(o, "googleAccounts"), "@google.accts", Bots.reply.put(o, "googleUrl", "@google.url", Bots.reply.put(o, "google", "@google", Bots.reply.put(o, "invite", "@peer.invite",
     Bots.reply.put(o, "secret", "@hook.secret", Bots.reply.put(o, "hook", "@hook.id",
-      Bots.reply.put(o, "token", "@hook.token", Bots.reply.put(o, "tokenHook", "@hook.tokfor", Bots.reply.put(o, "tokenUrl", "@hook.tokurl", Bots.reply.bot(o, u))))))))))
+      Bots.reply.put(o, "token", "@hook.token", Bots.reply.put(o, "tokenHook", "@hook.tokfor", Bots.reply.put(o, "tokenUrl", "@hook.tokurl", Bots.reply.bot(o, u)))))))))))
 
 # an answer: its request leaves the outbox; a diff opens the diff view
 def Ui.reply(u: Ui, +o: J.Json) -> Ui:
@@ -3844,12 +3882,26 @@ def Page.earlier.k(+u: Ui, +thread: String) -> Ui:
 def Page.earlier(+u: Ui, +value: String) -> Ui:
   Page.earlier.k(u, Bool.pick(String, String.is_empty(value), Ui.sel.of(u), value))
 
+def Bots.tab.with(a: Act) -> Act:
+  match a:
+    case Act{u, cs}:
+      Act{u, Scroll{} <> cs}
+
+# a bot's tab; Settings asks Google's status too, so the accounts signed
+# in (perhaps in a browser since) are the hub's
+def Bots.tab.k(settings: Bool, u: Ui) -> Act:
+  match settings:
+    case True{}:
+      Bots.tab.with(Bots.google.rpc(u, "status", ""))
+    case False{}:
+      Act{u, [Scroll{}]}
+
 def Bots.act(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 0n:
       Bots.select(u, value)
     case 1n:
-      Act{Ui.scratch_set(u, "@btab", value), [Scroll{}]}
+      Bots.tab.k(String.eq(value, "settings"), Ui.scratch_set(u, "@btab", value))
     case 2n:
       Act{Bots.flag(u, "@bnew"), [Focus{"bot-name"}]}
     case 3n:

@@ -4719,14 +4719,27 @@ def Laws.google_own_client_wins(mine, sh, h):
   %Equal.sym(Bool, GO.Client.has(mine), True{}, h) : {GO.Google.client.k(_, mine, sh) == mine : GO.Client}
   {==}
 
-def Laws.google_shared_calendar_only():
+def Laws.google_shared_scopes_all():
   {==}
 
-def Laws.google_shared_no_gmail(tool, h):
-  %Equal.sym(Bool, String.starts_with(tool, "gmail_"), True{}, h) : {Bool.or(False{}, Bool.not(_)) == False{} : Bool}
+def Laws.google_shared_covers_all(tool):
   {==}
 
 def Laws.google_own_covers_all(tool):
+  {==}
+
+def Laws.google_accts_pick_first(a, t):
+  {==}
+
+def Laws.google_accts_put_replaces(a, t, b, h):
+  %Equal.sym(Bool, String.eq(GO.Acct.email(a), GO.Acct.email(b)), True{}, h) : {GO.Accts.put.go(a <> t, _, b, GO.Acct.email(b)) == b <> t : List<&2, GO.Acct>}
+  {==}
+
+def Laws.google_accts_put_new(b):
+  {==}
+
+def Laws.google_accts_drop_named(a, t, e, h):
+  %Equal.sym(Bool, String.eq(GO.Acct.email(a), e), True{}, h) : {GO.Accts.drop.go(a <> t, _, e) == GO.Accts.drop(t, e) : List<&2, GO.Acct>}
   {==}
 
 # Bots

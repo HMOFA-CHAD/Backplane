@@ -360,21 +360,39 @@ Gmail and Calendar through Google's APIs, not the browser: OAuth 2.0 for
 installed apps with PKCE and a loopback redirect to the hub
 (`/oauth/google`), or paste the redirected URL when the browser is on
 another device. Tools: `gmail_search`, `gmail_read`, `gmail_send`
-(asks you first), `calendar_events`, `calendar_create` (asks you first).
+(asks you first), `calendar_events`, `calendar_create` (asks you first),
+`google_accounts`.
 
-Connect Google in Settings signs in with Backplane's shared OAuth client
-(`Google.shared` in `src/core/google.bend`; `BACKPLANE_GOOGLE_CLIENT_ID`
-and `BACKPLANE_GOOGLE_CLIENT_SECRET` replace it), so nobody pastes
-anything. The shared client asks for Calendar only: Gmail's scopes are
-restricted, and a client anyone can use needs Google's yearly security
-assessment to ask for them. For Gmail, open Own client and paste a Google
-Cloud OAuth client (Desktop app) of your own; it always wins over the
-shared one (laws `google_own_client_wins`, `google_shared_*`).
+Several accounts: each sign-in adds one (Google shows its account
+chooser; signing in to an address already there replaces it). They live
+in `<home>/secrets/google.json` under `accounts`, the default first (a
+file from before keeps its one account at its top and is read as the
+first). Every tool takes an optional `account` address; without it, the
+first. Settings lists the accounts, each with its own Sign out (the
+`google` action `signout:<address>`; `disconnect` with no address signs
+out all). Pure half: `Acct`/`Accts.*` in `src/core/google.bend`, laws
+`google_accts_*`.
 
-Registering the shared client: a Google Cloud project with the Calendar
-API on, an OAuth consent screen (External, In production, scope
-`calendar.events`, submitted for verification), and an OAuth client of
-type Desktop app. Its id and secret go in `Google.shared`; an installed
+Connect Google in Settings signs in with Backplane's shared OAuth client,
+so nobody pastes anything. The client is baked in at build time:
+`scripts/build-app.sh` reads `BACKPLANE_GOOGLE_CLIENT_ID` and
+`BACKPLANE_GOOGLE_CLIENT_SECRET` from its environment (release builds get
+them from the repository's Actions secrets) or from a git-ignored `.env` in
+the checkout or the main checkout, and `src/server/effects/google.c` hands
+them to `Gs.shared`. The same variables at run time win over the baked
+ones; with neither, `Google.shared` in `src/core/google.bend` is used.
+The shared client asks for Gmail and Calendar (laws `google_shared_*`).
+Gmail's scopes are restricted: until Google verifies the client (a yearly
+security assessment), people click past an unverified-app warning and at
+most 100 accounts can sign in. Own client takes a Google Cloud OAuth client
+(Desktop app) of your own; it always wins over the shared one (law
+`google_own_client_wins`).
+
+Registering the shared client: a Google Cloud project with the Gmail and
+Calendar APIs on, an OAuth consent screen (External, In production, scopes
+`gmail.modify` and `calendar.events`), and an OAuth client of type Desktop
+app. Its id and secret go in `.env` and the repository's Actions secrets
+(`BACKPLANE_GOOGLE_CLIENT_ID`, `_SECRET`); an installed
 app's secret is not secret (RFC 8252 8.5), PKCE protects the code. Until
 Google verifies it, people see an unverified-app warning and at most 100
 can sign in; while the consent screen is in Testing, sign-ins expire

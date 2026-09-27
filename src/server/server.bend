@@ -3474,24 +3474,32 @@ def BotJob.google.op(i: Nat, +home: String, +p: J.Json, +redirect: String) -> IO
     case 3n:
       GS.Google.status(home)
     case 4n:
-      GS.Google.disconnect(home)
+      GS.Google.disconnect(home, String.trim(J.Json.get_str(p, "account", "")))
     case 5n:
       BotJob.google.connect(Bool.not(String.is_empty(String.trim(J.Json.get_str(p, "clientId", "")))), home, p, redirect)
     case _:
       IO.pure(String, "error: unknown Google request")
 
-def BotJob.google.done(+text: String, +begin: Bool, +inbox: Chan(Msg), +client: U32, +id: String) -> IO(Unit):
+# a status answer carries the signed-in addresses too, one a line
+def BotJob.google.kvs(status: Bool, +key: String, +text: String, +raw: String) -> List<&2, J.KV>:
+  match status:
+    case True{}:
+      [J.KV{key, J.Str{text}}, J.KV{"googleAccounts", J.Str{GG.Accts.line(raw)}}]
+    case False{}:
+      [J.KV{key, J.Str{text}}]
+
+def BotJob.google.done(+text: String, +raw: String, +begin: Bool, +inbox: Chan(Msg), +client: U32, +id: String) -> IO(Unit):
   Bool.pick(IO(Unit), String.starts_with(text, "error"), BotJob.fail(inbox, client, id, Bool.pick(String, String.starts_with(text, "error: "), String.drop(text, 7n), text)),
-    BotJob.reply(inbox, client, id, True{}, [J.KV{Bool.pick(String, begin, "googleUrl", "google"), J.Str{text}}]))
+    BotJob.reply(inbox, client, id, True{}, BotJob.google.kvs(String.starts_with(raw, "{"), Bool.pick(String, begin, "googleUrl", "google"), text, raw)))
 
 # Google's setup and sign-in (src/server/google.bend), off the hub
 def BotJob.google(+inbox: Chan(Msg), +home: String, +port: U32, +params: String, +client: U32, +id: String) -> IO(Unit):
   do IO<Unit>:
     +p : J.Json = Maybe.default(&2, J.Json, J.Json.parse(params), J.Null{})
     +i : Nat = BotJob.google.pos(J.Json.get_str(p, "op", ""))
-    raw : String <- BotJob.google.op(i, home, p, Bot.redirect(port))
+    +raw : String <- BotJob.google.op(i, home, p, Bot.redirect(port))
     +text : String <- GS.Google.say(raw)
-    BotJob.google.done(text, Bool.or(Nat.is_eq(i, 1n), Nat.is_eq(i, 5n)), inbox, client, id)
+    BotJob.google.done(text, raw, Bool.or(Nat.is_eq(i, 1n), Nat.is_eq(i, 5n)), inbox, client, id)
 
 def Bot.ran(r: P.Ran) -> String:
   match r:
@@ -4417,13 +4425,13 @@ def Tailnet.start(n: Net, +port: U32, +web: String, +inbox: Chan(Msg)) -> IO(Uni
 
 # Google's tools for bots
 # -----------------------
-# gmail_search, gmail_read, calendar_events run at once, off the hub;
+# gmail_search, gmail_read, calendar_events, google_accounts run at once, off the hub;
 # gmail_send and calendar_create first open an approval ask (the reply
 # waits in the park until the user answers).
 
 def Gg.is(+o: J.Json) -> Bool:
   Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"),
-    Nat.is_lt(C.Codec.pos(["gmail_search", "gmail_read", "gmail_send", "calendar_events", "calendar_create"], J.Json.get_str(J.Json.get_obj(o, "params"), "name", "")), 5n))
+    Nat.is_lt(C.Codec.pos(GG.Google.tool_names(), J.Json.get_str(J.Json.get_obj(o, "params"), "name", "")), List.length(&2, String, GG.Google.tool_names())))
 
 def Gg.tool(+o: J.Json) -> String:
   J.Json.get_str(J.Json.get_obj(o, "params"), "name", "")
@@ -4466,7 +4474,8 @@ def Gg.detail.k(send: Bool, +a: J.Json) -> String:
 
 # what the user approves: the mail's recipients, subject and text, or the event
 def Gg.detail(+o: J.Json) -> String:
-  Gg.detail.k(String.eq(Gg.tool(o), "gmail_send"), Gg.args(o))
+  Bool.pick(String, String.is_empty(J.Json.get_str(Gg.args(o), "account", "")), "", "Account: " ++ J.Json.get_str(Gg.args(o), "account", "") ++ "\n")
+    ++ Gg.detail.k(String.eq(Gg.tool(o), "gmail_send"), Gg.args(o))
 
 def Hub.google.k(ask: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match ask h:
