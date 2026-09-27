@@ -610,10 +610,14 @@ def SE.fin(st: SE) -> Solid:
     case SE{e, _, _, n, b}:
       Solid{n, b, Enc.rev(e)}
 
-# Thinning for the phones and the web: a triangle whose corners fall two in
-# one cell of a grid a thousandth of the model's size is dropped (smaller
-# than a pixel there; a case assembly with its board went from 880k
-# triangles to 134k, 12 MB to 2). The window draws the whole model.
+# Thinning for the phones and the web, by vertex clustering: every corner
+# moves across to the centre of its cell in a grid a thousandth of the
+# model's size, and a triangle two of whose corners land in one cell
+# is dropped. The ones kept meet at the moved corners, so surfaces stay
+# whole: a part's small triangles fold into fewer larger ones rather than
+# leaving it in fragments (a board's parts once kept 18% of their
+# triangles as scattered slivers). A case assembly with its board went from
+# 880k triangles to 134k, 12 MB to 2. The window draws the whole model.
 type Grid is Data:
   Grid{x0: F32, y0: F32, z0: F32, x1: F32, y1: F32, z1: F32}
 
@@ -650,6 +654,19 @@ def Grid.keep(+t: G.Tri3, +x0: F32, +y0: F32, +z0: F32, +s: F32) -> Bool:
     case G.Tri3{+ax, +ay, +az, +bx, +by, +bz, +cx, +cy, +cz, _}:
       Bool.not(Bool.or(Grid.same(ax, ay, az, bx, by, bz, x0, y0, z0, s), Bool.or(Grid.same(bx, by, bz, cx, cy, cz, x0, y0, z0, s), Grid.same(ax, ay, az, cx, cy, cz, x0, y0, z0, s))))
 
+# a coordinate at its cell's centre
+def Grid.snap(+v: F32, +o: F32, +s: F32) -> F32:
+  F32.add(o, F32.mul(F32.add(F32.floor(F32.div(F32.sub(v, o), s)), 0.5), s))
+
+# (across only: y, the model's up, keeps its value, so a board's thin
+# layers (body, copper, mask, silk, hundredths of a millimetre apart) stay
+# apart instead of merging into one height and fighting)
+def Grid.snap.tri(t: G.Tri3, +x0: F32, +y0: F32, +z0: F32, +s: F32) -> G.Tri3:
+  match t:
+    case G.Tri3{ax, ay, az, bx, by, bz, cx, cy, cz, c}:
+      G.Tri3{Grid.snap(ax, x0, s), ay, Grid.snap(az, z0, s), Grid.snap(bx, x0, s), by, Grid.snap(bz, z0, s),
+        Grid.snap(cx, x0, s), cy, Grid.snap(cz, z0, s), c}
+
 def Grid.put.k(keep: Bool, t: G.Tri3, acc: List<&2, G.Tri3>) -> List<&2, G.Tri3>:
   match keep:
     case True{}:
@@ -662,7 +679,7 @@ def Grid.thin(ts: List<&2, G.Tri3>, +x0: F32, +y0: F32, +z0: F32, +s: F32, acc: 
     case Nil{}:
       List.reverse(&2, G.Tri3, acc)
     case +t <> r:
-      Grid.thin(r, x0, y0, z0, s, Grid.put.k(Grid.keep(t, x0, y0, z0, s), t, acc))
+      Grid.thin(r, x0, y0, z0, s, Grid.put.k(Grid.keep(t, x0, y0, z0, s), Grid.snap.tri(t, x0, y0, z0, s), acc))
 
 def Solid.thin.go(+s: F32, +x0: F32, +y0: F32, +z0: F32, +ts: List<&2, G.Tri3>) -> List<&2, G.Tri3>:
   Bool.pick(List<&2, G.Tri3>, F32.is_gt(s, 0.0), Grid.thin(ts, x0, y0, z0, s, Nil{}), ts)

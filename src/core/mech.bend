@@ -48,6 +48,25 @@ def Mech.upright.go(ts: List<&2, G.Tri3>, acc: List<&2, G.Tri3>) -> List<&2, G.T
 def Mech.upright(ts: List<&2, G.Tri3>) -> List<&2, G.Tri3>:
   List.reverse(&2, G.Tri3, Mech.upright.go(ts, Nil{}))
 
+# a STEP's model (step2glb writes millimetres) in metres, glTF's unit and
+# KiCad's board exports': the phones and the web then place, fit and zoom a
+# part as they do a board
+def Mech.mm.tri(t: G.Tri3) -> G.Tri3:
+  match t:
+    case G.Tri3{ax, ay, az, bx, by, bz, cx, cy, cz, c}:
+      G.Tri3{F32.mul(ax, 0.001), F32.mul(ay, 0.001), F32.mul(az, 0.001), F32.mul(bx, 0.001), F32.mul(by, 0.001), F32.mul(bz, 0.001),
+        F32.mul(cx, 0.001), F32.mul(cy, 0.001), F32.mul(cz, 0.001), c}
+
+def Mech.metres.go(ts: List<&2, G.Tri3>, acc: List<&2, G.Tri3>) -> List<&2, G.Tri3>:
+  match ts:
+    case Nil{}:
+      List.reverse(&2, G.Tri3, acc)
+    case t <> r:
+      Mech.metres.go(r, Mech.mm.tri(t) <> acc)
+
+def Mech.metres(ts: List<&2, G.Tri3>) -> List<&2, G.Tri3>:
+  Mech.metres.go(ts, Nil{})
+
 # Files
 # -----
 

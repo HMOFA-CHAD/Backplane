@@ -172,12 +172,53 @@ class View {
     gl.linkProgram(this.prog);
     this.bufs = ["p", "n", "c"].map((a) => ({ a: gl.getAttribLocation(this.prog, a), b: gl.createBuffer() }));
     this.drag = null;
-    canvas.addEventListener("pointerdown", (e) => { canvas.setPointerCapture(e.pointerId); this.drag = { x: e.clientX, y: e.clientY, pan: e.shiftKey || e.button !== 0 }; });
-    canvas.addEventListener("pointermove", (e) => this.move(e));
-    canvas.addEventListener("pointerup", () => { this.drag = null; });
-    canvas.addEventListener("wheel", (e) => { e.preventDefault(); this.dist *= Math.exp(e.deltaY * 0.0015); this.later(); }, { passive: false });
+    // one finger (or the mouse) turns, shift or a second button pans; two
+    // fingers pinch to zoom and move the model with their middle
+    this.pts = new Map();
+    const two = () => {
+      const [a, b] = [...this.pts.values()];
+      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
+    };
+    canvas.addEventListener("pointerdown", (e) => {
+      try { canvas.setPointerCapture(e.pointerId); } catch {}
+      this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      this.drag = this.pts.size === 1 ? { x: e.clientX, y: e.clientY, pan: e.shiftKey || e.button !== 0 } : null;
+      this.pinch = this.pts.size === 2 ? two() : null;
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!this.pts.has(e.pointerId)) return;
+      this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.pinch && this.pts.size === 2) {
+        const m = two();
+        this.zoomTo(this.dist * Math.max(this.pinch.d, 1) / Math.max(m.d, 1));
+        this.panBy(m.x - this.pinch.x, m.y - this.pinch.y);
+        this.pinch = m;
+        this.later();
+      } else this.move(e);
+    });
+    const up = (e) => {
+      this.pts.delete(e.pointerId);
+      this.pinch = null;
+      const [rest] = [...this.pts.values()];
+      this.drag = rest ? { x: rest.x, y: rest.y, pan: false } : null;
+    };
+    canvas.addEventListener("pointerup", up);
+    canvas.addEventListener("pointercancel", up);
+    canvas.addEventListener("wheel", (e) => { e.preventDefault(); this.zoomTo(this.dist * Math.exp(e.deltaY * 0.0015)); this.later(); }, { passive: false });
     canvas.addEventListener("dblclick", () => { this.fit(); this.later(); });
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+
+  // the distance, kept between a fiftieth and forty times the model's size
+  zoomTo(d) {
+    this.dist = Math.min(Math.max(d, this.r / 50), this.r * 40);
+  }
+
+  // the model moved with the pointer by (dx, dy) pixels
+  panBy(dx, dy) {
+    const s = this.dist / Math.max(this.canvas.clientHeight, 1);
+    const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+    this.cx -= (dx * cy) * s; this.cy -= (dx * sy) * s; this.cz += dy * s;
   }
 
   move(e) {
@@ -185,9 +226,7 @@ class View {
     const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y;
     this.drag.x = e.clientX; this.drag.y = e.clientY;
     if (this.drag.pan) {
-      const s = this.dist / Math.max(this.canvas.clientHeight, 1);
-      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
-      this.cx -= (dx * cy) * s; this.cy -= (dx * sy) * s; this.cz += dy * s;
+      this.panBy(dx, dy);
     } else {
       this.yaw -= dx * 0.008;
       this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch + dy * 0.008));

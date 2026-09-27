@@ -3034,20 +3034,18 @@ def Mpage.sync(a: Act) -> Act:
 # or a part's) come as they come to the phones. The page asks the hub for
 # the source on screen (kicad.watch) whenever it changes, and host.js
 # draws the plots that come back under the source's key
-# "<kind>|<root>|<path>" (0 board, 1 schematic, 4 3D; path "" for the
+# "<kind>|<root>|<path>" (0 board, 1 schematic, 2 3D; path "" for the
 # project's own file). "" when the pane shows something else.
 
 # the viewer's kind on the web: the thread's, the board before any
 def Solid.kind(+u: Ui) -> String:
   Bool.pick(String, String.is_empty(Ui.view_get(u, "view.kind")), "board", Ui.view_get(u, "view.kind"))
 
-# (the web's 3D is kind 4: the board's copper, mask and silk come with
-# its model, as the page lays no board plot over it)
 def Solid.num(+k: String) -> String:
-  Bool.pick(String, String.eq(k, "board"), "0", Bool.pick(String, String.eq(k, "schematic"), "1", Bool.pick(String, String.eq(k, "3d"), "4", "")))
+  Bool.pick(String, String.eq(k, "board"), "0", Bool.pick(String, String.eq(k, "schematic"), "1", Bool.pick(String, String.eq(k, "3d"), "2", "")))
 
 def Solid.ask(+k: String) -> String:
-  Bool.pick(String, String.eq(k, "3d"), "3d-full", k)
+  k
 
 def Solid.want(+u: Ui) -> String:
   Bool.pick(String, Bool.or(Bool.or(Bool.not(Ui.panel(u)), String.is_empty(Ui.root(u))), String.is_empty(Solid.num(Solid.kind(u)))), "",

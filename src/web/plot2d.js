@@ -96,15 +96,44 @@ class View {
     this.scale = 1; this.ox = 0; this.oy = 0;
     this.fitted = false;
     this.drag = null;
-    canvas.addEventListener("pointerdown", (e) => { canvas.setPointerCapture(e.pointerId); this.drag = { x: e.clientX, y: e.clientY }; canvas.classList.add("dragging"); });
+    // one finger (or the mouse) pans; two pinch to zoom about their middle
+    // and move the view with it
+    this.pts = new Map();
+    const mid = () => {
+      const [a, b] = [...this.pts.values()];
+      const r = canvas.getBoundingClientRect();
+      return { x: (a.x + b.x) / 2 - r.left, y: (a.y + b.y) / 2 - r.top, d: Math.hypot(a.x - b.x, a.y - b.y) };
+    };
+    canvas.addEventListener("pointerdown", (e) => {
+      try { canvas.setPointerCapture(e.pointerId); } catch {}
+      this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      this.drag = this.pts.size === 1 ? { x: e.clientX, y: e.clientY } : null;
+      this.pinch = this.pts.size === 2 ? mid() : null;
+      canvas.classList.add("dragging");
+    });
     canvas.addEventListener("pointermove", (e) => {
-      if (!this.drag) return;
-      this.ox += e.clientX - this.drag.x; this.oy += e.clientY - this.drag.y;
+      if (!this.pts.has(e.pointerId)) return;
+      this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.pinch && this.pts.size === 2) {
+        const m = mid(), f = m.d / Math.max(this.pinch.d, 1);
+        this.ox = m.x - (this.pinch.x - this.ox) * f; this.oy = m.y - (this.pinch.y - this.oy) * f;
+        this.scale *= f;
+        this.pinch = m;
+      } else if (this.drag) {
+        this.ox += e.clientX - this.drag.x; this.oy += e.clientY - this.drag.y;
+        this.drag.x = e.clientX; this.drag.y = e.clientY;
+      } else return;
       this.touched = true;
-      this.drag.x = e.clientX; this.drag.y = e.clientY;
       this.later();
     });
-    const up = () => { this.drag = null; canvas.classList.remove("dragging"); };
+    const up = (e) => {
+      this.pts.delete(e.pointerId);
+      this.pinch = null;
+      // the finger left behind carries on panning from where it is
+      const [rest] = [...this.pts.values()];
+      this.drag = rest ? { x: rest.x, y: rest.y } : null;
+      if (!rest) canvas.classList.remove("dragging");
+    };
     canvas.addEventListener("pointerup", up);
     canvas.addEventListener("pointercancel", up);
     canvas.addEventListener("wheel", (e) => {

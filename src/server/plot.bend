@@ -54,9 +54,8 @@ type Sub is Data:
 type PSt is Data:
   PSt{srcs: List<&2, Src>, subs: List<&2, Sub>, polling: Bool}
 
-# a source drawn as a 3D model: 2 with its parts, 3 its board alone, 4
-# with its parts and its copper, mask and silk (the web, which lays no
-# board plot over the faces as the phones do)
+# a source drawn as a 3D model: 2 with its parts, 3 its board alone, 4 as
+# 2 (the web's key from before; every board model has its mask and silk)
 def Pv.solid.kind(+kind: U32) -> Bool:
   Bool.or(Bool.or(U32.is_eq(kind, 2), U32.is_eq(kind, 3)), U32.is_eq(kind, 4))
 
@@ -369,10 +368,12 @@ def Pv.is_step(+p: String) -> Bool:
 # a 3D model as a GLB: a .glb as it is; a STEP through step2glb; a board's
 # body and parts through kicad-cli (its copper, mask and silk the phone
 # draws from the board's plot), or its body alone (kind 3: parts off)
+# (a board's model is its body with its mask, silk and pads, and its parts
+# unless bare; tracks and zones are left out: copper drawn over the mask
+# only blots it)
 def Pv.glb.flags(+bare: Bool, +full: Bool, +out: String, +path: String) -> List<&2, String>:
-  List.append(&2, String, ["pcb", "export", "glb"], List.append(&2, String, Bool.pick(List<&2, String>, bare, ["--no-components"],
-    Bool.pick(List<&2, String>, full, ["--subst-models", "--include-tracks", "--include-pads", "--include-zones", "--include-soldermask", "--include-silkscreen"], ["--subst-models"])),
-    ["-f", "-o", out, path]))
+  List.append(&2, String, ["pcb", "export", "glb"], List.append(&2, String, Bool.pick(List<&2, String>, bare, ["--no-components"], ["--subst-models"]),
+    ["--include-pads", "--include-soldermask", "--include-silkscreen", "-f", "-o", out, path]))
 
 # a STEP's GLB is written beside and moved in whole: a reader never meets
 # half of one
@@ -405,7 +406,7 @@ def Pv.missing.note(+n: Nat) -> String:
 def Pv.solid.up(step: Bool, ts: List<&2, G.Tri3>) -> List<&2, G.Tri3>:
   match step:
     case True{}:
-      MC.Mech.upright(ts)
+      MC.Mech.upright(MC.Mech.metres(ts))
     case False{}:
       ts
 

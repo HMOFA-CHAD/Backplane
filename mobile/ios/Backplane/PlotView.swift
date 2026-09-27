@@ -87,8 +87,12 @@ struct Orbit {
     mutating func move(_ m: SIMD2<Float>, _ s: Float) { pan += SIMD2(-m.x, m.y) * s }
 
     // dist over k, keeping the point at p (world units from the view's centre) where it is
+    // within 1/60 and 20 times the fitted distance (home), so any model's
+    // size zooms alike
+    var home: Float = 0
+
     mutating func zoom(_ k: Float, _ p: SIMD2<Float>) {
-        let d = min(max(dist / k, 2_000), 5_000_000)
+        let d = min(max(dist / k, home > 0 ? home / 60 : 2_000), home > 0 ? home * 20 : 5_000_000)
         pan += p * (1 - d / dist)
         dist = d
     }
@@ -455,9 +459,11 @@ final class PlotRenderer: NSObject, MTKViewDelegate {
                 let mp = pipe("mesh_v", "mesh_f", cov: false, three: true)
                 frame(cb, t, clear: true, depth: true) { e in model(e, mp) }
             }
+            // the board's layers lie on a plain slab until its model comes,
+            // which has its own mask, silk and pads (a picked piece still shows)
             for (face, z) in [(top, thick + 40), (bottom, Float(-40))] {
                 u.z = z
-                for id in face {
+                for id in face where meshCount == 0 {
                     for l in layers where l.layer == id && shown(l.layer) {
                         let (c, tr) = draws(l)
                         layer(cb, t, &u, color: l.color, caps: c, tris: tr)
@@ -555,6 +561,7 @@ final class PlotCanvas: MTKView {
         // the narrower of the two fields of view takes the whole board
         let half = tan(o.fov * .pi / 360), aspect = Float(bounds.width) / Float(max(bounds.height, 1))
         o.dist = reach / (half * min(aspect, 1)) * 1.1
+        o.home = o.dist
         renderer.orbit = o
         fitted = true
         setNeedsDisplay()
@@ -573,6 +580,7 @@ final class PlotCanvas: MTKView {
         let diag = simd_length(SIMD3(b[3] - b[0], b[4] - b[1], b[5] - b[2]))
         let half = tan(o.fov * .pi / 360), aspect = Float(bounds.width) / Float(max(bounds.height, 1))
         o.dist = diag / 2 / (half * min(aspect, 1)) * 1.1
+        o.home = o.dist
         renderer.orbit = o
         fitted = true
     }
