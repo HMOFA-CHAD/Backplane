@@ -20,6 +20,7 @@ import kotlin.math.exp
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 import kotlin.math.sin
 import kotlin.math.tan
 
@@ -198,8 +199,8 @@ private fun turned(v: FloatArray, k: FloatArray, a: Float): FloatArray {
 // eye to the pivot's depth. Gestures copy it, change the copy and swap it in.
 class Orbit(val pivot: FloatArray = floatArrayOf(0f, 0f, 0f), var r: FloatArray = floatArrayOf(1f, 0f, 0f),
             var u: FloatArray = floatArrayOf(0f, 0f, 1f), var f: FloatArray = floatArrayOf(0f, 1f, 0f),
-            var sx: Float = 0f, var sy: Float = 0f, var dist: Float = 100_000f, var fov: Float = 35f) {
-    fun copy() = Orbit(pivot.copyOf(), r.copyOf(), u.copyOf(), f.copyOf(), sx, sy, dist, fov)
+            var sx: Float = 0f, var sy: Float = 0f, var dist: Float = 100_000f, var fov: Float = 35f, var home: Float = 0f) {
+    fun copy() = Orbit(pivot.copyOf(), r.copyOf(), u.copyOf(), f.copyOf(), sx, sy, dist, fov, home)
     fun target() = FloatArray(3) { pivot[it] + r[it] * sx + u[it] * sy }
     fun eye(): FloatArray { val t = target(); return FloatArray(3) { t[it] - f[it] * dist } }
 
@@ -240,9 +241,13 @@ class Orbit(val pivot: FloatArray = floatArrayOf(0f, 0f, 0f), var r: FloatArray 
     // the point under the fingers at the pivot's depth moves with them (s: world per pixel)
     fun pan(mx: Float, my: Float, s: Float): Orbit { sx -= mx * s; sy += my * s; return this }
 
-    // dist over k, keeping the point at (x, y) world units from the view's centre where it is
+    // dist over k, keeping the point at (x, y) world units from the view's
+    // centre where it is; within 1/60 and 20 times the fitted distance (home),
+    // so any model's size zooms alike
     fun zoom(k: Float, x: Float, y: Float): Orbit {
-        val d = min(max(dist / k, 2_000f), 5_000_000f)
+        val lo = if (home > 0f) home / 60f else 2_000f
+        val hi = if (home > 0f) home * 20f else 5_000_000f
+        val d = min(max(dist / k, lo), hi)
         val q = d / dist
         sx += x * (1 - q); sy += y * (1 - q); dist = d
         return this
@@ -586,9 +591,11 @@ class PlotRenderer : GLSurfaceView.Renderer {
                 glColorMask(true, true, true, true)
             }
             glDisable(GL_DEPTH_TEST)
+            // the board's layers lie on a plain slab until its model comes,
+            // which has its own mask, silk and pads (a picked piece still shows)
             for ((face, zz) in listOf(top to thick + 40f, bottom to -40f)) {
                 z = zz
-                for (id in face) for (l in layers) if (l.layer == id && shown(l.layer)) draw(l)
+                if (meshCount == 0) for (id in face) for (l in layers) if (l.layer == id && shown(l.layer)) draw(l)
                 if (hiLayer in face) hi()
             }
         } else {
@@ -662,14 +669,15 @@ class PlotSurface(context: Context) : GLSurfaceView(context) {
         // the narrower of the two fields of view takes the whole board
         val half = tan(o.fov * Math.PI.toFloat() / 360f)
         renderer.orbit = Orbit(floatArrayOf(cx, -cy, renderer.thick / 2),
-            dist = reach / (half * min(width.toFloat() / max(height, 1), 1f)) * 1.1f, fov = o.fov).aim(0.5f, 0.75f)
+            dist = reach / (half * min(width.toFloat() / max(height, 1), 1f)) * 1.1f, fov = o.fov).aim(0.5f, 0.75f).also { it.home = it.dist }
         fitted = true
         requestRender()
     }
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         super.onSizeChanged(w, h, ow, oh)
-        if (!fitted) refit()
+        val b = shownMesh?.mesh?.box
+        if (!fitted) { if (box.size < 4 && b != null && b.size == 6) fitSolid(b) else refit() }
     }
 
     fun setThree(on: Boolean) {
@@ -703,7 +711,21 @@ class PlotSurface(context: Context) : GLSurfaceView(context) {
         if (m == null || m === shownMesh) return
         shownMesh = m
         queueEvent { renderer.mesh(m.mesh) }
+        // a part alone (no board plot under it) is fitted by its own box
+        val b = m.mesh?.box
+        if (box.size < 4 && b != null && b.size == 6 && width > 0) fitSolid(b)
         requestRender()
+    }
+
+    // the camera round a model's 3D box (x0 y0 z0 x1 y1 z1, the mesh's own
+    // axes; the pivot's y is flipped, as refit's is)
+    private fun fitSolid(b: FloatArray) {
+        val o = renderer.orbit
+        val diag = sqrt((b[3] - b[0]) * (b[3] - b[0]) + (b[4] - b[1]) * (b[4] - b[1]) + (b[5] - b[2]) * (b[5] - b[2]))
+        val half = tan(o.fov * Math.PI.toFloat() / 360f)
+        renderer.orbit = Orbit(floatArrayOf((b[0] + b[3]) / 2, -(b[1] + b[4]) / 2, (b[2] + b[5]) / 2),
+            dist = diag / 2 / (half * min(width.toFloat() / max(height, 1), 1f)) * 1.1f, fov = o.fov).aim(0.5f, 0.75f).also { it.home = it.dist }
+        fitted = true
     }
 
     // the picked piece ("chunk,info" of the held chunks), drawn bright

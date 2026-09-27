@@ -6,6 +6,8 @@
 // is dumb).
 
 import App from "./app.bend";
+import * as Solid from "./solid.js";
+import * as Plot2d from "./plot2d.js";
 
 // JSON <-> Bend Json
 // ------------------
@@ -199,6 +201,8 @@ function render() {
   // earlier entries added above keep the view where it was
   else if (tl2 && tl === tl2) tl2.scrollTop = tl2.scrollHeight - fromEnd;
   scroll = false;
+  Solid.mount(document.getElementById("solid"));
+  Plot2d.mount(document.getElementById("plot"));
   earlierAsked = false;
   if (focus) {
     document.getElementById(focus)?.focus();
@@ -591,6 +595,12 @@ function lbOpen(url) {
   if (img.complete) lbDraw();
 }
 
+// a viewer's Fit button
+document.addEventListener("click", (e) => {
+  if (!e.target.closest?.('[data-view="fit"]')) return;
+  Plot2d.fit();
+  Solid.fit();
+});
 // the timeline scrolled within two screens of its top while earlier
 // entries are left out (view.bend's mark): ask for them, once a render
 document.addEventListener("scroll", (e) => {
@@ -691,7 +701,18 @@ function connect() {
   s.onmessage = (e) => {
     // the hub sends only binary CBOR frames
     if (typeof e.data === "string") return;
-    const j = App.wire_in(toList(new Uint8Array(e.data)));
+    // plots go straight to the viewers, not through Bend: a 3D model
+    // ("2|", "3|" or "4|...") to solid.js, a board or schematic to plot2d.js
+    const bytes = new Uint8Array(e.data);
+    if (Solid.isPlot(bytes)) {
+      const at = { bytes: bytes.length, t: performance.now() };
+      const o = Solid.cbor(bytes);
+      const key = typeof o?.key === "string" ? o.key : "";
+      if (key.startsWith("2|") || key.startsWith("3|") || key.startsWith("4|")) Solid.got(o, at);
+      else if (o) Plot2d.got(o, at);
+      return;
+    }
+    const j = App.wire_in(toList(bytes));
     keep(JSON.parse(App.show(j)));
     const r = App.recv(ui, j);
     ui = r.ui;
@@ -700,6 +721,9 @@ function connect() {
   };
   s.onclose = () => {
     if (socket === s) socket = null;
+    // a new connection holds no plots
+    Plot2d.reset();
+    Solid.reset();
     ui = App.online(ui, false);
     later();
     setTimeout(connect, backoff);

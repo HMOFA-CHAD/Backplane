@@ -408,10 +408,19 @@ def Hit.find(+hs: List<&2, Hit>, +x: U32, +y: U32) -> Maybe<&2, Hit>:
   Hit.go(hs, Hit.first(hs, x, y), x, y)
 
 # show another kind of view: the scene starts empty and refits
+# (another kind or file starts its 3D scene over, so the next model is
+# fitted; the same file shown again keeps its scene and camera)
+def Vw.scene.k(same: Bool, t: FA.Scene3) -> FA.Scene3:
+  match same:
+    case True{}:
+      t
+    case False{}:
+      FA.Scene3.none()
+
 def Vw.kind_set(v: V.Vw, +k: U32, +path: String) -> V.Vw:
   match v:
-    case V.Vw{_, vi, _, r, d, lx, ly, b, _, cu, V.Vx{_, _, t, c, sh, bu, px, py, _, se, bm}}:
-      V.Vw{Nil{}, V.View{1.0, 0.0, 0.0}, False{}, "", d, lx, ly, b, False{}, cu, V.Vx{k, "", t, c, sh, bu, px, py, path, se, bm}}
+    case V.Vw{_, vi, _, r, d, lx, ly, b, _, cu, V.Vx{+k0, _, t, c, sh, bu, px, py, +p0, se, bm}}:
+      V.Vw{Nil{}, V.View{1.0, 0.0, 0.0}, False{}, "", d, lx, ly, b, False{}, cu, V.Vx{k, "", Vw.scene.k(Bool.and(U32.is_eq(k, k0), String.eq(path, p0)), t), c, sh, bu, px, py, path, se, bm}}
 
 def Vw.pick_set(v: V.Vw, +key: String) -> V.Vw:
   match v:
@@ -969,6 +978,26 @@ def Nui.with_ui(n: Nui, u: U.Ui) -> Nui:
     case Nui{_, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}:
       Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}
 
+def Nui.sync.k(a: U.Act, n: Nui) -> Step:
+  match a:
+    case U.Act{u, cs}:
+      Step{Nui.with_ui(n, u), Nui.cmds(cs), True{}}
+
+# a message's state with what the client asks for after it (the
+# Mechanical page's parts, client.bend's Mpage.sync)
+def Nui.sync(+n: Nui) -> Step:
+  Nui.sync.k(U.Mpage.sync(U.Act{Nui.ui(n), Nil{}}), n)
+
+# the same, drawing a frame only when d (a message another thread's
+# stream sent shows nothing: U.Ui.shows)
+def Nui.sync.kd(a: U.Act, n: Nui, +d: Bool) -> Step:
+  match a:
+    case U.Act{u, +cs}:
+      Step{Nui.with_ui(n, u), Nui.cmds(cs), Bool.or(d, Bool.not(List.is_empty(&2, U.Cmd, cs)))}
+
+def Nui.sync.d(+n: Nui, +d: Bool) -> Step:
+  Nui.sync.kd(U.Mpage.sync(U.Act{Nui.ui(n), Nil{}}), n, d)
+
 def Undo.put(+n: Nui, +w: String, v: String) -> Nui:
   Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Undo.key(n, w), v))
 
@@ -1110,7 +1139,7 @@ def Hear.k(text: Bool, +here: Bool, +n: Nui, +o: J.Json) -> Step:
     case True{}:
       Hear.kept(Hear.to(here, Nui.recv(Hear.at(here, n), o)), J.Json.get_str(o, "thread", ""))
     case False{}:
-      Step{Nui.recv(n, o), Nil{}, U.Ui.shows(Nui.ui(n), o)}
+      Nui.sync.d(Nui.recv(n, o), U.Ui.shows(Nui.ui(n), o))
 
 # a message from the hub (another thread's streamed text draws nothing,
 # U.Ui.shows)
@@ -1662,17 +1691,18 @@ def Nui.prepare.k(open: Bool, +n: Nui) -> Nui:
 
 # a kind of view by name (View.kind_of reads it back)
 def View.name(+k: U32) -> String:
-  Bool.pick(String, U32.is_eq(k, 1), "schematic", Bool.pick(String, U32.is_eq(k, 2), "3d", Bool.pick(String, U32.is_eq(k, 3), "browser", Bool.pick(String, U32.is_eq(k, 4), "diff", "board"))))
+  Bool.pick(String, U32.is_eq(k, 1), "schematic", Bool.pick(String, U32.is_eq(k, 2), "3d", Bool.pick(String, U32.is_eq(k, 3), "browser", Bool.pick(String, U32.is_eq(k, 4), "diff", Bool.pick(String, U32.is_eq(k, 5), "mech", "board")))))
 
 # the kind of view for a requested file: named, else from its extension
 def View.kind_of(+kind: String, +path: String) -> U32:
+  Bool.pick(U32, String.eq(kind, "mech"), 5,
   Bool.pick(U32, String.eq(kind, "diff"), 4,
   Bool.pick(U32, String.eq(kind, "browser"), 3,
   Bool.pick(U32, String.eq(kind, "schematic"), 1,
     Bool.pick(U32, Bool.or(String.eq(kind, "3d"), String.eq(kind, "step")), 2,
       Bool.pick(U32, String.eq(kind, "board"), 0,
         Bool.pick(U32, String.ends_with(path, ".kicad_sch"), 1,
-          Bool.pick(U32, Bool.or(String.ends_with(path, ".glb"), Bool.or(String.ends_with(path, ".step"), String.ends_with(path, ".stp"))), 2, 0)))))))
+          Bool.pick(U32, Bool.or(String.ends_with(path, ".glb"), Bool.or(String.ends_with(path, ".step"), String.ends_with(path, ".stp"))), 2, 0))))))))
 
 def Vx.seen(x: V.Vx) -> String:
   match x:
