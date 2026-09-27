@@ -130,8 +130,8 @@ final class PlotRenderer: NSObject, MTKViewDelegate {
     // each layer's colour on the viewer's light ground (empty: the chunks' own)
     var look: [UInt32] = []
     // the layers the user turned off, a bit each
-    var off: UInt32 = 0
-    func shown(_ layer: Int) -> Bool { layer < 0 || layer > 31 || (off >> UInt32(layer)) & 1 == 0 }
+    var hiddenLayers: UInt32 = 0
+    func shown(_ layer: Int) -> Bool { layer < 0 || layer > 31 || (hiddenLayers >> UInt32(layer)) & 1 == 0 }
     // 2D view: pixels per micrometre and where 0,0 lands, in points
     var scale: Float = 0.01
     var off = SIMD2<Float>(0, 0)
@@ -771,8 +771,8 @@ struct PlotCanvasView: UIViewRepresentable {
             c.renderer.three = three
             c.refit()
         }
-        if c.renderer.off != (viewer.off ?? 0) {
-            c.renderer.off = viewer.off ?? 0
+        if c.renderer.hiddenLayers != (viewer.off ?? 0) {
+            c.renderer.hiddenLayers = viewer.off ?? 0
             c.setNeedsDisplay()
         }
         if let f = frame, f.at != context.coordinator.shown || (viewer.look ?? []) != context.coordinator.look {
