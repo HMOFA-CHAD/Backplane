@@ -18,6 +18,9 @@ struct StatusDot: View {
         case "working": ProgressView().controlSize(.mini)
         case "failed": Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
         case "queued": Image(systemName: "clock").foregroundStyle(.secondary).font(.caption)
+        // the turn is over, its subagents still at work
+        case "waiting": Image(systemName: "arrow.triangle.branch").foregroundStyle(.pink).font(.caption)
+                .symbolEffect(.pulse)
         case "ready": Image(systemName: "circle.fill").font(.system(size: 7)).foregroundStyle(.quaternary)
         default:
             switch state {

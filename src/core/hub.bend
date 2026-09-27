@@ -873,10 +873,58 @@ def Claude.init(+s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   +sid = J.Json.get_str(o, "session_id", "")
   Claude.init.k(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now)
 
+# Claude's subagents (model.bend's Bg): a local agent started, what it
+# does now, and its end; the list is written only when it changes
+def Bg.put.k(same: Bool, +th: String, +now: Nat, +after: String) -> List<&2, M.Change>:
+  match same:
+    case True{}:
+      Nil{}
+    case False{}:
+      [M.SettingSet{M.Bg.key(th), after, now}]
+
+def Bg.put(+s: M.State, +th: String, +now: Nat, ls: List<&2, String>) -> List<&2, M.Change>:
+  +after = M.Bg.show(ls)
+  Bg.put.k(String.eq(M.Setting.get(s, M.Bg.key(th), ""), after), th, now, after)
+
+def Bg.started(agent: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
+  match agent:
+    case True{}:
+      Bg.put(s, th, now, M.Bg.add(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""), J.Json.get_str(o, "description", "Subagent")))
+    case False{}:
+      Nil{}
+
+def Bg.ended(done: Bool, +s: M.State, +th: String, +now: Nat, +id: String) -> List<&2, M.Change>:
+  match done:
+    case True{}:
+      Bg.put(s, th, now, M.Bg.drop(M.Bg.of(s, th), id))
+    case False{}:
+      Nil{}
+
+def Bg.system.k(i: Nat, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
+  match i:
+    case 0n:
+      Bg.started(String.eq(J.Json.get_str(o, "task_type", ""), "local_agent"), s, th, now, o)
+    case 1n:
+      Bg.put(s, th, now, M.Bg.set(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""), J.Json.get_str(o, "description", "")))
+    case 2n:
+      Bg.put(s, th, now, M.Bg.drop(M.Bg.of(s, th), J.Json.get_str(o, "task_id", "")))
+    case 3n:
+      Bg.ended(Nat.is_lt(C.Codec.pos(["completed", "failed", "killed", "stopped", "cancelled"], J.Json.get_str(J.Json.get_obj(o, "patch"), "status", "")), 5n),
+        s, th, now, J.Json.get_str(o, "task_id", ""))
+    case _:
+      Nil{}
+
+def Bg.system(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
+  Bg.system.k(C.Codec.pos(["task_started", "task_progress", "task_notification", "task_updated"], J.Json.get_str(o, "subtype", "")), s, th, now, o)
+
+# none left at work (the agent's process ended)
+def Bg.clear(+s: M.State, +th: String, +now: Nat) -> List<&2, M.Change>:
+  Bg.put(s, th, now, Nil{})
+
 def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   match i:
     case 0n:
-      Step.after(Claude.init(s, thread, now, o), Usage.compact(s, thread, now, o))
+      Step.after(Step.after(Claude.init(s, thread, now, o), Usage.compact(s, thread, now, o)), Bg.system(s, thread, now, o))
     case 1n:
       Claude.stream(thread, J.Json.get_obj(o, "event"))
     case 2n:
@@ -1807,7 +1855,7 @@ def Hub.agent_line(+s: M.State, +now: Nat, +thread: String, line: String) -> Ste
 
 # an agent process ended; a turn still running ends with it
 def Hub.agent_gone(+s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:
-  Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code))))
+  Step.after(Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code)))), Bg.clear(s, thread, now))
 
 def Step.outs_of(st: Step) -> List<&2, Out>:
   match st:
@@ -1985,9 +2033,17 @@ def Rec.step(r: Rec) -> Step:
     case Rec{_, cs, os}:
       Step{cs, os}
 
+# no agent survives a restart: none of their subagents are at work
+def Bg.clear.all(ids: List<&2, String>, +s: M.State, +now: Nat) -> List<&2, M.Change>:
+  match ids:
+    case Nil{}:
+      Nil{}
+    case +id <> t:
+      List.append(&2, M.Change, Bg.clear(s, id, now), Bg.clear.all(t, s, now))
+
 # what a hub that just started from its log does first
 def Hub.recover(+s: M.State, +now: Nat) -> Step:
-  Rec.step(Rec.turns(Rec.ids(Rec.threads(s)), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), now))
+  Step.after(Rec.step(Rec.turns(Rec.ids(Rec.threads(s)), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), now)), Bg.clear.all(Rec.ids(Rec.threads(s)), s, now))
 
 # Turn processes
 # --------------

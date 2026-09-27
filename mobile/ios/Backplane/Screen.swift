@@ -254,6 +254,8 @@ struct ThreadView: Decodable {
     let menu: [Tool]?
     let parent: Entry?
     let tasks: [TaskRow]?
+    // the agent's own subagents at work: what each does now
+    let agents: [String]?
     let asks: [Ask]?
     let skills: [Skill]?
     let btw: Btw?
@@ -314,6 +316,9 @@ struct Folders: Decodable {
 struct HubRow: Decodable, Hashable {
     let key, name: String
     let online: Bool
+    // its version, and how many of its changes this phone holds
+    let version: String?
+    let changes: Int?
 }
 
 struct Found: Decodable, Hashable {

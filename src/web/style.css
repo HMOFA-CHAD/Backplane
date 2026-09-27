@@ -14,6 +14,7 @@
   --bad: #f06a6a;
   --input: #b48cff;
   --queued: #4fc1c9;
+  --waiting: #e07bd0;
   --on-accent: #06121f;
   --view: #08090b;
   --add-bg: #11331f;
@@ -38,6 +39,7 @@
   --bad: #c93434;
   --input: #7446d0;
   --queued: #127c84;
+  --waiting: #a3399a;
   --on-accent: #ffffff;
   --view: #f5f4ef;
   --add-bg: #dff3e4;
@@ -91,6 +93,7 @@ button.icon:hover { color: var(--text); border-color: var(--line); }
 .dot.stop, .dot.approval { background: var(--warn); }
 .dot.input { background: var(--input); }
 .dot.queued { background: var(--queued); }
+.dot.waiting { background: var(--waiting); animation: pulse 1.2s ease-in-out infinite; }
 .thread .moves { display: none; gap: 2px; }
 .thread:hover .moves { display: flex; }
 .thread .move { padding: 0 5px; font-size: 11px; line-height: 16px; background: none; }

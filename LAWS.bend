@@ -2951,3 +2951,40 @@ law sum_not_due_stamps_nothing:
   for +now: Nat
   {H.Sum.at(False{}, id, now) == [] : List<&2, M.Change>}
 
+# Subagents
+# ---------
+
+# a subagent is listed once when it starts, says what it does as it goes,
+# and leaves the list when it ends; progress for one not listed changes nothing
+law bg_start_progress_end:
+  {M.Bg.show(M.Bg.drop(M.Bg.set(M.Bg.add(M.Bg.lines("a\tx"), "b", "y"), "b", "z"), "a")) == "b\tz" : String}
+
+law bg_added_once:
+  {M.Bg.show(M.Bg.add(M.Bg.lines("a\tx"), "a", "y")) == "a\tx" : String}
+
+law bg_progress_unlisted:
+  {M.Bg.show(M.Bg.set(M.Bg.lines("a\tx"), "b", "z")) == "a\tx" : String}
+
+law bg_doing:
+  {M.Bg.doing("a\tRunning tests") == "Running tests" : String}
+
+# a thread whose turn is over and whose subagents are still at work shows
+# as waiting on them (its own colour), queued messages or not
+law status_waits_on_subagents:
+  for q: Bool
+  {M.Status.wait(True{}, M.Status.of(False{}, False{}, M.Completed{}, q)) == M.StWaiting{} : M.Status}
+
+# a running turn, a question and an approval still come first
+law status_work_before_waiting:
+  for q: Bool
+  {M.Status.wait(True{}, M.Status.of(False{}, False{}, M.Running{}, q)) == M.StWorking{} : M.Status}
+
+law status_input_before_waiting:
+  for t: M.TurnState
+  for q: Bool
+  {M.Status.wait(True{}, M.Status.of(False{}, True{}, t, q)) == M.StInput{} : M.Status}
+
+# with none at work the dot is as before
+law status_no_subagents_same:
+  for s: M.Status
+  {M.Status.wait(False{}, s) == s : M.Status}

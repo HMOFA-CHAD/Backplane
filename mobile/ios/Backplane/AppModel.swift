@@ -30,6 +30,16 @@ final class AppModel {
     // the composer's text, owned here so typing never waits on Bend
     var composer = ""
     private(set) var scrolls = 0
+    // each hub's socket as this phone sees it (HubsView, the list's pill)
+    private(set) var conn: [String: HubConn] = [:]
+    // the last screen of each thread shown, by its id: a thread tapped
+    // again shows at once while its fresh screen is made
+    private(set) var seen: [String: ThreadView] = [:]
+    @ObservationIgnored private var seenOrder: [String] = []
+    // messages sent from this phone the client has not answered yet: shown
+    // at once as sending, dropped when the answer (with its own sending
+    // row) is on screen
+    private(set) var outgoing: [Outgoing] = []
     // the navigation stack's path: moved at once by a tap or a swipe back,
     // and by the screen only when its selection changes, so a screen that
     // answers an older action never pulls a thread back open
@@ -173,8 +183,12 @@ final class AppModel {
                 let r = try? JSONDecoder().decode(Resume.self, from: Data(await e.resume(key).utf8))
                 return Pairing.socket(link, since: r?.since ?? "0", origin: r?.origin ?? "")
             },
+            onConnecting: { [weak self] in
+                self?.conn[key, default: HubConn()].phase = .connecting
+            },
             onOpen: { [weak self] in
                 if self?.shownHub == key { self?.plots.reset() }
+                self?.conn[key, default: HubConn()].phase = .syncing
                 self?.run { await $0.online(key, true) }
             },
             // plots go straight to the viewer, never through the Bend client,
@@ -183,13 +197,31 @@ final class AppModel {
                 if PlotStore.isPlot(d) {
                     if self?.shownHub == key { self?.plots.receive(d) }
                 } else {
-                    self?.dirty = true
-                    self?.run { await $0.recv(key, d.base64EncodedString()) }
+                    self?.received(key, d)
                 }
             },
-            onClose: { [weak self] in self?.run { await $0.online(key, false) } })
+            onClose: { [weak self] in
+                self?.conn[key, default: HubConn()].phase = .offline
+                self?.run { await $0.online(key, false) }
+            })
         hubs[key] = h
         h.start()
+    }
+
+    // a frame from hub key: the first after a connect carries what this
+    // phone missed, and the hub is up to date once it is folded in
+    private func received(_ key: String, _ d: Data) {
+        dirty = true
+        var c = conn[key, default: HubConn()]
+        c.heard = Date()
+        let catching = c.phase != .online
+        if catching { c.bytes = d.count }
+        conn[key] = c
+        let e = engine
+        Task {
+            apply(await e.recv(key, d.base64EncodedString()))
+            if catching, conn[key]?.phase == .syncing { conn[key]?.phase = .online }
+        }
     }
 
     private func run(_ f: @escaping (Engine) async -> Out?) {
@@ -234,6 +266,16 @@ final class AppModel {
         act("select", p.last ?? "")
     }
 
+    // a thread's screen kept for the next time it is opened (the last 24)
+    private func remember(_ sel: String, _ t: ThreadView) {
+        seen[sel] = t
+        if seenOrder.last != sel {
+            seenOrder.removeAll { $0 == sel }
+            seenOrder.append(sel)
+            if seenOrder.count > 24 { seen[seenOrder.removeFirst()] = nil }
+        }
+    }
+
     // the cats' rigs by key ("look:mood"), each asked of the bridge once
     private(set) var cats: [String: [CatPart]] = [:]
     @ObservationIgnored private var asked: Set<String> = []
@@ -258,9 +300,26 @@ final class AppModel {
 
     // what the stack shows: the thread selected, or a room or a bot on a
     // linked machine (a bot's own view is its thread's)
-    private static func nav(_ s: Screen) -> String {
+    static func nav(_ s: Screen) -> String {
         if let b = s.bot, b.kind != "bot" { return "@" + b.kind + ":" + b.id }
         return s.sel
+    }
+
+    // the composer's text sent now: it shows at once as sending and the
+    // composer empties; the client's answer carries it on (its own sending
+    // row, then the hub's message)
+    func send(_ action: String = "send") {
+        let text = composer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let thread = screen?.thread?.id ?? ""
+        if !text.isEmpty { outgoing.append(Outgoing(thread: thread, text: text)) }
+        composer = ""
+        typing += 1
+        let e = engine
+        Task {
+            let out = await e.act(action, "")
+            typing -= 1
+            apply(out, sent: text)
+        }
     }
 
     func draft(_ text: String) {
@@ -300,11 +359,15 @@ final class AppModel {
         if yes, let s = screen { island?.show(s.island, foreground: true) }
     }
 
-    private func apply(_ out: Out?) {
-        guard let o = out else { return }
+    private func apply(_ out: Out?, sent: String? = nil) {
+        guard let o = out else {
+            if let t = sent, let i = outgoing.firstIndex(where: { $0.text == t }) { outgoing.remove(at: i) }
+            return
+        }
         if let s = o.screen {
             if typing == 0 { composer = s.thread?.draft ?? "" }
             screen = s
+            if let t = s.thread, !s.sel.isEmpty { remember(s.sel, t) }
             if s.hub != shownHub {
                 shownHub = s.hub
                 plots.reset()
@@ -360,6 +423,7 @@ final class AppModel {
             }
             #endif
         }
+        if let t = sent, let i = outgoing.firstIndex(where: { $0.text == t }) { outgoing.remove(at: i) }
         for c in o.cmds {
             switch c.type {
             case "send": if let d = Data(base64Encoded: c.data ?? "") { hubs[c.hub ?? ""]?.send(d) }
@@ -372,4 +436,19 @@ final class AppModel {
             }
         }
     }
+}
+
+// a hub's socket: connecting (or trying again), offline between tries,
+// syncing while what it missed comes in and is folded, then online
+struct HubConn: Equatable {
+    enum Phase { case connecting, offline, syncing, online }
+    var phase: Phase = .connecting
+    var heard: Date?
+    // the size of the frame that caught this phone up
+    var bytes = 0
+}
+
+struct Outgoing: Identifiable, Equatable {
+    let id = UUID()
+    let thread, text: String
 }

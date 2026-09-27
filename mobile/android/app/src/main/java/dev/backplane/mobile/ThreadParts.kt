@@ -158,6 +158,8 @@ fun StatusDot(state: String, status: String) {
             "working" -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
             "failed" -> Icon(Icons.Filled.Error, "Failed", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
             "queued" -> Icon(Icons.Filled.Schedule, "Queued", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
+            // the turn is over, its subagents still at work
+            "waiting" -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color(0xFFE07BD0))
             "ready" -> Dot(MaterialTheme.colorScheme.outlineVariant)
             else -> when (state) {
                 "run" -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)

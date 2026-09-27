@@ -65,6 +65,7 @@ final class Hub {
     // the address for each (re)connect: it carries since/origin, so the
     // hub sends only what this app has not seen
     private let url: () async -> URL?
+    private let onConnecting: () -> Void
     private let onOpen: () -> Void
     private let onMessage: (Data) -> Void
     private let onClose: () -> Void
@@ -73,8 +74,10 @@ final class Hub {
     private var stopped = false
     private var generation = 0
 
-    init(url: @escaping () async -> URL?, onOpen: @escaping () -> Void, onMessage: @escaping (Data) -> Void, onClose: @escaping () -> Void) {
+    init(url: @escaping () async -> URL?, onConnecting: @escaping () -> Void, onOpen: @escaping () -> Void, onMessage: @escaping (Data) -> Void,
+         onClose: @escaping () -> Void) {
         self.url = url
+        self.onConnecting = onConnecting
         self.onOpen = onOpen
         self.onMessage = onMessage
         self.onClose = onClose
@@ -101,6 +104,7 @@ final class Hub {
         guard !stopped else { return }
         generation += 1
         let gen = generation
+        onConnecting()
         Task {
             guard let u = await url(), gen == generation, !stopped else { return }
             let t = URLSession.shared.webSocketTask(with: u)
