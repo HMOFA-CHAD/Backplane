@@ -226,23 +226,26 @@ def Lay.ibutton(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +name: String, +color: U3
 # Sidebar
 # -------
 
-# the dot's color for a thread's status (M.Status.of orders them)
-def Lay.status(s: M.Status) -> U32:
-  match s:
-    case M.StApproval{}:
+# the dot's color for a thread's phase, in the sidebar and on the line at
+# the end of its timeline (M.Phase.of orders the phases)
+def Lay.phase(p: M.Phase) -> U32:
+  match p:
+    case M.PhApproval{}:
       T.Th.warn()
-    case M.StInput{}:
+    case M.PhInput{}:
       T.Th.input()
-    case M.StWorking{}:
+    case M.PhWorking{}:
       T.Th.accent()
-    case M.StFailed{}:
-      T.Th.bad()
-    case M.StQueued{}:
-      T.Th.queued()
-    case M.StReady{}:
-      T.Th.faint()
-    case M.StWaiting{}:
+    case M.PhMonitoring{_}:
       T.Th.waiting()
+    case M.PhFailed{}:
+      T.Th.bad()
+    case M.PhQueued{}:
+      T.Th.queued()
+    case M.PhComplete{}:
+      T.Th.ok()
+    case _:
+      T.Th.faint()
 
 # a thread's row; the selected one is raised, with its project's colour
 # (tint) down its left edge
@@ -259,7 +262,7 @@ def Lay.row.k(+ty: Ty, +on: Bool, id: String, title: String, +ago: String, +dot:
 def Lay.row(+ty: Ty, +t: M.Thread, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
   match t:
     case M.Thread{+id, +p, title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      Lay.row.k(ty, String.eq(id, sel), id, title, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), Lay.status(U.Side.status(st, t)), BG.Badge.rgb_of(st, p), c, y)
+      Lay.row.k(ty, String.eq(id, sel), id, title, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), Lay.phase(U.Side.phase(st, t)), BG.Badge.rgb_of(st, p), c, y)
 
 # rows from y down; answers the output and the next y
 type Col is Data:
@@ -1145,26 +1148,6 @@ def TL.draw_all(+ty: Ty, ls: List<&2, TLine>, more: Bool, +c: D.Clip, +x0: U32, 
         TL.draw_all(ty, rest, TL.more(rest, (y + TL.h(k) : U32), y1), c, x0, x1, (y + TL.h(k) : U32), y1, 1n+i, sel)])
     case _ _:
       Out.none()
-
-# the phase line's dot color (M.Phase.of orders the phases)
-def Lay.phase(p: M.Phase) -> U32:
-  match p:
-    case M.PhApproval{}:
-      T.Th.warn()
-    case M.PhInput{}:
-      T.Th.input()
-    case M.PhWorking{}:
-      T.Th.accent()
-    case M.PhMonitoring{_}:
-      T.Th.waiting()
-    case M.PhFailed{}:
-      T.Th.bad()
-    case M.PhQueued{}:
-      T.Th.queued()
-    case M.PhComplete{}:
-      T.Th.ok()
-    case _:
-      T.Th.faint()
 
 def TL.phase.k(idle: Bool, +label: String, +dot: U32) -> List<&2, TLine>:
   match idle:

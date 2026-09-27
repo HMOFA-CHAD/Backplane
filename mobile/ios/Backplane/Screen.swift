@@ -15,7 +15,8 @@ struct SwipeChoice: Decodable, Hashable {
 
 struct Row: Decodable, Identifiable, Hashable {
     let id, title, state, ago: String
-    // what its dot says: approval, input, working, failed, queued, ready
+    // what its dot says: approval, input, working, monitoring, failed,
+    // queued, complete, stopped, idle
     let status: String?
     let pinned: Bool
     let lead, trail: [Swipe]
@@ -248,6 +249,8 @@ struct ThreadView: Decodable {
     let working, draft, send: String
     // "interrupt" while a turn runs with nothing typed (the button is Stop)
     let sendAct: String?
+    // the phase the working line's dot shows (as a row's status)
+    let phase: String?
     let picker: ModelPicker
     let viewer: Viewer
     // the menu under the toolbar's ellipsis, after the tools

@@ -135,7 +135,7 @@ button.fold:hover { color: var(--text); }
 button.fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .working { color: var(--faint); font-size: 12px; }
 .phase { display: flex; align-items: center; gap: 8px; color: var(--faint); font-size: 12px; }
-.dot.monitoring { background: var(--accent); }
+.dot.monitoring { background: var(--waiting); animation: pulse 1.2s ease-in-out infinite; }
 .dot.complete { background: var(--ok); }
 .dot.stopped { background: var(--faint); }
 .composer { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 16px 14px; border-top: 1px solid var(--line); }
