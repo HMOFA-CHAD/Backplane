@@ -363,6 +363,15 @@ another device. Tools: `gmail_search`, `gmail_read`, `gmail_send`
 (asks you first), `calendar_events`, `calendar_create` (asks you first),
 `google_accounts`.
 
+Google always sends the browser back to `127.0.0.1:<port>`, so a sign-in
+started on another machine's hub (a phone, or a window linked to that
+hub) lands on the hub of the machine the browser runs on. The sign-in's
+state names the hub that started it (its tailnet address,
+`Google.state`), and a hub whose sign-in it is not answers with a
+redirect there (`Google.hop`: only to a `*.ts.net` address, only once;
+laws `google_state_*`, `google_hop_*`). With no hub on the browser's
+machine, paste the address the browser ended on instead.
+
 Several accounts: each sign-in adds one (Google shows its account
 chooser; signing in to an address already there replaces it). They live
 in `<home>/secrets/google.json` under `accounts`, the default first (a

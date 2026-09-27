@@ -144,6 +144,17 @@ try {
   const pend = await op(a, "status");
   check("status while waiting", String(pend?.google).startsWith("Waiting for Google"), pend);
 
+  // a sign-in started on another of the owner's hubs lands here (Google
+  // always sends the browser to 127.0.0.1): sent on to that hub, once
+  const other = `zz.${b64u("http://box.tail1.ts.net:3787")}`;
+  const hop = await fetch(`http://127.0.0.1:${a.port}/oauth/google?state=${other}&code=4%2F0Ab`, { redirect: "manual" });
+  check("another hub's sign-in is sent on to it", hop.status === 302 && hop.headers.get("location") === `http://box.tail1.ts.net:3787/oauth/google?state=${other}&code=4%2F0Ab&hop=1`, [hop.status, hop.headers.get("location")]);
+  const again = await fetch(`http://127.0.0.1:${a.port}/oauth/google?state=${other}&code=4%2F0Ab&hop=1`, { redirect: "manual" });
+  check("but only once", again.status === 200 && (await again.text()).includes("paste this page"), again.status);
+  const evil = await fetch(`http://127.0.0.1:${a.port}/oauth/google?state=zz.${b64u("https://evil.example.com")}&code=c`, { redirect: "manual" });
+  check("and only to a tailnet machine", evil.status === 200, evil.status);
+  check("none of that traded a code", grants.length === 0, grants);
+
   const back = await fetch(`http://127.0.0.1:${a.port}/oauth/google?state=${url.searchParams.get("state")}&code=4%2F0Ab&scope=${encodeURIComponent(scope)}`);
   const page = await back.text();
   check("the redirect finishes the sign-in", back.status === 200 && page.includes("Google is connected"), page.slice(0, 300));

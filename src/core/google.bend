@@ -1307,3 +1307,58 @@ def Html.esc(s: String) -> String:
 def Google.page(msg: String) -> String:
   "<!doctype html><meta charset=\"utf-8\"><title>Backplane</title><body style=\"font:14px system-ui,sans-serif;margin:40px\"><p>"
     ++ Html.esc(msg) ++ "</p></body>"
+
+# Which hub started a sign-in
+# ---------------------------
+# Google always sends the browser back to http://127.0.0.1:<port>, so a
+# sign-in started on another machine's hub lands on the hub of the machine
+# the browser runs on. The state names the hub that started it (its
+# tailnet address, base64url, after a '.'; the nonce is base64url, which
+# has no '.'), and a hub whose sign-in it is not sends the browser there.
+
+# the state for a sign-in: the nonce, and the hub's address when it has one
+def Google.state(+nonce: String, +home: String) -> String:
+  Bool.pick(String, String.is_empty(home), nonce, nonce ++ "." ++ Gb64.encode_url(U.Utf8.encode(home)))
+
+def Google.state.home.k(ps: List<&2, String>) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case b <> _:
+      U.Utf8.decode(Gb64.decode(b))
+
+# the hub a state names ("" for none)
+def Google.state.home(s: String) -> String:
+  Google.state.home.k(List.drop(&2, String, String.split(s, '.'), 1n))
+
+def Google.hop.rest(+url: String) -> String:
+  Bool.pick(String, String.starts_with(url, "https://"), String.drop(url, 8n),
+    Bool.pick(String, String.starts_with(url, "http://"), String.drop(url, 7n), ""))
+
+def Google.hop.host(+rest: String) -> String:
+  Maybe.default(&2, String, List.head(&2, String, String.split(rest, ':')), "")
+
+def Google.hop.plain(+rest: String) -> Bool:
+  Bool.not(Bool.or(String.contains(rest, "/"), Bool.or(String.contains(rest, "@"),
+    Bool.or(String.contains(rest, "?"), Bool.or(String.contains(rest, "#"), String.contains(rest, "\\"))))))
+
+# a hub the browser may be sent to: a machine on a tailnet
+# (http(s)://<name>.ts.net[:port], nothing after)
+def Google.hop.ok(+url: String) -> Bool:
+  Bool.and(String.ends_with(Google.hop.host(Google.hop.rest(url)), ".ts.net"), Google.hop.plain(Google.hop.rest(url)))
+
+def Google.hop.k(go: Bool, +home: String, +query: String) -> String:
+  match go:
+    case True{}:
+      home ++ "/oauth/google?" ++ query ++ "&hop=1"
+    case False{}:
+      ""
+
+# where to send the browser Google sent back (query: the redirect's) when
+# the sign-in in flight here (mine: its state) is not the one it names:
+# the hub its state names, on the tailnet, and only once (hop=1); "" to
+# finish here
+def Google.hop(+query: String, +mine: String) -> String:
+  Google.hop.k(Bool.and(Bool.not(String.eq(Url.param(query, "state"), mine)),
+      Bool.and(Bool.not(String.eq(Url.param(query, "hop"), "1")), Google.hop.ok(Google.state.home(Url.param(query, "state"))))),
+    Google.state.home(Url.param(query, "state")), query)

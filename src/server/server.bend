@@ -3452,23 +3452,23 @@ def BotJob.google.pos(+op: String) -> Nat:
   Bool.pick(Nat, String.eq(op, "configure"), 0n,
     Bool.pick(Nat, String.eq(op, "paste"), 2n, C.Codec.pos(["config", "begin", "finish", "status", "disconnect", "connect"], op)))
 
-def BotJob.google.then(+text: String, +home: String, +redirect: String) -> IO(String):
-  Bool.pick(IO(String), String.starts_with(text, "error"), IO.pure(String, text), GS.Google.begin(home, redirect))
+def BotJob.google.then(+text: String, +home: String, +redirect: String, +here: String) -> IO(String):
+  Bool.pick(IO(String), String.starts_with(text, "error"), IO.pure(String, text), GS.Google.begin(home, redirect, here))
 
-def BotJob.google.connect(typed: Bool, +home: String, +p: J.Json, +redirect: String) -> IO(String):
+def BotJob.google.connect(typed: Bool, +home: String, +p: J.Json, +redirect: String, +here: String) -> IO(String):
   match typed:
     case False{}:
-      GS.Google.begin(home, redirect)
+      GS.Google.begin(home, redirect, here)
     case True{}:
       IO.bind(String, String, GS.Google.configure(home, J.Json.get_str(p, "clientId", ""), J.Json.get_str(p, "clientSecret", "")),
-        t => BotJob.google.then(t, home, redirect))
+        t => BotJob.google.then(t, home, redirect, here))
 
-def BotJob.google.op(i: Nat, +home: String, +p: J.Json, +redirect: String) -> IO(String):
+def BotJob.google.op(i: Nat, +home: String, +p: J.Json, +redirect: String, +here: String) -> IO(String):
   match i:
     case 0n:
       GS.Google.configure(home, J.Json.get_str(p, "clientId", ""), J.Json.get_str(p, "clientSecret", ""))
     case 1n:
-      GS.Google.begin(home, redirect)
+      GS.Google.begin(home, redirect, here)
     case 2n:
       GS.Google.finish(home, J.Json.get_str(p, "pasted", ""), redirect)
     case 3n:
@@ -3476,7 +3476,7 @@ def BotJob.google.op(i: Nat, +home: String, +p: J.Json, +redirect: String) -> IO
     case 4n:
       GS.Google.disconnect(home, String.trim(J.Json.get_str(p, "account", "")))
     case 5n:
-      BotJob.google.connect(Bool.not(String.is_empty(String.trim(J.Json.get_str(p, "clientId", "")))), home, p, redirect)
+      BotJob.google.connect(Bool.not(String.is_empty(String.trim(J.Json.get_str(p, "clientId", "")))), home, p, redirect, here)
     case _:
       IO.pure(String, "error: unknown Google request")
 
@@ -3492,12 +3492,22 @@ def BotJob.google.done(+text: String, +raw: String, +begin: Bool, +inbox: Chan(M
   Bool.pick(IO(Unit), String.starts_with(text, "error"), BotJob.fail(inbox, client, id, Bool.pick(String, String.starts_with(text, "error: "), String.drop(text, 7n), text)),
     BotJob.reply(inbox, client, id, True{}, BotJob.google.kvs(String.starts_with(raw, "{"), Bool.pick(String, begin, "googleUrl", "google"), text, raw)))
 
+# where other machines reach this hub, for a sign-in to name (begin and
+# connect only: it asks tailscale)
+def BotJob.google.here(begin: Bool, +tailnet: Bool, +host: String, +port: U32) -> IO(String):
+  match begin:
+    case True{}:
+      BN.Bn.url.here(tailnet, host, port)
+    case False{}:
+      IO.pure(String, "")
+
 # Google's setup and sign-in (src/server/google.bend), off the hub
-def BotJob.google(+inbox: Chan(Msg), +home: String, +port: U32, +params: String, +client: U32, +id: String) -> IO(Unit):
+def BotJob.google(+inbox: Chan(Msg), +home: String, +tailnet: Bool, +host: String, +port: U32, +params: String, +client: U32, +id: String) -> IO(Unit):
   do IO<Unit>:
     +p : J.Json = Maybe.default(&2, J.Json, J.Json.parse(params), J.Null{})
     +i : Nat = BotJob.google.pos(J.Json.get_str(p, "op", ""))
-    +raw : String <- BotJob.google.op(i, home, p, Bot.redirect(port))
+    +here : String <- BotJob.google.here(Bool.or(Nat.is_eq(i, 1n), Nat.is_eq(i, 5n)), tailnet, host, port)
+    +raw : String <- BotJob.google.op(i, home, p, Bot.redirect(port), here)
     +text : String <- GS.Google.say(raw)
     BotJob.google.done(text, raw, Bool.or(Nat.is_eq(i, 1n), Nat.is_eq(i, 5n)), inbox, client, id)
 
@@ -3669,7 +3679,7 @@ def Bot.fx(i: Nat, +st: M.State, +inbox: Chan(Msg), +cfg: Cfg, +a: String, +b: S
     case 7n:
       IO.spawn(Unit, BN.Bn.peer.forget(Cfg.home(cfg), a))
     case 8n:
-      IO.spawn(Unit, BotJob.google(inbox, Cfg.home(cfg), Cfg.port(cfg), a, BotJob.client(b), BotJob.id(c)))
+      IO.spawn(Unit, BotJob.google(inbox, Cfg.home(cfg), Cfg.tailnet(cfg), Cfg.host(cfg), Cfg.port(cfg), a, BotJob.client(b), BotJob.id(c)))
     case 9n:
       IO.spawn(Unit, BotJob.token(0n, inbox, Cfg.home(cfg), Cfg.tailnet(cfg), Cfg.host(cfg), Cfg.port(cfg), a, BotJob.client(b), BotJob.id(c)))
     case 10n:
@@ -3941,10 +3951,20 @@ def Bot.shot(+home: String, +bot: String, +reply: Chan(List<&2, U32>)) -> IO(Uni
 def Bot.oauth.page(+text: String) -> String:
   GG.Google.page(Bool.pick(String, String.starts_with(text, "error"), text, "Google is connected to Backplane. You can close this tab."))
 
-# Google sent the browser back with a code: finish signing in
-def Bot.oauth(+home: String, +port: U32, +path: String, +reply: Chan(List<&2, U32>)) -> IO(Unit):
+def Bot.oauth.here(+home: String, +port: U32, +path: String, +reply: Chan(List<&2, U32>)) -> IO(Unit):
   IO.bind(String, Unit, GS.Google.finish(home, path, Bot.redirect(port)),
     t => Bot.answer(reply, W.Http.response("200 OK", "text/html; charset=utf-8", U.Utf8.encode(Bot.oauth.page(t)), "")))
+
+def Bot.oauth.to(+to: String, +home: String, +port: U32, +path: String, +reply: Chan(List<&2, U32>)) -> IO(Unit):
+  Bool.pick(IO(Unit), String.is_empty(to), Bot.oauth.here(home, port, path, reply),
+    Bot.answer(reply, W.Http.response("302 Found", "text/plain; charset=utf-8", U.Utf8.encode("Signing in on " ++ to), "Location: " ++ to ++ "\r\n")))
+
+# Google sent the browser back with a code: finish signing in, or, when
+# the sign-in was started on another of the owner's hubs (the browser runs
+# here, that hub elsewhere), send the browser on to it (GG.Google.hop)
+def Bot.oauth(+home: String, +port: U32, +path: String, +reply: Chan(List<&2, U32>)) -> IO(Unit):
+  IO.bind(String, Unit, GS.Google.pending(home),
+    mine => Bot.oauth.to(GG.Google.hop(GG.Url.query(path), mine), home, port, path, reply))
 
 def Bot.me(+link: Bool) -> IO(String):
   Bool.pick(IO(String), link, BN.Bn.name(), IO.pure(String, ""))
