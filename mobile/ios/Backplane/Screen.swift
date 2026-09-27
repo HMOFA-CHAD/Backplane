@@ -103,6 +103,7 @@ struct TaskRow: Decodable, Identifiable {
 // a skill the `$` being typed may complete to ("skill" with its name)
 struct Skill: Decodable, Hashable {
     let name, desc: String
+    let on: Bool?
 }
 
 // a side question (/btw) and its answer, until closed

@@ -171,7 +171,7 @@ you type:
 
 | sigil | names | when sent |
 |---|---|---|
-| `@name` | a bot | the bot is woken (hop 0) with the message and the thread it came from; it can `thread_read` it and answer with `thread_send` |
+| `@name`, `@name@machine` | a bot, here or on a linked machine | the bot is woken (hop 0) with the message and the thread it came from; it can `thread_read` it and answer with `thread_send` |
 | `>slug` | a thread | the agent is told the thread's id, project and summary |
 | `%slug` | a project | the agent is told the project's id, folder and summary |
 | `#slug` | a group chat | the message is posted in the room |
@@ -183,8 +183,12 @@ thread's own agent gets the message as typed plus a `<references>` block
 naming each (`Refs.agent`); the timeline keeps it as typed. A bot is never
 woken by a mention in its own thread (law `refs_own_bot_never`), and a
 message resent after a dropped connection wakes nothing twice
-(`bot_mention_once`). Bots on linked machines (`name@peer`) are not
-offered yet.
+(`bot_mention_once`). Bots on linked machines are offered too, from the
+list every client gets (info `bots.remote`), as `@name@machine` (the
+machine's link id when its name could mean another, `Refs.fars`); sent,
+the bot hears the message as the person's, with the thread's title, which
+it cannot read, and answers in the person's conversation with it
+(`Bots.mention.far`, the same room `bots.tell` writes in).
 
 The menu (`Refs.offer` in `src/core/refs.bend`) ranks by how well the
 query matches the slug or name (fuzzy), a query of three or more letters

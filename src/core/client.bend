@@ -783,7 +783,7 @@ def Ui.actions() -> List<&2, String>:
    "peer-invite", "peer-join", "peer-revoke", "google", "remote", "remote-send", "bot-look", "room-delete", "routine-edit", "hook-done", "form-close", "earlier",
    "hook-token", "hook-retoken", "hook-untoken",
    "voice", "voice-key", "voice-unkey", "voice-dict", "voice-use", "voice-add", "voice-fix", "voice-fixed", "voice-skip", "voice-err", "voice-term", "voice-unterm",
-   "btw-close", "vw-light", "proj-pick", "proj-found", "proj-browse", "proj-back", "space-link"]
+   "btw-close", "vw-light", "proj-pick", "proj-found", "proj-browse", "proj-back", "space-link", "skill-move"]
 
 # Reading the client state
 # ------------------------
@@ -1394,10 +1394,10 @@ def Ui.mention(u: Ui, +path: String) -> Act:
 # once per edit of the draft and kept in the info map ("refs.for", "refs"),
 # so a frame or a phone's screen only reads them. Tab or Enter completes
 # the first (or a clicked one). A row's name is the whole word it puts in,
-# sigil and all.
+# sigil and all. The arrow keys move the highlight (Skills.move).
 
 type SkillRow is Data:
-  SkillRow{name: String, description: String}
+  SkillRow{name: String, description: String, on: Bool}
 
 # the draft's last word
 def Skills.token(+draft: String) -> String:
@@ -1419,7 +1419,7 @@ def Skills.rows(xs: List<&2, J.Json>, +q: String) -> List<&2, SkillRow>:
     case Nil{}:
       Nil{}
     case +x <> t:
-      Skills.rows.k(String.starts_with(J.Json.get_str(x, "name", ""), q), SkillRow{"$" ++ J.Json.get_str(x, "name", ""), J.Json.get_str(x, "description", "")}, Skills.rows(t, q))
+      Skills.rows.k(String.starts_with(J.Json.get_str(x, "name", ""), q), SkillRow{"$" ++ J.Json.get_str(x, "name", ""), J.Json.get_str(x, "description", ""), False{}}, Skills.rows(t, q))
 
 def Skills.offer(on: Bool, +list: String, +q: String) -> List<&2, SkillRow>:
   match on:
@@ -1447,7 +1447,7 @@ def Refs.show(cs: List<&2, RF.Cand>) -> List<&2, String>:
       (w ++ "\t" ++ Refs.flat(a)) <> Refs.show(t)
 
 def Refs.row(+l: String) -> SkillRow:
-  SkillRow{Maybe.default(&2, String, List.head(&2, String, String.split(l, '\t')), ""), String.join(List.drop(&2, String, String.split(l, '\t'), 1n), " ")}
+  SkillRow{Maybe.default(&2, String, List.head(&2, String, String.split(l, '\t')), ""), String.join(List.drop(&2, String, String.split(l, '\t'), 1n), " "), False{}}
 
 def Refs.rows(ls: List<&2, String>) -> List<&2, SkillRow>:
   match ls:
@@ -1479,28 +1479,85 @@ def Skills.of.k(dollar: Bool, +sel: String, +dr: Map<&2, String>, +nf: Map<&2, S
 def Skills.of(+sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
   Skills.of.k(String.starts_with(Skills.token(Str.get(dr, sel)), "$"), sel, dr, nf)
 
+# The row the arrow keys have moved to: info "sk.at" (its index), kept
+# for the draft it was moved on ("sk.on", thread and text); any other
+# draft starts at the first row. Enter or Tab takes it.
+def Skills.on(+sel: String, +draft: String) -> String:
+  sel ++ "\n" ++ draft
+
+def Skills.at.of(same: Bool, +at: String) -> Nat:
+  match same:
+    case True{}:
+      Maybe.default(&2, Nat, Nat.read(at), 0n)
+    case False{}:
+      0n
+
+def Skills.at.k(+sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> Nat:
+  Skills.at.of(String.eq(Str.get(nf, "sk.on"), Skills.on(sel, Str.get(dr, sel))), Str.get(nf, "sk.at"))
+
+# the rows with the one at k (counted from 1) marked
+def Skills.mark(rs: List<&2, SkillRow>, +k: Nat) -> List<&2, SkillRow>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case SkillRow{n, d, _} <> t:
+      SkillRow{n, d, Nat.is_eq(k, 1n)} <> Skills.mark(t, Nat.sub(k, 1n))
+
+# what the composer offers now, the highlighted row marked (the first
+# when the arrows moved past the end of a shorter list)
+def Skills.marked(+rs: List<&2, SkillRow>, +at: Nat) -> List<&2, SkillRow>:
+  Skills.mark(rs, Nat.add(Bool.pick(Nat, Nat.is_lt(at, List.length(&2, SkillRow, rs)), at, 0n), 1n))
+
 def Ui.skills(u: Ui) -> List<&2, SkillRow>:
   match u:
     case Ui{_, +sel, +dr, _, _, _, _, _, _, _, _, _, _, _, +nf, _, _}:
-      Skills.of(sel, dr, nf)
+      Skills.marked(Skills.of(sel, dr, nf), Skills.at.k(sel, dr, nf))
+
+def Skills.lit(rs: List<&2, SkillRow>) -> String:
+  match rs:
+    case Nil{}:
+      ""
+    case SkillRow{n, _, True{}} <> _:
+      n
+    case SkillRow{_, _, False{}} <> t:
+      Skills.lit(t)
+
+def Skills.idx(rs: List<&2, SkillRow>, +i: Nat) -> Nat:
+  match rs:
+    case Nil{}:
+      0n
+    case SkillRow{_, _, True{}} <> _:
+      i
+    case SkillRow{_, _, False{}} <> t:
+      Skills.idx(t, 1n+i)
+
+# the arrow keys move the highlight ("down", else up), wrapping round
+def Skills.step(+down: Bool, +i: Nat, +n: Nat) -> Nat:
+  match n:
+    case 0n:
+      0n
+    case _:
+      Nat.mod(Bool.pick(Nat, down, Nat.add(i, 1n), Nat.add(i, Nat.sub(n, 1n))), n)
+
+def Skills.moved(u: Ui, +i: Nat) -> Ui:
+  match u:
+    case Ui{st, +sel, +dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note,
+        Map.set(&2, String, Map.set(&2, String, nf, "sk.at", Nat.show(i)), "sk.on", Skills.on(sel, Str.get(dr, sel))), ob, tr}
+
+def Skills.move(+u: Ui, +v: String) -> Act:
+  Act{Skills.moved(u, Skills.step(String.eq(v, "down"), Skills.idx(Ui.skills(u), 0n), List.length(&2, SkillRow, Ui.skills(u)))), Nil{}}
 
 def Skills.named(rs: List<&2, SkillRow>, +v: String) -> Bool:
   match rs:
     case Nil{}:
       False{}
-    case SkillRow{n, _} <> t:
+    case SkillRow{n, _, _} <> t:
       Bool.or(String.eq(n, v), Skills.named(t, v))
 
-def Skills.first(rs: List<&2, SkillRow>) -> String:
-  match rs:
-    case SkillRow{n, _} <> _:
-      n
-    case Nil{}:
-      ""
-
-# the word a completion puts in: the one clicked, else the first offered
+# the word a completion puts in: the one clicked, else the highlighted
 def Skills.pick(+rs: List<&2, SkillRow>, +v: String) -> String:
-  Bool.pick(String, Skills.named(rs, v), v, Skills.first(rs))
+  Bool.pick(String, Skills.named(rs, v), v, Skills.lit(rs))
 
 # the draft with its last word replaced by a completion
 def Skills.complete(+draft: String, +word: String) -> String:
@@ -2106,9 +2163,10 @@ def Skills.want(a: Act) -> Act:
 
 def Refs.fill(on: Bool, u: Ui) -> Ui:
   match on u:
-    case True{} Ui{+st, +sel, +dr, live, op, on2, +now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+    case True{} Ui{+st, +sel, +dr, live, op, on2, +now, ad, pa, v, rid, w, er, note, +nf, ob, tr}:
       Ui{st, sel, dr, live, op, on2, now, ad, pa, v, rid, w, er, note,
-        Map.set(&2, String, Map.set(&2, String, nf, "refs", String.join(Refs.show(RF.Refs.offer(st, sel, now, Skills.token(Str.get(dr, sel)))), "\n")), "refs.for", Refs.for(sel, Str.get(dr, sel))), ob, tr}
+        Map.set(&2, String, Map.set(&2, String, nf, "refs", String.join(Refs.show(RF.Refs.offer.with(st, sel, now, Skills.token(Str.get(dr, sel)),
+          RF.Refs.fars.if(String.starts_with(Skills.token(Str.get(dr, sel)), "@"), Str.get(nf, "bots.remote"), BT.World.peers(M.State.bots(st))))), "\n")), "refs.for", Refs.for(sel, Str.get(dr, sel))), ob, tr}
     case False{} _:
       u
 
@@ -3643,6 +3701,9 @@ def Voice.act(i: Nat, +u: Ui, +value: String) -> Act:
     # a link or form in a bot's page
     case 18n:
       Bots.space.link(u, value)
+    # the arrow keys in the composer's menu
+    case 19n:
+      Skills.move(u, value)
     # and the project picker's own: go to a project, add one found, browse
     # folders, back to the projects
     case _:

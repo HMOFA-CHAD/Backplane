@@ -1397,29 +1397,29 @@ def Lay.picker(open: Bool, +ty: Ty, +ms: List<&2, String>, +cur: String, +info: 
     case False{}:
       Out.none()
 
-def Skills.row(+ty: Ty, +n: String, +d: String, +x: U32, +y: U32, +w: U32, first: Bool) -> Out:
+def Skills.row(+ty: Ty, +n: String, +d: String, +x: U32, +y: U32, +w: U32, on: Bool) -> Out:
   +nw = Ty.width(ty, 2n, n)
-  Out{List.concat(&2, R.Op, [Bool.pick(List<&2, R.Op>, first, Lay.round(D.Clip.all(), (x + 4 : U32), y, (w - 8 : U32), 28, 5, T.Th.sel()), Nil{}),
+  Out{List.concat(&2, R.Op, [Bool.pick(List<&2, R.Op>, on, Lay.round(D.Clip.all(), (x + 4 : U32), y, (w - 8 : U32), 28, 5, T.Th.sel()), Nil{}),
       Ty.text(ty, 2n, n, D.Clip.all(), (x + 14 : U32), y, 28, T.Th.text()),
       Ty.text(ty, 2n, Lay.fit_or_none(ty, 2n, d, U32.dim(w, (nw + 48 : U32))), D.Clip.all(), (x + 30 + nw : U32), y, 28, T.Th.dim())]),
     [Lay.hit(x, y, w, 28, "skill", n)]}
 
-def Skills.rows(+ty: Ty, rs: List<&2, U.SkillRow>, +x: U32, +y: U32, +w: U32, first: Bool) -> Out:
+def Skills.rows(+ty: Ty, rs: List<&2, U.SkillRow>, +x: U32, +y: U32, +w: U32) -> Out:
   match rs:
     case Nil{}:
       Out.none()
-    case U.SkillRow{+n, +d} <> t:
-      Out.cat(Skills.row(ty, n, d, x, y, w, first), Skills.rows(ty, t, x, (y + 28 : U32), w, False{}))
+    case U.SkillRow{+n, +d, on} <> t:
+      Out.cat(Skills.row(ty, n, d, x, y, w, on), Skills.rows(ty, t, x, (y + 28 : U32), w))
 
 # the skills a `$` being typed may complete to, or the bots, threads,
 # projects and rooms a `@`, `>`, `%` or `#` may, above the composer with
-# their summaries (Tab or Enter takes the first, highlighted)
+# their summaries (the arrow keys move the highlight, Tab or Enter takes it)
 def Lay.skills(+ty: Ty, +rs: List<&2, U.SkillRow>, +x0: U32, +x1: U32, +bottom: U32) -> Out:
   +n = {U32.from_nat(List.length(&2, U.SkillRow, rs)) : U32}
   +h = {(n * 28 + 8 : U32) : U32}
   Out.when(U32.is_gt(n, 0),
     Out.cat(Out.ops(Lay.box(D.Clip.all(), x0, (bottom - h : U32), (x1 - x0 : U32), h, 8, T.Th.panel(), T.Th.line())),
-      Skills.rows(ty, rs, x0, (bottom - h + 4 : U32), (x1 - x0 : U32), True{})))
+      Skills.rows(ty, rs, x0, (bottom - h + 4 : U32), (x1 - x0 : U32))))
 
 # where position p of the draft sits: its wrapped line and x
 # the shown line position p is on, and how far into it (ss: where each

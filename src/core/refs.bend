@@ -2,11 +2,13 @@ import Base
 import ./model.bend as M
 import ./bot.bend as BT
 import ./fuzzy.bend as F
+import ./json.bend as J
 
 # References in a message
 # -----------------------
-# A word that starts with a sigil names something: `@bot` a bot, `>thread`
-# a thread, `%project` a project, `#room` a group chat. After the sigil
+# A word that starts with a sigil names something: `@bot` a bot (here, or
+# `@name@machine` on a linked machine), `>thread` a thread, `%project` a
+# project, `#room` a group chat. After the sigil
 # comes a slug: letters, digits, '-' and '_' (Slug.of a title: lower case,
 # every other run of characters one '-', at most 40 long). A thread whose
 # slug another thread shares is named `slug-<seq>`, the number its id ends
@@ -141,10 +143,25 @@ def Refs.sigil(+kind: String) -> String:
 def Refs.token(+draft: String) -> String:
   Maybe.default(&2, String, List.last(&2, String, String.split(Maybe.default(&2, String, List.last(&2, String, String.lines(draft)), ""), ' ')), "")
 
+# a bot on a linked machine: what follows the sigil is `name@machine`.
+# The machine a word names ("" for a bot here); its name comes first
+def Refs.far.after(+a: String, +r: String) -> String:
+  Bool.pick(String, Bool.and(Bool.not(String.is_empty(a)), String.starts_with(r, "@")), Slug.take(String.drop(r, 1n)), "")
+
+def Refs.far.m(+rest: String) -> String:
+  Refs.far.after(Slug.take(rest), String.drop(rest, String.length(Slug.take(rest))))
+
+# whether what follows a `@` is `name@machine` as far as typed (slug
+# characters around one '@', the machine not yet typed is fine)
+def Refs.far.typing(+rest: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(Slug.take(rest))),
+    Bool.and(String.starts_with(String.drop(rest, String.length(Slug.take(rest))), "@"), Slug.all(String.drop(rest, Nat.add(String.length(Slug.take(rest)), 1n)))))
+
 # whether a word is a reference being typed: a sigil, then slug characters
-# only (none yet is fine)
+# only (none yet is fine), or a bot's `name@machine`
 def Refs.typing(+w: String) -> Bool:
-  Bool.and(Bool.not(String.is_empty(Refs.kind(w))), Slug.all(String.drop(w, 1n)))
+  Bool.and(Bool.not(String.is_empty(Refs.kind(w))),
+    Bool.or(Slug.all(String.drop(w, 1n)), Bool.and(String.eq(Refs.kind(w), "bot"), Refs.far.typing(String.drop(w, 1n)))))
 
 # Summaries
 # ---------
@@ -447,6 +464,56 @@ def Refs.bots.go(bs: List<&2, BT.Bot>, +s: M.State, +sel: String, +now: Nat, +q:
 def Refs.bots(+s: M.State, +sel: String, +now: Nat, +q: String) -> List<&2, Cand>:
   Refs.bots.go(BT.World.bots(M.State.bots(s)), s, sel, now, q)
 
+# Bots on linked machines, as the hub lists them (info "bots.remote":
+# [{"name", "peer", "peerName", "state", "seen"}]): a bot's word is
+# `@name@machine`, the machine by its name, or by its link id when the
+# name could mean another machine or is no slug
+type Far is Data:
+  Far{name: String, at: String, about: String, seen: Nat}
+
+def Refs.far.at(+ps: List<&2, BT.Peer>, +link: String, +pname: String) -> String:
+  Bool.pick(String, Bool.or(BT.Peer.clash(ps, link, pname), Bool.not(Slug.all(pname))), link, pname)
+
+def Refs.far.of(+ps: List<&2, BT.Peer>, +o: J.Json) -> Far:
+  Far{J.Json.get_str(o, "name", ""), Refs.far.at(ps, J.Json.get_str(o, "peer", ""), J.Json.get_str(o, "peerName", J.Json.get_str(o, "peer", ""))),
+    "bot on " ++ J.Json.get_str(o, "peerName", J.Json.get_str(o, "peer", "")) ++ Bool.pick(String, String.eq(J.Json.get_str(o, "state", ""), "away"), ", away", ""),
+    J.Json.get_nat(o, "seen", 0n)}
+
+def Refs.fars.go(os: List<&2, J.Json>, +ps: List<&2, BT.Peer>) -> List<&2, Far>:
+  match os:
+    case Nil{}:
+      Nil{}
+    case +o <> t:
+      Refs.cons(Far, Bool.and(Slug.all(J.Json.get_str(o, "name", "")), Bool.not(String.is_empty(J.Json.get_str(o, "name", "")))), Refs.far.of(ps, o), Refs.fars.go(t, ps))
+
+# the linked machines' bots a list names (bots whose name is no slug
+# cannot be written as a word, so are left out)
+def Refs.fars(+dir: String, +ps: List<&2, BT.Peer>) -> List<&2, Far>:
+  Refs.fars.go(J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse(dir), J.Json.arr(Nil{}))), ps)
+
+# the list read only for a `@` word (a phone parses it per keystroke)
+def Refs.fars.if(bot: Bool, +dir: String, +ps: List<&2, BT.Peer>) -> List<&2, Far>:
+  match bot:
+    case True{}:
+      Refs.fars(dir, ps)
+    case False{}:
+      Nil{}
+
+def Refs.f.cand.k(+sc: Nat, +now: Nat, +word: String, +about: String, +seen: Nat, rest: List<&2, Cand>) -> List<&2, Cand>:
+  Refs.keep(sc, Cand{word, about, Nat.add(sc, Refs.fresh(now, seen)), seen}, rest)
+
+def Refs.f.cand(+now: Nat, +q: String, f: Far, rest: List<&2, Cand>) -> List<&2, Cand>:
+  match f:
+    case Far{+n, +at, +ab, +seen}:
+      Refs.f.cand.k(Refs.score(String.to_lower(n) ++ "@" ++ String.to_lower(at), n, ab, q), now, "@" ++ n ++ "@" ++ at, ab, seen, rest)
+
+def Refs.f.cands(fs: List<&2, Far>, +now: Nat, +q: String) -> List<&2, Cand>:
+  match fs:
+    case Nil{}:
+      Nil{}
+    case f <> t:
+      Refs.f.cand(now, q, f, Refs.f.cands(t, now, q))
+
 def Refs.p.cand(+s: M.State, +here: String, +q: String, p: M.Project, +rest: List<&2, Cand>) -> List<&2, Cand>:
   match p:
     case M.Project{+id, +ti, +root, +at, rm}:
@@ -485,10 +552,10 @@ def Refs.rooms.go(rs: List<&2, BT.Room>, +q: String) -> List<&2, Cand>:
 def Refs.rooms(+s: M.State, +q: String) -> List<&2, Cand>:
   Refs.rooms.go(BT.World.rooms(M.State.bots(s)), q)
 
-def Refs.cands(i: Nat, +s: M.State, +sel: String, +now: Nat, +q: String) -> List<&2, Cand>:
+def Refs.cands(i: Nat, +s: M.State, +sel: String, +now: Nat, +q: String, fs: List<&2, Far>) -> List<&2, Cand>:
   match i:
     case 0n:
-      Refs.bots(s, sel, now, q)
+      List.append(&2, Cand, Refs.bots(s, sel, now, q), Refs.f.cands(fs, now, q))
     case 1n:
       Refs.threads(s, sel, now, q)
     case 2n:
@@ -502,9 +569,13 @@ def Refs.kind.pos(+kind: String) -> Nat:
   Bool.pick(Nat, String.eq(kind, "bot"), 0n, Bool.pick(Nat, String.eq(kind, "thread"), 1n, Bool.pick(Nat, String.eq(kind, "project"), 2n, Bool.pick(Nat, String.eq(kind, "room"), 3n, 4n))))
 
 # the rows offered for a word being typed in thread sel (none for a word
-# that is no reference)
+# that is no reference), with the linked machines' bots fs after a `@`
+def Refs.offer.with(+s: M.State, +sel: String, +now: Nat, +w: String, fs: List<&2, Far>) -> List<&2, Cand>:
+  List.take(&2, Cand, List.sort(~Cand, ~Cand.before, Refs.cands(Bool.pick(Nat, Refs.typing(w), Refs.kind.pos(Refs.kind(w)), 4n), s, sel, now, String.to_lower(String.drop(w, 1n)), fs)), Refs.max())
+
+# the rows offered with this hub's own bots only
 def Refs.offer(+s: M.State, +sel: String, +now: Nat, +w: String) -> List<&2, Cand>:
-  List.take(&2, Cand, List.sort(~Cand, ~Cand.before, Refs.cands(Bool.pick(Nat, Refs.typing(w), Refs.kind.pos(Refs.kind(w)), 4n), s, sel, now, String.to_lower(String.drop(w, 1n)))), Refs.max())
+  Refs.offer.with(s, sel, now, w, Nil{})
 
 # Resolving a sent message
 # ------------------------
@@ -593,10 +664,26 @@ def Refs.find.k(i: Nat, +s: M.State, +sel: String, +w: String) -> List<&2, Hit>:
     case _:
       Nil{}
 
+# a bot on a linked machine the log knows (its id is "name@machine", as
+# bothub.bend's Bots.tell takes it)
+def Refs.far.hit(m: Maybe<&2, BT.Peer>, +name: String, +at: String) -> List<&2, Hit>:
+  match m:
+    case Some{_}:
+      [Hit{"bot", name ++ "@" ++ at, name, "@" ++ name ++ "@" ++ at}]
+    case None{}:
+      Nil{}
+
+def Refs.find.far(far: Bool, +s: M.State, +sel: String, +word: String) -> List<&2, Hit>:
+  match far:
+    case True{}:
+      Refs.far.hit(BT.Peer.of(BT.World.peers(M.State.bots(s)), Refs.far.m(String.drop(word, 1n))), Slug.take(String.drop(word, 1n)), Refs.far.m(String.drop(word, 1n)))
+    case False{}:
+      Refs.find.k(Refs.kind.pos(Refs.kind(word)), s, sel, Slug.of(Slug.take(String.drop(word, 1n))))
+
 # what one word names (nothing, or one hit)
 def Refs.find(+s: M.State, +sel: String, +word: String) -> List<&2, Hit>:
   Bool.pick(List<&2, Hit>, String.is_empty(Slug.take(String.drop(word, 1n))), Nil{},
-    Refs.find.k(Refs.kind.pos(Refs.kind(word)), s, sel, Slug.of(Slug.take(String.drop(word, 1n)))))
+    Refs.find.far(Bool.and(String.eq(Refs.kind(word), "bot"), Bool.not(String.is_empty(Refs.far.m(String.drop(word, 1n))))), s, sel, word))
 
 def Refs.has(hs: List<&2, Hit>, +id: String) -> Bool:
   match hs:
@@ -642,7 +729,9 @@ def Refs.only(hs: List<&2, Hit>, +kind: String) -> List<&2, Hit>:
 def Refs.line.go(i: Nat, +s: M.State, +id: String, +name: String, +w: String) -> String:
   match i:
     case 0n:
-      w ++ " is the bot \"" ++ name ++ "\"; it has been sent this message and may answer in this thread."
+      Bool.pick(String, String.contains(id, "@"),
+        w ++ " is the bot \"" ++ name ++ "\" on the linked machine " ++ Refs.far.m(id) ++ "; it has been sent this message, cannot read this thread, and answers in the person's conversation with it.",
+        w ++ " is the bot \"" ++ name ++ "\"; it has been sent this message and may answer in this thread.")
     case 1n:
       w ++ " is the thread \"" ++ name ++ "\" (id " ++ id ++ ", project \"" ++ Refs.proj.title(s, Refs.t.project(Sum.thread.of(s, id))) ++ "\")" ++
         Bool.pick(String, String.is_empty(Sum.of(s, id)), "", ": " ++ Sum.of(s, id)) ++ ". Read it with thread_read."

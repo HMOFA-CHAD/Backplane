@@ -392,7 +392,7 @@ fun ComposerExtras(m: AppModel, t: ThreadView) {
     if (t.skills.isNotEmpty()) Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         t.skills.forEachIndexed { i, k ->
             Surface(onClick = { m.act("skill", k.name) }, shape = corner, modifier = Modifier.fillMaxWidth(),
-                color = if (i == 0) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface) {
+                color = if (k.on) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                     Text(k.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1)
                     if (k.desc.isNotEmpty()) Text(k.desc, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,

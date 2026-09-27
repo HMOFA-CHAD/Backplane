@@ -162,7 +162,7 @@ button.fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowra
 .look .remove { align-self: flex-start; color: var(--bad); }
 .composer .skills { position: absolute; bottom: 100%; left: 16px; right: 16px; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); padding: 4px; }
 .composer .skills button { display: flex; gap: 10px; text-align: left; border-color: transparent; background: none; }
-.composer .skills button:first-child { background: var(--raise); }
+.composer .skills button.on { background: var(--raise); }
 .composer .skills .name { color: var(--text); white-space: nowrap; }
 .composer .skills .desc { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer textarea:focus, .add input:focus { outline: none; border-color: var(--accent); }

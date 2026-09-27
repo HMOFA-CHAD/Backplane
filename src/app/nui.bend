@@ -1071,11 +1071,20 @@ def Nui.composer.sk(complete: Bool, e: Ed, n: Nui, +alt: Bool) -> Step:
     case False{}:
       Nui.composer.k(e, n, alt)
 
-# while skills are offered, Tab and Enter complete the first
+# up and down move the menu's highlight
+def Nui.composer.ar(arrow: Bool, +code: U32, +e: Ed, n: Nui, +alt: Bool) -> Step:
+  match arrow:
+    case True{}:
+      Nui.act(n, "skill-move", Bool.pick(String, U32.is_eq(code, Key.down()), "down", "up"))
+    case False{}:
+      Nui.composer.sk(Bool.or(U32.is_eq(code, Key.tab()), Ed.submit(e)), e, n, alt)
+
+# while skills or references are offered, the arrow keys move the
+# highlight and Tab and Enter complete the highlighted one
 def Nui.composer.s(has: Bool, +code: U32, +e: Ed, n: Nui, +alt: Bool) -> Step:
   match has:
     case True{}:
-      Nui.composer.sk(Bool.or(U32.is_eq(code, Key.tab()), Ed.submit(e)), e, n, alt)
+      Nui.composer.ar(Bool.or(U32.is_eq(code, Key.up()), U32.is_eq(code, Key.down())), code, e, n, alt)
     case False{}:
       Nui.composer.k(e, n, alt)
 
