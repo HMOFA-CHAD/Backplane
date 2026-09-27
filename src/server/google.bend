@@ -453,7 +453,7 @@ def Gs.begin.go(ok: Bool, +home: String, s: GSec, +verifier: String, +state: Str
         Gs.save(home, GSec{id, secret, refresh, access, expiry, email, verifier, state, redirect})
         return G.Google.auth_url(id, redirect, challenge, state, G.Google.scopes_for(own))
 
-def Gs.begin.k(ok: Bool, +home: String, s: GSec, +redirect: String, own: Bool) -> IO(String):
+def Gs.begin.k(ok: Bool, +home: String, s: GSec, +redirect: String, +here: String, own: Bool) -> IO(String):
   match ok:
     case False{}:
       IO.pure(String, "error: this build has no shared Google client; add your own OAuth client (Desktop app) id and secret first")
@@ -462,9 +462,15 @@ def Gs.begin.k(ok: Bool, +home: String, s: GSec, +redirect: String, own: Bool) -
         mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(Gs.dir(home))
         m : Result<&1, &1, U32 & String, Unit> <- H.FS.chmod(Gs.dir(home), 448)
         +verifier : String <- Gf.nonce(12n)
-        +state : String <- Gf.nonce(4n)
+        +nonce : String <- Gf.nonce(4n)
+        +state : String = G.Google.state(nonce, here)
         +challenge : String <- Gs.challenge(Gs.dir(home), verifier)
         Gs.begin.go(Nat.is_eq(String.length(challenge), 43n), home, s, verifier, state, challenge, redirect, own)
+
+def Gs.pstate(s: GSec) -> String:
+  match s:
+    case GSec{_, _, _, _, _, _, _, state, _}:
+      state
 
 def Gs.configured(s: GSec) -> Bool:
   match s:
@@ -477,18 +483,20 @@ def Gs.with(s: GSec, c: G.Client) -> GSec:
     case GSec{_, _, refresh, access, expiry, email, verifier, state, redirect} G.Client{id, secret}:
       GSec{id, secret, refresh, access, expiry, email, verifier, state, redirect}
 
-def Gs.begin.with(+home: String, +s: GSec, +sh: String, +redirect: String) -> IO(String):
-  Gs.begin.k(Gs.configured(s), home, s, redirect, Bool.not(G.Google.is_shared(Gs.id(s), sh)))
+def Gs.begin.with(+home: String, +s: GSec, +sh: String, +redirect: String, +here: String) -> IO(String):
+  Gs.begin.k(Gs.configured(s), home, s, redirect, here, Bool.not(G.Google.is_shared(Gs.id(s), sh)))
 
 # starts a sign-in: keeps a fresh PKCE verifier and state, and answers the
 # URL the user opens (or "error: ..."). redirect is where Google sends the
 # browser back: http://127.0.0.1:<port>/oauth/google. The user's own
-# client when there is one, else the shared one (Calendar only).
-def Google.begin(+home: String, +redirect: String) -> IO(String):
+# client when there is one, else the shared one (Calendar only). here is
+# where other machines reach this hub, named in the state (G.Google.state)
+# so a browser sent back to another machine's hub finds its way here.
+def Google.begin(+home: String, +redirect: String, +here: String) -> IO(String):
   do IO<String>:
     +s : GSec <- Gs.load(home)
     +sh : G.Client <- Gs.shared()
-    Gs.begin.with(home, Gs.with(s, G.Google.client(Gs.client(s), sh)), G.Client.id(sh), redirect)
+    Gs.begin.with(home, Gs.with(s, G.Google.client(Gs.client(s), sh)), G.Client.id(sh), redirect, here)
 
 def Gs.email.k(ok: Bool, +body: String) -> String:
   match ok:
@@ -545,7 +553,7 @@ def Gs.finish.tok(m: Maybe<&2, G.Tok>, +home: String, s: GSec, r: GResp, +e: GEn
 def Gs.finish.x(ok: Bool, +home: String, s: GSec, +code: String, +verifier: String, +redirect: String) -> IO(String):
   match ok s:
     case False{} _:
-      IO.pure(String, "error: this sign-in was not started here or has expired; start again")
+      IO.pure(String, "error: this sign-in was not started here or has expired; start again, or paste this page's address into Google's settings on the machine where you pressed Connect")
     case True{} GSec{+id, +secret, a, b, c, d, f, g, h}:
       do IO<String>:
         +e : GEnds <- Ge.get()
@@ -886,3 +894,7 @@ def Google.say(+text: String) -> IO(String):
 # the MCP tool definitions, a JSON array shaped as tools/list's
 def Google.tools() -> J.Json:
   J.Json.arr(G.Google.tool_defs())
+
+# the state of the sign-in in flight here ("" for none)
+def Google.pending(+home: String) -> IO(String):
+  IO.bind(GSec, String, Gs.load(home), s => IO.pure(String, Gs.pstate(s)))

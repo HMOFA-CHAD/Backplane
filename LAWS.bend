@@ -2467,6 +2467,30 @@ law google_code_of_example:
 law google_denied_no_code:
   {GO.Google.code_of("http://127.0.0.1:3787/oauth/google?error=access_denied&state=st8") == None{} : Maybe<&2, GO.CodeState>}
 
+# a sign-in's state names the hub that started it
+law google_state_home_example:
+  {GO.Google.state.home(GO.Google.state("n0Ab-_", "http://box.tail1.ts.net:3787")) == "http://box.tail1.ts.net:3787" : String}
+
+# Google's redirect for another hub's sign-in goes on to that hub, once
+law google_hop_other:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "http://box.tail1.ts.net:3787") ++ "&code=4%2F0Ab", "n9")
+    == "http://box.tail1.ts.net:3787/oauth/google?state=" ++ GO.Google.state("n0", "http://box.tail1.ts.net:3787") ++ "&code=4%2F0Ab&hop=1" : String}
+
+# this hub's own sign-in finishes here
+law google_hop_mine:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "http://box.tail1.ts.net:3787") ++ "&code=c", GO.Google.state("n0", "http://box.tail1.ts.net:3787")) == "" : String}
+
+# a browser already sent on is never sent again (no loop)
+law google_hop_once:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "http://box.tail1.ts.net:3787") ++ "&code=c&hop=1", "") == "" : String}
+
+# only to a machine on a tailnet
+law google_hop_tailnet_only:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "https://evil.example.com") ++ "&code=c", "") == "" : String}
+
+law google_hop_no_path:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "https://evil.example.com/x.ts.net") ++ "&code=c", "") == "" : String}
+
 # a To, Cc or Subject cannot start a header of its own
 law google_header_no_newline_example:
   {GO.Mail.clean("a@x.org\r\nBcc: e@x.org") == "a@x.org  Bcc: e@x.org" : String}

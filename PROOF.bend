@@ -4715,6 +4715,24 @@ def Laws.google_expiring_not_fresh(now):
   %google_add60_gt(now) : {Cmp.is_lt(_) == False{} : Bool}
   {==}
 
+def Laws.google_state_home_example():
+  {==}
+
+def Laws.google_hop_other():
+  {==}
+
+def Laws.google_hop_mine():
+  {==}
+
+def Laws.google_hop_once():
+  {==}
+
+def Laws.google_hop_tailnet_only():
+  {==}
+
+def Laws.google_hop_no_path():
+  {==}
+
 def Laws.google_own_client_wins(mine, sh, h):
   %Equal.sym(Bool, GO.Client.has(mine), True{}, h) : {GO.Google.client.k(_, mine, sh) == mine : GO.Client}
   {==}
