@@ -411,11 +411,12 @@ def Look.open(open: Bool, +ty: Ty, +st: M.State, +id: String, +rm: Bool, +c: D.C
 # a project's name under its badge's icon (a click opens the editor; its
 # hit starts past x 10, where a drag drops onto the header), its
 # + for a new thread, the editor when open, then its threads
-def Lay.project(+ty: Ty, r: U.SRow, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+# (quiet: no live thread, so its name and badge are faded)
+def Lay.project(+ty: Ty, r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   match r:
     case U.SRow{_, M.Project{+id, title, _, _, _}, M.Shelves{pinned, active, settled, hidden, snoozed}}:
-      Lay.col.cat(Out.all([Out{Ty.text(ty, 2n, Ty.fit(ty, 2n, title, 180), c, 38, (y + 4 : U32), 28, T.Th.dim()), [Lay.hit(0, y, 228, 32, "project", id)]},
-          Out{Lay.icon(ty, BG.Badge.icon(st, id), c, 14, (y + 10 : U32), BG.Badge.rgb_of(st, id)), [Lay.hit(12, (y + 4 : U32), 24, 28, "look", id)]},
+      Lay.col.cat(Out.all([Out{Ty.text(ty, 2n, Ty.fit(ty, 2n, title, 180), c, 38, (y + 4 : U32), 28, Bool.pick(U32, quiet, T.Th.faint(), T.Th.dim())), [Lay.hit(0, y, 228, 32, "project", id)]},
+          Out{Lay.icon(ty, BG.Badge.icon(st, id), c, 14, (y + 10 : U32), Bool.pick(U32, quiet, T.Th.faint(), BG.Badge.rgb_of(st, id))), [Lay.hit(12, (y + 4 : U32), 24, 28, "look", id)]},
           Out{Lay.icon(ty, "plus", c, 236, (y + 10 : U32), T.Th.faint()), [Lay.hit(230, (y + 4 : U32), 28, 28, "new-thread", id)]}]),
         Lay.col.then(Look.open(String.eq(look, id), ty, st, id, String.eq(rm, id), c, (y + 32 : U32)), y0 =>
         Lay.col.then(Lay.rows(ty, pinned, st, sel, now, False{}, c, y0), y1 =>
@@ -424,12 +425,129 @@ def Lay.project(+ty: Ty, r: U.SRow, +open: Map<&2, Bool>, +st: M.State, +sel: St
               Lay.col.then(Lay.shelf(ty, U.Flag.get(open, id), id, "Settled", settled, st, sel, now, c, y3), y4 =>
                 Lay.shelf(ty, U.Flag.get(open, "arch:" ++ id), "arch:" ++ id, "Archived", M.Archive.of(hidden), st, sel, now, c, y4)))))))
 
-def Lay.projects(+ty: Ty, rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.projects(+ty: Ty, rs: List<&2, U.SRow>, +quiet: Bool, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   match rs:
     case Nil{}:
       Col{Out.none(), y}
     case r <> t:
-      Lay.col.then(Lay.project(ty, r, open, st, sel, now, look, rm, c, y), y2 => Lay.projects(ty, t, open, st, sel, now, look, rm, c, (y2 + 8 : U32)))
+      Lay.col.then(Lay.project(ty, r, quiet, open, st, sel, now, look, rm, c, y), y2 => Lay.projects(ty, t, quiet, open, st, sel, now, look, rm, c, (y2 + 8 : U32)))
+
+# the older projects (quiet for Quiet.days): folded under one row at the
+# end; a search shows them in place
+def Lay.older.rows(open: Bool, +ty: Ty, rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  match open:
+    case True{}:
+      Lay.projects(ty, rs, True{}, op, st, sel, now, look, rm, c, y)
+    case False{}:
+      Col{Out.none(), y}
+
+def Lay.older.k(searching: Bool, +ty: Ty, +rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  match searching:
+    case True{}:
+      Lay.projects(ty, rs, True{}, op, st, sel, now, look, rm, c, y)
+    case False{}:
+      Lay.col.cat(Out{List.append(&2, R.Op, Lay.icon(ty, Bool.pick(String, U.Flag.get(op, "old-projects"), "chevron-down", "chevron-right"), c, 12, (y + 6 : U32), T.Th.faint()),
+          Ty.text(ty, 2n, "Older " ++ Nat.show(List.length(&2, U.SRow, rs)), c, 32, y, 28, T.Th.faint())), [Lay.hit(0, y, 264, 28, "side-older", "")]},
+        Lay.older.rows(U.Flag.get(op, "old-projects"), ty, rs, op, st, sel, now, look, rm, c, (y + 32 : U32)))
+
+def Lay.older(+ty: Ty, rs: List<&2, U.SRow>, +searching: Bool, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  match rs:
+    case Nil{}:
+      Col{Out.none(), y}
+    case +r <> +t:
+      Lay.older.k(searching, ty, r <> t, op, st, sel, now, look, rm, c, y)
+
+# the projects view: live projects, then the quiet ones faded, then the
+# older ones folded (core's Side.groups)
+def Lay.groups(+ty: Ty, g: U.SGroups, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  match g:
+    case U.SGroups{l, qs, o}:
+      Lay.col.then(Lay.projects(ty, l, False{}, op, st, sel, now, look, rm, c, y), y1 =>
+        Lay.col.then(Lay.projects(ty, qs, True{}, op, st, sel, now, look, rm, c, y1), y2 =>
+          Lay.older(ty, o, Bool.not(String.is_empty(q)), op, st, sel, now, look, rm, c, y2)))
+
+# The active view
+# ---------------
+# One list of every live thread, what waits on the person first, then the
+# ones settled lately, faded (core's Active.rows). A row shows its
+# project's name where the other view shows the age.
+
+def Lay.arow.k(+ty: Ty, +on: Bool, id: String, title: String, +proj: String, +faded: Bool, +dot: U32, +tint: U32, +c: D.Clip, +y: U32) -> Out:
+  +pn = Ty.fit(ty, 2n, proj, 96)
+  +pw = Ty.width(ty, 2n, pn)
+  Out{List.concat(&2, R.Op, [
+      Bool.pick(List<&2, R.Op>, on, List.append(&2, R.Op, Lay.round(c, 6, (y + 1 : U32), 252, 30, 6, T.Th.raise()), [D.Draw.rect(c, 6, (y + 1 : U32), 2, 30, tint, 255)]), Nil{}),
+      [D.Draw.disc(c, 19.0, U32.to_f32((y + 16 : U32)), 3.0, Bool.pick(U32, faded, T.Th.line(), dot), 255)],
+      Ty.text(ty, 0n, Ty.fit(ty, 0n, title, (252 - 32 - pw - 12 : U32)), c, 32, y, 32, Bool.pick(U32, on, T.Th.text(), Bool.pick(U32, faded, T.Th.faint(), T.Th.soft()))),
+      Ty.text(ty, 2n, pn, c, (252 - pw : U32), y, 32, Bool.pick(U32, faded, T.Th.line(), T.Th.faint()))]),
+    [Lay.hit(0, y, 264, 32, "select", id)]}
+
+def Lay.arow.on(+ty: Ty, r: U.ARow, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Out:
+  match r:
+    case U.ARow{_, _, +t, +pid, +pt, +faded}:
+      Lay.arow.k(ty, String.eq(M.Thread.id(t), sel), M.Thread.id(t), U.Active.title(t), pt, faded, Lay.phase(U.Side.phase(st, t)), BG.Badge.rgb_of(st, pid), c, y)
+
+def Lay.arow.id(r: U.ARow) -> String:
+  match r:
+    case U.ARow{_, _, t, _, _, _}:
+      M.Thread.id(t)
+
+def Lay.arow.k2(seen: Bool, +ty: Ty, r: U.ARow, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Out:
+  match seen:
+    case True{}:
+      Lay.arow.on(ty, r, st, sel, c, y)
+    case False{}:
+      Out{Nil{}, [Lay.hit(0, y, 264, 32, "select", Lay.arow.id(r))]}
+
+def Lay.arows(+ty: Ty, rs: List<&2, U.ARow>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+  match rs:
+    case Nil{}:
+      Col{Out.none(), y}
+    case r <> t:
+      Lay.col.cat(Lay.arow.k2(Lay.row.seen(c, y), ty, r, st, sel, c, y), Lay.arows(ty, t, st, sel, c, (y + 32 : U32)))
+
+def Lay.aparts.put(faded: Bool, r: U.ARow, p: U.AParts) -> U.AParts:
+  match faded p:
+    case True{} U.AParts{l, f}:
+      U.AParts{l, r <> f}
+    case False{} U.AParts{l, f}:
+      U.AParts{r <> l, f}
+
+def Lay.aparts(rs: List<&2, U.ARow>) -> U.AParts:
+  match rs:
+    case Nil{}:
+      U.AParts{Nil{}, Nil{}}
+    case +r <> t:
+      Lay.aparts.put(U.ARow.faded(r), r, Lay.aparts(t))
+
+# the faded rows under a thin label
+def Lay.afaded(+ty: Ty, rs: List<&2, U.ARow>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+  match rs:
+    case Nil{}:
+      Col{Out.none(), y}
+    case +r <> +t:
+      Lay.col.cat(Out.ops(Ty.text(ty, 2n, "Settled lately", c, 16, (y + 4 : U32), 28, T.Th.faint())), Lay.arows(ty, r <> t, st, sel, c, (y + 32 : U32)))
+
+def Lay.active.k(p: U.AParts, +empty: Bool, +ty: Ty, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+  match p:
+    case U.AParts{l, f}:
+      Lay.col.cat(Out.ops(Bool.pick(List<&2, R.Op>, empty, Ty.text(ty, 2n, "Nothing active", c, 16, y, 32, T.Th.faint()), Nil{})),
+        Lay.col.then(Lay.arows(ty, l, st, sel, c, y), y1 => Lay.afaded(ty, f, st, sel, c, y1)))
+
+def Lay.active(+ty: Ty, rs: List<&2, U.ARow>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+  match rs:
+    case Nil{}:
+      Col{Out.ops(Ty.text(ty, 2n, "Nothing active", c, 16, y, 32, T.Th.faint())), (y + 32 : U32)}
+    case +r <> +t:
+      Lay.active.k(Lay.aparts(r <> t), False{}, ty, st, sel, c, y)
+
+# the list the "sidebar.view" setting picks (only that one is laid out)
+def Lay.side.list(active: Bool, +ty: Ty, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  match active:
+    case True{}:
+      Lay.active(ty, U.Active.rows(st, now, q), st, sel, c, y)
+    case False{}:
+      Lay.groups(ty, U.Side.groups(U.Side.shown(st, now, q), now), q, op, st, sel, now, look, rm, c, y)
 
 def Lay.field(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +w: U32, +text: String, +focused: Bool, +blink: Bool, +caret: Nat, +mark: Nat, +placeholder: String, +id: String) -> Out:
   +vis = Ty.fit(ty, 2n, text, (w - 16 : U32))
@@ -518,8 +636,9 @@ def Links.over(o: Out, ls: List<&2, U.Link2>, +now: Nat, +c: D.Clip) -> Out:
 
 # Machines
 # --------
-# With more than one machine, a row under the header names the one shown
-# and opens the list to switch.
+# Backplane is one app on every machine the owner has: which machine's
+# projects show is a quiet choice at the foot of the sidebar (only with
+# more than one), next to Settings; its list opens upward.
 
 def Mach.rows(+ty: Ty, rs: List<&2, U.MRow>, +y: U32) -> Out:
   match rs:
@@ -532,26 +651,25 @@ def Mach.rows(+ty: Ty, rs: List<&2, U.MRow>, +y: U32) -> Out:
           [Lay.hit(4, y, 256, 30, "machine", url)]},
         Mach.rows(ty, t, (y + 30 : U32)))
 
-def Mach.menu(+ty: Ty, open: Bool, +rs: List<&2, U.MRow>) -> Out:
+def Mach.menu(+ty: Ty, open: Bool, +rs: List<&2, U.MRow>, +h: U32) -> Out:
   match open:
     case True{}:
-      Out.cat(Out.ops(Lay.box(D.Clip.all(), 4, 88, 256, (U32.from_nat(List.length(&2, U.MRow, rs)) * 30 + 8 : U32), 0, T.Th.raise(), T.Th.line())),
-        Mach.rows(ty, rs, 92))
+      +hh = {(U32.from_nat(List.length(&2, U.MRow, rs)) * 30 + 8 : U32) : U32}
+      Out.cat(Out.ops(Lay.box(D.Clip.all(), 4, (h - 52 - hh : U32), 256, hh, 0, T.Th.raise(), T.Th.line())),
+        Mach.rows(ty, rs, (h - 48 - hh : U32)))
     case False{}:
       Out.none()
 
-def Mach.bar.k(any: Bool, +ty: Ty, +rs: List<&2, U.MRow>) -> Out:
+# the machine shown, at the right of the Settings row
+def Mach.bar.k(any: Bool, +ty: Ty, +rs: List<&2, U.MRow>, +h: U32) -> Out:
   match any:
     case True{}:
-      Out{List.concat(&2, R.Op, [[D.Draw.rect(D.Clip.all(), 0, 87, 264, 1, T.Th.line(), 255)],
-          Ty.text(ty, 2n, Ty.fit(ty, 2n, U.Machines.current(rs), 200), D.Clip.all(), 16, 52, 36, T.Th.text()),
-          Lay.icon(ty, "chevron-down", D.Clip.all(), 236, 62, T.Th.dim())]), [Lay.hit(0, 52, 263, 36, "flag", "machines")]}
+      +nm = Ty.fit(ty, 2n, U.Machines.current(rs), 110)
+      +nw = Ty.width(ty, 2n, nm)
+      Out{List.append(&2, R.Op, Ty.text(ty, 2n, nm, D.Clip.all(), (236 - nw : U32), (h - 48 : U32), 48, T.Th.faint()),
+          Lay.icon(ty, "chevron-up", D.Clip.all(), 238, (h - 32 : U32), T.Th.faint())), [Lay.hit((228 - nw : U32), (h - 48 : U32), (35 + nw : U32), 48, "flag", "machines")]}
     case False{}:
       Out.none()
-
-# how far the machine row pushes the projects down
-def Mach.h(any: Bool) -> U32:
-  Bool.pick(U32, any, 36, 0)
 
 # Hotkey hints: while alt or ctrl is held (nui.bend's Hint) each row a
 # number reaches shows it: projects by their new-thread button, threads by
@@ -605,13 +723,11 @@ def Lay.hint.ids(alt: Bool, ctrl: Bool, +u: U.Ui) -> List<&2, String>:
     case False{} False{}:
       Nil{}
 
-# the sidebar's project search, under the header (and the add row)
-def Lay.finding(+ty: Ty, find: Bool, +y: U32, +q: String, +focus: String, +caret: Nat, +mark: Nat) -> Out:
-  match find:
-    case True{}:
-      Lay.field(ty, D.Clip.all(), 12, y, 240, q, String.eq(focus, S.Fld.id("pq", "proj-go", "")), True{}, caret, mark, "Find a project", S.Fld.id("pq", "proj-go", ""))
-    case False{}:
-      Out.none()
+# the sidebar's search, at the top of its list: projects by name, or in
+# the active view threads by title or project (the query holds while it
+# has text: core's Find.q)
+def Lay.finding(+ty: Ty, +active: Bool, +y: U32, +q: String, +focus: String, +caret: Nat, +mark: Nat) -> Out:
+  Lay.field(ty, D.Clip.all(), 12, y, 240, q, String.eq(focus, S.Fld.id("pq", "proj-go", "")), True{}, caret, mark, Bool.pick(String, active, "Search threads", "Search projects"), S.Fld.id("pq", "proj-go", ""))
 
 # the sidebar's rows, and how far they may scroll (nui.bend's Side.most):
 # until the end of the list, scrolled up by sd, meets the bottom
@@ -621,28 +737,28 @@ def Side.most(c: Col, +sd: U32, +bottom: U32) -> Out:
       Out.cat(o, Out{Nil{}, [Lay.hit(0, 0, 0, 0, "side-most", U32.show(U32.dim((y + sd + 8 : U32), bottom)))]})
 
 def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, +adding: Bool, +v: String,
-    +sd: U32, +caret: Nat, +mark: Nat, +focus: String, +path: String, +h: U32, +settings: Bool, +ms: List<&2, U.MRow>, +hint: String, +ids: List<&2, String>, +look: String, +rm: String, +find: Bool, +q: String, more: D.Clip -> U32 -> Col) -> Out:
+    +sd: U32, +caret: Nat, +mark: Nat, +focus: String, +path: String, +h: U32, +settings: Bool, +ms: List<&2, U.MRow>, +hint: String, +ids: List<&2, String>, +look: String, +rm: String, +q: String, more: D.Clip -> U32 -> Col) -> Out:
   +top = {D.Clip{0, 0, 264, 52} : D.Clip}
   +many = Nat.is_gt(List.length(&2, U.MRow, ms), 1n)
-  +yf = {(Bool.pick(U32, adding, 96, 58) + Mach.h(many) : U32) : U32}
-  +y0 = {(Bool.pick(U32, adding, 96, 60) + Mach.h(many) + Bool.pick(U32, find, 36, 0) : U32) : U32}
+  +active = String.eq(U.Side.view(st), "active")
+  +yf = {Bool.pick(U32, adding, 96, 60) : U32}
+  +y0 = {(yf + 36 : U32) : U32}
   Out.all([
     Out.ops([D.Draw.rect(D.Clip.all(), 0, 0, 264, h, T.Th.panel(), 255), D.Draw.rect(D.Clip.all(), 263, 0, 1, h, T.Th.line(), 255),
       D.Draw.rect(top, 0, 51, 264, 1, T.Th.line(), 255),
       D.Draw.disc(top, 19.0, 26.0, 3.5, Bool.pick(U32, on, T.Th.ok(), T.Th.bad()), 255)]),
     Out.ops(List.append(&2, R.Op, Ty.text(ty, 1n, "Backplane", top, 30, 0, 52, T.Th.text()),
       Ty.text(ty, 2n, "v" ++ v, top, (30 + Ty.width(ty, 1n, "Backplane") + 8 : U32), 0, 52, T.Th.faint()))),
-    Out{Lay.icon(ty, "search", top, 206, 18, Bool.pick(U32, find, T.Th.text(), T.Th.dim())), [Lay.hit(200, 12, 28, 28, "proj-find", "")]},
     Out{Lay.icon(ty, "plus", top, 234, 18, T.Th.dim()), [Lay.hit(228, 12, 28, 28, "vw-projo", "")]},
     Lay.adding(ty, adding, path, String.eq(focus, "project-path"), caret, mark),
-    Lay.finding(ty, find, yf, q, focus, caret, mark),
-    Links.over(Lay.hints(hint, Side.most(Lay.col.then(Lay.projects(ty, U.Side.shown(st, now, Bool.pick(String, find, q, "")), open, st, sel, now, look, rm,
+    Links.over(Lay.hints(hint, Side.most(Lay.col.then(Lay.side.list(active, ty, q, open, st, sel, now, look, rm,
       D.Clip{0, y0, 264, (h - 48 : U32)}, U32.sub(y0, sd)), more(D.Clip{0, y0, 264, (h - 48 : U32)})), sd, (h - 48 : U32)), ty, D.Clip{0, y0, 264, (h - 48 : U32)}, ids), U.Links.recent(st, now), now, D.Clip{0, y0, 264, (h - 48 : U32)}),
+    Lay.finding(ty, active, yf, q, focus, caret, mark),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), 0, (h - 48 : U32), 263, 48, T.Th.panel(), 255), D.Draw.rect(D.Clip.all(), 0, (h - 48 : U32), 263, 1, T.Th.line(), 255)],
         List.append(&2, R.Op, Lay.icon(ty, "settings", D.Clip.all(), 16, (h - 32 : U32), Bool.pick(U32, settings, T.Th.text(), T.Th.dim())), Ty.text(ty, 2n, "Settings", D.Clip.all(), 40, (h - 48 : U32), 48, Bool.pick(U32, settings, T.Th.text(), T.Th.dim())))),
-      [Lay.hit(0, (h - 48 : U32), 263, 48, "flag", "settings")]},
-    Mach.bar.k(many, ty, ms),
-    Mach.menu(ty, Bool.and(many, U.Flag.get(open, "machines")), ms)])
+      [Lay.hit(0, (h - 48 : U32), 120, 48, "flag", "settings")]},
+    Mach.bar.k(many, ty, ms, h),
+    Mach.menu(ty, Bool.and(many, U.Flag.get(open, "machines")), ms, h)])
 
 # Timeline
 # --------
@@ -2117,7 +2233,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +tms = U.Models.menu(U.Str.get(info, "models"), tp)
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
-  +total = {(1040 + dy + ey + Set.voice.h(ty, n, x, w) : U32) : U32}
+  +total = {(1092 + dy + ey + Set.voice.h(ty, n, x, w) : U32) : U32}
   +pair = U.Pair.link(info)
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
@@ -2157,23 +2273,26 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
       Lay.chip(ty, (x + w - 120 : U32), (b2 + 500 + dy + ey : U32), "On", String.eq(ipc, "on"), "setting", "kicad.ipc=on"),
       Lay.chip(ty, (x + w - 70 : U32), (b2 + 500 + dy + ey : U32), "Off", String.eq(ipc, "off"), "setting", "kicad.ipc=off")]), Out.none()),
     Set.head(ty, "Appearance", x, (b2 + 570 + dy + ey : U32)),
-    Set.card(x, (b2 + 602 + dy + ey : U32), w, 64),
+    Set.card(x, (b2 + 602 + dy + ey : U32), w, 116),
     Set.row.r(ty, "Theme", "The window and the web page (phones unset follow their own system).", x, (b2 + 604 + dy + ey : U32), w, 150),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Light") - 6 - Lay.button.w(ty, "Dark") : U32), (b2 + 618 + dy + ey : U32), "Dark", Bool.not(String.eq(M.Setting.get(st, "ui.theme", ""), "light")), "setting", "ui.theme=dark"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Light") : U32), (b2 + 618 + dy + ey : U32), "Light", String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "setting", "ui.theme=light"),
-    Set.head(ty, "Network and updates", x, (b2 + 690 + dy + ey : U32)),
-    Set.card(x, (b2 + 722 + dy + ey : U32), w, 216),
+    Set.row.r(ty, "Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", x, (b2 + 656 + dy + ey : U32), w, 190),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Active") - 6 - Lay.button.w(ty, "Projects") : U32), (b2 + 670 + dy + ey : U32), "Projects", Bool.not(String.eq(U.Side.view(st), "active")), "setting", "sidebar.view=projects"),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Active") : U32), (b2 + 670 + dy + ey : U32), "Active", String.eq(U.Side.view(st), "active"), "setting", "sidebar.view=active"),
+    Set.head(ty, "Network and updates", x, (b2 + 742 + dy + ey : U32)),
+    Set.card(x, (b2 + 774 + dy + ey : U32), w, 216),
     Set.row(ty, "Tailscale: " ++ U.Str.get(info, "tailnet"), Bool.pick(String, String.eq(U.Str.get(info, "tailnet"), "off"), "Listening on " ++ U.Str.get(info, "listen") ++ " only (started with --no-tailscale, or Tailscale is not up).",
-      "Also on your tailnet: your own devices get in, others need the pairing token."), x, (b2 + 724 + dy + ey : U32), w),
-    Set.row.r(ty, "Pairing link", U.Pair.note(pair), x, (b2 + 776 + dy + ey : U32), w, 80),
-    Bool.pick(Out, String.is_empty(pair), Out.none(), Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Copy") : U32), (b2 + 786 + dy + ey : U32), "Copy", T.Th.soft(), "copy", pair)),
-    Set.row.r(ty, "Backplane " ++ v, U.Update.line(info, note), x, (b2 + 828 + dy + ey : U32), w, 150),
-    Bool.pick(Out, U.Update.packaged(info), Out.none(), Bool.pick(Out, String.starts_with(note, "update "), Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Install update") : U32), (b2 + 838 + dy + ey : U32), "Install update", T.Th.accent(), "update", ""),
-      Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Check now") : U32), (b2 + 838 + dy + ey : U32), "Check now", T.Th.soft(), "update-check", ""))),
-    Set.row.r(ty, "Update channel", "Stable takes releases; nightly also takes the daily builds.", x, (b2 + 880 + dy + ey : U32), w, 190),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") - 6 - Lay.button.w(ty, "Stable") : U32), (b2 + 894 + dy + ey : U32), "Stable", Bool.not(String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly")), "setting", "update.channel=stable"),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") : U32), (b2 + 894 + dy + ey : U32), "Nightly", String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly"), "setting", "update.channel=nightly"),
-    Set.voice(ty, st, n, x, w, (b2 + 958 + dy + ey : U32))])),
+      "Also on your tailnet: your own devices get in, others need the pairing token."), x, (b2 + 932 + dy + ey : U32), w),
+    Set.row.r(ty, "Pairing link", U.Pair.note(pair), x, (b2 + 932 + dy + ey : U32), w, 80),
+    Bool.pick(Out, String.is_empty(pair), Out.none(), Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Copy") : U32), (b2 + 890 + dy + ey : U32), "Copy", T.Th.soft(), "copy", pair)),
+    Set.row.r(ty, "Backplane " ++ v, U.Update.line(info, note), x, (b2 + 932 + dy + ey : U32), w, 150),
+    Bool.pick(Out, U.Update.packaged(info), Out.none(), Bool.pick(Out, String.starts_with(note, "update "), Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Install update") : U32), (b2 + 890 + dy + ey : U32), "Install update", T.Th.accent(), "update", ""),
+      Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Check now") : U32), (b2 + 890 + dy + ey : U32), "Check now", T.Th.soft(), "update-check", ""))),
+    Set.row.r(ty, "Update channel", "Stable takes releases; nightly also takes the daily builds.", x, (b2 + 932 + dy + ey : U32), w, 190),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") - 6 - Lay.button.w(ty, "Stable") : U32), (b2 + 946 + dy + ey : U32), "Stable", Bool.not(String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly")), "setting", "update.channel=stable"),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") : U32), (b2 + 946 + dy + ey : U32), "Nightly", String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly"), "setting", "update.channel=nightly"),
+    Set.voice(ty, st, n, x, w, (b2 + 1010 + dy + ey : U32))])),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 51, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255)],
       Ty.text(ty, 0n, "Settings", D.Clip.all(), (x0 + 24 : U32), 0, 52, T.Th.text())), Nil{}},
     Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Close") : U32), 12, "Close", T.Th.soft(), "flag", "settings")])
@@ -2654,12 +2773,49 @@ def Lay.ghost(+ty: Ty, +n: S.Nui) -> Out:
       Lay.ghost.k(Bool.and(Bool.not(String.is_empty(U.Ui.scratch(u, "@drag"))), S.Row.far(S.Row.y(n), my)), ty,
         U.Drag.title(U.Ui.state(u), U.Ui.scratch(u, "@drag")), U32.max(my, 67))
 
+# Row menus
+# ---------
+# A right-click on a thread's row or a project's name opens its menu
+# (core's Menu) where the pointer was ("@menu.x", "@menu.y"), kept inside
+# the window; a press anywhere else shuts it ("menu-close" under it).
+
+def Rm.items(+ty: Ty, xs: List<&2, U.MItem>, +x: U32, +y: U32) -> Out:
+  match xs:
+    case Nil{}:
+      Out.none()
+    case U.MItem{+l, +a, +v, +t} <> r:
+      Out.cat(Out{Ty.text(ty, 2n, Ty.fit(ty, 2n, l, 184), D.Clip.all(), (x + 12 : U32), y, 30, Bool.pick(U32, String.eq(t, "danger"), T.Th.bad(), T.Th.soft())),
+          [Lay.hit(x, y, 208, 30, a, v)]},
+        Rm.items(ty, r, x, (y + 30 : U32)))
+
+# (d where no pointer set it)
+def Rm.num(+s: String, +d: U32) -> U32:
+  Bool.pick(U32, String.is_empty(s), d, U32.from_nat(M.Switch.num(s, 0n)))
+
+def Rm.box(+ty: Ty, +xs: List<&2, U.MItem>, +px: U32, +py: U32, +w: U32, +h: U32) -> Out:
+  +hh = {(U32.from_nat(List.length(&2, U.MItem, xs)) * 30 + 8 : U32) : U32}
+  +x = {U32.min(px, (w - 212 : U32)) : U32}
+  +y = {U32.min(py, (h - hh - 4 : U32)) : U32}
+  Out.all([Out{Nil{}, [Lay.hit(0, 0, w, h, "menu-close", "")]},
+    Out.ops(Lay.box(D.Clip.all(), x, y, 208, hh, 0, T.Th.raise(), T.Th.line())),
+    Rm.items(ty, xs, x, (y + 4 : U32))])
+
+def Rm.draw.k(none: Bool, +ty: Ty, +u: U.Ui, +w: U32, +h: U32) -> Out:
+  match none:
+    case True{}:
+      Out.none()
+    case False{}:
+      Rm.box(ty, U.Menu.items(u, True{}), Rm.num(U.Ui.scratch(u, "@menu.x"), 40), Rm.num(U.Ui.scratch(u, "@menu.y"), 140), w, h)
+
+def Rm.draw(+ty: Ty, +u: U.Ui, +w: U32, +h: U32) -> Out:
+  Rm.draw.k(String.is_empty(U.Menu.open(u)), ty, u, w, h)
+
 def Lay.sidebar.x(+ty: Ty, +n: S.Nui, +h: U32, more: D.Clip -> U32 -> Col) -> Out:
   match n:
-    case S.Nui{U.Ui{+st, +sel, _, _, +open, on, +now, adding, _, +v, _, _, _, +note, _, _, _}, _, _, _, _, +sd, _, +caret, +focus, +path, _, _, vw}:
+    case S.Nui{U.Ui{+st, +sel, _, _, +open, on, +now, adding, _, +v, _, _, _, +note, _, _, _}, +w, _, _, _, +sd, _, +caret, +focus, +path, _, _, vw}:
       Out.all([Lay.sidebar.k(ty, D.Clip{0, 52, 264, h}, st, sel, open, on, now, adding, v, sd, caret, S.Nui.mark(n), focus, path, h, U.Flag.get(open, "settings"), U.Machines.rows(S.Nui.ui(n)),
         U.Ui.scratch(S.Nui.ui(n), "@hint"), Lay.hint.ids(String.eq(U.Ui.scratch(S.Nui.ui(n), "@hint"), "alt"), String.eq(U.Ui.scratch(S.Nui.ui(n), "@hint"), "ctrl"), S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@look"), U.Ui.scratch(S.Nui.ui(n), "@rm"),
-        U.Flag.get(open, "psearch"), U.Ui.scratch(S.Nui.ui(n), "@f.pq"), more), Lay.note(ty, note, h), Lay.ghost(ty, n)])
+        U.Ui.scratch(S.Nui.ui(n), "@f.pq"), more), Lay.note(ty, note, h), Lay.ghost(ty, n), Rm.draw(ty, S.Nui.ui(n), w, h)])
 
 # the sidebar with nothing under the projects
 def Lay.sidebar(+ty: Ty, +n: S.Nui, +h: U32) -> Out:

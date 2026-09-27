@@ -1146,6 +1146,76 @@ def Laws.find_empty_keeps(rs):
 def Laws.find_shut_shows_all(st, now, dr):
   Laws.find_empty_keeps(U.Side.rows(st, now))
 
+def Laws.find_always_on(op, dr):
+  {==}
+
+def Laws.urg_approval_top(p):
+  match p:
+    case M.PhApproval{}:
+      {==}
+    case M.PhInput{}:
+      {==}
+    case M.PhWorking{}:
+      {==}
+    case M.PhMonitoring{n}:
+      {==}
+    case M.PhFailed{}:
+      {==}
+    case M.PhQueued{}:
+      {==}
+    case M.PhComplete{}:
+      {==}
+    case M.PhStopped{}:
+      {==}
+    case M.PhIdle{}:
+      {==}
+
+def Laws.urg_input_over_working(a, b):
+  match a b:
+    case True{} True{}:
+      {==}
+    case True{} False{}:
+      {==}
+    case False{} True{}:
+      {==}
+    case False{} False{}:
+      {==}
+
+def Laws.urg_done_over_working(a, b):
+  match a b:
+    case True{} True{}:
+      {==}
+    case True{} False{}:
+      {==}
+    case False{} True{}:
+      {==}
+    case False{} False{}:
+      {==}
+
+def Laws.urg_pin_within(p):
+  match p:
+    case M.PhApproval{}:
+      {==}
+    case M.PhInput{}:
+      {==}
+    case M.PhWorking{}:
+      {==}
+    case M.PhMonitoring{n}:
+      {==}
+    case M.PhFailed{}:
+      {==}
+    case M.PhQueued{}:
+      {==}
+    case M.PhComplete{}:
+      {==}
+    case M.PhStopped{}:
+      {==}
+    case M.PhIdle{}:
+      {==}
+
+def Laws.menu_settled_brings_back(p, id, armed):
+  {==}
+
 def Laws.caret_shows_when_moved():
   {==}
 

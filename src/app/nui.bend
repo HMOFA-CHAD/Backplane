@@ -1592,7 +1592,8 @@ def Pick.click(+n: Nui, +v: String) -> Step:
 def Menu.own(+a: String, +v: String) -> Bool:
   Bool.or(Bool.or(Bool.or(Bool.or(String.eq(a, "model"), String.eq(a, "effort")), Bool.or(String.eq(a, "machine"), String.eq(a, "menu"))),
     Bool.and(String.eq(a, "flag"), Bool.or(String.eq(v, "models"), String.eq(v, "machines")))),
-    Bool.or(Bool.or(String.eq(a, "look"), String.eq(a, "look-set")), String.eq(a, "look-bg")))
+    Bool.or(Bool.or(Bool.or(String.eq(a, "look"), String.eq(a, "look-set")), String.eq(a, "look-bg")),
+      Bool.or(String.eq(a, "row-delete"), String.eq(a, "proj-remove"))))
 
 def Menu.inside(m: Maybe<&2, Hit>) -> Bool:
   match m:
@@ -1606,7 +1607,7 @@ def Menu.shut(inside: Bool, +n: Nui) -> Nui:
     case True{}:
       n
     case False{}:
-      Nui.with_ui(n, U.Ui.scratch_set(U.Ui.flag_off(U.Ui.flag_off(Nui.ui(n), "models"), "machines"), "@look", ""))
+      Nui.with_ui(n, U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.flag_off(U.Ui.flag_off(Nui.ui(n), "models"), "machines"), "@look", ""), "@menu", ""))
 
 # the picker keeps where it was scrolled only while presses stay in it
 def Menu.keeps_off(m: Maybe<&2, Hit>) -> Bool:
@@ -2418,7 +2419,8 @@ def Nui.key.menu(menu: Bool, +n: Nui, +code: U32, +text: U32, +mods: U32) -> Ste
       Nui.key.go(Keys.name(code, mods, String.eq(Nui.focus_of(n), "terminal")), n, code, text, mods)
 
 def Nui.key.m(+n: Nui, +code: U32, +text: U32, +mods: U32) -> Step:
-  Nui.key.menu(Bool.and(U32.is_eq(code, Key.escape()), Bool.or(Bool.or(U.Ui.flag(Nui.ui(n), "models"), U.Ui.flag(Nui.ui(n), "machines")), Bool.not(String.is_empty(U.Ui.scratch(Nui.ui(n), "@look"))))), n, code, text, mods)
+  Nui.key.menu(Bool.and(U32.is_eq(code, Key.escape()), Bool.or(Bool.or(U.Ui.flag(Nui.ui(n), "models"), U.Ui.flag(Nui.ui(n), "machines")),
+    Bool.not(String.is_empty(U.Ui.scratch(Nui.ui(n), "@look") ++ U.Ui.scratch(Nui.ui(n), "@menu"))))), n, code, text, mods)
 
 # Selecting thread text
 # ---------------------
@@ -2543,18 +2545,26 @@ def Nui.press.k(drag: Bool, +n: Nui, +x: U32, +y: U32) -> Step:
     case False{}:
       Row.press(Hit.find(Nui.hits(n), x, y), n, x, y)
 
-# a right-click on a sidebar row settles it, or brings a settled one back
-def Row.menu.k(row: Bool, +n: Nui, +value: String) -> Step:
-  match row:
-    case True{}:
-      Nui.act(n, "row-toggle", value)
-    case False{}:
+# a right-click on a sidebar row opens its menu where the pointer is
+# (core's Menu: "row-menu"), on a project's name or badge the project's
+# ("proj-menu"); it never acts on the row by itself
+def Row.menu.at(+n: Nui, +x: U32, +y: U32) -> Nui:
+  Nui.with_ui(n, U.Ui.scratch_set(U.Ui.scratch_set(Nui.ui(n), "@menu.x", U32.show(x)), "@menu.y", U32.show(y)))
+
+def Row.menu.k(row: Bool, proj: Bool, +n: Nui, +value: String, +x: U32, +y: U32) -> Step:
+  match row proj:
+    case True{} _:
+      Nui.act(Row.menu.at(n, x, y), "row-menu", value)
+    case False{} True{}:
+      Nui.act(Row.menu.at(n, x, y), "proj-menu", value)
+    case False{} False{}:
       Step{n, Nil{}, False{}}
 
-def Row.menu(m: Maybe<&2, Hit>, +n: Nui, +x: U32) -> Step:
+def Row.menu(m: Maybe<&2, Hit>, +n: Nui, +x: U32, +y: U32) -> Step:
   match m:
     case Some{Hit{_, _, _, _, +action, +value}}:
-      Row.menu.k(Bool.and(String.eq(action, "select"), U32.is_lt(x, 264)), n, value)
+      Row.menu.k(Bool.and(String.eq(action, "select"), U32.is_lt(x, 264)),
+        Bool.and(Bool.or(String.eq(action, "project"), String.eq(action, "look")), U32.is_lt(x, 264)), n, value, x, y)
     case None{}:
       Step{n, Nil{}, False{}}
 
@@ -2640,7 +2650,7 @@ def Nui.event(+n: Nui, e: W.WinEv) -> Step:
     case W.WButton{+x, +y, 1, False{}}:
       Sel.end(Row.release(Bool.not(String.is_empty(Row.id(n))), n, x, y))
     case W.WButton{+x, +y, 3, True{}}:
-      Row.menu(Hit.find(Nui.hits(n), x, y), Menu.press(Hit.find(Nui.hits(n), x, y), n), x)
+      Row.menu(Hit.find(Nui.hits(n), x, y), Menu.press(Hit.find(Nui.hits(n), x, y), n), x, y)
     case W.WButton{+x, +y, 2, True{}}:
       Nui.mpress(Nui.in_viewer(n, x), n, x, y)
     case W.WButton{+x, +y, 2, False{}}:

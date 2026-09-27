@@ -891,6 +891,43 @@ law find_shut_shows_all:
   for dr: Map<&2, String>
   {U.Side.shown(st, now, U.Find.q.k(False{}, dr)) == U.Side.rows(st, now) : List<&2, U.SRow>}
 
+# the sidebar's search field is always there now: its query holds whether
+# or not the phones' old toggle ("psearch") is on
+law find_always_on:
+  for op: Map<&2, Bool>
+  for dr: Map<&2, String>
+  {U.Find.q(op, dr) == U.Str.get(dr, "@f.pq") : String}
+
+# the active view puts what waits on the person first: nothing ranks over
+# an approval, and a question or a finished turn sorts above work in
+# progress, pinned or not
+law urg_approval_top:
+  for p: M.Phase
+  {Nat.is_ge(U.Urg.rank(M.PhApproval{}), U.Urg.rank(p)) == True{} : Bool}
+
+law urg_input_over_working:
+  for a: Bool
+  for b: Bool
+  {Nat.is_gt(U.Urg.key(M.PhInput{}, a), U.Urg.key(M.PhWorking{}, b)) == True{} : Bool}
+
+law urg_done_over_working:
+  for a: Bool
+  for b: Bool
+  {Nat.is_gt(U.Urg.key(M.PhComplete{}, a), U.Urg.key(M.PhWorking{}, b)) == True{} : Bool}
+
+# within a phase, a pinned thread comes first
+law urg_pin_within:
+  for p: M.Phase
+  {Nat.is_gt(U.Urg.key(p, True{}), U.Urg.key(p, False{})) == True{} : Bool}
+
+# a settled thread's menu leads with bringing it back, and ends with a
+# Delete that asks first (menu_delete_asks in test/sidebar_test.bend)
+law menu_settled_brings_back:
+  for p: Bool
+  for id: String
+  for armed: Bool
+  {List.head(&2, U.MItem, U.Menu.thread.k(M.Settled{}, p, id, armed)) == Some{U.MItem{"Bring back", "row-unsettle", id, ""}} : Maybe<&2, U.MItem>}
+
 # a caret that just moved (or a field just focused) is shown
 law caret_shows_when_moved:
   {N.Blink.shown(0n) == True{} : Bool}
@@ -1626,7 +1663,7 @@ law menu_right_press_first:
   for +n: N.Nui
   for +x: U32
   for +y: U32
-  {N.Nui.event(n, W.WButton{x, y, 3, True{}}) == N.Row.menu(N.Hit.find(N.Nui.hits(n), x, y), N.Menu.press(N.Hit.find(N.Nui.hits(n), x, y), n), x) : N.Step}
+  {N.Nui.event(n, W.WButton{x, y, 3, True{}}) == N.Row.menu(N.Hit.find(N.Nui.hits(n), x, y), N.Menu.press(N.Hit.find(N.Nui.hits(n), x, y), n), x, y) : N.Step}
 
 # a press on nothing is outside
 law menu_press_nothing:

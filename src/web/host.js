@@ -432,7 +432,13 @@ for (const ev of EVENTS) {
     const el = e.target.closest?.(`[data-on-${ev}]`);
     if (!el) return;
     const action = el.getAttribute(`data-on-${ev}`);
-    if (ev === "contextmenu") e.preventDefault();
+    // a row's menu opens where the pointer was (view.bend's View.rmenu
+    // reads these)
+    if (ev === "contextmenu") {
+      e.preventDefault();
+      document.documentElement.style.setProperty("--mx", Math.min(e.clientX, innerWidth - 216) + "px");
+      document.documentElement.style.setProperty("--my", e.clientY + "px");
+    }
     dispatch(action, ev === "input" ? inputValue(el) : valueOf(el));
   });
 }

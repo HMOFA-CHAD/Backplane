@@ -55,7 +55,7 @@ def View.rows(ps: List<&2, M.Project>, +ts: List<&2, M.Thread>) -> List<&2, PRow
 # a sidebar row: its status dot, title and age (a snoozed row: the time
 # left); rows of a shelf with manual order get move buttons on hover
 def View.row.k(+id: String, +title: String, +ago: String, +dot: String, +sel: String, +movable: Bool) -> D.Node:
-  D.El{"div", id, [D.At{"class", Bool.pick(String, String.eq(id, sel), "thread on", "thread")}, D.At{"data-value", id}, D.On{"click", "select"}, D.On{"contextmenu", "row-toggle"}],
+  D.El{"div", id, [D.At{"class", Bool.pick(String, String.eq(id, sel), "thread on", "thread")}, D.At{"data-value", id}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
     D.Dom.cat([D.Dom.span("dot " ++ dot, ""), D.Dom.span("title", title)],
       D.Dom.cat(Bool.pick(List<&2, D.Node>, movable, [D.El{"span", "", [D.At{"class", "moves"}], [D.Dom.button("move", "move", id ++ "|up", "Move up", "↑"), D.Dom.button("move", "move", id ++ "|down", "Move down", "↓")]}], Nil{}),
         [D.Dom.span("ago", ago)]))}
@@ -130,11 +130,11 @@ def View.look(open: Bool, +st: M.State, +id: String, +rm: Bool) -> List<&2, D.No
     case False{}:
       Nil{}
 
-def View.project(r: U.SRow, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> D.Node:
+def View.project(r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> D.Node:
   match r:
     case U.SRow{_, M.Project{+id, title, root, _, _}, M.Shelves{pinned, active, settled, hidden, snoozed}}:
-      D.El{"section", id, [D.At{"class", "project"}, D.At{"style", "--tint:" ++ BG.Badge.css_of(st, id)}, D.At{"data-drag-to", id}, D.At{"data-drag-act", "reorder-project"}],
-        List.concat(&2, D.Node, [[D.El{"div", "", [D.At{"class", "project-head"}, D.At{"title", root}, D.At{"draggable", "true"}, D.At{"data-drag", id}, D.At{"data-drag-act", "reorder-project"}],
+      D.El{"section", id, [D.At{"class", Bool.pick(String, quiet, "project quiet", "project")}, D.At{"style", "--tint:" ++ BG.Badge.css_of(st, id)}, D.At{"data-drag-to", id}, D.At{"data-drag-act", "reorder-project"}],
+        List.concat(&2, D.Node, [[D.El{"div", "", [D.At{"class", "project-head"}, D.At{"title", root}, D.At{"draggable", "true"}, D.At{"data-drag", id}, D.At{"data-drag-act", "reorder-project"}, D.At{"data-value", id}, D.On{"contextmenu", "proj-menu"}],
             [WI.WIcon.button("badge", "look", id, "Colour and icon", BG.Badge.icon(st, id), 14, ""), D.Dom.span("name", title), WI.WIcon.button("icon", "new-thread", id, "New thread", "plus", 16, "")]}],
           View.look(String.eq(look, id), st, id, String.eq(rm, id)),
           View.rows_in(pinned, st, sel, now, True{}, False{}),
@@ -143,20 +143,98 @@ def View.project(r: U.SRow, +open: Map<&2, Bool>, +st: M.State, +sel: String, +n
           View.shelf(U.Flag.get(open, id), id, "Settled", settled, st, sel, now),
           View.shelf(U.Flag.get(open, "arch:" ++ id), "arch:" ++ id, "Archived", M.Archive.of(hidden), st, sel, now)])}
 
-def View.projects(rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+def View.projects(rs: List<&2, U.SRow>, +quiet: Bool, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       Nil{}
     case r <> t:
-      View.project(r, open, st, sel, now, look, rm) <> View.projects(t, open, st, sel, now, look, rm)
+      View.project(r, quiet, open, st, sel, now, look, rm) <> View.projects(t, quiet, open, st, sel, now, look, rm)
 
-# the project search, while open ("proj-find" opens and shuts it)
-def View.find(find: Bool, +q: String) -> List<&2, D.Node>:
-  match find:
+def View.older.open(on: Bool, rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+  match on:
     case True{}:
-      [D.El{"div", "", [D.At{"class", "find"}], [WB.WB.input("proj-find", "pq", q, "Find a project", "proj-go")]}]
+      View.projects(rs, True{}, open, st, sel, now, look, rm)
     case False{}:
       Nil{}
+
+# the older projects (quiet for Quiet.days) folded under one row; a search
+# shows them in place
+def View.older.k(searching: Bool, +n: Nat, rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+  match searching:
+    case True{}:
+      View.projects(rs, True{}, open, st, sel, now, look, rm)
+    case False{}:
+      WI.WIcon.button(Bool.pick(String, U.Flag.get(open, "old-projects"), "shelf older open", "shelf older"), "side-older", "", "Projects quiet for three days",
+          Bool.pick(String, U.Flag.get(open, "old-projects"), "chevron-down", "chevron-right"), 14, "Older " ++ Nat.show(n))
+        <> View.older.open(U.Flag.get(open, "old-projects"), rs, open, st, sel, now, look, rm)
+
+def View.older(rs: List<&2, U.SRow>, +searching: Bool, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> +t:
+      View.older.k(searching, List.length(&2, U.SRow, r <> t), r <> t, open, st, sel, now, look, rm)
+
+# the projects view: live, quiet (faded), older (folded): core's Side.groups
+def View.groups(g: U.SGroups, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+  match g:
+    case U.SGroups{l, qs, o}:
+      List.concat(&2, D.Node, [View.projects(l, False{}, open, st, sel, now, look, rm), View.projects(qs, True{}, open, st, sel, now, look, rm),
+        View.older(o, Bool.not(String.is_empty(q)), open, st, sel, now, look, rm)])
+
+# the active view: every live thread, what waits on you first, then the
+# threads settled lately, faded (core's Active.rows); a row names its
+# project where the other view shows its age
+def View.arow(r: U.ARow, +st: M.State, +sel: String) -> D.Node:
+  match r:
+    case U.ARow{_, _, +t, +pid, +pt, +faded}:
+      D.El{"div", M.Thread.id(t), [D.At{"class", Bool.pick(String, String.eq(M.Thread.id(t), sel), "thread on", Bool.pick(String, faded, "thread faded", "thread"))},
+          D.At{"style", "--tint:" ++ BG.Badge.css_of(st, pid)}, D.At{"data-value", M.Thread.id(t)}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
+        [D.Dom.span("dot " ++ M.Phase.name(U.Side.phase(st, t)), ""), D.Dom.span("title", U.Active.title(t)), D.Dom.span("ago", pt)]}
+
+def View.arows(rs: List<&2, U.ARow>, +st: M.State, +sel: String, +label: Bool) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      List.append(&2, D.Node, Bool.pick(List<&2, D.Node>, Bool.and(label, U.ARow.faded(r)), [D.Dom.span("shelf-label", "Settled lately")], Nil{}),
+        View.arow(r, st, sel) <> View.arows(t, st, sel, Bool.and(label, Bool.not(U.ARow.faded(r)))))
+
+def View.active(rs: List<&2, U.ARow>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      [D.Dom.span("shelf-label", "Nothing active")]
+    case +r <> +t:
+      [D.El{"section", "", [D.At{"class", "project active"}], View.arows(r <> t, st, sel, True{})}]
+
+# the list the "sidebar.view" setting picks (only that one is built)
+def View.list(active: Bool, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+  match active:
+    case True{}:
+      View.active(U.Active.rows(st, now, q), st, sel)
+    case False{}:
+      View.groups(U.Side.groups(U.Side.shown(st, now, q), now), q, open, st, sel, now, look, rm)
+
+# the search, always at the top of the list
+def View.find(+active: Bool, +q: String) -> List<&2, D.Node>:
+  [D.El{"div", "", [D.At{"class", "find"}], [WB.WB.input("proj-find", "pq", q, Bool.pick(String, active, "Search threads", "Search projects"), "proj-go")]}]
+
+# a row's or project's menu (core's Menu), where the pointer was (host.js
+# keeps it in --mx, --my); the shade under it shuts it
+def View.mitems(xs: List<&2, U.MItem>) -> List<&2, D.Node>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case U.MItem{+l, a, v, +t} <> r:
+      D.Dom.button(Bool.pick(String, String.eq(t, "danger"), "mi danger", "mi"), a, v, l, l) <> View.mitems(r)
+
+def View.rmenu(xs: List<&2, U.MItem>) -> List<&2, D.Node>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +i <> +r:
+      [D.El{"div", "", [D.At{"class", "shade"}, D.At{"data-value", ""}, D.On{"click", "menu-close"}, D.On{"contextmenu", "menu-close"}], Nil{}},
+       D.El{"div", "", [D.At{"class", "rowmenu"}], View.mitems(i <> r)}]
 
 def View.add(adding: Bool) -> List<&2, D.Node>:
   match adding:
@@ -167,8 +245,9 @@ def View.add(adding: Bool) -> List<&2, D.Node>:
     case False{}:
       Nil{}
 
-# the owner's machines (only with more than one): this page's hub first;
-# picking another opens that machine's page
+# the owner's machines (only with more than one), at the foot of the
+# sidebar beside Settings: Backplane is one app on each, and picking
+# another opens that machine's page ("flag machines" opens the list)
 def View.mrows(rs: List<&2, U.MRow>) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
@@ -176,30 +255,39 @@ def View.mrows(rs: List<&2, U.MRow>) -> List<&2, D.Node>:
     case U.MRow{+n, url, +on} <> t:
       D.Dom.button(Bool.pick(String, on, "machine on", "machine"), "machine", url, n, n) <> View.mrows(t)
 
-def View.machines(many: Bool, rs: List<&2, U.MRow>) -> List<&2, D.Node>:
-  match many:
+def View.mlist(open: Bool, rs: List<&2, U.MRow>) -> List<&2, D.Node>:
+  match open:
     case True{}:
       [D.El{"div", "", [D.At{"class", "machines"}], View.mrows(rs)}]
     case False{}:
       Nil{}
 
-def View.sidebar.k(+ms: List<&2, U.MRow>, +st: M.State, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, bots: List<&2, D.Node>) -> D.Node:
+def View.machines(many: Bool, +open: Bool, +rs: List<&2, U.MRow>) -> List<&2, D.Node>:
+  match many:
+    case True{}:
+      List.append(&2, D.Node, View.mlist(open, rs), [WI.WIcon.button("machine-pick", "flag", "machines", "Machine", "chevron-up", 14, U.Machines.current(rs))])
+    case False{}:
+      Nil{}
+
+def View.sidebar.k(+ms: List<&2, U.MRow>, +st: M.State, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, mi: List<&2, U.MItem>, bots: List<&2, D.Node>) -> D.Node:
   D.El{"aside", "sidebar", [D.At{"class", "sidebar"}],
         D.Dom.cat([D.El{"div", "", [D.At{"class", "brand"}], [
             D.Dom.span(Bool.pick(String, on, "conn on", "conn"), ""),
             D.Dom.span("name", "Backplane"), D.Dom.span("ver", v),
-            WI.WIcon.button(Bool.pick(String, U.Flag.get(open, "psearch"), "icon on", "icon"), "proj-find", "", "Find a project", "search", 16, ""),
             WI.WIcon.button("icon", "proj-open", "", "Add project", "plus", 16, "")]}],
-          D.Dom.cat(View.machines(Nat.is_gt(List.length(&2, U.MRow, ms), 1n), ms), D.Dom.cat(View.add(adding), D.Dom.cat(View.find(U.Flag.get(open, "psearch"), q),
-            D.Dom.cat(View.projects(U.Side.shown(st, now, q), open, st, sel, now, look, rm), D.Dom.cat(bots,
-            [WI.WIcon.button("settings-link", "flag", "settings", "Settings", "settings", 16, "Settings")]))))))}
+          D.Dom.cat(View.add(adding), D.Dom.cat(View.find(String.eq(U.Side.view(st), "active"), q),
+            D.Dom.cat(View.list(String.eq(U.Side.view(st), "active"), q, open, st, sel, now, look, rm), D.Dom.cat(bots, D.Dom.cat(View.rmenu(mi),
+            [D.El{"div", "", [D.At{"class", "foot"}], WI.WIcon.button("settings-link", "flag", "settings", "Settings", "settings", 16, "Settings")
+              <> View.machines(Nat.is_gt(List.length(&2, U.MRow, ms), 1n), U.Flag.get(open, "machines"), ms)}]))))))}
 
-def View.sidebar.u(bots: List<&2, D.Node>, u: U.Ui) -> D.Node:
+def View.sidebar.w(bots: List<&2, D.Node>, ms: List<&2, U.MRow>, mi: List<&2, U.MItem>, u: U.Ui) -> D.Node:
   match u:
-    case U.Ui{+st, +sel, +d, l, +open, +on, +now, +adding, pa, +v, r, w, e, note, nf, ob, tr}:
-      View.sidebar.k(U.Machines.rows(U.Ui{st, sel, d, l, open, on, now, adding, pa, v, r, w, e, note, nf, ob, tr}), st, sel, open, on, now, adding, v, U.Str.get(d, "@look"), U.Str.get(d, "@rm"), U.Find.q(open, d), bots)
+    case U.Ui{+st, +sel, +d, _, +open, +on, +now, +adding, _, +v, _, _, _, _, _, _, _}:
+      View.sidebar.k(ms, st, sel, open, on, now, adding, v, U.Str.get(d, "@look"), U.Str.get(d, "@rm"), U.Find.q(open, d), mi, bots)
 
-# the sidebar: the projects, then the bots and rooms (bots.bend)
+def View.sidebar.u(bots: List<&2, D.Node>, +u: U.Ui) -> D.Node:
+  View.sidebar.w(bots, U.Machines.rows(u), U.Menu.items(u, True{}), u)
+
 def View.sidebar(+u: U.Ui) -> D.Node:
   View.sidebar.u(WB.WB.side(u), u)
 
@@ -542,6 +630,7 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
       View.setrow(U.KiCad.cli.label(nf), U.KiCad.cli.note(nf), View.fork(U.Str.get(nf, "kicad.fork"))),
       View.setrow(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, D.Node>, U.KiCad.ipc.ready(nf), View.chips(["on", "off"], ipc, "kicad.ipc"), Nil{})),
       View.setrow("Theme", "The window and the web page (phones unset follow their own system).", View.chips(["dark", "light"], Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "light", "dark"), "ui.theme")),
+      View.setrow("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", View.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
       View.setrow("Tailscale: " ++ U.Str.get(nf, "tailnet"), "Listening on " ++ U.Str.get(nf, "listen"), Nil{}),
       View.setrow("Pairing link", U.Pair.note(U.Pair.link(nf)), D.Dom.when(Bool.not(String.is_empty(U.Pair.link(nf))), D.Dom.copy(U.Pair.link(nf)))),
       View.setrow("Update channel", "Stable takes releases; nightly also takes the daily builds.", View.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
