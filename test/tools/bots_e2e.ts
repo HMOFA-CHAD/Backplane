@@ -269,6 +269,26 @@ try {
   const answered = await change(b, "RoomPosted", (c) => c.from === "miso@alpha" && c.text === answer);
   check("the answer reaches the person on beta, in the room they wrote in", answered?.room === "dm:miso@alpha:you", answered ?? b.seen.filter((c) => c.$ === "RoomPosted"));
 
+  // a thread on beta mentions the bot on alpha (@name@machine): alpha's bot
+  // hears it as beta's person, and its answer reaches beta's conversation
+  mkdirSync(join(root, "proj-beta"), { recursive: true });
+  const bp = await rpc(b, "project.add", { path: join(root, "proj-beta") });
+  const bpc = await change(b, "ProjectCreated");
+  const bth = await rpc(b, "thread.create", { project: bpc?.id ?? bp?.id ?? "", title: "Mention far" });
+  const btc = await change(b, "ThreadCreated", (c) => c.title === "Mention far");
+  check("a thread on beta", !!btc, [bp, bth]);
+  // (a second on: the stand-in answers alike, and one body signed twice in
+  // one second is refused as a replay)
+  await sleep(1100);
+  const ment = await rpc(b, "turn.start", { thread: btc?.id ?? "", text: "@miso@alpha please look", msg: "m-far-1" });
+  check("a message naming miso@alpha is sent", ment?.ok, ment);
+  const mlog = await change(b, "RoomPosted", (c) => c.room === "dm:miso@alpha:you" && String(c.text).includes("please look"));
+  check("beta logs it in the person's conversation with miso", !!mlog && String(mlog.text).includes("Mention far"), mlog ?? b.seen.filter((c) => c.$ === "RoomPosted"));
+  const mhear = await change(a, "RoomPosted", (c) => String(c.text).includes("mentioned you in the thread") && String(c.text).includes("please look"));
+  check("alpha's miso hears it from beta's person", !!mhear && String(mhear.from).endsWith("@beta"), mhear ?? a.seen.filter((c) => c.$ === "RoomPosted"));
+  const mback = await until(10000, () => b.seen.filter((c) => c.$ === "RoomPosted" && c.from === "miso@alpha" && c.text === answer).length >= 2);
+  check("miso's answer reaches beta's conversation", !!mback, b.seen.filter((c) => c.$ === "RoomPosted"));
+
   // a room shared by both machines: alpha's person makes it with a bot on
   // each; beta learns it from the first post, and its side can post back
   const kelp = await rpc(b, "bots.create", { name: "kelp" });
