@@ -76,6 +76,8 @@ Performance: every process keeps counters (`docs/perf.md`). ctrl+shift+h in the 
 
 Typing speed: `scripts/build-app.sh test/native/type_bench.bend build/type_bench && build/type_bench` replays keys through the event, memo, layout and tiles with no window and prints ms per key. Scrolling: `test/native/scroll_bench.bend` the same for wheel notches up and down, and checks each frame against one drawn from scratch.
 
+Many agents at once: `bun test/tools/agents_load.ts build/backplane build/wire --agents 1,10,50 --secs 20` starts a headless hub per count with a stand-in `claude` (Claude's stream-json: deltas, messages, tool calls; no model runs), streams from every thread at once and prints round trips, delta lag, rates, hub CPU and `/debug/perf`. The window's side: `build/agents_bench [MESSAGES [ENTRIES PER THREAD]]` (`test/native/agents_bench.bend`) hears a stream over 50 running threads and times each frame it asks for. Per-frame work must not grow with the log: read a thread's entries with `M.State.mine` and the links with `M.State.links` (the `Idx` filed on post), never by walking `entries`; another thread's delta asks for no frame (`U.Ui.shows`).
+
 Headless UI checks: start Xvfb on `:77`, run `DISPLAY=:77 BACKPLANE_SNAP=/tmp/snap.ppm build/backplane --home /tmp/bp-x`, drive it with `build/xpoke` (`test/tools/xpoke.c`: click/type/key/wheel), and view frames with `scripts/ppm-to-png.py`.
 
 ## Bend traps (learned here, keep adding)

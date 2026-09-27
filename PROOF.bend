@@ -5467,3 +5467,35 @@ def Laws.status_input_before_waiting(t, q):
 
 def Laws.status_no_subagents_same(s):
   {==}
+
+def Laws.shows_other_delta(u, th, text, h):
+  match u:
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      %Equal.sym(Bool, String.eq(th, sel), False{}, h) : {_ == False{} : Bool}
+      {==}
+
+def Laws.shows_own_delta(u, text):
+  match u:
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Laws.string_eq_refl(sel)
+
+def Laws.shows_changes(u, items):
+  {==}
+
+def Laws.idx_page_own():
+  {==}
+
+def Laws.idx_page_sent():
+  {==}
+
+def Laws.idx_sent_filed():
+  {==}
+
+def Laws.idx_page_short():
+  {==}
+
+def Laws.idx_links():
+  {==}
+
+def Laws.idx_links_found():
+  {==}

@@ -490,7 +490,7 @@ def Pending.go(xs: List<&2, String>, +thread: String, +es: List<&2, M.Entry>) ->
 def Ui.pending(u: Ui, +thread: String) -> List<&2, String>:
   match u:
     case Ui{st, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ob, tr}:
-      Pending.go(Map.values(&2, String, ob), thread, Ui.entries(st))
+      Pending.go(Map.values(&2, String, ob), thread, M.State.mine(st, thread))
 
 def Ui.online(u: Ui, b: Bool) -> Ui:
   match u:
@@ -1613,7 +1613,7 @@ def Links.recent.go(es: List<&2, M.Entry>, +now: Nat, live: Bool) -> List<&2, Li
 
 # messages between threads in the last 15 minutes (the sidebar draws them)
 def Links.recent(s: M.State, +now: Nat) -> List<&2, Link2>:
-  Links.recent.go(Ui.entries(s), now, True{})
+  Links.recent.go(M.State.links(s), now, True{})
 
 # Terminals
 # ---------
@@ -3736,6 +3736,21 @@ def Bots.wanted(+u: Ui) -> Ui:
 # a message from the server
 def Ui.recv(+u: Ui, +o: J.Json) -> Ui:
   Ui.reselect(Ui.sel(u), Bots.wanted(Ui.recv.k(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice"], J.Json.get_str(o, "t", "")), u, o)))
+
+def Ui.shows.k(delta: Bool, +sel: String, +o: J.Json) -> Bool:
+  match delta:
+    case True{}:
+      String.eq(J.Json.get_str(o, "thread", ""), sel)
+    case False{}:
+      True{}
+
+# whether a message from the server can change what the window shows: a
+# thread's streamed text is drawn only while that thread is open, so
+# another thread's delta asks for no frame (with fifty agents streaming,
+# a frame per delta kept the window drawing all the time; laws
+# shows_other_delta, shows_own_delta, shows_changes)
+def Ui.shows(+u: Ui, +o: J.Json) -> Bool:
+  Ui.shows.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), Ui.sel(u), o)
 
 # a message from the server, with what to send: a (re)connection (the
 # server's log arrives first on each) sends the outbox again, so nothing
