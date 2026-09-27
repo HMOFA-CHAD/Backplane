@@ -6,28 +6,43 @@ import UniformTypeIdentifiers
 // choice comes from the screen (src/mobile/screen.bend); these only draw
 // them and send back the action each names.
 
-// a thread's dot: what most needs the user (row.status), else its turn
+// the hub's palette for a thread's phase (src/web/style.css, src/app/theme.bend)
+enum PhaseColor {
+    static func rgb(_ hex: UInt32) -> Color {
+        Color(red: Double(hex >> 16 & 0xff) / 255, green: Double(hex >> 8 & 0xff) / 255, blue: Double(hex & 0xff) / 255)
+    }
+    static let accent = rgb(0x5fb3ff), ok = rgb(0x58c28a), warn = rgb(0xe3b341), bad = rgb(0xf06a6a)
+    static let input = rgb(0xb48cff), queued = rgb(0x4fc1c9), waiting = rgb(0xe07bd0), faint = rgb(0x5c6473)
+}
+
+// a thread's dot: its phase (row.status, src/core/model.bend's Phase.name),
+// in the same colors as the desktop and web; else its turn
 struct StatusDot: View {
     let state: String
     let status: String?
 
+    private func dot(_ c: Color) -> some View {
+        Circle().fill(c).frame(width: 7, height: 7)
+    }
+
     var body: some View {
         switch status ?? "" {
-        case "approval": Image(systemName: "hand.raised.fill").foregroundStyle(.orange).font(.caption)
-        case "input": Image(systemName: "questionmark.bubble.fill").foregroundStyle(.blue).font(.caption)
-        case "working": ProgressView().controlSize(.mini)
-        case "failed": Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
-        case "queued": Image(systemName: "clock").foregroundStyle(.secondary).font(.caption)
-        // the turn is over, its subagents still at work
-        case "waiting": Image(systemName: "arrow.triangle.branch").foregroundStyle(.pink).font(.caption)
+        case "approval": Image(systemName: "hand.raised.fill").foregroundStyle(PhaseColor.warn).font(.caption)
+        case "input": Image(systemName: "questionmark.bubble.fill").foregroundStyle(PhaseColor.input).font(.caption)
+        case "working": ProgressView().controlSize(.mini).tint(PhaseColor.accent)
+        // the turn is over, its subagents still at work ("waiting" from an older hub)
+        case "monitoring", "waiting": Image(systemName: "arrow.triangle.branch").foregroundStyle(PhaseColor.waiting).font(.caption)
                 .symbolEffect(.pulse)
-        case "ready": Image(systemName: "circle.fill").font(.system(size: 7)).foregroundStyle(.quaternary)
+        case "failed": Image(systemName: "exclamationmark.circle.fill").foregroundStyle(PhaseColor.bad)
+        case "queued": Image(systemName: "clock").foregroundStyle(PhaseColor.queued).font(.caption)
+        case "complete": dot(PhaseColor.ok)
+        case "stopped", "idle", "ready": dot(PhaseColor.faint)
         default:
             switch state {
-            case "run": ProgressView().controlSize(.mini)
-            case "fail": Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
-            case "stop": Image(systemName: "stop.circle").foregroundStyle(.orange)
-            default: Image(systemName: "circle.fill").font(.system(size: 7)).foregroundStyle(.quaternary)
+            case "run": ProgressView().controlSize(.mini).tint(PhaseColor.accent)
+            case "fail": Image(systemName: "exclamationmark.circle.fill").foregroundStyle(PhaseColor.bad)
+            case "stop": Image(systemName: "stop.circle").foregroundStyle(PhaseColor.warn)
+            default: dot(PhaseColor.faint)
             }
         }
     }

@@ -11,7 +11,8 @@ data class SwipeChoice(val label: String, val value: String)
 
 data class Swipe(val label: String, val action: String, val value: String, val tone: String, val options: List<SwipeChoice>)
 
-// status: what its dot says (approval, input, working, failed, queued, ready)
+// status: what its dot says (approval, input, working, monitoring, failed,
+// queued, complete, stopped, idle)
 data class Row(
     val id: String, val title: String, val state: String, val ago: String, val pinned: Boolean,
     val lead: List<Swipe>, val trail: List<Swipe>, val status: String = "",
@@ -162,6 +163,8 @@ data class ThreadView(
     val chunk: Int = 196_608,
     val diff: Diff? = null,
     val term: Term? = null,
+    // the phase the working line's dot shows (as a row's status)
+    val phase: String = "",
 )
 
 data class Btw(val q: String, val a: String)
@@ -324,6 +327,7 @@ private fun thread(o: JSONObject) = threadOf(o).copy(
         })
     },
     term = o.optJSONObject("term")?.let(::term),
+    phase = o.optString("phase"),
 )
 
 private fun threadOf(o: JSONObject) = ThreadView(
