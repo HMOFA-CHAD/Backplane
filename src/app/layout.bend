@@ -2219,6 +2219,13 @@ def Set.voice(+ty: Ty, +st: M.State, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Ou
     Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, "Pebble ring: set its webhook to send the recording; it is transcribed here with this dictionary.", (w - 32 : U32)),
       D.Clip.all(), (x + 16 : U32), (y + 328 + dr + tr : U32), 24, T.Th.faint()))])
 
+# the "restart.continue" row: on or off
+def Set.carry(+ty: Ty, +on: Bool, +x: U32, +w: U32, +y: U32) -> Out:
+  Out.all([
+    Set.row.r(ty, "Continue after a restart", "Turns a restart cuts short go on by themselves.", x, y, w, 150),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Off") - 6 - Lay.button.w(ty, "On") : U32), (y + 14 : U32), "On", on, "setting", "restart.continue=on"),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Off") : U32), (y + 14 : U32), "Off", Bool.not(on), "setting", "restart.continue=off")])
+
 def Set.voice.h(+ty: Ty, +n: S.Nui, +x: U32, +w: U32) -> U32:
   +u = S.Nui.ui(n)
   +devs = Vx.devs(u)
@@ -2238,23 +2245,24 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 46 : U32) : U32}
-  +total = {(1092 + dy + fy + Set.voice.h(ty, n, x, w) : U32) : U32}
+  +total = {(1156 + dy + fy + Set.voice.h(ty, n, x, w) : U32) : U32}
   +pair = U.Pair.link(info)
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
-  +b2 = {(b + 64 : U32) : U32}
+  +b2 = {(b + 128 : U32) : U32}
   +fu = M.Setting.get(st, "followup", "")
   Out.all([
     Out{Nil{}, [Lay.hit(x0, 52, (x1 - x0 : U32), (h - 52 : U32), "set-bg", U32.show(U32.dim(total, h)))]},
     Out.hits_below(52, Out.all([
     Set.head(ty, "Threads", x, (b + 76 : U32)),
-    Set.card(x, (b + 108 : U32), w, 128),
+    Set.card(x, (b + 108 : U32), w, 192),
     Set.row.r(ty, "Settle after", "Threads idle this long move to Settled. They stay saved.", x, (b + 110 : U32), w, 190),
     Set.days(ty, M.Setting.get(st, "settle.days", "3"), (x + w - 172 : U32), (b + 126 : U32)),
     Set.row.r(ty, "Follow-ups while a turn runs", "Queue waits for the turn to end; steer sends into it. Ctrl+Enter does the other.", x, (b + 174 : U32), w, 250),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Steer") - 6 - Lay.button.w(ty, "Queue") - 6 - Lay.button.w(ty, "Default") : U32), (b + 188 : U32), "Default", String.is_empty(fu), "setting", "followup="),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Steer") - 6 - Lay.button.w(ty, "Queue") : U32), (b + 188 : U32), "Queue", String.eq(fu, "queue"), "setting", "followup=queue"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Steer") : U32), (b + 188 : U32), "Steer", String.eq(fu, "steer"), "setting", "followup=steer"),
+    Set.carry(ty, M.Carry.on(st), x, w, (b + 238 : U32)),
     Set.head(ty, "Agents", x, (b2 + 192 : U32)),
     Set.card(x, (b2 + 224 : U32), w, (124 + dy : U32)),
     Set.row(ty, "Provider and model for new threads", Set.cli(U.Models.cli(U.Str.get(info, "models"), prov), prov) ++ ". Each thread keeps its own; change it from the composer.", x, (b2 + 226 : U32), w),

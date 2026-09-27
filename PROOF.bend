@@ -4131,6 +4131,18 @@ def Laws.recover_leaves_idle():
 def Laws.recover_empty_nothing(now):
   {==}
 
+def Laws.carry_continues():
+  {==}
+
+def Laws.carry_leaves_idle():
+  {==}
+
+def Laws.carry_off_nothing():
+  {==}
+
+def Laws.carry_once():
+  {==}
+
 def Laws.ask_makes_pending():
   {==}
 
