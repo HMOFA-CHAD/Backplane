@@ -37,6 +37,15 @@ of bot threads, law `kids_bot_child_shown`), so the person sees it in that
 project's sidebar. Its result still comes back to the bot as a message,
 and the delegation depth limit applies as before.
 
+`project_create(path, name?)` adds a project for the person, but only
+once they say yes: every call opens an approval card ("New project ...,
+Folder: ...") unless they allowed it for the session (law
+`bot_newproj_asks`; a single yes never covers the next call,
+`bot_newproj_once`). On accept the server makes the folder when missing
+(`~/x`, or a bare name under the home folder), resolves it, and the hub
+adds it (`Bots.newproj.made`); a folder that is a project already answers
+that project. Declining makes nothing.
+
 `bot_create` makes a sub-bot for a lasting role. Its maker is kept as the
 setting `bot.parent.<id>`. Sub-bots go at most two levels below a bot a
 person made (law `bot_spawn_bounded`), and a bot keeps at most eight.
@@ -343,7 +352,7 @@ MagicDNS name on the tailnet (same port), else its listen address.
 Every minute the hub runs due routines (`date +%z` for the time zone)
 and asks each linked machine for its bots; the merged list is the info
 key `bots.remote` (a machine that does not answer keeps its bots, away).
-`test/tools/bots_e2e.ts` runs two hubs against each other.
+`test/tools/bots_e2e.ts` runs two hubs against each other; `test/tools/newproj_e2e.ts` runs project_create on one.
 
 Each bot is listed once (`src/core/once.bend`; laws `bot_rows_once`,
 `bot_picks_once`, `hubs_bots_once`). A bot here is keyed by its id, a bot

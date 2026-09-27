@@ -5316,3 +5316,15 @@ def Laws.far_machine_stranger():
 
 def Laws.tailnet_domain():
   {==}
+
+def Laws.bot_newproj_asks(th):
+  {==}
+
+def Laws.bot_newproj_once():
+  {==}
+
+def Laws.bot_newproj_decline():
+  {==}
+
+def Laws.bot_newproj_no_answer():
+  {==}

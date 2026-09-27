@@ -2858,3 +2858,22 @@ law far_machine_stranger:
 # the tailnet's domain, from this machine's MagicDNS name
 law tailnet_domain:
   {TN.Tailnet.domain("{\"Self\":{\"DNSName\":\"desk.tail1.ts.net.\"}}") == "tail1.ts.net" : String}
+
+# A bot's new project waits for the person
+# ----------------------------------------
+
+# with no approval for the session on record, project_create always asks
+law bot_newproj_asks:
+  for +th: String
+  {BHS.Bots.newproj.asks(Nil{}, th) == True{} : Bool}
+
+# a yes to one call is not a yes to the next: only "allow for the session" is
+law bot_newproj_once:
+  {BHS.Bots.newproj.asks([M.Ask{"q1", "t1", "approval", "project_create", "", "", False{}, "accept"}], "t1") == True{} : Bool}
+
+# declining, or no answer, makes nothing
+law bot_newproj_decline:
+  {BHS.Bots.newproj.yes("decline") == False{} : Bool}
+
+law bot_newproj_no_answer:
+  {BHS.Bots.newproj.yes("") == False{} : Bool}

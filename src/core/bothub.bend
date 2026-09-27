@@ -1200,6 +1200,61 @@ def Bots.projects.json(+s: M.State) -> List<&2, J.Json>:
     case M.State{ps, _, _, _, _, _, _, _, _, _, _}:
       Bots.projects.go(Map.values(&2, M.Project, ps))
 
+# New projects (project_create)
+# -----------------------------
+# A bot may add a project only when the person says yes: the hub opens an
+# approval ask for every call (unless they allowed it for the session),
+# the server makes or resolves the folder once they accept, and
+# Bots.newproj.made adds it. Nothing is made before the answer.
+
+def Bots.newproj.def() -> J.Json:
+  MC.Tool.def("project_create", "Make a new project for the person: a folder (made when missing) added to their projects. The person is asked to approve it first. Answers the project's id; start work there with thread_launch and that `project`.",
+    [MC.Tool.prop("path", "string", "The folder: an absolute path, ~/x, or a name (under the home folder)."), MC.Tool.prop("name", "string", "Its name in the sidebar (default: the folder's).")], ["path"])
+
+def Bots.newproj.is(+o: J.Json) -> Bool:
+  Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "project_create"))
+
+# whether the call must wait for the person: always, unless they allowed
+# project_create for this thread's session
+def Bots.newproj.asks(as: List<&2, M.Ask>, +thread: String) -> Bool:
+  Bool.not(MC.Perm.session_ok(as, thread, "project_create"))
+
+# the answers that let it go ahead
+def Bots.newproj.yes(+answer: String) -> Bool:
+  Bool.or(String.eq(answer, "accept"), String.eq(answer, "session"))
+
+# what the approval card says
+def Bots.newproj.detail(+a: J.Json) -> String:
+  "New project" ++ Bool.pick(String, String.is_empty(String.trim(J.Json.get_str(a, "name", ""))), "", " " ++ String.trim(J.Json.get_str(a, "name", ""))) ++
+    "\nFolder: " ++ String.trim(J.Json.get_str(a, "path", "")) ++ " (made when missing)"
+
+def Bots.newproj.here(p: M.Project, +root: String) -> Bool:
+  match p:
+    case M.Project{_, _, r, _, rm}:
+      Bool.and(Bool.not(rm), String.eq(B.Hub.root.norm(r), B.Hub.root.norm(root)))
+
+# the live project whose folder is `root`
+def Bots.newproj.at(ps: List<&2, M.Project>, +root: String) -> Maybe<&2, M.Project>:
+  match ps:
+    case Nil{}:
+      None{}
+    case +p <> t:
+      Bool.pick(Maybe<&2, M.Project>, Bots.newproj.here(p, root), Some{p}, Bots.newproj.at(t, root))
+
+def Bots.newproj.made.k(m: Maybe<&2, M.Project>, +s: M.State, +now: Nat, +root: String, +title: String) -> MC.Res:
+  match m:
+    case Some{p}:
+      MR.ok(J.Json.obj([J.KV{"project", Bots.project.json(p)}, J.KV{"note", J.Str{"already a project"}}]))
+    case None{}:
+      MR.step(J.Json.obj([J.KV{"project", Bots.project.json(M.Project{B.Hub.id("p", now, B.Hub.seq(s)), title, B.Hub.root.norm(root), now, False{}})}, J.KV{"note", J.Str{"created"}}]),
+        B.Step{[M.ProjectCreated{B.Hub.id("p", now, B.Hub.seq(s)), title, B.Hub.root.norm(root), now}], Nil{}})
+
+# the person said yes and the server resolved the folder: a folder that is
+# a project already answers that project; any other becomes one
+def Bots.newproj.made(+s: M.State, +now: Nat, +root: String, +name: String) -> MC.Res:
+  Bots.newproj.made.k(Bots.newproj.at(B.Hub.projects(s), root), s, now, root,
+    Bool.pick(String, String.is_empty(String.trim(name)), B.Hub.base(root), String.trim(name)))
+
 # Sub-bots
 # --------
 # A bot may make bots (bot_create). Its sub-bot's maker is kept as the
@@ -1451,7 +1506,7 @@ def Bots.call(+s: M.State, +now: Nat, +dir: J.Json, +thread: String, +id: J.Json
 
 # tools/list for a bot's agent: Backplane's tools and the bots' own
 def Bots.list(+id: J.Json, +extra: List<&2, J.Json>) -> String:
-  MC.Mcp.result(id, J.Json.obj([J.KV{"tools", J.Json.arr(List.concat(&2, J.Json, [J.Json.elems(J.Json.get_obj(MC.Mcp.tools(), "tools")), Bots.tools(), extra]))}]))
+  MC.Mcp.result(id, J.Json.obj([J.KV{"tools", J.Json.arr(List.concat(&2, J.Json, [J.Json.elems(J.Json.get_obj(MC.Mcp.tools(), "tools")), Bots.tools(), [Bots.newproj.def()], extra]))}]))
 
 type Route is Data:
   RList{}
@@ -1509,7 +1564,8 @@ def Bots.prompt.k(m: Maybe<&2, BT.Bot>, +s: M.State, +home: String) -> String:
       "Conversations between bots stop after " ++ Nat.show(BT.Hop.max()) ++ " messages; keep them purposeful and end them when the work is done.\n" ++
       "- New work gets its own visible thread: start it with thread_launch and its `project` (project_list gives the ids), so the person sees it in that project and can follow it later. " ++
       "Don't hand work to hidden helpers: delegate_task from a bot needs a `project` too, and its child shows there as a thread of its own whose result comes back to you. " ++
-      "thread_list, thread_read, thread_send and thread_wait reach threads in any project. For a lasting role, make a sub-bot with bot_create.\n" ++
+      "thread_list, thread_read, thread_send and thread_wait reach threads in any project. When work needs a project that does not exist yet, project_create makes one once the person approves. " ++
+      "For a lasting role, make a sub-bot with bot_create.\n" ++
       "- Memory: each turn starts with a <memory> block of what you know that matters now. Save durable things with memory_save under short keys; " ++
       "update a key instead of adding near-duplicates; forget what turns out wrong. Use memory_recall before asking a person something you may already know.\n" ++
       "- Your space (space_set) is your own UI in the Space tab: keep it showing what you are doing and what people can press. " ++
