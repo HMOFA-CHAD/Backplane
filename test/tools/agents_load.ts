@@ -19,6 +19,7 @@
 // its result (a user line); after `secs` the result line.
 // BINARY defaults to build/backplane, WIREDIR to build/wire (bend
 // test/wire/index.html -o build/wire). --keep leaves the homes in /tmp.
+// LOAD_DISPLAY=:77 opens the window too (Xvfb), so /debug/perf has ui.* rows.
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -122,7 +123,7 @@ async function run(n: number): Promise<Result> {
   const port = freePort();
   const proc = Bun.spawn([resolve(bin), "--home", home, "--port", String(port), "--no-tailscale"], {
     env: {
-      ...process.env, DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_PEERS: "",
+      ...process.env, DISPLAY: process.env.LOAD_DISPLAY ?? "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_PEERS: "",
       FAKE_SECS: String(secs), FAKE_PER: String(Math.max(1, Math.round(hz / 10))), FAKE_CYCLE: String(cycle),
       PATH: `${fake}:${process.env.PATH}`,
     },
