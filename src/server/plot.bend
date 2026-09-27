@@ -165,7 +165,7 @@ def Pv.send.k(quiet: Bool, +out: Chan(POut), +client: U32, +key: String, +pl: P.
     case True{}:
       IO.pure(Unit, Unit{})
     case False{}:
-      Pv.bin(out, client, P.Plot.msg(key, P.Plot.box(pl), P.Plot.thick(pl), rs))
+      Pv.bin(out, client, P.Plot.msg(key, P.Plot.box(pl), P.Plot.thick(pl), P.Plot.edge(pl), rs))
 
 # a phone's view brought up to a plot: the delta goes out unless it would
 # change nothing; the phone now holds the plot's chunks

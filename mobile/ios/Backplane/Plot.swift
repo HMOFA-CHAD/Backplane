@@ -240,11 +240,13 @@ struct PlotMesh: @unchecked Sendable {
 }
 
 // What the renderer draws: the chunks in paint order and which of them
-// just arrived (they fade in), the box and thickness, or why there is
-// nothing to draw.
+// just arrived (they fade in), the box, the board's rectangle (empty
+// from an older hub, or x0 > x1 for a schematic) and thickness, or why
+// there is nothing to draw.
 struct PlotFrame {
     let key: String
     let box: [Float]
+    let edge: [Float]
     let thick: Float
     let chunks: [PlotChunk]
     let fresh: Set<Int>
@@ -296,7 +298,7 @@ final class PlotStore {
                         guard gen == self.generation else { return }
                         if solid { self.mesh = MeshFrame(key: key, mesh: nil, none: why, at: Date()); return }
                         self.held = []
-                        self.frame = PlotFrame(key: key, box: [], thick: 0, chunks: [], fresh: [], none: why, at: Date())
+                        self.frame = PlotFrame(key: key, box: [], edge: [], thick: 0, chunks: [], fresh: [], none: why, at: Date())
                     }
                 }
                 return
@@ -322,6 +324,7 @@ final class PlotStore {
             for (k, (i, _)) in objs.enumerated() { cs[i] = decoded[k]; fresh.insert(i) }
             decoded.deallocate()
             let box = (o["box"] as? [Int] ?? []).map { Float($0) }
+            let edge = (o["edge"] as? [Int] ?? []).map { Float($0) }
             let thick = Float(o["thick"] as? Int ?? 1600)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -331,7 +334,7 @@ final class PlotStore {
                     }
                     let all = cs.compactMap { $0 }
                     self.held = all
-                    self.frame = PlotFrame(key: key, box: box, thick: thick, chunks: all, fresh: fresh, none: "", at: Date())
+                    self.frame = PlotFrame(key: key, box: box, edge: edge, thick: thick, chunks: all, fresh: fresh, none: "", at: Date())
                 }
             }
         }

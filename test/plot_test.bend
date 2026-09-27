@@ -105,14 +105,19 @@ def main() -> IO(Unit):
     C.Check.str("info file, other chunk", P.Infos.find(P.Infos.file(a), P.Chunk.sig(P.Plot.at(0n, a)), 0n), "track;net=1;layer=B.Cu;width=0.5")
     C.Check.str("info file, no such chunk", P.Infos.find(P.Infos.file(a), 12345, 0n), "")
     C.Check.str("delta rebuilds", Bool.show(eqs(P.Plot.apply(P.Plot.delta(b, a), a), b)), "True")
-    C.Check.str("message", nums(P.Plot.msg("k", P.Box{0, 4294967295, 7, 8}, 1600, [P.Keep{2n}, P.Fresh{P.Chunk{0, 12, 5, 200, 1, 250, "BA", "x"}}])),
-      "165,1,100,112,108,111,116,24,31,97,107,99,98,111,120,132,0,32,7,8,101,116,104,105,99,107,25,6,64,98,99,115,130,2,166,97,108,12,97,99,5,97,97,24,200,97,109,1,97,119,24,250,97,100,66,65,66")
+    C.Check.str("message", nums(P.Plot.msg("k", P.Box{0, 4294967295, 7, 8}, 1600, P.Box{1, 2, 3, 4}, [P.Keep{2n}, P.Fresh{P.Chunk{0, 12, 5, 200, 1, 250, "BA", "x"}}])),
+      "166,1,100,112,108,111,116,24,31,97,107,99,98,111,120,132,0,32,7,8,101,116,104,105,99,107,25,6,64,100,101,100,103,101,132,1,2,3,4,98,99,115,130,2,166,97,108,12,97,99,5,97,97,24,200,97,109,1,97,119,24,250,97,100,66,65,66")
     # what a child process prints, scanned back by the hub, is the plot
     +pl : P.Plot = plot("20 10")
     +back : P.Plot = P.Scan.plot(P.Line.plot(pl))
     C.Check.str("lines round trip", Bool.show(eqs(P.Plot.chunks(back), P.Plot.chunks(pl))), "True")
     C.Check.str("lines keep the box", box(P.Plot.box(back)), box(P.Plot.box(pl)))
     C.Check.str("box", box(P.Plot.box(pl)), "0,4294963296,40000,40000")
+    # the board's rectangle is its outline's alone (the zone below y 0 and
+    # the stroke width left out)
+    C.Check.str("edge", box(P.Plot.edge(pl)), "0,0,40000,40000")
+    C.Check.str("lines keep the edge", box(P.Plot.edge(back)), box(P.Plot.edge(pl)))
+    C.Check.str("a schematic has no edge", box(P.Plot.edge(P.Plot.of(items(B.Board.items(U.Utf8.encode(board("20 10")))), 1))), box(P.Box.empty()))
     # a model's triangles: board axes (glTF z is the board's y, glTF y is
     # up), 10 micrometre units; colour XOR then zigzag deltas
     +so : P.Solid = P.Solid.of([G.Tri3{0.001, 0.0016, 0.002, 0.003, 0.0016, 0.002, 0.001, 0.0016, 0.004, 255}])

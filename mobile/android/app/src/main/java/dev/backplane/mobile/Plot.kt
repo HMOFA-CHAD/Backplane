@@ -234,10 +234,11 @@ class PlotMesh(val verts: FloatArray, val colors: IntArray, val box: FloatArray)
 }
 
 // What the renderer draws: the chunks in paint order and which of them
-// just arrived (they fade in), the box and thickness, or why there is
-// nothing to draw.
+// just arrived (they fade in), the box, the board's rectangle (empty
+// from an older hub, or x0 > x1 for a schematic) and thickness, or why
+// there is nothing to draw.
 class PlotFrame(
-    val key: String, val box: FloatArray, val thick: Float, val chunks: List<PlotChunk>, val fresh: Set<Int>,
+    val key: String, val box: FloatArray, val edge: FloatArray, val thick: Float, val chunks: List<PlotChunk>, val fresh: Set<Int>,
     val none: String, val at: Long,
 )
 
@@ -277,7 +278,7 @@ class PlotStore {
                     if (gen != generation) return@post
                     if (solid) { mesh = MeshFrame(key, null, why, System.currentTimeMillis()); return@post }
                     held = emptyList()
-                    frame = PlotFrame(key, FloatArray(0), 0f, emptyList(), emptySet(), why, System.currentTimeMillis())
+                    frame = PlotFrame(key, FloatArray(0), FloatArray(0), 0f, emptyList(), emptySet(), why, System.currentTimeMillis())
                 }
                 return@execute
             }
@@ -292,6 +293,7 @@ class PlotStore {
             val decoded = HashMap<Int, PlotChunk>()
             jobs.forEachIndexed { k, (i, _) -> decoded[i] = done[k].get() }
             val box = (o["box"] as? List<*>)?.map { ((it as? Long) ?: 0L).toFloat() }?.toFloatArray() ?: FloatArray(0)
+            val edge = (o["edge"] as? List<*>)?.map { ((it as? Long) ?: 0L).toFloat() }?.toFloatArray() ?: FloatArray(0)
             val thick = ((o["thick"] as? Long) ?: 1600L).toFloat()
             // the main thread keeps arrival order: each plot applies to the one before
             main.post {
@@ -302,7 +304,7 @@ class PlotStore {
                     if (c != null) all.add(c)
                 }
                 held = all
-                frame = PlotFrame(key, box, thick, all, decoded.keys, "", System.currentTimeMillis())
+                frame = PlotFrame(key, box, edge, thick, all, decoded.keys, "", System.currentTimeMillis())
             }
         }
     }
