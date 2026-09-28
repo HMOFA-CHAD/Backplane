@@ -108,7 +108,7 @@ def USkill.lines(ss: List<&2, USkill>) -> List<&2, String>:
 
 def USkill.block(+ls: List<&2, String>) -> String:
   Bool.pick(String, List.is_empty(&2, String, ls), "",
-    "\n\n<skills>\nThe user installed these skills (Claude Code SKILL.md format). When a task matches a skill's description, read that skill's complete SKILL.md before starting and follow it. Resolve paths it mentions relative to its directory.\n"
+    "\n\n<skills>\nThese skills are installed (Claude Code SKILL.md format). When a task matches a skill's description, read that skill's complete SKILL.md before starting and follow it. Resolve paths it mentions relative to its directory.\n"
     ++ String.join(ls, "\n") ++ "\n</skills>")
 
 # the skills block for providers that do not read skills themselves

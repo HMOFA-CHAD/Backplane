@@ -4237,6 +4237,9 @@ def Laws.kicad_missing_prompt():
 def Laws.claude_kistack_plugin():
   {==}
 
+def Laws.runtime_no_kistack_block():
+  {==}
+
 def Laws.mech_render_path():
   {==}
 
