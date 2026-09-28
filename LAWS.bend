@@ -7,6 +7,7 @@ import ./src/app/viewer.bend as V
 import ./src/app/theme.bend as TH
 import ./src/core/semver.bend as SV
 import ./src/app/nui.bend as N
+import ./src/app/bots.bend as BV
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
 import ./src/core/refs.bend as RF
@@ -2674,6 +2675,72 @@ law bot_hop_bounded:
   for +h: Nat
   {BOT.Hop.bound(BOT.Hop.next(h)) == True{} : Bool}
 
+# a busy bot hears a message: its turn keeps its hop (the message waits for
+# the next turn), so another bot's answer never deepens its own
+law bot_hop_busy_keeps:
+  for +c: BOT.Hops
+  for +h: Nat
+  {BOT.Hops.now(BOT.Hop.woke(True{}, c, h)) == BOT.Hops.now(c) : Nat}
+
+# a bot at rest hears a message at hop h: its turn runs at h
+law bot_hop_idle_starts:
+  for +c: BOT.Hops
+  for +h: Nat
+  {BOT.Hops.now(BOT.Hop.woke(False{}, c, h)) == h : Nat}
+
+# a message that waits alone is answered by the next turn at its hop, so
+# each message of a back-and-forth is answered one hop deeper
+law bot_hop_queue_takes:
+  for +n: Nat
+  for +w: Nat
+  for +h: Nat
+  {BOT.Hops.now(BOT.Hop.taken(BOT.Hop.woke(True{}, BOT.Hops{n, w, False{}}, h))) == h : Nat}
+
+# the step behind bot_hop_fanout: any number of messages reaching a busy
+# bot leave its turn's hop as it was
+law bot_hop_wakes_keep:
+  for hs: List<&2, Nat>
+  for +c: BOT.Hops
+  {BOT.Hops.now(BOT.Hop.wakes(hs, c)) == BOT.Hops.now(c) : Nat}
+
+# a request fanned out to N bots lets each reply once: a bot woken by a post
+# at hop h answers at h+1, however many of the others' answers reach it
+# while it works
+law bot_hop_fanout:
+  for hs: List<&2, Nat>
+  for +c: BOT.Hops
+  for +h: Nat
+  {BOT.Hop.next(BOT.Hops.now(BOT.Hop.wakes(hs, BOT.Hop.woke(False{}, c, h)))) == BOT.Hop.next(h) : Maybe<&2, Nat>}
+
+# the step behind bot_loop_bounded: one message of a back-and-forth keeps
+# the talk within the bound
+law bot_loop_up:
+  for ok: Bool
+  for b: Bool
+  for +h: Nat
+  for q: {Nat.is_le(1n+h, BOT.Hop.max()) == ok : Bool}
+  for e: {Nat.is_le(h, BOT.Hop.max()) == True{} : Bool}
+  {Nat.is_le(BOT.Hop.up.k(BOT.Hop.send.k(ok, 1n+h), b, h), BOT.Hop.max()) == True{} : Bool}
+
+# a bot-only loop stops within the limit: however long two bots answer each
+# other, busy or at rest, the talk never goes past the bound
+law bot_loop_bounded:
+  for bs: List<&2, Bool>
+  for +h: Nat
+  for e: {Nat.is_le(h, BOT.Hop.max()) == True{} : Bool}
+  {Nat.is_le(BOT.Hop.climb(bs, h), BOT.Hop.max()) == True{} : Bool}
+
+# ten answers back and forth from a person's message: the talk stops at the
+# bound after six
+law bot_loop_stops:
+  {BOT.Hop.climb([True{}, False{}, True{}, True{}, False{}, False{}, True{}, False{}, True{}, True{}], 0n) == BOT.Hop.max() : Nat}
+
+# a held post (past the bound) wakes no bot, here or on the machine it
+# reaches; it is kept in its room for the person
+law bot_held_wakes_none:
+  for st: H.Step
+  {BHS.Bots.hop.gate(BOT.Hop.live(BOT.Hop.held()), st) == H.Step.none() : H.Step}
+
 # a linked machine never takes over a live room here with no member on it
 law bot_room_no_takeover:
   for +i: String
@@ -3233,3 +3300,30 @@ law select_leaves_settings:
 
 law room_leaves_settings:
   {U.Ui.flag(U.Act.ui(U.Bots.room.select(U.Ui.flag_on(U.Ui.init(0n), "settings"), "r1")), "settings") == False{} : Bool}
+
+# a room's posts are lines the tiles slide with, so a wheel notch reuses
+# what the last frame drew
+law hits_chat_line_slides:
+  for +x0: U32
+  {N.Hits.kind(False{}, x0, "chat-line") == True{} : Bool}
+
+# a room scrolls one tile a notch; Settings and bot panes keep 48 px
+law chat_notch_tile:
+  {N.Set.scroll.by("0", "1000", 1, N.Nui.notch()) == "64" : String}
+
+law set_scroll_48:
+  {N.Set.scroll("0", "1000", 1) == "48" : String}
+
+# a cat that holds still is posed once (at clock 0), not on every tick
+# another cat moves; a moving one follows the clock
+law bots_still_cat_posed_once:
+  for +c: Nat
+  {BV.Bv.warm.at("idle", c) == 0n : Nat}
+
+law bots_away_cat_posed_once:
+  for +c: Nat
+  {BV.Bv.warm.at("away", c) == 0n : Nat}
+
+law bots_moving_cat_follows_clock:
+  for +c: Nat
+  {BV.Bv.warm.at("work", c) == c : Nat}

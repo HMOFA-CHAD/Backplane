@@ -34,6 +34,12 @@ type Peer is Data:
 type Page is Data:
   Page{html: String, at: Nat}
 
+# a bot's conversation depth: the hop of the turn it runs (or ran last),
+# and, when `held`, the lowest hop of the messages waiting for its next
+# turn (Hop.woke, Hop.taken)
+type Hops is Data:
+  Hops{now: Nat, wait: Nat, held: Bool}
+
 type World is Data:
   World{
     bots: Map<&2, Bot>,
@@ -44,7 +50,7 @@ type World is Data:
     mems: Map<&2, Mem>,
     peers: Map<&2, Peer>,
     spaces: Map<&2, String>,
-    hops: Map<&2, Nat>,
+    hops: Map<&2, Hops>,
     talk: Map<&2, Nat>,
     pages: Map<&2, Page>
   }
@@ -55,7 +61,7 @@ def Got(-V: Data, r: Map<&2, V> & V) -> V:
   v
 
 def World.empty() -> World:
-  World{Map.new(&2, Bot), Map.new(&2, Room), Nil{}, Map.new(&2, Hook), Map.new(&2, Routine), Map.new(&2, Mem), Map.new(&2, Peer), Map.new(&2, String), Map.new(&2, Nat), Map.new(&2, Nat), Map.new(&2, Page)}
+  World{Map.new(&2, Bot), Map.new(&2, Room), Nil{}, Map.new(&2, Hook), Map.new(&2, Routine), Map.new(&2, Mem), Map.new(&2, Peer), Map.new(&2, String), Map.new(&2, Hops), Map.new(&2, Nat), Map.new(&2, Page)}
 
 def Bot.blank(id: String) -> Bot:
   Bot{id, "", "", 0n, "", 0n, True{}}
@@ -276,10 +282,71 @@ def World.peer_set.k(w: World, +id: String, name: String, url: String, revoked: 
 def World.peer_set(+w: World, +id: String, name: String, url: String, revoked: Bool, +at: Nat) -> World:
   World.peer_set.k(w, id, name, url, revoked, at, World.peer(w, id))
 
-def World.woke(w: World, +bot: String, hop: Nat) -> World:
+# Conversation depth
+# ------------------
+# A human, a routine, a webhook or a space button wakes a bot at hop 0; a
+# bot's message goes out one hop past the turn that sent it (Hop.send
+# below). A turn's hop is the lowest hop of the messages it answers: one
+# a bot at rest hears starts a turn at its hop, and one a busy bot hears
+# waits for its next turn, which runs at the lowest hop waiting. So when
+# N bots answer one post, a sibling's answer arriving mid-turn never makes
+# a bot's own answer deeper (law bot_hop_fanout), while each message of a
+# back-and-forth is answered one hop deeper (bot_hop_queue_takes).
+
+def Hops.now(c: Hops) -> Nat:
+  match c:
+    case Hops{n, _, _}:
+      n
+
+def Hop.low(+a: Nat, +b: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_le(a, b), a, b)
+
+def Hop.wait(held: Bool, +w: Nat, +h: Nat) -> Nat:
+  match held:
+    case True{}:
+      Hop.low(w, h)
+    case False{}:
+      h
+
+# a message at hop h reaches a bot: at rest, it starts a turn at h; busy,
+# its turn keeps its hop and the message waits for the next turn
+def Hop.woke(busy: Bool, c: Hops, +h: Nat) -> Hops:
+  match busy c:
+    case True{} Hops{n, w, held}:
+      Hops{n, Hop.wait(held, w, h), True{}}
+    case False{} _:
+      Hops{h, 0n, False{}}
+
+def Hop.taken.k(held: Bool, n: Nat, w: Nat) -> Hops:
+  match held:
+    case True{}:
+      Hops{w, 0n, False{}}
+    case False{}:
+      Hops{n, 0n, False{}}
+
+# the next turn takes the messages that waited: it runs at the lowest hop
+def Hop.taken(c: Hops) -> Hops:
+  match c:
+    case Hops{n, w, held}:
+      Hop.taken.k(held, n, w)
+
+# a busy bot hears messages at the hops hs (its siblings' answers)
+def Hop.wakes(hs: List<&2, Nat>, c: Hops) -> Hops:
+  match hs:
+    case Nil{}:
+      c
+    case +h <> t:
+      Hop.wakes(t, Hop.woke(True{}, c, h))
+
+def World.woke(w: World, +bot: String, busy: Bool, +hop: Nat) -> World:
   match w:
-    case World{bs, rs, ps, hs, ro, ms, pe, sp, ho, ta, pg}:
-      World{bs, rs, ps, hs, ro, ms, pe, sp, Map.set(&2, Nat, ho, bot, hop), ta, pg}
+    case World{bs, rs, ps, hs, ro, ms, pe, sp, +ho, ta, pg}:
+      World{bs, rs, ps, hs, ro, ms, pe, sp, Map.set(&2, Hops, ho, bot, Hop.woke(busy, Got(Hops, Map.get(Hops, Hops{0n, 0n, False{}}, ho, bot)), hop)), ta, pg}
+
+def World.taken.id(w: World, +bot: String) -> World:
+  match w:
+    case World{bs, rs, ps, hs, ro, ms, pe, sp, +ho, ta, pg}:
+      World{bs, rs, ps, hs, ro, ms, pe, sp, Map.set(&2, Hops, ho, bot, Hop.taken(Got(Hops, Map.get(Hops, Hops{0n, 0n, False{}}, ho, bot)))), ta, pg}
 
 # Reading
 # -------
@@ -371,6 +438,17 @@ def Bot.of.thread.go(bs: List<&2, Bot>, +thread: String) -> Maybe<&2, Bot>:
 # the bot a thread belongs to, if any
 def World.of_thread(+w: World, +thread: String) -> Maybe<&2, Bot>:
   Bot.of.thread.go(World.bots(w), thread)
+
+def World.taken.k(m: Maybe<&2, Bot>, w: World) -> World:
+  match m:
+    case Some{b}:
+      World.taken.id(w, Bot.id(b))
+    case None{}:
+      w
+
+# a bot's thread takes its waiting messages into a new turn
+def World.taken(+w: World, +thread: String) -> World:
+  World.taken.k(World.of_thread(w, thread), w)
 
 def World.page.k(m: Maybe<&2, Bot>, +thread: String) -> String:
   match m:
@@ -530,7 +608,7 @@ def Page.at(p: Page) -> Nat:
 def World.hop(+w: World, +bot: String) -> Nat:
   match w:
     case World{_, _, _, _, _, _, _, _, ho, _, _}:
-      Got(Nat, Map.get(Nat, 0n, ho, bot))
+      Hops.now(Got(Hops, Map.get(Hops, Hops{0n, 0n, False{}}, ho, bot)))
 
 def World.talked_at(+w: World, +bot: String) -> Nat:
   match w:
@@ -706,11 +784,12 @@ def Member.has(ms: List<&2, String>, +ps: List<&2, Peer>, +k: String) -> Bool:
     case +m <> t:
       Bool.or(String.eq(Member.key(ps, m), k), Member.has(t, ps, k))
 
-# Conversation depth
-# ------------------
-# A human, a routine, a webhook or a space button wakes a bot at hop 0; a
-# bot's message goes out one hop past the turn that sent it, and never
-# past Hop.max(), so bots cannot keep each other talking forever.
+# The depth bound
+# ---------------
+# A bot's message goes out one hop past the turn that sent it (World.woke
+# above), and never past Hop.max(), so bots cannot keep each other talking
+# forever. One that would go past it is held: kept in its room for the
+# person (hop Hop.held()), heard by no bot.
 
 def Hop.max() -> Nat:
   6n
@@ -728,6 +807,31 @@ def Hop.next(+h: Nat) -> Maybe<&2, Nat>:
 
 def Hop.send(+w: World, +bot: String) -> Maybe<&2, Nat>:
   Hop.next(World.hop(w, bot))
+
+# the hop of a held message: one past the bound
+def Hop.held() -> Nat:
+  1n+Hop.max()
+
+# a message at this hop is heard by bots
+def Hop.live(+h: Nat) -> Bool:
+  Nat.is_le(h, Hop.max())
+
+# a back-and-forth between bots from hop h: each message (while one may go
+# out) is answered by the other bot, busy (its next turn takes it, `True`)
+# or at rest; the hop the talk has reached
+def Hop.up.k(m: Maybe<&2, Nat>, busy: Bool, +h: Nat) -> Nat:
+  match m:
+    case Some{+n}:
+      Hops.now(Hop.taken(Hop.woke(busy, Hops{h, 0n, False{}}, n)))
+    case None{}:
+      h
+
+def Hop.climb(bs: List<&2, Bool>, +h: Nat) -> Nat:
+  match bs:
+    case Nil{}:
+      h
+    case b <> t:
+      Hop.climb(t, Hop.up.k(Hop.next(h), b, h))
 
 # a message that may go out is within the bound
 def Hop.bound(m: Maybe<&2, Nat>) -> Bool:

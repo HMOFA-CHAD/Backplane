@@ -439,14 +439,15 @@ def Nui.hits(n: Nui) -> List<&2, Hit>:
     case Nui{_, _, _, _, _, _, _, _, _, _, hi, _, vw}:
       hi
 
-# a line of the thread (side False: "tl-line") or a thread's row in the
-# sidebar (side True: "select" left of 264)
+# a line of the thread (side False: "tl-line", or a room's post,
+# "chat-line") or a thread's row in the sidebar (side True: "select" left
+# of 264)
 def Hits.kind(side: Bool, +x0: U32, +a: String) -> Bool:
   match side:
     case True{}:
       Bool.and(String.eq(a, "select"), U32.is_lt(x0, 264))
     case False{}:
-      String.eq(a, "tl-line")
+      Bool.or(String.eq(a, "tl-line"), String.eq(a, "chat-line"))
 
 def Hits.is_line(hs: List<&2, Hit>, +side: Bool) -> Bool:
   match hs:
@@ -1981,17 +1982,23 @@ def Nui.spin(viewer: Bool, +n: Nui, +x: U32, +y: U32, +dir: U32) -> Step:
     case False{}:
       Cs.spin(n, x, y, dir)
 
-# the wheel over the settings screen scrolls it by 48 px a notch, within
-# 0..the most its hit "set-bg" says
-def Set.scroll(+now: String, +last: String, +dir: U32) -> String:
+# the wheel over the settings screen scrolls it by step px a notch (48;
+# a room's posts one tile, Nui.notch), within 0..the most its hit "set-bg"
+# says
+def Set.scroll.by(+now: String, +last: String, +dir: U32, +step: U32) -> String:
   +off = Maybe.default(&2, U32, U32.read(now), 0)
   +most = Maybe.default(&2, U32, U32.read(last), 0)
-  U32.show(U32.min(Bool.pick(U32, U32.is_eq(dir, 0), Bool.pick(U32, U32.is_ge(off, 48), (off - 48 : U32), 0), (off + 48 : U32)), most))
+  U32.show(U32.min(Bool.pick(U32, U32.is_eq(dir, 0), Bool.pick(U32, U32.is_ge(off, step), (off - step : U32), 0), (off + step : U32)), most))
+
+def Set.scroll(+now: String, +last: String, +dir: U32) -> String:
+  Set.scroll.by(now, last, dir, 48)
 
 # the wheel over a room's posts: up goes back ("@chat.sc", from the
-# bottom, within 0..the most its hit "chat-bg" says)
+# bottom, within 0..the most its hit "chat-bg" says), a tile a notch, so
+# the frame after it reuses the tiles it slid (the posts' "chat-line"
+# hits say how far)
 def Chat.scroll(+n: Nui, +v: String, +dir: U32) -> Nui:
-  Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), "@chat.sc", Set.scroll(U.Ui.scratch(Nui.ui(n), "@chat.sc"), v, Bool.pick(U32, U32.is_eq(dir, 0), 1, 0))))
+  Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), "@chat.sc", Set.scroll.by(U.Ui.scratch(Nui.ui(n), "@chat.sc"), v, Bool.pick(U32, U32.is_eq(dir, 0), 1, 0), Nui.notch())))
 
 def Chat.spin(none: Bool, +v: String, +n: Nui, +x: U32, +y: U32, +dir: U32) -> Step:
   match none:

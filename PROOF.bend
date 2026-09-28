@@ -4885,6 +4885,53 @@ def Laws.bot_hop_step(ok, n, h):
 def Laws.bot_hop_bounded(h):
   Laws.bot_hop_step(Nat.is_le(1n+h, BOT.Hop.max()), 1n+h, {==})
 
+def Laws.bot_hop_busy_keeps(c, h):
+  match c:
+    case BOT.Hops{n, w, held}:
+      {==}
+
+def Laws.bot_hop_idle_starts(c, h):
+  {==}
+
+def Laws.bot_hop_queue_takes(n, w, h):
+  {==}
+
+def Laws.bot_hop_wakes_keep(hs, c):
+  match hs:
+    case Nil{}:
+      {==}
+    case +h <> t:
+      Equal.trans(Nat, BOT.Hops.now(BOT.Hop.wakes(t, BOT.Hop.woke(True{}, c, h))), BOT.Hops.now(BOT.Hop.woke(True{}, c, h)), BOT.Hops.now(c),
+        Laws.bot_hop_wakes_keep(t, BOT.Hop.woke(True{}, c, h)), Laws.bot_hop_busy_keeps(c, h))
+
+def Laws.bot_hop_fanout(hs, c, h):
+  Equal.cong(Nat, Maybe<&2, Nat>, x => BOT.Hop.next(x), BOT.Hops.now(BOT.Hop.wakes(hs, BOT.Hop.woke(False{}, c, h))), h,
+    Laws.bot_hop_wakes_keep(hs, BOT.Hop.woke(False{}, c, h)))
+
+def Laws.bot_loop_up(ok, b, h, q, e):
+  match ok:
+    case True{}:
+      match b:
+        case True{}:
+          q
+        case False{}:
+          q
+    case False{}:
+      e
+
+def Laws.bot_loop_bounded(bs, h, e):
+  match bs:
+    case Nil{}:
+      e
+    case +b <> t:
+      Laws.bot_loop_bounded(t, BOT.Hop.up.k(BOT.Hop.next(h), b, h), Laws.bot_loop_up(Nat.is_le(1n+h, BOT.Hop.max()), b, h, {==}, e))
+
+def Laws.bot_loop_stops():
+  {==}
+
+def Laws.bot_held_wakes_none(st):
+  {==}
+
 def Laws.bot_room_no_takeover(i, n, c, s, pid):
   {==}
 
@@ -5656,4 +5703,22 @@ def Laws.select_leaves_settings():
   {==}
 
 def Laws.room_leaves_settings():
+  {==}
+
+def Laws.hits_chat_line_slides(x0):
+  {==}
+
+def Laws.chat_notch_tile():
+  {==}
+
+def Laws.set_scroll_48():
+  {==}
+
+def Laws.bots_still_cat_posed_once(c):
+  {==}
+
+def Laws.bots_away_cat_posed_once(c):
+  {==}
+
+def Laws.bots_moving_cat_follows_clock(c):
   {==}

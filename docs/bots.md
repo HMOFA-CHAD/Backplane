@@ -54,8 +54,28 @@ person made (law `bot_spawn_bounded`), and a bot keeps at most eight.
 
 A message a bot sends carries a hop count: a human, a routine, a webhook or
 a space button starts at 0, and a bot's message to another bot is one more
-than the hop of the turn that sent it. A bot never sends past
-`Hop.max()` (law `bot_hop_bounded`), so two bots cannot talk forever.
+than the hop of the turn that sent it (`Hop.send` in `src/core/bot.bend`).
+
+A turn's hop is the lowest hop of the messages it answers (`Hops`,
+`Hop.woke`, `Hop.taken`). A message that reaches a bot at rest starts a
+turn at its hop. One that reaches a busy bot (its thread running, so the
+hub queues the message) leaves the running turn's hop alone and waits;
+the next turn (`QueueTaken`) runs at the lowest hop waiting. So when a
+post at hop h asks five bots to answer once, each answer goes out at h+1
+even though every answer wakes the others (law `bot_hop_fanout`), while a
+back-and-forth between bots goes one hop deeper per message
+(`bot_hop_queue_takes`) and stops at `Hop.max()`, 6 (`bot_hop_bounded`,
+`bot_loop_bounded`, `bot_loop_stops`). A person, a routine or a webhook
+starts a new exchange at hop 0.
+
+A message past the bound is held, not dropped: it is posted where it was
+going with a `[held: ...]` line, for the person to read, and heard by no
+bot (`Bots.hop.gate`, law `bot_held_wakes_none`). In a shared room it goes
+to the members' machines too, which log it and wake no one there. The
+sending bot gets an answer saying so (`held: true` and a note telling it
+not to send it again or anywhere else), not an error. A hop from a linked
+machine is capped at the held hop (`Bots.hop.cap`). `test/depth_test.bend`
+runs #staff: five bots here and one on a linked machine answering one post.
 
 ## Cats
 
