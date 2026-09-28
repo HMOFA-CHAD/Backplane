@@ -2131,9 +2131,12 @@ def Skills.scan.k(+home: String, +cwd: String) -> IO(List<&2, AG.USkill>):
   do IO<List<&2, AG.USkill>>:
     us : List<&2, AG.USkill> <- Skills.dir(home ++ "/.claude/skills")
     ps : List<&2, AG.USkill> <- Skills.dir(cwd ++ "/.claude/skills")
-    return AG.USkill.merge(us, ps)
+    rev : String <- K.KiStack.current(home)
+    ks : List<&2, AG.USkill> <- Skills.dir(K.KiStack.base(home) ++ "/" ++ rev ++ "/skills")
+    return AG.USkill.merge(AG.USkill.merge(us, ps), ks)
 
-# ~/.claude/skills, then <cwd>/.claude/skills (the user's win a clash)
+# ~/.claude/skills, then <cwd>/.claude/skills (the user's win a clash),
+# then KiStack's
 def Skills.scan(+cwd: String) -> IO(List<&2, AG.USkill>):
   IO.bind(String, List<&2, AG.USkill>, Env.get("HOME", "/nonexistent"), home => Skills.scan.k(home, cwd))
 
@@ -2977,7 +2980,7 @@ def Main.prepare(+user: String, +exe: String) -> IO(Boot):
 def Main.config(+user: String, +exe: String, args: List<String>, b: Boot) -> Cfg:
   Boot{kdir, skills, rt, ms, mt, +fc} = b
   Main.args(args, Cfg{user ++ "/.backplane-bend", exe ++ "/web", "127.0.0.1", 3787,
-    Q.Prompt.runtime("Backplane", skills) ++ "\n\n" ++ Q.Prompt.mech(fc, exe ++ "/backplane"), [kdir], Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc}})
+    Q.Prompt.runtime("Backplane") ++ "\n\n" ++ Q.Prompt.mech(fc, exe ++ "/backplane"), [kdir], Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc}})
 
 def Sys.exe_dir.io() -> IO(String):
   H.Sys.exe_dir()

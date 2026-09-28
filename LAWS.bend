@@ -1412,6 +1412,10 @@ law kicad_missing_prompt:
 law claude_kistack_plugin:
   {PM.Claude.plugins(["/k/rev"]) == ["--plugin-dir", "/k/rev"] : List<&2, String>}
 
+# the KiStack skills are loaded or listed, never spelled out in the prompt
+law runtime_no_kistack_block:
+  {String.contains(PM.Prompt.runtime("Backplane"), "<kistack_skills>") == False{} : Bool}
+
 # a part's render from a view goes to renders/ beside it, named by view
 law mech_render_path:
   {MCH.Mech.render("mech/bracket.step", "iso") == "mech/renders/bracket.iso.png" : String}
