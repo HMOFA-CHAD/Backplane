@@ -5704,3 +5704,21 @@ def Laws.select_leaves_settings():
 
 def Laws.room_leaves_settings():
   {==}
+
+def Laws.hits_chat_line_slides(x0):
+  {==}
+
+def Laws.chat_notch_tile():
+  {==}
+
+def Laws.set_scroll_48():
+  {==}
+
+def Laws.bots_still_cat_posed_once(c):
+  {==}
+
+def Laws.bots_away_cat_posed_once(c):
+  {==}
+
+def Laws.bots_moving_cat_follows_clock(c):
+  {==}

@@ -13,6 +13,7 @@ import ./layout.bend as L
 import ./cats.bend as CA
 import ./forms.bend as F
 import ./space.bend as SV
+import ../core/eq.bend as Q
 
 # The bots in the window (docs/bots.md): their cats under the projects in
 # the sidebar, the rooms, and the main area for a bot (its tabs), a room or
@@ -153,13 +154,20 @@ def Bv.warm.sel(sel: Bool, c: Map<&2, CA.CatF>, +look: Nat, +mood: String, +remo
     case False{}:
       c
 
+# the clock a cat is posed at: a cat that holds still (asleep, ready,
+# failed, away: CA.Cats.moving) always at 0, so it is posed once, not on
+# every tick another cat moves
+def Bv.warm.at(+mood: String, +clock: Nat) -> Nat:
+  Bool.pick(Nat, CA.Cats.moving(mood), clock, 0n)
+
 # the cats on show, posed into the cache at the clock before a frame
 def Bv.warm.go(rs: List<&2, BU.BRow>, c: Map<&2, CA.CatF>, +clock: Nat) -> Map<&2, CA.CatF>:
   match rs:
     case Nil{}:
       c
     case BU.BRow{_, _, _, +look, +mood, _, sel, +remote, _, _} <> t:
-      Bv.warm.go(t, Bv.warm.sel(sel, CA.Cats.warm(c, look, mood, 28, clock), look, mood, remote, clock), clock)
+      +at = Bv.warm.at(mood, clock)
+      Bv.warm.go(t, Bv.warm.sel(sel, CA.Cats.warm(c, look, mood, 28, at), look, mood, remote, at), clock)
 
 def Bv.warm(+u: U.Ui, c: Map<&2, CA.CatF>, +clock: Nat) -> Map<&2, CA.CatF>:
   Bv.warm.go(BU.BU.rows(u), c, clock)
@@ -603,49 +611,109 @@ def Bv.bot(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: B
 # "@chat.sc" from the bottom), and a line to write in.
 
 type PostL is Data:
-  PostL{from: String, when: String, lines: List<&2, String>}
+  PostL{id: String, from: String, when: String, lines: List<&2, String>}
 
-def Bv.posts.l(ps: List<&2, BT.Post>, +ty: L.Ty, +u: U.Ui, +now: Nat, +w: U32) -> List<&2, PostL>:
+# Wrapped posts kept from frame to frame (main.bend's Kept): a post's
+# text and its lines at a width, under "<id>:<width>". Layout takes the
+# lines kept only for the same text (a post's id alone could come back
+# with another; a missing glyph's fetch starts them over, Shell.paint.again)
+type PW is Data:
+  PW{ok: Bool, text: String, lines: List<&2, String>}
+
+def Bv.wraps.none() -> Map<&2, PW>:
+  Map.new(&2, PW)
+
+def Bv.wrap.key(+id: String, +w: U32) -> String:
+  id ++ ":" ++ U32.show(w)
+
+def Bv.wrap.got(r: Map<&2, PW> & PW) -> PW:
+  (_, p) = r
+  p
+
+def Bv.wrap.same(same: Bool, ls: List<&2, String>, +ty: L.Ty, +text: String, +w: U32) -> List<&2, String>:
+  match same:
+    case True{}:
+      ls
+    case False{}:
+      L.Ty.wrap(ty, 3n, text, w)
+
+def Bv.wrap.k(p: PW, +ty: L.Ty, +text: String, +w: U32) -> List<&2, String>:
+  match p:
+    case PW{True{}, +t, ls}:
+      Bv.wrap.same(Q.Eq.str(t, text), ls, ty, text, w)
+    case PW{False{}, _, _}:
+      L.Ty.wrap(ty, 3n, text, w)
+
+# a post's lines: the kept ones when they wrapped the same text, else
+# wrapped now
+def Bv.wrap(+ws: Map<&2, PW>, +ty: L.Ty, +id: String, +text: String, +w: U32) -> List<&2, String>:
+  Bv.wrap.k(Bv.wrap.got(Map.get(PW, PW{False{}, "", Nil{}}, ws, Bv.wrap.key(id, w))), ty, text, w)
+
+def Bv.posts.l(ps: List<&2, BT.Post>, +ws: Map<&2, PW>, +ty: L.Ty, +u: U.Ui, +now: Nat, +w: U32) -> List<&2, PostL>:
   match ps:
     case Nil{}:
       Nil{}
-    case BT.Post{_, _, +from, +text, _, +at} <> t:
-      PostL{BU.BU.member(u, from), U.Time.ago(now, at), L.Ty.wrap(ty, 3n, text, w)} <> Bv.posts.l(t, ty, u, now, w)
+    case BT.Post{+id, _, +from, +text, _, +at} <> t:
+      PostL{id, BU.BU.member(u, from), U.Time.ago(now, at), Bv.wrap(ws, ty, id, text, w)} <> Bv.posts.l(t, ws, ty, u, now, w)
 
 def Bv.posts.h(ps: List<&2, PostL>, +acc: U32) -> U32:
   match ps:
     case Nil{}:
       acc
-    case PostL{_, _, +ls} <> t:
+    case PostL{_, _, _, +ls} <> t:
       Bv.posts.h(t, (acc + 36 + Bv.nl(ls) * 22 : U32))
 
-def Bv.posts.draw(ps: List<&2, PostL>, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32) -> List<&2, R.Op>:
+# a post's height: its name line, its lines, and the gap under it
+def Bv.post.h(+ls: List<&2, String>) -> U32:
+  (36 + Bv.nl(ls) * 22 : U32)
+
+# a post on screen: its name, when, its lines, and a line region of no
+# width (never clicked; its y says how far the posts slid since the last
+# frame, nui.bend's Hits.slide, so the tiles reuse what they drew)
+def Bv.post.draw(on: Bool, +ty: L.Ty, +id: String, +from: String, +when: String, +ls: List<&2, String>, +c: D.Clip, +x: U32, +y: U32) -> L.Out:
+  match on:
+    case True{}:
+      L.Out{List.concat(&2, R.Op, [
+          L.Ty.text(ty, 0n, from, c, x, y, 24, Bool.pick(U32, String.eq(from, "you"), T.Th.soft(), T.Th.accent())),
+          L.Ty.text(ty, 2n, when, c, (x + L.Ty.width(ty, 0n, from) + 10 : U32), y, 24, T.Th.faint()),
+          Bv.lines(ls, ty, c, x, (y + 24 : U32), T.Th.text())]),
+        [L.Lay.hit(x, y, 0, Bv.post.h(ls), "chat-line", id)]}
+    case False{}:
+      L.Out.none()
+
+# the posts from y down; oy is where y is in the posts (0 at the first),
+# and only those that reach into lo..hi there (with a margin for glyphs
+# past their lines) are drawn: the clip cuts the rest to nothing
+def Bv.posts.draw(ps: List<&2, PostL>, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32, +oy: Nat, +lo: Nat, +hi: Nat) -> L.Out:
   match ps:
     case Nil{}:
-      Nil{}
-    case PostL{+from, +when, +ls} <> t:
-      List.concat(&2, R.Op, [
-        L.Ty.text(ty, 0n, from, c, x, y, 24, Bool.pick(U32, String.eq(from, "you"), T.Th.soft(), T.Th.accent())),
-        L.Ty.text(ty, 2n, when, c, (x + L.Ty.width(ty, 0n, from) + 10 : U32), y, 24, T.Th.faint()),
-        Bv.lines(ls, ty, c, x, (y + 24 : U32), T.Th.text()),
-        Bv.posts.draw(t, ty, c, x, (y + 36 + Bv.nl(ls) * 22 : U32))])
+      L.Out.none()
+    case PostL{+id, +from, +when, +ls} <> t:
+      +h = U32.to_nat(Bv.post.h(ls))
+      L.Out.cat(Bv.post.draw(Bool.and(Nat.is_gt(Nat.add(Nat.add(oy, h), 16n), lo), Nat.is_lt(oy, Nat.add(hi, 16n))), ty, id, from, when, ls, c, x, y),
+        Bv.posts.draw(t, ty, c, x, (y + Bv.post.h(ls) : U32), Nat.add(oy, h), lo, hi))
 
 def Bv.chat.off(+u: U.Ui) -> U32:
   Maybe.default(&2, U32, U32.read(U.Ui.scratch(u, "@chat.sc")), 0)
 
-# the posts from top to bottom, the newest at the bottom unless scrolled
-def Bv.chat(+ty: L.Ty, ps: List<&2, BT.Post>, +u: U.Ui, +empty: String, +x0: U32, +x1: U32, +top: U32, +bottom: U32) -> L.Out:
+# the posts from top to bottom, the newest at the bottom unless scrolled;
+# lo..hi are the clip's rows in the posts' own coordinates (the first post
+# at 0), and only posts there are drawn
+def Bv.chat(+ty: L.Ty, +ws: Map<&2, PW>, ps: List<&2, BT.Post>, +u: U.Ui, +empty: String, +x0: U32, +x1: U32, +top: U32, +bottom: U32) -> L.Out:
   +w = Bv.pane.w(x0, x1)
   +x = Bv.pane.x(x0, x1)
-  +pl = Bv.posts.l(ps, ty, u, U.Side.now(u), w)
+  +pl = Bv.posts.l(ps, ws, ty, u, U.Side.now(u), w)
   +total = Bv.posts.h(pl, 0)
   +view = {L.U32.dim(bottom, (top + 16 : U32)) : U32}
   +most = L.U32.dim(total, view)
   +off = U32.min(Bv.chat.off(u), most)
-  +y = {Bool.pick(U32, U32.is_le(total, view), (top + 16 : U32), ((bottom - total : U32) + off : U32)) : U32}
-  L.Out{List.append(&2, R.Op, Bool.pick(List<&2, R.Op>, U32.is_eq(total, 0), L.Ty.text(ty, 2n, empty, D.Clip.all(), x, (top + 16 : U32), 28, T.Th.faint()), Nil{}),
-      Bv.posts.draw(pl, ty, D.Clip{x0, top, x1, bottom}, x, y)),
-    [L.Lay.hit(x0, top, (x1 - x0 : U32), (bottom - top : U32), "chat-bg", U32.show(most))]}
+  +fits = U32.is_le(total, view)
+  +y = {Bool.pick(U32, fits, (top + 16 : U32), ((bottom - total : U32) + off : U32)) : U32}
+  +lo = Bool.pick(Nat, fits, 0n, Nat.sub(Nat.add(U32.to_nat(top), U32.to_nat(total)), Nat.add(U32.to_nat(bottom), U32.to_nat(off))))
+  +hi = Bool.pick(Nat, fits, U32.to_nat(total), Nat.sub(U32.to_nat(total), U32.to_nat(off)))
+  L.Out.cat(L.Out{Bool.pick(List<&2, R.Op>, U32.is_eq(total, 0), L.Ty.text(ty, 2n, empty, D.Clip.all(), x, (top + 16 : U32), 28, T.Th.faint()), Nil{}),
+      [L.Lay.hit(x0, top, (x1 - x0 : U32), (bottom - top : U32), "chat-bg", U32.show(most))]},
+    Bv.posts.draw(pl, ty, D.Clip{x0, top, x1, bottom}, x, y, 0n, lo, hi))
 
 # the line at the bottom: Enter or Send posts it
 def Bv.say(+ty: L.Ty, +f: F.FS, +name: String, +action: String, +ph: String, +x0: U32, +x1: U32, +h: U32) -> L.Out:
@@ -661,14 +729,14 @@ def Bv.top(+ty: L.Ty, +title: String, +sub: String, +x0: U32, +x1: U32, right: L
     L.Out.ops(L.Ty.text(ty, 2n, L.Ty.fit(ty, 2n, sub, L.U32.dim((x1 - x0 : U32), (tw + 200 : U32))), D.Clip.all(), (x0 + 36 + tw : U32), 0, 52, T.Th.faint())),
     right])
 
-def Bv.room(+ty: L.Ty, +n: S.Nui, r: BT.Room, +x0: U32, +x1: U32) -> L.Out:
+def Bv.room(+ty: L.Ty, +ws: Map<&2, PW>, +n: S.Nui, r: BT.Room, +x0: U32, +x1: U32) -> L.Out:
   match r:
     case BT.Room{+id, +name, ms, cr, de}:
       +u = S.Nui.ui(n)
       +h = S.Nui.height(n)
       +dw = L.Lay.button.w(ty, "Delete room")
       L.Out.all([
-        Bv.chat(ty, BU.BU.posts(u, id), u, "Nothing said here yet. Every bot in the room hears what is posted.", x0, x1, 52, (h - 60 : U32)),
+        Bv.chat(ty, ws, BU.BU.posts(u, id), u, "Nothing said here yet. Every bot in the room hears what is posted.", x0, x1, 52, (h - 60 : U32)),
         Bv.say(ty, F.Fm.fs(n), "rpost", "room-post", "Write to the room", x0, x1, h),
         Bv.top(ty, "# " ++ name, BU.BU.members(u, BT.Room{id, name, ms, cr, de}), x0, x1,
           F.Fm.button(ty, D.Clip.all(), (x1 - 16 - dw : U32), 12, "Delete room", T.Th.soft(), "room-delete", id))])
@@ -687,42 +755,79 @@ def Bv.far.cat(m: Maybe<&2, BU.BRow>, +cats: Map<&2, CA.CatF>, +ms: Nat, +x0: U3
     case None{}:
       L.Out.none()
 
-def Bv.remote(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +n: S.Nui, +id: String, +x0: U32, +x1: U32) -> L.Out:
+def Bv.remote(+ty: L.Ty, +ws: Map<&2, PW>, +cats: Map<&2, CA.CatF>, +n: S.Nui, +id: String, +x0: U32, +x1: U32) -> L.Out:
   +u = S.Nui.ui(n)
   +h = S.Nui.height(n)
   L.Out.all([
-    Bv.chat(ty, BU.BU.remote.posts(u, id), u, "Write to " ++ id ++ ". It answers from its own machine.", x0, x1, 52, (h - 60 : U32)),
+    Bv.chat(ty, ws, BU.BU.remote.posts(u, id), u, "Write to " ++ id ++ ". It answers from its own machine.", x0, x1, 52, (h - 60 : U32)),
     Bv.say(ty, F.Fm.fs(n), "rtext", "remote-send", "Write to " ++ id, x0, x1, h),
     Bv.top(ty, "     " ++ id, "on a linked machine", x0, x1, Bv.far.cat(Bv.far.find(BU.BU.remote(u), id), cats, S.Nui.ms_of(n), x0))])
 
 # The main area and the frame
 # ---------------------------
 
-def Bv.view(v: BU.View, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui, +x1: U32) -> Maybe<&2, L.Out>:
+def Bv.view(v: BU.View, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, +x1: U32) -> Maybe<&2, L.Out>:
   match v:
     case BU.VThread{}:
       None{}
     case BU.VBot{b}:
       Some{Bv.bot(ty, memo, cats, n, b, 264, x1)}
     case BU.VRoom{r}:
-      Some{Bv.room(ty, n, r, 264, x1)}
+      Some{Bv.room(ty, ws, n, r, 264, x1)}
     case BU.VRemote{+id}:
-      Some{Bv.remote(ty, cats, n, id, 264, x1)}
+      Some{Bv.remote(ty, ws, cats, n, id, 264, x1)}
 
-def Bv.main.k(settings: Bool, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui) -> Maybe<&2, L.Out>:
+def Bv.main.k(settings: Bool, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> Maybe<&2, L.Out>:
   match settings:
     case True{}:
       None{}
     case False{}:
-      Bv.view(BU.BU.view(S.Nui.ui(n)), ty, memo, cats, L.Lay.shrink(n, L.Lay.term_h(n)), L.Lay.x1(n))
+      Bv.view(BU.BU.view(S.Nui.ui(n)), ty, memo, cats, ws, L.Lay.shrink(n, L.Lay.term_h(n)), L.Lay.x1(n))
 
 # a bot's, room's or remote bot's main area (None: the usual one)
+def Bv.main.w(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> Maybe<&2, L.Out>:
+  Bv.main.k(U.Ui.flag(S.Nui.ui(n), "settings"), ty, memo, cats, ws, n)
+
 def Bv.main(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui) -> Maybe<&2, L.Out>:
-  Bv.main.k(U.Ui.flag(S.Nui.ui(n), "settings"), ty, memo, cats, n)
+  Bv.main.w(ty, memo, cats, Bv.wraps.none(), n)
 
-def Bv.frame.k(sd: Sd, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui) -> L.Out:
-  L.Lay.frame.x(ty, memo, n, c => y => Bv.side.of(sd, c, y), Bv.main(ty, memo, cats, n))
+def Bv.frame.k(sd: Sd, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> L.Out:
+  L.Lay.frame.x(ty, memo, n, c => y => Bv.side.of(sd, c, y), Bv.main.w(ty, memo, cats, ws, n))
 
-# the whole window, topmost first, with the bots in it
+# the whole window, topmost first, with the bots in it; ws: the posts
+# wrapped for the frame before (Bv.wraps)
+def Bv.frame.w(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> L.Out:
+  Bv.frame.k(Bv.sd(ty, cats, n), ty, memo, cats, ws, n)
+
+# (every post wrapped afresh)
 def Bv.frame(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui) -> L.Out:
-  Bv.frame.k(Bv.sd(ty, cats, n), ty, memo, cats, n)
+  Bv.frame.w(ty, memo, cats, Bv.wraps.none(), n)
+
+# the posts on show wrapped for this frame: those of the room or the bot
+# elsewhere shown, at its width, kept from ws where their text is the same
+# (only what is shown is kept)
+def Bv.wraps.put(ps: List<&2, BT.Post>, +ws: Map<&2, PW>, +ty: L.Ty, +w: U32, acc: Map<&2, PW>) -> Map<&2, PW>:
+  match ps:
+    case Nil{}:
+      acc
+    case BT.Post{+id, _, _, +text, _, _} <> t:
+      Bv.wraps.put(t, ws, ty, w, Map.set(&2, PW, acc, Bv.wrap.key(id, w), PW{True{}, text, Bv.wrap(ws, ty, id, text, w)}))
+
+def Bv.wraps.of(v: BU.View, +u: U.Ui, +ws: Map<&2, PW>, +ty: L.Ty, +w: U32) -> Map<&2, PW>:
+  match v:
+    case BU.VRoom{BT.Room{+id, _, _, _, _}}:
+      Bv.wraps.put(BU.BU.posts(u, id), ws, ty, w, Bv.wraps.none())
+    case BU.VRemote{+id}:
+      Bv.wraps.put(BU.BU.remote.posts(u, id), ws, ty, w, Bv.wraps.none())
+    case _:
+      Bv.wraps.none()
+
+def Bv.wraps.k(settings: Bool, +ty: L.Ty, +n: S.Nui, +ws: Map<&2, PW>) -> Map<&2, PW>:
+  match settings:
+    case True{}:
+      Bv.wraps.none()
+    case False{}:
+      Bv.wraps.of(BU.BU.view(S.Nui.ui(n)), S.Nui.ui(n), ws, ty, Bv.pane.w(264, L.Lay.x1(n)))
+
+def Bv.wraps(+ty: L.Ty, +n: S.Nui, +ws: Map<&2, PW>) -> Map<&2, PW>:
+  Bv.wraps.k(U.Ui.flag(S.Nui.ui(n), "settings"), ty, n, ws)

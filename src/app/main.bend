@@ -67,10 +67,13 @@ type Tie is Data:
   Tie{home: Chan(S.Msg), url: String, tag: String, n: Nat, pics: Map<&2, BM.Bitmap>, asked: Map<&2, Bool>}
 
 # what one frame keeps for the next: its tiles, the timeline's memos
-# (the open thread's first, then the threads shown before it) and the
-# bots' cats, flattened once per look and mood
+# (the open thread's first, then the threads shown before it), the
+# bots' cats, flattened once per look and mood, the threads' parked
+# viewers (one N.Park, behind a List: the window's state flattens to no
+# more fields than an arity of 255, main.bend fails to build past it), and
+# the posts on show wrapped (a room's, a bot's elsewhere: BV.Bv.wraps)
 type Kept is Data:
-  Kept{frames: TI.Frames, memos: List<&2, L.TLMemo>, cats: Map<&2, CA.CatF>, park: N.Park}
+  Kept{frames: TI.Frames, memos: List<&2, L.TLMemo>, cats: Map<&2, CA.CatF>, parks: List<&2, N.Park>, wraps: Map<&2, BV.PW>}
 
 # the boards being watched and the fonts
 type Aux is Data:
@@ -1436,33 +1439,43 @@ def Shell.image(pa: Bool, +ops: List<&2, R.Op>, +vw: V.Vw, +ww: U32, +hh: U32, +
 
 def Aux.frames(a: Aux) -> TI.Frames:
   match a:
-    case Aux{_, _, _, Kept{f, _, _, _}}:
+    case Aux{_, _, _, Kept{f, _, _, _, _}}:
       f
 
 def Aux.memos(a: Aux) -> List<&2, L.TLMemo>:
   match a:
-    case Aux{_, _, _, Kept{_, m, _, _}}:
+    case Aux{_, _, _, Kept{_, m, _, _, _}}:
       m
 
 def Aux.with_frames(a: Aux, f: TI.Frames) -> Aux:
   match a:
-    case Aux{ws, ty, ti, Kept{_, m, cs, pk}}:
-      Aux{ws, ty, ti, Kept{f, m, cs, pk}}
+    case Aux{ws, ty, ti, Kept{_, m, cs, pk, wr}}:
+      Aux{ws, ty, ti, Kept{f, m, cs, pk, wr}}
 
 def Aux.with_memos(a: Aux, m: List<&2, L.TLMemo>) -> Aux:
   match a:
-    case Aux{ws, ty, ti, Kept{f, _, cs, pk}}:
-      Aux{ws, ty, ti, Kept{f, m, cs, pk}}
+    case Aux{ws, ty, ti, Kept{f, _, cs, pk, wr}}:
+      Aux{ws, ty, ti, Kept{f, m, cs, pk, wr}}
 
 def Aux.cats(a: Aux) -> Map<&2, CA.CatF>:
   match a:
-    case Aux{_, _, _, Kept{_, _, cs, _}}:
+    case Aux{_, _, _, Kept{_, _, cs, _, _}}:
       cs
 
 def Aux.with_cats(a: Aux, cs: Map<&2, CA.CatF>) -> Aux:
   match a:
-    case Aux{ws, ty, ti, Kept{f, m, _, pk}}:
-      Aux{ws, ty, ti, Kept{f, m, cs, pk}}
+    case Aux{ws, ty, ti, Kept{f, m, _, pk, wr}}:
+      Aux{ws, ty, ti, Kept{f, m, cs, pk, wr}}
+
+def Aux.wraps(a: Aux) -> Map<&2, BV.PW>:
+  match a:
+    case Aux{_, _, _, Kept{_, _, _, _, wr}}:
+      wr
+
+def Aux.with_wraps(a: Aux, wr: Map<&2, BV.PW>) -> Aux:
+  match a:
+    case Aux{ws, ty, ti, Kept{f, m, cs, pk, _}}:
+      Aux{ws, ty, ti, Kept{f, m, cs, pk, wr}}
 
 # frames go on while a fade, a hover ease or a lightbox ease runs
 def Shell.anim(+n: N.Nui, +ms: Nat) -> Bool:
@@ -1580,14 +1593,16 @@ def Aux.with_ty(a: Aux, t: L.Ty) -> Aux:
       Aux{ws, t, ti, k}
 
 # the frame again with the glyphs it wanted in the cache: the timeline's
-# memos are made again (their lines were measured without them)
+# memos and the posts' lines are made again (they were measured without
+# them)
 def Shell.paint.again(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t2: U32) -> IO(Shell):
   do IO<Shell>:
     +memos : List<&2, L.TLMemo> = L.Lay.memos(ty, n, Nil{})
-    +o : L.Out = BV.Bv.frame(ty, L.TL.memos.now(memos), cats, n)
+    +wraps : Map<&2, BV.PW> = BV.Bv.wraps(ty, n, BV.Bv.wraps.none())
+    +o : L.Out = BV.Bv.frame.w(ty, L.TL.memos.now(memos), cats, wraps, n)
     +k : Nat = Lay.nops(o)
     +t3 : U32 <- PS.Perf.lap("ui.glyphs", t2)
-    Shell.paint.out(o, oh, n, w, q, i, Aux.with_cats(Aux.with_memos(Aux.with_ty(wa, ty), memos), cats), epoch, ms, t0, t3)
+    Shell.paint.out(o, oh, n, w, q, i, Aux.with_wraps(Aux.with_cats(Aux.with_memos(Aux.with_ty(wa, ty), memos), cats), wraps), epoch, ms, t0, t3)
 
 # glyphs the layout found missing (text in a script the cache has not
 # seen: Greek, CJK, symbols) are fetched, and the frame laid out again
@@ -1598,18 +1613,19 @@ def Shell.paint.want(ws: List<&2, X.Want>, o: L.Out, +cats: Map<&2, CA.CatF>, +m
     case +h <> +t:
       IO.bind(L.Ty, Shell, L.Ty.fill(Aux.ty(wa), h <> t), ty => Shell.paint.again(ty, cats, oh, n, w, q, i, wa, epoch, ms, t0, t2))
 
-# the cats the frame shows are posed into the cache first; the layout is
-# timed from t1 (ui.layout, with the ops it made as ui.ops)
+# the cats the frame shows are posed into the cache first, and the posts
+# it shows wrapped (kept in wa); the layout is timed from t1 (ui.layout,
+# with the ops it made as ui.ops)
 def Shell.paint.c(+cats: Map<&2, CA.CatF>, +memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t1: U32) -> IO(Shell):
   do IO<Shell>:
-    +o : L.Out = BV.Bv.frame(Aux.ty(wa), L.TL.memos.now(memos), cats, n)
+    +o : L.Out = BV.Bv.frame.w(Aux.ty(wa), L.TL.memos.now(memos), cats, Aux.wraps(wa), n)
     +k : Nat = Lay.nops(o)
     +t2 : U32 <- PS.Perf.lap("ui.layout", t1)
     PS.Perf.add("ui.ops", U32.from_nat(k))
     Shell.paint.want(X.Text.wants(Lay.ops(o), Nil{}), o, cats, memos, oh, n, w, q, i, wa, epoch, ms, t0, t2)
 
 def Shell.paint.m(+memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t1: U32) -> IO(Shell):
-  Shell.paint.c(BV.Bv.warm(N.Nui.ui(n), Aux.cats(wa), BV.Bv.clock.of(n)), memos, oh, n, w, q, i, wa, epoch, ms, t0, t1)
+  Shell.paint.c(BV.Bv.warm(N.Nui.ui(n), Aux.cats(wa), BV.Bv.clock.of(n)), memos, oh, n, w, q, i, Aux.with_wraps(wa, BV.Bv.wraps(Aux.ty(wa), n, Aux.wraps(wa))), epoch, ms, t0, t1)
 
 # the timeline's memo is brought up to this frame first; layout draws from
 # it. Each step is timed: ui.memo, ui.layout, then ui.raster and
@@ -1699,13 +1715,13 @@ def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
 
 def Aux.park(a: Aux) -> N.Park:
   match a:
-    case Aux{_, _, _, Kept{_, _, _, pk}}:
-      pk
+    case Aux{_, _, _, Kept{_, _, _, pk, _}}:
+      Maybe.default(&2, N.Park, List.head(&2, N.Park, pk), N.Park.init())
 
 def Aux.with_park(a: Aux, pk: N.Park) -> Aux:
   match a:
-    case Aux{ws, ty, ti, Kept{f, m, cs, _}}:
-      Aux{ws, ty, ti, Kept{f, m, cs, pk}}
+    case Aux{ws, ty, ti, Kept{f, m, cs, _, wr}}:
+      Aux{ws, ty, ti, Kept{f, m, cs, [pk], wr}}
 
 def Shell.parked(r: N.Nui & N.Park, w: Window, qd: Bool, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux) -> Shell:
   (n, pk) = r
@@ -1822,7 +1838,7 @@ def Shell.twin(r: Window & Window, +inbox: Chan(S.Msg), +drafts: String, +fq: Ch
     got : Maybe<&1, L.Ty> <- Chan.recv(L.Ty, fq)
     ty : L.Ty <- Shell.fonts(got)
     ui : U.Ui <- Drafts.load(U.Ui.init(U32.to_nat(t)), drafts)
-    a : Shell <- Shell.later(Shell{N.Nui.init(ui, 1400, 900), pw, True{}, False{}, q, inbox, Aux{Nil{}, ty, Tie{inbox, "", "#0", 1n, Map.new(&2, BM.Bitmap), Map.new(&2, Bool)}, Kept{TI.FNone{}, Nil{}, CA.Cats.none(), N.Park.init()}}})
+    a : Shell <- Shell.later(Shell{N.Nui.init(ui, 1400, 900), pw, True{}, False{}, q, inbox, Aux{Nil{}, ty, Tie{inbox, "", "#0", 1n, Map.new(&2, BM.Bitmap), Map.new(&2, Bool)}, Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none()}}})
     Shell.loop(S.Fuel.forever(), a)
 
 def Shell.opened(r: Result<&1, &1, U32 & String, Window>, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty)) -> IO(Unit):

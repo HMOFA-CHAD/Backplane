@@ -7,6 +7,7 @@ import ./src/app/viewer.bend as V
 import ./src/app/theme.bend as TH
 import ./src/core/semver.bend as SV
 import ./src/app/nui.bend as N
+import ./src/app/bots.bend as BV
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
 import ./src/core/refs.bend as RF
@@ -3299,3 +3300,30 @@ law select_leaves_settings:
 
 law room_leaves_settings:
   {U.Ui.flag(U.Act.ui(U.Bots.room.select(U.Ui.flag_on(U.Ui.init(0n), "settings"), "r1")), "settings") == False{} : Bool}
+
+# a room's posts are lines the tiles slide with, so a wheel notch reuses
+# what the last frame drew
+law hits_chat_line_slides:
+  for +x0: U32
+  {N.Hits.kind(False{}, x0, "chat-line") == True{} : Bool}
+
+# a room scrolls one tile a notch; Settings and bot panes keep 48 px
+law chat_notch_tile:
+  {N.Set.scroll.by("0", "1000", 1, N.Nui.notch()) == "64" : String}
+
+law set_scroll_48:
+  {N.Set.scroll("0", "1000", 1) == "48" : String}
+
+# a cat that holds still is posed once (at clock 0), not on every tick
+# another cat moves; a moving one follows the clock
+law bots_still_cat_posed_once:
+  for +c: Nat
+  {BV.Bv.warm.at("idle", c) == 0n : Nat}
+
+law bots_away_cat_posed_once:
+  for +c: Nat
+  {BV.Bv.warm.at("away", c) == 0n : Nat}
+
+law bots_moving_cat_follows_clock:
+  for +c: Nat
+  {BV.Bv.warm.at("work", c) == c : Nat}
