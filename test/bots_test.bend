@@ -198,9 +198,12 @@ def main() -> IO(Unit):
     C.Check.str("send self", yes(String.contains(call(s, 1004n, th.of(s, "Miso"), "bot_send", "{\"to\":\"Miso\",\"text\":\"hi\"}"), "that is you")), "yes")
     C.Check.str("send nobody", yes(String.contains(call(s, 1004n, th.of(s, "Miso"), "bot_send", "{\"to\":\"Nope\",\"text\":\"hi\"}"), "no bot by that name")), "yes")
     C.Check.str("not a bot", yes(String.contains(call(M.State.empty(), 1004n, "t1", "bot_send", "{\"to\":\"Nope\",\"text\":\"hi\"}"), "unknown tool")), "yes")
-    # Miso keeps its own hop (0) here, so each send goes out at 1; set Miso deep
+    # Miso keeps its own hop (0) here, so each send goes out at 1; set Miso
+    # deep: its message is held, logged for the person, heard by no bot
     C.Check.str("hop bound", yes(String.contains(call(run(s, B.Step{[M.BotWoke{id.of(s, "Miso"), 6n, 1005n}], Nil{}}), 1005n, th.of(s, "Miso"), "bot_send",
-      "{\"to\":\"Tofu\",\"text\":\"hi\"}"), "stops here")), "yes")
+      "{\"to\":\"Tofu\",\"text\":\"hi\"}"), "no bot was woken")), "yes")
+    C.Check.str("hop bound held", st.tags(call.step(run(s, B.Step{[M.BotWoke{id.of(s, "Miso"), 6n, 1005n}], Nil{}}), 1005n, th.of(s, "Miso"), "bot_send",
+      "{\"to\":\"Tofu\",\"text\":\"hi\"}")), "RoomSet RoomPosted | ")
     C.Check.str("hop 5 ok", yes(String.contains(call(run(s, B.Step{[M.BotWoke{id.of(s, "Miso"), 5n, 1005n}], Nil{}}), 1005n, th.of(s, "Miso"), "bot_send",
       "{\"to\":\"Tofu\",\"text\":\"hi\"}"), "posted in")), "yes")
     C.Check.str("posts logged", Nat.show(List.length(&2, BT.Post, BT.World.posts(M.State.bots(hops(3n, s)), BT.Room.id(room.of(hops(3n, s), "miso + tofu")), 10n))), "3")
@@ -239,7 +242,7 @@ def main() -> IO(Unit):
     # a linked machine's bot
     C.Check.str("incoming", st.tags(BH.Bots.incoming(s, 1010n, "laptop", Maybe.default(&2, J.Json, J.Json.parse("{\"from\":\"Nori\",\"to\":\"miso\",\"text\":\"yo\",\"hop\":2}"), J.Null{}))),
       "RoomPosted BotWoke MessagePosted TurnChanged | out out out ")
-    C.Check.str("incoming too deep", st.tags(BH.Bots.incoming(s, 1010n, "laptop", Maybe.default(&2, J.Json, J.Json.parse("{\"from\":\"Nori\",\"to\":\"miso\",\"text\":\"yo\",\"hop\":9}"), J.Null{}))), "| ")
+    C.Check.str("incoming too deep", st.tags(BH.Bots.incoming(s, 1010n, "laptop", Maybe.default(&2, J.Json, J.Json.parse("{\"from\":\"Nori\",\"to\":\"miso\",\"text\":\"yo\",\"hop\":9}"), J.Null{}))), "RoomPosted | ")
     C.Check.str("remote no peer", yes(String.contains(call(s, 1004n, th.of(s, "Miso"), "bot_send", "{\"to\":\"Nori@laptop\",\"text\":\"hi\"}"), "no linked machine")), "yes")
     +p : M.State = run(s, B.Step{[M.PeerSet{"p1", "laptop", "http://laptop:3787", False{}, 1000n}], Nil{}})
     C.Check.str("remote send", st.tags(call.step(p, 1004n, th.of(p, "Miso"), "bot_send", "{\"to\":\"Nori@laptop\",\"text\":\"hi\"}")), "RoomSet RoomPosted | fx:send ")
@@ -277,7 +280,7 @@ def main() -> IO(Unit):
       "\"members\":[\"Nori\",\"Miso@\",\"Ghost@far\"]")), "yes")
     C.Check.str("shared not a member", st.tags(BH.Bots.incoming(q, 1010n, "desk", json("{\"from\":\"Nori\",\"tos\":[\"tofu\"],\"members\":[\"Nori@\",\"miso\"],\"room\":\"r5-0\",\"roomName\":\"team\",\"text\":\"hi\",\"hop\":1}"))),
       "RoomSet RoomPosted | ")
-    C.Check.str("shared too deep", st.tags(BH.Bots.incoming(q, 1010n, "desk", json("{\"from\":\"Nori\",\"tos\":[\"miso\"],\"members\":[\"Nori@\",\"miso\"],\"room\":\"r5-0\",\"roomName\":\"team\",\"text\":\"hi\",\"hop\":9}"))), "| ")
+    C.Check.str("shared too deep", st.tags(BH.Bots.incoming(q, 1010n, "desk", json("{\"from\":\"Nori\",\"tos\":[\"miso\"],\"members\":[\"Nori@\",\"miso\"],\"room\":\"r5-0\",\"roomName\":\"team\",\"text\":\"hi\",\"hop\":9}"))), "RoomSet RoomPosted | ")
     +lr : M.State = run(q, call.step(q, 1006n, th.of(q, "Miso"), "room_create", "{\"name\":\"ours\",\"members\":\"Tofu\"}"))
     C.Check.str("shared no takeover", st.tags(BH.Bots.incoming(lr, 1010n, "desk", json("{\"from\":\"Nori\",\"tos\":[\"miso\"],\"members\":[\"Nori@\",\"miso\"],\"room\":\"" ++ BT.Room.id(room.of(lr, "ours")) ++ "\",\"roomName\":\"ours\",\"text\":\"hi\",\"hop\":1}"))), "| ")
     C.Check.str("shared deleted stays", st.tags(BH.Bots.incoming(run(q2, B.Step{[M.RoomDeleted{"r5-0", 1011n}], Nil{}}), 1012n, "desk", json(post))), "| ")

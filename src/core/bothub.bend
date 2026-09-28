@@ -36,6 +36,19 @@ def Bots.inbox(+s: M.State, +now: Nat, +from: String, +to: String, +msg: String,
 def Bots.wake(+s: M.State, +now: Nat, +from: String, +bot: BT.Bot, +msg: String, +text: String, +hop: Nat) -> B.Step:
   B.Step.before([M.BotWoke{BT.Bot.id(bot), hop, now}], Nil{}, Bots.inbox(s, now, from, BT.Bot.thread(bot), msg, text))
 
+# a post's step wakes bots only while its hop is within the bound; a held
+# one (BT.Hop.held) wakes no one (law bot_held_wakes_none)
+def Bots.hop.gate(live: Bool, st: B.Step) -> B.Step:
+  match live:
+    case True{}:
+      st
+    case False{}:
+      B.Step.none()
+
+# a hop from a linked machine, at most the held hop
+def Bots.hop.cap(+h: Nat) -> Nat:
+  Bool.pick(Nat, BT.Hop.live(h), h, BT.Hop.held())
+
 def Step.cat(a: B.Step, b: B.Step) -> B.Step:
   match a b:
     case B.Step{ca, oa} B.Step{cb, ob}:
@@ -200,14 +213,16 @@ def Bots.fan(ms: List<&2, String>, +i: Nat, +s: M.State, +now: Nat, +seq: Nat, +
     case +m <> t:
       Step.cat(Bots.member(s, now, seq, i, from, fname, self, room, rname, text, hop, m), Bots.fan(t, 1n+i, s, now, seq, from, fname, self, room, rname, text, hop))
 
-# a post in a room: logged, then every other member hears it. `from` is
-# the sender's thread ("" for a person), `self` its bot id
+# a post in a room: logged, then every other member hears it (a held one
+# is logged, here and on the machines of members elsewhere, for the
+# person, and heard by no bot). `from` is the sender's thread ("" for a
+# person), `self` its bot id
 def Bots.post(+s: M.State, +now: Nat, +from: String, +fname: String, +self: String, r: BT.Room, +text: String, +hop: Nat) -> B.Step:
   match r:
     case BT.Room{+room, +rname, +ms, _, _}:
       B.Step.before([M.RoomPosted{B.Hub.id("p", now, B.Hub.seq(s)), room, fname, text, hop, now}],
         Bots.remotes(Bots.peers.of(ms, s, Nil{}), s, ms, fname, room, rname, text, hop),
-        Bots.fan(ms, 0n, s, now, B.Hub.seq(s), from, fname, self, room, rname, text, hop))
+        Bots.hop.gate(BT.Hop.live(hop), Bots.fan(ms, 0n, s, now, B.Hub.seq(s), from, fname, self, room, rname, text, hop)))
 
 # a direct message from a bot (or a person) to one bot, here or elsewhere
 def Bots.direct(+s: M.State, +now: Nat, +from: String, +fname: String, +self: String, +to: String, +tname: String, +text: String, +hop: Nat) -> B.Step:
@@ -690,18 +705,16 @@ def Bots.hooked(+s: M.State, +now: Nat, +hook: String, body: String) -> B.Step:
 def Bots.in.room(+rname: String) -> String:
   Bool.pick(String, String.is_empty(rname), "dm:", "room")
 
-def Bots.incoming.go(ok: Bool, +s: M.State, +now: Nat, +bot: BT.Bot, +from: String, +rname: String, +text: String, +hop: Nat) -> B.Step:
-  match ok:
-    case True{}:
-      B.Step.before([M.RoomPosted{B.Hub.id("p", now, B.Hub.seq(s)), BT.Room.dm(from, BT.Bot.name(bot)), from, text, hop, now}], Nil{},
-        Bots.wake(s, now, "", bot, B.Hub.id("m", now, B.Hub.seq(s)), Bots.note(from, Bots.in.room(rname), rname, text), hop))
-    case False{}:
-      B.Step.none()
+# a message from a bot elsewhere is logged in the direct room; the bot
+# here hears it only within the bound (a held one is for the person)
+def Bots.incoming.go(+s: M.State, +now: Nat, +bot: BT.Bot, +from: String, +rname: String, +text: String, +hop: Nat) -> B.Step:
+  B.Step.before([M.RoomPosted{B.Hub.id("p", now, B.Hub.seq(s)), BT.Room.dm(from, BT.Bot.name(bot)), from, text, hop, now}], Nil{},
+    Bots.hop.gate(BT.Hop.live(hop), Bots.wake(s, now, "", bot, B.Hub.id("m", now, B.Hub.seq(s)), Bots.note(from, Bots.in.room(rname), rname, text), hop)))
 
 def Bots.incoming.k(b: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +peer: String, +from: String, +rname: String, +text: String, +hop: Nat) -> B.Step:
   match b:
     case Some{+bot}:
-      Bots.incoming.go(Nat.is_le(hop, BT.Hop.max()), s, now, bot, from, rname, text, hop)
+      Bots.incoming.go(s, now, bot, from, rname, text, Bots.hop.cap(hop))
     case None{}:
       B.Step.none()
 
@@ -864,14 +877,14 @@ def Bots.tick(+s: M.State, +now: Nat, +tz: Tz) -> B.Step:
 def Bots.tools() -> List<&2, J.Json>:
   [MC.Tool.def("bot_whoami", "Who you are as a Backplane bot: your name, id, home folder, rooms, routines, webhooks, and how deep the current conversation is.", Nil{}, Nil{}),
    MC.Tool.def("bot_list", "List the bots you can talk to: the bots on this machine (with what they are doing) and bots on linked machines (name@machine).", Nil{}, Nil{}),
-   MC.Tool.def("bot_send", "Ask another bot for something, here (its name) or on a linked machine (name@machine). It goes in a room of the two of you named for `topic`, which the person can read: the same room each time for the same bots and topic, so every later message about a request stays together. It reaches the bot's inbox and waits while that bot works. Messages between bots carry a depth: after a few replies back and forth it stops; wait for a person, a routine or a webhook to start a new conversation.",
+   MC.Tool.def("bot_send", "Ask another bot for something, here (its name) or on a linked machine (name@machine). It goes in a room of the two of you named for `topic`, which the person can read: the same room each time for the same bots and topic, so every later message about a request stays together. It reaches the bot's inbox and waits while that bot works. Messages between bots carry a depth: each answer is one deeper than the message it answers, and after a few replies back and forth the next one is held (the person sees it, no bot hears it) until a person, a routine or a webhook starts a new exchange.",
      [MC.Tool.prop("to", "string", "The bot's name, or name@machine."), MC.Tool.prop("text", "string", "The message."),
       MC.Tool.prop("topic", "string", "What the request is about, in a few words; the room is named for it (default: the two bots' names)."),
       MC.Tool.prop("direct", "boolean", "Send a private message instead of posting in a room. Only when the person asked for one.")], ["to", "text"]),
    MC.Tool.def("room_list", "List rooms (group conversations) and their members.", Nil{}, Nil{}),
    MC.Tool.def("room_create", "Make a room for a group of bots (you are added). Members are bot names here, or name@machine.",
      [MC.Tool.prop("name", "string", "The room's name."), MC.Tool.prop("members", "string", "Members, separated by commas or spaces.")], ["name", "members"]),
-   MC.Tool.def("room_post", "Post a message in a room: every other member hears it.",
+   MC.Tool.def("room_post", "Post a message in a room: every other member hears it. Answer a post once, only when you have something to add; past the depth limit a post is held (the person sees it, no bot hears it).",
      [MC.Tool.prop("room", "string", "The room's name or id."), MC.Tool.prop("text", "string", "The message.")], ["room", "text"]),
    MC.Tool.def("room_read", "Read a room's (or a direct conversation's) recent messages, oldest first.",
      [MC.Tool.prop("room", "string", "The room's name or id, or a bot's name for your direct messages with it."), MC.Tool.prop("limit", "number", "How many (default 30).")], ["room"]),
@@ -1064,18 +1077,18 @@ def Bots.shared.go(ok: Bool, +s: M.State, +now: Nat, +room: String, +rname: Stri
     case True{}:
       B.Step.before(List.append(&2, M.Change, Bots.shared.set(Bots.room.same(BT.World.room(M.State.bots(s), room), rname, BT.Room.members.show(ms)), room, rname, BT.Room.members.show(ms), now),
           [M.RoomPosted{B.Hub.id("p", now, B.Hub.seq(s)), room, from, text, hop, now}]), Nil{},
-        Bots.shared.wake(tos, 0n, s, now, ms, from, room, rname, text, hop))
+        Bots.hop.gate(BT.Hop.live(hop), Bots.shared.wake(tos, 0n, s, now, ms, from, room, rname, text, hop)))
     case False{}:
       B.Step.none()
 
 # a post in a shared room from a linked machine: the room is kept here with
 # its members as this machine names them, the post logged once, and the
-# bots here it is for hear it. Nothing is passed on.
+# bots here it is for hear it (not a held one, past the bound: that one is
+# for the person). Nothing is passed on.
 def Bots.shared(+s: M.State, +now: Nat, +peer: String, +o: J.Json) -> B.Step:
-  Bots.shared.go(Bool.and(Nat.is_le(J.Json.get_nat(o, "hop", 0n), BT.Hop.max()),
-      Bots.room.open(BT.World.room(M.State.bots(s), J.Json.get_str(o, "room", "")), s, Bots.peer.idm(Bots.peer(s, peer)))),
+  Bots.shared.go(Bots.room.open(BT.World.room(M.State.bots(s), J.Json.get_str(o, "room", "")), s, Bots.peer.idm(Bots.peer(s, peer))),
     s, now, J.Json.get_str(o, "room", ""), J.Json.get_str(o, "roomName", "room"), Bots.shared.members(s, peer, o),
-    J.Json.get_str(o, "from", "") ++ "@" ++ peer, Bots.tos(o), J.Json.get_str(o, "text", ""), J.Json.get_nat(o, "hop", 0n))
+    J.Json.get_str(o, "from", "") ++ "@" ++ peer, Bots.tos(o), J.Json.get_str(o, "text", ""), Bots.hop.cap(J.Json.get_nat(o, "hop", 0n)))
 
 def Bots.incoming.by(shared: Bool, +s: M.State, +now: Nat, +peer: String, +o: J.Json) -> B.Step:
   match shared:
@@ -1186,14 +1199,42 @@ def Req.go(+found: Maybe<&2, BT.Room>, +s: M.State, +now: Nat, +hop: Nat, +i: St
   +r = {Req.target(k, id, name, ms, now) : BT.Room}
   MR.step(Req.said(r), B.Step.before(Req.set(k, id, name, ms, now), Nil{}, Bots.post(s, now, th, n, i, r, text, hop)))
 
-def Bots.post.hop(m: Maybe<&2, Nat>, r: Maybe<&2, BT.Room>, +s: M.State, +now: Nat, b: BT.Bot, +text: String) -> MC.Res:
-  match m r b:
-    case Some{+hop} Some{room} BT.Bot{i, n, th, _, _, _, _}:
+# A message past the depth bound is held: posted where it was going with
+# a note, for the person to read, and heard by no bot. The bot is told so
+# plainly, so it neither retries nor writes the message somewhere else.
+
+def Held.text(+text: String) -> String:
+  "[held: " ++ Nat.show(BT.Hop.max()) ++ " messages between bots without a person, so no bot heard this]\n" ++ text
+
+def Held.note() -> String:
+  "held: this exchange between bots is " ++ Nat.show(BT.Hop.max()) ++ " messages deep, so no bot was woken. Your message is in the room for the person to read; don't send it again or anywhere else. A message from a person, a routine or a webhook starts a new exchange."
+
+def Held.res.k(ok: Bool, body: J.Json, st: B.Step) -> MC.Res:
+  match ok:
+    case True{}:
+      MR.step(J.Json.obj([J.KV{"ok", J.Flag{True{}}}, J.KV{"held", J.Flag{True{}}}, J.KV{"note", J.Str{Held.note()}}]), st)
+    case False{}:
+      MC.Res{False{}, body, st}
+
+# a held message's answer: the note, when it was sent
+def Held.res(r: MC.Res) -> MC.Res:
+  match r:
+    case MC.Res{ok, body, st}:
+      Held.res.k(ok, body, st)
+
+def Bots.post.room(r: Maybe<&2, BT.Room>, +s: M.State, +now: Nat, b: BT.Bot, +text: String, +hop: Nat) -> MC.Res:
+  match r b:
+    case Some{room} BT.Bot{i, n, th, _, _, _, _}:
       MR.step(MR.said("posted"), Bots.post(s, now, th, n, i, room, text, hop))
-    case None{} _ _:
-      MR.fail("this conversation between bots has gone " ++ Nat.show(BT.Hop.max()) ++ " messages deep, so it stops here")
-    case Some{_} None{} _:
+    case None{} _:
       MR.fail("no such room (see room_list)")
+
+def Bots.post.hop(m: Maybe<&2, Nat>, r: Maybe<&2, BT.Room>, +s: M.State, +now: Nat, b: BT.Bot, +text: String) -> MC.Res:
+  match m:
+    case Some{+hop}:
+      Bots.post.room(r, s, now, b, text, hop)
+    case None{}:
+      Held.res(Bots.post.room(r, s, now, b, Held.text(text), BT.Hop.held()))
 
 def Bots.read.other(m: Maybe<&2, BT.Bot>, +room: String) -> String:
   match m:
@@ -1505,7 +1546,7 @@ def Bots.send.hop(m: Maybe<&2, Nat>, direct: Bool, +s: M.State, +now: Nat, b: BT
     case Some{+hop}:
       Bots.send.to(Bots.remote(to), direct, s, now, b, to, topic, text, hop)
     case None{}:
-      MR.fail("this conversation between bots has gone " ++ Nat.show(BT.Hop.max()) ++ " messages deep, so it stops here; wait for a person, a routine or a webhook")
+      Held.res(Bots.send.to(Bots.remote(to), direct, s, now, b, to, topic, Held.text(text), BT.Hop.held()))
 
 def Bots.spawn.go(+s: M.State, +now: Nat, +maker: String, +mth: String, +a: J.Json, +name: String, +bot: String, +th: String) -> MC.Res:
   MR.step(J.Json.obj([J.KV{"bot", J.Str{bot}}, J.KV{"name", J.Str{name}}, J.KV{"note", J.Str{name ++ " is made: talk to it with bot_send"}}]),

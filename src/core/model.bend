@@ -1319,6 +1319,29 @@ def State.world(f: BT.World -> BT.World, s: State) -> State:
     case State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}:
       State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, [Ext.with_world(f, Ext.of(bw))]}
 
+def State.running.k(t: Thread) -> Bool:
+  match t:
+    case Thread{_, _, _, _, _, Running{}, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      True{}
+    case _:
+      False{}
+
+def State.world.of(s: State) -> BT.World:
+  match s:
+    case State{_, _, _, _, _, _, _, _, _, _, bw}:
+      State.bots.k(bw)
+
+# a message to a bot waits for its next turn while its thread runs one (as
+# hub.bend's inbox queues it)
+def State.busy_bot(+s: State, +bot: String) -> Bool:
+  State.running.k(State.thread.get(s, BT.Bot.thread(BT.World.bot(State.world.of(s), bot))))
+
+def State.woke.k(busy: Bool, s: State, +bot: String, +hop: Nat) -> State:
+  State.world((w => BT.World.woke(w, bot, busy, hop)), s)
+
+def State.woke(+s: State, +bot: String, +hop: Nat) -> State:
+  State.woke.k(State.busy_bot(s, bot), s, bot, hop)
+
 def State.apply.go(s: State, e: Change) -> State:
   match e:
     case ProjectCreated{id, title, root, at}:
@@ -1363,8 +1386,8 @@ def State.apply.go(s: State, e: Change) -> State:
       State.setting(s, k, v)
     case TurnQueued{th, msg, text, _}:
       State.enqueue(s, th, msg, text)
-    case QueueTaken{th, _}:
-      State.take(s, th)
+    case QueueTaken{+th, _}:
+      State.world((w => BT.World.taken(w, th)), State.take(s, th))
     case AskOpened{id, th, k, tool, d, o, _}:
       State.ask(s, Ask{id, th, k, tool, d, o, True{}, ""})
     case AskClosed{+id, a, _}:
@@ -1414,7 +1437,7 @@ def State.apply.go(s: State, e: Change) -> State:
     case PeerSet{id, name, url, revoked, at}:
       State.world((w => BT.World.peer_set(w, id, name, url, revoked, at)), s)
     case BotWoke{bot, hop, _}:
-      State.world((w => BT.World.woke(w, bot, hop)), s)
+      State.woke(s, bot, hop)
     case SpacePageSet{bot, html, at}:
       State.world((w => BT.World.spage_set(w, bot, html, at)), s)
     case TodosSet{+th, todos, _}:
