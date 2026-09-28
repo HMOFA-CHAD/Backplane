@@ -259,6 +259,15 @@ def KiStack.current(+home: String) -> IO(String):
     ok : Bool <- Io.is_file(KiStack.base(home) ++ "/" ++ sha ++ "/skills/pcb/SKILL.md")
     return KiStack.current.k(ok, sha)
 
+# a revision directory made a Claude Code plugin named kistack (its skills
+# are already where a plugin keeps them), so every Claude thread gets them
+# as its own skills through --plugin-dir
+def KiStack.plugin.sh() -> String:
+  "[ -d \"$1/skills\" ] || exit 0; [ -f \"$1/.claude-plugin/plugin.json\" ] && exit 0; mkdir -p \"$1/.claude-plugin\" && printf '%s\\n' '{\"name\":\"kistack\",\"description\":\"KiStack KiCad skills by American Embedded\"}' > \"$1/.claude-plugin/plugin.json\""
+
+def KiStack.plugin(+dir: String) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", KiStack.plugin.sh(), "sh", dir], "/"), r => IO.pure(Unit, Unit{}))
+
 # the skills live in <cache>/backplane/kistack/<revision>/skills (shared with
 # the TypeScript Backplane); with no latest revision fetched yet, fetch the
 # pinned one when it is missing
@@ -268,6 +277,7 @@ def KiStack.ensure(+home: String) -> IO(Unit):
     +dir : String = KiStack.base(home) ++ "/" ++ rev
     have : Bool <- Io.is_file(dir ++ "/skills/pcb/SKILL.md")
     KiStack.ensure.k(have, dir)
+    KiStack.plugin(dir)
 
 def KiCad.install.k(r: P.Ran) -> String:
   match r:

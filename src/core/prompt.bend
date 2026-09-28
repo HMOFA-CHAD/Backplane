@@ -222,6 +222,15 @@ def Claude.dirs(ds: List<&2, String>) -> List<&2, String>:
     case d <> t:
       "--add-dir" <> d <> Claude.dirs(t)
 
+# each KiStack revision directory loaded as a plugin (the hub writes its
+# manifest, KiStack.plugin), so its skills are Claude's own `kistack:<name>`
+def Claude.plugins(ds: List<&2, String>) -> List<&2, String>:
+  match ds:
+    case Nil{}:
+      Nil{}
+    case d <> t:
+      "--plugin-dir" <> d <> Claude.plugins(t)
+
 # `claude` flags for a long-lived stream-json session
 # outside full access, Claude asks Backplane (the user) before a tool runs
 def Claude.ask(r: M.RuntimeMode, i: M.InteractionMode, rest: List<&2, String>) -> List<&2, String>:

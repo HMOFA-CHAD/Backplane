@@ -1401,6 +1401,11 @@ law kicad_missing_said:
 law kicad_missing_prompt:
   {String.starts_with(PM.Prompt.kicad("", False{}, "", "", False{}), "<kicad_runtime>KiCad is not installed") == True{} : Bool}
 
+# every Claude thread loads each KiStack directory as a plugin, so the
+# skills are its own besides being listed in its prompt
+law claude_kistack_plugin:
+  {PM.Claude.plugins(["/k/rev"]) == ["--plugin-dir", "/k/rev"] : List<&2, String>}
+
 # a part's render from a view goes to renders/ beside it, named by view
 law mech_render_path:
   {MCH.Mech.render("mech/bracket.step", "iso") == "mech/renders/bracket.iso.png" : String}

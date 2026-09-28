@@ -4231,6 +4231,9 @@ def Laws.kicad_missing_said():
 def Laws.kicad_missing_prompt():
   {==}
 
+def Laws.claude_kistack_plugin():
+  {==}
+
 def Laws.mech_render_path():
   {==}
 
