@@ -72,6 +72,10 @@ def menu(+u: U.Ui) -> String:
 def active(+q: String) -> String:
   String.join(U.Active.ids(U.Active.rows(st(), now(), q)), ",")
 
+# the active view as a client shows it, the settled fold as the Ui has it
+def shown(+u: U.Ui, +q: String) -> String:
+  String.join(U.Active.ids(U.Active.folded(U.Active.open(U.Side.open(u), q), U.Active.parts(U.Active.rows(U.Side.st(u), U.Side.now(u), q)))), ",")
+
 def faded(rs: List<&2, U.ARow>) -> List<&2, String>:
   match rs:
     case Nil{}:
@@ -90,6 +94,14 @@ def main() -> IO(Unit):
     C.Check.str("settled faded", String.join(faded(U.Active.rows(st(), now(), "")), ","), "False,False,False,True,True")
     C.Check.str("active search by project", active("enclosure"), "f")
     C.Check.str("active search by title", active("regul"), "c")
+    C.Check.str("settled folded", shown(base(), ""), "c,b,a")
+    C.Check.str("settled unfolds", shown(act(base(), "side-settled", ""), ""), "c,b,a,f,d")
+    C.Check.str("settled fold shuts again", shown(act(act(base(), "side-settled", ""), "side-settled", ""), ""), "c,b,a")
+    C.Check.str("search shows settled", shown(base(), "enclosure"), "f")
+    C.Check.str("settled count", Nat.show(U.Active.faded_n(U.Active.parts(U.Active.rows(st(), now(), "")))), "2")
+    C.Check.str("view swaps at once", U.Side.view(U.Side.st(act(base(), "setting", "sidebar.view=active"))), "active")
+    C.Check.str("view swap still sent", sent(U.Ui.act(base(), "setting", "sidebar.view=active")), "{\"id\":0,\"m\":\"setting.set\",\"p\":{\"key\":\"sidebar.view\",\"value\":\"active\"}}")
+    C.Check.str("view swap keeps the sequence", Nat.show(U.Ui.seq(act(base(), "setting", "sidebar.view=active"))), Nat.show(U.Ui.seq(base())))
     C.Check.str("menu opens", U.Ui.scratch(act(base(), "row-menu", "d"), "@menu"), "t:d")
     C.Check.str("same again shuts", U.Ui.scratch(act(act(base(), "row-menu", "d"), "row-menu", "d"), "@menu"), "")
     C.Check.str("settled menu", menu(act(base(), "row-menu", "d")), "Bring back,Archive,Delete")

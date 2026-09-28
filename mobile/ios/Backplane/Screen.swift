@@ -42,7 +42,8 @@ struct Project: Decodable, Identifiable {
     let quiet: Bool?
 }
 
-// the folded shelf of older projects at the end of the list ("side-older")
+// the folded shelf of older projects at the end of the list ("side-older"),
+// and the active view's settled threads ("side-settled")
 struct Older: Decodable, Equatable {
     let count: Int
     let open: Bool
@@ -497,6 +498,7 @@ struct Screen: Decodable {
     let view: String?
     let active: [Row]?
     let older: Older?
+    let settled: Older?
     let rowMenu: RowMenu?
     let bots: [BotRow]
     let rooms: [RoomRow]

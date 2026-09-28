@@ -426,15 +426,26 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
             // active view threads by title or project)
             s.search?.let { f -> item(key = "find") { SearchField(m, f, s.projects.firstOrNull()?.id) } }
             if (s.view == "active") {
-                if (s.active.isEmpty()) {
+                if (s.active.isEmpty() && s.settled == null) {
                     if (s.projects.isNotEmpty() && s.search?.query.isNullOrEmpty()) item(key = "none") {
                         Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
                             Text("Nothing active", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
                         }
                     }
                 } else {
-                    items(s.active, key = { "t:" + it.id }) { ThreadRow(m, it) }
+                    // live rows; the settled ones follow their fold while it is open
+                    items(s.active.filter { !it.faded }, key = { "t:" + it.id }) { ThreadRow(m, it) }
                     item(key = "d:active") { HorizontalDivider() }
+                    s.settled?.let { o ->
+                        item(key = "settled") {
+                            ListItem(
+                                headlineContent = { Text("Settled ${o.count}", style = MaterialTheme.typography.labelLarge) },
+                                trailingContent = { Icon(if (o.open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null) },
+                                modifier = Modifier.combinedClickableCompat { m.act("side-settled", "") },
+                            )
+                        }
+                    }
+                    items(s.active.filter { it.faded }, key = { "t:" + it.id }) { ThreadRow(m, it) }
                 }
             } else {
                 for (p in s.projects) {

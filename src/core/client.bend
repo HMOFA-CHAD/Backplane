@@ -747,9 +747,19 @@ def Ui.setting.k(ps: List<&2, String>) -> List<&2, J.KV>:
     case Nil{}:
       Nil{}
 
-# "key=value" -> setting.set
-def Ui.setting(u: Ui, kv: String) -> Act:
-  Ui.rpc(u, "setting.set", Ui.setting.k(String.split(kv, '=')))
+# a setting applied here at once, before the hub answers with the same
+# (the sequence is left alone, so nothing the hub sends is skipped)
+def Ui.setting.here(u: Ui, ps: List<&2, String>) -> Ui:
+  match u ps:
+    case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr} k <> t:
+      Ui{M.State.setting(st, k, String.join(t, "=")), sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+    case x Nil{}:
+      x
+
+# "key=value" -> setting.set, shown at once (the sidebar's view swaps
+# without waiting for the hub)
+def Ui.setting(u: Ui, +kv: String) -> Act:
+  Ui.rpc(Ui.setting.here(u, String.split(kv, '=')), "setting.set", Ui.setting.k(String.split(kv, '=')))
 
 def Ui.close(u: Ui, +key: String) -> Ui:
   match u:
@@ -2269,6 +2279,40 @@ def Active.ids(rs: List<&2, ARow>) -> List<&2, String>:
     case ARow{_, _, t, _, _, _} <> r:
       M.Thread.id(t) <> Active.ids(r)
 
+# the rows split: live ones, then the settled ones, each in order
+def Active.parts.put(faded: Bool, r: ARow, p: AParts) -> AParts:
+  match faded p:
+    case True{} AParts{l, f}:
+      AParts{l, r <> f}
+    case False{} AParts{l, f}:
+      AParts{r <> l, f}
+
+def Active.parts(rs: List<&2, ARow>) -> AParts:
+  match rs:
+    case Nil{}:
+      AParts{Nil{}, Nil{}}
+    case +r <> t:
+      Active.parts.put(ARow.faded(r), r, Active.parts(t))
+
+# The settled rows fold under one "Settled N" row, shut until opened (flag
+# "active-settled", action "side-settled"); a search shows them in place
+def Active.open(+op: Map<&2, Bool>, +q: String) -> Bool:
+  Bool.or(Flag.get(op, "active-settled"), Bool.not(String.is_empty(q)))
+
+# the rows shown: the settled ones only while their fold is open (law
+# active_fold_shut)
+def Active.folded(show: Bool, p: AParts) -> List<&2, ARow>:
+  match show p:
+    case True{} AParts{l, f}:
+      List.append(&2, ARow, l, f)
+    case False{} AParts{l, _}:
+      l
+
+def Active.faded_n(p: AParts) -> Nat:
+  match p:
+    case AParts{_, f}:
+      List.length(&2, ARow, f)
+
 # Row menus
 # ---------
 # A right-click on a thread's row or a project's name (a long press on a
@@ -2356,7 +2400,7 @@ def Menu.set(+u: Ui, +m: String) -> Ui:
   Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@del", ""), "@rm", ""), "@menu", Bool.pick(String, String.eq(Menu.open(u), m), "", m))
 
 def Menu.actions() -> List<&2, String>:
-  ["row-menu", "proj-menu", "menu-close", "row-pin", "row-unpin", "row-archive", "row-unarchive", "side-older"]
+  ["row-menu", "proj-menu", "menu-close", "row-pin", "row-unpin", "row-archive", "row-unarchive", "side-older", "side-settled"]
 
 def Menu.shut(a: Act) -> Act:
   match a:
@@ -2380,6 +2424,9 @@ def Menu.act.k(i: Nat, +u: Ui, +value: String) -> Act:
     # the folded shelf of older projects opened or shut
     case 7n:
       Ui.toggle_settled(u, "old-projects")
+    # the active view's settled rows folded or shown
+    case 8n:
+      Ui.toggle_settled(u, "active-settled")
     case _:
       Menu.shut(Ui.rpc(u, "thread.unarchive", [J.KV{"thread", J.Str{value}}]))
 
@@ -4840,7 +4887,7 @@ def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Ac
       Menu.after(action, Ui.reselect.act(Ui.sel(u), Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)))
 
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 8n), C.Codec.pos(Menu.actions(), action), u, action, value))
+  Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 9n), C.Codec.pos(Menu.actions(), action), u, action, value))
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

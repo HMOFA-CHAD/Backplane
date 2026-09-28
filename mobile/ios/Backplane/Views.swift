@@ -273,6 +273,20 @@ struct ProjectsView: View {
     // the row menu this dialog let go of: it stays down until the screen drops it
     @State private var shutMenu: RowMenu?
 
+    // a folded shelf: its name and count, a tap opens or shuts it
+    func foldRow(_ name: String, _ o: Older, _ action: String) -> some View {
+        Section {
+            Button { model.act(action, "") } label: {
+                HStack {
+                    Text("\(name) \(o.count)").font(.subheadline)
+                    Spacer()
+                    Image(systemName: o.open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            .tint(.secondary)
+        }
+    }
+
     var body: some View {
         List {
             // the search is always the list's first row (projects, or in the
@@ -282,30 +296,27 @@ struct ProjectsView: View {
             }
             if screen.view == "active" {
                 let rows = screen.active ?? []
-                if rows.isEmpty {
+                if rows.isEmpty && screen.settled == nil {
                     if !screen.projects.isEmpty && (screen.search?.query ?? "").isEmpty {
                         ContentUnavailableView("Nothing active", systemImage: "tray")
                             .listRowBackground(Color.clear)
                     }
                 } else {
+                    // live rows; the settled ones follow the fold while it is open
                     Section {
-                        ForEach(rows) { ThreadRow(model: model, row: $0) { choosing = $0 } }
+                        ForEach(rows.filter { !($0.faded ?? false) }) { ThreadRow(model: model, row: $0) { choosing = $0 } }
+                    }
+                    if let o = screen.settled { foldRow("Settled", o, "side-settled") }
+                    let faded = rows.filter { $0.faded ?? false }
+                    if !faded.isEmpty {
+                        Section {
+                            ForEach(faded) { ThreadRow(model: model, row: $0) { choosing = $0 } }
+                        }
                     }
                 }
             } else {
                 ForEach(screen.projects) { p in projectSection(p) }
-                if let o = screen.older {
-                    Section {
-                        Button { model.act("side-older", "") } label: {
-                            HStack {
-                                Text("Older \(o.count)").font(.subheadline)
-                                Spacer()
-                                Image(systemName: o.open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                            }
-                        }
-                        .tint(.secondary)
-                    }
-                }
+                if let o = screen.older { foldRow("Older", o, "side-older") }
             }
             if !screen.hubs.isEmpty { BotsSection(model: model, screen: screen) }
         }

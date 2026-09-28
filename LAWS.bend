@@ -923,6 +923,12 @@ law urg_pin_within:
   for p: M.Phase
   {Nat.is_gt(U.Urg.key(p, True{}), U.Urg.key(p, False{})) == True{} : Bool}
 
+# the active view with its settled fold shut shows only the live rows
+law active_fold_shut:
+  for l: List<&2, U.ARow>
+  for f: List<&2, U.ARow>
+  {U.Active.folded(False{}, U.AParts{l, f}) == l : List<&2, U.ARow>}
+
 # a settled thread's menu leads with bringing it back, and ends with a
 # Delete that asks first (menu_delete_asks in test/sidebar_test.bend)
 law menu_settled_brings_back:
