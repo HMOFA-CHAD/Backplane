@@ -289,6 +289,8 @@ def Piece.prim(p: B.Prim, +layer: U32, +kh: U32, info: String) -> Piece:
       Piece.path(layer, 0, 0, kh, ps, info)
     case B.PPoly{+ps, +w, False{}}:
       Piece.path(layer, 1, Num.um(w), kh, Pts.closed(ps), info)
+    case B.PTint{+ps, +color, +alpha}:
+      Piece.path(layer, 0, B.Tint.code(color, alpha), kh, ps, info)
 
 def Piece.shown(+alpha: U32) -> Bool:
   U32.is_ne(alpha, 0)
@@ -380,10 +382,18 @@ def Chunk.look(l: U32 & U32, +rank: U32, e: Enc) -> Chunk:
   (+color, +alpha) = l
   Chunk.fin(e, rank, color, alpha)
 
+# fills with a width are tints (B.Tint.code): their colour is their own
+def Chunk.tint(own: Bool, +kind: U32, +rank: U32) -> U32 & U32:
+  match own:
+    case True{}:
+      (B.Tint.color(Rank.width(rank)), B.Tint.alpha(Rank.width(rank)))
+    case False{}:
+      LO.Look.of(kind, Rank.layer(rank))
+
 def Chunk.of(g: Group, +kind: U32) -> Chunk:
   match g:
     case Group{_, +rank, ps}:
-      Chunk.look(LO.Look.of(kind, Rank.layer(rank)), rank, Enc.pieces(ps, Rank.mode(rank), Enc.new()))
+      Chunk.look(Chunk.tint(Bool.and(U32.is_eq(Rank.mode(rank), 0), U32.is_ne(Rank.width(rank), 0)), kind, rank), rank, Enc.pieces(ps, Rank.mode(rank), Enc.new()))
 
 # Parallel encoding
 # -----------------
@@ -489,6 +499,8 @@ def Edge.prim(p: B.Prim, b: Box) -> Box:
     case B.PCirc{c, +r, _, _}:
       Edge.pts([c], r, b)
     case B.PPoly{ps, _, _}:
+      Edge.pts(ps, 0.0, b)
+    case B.PTint{ps, _, _}:
       Edge.pts(ps, 0.0, b)
 
 def Edge.put(on: Bool, p: B.Prim, b: Box) -> Box:

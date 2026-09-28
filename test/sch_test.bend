@@ -16,6 +16,9 @@ def sheet() -> String:
         (pin passive line (at 0 -3.81 90) (length 1.27) (name \"~\" (effects (font (size 1.27 1.27)))) (number \"2\" (effects (font (size 1.27 1.27))))))))
   (wire (pts (xy 10 10) (xy 20 10)) (stroke (width 0) (type default)) (uuid \"w1\"))
   (junction (at 20 10) (diameter 0) (color 0 0 0 0) (uuid \"j1\"))
+  (rectangle (start 0 0) (end 30 20) (stroke (width 0.3) (type dash) (color 190 0 0 1)) (fill (type color) (color 190 0 0 0.06)) (uuid \"r1\"))
+  (rectangle (start 0 0) (end 5 5) (stroke (width 0.1)) (fill (type background)) (uuid \"r2\"))
+  (text_box \"note\" (at 40 0 0) (size 20 10) (stroke (width 0.1)) (fill (type color) (color 0 0 255 0.1)) (effects (font (size 1.27 1.27))) (uuid \"t1\"))
   (label \"SDA\" (at 10 10 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid \"l1\"))
   (symbol (lib_id \"Device:R\") (at 100 50 90) (unit 1) (uuid \"s1\")
     (property \"Reference\" \"R1\" (at 100 47 0) (effects (font (size 1.27 1.27))))
@@ -81,6 +84,14 @@ def layer(m: Maybe<&2, B.Item>) -> String:
     case None{}:
       "(missing)"
 
+# a tint's colour and opacity
+def tint(m: Maybe<&2, B.Item>) -> String:
+  match m:
+    case Some{B.Item{_, _, _, B.PTint{_, c, a}, _}}:
+      U32.show(c) ++ "/" ++ U32.show(a)
+    case _:
+      "(not a tint)"
+
 def main() -> IO(Unit):
   +xs = items(Sch.Sch.items(U.Utf8.encode(sheet())))
   do IO<Unit>:
@@ -98,5 +109,12 @@ def main() -> IO(Unit):
     C.Check.str("sch no hidden number", info(find(xs, "s1/pin/1/#/0")), "(missing)")
     C.Check.str("sch value", layer(find(xs, "s1/f/Value/0")), "10")
     C.Check.str("sch hidden field", info(find(xs, "s1/f/Footprint/0")), "(missing)")
+    C.Check.str("sch tint", tint(find(xs, "r1/tint")), "12386304/16")
+    C.Check.str("sch tint under the sheet", layer(find(xs, "r1/tint")), "1")
+    C.Check.str("sch tinted box outline", layer(find(xs, "r1")), "4")
+    C.Check.str("sch tinted box not filled opaque", info(find(xs, "r1/f")), "(missing)")
+    C.Check.str("sch background fill hides nothing", info(find(xs, "r2/f")), "(missing)")
+    C.Check.str("sch background fill no tint", info(find(xs, "r2/tint")), "(missing)")
+    C.Check.str("sch text box tint", tint(find(xs, "t1/tint")), "255/24")
     C.Check.str("stroke width", rnd(ST.Stroke.width("H", 21.0)), "22")
     C.Check.str("stroke wrap", ST.Stroke.wrap("aa bb cc", 21.0, 100.0), "aa bb\ncc")

@@ -87,3 +87,10 @@ def main() -> IO(Unit):
       "{\"id\":0,\"m\":\"attach.put\",\"p\":{\"thread\":\"t1\",\"key\":\"k\",\"name\":\"a.png\",\"i\":0,\"last\":true,\"data\":\"QUJD\"}};")
     C.Check.str("client reply", show.list(U.Ui.atts(U.Ui.recv(ui.one(), Maybe.default(&2, J.Json, J.Json.parse("{\"t\":\"reply\",\"id\":3,\"ok\":true,\"result\":{\"attached\":\"/h/a/t1/k-y.pdf\",\"thread\":\"t1\"}}"), J.Null{})), "t1")),
       "[/h/a/t1/k-x.png|/h/a/t1/k-y.pdf]")
+    C.Check.str("client upload starts", U.Ui.uploading(act.ui(U.Ui.act(ui.one(), "attach-up", "{\"name\":\"big.mov\",\"size\":3}")), "t1"), "big.mov")
+    C.Check.str("client upload ends", show.list(U.Ui.atts(act.ui(U.Ui.act(act.ui(U.Ui.act(ui.one(), "attach-up", "{\"name\":\"y.pdf\",\"size\":3}")), "attach-end", "{\"attached\":\"/h/a/t1/k-y.pdf\",\"thread\":\"t1\"}")), "t1")),
+      "[/h/a/t1/k-x.png|/h/a/t1/k-y.pdf]")
+    C.Check.str("client upload ends shown", U.Ui.uploading(act.ui(U.Ui.act(act.ui(U.Ui.act(ui.one(), "attach-up", "{\"name\":\"y.pdf\",\"size\":3}")), "attach-end", "{\"attached\":\"/h/a/t1/k-y.pdf\",\"thread\":\"t1\"}")), "t1"), "")
+    C.Check.str("client upload too big", U.Ui.uploading(act.ui(U.Ui.act(ui.one(), "attach-up", "{\"name\":\"big.mov\",\"size\":99999999}")), "t1"), "")
+    C.Check.str("client upload fails", U.Ui.uploading(act.ui(U.Ui.act(act.ui(U.Ui.act(ui.one(), "attach-up", "{\"name\":\"y.pdf\",\"size\":3}")), "attach-end", "{\"text\":\"no\",\"thread\":\"t1\",\"upload\":true}")), "t1"), "")
+    C.Check.str("client upload fails atts", show.list(U.Ui.atts(act.ui(U.Ui.act(act.ui(U.Ui.act(ui.one(), "attach-up", "{\"name\":\"y.pdf\",\"size\":3}")), "attach-end", "{\"text\":\"no\",\"thread\":\"t1\",\"upload\":true}")), "t1")), "[/h/a/t1/k-x.png]")

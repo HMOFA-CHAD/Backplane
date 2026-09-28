@@ -119,6 +119,8 @@ def PBox.of(p: B.Prim) -> PBox:
       PBox.pts([c], F32.add(r, F32.mul(0.5, w)), PBox.none())
     case B.PPoly{ps, +w, _}:
       PBox.pts(ps, F32.mul(0.5, w), PBox.none())
+    case B.PTint{ps, _, _}:
+      PBox.pts(ps, 0.0, PBox.none())
 
 def PBox.meets(a: PBox, b: PBox) -> Bool:
   match a b:
@@ -153,6 +155,8 @@ def Outline.prim(p: B.Prim, b: PBox) -> PBox:
     case B.PCirc{c, +r, _, _}:
       PBox.pts([c], r, b)
     case B.PPoly{ps, _, _}:
+      PBox.pts(ps, 0.0, b)
+    case B.PTint{ps, _, _}:
       PBox.pts(ps, 0.0, b)
 
 def Outline.box(ps: List<&2, B.Prim>, b: PBox) -> PBox:
@@ -305,6 +309,8 @@ def Wall.prim(p: B.Prim, +y0: F32, +y1: F32, +col: U32, acc: List<&2, G.Tri3>) -
     case B.PCirc{B.Pt{+cx, +cy}, +r, _, _}:
       Wall.path(Circ.pts(48n, cx, cy, r, 48n, Nil{}), y0, y1, col, acc)
     case B.PPoly{ps, _, _}:
+      Wall.path(Wall.close(ps), y0, y1, col, acc)
+    case B.PTint{ps, _, _}:
       Wall.path(Wall.close(ps), y0, y1, col, acc)
 
 def Wall.all(ps: List<&2, B.Prim>, +y0: F32, +y1: F32, +col: U32, acc: List<&2, G.Tri3>) -> List<&2, G.Tri3>:
@@ -537,6 +543,8 @@ def Face.prim(p: B.Prim, +v: MS.View, +h: F32, +clip: D.Clip, +col: U32, acc: Li
       Face.circ(fill, c, r, w, v, h, clip, col, acc)
     case B.PPoly{+ps, +w, fill}:
       Face.pgon(fill, F32.is_gt(w, 0.0), ps, w, v, h, clip, col, acc)
+    case B.PTint{+ps, _, _}:
+      Face.pgon(True{}, False{}, ps, 0.0, v, h, clip, col, acc)
 
 def Face.prims(ps: List<&2, B.Prim>, +v: MS.View, +h: F32, +clip: D.Clip, +col: U32, acc: List<&2, R.Op>) -> List<&2, R.Op>:
   match ps:
@@ -584,6 +592,8 @@ def Edge.prim(p: B.Prim, +v: MS.View, +h: F32, acc: List<&2, R.Edge>) -> List<&2
     case B.PCirc{B.Pt{+cx, +cy}, +r, _, _}:
       Edge.path(Circ.pts(48n, cx, cy, r, 48n, Nil{}), v, h, acc)
     case B.PPoly{ps, _, _}:
+      Edge.path(Wall.close(ps), v, h, acc)
+    case B.PTint{ps, _, _}:
       Edge.path(Wall.close(ps), v, h, acc)
 
 def Edge.all(ps: List<&2, B.Prim>, +v: MS.View, +h: F32, acc: List<&2, R.Edge>) -> List<&2, R.Edge>:

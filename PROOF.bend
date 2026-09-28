@@ -5645,3 +5645,15 @@ def Laws.idx_links():
 
 def Laws.idx_links_found():
   {==}
+
+def Laws.plot_tint_own_colour():
+  {==}
+
+def Laws.tint_code_again():
+  {==}
+
+def Laws.select_leaves_settings():
+  {==}
+
+def Laws.room_leaves_settings():
+  {==}

@@ -183,11 +183,13 @@ data class ThreadView(
     val skills: List<Skill> = emptyList(),
     // a side question (/btw) and its answer, until closed
     val btw: Btw? = null,
-    // what the next message attaches, and what is still uploading; files
-    // go up in pieces of chunk bytes
+    // what the next message attaches, and what is still uploading (chunk:
+    // the web's piece size; the app sends a file whole, POST /attach)
     val attaching: List<Chip> = emptyList(),
     val uploading: String = "",
     val chunk: Int = 196_608,
+    // the most one attachment may hold, in bytes
+    val cap: Int = 10_485_760,
     val diff: Diff? = null,
     val term: Term? = null,
     // the phase the working line's dot shows (as a row's status)
@@ -351,6 +353,7 @@ private fun thread(o: JSONObject) = threadOf(o).copy(
     attaching = chips(o.optJSONArray("attaching")),
     uploading = o.optString("uploading"),
     chunk = o.optInt("chunk", 196_608),
+    cap = o.optInt("cap", 10_485_760),
     diff = o.optJSONObject("diff")?.let { d ->
         Diff(d.optString("summary"), d.optJSONArray("files").map { f ->
             DiffFile(f.optString("name"), f.optString("status"),

@@ -308,11 +308,13 @@ struct ThreadView: Decodable {
     let asks: [Ask]?
     let skills: [Skill]?
     let btw: Btw?
-    // what the next message attaches, and what is still uploading; files
-    // go up in pieces of chunk bytes
+    // what the next message attaches, and what is still uploading (chunk:
+    // the web's piece size; the app sends a file whole, POST /attach)
     let attaching: [Chip]?
     let uploading: String?
     let chunk: Int?
+    // the most one attachment may hold, in bytes
+    let cap: Int?
     let diff: Diff?
     let term: Term?
 }

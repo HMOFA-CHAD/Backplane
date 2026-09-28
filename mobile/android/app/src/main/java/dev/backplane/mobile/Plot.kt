@@ -83,7 +83,8 @@ private fun Map<String, Any?>.int(k: String, d: Int = 0) = (this[k] as? Long)?.t
 // a capsule of no length) and fill triangles (x y, three per triangle);
 // and its pieces, for tap hit tests: each piece's info index (what the hub
 // is asked), its capsules and triangles, and its box.
-class PlotChunk(val layer: Int, val color: Int, val alpha: Float) {
+// own: a tint (fills with a width), drawn in its own colour, not its layer's
+class PlotChunk(val layer: Int, val color: Int, val alpha: Float, val own: Boolean = false) {
     class Piece(val info: Int, val caps: IntRange, val tris: IntRange, val box: FloatArray)
 
     var caps = FloatArray(0)
@@ -118,8 +119,8 @@ class PlotChunk(val layer: Int, val color: Int, val alpha: Float) {
 
     companion object {
         fun decode(o: Map<String, Any?>): PlotChunk {
-            val c = PlotChunk(o.int("l"), o.int("c"), o.int("a", 255) / 255f)
             val mode = o.int("m", 1)
+            val c = PlotChunk(o.int("l"), o.int("c"), o.int("a", 255) / 255f, mode == 0 && o.int("w") != 0)
             val r = o.int("w") / 2f
             val v = Varints(o["d"] as? ByteArray ?: ByteArray(0))
             val caps = Floats()

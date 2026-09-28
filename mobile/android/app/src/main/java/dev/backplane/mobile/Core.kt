@@ -207,24 +207,41 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         return if (i < 0) Pairing.http(l, path) else Pairing.http(l, path.substring(0, i), path.substring(i + 1))
     }
 
-    // a file for the next message, sent to the thread's hub in the pieces
-    // the screen asks for ("attach" decides what goes out)
+    // a file for the next message: one POST /attach to the thread's hub with
+    // the file as the body (no base64, no pieces through the engine); the
+    // hub's answer goes back as "attach-end", as an attach.put's would
     fun attach(data: ByteArray, name: String) {
         if (data.isEmpty()) return
-        val size = maxOf(screen?.thread?.chunk ?: 196_608, 1024)
+        val s = screen ?: return
+        val thread = s.thread?.id ?: return
+        val l = links.firstOrNull { Pairing.key(it) == s.hub } ?: links.firstOrNull() ?: return
         val key = "%08x".format(SecureRandom().nextInt())
+        fun q(v: String) = java.net.URLEncoder.encode(v, "UTF-8").replace("+", "%20")
+        val url = Pairing.http(l, "/attach", "thread=${q(thread)}&key=$key&name=${q(name)}") ?: return
+        // the engine decides: one over the cap it refuses, and nothing goes
+        act("attach-up", JSONObject().put("name", name).put("size", data.size).toString())
+        if (data.size > (s.thread?.cap ?: 10_485_760)) return
         scope.launch {
-            var i = 0
-            var off = 0
-            while (off < data.size) {
-                val end = minOf(off + size, data.size)
-                val piece = JSONObject()
-                    .put("key", key).put("name", name).put("size", data.size).put("i", i).put("last", end >= data.size)
-                    .put("data", Base64.encodeToString(data, off, end - off, Base64.NO_WRAP))
-                apply(engine.act("attach", piece.toString()))
-                i += 1
-                off = end
+            val answer = withContext(Dispatchers.IO) {
+                try {
+                    val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                    c.requestMethod = "POST"
+                    c.doOutput = true
+                    c.connectTimeout = 15_000
+                    c.readTimeout = 600_000
+                    c.setFixedLengthStreamingMode(data.size)
+                    c.setRequestProperty("Content-Type", "application/octet-stream")
+                    c.outputStream.use { it.write(data) }
+                    val code = c.responseCode
+                    val body = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+                    c.disconnect()
+                    body
+                } catch (e: Exception) {
+                    ""
+                }
             }
+            val ok = try { JSONObject(answer); true } catch (e: Exception) { false }
+            act("attach-end", if (ok) answer else JSONObject().put("text", "the upload did not reach the hub").put("thread", thread).put("upload", true).toString())
         }
     }
 

@@ -13,6 +13,13 @@ def Sock.recv_bytes(sock: Socket, max: U32) ->
   import "./effects/host.c"
   import "./effects/host.js"
 
+# the next n bytes of the socket appended to the file at path, straight
+# to disk (an upload's body); fails when the peer closes before n bytes
+def Sock.save(sock: Socket, path: String, n: U32) ->
+  IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
 def Sock.send_bytes(sock: Socket, data: List<&2, U32>) ->
   IO(Socket & Result<&1, &1, U32 & String, Unit>):
   import "./effects/host.c"

@@ -252,12 +252,13 @@ final class PlotRenderer: NSObject, MTKViewDelegate {
         while i < chunks.count {
             let first = chunks[i]
             var j = i
-            while j < chunks.count, chunks[j].layer == first.layer { j += 1 }
+            while j < chunks.count, chunks[j].layer == first.layer, chunks[j].own == first.own,
+                  !first.own || (chunks[j].color == first.color && chunks[j].alpha == first.alpha) { j += 1 }
             let c0 = caps.count / 5, t0 = tris.count / 2
             for k in i..<j where !fresh.contains(k) { caps += chunks[k].caps; tris += chunks[k].tris }
             let c1 = caps.count / 5, t1 = tris.count / 2
             for k in i..<j where fresh.contains(k) { caps += chunks[k].caps; tris += chunks[k].tris }
-            let rgb = first.layer >= 0 && first.layer < look.count ? look[first.layer] : first.color
+            let rgb = !first.own && first.layer >= 0 && first.layer < look.count ? look[first.layer] : first.color
             out.append(LayerDraw(layer: first.layer,
                 color: SIMD4(Float((rgb >> 16) & 255) / 255, Float((rgb >> 8) & 255) / 255, Float(rgb & 255) / 255, first.alpha),
                 caps: c0..<c1, freshCaps: c1..<(caps.count / 5), tris: t0..<t1, freshTris: t1..<(tris.count / 2)))

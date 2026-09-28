@@ -18,10 +18,51 @@ type Prim is Data:
   PLine{pts: List<&2, Pt>, w: F32}
   PCirc{c: Pt, r: F32, w: F32, fill: Bool}
   PPoly{pts: List<&2, Pt>, w: F32, fill: Bool}
+  # a filled polygon in its own colour (0xRRGGBB) and opacity (0-255): a
+  # schematic's coloured box, drawn under the sheet at its layer's place
+  PTint{pts: List<&2, Pt>, color: U32, alpha: U32}
 
 # layer is an index into Layer.names
 type Item is Data:
   Item{key: String, sig: U32, layer: U32, prim: Prim, info: String}
+
+# Tints
+# -----
+# A coloured box's colour and opacity packed in 21 bits (5 bits a channel,
+# 6 of opacity), never 0 (the opacity is at least one step): what a plot
+# chunk of fills carries as its width, so boxes of one colour share a
+# chunk and every viewer draws the same colour. A tint is kept quantized
+# (Tint.of), so packing it again gives it back (law tint_code_again).
+
+# a channel (0-255) to 5 bits and back, rounded both ways
+def Tint.q5(+c: U32) -> U32:
+  (((U32.and(c, 255) * 31 : U32) + 127 : U32) / 255 : U32)
+
+def Tint.e5(+q: U32) -> U32:
+  (((q * 255 : U32) + 15 : U32) / 31 : U32)
+
+# an opacity (0-255) to 6 bits (at least 1) and back
+def Tint.q6(+a: U32) -> U32:
+  U32.max(U32.min((((a * 63 : U32) + 127 : U32) / 255 : U32), 63), 1)
+
+def Tint.e6(+q: U32) -> U32:
+  (((q * 255 : U32) + 31 : U32) / 63 : U32)
+
+def Tint.code(+color: U32, +alpha: U32) -> U32:
+  U32.or(U32.or(U32.shln(Tint.q5(U32.shrn(color, 16n)), 16n), U32.shln(Tint.q5(U32.shrn(color, 8n)), 11n)),
+    U32.or(U32.shln(Tint.q5(color), 6n), Tint.q6(U32.min(alpha, 255))))
+
+def Tint.color(+k: U32) -> U32:
+  U32.or(U32.or(U32.shln(Tint.e5(U32.and(U32.shrn(k, 16n), 31)), 16n), U32.shln(Tint.e5(U32.and(U32.shrn(k, 11n), 31)), 8n)),
+    Tint.e5(U32.and(U32.shrn(k, 6n), 31)))
+
+def Tint.alpha(+k: U32) -> U32:
+  Tint.e6(U32.and(k, 63))
+
+# a filled polygon in a colour as viewers draw it
+def Tint.of(ps: List<&2, Pt>, +color: U32, +alpha: U32) -> Prim:
+  +k = Tint.code(color, alpha)
+  PTint{ps, Tint.color(k), Tint.alpha(k)}
 
 # a footprint's placement: origin and rotation (radians)
 type Place is Data:

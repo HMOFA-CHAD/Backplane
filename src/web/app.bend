@@ -102,6 +102,14 @@ def show(j: J.Json) -> String:
 def chunk() -> String:
   Nat.show(AT.Att.chunk())
 
+# the thread a file goes to (POST /attach), and what it is uploading
+# ("attach-up" refused a file over the cap when it is not that file)
+def sel(u: U.Ui) -> String:
+  U.Ui.sel(u)
+
+def uploading(u: U.Ui, thread: String) -> String:
+  U.Ui.uploading(u, thread)
+
 # the shortcuts the page takes for itself, comma-separated (in the
 # terminal, and elsewhere)
 def keys_term() -> String:
