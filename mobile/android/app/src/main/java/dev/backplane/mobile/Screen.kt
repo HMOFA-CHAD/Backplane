@@ -31,7 +31,8 @@ data class Project(
     val quiet: Boolean = false,
 )
 
-// the folded shelf of older projects at the end of the list ("side-older")
+// the folded shelf of older projects at the end of the list ("side-older"),
+// and the active view's settled threads ("side-settled")
 data class Older(val count: Int, val open: Boolean)
 
 // a row's or project's menu (a long press): each item sends action with value
@@ -275,7 +276,7 @@ data class Screen(
     val theme: String = "",
     // "projects" (sections) or "active" (one flat list of rows, active)
     val view: String = "projects", val active: List<Row> = emptyList(),
-    val older: Older? = null, val rowMenu: RowMenu? = null,
+    val older: Older? = null, val settled: Older? = null, val rowMenu: RowMenu? = null,
 )
 
 data class Cmd(
@@ -498,6 +499,7 @@ fun parseScreen(o: JSONObject) = Screen(
     view = o.optString("view").ifEmpty { "projects" },
     active = o.optJSONArray("active").map(::row),
     older = o.optJSONObject("older")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
+    settled = o.optJSONObject("settled")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
     rowMenu = o.optJSONObject("rowMenu")?.let { mn ->
         RowMenu(mn.optString("title"), mn.optJSONArray("items").map {
             RowMenuItem(it.optString("label"), it.optString("action"), it.optString("value"), it.optString("tone"))

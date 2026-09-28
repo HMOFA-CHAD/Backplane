@@ -1192,6 +1192,9 @@ def Laws.urg_done_over_working(a, b):
     case False{} False{}:
       {==}
 
+def Laws.active_fold_shut(l, f):
+  {==}
+
 def Laws.urg_pin_within(p):
   match p:
     case M.PhApproval{}:

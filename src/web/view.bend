@@ -197,26 +197,55 @@ def View.arow(r: U.ARow, +st: M.State, +sel: String) -> D.Node:
           D.At{"style", "--tint:" ++ BG.Badge.css_of(st, pid)}, D.At{"data-value", M.Thread.id(t)}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
         [D.Dom.span("dot " ++ M.Phase.name(U.Side.phase(st, t)), ""), D.Dom.span("title", U.Active.title(t)), D.Dom.span("ago", pt)]}
 
-def View.arows(rs: List<&2, U.ARow>, +st: M.State, +sel: String, +label: Bool) -> List<&2, D.Node>:
+def View.arows(rs: List<&2, U.ARow>, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       Nil{}
-    case +r <> t:
-      List.append(&2, D.Node, Bool.pick(List<&2, D.Node>, Bool.and(label, U.ARow.faded(r)), [D.Dom.span("shelf-label", "Settled lately")], Nil{}),
-        View.arow(r, st, sel) <> View.arows(t, st, sel, Bool.and(label, Bool.not(U.ARow.faded(r)))))
+    case r <> t:
+      View.arow(r, st, sel) <> View.arows(t, st, sel)
 
-def View.active(rs: List<&2, U.ARow>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+def View.afaded.open(on: Bool, rs: List<&2, U.ARow>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+  match on:
+    case True{}:
+      View.arows(rs, st, sel)
+    case False{}:
+      Nil{}
+
+# the settled rows folded under one "Settled N" row, shown while it is
+# open or a search is on (core's Active.open)
+def View.afaded.k(searching: Bool, +open: Bool, +n: Nat, rs: List<&2, U.ARow>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+  match searching:
+    case True{}:
+      View.arows(rs, st, sel)
+    case False{}:
+      WI.WIcon.button(Bool.pick(String, open, "shelf older open", "shelf older"), "side-settled", "", "Threads settled in the last three days",
+          Bool.pick(String, open, "chevron-down", "chevron-right"), 14, "Settled " ++ Nat.show(n))
+        <> View.afaded.open(open, rs, st, sel)
+
+def View.afaded(rs: List<&2, U.ARow>, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> +t:
+      View.afaded.k(Bool.not(String.is_empty(q)), U.Flag.get(open, "active-settled"), List.length(&2, U.ARow, r <> t), r <> t, st, sel)
+
+def View.active.k(p: U.AParts, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+  match p:
+    case U.AParts{l, f}:
+      [D.El{"section", "", [D.At{"class", "project active"}], List.append(&2, D.Node, View.arows(l, st, sel), View.afaded(f, q, open, st, sel))}]
+
+def View.active(rs: List<&2, U.ARow>, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       [D.Dom.span("shelf-label", "Nothing active")]
     case +r <> +t:
-      [D.El{"section", "", [D.At{"class", "project active"}], View.arows(r <> t, st, sel, True{})}]
+      View.active.k(U.Active.parts(r <> t), q, open, st, sel)
 
 # the list the "sidebar.view" setting picks (only that one is built)
 def View.list(active: Bool, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
   match active:
     case True{}:
-      View.active(U.Active.rows(st, now, q), st, sel)
+      View.active(U.Active.rows(st, now, q), q, open, st, sel)
     case False{}:
       View.groups(U.Side.groups(U.Side.shown(st, now, q), now), q, open, st, sel, now, look, rm)
 

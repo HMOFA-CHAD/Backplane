@@ -507,46 +507,48 @@ def Lay.arows(+ty: Ty, rs: List<&2, U.ARow>, +st: M.State, +sel: String, +c: D.C
     case r <> t:
       Lay.col.cat(Lay.arow.k2(Lay.row.seen(c, y), ty, r, st, sel, c, y), Lay.arows(ty, t, st, sel, c, (y + 32 : U32)))
 
-def Lay.aparts.put(faded: Bool, r: U.ARow, p: U.AParts) -> U.AParts:
-  match faded p:
-    case True{} U.AParts{l, f}:
-      U.AParts{l, r <> f}
-    case False{} U.AParts{l, f}:
-      U.AParts{r <> l, f}
+# the settled rows: folded under one "Settled N" row, shown while it is
+# open or a search is on (core's Active.open)
+def Lay.afaded.rows(open: Bool, +ty: Ty, rs: List<&2, U.ARow>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+  match open:
+    case True{}:
+      Lay.arows(ty, rs, st, sel, c, y)
+    case False{}:
+      Col{Out.none(), y}
 
-def Lay.aparts(rs: List<&2, U.ARow>) -> U.AParts:
-  match rs:
-    case Nil{}:
-      U.AParts{Nil{}, Nil{}}
-    case +r <> t:
-      Lay.aparts.put(U.ARow.faded(r), r, Lay.aparts(t))
+def Lay.afaded.k(searching: Bool, +open: Bool, +ty: Ty, +rs: List<&2, U.ARow>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+  match searching:
+    case True{}:
+      Lay.arows(ty, rs, st, sel, c, y)
+    case False{}:
+      Lay.col.cat(Out{List.append(&2, R.Op, Lay.icon(ty, Bool.pick(String, open, "chevron-down", "chevron-right"), c, 12, (y + 6 : U32), T.Th.faint()),
+          Ty.text(ty, 2n, "Settled " ++ Nat.show(List.length(&2, U.ARow, rs)), c, 32, y, 28, T.Th.faint())), [Lay.hit(0, y, 264, 28, "side-settled", "")]},
+        Lay.afaded.rows(open, ty, rs, st, sel, c, (y + 32 : U32)))
 
-# the faded rows under a thin label
-def Lay.afaded(+ty: Ty, rs: List<&2, U.ARow>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.afaded(+ty: Ty, rs: List<&2, U.ARow>, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
   match rs:
     case Nil{}:
       Col{Out.none(), y}
     case +r <> +t:
-      Lay.col.cat(Out.ops(Ty.text(ty, 2n, "Settled lately", c, 16, (y + 4 : U32), 28, T.Th.faint())), Lay.arows(ty, r <> t, st, sel, c, (y + 32 : U32)))
+      Lay.afaded.k(Bool.not(String.is_empty(q)), U.Flag.get(op, "active-settled"), ty, r <> t, st, sel, c, y)
 
-def Lay.active.k(p: U.AParts, +empty: Bool, +ty: Ty, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.active.k(p: U.AParts, +ty: Ty, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
   match p:
     case U.AParts{l, f}:
-      Lay.col.cat(Out.ops(Bool.pick(List<&2, R.Op>, empty, Ty.text(ty, 2n, "Nothing active", c, 16, y, 32, T.Th.faint()), Nil{})),
-        Lay.col.then(Lay.arows(ty, l, st, sel, c, y), y1 => Lay.afaded(ty, f, st, sel, c, y1)))
+      Lay.col.then(Lay.arows(ty, l, st, sel, c, y), y1 => Lay.afaded(ty, f, q, op, st, sel, c, y1))
 
-def Lay.active(+ty: Ty, rs: List<&2, U.ARow>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.active(+ty: Ty, rs: List<&2, U.ARow>, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
   match rs:
     case Nil{}:
       Col{Out.ops(Ty.text(ty, 2n, "Nothing active", c, 16, y, 32, T.Th.faint())), (y + 32 : U32)}
     case +r <> +t:
-      Lay.active.k(Lay.aparts(r <> t), False{}, ty, st, sel, c, y)
+      Lay.active.k(U.Active.parts(r <> t), ty, q, op, st, sel, c, y)
 
 # the list the "sidebar.view" setting picks (only that one is laid out)
 def Lay.side.list(active: Bool, +ty: Ty, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   match active:
     case True{}:
-      Lay.active(ty, U.Active.rows(st, now, q), st, sel, c, y)
+      Lay.active(ty, U.Active.rows(st, now, q), q, op, st, sel, c, y)
     case False{}:
       Lay.groups(ty, U.Side.groups(U.Side.shown(st, now, q), now), q, op, st, sel, now, look, rm, c, y)
 

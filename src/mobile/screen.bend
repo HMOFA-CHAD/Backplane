@@ -167,12 +167,26 @@ def Mob.arows(rs: List<&2, U.ARow>, +st: M.State, +now: Nat) -> List<&2, J.Json>
     case r <> t:
       Mob.arow(r, st, now) <> Mob.arows(t, st, now)
 
-def Mob.active(on: Bool, +st: M.State, +now: Nat, +q: String) -> List<&2, J.Json>:
+# the settled rows only while their fold is open or a search is on
+def Mob.active(on: Bool, +st: M.State, +now: Nat, +q: String, +o: Map<&2, Bool>) -> List<&2, J.Json>:
   match on:
     case True{}:
-      Mob.arows(U.Active.rows(st, now, q), st, now)
+      Mob.arows(U.Active.folded(U.Active.open(o, q), U.Active.parts(U.Active.rows(st, now, q))), st, now)
     case False{}:
       Nil{}
+
+# the active view's fold of settled rows: how many and whether it is open
+# ("side-settled" flips it); null while there are none or a search shows them
+def Mob.settled(+st: M.State, +now: Nat, +q: String, +o: Map<&2, Bool>) -> J.Json:
+  Mob.older.j(U.Active.faded_n(U.Active.parts(U.Active.rows(st, now, q))), U.Flag.get(o, "active-settled"), q)
+
+# (only worked out while the active view is on)
+def Mob.settled.if(on: Bool, +st: M.State, +now: Nat, +q: String, +o: Map<&2, Bool>) -> J.Json:
+  match on:
+    case True{}:
+      Mob.settled(st, now, q, o)
+    case False{}:
+      J.Null{}
 
 # a row's or project's menu (core's Menu): its title and items, each
 # sending its action with its value; null while none is open, or while a
@@ -898,7 +912,8 @@ def Mob.screen(+u: U.Ui) -> J.Json:
         J.KV{"projects", J.Json.arr(Mob.grouped(U.Side.groups(U.Side.shown(st, now, U.Find.q(o, dr)), now), o, st, now, U.Find.q(o, dr)))},
         J.KV{"older", Mob.older(U.Side.groups(U.Side.shown(st, now, U.Find.q(o, dr)), now), o, U.Find.q(o, dr))},
         J.KV{"view", J.Json.str(U.Side.view(st))},
-        J.KV{"active", J.Json.arr(Mob.active(String.eq(U.Side.view(st), "active"), st, now, U.Find.q(o, dr)))},
+        J.KV{"active", J.Json.arr(Mob.active(String.eq(U.Side.view(st), "active"), st, now, U.Find.q(o, dr), o))},
+        J.KV{"settled", Mob.settled.if(String.eq(U.Side.view(st), "active"), st, now, U.Find.q(o, dr), o)},
         J.KV{"rowMenu", Mob.rmenu(u)},
         J.KV{"search", Mob.search(u)},
         J.KV{"deleting", Mob.deleting(u)},
