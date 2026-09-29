@@ -6,6 +6,16 @@ import ../core/utf8.bend as U
 import ../core/json.bend as J
 import ../core/cbor.bend as CB
 
+# Resolution and TCP connect share a bounded deadline. The byte poll
+# keeps any binary frame that arrives with the HTTP upgrade head intact.
+def Link.connect(host: String, port: U32, ms: U32) -> IO(Result<&1, &1, U32 & String, Socket>):
+  import "./effects/link.c"
+  import "./effects/link.js"
+
+def Link.poll(s: Socket, ms: U32) -> IO(Socket & Result<&1, &1, U32 & String, Maybe<&2, List<&2, U32>>>):
+  import "./effects/link.c"
+  import "./effects/link.js"
+
 # A link to another machine's hub, in the shape of a hub: the window sends
 # it S.Msg (Join once, then Rpc for each request, Leave to hang up) and
 # reads S.Wire from the channel it joined with, just as with its own hub.
@@ -36,7 +46,7 @@ def Link.say(+out: Chan(S.Wire), +text: String) -> IO(Unit):
 # the link is down: say why (a note the window shows), then hang up
 def Link.down(+out: Chan(S.Wire), +why: String) -> IO(Unit):
   do IO<Unit>:
-    Link.say(out, "{\"t\":\"update\",\"state\":" ++ "\"" ++ why ++ "\"}")
+    Link.say(out, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"update"}}, J.KV{"state", J.Str{why}}, J.KV{"error", J.Str{why}}])))
     Chan.close(S.Wire, out)
 
 # Writing: requests from the window become masked binary CBOR frames
@@ -212,35 +222,56 @@ def Link.split.k(m: Maybe<&2, W.Split>, s: Socket, +inbox: Chan(S.Msg), +out: Ch
     case None{}:
       k(s)
 
-def Link.head(fuel: Nat, s: Socket, +buf: List<&2, U32>, +inbox: Chan(S.Msg), +out: Chan(S.Wire)) -> IO(Unit):
+def Link.unreachable(s: Socket, +inbox: Chan(S.Msg), +out: Chan(S.Wire)) -> IO(Unit):
+  do IO<Unit>:
+    Socket.close(s)
+    IO.spawn(Unit, Link.drain(Link.fuel(), inbox))
+    Link.down(out, "unreachable: no handshake from that machine within 5 seconds")
+
+def Link.head.got(r: Socket & Result<&1, &1, U32 & String, Maybe<&2, List<&2, U32>>>, +inbox: Chan(S.Msg), +out: Chan(S.Wire), k: Socket -> List<&2, U32> -> IO(Unit)) -> IO(Unit):
+  (s, res) = r
+  match res:
+    case Done{Some{Nil{}}}:
+      Link.unreachable(s, inbox, out)
+    case Done{Some{bs}}:
+      k(s, bs)
+    case _:
+      Link.unreachable(s, inbox, out)
+
+def Link.head(fuel: Nat, s: Socket, +buf: List<&2, U32>, +deadline: Nat, +inbox: Chan(S.Msg), +out: Chan(S.Wire)) -> IO(Unit):
   match fuel:
     case 0n:
-      do IO<Unit>:
-        Socket.close(s)
-        IO.spawn(Unit, Link.drain(Link.fuel(), inbox))
-        Link.down(out, "no answer from that machine")
+      Link.unreachable(s, inbox, out)
     case 1n+f:
       Link.split.k(W.Http.split(buf), s, inbox, out,
-        s2 => Link.more(s2, out, s3 => bs => Link.head(f, s3, List.append(&2, U32, buf, bs), inbox, out)))
+        s2 => IO.bind(Nat, Unit, IO.now(), now => IO.bind(Socket & Result<&1, &1, U32 & String, Maybe<&2, List<&2, U32>>>, Unit,
+          Link.poll(s2, U32.from_nat(Nat.sub(deadline, now))), r => Link.head.got(r, inbox, out, s3 => bs => Link.head(f, s3, List.append(&2, U32, buf, bs), deadline, inbox, out)))))
 
 def Link.sent(r: Socket & Result<&1, &1, U32 & String, Unit>, +inbox: Chan(S.Msg), +out: Chan(S.Wire)) -> IO(Unit):
-  (s, _) = r
-  Link.head(64n, s, Nil{}, inbox, out)
+  (s, res) = r
+  match res:
+    case Done{_}:
+      IO.bind(Nat, Unit, IO.now(), now => Link.head(64n, s, Nil{}, Nat.add(now, 5000n), inbox, out))
+    case Fail{_}:
+      Link.unreachable(s, inbox, out)
 
-def Link.connected(r: Result<&1, &1, U32 & String, Socket>, +url: String, +inbox: Chan(S.Msg), +out: Chan(S.Wire)) -> IO(Unit):
+def Link.path(since: Nat, origin: String) -> String:
+  "/ws?since=" ++ Nat.show(since) ++ "&origin=" ++ origin ++ "&enc=cbor"
+
+def Link.connected(r: Result<&1, &1, U32 & String, Socket>, +url: String, since: Nat, origin: String, +inbox: Chan(S.Msg), +out: Chan(S.Wire)) -> IO(Unit):
   match r:
     case Done{s}:
-      IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_text(s, W.Ws.request(Link.host(url), Link.port(url), "/ws?since=0&origin=&enc=cbor")),
+      IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_text(s, W.Ws.request(Link.host(url), Link.port(url), Link.path(since, origin))),
         r2 => Link.sent(r2, inbox, out))
     case Fail{_}:
       do IO<Unit>:
         IO.spawn(Unit, Link.drain(Link.fuel(), inbox))
-        Link.down(out, "cannot reach " ++ Link.host(url))
+        Link.down(out, "unreachable: cannot resolve or reach " ++ Link.host(url))
 
 def Link.joined(m: Maybe<&1, S.Msg>, +url: String, +inbox: Chan(S.Msg)) -> IO(Unit):
   match m:
-    case Some{S.Join{_, out, _, _}}:
-      IO.bind(Result<&1, &1, U32 & String, Socket>, Unit, TCP.connect(Link.host(url), Link.port(url)), r => Link.connected(r, url, inbox, out))
+    case Some{S.Join{_, out, since, origin}}:
+      IO.bind(Result<&1, &1, U32 & String, Socket>, Unit, Link.connect(Link.host(url), Link.port(url), 5000), r => Link.connected(r, url, since, origin, inbox, out))
     case _:
       IO.pure(Unit, Unit{})
 
