@@ -2411,6 +2411,8 @@ def Nui.vw_act.more(i: Nat, +n: Nui, +value: String) -> Step:
       Nui.sheet.go(n, HI.Hier.parent(Nui.rows(n), Nui.sheet.at(n)))
     case 6n:
       Nui.vlight.flip(n)
+    case 7n:
+      Nui.shortcut.k(U.Keys.pos(Keys.list(), value), n, 0)
     case _:
       Step{n, Nil{}, False{}}
 
@@ -2437,7 +2439,7 @@ def Nui.vw_act.k(i: Nat, +n: Nui, +value: String) -> Step:
 
 # the window's own actions (they never reach the client state)
 def Nui.vw_act(+n: Nui, +action: String, +value: String) -> Step:
-  Nui.vw_act.k(Nui.pos(["vw-kind", "vw-unpick", "vw-pal", "vw-palx", "vw-proj", "vw-projx", "vw-projo", "vw-find", "vw-layers", "vw-layer", "vw-layers-reset", "vw-sheet", "vw-open", "vw-up", "vw-light"], action, 0n), n, value)
+  Nui.vw_act.k(Nui.pos(["vw-kind", "vw-unpick", "vw-pal", "vw-palx", "vw-proj", "vw-projx", "vw-projo", "vw-find", "vw-layers", "vw-layer", "vw-layers-reset", "vw-sheet", "vw-open", "vw-up", "vw-light", "vw-key"], action, 0n), n, value)
 
 # a link in a message: only a web address is ever opened (law link_no_script)
 def Nui.click.url(url: Bool, +n: Nui, +action: String, +value: String) -> Step:

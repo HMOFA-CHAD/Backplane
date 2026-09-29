@@ -372,6 +372,16 @@ button.icon { display: inline-flex; align-items: center; justify-content: center
 .lightbox .lb-close { position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; padding: 0; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 20px; line-height: 1; cursor: pointer; }
 .lightbox .lb-close:hover { border-color: var(--accent); }
 .tools button.danger { border-color: var(--bad); color: var(--bad); }
+.tools { align-items: center; }
+.tools button.tool { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 7px; white-space: nowrap; }
+.tools button.tool .ico { color: var(--dim); }
+.tools button.tool.on { color: var(--text); background: var(--sel, var(--raise)); }
+.tools button.tool.on .ico { color: var(--accent); }
+.tools button.tool.danger .ico { color: var(--bad); }
+.tools button.tool.gap { margin-left: 9px; position: relative; }
+.tools button.tool.gap::before { content: ""; position: absolute; left: -9px; top: 6px; bottom: 6px; border-left: 1px solid var(--line); }
+.tools button.tool.gap:first-child { margin-left: 0; }
+.tools button.tool.gap:first-child::before { display: none; }
 
 /* Bots (src/web/bots.bend) */
 .bots { margin-top: 12px; padding: 8px 0 4px; border-top: 1px solid var(--line); }

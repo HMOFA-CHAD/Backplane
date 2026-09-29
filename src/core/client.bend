@@ -1936,7 +1936,7 @@ def Palette.actions(+pid: String) -> List<&2, PItem>:
    PItem{"Settle thread", "settle", ""}, PItem{"Pin thread", "pin", ""}, PItem{"Archive thread", "archive", ""}, PItem{"Unarchive thread", "unarchive", ""}, PItem{"Delete thread", "delete", ""},
    PItem{"Snooze 1 hour", "snooze", "1h"}, PItem{"Snooze until tomorrow 9:00", "snooze", "tomorrow"}, PItem{"Snooze 1 week", "snooze", "1w"}, PItem{"Unsnooze", "snooze", "off"},
    PItem{"Search threads", "key:search", ""}, PItem{"Find file", "key:files", ""},
-   PItem{"Viewer", "panel", ""}, PItem{"Open in KiCad", "kicad-open", ""}, PItem{"Settings", "flag", "settings"}, PItem{"Update Backplane", "update", ""}]
+   PItem{"Panel: board, schematic, 3D, Mech, diff, browser", "panel", ""}, PItem{"Open in KiCad", "kicad-open", ""}, PItem{"Settings", "flag", "settings"}, PItem{"Update Backplane", "update", ""}]
 
 def Palette.words(ws: List<&2, String>, +l: String) -> Bool:
   match ws:

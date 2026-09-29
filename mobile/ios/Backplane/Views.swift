@@ -853,7 +853,7 @@ struct ThreadScreen: View {
                 Menu {
                     ForEach(thread.tools.filter { $0.action != "interrupt" }, id: \.self) { t in
                         Button { model.act(t.action, t.value ?? "") } label: {
-                            if t.on { Label(t.label, systemImage: "checkmark") } else { Text(t.label) }
+                            Label(t.label, systemImage: t.on ? "checkmark" : Self.icon(t.icon))
                         }
                     }
                     Divider()
@@ -867,7 +867,7 @@ struct ThreadScreen: View {
                                 // the terminal opens at the size this phone has room for
                                 model.act(t.action, t.action == "term-toggle" ? TermSheet.size() : t.value ?? "")
                             } label: {
-                                if t.on { Label(t.label, systemImage: "checkmark") } else { Label(t.label, systemImage: Self.icon(t.action)) }
+                                Label(t.label, systemImage: t.on ? "checkmark" : Self.icon(t.icon))
                             }
                         }
                     }
@@ -907,13 +907,22 @@ struct ThreadScreen: View {
         return c == .online || c == .syncing ? "Sending…" : "Waiting for " + (s.hubs.first { $0.key == s.hub }?.name ?? "the hub") + "…"
     }
 
-    static func icon(_ action: String) -> String {
-        switch action {
+    // a tool's icon (core/icons.bend's name) as an SF Symbol
+    static func icon(_ name: String?) -> String {
+        switch name ?? "" {
+        case "pin": "pin"
+        case "circle-check": "checkmark.circle"
+        case "clock": "clock"
+        case "archive": "archivebox"
+        case "trash": "trash"
+        case "git-fork": "arrow.triangle.branch"
+        case "undo": "arrow.uturn.backward"
+        case "terminal": "terminal"
+        case "panel-right": "sidebar.right"
         case "diff": "plusminus"
-        case "term-toggle": "terminal"
-        case "find-open": "doc.text.magnifyingglass"
-        case "snooze": "moon.zzz"
-        case "row-delete": "trash"
+        case "search": "doc.text.magnifyingglass"
+        case "stop": "stop.fill"
+        case "x": "xmark"
         default: "circle"
         }
     }

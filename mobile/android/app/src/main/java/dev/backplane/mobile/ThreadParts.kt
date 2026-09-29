@@ -47,6 +47,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.CheckCircleOutline
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.automirrored.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.VerticalSplit
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -779,11 +786,20 @@ fun SettingsSheet(m: AppModel, st: Settings) {
 }
 
 // the thread menu's icon for an action
-fun menuIcon(action: String) = when (action) {
+// a tool's icon (core/icons.bend's name) as a Material icon
+fun toolIcon(name: String) = when (name) {
+    "pin" -> Icons.Filled.PushPin
+    "circle-check" -> Icons.Filled.CheckCircleOutline
+    "clock" -> Icons.Filled.Snooze
+    "archive" -> Icons.Filled.Archive
+    "trash" -> Icons.Filled.Delete
+    "git-fork" -> Icons.AutoMirrored.Filled.CallSplit
+    "undo" -> Icons.AutoMirrored.Filled.Undo
+    "terminal" -> Icons.Filled.Terminal
+    "panel-right" -> Icons.Filled.VerticalSplit
     "diff" -> Icons.Filled.Difference
-    "term-toggle" -> Icons.Filled.Terminal
-    "find-open" -> Icons.Filled.FindInPage
-    "snooze" -> Icons.Filled.Snooze
-    "row-delete" -> Icons.Filled.Delete
+    "search" -> Icons.Filled.FindInPage
+    "stop" -> Icons.Filled.Stop
+    "x" -> Icons.Filled.Close
     else -> null
 }

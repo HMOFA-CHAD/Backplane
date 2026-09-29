@@ -2,6 +2,7 @@ import Base
 import ../core/model.bend as M
 import ./dom.bend as D
 import ./icon.bend as WI
+import ../core/tools.bend as TO
 import ../core/client.bend as U
 import ../core/attach.bend as AT
 import ../core/vt.bend as VT
@@ -395,47 +396,31 @@ def View.running(t: M.TurnState) -> Bool:
     case _:
       False{}
 
-def View.pin(p: Bool) -> D.Node:
-  match p:
+# a header tool (core/tools.bend): its icon and label, its sentence as the
+# tooltip; a group starts with a line before it (class "gap")
+def View.tool.cls(on: Bool, danger: Bool, gap: Bool) -> String:
+  Bool.pick(String, on, "on", "") ++ Bool.pick(String, danger, " danger", "") ++ Bool.pick(String, gap, " gap", "")
+
+def View.tool(t: TO.Tool) -> D.Node:
+  match t:
+    case TO.Tool{+i, +l, tip, a, v, on, dg, gap}:
+      WI.WIcon.button("tool " ++ View.tool.cls(on, dg, gap), a, v, tip, i, 16, l)
+
+def View.tools(ts: List<&2, TO.Tool>) -> List<&2, D.Node>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case t <> r:
+      View.tool(t) <> View.tools(r)
+
+# picking a snooze: its choices, then the button that closes them
+def View.snoozes(picking: Bool) -> List<&2, D.Node>:
+  match picking:
     case True{}:
-      D.Dom.button("on", "unpin", "", "Unpin", "Pinned")
-    case False{}:
-      D.Dom.button("", "pin", "", "Pin", "Pin")
-
-def View.settle(o: M.Override, auto: Bool) -> D.Node:
-  match o auto:
-    case M.ForcedSettled{} _:
-      D.Dom.button("on", "unsettle", "", "Bring back to active", "Settled")
-    case M.NoOverride{} True{}:
-      D.Dom.button("on", "unsettle", "", "Bring back to active", "Settled")
-    case _ _:
-      D.Dom.button("", "settle", "", "Settle thread", "Settle")
-
-def View.archive(a: Bool) -> D.Node:
-  match a:
-    case True{}:
-      D.Dom.button("on", "unarchive", "", "Bring back from the archive", "Archived")
-    case False{}:
-      D.Dom.button("", "archive", "", "Archive thread", "Archive")
-
-# snoozed: the button wakes it; else it opens the snooze choices
-def View.snooze(snoozed: Bool, picking: Bool) -> List<&2, D.Node>:
-  match snoozed picking:
-    case True{} _:
-      [D.Dom.button("on", "snooze", "off", "Wake it now", "Snoozed")]
-    case False{} False{}:
-      [D.Dom.button("", "flag", "snooze", "Snooze", "Snooze")]
-    case False{} True{}:
       [D.Dom.button("", "snooze", "1h", "Snooze for an hour", "1 hour"), D.Dom.button("", "snooze", "tomorrow", "Snooze until 9:00 tomorrow", "Tomorrow"),
-       D.Dom.button("", "snooze", "1w", "Snooze for a week", "1 week"), D.Dom.button("on", "flag", "snooze", "Cancel", "Snooze")]
-
-# Delete asks first: once armed it reads "Delete thread" beside Cancel
-def View.del(on: Bool) -> List<&2, D.Node>:
-  match on:
-    case True{}:
-      [D.Dom.button("danger", "delete", "", "Delete this thread for good", "Delete thread"), D.Dom.button("", "delete-no", "", "Keep it", "Cancel")]
+       D.Dom.button("", "snooze", "1w", "Snooze for a week", "1 week"), D.Dom.button("on", "flag", "snooze", "Cancel", "Cancel")]
     case False{}:
-      [D.Dom.button("", "delete", "", "Delete thread", "Delete")]
+      Nil{}
 
 def View.header(t: M.Thread, +st: M.State, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, del: Bool) -> D.Node:
   match t:
@@ -445,12 +430,10 @@ def View.header(t: M.Thread, +st: M.State, +panel: Bool, snoozed: Bool, picking:
         D.El{"span", "", [D.At{"class", "badge"}], [WI.WIcon.svg(BG.Badge.icon(st, p), 16)]},
         D.Dom.span("title", title),
         D.Dom.span("meta", Bool.pick(String, String.is_empty(branch), "", branch)),
-        D.El{"div", "", [D.At{"class", "tools"}], List.concat(&2, D.Node, [D.Dom.when(View.running(turn), D.Dom.button("", "interrupt", "", "Stop the running turn", "Stop")),
-          [View.pin(pinned), View.settle(override, Nat.is_gt(sa, ua))], View.snooze(snoozed, picking), [View.archive(archived)], View.del(del), [
-           D.Dom.button("", "fork", "", "A new thread that goes on from here", "Fork")],
-          D.Dom.when(Bool.not(String.is_empty(M.Fork.source(st, id))), D.Dom.button("", "back", "", "Send what this fork did to the thread it came from, with its next message", "Bring back")), [
-           D.Dom.button(Bool.pick(String, term, "on", ""), "term-toggle", "@term-size", "Terminal (ctrl+j)", "Terminal"),
-           D.Dom.button(Bool.pick(String, panel, "on", ""), "panel", "", "The board, schematic, 3D model, parts and diff, beside the thread", "Viewer")]])}]}
+        D.El{"div", "", [D.At{"class", "tools"}], List.append(&2, D.Node,
+          View.tools(TO.Tools.head(TO.Head{View.running(turn), TO.Tools.settled(override, Nat.is_gt(sa, ua)), pinned, snoozed, archived, del,
+            Bool.not(String.is_empty(M.Fork.source(st, id))), term, panel}, "flag", "snooze", "term-toggle", "@term-size")),
+          View.snoozes(picking))}]}
 
 # the model menu's rows: each model's name, then what its CLI calls it,
 # in two columns (the names' as wide as the longest, --namew)

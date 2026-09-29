@@ -67,6 +67,8 @@ struct RowMenu: Decodable, Equatable {
 // offers choices whose values it sends instead; danger asks first
 struct Tool: Decodable, Hashable {
     let label, action: String
+    // core/icons.bend's name for it (Views' icon(_:) turns it into a symbol)
+    let icon: String?
     let on: Bool
     let value: String?
     let danger: Bool?
