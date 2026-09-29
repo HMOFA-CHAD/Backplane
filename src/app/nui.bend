@@ -654,8 +654,21 @@ def Nui.ui(n: Nui) -> U.Ui:
 def Nui.unpick(+n: Nui) -> Nui:
   Bool.pick(Nui, Bool.and(String.eq(Nui.focus_of(n), "proj"), Bool.not(U.Ui.flag(Nui.ui(n), "proj"))), Nui.with_focus(n, "composer"), n)
 
+def Nui.unremote.k(promoted: Bool, n: Nui) -> Nui:
+  match promoted n:
+    case True{} Nui{+u, w, h, mx, my, sd, _, _, _, pa, hi, ms, vw}:
+      Nui{u, w, h, mx, my, sd, 0, String.length(U.Ui.draft_text(u)), "composer", pa, hi, ms, vw}
+    case False{} _:
+      n
+
+# A reported chat gaining its mirror replaces the form with the normal
+# composer. Keep keyboard focus on the visible field after that change.
+def Nui.unremote(+n: Nui) -> Nui:
+  Nui.unremote.k(Bool.and(String.eq(Nui.focus_of(n), Fld.alias("remote-send")),
+    Bool.and(String.is_empty(U.Ui.scratch(Nui.ui(n), "@remote")), Bool.not(String.is_empty(U.Ui.scratch(Nui.ui(n), "@bot"))))), n)
+
 def Nui.recv(n: Nui, +o: J.Json) -> Nui:
-  Nui.unpick(Nui.recv.k(n, o))
+  Nui.unpick(Nui.unremote(Nui.recv.k(n, o)))
 
 def Undo.key(+n: Nui, +w: String) -> String:
   "@" ++ w ++ ":" ++ U.Ui.sel(Nui.ui(n))

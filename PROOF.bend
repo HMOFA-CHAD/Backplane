@@ -6049,3 +6049,17 @@ def Laws.hubs_origin_here(p, name):
 
 def Laws.hubs_origin_elsewhere():
   {==}
+
+def Laws.far_arrival_no_choice(u):
+  {==}
+
+def Laws.far_arrival_not_shared(u):
+  {==}
+
+def Laws.far_arrival_thread_selected(u, id, name, thread):
+  match u:
+    case U.Ui{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      {==}
+
+def Laws.far_arrival_focus_unchanged(n):
+  {==}

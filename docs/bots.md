@@ -531,18 +531,23 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
   routines: `Fr.methods`) goes to its hub in that hub's ids (`Fr.route`,
   `POST /far/rpc`), signed like every hub-to-hub request; the owning hub
   takes it only for what it shares (`Fr.allowed`). The client's answer
-  keeps the owner's success, error and payload, with the caller's request id; while it is away the answer says so. Anything
+  keeps the owner's success, error and payload, with the caller's request id;
+  while it is away the answer says so. Anything
   else about a far thread is refused here (law `far_route_here_stays`,
   `far_allowed_only_methods`).
 - The same view. A mirrored bot is a bot in the read model, so the window,
   the web and the phones show it with the same header, tabs, space and
   chat, its thread with the same timeline and composer; only its name
-  carries its machine ("Kit · box", `Label.title` and `Ui.far.title`) and its tabs are what
-  its machine shares (chat, space, memory, routines; `BU.tabs.of`). Ordinary
+  carries its machine ("Kit · box", `Label.title` and `Ui.far.title`). Its tabs are what
+  its machine shares (chat, space, memory, routines; `BU.tabs.of`). A reported-only
+  choice adopts the full thread when its mirror arrives, keeping an unfinished
+  remote composer in place until it has been sent (`Far.arrived`). Ordinary
   thread rows, project sections and timeline headers use the same machine
   marker. On phones paired with both hubs, the paired owner's catalog
   replaces mirrored sections/rows once it has loaded (`Hubs.catalog.*`);
-  its cached mirror stays visible until then. When the paired owner differs from the focused hub, its machine badge remains visible. Hidden Older and Settled counts also drop duplicates.
+  its cached mirror stays visible until then. When the paired owner differs from
+  the focused hub, its machine badge remains visible. Hidden Older and Settled
+  counts also drop duplicates.
 - Not mirrored: streamed text while a far turn runs (its messages arrive as
   they are posted), file viewers for far project threads, and a bot's browser.
 

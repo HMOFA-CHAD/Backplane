@@ -6,6 +6,7 @@ import ../src/core/json.bend as J
 import ../src/core/client.bend as U
 import ../src/core/botui.bend as BU
 import ../src/core/far.bend as FR
+import ../src/app/nui.bend as N
 import ../src/core/bot.bend as BT
 import ../src/mobile/hubs.bend as H
 
@@ -134,6 +135,10 @@ def list(+h: H.Hubs, +key: String) -> String:
 def pbot(+h: H.Hubs) -> J.Json:
   J.Json.get_obj(H.Hubs.screen(h), "bot")
 
+def nori.arrives(+u: U.Ui) -> U.Ui:
+  U.Ui.recv(u, Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.msg("p1", "box", False{}, 12n, 14n,
+      numbered([M.ThreadCreated{"nt", "", "Nori", M.Local{}, "", "", "claude", "", 103n}, M.BotSet{"nb", "Nori", "nt", 3n, "", 103n}], 13n))), J.Null{}))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +u : U.Ui = joined()
@@ -150,6 +155,11 @@ def main() -> IO(Unit):
     # a bot only reported: the bot view with its chat alone
     +n : U.Ui = go(u, "remote", "Nori@box")
     C.Check.str("reported only: the conversation", view(BU.BU.view(n)), "remote Nori@box")
+    +arrived : U.Ui = nori.arrives(n)
+    C.Check.str("reported choice adopts its arriving mirrored thread", U.Ui.scratch(arrived, "@bot") ++ " " ++ U.Ui.sel(arrived) ++ " [" ++ U.Ui.scratch(arrived, "@remote") ++ "]", "p1~nb p1~nt []")
+    C.Check.str("arriving thread keeps native keyboard focus", N.Nui.focus_of(N.Nui.unremote(N.Nui.with_focus(N.Nui.init(arrived, 1400, 900), N.Fld.alias("remote-send")))), "composer")
+    +writing : U.Ui = nori.arrives(go(n, "bfield", "rtext\u{1f}unfinished"))
+    C.Check.str("arrival preserves an unfinished composer", U.Bots.field(writing, "rtext") ++ " " ++ U.Ui.scratch(writing, "@remote"), "unfinished Nori@box")
     C.Check.str("its header", head(BU.BU.head(n, BU.BU.view(n))), "Nori · box|work|chat|chat|False|False")
     C.Check.str("one no machine lists", head(BU.BU.head(u, BU.VRemote{"Ghost@far"})), "Ghost@far|away|chat|chat|False|False")
     # phones: the row's action and the bot's header

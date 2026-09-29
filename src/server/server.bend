@@ -3935,8 +3935,8 @@ def Far.body(r: BN.Resp) -> String:
 
 # a push too big for a request says only where it ends, past a gap, so
 # the other end pulls it in pages
-# The first durable change identifies the history. Hash once off the hub
-# at startup, or from the first (small) commit; cache it in Fh thereafter.
+# The first durable change identifies the history. Cache its hash at
+# startup or the first (small) commit, before accepting new pushes.
 def Far.history(+ls: List<&2, String>) -> String:
   Bool.pick(String, List.is_empty(&2, String, ls), "", SG.Sign.header("00", 0n, Maybe.default(&2, String, List.last(&2, String, ls), "")))
 
@@ -3966,7 +3966,7 @@ def Far.rpc.job(+client: U32, +id: String, +link: String, +body: String, +home: 
 
 # this hub's shared lines, made from its log (newest first)
 def Far.feed.job(+ls: List<&2, String>, +st: M.State, +inbox: Chan(Msg)) -> IO(Unit):
-  Far.send(inbox, FarFeed{FR.Fr.feed(ls, st), Far.history(ls)})
+  Far.send(inbox, FarFeed{FR.Fr.feed(ls, st), ""})
 
 # a mirror kept on disk, read back
 def Far.load.job(+link: String, +name: String, +home: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -4016,6 +4016,15 @@ def Far.push.go(ps: List<&2, BO.Peer>, h: Hub, +from: Nat, +to: Nat, +xs: List<&
       IO.pure(Hub, h)
     case BO.Peer{+i, _, +u, _, _} <> t:
       IO.bind(Hub, Hub, Far.push.one.k(Far.out.of(Far.fh(h), i), u, from, to, xs), h2 => Far.push.go(t, h2, from, to, xs))
+
+# When discovery first recognizes a linked machine as the owner's, offer
+# our current head. Its mirror can pull even if our commits happened
+# before discovery, or our hub restarted without an observed away tick.
+# Only discovery's newly returned peers are offered; no extra timer.
+def Far.offer(h: Hub, +ps: List<&2, BO.Peer>) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Far.push.go(Far.own.go(ps, cfg), Hub{st, f, ls, cl, as, inbox, cfg, note}, M.State.seq(st), M.State.seq(st), Nil{})
 
 def Far.feed.put(p: FR.Fh & Hub, ls: List<&2, FR.Line>) -> Hub:
   (fh, h) = p
@@ -4324,13 +4333,17 @@ def Far.start.go(ps: List<&2, BO.Peer>, +home: String, +inbox: Chan(Msg)) -> IO(
         IO.spawn(Unit, Far.load.job(i, n, home, inbox))
         Far.start.go(t, home, inbox)
 
+def Far.start.epoch(p: FR.Fh & Hub, +ls: List<&2, String>) -> Hub:
+  (fh, h) = p
+  Far.with(h, FR.Fh.epoch.set(fh, Far.history(ls)))
+
 def Far.start(h: Hub) -> IO(Hub):
   match h:
     case Hub{+st, f, +ls, cl, as, +inbox, +cfg, note}:
       do IO<Hub>:
         IO.spawn(Unit, Far.feed.job(ls, st, inbox))
         Far.start.go(Far.live(BO.World.peers(M.State.bots(st))), Cfg.home(cfg), inbox)
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+        return Far.start.epoch(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), ls)
 
 # A client joined: every mirror, whole
 def Far.join.go(ms: List<&2, FR.In>, +out: Chan(Wire)) -> IO(Unit):
@@ -4617,9 +4630,11 @@ def Hub.dir.returned(h: Hub, +mc: String) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
         h2 : Hub <- Hub.machines(Hub{st, f, ls, cl, as, inbox, cfg, note}, mc)
-        Hub.dir.queue(h2, BH.Dir.returned(BO.World.peers(M.State.bots(st)),
+        +returned : List<&2, BO.Peer> = BH.Dir.returned(BO.World.peers(M.State.bots(st)),
           J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(Bot.dir.machines(Cfg.net(cfg))), J.Null{}), "peers")),
-          J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(mc), J.Null{}), "peers"))))
+          J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(mc), J.Null{}), "peers")))
+        h3 : Hub <- Hub.dir.queue(h2, returned)
+        Far.offer(h3, returned)
 
 def Bot.dir.awake(refresh: Bool, +inbox: Chan(Msg), +peer: String) -> IO(Unit):
   match refresh:

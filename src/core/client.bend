@@ -4598,6 +4598,26 @@ def Ui.reply(u: Ui, +o: J.Json) -> Ui:
 # A link's threads and bots (far.bend): its batch folded into the read
 # model under this hub's ids, and whether it answered ("far.away.<link>")
 # and what it is called ("far.name.<link>") kept for the rows that show it
+def Far.arrived.m(m: Maybe<&2, BT.Bot>, u: Ui) -> Ui:
+  match m:
+    case Some{BT.Bot{+id, _, +th, _, _, _, _}}:
+      Ui.flag_off(Bots.views(Bots.sel.set(u, th), id, "", ""), "settings")
+    case None{}:
+      u
+
+def Far.arrived.k(waiting: Bool, +u: Ui) -> Ui:
+  match waiting:
+    case True{}:
+      Far.arrived.m(Far.mirrored(BT.World.bots(M.State.bots(Ui.state(u))), BT.Member.key(Bots.peers(u), Ui.scratch(u, "@remote"))), u)
+    case False{}:
+      u
+
+# A reported-only bot opens immediately. If its owner subsequently
+# shares its thread, the same choice gains the normal timeline and tabs.
+# Keep an unfinished remote composer in place until it has been sent.
+def Far.arrived(+u: Ui) -> Ui:
+  Far.arrived.k(Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@remote"))), String.is_empty(Bots.field(u, "rtext"))), u)
+
 def Ui.far.st(u: Ui, st: M.State) -> Ui:
   match u:
     case Ui{_, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
@@ -4609,7 +4629,7 @@ def Ui.far.k(+u: Ui, +link: String, +o: J.Json) -> Ui:
     "far.away." ++ link, Bool.pick(String, J.Json.get_bool(o, "away", False{}), "1", "")), "far.name." ++ link, J.Json.get_str(o, "name", link))
 
 def Ui.far(+u: Ui, +o: J.Json) -> Ui:
-  Ui.far.k(u, J.Json.get_str(o, "link", ""), o)
+  Far.arrived(Ui.far.k(u, J.Json.get_str(o, "link", ""), o))
 
 # whether the machine a thing elsewhere lives on did not answer last time
 def Ui.far.away(+u: Ui, +id: String) -> Bool:

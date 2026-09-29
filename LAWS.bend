@@ -3784,3 +3784,22 @@ law hubs_origin_here:
 
 law hubs_origin_elsewhere:
   {J.Json.get_str(Hb.Hubs.origin.project(True{}, J.Json.obj([J.KV{"title", J.Str{"Board"}}]), "desk"), "machine", "") == "desk" : String}
+
+law far_arrival_no_choice:
+  for u: U.Ui
+  {U.Far.arrived.k(False{}, u) == u : U.Ui}
+
+law far_arrival_not_shared:
+  for u: U.Ui
+  {U.Far.arrived.m(None{}, u) == u : U.Ui}
+
+law far_arrival_thread_selected:
+  for u: U.Ui
+  for id: String
+  for name: String
+  for +thread: String
+  {U.Ui.sel(U.Far.arrived.m(Some{BOT.Bot{id, name, thread, 1n, "", 0n, False{}}}, u)) == thread : String}
+
+law far_arrival_focus_unchanged:
+  for n: N.Nui
+  {N.Nui.unremote.k(False{}, n) == n : N.Nui}

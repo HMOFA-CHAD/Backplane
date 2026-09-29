@@ -18,6 +18,7 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, mkdirSync, existsSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createHmac } from "node:crypto";
 
 const args = process.argv.slice(2);
 const [bin = "build/backplane", wire = "build/wire"] = args.filter((a) => !a.startsWith("--"));
@@ -183,8 +184,9 @@ try {
   const project = await rpc(ca, "project.add", { path: projectPath });
   const pc = await until(5000, () => ca.seen.find((c) => c.$ === "ProjectCreated" && c.root === projectPath));
   const ordinary = await rpc(ca, "thread.create", { project: pc?.id ?? project?.id, title: "REMOTE BOARD REVIEW" });
-  const pt = ordinary?.thread;
-  check("ordinary project thread created", !!pt, ordinary);
+  const created = await until(5000, () => ca.seen.find((c) => c.$ === "ThreadCreated" && c.project === pc?.id && c.title === "REMOTE BOARD REVIEW"));
+  const pt = created?.id;
+  check("ordinary project thread created", !!ordinary?.ok && !!pt, [ordinary, created]);
   const catalog = await until(8000, () => farItems(cb, link).find((c) => c.$ === "ThreadCreated" && c.id === pt));
   check("ordinary project and thread are mirrored together", !!catalog && catalog.project === pc?.id && farItems(cb, link).some((c) => c.$ === "ProjectCreated" && c.id === pc?.id), catalog);
   const psent = await rpc(cb, "turn.start", { thread: `${link}~${pt}`, text: "review from beta", msg: "ordinary-m1", mode: "queue" });
@@ -277,6 +279,44 @@ try {
   const here = await until(75000, () => { const f = lastFar(cb4, link); return f && !f.away ? f : undefined; });
   check("alpha back: here again", !!here, lastFar(cb4, link));
   check("missed message catches up after return", !!await until(10000, () => farItems(cb4, link).find((c) => c.$ === "MessagePosted" && c.msg === "catchup-m1")));
+
+  // Replace only this temporary owner's history. A new epoch must clear
+  // its old mirror even though the replacement has a lower sequence.
+  const oldEpoch = lastFar(cb4, link)?.epoch;
+  ca2.ws.close();
+  a.proc!.kill();
+  await a.proc!.exited;
+  const peerChange = ca.seen.find((c) => c.$ === "PeerSet" && c.id === link);
+  const resetAt = Math.floor(Date.now() / 1000) + 1;
+  const replacement = [
+    { ...peerChange, at: resetAt },
+    { $: "ThreadCreated", id: "reset-thread", project: "", title: "New history", env: "local", provider: "claude", at: resetAt },
+    { $: "BotSet", id: "reset-bot", name: "new-history", thread: "reset-thread", look: 2, persona: "", at: resetAt },
+  ];
+  check("replacement keeps the linked peer", !!peerChange, peerChange);
+  writeFileSync(join(a.home, "events.jsonl"), replacement.map((c) => JSON.stringify(c)).join("\n") + "\n");
+  spawn(a);
+  await up(a);
+  const ca3 = await connect(a);
+  clients.push(ca3);
+  const resetTurn = await rpc(ca3, "turn.start", { thread: "reset-thread", text: "new history", msg: "reset-message", mode: "queue" });
+  check("replacement owner accepts a new turn", !!resetTurn?.ok && !!await until(5000, () => ca3.seen.find((c) => c.$ === "MessagePosted" && c.msg === "reset-message")), resetTurn);
+  const reset = await until(75000, () => cb4.far.find((f) => f.link === link && f.epoch && f.epoch !== oldEpoch && f.items.some((i: any) => i.c.$ === "BotSet" && i.c.id === "reset-bot")));
+  check("history replacement takes its lower sequence", !!reset && reset.head < disk.head,
+    reset ? { epoch: reset.epoch, head: reset.head, old: disk.head } : { last: lastFar(cb4, link), owner: ca3.seen.slice(-8) });
+  const mirrorPath = join(b.home, "far", `${link}.jsonl`);
+  check("history replacement clears old disk projection", !!reset && !readFileSync(mirrorPath, "utf8").includes(miso.bot));
+
+  // A late old push is only a hint to pull the current authority. It
+  // cannot put the old history back, or advance the new mirror to 999.
+  const secret = JSON.parse(readFileSync(join(a.home, "secrets", "peers", link), "utf8")).secret;
+  const delayed = JSON.stringify({ name: "alpha", epoch: oldEpoch, since: 0, head: 999, items: [{ n: 999, c: { $: "BotSet", id: miso.bot, name: "stale-history", thread: th, look: 1, at: resetAt } }] });
+  const ts = Math.floor(Date.now() / 1000);
+  const sig = "sha256=" + createHmac("sha256", Buffer.from(secret, "hex")).update(`${ts}.${delayed}`).digest("hex");
+  const late = await fetch(`http://127.0.0.1:${b.port}/far/push`, { method: "POST", body: delayed,
+    headers: { "content-type": "application/json", "x-backplane-peer": link, "x-backplane-timestamp": String(ts), "x-backplane-signature": sig } });
+  await sleep(500);
+  check("late push cannot restore an old epoch", late.ok && lastFar(cb4, link)?.epoch === reset?.epoch && lastFar(cb4, link)?.head < 999 && !readFileSync(mirrorPath, "utf8").includes("stale-history"));
 } finally {
   for (const c of clients) { try { c.ws.close(); } catch {} }
   for (const h of [a, b]) if (h.proc) { h.proc.kill(); await h.proc.exited; }
