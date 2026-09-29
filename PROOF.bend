@@ -5990,3 +5990,62 @@ def cache_bounded_step(home: Bool, +v: U.HubView, +vs: List<&2, U.HubView>) -> {
 
 def Laws.hub_cache_bounded(v, vs):
   cache_bounded_step(String.is_empty(U.HubView.hub(v)), v, vs)
+
+def Laws.far_project_named(l, id, title, root, at):
+  {==}
+
+def Laws.far_project_shared(s):
+  {==}
+
+def Laws.far_project_thread_shared():
+  {==}
+
+def Laws.far_label_here(s, id, title):
+  {==}
+
+def Laws.far_label_away():
+  {==}
+
+def Laws.far_cursor_keeps_marker():
+  {==}
+
+def Laws.far_routine_routes_home():
+  {==}
+
+def Laws.hubs_catalog_mirror_dropped(r, rest):
+  {==}
+
+def Laws.hubs_sidebar_view_everywhere():
+  {==}
+
+def Laws.far_epoch_legacy(old):
+  {==}
+
+def Laws.far_epoch_same():
+  {==}
+
+def Laws.far_epoch_reset():
+  {==}
+
+def Laws.far_reset_keeps_sequence(s, l):
+  match s:
+    case M.State{_, _, _, _, _, _, _, _, _, _, _}:
+      {==}
+
+def Laws.far_loaded_live_wins():
+  {==}
+
+def Laws.far_reply_preserves_error():
+  {==}
+
+def Laws.far_draft_kept(text):
+  {==}
+
+def Laws.hubs_fold_null(older, hs, from):
+  {==}
+
+def Laws.hubs_origin_here(p, name):
+  {==}
+
+def Laws.hubs_origin_elsewhere():
+  {==}

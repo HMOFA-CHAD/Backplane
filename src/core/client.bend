@@ -56,6 +56,11 @@ type Cmd is Data:
 type Act is Data:
   Act{ui: Ui, cmds: List<&2, Cmd>}
 
+# The machine marker for projects, sidebar rows and timeline headers.
+def Label.title(+st: M.State, +id: String, title: String) -> String:
+  FR.Fr.title(st, id, title)
+
+
 def Act.cmds(a: Act) -> List<&2, Cmd>:
   match a:
     case Act{_, cs}:
@@ -590,7 +595,7 @@ def Ui.select.k(u: Ui, +id: String) -> Ui:
 
 def Draft.safe.c(+c: U32) -> Bool:
   Bool.or(Bool.or(Bool.and(U32.is_ge(c, 48), U32.is_le(c, 57)), Bool.and(U32.is_ge(c, 97), U32.is_le(c, 122))),
-    Bool.or(Bool.and(U32.is_ge(c, 65), U32.is_le(c, 90)), Bool.or(U32.is_eq(c, 45), U32.is_eq(c, 95))))
+    Bool.or(Bool.and(U32.is_ge(c, 65), U32.is_le(c, 90)), Bool.or(U32.is_eq(c, 126), Bool.or(U32.is_eq(c, 45), U32.is_eq(c, 95)))))
 
 def Draft.safe.go(s: String) -> Bool:
   match s:
@@ -599,7 +604,7 @@ def Draft.safe.go(s: String) -> Bool:
     case SCon{Chr{c}, t}:
       Bool.and(Draft.safe.c(c), Draft.safe.go(t))
 
-# a name made only of letters, digits, '-' and '_'
+# a name made only of letters, digits, '-', '_' and far's '~' separator
 def Draft.safe(s: String) -> Bool:
   match s:
     case SNil{}:
@@ -4599,8 +4604,8 @@ def Ui.far.st(u: Ui, st: M.State) -> Ui:
       Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
 
 def Ui.far.k(+u: Ui, +link: String, +o: J.Json) -> Ui:
-  Ui.info_set(Ui.info_set(Ui.far.st(u, FR.Fr.fold(Ui.state(u), link, J.Json.get_nat(o, "since", 0n), J.Json.get_nat(o, "head", 0n),
-      FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items"))))),
+  Ui.info_set(Ui.info_set(Ui.far.st(u, FR.Fr.mark(FR.Fr.recv(Ui.state(u), link, J.Json.get_str(o, "epoch", ""), J.Json.get_nat(o, "since", 0n), J.Json.get_nat(o, "head", 0n),
+      FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items")))), link, J.Json.get_str(o, "name", link), J.Json.get_bool(o, "away", False{}))),
     "far.away." ++ link, Bool.pick(String, J.Json.get_bool(o, "away", False{}), "1", "")), "far.name." ++ link, J.Json.get_str(o, "name", link))
 
 def Ui.far(+u: Ui, +o: J.Json) -> Ui:
@@ -4617,7 +4622,7 @@ def Ui.far.name(+u: Ui, +id: String) -> String:
 # a thread's or bot's name as shown: "Kit · desk" for one elsewhere, with
 # " (away)" while its machine does not answer
 def Ui.far.title(+u: Ui, +id: String, +title: String) -> String:
-  title ++ FR.Fr.where(id, Ui.far.name(u, id)) ++ Bool.pick(String, Ui.far.away(u, id), " (away)", "")
+  Label.title(Ui.state(u), id, title)
 
 def Ui.recv.k(i: Nat, u: Ui, +o: J.Json) -> Ui:
   match i:

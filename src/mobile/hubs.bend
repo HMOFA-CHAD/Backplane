@@ -10,6 +10,7 @@ import ./picker.bend as PK
 import ../core/botui.bend as BU
 import ../core/bot.bend as BT
 import ../core/once.bend as O
+import ../core/far.bend as FR
 
 # The phone keeps every hub it paired with connected at once, each with
 # its own client (Ui). A hub's key is its socket's host:port, which the
@@ -436,6 +437,14 @@ def Hubs.routes() -> Nat:
 def Hubs.everywhere(+action: String) -> Bool:
   Nat.is_lt(C.Codec.pos(["dismiss", "delete-no", "proj-keep", "proj-find", "proj-find-q", "menu-close", "side-older", "side-settled"], action), 8n)
 
+# The merged phone sidebar has one view preference across paired hubs.
+def Hubs.every.op(op: Op) -> Bool:
+  match op:
+    case Do{+a, +v}:
+      Bool.or(Hubs.everywhere(a), Bool.and(String.eq(a, "setting"), String.starts_with(v, "sidebar.view=")))
+    case _:
+      False{}
+
 # of what the hub let go says, only what it sends (its viewer's watch
 # ends); its focus and scroll are for a screen no longer shown
 def Hubs.sends(cs: List<&2, HCmd>) -> List<&2, HCmd>:
@@ -471,7 +480,7 @@ def Hubs.focus(move: Bool, hs: Hubs, +key: String, +op: Op) -> HAct:
     case True{} Hubs{+cid, +now, +cur, list}:
       Hubs.then(Hubs.run(list, False{}, cur, Do{"select", ""}), cid, now, key, key, op)
     case False{} Hubs{+cid, +now, +cur, list}:
-      Hubs.step(Hubs{cid, now, cur, list}, Hubs.everywhere(Op.action(op)), key, op)
+      Hubs.step(Hubs{cid, now, cur, list}, Hubs.every.op(op), key, op)
 
 # (matches, not Bool.pick: an unrouted value, which may be a big piece of
 # an upload, is never split)
@@ -675,6 +684,32 @@ def Hubs.projects.p(+ps: List<&2, J.Json>) -> List<&2, J.Json>:
 def Hubs.projects(ss: List<&2, Shown>, +many: Bool) -> List<&2, J.Json>:
   Hubs.projects.p(Hubs.projects.all(ss, many))
 
+# Once a paired owner replaces a mirror, keep its machine visible too.
+# A mirror already names its origin in its title; its relay is not its
+# origin. Rows from the focused hub retain the usual collision label.
+def Hubs.origin.name(ss: List<&2, Shown>, +key: String) -> String:
+  match ss:
+    case Nil{}:
+      key
+    case Shown{+k, +n, _} <> t:
+      Bool.pick(String, String.eq(k, key), n, Hubs.origin.name(t, key))
+
+def Hubs.origin.project(elsewhere: Bool, p: J.Json, +name: String) -> J.Json:
+  match elsewhere:
+    case True{}:
+      Hubs.machine(p, name)
+    case False{}:
+      p
+
+def Hubs.origin.projects(ps: List<&2, J.Json>, +ss: List<&2, Shown>, +cur: String) -> List<&2, J.Json>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      +id = J.Json.get_str(p, "id", "")
+      Hubs.origin.project(Bool.and(Bool.not(String.eq(Hubs.key_of(id), cur)), Bool.not(FR.Fr.is(Hubs.rest(id)))), p,
+        Hubs.origin.name(ss, Hubs.key_of(id))) <> Hubs.origin.projects(t, ss, cur)
+
 # every hub's folded shelf at k ("older": older projects; "settled": the
 # active view's settled rows) as one: how many in all, and open when any
 # hub's is ("side-older", "side-settled" go to every hub)
@@ -847,6 +882,121 @@ def Hubs.holds(hs: List<&2, Hub>, +from: String, +l: String) -> Bool:
       Bool.or(Bool.and(Bool.not(String.eq(Hub.key(h), from)), BT.Maybe.is(BT.Peer, BT.Peer.by.id(BT.World.peers(M.State.bots(Hubs.state(h))), l))),
         Hubs.holds(t, from, l))
 
+# Projects and ordinary threads follow the same ownership rule as bots.
+# Drop a mirror only when the paired owner actually has that entity;
+# during initial connection its cached mirror must remain visible.
+def Hubs.entity.got(-A: Data, r: Map<&2, A> & Bool) -> Bool:
+  (_, b) = r
+  b
+
+def Hubs.entity.has(+s: M.State, project: Bool, +id: String) -> Bool:
+  match s project:
+    case M.State{ps, _, _, _, _, _, _, _, _, _, _} True{}:
+      Hubs.entity.got(M.Project, Map.has(&2, M.Project, ps, id))
+    case M.State{_, ts, _, _, _, _, _, _, _, _, _} False{}:
+      Hubs.entity.got(M.Thread, Map.has(&2, M.Thread, ts, id))
+
+def Hubs.entity.owner(hs: List<&2, Hub>, +from: String, +link: String, +at: String, +project: Bool, +id: String) -> Bool:
+  match hs:
+    case Nil{}:
+      False{}
+    case +h <> t:
+      Bool.or(Bool.and(Hubs.twin.is(Hub.key(h), Hubs.state(h), from, link, at), Hubs.entity.has(Hubs.state(h), project, id)),
+        Hubs.entity.owner(t, from, link, at, project, id))
+
+def Hubs.entity.dup(+hs: List<&2, Hub>, +from: String, +project: Bool, +id: String) -> Bool:
+  Bool.and(FR.Fr.is(id), Hubs.entity.owner(hs, from, FR.Fr.link(id), Hubs.far.at(Hubs.of.key(hs, from), FR.Fr.link(id)), project, FR.Fr.local(id)))
+
+def Hubs.catalog.rows(rs: List<&2, J.Json>, +hs: List<&2, Hub>, +from: String, +project: Bool) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      Hubs.part.k(Bool.not(Hubs.entity.dup(hs, from, project, Hubs.rest(J.Json.get_str(r, "id", "")))), r,
+        Hubs.catalog.rows(t, hs, from, project))
+
+# Filter only catalog arrays, never timeline text or the focused view.
+# A mirrored project contains only mirrored threads, so dropping its
+# section also drops every shelf without touching local fold state.
+def Hubs.catalog.value(catalog: Bool, v: J.Json, +hs: List<&2, Hub>, +from: String, +project: Bool) -> J.Json:
+  match catalog:
+    case True{}:
+      J.Json.arr(Hubs.catalog.rows(J.Json.elems(v), hs, from, project))
+    case False{}:
+      v
+
+# Fold counts include hidden rows. Apply the ownership filter to those
+# rows too, so pairing the owner does not double Older or Settled.
+def Hubs.fold.projects(rs: List<&2, U.SRow>, +hs: List<&2, Hub>, +from: String, acc: Nat) -> Nat:
+  match rs:
+    case Nil{}:
+      acc
+    case U.SRow{_, M.Project{+id, _, _, _, _}, _} <> t:
+      Hubs.fold.projects(t, hs, from, Nat.add(acc, Bool.pick(Nat, Hubs.entity.dup(hs, from, True{}, id), 1n, 0n)))
+
+def Hubs.fold.older(g: U.SGroups, +hs: List<&2, Hub>, +from: String) -> Nat:
+  match g:
+    case U.SGroups{_, _, o}:
+      Hubs.fold.projects(o, hs, from, 0n)
+
+def Hubs.fold.rows(rs: List<&2, U.ARow>, +hs: List<&2, Hub>, +from: String, acc: Nat) -> Nat:
+  match rs:
+    case Nil{}:
+      acc
+    case U.ARow{_, _, +t, _, _, _} <> rest:
+      Hubs.fold.rows(rest, hs, from, Nat.add(acc, Bool.pick(Nat, Hubs.entity.dup(hs, from, False{}, M.Thread.id(t)), 1n, 0n)))
+
+def Hubs.fold.settled(p: U.AParts, +hs: List<&2, Hub>, +from: String) -> Nat:
+  match p:
+    case U.AParts{_, f}:
+      Hubs.fold.rows(f, hs, from, 0n)
+
+def Hubs.fold.count(older: Bool, h: Maybe<&2, Hub>, +hs: List<&2, Hub>, +from: String) -> Nat:
+  match older h:
+    case True{} Some{Hub{_, U.Ui{+st, _, +dr, _, +o, _, +now, _, _, _, _, _, _, _, _, _, _}}}:
+      Hubs.fold.older(U.Side.groups(U.Side.shown(st, now, U.Find.q(o, dr)), now), hs, from)
+    case False{} Some{Hub{_, U.Ui{+st, _, +dr, _, +o, _, +now, _, _, _, _, _, _, _, _, _, _}}}:
+      Hubs.fold.settled(U.Active.parts(U.Active.rows(st, now, U.Find.q(o, dr))), hs, from)
+    case _ None{}:
+      0n
+
+def Hubs.fold.json(v: J.Json, +older: Bool, +hs: List<&2, Hub>, +from: String) -> J.Json:
+  match v:
+    case J.Obj{+fs}:
+      S.Mob.older.j(Nat.sub(J.Json.get_nat(J.Obj{fs}, "count", 0n), Hubs.fold.count(older, Hubs.find(hs, from), hs, from)),
+        J.Json.get_bool(J.Obj{fs}, "open", False{}), "")
+    case x:
+      x
+
+def Hubs.catalog.field(kind: Nat, v: J.Json, +hs: List<&2, Hub>, +from: String) -> J.Json:
+  match kind:
+    case 0n:
+      Hubs.catalog.value(True{}, v, hs, from, True{})
+    case 1n:
+      Hubs.catalog.value(True{}, v, hs, from, False{})
+    case 2n:
+      Hubs.fold.json(v, True{}, hs, from)
+    case 3n:
+      Hubs.fold.json(v, False{}, hs, from)
+    case _:
+      v
+
+def Hubs.catalog.fields(fs: J.Json, +hs: List<&2, Hub>, +from: String) -> J.Json:
+  match fs:
+    case J.Field{+k, +v, t}:
+      J.Field{k, Hubs.catalog.field(C.Codec.pos(["projects", "active", "older", "settled"], k), v, hs, from), Hubs.catalog.fields(t, hs, from)}
+    case x:
+      x
+
+def Hubs.catalog.shown(ss: List<&2, Shown>, +hs: List<&2, Hub>) -> List<&2, Shown>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case Shown{+k, n, J.Obj{fs}} <> t:
+      Shown{k, n, J.Obj{Hubs.catalog.fields(fs, hs, k)}} <> Hubs.catalog.shown(t, hs)
+    case h <> t:
+      h <> Hubs.catalog.shown(t, hs)
+
 # a row a hub mirrors from a linked machine (far.bend): a bot elsewhere
 # that opens as a bot (BU.act), its threads kept by this hub
 def Hubs.mirrored(+r: J.Json) -> Bool:
@@ -945,7 +1095,7 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
     J.KV{"sel", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "sel", ""))},
     J.KV{"theme", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "theme", ""))},
     J.KV{"empty", J.Json.str(Hubs.empty(List.length(&2, J.Json, Hubs.projects(ss, False{})), List.length(&2, Shown, ss), J.Json.get_bool(Hubs.first_obj(ss, "search"), "open", False{})))},
-    J.KV{"projects", J.Json.arr(Hubs.projects(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},
+    J.KV{"projects", J.Json.arr(Hubs.origin.projects(Hubs.projects(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)), ss, cur))},
     J.KV{"older", Hubs.older(ss, "older")},
     J.KV{"settled", Hubs.older(ss, "settled")},
     J.KV{"view", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "view", "projects"))},
@@ -972,4 +1122,4 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
 def Hubs.screen(hs: Hubs) -> J.Json:
   match hs:
     case Hubs{_, _, +cur, +list}:
-      Hubs.screen.k(Hubs.relabel(Hubs.shown(list)), cur, list)
+      Hubs.screen.k(Hubs.relabel(Hubs.catalog.shown(Hubs.shown(list), list)), cur, list)

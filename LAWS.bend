@@ -3702,3 +3702,85 @@ law hub_cache_bounded:
   for +v: U.HubView
   for +vs: List<&2, U.HubView>
   {List.drop(&2, U.HubView, U.HubCache.put(v, vs), 2n) == Nil{} : List<&2, U.HubView>}
+
+# Owner-shared projects and ordinary threads use the far projection too.
+law far_project_named:
+  for +l: String
+  for +id: String
+  for title: String
+  for root: String
+  for at: Nat
+  {FR.Fr.change(l, M.ProjectCreated{id, title, root, at}) == Some{M.ProjectCreated{FR.Fr.id(l, id), title, root, at}} : Maybe<&2, M.Change>}
+
+law far_project_shared:
+  for s: M.State
+  {FR.Fr.shared(s, M.ProjectCreated{"p1", "Board", "/board", 1n}) == True{} : Bool}
+
+law far_project_thread_shared:
+  {FR.Fr.thread.shared(M.State.replay([M.ProjectCreated{"p", "Board", "/board", 1n},
+    M.ThreadCreated{"t", "p", "Layout", M.Local{}, "", "", "claude", "", 2n}], M.State.empty()), "t") == True{} : Bool}
+
+law far_label_here:
+  for +s: M.State
+  for +id: String
+  for title: String
+  {FR.Fr.title.k(False{}, s, id, title) == title : String}
+
+law far_label_away:
+  {FR.Fr.title(FR.Fr.mark(M.State.empty(), "p1", "desk", True{}), "p1~t", "Layout") == "Layout · desk (away)" : String}
+
+law far_cursor_keeps_marker:
+  {FR.Fr.title(FR.Fr.head.set(FR.Fr.mark(M.State.empty(), "p1", "desk", True{}), "p1", 5n), "p1~t", "Layout") == "Layout · desk (away)" : String}
+
+law far_routine_routes_home:
+  {FR.Fr.params.local(J.Field{"routine", J.Str{"p1~r1"}, J.End{}}, "p1") == J.Field{"routine", J.Str{"r1"}, J.End{}} : J.Json}
+
+law hubs_catalog_mirror_dropped:
+  for r: J.Json
+  for rest: List<&2, J.Json>
+  {Hb.Hubs.part.k(Bool.not(True{}), r, rest) == rest : List<&2, J.Json>}
+
+law hubs_sidebar_view_everywhere:
+  {Hb.Hubs.every.op(Hb.Do{"setting", "sidebar.view=active"}) == True{} : Bool}
+
+# History reset and restart races remain isolated to their owner.
+law far_epoch_legacy:
+  for +old: String
+  {FR.Fr.epoch.changed(old, "") == False{} : Bool}
+
+law far_epoch_same:
+  {FR.Fr.epoch.changed("history1", "history1") == False{} : Bool}
+
+law far_epoch_reset:
+  {FR.Fr.epoch.changed("history1", "history2") == True{} : Bool}
+
+law far_reset_keeps_sequence:
+  for s: M.State
+  for +l: String
+  {M.State.seq(FR.Fr.forget(s, l)) == M.State.seq(s) : Nat}
+
+law far_loaded_live_wins:
+  {FR.In.head(FR.In.loaded(FR.In.put(FR.In.new("p1", "desk"), 0n, 9n, Nil{}),
+    FR.In.new("p1", "desk"))) == 9n : Nat}
+
+law far_reply_preserves_error:
+  {FR.Fr.reply(J.Json.obj([J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{False{}}}, J.KV{"error", J.Str{"declined"}}]), "7") ==
+    "{\"id\":7,\"ok\":false,\"error\":\"declined\"}" : String}
+
+law far_draft_kept:
+  for text: String
+  {U.Draft.keep("p1~t1", text) == [U.Keep{"p1~t1", text}] : List<&2, U.Cmd>}
+
+law hubs_fold_null:
+  for +older: Bool
+  for +hs: List<&2, Hb.Hub>
+  for +from: String
+  {Hb.Hubs.fold.json(J.Null{}, older, hs, from) == J.Null{} : J.Json}
+
+law hubs_origin_here:
+  for p: J.Json
+  for name: String
+  {Hb.Hubs.origin.project(False{}, p, name) == p : J.Json}
+
+law hubs_origin_elsewhere:
+  {J.Json.get_str(Hb.Hubs.origin.project(True{}, J.Json.obj([J.KV{"title", J.Str{"Board"}}]), "desk"), "machine", "") == "desk" : String}

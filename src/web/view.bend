@@ -68,7 +68,7 @@ def View.row.k(+id: String, +title: String, +ago: String, +dot: String, +sel: St
 def View.row(+t: M.Thread, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> D.Node:
   match t:
     case M.Thread{+id, _, +title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      View.row.k(id, title, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), M.Phase.name(U.Side.phase(st, t)), sel, movable)
+      View.row.k(id, U.Label.title(st, id, title), Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), M.Phase.name(U.Side.phase(st, t)), sel, movable)
 
 def View.rows_in(ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> List<&2, D.Node>:
   match ts:
@@ -140,7 +140,7 @@ def View.project(r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +st: M.State, +s
     case U.SRow{_, M.Project{+id, title, root, _, _}, M.Shelves{pinned, active, settled, hidden, snoozed}}:
       D.El{"section", id, [D.At{"class", Bool.pick(String, quiet, "project quiet", "project")}, D.At{"style", "--tint:" ++ BG.Badge.css_of(st, id)}, D.At{"data-drag-to", id}, D.At{"data-drag-act", "reorder-project"}],
         List.concat(&2, D.Node, [[D.El{"div", "", [D.At{"class", "project-head"}, D.At{"title", root}, D.At{"draggable", "true"}, D.At{"data-drag", id}, D.At{"data-drag-act", "reorder-project"}, D.At{"data-value", id}, D.On{"contextmenu", "proj-menu"}],
-            [WI.WIcon.button("badge", "look", id, "Colour and icon", BG.Badge.icon(st, id), 14, ""), D.Dom.span("name", title), WI.WIcon.button("icon", "new-thread", id, "New thread", "plus", 16, "")]}],
+            [WI.WIcon.button("badge", "look", id, "Colour and icon", BG.Badge.icon(st, id), 14, ""), D.Dom.span("name", U.Label.title(st, id, title)), WI.WIcon.button("icon", "new-thread", id, "New thread", "plus", 16, "")]}],
           View.look(String.eq(look, id), st, id, String.eq(rm, id)),
           View.rows_in(pinned, st, sel, now, True{}, False{}),
           View.rows_in(active, st, sel, now, True{}, False{}),
@@ -195,7 +195,7 @@ def View.arow(r: U.ARow, +st: M.State, +sel: String) -> D.Node:
     case U.ARow{_, _, +t, +pid, +pt, +faded}:
       D.El{"div", M.Thread.id(t), [D.At{"class", Bool.pick(String, String.eq(M.Thread.id(t), sel), "thread on", Bool.pick(String, faded, "thread faded", "thread"))},
           D.At{"style", "--tint:" ++ BG.Badge.css_of(st, pid)}, D.At{"data-value", M.Thread.id(t)}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
-        [D.Dom.span("dot " ++ M.Phase.name(U.Side.phase(st, t)), ""), D.Dom.span("title", U.Active.title(t)), D.Dom.span("ago", pt)]}
+        [D.Dom.span("dot " ++ M.Phase.name(U.Side.phase(st, t)), ""), D.Dom.span("title", U.Label.title(st, M.Thread.id(t), U.Active.title(t))), D.Dom.span("ago", pt)]}
 
 def View.arows(rs: List<&2, U.ARow>, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
@@ -437,7 +437,7 @@ def View.header(t: M.Thread, +st: M.State, +panel: Bool, snoozed: Bool, picking:
       D.El{"header", "", [D.At{"class", "thread-head"}, D.At{"style", "--tint:" ++ BG.Badge.css_of(st, p)}], [
         D.Dom.button("back", "select", "", "Threads", "‹"),
         D.El{"span", "", [D.At{"class", "badge"}], [WI.WIcon.svg(BG.Badge.icon(st, p), 16)]},
-        D.Dom.span("title", title),
+        D.Dom.span("title", U.Label.title(st, id, title)),
         D.Dom.span("meta", Bool.pick(String, String.is_empty(branch), "", branch)),
         D.El{"div", "", [D.At{"class", "tools"}], List.concat(&2, D.Node, [D.Dom.when(View.running(turn), D.Dom.button("", "interrupt", "", "Stop the running turn", "Stop")),
           [View.pin(pinned), View.settle(override, Nat.is_gt(sa, ua))], View.snooze(snoozed, picking), [View.archive(archived)], View.del(del), [

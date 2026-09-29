@@ -1,7 +1,7 @@
 // End to end: threads elsewhere (far.bend, docs/bots.md "Threads
 // elsewhere") on two headless hubs linked to each other. Each hub lists the
 // other as one of the owner's machines (BACKPLANE_PEERS), so each shares
-// its bots and their threads with the other. Checks that a bot made on
+// its projects, bots and threads with the other. Checks that a bot made on
 // alpha appears on beta, mirrored and named by the link; that writing to
 // it from beta reaches alpha and alpha's answer comes back; that a client
 // joining beta later gets the mirror whole; that when alpha stops, beta
@@ -46,6 +46,10 @@ n=0
 while IFS= read -r line; do
   case "$line" in
     *'"type":"user"'*)
+      case "$line" in *'hold until stopped'*)
+        printf '%s\\n' '{"type":"assistant","message":{"id":"hold","content":[{"type":"text","text":"waiting for Stop"}]}}'
+        continue ;;
+      esac
       n=$((n + 1))
       printf '%s\\n' '{"type":"assistant","message":{"id":"m'"$$-$n"'","content":[{"type":"text","text":"${answer}"}]}}'
       printf '%s\\n' '{"type":"result","is_error":false,"result":"${answer}"}' ;;
@@ -173,6 +177,41 @@ try {
   const mine = farItems(cb, link).filter((c) => c.$ === "MessagePosted" && c.thread === th && c.text.includes("hello from beta"));
   check("beta sees its own message once, with its msg id", mine.length === 1 && mine[0].msg === "far-m1", mine);
 
+  // Ordinary project threads use the same mirror and routing path.
+  const projectPath = join(root, "board");
+  mkdirSync(projectPath);
+  const project = await rpc(ca, "project.add", { path: projectPath });
+  const pc = await until(5000, () => ca.seen.find((c) => c.$ === "ProjectCreated" && c.root === projectPath));
+  const ordinary = await rpc(ca, "thread.create", { project: pc?.id ?? project?.id, title: "REMOTE BOARD REVIEW" });
+  const pt = ordinary?.thread;
+  check("ordinary project thread created", !!pt, ordinary);
+  const catalog = await until(8000, () => farItems(cb, link).find((c) => c.$ === "ThreadCreated" && c.id === pt));
+  check("ordinary project and thread are mirrored together", !!catalog && catalog.project === pc?.id && farItems(cb, link).some((c) => c.$ === "ProjectCreated" && c.id === pc?.id), catalog);
+  const psent = await rpc(cb, "turn.start", { thread: `${link}~${pt}`, text: "review from beta", msg: "ordinary-m1", mode: "queue" });
+  check("ordinary thread send reaches its owner", !!psent?.ok && !!await until(8000, () => ca.seen.find((c) => c.$ === "MessagePosted" && c.thread === pt && c.text.includes("review from beta"))), psent);
+  check("ordinary thread answer returns through the mirror", !!await until(8000, () => farItems(cb, link).find((c) => c.$ === "MessagePosted" && c.thread === pt && c.text === answer)));
+
+  // Stop goes to the owner's live agent, not a process on the mirror.
+  await rpc(cb, "turn.start", { thread: `${link}~${th}`, text: "hold until stopped", msg: "far-hold", mode: "queue" });
+  const running = await until(8000, () => ca.seen.find((c) => c.$ === "MessagePosted" && c.msg === "far-hold"));
+  check("remote hold starts on alpha", !!running);
+  const stopped = await rpc(cb, "turn.interrupt", { thread: `${link}~${th}` });
+  const stopOnA = await until(8000, () => ca.seen.find((c) => c.$ === "TurnChanged" && c.thread === th && c.state === "interrupted"));
+  check("remote Stop reaches alpha", !!stopped?.ok && !!stopOnA, [stopped, stopOnA]);
+  check("remote Stop is mirrored", !!await until(8000, () => farItems(cb, link).find((c) => c.$ === "TurnChanged" && c.thread === th && c.state === "interrupted")));
+
+  // A real approval waits on alpha; beta answers the namespaced ask.
+  const approval = fetch(`http://127.0.0.1:${a.port}/mcp/${th}`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "project_create", arguments: { path: join(root, "declined-project") } } }),
+  }).then((r) => r.json());
+  const ask = await until(8000, () => farItems(cb, link).find((c) => c.$ === "AskOpened" && c.tool === "project_create"));
+  check("alpha's approval appears on beta", !!ask, ask);
+  const approved = await rpc(cb, "ask.answer", { id: `${link}~${ask?.id}`, answer: "decline" });
+  const approvalResult = await approval;
+  check("remote approval response reaches alpha", !!approved?.ok && !!await until(8000, () => ca.seen.find((c) => c.$ === "AskClosed" && c.id === ask?.id && c.answer === "decline")), [approved, approvalResult]);
+  check("declined approval does not create a folder", !existsSync(join(root, "declined-project")));
+
   // a request beta may not send on
   const del = await rpc(cb, "thread.delete", { thread: `${link}~${th}` });
   check("a delete of a far thread is refused", !!del && !del.ok, del);
@@ -196,7 +235,10 @@ try {
     copyFileSync(join(b.home, "events.jsonl"), join(dump, "events.jsonl"));
     const info = JSON.stringify({ t: "info", info: { "bots.remote": cb.info["bots.remote"] ?? "[]" } });
     writeFileSync(join(dump, "info.txt"), [info, ...cb2.raw].join("\n") + "\n");
-    writeFileSync(join(dump, "ids.txt"), `${link}~${th}\n${link}~${miso?.bot}\n`);
+    writeFileSync(join(dump, "ids.txt"), `${link}~${th}\n${link}~${miso?.bot}\n${link}~${pt}\n`);
+    copyFileSync(join(a.home, "events.jsonl"), join(dump, "owner-events.jsonl"));
+    mkdirSync(join(dump, "far"), { recursive: true });
+    copyFileSync(join(b.home, "far", `${link}.jsonl`), join(dump, "far", `${link}.jsonl`));
   }
 
   // alpha stops: beta keeps it, away (within the minute's directory)
@@ -228,8 +270,13 @@ try {
   // alpha comes back: beta pulls and is here again
   spawn(a);
   await up(a);
+  const ca2 = await connect(a);
+  clients.push(ca2);
+  const catchup = await rpc(ca2, "turn.start", { thread: th, text: "after partition", msg: "catchup-m1", mode: "queue" });
+  check("owner can post after return", !!catchup?.ok, catchup);
   const here = await until(75000, () => { const f = lastFar(cb4, link); return f && !f.away ? f : undefined; });
   check("alpha back: here again", !!here, lastFar(cb4, link));
+  check("missed message catches up after return", !!await until(10000, () => farItems(cb4, link).find((c) => c.$ === "MessagePosted" && c.msg === "catchup-m1")));
 } finally {
   for (const c of clients) { try { c.ws.close(); } catch {} }
   for (const h of [a, b]) if (h.proc) { h.proc.kill(); await h.proc.exited; }

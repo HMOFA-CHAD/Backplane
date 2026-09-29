@@ -83,7 +83,7 @@ def main() -> IO(Unit):
     C.Check.str("offline is a change", yes(A.online_same(two(), "box:3787", False{})), "no")
     C.Check.str("offline again is the same", yes(A.online_same(H.Hubs.after(H.Hubs.online(two(), "box:3787", False{})), "box:3787", False{})), "yes")
     C.Check.str("projects of both", list(two(), "projects", "id"), "100.1.1.1:3787|p1;box:3787|p2;")
-    C.Check.str("one list: machines unnamed while names differ", list(two(), "projects", "machine"), ";;")
+    C.Check.str("one list: other hub keeps its machine marker", list(two(), "projects", "machine"), ";box;")
     C.Check.str("thread ids qualified", rows(two()), "100.1.1.1:3787|t1;")
     C.Check.str("hubs listed", list(two(), "hubs", "name"), "lap;box;")
     C.Check.str("nothing selected", screen(two(), "sel"), "")

@@ -479,9 +479,8 @@ whole log over the link (11 to 20 s for a 13 MB log, `test/native/link_bench.ben
 
 ## Threads elsewhere
 
-`src/core/far.bend`. A hub shares its bots and their threads (every thread
-in no project: turns, messages, tool calls, asks, delegated tasks, the
-bot's space, memory and routines) with the owner's other machines it is
+`src/core/far.bend`. A hub shares its projects, ordinary project threads and bots (turns,
+messages, tool calls, asks, delegated tasks, bot space, memory and routines) with the owner's other machines it is
 linked to. It shares no settings, devices, links, webhooks or rooms (rooms
 travel on their own, above), and nothing with a machine that is not the
 owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
@@ -493,22 +492,30 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
   and a phone paired with both machines keeps the owner's own.
 - Push. The owning hub is the authority. Each commit's shared changes go,
   numbered by its log, to each such peer: `POST /far/push`
-  `{"name", "since", "head", "items": [{"n", "c"}]}`, one push out per link
+  `{"name", "epoch", "since", "head", "items": [{"n", "c"}]}`, one push out per link
   at a time, later batches merged behind it (`Out.*`). A batch says it
   follows the last push that got through only while every push since did;
   after a failure or a restart it says it follows only its own start.
 - Pull. A mirror takes a batch only when it follows what it has
   (`since <= head`) and only the items it lacks (`n > head`); a batch past a
-  gap takes nothing and the rest is pulled: `POST /far/log {"since"}`
-  answers a page of about 400 KB `{"head", "items", "more"}` from the
+  gap takes nothing and the rest is pulled: `POST /far/log {"since", "epoch"}`
+  answers a page of about 400 KB `{"since", "epoch", "head", "items", "more"}` from the
   owning hub's feed (its shared lines, made from the log off the hub at
   start, then grown by each commit). A batch that comes twice, late or out
   of order changes nothing (laws `far_gap_takes_nothing`,
   `far_old_takes_nothing`, `far_overlap_takes_new`, `far_batch_again`).
+- History identity. The epoch is a cached hash of the first durable wire
+  change. It stays the same through restart; replacing that first change
+  changes it. A pull with another epoch starts at zero. A push naming
+  another epoch triggers a pull from the authority (a delayed push cannot
+  revert history). Clients remove only that link's old projection, preserving
+  their local sequence and other mirrors. Old mirror files and epoch-free
+  messages remain readable. An exact copy of the original history prefix
+  has the same epoch; reset history must replace its first change.
 - Mirrors. The receiving hub keeps one per link, in memory and in
-  `<home>/far/<link>.jsonl` (each batch's items, then `{"head"}`), and
+  `<home>/far/<link>.jsonl` (an epoch header, each batch's items, then `{"head"}`), and
   sends it to each client that joins (`{"t":"far","link","name","away",
-  "since","head","items"}`, `since` 0) and each batch as it comes. A
+  "epoch","since","head","items"}`, `since` 0) and each batch as it comes. A
   client folds it into its read model under the far ids, never counting it
   in its own log's sequence (a reconnect still asks its hub for exactly what
   it missed), and keeps how far it has each link beside the read model, so
@@ -524,16 +531,20 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
   routines: `Fr.methods`) goes to its hub in that hub's ids (`Fr.route`,
   `POST /far/rpc`), signed like every hub-to-hub request; the owning hub
   takes it only for what it shares (`Fr.allowed`). The client's answer
-  waits for the owning hub's; while it is away the answer says so. Anything
+  keeps the owner's success, error and payload, with the caller's request id; while it is away the answer says so. Anything
   else about a far thread is refused here (law `far_route_here_stays`,
   `far_allowed_only_methods`).
 - The same view. A mirrored bot is a bot in the read model, so the window,
   the web and the phones show it with the same header, tabs, space and
   chat, its thread with the same timeline and composer; only its name
-  carries its machine ("Kit · box", `Ui.far.title`) and its tabs are what
-  its machine shares (chat, space, memory, routines; `BU.tabs.of`).
+  carries its machine ("Kit · box", `Label.title` and `Ui.far.title`) and its tabs are what
+  its machine shares (chat, space, memory, routines; `BU.tabs.of`). Ordinary
+  thread rows, project sections and timeline headers use the same machine
+  marker. On phones paired with both hubs, the paired owner's catalog
+  replaces mirrored sections/rows once it has loaded (`Hubs.catalog.*`);
+  its cached mirror stays visible until then. When the paired owner differs from the focused hub, its machine badge remains visible. Hidden Older and Settled counts also drop duplicates.
 - Not mirrored: streamed text while a far turn runs (its messages arrive as
-  they are posted), threads in projects, and a bot's browser.
+  they are posted), file viewers for far project threads, and a bot's browser.
 
 `test/far_test.bend` (the client's fold, routing, sharing) and
 `test/tools/far_e2e.ts` (two hubs: a bot made on one shows on the other,

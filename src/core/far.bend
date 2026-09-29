@@ -2,6 +2,7 @@ import Base
 import ./json.bend as J
 import ./model.bend as M
 import ./codec.bend as C
+import ./bot.bend as BT
 
 # Threads that live on a linked machine (docs/bots.md, "Threads elsewhere").
 #
@@ -69,6 +70,10 @@ def Fr.local(+id: String) -> String:
 
 def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
   match c:
+    case M.ProjectCreated{+id, title, root, at}:
+      Some{M.ProjectCreated{Fr.id(l, id), title, root, at}}
+    case M.ProjectRemoved{+id, at}:
+      Some{M.ProjectRemoved{Fr.id(l, id), at}}
     case M.ThreadCreated{+id, +project, title, env, branch, worktree, provider, model, at}:
       Some{M.ThreadCreated{Fr.id(l, id), Fr.opt(l, project), title, env, branch, worktree, provider, model, at}}
     case M.ThreadRenamed{+id, title, at}:
@@ -140,9 +145,8 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
 
 # What the owning hub shares
 # --------------------------
-# Its bots and every thread that belongs to no project (a bot's own), with
-# what happens in them: turns, asks, the tasks they delegate. Nothing
-# about projects, settings, devices, links, hooks or rooms.
+# Its projects, bots and threads, shared only over an owner-trusted link
+# by the server. Settings, devices, links, hooks and rooms stay home.
 
 def Fr.st.threads(s: M.State) -> Map<&2, M.Thread>:
   match s:
@@ -168,14 +172,14 @@ def Fr.got.thread(r: Map<&2, M.Thread> & M.Thread) -> M.Thread:
   (_, t) = r
   t
 
-# a thread kept here that belongs to no project
+# A thread owned here. Mirrors are client projections, never re-exported.
 def Fr.has(r: Map<&2, M.Thread> & Bool) -> Bool:
   (_, b) = r
   b
 
 def Fr.thread.shared(+s: M.State, +th: String) -> Bool:
   Bool.and(Fr.has(Map.has(&2, M.Thread, Fr.st.threads(s), th)),
-    String.is_empty(Fr.thread.project(Fr.got.thread(Map.get(M.Thread, M.Thread.blank(th), Fr.st.threads(s), th)))))
+    Bool.not(Fr.is(th)))
 
 def Fr.ask.thread(r: Map<&2, M.Ask> & M.Ask) -> String:
   match r:
@@ -197,6 +201,10 @@ def Fr.task.shared(+s: M.State, +id: String) -> Bool:
 # machines
 def Fr.shared(+s: M.State, c: M.Change) -> Bool:
   match c:
+    case M.ProjectCreated{+id, _, _, _}:
+      Bool.not(Fr.is(id))
+    case M.ProjectRemoved{+id, _}:
+      Bool.not(Fr.is(id))
     case M.ThreadCreated{+id, _, _, _, _, _, _, _, _}:
       Fr.thread.shared(s, id)
     case M.ThreadRenamed{+id, _, _}:
@@ -362,7 +370,7 @@ def Fr.head(+s: M.State, +link: String) -> Nat:
   M.Nav.until(M.Nav.get(M.State.navs(s), Fr.nav(link)))
 
 def Fr.head.set(s: M.State, +link: String, +h: Nat) -> M.State:
-  M.State.nav((x => M.Nav{h, "", ""}), s, Fr.nav(link))
+  M.State.nav((x => M.Nav.snoozed(x, h)), s, Fr.nav(link))
 
 def Fr.apply.k(m: Maybe<&2, M.Change>, s: M.State) -> M.State:
   match m:
@@ -396,48 +404,150 @@ def Fr.fold.k(g: Got, +link: String, s: M.State) -> M.State:
 def Fr.fold(+s: M.State, +link: String, +since: Nat, +to: Nat, xs: List<&2, Item>) -> M.State:
   Fr.fold.k(Fr.take(Fr.head(s, link), since, to, xs), link, s)
 
+# Machine metadata lives beside the cursor in the client projection, so
+# every UI can label a row from M.State without a separate info lookup.
+def Fr.mark(s: M.State, +link: String, +name: String, +away: Bool) -> M.State:
+  M.State.nav((x => M.Nav{M.Nav.until(x), name, Bool.pick(String, away, "away", "")}), s, Fr.nav(link))
+
+def Fr.name(+s: M.State, +id: String) -> String:
+  M.Nav.key(M.Nav.get(M.State.navs(s), Fr.nav(Fr.link(id))), "pinned")
+
+def Fr.away(+s: M.State, +id: String) -> Bool:
+  Bool.and(Fr.is(id), String.eq(M.Nav.key(M.Nav.get(M.State.navs(s), Fr.nav(Fr.link(id))), "active"), "away"))
+
+def Fr.title.k(far: Bool, +s: M.State, +id: String, title: String) -> String:
+  match far:
+    case False{}:
+      title
+    case True{}:
+      title ++ " · " ++ Bool.pick(String, String.is_empty(Fr.name(s, id)), Fr.link(id), Fr.name(s, id)) ++ Bool.pick(String, Fr.away(s, id), " (away)", "")
+
+def Fr.title(+s: M.State, +id: String, title: String) -> String:
+  Fr.title.k(Fr.is(id), s, id, title)
+
+# A history reset removes only that link's projection; it never changes
+# the local sequence, local entries, or another machine's mirror.
+def Fr.map.step(-A: Data, remove: Bool, m: Map<&2, A>, key: String) -> Map<&2, A>:
+  match remove:
+    case True{}:
+      Map.del(&2, A, m, key)
+    case False{}:
+      m
+
+def Fr.map.go(-A: Data, ks: List<&2, String>, m: Map<&2, A>, +prefix: String) -> Map<&2, A>:
+  match ks:
+    case Nil{}:
+      m
+    case +k <> t:
+      Fr.map.go(A, t, Fr.map.step(A, String.starts_with(k, prefix), m, k), prefix)
+
+def Fr.map(-A: Data, +m: Map<&2, A>, +prefix: String) -> Map<&2, A>:
+  Fr.map.go(A, Map.keys(&2, A, m), m, prefix)
+
+def Fr.entries.keep(remove: Bool, e: M.Entry, acc: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match remove:
+    case True{}:
+      acc
+    case False{}:
+      e <> acc
+
+def Fr.entries.go(es: List<&2, M.Entry>, +prefix: String, acc: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match es:
+    case Nil{}:
+      List.reverse(&2, M.Entry, acc)
+    case +e <> t:
+      Fr.entries.go(t, prefix, Fr.entries.keep(String.starts_with(M.Idx.thread(e), prefix), e, acc))
+
+def Fr.index(es: List<&2, M.Entry>, by: Map<&2, List<&2, M.Entry>>) -> Map<&2, List<&2, M.Entry>>:
+  match es:
+    case Nil{}:
+      by
+    case +e <> t:
+      Fr.index(t, M.Idx.post(by, e))
+
+def Fr.world(w: BT.World, +prefix: String) -> BT.World:
+  match w:
+    case BT.World{bs, rs, ps, hs, ro, ms, pe, sp, ho, ta, pg}:
+      BT.World{Fr.map(BT.Bot, bs, prefix), rs, ps, hs, Fr.map(BT.Routine, ro, prefix), Fr.map(BT.Mem, ms, prefix), pe,
+        Fr.map(String, sp, prefix), Fr.map(BT.Hops, ho, prefix), Fr.map(Nat, ta, prefix), Fr.map(BT.Page, pg, prefix)}
+
+def Fr.ext(bw: List<&2, M.Ext>, +prefix: String, es: List<&2, M.Entry>) -> List<&2, M.Ext>:
+  [M.Ext{Fr.world(M.Ext.world(M.Ext.of(bw)), prefix), Fr.index(List.reverse(&2, M.Entry, es), Map.new(&2, List<&2, M.Entry>))}]
+
+def Fr.forget(s: M.State, +link: String) -> M.State:
+  match s:
+    case M.State{ps, ts, +es, n, tk, sg, qu, ak, dv, +nv, bw}:
+      +prefix = link ++ "~"
+      +kept = Fr.entries.go(es, prefix, Nil{})
+      M.State{Fr.map(M.Project, ps, prefix), Fr.map(M.Thread, ts, prefix), kept, n, Fr.map(M.Task, tk, prefix), sg,
+        Fr.map(List<&2, M.QItem>, qu, prefix), Fr.map(M.Ask, ak, prefix), dv,
+        Map.del(&2, M.Nav, Fr.map(M.Nav, nv, prefix), Fr.nav(link)), Fr.ext(bw, prefix, kept)}
+
+def Fr.epoch.nav(+link: String) -> String:
+  "epoch~" ++ link
+
+def Fr.epoch.of(+s: M.State, +link: String) -> String:
+  M.Nav.key(M.Nav.get(M.State.navs(s), Fr.epoch.nav(link)), "pinned")
+
+def Fr.epoch.keep(s: M.State, +link: String, +epoch: String) -> M.State:
+  M.State.nav((x => M.Nav.keyed(x, "pinned", epoch)), s, Fr.epoch.nav(link))
+
+def Fr.recv.base(reset: Bool, s: M.State, +link: String) -> M.State:
+  match reset:
+    case True{}:
+      Fr.forget(s, link)
+    case False{}:
+      s
+
+def Fr.epoch.changed(+old: String, +epoch: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(epoch)), Bool.not(String.eq(old, epoch)))
+
+def Fr.recv(+s: M.State, +link: String, +epoch: String, +since: Nat, +to: Nat, xs: List<&2, Item>) -> M.State:
+  Fr.epoch.keep(Fr.fold(Fr.recv.base(Fr.epoch.changed(Fr.epoch.of(s, link), epoch), s, link), link, since, to, xs), link,
+    Bool.pick(String, String.is_empty(epoch), Fr.epoch.of(s, link), epoch))
+
 # A hub's mirror of a link
 # ------------------------
 # What the other end sent, in its order, how far it goes, its name, and
 # whether it answered last time (away: shown, stale, until it does).
 
 type In is Data:
-  In{link: String, name: String, head: Nat, items: List<&2, Item>, away: Bool}
+  In{link: String, name: String, head: Nat, items: List<&2, Item>, away: Bool, epoch: String}
 
 def In.new(+link: String, +name: String) -> In:
-  In{link, name, 0n, Nil{}, True{}}
+  In{link, name, 0n, Nil{}, True{}, ""}
 
 def In.link(i: In) -> String:
   match i:
-    case In{l, _, _, _, _}:
+    case In{l, _, _, _, _, _}:
       l
 
 def In.head(i: In) -> Nat:
   match i:
-    case In{_, _, h, _, _}:
+    case In{_, _, h, _, _, _}:
       h
 
 def In.away(i: In) -> Bool:
   match i:
-    case In{_, _, _, _, a}:
+    case In{_, _, _, _, a, _}:
       a
 
 def In.away.set(i: In, a: Bool) -> In:
   match i:
-    case In{l, n, h, xs, _}:
-      In{l, n, h, xs, a}
+    case In{l, n, h, xs, _, e}:
+      In{l, n, h, xs, a, e}
 
 def In.name.set(i: In, +nm: String) -> In:
   match i:
-    case In{l, n, h, xs, a}:
-      In{l, Bool.pick(String, String.is_empty(nm), n, nm), h, xs, a}
+    case In{l, n, h, xs, a, e}:
+      In{l, Bool.pick(String, String.is_empty(nm), n, nm), h, xs, a, e}
 
 def In.put.k(g: Got, i: In) -> In:
   match g i:
     case Got{_, _, True{}} _:
       i
-    case Got{h, ys, False{}} In{l, n, _, xs, _}:
-      In{l, n, h, List.append(&2, Item, xs, ys), False{}}
+    case Got{h, ys, False{}} In{l, n, _, xs, _, e}:
+      In{l, n, h, List.append(&2, Item, xs, ys), False{}, e}
 
 # a batch into the mirror (it answered, so it is here)
 def In.put(+i: In, +since: Nat, +to: Nat, xs: List<&2, Item>) -> In:
@@ -452,11 +562,36 @@ def Fr.msg(+link: String, +name: String, away: Bool, +since: Nat, +head: Nat, xs
   J.Json.show(J.Json.obj([J.KV{"t", J.Str{"far"}}, J.KV{"link", J.Str{link}}, J.KV{"name", J.Str{name}}, J.KV{"away", J.Json.bool(away)},
     J.KV{"since", J.Json.nat(since)}, J.KV{"head", J.Json.nat(head)}, J.KV{"items", J.Json.arr(Fr.items.json(xs))}]))
 
+def Fr.epoch.fields(o: J.Json) -> J.Json:
+  match o:
+    case J.Obj{fs}:
+      fs
+    case _:
+      J.End{}
+
+def In.epoch(i: In) -> String:
+  match i:
+    case In{_, _, _, _, _, e}:
+      e
+
+def In.epoch.set(i: In, e: String) -> In:
+  match i:
+    case In{l, n, h, xs, a, _}:
+      In{l, n, h, xs, a, e}
+
+# Optional on the wire: old clients still decode the same far message.
+def Fr.with.epoch(+text: String, epoch: String) -> String:
+  J.Json.show(J.Obj{J.Field{"epoch", J.Str{epoch}, Fr.epoch.fields(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))}})
+
+def Fr.msg.epoch(+link: String, +name: String, away: Bool, +since: Nat, +head: Nat, xs: List<&2, Item>, epoch: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"t", J.Str{"far"}}, J.KV{"link", J.Str{link}}, J.KV{"name", J.Str{name}}, J.KV{"away", J.Json.bool(away)},
+    J.KV{"since", J.Json.nat(since)}, J.KV{"head", J.Json.nat(head)}, J.KV{"epoch", J.Str{epoch}}, J.KV{"items", J.Json.arr(Fr.items.json(xs))}]))
+
 # all a mirror holds, for a client that just joined
 def In.msg(i: In) -> String:
   match i:
-    case In{+l, +n, +h, xs, a}:
-      Fr.msg(l, n, a, 0n, h, xs)
+    case In{+l, +n, +h, xs, a, +e}:
+      Fr.msg.epoch(l, n, a, 0n, h, xs, e)
 
 # Mirrors by link
 # ---------------
@@ -502,7 +637,7 @@ def Fr.may(+m: String) -> Bool:
 
 # the params that name a thing (the ones renamed on the way)
 def Fr.keys() -> List<&2, String>:
-  ["thread", "id", "bot"]
+  ["thread", "id", "bot", "routine", "task", "parent", "child", "project", "ask"]
 
 def Fr.key(+k: String) -> Bool:
   Fr.may.go(Fr.keys(), k)
@@ -571,6 +706,22 @@ def Fr.allowed.k(+s: M.State, +m: String, +p: J.Json) -> Bool:
 
 def Fr.allowed(+s: M.State, +o: J.Json) -> Bool:
   Bool.and(Fr.may(J.Json.get_str(o, "m", "")), Fr.allowed.k(s, J.Json.get_str(o, "m", ""), J.Json.get_obj(o, "p")))
+
+# The owning hub's reply keeps its success/error and payload; only the
+# caller's request id is restored on the receiving hub.
+def Fr.reply.fields(fs: J.Json, +id: String) -> J.Json:
+  match fs:
+    case J.Field{+k, +v, t}:
+      J.Field{k, Bool.pick(J.Json, String.eq(k, "id"), J.Num{id}, v), Fr.reply.fields(t, id)}
+    case x:
+      x
+
+def Fr.reply(o: J.Json, +id: String) -> String:
+  J.Json.show(J.Obj{Fr.reply.fields(Fr.obj.fields(o), id)})
+
+# A late disk load never replaces a mirror already updated by traffic.
+def In.loaded(+live: In, +disk: In) -> In:
+  Bool.pick(In, Bool.and(In.away(live), Nat.is_ge(In.head(disk), In.head(live))), disk, live)
 
 # How a thing elsewhere is shown
 # ------------------------------
@@ -784,14 +935,14 @@ def Send.body(s: Send, +name: String) -> String:
 # (None until made from the log), and the lines committed meanwhile
 
 type Fh is Data:
-  Fh{ins: List<&2, In>, outs: List<&2, Out>, feed: Maybe<&2, List<&2, Line>>, early: List<&2, Line>, pulls: List<&2, String>}
+  Fh{ins: List<&2, In>, outs: List<&2, Out>, feed: Maybe<&2, List<&2, Line>>, early: List<&2, Line>, pulls: List<&2, String>, epoch: String}
 
 def Fh.empty() -> Fh:
-  Fh{Nil{}, Nil{}, None{}, Nil{}, Nil{}}
+  Fh{Nil{}, Nil{}, None{}, Nil{}, Nil{}, ""}
 
 def Fh.ins(f: Fh) -> List<&2, In>:
   match f:
-    case Fh{i, _, _, _, _}:
+    case Fh{i, _, _, _, _, _}:
       i
 
 def Fh.in(+f: Fh, +link: String, +name: String) -> In:
@@ -799,23 +950,23 @@ def Fh.in(+f: Fh, +link: String, +name: String) -> In:
 
 def Fh.in.set(f: Fh, i: In) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p}:
-      Fh{Ins.set(ms, i), os, fd, e, p}
+    case Fh{ms, os, fd, e, p, ep}:
+      Fh{Ins.set(ms, i), os, fd, e, p, ep}
 
 def Fh.out(+f: Fh, +link: String) -> Out:
   match f:
-    case Fh{_, os, _, _, _}:
+    case Fh{_, os, _, _, _, _}:
       Outs.get(os, link)
 
 def Fh.out.set(f: Fh, o: Out) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p}:
-      Fh{ms, Outs.set(os, o), fd, e, p}
+    case Fh{ms, os, fd, e, p, ep}:
+      Fh{ms, Outs.set(os, o), fd, e, p, ep}
 
 # the feed, None until it is made from the log
 def Fh.feed(f: Fh) -> Maybe<&2, List<&2, Line>>:
   match f:
-    case Fh{_, _, fd, _, _}:
+    case Fh{_, _, fd, _, _, _}:
       fd
 
 def Fh.feed.put(m: Maybe<&2, List<&2, Line>>, e: List<&2, Line>, ls: List<&2, Line>) -> Maybe<&2, List<&2, Line>> & List<&2, Line>:
@@ -827,8 +978,8 @@ def Fh.feed.put(m: Maybe<&2, List<&2, Line>>, e: List<&2, Line>, ls: List<&2, Li
 
 def Fh.feed.at.k(f: Fh, fd: Maybe<&2, List<&2, Line>>, e: List<&2, Line>) -> Fh:
   match f:
-    case Fh{ms, os, _, _, p}:
-      Fh{ms, os, fd, e, p}
+    case Fh{ms, os, _, _, p, ep}:
+      Fh{ms, os, fd, e, p, ep}
 
 def Fh.feed.at(f: Fh, r: Maybe<&2, List<&2, Line>> & List<&2, Line>) -> Fh:
   (fd, e) = r
@@ -837,25 +988,25 @@ def Fh.feed.at(f: Fh, r: Maybe<&2, List<&2, Line>> & List<&2, Line>) -> Fh:
 # a commit's shared lines (newest first) join the feed, or wait for it
 def Fh.feed.add(f: Fh, ls: List<&2, Line>) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p}:
-      Fh.feed.at(Fh{ms, os, None{}, Nil{}, p}, Fh.feed.put(fd, e, ls))
+    case Fh{ms, os, fd, e, p, ep}:
+      Fh.feed.at(Fh{ms, os, None{}, Nil{}, p, ep}, Fh.feed.put(fd, e, ls))
 
 # the feed made from the log (up to where it was when asked), with what
 # was committed since on top
 def Fh.feed.ready(f: Fh, ls: List<&2, Line>) -> Fh:
   match f:
-    case Fh{ms, os, _, e, p}:
-      Fh{ms, os, Some{List.append(&2, Line, e, ls)}, Nil{}, p}
+    case Fh{ms, os, _, e, p, ep}:
+      Fh{ms, os, Some{List.append(&2, Line, e, ls)}, Nil{}, p, ep}
 
 def Fh.pulling(+f: Fh, +link: String) -> Bool:
   match f:
-    case Fh{_, _, _, _, p}:
+    case Fh{_, _, _, _, p, _}:
       Fr.may.go(p, link)
 
 def Fh.pull.on(f: Fh, +link: String) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p}:
-      Fh{ms, os, fd, e, link <> p}
+    case Fh{ms, os, fd, e, p, ep}:
+      Fh{ms, os, fd, e, link <> p, ep}
 
 def Fh.pull.off.go(ps: List<&2, String>, +link: String) -> List<&2, String>:
   match ps:
@@ -866,8 +1017,18 @@ def Fh.pull.off.go(ps: List<&2, String>, +link: String) -> List<&2, String>:
 
 def Fh.pull.off(f: Fh, +link: String) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p}:
-      Fh{ms, os, fd, e, Fh.pull.off.go(p, link)}
+    case Fh{ms, os, fd, e, p, ep}:
+      Fh{ms, os, fd, e, Fh.pull.off.go(p, link), ep}
+
+def Fh.epoch(f: Fh) -> String:
+  match f:
+    case Fh{_, _, _, _, _, ep}:
+      ep
+
+def Fh.epoch.set(f: Fh, +epoch: String) -> Fh:
+  match f:
+    case Fh{ms, os, fd, e, p, +ep}:
+      Fh{ms, os, fd, e, p, Bool.pick(String, String.is_empty(epoch), ep, epoch)}
 
 # lines (newest first) as items, oldest first
 def Fr.lines.items(ls: List<&2, Line>, acc: List<&2, Item>) -> List<&2, Item>:
@@ -907,34 +1068,34 @@ def Fr.some.j(m: Maybe<&2, J.Json>) -> Bool:
     case None{}:
       False{}
 
-def Fr.file.item(m: Maybe<&2, J.Json>, +h: Nat, +acc: List<&2, Item>) -> Nat & List<&2, Item>:
-  match m:
-    case Some{+o}:
-      Bool.pick(Nat & List<&2, Item>, Fr.some.j(J.Json.get(o, "c")), (h, Item.of(o) <> acc), (J.Json.get_nat(o, "head", h), acc))
-    case None{}:
-      (h, acc)
+# New files carry an epoch header before their batches. Old files remain
+# readable; the first epoch-aware pull replaces that legacy projection.
+def Fr.file.line(m: Maybe<&2, J.Json>, i: In) -> In:
+  match m i:
+    case Some{+o} In{+l, +n, +h, +xs, +a, +e}:
+      Bool.pick(In, Fr.some.j(J.Json.get(o, "c")), In{l, n, h, Item.of(o) <> xs, a, e},
+        In{l, n, J.Json.get_nat(o, "head", h), xs, a, J.Json.get_str(o, "epoch", e)})
+    case None{} _:
+      i
 
-def Fr.file.fin(r: Nat & List<&2, Item>, +link: String, +name: String) -> In:
-  (h, acc) = r
-  In{link, name, h, List.reverse(&2, Item, acc), True{}}
-
-def Fr.file.step(+l: String, r: Nat & List<&2, Item>) -> Nat & List<&2, Item>:
-  (h, acc) = r
-  Fr.file.item(J.Json.parse(l), h, acc)
-
-def Fr.file.go(ls: List<&2, String>, r: Nat & List<&2, Item>) -> Nat & List<&2, Item>:
+def Fr.file.scan(ls: List<&2, String>, i: In) -> In:
   match ls:
     case Nil{}:
-      r
-    case +l <> t:
-      Fr.file.go(t, Fr.file.step(l, r))
+      i
+    case l <> t:
+      Fr.file.scan(t, Fr.file.line(J.Json.parse(l), i))
+
+def Fr.file.done(i: In) -> In:
+  match i:
+    case In{l, n, h, xs, a, e}:
+      In{l, n, h, List.reverse(&2, Item, xs), a, e}
 
 def Fr.file.read(+text: String, +link: String, +name: String) -> In:
-  Fr.file.fin(Fr.file.go(String.lines(text), (0n, Nil{})), link, name)
+  Fr.file.done(Fr.file.scan(String.lines(text), In.new(link, name)))
 
 def In.name.of(i: In) -> String:
   match i:
-    case In{_, n, _, _, _}:
+    case In{_, n, _, _, _, _}:
       n
 
 # a push that only says where it ends, as a gap: the other end pulls
@@ -961,5 +1122,5 @@ def Fr.page.html.go(xs: List<&2, Item>, +bot: String, +cur: String) -> String:
 
 def In.page(i: In, +bot: String) -> String:
   match i:
-    case In{_, _, _, xs, _}:
+    case In{_, _, _, xs, _, _}:
       Fr.page.html.go(xs, bot, "")
