@@ -249,7 +249,7 @@ type Did is Data:
 def One.got.k(+seen: List<&2, N.Seen>, a: U.Act) -> Did:
   match a:
     case U.Act{+u, cmds}:
-      Did{U.Act{u, cmds}, N.Note.alerts(U.Ui.threads(S.Mob.st(u)), seen, S.Mob.st(u), U.Ui.entries(S.Mob.st(u)))}
+      Did{U.Act{u, cmds}, N.Note.alerts(U.Ui.threads(S.Mob.st(u)), seen, S.Mob.st(u), U.Ui.entries(S.Mob.st(u)), U.Ui.info(u, "desk"))}
 
 def One.got.seen(a: U.Act) -> U.Act:
   match a:

@@ -13,6 +13,7 @@ import ./voice.bend as VC
 import ./space.bend as SPC
 import ./refs.bend as RF
 import ./mech.bend as MC
+import ./desk.bend as DK
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -51,6 +52,9 @@ type Cmd is Data:
   # a thread's draft as it now is: the host writes it down at once (a file,
   # local storage) so a crash loses nothing typed; "" forgets it
   Keep{thread: String, text: String}
+  # a desktop notification the hub sent this desk (core/desk.bend): the
+  # host shows it (a click opens the thread); `key` replaces an earlier one
+  Notify{thread: String, title: String, body: String, key: String}
 
 type Act is Data:
   Act{ui: Ui, cmds: List<&2, Cmd>}
@@ -519,7 +523,7 @@ def Ui.pending(u: Ui, +thread: String) -> List<&2, String>:
 def Ui.online(u: Ui, b: Bool) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, _, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, "@mech.at", ""), "@solid.at", ""), live, op, b, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, dr, "@mech.at", ""), "@solid.at", ""), "@desk", ""), live, op, b, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
 
 # the clock goes in the info map too, where a thread's folded turns read
 # it ("5m ago", FO.Fold.roles)
@@ -4602,8 +4606,40 @@ def Ui.shows(+u: Ui, +o: J.Json) -> Bool:
 def Ui.recv_act.go(u: Ui, +o: J.Json) -> Act:
   Ui.recv_act.t(String.eq(J.Json.get_str(o, "t", ""), "term"), J.Json.get_str(o, "thread", ""), Ui.recv_act.k(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv(u, o)))
 
+# a desktop notification ({"t":"notify"}, sent only to a desk)
+def Ui.recv_act.n(notify: Bool, u: Ui, +o: J.Json) -> Act:
+  match notify:
+    case True{}:
+      Act{u, [Notify{J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "title", ""), J.Json.get_str(o, "body", ""), J.Json.get_str(o, "key", "")}]}
+    case False{}:
+      Mpage.sync(Ui.recv_act.go(u, o))
+
 def Ui.recv_act(u: Ui, +o: J.Json) -> Act:
-  Mpage.sync(Ui.recv_act.go(u, o))
+  Ui.recv_act.n(String.eq(J.Json.get_str(o, "t", ""), "notify"), u, o)
+
+# Desks
+# -----
+# The window and the web page (never a phone) tell the hub which thread
+# they show and whether they have the focus, when either changes and at
+# most every beat while in use (core/desk.bend's Desk.due). The hub then
+# holds phone alerts for a thread a desk watches, and sends the desk used
+# last a desktop notification for the rest. A new connection resets
+# "@desk" (Ui.online), so it hears the look again.
+
+def Ui.desk.k(due: Bool, +u: Ui, +thread: String, +focused: Bool, +now: Nat) -> Act:
+  match due:
+    case True{}:
+      Ui.rpc(Ui.scratch_set(Ui.scratch_set(u, "@desk", DK.Desk.said(thread, focused)), "@desk.at", Nat.show(now)), "desk.look", DK.Desk.params(thread, focused))
+    case False{}:
+      Act{u, Nil{}}
+
+# a desk's host calls this after its input, focus changes and messages
+def Ui.desk(+u: Ui, +focused: Bool, +now: Nat) -> Act:
+  Ui.desk.k(DK.Desk.due(Ui.scratch(u, "@desk"), Ui.scratch(u, "@desk.at"), Ui.sel(u), focused, now), u, Ui.sel(u), focused, now)
+
+# a new connection to a hub (the window's link): the desk says its look again
+def Ui.desk.reset(u: Ui) -> Ui:
+  Ui.scratch_set(u, "@desk", "")
 
 # Pages of a timeline
 # -------------------

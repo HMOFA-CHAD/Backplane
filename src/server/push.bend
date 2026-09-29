@@ -5,13 +5,16 @@ import ../core/hub.bend as B
 import ../core/sha1.bend as S
 import ../core/utf8.bend as U
 import ../core/notice.bend as NO
+import ../core/desk.bend as DK
 import ./host.bend as H
 import ./proc.bend as P
 
 # Phone notifications (APNs alerts and Live Activity updates). The hub
 # calls Push.turn_ended once for every turn that completes or fails, off
 # its own thread (the server spawns it), with the state as it was when the
-# turn ended. `state` is "completed" or "failed".
+# turn ended. `state` is "completed" or "failed"; `seen` says a desk (the
+# window, a web page) is watching the thread, so no alert goes out
+# (core/desk.bend), only the island's update.
 #
 # Nothing happens until the settings push.apns.key (the path of the .p8
 # key; the key itself is never stored), push.apns.keyid and push.apns.team
@@ -413,7 +416,7 @@ def Push.key(+n: NO.Notice) -> String:
 def Push.held.k(none: Bool, +thread: String) -> IO(Unit):
   match none:
     case True{}:
-      IO.print_err("backplane: push alert held for " ++ thread ++ " (a room exchange already told the person)")
+      IO.print_err("backplane: push alert held for " ++ thread ++ " (a desk is watching it, or a room exchange already told the person)")
     case False{}:
       IO.pure(Unit, Unit{})
 
@@ -429,7 +432,7 @@ def Push.gate(no: Bool, ds: List<&2, M.Device>, +j: Job, +prefix: String) -> IO(
     case False{}:
       Push.all(ds, j, prefix, 0n)
 
-def Push.send(+home: String, +st: M.State, +thread: String, +state: String, +key: String, +kid: String, +team: String) -> IO(List<&2, String>):
+def Push.send(+home: String, +st: M.State, +thread: String, +state: String, seen: Bool, +key: String, +kid: String, +team: String) -> IO(List<&2, String>):
   do IO<List<&2, String>>:
     +dir : String = home ++ "/tmp"
     mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir)
@@ -441,7 +444,7 @@ def Push.send(+home: String, +st: M.State, +thread: String, +state: String, +key
     base : String <- Push.env("BACKPLANE_APNS_URL")
     +others : List<&2, M.Thread> = Island.others(st, thread)
     +note : NO.Notice = NO.Notice.of(st, thread, String.eq(state, "failed"), True{})
-    +key : String = Push.key(note)
+    +key : String = DK.Desk.hold(seen, Push.key(note))
     Push.held(key, thread)
     +job : Job = Job{dir, base, jwt, now, thread,
       Push.alert(thread, key, Push.title(B.Hub.thread(st, thread)), Push.body(String.eq(state, "failed"), Push.first(B.Task.last(st, thread)))),
@@ -459,26 +462,26 @@ def Push.skip(phones: Bool) -> IO(List<&2, String>):
     case False{}:
       IO.pure(List<&2, String>, Nil{})
 
-def Push.ready(ok: Bool, phones: Bool, +home: String, +st: M.State, +thread: String, +state: String, +key: String, +kid: String, +team: String) -> IO(List<&2, String>):
+def Push.ready(ok: Bool, phones: Bool, +home: String, +st: M.State, +thread: String, +state: String, seen: Bool, +key: String, +kid: String, +team: String) -> IO(List<&2, String>):
   match ok:
     case True{}:
-      Push.send(home, st, thread, state, key, kid, team)
+      Push.send(home, st, thread, state, seen, key, kid, team)
     case False{}:
       Push.skip(phones)
 
 def Push.any(ds: List<&2, M.Device>) -> Bool:
   Bool.not(List.is_empty(&2, M.Device, ds))
 
-def Push.start(+home: String, +st: M.State, +thread: String, +state: String, +key: String, +kid: String, +team: String) -> IO(List<&2, String>):
+def Push.start(+home: String, +st: M.State, +thread: String, +state: String, seen: Bool, +key: String, +kid: String, +team: String) -> IO(List<&2, String>):
   do IO<List<&2, String>>:
     has : Bool <- Push.exists(key)
     +phones : Bool = Push.any(Push.devices(st))
     Push.ready(Bool.and(has, Bool.and(phones, Bool.not(Bool.or(String.is_empty(key), Bool.or(String.is_empty(kid), String.is_empty(team)))))),
-      phones, home, st, thread, state, key, kid, team)
+      phones, home, st, thread, state, seen, key, kid, team)
 
 # every push for a turn that ended; answers the tokens APNs reported dead
-def Push.turn_ended.dead(+home: String, +st: M.State, +thread: String, +state: String) -> IO(List<&2, String>):
-  Push.start(home, st, thread, state, M.Setting.get(st, "push.apns.key", ""), M.Setting.get(st, "push.apns.keyid", ""), M.Setting.get(st, "push.apns.team", ""))
+def Push.turn_ended.dead(+home: String, +st: M.State, +thread: String, +state: String, seen: Bool) -> IO(List<&2, String>):
+  Push.start(home, st, thread, state, seen, M.Setting.get(st, "push.apns.key", ""), M.Setting.get(st, "push.apns.keyid", ""), M.Setting.get(st, "push.apns.team", ""))
 
 # the request that forgets a dead token (for the hub's inbox, as a client
 # request would; the reply goes to no one)
@@ -490,5 +493,5 @@ def Push.turn_ended.done(dead: List<&2, String>) -> IO(Unit):
 
 # without the hub's inbox: dead tokens are found but not dropped (the hub
 # calls Push.turn_ended.dead and posts Push.drop_request for each)
-def Push.turn_ended(+home: String, st: M.State, +thread: String, +state: String) -> IO(Unit):
-  IO.bind(List<&2, String>, Unit, Push.turn_ended.dead(home, st, thread, state), Push.turn_ended.done)
+def Push.turn_ended(+home: String, st: M.State, +thread: String, +state: String, seen: Bool) -> IO(Unit):
+  IO.bind(List<&2, String>, Unit, Push.turn_ended.dead(home, st, thread, state, seen), Push.turn_ended.done)
