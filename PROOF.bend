@@ -1,4 +1,5 @@
 import Base
+import ./src/gfx/text.bend as X
 import ./src/core/bothub.bend as BHS
 import ./src/core/bot.bend as BOT
 import ./src/core/botui.bend as BU
@@ -5730,4 +5731,31 @@ def Laws.bots_away_cat_posed_once(c):
   {==}
 
 def Laws.bots_moving_cat_follows_clock(c):
+  {==}
+
+# Text fitting: early exit preserves the original recurrence.
+
+def Laws.fit_count_guard(s, fits, cache, f, max, used):
+  match s fits:
+    case SNil{} False{}:
+      {==}
+    case SCon{Chr{cp}, t} False{}:
+      {==}
+    case SNil{} True{}:
+      {==}
+    case SCon{Chr{cp}, t} True{}:
+      {==}
+
+def Laws.fit_count_step(cp, s, cache, f, max, used):
+  Laws.fit_count_guard(s, U32.is_le((used + X.TG.adv(X.Text.get(cache, f, cp)) : U32), max),
+    cache, f, max, (used + X.TG.adv(X.Text.get(cache, f, cp)) : U32))
+
+def Laws.fit_chunk_progress(n):
+  match n:
+    case 0n:
+      (0n, {==})
+    case 1n+k:
+      (k, {==})
+
+def Laws.fit_wrap_unicode():
   {==}

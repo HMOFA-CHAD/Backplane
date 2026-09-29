@@ -613,12 +613,16 @@ def Bv.bot(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: B
 type PostL is Data:
   PostL{id: String, from: String, when: String, lines: List<&2, String>}
 
-# Wrapped posts kept from frame to frame (main.bend's Kept): a post's
-# text and its lines at a width, under "<id>:<width>". Layout takes the
-# lines kept only for the same text (a post's id alone could come back
-# with another; a missing glyph's fetch starts them over, Shell.paint.again)
+# Wrapped posts kept from frame to frame (main.bend's Kept). The outer
+# map holds eight recently used conversation/width groups and their order;
+# each group's map holds its posts under "<id>:<width>". A post is reused
+# only for the same text. A missing glyph's fetch starts every group over
+# (Shell.paint.again). The nested map sits behind a List to keep native
+# state records from flattening it into too many fields.
 type PW is Data:
   PW{ok: Bool, text: String, lines: List<&2, String>}
+  PWGroup{posts: List<&2, Map<&2, PW>>}
+  PWKeys{keys: List<&2, String>}
 
 def Bv.wraps.none() -> Map<&2, PW>:
   Map.new(&2, PW)
@@ -641,13 +645,28 @@ def Bv.wrap.k(p: PW, +ty: L.Ty, +text: String, +w: U32) -> List<&2, String>:
   match p:
     case PW{True{}, +t, ls}:
       Bv.wrap.same(Q.Eq.str(t, text), ls, ty, text, w)
-    case PW{False{}, _, _}:
+    case _:
       L.Ty.wrap(ty, 3n, text, w)
 
 # a post's lines: the kept ones when they wrapped the same text, else
 # wrapped now
 def Bv.wrap(+ws: Map<&2, PW>, +ty: L.Ty, +id: String, +text: String, +w: U32) -> List<&2, String>:
   Bv.wrap.k(Bv.wrap.got(Map.get(PW, PW{False{}, "", Nil{}}, ws, Bv.wrap.key(id, w))), ty, text, w)
+
+# Room ids include a remote DM's stable conversation key. Width is part
+# of the group key, so returning after a resize can reuse either layout.
+def Bv.wraps.key(+room: String, +w: U32) -> String:
+  "c:" ++ Bv.wrap.key(room, w)
+
+def Bv.wraps.group.k(p: PW) -> Map<&2, PW>:
+  match p:
+    case PWGroup{ws <> _}:
+      ws
+    case _:
+      Bv.wraps.none()
+
+def Bv.wraps.group(+ws: Map<&2, PW>, +room: String, +w: U32) -> Map<&2, PW>:
+  Bv.wraps.group.k(Bv.wrap.got(Map.get(PW, PW{False{}, "", Nil{}}, ws, Bv.wraps.key(room, w))))
 
 def Bv.posts.l(ps: List<&2, BT.Post>, +ws: Map<&2, PW>, +ty: L.Ty, +u: U.Ui, +now: Nat, +w: U32) -> List<&2, PostL>:
   match ps:
@@ -736,7 +755,7 @@ def Bv.room(+ty: L.Ty, +ws: Map<&2, PW>, +n: S.Nui, r: BT.Room, +x0: U32, +x1: U
       +h = S.Nui.height(n)
       +dw = L.Lay.button.w(ty, "Delete room")
       L.Out.all([
-        Bv.chat(ty, ws, BU.BU.posts(u, id), u, "Nothing said here yet. Every bot in the room hears what is posted.", x0, x1, 52, (h - 60 : U32)),
+        Bv.chat(ty, Bv.wraps.group(ws, id, Bv.pane.w(x0, x1)), BU.BU.posts(u, id), u, "Nothing said here yet. Every bot in the room hears what is posted.", x0, x1, 52, (h - 60 : U32)),
         Bv.say(ty, F.Fm.fs(n), "rpost", "room-post", "Write to the room", x0, x1, h),
         Bv.top(ty, "# " ++ name, BU.BU.members(u, BT.Room{id, name, ms, cr, de}), x0, x1,
           F.Fm.button(ty, D.Clip.all(), (x1 - 16 - dw : U32), 12, "Delete room", T.Th.soft(), "room-delete", id))])
@@ -759,7 +778,7 @@ def Bv.remote(+ty: L.Ty, +ws: Map<&2, PW>, +cats: Map<&2, CA.CatF>, +n: S.Nui, +
   +u = S.Nui.ui(n)
   +h = S.Nui.height(n)
   L.Out.all([
-    Bv.chat(ty, ws, BU.BU.remote.posts(u, id), u, "Write to " ++ id ++ ". It answers from its own machine.", x0, x1, 52, (h - 60 : U32)),
+    Bv.chat(ty, Bv.wraps.group(ws, BT.Room.dm("you", id), Bv.pane.w(x0, x1)), BU.BU.remote.posts(u, id), u, "Write to " ++ id ++ ". It answers from its own machine.", x0, x1, 52, (h - 60 : U32)),
     Bv.say(ty, F.Fm.fs(n), "rtext", "remote-send", "Write to " ++ id, x0, x1, h),
     Bv.top(ty, "     " ++ id, "on a linked machine", x0, x1, Bv.far.cat(Bv.far.find(BU.BU.remote(u), id), cats, S.Nui.ms_of(n), x0))])
 
@@ -803,9 +822,9 @@ def Bv.frame.w(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2,
 def Bv.frame(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui) -> L.Out:
   Bv.frame.w(ty, memo, cats, Bv.wraps.none(), n)
 
-# the posts on show wrapped for this frame: those of the room or the bot
-# elsewhere shown, at its width, kept from ws where their text is the same
-# (only what is shown is kept)
+# The posts on show wrapped for this frame, reusing the selected group's
+# unchanged texts. Rebuilding this one group removes posts no longer in
+# the conversation's bounded window; other groups stay until evicted.
 def Bv.wraps.put(ps: List<&2, BT.Post>, +ws: Map<&2, PW>, +ty: L.Ty, +w: U32, acc: Map<&2, PW>) -> Map<&2, PW>:
   match ps:
     case Nil{}:
@@ -813,19 +832,62 @@ def Bv.wraps.put(ps: List<&2, BT.Post>, +ws: Map<&2, PW>, +ty: L.Ty, +w: U32, ac
     case BT.Post{+id, _, _, +text, _, _} <> t:
       Bv.wraps.put(t, ws, ty, w, Map.set(&2, PW, acc, Bv.wrap.key(id, w), PW{True{}, text, Bv.wrap(ws, ty, id, text, w)}))
 
+def Bv.wraps.max() -> Nat:
+  8n
+
+def Bv.wraps.keys.k(p: PW) -> List<&2, String>:
+  match p:
+    case PWKeys{ks}:
+      ks
+    case _:
+      Nil{}
+
+def Bv.wraps.keys(+ws: Map<&2, PW>) -> List<&2, String>:
+  Bv.wraps.keys.k(Bv.wrap.got(Map.get(PW, PWKeys{Nil{}}, ws, "@wraps")))
+
+def Bv.wraps.drop.k(same: Bool, k: String, rest: List<&2, String>) -> List<&2, String>:
+  match same:
+    case True{}:
+      rest
+    case False{}:
+      k <> rest
+
+def Bv.wraps.drop(ks: List<&2, String>, +key: String) -> List<&2, String>:
+  match ks:
+    case Nil{}:
+      Nil{}
+    case +k <> t:
+      Bv.wraps.drop.k(String.eq(k, key), k, Bv.wraps.drop(t, key))
+
+def Bv.wraps.evict(ks: List<&2, String>, ws: Map<&2, PW>) -> Map<&2, PW>:
+  match ks:
+    case Nil{}:
+      ws
+    case k <> t:
+      Bv.wraps.evict(t, Map.del(&2, PW, ws, k))
+
+def Bv.wraps.keep(+ws: Map<&2, PW>, +key: String, posts: Map<&2, PW>) -> Map<&2, PW>:
+  +keys = {key <> Bv.wraps.drop(Bv.wraps.keys(ws), key) : List<&2, String>}
+  Map.set(&2, PW, Map.set(&2, PW,
+      Bv.wraps.evict(List.drop(&2, String, keys, Bv.wraps.max()), ws), key, PWGroup{[posts]}),
+    "@wraps", PWKeys{List.take(&2, String, keys, Bv.wraps.max())})
+
+def Bv.wraps.conversation(+ps: List<&2, BT.Post>, +room: String, +ws: Map<&2, PW>, +ty: L.Ty, +w: U32) -> Map<&2, PW>:
+  Bv.wraps.keep(ws, Bv.wraps.key(room, w), Bv.wraps.put(ps, Bv.wraps.group(ws, room, w), ty, w, Bv.wraps.none()))
+
 def Bv.wraps.of(v: BU.View, +u: U.Ui, +ws: Map<&2, PW>, +ty: L.Ty, +w: U32) -> Map<&2, PW>:
   match v:
     case BU.VRoom{BT.Room{+id, _, _, _, _}}:
-      Bv.wraps.put(BU.BU.posts(u, id), ws, ty, w, Bv.wraps.none())
+      Bv.wraps.conversation(BU.BU.posts(u, id), id, ws, ty, w)
     case BU.VRemote{+id}:
-      Bv.wraps.put(BU.BU.remote.posts(u, id), ws, ty, w, Bv.wraps.none())
+      Bv.wraps.conversation(BU.BU.remote.posts(u, id), BT.Room.dm("you", id), ws, ty, w)
     case _:
-      Bv.wraps.none()
+      ws
 
 def Bv.wraps.k(settings: Bool, +ty: L.Ty, +n: S.Nui, +ws: Map<&2, PW>) -> Map<&2, PW>:
   match settings:
     case True{}:
-      Bv.wraps.none()
+      ws
     case False{}:
       Bv.wraps.of(BU.BU.view(S.Nui.ui(n)), S.Nui.ui(n), ws, ty, Bv.pane.w(264, L.Lay.x1(n)))
 

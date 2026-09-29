@@ -368,6 +368,19 @@ def Fit.count.k(ok: Bool, rest: Nat) -> Nat:
     case False{}:
       0n
 
+# The decision belongs to the character just examined. Branch before
+# touching the suffix: eager arguments to Fit.count.k walked all of it,
+# even when the first character overflowed.
+def Fit.count.go(s: String, fits: Bool, +cache: Map<&2, TG>, +f: Face, +max: U32, +used: U32) -> Nat:
+  match s fits:
+    case _ False{}:
+      0n
+    case SNil{} True{}:
+      1n
+    case SCon{Chr{+cp}, t} True{}:
+      +u2 = (used + TG.adv(Text.get(cache, f, cp)) : U32)
+      1n+Fit.count.go(t, U32.is_le(u2, max), cache, f, max, u2)
+
 # how many leading characters of s fit in max (26.6) after used
 def Fit.count(s: String, +cache: Map<&2, TG>, +f: Face, +max: U32, +used: U32) -> Nat:
   match s:
@@ -375,16 +388,30 @@ def Fit.count(s: String, +cache: Map<&2, TG>, +f: Face, +max: U32, +used: U32) -
       0n
     case SCon{Chr{+cp}, t}:
       +u2 = (used + TG.adv(Text.get(cache, f, cp)) : U32)
-      Fit.count.k(U32.is_le(u2, max), Fit.count(t, cache, f, max, u2))
+      Fit.count.go(t, U32.is_le(u2, max), cache, f, max, u2)
+
+# Always make progress, even when a single glyph is wider than the line.
+def Fit.atleast(n: Nat) -> Nat:
+  match n:
+    case 0n:
+      1n
+    case 1n+k:
+      1n+k
+
+# Pieces newest first, so even a token broken into many narrow lines
+# never builds a call stack proportional to the number of lines.
+def Fit.chunk.go(n: Nat, empty: Bool, +s: String, +cache: Map<&2, TG>, +f: Face, +max: U32, acc: List<&2, String>) -> List<&2, String>:
+  match n empty:
+    case 1n+m False{}:
+      +k = Fit.atleast(Fit.count(s, cache, f, max, 0))
+      +rest = String.drop(s, k)
+      Fit.chunk.go(m, String.is_empty(rest), rest, cache, f, max, String.take(s, k) <> acc)
+    case _ _:
+      List.reverse(&2, String, acc)
 
 # s in pieces that each fit in max (at least one character each)
 def Fit.chunk(n: Nat, empty: Bool, +s: String, +cache: Map<&2, TG>, +f: Face, +max: U32) -> List<&2, String>:
-  match n empty:
-    case 1n+m False{}:
-      +k = Bool.pick(Nat, Nat.is_eq(Fit.count(s, cache, f, max, 0), 0n), 1n, Fit.count(s, cache, f, max, 0))
-      String.take(s, k) <> Fit.chunk(m, String.is_empty(String.drop(s, k)), String.drop(s, k), cache, f, max)
-    case _ _:
-      Nil{}
+  Fit.chunk.go(n, empty, s, cache, f, max, Nil{})
 
 # lines so far (newest first), the line being filled, and its advance
 type PAcc is Data:
