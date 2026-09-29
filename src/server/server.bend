@@ -5234,7 +5234,7 @@ def Conn.head(fuel: Nat, s: Socket, +buf: List<&2, U32>, +web: String, +id: U32,
 def Accept.whois(r: Socket & String, +owner: String, +id: U32, +web: String, +inbox: Chan(Msg), +token: String) -> IO(Unit):
   (s, ip) = r
   do IO<Unit>:
-    w : P.Ran <- P.Proc.run("tailscale", ["whois", "--json", ip], "/")
+    w : P.Ran <- P.Proc.run("timeout", ["--kill-after=1", "5", "tailscale", "whois", "--json", ip], "/")
     Conn.head(64n, s, Nil{}, web, id, inbox, TN.Tailnet.trusts(owner, TN.Tailnet.login(Tailnet.out(w))), token)
 
 def Accept.trust(ask: Bool, s: Socket, +owner: String, +id: U32, +web: String, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):

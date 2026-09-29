@@ -63,8 +63,46 @@ type ShellMsg is Data:
 # which hub the window talks to: its own (url "") or another machine's
 # through a link; each connection gets its own tag so messages from one
 # already left are dropped
+type TieKeep is Data:
+  TieKeep{pics: Map<&2, BM.Bitmap>, asked: Map<&2, Bool>, cache: List<&2, U.HubView>}
+
+# Keep the growing connection data behind a list, as Kept does for parks:
+# the window's IO continuations must stay under the native arity limit.
 type Tie is Data:
-  Tie{home: Chan(S.Msg), url: String, tag: String, n: Nat, pics: Map<&2, BM.Bitmap>, asked: Map<&2, Bool>}
+  Tie{home: Chan(S.Msg), url: String, tag: String, n: Nat, kept: List<&2, TieKeep>}
+
+def TieKeep.empty() -> List<&2, TieKeep>:
+  [TieKeep{Map.new(&2, BM.Bitmap), Map.new(&2, Bool), Nil{}}]
+
+def TieKeep.pics(ks: List<&2, TieKeep>) -> Map<&2, BM.Bitmap>:
+  match ks:
+    case TieKeep{ps, _, _} <> _: ps
+    case Nil{}: Map.new(&2, BM.Bitmap)
+
+def TieKeep.asked(ks: List<&2, TieKeep>) -> Map<&2, Bool>:
+  match ks:
+    case TieKeep{_, ak, _} <> _: ak
+    case Nil{}: Map.new(&2, Bool)
+
+def TieKeep.cache(ks: List<&2, TieKeep>) -> List<&2, U.HubView>:
+  match ks:
+    case TieKeep{_, _, cs} <> _: cs
+    case Nil{}: Nil{}
+
+def TieKeep.with_pics(ks: List<&2, TieKeep>, ps: Map<&2, BM.Bitmap>) -> List<&2, TieKeep>:
+  match ks:
+    case TieKeep{_, ak, cs} <> _: [TieKeep{ps, ak, cs}]
+    case Nil{}: [TieKeep{ps, Map.new(&2, Bool), Nil{}}]
+
+def TieKeep.with_asked(ks: List<&2, TieKeep>, ak: Map<&2, Bool>) -> List<&2, TieKeep>:
+  match ks:
+    case TieKeep{ps, _, cs} <> _: [TieKeep{ps, ak, cs}]
+    case Nil{}: [TieKeep{Map.new(&2, BM.Bitmap), ak, Nil{}}]
+
+def TieKeep.with_cache(ks: List<&2, TieKeep>, cs: List<&2, U.HubView>) -> List<&2, TieKeep>:
+  match ks:
+    case TieKeep{ps, ak, _} <> _: [TieKeep{ps, ak, cs}]
+    case Nil{}: [TieKeep{Map.new(&2, BM.Bitmap), Map.new(&2, Bool), cs}]
 
 # what one frame keeps for the next: its tiles, the timeline's memos
 # (the open thread's first, then the threads shown before it), the
@@ -241,8 +279,8 @@ def Pics.size(+w: U32, +h: U32) -> String:
 
 def Tie.pics(t: Tie) -> Map<&2, BM.Bitmap>:
   match t:
-    case Tie{_, _, _, _, ps, _}:
-      ps
+    case Tie{_, _, _, _, ks}:
+      TieKeep.pics(ks)
 
 def Pics.sent.ok(got: U32 & U32 & List<&2, U32>, +q: Chan(ShellMsg), +tag: String, +path: String) -> IO(Unit):
   (w, rest) = got
@@ -402,9 +440,9 @@ def Pics.noted(u: U.Ui, +path: String, +note: String) -> U.Ui:
 
 def Pics.store(a: Shell, +path: String, +note: String, m: Maybe<&2, BM.Bitmap>) -> IO(Shell):
   match a:
-    case Shell{+n, w, _, qd, q, i, Aux{ws, ty, Tie{home, url, tag, k, ps, ak}, fr}}:
+    case Shell{+n, w, _, qd, q, i, Aux{ws, ty, Tie{home, url, tag, k, +ks}, fr}}:
       Shell.later(Shell{N.Nui.with_ui(n, Pics.noted(N.Nui.ui(n), path, note)), w, True{}, qd, q, i,
-        Aux{ws, ty, Tie{home, url, tag, k, Shot.keep(Shot.ok(path, note), m, ps, path), ak}, fr}})
+        Aux{ws, ty, Tie{home, url, tag, k, TieKeep.with_pics(ks, Shot.keep(Shot.ok(path, note), m, TieKeep.pics(ks), path))}, fr}})
 
 # an image loaded (or failed) for this connection: keep it and redraw
 def Pics.got(current: Bool, a: Shell, +path: String, +note: String, m: Maybe<&2, BM.Bitmap>) -> IO(Shell):
@@ -431,9 +469,10 @@ def Pics.uniq(ps: List<&2, String>, +acc: List<&2, String>) -> List<&2, String>:
 # images the frame shows that were never asked for start loading
 def Pics.ask(+hs: List<&2, N.Hit>, wa: Aux, +q: Chan(ShellMsg), +bp: String) -> IO(Aux):
   match wa:
-    case Aux{ws, ty, Tie{home, +url, +tag, n, ps, +ak}, fr}:
+    case Aux{ws, ty, Tie{home, +url, +tag, n, +ks}, fr}:
+      +ak = TieKeep.asked(ks)
       +fresh = Pics.uniq(Pics.new(hs, ak), Nil{})
-      IO.bind(Unit, Aux, Pics.spawn(fresh, url, q, tag, bp), u => IO.pure(Aux, Aux{ws, ty, Tie{home, url, tag, n, ps, Pics.mark(fresh, ak)}, fr}))
+      IO.bind(Unit, Aux, Pics.spawn(fresh, url, q, tag, bp), u => IO.pure(Aux, Aux{ws, ty, Tie{home, url, tag, n, TieKeep.with_asked(ks, Pics.mark(fresh, ak))}, fr}))
 
 # no caret blinks under the lightbox (nothing else asks for frames then)
 def Lbv.blink(on: Bool, +n: N.Nui, +q: Chan(ShellMsg), +ms: Nat) -> IO(N.Nui):
@@ -504,12 +543,12 @@ def Pics.over(hs: List<&2, N.Hit>, +pics: Map<&2, BM.Bitmap>, +done: List<&2, St
 
 def Tie.tag(t: Tie) -> String:
   match t:
-    case Tie{_, _, g, _, _, _}:
+    case Tie{_, _, g, _, _}:
       g
 
 def Tie.url(t: Tie) -> String:
   match t:
-    case Tie{_, u, _, _, _, _}:
+    case Tie{_, u, _, _, _}:
       u
 
 # the hub to join: this machine's own, or a link to another
@@ -520,21 +559,30 @@ def Shell.hub(local: Bool, +home: Chan(S.Msg), +url: String) -> IO(Chan(S.Msg)):
     case False{}:
       LK.Link.start(url)
 
-def Shell.joined(+i2: Chan(S.Msg), +q: Chan(ShellMsg), +tag: String) -> IO(Unit):
+def Shell.joined(+i2: Chan(S.Msg), +q: Chan(ShellMsg), +tag: String, since: Nat, origin: String) -> IO(Unit):
   do IO<Unit>:
     +out : Chan(S.Wire) <- Chan.new(S.Wire, 8192)
-    ok : Bool <- Chan.send(S.Msg, i2, S.Join{0, out, 0n, ""})
+    ok : Bool <- Chan.send(S.Msg, i2, S.Join{0, out, since, origin})
     IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, tag))
+
+# Save the departing installed state before an input step replaces it.
+# The list behind Tie bounds both retained read models and record arity.
+def Shell.remember(a: Shell) -> Shell:
+  match a:
+    case Shell{+nu, w, d, qd, q, i, Aux{ws, ty, Tie{home, url, tag, n, +ks}, fr}}:
+      Shell{nu, w, d, qd, q, i, Aux{ws, ty, Tie{home, url, tag, n, TieKeep.with_cache(ks, U.HubCache.save(N.Nui.ui(nu), TieKeep.cache(ks)))}, fr}}
 
 def Shell.connect.k(t: Tie, a: Shell, +url: String) -> IO(Shell):
   match t a:
-    case Tie{+home, _, _, +n, _, _} Shell{nu, w, d, qd, +q, +i, Aux{ws, ty, _, fr}}:
+    case Tie{+home, _, _, +n, ks} Shell{nu, w, d, qd, +q, +i, Aux{ws, ty, _, fr}}:
       do IO<Shell>:
+        +cache : List<&2, U.HubView> = TieKeep.cache(ks)
         ok : Bool <- Chan.send(S.Msg, i, S.Leave{0})
         +tag : String = url ++ "#" ++ Nat.show(n)
+        +nu2 : N.Nui = N.Nui.connection(nu, tag, U.HubCache.get(cache, url))
         +i2 : Chan(S.Msg) <- Shell.hub(String.is_empty(url), home, url)
-        Shell.joined(i2, q, tag)
-        return Shell{nu, w, True{}, qd, q, i2, Aux{ws, ty, Tie{home, url, tag, 1n+n, Map.new(&2, BM.Bitmap), Map.new(&2, Bool)}, fr}}
+        Shell.joined(i2, q, tag, U.Ui.seq(N.Nui.ui(nu2)), U.Ui.info(N.Nui.ui(nu2), "origin"))
+        return Shell{nu2, w, True{}, qd, q, i2, Aux{ws, ty, Tie{home, url, tag, 1n+n, [TieKeep{Map.new(&2, BM.Bitmap), Map.new(&2, Bool), cache}]}, Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none()}}}
 
 def Shell.retry.later(+q: Chan(ShellMsg), +tag: String) -> IO(Unit):
   do IO<Unit>:
@@ -560,7 +608,7 @@ def Shell.dirty(a: Shell) -> IO(Shell):
 def Shell.adopt(current: Bool, a: Shell, st: M.State, +head: String) -> IO(Shell):
   match current a:
     case True{} Shell{n, w, _, qd, q, i, wa}:
-      Shell.later(Shell{N.Nui.adopt(N.Nui.recv(n, Maybe.default(&2, J.Json, J.Json.parse(head), J.Null{})), st), w, True{}, qd, q, i, wa})
+      Shell.later(Shell{N.Nui.adopt(n, st, Maybe.default(&2, J.Json, J.Json.parse(head), J.Null{})), w, True{}, qd, q, i, wa})
     case False{} _:
       IO.pure(Shell, a)
 
@@ -614,10 +662,13 @@ def Aux.tie(a: Aux) -> Tie:
 
 # talk to the hub at url ("" is this machine's): leave the one now joined,
 # join the other; its log replaces what the window shows
-def Shell.connect(a: Shell, +url: String) -> IO(Shell):
+def Shell.connect.go(a: Shell, +url: String) -> IO(Shell):
   match a:
     case Shell{n, w, d, qd, q, i, Aux{ws, ty, +ti, fr}}:
       Shell.connect.k(ti, Shell{n, w, d, qd, q, i, Aux{ws, ty, ti, fr}}, url)
+
+def Shell.connect(a: Shell, url: String) -> IO(Shell):
+  Shell.connect.go(Shell.remember(a), url)
 
 # Commands
 # --------
@@ -719,10 +770,10 @@ def Shell.gone(current: Bool, local: Bool, a: Shell, +tag: String) -> IO(Shell):
   match current local a:
     case True{} True{} _:
       IO.die(Shell, 0, "")
-    case True{} False{} Shell{n, w, d, qd, +q, i, wa}:
+    case True{} False{} Shell{+n, w, d, qd, +q, i, wa}:
       do IO<Shell>:
         IO.spawn(Unit, Shell.retry.later(q, tag))
-        return Shell{n, w, d, qd, q, i, wa}
+        return Shell{N.Nui.with_ui(n, U.Ui.online(N.Nui.ui(n), False{})), w, True{}, qd, q, i, wa}
     case False{} _ _:
       IO.pure(Shell, a)
 
@@ -741,10 +792,13 @@ def Shell.cmds(cs: List<&2, N.NCmd>, a: Shell) -> IO(Shell):
       IO.bind(Shell, Shell, Shell.cmd(a, c), a2 => Shell.cmds(t, a2))
 
 # fold a step into the app: its state, its commands, maybe a frame
-def Shell.step(a: Shell, s: N.Step) -> IO(Shell):
+def Shell.step.go(a: Shell, s: N.Step) -> IO(Shell):
   match a s:
     case Shell{_, w, d, qd, q, i, wa} N.Step{n, cs, dirty}:
       IO.bind(Shell, Shell, Shell.cmds(cs, Shell{n, w, Bool.or(d, dirty), qd, q, i, wa}), Shell.dirty)
+
+def Shell.step(a: Shell, s: N.Step) -> IO(Shell):
+  Shell.step.go(Shell.remember(a), s)
 
 def Shell.recv(a: Shell, +text: String) -> IO(Shell):
   match a:
@@ -1592,12 +1646,24 @@ def Aux.with_ty(a: Aux, t: L.Ty) -> Aux:
     case Aux{ws, _, ti, k}:
       Aux{ws, t, ti, k}
 
+# Match before calling Lay.memos: a hidden timeline does no wrapping.
+def Shell.memos(visible: Bool, ty: L.Ty, n: N.Nui, ms: List<&2, L.TLMemo>) -> List<&2, L.TLMemo>:
+  match visible:
+    case True{}:
+      L.Lay.memos(ty, n, ms)
+    case False{}:
+      ms
+
+# Keep the repeated Nui use outside the frame's large IO continuation.
+def Shell.memos.of(ty: L.Ty, +n: N.Nui, ms: List<&2, L.TLMemo>) -> List<&2, L.TLMemo>:
+  Shell.memos(U.Ui.timeline(N.Nui.ui(n)), ty, n, ms)
+
 # the frame again with the glyphs it wanted in the cache: the timeline's
 # memos and the posts' lines are made again (they were measured without
 # them)
 def Shell.paint.again(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t2: U32) -> IO(Shell):
   do IO<Shell>:
-    +memos : List<&2, L.TLMemo> = L.Lay.memos(ty, n, Nil{})
+    +memos : List<&2, L.TLMemo> = Shell.memos.of(ty, n, Nil{})
     +wraps : Map<&2, BV.PW> = BV.Bv.wraps(ty, n, BV.Bv.wraps.none())
     +o : L.Out = BV.Bv.frame.w(ty, L.TL.memos.now(memos), cats, wraps, n)
     +k : Nat = Lay.nops(o)
@@ -1633,7 +1699,7 @@ def Shell.paint.m(+memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w
 def Shell.paint.go(+oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
   do IO<Shell>:
     +t0 : U32 <- PS.Perf.us()
-    +memos : List<&2, L.TLMemo> = L.Lay.memos(Aux.ty(wa), n, Aux.memos(wa))
+    +memos : List<&2, L.TLMemo> = Shell.memos.of(Aux.ty(wa), n, Aux.memos(wa))
     +t1 : U32 <- PS.Perf.lap("ui.memo", t0)
     Shell.paint.m(memos, oh, n, w, q, i, wa, epoch, ms, t0, t1)
 
@@ -1838,7 +1904,7 @@ def Shell.twin(r: Window & Window, +inbox: Chan(S.Msg), +drafts: String, +fq: Ch
     got : Maybe<&1, L.Ty> <- Chan.recv(L.Ty, fq)
     ty : L.Ty <- Shell.fonts(got)
     ui : U.Ui <- Drafts.load(U.Ui.init(U32.to_nat(t)), drafts)
-    a : Shell <- Shell.later(Shell{N.Nui.init(ui, 1400, 900), pw, True{}, False{}, q, inbox, Aux{Nil{}, ty, Tie{inbox, "", "#0", 1n, Map.new(&2, BM.Bitmap), Map.new(&2, Bool)}, Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none()}}})
+    a : Shell <- Shell.later(Shell{N.Nui.init(ui, 1400, 900), pw, True{}, False{}, q, inbox, Aux{Nil{}, ty, Tie{inbox, "", "#0", 1n, TieKeep.empty()}, Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none()}}})
     Shell.loop(S.Fuel.forever(), a)
 
 def Shell.opened(r: Result<&1, &1, U32 & String, Window>, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty)) -> IO(Unit):
