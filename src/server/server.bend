@@ -124,6 +124,8 @@ type Msg is Data:
   FarReplied{client: U32, id: String, link: String, code: Nat, body: String}
   FarLoaded{link: String, name: String, text: String}
   FarHere{answered: String}
+  # a pull to try again (the other hub was still making its feed)
+  FarRetry{link: String}
 
 # remote access: also listen on the tailnet, serve HTTPS through
 # `tailscale serve`, and the token remote clients must present
@@ -4169,8 +4171,24 @@ def Far.pull.done(p: FR.Fh & Hub, +link: String) -> Hub:
   Far.with(h, FR.Fh.pull.off(fh, link))
 
 # a page came back (or the pull failed: the link is away until it answers)
+def Far.retry.job(+link: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    IO.sleep(2000)
+    Far.send(inbox, FarRetry{link})
+
+def Far.pulled.k(busy: Bool, h: Hub, +link: String, +since: Nat, +code: Nat, +body: String) -> IO(Hub):
+  match busy h:
+    case True{} Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Far.retry.job(link, inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case False{} _:
+      Far.page.k(Nat.is_eq(code, 200n), J.Json.parse(body), h, link, since)
+
+# a page came back (or the pull failed: the link is away until it answers;
+# a hub still making its feed is asked again in a moment)
 def Hub.far.pulled(h: Hub, +link: String, +since: Nat, +code: Nat, +body: String) -> IO(Hub):
-  Far.page.k(Nat.is_eq(code, 200n), J.Json.parse(body), Far.pull.done(Far.fh(h), link), link, since)
+  Far.pulled.k(Nat.is_eq(code, 503n), Far.pull.done(Far.fh(h), link), link, since, code, body)
 
 # a request sent on for a client came back: its answer goes to the client
 def Hub.far.replied(h: Hub, +client: U32, +id: String, +link: String, +code: Nat, +body: String) -> IO(Hub):
@@ -4336,8 +4354,15 @@ def Hub.rpc.o(m: Maybe<&2, J.Json>, h: Hub, +client: U32, +text: String, +now: N
       Hub.rpc.here(h, client, text, now)
 
 # a request about something on a linked machine goes there (Far.rpc.go)
+def Hub.rpc.far(maybe: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
+  match maybe:
+    case True{}:
+      Hub.rpc.o(J.Json.parse(text), h, client, text, now)
+    case False{}:
+      Hub.rpc.here(h, client, text, now)
+
 def Hub.rpc(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
-  Hub.rpc.o(J.Json.parse(text), h, client, text, now)
+  Hub.rpc.far(String.contains(text, "~"), h, client, text, now)
 
 def Hub.line.k(p: M.State & Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
   (st, h) = p
@@ -5398,6 +5423,8 @@ def Msg.kind(m: Msg) -> String:
       "far_loaded"
     case FarHere{_}:
       "far_here"
+    case FarRetry{_}:
+      "far_retry"
 
 def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
   match m:
@@ -5469,6 +5496,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.far.loaded(h, link, name, text)
     case FarHere{ans}:
       Hub.far.here(h, ans)
+    case FarRetry{link}:
+      Far.pull.here(h, link)
 
 # each message's handling is timed as hub.<kind> (docs/perf.md)
 def Hub.got(m: Maybe<&1, Msg>, h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):
