@@ -4016,8 +4016,8 @@ def Far.push.lines(+lines: List<&2, FR.Line>, h: Hub, +from: Nat, +to: Nat) -> I
 # go to each of the owner's linked machines
 def Far.push(h: Hub, cs: List<&2, M.Change>, fresh: List<&2, String>, +from: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, +ls, cl, as, inbox, cfg, note}:
-      Far.push.lines(FR.Fr.feed.add(cs, List.reverse(&2, String, fresh), from, st, Nil{}), Hub{st, f, ls, cl, as, inbox, cfg, note}, from, List.length(&2, String, ls))
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Far.push.lines(FR.Fr.feed.add(cs, List.reverse(&2, String, fresh), from, st, Nil{}), Hub{st, f, ls, cl, as, inbox, cfg, note}, from, M.State.seq(st))
 
 def Far.pushed.go(+o: FR.Out, h: Hub, ok: Bool, +to: Nat) -> IO(Hub):
   match h:
