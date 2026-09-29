@@ -5805,6 +5805,8 @@ def Laws.alert_watched_quiet(kind, id, title, st, es, rest):
   {==}
 
 def Laws.desk_due_first(last_at, thread, focused, now):
+  {==}
+
 # Design history
 # --------------
 
