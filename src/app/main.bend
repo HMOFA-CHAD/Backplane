@@ -59,6 +59,8 @@ type ShellMsg is Data:
   PicOk{tag: String, path: String, w: U32, h: U32, rgb: List<&2, U32>}
   PicErr{tag: String, path: String, why: String}
   Blink{}
+  # a desktop notification was clicked: its thread opens
+  Opened{thread: String}
 
 # which hub the window talks to: its own (url "") or another machine's
 # through a link; each connection gets its own tag so messages from one
@@ -534,7 +536,7 @@ def Shell.connect.k(t: Tie, a: Shell, +url: String) -> IO(Shell):
         +tag : String = url ++ "#" ++ Nat.show(n)
         +i2 : Chan(S.Msg) <- Shell.hub(String.is_empty(url), home, url)
         Shell.joined(i2, q, tag)
-        return Shell{nu, w, True{}, qd, q, i2, Aux{ws, ty, Tie{home, url, tag, 1n+n, Map.new(&2, BM.Bitmap), Map.new(&2, Bool)}, fr}}
+        return Shell{N.Nui.desk.reset(nu), w, True{}, qd, q, i2, Aux{ws, ty, Tie{home, url, tag, 1n+n, Map.new(&2, BM.Bitmap), Map.new(&2, Bool)}, fr}}
 
 def Shell.retry.later(+q: Chan(ShellMsg), +tag: String) -> IO(Unit):
   do IO<Unit>:
@@ -624,6 +626,29 @@ def Shell.connect(a: Shell, +url: String) -> IO(Shell):
 
 # a link opens in the system's browser, detached (BACKPLANE_OPEN names
 # another opener); the address goes as an argument, never as shell text
+# a desktop notification through libnotify's notify-send (nothing when it
+# is missing); one with an Open action waits for a click, which opens the
+# thread here
+def Shell.notify.sh() -> String:
+  "command -v notify-send >/dev/null 2>&1 || exit 0; notify-send -a Backplane -i backplane -A open=Open -w -- \"$1\" \"$2\" 2>/dev/null || notify-send -a Backplane -i backplane -- \"$1\" \"$2\" 2>/dev/null"
+
+def Shell.notified.k(open: Bool, +q: Chan(ShellMsg), thread: String) -> IO(Unit):
+  match open:
+    case True{}:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(ShellMsg, q, Opened{thread})
+        return Unit{}
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Shell.notified(r: P.Ran, +q: Chan(ShellMsg), thread: String) -> IO(Unit):
+  match r:
+    case P.Ran{_, +out}:
+      Shell.notified.k(String.eq(String.trim(out), "open"), q, thread)
+
+def Shell.notify(+q: Chan(ShellMsg), thread: String, +title: String, +body: String) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Shell.notify.sh(), "sh", title, body], "/"), r => Shell.notified(r, q, thread))
+
 def Shell.open(+url: String) -> IO(Unit):
   IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", "${BACKPLANE_OPEN:-xdg-open} \"$1\" >/dev/null 2>&1 &", "sh", url], "/"), r => IO.pure(Unit, Unit{}))
 
@@ -711,6 +736,10 @@ def Shell.cmd(a: Shell, c: N.NCmd) -> IO(Shell):
     case Shell{+n, w, d, qd, q, i, wa} N.NKeep{id, t}:
       do IO<Shell>:
         Drafts.write(U.Ui.info(N.Nui.ui(n), "local.drafts"), id, t)
+        return Shell{n, w, d, qd, q, i, wa}
+    case Shell{n, w, d, qd, +q, i, wa} N.NNotify{th, ti, b}:
+      do IO<Shell>:
+        IO.spawn(Unit, Shell.notify(q, th, ti, b))
         return Shell{n, w, d, qd, q, i, wa}
 
 # a connection closed: this machine's own hub means the app is ending;
@@ -814,10 +843,29 @@ def Shell.acted(a: Shell, +ms: Nat) -> Shell:
     case Shell{+n, w, d, qd, q, i, wa}:
       Shell{N.Nui.with_ui(n, U.Ui.info_set(N.Nui.ui(n), "act.at", Nat.show(ms))), w, d, qd, q, i, wa}
 
+def Shell.desk.k(a: Shell, +now: Nat) -> IO(Shell):
+  match a:
+    case Shell{+n, w, d, qd, q, i, wa}:
+      Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.desk(n, now))
+
+# this window is a desk (core/desk.bend): after its input, the hub may
+# hear which thread it shows and whether it has the focus
+def Shell.desk(a: Shell) -> IO(Shell):
+  do IO<Shell>:
+    t : U32 <- H.Clock.epoch()
+    Shell.desk.k(a, U32.to_nat(t))
+
 def Shell.events(es: List<&2, W.WinEv>, a: Shell) -> IO(Shell):
   do IO<Shell>:
     ms : Nat <- IO.now()
-    Shell.events.go(es, Shell.acted(a, ms))
+    a2 : Shell <- Shell.events.go(es, Shell.acted(a, ms))
+    Shell.desk(a2)
+
+# a desktop notification clicked: its thread opens
+def Shell.clicked(a: Shell, +thread: String) -> IO(Shell):
+  match a:
+    case Shell{+n, w, d, qd, q, i, wa}:
+      Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.act(n, "select", thread))
 
 def Aux.with_tie(a: Aux, ti: Tie) -> Aux:
   match a:
@@ -1712,6 +1760,8 @@ def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
       Shell.tagged(a, PicOk{tag, path, w, h, rgb})
     case PicErr{tag, path, why}:
       Shell.tagged(a, PicErr{tag, path, why})
+    case Opened{th}:
+      Shell.clicked(a, th)
 
 def Aux.park(a: Aux) -> N.Park:
   match a:
@@ -1772,6 +1822,8 @@ def ShellMsg.kind(m: ShellMsg) -> String:
       "pic_err"
     case Blink{}:
       "blink"
+    case Opened{_}:
+      "opened"
 
 # the span a message that leaves a frame to draw starts: input to pixels,
 # hub message to pixels

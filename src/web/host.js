@@ -244,6 +244,8 @@ function run(cmds) {
       if (c.url) location.href = App.visit(ui, c.url);
     } else if (c.$ === "Scroll") {
       scroll = true;
+    } else if (c.$ === "Notify") {
+      notify(c);
     } else if (c.$ === "Keep") {
       // written at once: a crash or a closed tab loses nothing typed
       try {
@@ -254,6 +256,44 @@ function run(cmds) {
   }
 }
 
+// Desk
+// ----
+// This page is a desk (core/desk.bend): app.bend's desk decides when to
+// tell the hub which thread it shows and whether the person has it in
+// front of them; the hub then holds the phones' alerts for that thread and
+// sends this page a desktop notification for others when it was the desk
+// used last.
+
+function deskCheck() {
+  const focused = document.visibilityState === "visible" && document.hasFocus();
+  const r = App.desk(ui, focused, now());
+  ui = r.ui;
+  run(r.cmds);
+}
+
+for (const ev of ["focus", "blur"]) window.addEventListener(ev, deskCheck);
+document.addEventListener("visibilitychange", deskCheck);
+for (const ev of ["pointerdown", "keydown", "wheel"]) document.addEventListener(ev, deskCheck, { capture: true, passive: true });
+
+// the browser asks the person once, on a first click or key (the only time
+// browsers let a page ask)
+function askNotify() {
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
+}
+for (const ev of ["pointerdown", "keydown"]) document.addEventListener(ev, askNotify, { once: true, capture: true });
+
+function notify(c) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    const n = new Notification(c.title, { body: c.body, tag: c.key || c.thread, icon: "./apple-touch-icon.png" });
+    n.onclick = () => {
+      window.focus();
+      if (c.thread) dispatch("select", c.thread);
+      n.close();
+    };
+  } catch {}
+}
+
 // run an action; answers whether it did anything (a key it did nothing
 // with stays the browser's)
 function dispatch(action, value) {
@@ -261,6 +301,7 @@ function dispatch(action, value) {
   ui = r.ui;
   const did = r.cmds && r.cmds.$ === "Con";
   run(r.cmds);
+  deskCheck();
   later();
   return did;
 }
@@ -696,6 +737,7 @@ function connect() {
     socket = s;
     backoff = 250;
     ui = App.online(ui, true);
+    deskCheck();
     later();
   };
   s.onmessage = (e) => {

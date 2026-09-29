@@ -54,6 +54,8 @@ type NCmd is Data:
   NOpen{url: String}
   # write a thread's draft down now ("" forgets it)
   NKeep{thread: String, text: String}
+  # a desktop notification from the hub (core/desk.bend)
+  NNotify{thread: String, title: String, body: String}
 
 type Step is Data:
   Step{nui: Nui, cmds: List<&2, NCmd>, dirty: Bool}
@@ -113,6 +115,8 @@ def Nui.cmd(c: U.Cmd, rest: List<&2, NCmd>) -> List<&2, NCmd>:
       NConnect{url} <> rest
     case U.Keep{id, t}:
       NKeep{id, t} <> rest
+    case U.Notify{th, ti, b, _}:
+      NNotify{th, ti, b} <> rest
     case _:
       rest
 
@@ -2670,6 +2674,20 @@ def Nui.focused(+n: Nui) -> Step:
 # whether the window has the keyboard
 def Nui.has_focus(+n: Nui) -> Bool:
   String.is_empty(U.Ui.scratch(Nui.ui(n), "@blur"))
+
+# this window is a desk (core/desk.bend): after its input it may tell the
+# hub which thread it shows and whether it has the focus (no frame)
+def Nui.desk.k(a: U.Act, n: Nui) -> Step:
+  match a:
+    case U.Act{u, +cs}:
+      Step{Nui.with_ui(n, u), Nui.cmds(cs), False{}}
+
+def Nui.desk(+n: Nui, +now: Nat) -> Step:
+  Nui.desk.k(U.Ui.desk(Nui.ui(n), Nui.has_focus(n), now), n)
+
+# a new connection hears the look again
+def Nui.desk.reset(+n: Nui) -> Nui:
+  Nui.with_ui(n, U.Ui.desk.reset(Nui.ui(n)))
 
 # one window event
 def Nui.event(+n: Nui, e: W.WinEv) -> Step:

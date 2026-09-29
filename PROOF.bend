@@ -819,12 +819,12 @@ def Laws.alert_not_on_stop(b):
     case False{}:
       {==}
 
-def Laws.alert_none_on_connect(ts, st, es):
+def Laws.alert_none_on_connect(ts, st, es, desk):
   match ts:
     case Nil{}:
       {==}
     case M.Thread{id, p, ti, c, a, tu, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de} <> t:
-      Laws.alert_none_on_connect(t, st, es)
+      Laws.alert_none_on_connect(t, st, es, desk)
 
 def Laws.notice_fail_always(bot, asking, posted, first, msg):
   {==}
@@ -5755,4 +5755,35 @@ def Laws.subs_shell_not_agent():
   {==}
 
 def Laws.subs_badge():
+  {==}
+
+def Laws.desk_phone_never(thread, now):
+  {==}
+
+def Laws.desk_unfocused_never(d, th, at, thread, now):
+  match d:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.desk_look_fresh():
+  {==}
+
+def Laws.desk_look_expires():
+  {==}
+
+def Laws.desk_seen_holds(key):
+  {==}
+
+def Laws.desk_seen_nobody(xs):
+  {==}
+
+def Laws.desk_none_nobody():
+  {==}
+
+def Laws.alert_watched_quiet(kind, id, title, st, es, rest):
+  {==}
+
+def Laws.desk_due_first(last_at, thread, focused, now):
   {==}

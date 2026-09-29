@@ -42,6 +42,9 @@ type Out is Data:
   # a bot effect the server runs with IO or secrets (bothub.bend): kind
   # home, gone, hook, unhook, send, invite, join, unpeer, google
   BotFx{kind: String, a: String, b: String, c: String}
+  # a desk client (the window, the web page) shows thread, with or
+  # without the focus (core/desk.bend; the server keeps it per client)
+  DeskLook{client: U32, thread: String, focused: Bool}
 
 type Step is Data:
   Step{changes: List<&2, M.Change>, outs: List<&2, Out>}
@@ -652,6 +655,14 @@ def Attach.go(ok: Bool, +client: U32, +id: String, o: Out) -> Step:
 
 # attach.put: a piece of an uploaded file (base64); attach.file: a file on
 # this machine, copied in; update.check: look for a release now
+# desk.look {thread, focused}: no reply (a desk says it often)
+def Desk.request(look: Bool, +client: U32, +id: String, +p: J.Json) -> Step:
+  match look:
+    case True{}:
+      Step.outs([DeskLook{client, J.Json.get_str(p, "thread", ""), J.Json.get_bool(p, "focused", False{})}])
+    case False{}:
+      Step.outs([Reply.err(client, id, "unknown method")])
+
 def Hub.media(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
@@ -664,7 +675,7 @@ def Hub.media(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.J
     case 2n:
       Step.outs([Git{client, id, "update.check", "", "", M.Setting.get(s, "update.channel", "stable"), ""}])
     case _:
-      Step.outs([Reply.err(client, id, "unknown method")])
+      Desk.request(String.eq(m, "desk.look"), client, id, p)
 
 def Hub.methods() -> List<&2, String>:
   ["project.add", "project.remove", "thread.create", "turn.start", "turn.interrupt",

@@ -66,6 +66,7 @@ import ./src/core/mech.bend as MCH
 import ./src/core/png.bend as PNG
 import ./src/core/voice.bend as VO
 import ./src/core/once.bend as ON
+import ./src/core/desk.bend as DK
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -742,7 +743,8 @@ law alert_none_on_connect:
   for ts: List<&2, M.Thread>
   for +st: M.State
   for +es: List<&2, M.Entry>
-  {Nt.Note.alerts(ts, [], st, es) == [] : List<&2, J.Json>}
+  for +desk: String
+  {Nt.Note.alerts(ts, [], st, es, desk) == [] : List<&2, J.Json>}
 
 # One item, one alert (core/notice.bend). Notice.decide(failed, bot,
 # asking, posted, first, msg): 0 no alert, 1 an alert, 2 a failure.
@@ -3391,3 +3393,61 @@ law subs_shell_not_agent:
 
 law subs_badge:
   {SB.Subs.badge(0n) ++ "|" ++ SB.Subs.badge(1n) ++ "|" ++ SB.Subs.badge(3n) == "|1 agent|3 agents" : String}
+
+# Desks (core/desk.bend)
+# ----------------------
+
+# a client that never said desk.look (a phone) watches nothing
+law desk_phone_never:
+  for thread: String
+  for now: Nat
+  {DK.Look.sees(DK.Look.none(), thread, now) == False{} : Bool}
+
+# a desk without the focus watches nothing
+law desk_unfocused_never:
+  for d: Bool
+  for th: String
+  for at: Nat
+  for thread: String
+  for now: Nat
+  {DK.Look.sees(DK.Look{d, th, False{}, at}, thread, now) == False{} : Bool}
+
+# a focused desk watches its thread while in use, and stops once a window
+# passes with no word from it
+law desk_look_fresh:
+  {DK.Look.sees(DK.Look{True{}, "t", True{}, 100n}, "t", 279n) == True{} : Bool}
+
+law desk_look_expires:
+  {DK.Look.sees(DK.Look{True{}, "t", True{}, 100n}, "t", 280n) == False{} : Bool}
+
+# a thread a desk watches raises no push alert
+law desk_seen_holds:
+  for key: String
+  {DK.Desk.hold(True{}, key) == "" : String}
+
+# nor a desktop notification
+law desk_seen_nobody:
+  for xs: List<&2, DK.At>
+  {DK.Desk.to.k(True{}, xs) == None{} : Maybe<&2, U32>}
+
+# with no desk connected there is no desktop notification
+law desk_none_nobody:
+  {DK.Desk.lead(Nil{}) == None{} : Maybe<&2, U32>}
+
+# nor the phone's own alert
+law alert_watched_quiet:
+  for kind: String
+  for id: String
+  for title: String
+  for st: M.State
+  for es: List<&2, M.Entry>
+  for rest: List<&2, J.Json>
+  {Nt.Note.alert.w(True{}, kind, id, title, st, es, rest) == rest : List<&2, J.Json>}
+
+# a desk that never said its look says it at once
+law desk_due_first:
+  for last_at: String
+  for thread: String
+  for focused: Bool
+  for now: Nat
+  {DK.Desk.due("", last_at, thread, focused, now) == True{} : Bool}
