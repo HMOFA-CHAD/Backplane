@@ -1654,12 +1654,16 @@ def Shell.memos(visible: Bool, ty: L.Ty, n: N.Nui, ms: List<&2, L.TLMemo>) -> Li
     case False{}:
       ms
 
+# Keep the repeated Nui use outside the frame's large IO continuation.
+def Shell.memos.of(ty: L.Ty, +n: N.Nui, ms: List<&2, L.TLMemo>) -> List<&2, L.TLMemo>:
+  Shell.memos(U.Ui.timeline(N.Nui.ui(n)), ty, n, ms)
+
 # the frame again with the glyphs it wanted in the cache: the timeline's
 # memos and the posts' lines are made again (they were measured without
 # them)
 def Shell.paint.again(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t2: U32) -> IO(Shell):
   do IO<Shell>:
-    +memos : List<&2, L.TLMemo> = Shell.memos(U.Ui.timeline(N.Nui.ui(n)), ty, n, Nil{})
+    +memos : List<&2, L.TLMemo> = Shell.memos.of(ty, n, Nil{})
     +wraps : Map<&2, BV.PW> = BV.Bv.wraps(ty, n, BV.Bv.wraps.none())
     +o : L.Out = BV.Bv.frame.w(ty, L.TL.memos.now(memos), cats, wraps, n)
     +k : Nat = Lay.nops(o)
@@ -1695,7 +1699,7 @@ def Shell.paint.m(+memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w
 def Shell.paint.go(+oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
   do IO<Shell>:
     +t0 : U32 <- PS.Perf.us()
-    +memos : List<&2, L.TLMemo> = Shell.memos(U.Ui.timeline(N.Nui.ui(n)), Aux.ty(wa), n, Aux.memos(wa))
+    +memos : List<&2, L.TLMemo> = Shell.memos.of(Aux.ty(wa), n, Aux.memos(wa))
     +t1 : U32 <- PS.Perf.lap("ui.memo", t0)
     Shell.paint.m(memos, oh, n, w, q, i, wa, epoch, ms, t0, t1)
 
