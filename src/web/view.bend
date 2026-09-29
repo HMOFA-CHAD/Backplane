@@ -1081,16 +1081,20 @@ def View.thread.h(+u: U.Ui, t: M.Thread, hd: List<&2, D.Node>) -> D.Node:
 def View.thread(+u: U.Ui, t: M.Thread) -> D.Node:
   View.thread.h(u, t, Nil{})
 
-# a bot: its header and tabs, then its thread (Chat) or another tab
-def View.bot.k(chat: Bool, +u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:
+# a bot, here or mirrored from a linked machine: its header and tabs
+# (BU.head), then its thread (Chat) or another tab
+def View.bot.k(chat: Bool, +u: U.Ui, +b: BT.Bot, +hd: BI.Head) -> D.Node:
   match chat:
     case True{}:
-      View.thread.h(u, U.Ui.thread(U.Ui.state(u), BT.Bot.thread(b)), [WB.WB.head(u, b), WB.WB.tabs(tab)])
+      View.thread.h(u, U.Ui.thread(U.Ui.state(u), BT.Bot.thread(b)), [WB.WB.head(u, b, hd), WB.WB.tabs(hd)])
     case False{}:
-      D.El{"main", "bot", [D.At{"class", "thread-view bot-view"}], [WB.WB.head(u, b), WB.WB.tabs(tab), WB.WB.body(u, b, tab)]}
+      D.El{"main", "bot", [D.At{"class", "thread-view bot-view"}], [WB.WB.head(u, b, hd), WB.WB.tabs(hd), WB.WB.body(u, b, BI.Head.tab(hd))]}
+
+def View.bot.h(+u: U.Ui, +b: BT.Bot, +hd: BI.Head) -> D.Node:
+  View.bot.k(String.eq(BI.Head.tab(hd), "chat"), u, b, hd)
 
 def View.bot(+u: U.Ui, +b: BT.Bot) -> D.Node:
-  View.bot.k(String.eq(BI.BU.tab(u), "chat"), u, b, BI.BU.tab(u))
+  View.bot.h(u, b, BI.BU.head.bot(u, b))
 
 def View.main.s(settings: Bool, none: Bool, u: U.Ui, +sel: String, +n: Nat) -> D.Node:
   match settings none u:

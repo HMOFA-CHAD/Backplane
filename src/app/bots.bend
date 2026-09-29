@@ -32,23 +32,21 @@ def Bv.head(+ty: L.Ty, +c: D.Clip, +label: String, action: String, +on: Bool, +y
   L.Out{List.append(&2, R.Op, L.Ty.text(ty, 2n, label, c, 16, y, 28, T.Th.faint()), L.Lay.icon(ty, Bool.pick(String, on, "x", "plus"), c, 236, (y + 6 : U32), T.Th.faint())),
     [L.Lay.hit(228, y, 30, 28, action, "")]}
 
-def Bv.title(+name: String, +remote: Bool, +peer: String) -> String:
-  Bool.pick(String, Bool.and(remote, Bool.not(String.is_empty(peer))), name ++ " · " ++ peer, name)
-
 def Bv.note.color(+mood: String) -> U32:
   Bool.pick(U32, String.eq(mood, "wait"), T.Th.warn(), Bool.pick(U32, String.eq(mood, "error"), T.Th.bad(), T.Th.faint()))
 
-# a cat's row: the cat, its name, and its mood
-def Bv.row(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +ms: Nat, r: BU.BRow, +c: D.Clip, +y: U32) -> L.Out:
+# a cat's row: the cat, its name (with its machine when elsewhere), and
+# its mood; choosing it does what BU.act says
+def Bv.row(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +ms: Nat, +r: BU.BRow, +c: D.Clip, +y: U32) -> L.Out:
   match r:
-    case BU.BRow{+id, +name, _, +look, +mood, +note, +sel, +remote, +peer, _}:
+    case BU.BRow{+id, _, _, +look, +mood, +note, +sel, _, _, _}:
       +nw = L.Ty.width(ty, 2n, note)
       L.Out{List.concat(&2, R.Op, [
           Bool.pick(List<&2, R.Op>, sel, [D.Draw.rect(c, 6, (y + 1 : U32), 252, 34, T.Th.raise(), 255), D.Draw.rect(c, 6, (y + 1 : U32), 2, 34, T.Th.accent(), 255)], Nil{}),
           CA.Cats.draw(cats, look, mood, ms, c, 14, (y + 4 : U32), 28),
-          L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, Bv.title(name, remote, peer), L.U32.dim(192, nw)), c, 50, y, 36, Bool.pick(U32, sel, T.Th.text(), T.Th.soft())),
+          L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, BU.BU.row.title(r), L.U32.dim(192, nw)), c, 50, y, 36, Bool.pick(U32, sel, T.Th.text(), T.Th.soft())),
           L.Ty.text(ty, 2n, note, c, (252 - nw : U32), y, 36, Bv.note.color(mood))]),
-        [L.Lay.hit(0, y, 264, 36, Bool.pick(String, remote, "remote", "bot"), id)]}
+        [L.Lay.hit(0, y, 264, 36, BU.BU.act(r), id)]}
 
 def Bv.rows(rs: List<&2, BU.BRow>, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +ms: Nat, +c: D.Clip, +y: U32) -> L.Col:
   match rs:
@@ -147,10 +145,10 @@ def Bv.side(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +n: S.Nui, +c: D.Clip, +y: U32) 
   Bv.side.of(Bv.sd(ty, cats, n), c, y)
 
 # the selected cat is also drawn large at the top of its view
-def Bv.warm.sel(sel: Bool, c: Map<&2, CA.CatF>, +look: Nat, +mood: String, +remote: Bool, +clock: Nat) -> Map<&2, CA.CatF>:
+def Bv.warm.sel(sel: Bool, c: Map<&2, CA.CatF>, +look: Nat, +mood: String, +clock: Nat) -> Map<&2, CA.CatF>:
   match sel:
     case True{}:
-      CA.Cats.warm(c, look, mood, Bool.pick(U32, remote, 36, 64), clock)
+      CA.Cats.warm(c, look, mood, 64, clock)
     case False{}:
       c
 
@@ -165,9 +163,9 @@ def Bv.warm.go(rs: List<&2, BU.BRow>, c: Map<&2, CA.CatF>, +clock: Nat) -> Map<&
   match rs:
     case Nil{}:
       c
-    case BU.BRow{_, _, _, +look, +mood, _, sel, +remote, _, _} <> t:
+    case BU.BRow{_, _, _, +look, +mood, _, sel, _, _, _} <> t:
       +at = Bv.warm.at(mood, clock)
-      Bv.warm.go(t, Bv.warm.sel(sel, CA.Cats.warm(c, look, mood, 28, at), look, mood, remote, at), clock)
+      Bv.warm.go(t, Bv.warm.sel(sel, CA.Cats.warm(c, look, mood, 28, at), look, mood, at), clock)
 
 def Bv.warm(+u: U.Ui, c: Map<&2, CA.CatF>, +clock: Nat) -> Map<&2, CA.CatF>:
   Bv.warm.go(BU.BU.rows(u), c, clock)
@@ -247,11 +245,20 @@ def Bv.nl(+ls: List<&2, String>) -> U32:
 # Memory
 # ------
 
-def Bv.mem(+ty: L.Ty, m: BT.Mem, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+# o when on, else nothing
+def Bv.when(on: Bool, o: L.Out) -> L.Out:
+  match on:
+    case True{}:
+      o
+    case False{}:
+      L.Out.none()
+
+# a memory; Forget only for a bot here (BU.owns)
+def Bv.mem(+ty: L.Ty, m: BT.Mem, +own: Bool, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   match m:
     case BT.Mem{_, +key, +kind, +text, +tags, _, _}:
       +kw = L.Ty.width(ty, 2n, kind)
-      +fw = L.Lay.button.w(ty, "Forget")
+      +fw = {Bool.pick(U32, own, L.Lay.button.w(ty, "Forget"), 0) : U32}
       +ls = L.Ty.wrap(ty, 3n, text, (w - 24 : U32))
       +th = {Bool.pick(U32, String.is_empty(tags), 0, 20) : U32}
       +h = {(48 + Bv.nl(ls) * 22 + th : U32) : U32}
@@ -259,24 +266,24 @@ def Bv.mem(+ty: L.Ty, m: BT.Mem, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col
           L.Out.ops(L.Lay.box(c, x, y, w, h, 0, T.Th.panel(), T.Th.line())),
           L.Out.ops(L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, key, L.U32.dim(w, (kw + fw + 48 : U32))), c, (x + 12 : U32), (y + 6 : U32), 28, T.Th.text())),
           L.Out.ops(L.Ty.text(ty, 2n, kind, c, (x + w - fw - 20 - kw : U32), (y + 6 : U32), 28, T.Th.accent())),
-          F.Fm.button(ty, c, (x + w - fw - 8 : U32), (y + 6 : U32), "Forget", T.Th.soft(), "mem-forget", key),
+          Bv.when(own, F.Fm.button(ty, c, (x + w - fw - 8 : U32), (y + 6 : U32), "Forget", T.Th.soft(), "mem-forget", key)),
           L.Out.ops(Bv.lines(ls, ty, c, (x + 12 : U32), (y + 38 : U32), T.Th.soft())),
           Bv.faint(ty, c, tags, (x + 12 : U32), (w - 24 : U32), (y + 40 + Bv.nl(ls) * 22 : U32))]),
         (y + h + 8 : U32)}
 
-def Bv.mems(ms: List<&2, BT.Mem>, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+def Bv.mems(ms: List<&2, BT.Mem>, +ty: L.Ty, +own: Bool, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   match ms:
     case Nil{}:
       L.Col{L.Out.none(), y}
     case m <> t:
-      L.Lay.col.then(Bv.mem(ty, m, c, x, w, y), y2 => Bv.mems(t, ty, c, x, w, y2))
+      L.Lay.col.then(Bv.mem(ty, m, own, c, x, w, y), y2 => Bv.mems(t, ty, own, c, x, w, y2))
 
 def Bv.memory(+ty: L.Ty, +u: U.Ui, +bot: String, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   +ms = BU.BU.mems(u, bot)
   L.Lay.col.cat(L.Out.cat(Bv.h2(ty, c, "Memory", x, y),
       Bv.faint(ty, c, Bool.pick(String, List.is_empty(&2, BT.Mem, ms), "Nothing remembered yet. It keeps what it learns about you, your preferences, facts and how-tos here.",
         Nat.show(List.length(&2, BT.Mem, ms)) ++ " items. The ones about you and your preferences go into every turn."), x, w, (y + 30 : U32))),
-    Bv.mems(ms, ty, c, x, w, (y + 60 : U32)))
+    Bv.mems(ms, ty, BU.BU.owns(bot), c, x, w, (y + 60 : U32)))
 
 # Routines
 # --------
@@ -303,12 +310,33 @@ def Bv.routine(+ty: L.Ty, r: BT.Routine, +now: Nat, +c: D.Clip, +x: U32, +w: U32
           L.Out.ops(L.Ty.text(ty, 2n, L.Ty.fit(ty, 2n, prompt, (w - 24 : U32)), c, (x + 12 : U32), (y + 62 : U32), 20, T.Th.soft()))]),
         (y + 98 : U32)}
 
-def Bv.routines(rs: List<&2, BT.Routine>, +ty: L.Ty, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+# a routine of a bot elsewhere: its hub runs it on asking, nothing more
+def Bv.routine.far(+ty: L.Ty, r: BT.Routine, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+  match r:
+    case BT.Routine{+id, _, +name, +cron, +prompt, +on, _, _, _}:
+      +b3 = L.Lay.button.w(ty, "Run now")
+      +bx = {(x + w - 12 - b3 : U32) : U32}
+      L.Col{L.Out.all([
+          L.Out.ops(L.Lay.box(c, x, y, w, 90, 0, T.Th.panel(), T.Th.line())),
+          L.Out.ops(L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, name, L.U32.dim((bx - x : U32), 24)), c, (x + 12 : U32), (y + 8 : U32), 28, Bool.pick(U32, on, T.Th.text(), T.Th.dim()))),
+          F.Fm.button(ty, c, bx, (y + 8 : U32), "Run now", T.Th.soft(), "routine-run", id),
+          Bv.faint(ty, c, CR.Cron.describe(cron) ++ Bool.pick(String, on, "", " · off"), (x + 12 : U32), (w - 24 : U32), (y + 40 : U32)),
+          L.Out.ops(L.Ty.text(ty, 2n, L.Ty.fit(ty, 2n, prompt, (w - 24 : U32)), c, (x + 12 : U32), (y + 62 : U32), 20, T.Th.soft()))]),
+        (y + 98 : U32)}
+
+def Bv.routine.k(own: Bool, +ty: L.Ty, r: BT.Routine, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+  match own:
+    case True{}:
+      Bv.routine(ty, r, now, c, x, w, y)
+    case False{}:
+      Bv.routine.far(ty, r, c, x, w, y)
+
+def Bv.routines(rs: List<&2, BT.Routine>, +ty: L.Ty, +own: Bool, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   match rs:
     case Nil{}:
       L.Col{L.Out.none(), y}
     case r <> t:
-      L.Lay.col.then(Bv.routine(ty, r, now, c, x, w, y), y2 => Bv.routines(t, ty, now, c, x, w, y2))
+      L.Lay.col.then(Bv.routine.k(own, ty, r, now, c, x, w, y), y2 => Bv.routines(t, ty, own, now, c, x, w, y2))
 
 def Bv.oform(+ty: L.Ty, +f: F.FS, +editing: Bool, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   L.Col{L.Out.all([
@@ -320,13 +348,21 @@ def Bv.oform(+ty: L.Ty, +f: F.FS, +editing: Bool, +c: D.Clip, +x: U32, +w: U32, 
       F.Fm.button(ty, c, x, (y + 186 : U32), Bool.pick(String, editing, "Save", "Add routine"), T.Th.accent(), "routine-save", "")]),
     (y + 230 : U32)}
 
+# the new routine form, for a bot here
+def Bv.oform.if(own: Bool, +ty: L.Ty, +f: F.FS, +editing: Bool, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+  match own:
+    case True{}:
+      Bv.oform(ty, f, editing, c, x, w, y)
+    case False{}:
+      L.Col{L.Out.none(), y}
+
 def Bv.rtab(+ty: L.Ty, +f: F.FS, +bot: String, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   +rs = BU.BU.routines(F.FS.ui(f), bot)
   L.Lay.col.cat(L.Out.cat(Bv.h2(ty, c, "Routines", x, y),
       Bv.faint(ty, c, Bool.pick(String, List.is_empty(&2, BT.Routine, rs), "None yet. A routine gives it a prompt on a schedule, in this hub's time zone.",
         "Each runs once when due, even after the hub was off."), x, w, (y + 30 : U32))),
-    L.Lay.col.then(Bv.routines(rs, ty, U.Side.now(F.FS.ui(f)), c, x, w, (y + 60 : U32)), y2 =>
-      Bv.oform(ty, f, BU.BU.open(F.FS.ui(f), "@onew"), c, x, w, (y2 + 12 : U32))))
+    L.Lay.col.then(Bv.routines(rs, ty, BU.BU.owns(bot), U.Side.now(F.FS.ui(f)), c, x, w, (y + 60 : U32)), y2 =>
+      Bv.oform.if(BU.BU.owns(bot), ty, f, BU.BU.open(F.FS.ui(f), "@onew"), c, x, w, (y2 + 12 : U32))))
 
 # Webhooks
 # --------
@@ -546,6 +582,7 @@ def Bv.busy(s: M.Status) -> Bool:
     case _:
       False{}
 
+# the stop button, at the header's right (x1: where it ends)
 def Bv.stop(on: Bool, +ty: L.Ty, +x1: U32) -> L.Out:
   match on:
     case True{}:
@@ -553,24 +590,28 @@ def Bv.stop(on: Bool, +ty: L.Ty, +x1: U32) -> L.Out:
     case False{}:
       L.Out.none()
 
-# the bot's cat (64 px), its name and mood, its tabs, and its own viewer
-# (board, schematic, 3D, browser, diff) opened or shut beside them
-def Bv.header(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +u: U.Ui, +ms: Nat, b: BT.Bot, +tab: String, +x0: U32, +x1: U32) -> L.Out:
-  match b:
-    case BT.Bot{+id, +name, +th, +look, pe, cr, de}:
-      +st = U.Ui.state(u)
-      +mood = BU.Mood.bot(st, U.Side.now(u), BT.Bot{id, name, th, look, pe, cr, de})
-      +t = U.Ui.thread(st, th)
-      +nw = L.Ty.width(ty, 1n, name)
+# where the header's right side ends before the Viewer chip (when shown)
+def Bv.right(+viewer: Bool, +ty: L.Ty, +x1: U32) -> U32:
+  Bool.pick(U32, viewer, (x1 - 8 - L.Lay.button.w(ty, "Viewer") : U32), x1)
+
+# a bot's header (BU.head, the same for a bot here, one mirrored from a
+# linked machine and one only reported by one): its cat (64 px), its name
+# with where it lives, its mood (and sub), what goes at its right (Stop),
+# its own viewer (board, schematic, 3D, browser, diff) when it has one,
+# and its tabs
+def Bv.header(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +u: U.Ui, +ms: Nat, hd: BU.Head, +sub: String, right: L.Out, +x0: U32, +x1: U32) -> L.Out:
+  match hd:
+    case BU.Head{+title, +look, +mood, +note, ts, +tab, +viewer, _}:
+      +nw = L.Ty.width(ty, 1n, title)
       L.Out.all([
         L.Out{[D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), Bv.hy(), T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, (Bv.hy() - 1 : U32), (x1 - x0 : U32), 1, T.Th.line(), 255)],
           [L.Lay.hit(x0, 0, (x1 - x0 : U32), Bv.hy(), "", "")]},
         L.Out.ops(CA.Cats.draw(cats, look, mood, ms, D.Clip.all(), (x0 + 20 : U32), 12, 64)),
-        L.Out.ops(L.Ty.text(ty, 1n, name, D.Clip.all(), (x0 + 100 : U32), 10, 30, T.Th.text())),
-        L.Out.ops(L.Ty.text(ty, 2n, BU.Mood.note(mood) ++ " · " ++ M.Thread.provider(t), D.Clip.all(), (x0 + 112 + nw : U32), 10, 30, Bv.note.color(mood))),
-        Bv.stop(Bv.busy(U.Side.status(st, U.Ui.thread(st, th))), ty, (x1 - 8 - L.Lay.button.w(ty, "Viewer") : U32)),
-        F.Fm.chip(ty, D.Clip.all(), (x1 - 16 - L.Lay.button.w(ty, "Viewer") : U32), 12, "Viewer", U.Ui.panel(u), "panel", ""),
-        Bv.tabs(BU.BU.tabs(), ty, tab, (x0 + 100 : U32), 48)])
+        L.Out.ops(L.Ty.text(ty, 1n, title, D.Clip.all(), (x0 + 100 : U32), 10, 30, T.Th.text())),
+        L.Out.ops(L.Ty.text(ty, 2n, note ++ sub, D.Clip.all(), (x0 + 112 + nw : U32), 10, 30, Bv.note.color(mood))),
+        right,
+        Bv.when(viewer, F.Fm.chip(ty, D.Clip.all(), (x1 - 16 - L.Lay.button.w(ty, "Viewer") : U32), 12, "Viewer", U.Ui.panel(u), "panel", "")),
+        Bv.tabs(ts, ty, tab, (x0 + 100 : U32), 48)])
 
 def Bv.tab.n(+t: String) -> Nat:
   S.Nui.pos(BU.BU.tabs(), t, 0n)
@@ -601,9 +642,18 @@ def Bv.bot.k(k: Nat, +ty: L.Ty, +memo: L.TLMemo, +n: S.Nui, +b: BT.Bot, +x0: U32
       Bv.pane(Bv.pane.k(j, ty, F.Fm.fs(n), b, D.Clip{x0, Bv.hy(), x1, S.Nui.height(n)}, Bv.pane.x(x0, x1), Bv.pane.w(x0, x1), (top - off : U32)),
         x0, x1, Bv.hy(), off, S.Nui.height(n))
 
+# a bot, here or mirrored from a linked machine: its header, then the tab
+# BU.head picks (the tabs it has)
+def Bv.bot.h(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +hd: BU.Head, +x0: U32, +x1: U32) -> L.Out:
+  +u = S.Nui.ui(n)
+  +st = U.Ui.state(u)
+  +th = BT.Bot.thread(b)
+  L.Out.cat(Bv.bot.k(Bv.tab.n(BU.Head.tab(hd)), ty, memo, n, b, x0, x1),
+    Bv.header(ty, cats, u, S.Nui.ms_of(n), hd, " · " ++ M.Thread.provider(U.Ui.thread(st, th)),
+      Bv.stop(Bv.busy(U.Side.status(st, U.Ui.thread(st, th))), ty, Bv.right(BU.Head.viewer(hd), ty, x1)), x0, x1))
+
 def Bv.bot(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +x0: U32, +x1: U32) -> L.Out:
-  +tab = BU.BU.tab(S.Nui.ui(n))
-  L.Out.cat(Bv.bot.k(Bv.tab.n(tab), ty, memo, n, b, x0, x1), Bv.header(ty, cats, S.Nui.ui(n), S.Nui.ms_of(n), b, tab, x0, x1))
+  Bv.bot.h(ty, memo, cats, n, b, BU.BU.head.bot(S.Nui.ui(n), b), x0, x1)
 
 # Rooms and bots elsewhere
 # ------------------------
@@ -741,27 +791,16 @@ def Bv.room(+ty: L.Ty, +ws: Map<&2, PW>, +n: S.Nui, r: BT.Room, +x0: U32, +x1: U
         Bv.top(ty, "# " ++ name, BU.BU.members(u, BT.Room{id, name, ms, cr, de}), x0, x1,
           F.Fm.button(ty, D.Clip.all(), (x1 - 16 - dw : U32), 12, "Delete room", T.Th.soft(), "room-delete", id))])
 
-def Bv.far.find(rs: List<&2, BU.BRow>, +id: String) -> Maybe<&2, BU.BRow>:
-  match rs:
-    case Nil{}:
-      None{}
-    case BU.BRow{+i, +na, +th, +lk, +mo, +no, +se, +re, +pe, +l} <> t:
-      Bool.pick(Maybe<&2, BU.BRow>, String.eq(i, id), Some{BU.BRow{i, na, th, lk, mo, no, se, re, pe, l}}, Bv.far.find(t, id))
-
-def Bv.far.cat(m: Maybe<&2, BU.BRow>, +cats: Map<&2, CA.CatF>, +ms: Nat, +x0: U32) -> L.Out:
-  match m:
-    case Some{BU.BRow{_, _, _, +look, +mood, +note, _, _, _, _}}:
-      L.Out.ops(List.append(&2, R.Op, CA.Cats.draw(cats, look, mood, ms, D.Clip.all(), (x0 + 16 : U32), 8, 36), []))
-    case None{}:
-      L.Out.none()
-
+# a bot only reported by a linked machine: the bot's view (BU.head: its
+# cat, "name · machine", its mood, Chat alone) over the person's
+# conversation with it
 def Bv.remote(+ty: L.Ty, +ws: Map<&2, PW>, +cats: Map<&2, CA.CatF>, +n: S.Nui, +id: String, +x0: U32, +x1: U32) -> L.Out:
   +u = S.Nui.ui(n)
   +h = S.Nui.height(n)
   L.Out.all([
-    Bv.chat(ty, ws, BU.BU.remote.posts(u, id), u, "Write to " ++ id ++ ". It answers from its own machine.", x0, x1, 52, (h - 60 : U32)),
+    Bv.chat(ty, ws, BU.BU.remote.posts(u, id), u, "Write to " ++ id ++ ". It answers from its own machine.", x0, x1, Bv.hy(), (h - 60 : U32)),
     Bv.say(ty, F.Fm.fs(n), "rtext", "remote-send", "Write to " ++ id, x0, x1, h),
-    Bv.top(ty, "     " ++ id, "on a linked machine", x0, x1, Bv.far.cat(Bv.far.find(BU.BU.remote(u), id), cats, S.Nui.ms_of(n), x0))])
+    Bv.header(ty, cats, u, S.Nui.ms_of(n), BU.BU.head(u, BU.VRemote{id}), "", L.Out.none(), x0, x1)])
 
 # The main area and the frame
 # ---------------------------
