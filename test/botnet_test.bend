@@ -3,6 +3,7 @@ import ./check.bend as C
 import ../src/server/botnet.bend as BN
 import ../src/core/sign.bend as G
 import ../src/core/json.bend as J
+import ../src/core/bothub.bend as BH
 import ../src/server/proc.bend as P
 
 # The pure parts of src/server/botnet.bend: which ids may name a secret
@@ -103,8 +104,8 @@ def main() -> IO(Unit):
     C.Check.str("resp", resp(BN.Bn.resp.k(List.reverse(&2, String, String.lines("{\"name\":\"a\"}\n200")))), "200 {\"name\":\"a\"}")
     C.Check.str("resp failed", resp(BN.Bn.resp(P.Ran{7, "x"})), "0 ")
     C.Check.str("dir items", names(BN.Bn.items(J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse("[{\"name\":\"miso\",\"state\":\"ready\"},{\"name\":\"\"},{\"name\":\"a@b\",\"state\":\"work\"}]"), J.Null{})), "p1", "desk", 5n)), "miso/ready,ab/work")
-    C.Check.str("dir away", names(BN.Bn.fetched(BN.Resp{0n, ""}, "p1", "desk", 9n,
-      BN.Bn.items(J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse("[{\"name\":\"miso\",\"state\":\"ready\"}]"), J.Null{})), "p1", "desk", 5n))), "miso/away")
-    C.Check.str("dir away other peer", names(BN.Bn.fetched(BN.Resp{0n, ""}, "p2", "lap", 9n,
-      BN.Bn.items(J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse("[{\"name\":\"miso\",\"state\":\"ready\"}]"), J.Null{})), "p1", "desk", 5n))), "")
-    C.Check.str("dir fresh", names(BN.Bn.fetched(BN.Resp{200n, "[{\"name\":\"nori\",\"state\":\"idle\"}]"}, "p1", "desk", 9n, Nil{})), "nori/idle")
+    C.Check.str("dir away", names(BH.Dir.merge(BN.Bn.fetched(BN.Resp{0n, ""}, "p1", "desk", 9n),
+      BN.Bn.items(J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse("[{\"name\":\"miso\",\"state\":\"ready\"}]"), J.Null{})), "p1", "desk", 5n), "p1")), "miso/away")
+    C.Check.str("dir away other peer", names(BH.Dir.merge(BN.Bn.fetched(BN.Resp{0n, ""}, "p2", "lap", 9n),
+      BN.Bn.items(J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse("[{\"name\":\"miso\",\"state\":\"ready\"}]"), J.Null{})), "p1", "desk", 5n), "p2")), "miso/ready")
+    C.Check.str("dir fresh", names(BH.Dir.merge(BN.Bn.fetched(BN.Resp{200n, "[{\"name\":\"nori\",\"state\":\"idle\"}]"}, "p1", "desk", 9n), Nil{}, "p1")), "nori/idle")

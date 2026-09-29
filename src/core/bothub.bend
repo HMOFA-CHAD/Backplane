@@ -10,6 +10,196 @@ import ./ring.bend as RG
 import ./space.bend as SP
 import ./refs.bend as RF
 
+# Remote bot directories. A result replaces just its peer; a failure
+# keeps that peer's rows and their last-seen timestamps, marked away.
+# Sort by peer id and bot name so arrival order never changes the UI.
+def Dir.item(peer: String, pname: String, look: Nat, name: String, state: String, seen: Nat) -> J.Json:
+  J.Json.obj([J.KV{"name", J.Str{name}}, J.KV{"peer", J.Str{peer}}, J.KV{"peerName", J.Str{pname}}, J.KV{"look", J.Json.nat(look)},
+    J.KV{"state", J.Str{state}}, J.KV{"seen", J.Json.nat(seen)}])
+
+# Change only the state field, preserving even fields newer clients add.
+def Dir.away.fields(fs: J.Json) -> J.Json:
+  match fs:
+    case J.Field{+k, +v, t}:
+      J.Field{k, Bool.pick(J.Json, String.eq(k, "state"), J.Str{"away"}, v), Dir.away.fields(t)}
+    case _:
+      J.End{}
+
+def Dir.away.one(o: J.Json) -> J.Json:
+  match o:
+    case J.Obj{fs}:
+      J.Obj{Dir.away.fields(fs)}
+    case _:
+      J.Null{}
+
+def Dir.changed(mine: Bool, +o: J.Json) -> J.Json:
+  match mine:
+    case True{}:
+      Dir.away.one(o)
+    case False{}:
+      o
+
+def Dir.away(xs: List<&2, J.Json>, +peer: String) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +o <> t:
+      Dir.changed(String.eq(J.Json.get_str(o, "peer", ""), peer), o) <> Dir.away(t, peer)
+
+def Dir.other(xs: List<&2, J.Json>, +peer: String) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +o <> t:
+      BT.Post.keep(J.Json, Bool.not(String.eq(J.Json.get_str(o, "peer", ""), peer)), o, Dir.other(t, peer))
+
+def Dir.key(+o: J.Json) -> String:
+  J.Json.get_str(o, "peer", "") ++ ":" ++ J.Json.get_str(o, "name", "")
+
+def Dir.le(a: J.Json, b: J.Json) -> Bool:
+  String.is_le(Dir.key(a), Dir.key(b))
+
+def Dir.sort(xs: List<&2, J.Json>) -> List<&2, J.Json>:
+  List.sort(~J.Json, ~Dir.le, xs)
+
+def Dir.merge(m: Maybe<&2, List<&2, J.Json>>, prev: List<&2, J.Json>, +peer: String) -> List<&2, J.Json>:
+  match m:
+    case Some{xs}:
+      Dir.sort(List.append(&2, J.Json, Dir.other(prev, peer), xs))
+    case None{}:
+      Dir.away(prev, peer)
+
+def Dir.accept(current: Bool, result: Maybe<&2, List<&2, J.Json>>, prev: List<&2, J.Json>, +peer: String) -> List<&2, J.Json>:
+  match current:
+    case True{}:
+      Dir.merge(result, prev, peer)
+    case False{}:
+      prev
+
+def Dir.request.one(m: Maybe<&2, BT.Peer>) -> List<&2, BT.Peer>:
+  match m:
+    case Some{p}:
+      [p]
+    case None{}:
+      Nil{}
+
+def Dir.request.k(all: Bool, ps: List<&2, BT.Peer>, +peer: String) -> List<&2, BT.Peer>:
+  match all:
+    case True{}:
+      ps
+    case False{}:
+      Dir.request.one(BT.Peer.by.id(ps, peer))
+
+def Dir.request(ps: List<&2, BT.Peer>, +peer: String) -> List<&2, BT.Peer>:
+  Dir.request.k(String.is_empty(peer), ps, peer)
+
+# Only known away rows make an inbound request a return signal. Empty
+# directories are valid and must not create a reciprocal polling loop.
+def Dir.stale(xs: List<&2, J.Json>, +peer: String) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case +o <> t:
+      Bool.or(Bool.and(String.eq(J.Json.get_str(o, "peer", ""), peer), String.eq(J.Json.get_str(o, "state", ""), "away")), Dir.stale(t, peer))
+
+def Dir.online(ms: List<&2, J.Json>, +name: String, +url: String) -> Bool:
+  match ms:
+    case Nil{}:
+      False{}
+    case +o <> t:
+      Bool.or(Bool.or(String.eq(J.Json.get_str(o, "url", ""), url), String.eq(J.Json.get_str(o, "name", ""), name)), Dir.online(t, name, url))
+
+def Dir.returned(ps: List<&2, BT.Peer>, +before: List<&2, J.Json>, +after: List<&2, J.Json>) -> List<&2, BT.Peer>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case BT.Peer{+i, +n, +u, +ts, +r} <> t:
+      BT.Post.keep(BT.Peer, Bool.and(Bool.not(Dir.online(before, n, u)), Dir.online(after, n, u)), BT.Peer{i, n, u, ts, r}, Dir.returned(t, before, after))
+
+def Dir.linked(xs: List<&2, J.Json>, +ps: List<&2, BT.Peer>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +o <> t:
+      BT.Post.keep(J.Json, Maybe.is_some(&2, BT.Peer, BT.Peer.by.id(ps, J.Json.get_str(o, "peer", ""))), o, Dir.linked(t, ps))
+
+def Dir.all_away(xs: List<&2, J.Json>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case o <> t:
+      Dir.away.one(o) <> Dir.all_away(t)
+
+def Dir.cached(xs: List<&2, J.Json>, +ps: List<&2, BT.Peer>) -> List<&2, J.Json>:
+  Dir.sort(Dir.all_away(Dir.linked(xs, ps)))
+
+# The hub owns this queue. A peer occurs once across active and pending;
+# triggers during its fetch are coalesced. Slots are filled after every
+# completion rather than waiting for the slowest member of a batch.
+type DirWork is Data:
+  DirWork{active: List<&2, String>, pending: List<&2, String>}
+
+def DirWork.empty() -> DirWork:
+  DirWork{Nil{}, Nil{}}
+
+def DirWork.add.k(known: Bool, active: List<&2, String>, pending: List<&2, String>, peer: String) -> DirWork:
+  match known:
+    case True{}:
+      DirWork{active, pending}
+    case False{}:
+      DirWork{active, List.append(&2, String, pending, [peer])}
+
+def DirWork.add(w: DirWork, +peer: String) -> DirWork:
+  match w:
+    case DirWork{+a, +q}:
+      DirWork.add.k(Bool.or(List.contains(~String, ~String.eq, a, peer), List.contains(~String, ~String.eq, q, peer)), a, q, peer)
+
+def DirWork.queue(ps: List<&2, BT.Peer>, w: DirWork) -> DirWork:
+  match ps:
+    case Nil{}:
+      w
+    case BT.Peer{i, _, _, _, _} <> t:
+      DirWork.queue(t, DirWork.add(w, i))
+
+def DirWork.remove(xs: List<&2, String>, +peer: String) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +h <> t:
+      BT.Post.keep(String, Bool.not(String.eq(h, peer)), h, DirWork.remove(t, peer))
+
+def DirWork.finish(w: DirWork, +peer: String) -> DirWork:
+  match w:
+    case DirWork{a, q}:
+      DirWork{DirWork.remove(a, peer), q}
+
+type DirPlan is Data:
+  DirPlan{work: DirWork, launch: List<&2, String>}
+
+def DirPlan.work(p: DirPlan) -> DirWork:
+  match p:
+    case DirPlan{w, _}:
+      w
+
+def DirPlan.launch(p: DirPlan) -> List<&2, String>:
+  match p:
+    case DirPlan{_, xs}:
+      xs
+
+def DirWork.fill(fuel: Nat, w: DirWork, launch: List<&2, String>) -> DirPlan:
+  match fuel w:
+    case 0n _:
+      DirPlan{w, List.reverse(&2, String, launch)}
+    case 1n+f DirWork{a, Nil{}}:
+      DirPlan{DirWork{a, Nil{}}, List.reverse(&2, String, launch)}
+    case 1n+f DirWork{a, +i <> q}:
+      DirWork.fill(f, DirWork{i <> a, q}, i <> launch)
+
+def DirWork.plan(+w: DirWork) -> DirPlan:
+  match w:
+    case DirWork{+a, q}:
+      DirWork.fill(Nat.sub(4n, List.length(&2, String, a)), DirWork{a, q}, Nil{})
+
 # Bots, as a decider (docs/bots.md). Client requests ("bots.*"), the bots'
 # own MCP tools, messages between bots, routines, webhooks and messages
 # from linked machines all come in here and leave as changes and effects,
