@@ -20,14 +20,14 @@ import ../core/bothub.bend as BH
 # what the server keeps for bots: the linked machines' bots (a JSON array,
 # as clients read it) and the signatures accepted within the window
 type Bn is Data:
-  Bn{dir: String, seen: SG.Seen}
+  Bn{dir: String, seen: SG.Seen, work: BH.DirWork}
 
 def Bn.empty() -> Bn:
-  Bn{"[]", SG.Seen.empty()}
+  Bn{"[]", SG.Seen.empty(), BH.DirWork.empty()}
 
 def Bn.dir(b: Bn) -> String:
   match b:
-    case Bn{d, _}:
+    case Bn{d, _, _}:
       d
 
 # Files
@@ -416,18 +416,18 @@ def Bn.seen.k(had: Bool, s: SG.Seen, +key: String, +now: Nat) -> Maybe<&2, SG.Se
 
 def Bn.accept(+b: Bn, +key: String, +now: Nat) -> Maybe<&2, SG.Seen>:
   match b:
-    case Bn{_, +s}:
+    case Bn{_, +s, _}:
       Bn.seen.k(SG.Seen.has(s, key), s, key, now)
 
 def Bn.with_seen(b: Bn, s: SG.Seen) -> Bn:
   match b:
-    case Bn{d, _}:
-      Bn{d, s}
+    case Bn{d, _, w}:
+      Bn{d, s, w}
 
 def Bn.with_dir(b: Bn, d: String) -> Bn:
   match b:
-    case Bn{_, s}:
-      Bn{d, s}
+    case Bn{_, s, w}:
+      Bn{d, s, w}
 
 # Signed requests out
 # -------------------
@@ -575,10 +575,6 @@ def Bn.mine.go(bs: List<&2, BO.Bot>, +s: M.State) -> List<&2, J.Json>:
 def Bn.mine(+s: M.State) -> String:
   J.Json.show(J.Json.arr(Bn.mine.go(BO.World.bots(M.State.bots(s)), s)))
 
-def Bn.item(+peer: String, +pname: String, +look: Nat, +name: String, +state: String, +seen: Nat) -> J.Json:
-  J.Json.obj([J.KV{"name", J.Str{name}}, J.KV{"peer", J.Str{peer}}, J.KV{"peerName", J.Str{pname}}, J.KV{"look", J.Json.nat(look)},
-    J.KV{"state", J.Str{state}}, J.KV{"seen", J.Json.nat(seen)}])
-
 def Bn.item.keep(blank: Bool, it: J.Json, rest: List<&2, J.Json>) -> List<&2, J.Json>:
   match blank:
     case True{}:
@@ -592,48 +588,72 @@ def Bn.items(xs: List<&2, J.Json>, +peer: String, +pname: String, +now: Nat) -> 
       Nil{}
     case +o <> t:
       Bn.item.keep(String.is_empty(Bn.clean(J.Json.get_str(o, "name", ""))),
-        Bn.item(peer, pname, J.Json.get_nat(o, "look", 0n), Bn.clean(J.Json.get_str(o, "name", "")), Bn.clean(J.Json.get_str(o, "state", "ready")), now),
+        BH.Dir.item(peer, pname, J.Json.get_nat(o, "look", 0n), Bn.clean(J.Json.get_str(o, "name", "")), Bn.clean(J.Json.get_str(o, "state", "ready")), now),
         Bn.items(t, peer, pname, now))
 
-def Bn.away.k(mine: Bool, +o: J.Json, rest: List<&2, J.Json>) -> List<&2, J.Json>:
-  match mine:
+# Only directory requests use the short deadline. Delivery keeps Bn.args
+# and its existing 15-second timeout; signed headers still go over stdin.
+def Bn.dir.args(url: String) -> List<&2, String>:
+  ["-sS", "--proto", "=http,https", "--connect-timeout", "2", "-m", "4", "--max-filesize", "1048576",
+    "-X", "GET", "-H", "@-", "-w", "\n%{http_code}", "--url", url]
+
+def Bn.dir.signed(ok: Bool, +url: String, +peer: String, +secret: String, +now: Nat) -> IO(Resp):
+  match ok:
     case True{}:
-      Bn.item(J.Json.get_str(o, "peer", ""), J.Json.get_str(o, "peerName", ""), J.Json.get_nat(o, "look", 0n), J.Json.get_str(o, "name", ""), "away",
-        J.Json.get_nat(o, "seen", 0n)) <> rest
+      do IO<Resp>:
+        r : P.Ran <- Bn.curl(Bn.dir.args(Bn.url.base(url) ++ "/bots/dir"), Bn.headers(peer, now, SG.Sign.header(secret, now, "")))
+        return Bn.resp(r)
     case False{}:
-      rest
+      IO.pure(Resp, Resp{0n, ""})
 
-# a machine that did not answer keeps the bots it had, away
-def Bn.away(xs: List<&2, J.Json>, +peer: String) -> List<&2, J.Json>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case +o <> t:
-      Bn.away.k(String.eq(J.Json.get_str(o, "peer", ""), peer), o, Bn.away(t, peer))
+def Bn.dir.fetch(+home: String, +url: String, +peer: String, +now: Nat) -> IO(Resp):
+  do IO<Resp>:
+    +secret : String <- Bn.peer.secret(home, peer)
+    Bn.dir.signed(Bool.and(Bn.url.ok(url), Bool.not(String.is_empty(secret))), url, peer, secret, now)
 
-def Bn.fetched.j(m: Maybe<&2, J.Json>, +peer: String, +pname: String, +now: Nat, +prev: List<&2, J.Json>) -> List<&2, J.Json>:
+# Malformed JSON, including a valid object rather than an array, fails.
+# An empty array is a successful replacement (the peer removed its bots).
+def Bn.fetched.j(m: Maybe<&2, J.Json>, +peer: String, +pname: String, +now: Nat) -> Maybe<&2, List<&2, J.Json>>:
   match m:
-    case Some{+j}:
-      Bn.items(List.take(&2, J.Json, J.Json.elems(j), 200n), peer, pname, now)
-    case None{}:
-      Bn.away(prev, peer)
+    case Some{J.Arr{xs}}:
+      Some{Bn.items(List.take(&2, J.Json, J.Json.elems(J.Arr{xs}), 200n), peer, pname, now)}
+    case _:
+      None{}
 
-def Bn.fetched(r: Resp, +peer: String, +pname: String, +now: Nat, +prev: List<&2, J.Json>) -> List<&2, J.Json>:
+def Bn.fetched(r: Resp, +peer: String, +pname: String, +now: Nat) -> Maybe<&2, List<&2, J.Json>>:
   match r:
-    case Resp{+code, +body}:
-      Bn.fetched.j(Bool.pick(Maybe<&2, J.Json>, Nat.is_eq(code, 200n), J.Json.parse(body), None{}), peer, pname, now, prev)
+    case Resp{200n, body}:
+      Bn.fetched.j(J.Json.parse(body), peer, pname, now)
+    case _:
+      None{}
 
-def Bn.dir.go(ps: List<&2, BO.Peer>, +home: String, +now: Nat, +prev: List<&2, J.Json>, acc: List<&2, J.Json>) -> IO(List<&2, J.Json>):
-  match ps:
-    case Nil{}:
-      IO.pure(List<&2, J.Json>, acc)
-    case BO.Peer{+i, +n, +u, _, _} <> t:
-      do IO<List<&2, J.Json>>:
-        r : Resp <- Bn.to_peer(home, u, i, now, "/bots/dir", False{}, "")
-        Bn.dir.go(t, home, now, prev, List.append(&2, J.Json, acc, Bn.fetched(r, i, Bool.pick(String, String.is_empty(n), i, n), now, prev)))
+def Bn.work(b: Bn) -> BH.DirWork:
+  match b:
+    case Bn{_, _, w}:
+      w
 
-# every linked machine's bots (asked GET /bots/dir, signed), as the JSON
-# array clients read: [{"name", "peer", "peerName", "look", "state", "seen"}]
-def Bn.dir.fetch(ps: List<&2, BO.Peer>, +home: String, +now: Nat, +prev: String) -> IO(String):
-  IO.bind(List<&2, J.Json>, String, Bn.dir.go(ps, home, now, J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse(prev), J.Null{})), Nil{}),
-    xs => IO.pure(String, J.Json.show(J.Json.arr(xs))))
+def Bn.with_work(b: Bn, w: BH.DirWork) -> Bn:
+  match b:
+    case Bn{d, s, _}:
+      Bn{d, s, w}
+
+def Bn.cache(home: String) -> String:
+  home ++ "/bots.cache"
+
+# One snapshot holds the last directory per peer, with original `seen`.
+# The hub serializes these small local writes; rename keeps a restart
+# from reading a partial file. No event-log entries or secrets here.
+def Bn.cache.saved(ok: Bool, +home: String) -> IO(Unit):
+  match ok:
+    case True{}:
+      do IO<Unit>:
+        r : Result<&1, &1, U32 & String, Unit> <- H.FS.rename(Bn.cache(home) ++ ".tmp", Bn.cache(home))
+        return Unit{}
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Bn.cache.save(+home: String, text: String) -> IO(Unit):
+  IO.bind(Bool, Unit, Bf.secret(Bn.cache(home) ++ ".tmp", text), ok => Bn.cache.saved(ok, home))
+
+def Bn.cache.load(text: String, ps: List<&2, BO.Peer>) -> String:
+  J.Json.show(J.Json.arr(BH.Dir.cached(J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})), ps)))

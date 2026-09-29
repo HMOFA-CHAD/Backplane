@@ -96,7 +96,9 @@ type Msg is Data:
   # this machine's UTC offset as `date +%z` prints it
   BotTick{tz: String}
   # the bots on linked machines (a JSON array)
-  BotsFound{dir: String}
+  BotsFound{peer: String, url: String, result: Maybe<&2, List<&2, J.Json>>}
+  # one peer, or every peer when empty; the hub coalesces active fetches
+  BotsRefresh{peer: String}
   # a request for bots' routes (a webhook, a linked machine, a bot's
   # screen, Google's sign-in redirect); the reply is the whole response
   # (`ct` its content type; `raw` its bytes, kept only for a form with a
@@ -597,17 +599,30 @@ def Hub.info(c: Cfg) -> J.Json:
     case Cfg{+home, _, host, port, _, _, _, net}:
       J.Json.obj(List.append(&2, J.KV, [J.KV{"home", J.Str{home}}, J.KV{"browser.frames", J.Str{home ++ "/browser.rgb"}}, J.KV{"listen", J.Str{host ++ ":" ++ U32.show(port)}}], Info.net(net)))
 
-def Hub.commit.wrote(r: File & Result<&1, &1, U32 & String, Unit>, st: M.State, +line: String, ls: List<&2, String>, cl: List<&2, Client>,
+# A link change is handled after it has been stored, through the inbox,
+# so both sides of an invite refresh immediately (revokes prune rows).
+def Bot.dir.changed(c: M.Change, +inbox: Chan(Msg)) -> IO(Unit):
+  match c:
+    case M.PeerSet{peer, _, _, _, _}:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(Msg, inbox, BotsRefresh{peer})
+        return Unit{}
+    case _:
+      IO.pure(Unit, Unit{})
+
+def Hub.commit.wrote(r: File & Result<&1, &1, U32 & String, Unit>, c: M.Change, st: M.State, +line: String, ls: List<&2, String>, cl: List<&2, Client>,
     as: List<&2, Agent>, +inbox: Chan(Msg), cfg: Cfg, note: String, fresh: List<&2, String>, k: Hub -> List<&2, String> -> IO(Hub & List<&2, String>)) -> IO(Hub & List<&2, String>):
   (f, _) = r
-  k(Hub{st, f, line <> ls, cl, as, inbox, cfg, note}, line <> fresh)
+  do IO<Hub & List<&2, String>>:
+    Bot.dir.changed(c, inbox)
+    k(Hub{st, f, line <> ls, cl, as, inbox, cfg, note}, line <> fresh)
 
 # the full line goes to disk; `wire`, its copy for clients, to the log
-def Hub.commit.one(h: Hub, line: String, +wire: String, c: M.Change, fresh: List<&2, String>, k: Hub -> List<&2, String> -> IO(Hub & List<&2, String>)) -> IO(Hub & List<&2, String>):
+def Hub.commit.one(h: Hub, line: String, +wire: String, +c: M.Change, fresh: List<&2, String>, k: Hub -> List<&2, String> -> IO(Hub & List<&2, String>)) -> IO(Hub & List<&2, String>):
   match h:
     case Hub{st, f, ls, cl, as, +inbox, cfg, note}:
       IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & List<&2, String>, File.write(f, line ++ "\n"),
-        r => Hub.commit.wrote(r, M.State.apply(st, c), wire, ls, cl, as, inbox, cfg, note, fresh, k))
+        r => Hub.commit.wrote(r, c, M.State.apply(st, c), wire, ls, cl, as, inbox, cfg, note, fresh, k))
 
 def Hub.announce(r: Hub & List<&2, String>) -> IO(Hub):
   (h, fresh) = r
@@ -3949,29 +3964,108 @@ def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):
 # The minute
 # ----------
 
-def Bot.dir.job(ps: List<&2, BO.Peer>, +home: String, +now: Nat, +prev: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(String, Unit, BN.Bn.dir.fetch(ps, home, now, prev), d => IO.bind(Bool, Unit, Chan.send(Msg, inbox, BotsFound{d}), ok => IO.pure(Unit, Unit{})))
+# Each worker publishes as soon as its peer answers. The hub owns slots;
+# no worker reads or replaces a snapshot of another worker's result.
+def Bot.dir.job(+peer: String, +url: String, +pname: String, +home: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +now : Nat <- Now.nat()
+    r : BN.Resp <- BN.Bn.dir.fetch(home, url, peer, now)
+    seen : Nat <- Now.nat()
+    ok : Bool <- Chan.send(Msg, inbox, BotsFound{peer, url, BN.Bn.fetched(r, peer, pname, seen)})
+    return Unit{}
 
-# routines that are due run, and the linked machines are asked for their bots
-def Hub.bot_tick(h: Hub, +tz: String, +now: Nat) -> IO(Hub):
+def Bot.dir.launch(ids: List<&2, String>, +st: M.State, +cfg: Cfg, +inbox: Chan(Msg)) -> IO(Unit):
+  match ids:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case +i <> t:
+      do IO<Unit>:
+        IO.spawn(Unit, Bot.dir.job(i, Bot.peer.url(st, i), Bot.peer.name(st, i), Cfg.home(cfg), inbox))
+        Bot.dir.launch(t, st, cfg, inbox)
+
+def Hub.dir.plan(h: Hub, +plan: BH.DirPlan) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
       do IO<Hub>:
-        IO.spawn(Unit, Bot.dir.job(BO.World.peers(M.State.bots(st)), Cfg.home(cfg), now, BN.Bn.dir(Cfg.bn(cfg)), inbox))
-        Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, BH.Bots.tick(st, now, BH.Tz{M.Snooze.tz.secs(tz), M.Snooze.tz.east(tz)}))
+        Bot.dir.launch(BH.DirPlan.launch(plan), st, cfg, inbox)
+        return Hub{st, f, ls, cl, as, inbox, Cfg.with_bn(cfg, BN.Bn.with_work(Cfg.bn(cfg), BH.DirPlan.work(plan))), note}
 
-def Hub.bots_found.k(same: Bool, h: Hub, d: String) -> IO(Hub):
+def Hub.dir.queue(h: Hub, ps: List<&2, BO.Peer>) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.dir.plan(Hub{st, f, ls, cl, as, inbox, cfg, note}, BH.DirWork.plan(BH.DirWork.queue(ps, BN.Bn.work(Cfg.bn(cfg)))))
+
+def Hub.bots_found.k(same: Bool, h: Hub, +d: String) -> IO(Hub):
   match same h:
     case True{} _:
       IO.pure(Hub, h)
     case False{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.models.k(Hub{st, f, ls, cl, as, inbox, Cfg.with_bn(cfg, BN.Bn.with_dir(Cfg.bn(cfg), d)), note})
+      do IO<Hub>:
+        BN.Bn.cache.save(Cfg.home(cfg), d)
+        Hub.models.k(Hub{st, f, ls, cl, as, inbox, Cfg.with_bn(cfg, BN.Bn.with_dir(Cfg.bn(cfg), d)), note})
 
-# the linked machines' bots changed: every client hears (info "bots.remote")
-def Hub.bots_found(h: Hub, +d: String) -> IO(Hub):
+# Compare with the current directory, never the worker's starting copy.
+def Hub.dir.publish(h: Hub, +d: String) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.bots_found.k(String.eq(BN.Bn.dir(Cfg.bn(cfg)), d), Hub{st, f, ls, cl, as, inbox, cfg, note}, d)
+
+# Only the result of a still-linked peer at the same URL is accepted.
+# Always release its slot, including for failures and revoked links.
+def Hub.bots_found(h: Hub, +peer: String, +url: String, result: Maybe<&2, List<&2, J.Json>>) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +prev : List<&2, J.Json> = J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse(BN.Bn.dir(Cfg.bn(cfg))), J.Null{}))
+        +rows : List<&2, J.Json> = BH.Dir.accept(Bool.and(Bot.peer.live(st, peer), String.eq(Bot.peer.url(st, peer), url)), result, prev, peer)
+        h2 : Hub <- Hub.dir.publish(Hub{st, f, ls, cl, as, inbox,
+          Cfg.with_bn(cfg, BN.Bn.with_work(Cfg.bn(cfg), BH.DirWork.finish(BN.Bn.work(Cfg.bn(cfg)), peer))), note},
+          J.Json.show(J.Json.arr(BH.Dir.linked(rows, BO.World.peers(M.State.bots(st))))))
+        Hub.dir.queue(h2, Nil{})
+
+# Link changes prune the cache too, so revoked peers stay gone on restart.
+def Hub.dir.refresh(h: Hub, +peer: String) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +ps : List<&2, BO.Peer> = BO.World.peers(M.State.bots(st))
+        h2 : Hub <- Hub.dir.publish(Hub{st, f, ls, cl, as, inbox, cfg, note}, J.Json.show(J.Json.arr(BH.Dir.linked(
+          J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse(BN.Bn.dir(Cfg.bn(cfg))), J.Null{})), ps))))
+        Hub.dir.queue(h2, BH.Dir.request(ps, peer))
+
+# Routines keep their minute cadence; the ticker's first message also
+# refreshes directories immediately after the hub/window has opened.
+def Hub.bot_tick(h: Hub, +tz: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        h2 : Hub <- Hub.dir.refresh(Hub{st, f, ls, cl, as, inbox, cfg, note}, "")
+        Hub.step(h2, BH.Bots.tick(st, now, BH.Tz{M.Snooze.tz.secs(tz), M.Snooze.tz.east(tz)}))
+
+# Discovery and signed inbound traffic are return signals. Fetch just the
+# returning peer, and never bounce every successful directory request.
+def Bot.dir.machines(n: Net) -> String:
+  match n:
+    case Net{_, _, _, _, _, _, _, _, _, mc, _, _, _, _, _}:
+      mc
+
+def Hub.dir.returned(h: Hub, +mc: String) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        h2 : Hub <- Hub.machines(Hub{st, f, ls, cl, as, inbox, cfg, note}, mc)
+        Hub.dir.queue(h2, BH.Dir.returned(BO.World.peers(M.State.bots(st)),
+          J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(Bot.dir.machines(Cfg.net(cfg))), J.Null{}), "peers")),
+          J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(mc), J.Null{}), "peers"))))
+
+def Bot.dir.awake(refresh: Bool, +inbox: Chan(Msg), +peer: String) -> IO(Unit):
+  match refresh:
+    case True{}:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(Msg, inbox, BotsRefresh{peer})
+        return Unit{}
+    case False{}:
+      IO.pure(Unit, Unit{})
 
 # Requests from outside
 # ---------------------
@@ -4275,8 +4369,11 @@ def Hub.bot.seen(bad: Bool, m: Maybe<&2, SG.Seen>, h: Hub, +why: String, +kind: 
       Hub.answer(h, reply, W.Http.text("401 Unauthorized", why))
     case False{} None{} _:
       Hub.answer(h, reply, W.Http.text("401 Unauthorized", "already seen"))
-    case False{} Some{s} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.bot.act(C.Codec.pos(["hook", "deliver", "link", "dir"], kind), Hub{st, f, ls, cl, as, inbox, Cfg.with_bn(cfg, BN.Bn.with_seen(Cfg.bn(cfg), s)), note},
+    case False{} Some{s} Hub{st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        Bot.dir.awake(Bool.and(Bool.or(String.eq(kind, "dir"), String.eq(kind, "deliver")), BH.Dir.stale(
+          J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse(BN.Bn.dir(Cfg.bn(cfg))), J.Null{})), arg)), inbox, arg)
+        Hub.bot.act(C.Codec.pos(["hook", "deliver", "link", "dir"], kind), Hub{st, f, ls, cl, as, inbox, Cfg.with_bn(cfg, BN.Bn.with_seen(Cfg.bn(cfg), s)), note},
         arg, body, me, reply, now)
 
 # a signed request (or a webhook's bearer token), checked: genuine (key),
@@ -4810,8 +4907,10 @@ def Msg.kind(m: Msg) -> String:
       "commit"
     case BotTick{_}:
       "bot_tick"
-    case BotsFound{_}:
+    case BotsFound{_, _, _}:
       "bots_found"
+    case BotsRefresh{_}:
+      "bots_refresh"
     case BotHttp{_, _, _, _, _, _, _, _, _, _, _}:
       "bot_http"
     case BotVerified{_, _, _, _, _, _}:
@@ -4862,15 +4961,17 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case ModelsFound{ms, mt}:
       Hub.models(h, ms, mt)
     case MachinesFound{mc}:
-      Hub.machines(h, mc)
+      Hub.dir.returned(h, mc)
     case LinkFound{lk}:
       Hub.link(h, lk)
     case Commit{cs}:
       Hub.step(h, B.Step{cs, Nil{}})
     case BotTick{tz}:
       Hub.bot_tick(h, tz, now)
-    case BotsFound{d}:
-      Hub.bots_found(h, d)
+    case BotsFound{peer, url, result}:
+      Hub.bots_found(h, peer, url, result)
+    case BotsRefresh{peer}:
+      Hub.dir.refresh(h, peer)
     case BotHttp{kind, arg, peer, ts, sig, gh, dl, body, ct, raw, reply}:
       Hub.bot_http(h, kind, arg, peer, ts, sig, gh, dl, body, ct, raw, reply, now)
     case BotVerified{kind, arg, key, body, me, reply}:
@@ -5032,6 +5133,7 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         f : Result<&1, &1, U32 & String, File> <- File.open(Store.path(home), "a")
         tok : String <- Token.load(home)
         +mc : String <- Files.text(Models.cache(home))
+        +bc : String <- BN.Bf.text(BN.Bn.cache(home))
         +off : String <- Env.get("BACKPLANE_NO_UPDATE", "")
         +ai : String <- Env.get("APPIMAGE", "")
-        Main.opened(f, st, ls, Cfg.with_managed(Cfg.with_models(Cfg.with_token(Cfg{home, w, h, p, pr, ds, v, nt}, tok), BT.Cache.json(mc), BT.Cache.text(mc)), SV.Chan.managed(off, ai)), need, front)
+        Main.opened(f, st, ls, Cfg.with_managed(Cfg.with_models(Cfg.with_bn(Cfg.with_token(Cfg{home, w, h, p, pr, ds, v, nt}, tok), BN.Bn.with_dir(BN.Bn.empty(), BN.Bn.cache.load(bc, BO.World.peers(M.State.bots(st))))), BT.Cache.json(mc), BT.Cache.text(mc)), SV.Chan.managed(off, ai)), need, front)

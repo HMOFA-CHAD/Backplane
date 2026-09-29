@@ -3342,3 +3342,45 @@ law bots_away_cat_posed_once:
 law bots_moving_cat_follows_clock:
   for +c: Nat
   {BV.Bv.warm.at("work", c) == c : Nat}
+
+# Per-peer remote bot directories and bounded refreshes
+
+law remote_dir_failed_peer:
+  for +xs: List<&2, J.Json>
+  for +p: String
+  {BHS.Dir.merge(None{}, xs, p) == BHS.Dir.away(xs, p) : List<&2, J.Json>}
+
+law remote_dir_away_seen:
+  for +p: String
+  for +n: String
+  for +look: Nat
+  for +seen: Nat
+  {J.Json.get_obj(BHS.Dir.away.one(BHS.Dir.item(p, "machine", look, n, "work", seen)), "seen") == J.Json.nat(seen) : J.Json}
+
+law remote_dir_arrival_order:
+  {BHS.Dir.merge(Some{[BHS.Dir.item("a", "alpha", 0n, "miso", "ready", 1n)]},
+      [BHS.Dir.item("b", "beta", 0n, "nori", "ready", 1n)], "a") ==
+    BHS.Dir.merge(Some{[BHS.Dir.item("b", "beta", 0n, "nori", "ready", 1n)]},
+      [BHS.Dir.item("a", "alpha", 0n, "miso", "ready", 1n)], "b") : List<&2, J.Json>}
+
+law remote_dir_other_unchanged:
+  for +o: J.Json
+  {BHS.Dir.changed(False{}, o) == o : J.Json}
+
+law remote_dir_obsolete_ignored:
+  for +xs: List<&2, J.Json>
+  for +p: String
+  for +r: Maybe<&2, List<&2, J.Json>>
+  {BHS.Dir.accept(False{}, r, xs, p) == xs : List<&2, J.Json>}
+
+law remote_dir_known_not_queued:
+  for +a: List<&2, String>
+  for +q: List<&2, String>
+  for +p: String
+  {BHS.DirWork.add.k(True{}, a, q, p) == BHS.DirWork{a, q} : BHS.DirWork}
+
+law remote_dir_four_slots:
+  {BHS.DirPlan.launch(BHS.DirWork.plan(BHS.DirWork{[], ["a", "b", "c", "d", "e"]})) == ["a", "b", "c", "d"] : List<&2, String>}
+
+law remote_dir_freed_slot:
+  {BHS.DirPlan.launch(BHS.DirWork.plan(BHS.DirWork.finish(BHS.DirWork{["d", "c", "b", "a"], ["e"]}, "b"))) == ["e"] : List<&2, String>}

@@ -5731,3 +5731,28 @@ def Laws.bots_away_cat_posed_once(c):
 
 def Laws.bots_moving_cat_follows_clock(c):
   {==}
+
+# Per-peer remote bot directories and bounded refreshes
+def Laws.remote_dir_failed_peer(xs, p):
+  {==}
+
+def Laws.remote_dir_away_seen(p, n, look, seen):
+  {==}
+
+def Laws.remote_dir_arrival_order():
+  {==}
+
+def Laws.remote_dir_other_unchanged(o):
+  {==}
+
+def Laws.remote_dir_obsolete_ignored(xs, p, r):
+  {==}
+
+def Laws.remote_dir_known_not_queued(a, q, p):
+  {==}
+
+def Laws.remote_dir_four_slots():
+  {==}
+
+def Laws.remote_dir_freed_slot():
+  {==}
