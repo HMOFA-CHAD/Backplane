@@ -4021,10 +4021,32 @@ def Far.push.go(ps: List<&2, BO.Peer>, h: Hub, +from: Nat, +to: Nat, +xs: List<&
 # our current head. Its mirror can pull even if our commits happened
 # before discovery, or our hub restarted without an observed away tick.
 # Only discovery's newly returned peers are offered; no extra timer.
+def Far.offer.job(+link: String, +head: Nat, +epoch: String, +home: String, +url: String) -> IO(Unit):
+  do IO<Unit>:
+    now : Nat <- Now.nat()
+    +name : String <- BN.Bn.name()
+    r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/push", True{},
+      FR.Fr.with.epoch(FR.Send.body(FR.Send{link, head, head, Nil{}}, name), epoch))
+    return Unit{}
+
+# An empty head hint is deliberately outside the item queue: Out.next
+# sends only batches with items. It carries no acknowledgement for that
+# queue, and cannot reset a mirror without an authoritative pull.
+def Far.offer.go(ps: List<&2, BO.Peer>, +head: Nat, +epoch: String, +home: String) -> IO(Unit):
+  match ps:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case BO.Peer{+link, _, +url, _, _} <> t:
+      do IO<Unit>:
+        IO.spawn(Unit, Far.offer.job(link, head, epoch, home, url))
+        Far.offer.go(t, head, epoch, home)
+
 def Far.offer(h: Hub, +ps: List<&2, BO.Peer>) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      Far.push.go(Far.own.go(ps, cfg), Hub{st, f, ls, cl, as, inbox, cfg, note}, M.State.seq(st), M.State.seq(st), Nil{})
+      do IO<Hub>:
+        Far.offer.go(Far.own.go(ps, cfg), M.State.seq(st), FR.Fh.epoch(BN.Bn.far(Cfg.bn(cfg))), Cfg.home(cfg))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 def Far.feed.put(p: FR.Fh & Hub, ls: List<&2, FR.Line>) -> Hub:
   (fh, h) = p
