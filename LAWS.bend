@@ -3484,3 +3484,102 @@ law far_bot_tabs:
 
 law far_bot_tabs_here:
   {BU.BU.tabs.of("b1") == BU.BU.tabs() : List<&2, String>}
+
+# Remote bots in the same view
+# ----------------------------
+# A row opens what it stands for: a bot with a thread here (this
+# machine's, or one mirrored from a linked machine) as a bot; a bot only
+# reported by a linked machine as the conversation with it
+law far_row_act_mirror:
+  for +i: String
+  for +n: String
+  for +lk: Nat
+  for +m: String
+  for +no: String
+  for +se: Bool
+  for +pe: String
+  for +l: String
+  {BU.BU.act(BU.BRow{i, n, "p1~bt1", lk, m, no, se, True{}, pe, l}) == "bot" : String}
+
+law far_row_act_reported:
+  for +i: String
+  for +n: String
+  for +lk: Nat
+  for +m: String
+  for +no: String
+  for +se: Bool
+  for +pe: String
+  for +l: String
+  {BU.BU.act(BU.BRow{i, n, "", lk, m, no, se, True{}, pe, l}) == "remote" : String}
+
+# a bot elsewhere is named with its machine; one here by its name alone
+law bot_row_title_far:
+  for +i: String
+  for +th: String
+  for +lk: Nat
+  for +m: String
+  for +no: String
+  for +se: Bool
+  for +l: String
+  {BU.BU.row.title(BU.BRow{i, "Kit", th, lk, m, no, se, True{}, "box", l}) == "Kit · box" : String}
+
+law bot_row_title_here:
+  for +i: String
+  for +n: String
+  for +th: String
+  for +lk: Nat
+  for +m: String
+  for +no: String
+  for +se: Bool
+  for +pe: String
+  for +l: String
+  {BU.BU.row.title(BU.BRow{i, n, th, lk, m, no, se, False{}, pe, l}) == n : String}
+
+# a bot only reported by a linked machine shows in a bot's view with one
+# tab, its chat, and nothing that acts on its machine
+law bot_head_remote:
+  for +u: U.Ui
+  for +id: String
+  for +t: String
+  for +lk: Nat
+  for +m: String
+  {BU.BU.head.m(True{}, u, id, t, lk, m) == BU.Head{t, lk, m, BU.Mood.note(m), ["chat"], "chat", False{}, False{}} : BU.Head}
+
+law bot_head_remote_view:
+  for +u: U.Ui
+  for +id: String
+  {BU.Head.tabs(BU.BU.head(u, BU.VRemote{id})) == ["chat"] : List<&2, String>}
+
+# a mirrored bot's view has the tabs its machine shares, no viewer (its
+# files are on its machine), and its memory and routines are read here
+law far_bot_head_tabs:
+  for +u: U.Ui
+  for +t: String
+  for +lk: Nat
+  for +m: String
+  {BU.Head.tabs(BU.BU.head.m(False{}, u, "p1~b1", t, lk, m)) == ["chat", "space", "memory", "routines"] : List<&2, String>}
+
+law far_bot_head_stays_home:
+  for +u: U.Ui
+  for +t: String
+  for +lk: Nat
+  for +m: String
+  {Bool.or(BU.Head.viewer(BU.BU.head.m(False{}, u, "p1~b1", t, lk, m)), BU.Head.owns(BU.BU.head.m(False{}, u, "p1~b1", t, lk, m))) == False{} : Bool}
+
+law bot_head_here_owns:
+  for +u: U.Ui
+  for +t: String
+  for +lk: Nat
+  for +m: String
+  {Bool.and(BU.Head.viewer(BU.BU.head.m(False{}, u, "b1", t, lk, m)), BU.Head.owns(BU.BU.head.m(False{}, u, "b1", t, lk, m))) == True{} : Bool}
+
+# on a phone paired with a bot's own hub and a hub that mirrors it, the
+# mirrored copy adds nothing: the bot shows once, as its own hub's
+law hubs_bots_mirror_dropped:
+  for +far: Bool
+  for +want: Bool
+  for +hs: List<&2, Hb.Hub>
+  for +from: String
+  for +r: J.Json
+  for rest: List<&2, ON.Ky<J.Json>>
+  {Hb.Hubs.bot.keep.k(True{}, far, want, hs, from, r, rest) == rest : List<&2, ON.Ky<J.Json>>}

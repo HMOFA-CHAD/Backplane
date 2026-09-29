@@ -5794,3 +5794,33 @@ def Laws.far_bot_tabs():
 
 def Laws.far_bot_tabs_here():
   {==}
+
+def Laws.far_row_act_mirror(i, n, lk, m, no, se, pe, l):
+  {==}
+
+def Laws.far_row_act_reported(i, n, lk, m, no, se, pe, l):
+  {==}
+
+def Laws.bot_row_title_far(i, th, lk, m, no, se, l):
+  {==}
+
+def Laws.bot_row_title_here(i, n, th, lk, m, no, se, pe, l):
+  {==}
+
+def Laws.bot_head_remote(u, id, t, lk, m):
+  {==}
+
+def Laws.bot_head_remote_view(u, id):
+  {==}
+
+def Laws.far_bot_head_tabs(u, t, lk, m):
+  {==}
+
+def Laws.far_bot_head_stays_home(u, t, lk, m):
+  {==}
+
+def Laws.bot_head_here_owns(u, t, lk, m):
+  {==}
+
+def Laws.hubs_bots_mirror_dropped(far, want, hs, from, r, rest):
+  {==}

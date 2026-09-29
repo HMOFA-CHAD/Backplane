@@ -100,8 +100,11 @@ def main() -> IO(Unit):
     C.Check.str("remote log keeps the home list",
       rows(U.Machines.rows(U.Ui.recv(after(U.Ui.act(home(), "machine", "http://100.2.2.2:3787")), msg("{\"t\":\"log\",\"items\":[],\"info\":{\"machines\":\"{}\"}}")))),
       "laptop=|desktop=http://100.2.2.2:3787*|")
-    C.Check.str("a bot on the owner's machine opens there", cmds(U.Ui.act(linked(""), "remote", "Kit@p1")), "connect http://100.2.2.2:3787")
-    C.Check.str("and is shown once that hub's log comes", shown(U.Ui.recv(after(U.Ui.act(linked(""), "remote", "Kit@p1")), desk())), "b1/bt1/")
+    # the window no longer switches hubs to show a bot (that fetched the
+    # other hub's whole log): a bot not mirrored here is the conversation
+    # (a mirrored one opens as a bot, test/far_test.bend, farui_test.bend)
+    C.Check.str("a bot on the owner's machine never switches hubs", cmds(U.Ui.act(linked(""), "remote", "Kit@p1")), "none")
+    C.Check.str("and is the conversation until it is mirrored", shown(after(U.Ui.act(linked(""), "remote", "Kit@p1"))), "//Kit@p1")
     C.Check.str("a bot on someone else's machine is a conversation", cmds(U.Ui.act(linked(""), "remote", "Pal@p2")), "none")
     C.Check.str("shown as one", shown(after(U.Ui.act(linked(""), "remote", "Pal@p2"))), "//Pal@p2")
     C.Check.str("a machine name alone, off the tailnet, is not enough", cmds(U.Ui.act(U.Ui.info_set(U.Ui.info_set(home(), "bots.remote", fars()), "local.fixed", ""), "remote", "Kit@desktop")), "none")
