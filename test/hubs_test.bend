@@ -91,7 +91,13 @@ def main() -> IO(Unit):
     C.Check.str("select moves to its hub", H.Hubs.cur(H.Hubs.after(H.Hubs.act(two(), "select", "box:3787|t2"))), "box:3787")
     C.Check.str("selected there", sel(H.Hubs.after(H.Hubs.act(two(), "select", "box:3787|t2")), "box:3787"), "t2")
     C.Check.str("screen sel qualified", screen(H.Hubs.after(H.Hubs.act(two(), "select", "box:3787|t2")), "sel"), "box:3787|t2")
-    C.Check.str("thread shown", J.Json.get_str(J.Json.get_obj(H.Hubs.screen(H.Hubs.after(H.Hubs.act(two(), "select", "box:3787|t2"))), "thread"), "title", ""), "Two")
+    C.Check.str("thread shown with its machine", J.Json.get_str(J.Json.get_obj(H.Hubs.screen(H.Hubs.after(H.Hubs.act(two(), "select", "box:3787|t2"))), "thread"), "title", ""), "Two · box")
+    C.Check.str("offline selected owner stays named", J.Json.get_str(J.Json.get_obj(H.Hubs.screen(H.Hubs.after(H.Hubs.online(H.Hubs.after(H.Hubs.act(two(), "select", "box:3787|t2")), "box:3787", False{}))), "thread"), "title", ""), "Two · box (away)")
+    C.Check.str("single hub title stays plain", J.Json.get_str(H.Hubs.origin.row(False{}, J.Json.obj([J.KV{"title", J.Str{"One"}}]), "lap", False{}), "title", ""), "One")
+    C.Check.str("active direct owner named", J.Json.get_str(H.Hubs.origin.row(True{}, J.Json.obj([J.KV{"id", J.Str{"box:3787|t2"}}, J.KV{"title", J.Str{"Two"}}]), "box", True{}), "title", ""), "Two · box")
+    C.Check.str("active owner id stays routable", J.Json.get_str(H.Hubs.origin.row(True{}, J.Json.obj([J.KV{"id", J.Str{"box:3787|t2"}}, J.KV{"title", J.Str{"Two"}}]), "box", False{}), "id", ""), "box:3787|t2")
+    C.Check.str("mirror title never names its relay", J.Json.get_str(H.Hubs.origin.row(True{}, J.Json.obj([J.KV{"id", J.Str{"lap:3787|p1~t2"}}, J.KV{"title", J.Str{"Two · box"}}]), "lap", True{}), "title", ""), "Two · box")
+    C.Check.str("reported-only title stays with owner", J.Json.get_str(H.Hubs.origin.row(True{}, J.Json.obj([J.KV{"kind", J.Str{"remote"}}, J.KV{"title", J.Str{"Kit · box"}}]), "lap", True{}), "title", ""), "Kit · box")
     C.Check.str("the hub left drops its thread",
       sel(H.Hubs.after(H.Hubs.act(H.Hubs.after(H.Hubs.act(two(), "select", "100.1.1.1:3787|t1")), "select", "box:3787|t2")), "100.1.1.1:3787"), "")
     C.Check.str("a thread's action goes to the current hub",

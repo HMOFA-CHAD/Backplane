@@ -3803,3 +3803,19 @@ law far_arrival_thread_selected:
 law far_arrival_focus_unchanged:
   for n: N.Nui
   {N.Nui.unremote.k(False{}, n) == n : N.Nui}
+
+law hubs_origin_label_plain:
+  for v: J.Json
+  for name: String
+  for online: Bool
+  {Hb.Hubs.origin.label(False{}, v, name, online) == v : J.Json}
+
+law hubs_origin_title_here:
+  for title: String
+  for name: String
+  {Hb.Hubs.origin.title(True{}, title, name, True{}) == title ++ " · " ++ name : String}
+
+law hubs_origin_title_away:
+  for title: String
+  for name: String
+  {Hb.Hubs.origin.title(True{}, title, name, False{}) == title ++ " · " ++ name ++ " (away)" : String}

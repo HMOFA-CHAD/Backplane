@@ -545,7 +545,7 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
   thread rows, project sections and timeline headers use the same machine
   marker. On phones paired with both hubs, the paired owner's catalog
   replaces mirrored sections/rows once it has loaded (`Hubs.catalog.*`);
-  its cached mirror stays visible until then. When the paired owner differs from
+  its cached mirror stays visible until then. Direct paired-owner Active rows and focused thread/bot headers keep the machine name too; an offline owner is marked away, and an already-marked mirror keeps its original title. When the paired owner differs from
   the focused hub, its machine badge remains visible. Hidden Older and Settled
   counts also drop duplicates.
 - Not mirrored: streamed text while a far turn runs (its messages arrive as

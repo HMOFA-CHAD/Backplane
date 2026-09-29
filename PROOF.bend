@@ -6063,3 +6063,12 @@ def Laws.far_arrival_thread_selected(u, id, name, thread):
 
 def Laws.far_arrival_focus_unchanged(n):
   {==}
+
+def Laws.hubs_origin_label_plain(v, name, online):
+  {==}
+
+def Laws.hubs_origin_title_here(title, name):
+  {==}
+
+def Laws.hubs_origin_title_away(title, name):
+  {==}

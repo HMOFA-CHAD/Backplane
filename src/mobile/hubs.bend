@@ -710,6 +710,65 @@ def Hubs.origin.projects(ps: List<&2, J.Json>, +ss: List<&2, Shown>, +cur: Strin
       Hubs.origin.project(Bool.and(Bool.not(String.eq(Hubs.key_of(id), cur)), Bool.not(FR.Fr.is(Hubs.rest(id)))), p,
         Hubs.origin.name(ss, Hubs.key_of(id))) <> Hubs.origin.projects(t, ss, cur)
 
+# A directly paired owner survives mirror deduplication. Its Active rows
+# and focused headers still name their machine, including when its socket
+# is offline. Far and reported-only titles already name their origin.
+def Hubs.origin.caption(online: Bool, title: String, name: String) -> String:
+  match online:
+    case True{}:
+      title ++ " · " ++ name
+    case False{}:
+      title ++ " · " ++ name ++ " (away)"
+
+def Hubs.origin.title(mark: Bool, title: String, +name: String, +online: Bool) -> String:
+  match mark:
+    case False{}:
+      title
+    case True{}:
+      Hubs.origin.caption(online, title, name)
+
+def Hubs.origin.fields(fs: J.Json, +name: String, +online: Bool) -> J.Json:
+  match fs:
+    case J.Field{+k, J.Str{+v}, t}:
+      J.Field{k, J.Str{Hubs.origin.title(String.eq(k, "title"), v, name, online)}, Hubs.origin.fields(t, name, online)}
+    case J.Field{k, v, t}:
+      J.Field{k, v, Hubs.origin.fields(t, name, online)}
+    case x:
+      x
+
+def Hubs.origin.object(v: J.Json, +name: String, +online: Bool) -> J.Json:
+  match v:
+    case J.Obj{fs}:
+      J.Obj{Hubs.origin.fields(fs, name, online)}
+    case _:
+      v
+
+def Hubs.origin.label(mark: Bool, v: J.Json, name: String, online: Bool) -> J.Json:
+  match mark:
+    case False{}:
+      v
+    case True{}:
+      Hubs.origin.object(v, name, online)
+
+def Hubs.origin.direct(+v: J.Json) -> Bool:
+  +id = J.Json.get_str(v, "id", "")
+  Bool.not(Bool.or(Bool.or(FR.Fr.is(id), FR.Fr.is(Hubs.rest(id))),
+    Bool.or(J.Json.get_bool(v, "remote", False{}), String.eq(J.Json.get_str(v, "kind", ""), "remote"))))
+
+def Hubs.origin.row(+many: Bool, +v: J.Json, +name: String, +online: Bool) -> J.Json:
+  Hubs.origin.label(Bool.and(many, Hubs.origin.direct(v)), v, name, online)
+
+def Hubs.origin.rows(rs: List<&2, J.Json>, +many: Bool, +name: String, +online: Bool) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      Hubs.origin.row(many, r, name, online) <> Hubs.origin.rows(t, many, name, online)
+
+def Hubs.origin.focus(+ss: List<&2, Shown>, +cur: String, +field: String) -> J.Json:
+  Hubs.origin.row(Nat.is_gt(List.length(&2, Shown, ss), 1n), J.Json.get_obj(Hubs.of(ss, cur), field),
+    Hubs.origin.name(ss, cur), J.Json.get_bool(Hubs.of(ss, cur), "online", False{}))
+
 # every hub's folded shelf at k ("older": older projects; "settled": the
 # active view's settled rows) as one: how many in all, and open when any
 # hub's is ("side-older", "side-settled" go to every hub)
@@ -743,15 +802,16 @@ def Hubs.arow.cmp(+a: J.Json, +b: J.Json) -> Bool:
 def Hubs.arow.before(a: J.Json, b: J.Json) -> Bool:
   Hubs.arow.cmp(a, b)
 
-def Hubs.active.all(ss: List<&2, Shown>) -> List<&2, J.Json>:
+def Hubs.active.all(ss: List<&2, Shown>, +many: Bool) -> List<&2, J.Json>:
   match ss:
     case Nil{}:
       Nil{}
-    case Shown{_, _, +j} <> t:
-      List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(j, "active")), Hubs.active.all(t))
+    case Shown{_, +name, +j} <> t:
+      List.append(&2, J.Json, Hubs.origin.rows(J.Json.elems(J.Json.get_obj(j, "active")), many, name,
+        J.Json.get_bool(j, "online", False{})), Hubs.active.all(t, many))
 
-def Hubs.active(ss: List<&2, Shown>) -> List<&2, J.Json>:
-  List.sort(~J.Json, ~Hubs.arow.before, Hubs.active.all(ss))
+def Hubs.active(+ss: List<&2, Shown>) -> List<&2, J.Json>:
+  List.sort(~J.Json, ~Hubs.arow.before, Hubs.active.all(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)))
 
 # every hub's list at k (bots, rooms), named by machine when there are several
 def Hubs.all(ss: List<&2, Shown>, +k: String, +many: Bool) -> List<&2, J.Json>:
@@ -1108,12 +1168,12 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
     J.KV{"settings", J.Json.get_obj(Hubs.of(ss, cur), "settings")},
     J.KV{"find", J.Json.get_obj(Hubs.of(ss, cur), "find")},
     J.KV{"island", N.Note.island.k(Hubs.lines(ss))},
-    J.KV{"thread", J.Json.get_obj(Hubs.of(ss, cur), "thread")},
+    J.KV{"thread", Hubs.origin.focus(ss, cur, "thread")},
     J.KV{"bots", J.Json.arr(Hubs.bots(ss, list, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},
     J.KV{"rooms", J.Json.arr(Hubs.rooms(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},
     J.KV{"newBot", J.Json.get_obj(Hubs.of(ss, cur), "newBot")},
     J.KV{"newRoom", J.Json.get_obj(Hubs.of(ss, cur), "newRoom")},
-    J.KV{"bot", J.Json.get_obj(Hubs.of(ss, cur), "bot")},
+    J.KV{"bot", Hubs.origin.focus(ss, cur, "bot")},
     J.KV{"hub", J.Json.str(cur)},
     J.KV{"hubs", J.Json.arr(Hubs.rows(ss))},
     J.KV{"found", J.Json.arr(Hubs.found(list))}])
