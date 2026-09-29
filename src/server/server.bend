@@ -4738,11 +4738,17 @@ def Bot.page.sent(none: Bool, +html: String, +reply: Chan(List<&2, U32>)) -> IO(
         "Content-Security-Policy: " ++ SPC.Space.page.csp() ++ "\r\nX-Content-Type-Options: nosniff\r\n"))
 
 # a bot's space page (Space.page: no scripts, nothing from the network)
+# a bot's page: one here from the read model, one mirrored from a linked
+# machine ("<link>~<id>") from its mirror
+def Hub.bot.page.html(+st: M.State, +cfg: Cfg, +bot: String) -> String:
+  Bool.pick(String, FR.Fr.is(bot), FR.In.page(FR.Fh.in(BN.Bn.far(Cfg.bn(cfg)), FR.Fr.link(bot), ""), FR.Fr.local(bot)),
+    BO.Page.html(BO.World.spage(M.State.bots(st), bot)))
+
 def Hub.bot.page(h: Hub, +bot: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
-        +html : String = BO.Page.html(BO.World.spage(M.State.bots(st), bot))
+        +html : String = Hub.bot.page.html(st, cfg, bot)
         IO.spawn(Unit, Bot.page.sent(Bool.or(String.is_empty(bot), String.is_empty(html)), html, reply))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
@@ -4895,8 +4901,12 @@ def Conn.bot.shot_id(+r: String) -> String:
   Bool.pick(String, BN.Bn.safe(String.take(String.drop(r, 6n), Nat.sub(String.length(r), 17n))), String.take(String.drop(r, 6n), Nat.sub(String.length(r), 17n)), "")
 
 # /bots/<id>/space.html: the id ("" when it is not a plain id)
+# (a plain id, or a mirrored bot's "<link>~<id>" of two plain ids)
+def Conn.bot.page_ok(+id: String) -> Bool:
+  Bool.or(BN.Bn.safe(id), Bool.and(FR.Fr.is(id), Bool.and(BN.Bn.safe(FR.Fr.link(id)), BN.Bn.safe(FR.Fr.local(id)))))
+
 def Conn.bot.page_id(+r: String) -> String:
-  Bool.pick(String, BN.Bn.safe(String.take(String.drop(r, 6n), Nat.sub(String.length(r), 17n))), String.take(String.drop(r, 6n), Nat.sub(String.length(r), 17n)), "")
+  Bool.pick(String, Conn.bot.page_ok(String.take(String.drop(r, 6n), Nat.sub(String.length(r), 17n))), String.take(String.drop(r, 6n), Nat.sub(String.length(r), 17n)), "")
 
 def Conn.bot.answer(m: Maybe<&1, List<&2, U32>>, s: Socket) -> IO(Unit):
   match m:

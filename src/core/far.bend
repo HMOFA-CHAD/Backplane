@@ -942,3 +942,24 @@ def Send.gap(s: Send) -> Send:
   match s:
     case Send{l, _, +to, _}:
       Send{l, to, to, Nil{}}
+
+# a mirrored bot's space page (its newest SpacePageSet; "" for none), for
+# GET /bots/<link>~<id>/space.html on the hub that mirrors it
+def Fr.page.html.k(hit: Bool, +o: J.Json, +cur: String) -> String:
+  match hit:
+    case True{}:
+      J.Json.get_str(o, "html", "")
+    case False{}:
+      cur
+
+def Fr.page.html.go(xs: List<&2, Item>, +bot: String, +cur: String) -> String:
+  match xs:
+    case Nil{}:
+      cur
+    case Item{_, +c} <> t:
+      Fr.page.html.go(t, bot, Fr.page.html.k(Bool.and(String.eq(J.Json.get_str(c, "$", ""), "SpacePageSet"), String.eq(J.Json.get_str(c, "bot", ""), bot)), c, cur))
+
+def In.page(i: In, +bot: String) -> String:
+  match i:
+    case In{_, _, _, xs, _}:
+      Fr.page.html.go(xs, bot, "")
