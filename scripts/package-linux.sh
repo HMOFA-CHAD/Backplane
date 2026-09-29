@@ -72,7 +72,7 @@ Maintainer: i2cjak <i2cjak@users.noreply.github.com>
 Installed-Size: $(du -sk "$root" | cut -f1)
 Depends: libc6 (>= $glibc), libx11-6
 Recommends: git, kicad, tailscale
-Homepage: https://github.com/i2cjak/backplane-bend
+Homepage: https://github.com/i2cjak/Backplane
 Section: devel
 Priority: optional
 Description: Agentic hardware development, with live KiCad viewers

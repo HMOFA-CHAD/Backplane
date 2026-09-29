@@ -13,7 +13,7 @@ import ../core/version.bend as VR
 # binary, swaps the files in with renames, and restarts in place.
 
 def Update.repo() -> String:
-  "i2cjak/backplane-bend"
+  "i2cjak/Backplane"
 
 # stable asks for the latest full release (however many nightlies follow
 # it); nightly lists the recent ones

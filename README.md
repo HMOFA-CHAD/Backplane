@@ -18,7 +18,7 @@ Codex) with live KiCad viewers, in a native window drawn entirely by Bend.
 ## Install
 
 ```sh
-curl -fsSL https://github.com/i2cjak/backplane-bend/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/i2cjak/Backplane/releases/latest/download/install.sh | sh
 backplane
 ```
 

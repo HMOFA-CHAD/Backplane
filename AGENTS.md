@@ -2,8 +2,8 @@
 
 An agentic hardware development environment: an agent harness with
 deterministic viewers for KiCad boards, schematics, and STEP models. It is a
-ground-up rewrite of Backplane (a T3Code fork, `i2cjak/Backplane`) in
-[Bend](https://bend-lang.com), so the rules that matter are laws the compiler
+ground-up rewrite of Backplane (formerly a T3Code fork; this repo now lives
+at `i2cjak/Backplane`) in [Bend](https://bend-lang.com), so the rules that matter are laws the compiler
 checks.
 
 When using Bend:

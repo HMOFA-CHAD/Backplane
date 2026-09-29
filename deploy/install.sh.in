@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs Backplane: curl -fsSL https://github.com/i2cjak/backplane-bend/releases/latest/download/install.sh | sh
+# Installs Backplane: curl -fsSL https://github.com/i2cjak/Backplane/releases/latest/download/install.sh | sh
 #
 # The release workflow fills in the version and the sha256 of each archive,
 # so this script vouches for what it downloads. It unpacks into
@@ -8,7 +8,7 @@
 # from the same releases afterwards.
 set -eu
 
-REPO="i2cjak/backplane-bend"
+REPO="i2cjak/Backplane"
 VER="@VERSION@"
 SHA_LINUX_X64="@SHA_LINUX_X64@"
 SHA_LINUX_ARM64="@SHA_LINUX_ARM64@"
