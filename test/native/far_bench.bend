@@ -12,6 +12,8 @@ import ../../src/gfx/tiles.bend as TI
 import ../../src/app/win.bend as W
 import ../../src/core/far.bend as FR
 import ../../src/core/bot.bend as BT
+import ../../src/app/bots.bend as BV
+import ../../src/app/cats.bend as CA
 
 # Choosing a bot that lives on another machine, timed on a real event log:
 # the log's own bots and their threads are made a linked machine's mirror
@@ -102,10 +104,21 @@ def kept_n(k: Kept) -> N.Nui:
     case Kept{n, _, _}:
       n
 
+# Use the real bot window and skip wrapping for a hidden timeline.
+def memos(visible: Bool, +ty: L.Ty, +n: N.Nui, old: List<&2, L.TLMemo>) -> List<&2, L.TLMemo>:
+  match visible:
+    case True{}:
+      L.Lay.memos(ty, n, old)
+    case False{}:
+      old
+
+def frame(+ty: L.Ty, +mm: List<&2, L.TLMemo>, +n: N.Nui) -> L.Out:
+  BV.Bv.frame(ty, L.TL.memos.now(mm), BV.Bv.warm(N.Nui.ui(n), CA.Cats.none(), 0n), n)
+
 def warm(+ty: L.Ty, +n0: N.Nui) -> Kept:
   +n = prepared(n0, 0n)
-  +mm = L.Lay.memos(ty, n, Nil{})
-  +o = L.Lay.frame(ty, L.TL.memos.now(mm), n)
+  +mm = memos(U.Ui.timeline(N.Nui.ui(n)), ty, n, Nil{})
+  +o = frame(ty, mm, n)
   Kept{with_hits(n, hits(o), 0n), mm, TI.FSome{N.Nui.width(n), N.Nui.height(n), TI.Frame.par(N.Nui.width(n), N.Nui.height(n), ops(o), Pix{T.Th.bg()}, TI.FNone{}, 0)}}
 
 # one event and the frame after it, timed: event, memo, layout, tiles (ms)
@@ -116,9 +129,9 @@ def step(+what: String, e: W.WinEv, +ty: L.Ty, k: Kept) -> IO(Kept):
         +t0 : Nat <- IO.now()
         +n1 : N.Nui = prepared(step_nui(N.Nui.event(n0, e)), 7n)
         +t1 : Nat <- IO.now()
-        +mm : List<&2, L.TLMemo> = L.Lay.memos(ty, n1, memo0)
+        +mm : List<&2, L.TLMemo> = memos(U.Ui.timeline(N.Nui.ui(n1)), ty, n1, memo0)
         +t2 : Nat <- IO.now()
-        +o : L.Out = L.Lay.frame(ty, L.TL.memos.now(mm), n1)
+        +o : L.Out = frame(ty, mm, n1)
         +k2 : Nat = List.length(&2, R.Op, ops(o))
         +t3 : Nat <- IO.now()
         +tiles : TI.Tiles = TI.Frame.par(N.Nui.width(n1), N.Nui.height(n1), ops(o), Pix{T.Th.bg()}, fr0, 0)
@@ -155,7 +168,7 @@ def main() -> IO(Unit):
     +t2 : Nat <- IO.now()
     seen(String.length(msg), "client: the mirror folded in (chars)", t1, t2)
     +name : String = first_far(BT.World.bots(M.State.bots(U.Ui.state(u1))))
-    +info : String = "{\"t\":\"info\",\"info\":{\"bots.remote\":" ++ J.Json.show(J.Str{"[{\"name\":\"" ++ name ++ "\",\"peer\":\"p1\",\"peerName\":\"box\",\"look\":1,\"state\":\"ready\"}]"}) ++ "}}"
+    +info : String = "{\"t\":\"info\",\"info\":{\"bots.remote\":" ++ J.Json.show(J.Str{"[{\"name\":\"" ++ name ++ "\",\"peer\":\"p1\",\"peerName\":\"box\",\"look\":1,\"state\":\"ready\"},{\"name\":\"visitor\",\"peer\":\"p1\",\"peerName\":\"box\",\"look\":1,\"state\":\"ready\"}]"}) ++ "}}"
     +u2 : U.Ui = U.Ui.recv(u1, Maybe.default(&2, J.Json, J.Json.parse(info), J.Null{}))
     +ty : L.Ty <- L.Ty.load()
     +k : Kept = warm(ty, N.Nui.init(u2, 1400, 900))
@@ -170,3 +183,7 @@ def main() -> IO(Unit):
     k3 : Kept <- step("  the next frame", W.WExpose{}, ty, k2)
     +t5 : Nat <- IO.now()
     seen(0n, "total, choice to second frame", t3, t5)
+    +local : String = BT.Bot.id(Maybe.default(&2, BT.Bot, List.head(&2, BT.Bot, BT.World.bots(M.State.bots(st))), BT.Bot.blank("")))
+    k4 : Kept <- step("local bot first frame", W.WExpose{}, ty, Kept{N.Nui.with_ui(n0, act_ui(U.Ui.act(u2, "bot", local))), Nil{}, TI.FNone{}})
+    k5 : Kept <- step("reported-only bot first frame", W.WExpose{}, ty, Kept{N.Nui.with_ui(n0, act_ui(U.Ui.act(u2, "remote", "visitor@box"))), Nil{}, TI.FNone{}})
+    return Unit{}
