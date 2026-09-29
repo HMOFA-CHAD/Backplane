@@ -893,24 +893,41 @@ def Bg.started(agent: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> 
     case False{}:
       Nil{}
 
-def Bg.ended(done: Bool, +s: M.State, +th: String, +now: Nat, +id: String) -> List<&2, M.Change>:
+# a foreground shell Claude moved to the background when it ran past its
+# timeout (task_updated sets is_backgrounded; the patch has no description)
+def Bg.moved(bg: Bool, +s: M.State, +th: String, +now: Nat, +id: String) -> List<&2, M.Change>:
+  match bg:
+    case True{}:
+      Bg.put(s, th, now, M.Bg.add(M.Bg.of(s, th), id, "Background shell"))
+    case False{}:
+      Nil{}
+
+def Bg.ended(done: Bool, bg: Bool, +s: M.State, +th: String, +now: Nat, +id: String) -> List<&2, M.Change>:
   match done:
     case True{}:
       Bg.put(s, th, now, M.Bg.drop(M.Bg.of(s, th), id))
     case False{}:
-      Nil{}
+      Bg.moved(bg, s, th, now, id)
+
+# a task the agent left running: a subagent, a background shell or
+# monitor, a workflow; not one a subagent runs for itself, and not a
+# foreground shell (listed only if Claude moves it to the background,
+# Bg.moved)
+def Bg.listed(+o: J.Json) -> Bool:
+  Bool.and(Nat.is_lt(C.Codec.pos(["local_agent", "local_bash", "local_workflow", "remote_agent", "monitor_mcp", "monitor_ws", "in_process_teammate"], J.Json.get_str(o, "task_type", "")), 7n),
+    Bool.and(Bool.not(J.Json.get_bool(o, "owned_by_subagent", False{})), J.Json.get_bool(o, "is_backgrounded", True{})))
 
 def Bg.system.k(i: Nat, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
   match i:
     case 0n:
-      Bg.started(String.eq(J.Json.get_str(o, "task_type", ""), "local_agent"), s, th, now, o)
+      Bg.started(Bg.listed(o), s, th, now, o)
     case 1n:
       Bg.put(s, th, now, M.Bg.set(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""), J.Json.get_str(o, "description", "")))
     case 2n:
       Bg.put(s, th, now, M.Bg.drop(M.Bg.of(s, th), J.Json.get_str(o, "task_id", "")))
     case 3n:
       Bg.ended(Nat.is_lt(C.Codec.pos(["completed", "failed", "killed", "stopped", "cancelled"], J.Json.get_str(J.Json.get_obj(o, "patch"), "status", "")), 5n),
-        s, th, now, J.Json.get_str(o, "task_id", ""))
+        J.Json.get_bool(J.Json.get_obj(o, "patch"), "is_backgrounded", False{}), s, th, now, J.Json.get_str(o, "task_id", ""))
     case _:
       Nil{}
 
