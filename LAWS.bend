@@ -39,6 +39,8 @@ import ./src/core/fold.bend as FO
 import ./src/core/subs.bend as SB
 import ./src/core/http.bend as WS
 import ./src/core/plot.bend as PL
+import ./src/core/look.bend as LO
+import ./src/core/hist.bend as HS
 import ./src/mobile/view.bend as MV
 import ./src/core/pcb3d.bend as P3
 import ./src/gfx/mesh.bend as MS
@@ -1600,6 +1602,10 @@ law view_sheet_key:
 
 law view_board_no_sheet:
   {MV.View.key.at("board", "/p", "/p/amp.kicad_sch", False{}) == "0|/p|" : String}
+
+# a board's version (the design history) is its source
+law view_board_version_key:
+  {MV.View.key.at("board", "/p", "git\tg\tc\t2\t/p/a.kicad_pcb", False{}) == "0|/p|git\tg\tc\t2\t/p/a.kicad_pcb" : String}
 
 law view_bare_key:
   {MV.View.key.at("3d", "/p", "", True{}) == "3|/p|" : String}
@@ -3451,3 +3457,64 @@ law desk_due_first:
   for focused: Bool
   for now: Nat
   {DK.Desk.due("", last_at, thread, focused, now) == True{} : Bool}
+# Design history (core/hist.bend)
+# --------------------------------
+
+# a version compared with itself marks nothing: every item stays on its
+# layer, dimmed
+law hist_mark_self:
+  for xs: List<&2, B.Item>
+  {HS.Mark.go(xs, xs, HS.Mark.heads(xs, xs)) == HS.Mark.dims(xs) : List<&2, B.Item>}
+
+# a file in a commit and a comparison ending on it are of the live file,
+# so moving between them keeps the viewer's scene and view
+law hist_version_family:
+  {HS.Hist.family(HS.Hist.git("/r/.git", "c1", "/r", "hw/a.kicad_pcb")) == "/r/hw/a.kicad_pcb" : String}
+
+law hist_compare_family:
+  {HS.Hist.family(HS.Hist.diff(HS.Hist.git("/r/.git", "c1", "/r", "a.kicad_pcb"), "/r/a.kicad_pcb")) == "/r/a.kicad_pcb" : String}
+
+# git show names the file from the top, a sheet's ".." folded
+law hist_obj_folds:
+  {HS.Hist.git.obj(HS.Hist.git("/r/.git", "c1", "/r", "hw/sub/../a.kicad_sch")) == "c1:hw/a.kicad_sch" : String}
+
+# a sheet in a commit resolves beside its parent, in the same commit
+law hist_sheet_same_commit:
+  {HI.Hier.resolve(HS.Hist.git("/g", "c", "/t", "hw/root.kicad_sch"), "kid.kicad_sch") == HS.Hist.git("/g", "c", "/t", "hw/kid.kicad_sch") : String}
+
+# the arrows: forward from the last step is the live file, back from the
+# live file the last step
+law hist_fwd_last_live:
+  for +n: Nat
+  {HS.Hist.fwd(n, n) == 0n : Nat}
+
+law hist_back_live_last:
+  for +n: Nat
+  {HS.Hist.back(n, 0n) == n : Nat}
+
+# no step is named: the live file
+law hist_index_live:
+  for ss: List<&2, HS.Step>
+  {HS.Hist.index(ss, "") == 0n : Nat}
+
+# a capture that changed nothing logs nothing
+law hist_record_nothing:
+  for +e: String
+  {HS.Hist.record("", e) == "" : String}
+
+# a board's or schematic's own look is untouched by comparisons; a
+# comparison's marks each have a colour of their own
+law look_plain_board:
+  for +layer: U32
+  {LO.Look.of(0, layer) == LO.Look.plain(0, layer) : U32 & U32}
+
+law look_plain_sch:
+  for +layer: U32
+  {LO.Look.of(1, layer) == LO.Look.plain(1, layer) : U32 & U32}
+
+law look_marks_distinct:
+  {Bool.or(U32.is_eq(LO.Look.mark.color(False{}, 26), LO.Look.mark.color(False{}, 27)), Bool.or(U32.is_eq(LO.Look.mark.color(False{}, 27), LO.Look.mark.color(False{}, 28)), U32.is_eq(LO.Look.mark.color(False{}, 26), LO.Look.mark.color(False{}, 28)))) == False{} : Bool}
+
+# the layer list reaches a comparison's marks, whatever the kind's own count
+law look_names_marks:
+  {List.drop(&2, String, LO.Look.names(U32.or(0, LO.Look.diff()), B.Layer.names()), 26n) == ["Removed", "Changed", "Added"] : List<&2, String>}

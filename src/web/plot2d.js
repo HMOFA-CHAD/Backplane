@@ -7,7 +7,10 @@
 // round ends) or polygons (fills), in micrometres. Bend decides which
 // source is on screen and asks for it (client.bend's Solid.want, the
 // canvas's data-key); this file only decodes and draws, panned and zoomed
-// by the pointer. Nothing animates: a frame is drawn when something changed.
+// by the pointer. A chunk sent whole fades in over the canvas's data-fade
+// ms (the phones do the same), so moving between versions of a file
+// (data-fam, core/hist.bend's family: the view stays put) fades in only
+// what changed; otherwise a frame is drawn only when something changed.
 
 // varints (7 bits a byte, low first) and zigzag, as the hub writes them
 function reader(bytes) {
@@ -53,7 +56,7 @@ function chunk(o) {
   }
   const c = o.c ?? 0;
   const color = `rgba(${(c >> 16) & 255},${(c >> 8) & 255},${c & 255},${(o.a ?? 255) / 255})`;
-  return { fill, line, dots, r, color, layer: o.l ?? 0 };
+  return { fill, line, dots, r, color, layer: o.l ?? 0, born: performance.now() };
 }
 
 // what this connection holds: the chunks of the last plot, in its order
@@ -86,7 +89,7 @@ export function got(o, at = { bytes: 0, t: performance.now() }) {
     }
     held = all;
     const box = Array.isArray(o.box) && o.box.length === 4 ? o.box : [0, 0, 1, 1];
-    plots.set(key, { chunks: all, box });
+    plots.set(key, { chunks: all, box, fam: typeof o.fam === "string" ? o.fam : key });
   }
   if (view && view.key === key) { view.show(plots.get(key)); present(plots.get(key)); }
 }
@@ -100,6 +103,8 @@ class View {
     this.off = 0;
     this.scale = 1; this.ox = 0; this.oy = 0;
     this.fitted = false;
+    this.fade = 220;
+    this.fam = "";
     this.drag = null;
     // one finger (or the mouse) pans; two pinch to zoom about their middle
     // and move the view with it
@@ -204,8 +209,13 @@ class View {
     g.setTransform(this.scale * dpr, 0, 0, this.scale * dpr, this.ox * dpr, this.oy * dpr);
     g.lineCap = "round";
     g.lineJoin = "round";
+    const now = performance.now();
+    let fading = false;
     for (const k of p.chunks) {
       if (Math.floor(this.off / 2 ** k.layer) % 2) continue; // a layer turned off
+      const a = this.fade > 0 ? Math.min(1, (now - (k.born ?? 0)) / this.fade) : 1;
+      if (a < 1) fading = true;
+      g.globalAlpha = a;
       g.fillStyle = k.color;
       g.strokeStyle = k.color;
       g.fill(k.fill);
@@ -214,6 +224,9 @@ class View {
       g.lineWidth = Math.max(k.r * 2, 1 / this.scale);
       g.stroke(k.line);
     }
+    g.globalAlpha = 1;
+    // only while something fades in does it ask for the next frame
+    if (fading) this.later();
     // how it came, small in a corner
     const st = stats.get(this.key);
     if (st) {
@@ -242,12 +255,16 @@ export function mount(canvas) {
   const off = Number(canvas.dataset.off || 0);
   if (off !== view.off) { view.off = off; view.later(); }
   present(view.plot);
+  view.fade = Number(canvas.dataset.fade || 0);
   const key = canvas.dataset.key || "";
   if (key !== view.key) {
+    // another version of the same file keeps its view, and the last one
+    // stays up until the next comes
+    const same = view.plot && view.plot.chunks && canvas.dataset.fam && canvas.dataset.fam === view.fam;
     view.key = key;
+    view.fam = canvas.dataset.fam || "";
     view.asked = performance.now();
-    view.plot = null;
-    view.fitted = false;
+    if (!same) { view.plot = null; view.fitted = false; }
     if (plots.has(key)) view.show(plots.get(key)); else view.later();
   }
 }

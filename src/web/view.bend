@@ -20,6 +20,7 @@ import ../core/bot.bend as BT
 import ../core/botui.bend as BI
 import ./bots.bend as WB
 import ../core/voice.bend as VC
+import ../core/hist.bend as HS
 
 # Ui -> Node. Every decision (order, shelf, status) comes from core defs
 # with laws behind them; this file only lays them out.
@@ -784,14 +785,26 @@ def View.images(ps: List<&2, String>) -> List<&2, D.Node>:
       D.El{"a", "", [D.At{"class", "shot"}, D.At{"href", IM.Img.url(p)}, D.At{"target", "_blank"}, D.At{"title", p}, D.At{"data-lightbox", IM.Img.url(p)}],
         [D.El{"img", "", [D.At{"src", IM.Img.url(p)}, D.At{"alt", p}, D.At{"loading", "lazy"}], Nil{}}]} <> View.images(t)
 
+# a tool call or other activity; a design step (core/hist.bend) is a row
+# that shows it in the viewer. data-id is what host.js scrolls to (Jump)
+def View.act(step: Bool, e: M.Entry) -> D.Node:
+  match step e:
+    case True{} M.Act{+id, _, _, _, _, _}:
+      D.El{"div", id, [D.At{"class", "act step"}, D.At{"data-id", id}],
+        [WI.WIcon.button("step", "hist-show", id, "Show this change in the viewer", "history", 14, HS.Hist.row(e))]}
+    case _ M.Act{+id, _, tone, kind, summary, _}:
+      D.El{"div", id, [D.At{"class", "act " ++ tone}, D.At{"data-id", id}], [D.Dom.span("kind", kind), D.Dom.span("summary", summary)]}
+    case _ M.Msg{+id, _, _, text, _}:
+      D.El{"div", id, [D.At{"class", "act"}, D.At{"data-id", id}], [D.Dom.span("summary", text)]}
+
 def View.entry.own(e: M.Entry) -> D.Node:
   match e:
-    case M.Msg{id, _, M.User{}, +text, _}:
-      D.El{"div", id, [D.At{"class", "msg user"}], D.Dom.cat(View.user_body(text), [D.Dom.copy(AT.Att.body(text))])}
-    case M.Msg{id, _, _, +text, _}:
-      D.El{"div", id, [D.At{"class", "msg assistant"}], D.Dom.cat([D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}], D.Dom.cat(View.images(IM.Img.paths(text)), [D.Dom.copy(text)]))}
-    case M.Act{id, _, tone, kind, summary, _}:
-      D.El{"div", id, [D.At{"class", "act " ++ tone}], [D.Dom.span("kind", kind), D.Dom.span("summary", summary)]}
+    case M.Msg{+id, _, M.User{}, +text, _}:
+      D.El{"div", id, [D.At{"class", "msg user"}, D.At{"data-id", id}], D.Dom.cat(View.user_body(text), [D.Dom.copy(AT.Att.body(text))])}
+    case M.Msg{+id, _, _, +text, _}:
+      D.El{"div", id, [D.At{"class", "msg assistant"}, D.At{"data-id", id}], D.Dom.cat([D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}], D.Dom.cat(View.images(IM.Img.paths(text)), [D.Dom.copy(text)]))}
+    case M.Act{+id, +th, +tone, +kind, +summary, +at}:
+      View.act(String.eq(tone, HS.Step.tone()), M.Act{id, th, tone, kind, summary, at})
 
 # an entry of this thread (headed by the thread that sent it) or a message
 # this thread sent to another (a link)
@@ -1249,15 +1262,114 @@ def View.layer.btns(ns: List<&2, String>, +k: U32, +i: U32, +off: U32) -> List<&
     case +n <> t:
       View.layer.btn(U32.is_gt(View.layer.alpha(LO.Look.of.t(False{}, k, i)), 0), i, n, off, View.layer.btns(t, k, (i + 1 : U32), off))
 
-def View.layers(+sch: Bool, +off: U32) -> D.Node:
+# (a comparison lists its marks too: removed, changed, added)
+def View.layers(+sch: Bool, +cmp: Bool, +off: U32) -> D.Node:
+  +k = {U32.or(Bool.pick(U32, sch, 1, 0), Bool.pick(U32, cmp, LO.Look.diff(), 0)) : U32}
   D.El{"details", "", [D.At{"class", "layers"}], [D.El{"summary", "", [D.At{"title", "Turn layers on and off"}], [D.Txt{"Layers"}]},
-    D.El{"div", "", [D.At{"class", "layer-list"}], View.layer.btns(Bool.pick(List<&2, String>, sch, SC.Sch.layer_names(), B.Layer.names()), Bool.pick(U32, sch, 1, 0), 0, off)}]}
+    D.El{"div", "", [D.At{"class", "layer-list"}], View.layer.btns(LO.Look.names(k, Bool.pick(List<&2, String>, sch, SC.Sch.layer_names(), B.Layer.names())), k, 0, off)}]}
+
+# The design history bar (client.bend's Hs.bar): the arrows, play and
+# the position, the changes, compare and live buttons; a scrubber with a
+# tick a step; what the agent said before the step, and a way back to it.
+# A comparison names its two sides (each opens the menu of versions) over
+# a legend.
+
+def View.hist.icon(+cls: String, +action: String, +title: String, +name: String) -> D.Node:
+  WI.WIcon.button(cls, action, "", title, name, 16, "")
+
+def View.hist.live(at: Nat) -> List<&2, D.Node>:
+  match at:
+    case 0n:
+      Nil{}
+    case _:
+      [D.Dom.button("hbtn live", "hist-live", "", "Back to the file as it is now", "Live")]
+
+def View.hist.tick(+id: String, +i: Nat, +n: Nat, +cur: Bool) -> D.Node:
+  D.El{"button", "", [D.At{"class", Bool.pick(String, cur, "tick on", "tick")}, D.At{"title", Bool.pick(String, String.is_empty(id), "The live file", "Step " ++ Nat.show(1n+i))},
+    D.At{"style", "left:calc(100% * " ++ Nat.show(i) ++ " / " ++ Nat.show(Bool.pick(Nat, Nat.is_eq(n, 0n), 1n, n)) ++ ")"}, D.At{"data-value", id}, D.On{"click", "hist-go"}], Nil{}}
+
+def View.hist.ticks(ss: List<&2, HS.Step>, +i: Nat, +n: Nat, +at: Nat) -> List<&2, D.Node>:
+  match ss:
+    case Nil{}:
+      [View.hist.tick("", i, n, Nat.is_eq(at, 0n))]
+    case +s <> t:
+      View.hist.tick(HS.Step.id(s), i, n, Nat.is_eq(at, 1n+i)) <> View.hist.ticks(t, 1n+i, n, at)
+
+def View.hist.said(live: Bool, +text: String) -> List<&2, D.Node>:
+  match live:
+    case True{}:
+      [D.Dom.span("said", "The live file. Each tick is a change the agent made; play to watch them.")]
+    case False{}:
+      [WI.WIcon.button("icon", "hist-jump", "", "Go to this point of the thread", "message-square", 16, ""),
+       D.El{"button", "", [D.At{"class", "said"}, D.At{"title", "Go to this point of the thread"}, D.At{"data-value", ""}, D.On{"click", "hist-jump"}], [D.Txt{text}]}]
+
+def View.hist.walk(b: U.HBar, +u: U.Ui) -> D.Node:
+  match b:
+    case U.HBar{_, +n, +at, +title, _, +label, +said, +pl, +df, _, _, _, _}:
+      D.El{"div", "", [D.At{"class", "hist"}], [
+        D.El{"div", "", [D.At{"class", "hist-row"}], List.append(&2, D.Node, [
+          View.hist.icon("icon", "hist-first", "The first step", "skip-back"),
+          View.hist.icon("icon", "hist-prev", "The step before", "chevron-left"),
+          View.hist.icon("icon play", "hist-play", Bool.pick(String, pl, "Pause", "Play the steps"), Bool.pick(String, pl, "pause", "play")),
+          View.hist.icon("icon", "hist-next", "The step after", "chevron-right"),
+          View.hist.icon("icon", "hist-last", "The last step", "skip-forward"),
+          D.Dom.span("title", title), D.Dom.span("grow", ""),
+          D.Dom.button(Bool.pick(String, df, "hbtn on", "hbtn"), "hist-diff", "", "Mark what each step changed", "Changes"),
+          D.Dom.button("hbtn", "cmp", "a", "Compare two versions of the file", "Compare")], View.hist.live(at))},
+        D.El{"div", "", [D.At{"class", "hist-scrub"}], View.hist.ticks(U.Hs.track(u), 0n, n, at)},
+        D.El{"div", "", [D.At{"class", "hist-said"}], View.hist.said(Nat.is_eq(at, 0n), Bool.pick(String, String.is_empty(said), label, said))}]}
+
+def View.hist.key(+layer: U32, +label: String) -> D.Node:
+  D.El{"span", "", [D.At{"class", "key"}], [D.El{"i", "", [D.At{"style", "background:" ++ View.hex(LO.Look.mark.color(False{}, layer))}], Nil{}}, D.Txt{label}]}
+
+def View.hist.cmp(b: U.HBar) -> D.Node:
+  match b:
+    case U.HBar{_, _, _, _, _, _, _, _, _, _, +a, +bb, +menu}:
+      D.El{"div", "", [D.At{"class", "hist cmp"}], [
+        D.El{"div", "", [D.At{"class", "hist-row"}], [
+          D.Dom.button(Bool.pick(String, String.eq(menu, "a"), "hbtn side on", "hbtn side"), "cmp-side", "a", "Pick the old version", "Old: " ++ a),
+          D.Dom.button(Bool.pick(String, String.eq(menu, "b"), "hbtn side on", "hbtn side"), "cmp-side", "b", "Pick the new version", "New: " ++ bb),
+          D.Dom.span("grow", ""), D.Dom.button("hbtn", "cmp-close", "", "Back to the file as it is now", "Close")]},
+        D.El{"div", "", [D.At{"class", "hist-legend"}], [View.hist.key(26, "Removed"), View.hist.key(27, "Changed"), View.hist.key(28, "Added")]}]}
+
+def View.hist.k(on: Bool, cmp: Bool, b: U.HBar, +u: U.Ui) -> List<&2, D.Node>:
+  match on cmp:
+    case False{} _:
+      Nil{}
+    case True{} True{}:
+      [View.hist.cmp(b)]
+    case True{} False{}:
+      [View.hist.walk(b, u)]
+
+def View.hist(+b: U.HBar, +u: U.Ui) -> List<&2, D.Node>:
+  View.hist.k(U.HBar.on(b), U.HBar.cmp(b), b, u)
+
+# the menu of versions over the stage, a row each; a press outside shuts it
+def View.hist.rows(rs: List<&2, U.HRow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.HRow{+l, +sub, +v} <> t:
+      D.El{"button", "", [D.At{"class", "row"}, D.At{"data-value", v}, D.On{"click", "cmp-pick"}], [D.Dom.span("name", l), D.Dom.span("sub", sub)]} <> View.hist.rows(t)
+
+def View.hist.menu.k(open: Bool, +u: U.Ui, +side: String) -> List<&2, D.Node>:
+  match open:
+    case True{}:
+      [D.El{"div", "", [D.At{"class", "hist-scrim"}, D.At{"data-value", ""}, D.On{"click", "cmp-shut"}], Nil{}},
+       D.El{"div", "", [D.At{"class", "hist-menu"}], D.Dom.span("head", Bool.pick(String, String.eq(side, "b"), "Compare with (new)", "Compare from (old)")) <> View.hist.rows(U.Hs.menu(u, side))}]
+    case False{}:
+      Nil{}
+
+def View.hist.menu(+u: U.Ui) -> D.Node:
+  D.El{"div", "", [D.At{"class", "hist-over"}], View.hist.menu.k(Bool.not(String.is_empty(U.Ui.scratch(u, "@cmp.menu"))), u, U.Ui.scratch(u, "@cmp.menu"))}
 
 # a board or schematic: host.js (plot2d.js) draws the hub's plot of it on
 # the canvas whose data-key it carries, less the layers data-off names
 def View.plot(+u: U.Ui, +what: List<&2, D.Node>) -> List<&2, D.Node>:
-  [View.bar(List.append(&2, D.Node, what, [View.layers(String.eq(U.Solid.kind(u), "schematic"), U.Solid.off(u))]), "drag to pan · wheel to zoom · double-click to fit"),
-   D.El{"div", "", [D.At{"class", "viewer-stage"}], [D.El{"canvas", "plot", [D.At{"id", "plot"}, D.At{"data-key", U.Solid.want(u)}, D.At{"data-off", U32.show(U.Solid.off(u))}], Nil{}}]}]
+  View.bar(List.append(&2, D.Node, what, [View.layers(String.eq(U.Solid.kind(u), "schematic"), Nat.is_eq(HS.Hist.kind(U.Ui.view_get(u, "view.path")), 2n), U.Solid.off(u))]), "drag to pan · wheel to zoom · double-click to fit")
+   <> D.El{"div", "", [D.At{"class", "viewer-stage"}], [D.El{"canvas", "plot", [D.At{"id", "plot"}, D.At{"data-key", U.Solid.want(u)}, D.At{"data-off", U32.show(U.Solid.off(u))},
+        D.At{"data-fade", Nat.show(U.Hs.fade())}, D.At{"data-fam", HS.Hist.key.family(U.Solid.want(u))}], Nil{}}, View.hist.menu(u)]}
+   <> View.hist(U.Hs.bar(u), u)
 
 # over a part in 3D: the thread's parts and Renders; the board: its name
 # after the parts: Renders for one of them, or the name of another model

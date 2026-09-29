@@ -14,6 +14,7 @@ import ./space.bend as SPC
 import ./refs.bend as RF
 import ./mech.bend as MC
 import ./desk.bend as DK
+import ./hist.bend as HI
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -55,6 +56,10 @@ type Cmd is Data:
   # a desktop notification the hub sent this desk (core/desk.bend): the
   # host shows it (a click opens the thread); `key` replaces an earlier one
   Notify{thread: String, title: String, body: String, key: String}
+  # run an action after ms (the viewer's history playing, Hs.tick)
+  Later{ms: Nat, action: String, value: String}
+  # show an entry of the selected thread (the history's way back to it)
+  Jump{id: String}
 
 type Act is Data:
   Act{ui: Ui, cmds: List<&2, Cmd>}
@@ -834,7 +839,9 @@ def Ui.actions() -> List<&2, String>:
    "voice", "voice-key", "voice-unkey", "voice-dict", "voice-use", "voice-add", "voice-fix", "voice-fixed", "voice-skip", "voice-err", "voice-term", "voice-unterm",
    "btw-close", "vw-light", "proj-pick", "proj-found", "proj-browse", "proj-back", "space-link", "skill-move",
    "mech", "mech-part", "mech-3d", "mech-refresh", "mech-renders", "mech-render", "view-kind", "view-sheet", "view-layer",
-   "attach-up", "attach-end"]
+   "attach-up", "attach-end",
+   "hist-go", "hist-prev", "hist-next", "hist-first", "hist-last", "hist-play", "hist-tick", "hist-diff", "hist-live", "hist-jump",
+   "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut"]
 
 # Reading the client state
 # ------------------------
@@ -2524,6 +2531,11 @@ def Ui.info_set(u: Ui, +k: String, +v: String) -> Ui:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, +nf, ob, tr}:
       Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, Map.set(&2, String, nf, k, v), ob, tr}
 
+# a view key of the selected thread set (the phones' viewer lends the
+# client its kind)
+def Ui.view_get.set(+u: Ui, +k: String, +v: String) -> Ui:
+  Ui.info_set(u, k ++ ":" ++ Ui.sel(u), v)
+
 # a run of tool calls opened or shut: the value is "1" or "0", then the
 # run's id (FO.Fold.ask); the choice is kept in the info map (FO.Fold.user)
 def Ui.tool_fold(u: Ui, +v: String) -> Ui:
@@ -3451,8 +3463,10 @@ def Mpage.sync(a: Act) -> Act:
 # project's own file). "" when the pane shows something else.
 
 # the viewer's kind on the web: the thread's, the board before any
+# (a file an agent showed with no kind is what its name says)
 def Solid.kind(+u: Ui) -> String:
-  Bool.pick(String, String.is_empty(Ui.view_get(u, "view.kind")), "board", Ui.view_get(u, "view.kind"))
+  Bool.pick(String, String.is_empty(Ui.view_get(u, "view.kind")),
+    Bool.pick(String, Nat.is_eq(HI.Hist.ext(HI.Hist.family(Ui.view_get(u, "view.path"))), 1n), "schematic", "board"), Ui.view_get(u, "view.kind"))
 
 def Solid.num(+k: String) -> String:
   Bool.pick(String, String.eq(k, "board"), "0", Bool.pick(String, String.eq(k, "schematic"), "1", Bool.pick(String, String.eq(k, "3d"), "2", "")))
@@ -3481,9 +3495,6 @@ def Solid.sync(a: Act) -> Act:
 # has none, else nothing
 def Mpage.note(+u: Ui) -> String:
   Bool.pick(String, Bool.not(String.is_empty(Ui.info(u, "freecad"))), "", "FreeCAD is not installed on this hub's machine, and agents need it to model parts: get it from freecad.org/downloads.")
-
-def Ui.reply.skills(u: Ui, +o: J.Json) -> Ui:
-  Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Ui.reply.body(u, o), o), o)
 
 def Ui.error_set(u: Ui, e: String) -> Ui:
   match u:
@@ -4421,9 +4432,482 @@ def Upload.start(+u: Ui, +o: J.Json) -> Act:
 def Upload.end(+u: Ui, +v: String) -> Act:
   Upload.end.k(Maybe.default(&2, J.Json, J.Json.parse(v), J.Json.obj([J.KV{"text", J.Str{"the upload failed"}}, J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"upload", J.Flag{True{}}}])), u)
 
+# Design history
+# --------------
+# The viewer's history of the thread's board or schematic (core/hist.bend):
+# the steps the agent's tool calls made, walked one by one or played (each
+# version fades in over the last, only what changed), each shown as it was
+# or compared with the step before, with what the agent said before it and
+# a way back to that point of the thread; and any two versions compared
+# (a branch, a commit, a turn, a step, the working copy). Kept per thread
+# in the info map: "hist.at:<t>" the step on show ("" live), "hist.back:<t>"
+# the path to go back to, "hist.diff:<t>" "1" to compare each step with the
+# one before, "hist.play:<t>" the playback's token while it plays,
+# "cmp.a:<t>"/"cmp.b:<t>" (and labels "cmp.al"/"cmp.bl") a comparison's
+# versions, "refs:<t>" the hub's history.refs answer, "hist.jump" the
+# entry last gone to (marked in the thread); the scratch's "@cmp.menu" the
+# side a menu picks for.
+
+def Hs.ext(+path: String) -> Nat:
+  Bool.pick(Nat, Nat.is_eq(HI.Hist.ext(HI.Hist.family(path)), 1n), 1n, 0n)
+
+def Hs.kind.of(+k: String, +path: String) -> Nat:
+  Bool.pick(Nat, String.eq(k, "schematic"), 1n, Bool.pick(Nat, String.eq(k, "board"), 0n, Bool.pick(Nat, String.is_empty(k), Hs.ext(path), 2n)))
+
+# the board (0), schematic (1) or neither (2) the thread's viewer shows
+def Hs.kind(+u: Ui) -> Nat:
+  Hs.kind.of(Ui.view_get(u, "view.kind"), Ui.view_get(u, "view.path"))
+
+def Hs.kname(+k: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(k, 1n), "schematic", "board")
+
+def Hs.get(+u: Ui, +k: String) -> String:
+  Ui.view_get(u, k)
+
+def Hs.set(+u: Ui, +k: String, +v: String) -> Ui:
+  Ui.info_set(u, k ++ ":" ++ Ui.sel(u), v)
+
+# the steps that changed the kind of file on show, oldest first
+def Hs.track(+u: Ui) -> List<&2, HI.Step>:
+  HI.Hist.track(HI.Hist.steps(Ui.state(u), Ui.sel(u)), Hs.kind(u))
+
+def Hs.path(+u: Ui) -> String:
+  Ui.view_get(u, "view.path")
+
+# the position on show (1 the first step), 0 while the live file shows
+def Hs.at(+u: Ui, +ss: List<&2, HI.Step>) -> Nat:
+  Bool.pick(Nat, Nat.is_eq(HI.Hist.kind(Hs.path(u)), 0n), 0n, HI.Hist.index(ss, Hs.get(u, "hist.at")))
+
+def Hs.diff(+u: Ui) -> Bool:
+  String.eq(Hs.get(u, "hist.diff"), "1")
+
+def Hs.cmp(+u: Ui) -> Bool:
+  Bool.and(Bool.not(String.is_empty(Hs.get(u, "cmp.a"))), Nat.is_eq(HI.Hist.kind(Hs.path(u)), 2n))
+
+def Hs.playing(+u: Ui) -> Bool:
+  Bool.not(String.is_empty(Hs.get(u, "hist.play")))
+
+# the live file is kept to come back to, the first time a version shows
+def Hs.keep(live: Bool, +u: Ui, +path: String) -> Ui:
+  match live:
+    case True{}:
+      Hs.set(u, "hist.back", path)
+    case False{}:
+      u
+
+def Hs.keep.live(+u: Ui) -> Ui:
+  Hs.keep(Nat.is_eq(HI.Hist.kind(Hs.path(u)), 0n), u, Hs.path(u))
+
+def Hs.clear.cmp(u: Ui) -> Ui:
+  Hs.set(Hs.set(Hs.set(Hs.set(u, "cmp.a", ""), "cmp.b", ""), "cmp.al", ""), "cmp.bl", "")
+
+# show a step (as it was, or compared with the one before)
+def Hs.show(+u: Ui, +s: HI.Step, +k: Nat) -> Ui:
+  Ui.view_put(Hs.set(Hs.clear.cmp(Hs.keep.live(u)), "hist.at", HI.Step.id(s)), Hs.kname(k),
+    HI.Step.spec(s, k, HI.Hist.family(Hs.path(u)), Hs.diff(u)))
+
+# the path to go back to: the one kept, when it is a file of the kind on
+# show (a step of the other kind moved the viewer: its project's own file)
+def Hs.back(+u: Ui) -> String:
+  Bool.pick(String, Nat.is_eq(Hs.ext(Hs.get(u, "hist.back")), Hs.kind(u)), Hs.get(u, "hist.back"), "")
+
+# back to the live file
+def Hs.live(+u: Ui) -> Ui:
+  Ui.view_put(Hs.clear.cmp(Hs.set(Hs.set(Hs.set(u, "hist.at", ""), "hist.play", ""), "hist.back", "")), Hs.kname(Hs.kind(u)),
+    Bool.pick(String, Nat.is_eq(HI.Hist.kind(Hs.path(u)), 0n), Hs.path(u), Hs.back(u)))
+
+def Hs.go.k(m: Maybe<&2, HI.Step>, +u: Ui) -> Ui:
+  match m:
+    case Some{+s}:
+      Hs.show(u, s, Hs.kind(u))
+    case None{}:
+      Hs.live(u)
+
+# go to position i of the track (0, or past its end: the live file)
+def Hs.go(+u: Ui, +ss: List<&2, HI.Step>, +i: Nat) -> Ui:
+  Hs.go.k(HI.Hist.nth(ss, i), u)
+
+def Hs.n(+ss: List<&2, HI.Step>) -> Nat:
+  List.length(&2, HI.Step, ss)
+
+def Hs.step(fwd: Bool, +u: Ui) -> Ui:
+  match fwd:
+    case True{}:
+      Hs.go(u, Hs.track(u), HI.Hist.fwd(Hs.n(Hs.track(u)), Hs.at(u, Hs.track(u))))
+    case False{}:
+      Hs.go(u, Hs.track(u), HI.Hist.back(Hs.n(Hs.track(u)), Hs.at(u, Hs.track(u))))
+
+# Playback: a step every Hs.beat() ms. Each start takes a new token, and a
+# tick only counts with the token still playing, so pausing and playing
+# again never leaves two clocks running.
+
+def Hs.beat() -> Nat:
+  1400n
+
+def Hs.tick(+u: Ui, +token: String) -> Cmd:
+  Later{Hs.beat(), "hist-tick", Ui.sel(u) ++ "\t" ++ token}
+
+def Hs.num(s: String) -> Nat:
+  M.Switch.num(s, 0n)
+
+def Hs.play.start(+u: Ui, +ss: List<&2, HI.Step>) -> Act:
+  +token = Nat.show(1n+Hs.num(Ui.info(u, "hist.gen")))
+  +at = Hs.at(u, ss)
+  +u2 = Hs.set(Ui.info_set(u, "hist.gen", token), "hist.play", token)
+  Act{Bool.pick(Ui, Bool.or(Nat.is_eq(at, 0n), Nat.is_ge(at, Hs.n(ss))), Hs.go(u2, ss, 1n), u2), [Hs.tick(u, token)]}
+
+def Hs.play.k(on: Bool, +u: Ui) -> Act:
+  match on:
+    case True{}:
+      Act{Hs.set(u, "hist.play", ""), Nil{}}
+    case False{}:
+      Hs.play.start(u, Hs.track(u))
+
+def Hs.play(+u: Ui) -> Act:
+  Hs.play.k(Hs.playing(u), u)
+
+def Hs.tick.go(last: Bool, +u: Ui, +ss: List<&2, HI.Step>, +at: Nat, +token: String) -> Act:
+  match last:
+    case True{}:
+      Act{Hs.set(u, "hist.play", ""), Nil{}}
+    case False{}:
+      Act{Hs.go(u, ss, 1n+at), [Hs.tick(u, token)]}
+
+def Hs.tick.k(mine: Bool, +u: Ui, +token: String) -> Act:
+  match mine:
+    case True{}:
+      Hs.tick.go(Bool.or(Nat.is_eq(Hs.at(u, Hs.track(u)), 0n), Nat.is_ge(Hs.at(u, Hs.track(u)), Hs.n(Hs.track(u)))), u, Hs.track(u), Hs.at(u, Hs.track(u)), token)
+    case False{}:
+      Act{u, Nil{}}
+
+# a tick: value "<thread>\t<token>"; on another thread, or a stale
+# token, it does nothing
+def Hs.tick.away(here: Bool, +u: Ui, +th: String, +token: String) -> Act:
+  match here:
+    case True{}:
+      Hs.tick.k(Bool.and(Hs.playing(u), String.eq(token, Hs.get(u, "hist.play"))), u, token)
+    case False{}:
+      Act{Ui.info_set(u, "hist.play:" ++ th, ""), Nil{}}
+
+# (a tick for a thread no longer on show stops its playback: it plays
+# only while seen)
+def Hs.tick.on(+u: Ui, +value: String) -> Act:
+  Hs.tick.away(String.eq(HI.Hist.at(String.split(value, '\t'), 0n), Ui.sel(u)), u, HI.Hist.at(String.split(value, '\t'), 0n), HI.Hist.at(String.split(value, '\t'), 1n))
+
+def Hs.diff.flip(+u: Ui) -> Ui:
+  Hs.go(Hs.set(u, "hist.diff", Bool.pick(String, Hs.diff(u), "", "1")), Hs.track(u), Hs.at(u, Hs.track(u)))
+
+# Going back to the thread
+# ------------------------
+# The entry a step followed is revealed (its folds open, enough pages
+# shown) and marked; the host scrolls to it (Jump).
+
+def Hs.pos(es: List<&2, M.Entry>, +id: String, +i: Nat) -> Nat:
+  match es:
+    case Nil{}:
+      i
+    case +e <> t:
+      Bool.pick(Nat, String.eq(M.Idx.id(e), id), i, Hs.pos(t, id, 1n+i))
+
+def Hs.opens(ks: List<&2, String>, u: Ui) -> Ui:
+  match ks:
+    case Nil{}:
+      u
+    case +k <> t:
+      Hs.opens(t, Ui.info_set(u, k, "1"))
+
+# enough pages that the entry p back shows, on any client (a phone's
+# first page is shorter than the window's)
+def Hs.pages(+u: Ui, +th: String, +p: Nat) -> Ui:
+  Ui.scratch_set(u, "@more." ++ th, Nat.show(Bool.pick(Nat, Nat.is_ge(Hs.num(Ui.scratch(u, "@more." ++ th)), Nat.div(Nat.add(p, 59n), 60n)), Hs.num(Ui.scratch(u, "@more." ++ th)), Nat.div(Nat.add(p, 59n), 60n))))
+
+# (playing stops: the thread is on show now)
+def Hs.jump.to(+u: Ui, +es: List<&2, M.Entry>, +id: String) -> Act:
+  Act{Ui.info_set(Hs.pages(Hs.opens(FO.Fold.reveal(List.reverse(&2, M.Entry, es), id), Hs.set(u, "hist.play", "")), Ui.sel(u), Hs.pos(es, id, 0n)), "hist.jump", id), [Jump{id}]}
+
+def Hs.anchor.k(m: Maybe<&2, HI.Step>, +es: List<&2, M.Entry>) -> String:
+  match m:
+    case Some{+s}:
+      HI.Hist.anchor(es, s)
+    case None{}:
+      ""
+
+# the entry the step on show followed
+def Hs.anchor(+u: Ui, +es: List<&2, M.Entry>) -> String:
+  Hs.anchor.k(HI.Hist.nth(Hs.track(u), Hs.at(u, Hs.track(u))), es)
+
+def Hs.jump.k(none: Bool, +u: Ui, +es: List<&2, M.Entry>, +id: String) -> Act:
+  match none:
+    case True{}:
+      Act{u, Nil{}}
+    case False{}:
+      Hs.jump.to(u, es, id)
+
+# go to an entry of the selected thread ("" the one the step on show followed)
+def Hs.jump(+u: Ui, +value: String) -> Act:
+  +es = M.State.mine(Ui.state(u), Ui.sel(u))
+  +id = Bool.pick(String, String.is_empty(value), Hs.anchor(u, es), value)
+  Hs.jump.k(String.is_empty(id), u, es, id)
+
+# A step's row in the thread shows it: its board, else its schematic (the
+# kind on show when the step changed one)
+def Hs.show.kind(+s: HI.Step, +k: Nat) -> Nat:
+  Bool.pick(Nat, Bool.and(Nat.is_lt(k, 2n), HI.Step.has(s, k)), k, Bool.pick(Nat, HI.Step.has(s, 0n), 0n, 1n))
+
+def Hs.show.at(m: Maybe<&2, HI.Step>, +u: Ui) -> Ui:
+  match m:
+    case Some{+s}:
+      Hs.show(Ui.view_put(u, Hs.kname(Hs.show.kind(s, Hs.kind(u))), Bool.pick(String, Nat.is_eq(HI.Hist.kind(Hs.path(u)), 0n), Hs.path(u), Hs.get(u, "hist.back"))), s, Hs.show.kind(s, Hs.kind(u)))
+    case None{}:
+      u
+
+def Hs.find(ss: List<&2, HI.Step>, +id: String) -> Maybe<&2, HI.Step>:
+  match ss:
+    case Nil{}:
+      None{}
+    case +s <> t:
+      Bool.pick(Maybe<&2, HI.Step>, String.eq(HI.Step.id(s), id), Some{s}, Hs.find(t, id))
+
+def Hs.show.id(+u: Ui, +id: String) -> Ui:
+  Hs.show.at(Hs.find(HI.Hist.steps(Ui.state(u), Ui.sel(u)), id), Hs.keep.live(u))
+
+# Comparing
+# ---------
+# The menu lists what a side may be: the working copy, the thread's steps
+# (newest first), then what the hub found (history.refs: HEAD, branches,
+# commits that touched KiCad files, the thread's turns). A row's value is
+# "<side>\t<commit>\t<label>\t<git dir>\t<top>" (commit "" the working copy).
+
+type HRow is Data:
+  HRow{label: String, sub: String, value: String}
+
+def Hs.refs(+u: Ui) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(Hs.get(u, "refs")), J.Null{})
+
+def Hs.row.value(+side: String, +commit: String, +label: String, +git: String, +top: String) -> String:
+  side ++ "\t" ++ commit ++ "\t" ++ label ++ "\t" ++ git ++ "\t" ++ top
+
+def Hs.row.steps(ss: List<&2, HI.Step>, +side: String, +es: List<&2, M.Entry>, +i: Nat, acc: List<&2, HRow>) -> List<&2, HRow>:
+  match ss:
+    case Nil{}:
+      acc
+    case HI.Step{+id, _, +c, _, +g, +top, _, _} <> t:
+      Hs.row.steps(t, side, es, 1n+i, HRow{"Step " ++ Nat.show(i), HI.Hist.label(es, HI.Hist.anchor(es, HI.Step{id, "", c, "", g, top, Nil{}, 0n})), Hs.row.value(side, c, "Step " ++ Nat.show(i), g, top)} <> acc)
+
+def Hs.ref.label(+r: HI.Ref) -> String:
+  match r:
+    case HI.Ref{+k, +l, _}:
+      Bool.pick(String, String.eq(k, "turn"), "Turn " ++ HI.Hist.at(List.reverse(&2, String, String.split(l, '/')), 0n), l)
+
+def Hs.ref.kind(+k: String) -> String:
+  Bool.pick(String, String.eq(k, "head"), "the commit checked out", Bool.pick(String, String.eq(k, "branch"), "branch", Bool.pick(String, String.eq(k, "turn"), "this thread, at the end of a turn", "commit")))
+
+# (turn 0 is the thread before it began)
+def Hs.ref.sub(+k: String, +label: String) -> String:
+  Bool.pick(String, String.eq(label, "Turn 0"), "this thread, before it began", Hs.ref.kind(k))
+
+def Hs.row.refs(rs: List<&2, HI.Ref>, +side: String, +git: String, +top: String) -> List<&2, HRow>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case HI.Ref{+k, +l, +c} <> t:
+      HRow{Hs.ref.label(HI.Ref{k, l, c}), Hs.ref.sub(k, Hs.ref.label(HI.Ref{k, l, c})), Hs.row.value(side, c, Hs.ref.label(HI.Ref{k, l, c}), git, top)} <> Hs.row.refs(t, side, git, top)
+
+# the newest steps the menu lists (older ones are on the scrubber), so
+# the branches and commits after them stay in reach
+def Hs.menu.steps() -> Nat:
+  8n
+
+# the menu's rows for a side ("a" the old version, "b" the new)
+def Hs.menu(+u: Ui, +side: String) -> List<&2, HRow>:
+  +r = Hs.refs(u)
+  +es = M.State.mine(Ui.state(u), Ui.sel(u))
+  List.append(&2, HRow, [HRow{"Working copy", "the files as they are now", Hs.row.value(side, "", "Working copy", "", "")}],
+    List.append(&2, HRow, List.take(&2, HRow, Hs.row.steps(Hs.track(u), side, es, 1n, Nil{}), Hs.menu.steps()),
+      Hs.row.refs(HI.Hist.refs(J.Json.get_str(r, "refs", "")), side, J.Json.get_str(r, "git", ""), J.Json.get_str(r, "top", ""))))
+
+# the live file compared: the one on show, else the project's (the hub's
+# answer names its board and schematic)
+def Hs.live.abs(+u: Ui) -> String:
+  Bool.pick(String, String.is_empty(HI.Hist.family(Hs.path(u))),
+    J.Json.get_str(Hs.refs(u), Bool.pick(String, Nat.is_eq(Hs.kind(u), 1n), "sch", "pcb"), ""), HI.Hist.family(Hs.path(u)))
+
+# the sides picked belong to one file ("cmp.f:<t>"): another file on show
+# starts a comparison over
+def Hs.cmp.fresh(+u: Ui) -> Ui:
+  Bool.pick(Ui, String.eq(Hs.get(u, "cmp.f"), Hs.live.abs(u)), u, Hs.set(Hs.clear.cmp(u), "cmp.f", Hs.live.abs(u)))
+
+# one side's version: the working copy, or the file in a commit
+def Hs.side.spec(+commit: String, +git: String, +top: String, +abs: String) -> String:
+  Bool.pick(String, String.is_empty(commit), abs,
+    Bool.pick(String, String.starts_with(abs, top ++ "/"), HI.Hist.git(git, commit, top, String.drop(abs, 1n+String.length(top))), ""))
+
+# a side not picked is the working copy
+def Hs.cmp.side(+u: Ui, +side: String) -> String:
+  Bool.pick(String, String.is_empty(Hs.get(u, "cmp." ++ side)), Hs.live.abs(u), Hs.get(u, "cmp." ++ side))
+
+def Hs.cmp.path(+u: Ui) -> String:
+  HI.Hist.diff(Hs.cmp.side(u, "a"), Hs.cmp.side(u, "b"))
+
+def Hs.cmp.show(+u: Ui) -> Ui:
+  Ui.scratch_set(Ui.view_put(u, Hs.kname(Hs.kind(u)), Hs.cmp.path(u)), "@cmp.menu", "")
+
+def Hs.cmp.fill.a(+u: Ui) -> Ui:
+  Bool.pick(Ui, String.is_empty(Hs.get(u, "cmp.a")), Hs.set(Hs.set(u, "cmp.a", Hs.live.abs(u)), "cmp.al", "Working copy"), u)
+
+def Hs.cmp.fill.b(+u: Ui) -> Ui:
+  Bool.pick(Ui, String.is_empty(Hs.get(u, "cmp.b")), Hs.set(Hs.set(u, "cmp.b", Hs.live.abs(u)), "cmp.bl", "Working copy"), u)
+
+# the side not picked yet is the working copy (named, so the bar and
+# Hs.cmp see a comparison whichever side came first)
+def Hs.cmp.fill(+u: Ui) -> Ui:
+  Hs.cmp.fill.b(Hs.cmp.fill.a(u))
+
+# a version picked for a side
+def Hs.pick.k(bad: Bool, +u: Ui, +side: String, +spec: String, +label: String) -> Ui:
+  match bad:
+    case True{}:
+      Ui.error_set(u, "This file is not in the repository, so it cannot be compared.")
+    case False{}:
+      Hs.cmp.show(Hs.cmp.fill(Hs.set(Hs.set(Hs.set(Hs.set(Hs.cmp.fresh(Hs.keep.live(u)), "hist.at", ""), "hist.play", ""), "cmp." ++ side, spec), "cmp." ++ side ++ "l", label)))
+
+def Hs.pick.v(+u: Ui, +xs: List<&2, String>) -> Ui:
+  +side = Bool.pick(String, String.eq(HI.Hist.at(xs, 0n), "b"), "b", "a")
+  +spec = Hs.side.spec(HI.Hist.at(xs, 1n), HI.Hist.at(xs, 3n), HI.Hist.at(xs, 4n), Hs.live.abs(u))
+  Hs.pick.k(Bool.or(String.is_empty(Hs.live.abs(u)), String.is_empty(spec)), u, side, spec, HI.Hist.at(xs, 2n))
+
+def Hs.pick(+u: Ui, +value: String) -> Ui:
+  Hs.pick.v(u, String.split(value, '\t'))
+
+# opening the menu asks the hub what there is to compare with
+def Hs.menu.open(+u: Ui, +side: String) -> Act:
+  Ui.rpc(Ui.scratch_set(u, "@cmp.menu", side), "history.refs", [J.KV{"thread", J.Str{Ui.sel(u)}}])
+
+def Hs.menu.k(open: Bool, +u: Ui, +side: String) -> Act:
+  match open:
+    case True{}:
+      Act{Ui.scratch_set(u, "@cmp.menu", ""), Nil{}}
+    case False{}:
+      Hs.menu.open(u, side)
+
+def Hs.refs.has(+o: J.Json) -> Bool:
+  Bool.not(String.eq(J.Json.show(Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(o, "result"), "refs"), J.Null{})), "null"))
+
+def Hs.refs.store(has: Bool, u: Ui, +o: J.Json) -> Ui:
+  match has:
+    case True{}:
+      Ui.info_set(u, "refs:" ++ J.Json.get_str(J.Json.get_obj(o, "result"), "thread", ""), J.Json.show(J.Json.get_obj(o, "result")))
+    case False{}:
+      u
+
+def Ui.reply.skills(u: Ui, +o: J.Json) -> Ui:
+  Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Hs.refs.store(Hs.refs.has(o), Ui.reply.body(u, o), o), o), o)
+
+# The bar
+# -------
+# What every client's viewer shows under a board or schematic with a
+# history (or a comparison on show): on, the track's length and the
+# position (0 live), what the step followed and what was said before it.
+
+type HBar is Data:
+  HBar{on: Bool, n: Nat, at: Nat, title: String, entry: String, label: String, said: String, playing: Bool, diff: Bool, cmp: Bool, a: String, b: String, menu: String}
+
+def Hs.said.line(+s: String) -> String:
+  HI.Hist.line(s)
+
+def Hs.bar.k(m: Maybe<&2, HI.Step>, +u: Ui, +n: Nat, +at: Nat, +es: List<&2, M.Entry>) -> HBar:
+  match m:
+    case Some{+s}:
+      HBar{True{}, n, at, "Step " ++ Nat.show(at) ++ " of " ++ Nat.show(n) ++ Bool.pick(String, HI.Step.first(s), " · before the agent's edits", ""),
+        HI.Hist.anchor(es, s), HI.Hist.label(es, HI.Hist.anchor(es, s)), Hs.said.line(HI.Hist.said(es, HI.Hist.anchor(es, s))),
+        Hs.playing(u), Hs.diff(u), False{}, "", "", Ui.scratch(u, "@cmp.menu")}
+    case None{}:
+      HBar{Bool.or(Nat.is_gt(n, 0n), Hs.cmp(u)), n, 0n, Bool.pick(String, Hs.cmp(u), "Comparing", "Live · " ++ Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " step", " steps")),
+        "", "", "", Hs.playing(u), Hs.diff(u), Hs.cmp(u), Hs.get(u, "cmp.al"), Bool.pick(String, String.is_empty(Hs.get(u, "cmp.bl")), "Working copy", Hs.get(u, "cmp.bl")), Ui.scratch(u, "@cmp.menu")}
+
+def HBar.on(b: HBar) -> Bool:
+  match b:
+    case HBar{on, _, _, _, _, _, _, _, _, _, _, _, _}:
+      on
+
+def HBar.cmp(b: HBar) -> Bool:
+  match b:
+    case HBar{_, _, _, _, _, _, _, _, _, c, _, _, _}:
+      c
+
+# how much of the window's viewer the bar takes (layout.bend's Hb.draw;
+# a board is fitted above it)
+def HBar.h(+b: HBar) -> U32:
+  Bool.pick(U32, HBar.on(b), Bool.pick(U32, HBar.cmp(b), 72, 96), 0)
+
+# how long a change takes to fade in, every viewer the same (the window's
+# V.Fade.ms)
+def Hs.fade() -> Nat:
+  220n
+
+def Hs.bar.on(on: Bool, +u: Ui) -> HBar:
+  match on:
+    case True{}:
+      Hs.bar.k(HI.Hist.nth(Hs.track(u), Hs.at(u, Hs.track(u))), u, Hs.n(Hs.track(u)), Hs.at(u, Hs.track(u)), M.State.mine(Ui.state(u), Ui.sel(u)))
+    case False{}:
+      HBar{False{}, 0n, 0n, "", "", "", "", False{}, False{}, False{}, "", "", ""}
+
+# the bar for the selected thread's viewer when it shows (on): off unless
+# a board or a schematic shows
+def Hs.bar.for(+u: Ui, on: Bool) -> HBar:
+  Hs.bar.on(Bool.and(on, Bool.and(Nat.is_lt(Hs.kind(u), 2n), Bool.not(String.is_empty(Ui.sel(u))))), u)
+
+# (the window's and the web's: while the panel is open)
+def Hs.bar(+u: Ui) -> HBar:
+  Hs.bar.for(u, Ui.panel(u))
+
+# Actions (Ui.actions from "hist-go")
+def Hs.act(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n:
+      Act{Hs.go(u, Hs.track(u), HI.Hist.index(Hs.track(u), value)), Nil{}}
+    case 1n:
+      Act{Hs.step(False{}, u), Nil{}}
+    case 2n:
+      Act{Hs.step(True{}, u), Nil{}}
+    case 3n:
+      Act{Hs.go(u, Hs.track(u), 1n), Nil{}}
+    case 4n:
+      Act{Hs.go(u, Hs.track(u), Hs.n(Hs.track(u))), Nil{}}
+    case 5n:
+      Hs.play(u)
+    case 6n:
+      Hs.tick.on(u, value)
+    case 7n:
+      Act{Hs.diff.flip(u), Nil{}}
+    case 8n:
+      Act{Hs.live(u), Nil{}}
+    case 9n:
+      Hs.jump(u, value)
+    case 10n:
+      Act{Hs.show.id(u, value), Nil{}}
+    case 11n:
+      Hs.menu.k(Bool.not(String.is_empty(Ui.scratch(u, "@cmp.menu"))), u, Bool.pick(String, String.is_empty(value), "a", value))
+    case 12n:
+      Act{Hs.pick(u, value), Nil{}}
+    case 13n:
+      Act{Hs.live(u), Nil{}}
+    case 14n:
+      Hs.menu.open(u, Bool.pick(String, String.eq(value, "b"), "b", "a"))
+    case _:
+      Act{Ui.scratch_set(u, "@cmp.menu", ""), Nil{}}
+
 # a phone's upload over HTTP: it starts (value: {"name", "size"}; one over
 # the cap is refused here, and the phone sends nothing, as the screen's
 # "cap" says), and the hub answered (value: its JSON, as an attach.put's)
+# past the phone's upload: the viewer's history (Hs.act, from 31)
+def Upload.rest(hist: Bool, +i: Nat, +u: Ui, +value: String) -> Act:
+  match hist:
+    case True{}:
+      Hs.act(Nat.sub(i, 31n), u, value)
+    case False{}:
+      Mpage.act(Nat.sub(i, 20n), u, value)
+
 def Upload.act(+i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 29n:
@@ -4431,7 +4915,7 @@ def Upload.act(+i: Nat, +u: Ui, +value: String) -> Act:
     case 30n:
       Upload.end(u, value)
     case _:
-      Mpage.act(Nat.sub(i, 20n), u, value)
+      Upload.rest(Nat.is_ge(i, 31n), i, u, value)
 
 # past the table's own: the project picker's (14-17), then the Mechanical
 # page's (20-28; client.bend's Mpage.act), then a phone's upload (29, 30)

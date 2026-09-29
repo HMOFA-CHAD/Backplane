@@ -17,6 +17,7 @@ import ../core/vt.bend as VT
 import ../core/codec.bend as C
 import ../core/botui.bend as B
 import ./bots.bend as MB
+import ../core/hist.bend as HS
 
 # Ui -> the screen the phone apps draw, as JSON. SwiftUI and Compose map
 # it onto native lists, toolbars and text fields; every decision (order,
@@ -319,6 +320,18 @@ def Mob.imgs.list(+s: String) -> List<&2, String>:
 def Mob.imgs(+dr: Map<&2, String>, +id: String) -> List<&2, J.Json>:
   Mob.urls(Mob.imgs.list(String.drop(U.Str.get(dr, Mob.imgs.key(id)), 1n)))
 
+# a tool call or other activity; a design step (core/hist.bend) is a row
+# that shows it in the viewer ("hist-show" with its value)
+def Mob.act(step: Bool, e: M.Entry) -> J.Json:
+  match step e:
+    case True{} M.Act{+id, _, _, _, _, _}:
+      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("step")}, J.KV{"text", J.Json.str(HS.Hist.row(e))}, J.KV{"value", J.Json.str(id)}])
+    case _ M.Act{+id, _, tone, kind, summary, _}:
+      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("act")}, J.KV{"tone", J.Json.str(tone)},
+        J.KV{"label", J.Json.str(kind)}, J.KV{"text", J.Json.str(summary)}])
+    case _ M.Msg{+id, _, _, text, _}:
+      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("act")}, J.KV{"tone", J.Json.str("")}, J.KV{"label", J.Json.str("")}, J.KV{"text", J.Json.str(text)}])
+
 # an entry of the thread itself: a user message is what was written and
 # its attachments; a reply its markdown and the images it names
 def Mob.own(e: M.Entry, +dr: Map<&2, String>) -> J.Json:
@@ -329,9 +342,8 @@ def Mob.own(e: M.Entry, +dr: Map<&2, String>) -> J.Json:
     case M.Msg{+id, _, _, +text, _}:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("assistant")}, J.KV{"text", J.Json.str(text)},
         J.KV{"blocks", J.Json.arr(Mob.nodes(D.Md.render(text)))}, J.KV{"images", J.Json.arr(Mob.imgs(dr, id))}])
-    case M.Act{id, _, tone, kind, summary, _}:
-      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("act")}, J.KV{"tone", J.Json.str(tone)},
-        J.KV{"label", J.Json.str(kind)}, J.KV{"text", J.Json.str(summary)}])
+    case M.Act{+id, +th, +tone, +kind, +summary, +at}:
+      Mob.act(String.eq(tone, HS.Step.tone()), M.Act{id, th, tone, kind, summary, at})
 
 # a row that opens another thread (value: its id)
 def Mob.link(+id: String, +text: String, +to: String) -> J.Json:

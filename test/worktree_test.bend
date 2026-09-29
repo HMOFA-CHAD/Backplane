@@ -129,14 +129,14 @@ def main() -> IO(Unit):
     C.Check.str("no answer keeps the placeholder", tags(step(sent(), 103n, "{\"id\":0,\"m\":\"thread.titled\",\"p\":{\"thread\":\"t100-1\",\"placeholder\":\"fix the footprint\",\"title\":\"\"}}")), "")
     C.Check.str("ready runs it", tags(step(sent(), 102n, "{\"id\":0,\"m\":\"thread.worktree\",\"p\":{\"thread\":\"t100-1\",\"branch\":\"backplane/0a1b2c3d\",\"path\":\"/r/.backplane/worktrees/backplane-0a1b2c3d/board\"}}")), "WorktreeSet QueueTaken TurnChanged")
     C.Check.str("ready runs it there", outs(step(sent(), 102n, "{\"id\":0,\"m\":\"thread.worktree\",\"p\":{\"thread\":\"t100-1\",\"branch\":\"backplane/0a1b2c3d\",\"path\":\"/r/.backplane/worktrees/backplane-0a1b2c3d/board\"}}")),
-      "git:checkpoint0@/r/.backplane/worktrees/backplane-0a1b2c3d/board() git:name@/r/.backplane/worktrees/backplane-0a1b2c3d/board(backplane/0a1b2c3d) start@/r/.backplane/worktrees/backplane-0a1b2c3d/board send")
+      "git:checkpoint0@/r/.backplane/worktrees/backplane-0a1b2c3d/board() git:step@/r/.backplane/worktrees/backplane-0a1b2c3d/board() git:name@/r/.backplane/worktrees/backplane-0a1b2c3d/board(backplane/0a1b2c3d) start@/r/.backplane/worktrees/backplane-0a1b2c3d/board send")
     C.Check.str("viewer follows the worktree", U.Ui.dir(state(ready()), "/r/.backplane/worktrees/backplane-0a1b2c3d/board", "p1"), "/r/.backplane/worktrees/backplane-0a1b2c3d/board")
     C.Check.str("next message runs in the worktree", outs(step(ready(), 200n, "{\"id\":3,\"m\":\"turn.start\",\"p\":{\"thread\":\"t100-1\",\"text\":\"and the other\"}}")),
-      "git:checkpoint0@/r/.backplane/worktrees/backplane-0a1b2c3d/board() start@/r/.backplane/worktrees/backplane-0a1b2c3d/board send")
-    C.Check.str("skipped runs in the folder", outs(step(sent(), 102n, "{\"id\":0,\"m\":\"thread.local\",\"p\":{\"thread\":\"t100-1\"}}")), "git:checkpoint0@/r/board() start@/r/board send")
+      "git:checkpoint0@/r/.backplane/worktrees/backplane-0a1b2c3d/board() git:step@/r/.backplane/worktrees/backplane-0a1b2c3d/board(m200-8) start@/r/.backplane/worktrees/backplane-0a1b2c3d/board send")
+    C.Check.str("skipped runs in the folder", outs(step(sent(), 102n, "{\"id\":0,\"m\":\"thread.local\",\"p\":{\"thread\":\"t100-1\"}}")), "git:checkpoint0@/r/board() git:step@/r/board() start@/r/board send")
     C.Check.str("skipped is local", tags(step(sent(), 102n, "{\"id\":0,\"m\":\"thread.local\",\"p\":{\"thread\":\"t100-1\"}}")), "WorktreeSkipped QueueTaken TurnChanged")
     C.Check.str("no wait past the window", tags(step(made(), 300n, "{\"id\":2,\"m\":\"turn.start\",\"p\":{\"thread\":\"t100-1\",\"text\":\"go\"}}")), "ThreadRenamed MessagePosted TurnChanged")
-    C.Check.str("stranded wait runs on the tick", outs(H.Hub.tick(state(sent()), 400n)), "git:checkpoint0@/r/board() start@/r/board send")
+    C.Check.str("stranded wait runs on the tick", outs(H.Hub.tick(state(sent()), 400n)), "git:checkpoint0@/r/board() git:step@/r/board() start@/r/board send")
     C.Check.str("tick leaves a fresh wait", outs(H.Hub.tick(state(sent()), 150n)), "")
     C.Check.str("tick asks gh", outs(H.Hub.tick(state(ready()), 1000n)), "git:merged@/r/board(t100-1\tbackplane/0a1b2c3d)")
     C.Check.str("tick skips branchless", outs(H.Hub.tick(state(after(base(), 100n, "{\"id\":1,\"m\":\"thread.create\",\"p\":{\"project\":\"p1\",\"env\":\"local\"}}")), 1000n)), "")
@@ -166,5 +166,5 @@ def main() -> IO(Unit):
     C.Check.str("coming back waits", tags(step(removed(), 5000n, "{\"id\":3,\"m\":\"turn.start\",\"p\":{\"thread\":\"t100-1\",\"text\":\"one more thing\"}}")), "MessagePosted TurnQueued")
     C.Check.str("coming back asks once", outs(step(back(), 5010n, "{\"id\":4,\"m\":\"turn.start\",\"p\":{\"thread\":\"t100-1\",\"text\":\"and this\"}}")), "")
     C.Check.str("back runs there", outs(step(back(), 5020n, "{\"id\":0,\"m\":\"thread.worktree\",\"p\":{\"thread\":\"t100-1\",\"branch\":\"backplane/0a1b2c3d\",\"path\":\"/r/.backplane/worktrees/backplane-0a1b2c3d/board\"}}")),
-      "git:checkpoint0@/r/.backplane/worktrees/backplane-0a1b2c3d/board() start@/r/.backplane/worktrees/backplane-0a1b2c3d/board send")
+      "git:checkpoint0@/r/.backplane/worktrees/backplane-0a1b2c3d/board() git:step@/r/.backplane/worktrees/backplane-0a1b2c3d/board() start@/r/.backplane/worktrees/backplane-0a1b2c3d/board send")
     C.Check.str("codec removed", roundtrip(M.WorktreeRemoved{"a", 3n}), "{\"$\":\"WorktreeRemoved\",\"id\":\"a\",\"at\":3}")

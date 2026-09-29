@@ -62,8 +62,58 @@ def Look.of.k(sch: Bool, +layer: U32) -> U32 & U32:
       Look.board(U32.to_nat(layer))
 
 # a layer's colour and opacity in a board (kind 0) or a schematic (kind 1)
-def Look.of(+kind: U32, +layer: U32) -> U32 & U32:
+def Look.plain(+kind: U32, +layer: U32) -> U32 & U32:
   Look.of.k(U32.is_eq(kind, 1), layer)
+
+# Comparisons
+# -----------
+# A comparison of two versions (core/hist.bend's Hist.mark) is drawn with
+# its kind plus Look.diff(): what was removed, what changed and what was
+# added on their own layers (26, 27, 28: no board or schematic layer
+# reaches them), in red, amber and green, over everything else dimmed to
+# a third.
+
+def Look.diff() -> U32:
+  8
+
+def Look.is_diff(+kind: U32) -> Bool:
+  U32.is_ge(kind, Look.diff())
+
+# a kind without its comparison flag
+def Look.base(+kind: U32) -> U32:
+  U32.and(kind, 7)
+
+def Look.mark(+layer: U32) -> Bool:
+  Bool.and(U32.is_ge(layer, 26), U32.is_le(layer, 28))
+
+def Look.mark.color(light: Bool, +layer: U32) -> U32:
+  match light:
+    case True{}:
+      Bool.pick(U32, U32.is_eq(layer, 26), 13446961, Bool.pick(U32, U32.is_eq(layer, 27), 12086784, 1603918))
+    case False{}:
+      Bool.pick(U32, U32.is_eq(layer, 26), 15026253, Bool.pick(U32, U32.is_eq(layer, 27), 16098596, 3187820))
+
+def Look.dim(l: U32 & U32) -> U32 & U32:
+  (c, +a) = l
+  (c, (a / 3 : U32))
+
+def Look.diff.k(mark: Bool, light: Bool, +kind: U32, +layer: U32, plain: U32 & U32) -> U32 & U32:
+  match mark:
+    case True{}:
+      (Look.mark.color(light, layer), 235)
+    case False{}:
+      Look.dim(plain)
+
+# a layer's colour and opacity: a board's or schematic's, or a comparison's
+def Look.of.d(diff: Bool, +kind: U32, +layer: U32) -> U32 & U32:
+  match diff:
+    case True{}:
+      Look.diff.k(Look.mark(layer), False{}, kind, layer, Look.plain(Look.base(kind), layer))
+    case False{}:
+      Look.plain(kind, layer)
+
+def Look.of(+kind: U32, +layer: U32) -> U32 & U32:
+  Look.of.d(Look.is_diff(kind), kind, layer)
 
 # The light ground
 # ----------------
@@ -195,14 +245,42 @@ def Look.lit(l: U32 & U32, +kind: U32, +layer: U32) -> U32 & U32:
   (_, a) = l
   (Look.light.k(U32.is_eq(kind, 1), layer), a)
 
-# a layer's colour and opacity on the light ground or the dark one
-def Look.of.t(light: Bool, +kind: U32, +layer: U32) -> U32 & U32:
+def Look.plain.t(light: Bool, +kind: U32, +layer: U32) -> U32 & U32:
   match light:
     case True{}:
-      Look.lit(Look.of(kind, layer), kind, layer)
+      Look.lit(Look.plain(kind, layer), kind, layer)
     case False{}:
-      Look.of(kind, layer)
+      Look.plain(kind, layer)
 
-# how many layers a board or schematic paints
+def Look.of.t.d(diff: Bool, +light: Bool, +kind: U32, +layer: U32) -> U32 & U32:
+  match diff:
+    case True{}:
+      Look.diff.k(Look.mark(layer), light, kind, layer, Look.plain.t(light, Look.base(kind), layer))
+    case False{}:
+      Look.plain.t(light, kind, layer)
+
+# a layer's colour and opacity on the light ground or the dark one
+def Look.of.t(light: Bool, +kind: U32, +layer: U32) -> U32 & U32:
+  Look.of.t.d(Look.is_diff(kind), light, kind, layer)
+
+# how many layers a board or schematic paints (a comparison: up to its
+# marks)
 def Look.count(+kind: U32) -> Nat:
-  Bool.pick(Nat, U32.is_eq(kind, 1), 24n, 25n)
+  Bool.pick(Nat, Look.is_diff(kind), 29n, Bool.pick(Nat, U32.is_eq(kind, 1), 24n, 25n))
+
+def Look.pad(+n: Nat) -> List<&2, String>:
+  match n:
+    case 0n:
+      Nil{}
+    case 1n+k:
+      "" <> Look.pad(k)
+
+# the layer list's names: the kind's own, then a comparison's marks
+def Look.names(+kind: U32, +own: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, Look.is_diff(kind),
+    List.append(&2, String, own, List.append(&2, String, Look.pad(Nat.sub(26n, List.length(&2, String, own))), ["Removed", "Changed", "Added"])), own)
+
+# a look's opacity
+def Look.alpha.of(l: U32 & U32) -> U32:
+  (_, a) = l
+  a

@@ -142,7 +142,26 @@ data class Viewer(
     val note: String = "",
     // the Mechanical page, when that is what is open
     val mech: MechPage? = null,
+    // the design history's bar under a board or schematic (null: none)
+    val hist: HistBar? = null,
 )
+
+// The design history (src/mobile/view.bend's Hist.json): the steps in the
+// track and the one shown (0 the live file), what to call it, what the
+// agent said before it, playing, changes marked, a comparison on show and
+// its sides' labels, the side whose version menu is open ("" shut), a tick
+// per step then the live file (id ""), that menu (null shut), and the
+// legend's colours (0xRRGGBB: removed, changed, added)
+data class HistBar(
+    val n: Int, val at: Int, val title: String, val entry: String, val said: String,
+    val playing: Boolean, val diff: Boolean, val cmp: Boolean, val a: String, val b: String, val side: String,
+    val ticks: List<HistTick>, val menu: List<HistRow>?, val keys: IntArray,
+)
+
+data class HistTick(val id: String, val on: Boolean)
+
+// a version the menu offers ("cmp-pick" value)
+data class HistRow(val label: String, val sub: String, val value: String)
 
 // The Mechanical page (src/mobile/view.bend's Mech.json): what to say
 // while there are no parts, the parts ("mech-part" value), the part on
@@ -296,6 +315,8 @@ data class Cmd(
     // key alerts about the same item share
     val thread: String = "", val title: String = "", val kind: String = "", val body: String = "",
     val key: String = "",
+    // a "later": an action (with its value) to send after ms; a "jump": the entry to show
+    val ms: Long = 0, val action: String = "", val value: String = "", val id: String = "",
 )
 
 // an answer from the engine: its screen (none from a quiet call, or when a
@@ -420,6 +441,13 @@ private fun viewer(o: JSONObject) = Viewer(
             p.optJSONArray("shots").map { MechShot(it.optString("view"), it.optString("url")) }, p.optString("empty"),
             p.optString("rel"), p.optBoolean("busy"), p.optString("render"), p.optString("err"))
     },
+    o.optJSONObject("hist")?.let { h ->
+        HistBar(h.optInt("n"), h.optInt("at"), h.optString("title"), h.optString("entry"), h.optString("said"),
+            h.optBoolean("playing"), h.optBoolean("diff"), h.optBoolean("cmp"), h.optString("a"), h.optString("b"), h.optString("side"),
+            h.optJSONArray("ticks").map { HistTick(it.optString("id"), it.optBoolean("on")) },
+            h.optJSONArray("menu")?.let { a -> a.map { HistRow(it.optString("label"), it.optString("sub"), it.optString("value")) } },
+            ints(h.optJSONArray("keys")))
+    },
 )
 
 private fun strs(a: JSONArray?): List<String> =
@@ -525,5 +553,6 @@ fun parseScreen(o: JSONObject) = Screen(
 fun parseCmds(o: JSONObject): List<Cmd> =
     o.optJSONArray("cmds").map {
         Cmd(it.optString("type"), it.optString("text"), it.optString("data"), it.optString("hub"),
-            it.optString("thread"), it.optString("title"), it.optString("kind"), it.optString("body"), it.optString("key"))
+            it.optString("thread"), it.optString("title"), it.optString("kind"), it.optString("body"), it.optString("key"),
+            it.optDouble("ms", 0.0).toLong(), it.optString("action"), it.optString("value"), it.optString("id"))
     }

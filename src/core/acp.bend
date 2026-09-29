@@ -116,6 +116,15 @@ def Acp.reply.k(id: Nat, ok: Bool, a: Acp, +t: AcpTurn, +o: J.Json) -> AcpOut:
 # Agent → client: updates and permission requests
 # -----------------------------------------------
 
+# a tool call that has run ("tool.done", with the call's id as the Act
+# logged for it): the hub snapshots the design then (hub.bend's Steps)
+def Acp.tool.done(done: Bool, a: Acp, +u: J.Json) -> AcpOut:
+  match done:
+    case True{}:
+      AcpOut{a, Nil{}, [Acp.event("tool.done", [J.KV{"id", J.Str{J.Json.get_str(u, "toolCallId", "")}}])], Nil{}}
+    case False{}:
+      AcpOut{a, Nil{}, Nil{}, Nil{}}
+
 # an ACP plan's entries ({content, priority, status}) as todo items
 def Acp.plan(es: List<&2, J.Json>) -> List<&2, J.Json>:
   match es:
@@ -134,6 +143,8 @@ def Acp.update.k(i: Nat, a: Acp, +u: J.Json) -> AcpOut:
         J.KV{"command", J.Str{J.Json.get_str(u, "title", J.Json.get_str(u, "kind", "tool"))}}])}])], Nil{}}
     case 2n _:
       AcpOut{a, Nil{}, [Acp.event("item.updated", [J.KV{"item", J.Json.obj([J.KV{"type", J.Str{"todo_list"}}, J.KV{"items", J.Json.arr(Acp.plan(J.Json.elems(J.Json.get_obj(u, "entries"))))}])}])], Nil{}}
+    case 3n _:
+      Acp.tool.done(Bool.or(String.eq(J.Json.get_str(u, "status", ""), "completed"), String.eq(J.Json.get_str(u, "status", ""), "failed")), a, u)
     case _ _:
       AcpOut{a, Nil{}, Nil{}, Nil{}}
 
@@ -174,7 +185,7 @@ def Acp.open_now(a: Acp) -> Bool:
 def Acp.update.live(open: Bool, a: Acp, +o: J.Json) -> AcpOut:
   match open:
     case True{}:
-      Acp.update.k(Acp.pos(["agent_message_chunk", "tool_call", "plan"], J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "update"), "sessionUpdate", ""), 0n), a,
+      Acp.update.k(Acp.pos(["agent_message_chunk", "tool_call", "plan", "tool_call_update"], J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "update"), "sessionUpdate", ""), 0n), a,
         J.Json.get_obj(J.Json.get_obj(o, "params"), "update"))
     case False{}:
       AcpOut{a, Nil{}, Nil{}, Nil{}}

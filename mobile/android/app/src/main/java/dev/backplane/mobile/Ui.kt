@@ -108,6 +108,25 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.delay
 
 @Composable
 fun App(m: AppModel) {
@@ -643,6 +662,20 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
         val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
         if (count > 0 && last >= count - 3) list.animateScrollToItem(count - 1)
     }
+    // the design history's way back: the entry scrolled to (near the top)
+    // and tinted, the tint fading out; after the rows the jump opened are laid out
+    var lit by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(m.jump) {
+        val j = m.jump ?: return@LaunchedEffect
+        delay(60)
+        val i = t.entries.indexOfFirst { it.id == j.id }
+        if (i < 0) return@LaunchedEffect
+        val head = (if (t.parent != null) 1 else 0) + (if (t.earlier > 0) 1 else 0)
+        list.animateScrollToItem(maxOf(0, head + i - 1))
+        lit = j.id
+        delay(400)
+        if (lit == j.id) lit = null
+    }
     Scaffold(
         // opaque, so the entries scrolled under it (a bot's cat and tabs) never show through
         topBar = { Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
@@ -797,7 +830,13 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                 }
                 Spacer(Modifier.size(1.dp))
             }
-            items(t.entries, key = { it.id }) { EntryRow(m, it) { u -> shown = u } }
+            items(t.entries, key = { it.id }) { e ->
+                val on = lit == e.id
+                val tint by animateFloatAsState(if (on) 0.18f else 0f, tween(if (on) 150 else 2000), label = "jump")
+                Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primary.copy(alpha = tint))) {
+                    EntryRow(m, e) { u -> shown = u }
+                }
+            }
             itemsIndexed(t.sending, key = { i, _ -> "sending:$i" }) { _, text -> SendingView(text) }
             if (t.live.isNotEmpty()) item(key = "live") { Markdown(t.live) }
             else if (t.working.isNotEmpty()) item(key = "live") {
@@ -820,10 +859,13 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PlotScreen(m: AppModel, v: Viewer) {
-    // a plot for any other source is stale (a switch in flight)
-    val f = m.plots.frame?.takeIf { it.key == v.layers }
+    // a plot for any other source is stale (a switch in flight), except,
+    // while the design history shows, the last version of this kind and
+    // project: it stays until the next arrives (no blank between steps)
+    val f = m.plots.frame?.takeIf { it.key == v.layers || (v.hist != null && it.none.isEmpty() && plotHead(it.key) == plotHead(v.layers)) }
     val mesh = m.plots.mesh?.takeIf { it.key == v.key }
-    Box(Modifier.fillMaxSize().background(Color(0xFF000000.toInt() or v.bg))) {
+    Column(Modifier.fillMaxSize().background(Color(0xFF000000.toInt() or v.bg))) {
+    Box(Modifier.weight(1f).fillMaxWidth()) {
         // a part alone gets a surface of its own: nothing of a board is left on it
         key(if (v.layers.isEmpty()) v.key else "") {
         AndroidView(factory = { PlotSurface(it) }, modifier = Modifier.fillMaxSize(), update = { s ->
@@ -872,6 +914,128 @@ private fun PlotScreen(m: AppModel, v: Viewer) {
         ViewerControls(m, v, f?.chunks?.map { it.layer }?.toSet() ?: emptySet(), Modifier.align(Alignment.TopStart).statusBarsPadding().padding(top = 56.dp))
         if (v.open == "mech") v.mech?.let { p -> MechBar(m, p, v.light, Modifier.align(Alignment.TopStart).statusBarsPadding().padding(top = 108.dp)) }
         v.card?.let { c -> PlotCard(m, c, Modifier.align(Alignment.BottomCenter)) }
+    }
+    // the design history under the plot, which gives it the room
+    v.hist?.let { h -> HistoryBar(m, h, v.light) }
+    }
+    v.hist?.let { h -> h.menu?.let { rows -> HistMenu(m, h.side, rows) } }
+}
+
+// a plot key's kind and project (a version's key keeps both)
+private fun plotHead(k: String) = k.split("|", limit = 3).take(2).joinToString("|")
+
+// The design history under a board or schematic (src/mobile/view.bend's
+// Hist.json): the steps and the file now, a scrubber with a tick each,
+// what the agent said before the step shown (a tap goes back to it in the
+// thread), or a comparison of two versions and its legend
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun HistoryBar(m: AppModel, h: HistBar, light: Boolean) {
+    val fg = if (light) Color.Black else Color.White
+    val dim = fg.copy(alpha = 0.6f)
+    val accent = MaterialTheme.colorScheme.primary
+    Column(Modifier.fillMaxWidth().background(if (light) Color(0xFFF2F2F2) else Color(0xFF1C1C1E))
+        .navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (h.cmp) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    HistChip("Old: ${h.a}", h.side == "a", fg, accent, Modifier.weight(1f, fill = false)) { m.act("cmp-side", "a") }
+                    HistChip("New: ${h.b}", h.side == "b", fg, accent, Modifier.weight(1f, fill = false)) { m.act("cmp-side", "b") }
+                }
+                HistChip("Close", false, fg, accent) { m.act("cmp-close", "") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                val names = listOf("Removed", "Changed", "Added")
+                for (i in 0 until minOf(names.size, h.keys.size)) Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Box(Modifier.size(10.dp).background(Color(0xFF000000.toInt() or h.keys[i])))
+                    Text(names[i], style = MaterialTheme.typography.labelSmall, color = dim)
+                }
+            }
+        } else {
+            // one row when the title fits, else the chips go under it
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.align(Alignment.CenterVertically), verticalAlignment = Alignment.CenterVertically) {
+                    HistIcon(Icons.Filled.SkipPrevious, "First step", fg) { m.act("hist-first", "") }
+                    HistIcon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous step", fg) { m.act("hist-prev", "") }
+                    HistIcon(if (h.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (h.playing) "Pause" else "Play", fg) { m.act("hist-play", "") }
+                    HistIcon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next step", fg) { m.act("hist-next", "") }
+                    HistIcon(Icons.Filled.SkipNext, "Last step", fg) { m.act("hist-last", "") }
+                    Text(h.title, Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium, color = fg,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                HistChip("Changes", h.diff, fg, accent, Modifier.align(Alignment.CenterVertically)) { m.act("hist-diff", "") }
+                HistChip("Compare", false, fg, accent, Modifier.align(Alignment.CenterVertically)) { m.act("cmp", "a") }
+                if (h.at > 0) HistChip("Live", false, fg, accent, Modifier.align(Alignment.CenterVertically)) { m.act("hist-live", "") }
+            }
+            // a tick per step, then the live file; a tap shows that one
+            Box(Modifier.fillMaxWidth().height(28.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().height(2.dp).background(dim.copy(alpha = 0.4f)))
+                Row(Modifier.fillMaxWidth().fillMaxHeight()) {
+                    h.ticks.forEachIndexed { i, tk ->
+                        Box(Modifier.weight(1f).fillMaxHeight()
+                            .semantics {
+                                contentDescription = if (tk.id.isEmpty()) "Live file" else "Step ${i + 1}"
+                                role = Role.Button
+                                selected = tk.on
+                            }
+                            .clickable { m.act("hist-go", tk.id) },
+                            contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(width = if (tk.on) 4.dp else 2.dp, height = if (tk.on) 20.dp else 10.dp)
+                                .background(if (tk.on) accent else dim))
+                        }
+                    }
+                }
+            }
+            if (h.at > 0) Row(Modifier.fillMaxWidth().clickable { m.act("hist-jump", "") }.padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.AutoMirrored.Filled.Chat, "Show in the thread", Modifier.size(16.dp), tint = accent)
+                Text(h.said, style = MaterialTheme.typography.labelMedium, color = fg, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            else Text(h.said, style = MaterialTheme.typography.labelMedium, color = dim, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun HistIcon(icon: ImageVector, label: String, fg: Color, onClick: () -> Unit) {
+    Box(Modifier.size(36.dp).clickable(role = Role.Button, onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, label, Modifier.size(22.dp), tint = fg)
+    }
+}
+
+// square, filled with the accent while on
+@Composable
+private fun HistChip(label: String, on: Boolean, fg: Color, accent: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(modifier.background(if (on) accent else fg.copy(alpha = 0.12f))
+        .semantics { selected = on }
+        .clickable(role = Role.Button, onClick = onClick)
+        .padding(horizontal = 8.dp, vertical = 5.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (on) Color.White else fg,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+// the versions a comparison's side may take ("cmp-pick" value); let go, it shuts
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HistMenu(m: AppModel, side: String, rows: List<HistRow>) {
+    ModalBottomSheet(onDismissRequest = { m.act("cmp-shut", "") }, sheetState = rememberModalBottomSheetState(),
+        shape = androidx.compose.ui.graphics.RectangleShape) {
+        Text(if (side == "a") "Compare from (old)" else "Compare with (new)", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.titleMedium)
+        LazyColumn(Modifier.navigationBarsPadding()) {
+            items(rows) { r ->
+                ListItem(
+                    headlineContent = { Text(r.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    supportingContent = if (r.sub.isEmpty()) null else ({
+                        Text(r.sub, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.outline)
+                    }),
+                    modifier = Modifier.clickable { m.act("cmp-pick", r.value) },
+                )
+            }
+        }
     }
 }
 

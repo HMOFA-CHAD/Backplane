@@ -186,7 +186,7 @@ def Hub.post.go(wait: Bool, +t: M.Thread, +cwd: String, +queued: String, +now: N
       Step{List.concat(&2, M.Change, [[M.MessagePosted{thread, msg, role, text, now}],
           Bool.pick(List<&2, M.Change>, String.is_empty(queued), Nil{}, [M.QueueTaken{thread, now}]),
           [M.TurnChanged{thread, M.Running{}, now}]]),
-        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> Hub.run(t, cwd, M.Queue.join(queued, text))}
+        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> Git{0, "", "step", thread, cwd, msg, ""} <> Hub.run(t, cwd, M.Queue.join(queued, text))}
 
 def Step.after(st: Step, more: List<&2, M.Change>) -> Step:
   match st:
@@ -622,7 +622,7 @@ def Wt.start.k(go: Bool, +first: Bool, +t: M.Thread, +cwd: String, +queued: Stri
   match go:
     case True{}:
       Step{[M.QueueTaken{thread, now}, M.TurnChanged{thread, M.Running{}, now}],
-        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> List.append(&2, Out, Wt.name(first, t, queued), Hub.run(t, cwd, queued))}
+        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> Git{0, "", "step", thread, cwd, "", ""} <> List.append(&2, Out, Wt.name(first, t, queued), Hub.run(t, cwd, queued))}
     case False{}:
       Step.none()
 
@@ -638,7 +638,7 @@ def Merge.found(due: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +t
 
 # attachments, files and the web client's panes
 def Hub.methods.media() -> List<&2, String>:
-  ["attach.put", "attach.file", "update.check"]
+  ["attach.put", "attach.file", "update.check", "history.refs"]
 
 # one piece of an upload: "<index>|<1 when last>|<stored name>"
 def Attach.piece(+p: J.Json) -> String:
@@ -674,6 +674,8 @@ def Hub.media(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.J
           AT.Att.stored(Hub.id("a", now, Hub.seq(s)), AT.Att.base(AT.Att.from_uri(J.Json.get_str(p, "path", ""))))})
     case 2n:
       Step.outs([Git{client, id, "update.check", "", "", M.Setting.get(s, "update.channel", "stable"), ""}])
+    case 3n:
+      Hub.git(s, client, id, "refs", J.Json.get_str(p, "thread", ""), "", "")
     case _:
       Desk.request(String.eq(m, "desk.look"), client, id, p)
 
@@ -966,6 +968,68 @@ def Bg.system(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Cha
 def Bg.clear(+s: M.State, +th: String, +now: Nat) -> List<&2, M.Change>:
   Bg.put(s, th, now, Nil{})
 
+# Design steps
+# ------------
+# After a tool call the server snapshots the thread's KiCad files (job
+# "step", its `a` the entry the step follows; core/hist.bend). Claude's
+# tool calls end with a "user" line of tool results; Codex's and Grok's
+# are logged when they have run.
+
+def Steps.out(+thread: String, +cwd: String, +entry: String) -> Out:
+  Git{0, "", "step", thread, cwd, entry, ""}
+
+def Step.also(st: Step, os: List<&2, Out>) -> Step:
+  match st:
+    case Step{cs, o}:
+      Step{cs, List.append(&2, Out, o, os)}
+
+def Steps.hit(bs: List<&2, J.Json>) -> Bool:
+  match bs:
+    case +b <> _:
+      String.eq(J.Json.get_str(b, "type", ""), "tool_result")
+    case Nil{}:
+      False{}
+
+# the first tool result's call
+def Steps.first(bs: List<&2, J.Json>, hit: Bool) -> String:
+  match bs hit:
+    case Nil{} _:
+      ""
+    case +b <> +r True{}:
+      J.Json.get_str(b, "tool_use_id", "")
+    case +b <> t False{}:
+      Steps.first(t, Steps.hit(t))
+
+def Steps.claude.k(+id: String, +thread: String, +cwd: String) -> List<&2, Out>:
+  Bool.pick(List<&2, Out>, String.is_empty(id), Nil{}, [Steps.out(thread, cwd, id)])
+
+# a line of tool results: a step after the first of them
+def Steps.claude(+bs: List<&2, J.Json>, +thread: String, +cwd: String) -> List<&2, Out>:
+  Steps.claude.k(Steps.first(bs, Steps.hit(bs)), thread, cwd)
+
+def Steps.acts(cs: List<&2, M.Change>, +thread: String, +cwd: String) -> List<&2, Out>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case M.ActivityLogged{_, +id, +tone, _, _, _} <> t:
+      List.append(&2, Out, Bool.pick(List<&2, Out>, String.eq(tone, "tool"), [Steps.out(thread, cwd, id)], Nil{}), Steps.acts(t, thread, cwd))
+    case _ <> t:
+      Steps.acts(t, thread, cwd)
+
+def Steps.after(st: Step, +thread: String, +cwd: String) -> Step:
+  match st:
+    case Step{+cs, os}:
+      Step{cs, List.append(&2, Out, os, Steps.acts(cs, thread, cwd))}
+
+# Grok's calls are logged before they run: its step waits for the call's
+# end (acp.bend's "tool.done")
+def Steps.after.if(on: Bool, st: Step, +thread: String, +cwd: String) -> Step:
+  match on:
+    case True{}:
+      Steps.after(st, thread, cwd)
+    case False{}:
+      st
+
 def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   match i:
     case 0n:
@@ -977,7 +1041,7 @@ def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -
     case 3n:
       Step.after(Claude.result(thread, now, o), Usage.window(s, thread, now, o))
     case 4n:
-      Claude.named(s, thread, now, o)
+      Step.also(Claude.named(s, thread, now, o), Steps.claude(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), thread, Hub.cwd(s, Hub.thread(s, thread))))
     case _:
       Step.none()
 
@@ -1307,7 +1371,7 @@ def Queue.steer.k(m: Maybe<&2, M.QItem>, +run: Bool, +s: M.State, +now: Nat, +cl
       Step.before([M.QueueTakenOne{thread, msg, now}], [Reply.ok(client, id)], Steer.go(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), now, Hub.seq(s), thread, text))
     case Some{M.QItem{+msg, +text}} False{}:
       Step{[M.QueueTakenOne{thread, msg, now}, M.TurnChanged{thread, M.Running{}, now}],
-        Reply.ok(client, id) <> Git{0, "", "checkpoint0", thread, Hub.cwd(s, Hub.thread(s, thread)), "", ""} <> Hub.run(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), text)}
+        Reply.ok(client, id) <> Git{0, "", "checkpoint0", thread, Hub.cwd(s, Hub.thread(s, thread)), "", ""} <> Git{0, "", "step", thread, Hub.cwd(s, Hub.thread(s, thread)), "", ""} <> Hub.run(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), text)}
     case None{} _:
       Step.outs([Reply.err(client, id, "no such queued message")])
 
@@ -1700,8 +1764,8 @@ def Codex.todo(todo: Bool, +thread: String, +now: Nat, +it: J.Json) -> Step:
 
 # item.started and item.updated share a case: only todo lists are read there
 def Codex.kind(+t: String) -> Nat:
-  Bool.pick(Nat, Bool.or(String.eq(t, "item.started"), String.eq(t, "item.updated")), 5n,
-    C.Codec.pos(["thread.started", "item.completed", "turn.completed", "turn.failed", "item.delta"], t))
+  Bool.pick(Nat, String.eq(t, "tool.done"), 6n, Bool.pick(Nat, Bool.or(String.eq(t, "item.started"), String.eq(t, "item.updated")), 5n,
+    C.Codec.pos(["thread.started", "item.completed", "turn.completed", "turn.failed", "item.delta"], t)))
 
 def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   match i:
@@ -1715,6 +1779,8 @@ def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) ->
       Step.outs([Delta.push(thread, J.Json.get_str(o, "text", ""))])
     case 5n:
       Codex.todo(String.eq(J.Json.get_str(J.Json.get_obj(o, "item"), "type", ""), "todo_list"), thread, now, J.Json.get_obj(o, "item"))
+    case 6n:
+      Step.outs([Steps.out(thread, Hub.cwd(s, Hub.thread(s, thread)), "")])
     case 3n:
       Step{[M.ActivityLogged{thread, Hub.id("e", now, Hub.seq(s)), "error", Hub.provider(Hub.thread(s, thread)), J.Json.get_str(J.Json.get_obj(o, "error"), "message", J.Json.get_str(o, "message", "turn failed")), now}, M.TurnChanged{thread, M.Failed{}, now}], Nil{}}
     case _:
@@ -1732,7 +1798,7 @@ def Codex.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now: 
 def Hub.agent_line.c(run: Bool, +s: M.State, +now: Nat, +thread: String, line: String) -> Step:
   match run:
     case True{}:
-      Codex.line.parsed(J.Json.parse(line), s, thread, now)
+      Steps.after.if(Bool.not(String.eq(Hub.provider(Hub.thread(s, thread)), "grok")), Codex.line.parsed(J.Json.parse(line), s, thread, now), thread, Hub.cwd(s, Hub.thread(s, thread)))
     case False{}:
       Step.none()
 
@@ -1794,7 +1860,7 @@ def Ended.out.k(none: Bool, +s: M.State, +now: Nat, +state: String, +thread: Str
       st
     case False{} Step{cs, os}:
       Step{List.append(&2, M.Change, cs, Sum.at(RF.Sum.due(s, thread, now), thread, now)),
-        List.append(&2, Out, os, TurnEnded{thread, state} <> Git{0, "", "checkpoint", thread, cwd, "", ""} <> Sum.out(RF.Sum.due(s, thread, now), s, thread, "thread"))}
+        List.append(&2, Out, os, TurnEnded{thread, state} <> Git{0, "", "step", thread, cwd, "", ""} <> Git{0, "", "checkpoint", thread, cwd, "", ""} <> Sum.out(RF.Sum.due(s, thread, now), s, thread, "thread"))}
 
 def Ended.out.s(+s: M.State, +now: Nat, +state: String, +thread: String, +cwd: String, st: Step) -> Step:
   Ended.out.k(String.is_empty(state), s, now, state, thread, cwd, st)

@@ -186,6 +186,20 @@ struct EntryRow: View {
                 Text(entry.text).lineLimit(1).font(.callout)
             }
             .buttonStyle(.borderless)
+        // a design step: shows it in the viewer
+        case "step":
+            Button { model.act("hist-show", entry.value ?? "") } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                    Text(entry.text).lineLimit(2)
+                }
+                .font(.caption.monospaced())
+                .foregroundStyle(Color.accentColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Show in the viewer: " + entry.text)
         default:
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(entry.label ?? "").foregroundStyle(.tertiary)

@@ -12,6 +12,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val screen get() = core.screen
     val composer get() = core.composer
     val scrolls get() = core.scrolls
+    val jump get() = core.jump
     val plots get() = core.plots
 
     fun pair(text: String) = core.pair(text)

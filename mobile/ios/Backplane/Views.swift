@@ -620,6 +620,8 @@ struct ThreadScreen: View {
     @State private var shown: Shown?
     // the entry that was first when earlier ones were asked for
     @State private var keepAt: String?
+    // the entry a jump showed, tinted for a moment
+    @State private var lit: String?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -643,7 +645,11 @@ struct ThreadScreen: View {
                             }
                         })
                     }
-                    ForEach(thread.entries) { EntryRow(model: model, entry: $0) { shown = $0 }.id($0.id) }
+                    ForEach(thread.entries) { e in
+                        EntryRow(model: model, entry: e) { shown = $0 }
+                            .background(Color.accentColor.opacity(lit == e.id ? 0.18 : 0))
+                            .id(e.id)
+                    }
                     // the client's sending rows, then those tapped here it has
                     // not answered yet, by place: one handed over keeps its place
                     ForEach(Array(sending.enumerated()), id: \.offset) { _, text in
@@ -677,6 +683,18 @@ struct ThreadScreen: View {
             .onChange(of: thread.entries.last?.id) { proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: thread.entries.first?.id) {
                 if let k = keepAt { proxy.scrollTo(k, anchor: .top); keepAt = nil }
+            }
+            // the design history's way back: the entry scrolled to and tinted,
+            // the tint fading out (after the rows the jump opened are laid out)
+            .onChange(of: model.jump) { _, j in
+                guard live, let j else { return }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(60))
+                    withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(j.id, anchor: .center) }
+                    lit = j.id
+                    try? await Task.sleep(for: .milliseconds(400))
+                    withAnimation(.easeOut(duration: 2)) { if lit == j.id { lit = nil } }
+                }
             }
         }
         .safeAreaInset(edge: .bottom) {

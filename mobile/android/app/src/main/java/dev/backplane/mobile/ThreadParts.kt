@@ -62,6 +62,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Difference
 import androidx.compose.material.icons.filled.FindInPage
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Error
@@ -335,6 +336,13 @@ fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
         "link" -> Text(e.text, Modifier.clickable { m.act("select", e.value) }.padding(vertical = 2.dp),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // a design step: shows it in the viewer
+        "step" -> Row(Modifier.fillMaxWidth().clickable { m.act("hist-show", e.value) }.padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Filled.History, "Show in the viewer", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+            Text(e.text, style = MaterialTheme.typography.labelMedium.copy(fontFamily = mono),
+                color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
         else -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val color = if (e.tone == "error") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
             val style = MaterialTheme.typography.labelMedium.copy(fontFamily = mono)

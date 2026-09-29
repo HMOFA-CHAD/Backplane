@@ -233,6 +233,10 @@ function out(cmds, quiet, alerts) {
     else if (c.$ === "Copy") cs.push({ type: "copy", text: c.text });
     else if (c.$ === "Focus") cs.push({ type: "focus", id: c.id });
     else if (c.$ === "Scroll") cs.push({ type: "scroll" });
+    // a client action come due (the design history playing), back to the hub that asked
+    else if (c.$ === "Later") cs.push({ type: "later", ms: Number(c.ms), action: c.action, value: h.hub + "|" + c.value });
+    // show an entry of the thread (the history's way back to it)
+    else if (c.$ === "Jump") cs.push({ type: "jump", id: c.id });
     // the native side writes it down at once; "" forgets it
     else if (c.$ === "Keep") {
       const key = h.hub + "|" + c.thread;

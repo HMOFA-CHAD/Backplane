@@ -188,6 +188,7 @@ let socket = null;
 let queued = false;
 let scroll = false;
 let focus = null;
+let jump = null;
 let earlierAsked = false;
 
 function render() {
@@ -201,6 +202,17 @@ function render() {
   // earlier entries added above keep the view where it was
   else if (tl2 && tl === tl2) tl2.scrollTop = tl2.scrollHeight - fromEnd;
   scroll = false;
+  // an entry the history went back to (Jump): brought into view, flashed
+  if (jump && tl2) {
+    const el = tl2.querySelector(`[data-id="${CSS.escape(jump)}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "center" });
+      el.classList.remove("jumped");
+      void el.offsetWidth;
+      el.classList.add("jumped");
+    }
+    jump = null;
+  }
   Solid.mount(document.getElementById("solid"));
   Plot2d.mount(document.getElementById("plot"));
   earlierAsked = false;
@@ -246,6 +258,12 @@ function run(cmds) {
       scroll = true;
     } else if (c.$ === "Notify") {
       notify(c);
+    } else if (c.$ === "Later") {
+      // a client action come due (the history playing)
+      setTimeout(() => dispatch(c.action, c.value), Number(c.ms));
+    } else if (c.$ === "Jump") {
+      jump = c.id; // after the next render, which opens its folds
+      later();
     } else if (c.$ === "Keep") {
       // written at once: a crash or a closed tab loses nothing typed
       try {
