@@ -1356,6 +1356,18 @@ law fold_default_live:
   for +live: Bool
   {FO.Fold.open("", live) == live : Bool}
 
+# a message is never folded away: it shows as itself wherever it sits
+law fold_roles_message_shown:
+  for +i: String
+  for +th: String
+  for +r: M.Role
+  for +x: String
+  for +a: Nat
+  for +t: List<&2, M.Entry>
+  for +info: Map<&2, String>
+  for +running: Bool
+  {List.head(&2, FO.Role, FO.Fold.roles(M.Msg{i, th, r, x, a} <> t, info, running)) == Some{FO.RShow{}} : Maybe<&2, FO.Role>}
+
 # a turn's work folds under its message: the message itself is never in
 # it, and while the turn runs its work stays open until shut by hand
 law work_message_shown:

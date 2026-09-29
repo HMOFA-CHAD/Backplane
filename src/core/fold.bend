@@ -13,11 +13,9 @@ import ./model.bend as M
 # client's info map), shut when they shut it ("0"), and otherwise open only
 # while it is the live one: the last thing in a thread whose turn runs.
 #
-# A turn folds the same way, one level up: what the agent did between a
-# user's message and its last reply shows as one row, "Worked for 2m 13s ·
-# 5m ago", open while the turn runs and shut once it is done
-# ("fold:work:<the user message's id>"). Inside it the tool runs fold as
-# before; the message and the reply are never in it (laws work_*).
+# Only tool calls fold: a turn's messages always show (law
+# fold_roles_message_shown). The turn fold below ("Worked for …", Work.*)
+# is no longer applied; it hid the agent's messages between tool runs.
 
 type Grp is Data:
   GOne{e: M.Entry}
@@ -403,6 +401,6 @@ def Fold.now(m: Map<&2, String>) -> Nat:
   M.Switch.num(Fold.user.k(Map.get(String, "", m, "clock")), 0n)
 
 # the roles of a thread's entries, with the client's info map and whether
-# its turn runs
+# its turn runs: tool runs fold, nothing else does
 def Fold.roles(+es: List<&2, M.Entry>, +info: Map<&2, String>, +running: Bool) -> List<&2, Role>:
-  Work.zip(Work.roles.go(Work.segs(es), info, running, Fold.now(info)), Fold.roles.go(Fold.groups(es), info, running))
+  Fold.roles.go(Fold.groups(es), info, running)
