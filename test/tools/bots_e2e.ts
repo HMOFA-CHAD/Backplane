@@ -220,8 +220,8 @@ try {
   check("no credentials is refused (401) and says so", bn.status === 401 && bn.text.includes("no credentials"), bn);
   const bsig = await post(url, body, { authorization: `Bearer ${token}`, "x-backplane-timestamp": String(now()), "x-backplane-signature": sign("00".repeat(32), now(), body) });
   check("a wrong signature is refused even with the token (401)", bsig.status === 401 && bsig.text.includes("signature"), bsig);
-  const bbig = await postForm(url, form({ transcription: "big" }, new Uint8Array(300000)), { authorization: `Bearer ${token}` });
-  check("a form over 256 KB is refused (413)", bbig.status === 413, bbig.status);
+  const bbig = await postForm(url, form({ transcription: "big" }, new Uint8Array(2100000)), { authorization: `Bearer ${token}` });
+  check("a form over 2 MB is refused (413)", bbig.status === 413, bbig.status);
   const tk3 = await rpc(a, "bots.hook_token", { hook: hk.hook, op: "new" });
   check("a new token replaces the old one", tk3?.ok && /^[0-9a-f]{32}$/.test(tk3.token) && tk3.token !== token, tk3);
   const bold = await postForm(url, form({ transcription: "old token" }), { authorization: `Bearer ${token}` });
