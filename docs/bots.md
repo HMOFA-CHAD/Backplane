@@ -523,7 +523,13 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
 - Freshness and partitions. No polling of its own: pushes as changes
   happen; a pull at start (after the mirror is read back from disk), on a
   gap, and when the minute's directory exchange finds a link that was away
-  answering again. A link that does not answer the directory, or a pull,
+  answering again. When discovery recognizes a linked owner machine, it
+  both offers the current head and pulls that peer's authoritative history
+  (`Far.returned`): an earlier hint may have arrived before this side
+  recognized ownership and been refused. This also checks a healthy cached
+  mirror after a quick restart. These are one-time discovery actions; the
+  existing minute directory and two-minute machine discovery remain the
+  only periodic checks. A link that does not answer the directory, or a pull,
   is away: its bots and threads stay listed and readable, marked away
   (`far.away.<link>`, mood "away", "Kit · box (away)").
 - Requests. What a client does to a thread elsewhere (write, stop, answer

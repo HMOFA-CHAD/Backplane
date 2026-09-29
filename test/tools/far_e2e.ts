@@ -268,6 +268,11 @@ try {
   clients.push(cb4);
   const disk = await until(8000, () => lastFar(cb4, link));
   check("after a restart the mirror shows from disk, away", !!disk && disk.away && disk.items.some((i: any) => i.c.$ === "BotSet"), disk && { ...disk, items: disk.items.length });
+  // Finish beta's first discovery while alpha is still down. This makes
+  // the initial owner-return hint arrive before beta recognizes alpha,
+  // rather than letting startup timing accidentally hide that case.
+  const absent = await until(10000, () => cb4.info?.machines && !String(cb4.info.machines).includes(`127.0.0.1:${a.port}`));
+  check("restart discovery observes the stopped owner", !!absent, cb4.info?.machines);
 
   // alpha comes back: beta pulls and is here again
   spawn(a);
@@ -303,7 +308,7 @@ try {
   check("replacement owner accepts a new turn", !!resetTurn?.ok && !!await until(5000, () => ca3.seen.find((c) => c.$ === "MessagePosted" && c.msg === "reset-message")), resetTurn);
   const reset = await until(75000, () => cb4.far.find((f) => f.link === link && f.epoch && f.epoch !== oldEpoch && f.items.some((i: any) => i.c.$ === "BotSet" && i.c.id === "reset-bot")));
   check("history replacement takes its lower sequence", !!reset && reset.head < disk.head,
-    reset ? { epoch: reset.epoch, head: reset.head, old: disk.head } : { last: lastFar(cb4, link), owner: ca3.seen.slice(-8) });
+    reset ? { epoch: reset.epoch, head: reset.head, old: disk.head } : { machines: { owner: ca3.info?.machines, mirror: cb4.info?.machines }, last: lastFar(cb4, link), owner: ca3.seen.slice(-8) });
   const mirrorPath = join(b.home, "far", `${link}.jsonl`);
   check("history replacement clears old disk projection", !!reset && !readFileSync(mirrorPath, "utf8").includes(miso.bot));
 

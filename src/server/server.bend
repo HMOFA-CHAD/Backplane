@@ -4150,6 +4150,22 @@ def Far.pull.here.k(r: Nat & Hub, +link: String) -> IO(Hub):
 def Far.pull.here(h: Hub, +link: String) -> IO(Hub):
   Far.pull.here.k(Far.mirror.head(h, link), link)
 
+# Recognition must pull too: the other side's earlier hint may have
+# arrived before this side recognized ownership and been refused. Pull
+# even a healthy cached mirror, so a quick history replacement is found.
+def Far.returned.go(ps: List<&2, BO.Peer>, h: Hub) -> IO(Hub):
+  match ps:
+    case Nil{}:
+      IO.pure(Hub, h)
+    case BO.Peer{+link, _, _, _, _} <> t:
+      IO.bind(Hub, Hub, Far.pull.here(h, link), h2 => Far.returned.go(t, h2))
+
+def Far.returned(h: Hub, +ps: List<&2, BO.Peer>) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      IO.bind(Hub, Hub, Far.offer(Hub{st, f, ls, cl, as, inbox, cfg, note}, ps),
+        h2 => Far.returned.go(Far.own.go(ps, cfg), h2))
+
 def Far.store(h: Hub, +link: String, +text: String) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
@@ -4656,7 +4672,7 @@ def Hub.dir.returned(h: Hub, +mc: String) -> IO(Hub):
           J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(Bot.dir.machines(Cfg.net(cfg))), J.Null{}), "peers")),
           J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(mc), J.Null{}), "peers")))
         h3 : Hub <- Hub.dir.queue(h2, returned)
-        Far.offer(h3, returned)
+        Far.returned(h3, returned)
 
 def Bot.dir.awake(refresh: Bool, +inbox: Chan(Msg), +peer: String) -> IO(Unit):
   match refresh:
