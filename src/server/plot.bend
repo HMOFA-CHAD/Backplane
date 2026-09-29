@@ -12,6 +12,9 @@ import ../core/utf8.bend as U
 import ../core/eq.bend as Q
 import ../core/json.bend as J
 import ../core/hier.bend as HI
+import ../core/hist.bend as HS
+import ../core/look.bend as LO
+import ./git.bend as GT
 
 # The phones' viewer. One actor owns every board, schematic or 3D model a
 # phone watches and what each phone holds of it. It polls the files (every
@@ -49,7 +52,7 @@ type Src is Data:
 # a phone's view: a source it watches, the chunks it holds, and the 3D
 # model's bytes it holds (a 3D view is two: the board's plot and the model)
 type Sub is Data:
-  Sub{client: U32, key: String, sent: List<&2, P.Chunk>, mesh: String}
+  Sub{client: U32, key: String, sent: List<&2, P.Chunk>, mesh: String, fresh: Bool}
 
 type PSt is Data:
   PSt{srcs: List<&2, Src>, subs: List<&2, Sub>, polling: Bool}
@@ -116,7 +119,7 @@ def Sub.watched(ss: List<&2, Sub>, +key: String) -> Bool:
   match ss:
     case Nil{}:
       False{}
-    case Sub{_, +k, _, _} <> t:
+    case Sub{_, +k, _, _, _} <> t:
       Bool.or(String.eq(k, key), Sub.watched(t, key))
 
 def Src.keep(keep: Bool, s: Src, rest: List<&2, Src>) -> List<&2, Src>:
@@ -148,7 +151,7 @@ def Sub.keep(drop: Bool, s: Sub, rest: List<&2, Sub>) -> List<&2, Sub>:
 
 def Sub.client(s: Sub) -> U32:
   match s:
-    case Sub{c, _, _, _}:
+    case Sub{c, _, _, _, _}:
       c
 
 # every view but the client's
@@ -159,6 +162,28 @@ def Sub.drop(ss: List<&2, Sub>, +client: U32) -> List<&2, Sub>:
     case +s <> t:
       Sub.keep(U32.is_eq(Sub.client(s), client), s, Sub.drop(t, client))
 
+# the chunks a phone holds, whatever source they came from (a phone keeps
+# the last plot it was sent; a 3D model's view holds no plot chunks): a new view's first plot is a delta against
+# them, so moving between versions of a file sends and fades in only what
+# changed (law plot_delta_exact holds against any held chunks). A new
+# view sends its first plot even when it changes nothing (fresh).
+def Sub.plot(+key: String) -> Bool:
+  Bool.or(String.starts_with(key, "0|"), String.starts_with(key, "1|"))
+
+def Sub.carry(ss: List<&2, Sub>, +client: U32) -> List<&2, P.Chunk>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case Sub{+c, +k, +cs, _, _} <> t:
+      Bool.pick(List<&2, P.Chunk>, Bool.and(U32.is_eq(c, client), Sub.plot(k)), cs, Sub.carry(t, client))
+
+def Sub.clear.k(hit: Bool, s: Sub) -> Sub:
+  match hit s:
+    case True{} Sub{c, k, _, m, f}:
+      Sub{c, k, Nil{}, m, f}
+    case False{} _:
+      s
+
 # Sending
 # -------
 
@@ -167,17 +192,17 @@ def Pv.send.k(quiet: Bool, +out: Chan(POut), +client: U32, +key: String, +pl: P.
     case True{}:
       IO.pure(Unit, Unit{})
     case False{}:
-      Pv.bin(out, client, P.Plot.msg(key, P.Plot.box(pl), P.Plot.thick(pl), P.Plot.edge(pl), rs))
+      Pv.bin(out, client, P.Plot.msg.fam(key, HS.Hist.key.family(key), P.Plot.box(pl), P.Plot.thick(pl), P.Plot.edge(pl), rs))
 
 # a phone's view brought up to a plot: the delta goes out unless it would
 # change nothing; the phone now holds the plot's chunks
 def Pv.send.plot(s: Sub, +pl: P.Plot, +out: Chan(POut)) -> IO(Sub):
   match s:
-    case Sub{+client, +key, +sent, mesh}:
+    case Sub{+client, +key, +sent, mesh, fresh}:
       do IO<Sub>:
         +rs : List<&2, P.Ref> = P.Plot.delta(P.Plot.chunks(pl), sent)
-        Pv.send.k(P.Plot.quiet(rs, 0n, List.length(&2, P.Chunk, sent)), out, client, key, pl, rs)
-        return Sub{client, key, P.Plot.chunks(pl), mesh}
+        Pv.send.k(Bool.and(Bool.not(fresh), P.Plot.quiet(rs, 0n, List.length(&2, P.Chunk, sent))), out, client, key, pl, rs)
+        return Sub{client, key, P.Plot.chunks(pl), mesh, False{}}
 
 def Pv.solid.rev(so: P.Solid) -> String:
   match so:
@@ -200,10 +225,10 @@ def Pv.send.solid.k(same: Bool, +out: Chan(POut), +client: U32, +key: String, so
 # exactly this one
 def Pv.send.solid(s: Sub, +so: P.Solid, +out: Chan(POut)) -> IO(Sub):
   match s:
-    case Sub{+client, +key, sent, +mesh}:
+    case Sub{+client, +key, sent, +mesh, fresh}:
       do IO<Sub>:
         Pv.send.solid.k(Q.Eq.str(Pv.solid.rev(so), mesh), out, client, key, so)
-        return Sub{client, key, sent, Pv.solid.rev(so)}
+        return Sub{client, key, sent, Pv.solid.rev(so), fresh}
 
 def Pv.send.at(solid: Bool, s: Sub, +pl: P.Plot, +out: Chan(POut)) -> IO(Sub):
   match solid:
@@ -224,8 +249,23 @@ def Pv.send.if(hit: Bool, s: Sub, m: Maybe<&2, P.Plot>, +out: Chan(POut)) -> IO(
 
 def Sub.is(s: Sub, +key: String) -> Bool:
   match s:
-    case Sub{_, k, _, _}:
+    case Sub{_, k, _, _, _}:
       String.eq(k, key)
+
+def Sub.clear.go(ss: List<&2, Sub>, +key: String) -> List<&2, Sub>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case +s <> t:
+      Sub.clear.k(Sub.is(s, key), s) <> Sub.clear.go(t, key)
+
+# a phone told there is nothing for key holds nothing
+def Sub.clear(ss: List<&2, Sub>, +key: String, bad: Bool) -> List<&2, Sub>:
+  match bad:
+    case True{}:
+      Sub.clear.go(ss, key)
+    case False{}:
+      ss
 
 def Pv.fail.one(hit: Bool, +s: Sub, +key: String, +err: String, +out: Chan(POut)) -> IO(Unit):
   match hit:
@@ -497,10 +537,59 @@ def Pv.child.solid(+bare: Bool, +full: Bool, +path: String, +note: String) -> IO
     r : PR.Ran <- Pv.glb.run(Bool.or(isglb, have), Pv.is_step(path), bare, full, path, out)
     Pv.solid.done(r, out, note, Pv.is_step(path))
 
-def Pv.child.plot(+kind: U32, +path: String, +infos: String) -> IO(Unit):
+def Pv.unread() -> String:
+  "This version of the file cannot be read."
+
+# a file in a commit that cannot be read never will be: say so (exit 3)
+# rather than wait as for a live file half written (exit 2)
+def Pv.child.v(m: Maybe<&2, P.Plot>, fixed: Bool, +thick: U32, +infos: String) -> IO(Unit):
+  match m fixed:
+    case None{} True{}:
+      IO.die(Unit, 3, Pv.unread())
+    case _ _:
+      Pv.child.k(m, thick, infos)
+
+# a version's items: none at all when it cannot be read (a file in a
+# commit that lacks it reads as no bytes)
+def Pv.version(fixed: Bool, +kind: U32, bs: List<&2, U32>) -> Maybe<&2, List<&2, B.Item>>:
+  match fixed bs:
+    case True{} Nil{}:
+      None{}
+    case _ +b:
+      Pv.parse.k(U32.is_eq(kind, 1), b)
+
+def Pv.child.one(+kind: U32, +path: String, +infos: String) -> IO(Unit):
   do IO<Unit>:
-    +bs : List<&2, U32> <- K.Io.bytes(path)
-    Pv.child.k(Pv.plot(Pv.parse.k(U32.is_eq(kind, 1), bs), kind), Bool.pick(U32, U32.is_eq(kind, 0), Pv.thick(bs), 0), infos)
+    +bs : List<&2, U32> <- GT.Git.version(path)
+    Pv.child.v(Pv.plot(Pv.version(Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)), kind, bs), kind), Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)), Bool.pick(U32, U32.is_eq(kind, 0), Pv.thick(bs), 0), infos)
+
+# one side of a comparison: a file that is not there (made or removed by
+# the change) has no items
+def Pv.side(+kind: U32, bs: List<&2, U32>) -> Maybe<&2, List<&2, B.Item>>:
+  match bs:
+    case Nil{}:
+      Some{Nil{}}
+    case +b <> t:
+      Pv.parse.k(U32.is_eq(kind, 1), b <> t)
+
+def Pv.mark(a: Maybe<&2, List<&2, B.Item>>, b: Maybe<&2, List<&2, B.Item>>) -> Maybe<&2, List<&2, B.Item>>:
+  match a b:
+    case Some{+oa} Some{+nb}:
+      Some{HS.Hist.mark(oa, nb)}
+    case _ _:
+      None{}
+
+# a comparison (core/hist.bend): both versions parsed, the new one's
+# items marked against the old one's (an old one that cannot be read has
+# none: the file is new), in the comparison's look (kind | Look.diff)
+def Pv.child.diff(+kind: U32, +path: String, +infos: String) -> IO(Unit):
+  do IO<Unit>:
+    +a : List<&2, U32> <- GT.Git.version(HS.Hist.old(path))
+    +b : List<&2, U32> <- GT.Git.version(HS.Hist.new(path))
+    Pv.child.k(Pv.plot(Pv.mark(Pv.side(kind, a), Pv.side(kind, b)), U32.or(kind, LO.Look.diff())), 0, infos)
+
+def Pv.child.plot(+kind: U32, +path: String, +infos: String) -> IO(Unit):
+  Bool.pick(IO(Unit), Nat.is_eq(HS.Hist.kind(path), 2n), Pv.child.diff(kind, path, infos), Pv.child.one(kind, path, infos))
 
 def Pv.child(+kind: U32, +path: String, +infos: String) -> IO(Unit):
   Bool.pick(IO(Unit), Pv.solid.kind(kind), Pv.child.solid(U32.is_eq(kind, 3), U32.is_eq(kind, 4), path, infos), Pv.child.plot(kind, path, infos))
@@ -524,7 +613,7 @@ def Tree.next(todo: List<&2, String>, +tab: List<&2, HI.Kids>, k: List<&2, HI.Ki
       IO.pure(List<&2, HI.Kids>, tab)
     case +p <> rest:
       do IO<List<&2, HI.Kids>>:
-        bs : List<&2, U32> <- K.Io.bytes(p)
+        bs : List<&2, U32> <- GT.Git.version(p)
         +kd : HI.Kids = HI.Hier.kids(p, bs)
         k(kd <> tab, HI.Hier.todo(HI.Hier.kids.sheets(kd), kd <> tab, rest))
 
@@ -535,11 +624,12 @@ def Tree.load(fuel: Nat, +todo: List<&2, String>, +tab: List<&2, HI.Kids>) -> IO
     case 1n+f:
       Tree.next(todo, tab, t2 => d2 => Tree.load(f, d2, t2))
 
-# the root sheet: the project's schematic, else the file shown
+# the root sheet: the project's schematic (in the same commit when the
+# file shown is a version, core/hist.bend), else the file shown
 def Tree.root(f: K.Files, +path: String) -> String:
   match f:
     case K.Files{_, _, +sch}:
-      Bool.pick(String, String.is_empty(sch), path, sch)
+      Bool.pick(String, String.is_empty(sch), path, HS.Hist.rebase(path, sch))
 
 # `backplane --plot-tree ROOT`: the rows, as Hier.show writes them
 def Pv.child.tree(+root: String) -> IO(Unit):
@@ -560,8 +650,8 @@ def Pv.tree.k(+file: String, +client: U32, +root: String, +out: Chan(POut)) -> I
   Bool.pick(IO(Unit), String.is_empty(file), IO.pure(Unit, Unit{}),
     IO.bind(String, Unit, H.Sys.exe_path(), exe => IO.bind(PR.Ran, Unit, PR.Proc.run(exe, ["--plot-tree", file], "/"), r => Pv.tree.say(r, client, root, out))))
 
-def Pv.tree(+client: U32, +root: String, +out: Chan(POut)) -> IO(Unit):
-  IO.bind(K.Files, Unit, K.Files.read(root), f => Pv.tree.k(Tree.root(f, ""), client, root, out))
+def Pv.tree(+client: U32, +root: String, +path: String, +out: Chan(POut)) -> IO(Unit):
+  IO.bind(K.Files, Unit, K.Files.read(root), f => Pv.tree.k(Tree.root(f, Bool.pick(String, Nat.is_eq(HS.Hist.kind(path), 1n), path, "")), client, root, out))
 
 def Pv.args.copy(xs: List<String>) -> List<&2, String>:
   match xs:
@@ -641,12 +731,55 @@ def Pv.note(solid: Bool, +subs: List<&2, Sub>, +key: String, +dir: String, +out:
     case False{}:
       IO.pure(Unit, Unit{})
 
+# A version's stamp, as the poll compares it: a live file's size and
+# mtime; a file in a commit never changes (1, 1); a comparison its sides'
+# folded together, so an edit to either live side reads it again
+
+def Pv.live(+path: String) -> Bool:
+  Bool.and(Nat.is_eq(HS.Hist.kind(path), 0n), Bool.not(String.is_empty(path)))
+
+# nothing to watch: no side is a live file
+def Pv.stamp.fixed(+path: String) -> Bool:
+  Bool.pick(Bool, Nat.is_eq(HS.Hist.kind(path), 2n), Bool.not(Bool.or(Pv.live(HS.Hist.old(path)), Pv.live(HS.Hist.new(path)))), Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)))
+
+def Pv.stamp.one.k(live: Bool, +path: String) -> IO(U32 & U32):
+  match live:
+    case True{}:
+      IO.bind(Result<&1, &1, U32 & String, U32 & U32 & U32>, U32 & U32, H.FS.stat(path), r => IO.pure(U32 & U32, Pv.stamp(r)))
+    case False{}:
+      IO.pure(U32 & U32, (1, 1))
+
+def Pv.stamp.one(+path: String) -> IO(U32 & U32):
+  Pv.stamp.one.k(Pv.live(path), path)
+
+def Pv.stamp.fold(a: U32 & U32, b: U32 & U32) -> U32 & U32:
+  (sa, ma) = a
+  (sb, mb) = b
+  ((sa + (sb * 31 : U32) : U32), U32.xor(ma, (mb * 2654435761 : U32)))
+
+def Pv.stamp.two(+path: String) -> IO(U32 & U32):
+  do IO<U32 & U32>:
+    a : U32 & U32 <- Pv.stamp.one(HS.Hist.old(path))
+    b : U32 & U32 <- Pv.stamp.one(HS.Hist.new(path))
+    return Pv.stamp.fold(a, b)
+
+def Pv.stamp.of.k(cmp: Bool, +path: String) -> IO(U32 & U32):
+  match cmp:
+    case True{}:
+      Pv.stamp.two(path)
+    case False{}:
+      Pv.stamp.one.k(Nat.is_eq(HS.Hist.kind(path), 0n), path)
+
+# a version's size and mtime (Pv.stamp)
+def Pv.stamp.of(+path: String) -> IO(U32 & U32):
+  Pv.stamp.of.k(Nat.is_eq(HS.Hist.kind(path), 2n), path)
+
 def Pv.read(+key: String, +kind: U32, +path: String, +q: Chan(PMsg), +dir: String) -> IO(Unit):
   do IO<Unit>:
-    st : Result<&1, &1, U32 & String, U32 & U32 & U32> <- H.FS.stat(path)
+    st : U32 & U32 <- Pv.stamp.of(path)
     exe : String <- H.Sys.exe_path()
     r : PR.Ran <- PR.Proc.run(exe, ["--plot", U32.show(kind), path, Pv.infos(dir, key)], "/")
-    Pv.read.k(Pv.stamp(st), r, key, kind, q)
+    Pv.read.k(st, r, key, kind, q)
 
 # Polling
 # -------
@@ -680,8 +813,8 @@ def Pv.poll.one(busy: Bool, s: Src, +q: Chan(PMsg), +dir: String) -> IO(Src):
       IO.pure(Src, s)
     case False{} Src{k, kd, +p, sz, mt, re, b, pl}:
       do IO<Src>:
-        st : Result<&1, &1, U32 & String, U32 & U32 & U32> <- H.FS.stat(p)
-        Pv.poll.st(Pv.stamp(st), Src{k, kd, p, sz, mt, re, b, pl}, q, dir)
+        st : U32 & U32 <- Pv.stamp.of(p)
+        Pv.poll.st(st, Src{k, kd, p, sz, mt, re, b, pl}, q, dir)
 
 def Src.busy(s: Src) -> Bool:
   match s:
@@ -778,10 +911,10 @@ def Pv.watch.k(none: Bool, keep: Bool, st: PSt, +client: U32, +kind: U32, +key: 
         Pv.say(out, client, P.Plot.none(key, Pv.none(kind)))
         +subs2 : List<&2, Sub> = Pv.subs(keep, subs, client)
         return PSt{Src.gc(ss, subs2), subs2, polling}
-    case False{} PSt{+ss, subs, polling}:
+    case False{} PSt{+ss, +subs, polling}:
       do IO<PSt>:
         +ss2 : List<&2, Src> = Src.add(Src.has(ss, key), key, kind, file, ss)
-        sub : Sub <- Pv.watch.now(Src.plot(ss2, key), Sub{client, key, Nil{}, SNil{}}, out)
+        sub : Sub <- Pv.watch.now(Src.plot(ss2, key), Sub{client, key, Sub.carry(subs, client), SNil{}, True{}}, out)
         +subs2 : List<&2, Sub> = sub <> Pv.subs(keep, subs, client)
         p2 : Bool <- Pv.start(polling, q)
         return PSt{Src.gc(ss2, subs2), subs2, p2}
@@ -796,7 +929,7 @@ def Pv.watch.board(board: Bool, st: PSt, +client: U32, +root: String, +path: Str
 
 def Sub.sent.of(s: Sub) -> List<&2, P.Chunk>:
   match s:
-    case Sub{_, _, cs, _}:
+    case Sub{_, _, cs, _, _}:
       cs
 
 def Sub.mine(+s: Sub, +client: U32, +key: String) -> Bool:
@@ -834,7 +967,7 @@ def Pv.handle(st: PSt, m: PMsg, +q: Chan(PMsg), +out: Chan(POut), +dir: String) 
       do IO<PSt>:
         +file : String <- Pv.file(kind, root, path)
         st2 : PSt <- Pv.watch.k(String.is_empty(file), False{}, st, client, kind, Src.key(kind, root, path), file, q, out)
-        Bool.pick(IO(Unit), U32.is_eq(kind, 1), IO.spawn(Unit, Pv.tree(client, root, out)), IO.pure(Unit, Unit{}))
+        Bool.pick(IO(Unit), U32.is_eq(kind, 1), IO.spawn(Unit, Pv.tree(client, root, path, out)), IO.pure(Unit, Unit{}))
         Pv.watch.board(Bool.and(Pv.solid.kind(kind), String.ends_with(file, ".kicad_pcb")), st2, client, root, path, file, q, out)
     case PSt{ss, +subs, polling} PStop{+client}:
       do IO<PSt>:
@@ -852,7 +985,7 @@ def Pv.handle(st: PSt, m: PMsg, +q: Chan(PMsg), +out: Chan(POut), +dir: String) 
     case PSt{ss, +subs, polling} PGot{+key, +sz, +mt, +pl, +err}:
       do IO<PSt>:
         Bool.pick(IO(Unit), String.is_empty(err), IO.pure(Unit, Unit{}), Pv.fail(subs, key, err, out))
-        +subs2 : List<&2, Sub> <- Pv.fan(subs, key, pl, out)
+        +subs2 : List<&2, Sub> <- Pv.fan(Sub.clear(subs, key, Bool.not(String.is_empty(err))), key, pl, out)
         Pv.note(Bool.and(String.is_empty(err), Bool.or(String.starts_with(key, "2|"), String.starts_with(key, "3|"))), subs2, key, dir, out)
         return PSt{Pv.got.srcs(ss, key, sz, mt, pl), subs2, polling}
 

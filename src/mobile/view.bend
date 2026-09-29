@@ -7,6 +7,7 @@ import ../core/hier.bend as HI
 import ../core/board.bend as B
 import ../core/schematic.bend as SC
 import ../core/mech.bend as MC
+import ../core/hist.bend as HS
 
 # The phones' board viewer, as the Bend client decides it. The viewer
 # shows the selected thread's project board, schematic or 3D model
@@ -49,12 +50,34 @@ def View.sheet(+u: U.Ui) -> String:
 def View.bare(+u: U.Ui) -> Bool:
   Bool.not(String.is_empty(U.Ui.scratch(u, "@view.bare")))
 
+# The design history (client.bend's Hs): the client's view kind and path
+# are the phone's board or schematic when a history action runs
+# (View.hist.act), and while a version or a comparison of that kind shows,
+# it is the source (View.src) in place of the project's file or sheet
+def View.hist.num(+kind: String) -> Nat:
+  Bool.pick(Nat, String.eq(kind, "schematic"), 1n, Bool.pick(Nat, String.eq(kind, "board"), 0n, 2n))
+
+# (a version of the phone's kind of file: a schematic's version never
+# goes to the board)
+def View.hist(+u: U.Ui) -> Bool:
+  Bool.and(Nat.is_lt(View.hist.num(View.kind(u)), 2n),
+    Bool.and(Bool.not(Nat.is_eq(HS.Hist.kind(U.Ui.view_get(u, "view.path")), 0n)), Nat.is_eq(HS.Hist.ext(HS.Hist.family(U.Ui.view_get(u, "view.path"))), View.hist.num(View.kind(u)))))
+
+# the client as the phone's viewer is: its kind the phone's
+def View.as_client(+u: U.Ui) -> U.Ui:
+  Bool.pick(U.Ui, Nat.is_lt(View.hist.num(View.kind(u)), 2n), U.Ui.view_get.set(u, "view.kind", View.kind(u)), u)
+
+# the file the source names: a version while the history shows one, else
+# a schematic's sheet ("" the project's own)
+def View.src(+u: U.Ui) -> String:
+  Bool.pick(String, View.hist(u), U.Ui.view_get(u, "view.path"), Bool.pick(String, String.eq(View.kind(u), "schematic"), View.sheet(u), ""))
+
 def View.key.at(+kind: String, +root: String, +path: String, bare: Bool) -> String:
-  Bool.pick(String, String.eq(kind, "schematic"), View.key(kind, root) ++ path,
+  Bool.pick(String, Bool.or(String.eq(kind, "schematic"), Bool.and(String.eq(kind, "board"), Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)))), View.key(kind, root) ++ path,
     Bool.pick(String, Bool.and(bare, Bool.not(String.is_empty(View.key(kind, root)))), "3|" ++ root ++ "|", View.key(kind, root)))
 
 def View.layers.at(+kind: String, +root: String, +path: String) -> String:
-  Bool.pick(String, String.eq(kind, "schematic"), View.key.at(kind, root, path, False{}), View.layers(kind, root))
+  Bool.pick(String, Bool.or(String.eq(kind, "schematic"), Bool.and(String.eq(kind, "board"), Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)))), View.key.at(kind, root, path, False{}), View.layers(kind, root))
 
 # Mech ("mech") shows the part on show in 3D, with the parts over it;
 # Renders ("renders") its pictures (client.bend's Mpage decides the part)
@@ -78,16 +101,16 @@ def View.on_part(+u: U.Ui) -> Bool:
 # the source the screen shows now
 def View.want(+u: U.Ui) -> String:
   Bool.pick(String, Bool.and(View.on_part(u), Bool.not(String.is_empty(U.Ui.root(u)))), "2|" ++ U.Ui.root(u) ++ "|" ++ View.part(u),
-    View.key.at(View.kind(u), U.Ui.root(u), View.sheet(u), Bool.and(String.eq(View.kind(u), "3d"), View.bare(u))))
+    View.key.at(View.kind(u), U.Ui.root(u), View.src(u), Bool.and(String.eq(View.kind(u), "3d"), View.bare(u))))
 
-# the file a source names: a schematic's sheet, or Mech's part
+# the file a source names: a version, a schematic's sheet, or Mech's part
 def View.path(+u: U.Ui) -> String:
-  Bool.pick(String, String.eq(View.kind(u), "mech"), View.part(u), View.sheet(u))
+  Bool.pick(String, String.eq(View.kind(u), "mech"), View.part(u), View.src(u))
 
 # (Mech's part is a 3D model to the hub)
 def View.ask(+want: String, +kind: String, +root: String, +path: String) -> List<&2, J.KV>:
   [J.KV{"kind", J.Str{Bool.pick(String, String.is_empty(want), "", Bool.pick(String, String.starts_with(want, "3|"), "3d-bare", Bool.pick(String, String.eq(kind, "mech"), "3d", kind)))}}, J.KV{"root", J.Str{root}},
-   J.KV{"path", J.Str{Bool.pick(String, Bool.or(String.eq(kind, "schematic"), String.eq(kind, "mech")), path, "")}}]
+   J.KV{"path", J.Str{Bool.pick(String, Bool.or(Bool.or(String.eq(kind, "schematic"), String.eq(kind, "board")), String.eq(kind, "mech")), path, "")}}]
 
 def View.join(a: U.Act, cmds: List<&2, U.Cmd>) -> U.Act:
   match a:
@@ -117,6 +140,26 @@ def View.sync(a: U.Act) -> U.Act:
 # picked is let go
 def View.open.k(+u: U.Ui, v: String) -> U.Act:
   View.sync(U.Act{U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(u, View.slot(u), v), "@pick", ""), "@card", ""), "@pick.rid", ""), Nil{}})
+
+# going back to the thread shuts the phone's viewer over it
+def View.hist.jump(jump: Bool, a: U.Act) -> U.Act:
+  match jump a:
+    case True{} U.Act{u, cs}:
+      View.join(View.open.k(u, ""), cs)
+    case False{} _:
+      View.sync(a)
+
+# a step's row in the thread opens the phone's viewer on it (its board or
+# its schematic, as Hs.show picked)
+def View.hist.show(show: Bool, a: U.Act) -> U.Act:
+  match show a:
+    case True{} U.Act{+u, cs}:
+      View.join(View.open.k(u, Bool.pick(String, String.eq(U.Ui.view_get(u, "view.kind"), "schematic"), "schematic", "board")), cs)
+    case False{} _:
+      a
+
+def View.hist.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
+  View.hist.jump(String.eq(action, "hist-jump"), View.hist.show(String.eq(action, "hist-show"), U.Ui.act(View.as_client(u), action, value)))
 
 # (the Mechanical page, "mech", is the client's: its view is set there,
 # and the parts asked for; a view picked by hand shows the project's own
@@ -169,12 +212,13 @@ def View.look.go(n: Nat, +kind: U32, +i: U32) -> List<&2, J.Json>:
     case 0n:
       Nil{}
     case 1n+k:
-      J.Num{U32.show(LO.Look.light.k(U32.is_eq(kind, 1), i))} <> View.look.go(k, kind, (i + 1 : U32))
+      J.Num{U32.show(Bool.pick(U32, LO.Look.mark(i), LO.Look.mark.color(True{}, i), LO.Look.light.k(U32.is_eq(kind, 1), i)))} <> View.look.go(k, kind, (i + 1 : U32))
 
+# (up to a comparison's marks, in their light colours)
 def View.look(light: Bool, +kind: String) -> List<&2, J.Json>:
   match light:
     case True{}:
-      View.look.go(LO.Look.count(Bool.pick(U32, String.eq(kind, "schematic"), 1, 0)), Bool.pick(U32, String.eq(kind, "schematic"), 1, 0), 0)
+      View.look.go(LO.Look.count(LO.Look.diff()), Bool.pick(U32, String.eq(kind, "schematic"), 1, 0), 0)
     case False{}:
       Nil{}
 
@@ -235,9 +279,11 @@ def View.layer.rows(ns: List<&2, String>, +k: U32, +i: U32, +off: U32) -> List<&
       View.layer.row(U32.is_gt(V.Look.alpha(k, i, 0), 0), i, n, off, View.layer.rows(t, k, (i + 1 : U32), off))
 
 # the list the phone's Layers menu shows (none for 3D)
+# (a comparison's marks too: removed, changed, added)
 def View.layer.list(+u: U.Ui) -> List<&2, J.Json>:
+  +k = {U32.or(Bool.pick(U32, String.eq(View.kind(u), "schematic"), 1, 0), Bool.pick(U32, Bool.and(View.hist(u), Nat.is_eq(HS.Hist.kind(U.Ui.view_get(u, "view.path")), 2n)), LO.Look.diff(), 0)) : U32}
   Bool.pick(List<&2, J.Json>, Bool.or(String.eq(View.kind(u), "board"), String.eq(View.kind(u), "schematic")),
-    View.layer.rows(View.names(View.kind(u)), Bool.pick(U32, String.eq(View.kind(u), "schematic"), 1, 0), 0, View.off(u)), Nil{})
+    View.layer.rows(LO.Look.names(k, View.names(View.kind(u))), k, 0, View.off(u)), Nil{})
 
 # Sheets
 # ------
@@ -273,8 +319,20 @@ def View.rows(+u: U.Ui) -> List<&2, HI.Row>:
 def View.sheet.go(+u: U.Ui, +i: Nat, +file: String) -> U.Act:
   View.sync(U.Act{Pick.clear(U.Ui.scratch_set(u, "@view.sheet:" ++ U.Ui.sel(u), Bool.pick(String, Nat.is_eq(i, 0n), "", file))), Nil{}})
 
-def View.sheet.pick(+u: U.Ui, +v: String) -> U.Act:
+def View.sheet.pick.u(+u: U.Ui, +v: String) -> U.Act:
   View.sheet.go(u, Maybe.default(&2, Nat, Nat.read(v), 0n), HI.Hier.file(View.rows(u), Maybe.default(&2, Nat, Nat.read(v), 0n)))
+
+def View.sheet.pick.k(hist: Bool, +u: U.Ui, +v: String) -> U.Act:
+  match hist:
+    case True{}:
+      View.sheet.pick.u(U.Act.ui(U.Ui.act(View.as_client(u), "hist-live", "")), v)
+    case False{}:
+      View.sheet.pick.u(u, v)
+
+# (while a version shows, the live files come back first: the sheets
+# listed are the live design's)
+def View.sheet.pick(+u: U.Ui, +v: String) -> U.Act:
+  View.sheet.pick.k(View.hist(u), u, v)
 
 def View.sheet.row(r: HI.Row, +i: Nat, +cur: String) -> J.Json:
   match r:
@@ -465,6 +523,39 @@ def Mech.json(on: Bool, +u: U.Ui) -> J.Json:
     case False{}:
       J.Null{}
 
+# The history bar as the phones draw it: null when there is none, else
+# what Hs.bar says, the scrubber's ticks (id "" the live file, on the
+# one shown), the menu of versions while one is open, and the legend's
+# colours (0xRRGGBB)
+def Hist.ticks(ss: List<&2, HS.Step>, +i: Nat, +at: Nat) -> List<&2, J.Json>:
+  match ss:
+    case Nil{}:
+      [J.Json.obj([J.KV{"id", J.Str{""}}, J.KV{"on", J.Json.bool(Nat.is_eq(at, 0n))}])]
+    case +s <> t:
+      J.Json.obj([J.KV{"id", J.Str{HS.Step.id(s)}}, J.KV{"on", J.Json.bool(Nat.is_eq(at, 1n+i))}]) <> Hist.ticks(t, 1n+i, at)
+
+def Hist.rows(rs: List<&2, U.HRow>) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.HRow{+l, +sub, +v} <> t:
+      J.Json.obj([J.KV{"label", J.Str{l}}, J.KV{"sub", J.Str{sub}}, J.KV{"value", J.Str{v}}]) <> Hist.rows(t)
+
+def Hist.menu(+side: String, +u: U.Ui) -> J.Json:
+  Bool.pick(J.Json, String.is_empty(side), J.Null{}, J.Json.arr(Hist.rows(U.Hs.menu(u, side))))
+
+def Hist.json.k(b: U.HBar, +u: U.Ui) -> J.Json:
+  match b:
+    case U.HBar{_, +n, +at, +title, +entry, +label, +said, +pl, +df, +cmp, +a, +bb, +menu}:
+      J.Json.obj([J.KV{"n", J.Num{Nat.show(n)}}, J.KV{"at", J.Num{Nat.show(at)}}, J.KV{"title", J.Str{title}}, J.KV{"entry", J.Str{entry}},
+        J.KV{"said", J.Str{Bool.pick(String, Nat.is_eq(at, 0n), "The live file. Each tick is a change the agent made; play to watch them.", Bool.pick(String, String.is_empty(said), label, said))}},
+        J.KV{"playing", J.Json.bool(pl)}, J.KV{"diff", J.Json.bool(df)}, J.KV{"cmp", J.Json.bool(cmp)}, J.KV{"a", J.Str{a}}, J.KV{"b", J.Str{bb}}, J.KV{"side", J.Str{menu}},
+        J.KV{"ticks", J.Json.arr(Hist.ticks(U.Hs.track(u), 0n, at))}, J.KV{"menu", Hist.menu(menu, u)},
+        J.KV{"keys", J.Json.arr([J.Num{U32.show(LO.Look.mark.color(False{}, 26))}, J.Num{U32.show(LO.Look.mark.color(False{}, 27))}, J.Num{U32.show(LO.Look.mark.color(False{}, 28))}])}])
+
+def Hist.json(+b: U.HBar, +u: U.Ui) -> J.Json:
+  Bool.pick(J.Json, U.HBar.on(b), Hist.json.k(b, u), J.Null{})
+
 # what the phone's viewer needs: the source open ("" closed), its key and
 # the key of the plot it draws layers from, the choices, and how to draw:
 # background, the fade of new chunks (ms, as the window's), the first
@@ -474,7 +565,8 @@ def Mech.json(on: Bool, +u: U.Ui) -> J.Json:
 # arrives, and the field of view (degrees)
 def View.json(+u: U.Ui) -> J.Json:
   J.Json.obj([J.KV{"open", J.Str{Bool.pick(String, Bool.or(Bool.not(String.is_empty(View.want(u))), View.mech(u)), View.kind(u), "")}}, J.KV{"key", J.Str{View.want(u)}},
-    J.KV{"layers", J.Str{Bool.pick(String, View.mech(u), "", View.layers.at(View.kind(u), U.Ui.root(u), View.sheet(u)))}},
+    J.KV{"layers", J.Str{Bool.pick(String, View.mech(u), "", View.layers.at(View.kind(u), U.Ui.root(u), View.src(u)))}},
+    J.KV{"hist", Hist.json(U.Hs.bar.for(View.as_client(u), Nat.is_lt(View.hist.num(View.kind(u)), 2n)), View.as_client(u))},
     J.KV{"mech", Mech.json(View.mech(u), u)},
     J.KV{"sheets", J.Json.arr(View.sheet.list(u))}, J.KV{"layerList", J.Json.arr(View.layer.list(u))}, J.KV{"off", J.Num{U32.show(View.off(u))}},
     J.KV{"parts", J.Flag{Bool.not(View.bare(u))}}, J.KV{"note", J.Str{View.note(u)}},

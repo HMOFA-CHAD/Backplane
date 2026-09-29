@@ -246,9 +246,11 @@ struct PlotMesh: @unchecked Sendable {
 // What the renderer draws: the chunks in paint order and which of them
 // just arrived (they fade in), the box, the board's rectangle (empty
 // from an older hub, or x0 > x1 for a schematic) and thickness, or why
-// there is nothing to draw.
+// there is nothing to draw. fam: the file the source is a version of
+// (versions of one file share it; the key itself when the hub names none).
 struct PlotFrame {
     let key: String
+    let fam: String
     let box: [Float]
     let edge: [Float]
     let thick: Float
@@ -294,6 +296,7 @@ final class PlotStore {
         queue.async {
             guard let o = Cbor.decode(d) as? [String: Any] else { return }
             let key = o["key"] as? String ?? ""
+            let fam = (o["fam"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? key
             // a 3D model: with its parts (2) or the board alone (3)
             let solid = key.hasPrefix("2|") || key.hasPrefix("3|")
             if let why = o["none"] as? String {
@@ -302,7 +305,7 @@ final class PlotStore {
                         guard gen == self.generation else { return }
                         if solid { self.mesh = MeshFrame(key: key, mesh: nil, none: why, at: Date()); return }
                         self.held = []
-                        self.frame = PlotFrame(key: key, box: [], edge: [], thick: 0, chunks: [], fresh: [], none: why, at: Date())
+                        self.frame = PlotFrame(key: key, fam: fam, box: [], edge: [], thick: 0, chunks: [], fresh: [], none: why, at: Date())
                     }
                 }
                 return
@@ -340,7 +343,7 @@ final class PlotStore {
                     }
                     let all = cs.compactMap { $0 }
                     self.held = all
-                    self.frame = PlotFrame(key: key, box: box, edge: edge, thick: thick, chunks: all, fresh: fresh, none: "", at: Date())
+                    self.frame = PlotFrame(key: key, fam: fam, box: box, edge: edge, thick: thick, chunks: all, fresh: fresh, none: "", at: Date())
                 }
             }
         }

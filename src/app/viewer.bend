@@ -313,8 +313,9 @@ def Ops.item.k(look: U32 & U32, p: B.Prim, +v: View, +c: D.Clip, +fade: U32, res
 def Look.of(+kind: U32, +layer: U32) -> U32 & U32:
   LO.Look.of(kind, layer)
 
+# (a comparison's marks included: other scenes have nothing on them)
 def Look.count(+kind: U32) -> Nat:
-  LO.Look.count(kind)
+  LO.Look.count(U32.or(kind, LO.Look.diff()))
 
 # Layer visibility
 # ----------------
@@ -354,13 +355,22 @@ def Look.flip.k(on: Bool, look: U32 & U32) -> U32 & U32:
       (c, Bool.pick(U32, U32.is_eq(a, 0), Look.dim(), 0))
 
 # The look word: besides a bit per layer, bit 31 is the viewer's light
-# ground (its own sun/moon button) and bit 30 the window's light theme;
-# no layer index reaches either (a board has 25 layers, a schematic 24)
+# ground (its own sun/moon button), bit 30 the window's light theme and
+# bit 29 a comparison's look (Look.cmp);
+# no layer reaches any of them (a board has 25 layers, a schematic 24,
+# a comparison marks up to 28)
 def Look.light.bit() -> U32:
   2147483648
 
 def Look.ui.bit() -> U32:
   1073741824
+
+# bit 29: the scene is a comparison (core/hist.bend), drawn in its look
+def Look.cmp.bit() -> U32:
+  536870912
+
+def Look.cmp(+flip: U32) -> Bool:
+  Bool.not(U32.is_eq(U32.and(flip, Look.cmp.bit()), 0))
 
 def Look.light(+flip: U32) -> Bool:
   Bool.not(U32.is_eq(U32.and(flip, Look.light.bit()), 0))
@@ -374,7 +384,7 @@ def Look.ground(+flip: U32) -> U32:
 
 # a layer's colour and opacity once the user's flips apply
 def Look.on(+kind: U32, +layer: U32, +flip: U32) -> U32 & U32:
-  Look.flip.k(Look.flipped(flip, layer), LO.Look.of.t(Look.light(flip), kind, layer))
+  Look.flip.k(Look.flipped(flip, layer), LO.Look.of.t(Look.light(flip), Bool.pick(U32, Look.cmp(flip), U32.or(kind, LO.Look.diff()), kind), layer))
 
 def Look.alpha.k(l: U32 & U32) -> U32:
   (_, a) = l

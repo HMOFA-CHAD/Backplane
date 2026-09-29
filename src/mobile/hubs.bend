@@ -195,6 +195,15 @@ def One.find(files: Bool, +u: U.Ui, +mode: String) -> U.Act:
     case False{}:
       U.Act{U.Palette.open(u, mode), Nil{}}
 
+# the design history's actions run with the phone's board or schematic as
+# the client's view (VW.View.hist.act)
+def One.act.rest(hist: Bool, +u: U.Ui, +action: String, +value: String) -> U.Act:
+  match hist:
+    case True{}:
+      VW.View.hist.act(u, action, value)
+    case False{}:
+      VW.View.sync(U.Ui.act(u, action, value))
+
 def One.act.k(i: Nat, +u: U.Ui, +action: String, +value: String) -> U.Act:
   match i:
     case 0n:
@@ -230,7 +239,7 @@ def One.act.k(i: Nat, +u: U.Ui, +action: String, +value: String) -> U.Act:
     case 15n:
       VW.View.mech.act(u, action, value, "renders")
     case _:
-      VW.View.sync(U.Ui.act(u, action, value))
+      One.act.rest(Bool.or(String.starts_with(action, "hist-"), String.starts_with(action, "cmp")), u, action, value)
 
 def One.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
   One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders"], action), u, action, value)
@@ -418,17 +427,18 @@ def Hubs.register(hs: Hubs, p: String, t: String, k: String, th: String, e: Stri
 # actions whose value names a row, a project, a bot or room, or (opening
 # the project picker or a bot or room form, adding a project) a hub: they
 # go to the hub it names; the first nine also bring it into focus, so the
-# picker's, the bot's and the forms' own actions follow it
+# picker's, the bot's and the forms' own actions follow it (the history's
+# playback ticks go to the hub that asked: bridge.js names it)
 def Hubs.routed(+action: String) -> Nat:
   C.Codec.pos(["select", "new-thread", "picker-open", "bot", "room", "remote", "bot-new", "room-new", "proj-go",
     "row-settle", "row-unsettle", "row-snooze", "row-delete", "toggle-settled", "add-project", "proj-remove",
-    "row-menu", "proj-menu", "row-pin", "row-unpin", "row-archive", "row-unarchive"], action)
+    "row-menu", "proj-menu", "row-pin", "row-unpin", "row-archive", "row-unarchive", "hist-tick"], action)
 
 def Hubs.moves() -> Nat:
   9n
 
 def Hubs.routes() -> Nat:
-  22n
+  23n
 
 # answers to what any hub may be showing (its error, a delete or remove
 # to confirm); the project search is every hub's at once, since the list

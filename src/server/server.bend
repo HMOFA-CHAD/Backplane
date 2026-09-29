@@ -45,6 +45,7 @@ import ../core/perf.bend as PF
 import ../core/semver.bend as SV
 import ../core/desk.bend as DK
 import ../core/notice.bend as NO
+import ../core/hist.bend as HI
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -1424,6 +1425,43 @@ def KiCadJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +cwd: String, +ho
     +err : String <- K.KiCad.open(rt, fs)
     GitJob.reply(inbox, client, id, String.is_empty(err), J.Json.obj([J.KV{"text", J.Str{err}}]))
 
+# Design steps (core/hist.bend): after a tool call, the thread's KiCad
+# files snapshot (Git.step.capture); a change is logged in the thread as
+# an Act of tone "step" whose summary is its record. `entry` is the tool
+# call or message it follows ("" at a turn's end).
+
+def StepJob.log(+inbox: Chan(Msg), +thread: String, +id: String, +rec: String) -> IO(Unit):
+  do IO<Unit>:
+    now : Nat <- Now.nat()
+    ok : Bool <- Chan.send(Msg, inbox, Commit{[M.ActivityLogged{thread, id, HI.Step.tone(), "kicad", rec, now}]})
+    return Unit{}
+
+def StepJob.done(+inbox: Chan(Msg), +thread: String, +entry: String, +out: String) -> IO(Unit):
+  +rec = HI.Hist.record(out, entry)
+  Bool.pick(IO(Unit), String.is_empty(rec), IO.pure(Unit, Unit{}),
+    StepJob.log(inbox, thread, "step:" ++ String.trim(HI.Hist.at(String.split(out, '\n'), 0n)), rec))
+
+def StepJob.run(+inbox: Chan(Msg), +thread: String, +cwd: String, +entry: String) -> IO(Unit):
+  Bool.pick(IO(Unit), String.is_empty(cwd), IO.pure(Unit, Unit{}),
+    IO.bind(String, Unit, GT.Git.step.capture(cwd, thread), out => StepJob.done(inbox, thread, entry, out)))
+
+def RefsJob.files(f: K.Files) -> List<&2, J.KV>:
+  match f:
+    case K.Files{_, pcb, sch}:
+      [J.KV{"pcb", J.Str{pcb}}, J.KV{"sch", J.Str{sch}}]
+
+# what the thread's files may be compared with (Git.refs), and its
+# canonical board and schematic
+def RefsJob.reply(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +ls: List<&2, String>, f: K.Files) -> IO(Unit):
+  GitJob.reply(inbox, client, id, True{}, J.Json.obj(List.append(&2, J.KV, [J.KV{"thread", J.Str{thread}}, J.KV{"git", J.Str{HI.Hist.at(ls, 0n)}},
+    J.KV{"top", J.Str{HI.Hist.at(ls, 1n)}}, J.KV{"refs", J.Str{String.join(List.drop(&2, String, ls, 2n), "\n")}}], RefsJob.files(f))))
+
+def RefsJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String) -> IO(Unit):
+  do IO<Unit>:
+    out : String <- GT.Git.refs(cwd, thread)
+    f : K.Files <- K.Files.read(cwd)
+    RefsJob.reply(inbox, client, id, thread, String.split(out, '\n'), f)
+
 def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
   match i:
     case 0n:
@@ -1448,12 +1486,16 @@ def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U
       Mech.list(inbox, client, id, thread, cwd)
     case 10n:
       Mech.render(inbox, client, id, thread, cwd, a)
+    case 11n:
+      StepJob.run(inbox, thread, cwd, a)
+    case 12n:
+      RefsJob.run(inbox, client, id, thread, cwd)
     case _:
       GitJob.run.git(tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # a job the hub asked for: a git job, or one of the sidebar's
 def GitJob.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
-  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
+  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # Grok (grok agent stdio, ACP)
 # ----------------------------

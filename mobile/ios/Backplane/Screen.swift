@@ -232,6 +232,34 @@ struct Viewer: Decodable {
     let note: String?
     // the Mechanical page, when that is what is open
     let mech: MechPage?
+    // the design history's bar under a board or schematic (nil: none)
+    let hist: HistBar?
+}
+
+// The design history (src/mobile/view.bend's Hist.json): the steps in the
+// track and the one shown (0 the live file), what to call it, what the
+// agent said before it, playing, changes marked, a comparison on show and
+// its sides' labels, the side whose version menu is open ("" shut), a tick
+// per step then the live file (id ""), that menu, and the legend's
+// colours (0xRRGGBB: removed, changed, added)
+struct HistBar: Decodable, Equatable {
+    let n, at: Int
+    let title, entry, said: String
+    let playing, diff, cmp: Bool
+    let a, b, side: String
+    let ticks: [HistTick]
+    let menu: [HistRow]?
+    let keys: [UInt32]
+}
+
+struct HistTick: Decodable, Hashable {
+    let id: String
+    let on: Bool
+}
+
+// a version the menu offers ("cmp-pick" value)
+struct HistRow: Decodable, Hashable {
+    let label, sub, value: String
 }
 
 // The Mechanical page (src/mobile/view.bend's Mech.json): what to say
@@ -539,6 +567,9 @@ struct Cmd: Decodable {
     let data, hub: String?
     // notify; key is shared by alerts about the same item (src/core/notice.bend)
     let thread, title, kind, body, key: String?
+    // later: an action (with its value) to send after ms; jump: the entry to show
+    let ms: Double?
+    let action, value, id: String?
 }
 
 struct Resume: Decodable {

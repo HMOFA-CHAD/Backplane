@@ -790,8 +790,28 @@ def Idx.sent(sent: Bool, ix: Map<&2, List<&2, Entry>>, +from: String, +e: Entry)
 def Idx.post.k(ix: Map<&2, List<&2, Entry>>, +th: String, +from: String, +e: Entry) -> Map<&2, List<&2, Entry>>:
   Idx.sent(Bool.and(Bool.not(String.is_empty(from)), Bool.not(String.eq(from, th))), Idx.put(ix, th, e), from, e)
 
+# a design step (an Act of tone "step", core/hist.bend) is filed under
+# "@steps:<thread>" as well, so the viewer's history reads a thread's
+# steps without walking its entries
+def Idx.steps.key(+th: String) -> String:
+  "@steps:" ++ th
+
+def Idx.is_step(e: Entry) -> Bool:
+  match e:
+    case Msg{_, _, _, _, _}:
+      False{}
+    case Act{_, _, +tone, _, _, _}:
+      String.eq(tone, "step")
+
+def Idx.step(step: Bool, ix: Map<&2, List<&2, Entry>>, +e: Entry) -> Map<&2, List<&2, Entry>>:
+  match step:
+    case True{}:
+      Idx.put(ix, Idx.steps.key(Idx.thread(e)), e)
+    case False{}:
+      ix
+
 def Idx.post(ix: Map<&2, List<&2, Entry>>, +e: Entry) -> Map<&2, List<&2, Entry>>:
-  Idx.post.k(ix, Idx.thread(e), Link.from(Idx.id(e)), e)
+  Idx.step(Idx.is_step(e), Idx.post.k(ix, Idx.thread(e), Link.from(Idx.id(e)), e), e)
 
 # Projection
 # ----------
@@ -888,6 +908,12 @@ def State.mine(s: State, +th: String) -> List<&2, Entry>:
   match s:
     case State{_, _, _, _, _, _, _, _, _, _, bw}:
       Idx.get(Ext.by(Ext.of(bw)), th)
+
+# a thread's design steps (Acts of tone "step"), newest first
+def State.steps(s: State, +th: String) -> List<&2, Entry>:
+  match s:
+    case State{_, _, _, _, _, _, _, _, _, _, bw}:
+      Idx.get(Ext.by(Ext.of(bw)), Idx.steps.key(th))
 
 # every message between threads, newest first
 def State.links(s: State) -> List<&2, Entry>:

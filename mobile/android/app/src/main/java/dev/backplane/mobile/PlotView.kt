@@ -629,7 +629,7 @@ class PlotSurface(context: Context) : GLSurfaceView(context) {
     var chunks: List<PlotChunk> = emptyList()
     var onPick: (String) -> Unit = {}
     private var fitted = false
-    private var shownKey = ""
+    private var shownFam = ""
     private var fadeFrom = 0L
     private var flingX = 0f
     private var flingY = 0f
@@ -696,9 +696,10 @@ class PlotSurface(context: Context) : GLSurfaceView(context) {
         renderer.thick = if (f.thick > 0) f.thick else 1600f
         val e = if (f.edge.size == 4 && f.edge[0] <= f.edge[2]) f.edge else f.box
         queueEvent { renderer.load(f.chunks, f.fresh); renderer.slab(e, slab) }
-        // a new source (board to schematic, another sheet) fits anew
-        val first = box.isEmpty() || !fitted || f.key != shownKey
-        shownKey = f.key
+        // a new source (board to schematic, another sheet) fits anew; another
+        // version of the same file keeps the view where the user left it
+        val first = box.isEmpty() || !fitted || f.fam != shownFam
+        shownFam = f.fam
         box = f.box
         edge = e
         if (first) { fitted = false; refit() }

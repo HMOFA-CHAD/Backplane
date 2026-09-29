@@ -37,6 +37,8 @@ import ../core/perf.bend as PF
 import ../gfx/fresh.bend as FR
 import ./render.bend as RN
 import ../core/mech.bend as MC
+import ../core/hist.bend as HS
+import ../server/git.bend as GT
 
 # `backplane`: the hub, the web server (for other devices), and the native
 # window as client 0. Window events and hub messages meet in one queue; a
@@ -61,6 +63,8 @@ type ShellMsg is Data:
   Blink{}
   # a desktop notification was clicked: its thread opens
   Opened{thread: String}
+  # a client action come due (client.bend's Later: the history playing)
+  Due{action: String, value: String}
 
 # which hub the window talks to: its own (url "") or another machine's
 # through a link; each connection gets its own tag so messages from one
@@ -169,7 +173,7 @@ def Shell.later(a: Shell) -> IO(Shell):
 def Shell.hits(n: N.Nui, hs: List<&2, N.Hit>, +now: Nat) -> N.Step:
   match n:
     case N.Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, _, ms, vw}:
-      N.Hover.again(N.Nui{U.Ui.tick(u, now), w, h, mx, my, sd, sc, ca, fo, pa, hs, ms, vw})
+      N.Jump.settle(N.Hover.again(N.Nui{U.Ui.tick(u, now), w, h, mx, my, sd, sc, ca, fo, pa, hs, ms, vw}))
 
 def Shell.hits.nui(s: N.Step) -> N.Nui:
   match s:
@@ -711,6 +715,13 @@ def Drafts.load(u: U.Ui, +dir: String) -> IO(U.Ui):
     ns : Result<&1, &1, U32 & String, List<String>> <- H.FS.list(dir)
     Drafts.listed(ns, U.Ui.info_set(u, "local.drafts", dir), dir)
 
+# a client action's timer (client.bend's Later)
+def Timer.due(+q: Chan(ShellMsg), +ms: Nat, +action: String, +value: String) -> IO(Unit):
+  do IO<Unit>:
+    IO.sleep(U32.from_nat(ms))
+    ok : Bool <- Chan.send(ShellMsg, q, Due{action, value})
+    return Unit{}
+
 def Shell.cmd(a: Shell, c: N.NCmd) -> IO(Shell):
   match a c:
     case Shell{n, w, d, qd, q, +i, wa} N.NSend{t}:
@@ -740,6 +751,10 @@ def Shell.cmd(a: Shell, c: N.NCmd) -> IO(Shell):
     case Shell{n, w, d, qd, +q, i, wa} N.NNotify{th, ti, b}:
       do IO<Shell>:
         IO.spawn(Unit, Shell.notify(q, th, ti, b))
+        return Shell{n, w, d, qd, q, i, wa}
+    case Shell{n, w, d, qd, +q, i, wa} N.NLater{ms, action, value}:
+      do IO<Shell>:
+        IO.spawn(Unit, Timer.due(q, ms, action, value))
         return Shell{n, w, d, qd, q, i, wa}
 
 # a connection closed: this machine's own hub means the app is ending;
@@ -774,6 +789,12 @@ def Shell.step(a: Shell, s: N.Step) -> IO(Shell):
   match a s:
     case Shell{_, w, d, qd, q, i, wa} N.Step{n, cs, dirty}:
       IO.bind(Shell, Shell, Shell.cmds(cs, Shell{n, w, Bool.or(d, dirty), qd, q, i, wa}), Shell.dirty)
+
+# an action come due runs as a click would
+def Shell.due(a: Shell, +action: String, +value: String) -> IO(Shell):
+  match a:
+    case Shell{+n, w, d, qd, q, i, wa}:
+      Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.act(n, action, value))
 
 def Shell.recv(a: Shell, +text: String) -> IO(Shell):
   match a:
@@ -1192,15 +1213,40 @@ def Watch.tree.if(sch: Bool, +path: String, +key: String, +q: Chan(ShellMsg)) ->
     case False{}:
       IO.pure(Unit, Unit{})
 
+# a version that cannot be read (a file a commit lacks) shows nothing and
+# says so (the scene of the version before must not stand in for it)
+def Watch.sent.v(m: Maybe<&2, List<&2, B.Item>>, fixed: Bool, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
+  match m fixed:
+    case None{} True{}:
+      do IO<Unit>:
+        Watch.sent(Some{Nil{}}, key, q)
+        Watch.say(key, PV.Pv.unread(), q)
+    case _ _:
+      Watch.sent(m, key, q)
+
+def Watch.mark(a: Maybe<&2, List<&2, B.Item>>, b: Maybe<&2, List<&2, B.Item>>) -> Maybe<&2, List<&2, B.Item>>:
+  PV.Pv.mark(a, b)
+
+def Watch.version(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
+  do IO<Unit>:
+    bs : List<&2, U32> <- GT.Git.version(path)
+    Watch.sent.v(Watch.sorted(PV.Pv.version(Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)), Src.kind(key), bs)), Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)), key, q)
+    Watch.tree.if(U32.is_eq(Src.kind(key), 1), path, key, q)
+
+# a comparison (core/hist.bend): the new version's items marked against
+# the old one's (none when it cannot be read: the file is new)
+def Watch.compare(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
+  do IO<Unit>:
+    a : List<&2, U32> <- GT.Git.version(HS.Hist.old(path))
+    b : List<&2, U32> <- GT.Git.version(HS.Hist.new(path))
+    Watch.sent.v(Watch.sorted(Watch.mark(PV.Pv.side(Src.kind(key), a), PV.Pv.side(Src.kind(key), b))), PV.Pv.stamp.fixed(path), key, q)
+
 def Watch.read.k(three: Bool, +path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
   match three:
     case True{}:
       Watch.mesh(path, key, q)
     case False{}:
-      do IO<Unit>:
-        bs : List<&2, U32> <- S.Files.read(path)
-        Watch.sent(Watch.sorted(Watch.parse(Src.kind(key), bs)), key, q)
-        Watch.tree.if(U32.is_eq(Src.kind(key), 1), path, key, q)
+      Bool.pick(IO(Unit), Nat.is_eq(HS.Hist.kind(path), 2n), Watch.compare(path, key, q), Watch.version(path, key, q))
 
 # read, parse (in parallel) and send; a half-written file sends nothing
 def Watch.read(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
@@ -1246,8 +1292,8 @@ def Watch.loop(fuel: Nat, +key: String, +path: String, +sz: U32, +mt: U32, re: N
     case 1n+f:
       do IO<Unit>:
         IO.sleep(150)
-        st : Result<&1, &1, U32 & String, U32 & U32 & U32> <- H.FS.stat(path)
-        Watch.step(Watch.stat(st), sz, mt, Bool.pick(Nat, U32.is_eq(Src.kind(key), 2), 0n, re), key, path, q, s2 => m2 => r2 => Watch.loop(f, key, path, s2, m2, r2, q))
+        st : U32 & U32 <- PV.Pv.stamp.of(path)
+        Watch.step(st, sz, mt, Bool.pick(Nat, U32.is_eq(Src.kind(key), 2), 0n, re), key, path, q, s2 => m2 => r2 => Watch.loop(f, key, path, s2, m2, r2, q))
 
 def Watch.seq(h: BM.BmHead) -> U32:
   match h:
@@ -1318,7 +1364,8 @@ def Watch.go(none: Bool, once: Bool, +key: String, +path: String, +q: Chan(Shell
     case False{} True{}:
       Bool.pick(IO(Unit), U32.is_eq(Src.kind(key), 3), Watch.shot(path, key, q), Watch.read(path, key, q))
     case False{} False{}:
-      Bool.pick(IO(Unit), U32.is_eq(Src.kind(key), 3), Watch.shots(S.Fuel.forever(), key, path, 0, q), Watch.loop(S.Fuel.forever(), key, path, 0, 0, 0n, q))
+      Bool.pick(IO(Unit), U32.is_eq(Src.kind(key), 3), Watch.shots(S.Fuel.forever(), key, path, 0, q),
+        Bool.pick(IO(Unit), PV.Pv.stamp.fixed(path), Watch.read(path, key, q), Watch.loop(S.Fuel.forever(), key, path, 0, 0, 0n, q)))
 
 # watch a source (or, when it is watched already, read it once)
 def Watch.start(once: Bool, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
@@ -1740,6 +1787,8 @@ def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
       Shell.frame(a)
     case Blink{}:
       Shell.frame(Shell.blinked(a))
+    case Due{+action, +value}:
+      Shell.due(a, action, value)
     case Gone{tag}:
       Shell.tagged(a, Gone{tag})
     case Retry{tag}:
@@ -1824,6 +1873,8 @@ def ShellMsg.kind(m: ShellMsg) -> String:
       "blink"
     case Opened{_}:
       "opened"
+    case Due{_, _}:
+      "due"
 
 # the span a message that leaves a frame to draw starts: input to pixels,
 # hub message to pixels

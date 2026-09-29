@@ -34,6 +34,8 @@ import ./src/core/gh.bend as GH
 import ./src/core/fold.bend as FO
 import ./src/core/subs.bend as SB
 import ./src/core/plot.bend as PL
+import ./src/core/look.bend as LO
+import ./src/core/hist.bend as HS
 import ./src/mobile/view.bend as MV
 import ./src/core/pcb3d.bend as P3
 import ./src/gfx/mesh.bend as MS
@@ -370,8 +372,22 @@ def Laws.fade_done(born, k):
     : {V.Fade.alpha.k(_, Nat.sub(Nat.add(Nat.add(born, V.Fade.ms()), k), born)) == 255 : U32}
   {==}
 
+# on the dark ground the look is the kind's own, comparison or not
+law look_dark_own:
+  for d: Bool
+  for +kind: U32
+  for +layer: U32
+  {LO.Look.of.t.d(d, False{}, kind, layer) == LO.Look.of.d(d, kind, layer) : U32 & U32}
+
+def look_dark_own(d, kind, layer):
+  match d:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
 def Laws.look_flip_none(kind, layer):
-  {==}
+  look_dark_own(LO.Look.is_diff(kind), kind, layer)
 
 def Laws.look_flip_hides():
   {==}
@@ -2955,7 +2971,7 @@ def tl_entries_roles(ty, es, rs, st, sel, px, pics):
           Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.entry(ty, e, st, sel, px, pics), x),
             L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), Nil{}, st, sel, px, pics), L.TL.entries.r(ty, t, Nil{}, st, sel, px, pics), tl_entries_roles(ty, t, Nil{}, st, sel, px, pics))
         case +r <> +rt:
-          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.role(r, ty, L.TL.entry(ty, e, st, sel, px, pics), px), x),
+          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), L.TL.role(r, ty, L.TL.entry(ty, e, st, sel, px, pics), px)), x),
             L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), rt, st, sel, px, pics), L.TL.entries.r(ty, t, rt, st, sel, px, pics), tl_entries_roles(ty, t, rt, st, sel, px, pics))
 
 def tl_entries_memo(ty, es, st, sel, px, pics):
@@ -4221,6 +4237,9 @@ def Laws.view_sheet_key():
   {==}
 
 def Laws.view_board_no_sheet():
+  {==}
+
+def Laws.view_board_version_key():
   {==}
 
 def Laws.view_bare_key():
@@ -5786,4 +5805,55 @@ def Laws.alert_watched_quiet(kind, id, title, st, es, rest):
   {==}
 
 def Laws.desk_due_first(last_at, thread, focused, now):
+# Design history
+# --------------
+
+def Laws.hist_mark_self(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case B.Item{+k, +s, +l, +p, +i} <> +t:
+      %Equal.sym((String & String) & Cmp, String.cmp(k, k), ((k, k), EQ{}), string_cmp_refl(k))
+        : {HS.Mark.go(B.Item{k, s, l, p, i} <> t, B.Item{k, s, l, p, i} <> t, HS.Mark.key.cmp.fin(_)) == HS.Mark.dims(B.Item{k, s, l, p, i} <> t) : List<&2, B.Item>}
+      %Equal.sym(Bool, U32.is_eq(s, s), True{}, u32_eq_refl(s))
+        : {HS.Mark.same.k(_, B.Item{k, s, l, p, i}, B.Item{k, s, l, p, i}, HS.Mark.go(t, t, HS.Mark.heads(t, t))) == HS.Mark.dims(B.Item{k, s, l, p, i} <> t) : List<&2, B.Item>}
+      Equal.cong(List<&2, B.Item>, List<&2, B.Item>, ys => HS.Mark.dim(B.Item{k, s, l, p, i}) <> ys,
+        HS.Mark.go(t, t, HS.Mark.heads(t, t)), HS.Mark.dims(t), Laws.hist_mark_self(t))
+
+def Laws.hist_version_family():
+  {==}
+
+def Laws.hist_compare_family():
+  {==}
+
+def Laws.hist_obj_folds():
+  {==}
+
+def Laws.hist_sheet_same_commit():
+  {==}
+
+def Laws.hist_fwd_last_live(n):
+  %Equal.sym(Bool, Nat.is_ge(n, n), True{}, Nat.ge_refl(n)) : {Bool.pick(Nat, Bool.or(Nat.is_eq(n, 0n), _), 0n, 1n+n) == 0n : Nat}
+  %Equal.sym(Bool, Bool.or(Nat.is_eq(n, 0n), True{}), True{}, or_true_r(Nat.is_eq(n, 0n))) : {Bool.pick(Nat, _, 0n, 1n+n) == 0n : Nat}
+  {==}
+
+def Laws.hist_back_live_last(n):
+  {==}
+
+def Laws.hist_index_live(ss):
+  {==}
+
+def Laws.hist_record_nothing(e):
+  {==}
+
+def Laws.look_plain_board(layer):
+  {==}
+
+def Laws.look_plain_sch(layer):
+  {==}
+
+def Laws.look_marks_distinct():
+  {==}
+
+def Laws.look_names_marks():
   {==}
