@@ -400,7 +400,7 @@ final class AppModel {
             }
             if let n = botting, let b = s.bots.first(where: { $0.name == n }) {
                 botting = nil
-                act(b.remote ? "remote" : "bot", b.id)
+                act(b.act ?? (b.remote ? "remote" : "bot"), b.id)
             } else if let n = botting, let r = s.rooms.first(where: { $0.name == n }) {
                 botting = nil
                 act("room", r.id)

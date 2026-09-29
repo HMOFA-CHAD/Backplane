@@ -49,7 +49,7 @@ struct BotsSection: View {
     var body: some View {
         Section {
             ForEach(screen.bots) { b in
-                Button { model.act(b.remote ? "remote" : "bot", b.id) } label: {
+                Button { model.act(b.act ?? (b.remote ? "remote" : "bot"), b.id) } label: {
                     HStack(spacing: 12) {
                         BotCat(model: model, key: b.cat, size: 36)
                         VStack(alignment: .leading, spacing: 2) {
@@ -206,10 +206,10 @@ private struct BotHeader: View {
             BotCat(model: model, key: bot.cat ?? "", size: size)
                 .saturation(bot.mood == "away" ? 0 : 1)
             VStack(alignment: .leading, spacing: 2) {
-                Text(bot.name).font(.title3.weight(.semibold)).lineLimit(1)
+                Text(bot.title ?? bot.name).font(.title3.weight(.semibold)).lineLimit(1)
                 HStack(spacing: 5) {
                     MoodDot(mood: bot.mood ?? "")
-                    Text([bot.note ?? "", bot.peer ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")).lineLimit(1)
+                    Text([bot.note ?? "", bot.title == nil ? bot.peer ?? "" : ""].filter { !$0.isEmpty }.joined(separator: " · ")).lineLimit(1)
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

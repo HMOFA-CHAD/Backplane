@@ -209,12 +209,13 @@ data class HubRow(val key: String, val name: String, val online: Boolean)
 
 data class Found(val name: String, val url: String)
 
-// Bots (src/mobile/bots.bend). A cat in the list: "bot" (or, remote,
-// "remote") sends its id; mood and note say how it is; cat names its rig
-// ("look:mood"), which the bridge gives once (Core.cats).
+// Bots (src/mobile/bots.bend). A cat in the list: act ("bot", or
+// "remote" for a bot only reported by a linked machine) sends its id;
+// mood and note say how it is; cat names its rig ("look:mood"), which the
+// bridge gives once (Core.cats).
 data class BotRow(
     val id: String, val name: String, val mood: String, val note: String, val peer: String, val cat: String,
-    val look: Int, val sel: Boolean, val remote: Boolean, val machine: String,
+    val look: Int, val sel: Boolean, val remote: Boolean, val machine: String, val act: String,
 )
 
 // a room in the list ("room" sends its id)
@@ -259,6 +260,8 @@ data class BotView(
     val cat: String, val tabs: List<BotTab>, val space: SpaceModel?, val page: SpacePageModel?, val browser: BotBrowser?,
     val memory: List<BotMemory>, val routines: List<BotRoutine>, val routine: RoutineForm?,
     val hooks: List<BotHook>, val settings: BotSettings?, val posts: List<BotPost>,
+    // the name as shown: "Kit · desk" for a bot on a linked machine
+    val title: String,
 )
 
 // hub: the one in focus (its thread is shown, its plots are drawn)
@@ -446,6 +449,7 @@ private fun botView(o: JSONObject) = BotView(
     o.optJSONArray("posts").map {
         BotPost(it.optString("id"), it.optString("from"), it.optString("text"), it.optString("ago"), it.optBoolean("mine"))
     },
+    o.optString("title", o.optString("name")),
 )
 
 fun parseScreen(o: JSONObject) = Screen(
@@ -471,7 +475,8 @@ fun parseScreen(o: JSONObject) = Screen(
     o.optJSONArray("found").map { Found(it.optString("name"), it.optString("url")) },
     o.optJSONArray("bots").map {
         BotRow(it.optString("id"), it.optString("name"), it.optString("mood"), it.optString("note"), it.optString("peer"),
-            it.optString("cat"), it.optInt("look"), it.optBoolean("sel"), it.optBoolean("remote"), it.optString("machine"))
+            it.optString("cat"), it.optInt("look"), it.optBoolean("sel"), it.optBoolean("remote"), it.optString("machine"),
+            it.optString("act", if (it.optBoolean("remote")) "remote" else "bot"))
     },
     o.optJSONArray("rooms").map {
         RoomRow(it.optString("id"), it.optString("name"), it.optInt("members"), it.optBoolean("sel"), it.optString("machine"))

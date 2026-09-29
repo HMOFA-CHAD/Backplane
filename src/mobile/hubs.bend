@@ -773,7 +773,9 @@ def Hubs.auth(+url: String) -> String:
 # the machine at its url) and has a bot of that name, as that hub's own
 # bot; else by its machine's host:port and its name, so two hubs reporting
 # the same machine agree. Every hub's own bots come first, so a bot shows
-# as its own hub's.
+# as its own hub's. A bot a hub mirrors from a linked machine (its threads
+# kept there, far.bend) is dropped when that machine is paired too
+# (Hubs.bot.dup): it shows once, as its own hub's.
 
 def Hubs.state(h: Hub) -> M.State:
   U.Ui.state(Hub.ui(h))
@@ -834,8 +836,36 @@ def Hubs.bot.key(+hs: List<&2, Hub>, +from: String, +r: J.Json) -> String:
     Hubs.far.key(hs, from, Hubs.far.at(Hubs.of.key(hs, from), J.Json.get_str(r, "link", "")), r),
     from ++ "|" ++ J.Json.get_str(r, "key", ""))
 
+# whether a paired hub other than `from` holds link l: a link's id is the
+# same at both its ends, so that hub is the machine l reaches from `from`
+# (or, for a link among more, one that reaches it too)
+def Hubs.holds(hs: List<&2, Hub>, +from: String, +l: String) -> Bool:
+  match hs:
+    case Nil{}:
+      False{}
+    case +h <> t:
+      Bool.or(Bool.and(Bool.not(String.eq(Hub.key(h), from)), BT.Maybe.is(BT.Peer, BT.Peer.by.id(BT.World.peers(M.State.bots(Hubs.state(h))), l))),
+        Hubs.holds(t, from, l))
+
+# a row a hub mirrors from a linked machine (far.bend): a bot elsewhere
+# that opens as a bot (BU.act), its threads kept by this hub
+def Hubs.mirrored(+r: J.Json) -> Bool:
+  Bool.and(J.Json.get_bool(r, "remote", False{}), String.eq(J.Json.get_str(r, "act", ""), "bot"))
+
+# a mirrored bot whose own machine is paired too: that hub lists it as its
+# own, so the copy goes (law hubs_bots_mirror_dropped)
+def Hubs.bot.dup(+hs: List<&2, Hub>, +from: String, +r: J.Json) -> Bool:
+  Bool.and(Hubs.mirrored(r), Bool.and(Bool.not(String.is_empty(J.Json.get_str(r, "link", ""))), Hubs.holds(hs, from, J.Json.get_str(r, "link", ""))))
+
+def Hubs.bot.keep.k(dup: Bool, +far: Bool, +want: Bool, +hs: List<&2, Hub>, +from: String, +r: J.Json, rest: List<&2, O.Ky<J.Json>>) -> List<&2, O.Ky<J.Json>>:
+  match dup:
+    case True{}:
+      rest
+    case False{}:
+      BT.Post.keep(O.Ky<J.Json>, Bool.pick(Bool, want, far, Bool.not(far)), O.Ky{Hubs.bot.key(hs, from, r), r}, rest)
+
 def Hubs.bot.keep(+far: Bool, +want: Bool, +hs: List<&2, Hub>, +from: String, +r: J.Json, rest: List<&2, O.Ky<J.Json>>) -> List<&2, O.Ky<J.Json>>:
-  BT.Post.keep(O.Ky<J.Json>, Bool.pick(Bool, want, far, Bool.not(far)), O.Ky{Hubs.bot.key(hs, from, r), r}, rest)
+  Hubs.bot.keep.k(Hubs.bot.dup(hs, from, r), far, want, hs, from, r, rest)
 
 def Hubs.bot.rows(rs: List<&2, J.Json>, +want: Bool, +hs: List<&2, Hub>, +from: String) -> List<&2, O.Ky<J.Json>>:
   match rs:

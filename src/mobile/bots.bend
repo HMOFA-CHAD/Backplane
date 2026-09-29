@@ -34,10 +34,15 @@ def MBots.ago(none: Bool, +now: Nat, +at: Nat) -> String:
 # The list
 # --------
 
-def MBots.row(r: B.BRow) -> J.Json:
+# a cat in the list; "act" is what a tap sends with its id (BU.act: "bot"
+# for a bot with a thread, here or mirrored, "remote" for one only
+# reported; "remote" stays for apps that pick it themselves), "title" its
+# name as shown (with its machine when elsewhere)
+def MBots.row(+r: B.BRow) -> J.Json:
   match r:
     case B.BRow{+i, +n, _, +lk, +m, note, sel, +rem, peer, +l}:
-      J.Json.obj([J.KV{"id", J.Json.str(i)}, J.KV{"name", J.Json.str(n)}, J.KV{"look", J.Json.nat(lk)},
+      J.Json.obj([J.KV{"id", J.Json.str(i)}, J.KV{"name", J.Json.str(n)}, J.KV{"title", J.Json.str(B.BU.row.title(r))},
+        J.KV{"act", J.Json.str(B.BU.act(r))}, J.KV{"look", J.Json.nat(lk)},
         J.KV{"mood", J.Json.str(m)}, J.KV{"note", J.Json.str(note)}, J.KV{"sel", J.Json.bool(sel)},
         J.KV{"remote", J.Json.bool(rem)}, J.KV{"peer", J.Json.str(peer)}, J.KV{"cat", MBots.cat(lk, m)},
         J.KV{"key", J.Json.str(B.BU.key.k(rem, i, n, l))}, J.KV{"link", J.Json.str(l)}])
@@ -245,17 +250,24 @@ def MBots.tab.k(i: Nat, +u: U.Ui, b: BT.Bot, +id: String, +persona: String, +now
     case _:
       Nil{}
 
-def MBots.bot.m(+u: U.Ui, b: BT.Bot, +id: String, +name: String, +lk: Nat, +persona: String, +mood: String, +tab: String) -> J.Json:
+# a bot's header (BU.head): its name as shown ("title": with its machine
+# when mirrored from a linked machine), its mood, its tabs and the one
+# shown, and whether its memory and routines may be changed here ("edit")
+def MBots.head(+hd: B.Head) -> List<&2, J.KV>:
+  [J.KV{"title", J.Json.str(B.Head.title(hd))}, J.KV{"mood", J.Json.str(B.Head.mood(hd))},
+   J.KV{"note", J.Json.str(B.Head.note(hd))}, J.KV{"look", J.Json.nat(B.Head.look(hd))}, J.KV{"cat", MBots.cat(B.Head.look(hd), B.Head.mood(hd))},
+   J.KV{"tab", J.Json.str(B.Head.tab(hd))}, J.KV{"tabs", J.Json.arr(MBots.tabs(B.Head.tabs(hd)))},
+   J.KV{"edit", J.Json.bool(B.Head.owns(hd))}]
+
+def MBots.bot.m(+u: U.Ui, b: BT.Bot, +id: String, +name: String, +persona: String, +hd: B.Head) -> J.Json:
   J.Json.obj(List.append(&2, J.KV,
-    [J.KV{"kind", J.Json.str("bot")}, J.KV{"id", J.Json.str(id)}, J.KV{"name", J.Json.str(name)}, J.KV{"mood", J.Json.str(mood)},
-     J.KV{"note", J.Json.str(B.Mood.note(mood))}, J.KV{"look", J.Json.nat(lk)}, J.KV{"cat", MBots.cat(lk, mood)},
-     J.KV{"tab", J.Json.str(tab)}, J.KV{"tabs", J.Json.arr(MBots.tabs(B.BU.tabs()))}],
-    MBots.tab.k(C.Codec.pos(B.BU.tabs(), tab), u, b, id, persona, U.Side.now(u))))
+    [J.KV{"kind", J.Json.str("bot")}, J.KV{"id", J.Json.str(id)}, J.KV{"name", J.Json.str(name)}],
+    List.append(&2, J.KV, MBots.head(hd), MBots.tab.k(C.Codec.pos(B.BU.tabs(), B.Head.tab(hd)), u, b, id, persona, U.Side.now(u)))))
 
 def MBots.bot(+u: U.Ui, b: BT.Bot) -> J.Json:
   match b:
     case BT.Bot{+i, +n, +th, +lk, +pe, +c, +d}:
-      MBots.bot.m(u, BT.Bot{i, n, th, lk, pe, c, d}, i, n, lk, pe, B.Mood.bot(U.Ui.state(u), U.Side.now(u), BT.Bot{i, n, th, lk, pe, c, d}), B.BU.tab(u))
+      MBots.bot.m(u, BT.Bot{i, n, th, lk, pe, c, d}, i, n, pe, B.BU.head.bot(u, BT.Bot{i, n, th, lk, pe, c, d}))
 
 # Rooms and bots elsewhere
 # ------------------------
@@ -282,35 +294,18 @@ def MBots.room.view(+u: U.Ui, r: BT.Room) -> J.Json:
         J.KV{"posts", J.Json.arr(MBots.posts(B.BU.posts(u, i), u, U.Side.now(u)))},
         J.KV{"draft", J.Json.str(B.BU.field(u, "rpost"))}])
 
-def MBots.far.o(+u: U.Ui, +id: String, name: String, +mood: String, note: String, +lk: Nat, peer: String) -> J.Json:
-  J.Json.obj([J.KV{"kind", J.Json.str("remote")}, J.KV{"id", J.Json.str(id)}, J.KV{"name", J.Json.str(name)},
-    J.KV{"mood", J.Json.str(mood)}, J.KV{"note", J.Json.str(note)}, J.KV{"look", J.Json.nat(lk)}, J.KV{"cat", MBots.cat(lk, mood)},
-    J.KV{"peer", J.Json.str(peer)}, J.KV{"posts", J.Json.arr(MBots.posts(B.BU.remote.posts(u, id), u, U.Side.now(u)))},
-    J.KV{"draft", J.Json.str(B.BU.field(u, "rtext"))}])
-
-def MBots.far.m(m: Maybe<&2, B.BRow>, +u: U.Ui, +id: String) -> J.Json:
+def MBots.far.m(m: B.BRow, +u: U.Ui, +id: String, +hd: B.Head) -> J.Json:
   match m:
-    case Some{B.BRow{_, n, _, lk, mo, note, _, _, peer, _}}:
-      MBots.far.o(u, id, n, mo, note, lk, peer)
-    case None{}:
-      MBots.far.o(u, id, id, "away", B.Mood.note("away"), 0n, "")
+    case B.BRow{_, n, _, _, _, _, _, _, peer, _}:
+      J.Json.obj(List.append(&2, J.KV, [J.KV{"kind", J.Json.str("remote")}, J.KV{"id", J.Json.str(id)}, J.KV{"name", J.Json.str(n)},
+        J.KV{"peer", J.Json.str(peer)}, J.KV{"posts", J.Json.arr(MBots.posts(B.BU.remote.posts(u, id), u, U.Side.now(u)))},
+        J.KV{"draft", J.Json.str(B.BU.field(u, "rtext"))}], MBots.head(hd)))
 
-def MBots.rid(r: B.BRow) -> String:
-  match r:
-    case B.BRow{i, _, _, _, _, _, _, _, _, _}:
-      i
-
-def MBots.far.find(rs: List<&2, B.BRow>, +id: String) -> Maybe<&2, B.BRow>:
-  match rs:
-    case Nil{}:
-      None{}
-    case +r <> t:
-      Bool.pick(Maybe<&2, B.BRow>, String.eq(MBots.rid(r), id), Some{r}, MBots.far.find(t, id))
-
-# a bot on a linked machine: its cat and the person's conversation with
-# it ("bfield" rtext, "remote-send")
+# a bot only reported by a linked machine: the same header as a bot's
+# (BU.head: "name · machine", Chat alone) over the person's conversation
+# with it ("bfield" rtext, "remote-send")
 def MBots.far(+u: U.Ui, +id: String) -> J.Json:
-  MBots.far.m(MBots.far.find(B.BU.remote(u), id), u, id)
+  MBots.far.m(B.BU.remote.row(u, id), u, id, B.BU.head(u, B.VRemote{id}))
 
 def MBots.view(v: B.View, +u: U.Ui) -> J.Json:
   match v:
