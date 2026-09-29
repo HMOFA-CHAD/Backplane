@@ -4106,7 +4106,7 @@ def Far.took.go(none: Bool, moved: Bool, h: Hub, +link: String, +from: Nat, +hd:
 def Far.took.k(g: FR.Got, +i: FR.In, h: Hub, +since: Nat, +to: Nat, +xs: List<&2, FR.Item>, +name: String, moved: Bool) -> IO(Hub):
   match g:
     case FR.Got{+_, +_, True{}}:
-      Far.pull(Far.in.put(h, FR.In.name.set(FR.In.away.set(i, False{}), name)), FR.In.link(i), FR.In.head(i))
+      Far.pull(Far.in.put(h, FR.In.name.set(i, name)), FR.In.link(i), FR.In.head(i))
     case FR.Got{+hd, ys, False{}}:
       Far.took.go(List.is_empty(&2, FR.Item, ys), moved, Far.in.put(h, FR.In.name.set(FR.In.put(i, since, to, xs), name)), FR.In.link(i), FR.In.head(i), hd, ys, name)
 
