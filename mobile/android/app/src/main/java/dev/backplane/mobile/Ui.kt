@@ -338,7 +338,8 @@ private fun ThreadRow(m: AppModel, r: Row) {
                 trailingContent = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (r.pinned) Icon(Icons.Filled.PushPin, "Pinned", Modifier.size(16.dp).padding(end = 4.dp))
-                        Text(r.ago, style = MaterialTheme.typography.labelMedium)
+                        if (r.agents.isNotEmpty()) Text(r.agents, style = MaterialTheme.typography.labelMedium, color = PhaseColor.accent)
+                        else Text(r.ago, style = MaterialTheme.typography.labelMedium)
                     }
                 },
                 // a long press asks for the row's menu (the screen's rowMenu)
@@ -626,7 +627,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
     var shown by remember { mutableStateOf<String?>(null) }
     val termSize = rememberTermSize()
     Errors(m, s, snacks)
-    val count = (if (t.parent != null) 1 else 0) + (if (t.tasks.isNotEmpty()) 1 else 0) +
+    val count = (if (t.parent != null) 1 else 0) +
         (if (t.earlier > 0) 1 else 0) + t.entries.size + t.sending.size + (if (t.live.isNotEmpty() || t.working.isNotEmpty()) 1 else 0)
     LaunchedEffect(t.id, m.scrolls) { if (count > 0) list.scrollToItem(count - 1) }
     // earlier entries shown: the view goes back to the entry that was first
@@ -635,7 +636,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
         val k = keepAt ?: return@LaunchedEffect
         keepAt = null
         val i = t.entries.indexOfFirst { it.id == k }
-        val head = (if (t.parent != null) 1 else 0) + (if (t.tasks.isNotEmpty()) 1 else 0) + (if (t.earlier > 0) 1 else 0)
+        val head = (if (t.parent != null) 1 else 0) + (if (t.earlier > 0) 1 else 0)
         if (i >= 0) list.scrollToItem(head + i)
     }
     LaunchedEffect(count, t.live) {
@@ -711,6 +712,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
         bottomBar = {
             Surface(tonalElevation = 3.dp) {
                 Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp)) {
+                    t.subs?.let { u -> Box(Modifier.padding(bottom = 8.dp)) { SubsView(m, u) } }
                     for (a in t.asks) Box(Modifier.padding(bottom = 8.dp)) { AskCard(m, a) }
                     t.todos?.let { td ->
                         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -786,7 +788,6 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
             start = 16.dp, end = 16.dp, top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             t.parent?.let { p -> item(key = "parent") { EntryRow(m, p) { shown = it } } }
-            if (t.tasks.isNotEmpty()) item(key = "tasks") { TasksView(m, t.tasks) }
             // scrolled up to the top while earlier entries are left out: they
             // are shown, no button (the list keeps its place by entry key)
             if (t.earlier > 0) item(key = "earlier:" + (t.entries.firstOrNull()?.id ?: "")) {

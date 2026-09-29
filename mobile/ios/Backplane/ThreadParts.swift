@@ -198,24 +198,52 @@ struct EntryRow: View {
     }
 }
 
-// the threads this one delegated to
-struct TasksView: View {
+private func subColor(_ state: String) -> Color {
+    switch state {
+    case "running": PhaseColor.accent
+    case "done": PhaseColor.ok
+    case "queued": PhaseColor.faint
+    case "cancelled": PhaseColor.warn
+    default: PhaseColor.bad
+    }
+}
+
+// the subagent panel: what this thread delegated (a tap opens its thread)
+// and the agent's own (a tap opens or shuts its steps); outlined in the
+// accent while any are at work
+struct SubsView: View {
     let model: AppModel
-    let tasks: [TaskRow]
+    let subs: Subs
 
     var body: some View {
+        let busy = !subs.busy.isEmpty
         VStack(alignment: .leading, spacing: 6) {
-            Text("Subagents").font(.caption.bold()).foregroundStyle(.secondary)
-            ForEach(tasks) { t in
-                Button { model.act("select", t.id) } label: {
-                    HStack(spacing: 8) {
-                        StatusDot(state: t.state == "running" ? "run" : t.state == "failed" ? "fail" : "", status: nil).frame(width: 14)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(t.title).lineLimit(1)
-                            Text(t.who + " · " + t.state).font(.caption2).foregroundStyle(.secondary)
+            HStack {
+                Text("Subagents").font(.caption.bold()).foregroundStyle(busy ? .primary : .secondary)
+                Spacer(minLength: 0)
+                if busy { Text(subs.busy).font(.caption).foregroundStyle(PhaseColor.accent) }
+            }
+            ForEach(subs.rows) { r in
+                Button { model.act(r.act, r.value) } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Rectangle().fill(subColor(r.state)).frame(width: r.live ? 8 : 6, height: r.live ? 8 : 6)
+                            Text(r.agent ? (r.open ? "▾" : "▸") : r.who).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            Text(r.title).lineLimit(1)
+                            Spacer(minLength: 0)
+                            Text(r.state).font(.caption2).foregroundStyle(subColor(r.state))
                         }
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                        if !r.doing.isEmpty {
+                            Text(r.doing).font(.caption2).foregroundStyle(PhaseColor.accent).lineLimit(1).padding(.leading, 16)
+                        }
+                        ForEach(Array(r.steps.enumerated()), id: \.offset) { _, st in
+                            HStack(spacing: 6) {
+                                if !st.kind.isEmpty { Text(st.kind).foregroundStyle(.tertiary) }
+                                Text(st.text).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            .font(.caption2.monospaced())
+                            .padding(.leading, 16)
+                        }
                     }
                     .contentShape(.rect)
                 }
@@ -223,7 +251,8 @@ struct TasksView: View {
             }
         }
         .padding(10)
-        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 10))
+        .background(Color(.secondarySystemBackground))
+        .overlay(Rectangle().stroke(busy ? PhaseColor.accent : .clear, lineWidth: 1))
     }
 }
 

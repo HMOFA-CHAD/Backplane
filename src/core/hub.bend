@@ -886,10 +886,26 @@ def Bg.put(+s: M.State, +th: String, +now: Nat, ls: List<&2, String>) -> List<&2
   +after = M.Bg.show(ls)
   Bg.put.k(String.eq(M.Setting.get(s, M.Bg.key(th), ""), after), th, now, after)
 
+# a mark in a subagent's log (model.bend's Bg.log): it started, or ended
+# with a status; none for one no tool call started
+def Bg.mark.k(none: Bool, +th: String, +now: Nat, +call: String, +kind: String, +text: String) -> List<&2, M.Change>:
+  match none:
+    case True{}:
+      Nil{}
+    case False{}:
+      [M.ActivityLogged{M.Bg.log(th), call ++ "/" ++ kind, call, kind, text, now}]
+
+def Bg.mark(+th: String, +now: Nat, +call: String, +kind: String, +text: String) -> List<&2, M.Change>:
+  Bg.mark.k(String.is_empty(call), th, now, call, kind, text)
+
 def Bg.started(agent: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
   match agent:
     case True{}:
-      Bg.put(s, th, now, M.Bg.add(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""), J.Json.get_str(o, "description", "Subagent")))
+      +call = J.Json.get_str(o, "tool_use_id", "")
+      +what = J.Json.get_str(o, "description", "Subagent")
+      +kind = M.Bg.kind(J.Json.get_str(o, "task_type", ""))
+      List.append(&2, M.Change, Bg.put(s, th, now, M.Bg.start(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""), what, call, what, kind)),
+        Bg.mark(th, now, call, "start:" ++ kind, what))
     case False{}:
       Nil{}
 
@@ -898,7 +914,7 @@ def Bg.started(agent: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> 
 def Bg.moved(bg: Bool, +s: M.State, +th: String, +now: Nat, +id: String) -> List<&2, M.Change>:
   match bg:
     case True{}:
-      Bg.put(s, th, now, M.Bg.add(M.Bg.of(s, th), id, "Background shell"))
+      Bg.put(s, th, now, M.Bg.start(M.Bg.of(s, th), id, "Background shell", "", "Background shell", "shell"))
     case False{}:
       Nil{}
 
@@ -924,7 +940,8 @@ def Bg.system.k(i: Nat, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List
     case 1n:
       Bg.put(s, th, now, M.Bg.set(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""), J.Json.get_str(o, "description", "")))
     case 2n:
-      Bg.put(s, th, now, M.Bg.drop(M.Bg.of(s, th), J.Json.get_str(o, "task_id", "")))
+      List.append(&2, M.Change, Bg.put(s, th, now, M.Bg.drop(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""))),
+        Bg.mark(th, now, J.Json.get_str(o, "tool_use_id", ""), "end", J.Json.get_str(o, "status", "completed")))
     case 3n:
       Bg.ended(Nat.is_lt(C.Codec.pos(["completed", "failed", "killed", "stopped", "cancelled"], J.Json.get_str(J.Json.get_obj(o, "patch"), "status", "")), 5n),
         J.Json.get_bool(J.Json.get_obj(o, "patch"), "is_backgrounded", False{}), s, th, now, J.Json.get_str(o, "task_id", ""))
@@ -953,10 +970,49 @@ def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -
     case _:
       Step.none()
 
+# A subagent's own lines (parent_tool_use_id names the Agent call that
+# started it): what it writes and the tools it calls go to its log, not the
+# thread's timeline, and its partial text, tool results and usage are not
+# the agent's
+def Sub.block.k(i: Nat, +log: String, +call: String, +msg: String, +n: Nat, +now: Nat, +b: J.Json) -> List<&2, M.Change>:
+  match i:
+    case 0n:
+      [M.ActivityLogged{log, call ++ "/" ++ msg ++ ":" ++ Nat.show(n), call, "say", J.Json.get_str(b, "text", ""), now}]
+    case 1n:
+      [M.ActivityLogged{log, call ++ "/" ++ J.Json.get_str(b, "id", msg ++ ":" ++ Nat.show(n)), call, J.Json.get_str(b, "name", "tool"),
+        Claude.tool_summary(J.Json.get_str(b, "name", "tool"), J.Json.get_obj(b, "input")), now}]
+    case _:
+      Nil{}
+
+def Sub.blocks(bs: List<&2, J.Json>, +log: String, +call: String, +msg: String, +n: Nat, +now: Nat) -> List<&2, M.Change>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case +b <> t:
+      List.append(&2, M.Change,
+        Sub.block.k(C.Codec.pos(["text", "tool_use"], J.Json.get_str(b, "type", "")), log, call, msg, n, now, b),
+        Sub.blocks(t, log, call, msg, 1n+n, now))
+
+def Sub.line(i: Nat, +thread: String, +now: Nat, +call: String, +o: J.Json) -> Step:
+  match i:
+    case 2n:
+      Step{Sub.blocks(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), M.Bg.log(thread), call,
+        J.Json.get_str(J.Json.get_obj(o, "message"), "id", "msg"), 0n, now), Nil{}}
+    case _:
+      Step.none()
+
+def Claude.line.who(main: Bool, i: Nat, +s: M.State, +thread: String, +now: Nat, +call: String, +o: J.Json) -> Step:
+  match main:
+    case True{}:
+      Claude.line.k(i, s, thread, now, o)
+    case False{}:
+      Sub.line(i, thread, now, call, o)
+
 def Claude.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now: Nat) -> Step:
   match m:
     case Some{+o}:
-      Claude.line.k(C.Codec.pos(["system", "stream_event", "assistant", "result", "user"], J.Json.get_str(o, "type", "")), s, thread, now, o)
+      +call = J.Json.get_str(o, "parent_tool_use_id", "")
+      Claude.line.who(String.is_empty(call), C.Codec.pos(["system", "stream_event", "assistant", "result", "user"], J.Json.get_str(o, "type", "")), s, thread, now, call, o)
     case None{}:
       Step.none()
 

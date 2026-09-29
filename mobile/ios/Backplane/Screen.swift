@@ -23,6 +23,8 @@ struct Row: Decodable, Identifiable, Hashable {
     // the active view's rows: the project's name, and faded (settled lately)
     let project: String?
     let faded: Bool?
+    // "2 agents" while subagents work for it, shown where the age goes
+    let agents: String?
 }
 
 struct Project: Decodable, Identifiable {
@@ -117,9 +119,23 @@ struct Ask: Decodable, Identifiable {
     let buttons: [AskButton]
 }
 
-// a thread this one delegated to ("select" opens it)
-struct TaskRow: Decodable, Identifiable {
-    let id, who, title, state: String
+// the subagent panel (src/core/subs.bend): what the thread delegated and
+// the agent's own; a row sends act with value (a task opens its thread, a
+// subagent opens or shuts its steps)
+struct SubStep: Decodable, Hashable {
+    let kind, text: String
+}
+
+struct SubRow: Decodable, Identifiable {
+    let id, title, who, state, doing, act, value: String
+    let agent, live, open: Bool
+    let n: Int
+    let steps: [SubStep]
+}
+
+struct Subs: Decodable {
+    let busy: String
+    let rows: [SubRow]
 }
 
 // a skill the `$` being typed may complete to ("skill" with its name)
@@ -303,9 +319,7 @@ struct ThreadView: Decodable {
     // the menu under the toolbar's ellipsis, after the tools
     let menu: [Tool]?
     let parent: Entry?
-    let tasks: [TaskRow]?
-    // the agent's own subagents at work: what each does now
-    let agents: [String]?
+    let subs: Subs?
     let asks: [Ask]?
     let skills: [Skill]?
     let btw: Btw?

@@ -242,7 +242,11 @@ private struct ThreadRow: View {
             }
             Spacer()
             if row.pinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary) }
-            Text(row.ago).font(.caption).foregroundStyle(.secondary)
+            if let n = row.agents, !n.isEmpty {
+                Text(n).font(.caption).foregroundStyle(PhaseColor.accent)
+            } else {
+                Text(row.ago).font(.caption).foregroundStyle(.secondary)
+            }
             Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())
@@ -626,7 +630,6 @@ struct ThreadScreen: View {
                 // came and the text jumped)
                 VStack(alignment: .leading, spacing: 14) {
                     if let p = thread.parent { EntryRow(model: model, entry: p) { shown = $0 } }
-                    if let ts = thread.tasks, !ts.isEmpty { TasksView(model: model, tasks: ts) }
                     // scrolled up to the top while earlier entries are left
                     // out: they are shown, no button, and the view stays on
                     // the entry that was first
@@ -657,18 +660,6 @@ struct ThreadScreen: View {
                         }
                         .font(thread.state == "run" ? .body : .caption)
                     }
-                    if let ag = thread.agents, !ag.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(Array(ag.enumerated()), id: \.offset) { _, a in
-                                HStack(spacing: 8) {
-                                    ProgressView().controlSize(.mini)
-                                    Text(a.isEmpty ? "Subagent" : a).lineLimit(2)
-                                }
-                            }
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding()
@@ -690,6 +681,9 @@ struct ThreadScreen: View {
         }
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {
+            if let u = thread.subs {
+                SubsView(model: model, subs: u).padding(.horizontal).padding(.top, 8)
+            }
             ForEach(thread.asks ?? []) { a in
                 AskCard(model: model, ask: a).padding(.horizontal).padding(.top, 8)
             }
