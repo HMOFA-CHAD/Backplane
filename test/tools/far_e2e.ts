@@ -12,8 +12,10 @@
 //   bun test/tools/far_e2e.ts [BINARY] [WIREDIR]
 //
 // BINARY defaults to build/backplane; WIREDIR to build/wire (the hub's
-// CBOR codec: bend test/wire/index.html -o build/wire).
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, mkdirSync, existsSync } from "node:fs";
+// CBOR codec: bend test/wire/index.html -o build/wire). With
+// FAR_E2E_DUMP=DIR, beta's log and the messages a client got (the
+// directory, the mirror) are written there for test/native/ui_snap.bend.
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, mkdirSync, existsSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -56,7 +58,7 @@ for (const n of ["claude", "codex", "grok"]) {
 }
 
 type Hub = { name: string; home: string; port: number; peers: string; proc: ReturnType<typeof Bun.spawn> | null };
-type Client = { ws: WebSocket; seen: any[]; far: any[]; replies: Map<number, any>; n: number; info: any };
+type Client = { ws: WebSocket; seen: any[]; far: any[]; replies: Map<number, any>; n: number; info: any; raw: string[] };
 
 function spawn(h: Hub) {
   h.proc = Bun.spawn([resolve(bin), "--home", h.home, "--port", String(h.port), "--no-tailscale"], {
@@ -78,11 +80,13 @@ async function up(h: Hub) {
 }
 
 async function connect(h: Hub): Promise<Client> {
-  const c: Client = { ws: null as any, seen: [], far: [], replies: new Map(), n: 0, info: {} };
+  const c: Client = { ws: null as any, seen: [], far: [], replies: new Map(), n: 0, info: {}, raw: [] };
   const ws = new WebSocket(`ws://127.0.0.1:${h.port}/ws`);
   ws.binaryType = "arraybuffer";
   ws.onmessage = (e) => {
-    const o = JSON.parse(W.decode(new Uint8Array(e.data as ArrayBuffer)));
+    const text = W.decode(new Uint8Array(e.data as ArrayBuffer));
+    const o = JSON.parse(text);
+    if (o.t === "far") c.raw.push(text);
     for (const x of o.items ?? []) c.seen.push(x);
     if (o.t === "far") c.far.push({ ...o, at: Date.now() });
     if (o.t === "reply") c.replies.set(Number(o.id), o);
@@ -186,6 +190,14 @@ try {
   for (const i of snap?.items ?? []) { if (dupes.has(i.n)) twice = true; dupes.add(i.n); }
   check("each item once", !twice);
   check("the mirror is kept on disk", existsSync(join(b.home, "far", `${link}.jsonl`)));
+  const dump = process.env.FAR_E2E_DUMP;
+  if (dump) {
+    mkdirSync(dump, { recursive: true });
+    copyFileSync(join(b.home, "events.jsonl"), join(dump, "events.jsonl"));
+    const info = JSON.stringify({ t: "info", info: { "bots.remote": cb.info["bots.remote"] ?? "[]" } });
+    writeFileSync(join(dump, "info.txt"), [info, ...cb2.raw].join("\n") + "\n");
+    writeFileSync(join(dump, "ids.txt"), `${link}~${th}\n${link}~${miso?.bot}\n`);
+  }
 
   // alpha stops: beta keeps it, away (within the minute's directory)
   const t3 = Date.now();
