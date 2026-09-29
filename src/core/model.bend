@@ -2101,10 +2101,10 @@ def Phase.label(p: Phase) -> String:
 
 # Subagents
 # ---------
-# The subagents an agent has at work (Claude's task_started, task_progress
-# and task_notification lines), kept as the setting "bg.<thread>": one
-# "id\tdoing" line each. They can run on after the agent's own turn ends,
-# so the thread still shows them working.
+# The subagents, background shells and monitors an agent has at work
+# (Claude's task_started, task_progress and task_notification lines), kept
+# as the setting "bg.<thread>": one "id\tdoing" line each. They can run on
+# after the agent's own turn ends, so the thread shows it monitoring them.
 
 def Bg.key(+th: String) -> String:
   "bg." ++ th
