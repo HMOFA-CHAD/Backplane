@@ -385,9 +385,10 @@ struct ProjectsView: View {
         }
     }
 
-    // the row menu shows while the screen has one this dialog has not let go of
+    // the row menu shows while the screen has one this dialog has not let go
+    // of (a file link's shows over its thread)
     private var menuUp: Binding<Bool> {
-        Binding(get: { screen.rowMenu.map { $0 != shutMenu } ?? false }, set: { up in if !up { letGo() } })
+        Binding(get: { screen.rowMenu.map { $0.kind != "f" && $0 != shutMenu } ?? false }, set: { up in if !up { letGo() } })
     }
 
     private func pick(_ m: RowMenu, _ i: MenuItem) {
@@ -622,6 +623,8 @@ struct ThreadScreen: View {
     @State private var keepAt: String?
     // the entry a jump showed, tinted for a moment
     @State private var lit: String?
+    // the file menu this dialog let go of
+    @State private var shutFile: RowMenu?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -798,6 +801,20 @@ struct ThreadScreen: View {
         }
         .navigationTitle(thread.title)
         .navigationBarTitleDisplayMode(.inline)
+        // a file link tapped in a message asks for its menu (Open and Show
+        // in folder act on the hub's machine, Copy path here)
+        .environment(\.openURL, OpenURLAction { url in
+            guard let p = FileLink.path(url) else { return .systemAction }
+            model.act("file-menu", p)
+            return .handled
+        })
+        .confirmationDialog(fileMenu?.title ?? "", isPresented: fileUp, titleVisibility: .visible, presenting: fileMenu) { m in
+            ForEach(m.items, id: \.self) { i in
+                Button(i.label) { shutFile = m; model.act(i.action, i.value) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .onChange(of: fileMenu) { _, m in if m == nil { shutFile = nil } }
         .fullScreenCover(isPresented: Binding(get: { !thread.viewer.open.isEmpty }, set: { if !$0 { model.act("view", "") } })) {
             if let v = model.screen?.thread?.viewer {
                 if v.open == "renders", let p = v.mech { MechScreen(model: model, viewer: v, page: p) } else { PlotScreen(model: model, viewer: v) }
@@ -859,6 +876,23 @@ struct ThreadScreen: View {
                 }
             }
         }
+    }
+
+    // the screen's menu when it is a file link's
+    private var fileMenu: RowMenu? {
+        model.screen?.rowMenu.flatMap { $0.kind == "f" ? $0 : nil }
+    }
+
+    // shown until picked from or let go of; let go with no pick, it is closed
+    private var fileUp: Binding<Bool> {
+        Binding(get: { fileMenu.map { $0 != shutFile } ?? false }, set: { up in
+            guard !up, let m = fileMenu else { return }
+            shutFile = m
+            let model = self.model
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                if model.screen?.rowMenu == m { model.act("menu-close", "") }
+            }
+        })
     }
 
     // this thread's messages tapped here and not yet answered

@@ -497,6 +497,8 @@ for (const ev of EVENTS) {
     const action = el.getAttribute(`data-on-${ev}`);
     // a row's menu opens where the pointer was (view.bend's View.rmenu
     // reads these)
+    // a file link (dom.bend's Dom.file) goes to the hub, not to its href
+    if (ev === "click" && el.tagName === "A") e.preventDefault();
     if (ev === "contextmenu") {
       e.preventDefault();
       document.documentElement.style.setProperty("--mx", Math.min(e.clientX, innerWidth - 216) + "px");

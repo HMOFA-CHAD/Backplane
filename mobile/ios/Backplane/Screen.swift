@@ -58,6 +58,8 @@ struct MenuItem: Decodable, Hashable {
 
 struct RowMenu: Decodable, Equatable {
     let title: String
+    // "t" a thread's, "p" a project's, "f" a file link's (shown in the thread)
+    let kind: String?
     let items: [MenuItem]
 }
 
@@ -76,8 +78,9 @@ struct Block: Decodable, Hashable {
     let tag: String?
     let kids: [Block]?
     let text: String?
-    // a link's target
+    // a link's target, and whether it is a file's (Mob.href)
     let href: String?
+    let file: Bool?
 
     var plain: String { text ?? (kids ?? []).map(\.plain).joined() }
 }

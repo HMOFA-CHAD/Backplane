@@ -24,6 +24,7 @@ import ./plot.bend as PV
 import ../core/agent.bend as AG
 import ../core/tailnet.bend as TN
 import ../core/images.bend as IM
+import ../core/links.bend as LK
 import ../core/attach.bend as ATT
 import ../core/attach.bend as AT
 import ../core/sha1.bend as SH
@@ -1462,6 +1463,18 @@ def RefsJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +
     f : K.Files <- K.Files.read(cwd)
     RefsJob.reply(inbox, client, id, thread, String.split(out, '\n'), f)
 
+def FileJob.done(r: P.Ran, +inbox: Chan(Msg), +client: U32, +id: String) -> IO(Unit):
+  match r:
+    case P.Ran{0, _}:
+      GitJob.reply(inbox, client, id, True{}, J.Json.obj([J.KV{"text", J.Str{""}}]))
+    case P.Ran{_, out}:
+      GitJob.reply(inbox, client, id, False{}, J.Json.obj([J.KV{"text", J.Str{String.trim(out)}}]))
+
+# a file link from a thread, opened here or shown in its folder (core's
+# Link.file.cmd: the path goes as an argument, never as shell text)
+def FileJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +path: String, +how: String) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", LK.Link.file.cmd(how), "sh", path], "/"), r => FileJob.done(r, inbox, client, id))
+
 def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
   match i:
     case 0n:
@@ -1490,12 +1503,14 @@ def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U
       StepJob.run(inbox, thread, cwd, a)
     case 12n:
       RefsJob.run(inbox, client, id, thread, cwd)
+    case 13n:
+      FileJob.run(inbox, client, id, a, b)
     case _:
       GitJob.run.git(tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # a job the hub asked for: a git job, or one of the sidebar's
 def GitJob.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
-  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
+  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs", "open"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # Grok (grok agent stdio, ACP)
 # ----------------------------

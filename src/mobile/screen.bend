@@ -10,6 +10,7 @@ import ./picker.bend as PK
 import ../core/todo.bend as TD
 import ../core/attach.bend as AT
 import ../core/images.bend as IM
+import ../core/links.bend as LK
 import ../core/fold.bend as FO
 import ../core/subs.bend as SB
 import ../core/diff.bend as DF
@@ -205,7 +206,7 @@ def Mob.rmenu.k(none: Bool, +u: U.Ui) -> J.Json:
     case True{}:
       J.Null{}
     case False{}:
-      J.Json.obj([J.KV{"title", J.Json.str(U.Menu.title(u))}, J.KV{"items", J.Json.arr(Mob.mitems(U.Menu.items(u, False{})))}])
+      J.Json.obj([J.KV{"title", J.Json.str(U.Menu.title(u))}, J.KV{"kind", J.Json.str(U.Menu.kind(U.Menu.open(u)))}, J.KV{"items", J.Json.arr(Mob.mitems(U.Menu.items(u, False{})))}])
 
 def Mob.rmenu(+u: U.Ui) -> J.Json:
   Mob.rmenu.k(Bool.or(String.is_empty(U.Menu.open(u)), Bool.not(String.is_empty(U.Ui.scratch(u, "@del") ++ U.Ui.scratch(u, "@rm")))), u)
@@ -213,13 +214,14 @@ def Mob.rmenu(+u: U.Ui) -> J.Json:
 # markdown blocks from the same Md.render the web page uses; built onto a
 # reversed accumulator so a long reply's many blocks cost no stack (only
 # nesting does)
-# a link's target, the one attribute a phone needs
+# a link's target, the one attribute a phone needs, and whether it is a
+# file's (a tap opens the file's menu: "file-menu" with href)
 def Mob.href(as: List<&2, D.Attr>) -> List<&2, J.KV>:
   match as:
     case Nil{}:
       Nil{}
-    case D.At{+k, v} <> t:
-      Bool.pick(List<&2, J.KV>, String.eq(k, "href"), [J.KV{"href", J.Json.str(v)}], Mob.href(t))
+    case D.At{+k, +v} <> t:
+      Bool.pick(List<&2, J.KV>, String.eq(k, "href"), [J.KV{"href", J.Json.str(v)}, J.KV{"file", J.Json.bool(Bool.not(LK.Link.is_web(v)))}], Mob.href(t))
     case _ <> t:
       Mob.href(t)
 

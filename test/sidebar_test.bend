@@ -47,6 +47,20 @@ def sent(a: U.Act) -> String:
     case U.Act{_, cs}:
       sent.go(cs)
 
+def copied.go(cs: List<&2, U.Cmd>) -> String:
+  match cs:
+    case Nil{}:
+      ""
+    case U.Copy{t} <> _:
+      t
+    case _ <> r:
+      copied.go(r)
+
+def copied(a: U.Act) -> String:
+  match a:
+    case U.Act{_, cs}:
+      copied.go(cs)
+
 def base() -> U.Ui:
   U.Ui.fold(log(), U.Ui.init(now()))
 
@@ -117,5 +131,11 @@ def main() -> IO(Unit):
     C.Check.str("rich project menu", String.join(labels(U.Menu.items(act(base(), "proj-menu", "p1"), True{})), ","), "New thread,Colour and icon,Remove project")
     C.Check.str("remove asks", menu(act(act(base(), "proj-menu", "p1"), "proj-remove", "p1")), "New thread,Click again to remove")
     C.Check.str("menu title", U.Menu.title(act(base(), "proj-menu", "p2")), "enclosure")
+    C.Check.str("file menu", menu(act(act(base(), "select", "a"), "file-menu", "src/x.bend:12")), "Open,Show in folder,Copy path")
+    C.Check.str("file menu title", U.Menu.title(act(base(), "file-menu", "src/x.bend:12")), "src/x.bend:12")
+    C.Check.str("file open in the thread's folder", sent(U.Ui.act(act(base(), "select", "a"), "file-open", "src/x.bend:12")), "{\"id\":0,\"m\":\"file.open\",\"p\":{\"path\":\"/tmp/board/src/x.bend\",\"how\":\"open\"}}")
+    C.Check.str("file reveal", sent(U.Ui.act(act(act(base(), "select", "a"), "file-menu", "/etc/hosts"), "file-reveal", "/etc/hosts")), "{\"id\":0,\"m\":\"file.open\",\"p\":{\"path\":\"/etc/hosts\",\"how\":\"reveal\"}}")
+    C.Check.str("file reveal shuts", U.Ui.scratch(act(act(act(base(), "select", "a"), "file-menu", "/etc/hosts"), "file-reveal", "/etc/hosts"), "@menu"), "")
+    C.Check.str("copy path", copied(U.Ui.act(act(base(), "select", "b"), "file-copy", "./README.md")), "/tmp/board/README.md")
     C.Check.str("close disarms", U.Ui.scratch(act(act(act(base(), "row-menu", "d"), "row-delete", "d"), "menu-close", ""), "@del"), "")
     C.Check.str("enter opens first active", U.Ui.sel(act(act(U.Ui.fold(List.append(&2, M.Change, log(), [M.SettingSet{"sidebar.view", "active", 1n}]), U.Ui.init(now())), "bfield", "pq\u{1f}pin swap"), "proj-go", "")), "b")

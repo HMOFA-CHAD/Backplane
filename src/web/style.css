@@ -359,7 +359,8 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 .msg .shot { display: block; margin: 8px 0; }
 .msg .shot img { display: block; max-width: 100%; max-height: 420px; border: 1px solid var(--line); background: var(--bg); }
 
-.msg a.link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.msg a.link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; border: 0; padding: 0; font-size: inherit; white-space: normal; max-width: none; }
+.msg a.link.file code { color: inherit; }
 .ico { flex: none; display: block; }
 button.icon { display: inline-flex; align-items: center; justify-content: center; }
 .shelf, .settings-link, .model-chip { display: flex; align-items: center; gap: 6px; }

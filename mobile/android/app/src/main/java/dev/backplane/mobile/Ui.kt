@@ -79,6 +79,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -132,7 +133,8 @@ import kotlinx.coroutines.delay
 fun App(m: AppModel) {
     var pairing by rememberSaveable { mutableStateOf(false) }
     val s = m.screen
-    when {
+    // a file link tapped in a message asks for its menu
+    CompositionLocalProvider(LocalFileTap provides { p: String -> m.act("file-menu", p) }) { when {
         m.links.isEmpty() -> Pair("", cancel = null) { m.pair(it) }
         s == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         pairing -> {
@@ -162,7 +164,7 @@ fun App(m: AppModel) {
             ThreadScreen(m, s, s.thread)
         }
         else -> Projects(m, s, onPair = { pairing = true })
-    }
+    } }
     if (s == null || m.links.isEmpty()) return
     val d = s.deleting
     // the delete just answered: its dialog stays down until the screen drops it
@@ -194,6 +196,8 @@ fun App(m: AppModel) {
     )
     s.settings?.let { SettingsSheet(m, it) }
     s.find?.let { FindSheet(m, it) }
+    // a row's, a project's or (in a thread) a file link's menu
+    s.rowMenu?.let { RowMenuSheet(m, it) }
 }
 
 // the list's search field, always shown, never focused on its own:
@@ -540,13 +544,12 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
             if (s.hubs.isNotEmpty()) botsSection(m, s)
         }
     }
-    s.rowMenu?.let { RowMenuSheet(m, it) }
     s.folders?.let { FolderPicker(m, it) }
     s.newBot?.let { NewBotDialog(m, it) }
     s.newRoom?.let { NewRoomDialog(m, it) }
 }
 
-// a long-pressed row's or project's menu: an item sends its action (Delete
+// a long-pressed row's or project's menu, or a tapped file link's: an item sends its action (Delete
 // and Remove then ask through the deleting/removing dialogs); let go
 // without a choice, the menu is closed ("menu-close")
 @OptIn(ExperimentalMaterial3Api::class)

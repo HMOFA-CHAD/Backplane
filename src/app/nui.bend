@@ -2634,24 +2634,32 @@ def Nui.press.k(drag: Bool, +n: Nui, +x: U32, +y: U32) -> Step:
 
 # a right-click on a sidebar row opens its menu where the pointer is
 # (core's Menu: "row-menu"), on a project's name or badge the project's
-# ("proj-menu"); it never acts on the row by itself
+# ("proj-menu"), on a file link in a message the file's ("file-menu"); it
+# never acts on the row by itself
 def Row.menu.at(+n: Nui, +x: U32, +y: U32) -> Nui:
   Nui.with_ui(n, U.Ui.scratch_set(U.Ui.scratch_set(Nui.ui(n), "@menu.x", U32.show(x)), "@menu.y", U32.show(y)))
 
-def Row.menu.k(row: Bool, proj: Bool, +n: Nui, +value: String, +x: U32, +y: U32) -> Step:
+def Row.menu.f(file: Bool, +n: Nui, +value: String, +x: U32, +y: U32) -> Step:
+  match file:
+    case True{}:
+      Nui.act(Row.menu.at(n, x, y), "file-menu", value)
+    case False{}:
+      Step{n, Nil{}, False{}}
+
+def Row.menu.k(row: Bool, proj: Bool, file: Bool, +n: Nui, +value: String, +x: U32, +y: U32) -> Step:
   match row proj:
     case True{} _:
       Nui.act(Row.menu.at(n, x, y), "row-menu", value)
     case False{} True{}:
       Nui.act(Row.menu.at(n, x, y), "proj-menu", value)
     case False{} False{}:
-      Step{n, Nil{}, False{}}
+      Row.menu.f(file, n, value, x, y)
 
 def Row.menu(m: Maybe<&2, Hit>, +n: Nui, +x: U32, +y: U32) -> Step:
   match m:
     case Some{Hit{_, _, _, _, +action, +value}}:
       Row.menu.k(Bool.and(String.eq(action, "select"), U32.is_lt(x, 264)),
-        Bool.and(Bool.or(String.eq(action, "project"), String.eq(action, "look")), U32.is_lt(x, 264)), n, value, x, y)
+        Bool.and(Bool.or(String.eq(action, "project"), String.eq(action, "look")), U32.is_lt(x, 264)), String.eq(action, "file-open"), n, value, x, y)
     case None{}:
       Step{n, Nil{}, False{}}
 

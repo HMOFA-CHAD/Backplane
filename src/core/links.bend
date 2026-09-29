@@ -2,8 +2,9 @@ import Base
 
 # Links in a thread. A web address (http:// or https://) in a message, bare
 # or as a markdown link `[label](url)`, is a link both clients draw and open
-# (the web in a new tab, the window with the system's opener). What counts
-# as a link, and where it ends, is decided here, once, for both.
+# (the web in a new tab, the window with the system's opener). A path to a
+# file is a link too (Files below): it opens on the hub's machine. What
+# counts as a link, and where it ends, is decided here, once, for all.
 
 type Piece is Data:
   PText{text: String}
@@ -21,6 +22,151 @@ def Link.code(c: Char) -> U32:
   match c:
     case Chr{u}:
       u
+
+# Files
+# -----
+# A path in a message is a link: bare, in backticks (Md.code in
+# web/dom.bend) or as a markdown link's target. Its link keeps the path as
+# written (a line may follow, :12 or #L12); a link that is not a web address
+# is a file (Link.is_web decides). Clicking one asks the hub to open it
+# (file.open); a relative path is in the thread's folder (Link.file.abs).
+
+# what a path may hold besides letters and digits: . _ - / ~ + @ : #
+def Link.pmark(+u: U32) -> Bool:
+  Bool.or(Bool.or(Bool.or(U32.is_eq(u, 46), U32.is_eq(u, 95)), Bool.or(U32.is_eq(u, 45), U32.is_eq(u, 47))),
+    Bool.or(Bool.or(U32.is_eq(u, 126), U32.is_eq(u, 43)), Bool.or(Bool.or(U32.is_eq(u, 64), U32.is_eq(u, 58)), U32.is_eq(u, 35))))
+
+def Link.pchar(+c: Char) -> Bool:
+  Bool.or(Bool.or(Char.is_alpha(c), Char.is_digit(c)), Link.pmark(Link.code(c)))
+
+def Link.pchars(s: String, +ok: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      ok
+    case SCon{+h, t}:
+      Link.pchars(t, Bool.and(ok, Link.pchar(h)))
+
+# the path part: up to a line (:) or an anchor (#), walked to the end so
+# a long word costs no stack
+type Pt is Data:
+  Pt{done: Bool, acc: String}
+
+def Link.part.step(st: Pt, +h: Char) -> Pt:
+  match st:
+    case Pt{True{}, acc}:
+      Pt{True{}, acc}
+    case Pt{False{}, +acc}:
+      Bool.pick(Pt, Bool.or(U32.is_eq(Link.code(h), 58), U32.is_eq(Link.code(h), 35)), Pt{True{}, acc}, Pt{False{}, SCon{h, acc}})
+
+def Link.part.go(s: String, st: Pt) -> Pt:
+  match s:
+    case SNil{}:
+      st
+    case SCon{+h, t}:
+      Link.part.go(t, Link.part.step(st, h))
+
+def Link.part.of(st: Pt) -> String:
+  match st:
+    case Pt{_, acc}:
+      String.reverse(acc)
+
+def Link.part(+s: String) -> String:
+  Link.part.of(Link.part.go(s, Pt{False{}, SNil{}}))
+
+# a file's extension: a dot then a letter
+def Link.ext(s: String, +dot: Bool, +ok: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      ok
+    case SCon{+h, t}:
+      Link.ext(t, U32.is_eq(Link.code(h), 46), Bool.or(ok, Bool.and(dot, Char.is_alpha(h))))
+
+def Link.digit(m: Maybe<&2, Char>) -> Bool:
+  match m:
+    case Some{c}:
+      Char.is_digit(c)
+    case None{}:
+      False{}
+
+# what may follow the path: nothing, a line (:12, :12:3) or #L12
+def Link.sfx(+x: String) -> Bool:
+  Bool.or(String.is_empty(x), Bool.or(String.starts_with(x, "#L"), Bool.and(String.starts_with(x, ":"), Link.digit(String.get(x, 1n)))))
+
+def Link.last(+p: String) -> String:
+  Maybe.default(&2, String, List.last(&2, String, String.split(p, '/')), "")
+
+# a path by its look: absolute with a folder or a file, under ~/, ./ or
+# ../, or a folder then a file with an extension ("and/or", "1/2", "/s"
+# and "origin/main" are not)
+def Link.shape(+p: String) -> Bool:
+  Bool.or(Bool.or(String.starts_with(p, "~/"), String.starts_with(p, "./")), Bool.or(String.starts_with(p, "../"),
+    Bool.or(Bool.and(String.starts_with(p, "/"), String.contains(String.drop(p, 1n), "/")), Link.ext(Link.last(p), False{}, False{}))))
+
+# loose (a markdown link's target) also takes a lone file name (notes.md)
+def Link.ref.ok(+p: String, +sfx: String, +loose: Bool) -> Bool:
+  Bool.and(Bool.and(Link.sfx(sfx), Bool.not(String.ends_with(p, "."))), Bool.and(Bool.not(String.starts_with(p, "//")),
+    Bool.or(Bool.and(String.contains(p, "/"), Link.shape(p)), Bool.and(loose, Link.ext(p, False{}, False{})))))
+
+def Link.ref(+s: String, +loose: Bool) -> Bool:
+  Bool.and(Bool.and(Link.pchars(s, True{}), Bool.not(String.contains(s, "://"))),
+    Link.ref.ok(Link.part(s), String.drop(s, String.length(Link.part(s))), loose))
+
+# a path as a reader writes one: bare in a sentence, or in backticks
+def Link.is_path(+s: String) -> Bool:
+  Link.ref(s, False{})
+
+# a markdown target: file:// is dropped
+def Link.target(+u: String) -> String:
+  Bool.pick(String, String.starts_with(u, "file://"), String.drop(u, 7n), u)
+
+# the path a file link names, without its line or anchor
+def Link.file.path(+raw: String) -> String:
+  Link.part(raw)
+
+# absolute, or under ~/ (by its first char, so laws over "/" ++ s reduce)
+def Link.rooted(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      False{}
+    case SCon{+h, t}:
+      Bool.or(U32.is_eq(Link.code(h), 47), Bool.and(U32.is_eq(Link.code(h), 126), String.starts_with(t, "/")))
+
+def Link.file.abs.k(keep: Bool, +cwd: String, +p: String) -> String:
+  match keep:
+    case True{}:
+      p
+    case False{}:
+      Bool.pick(String, String.ends_with(cwd, "/"), cwd, cwd ++ "/") ++ Bool.pick(String, String.starts_with(p, "./"), String.drop(p, 2n), p)
+
+# where a file link's file is: as written when absolute or under ~/ (or
+# with no folder to be in), else in the thread's folder cwd
+def Link.file.abs(+cwd: String, +raw: String) -> String:
+  Link.file.abs.k(Bool.or(Link.rooted(raw), String.is_empty(cwd)), cwd, Link.file.path(raw))
+
+# the hub's shell for file.open: the path is its $1, never shell text; ~/
+# is the hub's home. "open" opens it with the system's opener
+# (BACKPLANE_OPEN names another), "reveal" shows it in its folder (the
+# desktop's file manager over D-Bus, else the folder opened; Finder on a Mac)
+def Link.file.sh() -> String:
+  "p=\"$1\"; case \"$p\" in \"~/\"*) p=\"$HOME/${p#??}\";; esac; case \"$p\" in /*) ;; *) p=\"$PWD/$p\";; esac; " ++
+  "[ -e \"$p\" ] || { echo \"No such file: $p\"; exit 1; }; "
+
+def Link.file.desk() -> String:
+  "[ -n \"$DISPLAY$WAYLAND_DISPLAY\" ] || { echo \"No desktop on this machine to open it on\"; exit 1; }; "
+
+def Link.file.open() -> String:
+  Link.file.sh() ++ "if [ \"$(uname)\" = Darwin ]; then open \"$p\"; exit $?; fi; " ++ Link.file.desk() ++
+  "(${BACKPLANE_OPEN:-xdg-open} \"$p\" >/dev/null 2>&1 &)"
+
+def Link.file.reveal() -> String:
+  Link.file.sh() ++ "if [ \"$(uname)\" = Darwin ]; then open -R \"$p\"; exit $?; fi; " ++ Link.file.desk() ++
+  "u=$(printf %s \"$p\" | sed 's/%/%25/g; s/ /%20/g; s/#/%23/g; s/?/%3F/g'); " ++
+  "dbus-send --session --print-reply --reply-timeout=3000 --dest=org.freedesktop.FileManager1 --type=method_call /org/freedesktop/FileManager1 " ++
+  "org.freedesktop.FileManager1.ShowItems array:string:\"file://$u\" string:\"\" >/dev/null 2>&1 || " ++
+  "(${BACKPLANE_OPEN:-xdg-open} \"$(dirname \"$p\")\" >/dev/null 2>&1 &)"
+
+def Link.file.cmd(+how: String) -> String:
+  Bool.pick(String, String.eq(how, "reveal"), Link.file.reveal(), Link.file.open())
 
 # Scanning
 # --------
@@ -178,17 +324,29 @@ def Link.href.raw(acc: String, l: String, u: String) -> String:
 def Link.label(+l: String, +u: String) -> String:
   Bool.pick(String, String.is_empty(l), String.reverse(u), String.reverse(l))
 
+# a markdown image (![alt](path)) stays text: the image shows under it
+def Link.bang(acc: String) -> Bool:
+  match acc:
+    case SNil{}:
+      False{}
+    case SCon{+h, _}:
+      U32.is_eq(Link.code(h), 33)
+
+# a markdown link's target: a web address, or a file (not an image's)
+def Link.href.ok(+u: String, +acc: String) -> Bool:
+  Bool.or(Link.valid(u), Bool.and(Bool.not(Link.bang(acc)), Link.ref(Link.target(u), True{})))
+
 def Link.close(ok: Bool, +acc: String, +l: String, +u: String, out: List<&2, Piece>) -> Sc:
   match ok:
     case True{}:
-      Sc{SText{SNil{}}, PLink{Link.label(l, u), String.reverse(u)} <> Link.text(acc, out)}
+      Sc{SText{SNil{}}, PLink{Link.label(l, u), Link.target(String.reverse(u))} <> Link.text(acc, out)}
     case False{}:
       Sc{SText{SCon{')', Link.href.raw(acc, l, u)}}, out}
 
 def Link.href.k(k: Nat, +acc: String, +l: String, +u: String, out: List<&2, Piece>, +c: Char, +t: String) -> Sc:
   match k:
     case 1n:
-      Link.close(Link.valid(String.reverse(u)), acc, l, u, out)
+      Link.close(Link.href.ok(String.reverse(u), acc), acc, l, u, out)
     case 2n:
       Link.text.step(Link.href.raw(acc, l, u), out, c, t)
     case _:
@@ -234,9 +392,116 @@ def Link.go(s: String, sc: Sc) -> List<&2, Piece>:
     case SCon{+c, +t}:
       Link.go(t, Link.step(sc, c, t))
 
+# Bare paths
+# ----------
+# After the scan, each run of text is cut into words at spaces; a word
+# that is a path (Link.is_path) once what wraps it is dropped (a leading
+# ( [ " ' * < ` and a trailing . , ; : ! ? ' " ) ] * >) becomes a link.
+# Text so far (txt), the word being read and the pieces are kept reversed.
+
+type Bw is Data:
+  Bw{txt: String, word: String, out: List<&2, Piece>}
+
+def Link.wrap(+u: U32) -> Bool:
+  Bool.or(Bool.or(Bool.or(U32.is_eq(u, 40), U32.is_eq(u, 91)), Bool.or(U32.is_eq(u, 34), U32.is_eq(u, 39))),
+    Bool.or(Bool.or(U32.is_eq(u, 42), U32.is_eq(u, 60)), U32.is_eq(u, 96)))
+
+def Link.after(+u: U32) -> Bool:
+  Bool.or(Bool.or(Link.punct(u), U32.is_eq(u, 34)), Bool.or(Bool.or(U32.is_eq(u, 41), U32.is_eq(u, 42)), Bool.or(U32.is_eq(u, 62), U32.is_eq(u, 96))))
+
+# how many of s's first chars wrap it
+def Link.lead(s: String, +n: Nat, +on: Bool) -> Nat:
+  match s:
+    case SNil{}:
+      n
+    case SCon{+h, t}:
+      Link.lead(t, Bool.pick(Nat, Bool.and(on, Link.wrap(Link.code(h))), 1n+n, n), Bool.and(on, Link.wrap(Link.code(h))))
+
+# how many of a reversed word's first chars follow it
+def Link.tail(s: String, +n: Nat, +on: Bool) -> Nat:
+  match s:
+    case SNil{}:
+      n
+    case SCon{+h, t}:
+      Link.tail(t, Bool.pick(Nat, Bool.and(on, Link.after(Link.code(h))), 1n+n, n), Bool.and(on, Link.after(Link.code(h))))
+
+def Link.mid(+w: String, +lead: Nat, +trail: Nat) -> String:
+  String.take(String.drop(w, lead), Nat.sub(Nat.sub(String.length(w), lead), trail))
+
+def Link.bare.hit(ok: Bool, +w: String, +lead: Nat, +core: String, txt: String, out: List<&2, Piece>) -> Bw:
+  match ok:
+    case True{}:
+      Bw{String.reverse(String.drop(w, Nat.add(lead, String.length(core)))), SNil{}, PLink{core, core} <> Link.text(String.append(String.reverse(String.take(w, lead)), txt), out)}
+    case False{}:
+      Bw{String.append(String.reverse(w), txt), SNil{}, out}
+
+def Link.bare.core(+w: String, +lead: Nat, +trail: Nat, txt: String, out: List<&2, Piece>) -> Bw:
+  Link.bare.hit(Link.is_path(Link.mid(w, lead, trail)), w, lead, Link.mid(w, lead, trail), txt, out)
+
+def Link.bare.word(+rev: String, txt: String, out: List<&2, Piece>) -> Bw:
+  Link.bare.core(String.reverse(rev), Link.lead(String.reverse(rev), 0n, True{}), Link.tail(rev, 0n, True{}), txt, out)
+
+def Link.bare.flush(txt: String, word: String, out: List<&2, Piece>) -> Bw:
+  match word:
+    case SNil{}:
+      Bw{txt, SNil{}, out}
+    case SCon{h, t}:
+      Link.bare.word(SCon{h, t}, txt, out)
+
+def Link.bare.push(b: Bw, +c: Char) -> Bw:
+  match b:
+    case Bw{txt, w, out}:
+      Bw{SCon{c, txt}, w, out}
+
+def Link.bare.k(sp: Bool, +c: Char, txt: String, word: String, out: List<&2, Piece>) -> Bw:
+  match sp:
+    case True{}:
+      Link.bare.push(Link.bare.flush(txt, word, out), c)
+    case False{}:
+      Bw{txt, SCon{c, word}, out}
+
+def Link.bare.step(st: Bw, +c: Char) -> Bw:
+  match st:
+    case Bw{txt, word, out}:
+      Link.bare.k(Char.is_space(c), c, txt, word, out)
+
+def Link.bare.go(s: String, st: Bw) -> Bw:
+  match s:
+    case SNil{}:
+      st
+    case SCon{+c, t}:
+      Link.bare.go(t, Link.bare.step(st, c))
+
+def Link.bare.end(b: Bw) -> List<&2, Piece>:
+  match b:
+    case Bw{txt, _, out}:
+      List.reverse(&2, Piece, Link.text(txt, out))
+
+def Link.bare.fin(st: Bw) -> List<&2, Piece>:
+  match st:
+    case Bw{txt, word, out}:
+      Link.bare.end(Link.bare.flush(txt, word, out))
+
+# a run of text with its bare paths as links (a run with no / has none)
+def Link.bare.text.k(slash: Bool, +s: String) -> List<&2, Piece>:
+  match slash:
+    case True{}:
+      Link.bare.fin(Link.bare.go(s, Bw{SNil{}, SNil{}, Nil{}}))
+    case False{}:
+      [PText{s}]
+
+def Link.files(ps: List<&2, Piece>) -> List<&2, Piece>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case PText{+s} <> t:
+      List.append(&2, Piece, Link.bare.text.k(String.contains(s, "/"), s), Link.files(t))
+    case PLink{l, u} <> t:
+      PLink{l, u} <> Link.files(t)
+
 # text as runs of plain text and links, in order
 def Link.pieces(+s: String) -> List<&2, Piece>:
-  Link.go(s, Sc{SText{SNil{}}, Nil{}})
+  Link.files(Link.go(s, Sc{SText{SNil{}}, Nil{}}))
 
 # the text a reader sees (a link shows its label)
 def Link.plain(ps: List<&2, Piece>) -> String:
