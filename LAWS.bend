@@ -3583,3 +3583,33 @@ law hubs_bots_mirror_dropped:
   for +r: J.Json
   for rest: List<&2, ON.Ky<J.Json>>
   {Hb.Hubs.bot.keep.k(True{}, far, want, hs, from, r, rest) == rest : List<&2, ON.Ky<J.Json>>}
+# Text fitting: early exit preserves the original recurrence.
+
+law fit_count_guard:
+  for +s: String
+  for +fits: Bool
+  for +cache: Map<&2, X.TG>
+  for +f: X.Face
+  for +max: U32
+  for +used: U32
+  {X.Fit.count.go(s, fits, cache, f, max, used) == X.Fit.count.k(fits, X.Fit.count(s, cache, f, max, used)) : Nat}
+
+law fit_count_step:
+  for +cp: U32
+  for +s: String
+  for +cache: Map<&2, X.TG>
+  for +f: X.Face
+  for +max: U32
+  for +used: U32
+  {X.Fit.count(SCon{Chr{cp}, s}, cache, f, max, used) ==
+    X.Fit.count.k(U32.is_le((used + X.TG.adv(X.Text.get(cache, f, cp)) : U32), max),
+      X.Fit.count(s, cache, f, max, (used + X.TG.adv(X.Text.get(cache, f, cp)) : U32))) : Nat}
+
+law fit_chunk_progress:
+  for n: Nat
+  exs k: Nat
+  {X.Fit.atleast(n) == 1n+k : Nat}
+
+law fit_wrap_unicode:
+  {X.Text.wrap(Map.new(&2, X.TG), X.Text.bitmap(), "日本語 😀🚀🙂\nabcde  x\n", 24) ==
+    ["日本語", "😀🚀🙂", "abc", "de ", "x", ""] : List<&2, String>}
