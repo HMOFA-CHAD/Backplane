@@ -66,7 +66,7 @@ def visit(+u: U.Ui, +url: String) -> String:
 # the page opened with "#bot=<name>" (decoded): that bot is shown once the
 # log has it
 def wanted(+u: U.Ui, +hash: String) -> U.Ui:
-  Bool.pick(U.Ui, String.starts_with(hash, "#bot="), U.Ui.scratch_set(u, "@bot.want", String.drop(hash, 5n)), u)
+  Bool.pick(U.Ui, String.starts_with(hash, "#bot="), U.Want.bot(u, String.drop(hash, 5n)), u)
 
 def act(u: U.Ui, action: String, value: String) -> U.Act:
   U.Solid.sync(U.Ui.act(u, action, value))

@@ -4604,10 +4604,54 @@ def Laws.window_state_seq(s):
     case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}:
       {==}
 
-def Laws.window_adopt(u, st):
+def reselect_state(same: Bool, +u: U.Ui, +old: String) -> {U.Ui.state(U.Ui.reselect.k(same, u, old)) == U.Ui.state(u) : M.State}:
+  match same u:
+    case True{} _: {==}
+    case False{} U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}: {==}
+
+def wanted_bot_state(m: Maybe<&2, BOT.Bot>, +u: U.Ui) -> {U.Ui.state(U.Bots.wanted.m(m, u)) == U.Ui.state(u) : M.State}:
+  match m u:
+    case Some{BOT.Bot{i, n, th, lk, p, c, d}} U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}: {==}
+    case None{} _: {==}
+
+def wanted_thread_state(found: Bool, +u: U.Ui, +id: String) -> {U.Ui.state(U.Want.thread.k(found, u, id)) == U.Ui.state(u) : M.State}:
+  match found u:
+    case True{} U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}: {==}
+    case False{} _: {==}
+
+def wanted_state(bound: Bool, +u: U.Ui) -> {U.Ui.state(U.Bots.wanted.k(bound, u)) == U.Ui.state(u) : M.State}:
+  match bound:
+    case False{}: {==}
+    case True{}:
+      +m = BOT.World.find(M.State.bots(U.Ui.state.of(u)), U.Ui.scratch(u, "@bot.want"))
+      +found = Bool.and(Bool.not(String.is_empty(U.Ui.scratch(u, "@thread.want"))), U.Want.thread.exists(U.Ui.state.of(u), U.Ui.scratch(u, "@thread.want")))
+      +id = U.Ui.scratch(u, "@thread.want")
+      Equal.trans(M.State, U.Ui.state(U.Want.thread.k(found, U.Bots.wanted.m(m, u), id)), U.Ui.state(U.Bots.wanted.m(m, u)), U.Ui.state(u),
+        wanted_thread_state(found, U.Bots.wanted.m(m, u), id), wanted_bot_state(m, u))
+
+def wanted_any_state(pending: Bool, +u: U.Ui) -> {U.Ui.state(U.Bots.wanted.any(pending, u)) == U.Ui.state(u) : M.State}:
+  match pending:
+    case False{}: {==}
+    case True{}: wanted_state(U.Want.bound(u), u)
+
+def installed_state(+u: U.Ui) -> {U.Ui.state(U.Ui.installed(u)) == U.Ui.state(u) : M.State}:
   match u:
-    case U.Ui{s0, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      {==}
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}: {==}
+
+def adopt_raw_state(+u: U.Ui, +st: M.State) -> {U.Ui.state(U.Ui.adopt.raw(u, st)) == st : M.State}:
+  match u:
+    case U.Ui{s0, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}: {==}
+
+def Laws.window_adopt(u, st):
+  match u st:
+    case +uu +ss:
+      +raw = U.Ui.adopt.raw(uu, ss)
+      +ins = U.Ui.installed(raw)
+      +wanted = U.Bots.wanted(ins)
+      Equal.trans(M.State, U.Ui.state(U.Ui.reselect(U.Ui.sel(uu), wanted)), U.Ui.state(wanted), ss,
+        reselect_state(String.eq(U.Ui.sel(uu), U.Ui.sel(wanted)), wanted, U.Ui.sel(uu)),
+        Equal.trans(M.State, U.Ui.state(wanted), U.Ui.state(ins), ss, wanted_any_state(Bool.or(Bool.not(String.is_empty(U.Ui.scratch(ins, "@bot.want"))), Bool.not(String.is_empty(U.Ui.scratch(ins, "@thread.want")))), ins),
+          Equal.trans(M.State, U.Ui.state(ins), U.Ui.state(raw), ss, installed_state(raw), adopt_raw_state(uu, ss))))
 
 def Laws.todo_write_whole_list():
   {==}
@@ -5731,3 +5775,73 @@ def Laws.bots_away_cat_posed_once(c):
 
 def Laws.bots_moving_cat_follows_clock(c):
   {==}
+
+
+def Laws.want_other_hub(u, generation, installed):
+  match generation installed:
+    case True{} True{}: {==}
+    case True{} False{}: {==}
+    case False{} True{}: {==}
+    case False{} False{}: {==}
+
+def Laws.want_old_generation(u, hub, installed):
+  match hub installed:
+    case True{} True{}: {==}
+    case True{} False{}: {==}
+    case False{} True{}: {==}
+    case False{} False{}: {==}
+
+def Laws.want_before_install(u, hub, generation):
+  match hub generation:
+    case True{} True{}: {==}
+    case True{} False{}: {==}
+    case False{} True{}: {==}
+    case False{} False{}: {==}
+
+def Laws.machine_clears_selection(u, hub):
+  match u:
+    case U.Ui{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}: {==}
+
+def Laws.timeline_hidden_settings(selected, thread):
+  match selected thread:
+    case True{} True{}: {==}
+    case True{} False{}: {==}
+    case False{} True{}: {==}
+    case False{} False{}: {==}
+
+def Laws.timeline_hidden_pane(settings, selected):
+  match settings selected:
+    case True{} True{}: {==}
+    case True{} False{}: {==}
+    case False{} True{}: {==}
+    case False{} False{}: {==}
+
+def home_short_step(home: Bool, +v: U.HubView, +rest: List<&2, U.HubView>, p: {List.drop(&2, U.HubView, rest, 1n) == Nil{} : List<&2, U.HubView>}) -> {List.drop(&2, U.HubView, U.HubCache.home.k(home, v, rest), 1n) == Nil{} : List<&2, U.HubView>}:
+  match home:
+    case True{}: {==}
+    case False{}: p
+
+def Laws.hub_cache_home_short(vs):
+  match vs:
+    case Nil{}: {==}
+    case +v <> +t:
+      home_short_step(String.is_empty(U.HubView.hub(v)), v, U.HubCache.home(t), Laws.hub_cache_home_short(t))
+
+def remote_short_step(home: Bool, +v: U.HubView, +rest: List<&2, U.HubView>, p: {List.drop(&2, U.HubView, rest, 1n) == Nil{} : List<&2, U.HubView>}) -> {List.drop(&2, U.HubView, U.HubCache.remote.k(home, v, rest), 1n) == Nil{} : List<&2, U.HubView>}:
+  match home:
+    case True{}: p
+    case False{}: {==}
+
+def Laws.hub_cache_remote_short(vs):
+  match vs:
+    case Nil{}: {==}
+    case +v <> +t:
+      remote_short_step(String.is_empty(U.HubView.hub(v)), v, U.HubCache.remote(t), Laws.hub_cache_remote_short(t))
+
+def cache_bounded_step(home: Bool, +v: U.HubView, +vs: List<&2, U.HubView>) -> {List.drop(&2, U.HubView, U.HubCache.put.k(home, v, vs), 2n) == Nil{} : List<&2, U.HubView>}:
+  match home:
+    case True{}: Laws.hub_cache_remote_short(vs)
+    case False{}: Laws.hub_cache_home_short(vs)
+
+def Laws.hub_cache_bounded(v, vs):
+  cache_bounded_step(String.is_empty(U.HubView.hub(v)), v, vs)

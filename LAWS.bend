@@ -3342,3 +3342,52 @@ law bots_away_cat_posed_once:
 law bots_moving_cat_follows_clock:
   for +c: Nat
   {BV.Bv.warm.at("work", c) == c : Nat}
+
+
+# A pending selection cannot consume another hub's read model.
+law want_other_hub:
+  for +u: U.Ui
+  for +generation: Bool
+  for +installed: Bool
+  {U.Bots.wanted.k(U.Want.accept(False{}, generation, installed), u) == u : U.Ui}
+
+law want_old_generation:
+  for +u: U.Ui
+  for +hub: Bool
+  for +installed: Bool
+  {U.Bots.wanted.k(U.Want.accept(hub, False{}, installed), u) == u : U.Ui}
+
+law want_before_install:
+  for +u: U.Ui
+  for +hub: Bool
+  for +generation: Bool
+  {U.Bots.wanted.k(U.Want.accept(hub, generation, False{}), u) == u : U.Ui}
+
+law machine_clears_selection:
+  for +u: U.Ui
+  for +hub: String
+  {U.Ui.sel(U.Act.ui(U.Ui.machine(u, hub))) == "" : String}
+
+law timeline_hidden_settings:
+  for +selected: Bool
+  for +thread: Bool
+  {U.Timeline.visible(True{}, selected, thread) == False{} : Bool}
+
+law timeline_hidden_pane:
+  for +settings: Bool
+  for +selected: Bool
+  {U.Timeline.visible(settings, selected, False{}) == False{} : Bool}
+
+# Cache walks return at most one home and one linked snapshot.
+law hub_cache_home_short:
+  for +vs: List<&2, U.HubView>
+  {List.drop(&2, U.HubView, U.HubCache.home(vs), 1n) == Nil{} : List<&2, U.HubView>}
+
+law hub_cache_remote_short:
+  for +vs: List<&2, U.HubView>
+  {List.drop(&2, U.HubView, U.HubCache.remote(vs), 1n) == Nil{} : List<&2, U.HubView>}
+
+law hub_cache_bounded:
+  for +v: U.HubView
+  for +vs: List<&2, U.HubView>
+  {List.drop(&2, U.HubView, U.HubCache.put(v, vs), 2n) == Nil{} : List<&2, U.HubView>}

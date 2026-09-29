@@ -1317,10 +1317,10 @@ def Vw.stale(v: V.Vw) -> V.Vw:
     case V.Vw{s, vi, f, r, d, lx, ly, b, _, cu, vx}:
       V.Vw{s, vi, f, r, d, lx, ly, b, False{}, cu, vx}
 
-def Nui.adopt.k(n: Nui, st: M.State) -> Nui:
+def Nui.adopt.k(n: Nui, st: M.State, head: J.Json) -> Nui:
   match n:
     case Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}:
-      Nui{U.Ui.adopt(u, st), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}
+      Nui{U.Ui.adopt_log(u, st, head), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}
 
 def Nui.adopt.theme(changed: Bool, +n: Nui) -> Nui:
   match changed:
@@ -1331,8 +1331,15 @@ def Nui.adopt.theme(changed: Bool, +n: Nui) -> Nui:
 
 # the hub's read model, handed over (main.bend's Shell.adopt); a new theme
 # draws the viewer's base again (its plain part is the window's ground)
-def Nui.adopt(+n: Nui, +st: M.State) -> Nui:
-  Nui.adopt.theme(Bool.not(String.eq(M.Setting.get(st, "ui.theme", ""), M.Setting.get(U.Ui.state.of(Nui.ui(n)), "ui.theme", ""))), Nui.adopt.k(n, st))
+def Nui.adopt(+n: Nui, +st: M.State, head: J.Json) -> Nui:
+  Nui.adopt.theme(Bool.not(String.eq(M.Setting.get(st, "ui.theme", ""), M.Setting.get(U.Ui.state.of(Nui.ui(n)), "ui.theme", ""))), Nui.adopt.k(n, st, head))
+
+# A new machine drops native focus, scroll, hits, selections and scene as
+# well as core selectors. A cached read model is safe to display at once.
+def Nui.connection(n: Nui, +tag: String, cached: Maybe<&2, U.HubView>) -> Nui:
+  match n:
+    case Nui{u, w, h, _, _, _, _, _, _, _, _, _, _}:
+      Nui.init(U.Ui.cached(cached, U.Ui.connection(u, tag)), w, h)
 
 # a board file arrived for a project root: same root merges (only what
 # changed fades), a new root starts over (the whole board fades in)
