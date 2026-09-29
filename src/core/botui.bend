@@ -349,6 +349,13 @@ def BU.view(+u: U.Ui) -> View:
 def BU.tabs() -> List<&2, String>:
   ["chat", "space", "browser", "memory", "routines", "hooks", "settings"]
 
+# a bot's tabs: all of them for a bot here; for one mirrored from a linked
+# machine (far.bend) what its machine shares: its chat, space, memory and
+# routines. Its browser, webhooks and settings stay on its machine (law
+# far_bot_tabs).
+def BU.tabs.of(+id: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, FR.Fr.is(id), ["chat", "space", "memory", "routines"], BU.tabs())
+
 def BU.tab.label(+t: String) -> String:
   Bool.pick(String, String.eq(t, "chat"), "Chat",
     Bool.pick(String, String.eq(t, "space"), "Space",
@@ -357,9 +364,20 @@ def BU.tab.label(+t: String) -> String:
           Bool.pick(String, String.eq(t, "routines"), "Routines",
             Bool.pick(String, String.eq(t, "hooks"), "Webhooks", "Settings"))))))
 
+def BU.tab.has(ts: List<&2, String>, +t: String) -> Bool:
+  match ts:
+    case Nil{}:
+      False{}
+    case x <> r:
+      Bool.or(String.eq(x, t), BU.tab.has(r, t))
+
 # the bot's tab ("chat" until one is picked)
 def BU.tab(+u: U.Ui) -> String:
   Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@btab")), "chat", U.Ui.scratch(u, "@btab"))
+
+# the tab shown: the one picked, when this bot has it, else its chat
+def BU.tab.of(+u: U.Ui, +id: String) -> String:
+  Bool.pick(String, BU.tab.has(BU.tabs.of(id), BU.tab(u)), BU.tab(u), "chat")
 
 def BU.space.none(paged: Bool, +name: String) -> SP.Space:
   match paged:

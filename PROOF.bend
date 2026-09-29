@@ -5788,3 +5788,9 @@ def Laws.far_where_here(n):
 
 def Laws.far_where_far():
   {==}
+
+def Laws.far_bot_tabs():
+  {==}
+
+def Laws.far_bot_tabs_here():
+  {==}

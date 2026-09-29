@@ -3476,3 +3476,11 @@ law far_where_here:
 
 law far_where_far:
   {FR.Fr.where("p1~t1", "box") == " · box" : String}
+
+# a bot mirrored from a linked machine has only the tabs its machine
+# shares; a bot here keeps them all
+law far_bot_tabs:
+  {BU.BU.tabs.of("p1~b1") == ["chat", "space", "memory", "routines"] : List<&2, String>}
+
+law far_bot_tabs_here:
+  {BU.BU.tabs.of("b1") == BU.BU.tabs() : List<&2, String>}
