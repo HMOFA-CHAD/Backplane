@@ -7,6 +7,7 @@ import ../core/sign.bend as SG
 import ../core/model.bend as M
 import ../core/bot.bend as BO
 import ../core/bothub.bend as BH
+import ../core/far.bend as FR
 
 # Bots' IO that needs secrets (docs/bots.md): webhook and peer secrets,
 # signed requests to linked machines, verifying signed requests to us, and
@@ -18,17 +19,28 @@ import ../core/bothub.bend as BH
 # reads the signed headers on stdin and the body from a 0600 file.
 
 # what the server keeps for bots: the linked machines' bots (a JSON array,
-# as clients read it) and the signatures accepted within the window
+# as clients read it), the signatures accepted within the window, and the
+# threads elsewhere (far.bend: mirrors, pushes, this hub's feed)
 type Bn is Data:
-  Bn{dir: String, seen: SG.Seen}
+  Bn{dir: String, seen: SG.Seen, far: FR.Fh}
 
 def Bn.empty() -> Bn:
-  Bn{"[]", SG.Seen.empty()}
+  Bn{"[]", SG.Seen.empty(), FR.Fh.empty()}
 
 def Bn.dir(b: Bn) -> String:
   match b:
-    case Bn{d, _}:
+    case Bn{d, _, _}:
       d
+
+def Bn.far(b: Bn) -> FR.Fh:
+  match b:
+    case Bn{_, _, f}:
+      f
+
+def Bn.with_far(b: Bn, f: FR.Fh) -> Bn:
+  match b:
+    case Bn{d, s, _}:
+      Bn{d, s, f}
 
 # Files
 # -----
@@ -416,18 +428,18 @@ def Bn.seen.k(had: Bool, s: SG.Seen, +key: String, +now: Nat) -> Maybe<&2, SG.Se
 
 def Bn.accept(+b: Bn, +key: String, +now: Nat) -> Maybe<&2, SG.Seen>:
   match b:
-    case Bn{_, +s}:
+    case Bn{_, +s, _}:
       Bn.seen.k(SG.Seen.has(s, key), s, key, now)
 
 def Bn.with_seen(b: Bn, s: SG.Seen) -> Bn:
   match b:
-    case Bn{d, _}:
-      Bn{d, s}
+    case Bn{d, _, f}:
+      Bn{d, s, f}
 
 def Bn.with_dir(b: Bn, d: String) -> Bn:
   match b:
-    case Bn{_, s}:
-      Bn{d, s}
+    case Bn{_, s, f}:
+      Bn{d, s, f}
 
 # Signed requests out
 # -------------------
@@ -623,17 +635,38 @@ def Bn.fetched(r: Resp, +peer: String, +pname: String, +now: Nat, +prev: List<&2
     case Resp{+code, +body}:
       Bn.fetched.j(Bool.pick(Maybe<&2, J.Json>, Nat.is_eq(code, 200n), J.Json.parse(body), None{}), peer, pname, now, prev)
 
-def Bn.dir.go(ps: List<&2, BO.Peer>, +home: String, +now: Nat, +prev: List<&2, J.Json>, acc: List<&2, J.Json>) -> IO(List<&2, J.Json>):
+def Bn.ok(r: Resp) -> Bool:
+  match r:
+    case Resp{+code, _}:
+      Nat.is_eq(code, 200n)
+
+def Bn.answered(ok: Bool, +i: String, acc: List<&2, String>) -> List<&2, String>:
+  match ok:
+    case True{}:
+      i <> acc
+    case False{}:
+      acc
+
+def Bn.dir.go(ps: List<&2, BO.Peer>, +home: String, +now: Nat, +prev: List<&2, J.Json>, xs: List<&2, J.Json>, ok: List<&2, String>) -> IO(List<&2, J.Json> & List<&2, String>):
   match ps:
     case Nil{}:
-      IO.pure(List<&2, J.Json>, acc)
+      IO.pure(List<&2, J.Json> & List<&2, String>, (xs, ok))
     case BO.Peer{+i, +n, +u, _, _} <> t:
-      do IO<List<&2, J.Json>>:
-        r : Resp <- Bn.to_peer(home, u, i, now, "/bots/dir", False{}, "")
-        Bn.dir.go(t, home, now, prev, List.append(&2, J.Json, acc, Bn.fetched(r, i, Bool.pick(String, String.is_empty(n), i, n), now, prev)))
+      do IO<List<&2, J.Json> & List<&2, String>>:
+        +r : Resp <- Bn.to_peer(home, u, i, now, "/bots/dir", False{}, "")
+        Bn.dir.go(t, home, now, prev, List.append(&2, J.Json, xs, Bn.fetched(r, i, Bool.pick(String, String.is_empty(n), i, n), now, prev)), Bn.answered(Bn.ok(r), i, ok))
+
+def Bn.dir.done(r: List<&2, J.Json> & List<&2, String>) -> IO(String & String):
+  (xs, ok) = r
+  IO.pure(String & String, (J.Json.show(J.Json.arr(xs)), String.join(ok, "\n")))
 
 # every linked machine's bots (asked GET /bots/dir, signed), as the JSON
-# array clients read: [{"name", "peer", "peerName", "look", "state", "seen"}]
-def Bn.dir.fetch(ps: List<&2, BO.Peer>, +home: String, +now: Nat, +prev: String) -> IO(String):
-  IO.bind(List<&2, J.Json>, String, Bn.dir.go(ps, home, now, J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse(prev), J.Null{})), Nil{}),
-    xs => IO.pure(String, J.Json.show(J.Json.arr(xs))))
+# array clients read: [{"name", "peer", "peerName", "look", "state", "seen"}],
+# and the ids of the machines that answered (one a line)
+def Bn.dir.fetch(ps: List<&2, BO.Peer>, +home: String, +now: Nat, +prev: String) -> IO(String & String):
+  IO.bind(List<&2, J.Json> & List<&2, String>, String & String, Bn.dir.go(ps, home, now, J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse(prev), J.Null{})), Nil{}, Nil{}),
+    Bn.dir.done)
+
+# a line appended to a file (made when missing)
+def Bf.append(+path: String, text: String) -> IO(Bool):
+  IO.bind(Result<&1, &1, U32 & String, File>, Bool, File.open(path, "a"), r => Bf.write.opened(r, text))

@@ -578,3 +578,367 @@ def Fr.allowed(+s: M.State, +o: J.Json) -> Bool:
 
 def Fr.where(+id: String, +name: String) -> String:
   Bool.pick(String, Fr.is(id), " · " ++ name, "")
+
+# The owning hub's feed
+# ---------------------
+# What it shares, as its log numbers it (newest first; each a wire line,
+# kept as text so the hub holds no parsed copy): made once from the log
+# (off the hub), then grown by each commit. A linked machine's pull reads
+# a page of it after the number it has.
+
+type Line is Data:
+  Line{n: Nat, text: String}
+
+def Line.n(l: Line) -> Nat:
+  match l:
+    case Line{n, _}:
+      n
+
+def Fr.line.k(sh: Bool, +n: Nat, +text: String, rest: List<&2, Line>) -> List<&2, Line>:
+  match sh:
+    case True{}:
+      Line{n, text} <> rest
+    case False{}:
+      rest
+
+def Fr.line.shared(m: Maybe<&2, M.Change>, +s: M.State) -> Bool:
+  match m:
+    case Some{c}:
+      Fr.shared(s, c)
+    case None{}:
+      False{}
+
+def Fr.line.parsed(m: Maybe<&2, J.Json>) -> Maybe<&2, M.Change>:
+  match m:
+    case Some{+o}:
+      C.Change.decode(o)
+    case None{}:
+      None{}
+
+# the shared lines of a log (newest first, `n` the number of the first),
+# newest first; tail-recursive (a log holds tens of thousands)
+def Fr.feed.go(ls: List<&2, String>, +n: Nat, +s: M.State, acc: List<&2, Line>) -> List<&2, Line>:
+  match ls:
+    case Nil{}:
+      List.reverse(&2, Line, acc)
+    case +l <> t:
+      Fr.feed.go(t, Nat.sub(n, 1n), s, Fr.line.k(Fr.line.shared(Fr.line.parsed(J.Json.parse(l)), s), n, l, acc))
+
+def Fr.feed(+ls: List<&2, String>, +s: M.State) -> List<&2, Line>:
+  Fr.feed.go(ls, List.length(&2, String, ls), s, Nil{})
+
+# a commit's changes (oldest first) with their wire lines (oldest first),
+# numbered after `seq`, the shared ones newest first
+def Fr.feed.add(cs: List<&2, M.Change>, ls: List<&2, String>, +seq: Nat, +s: M.State, acc: List<&2, Line>) -> List<&2, Line>:
+  match cs ls:
+    case +c <> t +l <> r:
+      Fr.feed.add(t, r, 1n+seq, s, Fr.line.k(Fr.shared(s, c), 1n+seq, l, acc))
+    case _ _:
+      acc
+
+def Fr.feed.keep(go: Bool, +n: Nat, +t: String, acc: List<&2, Line>) -> List<&2, Line>:
+  match go:
+    case True{}:
+      Line{n, t} <> acc
+    case False{}:
+      acc
+
+# the lines after `since`, oldest first (the feed is newest first, so they
+# are the ones before the first at or below `since`)
+def Fr.feed.after(fs: List<&2, Line>, +since: Nat, +go: Bool, acc: List<&2, Line>) -> List<&2, Line>:
+  match fs:
+    case Nil{}:
+      acc
+    case Line{+n, +t} <> r:
+      Fr.feed.after(r, since, Bool.and(go, Nat.is_gt(n, since)), Fr.feed.keep(Bool.and(go, Nat.is_gt(n, since)), n, t, acc))
+
+# a page: the items after `since` up to about `cap` characters (one bigger
+# line goes alone), where it ends (the last item's number when there is
+# more, else the log's end), and whether there is more
+type Page is Data:
+  Page{head: Nat, items: List<&2, Item>, more: Bool}
+
+type Pg is Data:
+  Pg{room: Nat, last: Nat, count: Nat, items: List<&2, Item>, full: Bool}
+
+def Fr.page.item(+n: Nat, +t: String) -> Item:
+  Item{n, Maybe.default(&2, J.Json, J.Json.parse(t), J.Null{})}
+
+def Fr.page.step.k(fits: Bool, first: Bool, p: Pg, +n: Nat, +t: String) -> Pg:
+  match fits first p:
+    case True{} _ Pg{r, _, c, xs, f}:
+      Pg{Nat.sub(r, String.length(t)), n, 1n+c, Fr.page.item(n, t) <> xs, f}
+    case False{} True{} Pg{_, _, c, xs, _}:
+      Pg{0n, n, 1n+c, Fr.page.item(n, t) <> xs, True{}}
+    case False{} False{} Pg{r, l, c, xs, _}:
+      Pg{r, l, c, xs, True{}}
+
+def Fr.page.step(p: Pg, +n: Nat, +t: String) -> Pg:
+  match p:
+    case Pg{+r, l, +c, xs, True{}}:
+      Pg{r, l, c, xs, True{}}
+    case Pg{+r, l, +c, xs, False{}}:
+      Fr.page.step.k(Nat.is_le(String.length(t), r), Nat.is_eq(c, 0n), Pg{r, l, c, xs, False{}}, n, t)
+
+def Fr.page.go(ls: List<&2, Line>, p: Pg) -> Pg:
+  match ls:
+    case Nil{}:
+      p
+    case Line{+n, +t} <> r:
+      Fr.page.go(r, Fr.page.step(p, n, t))
+
+def Fr.page.of(p: Pg, +total: Nat, +seq: Nat) -> Page:
+  match p:
+    case Pg{_, +l, +c, xs, _}:
+      Page{Bool.pick(Nat, Nat.is_lt(c, total), l, seq), List.reverse(&2, Item, xs), Nat.is_lt(c, total)}
+
+def Fr.page.k(+ls: List<&2, Line>, +since: Nat, +seq: Nat, +cap: Nat) -> Page:
+  Fr.page.of(Fr.page.go(ls, Pg{cap, since, 0n, Nil{}, False{}}), List.length(&2, Line, ls), seq)
+
+# what a pull from `since` gets (seq: this log's length)
+def Fr.page(+fs: List<&2, Line>, +since: Nat, +seq: Nat, +cap: Nat) -> Page:
+  Fr.page.k(Fr.feed.after(fs, since, True{}, Nil{}), since, seq, cap)
+
+def Page.json(p: Page) -> String:
+  match p:
+    case Page{h, xs, m}:
+      J.Json.show(J.Json.obj([J.KV{"head", J.Json.nat(h)}, J.KV{"items", J.Json.arr(Fr.items.json(xs))}, J.KV{"more", J.Json.bool(m)}]))
+
+# Pushing to a linked machine
+# ---------------------------
+# One push at a time per link. A batch says it follows the last push that
+# got through (`acked`) only while every push since did (`clean`); after a
+# failure (or a restart: nothing is known) it says it follows only its own
+# start, so the other end, missing what failed, finds the gap and pulls.
+# Batches that come while one is out wait, merged, for it to end.
+
+type Out is Data:
+  Out{link: String, acked: Nat, clean: Bool, busy: Bool, from: Nat, to: Nat, items: List<&2, Item>}
+
+def Out.new(+link: String) -> Out:
+  Out{link, 0n, False{}, False{}, 0n, 0n, Nil{}}
+
+def Out.link(o: Out) -> String:
+  match o:
+    case Out{l, _, _, _, _, _, _}:
+      l
+
+# a batch to send: what it follows, where it ends, its items
+type Send is Data:
+  Send{link: String, since: Nat, to: Nat, items: List<&2, Item>}
+
+def Out.add.k(empty: Bool, o: Out, +from: Nat, +to: Nat, xs: List<&2, Item>) -> Out:
+  match empty o:
+    case True{} Out{l, a, c, b, f, _, ys}:
+      Out{l, a, c, b, f, to, ys}
+    case False{} Out{l, a, c, b, f, _, +ys}:
+      Out{l, a, c, b, Bool.pick(Nat, List.is_empty(&2, Item, ys), from, f), to, List.append(&2, Item, ys, xs)}
+
+# a commit that took the log from `from` to `to`, with what it shares
+def Out.add(o: Out, +from: Nat, +to: Nat, +xs: List<&2, Item>) -> Out:
+  Out.add.k(List.is_empty(&2, Item, xs), o, from, to, xs)
+
+def Out.next.k(go: Bool, o: Out) -> Maybe<&2, Send> & Out:
+  match go o:
+    case True{} Out{+l, +a, +c, _, +f, +t, xs}:
+      (Some{Send{l, Bool.pick(Nat, c, a, f), t, xs}}, Out{l, a, c, True{}, f, t, Nil{}})
+    case False{} _:
+      (None{}, o)
+
+# the push to start now, if one is due (none out, something waiting)
+def Out.next(o: Out) -> Maybe<&2, Send> & Out:
+  match o:
+    case Out{l, a, c, +b, f, t, +xs}:
+      Out.next.k(Bool.and(Bool.not(b), Bool.not(List.is_empty(&2, Item, xs))), Out{l, a, c, b, f, t, xs})
+
+# the push out ended: through (up to `to`), or not
+def Out.done(o: Out, ok: Bool, +to: Nat) -> Out:
+  match o ok:
+    case Out{l, _, _, _, f, t, xs} True{}:
+      Out{l, to, True{}, False{}, f, t, xs}
+    case Out{l, a, _, _, f, t, xs} False{}:
+      Out{l, a, False{}, False{}, f, t, xs}
+
+def Outs.get(os: List<&2, Out>, +link: String) -> Out:
+  match os:
+    case Nil{}:
+      Out.new(link)
+    case +o <> t:
+      Bool.pick(Out, String.eq(Out.link(o), link), o, Outs.get(t, link))
+
+def Outs.set(os: List<&2, Out>, +o: Out) -> List<&2, Out>:
+  match os:
+    case Nil{}:
+      [o]
+    case +x <> +t:
+      Bool.pick(List<&2, Out>, String.eq(Out.link(x), Out.link(o)), o <> t, x <> Outs.set(t, o))
+
+def Send.body(s: Send, +name: String) -> String:
+  match s:
+    case Send{_, since, to, xs}:
+      J.Json.show(J.Json.obj([J.KV{"name", J.Str{name}}, J.KV{"since", J.Json.nat(since)}, J.KV{"head", J.Json.nat(to)}, J.KV{"items", J.Json.arr(Fr.items.json(xs))}]))
+
+# What a hub keeps for threads elsewhere
+# --------------------------------------
+# its mirrors (one per link), its pushes (one per link), its own feed
+# (None until made from the log), and the lines committed meanwhile
+
+type Fh is Data:
+  Fh{ins: List<&2, In>, outs: List<&2, Out>, feed: Maybe<&2, List<&2, Line>>, early: List<&2, Line>, pulls: List<&2, String>}
+
+def Fh.empty() -> Fh:
+  Fh{Nil{}, Nil{}, None{}, Nil{}, Nil{}}
+
+def Fh.ins(f: Fh) -> List<&2, In>:
+  match f:
+    case Fh{i, _, _, _, _}:
+      i
+
+def Fh.in(+f: Fh, +link: String, +name: String) -> In:
+  Ins.get(Fh.ins(f), link, name)
+
+def Fh.in.set(f: Fh, i: In) -> Fh:
+  match f:
+    case Fh{ms, os, fd, e, p}:
+      Fh{Ins.set(ms, i), os, fd, e, p}
+
+def Fh.out(+f: Fh, +link: String) -> Out:
+  match f:
+    case Fh{_, os, _, _, _}:
+      Outs.get(os, link)
+
+def Fh.out.set(f: Fh, o: Out) -> Fh:
+  match f:
+    case Fh{ms, os, fd, e, p}:
+      Fh{ms, Outs.set(os, o), fd, e, p}
+
+# the feed, None until it is made from the log
+def Fh.feed(f: Fh) -> Maybe<&2, List<&2, Line>>:
+  match f:
+    case Fh{_, _, fd, _, _}:
+      fd
+
+def Fh.feed.put(m: Maybe<&2, List<&2, Line>>, e: List<&2, Line>, ls: List<&2, Line>) -> Maybe<&2, List<&2, Line>> & List<&2, Line>:
+  match m:
+    case Some{fs}:
+      (Some{List.append(&2, Line, ls, fs)}, e)
+    case None{}:
+      (None{}, List.append(&2, Line, ls, e))
+
+def Fh.feed.at.k(f: Fh, fd: Maybe<&2, List<&2, Line>>, e: List<&2, Line>) -> Fh:
+  match f:
+    case Fh{ms, os, _, _, p}:
+      Fh{ms, os, fd, e, p}
+
+def Fh.feed.at(f: Fh, r: Maybe<&2, List<&2, Line>> & List<&2, Line>) -> Fh:
+  (fd, e) = r
+  Fh.feed.at.k(f, fd, e)
+
+# a commit's shared lines (newest first) join the feed, or wait for it
+def Fh.feed.add(f: Fh, ls: List<&2, Line>) -> Fh:
+  match f:
+    case Fh{ms, os, fd, e, p}:
+      Fh.feed.at(Fh{ms, os, None{}, Nil{}, p}, Fh.feed.put(fd, e, ls))
+
+# the feed made from the log (up to where it was when asked), with what
+# was committed since on top
+def Fh.feed.ready(f: Fh, ls: List<&2, Line>) -> Fh:
+  match f:
+    case Fh{ms, os, _, e, p}:
+      Fh{ms, os, Some{List.append(&2, Line, e, ls)}, Nil{}, p}
+
+def Fh.pulling(+f: Fh, +link: String) -> Bool:
+  match f:
+    case Fh{_, _, _, _, p}:
+      Fr.may.go(p, link)
+
+def Fh.pull.on(f: Fh, +link: String) -> Fh:
+  match f:
+    case Fh{ms, os, fd, e, p}:
+      Fh{ms, os, fd, e, link <> p}
+
+def Fh.pull.off.go(ps: List<&2, String>, +link: String) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +x <> +t:
+      Bool.pick(List<&2, String>, String.eq(x, link), t, x <> Fh.pull.off.go(t, link))
+
+def Fh.pull.off(f: Fh, +link: String) -> Fh:
+  match f:
+    case Fh{ms, os, fd, e, p}:
+      Fh{ms, os, fd, e, Fh.pull.off.go(p, link)}
+
+# lines (newest first) as items, oldest first
+def Fr.lines.items(ls: List<&2, Line>, acc: List<&2, Item>) -> List<&2, Item>:
+  match ls:
+    case Nil{}:
+      acc
+    case Line{+n, +t} <> r:
+      Fr.lines.items(r, Fr.page.item(n, t) <> acc)
+
+# A mirror kept on disk
+# ---------------------
+# <home>/far/<link>.jsonl: each batch taken, its items as lines, then
+# {"head": n}; read back at start (the mirror shows, away, until its
+# machine answers)
+
+def Fr.file.items(xs: List<&2, Item>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case x <> t:
+      J.Json.show(Item.json(x)) ++ "\n" ++ Fr.file.items(t)
+
+def Fr.file.batch(xs: List<&2, Item>, +head: Nat) -> String:
+  Fr.file.items(xs) ++ "{\"head\":" ++ Nat.show(head) ++ "}\n"
+
+def Bool.is_some.j(m: Maybe<&2, J.Json>) -> Bool:
+  match m:
+    case Some{_}:
+      True{}
+    case None{}:
+      False{}
+
+def Fr.some.j(m: Maybe<&2, J.Json>) -> Bool:
+  match m:
+    case Some{_}:
+      True{}
+    case None{}:
+      False{}
+
+def Fr.file.item(m: Maybe<&2, J.Json>, +h: Nat, +acc: List<&2, Item>) -> Nat & List<&2, Item>:
+  match m:
+    case Some{+o}:
+      Bool.pick(Nat & List<&2, Item>, Fr.some.j(J.Json.get(o, "c")), (h, Item.of(o) <> acc), (J.Json.get_nat(o, "head", h), acc))
+    case None{}:
+      (h, acc)
+
+def Fr.file.fin(r: Nat & List<&2, Item>, +link: String, +name: String) -> In:
+  (h, acc) = r
+  In{link, name, h, List.reverse(&2, Item, acc), True{}}
+
+def Fr.file.step(+l: String, r: Nat & List<&2, Item>) -> Nat & List<&2, Item>:
+  (h, acc) = r
+  Fr.file.item(J.Json.parse(l), h, acc)
+
+def Fr.file.go(ls: List<&2, String>, r: Nat & List<&2, Item>) -> Nat & List<&2, Item>:
+  match ls:
+    case Nil{}:
+      r
+    case +l <> t:
+      Fr.file.go(t, Fr.file.step(l, r))
+
+def Fr.file.read(+text: String, +link: String, +name: String) -> In:
+  Fr.file.fin(Fr.file.go(String.lines(text), (0n, Nil{})), link, name)
+
+def In.name.of(i: In) -> String:
+  match i:
+    case In{_, n, _, _, _}:
+      n
+
+# a push that only says where it ends, as a gap: the other end pulls
+def Send.gap(s: Send) -> Send:
+  match s:
+    case Send{l, _, +to, _}:
+      Send{l, to, to, Nil{}}
