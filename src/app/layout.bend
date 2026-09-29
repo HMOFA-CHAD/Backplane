@@ -25,6 +25,7 @@ import ../core/vt.bend as VT
 import ../core/attach.bend as AT
 import ../core/eq.bend as Q
 import ../core/fold.bend as FO
+import ../core/subs.bend as SB
 import ../core/menu.bend as MN
 import ../core/badge.bend as BG
 import ../core/voice.bend as VC
@@ -262,20 +263,30 @@ def Lay.phase(p: M.Phase) -> U32:
 
 # a thread's row; the selected one is raised, with its project's colour
 # (tint) down its left edge
-def Lay.row.k(+ty: Ty, +on: Bool, id: String, title: String, +ago: String, +dot: U32, +tint: U32, +c: D.Clip, +y: U32) -> Out:
+def Lay.row.k(+ty: Ty, +on: Bool, id: String, title: String, +ago: String, +ac: U32, +dot: U32, +tint: U32, +c: D.Clip, +y: U32) -> Out:
   +aw = Ty.width(ty, 2n, ago)
   Out{List.concat(&2, R.Op, [
       Bool.pick(List<&2, R.Op>, on, List.append(&2, R.Op, Lay.round(c, 6, (y + 1 : U32), 252, 30, 6, T.Th.raise()), [D.Draw.rect(c, 6, (y + 1 : U32), 2, 30, tint, 255)]), Nil{}),
       [D.Draw.disc(c, 19.0, U32.to_f32((y + 16 : U32)), 3.0, dot, 255)],
       Ty.text(ty, 0n, Ty.fit(ty, 0n, title, (252 - 32 - aw - 12 : U32)), c, 32, y, 32, Bool.pick(U32, on, T.Th.text(), T.Th.soft())),
-      Ty.text(ty, 2n, ago, c, (252 - aw : U32), y, 32, T.Th.faint())]),
+      Ty.text(ty, 2n, ago, c, (252 - aw : U32), y, 32, ac)]),
     [Lay.hit(0, y, 264, 32, "select", id)]}
+
+# a row's right-hand note: how many subagents it has at work, in the
+# accent, else what the row shows there
+def Lay.row.note(+badge: String, +other: String) -> String:
+  Bool.pick(String, String.is_empty(badge), other, badge)
+
+def Lay.row.nc(+badge: String, +other: U32) -> U32:
+  Bool.pick(U32, String.is_empty(badge), other, T.Th.accent())
 
 # a sidebar row; a snoozed one shows the time left instead of its age
 def Lay.row.on(+ty: Ty, +t: M.Thread, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
   match t:
     case M.Thread{+id, +p, title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      Lay.row.k(ty, String.eq(id, sel), id, title, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), Lay.phase(U.Side.phase(st, t)), BG.Badge.rgb_of(st, p), c, y)
+      +b = SB.Subs.badge(SB.Subs.count(st, id))
+      Lay.row.k(ty, String.eq(id, sel), id, title, Lay.row.note(b, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a))), Lay.row.nc(b, T.Th.faint()),
+        Lay.phase(U.Side.phase(st, t)), BG.Badge.rgb_of(st, p), c, y)
 
 # whether a row at y (32 tall) shows in c at all (one scrolled above the
 # top sits at y modulo 2^32, past the bottom)
@@ -473,20 +484,20 @@ def Lay.groups(+ty: Ty, g: U.SGroups, +q: String, +op: Map<&2, Bool>, +st: M.Sta
 # ones settled lately, faded (core's Active.rows). A row shows its
 # project's name where the other view shows the age.
 
-def Lay.arow.k(+ty: Ty, +on: Bool, id: String, title: String, +proj: String, +faded: Bool, +dot: U32, +tint: U32, +c: D.Clip, +y: U32) -> Out:
-  +pn = Ty.fit(ty, 2n, proj, 96)
+def Lay.arow.k(+ty: Ty, +on: Bool, id: String, title: String, +proj: String, +badge: String, +faded: Bool, +dot: U32, +tint: U32, +c: D.Clip, +y: U32) -> Out:
+  +pn = Ty.fit(ty, 2n, Lay.row.note(badge, proj), 96)
   +pw = Ty.width(ty, 2n, pn)
   Out{List.concat(&2, R.Op, [
       Bool.pick(List<&2, R.Op>, on, List.append(&2, R.Op, Lay.round(c, 6, (y + 1 : U32), 252, 30, 6, T.Th.raise()), [D.Draw.rect(c, 6, (y + 1 : U32), 2, 30, tint, 255)]), Nil{}),
       [D.Draw.disc(c, 19.0, U32.to_f32((y + 16 : U32)), 3.0, Bool.pick(U32, faded, T.Th.line(), dot), 255)],
       Ty.text(ty, 0n, Ty.fit(ty, 0n, title, (252 - 32 - pw - 12 : U32)), c, 32, y, 32, Bool.pick(U32, on, T.Th.text(), Bool.pick(U32, faded, T.Th.faint(), T.Th.soft()))),
-      Ty.text(ty, 2n, pn, c, (252 - pw : U32), y, 32, Bool.pick(U32, faded, T.Th.line(), T.Th.faint()))]),
+      Ty.text(ty, 2n, pn, c, (252 - pw : U32), y, 32, Lay.row.nc(badge, Bool.pick(U32, faded, T.Th.line(), T.Th.faint())))]),
     [Lay.hit(0, y, 264, 32, "select", id)]}
 
 def Lay.arow.on(+ty: Ty, r: U.ARow, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Out:
   match r:
     case U.ARow{_, _, +t, +pid, +pt, +faded}:
-      Lay.arow.k(ty, String.eq(M.Thread.id(t), sel), M.Thread.id(t), U.Active.title(t), pt, faded, Lay.phase(U.Side.phase(st, t)), BG.Badge.rgb_of(st, pid), c, y)
+      Lay.arow.k(ty, String.eq(M.Thread.id(t), sel), M.Thread.id(t), U.Active.title(t), pt, SB.Subs.badge(SB.Subs.count(st, M.Thread.id(t))), faded, Lay.phase(U.Side.phase(st, t)), BG.Badge.rgb_of(st, pid), c, y)
 
 def Lay.arow.id(r: U.ARow) -> String:
   match r:
@@ -1859,54 +1870,105 @@ def Lay.timeline(+ty: Ty, +ls: List<&2, TLine>, +x0: U32, +x1: U32, +top: U32, +
 
 # Subagents
 # ---------
+# The panel over the timeline (core/subs.bend has the rows): its border and
+# count turn the accent while any are at work; a task's row opens its
+# thread, a subagent's opens or shuts its steps.
 
-def Task.color(s: M.TaskState) -> U32:
+def Sa.color(+word: String) -> U32:
+  Bool.pick(U32, String.eq(word, "running"), T.Th.accent(),
+    Bool.pick(U32, String.eq(word, "done"), T.Th.ok(),
+      Bool.pick(U32, String.eq(word, "queued"), T.Th.faint(),
+        Bool.pick(U32, String.eq(word, "cancelled"), T.Th.warn(), T.Th.bad()))))
+
+def Sa.steps.n(+ss: List<&2, SB.SubStep>) -> U32:
+  U32.from_nat(List.length(&2, SB.SubStep, ss))
+
+# how tall a row is: its line, what it does now, the steps it shows
+def Sa.h(r: SB.SubRow) -> U32:
+  match r:
+    case SB.SubRow{_, _, _, _, _, +doing, _, _, _, +ss}:
+      (28 + Bool.pick(U32, String.is_empty(doing), 0, 20) + Sa.steps.n(ss) * 20 : U32)
+
+def Sa.step(+ty: Ty, s: SB.SubStep, +x: U32, +x1: U32, +y: U32) -> List<&2, R.Op>:
   match s:
-    case M.TaskQueued{}:
-      T.Th.faint()
-    case M.TaskRunning{}:
-      T.Th.accent()
-    case M.TaskDone{}:
-      T.Th.ok()
-    case M.TaskFailed{}:
-      T.Th.bad()
-    case M.TaskCancelled{}:
-      T.Th.warn()
+    case SB.SubStep{+kind, +text}:
+      +lab = SB.Subs.step.label(kind)
+      +lw = {Bool.pick(U32, String.is_empty(lab), 0, (Ty.width(ty, 2n, lab) + 8 : U32)) : U32}
+      List.append(&2, R.Op, Ty.text(ty, 2n, lab, D.Clip.all(), x, y, 20, T.Th.faint()),
+        Ty.text(ty, 2n, Ty.fit(ty, 2n, text, (x1 - x - lw : U32)), D.Clip.all(), (x + lw : U32), y, 20, T.Th.dim()))
 
-def Tasks.row(+ty: Ty, t: M.Task, +st: M.State, +x0: U32, +x1: U32, +y: U32) -> Out:
-  match t:
-    case M.Task{_, _, +child, _, +s, _, _, +pr, +mo}:
-      +word = U.Task.word(s)
-      +who = U.Models.label(pr, mo)
+def Sa.steps(+ty: Ty, ss: List<&2, SB.SubStep>, +x: U32, +x1: U32, +y: U32) -> List<&2, R.Op>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case s <> t:
+      List.append(&2, R.Op, Sa.step(ty, s, x, x1, y), Sa.steps(ty, t, x, x1, (y + 20 : U32)))
+
+# a task shows its model; a subagent the chevron that opens it
+def Sa.lead(agent: Bool, +ty: Ty, +open: Bool, +who: String, +x0: U32, +y: U32) -> List<&2, R.Op>:
+  match agent:
+    case True{}:
+      Lay.icon(ty, Bool.pick(String, open, "chevron-down", "chevron-right"), D.Clip.all(), (x0 + 24 : U32), (y + 6 : U32), T.Th.dim())
+    case False{}:
+      Ty.text(ty, 2n, who, D.Clip.all(), (x0 + 26 : U32), y, 28, T.Th.dim())
+
+def Sa.hit(agent: Bool, +open: Bool, +key: String, +x0: U32, +x1: U32, +y: U32, +h: U32) -> S.Hit:
+  match agent:
+    case True{}:
+      Lay.hit(x0, y, (x1 - x0 : U32), h, "fold", SB.Subs.ask(open, key))
+    case False{}:
+      Lay.hit(x0, y, (x1 - x0 : U32), h, "select", key)
+
+def Sa.row(+ty: Ty, r: SB.SubRow, +x0: U32, +x1: U32, +y: U32) -> Out:
+  match r:
+    case SB.SubRow{+key, +agent, +title, +who, +word, +doing, +live, +open, _, ss}:
       +ww = Ty.width(ty, 2n, word)
-      +whw = Ty.width(ty, 2n, who)
+      +lw = {Bool.pick(U32, agent, 20, (Ty.width(ty, 2n, who) + 12 : U32)) : U32}
+      +tx = {(x0 + 26 + lw : U32) : U32}
+      +dh = {Bool.pick(U32, String.is_empty(doing), 0, 20) : U32}
       Out{List.concat(&2, R.Op, [
-          [D.Draw.disc(D.Clip.all(), U32.to_f32((x0 + 14 : U32)), U32.to_f32((y + 14 : U32)), 3.0, Task.color(s), 255)],
-          Ty.text(ty, 2n, who, D.Clip.all(), (x0 + 26 : U32), y, 28, T.Th.dim()),
-          Ty.text(ty, 0n, Ty.fit(ty, 0n, U.Tasks.title(st, child), (x1 - x0 - whw - ww - 64 : U32)), D.Clip.all(), (x0 + 38 + whw : U32), y, 28, T.Th.soft()),
-          Ty.text(ty, 2n, word, D.Clip.all(), (x1 - ww - 12 : U32), y, 28, Task.color(s))]),
-        [Lay.hit(x0, y, (x1 - x0 : U32), 28, "select", child)]}
+          [D.Draw.disc(D.Clip.all(), U32.to_f32((x0 + 14 : U32)), U32.to_f32((y + 14 : U32)), Bool.pick(F32, live, 4.0, 3.0), Sa.color(word), 255)],
+          Sa.lead(agent, ty, open, who, x0, y),
+          Ty.text(ty, 0n, Ty.fit(ty, 0n, title, (x1 - tx - ww - 24 : U32)), D.Clip.all(), tx, y, 28, Bool.pick(U32, live, T.Th.text(), T.Th.soft())),
+          Ty.text(ty, 2n, word, D.Clip.all(), (x1 - ww - 12 : U32), y, 28, Sa.color(word)),
+          Ty.text(ty, 2n, Ty.fit(ty, 2n, doing, (x1 - tx - 12 : U32)), D.Clip.all(), tx, (y + 26 : U32), 18, T.Th.accent()),
+          Sa.steps(ty, ss, tx, (x1 - 12 : U32), (y + 28 + dh : U32))]),
+        [Sa.hit(agent, open, key, x0, x1, y, (28 + dh : U32))]}
 
-def Tasks.rows(+ty: Ty, ts: List<&2, M.Task>, +st: M.State, +x0: U32, +x1: U32, +y: U32) -> Out:
-  match ts:
+def Sa.rows(+ty: Ty, rs: List<&2, SB.SubRow>, +x0: U32, +x1: U32, +y: U32) -> Out:
+  match rs:
     case Nil{}:
       Out.none()
-    case t <> rest:
-      Out.cat(Tasks.row(ty, t, st, x0, x1, y), Tasks.rows(ty, rest, st, x0, x1, (y + 28 : U32)))
+    case +r <> rest:
+      Out.cat(Sa.row(ty, r, x0, x1, y), Sa.rows(ty, rest, x0, x1, (y + Sa.h(r) : U32)))
 
-# the subagent viewer: every task this thread delegated, its model and its
-# state; click one to open its thread
-def Lay.tasks(+ty: Ty, +ts: List<&2, M.Task>, +st: M.State, +x0: U32, +x1: U32, +y: U32) -> Out:
-  +n = {U32.from_nat(List.length(&2, M.Task, ts)) : U32}
-  Out.when(U32.is_gt(n, 0),
-    Out.all([
-      Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), (n * 28 + 36 : U32), 8, T.Th.panel(), T.Th.line())),
-      Out.ops(Ty.text(ty, 2n, "Subagents", D.Clip.all(), (x0 + 12 : U32), y, 32, T.Th.faint())),
-      Tasks.rows(ty, ts, st, x0, x1, (y + 30 : U32))]))
+def Sa.sum(rs: List<&2, SB.SubRow>) -> U32:
+  match rs:
+    case Nil{}:
+      0
+    case +r <> rest:
+      (Sa.h(r) + Sa.sum(rest) : U32)
 
-def Tasks.height(+ts: List<&2, M.Task>) -> U32:
-  +n = {U32.from_nat(List.length(&2, M.Task, ts)) : U32}
-  Bool.pick(U32, U32.is_eq(n, 0), 0, (n * 28 + 48 : U32))
+# the subagent viewer: every task this thread delegated and each of the
+# agent's own subagents, what each does now, and the steps of those open
+def Lay.subs.k(some: Bool, +ty: Ty, +rs: List<&2, SB.SubRow>, +x0: U32, +x1: U32, +y: U32) -> Out:
+  match some:
+    case True{}:
+      +busy = SB.Subs.busy(SB.Subs.live(rs))
+      +on = Bool.not(String.is_empty(busy))
+      Out.all([
+        Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), (Sa.sum(rs) + 36 : U32), 8, T.Th.panel(), Bool.pick(U32, on, T.Th.accent(), T.Th.line()))),
+        Out.ops(Ty.text(ty, 2n, "Subagents", D.Clip.all(), (x0 + 12 : U32), y, 32, Bool.pick(U32, on, T.Th.text(), T.Th.faint()))),
+        Out.ops(Ty.text(ty, 2n, busy, D.Clip.all(), (x1 - Ty.width(ty, 2n, busy) - 12 : U32), y, 32, T.Th.accent())),
+        Sa.rows(ty, rs, x0, x1, (y + 30 : U32))])
+    case False{}:
+      Out.none()
+
+def Lay.subs(+ty: Ty, +rs: List<&2, SB.SubRow>, +x0: U32, +x1: U32, +y: U32) -> Out:
+  Lay.subs.k(Bool.not(List.is_empty(&2, SB.SubRow, rs)), ty, rs, x0, x1, y)
+
+def Subs.height(+rs: List<&2, SB.SubRow>) -> U32:
+  Bool.pick(U32, List.is_empty(&2, SB.SubRow, rs), 0, (Sa.sum(rs) + 48 : U32))
 
 def Lay.parent.k(+ty: Ty, +p: String, +st: M.State, +x0: U32, +y: U32) -> Out:
   +label = "← delegated by " ++ U.Tasks.title(st, p)
@@ -3602,10 +3664,10 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
       +cx0 = {(x0 + U32.shr((x1 - x0 - cw : U32)) : U32) : U32}
       +cx1 = {(cx0 + cw : U32) : U32}
-      +ts = U.Tasks.of(st, sel)
+      +ts = SB.Subs.rows(st, pics, sel)
       # the row under the header: the parent's link
       +pl = {Bool.pick(U32, String.is_empty(U.Tasks.parent(st, sel)), 0, 32) : U32}
-      +top = {(52 + hy + pl + Tasks.height(ts) : U32) : U32}
+      +top = {(52 + hy + pl + Subs.height(ts) : U32) : U32}
       +asks = U.Asks.open(st, sel)
       +ah = Asks.h(ty, asks, (cw - 32 : U32))
       +qs = M.Queue.items(st, sel)
@@ -3622,7 +3684,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
           TL.live.k(ty, String.is_empty(live), ph, live, cw)]),
         cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
-          Lay.tasks(ty, ts, st, cx0, cx1, (60 + hy + pl : U32)),
+          Lay.subs(ty, ts, cx0, cx1, (60 + hy + pl : U32)),
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)) ++ U.Usage.tail(st, sel), rs, atts, up, path),
           Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
           Lay.todos(ty, tds, cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),

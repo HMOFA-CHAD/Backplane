@@ -13,6 +13,7 @@ import ../core/schematic.bend as SC
 import ../core/hier.bend as HI
 import ../core/images.bend as IM
 import ../core/fold.bend as FO
+import ../core/subs.bend as SB
 import ../core/badge.bend as BG
 import ../core/todo.bend as TD
 import ../core/bot.bend as BT
@@ -59,16 +60,20 @@ def View.rows(ps: List<&2, M.Project>, +ts: List<&2, M.Thread>) -> List<&2, PRow
 
 # a sidebar row: its status dot, title and age (a snoozed row: the time
 # left); rows of a shelf with manual order get move buttons on hover
-def View.row.k(+id: String, +title: String, +ago: String, +dot: String, +sel: String, +movable: Bool) -> D.Node:
+# a row with subagents at work says how many where its age goes
+def View.note(+badge: String, +other: String) -> D.Node:
+  Bool.pick(D.Node, String.is_empty(badge), D.Dom.span("ago", other), D.Dom.span("ago agents", badge))
+
+def View.row.k(+id: String, +title: String, +ago: String, +badge: String, +dot: String, +sel: String, +movable: Bool) -> D.Node:
   D.El{"div", id, [D.At{"class", Bool.pick(String, String.eq(id, sel), "thread on", "thread")}, D.At{"data-value", id}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
     D.Dom.cat([D.Dom.span("dot " ++ dot, ""), D.Dom.span("title", title)],
       D.Dom.cat(Bool.pick(List<&2, D.Node>, movable, [D.El{"span", "", [D.At{"class", "moves"}], [D.Dom.button("move", "move", id ++ "|up", "Move up", "↑"), D.Dom.button("move", "move", id ++ "|down", "Move down", "↓")]}], Nil{}),
-        [D.Dom.span("ago", ago)]))}
+        [View.note(badge, ago)]))}
 
 def View.row(+t: M.Thread, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> D.Node:
   match t:
     case M.Thread{+id, _, +title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      View.row.k(id, title, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), M.Phase.name(U.Side.phase(st, t)), sel, movable)
+      View.row.k(id, title, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), SB.Subs.badge(SB.Subs.count(st, id)), M.Phase.name(U.Side.phase(st, t)), sel, movable)
 
 def View.rows_in(ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> List<&2, D.Node>:
   match ts:
@@ -195,7 +200,7 @@ def View.arow(r: U.ARow, +st: M.State, +sel: String) -> D.Node:
     case U.ARow{_, _, +t, +pid, +pt, +faded}:
       D.El{"div", M.Thread.id(t), [D.At{"class", Bool.pick(String, String.eq(M.Thread.id(t), sel), "thread on", Bool.pick(String, faded, "thread faded", "thread"))},
           D.At{"style", "--tint:" ++ BG.Badge.css_of(st, pid)}, D.At{"data-value", M.Thread.id(t)}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
-        [D.Dom.span("dot " ++ M.Phase.name(U.Side.phase(st, t)), ""), D.Dom.span("title", U.Active.title(t)), D.Dom.span("ago", pt)]}
+        [D.Dom.span("dot " ++ M.Phase.name(U.Side.phase(st, t)), ""), D.Dom.span("title", U.Active.title(t)), View.note(SB.Subs.badge(SB.Subs.count(st, M.Thread.id(t))), pt)]}
 
 def View.arows(rs: List<&2, U.ARow>, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
@@ -503,23 +508,50 @@ def View.skills(+rs: List<&2, U.SkillRow>) -> List<&2, D.Node>:
 # ---------
 
 
-def View.task(t: M.Task, +st: M.State) -> D.Node:
-  match t:
-    case M.Task{_, _, +child, _, +s, _, _, +pr, +mo}:
-      D.El{"div", child, [D.At{"class", "task " ++ U.Task.word(s)}, D.At{"data-value", child}, D.On{"click", "select"}],
-        [D.Dom.span("state-dot", ""), D.Dom.span("who", U.Models.label(pr, mo)), D.Dom.span("title", U.Tasks.title(st, child)), D.Dom.span("state", U.Task.word(s))]}
+# the panel over the timeline (core/subs.bend has the rows), held at the
+# top while the timeline scrolls; a task's row opens its thread, a
+# subagent's opens or shuts its steps
 
-def View.tasks.go(ts: List<&2, M.Task>, +st: M.State) -> List<&2, D.Node>:
-  match ts:
+def View.sub.step(s: SB.SubStep) -> D.Node:
+  match s:
+    case SB.SubStep{+kind, +text}:
+      D.El{"div", "", [D.At{"class", "sub-step"}], [D.Dom.span("kind", SB.Subs.step.label(kind)), D.Dom.span("text", text)]}
+
+def View.sub.steps(ss: List<&2, SB.SubStep>) -> List<&2, D.Node>:
+  match ss:
     case Nil{}:
       Nil{}
-    case t <> rest:
-      View.task(t, st) <> View.tasks.go(rest, st)
+    case s <> t:
+      View.sub.step(s) <> View.sub.steps(t)
 
-# the subagent viewer: the tasks this thread delegated
-def View.tasks(+ts: List<&2, M.Task>, +st: M.State) -> List<&2, D.Node>:
-  Bool.pick(List<&2, D.Node>, List.is_empty(&2, M.Task, ts), Nil{},
-    [D.El{"div", "tasks", [D.At{"class", "tasks"}], D.Dom.span("tasks-head", "Subagents") <> View.tasks.go(ts, st)}])
+def View.sub.act(agent: Bool, +open: Bool, +key: String) -> List<&2, D.Attr>:
+  match agent:
+    case True{}:
+      [D.At{"data-value", SB.Subs.ask(open, key)}, D.On{"click", "fold"}]
+    case False{}:
+      [D.At{"data-value", key}, D.On{"click", "select"}]
+
+def View.sub(r: SB.SubRow) -> D.Node:
+  match r:
+    case SB.SubRow{+key, +agent, +title, +who, +word, +doing, +live, +open, _, ss}:
+      D.El{"div", key, [D.At{"class", "sub " ++ word ++ Bool.pick(String, live, " live", "")}],
+        D.Dom.cat([D.El{"div", "", List.append(&2, D.Attr, [D.At{"class", "sub-row"}], View.sub.act(agent, open, key)),
+          [D.Dom.span("state-dot", ""), D.Dom.span("who", Bool.pick(String, agent, Bool.pick(String, open, "▾", "▸"), who)), D.Dom.span("title", title), D.Dom.span("state", word)]}],
+          D.Dom.cat(D.Dom.when(Bool.not(String.is_empty(doing)), D.Dom.span("doing", doing)), View.sub.steps(ss)))}
+
+def View.subs.go(rs: List<&2, SB.SubRow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> rest:
+      View.sub(r) <> View.subs.go(rest)
+
+# the subagent viewer: what this thread delegated and the agent's own
+def View.subs(+rs: List<&2, SB.SubRow>) -> List<&2, D.Node>:
+  +busy = SB.Subs.busy(SB.Subs.live(rs))
+  Bool.pick(List<&2, D.Node>, List.is_empty(&2, SB.SubRow, rs), Nil{},
+    [D.El{"div", "subs", [D.At{"class", Bool.pick(String, String.is_empty(busy), "subs", "subs busy")}],
+      D.El{"div", "", [D.At{"class", "subs-head"}], [D.Dom.span("", "Subagents"), D.Dom.span("busy", busy)]} <> View.subs.go(rs)}])
 
 def View.parent(+st: M.State, +p: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, String.is_empty(p), Nil{},
@@ -1065,7 +1097,7 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
         D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
         View.top(hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id)), [
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
-          D.Dom.cat(View.parent(st, U.Tasks.parent(st, id)), D.Dom.cat(View.tasks(U.Tasks.of(st, id), st),
+          D.Dom.cat(View.parent(st, U.Tasks.parent(st, id)), D.Dom.cat(View.subs(SB.Subs.rows(st, nf, id)),
           D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn)), D.Dom.cat(View.sending(pend),
             View.live.k(String.is_empty(U.Str.get(live, id)), U.Side.phase(st, U.Ui.thread(st, id)), U.Str.get(live, id))))))},
         D.El{"div", "asks", [D.At{"class", "asks"}], View.asks(U.Asks.open(st, id), U.Str.get(drafts, sel))},

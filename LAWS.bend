@@ -36,6 +36,7 @@ import ./src/core/client.bend as U
 import ./src/core/gh.bend as GH
 import ./src/gfx/text.bend as X
 import ./src/core/fold.bend as FO
+import ./src/core/subs.bend as SB
 import ./src/core/http.bend as WS
 import ./src/core/plot.bend as PL
 import ./src/mobile/view.bend as MV
@@ -3354,3 +3355,39 @@ law bots_away_cat_posed_once:
 law bots_moving_cat_follows_clock:
   for +c: Nat
   {BV.Bv.warm.at("work", c) == c : Nat}
+
+# a subagent started by an Agent call keeps the call and what it was asked
+# while its progress changes what it does
+law bg_start_keeps_call:
+  {M.Bg.show(M.Bg.set(M.Bg.start(Nil{}, "a", "x", "c1", "List files", "subagent"), "a", "Running ls")) == "a\tRunning ls\tc1\tList files\tsubagent" : String}
+
+law bg_call_title:
+  {M.Bg.call("a\tx\tc1\tList files") ++ "|" ++ M.Bg.title("a\tx\tc1\tList files") == "c1|List files" : String}
+
+# a subagent at work shows what it does now and its steps from its log,
+# open until the person shuts it
+law subs_agent_at_work:
+  {SB.Subs.rows(M.State.replay([M.SettingSet{"bg.t1", "a\tRunning ls\tc1\tList files\tsubagent", 1n},
+      M.ActivityLogged{"@sub:t1", "c1/start:subagent", "c1", "start:subagent", "List files", 1n}, M.ActivityLogged{"@sub:t1", "c1/u1", "c1", "Bash", "ls\n-la", 2n}], M.State.empty()),
+    Map.new(&2, String), "t1")
+    == [SB.SubRow{"c1", True{}, "List files", "subagent", "running", "Running ls", True{}, True{}, 1n, [SB.SubStep{"Bash", "ls"}]}] : List<&2, SB.SubRow>}
+
+# a finished one stays listed, shut, with how it ended
+law subs_agent_done_shut:
+  {SB.Subs.rows(M.State.replay([M.ActivityLogged{"@sub:t1", "c1/start:subagent", "c1", "start:subagent", "List files", 1n},
+      M.ActivityLogged{"@sub:t1", "c1/u1", "c1", "Bash", "ls", 2n}, M.ActivityLogged{"@sub:t1", "c1/end", "c1", "end", "completed", 3n}], M.State.empty()),
+    Map.new(&2, String), "t1")
+    == [SB.SubRow{"c1", True{}, "List files", "subagent", "done", "", False{}, False{}, 1n, []}] : List<&2, SB.SubRow>}
+
+
+# a background shell is listed by its kind, and is not an agent in the
+# sidebar's count
+law subs_shell_named:
+  {SB.Subs.rows(M.State.replay([M.SettingSet{"bg.t1", "b\tRunning\tc2\tscripts/check.sh\tshell", 1n}], M.State.empty()), Map.new(&2, String), "t1")
+    == [SB.SubRow{"c2", True{}, "shell: scripts/check.sh", "shell", "running", "Running", True{}, True{}, 0n, []}] : List<&2, SB.SubRow>}
+
+law subs_shell_not_agent:
+  {SB.Subs.count(M.State.replay([M.SettingSet{"bg.t1", "b\tRunning\tc2\tscripts/check.sh\tshell\na\tx\tc1\tList files\tsubagent", 1n}], M.State.empty()), "t1") == 1n : Nat}
+
+law subs_badge:
+  {SB.Subs.badge(0n) ++ "|" ++ SB.Subs.badge(1n) ++ "|" ++ SB.Subs.badge(3n) == "|1 agent|3 agents" : String}

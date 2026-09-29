@@ -18,6 +18,8 @@ data class Row(
     val lead: List<Swipe>, val trail: List<Swipe>, val status: String = "",
     // the active view's rows: the project's name, and faded (settled lately)
     val project: String = "", val faded: Boolean = false,
+    // "2 agents" while subagents work for it, shown where the age goes
+    val agents: String = "",
 )
 
 // machine: the hub it is on, named when the phone has several
@@ -83,8 +85,15 @@ data class Entry(
 data class AskButton(val label: String, val value: String, val primary: Boolean)
 data class Ask(val id: String, val kind: String, val head: String, val detail: String, val blocks: List<Block>, val buttons: List<AskButton>)
 
-// a thread this one delegated to ("select" opens it)
-data class TaskRow(val id: String, val who: String, val title: String, val state: String)
+// the subagent panel (src/core/subs.bend): what the thread delegated and
+// the agent's own; a row sends act with value (a task opens its thread, a
+// subagent opens or shuts its steps)
+data class SubStep(val kind: String, val text: String)
+data class SubRow(
+    val id: String, val agent: Boolean, val title: String, val who: String, val state: String, val doing: String,
+    val live: Boolean, val open: Boolean, val n: Int, val steps: List<SubStep>, val act: String, val value: String,
+)
+data class Subs(val busy: String, val rows: List<SubRow>)
 
 // a skill the `$` being typed may complete to ("skill" with its name)
 data class Skill(val name: String, val desc: String, val on: Boolean = false)
@@ -179,7 +188,7 @@ data class ThreadView(
     // the menu under the toolbar's overflow, after the tools
     val menu: List<Tool> = emptyList(),
     val parent: Entry? = null,
-    val tasks: List<TaskRow> = emptyList(),
+    val subs: Subs? = null,
     val asks: List<Ask> = emptyList(),
     val skills: List<Skill> = emptyList(),
     // a side question (/btw) and its answer, until closed
@@ -308,7 +317,7 @@ private fun swipe(o: JSONObject) = Swipe(
 private fun row(o: JSONObject) = Row(
     o.optString("id"), o.optString("title"), o.optString("state"), o.optString("ago"), o.optBoolean("pinned"),
     o.optJSONArray("lead").map(::swipe), o.optJSONArray("trail").map(::swipe), o.optString("status"),
-    o.optString("project"), o.optBoolean("faded"),
+    o.optString("project"), o.optBoolean("faded"), o.optString("agents"),
 )
 
 private fun chips(a: JSONArray?) =
@@ -344,7 +353,13 @@ private fun thread(o: JSONObject) = threadOf(o).copy(
     earlier = o.optInt("earlier", 0),
     menu = o.optJSONArray("menu").map(::tool),
     parent = o.optJSONObject("parent")?.let(::entry),
-    tasks = o.optJSONArray("tasks").map { TaskRow(it.optString("id"), it.optString("who"), it.optString("title"), it.optString("state")) },
+    subs = o.optJSONObject("subs")?.let { u ->
+        Subs(u.optString("busy"), u.optJSONArray("rows").map {
+            SubRow(it.optString("id"), it.optBoolean("agent"), it.optString("title"), it.optString("who"), it.optString("state"),
+                it.optString("doing"), it.optBoolean("live"), it.optBoolean("open"), it.optInt("n"),
+                it.optJSONArray("steps").map { st -> SubStep(st.optString("kind"), st.optString("text")) }, it.optString("act"), it.optString("value"))
+        })
+    },
     asks = o.optJSONArray("asks").map { a ->
         Ask(a.optString("id"), a.optString("kind"), a.optString("head"), a.optString("detail"), blocks(a.optJSONArray("blocks")),
             a.optJSONArray("buttons").map { AskButton(it.optString("label"), it.optString("value"), it.optBoolean("primary")) })

@@ -11,6 +11,7 @@ import ../core/todo.bend as TD
 import ../core/attach.bend as AT
 import ../core/images.bend as IM
 import ../core/fold.bend as FO
+import ../core/subs.bend as SB
 import ../core/diff.bend as DF
 import ../core/vt.bend as VT
 import ../core/codec.bend as C
@@ -80,7 +81,7 @@ def Mob.row(t: M.Thread, +status: String, +st: M.State, +now: Nat, +shelf: Nat) 
   match t:
     case M.Thread{+id, _, title, _, +a, turn, _, _, _, _, _, pinned, _, _, _, _, _, _, _, _, _}:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"title", J.Json.str(title)}, J.KV{"state", J.Json.str(Mob.state(turn))},
-        J.KV{"ago", J.Json.str(Mob.when(shelf, st, id, a, now))}, J.KV{"pinned", J.Json.bool(pinned)},
+        J.KV{"ago", J.Json.str(Mob.when(shelf, st, id, a, now))}, J.KV{"agents", J.Json.str(SB.Subs.badge(SB.Subs.count(st, id)))}, J.KV{"pinned", J.Json.bool(pinned)},
         J.KV{"status", J.Json.str(status)}, J.KV{"lead", J.Json.arr(Mob.lead(shelf, id))}, J.KV{"trail", J.Json.arr(Mob.trail(id))}])
 
 def Mob.rows(ts: List<&2, M.Thread>, +st: M.State, +now: Nat, +shelf: Nat) -> List<&2, J.Json>:
@@ -587,28 +588,40 @@ def Mob.asks(as: List<&2, M.Ask>, +draft: String) -> List<&2, J.Json>:
     case a <> t:
       Mob.ask(a, draft) <> Mob.asks(t, draft)
 
-# Subagents: the threads this one delegated to ("select" opens one), and
-# the thread that delegated this one
-def Mob.task(t: M.Task, +st: M.State) -> J.Json:
-  match t:
-    case M.Task{_, _, +child, _, +s, _, _, +pr, +mo}:
-      J.Json.obj([J.KV{"id", J.Json.str(child)}, J.KV{"who", J.Json.str(U.Models.label(pr, mo))}, J.KV{"title", J.Json.str(U.Tasks.title(st, child))},
-        J.KV{"state", J.Json.str(U.Task.word(s))}])
+# Subagents (core/subs.bend): what this thread delegated ("select" with
+# the row's key opens its thread) and the agent's own ("fold" with its
+# value opens or shuts its steps), and the thread that delegated this one
+def Mob.sub.step(s: SB.SubStep) -> J.Json:
+  match s:
+    case SB.SubStep{+kind, +text}:
+      J.Json.obj([J.KV{"kind", J.Json.str(SB.Subs.step.label(kind))}, J.KV{"text", J.Json.str(text)}])
 
-def Mob.tasks(ts: List<&2, M.Task>, +st: M.State) -> List<&2, J.Json>:
-  match ts:
+def Mob.sub.steps(ss: List<&2, SB.SubStep>) -> List<&2, J.Json>:
+  match ss:
     case Nil{}:
       Nil{}
-    case t <> rest:
-      Mob.task(t, st) <> Mob.tasks(rest, st)
+    case s <> t:
+      Mob.sub.step(s) <> Mob.sub.steps(t)
 
-# the agent's own subagents at work: what each does now
-def Mob.bgs(ls: List<&2, String>) -> List<&2, J.Json>:
-  match ls:
+def Mob.sub(r: SB.SubRow) -> J.Json:
+  match r:
+    case SB.SubRow{+key, +agent, +title, +who, +word, +doing, +live, +open, n, ss}:
+      J.Json.obj([J.KV{"id", J.Json.str(key)}, J.KV{"agent", J.Json.bool(agent)}, J.KV{"title", J.Json.str(title)}, J.KV{"who", J.Json.str(who)},
+        J.KV{"state", J.Json.str(word)}, J.KV{"doing", J.Json.str(doing)}, J.KV{"live", J.Json.bool(live)}, J.KV{"open", J.Json.bool(open)},
+        J.KV{"n", J.Json.nat(n)}, J.KV{"steps", J.Json.arr(Mob.sub.steps(ss))},
+        J.KV{"act", J.Json.str(Bool.pick(String, agent, "fold", "select"))}, J.KV{"value", J.Json.str(Bool.pick(String, agent, SB.Subs.ask(open, key), key))}])
+
+def Mob.subs.go(rs: List<&2, SB.SubRow>) -> List<&2, J.Json>:
+  match rs:
     case Nil{}:
       Nil{}
-    case +l <> t:
-      J.Json.str(M.Bg.doing(l)) <> Mob.bgs(t)
+    case r <> rest:
+      Mob.sub(r) <> Mob.subs.go(rest)
+
+# the panel: its rows and how many are at work ("" with none)
+def Mob.subs(+rs: List<&2, SB.SubRow>) -> J.Json:
+  Bool.pick(J.Json, List.is_empty(&2, SB.SubRow, rs), J.Null{},
+    J.Json.obj([J.KV{"busy", J.Json.str(SB.Subs.busy(SB.Subs.live(rs)))}, J.KV{"rows", J.Json.arr(Mob.subs.go(rs))}]))
 
 def Mob.parent(none: Bool, +st: M.State, +p: String) -> J.Json:
   match none:
@@ -760,8 +773,7 @@ def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: 
         J.KV{"tools", J.Json.arr(List.concat(&2, J.Json, [Mob.stop(V.View.running(turn)), [Mob.pin(pinned), Mob.settle(o, Nat.is_gt(sa, ua)), Mob.archive(archived), Mob.tool("Fork", "fork", False{})], Bool.pick(List<&2, J.Json>, String.is_empty(M.Fork.source(st, id)), Nil{}, [Mob.tool("Bring back", "back", False{})])]))},
         J.KV{"menu", J.Json.arr(Mob.menu(id, M.Snooze.on(now, U.Side.until(st, id))))},
         J.KV{"parent", Mob.parent(String.is_empty(U.Tasks.parent(st, id)), st, U.Tasks.parent(st, id))},
-        J.KV{"tasks", J.Json.arr(Mob.tasks(U.Tasks.of(st, id), st))},
-        J.KV{"agents", J.Json.arr(Mob.bgs(M.Bg.of(st, id)))},
+        J.KV{"subs", Mob.subs(SB.Subs.rows(st, nf, id))},
         J.KV{"entries", J.Json.arr(Mob.paged.es(pg, st, id, nf, drafts, V.View.running(turn)))},
         J.KV{"earlier", J.Json.nat(U.Win.hidden(pg))},
         J.KV{"sending", J.Json.arr(Mob.strs(pend))},

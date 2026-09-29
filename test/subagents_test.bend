@@ -3,6 +3,7 @@ import ./check.bend as C
 import ../src/core/model.bend as M
 import ../src/core/hub.bend as H
 import ../src/core/client.bend as U
+import ../src/core/subs.bend as SB
 
 # Claude's subagents and background shells: a background one started, said what it does, and
 # ended (lines as Claude Code 2.1 writes them); the thread waits on it
@@ -53,6 +54,32 @@ def moved() -> List<&2, M.Change>:
   after(after(made(), 102n, "{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"b5\",\"task_type\":\"local_bash\",\"is_backgrounded\":false,\"description\":\"Run checks\"}"),
     103n, "{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"b5\",\"patch\":{\"is_backgrounded\":true}}")
 
+# the subagent's own lines: a tool call, then what it wrote
+def stepped() -> List<&2, M.Change>:
+  after(after(started(), 102n, "{\"type\":\"assistant\",\"parent_tool_use_id\":\"toolu_1\",\"message\":{\"id\":\"m9\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_2\",\"name\":\"Bash\",\"input\":{\"command\":\"ls /etc/ssh\"}}]}}"),
+    103n, "{\"type\":\"assistant\",\"parent_tool_use_id\":\"toolu_1\",\"message\":{\"id\":\"m10\",\"content\":[{\"type\":\"text\",\"text\":\"10 files\\nmore\"}]}}")
+
+def entries(+es: List<&2, M.Change>, +th: String) -> String:
+  Nat.show(List.length(&2, M.Entry, M.State.mine(state(es), th)))
+
+def row.show(r: SB.SubRow) -> String:
+  match r:
+    case SB.SubRow{k, _, ti, _, w, d, _, o, n, ss}:
+      k ++ "|" ++ ti ++ "|" ++ w ++ "|" ++ d ++ "|" ++ Bool.pick(String, o, "open", "shut") ++ "|" ++ Nat.show(n) ++ "|" ++ Nat.show(List.length(&2, SB.SubStep, ss))
+
+def rows.show(rs: List<&2, SB.SubRow>) -> String:
+  match rs:
+    case Nil{}:
+      ""
+    case r <> t:
+      row.show(r) ++ ";" ++ rows.show(t)
+
+def rows(+es: List<&2, M.Change>) -> String:
+  rows.show(SB.Subs.rows(state(es), Map.new(&2, String), "t100-1"))
+
+def stepped.ended() -> List<&2, M.Change>:
+  after(stepped(), 105n, "{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"a847\",\"tool_use_id\":\"toolu_1\",\"status\":\"completed\",\"session_id\":\"s\"}")
+
 def status(+es: List<&2, M.Change>) -> String:
   M.Status.name(U.Side.status(state(es), H.Hub.thread(state(es), "t100-1")))
 
@@ -72,6 +99,15 @@ def doing(+es: List<&2, M.Change>) -> String:
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("started", doing(started()), "Run bash command and report output")
+    C.Check.str("its steps stay off the thread", entries(stepped(), "t100-1"), entries(started(), "t100-1"))
+    C.Check.str("its steps go to its log", entries(stepped(), M.Bg.log("t100-1")), "3")
+    C.Check.str("at work: open with its steps", rows(stepped()), "toolu_1|Run bash command and report output|running|Run bash command and report output|open|2|2;")
+    C.Check.str("at work: its title kept through progress", rows(after(stepped(), 104n, "{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"a847\",\"description\":\"Running ls\"}")),
+      "toolu_1|Run bash command and report output|running|Running ls|open|2|2;")
+    C.Check.str("ended: listed, shut", rows(stepped.ended()), "toolu_1|Run bash command and report output|done||shut|2|0;")
+    C.Check.str("a background shell is listed by its kind", rows(shell()), "b3|shell: scripts/check.sh|running|scripts/check.sh|open|0|0;")
+    C.Check.str("a background shell is not an agent", SB.Subs.badge(SB.Subs.count(state(shell()), "t100-1")), "")
+    C.Check.str("the sidebar's count", SB.Subs.badge(SB.Subs.count(state(stepped()), "t100-1")) ++ "/" ++ SB.Subs.badge(SB.Subs.count(state(stepped.ended()), "t100-1")), "1 agent/")
     C.Check.str("working while the turn runs", status(started()), "working")
     C.Check.str("waiting after the turn", status(done()), "waiting")
     C.Check.str("phase after the turn", phase(done()), "Monitoring 1 task")

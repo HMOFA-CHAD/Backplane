@@ -32,6 +32,7 @@ import ./src/app/layout.bend as L
 import ./src/core/eq.bend as Q
 import ./src/core/gh.bend as GH
 import ./src/core/fold.bend as FO
+import ./src/core/subs.bend as SB
 import ./src/core/plot.bend as PL
 import ./src/mobile/view.bend as MV
 import ./src/core/pcb3d.bend as P3
@@ -5733,4 +5734,25 @@ def Laws.bots_away_cat_posed_once(c):
   {==}
 
 def Laws.bots_moving_cat_follows_clock(c):
+  {==}
+
+def Laws.bg_start_keeps_call():
+  {==}
+
+def Laws.bg_call_title():
+  {==}
+
+def Laws.subs_agent_at_work():
+  {==}
+
+def Laws.subs_agent_done_shut():
+  {==}
+
+def Laws.subs_shell_named():
+  {==}
+
+def Laws.subs_shell_not_agent():
+  {==}
+
+def Laws.subs_badge():
   {==}
