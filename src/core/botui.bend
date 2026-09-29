@@ -5,6 +5,7 @@ import ./client.bend as U
 import ./bot.bend as BT
 import ./space.bend as SP
 import ./once.bend as O
+import ./far.bend as FR
 
 # What the bots' screens show, for every client (the window, the web and
 # the phones draw from these; docs/bots.md). The sidebar's cats with their
@@ -94,6 +95,17 @@ def BU.remote.sel(+u: U.Ui) -> String:
 
 def BU.row.m(+mood: String, i: String, n: String, th: String, lk: Nat, sel: Bool) -> BRow:
   BRow{i, n, th, lk, mood, Mood.note(mood), sel, False{}, "", ""}
+
+def BU.row.far.m(+mood: String, i: String, n: String, th: String, lk: Nat, sel: Bool, pe: String, l: String) -> BRow:
+  BRow{i, n, th, lk, mood, Mood.note(mood), sel, True{}, pe, l}
+
+# what choosing a row does: a bot with a thread here (this machine's, or
+# one mirrored from its own) opens as a bot ("bot"); a bot only reported
+# by a linked machine is a conversation ("remote")
+def BU.act(r: BRow) -> String:
+  match r:
+    case BRow{_, _, +th, _, _, _, _, _, _, _}:
+      Bool.pick(String, String.is_empty(th), "remote", "bot")
 
 # Each bot once
 # -------------
@@ -433,7 +445,7 @@ def BU.picks.gone(ms: List<&2, String>, +ps: List<&2, BT.Peer>) -> List<&2, O.Ky
 # this machine's bots, then those on linked machines ("name@machine"),
 # then members elsewhere no machine lists, before each is kept once
 def BU.picks.all(+u: U.Ui, +ms: List<&2, String>) -> List<&2, O.Ky<Pick>>:
-  List.append(&2, O.Ky<Pick>, BU.picks.go(BT.World.bots(M.State.bots(U.Ui.state(u))), BU.peers.of(u), ms, BT.World.bots(M.State.bots(U.Ui.state(u)))),
+  List.append(&2, O.Ky<Pick>, BU.picks.go(BT.World.bots.here(M.State.bots(U.Ui.state(u))), BU.peers.of(u), ms, BT.World.bots.here(M.State.bots(U.Ui.state(u)))),
     List.append(&2, O.Ky<Pick>, BU.picks.far(BU.remote.all(u), BU.peers.of(u), ms), BU.picks.gone(ms, BU.peers.of(u))))
 
 def BU.picks.src(+u: U.Ui) -> List<&2, O.Ky<Pick>>:
@@ -488,20 +500,47 @@ def Mood.bot(+st: M.State, +now: Nat, b: BT.Bot) -> String:
     case BT.Bot{+i, _, +th, _, _, _, _}:
       Mood.bot.t(U.Ui.thread(st, th), st, now, BT.World.talked_at(M.State.bots(st), i))
 
-def BU.row(+st: M.State, +now: Nat, +sel: String, +all: List<&2, BT.Bot>, b: BT.Bot) -> BRow:
+# this machine's own bots (not those mirrored from a linked machine)
+def BU.here.k(far: Bool, b: BT.Bot, rest: List<&2, BT.Bot>) -> List<&2, BT.Bot>:
+  match far:
+    case True{}:
+      rest
+    case False{}:
+      b <> rest
+
+def BU.here(bs: List<&2, BT.Bot>) -> List<&2, BT.Bot>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case +b <> t:
+      BU.here.k(FR.Fr.is(BT.Bot.id(b)), b, BU.here(t))
+
+def BU.row.here(+st: M.State, +now: Nat, +sel: String, +all: List<&2, BT.Bot>, b: BT.Bot) -> BRow:
   match b:
     case BT.Bot{+i, +n, +th, +lk, pe, c, d}:
       BU.row.m(Mood.bot(st, now, BT.Bot{i, n, th, lk, pe, c, d}), i, BU.label(Nat.is_gt(BU.named(all, n), 1n), n, i), th, lk, String.eq(i, sel))
 
-def BU.rows.go(bs: List<&2, BT.Bot>, +st: M.State, +now: Nat, +sel: String, +all: List<&2, BT.Bot>) -> List<&2, BRow>:
+# a bot on a linked machine whose threads are mirrored here (far.bend): a
+# bot like any other, keyed as its machine reports it (its name at the
+# link), so the report of it is the same entry; away while its machine is
+def BU.row.far(+u: U.Ui, +st: M.State, +now: Nat, +sel: String, b: BT.Bot) -> BRow:
+  match b:
+    case BT.Bot{+i, +n, +th, +lk, pe, c, d}:
+      BU.row.far.m(Bool.pick(String, U.Ui.far.away(u, i), "away", Mood.bot(st, now, BT.Bot{i, n, th, lk, pe, c, d})), i, n, th, lk, String.eq(i, sel),
+        U.Ui.far.name(u, i), FR.Fr.link(i))
+
+def BU.row(+u: U.Ui, +st: M.State, +now: Nat, +sel: String, +all: List<&2, BT.Bot>, +b: BT.Bot) -> BRow:
+  Bool.pick(BRow, FR.Fr.is(BT.Bot.id(b)), BU.row.far(u, st, now, sel, b), BU.row.here(st, now, sel, all, b))
+
+def BU.rows.go(bs: List<&2, BT.Bot>, +u: U.Ui, +st: M.State, +now: Nat, +sel: String, +all: List<&2, BT.Bot>) -> List<&2, BRow>:
   match bs:
     case Nil{}:
       Nil{}
     case b <> t:
-      BU.row(st, now, sel, all, b) <> BU.rows.go(t, st, now, sel, all)
+      BU.row(u, st, now, sel, all, b) <> BU.rows.go(t, u, st, now, sel, all)
 
 def BU.rows.here(+u: U.Ui, +bs: List<&2, BT.Bot>) -> List<&2, BRow>:
-  BU.rows.go(bs, U.Ui.state(u), U.Side.now(u), BU.bot.sel(u), bs)
+  BU.rows.go(bs, u, U.Ui.state(u), U.Side.now(u), BU.bot.sel(u), BU.here(bs))
 
 # the sidebar's cats before each is kept once: this machine's bots (oldest
 # first), then those the linked machines report

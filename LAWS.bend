@@ -1,6 +1,7 @@
 import Base
 import ./src/core/bothub.bend as BHS
 import ./src/core/bot.bend as BOT
+import ./src/core/far.bend as FR
 import ./src/core/botui.bend as BU
 import ./src/core/model.bend as M
 import ./src/app/viewer.bend as V
@@ -3342,3 +3343,136 @@ law bots_away_cat_posed_once:
 law bots_moving_cat_follows_clock:
   for +c: Nat
   {BV.Bv.warm.at("work", c) == c : Nat}
+
+# Threads elsewhere (far.bend)
+# ----------------------------
+# A thing on a linked machine is named by the link and its own id there,
+# so it never takes the place of anything here, and a request about it
+# goes back to that machine in that machine's ids.
+
+law far_id_parts:
+  {FR.Fr.link(FR.Fr.id("p1", "t1")) ++ " " ++ FR.Fr.local(FR.Fr.id("p1", "t1")) == "p1 t1" : String}
+
+# an id here names nothing elsewhere and is its own local id
+law far_id_here:
+  {FR.Fr.link("t1790715007-34164") ++ "|" ++ FR.Fr.local("t1790715007-34164") == "|t1790715007-34164" : String}
+
+# a linked machine's message lands in its thread as named here, never in
+# a thread of this machine
+law far_change_names_link:
+  for +l: String
+  for +th: String
+  for +msg: String
+  for role: M.Role
+  for +text: String
+  for +at: Nat
+  {FR.Fr.change(l, M.MessagePosted{th, msg, role, text, at}) == Some{M.MessagePosted{FR.Fr.id(l, th), msg, role, text, at}} : Maybe<&2, M.Change>}
+
+law far_change_bot_named:
+  for +l: String
+  for +id: String
+  for +name: String
+  for +th: String
+  for +look: Nat
+  for +persona: String
+  for +at: Nat
+  {FR.Fr.change(l, M.BotSet{id, name, th, look, persona, at}) == Some{M.BotSet{FR.Fr.id(l, id), name, FR.Fr.id(l, th), look, persona, at}} : Maybe<&2, M.Change>}
+
+# settings, links, devices, webhooks and rooms stay on their machine: never
+# shared, never folded in elsewhere
+law far_settings_stay_home:
+  for +s: M.State
+  for +k: String
+  for +v: String
+  for +at: Nat
+  {Bool.or(FR.Fr.shared(s, M.SettingSet{k, v, at}), FR.Fr.is.some(FR.Fr.change("p1", M.SettingSet{k, v, at}))) == False{} : Bool}
+
+law far_peers_stay_home:
+  for +s: M.State
+  for +i: String
+  for +n: String
+  for +u: String
+  for r: Bool
+  for +at: Nat
+  {Bool.or(FR.Fr.shared(s, M.PeerSet{i, n, u, r, at}), FR.Fr.is.some(FR.Fr.change("p1", M.PeerSet{i, n, u, r, at}))) == False{} : Bool}
+
+law far_hooks_stay_home:
+  for +s: M.State
+  for +i: String
+  for +b: String
+  for +n: String
+  for r: Bool
+  for +at: Nat
+  {Bool.or(FR.Fr.shared(s, M.HookSet{i, b, n, r, at}), FR.Fr.is.some(FR.Fr.change("p1", M.HookSet{i, b, n, r, at}))) == False{} : Bool}
+
+law far_devices_stay_home:
+  for +s: M.State
+  for +tk: String
+  for +pl: String
+  for +k: String
+  for +th: String
+  for +env: String
+  for +bu: String
+  for +at: Nat
+  {Bool.or(FR.Fr.shared(s, M.DeviceRegistered{tk, pl, k, th, env, bu, at}), FR.Fr.is.some(FR.Fr.change("p1", M.DeviceRegistered{tk, pl, k, th, env, bu, at}))) == False{} : Bool}
+
+law far_rooms_stay_home:
+  for +s: M.State
+  for +i: String
+  for +r: String
+  for +f: String
+  for +t: String
+  for +h: Nat
+  for +at: Nat
+  {Bool.or(FR.Fr.shared(s, M.RoomPosted{i, r, f, t, h, at}), FR.Fr.is.some(FR.Fr.change("p1", M.RoomPosted{i, r, f, t, h, at}))) == False{} : Bool}
+
+# a batch past a gap takes nothing (the rest is asked for), whatever it holds
+law far_gap_takes_nothing:
+  for xs: List<&2, FR.Item>
+  {FR.Fr.take(3n, 5n, 9n, xs) == FR.Got{3n, Nil{}, True{}} : FR.Got}
+
+# a batch already had (late, or sent twice) takes nothing and moves nothing back
+law far_old_takes_nothing:
+  for a: J.Json
+  for b: J.Json
+  {FR.Fr.take(9n, 3n, 6n, [FR.Item{4n, a}, FR.Item{6n, b}]) == FR.Got{9n, Nil{}, False{}} : FR.Got}
+
+# of a batch that overlaps what is had, only what is new is taken
+law far_overlap_takes_new:
+  for a: J.Json
+  for b: J.Json
+  for c: J.Json
+  {FR.Fr.take(5n, 3n, 8n, [FR.Item{4n, a}, FR.Item{6n, b}, FR.Item{8n, c}]) == FR.Got{8n, [FR.Item{6n, b}, FR.Item{8n, c}], False{}} : FR.Got}
+
+# and the same batch again then takes nothing
+law far_batch_again:
+  for a: J.Json
+  for b: J.Json
+  {FR.Fr.take(8n, 5n, 8n, [FR.Item{6n, a}, FR.Item{8n, b}]) == FR.Got{8n, Nil{}, False{}} : FR.Got}
+
+# a request about a thread here is never sent elsewhere; one about a
+# thread elsewhere goes to its link
+law far_route_here_stays:
+  {FR.Fr.route(J.Json.obj([J.KV{"m", J.Str{"turn.start"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"text", J.Str{"a~b"}}])}])) == None{} : Maybe<&2, FR.Route>}
+
+law far_route_goes_home:
+  {FR.Route.link.of(FR.Fr.route(J.Json.obj([J.KV{"m", J.Str{"turn.interrupt"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"p1~t1"}}])}]))) == "p1" : String}
+
+# the owning hub takes from a linked machine only what Fr.methods lists
+law far_allowed_only_methods:
+  for +s: M.State
+  for +p: J.Json
+  {FR.Fr.allowed(s, J.Json.obj([J.KV{"m", J.Str{"setting.set"}}, J.KV{"p", p}])) == False{} : Bool}
+
+law far_no_delete:
+  for +s: M.State
+  for +p: J.Json
+  {FR.Fr.allowed(s, J.Json.obj([J.KV{"m", J.Str{"thread.delete"}}, J.KV{"p", p}])) == False{} : Bool}
+
+# where a thing lives is shown beside its name, only for a thing elsewhere
+law far_where_here:
+  for +n: String
+  {FR.Fr.where("t1", n) == "" : String}
+
+law far_where_far:
+  {FR.Fr.where("p1~t1", "box") == " · box" : String}

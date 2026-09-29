@@ -13,6 +13,7 @@ import ./voice.bend as VC
 import ./space.bend as SPC
 import ./refs.bend as RF
 import ./mech.bend as MC
+import ./far.bend as FR
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -4021,8 +4022,29 @@ def Far.peer(m: Maybe<&2, BT.Peer>, +u: Ui, +id: String) -> Act:
     case None{}:
       Far.chat(u, id)
 
+# the bot mirrored here (far.bend) that a linked machine reports as
+# name@machine: its link and its name (any case), as BU.key keys both
+def Far.mirrored(bs: List<&2, BT.Bot>, +key: String) -> Maybe<&2, BT.Bot>:
+  match bs:
+    case Nil{}:
+      None{}
+    case +b <> t:
+      Bool.pick(Maybe<&2, BT.Bot>, Bool.and(FR.Fr.is(BT.Bot.id(b)), String.eq(BT.Member.far(BT.Bot.name(b), FR.Fr.link(BT.Bot.id(b))), key)), Some{b}, Far.mirrored(t, key))
+
+def Far.pick(m: Maybe<&2, BT.Bot>, +u: Ui, +id: String) -> Act:
+  match m:
+    case Some{b}:
+      Bots.select(u, BT.Bot.id(b))
+    case None{}:
+      Far.chat(u, id)
+
+# a bot elsewhere, chosen: the bot itself when its machine shares its
+# threads with this one (it is mirrored here: the same view as a bot
+# here, at once, law far_pick_mirrored), else the conversation with it.
+# The window never switches hubs to show a bot: that fetched the other
+# hub's whole log (11-20 s on a 13 MB log).
 def Bots.remote.select(+u: Ui, +id: String) -> Act:
-  Far.peer(BT.Peer.of(Bots.peers(u), BT.Member.machine(id)), u, id)
+  Far.pick(Far.mirrored(BT.World.bots(M.State.bots(Ui.state.of(u))), BT.Member.key(Bots.peers(u), id)), u, id)
 
 # the members that are not the bot k stands for (BT.Member.key: "Kit@box"
 # and "Kit@<box's id>" are one bot)
@@ -4535,6 +4557,35 @@ def Bots.reply(+o: J.Json, +u: Ui) -> Ui:
 def Ui.reply(u: Ui, +o: J.Json) -> Ui:
   Bots.reply(o, Proj.reply(o, Btw.reply(Ui.reply.skills(u, o), o)))
 
+# A link's threads and bots (far.bend): its batch folded into the read
+# model under this hub's ids, and whether it answered ("far.away.<link>")
+# and what it is called ("far.name.<link>") kept for the rows that show it
+def Ui.far.st(u: Ui, st: M.State) -> Ui:
+  match u:
+    case Ui{_, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+
+def Ui.far.k(+u: Ui, +link: String, +o: J.Json) -> Ui:
+  Ui.info_set(Ui.info_set(Ui.far.st(u, FR.Fr.fold(Ui.state(u), link, J.Json.get_nat(o, "since", 0n), J.Json.get_nat(o, "head", 0n),
+      FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items"))))),
+    "far.away." ++ link, Bool.pick(String, J.Json.get_bool(o, "away", False{}), "1", "")), "far.name." ++ link, J.Json.get_str(o, "name", link))
+
+def Ui.far(+u: Ui, +o: J.Json) -> Ui:
+  Ui.far.k(u, J.Json.get_str(o, "link", ""), o)
+
+# whether the machine a thing elsewhere lives on did not answer last time
+def Ui.far.away(+u: Ui, +id: String) -> Bool:
+  Bool.and(FR.Fr.is(id), String.eq(Ui.info(u, "far.away." ++ FR.Fr.link(id)), "1"))
+
+# the name of the machine a thing elsewhere lives on ("" for one here)
+def Ui.far.name(+u: Ui, +id: String) -> String:
+  Bool.pick(String, FR.Fr.is(id), Bool.pick(String, String.is_empty(Ui.info(u, "far.name." ++ FR.Fr.link(id))), FR.Fr.link(id), Ui.info(u, "far.name." ++ FR.Fr.link(id))), "")
+
+# a thread's or bot's name as shown: "Kit · desk" for one elsewhere, with
+# " (away)" while its machine does not answer
+def Ui.far.title(+u: Ui, +id: String, +title: String) -> String:
+  title ++ FR.Fr.where(id, Ui.far.name(u, id)) ++ Bool.pick(String, Ui.far.away(u, id), " (away)", "")
+
 def Ui.recv.k(i: Nat, u: Ui, +o: J.Json) -> Ui:
   match i:
     case 0n:
@@ -4555,6 +4606,8 @@ def Ui.recv.k(i: Nat, u: Ui, +o: J.Json) -> Ui:
       Ui.info_merge(u, J.Json.get_obj(o, "info"))
     case 8n:
       Voice.recv(u, o)
+    case 9n:
+      Ui.far(u, o)
     case _:
       u
 
@@ -4579,7 +4632,7 @@ def Bots.wanted(+u: Ui) -> Ui:
 
 # a message from the server
 def Ui.recv(+u: Ui, +o: J.Json) -> Ui:
-  Ui.reselect(Ui.sel(u), Bots.wanted(Ui.recv.k(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice"], J.Json.get_str(o, "t", "")), u, o)))
+  Ui.reselect(Ui.sel(u), Bots.wanted(Ui.recv.k(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice", "far"], J.Json.get_str(o, "t", "")), u, o)))
 
 def Ui.shows.k(delta: Bool, +sel: String, +o: J.Json) -> Bool:
   match delta:

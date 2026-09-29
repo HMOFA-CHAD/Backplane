@@ -5731,3 +5731,60 @@ def Laws.bots_away_cat_posed_once(c):
 
 def Laws.bots_moving_cat_follows_clock(c):
   {==}
+
+def Laws.far_id_parts():
+  {==}
+
+def Laws.far_id_here():
+  {==}
+
+def Laws.far_change_names_link(l, th, msg, role, text, at):
+  {==}
+
+def Laws.far_change_bot_named(l, id, name, th, look, persona, at):
+  {==}
+
+def Laws.far_settings_stay_home(s, k, v, at):
+  {==}
+
+def Laws.far_peers_stay_home(s, i, n, u, r, at):
+  {==}
+
+def Laws.far_hooks_stay_home(s, i, b, n, r, at):
+  {==}
+
+def Laws.far_devices_stay_home(s, tk, pl, k, th, env, bu, at):
+  {==}
+
+def Laws.far_rooms_stay_home(s, i, r, f, t, h, at):
+  {==}
+
+def Laws.far_gap_takes_nothing(xs):
+  {==}
+
+def Laws.far_old_takes_nothing(a, b):
+  {==}
+
+def Laws.far_overlap_takes_new(a, b, c):
+  {==}
+
+def Laws.far_batch_again(a, b):
+  {==}
+
+def Laws.far_route_here_stays():
+  {==}
+
+def Laws.far_route_goes_home():
+  {==}
+
+def Laws.far_allowed_only_methods(s, p):
+  {==}
+
+def Laws.far_no_delete(s, p):
+  {==}
+
+def Laws.far_where_here(n):
+  {==}
+
+def Laws.far_where_far():
+  {==}
