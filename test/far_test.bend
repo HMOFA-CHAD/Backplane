@@ -1,0 +1,219 @@
+import Base
+import ./check.bend as C
+import ../src/core/model.bend as M
+import ../src/core/codec.bend as K
+import ../src/core/json.bend as J
+import ../src/core/client.bend as U
+import ../src/core/botui.bend as BU
+import ../src/core/bot.bend as BT
+import ../src/core/far.bend as FR
+import ../src/mobile/hubs.bend as H
+import ../src/mobile/screen.bend as MS
+
+# Threads elsewhere (far.bend): a hub's clients fold a linked machine's
+# bots and threads in under ids of their own, once, in order, and send
+# what they do to them back to that machine.
+
+def items(cs: List<&2, M.Change>) -> List<&2, J.Json>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case c <> t:
+      K.Change.encode(c) <> items(t)
+
+def log(+since: Nat, cs: List<&2, M.Change>) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Json.str("log")}, J.KV{"since", J.Json.nat(since)}, J.KV{"items", J.Json.arr(items(cs))}])
+
+def info(+remote: String) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Json.str("info")}, J.KV{"info", J.Json.obj([J.KV{"bots.remote", J.Json.str(remote)}])}])
+
+# items numbered from n, as the owning hub numbers its log
+def numbered(cs: List<&2, M.Change>, +n: Nat) -> List<&2, FR.Item>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case c <> t:
+      FR.Item{n, K.Change.wire(c)} <> numbered(t, 1n+n)
+
+def far(+since: Nat, +head: Nat, away: Bool, xs: List<&2, FR.Item>) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.msg("p1", "box", away, since, head, xs)), J.Null{})
+
+# box's Kit: its thread (no project), a message, a turn that ran
+def box() -> List<&2, FR.Item>:
+  numbered([M.ThreadCreated{"bt1", "", "Kit", M.Local{}, "", "", "claude", "", 100n},
+    M.BotSet{"b1", "Kit", "bt1", 7n, "helps", 100n},
+    M.MessagePosted{"bt1", "m1", M.User{}, "hello", 101n},
+    M.TurnChanged{"bt1", M.Running{}, 102n}], 11n)
+
+def more() -> List<&2, FR.Item>:
+  numbered([M.MessagePosted{"bt1", "m2", M.Assistant{}, "hi there", 103n}, M.TurnChanged{"bt1", M.Completed{}, 104n}], 20n)
+
+def here() -> List<&2, M.Change>:
+  [M.PeerSet{"p1", "box", "http://box:3787", False{}, 50n},
+   M.ThreadCreated{"t1", "", "Pip", M.Local{}, "", "", "claude", "", 90n}, M.BotSet{"b9", "Pip", "t1", 3n, "", 90n}]
+
+def recv(+u: U.Ui, +o: J.Json) -> U.Ui:
+  U.Ui.recv(u, o)
+
+def joined() -> U.Ui:
+  recv(recv(recv(U.Ui.init(1000n), log(0n, here())), info("[{\"name\":\"Kit\",\"peer\":\"p1\",\"peerName\":\"box\",\"look\":7,\"state\":\"working\"}]")),
+    far(0n, 14n, False{}, box()))
+
+def title(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, _, ti, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      ti
+
+def count(+u: U.Ui, +th: String) -> String:
+  Nat.show(List.length(&2, M.Entry, M.State.mine(U.Ui.state(u), th)))
+
+def rows(rs: List<&2, BU.BRow>) -> String:
+  match rs:
+    case Nil{}:
+      ""
+    case BU.BRow{+i, +n, _, _, +m, _, _, r, +p, +l} <> t:
+      i ++ "|" ++ n ++ "|" ++ m ++ "|" ++ Bool.show(r) ++ "|" ++ p ++ "|" ++ l ++ ";" ++ rows(t)
+
+def acts(rs: List<&2, BU.BRow>) -> String:
+  match rs:
+    case Nil{}:
+      ""
+    case +r <> t:
+      BU.BU.act(r) ++ ";" ++ acts(t)
+
+def act_ui(a: U.Act) -> U.Ui:
+  match a:
+    case U.Act{u, _}:
+      u
+
+def route(m: Maybe<&2, FR.Route>) -> String:
+  match m:
+    case Some{FR.Route{l, mm, b}}:
+      l ++ " " ++ mm ++ " " ++ b
+    case None{}:
+      "none"
+
+def rpc(+m: String, +p: List<&2, J.KV>) -> J.Json:
+  J.Json.obj([J.KV{"id", J.Num{"7"}}, J.KV{"m", J.Str{m}}, J.KV{"p", J.Json.obj(p)}])
+
+# the owning hub's state: Kit's thread and a project's thread
+def owner() -> M.State:
+  M.State.replay([M.ProjectCreated{"p", "board", "/b", 1n}, M.ThreadCreated{"pt", "p", "layout", M.Local{}, "", "", "claude", "", 2n},
+    M.ThreadCreated{"bt1", "", "Kit", M.Local{}, "", "", "claude", "", 3n}, M.BotSet{"b1", "Kit", "bt1", 7n, "", 3n},
+    M.AskOpened{"a1", "bt1", "tool", "Bash", "ls", "", 4n}, M.AskOpened{"a2", "pt", "tool", "Bash", "ls", "", 5n}], M.State.empty())
+
+def project.items() -> List<&2, FR.Item>:
+  numbered([M.ProjectCreated{"p", "Board", "/board", 1n}, M.ThreadCreated{"pt", "p", "Layout", M.Local{}, "", "", "claude", "", 2n},
+    M.MessagePosted{"pt", "m", M.User{}, "shared work", 3n}, M.AskOpened{"pa", "pt", "approval", "Bash", "ls", "", 4n}], 15n)
+
+def phone() -> H.Hubs:
+  H.Hubs.after(H.Hubs.recv(H.Hubs.after(H.Hubs.recv(H.Hubs.set(H.Hubs.init(1000n, "c"), ["here:3791", "box:3792"]), "here:3791",
+    log(0n, [M.PeerSet{"p1", "box", "http://box:3792", False{}, 1n}]))), "here:3791", far(0n, 18n, False{}, project.items())))
+
+def paired(+h: H.Hubs) -> H.Hubs:
+  H.Hubs.after(H.Hubs.recv(h, "box:3792", log(0n, [M.PeerSet{"p1", "here", "http://here:3791", False{}, 1n},
+    M.ProjectCreated{"p", "Board", "/board", 1n}, M.ThreadCreated{"pt", "p", "Layout", M.Local{}, "", "", "claude", "", 2n}])))
+
+def settled.phone() -> H.Hubs:
+  H.Hubs.after(H.Hubs.recv(H.Hubs.after(H.Hubs.recv(paired(phone()), "box:3792", log(3n, [M.ThreadSettled{"pt", True{}, 995n}]))),
+    "here:3791", far(18n, 19n, False{}, numbered([M.ThreadSettled{"pt", True{}, 995n}], 19n))))
+
+def first(+o: J.Json, +k: String) -> J.Json:
+  Maybe.default(&2, J.Json, List.head(&2, J.Json, J.Json.elems(J.Json.get_obj(o, k))), J.Null{})
+
+def fields(xs: List<&2, J.Json>, +k: String) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case x <> t:
+      J.Json.get_str(x, k, "") ++ ";" ++ fields(t, k)
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    +u : U.Ui = joined()
+    C.Check.str("ids", FR.Fr.id("p1", "t~x") ++ " " ++ FR.Fr.link("p1~t~x") ++ " " ++ FR.Fr.local("p1~t~x") ++ " [" ++ FR.Fr.link("t1") ++ "] " ++ FR.Fr.local("t1"),
+      "p1~t~x p1 t~x [] t1")
+    C.Check.str("thread folded in under its link", count(u, "p1~bt1") ++ " " ++ title(U.Ui.thread(U.Ui.state(u), "p1~bt1")), "1 Kit")
+    C.Check.str("its hub's sequence untouched", Nat.show(M.State.seq(U.Ui.state(u))), "3")
+    C.Check.str("bot listed once, as a bot with its machine", rows(BU.BU.rows(u)),
+      "b9|Pip|sleep|False||;p1~b1|Kit|work|True|box|p1;")
+    C.Check.str("rows open as bots", acts(BU.BU.rows(u)), "bot;bot;")
+    C.Check.str("title with its machine", U.Ui.far.title(u, "p1~bt1", "Kit") ++ "/" ++ U.Ui.far.title(u, "t1", "Pip"), "Kit · box/Pip")
+    +pu : U.Ui = recv(u, far(14n, 18n, False{}, project.items()))
+    C.Check.str("ordinary project thread folded with its parent", U.Ui.thread_project(U.Ui.thread(U.Ui.state(pu), "p1~pt")) ++ " " ++ count(pu, "p1~pt"), "p1~p 1")
+    C.Check.str("ordinary thread marker", U.Label.title(U.Ui.state(pu), "p1~pt", "Layout"), "Layout · box")
+    C.Check.str("far composer draft survives saving", Bool.show(U.Draft.safe("p1~pt")) ++ " " ++ Bool.show(U.Draft.safe("p1~../pt")), "True False")
+    C.Check.str("shared approval id", Nat.show(List.length(&2, M.Ask, U.Asks.open(U.Ui.state(pu), "p1~pt"))), "1")
+    C.Check.str("phone project marker", J.Json.get_str(first(H.Hubs.screen(phone()), "projects"), "title", ""), "Board · box")
+    C.Check.str("phone thread marker", J.Json.get_str(first(first(H.Hubs.screen(phone()), "projects"), "threads"), "title", ""), "Layout · box")
+    C.Check.str("phone keeps mirror while owner catalog not installed", Nat.show(List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(H.Hubs.screen(phone()), "projects")))), "1")
+    C.Check.str("phone paired owner removes mirror project", fields(J.Json.elems(J.Json.get_obj(H.Hubs.screen(paired(phone())), "projects")), "id"), "box:3792|p;")
+    C.Check.str("paired owner's project keeps its machine marker", J.Json.get_str(first(H.Hubs.screen(paired(phone())), "projects"), "machine", ""), "box")
+    +active : H.Hubs = H.Hubs.after(H.Hubs.act(paired(phone()), "setting", "sidebar.view=active"))
+    C.Check.str("phone active has one ordinary thread", fields(J.Json.elems(J.Json.get_obj(H.Hubs.screen(active), "active")), "id"), "box:3792|pt;")
+    +settled : H.Hubs = H.Hubs.after(H.Hubs.act(settled.phone(), "setting", "sidebar.view=active"))
+    C.Check.str("phone counts hidden settled thread once", Nat.show(J.Json.get_nat(J.Json.get_obj(H.Hubs.screen(settled), "settled"), "count", 0n)), "1")
+    +older : H.Hubs = H.Hubs.after(H.Hubs.tick(settled, 1000000n))
+    C.Check.str("phone counts hidden older project once", Nat.show(J.Json.get_nat(J.Json.get_obj(H.Hubs.screen(older), "older"), "count", 0n)), "1")
+    +bp : H.Hubs = H.Hubs.after(H.Hubs.recv(H.Hubs.after(H.Hubs.recv(H.Hubs.set(H.Hubs.init(1000n, "c"), ["here:3791", "box:3792"]),
+      "here:3791", log(0n, [M.PeerSet{"p1", "box", "http://box:3792", False{}, 1n}]))), "here:3791", far(0n, 14n, False{}, box())))
+    C.Check.str("phone keeps bot until paired owner installs it", Nat.show(List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(H.Hubs.screen(bp), "bots")))), "1")
+    +bp2 : H.Hubs = H.Hubs.after(H.Hubs.recv(bp, "box:3792", log(0n, [M.PeerSet{"p1", "here", "http://here:3791", False{}, 1n},
+      M.ThreadCreated{"bt1", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Kit", "bt1", 7n, "helps", 100n}])))
+    C.Check.str("phone paired owner lists bot once", Nat.show(List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(H.Hubs.screen(bp2), "bots")))), "1")
+    # the report of it (Kit@box) opens the mirrored bot, not a hub switch
+    +s : U.Ui = act_ui(U.Ui.act(u, "remote", "Kit@box"))
+    C.Check.str("remote pick opens the mirror", U.Ui.scratch(s, "@bot") ++ " " ++ U.Ui.sel(s) ++ " [" ++ U.Ui.scratch(s, "@remote") ++ "] [" ++ U.Ui.info(s, "local.machine") ++ "]",
+      "p1~b1 p1~bt1 [] []")
+    # the same batch again, and an older one, change nothing
+    +u2 : U.Ui = recv(recv(u, far(0n, 14n, False{}, box())), far(10n, 13n, False{}, box()))
+    C.Check.str("a batch twice is taken once", count(u2, "p1~bt1"), "1")
+    # a batch past a gap is left for the pull
+    +u3 : U.Ui = recv(u2, far(18n, 21n, False{}, more()))
+    C.Check.str("a gap takes nothing", count(u3, "p1~bt1") ++ " " ++ Nat.show(FR.Fr.head(U.Ui.state(u3), "p1")), "1 14")
+    +u4 : U.Ui = recv(u3, far(14n, 21n, False{}, more()))
+    C.Check.str("the next batch in order", count(u4, "p1~bt1") ++ " " ++ Nat.show(FR.Fr.head(U.Ui.state(u4), "p1")), "2 21")
+    # A new authoritative history replaces only its projection. Same
+    # epoch on another snapshot remains idempotent, including after load.
+    +e1 : U.Ui = recv(u4, Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.msg.epoch("p1", "box", False{}, 0n, 14n, box(), "old")), J.Null{}))
+    +e2 : U.Ui = recv(e1, Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.msg.epoch("p2", "other", False{}, 0n, 14n, box(), "other")), J.Null{}))
+    +e3 : U.Ui = recv(e2, Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.msg.epoch("p1", "box", False{}, 0n, 1n,
+      numbered([M.ThreadCreated{"new", "", "New history", M.Local{}, "", "", "claude", "", 200n}], 1n), "new")), J.Null{}))
+    C.Check.str("reset removes old entries and bot", count(e3, "p1~bt1") ++ " " ++ Bool.show(BT.Maybe.is(BT.Bot, BT.World.find.id(BT.World.bot(M.State.bots(U.Ui.state(e3)), "p1~b1")))), "0 False")
+    C.Check.str("reset preserves local and other mirror", Nat.show(M.State.seq(U.Ui.state(e3))) ++ " " ++ count(e3, "p2~bt1") ++ " " ++ title(U.Ui.thread(U.Ui.state(e3), "t1")), "3 1 Pip")
+    C.Check.str("reset takes the lower new head", Nat.show(FR.Fr.head(U.Ui.state(e3), "p1")) ++ " " ++ title(U.Ui.thread(U.Ui.state(e3), "p1~new")), "1 New history")
+    +disk : FR.In = FR.Fr.file.read("{\"epoch\":\"new\"}\n" ++ FR.Fr.file.batch(numbered([M.ThreadCreated{"new", "", "New history", M.Local{}, "", "", "claude", "", 200n}], 1n), 1n), "p1", "box")
+    C.Check.str("disk keeps epoch and head", FR.In.epoch(disk) ++ " " ++ Nat.show(FR.In.head(disk)) ++ " " ++ Bool.show(FR.In.away(disk)), "new 1 True")
+    C.Check.str("late disk load cannot replace live batch", Nat.show(FR.In.head(FR.In.loaded(FR.In.put(FR.In.new("p1", "box"), 0n, 21n, more()), disk))), "21")
+    C.Check.str("reply preserves owner's refusal and request id", FR.Fr.reply(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{False{}}}, J.KV{"error", J.Str{"cannot start"}}]), "23"),
+      "{\"t\":\"reply\",\"id\":23,\"ok\":false,\"error\":\"cannot start\"}")
+    # its machine stops answering: kept, away
+    +u5 : U.Ui = recv(u4, far(21n, 21n, True{}, Nil{}))
+    C.Check.str("away keeps it", count(u5, "p1~bt1") ++ " " ++ rows(BU.BU.rows(u5)) ++ " " ++ U.Ui.far.title(u5, "p1~bt1", "Kit"),
+      "2 b9|Pip|sleep|False||;p1~b1|Kit|away|True|box|p1; Kit · box (away)")
+    # a reconnect resumes this hub's log: the mirror stays; a fresh log
+    # forgets it with its head, and the snapshot brings it back
+    +u6 : U.Ui = recv(u5, log(3n, Nil{}))
+    C.Check.str("resume keeps it", count(u6, "p1~bt1"), "2")
+    +u7 : U.Ui = recv(u6, log(0n, here()))
+    C.Check.str("fresh log forgets it", count(u7, "p1~bt1") ++ " " ++ Nat.show(FR.Fr.head(U.Ui.state(u7), "p1")), "0 0")
+    +u8 : U.Ui = recv(u7, far(0n, 21n, False{}, List.append(&2, FR.Item, box(), more())))
+    C.Check.str("snapshot again", count(u8, "p1~bt1"), "2")
+    # requests: one about a thread elsewhere goes to its machine in its ids
+    C.Check.str("route turn.start", route(FR.Fr.route(rpc("turn.start", [J.KV{"thread", J.Str{"p1~bt1"}}, J.KV{"text", J.Str{"hi"}}, J.KV{"msg", J.Str{"m9"}}]))),
+      "p1 turn.start {\"id\":0,\"m\":\"turn.start\",\"p\":{\"thread\":\"bt1\",\"text\":\"hi\",\"msg\":\"m9\"}}")
+    C.Check.str("route ask.answer", route(FR.Fr.route(rpc("ask.answer", [J.KV{"id", J.Str{"p1~a1"}}, J.KV{"answer", J.Str{"yes"}}]))),
+      "p1 ask.answer {\"id\":0,\"m\":\"ask.answer\",\"p\":{\"id\":\"a1\",\"answer\":\"yes\"}}")
+    C.Check.str("a request here stays", route(FR.Fr.route(rpc("turn.start", [J.KV{"thread", J.Str{"bt1"}}, J.KV{"text", J.Str{"a~b"}}]))), "none")
+    # the owning hub: what it shares, and what it lets a linked machine do
+    +st : M.State = owner()
+    C.Check.str("shared", Bool.show(FR.Fr.shared(st, M.MessagePosted{"bt1", "m", M.User{}, "x", 9n})) ++ " " ++ Bool.show(FR.Fr.shared(st, M.MessagePosted{"pt", "m", M.User{}, "x", 9n}))
+      ++ " " ++ Bool.show(FR.Fr.shared(st, M.SettingSet{"k", "v", 9n})) ++ " " ++ Bool.show(FR.Fr.shared(st, M.AskClosed{"a1", "y", 9n})) ++ " " ++ Bool.show(FR.Fr.shared(st, M.AskClosed{"a2", "y", 9n})),
+      "True True False True True")
+    C.Check.str("allowed", Bool.show(FR.Fr.allowed(st, rpc("turn.start", [J.KV{"thread", J.Str{"bt1"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("turn.start", [J.KV{"thread", J.Str{"pt"}}])))
+      ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("ask.answer", [J.KV{"id", J.Str{"a1"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("ask.answer", [J.KV{"id", J.Str{"a2"}}])))
+      ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("setting.set", [J.KV{"key", J.Str{"x"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.delete", [J.KV{"thread", J.Str{"bt1"}}]))),
+      "True True True True False False")
+    # a mirrored bot's space page, served by the mirroring hub
+    +pi : FR.In = FR.In.put(FR.In.new("p1", "box"), 0n, 3n, numbered([M.SpacePageSet{"b1", "<p>old</p>", 1n}, M.SpacePageSet{"b2", "<p>other</p>", 2n}, M.SpacePageSet{"b1", "<p>new</p>", 3n}], 1n))
+    C.Check.str("mirrored space page", FR.In.page(pi, "b1") ++ "|" ++ FR.In.page(pi, "b9"), "<p>new</p>|")

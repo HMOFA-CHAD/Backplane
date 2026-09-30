@@ -1,6 +1,7 @@
 import Base
 import ./src/core/bothub.bend as BHS
 import ./src/core/bot.bend as BOT
+import ./src/core/far.bend as FR
 import ./src/core/botui.bend as BU
 import ./src/core/model.bend as M
 import ./src/app/viewer.bend as V
@@ -3427,6 +3428,481 @@ law bots_moving_cat_follows_clock:
   for +c: Nat
   {BV.Bv.warm.at("work", c) == c : Nat}
 
+# Threads elsewhere (far.bend)
+# ----------------------------
+# A thing on a linked machine is named by the link and its own id there,
+# so it never takes the place of anything here, and a request about it
+# goes back to that machine in that machine's ids.
+
+law far_id_parts:
+  {FR.Fr.link(FR.Fr.id("p1", "t1")) ++ " " ++ FR.Fr.local(FR.Fr.id("p1", "t1")) == "p1 t1" : String}
+
+# an id here names nothing elsewhere and is its own local id
+law far_id_here:
+  {FR.Fr.link("t1790715007-34164") ++ "|" ++ FR.Fr.local("t1790715007-34164") == "|t1790715007-34164" : String}
+
+# a linked machine's message lands in its thread as named here, never in
+# a thread of this machine
+law far_change_names_link:
+  for +l: String
+  for +th: String
+  for +msg: String
+  for role: M.Role
+  for +text: String
+  for +at: Nat
+  {FR.Fr.change(l, M.MessagePosted{th, msg, role, text, at}) == Some{M.MessagePosted{FR.Fr.id(l, th), msg, role, text, at}} : Maybe<&2, M.Change>}
+
+law far_change_bot_named:
+  for +l: String
+  for +id: String
+  for +name: String
+  for +th: String
+  for +look: Nat
+  for +persona: String
+  for +at: Nat
+  {FR.Fr.change(l, M.BotSet{id, name, th, look, persona, at}) == Some{M.BotSet{FR.Fr.id(l, id), name, FR.Fr.id(l, th), look, persona, at}} : Maybe<&2, M.Change>}
+
+# settings, links, devices, webhooks and rooms stay on their machine: never
+# shared, never folded in elsewhere
+law far_settings_stay_home:
+  for +s: M.State
+  for +k: String
+  for +v: String
+  for +at: Nat
+  {Bool.or(FR.Fr.shared(s, M.SettingSet{k, v, at}), FR.Fr.is.some(FR.Fr.change("p1", M.SettingSet{k, v, at}))) == False{} : Bool}
+
+law far_peers_stay_home:
+  for +s: M.State
+  for +i: String
+  for +n: String
+  for +u: String
+  for r: Bool
+  for +at: Nat
+  {Bool.or(FR.Fr.shared(s, M.PeerSet{i, n, u, r, at}), FR.Fr.is.some(FR.Fr.change("p1", M.PeerSet{i, n, u, r, at}))) == False{} : Bool}
+
+law far_hooks_stay_home:
+  for +s: M.State
+  for +i: String
+  for +b: String
+  for +n: String
+  for r: Bool
+  for +at: Nat
+  {Bool.or(FR.Fr.shared(s, M.HookSet{i, b, n, r, at}), FR.Fr.is.some(FR.Fr.change("p1", M.HookSet{i, b, n, r, at}))) == False{} : Bool}
+
+law far_devices_stay_home:
+  for +s: M.State
+  for +tk: String
+  for +pl: String
+  for +k: String
+  for +th: String
+  for +env: String
+  for +bu: String
+  for +at: Nat
+  {Bool.or(FR.Fr.shared(s, M.DeviceRegistered{tk, pl, k, th, env, bu, at}), FR.Fr.is.some(FR.Fr.change("p1", M.DeviceRegistered{tk, pl, k, th, env, bu, at}))) == False{} : Bool}
+
+law far_rooms_stay_home:
+  for +s: M.State
+  for +i: String
+  for +r: String
+  for +f: String
+  for +t: String
+  for +h: Nat
+  for +at: Nat
+  {Bool.or(FR.Fr.shared(s, M.RoomPosted{i, r, f, t, h, at}), FR.Fr.is.some(FR.Fr.change("p1", M.RoomPosted{i, r, f, t, h, at}))) == False{} : Bool}
+
+# a batch past a gap takes nothing (the rest is asked for), whatever it holds
+law far_gap_takes_nothing:
+  for xs: List<&2, FR.Item>
+  {FR.Fr.take(3n, 5n, 9n, xs) == FR.Got{3n, Nil{}, True{}} : FR.Got}
+
+# a batch already had (late, or sent twice) takes nothing and moves nothing back
+law far_old_takes_nothing:
+  for a: J.Json
+  for b: J.Json
+  {FR.Fr.take(9n, 3n, 6n, [FR.Item{4n, a}, FR.Item{6n, b}]) == FR.Got{9n, Nil{}, False{}} : FR.Got}
+
+# of a batch that overlaps what is had, only what is new is taken
+law far_overlap_takes_new:
+  for a: J.Json
+  for b: J.Json
+  for c: J.Json
+  {FR.Fr.take(5n, 3n, 8n, [FR.Item{4n, a}, FR.Item{6n, b}, FR.Item{8n, c}]) == FR.Got{8n, [FR.Item{6n, b}, FR.Item{8n, c}], False{}} : FR.Got}
+
+# and the same batch again then takes nothing
+law far_batch_again:
+  for a: J.Json
+  for b: J.Json
+  {FR.Fr.take(8n, 5n, 8n, [FR.Item{6n, a}, FR.Item{8n, b}]) == FR.Got{8n, Nil{}, False{}} : FR.Got}
+
+# a request about a thread here is never sent elsewhere; one about a
+# thread elsewhere goes to its link
+law far_route_here_stays:
+  {FR.Fr.route(J.Json.obj([J.KV{"m", J.Str{"turn.start"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"text", J.Str{"a~b"}}])}])) == None{} : Maybe<&2, FR.Route>}
+
+law far_route_goes_home:
+  {FR.Route.link.of(FR.Fr.route(J.Json.obj([J.KV{"m", J.Str{"turn.interrupt"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"p1~t1"}}])}]))) == "p1" : String}
+
+# the owning hub takes from a linked machine only what Fr.methods lists
+law far_allowed_only_methods:
+  for +s: M.State
+  for +p: J.Json
+  {FR.Fr.allowed(s, J.Json.obj([J.KV{"m", J.Str{"setting.set"}}, J.KV{"p", p}])) == False{} : Bool}
+
+law far_no_delete:
+  for +s: M.State
+  for +p: J.Json
+  {FR.Fr.allowed(s, J.Json.obj([J.KV{"m", J.Str{"thread.delete"}}, J.KV{"p", p}])) == False{} : Bool}
+
+# where a thing lives is shown beside its name, only for a thing elsewhere
+law far_where_here:
+  for +n: String
+  {FR.Fr.where("t1", n) == "" : String}
+
+law far_where_far:
+  {FR.Fr.where("p1~t1", "box") == " · box" : String}
+
+# a bot mirrored from a linked machine has only the tabs its machine
+# shares; a bot here keeps them all
+law far_bot_tabs:
+  {BU.BU.tabs.of("p1~b1") == ["chat", "space", "memory", "routines"] : List<&2, String>}
+
+law far_bot_tabs_here:
+  {BU.BU.tabs.of("b1") == BU.BU.tabs() : List<&2, String>}
+
+# Remote bots in the same view
+# ----------------------------
+# A row opens what it stands for: a bot with a thread here (this
+# machine's, or one mirrored from a linked machine) as a bot; a bot only
+# reported by a linked machine as the conversation with it
+law far_row_act_mirror:
+  for +i: String
+  for +n: String
+  for +lk: Nat
+  for +m: String
+  for +no: String
+  for +se: Bool
+  for +pe: String
+  for +l: String
+  {BU.BU.act(BU.BRow{i, n, "p1~bt1", lk, m, no, se, True{}, pe, l}) == "bot" : String}
+
+law far_row_act_reported:
+  for +i: String
+  for +n: String
+  for +lk: Nat
+  for +m: String
+  for +no: String
+  for +se: Bool
+  for +pe: String
+  for +l: String
+  {BU.BU.act(BU.BRow{i, n, "", lk, m, no, se, True{}, pe, l}) == "remote" : String}
+
+# a bot elsewhere is named with its machine; one here by its name alone
+law bot_row_title_far:
+  for +i: String
+  for +th: String
+  for +lk: Nat
+  for +m: String
+  for +no: String
+  for +se: Bool
+  for +l: String
+  {BU.BU.row.title(BU.BRow{i, "Kit", th, lk, m, no, se, True{}, "box", l}) == "Kit · box" : String}
+
+law bot_row_title_here:
+  for +i: String
+  for +n: String
+  for +th: String
+  for +lk: Nat
+  for +m: String
+  for +no: String
+  for +se: Bool
+  for +pe: String
+  for +l: String
+  {BU.BU.row.title(BU.BRow{i, n, th, lk, m, no, se, False{}, pe, l}) == n : String}
+
+# a bot only reported by a linked machine shows in a bot's view with one
+# tab, its chat, and nothing that acts on its machine
+law bot_head_remote:
+  for +u: U.Ui
+  for +id: String
+  for +t: String
+  for +lk: Nat
+  for +m: String
+  {BU.BU.head.m(True{}, u, id, t, lk, m) == BU.Head{t, lk, m, BU.Mood.note(m), ["chat"], "chat", False{}, False{}} : BU.Head}
+
+law bot_head_remote_view:
+  for +u: U.Ui
+  for +id: String
+  {BU.Head.tabs(BU.BU.head(u, BU.VRemote{id})) == ["chat"] : List<&2, String>}
+
+# a mirrored bot's view has the tabs its machine shares, no viewer (its
+# files are on its machine), and its memory and routines are read here
+law far_bot_head_tabs:
+  for +u: U.Ui
+  for +t: String
+  for +lk: Nat
+  for +m: String
+  {BU.Head.tabs(BU.BU.head.m(False{}, u, "p1~b1", t, lk, m)) == ["chat", "space", "memory", "routines"] : List<&2, String>}
+
+law far_bot_head_stays_home:
+  for +u: U.Ui
+  for +t: String
+  for +lk: Nat
+  for +m: String
+  {Bool.or(BU.Head.viewer(BU.BU.head.m(False{}, u, "p1~b1", t, lk, m)), BU.Head.owns(BU.BU.head.m(False{}, u, "p1~b1", t, lk, m))) == False{} : Bool}
+
+law bot_head_here_owns:
+  for +u: U.Ui
+  for +t: String
+  for +lk: Nat
+  for +m: String
+  {Bool.and(BU.Head.viewer(BU.BU.head.m(False{}, u, "b1", t, lk, m)), BU.Head.owns(BU.BU.head.m(False{}, u, "b1", t, lk, m))) == True{} : Bool}
+
+# on a phone paired with a bot's own hub and a hub that mirrors it, the
+# mirrored copy adds nothing: the bot shows once, as its own hub's
+law hubs_bots_mirror_dropped:
+  for +far: Bool
+  for +want: Bool
+  for +hs: List<&2, Hb.Hub>
+  for +from: String
+  for +r: J.Json
+  for rest: List<&2, ON.Ky<J.Json>>
+  {Hb.Hubs.bot.keep.k(True{}, far, want, hs, from, r, rest) == rest : List<&2, ON.Ky<J.Json>>}
+# Text fitting: early exit preserves the original recurrence.
+
+law fit_count_guard:
+  for +s: String
+  for +fits: Bool
+  for +cache: Map<&2, X.TG>
+  for +f: X.Face
+  for +max: U32
+  for +used: U32
+  {X.Fit.count.go(s, fits, cache, f, max, used) == X.Fit.count.k(fits, X.Fit.count(s, cache, f, max, used)) : Nat}
+
+law fit_count_step:
+  for +cp: U32
+  for +s: String
+  for +cache: Map<&2, X.TG>
+  for +f: X.Face
+  for +max: U32
+  for +used: U32
+  {X.Fit.count(SCon{Chr{cp}, s}, cache, f, max, used) ==
+    X.Fit.count.k(U32.is_le((used + X.TG.adv(X.Text.get(cache, f, cp)) : U32), max),
+      X.Fit.count(s, cache, f, max, (used + X.TG.adv(X.Text.get(cache, f, cp)) : U32))) : Nat}
+
+law fit_chunk_progress:
+  for n: Nat
+  exs k: Nat
+  {X.Fit.atleast(n) == 1n+k : Nat}
+
+law fit_wrap_unicode:
+  {X.Text.wrap(Map.new(&2, X.TG), X.Text.bitmap(), "日本語 😀🚀🙂\nabcde  x\n", 24) ==
+    ["日本語", "😀🚀🙂", "abc", "de ", "x", ""] : List<&2, String>}
+# Per-peer remote bot directories and bounded refreshes
+
+law remote_dir_failed_peer:
+  for +xs: List<&2, J.Json>
+  for +p: String
+  {BHS.Dir.merge(None{}, xs, p) == BHS.Dir.away(xs, p) : List<&2, J.Json>}
+
+law remote_dir_away_seen:
+  for +p: String
+  for +n: String
+  for +look: Nat
+  for +seen: Nat
+  {J.Json.get_obj(BHS.Dir.away.one(BHS.Dir.item(p, "machine", look, n, "work", seen)), "seen") == J.Json.nat(seen) : J.Json}
+
+law remote_dir_arrival_order:
+  {BHS.Dir.merge(Some{[BHS.Dir.item("a", "alpha", 0n, "miso", "ready", 1n)]},
+      [BHS.Dir.item("b", "beta", 0n, "nori", "ready", 1n)], "a") ==
+    BHS.Dir.merge(Some{[BHS.Dir.item("b", "beta", 0n, "nori", "ready", 1n)]},
+      [BHS.Dir.item("a", "alpha", 0n, "miso", "ready", 1n)], "b") : List<&2, J.Json>}
+
+law remote_dir_other_unchanged:
+  for +o: J.Json
+  {BHS.Dir.changed(False{}, o) == o : J.Json}
+
+law remote_dir_obsolete_ignored:
+  for +xs: List<&2, J.Json>
+  for +p: String
+  for +r: Maybe<&2, List<&2, J.Json>>
+  {BHS.Dir.accept(False{}, r, xs, p) == xs : List<&2, J.Json>}
+
+law remote_dir_known_not_queued:
+  for +a: List<&2, String>
+  for +q: List<&2, String>
+  for +p: String
+  {BHS.DirWork.add.k(True{}, a, q, p) == BHS.DirWork{a, q} : BHS.DirWork}
+
+law remote_dir_four_slots:
+  {BHS.DirPlan.launch(BHS.DirWork.plan(BHS.DirWork{[], ["a", "b", "c", "d", "e"]})) == ["a", "b", "c", "d"] : List<&2, String>}
+
+law remote_dir_freed_slot:
+  {BHS.DirPlan.launch(BHS.DirWork.plan(BHS.DirWork.finish(BHS.DirWork{["d", "c", "b", "a"], ["e"]}, "b"))) == ["e"] : List<&2, String>}
+
+# A pending selection cannot consume another hub's read model.
+law want_other_hub:
+  for +u: U.Ui
+  for +generation: Bool
+  for +installed: Bool
+  {U.Bots.wanted.k(U.Want.accept(False{}, generation, installed), u) == u : U.Ui}
+
+law want_old_generation:
+  for +u: U.Ui
+  for +hub: Bool
+  for +installed: Bool
+  {U.Bots.wanted.k(U.Want.accept(hub, False{}, installed), u) == u : U.Ui}
+
+law want_before_install:
+  for +u: U.Ui
+  for +hub: Bool
+  for +generation: Bool
+  {U.Bots.wanted.k(U.Want.accept(hub, generation, False{}), u) == u : U.Ui}
+
+law machine_clears_selection:
+  for +u: U.Ui
+  for +hub: String
+  {U.Ui.sel(U.Act.ui(U.Ui.machine(u, hub))) == "" : String}
+
+law timeline_hidden_settings:
+  for +selected: Bool
+  for +thread: Bool
+  {U.Timeline.visible(True{}, selected, thread) == False{} : Bool}
+
+law timeline_hidden_pane:
+  for +settings: Bool
+  for +selected: Bool
+  {U.Timeline.visible(settings, selected, False{}) == False{} : Bool}
+
+# Cache walks return at most one home and one linked snapshot.
+law hub_cache_home_short:
+  for +vs: List<&2, U.HubView>
+  {List.drop(&2, U.HubView, U.HubCache.home(vs), 1n) == Nil{} : List<&2, U.HubView>}
+
+law hub_cache_remote_short:
+  for +vs: List<&2, U.HubView>
+  {List.drop(&2, U.HubView, U.HubCache.remote(vs), 1n) == Nil{} : List<&2, U.HubView>}
+
+law hub_cache_bounded:
+  for +v: U.HubView
+  for +vs: List<&2, U.HubView>
+  {List.drop(&2, U.HubView, U.HubCache.put(v, vs), 2n) == Nil{} : List<&2, U.HubView>}
+
+# Owner-shared projects and ordinary threads use the far projection too.
+law far_project_named:
+  for +l: String
+  for +id: String
+  for title: String
+  for root: String
+  for at: Nat
+  {FR.Fr.change(l, M.ProjectCreated{id, title, root, at}) == Some{M.ProjectCreated{FR.Fr.id(l, id), title, root, at}} : Maybe<&2, M.Change>}
+
+law far_project_shared:
+  for s: M.State
+  {FR.Fr.shared(s, M.ProjectCreated{"p1", "Board", "/board", 1n}) == True{} : Bool}
+
+law far_project_thread_shared:
+  {FR.Fr.thread.shared(M.State.replay([M.ProjectCreated{"p", "Board", "/board", 1n},
+    M.ThreadCreated{"t", "p", "Layout", M.Local{}, "", "", "claude", "", 2n}], M.State.empty()), "t") == True{} : Bool}
+
+law far_label_here:
+  for +s: M.State
+  for +id: String
+  for title: String
+  {FR.Fr.title.k(False{}, s, id, title) == title : String}
+
+law far_label_away:
+  {FR.Fr.title(FR.Fr.mark(M.State.empty(), "p1", "desk", True{}), "p1~t", "Layout") == "Layout · desk (away)" : String}
+
+law far_cursor_keeps_marker:
+  {FR.Fr.title(FR.Fr.head.set(FR.Fr.mark(M.State.empty(), "p1", "desk", True{}), "p1", 5n), "p1~t", "Layout") == "Layout · desk (away)" : String}
+
+law far_routine_routes_home:
+  {FR.Fr.params.local(J.Field{"routine", J.Str{"p1~r1"}, J.End{}}, "p1") == J.Field{"routine", J.Str{"r1"}, J.End{}} : J.Json}
+
+law hubs_catalog_mirror_dropped:
+  for r: J.Json
+  for rest: List<&2, J.Json>
+  {Hb.Hubs.part.k(Bool.not(True{}), r, rest) == rest : List<&2, J.Json>}
+
+law hubs_sidebar_view_everywhere:
+  {Hb.Hubs.every.op(Hb.Do{"setting", "sidebar.view=active"}) == True{} : Bool}
+
+# History reset and restart races remain isolated to their owner.
+law far_epoch_legacy:
+  for +old: String
+  {FR.Fr.epoch.changed(old, "") == False{} : Bool}
+
+law far_epoch_same:
+  {FR.Fr.epoch.changed("history1", "history1") == False{} : Bool}
+
+law far_epoch_reset:
+  {FR.Fr.epoch.changed("history1", "history2") == True{} : Bool}
+
+law far_reset_keeps_sequence:
+  for s: M.State
+  for +l: String
+  {M.State.seq(FR.Fr.forget(s, l)) == M.State.seq(s) : Nat}
+
+law far_loaded_live_wins:
+  {FR.In.head(FR.In.loaded(FR.In.put(FR.In.new("p1", "desk"), 0n, 9n, Nil{}),
+    FR.In.new("p1", "desk"))) == 9n : Nat}
+
+law far_reply_preserves_error:
+  {FR.Fr.reply(J.Json.obj([J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{False{}}}, J.KV{"error", J.Str{"declined"}}]), "7") ==
+    "{\"id\":7,\"ok\":false,\"error\":\"declined\"}" : String}
+
+law far_draft_kept:
+  for text: String
+  {U.Draft.keep("p1~t1", text) == [U.Keep{"p1~t1", text}] : List<&2, U.Cmd>}
+
+law hubs_fold_null:
+  for +older: Bool
+  for +hs: List<&2, Hb.Hub>
+  for +from: String
+  {Hb.Hubs.fold.json(J.Null{}, older, hs, from) == J.Null{} : J.Json}
+
+law hubs_origin_here:
+  for p: J.Json
+  for name: String
+  {Hb.Hubs.origin.project(False{}, p, name) == p : J.Json}
+
+law hubs_origin_elsewhere:
+  {J.Json.get_str(Hb.Hubs.origin.project(True{}, J.Json.obj([J.KV{"title", J.Str{"Board"}}]), "desk"), "machine", "") == "desk" : String}
+
+law far_arrival_no_choice:
+  for u: U.Ui
+  {U.Far.arrived.k(False{}, u) == u : U.Ui}
+
+law far_arrival_not_shared:
+  for u: U.Ui
+  {U.Far.arrived.m(None{}, u) == u : U.Ui}
+
+law far_arrival_thread_selected:
+  for u: U.Ui
+  for id: String
+  for name: String
+  for +thread: String
+  {U.Ui.sel(U.Far.arrived.m(Some{BOT.Bot{id, name, thread, 1n, "", 0n, False{}}}, u)) == thread : String}
+
+law far_arrival_focus_unchanged:
+  for n: N.Nui
+  {N.Nui.unremote.k(False{}, n) == n : N.Nui}
+
+law hubs_origin_label_plain:
+  for v: J.Json
+  for name: String
+  for online: Bool
+  {Hb.Hubs.origin.label(False{}, v, name, online) == v : J.Json}
+
+law hubs_origin_title_here:
+  for title: String
+  for name: String
+  {Hb.Hubs.origin.title(True{}, title, name, True{}) == title ++ " · " ++ name : String}
+
+law hubs_origin_title_away:
+  for title: String
+  for name: String
+  {Hb.Hubs.origin.title(True{}, title, name, False{}) == title ++ " · " ++ name ++ " (away)" : String}
 # a subagent started by an Agent call keeps the call and what it was asked
 # while its progress changes what it does
 law bg_start_keeps_call:

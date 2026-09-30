@@ -462,7 +462,7 @@ def Refs.bots.go(bs: List<&2, BT.Bot>, +s: M.State, +sel: String, +now: Nat, +q:
       Refs.b.cand(s, sel, now, q, b, Refs.bots.go(r, s, sel, now, q))
 
 def Refs.bots(+s: M.State, +sel: String, +now: Nat, +q: String) -> List<&2, Cand>:
-  Refs.bots.go(BT.World.bots(M.State.bots(s)), s, sel, now, q)
+  Refs.bots.go(BT.World.bots.here(M.State.bots(s)), s, sel, now, q)
 
 # Bots on linked machines, as the hub lists them (info "bots.remote":
 # [{"name", "peer", "peerName", "state", "seen"}]): a bot's word is
@@ -654,7 +654,7 @@ def Refs.r.hits(rs: List<&2, BT.Room>, +w: String) -> List<&2, Hit>:
 def Refs.find.k(i: Nat, +s: M.State, +sel: String, +w: String) -> List<&2, Hit>:
   match i:
     case 0n:
-      Refs.b.hits(BT.World.bots(M.State.bots(s)), w, sel)
+      Refs.b.hits(BT.World.bots.here(M.State.bots(s)), w, sel)
     case 1n:
       Refs.find.thread(s, sel, w)
     case 2n:

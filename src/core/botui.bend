@@ -5,6 +5,7 @@ import ./client.bend as U
 import ./bot.bend as BT
 import ./space.bend as SP
 import ./once.bend as O
+import ./far.bend as FR
 
 # What the bots' screens show, for every client (the window, the web and
 # the phones draw from these; docs/bots.md). The sidebar's cats with their
@@ -94,6 +95,17 @@ def BU.remote.sel(+u: U.Ui) -> String:
 
 def BU.row.m(+mood: String, i: String, n: String, th: String, lk: Nat, sel: Bool) -> BRow:
   BRow{i, n, th, lk, mood, Mood.note(mood), sel, False{}, "", ""}
+
+def BU.row.far.m(+mood: String, i: String, n: String, th: String, lk: Nat, sel: Bool, pe: String, l: String) -> BRow:
+  BRow{i, n, th, lk, mood, Mood.note(mood), sel, True{}, pe, l}
+
+# what choosing a row does: a bot with a thread here (this machine's, or
+# one mirrored from its own) opens as a bot ("bot"); a bot only reported
+# by a linked machine is a conversation ("remote")
+def BU.act(r: BRow) -> String:
+  match r:
+    case BRow{_, _, +th, _, _, _, _, _, _, _}:
+      Bool.pick(String, String.is_empty(th), "remote", "bot")
 
 # Each bot once
 # -------------
@@ -337,6 +349,13 @@ def BU.view(+u: U.Ui) -> View:
 def BU.tabs() -> List<&2, String>:
   ["chat", "space", "browser", "memory", "routines", "hooks", "settings"]
 
+# a bot's tabs: all of them for a bot here; for one mirrored from a linked
+# machine (far.bend) what its machine shares: its chat, space, memory and
+# routines. Its browser, webhooks and settings stay on its machine (law
+# far_bot_tabs).
+def BU.tabs.of(+id: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, FR.Fr.is(id), ["chat", "space", "memory", "routines"], BU.tabs())
+
 def BU.tab.label(+t: String) -> String:
   Bool.pick(String, String.eq(t, "chat"), "Chat",
     Bool.pick(String, String.eq(t, "space"), "Space",
@@ -345,9 +364,20 @@ def BU.tab.label(+t: String) -> String:
           Bool.pick(String, String.eq(t, "routines"), "Routines",
             Bool.pick(String, String.eq(t, "hooks"), "Webhooks", "Settings"))))))
 
+def BU.tab.has(ts: List<&2, String>, +t: String) -> Bool:
+  match ts:
+    case Nil{}:
+      False{}
+    case x <> r:
+      Bool.or(String.eq(x, t), BU.tab.has(r, t))
+
 # the bot's tab ("chat" until one is picked)
 def BU.tab(+u: U.Ui) -> String:
   Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@btab")), "chat", U.Ui.scratch(u, "@btab"))
+
+# the tab shown: the one picked, when this bot has it, else its chat
+def BU.tab.of(+u: U.Ui, +id: String) -> String:
+  Bool.pick(String, BU.tab.has(BU.tabs.of(id), BU.tab(u)), BU.tab(u), "chat")
 
 def BU.space.none(paged: Bool, +name: String) -> SP.Space:
   match paged:
@@ -433,7 +463,7 @@ def BU.picks.gone(ms: List<&2, String>, +ps: List<&2, BT.Peer>) -> List<&2, O.Ky
 # this machine's bots, then those on linked machines ("name@machine"),
 # then members elsewhere no machine lists, before each is kept once
 def BU.picks.all(+u: U.Ui, +ms: List<&2, String>) -> List<&2, O.Ky<Pick>>:
-  List.append(&2, O.Ky<Pick>, BU.picks.go(BT.World.bots(M.State.bots(U.Ui.state(u))), BU.peers.of(u), ms, BT.World.bots(M.State.bots(U.Ui.state(u)))),
+  List.append(&2, O.Ky<Pick>, BU.picks.go(BT.World.bots.here(M.State.bots(U.Ui.state(u))), BU.peers.of(u), ms, BT.World.bots.here(M.State.bots(U.Ui.state(u)))),
     List.append(&2, O.Ky<Pick>, BU.picks.far(BU.remote.all(u), BU.peers.of(u), ms), BU.picks.gone(ms, BU.peers.of(u))))
 
 def BU.picks.src(+u: U.Ui) -> List<&2, O.Ky<Pick>>:
@@ -488,20 +518,58 @@ def Mood.bot(+st: M.State, +now: Nat, b: BT.Bot) -> String:
     case BT.Bot{+i, _, +th, _, _, _, _}:
       Mood.bot.t(U.Ui.thread(st, th), st, now, BT.World.talked_at(M.State.bots(st), i))
 
-def BU.row(+st: M.State, +now: Nat, +sel: String, +all: List<&2, BT.Bot>, b: BT.Bot) -> BRow:
+# a bot's mood, "away" while the machine it lives on does not answer
+def BU.mood.far(away: Bool, +st: M.State, +now: Nat, b: BT.Bot) -> String:
+  match away:
+    case True{}:
+      "away"
+    case False{}:
+      Mood.bot(st, now, b)
+
+def BU.mood(+u: U.Ui, +b: BT.Bot) -> String:
+  BU.mood.far(U.Ui.far.away(u, BT.Bot.id(b)), U.Ui.state(u), U.Side.now(u), b)
+
+# this machine's own bots (not those mirrored from a linked machine)
+def BU.here.k(far: Bool, b: BT.Bot, rest: List<&2, BT.Bot>) -> List<&2, BT.Bot>:
+  match far:
+    case True{}:
+      rest
+    case False{}:
+      b <> rest
+
+def BU.here(bs: List<&2, BT.Bot>) -> List<&2, BT.Bot>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case +b <> t:
+      BU.here.k(FR.Fr.is(BT.Bot.id(b)), b, BU.here(t))
+
+def BU.row.here(+st: M.State, +now: Nat, +sel: String, +all: List<&2, BT.Bot>, b: BT.Bot) -> BRow:
   match b:
     case BT.Bot{+i, +n, +th, +lk, pe, c, d}:
       BU.row.m(Mood.bot(st, now, BT.Bot{i, n, th, lk, pe, c, d}), i, BU.label(Nat.is_gt(BU.named(all, n), 1n), n, i), th, lk, String.eq(i, sel))
 
-def BU.rows.go(bs: List<&2, BT.Bot>, +st: M.State, +now: Nat, +sel: String, +all: List<&2, BT.Bot>) -> List<&2, BRow>:
+# a bot on a linked machine whose threads are mirrored here (far.bend): a
+# bot like any other, keyed as its machine reports it (its name at the
+# link), so the report of it is the same entry; away while its machine is
+def BU.row.far(+u: U.Ui, +st: M.State, +now: Nat, +sel: String, b: BT.Bot) -> BRow:
+  match b:
+    case BT.Bot{+i, +n, +th, +lk, pe, c, d}:
+      BU.row.far.m(BU.mood.far(U.Ui.far.away(u, i), st, now, BT.Bot{i, n, th, lk, pe, c, d}), i, n, th, lk, String.eq(i, sel),
+        U.Ui.far.name(u, i), FR.Fr.link(i))
+
+def BU.row(+u: U.Ui, +st: M.State, +now: Nat, +sel: String, +all: List<&2, BT.Bot>, +b: BT.Bot) -> BRow:
+  Bool.pick(BRow, FR.Fr.is(BT.Bot.id(b)), BU.row.far(u, st, now, sel, b), BU.row.here(st, now, sel, all, b))
+
+def BU.rows.go(bs: List<&2, BT.Bot>, +u: U.Ui, +st: M.State, +now: Nat, +sel: String, +all: List<&2, BT.Bot>) -> List<&2, BRow>:
   match bs:
     case Nil{}:
       Nil{}
     case b <> t:
-      BU.row(st, now, sel, all, b) <> BU.rows.go(t, st, now, sel, all)
+      BU.row(u, st, now, sel, all, b) <> BU.rows.go(t, u, st, now, sel, all)
 
 def BU.rows.here(+u: U.Ui, +bs: List<&2, BT.Bot>) -> List<&2, BRow>:
-  BU.rows.go(bs, U.Ui.state(u), U.Side.now(u), BU.bot.sel(u), bs)
+  BU.rows.go(bs, u, U.Ui.state(u), U.Side.now(u), BU.bot.sel(u), BU.here(bs))
 
 # the sidebar's cats before each is kept once: this machine's bots (oldest
 # first), then those the linked machines report
@@ -519,3 +587,131 @@ def BU.rows(+u: U.Ui) -> List<&2, BRow>:
 # only while one does)
 def BU.moving(+u: U.Ui) -> Bool:
   BU.moving.go(BU.rows(u))
+
+def BU.row.title.k(remote: Bool, +n: String, +pe: String) -> String:
+  match remote:
+    case True{}:
+      Bool.pick(String, String.is_empty(pe), n, n ++ " · " ++ pe)
+    case False{}:
+      n
+
+# A bot's view
+# ------------
+# Every bot shows in one view whatever machine it lives on: its cat, its
+# name with where it lives ("Kit · box", U.Ui.far.title), its mood, its
+# tabs, then the tab. A bot mirrored from a linked machine (far.bend) is a
+# bot like one here, less what stays on its machine: its browser, webhooks
+# and settings (BU.tabs.of), its viewer (files on that machine), and
+# changes to its memory and routines (only Fr.methods reach its hub: it can
+# be written to, stopped, answered, and a routine run). A bot only reported
+# by a linked machine (VRemote) is the same view with one tab, Chat: the
+# person's conversation with it (laws bot_head_*).
+
+# a row's name as the list shows it: a bot elsewhere with its machine
+def BU.row.title(r: BRow) -> String:
+  match r:
+    case BRow{_, +n, _, _, _, _, _, rem, +pe, _}:
+      BU.row.title.k(rem, n, pe)
+
+# whether a bot's header offers its viewer (its thread's files): only for
+# a bot here
+def BU.viewer.of(+id: String) -> Bool:
+  Bool.not(FR.Fr.is(id))
+
+# whether a bot's memory and routines can be changed from here (Forget,
+# Edit, Delete, On/Off, a new routine): only a bot here. Run now reaches a
+# mirrored bot's hub too.
+def BU.owns(+id: String) -> Bool:
+  Bool.not(FR.Fr.is(id))
+
+type Head is Data:
+  Head{title: String, look: Nat, mood: String, note: String, tabs: List<&2, String>, tab: String, viewer: Bool, owns: Bool}
+
+def Head.title(h: Head) -> String:
+  match h:
+    case Head{t, _, _, _, _, _, _, _}:
+      t
+
+def Head.tabs(h: Head) -> List<&2, String>:
+  match h:
+    case Head{_, _, _, _, ts, _, _, _}:
+      ts
+
+def Head.tab(h: Head) -> String:
+  match h:
+    case Head{_, _, _, _, _, t, _, _}:
+      t
+
+def Head.viewer(h: Head) -> Bool:
+  match h:
+    case Head{_, _, _, _, _, _, v, _}:
+      v
+
+def Head.owns(h: Head) -> Bool:
+  match h:
+    case Head{_, _, _, _, _, _, _, o}:
+      o
+
+def Head.look(h: Head) -> Nat:
+  match h:
+    case Head{_, l, _, _, _, _, _, _}:
+      l
+
+def Head.mood(h: Head) -> String:
+  match h:
+    case Head{_, _, m, _, _, _, _, _}:
+      m
+
+def Head.note(h: Head) -> String:
+  match h:
+    case Head{_, _, _, n, _, _, _, _}:
+      n
+
+# a bot's header: a bot with a thread (remote False), or one only reported
+# by a linked machine (remote True: Chat alone)
+def BU.head.m(remote: Bool, +u: U.Ui, +id: String, +title: String, +look: Nat, +mood: String) -> Head:
+  match remote:
+    case True{}:
+      Head{title, look, mood, Mood.note(mood), ["chat"], "chat", False{}, False{}}
+    case False{}:
+      Head{title, look, mood, Mood.note(mood), BU.tabs.of(id), BU.tab.of(u, id), BU.viewer.of(id), BU.owns(id)}
+
+# the row a linked machine reports for a bot elsewhere (away, named by its
+# id, while none does)
+def BU.remote.find(rs: List<&2, BRow>, +id: String) -> BRow:
+  match rs:
+    case Nil{}:
+      BRow{id, id, "", 0n, "away", Mood.note("away"), True{}, True{}, "", ""}
+    case BRow{+i, +n, +th, +lk, +mo, +no, +se, +re, +pe, +l} <> t:
+      Bool.pick(BRow, String.eq(i, id), BRow{i, n, th, lk, mo, no, se, re, pe, l}, BU.remote.find(t, id))
+
+def BU.remote.row(+u: U.Ui, +id: String) -> BRow:
+  BU.remote.find(BU.remote(u), id)
+
+def BRow.look(r: BRow) -> Nat:
+  match r:
+    case BRow{_, _, _, lk, _, _, _, _, _, _}:
+      lk
+
+def BRow.mood(r: BRow) -> String:
+  match r:
+    case BRow{_, _, _, _, m, _, _, _, _, _}:
+      m
+
+def BU.head.remote(+r: BRow, +u: U.Ui, +id: String) -> Head:
+  BU.head.m(True{}, u, id, BU.row.title(r), BRow.look(r), BRow.mood(r))
+
+def BU.head.bot(+u: U.Ui, b: BT.Bot) -> Head:
+  match b:
+    case BT.Bot{+i, +n, +th, +lk, +pe, +c, +d}:
+      BU.head.m(False{}, u, i, U.Ui.far.title(u, i, n), lk, BU.mood(u, BT.Bot{i, n, th, lk, pe, c, d}))
+
+# what a bot's view shows above its tab (a room or the thread: nothing)
+def BU.head(+u: U.Ui, v: View) -> Head:
+  match v:
+    case VBot{b}:
+      BU.head.bot(u, b)
+    case VRemote{+id}:
+      BU.head.remote(BU.remote.row(u, id), u, id)
+    case _:
+      Head{"", 0n, "away", Mood.note("away"), Nil{}, "chat", False{}, False{}}

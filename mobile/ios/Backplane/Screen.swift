@@ -424,11 +424,14 @@ struct Found: Decodable, Hashable {
     let name, url: String
 }
 
-// Bots (src/mobile/bots.bend). A cat in the list: "bot" (or, remote,
-// "remote") sends its id; mood and note say how it is; cat names its rig
-// ("look:mood"), which the bridge gives once (AppModel.cats).
+// Bots (src/mobile/bots.bend). A cat in the list: act ("bot", or
+// "remote" for a bot only reported by a linked machine; older bridges
+// leave it out and say remote) sends its id; mood and note say how it is;
+// cat names its rig ("look:mood"), which the bridge gives once
+// (AppModel.cats).
 struct BotRow: Decodable, Identifiable {
     let id, name, mood, note, peer, cat: String
+    let act: String?
     let look: Int
     let sel, remote: Bool
     let machine: String?
@@ -520,6 +523,8 @@ struct BotPost: Decodable, Identifiable {
 // on a linked machine ("remote")
 struct BotView: Decodable {
     let kind, id, name: String
+    // the name as shown: "Kit · desk" for a bot on a linked machine
+    let title: String?
     let mood, note, tab, peer, members, draft, secret, secretFor, hname, cat: String?
     let look: Int?
     let tabs: [BotTab]?

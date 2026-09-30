@@ -696,8 +696,21 @@ def Jump.settle(s: Step) -> Step:
 def Nui.unpick(+n: Nui) -> Nui:
   Bool.pick(Nui, Bool.and(String.eq(Nui.focus_of(n), "proj"), Bool.not(U.Ui.flag(Nui.ui(n), "proj"))), Nui.with_focus(n, "composer"), n)
 
+def Nui.unremote.k(promoted: Bool, n: Nui) -> Nui:
+  match promoted n:
+    case True{} Nui{+u, w, h, mx, my, sd, _, _, _, pa, hi, ms, vw}:
+      Nui{u, w, h, mx, my, sd, 0, String.length(U.Ui.draft_text(u)), "composer", pa, hi, ms, vw}
+    case False{} _:
+      n
+
+# A reported chat gaining its mirror replaces the form with the normal
+# composer. Keep keyboard focus on the visible field after that change.
+def Nui.unremote(+n: Nui) -> Nui:
+  Nui.unremote.k(Bool.and(String.eq(Nui.focus_of(n), Fld.alias("remote-send")),
+    Bool.and(String.is_empty(U.Ui.scratch(Nui.ui(n), "@remote")), Bool.not(String.is_empty(U.Ui.scratch(Nui.ui(n), "@bot"))))), n)
+
 def Nui.recv(n: Nui, +o: J.Json) -> Nui:
-  Nui.unpick(Nui.recv.k(n, o))
+  Nui.unpick(Nui.unremote(Nui.recv.k(n, o)))
 
 def Undo.key(+n: Nui, +w: String) -> String:
   "@" ++ w ++ ":" ++ U.Ui.sel(Nui.ui(n))
@@ -1367,10 +1380,10 @@ def Vw.stale(v: V.Vw) -> V.Vw:
     case V.Vw{s, vi, f, r, d, lx, ly, b, _, cu, vx}:
       V.Vw{s, vi, f, r, d, lx, ly, b, False{}, cu, vx}
 
-def Nui.adopt.k(n: Nui, st: M.State) -> Nui:
+def Nui.adopt.k(n: Nui, st: M.State, head: J.Json) -> Nui:
   match n:
     case Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}:
-      Nui{U.Ui.adopt(u, st), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}
+      Nui{U.Ui.adopt_log(u, st, head), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}
 
 def Nui.adopt.theme(changed: Bool, +n: Nui) -> Nui:
   match changed:
@@ -1381,8 +1394,15 @@ def Nui.adopt.theme(changed: Bool, +n: Nui) -> Nui:
 
 # the hub's read model, handed over (main.bend's Shell.adopt); a new theme
 # draws the viewer's base again (its plain part is the window's ground)
-def Nui.adopt(+n: Nui, +st: M.State) -> Nui:
-  Nui.adopt.theme(Bool.not(String.eq(M.Setting.get(st, "ui.theme", ""), M.Setting.get(U.Ui.state.of(Nui.ui(n)), "ui.theme", ""))), Nui.adopt.k(n, st))
+def Nui.adopt(+n: Nui, +st: M.State, head: J.Json) -> Nui:
+  Nui.adopt.theme(Bool.not(String.eq(M.Setting.get(st, "ui.theme", ""), M.Setting.get(U.Ui.state.of(Nui.ui(n)), "ui.theme", ""))), Nui.adopt.k(n, st, head))
+
+# A new machine drops native focus, scroll, hits, selections and scene as
+# well as core selectors. A cached read model is safe to display at once.
+def Nui.connection(n: Nui, +tag: String, cached: Maybe<&2, U.HubView>) -> Nui:
+  match n:
+    case Nui{u, w, h, _, _, _, _, _, _, _, _, _, _}:
+      Nui.init(U.Ui.cached(cached, U.Ui.connection(u, tag)), w, h)
 
 # a board file arrived for a project root: same root merges (only what
 # changed fades), a new root starts over (the whole board fades in)

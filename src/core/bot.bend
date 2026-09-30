@@ -392,6 +392,19 @@ def World.bots(+w: World) -> List<&2, Bot>:
     case World{bs, _, _, _, _, _, _, _, _, _, _}:
       List.sort(~Bot, ~Bot.before, List.filter(~Bot, ~Bot.live, Map.values(&2, Bot, bs)))
 
+def Bot.here(b: Bot) -> Bool:
+  match b:
+    case Bot{+i, _, _, _, _, _, d}:
+      Bool.and(Bool.not(d), Bool.not(String.contains(i, "~")))
+
+# this machine's own live bots, oldest first: not those a client mirrors
+# from a linked machine (far.bend names them "<link>~<id>"), which rooms,
+# mentions and pickers reach as name@machine instead
+def World.bots.here(+w: World) -> List<&2, Bot>:
+  match w:
+    case World{bs, _, _, _, _, _, _, _, _, _, _}:
+      List.sort(~Bot, ~Bot.before, List.filter(~Bot, ~Bot.here, Map.values(&2, Bot, bs)))
+
 def Bot.named.k(+b: Bot, +name: String) -> Bool:
   Bool.and(Bot.live(b), String.eq(String.to_lower(Bot.name(b)), String.to_lower(name)))
 

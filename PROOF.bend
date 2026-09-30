@@ -1,4 +1,5 @@
 import Base
+import ./src/gfx/text.bend as X
 import ./src/core/bothub.bend as BHS
 import ./src/core/bot.bend as BOT
 import ./src/core/botui.bend as BU
@@ -4657,10 +4658,54 @@ def Laws.window_state_seq(s):
     case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}:
       {==}
 
-def Laws.window_adopt(u, st):
+def reselect_state(same: Bool, +u: U.Ui, +old: String) -> {U.Ui.state(U.Ui.reselect.k(same, u, old)) == U.Ui.state(u) : M.State}:
+  match same u:
+    case True{} _: {==}
+    case False{} U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}: {==}
+
+def wanted_bot_state(m: Maybe<&2, BOT.Bot>, +u: U.Ui) -> {U.Ui.state(U.Bots.wanted.m(m, u)) == U.Ui.state(u) : M.State}:
+  match m u:
+    case Some{BOT.Bot{i, n, th, lk, p, c, d}} U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}: {==}
+    case None{} _: {==}
+
+def wanted_thread_state(found: Bool, +u: U.Ui, +id: String) -> {U.Ui.state(U.Want.thread.k(found, u, id)) == U.Ui.state(u) : M.State}:
+  match found u:
+    case True{} U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}: {==}
+    case False{} _: {==}
+
+def wanted_state(bound: Bool, +u: U.Ui) -> {U.Ui.state(U.Bots.wanted.k(bound, u)) == U.Ui.state(u) : M.State}:
+  match bound:
+    case False{}: {==}
+    case True{}:
+      +m = BOT.World.find(M.State.bots(U.Ui.state.of(u)), U.Ui.scratch(u, "@bot.want"))
+      +found = Bool.and(Bool.not(String.is_empty(U.Ui.scratch(u, "@thread.want"))), U.Want.thread.exists(U.Ui.state.of(u), U.Ui.scratch(u, "@thread.want")))
+      +id = U.Ui.scratch(u, "@thread.want")
+      Equal.trans(M.State, U.Ui.state(U.Want.thread.k(found, U.Bots.wanted.m(m, u), id)), U.Ui.state(U.Bots.wanted.m(m, u)), U.Ui.state(u),
+        wanted_thread_state(found, U.Bots.wanted.m(m, u), id), wanted_bot_state(m, u))
+
+def wanted_any_state(pending: Bool, +u: U.Ui) -> {U.Ui.state(U.Bots.wanted.any(pending, u)) == U.Ui.state(u) : M.State}:
+  match pending:
+    case False{}: {==}
+    case True{}: wanted_state(U.Want.bound(u), u)
+
+def installed_state(+u: U.Ui) -> {U.Ui.state(U.Ui.installed(u)) == U.Ui.state(u) : M.State}:
   match u:
-    case U.Ui{s0, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      {==}
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}: {==}
+
+def adopt_raw_state(+u: U.Ui, +st: M.State) -> {U.Ui.state(U.Ui.adopt.raw(u, st)) == st : M.State}:
+  match u:
+    case U.Ui{s0, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}: {==}
+
+def Laws.window_adopt(u, st):
+  match u st:
+    case +uu +ss:
+      +raw = U.Ui.adopt.raw(uu, ss)
+      +ins = U.Ui.installed(raw)
+      +wanted = U.Bots.wanted(ins)
+      Equal.trans(M.State, U.Ui.state(U.Ui.reselect(U.Ui.sel(uu), wanted)), U.Ui.state(wanted), ss,
+        reselect_state(String.eq(U.Ui.sel(uu), U.Ui.sel(wanted)), wanted, U.Ui.sel(uu)),
+        Equal.trans(M.State, U.Ui.state(wanted), U.Ui.state(ins), ss, wanted_any_state(Bool.or(Bool.not(String.is_empty(U.Ui.scratch(ins, "@bot.want"))), Bool.not(String.is_empty(U.Ui.scratch(ins, "@thread.want")))), ins),
+          Equal.trans(M.State, U.Ui.state(ins), U.Ui.state(raw), ss, installed_state(raw), adopt_raw_state(uu, ss))))
 
 def Laws.todo_write_whole_list():
   {==}
@@ -5793,6 +5838,301 @@ def Laws.bots_away_cat_posed_once(c):
 def Laws.bots_moving_cat_follows_clock(c):
   {==}
 
+def Laws.far_id_parts():
+  {==}
+
+def Laws.far_id_here():
+  {==}
+
+def Laws.far_change_names_link(l, th, msg, role, text, at):
+  {==}
+
+def Laws.far_change_bot_named(l, id, name, th, look, persona, at):
+  {==}
+
+def Laws.far_settings_stay_home(s, k, v, at):
+  {==}
+
+def Laws.far_peers_stay_home(s, i, n, u, r, at):
+  {==}
+
+def Laws.far_hooks_stay_home(s, i, b, n, r, at):
+  {==}
+
+def Laws.far_devices_stay_home(s, tk, pl, k, th, env, bu, at):
+  {==}
+
+def Laws.far_rooms_stay_home(s, i, r, f, t, h, at):
+  {==}
+
+def Laws.far_gap_takes_nothing(xs):
+  {==}
+
+def Laws.far_old_takes_nothing(a, b):
+  {==}
+
+def Laws.far_overlap_takes_new(a, b, c):
+  {==}
+
+def Laws.far_batch_again(a, b):
+  {==}
+
+def Laws.far_route_here_stays():
+  {==}
+
+def Laws.far_route_goes_home():
+  {==}
+
+def Laws.far_allowed_only_methods(s, p):
+  {==}
+
+def Laws.far_no_delete(s, p):
+  {==}
+
+def Laws.far_where_here(n):
+  {==}
+
+def Laws.far_where_far():
+  {==}
+
+def Laws.far_bot_tabs():
+  {==}
+
+def Laws.far_bot_tabs_here():
+  {==}
+
+def Laws.far_row_act_mirror(i, n, lk, m, no, se, pe, l):
+  {==}
+
+def Laws.far_row_act_reported(i, n, lk, m, no, se, pe, l):
+  {==}
+
+def Laws.bot_row_title_far(i, th, lk, m, no, se, l):
+  {==}
+
+def Laws.bot_row_title_here(i, n, th, lk, m, no, se, pe, l):
+  {==}
+
+def Laws.bot_head_remote(u, id, t, lk, m):
+  {==}
+
+def Laws.bot_head_remote_view(u, id):
+  {==}
+
+def Laws.far_bot_head_tabs(u, t, lk, m):
+  {==}
+
+def Laws.far_bot_head_stays_home(u, t, lk, m):
+  {==}
+
+def Laws.bot_head_here_owns(u, t, lk, m):
+  {==}
+
+def Laws.hubs_bots_mirror_dropped(far, want, hs, from, r, rest):
+  {==}
+
+# Text fitting: early exit preserves the original recurrence.
+
+def Laws.fit_count_guard(s, fits, cache, f, max, used):
+  match s fits:
+    case SNil{} False{}:
+      {==}
+    case SCon{Chr{cp}, t} False{}:
+      {==}
+    case SNil{} True{}:
+      {==}
+    case SCon{Chr{cp}, t} True{}:
+      {==}
+
+def Laws.fit_count_step(cp, s, cache, f, max, used):
+  Laws.fit_count_guard(s, U32.is_le((used + X.TG.adv(X.Text.get(cache, f, cp)) : U32), max),
+    cache, f, max, (used + X.TG.adv(X.Text.get(cache, f, cp)) : U32))
+
+def Laws.fit_chunk_progress(n):
+  match n:
+    case 0n:
+      (0n, {==})
+    case 1n+k:
+      (k, {==})
+
+def Laws.fit_wrap_unicode():
+  {==}
+
+# Per-peer remote bot directories and bounded refreshes
+def Laws.remote_dir_failed_peer(xs, p):
+  {==}
+
+def Laws.remote_dir_away_seen(p, n, look, seen):
+  {==}
+
+def Laws.remote_dir_arrival_order():
+  {==}
+
+def Laws.remote_dir_other_unchanged(o):
+  {==}
+
+def Laws.remote_dir_obsolete_ignored(xs, p, r):
+  {==}
+
+def Laws.remote_dir_known_not_queued(a, q, p):
+  {==}
+
+def Laws.remote_dir_four_slots():
+  {==}
+
+def Laws.remote_dir_freed_slot():
+  {==}
+
+def Laws.want_other_hub(u, generation, installed):
+  match generation installed:
+    case True{} True{}: {==}
+    case True{} False{}: {==}
+    case False{} True{}: {==}
+    case False{} False{}: {==}
+
+def Laws.want_old_generation(u, hub, installed):
+  match hub installed:
+    case True{} True{}: {==}
+    case True{} False{}: {==}
+    case False{} True{}: {==}
+    case False{} False{}: {==}
+
+def Laws.want_before_install(u, hub, generation):
+  match hub generation:
+    case True{} True{}: {==}
+    case True{} False{}: {==}
+    case False{} True{}: {==}
+    case False{} False{}: {==}
+
+def Laws.machine_clears_selection(u, hub):
+  match u:
+    case U.Ui{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}: {==}
+
+def Laws.timeline_hidden_settings(selected, thread):
+  match selected thread:
+    case True{} True{}: {==}
+    case True{} False{}: {==}
+    case False{} True{}: {==}
+    case False{} False{}: {==}
+
+def Laws.timeline_hidden_pane(settings, selected):
+  match settings selected:
+    case True{} True{}: {==}
+    case True{} False{}: {==}
+    case False{} True{}: {==}
+    case False{} False{}: {==}
+
+def home_short_step(home: Bool, +v: U.HubView, +rest: List<&2, U.HubView>, p: {List.drop(&2, U.HubView, rest, 1n) == Nil{} : List<&2, U.HubView>}) -> {List.drop(&2, U.HubView, U.HubCache.home.k(home, v, rest), 1n) == Nil{} : List<&2, U.HubView>}:
+  match home:
+    case True{}: {==}
+    case False{}: p
+
+def Laws.hub_cache_home_short(vs):
+  match vs:
+    case Nil{}: {==}
+    case +v <> +t:
+      home_short_step(String.is_empty(U.HubView.hub(v)), v, U.HubCache.home(t), Laws.hub_cache_home_short(t))
+
+def remote_short_step(home: Bool, +v: U.HubView, +rest: List<&2, U.HubView>, p: {List.drop(&2, U.HubView, rest, 1n) == Nil{} : List<&2, U.HubView>}) -> {List.drop(&2, U.HubView, U.HubCache.remote.k(home, v, rest), 1n) == Nil{} : List<&2, U.HubView>}:
+  match home:
+    case True{}: p
+    case False{}: {==}
+
+def Laws.hub_cache_remote_short(vs):
+  match vs:
+    case Nil{}: {==}
+    case +v <> +t:
+      remote_short_step(String.is_empty(U.HubView.hub(v)), v, U.HubCache.remote(t), Laws.hub_cache_remote_short(t))
+
+def cache_bounded_step(home: Bool, +v: U.HubView, +vs: List<&2, U.HubView>) -> {List.drop(&2, U.HubView, U.HubCache.put.k(home, v, vs), 2n) == Nil{} : List<&2, U.HubView>}:
+  match home:
+    case True{}: Laws.hub_cache_remote_short(vs)
+    case False{}: Laws.hub_cache_home_short(vs)
+
+def Laws.hub_cache_bounded(v, vs):
+  cache_bounded_step(String.is_empty(U.HubView.hub(v)), v, vs)
+
+def Laws.far_project_named(l, id, title, root, at):
+  {==}
+
+def Laws.far_project_shared(s):
+  {==}
+
+def Laws.far_project_thread_shared():
+  {==}
+
+def Laws.far_label_here(s, id, title):
+  {==}
+
+def Laws.far_label_away():
+  {==}
+
+def Laws.far_cursor_keeps_marker():
+  {==}
+
+def Laws.far_routine_routes_home():
+  {==}
+
+def Laws.hubs_catalog_mirror_dropped(r, rest):
+  {==}
+
+def Laws.hubs_sidebar_view_everywhere():
+  {==}
+
+def Laws.far_epoch_legacy(old):
+  {==}
+
+def Laws.far_epoch_same():
+  {==}
+
+def Laws.far_epoch_reset():
+  {==}
+
+def Laws.far_reset_keeps_sequence(s, l):
+  match s:
+    case M.State{_, _, _, _, _, _, _, _, _, _, _}:
+      {==}
+
+def Laws.far_loaded_live_wins():
+  {==}
+
+def Laws.far_reply_preserves_error():
+  {==}
+
+def Laws.far_draft_kept(text):
+  {==}
+
+def Laws.hubs_fold_null(older, hs, from):
+  {==}
+
+def Laws.hubs_origin_here(p, name):
+  {==}
+
+def Laws.hubs_origin_elsewhere():
+  {==}
+
+def Laws.far_arrival_no_choice(u):
+  {==}
+
+def Laws.far_arrival_not_shared(u):
+  {==}
+
+def Laws.far_arrival_thread_selected(u, id, name, thread):
+  match u:
+    case U.Ui{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      {==}
+
+def Laws.far_arrival_focus_unchanged(n):
+  {==}
+
+def Laws.hubs_origin_label_plain(v, name, online):
+  {==}
+
+def Laws.hubs_origin_title_here(title, name):
+  {==}
+
+def Laws.hubs_origin_title_away(title, name):
+  {==}
 def Laws.bg_start_keeps_call():
   {==}
 

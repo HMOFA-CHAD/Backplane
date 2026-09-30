@@ -152,7 +152,7 @@ fun LazyListScope.botsSection(m: AppModel, s: Screen) {
             },
             leadingContent = { BotCat(m, b.cat, 40.dp) },
             modifier = Modifier.alpha(if (b.mood == "away") 0.5f else 1f)
-                .clickable { m.act(if (b.remote) "remote" else "bot", b.id) },
+                .clickable { m.act(b.act, b.id) },
         )
     }
     items(s.rooms, key = { "r:" + it.id }) { r ->
@@ -238,10 +238,10 @@ private fun BotHeader(m: AppModel, b: BotView, size: Dp) {
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.alpha(if (b.mood == "away") 0.5f else 1f)) { BotCat(m, b.cat, size) }
         Column {
-            Text(b.name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(b.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 MoodDot(b.mood)
-                Text(listOf(b.note, b.peer).filter { it.isNotEmpty() }.joinToString(" · "),
+                Text(listOf(b.note, if (b.title == b.name) b.peer else "").filter { it.isNotEmpty() }.joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
             }
         }

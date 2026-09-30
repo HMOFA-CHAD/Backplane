@@ -13,6 +13,7 @@ import ./voice.bend as VC
 import ./space.bend as SPC
 import ./refs.bend as RF
 import ./mech.bend as MC
+import ./far.bend as FR
 import ./desk.bend as DK
 import ./hist.bend as HI
 import ./links.bend as LK
@@ -64,6 +65,11 @@ type Cmd is Data:
 
 type Act is Data:
   Act{ui: Ui, cmds: List<&2, Cmd>}
+
+# The machine marker for projects, sidebar rows and timeline headers.
+def Label.title(+st: M.State, +id: String, title: String) -> String:
+  FR.Fr.title(st, id, title)
+
 
 def Act.cmds(a: Act) -> List<&2, Cmd>:
   match a:
@@ -210,7 +216,7 @@ def Local.keep.go(ks: List<&2, String>, +old: Map<&2, String>, m: Map<&2, String
 # (and the clock this client last ticked, which a folded turn's "5m ago"
 # reads)
 def Local.keep(+old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
-  Local.keep.go(["local.machine", "local.machines", "local.drafts", "clock", "local.fixed"], old, m)
+  Local.keep.go(["cid", "local.machine", "local.machines", "local.drafts", "clock", "local.fixed", "local.generation", "local.state.hub", "local.state.gen"], old, m)
 
 def Machines.home.k(home: Bool, +nf: Map<&2, String>) -> Map<&2, String>:
   Bool.pick(Map<&2, String>, Bool.and(home, Bool.not(String.is_empty(Str.get(nf, "machines")))), Map.set(&2, String, nf, "local.machines", Str.get(nf, "machines")), nf)
@@ -248,12 +254,30 @@ def Machines.current(rs: List<&2, MRow>) -> String:
     case MRow{+n, _, +on} <> t:
       Bool.pick(String, on, n, Machines.current(t))
 
-# switch to a machine: the host connects there, and its log replaces this
-# one (the selection and anything still unsent belong to the old machine)
+def Machine.draft(scratch: Bool, +k: String, dr: Map<&2, String>, out: Map<&2, String>) -> Map<&2, String>:
+  match scratch:
+    case True{}:
+      out
+    case False{}:
+      Map.set(&2, String, out, k, Str.get(dr, k))
+
+# A transition discards every active scratch selector, live delta, viewer,
+# terminal and outbox from the departing hub. Unsent thread drafts stay.
+def Machine.drafts(ks: List<&2, String>, +dr: Map<&2, String>, out: Map<&2, String>) -> Map<&2, String>:
+  match ks:
+    case Nil{}:
+      out
+    case +k <> t:
+      Machine.drafts(t, dr, Machine.draft(String.starts_with(k, "@"), k, dr, out))
+
+# The window assigns the actual connection tag when it opens the link.
+# The transition itself also advances the generation, before any message
+# can try to satisfy a selection against the old read model.
 def Ui.machine(u: Ui, +url: String) -> Act:
   match u:
-    case Ui{st, _, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, _, tr}:
-      Act{Ui{st, "", dr, live, Map.set(&2, Bool, op, "machines", False{}), on, now, ad, pa, v, rid, w, er, note, Map.set(&2, String, nf, "local.machine", url), Map.new(&2, String), tr}, [Connect{url}]}
+    case Ui{_, _, +dr, _, _, _, now, ad, _, _, rid, w, _, _, +nf, _, _}:
+      Act{Ui{M.State.empty(), "", Machine.drafts(Map.keys(&2, String, dr), dr, Map.new(&2, String)), Map.new(&2, String), Map.new(&2, Bool), False{}, now, ad, False{}, "", rid, w, "", "connecting",
+        Map.set(&2, String, Map.set(&2, String, Local.keep(nf, Map.new(&2, String)), "local.machine", url), "local.generation", "pending:" ++ Str.get(nf, "local.generation")), Map.new(&2, String), Map.new(&2, VT.Vt)}, [Connect{url}]}
 
 def Ui.info_merge(u: Ui, o: J.Json) -> Ui:
   match u o:
@@ -282,7 +306,7 @@ def Ui.reset(u: Ui, +o: J.Json) -> Ui:
 # how many changes this client holds (a reconnect asks for the rest)
 # the log's read model handed over whole (the hub's own window: nothing
 # to parse or replay)
-def Ui.adopt(u: Ui, st: M.State) -> Ui:
+def Ui.adopt.raw(u: Ui, st: M.State) -> Ui:
   match u:
     case Ui{_, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
       Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
@@ -571,7 +595,7 @@ def Ui.on_thread(u: Ui, m: String) -> Act:
 def Ui.select.k(u: Ui, +id: String) -> Ui:
   match u:
     case Ui{st, _, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      Ui{st, id, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, dr, "@del", ""), "@bot", ""), "@room", ""), "@remote", ""), "@bot.want", ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+      Ui{st, id, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, dr, "@del", ""), "@bot", ""), "@room", ""), "@remote", ""), "@bot.want", ""), "@thread.want", ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
 
 # Drafts kept
 # -----------
@@ -581,7 +605,7 @@ def Ui.select.k(u: Ui, +id: String) -> Ui:
 
 def Draft.safe.c(+c: U32) -> Bool:
   Bool.or(Bool.or(Bool.and(U32.is_ge(c, 48), U32.is_le(c, 57)), Bool.and(U32.is_ge(c, 97), U32.is_le(c, 122))),
-    Bool.or(Bool.and(U32.is_ge(c, 65), U32.is_le(c, 90)), Bool.or(U32.is_eq(c, 45), U32.is_eq(c, 95))))
+    Bool.or(Bool.and(U32.is_ge(c, 65), U32.is_le(c, 90)), Bool.or(U32.is_eq(c, 126), Bool.or(U32.is_eq(c, 45), U32.is_eq(c, 95)))))
 
 def Draft.safe.go(s: String) -> Bool:
   match s:
@@ -590,7 +614,7 @@ def Draft.safe.go(s: String) -> Bool:
     case SCon{Chr{c}, t}:
       Bool.and(Draft.safe.c(c), Draft.safe.go(t))
 
-# a name made only of letters, digits, '-' and '_'
+# a name made only of letters, digits, '-', '_' and far's '~' separator
 def Draft.safe(s: String) -> Bool:
   match s:
     case SNil{}:
@@ -3953,7 +3977,7 @@ def Bots.sel.set(u: Ui, +th: String) -> Ui:
 
 # (a bot still awaited, "@bot.want", gives way to what was chosen since)
 def Bots.views(u: Ui, +bot: String, +room: String, +remote: String) -> Ui:
-  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@bot", bot), "@room", room), "@remote", remote), "@del", ""), "@bot.want", "")
+  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@bot", bot), "@room", room), "@remote", remote), "@del", ""), "@bot.want", ""), "@thread.want", "")
 
 # a bot shown: its thread is selected, its tab kept
 def Bots.select.k(m: Maybe<&2, BT.Bot>, u: Ui) -> Act:
@@ -4023,25 +4047,6 @@ def Far.machine(+j: J.Json, +pname: String, +purl: String) -> Maybe<&2, String>:
 def Far.chat(u: Ui, +id: String) -> Act:
   Act{Bots.views(u, "", "", id), [Focus{"remote-send"}, Scroll{}]}
 
-def Far.opened(a: Act, +name: String) -> Act:
-  match a:
-    case Act{u, cs}:
-      Act{Ui.scratch_set(u, "@bot.want", name), cs}
-
-def Far.open(same: Bool, +u: Ui, +url: String, +id: String, +name: String) -> Act:
-  match same:
-    case True{}:
-      Far.chat(u, id)
-    case False{}:
-      Far.opened(Ui.machine(u, url), name)
-
-def Far.go(m: Maybe<&2, String>, +u: Ui, +id: String, +name: String) -> Act:
-  match m:
-    case Some{+url}:
-      Far.open(Bool.or(String.eq(url, Ui.info(u, "local.machine")), String.eq(Ui.info(u, "local.fixed"), "1")), u, url, id, name)
-    case None{}:
-      Far.chat(u, id)
-
 # "name\u001ftext": a form field
 def Bots.bfield.k(ps: List<&2, String>, u: Ui) -> Ui:
   match ps:
@@ -4090,17 +4095,28 @@ def Bots.peers.k(+ps: List<&2, BT.Peer>, +u: Ui) -> List<&2, BT.Peer>:
 def Bots.peers(+u: Ui) -> List<&2, BT.Peer>:
   Bots.peers.k(BT.World.peers(M.State.bots(Ui.state.of(u))), u)
 
-# a bot elsewhere ("name@machine", BU.far's id): the machine it names, as
-# BT.Peer.of finds it (an id first, then a name)
-def Far.peer(m: Maybe<&2, BT.Peer>, +u: Ui, +id: String) -> Act:
+def Far.mirrored(bs: List<&2, BT.Bot>, +key: String) -> Maybe<&2, BT.Bot>:
+  match bs:
+    case Nil{}:
+      None{}
+    case +b <> t:
+      Bool.pick(Maybe<&2, BT.Bot>, Bool.and(FR.Fr.is(BT.Bot.id(b)), String.eq(BT.Member.far(BT.Bot.name(b), FR.Fr.link(BT.Bot.id(b))), key)), Some{b}, Far.mirrored(t, key))
+
+def Far.pick(m: Maybe<&2, BT.Bot>, +u: Ui, +id: String) -> Act:
   match m:
-    case Some{BT.Peer{_, +n, +url, _, _}}:
-      Far.go(Far.machine(Maybe.default(&2, J.Json, J.Json.parse(Ui.info(u, "local.machines")), J.Null{}), n, url), u, id, BT.Member.name(id))
+    case Some{b}:
+      Bots.select(u, BT.Bot.id(b))
     case None{}:
       Far.chat(u, id)
 
+# a bot elsewhere, chosen: the bot itself when its machine shares its
+# threads with this one (it is mirrored here: the same view as a bot
+# here, at once, law far_pick_mirrored), else the conversation with it.
+# The window never switches hubs to show a bot: that fetched the other
+# hub's whole log (11-20 s on a 13 MB log).
 def Bots.remote.select(+u: Ui, +id: String) -> Act:
-  Far.peer(BT.Peer.of(Bots.peers(u), BT.Member.machine(id)), u, id)
+  Far.pick(Far.mirrored(BT.World.bots(M.State.bots(Ui.state.of(u))), BT.Member.key(Bots.peers(u), id)), u, id)
+
 
 # the members that are not the bot k stands for (BT.Member.key: "Kit@box"
 # and "Kit@<box's id>" are one bot)
@@ -5046,13 +5062,68 @@ def Voice.flag.k(ask: Bool, a: Act) -> Act:
 def Voice.flag(+value: String, a: Act) -> Act:
   Voice.flag.k(String.eq(value, "settings"), a)
 
-# the reply may beat the bot's own change: remember it, and show it when it comes
+def Bots.reply.put(+o: J.Json, +key: String, +into: String, +u: Ui) -> Ui:
+  Bool.pick(Ui, String.is_empty(J.Json.get_str(o, key, "")), u, Ui.scratch_set(u, into, J.Json.get_str(o, key, "")))
+
+# a key the answer has, even when empty (no account left is news)
+def Bots.reply.has(m: Maybe<&2, J.Json>, +into: String, +u: Ui) -> Ui:
+  match m:
+    case Some{J.Str{s}}:
+      Ui.scratch_set(u, into, s)
+    case _:
+      u
+
+# A pending selection names both its hub and its connection generation.
+# Only a read model installed for that exact pair can resolve it.
+def Want.accept(hub: Bool, generation: Bool, installed: Bool) -> Bool:
+  match hub generation installed:
+    case True{} True{} True{}:
+      True{}
+    case _ _ _:
+      False{}
+
+def Want.bound(+u: Ui) -> Bool:
+  Want.accept(String.eq(Ui.scratch(u, "@want.hub"), Ui.info(u, "local.machine")),
+    String.eq(Ui.scratch(u, "@want.gen"), Ui.info(u, "local.generation")),
+    Bool.and(String.eq(Ui.info(u, "local.state.hub"), Ui.info(u, "local.machine")), String.eq(Ui.info(u, "local.state.gen"), Ui.info(u, "local.generation"))))
+
+def Want.bot(+u: Ui, name: String) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@thread.want", ""), "@bot.want", name), "@want.hub", Ui.info(u, "local.machine")), "@want.gen", Ui.info(u, "local.generation"))
+
+def Far.opened(a: Act, +name: String) -> Act:
+  match a:
+    case Act{u, cs}:
+      Act{Want.bot(u, name), cs}
+
+def Far.open(same: Bool, +u: Ui, +url: String, +id: String, +name: String) -> Act:
+  match same:
+    case True{}:
+      Far.chat(u, id)
+    case False{}:
+      Far.opened(Ui.machine(u, url), name)
+
+def Far.go(m: Maybe<&2, String>, +u: Ui, +id: String, +name: String) -> Act:
+  match m:
+    case Some{+url}:
+      Far.open(Bool.or(String.eq(url, Ui.info(u, "local.machine")), String.eq(Ui.info(u, "local.fixed"), "1")), u, url, id, name)
+    case None{}:
+      Far.chat(u, id)
+
+# a bot elsewhere ("name@machine", BU.far's id): the machine it names, as
+# BT.Peer.of finds it (an id first, then a name)
+def Far.peer(m: Maybe<&2, BT.Peer>, +u: Ui, +id: String) -> Act:
+  match m:
+    case Some{BT.Peer{_, +n, +url, _, _}}:
+      Far.go(Far.machine(Maybe.default(&2, J.Json, J.Json.parse(Ui.info(u, "local.machines")), J.Null{}), n, url), u, id, BT.Member.name(id))
+    case None{}:
+      Far.chat(u, id)
+
 def Bots.reply.show(m: Maybe<&2, BT.Bot>, +id: String, u: Ui) -> Ui:
   match m:
     case Some{BT.Bot{+i, _, +th, _, _, _, _}}:
       Bots.views(Bots.sel.set(u, th), i, "", "")
     case None{}:
-      Ui.scratch_set(u, "@bot.want", id)
+      Want.bot(u, id)
 
 def Bots.reply.bot.k(none: Bool, +o: J.Json, +u: Ui) -> Ui:
   match none:
@@ -5066,17 +5137,6 @@ def Bots.reply.bot.k(none: Bool, +o: J.Json, +u: Ui) -> Ui:
 def Bots.reply.bot(+o: J.Json, u: Ui) -> Ui:
   Bots.reply.bot.k(String.is_empty(J.Json.get_str(o, "bot", "")), o, u)
 
-def Bots.reply.put(+o: J.Json, +key: String, +into: String, +u: Ui) -> Ui:
-  Bool.pick(Ui, String.is_empty(J.Json.get_str(o, key, "")), u, Ui.scratch_set(u, into, J.Json.get_str(o, key, "")))
-
-# a key the answer has, even when empty (no account left is news)
-def Bots.reply.has(m: Maybe<&2, J.Json>, +into: String, +u: Ui) -> Ui:
-  match m:
-    case Some{J.Str{s}}:
-      Ui.scratch_set(u, into, s)
-    case _:
-      u
-
 def Bots.reply(+o: J.Json, +u: Ui) -> Ui:
   Voice.reply(o, Bots.reply.has(J.Json.get(o, "googleAccounts"), "@google.accts", Bots.reply.put(o, "googleUrl", "@google.url", Bots.reply.put(o, "google", "@google", Bots.reply.put(o, "invite", "@peer.invite",
     Bots.reply.put(o, "secret", "@hook.secret", Bots.reply.put(o, "hook", "@hook.id",
@@ -5085,6 +5145,55 @@ def Bots.reply(+o: J.Json, +u: Ui) -> Ui:
 # an answer: its request leaves the outbox; a diff opens the diff view
 def Ui.reply(u: Ui, +o: J.Json) -> Ui:
   Bots.reply(o, Proj.reply(o, Btw.reply(Ui.reply.skills(u, o), o)))
+
+# A link's threads and bots (far.bend): its batch folded into the read
+# model under this hub's ids, and whether it answered ("far.away.<link>")
+# and what it is called ("far.name.<link>") kept for the rows that show it
+def Far.arrived.m(m: Maybe<&2, BT.Bot>, u: Ui) -> Ui:
+  match m:
+    case Some{BT.Bot{+id, _, +th, _, _, _, _}}:
+      Ui.flag_off(Bots.views(Bots.sel.set(u, th), id, "", ""), "settings")
+    case None{}:
+      u
+
+def Far.arrived.k(waiting: Bool, +u: Ui) -> Ui:
+  match waiting:
+    case True{}:
+      Far.arrived.m(Far.mirrored(BT.World.bots(M.State.bots(Ui.state(u))), BT.Member.key(Bots.peers(u), Ui.scratch(u, "@remote"))), u)
+    case False{}:
+      u
+
+# A reported-only bot opens immediately. If its owner subsequently
+# shares its thread, the same choice gains the normal timeline and tabs.
+# Keep an unfinished remote composer in place until it has been sent.
+def Far.arrived(+u: Ui) -> Ui:
+  Far.arrived.k(Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@remote"))), String.is_empty(Bots.field(u, "rtext"))), u)
+
+def Ui.far.st(u: Ui, st: M.State) -> Ui:
+  match u:
+    case Ui{_, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+
+def Ui.far.k(+u: Ui, +link: String, +o: J.Json) -> Ui:
+  Ui.info_set(Ui.info_set(Ui.far.st(u, FR.Fr.mark(FR.Fr.recv(Ui.state(u), link, J.Json.get_str(o, "epoch", ""), J.Json.get_nat(o, "since", 0n), J.Json.get_nat(o, "head", 0n),
+      FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items")))), link, J.Json.get_str(o, "name", link), J.Json.get_bool(o, "away", False{}))),
+    "far.away." ++ link, Bool.pick(String, J.Json.get_bool(o, "away", False{}), "1", "")), "far.name." ++ link, J.Json.get_str(o, "name", link))
+
+def Ui.far(+u: Ui, +o: J.Json) -> Ui:
+  Far.arrived(Ui.far.k(u, J.Json.get_str(o, "link", ""), o))
+
+# whether the machine a thing elsewhere lives on did not answer last time
+def Ui.far.away(+u: Ui, +id: String) -> Bool:
+  Bool.and(FR.Fr.is(id), String.eq(Ui.info(u, "far.away." ++ FR.Fr.link(id)), "1"))
+
+# the name of the machine a thing elsewhere lives on ("" for one here)
+def Ui.far.name(+u: Ui, +id: String) -> String:
+  Bool.pick(String, FR.Fr.is(id), Bool.pick(String, String.is_empty(Ui.info(u, "far.name." ++ FR.Fr.link(id))), FR.Fr.link(id), Ui.info(u, "far.name." ++ FR.Fr.link(id))), "")
+
+# a thread's or bot's name as shown: "Kit · desk" for one elsewhere, with
+# " (away)" while its machine does not answer
+def Ui.far.title(+u: Ui, +id: String, +title: String) -> String:
+  Label.title(Ui.state(u), id, title)
 
 def Ui.recv.k(i: Nat, u: Ui, +o: J.Json) -> Ui:
   match i:
@@ -5106,31 +5215,211 @@ def Ui.recv.k(i: Nat, u: Ui, +o: J.Json) -> Ui:
       Ui.info_merge(u, J.Json.get_obj(o, "info"))
     case 8n:
       Voice.recv(u, o)
+    case 9n:
+      Ui.far(u, o)
     case _:
       u
+
+# A thread request uses the same binding as a bot request.
+def Want.thread(+u: Ui, id: String) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@bot.want", ""), "@thread.want", id), "@want.hub", Ui.info(u, "local.machine")), "@want.gen", Ui.info(u, "local.generation"))
+
+def Want.rebind(bound: Bool, u: Ui, +generation: String) -> Ui:
+  match bound:
+    case True{}:
+      Ui.scratch_set(u, "@want.gen", generation)
+    case False{}:
+      u
+
+# Called only for the destination chosen by Ui.machine. Old socket
+# messages are rejected by the host's connection tag before Ui.recv.
+def Ui.connection(+u: Ui, +generation: String) -> Ui:
+  Ui.online(Ui.info_set(Want.rebind(Bool.and(String.eq(Ui.scratch(u, "@want.hub"), Ui.info(u, "local.machine")), String.eq(Ui.scratch(u, "@want.gen"), Ui.info(u, "local.generation"))), u, generation), "local.generation", generation), False{})
+
+def Ui.installed(+u: Ui) -> Ui:
+  Ui.info_set(Ui.info_set(u, "local.state.hub", Ui.info(u, "local.machine")), "local.state.gen", Ui.info(u, "local.generation"))
 
 def Bots.wanted.m(m: Maybe<&2, BT.Bot>, u: Ui) -> Ui:
   match m:
     case Some{BT.Bot{+i, _, +th, _, _, _, _}}:
-      Ui.scratch_set(Bots.views(Bots.sel.set(u, th), i, "", ""), "@bot.want", "")
+      Bots.views(Bots.sel.set(u, th), i, "", "")
     case None{}:
       u
 
-def Bots.wanted.k(none: Bool, +u: Ui) -> Ui:
-  match none:
+def Want.thread.k(found: Bool, u: Ui, id: String) -> Ui:
+  match found:
     case True{}:
-      u
+      Ui.scratch_set(Bots.views(Bots.sel.set(u, id), "", "", ""), "@thread.want", "")
     case False{}:
-      Bots.wanted.m(BT.World.find(M.State.bots(Ui.state.of(u)), Ui.scratch(u, "@bot.want")), u)
+      u
 
-# a bot asked for (just made, or opened on another machine: an id or a
-# name) is shown once its change has come
+def Want.thread.has(r: Map<&2, M.Thread> & Bool) -> Bool:
+  (_, found) = r
+  found
+
+def Want.thread.exists(st: M.State, +id: String) -> Bool:
+  match st:
+    case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
+      Want.thread.has(Map.has(&2, M.Thread, ts, id))
+
+def Bots.wanted.k(bound: Bool, +u: Ui) -> Ui:
+  match bound:
+    case True{}:
+      Want.thread.k(Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@thread.want"))), Want.thread.exists(Ui.state.of(u), Ui.scratch(u, "@thread.want"))),
+        Bots.wanted.m(BT.World.find(M.State.bots(Ui.state.of(u)), Ui.scratch(u, "@bot.want")), u), Ui.scratch(u, "@thread.want"))
+    case False{}:
+      u
+
+def Bots.wanted.any(pending: Bool, +u: Ui) -> Ui:
+  match pending:
+    case True{}:
+      Bots.wanted.k(Want.bound(u), u)
+    case False{}:
+      u
+
 def Bots.wanted(+u: Ui) -> Ui:
-  Bots.wanted.k(String.is_empty(Ui.scratch(u, "@bot.want")), u)
+  Bots.wanted.any(Bool.or(Bool.not(String.is_empty(Ui.scratch(u, "@bot.want"))), Bool.not(String.is_empty(Ui.scratch(u, "@thread.want")))), u)
 
-# a message from the server
+# Adoption installs the complete state before resolving a pending want
+# and restoring that thread's viewer. No empty-log intermediate selection.
+def Ui.adopt(+u: Ui, st: M.State) -> Ui:
+  Ui.reselect(Ui.sel(u), Bots.wanted(Ui.installed(Ui.adopt.raw(u, st))))
+
+def Ui.adopt_log(u: Ui, st: M.State, o: J.Json) -> Ui:
+  Ui.adopt(Ui.reset(u, o), st)
+
+def Ui.join(log: Bool, u: Ui) -> Ui:
+  match log:
+    case True{}:
+      Ui.installed(u)
+    case False{}:
+      u
+
+# A message can resolve a want only against the installed destination.
 def Ui.recv(+u: Ui, +o: J.Json) -> Ui:
-  Ui.reselect(Ui.sel(u), Bots.wanted(Ui.recv.k(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice"], J.Json.get_str(o, "t", "")), u, o)))
+  Ui.reselect(Ui.sel(u), Bots.wanted(Ui.join(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv.k(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice", "far"], J.Json.get_str(o, "t", "")), u, o))))
+
+# The cache contains home and at most one linked hub; each slot keeps its
+# read model and machine info (including the log origin) together.
+type HubView is Data:
+  HubView{hub: String, state: M.State, info: Map<&2, String>}
+
+def HubView.hub(v: HubView) -> String:
+  match v:
+    case HubView{hub, _, _}:
+      hub
+
+def HubCache.home.k(home: Bool, v: HubView, rest: List<&2, HubView>) -> List<&2, HubView>:
+  match home:
+    case True{}:
+      [v]
+    case False{}:
+      rest
+
+def HubCache.home(vs: List<&2, HubView>) -> List<&2, HubView>:
+  match vs:
+    case Nil{}:
+      Nil{}
+    case +v <> t:
+      HubCache.home.k(String.is_empty(HubView.hub(v)), v, HubCache.home(t))
+
+def HubCache.remote.k(home: Bool, v: HubView, rest: List<&2, HubView>) -> List<&2, HubView>:
+  match home:
+    case True{}:
+      rest
+    case False{}:
+      [v]
+
+def HubCache.remote(vs: List<&2, HubView>) -> List<&2, HubView>:
+  match vs:
+    case Nil{}:
+      Nil{}
+    case +v <> t:
+      HubCache.remote.k(String.is_empty(HubView.hub(v)), v, HubCache.remote(t))
+
+def HubCache.put.k(home: Bool, v: HubView, vs: List<&2, HubView>) -> List<&2, HubView>:
+  match home:
+    case True{}:
+      v <> HubCache.remote(vs)
+    case False{}:
+      v <> HubCache.home(vs)
+
+def HubCache.put(+v: HubView, vs: List<&2, HubView>) -> List<&2, HubView>:
+  HubCache.put.k(String.is_empty(HubView.hub(v)), v, vs)
+
+def HubCache.get.k(same: Bool, v: HubView, rest: Maybe<&2, HubView>) -> Maybe<&2, HubView>:
+  match same:
+    case True{}:
+      Some{v}
+    case False{}:
+      rest
+
+def HubCache.get(vs: List<&2, HubView>, +hub: String) -> Maybe<&2, HubView>:
+  match vs:
+    case Nil{}:
+      None{}
+    case +v <> t:
+      HubCache.get.k(String.eq(HubView.hub(v), hub), v, HubCache.get(t, hub))
+
+def Ui.infos(u: Ui) -> Map<&2, String>:
+  match u:
+    case Ui{_, _, _, _, _, _, _, _, _, _, _, _, _, _, nf, _, _}:
+      nf
+
+def HubCache.save.k(installed: Bool, +u: Ui, vs: List<&2, HubView>) -> List<&2, HubView>:
+  match installed:
+    case True{}:
+      HubCache.put(HubView{Ui.info(u, "local.machine"), Ui.state.of(u), Ui.infos(u)}, vs)
+    case False{}:
+      vs
+
+def HubCache.save(+u: Ui, vs: List<&2, HubView>) -> List<&2, HubView>:
+  HubCache.save.k(Bool.and(String.eq(Ui.info(u, "local.machine"), Ui.info(u, "local.state.hub")), String.eq(Ui.info(u, "local.generation"), Ui.info(u, "local.state.gen"))), u, vs)
+
+def Ui.cached.raw(u: Ui, v: HubView) -> Ui:
+  match u v:
+    case Ui{_, sel, dr, live, op, on, now, ad, pa, ver, rid, w, er, note, +nf, ob, tr} HubView{_, st, info}:
+      Ui{st, sel, dr, live, op, on, now, ad, pa, ver, rid, w, er, note, Local.keep(nf, info), ob, tr}
+
+def Ui.cached.k(same: Bool, +u: Ui, v: HubView) -> Ui:
+  match same:
+    case True{}:
+      Ui.reselect(Ui.sel(u), Bots.wanted(Ui.installed(Ui.cached.raw(u, v))))
+    case False{}:
+      u
+
+def Ui.cached(m: Maybe<&2, HubView>, +u: Ui) -> Ui:
+  match m:
+    case Some{+v}:
+      Ui.cached.k(String.eq(HubView.hub(v), Ui.info(u, "local.machine")), u, v)
+    case None{}:
+      u
+
+# Whether the actual main area uses the thread timeline. Rooms and remote
+# conversations have their own posts, and every bot tab except Chat has
+# its own pane. Keep this decision before any wrapping work.
+def Timeline.visible(settings: Bool, selected: Bool, thread: Bool) -> Bool:
+  match settings selected thread:
+    case False{} True{} True{}:
+      True{}
+    case _ _ _:
+      False{}
+
+def Timeline.bot(m: Maybe<&2, BT.Bot>, +u: Ui) -> Bool:
+  match m:
+    case Some{BT.Bot{_, _, +th, _, _, _, _}}:
+      Bool.or(Bool.not(String.eq(th, Ui.sel(u))), Bool.or(String.is_empty(Ui.scratch(u, "@btab")), String.eq(Ui.scratch(u, "@btab"), "chat")))
+    case None{}:
+      True{}
+
+def Timeline.room(r: BT.Room, +u: Ui) -> Bool:
+  match r:
+    case BT.Room{_, _, _, _, deleted}:
+      Bool.and(deleted, Bool.and(String.is_empty(Ui.scratch(u, "@remote")), Timeline.bot(BT.World.find.id(BT.World.bot(M.State.bots(Ui.state.of(u)), Ui.scratch(u, "@bot"))), u)))
+
+def Ui.timeline(+u: Ui) -> Bool:
+  Timeline.visible(Ui.flag(u, "settings"), Bool.not(String.is_empty(Ui.sel(u))), Timeline.room(BT.World.room(M.State.bots(Ui.state.of(u)), Ui.scratch(u, "@room")), u))
+
 
 def Ui.shows.k(delta: Bool, +sel: String, +o: J.Json) -> Bool:
   match delta:
