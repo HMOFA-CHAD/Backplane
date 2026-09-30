@@ -54,6 +54,9 @@ final class Engine: @unchecked Sendable {
     // before it is out of date before it could be drawn, so it is skipped
     private let lock = NSLock()
     private var ahead = 0
+    // a screen was dropped that way: the next recv builds one even for a
+    // frame that changes nothing on screen (bridge.js's owed)
+    private var owe = false
 
     // late: the arguments decided on the queue, as the call runs
     private func call<T>(_ name: String, _ args: [Any], late: (() -> [Any])? = nil, _ finish: @escaping (String) -> T) async -> T {
@@ -73,11 +76,22 @@ final class Engine: @unchecked Sendable {
     // decoded here, off the main thread: a thread's screen is large
     // quiet: when newer calls wait behind this one, it is made with a last
     // argument true, and builds no screen (it would be dropped anyway)
+    // (a quiet call is told both, as its last two arguments)
     private func out(_ name: String, _ args: [Any], screen: Bool = true, quiet: Bool = false) async -> Out? {
         if screen { lock.withLock { ahead += 1 } }
-        let late: (() -> [Any])? = quiet ? { self.lock.withLock { self.ahead > 1 } ? args + [true] : args } : nil
+        let late: (() -> [Any])? = quiet ? {
+            self.lock.withLock {
+                let o = self.owe
+                self.owe = false
+                return args + [self.ahead > 1, o]
+            }
+        } : nil
         return await call(name, args, late: late) { text in
-            let stale = screen && self.lock.withLock { self.ahead -= 1; return self.ahead > 0 }
+            let stale = screen && self.lock.withLock {
+                self.ahead -= 1
+                if self.ahead > 0 { self.owe = true }
+                return self.ahead > 0
+            }
             return Out.decode(text, screen: !stale)
         }
     }

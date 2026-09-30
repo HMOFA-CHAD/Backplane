@@ -90,65 +90,86 @@ def Hubs.rest(+v: String) -> String:
 # viewer's, model picker's and project picker's own values; the bot, room
 # or remote bot shown and the bot and room forms, all of the hub in focus,
 # whose actions go there), 2 an id of this hub, 0 anything else
-# (asked of every field of the screen, which on a phone made this walk a
-# third of a screen's cost: the key's first letters name the one name it
-# could be, and one comparison settles it)
-type Q4 is Data:
-  Q4{a: U32, b: U32, c: U32, d: U32}
-
-def Q.chars(+k: String) -> Q4:
-  match k:
-    case SCon{Chr{a}, SCon{Chr{b}, SCon{Chr{c}, SCon{Chr{d}, _}}}}:
-      Q4{a, b, c, d}
-    case SCon{Chr{a}, SCon{Chr{b}, SCon{Chr{c}, SNil{}}}}:
-      Q4{a, b, c, 0}
-    case SCon{Chr{a}, SCon{Chr{b}, SNil{}}}:
-      Q4{a, b, 0, 0}
-    case SCon{Chr{a}, SNil{}}:
-      Q4{a, 0, 0, 0}
-    case SNil{}:
-      Q4{0, 0, 0, 0}
-
-# a name, and its kind (1 left alone, 2 an id)
+# (asked of every field of the screen, thousands a screen: on a phone a
+# chain of every name tried for every key was a third of a screen. A hash
+# of the key's first two letters turns away two in three keys at once
+# (Q.may: a bit a hash, set for the names' first letters), "value" and
+# "id", most of the rest, are tried first, and the rare names last)
 type QN is Data:
   QN{name: String, kind: Nat}
 
-def Q.two(+a: U32, +b: U32, +x: U32, +y: U32) -> Bool:
-  Bool.and(U32.is_eq(a, x), U32.is_eq(b, y))
+def Q.names() -> List<&2, QN>:
+  [QN{"sel", 2n}, QN{"thread", 2n}, QN{"entries", 1n}, QN{"live", 1n}, QN{"viewer", 1n}, QN{"blocks", 1n}, QN{"bot", 1n},
+    QN{"picker", 1n}, QN{"folders", 1n}, QN{"find", 1n}, QN{"asks", 1n}, QN{"attaching", 1n}, QN{"menu", 1n}, QN{"diff", 1n},
+    QN{"term", 1n}, QN{"skills", 1n}, QN{"settings", 1n}, QN{"newBot", 1n}, QN{"newRoom", 1n}]
 
-# the only name a key starting a b c d could be ("" for none)
-def Q.cand(q: Q4) -> QN:
-  match q:
-    case Q4{+a, +b, +c, +d}:
-      Bool.pick(QN, Q.two(a, b, 101, 110), QN{"entries", 1n},
-      Bool.pick(QN, Q.two(a, b, 108, 105), QN{"live", 1n},
-      Bool.pick(QN, Q.two(a, b, 118, 105), QN{"viewer", 1n},
-      Bool.pick(QN, Q.two(a, b, 118, 97), QN{"value", 2n},
-      Bool.pick(QN, Q.two(a, b, 98, 108), QN{"blocks", 1n},
-      Bool.pick(QN, Q.two(a, b, 98, 111), QN{"bot", 1n},
-      Bool.pick(QN, Q.two(a, b, 112, 105), QN{"picker", 1n},
-      Bool.pick(QN, Q.two(a, b, 102, 111), QN{"folders", 1n},
-      Bool.pick(QN, Q.two(a, b, 102, 105), QN{"find", 1n},
-      Bool.pick(QN, Q.two(a, b, 97, 115), QN{"asks", 1n},
-      Bool.pick(QN, Q.two(a, b, 97, 116), QN{"attaching", 1n},
-      Bool.pick(QN, Q.two(a, b, 109, 101), QN{"menu", 1n},
-      Bool.pick(QN, Q.two(a, b, 100, 105), QN{"diff", 1n},
-      Bool.pick(QN, Q.two(a, b, 116, 101), QN{"term", 1n},
-      Bool.pick(QN, Q.two(a, b, 116, 104), QN{"thread", 2n},
-      Bool.pick(QN, Q.two(a, b, 115, 107), QN{"skills", 1n},
-      Bool.pick(QN, Bool.and(Q.two(a, b, 115, 101), U32.is_eq(c, 116)), QN{"settings", 1n},
-      Bool.pick(QN, Bool.and(Q.two(a, b, 115, 101), U32.is_eq(c, 108)), QN{"sel", 2n},
-      Bool.pick(QN, Bool.and(Q.two(a, b, 110, 101), U32.is_eq(d, 66)), QN{"newBot", 1n},
-      Bool.pick(QN, Bool.and(Q.two(a, b, 110, 101), U32.is_eq(d, 82)), QN{"newRoom", 1n},
-      Bool.pick(QN, Q.two(a, b, 105, 100), QN{"id", 2n}, QN{"", 0n})))))))))))))))))))))
+def Q.hash(+a: U32, +b: U32) -> U32:
+  U32.and(U32.shrn(((a * 29 : U32) + b : U32), 2n), 31)
 
-def Q.kind.k(n: QN, +k: String) -> Nat:
-  match n:
-    case QN{+name, kind}:
-      Bool.pick(Nat, Bool.and(Bool.not(String.is_empty(name)), String.eq(k, name)), kind, 0n)
+def Q.bit(+a: U32, +b: U32) -> Bool:
+  U32.is_eq(U32.and(U32.shrn(3100017230, U32.to_nat(Q.hash(a, b))), 1), 1)
+
+# whether a key could be one of the names (never false for one of them:
+# law q_may_names)
+def Q.may(+k: String) -> Bool:
+  match k:
+    case SCon{Chr{+a}, SCon{Chr{+b}, _}}:
+      Q.bit(a, b)
+    case _:
+      False{}
+
+def Q.step.k(hit: Bool, n: QN, st: Nat) -> Nat:
+  match hit n:
+    case True{} QN{_, kind}:
+      kind
+    case False{} _:
+      st
+
+def Q.step(+st: Nat, n: QN, +k: String) -> Nat:
+  match st n:
+    case 0n QN{+name, kind}:
+      Q.step.k(String.eq(name, k), QN{name, kind}, 0n)
+    case 1n+j _:
+      1n+j
+
+def Q.find(ns: List<&2, QN>, +k: String, +st: Nat) -> Nat:
+  match ns:
+    case Nil{}:
+      st
+    case n <> t:
+      Q.find(t, k, Q.step(st, n, k))
+
+def Q.rare(id: Bool, +k: String) -> Nat:
+  match id:
+    case True{}:
+      2n
+    case False{}:
+      Q.find(Q.names(), k, 0n)
+
+def Q.named(value: Bool, +k: String) -> Nat:
+  match value:
+    case True{}:
+      2n
+    case False{}:
+      Q.rare(String.eq(k, "id"), k)
+
+def Q.kind.k(may: Bool, +k: String) -> Nat:
+  match may:
+    case True{}:
+      Q.named(String.eq(k, "value"), k)
+    case False{}:
+      0n
 
 def Q.kind(+k: String) -> Nat:
-  Q.kind.k(Q.cand(Q.chars(k)), k)
+  Q.kind.k(Q.may(k), k)
+
+# whether every name is its own kind through Q.kind (law q_kind_names)
+def Q.own(ns: List<&2, QN>) -> Bool:
+  match ns:
+    case Nil{}:
+      True{}
+    case QN{+name, +kind} <> t:
+      Bool.and(Nat.is_eq(Q.kind(name), kind), Q.own(t))
 
 # a hub's screen (or alerts) with every id made that hub's
 def Q.walk(j: J.Json, +p: String, mode: Nat) -> J.Json:
@@ -496,6 +517,20 @@ def Hubs.cur(hs: Hubs) -> String:
   match hs:
     case Hubs{_, _, c, _}:
       c
+
+def Hubs.shows.k(focus: Bool, +hs: Hubs, +key: String, +o: J.Json) -> Bool:
+  match focus:
+    case True{}:
+      U.Ui.shows(Hubs.ui(hs, key), o)
+    case False{}:
+      False{}
+
+# whether a message from hub key can change the screen: a thread's streamed
+# text shows only in the thread open on the hub in focus, so any other
+# thread's delta (every token of every agent at work, on every hub) builds
+# no screen (laws hubs_delta_elsewhere, hubs_delta_other_thread)
+def Hubs.shows(+hs: Hubs, +key: String, +o: J.Json) -> Bool:
+  Hubs.shows.k(String.eq(key, Hubs.cur(hs)), hs, key, o)
 
 def Hubs.list(hs: Hubs) -> List<&2, Hub>:
   match hs:

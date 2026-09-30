@@ -122,17 +122,21 @@ class Engine(private val app: android.content.Context, private val source: Strin
     // calls queued whose answer carries a screen: while one is, the screen
     // before it is out of date before it could be drawn, so it is skipped
     private val ahead = AtomicInteger(0)
+    // a screen was dropped that way: the next recv builds one even for a
+    // frame that changes nothing on screen (bridge.js's owed)
+    private val owe = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private suspend fun call(expr: String): String =
         withContext(dispatcher) { context().evaluate(expr) }
 
     // parsed here, off the main thread: a thread's screen is large.
-    // behind: the call to make instead when newer calls wait behind this
-    // one (its screen would be dropped anyway)
-    private suspend fun out(expr: String, screen: Boolean = true, behind: String? = null): Reply {
+    // late: the call to make, told as it runs whether newer calls wait
+    // behind this one (its screen would be dropped anyway) and whether a
+    // screen was dropped since the last such call
+    private suspend fun out(expr: String, screen: Boolean = true, late: ((Boolean, Boolean) -> String)? = null): Reply {
         if (screen) ahead.incrementAndGet()
         return withContext(dispatcher) {
-            val e = if (behind != null && ahead.get() > 1) behind else expr
+            val e = late?.invoke(ahead.get() > 1, owe.getAndSet(false)) ?: expr
             val t0 = android.os.SystemClock.elapsedRealtime()
             val text = context().evaluate(e)
             val ms = android.os.SystemClock.elapsedRealtime() - t0
@@ -140,6 +144,7 @@ class Engine(private val app: android.content.Context, private val source: Strin
             if (ms > 100) android.util.Log.i("Backplane", "slow ${e.substringBefore('(')}: $ms ms")
             val o = JSONObject(text)
             val stale = screen && ahead.decrementAndGet() > 0
+            if (stale) owe.set(true)
             Reply(if (stale) null else o.optJSONObject("screen")?.let(::parseScreen), parseCmds(o))
         }
     }
@@ -152,7 +157,7 @@ class Engine(private val app: android.content.Context, private val source: Strin
     suspend fun screen() = out("Backplane.screen()")
     // a binary frame from hub key, as base64
     suspend fun recv(key: String, data: String) =
-        out("Backplane.recv(${q(key)}, ${q(data)})", behind = "Backplane.recv(${q(key)}, ${q(data)}, true)")
+        out("", late = { quiet, owed -> "Backplane.recv(${q(key)}, ${q(data)}, $quiet, $owed)" })
     // the whole client state as text (StateStore), and the state loaded back
     suspend fun save() = call("Backplane.save()")
     suspend fun load(text: String) = out("Backplane.load(${q(text)})")

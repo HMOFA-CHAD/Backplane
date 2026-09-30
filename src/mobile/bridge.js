@@ -225,7 +225,12 @@ function plain(j) {
   }
 }
 
+// a frame that could change the screen came while more waited behind it
+// (so it built none): the next call builds one, whatever that frame is
+let owed = false;
+
 function out(cmds, quiet, alerts) {
+  if (!quiet) owed = false;
   const cs = [];
   for (const h of each(cmds)) {
     const c = h.cmd;
@@ -288,8 +293,16 @@ globalThis.Backplane = {
   // a binary frame from hub k, as base64
   // quiet: more frames wait behind this one, so no screen is built for it
   // (only the last of a burst is drawn: terminal echoes, streamed text)
-  recv(k, data, quiet) {
-    return step(App.recv(hubs, k, cbor(bytes(data))), quiet === true);
+  // (nor for streamed text the screen does not show: App.shows, laws
+  // hubs_delta_*; every token of every agent at work is a frame)
+  // owe: the app dropped a screen since (a newer call was waiting), so
+  // this one builds one
+  recv(k, data, quiet, owe) {
+    const o = cbor(bytes(data));
+    const r = App.recv(hubs, k, o);
+    const shows = App.shows(r.hubs, k, o);
+    if (owe === true || (quiet === true && shows)) owed = true;
+    return step(r, quiet === true || !(shows || owed));
   },
   // The whole client state as text, kept by the app when it leaves the
   // foreground: the next launch load()s it instead of folding every event
