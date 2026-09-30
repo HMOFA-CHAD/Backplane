@@ -724,7 +724,7 @@ def Plot.of.k(+ps: List<&2, Piece>, +kind: U32, edge: Box) -> Plot:
 # the chunks of some items, in paint order, their extent and the board's
 # rectangle
 def Plot.of(+its: List<&2, B.Item>, +kind: U32) -> Plot:
-  Plot.of.k(Piece.psort(5n, its, kind), kind, Edge.box(its, Bool.pick(U32, U32.is_eq(kind, 0), B.Layer.id("Edge.Cuts"), 4294967295), Box.empty()))
+  Plot.of.k(Piece.psort(5n, its, kind), kind, Edge.box(its, Bool.pick(U32, U32.is_eq(LO.Look.base(kind), 0), B.Layer.id("Edge.Cuts"), 4294967295), Box.empty()))
 
 def Plot.of.solid(so: Solid) -> Plot:
   Plot{Nil{}, Box.empty(), 0, so, Box.empty()}
@@ -983,6 +983,13 @@ def Out.box(b: Box, acc: List<&2, U32>) -> List<&2, U32>:
 def Plot.msg(+key: String, b: Box, +thick: U32, e: Box, +rs: List<&2, Ref>) -> List<&2, U32>:
   Cb.head(160, 6, Cb.uint(1, Cb.key("plot", Cb.uint(31, Cb.text(String.reverse(key), Cb.key("box", Out.box(b,
     Cb.key("thick", Cb.uint(thick, Cb.key("edge", Out.box(e, Cb.key("cs", Cb.head(128, U32.from_nat(List.length(&2, Ref, rs)), Out.refs(List.reverse(&2, Ref, rs), Nil{}))))))))))))))
+
+# the same with "fam": the file the source is a version of (core/hist.bend's
+# Hist.key.family): a viewer moving between versions of one file keeps its
+# view instead of fitting the new plot
+def Plot.msg.fam(+key: String, +fam: String, b: Box, +thick: U32, e: Box, +rs: List<&2, Ref>) -> List<&2, U32>:
+  Cb.head(160, 7, Cb.uint(1, Cb.key("plot", Cb.uint(31, Cb.text(String.reverse(key), Cb.key("fam", Cb.text(String.reverse(fam), Cb.key("box", Out.box(b,
+    Cb.key("thick", Cb.uint(thick, Cb.key("edge", Out.box(e, Cb.key("cs", Cb.head(128, U32.from_nat(List.length(&2, Ref, rs)), Out.refs(List.reverse(&2, Ref, rs), Nil{}))))))))))))))))
 
 # s in front of acc, given s backwards
 def Out.pre(rs: String, acc: String) -> String:

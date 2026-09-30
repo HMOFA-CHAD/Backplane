@@ -57,6 +57,14 @@ def Icon.all() -> List<&2, IDef>:
    IDef{"arrow-up", [Icon.s("m5 12 7-7 7 7"), Icon.s("M12 19V5")]},
    IDef{"send", [Icon.s("M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"), Icon.s("m21.854 2.147-10.94 10.939")]},
    IDef{"stop", [Layer{"M6 6h12v12H6z", True{}}]},
+   IDef{"play", [Layer{"M7 4l13 8-13 8z", True{}}]},
+   IDef{"pause", [Layer{"M6 4h4v16H6z", True{}}, Layer{"M14 4h4v16h-4z", True{}}]},
+   IDef{"chevron-left", [Icon.s("m15 18-6-6 6-6")]},
+   IDef{"skip-back", [Icon.s("M19 20 9 12l10-8z"), Icon.s("M5 19V5")]},
+   IDef{"skip-forward", [Icon.s("M5 4l10 8-10 8z"), Icon.s("M19 5v14")]},
+   IDef{"history", [Icon.s("M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"), Icon.s("M3 3v5h5"), Icon.s("M12 7v5l4 2")]},
+   IDef{"git-compare", [Icon.s("M15 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0"), Icon.s("M3 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0"), Icon.s("M13 6h3a2 2 0 0 1 2 2v7"), Icon.s("M11 18H8a2 2 0 0 1-2-2V9")]},
+   IDef{"message-square", [Icon.s("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z")]},
    IDef{"sun", [Icon.s("M8 12a4 4 0 1 0 8 0a4 4 0 1 0-8 0"), Icon.s("M12 2v2"), Icon.s("M12 20v2"), Icon.s("m4.93 4.93 1.41 1.41"), Icon.s("m17.66 17.66 1.41 1.41"),
      Icon.s("M2 12h2"), Icon.s("M20 12h2"), Icon.s("m6.34 17.66-1.41 1.41"), Icon.s("m19.07 4.93-1.41 1.41")]},
    IDef{"moon", [Icon.s("M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z")]},
@@ -84,7 +92,14 @@ def Icon.all() -> List<&2, IDef>:
    IDef{"wrench", [Icon.s("M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z")]},
    IDef{"flask-conical", [Icon.s("M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.07-10.13A2 2 0 0 1 14 9.53V2"), Icon.s("M8.5 2h7"), Icon.s("M7 16h10")]},
    IDef{"book", [Icon.s("M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20")]},
-   IDef{"star", [Icon.s("M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z")]}]
+   IDef{"star", [Icon.s("M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z")]},
+   IDef{"pin", [Icon.s("M12 17v5"), Icon.s("M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z")]},
+   IDef{"circle-check", [Icon.s("M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0"), Icon.s("m9 12 2 2 4-4")]},
+   IDef{"clock", [Icon.s("M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0"), Icon.s("M12 6v6l4 2")]},
+   IDef{"archive", [Icon.s("M2 3h20v5H2z"), Icon.s("M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"), Icon.s("M10 12h4")]},
+   IDef{"trash", [Icon.s("M3 6h18"), Icon.s("M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"), Icon.s("M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"), Icon.s("M10 11v6"), Icon.s("M14 11v6")]},
+   IDef{"git-fork", [Icon.s("M9 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0"), Icon.s("M3 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0"), Icon.s("M15 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0"), Icon.s("M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"), Icon.s("M12 12v3")]},
+   IDef{"undo", [Icon.s("M9 14 4 9l5-5"), Icon.s("M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11")]}]
 
 def Icon.pick(hit: Bool, ls: List<&2, Layer>, found: List<&2, Layer>) -> List<&2, Layer>:
   match hit:
@@ -116,7 +131,9 @@ def Icon.names() -> List<&2, String>:
 
 # the icons the two UIs draw (laws icons_*: each is in the set)
 def Icon.used() -> List<&2, String>:
-  ["plus", "x", "chevron-down", "chevron-right", "settings", "paperclip", "arrow-up", "stop", "mic", "search", "sun", "moon"]
+  ["plus", "x", "chevron-down", "chevron-right", "settings", "paperclip", "arrow-up", "stop", "mic", "search", "sun", "moon",
+   "play", "pause", "chevron-left", "skip-back", "skip-forward", "history", "git-compare", "message-square",
+   "pin", "circle-check", "clock", "archive", "trash", "git-fork", "undo", "terminal", "panel-right", "diff"]
 
 def Icon.missing.k(none: Bool, +n: String, rest: List<&2, String>) -> List<&2, String>:
   match none:

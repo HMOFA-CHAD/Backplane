@@ -501,7 +501,7 @@ final class PlotCanvas: MTKView {
     var chunks: [PlotChunk] = []
     var onPick: (String) -> Void = { _ in }
     private var fitted = false
-    private var shownKey = ""
+    private var shownFam = ""
     private var fadeFrom: Date?
     private var fling = SIMD2<Float>(0, 0)
     private var link: CADisplayLink?
@@ -597,9 +597,10 @@ final class PlotCanvas: MTKView {
         renderer.thick = f.thick > 0 ? f.thick : 1600
         renderer.load(f.chunks, fresh: f.fresh)
         chunks = f.chunks
-        // a new source (board to schematic, another sheet) fits anew
-        let first = box.isEmpty || !fitted || f.key != shownKey
-        shownKey = f.key
+        // a new source (board to schematic, another sheet) fits anew; another
+        // version of the same file keeps the view where the user left it
+        let first = box.isEmpty || !fitted || f.fam != shownFam
+        shownFam = f.fam
         box = f.box
         edge = f.edge.count == 4 && f.edge[0] <= f.edge[2] ? f.edge : f.box
         renderer.slab(edge, color: slab)
@@ -928,9 +929,12 @@ struct PlotScreen: View {
     let viewer: Viewer
 
     var body: some View {
-        // a plot for any other source is stale (a switch in flight)
-        let f = model.plots.frame.flatMap { $0.key == viewer.layers ? $0 : nil }
+        // a plot for any other source is stale (a switch in flight), except,
+        // while the design history shows, the last version of this kind and
+        // project: it stays until the next arrives (no blank between steps)
+        let f = model.plots.frame.flatMap { $0.key == viewer.layers || (viewer.hist != nil && $0.none.isEmpty && Self.head($0.key) == Self.head(viewer.layers)) ? $0 : nil }
         let m = model.plots.mesh.flatMap { $0.key == viewer.key ? $0 : nil }
+        VStack(spacing: 0) {
         ZStack(alignment: .top) {
             Color(rgb: viewer.bg).ignoresSafeArea()
             PlotCanvasView(frame: f?.none.isEmpty == true ? f : nil, mesh: m, viewer: viewer) { model.act("view-pick", $0) }
@@ -977,8 +981,169 @@ struct PlotScreen: View {
                 CardView(card: c, model: model).frame(maxHeight: .infinity, alignment: .bottom)
             }
         }
+        // the design history under the plot, which gives it the room
+        if let h = viewer.hist { HistBarView(model: model, hist: h) }
+        }
         .preferredColorScheme(viewer.light == true ? .light : .dark)
         .statusBarHidden()
+        // a comparison's version menu; let go, it shuts
+        .sheet(isPresented: Binding(get: { viewer.hist?.menu != nil },
+                                    set: { if !$0, model.screen?.thread?.viewer.hist?.menu != nil { model.act("cmp-shut", "") } })) {
+            if let h = model.screen?.thread?.viewer.hist, let rows = h.menu {
+                HistMenuSheet(model: model, side: h.side, rows: rows)
+            }
+        }
+    }
+
+    // a plot key's kind and project (a version's key keeps both)
+    static func head(_ k: String) -> String {
+        k.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false).prefix(2).joined(separator: "|")
+    }
+}
+
+// The design history under a board or schematic (src/mobile/view.bend's
+// Hist.json): the steps and the file now, a scrubber with a tick each,
+// what the agent said before the step shown (a tap goes back to it in the
+// thread), or a comparison of two versions and its legend
+struct HistBarView: View {
+    let model: AppModel
+    let hist: HistBar
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if hist.cmp {
+                HStack(spacing: 6) {
+                    chip("Old: " + hist.a, on: hist.side == "a") { model.act("cmp-side", "a") }
+                    chip("New: " + hist.b, on: hist.side == "b") { model.act("cmp-side", "b") }
+                    Spacer(minLength: 0)
+                    chip("Close", on: false) { model.act("cmp-close", "") }
+                }
+                HStack(spacing: 12) {
+                    ForEach(Array(zip(["Removed", "Changed", "Added"], hist.keys).enumerated()), id: \.offset) { _, k in
+                        HStack(spacing: 4) {
+                            Rectangle().fill(Color(rgb: k.1)).frame(width: 10, height: 10)
+                            Text(k.0)
+                        }
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+                // one row when the whole title fits, else the chips go under it
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) { steps; chips }
+                    VStack(alignment: .leading, spacing: 6) {
+                        steps
+                        HStack(spacing: 6) { Spacer(minLength: 0); chips }
+                    }
+                }
+                scrubber
+                if hist.at > 0 {
+                    Button { model.act("hist-jump", "") } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: "text.bubble").foregroundStyle(Color.accentColor)
+                            Text(hist.said).lineLimit(2).multilineTextAlignment(.leading)
+                        }
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Show in the thread: " + hist.said)
+                } else {
+                    Text(hist.said).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.bar)
+    }
+
+    private var steps: some View {
+        HStack(spacing: 2) {
+            icon("backward.end", "First step", "hist-first")
+            icon("chevron.left", "Previous step", "hist-prev")
+            icon(hist.playing ? "pause.fill" : "play.fill", hist.playing ? "Pause" : "Play", "hist-play")
+            icon("chevron.right", "Next step", "hist-next")
+            icon("forward.end", "Last step", "hist-last")
+            Text(hist.title).font(.caption).lineLimit(1).truncationMode(.tail)
+                .padding(.leading, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder private var chips: some View {
+        chip("Changes", on: hist.diff) { model.act("hist-diff", "") }
+        chip("Compare", on: false) { model.act("cmp", "a") }
+        if hist.at > 0 { chip("Live", on: false) { model.act("hist-live", "") } }
+    }
+
+    // a tick per step, then the live file; a tap shows that one
+    private var scrubber: some View {
+        ZStack {
+            Rectangle().fill(Color.secondary.opacity(0.4)).frame(height: 2)
+            HStack(spacing: 0) {
+                ForEach(Array(hist.ticks.enumerated()), id: \.offset) { i, t in
+                    Button { model.act("hist-go", t.id) } label: {
+                        Rectangle().fill(t.on ? Color.accentColor : Color.secondary)
+                            .frame(width: t.on ? 4 : 2, height: t.on ? 20 : 10)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(t.id.isEmpty ? "Live file" : "Step \(i + 1)")
+                    .accessibilityAddTraits(t.on ? .isSelected : [])
+                }
+            }
+        }
+        .frame(height: 28)
+    }
+
+    private func icon(_ name: String, _ label: String, _ action: String) -> some View {
+        Button { model.act(action, "") } label: {
+            Image(systemName: name).frame(width: 30, height: 30).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private func chip(_ label: String, on: Bool, _ tap: @escaping () -> Void) -> some View {
+        Button(action: tap) {
+            Text(label).font(.caption).lineLimit(1)
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .foregroundStyle(on ? Color.white : Color.primary)
+                .background(on ? Color.accentColor : Color.secondary.opacity(0.18), in: .rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+// the versions a comparison's side may take ("cmp-pick" value)
+struct HistMenuSheet: View {
+    let model: AppModel
+    let side: String
+    let rows: [HistRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(side == "a" ? "Compare from (old)" : "Compare with (new)").font(.headline).padding()
+            List(Array(rows.enumerated()), id: \.offset) { _, r in
+                Button { model.act("cmp-pick", r.value) } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(r.label).lineLimit(1)
+                        if !r.sub.isEmpty { Text(r.sub).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+            }
+            .listStyle(.plain)
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
@@ -46,6 +47,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.CheckCircleOutline
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.automirrored.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.VerticalSplit
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -61,6 +69,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Difference
 import androidx.compose.material.icons.filled.FindInPage
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Error
@@ -334,6 +343,13 @@ fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
         "link" -> Text(e.text, Modifier.clickable { m.act("select", e.value) }.padding(vertical = 2.dp),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // a design step: shows it in the viewer
+        "step" -> Row(Modifier.fillMaxWidth().clickable { m.act("hist-show", e.value) }.padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Filled.History, "Show in the viewer", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+            Text(e.text, style = MaterialTheme.typography.labelMedium.copy(fontFamily = mono),
+                color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
         else -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val color = if (e.tone == "error") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
             val style = MaterialTheme.typography.labelMedium.copy(fontFamily = mono)
@@ -343,21 +359,43 @@ fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
     }
 }
 
-// the threads this one delegated to
+private fun subColor(state: String) = when (state) {
+    "running" -> PhaseColor.accent
+    "done" -> PhaseColor.ok
+    "queued" -> Color.Gray
+    "cancelled" -> PhaseColor.warn
+    else -> PhaseColor.bad
+}
+
+// the subagent panel: what this thread delegated (a tap opens its thread)
+// and the agent's own (a tap opens or shuts its steps); outlined in the
+// accent while any are at work
 @Composable
-fun TasksView(m: AppModel, tasks: List<TaskRow>) {
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = corner, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Subagents", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.outline)
-            for (t in tasks) Row(Modifier.fillMaxWidth().clickable { m.act("select", t.id) }.padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatusDot(when (t.state) { "running" -> "run"; "failed" -> "fail"; else -> "" }, "")
-                Column(Modifier.weight(1f)) {
-                    Text(t.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(t.who + " · " + t.state, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+fun SubsView(m: AppModel, subs: Subs) {
+    val busy = subs.busy.isNotEmpty()
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = corner, modifier = Modifier.fillMaxWidth()
+        .then(if (busy) Modifier.border(1.dp, PhaseColor.accent, corner) else Modifier)) {
+        Column(Modifier.padding(10.dp).heightIn(max = 260.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(Modifier.fillMaxWidth()) {
+                Text("Subagents", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                    color = if (busy) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
+                if (busy) Text(subs.busy, style = MaterialTheme.typography.labelMedium, color = PhaseColor.accent)
+            }
+            for (r in subs.rows) Column(Modifier.fillMaxWidth().clickable { m.act(r.act, r.value) }.padding(vertical = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.size(if (r.live) 8.dp else 6.dp).background(subColor(r.state)))
+                    Text(if (r.agent) (if (r.open) "▾" else "▸") else r.who, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                    Text(r.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(r.state, style = MaterialTheme.typography.labelSmall, color = subColor(r.state))
                 }
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
+                if (r.doing.isNotEmpty()) Text(r.doing, Modifier.padding(start = 16.dp), style = MaterialTheme.typography.labelSmall,
+                    color = PhaseColor.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                for (st in r.steps) Row(Modifier.padding(start = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val style = MaterialTheme.typography.labelSmall.copy(fontFamily = mono)
+                    if (st.kind.isNotEmpty()) Text(st.kind, style = style, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f))
+                    Text(st.text, style = style, color = MaterialTheme.colorScheme.outline, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
     }
@@ -748,11 +786,20 @@ fun SettingsSheet(m: AppModel, st: Settings) {
 }
 
 // the thread menu's icon for an action
-fun menuIcon(action: String) = when (action) {
+// a tool's icon (core/icons.bend's name) as a Material icon
+fun toolIcon(name: String) = when (name) {
+    "pin" -> Icons.Filled.PushPin
+    "circle-check" -> Icons.Filled.CheckCircleOutline
+    "clock" -> Icons.Filled.Snooze
+    "archive" -> Icons.Filled.Archive
+    "trash" -> Icons.Filled.Delete
+    "git-fork" -> Icons.AutoMirrored.Filled.CallSplit
+    "undo" -> Icons.AutoMirrored.Filled.Undo
+    "terminal" -> Icons.Filled.Terminal
+    "panel-right" -> Icons.Filled.VerticalSplit
     "diff" -> Icons.Filled.Difference
-    "term-toggle" -> Icons.Filled.Terminal
-    "find-open" -> Icons.Filled.FindInPage
-    "snooze" -> Icons.Filled.Snooze
-    "row-delete" -> Icons.Filled.Delete
+    "search" -> Icons.Filled.FindInPage
+    "stop" -> Icons.Filled.Stop
+    "x" -> Icons.Filled.Close
     else -> null
 }

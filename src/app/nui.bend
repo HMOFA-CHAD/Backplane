@@ -17,6 +17,7 @@ import ../core/edit.bend as ED
 import ../core/model.bend as M
 import ../core/bot.bend as BT
 import ../core/perf.bend as PF
+import ../core/hist.bend as HS
 
 # The native window's state around the shared client state (Ui): size,
 # pointer, scroll, focus and the composer caret. Input is pure: an event
@@ -54,6 +55,10 @@ type NCmd is Data:
   NOpen{url: String}
   # write a thread's draft down now ("" forgets it)
   NKeep{thread: String, text: String}
+  # a desktop notification from the hub (core/desk.bend)
+  NNotify{thread: String, title: String, body: String}
+  # run a client action after ms (client.bend's Later)
+  NLater{ms: Nat, action: String, value: String}
 
 type Step is Data:
   Step{nui: Nui, cmds: List<&2, NCmd>, dirty: Bool}
@@ -113,6 +118,10 @@ def Nui.cmd(c: U.Cmd, rest: List<&2, NCmd>) -> List<&2, NCmd>:
       NConnect{url} <> rest
     case U.Keep{id, t}:
       NKeep{id, t} <> rest
+    case U.Notify{th, ti, b, _}:
+      NNotify{th, ti, b} <> rest
+    case U.Later{ms, a, v}:
+      NLater{ms, a, v} <> rest
     case _:
       rest
 
@@ -155,6 +164,8 @@ def Nui.effects(cs: List<&2, U.Cmd>, n: Nui) -> Nui:
       Nui.effects(t, Nui{u, w, h, mx, my, sd, sc, ca, Fld.alias(id), pa, hi, ms, vw})
     case U.Scroll{} <> t Nui{u, w, h, mx, my, sd, _, ca, fo, pa, hi, ms, vw}:
       Nui.effects(t, Nui{u, w, h, mx, my, sd, 0, ca, fo, pa, hi, ms, vw})
+    case U.Jump{_} <> t Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}:
+      Nui.effects(t, Nui{U.Ui.scratch_set(u, "@jump.go", "1"), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw})
     case _ <> t _:
       Nui.effects(t, n)
 
@@ -379,6 +390,25 @@ def Nui.focus(n: Nui, fo: String) -> Step:
     case Nui{u, w, h, mx, my, sd, sc, ca, _, pa, hi, ms, vw}:
       Step{Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}, Nil{}, True{}}
 
+# Going back to an entry (client.bend's Jump): the next frame lays the
+# thread out with the entry's rule and says how far to scroll ("tl-jump",
+# layout.bend's TL.jump.sc); the scroll is taken once, and one more frame
+# draws it there
+
+def Jump.hit(hs: List<&2, Hit>) -> String:
+  match hs:
+    case Nil{}:
+      ""
+    case Hit{_, _, _, _, +a, +v} <> t:
+      Bool.pick(String, String.eq(a, "tl-jump"), v, Jump.hit(t))
+
+def Jump.to(go: Bool, s: Step) -> Step:
+  match go s:
+    case True{} Step{Nui{u, w, h, mx, my, sd, _, ca, fo, pa, +hi, ms, vw}, cs, _}:
+      Step{Nui{U.Ui.scratch_set(u, "@jump.go", ""), w, h, mx, my, sd, U32.from_nat(M.Switch.num(Jump.hit(hi), 0n)), ca, fo, pa, hi, ms, vw}, cs, True{}}
+    case False{} _:
+      s
+
 # Pointer
 # -------
 
@@ -417,10 +447,17 @@ def Vw.scene.k(same: Bool, t: FA.Scene3) -> FA.Scene3:
     case False{}:
       FA.Scene3.none()
 
-def Vw.kind_set(v: V.Vw, +k: U32, +path: String) -> V.Vw:
-  match v:
-    case V.Vw{_, vi, _, r, d, lx, ly, b, _, cu, V.Vx{+k0, _, t, c, sh, bu, px, py, +p0, se, bm}}:
+def Vw.kind_set.k(keep: Bool, v: V.Vw, +k: U32, +path: String) -> V.Vw:
+  match keep v:
+    case True{} V.Vw{s, vi, f, r, d, lx, ly, b, fr, cu, V.Vx{_, p, t, c, sh, bu, px, py, _, se, bm}}:
+      V.Vw{s, vi, f, r, d, lx, ly, b, fr, cu, V.Vx{k, p, t, c, sh, bu, px, py, path, se, bm}}
+    case False{} V.Vw{_, vi, _, r, d, lx, ly, b, _, cu, V.Vx{+k0, _, t, c, sh, bu, px, py, +p0, se, bm}}:
       V.Vw{Nil{}, V.View{1.0, 0.0, 0.0}, False{}, "", d, lx, ly, b, False{}, cu, V.Vx{k, "", Vw.scene.k(Bool.and(U32.is_eq(k, k0), String.eq(path, p0)), t), c, sh, bu, px, py, path, se, bm}}
+
+def Vw.path(v: V.Vw) -> String:
+  match v:
+    case V.Vw{_, _, _, _, _, _, _, _, _, _, V.Vx{_, _, _, _, _, _, _, _, p, _, _}}:
+      p
 
 def Vw.pick_set(v: V.Vw, +key: String) -> V.Vw:
   match v:
@@ -649,6 +686,11 @@ def Nui.ui(n: Nui) -> U.Ui:
     case Nui{u, _, _, _, _, _, _, _, _, _, _, _, vw}:
       u
 
+def Jump.settle(s: Step) -> Step:
+  match s:
+    case Step{+n, cs, d}:
+      Jump.to(Bool.and(String.eq(U.Ui.scratch(Nui.ui(n), "@jump.go"), "1"), Bool.not(String.is_empty(Jump.hit(Nui.hits(n))))), Step{n, cs, d})
+
 # the picker closes itself once its project is added: the keys go back
 # to the composer
 def Nui.unpick(+n: Nui) -> Nui:
@@ -736,6 +778,14 @@ def Vw.x(v: V.Vw) -> V.Vx:
 def Vw.kind(v: V.Vw) -> U32:
   Vx.kind(Vw.x(v))
 
+# moving to another version of the file on show (core/hist.bend: a step,
+# a comparison, the live file again) keeps the scene and the view: the
+# next read merges, so only what changed fades in; anything else starts over
+def Vw.kind_set(+v: V.Vw, +k: U32, +path: String) -> V.Vw:
+  Vw.kind_set.k(Bool.and(Bool.and(U32.is_eq(k, Vw.kind(v)), U32.is_lt(k, 2)),
+      Bool.and(Bool.not(String.eq(path, Vw.path(v))), Bool.and(Bool.not(String.is_empty(HS.Hist.family(path))), String.eq(HS.Hist.family(path), HS.Hist.family(Vw.path(v)))))),
+    v, k, path)
+
 # the layers the user turned on or off in the kind on show (V.Look.on);
 # kept per kind in the scratch, so a board's and a schematic's differ
 def Nui.flip.key(+n: Nui) -> String:
@@ -755,7 +805,7 @@ def Nui.light(+n: Nui) -> Bool:
 # what a frame draws with: the layers' flips and both grounds (viewer.bend's
 # look word)
 def Nui.look(+n: Nui) -> U32:
-  U32.or(U32.and(Nui.flip(n), 1073741823),
+  U32.or(U32.or(U32.and(Nui.flip(n), 536870911), Bool.pick(U32, Nat.is_eq(HS.Hist.kind(Vw.path(Nui.vw(n))), 2n), V.Look.cmp.bit(), 0)),
     U32.or(Bool.pick(U32, Nui.vlight(n), V.Look.light.bit(), 0), Bool.pick(U32, Nui.light(n), V.Look.ui.bit(), 0)))
 
 # SolidWorks' view controls (the 3D viewer)
@@ -1426,7 +1476,7 @@ def Vw.fresh_for(+v: V.Vw, +key: String) -> Bool:
   String.eq(Vx.shown(Vw.x(v)), key)
 
 def Vw.board.same(+v: V.Vw, +key: String, +items: List<&2, B.Item>, +now: Nat) -> V.Vw:
-  Vw.board.k(String.eq(Vw.root(v), key), v, key, items, now)
+  Vw.board.k(String.eq(HS.Hist.key.family(Vw.root(v)), HS.Hist.key.family(key)), v, key, items, now)
 
 # results for a source other than the one on show are stale: dropped
 def Nui.board(+n: Nui, +key: String, +items: List<&2, B.Item>, +now: Nat) -> Nui:
@@ -1701,7 +1751,7 @@ def Menu.scroll(+v: String, +dir: U32) -> String:
 def Nui.prepare.fit(open: Bool, +n: Nui) -> Nui:
   match open:
     case True{}:
-      Nui.with_vw(n, Vw.fit(Nui.vw(n), Nui.vx0(n), Nui.height(n), Nui.width(n)))
+      Nui.with_vw(n, Vw.fit(Nui.vw(n), Nui.vx0(n), (Nui.height(n) - U.HBar.h(U.Hs.bar(Nui.ui(n))) : U32), Nui.width(n)))
     case False{}:
       n
 
@@ -2381,6 +2431,8 @@ def Nui.vw_act.more(i: Nat, +n: Nui, +value: String) -> Step:
       Nui.sheet.go(n, HI.Hier.parent(Nui.rows(n), Nui.sheet.at(n)))
     case 6n:
       Nui.vlight.flip(n)
+    case 7n:
+      Nui.shortcut.k(U.Keys.pos(Keys.list(), value), n, 0)
     case _:
       Step{n, Nil{}, False{}}
 
@@ -2407,7 +2459,7 @@ def Nui.vw_act.k(i: Nat, +n: Nui, +value: String) -> Step:
 
 # the window's own actions (they never reach the client state)
 def Nui.vw_act(+n: Nui, +action: String, +value: String) -> Step:
-  Nui.vw_act.k(Nui.pos(["vw-kind", "vw-unpick", "vw-pal", "vw-palx", "vw-proj", "vw-projx", "vw-projo", "vw-find", "vw-layers", "vw-layer", "vw-layers-reset", "vw-sheet", "vw-open", "vw-up", "vw-light"], action, 0n), n, value)
+  Nui.vw_act.k(Nui.pos(["vw-kind", "vw-unpick", "vw-pal", "vw-palx", "vw-proj", "vw-projx", "vw-projo", "vw-find", "vw-layers", "vw-layer", "vw-layers-reset", "vw-sheet", "vw-open", "vw-up", "vw-light", "vw-key"], action, 0n), n, value)
 
 # a link in a message: only a web address is ever opened (law link_no_script)
 def Nui.click.url(url: Bool, +n: Nui, +action: String, +value: String) -> Step:
@@ -2604,24 +2656,32 @@ def Nui.press.k(drag: Bool, +n: Nui, +x: U32, +y: U32) -> Step:
 
 # a right-click on a sidebar row opens its menu where the pointer is
 # (core's Menu: "row-menu"), on a project's name or badge the project's
-# ("proj-menu"); it never acts on the row by itself
+# ("proj-menu"), on a file link in a message the file's ("file-menu"); it
+# never acts on the row by itself
 def Row.menu.at(+n: Nui, +x: U32, +y: U32) -> Nui:
   Nui.with_ui(n, U.Ui.scratch_set(U.Ui.scratch_set(Nui.ui(n), "@menu.x", U32.show(x)), "@menu.y", U32.show(y)))
 
-def Row.menu.k(row: Bool, proj: Bool, +n: Nui, +value: String, +x: U32, +y: U32) -> Step:
+def Row.menu.f(file: Bool, +n: Nui, +value: String, +x: U32, +y: U32) -> Step:
+  match file:
+    case True{}:
+      Nui.act(Row.menu.at(n, x, y), "file-menu", value)
+    case False{}:
+      Step{n, Nil{}, False{}}
+
+def Row.menu.k(row: Bool, proj: Bool, file: Bool, +n: Nui, +value: String, +x: U32, +y: U32) -> Step:
   match row proj:
     case True{} _:
       Nui.act(Row.menu.at(n, x, y), "row-menu", value)
     case False{} True{}:
       Nui.act(Row.menu.at(n, x, y), "proj-menu", value)
     case False{} False{}:
-      Step{n, Nil{}, False{}}
+      Row.menu.f(file, n, value, x, y)
 
 def Row.menu(m: Maybe<&2, Hit>, +n: Nui, +x: U32, +y: U32) -> Step:
   match m:
     case Some{Hit{_, _, _, _, +action, +value}}:
       Row.menu.k(Bool.and(String.eq(action, "select"), U32.is_lt(x, 264)),
-        Bool.and(Bool.or(String.eq(action, "project"), String.eq(action, "look")), U32.is_lt(x, 264)), n, value, x, y)
+        Bool.and(Bool.or(String.eq(action, "project"), String.eq(action, "look")), U32.is_lt(x, 264)), String.eq(action, "file-open"), n, value, x, y)
     case None{}:
       Step{n, Nil{}, False{}}
 
@@ -2690,6 +2750,20 @@ def Nui.focused(+n: Nui) -> Step:
 # whether the window has the keyboard
 def Nui.has_focus(+n: Nui) -> Bool:
   String.is_empty(U.Ui.scratch(Nui.ui(n), "@blur"))
+
+# this window is a desk (core/desk.bend): after its input it may tell the
+# hub which thread it shows and whether it has the focus (no frame)
+def Nui.desk.k(a: U.Act, n: Nui) -> Step:
+  match a:
+    case U.Act{u, +cs}:
+      Step{Nui.with_ui(n, u), Nui.cmds(cs), False{}}
+
+def Nui.desk(+n: Nui, +now: Nat) -> Step:
+  Nui.desk.k(U.Ui.desk(Nui.ui(n), Nui.has_focus(n), now), n)
+
+# a new connection hears the look again
+def Nui.desk.reset(+n: Nui) -> Nui:
+  Nui.with_ui(n, U.Ui.desk.reset(Nui.ui(n)))
 
 # one window event
 def Nui.event(+n: Nui, e: W.WinEv) -> Step:

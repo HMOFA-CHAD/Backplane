@@ -48,6 +48,14 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         private set
     var scrolls by mutableIntStateOf(0)
         private set
+    // an entry of the open thread to show (a "jump"); n counts the jumps, so
+    // the same entry shown twice scrolls twice
+    var jump by mutableStateOf<Jump?>(null)
+        private set
+    // a jump waiting for a screen that holds its entry (the jump opens folds
+    // and pages first), and how many more screens it waits
+    private var jumping: String? = null
+    private var jumpLeft = 0
     // the board viewer's plots, which come straight from the socket
     val plots = PlotStore()
     // drafts sent to Bend and not yet answered: until then a screen may
@@ -274,10 +282,33 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
                 cm.setPrimaryClip(ClipData.newPlainText("Backplane", c.text))
             }
             "scroll" -> scrolls += 1
+            // an action come due (the design history playing), sent as a tap would
+            "later" -> if (c.action.isNotEmpty()) {
+                val action = c.action
+                val value = c.value
+                scope.launch {
+                    delay(maxOf(0L, c.ms))
+                    act(action, value)
+                }
+            }
+            "jump" -> if (c.id.isNotEmpty()) { jumping = c.id; jumpLeft = 4 }
             "keep" -> keep(c.thread, c.text)
             "notify" -> if (!(foreground && screen?.sel == c.thread)) Notes.turn(app, c)
         }
+        jumping?.let { id ->
+            val t = screen?.thread ?: return@let
+            val e = t.entries.firstOrNull { it.id == id || it.id.endsWith("|$id") }
+            if (e != null) {
+                jumping = null
+                jump = Jump(e.id, (jump?.n ?: 0) + 1)
+            } else if (out.screen != null) {
+                jumpLeft -= 1
+                if (jumpLeft <= 0) jumping = null
+            }
+        }
     }
+
+    data class Jump(val id: String, val n: Int)
 
     // a thread's draft, written at once (a crash loses nothing typed); "" forgets it
     private fun keep(thread: String, text: String) {

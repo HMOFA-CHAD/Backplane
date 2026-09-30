@@ -13,22 +13,51 @@ import ./model.bend as M
 # client's info map), shut when they shut it ("0"), and otherwise open only
 # while it is the live one: the last thing in a thread whose turn runs.
 #
-# A turn folds the same way, one level up: what the agent did between a
-# user's message and its last reply shows as one row, "Worked for 2m 13s ·
-# 5m ago", open while the turn runs and shut once it is done
-# ("fold:work:<the user message's id>"). Inside it the tool runs fold as
-# before; the message and the reply are never in it (laws work_*).
+# Only tool calls fold: a turn's messages always show (law
+# fold_roles_message_shown). The turn fold below ("Worked for …", Work.*)
+# is no longer applied; it hid the agent's messages between tool runs.
 
 type Grp is Data:
   GOne{e: M.Entry}
   GRun{es: List<&2, M.Entry>}
 
+# a tool call, or a design step one made (core/hist.bend: it folds with
+# the calls around it)
 def Fold.tool(e: M.Entry) -> Bool:
   match e:
-    case M.Act{_, _, tone, _, _, _}:
-      String.eq(tone, "tool")
+    case M.Act{_, _, +tone, _, _, _}:
+      Bool.or(String.eq(tone, "tool"), String.eq(tone, "step"))
     case M.Msg{_, _, _, _, _}:
       False{}
+
+def Fold.step(e: M.Entry) -> Bool:
+  match e:
+    case M.Act{_, _, +tone, _, _, _}:
+      String.eq(tone, "step")
+    case M.Msg{_, _, _, _, _}:
+      False{}
+
+def Fold.steps(es: List<&2, M.Entry>) -> Nat:
+  match es:
+    case Nil{}:
+      0n
+    case +e <> t:
+      Nat.add(Bool.pick(Nat, Fold.step(e), 1n, 0n), Fold.steps(t))
+
+def Fold.calls.k(step: Bool, e: M.Entry, rest: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match step:
+    case True{}:
+      rest
+    case False{}:
+      e <> rest
+
+# the tool calls of a run, its steps left out
+def Fold.calls(es: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match es:
+    case Nil{}:
+      Nil{}
+    case +e <> t:
+      Fold.calls.k(Fold.step(e), e, Fold.calls(t))
 
 # an entry in front of the groups after it: a tool call joins the run that
 # starts there
@@ -139,13 +168,21 @@ def Fold.first(k: Nat, xs: List<&2, String>) -> List<&2, String>:
     case 1n+j Nil{}:
       Nil{}
 
-# "6 tool calls · shell, edit, read" (three kinds at most)
-def Fold.label(+es: List<&2, M.Entry>) -> String:
-  +n = List.length(&2, M.Entry, es)
-  +ks = Fold.kinds(es, Nil{})
+def Fold.calls.label(+n: Nat, +ks: List<&2, String>) -> String:
   Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " tool call", " tool calls")
     ++ Bool.pick(String, List.is_empty(&2, String, ks), "", " · " ++ String.join(Fold.first(3n, ks), ", ")
     ++ Bool.pick(String, Nat.is_gt(List.length(&2, String, ks), 3n), ", …", ""))
+
+def Fold.steps.label(+n: Nat) -> String:
+  Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " design change", " design changes")
+
+# "6 tool calls · shell, edit, read" (three kinds at most), and how many
+# design changes they made
+def Fold.label(+es: List<&2, M.Entry>) -> String:
+  +n = List.length(&2, M.Entry, Fold.calls(es))
+  +d = Fold.steps(es)
+  Bool.pick(String, Nat.is_eq(n, 0n), Fold.steps.label(d),
+    Fold.calls.label(n, Fold.kinds(Fold.calls(es), Nil{})) ++ Bool.pick(String, Nat.is_eq(d, 0n), "", " · " ++ Fold.steps.label(d)))
 
 # the run's id: its first entry's
 def Fold.run_id(es: List<&2, M.Entry>) -> String:
@@ -403,6 +440,45 @@ def Fold.now(m: Map<&2, String>) -> Nat:
   M.Switch.num(Fold.user.k(Map.get(String, "", m, "clock")), 0n)
 
 # the roles of a thread's entries, with the client's info map and whether
-# its turn runs
+# its turn runs: tool runs fold, nothing else does
 def Fold.roles(+es: List<&2, M.Entry>, +info: Map<&2, String>, +running: Bool) -> List<&2, Role>:
-  Work.zip(Work.roles.go(Work.segs(es), info, running, Fold.now(info)), Fold.roles.go(Fold.groups(es), info, running))
+  Fold.roles.go(Fold.groups(es), info, running)
+
+# Revealing an entry
+# ------------------
+# To show an entry (the viewer's history goes back to the tool call a
+# design step followed), the run of tool calls it sits in opens. A page
+# may start inside the run, making a later entry its first, so every
+# entry's key is set: whichever heads the run on show opens it. Entries
+# oldest first; the keys to set to "1".
+
+def Reveal.has(es: List<&2, M.Entry>, +id: String) -> Bool:
+  match es:
+    case Nil{}:
+      False{}
+    case +e <> t:
+      Bool.or(String.eq(Fold.id(e), id), Reveal.has(t, id))
+
+def Reveal.keys(es: List<&2, M.Entry>) -> List<&2, String>:
+  match es:
+    case Nil{}:
+      Nil{}
+    case +e <> t:
+      Fold.key(Fold.id(e)) <> Reveal.keys(t)
+
+def Reveal.run(g: Grp, +id: String) -> List<&2, String>:
+  match g:
+    case GRun{+es}:
+      Bool.pick(List<&2, String>, Reveal.has(es, id), Reveal.keys(es), Nil{})
+    case GOne{_}:
+      Nil{}
+
+def Reveal.runs(gs: List<&2, Grp>, +id: String) -> List<&2, String>:
+  match gs:
+    case Nil{}:
+      Nil{}
+    case g <> t:
+      List.append(&2, String, Reveal.run(g, id), Reveal.runs(t, id))
+
+def Fold.reveal(+es: List<&2, M.Entry>, +id: String) -> List<&2, String>:
+  Reveal.runs(Fold.groups(es), id)

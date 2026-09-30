@@ -24,6 +24,7 @@ import ./plot.bend as PV
 import ../core/agent.bend as AG
 import ../core/tailnet.bend as TN
 import ../core/images.bend as IM
+import ../core/links.bend as LK
 import ../core/attach.bend as ATT
 import ../core/attach.bend as AT
 import ../core/sha1.bend as SH
@@ -45,6 +46,9 @@ import ./perf.bend as PS
 import ./freecad.bend as FC
 import ../core/perf.bend as PF
 import ../core/semver.bend as SV
+import ../core/desk.bend as DK
+import ../core/notice.bend as NO
+import ../core/hist.bend as HI
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -138,7 +142,8 @@ type Cfg is Data:
   Cfg{home: String, web: String, host: String, port: U32, prompt: String, dirs: List<&2, String>, version: String, net: Net}
 
 type Client is Data:
-  Client{id: U32, out: Chan(Wire)}
+  # look: what the client last said it shows (desk.look; core/desk.bend)
+  Client{id: U32, out: Chan(Wire), look: DK.Look}
 
 type Agent is Data:
   Agent{thread: String, input: Chan(String), pid: U32, key: String}
@@ -203,14 +208,14 @@ def Store.path(+home: String) -> String:
 
 def Clients.hit(cs: List<&2, Client>, +id: U32) -> Bool:
   match cs:
-    case Client{i, _} <> _:
+    case Client{i, _, _} <> _:
       U32.is_eq(i, id)
     case Nil{}:
       False{}
 
 def Clients.find(cs: List<&2, Client>, hit: Bool, +id: U32) -> Maybe<&2, Chan(Wire)>:
   match cs hit:
-    case Client{_, o} <> _ True{}:
+    case Client{_, o, _} <> _ True{}:
       Some{o}
     case _ <> +t False{}:
       Clients.find(t, Clients.hit(t, id), id)
@@ -231,8 +236,30 @@ def Clients.drop(cs: List<&2, Client>, +id: U32) -> List<&2, Client>:
   match cs:
     case Nil{}:
       Nil{}
-    case Client{+i, o} <> t:
-      Clients.drop.k(U32.is_eq(i, id), Client{i, o}, Clients.drop(t, id))
+    case Client{+i, o, l} <> t:
+      Clients.drop.k(U32.is_eq(i, id), Client{i, o, l}, Clients.drop(t, id))
+
+def Clients.look.k(same: Bool, +i: U32, o: Chan(Wire), l: DK.Look, +look: DK.Look) -> Client:
+  match same:
+    case True{}:
+      Client{i, o, look}
+    case False{}:
+      Client{i, o, l}
+
+# a client's new look
+def Clients.look(cs: List<&2, Client>, +id: U32, +look: DK.Look) -> List<&2, Client>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Client{+i, o, l} <> t:
+      Clients.look.k(U32.is_eq(i, id), i, o, l, look) <> Clients.look(t, id, look)
+
+def Clients.looks(cs: List<&2, Client>) -> List<&2, DK.At>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Client{i, _, l} <> t:
+      DK.At{i, l} <> Clients.looks(t)
 
 def Agents.hit(as: List<&2, Agent>, +th: String) -> Bool:
   match as:
@@ -280,7 +307,7 @@ def Wire.all(cs: List<&2, Client>, +text: String) -> IO(Unit):
   match cs:
     case Nil{}:
       IO.pure(Unit, Unit{})
-    case Client{_, o} <> t:
+    case Client{_, o, _} <> t:
       do IO<Unit>:
         ok : Bool <- Chan.send(Wire, o, WText{text})
         Wire.all(t, text)
@@ -746,6 +773,34 @@ def Hub.join.note.k(empty: Bool, +out: Chan(Wire), +note: String) -> IO(Unit):
 
 def Hub.join.note(+out: Chan(Wire), +note: String) -> IO(Unit):
   Hub.join.note.k(String.is_empty(note), out, note)
+
+# Desks
+# -----
+# which threads a desk watches (core/desk.bend): a client joining hears
+# them, and every client hears them again whenever they change
+
+def Desk.join(+text: String) -> String:
+  Bool.pick(String, String.is_empty(text), "", DK.Desk.info(text))
+
+def Desk.say.k(same: Bool, +cl: List<&2, Client>, +text: String) -> IO(Unit):
+  match same:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      Wire.all(cl, DK.Desk.info(text))
+
+def Desk.say(+before: String, +cl: List<&2, Client>, +now: Nat) -> IO(Unit):
+  Desk.say.k(String.eq(before, DK.Desk.text(Clients.looks(cl), now)), cl, DK.Desk.text(Clients.looks(cl), now))
+
+# a desk said what it shows
+def Hub.desk(h: Hub, +client: U32, +thread: String, +focused: Bool) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        +cl2 : List<&2, Client> = Clients.look(cl, client, DK.Look{True{}, thread, focused, now})
+        Desk.say(DK.Desk.text(Clients.looks(cl), now), cl2, now)
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
 def Hub.leave.close(m: Maybe<&2, Chan(Wire)>) -> IO(Unit):
   match m:
@@ -1380,6 +1435,55 @@ def KiCadJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +cwd: String, +ho
     +err : String <- K.KiCad.open(rt, fs)
     GitJob.reply(inbox, client, id, String.is_empty(err), J.Json.obj([J.KV{"text", J.Str{err}}]))
 
+# Design steps (core/hist.bend): after a tool call, the thread's KiCad
+# files snapshot (Git.step.capture); a change is logged in the thread as
+# an Act of tone "step" whose summary is its record. `entry` is the tool
+# call or message it follows ("" at a turn's end).
+
+def StepJob.log(+inbox: Chan(Msg), +thread: String, +id: String, +rec: String) -> IO(Unit):
+  do IO<Unit>:
+    now : Nat <- Now.nat()
+    ok : Bool <- Chan.send(Msg, inbox, Commit{[M.ActivityLogged{thread, id, HI.Step.tone(), "kicad", rec, now}]})
+    return Unit{}
+
+def StepJob.done(+inbox: Chan(Msg), +thread: String, +entry: String, +out: String) -> IO(Unit):
+  +rec = HI.Hist.record(out, entry)
+  Bool.pick(IO(Unit), String.is_empty(rec), IO.pure(Unit, Unit{}),
+    StepJob.log(inbox, thread, "step:" ++ String.trim(HI.Hist.at(String.split(out, '\n'), 0n)), rec))
+
+def StepJob.run(+inbox: Chan(Msg), +thread: String, +cwd: String, +entry: String) -> IO(Unit):
+  Bool.pick(IO(Unit), String.is_empty(cwd), IO.pure(Unit, Unit{}),
+    IO.bind(String, Unit, GT.Git.step.capture(cwd, thread), out => StepJob.done(inbox, thread, entry, out)))
+
+def RefsJob.files(f: K.Files) -> List<&2, J.KV>:
+  match f:
+    case K.Files{_, pcb, sch}:
+      [J.KV{"pcb", J.Str{pcb}}, J.KV{"sch", J.Str{sch}}]
+
+# what the thread's files may be compared with (Git.refs), and its
+# canonical board and schematic
+def RefsJob.reply(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +ls: List<&2, String>, f: K.Files) -> IO(Unit):
+  GitJob.reply(inbox, client, id, True{}, J.Json.obj(List.append(&2, J.KV, [J.KV{"thread", J.Str{thread}}, J.KV{"git", J.Str{HI.Hist.at(ls, 0n)}},
+    J.KV{"top", J.Str{HI.Hist.at(ls, 1n)}}, J.KV{"refs", J.Str{String.join(List.drop(&2, String, ls, 2n), "\n")}}], RefsJob.files(f))))
+
+def RefsJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String) -> IO(Unit):
+  do IO<Unit>:
+    out : String <- GT.Git.refs(cwd, thread)
+    f : K.Files <- K.Files.read(cwd)
+    RefsJob.reply(inbox, client, id, thread, String.split(out, '\n'), f)
+
+def FileJob.done(r: P.Ran, +inbox: Chan(Msg), +client: U32, +id: String) -> IO(Unit):
+  match r:
+    case P.Ran{0, _}:
+      GitJob.reply(inbox, client, id, True{}, J.Json.obj([J.KV{"text", J.Str{""}}]))
+    case P.Ran{_, out}:
+      GitJob.reply(inbox, client, id, False{}, J.Json.obj([J.KV{"text", J.Str{String.trim(out)}}]))
+
+# a file link from a thread, opened here or shown in its folder (core's
+# Link.file.cmd: the path goes as an argument, never as shell text)
+def FileJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +path: String, +how: String) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", LK.Link.file.cmd(how), "sh", path], "/"), r => FileJob.done(r, inbox, client, id))
+
 def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
   match i:
     case 0n:
@@ -1404,12 +1508,18 @@ def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U
       Mech.list(inbox, client, id, thread, cwd)
     case 10n:
       Mech.render(inbox, client, id, thread, cwd, a)
+    case 11n:
+      StepJob.run(inbox, thread, cwd, a)
+    case 12n:
+      RefsJob.run(inbox, client, id, thread, cwd)
+    case 13n:
+      FileJob.run(inbox, client, id, a, b)
     case _:
       GitJob.run.git(tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # a job the hub asked for: a git job, or one of the sidebar's
 def GitJob.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
-  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
+  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs", "open"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # Grok (grok agent stdio, ACP)
 # ----------------------------
@@ -1774,14 +1884,23 @@ def Agent.same(m: Maybe<&2, Agent>, +key: String) -> Bool:
     case None{}:
       False{}
 
+# an agent starting in a KiCad project opens its thread's panel on the
+# board, unless the person has opened or shut it by hand (core's Auto.view,
+# client.bend's Viewer.auto)
+def Hub.auto(+cl: List<&2, Client>, +thread: String, fs: K.Files) -> IO(Unit):
+  match fs:
+    case K.Files{_, +pcb, +sch}:
+      Bool.pick(IO(Unit), String.is_empty(B.Auto.view(thread, pcb, sch)), IO.pure(Unit, Unit{}), Wire.all(cl, B.Auto.view(thread, pcb, sch)))
+
 def Hub.start.go(same: Bool, m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
   match same h:
     case True{} _:
       IO.pure(Hub, h)
-    case False{} Hub{+st, f, ls, cl, +as, inbox, +cfg, note}:
+    case False{} Hub{+st, f, ls, +cl, +as, inbox, +cfg, note}:
       do IO<Hub>:
         Hub.agent_stop(m)
-        fs : K.Files <- K.Files.read(cwd)
+        +fs : K.Files <- K.Files.read(cwd)
+        Hub.auto(cl, thread, fs)
         res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs), effort), cwd, 0)
         Hub.spawned(res, Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, thread, Agent.key(model, r, i, effort))
 
@@ -1988,8 +2107,22 @@ def Hub.drop_dead(ts: List<&2, String>, +inbox: Chan(Msg)) -> IO(Unit):
     case t <> rest:
       IO.bind(Bool, Unit, Chan.send(Msg, inbox, Rpc{0, PU.Push.drop_request(t)}), _ => Hub.drop_dead(rest, inbox))
 
-def Hub.phone(+home: String, st: M.State, +thread: String, +state: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(List<&2, String>, Unit, PU.Push.turn_ended.dead(home, st, thread, state), ds => Hub.drop_dead(ds, inbox))
+def Hub.phone(+home: String, st: M.State, +thread: String, +state: String, seen: Bool, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(List<&2, String>, Unit, PU.Push.turn_ended.dead(home, st, thread, state, seen), ds => Hub.drop_dead(ds, inbox))
+
+def Desk.tell.k(+n: NO.Notice, +cl: List<&2, Client>, +c: U32, +st: M.State, +thread: String, +state: String) -> IO(Unit):
+  Bool.pick(IO(Unit), String.is_empty(NO.Notice.kind(n)), IO.pure(Unit, Unit{}),
+    Wire.send(Clients.get(cl, c), WText{DK.Desk.notify(thread, PU.Push.title(B.Hub.thread(st, thread)),
+      PU.Push.body(String.eq(state, "failed"), PU.Push.first(B.Task.last(st, thread))), NO.Notice.kind(n), NO.Notice.key(n))}))
+
+# a turn's end as a desktop notification, on the desk used last, when it
+# is news (core/notice.bend, as for phones) and no desk watches the thread
+def Desk.tell(m: Maybe<&2, U32>, +cl: List<&2, Client>, +st: M.State, +thread: String, +state: String) -> IO(Unit):
+  match m:
+    case Some{+c}:
+      Desk.tell.k(NO.Notice.of(st, thread, String.eq(state, "failed"), True{}), cl, c, st, thread, state)
+    case None{}:
+      IO.pure(Unit, Unit{})
 
 # the reply now, or (for a request that waits on the user) parked until
 # the ask it opened is answered
@@ -2086,13 +2219,15 @@ def Plot.put(m: Maybe<&2, Chan(PV.PMsg)>, +msg: PV.PMsg) -> IO(Unit):
     case None{}:
       IO.pure(Unit, Unit{})
 
-def Hub.leave(h: Hub, +client: U32) -> IO(Hub):
+def Hub.leave(h: Hub, +client: U32, +now: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, +cl, as, inbox, +cfg, note}:
       do IO<Hub>:
         Hub.leave.close(Clients.get(cl, client))
         Plot.put(Cfg.pv(cfg), PV.PStop{client})
-        return Hub{st, f, ls, Clients.drop(cl, client), as, inbox, cfg, note}
+        +cl2 : List<&2, Client> = Clients.drop(cl, client)
+        Desk.say(DK.Desk.text(Clients.looks(cl), now), cl2, now)
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
 # kicad.watch: kind "board", "schematic", "3d", "3d-bare" or "3d-full"
 # shows it, anything else stops
@@ -3798,9 +3933,10 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         Plot.put(Cfg.pv(cfg), Plot.watch(client, kind, root, path))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.CodexTurn{+thread, +cwd, +model, +session, r, text}:
+    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.CodexTurn{+thread, +cwd, +model, +session, r, text}:
       do IO<Hub>:
-        fs : K.Files <- K.Files.read(cwd)
+        +fs : K.Files <- K.Files.read(cwd)
+        Hub.auto(cl, thread, fs)
         +now : Nat <- Now.nat()
         IO.spawn(Unit, Codex.go(cfg, st, thread, cwd, model, session, r, BH.Bots.turn(st, now, thread, text), fs, inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
@@ -3808,15 +3944,21 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         IO.spawn(Unit, Install.go(Cfg.home(cfg), inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.GrokTurn{+thread, +cwd, +model, +session, r, +text}:
+    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.GrokTurn{+thread, +cwd, +model, +session, r, +text}:
       do IO<Hub>:
-        fs : K.Files <- K.Files.read(cwd)
+        +fs : K.Files <- K.Files.read(cwd)
+        Hub.auto(cl, thread, fs)
         +now : Nat <- Now.nat()
         IO.spawn(Unit, Grok.go(cfg, st, thread, cwd, model, session, r, BH.Bots.turn(st, now, thread, text), fs, inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.TurnEnded{+thread, +state}:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note} B.DeskLook{+client, +thread, +focused}:
+      Hub.desk(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, thread, focused)
+    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.TurnEnded{+thread, +state}:
       do IO<Hub>:
-        IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, state, inbox))
+        +now : Nat <- Now.nat()
+        +seen : Bool = DK.Desk.seen(Clients.looks(cl), thread, now)
+        Desk.tell(DK.Desk.to(Clients.looks(cl), thread, now), cl, st, thread, state)
+        IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, state, seen, inbox))
         ok : Bool <- Chan.send(Msg, inbox, Rpc{0, BH.Reply.request(thread, state)})
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.Fs{+client, +id, +op, +path}:
@@ -4398,23 +4540,25 @@ def Far.join(+cfg: Cfg, +out: Chan(Wire)) -> IO(Unit):
 
 # the window in this process: the read model (devices left out, as the
 # wire leaves them) and the log message with no items
-def Hub.join.here(h: Hub, +client: U32, +out: Chan(Wire)) -> IO(Hub):
+def Hub.join.here(h: Hub, +client: U32, +out: Chan(Wire), +now: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, +ls, cl, as, inbox, +cfg, +note}:
+    case Hub{+st, f, +ls, +cl, as, inbox, +cfg, +note}:
       do IO<Hub>:
         ok : Bool <- Chan.send(Wire, out, WState{M.State.private(st), Hub.log_msg.k(0n, ls, cfg, 0n)})
         Far.join(cfg, out)
         Hub.join.note(out, note)
-        return Hub{st, f, ls, Client{client, out} <> cl, as, inbox, cfg, note}
+        Hub.join.note(out, Desk.join(DK.Desk.text(Clients.looks(cl), now)))
+        return Hub{st, f, ls, Client{client, out, DK.Look.none()} <> cl, as, inbox, cfg, note}
 
-def Hub.join(h: Hub, +client: U32, +out: Chan(Wire), +since: Nat, +origin: String) -> IO(Hub):
+def Hub.join(h: Hub, +client: U32, +out: Chan(Wire), +since: Nat, +origin: String, +now: Nat) -> IO(Hub):
   match h:
-    case Hub{st, f, +ls, cl, as, inbox, +cfg, +note}:
+    case Hub{st, f, +ls, +cl, as, inbox, +cfg, +note}:
       do IO<Hub>:
         ok : Bool <- Chan.send(Wire, out, WText{Hub.log_msg(ls, cfg, Bool.pick(Nat, String.eq(origin, Hub.origin(ls)), since, 0n))})
         Far.join(cfg, out)
         Hub.join.note(out, note)
-        return Hub{st, f, ls, Client{client, out} <> cl, as, inbox, cfg, note}
+        Hub.join.note(out, Desk.join(DK.Desk.text(Clients.looks(cl), now)))
+        return Hub{st, f, ls, Client{client, out, DK.Look.none()} <> cl, as, inbox, cfg, note}
 
 def Far.rpc.may(ok: Bool, h: Hub, +client: U32, +id: String, +link: String, +body: String, +now: Nat) -> IO(Hub):
   match ok h:
@@ -4507,6 +4651,7 @@ def Hub.tick(h: Hub, +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, +ls, +cl, +as, inbox, cfg, note}:
       do IO<Hub>:
+        Desk.say(DK.Desk.text(Clients.looks(cl), Nat.sub(now, 60n)), cl, now)
         PS.Perf.set("hub.clients", U32.from_nat(List.length(&2, Client, cl)))
         PS.Perf.set("hub.agents", U32.from_nat(List.length(&2, Agent, as)))
         PS.Perf.set("hub.changes", U32.from_nat(List.length(&2, String, ls)))
@@ -5675,11 +5820,11 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case Announce{text}:
       Hub.note(h, text)
     case Join{client, out, since, origin}:
-      Hub.join(h, client, out, since, origin)
+      Hub.join(h, client, out, since, origin, now)
     case JoinHere{client, out}:
-      Hub.join.here(h, client, out)
+      Hub.join.here(h, client, out, now)
     case Leave{client}:
-      Hub.leave(h, client)
+      Hub.leave(h, client, now)
     case Rpc{client, text}:
       Hub.rpc(h, client, text, now)
     case AgentLine{tag, line}:

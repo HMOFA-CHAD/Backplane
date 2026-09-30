@@ -188,6 +188,7 @@ let socket = null;
 let queued = false;
 let scroll = false;
 let focus = null;
+let jump = null;
 let earlierAsked = false;
 
 function render() {
@@ -201,6 +202,17 @@ function render() {
   // earlier entries added above keep the view where it was
   else if (tl2 && tl === tl2) tl2.scrollTop = tl2.scrollHeight - fromEnd;
   scroll = false;
+  // an entry the history went back to (Jump): brought into view, flashed
+  if (jump && tl2) {
+    const el = tl2.querySelector(`[data-id="${CSS.escape(jump)}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "center" });
+      el.classList.remove("jumped");
+      void el.offsetWidth;
+      el.classList.add("jumped");
+    }
+    jump = null;
+  }
   Solid.mount(document.getElementById("solid"));
   Plot2d.mount(document.getElementById("plot"));
   earlierAsked = false;
@@ -244,6 +256,14 @@ function run(cmds) {
       if (c.url) location.href = App.visit(ui, c.url);
     } else if (c.$ === "Scroll") {
       scroll = true;
+    } else if (c.$ === "Notify") {
+      notify(c);
+    } else if (c.$ === "Later") {
+      // a client action come due (the history playing)
+      setTimeout(() => dispatch(c.action, c.value), Number(c.ms));
+    } else if (c.$ === "Jump") {
+      jump = c.id; // after the next render, which opens its folds
+      later();
     } else if (c.$ === "Keep") {
       // written at once: a crash or a closed tab loses nothing typed
       try {
@@ -254,6 +274,44 @@ function run(cmds) {
   }
 }
 
+// Desk
+// ----
+// This page is a desk (core/desk.bend): app.bend's desk decides when to
+// tell the hub which thread it shows and whether the person has it in
+// front of them; the hub then holds the phones' alerts for that thread and
+// sends this page a desktop notification for others when it was the desk
+// used last.
+
+function deskCheck() {
+  const focused = document.visibilityState === "visible" && document.hasFocus();
+  const r = App.desk(ui, focused, now());
+  ui = r.ui;
+  run(r.cmds);
+}
+
+for (const ev of ["focus", "blur"]) window.addEventListener(ev, deskCheck);
+document.addEventListener("visibilitychange", deskCheck);
+for (const ev of ["pointerdown", "keydown", "wheel"]) document.addEventListener(ev, deskCheck, { capture: true, passive: true });
+
+// the browser asks the person once, on a first click or key (the only time
+// browsers let a page ask)
+function askNotify() {
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
+}
+for (const ev of ["pointerdown", "keydown"]) document.addEventListener(ev, askNotify, { once: true, capture: true });
+
+function notify(c) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    const n = new Notification(c.title, { body: c.body, tag: c.key || c.thread, icon: "./apple-touch-icon.png" });
+    n.onclick = () => {
+      window.focus();
+      if (c.thread) dispatch("select", c.thread);
+      n.close();
+    };
+  } catch {}
+}
+
 // run an action; answers whether it did anything (a key it did nothing
 // with stays the browser's)
 function dispatch(action, value) {
@@ -261,6 +319,7 @@ function dispatch(action, value) {
   ui = r.ui;
   const did = r.cmds && r.cmds.$ === "Con";
   run(r.cmds);
+  deskCheck();
   later();
   return did;
 }
@@ -438,6 +497,8 @@ for (const ev of EVENTS) {
     const action = el.getAttribute(`data-on-${ev}`);
     // a row's menu opens where the pointer was (view.bend's View.rmenu
     // reads these)
+    // a file link (dom.bend's Dom.file) goes to the hub, not to its href
+    if (ev === "click" && el.tagName === "A") e.preventDefault();
     if (ev === "contextmenu") {
       e.preventDefault();
       document.documentElement.style.setProperty("--mx", Math.min(e.clientX, innerWidth - 216) + "px");
@@ -696,6 +757,7 @@ function connect() {
     socket = s;
     backoff = 250;
     ui = App.online(ui, true);
+    deskCheck();
     later();
   };
   s.onmessage = (e) => {

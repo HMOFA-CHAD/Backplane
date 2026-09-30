@@ -168,17 +168,28 @@ button.fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowra
 .composer .skills .desc { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer textarea:focus, .add input:focus { outline: none; border-color: var(--accent); }
 .thread-view.dropping .composer { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--raise); }
-.tasks { border: 1px solid var(--line); background: var(--panel); max-width: 860px; }
-.tasks-head { display: block; padding: 6px 10px; color: var(--faint); font-size: 11px; }
-.task { display: flex; gap: 10px; align-items: center; padding: 5px 10px; cursor: pointer; }
-.task:hover { background: var(--raise); }
-.task .state-dot { width: 6px; height: 6px; background: var(--faint); flex: none; }
-.task.running .state-dot { background: var(--accent); } .task.done .state-dot { background: var(--ok); }
-.task.failed .state-dot { background: var(--bad); } .task.cancelled .state-dot { background: var(--warn); }
-.task .who { color: var(--dim); font-size: 12px; flex: none; }
-.task .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task .state { color: var(--dim); font-size: 12px; }
-.task.running .state { color: var(--accent); } .task.done .state { color: var(--ok); } .task.failed .state { color: var(--bad); }
+.subs { border: 1px solid var(--line); background: var(--panel); max-width: 860px; position: sticky; top: 0; z-index: 2; max-height: 40vh; overflow-y: auto; }
+.subs.busy { border-color: var(--accent); }
+.subs-head { display: flex; justify-content: space-between; padding: 6px 10px; color: var(--faint); font-size: 11px; }
+.subs.busy .subs-head { color: var(--text); }
+.subs-head .busy { color: var(--accent); }
+.sub-row { display: flex; gap: 10px; align-items: center; padding: 5px 10px; cursor: pointer; }
+.sub-row:hover { background: var(--raise); }
+.sub .state-dot { width: 6px; height: 6px; background: var(--faint); flex: none; }
+.sub.running .state-dot { background: var(--accent); width: 8px; height: 8px; }
+.sub.done .state-dot { background: var(--ok); }
+.sub.failed .state-dot, .sub.stopped .state-dot, .sub.killed .state-dot { background: var(--bad); } .sub.cancelled .state-dot { background: var(--warn); }
+.sub .who { color: var(--dim); font-size: 12px; flex: none; }
+.sub .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub.live .title { color: var(--text); }
+.sub .state { color: var(--dim); font-size: 12px; }
+.sub.running .state { color: var(--accent); } .sub.done .state { color: var(--ok); } .sub.failed .state { color: var(--bad); }
+.sub .doing { display: block; padding: 0 10px 4px 32px; color: var(--accent); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-step { display: flex; gap: 8px; padding: 1px 10px 1px 32px; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.sub-step .kind { color: var(--faint); flex: none; }
+.sub-step .text { overflow: hidden; text-overflow: ellipsis; }
+.sub:last-child .sub-step:last-child { padding-bottom: 6px; }
+.ago.agents { color: var(--accent); }
 .parent { align-self: flex-start; background: none; border: 0; color: var(--accent); padding: 0; }
 .settings-link { display: block; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); color: var(--dim); padding: 12px; margin-top: 16px; }
 .settings-view { display: flex; flex-direction: column; min-height: 0; height: 100%; }
@@ -348,7 +359,8 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 .msg .shot { display: block; margin: 8px 0; }
 .msg .shot img { display: block; max-width: 100%; max-height: 420px; border: 1px solid var(--line); background: var(--bg); }
 
-.msg a.link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.msg a.link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; border: 0; padding: 0; font-size: inherit; white-space: normal; max-width: none; }
+.msg a.link.file code { color: inherit; }
 .ico { flex: none; display: block; }
 button.icon { display: inline-flex; align-items: center; justify-content: center; }
 .shelf, .settings-link, .model-chip { display: flex; align-items: center; gap: 6px; }
@@ -360,6 +372,16 @@ button.icon { display: inline-flex; align-items: center; justify-content: center
 .lightbox .lb-close { position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; padding: 0; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 20px; line-height: 1; cursor: pointer; }
 .lightbox .lb-close:hover { border-color: var(--accent); }
 .tools button.danger { border-color: var(--bad); color: var(--bad); }
+.tools { align-items: center; }
+.tools button.tool { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 7px; white-space: nowrap; }
+.tools button.tool .ico { color: var(--dim); }
+.tools button.tool.on { color: var(--text); background: var(--sel, var(--raise)); }
+.tools button.tool.on .ico { color: var(--accent); }
+.tools button.tool.danger .ico { color: var(--bad); }
+.tools button.tool.gap { margin-left: 9px; position: relative; }
+.tools button.tool.gap::before { content: ""; position: absolute; left: -9px; top: 6px; bottom: 6px; border-left: 1px solid var(--line); }
+.tools button.tool.gap:first-child { margin-left: 0; }
+.tools button.tool.gap:first-child::before { display: none; }
 
 /* Bots (src/web/bots.bend) */
 .bots { margin-top: 12px; padding: 8px 0 4px; border-top: 1px solid var(--line); }
@@ -499,3 +521,40 @@ button.mic.starting, button.mic.stopping { border-color: var(--bad); color: var(
 .rowmenu .mi { background: none; border: 0; text-align: left; padding: 6px 12px; color: var(--soft, var(--text)); }
 .rowmenu .mi:hover { background: var(--sel, var(--panel)); }
 .rowmenu .mi.danger { color: var(--bad); }
+
+/* the viewer's design history (core/hist.bend): the bar under the stage */
+.hist { flex: none; border-top: 1px solid var(--line); background: var(--bg); padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.hist-row { display: flex; align-items: center; gap: 4px; min-width: 0; flex-wrap: wrap; }
+.hist-row .title { color: var(--text); margin: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.hist-row .grow { flex: 1; }
+.hist-row .icon.play { color: var(--accent); }
+.hbtn { font-size: 12px; padding: 3px 10px; border: 1px solid var(--line); background: var(--raise); color: var(--dim); white-space: nowrap; max-width: 46%; overflow: hidden; text-overflow: ellipsis; }
+.hbtn:hover { color: var(--text); }
+.hbtn.on { border-color: var(--accent); color: var(--text); }
+.hbtn.live { color: var(--accent); }
+.hist-scrub { position: relative; height: 18px; margin: 0 8px; }
+.hist-scrub::before { content: ""; position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: var(--line); }
+.hist-scrub .tick { position: absolute; top: 3px; width: 10px; height: 12px; margin-left: -5px; padding: 0; border: 0; background: none; }
+.hist-scrub .tick::after { content: ""; position: absolute; left: 4px; top: 0; width: 2px; height: 12px; background: var(--dim); }
+.hist-scrub .tick.on::after { left: 3px; top: -2px; width: 4px; height: 16px; background: var(--accent); }
+.hist-said { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.hist-said .said { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.hist-said span.said { color: var(--faint); }
+.hist-said .said:hover { color: var(--text); }
+.hist-legend { display: flex; gap: 16px; color: var(--dim); font-size: 12px; }
+.hist-legend .key { display: inline-flex; align-items: center; gap: 6px; }
+.hist-legend .key i { width: 10px; height: 10px; display: inline-block; }
+.hist-over { position: absolute; inset: 0; pointer-events: none; }
+.hist-over:empty { display: none; }
+.hist-scrim { position: absolute; inset: 0; pointer-events: auto; }
+.hist-menu { position: absolute; left: 12px; bottom: 8px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 16px); overflow: auto; background: var(--raise); border: 1px solid var(--line); pointer-events: auto; display: flex; flex-direction: column; }
+.hist-menu .head { color: var(--faint); padding: 6px 12px; font-size: 12px; }
+.hist-menu .row { display: flex; gap: 10px; align-items: baseline; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); padding: 6px 12px; color: var(--text); min-width: 0; }
+.hist-menu .row:hover { background: var(--panel); }
+.hist-menu .row .name { flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-menu .row .sub { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.act.step button.step { display: flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; color: var(--accent); font-family: var(--mono); font-size: 12px; max-width: 860px; }
+.act.step button.step span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act.step button.step:hover { text-decoration: underline; }
+.jumped { animation: jumped 2.4s ease-out; box-shadow: inset 2px 0 0 var(--accent); }
+@keyframes jumped { from { background: rgba(95, 179, 255, 0.18); } to { background: transparent; } }

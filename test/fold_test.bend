@@ -123,12 +123,10 @@ def main() -> IO(Unit):
     C.Check.str("user shut the live one", Show.roles(F.Fold.roles([tool("a", "x")], Map.set(&2, String, none(), "fold:a", "0"), True{})), "h(a|1 tool call · x|False) ")
     C.Check.str("ask", F.Fold.ask(True{}, "a") ++ " " ++ F.Fold.ask(False{}, "a"), "0a 1a")
     C.Check.str("took", M.Time.took(45n) ++ " " ++ M.Time.took(133n) ++ " " ++ M.Time.took(3900n), "45s 2m 13s 1h 5m")
-    C.Check.str("turn done: its work folds up to the last reply", Show.roles(F.Fold.roles(turn(), at(533n), False{})),
-      "s w(work:u|Worked for 2m 13s · 5m ago|False|h(a|2 tool calls · shell, edit|False)) i(False) i(False) i(False) s ")
-    C.Check.str("turn running: all of it open", Show.roles(F.Fold.roles(turn(), at(533n), True{})),
-      "s w(work:u|Working · started 7m ago|True|h(a|2 tool calls · shell, edit|False)) i(False) s h(c|1 tool call · read|False) s ")
-    C.Check.str("turn opened again", Show.roles(F.Fold.roles(turn(), Map.set(&2, String, at(240n), "fold:work:u", "1"), False{})),
-      "s w(work:u|Worked for 2m 13s · just now|True|h(a|2 tool calls · shell, edit|False)) i(False) s h(c|1 tool call · read|False) s ")
+    C.Check.str("turn done: its messages show, only tool runs fold", Show.roles(F.Fold.roles(turn(), at(533n), False{})),
+      "s h(a|2 tool calls · shell, edit|False) i(False) s h(c|1 tool call · read|False) s ")
+    C.Check.str("turn running: the last run open", Show.roles(F.Fold.roles([user("u", 0n), said("m", 1n), ran("a", "x", 2n)], at(533n), True{})),
+      "s s h(a|1 tool call · x|True) ")
     C.Check.str("turn with no reply: nothing folds", Show.roles(F.Fold.roles([user("u", 0n), ran("a", "x", 1n), err("e")], none(), False{})),
       "s h(a|1 tool call · x|False) s ")
     C.Check.str("turn answered at once: nothing folds", Show.roles(F.Fold.roles([user("u", 0n), said("m", 1n)], none(), False{})), "s s ")

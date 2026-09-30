@@ -4,6 +4,8 @@ import ./gh.bend as GH
 import ../core/sha1.bend as S
 import ../core/utf8.bend as U
 import ../core/diff.bend as D
+import ../core/hist.bend as HI
+import ./kicad.bend as K
 
 # Git, run as a subprocess with an argv list (never a shell line). Every
 # action answers text: the result, "" when there is nothing to say, or
@@ -563,6 +565,141 @@ def Git.revert.k(+cwd: String, +idx: String, r: String) -> IO(String):
 def Git.checkpoint.revert(+cwd: String, +thread_id: String, n: Nat) -> IO(String):
   Git.seq(Git.run(cwd, ["rev-parse", "--absolute-git-dir"]), gd =>
     Git.revert.k(cwd, Git.index_path(gd, thread_id), Git.checkpoint.ref(thread_id, n)))
+
+# Steps
+# -----
+# The KiCad files after each tool call, for the viewer's history
+# (core/hist.bend). One sh script a capture: the thread's .kicad_sch and
+# .kicad_pcb files (KiCad's autosaves and backups left out) staged through
+# its own index, and when that tree differs from the last step's, a commit
+# on refs/backplane/checkpoints/<b64url(thread)>/steps whose parent is the
+# last step (update-ref checks the old value, so two captures at once
+# cannot fork the chain; a lock directory makes them take turns). A
+# folder outside git keeps its steps in <folder>/.backplane/history.git.
+# A capture whose owner died leaves its lock (it holds the owner's pid) and
+# the index's own lock for the next to clear. KiCad files the repository
+# tracks are staged even when ignored. The ref is created with
+# update-ref --stdin and the empty tree hashed, so a SHA-256 repository
+# works too. It prints the commit, the one before ("" for the first), the
+# git dir and the top of the work tree a line each, then git's -z
+# name-status of the files changed (Hist.record); nothing when nothing
+# changed. A repository with no KiCad files (and no steps yet) is left
+# at once, so software threads pay one quick look. A capture runs after
+# the tool call is reported, while the agent goes on: two quick edits may
+# land in one step, and a turn's first may race the agent's first edit.
+
+def Git.step.script() -> String:
+  String.join([
+    "exec 2>/dev/null",
+    "cd \"$1\" || exit 0",
+    "name=$2",
+    "if top=$(git rev-parse --show-toplevel) && [ -n \"$top\" ]; then",
+    "  gd=$(cd \"$(git rev-parse --git-common-dir)\" && pwd) || exit 0",
+    "  pd=$(git rev-parse --absolute-git-dir) || exit 0",
+    "  shadow=",
+    "else",
+    "  top=$(pwd); gd=$top/.backplane/history.git; pd=$gd; shadow=1",
+    "  [ \"$top\" = / ] || [ \"$top\" = \"$HOME\" ] && exit 0",
+    "  [ -d \"$gd\" ] || [ -n \"$(find . -maxdepth 4 \\( -name '*.kicad_pcb' -o -name '*.kicad_sch' \\) -print | head -n 1)\" ] || exit 0",
+    "  export GIT_DIR=\"$gd\" GIT_WORK_TREE=\"$top\"",
+    "  if [ ! -d \"$gd\" ]; then",
+    "    mkdir -p \"$top/.backplane\" && git init -q >/dev/null || exit 0",
+    "    printf '/.backplane/\\n' >> \"$gd/info/exclude\"",
+    "  fi",
+    "fi",
+    "ref=refs/backplane/checkpoints/$name/steps",
+    "spec='*.kicad_[ps]c[bh]'",
+    "[ -n \"$shadow\" ] || git rev-parse -q --verify \"$ref\" >/dev/null || [ -n \"$(git ls-files -- \"$spec\" | head -n 1)\" ] || [ -n \"$(find . -maxdepth 4 \\( -name '*.kicad_pcb' -o -name '*.kicad_sch' \\) -not -path './.backplane/*' -print | head -n 1)\" ] || exit 0",
+    "idx=$pd/backplane-$name.steps.index",
+    "lock=$pd/backplane-$name.steps.lock",
+    "n=0",
+    "until mkdir \"$lock\"; do",
+    "  o=$(cat \"$lock/pid\")",
+    "  if [ -n \"$o\" ] && ! kill -0 \"$o\"; then rm -rf \"$lock\"; continue; fi",
+    "  n=$((n+1)); [ $n -gt 600 ] && exit 0; sleep 0.1",
+    "done",
+    "echo $$ > \"$lock/pid\"",
+    "trap '[ \"$(cat \"$lock/pid\")\" = $$ ] && rm -rf \"$lock\"' EXIT",
+    "rm -f \"$idx.lock\"",
+    "[ -n \"$shadow\" ] || git ls-files -z -- \"$spec\" | GIT_INDEX_FILE=$idx xargs -0 git add -f -- >/dev/null",
+    "GIT_INDEX_FILE=$idx git add -A -- \"$spec\" ':(exclude)*_autosave-*' ':(exclude)*-backups/*' >/dev/null",
+    "tree=$(GIT_INDEX_FILE=$idx git write-tree) || exit 0",
+    "prev=$(git rev-parse -q --verify \"$ref\")",
+    "if [ -n \"$prev\" ]; then",
+    "  [ \"$(git rev-parse \"$prev^{tree}\")\" = \"$tree\" ] && exit 0",
+    "else",
+    "  [ \"$tree\" = \"$(git hash-object -t tree /dev/null)\" ] && exit 0",
+    "fi",
+    "c=$(GIT_AUTHOR_NAME=Backplane GIT_AUTHOR_EMAIL=backplane@localhost GIT_COMMITTER_NAME=Backplane GIT_COMMITTER_EMAIL=backplane@localhost git commit-tree --no-gpg-sign -m \"backplane step\" ${prev:+-p \"$prev\"} \"$tree\") || exit 0",
+    "if [ -n \"$prev\" ]; then git update-ref \"$ref\" \"$c\" \"$prev\" || exit 0",
+    "else printf 'create %s %s\\n' \"$ref\" \"$c\" | git update-ref --stdin || exit 0; fi",
+    "printf '%s\\n%s\\n%s\\n%s\\n' \"$c\" \"$prev\" \"$gd\" \"$top\"",
+    "git diff-tree -r -z --no-commit-id --name-status --root ${prev:+\"$prev\"} \"$c\""], "\n")
+
+def Git.step.ran(r: P.Ran) -> IO(String):
+  match r:
+    case P.Ran{0, out}:
+      IO.pure(String, out)
+    case _:
+      IO.pure(String, "")
+
+# a step of the thread's KiCad files in cwd: the script's output, or ""
+def Git.step.capture(+cwd: String, +thread_id: String) -> IO(String):
+  IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Git.step.script(), "sh", cwd, Git.b64url(thread_id)], "/"), Git.step.ran)
+
+# What a file may be compared with: the git dir and top (as Git.step
+# finds them), then lines "kind\tlabel\tcommit": HEAD, the newest
+# branches, commits that touched KiCad files, the thread's turns
+def Git.refs.script() -> String:
+  String.join([
+    "exec 2>/dev/null",
+    "cd \"$1\" || exit 0",
+    "name=$2",
+    "if top=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n \"$top\" ]; then",
+    "  gd=$(cd \"$(git rev-parse --git-common-dir)\" && pwd) || exit 0",
+    "  printf '%s\\n%s\\n' \"$gd\" \"$top\"",
+    "  h=$(git rev-parse -q --verify HEAD) && printf 'head\\tHEAD\\t%s\\n' \"$h\"",
+    "  git for-each-ref --sort=-committerdate --count=40 --format='branch%09%(refname:short)%09%(objectname)' refs/heads refs/remotes",
+    "  git log -n 40 --format='commit%x09%h %s%x09%H' -- '*.kicad_[ps]c[bh]'",
+    "  git for-each-ref --sort=-committerdate --format='turn%09%(refname)%09%(objectname)' \"refs/backplane/checkpoints/$name/turn/\"",
+    "else",
+    "  top=$(pwd)",
+    "  printf '%s\\n%s\\n' \"$top/.backplane/history.git\" \"$top\"",
+    "fi"], "\n")
+
+def Git.refs(+cwd: String, +thread_id: String) -> IO(String):
+  IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Git.refs.script(), "sh", cwd, Git.b64url(thread_id)], "/"), Git.step.ran)
+
+def Git.show.ran(r: P.Ran) -> IO(Maybe<&2, String>):
+  match r:
+    case P.Ran{0, out}:
+      IO.pure(Maybe<&2, String>, Some{out})
+    case _:
+      IO.pure(Maybe<&2, String>, None{})
+
+# a file as a commit has it (a version path, core/hist.bend); None when
+# the commit or the file is not there
+def Git.show(+g: String, +obj: String) -> IO(Maybe<&2, String>):
+  IO.bind(P.Ran, Maybe<&2, String>, P.Proc.run("sh", ["-c", "exec 2>/dev/null; git --git-dir=\"$1\" show \"$2\"", "sh", g, obj], "/"), Git.show.ran)
+
+def Git.version.got(m: Maybe<&2, String>) -> IO(List<&2, U32>):
+  match m:
+    case Some{t}:
+      IO.pure(List<&2, U32>, U.Utf8.encode(t))
+    case None{}:
+      IO.pure(List<&2, U32>, Nil{})
+
+def Git.version.k(k: Nat, +path: String) -> IO(List<&2, U32>):
+  match k:
+    case 1n:
+      IO.bind(Maybe<&2, String>, List<&2, U32>, Git.show(HI.Hist.git.dir(path), HI.Hist.git.obj(path)), Git.version.got)
+    case _:
+      K.Io.bytes(path)
+
+# the bytes of a version the viewer names (core/hist.bend): a live file,
+# or a file in a commit; [] when it cannot be read
+def Git.version(+path: String) -> IO(List<&2, U32>):
+  Git.version.k(HI.Hist.kind(path), path)
 
 # Stacked actions
 # ---------------

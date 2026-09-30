@@ -112,7 +112,7 @@ def sum(xs: List<&2, String>) -> Nat:
 
 # the phone's alerts for one hub's frame: `th` was seen running before it
 def ph.alerts(+s: M.State, +th: String) -> Nat:
-  List.length(&2, J.Json, N.Note.alerts(U.Ui.threads(s), [N.Seen{th, True{}}], s, M.State.entries.all(s)))
+  List.length(&2, J.Json, N.Note.alerts(U.Ui.threads(s), [N.Seen{th, True{}}], s, M.State.entries.all(s), ""))
 
 def main() -> IO(Unit):
   do IO<Unit>:

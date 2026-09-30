@@ -2,6 +2,7 @@ import Base
 import ../core/json.bend as J
 import ../core/model.bend as M
 import ../core/notice.bend as NO
+import ../core/desk.bend as DK
 
 # What the phone tells its owner: an alert when a turn ends, and the
 # Dynamic Island (iOS Live Activity, Android promoted notification) while
@@ -146,24 +147,34 @@ def Note.alert.n(n: NO.Notice, +id: String, +title: String, +es: List<&2, M.Entr
     case NO.Notice{+kind, +key}:
       Note.alert.n.k(String.is_empty(kind), kind, key, id, title, es, rest)
 
-def Note.alert.q(none: Bool, +kind: String, +id: String, +title: String, +st: M.State, +es: List<&2, M.Entry>, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
-  match none:
+# a thread a desk (the window, a web page) is watching raises no alert
+# here: the person is looking at it (core/desk.bend; law alert_watched_quiet)
+def Note.alert.w(watched: Bool, +kind: String, +id: String, +title: String, +st: M.State, +es: List<&2, M.Entry>, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match watched:
     case True{}:
       rest
     case False{}:
       Note.alert.n(NO.Notice.of(st, id, String.eq(kind, "fail"), False{}), id, title, es, rest)
 
-def Note.alert(+kind: String, +id: String, +title: String, +st: M.State, +es: List<&2, M.Entry>, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
-  Note.alert.q(String.is_empty(kind), kind, id, title, st, es, rest)
+def Note.alert.q(none: Bool, +kind: String, +id: String, +title: String, +st: M.State, +es: List<&2, M.Entry>, +desk: String, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match none:
+    case True{}:
+      rest
+    case False{}:
+      Note.alert.w(DK.Desk.watched(desk, id), kind, id, title, st, es, rest)
+
+def Note.alert(+kind: String, +id: String, +title: String, +st: M.State, +es: List<&2, M.Entry>, +desk: String, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  Note.alert.q(String.is_empty(kind), kind, id, title, st, es, desk, rest)
 
 # the alerts a server message raised: every thread seen running before it
-# that has now finished or failed, and is news (st is the hub's state)
-def Note.alerts(ts: List<&2, M.Thread>, +seen: List<&2, Seen>, +st: M.State, +es: List<&2, M.Entry>) -> List<&2, J.Json>:
+# that has now finished or failed, and is news (st is the hub's state;
+# desk the threads a desk watches, the hub's info "desk")
+def Note.alerts(ts: List<&2, M.Thread>, +seen: List<&2, Seen>, +st: M.State, +es: List<&2, M.Entry>, +desk: String) -> List<&2, J.Json>:
   match ts:
     case Nil{}:
       Nil{}
     case M.Thread{+id, _, title, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
-      Note.alert(Note.kind(Note.was(seen, id), turn), id, title, st, es, Note.alerts(t, seen, st, es))
+      Note.alert(Note.kind(Note.was(seen, id), turn), id, title, st, es, desk, Note.alerts(t, seen, st, es, desk))
 
 def Note.doing.line(+d: String) -> String:
   Note.line(Bool.pick(String, String.is_empty(d), "Working", d), 80n)

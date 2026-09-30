@@ -74,6 +74,11 @@ def act(u: U.Ui, action: String, value: String) -> U.Act:
 def view(u: U.Ui) -> D.Node:
   V.View.page(u)
 
+# this page is a desk (core/desk.bend): host.js calls this after input,
+# focus and visibility changes; it answers the desk.look to send, when due
+def desk(u: U.Ui, focused: Bool, now: Nat) -> U.Act:
+  U.Ui.desk(u, focused, now)
+
 def online(u: U.Ui, b: Bool) -> U.Ui:
   U.Ui.online(u, b)
 

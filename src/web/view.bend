@@ -2,6 +2,7 @@ import Base
 import ../core/model.bend as M
 import ./dom.bend as D
 import ./icon.bend as WI
+import ../core/tools.bend as TO
 import ../core/client.bend as U
 import ../core/attach.bend as AT
 import ../core/vt.bend as VT
@@ -13,12 +14,14 @@ import ../core/schematic.bend as SC
 import ../core/hier.bend as HI
 import ../core/images.bend as IM
 import ../core/fold.bend as FO
+import ../core/subs.bend as SB
 import ../core/badge.bend as BG
 import ../core/todo.bend as TD
 import ../core/bot.bend as BT
 import ../core/botui.bend as BI
 import ./bots.bend as WB
 import ../core/voice.bend as VC
+import ../core/hist.bend as HS
 
 # Ui -> Node. Every decision (order, shelf, status) comes from core defs
 # with laws behind them; this file only lays them out.
@@ -59,16 +62,20 @@ def View.rows(ps: List<&2, M.Project>, +ts: List<&2, M.Thread>) -> List<&2, PRow
 
 # a sidebar row: its status dot, title and age (a snoozed row: the time
 # left); rows of a shelf with manual order get move buttons on hover
-def View.row.k(+id: String, +title: String, +ago: String, +dot: String, +sel: String, +movable: Bool) -> D.Node:
+# a row with subagents at work says how many where its age goes
+def View.note(+badge: String, +other: String) -> D.Node:
+  Bool.pick(D.Node, String.is_empty(badge), D.Dom.span("ago", other), D.Dom.span("ago agents", badge))
+
+def View.row.k(+id: String, +title: String, +ago: String, +badge: String, +dot: String, +sel: String, +movable: Bool) -> D.Node:
   D.El{"div", id, [D.At{"class", Bool.pick(String, String.eq(id, sel), "thread on", "thread")}, D.At{"data-value", id}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
     D.Dom.cat([D.Dom.span("dot " ++ dot, ""), D.Dom.span("title", title)],
       D.Dom.cat(Bool.pick(List<&2, D.Node>, movable, [D.El{"span", "", [D.At{"class", "moves"}], [D.Dom.button("move", "move", id ++ "|up", "Move up", "↑"), D.Dom.button("move", "move", id ++ "|down", "Move down", "↓")]}], Nil{}),
-        [D.Dom.span("ago", ago)]))}
+        [View.note(badge, ago)]))}
 
 def View.row(+t: M.Thread, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> D.Node:
   match t:
     case M.Thread{+id, _, +title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      View.row.k(id, U.Label.title(st, id, title), Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), M.Phase.name(U.Side.phase(st, t)), sel, movable)
+      View.row.k(id, U.Label.title(st, id, title), Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), SB.Subs.badge(SB.Subs.count(st, id)), M.Phase.name(U.Side.phase(st, t)), sel, movable)
 
 def View.rows_in(ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> List<&2, D.Node>:
   match ts:
@@ -195,7 +202,7 @@ def View.arow(r: U.ARow, +st: M.State, +sel: String) -> D.Node:
     case U.ARow{_, _, +t, +pid, +pt, +faded}:
       D.El{"div", M.Thread.id(t), [D.At{"class", Bool.pick(String, String.eq(M.Thread.id(t), sel), "thread on", Bool.pick(String, faded, "thread faded", "thread"))},
           D.At{"style", "--tint:" ++ BG.Badge.css_of(st, pid)}, D.At{"data-value", M.Thread.id(t)}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
-        [D.Dom.span("dot " ++ M.Phase.name(U.Side.phase(st, t)), ""), D.Dom.span("title", U.Label.title(st, M.Thread.id(t), U.Active.title(t))), D.Dom.span("ago", pt)]}
+        [D.Dom.span("dot " ++ M.Phase.name(U.Side.phase(st, t)), ""), D.Dom.span("title", U.Label.title(st, M.Thread.id(t), U.Active.title(t))), View.note(SB.Subs.badge(SB.Subs.count(st, M.Thread.id(t))), pt)]}
 
 def View.arows(rs: List<&2, U.ARow>, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
@@ -389,47 +396,31 @@ def View.running(t: M.TurnState) -> Bool:
     case _:
       False{}
 
-def View.pin(p: Bool) -> D.Node:
-  match p:
+# a header tool (core/tools.bend): its icon and label, its sentence as the
+# tooltip; a group starts with a line before it (class "gap")
+def View.tool.cls(on: Bool, danger: Bool, gap: Bool) -> String:
+  Bool.pick(String, on, "on", "") ++ Bool.pick(String, danger, " danger", "") ++ Bool.pick(String, gap, " gap", "")
+
+def View.tool(t: TO.Tool) -> D.Node:
+  match t:
+    case TO.Tool{+i, +l, tip, a, v, on, dg, gap}:
+      WI.WIcon.button("tool " ++ View.tool.cls(on, dg, gap), a, v, tip, i, 16, l)
+
+def View.tools(ts: List<&2, TO.Tool>) -> List<&2, D.Node>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case t <> r:
+      View.tool(t) <> View.tools(r)
+
+# picking a snooze: its choices, then the button that closes them
+def View.snoozes(picking: Bool) -> List<&2, D.Node>:
+  match picking:
     case True{}:
-      D.Dom.button("on", "unpin", "", "Unpin", "Pinned")
-    case False{}:
-      D.Dom.button("", "pin", "", "Pin", "Pin")
-
-def View.settle(o: M.Override, auto: Bool) -> D.Node:
-  match o auto:
-    case M.ForcedSettled{} _:
-      D.Dom.button("on", "unsettle", "", "Bring back to active", "Settled")
-    case M.NoOverride{} True{}:
-      D.Dom.button("on", "unsettle", "", "Bring back to active", "Settled")
-    case _ _:
-      D.Dom.button("", "settle", "", "Settle thread", "Settle")
-
-def View.archive(a: Bool) -> D.Node:
-  match a:
-    case True{}:
-      D.Dom.button("on", "unarchive", "", "Bring back from the archive", "Archived")
-    case False{}:
-      D.Dom.button("", "archive", "", "Archive thread", "Archive")
-
-# snoozed: the button wakes it; else it opens the snooze choices
-def View.snooze(snoozed: Bool, picking: Bool) -> List<&2, D.Node>:
-  match snoozed picking:
-    case True{} _:
-      [D.Dom.button("on", "snooze", "off", "Wake it now", "Snoozed")]
-    case False{} False{}:
-      [D.Dom.button("", "flag", "snooze", "Snooze", "Snooze")]
-    case False{} True{}:
       [D.Dom.button("", "snooze", "1h", "Snooze for an hour", "1 hour"), D.Dom.button("", "snooze", "tomorrow", "Snooze until 9:00 tomorrow", "Tomorrow"),
-       D.Dom.button("", "snooze", "1w", "Snooze for a week", "1 week"), D.Dom.button("on", "flag", "snooze", "Cancel", "Snooze")]
-
-# Delete asks first: once armed it reads "Delete thread" beside Cancel
-def View.del(on: Bool) -> List<&2, D.Node>:
-  match on:
-    case True{}:
-      [D.Dom.button("danger", "delete", "", "Delete this thread for good", "Delete thread"), D.Dom.button("", "delete-no", "", "Keep it", "Cancel")]
+       D.Dom.button("", "snooze", "1w", "Snooze for a week", "1 week"), D.Dom.button("on", "flag", "snooze", "Cancel", "Cancel")]
     case False{}:
-      [D.Dom.button("", "delete", "", "Delete thread", "Delete")]
+      Nil{}
 
 def View.header(t: M.Thread, +st: M.State, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, del: Bool) -> D.Node:
   match t:
@@ -439,12 +430,10 @@ def View.header(t: M.Thread, +st: M.State, +panel: Bool, snoozed: Bool, picking:
         D.El{"span", "", [D.At{"class", "badge"}], [WI.WIcon.svg(BG.Badge.icon(st, p), 16)]},
         D.Dom.span("title", U.Label.title(st, id, title)),
         D.Dom.span("meta", Bool.pick(String, String.is_empty(branch), "", branch)),
-        D.El{"div", "", [D.At{"class", "tools"}], List.concat(&2, D.Node, [D.Dom.when(View.running(turn), D.Dom.button("", "interrupt", "", "Stop the running turn", "Stop")),
-          [View.pin(pinned), View.settle(override, Nat.is_gt(sa, ua))], View.snooze(snoozed, picking), [View.archive(archived)], View.del(del), [
-           D.Dom.button("", "fork", "", "A new thread that goes on from here", "Fork")],
-          D.Dom.when(Bool.not(String.is_empty(M.Fork.source(st, id))), D.Dom.button("", "back", "", "Send what this fork did to the thread it came from, with its next message", "Bring back")), [
-           D.Dom.button(Bool.pick(String, term, "on", ""), "term-toggle", "@term-size", "Terminal (ctrl+j)", "Terminal"),
-           D.Dom.button(Bool.pick(String, panel, "on", ""), "panel", "", "The board, schematic, 3D model, parts and diff, beside the thread", "Viewer")]])}]}
+        D.El{"div", "", [D.At{"class", "tools"}], List.append(&2, D.Node,
+          View.tools(TO.Tools.head(TO.Head{View.running(turn), TO.Tools.settled(override, Nat.is_gt(sa, ua)), pinned, snoozed, archived, del,
+            Bool.not(String.is_empty(M.Fork.source(st, id))), term, panel}, "flag", "snooze", "term-toggle", "@term-size")),
+          View.snoozes(picking))}]}
 
 # the model menu's rows: each model's name, then what its CLI calls it,
 # in two columns (the names' as wide as the longest, --namew)
@@ -503,23 +492,50 @@ def View.skills(+rs: List<&2, U.SkillRow>) -> List<&2, D.Node>:
 # ---------
 
 
-def View.task(t: M.Task, +st: M.State) -> D.Node:
-  match t:
-    case M.Task{_, _, +child, _, +s, _, _, +pr, +mo}:
-      D.El{"div", child, [D.At{"class", "task " ++ U.Task.word(s)}, D.At{"data-value", child}, D.On{"click", "select"}],
-        [D.Dom.span("state-dot", ""), D.Dom.span("who", U.Models.label(pr, mo)), D.Dom.span("title", U.Tasks.title(st, child)), D.Dom.span("state", U.Task.word(s))]}
+# the panel over the timeline (core/subs.bend has the rows), held at the
+# top while the timeline scrolls; a task's row opens its thread, a
+# subagent's opens or shuts its steps
 
-def View.tasks.go(ts: List<&2, M.Task>, +st: M.State) -> List<&2, D.Node>:
-  match ts:
+def View.sub.step(s: SB.SubStep) -> D.Node:
+  match s:
+    case SB.SubStep{+kind, +text}:
+      D.El{"div", "", [D.At{"class", "sub-step"}], [D.Dom.span("kind", SB.Subs.step.label(kind)), D.Dom.span("text", text)]}
+
+def View.sub.steps(ss: List<&2, SB.SubStep>) -> List<&2, D.Node>:
+  match ss:
     case Nil{}:
       Nil{}
-    case t <> rest:
-      View.task(t, st) <> View.tasks.go(rest, st)
+    case s <> t:
+      View.sub.step(s) <> View.sub.steps(t)
 
-# the subagent viewer: the tasks this thread delegated
-def View.tasks(+ts: List<&2, M.Task>, +st: M.State) -> List<&2, D.Node>:
-  Bool.pick(List<&2, D.Node>, List.is_empty(&2, M.Task, ts), Nil{},
-    [D.El{"div", "tasks", [D.At{"class", "tasks"}], D.Dom.span("tasks-head", "Subagents") <> View.tasks.go(ts, st)}])
+def View.sub.act(agent: Bool, +open: Bool, +key: String) -> List<&2, D.Attr>:
+  match agent:
+    case True{}:
+      [D.At{"data-value", SB.Subs.ask(open, key)}, D.On{"click", "fold"}]
+    case False{}:
+      [D.At{"data-value", key}, D.On{"click", "select"}]
+
+def View.sub(r: SB.SubRow) -> D.Node:
+  match r:
+    case SB.SubRow{+key, +agent, +title, +who, +word, +doing, +live, +open, _, ss}:
+      D.El{"div", key, [D.At{"class", "sub " ++ word ++ Bool.pick(String, live, " live", "")}],
+        D.Dom.cat([D.El{"div", "", List.append(&2, D.Attr, [D.At{"class", "sub-row"}], View.sub.act(agent, open, key)),
+          [D.Dom.span("state-dot", ""), D.Dom.span("who", Bool.pick(String, agent, Bool.pick(String, open, "▾", "▸"), who)), D.Dom.span("title", title), D.Dom.span("state", word)]}],
+          D.Dom.cat(D.Dom.when(Bool.not(String.is_empty(doing)), D.Dom.span("doing", doing)), View.sub.steps(ss)))}
+
+def View.subs.go(rs: List<&2, SB.SubRow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> rest:
+      View.sub(r) <> View.subs.go(rest)
+
+# the subagent viewer: what this thread delegated and the agent's own
+def View.subs(+rs: List<&2, SB.SubRow>) -> List<&2, D.Node>:
+  +busy = SB.Subs.busy(SB.Subs.live(rs))
+  Bool.pick(List<&2, D.Node>, List.is_empty(&2, SB.SubRow, rs), Nil{},
+    [D.El{"div", "subs", [D.At{"class", Bool.pick(String, String.is_empty(busy), "subs", "subs busy")}],
+      D.El{"div", "", [D.At{"class", "subs-head"}], [D.Dom.span("", "Subagents"), D.Dom.span("busy", busy)]} <> View.subs.go(rs)}])
 
 def View.parent(+st: M.State, +p: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, String.is_empty(p), Nil{},
@@ -752,14 +768,26 @@ def View.images(ps: List<&2, String>) -> List<&2, D.Node>:
       D.El{"a", "", [D.At{"class", "shot"}, D.At{"href", IM.Img.url(p)}, D.At{"target", "_blank"}, D.At{"title", p}, D.At{"data-lightbox", IM.Img.url(p)}],
         [D.El{"img", "", [D.At{"src", IM.Img.url(p)}, D.At{"alt", p}, D.At{"loading", "lazy"}], Nil{}}]} <> View.images(t)
 
+# a tool call or other activity; a design step (core/hist.bend) is a row
+# that shows it in the viewer. data-id is what host.js scrolls to (Jump)
+def View.act(step: Bool, e: M.Entry) -> D.Node:
+  match step e:
+    case True{} M.Act{+id, _, _, _, _, _}:
+      D.El{"div", id, [D.At{"class", "act step"}, D.At{"data-id", id}],
+        [WI.WIcon.button("step", "hist-show", id, "Show this change in the viewer", "history", 14, HS.Hist.row(e))]}
+    case _ M.Act{+id, _, tone, kind, summary, _}:
+      D.El{"div", id, [D.At{"class", "act " ++ tone}, D.At{"data-id", id}], [D.Dom.span("kind", kind), D.Dom.span("summary", summary)]}
+    case _ M.Msg{+id, _, _, text, _}:
+      D.El{"div", id, [D.At{"class", "act"}, D.At{"data-id", id}], [D.Dom.span("summary", text)]}
+
 def View.entry.own(e: M.Entry) -> D.Node:
   match e:
-    case M.Msg{id, _, M.User{}, +text, _}:
-      D.El{"div", id, [D.At{"class", "msg user"}], D.Dom.cat(View.user_body(text), [D.Dom.copy(AT.Att.body(text))])}
-    case M.Msg{id, _, _, +text, _}:
-      D.El{"div", id, [D.At{"class", "msg assistant"}], D.Dom.cat([D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}], D.Dom.cat(View.images(IM.Img.paths(text)), [D.Dom.copy(text)]))}
-    case M.Act{id, _, tone, kind, summary, _}:
-      D.El{"div", id, [D.At{"class", "act " ++ tone}], [D.Dom.span("kind", kind), D.Dom.span("summary", summary)]}
+    case M.Msg{+id, _, M.User{}, +text, _}:
+      D.El{"div", id, [D.At{"class", "msg user"}, D.At{"data-id", id}], D.Dom.cat(View.user_body(text), [D.Dom.copy(AT.Att.body(text))])}
+    case M.Msg{+id, _, _, +text, _}:
+      D.El{"div", id, [D.At{"class", "msg assistant"}, D.At{"data-id", id}], D.Dom.cat([D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}], D.Dom.cat(View.images(IM.Img.paths(text)), [D.Dom.copy(text)]))}
+    case M.Act{+id, +th, +tone, +kind, +summary, +at}:
+      View.act(String.eq(tone, HS.Step.tone()), M.Act{id, th, tone, kind, summary, at})
 
 # an entry of this thread (headed by the thread that sent it) or a message
 # this thread sent to another (a link)
@@ -1065,7 +1093,7 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
         D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
         View.top(hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id)), [
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
-          D.Dom.cat(View.parent(st, U.Tasks.parent(st, id)), D.Dom.cat(View.tasks(U.Tasks.of(st, id), st),
+          D.Dom.cat(View.parent(st, U.Tasks.parent(st, id)), D.Dom.cat(View.subs(SB.Subs.rows(st, nf, id)),
           D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn)), D.Dom.cat(View.sending(pend),
             View.live.k(String.is_empty(U.Str.get(live, id)), U.Side.phase(st, U.Ui.thread(st, id)), U.Str.get(live, id))))))},
         D.El{"div", "asks", [D.At{"class", "asks"}], View.asks(U.Asks.open(st, id), U.Str.get(drafts, sel))},
@@ -1221,15 +1249,114 @@ def View.layer.btns(ns: List<&2, String>, +k: U32, +i: U32, +off: U32) -> List<&
     case +n <> t:
       View.layer.btn(U32.is_gt(View.layer.alpha(LO.Look.of.t(False{}, k, i)), 0), i, n, off, View.layer.btns(t, k, (i + 1 : U32), off))
 
-def View.layers(+sch: Bool, +off: U32) -> D.Node:
+# (a comparison lists its marks too: removed, changed, added)
+def View.layers(+sch: Bool, +cmp: Bool, +off: U32) -> D.Node:
+  +k = {U32.or(Bool.pick(U32, sch, 1, 0), Bool.pick(U32, cmp, LO.Look.diff(), 0)) : U32}
   D.El{"details", "", [D.At{"class", "layers"}], [D.El{"summary", "", [D.At{"title", "Turn layers on and off"}], [D.Txt{"Layers"}]},
-    D.El{"div", "", [D.At{"class", "layer-list"}], View.layer.btns(Bool.pick(List<&2, String>, sch, SC.Sch.layer_names(), B.Layer.names()), Bool.pick(U32, sch, 1, 0), 0, off)}]}
+    D.El{"div", "", [D.At{"class", "layer-list"}], View.layer.btns(LO.Look.names(k, Bool.pick(List<&2, String>, sch, SC.Sch.layer_names(), B.Layer.names())), k, 0, off)}]}
+
+# The design history bar (client.bend's Hs.bar): the arrows, play and
+# the position, the changes, compare and live buttons; a scrubber with a
+# tick a step; what the agent said before the step, and a way back to it.
+# A comparison names its two sides (each opens the menu of versions) over
+# a legend.
+
+def View.hist.icon(+cls: String, +action: String, +title: String, +name: String) -> D.Node:
+  WI.WIcon.button(cls, action, "", title, name, 16, "")
+
+def View.hist.live(at: Nat) -> List<&2, D.Node>:
+  match at:
+    case 0n:
+      Nil{}
+    case _:
+      [D.Dom.button("hbtn live", "hist-live", "", "Back to the file as it is now", "Live")]
+
+def View.hist.tick(+id: String, +i: Nat, +n: Nat, +cur: Bool) -> D.Node:
+  D.El{"button", "", [D.At{"class", Bool.pick(String, cur, "tick on", "tick")}, D.At{"title", Bool.pick(String, String.is_empty(id), "The live file", "Step " ++ Nat.show(1n+i))},
+    D.At{"style", "left:calc(100% * " ++ Nat.show(i) ++ " / " ++ Nat.show(Bool.pick(Nat, Nat.is_eq(n, 0n), 1n, n)) ++ ")"}, D.At{"data-value", id}, D.On{"click", "hist-go"}], Nil{}}
+
+def View.hist.ticks(ss: List<&2, HS.Step>, +i: Nat, +n: Nat, +at: Nat) -> List<&2, D.Node>:
+  match ss:
+    case Nil{}:
+      [View.hist.tick("", i, n, Nat.is_eq(at, 0n))]
+    case +s <> t:
+      View.hist.tick(HS.Step.id(s), i, n, Nat.is_eq(at, 1n+i)) <> View.hist.ticks(t, 1n+i, n, at)
+
+def View.hist.said(live: Bool, +text: String) -> List<&2, D.Node>:
+  match live:
+    case True{}:
+      [D.Dom.span("said", "The live file. Each tick is a change the agent made; play to watch them.")]
+    case False{}:
+      [WI.WIcon.button("icon", "hist-jump", "", "Go to this point of the thread", "message-square", 16, ""),
+       D.El{"button", "", [D.At{"class", "said"}, D.At{"title", "Go to this point of the thread"}, D.At{"data-value", ""}, D.On{"click", "hist-jump"}], [D.Txt{text}]}]
+
+def View.hist.walk(b: U.HBar, +u: U.Ui) -> D.Node:
+  match b:
+    case U.HBar{_, +n, +at, +title, _, +label, +said, +pl, +df, _, _, _, _}:
+      D.El{"div", "", [D.At{"class", "hist"}], [
+        D.El{"div", "", [D.At{"class", "hist-row"}], List.append(&2, D.Node, [
+          View.hist.icon("icon", "hist-first", "The first step", "skip-back"),
+          View.hist.icon("icon", "hist-prev", "The step before", "chevron-left"),
+          View.hist.icon("icon play", "hist-play", Bool.pick(String, pl, "Pause", "Play the steps"), Bool.pick(String, pl, "pause", "play")),
+          View.hist.icon("icon", "hist-next", "The step after", "chevron-right"),
+          View.hist.icon("icon", "hist-last", "The last step", "skip-forward"),
+          D.Dom.span("title", title), D.Dom.span("grow", ""),
+          D.Dom.button(Bool.pick(String, df, "hbtn on", "hbtn"), "hist-diff", "", "Mark what each step changed", "Changes"),
+          D.Dom.button("hbtn", "cmp", "a", "Compare two versions of the file", "Compare")], View.hist.live(at))},
+        D.El{"div", "", [D.At{"class", "hist-scrub"}], View.hist.ticks(U.Hs.track(u), 0n, n, at)},
+        D.El{"div", "", [D.At{"class", "hist-said"}], View.hist.said(Nat.is_eq(at, 0n), Bool.pick(String, String.is_empty(said), label, said))}]}
+
+def View.hist.key(+layer: U32, +label: String) -> D.Node:
+  D.El{"span", "", [D.At{"class", "key"}], [D.El{"i", "", [D.At{"style", "background:" ++ View.hex(LO.Look.mark.color(False{}, layer))}], Nil{}}, D.Txt{label}]}
+
+def View.hist.cmp(b: U.HBar) -> D.Node:
+  match b:
+    case U.HBar{_, _, _, _, _, _, _, _, _, _, +a, +bb, +menu}:
+      D.El{"div", "", [D.At{"class", "hist cmp"}], [
+        D.El{"div", "", [D.At{"class", "hist-row"}], [
+          D.Dom.button(Bool.pick(String, String.eq(menu, "a"), "hbtn side on", "hbtn side"), "cmp-side", "a", "Pick the old version", "Old: " ++ a),
+          D.Dom.button(Bool.pick(String, String.eq(menu, "b"), "hbtn side on", "hbtn side"), "cmp-side", "b", "Pick the new version", "New: " ++ bb),
+          D.Dom.span("grow", ""), D.Dom.button("hbtn", "cmp-close", "", "Back to the file as it is now", "Close")]},
+        D.El{"div", "", [D.At{"class", "hist-legend"}], [View.hist.key(26, "Removed"), View.hist.key(27, "Changed"), View.hist.key(28, "Added")]}]}
+
+def View.hist.k(on: Bool, cmp: Bool, b: U.HBar, +u: U.Ui) -> List<&2, D.Node>:
+  match on cmp:
+    case False{} _:
+      Nil{}
+    case True{} True{}:
+      [View.hist.cmp(b)]
+    case True{} False{}:
+      [View.hist.walk(b, u)]
+
+def View.hist(+b: U.HBar, +u: U.Ui) -> List<&2, D.Node>:
+  View.hist.k(U.HBar.on(b), U.HBar.cmp(b), b, u)
+
+# the menu of versions over the stage, a row each; a press outside shuts it
+def View.hist.rows(rs: List<&2, U.HRow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.HRow{+l, +sub, +v} <> t:
+      D.El{"button", "", [D.At{"class", "row"}, D.At{"data-value", v}, D.On{"click", "cmp-pick"}], [D.Dom.span("name", l), D.Dom.span("sub", sub)]} <> View.hist.rows(t)
+
+def View.hist.menu.k(open: Bool, +u: U.Ui, +side: String) -> List<&2, D.Node>:
+  match open:
+    case True{}:
+      [D.El{"div", "", [D.At{"class", "hist-scrim"}, D.At{"data-value", ""}, D.On{"click", "cmp-shut"}], Nil{}},
+       D.El{"div", "", [D.At{"class", "hist-menu"}], D.Dom.span("head", Bool.pick(String, String.eq(side, "b"), "Compare with (new)", "Compare from (old)")) <> View.hist.rows(U.Hs.menu(u, side))}]
+    case False{}:
+      Nil{}
+
+def View.hist.menu(+u: U.Ui) -> D.Node:
+  D.El{"div", "", [D.At{"class", "hist-over"}], View.hist.menu.k(Bool.not(String.is_empty(U.Ui.scratch(u, "@cmp.menu"))), u, U.Ui.scratch(u, "@cmp.menu"))}
 
 # a board or schematic: host.js (plot2d.js) draws the hub's plot of it on
 # the canvas whose data-key it carries, less the layers data-off names
 def View.plot(+u: U.Ui, +what: List<&2, D.Node>) -> List<&2, D.Node>:
-  [View.bar(List.append(&2, D.Node, what, [View.layers(String.eq(U.Solid.kind(u), "schematic"), U.Solid.off(u))]), "drag to pan · wheel to zoom · double-click to fit"),
-   D.El{"div", "", [D.At{"class", "viewer-stage"}], [D.El{"canvas", "plot", [D.At{"id", "plot"}, D.At{"data-key", U.Solid.want(u)}, D.At{"data-off", U32.show(U.Solid.off(u))}], Nil{}}]}]
+  View.bar(List.append(&2, D.Node, what, [View.layers(String.eq(U.Solid.kind(u), "schematic"), Nat.is_eq(HS.Hist.kind(U.Ui.view_get(u, "view.path")), 2n), U.Solid.off(u))]), "drag to pan · wheel to zoom · double-click to fit")
+   <> D.El{"div", "", [D.At{"class", "viewer-stage"}], [D.El{"canvas", "plot", [D.At{"id", "plot"}, D.At{"data-key", U.Solid.want(u)}, D.At{"data-off", U32.show(U.Solid.off(u))},
+        D.At{"data-fade", Nat.show(U.Hs.fade())}, D.At{"data-fam", HS.Hist.key.family(U.Solid.want(u))}], Nil{}}, View.hist.menu(u)]}
+   <> View.hist(U.Hs.bar(u), u)
 
 # over a part in 3D: the thread's parts and Renders; the board: its name
 # after the parts: Renders for one of them, or the name of another model

@@ -42,6 +42,9 @@ type Out is Data:
   # a bot effect the server runs with IO or secrets (bothub.bend): kind
   # home, gone, hook, unhook, send, invite, join, unpeer, google
   BotFx{kind: String, a: String, b: String, c: String}
+  # a desk client (the window, the web page) shows thread, with or
+  # without the focus (core/desk.bend; the server keeps it per client)
+  DeskLook{client: U32, thread: String, focused: Bool}
 
 type Step is Data:
   Step{changes: List<&2, M.Change>, outs: List<&2, Out>}
@@ -183,7 +186,7 @@ def Hub.post.go(wait: Bool, +t: M.Thread, +cwd: String, +queued: String, +now: N
       Step{List.concat(&2, M.Change, [[M.MessagePosted{thread, msg, role, text, now}],
           Bool.pick(List<&2, M.Change>, String.is_empty(queued), Nil{}, [M.QueueTaken{thread, now}]),
           [M.TurnChanged{thread, M.Running{}, now}]]),
-        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> Hub.run(t, cwd, M.Queue.join(queued, text))}
+        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> Git{0, "", "step", thread, cwd, msg, ""} <> Hub.run(t, cwd, M.Queue.join(queued, text))}
 
 def Step.after(st: Step, more: List<&2, M.Change>) -> Step:
   match st:
@@ -408,7 +411,7 @@ def Hub.methods.fs() -> List<&2, String>:
 
 # sidebar and navigation
 def Hub.methods.nav() -> List<&2, String>:
-  ["thread.snooze", "thread.reorder", "files.list", "kicad.open", "project.reorder", "mech.list", "mech.render"]
+  ["thread.snooze", "thread.reorder", "files.list", "kicad.open", "project.reorder", "mech.list", "mech.render", "file.open"]
 
 # snooze a thread: {thread, for: "1h" | "1w" | "tomorrow" | "off"} or
 # {thread, until}. Tomorrow 9:00 is local time, which the server knows:
@@ -619,7 +622,7 @@ def Wt.start.k(go: Bool, +first: Bool, +t: M.Thread, +cwd: String, +queued: Stri
   match go:
     case True{}:
       Step{[M.QueueTaken{thread, now}, M.TurnChanged{thread, M.Running{}, now}],
-        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> List.append(&2, Out, Wt.name(first, t, queued), Hub.run(t, cwd, queued))}
+        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> Git{0, "", "step", thread, cwd, "", ""} <> List.append(&2, Out, Wt.name(first, t, queued), Hub.run(t, cwd, queued))}
     case False{}:
       Step.none()
 
@@ -635,7 +638,7 @@ def Merge.found(due: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +t
 
 # attachments, files and the web client's panes
 def Hub.methods.media() -> List<&2, String>:
-  ["attach.put", "attach.file", "update.check"]
+  ["attach.put", "attach.file", "update.check", "history.refs"]
 
 # one piece of an upload: "<index>|<1 when last>|<stored name>"
 def Attach.piece(+p: J.Json) -> String:
@@ -652,6 +655,14 @@ def Attach.go(ok: Bool, +client: U32, +id: String, o: Out) -> Step:
 
 # attach.put: a piece of an uploaded file (base64); attach.file: a file on
 # this machine, copied in; update.check: look for a release now
+# desk.look {thread, focused}: no reply (a desk says it often)
+def Desk.request(look: Bool, +client: U32, +id: String, +p: J.Json) -> Step:
+  match look:
+    case True{}:
+      Step.outs([DeskLook{client, J.Json.get_str(p, "thread", ""), J.Json.get_bool(p, "focused", False{})}])
+    case False{}:
+      Step.outs([Reply.err(client, id, "unknown method")])
+
 def Hub.media(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
@@ -663,8 +674,10 @@ def Hub.media(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.J
           AT.Att.stored(Hub.id("a", now, Hub.seq(s)), AT.Att.base(AT.Att.from_uri(J.Json.get_str(p, "path", ""))))})
     case 2n:
       Step.outs([Git{client, id, "update.check", "", "", M.Setting.get(s, "update.channel", "stable"), ""}])
+    case 3n:
+      Hub.git(s, client, id, "refs", J.Json.get_str(p, "thread", ""), "", "")
     case _:
-      Step.outs([Reply.err(client, id, "unknown method")])
+      Desk.request(String.eq(m, "desk.look"), client, id, p)
 
 def Hub.methods() -> List<&2, String>:
   ["project.add", "project.remove", "thread.create", "turn.start", "turn.interrupt",
@@ -886,31 +899,65 @@ def Bg.put(+s: M.State, +th: String, +now: Nat, ls: List<&2, String>) -> List<&2
   +after = M.Bg.show(ls)
   Bg.put.k(String.eq(M.Setting.get(s, M.Bg.key(th), ""), after), th, now, after)
 
+# a mark in a subagent's log (model.bend's Bg.log): it started, or ended
+# with a status; none for one no tool call started
+def Bg.mark.k(none: Bool, +th: String, +now: Nat, +call: String, +kind: String, +text: String) -> List<&2, M.Change>:
+  match none:
+    case True{}:
+      Nil{}
+    case False{}:
+      [M.ActivityLogged{M.Bg.log(th), call ++ "/" ++ kind, call, kind, text, now}]
+
+def Bg.mark(+th: String, +now: Nat, +call: String, +kind: String, +text: String) -> List<&2, M.Change>:
+  Bg.mark.k(String.is_empty(call), th, now, call, kind, text)
+
 def Bg.started(agent: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
   match agent:
     case True{}:
-      Bg.put(s, th, now, M.Bg.add(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""), J.Json.get_str(o, "description", "Subagent")))
+      +call = J.Json.get_str(o, "tool_use_id", "")
+      +what = J.Json.get_str(o, "description", "Subagent")
+      +kind = M.Bg.kind(J.Json.get_str(o, "task_type", ""))
+      List.append(&2, M.Change, Bg.put(s, th, now, M.Bg.start(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""), what, call, what, kind)),
+        Bg.mark(th, now, call, "start:" ++ kind, what))
     case False{}:
       Nil{}
 
-def Bg.ended(done: Bool, +s: M.State, +th: String, +now: Nat, +id: String) -> List<&2, M.Change>:
+# a foreground shell Claude moved to the background when it ran past its
+# timeout (task_updated sets is_backgrounded; the patch has no description)
+def Bg.moved(bg: Bool, +s: M.State, +th: String, +now: Nat, +id: String) -> List<&2, M.Change>:
+  match bg:
+    case True{}:
+      Bg.put(s, th, now, M.Bg.start(M.Bg.of(s, th), id, "Background shell", "", "Background shell", "shell"))
+    case False{}:
+      Nil{}
+
+def Bg.ended(done: Bool, bg: Bool, +s: M.State, +th: String, +now: Nat, +id: String) -> List<&2, M.Change>:
   match done:
     case True{}:
       Bg.put(s, th, now, M.Bg.drop(M.Bg.of(s, th), id))
     case False{}:
-      Nil{}
+      Bg.moved(bg, s, th, now, id)
+
+# a task the agent left running: a subagent, a background shell or
+# monitor, a workflow; not one a subagent runs for itself, and not a
+# foreground shell (listed only if Claude moves it to the background,
+# Bg.moved)
+def Bg.listed(+o: J.Json) -> Bool:
+  Bool.and(Nat.is_lt(C.Codec.pos(["local_agent", "local_bash", "local_workflow", "remote_agent", "monitor_mcp", "monitor_ws", "in_process_teammate"], J.Json.get_str(o, "task_type", "")), 7n),
+    Bool.and(Bool.not(J.Json.get_bool(o, "owned_by_subagent", False{})), J.Json.get_bool(o, "is_backgrounded", True{})))
 
 def Bg.system.k(i: Nat, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
   match i:
     case 0n:
-      Bg.started(String.eq(J.Json.get_str(o, "task_type", ""), "local_agent"), s, th, now, o)
+      Bg.started(Bg.listed(o), s, th, now, o)
     case 1n:
       Bg.put(s, th, now, M.Bg.set(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""), J.Json.get_str(o, "description", "")))
     case 2n:
-      Bg.put(s, th, now, M.Bg.drop(M.Bg.of(s, th), J.Json.get_str(o, "task_id", "")))
+      List.append(&2, M.Change, Bg.put(s, th, now, M.Bg.drop(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""))),
+        Bg.mark(th, now, J.Json.get_str(o, "tool_use_id", ""), "end", J.Json.get_str(o, "status", "completed")))
     case 3n:
       Bg.ended(Nat.is_lt(C.Codec.pos(["completed", "failed", "killed", "stopped", "cancelled"], J.Json.get_str(J.Json.get_obj(o, "patch"), "status", "")), 5n),
-        s, th, now, J.Json.get_str(o, "task_id", ""))
+        J.Json.get_bool(J.Json.get_obj(o, "patch"), "is_backgrounded", False{}), s, th, now, J.Json.get_str(o, "task_id", ""))
     case _:
       Nil{}
 
@@ -920,6 +967,68 @@ def Bg.system(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Cha
 # none left at work (the agent's process ended)
 def Bg.clear(+s: M.State, +th: String, +now: Nat) -> List<&2, M.Change>:
   Bg.put(s, th, now, Nil{})
+
+# Design steps
+# ------------
+# After a tool call the server snapshots the thread's KiCad files (job
+# "step", its `a` the entry the step follows; core/hist.bend). Claude's
+# tool calls end with a "user" line of tool results; Codex's and Grok's
+# are logged when they have run.
+
+def Steps.out(+thread: String, +cwd: String, +entry: String) -> Out:
+  Git{0, "", "step", thread, cwd, entry, ""}
+
+def Step.also(st: Step, os: List<&2, Out>) -> Step:
+  match st:
+    case Step{cs, o}:
+      Step{cs, List.append(&2, Out, o, os)}
+
+def Steps.hit(bs: List<&2, J.Json>) -> Bool:
+  match bs:
+    case +b <> _:
+      String.eq(J.Json.get_str(b, "type", ""), "tool_result")
+    case Nil{}:
+      False{}
+
+# the first tool result's call
+def Steps.first(bs: List<&2, J.Json>, hit: Bool) -> String:
+  match bs hit:
+    case Nil{} _:
+      ""
+    case +b <> +r True{}:
+      J.Json.get_str(b, "tool_use_id", "")
+    case +b <> t False{}:
+      Steps.first(t, Steps.hit(t))
+
+def Steps.claude.k(+id: String, +thread: String, +cwd: String) -> List<&2, Out>:
+  Bool.pick(List<&2, Out>, String.is_empty(id), Nil{}, [Steps.out(thread, cwd, id)])
+
+# a line of tool results: a step after the first of them
+def Steps.claude(+bs: List<&2, J.Json>, +thread: String, +cwd: String) -> List<&2, Out>:
+  Steps.claude.k(Steps.first(bs, Steps.hit(bs)), thread, cwd)
+
+def Steps.acts(cs: List<&2, M.Change>, +thread: String, +cwd: String) -> List<&2, Out>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case M.ActivityLogged{_, +id, +tone, _, _, _} <> t:
+      List.append(&2, Out, Bool.pick(List<&2, Out>, String.eq(tone, "tool"), [Steps.out(thread, cwd, id)], Nil{}), Steps.acts(t, thread, cwd))
+    case _ <> t:
+      Steps.acts(t, thread, cwd)
+
+def Steps.after(st: Step, +thread: String, +cwd: String) -> Step:
+  match st:
+    case Step{+cs, os}:
+      Step{cs, List.append(&2, Out, os, Steps.acts(cs, thread, cwd))}
+
+# Grok's calls are logged before they run: its step waits for the call's
+# end (acp.bend's "tool.done")
+def Steps.after.if(on: Bool, st: Step, +thread: String, +cwd: String) -> Step:
+  match on:
+    case True{}:
+      Steps.after(st, thread, cwd)
+    case False{}:
+      st
 
 def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   match i:
@@ -932,14 +1041,53 @@ def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -
     case 3n:
       Step.after(Claude.result(thread, now, o), Usage.window(s, thread, now, o))
     case 4n:
-      Claude.named(s, thread, now, o)
+      Step.also(Claude.named(s, thread, now, o), Steps.claude(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), thread, Hub.cwd(s, Hub.thread(s, thread))))
     case _:
       Step.none()
+
+# A subagent's own lines (parent_tool_use_id names the Agent call that
+# started it): what it writes and the tools it calls go to its log, not the
+# thread's timeline, and its partial text, tool results and usage are not
+# the agent's
+def Sub.block.k(i: Nat, +log: String, +call: String, +msg: String, +n: Nat, +now: Nat, +b: J.Json) -> List<&2, M.Change>:
+  match i:
+    case 0n:
+      [M.ActivityLogged{log, call ++ "/" ++ msg ++ ":" ++ Nat.show(n), call, "say", J.Json.get_str(b, "text", ""), now}]
+    case 1n:
+      [M.ActivityLogged{log, call ++ "/" ++ J.Json.get_str(b, "id", msg ++ ":" ++ Nat.show(n)), call, J.Json.get_str(b, "name", "tool"),
+        Claude.tool_summary(J.Json.get_str(b, "name", "tool"), J.Json.get_obj(b, "input")), now}]
+    case _:
+      Nil{}
+
+def Sub.blocks(bs: List<&2, J.Json>, +log: String, +call: String, +msg: String, +n: Nat, +now: Nat) -> List<&2, M.Change>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case +b <> t:
+      List.append(&2, M.Change,
+        Sub.block.k(C.Codec.pos(["text", "tool_use"], J.Json.get_str(b, "type", "")), log, call, msg, n, now, b),
+        Sub.blocks(t, log, call, msg, 1n+n, now))
+
+def Sub.line(i: Nat, +thread: String, +now: Nat, +call: String, +o: J.Json) -> Step:
+  match i:
+    case 2n:
+      Step{Sub.blocks(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), M.Bg.log(thread), call,
+        J.Json.get_str(J.Json.get_obj(o, "message"), "id", "msg"), 0n, now), Nil{}}
+    case _:
+      Step.none()
+
+def Claude.line.who(main: Bool, i: Nat, +s: M.State, +thread: String, +now: Nat, +call: String, +o: J.Json) -> Step:
+  match main:
+    case True{}:
+      Claude.line.k(i, s, thread, now, o)
+    case False{}:
+      Sub.line(i, thread, now, call, o)
 
 def Claude.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now: Nat) -> Step:
   match m:
     case Some{+o}:
-      Claude.line.k(C.Codec.pos(["system", "stream_event", "assistant", "result", "user"], J.Json.get_str(o, "type", "")), s, thread, now, o)
+      +call = J.Json.get_str(o, "parent_tool_use_id", "")
+      Claude.line.who(String.is_empty(call), C.Codec.pos(["system", "stream_event", "assistant", "result", "user"], J.Json.get_str(o, "type", "")), s, thread, now, call, o)
     case None{}:
       Step.none()
 
@@ -1003,6 +1151,9 @@ def Hub.nav(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Jso
       Step.outs([Git{client, id, "mech", J.Json.get_str(p, "thread", ""), Hub.cwd(s, Hub.thread(s, J.Json.get_str(p, "thread", ""))), "", ""}])
     case 6n:
       Step.outs([Git{client, id, "render", J.Json.get_str(p, "thread", ""), Hub.cwd(s, Hub.thread(s, J.Json.get_str(p, "thread", ""))), J.Json.get_str(p, "path", ""), ""}])
+    # a file link opened on this machine, or shown in its folder: {path, how}
+    case 7n:
+      Step.outs([Git{client, id, "open", "", "/", J.Json.get_str(p, "path", ""), J.Json.get_str(p, "how", "open")}])
     case _:
       Hub.agentm(C.Codec.pos(Hub.methods.agent(), m), s, now, client, id, p, m)
 
@@ -1223,7 +1374,7 @@ def Queue.steer.k(m: Maybe<&2, M.QItem>, +run: Bool, +s: M.State, +now: Nat, +cl
       Step.before([M.QueueTakenOne{thread, msg, now}], [Reply.ok(client, id)], Steer.go(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), now, Hub.seq(s), thread, text))
     case Some{M.QItem{+msg, +text}} False{}:
       Step{[M.QueueTakenOne{thread, msg, now}, M.TurnChanged{thread, M.Running{}, now}],
-        Reply.ok(client, id) <> Git{0, "", "checkpoint0", thread, Hub.cwd(s, Hub.thread(s, thread)), "", ""} <> Hub.run(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), text)}
+        Reply.ok(client, id) <> Git{0, "", "checkpoint0", thread, Hub.cwd(s, Hub.thread(s, thread)), "", ""} <> Git{0, "", "step", thread, Hub.cwd(s, Hub.thread(s, thread)), "", ""} <> Hub.run(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), text)}
     case None{} _:
       Step.outs([Reply.err(client, id, "no such queued message")])
 
@@ -1570,6 +1721,24 @@ def Wt.hardware(ns: List<&2, String>) -> Bool:
     case +n <> t:
       Bool.or(Bool.or(String.ends_with(n, ".kicad_pro"), String.ends_with(n, ".kicad_pcb")), Bool.or(String.ends_with(n, ".kicad_sch"), Wt.hardware(t)))
 
+# what the hub tells the clients when an agent starts in a KiCad project:
+# show the thread's board (its schematic when there is no board) as the
+# hub's own view ("auto", which a panel shut by hand ignores); "" for a
+# project with neither
+def Auto.view.json(+thread: String, +pcb: String, +sch: String) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Str{"view"}}, J.KV{"thread", J.Str{thread}}, J.KV{"kind", J.Str{Bool.pick(String, String.is_empty(pcb), "schematic", "board")}},
+    J.KV{"path", J.Str{Bool.pick(String, String.is_empty(pcb), sch, pcb)}}, J.KV{"auto", J.Json.bool(True{})}])
+
+def Auto.view.k(none: Bool, +thread: String, +pcb: String, +sch: String) -> String:
+  match none:
+    case True{}:
+      ""
+    case False{}:
+      J.Json.show(Auto.view.json(thread, pcb, sch))
+
+def Auto.view(+thread: String, +pcb: String, +sch: String) -> String:
+  Auto.view.k(Bool.and(String.is_empty(pcb), String.is_empty(sch)), thread, pcb, sch)
+
 def Wt.digit(keep: Bool, +c: U32, rest: String) -> String:
   match keep:
     case True{}:
@@ -1616,8 +1785,8 @@ def Codex.todo(todo: Bool, +thread: String, +now: Nat, +it: J.Json) -> Step:
 
 # item.started and item.updated share a case: only todo lists are read there
 def Codex.kind(+t: String) -> Nat:
-  Bool.pick(Nat, Bool.or(String.eq(t, "item.started"), String.eq(t, "item.updated")), 5n,
-    C.Codec.pos(["thread.started", "item.completed", "turn.completed", "turn.failed", "item.delta"], t))
+  Bool.pick(Nat, String.eq(t, "tool.done"), 6n, Bool.pick(Nat, Bool.or(String.eq(t, "item.started"), String.eq(t, "item.updated")), 5n,
+    C.Codec.pos(["thread.started", "item.completed", "turn.completed", "turn.failed", "item.delta"], t)))
 
 def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   match i:
@@ -1631,6 +1800,8 @@ def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) ->
       Step.outs([Delta.push(thread, J.Json.get_str(o, "text", ""))])
     case 5n:
       Codex.todo(String.eq(J.Json.get_str(J.Json.get_obj(o, "item"), "type", ""), "todo_list"), thread, now, J.Json.get_obj(o, "item"))
+    case 6n:
+      Step.outs([Steps.out(thread, Hub.cwd(s, Hub.thread(s, thread)), "")])
     case 3n:
       Step{[M.ActivityLogged{thread, Hub.id("e", now, Hub.seq(s)), "error", Hub.provider(Hub.thread(s, thread)), J.Json.get_str(J.Json.get_obj(o, "error"), "message", J.Json.get_str(o, "message", "turn failed")), now}, M.TurnChanged{thread, M.Failed{}, now}], Nil{}}
     case _:
@@ -1648,7 +1819,7 @@ def Codex.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now: 
 def Hub.agent_line.c(run: Bool, +s: M.State, +now: Nat, +thread: String, line: String) -> Step:
   match run:
     case True{}:
-      Codex.line.parsed(J.Json.parse(line), s, thread, now)
+      Steps.after.if(Bool.not(String.eq(Hub.provider(Hub.thread(s, thread)), "grok")), Codex.line.parsed(J.Json.parse(line), s, thread, now), thread, Hub.cwd(s, Hub.thread(s, thread)))
     case False{}:
       Step.none()
 
@@ -1710,7 +1881,7 @@ def Ended.out.k(none: Bool, +s: M.State, +now: Nat, +state: String, +thread: Str
       st
     case False{} Step{cs, os}:
       Step{List.append(&2, M.Change, cs, Sum.at(RF.Sum.due(s, thread, now), thread, now)),
-        List.append(&2, Out, os, TurnEnded{thread, state} <> Git{0, "", "checkpoint", thread, cwd, "", ""} <> Sum.out(RF.Sum.due(s, thread, now), s, thread, "thread"))}
+        List.append(&2, Out, os, TurnEnded{thread, state} <> Git{0, "", "step", thread, cwd, "", ""} <> Git{0, "", "checkpoint", thread, cwd, "", ""} <> Sum.out(RF.Sum.due(s, thread, now), s, thread, "thread"))}
 
 def Ended.out.s(+s: M.State, +now: Nat, +state: String, +thread: String, +cwd: String, st: Step) -> Step:
   Ended.out.k(String.is_empty(state), s, now, state, thread, cwd, st)

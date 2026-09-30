@@ -242,7 +242,11 @@ private struct ThreadRow: View {
             }
             Spacer()
             if row.pinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary) }
-            Text(row.ago).font(.caption).foregroundStyle(.secondary)
+            if let n = row.agents, !n.isEmpty {
+                Text(n).font(.caption).foregroundStyle(PhaseColor.accent)
+            } else {
+                Text(row.ago).font(.caption).foregroundStyle(.secondary)
+            }
             Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())
@@ -381,9 +385,10 @@ struct ProjectsView: View {
         }
     }
 
-    // the row menu shows while the screen has one this dialog has not let go of
+    // the row menu shows while the screen has one this dialog has not let go
+    // of (a file link's shows over its thread)
     private var menuUp: Binding<Bool> {
-        Binding(get: { screen.rowMenu.map { $0 != shutMenu } ?? false }, set: { up in if !up { letGo() } })
+        Binding(get: { screen.rowMenu.map { $0.kind != "f" && $0 != shutMenu } ?? false }, set: { up in if !up { letGo() } })
     }
 
     private func pick(_ m: RowMenu, _ i: MenuItem) {
@@ -616,6 +621,10 @@ struct ThreadScreen: View {
     @State private var shown: Shown?
     // the entry that was first when earlier ones were asked for
     @State private var keepAt: String?
+    // the entry a jump showed, tinted for a moment
+    @State private var lit: String?
+    // the file menu this dialog let go of
+    @State private var shutFile: RowMenu?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -626,7 +635,6 @@ struct ThreadScreen: View {
                 // came and the text jumped)
                 VStack(alignment: .leading, spacing: 14) {
                     if let p = thread.parent { EntryRow(model: model, entry: p) { shown = $0 } }
-                    if let ts = thread.tasks, !ts.isEmpty { TasksView(model: model, tasks: ts) }
                     // scrolled up to the top while earlier entries are left
                     // out: they are shown, no button, and the view stays on
                     // the entry that was first
@@ -640,7 +648,11 @@ struct ThreadScreen: View {
                             }
                         })
                     }
-                    ForEach(thread.entries) { EntryRow(model: model, entry: $0) { shown = $0 }.id($0.id) }
+                    ForEach(thread.entries) { e in
+                        EntryRow(model: model, entry: e) { shown = $0 }
+                            .background(Color.accentColor.opacity(lit == e.id ? 0.18 : 0))
+                            .id(e.id)
+                    }
                     // the client's sending rows, then those tapped here it has
                     // not answered yet, by place: one handed over keeps its place
                     ForEach(Array(sending.enumerated()), id: \.offset) { _, text in
@@ -656,18 +668,6 @@ struct ThreadScreen: View {
                             Text(thread.working).foregroundStyle(.secondary)
                         }
                         .font(thread.state == "run" ? .body : .caption)
-                    }
-                    if let ag = thread.agents, !ag.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(Array(ag.enumerated()), id: \.offset) { _, a in
-                                HStack(spacing: 8) {
-                                    ProgressView().controlSize(.mini)
-                                    Text(a.isEmpty ? "Subagent" : a).lineLimit(2)
-                                }
-                            }
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     }
                     Color.clear.frame(height: 1).id("end")
                 }
@@ -687,9 +687,24 @@ struct ThreadScreen: View {
             .onChange(of: thread.entries.first?.id) {
                 if let k = keepAt { proxy.scrollTo(k, anchor: .top); keepAt = nil }
             }
+            // the design history's way back: the entry scrolled to and tinted,
+            // the tint fading out (after the rows the jump opened are laid out)
+            .onChange(of: model.jump) { _, j in
+                guard live, let j else { return }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(60))
+                    withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(j.id, anchor: .center) }
+                    lit = j.id
+                    try? await Task.sleep(for: .milliseconds(400))
+                    withAnimation(.easeOut(duration: 2)) { if lit == j.id { lit = nil } }
+                }
+            }
         }
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {
+            if let u = thread.subs {
+                SubsView(model: model, subs: u).padding(.horizontal).padding(.top, 8)
+            }
             ForEach(thread.asks ?? []) { a in
                 AskCard(model: model, ask: a).padding(.horizontal).padding(.top, 8)
             }
@@ -786,6 +801,20 @@ struct ThreadScreen: View {
         }
         .navigationTitle(thread.title)
         .navigationBarTitleDisplayMode(.inline)
+        // a file link tapped in a message asks for its menu (Open and Show
+        // in folder act on the hub's machine, Copy path here)
+        .environment(\.openURL, OpenURLAction { url in
+            guard let p = FileLink.path(url) else { return .systemAction }
+            model.act("file-menu", p)
+            return .handled
+        })
+        .confirmationDialog(fileMenu?.title ?? "", isPresented: fileUp, titleVisibility: .visible, presenting: fileMenu) { m in
+            ForEach(m.items, id: \.self) { i in
+                Button(i.label) { shutFile = m; model.act(i.action, i.value) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .onChange(of: fileMenu) { _, m in if m == nil { shutFile = nil } }
         .fullScreenCover(isPresented: Binding(get: { !thread.viewer.open.isEmpty }, set: { if !$0 { model.act("view", "") } })) {
             if let v = model.screen?.thread?.viewer {
                 if v.open == "renders", let p = v.mech { MechScreen(model: model, viewer: v, page: p) } else { PlotScreen(model: model, viewer: v) }
@@ -824,7 +853,7 @@ struct ThreadScreen: View {
                 Menu {
                     ForEach(thread.tools.filter { $0.action != "interrupt" }, id: \.self) { t in
                         Button { model.act(t.action, t.value ?? "") } label: {
-                            if t.on { Label(t.label, systemImage: "checkmark") } else { Text(t.label) }
+                            Label(t.label, systemImage: t.on ? "checkmark" : Self.icon(t.icon))
                         }
                     }
                     Divider()
@@ -838,7 +867,7 @@ struct ThreadScreen: View {
                                 // the terminal opens at the size this phone has room for
                                 model.act(t.action, t.action == "term-toggle" ? TermSheet.size() : t.value ?? "")
                             } label: {
-                                if t.on { Label(t.label, systemImage: "checkmark") } else { Label(t.label, systemImage: Self.icon(t.action)) }
+                                Label(t.label, systemImage: t.on ? "checkmark" : Self.icon(t.icon))
                             }
                         }
                     }
@@ -847,6 +876,23 @@ struct ThreadScreen: View {
                 }
             }
         }
+    }
+
+    // the screen's menu when it is a file link's
+    private var fileMenu: RowMenu? {
+        model.screen?.rowMenu.flatMap { $0.kind == "f" ? $0 : nil }
+    }
+
+    // shown until picked from or let go of; let go with no pick, it is closed
+    private var fileUp: Binding<Bool> {
+        Binding(get: { fileMenu.map { $0 != shutFile } ?? false }, set: { up in
+            guard !up, let m = fileMenu else { return }
+            shutFile = m
+            let model = self.model
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                if model.screen?.rowMenu == m { model.act("menu-close", "") }
+            }
+        })
     }
 
     // this thread's messages tapped here and not yet answered
@@ -861,13 +907,22 @@ struct ThreadScreen: View {
         return c == .online || c == .syncing ? "Sending…" : "Waiting for " + (s.hubs.first { $0.key == s.hub }?.name ?? "the hub") + "…"
     }
 
-    static func icon(_ action: String) -> String {
-        switch action {
+    // a tool's icon (core/icons.bend's name) as an SF Symbol
+    static func icon(_ name: String?) -> String {
+        switch name ?? "" {
+        case "pin": "pin"
+        case "circle-check": "checkmark.circle"
+        case "clock": "clock"
+        case "archive": "archivebox"
+        case "trash": "trash"
+        case "git-fork": "arrow.triangle.branch"
+        case "undo": "arrow.uturn.backward"
+        case "terminal": "terminal"
+        case "panel-right": "sidebar.right"
         case "diff": "plusminus"
-        case "term-toggle": "terminal"
-        case "find-open": "doc.text.magnifyingglass"
-        case "snooze": "moon.zzz"
-        case "row-delete": "trash"
+        case "search": "doc.text.magnifyingglass"
+        case "stop": "stop.fill"
+        case "x": "xmark"
         default: "circle"
         }
     }

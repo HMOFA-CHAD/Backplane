@@ -143,6 +143,25 @@ How a revert works:
 
 All diffs use `-c core.quotepath=false diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ -M`.
 
+## Design steps
+
+```
+Git.step.capture(cwd, thread_id) -> IO(String)   the capture's output, "" when nothing changed
+Git.refs(cwd, thread_id) -> IO(String)           git dir, top, then "kind\tlabel\tcommit" lines
+Git.show(git_dir, "<commit>:<path>") -> IO(Maybe<String>)
+Git.version(path) -> IO(List<U32>)               a live file, or a file in a commit (core/hist.bend's paths)
+```
+
+Ref layout: `refs/backplane/checkpoints/<b64url(thread_id)>/steps`, one ref whose history is the thread's steps.
+
+- After each tool call, and when a turn starts and ends, the hub asks for a step (job `step`, its `a` the tool call or message it follows).
+- One `sh` script stages the thread's `.kicad_sch` and `.kicad_pcb` files (not KiCad's autosaves or backups; tracked ones even when ignored) through the thread's own index (`<git-dir>/backplane-<b64>.steps.index`), and when that tree differs from the last step's, commits it with the last step as parent. `update-ref` checks the old value (a new ref is made with `update-ref --stdin`'s `create`), so two captures cannot fork the chain; a lock directory holding the owner's pid makes them take turns, and a dead owner's lock is cleared.
+- A folder outside git keeps its steps in `<folder>/.backplane/history.git` (its `info/exclude` lists `/.backplane/`), made only when the folder has KiCad files, never for `/` or the home folder.
+- The output is the commit, the step before (`""` for the first), the git dir, the top, then git's `-z` name-status of the files changed. The server logs it as an Act of tone `step` (core/hist.bend's `Hist.record`).
+- A capture runs beside the agent, not before it: two quick edits may share a step.
+
+`history.refs` answers what a file may be compared with: the git dir and top as the capture finds them, `HEAD`, the 40 newest branches, the 40 newest commits that touched KiCad files, the thread's turn checkpoints, and the project's board and schematic.
+
 ## Stacked actions
 
 ```

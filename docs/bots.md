@@ -183,6 +183,18 @@ A hub counts only its own bots' posts (it pushes only for its own threads). A
 phone paired with several hubs counts every bot, so only the hub whose bot
 answered first raises the alert. A held push is logged as
 `backplane: push alert held for <thread>`.
+
+### Desks
+
+The window and the web page are desks (`src/core/desk.bend`). Each tells
+the hub which thread it shows and whether it has the focus, when either
+changes and at most once a minute while in use. A thread a focused desk
+shows, used in the last 3 minutes, is being watched: its turn's end raises
+no phone alert (neither the APNs push nor the phone's own), and no desktop
+notification. Any other alert also shows as a desktop notification on the
+desk used last: the browser's notifications (the page asks for permission
+on the first click or key; macOS, Windows, Linux) or `notify-send` from the
+Linux window. Clicking it opens the thread.
 ## Mentions in threads
 
 In any thread's composer (web, window, phones) a word that starts with a

@@ -18,6 +18,8 @@ data class Row(
     val lead: List<Swipe>, val trail: List<Swipe>, val status: String = "",
     // the active view's rows: the project's name, and faded (settled lately)
     val project: String = "", val faded: Boolean = false,
+    // "2 agents" while subagents work for it, shown where the age goes
+    val agents: String = "",
 )
 
 // machine: the hub it is on, named when the phone has several
@@ -56,10 +58,13 @@ data class Folders(val text: String, val hint: String, val error: String, val it
 data class Tool(
     val label: String, val action: String, val on: Boolean,
     val value: String = "", val danger: Boolean = false, val options: List<SwipeChoice> = emptyList(),
+    // core/icons.bend's name for it (toolIcon turns it into a Material icon)
+    val icon: String = "",
 )
 
 sealed interface Block {
-    data class El(val tag: String, val kids: List<Block>) : Block
+    // a link's target, and whether it is a file's (Mob.href)
+    data class El(val tag: String, val kids: List<Block>, val href: String? = null, val file: Boolean = false) : Block
     data class Txt(val text: String) : Block
 }
 
@@ -83,8 +88,15 @@ data class Entry(
 data class AskButton(val label: String, val value: String, val primary: Boolean)
 data class Ask(val id: String, val kind: String, val head: String, val detail: String, val blocks: List<Block>, val buttons: List<AskButton>)
 
-// a thread this one delegated to ("select" opens it)
-data class TaskRow(val id: String, val who: String, val title: String, val state: String)
+// the subagent panel (src/core/subs.bend): what the thread delegated and
+// the agent's own; a row sends act with value (a task opens its thread, a
+// subagent opens or shuts its steps)
+data class SubStep(val kind: String, val text: String)
+data class SubRow(
+    val id: String, val agent: Boolean, val title: String, val who: String, val state: String, val doing: String,
+    val live: Boolean, val open: Boolean, val n: Int, val steps: List<SubStep>, val act: String, val value: String,
+)
+data class Subs(val busy: String, val rows: List<SubRow>)
 
 // a skill the `$` being typed may complete to ("skill" with its name)
 data class Skill(val name: String, val desc: String, val on: Boolean = false)
@@ -133,7 +145,26 @@ data class Viewer(
     val note: String = "",
     // the Mechanical page, when that is what is open
     val mech: MechPage? = null,
+    // the design history's bar under a board or schematic (null: none)
+    val hist: HistBar? = null,
 )
+
+// The design history (src/mobile/view.bend's Hist.json): the steps in the
+// track and the one shown (0 the live file), what to call it, what the
+// agent said before it, playing, changes marked, a comparison on show and
+// its sides' labels, the side whose version menu is open ("" shut), a tick
+// per step then the live file (id ""), that menu (null shut), and the
+// legend's colours (0xRRGGBB: removed, changed, added)
+data class HistBar(
+    val n: Int, val at: Int, val title: String, val entry: String, val said: String,
+    val playing: Boolean, val diff: Boolean, val cmp: Boolean, val a: String, val b: String, val side: String,
+    val ticks: List<HistTick>, val menu: List<HistRow>?, val keys: IntArray,
+)
+
+data class HistTick(val id: String, val on: Boolean)
+
+// a version the menu offers ("cmp-pick" value)
+data class HistRow(val label: String, val sub: String, val value: String)
 
 // The Mechanical page (src/mobile/view.bend's Mech.json): what to say
 // while there are no parts, the parts ("mech-part" value), the part on
@@ -179,7 +210,7 @@ data class ThreadView(
     // the menu under the toolbar's overflow, after the tools
     val menu: List<Tool> = emptyList(),
     val parent: Entry? = null,
-    val tasks: List<TaskRow> = emptyList(),
+    val subs: Subs? = null,
     val asks: List<Ask> = emptyList(),
     val skills: List<Skill> = emptyList(),
     // a side question (/btw) and its answer, until closed
@@ -290,6 +321,8 @@ data class Cmd(
     // key alerts about the same item share
     val thread: String = "", val title: String = "", val kind: String = "", val body: String = "",
     val key: String = "",
+    // a "later": an action (with its value) to send after ms; a "jump": the entry to show
+    val ms: Long = 0, val action: String = "", val value: String = "", val id: String = "",
 )
 
 // an answer from the engine: its screen (none from a quiet call, or when a
@@ -300,7 +333,8 @@ private fun <T> JSONArray?.map(f: (JSONObject) -> T): List<T> =
     if (this == null) emptyList() else (0 until length()).map { f(getJSONObject(it)) }
 
 private fun blocks(a: JSONArray?): List<Block> = a.map { o ->
-    if (o.has("tag")) Block.El(o.getString("tag"), blocks(o.optJSONArray("kids"))) else Block.Txt(o.optString("text"))
+    if (o.has("tag")) Block.El(o.getString("tag"), blocks(o.optJSONArray("kids")), if (o.has("href")) o.optString("href") else null, o.optBoolean("file"))
+    else Block.Txt(o.optString("text"))
 }
 
 private fun swipe(o: JSONObject) = Swipe(
@@ -311,7 +345,7 @@ private fun swipe(o: JSONObject) = Swipe(
 private fun row(o: JSONObject) = Row(
     o.optString("id"), o.optString("title"), o.optString("state"), o.optString("ago"), o.optBoolean("pinned"),
     o.optJSONArray("lead").map(::swipe), o.optJSONArray("trail").map(::swipe), o.optString("status"),
-    o.optString("project"), o.optBoolean("faded"),
+    o.optString("project"), o.optBoolean("faded"), o.optString("agents"),
 )
 
 private fun chips(a: JSONArray?) =
@@ -328,6 +362,7 @@ private fun entry(o: JSONObject) = Entry(
 private fun tool(o: JSONObject) = Tool(
     o.optString("label"), o.optString("action"), o.optBoolean("on"), o.optString("value"), o.optBoolean("danger"),
     o.optJSONArray("options").map { SwipeChoice(it.optString("label"), it.optString("value")) },
+    o.optString("icon"),
 )
 
 private fun term(o: JSONObject) = Term(
@@ -347,7 +382,13 @@ private fun thread(o: JSONObject) = threadOf(o).copy(
     earlier = o.optInt("earlier", 0),
     menu = o.optJSONArray("menu").map(::tool),
     parent = o.optJSONObject("parent")?.let(::entry),
-    tasks = o.optJSONArray("tasks").map { TaskRow(it.optString("id"), it.optString("who"), it.optString("title"), it.optString("state")) },
+    subs = o.optJSONObject("subs")?.let { u ->
+        Subs(u.optString("busy"), u.optJSONArray("rows").map {
+            SubRow(it.optString("id"), it.optBoolean("agent"), it.optString("title"), it.optString("who"), it.optString("state"),
+                it.optString("doing"), it.optBoolean("live"), it.optBoolean("open"), it.optInt("n"),
+                it.optJSONArray("steps").map { st -> SubStep(st.optString("kind"), st.optString("text")) }, it.optString("act"), it.optString("value"))
+        })
+    },
     asks = o.optJSONArray("asks").map { a ->
         Ask(a.optString("id"), a.optString("kind"), a.optString("head"), a.optString("detail"), blocks(a.optJSONArray("blocks")),
             a.optJSONArray("buttons").map { AskButton(it.optString("label"), it.optString("value"), it.optBoolean("primary")) })
@@ -407,6 +448,13 @@ private fun viewer(o: JSONObject) = Viewer(
         MechPage(p.optString("say"), p.optString("note"), choices(p.optJSONArray("parts")), p.optString("name"), p.optString("path"),
             p.optJSONArray("shots").map { MechShot(it.optString("view"), it.optString("url")) }, p.optString("empty"),
             p.optString("rel"), p.optBoolean("busy"), p.optString("render"), p.optString("err"))
+    },
+    o.optJSONObject("hist")?.let { h ->
+        HistBar(h.optInt("n"), h.optInt("at"), h.optString("title"), h.optString("entry"), h.optString("said"),
+            h.optBoolean("playing"), h.optBoolean("diff"), h.optBoolean("cmp"), h.optString("a"), h.optString("b"), h.optString("side"),
+            h.optJSONArray("ticks").map { HistTick(it.optString("id"), it.optBoolean("on")) },
+            h.optJSONArray("menu")?.let { a -> a.map { HistRow(it.optString("label"), it.optString("sub"), it.optString("value")) } },
+            ints(h.optJSONArray("keys")))
     },
 )
 
@@ -515,5 +563,6 @@ fun parseScreen(o: JSONObject) = Screen(
 fun parseCmds(o: JSONObject): List<Cmd> =
     o.optJSONArray("cmds").map {
         Cmd(it.optString("type"), it.optString("text"), it.optString("data"), it.optString("hub"),
-            it.optString("thread"), it.optString("title"), it.optString("kind"), it.optString("body"), it.optString("key"))
+            it.optString("thread"), it.optString("title"), it.optString("kind"), it.optString("body"), it.optString("key"),
+            it.optDouble("ms", 0.0).toLong(), it.optString("action"), it.optString("value"), it.optString("id"))
     }

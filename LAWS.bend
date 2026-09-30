@@ -31,14 +31,18 @@ import ./src/app/layout.bend as L
 import ./src/core/eq.bend as Q
 import ./src/core/svg.bend as SVG
 import ./src/core/icons.bend as ICO
+import ./src/core/tools.bend as TOOL
 import ./src/core/lightbox.bend as LBX
 import ./src/core/links.bend as LK
 import ./src/core/client.bend as U
 import ./src/core/gh.bend as GH
 import ./src/gfx/text.bend as X
 import ./src/core/fold.bend as FO
+import ./src/core/subs.bend as SB
 import ./src/core/http.bend as WS
 import ./src/core/plot.bend as PL
+import ./src/core/look.bend as LO
+import ./src/core/hist.bend as HS
 import ./src/mobile/view.bend as MV
 import ./src/core/pcb3d.bend as P3
 import ./src/gfx/mesh.bend as MS
@@ -66,6 +70,7 @@ import ./src/core/mech.bend as MCH
 import ./src/core/png.bend as PNG
 import ./src/core/voice.bend as VO
 import ./src/core/once.bend as ON
+import ./src/core/desk.bend as DK
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -742,7 +747,8 @@ law alert_none_on_connect:
   for ts: List<&2, M.Thread>
   for +st: M.State
   for +es: List<&2, M.Entry>
-  {Nt.Note.alerts(ts, [], st, es) == [] : List<&2, J.Json>}
+  for +desk: String
+  {Nt.Note.alerts(ts, [], st, es, desk) == [] : List<&2, J.Json>}
 
 # One item, one alert (core/notice.bend). Notice.decide(failed, bot,
 # asking, posted, first, msg): 0 no alert, 1 an alert, 2 a failure.
@@ -1134,6 +1140,22 @@ law link_no_file:
   for s: String
   {LK.Link.is_web("file:" ++ s) == False{} : Bool}
 
+# a path is a file's link, never a web page's: it goes to the hub
+law link_path_not_web:
+  for s: String
+  {LK.Link.is_web("/" ++ s) == False{} : Bool}
+
+# an absolute path is opened as written, whatever the thread's folder
+law link_file_abs_kept:
+  for cwd: String
+  for s: String
+  {LK.Link.file.abs(cwd, "/" ++ s) == LK.Link.file.path("/" ++ s) : String}
+
+# a file link's menu leads with Open, then Show in folder
+law menu_file_open_first:
+  for p: String
+  {List.take(&2, U.MItem, U.Menu.file(p), 2n) == [U.MItem{"Open", "file-open", p, ""}, U.MItem{"Show in folder", "file-reveal", p, ""}] : List<&2, U.MItem>}
+
 # a line with no links is drawn as it is, one run of text
 law link_plain_line:
   for s: String
@@ -1223,6 +1245,31 @@ law icons_used_exist:
 # every path of every icon parses and begins with a moveto
 law icons_all_draw:
   {ICO.Icon.bad(ICO.Icon.all()) == Nil{} : List<&2, String>}
+
+# every button the thread header can show has an icon in the set
+law tools_icons_exist:
+  {TOOL.Tools.missing() == Nil{} : List<&2, String>}
+
+# and a label and a sentence saying what it does beside its icon
+law tools_labelled:
+  {TOOL.Tools.labelled(TOOL.Tools.every()) == True{} : Bool}
+
+# the hub's own view when an agent starts in a KiCad project
+# it opens the panel of a thread whose viewer has shown nothing yet
+law viewer_auto_opens:
+  {U.Ui.panel(U.Ui.view(U.Act.ui(U.Ui.select(U.Ui.init(0n), "t1")), H.Auto.view.json("t1", "/p/b.kicad_pcb", ""))) == True{} : Bool}
+
+# and never one the person shut by hand
+law viewer_auto_hand_shut:
+  {U.Ui.panel(U.Ui.view(U.Act.ui(U.Ui.toggle_panel(U.Act.ui(U.Ui.toggle_panel(U.Act.ui(U.Ui.select(U.Ui.init(0n), "t1")))))), H.Auto.view.json("t1", "/p/b.kicad_pcb", ""))) == False{} : Bool}
+
+# a project with no board or schematic sends nothing
+law auto_view_none:
+  {H.Auto.view("t1", "", "") == "" : String}
+
+# a running turn's Stop comes first, before the thread's own buttons
+law tools_stop_first:
+  {List.head(&2, String, TOOL.Tools.icons(TOOL.Tools.head(TOOL.Head{True{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}}, "", "", "", ""))) == Some{"stop"} : Maybe<&2, String>}
 
 # Hotkeys
 # -------
@@ -1356,6 +1403,18 @@ law fold_user_shut:
 law fold_default_live:
   for +live: Bool
   {FO.Fold.open("", live) == live : Bool}
+
+# a message is never folded away: it shows as itself wherever it sits
+law fold_roles_message_shown:
+  for +i: String
+  for +th: String
+  for +r: M.Role
+  for +x: String
+  for +a: Nat
+  for +t: List<&2, M.Entry>
+  for +info: Map<&2, String>
+  for +running: Bool
+  {List.head(&2, FO.Role, FO.Fold.roles(M.Msg{i, th, r, x, a} <> t, info, running)) == Some{FO.RShow{}} : Maybe<&2, FO.Role>}
 
 # a turn's work folds under its message: the message itself is never in
 # it, and while the turn runs its work stays open until shut by hand
@@ -1586,6 +1645,10 @@ law view_sheet_key:
 
 law view_board_no_sheet:
   {MV.View.key.at("board", "/p", "/p/amp.kicad_sch", False{}) == "0|/p|" : String}
+
+# a board's version (the design history) is its source
+law view_board_version_key:
+  {MV.View.key.at("board", "/p", "git\tg\tc\t2\t/p/a.kicad_pcb", False{}) == "0|/p|git\tg\tc\t2\t/p/a.kicad_pcb" : String}
 
 law view_bare_key:
   {MV.View.key.at("3d", "/p", "", True{}) == "3|/p|" : String}
@@ -3819,3 +3882,157 @@ law hubs_origin_title_away:
   for title: String
   for name: String
   {Hb.Hubs.origin.title(True{}, title, name, False{}) == title ++ " · " ++ name ++ " (away)" : String}
+# a subagent started by an Agent call keeps the call and what it was asked
+# while its progress changes what it does
+law bg_start_keeps_call:
+  {M.Bg.show(M.Bg.set(M.Bg.start(Nil{}, "a", "x", "c1", "List files", "subagent"), "a", "Running ls")) == "a\tRunning ls\tc1\tList files\tsubagent" : String}
+
+law bg_call_title:
+  {M.Bg.call("a\tx\tc1\tList files") ++ "|" ++ M.Bg.title("a\tx\tc1\tList files") == "c1|List files" : String}
+
+# a subagent at work shows what it does now and its steps from its log,
+# open until the person shuts it
+law subs_agent_at_work:
+  {SB.Subs.rows(M.State.replay([M.SettingSet{"bg.t1", "a\tRunning ls\tc1\tList files\tsubagent", 1n},
+      M.ActivityLogged{"@sub:t1", "c1/start:subagent", "c1", "start:subagent", "List files", 1n}, M.ActivityLogged{"@sub:t1", "c1/u1", "c1", "Bash", "ls\n-la", 2n}], M.State.empty()),
+    Map.new(&2, String), "t1")
+    == [SB.SubRow{"c1", True{}, "List files", "subagent", "running", "Running ls", True{}, True{}, 1n, [SB.SubStep{"Bash", "ls"}]}] : List<&2, SB.SubRow>}
+
+# a finished one stays listed, shut, with how it ended
+law subs_agent_done_shut:
+  {SB.Subs.rows(M.State.replay([M.ActivityLogged{"@sub:t1", "c1/start:subagent", "c1", "start:subagent", "List files", 1n},
+      M.ActivityLogged{"@sub:t1", "c1/u1", "c1", "Bash", "ls", 2n}, M.ActivityLogged{"@sub:t1", "c1/end", "c1", "end", "completed", 3n}], M.State.empty()),
+    Map.new(&2, String), "t1")
+    == [SB.SubRow{"c1", True{}, "List files", "subagent", "done", "", False{}, False{}, 1n, []}] : List<&2, SB.SubRow>}
+
+
+# a background shell is listed by its kind, and is not an agent in the
+# sidebar's count
+law subs_shell_named:
+  {SB.Subs.rows(M.State.replay([M.SettingSet{"bg.t1", "b\tRunning\tc2\tscripts/check.sh\tshell", 1n}], M.State.empty()), Map.new(&2, String), "t1")
+    == [SB.SubRow{"c2", True{}, "shell: scripts/check.sh", "shell", "running", "Running", True{}, True{}, 0n, []}] : List<&2, SB.SubRow>}
+
+law subs_shell_not_agent:
+  {SB.Subs.count(M.State.replay([M.SettingSet{"bg.t1", "b\tRunning\tc2\tscripts/check.sh\tshell\na\tx\tc1\tList files\tsubagent", 1n}], M.State.empty()), "t1") == 1n : Nat}
+
+law subs_badge:
+  {SB.Subs.badge(0n) ++ "|" ++ SB.Subs.badge(1n) ++ "|" ++ SB.Subs.badge(3n) == "|1 agent|3 agents" : String}
+
+# Desks (core/desk.bend)
+# ----------------------
+
+# a client that never said desk.look (a phone) watches nothing
+law desk_phone_never:
+  for thread: String
+  for now: Nat
+  {DK.Look.sees(DK.Look.none(), thread, now) == False{} : Bool}
+
+# a desk without the focus watches nothing
+law desk_unfocused_never:
+  for d: Bool
+  for th: String
+  for at: Nat
+  for thread: String
+  for now: Nat
+  {DK.Look.sees(DK.Look{d, th, False{}, at}, thread, now) == False{} : Bool}
+
+# a focused desk watches its thread while in use, and stops once a window
+# passes with no word from it
+law desk_look_fresh:
+  {DK.Look.sees(DK.Look{True{}, "t", True{}, 100n}, "t", 279n) == True{} : Bool}
+
+law desk_look_expires:
+  {DK.Look.sees(DK.Look{True{}, "t", True{}, 100n}, "t", 280n) == False{} : Bool}
+
+# a thread a desk watches raises no push alert
+law desk_seen_holds:
+  for key: String
+  {DK.Desk.hold(True{}, key) == "" : String}
+
+# nor a desktop notification
+law desk_seen_nobody:
+  for xs: List<&2, DK.At>
+  {DK.Desk.to.k(True{}, xs) == None{} : Maybe<&2, U32>}
+
+# with no desk connected there is no desktop notification
+law desk_none_nobody:
+  {DK.Desk.lead(Nil{}) == None{} : Maybe<&2, U32>}
+
+# nor the phone's own alert
+law alert_watched_quiet:
+  for kind: String
+  for id: String
+  for title: String
+  for st: M.State
+  for es: List<&2, M.Entry>
+  for rest: List<&2, J.Json>
+  {Nt.Note.alert.w(True{}, kind, id, title, st, es, rest) == rest : List<&2, J.Json>}
+
+# a desk that never said its look says it at once
+law desk_due_first:
+  for last_at: String
+  for thread: String
+  for focused: Bool
+  for now: Nat
+  {DK.Desk.due("", last_at, thread, focused, now) == True{} : Bool}
+# Design history (core/hist.bend)
+# --------------------------------
+
+# a version compared with itself marks nothing: every item stays on its
+# layer, dimmed
+law hist_mark_self:
+  for xs: List<&2, B.Item>
+  {HS.Mark.go(xs, xs, HS.Mark.heads(xs, xs)) == HS.Mark.dims(xs) : List<&2, B.Item>}
+
+# a file in a commit and a comparison ending on it are of the live file,
+# so moving between them keeps the viewer's scene and view
+law hist_version_family:
+  {HS.Hist.family(HS.Hist.git("/r/.git", "c1", "/r", "hw/a.kicad_pcb")) == "/r/hw/a.kicad_pcb" : String}
+
+law hist_compare_family:
+  {HS.Hist.family(HS.Hist.diff(HS.Hist.git("/r/.git", "c1", "/r", "a.kicad_pcb"), "/r/a.kicad_pcb")) == "/r/a.kicad_pcb" : String}
+
+# git show names the file from the top, a sheet's ".." folded
+law hist_obj_folds:
+  {HS.Hist.git.obj(HS.Hist.git("/r/.git", "c1", "/r", "hw/sub/../a.kicad_sch")) == "c1:hw/a.kicad_sch" : String}
+
+# a sheet in a commit resolves beside its parent, in the same commit
+law hist_sheet_same_commit:
+  {HI.Hier.resolve(HS.Hist.git("/g", "c", "/t", "hw/root.kicad_sch"), "kid.kicad_sch") == HS.Hist.git("/g", "c", "/t", "hw/kid.kicad_sch") : String}
+
+# the arrows: forward from the last step is the live file, back from the
+# live file the last step
+law hist_fwd_last_live:
+  for +n: Nat
+  {HS.Hist.fwd(n, n) == 0n : Nat}
+
+law hist_back_live_last:
+  for +n: Nat
+  {HS.Hist.back(n, 0n) == n : Nat}
+
+# no step is named: the live file
+law hist_index_live:
+  for ss: List<&2, HS.Step>
+  {HS.Hist.index(ss, "") == 0n : Nat}
+
+# a capture that changed nothing logs nothing
+law hist_record_nothing:
+  for +e: String
+  {HS.Hist.record("", e) == "" : String}
+
+# a board's or schematic's own look is untouched by comparisons; a
+# comparison's marks each have a colour of their own
+law look_plain_board:
+  for +layer: U32
+  {LO.Look.of(0, layer) == LO.Look.plain(0, layer) : U32 & U32}
+
+law look_plain_sch:
+  for +layer: U32
+  {LO.Look.of(1, layer) == LO.Look.plain(1, layer) : U32 & U32}
+
+law look_marks_distinct:
+  {Bool.or(U32.is_eq(LO.Look.mark.color(False{}, 26), LO.Look.mark.color(False{}, 27)), Bool.or(U32.is_eq(LO.Look.mark.color(False{}, 27), LO.Look.mark.color(False{}, 28)), U32.is_eq(LO.Look.mark.color(False{}, 26), LO.Look.mark.color(False{}, 28)))) == False{} : Bool}
+
+# the layer list reaches a comparison's marks, whatever the kind's own count
+law look_names_marks:
+  {List.drop(&2, String, LO.Look.names(U32.or(0, LO.Look.diff()), B.Layer.names()), 26n) == ["Removed", "Changed", "Added"] : List<&2, String>}

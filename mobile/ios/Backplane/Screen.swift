@@ -23,6 +23,8 @@ struct Row: Decodable, Identifiable, Hashable {
     // the active view's rows: the project's name, and faded (settled lately)
     let project: String?
     let faded: Bool?
+    // "2 agents" while subagents work for it, shown where the age goes
+    let agents: String?
 }
 
 struct Project: Decodable, Identifiable {
@@ -56,6 +58,8 @@ struct MenuItem: Decodable, Hashable {
 
 struct RowMenu: Decodable, Equatable {
     let title: String
+    // "t" a thread's, "p" a project's, "f" a file link's (shown in the thread)
+    let kind: String?
     let items: [MenuItem]
 }
 
@@ -63,6 +67,8 @@ struct RowMenu: Decodable, Equatable {
 // offers choices whose values it sends instead; danger asks first
 struct Tool: Decodable, Hashable {
     let label, action: String
+    // core/icons.bend's name for it (Views' icon(_:) turns it into a symbol)
+    let icon: String?
     let on: Bool
     let value: String?
     let danger: Bool?
@@ -74,8 +80,9 @@ struct Block: Decodable, Hashable {
     let tag: String?
     let kids: [Block]?
     let text: String?
-    // a link's target
+    // a link's target, and whether it is a file's (Mob.href)
     let href: String?
+    let file: Bool?
 
     var plain: String { text ?? (kids ?? []).map(\.plain).joined() }
 }
@@ -117,9 +124,23 @@ struct Ask: Decodable, Identifiable {
     let buttons: [AskButton]
 }
 
-// a thread this one delegated to ("select" opens it)
-struct TaskRow: Decodable, Identifiable {
-    let id, who, title, state: String
+// the subagent panel (src/core/subs.bend): what the thread delegated and
+// the agent's own; a row sends act with value (a task opens its thread, a
+// subagent opens or shuts its steps)
+struct SubStep: Decodable, Hashable {
+    let kind, text: String
+}
+
+struct SubRow: Decodable, Identifiable {
+    let id, title, who, state, doing, act, value: String
+    let agent, live, open: Bool
+    let n: Int
+    let steps: [SubStep]
+}
+
+struct Subs: Decodable {
+    let busy: String
+    let rows: [SubRow]
 }
 
 // a skill the `$` being typed may complete to ("skill" with its name)
@@ -216,6 +237,34 @@ struct Viewer: Decodable {
     let note: String?
     // the Mechanical page, when that is what is open
     let mech: MechPage?
+    // the design history's bar under a board or schematic (nil: none)
+    let hist: HistBar?
+}
+
+// The design history (src/mobile/view.bend's Hist.json): the steps in the
+// track and the one shown (0 the live file), what to call it, what the
+// agent said before it, playing, changes marked, a comparison on show and
+// its sides' labels, the side whose version menu is open ("" shut), a tick
+// per step then the live file (id ""), that menu, and the legend's
+// colours (0xRRGGBB: removed, changed, added)
+struct HistBar: Decodable, Equatable {
+    let n, at: Int
+    let title, entry, said: String
+    let playing, diff, cmp: Bool
+    let a, b, side: String
+    let ticks: [HistTick]
+    let menu: [HistRow]?
+    let keys: [UInt32]
+}
+
+struct HistTick: Decodable, Hashable {
+    let id: String
+    let on: Bool
+}
+
+// a version the menu offers ("cmp-pick" value)
+struct HistRow: Decodable, Hashable {
+    let label, sub, value: String
 }
 
 // The Mechanical page (src/mobile/view.bend's Mech.json): what to say
@@ -303,9 +352,7 @@ struct ThreadView: Decodable {
     // the menu under the toolbar's ellipsis, after the tools
     let menu: [Tool]?
     let parent: Entry?
-    let tasks: [TaskRow]?
-    // the agent's own subagents at work: what each does now
-    let agents: [String]?
+    let subs: Subs?
     let asks: [Ask]?
     let skills: [Skill]?
     let btw: Btw?
@@ -530,6 +577,9 @@ struct Cmd: Decodable {
     let data, hub: String?
     // notify; key is shared by alerts about the same item (src/core/notice.bend)
     let thread, title, kind, body, key: String?
+    // later: an action (with its value) to send after ms; jump: the entry to show
+    let ms: Double?
+    let action, value, id: String?
 }
 
 struct Resume: Decodable {

@@ -790,8 +790,28 @@ def Idx.sent(sent: Bool, ix: Map<&2, List<&2, Entry>>, +from: String, +e: Entry)
 def Idx.post.k(ix: Map<&2, List<&2, Entry>>, +th: String, +from: String, +e: Entry) -> Map<&2, List<&2, Entry>>:
   Idx.sent(Bool.and(Bool.not(String.is_empty(from)), Bool.not(String.eq(from, th))), Idx.put(ix, th, e), from, e)
 
+# a design step (an Act of tone "step", core/hist.bend) is filed under
+# "@steps:<thread>" as well, so the viewer's history reads a thread's
+# steps without walking its entries
+def Idx.steps.key(+th: String) -> String:
+  "@steps:" ++ th
+
+def Idx.is_step(e: Entry) -> Bool:
+  match e:
+    case Msg{_, _, _, _, _}:
+      False{}
+    case Act{_, _, +tone, _, _, _}:
+      String.eq(tone, "step")
+
+def Idx.step(step: Bool, ix: Map<&2, List<&2, Entry>>, +e: Entry) -> Map<&2, List<&2, Entry>>:
+  match step:
+    case True{}:
+      Idx.put(ix, Idx.steps.key(Idx.thread(e)), e)
+    case False{}:
+      ix
+
 def Idx.post(ix: Map<&2, List<&2, Entry>>, +e: Entry) -> Map<&2, List<&2, Entry>>:
-  Idx.post.k(ix, Idx.thread(e), Link.from(Idx.id(e)), e)
+  Idx.step(Idx.is_step(e), Idx.post.k(ix, Idx.thread(e), Link.from(Idx.id(e)), e), e)
 
 # Projection
 # ----------
@@ -888,6 +908,12 @@ def State.mine(s: State, +th: String) -> List<&2, Entry>:
   match s:
     case State{_, _, _, _, _, _, _, _, _, _, bw}:
       Idx.get(Ext.by(Ext.of(bw)), th)
+
+# a thread's design steps (Acts of tone "step"), newest first
+def State.steps(s: State, +th: String) -> List<&2, Entry>:
+  match s:
+    case State{_, _, _, _, _, _, _, _, _, _, bw}:
+      Idx.get(Ext.by(Ext.of(bw)), Idx.steps.key(th))
 
 # every message between threads, newest first
 def State.links(s: State) -> List<&2, Entry>:
@@ -2101,13 +2127,25 @@ def Phase.label(p: Phase) -> String:
 
 # Subagents
 # ---------
-# The subagents an agent has at work (Claude's task_started, task_progress
-# and task_notification lines), kept as the setting "bg.<thread>": one
-# "id\tdoing" line each. They can run on after the agent's own turn ends,
-# so the thread still shows them working.
+# The subagents, background shells and monitors an agent has at work
+# (Claude's task_started, task_progress and task_notification lines), kept
+# as the setting "bg.<thread>": one "id	doing" line each, or
+# "id	doing	call	title	kind" (call: the tool call that started it;
+# title: what it was asked to do; kind: Bg.kind's word for its task type).
+# They can run on after the agent's own turn ends, so the thread shows it
+# monitoring them.
+#
+# What each one does, step by step, goes to its own log: entries of the
+# thread Bg.log(thread) (no thread id has '@'), off the thread's timeline,
+# each an Act whose tone is the call it belongs to and whose kind is the
+# tool it ran ("say" for what it wrote, "start:<kind>" and "end" for its
+# bounds).
 
 def Bg.key(+th: String) -> String:
   "bg." ++ th
+
+def Bg.log(+th: String) -> String:
+  "@sub:" ++ th
 
 # a subagent's id or what it does, on one line with no tab
 def Bg.clean(+t: String) -> String:
@@ -2154,10 +2192,21 @@ def Bg.drop(ls: List<&2, String>, +id: String) -> List<&2, String>:
     case +l <> t:
       Bg.drop.k(Bg.is(l, id), l, Bg.drop(t, id))
 
+# field i of a line ("" past its end)
+def Bg.field(+l: String, +i: Nat) -> String:
+  Maybe.default(&2, String, List.head(&2, String, List.drop(&2, String, String.split(l, '\t'), i)), "")
+
+# the fields after what it does, with their tab ("" for none)
+def Bg.rest.k(+r: String) -> String:
+  Bool.pick(String, String.is_empty(r), "", "\t" ++ r)
+
+def Bg.rest(+l: String) -> String:
+  Bg.rest.k(String.join(List.drop(&2, String, String.split(l, '\t'), 2n), "\t"))
+
 def Bg.set.k(hit: Bool, +l: String, +id: String, +doing: String) -> String:
   match hit:
     case True{}:
-      Bg.line(id, doing)
+      Bg.line(id, doing) ++ Bg.rest(l)
     case False{}:
       l
 
@@ -2169,16 +2218,39 @@ def Bg.set(ls: List<&2, String>, +id: String, +doing: String) -> List<&2, String
     case +l <> t:
       Bg.set.k(Bg.is(l, id), l, id, doing) <> Bg.set(t, id, doing)
 
-def Bg.add.k(has: Bool, +ls: List<&2, String>, +id: String, +doing: String) -> List<&2, String>:
+def Bg.add.k(has: Bool, +ls: List<&2, String>, +l: String) -> List<&2, String>:
   match has:
     case True{}:
       ls
     case False{}:
-      List.append(&2, String, ls, [Bg.line(id, doing)])
+      List.append(&2, String, ls, [l])
 
 # a subagent started (listed once, last)
 def Bg.add(+ls: List<&2, String>, +id: String, +doing: String) -> List<&2, String>:
-  Bg.add.k(Bg.has(ls, id), ls, id, doing)
+  Bg.add.k(Bg.has(ls, id), ls, Bg.line(id, doing))
+
+# one started by a tool call, with what it was asked to do and its kind
+def Bg.start(+ls: List<&2, String>, +id: String, +doing: String, +call: String, +title: String, +kind: String) -> List<&2, String>:
+  Bg.add.k(Bg.has(ls, id), ls, Bg.line(id, doing) ++ "\t" ++ Bg.clean(call) ++ "\t" ++ Bg.clean(title) ++ "\t" ++ Bg.clean(kind))
+
+# the word for a task type: "subagent", "shell", "workflow", "monitor"
+def Bg.kind(+tt: String) -> String:
+  Bool.pick(String, Bool.or(String.eq(tt, "local_agent"), Bool.or(String.eq(tt, "remote_agent"), String.eq(tt, "in_process_teammate"))), "subagent",
+    Bool.pick(String, String.eq(tt, "local_bash"), "shell",
+      Bool.pick(String, String.eq(tt, "local_workflow"), "workflow",
+        Bool.pick(String, String.starts_with(tt, "monitor_"), "monitor", "task"))))
+
+# a line's kind ("" for a line that names none)
+def Bg.kind.of(+l: String) -> String:
+  Bg.field(l, 4n)
+
+# the Agent tool call that started a line's subagent ("" for none)
+def Bg.call(+l: String) -> String:
+  Bg.field(l, 2n)
+
+# what it was asked to do ("" for none)
+def Bg.title(+l: String) -> String:
+  Bg.field(l, 3n)
 
 def Bg.show(ls: List<&2, String>) -> String:
   String.join(ls, "\n")

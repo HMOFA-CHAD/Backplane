@@ -33,7 +33,10 @@ import ./src/app/layout.bend as L
 import ./src/core/eq.bend as Q
 import ./src/core/gh.bend as GH
 import ./src/core/fold.bend as FO
+import ./src/core/subs.bend as SB
 import ./src/core/plot.bend as PL
+import ./src/core/look.bend as LO
+import ./src/core/hist.bend as HS
 import ./src/mobile/view.bend as MV
 import ./src/core/pcb3d.bend as P3
 import ./src/gfx/mesh.bend as MS
@@ -370,8 +373,22 @@ def Laws.fade_done(born, k):
     : {V.Fade.alpha.k(_, Nat.sub(Nat.add(Nat.add(born, V.Fade.ms()), k), born)) == 255 : U32}
   {==}
 
+# on the dark ground the look is the kind's own, comparison or not
+law look_dark_own:
+  for d: Bool
+  for +kind: U32
+  for +layer: U32
+  {LO.Look.of.t.d(d, False{}, kind, layer) == LO.Look.of.d(d, kind, layer) : U32 & U32}
+
+def look_dark_own(d, kind, layer):
+  match d:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
 def Laws.look_flip_none(kind, layer):
-  {==}
+  look_dark_own(LO.Look.is_diff(kind), kind, layer)
 
 def Laws.look_flip_hides():
   {==}
@@ -819,12 +836,12 @@ def Laws.alert_not_on_stop(b):
     case False{}:
       {==}
 
-def Laws.alert_none_on_connect(ts, st, es):
+def Laws.alert_none_on_connect(ts, st, es, desk):
   match ts:
     case Nil{}:
       {==}
     case M.Thread{id, p, ti, c, a, tu, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de} <> t:
-      Laws.alert_none_on_connect(t, st, es)
+      Laws.alert_none_on_connect(t, st, es, desk)
 
 def Laws.notice_fail_always(bot, asking, posted, first, msg):
   {==}
@@ -2955,7 +2972,7 @@ def tl_entries_roles(ty, es, rs, st, sel, px, pics):
           Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.entry(ty, e, st, sel, px, pics), x),
             L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), Nil{}, st, sel, px, pics), L.TL.entries.r(ty, t, Nil{}, st, sel, px, pics), tl_entries_roles(ty, t, Nil{}, st, sel, px, pics))
         case +r <> +rt:
-          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.role(r, ty, L.TL.entry(ty, e, st, sel, px, pics), px), x),
+          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), L.TL.role(r, ty, L.TL.entry(ty, e, st, sel, px, pics), px)), x),
             L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), rt, st, sel, px, pics), L.TL.entries.r(ty, t, rt, st, sel, px, pics), tl_entries_roles(ty, t, rt, st, sel, px, pics))
 
 def tl_entries_memo(ty, es, st, sel, px, pics):
@@ -2995,6 +3012,15 @@ def Laws.link_no_script(s):
   {==}
 
 def Laws.link_no_file(s):
+  {==}
+
+def Laws.link_path_not_web(s):
+  {==}
+
+def Laws.link_file_abs_kept(cwd, s):
+  {==}
+
+def Laws.menu_file_open_first(p):
   {==}
 
 def Laws.link_plain_line(s):
@@ -3150,6 +3176,24 @@ def Laws.icons_used_exist():
   {==}
 
 def Laws.icons_all_draw():
+  {==}
+
+def Laws.tools_icons_exist():
+  {==}
+
+def Laws.tools_labelled():
+  {==}
+
+def Laws.tools_stop_first():
+  {==}
+
+def Laws.viewer_auto_opens():
+  {==}
+
+def Laws.viewer_auto_hand_shut():
+  {==}
+
+def Laws.auto_view_none():
   {==}
 
 def Laws.hotkey_alt_digit():
@@ -4192,6 +4236,9 @@ def Laws.follow_alt_flips(s, p):
 def Laws.tailnet_link_token():
   {==}
 
+def Laws.fold_roles_message_shown(i, th, r, x, a, t, info, running):
+  {==}
+
 def Laws.work_message_shown(live, u, b, info, now):
   match live:
     case True{}:
@@ -4218,6 +4265,9 @@ def Laws.view_sheet_key():
   {==}
 
 def Laws.view_board_no_sheet():
+  {==}
+
+def Laws.view_board_version_key():
   {==}
 
 def Laws.view_bare_key():
@@ -6071,4 +6121,107 @@ def Laws.hubs_origin_title_here(title, name):
   {==}
 
 def Laws.hubs_origin_title_away(title, name):
+def Laws.bg_start_keeps_call():
+  {==}
+
+def Laws.bg_call_title():
+  {==}
+
+def Laws.subs_agent_at_work():
+  {==}
+
+def Laws.subs_agent_done_shut():
+  {==}
+
+def Laws.subs_shell_named():
+  {==}
+
+def Laws.subs_shell_not_agent():
+  {==}
+
+def Laws.subs_badge():
+  {==}
+
+def Laws.desk_phone_never(thread, now):
+  {==}
+
+def Laws.desk_unfocused_never(d, th, at, thread, now):
+  match d:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.desk_look_fresh():
+  {==}
+
+def Laws.desk_look_expires():
+  {==}
+
+def Laws.desk_seen_holds(key):
+  {==}
+
+def Laws.desk_seen_nobody(xs):
+  {==}
+
+def Laws.desk_none_nobody():
+  {==}
+
+def Laws.alert_watched_quiet(kind, id, title, st, es, rest):
+  {==}
+
+def Laws.desk_due_first(last_at, thread, focused, now):
+  {==}
+
+# Design history
+# --------------
+
+def Laws.hist_mark_self(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case B.Item{+k, +s, +l, +p, +i} <> +t:
+      %Equal.sym((String & String) & Cmp, String.cmp(k, k), ((k, k), EQ{}), string_cmp_refl(k))
+        : {HS.Mark.go(B.Item{k, s, l, p, i} <> t, B.Item{k, s, l, p, i} <> t, HS.Mark.key.cmp.fin(_)) == HS.Mark.dims(B.Item{k, s, l, p, i} <> t) : List<&2, B.Item>}
+      %Equal.sym(Bool, U32.is_eq(s, s), True{}, u32_eq_refl(s))
+        : {HS.Mark.same.k(_, B.Item{k, s, l, p, i}, B.Item{k, s, l, p, i}, HS.Mark.go(t, t, HS.Mark.heads(t, t))) == HS.Mark.dims(B.Item{k, s, l, p, i} <> t) : List<&2, B.Item>}
+      Equal.cong(List<&2, B.Item>, List<&2, B.Item>, ys => HS.Mark.dim(B.Item{k, s, l, p, i}) <> ys,
+        HS.Mark.go(t, t, HS.Mark.heads(t, t)), HS.Mark.dims(t), Laws.hist_mark_self(t))
+
+def Laws.hist_version_family():
+  {==}
+
+def Laws.hist_compare_family():
+  {==}
+
+def Laws.hist_obj_folds():
+  {==}
+
+def Laws.hist_sheet_same_commit():
+  {==}
+
+def Laws.hist_fwd_last_live(n):
+  %Equal.sym(Bool, Nat.is_ge(n, n), True{}, Nat.ge_refl(n)) : {Bool.pick(Nat, Bool.or(Nat.is_eq(n, 0n), _), 0n, 1n+n) == 0n : Nat}
+  %Equal.sym(Bool, Bool.or(Nat.is_eq(n, 0n), True{}), True{}, or_true_r(Nat.is_eq(n, 0n))) : {Bool.pick(Nat, _, 0n, 1n+n) == 0n : Nat}
+  {==}
+
+def Laws.hist_back_live_last(n):
+  {==}
+
+def Laws.hist_index_live(ss):
+  {==}
+
+def Laws.hist_record_nothing(e):
+  {==}
+
+def Laws.look_plain_board(layer):
+  {==}
+
+def Laws.look_plain_sch(layer):
+  {==}
+
+def Laws.look_marks_distinct():
+  {==}
+
+def Laws.look_names_marks():
   {==}
