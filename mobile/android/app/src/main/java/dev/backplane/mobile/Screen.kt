@@ -337,7 +337,6 @@ private fun blocks(a: JSONArray?): List<Block> = a.map { o ->
 private fun swipe(o: JSONObject) = Swipe(
     o.optString("label"), o.optString("action"), o.optString("value"), o.optString("tone"),
     o.optJSONArray("options").map { SwipeChoice(it.optString("label"), it.optString("value")) },
-    o.optString("icon"),
 )
 
 private fun row(o: JSONObject) = Row(
