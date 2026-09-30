@@ -58,6 +58,8 @@ data class Folders(val text: String, val hint: String, val error: String, val it
 data class Tool(
     val label: String, val action: String, val on: Boolean,
     val value: String = "", val danger: Boolean = false, val options: List<SwipeChoice> = emptyList(),
+    // core/icons.bend's name for it (toolIcon turns it into a Material icon)
+    val icon: String = "",
 )
 
 sealed interface Block {
@@ -335,6 +337,7 @@ private fun blocks(a: JSONArray?): List<Block> = a.map { o ->
 private fun swipe(o: JSONObject) = Swipe(
     o.optString("label"), o.optString("action"), o.optString("value"), o.optString("tone"),
     o.optJSONArray("options").map { SwipeChoice(it.optString("label"), it.optString("value")) },
+    o.optString("icon"),
 )
 
 private fun row(o: JSONObject) = Row(
@@ -357,6 +360,7 @@ private fun entry(o: JSONObject) = Entry(
 private fun tool(o: JSONObject) = Tool(
     o.optString("label"), o.optString("action"), o.optBoolean("on"), o.optString("value"), o.optBoolean("danger"),
     o.optJSONArray("options").map { SwipeChoice(it.optString("label"), it.optString("value")) },
+    o.optString("icon"),
 )
 
 private fun term(o: JSONObject) = Term(

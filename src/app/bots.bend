@@ -568,8 +568,8 @@ def Bv.header(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +u: U.Ui, +ms: Nat, b: BT.Bot,
         L.Out.ops(CA.Cats.draw(cats, look, mood, ms, D.Clip.all(), (x0 + 20 : U32), 12, 64)),
         L.Out.ops(L.Ty.text(ty, 1n, name, D.Clip.all(), (x0 + 100 : U32), 10, 30, T.Th.text())),
         L.Out.ops(L.Ty.text(ty, 2n, BU.Mood.note(mood) ++ " · " ++ M.Thread.provider(t), D.Clip.all(), (x0 + 112 + nw : U32), 10, 30, Bv.note.color(mood))),
-        Bv.stop(Bv.busy(U.Side.status(st, U.Ui.thread(st, th))), ty, (x1 - 8 - L.Lay.button.w(ty, "Viewer") : U32)),
-        F.Fm.chip(ty, D.Clip.all(), (x1 - 16 - L.Lay.button.w(ty, "Viewer") : U32), 12, "Viewer", U.Ui.panel(u), "panel", ""),
+        Bv.stop(Bv.busy(U.Side.status(st, U.Ui.thread(st, th))), ty, (x1 - 8 - L.Lay.button.w(ty, "Panel") : U32)),
+        F.Fm.chip(ty, D.Clip.all(), (x1 - 16 - L.Lay.button.w(ty, "Panel") : U32), 12, "Panel", U.Ui.panel(u), "panel", ""),
         Bv.tabs(BU.BU.tabs(), ty, tab, (x0 + 100 : U32), 48)])
 
 def Bv.tab.n(+t: String) -> Nat:

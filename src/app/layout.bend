@@ -32,6 +32,7 @@ import ../core/voice.bend as VC
 import ../core/mech.bend as MC
 import ../core/hist.bend as HS
 import ../core/look.bend as LO
+import ../core/tools.bend as TO
 
 # Nui -> draw ops and hit regions. Ops are gathered bottom-up (paint
 # order) and reversed once into the topmost-first order the rasterizer
@@ -1384,22 +1385,6 @@ def Lay.buttons(+ty: Ty, bs: List<&2, S.Hit>, +y: U32, +x: U32, +lo: U32) -> Out
       Lay.buttons.k(U32.is_ge(x, (lo + Lay.button.w(ty, label) : U32)), Lay.button(ty, D.Clip.all(), (x - Lay.button.w(ty, label) : U32), y, label, T.Th.soft(), Lay.act(action), Lay.val(action)),
         Lay.buttons(ty, t, y, (x - Lay.button.w(ty, label) - 8 : U32), lo))
 
-def Lay.pin(p: Bool) -> S.Hit:
-  match p:
-    case True{}:
-      S.Hit{0, 0, 0, 0, "Pinned", "unpin"}
-    case False{}:
-      S.Hit{0, 0, 0, 0, "Pin", "pin"}
-
-def Lay.settle(o: M.Override, auto: Bool) -> List<&2, S.Hit>:
-  match o auto:
-    case M.ForcedSettled{} _:
-      [S.Hit{0, 0, 0, 0, "Settled", "unsettle"}]
-    case M.NoOverride{} True{}:
-      [S.Hit{0, 0, 0, 0, "Settled", "unsettle"}]
-    case _ _:
-      [S.Hit{0, 0, 0, 0, "Settle", "settle"}]
-
 def Lay.buttons.w(+ty: Ty, bs: List<&2, S.Hit>) -> U32:
   match bs:
     case Nil{}:
@@ -1407,26 +1392,68 @@ def Lay.buttons.w(+ty: Ty, bs: List<&2, S.Hit>) -> U32:
     case S.Hit{_, _, _, _, +label, _} <> t:
       (Lay.button.w(ty, label) + 8 + Lay.buttons.w(ty, t) : U32)
 
-# Delete asks first: once armed it reads "Delete thread" beside Cancel
-def Lay.del(on: Bool) -> List<&2, S.Hit>:
-  match on:
-    case True{}:
-      [S.Hit{0, 0, 0, 0, "Delete thread", "delete"}, S.Hit{0, 0, 0, 0, "Cancel", "delete-no"}]
-    case False{}:
-      [S.Hit{0, 0, 0, 0, "Delete", "delete"}]
+# Header tools (core/tools.bend): an icon, then the label unless compact;
+# lit when on, red when it stops or destroys; a line between groups
+def Lay.tool.w(+ty: Ty, +label: String, +full: Bool) -> U32:
+  Bool.pick(U32, full, (Ty.width(ty, 2n, label) + 38 : U32), 28)
 
-def Lay.header.bs(turn: M.TurnState, override: M.Override, +sa: Nat, +ua: Nat, pinned: Bool, panel: Bool, +archived: Bool, +snoozed: Bool, del: Bool, +fork: Bool) -> List<&2, S.Hit>:
-  List.concat(&2, S.Hit, [
-    [S.Hit{0, 0, 0, 0, Bool.pick(String, panel, "Hide viewer", "Viewer"), "panel"},
-     S.Hit{0, 0, 0, 0, "Diff", "diff"}, S.Hit{0, 0, 0, 0, "Fork", "fork"}],
-    Bool.pick(List<&2, S.Hit>, fork, [S.Hit{0, 0, 0, 0, "Bring back", "back"}], Nil{}),
-    Lay.del(del),
-    [
-     Bool.pick(S.Hit, archived, S.Hit{0, 0, 0, 0, "Unarchive", "unarchive"}, S.Hit{0, 0, 0, 0, "Archive", "archive"}),
-     Bool.pick(S.Hit, snoozed, S.Hit{0, 0, 0, 0, "Snoozed", "snooze|off"}, S.Hit{0, 0, 0, 0, "Snooze", "vw-find|snooze"})],
-    Lay.settle(override, Nat.is_gt(sa, ua)),
-    [Lay.pin(pinned)],
-    Bool.pick(List<&2, S.Hit>, Lay.running(turn), [S.Hit{0, 0, 0, 0, "Stop", "interrupt"}], Nil{})])
+def Lay.tool.fg(on: Bool, danger: Bool) -> U32:
+  match on danger:
+    case _ True{}:
+      T.Th.bad()
+    case True{} False{}:
+      T.Th.text()
+    case False{} False{}:
+      T.Th.soft()
+
+def Lay.tool.label(full: Bool, +ty: Ty, +label: String, +x: U32, +y: U32, +fg: U32) -> List<&2, R.Op>:
+  match full:
+    case True{}:
+      Ty.text(ty, 2n, label, D.Clip.all(), (x + 28 : U32), y, 28, fg)
+    case False{}:
+      Nil{}
+
+def Lay.tool(+ty: Ty, +x: U32, +y: U32, +icon: String, +label: String, action: String, value: String, +on: Bool, +danger: Bool, +full: Bool) -> Out:
+  +w = Lay.tool.w(ty, label, full)
+  +fg = Lay.tool.fg(on, danger)
+  Out{List.concat(&2, R.Op, [Lay.box(D.Clip.all(), x, y, w, 28, 6, Bool.pick(U32, on, T.Th.sel(), T.Th.raise()), Bool.pick(U32, on, T.Th.accent(), T.Th.line())),
+      Lay.icon(ty, icon, D.Clip.all(), (x + 6 : U32), (y + 6 : U32), fg), Lay.tool.label(full, ty, label, x, y, fg)]),
+    [Lay.hit(x, y, w, 28, action, value)]}
+
+# the space after a tool: wider, with a line in it, before a new group
+def Lay.tool.gap(gap: Bool) -> U32:
+  Bool.pick(U32, gap, 17, 6)
+
+def Lay.tool.sep(sep: Bool, +x: U32, +y: U32) -> Out:
+  match sep:
+    case True{}:
+      Out.ops([D.Draw.rect(D.Clip.all(), (x + 8 : U32), (y + 6 : U32), 1, 16, T.Th.line(), 255)])
+    case False{}:
+      Out.none()
+
+# the tools right to left from x (ts is right to left), as many as fit
+# right of lo (in a narrow main area the rest would slide under the
+# sidebar, drawn where they cannot be clicked); sep: the tool drawn last
+# started a group, so a line goes between it and this one
+def Lay.tools(+ty: Ty, ts: List<&2, TO.Tool>, +y: U32, +x: U32, +lo: U32, +full: Bool, sep: Bool) -> Out:
+  match ts:
+    case Nil{}:
+      Out.none()
+    case TO.Tool{+i, +l, _, a, v, +on, +dg, +gap} <> t:
+      +w = Lay.tool.w(ty, l, full)
+      Lay.buttons.k(U32.is_ge(x, (lo + w : U32)), Out.cat(Lay.tool.sep(sep, x, y), Lay.tool(ty, (x - w : U32), y, i, l, a, v, on, dg, full)),
+        Lay.tools(ty, t, y, (x - w - Lay.tool.gap(gap) : U32), lo, full, gap))
+
+def Lay.tools.w(+ty: Ty, ts: List<&2, TO.Tool>, +full: Bool) -> U32:
+  match ts:
+    case Nil{}:
+      0
+    case TO.Tool{_, +l, _, _, _, _, _, +gap} <> t:
+      (Lay.tool.w(ty, l, full) + Lay.tool.gap(gap) + Lay.tools.w(ty, t, full) : U32)
+
+def Lay.header.bs(turn: M.TurnState, override: M.Override, +sa: Nat, +ua: Nat, pinned: Bool, panel: Bool, archived: Bool, snoozed: Bool, del: Bool, forked: Bool, term: Bool) -> List<&2, TO.Tool>:
+  List.reverse(&2, TO.Tool, TO.Tools.head(TO.Head{Lay.running(turn), TO.Tools.settled(override, Nat.is_gt(sa, ua)), pinned, snoozed, archived, del, forked, term, panel},
+    "vw-find", "snooze", "vw-key", "term"))
 
 # the title and branch get what the buttons leave
 # s fitted to px, or nothing when there is no room for a few letters
@@ -1437,9 +1464,11 @@ def Lay.fit_or_none(+ty: Ty, +k: Nat, +s: String, +px: U32) -> String:
 # branch in what the buttons leave
 # (the title keeps at least its first 160 px: buttons that would cover it
 # are left out, as buttons that do not fit are)
-def Lay.header.k(+ty: Ty, +title: String, +branch: String, +icon: String, +tint: U32, +bs: List<&2, S.Hit>, +x0: U32, +x1: U32, +hy: U32) -> Out:
+def Lay.header.k(+ty: Ty, +title: String, +branch: String, +icon: String, +tint: U32, +bs: List<&2, TO.Tool>, +x0: U32, +x1: U32, +hy: U32) -> Out:
   +keep = {U32.min(Ty.width(ty, 0n, title), 160) : U32}
-  +room = {U32.max(U32.dim(U32.dim((x1 - x0 : U32), Lay.buttons.w(ty, bs)), 80), keep) : U32}
+  # labels while they fit beside the title's first 160 px, else icons only
+  +full = U32.is_ge(U32.dim((x1 - x0 : U32), 80), (Lay.tools.w(ty, bs, True{}) + keep : U32))
+  +room = {U32.max(U32.dim(U32.dim((x1 - x0 : U32), Lay.tools.w(ty, bs, full)), 80), keep) : U32}
   +t = Ty.fit(ty, 0n, title, room)
   +tw = Ty.width(ty, 0n, t)
   Out.all([
@@ -1447,12 +1476,12 @@ def Lay.header.k(+ty: Ty, +title: String, +branch: String, +icon: String, +tint:
     Out.ops(Lay.icon(ty, icon, D.Clip.all(), (x0 + 24 : U32), (hy + 18 : U32), tint)),
     Out.ops(Ty.text(ty, 0n, t, D.Clip.all(), (x0 + 48 : U32), hy, 52, T.Th.text())),
     Out.ops(Ty.text(ty, 2n, Lay.fit_or_none(ty, 2n, branch, U32.dim(room, (tw + 12 : U32))), D.Clip.all(), (x0 + 60 + tw : U32), hy, 52, T.Th.faint())),
-    Lay.buttons(ty, bs, (hy + 12 : U32), (x1 - 16 : U32), (x0 + 60 + tw : U32))])
+    Lay.tools(ty, bs, (hy + 12 : U32), (x1 - 16 : U32), (x0 + 60 + tw : U32), full, False{})])
 
-def Lay.header(+ty: Ty, t: M.Thread, +st: M.State, +x0: U32, +x1: U32, panel: Bool, +snoozed: Bool, del: Bool, +hy: U32) -> Out:
+def Lay.header(+ty: Ty, t: M.Thread, +st: M.State, +x0: U32, +x1: U32, panel: Bool, term: Bool, +snoozed: Bool, del: Bool, +hy: U32) -> Out:
   match t:
     case M.Thread{+id, +p, +title, _, _, turn, _, +archived, override, +sa, +ua, pinned, _, +branch, _, _, _, _, _, _, _}:
-      Lay.header.k(ty, title, branch, BG.Badge.icon(st, p), BG.Badge.rgb_of(st, p), Lay.header.bs(turn, override, sa, ua, pinned, panel, archived, snoozed, del, Bool.not(String.is_empty(M.Fork.source(st, id)))), x0, x1, hy)
+      Lay.header.k(ty, title, branch, BG.Badge.icon(st, p), BG.Badge.rgb_of(st, p), Lay.header.bs(turn, override, sa, ua, pinned, panel, archived, snoozed, del, Bool.not(String.is_empty(M.Fork.source(st, id))), term), x0, x1, hy)
 
 def Lay.lines(+ty: Ty, ls: List<&2, String>, +c: D.Clip, +x: U32, +y: U32) -> Out:
   match ls:
@@ -3923,7 +3952,7 @@ def Lay.composer.a(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String
     Lay.attach_field(ty, String.eq(focus, "attach-path"), path, caret, mark, x0, x1, (y - 36 : U32))])
 
 def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: String, +st: M.State, +sel: String, +live: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool,
-    +x0: U32, +x1: U32, +h: U32, +sc: U32, pa: Bool, +info: String, +picking: Bool, +pend: List<&2, String>, +rs: List<&2, U.SkillRow>, +now: Nat,
+    +x0: U32, +x1: U32, +h: U32, +sc: U32, pa: Bool, term: Bool, +info: String, +picking: Bool, +pend: List<&2, String>, +rs: List<&2, U.SkillRow>, +now: Nat,
     +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String) -> Out:
   match t:
     case M.Thread{id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
@@ -3948,7 +3977,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       tl ch = Lay.timeline(ty,
         List.concat(&2, TLine, [TL.memo.shown(ty, memo, st, sel, cw, pics), TL.sending(ty, pend, cw),
           TL.live.k(ty, String.is_empty(live), ph, live, cw)]),
-        cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
+        cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
           Lay.subs(ty, ts, cx0, cx1, (60 + hy + pl : U32)),
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)) ++ U.Usage.tail(st, sel), rs, atts, up, path),
@@ -4224,7 +4253,7 @@ def Lay.more(+memo: TLMemo, +n: S.Nui, +sel: String) -> Bool:
 def Lay.thread.at(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32) -> Out:
   match n:
     case S.Nui{U.Ui{+st, +sel, _, +live, +op, _, _, _, pa, _, _, _, _, _, +nf, _, _}, _, +h, _, _, _, +sc, +caret, +focus, +path, _, _, _}:
-      Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, U.Ui.draft_text(S.Nui.ui(n)), x0, x1, h), Lay.thread.k(ty, memo, U.Ui.thread(st, sel), U.Ui.draft_text(S.Nui.ui(n)), S.Cs.held(n), st, sel, U.Str.get(live, sel), caret, S.Nui.mark(n), focus, S.Blink.on(n), x0, x1, h, sc, pa,
+      Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, U.Ui.draft_text(S.Nui.ui(n)), x0, x1, h), Lay.thread.k(ty, memo, U.Ui.thread(st, sel), U.Ui.draft_text(S.Nui.ui(n)), S.Cs.held(n), st, sel, U.Str.get(live, sel), caret, S.Nui.mark(n), focus, S.Blink.on(n), x0, x1, h, sc, pa, U.Flag.get(op, "term"),
         U.Str.get(nf, "models"), U.Flag.get(op, "models"), U.Ui.pending(S.Nui.ui(n), sel), U.Ui.skills(S.Nui.ui(n)), U.Side.now(S.Nui.ui(n)),
         U.Ui.atts(S.Nui.ui(n), sel), U.Ui.uploading(S.Nui.ui(n), sel), path, nf, U.Ui.deleting(S.Nui.ui(n)), TSel.of(U.Ui.scratch(S.Nui.ui(n), "@ts"), sel), U.Ui.scratch(S.Nui.ui(n), "@menu.off"), U.Side.phase(st, U.Ui.thread(st, sel)), hy, Lay.more(memo, n, sel), U.Btw.question(S.Nui.ui(n)), U.Btw.reply.of(S.Nui.ui(n)))),
         Vx.view(ty, n, st, sel, x0, x1, h)), Lay.earlier(Lay.more(memo, n, sel)))

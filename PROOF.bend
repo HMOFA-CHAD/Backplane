@@ -3177,6 +3177,24 @@ def Laws.icons_used_exist():
 def Laws.icons_all_draw():
   {==}
 
+def Laws.tools_icons_exist():
+  {==}
+
+def Laws.tools_labelled():
+  {==}
+
+def Laws.tools_stop_first():
+  {==}
+
+def Laws.viewer_auto_opens():
+  {==}
+
+def Laws.viewer_auto_hand_shut():
+  {==}
+
+def Laws.auto_view_none():
+  {==}
+
 def Laws.hotkey_alt_digit():
   {==}
 

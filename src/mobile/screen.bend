@@ -19,6 +19,7 @@ import ../core/codec.bend as C
 import ../core/botui.bend as B
 import ./bots.bend as MB
 import ../core/hist.bend as HS
+import ../core/tools.bend as TO
 
 # Ui -> the screen the phone apps draw, as JSON. SwiftUI and Compose map
 # it onto native lists, toolbars and text fields; every decision (order,
@@ -426,32 +427,24 @@ def Mob.entries.go(es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st: M.State, +
 def Mob.entries(+es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +dr: Map<&2, String>, +running: Bool) -> List<&2, J.Json>:
   List.reverse(&2, J.Json, Mob.entries.go(es, FO.Fold.roles(es, info, running), st, sel, dr, Nil{}))
 
-# a toolbar button: what it says and the action it sends
-def Mob.tool(label: String, action: String, on: Bool) -> J.Json:
-  J.Json.obj([J.KV{"label", J.Json.str(label)}, J.KV{"action", J.Json.str(action)}, J.KV{"on", J.Json.bool(on)}])
+# a toolbar button (core/tools.bend): its icon, what it says, what it does
+# (tip) and the action it sends
+def Mob.tool(t: TO.Tool) -> J.Json:
+  match t:
+    case TO.Tool{i, l, tip, a, v, on, dg, _}:
+      J.Json.obj([J.KV{"icon", J.Json.str(i)}, J.KV{"label", J.Json.str(l)}, J.KV{"tip", J.Json.str(tip)}, J.KV{"action", J.Json.str(a)},
+        J.KV{"value", J.Json.str(v)}, J.KV{"on", J.Json.bool(on)}, J.KV{"danger", J.Json.bool(dg)}])
 
-def Mob.pin(p: Bool) -> J.Json:
-  match p:
-    case True{}:
-      Mob.tool("Pinned", "unpin", True{})
-    case False{}:
-      Mob.tool("Pin", "pin", False{})
-
-def Mob.settle(o: M.Override, auto: Bool) -> J.Json:
-  match o auto:
-    case M.ForcedSettled{} _:
-      Mob.tool("Settled", "unsettle", True{})
-    case M.NoOverride{} True{}:
-      Mob.tool("Settled", "unsettle", True{})
-    case _ _:
-      Mob.tool("Settle", "settle", False{})
-
-def Mob.stop(running: Bool) -> List<&2, J.Json>:
-  match running:
-    case True{}:
-      [Mob.tool("Stop", "interrupt", False{})]
-    case False{}:
+def Mob.tools(ts: List<&2, TO.Tool>) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}:
       Nil{}
+    case t <> r:
+      Mob.tool(t) <> Mob.tools(r)
+
+# the toolbar's: stop, then under the menu where it sits and forking
+def Mob.head(running: Bool, pinned: Bool, settled: Bool, archived: Bool, forked: Bool) -> List<&2, J.Json>:
+  Mob.tools(List.concat(&2, TO.Tool, [TO.Tools.stop(running), [TO.Tools.pin(pinned), TO.Tools.settle(settled), TO.Tools.archive(archived), TO.Tools.fork()], TO.Tools.back(forked)]))
 
 def Mob.live(empty: Bool, running: Bool) -> String:
   match empty running:
@@ -735,28 +728,21 @@ def Mob.term(open: Bool, +u: U.Ui, +id: String) -> J.Json:
 # The thread's menu: each item sends its action with its value, or (a
 # snooze) offers choices whose values it sends instead; "on" checks it,
 # "danger" asks first
-def Mob.item(+label: String, +action: String, +value: String, on: Bool, danger: Bool, opts: List<&2, J.Json>) -> J.Json:
-  J.Json.obj([J.KV{"label", J.Json.str(label)}, J.KV{"action", J.Json.str(action)}, J.KV{"value", J.Json.str(value)},
+def Mob.item(+icon: String, +label: String, +action: String, +value: String, on: Bool, danger: Bool, opts: List<&2, J.Json>) -> J.Json:
+  J.Json.obj([J.KV{"icon", J.Json.str(icon)}, J.KV{"label", J.Json.str(label)}, J.KV{"action", J.Json.str(action)}, J.KV{"value", J.Json.str(value)},
     J.KV{"on", J.Json.bool(on)}, J.KV{"danger", J.Json.bool(danger)}, J.KV{"options", J.Json.arr(opts)}])
 
 def Mob.snooze(snoozed: Bool) -> J.Json:
   match snoozed:
     case True{}:
-      Mob.item("Snoozed", "snooze", "off", True{}, False{}, Nil{})
+      Mob.item("clock", "Snoozed", "snooze", "off", True{}, False{}, Nil{})
     case False{}:
-      Mob.item("Snooze", "snooze", "", False{}, False{}, [Mob.opt("1 hour", "1h"), Mob.opt("Tomorrow", "tomorrow"), Mob.opt("1 week", "1w")])
-
-def Mob.archive(a: Bool) -> J.Json:
-  match a:
-    case True{}:
-      Mob.item("Archived", "unarchive", "", True{}, False{}, Nil{})
-    case False{}:
-      Mob.item("Archive", "archive", "", False{}, False{}, Nil{})
+      Mob.item("clock", "Snooze", "snooze", "", False{}, False{}, [Mob.opt("1 hour", "1h"), Mob.opt("Tomorrow", "tomorrow"), Mob.opt("1 week", "1w")])
 
 def Mob.menu(+id: String, snoozed: Bool) -> List<&2, J.Json>:
-  [Mob.item("Diff", "diff", "", False{}, False{}, Nil{}), Mob.item("Terminal", "term-toggle", "", False{}, False{}, Nil{}),
-   Mob.item("Find file", "find-open", "files", False{}, False{}, Nil{}), Mob.snooze(snoozed),
-   Mob.item("Delete", "row-delete", id, False{}, True{}, Nil{})]
+  [Mob.item("diff", "Diff", "diff", "", False{}, False{}, Nil{}), Mob.item("terminal", "Terminal", "term-toggle", "", False{}, False{}, Nil{}),
+   Mob.item("search", "Find file", "find-open", "files", False{}, False{}, Nil{}), Mob.snooze(snoozed),
+   Mob.item("trash", "Delete", "row-delete", id, False{}, True{}, Nil{})]
 
 # a phone opens a thread on its newest 20 entries (a screen shows about
 # ten, and each reply's markdown is laid out in the phone's JS engine,
@@ -784,7 +770,7 @@ def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: 
       +pg = Mob.page(drafts, id, st)
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"title", J.Json.str(title)}, J.KV{"branch", J.Json.str(branch)},
         J.KV{"state", J.Json.str(Mob.state(turn))},
-        J.KV{"tools", J.Json.arr(List.concat(&2, J.Json, [Mob.stop(V.View.running(turn)), [Mob.pin(pinned), Mob.settle(o, Nat.is_gt(sa, ua)), Mob.archive(archived), Mob.tool("Fork", "fork", False{})], Bool.pick(List<&2, J.Json>, String.is_empty(M.Fork.source(st, id)), Nil{}, [Mob.tool("Bring back", "back", False{})])]))},
+        J.KV{"tools", J.Json.arr(Mob.head(V.View.running(turn), pinned, TO.Tools.settled(o, Nat.is_gt(sa, ua)), archived, Bool.not(String.is_empty(M.Fork.source(st, id)))))},
         J.KV{"menu", J.Json.arr(Mob.menu(id, M.Snooze.on(now, U.Side.until(st, id))))},
         J.KV{"parent", Mob.parent(String.is_empty(U.Tasks.parent(st, id)), st, U.Tasks.parent(st, id))},
         J.KV{"subs", Mob.subs(SB.Subs.rows(st, nf, id))},

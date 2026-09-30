@@ -709,7 +709,14 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                         DropdownMenu(menu, { menu = false }) {
                             for (tool in t.tools) if (tool.action != "interrupt") DropdownMenuItem(
                                 text = { Text(tool.label) },
-                                leadingIcon = { if (tool.on) Icon(Icons.Filled.Check, null) else Spacer(Modifier.width(24.dp)) },
+                                leadingIcon = {
+                                    val icon = toolIcon(tool.icon)
+                                    when {
+                                        tool.on -> Icon(Icons.Filled.Check, null)
+                                        icon != null -> Icon(icon, null)
+                                        else -> Spacer(Modifier.width(24.dp))
+                                    }
+                                },
                                 onClick = { menu = false; m.act(tool.action, tool.value) },
                             )
                             if (t.menu.isNotEmpty()) HorizontalDivider()
@@ -725,7 +732,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                                 } else DropdownMenuItem(
                                     text = { Text(item.label, color = if (item.danger) MaterialTheme.colorScheme.error else Color.Unspecified) },
                                     leadingIcon = {
-                                        val icon = menuIcon(item.action)
+                                        val icon = toolIcon(item.icon)
                                         when {
                                             item.on -> Icon(Icons.Filled.Check, null)
                                             icon != null -> Icon(icon, null, tint = if (item.danger) MaterialTheme.colorScheme.error else Color.Unspecified)

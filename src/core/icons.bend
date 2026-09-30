@@ -92,7 +92,14 @@ def Icon.all() -> List<&2, IDef>:
    IDef{"wrench", [Icon.s("M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z")]},
    IDef{"flask-conical", [Icon.s("M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.07-10.13A2 2 0 0 1 14 9.53V2"), Icon.s("M8.5 2h7"), Icon.s("M7 16h10")]},
    IDef{"book", [Icon.s("M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20")]},
-   IDef{"star", [Icon.s("M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z")]}]
+   IDef{"star", [Icon.s("M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z")]},
+   IDef{"pin", [Icon.s("M12 17v5"), Icon.s("M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z")]},
+   IDef{"circle-check", [Icon.s("M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0"), Icon.s("m9 12 2 2 4-4")]},
+   IDef{"clock", [Icon.s("M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0"), Icon.s("M12 6v6l4 2")]},
+   IDef{"archive", [Icon.s("M2 3h20v5H2z"), Icon.s("M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"), Icon.s("M10 12h4")]},
+   IDef{"trash", [Icon.s("M3 6h18"), Icon.s("M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"), Icon.s("M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"), Icon.s("M10 11v6"), Icon.s("M14 11v6")]},
+   IDef{"git-fork", [Icon.s("M9 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0"), Icon.s("M3 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0"), Icon.s("M15 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0"), Icon.s("M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"), Icon.s("M12 12v3")]},
+   IDef{"undo", [Icon.s("M9 14 4 9l5-5"), Icon.s("M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11")]}]
 
 def Icon.pick(hit: Bool, ls: List<&2, Layer>, found: List<&2, Layer>) -> List<&2, Layer>:
   match hit:
@@ -125,7 +132,8 @@ def Icon.names() -> List<&2, String>:
 # the icons the two UIs draw (laws icons_*: each is in the set)
 def Icon.used() -> List<&2, String>:
   ["plus", "x", "chevron-down", "chevron-right", "settings", "paperclip", "arrow-up", "stop", "mic", "search", "sun", "moon",
-   "play", "pause", "chevron-left", "skip-back", "skip-forward", "history", "git-compare", "message-square"]
+   "play", "pause", "chevron-left", "skip-back", "skip-forward", "history", "git-compare", "message-square",
+   "pin", "circle-check", "clock", "archive", "trash", "git-fork", "undo", "terminal", "panel-right", "diff"]
 
 def Icon.missing.k(none: Bool, +n: String, rest: List<&2, String>) -> List<&2, String>:
   match none:

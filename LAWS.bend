@@ -30,6 +30,7 @@ import ./src/app/layout.bend as L
 import ./src/core/eq.bend as Q
 import ./src/core/svg.bend as SVG
 import ./src/core/icons.bend as ICO
+import ./src/core/tools.bend as TOOL
 import ./src/core/lightbox.bend as LBX
 import ./src/core/links.bend as LK
 import ./src/core/client.bend as U
@@ -1243,6 +1244,31 @@ law icons_used_exist:
 # every path of every icon parses and begins with a moveto
 law icons_all_draw:
   {ICO.Icon.bad(ICO.Icon.all()) == Nil{} : List<&2, String>}
+
+# every button the thread header can show has an icon in the set
+law tools_icons_exist:
+  {TOOL.Tools.missing() == Nil{} : List<&2, String>}
+
+# and a label and a sentence saying what it does beside its icon
+law tools_labelled:
+  {TOOL.Tools.labelled(TOOL.Tools.every()) == True{} : Bool}
+
+# the hub's own view when an agent starts in a KiCad project
+# it opens the panel of a thread whose viewer has shown nothing yet
+law viewer_auto_opens:
+  {U.Ui.panel(U.Ui.view(U.Act.ui(U.Ui.select(U.Ui.init(0n), "t1")), H.Auto.view.json("t1", "/p/b.kicad_pcb", ""))) == True{} : Bool}
+
+# and never one the person shut by hand
+law viewer_auto_hand_shut:
+  {U.Ui.panel(U.Ui.view(U.Act.ui(U.Ui.toggle_panel(U.Act.ui(U.Ui.toggle_panel(U.Act.ui(U.Ui.select(U.Ui.init(0n), "t1")))))), H.Auto.view.json("t1", "/p/b.kicad_pcb", ""))) == False{} : Bool}
+
+# a project with no board or schematic sends nothing
+law auto_view_none:
+  {H.Auto.view("t1", "", "") == "" : String}
+
+# a running turn's Stop comes first, before the thread's own buttons
+law tools_stop_first:
+  {List.head(&2, String, TOOL.Tools.icons(TOOL.Tools.head(TOOL.Head{True{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}}, "", "", "", ""))) == Some{"stop"} : Maybe<&2, String>}
 
 # Hotkeys
 # -------

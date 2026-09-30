@@ -1875,14 +1875,23 @@ def Agent.same(m: Maybe<&2, Agent>, +key: String) -> Bool:
     case None{}:
       False{}
 
+# an agent starting in a KiCad project opens its thread's panel on the
+# board, unless the person has opened or shut it by hand (core's Auto.view,
+# client.bend's Viewer.auto)
+def Hub.auto(+cl: List<&2, Client>, +thread: String, fs: K.Files) -> IO(Unit):
+  match fs:
+    case K.Files{_, +pcb, +sch}:
+      Bool.pick(IO(Unit), String.is_empty(B.Auto.view(thread, pcb, sch)), IO.pure(Unit, Unit{}), Wire.all(cl, B.Auto.view(thread, pcb, sch)))
+
 def Hub.start.go(same: Bool, m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
   match same h:
     case True{} _:
       IO.pure(Hub, h)
-    case False{} Hub{+st, f, ls, cl, +as, inbox, +cfg, note}:
+    case False{} Hub{+st, f, ls, +cl, +as, inbox, +cfg, note}:
       do IO<Hub>:
         Hub.agent_stop(m)
-        fs : K.Files <- K.Files.read(cwd)
+        +fs : K.Files <- K.Files.read(cwd)
+        Hub.auto(cl, thread, fs)
         res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs), effort), cwd, 0)
         Hub.spawned(res, Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, thread, Agent.key(model, r, i, effort))
 
@@ -3910,9 +3919,10 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         Plot.put(Cfg.pv(cfg), Plot.watch(client, kind, root, path))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.CodexTurn{+thread, +cwd, +model, +session, r, text}:
+    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.CodexTurn{+thread, +cwd, +model, +session, r, text}:
       do IO<Hub>:
-        fs : K.Files <- K.Files.read(cwd)
+        +fs : K.Files <- K.Files.read(cwd)
+        Hub.auto(cl, thread, fs)
         +now : Nat <- Now.nat()
         IO.spawn(Unit, Codex.go(cfg, st, thread, cwd, model, session, r, BH.Bots.turn(st, now, thread, text), fs, inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
@@ -3920,9 +3930,10 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         IO.spawn(Unit, Install.go(Cfg.home(cfg), inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.GrokTurn{+thread, +cwd, +model, +session, r, +text}:
+    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.GrokTurn{+thread, +cwd, +model, +session, r, +text}:
       do IO<Hub>:
-        fs : K.Files <- K.Files.read(cwd)
+        +fs : K.Files <- K.Files.read(cwd)
+        Hub.auto(cl, thread, fs)
         +now : Nat <- Now.nat()
         IO.spawn(Unit, Grok.go(cfg, st, thread, cwd, model, session, r, BH.Bots.turn(st, now, thread, text), fs, inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
