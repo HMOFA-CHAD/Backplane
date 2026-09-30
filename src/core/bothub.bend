@@ -9,6 +9,7 @@ import ./cron.bend as CR
 import ./ring.bend as RG
 import ./space.bend as SP
 import ./refs.bend as RF
+import ./handoff.bend as HD
 
 # Remote bot directories. A result replaces just its peer; a failure
 # keeps that peer's rows and their last-seen timestamps, marked away.
@@ -756,7 +757,7 @@ def Reply.request(+thread: String, +state: String) -> String:
 def Bots.methods() -> List<&2, String>:
   ["bots.create", "bots.edit", "bots.delete", "bots.say", "bots.room", "bots.room_delete", "bots.post", "bots.routine", "bots.routine_delete",
    "bots.routine_run", "bots.hook", "bots.hook_revoke", "bots.forget", "bots.remember", "bots.space", "bots.invite", "bots.join", "bots.unpeer",
-   "bots.google", "bots.tell", "bots.hook_token", "bots.voice", "bots.answered"]
+   "bots.google", "bots.tell", "bots.hook_token", "bots.voice", "bots.answered", "bots.give"]
 
 def Bots.is(+m: String) -> Bool:
   String.starts_with(m, "bots.")
@@ -810,6 +811,81 @@ def Bots.token.k(h: BT.Hook, +s: M.State, +op: String, +client: U32, +id: String
 def Bots.token(+s: M.State, +client: U32, +id: String, +p: J.Json) -> B.Step:
   Bots.token.k(BT.World.hook(M.State.bots(s), J.Json.get_str(p, "hook", "")), s, J.Json.get_str(p, "op", "show"), client, id)
 
+# Giving a conversation
+# ---------------------
+# "/give" in a thread (bots.give {thread, text}; a scratch thread's way
+# out, M.Scratch): its conversation (HD.Hand.give) goes to every thread,
+# project and bot the text names. A thread gets it queued ahead of its next
+# message, like a fork brought back; a project gets a new thread with it
+# queued, like a fork; a bot is woken with it. The rest of the text rides
+# along as the person's note. A thread never gives to itself, and a text
+# that names nothing to give to is refused (laws give_*).
+
+def Give.note(+text: String) -> String:
+  String.trim(String.drop(String.trim(text), 5n))
+
+def Give.said(+src: String, +now: Nat, +key: String, +to: String) -> M.Change:
+  M.ActivityLogged{src, "k" ++ key, "info", "fork", "Given to " ++ to, now}
+
+def Give.thread.k(self: Bool, +s: M.State, +now: Nat, +key: String, +src: String, +hand: String, +to: String, +name: String) -> B.Step:
+  match self:
+    case True{}:
+      B.Step.none()
+    case False{}:
+      B.Step{[M.TurnQueued{to, HD.Hand.prefix() ++ "give:" ++ src ++ ":" ++ key, hand, now},
+          M.ActivityLogged{to, "k" ++ key ++ ".in", "info", "fork", "\"" ++ HD.Hand.title(B.Hub.thread(s, src)) ++ "\" was handed over; it goes with the next message", now},
+          Give.said(src, now, key, name)], Nil{}}
+
+def Give.project.k(t: M.Thread, +s: M.State, +now: Nat, +key: String, +th: String, +src: String, +hand: String, +pid: String, +name: String) -> B.Step:
+  match t:
+    case M.Thread{_, _, +ti, _, _, _, _, _, _, _, _, _, _, _, _, +pr, +mo, rt, im, _, _}:
+      +mode = M.Setting.get(s, "thread.env", "auto")
+      B.Step{[M.ThreadCreated{th, pid, ti, B.Hub.new.env(M.Scratch.is(pid), mode), "", B.Hub.new.wt(M.Scratch.is(pid), B.Hub.project.root(B.Hub.project(s, pid)), th), pr, mo, now}, M.ModesSet{th, rt, im, mo, now},
+          M.TurnQueued{th, HD.Hand.prefix() ++ "give:" ++ src ++ ":" ++ key, hand, now},
+          Give.said(src, now, key, name)],
+        B.Hub.new.outs(M.Scratch.is(pid), th, B.Hub.project.root(B.Hub.project(s, pid)), mode)}
+
+def Give.bot.k(remote: Bool, +s: M.State, +now: Nat, +i: Nat, +key: String, +src: String, +hand: String, +bot: String, +name: String) -> B.Step:
+  match remote:
+    case True{}:
+      B.Step.none()
+    case False{}:
+      Step.cat(Bots.wake(s, now, src, Bots.bot(s, bot), Bots.msg(now, B.Hub.seq(s), i), hand, 0n), B.Step{[Give.said(src, now, key, name)], Nil{}})
+
+def Give.k(k: Nat, +s: M.State, +now: Nat, +i: Nat, +key: String, +src: String, +hand: String, +id: String, +name: String) -> B.Step:
+  match k:
+    case 0n:
+      Give.bot.k(Bots.remote(id), s, now, i, key, src, hand, id, "@" ++ name)
+    case 1n:
+      Give.thread.k(String.eq(id, src), s, now, key, src, hand, id, "\"" ++ name ++ "\"")
+    case 2n:
+      Give.project.k(B.Hub.thread(s, src), s, now, key, B.Hub.id("t", now, Nat.add(B.Hub.seq(s), i)), src, hand, id, "a new thread in " ++ name)
+    case _:
+      B.Step.none()
+
+def Give.one(h: RF.Hit, +s: M.State, +now: Nat, +i: Nat, +src: String, +hand: String) -> B.Step:
+  match h:
+    case RF.Hit{+kind, +id, +name, _}:
+      Give.k(RF.Refs.kind.pos(kind), s, now, i, Nat.show(now) ++ "-" ++ Nat.show(B.Hub.seq(s)) ++ "." ++ Nat.show(i), src, hand, id, name)
+
+def Give.go(hs: List<&2, RF.Hit>, +i: Nat, +s: M.State, +now: Nat, +src: String, +hand: String) -> B.Step:
+  match hs:
+    case Nil{}:
+      B.Step.none()
+    case h <> t:
+      Step.cat(Give.one(h, s, now, i, src, hand), Give.go(t, 1n+i, s, now, src, hand))
+
+def Give.done(st: B.Step, +client: U32, +id: String) -> B.Step:
+  match st:
+    case B.Step{Nil{}, os}:
+      B.Step{Nil{}, B.Reply.err(client, id, "name a thread (>), a project (%) or a bot (@) to give this thread to") <> os}
+    case B.Step{c <> cs, os}:
+      B.Step{c <> cs, B.Reply.ok(client, id) <> os}
+
+def Give.step(+s: M.State, +now: Nat, +client: U32, +id: String, +src: String, +text: String) -> B.Step:
+  Give.done(Give.go(RF.Refs.found(s, src, text), 0n, s, now, src,
+    HD.Hand.give(B.Hub.entries(s), src, HD.Hand.title(B.Hub.thread(s, src)), Give.note(text))), client, id)
+
 def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> B.Step:
   match i:
     case 0n:
@@ -860,6 +936,8 @@ def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p
       B.Step.outs([B.BotFx{"voice", J.Json.show(p), U32.show(client), id}])
     case 22n:
       Reply.back(s, now, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "state", ""))
+    case 23n:
+      Give.step(s, now, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "text", ""))
     case _:
       Bots.err(client, id, "unknown bots request")
 

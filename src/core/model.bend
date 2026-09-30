@@ -1219,6 +1219,56 @@ def Switch.num(s: String, +acc: Nat) -> Nat:
 def Switch.seen(s: State, +th: String, +p: String) -> Nat:
   Switch.num(Setting.get(s, Switch.seen.key(th, p), "0"), 0n)
 
+# Scratch threads
+# ---------------
+# Conversations that belong to no project live in the built-in project
+# Scratch.id(), which the hub makes at start (rooted at <home>/scratch;
+# once removed it stays removed), each thread in a folder of its own. They
+# are ephemeral: one left alone for the "scratch.days" setting (1..90,
+# else 7) is deleted with its folder, unless it is pinned (kept) or busy
+# (laws scratch_*). "/give" hands one's conversation to threads, projects
+# and bots (bothub.bend's Give).
+
+def Scratch.id() -> String:
+  "scratch"
+
+def Scratch.is(+pid: String) -> Bool:
+  String.eq(pid, Scratch.id())
+
+def Scratch.days.k(+n: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_eq(n, 0n), 7n, Bool.pick(Nat, Nat.is_gt(n, 90n), 90n, n))
+
+# how long a scratch thread lives after its last activity, in seconds
+def Scratch.window(s: State) -> Nat:
+  Nat.mul(Scratch.days.k(Switch.num(Setting.get(s, "scratch.days", "7"), 0n)), 86400n)
+
+def Scratch.old.k(scratch: Bool, keep: Bool, +now: Nat, +at: Nat, +w: Nat) -> Bool:
+  match scratch:
+    case True{}:
+      Bool.and(Bool.not(keep), Nat.is_ge(now, Nat.add(at, w)))
+    case False{}:
+      False{}
+
+# a scratch thread that has had its time: not pinned, not deleted, not busy
+def Scratch.expired(+now: Nat, +w: Nat, t: Thread) -> Bool:
+  match t:
+    case Thread{_, +p, _, _, +a, turn, +pend, _, _, _, _, pin, _, _, _, _, _, _, _, _, del}:
+      Scratch.old.k(Scratch.is(p), Bool.or(pin, Bool.or(del, Thread.busy(turn, pend))), now, a, w)
+
+def Scratch.ensure.k(r: Map<&2, Project> & Bool, +root: String, +now: Nat) -> List<&2, Change>:
+  (_, has) = r
+  match has:
+    case True{}:
+      Nil{}
+    case False{}:
+      [ProjectCreated{Scratch.id(), "Scratch", root, now}]
+
+# the Scratch project, made once (a removed one is left removed)
+def Scratch.ensure(s: State, +root: String, +now: Nat) -> List<&2, Change>:
+  match s:
+    case State{ps, _, _, _, _, _, _, _, _, _, _}:
+      Scratch.ensure.k(Map.has(&2, Project, ps, Scratch.id()), root, now)
+
 # Context usage
 # -------------
 # How much of its model's context window a thread's session holds, as

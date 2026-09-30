@@ -149,6 +149,15 @@ def Hand.back(+es: List<&2, M.Entry>, +fork: String, +title: String) -> String:
   Hand.text("Work done in a fork of this thread, \"" ++ title ++ "\" (" ++ fork ++ "), brought back here. Its files stay on its own branch; what was said and done there, oldest first:",
     Hand.mine(es, fork), fork)
 
+def Hand.note(+note: String) -> String:
+  Bool.pick(String, String.is_empty(note), "", " The user's note with it: " ++ note)
+
+# a conversation given away (/give, bothub.bend's Give): what was said and
+# done in the thread given from, with the user's note
+def Hand.give(+es: List<&2, M.Entry>, +src: String, +title: String, +note: String) -> String:
+  Hand.text("The user hands you the conversation of the thread \"" ++ title ++ "\" (" ++ src ++ ")." ++ Hand.note(note) ++ " Its conversation, oldest first:",
+    Hand.mine(es, src), src)
+
 # a side question (/btw): the thread so far, then the question, for the
 # writing model to answer beside the running turn
 def Hand.btw(+es: List<&2, M.Entry>, +th: String, +title: String, +q: String) -> String:

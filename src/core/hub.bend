@@ -225,15 +225,41 @@ def Hub.env.outs(e: M.EnvMode, +th: String, +root: String, +mode: String) -> Lis
     case M.Local{}:
       Nil{}
 
+# a scratch thread (M.Scratch) works in a folder of its own that the
+# server makes (<home>/scratch/<thread>, a git repository like a bot's
+# home); any other thread as its project and mode say
+def Hub.new.env(scratch: Bool, +mode: String) -> M.EnvMode:
+  match scratch:
+    case True{}:
+      M.Local{}
+    case False{}:
+      Hub.env.of(mode)
+
+# a scratch thread's folder, known from the start so its first turn runs
+# there (the server makes it before anything else runs)
+def Hub.new.wt(scratch: Bool, +root: String, +th: String) -> String:
+  match scratch:
+    case True{}:
+      root ++ "/" ++ th
+    case False{}:
+      ""
+
+def Hub.new.outs(scratch: Bool, +th: String, +root: String, +mode: String) -> List<&2, Out>:
+  match scratch:
+    case True{}:
+      [BotFx{"scratch", th, "", ""}]
+    case False{}:
+      Hub.env.outs(Hub.env.of(mode), th, root, mode)
+
 def Hub.thread_create(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
   +project = J.Json.get_str(p, "project", "")
   +title = J.Json.get_str(p, "title", "New thread")
   +env = J.Json.get_str(p, "env", M.Setting.get(s, "thread.env", "auto"))
   +th = Hub.id("t", now, Hub.seq(s))
   Step{[M.ThreadCreated{th, project, title,
-    Hub.env.of(env), "", "", J.Json.get_str(p, "provider", M.Setting.get(s, "agent.provider", "claude")),
+    Hub.new.env(M.Scratch.is(project), env), "", Hub.new.wt(M.Scratch.is(project), Hub.project.root(Hub.project(s, project)), th), J.Json.get_str(p, "provider", M.Setting.get(s, "agent.provider", "claude")),
     J.Json.get_str(p, "model", M.Setting.get(s, "agent.model", "")), now}],
-    Reply.ok(client, id) <> Hub.env.outs(Hub.env.of(env), th, Hub.project.root(Hub.project(s, project)), env)}
+    Reply.ok(client, id) <> Hub.new.outs(M.Scratch.is(project), th, Hub.project.root(Hub.project(s, project)), env)}
 
 def Hub.root.norm.fin(+r: String) -> String:
   Bool.pick(String, String.is_empty(r), "/", r)
@@ -1516,14 +1542,29 @@ def Fork.env(+wt: String) -> M.EnvMode:
 def Fork.outs(+wt: String, +th: String, +root: String, +src: String) -> List<&2, Out>:
   Bool.pick(List<&2, Out>, String.is_empty(wt), Nil{}, [Git{0, "", "worktree", th, root, "fork", src}])
 
+# a scratch thread's fork is a scratch thread with a folder of its own
+def Fork.env.s(scratch: Bool, +wt: String) -> M.EnvMode:
+  match scratch:
+    case True{}:
+      M.Local{}
+    case False{}:
+      Fork.env(wt)
+
+def Fork.outs.s(scratch: Bool, +wt: String, +th: String, +root: String, +src: String) -> List<&2, Out>:
+  match scratch:
+    case True{}:
+      [BotFx{"scratch", th, "", ""}]
+    case False{}:
+      Fork.outs(wt, th, root, src)
+
 def Hub.fork.k(t: M.Thread, +s: M.State, +now: Nat, +client: U32, +id: String, +src: String) -> Step:
   match t:
     case M.Thread{_, +p, +ti, _, _, _, _, _, _, _, _, _, _, _, +wt, +pr, +mo, rt, im, _, _}:
       +th = Hub.id("t", now, Hub.seq(s))
-      Step{[M.ThreadCreated{th, p, "Fork: " ++ ti, Fork.env(wt), "", "", pr, mo, now}, M.ModesSet{th, rt, im, mo, now}, M.ThreadForked{th, src, now},
+      Step{[M.ThreadCreated{th, p, "Fork: " ++ ti, Fork.env.s(M.Scratch.is(p), wt), "", Hub.new.wt(M.Scratch.is(p), Hub.project.root(Hub.project(s, p)), th), pr, mo, now}, M.ModesSet{th, rt, im, mo, now}, M.ThreadForked{th, src, now},
           M.TurnQueued{th, HD.Hand.prefix() ++ src, HD.Hand.fork(Hub.entries(s), src, ti), now},
           M.ActivityLogged{src, Hub.id("k", now, Hub.seq(s)), "info", "fork", "Forked into \"Fork: " ++ ti ++ "\"", now}],
-        Reply.ok(client, id) <> Fork.outs(wt, th, Hub.project.root(Hub.project(s, p)), src)}
+        Reply.ok(client, id) <> Fork.outs.s(M.Scratch.is(p), wt, th, Hub.project.root(Hub.project(s, p)), src)}
 
 # a new thread that goes on from this one
 def Hub.fork(+s: M.State, +now: Nat, +client: U32, +id: String, +src: String) -> Step:
@@ -2188,15 +2229,36 @@ def Drop.asks(ts: List<&2, M.Thread>, +s: M.State, +now: Nat, +w: Nat) -> List<&
     case +t <> rest:
       Drop.k(M.Worktree.drop(s, t, now, w), s, t, Drop.asks(rest, s, now, w))
 
+# Scratch threads left alone long enough (M.Scratch.expired) are deleted,
+# like thread.delete, and the server removes their folders
+def Scratch.gone.k(go: Bool, +th: String, +now: Nat, rest: Step) -> Step:
+  match go:
+    case True{}:
+      Step.before([M.ThreadDeleted{th, now}], [AgentStop{th}, BotFx{"gone", th, "", ""}, BotFx{"scratch-gone", th, "", ""}], rest)
+    case False{}:
+      rest
+
+def Scratch.sweep(ts: List<&2, M.Thread>, +now: Nat, +w: Nat) -> Step:
+  match ts:
+    case Nil{}:
+      Step.none()
+    case +t <> rest:
+      Scratch.gone.k(M.Scratch.expired(now, w, t), M.Thread.id(t), now, Scratch.sweep(rest, now, w))
+
+def Step.join(a: Step, b: Step) -> Step:
+  match a:
+    case Step{cs, os}:
+      Step.before(cs, os, b)
+
 # every thread that should settle now, settled (a snoozed one never is);
 # gh asked about due merges; worktrees put away long enough removed;
-# stranded worktree waits run
+# stranded worktree waits run; expired scratch threads deleted
 def Hub.tick(+s: M.State, +now: Nat) -> Step:
   match s:
     case M.State{ps, +ts, _, _, +tk, _, _, _, _, _, _}:
       Step.before(Hub.settle.go(Map.values(&2, M.Thread, ts), M.State.navs(s), Map.values(&2, M.Task, tk), now, Hub.settle.window(s)),
         List.append(&2, Out, Merge.asks(Map.values(&2, M.Project, ps), Map.values(&2, M.Thread, ts), s), Drop.asks(Map.values(&2, M.Thread, ts), s, now, Hub.wt.window(s))),
-        Wt.stale(Map.values(&2, M.Thread, ts), s, now))
+        Step.join(Wt.stale(Map.values(&2, M.Thread, ts), s, now), Scratch.sweep(Map.values(&2, M.Thread, ts), now, M.Scratch.window(s))))
 
 # Asks keep their thread busy
 # ---------------------------

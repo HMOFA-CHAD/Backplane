@@ -4057,3 +4057,122 @@ law look_marks_distinct:
 # the layer list reaches a comparison's marks, whatever the kind's own count
 law look_names_marks:
   {List.drop(&2, String, LO.Look.names(U32.or(0, LO.Look.diff()), B.Layer.names()), 26n) == ["Removed", "Changed", "Added"] : List<&2, String>}
+
+# Scratch threads (M.Scratch): a pinned one is kept, whatever else holds
+law scratch_pinned_kept:
+  for +now: Nat
+  for +w: Nat
+  for +id: String
+  for +ti: String
+  for +c: Nat
+  for +a: Nat
+  for tu: M.TurnState
+  for +pe: Nat
+  for ar: Bool
+  for o: M.Override
+  for +sa: Nat
+  for +ua: Nat
+  for env: M.EnvMode
+  for +br: String
+  for +wt: String
+  for +pr: String
+  for +mo: String
+  for rt: M.RuntimeMode
+  for im: M.InteractionMode
+  for +se: String
+  for de: Bool
+  {M.Scratch.expired(now, w, M.Thread{id, "scratch", ti, c, a, tu, pe, ar, o, sa, ua, True{}, env, br, wt, pr, mo, rt, im, se, de}) == False{} : Bool}
+
+# a scratch thread whose turn runs is never taken away under it
+law scratch_running_kept:
+  for +now: Nat
+  for +w: Nat
+  for +id: String
+  for +ti: String
+  for +c: Nat
+  for +a: Nat
+  for +pe: Nat
+  for ar: Bool
+  for o: M.Override
+  for +sa: Nat
+  for +ua: Nat
+  for pin: Bool
+  for env: M.EnvMode
+  for +br: String
+  for +wt: String
+  for +pr: String
+  for +mo: String
+  for rt: M.RuntimeMode
+  for im: M.InteractionMode
+  for +se: String
+  for de: Bool
+  {M.Scratch.expired(now, w, M.Thread{id, "scratch", ti, c, a, M.Running{}, pe, ar, o, sa, ua, pin, env, br, wt, pr, mo, rt, im, se, de}) == False{} : Bool}
+
+# only Scratch's threads ever expire
+law scratch_project_kept:
+  for +now: Nat
+  for +w: Nat
+  for +id: String
+  for +ti: String
+  for +c: Nat
+  for +a: Nat
+  for tu: M.TurnState
+  for +pe: Nat
+  for ar: Bool
+  for o: M.Override
+  for +sa: Nat
+  for +ua: Nat
+  for pin: Bool
+  for env: M.EnvMode
+  for +br: String
+  for +wt: String
+  for +pr: String
+  for +mo: String
+  for rt: M.RuntimeMode
+  for im: M.InteractionMode
+  for +se: String
+  for de: Bool
+  {M.Scratch.expired(now, w, M.Thread{id, "p1", ti, c, a, tu, pe, ar, o, sa, ua, pin, env, br, wt, pr, mo, rt, im, se, de}) == False{} : Bool}
+
+# an idle scratch thread goes once its window has passed, not before
+law scratch_expires:
+  {M.Scratch.expired(1000n, 100n, M.Thread{"t", "scratch", "x", 0n, 900n, M.Idle{}, 0n, False{}, M.NoOverride{}, 0n, 0n, False{}, M.Local{}, "", "", "", "", M.FullAccess{}, M.DefaultMode{}, "", False{}}) == True{} : Bool}
+
+law scratch_not_yet:
+  {M.Scratch.expired(999n, 100n, M.Thread{"t", "scratch", "x", 0n, 900n, M.Idle{}, 0n, False{}, M.NoOverride{}, 0n, 0n, False{}, M.Local{}, "", "", "", "", M.FullAccess{}, M.DefaultMode{}, "", False{}}) == False{} : Bool}
+
+# the window in days: seven unless set, at most ninety
+law scratch_days_default:
+  {M.Scratch.days.k(0n) == 7n : Nat}
+
+law scratch_days_most:
+  {M.Scratch.days.k(91n) == 90n : Nat}
+
+# the Scratch project is made once, and a removed one stays removed
+law scratch_made:
+  {M.Scratch.ensure(M.State.empty(), "/h/scratch", 1n) == [M.ProjectCreated{"scratch", "Scratch", "/h/scratch", 1n}] : List<&2, M.Change>}
+
+law scratch_removed_stays:
+  {M.Scratch.ensure(M.State.replay([M.ProjectCreated{"scratch", "Scratch", "/h/scratch", 1n}, M.ProjectRemoved{"scratch", 2n}], M.State.empty()), "/h/scratch", 3n) == [] : List<&2, M.Change>}
+
+# Scratch never folds away in the sidebar, even with nothing in it
+law scratch_always_live:
+  for +now: Nat
+  {U.SRow.group(now, U.SRow{0n, M.Project{"scratch", "Scratch", "/h/scratch", 0n, False{}}, M.Shelves{[], [], [], [], []}}) == 0n : Nat}
+
+# "/give" is a command only as its own word, and never a side question
+law give_command:
+  {U.Give.is("/give >notes keep this") == True{} : Bool}
+
+law give_not_a_word:
+  {U.Give.is("/giver") == False{} : Bool}
+
+law give_not_btw:
+  {U.Btw.is("/give >notes") == False{} : Bool}
+
+# a give that names nothing changes nothing and says why
+law give_nothing_refused:
+  for +c: U32
+  for +id: String
+  for os: List<&2, H.Out>
+  {BHS.Give.done(H.Step{[], os}, c, id) == H.Step{[], H.Reply.err(c, id, "name a thread (>), a project (%) or a bot (@) to give this thread to") <> os} : H.Step}

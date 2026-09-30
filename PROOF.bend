@@ -6237,3 +6237,53 @@ def Laws.look_marks_distinct():
 
 def Laws.look_names_marks():
   {==}
+
+def Laws.scratch_pinned_kept(now, w, id, ti, c, a, tu, pe, ar, o, sa, ua, env, br, wt, pr, mo, rt, im, se, de):
+  {==}
+
+def Laws.scratch_running_kept(now, w, id, ti, c, a, pe, ar, o, sa, ua, pin, env, br, wt, pr, mo, rt, im, se, de):
+  match pin:
+    case True{}:
+      {==}
+    case False{}:
+      match de:
+        case True{}:
+          {==}
+        case False{}:
+          {==}
+
+def Laws.scratch_project_kept(now, w, id, ti, c, a, tu, pe, ar, o, sa, ua, pin, env, br, wt, pr, mo, rt, im, se, de):
+  {==}
+
+def Laws.scratch_expires():
+  {==}
+
+def Laws.scratch_not_yet():
+  {==}
+
+def Laws.scratch_days_default():
+  {==}
+
+def Laws.scratch_days_most():
+  {==}
+
+def Laws.scratch_made():
+  {==}
+
+def Laws.scratch_removed_stays():
+  {==}
+
+def Laws.scratch_always_live(now):
+  {==}
+
+def Laws.give_command():
+  {==}
+
+def Laws.give_not_a_word():
+  {==}
+
+def Laws.give_not_btw():
+  {==}
+
+def Laws.give_nothing_refused(c, id, os):
+  {==}

@@ -331,10 +331,10 @@ def Mcp.delegate.b(bot: Bool, none: Bool, +s: M.State, +now: Nat, +thread: Strin
 # a new top-level thread with its first message (it waits for its
 # worktree like any new thread)
 def Mcp.launch.go(+s: M.State, +now: Nat, +th: String, +from: String, +project: String, +env: String, +provider: String, +model: String, +title: String, +prompt: String) -> Res:
-  +c = {M.ThreadCreated{th, project, title, B.Hub.env.of(env), "", "", provider, model, now} : M.Change}
+  +c = {M.ThreadCreated{th, project, title, B.Hub.new.env(M.Scratch.is(project), env), "", B.Hub.new.wt(M.Scratch.is(project), B.Hub.project.root(B.Hub.project(s, project)), th), provider, model, now} : M.Change}
   +s1 = {M.State.replay([c], s) : M.State}
   Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{th}}, J.KV{"title", J.Str{title}}, J.KV{"provider", J.Str{provider}}, J.KV{"state", J.Str{"started"}}]),
-    B.Step.before([c], B.Hub.env.outs(B.Hub.env.of(env), th, B.Hub.project.root(B.Hub.project(s, project)), env),
+    B.Step.before([c], B.Hub.new.outs(M.Scratch.is(project), th, B.Hub.project.root(B.Hub.project(s, project)), env),
       B.Hub.post(s1, now, th, Mcp.from.id(from, B.Hub.id("m", now, B.Hub.seq(s1))), M.User{}, prompt))}
 
 # a project by id or name (any case)
