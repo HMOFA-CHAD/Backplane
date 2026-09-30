@@ -316,11 +316,24 @@ def Agent.end(s: Socket, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Un
     ok : Bool <- Chan.send(Msg, inbox, AgentGone{thread, code, pid})
     return Unit{}
 
+def Agent.pause(streaming: Bool) -> IO(Unit):
+  match streaming:
+    case True{}:
+      IO.sleep(B.Delta.pace())
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+# a read's lines, text deltas merged (B.Delta.merge), then a moment's wait
+# when it ended mid-stream, so the next read takes what came meanwhile
+def Agent.fed.k(+ls: List<&2, String>, s: Socket, carry: U.Lines, +thread: String, +inbox: Chan(Msg), k: Socket -> U.Lines -> IO(Unit)) -> IO(Unit):
+  do IO<Unit>:
+    Agent.lines(B.Delta.merge(ls), thread, inbox)
+    Agent.pause(B.Delta.streaming(ls))
+    k(s, carry)
+
 def Agent.fed(r: U.Lines & List<&2, String>, s: Socket, +thread: String, +inbox: Chan(Msg), k: Socket -> U.Lines -> IO(Unit)) -> IO(Unit):
   (carry, ls) = r
-  do IO<Unit>:
-    Agent.lines(ls, thread, inbox)
-    k(s, carry)
+  Agent.fed.k(ls, s, carry, thread, inbox, k)
 
 def Agent.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, +pid: U32, +thread: String, +inbox: Chan(Msg),
     k: Socket -> U.Lines -> IO(Unit)) -> IO(Unit):

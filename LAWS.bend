@@ -812,6 +812,27 @@ law hubs_no_id:
   for +k: String
   {Hb.Hubs.id(k, "") == "" : String}
 
+# the screen's id walk knows every name it treats apart: the hash that
+# turns keys away first never turns one of them away
+law q_kind_names:
+  {Hb.Q.own(Hb.QN{"value", 2n} <> Hb.QN{"id", 2n} <> Hb.Q.names()) == True{} : Bool}
+
+# a phone builds no screen for streamed text from a hub not in focus...
+law hubs_delta_elsewhere:
+  for +hs: Hb.Hubs
+  for +key: String
+  for +o: J.Json
+  for h: {String.eq(key, Hb.Hubs.cur(hs)) == False{} : Bool}
+  {Hb.Hubs.shows(hs, key, o) == False{} : Bool}
+
+# ...nor for a thread other than the one open on the hub in focus
+law hubs_delta_other_thread:
+  for +hs: Hb.Hubs
+  for +th: String
+  for +text: String
+  for h: {String.eq(th, U.Ui.sel(Hb.Hubs.ui(hs, Hb.Hubs.cur(hs)))) == False{} : Bool}
+  {Hb.Hubs.shows(hs, Hb.Hubs.cur(hs), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
+
 # a phone paired with no hub sends nothing, however time passes
 law hubs_unpaired_quiet:
   for +cid: String

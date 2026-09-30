@@ -300,12 +300,14 @@ def Mob.imgs.step(e: M.Entry, w: ImgW) -> ImgW:
     case _ _:
       w
 
+# (the walk stops once done: every frame asks, and a log holds thousands
+# of entries)
 def Mob.imgs.seen.go(es: List<&2, M.Entry>, w: ImgW) -> ImgW:
-  match es:
-    case Nil{}:
+  match es w:
+    case e <> t ImgW{+k, False{}, +u}:
+      Mob.imgs.seen.go(t, Mob.imgs.step(e, ImgW{k, False{}, u}))
+    case _ _:
       w
-    case e <> t:
-      Mob.imgs.seen.go(t, Mob.imgs.step(e, w))
 
 def Mob.imgs.ui(w: ImgW) -> U.Ui:
   match w:

@@ -869,6 +869,9 @@ def Laws.notice_window_opens(room, name, start, local, p):
 def Laws.hubs_no_id(k):
   {==}
 
+def Laws.q_kind_names():
+  {==}
+
 def Laws.hubs_unpaired_quiet(cid, now, cur, t):
   {==}
 
@@ -5730,6 +5733,14 @@ def Laws.shows_own_delta(u, text):
   match u:
     case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
       Laws.string_eq_refl(sel)
+
+def Laws.hubs_delta_elsewhere(hs, key, o, h):
+  %Equal.sym(Bool, String.eq(key, Hb.Hubs.cur(hs)), False{}, h) : {Hb.Hubs.shows.k(_, hs, key, o) == False{} : Bool}
+  {==}
+
+def Laws.hubs_delta_other_thread(hs, th, text, h):
+  %Equal.sym(Bool, String.eq(Hb.Hubs.cur(hs), Hb.Hubs.cur(hs)), True{}, Laws.string_eq_refl(Hb.Hubs.cur(hs))) : {Hb.Hubs.shows.k(_, hs, Hb.Hubs.cur(hs), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
+  Laws.shows_other_delta(Hb.Hubs.ui(hs, Hb.Hubs.cur(hs)), th, text, h)
 
 def Laws.shows_changes(u, items):
   {==}

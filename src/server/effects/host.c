@@ -235,10 +235,19 @@ static void __attribute__((constructor)) sock_send_text_use(void) {
 
 #ifdef CID_SOCK_DUP
 
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+
 // A second handle on the same socket, so one computation reads while
-// another writes. Each handle is closed on its own.
+// another writes. Each handle is closed on its own. A socket split this way
+// is a live link (a client's WebSocket, the window's link to another hub):
+// each frame goes out at once, not held by Nagle until the last one is
+// acknowledged (a round trip per small frame on a phone's link). A pipe or
+// socketpair refuses the option, which changes nothing.
 Term sock_dup_run(Env e, Term* f, IoWork* w) {
   int fd  = (int)io_hand_v(f[0]);
+  int one = 1;
+  setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
   int got = dup(fd);
   if (got >= 0) {
     fcntl(got, F_SETFD, FD_CLOEXEC);

@@ -692,6 +692,112 @@ def Hub.methods() -> List<&2, String>:
 def Delta.push(thread: String, text: String) -> Out:
   Broadcast{J.Json.show(J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{thread}}, J.KV{"text", J.Str{text}}]))}
 
+# Claude streams a token a line, and each was a frame to every client: a
+# phone rebuilt its screen per token. The lines of one read of the agent's
+# stdout (as much as has come, up to 64 KB) go to the hub together, and a
+# run of the main agent's text deltas to one block among them becomes one
+# delta with their text: an agent writing fast sends a few frames a read,
+# one writing slowly still sends each token as it comes. Every other line
+# stays as it is, in its place (test/delta_test.bend).
+
+# the merge so far: the lines out (last first), and the run open (its
+# block's key and its texts, last first)
+type DL is Data:
+  DL{out: List<&2, String>, key: String, texts: List<&2, String>, open: Bool}
+
+# a run's text as the one line that stands for it
+def Delta.line(+ts: List<&2, String>) -> String:
+  J.Json.show(J.Json.obj([J.KV{"type", J.Str{"stream_event"}}, J.KV{"event", J.Json.obj([J.KV{"type", J.Str{"content_block_delta"}},
+    J.KV{"delta", J.Json.obj([J.KV{"type", J.Str{"text_delta"}}, J.KV{"text", J.Str{String.join(List.reverse(&2, String, ts), "")}}])}])}]))
+
+def Delta.flush(open: Bool, +ts: List<&2, String>, out: List<&2, String>) -> List<&2, String>:
+  match open:
+    case True{}:
+      Delta.line(ts) <> out
+    case False{}:
+      out
+
+def Delta.step.k(delta: Bool, same: Bool, +key: String, text: String, line: String, st: DL) -> DL:
+  match delta same st:
+    case True{} True{} DL{out, k, ts, o}:
+      DL{out, k, text <> ts, o}
+    case True{} False{} DL{out, _, +ts, o}:
+      DL{Delta.flush(o, ts, out), key, [text], True{}}
+    case False{} _ DL{out, _, +ts, o}:
+      DL{line <> Delta.flush(o, ts, out), "", Nil{}, False{}}
+
+def DL.open(st: DL) -> Bool:
+  match st:
+    case DL{_, _, _, o}:
+      o
+
+def DL.key(st: DL) -> String:
+  match st:
+    case DL{_, k, _, _}:
+      k
+
+# a text delta of the main agent (not a subagent's), and its block
+def Delta.step.j(+o: J.Json, line: String, +st: DL) -> DL:
+  +ev = J.Json.get_obj(o, "event")
+  +d = J.Json.get_obj(ev, "delta")
+  +key = J.Json.show(J.Json.get_obj(ev, "index"))
+  Delta.step.k(Bool.and(Bool.and(String.eq(J.Json.get_str(o, "type", ""), "stream_event"), String.is_empty(J.Json.get_str(o, "parent_tool_use_id", ""))),
+      Bool.and(String.eq(J.Json.get_str(ev, "type", ""), "content_block_delta"), String.eq(J.Json.get_str(d, "type", ""), "text_delta"))),
+    Bool.and(DL.open(st), String.eq(key, DL.key(st))), key, J.Json.get_str(d, "text", ""), line, st)
+
+def Delta.step.m(m: Maybe<&2, J.Json>, line: String, +st: DL) -> DL:
+  match m:
+    case Some{+o}:
+      Delta.step.j(o, line, st)
+    case None{}:
+      Delta.step.k(False{}, False{}, "", "", line, st)
+
+def Delta.step.p(stream: Bool, +line: String, +st: DL) -> DL:
+  match stream:
+    case True{}:
+      Delta.step.m(J.Json.parse(line), line, st)
+    case False{}:
+      Delta.step.k(False{}, False{}, "", "", line, st)
+
+# (only a stream event is parsed: the other lines, a tool's whole output
+# among them, pass as they are)
+def Delta.step(+line: String, +st: DL) -> DL:
+  Delta.step.p(String.starts_with(line, "{\"type\":\"stream_event\""), line, st)
+
+def Delta.go(ls: List<&2, String>, st: DL) -> DL:
+  match ls:
+    case Nil{}:
+      st
+    case l <> t:
+      Delta.go(t, Delta.step(l, st))
+
+def Delta.fin(st: DL) -> List<&2, String>:
+  match st:
+    case DL{out, _, +ts, o}:
+      List.reverse(&2, String, Delta.flush(o, ts, out))
+
+# one read's lines with each run of text deltas as one
+def Delta.merge(ls: List<&2, String>) -> List<&2, String>:
+  Delta.fin(Delta.go(ls, DL{Nil{}, "", Nil{}, False{}}))
+
+def Delta.last(ls: List<&2, String>, acc: Bool) -> Bool:
+  match ls:
+    case Nil{}:
+      acc
+    case l <> t:
+      Delta.last(t, String.starts_with(l, "{\"type\":\"stream_event\""))
+
+# whether a read ended in streamed text: the reader then waits Delta.pace()
+# ms before reading again, so the tokens written meanwhile come in one read
+# and go out as one delta (an agent streams tens of tokens a second, each a
+# frame to every client, and a screen for a phone showing the thread);
+# anything else is read at once
+def Delta.streaming(ls: List<&2, String>) -> Bool:
+  Delta.last(ls, False{})
+
+def Delta.pace() -> U32:
+  60
+
 def Claude.stream.k(block: Bool, text: Bool, +thread: String, s: String) -> Step:
   match block text:
     case True{} True{}:
