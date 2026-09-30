@@ -740,10 +740,11 @@ def Ui.toggle_add(u: Ui) -> Act:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
       Act{Ui{st, sel, dr, live, op, on, now, Bool.not(ad), pa, v, rid, w, er, note, nf, ob, tr}, [Focus{"project-path"}]}
 
+# opened or shut by hand: the hub's own view leaves it alone from now on
 def Ui.toggle_panel(u: Ui) -> Act:
   match u:
-    case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      Act{Ui{st, sel, dr, live, op, on, now, ad, Bool.not(pa), v, rid, w, er, note, nf, ob, tr}, Nil{}}
+    case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Act{Ui{st, sel, dr, live, op, on, now, ad, Bool.not(pa), v, rid, w, er, note, Map.set(&2, String, nf, "panel.hand:" ++ sel, "1"), ob, tr}, Nil{}}
 
 def Ui.toggle_settled(u: Ui, +pid: String) -> Act:
   match u:
@@ -879,8 +880,30 @@ def Ui.reply.diff(has: Bool, u: Ui, +o: J.Json) -> Ui:
     case False{}:
       Ui.reply.k(u, o)
 
+# The hub's own view ("auto"), sent when an agent starts in a KiCad
+# project: it opens the thread's panel on its board (or schematic) only
+# while that thread's viewer has shown nothing and its panel was never
+# opened or shut by hand ("panel.hand:t"); an agent's viewer_show always
+# opens it (laws viewer_auto_*)
+def Viewer.auto(+u: Ui, +th: String) -> Bool:
+  Bool.and(String.is_empty(Ui.info(u, "view.kind:" ++ th)), Bool.not(String.eq(Ui.info(u, "panel.hand:" ++ th), "1")))
+
+def Ui.view.auto(go: Bool, +u: Ui, +th: String, +o: J.Json) -> Ui:
+  match go:
+    case True{}:
+      Ui.view.k(u, th, o)
+    case False{}:
+      u
+
+def Ui.view.at(auto: Bool, +u: Ui, +th: String, +o: J.Json) -> Ui:
+  match auto:
+    case True{}:
+      Ui.view.auto(Viewer.auto(u, th), u, th, o)
+    case False{}:
+      Ui.view.k(u, th, o)
+
 def Ui.view(+u: Ui, +o: J.Json) -> Ui:
-  Ui.view.k(u, Viewer.of(J.Json.get_str(o, "thread", ""), Ui.sel(u)), o)
+  Ui.view.at(J.Json.get_bool(o, "auto", False{}), u, Viewer.of(J.Json.get_str(o, "thread", ""), Ui.sel(u)), o)
 
 # the selected thread's draft
 def Ui.draft_text(u: Ui) -> String:

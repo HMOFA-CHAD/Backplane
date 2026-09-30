@@ -3186,6 +3186,15 @@ def Laws.tools_labelled():
 def Laws.tools_stop_first():
   {==}
 
+def Laws.viewer_auto_opens():
+  {==}
+
+def Laws.viewer_auto_hand_shut():
+  {==}
+
+def Laws.auto_view_none():
+  {==}
+
 def Laws.hotkey_alt_digit():
   {==}
 

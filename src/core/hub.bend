@@ -1721,6 +1721,24 @@ def Wt.hardware(ns: List<&2, String>) -> Bool:
     case +n <> t:
       Bool.or(Bool.or(String.ends_with(n, ".kicad_pro"), String.ends_with(n, ".kicad_pcb")), Bool.or(String.ends_with(n, ".kicad_sch"), Wt.hardware(t)))
 
+# what the hub tells the clients when an agent starts in a KiCad project:
+# show the thread's board (its schematic when there is no board) as the
+# hub's own view ("auto", which a panel shut by hand ignores); "" for a
+# project with neither
+def Auto.view.json(+thread: String, +pcb: String, +sch: String) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Str{"view"}}, J.KV{"thread", J.Str{thread}}, J.KV{"kind", J.Str{Bool.pick(String, String.is_empty(pcb), "schematic", "board")}},
+    J.KV{"path", J.Str{Bool.pick(String, String.is_empty(pcb), sch, pcb)}}, J.KV{"auto", J.Json.bool(True{})}])
+
+def Auto.view.k(none: Bool, +thread: String, +pcb: String, +sch: String) -> String:
+  match none:
+    case True{}:
+      ""
+    case False{}:
+      J.Json.show(Auto.view.json(thread, pcb, sch))
+
+def Auto.view(+thread: String, +pcb: String, +sch: String) -> String:
+  Auto.view.k(Bool.and(String.is_empty(pcb), String.is_empty(sch)), thread, pcb, sch)
+
 def Wt.digit(keep: Bool, +c: U32, rest: String) -> String:
   match keep:
     case True{}:

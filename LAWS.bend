@@ -1253,6 +1253,19 @@ law tools_icons_exist:
 law tools_labelled:
   {TOOL.Tools.labelled(TOOL.Tools.every()) == True{} : Bool}
 
+# the hub's own view when an agent starts in a KiCad project
+# it opens the panel of a thread whose viewer has shown nothing yet
+law viewer_auto_opens:
+  {U.Ui.panel(U.Ui.view(U.Act.ui(U.Ui.select(U.Ui.init(0n), "t1")), H.Auto.view.json("t1", "/p/b.kicad_pcb", ""))) == True{} : Bool}
+
+# and never one the person shut by hand
+law viewer_auto_hand_shut:
+  {U.Ui.panel(U.Ui.view(U.Act.ui(U.Ui.toggle_panel(U.Act.ui(U.Ui.toggle_panel(U.Act.ui(U.Ui.select(U.Ui.init(0n), "t1")))))), H.Auto.view.json("t1", "/p/b.kicad_pcb", ""))) == False{} : Bool}
+
+# a project with no board or schematic sends nothing
+law auto_view_none:
+  {H.Auto.view("t1", "", "") == "" : String}
+
 # a running turn's Stop comes first, before the thread's own buttons
 law tools_stop_first:
   {List.head(&2, String, TOOL.Tools.icons(TOOL.Tools.head(TOOL.Head{True{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}, False{}}, "", "", "", ""))) == Some{"stop"} : Maybe<&2, String>}
