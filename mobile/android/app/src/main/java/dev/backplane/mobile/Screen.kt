@@ -61,7 +61,8 @@ data class Tool(
 )
 
 sealed interface Block {
-    data class El(val tag: String, val kids: List<Block>) : Block
+    // a link's target, and whether it is a file's (Mob.href)
+    data class El(val tag: String, val kids: List<Block>, val href: String? = null, val file: Boolean = false) : Block
     data class Txt(val text: String) : Block
 }
 
@@ -327,7 +328,8 @@ private fun <T> JSONArray?.map(f: (JSONObject) -> T): List<T> =
     if (this == null) emptyList() else (0 until length()).map { f(getJSONObject(it)) }
 
 private fun blocks(a: JSONArray?): List<Block> = a.map { o ->
-    if (o.has("tag")) Block.El(o.getString("tag"), blocks(o.optJSONArray("kids"))) else Block.Txt(o.optString("text"))
+    if (o.has("tag")) Block.El(o.getString("tag"), blocks(o.optJSONArray("kids")), if (o.has("href")) o.optString("href") else null, o.optBoolean("file"))
+    else Block.Txt(o.optString("text"))
 }
 
 private fun swipe(o: JSONObject) = Swipe(

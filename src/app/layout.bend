@@ -868,7 +868,8 @@ def Nd.links(ns: List<&2, N.Node>) -> List<&2, LK.Piece>:
 # -----
 # A paragraph with links lays out as kind 13 lines: the paragraph's links
 # ride in the line's copy field (LK.Link.enc); drawing cuts each line into
-# runs (LK.Link.cut) and each link run hits "open-url" with its address.
+# runs (LK.Link.cut) and each link run hits "open-url" with its address, or
+# "file-open" with a file's path (a right-click there opens its menu).
 
 def TL.linked.k(+none: Bool, ls: List<&2, String>, +color: U32, +enc: String) -> List<&2, TLine>:
   match ls:
@@ -891,9 +892,9 @@ def TL.link.seg(+ty: Ty, p: LK.Piece, +c: D.Clip, +x: U32, +y: U32, +color: U32)
   match p:
     case LK.PText{s}:
       Out.ops(Ty.text(ty, 3n, s, c, x, y, 23, color))
-    case LK.PLink{+l, u}:
+    case LK.PLink{+l, +u}:
       Out{D.Draw.rect(c, x, (y + 19 : U32), Ty.width(ty, 3n, l), 1, T.Th.accent(), 255) <> Ty.text(ty, 3n, l, c, x, y, 23, T.Th.accent()),
-        [Lay.hit(x, y, Ty.width(ty, 3n, l), 23, "open-url", u)]}
+        [Lay.hit(x, y, Ty.width(ty, 3n, l), 23, Bool.pick(String, LK.Link.is_web(u), "open-url", "file-open"), u)]}
 
 def TL.link.segs(ps: List<&2, LK.Piece>, +ty: Ty, +c: D.Clip, +x: U32, +y: U32, +color: U32) -> Out:
   match ps:
@@ -3230,7 +3231,7 @@ def Lay.ghost(+ty: Ty, +n: S.Nui) -> Out:
 
 # Row menus
 # ---------
-# A right-click on a thread's row or a project's name opens its menu
+# A right-click on a thread's row, a project's name or a file link opens its menu
 # (core's Menu) where the pointer was ("@menu.x", "@menu.y"), kept inside
 # the window; a press anywhere else shuts it ("menu-close" under it).
 

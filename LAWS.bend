@@ -1138,6 +1138,22 @@ law link_no_file:
   for s: String
   {LK.Link.is_web("file:" ++ s) == False{} : Bool}
 
+# a path is a file's link, never a web page's: it goes to the hub
+law link_path_not_web:
+  for s: String
+  {LK.Link.is_web("/" ++ s) == False{} : Bool}
+
+# an absolute path is opened as written, whatever the thread's folder
+law link_file_abs_kept:
+  for cwd: String
+  for s: String
+  {LK.Link.file.abs(cwd, "/" ++ s) == LK.Link.file.path("/" ++ s) : String}
+
+# a file link's menu leads with Open, then Show in folder
+law menu_file_open_first:
+  for p: String
+  {List.take(&2, U.MItem, U.Menu.file(p), 2n) == [U.MItem{"Open", "file-open", p, ""}, U.MItem{"Show in folder", "file-reveal", p, ""}] : List<&2, U.MItem>}
+
 # a line with no links is drawn as it is, one run of text
 law link_plain_line:
   for s: String

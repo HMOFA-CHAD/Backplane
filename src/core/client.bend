@@ -15,6 +15,7 @@ import ./refs.bend as RF
 import ./mech.bend as MC
 import ./desk.bend as DK
 import ./hist.bend as HI
+import ./links.bend as LK
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -2380,7 +2381,12 @@ def Menu.project(+id: String, armed: Bool, rich: Bool) -> List<&2, MItem>:
   List.concat(&2, MItem, [[MItem{"New thread", "new-thread", id, ""}], Menu.look(rich, id),
     [MItem{Bool.pick(String, armed, "Click again to remove", "Remove project"), "proj-remove", id, "danger"}]])
 
-# the menu open ("" for none), its kind ("t" or "p") and its id
+# a file link's menu ("file-menu path", kept as "f:<path>"; a click on the
+# link is its Open). The path goes as written; Flink.* resolves it
+def Menu.file(+path: String) -> List<&2, MItem>:
+  [MItem{"Open", "file-open", path, ""}, MItem{"Show in folder", "file-reveal", path, ""}, MItem{"Copy path", "file-copy", path, ""}]
+
+# the menu open ("" for none), its kind ("t", "p" or "f") and its id
 def Menu.open(+u: Ui) -> String:
   Ui.scratch(u, "@menu")
 
@@ -2390,28 +2396,46 @@ def Menu.kind(+m: String) -> String:
 def Menu.id(+m: String) -> String:
   String.drop(m, 2n)
 
+def Menu.items.t(file: Bool, +u: Ui, +id: String) -> List<&2, MItem>:
+  match file:
+    case True{}:
+      Menu.file(id)
+    case False{}:
+      Menu.thread(Side.st(u), Side.now(u), id, String.eq(Ui.scratch(u, "@del"), id))
+
 def Menu.items.k(thread: Bool, +u: Ui, +id: String, rich: Bool) -> List<&2, MItem>:
   match thread:
     case True{}:
-      Menu.thread(Side.st(u), Side.now(u), id, String.eq(Ui.scratch(u, "@del"), id))
+      Menu.items.t(String.eq(Menu.kind(Menu.open(u)), "f"), u, id)
     case False{}:
       Menu.project(id, String.eq(Ui.scratch(u, "@rm"), id), rich)
 
 # the open menu's items (none while shut)
 def Menu.items(+u: Ui, rich: Bool) -> List<&2, MItem>:
-  Bool.pick(List<&2, MItem>, String.is_empty(Menu.open(u)), Nil{}, Menu.items.k(String.eq(Menu.kind(Menu.open(u)), "t"), u, Menu.id(Menu.open(u)), rich))
+  Bool.pick(List<&2, MItem>, String.is_empty(Menu.open(u)), Nil{}, Menu.items.k(Bool.not(String.eq(Menu.kind(Menu.open(u)), "p")), u, Menu.id(Menu.open(u)), rich))
 
-# its heading: the thread's title or the project's name
+# its heading: the thread's title, the project's name or the file's path
 def Menu.title(+u: Ui) -> String:
   Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "t"), Active.title(Ui.thread(Side.st(u), Menu.id(Menu.open(u)))),
-    Ui.project_title(Side.st(u), Menu.id(Menu.open(u))))
+    Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "f"), Menu.id(Menu.open(u)), Ui.project_title(Side.st(u), Menu.id(Menu.open(u)))))
+
 
 # opening one disarms any delete or remove; the same again shuts it
 def Menu.set(+u: Ui, +m: String) -> Ui:
   Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@del", ""), "@rm", ""), "@menu", Bool.pick(String, String.eq(Menu.open(u), m), "", m))
 
 def Menu.actions() -> List<&2, String>:
-  ["row-menu", "proj-menu", "menu-close", "row-pin", "row-unpin", "row-archive", "row-unarchive", "side-older", "side-settled"]
+  ["row-menu", "proj-menu", "menu-close", "row-pin", "row-unpin", "row-archive", "row-unarchive", "side-older", "side-settled",
+   "file-menu", "file-open", "file-reveal", "file-copy"]
+
+# a file link's path where the hub finds it: in the selected thread's folder
+# when relative (core/links.bend's Link.file.abs)
+def Flink.abs(+u: Ui, +raw: String) -> String:
+  LK.Link.file.abs(Ui.root(u), raw)
+
+# the hub opens it, or shows it in its folder (how: "open" or "reveal")
+def Flink.open(+u: Ui, +raw: String, +how: String) -> Act:
+  Ui.rpc(u, "file.open", [J.KV{"path", J.Str{Flink.abs(u, raw)}}, J.KV{"how", J.Str{how}}])
 
 def Menu.shut(a: Act) -> Act:
   match a:
@@ -2438,6 +2462,14 @@ def Menu.act.k(i: Nat, +u: Ui, +value: String) -> Act:
     # the active view's settled rows folded or shown
     case 8n:
       Ui.toggle_settled(u, "active-settled")
+    case 9n:
+      Act{Menu.set(u, "f:" ++ value), Nil{}}
+    case 10n:
+      Menu.shut(Flink.open(u, value, "open"))
+    case 11n:
+      Menu.shut(Flink.open(u, value, "reveal"))
+    case 12n:
+      Menu.shut(Act{u, [Copy{Flink.abs(u, value)}]})
     case _:
       Menu.shut(Ui.rpc(u, "thread.unarchive", [J.KV{"thread", J.Str{value}}]))
 
@@ -5407,7 +5439,7 @@ def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Ac
       Menu.after(action, Ui.reselect.act(Ui.sel(u), Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)))
 
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 9n), C.Codec.pos(Menu.actions(), action), u, action, value))
+  Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 13n), C.Codec.pos(Menu.actions(), action), u, action, value))
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

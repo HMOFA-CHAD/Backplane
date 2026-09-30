@@ -70,9 +70,21 @@ def Md.glyph(c: Char) -> Glyph:
     case Chr{+u}:
       Md.glyph.k(U32.is_eq(u, 96), U32.is_eq(u, 42))
 
-# a web link, opening in a new tab
+# a link to a file: a click asks the hub to open it ("file-open"), a
+# right-click opens its menu ("file-menu"); href is the path as written
+def Dom.file(+path: String, kids: List<&2, Node>) -> Node:
+  El{"a", "", [At{"class", "link file"}, At{"href", path}, At{"title", path}, On{"click", "file-open"}, On{"contextmenu", "file-menu"}, At{"data-value", path}], kids}
+
+def Dom.link.k(web: Bool, +label: String, +url: String) -> Node:
+  match web:
+    case True{}:
+      El{"a", "", [At{"class", "link"}, At{"href", url}, At{"target", "_blank"}, At{"rel", "noopener noreferrer"}, At{"title", url}], [Txt{label}]}
+    case False{}:
+      Dom.file(url, [Txt{label}])
+
+# a web link, opening in a new tab; any other link is a file's
 def Dom.link(+label: String, +url: String) -> Node:
-  El{"a", "", [At{"class", "link"}, At{"href", url}, At{"target", "_blank"}, At{"rel", "noopener noreferrer"}, At{"title", url}], [Txt{label}]}
+  Dom.link.k(LK.Link.is_web(url), label, url)
 
 # text with its links (LK.Link.pieces) as nodes, onto out (reversed)
 def Dom.pieces(ps: List<&2, LK.Piece>, out: List<&2, Node>) -> List<&2, Node>:
@@ -96,8 +108,16 @@ def Md.text(acc: String, out: List<&2, Node>) -> List<&2, Node>:
     case SCon{h, t}:
       Dom.pieces(LK.Link.pieces(String.reverse(SCon{h, t})), out)
 
-def Md.code(acc: String) -> Node:
-  El{"code", "", Nil{}, [Txt{String.reverse(acc)}]}
+def Md.code.k(path: Bool, +s: String) -> Node:
+  match path:
+    case True{}:
+      Dom.file(s, [El{"code", "", Nil{}, [Txt{s}]}])
+    case False{}:
+      El{"code", "", Nil{}, [Txt{s}]}
+
+# inline code; a path in backticks is a file's link
+def Md.code(+acc: String) -> Node:
+  Md.code.k(LK.Link.is_path(String.reverse(acc)), String.reverse(acc))
 
 def Md.bold(acc: String) -> Node:
   El{"strong", "", Nil{}, [Txt{String.reverse(acc)}]}

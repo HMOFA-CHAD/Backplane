@@ -3013,6 +3013,15 @@ def Laws.link_no_script(s):
 def Laws.link_no_file(s):
   {==}
 
+def Laws.link_path_not_web(s):
+  {==}
+
+def Laws.link_file_abs_kept(cwd, s):
+  {==}
+
+def Laws.menu_file_open_first(p):
+  {==}
+
 def Laws.link_plain_line(s):
   {==}
 

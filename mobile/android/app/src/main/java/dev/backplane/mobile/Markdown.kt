@@ -11,17 +11,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 
 // Draws the markdown blocks Md.render made (p, h3-h5, ul/li, pre, code,
-// strong) with native text styles.
+// strong, a) with native text styles. A web link opens in the browser; a
+// tap on a file's link asks for its menu ("file-menu" with the path).
 
 fun plain(bs: List<Block>): String = buildString {
     for (b in bs) when (b) {
@@ -30,15 +36,24 @@ fun plain(bs: List<Block>): String = buildString {
     }
 }
 
+// what a tapped file link does (the thread's model, where there is one)
+val LocalFileTap = staticCompositionLocalOf<((String) -> Unit)?> { null }
+
 @Composable
 private fun inline(bs: List<Block>): AnnotatedString {
     val code = MaterialTheme.colorScheme.surfaceVariant
+    val accent = MaterialTheme.colorScheme.primary
+    val tap = LocalFileTap.current
+    val style = TextLinkStyles(SpanStyle(color = accent, textDecoration = TextDecoration.Underline))
     fun AnnotatedString.Builder.go(xs: List<Block>) {
         for (b in xs) when (b) {
             is Block.Txt -> append(b.text)
-            is Block.El -> when (b.tag) {
-                "code" -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = code)) { go(b.kids) }
-                "strong" -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { go(b.kids) }
+            is Block.El -> when {
+                b.tag == "code" -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = code)) { go(b.kids) }
+                b.tag == "strong" -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { go(b.kids) }
+                b.tag == "a" && b.href != null && b.file && tap != null ->
+                    withLink(LinkAnnotation.Clickable(b.href, style) { tap(b.href) }) { go(b.kids) }
+                b.tag == "a" && b.href != null && !b.file -> withLink(LinkAnnotation.Url(b.href, style)) { go(b.kids) }
                 else -> go(b.kids)
             }
         }
