@@ -20,6 +20,13 @@ src = open(path, encoding="utf-8").read()
 
 I = r"[A-Za-z0-9_$]+"
 
+# the trampoline's tail-call maker (the minifier names it: J in one build, E
+# in another), which String.eq's shape goes through
+jmp = re.findall(r'function (' + I + r')\(([A-Z]),([A-Z])\)\{return\{\$:"\$JMP",f:\2,x:\3\}\}', src)
+if len(jmp) != 1:
+    sys.exit(f"bridge-native: the tail-call maker found {len(jmp)} times, not once")
+T = re.escape(jmp[0][0])
+
 # String.cmp: (a, b) -> ((a, b), Cmp)
 cmp_head = re.compile(
     r'function (' + I + r')\(([A-Z]),([A-Z])\)\{if\(\2===""\)if\(\3===""\)return\{\$:"Tuple",\["fst"\]:\{\$:"Tuple",\["fst"\]:"",\["snd"\]:""\},\["snd"\]:\{\$:"EQ"\}\};'
@@ -50,11 +57,11 @@ names = {n for n, _ in is_eq}
 fins = {
     f
     for f, x, y, g in re.findall(
-        r'function (' + I + r')\(([A-Z])\)\{let [A-Z]=\2\.fst,[A-Z]=[A-Z]\.fst,[A-Z]=[A-Z]\.snd,([A-Z])=\2\.snd;return J\((' + I + r'),\[\3\]\)\}', src
+        r'function (' + I + r')\(([A-Z])\)\{let [A-Z]=\2\.fst,[A-Z]=[A-Z]\.fst,[A-Z]=[A-Z]\.snd,([A-Z])=\2\.snd;return ' + T + r'\((' + I + r'),\[\3\]\)\}', src
     )
     if g in names
 }
-eq_re = re.compile(r'function (' + I + r')\(([A-Z]),([A-Z])\)\{return J\((' + I + r'),\[Q\(' + re.escape(cmp) + r'\(\2,\3\)\)\]\)\}')
+eq_re = re.compile(r'function (' + I + r')\(([A-Z]),([A-Z])\)\{return ' + T + r'\((' + I + r'),\[Q\(' + re.escape(cmp) + r'\(\2,\3\)\)\]\)\}')
 eqs = [e for e in eq_re.finditer(src) if e.group(4) in fins]
 if len(eqs) != 1:
     sys.exit(f"bridge-native: String.eq found {len(eqs)} times, not once")

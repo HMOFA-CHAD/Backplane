@@ -6025,9 +6025,10 @@ def Lock.write(+home: String, +port: U32) -> IO(Unit):
     r : P.Ran <- P.Proc.run("sh", ["-c", "echo \"$PPID $1\" > \"$2\"", "sh", U32.show(port), Lock.path(home)], "/")
     return Unit{}
 
-# "<pid> <port>" of another live Backplane holding the lock, else ""
+# "<pid> <port>" of another live Backplane holding the lock (the same
+# program as this one, by its process name), else ""
 def Lock.find.sh() -> String:
-  "f=$1/hub.lock; [ -f \"$f\" ] || exit 0; read pid port < \"$f\"; [ -n \"$pid\" ] && [ \"$pid\" != \"$PPID\" ] || exit 0; kill -0 \"$pid\" 2>/dev/null || exit 0; case $(ps -p \"$pid\" -o comm= 2>/dev/null) in *backplane*) echo \"$pid $port\";; esac"
+  "f=$1/hub.lock; [ -f \"$f\" ] || exit 0; read pid port < \"$f\"; [ -n \"$pid\" ] && [ \"$pid\" != \"$PPID\" ] || exit 0; kill -0 \"$pid\" 2>/dev/null || exit 0; [ \"$(ps -p \"$pid\" -o comm= 2>/dev/null)\" = \"$(ps -p \"$PPID\" -o comm= 2>/dev/null)\" ] && echo \"$pid $port\""
 
 def Lock.out(r: P.Ran) -> String:
   match r:
