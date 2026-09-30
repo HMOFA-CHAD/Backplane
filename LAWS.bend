@@ -13,6 +13,7 @@ import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
 import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
+import ./src/core/apikeys.bend as AK
 import ./src/core/acp.bend as AC
 import ./src/core/mcp.bend as MC
 import ./src/core/handoff.bend as HD
@@ -4190,3 +4191,27 @@ law give_nothing_refused:
   for +id: String
   for os: List<&2, H.Out>
   {BHS.Give.done(H.Step{[], os}, c, id) == H.Step{[], H.Reply.err(c, id, "name a thread (>), a project (%) or a bot (@) to give this thread to") <> os} : H.Step}
+
+# API keys (core/apikeys.bend): a name becomes an environment variable, a
+# value is single-quoted for a shell, setting a name replaces its line and
+# keeps the rest, and agents get nothing when there are no keys
+law keys_name_env:
+  {AK.Keys.name(" openai key ") == "OPENAI_KEY" : String}
+
+law keys_name_digit:
+  {AK.Keys.name("2captcha") == "_2CAPTCHA" : String}
+
+law keys_quote_single:
+  {AK.Keys.line("a", "it's") == "A='it'\\''s'" : String}
+
+law keys_set_replaces:
+  {AK.Keys.set("A='1'\nB='2'\n", "a", "3") == "B='2'\nA='3'\n" : String}
+
+law keys_drop_keeps_others:
+  {AK.Keys.drop("# mine\nA='1'\nB='2'\n", "A") == "# mine\nB='2'\n" : String}
+
+law keys_names_of_lines:
+  {AK.Keys.names("# note\nA='x=y'\n\nB='2'\n") == ["A", "B"] : List<&2, String>}
+
+law keys_prompt_none:
+  {AK.Keys.prompt("/h/secrets/api.env", "") == "" : String}

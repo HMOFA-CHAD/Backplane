@@ -6296,3 +6296,24 @@ def Laws.give_not_btw():
 
 def Laws.give_nothing_refused(c, id, os):
   {==}
+
+def Laws.keys_name_env():
+  {==}
+
+def Laws.keys_name_digit():
+  {==}
+
+def Laws.keys_quote_single():
+  {==}
+
+def Laws.keys_set_replaces():
+  {==}
+
+def Laws.keys_drop_keeps_others():
+  {==}
+
+def Laws.keys_names_of_lines():
+  {==}
+
+def Laws.keys_prompt_none():
+  {==}
