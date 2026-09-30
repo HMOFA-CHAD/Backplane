@@ -3531,13 +3531,14 @@ def BotJob.client(+b: String) -> U32:
 def BotJob.id(+c: String) -> String:
   Bool.pick(String, String.is_empty(c), "0", c)
 
-# a bot's home folder, a git repository (so its turns get checkpoints),
-# becomes its thread's folder
-def BotJob.home.k(safe: Bool, +inbox: Chan(Msg), +home: String, +bot: String, +thread: String) -> IO(Unit):
+# a bot's home folder (dir <home>/bots/), or a scratch thread's
+# (<home>/scratch/, M.Scratch), a git repository (so its turns get
+# checkpoints), becomes its thread's folder
+def BotJob.home.k(safe: Bool, +inbox: Chan(Msg), +dir: String, +bot: String, +thread: String) -> IO(Unit):
   match safe:
     case True{}:
       do IO<Unit>:
-        +path : String = home ++ "/bots/" ++ bot
+        +path : String = dir ++ bot
         mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(path)
         r : P.Ran <- P.Proc.run("git", ["init", "-q"], path)
         +now : Nat <- Now.nat()
@@ -3545,6 +3546,27 @@ def BotJob.home.k(safe: Bool, +inbox: Chan(Msg), +home: String, +bot: String, +t
         return Unit{}
     case False{}:
       Log.info("bots: not a folder name: " ++ bot)
+
+# a scratch thread's folder is made at once, before the effects after it
+# (its first turn may start in the same step); git init follows
+def BotJob.scratch(safe: Bool, +inbox: Chan(Msg), +dir: String, +thread: String) -> IO(Unit):
+  match safe:
+    case True{}:
+      do IO<Unit>:
+        mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir ++ thread)
+        IO.spawn(Unit, BotJob.home.k(True{}, inbox, dir, thread, thread))
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+# an expired scratch thread's folder goes with it
+def BotJob.scratch.gone(safe: Bool, +home: String, +thread: String) -> IO(Unit):
+  match safe:
+    case True{}:
+      do IO<Unit>:
+        r : P.Ran <- P.Proc.run("rm", ["-rf", "--", home ++ "/scratch/" ++ thread], home)
+        return Unit{}
+    case False{}:
+      IO.pure(Unit, Unit{})
 
 def BotJob.hooked(+secret: String, +inbox: Chan(Msg), +client: U32, +id: String, +hook: String) -> IO(Unit):
   Bool.pick(IO(Unit), String.is_empty(secret), BotJob.fail(inbox, client, id, "could not keep the webhook's secret"),
@@ -3888,7 +3910,7 @@ def VoiceJob.run(+inbox: Chan(Msg), +home: String, +params: String, +client: U32
 def Bot.fx(i: Nat, +st: M.State, +inbox: Chan(Msg), +cfg: Cfg, +a: String, +b: String, +c: String) -> IO(Unit):
   match i:
     case 0n:
-      IO.spawn(Unit, BotJob.home.k(BN.Bn.safe(a), inbox, Cfg.home(cfg), a, b))
+      IO.spawn(Unit, BotJob.home.k(BN.Bn.safe(a), inbox, Cfg.home(cfg) ++ "/bots/", a, b))
     case 1n:
       IO.spawn(Unit, BotJob.close(Cfg.br(cfg), a))
     case 2n:
@@ -3913,6 +3935,10 @@ def Bot.fx(i: Nat, +st: M.State, +inbox: Chan(Msg), +cfg: Cfg, +a: String, +b: S
       IO.spawn(Unit, BotJob.token(2n, inbox, Cfg.home(cfg), Cfg.tailnet(cfg), Cfg.host(cfg), Cfg.port(cfg), a, BotJob.client(b), BotJob.id(c)))
     case 12n:
       IO.spawn(Unit, VoiceJob.run(inbox, Cfg.home(cfg), a, BotJob.client(b), BotJob.id(c)))
+    case 13n:
+      BotJob.scratch(BN.Bn.safe(a), inbox, Cfg.home(cfg) ++ "/scratch/", a)
+    case 14n:
+      IO.spawn(Unit, BotJob.scratch.gone(BN.Bn.safe(a), Cfg.home(cfg), a))
     case _:
       IO.pure(Unit, Unit{})
 
@@ -3997,7 +4023,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.BotFx{+kind, +a, +b, +c}:
       do IO<Hub>:
-        Bot.fx(C.Codec.pos(["home", "gone", "hook", "unhook", "send", "invite", "join", "unpeer", "google", "token", "retoken", "untoken", "voice"], kind), st, inbox, cfg, a, b, c)
+        Bot.fx(C.Codec.pos(["home", "gone", "hook", "unhook", "send", "invite", "join", "unpeer", "google", "token", "retoken", "untoken", "voice", "scratch", "scratch-gone"], kind), st, inbox, cfg, a, b, c)
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 def Hub.outs(os: List<&2, B.Out>, h: Hub) -> IO(Hub):
@@ -4723,10 +4749,11 @@ def Hub.recover.carry(h: Hub, +before: M.State, +now: Nat) -> IO(Hub):
 def Hub.recover.go(h: Hub, st: B.Step, before: M.State, +now: Nat) -> IO(Hub):
   IO.bind(Hub, Hub, Hub.step(h, st), h2 => Hub.recover.carry(h2, before, now))
 
+# (and the Scratch project is made the first time, M.Scratch.ensure)
 def Hub.recover.k(h: Hub, +now: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.recover.go(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.recover(st, now), st, now)
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.recover.go(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step.before(M.Scratch.ensure(st, Cfg.home(cfg) ++ "/scratch", now), Nil{}, B.Hub.recover(st, now)), st, now)
 
 # (and threads elsewhere start: Far.start)
 def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):

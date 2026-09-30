@@ -719,6 +719,12 @@ def Btw.is(+draft: String) -> Bool:
 def Btw.q(+draft: String) -> String:
   String.trim(String.drop(String.trim(draft), 4n))
 
+# "/give <refs> [note]": the thread's conversation handed to each thread
+# (>), project (%) and bot (@) the text names (bothub.bend's Give); the way
+# a scratch thread (M.Scratch) goes somewhere (laws give_*)
+def Give.is(+draft: String) -> Bool:
+  Bool.or(String.eq(String.trim(draft), "/give"), Bool.or(String.starts_with(draft, "/give "), String.starts_with(draft, "/give\n")))
+
 # what the send button says, and what it does
 def Follow.button.k(stop: Bool, +label: String) -> String:
   match stop:
@@ -728,7 +734,7 @@ def Follow.button.k(stop: Bool, +label: String) -> String:
       label
 
 def Follow.button(+st: M.State, +sel: String, run: Bool, stop: Bool, +draft: String) -> String:
-  Follow.button.k(stop, Bool.pick(String, Btw.is(draft), "Ask", Follow.label(st, sel, run)))
+  Follow.button.k(stop, Bool.pick(String, Btw.is(draft), "Ask", Bool.pick(String, Give.is(draft), "Give", Follow.label(st, sel, run))))
 
 def Follow.act(stop: Bool) -> String:
   match stop:
@@ -1239,9 +1245,15 @@ def SRow.rank(r: SRow) -> Nat:
     case SRow{k, _, _}:
       k
 
-# 0 live, 1 quiet, 2 older
+def SRow.scratch(r: SRow) -> Bool:
+  match r:
+    case SRow{_, M.Project{+id, _, _, _, _}, _}:
+      M.Scratch.is(id)
+
+# 0 live, 1 quiet, 2 older; Scratch (M.Scratch) never folds away, so a new
+# scratch thread is always a click off
 def SRow.group(+now: Nat, +r: SRow) -> Nat:
-  Bool.pick(Nat, SRow.live(r), 0n, Bool.pick(Nat, Quiet.recent(now, SRow.rank(r)), 1n, 2n))
+  Bool.pick(Nat, Bool.or(SRow.live(r), SRow.scratch(r)), 0n, Bool.pick(Nat, Quiet.recent(now, SRow.rank(r)), 1n, 2n))
 
 type SGroups is Data:
   SGroups{live: List<&2, SRow>, quiet: List<&2, SRow>, old: List<&2, SRow>}
@@ -3967,8 +3979,21 @@ def Ui.send.btw(btw: Bool, +u: Ui, alt: Bool) -> Act:
     case False{}:
       Ui.send.go(u, alt)
 
+def Give.ask(u: Ui, +text: String) -> Act:
+  match u:
+    case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Ui.also(Ui.rpc(Ui{st, sel, Map.set(&2, String, dr, sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr},
+        "bots.give", [J.KV{"thread", J.Str{sel}}, J.KV{"text", J.Str{text}}]), Draft.keep(sel, ""))
+
+def Ui.send.give(give: Bool, +u: Ui, alt: Bool) -> Act:
+  match give:
+    case True{}:
+      Give.ask(u, Ui.draft_text(u))
+    case False{}:
+      Ui.send.btw(Btw.is(Ui.draft_text(u)), u, alt)
+
 def Ui.send(+u: Ui, alt: Bool) -> Act:
-  Ui.send.btw(Btw.is(Ui.draft_text(u)), u, alt)
+  Ui.send.give(Give.is(Ui.draft_text(u)), u, alt)
 
 def Bots.sel.set(u: Ui, +th: String) -> Ui:
   match u:

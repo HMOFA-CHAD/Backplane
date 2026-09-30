@@ -234,6 +234,31 @@ threads): a thread's when a turn ends, at most every ten minutes
 newest threads (`summary.<project>`). A bot's is its thread's; before its
 first turn the menu shows its persona's first line.
 
+## Scratch and giving a thread away
+
+Not every conversation belongs to a project. Scratch (a project every hub
+makes for itself, at `<home>/scratch`) holds throwaway threads: the `+` on
+its sidebar row starts one, and each works in a folder of its own
+(`<home>/scratch/<thread>`). They are ephemeral: one left alone for the
+`scratch.days` setting (default 7) is deleted with its folder at the next
+tick. Pin one to keep it.
+
+To take a conversation somewhere, type `/give` in its composer with the
+references it goes to and, if you like, a note (the send button reads
+"Give"):
+
+| names | what happens |
+|---|---|
+| `>slug` | the conversation is queued into that thread, ahead of its next message (like a fork brought back) |
+| `%slug` | a new thread in that project starts with it queued (like a fork) |
+| `@name` | the bot is woken with it |
+
+`/give >pcb-rev-b %enclosure keep the connector choice` hands one scratch
+conversation to a thread and to a new thread in another project at once;
+several scratch threads given to one thread gather there. The thread it came
+from logs where it went and stays where it is. `/give` works in every
+thread, not only scratch ones (bothub.bend's `Give`, laws `give_*`).
+
 ## Machines and people
 
 A peer is another hub, linked by an invite: the inviting hub makes
