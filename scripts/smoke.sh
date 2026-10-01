@@ -20,7 +20,9 @@ run() {
   bun test/smoke.ts "$port" "$home" build/wire
   kill $pid
   trap - EXIT
-  rm -rf "$home"
+  # a scratch thread's `git init` (the hub's child, not stopped with it)
+  # may still be writing its folder: try again once it is done
+  rm -rf "$home" 2>/dev/null || { sleep 1; rm -rf "$home"; }
 }
 run dist/backplane-serve 37931
 [ -x dist/backplane ] && DISPLAY= run dist/backplane 37932
