@@ -6755,6 +6755,9 @@ def Laws.island_unheard_late():
 def Laws.island_unheard_recent():
   {==}
 
+def Laws.island_lines_capped():
+  {==}
+
 def Laws.upload_thread_local():
   {==}
 

@@ -34,13 +34,14 @@ private func tap(_ s: IslandAttributes.ContentState) -> URL? {
     s.lines.count == 1 ? link(s.lines[0].thread) : link("", pick: true)
 }
 
-// each thread its own row, a tap on it opens that thread
+// each thread its own row, a tap on it opens that thread. The hub sends
+// only the first few (notice.bend's Notice.island.max) and counts the rest
 private struct Lines: View {
     let lines: [IslandAttributes.Line]
     let titles: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             ForEach(lines, id: \.thread) { l in
                 if let u = link(l.thread) {
                     Link(destination: u) { Row(line: l, title: titles) }
@@ -57,12 +58,14 @@ private struct Row: View {
     let line: IslandAttributes.Line
     let title: Bool
 
+    // one line a thread, so several fit the lock screen's 160 points
     var body: some View {
         HStack(spacing: 6) {
-            VStack(alignment: .leading, spacing: 1) {
-                if title { Text(line.title).font(.caption.weight(.semibold)).lineLimit(1) }
-                Text(line.doing).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+            if title {
+                Text(line.title).font(.caption.weight(.semibold)).lineLimit(1)
+                    .frame(maxWidth: 150, alignment: .leading)
             }
+            Text(line.doing).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
             Spacer(minLength: 4)
             if title { Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary) }
         }
@@ -70,21 +73,17 @@ private struct Row: View {
     }
 }
 
-// what is not shown: "+ N more"
-private struct More: View {
-    let n: Int
-
-    var body: some View {
-        if n > 0 { Text("+ \(n) more").font(.caption2).foregroundStyle(.secondary) }
-    }
-}
-
-// no word from the hubs for hours: this may no longer be so (open the app)
-private struct Stale: View {
+// one line under the rows: what is not shown ("+ N more"), and, with no
+// word from the hubs for hours, that this may no longer be so
+private struct Foot: View {
+    let more: Int
     let stale: Bool
 
     var body: some View {
-        if stale { Text("Not updated lately: open Backplane").font(.caption2).foregroundStyle(.secondary) }
+        let words = (more > 0 ? ["+ \(more) more"] : []) + (stale ? ["Not updated lately: open Backplane"] : [])
+        if !words.isEmpty {
+            Text(words.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+        }
     }
 }
 
@@ -99,9 +98,8 @@ struct IslandWidget: Widget {
                     Spacer()
                     if s.running > 1 { Text("\(s.running)").font(.headline.monospacedDigit()) }
                 }
-                Lines(lines: Array(s.lines.prefix(4)), titles: s.running > 1)
-                More(n: s.lines.count - 4)
-                Stale(stale: ctx.isStale)
+                Lines(lines: s.lines, titles: s.running > 1)
+                Foot(more: s.running - s.lines.count, stale: ctx.isStale)
             }
             .opacity(ctx.isStale ? 0.5 : 1)
             .padding()
@@ -120,9 +118,8 @@ struct IslandWidget: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Lines(lines: Array(s.lines.prefix(4)), titles: s.running > 1)
-                        More(n: s.lines.count - 4)
-                        Stale(stale: ctx.isStale)
+                        Lines(lines: s.lines, titles: s.running > 1)
+                        Foot(more: s.running - s.lines.count, stale: ctx.isStale)
                     }
                 }
             } compactLeading: {
