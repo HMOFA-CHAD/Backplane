@@ -93,13 +93,13 @@ const connect = async (): Promise<Client> => {
   let id = 0;
   return { seen, send: (m, p) => ws.send(W.encode(JSON.stringify({ id: ++id, m, p }))) };
 };
-const units: string[] = [];
+const runs: string[] = [];
 const call = async (url: string, name: string, args: object) => {
   const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }) });
   const t = await r.text();
   let inner: any = {};
   try { inner = JSON.parse(JSON.parse(t).result.content[0].text); } catch {}
-  if (inner.id && name === "work_run") units.push(`bp-${inner.id}`);
+  if (inner.id && name === "work_run") runs.push(inner.id);
   return { text: t, inner };
 };
 
@@ -187,7 +187,12 @@ try {
   void r7;
 } finally {
   if (hub) await kill(hub);
-  for (const u of units) Bun.spawnSync(["systemctl", "--user", "stop", u], { stdout: "ignore", stderr: "ignore" });
+  // what a run left going (its process group, the pid the launch wrote)
+  for (const id of runs) {
+    const pf = join(home, "work", id, "pid");
+    const p = existsSync(pf) ? Number(readFileSync(pf, "utf8").trim()) : 0;
+    if (p > 1) { try { process.kill(-p, "SIGTERM"); } catch {} try { process.kill(p, "SIGTERM"); } catch {} }
+  }
   if (process.env.KEEP) console.log(root); else rmSync(root, { recursive: true, force: true });
 }
 console.log(fail ? `${fail} failed` : "all ok");

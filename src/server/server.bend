@@ -61,7 +61,6 @@ import ../core/cmds.bend as CM
 import ../core/outbox.bend as OB
 import ../core/live.bend as LV
 import ../core/farlive.bend as FLV
-import ../core/contain.bend as CN
 import ../core/qr.bend as QR
 
 # The server. One hub computation owns the read model and the event log;
@@ -101,7 +100,7 @@ type Msg is Data:
   Leave{client: U32}
   Rpc{client: U32, text: String}
   AgentLine{thread: String, line: String}
-  # why is the scope's account of a signal's end (Ctn.why), made off the hub
+  # why is the exit in words (B.Exit.why), made off the hub
   AgentGone{thread: String, code: U32, pid: U32, why: String}
   Tick{}
   # a Codex or Grok turn's KiCad files, read off the hub: the panel opens
@@ -293,106 +292,6 @@ def Files.text(path: String) -> IO(String):
   do IO<String>:
     bs : List<&2, U32> <- Files.read(path)
     return U.Utf8.decode(bs)
-
-# Agent containment (core/contain.bend)
-# -------------------------------------
-# An agent starts in a scope of its own with a memory limit. /proc files
-# report no size, so the machine's memory is read by a tiny `head`.
-
-def Ctn.mem.of(r: P.Ran) -> String:
-  match r:
-    case P.Ran{_, out}:
-      out
-
-def Ctn.limit(+st: M.State) -> IO(String):
-  do IO<String>:
-    r : P.Ran <- P.Proc.run("head", ["-n", "1", "/proc/meminfo"], "/")
-    return CN.Contain.limit(Ctn.mem.of(r), M.Setting.get(st, "agent.memory", ""), M.Setting.get(st, "agent.memory.mb", ""))
-
-# why an agent that a signal ended ended: its scope says (a scope that
-# failed stays until read, then it is reset); "" unless it was an
-# out-of-memory kill. Runs in the process's own reader, never on the hub.
-def Ctn.why.k(ask: Bool, +thread: String, +gen: String, +code: U32) -> IO(String):
-  match ask:
-    case True{}:
-      do IO<String>:
-        r : P.Ran <- P.Proc.run("timeout", CN.Contain.show.args(CN.Contain.unit(thread, gen)), "/")
-        x : P.Ran <- P.Proc.run("timeout", CN.Contain.reset.args(CN.Contain.unit(thread, gen)), "/")
-        return CN.Contain.why(Ctn.mem.of(r), code)
-    case False{}:
-      IO.pure(String, "")
-
-def Ctn.why(+thread: String, +gen: String, +code: U32) -> IO(String):
-  Ctn.why.k(CN.Contain.ask(code), thread, gen, code)
-
-# Ending a scope: what its agent left in it (a shell, a build) is stopped,
-# SIGTERM then SIGKILL after the scope's TimeoutStopSec. A scope that is
-# gone answers at once. Always off the hub's loop (a reader's fiber, or one
-# spawned).
-def Ctn.stop.unit(+unit: String) -> IO(Unit):
-  do IO<Unit>:
-    r : P.Ran <- P.Proc.run("timeout", CN.Contain.stop.args(unit), "/")
-    return Unit{}
-
-def Ctn.stop.k(none: Bool, +thread: String, +gen: String) -> IO(Unit):
-  match none:
-    case True{}:
-      IO.pure(Unit, Unit{})
-    case False{}:
-      Ctn.stop.unit(CN.Contain.unit(thread, gen))
-
-# the scope of a thread's generation ("" for none: nothing to stop)
-def Ctn.stop(+thread: String, +gen: String) -> IO(Unit):
-  Ctn.stop.k(String.is_empty(gen), thread, gen)
-
-def Ctn.stale.keep(owned: Bool, +u: String, +rest: List<&2, String>) -> List<&2, String>:
-  Bool.pick(List<&2, String>, owned, u <> rest, rest)
-
-def Ctn.stale.owned(us: List<&2, String>, +st: M.State) -> List<&2, String>:
-  match us:
-    case Nil{}:
-      Nil{}
-    case +u <> t:
-      Ctn.stale.keep(B.Hub.owns(st, CN.Contain.thread.of(u)), u, Ctn.stale.owned(t, st))
-
-def Ctn.stale.stop(none: Bool, +us: List<&2, String>) -> IO(Unit):
-  match none:
-    case True{}:
-      IO.pure(Unit, Unit{})
-    case False{}:
-      do IO<Unit>:
-        r : P.Ran <- P.Proc.run("timeout", CN.Contain.stale.stop.args(us), "/")
-        return Unit{}
-
-# at start nothing of this hub's runs: every agent scope of a thread in
-# its log that this hub (its home, Contain.tag, the scope's description)
-# started is one a previous run left (a service restart does not end a
-# scope), and is stopped before the thread resumes; another hub's scopes
-# are left alone
-def Ctn.stale(+st: M.State, +tag: String) -> IO(Unit):
-  do IO<Unit>:
-    r : P.Ran <- P.Proc.run("timeout", CN.Contain.stale.args(), "/")
-    +us : List<&2, String> = Ctn.stale.owned(CN.Contain.stale.mine(Ctn.mem.of(r), tag), st)
-    Ctn.stale.stop(List.is_empty(&2, String, us), us)
-
-def Ctn.spawn.k(found: Bool, limit: String, tag: String, thread: String, gen: String, cmd: String, args: List<&2, String>, cwd: String) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
-  match found:
-    case True{}:
-      H.Proc.spawn("sh", CN.Contain.argv(limit, CN.Contain.unit(thread, gen), tag, cmd, args), cwd, 0)
-    case False{}:
-      H.Proc.spawn(cmd, args, cwd, 0)
-
-def Ctn.found(r: P.Ran) -> Bool:
-  match r:
-    case P.Ran{code, _}:
-      U32.is_eq(code, 0)
-
-# cmd with args, in its own scope; a program that is not there fails to
-# spawn as it always did (its turn says it could not start)
-def Ctn.spawn(+limit: String, +tag: String, +thread: String, +gen: String, +cmd: String, +args: List<&2, String>, +cwd: String) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
-  do IO<Result<&1, &1, U32 & String, U32 & Socket>>:
-    r : P.Ran <- P.Proc.run("sh", ["-c", "command -v \"$1\" >/dev/null 2>&1", "sh", cmd], "/")
-    Ctn.spawn.k(Ctn.found(r), limit, tag, thread, gen, cmd, args, cwd)
 
 # Event log
 # ---------
@@ -824,8 +723,7 @@ def Agent.end(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(
   do IO<Unit>:
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
-    +why : String <- Ctn.why(thread, gen, code)
-    Ctn.stop(thread, gen)
+    +why : String = B.Exit.why(code)
     ok : Bool <- Chan.send(Msg, inbox, AgentGone{thread, code, pid, why})
     return Unit{}
 
@@ -1457,21 +1355,15 @@ def Hub.agent_send(m: Maybe<&2, Agent>, line: String) -> IO(Unit):
     case None{}:
       IO.pure(Unit, Unit{})
 
-# retiring an agent: its input closes, the process is signalled, and its
-# whole scope is stopped (a shell or build it started dies with it), by a
-# fiber of its own
-def Hub.agent_stop.k(m: Maybe<&2, Agent>, +gen: String) -> IO(Unit):
+# retiring an agent: its input closes and the process is signalled
+def Hub.agent_stop(m: Maybe<&2, Agent>) -> IO(Unit):
   match m:
-    case Some{Agent{+thread, input, pid, _, _}}:
+    case Some{Agent{_, input, pid, _, _}}:
       do IO<Unit>:
         Chan.close(String, input)
         Proc.kill(pid, 15)
-        IO.spawn(Unit, Ctn.stop(thread, gen))
     case None{}:
       IO.pure(Unit, Unit{})
-
-def Hub.agent_stop(+m: Maybe<&2, Agent>) -> IO(Unit):
-  Hub.agent_stop.k(m, Agents.gen.k(m))
 
 def Hub.state(h: Hub) -> M.State & Hub:
   match h:
@@ -2451,7 +2343,6 @@ def Turn.end(s: Socket, +pid: U32, +tag: String, +gen: String, +inbox: Chan(Msg)
   do IO<Unit>:
     Socket.close(s)
     code : U32 <- H.Proc.wait(pid)
-    Ctn.stop(B.Tag.thread(tag), gen)
     ok : Bool <- Chan.send(Msg, inbox, TurnDone{tag})
     return Unit{}
 
@@ -2463,8 +2354,7 @@ def Turn.close(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String) 
   do IO<String>:
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
-    +why : String <- Ctn.why(B.Tag.thread(tag), gen, code)
-    Ctn.stop(B.Tag.thread(tag), gen)
+    +why : String = B.Exit.why(code)
     return Bool.pick(String, String.is_empty(why), dflt, why)
 
 def Turn.failed(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -2525,8 +2415,8 @@ def Codex.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: String
     case Fail{e}:
       Codex.failed(e, thread, gen, inbox)
 
-def Codex.run(+limit: String, +tag: String, +args: List<&2, String>, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Ctn.spawn(limit, tag, thread, gen, "codex", args, cwd), r => Codex.started(r, thread, gen, inbox))
+def Codex.run(+args: List<&2, String>, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("codex", args, cwd, 0), r => Codex.started(r, thread, gen, inbox))
 
 def Grok.stop(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -2631,8 +2521,8 @@ def Grok.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +t: AC.AcpTurn, 
     case Fail{e}:
       Grok.failed(e, thread, gen, inbox)
 
-def Grok.run(+limit: String, +tag: String, +args: List<&2, String>, +t: AC.AcpTurn, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Ctn.spawn(limit, tag, thread, gen, "grok", args, cwd), r => Grok.started(r, t, thread, gen, inbox))
+def Grok.run(+args: List<&2, String>, +t: AC.AcpTurn, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("grok", args, cwd, 0), r => Grok.started(r, t, thread, gen, inbox))
 
 # Updates
 # -------
@@ -3430,16 +3320,14 @@ def Codex.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Str
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-    +lim : String <- Ctn.limit(st)
-    Codex.run(lim, CN.Contain.tag(Cfg.home(cfg)), Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread), gen), cwd, thread, gen, inbox)
+    Codex.run(Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread), gen), cwd, thread, gen, inbox)
 
 def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-    +lim : String <- Ctn.limit(st)
-    Grok.run(lim, CN.Contain.tag(Cfg.home(cfg)), Grok.args(r, model, Hub.effort_of(st, thread)),
+    Grok.run(Grok.args(r, model, Hub.effort_of(st, thread)),
       AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("grok", text, ss), session, Grok.asks(r)}, cwd, thread, gen, inbox)
 
 def Term.nums(bs: List<&2, U32>) -> List<&2, String>:
@@ -5310,27 +5198,24 @@ def Hub.term_read(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String)) -> 
 # command runs from there through a small script that writes its output
 # to out and, when it ends, its exit code to code (written to code.tmp and
 # renamed, so code appears whole); started marks that it was launched, so
-# a launch asked again (after a restart) never starts it twice; it runs as
-# the transient unit bp-<id> (systemd-run --user, so it outlives a restart
-# of Backplane's own service) or, without user systemd, set apart with
-# setsid. The code file is the outcome: a run gone without one, a pid
-# reused or gone, a unit restarted as another invocation, all read as
-# "gone", outcome unknown, never success. A watcher checks every 2 s.
+# a launch asked again (after a restart) never starts it twice; it runs
+# set apart with setsid, a child of the hub's own service, so a restart of
+# Backplane can cut it off: then it reads as lost and the thread is told.
+# The code file is the outcome: a run gone without one, or a pid reused or
+# gone, reads as "gone", outcome unknown, never success. A watcher checks
+# every 2 s.
 
 def Watch.dir(+home: String, +id: String) -> String:
   home ++ "/work/" ++ id
 
-def Watch.unit(+id: String) -> String:
-  "bp-" ++ id
-
 def Watch.launch.sh() -> String:
-  "d=$1; c=$2; cmd=$3; u=$4; l=$5\npid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nmkdir -p \"$d\" || { echo gone; exit 0; }\n[ -e \"$d/code\" ] && { echo running; exit 0; }\nif [ -e \"$d/started\" ]; then { [ -e \"$d/out\" ] || [ -e \"$d/how\" ] || systemctl --user is-active --quiet \"$u\" 2>/dev/null; } && { echo running; exit 0; }; fi\nprintf '%s\\n' \"$cmd\" > \"$d/cmd\"\n{ printf ': > \"%s/out\"\\n' \"$d\"; printf 'cd \"%s\" || exit 127\\n' \"$c\"; printf 'sh \"%s/cmd\" > \"%s/out\" 2>&1\\n' \"$d\" \"$d\"; printf 'echo $? > \"%s/code.tmp\" && mv \"%s/code.tmp\" \"%s/code\"\\n' \"$d\" \"$d\" \"$d\"; } > \"$d/run.sh\"\n: > \"$d/started\"\nif command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then\n  if systemd-run --user --quiet --collect --unit=\"$u\" ${l:+\"--property=MemoryMax=$l\" --property=MemorySwapMax=0} sh \"$d/run.sh\" >/dev/null 2>&1; then systemctl --user show -p InvocationID --value \"$u\" > \"$d/inv\" 2>/dev/null; echo unit > \"$d/how\"; echo running; exit 0; fi\nfi\nif command -v setsid >/dev/null 2>&1; then setsid nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nelse perl -MPOSIX -e 'POSIX::setsid(); exec {$ARGV[0]} @ARGV or exit 127' nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nfi\necho $! > \"$d/pid\"\npid_id $! > \"$d/pidid\"\necho pid > \"$d/how\"\necho running\n"
+  "d=$1; c=$2; cmd=$3\npid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nmkdir -p \"$d\" || { echo gone; exit 0; }\n[ -e \"$d/code\" ] && { echo running; exit 0; }\nif [ -e \"$d/started\" ]; then { [ -e \"$d/out\" ] || [ -e \"$d/how\" ]; } && { echo running; exit 0; }; fi\nprintf '%s\\n' \"$cmd\" > \"$d/cmd\"\n{ printf ': > \"%s/out\"\\n' \"$d\"; printf 'cd \"%s\" || exit 127\\n' \"$c\"; printf 'sh \"%s/cmd\" > \"%s/out\" 2>&1\\n' \"$d\" \"$d\"; printf 'echo $? > \"%s/code.tmp\" && mv \"%s/code.tmp\" \"%s/code\"\\n' \"$d\" \"$d\" \"$d\"; } > \"$d/run.sh\"\n: > \"$d/started\"\nif command -v setsid >/dev/null 2>&1; then setsid nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nelse perl -MPOSIX -e 'POSIX::setsid(); exec {$ARGV[0]} @ARGV or exit 127' nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nfi\necho $! > \"$d/pid\"\npid_id $! > \"$d/pidid\"\necho pid > \"$d/how\"\necho running\n"
 
 def Watch.check.sh() -> String:
-  "k=$1; t=$2; id=$3; d=$4; u=$5\ncase $k in\nrun)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  how=$(cat \"$d/how\" 2>/dev/null)\n  if [ \"$how\" != pid ]; then systemctl --user is-active --quiet \"$u\" && { echo running; exit 0; }\n  else p=$(cat \"$d/pid\" 2>/dev/null); [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null && { echo running; exit 0; }; fi\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  echo gone ;;\nunit)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  s=$(systemctl --user show -p ActiveState --value \"$t\" 2>/dev/null); r=$(systemctl --user show -p ExecMainStatus --value \"$t\" 2>/dev/null); n=$(systemctl --user show -p InvocationID --value \"$t\" 2>/dev/null)\n  [ \"$id\" = - ] && [ -n \"$n\" ] && echo \"ident $n\"\n  [ \"$id\" != - ] && [ -n \"$n\" ] && [ \"$n\" != \"$id\" ] && { echo gone; exit 0; }\n  case $s in active|activating|deactivating|reloading) echo running ;; inactive|failed) [ -n \"$n\" ] && echo \"done ${r:-0}\" || echo gone ;; *) echo gone ;; esac ;;\npid)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  if [ -r \"/proc/$t/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$t/stat\" | cut -d' ' -f20); n=\"$b:$st\"\n  elif ps -p \"$t\" >/dev/null 2>&1; then n=$(ps -o lstart= -p \"$t\" | tr -s ' ' '_')\n  else echo gone; exit 0; fi\n  [ \"$id\" = - ] && { echo \"ident $n\"; echo running; exit 0; }\n  [ \"$n\" = \"$id\" ] && echo running || echo gone ;;\nfile)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -f \"$t\" ] && grep -qF \"$id\" \"$t\" 2>/dev/null && { echo found; exit 0; }\n  echo running ;;\n*) echo gone ;;\nesac\n"
+  "k=$1; t=$2; id=$3; d=$4\ncase $k in\nrun)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  p=$(cat \"$d/pid\" 2>/dev/null); [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null && { echo running; exit 0; }\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  echo gone ;;\npid)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  if [ -r \"/proc/$t/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$t/stat\" | cut -d' ' -f20); n=\"$b:$st\"\n  elif ps -p \"$t\" >/dev/null 2>&1; then n=$(ps -o lstart= -p \"$t\" | tr -s ' ' '_')\n  else echo gone; exit 0; fi\n  [ \"$id\" = - ] && { echo \"ident $n\"; echo running; exit 0; }\n  [ \"$n\" = \"$id\" ] && echo running || echo gone ;;\nfile)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -f \"$t\" ] && grep -qF \"$id\" \"$t\" 2>/dev/null && { echo found; exit 0; }\n  echo running ;;\n*) echo gone ;;\nesac\n"
 
 def Watch.stop.sh() -> String:
-  "pid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nk=$1; t=$2; id=$3; d=$4; u=$5\nmkdir -p \"$d\"\ncase $k in\nunwatch) : > \"$d/stop\" ;;\nrun) if [ \"$(cat \"$d/how\" 2>/dev/null)\" = unit ]; then n=$(systemctl --user show -p InvocationID --value \"$u\" 2>/dev/null); [ -n \"$n\" ] && [ \"$n\" = \"$(cat \"$d/inv\" 2>/dev/null)\" ] && systemctl --user stop \"$u\" >/dev/null 2>&1; else p=$(cat \"$d/pid\" 2>/dev/null); n=$(pid_id \"$p\"); [ -n \"$p\" ] && [ \"$p\" -gt 1 ] && [ -n \"$n\" ] && [ \"$n\" = \"$(cat \"$d/pidid\" 2>/dev/null)\" ] && { kill -TERM \"-$p\" 2>/dev/null; kill -TERM \"$p\" 2>/dev/null; }; fi ;;\nunit) n=$(systemctl --user show -p InvocationID --value \"$t\" 2>/dev/null); [ \"$id\" != - ] && [ -n \"$n\" ] && [ \"$n\" = \"$id\" ] && systemctl --user stop \"$t\" >/dev/null 2>&1 ;;\npid) [ \"$t\" -gt 1 ] 2>/dev/null && [ \"$id\" != - ] && [ \"$(pid_id \"$t\")\" = \"$id\" ] && kill -TERM \"$t\" 2>/dev/null ;;\nesac\ntrue\n"
+  "pid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nk=$1; t=$2; id=$3; d=$4\nmkdir -p \"$d\"\ncase $k in\nunwatch) : > \"$d/stop\" ;;\nrun) p=$(cat \"$d/pid\" 2>/dev/null); n=$(pid_id \"$p\"); [ -n \"$p\" ] && [ \"$p\" -gt 1 ] && [ -n \"$n\" ] && [ \"$n\" = \"$(cat \"$d/pidid\" 2>/dev/null)\" ] && { kill -TERM \"-$p\" 2>/dev/null; kill -TERM \"$p\" 2>/dev/null; } ;;\npid) [ \"$t\" -gt 1 ] 2>/dev/null && [ \"$id\" != - ] && [ \"$(pid_id \"$t\")\" = \"$id\" ] && kill -TERM \"$t\" 2>/dev/null ;;\nesac\ntrue\n"
 
 def Watch.tail.sh() -> String:
   "d=$1; [ -e \"$d/out\" ] && tail -c 2048 \"$d/out\"; true\n"
@@ -5412,7 +5297,7 @@ def Watch.tick(late: Bool, +ident: String, +home: String, +thread: String, +id: 
     case True{}:
       Watch.report(inbox, thread, id, kind, "timeout", Watch.dir(home, id))
     case False{}:
-      IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Watch.check.sh(), "sh", kind, target, ident, Watch.dir(home, id), Watch.unit(id)], "/"),
+      IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Watch.check.sh(), "sh", kind, target, ident, Watch.dir(home, id)], "/"),
         r => Watch.got(r, ident, thread, id, kind, Watch.dir(home, id), inbox, k))
 
 # the watcher: a check every 2 s until the work ends, its deadline passes,
@@ -5432,23 +5317,23 @@ def Watch.launched(r: P.Ran, +thread: String, +id: String, +inbox: Chan(Msg)) ->
         ok : Bool <- Chan.send(Msg, inbox, WatchLaunched{thread, id})
         return Unit{}
 
-def Watch.start(run: Bool, +limit: String, +home: String, +thread: String, +id: String, +target: String, +cwd: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Watch.start(run: Bool, +home: String, +thread: String, +id: String, +target: String, +cwd: String, +inbox: Chan(Msg)) -> IO(Unit):
   match run:
     case True{}:
-      IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Watch.launch.sh(), "sh", Watch.dir(home, id), cwd, target, Watch.unit(id), limit], "/"), r => Watch.launched(r, thread, id, inbox))
+      IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Watch.launch.sh(), "sh", Watch.dir(home, id), cwd, target], "/"), r => Watch.launched(r, thread, id, inbox))
     case False{}:
       IO.pure(Unit, Unit{})
 
 # an Await: a work_run's command launched (unless it ran already), then
 # watched
-def Watch.job(+limit: String, +home: String, +thread: String, +id: String, +kind: String, +target: String, +ident: String, +deadline: Nat, +cwd: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Watch.job(+home: String, +thread: String, +id: String, +kind: String, +target: String, +ident: String, +deadline: Nat, +cwd: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    Watch.start(String.eq(kind, "run"), limit, home, thread, id, target, cwd, inbox)
+    Watch.start(String.eq(kind, "run"), home, thread, id, target, cwd, inbox)
     Watch.loop(Fuel.forever(), ident, home, thread, id, kind, target, deadline, inbox)
 
 def Watch.stop.job(+home: String, +id: String, +kind: String, +target: String, +ident: String) -> IO(Unit):
   do IO<Unit>:
-    r : P.Ran <- P.Proc.run("sh", ["-c", Watch.stop.sh(), "sh", kind, target, ident, Watch.dir(home, id), Watch.unit(id)], "/")
+    r : P.Ran <- P.Proc.run("sh", ["-c", Watch.stop.sh(), "sh", kind, target, ident, Watch.dir(home, id)], "/")
     return Unit{}
 
 # Threads elsewhere (far.bend, docs/bots.md)
@@ -6375,8 +6260,7 @@ def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: S
     +fs : K.Files <- K.Files.read(cwd)
     ok : Bool <- Chan.send(Msg, inbox, AutoView{thread, fs})
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-    +lim : String <- Ctn.limit(st)
-    res : Result<&1, &1, U32 & String, U32 & Socket> <- Ctn.spawn(lim, CN.Contain.tag(Cfg.home(cfg)), thread, gen, "env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd)
+    res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 0)
     Claude.started(res, thread, gen, input, inbox)
 
 def Agents.pid.k(same: Bool, a: Agent, +pid: U32) -> Agent:
@@ -6589,8 +6473,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.Await{+thread, +id, +kind, +target, +ident, +deadline, +cwd}:
       do IO<Hub>:
-        +lim : String <- Ctn.limit(st)
-        IO.spawn(Unit, Watch.job(lim, Cfg.home(cfg), thread, id, kind, target, ident, deadline, cwd, inbox))
+        IO.spawn(Unit, Watch.job(Cfg.home(cfg), thread, id, kind, target, ident, deadline, cwd, inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.WatchStop{_, +id, +kind, +target, +ident}:
       do IO<Hub>:
@@ -7305,10 +7188,8 @@ def Hub.recover.k(h: Hub, +now: Nat) -> IO(Hub):
 # (and threads elsewhere start: Far.start)
 def Hub.recover.stale(h: Hub, +now: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      do IO<Hub>:
-        Ctn.stale(st, CN.Contain.tag(Cfg.home(cfg)))
-        Hub.recover.k(Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
+    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.recover.k(Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
 
 def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):
   IO.bind(Hub, Hub, Far.start(h), h2 => Hub.recover.stale(h2, now))

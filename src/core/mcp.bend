@@ -130,10 +130,10 @@ def Mcp.tools() -> J.Json:
       [Tool.prop("id", "string", "The terminal's id."), Tool.prop("text", "string", "The bytes to send, as text.")], ["id", "text"]),
     Tool.def("terminal_close", "Stop a terminal of this chat (its program is hung up; the user can start it again).",
       [Tool.prop("id", "string", "The terminal's id.")], ["id"]),
-    Tool.def("work_run", "Start long or detached work (a build, a test run, a job on another machine) so Backplane owns it: it survives restarts of Backplane, and when it ends you are woken with its exit code and the end of its output. Use this instead of `&`, nohup, disown or systemd-run, then end your turn; never poll or sleep-wait.",
+    Tool.def("work_run", "Start long or detached work (a build, a test run, a job on another machine) so Backplane owns it: when it ends you are woken with its exit code and the end of its output; if a restart of Backplane cuts it off you are told it was lost and can start it again. Use this instead of `&`, nohup or disown, then end your turn; never poll or sleep-wait.",
       [Tool.prop("command", "string", "The shell command, run in this thread's folder."), Tool.prop("note", "string", "What it is, in a few words."), Tool.prop("timeoutSec", "number", "Give up watching after this long (the work keeps running; the outcome is then unknown).")], ["command"]),
-    Tool.def("work_watch", "Have Backplane watch work that is already running and wake you when it ends: kind unit (a systemd --user unit), pid (a process), or file (a file that will contain the token this call returns). Then end your turn.",
-      [Tool.prop("kind", "string", "unit, pid or file."), Tool.prop("target", "string", "The unit name, the pid, or the file's path."), Tool.prop("note", "string", "What it is."), Tool.prop("timeoutSec", "number", "Give up watching after this long.")], ["kind", "target"]),
+    Tool.def("work_watch", "Have Backplane watch work that is already running and wake you when it ends: kind pid (a process) or file (a file that will contain the token this call returns). Then end your turn.",
+      [Tool.prop("kind", "string", "pid or file."), Tool.prop("target", "string", "The pid, or the file's path."), Tool.prop("note", "string", "What it is."), Tool.prop("timeoutSec", "number", "Give up watching after this long.")], ["kind", "target"]),
     Tool.def("work_list", "List the work Backplane watches for this thread (work_run and work_watch), with each one's state.", Nil{}, Nil{}),
     Tool.def("work_cancel", "Stop work started with work_run (or a watched unit or pid). It shows as cancelling until its end is confirmed.",
       [Tool.prop("id", "string", "The work's id.")], ["id"]),
@@ -593,7 +593,7 @@ def Mcp.work.watch(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json
           J.KV{"next", J.Str{Bool.pick(String, String.eq(J.Json.get_str(a, "kind", ""), "file"), "Make the work write the token into the file when it is done, then end your turn.", "End your turn: you will be woken when it ends.")}}]),
         B.Watch.start(s, now, thread, J.Json.get_str(a, "kind", ""), J.Json.get_str(a, "target", ""), Mcp.or(J.Json.get_str(a, "note", ""), J.Json.get_str(a, "target", "")), Mcp.secs(a))}
     case False{}:
-      Res.fail("kind must be unit, pid or file")
+      Res.fail("kind must be pid or file")
 
 def Mcp.work.cancel(+l: String, +s: M.State, +now: Nat, +thread: String, +id: String) -> Res:
   Bool.pick(Res, Bool.or(String.is_empty(l), M.Bg.ended(l)), Res.fail("no such work running"),
@@ -641,7 +641,7 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
     case 16n:
       Mcp.work.run(String.is_empty(String.trim(J.Json.get_str(a, "command", ""))), s, now, thread, a)
     case 17n:
-      Mcp.work.watch(Nat.is_lt(C.Codec.pos(["unit", "pid", "file"], J.Json.get_str(a, "kind", "")), 3n), s, now, thread, a)
+      Mcp.work.watch(Nat.is_lt(C.Codec.pos(["pid", "file"], J.Json.get_str(a, "kind", "")), 2n), s, now, thread, a)
     case 18n:
       Res.ok(J.Json.obj([J.KV{"work", J.Json.arr(Mcp.work.rows(M.Work.watch(s, thread)))}]))
     case 19n:

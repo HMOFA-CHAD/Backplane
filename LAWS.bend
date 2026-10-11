@@ -85,7 +85,6 @@ import ./src/core/emb.bend as EMB
 import ./src/core/outbox.bend as OB
 import ./src/core/live.bend as LV
 import ./src/core/farlive.bend as FLV
-import ./src/core/contain.bend as CTN
 import ./src/core/qr.bend as QR
 import ./src/core/layers.bend as LY
 
@@ -5549,74 +5548,11 @@ law bots_tell_once:
   for +to: String
   for +text: String
   {BHS.Bots.tell.once(True{}, mid, remote, s, now, client, id, to, text) == H.Step.outs([H.Reply.ok(client, id)]) : H.Step}
-# Agent containment (core/contain.bend): each agent runs in a scope with a
-# memory limit; the limit is half the machine unless set, clamped between
-# 2 GiB and 90% of it, and a test's MiB setting is taken as it is; a scope
-# that ended in an out-of-memory kill gives the turn its words. The laws
-# count in a unit that is 4 to a GiB, so no big number is normalized.
-law contain_default_half:
-  {CTN.Contain.units(64n, 0n, 0n, 4n) == 32n : Nat}
-
-law contain_clamp_min:
-  {CTN.Contain.units(10n, 0n, 0n, 4n) == 8n : Nat}
-
-law contain_clamp_max:
-  {CTN.Contain.units(64n, 100n, 0n, 4n) == 57n : Nat}
-
-law contain_set_gib:
-  {CTN.Contain.units(64n, 5n, 0n, 4n) == 20n : Nat}
-
-law contain_test_mib:
-  {CTN.Contain.units(64n, 5n, 3n, 4n) == 3n : Nat}
-
-law contain_unit_safe:
-  {CTN.Contain.unit("t/1 x", "17-9") == "bp-agent-t_1_x-17-9" : String}
-
-law contain_oom_words:
-  {CTN.Contain.exit_text(137, "oom-kill", "200M") == "agent ran out of memory (limit 200 MB)" : String}
-
-law contain_plain_exit:
-  {CTN.Contain.exit_text(3, "success", "200M") == "agent exited with code 3" : String}
-
-law contain_words_gb:
-  {CTN.Contain.words.g(12n, 4n) == "3 GB" : String}
-
-# The scope's own answer (systemctl show: Result and MemoryMax) is read in
-# the process's reader, off the hub's inbox, and gives an out-of-memory end
-# its words with the limit the scope held; any other end gives "". Bytes
-# are counted in a unit of 4 to a MiB here.
-law contain_why_oom:
-  {CTN.Contain.why.b("Result=oom-kill\nMemoryMax=800\n", 137, 4n) == "agent ran out of memory (limit 200 MB)" : String}
-
-law contain_why_plain:
-  {CTN.Contain.why.b("Result=success\nMemoryMax=800\n", 137, 4n) == "" : String}
-
-law contain_why_missing:
-  {CTN.Contain.why.b("", 137, 4n) == "" : String}
-
-# Retiring an agent stops its whole scope (what it started dies with it),
-# and a start stops the scopes a previous run left: the units `list-units`
-# names, whose thread (the name without "bp-agent-" and the generation's two
-# parts) is one of the log's.
-law contain_stop_scope:
-  {String.join(CTN.Contain.stop.args("bp-agent-t1-2-3-4"), " ") == "10 systemctl --user stop bp-agent-t1-2-3-4.scope" : String}
-
-law contain_stale_units:
-  {String.join(CTN.Contain.stale("bp-agent-t1-5-100-7.scope loaded active running [systemd-run] sleep\nother.scope loaded active running x\nbp-agent-t3-1-9-3.scope loaded failed failed z\n"), ",") == "bp-agent-t1-5-100-7,bp-agent-t3-1-9-3" : String}
-
-law contain_thread_of:
-  {CTN.Contain.thread.of("bp-agent-t17-5-100-7") == "t17-5" : String}
-
-# systemd-run expands ${VAR} in the arguments it is given, so the scope's
-# script turns that off (and, for a systemd without the flag, writes each
-# $ as $$): a prompt's dollar text reaches the agent as it is.
-law contain_no_expand:
-  {Bool.and(String.contains(CTN.Contain.script(), "--expand-environment=no"), String.contains(CTN.Contain.script(), "s/\\$/$$/g")) == True{} : Bool}
-
-# a hub stops only the scopes it started: one whose description names
-# another home is not its own
-law contain_tag_mine:
-  {CTN.Contain.stale.mine("bp-agent-t1-1-1.scope loaded active running backplane /h\nbp-agent-t2-1-1.scope loaded active running backplane /other\nbp-agent-t3-1-1.scope loaded failed failed [systemd-run] sleep 3\n", CTN.Contain.tag("/h")) == ["bp-agent-t1-1-1"] : List<&2, String>}
+# An agent's process ended by SIGKILL (137) is told as most likely out of
+# memory; any other end says its exit code (Exit.why gives ""). Backplane
+# picks the thread back up either way.
+law exit_why_killed:
+  {H.Exit.why(137) ++ "|" ++ H.Exit.why(3) == "agent was killed (signal 9, likely out of memory)|" : String}
 
 # A streamed reply's settled prefix (client.bend's Live.head: the text up
 # to the last blank line outside a fenced block) renders, and lays out,
