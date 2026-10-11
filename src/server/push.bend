@@ -252,11 +252,12 @@ def Island.headline(n: Nat, +title: String) -> String:
     case 1n+1n+p:
       Nat.show(2n+p) ++ " agents working"
 
-# ActivityAttributes.ContentState: {running, headline, lines}
+# ActivityAttributes.ContentState: {running, headline, lines}, every thread
+# counted, the first NO.Notice.island.max() listed
 def Island.state(+ts: List<&2, M.Thread>) -> J.Json:
   J.Json.obj([J.KV{"running", J.Num{Nat.show(List.length(&2, M.Thread, ts))}},
     J.KV{"headline", J.Str{Island.headline(List.length(&2, M.Thread, ts), Island.first(ts))}},
-    J.KV{"lines", J.Json.arr(Island.lines(ts))}])
+    J.KV{"lines", J.Json.arr(Island.lines(List.take(&2, M.Thread, ts, NO.Notice.island.max())))}])
 
 # an ended island goes at once: one left on the lock screen read "All
 # agents idle" beside the next one started

@@ -234,10 +234,12 @@ def Note.island.k(+ls: List<&2, J.Json>) -> J.Json:
 def Note.named(+h: String, +name: String) -> String:
   Bool.pick(String, String.is_empty(name), h, h ++ " · " ++ name)
 
+# (a Live Activity's: every thread counted, the first NO.Notice.island.max()
+# listed)
 def Note.island.k.named(+ls: List<&2, J.Json>, +name: String) -> J.Json:
   J.Json.obj([J.KV{"running", J.Json.nat(List.length(&2, J.Json, ls))},
     J.KV{"headline", J.Json.str(Note.named(Note.headline(List.length(&2, J.Json, ls), Note.first(ls)), name))},
-    J.KV{"lines", J.Json.arr(ls)}])
+    J.KV{"lines", J.Json.arr(List.take(&2, J.Json, ls, NO.Notice.island.max()))}])
 
 def Note.island(ts: List<&2, M.Thread>, +es: List<&2, M.Entry>) -> J.Json:
   Note.island.k(Note.lines(ts, es))

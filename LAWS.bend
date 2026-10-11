@@ -4857,6 +4857,12 @@ law island_unheard_late:
 law island_unheard_recent:
   {Nt.Note.heard.in(False{}, 12n, 5n, 10n) == True{} : Bool}
 
+# a Live Activity counts every thread but lists only the first few, so it
+# fits the lock screen and a push (Notice.island.max)
+law island_lines_capped:
+  {J.Json.show(Nt.Note.island.k.named([J.Json.nat(1n), J.Json.nat(2n), J.Json.nat(3n), J.Json.nat(4n), J.Json.nat(5n)], ""))
+    == "{\"running\":5,\"headline\":\"5 agents working\",\"lines\":[1,2,3]}" : String}
+
 # a phone's upload ends under the thread it started in, though the phone
 # named it with its hub ("<hub>|<id>"): the reply's thread is read as the
 # hub's own id, so the spinner clears and the path joins that thread

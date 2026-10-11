@@ -32,6 +32,13 @@ import ./far.bend as FR
 def Notice.window() -> Nat:
   300n
 
+# how many threads a Live Activity lists (the rest are "+ N more" from its
+# running count): its lock-screen view is at most 160 points tall, and a
+# hub's APNs push of it at most 4 KB, so every one of many never fits (law
+# island_lines_capped)
+def Notice.island.max() -> Nat:
+  3n
+
 type Notice is Data:
   Notice{kind: String, key: String}
 
