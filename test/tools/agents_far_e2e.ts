@@ -168,7 +168,7 @@ try {
   const tB = await until(5000, () => cb.seen.find((c) => c.$ === "ThreadCreated" && c.project === pcB?.id && c.title === "REMOTE REVIEW"));
   const pt = tB?.id as string;
   check("beta has a project and a thread", !!pcB && !!pt, [pcB, tB]);
-  // ids are time + counter, and an agent's systemd scope is named by its thread id and generation: two hubs on one machine making a thread in the same second would collide (a second `systemd-run --unit` of one name fails), so alpha makes its things a second later
+  // ids are time + counter: alpha makes its things a second later so the two hubs' ids never coincide
   await sleep(1100);
   const homePath = join(root, "home");
   mkdirSync(homePath);

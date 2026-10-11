@@ -1997,8 +1997,14 @@ def Stop.outs(+provider: String, +thread: String, +rid: String) -> List<&2, Out>
 def Hub.resume(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String) -> Step:
   Step.before(Nil{}, [Reply.ok(client, id)], Wt.start(s, now, thread, False{}))
 
-# why: what the server learned of the exit (core/contain.bend's words for
-# an out-of-memory end); "" says the plain exit code
+# why an agent's process ended, in words: a SIGKILL (137) is most likely
+# the kernel taking it for memory; any other end says its plain exit code
+# ("" here). Backplane picks the thread back up either way.
+def Exit.why(+code: U32) -> String:
+  Bool.pick(String, U32.is_eq(code, 137), "agent was killed (signal 9, likely out of memory)", "")
+
+# why: what the server learned of the exit (Exit.why); "" says the plain
+# exit code
 def Hub.agent_gone.k(running: Bool, +thread: String, +now: Nat, +code: U32, +why: String) -> Step:
   match running:
     case True{}:
@@ -2768,8 +2774,8 @@ def Lost.note(held: Bool, +s: M.State, +now: Nat, +th: String, +text: String) ->
 # ------------
 # Work outside an agent's own task list (a long build, a job on another
 # machine, a process already running) is the hub's to watch: work_run
-# launches a command so it survives the hub, work_watch follows a systemd
-# unit, a pid or a file, and when it ends the thread is told the outcome
+# launches a command, work_watch follows a pid or a file (a restart of the
+# hub that cuts a run off reads as lost, and the thread picks it back up), and when it ends the thread is told the outcome
 # (it wakes, or the note waits behind its turn). Rows are WorkSet kind
 # "watch" (setting watch.<thread>), written before anything is launched;
 # the row's removal makes the telling happen once. An outcome that cannot
