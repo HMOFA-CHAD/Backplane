@@ -8038,3 +8038,14 @@ def Laws.plane_need_ranked():
 
 def Laws.plane_hit_opens(t, at, pt, u, ix, st):
   {==}
+
+# --- uberbot onboarding: onboard_uber_* ---
+
+def Laws.onboard_uber_none_creates():
+  {==}
+
+def Laws.onboard_uber_pick_most_used():
+  {==}
+
+def Laws.onboard_uber_have_quiet():
+  {==}

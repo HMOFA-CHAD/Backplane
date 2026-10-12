@@ -106,6 +106,16 @@ def labels(cs: List<&2, U.TChoice>) -> String:
     case Nil{}:
       "."
 
+# every focus a step leaves, in order
+def focuses.of(cs: List<&2, U.Cmd>) -> String:
+  match cs:
+    case U.Focus{id} <> r:
+      "focus:" ++ id ++ " " ++ focuses.of(r)
+    case _ <> r:
+      focuses.of(r)
+    case Nil{}:
+      ""
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("steps are sound", Bool.show(OB.Ob.sound()), "True")
@@ -161,7 +171,7 @@ def main() -> IO(Unit):
     C.Check.str("uberbot: promote asks the hub and ends the tour", Bool.show(holds(sends(U.Ui.act(uberstep(bots3()), "uber-promote", "b2")), "bots.uber")) ++ at(act3(uberstep(bots3()), "uber-promote", "b2")), "True" ++ end())
     C.Check.str("uberbot: promote marks the tour done", M.Setting.get(U.Ui.state(act3(uberstep(bots3()), "uber-promote", "b2")), "onboard.done", ""), "1")
     C.Check.str("uberbot: create opens the form for it and ends the tour", U.Ui.scratch(ui(U.Ui.act(uberstep(logged()), "uber-new", "")), "@bnew") ++ U.Ui.scratch(act(uberstep(logged()), "uber-new"), "@uber.new") ++ at(act(uberstep(logged()), "uber-new")), "11" ++ end())
-    C.Check.str("uberbot: create keeps the keyboard in the name field", focus(U.Ui.act(uberstep(logged()), "uber-new", "")), "focus:bot-name")
+    C.Check.str("uberbot: create ends with the keyboard in the name field", focuses.of(cmds(U.Ui.act(uberstep(logged()), "uber-new", ""))), "focus: focus:bot-name ")
     C.Check.str("uberbot: the form hints at it", U.Bots.name.hint(act(uberstep(logged()), "uber-new")) ++ "|" ++ U.Bots.name.hint(U.Ui.init(1n)), "Name your uberbot|Name")
     C.Check.str("uberbot: the form's request carries uber", Bool.show(holds(sends(U.Ui.act(act3(act(uberstep(logged()), "uber-new"), "bfield", "name\u{1f}Ace"), "bot-create", "")), "\"uber\":true")), "True")
     C.Check.str("uberbot: an ordinary new bot does not", Bool.show(holds(sends(U.Ui.act(act3(U.Ui.init(1n), "bfield", "name\u{1f}Ace"), "bot-create", "")), "uber")), "False")

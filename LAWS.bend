@@ -5674,7 +5674,7 @@ law onboard_back_step:
 
 # next from the last step ends it, and the end stays the end
 law onboard_next_ends:
-  {OBD.Ob.live(OBD.Ob.next(8n)) == False{} : Bool}
+  {OBD.Ob.live(OBD.Ob.next(9n)) == False{} : Bool}
 
 law onboard_end_stays:
   {OBD.Ob.next(OBD.Ob.count()) == OBD.Ob.count() : Nat}
@@ -6437,3 +6437,41 @@ law plane_hit_opens:
   for +ix: U.SIx
   for +st: M.State
   {PLN.Plane.hit(PLN.Plane.thread.t(t, at, pt, u, ix, st)) == "select " ++ M.Thread.id(t) : String}
+
+# --- uberbot onboarding: onboard_uber_* ---
+
+# the tour's last step, shown for a state; its choices as "action value;"
+def OnbUber.step(st: M.State) -> U.Ui:
+  U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.adopt.raw(U.Ui.init(1n), st), "@sync", "1"), "@tour", "9")
+
+def OnbUber.acts(cs: List<&2, U.TChoice>) -> String:
+  match cs:
+    case Nil{}:
+      ""
+    case U.TChoice{_, a, v} <> t:
+      a ++ " " ++ v ++ ";" ++ OnbUber.acts(t)
+
+# Kit said once, Pip and Zed three times (Pip older), none an uberbot
+def OnbUber.bots() -> M.State:
+  M.State.replay([M.ThreadCreated{"t1", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Kit", "t1", 7n, "", 100n},
+    M.ThreadCreated{"t2", "", "Pip", M.Local{}, "", "", "claude", "", 101n}, M.BotSet{"b2", "Pip", "t2", 8n, "", 101n},
+    M.ThreadCreated{"t3", "", "Zed", M.Local{}, "", "", "claude", "", 102n}, M.BotSet{"b3", "Zed", "t3", 9n, "", 102n},
+    M.MessagePosted{"t1", "m1", M.User{}, "a", 110n},
+    M.MessagePosted{"t2", "m2", M.User{}, "a", 111n}, M.MessagePosted{"t2", "m3", M.User{}, "b", 112n}, M.MessagePosted{"t2", "m4", M.User{}, "c", 113n},
+    M.MessagePosted{"t3", "m5", M.User{}, "a", 114n}, M.MessagePosted{"t3", "m6", M.User{}, "b", 115n}, M.MessagePosted{"t3", "m7", M.User{}, "c", 116n}], M.State.empty())
+
+def OnbUber.first(cs: List<&2, U.TChoice>) -> String:
+  OnbUber.acts(List.take(&2, U.TChoice, cs, 1n))
+
+# with no bots here the only choice makes the uberbot
+law onboard_uber_none_creates:
+  {OnbUber.acts(U.Tour.choices(OnbUber.step(OnbUi.log()))) == "uber-new ;" : String}
+
+# with bots and no uberbot the first choice promotes the one used most
+# (ties: the oldest)
+law onboard_uber_pick_most_used:
+  {OnbUber.first(U.Tour.choices(OnbUber.step(OnbUber.bots()))) == "uber-promote b2;" : String}
+
+# with an uberbot the step offers nothing to choose
+law onboard_uber_have_quiet:
+  {List.is_empty(&2, U.TChoice, U.Tour.choices(OnbUber.step(M.State.replay([M.UberSet{"b1", "u1-a", 200n}], OnbUber.bots())))) == True{} : Bool}
