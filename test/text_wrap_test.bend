@@ -18,13 +18,23 @@ def Old.count(s: String, +cache: Map<&2, X.TG>, +f: X.Face, +max: U32, +used: U3
       +u2 = (used + X.TG.adv(X.Text.get(cache, f, cp)) : U32)
       X.Fit.count.k(U32.is_le(u2, max), Old.count(t, cache, f, max, u2))
 
-def Old.chunk(n: Nat, empty: Bool, +s: String, +cache: Map<&2, X.TG>, +f: X.Face, +max: U32) -> List<&2, String>:
+# characters that fit, at least one; computed once per chunk
+def Old.take.k(+c: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_eq(c, 0n), 1n, c)
+
+def Old.take(+s: String, +cache: Map<&2, X.TG>, +f: X.Face, +max: U32) -> Nat:
+  Old.take.k(Old.count(s, cache, f, max, 0))
+
+def Old.chunk.go(n: Nat, empty: Bool, +k: Nat, +s: String, +cache: Map<&2, X.TG>, +f: X.Face, +max: U32) -> List<&2, String>:
   match n empty:
     case 1n+m False{}:
-      +k = Bool.pick(Nat, Nat.is_eq(Old.count(s, cache, f, max, 0), 0n), 1n, Old.count(s, cache, f, max, 0))
-      String.take(s, k) <> Old.chunk(m, String.is_empty(String.drop(s, k)), String.drop(s, k), cache, f, max)
+      +r = String.drop(s, k)
+      String.take(s, k) <> Old.chunk.go(m, String.is_empty(r), Old.take(r, cache, f, max), r, cache, f, max)
     case _ _:
       Nil{}
+
+def Old.chunk(n: Nat, empty: Bool, +s: String, +cache: Map<&2, X.TG>, +f: X.Face, +max: U32) -> List<&2, String>:
+  Old.chunk.go(n, empty, Old.take(s, cache, f, max), s, cache, f, max)
 
 def Old.chunks(empty: Bool, +w: String, +cache: Map<&2, X.TG>, +f: X.Face, +max: U32) -> List<&2, String>:
   match empty:
