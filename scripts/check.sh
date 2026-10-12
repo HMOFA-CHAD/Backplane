@@ -21,7 +21,9 @@
 #
 # CHECK_JOBS: parallel bend processes (default: nproc/4, at least 1,
 # at most 6; CI sets it to the runner's core count). CHECK_SHARDS:
-# number of manifests (default: CHECK_JOBS).
+# number of manifests (default: 1; one manifest already loads each
+# file's source only once, so extra shards only trade more total work
+# and memory for parallelism when the single check is the bottleneck).
 set -eu
 cd "$(dirname "$0")/.."
 export BEND_NO_TELEMETRY=1
@@ -35,7 +37,7 @@ cores=$(nproc 2>/dev/null || echo 4)
 jobs=${CHECK_JOBS:-$(( cores / 4 ))}
 if [ "$jobs" -lt 1 ]; then jobs=1; fi
 if [ "$jobs" -gt 6 ]; then jobs=6; fi
-shards=${CHECK_SHARDS:-$jobs}
+shards=${CHECK_SHARDS:-1}
 
 work=$(mktemp -d .bend-check.XXXXXX)
 trap 'rm -rf "$work"' 0 1 2 15
@@ -84,14 +86,22 @@ if [ "$mode" != proof ]; then
   fi
 
   # Check the manifests $jobs at a time; LAWS.bend runs beside them.
+  # Wait only for these pids: a bare `wait` would also reap the proof
+  # started above, and waiting for it a second time fails under set -e.
   i=0
+  pids=""
   for m in "$work"/m/manifest-*.bend; do
     ( BUN_JSC_forceRAMSize=4294967296 nice -n 19 bend "$m" --check-only >"$work/m$i.out" 2>&1 ) &
+    pids="$pids $!"
     i=$(( i + 1 ))
-    if [ $(( i % jobs )) -eq 0 ]; then wait; fi
+    if [ $(( i % jobs )) -eq 0 ]; then
+      for p in $pids; do wait $p || true; done
+      pids=""
+    fi
   done
   ( check_one LAWS.bend >"$work/laws.out" 2>&1; echo $? >"$work/laws.rc" ) &
-  wait
+  pids="$pids $!"
+  for p in $pids; do wait $p || true; done
   bad=0
   i=0
   for m in "$work"/m/manifest-*.bend; do
