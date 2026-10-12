@@ -2387,12 +2387,21 @@ def Esc.field(find: Bool, +n: Nui) -> Step:
     case False{}:
       Nui.focus(n, "")
 
+# Esc in the composer shuts the menu it offers (completions) and does
+# nothing else; with none shown it leaves the field
+def Esc.menu(menu: Bool, +n: Nui) -> Step:
+  match menu:
+    case True{}:
+      Nui.act(n, "skill-close", "")
+    case False{}:
+      Esc.field(String.eq(Nui.focus_of(n), Fld.id("pq", "proj-go", "")), n)
+
 def Nui.key.k(paste: Bool, esc: Bool, +n: Nui, +code: U32, +text: U32, +mods: U32) -> Step:
   match paste esc:
     case True{} _:
       Step{n, [NPaste{}], False{}}
     case False{} True{}:
-      Esc.field(String.eq(Nui.focus_of(n), Fld.id("pq", "proj-go", "")), n)
+      Esc.menu(Bool.and(String.eq(Nui.focus_of(n), "composer"), Nui.skills_on(Nui.ui(n))), n)
     case False{} False{}:
       Nui.key.free(String.is_empty(Nui.focus_of(n)), U32.is_eq(code, 102), n, code, text, mods)
 

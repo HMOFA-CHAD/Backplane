@@ -1247,7 +1247,7 @@ def View.composer(+draft: String, +send: String, +act: String, +label: String, +
   D.El{"div", "", [D.At{"class", "composer"}], D.Dom.cat(
     View.menu(picking, ms, model, info, prov, es, effort), D.Dom.cat(View.skills(rs), D.Dom.cat(vo, D.Dom.cat(View.attaching(atts, up), [
     D.El{"textarea", "composer", [D.At{"id", "composer"}, D.At{"rows", "3"}, D.At{"placeholder", "Ask anything: @bot, >thread, %project, #room, $skill, /btw"}, D.At{"value", draft}, D.On{"input", "draft"},
-      D.At{"data-enter", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "send", "skill")}, D.At{"data-enter-alt", "send-alt"}, D.At{"data-tab", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill")}, D.At{"data-arrows", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-move")}, D.At{"data-paste", "attach"}], Nil{}},
+      D.At{"data-enter", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "send", "skill")}, D.At{"data-enter-alt", "send-alt"}, D.At{"data-tab", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill")}, D.At{"data-arrows", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-move")}, D.At{"data-esc", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-close")}, D.At{"data-paste", "attach"}], Nil{}},
     D.El{"div", "", [D.At{"class", "composer-foot"}], [
       WI.WIcon.after("model-chip", "flag", "models", "Choose the model and effort", U.Effort.label(label, effort) ++ ctx, "chevron-down", 14),
       D.El{"label", "", [D.At{"class", "attach"}, D.At{"title", "Attach files or images (or paste an image)"}], [WI.WIcon.svg("paperclip", 16),
@@ -1271,7 +1271,7 @@ def View.composer.t(+st: M.State, +sel: String, +drafts: Map<&2, String>, +op: M
     +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String) -> D.Node:
   +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
   View.composer(U.Str.get(drafts, sel), U.Follow.button(st, sel, View.running(turn), stop, U.Str.get(drafts, sel)), U.Follow.act(stop), U.Models.label(pr, mo), U.Usage.tail(st, sel), U.Flag.get(op, "models"), U.Models.menu(U.Str.get(nf, "models"), pr), mo, U.Str.get(nf, "models"), pr,
-    U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.of(sel, drafts, nf), atts, up, vo, mic)
+    U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.all(st, sel, drafts, nf), atts, up, vo, mic)
 
 def View.asks.box(+st: M.State, +id: String, +draft: String) -> D.Node:
   D.El{"div", "asks", [D.At{"class", "asks"}, D.At{"id", "asks"}], View.asks(U.Asks.open(st, id), draft)}

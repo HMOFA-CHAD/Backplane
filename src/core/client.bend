@@ -26,6 +26,7 @@ import ./diff.bend as DF
 import ./fm.bend as FM
 import ./onboard.bend as OB
 import ./layers.bend as LY
+import ./slash.bend as SL
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -1136,7 +1137,7 @@ def Ui.actions() -> List<&2, String>:
    "attach-up", "attach-end",
    "hist-go", "hist-prev", "hist-next", "hist-first", "hist-last", "hist-play", "hist-tick", "hist-diff", "hist-live", "hist-jump",
    "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page", "update-now", "work-cancel", "task-cancel",
-   "view-layer-pick", "view-layer-mode"]
+   "view-layer-pick", "view-layer-mode", "skill-close"]
 
 # Reading the client state
 # ------------------------
@@ -2096,6 +2097,31 @@ def Skills.of.k(dollar: Bool, +sel: String, +dr: Map<&2, String>, +nf: Map<&2, S
 def Skills.of(+sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
   Skills.of.k(String.starts_with(Skills.token(Str.get(dr, sel)), "$"), sel, dr, nf)
 
+# Slash commands: a draft that is one word starting with `/` offers the
+# commands (slash.bend; Claude's own only in a Claude thread) and then the
+# thread's skills, as `$name` rows, whose name starts with what follows
+def Slash.rows(cs: List<&2, SL.Cmd>) -> List<&2, SkillRow>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case SL.Cmd{n, a} <> t:
+      SkillRow{n, a, False{}} <> Slash.rows(t)
+
+def Slash.of(claude: Bool, +sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
+  List.take(&2, SkillRow, List.append(&2, SkillRow, Slash.rows(SL.Slash.cmds(claude, String.drop(Skills.token(Str.get(dr, sel)), 1n))),
+    Skills.offer(String.eq(Str.get(nf, "skills.for"), sel), Str.get(nf, "skills"), String.drop(Skills.token(Str.get(dr, sel)), 1n))), 8n)
+
+def Skills.all.k(slash: Bool, +st: M.State, +sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
+  match slash:
+    case True{}:
+      Slash.of(String.eq(M.Thread.provider(Ui.thread(st, sel)), "claude"), sel, dr, nf)
+    case False{}:
+      Skills.of(sel, dr, nf)
+
+# what the composer offers now: slash commands, skills or references
+def Skills.all(+st: M.State, +sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
+  Skills.all.k(SL.Slash.typing(Str.get(dr, sel)), st, sel, dr, nf)
+
 # The row the arrow keys have moved to: info "sk.at" (its index), kept
 # for the draft it was moved on ("sk.on", thread and text); any other
 # draft starts at the first row. Enter or Tab takes it.
@@ -2125,10 +2151,19 @@ def Skills.mark(rs: List<&2, SkillRow>, +k: Nat) -> List<&2, SkillRow>:
 def Skills.marked(+rs: List<&2, SkillRow>, +at: Nat) -> List<&2, SkillRow>:
   Skills.mark(rs, Nat.add(Bool.pick(Nat, Nat.is_lt(at, List.length(&2, SkillRow, rs)), at, 0n), 1n))
 
+def Ui.skills.k(shut: Bool, +st: M.State, +sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
+  match shut:
+    case True{}:
+      Nil{}
+    case False{}:
+      Skills.marked(Skills.all(st, sel, dr, nf), Skills.at.k(sel, dr, nf))
+
+# Esc shuts the menu ("skill-close", info "sk.off" is the draft it was
+# shut on): it stays shut until the draft changes
 def Ui.skills(u: Ui) -> List<&2, SkillRow>:
   match u:
-    case Ui{_, +sel, +dr, _, _, _, _, _, _, _, _, _, _, _, +nf, _, _}:
-      Skills.marked(Skills.of(sel, dr, nf), Skills.at.k(sel, dr, nf))
+    case Ui{+st, +sel, +dr, _, _, _, _, _, _, _, _, _, _, _, +nf, _, _}:
+      Ui.skills.k(String.eq(Str.get(nf, "sk.off"), Skills.on(sel, Str.get(dr, sel))), st, sel, dr, nf)
 
 def Skills.lit(rs: List<&2, SkillRow>) -> String:
   match rs:
@@ -2188,7 +2223,7 @@ def Ui.skill(+u: Ui, +v: String) -> Act:
   Ui.skill.k(Skills.pick(Ui.skills(u), v), u)
 
 def Skills.need(+u: Ui) -> Bool:
-  Bool.and(Skills.typing(Ui.draft_text(u)), Bool.not(String.eq(Ui.info(u, "skills.for"), Ui.sel(u))))
+  Bool.and(Bool.or(Skills.typing(Ui.draft_text(u)), SL.Slash.typing(Ui.draft_text(u))), Bool.not(String.eq(Ui.info(u, "skills.for"), Ui.sel(u))))
 
 # Reasoning effort in the composer
 # --------------------------------
@@ -3293,6 +3328,9 @@ def Btw.reply.of(+u: Ui) -> String:
 
 def Btw.text(+a: String) -> String:
   Bool.pick(String, String.is_empty(a), "Thinking…", a)
+
+def Skills.close(+u: Ui) -> Act:
+  Act{Ui.info_set(u, "sk.off", Skills.on(Ui.sel(u), Ui.draft_text(u))), Nil{}}
 
 def Skills.want(a: Act) -> Act:
   match a:
@@ -7551,8 +7589,15 @@ def Ui.act.t(tour: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Ui.act.p(String.eq(action, "proj-on"), u, action, value)
 
+def Ui.act.s(close: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match close:
+    case True{}:
+      Skills.close(u)
+    case False{}:
+      Ui.act.t(String.starts_with(action, "ob-"), u, action, value)
+
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Ui.act.t(String.starts_with(action, "ob-"), u, action, value)
+  Ui.act.s(String.eq(action, "skill-close"), u, action, value)
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

@@ -570,6 +570,16 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
+  // Esc shuts the menu the field offers
+  if (e.key === "Escape" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const esc = e.target.getAttribute?.("data-esc");
+    if (esc) {
+      e.preventDefault();
+      e.stopPropagation();
+      dispatch(esc, "");
+      return;
+    }
+  }
   if (e.key === "Tab" && !e.shiftKey) {
     const tab = e.target.getAttribute?.("data-tab");
     if (tab) {
