@@ -129,9 +129,18 @@ function patch(el, v) {
   // never moved: moving the focused field (the composer, when the menu
   // above it shuts) takes the keyboard from it
   for (const p of prev) if (!p.used && p.node.parentNode === el) el.removeChild(p.node);
+  const act = document.activeElement;
+  const held = act && act !== document.body && el.contains(act) ? act : null;
+  const s0 = held?.selectionStart, s1 = held?.selectionEnd;
   for (let i = 0; i < next.length; i += 1) {
     const at = el.childNodes[i];
     if (at !== next[i].node) el.insertBefore(next[i].node, at ?? null);
+  }
+  // a node moved all the same (unkeyed siblings matched by place) keeps
+  // the keyboard and the caret it had
+  if (held && held.isConnected && document.activeElement !== held) {
+    held.focus({ preventScroll: true });
+    if (s0 != null) try { held.setSelectionRange(s0, s1); } catch {}
   }
   for (const p of next) p.used = false;
   el.__kids = next;
