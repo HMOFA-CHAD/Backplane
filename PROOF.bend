@@ -7991,3 +7991,53 @@ def Laws.lyr_kind_base():
 
 def Laws.lyr_masks_only():
   {==}
+
+# Design review (review.bend)
+
+def Laws.review_fold_empty():
+  {==}
+
+def Laws.review_prompt_none():
+  {==}
+
+def Laws.review_unknown_ignored():
+  {==}
+
+def Laws.review_resolve():
+  {==}
+
+def Laws.review_reopen():
+  {==}
+
+def Laws.review_prompt_resolved():
+  {==}
+
+def Laws.review_drop():
+  {==}
+
+def Laws.review_reply_no_pin():
+  {==}
+
+def Laws.review_reply_counted():
+  {==}
+
+def Laws.review_orphan_ignored():
+  {==}
+
+def Laws.review_roundtrip_resolve():
+  {==}
+
+def Laws.review_roundtrip_edit():
+  {==}
+
+def Laws.review_roundtrip_drop():
+  {==}
+
+def Laws.review_other_tone():
+  {==}
+
+def Laws.review_moved():
+  {==}
+
+def Laws.review_not_moved():
+  {==}
