@@ -386,6 +386,24 @@ def Plane.key.peers(ps: List<&2, BT.Peer>, +u: U.Ui) -> String:
 def Plane.key(+u: U.Ui, +now: Nat) -> String:
   Nat.show(U.Ui.seq(u)) ++ "|" ++ Nat.show(Nat.div(now, 60n)) ++ "|" ++ Plane.key.peers(BU.BU.peers.of(u), u)
 
+# the bots at work now (their mood: working or talking), for the strip
+def Plane.working.k(hit: Bool, +n: Nat) -> Nat:
+  match hit:
+    case True{}:
+      1n+n
+    case False{}:
+      n
+
+def Plane.working.go(rs: List<&2, PRow>) -> Nat:
+  match rs:
+    case Nil{}:
+      0n
+    case +r <> t:
+      Plane.working.k(Bool.or(String.eq(PRow.state(r), "work"), String.eq(PRow.state(r), "talk")), Plane.working.go(t))
+
+def Plane.working(+p: Plane) -> Nat:
+  Plane.working.go(Plane.bots(p))
+
 # the sidebar row's words: "3 need you · 7 running" ("" when neither)
 def Plane.counts.part(+n: Nat, +words: String) -> String:
   Bool.pick(String, Nat.is_eq(n, 0n), "", Nat.show(n) ++ " " ++ words)
