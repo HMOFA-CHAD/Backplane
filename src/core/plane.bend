@@ -374,12 +374,48 @@ def Plane.of.i(+idle: List<&2, PRow>, +all: List<&2, PRow>, +u: U.Ui, +ix: U.SIx
 def Plane.of.k(+all: List<&2, PRow>, +u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
   Plane.of.i(Plane.sort(Plane.recent(Plane.part(all, 2n), now)), all, u, ix, now)
 
-# The thread rows and the bots' own with nothing dropped. A thread row
-# comes from its own Active row and a bot's from its own bot, so the keys
-# are distinct already (Plane.all.keyed keeps each once, at a cost that grows
-# with the square of the rows: a phone with 300 threads spent 60 ms on it).
-def Plane.all.vals(+u: U.Ui, +ix: U.SIx, +now: Nat) -> List<&2, PRow>:
-  List.append(&2, PRow, Plane.threads(U.Active.rows.ix(U.Ui.state(u), ix, now, ""), u, ix, U.Ui.state(u)),
+# A thread row is made only for a thread that shows: one that waits on the
+# person or runs, or (when idle threads are wanted) one active in the last
+# day. The rest are told apart by their state alone, which is cheap; a row's
+# machine, title and project cost more, and a phone with 300 threads spent
+# its time on the ones nobody sees.
+def Plane.thread.t.s(r: U.ARow, +state: String, +u: U.Ui, +st: M.State) -> PRow:
+  match r:
+    case U.ARow{_, +at, +t, _, +pt, _}:
+      Plane.thread.k(U.Ui.far.away(u, M.Thread.id(t)), M.Thread.id(t), U.Active.title(t), pt, U.Ui.far.name(u, M.Thread.id(t)), state, at)
+
+def Plane.thread.st(r: U.ARow, +ix: U.SIx, +st: M.State) -> String:
+  match r:
+    case U.ARow{_, _, +t, _, _, _}:
+      Plane.asking(Plane.state(U.Side.phase.ix(ix, st, t)), ix, M.Thread.id(t))
+
+def Plane.arow.at(r: U.ARow) -> Nat:
+  match r:
+    case U.ARow{_, +at, _, _, _, _}:
+      at
+
+def Plane.shows(+state: String, +at: Nat, +now: Nat, +idle: Bool) -> Bool:
+  Bool.or(Nat.is_lt(Plane.sec(state), 2n), Bool.and(idle, Bool.not(Nat.is_le(now, Nat.add(at, Plane.idle.age())))))
+
+def Plane.threads.m(show: Bool, r: U.ARow, +state: String, +u: U.Ui, +st: M.State, rest: List<&2, PRow>) -> List<&2, PRow>:
+  match show:
+    case True{}:
+      Plane.thread.t.s(r, state, u, st) <> rest
+    case False{}:
+      rest
+
+def Plane.threads.k(+r: U.ARow, +state: String, +u: U.Ui, +ix: U.SIx, +st: M.State, +idle: Bool, +now: Nat, rest: List<&2, PRow>) -> List<&2, PRow>:
+  Plane.threads.m(Bool.and(Bool.not(U.ARow.faded(r)), Plane.shows(state, Plane.arow.at(r), now, idle)), r, state, u, st, rest)
+
+def Plane.threads.f(rs: List<&2, U.ARow>, +u: U.Ui, +ix: U.SIx, +st: M.State, +idle: Bool, +now: Nat) -> List<&2, PRow>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      Plane.threads.k(r, Plane.thread.st(r, ix, st), u, ix, st, idle, now, Plane.threads.f(t, u, ix, st, idle, now))
+
+def Plane.all.vals(+u: U.Ui, +ix: U.SIx, +now: Nat, +idle: Bool) -> List<&2, PRow>:
+  List.append(&2, PRow, Plane.threads.f(U.Active.rows.ix(U.Ui.state(u), ix, now, ""), u, ix, U.Ui.state(u), idle, now),
     Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, ix, U.Ui.state(u)))
 
 # the idle threads, only when they are wanted (the Status tab shows them)
@@ -396,7 +432,7 @@ def Plane.of.f.k(+all: List<&2, PRow>, +u: U.Ui, +ix: U.SIx, +now: Nat, +idle: B
 # the same plane without the keyed pass (the phones' screens); with no idle
 # threads unless they are wanted (idle_n is then 0)
 def Plane.of.f(+u: U.Ui, +ix: U.SIx, +now: Nat, +idle: Bool) -> Plane:
-  Plane.of.f.k(Plane.all.vals(u, ix, now), u, ix, now, idle)
+  Plane.of.f.k(Plane.all.vals(u, ix, now, idle), u, ix, now, idle)
 
 def Plane.of.x(+u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
   Plane.of.k(O.Once.vals(PRow, Plane.all.keyed(u, ix, now)), u, ix, now)
