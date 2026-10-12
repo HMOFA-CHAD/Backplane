@@ -55,3 +55,7 @@ KiCad is the first adapter, built over `kicad-cli` 10 (`sch erc`, `pcb drc` with
 3. **Design checks.** ERC, DRC, BOM rules, checklist, custom scripts, on any version, in a detached worktree. Violations drawn as markers at their positions; MCP `design_check`; a PR gate.
 4. **Review comments.** Anchored pins on all four clients (right-click or long-press "Comment here"), replies, resolve; event log variants; MCP `review_comments`/`review_comment`; open comments in the agent's prompt; export to the PR and to an issue.
 5. **Releases.** Tag, gate on checks, outputs from the tag, notes from the BOM diff and checks since the last tag, local folder plus `gh release`.
+
+## Status
+
+1. Compare anything: done (window, web, iOS, Android). Typed refs, tags and the branch point; per-layer marks follow the active layer; sheets keep comparing; Old / Diff / New; the bar under every board and schematic.
