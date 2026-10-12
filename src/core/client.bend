@@ -7628,6 +7628,10 @@ def Uber.show.k(none: Bool, +u: Ui, +id: String) -> Act:
 def Uber.show(+u: Ui) -> Act:
   Uber.show.k(String.is_empty(UB.Uber.bot(Ui.state.of(u))), u, UB.Uber.bot(Ui.state.of(u)))
 
+# "uber-bot <bot>|<tab>": a bot with a tab shown (a routine's row)
+def Uber.bot.at(+u: Ui, +value: String) -> Act:
+  Bots.select(Ui.scratch_set(u, "@btab", Maybe.default(&2, String, List.get(&2, String, String.split(value, '|'), 1n), "")), Maybe.default(&2, String, List.head(&2, String, String.split(value, '|')), ""))
+
 def Uber.act.k(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 0n:
@@ -7636,13 +7640,15 @@ def Uber.act.k(i: Nat, +u: Ui, +value: String) -> Act:
       Ui.rpc(u, "bots.uber", [J.KV{"bot", J.Str{value}}])
     case 2n:
       Ui.rpc(u, "bots.uber", [J.KV{"bot", J.Str{""}}])
+    case 3n:
+      Uber.bot.at(u, value)
     case _:
       Act{u, Nil{}}
 
 def Uber.act.go(route: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match route:
     case True{}:
-      Uber.act.k(C.Codec.pos(["uber", "uber-promote", "uber-demote"], action), u, value)
+      Uber.act.k(C.Codec.pos(["uber", "uber-promote", "uber-demote", "uber-bot"], action), u, value)
     case False{}:
       Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)
 
