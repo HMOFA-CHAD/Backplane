@@ -63,6 +63,9 @@ import ./src/core/cad.bend as CAD
 import ./src/core/checks.bend as CHK
 import ./src/core/release.bend as REL
 import ./src/core/plane.bend as PLN
+import ./src/core/uber.bend as UBR
+import ./src/core/ubersync.bend as UBS
+import ./src/core/ubop.bend as UBO
 
 # Lemmas
 # ------
