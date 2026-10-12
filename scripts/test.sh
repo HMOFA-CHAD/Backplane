@@ -42,18 +42,29 @@ fi
 work=$(mktemp -d .bend-test.XXXXXX)
 trap 'rm -rf "$work"' 0 1 2 15
 
-# Run the selected tests $jobs at a time, one output file each.
+# Run the selected tests $jobs at a time, one output file each, with
+# a sliding window: waiting in whole batches would let one slow test
+# idle the other slots, so as soon as $jobs are running each new test
+# waits only for the oldest running one. The pid queue is "$@".
+set --
 i=0
 for t in $tests; do
+  if [ $# -ge $jobs ]; then
+    wait $1 || true
+    shift
+  fi
   ( s=$(date +%s%N)
     BUN_JSC_forceRAMSize=4294967296 nice -n 19 bend "$t" >"$work/$i.out" 2>&1
     echo $? >"$work/$i.rc"
     e=$(date +%s%N)
     echo $(( (e - s) / 1000000 )) >"$work/$i.dur" ) &
+  set -- "$@" $!
   i=$(( i + 1 ))
-  if [ $(( i % jobs )) -eq 0 ]; then wait; fi
 done
-wait
+while [ $# -gt 0 ]; do
+  wait $1 || true
+  shift
+done
 
 if [ -n "${TEST_TIMINGS_OUT:-}" ]; then
   : >"$TEST_TIMINGS_OUT"
