@@ -1271,7 +1271,7 @@ def View.composer.t(+st: M.State, +sel: String, +drafts: Map<&2, String>, +op: M
     +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String) -> D.Node:
   +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
   View.composer(U.Str.get(drafts, sel), U.Follow.button(st, sel, View.running(turn), stop, U.Str.get(drafts, sel)), U.Follow.act(stop), U.Models.label(pr, mo), U.Usage.tail(st, sel), U.Flag.get(op, "models"), U.Models.menu(U.Str.get(nf, "models"), pr), mo, U.Str.get(nf, "models"), pr,
-    U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.all(st, sel, drafts, nf), atts, up, vo, mic)
+    U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.shown(st, sel, drafts, nf), atts, up, vo, mic)
 
 def View.asks.box(+st: M.State, +id: String, +draft: String) -> D.Node:
   D.El{"div", "asks", [D.At{"class", "asks"}, D.At{"id", "asks"}], View.asks(U.Asks.open(st, id), draft)}

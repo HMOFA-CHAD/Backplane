@@ -56,6 +56,21 @@ def start(+t: String) -> U.Ui:
 def typed(u: U.Ui, d: String) -> U.Ui:
   ui(U.Ui.draft(u, d))
 
+def lit(rs: List<&2, U.SkillRow>) -> String:
+  match rs:
+    case Nil{}:
+      ""
+    case U.SkillRow{n, _, True{}} <> _:
+      n
+    case U.SkillRow{_, _, False{}} <> t:
+      lit(t)
+
+# what the web draws: the same rows, marked and shut as the window's
+def web(u: U.Ui) -> List<&2, U.SkillRow>:
+  match u:
+    case U.Ui{+st, +sel, +dr, _, _, _, _, _, _, _, _, _, _, _, +nf, _, _}:
+      U.Skills.shown(st, sel, dr, nf)
+
 def main() -> IO(Unit):
   +c = start("c")
   +x = start("x")
@@ -67,6 +82,7 @@ def main() -> IO(Unit):
   +reopen = typed(closed, "/c")
   +picked = ui(U.Ui.act(typed(c, "/gi"), "skill", ""))
   +clicked = ui(U.Ui.act(c1, "skill", "/context"))
+  +down = ui(U.Ui.act(c2, "skill-move", "down"))
   +d1 = typed(c, "$p")
   +dclosed = ui(U.Ui.act(d1, "skill-close", ""))
   do IO<Unit>:
@@ -93,3 +109,8 @@ def main() -> IO(Unit):
     C.Check.str("dollar still offers", names(U.Ui.skills(d1)), "$pcb-review $parts ")
     C.Check.str("esc shuts dollar", names(U.Ui.skills(dclosed)), "")
     C.Check.str("dollar narrows", names(U.Ui.skills(typed(c, "run $pa"))), "$parts ")
+    C.Check.str("first row lit", lit(U.Ui.skills(c2)), "/compact")
+    C.Check.str("down moves the light", lit(U.Ui.skills(down)), "/context")
+    C.Check.str("enter takes the lit row", U.Ui.draft_text(ui(U.Ui.act(down, "skill", ""))), "/context ")
+    C.Check.str("web lit like the window", lit(web(down)), "/context")
+    C.Check.str("web shut by esc", names(web(closed)), "")

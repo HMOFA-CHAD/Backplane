@@ -2158,12 +2158,16 @@ def Ui.skills.k(shut: Bool, +st: M.State, +sel: String, +dr: Map<&2, String>, +n
     case False{}:
       Skills.marked(Skills.all(st, sel, dr, nf), Skills.at.k(sel, dr, nf))
 
-# Esc shuts the menu ("skill-close", info "sk.off" is the draft it was
-# shut on): it stays shut until the draft changes
+# what the composer shows: the rows, the highlighted one marked; Esc shuts
+# the menu ("skill-close", info "sk.off" is the draft it was shut on) and
+# it stays shut until the draft changes (the web reads this too)
+def Skills.shown(+st: M.State, +sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
+  Ui.skills.k(String.eq(Str.get(nf, "sk.off"), Skills.on(sel, Str.get(dr, sel))), st, sel, dr, nf)
+
 def Ui.skills(u: Ui) -> List<&2, SkillRow>:
   match u:
     case Ui{+st, +sel, +dr, _, _, _, _, _, _, _, _, _, _, _, +nf, _, _}:
-      Ui.skills.k(String.eq(Str.get(nf, "sk.off"), Skills.on(sel, Str.get(dr, sel))), st, sel, dr, nf)
+      Skills.shown(st, sel, dr, nf)
 
 def Skills.lit(rs: List<&2, SkillRow>) -> String:
   match rs:
