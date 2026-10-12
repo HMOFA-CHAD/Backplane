@@ -593,29 +593,12 @@ def WB.pmachs(ms: List<&2, PL.PMach>) -> List<&2, D.Node>:
     case m <> t:
       WB.pmach(m) <> WB.pmachs(t)
 
-def WB.pbusy(+s: String) -> Bool:
-  Bool.or(String.eq(s, "work"), String.eq(s, "talk"))
-
-def WB.pworking.k(hit: Bool, +n: Nat) -> Nat:
-  match hit:
-    case True{}:
-      1n+n
-    case False{}:
-      n
-
-def WB.pworking(rs: List<&2, PL.PRow>) -> Nat:
-  match rs:
-    case Nil{}:
-      0n
-    case r <> t:
-      WB.pworking.k(WB.pbusy(PL.PRow.state(r)), WB.pworking(t))
-
 # the strip: the counters and the machines
 def WB.pstrip(+p: PL.Plane) -> D.Node:
   WB.div("plane-strip", [
     WB.pcount("Need you", List.length(&2, PL.PRow, PL.Plane.need(p))),
     WB.pcount("Running", List.length(&2, PL.PRow, PL.Plane.run(p))),
-    WB.pcount("Bots working", WB.pworking(PL.Plane.bots(p))),
+    WB.pcount("Bots working", PL.Plane.working(p)),
     WB.pcount("Unread rooms", List.length(&2, PL.PRow, PL.Plane.rooms(p))),
     WB.div("plane-machs", WB.pmachs(PL.Plane.machines(p)))])
 
@@ -643,9 +626,16 @@ def WB.plane.k(+p: PL.Plane, +now: Nat) -> D.Node:
 def WB.plane(+u: U.Ui) -> D.Node:
   WB.plane.k(PL.Plane.of(u, U.Side.now(u)), U.Side.now(u))
 
-# a tab's body: Status here, the others in WB.body
+# a tab's body: Status here, the others in WB.body; only the one shown is built
+def WB.main.k(status: Bool, +u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:
+  match status:
+    case True{}:
+      D.El{"div", "bot-body:status", [D.At{"class", "bot-body"}], [WB.plane(u)]}
+    case False{}:
+      WB.body(u, b, tab)
+
 def WB.main(+u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:
-  Bool.pick(D.Node, String.eq(tab, "status"), D.El{"div", "bot-body:status", [D.At{"class", "bot-body"}], [WB.plane(u)]}, WB.body(u, b, tab))
+  WB.main.k(String.eq(tab, "status"), u, b, tab)
 
 # Rooms and bots elsewhere
 # ------------------------

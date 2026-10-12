@@ -686,4 +686,5 @@ button.mic.starting, button.mic.stopping { border-color: var(--bad); color: var(
 }
 .plane-side .plane-row { padding: 0 12px; }
 .plane-side .plane-label { padding-left: 12px; }
-.plane-side .plane-row .sub { max-width: 55%; }
+.plane-side .plane-row .sub { flex: none; max-width: none; }
+.plane-side .plane-row .title { flex: 1 1 0; min-width: 0; }
