@@ -11,6 +11,10 @@
 #   BACKPLANE_JOBS  parallel compiles (default 4)
 #   BACKPLANE_CPUS  the cores builds may use (default 0-3; "" for any)
 #   BACKPLANE_CFLAGS  (default: -O3, as bend -o)
+#   BACKPLANE_UNITS   C units the segments are dealt into (default 16)
+#   BACKPLANE_OBJ_CACHE  objects by hash of unit text + compiler + flags
+#                     (default ~/.cache/backplane-bend/obj; 0 = none), so a
+#                     rebuild compiles only the units an edit changed
 # The Google OAuth client "Connect Google" signs in with is baked in from
 # BACKPLANE_GOOGLE_CLIENT_ID and _SECRET: the environment's (CI secrets), else
 # a git-ignored .env here or in the main checkout (src/server/effects/google.c).
@@ -47,6 +51,17 @@ fi
 cflags=${BACKPLANE_CFLAGS:--O3}
 CC=${CC:-clang}
 export CC
+# The app's C is cut into 16 units whatever the jobs: clang needs about 2.5 GB
+# for each (7 GB for each of 4 bigger ones), compile time is the same in
+# total, and a unit whose text is unchanged is taken from the object cache.
+units=${BACKPLANE_UNITS:-16}
+BP_CC_ID=$("$CC" --version 2>&1 | head -n 2 | tr '\n' ' ')
+BP_OBJ_CACHE=${BACKPLANE_OBJ_CACHE-${XDG_CACHE_HOME:-$HOME/.cache}/backplane-bend/obj}
+[ "$BP_OBJ_CACHE" = 0 ] && BP_OBJ_CACHE=""
+if [ -n "$BP_OBJ_CACHE" ] && [ -d "$BP_OBJ_CACHE" ]; then
+  # objects not used for 30 days go
+  find "$BP_OBJ_CACHE" -name '*.o' -mtime +30 -exec rm -f {} + 2>/dev/null || true
+fi
 work="build/cc/$(basename "$out")"
 mkdir -p "$work"
 # bend's own emit runs on every core; keep it polite too. Its C is the
@@ -59,7 +74,7 @@ else
   nice -n 19 $pin bend "$src" -o "$work/all.c" >/dev/null
 fi
 [ "${BACKPLANE_EMIT_ONLY:-}" = 1 ] && { echo "$work/all.c"; exit 0; }
-n=$(nice -n 19 python3 scripts/cc-split.py "$work/all.c" "$work" "$(( jobs * 2 ))")
+n=$(nice -n 19 python3 scripts/cc-split.py "$work/all.c" "$work" "$units")
 rm -f "$work"/u*.o
 # the baked Google client, read from .env without running it
 envval() {
@@ -79,8 +94,9 @@ if [ "${BACKPLANE_GOOGLE_BAKE:-1}" != 0 ] && [ -n "$gid" ] && [ -n "$gsec" ]; th
   printf '#define BP_GOOGLE_CLIENT_ID "%s"\n#define BP_GOOGLE_CLIENT_SECRET "%s"\n' "$gid" "$gsec" > "$work/bp_google.h"
   echo "baked Google client ${gid%%-*}-..."
 fi
-ls "$work"/u*.c | nice -n 19 $pin xargs -P "$jobs" -I{} sh -c \
-  '"$CC" -std=c11 '"$cflags"' -w -c "$1" -o "${1%.c}.o" || { echo "cc failed: $1" >&2; exit 255; }' _ {}
+# the biggest units first, so the last ones to start are the small ones
+export BP_CFLAGS="$cflags" BP_CC_ID BP_OBJ_CACHE
+ls -S "$work"/u*.c | nice -n 19 $pin xargs -P "$jobs" -I{} scripts/cc-unit.sh {}
 # the libraries bend -o links: X11 and ALSA when an effect includes them
 libs=""
 grep -q '#include <X11/' "$work/all.c" && libs="$libs -lX11"
