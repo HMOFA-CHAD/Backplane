@@ -113,7 +113,9 @@ def main() -> IO(Unit):
   +ma = B.Bom.parts("", [sheet("m.kicad_sch", multi())])
   +dp = B.Bom.parts("", [sheet("d.kicad_sch", dup())])
   +both = B.Bom.parts("", [sheet("a.kicad_sch", r("R1", "1k", "", "no")), sheet("b.kicad_sch", r("R2", "1k", "", "no"))])
+  +hole = B.Bom.parts("", [sheet("h.kicad_sch", sym("Mech:Hole", "H1", "M3", "", "", "(in_bom no) (dnp no)", "") ++ r("R1", "1k", "", "no"))])
   do IO<Unit>:
+    C.Check.str("in_bom no is left out", refs(hole), "R1 ")
     C.Check.str("natural order", refs(p1()), "C1 D1 R1 R2 R10 U1 ")
     C.Check.str("power symbols skipped", refs(p1()), "C1 D1 R1 R2 R10 U1 ")
     C.Check.str("fields", vals(p1()), "C1=100n// D1=LED//Acme R1=10k/RC-A/ R2=10k/RC-A/ R10=22k/RC-B/ U1=OPA2/OPA2134/ ")
@@ -136,5 +138,6 @@ def main() -> IO(Unit):
     C.Check.str("summary", sums(B.Bom.summary(p1(), p2())), "100n Capacitor_SMD:C_0402:1>0 1u Capacitor_SMD:C_0603:0>1 LED LED_SMD:LED_0603:1>1 OPA2134:1>1 RC-A:2>1 RC-B:1>1 RC-C:0>1 ")
     C.Check.str("diff md", B.Bom.diff.md(p1(), p2()), "1 added, 1 removed, 3 changed\n\n| Ref | Change | Was | Now |\n| --- | --- | --- | --- |\n| C1 | removed | value: 100n; footprint: Capacitor_SMD:C_0402 |  |\n| C2 | added |  | value: 1u; footprint: Capacitor_SMD:C_0603 |\n| D1 | changed |  | LCSC: C2286 |\n| R1 | changed | value: 10k; mpn: RC-A | value: 4k7; mpn: RC-C |\n| R10 | changed | dnp: no | dnp: yes |\n\n| Part | Was | Now |\n| --- | --- | --- |\n| 100n Capacitor_SMD:C_0402 | 1 | 0 |\n| 1u Capacitor_SMD:C_0603 | 0 | 1 |\n| RC-A | 2 | 1 |\n| RC-C | 0 | 1 |\n")
     C.Check.str("diff md of no change", B.Bom.diff.md(p1(), p1()), "No changes")
-    C.Check.str("rules", fnds(B.Bom.rules(dp)), "")
-    C.Check.str("rules clean design", fnds(B.Bom.rules(p1())), "")
+    C.Check.str("rules", fnds(B.Bom.rules(dp)), "bom_duplicate_ref/error/R1 bom_unannotated/error/R4? bom_missing_value/warning/R4? bom_missing_mpn/warning/R1 bom_missing_mpn/warning/R1 bom_missing_mpn/warning/R4? bom_mpn_footprint/error/R6 bom_mpn_footprint/error/R5 bom_dnp_in_bom/warning/R5 ")
+    C.Check.str("rules: partial MPN", fnds(B.Bom.rules(p1())), "bom_missing_mpn/warning/C1 bom_missing_mpn/warning/D1 ")
+    C.Check.str("rules: no MPN anywhere, no rule", fnds(B.Bom.rules(both)), "")

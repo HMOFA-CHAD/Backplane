@@ -88,6 +88,7 @@ import ./src/core/live.bend as LV
 import ./src/core/farlive.bend as FLV
 import ./src/core/qr.bend as QR
 import ./src/core/layers.bend as LY
+import ./src/core/bom.bend as BOM
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -6369,3 +6370,45 @@ law lyr_kind_base:
 # not kept and never the active one
 law lyr_masks_only:
   {LY.Masks.off(LY.Lyr.masks(0, 4096, LY.Focus{12, 2})) == 37736447 : U32}
+
+# Design review (bom)
+
+# references sort naturally: C2 before C10, and R10 after R2
+law bom_nat_c2_c10:
+  {BOM.Bom.before("C2", "C10") == True{} : Bool}
+
+law bom_nat_r10_r2:
+  {BOM.Bom.before("R10", "R2") == False{} : Bool}
+
+# a BOM compared with itself has no changes
+law bom_diff_self:
+  {BOM.Bom.diff(BOM.Bom.sample(), BOM.Bom.sample()) == Nil{} : List<&2, BOM.Chg>}
+
+# every BOM line's quantity is the number of its references
+law bom_group_qty:
+  {BOM.Bom.qty.ok(BOM.Bom.group(BOM.Bom.sample())) == True{} : Bool}
+
+# R1 and R2 are alike: one line "R1, R2" with quantity 2
+law bom_group_csv:
+  {BOM.Bom.csv(BOM.Bom.group(BOM.Bom.sample())) == "Reference,Qty,Value,Footprint,MPN,Manufacturer,DNP\nC1,1,1u,0402,,,\n\"R1, R2\",2,10k,0603,,,\n" : String}
+
+# a cell with a comma is quoted, a quote is doubled, a plain one is left
+law bom_csv_quote:
+  {BOM.Bom.q("a,b") == "\"a,b\"" : String}
+
+law bom_csv_quote_inner:
+  {BOM.Bom.q("5\" x") == "\"5\"\" x\"" : String}
+
+law bom_csv_plain:
+  {BOM.Bom.q("10k") == "10k" : String}
+
+# the diff summary line
+law bom_diff_line:
+  {BOM.Bom.line(3n, 1n, 2n) == "3 added, 1 removed, 2 changed" : String}
+
+law bom_diff_md_none:
+  {BOM.Bom.diff.md(BOM.Bom.sample(), BOM.Bom.sample()) == "No changes" : String}
+
+# a pipe in a cell is escaped
+law bom_md_pipe:
+  {BOM.Bom.c("a|b") == "a\\|b" : String}

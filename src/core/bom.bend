@@ -441,10 +441,25 @@ def Bom.sheets(+project: String, shs: List<&2, Sheet>) -> List<&2, Part>:
     case sh <> t:
       List.append(&2, Part, Bom.sheet(project, sh), Bom.sheets(project, t))
 
-# the design's parts: natural order, a multi-unit part once. A reference
-# that two symbols share stays twice (the duplicate rule says so).
+def Bom.keep.if(ok: Bool, +p: Part, rest: List<&2, Part>) -> List<&2, Part>:
+  match ok:
+    case True{}:
+      p <> rest
+    case False{}:
+      rest
+
+def Bom.keep.bom(ps: List<&2, Part>) -> List<&2, Part>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      Bom.keep.if(Bom.inbom(p), p, Bom.keep.bom(t))
+
+# the design's parts: natural order, a multi-unit part once, parts KiCad
+# leaves out of the BOM (in_bom no) dropped. A reference that two symbols
+# share stays twice (the duplicate rule says so).
 def Bom.parts(project: String, shs: List<&2, Sheet>) -> List<&2, Part>:
-  Bom.fold(Bom.sort(Bom.sheets(project, shs)))
+  Bom.fold(Bom.sort(Bom.keep.bom(Bom.sheets(project, shs))))
 
 # BOM lines
 # ---------
@@ -948,7 +963,7 @@ def Bom.rules(+ps: List<&2, Part>) -> List<&2, Fnd>:
 def Bom.nl() -> String:
   "\n"
 
-def Bom.dq.k(quote: Bool, c: Char, rest: String) -> String:
+def Bom.dq.k(quote: Bool, +c: Char, rest: String) -> String:
   match quote:
     case True{}:
       SCon{c, SCon{c, rest}}
@@ -975,8 +990,8 @@ def Bom.q(+s: String) -> String:
 
 def Bom.row.csv(l: Line) -> String:
   match l:
-    case Line{_, q, v, f, m, mf, d}:
-      String.concat([Bom.q(Bom.refs(l)), ",", Nat.show(q), ",", Bom.q(v), ",", Bom.q(f), ",", Bom.q(m), ",", Bom.q(mf), ",", Bom.yes.if(d), "\n"])
+    case Line{rs, q, v, f, m, mf, d}:
+      String.concat([Bom.q(String.join(rs, ", ")), ",", Nat.show(q), ",", Bom.q(v), ",", Bom.q(f), ",", Bom.q(m), ",", Bom.q(mf), ",", Bom.yes.if(d), "\n"])
 
 def Bom.rows.csv(ls: List<&2, Line>) -> String:
   match ls:
@@ -1003,7 +1018,7 @@ def Bom.c.if(pipe: Bool, nl: Bool, cr: Bool, c: Char, rest: String) -> String:
 def Bom.c.of(+x: U32, c: Char, rest: String) -> String:
   Bom.c.if(U32.is_eq(x, 124), U32.is_eq(x, 10), U32.is_eq(x, 13), c, rest)
 
-def Bom.c.k(c: Char, rest: String) -> String:
+def Bom.c.k(+c: Char, rest: String) -> String:
   Bom.c.of(Char.to_u32(c), c, rest)
 
 # a Markdown table cell: pipes escaped, line breaks flattened
@@ -1026,8 +1041,8 @@ def Bom.row.md(cs: List<&2, String>) -> String:
 
 def Bom.line.cells(l: Line) -> List<&2, String>:
   match l:
-    case Line{_, q, v, f, m, mf, d}:
-      [Bom.refs(l), Nat.show(q), v, f, m, mf, Bom.yes.if(d)]
+    case Line{rs, q, v, f, m, mf, d}:
+      [String.join(rs, ", "), Nat.show(q), v, f, m, mf, Bom.yes.if(d)]
 
 def Bom.rows.md(ls: List<&2, Line>) -> String:
   match ls:
@@ -1048,7 +1063,7 @@ def Bom.line.k(total: Nat, a: Nat, r: Nat, c: Nat) -> String:
       String.concat([Nat.show(a), " added, ", Nat.show(r), " removed, ", Nat.show(c), " changed"])
 
 # "3 added, 1 removed, 2 changed", or "No changes"
-def Bom.line(a: Nat, r: Nat, c: Nat) -> String:
+def Bom.line(+a: Nat, +r: Nat, +c: Nat) -> String:
   Bom.line.k(Nat.add(a, Nat.add(r, c)), a, r, c)
 
 def Bom.pick(was: Bool, w: String, n: String) -> String:
@@ -1068,7 +1083,7 @@ def Bom.dls.if(none: Bool, s: String, rest: List<&2, String>) -> List<&2, String
 def Bom.dls.k(+v: String, f: String, rest: List<&2, String>) -> List<&2, String>:
   Bom.dls.if(String.is_empty(v), String.concat([f, ": ", v]), rest)
 
-def Bom.dls(ds: List<&2, Dl>, was: Bool) -> List<&2, String>:
+def Bom.dls(ds: List<&2, Dl>, +was: Bool) -> List<&2, String>:
   match ds:
     case Nil{}:
       Nil{}
@@ -1079,7 +1094,7 @@ def Bom.rows.chg(cs: List<&2, Chg>) -> String:
   match cs:
     case Nil{}:
       ""
-    case Chg{r, k, ds} <> t:
+    case Chg{r, k, +ds} <> t:
       Bom.row.md([r, k, String.join(Bom.dls(ds, True{}), "; "), String.join(Bom.dls(ds, False{}), "; ")]) ++ Bom.rows.chg(t)
 
 def Bom.rows.sum.k(same: Bool, p: String, w: Nat, n: Nat, rest: String) -> String:
@@ -1093,7 +1108,7 @@ def Bom.rows.sum(ss: List<&2, Sum>) -> String:
   match ss:
     case Nil{}:
       ""
-    case Sum{p, w, n} <> t:
+    case Sum{p, +w, +n} <> t:
       Bom.rows.sum.k(Nat.is_eq(w, n), p, w, n, Bom.rows.sum(t))
 
 def Bom.diff.table(cs: List<&2, Chg>) -> String:
@@ -1127,17 +1142,20 @@ def Bom.diff.sum.md(ss: List<&2, Sum>, any: Bool) -> String:
     case False{}:
       ""
 
-def Bom.diff.md.k(cs: List<&2, Chg>, ss: List<&2, Sum>, any: Bool) -> String:
-  match cs:
-    case Nil{}:
+def Bom.diff.md.k(none: Bool, +cs: List<&2, Chg>, ss: List<&2, Sum>, any: Bool) -> String:
+  match none:
+    case True{}:
       "No changes"
-    case _:
+    case False{}:
       Bom.line(Bom.count("added", cs), Bom.count("removed", cs), Bom.count("changed", cs)) ++ "\n\n" ++ Bom.diff.table(cs) ++ Bom.diff.sum.md(ss, any)
+
+def Bom.diff.md.of(+cs: List<&2, Chg>, +ss: List<&2, Sum>) -> String:
+  Bom.diff.md.k(Nat.is_eq(List.length(&2, Chg, cs), 0n), cs, ss, Bom.sum.any(ss))
 
 # a diff as Markdown: the summary line, the changes by reference, and the
 # parts whose quantity moved
-def Bom.diff.md(old: List<&2, Part>, new: List<&2, Part>) -> String:
-  Bom.diff.md.k(Bom.diff(old, new), Bom.summary(old, new), Bom.sum.any(Bom.summary(old, new)))
+def Bom.diff.md(+old: List<&2, Part>, +new: List<&2, Part>) -> String:
+  Bom.diff.md.of(Bom.diff(old, new), Bom.summary(old, new))
 
 # Small helpers for the laws
 # --------------------------

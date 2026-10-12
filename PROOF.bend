@@ -58,6 +58,7 @@ import ./src/core/google.bend as GO
 import ./src/core/cat.bend as CAT
 import ./src/core/voice.bend as VO
 import ./src/core/once.bend as ON
+import ./src/core/bom.bend as BOM
 
 # Lemmas
 # ------
@@ -7990,4 +7991,39 @@ def Laws.lyr_kind_base():
   {==}
 
 def Laws.lyr_masks_only():
+  {==}
+
+# Design review (bom)
+
+def Laws.bom_nat_c2_c10():
+  {==}
+
+def Laws.bom_nat_r10_r2():
+  {==}
+
+def Laws.bom_diff_self():
+  {==}
+
+def Laws.bom_group_qty():
+  {==}
+
+def Laws.bom_group_csv():
+  {==}
+
+def Laws.bom_csv_quote():
+  {==}
+
+def Laws.bom_csv_quote_inner():
+  {==}
+
+def Laws.bom_csv_plain():
+  {==}
+
+def Laws.bom_diff_line():
+  {==}
+
+def Laws.bom_diff_md_none():
+  {==}
+
+def Laws.bom_md_pipe():
   {==}
