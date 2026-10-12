@@ -242,10 +242,14 @@ def Plane.bkys(rs: List<&2, PRow>) -> List<&2, O.Ky<PRow>>:
     case +r <> t:
       Plane.bky(r) <> Plane.bkys(t)
 
-# the thread rows and the bots' own, each kept once (law plane_each_once)
+# the thread rows and the bots' own, before each is kept once
+def Plane.all.src(+u: U.Ui, +now: Nat) -> List<&2, O.Ky<PRow>>:
+  List.append(&2, O.Ky<PRow>, Plane.kys(Plane.threads(U.Active.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now, ""), u, U.Side.ix(U.Ui.state(u)), U.Ui.state(u))),
+    Plane.bkys(Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, U.Side.ix(U.Ui.state(u)), U.Ui.state(u))))
+
+# ... and kept once (law plane_each_once)
 def Plane.all.keyed(+u: U.Ui, +now: Nat) -> List<&2, O.Ky<PRow>>:
-  O.Once.of(PRow, List.append(&2, O.Ky<PRow>, Plane.kys(Plane.threads(U.Active.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now, ""), u, U.Side.ix(U.Ui.state(u)), U.Ui.state(u))),
-    Plane.bkys(Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, U.Side.ix(U.Ui.state(u)), U.Ui.state(u)))))
+  O.Once.of(PRow, Plane.all.src(u, now))
 
 # Bots
 # ----

@@ -8028,7 +8028,7 @@ def Laws.uber_promote_again_nothing():
   {==}
 
 def Laws.plane_each_once(u, now):
-  Laws.once_distinct(PLN.PRow, PLN.Plane.all.keyed(u, now))
+  Laws.once_distinct(PLN.PRow, PLN.Plane.all.src(u, now))
 
 def Laws.plane_sections_once():
   {==}
