@@ -175,7 +175,8 @@ def View.sync(a: U.Act) -> U.Act:
   View.fv(View.sync.m(a))
 
 # a hub's answer to far.view: the viewer asks for the source again, now
-# that the folder is known
+# that the folder is known (and to history.resolve: the version it picked
+# is the source now)
 def View.far.k(far: Bool, a: U.Act) -> U.Act:
   match far a:
     case True{} +x:
@@ -183,8 +184,8 @@ def View.far.k(far: Bool, a: U.Act) -> U.Act:
     case False{} +x:
       x
 
-def View.far(o: J.Json, a: U.Act) -> U.Act:
-  View.far.k(U.Fm.has(J.Json.get_obj(o, "result"), "farView"), a)
+def View.far(+o: J.Json, a: U.Act) -> U.Act:
+  View.far.k(Bool.or(U.Fm.has(J.Json.get_obj(o, "result"), "farView"), U.Rv.reply.has(o)), a)
 
 # open a viewer ("board", "schematic", "3d") or close it (""); what was
 # picked is let go
