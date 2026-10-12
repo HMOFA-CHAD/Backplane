@@ -41,7 +41,7 @@ function freePort(): number {
 const root = mkdtempSync(join(tmpdir(), "bp-projthread-e2e-"));
 const fake = join(root, "bin");
 mkdirSync(fake);
-for (const n of ["claude", "codex", "grok"]) {
+for (const n of ["claude", "codex", "grok", "muse"]) {
   writeFileSync(join(fake, n), "#!/bin/sh\nexit 1\n");
   chmodSync(join(fake, n), 0o755);
 }

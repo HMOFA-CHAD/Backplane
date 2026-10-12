@@ -790,7 +790,7 @@ it stops, from disk after a restart).
 
 ### Agents across machines
 
-An agent (Claude, Codex or Grok, through the hub's MCP tools) works with the owner's other machines
+An agent (Claude, Codex, Grok or Muse, through the hub's MCP tools) works with the owner's other machines
 the way it works with its own project. `src/core/fmcp.bend` is the whole of it.
 
 - `machine_list` (every agent): this machine first, then each linked machine (`here` or `away`) with its

@@ -63,7 +63,7 @@ while IFS= read -r line; do
   esac
 done
 `;
-for (const n of ["claude", "codex", "grok"]) {
+for (const n of ["claude", "codex", "grok", "muse"]) {
   writeFileSync(join(fake, n), n === "claude" ? claude : "#!/bin/sh\nexit 1\n");
   chmodSync(join(fake, n), 0o755);
 }

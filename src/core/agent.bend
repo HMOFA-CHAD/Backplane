@@ -4,7 +4,7 @@ import ./prompt.bend as Q
 import ./model.bend as M
 
 # Agent features, pure: user and project skills (SKILL.md frontmatter, the
-# skills block Codex and Grok are told, `$skill` mentions), reasoning
+# skills block Codex, Grok and Muse are told, `$skill` mentions), reasoning
 # effort per provider, and the one-shot prompts that name a worktree's
 # branch and write commit messages. The server does the IO around these.
 
@@ -275,7 +275,7 @@ def Mention.expand(+provider: String, +text: String, +ss: List<&2, USkill>) -> S
 # ----------------
 # Per thread, in the settings map under effort.<thread>; "" is the
 # provider's default. Claude: --effort; Codex: model_reasoning_effort;
-# Grok: --reasoning-effort.
+# Grok: --reasoning-effort; Muse: turn/start's reasoningEffort (msp.bend).
 
 def Effort.key(+thread: String) -> String:
   "effort." ++ thread
@@ -283,7 +283,8 @@ def Effort.key(+thread: String) -> String:
 def Effort.levels(+provider: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, String.eq(provider, "claude"), ["low", "medium", "high", "xhigh", "max"],
     Bool.pick(List<&2, String>, String.eq(provider, "codex"), ["low", "medium", "high", "xhigh"],
-      Bool.pick(List<&2, String>, String.eq(provider, "grok"), ["low", "medium", "high"], Nil{})))
+      Bool.pick(List<&2, String>, String.eq(provider, "grok"), ["low", "medium", "high"],
+        Bool.pick(List<&2, String>, String.eq(provider, "muse"), ["minimal", "low", "medium", "high", "xhigh", "max"], Nil{}))))
 
 def Effort.in(xs: List<&2, String>, +e: String) -> Bool:
   match xs:
@@ -332,21 +333,21 @@ def Effort.pos(xs: List<&2, String>, +x: String, +i: Nat) -> Nat:
 # the flags that set a provider's effort (none for its default)
 def Effort.args(+provider: String, +e: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, String.is_empty(Effort.of(provider, e)), Nil{},
-    Effort.args.k(Effort.pos(["claude", "codex", "grok"], provider, 0n), Effort.of(provider, e)))
+    Effort.args.k(Effort.pos(["claude", "codex", "grok", "muse"], provider, 0n), Effort.of(provider, e)))
 
 # One-shot writing: thread titles, branch names and commit messages
 # -----------------------------------------------------------------
 # A light model with no tools, no MCP and no session, from the text
-# generation settings: text.provider (claude, codex or grok; claude for
-# anything else) and text.model ("" or unset: the provider's light model).
-# Claude and Codex read the text on stdin under a system prompt; Grok's
-# headless mode drops a system prompt, so it reads both on stdin.
+# generation settings: text.provider (claude, codex, grok or muse; claude
+# for anything else) and text.model ("" or unset: the provider's light
+# model). Claude and Codex read the text on stdin under a system prompt;
+# Grok's and Muse's headless modes take no system prompt, so they read both.
 
 type Tx is Data:
   Tx{provider: String, model: String}
 
 def Text.providers() -> List<&2, String>:
-  ["claude", "codex", "grok"]
+  ["claude", "codex", "grok", "muse"]
 
 def Text.norm.k(i: Nat) -> String:
   match i:
@@ -354,6 +355,8 @@ def Text.norm.k(i: Nat) -> String:
       "codex"
     case 2n:
       "grok"
+    case 3n:
+      "muse"
     case _:
       "claude"
 
@@ -367,6 +370,8 @@ def Text.light.k(i: Nat) -> String:
       "gpt-6-luna"
     case 2n:
       "grok-4.7-build-fast"
+    case 3n:
+      "muse-spark-1.3"
     case _:
       "haiku"
 
@@ -387,21 +392,24 @@ def Text.is_claude(+m: String) -> Bool:
 def Text.is_codex(+m: String) -> Bool:
   Bool.or(Bool.or(String.starts_with(m, "gpt-"), String.starts_with(m, "codex-")), Bool.and(String.starts_with(m, "o"), Text.digit(String.get(m, 1n))))
 
-def Text.family.k(claude: Bool, codex: Bool, grok: Bool) -> String:
-  match claude codex grok:
-    case True{} _ _:
+def Text.family.k(claude: Bool, codex: Bool, grok: Bool, muse: Bool) -> String:
+  match claude codex grok muse:
+    case True{} _ _ _:
       "claude"
-    case False{} True{} _:
+    case False{} True{} _ _:
       "codex"
-    case False{} False{} True{}:
+    case False{} False{} True{} _:
       "grok"
-    case False{} False{} False{}:
+    case False{} False{} False{} True{}:
+      "muse"
+    case False{} False{} False{} False{}:
       ""
 
 # whose model a name is: claude (haiku, sonnet, opus, fable, claude-*),
-# codex (gpt-*, codex-*, o3...), grok (grok-*), or "" when it is not known
+# codex (gpt-*, codex-*, o3...), grok (grok-*), muse (muse-*), or "" when
+# it is not known
 def Text.family(+m: String) -> String:
-  Text.family.k(Text.is_claude(m), Text.is_codex(m), String.starts_with(m, "grok-"))
+  Text.family.k(Text.is_claude(m), Text.is_codex(m), String.starts_with(m, "grok-"), String.starts_with(m, "muse-"))
 
 # a model the provider can run: its own, or one not known to be another's
 # (a text.model left over from another provider does not fit)
@@ -461,12 +469,21 @@ def OneShot.grok(+model: String) -> List<&2, String>:
   List.append(&2, String, ["60", "sh", "-c", "cat | exec grok --prompt-file /dev/stdin \"$@\"", "sh", "--output-format", "json", "--no-subagents",
     "--disable-web-search", "--permission-mode", "dontAsk", "--max-turns", "1", "--reasoning-effort", "low"], OneShot.flag("-m", model))
 
+# muse exec takes the prompt as an argument (it refuses a pipe as a prompt
+# file) and prints the answer alone; its tool output may not live under
+# the workspace, /tmp, so TMPDIR moves
+def OneShot.muse(+model: String) -> List<&2, String>:
+  List.append(&2, String, ["60", "sh", "-c", "TMPDIR=/var/tmp exec muse exec \"$@\" -- \"$(cat)\" 2>/dev/null", "sh", "--no-session-log", "--disable-shell",
+    "--disable-write", "--disable-web-tools", "--disable-reminders", "--approval-mode", "never", "--max-model-steps", "1", "--reasoning-effort", "low"], OneShot.flag("--model", model))
+
 def OneShot.args.k(i: Nat, +model: String, +system: String) -> List<&2, String>:
   match i:
     case 1n:
       OneShot.codex(model, system)
     case 2n:
       OneShot.grok(model)
+    case 3n:
+      OneShot.muse(model)
     case _:
       OneShot.claude(model, system)
 
@@ -485,7 +502,7 @@ def OneShot.input.k(grok: Bool, +system: String, +text: String) -> String:
 
 # what the writer reads on stdin
 def OneShot.input(+provider: String, +system: String, +text: String) -> String:
-  OneShot.input.k(String.eq(provider, "grok"), system, text)
+  OneShot.input.k(Bool.or(String.eq(provider, "grok"), String.eq(provider, "muse")), system, text)
 
 def OneShot.pick.k(m: Maybe<&2, J.Json>, rest: String) -> String:
   match m:
@@ -534,6 +551,8 @@ def OneShot.answer.k(i: Nat, +out: String) -> String:
       String.trim(OneShot.cx(String.lines(out), ""))
     case 2n:
       String.trim(OneShot.gk.k(J.Json.parse(String.trim(out))))
+    case 3n:
+      String.trim(out)
     case _:
       OneShot.result(out)
 

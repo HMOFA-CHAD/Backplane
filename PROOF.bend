@@ -4214,6 +4214,18 @@ def Laws.interrupt_codex_stops(th, r):
 def Laws.interrupt_grok_stops(th, r):
   {==}
 
+def Laws.interrupt_muse_stops(th, r):
+  {==}
+
+def Laws.muse_run_turn(th, cwd, m, s, r, i, t, u):
+  {==}
+
+def Laws.msp_mode_supervised_asks():
+  {==}
+
+def Laws.msp_mode_full_allows():
+  {==}
+
 def Laws.archive_running_stops():
   {==}
 

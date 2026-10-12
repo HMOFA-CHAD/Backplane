@@ -14,7 +14,7 @@ import ./diff.bend as DF
 # so MessagePosted keeps its shape, every provider sees the paths, and the
 # clients draw those lines as chips. Claude also gets images as content
 # blocks, Codex as `--image` flags; Grok reads the path (its ACP agent
-# reports promptCapabilities.image false).
+# reports promptCapabilities.image false), and so does Muse.
 
 # the most one attachment may hold, in bytes
 def Att.cap() -> Nat:

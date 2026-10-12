@@ -55,5 +55,6 @@ def main() -> IO(Unit):
     C.Check.str("no match offers none", names(U.Ui.skills(ui(a6))), "")
     C.Check.str("effort chips claude", String.join(U.Effort.chips("", "claude", ""), ","), ",low,medium,high,xhigh,max")
     C.Check.str("effort chips grok", String.join(U.Effort.chips("", "grok", ""), ","), ",low,medium,high")
+    C.Check.str("effort chips muse", String.join(U.Effort.chips("", "muse", ""), ","), ",minimal,low,medium,high,xhigh,max")
     C.Check.str("effort label", U.Effort.label("claude · opus", "high"), "claude · opus · high")
     C.Check.str("effort sends", sent(U.Ui.act(u0, "effort", "high")), "thread.effort ")

@@ -95,7 +95,7 @@ def Prompt.skills(ss: List<&2, Skill>) -> String:
   String.join(Prompt.lines(ss), "\n")
 
 # Backplane's own rule for the canonical board; the KiStack skills themselves
-# are not in the prompt: Claude loads them as a plugin, Codex and Grok get
+# are not in the prompt: Claude loads them as a plugin, Codex, Grok and Muse get
 # them in the short skills list (Skills.scan)
 def Prompt.board() -> String:
   "<backplane_kicad_board_editing>For normal KiCad PCB placement, routing, and cleanup, identify the project's canonical configured .kicad_pcb path (the board opened by the project or viewer) and keep using that exact path. Save each meaningful milestone to it so the active board and collaborators show progress. Keep backups and intermediate tool outputs in a separate backup or build directory. If a tool writes a staging or alternate file, validate it and promote the result back to the canonical path with a backup before continuing; do not silently switch the active filename. Use an alternate board only when the user explicitly requests an experiment or alternate design, and label it clearly. Coordinate ownership so only one agent or process writes the active board at a time; other agents may inspect it or prepare changes for integration.</backplane_kicad_board_editing>"
