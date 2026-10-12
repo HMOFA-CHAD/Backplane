@@ -113,6 +113,8 @@ import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.animation.core.animateFloatAsState
@@ -953,7 +955,11 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                     ComposerExtras(m, t)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         AttachButton(m)
-                        OutlinedTextField(m.composer, m::draft, Modifier.weight(1f), maxLines = 6,
+                        // the field keeps its own caret while typing; a draft changed from
+                        // outside (a completion, another thread) puts the caret at its end
+                        var field by remember { mutableStateOf(TextFieldValue(m.composer, TextRange(m.composer.length))) }
+                        if (field.text != m.composer) field = TextFieldValue(m.composer, TextRange(m.composer.length))
+                        OutlinedTextField(field, { v -> field = v; if (v.text != m.composer) m.draft(v.text) }, Modifier.weight(1f), maxLines = 6,
                             placeholder = { Text("Ask the agent") })
                         // a long press sends with the other follow-up mode (queue or steer);
                         // while a turn runs with nothing typed the button stops it
