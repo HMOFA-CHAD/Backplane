@@ -1052,6 +1052,13 @@ struct HistBarView: View {
                     Spacer(minLength: 0)
                     chip("Close", on: false) { model.act("cmp-close", "") }
                 }
+                Picker("Show", selection: Binding(get: { hist.showing ?? "diff" }, set: { model.act("rv-as", $0) })) {
+                    Text("Old").tag("old")
+                    Text("Diff").tag("diff")
+                    Text("New").tag("new")
+                }
+                .pickerStyle(.segmented)
+                if (hist.showing ?? "diff") == "diff" {
                 HStack(spacing: 12) {
                     ForEach(Array(zip(["Removed", "Changed", "Added"], hist.keys).enumerated()), id: \.offset) { _, k in
                         HStack(spacing: 4) {
@@ -1062,6 +1069,7 @@ struct HistBarView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                }
             } else {
                 // one row when the whole title fits, else the chips go under it
                 ViewThatFits(in: .horizontal) {
@@ -1160,10 +1168,20 @@ struct HistMenuSheet: View {
     let model: AppModel
     let side: String
     let rows: [HistRow]
+    @State private var ref = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(side == "a" ? "Compare from (old)" : "Compare with (new)").font(.headline).padding()
+            Text(side == "a" ? "Compare from (old)" : "Compare with (new)").font(.headline).padding([.horizontal, .top])
+            // any commit, branch or tag (rv-ref "<side>\t<text>")
+            TextField("Commit, branch or tag", text: $ref)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.go)
+                .onSubmit { model.act("rv-ref", side + "\t" + ref) }
+                .padding(10)
+                .background(Color.secondary.opacity(0.15), in: .rect)
+                .padding()
             List(Array(rows.enumerated()), id: \.offset) { _, r in
                 Button { model.act("cmp-pick", r.value) } label: {
                     VStack(alignment: .leading, spacing: 2) {

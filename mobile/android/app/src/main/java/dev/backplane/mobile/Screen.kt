@@ -199,6 +199,8 @@ data class HistBar(
     val n: Int, val at: Int, val title: String, val entry: String, val said: String,
     val playing: Boolean, val diff: Boolean, val cmp: Boolean, val a: String, val b: String, val side: String,
     val ticks: List<HistTick>, val menu: List<HistRow>?, val keys: IntArray,
+    // which of Old, Diff and New shows in a comparison (Rv.showing)
+    val showing: String = "",
 )
 
 data class HistTick(val id: String, val on: Boolean)
@@ -509,7 +511,7 @@ private fun viewer(o: JSONObject) = Viewer(
             h.optBoolean("playing"), h.optBoolean("diff"), h.optBoolean("cmp"), h.optString("a"), h.optString("b"), h.optString("side"),
             h.optJSONArray("ticks").map { HistTick(it.optString("id"), it.optBoolean("on")) },
             h.optJSONArray("menu")?.let { a -> a.map { HistRow(it.optString("label"), it.optString("sub"), it.optString("value")) } },
-            ints(h.optJSONArray("keys")))
+            ints(h.optJSONArray("keys")), h.optString("as"))
     },
     files = o.optJSONObject("files")?.let { f ->
         FilesPage(f.optJSONArray("trail").map { FileCrumb(it.optString("label"), it.optString("action"), it.optString("value")) },
