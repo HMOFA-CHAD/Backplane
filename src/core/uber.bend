@@ -21,7 +21,7 @@ def Uber.bot(+st: M.State) -> String:
   Uber.bot.k(Uber.live(st, M.Setting.get(st, "uber.bot", "")), M.Setting.get(st, "uber.bot", ""))
 
 def Uber.is(+st: M.State, +id: String) -> Bool:
-  Bool.and(Bool.not(String.is_empty(id)), String.eq(Uber.bot(st), id))
+  Bool.and(Bool.not(FR.Fr.is(id)), Bool.and(Bool.not(String.is_empty(id)), String.eq(Uber.bot(st), id)))
 
 # its id across machines
 def Uber.uid(+now: Nat, +seed: String) -> String:
