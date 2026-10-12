@@ -27,6 +27,7 @@ import ./fm.bend as FM
 import ./onboard.bend as OB
 import ./layers.bend as LY
 import ./slash.bend as SL
+import ./uber.bend as UB
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -3059,12 +3060,25 @@ def Menu.kind(+m: String) -> String:
 def Menu.id(+m: String) -> String:
   String.drop(m, 2n)
 
+# a bot's menu ("bot-menu id", kept as "b:<id>"): the person makes a bot
+# of this machine the uberbot, or not (core/uber.bend)
+def Menu.bot(+st: M.State, +id: String) -> List<&2, MItem>:
+  Bool.pick(List<&2, MItem>, UB.Uber.is(st, id), [MItem{"Not uberbot", "uber-demote", "", ""}],
+    Bool.pick(List<&2, MItem>, UB.Uber.live(st, id), [MItem{"Make uberbot", "uber-promote", id, ""}], Nil{}))
+
+def Menu.items.b(bot: Bool, +u: Ui, +id: String) -> List<&2, MItem>:
+  match bot:
+    case True{}:
+      Menu.bot(Side.st(u), id)
+    case False{}:
+      Menu.thread(Side.st(u), Side.now(u), id, String.eq(Ui.scratch(u, "@del"), id))
+
 def Menu.items.t(file: Bool, +u: Ui, +id: String) -> List<&2, MItem>:
   match file:
     case True{}:
       Menu.file(id)
     case False{}:
-      Menu.thread(Side.st(u), Side.now(u), id, String.eq(Ui.scratch(u, "@del"), id))
+      Menu.items.b(String.eq(Menu.kind(Menu.open(u)), "b"), u, id)
 
 def Menu.items.k(thread: Bool, +u: Ui, +id: String, rich: Bool) -> List<&2, MItem>:
   match thread:
@@ -3080,7 +3094,8 @@ def Menu.items(+u: Ui, rich: Bool) -> List<&2, MItem>:
 # its heading: the thread's title, the project's name or the file's path
 def Menu.title(+u: Ui) -> String:
   Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "t"), Active.title(Ui.thread(Side.st(u), Menu.id(Menu.open(u)))),
-    Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "f"), Menu.id(Menu.open(u)), Ui.project_title(Side.st(u), Menu.id(Menu.open(u)))))
+    Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "f"), Menu.id(Menu.open(u)),
+      Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "b"), BT.Bot.name(BT.World.bot(M.State.bots(Side.st(u)), Menu.id(Menu.open(u)))), Ui.project_title(Side.st(u), Menu.id(Menu.open(u))))))
 
 # opening one disarms any delete or remove; the same again shuts it
 def Menu.set(+u: Ui, +m: String) -> Ui:
@@ -3088,7 +3103,7 @@ def Menu.set(+u: Ui, +m: String) -> Ui:
 
 def Menu.actions() -> List<&2, String>:
   ["row-menu", "proj-menu", "menu-close", "row-pin", "row-unpin", "row-archive", "row-unarchive", "side-older", "side-settled",
-   "file-menu", "file-open", "file-reveal", "file-copy", "row-rename", "rename-save", "rename-no"]
+   "file-menu", "file-open", "file-reveal", "file-copy", "row-rename", "rename-save", "rename-no", "bot-menu"]
 
 # a file link's path where the hub finds it: in the selected thread's folder
 # when relative (core/links.bend's Link.file.abs)
@@ -3171,6 +3186,8 @@ def Menu.act.k(i: Nat, +u: Ui, +value: String) -> Act:
       Ren.save(u, value)
     case 15n:
       Act{Ren.clear(u), Nil{}}
+    case 16n:
+      Act{Menu.set(u, "b:" ++ value), Nil{}}
     case _:
       Menu.shut(Ui.rpc(u, "thread.unarchive", [J.KV{"thread", J.Str{value}}]))
 
@@ -5196,8 +5213,29 @@ def Bots.select.k(m: Maybe<&2, BT.Bot>, u: Ui) -> Act:
 def Bots.select(+u: Ui, +id: String) -> Act:
   Bots.select.k(BT.World.find.id(BT.World.bot(M.State.bots(Ui.state.of(u)), id)), u)
 
-def Bots.room.select(u: Ui, +id: String) -> Act:
-  Act{Ui.flag_off(Bots.views(u, "", id, ""), "settings"), [Focus{"room-post"}, Scroll{}]}
+# Rooms seen: the setting room.seen.<room> is the time (seconds) the person
+# last opened it; its unread posts are those after it that they did not
+# write. Opening a room with some unread says so; one with none sends nothing.
+def Rooms.seen(+u: Ui, +room: String) -> Nat:
+  Maybe.default(&2, Nat, Nat.read(M.Setting.get(Side.st(u), "room.seen." ++ room, "")), 0n)
+
+def Rooms.unread(+u: Ui, +room: String) -> Nat:
+  BT.World.unread(M.State.bots(Side.st(u)), room, Rooms.seen(u, room))
+
+def Rooms.mark.go(a: Act, +id: String) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Ui.also(Ui.setting(u, "room.seen." ++ id ++ "=" ++ Nat.show(Side.now(u))), cs)
+
+def Rooms.mark(+n: Nat, a: Act, +id: String) -> Act:
+  match n:
+    case 0n:
+      a
+    case 1n+_:
+      Rooms.mark.go(a, id)
+
+def Bots.room.select(+u: Ui, +id: String) -> Act:
+  Rooms.mark(Rooms.unread(u, id), Act{Ui.flag_off(Bots.views(u, "", id, ""), "settings"), [Focus{"room-post"}, Scroll{}]}, id)
 
 # A bot elsewhere on one of the owner's machines opens there: the window
 # switches to that machine's hub and shows the bot with all its tabs (its
@@ -7577,20 +7615,51 @@ def Tour.act.on(on: Bool, +u: Ui, +action: String) -> Act:
 def Tour.act(+u: Ui, +action: String) -> Act:
   Tour.act.on(Tour.on(u), u, action)
 
+# The uberbot (core/uber.bend, docs/uber.md): "uber" shows its Status tab,
+# "uber-promote <bot>" and "uber-demote" ask the hub (bots.uber), which backs
+# the bot up before it logs the promotion. Routed ahead of the action table.
+def Uber.show.k(none: Bool, +u: Ui, +id: String) -> Act:
+  match none:
+    case True{}:
+      Act{u, Nil{}}
+    case False{}:
+      Bots.select(Ui.scratch_set(u, "@btab", "status"), id)
+
+def Uber.show(+u: Ui) -> Act:
+  Uber.show.k(String.is_empty(UB.Uber.bot(Ui.state.of(u))), u, UB.Uber.bot(Ui.state.of(u)))
+
+def Uber.act.k(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n:
+      Uber.show(u)
+    case 1n:
+      Ui.rpc(u, "bots.uber", [J.KV{"bot", J.Str{value}}])
+    case 2n:
+      Ui.rpc(u, "bots.uber", [J.KV{"bot", J.Str{""}}])
+    case _:
+      Act{u, Nil{}}
+
+def Uber.act.go(route: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match route:
+    case True{}:
+      Uber.act.k(C.Codec.pos(["uber", "uber-promote", "uber-demote"], action), u, value)
+    case False{}:
+      Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)
+
 # a user action with its value
 def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Act:
   match menu:
     case True{}:
       Menu.act.k(i, u, value)
     case False{}:
-      Menu.after(action, Ui.reselect.act(Ui.sel(u), Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)))
+      Menu.after(action, Ui.reselect.act(Ui.sel(u), Uber.act.go(String.starts_with(action, "uber"), u, action, value)))
 
 def Ui.act.e(emb: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match emb:
     case True{}:
       Emb.act(u, action, value)
     case False{}:
-      Emb.sync.sel(Ui.sel(u), Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 16n), C.Codec.pos(Menu.actions(), action), u, action, value)))
+      Emb.sync.sel(Ui.sel(u), Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 17n), C.Codec.pos(Menu.actions(), action), u, action, value)))
 
 # the picker's machine row (routed before the action table)
 def Ui.act.p(pick: Bool, +u: Ui, +action: String, +value: String) -> Act:

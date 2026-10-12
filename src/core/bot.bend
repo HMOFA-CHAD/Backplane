@@ -593,6 +593,26 @@ def World.posts(+w: World, +room: String, +n: Nat) -> List<&2, Post>:
     case World{_, _, ps, _, _, _, _, _, _, _, _}:
       Post.in.go(ps, room, n, Nil{})
 
+def Post.unread.add(new: Bool, +n: Nat) -> Nat:
+  Bool.pick(Nat, new, 1n+n, n)
+
+# a walk from the newest post, stopping after the first at or before `seen`
+# (the older ones are older still); `done` says the last one was
+def Post.unread.go(ps: List<&2, Post>, done: Bool, +room: String, +seen: Nat, +n: Nat) -> Nat:
+  match ps done:
+    case Nil{} _:
+      n
+    case +p <> +t True{}:
+      n
+    case Post{_, +r, +f, _, _, +at} <> t False{}:
+      Post.unread.go(t, Nat.is_le(at, seen), room, seen, Post.unread.add(Bool.and(Nat.is_gt(at, seen), Bool.and(String.eq(r, room), Bool.not(String.eq(f, "you")))), n))
+
+# the posts in a room newer than `seen` that the person did not write
+def World.unread(+w: World, +room: String, +seen: Nat) -> Nat:
+  match w:
+    case World{_, _, ps, _, _, _, _, _, _, _, _}:
+      Post.unread.go(ps, False{}, room, seen, 0n)
+
 def Post.touches(p: Post, +bot: String) -> Bool:
   match p:
     case Post{_, r, f, _, _, _}:
