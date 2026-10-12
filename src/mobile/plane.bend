@@ -25,11 +25,15 @@ def MPlane.machine(+m: String) -> List<&2, J.KV>:
 def MPlane.ago(+kind: String, +now: Nat, +at: Nat) -> String:
   MB.MBots.ago(Bool.or(String.eq(kind, "routine"), Nat.is_eq(at, 0n)), now, at)
 
+# the uberbot's own row has no value; its id routes the tap to its hub
+def MPlane.value(+act: String, +val: String, +id: String) -> String:
+  Bool.pick(String, Bool.and(String.eq(act, "uber"), String.is_empty(val)), id, val)
+
 def MPlane.row(r: PL.PRow, +now: Nat) -> J.Json:
   match r:
     case PL.PRow{+kind, +id, +act, +val, +title, +sub, +machine, +state, +at, +away}:
       J.Json.obj(List.append(&2, J.KV,
-        [J.KV{"kind", J.Json.str(kind)}, J.KV{"id", J.Json.str(id)}, J.KV{"act", J.Json.str(act)}, J.KV{"value", J.Json.str(val)},
+        [J.KV{"kind", J.Json.str(kind)}, J.KV{"id", J.Json.str(id)}, J.KV{"act", J.Json.str(act)}, J.KV{"value", J.Json.str(MPlane.value(act, val, id))},
          J.KV{"title", J.Json.str(title)}, J.KV{"sub", J.Json.str(sub)}, J.KV{"state", J.Json.str(state)},
          J.KV{"ago", J.Json.str(MPlane.ago(kind, now, at))}, J.KV{"at", J.Json.nat(at)}, J.KV{"away", J.Json.bool(away)}],
         MPlane.machine(machine)))

@@ -94,7 +94,7 @@ private val square = RoundedCornerShape(4.dp)
 
 // how a mood looks next to a cat
 @Composable
-private fun moodTint(mood: String): Color = when (mood) {
+internal fun moodTint(mood: String): Color = when (mood) {
     "wait" -> Color(0xFFFF9F0A)
     "work", "talk" -> Color(0xFF30D158)
     "think" -> Color(0xFF0A84FF)
@@ -104,7 +104,7 @@ private fun moodTint(mood: String): Color = when (mood) {
 }
 
 @Composable
-private fun MoodDot(mood: String) {
+internal fun MoodDot(mood: String) {
     Box(Modifier.size(7.dp).clip(CircleShape).background(moodTint(mood)))
 }
 
@@ -279,6 +279,7 @@ private fun BotScreen(m: AppModel, s: Screen, b: BotView) {
     }) { pad ->
         Box(Modifier.fillMaxSize().padding(pad).imePadding()) {
             when (b.tab) {
+                "status" -> StatusTab(m, s.plane)
                 "space" -> if (b.page != null) SpacePage(m, b.page) else b.space?.let { SpaceView(it) { a, v -> m.act(a, v) } }
                 "browser" -> BrowserTab(m, b.browser)
                 "memory" -> MemoryTab(m, b.memory)

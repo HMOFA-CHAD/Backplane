@@ -554,6 +554,12 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
             // the search is always the list's first row (projects, or in the
             // active view threads by title or project)
             s.search?.let { f -> item(key = "find") { SearchField(m, f, s.projects.firstOrNull()?.id) } }
+            // the uberbot's card, and the status plane under it
+            s.uber?.let { u ->
+                item(key = "uber") { UberCardRow(m, u) }
+                s.plane?.let { planeSections(m, it, false) }
+                item(key = "d:uber") { HorizontalDivider() }
+            }
             if (s.view == "active") {
                 if (s.active.isEmpty() && s.settled == null) {
                     if (s.projects.isNotEmpty() && s.search?.query.isNullOrEmpty()) item(key = "none") {

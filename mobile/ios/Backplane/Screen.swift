@@ -659,6 +659,9 @@ struct Screen: Decodable {
     let rowMenu: RowMenu?
     let bots: [BotRow]
     let rooms: [RoomRow]
+    // the uberbot's card and the status plane (Plane.swift); none without an uberbot
+    let uber: UberCard?
+    let plane: PlaneModel?
     let newBot: NewBot?
     let newRoom: NewRoom?
     let bot: BotView?

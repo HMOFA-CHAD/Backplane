@@ -8,7 +8,7 @@ import SwiftUI
 private let sep = "\u{1f}"
 
 // how a mood looks next to a cat
-private func moodTint(_ mood: String) -> Color {
+func moodTint(_ mood: String) -> Color {
     switch mood {
     case "wait": .orange
     case "work", "talk": .green
@@ -19,7 +19,7 @@ private func moodTint(_ mood: String) -> Color {
     }
 }
 
-private struct MoodDot: View {
+struct MoodDot: View {
     let mood: String
 
     var body: some View {
@@ -254,6 +254,8 @@ struct BotScreen: View {
 
     @ViewBuilder private var content: some View {
         switch bot.tab ?? "chat" {
+        case "status":
+            StatusTab(model: model, plane: model.screen?.plane).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
         case "space":
             if let p = bot.page {
                 SpacePage(model: model, page: p).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)

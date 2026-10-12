@@ -363,6 +363,8 @@ data class Screen(
     val tour: Tour? = null,
     // a thread this phone asked for is still to come (its page opens at once)
     val making: Boolean = false,
+    // the uberbot's card and the status plane (Plane.kt); none without an uberbot
+    val uber: UberCard? = null, val plane: PlaneModel? = null,
 )
 
 data class Cmd(
@@ -621,6 +623,8 @@ fun parseScreen(o: JSONObject) = Screen(
     o.optString("theme"),
     view = o.optString("view").ifEmpty { "projects" },
     making = o.optBoolean("making"),
+    uber = o.optJSONObject("uber")?.let(::parseUber),
+    plane = o.optJSONObject("plane")?.let(::parsePlane),
     active = o.optJSONArray("active").map(::row),
     older = o.optJSONObject("older")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
     settled = o.optJSONObject("settled")?.let { Older(it.optInt("count"), it.optBoolean("open")) },

@@ -372,6 +372,10 @@ struct ProjectsView: View {
             if let f = screen.search {
                 Section { SearchField(model: model, search: f, first: screen.projects.first?.id) }
             }
+            if let u = screen.uber {
+                Section { UberCardRow(model: model, card: u) }
+                if let p = screen.plane { PlaneSections(model: model, plane: p, full: false) }
+            }
             if screen.view == "active" {
                 let rows = screen.active ?? []
                 if rows.isEmpty && screen.settled == nil {

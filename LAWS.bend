@@ -6505,3 +6505,7 @@ law onboard_uber_skip_answers:
 
 law onboard_uber_single_no_back:
   {U.Tour.back(OnbUi.synced(OnbUber.old())) == False{} : Bool}
+# the phone's status plane lists each row once, whichever hubs reported it
+law hubs_plane_once:
+  for +rs: List<&2, J.Json>
+  {ON.Once.distinct(ON.Once.keys(J.Json, Hb.Hubs.pl.keyed(rs))) == True{} : Bool}
