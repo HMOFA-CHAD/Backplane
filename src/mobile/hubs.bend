@@ -104,13 +104,13 @@ type QN is Data:
 def Q.names() -> List<&2, QN>:
   [QN{"sel", 2n}, QN{"thread", 2n}, QN{"entries", 1n}, QN{"live", 1n}, QN{"viewer", 1n}, QN{"blocks", 1n}, QN{"bot", 1n},
     QN{"picker", 1n}, QN{"folders", 1n}, QN{"find", 1n}, QN{"asks", 1n}, QN{"attaching", 1n}, QN{"menu", 1n}, QN{"diff", 1n},
-    QN{"term", 1n}, QN{"skills", 1n}, QN{"settings", 1n}, QN{"newBot", 1n}, QN{"newRoom", 1n}]
+    QN{"term", 1n}, QN{"skills", 1n}, QN{"settings", 1n}, QN{"newBot", 1n}, QN{"newRoom", 1n}, QN{"plane", 1n}]
 
 def Q.hash(+a: U32, +b: U32) -> U32:
   U32.and(U32.shrn(((a * 29 : U32) + b : U32), 2n), 31)
 
 def Q.bit(+a: U32, +b: U32) -> Bool:
-  U32.is_eq(U32.and(U32.shrn(3100017230, U32.to_nat(Q.hash(a, b))), 1), 1)
+  U32.is_eq(U32.and(U32.shrn(3100017358, U32.to_nat(Q.hash(a, b))), 1), 1)
 
 # whether a key could be one of the names (never false for one of them:
 # law q_may_names)
@@ -783,8 +783,8 @@ def Hubs.pl.null(j: J.Json) -> Bool:
     case _:
       False{}
 
-def Hubs.pl.fill(+any: Bool, +j: J.Json, +u: U.Ui, +k: String) -> J.Json:
-  Hubs.pl.fill.k(Bool.and(any, Hubs.pl.null(J.Json.get_obj(j, "plane"))), j, Q.all(MPL.MPlane.json(PL.Plane.of(u, S.Mob.now(u)), S.Mob.now(u)), k))
+def Hubs.pl.fill(+any: Bool, +j: J.Json, +u: U.Ui) -> J.Json:
+  Hubs.pl.fill.k(Bool.and(any, Hubs.pl.null(J.Json.get_obj(j, "plane"))), j, MPL.MPlane.json(PL.Plane.of.f(u, U.Side.ix(U.Ui.state(u)), S.Mob.now(u)), S.Mob.now(u)))
 
 type Shown is Data:
   Shown{key: String, name: String, j: J.Json}
@@ -796,7 +796,7 @@ def Hubs.shown.go(hs: List<&2, Hub>, +cur: String, +any: Bool) -> List<&2, Shown
     case Nil{}:
       Nil{}
     case Hub{+k, +u} <> t:
-      Shown{k, Hubs.name(k, u), Hubs.pl.fill(any, Q.all(S.Mob.screen.f(String.eq(k, cur), u), k), u, k)} <> Hubs.shown.go(t, cur, any)
+      Shown{k, Hubs.name(k, u), Hubs.pl.fill(any, Q.all(S.Mob.screen.f(String.eq(k, cur), u), k), u)} <> Hubs.shown.go(t, cur, any)
 
 def Hubs.shown(+hs: List<&2, Hub>, +cur: String) -> List<&2, Shown>:
   Hubs.shown.go(hs, cur, Hubs.pl.any(hs))
@@ -1421,9 +1421,9 @@ def Hubs.bots(+ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool) -> List<&2,
 def Hubs.pl.far(+hs: List<&2, Hub>, +from: String, +bot: String) -> Bool:
   Bool.and(FR.Fr.is(bot), Hubs.holds(hs, from, FR.Fr.link(bot)))
 
-# a routine's value is "<hub>|<bot>|routines"
+# a routine's value is "<bot>|routines" (the plane is qualified by Hubs.pl.q once its rows are kept)
 def Hubs.pl.bot.of(+value: String) -> String:
-  Maybe.default(&2, String, List.head(&2, String, String.split(Hubs.rest(value), '|')), "")
+  Maybe.default(&2, String, List.head(&2, String, String.split(value, '|')), "")
 
 def Hubs.pl.dup.k(i: Nat, +hs: List<&2, Hub>, +from: String, +id: String, +value: String) -> Bool:
   match i:
@@ -1437,7 +1437,7 @@ def Hubs.pl.dup.k(i: Nat, +hs: List<&2, Hub>, +from: String, +id: String, +value
       False{}
 
 def Hubs.pl.dup(+hs: List<&2, Hub>, +from: String, +r: J.Json) -> Bool:
-  Hubs.pl.dup.k(C.Codec.pos(["thread", "bot", "routine"], J.Json.get_str(r, "kind", "")), hs, from, Hubs.rest(J.Json.get_str(r, "id", "")), J.Json.get_str(r, "value", ""))
+  Hubs.pl.dup.k(C.Codec.pos(["thread", "bot", "routine"], J.Json.get_str(r, "kind", "")), hs, from, J.Json.get_str(r, "id", ""), J.Json.get_str(r, "value", ""))
 
 def Hubs.pl.label.k(name: Bool, r: J.Json, +machine: String) -> J.Json:
   match name:
@@ -1449,12 +1449,37 @@ def Hubs.pl.label.k(name: Bool, r: J.Json, +machine: String) -> J.Json:
 def Hubs.pl.label(+many: Bool, +machine: String, +r: J.Json) -> J.Json:
   Hubs.pl.label.k(Bool.and(many, String.is_empty(J.Json.get_str(r, "machine", ""))), r, machine)
 
+# a plane row made the hub's own: its id and its value carry the hub (the
+# plane is left out of Q.all, which walked every row's every key)
+def Hubs.pl.q.fields(fs: J.Json, +from: String) -> J.Json:
+  match fs:
+    case J.Field{+k, J.Str{+s}, t}:
+      J.Field{k, J.Str{Bool.pick(String, Bool.or(String.eq(k, "id"), String.eq(k, "value")), Hubs.id(from, s), s)}, Hubs.pl.q.fields(t, from)}
+    case J.Field{k, v, t}:
+      J.Field{k, v, Hubs.pl.q.fields(t, from)}
+    case x:
+      x
+
+def Hubs.pl.q(r: J.Json, +from: String) -> J.Json:
+  match r:
+    case J.Obj{fs}:
+      J.Obj{Hubs.pl.q.fields(fs, from)}
+    case x:
+      x
+
+def Hubs.pl.q.rows(rs: List<&2, J.Json>, +from: String) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      Hubs.pl.q(r, from) <> Hubs.pl.q.rows(t, from)
+
 def Hubs.pl.rows(rs: List<&2, J.Json>, +hs: List<&2, Hub>, +from: String, +many: Bool, +machine: String) -> List<&2, J.Json>:
   match rs:
     case Nil{}:
       Nil{}
     case +r <> t:
-      Hubs.part.k(Bool.not(Hubs.pl.dup(hs, from, r)), Hubs.pl.label(many, machine, r), Hubs.pl.rows(t, hs, from, many, machine))
+      Hubs.part.k(Bool.not(Hubs.pl.dup(hs, from, r)), Hubs.pl.q(Hubs.pl.label(many, machine, r), from), Hubs.pl.rows(t, hs, from, many, machine))
 
 # every hub's rows of the plane's section k
 def Hubs.pl.all(ss: List<&2, Shown>, +hs: List<&2, Hub>, +k: String, +many: Bool) -> List<&2, J.Json>:
@@ -1556,10 +1581,43 @@ def Hubs.pl.idle.k(+idle: List<&2, J.Json>, +ss: List<&2, Shown>, +hs: List<&2, 
 def Hubs.pl.build(+ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool, +uber: J.Json) -> MPL.MUber:
   Hubs.pl.idle.k(Hubs.pl.once(List.sort(~J.Json, ~Hubs.pl.newer, Hubs.pl.all(ss, hs, "idle", many))), ss, hs, many, uber)
 
+# One paired hub: its plane is the plane (core keeps each row once and in
+# order, and no other hub is there to mirror a row), and only its ids need
+# the hub's name.
+def Hubs.pl.one.fields(fs: J.Json, +from: String) -> J.Json:
+  match fs:
+    case J.Field{+k, J.Arr{+xs}, t}:
+      J.Field{k, J.Json.arr(Hubs.pl.q.rows(J.Json.elems(J.Arr{xs}), from)), Hubs.pl.one.fields(t, from)}
+    case J.Field{k, v, t}:
+      J.Field{k, v, Hubs.pl.one.fields(t, from)}
+    case x:
+      x
+
+def Hubs.pl.one.j(plane: J.Json, +from: String) -> J.Json:
+  match plane:
+    case J.Obj{fs}:
+      J.Obj{Hubs.pl.one.fields(fs, from)}
+    case x:
+      x
+
+def Hubs.pl.one(+ss: List<&2, Shown>, +uber: J.Json) -> MPL.MUber:
+  match ss:
+    case Shown{+k, _, +j} <> _:
+      MPL.MUber{uber, Hubs.pl.one.j(J.Json.get_obj(j, "plane"), k)}
+    case Nil{}:
+      MPL.MUber{J.Null{}, J.Null{}}
+
+def Hubs.pl.of.m(many: Bool, +ss: List<&2, Shown>, +hs: List<&2, Hub>, +uber: J.Json) -> MPL.MUber:
+  match many:
+    case True{}:
+      Hubs.pl.build(ss, hs, True{}, uber)
+    case False{}:
+      Hubs.pl.one(ss, uber)
+
 def Hubs.pl.of.k(up: Bool, +ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool, +uber: J.Json) -> MPL.MUber:
   match up:
     case True{}:
-      Hubs.pl.build(ss, hs, many, uber)
+      Hubs.pl.of.m(Nat.is_gt(List.length(&2, Shown, ss), 1n), ss, hs, uber)
     case False{}:
       MPL.MUber{J.Null{}, J.Null{}}
 

@@ -5,6 +5,8 @@ import ../src/core/client.bend as U
 import ../src/core/far.bend as FR
 import ../src/core/botui.bend as BU
 import ../src/core/plane.bend as PL
+import ../src/core/json.bend as J
+import ../src/mobile/plane.bend as MP
 
 # The status plane: its sections, their order, the counts line and the
 # rooms' unread (laws plane_*).
@@ -72,6 +74,7 @@ def main() -> IO(Unit):
     +p : PL.Plane = PL.Plane.of(ui(Nil{}), now())
     C.Check.str("need", ids(PL.Plane.need(p)), "t1,t2,t3,")
     C.Check.str("need states", states(PL.Plane.need(p)), "approval,question,failed,")
+    C.Check.str("a question the hub counts as pending is still a question", states(PL.Plane.need(PL.Plane.of(ui([M.PendingChanged{"t2", 1n, 199102n}]), now()))), "approval,question,failed,")
     C.Check.str("run, newest first", ids(PL.Plane.run(p)), "b1,t5,t4,")
     C.Check.str("run states", states(PL.Plane.run(p)), "working,queued,working,")
     C.Check.str("idle: the last day only", ids(PL.Plane.idle(p)), "t6,")
@@ -91,6 +94,7 @@ def main() -> IO(Unit):
     C.Check.str("machines", machines(PL.Plane.machines(PL.Plane.of(ui([M.PeerSet{"L", "desk", "http://desk:3787", False{}, 5n}]), now()))), "This machine:here,desk:syncing,")
     C.Check.str("the uberbot is not among the bots", ids(PL.Plane.bots(PL.Plane.of(ui([M.UberSet{"b2", "u1-a", 5n}]), now()))), "b1,")
     C.Check.str("it has its own row", row(BU.BU.uber(ui([M.UberSet{"b2", "u1-a", 5n}]))), "Pip")
+    C.Check.str("without the keyed pass, the same plane", J.Json.show(MP.MPlane.json(PL.Plane.of.f(far(False{}), U.Side.ix(U.Ui.state(far(False{}))), now()), now())), J.Json.show(MP.MPlane.json(PL.Plane.of(far(False{}), now()), now())))
     C.Check.str("a thread opens by select", PL.Plane.act.of(PL.Plane.need(p)), "select t1")
     C.Check.str("the key changes with the minute", Bool.pick(String, String.eq(PL.Plane.key(ui(Nil{}), now()), PL.Plane.key(ui(Nil{}), 200090n)), "same", "differs"), "differs")
     C.Check.str("and with the log", Bool.pick(String, String.eq(PL.Plane.key(ui(Nil{}), now()), PL.Plane.key(ui([M.SettingSet{"x", "y", 3n}]), now())), "same", "differs"), "differs")

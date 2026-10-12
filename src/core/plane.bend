@@ -131,11 +131,18 @@ def Plane.sec(+s: String) -> Nat:
   Bool.pick(Nat, Nat.is_gt(Plane.rank(s), 0n), 0n, Bool.pick(Nat, Bool.or(String.eq(s, "working"), String.eq(s, "queued")), 1n, 2n))
 
 # a thread of a machine that does not answer is not asking for anything
+# A thread whose open asks are all questions or plans is asking, though the
+# hub counts every ask as pending (the phase then says approval): the clients
+# draw a question apart from an approval.
+def Plane.asking(+s: String, +ix: U.SIx, +id: String) -> String:
+  Bool.pick(String, Bool.and(String.eq(s, "approval"), Bool.and(Bool.not(U.Asks.kind(U.SIx.open(ix, id), "approval")),
+    Bool.or(U.Asks.kind(U.SIx.open(ix, id), "input"), U.Asks.kind(U.SIx.open(ix, id), "plan")))), "question", s)
+
 def Plane.thread.k(+away: Bool, +id: String, +title: String, +sub: String, +machine: String, +phase: String, +at: Nat) -> PRow:
   PRow{"thread", id, "select", id, title, sub, machine, Bool.pick(String, away, "away", phase), at, away}
 
 def Plane.thread.t(+t: M.Thread, +at: Nat, +pt: String, +u: U.Ui, +ix: U.SIx, +st: M.State) -> PRow:
-  Plane.thread.k(U.Ui.far.away(u, M.Thread.id(t)), M.Thread.id(t), U.Active.title(t), pt, U.Ui.far.name(u, M.Thread.id(t)), Plane.state(U.Side.phase.ix(ix, st, t)), at)
+  Plane.thread.k(U.Ui.far.away(u, M.Thread.id(t)), M.Thread.id(t), U.Active.title(t), pt, U.Ui.far.name(u, M.Thread.id(t)), Plane.asking(Plane.state(U.Side.phase.ix(ix, st, t)), ix, M.Thread.id(t)), at)
 
 def Plane.thread(r: U.ARow, +u: U.Ui, +ix: U.SIx, +st: M.State) -> PRow:
   match r:
@@ -163,7 +170,7 @@ def Plane.bot.k(+away: Bool, +id: String, +name: String, +machine: String, +phas
   PRow{"bot", id, Bool.pick(String, uber, "uber", "bot"), Bool.pick(String, uber, "", id), name, "", machine, Bool.pick(String, away, "away", phase), at, away}
 
 def Plane.bot.t(+b: BT.Bot, +th: String, +u: U.Ui, +ix: U.SIx, +st: M.State) -> PRow:
-  Plane.bot.k(U.Ui.far.away(u, BT.Bot.id(b)), BT.Bot.id(b), BT.Bot.name(b), U.Ui.far.name(u, BT.Bot.id(b)), Plane.state(U.Side.phase.ix(ix, st, U.Ui.thread(st, th))),
+  Plane.bot.k(U.Ui.far.away(u, BT.Bot.id(b)), BT.Bot.id(b), BT.Bot.name(b), U.Ui.far.name(u, BT.Bot.id(b)), Plane.asking(Plane.state(U.Side.phase.ix(ix, st, U.Ui.thread(st, th))), ix, th),
     U.Active.activity(U.Ui.thread(st, th)), UB.Uber.is(st, BT.Bot.id(b)))
 
 # only a bot that has a thread, and one that is not at rest, shows here
@@ -366,6 +373,18 @@ def Plane.of.i(+idle: List<&2, PRow>, +all: List<&2, PRow>, +u: U.Ui, +ix: U.SIx
 
 def Plane.of.k(+all: List<&2, PRow>, +u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
   Plane.of.i(Plane.sort(Plane.recent(Plane.part(all, 2n), now)), all, u, ix, now)
+
+# The thread rows and the bots' own with nothing dropped. A thread row
+# comes from its own Active row and a bot's from its own bot, so the keys
+# are distinct already (Plane.all.keyed keeps each once, at a cost that grows
+# with the square of the rows: a phone with 300 threads spent 60 ms on it).
+def Plane.all.vals(+u: U.Ui, +ix: U.SIx, +now: Nat) -> List<&2, PRow>:
+  List.append(&2, PRow, Plane.threads(U.Active.rows.ix(U.Ui.state(u), ix, now, ""), u, ix, U.Ui.state(u)),
+    Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, ix, U.Ui.state(u)))
+
+# the same plane without the keyed pass (the phones' screens)
+def Plane.of.f(+u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
+  Plane.of.k(Plane.all.vals(u, ix, now), u, ix, now)
 
 def Plane.of.x(+u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
   Plane.of.k(O.Once.vals(PRow, Plane.all.keyed(u, ix, now)), u, ix, now)

@@ -89,6 +89,6 @@ def MPlane.of.k(r: B.BRow, +p: PL.Plane, +now: Nat) -> MUber:
 def MPlane.of(m: Maybe<&2, B.BRow>, +u: U.Ui, +ix: U.SIx, +now: Nat) -> MUber:
   match m:
     case Some{r}:
-      MPlane.of.k(r, PL.Plane.of.x(u, ix, now), now)
+      MPlane.of.k(r, PL.Plane.of.f(u, ix, now), now)
     case None{}:
       MUber{J.Null{}, J.Null{}}
