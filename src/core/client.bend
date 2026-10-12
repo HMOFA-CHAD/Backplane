@@ -3357,10 +3357,22 @@ def Refs.want(a: Act) -> Act:
     case Act{+u, cs}:
       Act{Refs.fill(RF.Refs.typing(Skills.token(Ui.draft_text(u))), u), cs}
 
+# an edit of the draft opens a menu Esc shut again (the same text sent
+# again leaves it shut)
+def Skills.reopen.k(same: Bool, +u: Ui) -> Ui:
+  match same:
+    case True{}:
+      u
+    case False{}:
+      Ui.info_set(u, "sk.off", "")
+
+def Skills.reopen(+u: Ui, +text: String) -> Ui:
+  Skills.reopen.k(String.eq(Ui.draft_text(u), text), u)
+
 # the selected thread's draft; typing a `$` fetches its skills once, a
 # reference being typed is looked up
-def Ui.draft(u: Ui, text: String) -> Act:
-  Refs.want(Skills.want(Ui.draft.set(u, text)))
+def Ui.draft(u: Ui, +text: String) -> Act:
+  Refs.want(Skills.want(Ui.draft.set(Skills.reopen(u, text), text)))
 
 # What the machine says about a provider: its CLI version ("" when it is
 # not installed) and a label per model
