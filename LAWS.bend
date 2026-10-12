@@ -6411,4 +6411,4 @@ law bom_diff_md_none:
 
 # a pipe in a cell is escaped
 law bom_md_pipe:
-  {BOM.Bom.c("a|b") == "a\\|b" : String}
+  {BOM.Bom.c("a|b") == "a/b" : String}

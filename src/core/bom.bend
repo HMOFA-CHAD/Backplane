@@ -955,7 +955,7 @@ def Bom.r.mpnfp(ps: List<&2, Part>) -> List<&2, Fnd>:
 
 # every finding of the design checks, over `Bom.parts`
 def Bom.rules(+ps: List<&2, Part>) -> List<&2, Fnd>:
-  List.concat(&2, Fnd, [Bom.r.dup(ps), Bom.r.unannotated(ps), Bom.r.footprint(ps), Bom.r.value(ps), Bom.r.mpn(ps), Bom.r.mpnfp(ps), Bom.r.dnp(ps)])
+  List.concat(&2, Fnd, [Bom.r.dup(ps), Bom.r.unannotated(ps), Bom.r.footprint(ps), Bom.r.value(ps), Bom.r.mpn(ps), Bom.r.mpnfp(ps)])
 
 # Output
 # ------
@@ -1007,7 +1007,7 @@ def Bom.csv(ls: List<&2, Line>) -> String:
 def Bom.c.if(pipe: Bool, nl: Bool, cr: Bool, c: Char, rest: String) -> String:
   match pipe nl cr:
     case True{} _ _:
-      SCon{Char.from_u32(92), SCon{c, rest}}
+      SCon{Char.from_u32(47), rest}
     case _ True{} _:
       SCon{Char.from_u32(32), rest}
     case _ _ True{}:
@@ -1021,7 +1021,8 @@ def Bom.c.of(+x: U32, c: Char, rest: String) -> String:
 def Bom.c.k(+c: Char, rest: String) -> String:
   Bom.c.of(Char.to_u32(c), c, rest)
 
-# a Markdown table cell: pipes escaped, line breaks flattened
+# a Markdown table cell: a pipe as "/" (the app's tables split on every
+# pipe, core dom.bend's Md), line breaks flattened
 def Bom.c(s: String) -> String:
   match s:
     case SNil{}:
