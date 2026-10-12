@@ -41,8 +41,8 @@ def machines(rs: List<&2, PL.PMach>) -> String:
     case Nil{}:
       ""
     case PL.PMach{n, s} <> t:
-      n ++ ":" ++ s ++ ","
-    case _:
+      n ++ ":" ++ s ++ "," ++ machines(t)
+    case Nil{}:
       ""
 
 def ids(rs: List<&2, PL.PRow>) -> String:
