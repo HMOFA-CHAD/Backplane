@@ -479,7 +479,10 @@ final class AppModel {
                 opening = nil
                 act("select", s.hub + "|" + id)
             }
-            if let n = botting, let b = s.bots.first(where: { $0.name == n }) {
+            if let n = botting, let u = s.uber, u.name == n {
+                botting = nil
+                act("uber", u.id)
+            } else if let n = botting, let b = s.bots.first(where: { $0.name == n }) {
                 botting = nil
                 act(b.act ?? (b.remote ? "remote" : "bot"), b.id)
             } else if let n = botting, let r = s.rooms.first(where: { $0.name == n }) {

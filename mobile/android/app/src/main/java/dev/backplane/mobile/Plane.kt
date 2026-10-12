@@ -201,7 +201,8 @@ fun LazyListScope.planeSections(m: AppModel, p: PlaneModel, full: Boolean, idleO
             }
         }
     }
-    planeSection(m, "bots", "Bots", p.bots, true)
+    // the home list has its own Bots section (the cats)
+    if (full) planeSection(m, "bots", "Bots", p.bots, true)
     planeSection(m, "rooms", "Rooms", p.rooms)
     planeSection(m, "routines", "Routines", p.routines)
     if (full && p.need.isEmpty() && p.run.isEmpty() && p.idleN == 0 && p.bots.isEmpty() && p.rooms.isEmpty() && p.routines.isEmpty()) {

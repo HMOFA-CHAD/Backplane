@@ -247,7 +247,8 @@ struct PlaneSections: View {
                 }
             }
         }
-        if !plane.bots.isEmpty { section("Bots", plane.bots, mood: true) }
+        // the home list has its own Bots section (the cats)
+        if full && !plane.bots.isEmpty { section("Bots", plane.bots, mood: true) }
         if !plane.rooms.isEmpty { section("Rooms", plane.rooms) }
         if !plane.routines.isEmpty { section("Routines", plane.routines) }
         if full && plane.need.isEmpty && plane.run.isEmpty && plane.idleN == 0 && plane.bots.isEmpty && plane.rooms.isEmpty && plane.routines.isEmpty {
@@ -266,7 +267,7 @@ private struct PlaneStrip: View {
     private func counter(_ n: Int, _ label: String, _ tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("\(n)").font(.title2.weight(.semibold)).monospacedDigit().foregroundStyle(n > 0 ? tint : Color.secondary)
-            Text(label).font(.caption2).textCase(.uppercase).foregroundStyle(.secondary).lineLimit(1)
+            Text(label).font(.caption2).textCase(.uppercase).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
