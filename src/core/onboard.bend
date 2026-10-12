@@ -115,7 +115,7 @@ def Ob.body.4(+k: Nat) -> String:
     ++ ", then mention it in any message: @scout look at the BOM."
 
 def Ob.body.5() -> String:
-  "Backplane runs the Claude Code, Codex or Grok command-line program: install one and sign in to it on the machine that runs this hub. Settings shows whether each is found, not whether you are signed in. Choose the provider and model in a thread's composer, or in Settings for new threads."
+  "Backplane runs the Claude Code, Codex, Grok or Muse Code command-line program: install one and sign in to it on the machine that runs this hub. Settings shows whether each is found, not whether you are signed in. Choose the provider and model in a thread's composer, or in Settings for new threads."
 
 def Ob.body.6(+k: Nat) -> String:
   "API keys for other services are kept in a file on the hub's machine that agents running there could read. They are told not to print them; nothing enforces it. "

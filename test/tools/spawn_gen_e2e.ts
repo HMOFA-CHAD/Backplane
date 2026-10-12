@@ -5,8 +5,8 @@
 //      it speaks) completes; one stopped while it starts, then sent again
 //      at once, completes with the second process's answer and never the
 //      first's
-//   2. grok that cannot start fails its turn (the current generation's
-//      failure is heard)
+//   2. grok and muse that cannot start fail their turns (the current
+//      generation's failure is heard)
 //   3. a Claude thread whose process was replaced (a new model): a
 //      changing tool call over the old process's MCP URL is refused as a
 //      stale process, a reading one answers, and the new URL may change
@@ -122,6 +122,10 @@ try {
   send("turn.start", { thread: g1, text: "hello grok", msg: "g-4" });
   await until(10000, () => turns(g1).at(-1) === "failed" ? true : undefined);
   check(turns(g1).at(-1) === "failed" && seen.some((x) => x.$ === "ActivityLogged" && x.thread === g1 && String(x.summary).includes("could not start grok")), "grok that cannot start fails its turn");
+  const m1 = await made("muse", "muse");
+  send("turn.start", { thread: m1, text: "hello muse", msg: "g-4m" });
+  await until(10000, () => turns(m1).at(-1) === "failed" ? true : undefined);
+  check(turns(m1).at(-1) === "failed" && seen.some((x) => x.$ === "ActivityLogged" && x.thread === m1 && String(x.summary).includes("could not start muse")), "muse that cannot start fails its turn");
 
   // 3. a replaced Claude process's MCP URL
   const t1 = await made("claude", "claude");

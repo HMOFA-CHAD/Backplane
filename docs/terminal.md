@@ -137,7 +137,7 @@ picker, an interactive script, a monitor.
 - The next message: when the person writes, the server asks the actor for
   what the thread's terminals show that the agent has not seen
   (`TNote`), puts it after the message as a `<terminals>` block (Claude,
-  Codex and Grok alike), and stops the ones not pinned.
+  Codex, Grok and Muse alike), and stops the ones not pinned.
 - When a program exits its last screen is written to `<home>/terms/<key>`
   (`COLSxROWS<tab>state`, then the snapshot), so reads and snapshots work
   after the hub starts again.

@@ -21,6 +21,7 @@ import ./src/core/apikeys.bend as AK
 import ./src/core/onboard.bend as OBD
 import ./src/core/fm.bend as FMG
 import ./src/core/acp.bend as AC
+import ./src/core/msp.bend as MSP
 import ./src/core/mcp.bend as MC
 import ./src/core/fmcp.bend as FMC
 import ./src/core/handoff.bend as HD
@@ -2225,6 +2226,31 @@ law interrupt_grok_stops:
   for +th: String
   for r: String
   {H.Stop.outs("grok", th, r) == [H.AgentStop{th}] : List<&2, H.Out>}
+
+law interrupt_muse_stops:
+  for +th: String
+  for r: String
+  {H.Stop.outs("muse", th, r) == [H.AgentStop{th}] : List<&2, H.Out>}
+
+# a Muse thread's turn is a Muse process (one per turn, over MSP)
+law muse_run_turn:
+  for +th: String
+  for +cwd: String
+  for +m: String
+  for +s: String
+  for +r: M.RuntimeMode
+  for i: M.InteractionMode
+  for +t: String
+  for u: String
+  {H.Hub.run.k(3n, th, cwd, "muse", m, s, r, i, t, u) == [H.MuseTurn{th, cwd, m, s, r, t}] : List<&2, H.Out>}
+
+# Muse's approval modes: supervised asks for anything its policy does not
+# allow; full access allows everything (no approval reaches the person)
+law msp_mode_supervised_asks:
+  {MSP.Msp.mode.k(0n) == "promptUnmatched" : String}
+
+law msp_mode_full_allows:
+  {MSP.Msp.mode.k(3n) == "allowAll" : String}
 
 # a retired process leaves nothing waiting: archive ends a running turn
 # (an idle thread gets no turn change), Stop, archive and an exit close

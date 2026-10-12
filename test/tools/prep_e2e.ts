@@ -23,6 +23,8 @@ writeFileSync(join(fake, "claude"), `#!/bin/sh\nexec ${process.execPath} ${resol
 chmodSync(join(fake, "claude"), 0o755);
 writeFileSync(join(fake, "grok"), "#!/bin/sh\nexit 1\n");
 chmodSync(join(fake, "grok"), 0o755);
+writeFileSync(join(fake, "muse"), "#!/bin/sh\nexit 1\n");
+chmodSync(join(fake, "muse"), 0o755);
 // a slow project walk: the hub must not wait for it
 writeFileSync(join(fake, "find"), "#!/bin/sh\nsleep 3\nexec /usr/bin/find \"$@\"\n");
 chmodSync(join(fake, "find"), 0o755);

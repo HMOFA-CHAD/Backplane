@@ -53,6 +53,8 @@ def main() -> IO(Unit):
     C.Check.str("effort codex", String.join(A.Effort.args("codex", "low"), " "), "-c model_reasoning_effort=\"low\"")
     C.Check.str("effort grok", String.join(A.Effort.args("grok", "high"), " "), "--reasoning-effort high")
     C.Check.str("effort grok no xhigh", String.join(A.Effort.args("grok", "xhigh"), " "), "")
+    C.Check.str("effort muse on the wire", String.join(A.Effort.args("muse", "high"), " "), "")
+    C.Check.str("effort muse levels", String.join(A.Effort.levels("muse"), ","), "minimal,low,medium,high,xhigh,max")
     C.Check.str("effort default", String.join(A.Effort.args("claude", ""), " "), "")
     C.Check.str("effort bogus", String.join(A.Effort.args("codex", "max; rm"), " "), "")
     C.Check.str("temp branch", yes(A.Name.temp("backplane/0a1b2c3d")), "yes")
@@ -73,6 +75,9 @@ def main() -> IO(Unit):
     C.Check.str("text claude leftover gpt", tx(A.Text.pick("claude", "gpt-6-sol")), "claude|haiku")
     C.Check.str("text claude id", tx(A.Text.pick("claude", "claude-opus-5-5")), "claude|claude-opus-5-5")
     C.Check.str("text grok leftover sonnet", tx(A.Text.pick("grok", "sonnet")), "grok|grok-4.7-build-fast")
+    C.Check.str("text muse", tx(A.Text.pick("muse", "")), "muse|muse-spark-1.3")
+    C.Check.str("text muse model", tx(A.Text.pick("muse", "muse-wonder-1.0")), "muse|muse-wonder-1.0")
+    C.Check.str("text muse leftover grok", tx(A.Text.pick("muse", "grok-4.6")), "muse|muse-spark-1.3")
     C.Check.str("text custom kept", tx(A.Text.pick("codex", "my-local-model")), "codex|my-local-model")
     C.Check.str("args claude", String.join(A.OneShot.args(A.Tx{"claude", "haiku"}, "SYS"), " "),
       "60 claude -p --model haiku --output-format json --no-session-persistence --tools  --strict-mcp-config --effort low --system-prompt SYS")
@@ -83,6 +88,10 @@ def main() -> IO(Unit):
     C.Check.str("args grok", String.join(A.OneShot.args(A.Tx{"grok", "grok-4.7-build-fast"}, "SYS"), " "),
       "60 sh -c cat | exec grok --prompt-file /dev/stdin \"$@\" sh --output-format json --no-subagents --disable-web-search --permission-mode dontAsk --max-turns 1 --reasoning-effort low -m grok-4.7-build-fast")
     C.Check.str("input grok", A.OneShot.input("grok", "SYS", "fix it"), "SYS\n\n<input>\nfix it\n</input>")
+    C.Check.str("args muse", String.join(A.OneShot.args(A.Tx{"muse", "muse-spark-1.3"}, "SYS"), " "),
+      "60 sh -c TMPDIR=/var/tmp exec muse exec \"$@\" -- \"$(cat)\" 2>/dev/null sh --no-session-log --disable-shell --disable-write --disable-web-tools --disable-reminders --approval-mode never --max-model-steps 1 --reasoning-effort low --model muse-spark-1.3")
+    C.Check.str("input muse", A.OneShot.input("muse", "SYS", "fix it"), "SYS\n\n<input>\nfix it\n</input>")
+    C.Check.str("answer muse", A.OneShot.answer("muse", "Fix Login Bug\n"), "Fix Login Bug")
     C.Check.str("input claude", A.OneShot.input("claude", "SYS", "fix it"), "fix it")
     C.Check.str("answer codex", A.OneShot.answer("codex", "Reading additional input from stdin...\n{\"type\":\"thread.started\",\"thread_id\":\"x\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"reasoning\",\"text\":\"hmm\"}}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_1\",\"type\":\"agent_message\",\"text\":\" Keep pinned threads at top \"}}\n{\"type\":\"turn.completed\"}\n"), "Keep pinned threads at top")
     C.Check.str("answer codex none", A.OneShot.answer("codex", "{\"type\":\"turn.failed\"}\n"), "")

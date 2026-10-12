@@ -938,7 +938,7 @@ def Ui.rpc.keep.msg(u: Ui, +m: String, +p: List<&2, J.KV>) -> Act:
 # ----------
 # While a turn runs, a message either waits in the queue or steers the
 # turn. The "followup" setting picks ("queue" or "steer"); unset, each
-# provider keeps its way (Claude steers, Codex and Grok queue). Ctrl+Enter
+# provider keeps its way (Claude steers, Codex, Grok and Muse queue). Ctrl+Enter
 # does the other one for that message (laws follow_*).
 
 def Follow.flip(+m: String) -> String:
@@ -3328,13 +3328,13 @@ def Models.about(+info: String, +provider: String) -> J.Json:
 def Effort.chips(+info: String, +provider: String, +model: String) -> List<&2, String>:
   Effort.chips.of(Effort.known(J.Json.get(J.Json.get_obj(Models.about(info, provider), "efforts"), Bool.pick(String, String.is_empty(model), "default", model)), provider))
 
-# The picker's chips: the providers first ("@claude", "@codex", "@grok";
+# The picker's chips: the providers first ("@claude", "@codex", "@grok", "@muse";
 # a thread goes on with another between turns, V2's provider switch),
 # then the efforts its model takes. One chip row and one action for all
 # clients: a chip's value starting with "@" is a provider.
 
 def Chip.providers() -> List<&2, String>:
-  ["@claude", "@codex", "@grok"]
+  ["@claude", "@codex", "@grok", "@muse"]
 
 def Chip.all(+info: String, +provider: String, +model: String) -> List<&2, String>:
   List.append(&2, String, Chip.providers(), Effort.chips(info, provider, model))

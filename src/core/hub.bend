@@ -38,6 +38,7 @@ type Out is Data:
   # run one Codex turn (a process per turn; `session` resumes)
   CodexTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   GrokTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
+  MuseTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   # a turn ended: "completed", "failed", or "stopped" (Stop, archive,
   # delete: no alert, but the phones' island still hears of it)
   TurnEnded{thread: String, state: String}
@@ -285,15 +286,17 @@ def Hub.title.k(fresh: Bool, +thread: String, +text: String, +now: Nat, rest: Li
       rest
 
 # the effects that run one turn of a thread's agent, by provider: Claude
-# keeps one process per thread fed with stream-json; Codex and Grok run a
-# process per turn, resuming their session (Grok over ACP, reported in
-# Codex's event shapes)
+# keeps one process per thread fed with stream-json; Codex, Grok and Muse
+# run a process per turn, resuming their session (Grok over ACP, Muse over
+# MSP, both reported in Codex's event shapes)
 def Hub.run.k(i: Nat, +thread: String, +cwd: String, +provider: String, +model: String, +session: String, runtime: M.RuntimeMode, interaction: M.InteractionMode, +text: String, +uuid: String) -> List<&2, Out>:
   match i:
     case 1n:
       [CodexTurn{thread, cwd, model, session, runtime, text}]
     case 2n:
       [GrokTurn{thread, cwd, model, session, runtime, text}]
+    case 3n:
+      [MuseTurn{thread, cwd, model, session, runtime, text}]
     case _:
       [AgentStart{thread, cwd, provider, model, session, runtime, interaction}, Claude.send(thread, cwd, text, uuid)]
 
@@ -301,7 +304,7 @@ def Hub.run.k(i: Nat, +thread: String, +cwd: String, +provider: String, +model: 
 def Hub.run(t: M.Thread, +cwd: String, +text: String, +uuid: String) -> List<&2, Out>:
   match t:
     case M.Thread{+id, _, _, _, _, _, _, _, _, _, _, _, _, _, _, +provider, model, runtime, interaction, session, _}:
-      Hub.run.k(C.Codec.pos(["claude", "codex", "grok"], provider), id, cwd, provider, model, session, runtime, interaction, text, uuid)
+      Hub.run.k(C.Codec.pos(["claude", "codex", "grok", "muse"], provider), id, cwd, provider, model, session, runtime, interaction, text, uuid)
 
 def Hub.post.go(wait: Bool, +t: M.Thread, +cwd: String, +queued: String, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   match wait:
@@ -2261,12 +2264,17 @@ def Codex.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now: 
     case None{}:
       Step.none()
 
-# a Codex or Grok line counts only while its thread's turn runs: what a
+# Grok's and Muse's tool calls are logged before they run: their design
+# steps come at "tool.done"
+def Hub.acp_like(+p: String) -> Bool:
+  Bool.or(String.eq(p, "grok"), String.eq(p, "muse"))
+
+# a Codex, Grok or Muse line counts only while its thread's turn runs: what a
 # stopped turn's process still says is old news (law stopped_turn_quiet)
 def Hub.agent_line.c(run: Bool, +s: M.State, +now: Nat, +thread: String, line: String) -> Step:
   match run:
     case True{}:
-      Steps.after.if(Bool.not(String.eq(Hub.provider(Hub.thread(s, thread)), "grok")), Codex.line.parsed(J.Json.parse(line), s, thread, now), thread, Hub.cwd(s, Hub.thread(s, thread)))
+      Steps.after.if(Bool.not(Hub.acp_like(Hub.provider(Hub.thread(s, thread)))), Codex.line.parsed(J.Json.parse(line), s, thread, now), thread, Hub.cwd(s, Hub.thread(s, thread)))
     case False{}:
       Step.none()
 
