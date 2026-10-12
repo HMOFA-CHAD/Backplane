@@ -11,6 +11,8 @@ import ../core/botui.bend as BU
 import ../core/bot.bend as BT
 import ../core/once.bend as O
 import ../core/far.bend as FR
+import ../core/plane.bend as PL
+import ./plane.bend as MPL
 
 # The phone keeps every hub it paired with connected at once, each with
 # its own client (Ui). A hub's key is its socket's host:port, which the
@@ -548,15 +550,15 @@ def Hubs.register.at(hs: Hubs, +key: String, p: String, t: String, k: String, th
 # picker's, the bot's and the forms' own actions follow it (the history's
 # playback ticks go to the hub that asked: bridge.js names it)
 def Hubs.routed(+action: String) -> Nat:
-  C.Codec.pos(["select", "new-thread", "picker-open", "bot", "room", "remote", "bot-new", "room-new", "proj-go",
+  C.Codec.pos(["select", "new-thread", "picker-open", "bot", "room", "remote", "uber", "uber-bot", "bot-new", "room-new", "proj-go",
     "row-settle", "row-unsettle", "row-snooze", "row-delete", "toggle-settled", "add-project", "proj-remove",
-    "row-menu", "proj-menu", "row-pin", "row-unpin", "row-archive", "row-unarchive", "hist-tick", "row-rename", "rename-save"], action)
+    "row-menu", "proj-menu", "row-pin", "row-unpin", "row-archive", "row-unarchive", "hist-tick", "row-rename", "rename-save", "uber-promote"], action)
 
 def Hubs.moves() -> Nat:
-  9n
+  11n
 
 def Hubs.routes() -> Nat:
-  25n
+  28n
 
 # answers to what any hub may be showing (its error, a delete or remove
 # to confirm); the project search is every hub's at once, since the list
@@ -734,17 +736,70 @@ def Hubs.self(+u: U.Ui) -> String:
 def Hubs.name(+key: String, +u: U.Ui) -> String:
   Bool.pick(String, String.is_empty(Hubs.self(u)), Maybe.default(&2, String, List.head(&2, String, String.split(key, ':')), key), Hubs.self(u))
 
+# The status plane (plane.bend) is built for every hub's screen while any
+# paired hub has an uberbot, so a hub without one still adds its rows
+def Hubs.pl.has.k(m: Maybe<&2, BU.BRow>) -> Bool:
+  match m:
+    case Some{_}:
+      True{}
+    case None{}:
+      False{}
+
+def Hubs.pl.has(+u: U.Ui) -> Bool:
+  Hubs.pl.has.k(BU.BU.uber(u))
+
+def Hubs.pl.any(hs: List<&2, Hub>) -> Bool:
+  match hs:
+    case Nil{}:
+      False{}
+    case Hub{_, +u} <> t:
+      Bool.pick(Bool, Hubs.pl.has(u), True{}, Hubs.pl.any(t))
+
+def Hubs.pl.put.k(hit: Bool, +k: String, v: J.Json, t: J.Json, plane: J.Json, rest: J.Json) -> J.Json:
+  match hit:
+    case True{}:
+      J.Field{k, plane, t}
+    case False{}:
+      J.Field{k, v, rest}
+
+def Hubs.pl.put(fs: J.Json, +plane: J.Json) -> J.Json:
+  match fs:
+    case J.Field{+k, v, +t}:
+      Hubs.pl.put.k(String.eq(k, "plane"), k, v, t, plane, Hubs.pl.put(t, plane))
+    case x:
+      x
+
+def Hubs.pl.fill.k(any: Bool, j: J.Json, +plane: J.Json) -> J.Json:
+  match any j:
+    case True{} J.Obj{fs}:
+      J.Obj{Hubs.pl.put(fs, plane)}
+    case _ x:
+      x
+
+def Hubs.pl.null(j: J.Json) -> Bool:
+  match j:
+    case J.Null{}:
+      True{}
+    case _:
+      False{}
+
+def Hubs.pl.fill(+any: Bool, +j: J.Json, +u: U.Ui, +k: String) -> J.Json:
+  Hubs.pl.fill.k(Bool.and(any, Hubs.pl.null(J.Json.get_obj(j, "plane"))), j, Q.all(MPL.MPlane.json(PL.Plane.of(u, S.Mob.now(u)), S.Mob.now(u)), k))
+
 type Shown is Data:
   Shown{key: String, name: String, j: J.Json}
 
 # (a hub out of focus builds no thread, bot or viewer: the merged screen
 # reads those from the hub in focus only)
-def Hubs.shown(hs: List<&2, Hub>, +cur: String) -> List<&2, Shown>:
+def Hubs.shown.go(hs: List<&2, Hub>, +cur: String, +any: Bool) -> List<&2, Shown>:
   match hs:
     case Nil{}:
       Nil{}
     case Hub{+k, +u} <> t:
-      Shown{k, Hubs.name(k, u), Q.all(S.Mob.screen.f(String.eq(k, cur), u), k)} <> Hubs.shown(t, cur)
+      Shown{k, Hubs.name(k, u), Hubs.pl.fill(any, Q.all(S.Mob.screen.f(String.eq(k, cur), u), k), u, k)} <> Hubs.shown.go(t, cur, any)
+
+def Hubs.shown(+hs: List<&2, Hub>, +cur: String) -> List<&2, Shown>:
+  Hubs.shown.go(hs, cur, Hubs.pl.any(hs))
 
 def Hubs.named(ss: List<&2, Shown>, +n: String) -> Nat:
   match ss:
@@ -1352,6 +1407,166 @@ def Hubs.bots.keyed(+ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool) -> Li
 def Hubs.bots(+ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool) -> List<&2, J.Json>:
   O.Once.vals(J.Json, Hubs.bots.keyed(ss, hs, many))
 
+# The status plane over every paired hub (docs/uber.md)
+# ------------------------------------------------------
+# Each hub's screen carries its own "uber" card and "plane" (plane.bend);
+# the phone shows one: the uberbot of the hub in focus, else the first
+# hub's, and every hub's rows under it. A row is routed by the hub its ids
+# carry. A thread or bot a hub only mirrors from a machine this phone is
+# paired with too is dropped, the owner's hub lists it itself (as the
+# Active rows and the cats do), and every list shows a row once (law
+# hubs_plane_once). A row of a machine other than the one it reports is
+# named by it when there are several hubs.
+
+def Hubs.pl.far(+hs: List<&2, Hub>, +from: String, +bot: String) -> Bool:
+  Bool.and(FR.Fr.is(bot), Hubs.holds(hs, from, FR.Fr.link(bot)))
+
+# a routine's value is "<hub>|<bot>|routines"
+def Hubs.pl.bot.of(+value: String) -> String:
+  Maybe.default(&2, String, List.head(&2, String, String.split(Hubs.rest(value), '|')), "")
+
+def Hubs.pl.dup.k(i: Nat, +hs: List<&2, Hub>, +from: String, +id: String, +value: String) -> Bool:
+  match i:
+    case 0n:
+      Hubs.entity.dup(hs, from, False{}, id)
+    case 1n:
+      Hubs.pl.far(hs, from, id)
+    case 2n:
+      Hubs.pl.far(hs, from, Hubs.pl.bot.of(value))
+    case _:
+      False{}
+
+def Hubs.pl.dup(+hs: List<&2, Hub>, +from: String, +r: J.Json) -> Bool:
+  Hubs.pl.dup.k(C.Codec.pos(["thread", "bot", "routine"], J.Json.get_str(r, "kind", "")), hs, from, Hubs.rest(J.Json.get_str(r, "id", "")), J.Json.get_str(r, "value", ""))
+
+def Hubs.pl.label.k(name: Bool, r: J.Json, +machine: String) -> J.Json:
+  match name:
+    case True{}:
+      Hubs.machine(r, machine)
+    case False{}:
+      r
+
+def Hubs.pl.label(+many: Bool, +machine: String, +r: J.Json) -> J.Json:
+  Hubs.pl.label.k(Bool.and(many, String.is_empty(J.Json.get_str(r, "machine", ""))), r, machine)
+
+def Hubs.pl.rows(rs: List<&2, J.Json>, +hs: List<&2, Hub>, +from: String, +many: Bool, +machine: String) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      Hubs.part.k(Bool.not(Hubs.pl.dup(hs, from, r)), Hubs.pl.label(many, machine, r), Hubs.pl.rows(t, hs, from, many, machine))
+
+# every hub's rows of the plane's section k
+def Hubs.pl.all(ss: List<&2, Shown>, +hs: List<&2, Hub>, +k: String, +many: Bool) -> List<&2, J.Json>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case Shown{+from, +name, +j} <> t:
+      List.append(&2, J.Json, Hubs.pl.rows(J.Json.elems(J.Json.get_obj(J.Json.get_obj(j, "plane"), k)), hs, from, many, name), Hubs.pl.all(t, hs, k, many))
+
+# the order of core's sections (Plane.before, Plane.newer, Plane.due.before)
+def Hubs.pl.need.before.cmp(+a: J.Json, +b: J.Json) -> Bool:
+  +ra = PL.Plane.rank(J.Json.get_str(a, "state", ""))
+  +rb = PL.Plane.rank(J.Json.get_str(b, "state", ""))
+  Bool.pick(Bool, Nat.is_eq(ra, rb), Nat.is_ge(J.Json.get_nat(a, "at", 0n), J.Json.get_nat(b, "at", 0n)), Nat.is_gt(ra, rb))
+
+def Hubs.pl.newer.cmp(+a: J.Json, +b: J.Json) -> Bool:
+  Nat.is_ge(J.Json.get_nat(a, "at", 0n), J.Json.get_nat(b, "at", 0n))
+
+def Hubs.pl.due.before.cmp(+a: J.Json, +b: J.Json) -> Bool:
+  +sa = J.Json.get_str(a, "state", "")
+  +sb = J.Json.get_str(b, "state", "")
+  Bool.pick(Bool, String.eq(sa, sb), PL.Plane.due.le(J.Json.get_nat(a, "at", 0n), J.Json.get_nat(b, "at", 0n)), String.eq(sa, "working"))
+
+def Hubs.pl.need.before(a: J.Json, b: J.Json) -> Bool:
+  Hubs.pl.need.before.cmp(a, b)
+
+def Hubs.pl.newer(a: J.Json, b: J.Json) -> Bool:
+  Hubs.pl.newer.cmp(a, b)
+
+def Hubs.pl.due.before(a: J.Json, b: J.Json) -> Bool:
+  Hubs.pl.due.before.cmp(a, b)
+
+# a row's key: what it stands for (a room is the same on every hub)
+def Hubs.pl.key(+r: J.Json) -> String:
+  J.Json.get_str(r, "kind", "") ++ ":" ++ Bool.pick(String, String.eq(J.Json.get_str(r, "kind", ""), "room"), Hubs.rest(J.Json.get_str(r, "id", "")), J.Json.get_str(r, "id", ""))
+
+def Hubs.pl.src(rs: List<&2, J.Json>) -> List<&2, O.Ky<J.Json>>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      O.Ky{Hubs.pl.key(r), r} <> Hubs.pl.src(t)
+
+def Hubs.pl.keyed(+rs: List<&2, J.Json>) -> List<&2, O.Ky<J.Json>>:
+  O.Once.of(J.Json, Hubs.pl.src(rs))
+
+def Hubs.pl.once(+rs: List<&2, J.Json>) -> List<&2, J.Json>:
+  O.Once.vals(J.Json, Hubs.pl.keyed(rs))
+
+def Hubs.pl.idle.n(ss: List<&2, Shown>, +k: String, acc: Nat) -> Nat:
+  match ss:
+    case Nil{}:
+      acc
+    case Shown{_, _, +j} <> t:
+      Hubs.pl.idle.n(t, k, Nat.add(acc, J.Json.get_nat(J.Json.get_obj(j, "plane"), k, 0n)))
+
+def Hubs.pl.len(ss: List<&2, Shown>, +k: String, acc: Nat) -> Nat:
+  match ss:
+    case Nil{}:
+      acc
+    case Shown{_, _, +j} <> t:
+      Hubs.pl.len(t, k, Nat.add(acc, List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(J.Json.get_obj(j, "plane"), k)))))
+
+# the uberbot's card: the focused hub's, else the first hub's that has one
+def Hubs.pl.uber(+ss: List<&2, Shown>, +cur: String) -> J.Json:
+  Bool.pick(J.Json, Hubs.nonnull(J.Json.get_obj(Hubs.of(ss, cur), "uber")), J.Json.get_obj(Hubs.of(ss, cur), "uber"), Hubs.first_obj(ss, "uber"))
+
+def Hubs.pl.working.k(hit: Bool, +n: Nat) -> Nat:
+  match hit:
+    case True{}:
+      1n+n
+    case False{}:
+      n
+
+# the merged bots at work (mood work or talk, as core's Plane.working)
+def Hubs.pl.working(rs: List<&2, J.Json>) -> Nat:
+  match rs:
+    case Nil{}:
+      0n
+    case +r <> t:
+      Hubs.pl.working.k(Bool.or(String.eq(J.Json.get_str(r, "state", ""), "work"), String.eq(J.Json.get_str(r, "state", ""), "talk")), Hubs.pl.working(t))
+
+def Hubs.pl.json(+need: List<&2, J.Json>, +run: List<&2, J.Json>, +idle: List<&2, J.Json>, +idle_n: Nat, +ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool, +uber: J.Json) -> MPL.MUber:
+  MPL.MUber{MPL.MPlane.card.k(uber, PL.Plane.counts.join(PL.Plane.counts.part(List.length(&2, J.Json, need), "need you"), PL.Plane.counts.part(List.length(&2, J.Json, run), "running"))),
+    J.Json.obj([J.KV{"need", J.Json.arr(need)}, J.KV{"run", J.Json.arr(run)}, J.KV{"idle", J.Json.arr(List.take(&2, J.Json, idle, PL.Plane.idle.max()))},
+      J.KV{"idleN", J.Json.nat(idle_n)},
+      J.KV{"working", J.Json.nat(Hubs.pl.working(Hubs.pl.once(Hubs.pl.all(ss, hs, "bots", many))))},
+      J.KV{"bots", J.Json.arr(Hubs.pl.once(Hubs.pl.all(ss, hs, "bots", many)))},
+      J.KV{"rooms", J.Json.arr(Hubs.pl.once(List.sort(~J.Json, ~Hubs.pl.newer, Hubs.pl.all(ss, hs, "rooms", many))))},
+      J.KV{"routines", J.Json.arr(Hubs.pl.once(List.sort(~J.Json, ~Hubs.pl.due.before, Hubs.pl.all(ss, hs, "routines", many))))},
+      J.KV{"machines", J.Json.get_obj(J.Json.get_obj(Hubs.of(ss, Hubs.key_of(J.Json.get_str(uber, "id", ""))), "plane"), "machines")}])}
+
+# (the idle count lost to dropped mirrors comes off the hubs' own counts)
+def Hubs.pl.idle.k(+idle: List<&2, J.Json>, +ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool, +uber: J.Json) -> MPL.MUber:
+  Hubs.pl.json(Hubs.pl.once(List.sort(~J.Json, ~Hubs.pl.need.before, Hubs.pl.all(ss, hs, "need", many))),
+    Hubs.pl.once(List.sort(~J.Json, ~Hubs.pl.newer, Hubs.pl.all(ss, hs, "run", many))), idle,
+    Nat.sub(Hubs.pl.idle.n(ss, "idleN", 0n), Nat.sub(Hubs.pl.len(ss, "idle", 0n), List.length(&2, J.Json, idle))), ss, hs, many, uber)
+
+def Hubs.pl.build(+ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool, +uber: J.Json) -> MPL.MUber:
+  Hubs.pl.idle.k(Hubs.pl.once(List.sort(~J.Json, ~Hubs.pl.newer, Hubs.pl.all(ss, hs, "idle", many))), ss, hs, many, uber)
+
+def Hubs.pl.of.k(up: Bool, +ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool, +uber: J.Json) -> MPL.MUber:
+  match up:
+    case True{}:
+      Hubs.pl.build(ss, hs, many, uber)
+    case False{}:
+      MPL.MUber{J.Null{}, J.Null{}}
+
+# the card and the plane, both null while no hub has an uberbot
+def Hubs.pl.of(+ss: List<&2, Shown>, +hs: List<&2, Hub>, +cur: String, +many: Bool) -> MPL.MUber:
+  Hubs.pl.of.k(Hubs.nonnull(Hubs.pl.uber(ss, cur)), ss, hs, many, Hubs.pl.uber(ss, cur))
+
 def Hubs.peer(skip: Bool, +p: J.Json, rest: List<&2, J.Json>) -> List<&2, J.Json>:
   match skip:
     case True{}:
@@ -1398,7 +1613,7 @@ def Hubs.empty(+n: Nat, +m: Nat, +finding: Bool) -> String:
   Bool.pick(String, Nat.is_eq(m, 0n), "Pair with a hub to start.",
     Bool.pick(String, Bool.and(finding, Nat.is_eq(n, 0n)), "No project matches.", S.Mob.empty(n)))
 
-def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J.Json:
+def Hubs.screen.p(+pl: MPL.MUber, +ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J.Json:
   J.Json.obj([J.KV{"online", J.Json.bool(Hubs.all_on(ss))}, J.KV{"version", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "version", ""))},
     J.KV{"error", J.Json.str(Hubs.said(ss, "error"))}, J.KV{"note", J.Json.str(Hubs.said(ss, "note"))},
     J.KV{"sel", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "sel", ""))},
@@ -1422,6 +1637,8 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
     J.KV{"island", N.Note.island.k(Hubs.lines.once(Hubs.lines(ss)))},
     J.KV{"islands", J.Json.arr(Hubs.islands(ss))},
     J.KV{"thread", Hubs.origin.focus(ss, cur, "thread")},
+    J.KV{"uber", MPL.MUber.uber(pl)},
+    J.KV{"plane", MPL.MUber.plane(pl)},
     J.KV{"bots", J.Json.arr(Hubs.bots(ss, list, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},
     J.KV{"rooms", J.Json.arr(Hubs.rooms(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},
     J.KV{"newBot", J.Json.get_obj(Hubs.of(ss, cur), "newBot")},
@@ -1430,6 +1647,9 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
     J.KV{"hub", J.Json.str(cur)},
     J.KV{"hubs", J.Json.arr(Hubs.rows(ss))},
     J.KV{"found", J.Json.arr(Hubs.found(list))}])
+
+def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J.Json:
+  Hubs.screen.p(Hubs.pl.of(ss, list, cur, Nat.is_gt(List.length(&2, Shown, ss), 1n)), ss, cur, list)
 
 # the whole screen: every hub's in one
 def Hubs.screen(hs: Hubs) -> J.Json:
