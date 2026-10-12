@@ -39,6 +39,8 @@ import ./src/gfx/draw.bend as D
 import ./src/app/layout.bend as L
 import ./src/core/eq.bend as Q
 import ./src/core/uber.bend as UBR
+import ./src/core/ubersync.bend as UBS
+import ./src/core/ubop.bend as UBO
 import ./src/core/plane.bend as PLN
 import ./src/core/svg.bend as SVG
 import ./src/core/icons.bend as ICO
@@ -6741,3 +6743,77 @@ law onboard_uber_single_no_back:
 law hubs_plane_once:
   for +rs: List<&2, J.Json>
   {ON.Once.distinct(ON.Once.keys(J.Json, Hb.Hubs.pl.keyed(rs))) == True{} : Bool}
+# --- uberbot sync: uber_merge_*, uber_*_term, uber_fire_*, uber_slot_once, uber_derived_no_ops (SPEC-2) ---
+
+# two machines' ops on one key, in either order, leave the same registers
+law uber_merge_comm:
+  {UBS.Ub.demo.fold([UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.mem("color", "fact", "blue", "")), UBS.Ub.demo.op("mB", 1n, 1001n, UBO.Ub.b.mem("color", "fact", "red", ""))]) == UBS.Ub.demo.fold([UBS.Ub.demo.op("mB", 1n, 1001n, UBO.Ub.b.mem("color", "fact", "red", "")), UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.mem("color", "fact", "blue", ""))]) : String}
+
+# an op taken twice is taken once
+law uber_merge_idem:
+  {UBS.Ub.demo.fold([UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.mem("color", "fact", "blue", "")), UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.mem("color", "fact", "blue", ""))]) == UBS.Ub.demo.fold([UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.mem("color", "fact", "blue", ""))]) : String}
+
+# a forget is a tombstone in the memory's register: a later one beats the save it follows, in either order
+law uber_forget_wins_older:
+  {M.Setting.get(M.State.replay([UBS.Ub.demo.op("mB", 1n, 1001n, UBO.Ub.b.forget("color")), UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.mem("color", "fact", "blue", ""))], UBS.Ub.demo.a()), "uber.r.u1-x.mem:color", "-") == UBO.Ub.b.forget("color") : String}
+
+# and an older forget does not beat a later save
+law uber_forget_loses_newer:
+  {M.Setting.get(M.State.replay([UBS.Ub.demo.op("mA", 1n, 1002n, UBO.Ub.b.mem("color", "fact", "blue", "")), UBS.Ub.demo.op("mB", 1n, 1001n, UBO.Ub.b.forget("color"))], UBS.Ub.demo.a()), "uber.r.u1-x.mem:color", "-") == UBO.Ub.b.mem("color", "fact", "blue", "") : String}
+
+# two machines taking the same term leave one holder, the same in either order
+law uber_one_holder_per_term:
+  {UBS.Ub.holder(M.State.replay([UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.lease("mA", 2n)), UBS.Ub.demo.op("mB", 1n, 1001n, UBO.Ub.b.lease("mB", 2n))], UBS.Ub.demo.a())) ++ UBS.Ub.holder(M.State.replay([UBS.Ub.demo.op("mB", 1n, 1001n, UBO.Ub.b.lease("mB", 2n)), UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.lease("mA", 2n))], UBS.Ub.demo.a())) == "mBmB" : String}
+
+# a higher term holds against a later stamp
+law uber_higher_term_wins:
+  {UBS.Ub.holder(M.State.replay([UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.lease("mA", 3n)), UBS.Ub.demo.op("mB", 1n, 2000n, UBO.Ub.b.lease("mB", 2n))], UBS.Ub.demo.a())) ++ UBS.Ub.holder(M.State.replay([UBS.Ub.demo.op("mB", 1n, 2000n, UBO.Ub.b.lease("mB", 2n)), UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.lease("mA", 3n))], UBS.Ub.demo.a())) == "mAmA" : String}
+
+# an unpinned routine runs where the conversation is held and nowhere else
+law uber_fire_holder_only:
+  for +mine: Bool
+  for +holder: Bool
+  {UBS.Ub.fires.k(False{}, mine, holder, True{}) == holder : Bool}
+
+# a pinned routine runs on its machine, whoever holds the conversation
+law uber_pinned_stays:
+  for +mine: Bool
+  for +holder: Bool
+  {UBS.Ub.fires.k(True{}, mine, holder, True{}) == mine : Bool}
+
+# a slot already run never runs again
+law uber_slot_once:
+  for +pinned: Bool
+  for +mine: Bool
+  for +holder: Bool
+  {UBS.Ub.fires.k(pinned, mine, holder, False{}) == False{} : Bool}
+
+# the same on a machine's own state: A holds and fires; B does not; neither fires a slot that ran
+law uber_fire_state:
+  {UBS.Ub.fires(M.State.replay([UBS.Ub.demo.op("mA", 1n, 900n, UBO.Ub.b.lease("mA", 1n))], UBS.Ub.demo.a()), "mA:r1", 5000n) == True{} : Bool}
+
+law uber_fire_state_other:
+  {UBS.Ub.fires(M.State.replay([UBS.Ub.demo.op("mA", 1n, 900n, UBO.Ub.b.lease("mA", 1n))], UBS.Ub.demo.b()), "mA:r1", 5000n) == False{} : Bool}
+
+law uber_slot_once_state:
+  {UBS.Ub.fires(M.State.replay([UBS.Ub.demo.op("mA", 1n, 900n, UBO.Ub.b.lease("mA", 1n)), UBS.Ub.demo.op("mA", 2n, 5001n, UBO.Ub.b.fired("mA:r1", 5000n))], UBS.Ub.demo.a()), "mA:r1", 5000n) == False{} : Bool}
+
+law uber_pinned_state:
+  {UBS.Ub.fires(M.State.replay([UBS.Ub.demo.op("mA", 1n, 900n, UBO.Ub.b.lease("mA", 1n)), UBS.Ub.demo.op("mA", 2n, 901n, UBO.Ub.b.routine("mA:r1", "R", "daily 09:00", "p", True{}, "mB"))], UBS.Ub.demo.b()), "mA:r1", 5000n) == True{} : Bool}
+
+# for any kind of op, what is derived is not an op
+law uber_derive_n_no_ops:
+  for n: Nat
+  for +b: String
+  for +me: String
+  for +o: J.Json
+  for +at: Nat
+  {UBS.Ub.noops(UBS.Ub.derive.n(n, b, me, o, at)) == True{} : Bool}
+
+# what an op does to the replica is never an op
+law uber_derived_no_ops:
+  for +win: Bool
+  for +st: M.State
+  for +o: J.Json
+  for +at: Nat
+  {UBS.Ub.noops(UBS.Ub.derive.k(win, st, o, at)) == True{} : Bool}

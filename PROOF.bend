@@ -8242,3 +8242,83 @@ def Laws.onboard_uber_single_no_back():
 
 def Laws.hubs_plane_once(rs):
   Laws.once_distinct(J.Json, Hb.Hubs.pl.src(rs))
+def Laws.uber_merge_comm():
+  {==}
+
+def Laws.uber_merge_idem():
+  {==}
+
+def Laws.uber_forget_wins_older():
+  {==}
+
+def Laws.uber_forget_loses_newer():
+  {==}
+
+def Laws.uber_one_holder_per_term():
+  {==}
+
+def Laws.uber_higher_term_wins():
+  {==}
+
+def Laws.uber_fire_holder_only(mine, holder):
+  {==}
+
+def Laws.uber_pinned_stays(mine, holder):
+  {==}
+
+def Laws.uber_slot_once(pinned, mine, holder):
+  {==}
+
+def Laws.uber_fire_state():
+  {==}
+
+def Laws.uber_fire_state_other():
+  {==}
+
+def Laws.uber_slot_once_state():
+  {==}
+
+def Laws.uber_pinned_state():
+  {==}
+
+def Laws.uber_derive_n_no_ops(n, b, me, o, at):
+  match n:
+    case 0n:
+      {==}
+    case 1n+p:
+      match p:
+        case 0n:
+          {==}
+        case 1n+p:
+          match p:
+            case 0n:
+              {==}
+            case 1n+p:
+              match p:
+                case 0n:
+                  {==}
+                case 1n+p:
+                  match p:
+                    case 0n:
+                      {==}
+                    case 1n+p:
+                      match p:
+                        case 0n:
+                          {==}
+                        case 1n+p:
+                          match p:
+                            case 0n:
+                              {==}
+                            case 1n+p:
+                              match p:
+                                case 0n:
+                                  {==}
+                                case 1n+p:
+                                  {==}
+
+def Laws.uber_derived_no_ops(win, st, o, at):
+  match win:
+    case True{}:
+      Laws.uber_derive_n_no_ops(UBS.Ub.kind.n(UBO.Ub.field(o, "k")), UBR.Uber.bot(st), UBS.Ub.me(st), o, at)
+    case False{}:
+      {==}

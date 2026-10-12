@@ -780,3 +780,37 @@ def Ub.handoff.thread(+st: M.State) -> String:
 def Ub.net.note(+machine: String, +same: Bool, +beat: Bool, +now: Nat) -> List<&2, J.KV>:
   List.append(&2, J.KV, Bool.pick(List<&2, J.KV>, same, [J.KV{"up." ++ machine, J.Json.nat(now)}], Nil{}),
     Bool.pick(List<&2, J.KV>, beat, [J.KV{"heard." ++ machine, J.Json.nat(now)}], Nil{}))
+
+# For the laws (LAWS.bend uber_*) and tests
+# -----------------------------------------
+
+# no change is an op
+def Ub.noops(cs: List<&2, M.Change>) -> Bool:
+  match cs:
+    case Nil{}:
+      True{}
+    case M.UberOp{_, _, _, _, _, _} <> t:
+      False{}
+    case _ <> t:
+      Ub.noops(t)
+
+# machine mA (a replica b1 under the uid u1-x) and mB (b2)
+def Ub.demo.a() -> M.State:
+  M.State.replay([M.ThreadCreated{"t1", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Kit", "t1", 7n, "", 100n},
+    M.SettingSet{"machine.id", "mA", 100n}, M.UberSet{"b1", "u1-x", 101n}], M.State.empty())
+
+def Ub.demo.b() -> M.State:
+  M.State.replay([M.ThreadCreated{"t2", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b2", "Kit", "t2", 7n, "", 100n},
+    M.SettingSet{"machine.id", "mB", 100n}, M.UberSet{"b2", "u1-x", 101n}], M.State.empty())
+
+# an op of u1-x as machine `origin`'s n-th, made at `secs`
+def Ub.demo.op(+origin: String, +n: Nat, +secs: Nat, +body: String) -> M.Change:
+  M.UberOp{"u1-x", origin, n, UO.Ub.stamp.make(secs, 0n, origin), body, secs}
+
+# the registers and counts a state ends with
+def Ub.digest(+st: M.State) -> String:
+  M.Setting.get(st, "uber.r.u1-x.mem:color", "-") ++ "|" ++ M.Setting.get(st, "uber.rs.u1-x.mem:color", "-") ++ "|" ++ M.Setting.get(st, "uber.r.u1-x.lease", "-") ++ "|" ++
+    M.Setting.get(st, "uber.vv.u1-x.mA", "-") ++ "|" ++ M.Setting.get(st, "uber.vv.u1-x.mB", "-") ++ "|" ++ M.Setting.get(st, "uber.origins.u1-x", "-")
+
+def Ub.demo.fold(+cs: List<&2, M.Change>) -> String:
+  Ub.digest(M.State.replay(cs, Ub.demo.a()))

@@ -7786,6 +7786,22 @@ def Hub.uber.do.k(init: Bool, h: Hub, +now: Nat) -> IO(Hub):
     case False{}:
       Uber.kick(h)
 
+def Hub.uber.beat.k(beat: Bool, h: Hub) -> IO(Hub):
+  match beat:
+    case True{}:
+      Uber.kick(h)
+    case False{}:
+      IO.pure(Hub, h)
+
+# every 15 s the machine that holds the uberbot's conversation says so to
+# the others, so a short silence is not a lapse
+def Hub.uber.beat.p(p: M.State & Hub) -> IO(Hub):
+  (st, h) = p
+  Hub.uber.beat.k(UBS.Ub.beat(st), h)
+
+def Hub.uber.beat(h: Hub) -> IO(Hub):
+  Hub.uber.beat.p(Hub.state(h))
+
 def Hub.uber.do(h: Hub, +what: String, +now: Nat) -> IO(Hub):
   Hub.uber.do.k(String.eq(what, "init"), h, now)
 
@@ -9480,7 +9496,7 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case Tick{}:
       Hub.tick(h, now)
     case Heart{}:
-      Hub.broadcast(h, DK.Alive.frame())
+      IO.bind(Hub, Hub, Hub.broadcast(h, DK.Alive.frame()), h2 => Hub.uber.beat(h2))
     case AutoView{thread, fs}:
       Hub.autoview(h, thread, fs)
     case ClaudePid{thread, pid, gen}:
