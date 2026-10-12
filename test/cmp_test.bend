@@ -65,7 +65,7 @@ def git(+c: String) -> String:
 def main() -> IO(Unit):
   +u = base()
   +cmp = act(u, "cmp-pick", "a\tc1\tv1\t/r/.git\t/r")
-  +f = LY.Focus{12, 1}
+  +f = {LY.Focus{12, 1} : LY.Focus}
   do IO<Unit>:
     # paths
     C.Check.str("diff on no layers is a plain diff", H.Hist.diff.on("x", "y", 0), "diff\nx\ny")
