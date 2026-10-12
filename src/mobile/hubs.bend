@@ -755,6 +755,32 @@ def Hubs.pl.any(hs: List<&2, Hub>) -> Bool:
     case Hub{_, +u} <> t:
       Bool.pick(Bool, Hubs.pl.has(u), True{}, Hubs.pl.any(t))
 
+# a plane row made the hub's own: its id and its value carry the hub (the
+# plane is left out of Q.all, which walked every row's every key)
+def Hubs.pl.q.fields(fs: J.Json, +from: String) -> J.Json:
+  match fs:
+    case J.Field{+k, J.Str{+s}, t}:
+      J.Field{k, J.Str{Bool.pick(String, Bool.or(String.eq(k, "id"), String.eq(k, "value")), Hubs.id(from, s), s)}, Hubs.pl.q.fields(t, from)}
+    case J.Field{k, v, t}:
+      J.Field{k, v, Hubs.pl.q.fields(t, from)}
+    case x:
+      x
+
+def Hubs.pl.q(r: J.Json, +from: String) -> J.Json:
+  match r:
+    case J.Obj{fs}:
+      J.Obj{Hubs.pl.q.fields(fs, from)}
+    case x:
+      x
+
+def Hubs.pl.q.rows(rs: List<&2, J.Json>, +from: String) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      Hubs.pl.q(r, from) <> Hubs.pl.q.rows(t, from)
+
+# a field of the hub's screen given a new value
 def Hubs.pl.put.k(hit: Bool, +k: String, v: J.Json, t: J.Json, plane: J.Json, rest: J.Json) -> J.Json:
   match hit:
     case True{}:
@@ -762,18 +788,11 @@ def Hubs.pl.put.k(hit: Bool, +k: String, v: J.Json, t: J.Json, plane: J.Json, re
     case False{}:
       J.Field{k, v, rest}
 
-def Hubs.pl.put(fs: J.Json, +plane: J.Json) -> J.Json:
+def Hubs.pl.put(fs: J.Json, +key: String, +plane: J.Json) -> J.Json:
   match fs:
     case J.Field{+k, v, +t}:
-      Hubs.pl.put.k(String.eq(k, "plane"), k, v, t, plane, Hubs.pl.put(t, plane))
+      Hubs.pl.put.k(String.eq(k, key), k, v, t, plane, Hubs.pl.put(t, key, plane))
     case x:
-      x
-
-def Hubs.pl.fill.k(any: Bool, j: J.Json, +plane: J.Json) -> J.Json:
-  match any j:
-    case True{} J.Obj{fs}:
-      J.Obj{Hubs.pl.put(fs, plane)}
-    case _ x:
       x
 
 def Hubs.pl.null(j: J.Json) -> Bool:
@@ -783,23 +802,57 @@ def Hubs.pl.null(j: J.Json) -> Bool:
     case _:
       False{}
 
-def Hubs.pl.fill(+any: Bool, +j: J.Json, +u: U.Ui) -> J.Json:
-  Hubs.pl.fill.k(Bool.and(any, Hubs.pl.null(J.Json.get_obj(j, "plane"))), j, MPL.MPlane.json(PL.Plane.of.f(u, U.Side.ix(U.Ui.state(u)), S.Mob.now(u)), S.Mob.now(u)))
+# the uberbot's card with the counts of the plane, when this hub has one
+def Hubs.pl.card.k(m: Maybe<&2, BU.BRow>, +p: PL.Plane, +k: String) -> J.Json:
+  match m:
+    case Some{r}:
+      Hubs.pl.q(MPL.MPlane.card(r, p), k)
+    case None{}:
+      J.Null{}
+
+def Hubs.pl.fill.p(+p: PL.Plane, +fs: J.Json, +u: U.Ui, +k: String) -> J.Json:
+  J.Obj{Hubs.pl.put(Hubs.pl.put(fs, "plane", MPL.MPlane.json(p, S.Mob.now(u))), "uber", Hubs.pl.card.k(BU.BU.uber(u), p, k))}
+
+def Hubs.pl.fill.k(any: Bool, +j: J.Json, +u: U.Ui, +k: String, +idle: Bool) -> J.Json:
+  match any j:
+    case True{} J.Obj{+fs}:
+      Hubs.pl.fill.p(PL.Plane.of.f(u, U.Side.ix(U.Ui.state(u)), S.Mob.now(u), idle), fs, u, k)
+    case _ x:
+      x
+
+def Hubs.pl.fill(+any: Bool, +j: J.Json, +u: U.Ui, +k: String, +idle: Bool) -> J.Json:
+  Hubs.pl.fill.k(any, j, u, k, idle)
+
+# whether the focused hub shows the uberbot's Status tab (whose idle threads
+# every hub then builds)
+def Hubs.pl.status.k(v: BU.View, +u: U.Ui) -> Bool:
+  match v:
+    case BU.VBot{+b}:
+      String.eq(BU.BU.tab.of(u, BT.Bot.id(b)), "status")
+    case _:
+      False{}
+
+def Hubs.pl.status(+hs: List<&2, Hub>, +cur: String) -> Bool:
+  match hs:
+    case Nil{}:
+      False{}
+    case Hub{+k, +u} <> t:
+      Bool.pick(Bool, String.eq(k, cur), Hubs.pl.status.k(BU.BU.view(u), u), Hubs.pl.status(t, cur))
 
 type Shown is Data:
   Shown{key: String, name: String, j: J.Json}
 
 # (a hub out of focus builds no thread, bot or viewer: the merged screen
 # reads those from the hub in focus only)
-def Hubs.shown.go(hs: List<&2, Hub>, +cur: String, +any: Bool) -> List<&2, Shown>:
+def Hubs.shown.go(hs: List<&2, Hub>, +cur: String, +any: Bool, +idle: Bool) -> List<&2, Shown>:
   match hs:
     case Nil{}:
       Nil{}
     case Hub{+k, +u} <> t:
-      Shown{k, Hubs.name(k, u), Hubs.pl.fill(any, Q.all(S.Mob.screen.f(String.eq(k, cur), u), k), u)} <> Hubs.shown.go(t, cur, any)
+      Shown{k, Hubs.name(k, u), Hubs.pl.fill(any, Q.all(S.Mob.screen.f(String.eq(k, cur), u), k), u, k, idle)} <> Hubs.shown.go(t, cur, any, idle)
 
 def Hubs.shown(+hs: List<&2, Hub>, +cur: String) -> List<&2, Shown>:
-  Hubs.shown.go(hs, cur, Hubs.pl.any(hs))
+  Hubs.shown.go(hs, cur, Hubs.pl.any(hs), Hubs.pl.status(hs, cur))
 
 def Hubs.named(ss: List<&2, Shown>, +n: String) -> Nat:
   match ss:
@@ -1448,31 +1501,6 @@ def Hubs.pl.label.k(name: Bool, r: J.Json, +machine: String) -> J.Json:
 
 def Hubs.pl.label(+many: Bool, +machine: String, +r: J.Json) -> J.Json:
   Hubs.pl.label.k(Bool.and(many, String.is_empty(J.Json.get_str(r, "machine", ""))), r, machine)
-
-# a plane row made the hub's own: its id and its value carry the hub (the
-# plane is left out of Q.all, which walked every row's every key)
-def Hubs.pl.q.fields(fs: J.Json, +from: String) -> J.Json:
-  match fs:
-    case J.Field{+k, J.Str{+s}, t}:
-      J.Field{k, J.Str{Bool.pick(String, Bool.or(String.eq(k, "id"), String.eq(k, "value")), Hubs.id(from, s), s)}, Hubs.pl.q.fields(t, from)}
-    case J.Field{k, v, t}:
-      J.Field{k, v, Hubs.pl.q.fields(t, from)}
-    case x:
-      x
-
-def Hubs.pl.q(r: J.Json, +from: String) -> J.Json:
-  match r:
-    case J.Obj{fs}:
-      J.Obj{Hubs.pl.q.fields(fs, from)}
-    case x:
-      x
-
-def Hubs.pl.q.rows(rs: List<&2, J.Json>, +from: String) -> List<&2, J.Json>:
-  match rs:
-    case Nil{}:
-      Nil{}
-    case r <> t:
-      Hubs.pl.q(r, from) <> Hubs.pl.q.rows(t, from)
 
 def Hubs.pl.rows(rs: List<&2, J.Json>, +hs: List<&2, Hub>, +from: String, +many: Bool, +machine: String) -> List<&2, J.Json>:
   match rs:

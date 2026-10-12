@@ -81,14 +81,3 @@ def MUber.plane(m: MUber) -> J.Json:
   match m:
     case MUber{_, p}:
       p
-
-def MPlane.of.k(r: B.BRow, +p: PL.Plane, +now: Nat) -> MUber:
-  MUber{MPlane.card(r, p), MPlane.json(p, now)}
-
-# neither while no bot is the uberbot
-def MPlane.of(m: Maybe<&2, B.BRow>, +u: U.Ui, +ix: U.SIx, +now: Nat) -> MUber:
-  match m:
-    case Some{r}:
-      MPlane.of.k(r, PL.Plane.of.f(u, ix, now), now)
-    case None{}:
-      MUber{J.Null{}, J.Null{}}

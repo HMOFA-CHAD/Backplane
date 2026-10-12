@@ -382,9 +382,21 @@ def Plane.all.vals(+u: U.Ui, +ix: U.SIx, +now: Nat) -> List<&2, PRow>:
   List.append(&2, PRow, Plane.threads(U.Active.rows.ix(U.Ui.state(u), ix, now, ""), u, ix, U.Ui.state(u)),
     Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, ix, U.Ui.state(u)))
 
-# the same plane without the keyed pass (the phones' screens)
-def Plane.of.f(+u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
-  Plane.of.k(Plane.all.vals(u, ix, now), u, ix, now)
+# the idle threads, only when they are wanted (the Status tab shows them)
+def Plane.idle.of(want: Bool, +all: List<&2, PRow>, +now: Nat) -> List<&2, PRow>:
+  match want:
+    case True{}:
+      Plane.sort(Plane.recent(Plane.part(all, 2n), now))
+    case False{}:
+      Nil{}
+
+def Plane.of.f.k(+all: List<&2, PRow>, +u: U.Ui, +ix: U.SIx, +now: Nat, +idle: Bool) -> Plane:
+  Plane.of.i(Plane.idle.of(idle, all, now), all, u, ix, now)
+
+# the same plane without the keyed pass (the phones' screens); with no idle
+# threads unless they are wanted (idle_n is then 0)
+def Plane.of.f(+u: U.Ui, +ix: U.SIx, +now: Nat, +idle: Bool) -> Plane:
+  Plane.of.f.k(Plane.all.vals(u, ix, now), u, ix, now, idle)
 
 def Plane.of.x(+u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
   Plane.of.k(O.Once.vals(PRow, Plane.all.keyed(u, ix, now)), u, ix, now)

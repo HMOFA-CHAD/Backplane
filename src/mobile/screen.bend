@@ -19,7 +19,6 @@ import ../core/codec.bend as C
 import ../core/onboard.bend as OB
 import ../core/botui.bend as B
 import ./bots.bend as MB
-import ./plane.bend as MPL
 import ../core/hist.bend as HS
 import ../core/tools.bend as TO
 import ../core/emb.bend as EM
@@ -1228,7 +1227,6 @@ def Mob.screen.go(+focus: Bool, +u: U.Ui, +ix: U.SIx, +g: U.SGroups, +side: MSid
       +folders = PK.MPick.json(u)
       +newbot = MB.MBots.new(u)
       +newroom = MB.MBots.rnew(u)
-      +uber = MPL.MPlane.of(B.BU.uber(u), u, ix, now)
       +thread = Mob.focus.thread(focus, u, sel)
       +bot = Mob.focus.bot(focus, u)
       J.Json.obj([J.KV{"online", J.Json.bool(on)}, J.KV{"version", J.Json.str(v)}, J.KV{"seq", J.Json.nat(U.Ui.seq(u))}, J.KV{"error", J.Json.str(e)},
@@ -1250,8 +1248,8 @@ def Mob.screen.go(+focus: Bool, +u: U.Ui, +ix: U.SIx, +g: U.SGroups, +side: MSid
         J.KV{"folders", folders},
         J.KV{"island", N.Note.island.h(N.Note.heard(on, now, Mob.heard(u)), U.Ui.threads(st), st)},
         J.KV{"thread", thread},
-        J.KV{"uber", MPL.MUber.uber(uber)},
-        J.KV{"plane", MPL.MUber.plane(uber)},
+        J.KV{"uber", J.Null{}},
+        J.KV{"plane", J.Null{}},
         J.KV{"bots", J.Json.arr(MB.MBots.rows(B.BU.rows(u)))},
         J.KV{"rooms", J.Json.arr(MB.MBots.rooms(B.BU.rooms(u)))},
         J.KV{"newBot", newbot},
