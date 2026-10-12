@@ -1,5 +1,7 @@
 import Base
 import ./bot.bend as BT
+import ./json.bend as J
+import ./ubop.bend as UO
 
 # The product's state, event-sourced. Every change is a Change appended to
 # the log; the read model is `replay(log)`. Events are persisted forever:
@@ -249,6 +251,10 @@ type Change is Data:
   # the person made `bot` the uberbot (uber.bot), `uid` its id across
   # machines (uber.uid); bot "" means no uberbot (uber.bot)
   UberSet{bot: String, uid: String, at: Nat}
+  # one op of the uberbot `uid`'s log, made by machine `origin` as its
+  # n-th, stamped `stamp` (a hybrid logical clock, ubop.bend), `op` its
+  # body as compact JSON; folded into settings under the uid (State.uberop)
+  UberOp{uid: String, origin: String, n: Nat, stamp: String, op: String, at: Nat}
 
 # the later of two times. Base's Nat.max recurses once per unit and
 # overflows at epoch scale; Nat.is_ge compiles to a machine comparison.
@@ -1453,6 +1459,69 @@ def State.woke.k(busy: Bool, s: State, +bot: String, +hop: Nat) -> State:
 def State.woke(+s: State, +bot: String, +hop: Nat) -> State:
   State.woke.k(State.busy_bot(s, bot), s, bot, hop)
 
+# The uberbot's op log (ubop.bend, ubersync.bend, docs/uber.md)
+# --------------------------------------------------------------
+# An op is taken only as its origin's next (n = highest seen + 1), so what
+# a machine has from an origin is always 1..n. Taken, it is kept as a line
+# (uber.op.<uid>.<origin>.<n>), moves that origin's count (uber.vv...) and
+# the clock (uber.hlc...), and writes its register (uber.r.<uid>.<key>,
+# its stamp in uber.rs...) only if it is later than the one there: the
+# same ops in any order leave the same registers. A "fired" op keeps the
+# highest slot a routine ran for (uber.fired...) and who ran it.
+
+def State.uber.reg.k(win: Bool, +s: State, +uid: String, +key: String, +stamp: String, +op: String) -> State:
+  match win:
+    case True{}:
+      State.setting(State.setting(s, UO.Ub.key.reg(uid, key), op), UO.Ub.key.stamp(uid, key), stamp)
+    case False{}:
+      s
+
+def State.uber.reg(+s: State, +uid: String, +key: String, +stamp: String, +op: String) -> State:
+  State.uber.reg.k(UO.Ub.newer(key, op, stamp, Setting.get(s, UO.Ub.key.reg(uid, key), ""), Setting.get(s, UO.Ub.key.stamp(uid, key), "")),
+    s, uid, key, stamp, op)
+
+def State.uber.fired.k(win: Bool, +s: State, +uid: String, +origin: String, +gid: String, +slot: Nat) -> State:
+  match win:
+    case True{}:
+      State.setting(State.setting(s, UO.Ub.key.fired(uid, gid), Nat.show(slot)), UO.Ub.key.by(uid, gid), origin)
+    case False{}:
+      s
+
+def State.uber.fired(+s: State, +uid: String, +origin: String, +o: J.Json) -> State:
+  State.uber.fired.k(Nat.is_gt(UO.Ub.nat(o, "slot"), Switch.num(Setting.get(s, UO.Ub.key.fired(uid, UO.Ub.field(o, "routine")), "0"), 0n)),
+    s, uid, origin, UO.Ub.field(o, "routine"), UO.Ub.nat(o, "slot"))
+
+def State.uber.body.k(fired: Bool, +s: State, +uid: String, +origin: String, +stamp: String, +op: String, +key: String) -> State:
+  match fired:
+    case True{}:
+      State.uber.fired(s, uid, origin, UO.Ub.json(op))
+    case False{}:
+      Bool.pick(State, String.is_empty(key), s, State.uber.reg(s, uid, key, stamp, op))
+
+def State.uber.body(+s: State, +uid: String, +origin: String, +stamp: String, +op: String) -> State:
+  State.uber.body.k(String.eq(UO.Ub.op.kind(op), "fired"), s, uid, origin, stamp, op, UO.Ub.op.key(op))
+
+def State.uber.origins(+s: State, +uid: String, +origin: String, +n: Nat) -> State:
+  Bool.pick(State, Nat.is_eq(n, 1n),
+    State.setting(s, UO.Ub.key.origins(uid), Bool.pick(String, String.is_empty(Setting.get(s, UO.Ub.key.origins(uid), "")), origin,
+      Setting.get(s, UO.Ub.key.origins(uid), "") ++ " " ++ origin)), s)
+
+def State.uber.hlc(+s: State, +uid: String, +stamp: String) -> State:
+  Bool.pick(State, UO.Ub.stamp.gt(stamp, Setting.get(s, UO.Ub.key.hlc(uid), "")), State.setting(s, UO.Ub.key.hlc(uid), stamp), s)
+
+def State.uberop.k(ok: Bool, +s: State, +uid: String, +origin: String, +n: Nat, +stamp: String, +op: String, +at: Nat) -> State:
+  match ok:
+    case True{}:
+      State.uber.body(State.uber.hlc(State.uber.origins(State.setting(State.setting(s, UO.Ub.key.vv(uid, origin), Nat.show(n)),
+        UO.Ub.key.op(uid, origin, n), UO.Ub.line(uid, origin, n, stamp, op, at)), uid, origin, n), uid, stamp), uid, origin, stamp, op)
+    case False{}:
+      s
+
+def State.uberop(+s: State, +uid: String, +origin: String, +n: Nat, +stamp: String, +op: String, +at: Nat) -> State:
+  State.uberop.k(Bool.and(Nat.is_eq(n, Nat.add(Switch.num(Setting.get(s, UO.Ub.key.vv(uid, origin), "0"), 0n), 1n)), Bool.not(String.is_empty(origin))),
+    s, uid, origin, n, stamp, op, at)
+
+
 def State.apply.go(s: State, e: Change) -> State:
   match e:
     case ProjectCreated{id, title, root, at}:
@@ -1555,6 +1624,8 @@ def State.apply.go(s: State, e: Change) -> State:
       State.setting(s, kind ++ "." ++ th, rows)
     case UberSet{bot, uid, _}:
       State.setting(State.setting(s, "uber.bot", bot), "uber.uid", uid)
+    case UberOp{+uid, +origin, +n, +stamp, +op, at}:
+      State.uberop(s, uid, origin, n, stamp, op, at)
     case TodosSet{+th, todos, _}:
       State.setting(s, "todos." ++ th, todos)
     case ProviderSet{+id, +p, m, _}:
