@@ -89,6 +89,9 @@ import ./src/core/farlive.bend as FLV
 import ./src/core/qr.bend as QR
 import ./src/core/layers.bend as LY
 import ./src/core/bom.bend as BOM
+import ./src/core/cad.bend as CAD
+import ./src/core/checks.bend as CHK
+import ./src/core/release.bend as REL
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -6439,3 +6442,101 @@ law bom_diff_md_none:
 # a pipe in a cell is escaped
 law bom_md_pipe:
   {BOM.Bom.c("a|b") == "a/b" : String}
+# Design review (checks, cad, release)
+# -------------------------------------
+
+# The CAD layer knows a KiCad board by its extension
+law cad_of_kicad_board:
+  {CAD.Cad.of("a/b.kicad_pcb") == CAD.Hit{"kicad", "board", True{}} : CAD.Hit}
+
+law cad_of_kicad_schematic:
+  {CAD.Cad.of("x.kicad_sch") == CAD.Hit{"kicad", "schematic", True{}} : CAD.Hit}
+
+law cad_of_case_ignored:
+  {CAD.Cad.of("X.KICAD_PRO") == CAD.Hit{"kicad", "project", True{}} : CAD.Hit}
+
+# a tool Backplane cannot run is recognised but marked not drawn
+law cad_of_altium_not_drawn:
+  {CAD.Cad.of("Main.PcbDoc") == CAD.Hit{"altium", "board", False{}} : CAD.Hit}
+
+law cad_of_unknown:
+  {CAD.Cad.of("readme.md") == CAD.Hit{"", "", False{}} : CAD.Hit}
+
+# a template's placeholders are replaced by their values
+law cad_fill_puts_vars_in:
+  {CAD.Cad.fill(["{cli}", "{out}/x.csv"], [CAD.Var{"cli", "k"}, CAD.Var{"out", "/o"}]) == ["k", "/o/x.csv"] : List<&2, String>}
+
+# a brace that names no variable passes through (KiCad's ${QUANTITY})
+law cad_fill_keeps_other_braces:
+  {CAD.Cad.fill(["${QUANTITY}"], [CAD.Var{"cli", "k"}]) == ["${QUANTITY}"] : List<&2, String>}
+
+# a single quote inside a word is written '\'' so sh reads it back
+law cad_shell_quotes_a_quote:
+  {CAD.Cad.quote("a'b") == "'a'\\''b'" : String}
+
+law cad_shell_words:
+  {CAD.Cad.shell(["a", "b c"]) == "'a' 'b c'" : String}
+
+# ticking a box and ticking it again gives the file back, byte for byte
+law checklist_toggle_twice:
+  {CHK.Checklist.toggle(CHK.Checklist.toggle("# A\n- [ ] x\n* [x] y\n", 1n), 1n) == "# A\n- [ ] x\n* [x] y\n" : String}
+
+law checklist_toggle_flips_one:
+  {CHK.Checklist.toggle("# A\n- [ ] x\n* [x] y\n", 1n) == "# A\n- [ ] x\n* [ ] y\n" : String}
+
+# a box that is not there changes nothing
+law checklist_toggle_past_end:
+  {CHK.Checklist.toggle("- [ ] x\n", 5n) == "- [ ] x\n" : String}
+
+# with no findings the gate passes
+law checks_gate_no_findings:
+  {CHK.Checks.gate(Nil{}, CHK.Checks.gate.default()) == "" : String}
+
+law checks_gate_no_findings_strict:
+  {CHK.Checks.gate(Nil{}, CHK.Gate{"warning", "warning", True{}}) == "" : String}
+
+law checks_md_empty:
+  {CHK.Checks.md(Nil{}, Nil{}, Nil{}) == "**Design checks:** No findings\n" : String}
+
+# an ERC report's violation becomes one finding of its severity
+law checks_erc_error_counted:
+  {CHK.Checks.count(CHK.Checks.erc("{\"sheets\":[{\"path\":\"/\",\"violations\":[{\"type\":\"t\",\"severity\":\"error\",\"description\":\"d\",\"items\":[]}]}]}"), "erc", "error") == 1n : Nat}
+
+# the next tag counts on from the newest one
+law release_next_dotted:
+  {REL.Release.next(["v1.1", "v1.2"]) == "v1.3" : String}
+
+law release_next_letter:
+  {REL.Release.next(["rev-A"]) == "rev-B" : String}
+
+law release_next_plain:
+  {REL.Release.next(["r7"]) == "r8" : String}
+
+law release_next_first:
+  {REL.Release.next(Nil{}) == "v1" : String}
+
+law release_tag_valid:
+  {REL.Release.valid("v1.2") == True{} : Bool}
+
+# git refuses these as tag names
+law release_tag_no_space:
+  {REL.Release.valid("a b") == False{} : Bool}
+
+law release_tag_no_dotdot:
+  {REL.Release.valid("a..b") == False{} : Bool}
+
+law release_tag_no_dash_lead:
+  {REL.Release.valid("-x") == False{} : Bool}
+
+law release_tag_no_lock_end:
+  {REL.Release.valid("x.lock") == False{} : Bool}
+
+law release_tag_not_empty:
+  {REL.Release.valid("") == False{} : Bool}
+
+# a release's outputs live in the repo's .backplane/releases/<tag>
+law release_dir_in_repo:
+  {REL.Release.dir("/r", "v1") == "/r/.backplane/releases/v1" : String}
+
+law release_gh_command:
+  {REL.Release.gh("v1", "n.md", ["f"]) == ["gh", "release", "create", "v1", "--title", "v1", "--notes-file", "n.md", "--verify-tag", "f"] : List<&2, String>}
