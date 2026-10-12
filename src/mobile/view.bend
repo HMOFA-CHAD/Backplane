@@ -175,7 +175,8 @@ def View.sync(a: U.Act) -> U.Act:
   View.fv(View.sync.m(a))
 
 # a hub's answer to far.view: the viewer asks for the source again, now
-# that the folder is known
+# that the folder is known (and to history.resolve: the version it picked
+# is the source now)
 def View.far.k(far: Bool, a: U.Act) -> U.Act:
   match far a:
     case True{} +x:
@@ -183,8 +184,8 @@ def View.far.k(far: Bool, a: U.Act) -> U.Act:
     case False{} +x:
       x
 
-def View.far(o: J.Json, a: U.Act) -> U.Act:
-  View.far.k(U.Fm.has(J.Json.get_obj(o, "result"), "farView"), a)
+def View.far(+o: J.Json, a: U.Act) -> U.Act:
+  View.far.k(Bool.or(U.Fm.has(J.Json.get_obj(o, "result"), "farView"), U.Rv.reply.has(o)), a)
 
 # open a viewer ("board", "schematic", "3d") or close it (""); what was
 # picked is let go
@@ -346,7 +347,7 @@ def View.lkind(+u: U.Ui) -> U32:
   Bool.pick(U32, String.eq(View.kind(u), "schematic"), 1, 0)
 
 def View.focus.put(+u: U.Ui, +f: LY.Focus) -> U.Act:
-  U.Act{Pick.clear(U.Ui.scratch_set(u, View.focus.key(u), LY.Lyr.show(f))), Nil{}}
+  View.hist.act(Pick.clear(U.Ui.scratch_set(u, View.focus.key(u), LY.Lyr.show(f))), "rv-bits", U32.show(U.Rv.bits(View.lkind(u), f)))
 
 def View.layer.pick(+u: U.Ui, +v: String) -> U.Act:
   View.focus.put(u, LY.Lyr.pick(View.focus(u), LY.Lyr.num(v, LY.Lyr.none())))
@@ -434,10 +435,25 @@ def View.sheet.pick.k(hist: Bool, +u: U.Ui, +v: String) -> U.Act:
     case False{}:
       View.sheet.pick.u(u, v)
 
+# a sheet picked while a comparison shows keeps comparing: the same
+# versions of that sheet (design review, core's Hist.sheet)
+def View.sheet.cmp(+u: U.Ui, +i: Nat, +file: String) -> U.Act:
+  View.sheet.go(U.Ui.view_put(u, "schematic", HS.Hist.sheet(U.Ui.view_get(u, "view.path"), file)), i, file)
+
+def View.sheet.cmp.u(+u: U.Ui, +v: String) -> U.Act:
+  View.sheet.cmp(u, Maybe.default(&2, Nat, Nat.read(v), 0n), HI.Hier.file(View.rows(u), Maybe.default(&2, Nat, Nat.read(v), 0n)))
+
+def View.sheet.pick.c(cmp: Bool, +u: U.Ui, +v: String) -> U.Act:
+  match cmp:
+    case True{}:
+      View.sheet.cmp.u(u, v)
+    case False{}:
+      View.sheet.pick.k(View.hist(u), u, v)
+
 # (while a version shows, the live files come back first: the sheets
 # listed are the live design's)
 def View.sheet.pick(+u: U.Ui, +v: String) -> U.Act:
-  View.sheet.pick.k(View.hist(u), u, v)
+  View.sheet.pick.c(U.Hs.cmp(View.as_client(u)), u, v)
 
 def View.sheet.row(r: HI.Row, +i: Nat, +cur: String) -> J.Json:
   match r:
@@ -654,7 +670,7 @@ def Hist.json.k(b: U.HBar, +u: U.Ui) -> J.Json:
     case U.HBar{_, +n, +at, +title, +entry, +label, +said, +pl, +df, +cmp, +a, +bb, +menu}:
       J.Json.obj([J.KV{"n", J.Num{Nat.show(n)}}, J.KV{"at", J.Num{Nat.show(at)}}, J.KV{"title", J.Str{title}}, J.KV{"entry", J.Str{entry}},
         J.KV{"said", J.Str{Bool.pick(String, Nat.is_eq(at, 0n), "The live file. Each tick is a change the agent made; play to watch them.", Bool.pick(String, String.is_empty(said), label, said))}},
-        J.KV{"playing", J.Json.bool(pl)}, J.KV{"diff", J.Json.bool(df)}, J.KV{"cmp", J.Json.bool(cmp)}, J.KV{"a", J.Str{a}}, J.KV{"b", J.Str{bb}}, J.KV{"side", J.Str{menu}},
+        J.KV{"playing", J.Json.bool(pl)}, J.KV{"diff", J.Json.bool(df)}, J.KV{"cmp", J.Json.bool(cmp)}, J.KV{"a", J.Str{a}}, J.KV{"b", J.Str{bb}}, J.KV{"side", J.Str{menu}}, J.KV{"as", J.Str{U.Rv.showing(u)}},
         J.KV{"ticks", J.Json.arr(Hist.ticks(U.Hs.track(u), 0n, at))}, J.KV{"menu", Hist.menu(menu, u)},
         J.KV{"keys", J.Json.arr([J.Num{U32.show(LO.Look.mark.color(False{}, 26))}, J.Num{U32.show(LO.Look.mark.color(False{}, 27))}, J.Num{U32.show(LO.Look.mark.color(False{}, 28))}])}])
 

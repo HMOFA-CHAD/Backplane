@@ -275,7 +275,7 @@ def One.act.k(i: Nat, +u: U.Ui, +action: String, +value: String) -> U.Act:
     case 22n:
       VW.View.layer.mode(u, value)
     case _:
-      One.act.rest(Bool.or(String.starts_with(action, "hist-"), String.starts_with(action, "cmp")), u, action, value)
+      One.act.rest(Bool.or(Bool.or(String.starts_with(action, "hist-"), String.starts_with(action, "cmp")), String.starts_with(action, "rv-")), u, action, value)
 
 def One.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
   One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders", "fm", "fm-cd", "fm-up", "fm-open", "fm-page", "view-layer-pick", "view-layer-mode"], action), u, action, value)
