@@ -19,7 +19,7 @@ import Base
 # "settings" (the sidebar's Settings button). Phones point at nothing.
 
 def Ob.count() -> Nat:
-  9n
+  10n
 
 def Ob.title(i: Nat) -> String:
   match i:
@@ -41,6 +41,8 @@ def Ob.title(i: Nat) -> String:
       "Other machines"
     case 8n:
       "Phones and browsers"
+    case 9n:
+      "Your uberbot"
     case _:
       ""
 
@@ -65,6 +67,8 @@ def Ob.target.d(i: Nat) -> String:
       "settings"
     case 8n:
       "settings"
+    case 9n:
+      "sidebar"
     case _:
       ""
 
@@ -137,6 +141,23 @@ def Ob.body.8(+k: Nat) -> String:
     "On the hub's computer open Settings, Pairing link, QR code. Here, Hubs, Scan QR code pairs it. This phone needs Tailscale on the same tailnet. A browser can open a hub's web address too.",
     "To pair a phone, install Tailscale on it and join the same tailnet. Then open Settings, Pairing link, QR code and scan it with the Backplane app or the phone's camera. Settings shows the link when Backplane has one. A browser on a tailnet device can open this hub's web address too.")
 
+# The last step is the uberbot (core/uber.bend): the bot the person makes
+# their main interface. Its words depend on the case client.bend's
+# Tour.uber.case gives: "none" (no bots here), "pick" (bots, no uberbot;
+# `name` is the one used most), "have" (an uberbot, `name`), or "join"
+# (reserved: a linked machine has one, `name`; never produced yet).
+def Ob.uber() -> Nat:
+  9n
+
+def Ob.body.9.lead() -> String:
+  "Your uberbot is the cat you talk to first: it sees every project, thread, bot and machine, and its Status tab shows what runs and what waits on you."
+
+def Ob.body.9(+k: Nat, +uc: String, +name: String) -> String:
+  Bool.pick(String, String.eq(uc, "have"), name ++ " is your uberbot. Click it at the top of the " ++ Bool.pick(String, Ob.phone(k), "list", "sidebar") ++ " for the Status of everything.",
+    Bool.pick(String, String.eq(uc, "join"), "Another of your machines has an uberbot, " ++ name ++ ".",
+      Bool.pick(String, String.eq(uc, "pick"), Ob.body.9.lead() ++ " Make one of your bots the uberbot: " ++ name ++ " is the one you use most. You can change it later.",
+        Ob.body.9.lead() ++ " Create it now; you can rename it later.")))
+
 def Ob.body(+k: Nat, +d: String, i: Nat) -> String:
   match i:
     case 0n:
@@ -157,8 +178,14 @@ def Ob.body(+k: Nat, +d: String, i: Nat) -> String:
       Ob.body.7(k)
     case 8n:
       Ob.body.8(k)
+    case 9n:
+      Ob.body.9(k, "none", "")
     case _:
       ""
+
+# the words of step i for a case of the uberbot step; other steps ignore it
+def Ob.body.uber(+k: Nat, +d: String, +uc: String, +name: String, +i: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(i, Ob.uber()), Ob.body.9(k, uc, name), Ob.body(k, d, i))
 
 # digits in a client's text (anything else, the "m", is skipped)
 def Ob.num(s: String, +acc: Nat) -> Nat:

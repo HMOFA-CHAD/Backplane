@@ -64,12 +64,47 @@ def at(u: U.Ui) -> String:
 def act(u: U.Ui, a: String) -> U.Ui:
   ui(U.Ui.act(u, a, ""))
 
+def act3(u: U.Ui, a: String, v: String) -> U.Ui:
+  ui(U.Ui.act(u, a, v))
+
 # a string holds a piece (found by splitting on it)
 def holds(+s: String, +p: String) -> Bool:
   String.contains(s, p)
 
 def end() -> String:
   Nat.show(OB.Ob.count())
+
+# the text of every request a step sent
+def sends.of(cs: List<&2, U.Cmd>) -> String:
+  match cs:
+    case U.Send{t} <> r:
+      t ++ "|" ++ sends.of(r)
+    case _ <> r:
+      sends.of(r)
+    case Nil{}:
+      ""
+
+def sends(a: U.Act) -> String:
+  sends.of(cmds(a))
+
+# three bots: Kit said once, Pip and Zed three times (Pip is older)
+def bots3() -> M.State:
+  M.State.replay([M.ThreadCreated{"t1", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Kit", "t1", 7n, "", 100n},
+    M.ThreadCreated{"t2", "", "Pip", M.Local{}, "", "", "claude", "", 101n}, M.BotSet{"b2", "Pip", "t2", 8n, "", 101n},
+    M.ThreadCreated{"t3", "", "Zed", M.Local{}, "", "", "claude", "", 102n}, M.BotSet{"b3", "Zed", "t3", 9n, "", 102n},
+    M.MessagePosted{"t1", "m1", M.User{}, "a", 110n},
+    M.MessagePosted{"t2", "m2", M.User{}, "a", 111n}, M.MessagePosted{"t2", "m3", M.User{}, "b", 112n}, M.MessagePosted{"t2", "m4", M.User{}, "c", 113n},
+    M.MessagePosted{"t3", "m5", M.User{}, "a", 114n}, M.MessagePosted{"t3", "m6", M.User{}, "b", 115n}, M.MessagePosted{"t3", "m7", M.User{}, "c", 116n}], M.State.empty())
+
+def uberstep(+st: M.State) -> U.Ui:
+  U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.adopt.raw(U.Ui.init(1000n), st), "@sync", "1"), "@tour", "9")
+
+def labels(cs: List<&2, U.TChoice>) -> String:
+  match cs:
+    case U.TChoice{l, a, v} <> r:
+      l ++ " " ++ a ++ " " ++ v ++ "; " ++ labels(r)
+    case Nil{}:
+      "."
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -94,11 +129,11 @@ def main() -> IO(Unit):
     C.Check.str("skip ends it", at(act(fresh(), "ob-skip")), end())
     C.Check.str("skip tells the hub", sent(U.Ui.act(fresh(), "ob-skip", "")), "2")
     C.Check.str("skip is kept as a setting", M.Setting.get(U.Ui.state(act(fresh(), "ob-skip")), "onboard.done", ""), "1")
-    C.Check.str("last step reads Done", OB.Ob.forward(8n) ++ " " ++ OB.Ob.forward(7n), "Done Next")
-    C.Check.str("next from the last ends it", Bool.show(OB.Ob.live(OB.Ob.next(8n))), "False")
+    C.Check.str("last step reads Done", OB.Ob.forward(9n) ++ " " ++ OB.Ob.forward(8n), "Done Next")
+    C.Check.str("next from the last ends it", Bool.show(OB.Ob.live(OB.Ob.next(9n))), "False")
     C.Check.str("a stray next with no tour does nothing", sent(U.Ui.act(done(), "ob-next", "")), "0")
     C.Check.str("a stray next leaves it done", at(act(done(), "ob-next")), end())
-    C.Check.str("counter", OB.Ob.counter(2n), "3 of 9")
+    C.Check.str("counter", OB.Ob.counter(2n), "3 of 10")
     # a done from another client
     C.Check.str("done elsewhere closes an auto tour that moved on", at(U.Ui.adopt.raw(act(act(fresh(), "ob-next"), "ob-next"), finished())), end())
     C.Check.str("done elsewhere leaves a hand-opened tour", at(U.Ui.adopt.raw(act(done(), "ob-open"), finished())), "0")
@@ -113,6 +148,27 @@ def main() -> IO(Unit):
     C.Check.str("skip with a remote chat showing focuses its field", focus(U.Ui.act(U.Bots.views(U.Ui.select.k(fresh(), "t1"), "", "", "x"), "ob-skip", "")), "focus:remote-send")
     C.Check.str("skip with Settings up focuses nothing", focus(U.Ui.act(U.Ui.flag_on(U.Ui.select.k(fresh(), "t1"), "settings"), "ob-skip", "")), "focus:")
     C.Check.str("no thread's head under a remote chat", U.Tour.target(0n, U.Ui.scratch_set(U.Bots.views(U.Ui.select.k(fresh(), "t1"), "", "", "x"), "@tour", "m3")), "")
+    # the uberbot step
+    C.Check.str("uberbot: the last step", OB.Ob.title(9n) ++ "|" ++ OB.Ob.target(0n, 9n) ++ "|" ++ OB.Ob.target(2n, 9n), "Your uberbot|sidebar|")
+    C.Check.str("uberbot: no choices on other steps", labels(U.Tour.choices(fresh())), ".")
+    C.Check.str("uberbot: no bots creates one", labels(U.Tour.choices(uberstep(logged()))), "Create my uberbot uber-new ; .")
+    C.Check.str("uberbot: no bots words", Bool.show(holds(U.Tour.body(0n, uberstep(logged())), "Create it now; you can rename it later.")), "True")
+    C.Check.str("uberbot: pick the most used, ties the oldest", labels(U.Tour.choices(uberstep(bots3()))), "Make Pip my uberbot uber-promote b2; Make Zed uber-promote b3; Make Kit uber-promote b1; Create a new one uber-new ; .")
+    C.Check.str("uberbot: pick words suggest it", Bool.show(holds(U.Tour.body(0n, uberstep(bots3())), "Pip is the one you use most")), "True")
+    C.Check.str("uberbot: have, no choices", labels(U.Tour.choices(uberstep(M.State.replay([M.UberSet{"b1", "u1-a", 200n}], bots3())))), ".")
+    C.Check.str("uberbot: have words, window and phone", Bool.show(Bool.and(holds(U.Tour.body(0n, uberstep(M.State.replay([M.UberSet{"b1", "u1-a", 200n}], bots3()))), "Kit is your uberbot. Click it at the top of the sidebar for the Status of everything."),
+      holds(U.Tour.body(2n, uberstep(M.State.replay([M.UberSet{"b1", "u1-a", 200n}], bots3()))), "at the top of the list"))), "True")
+    C.Check.str("uberbot: promote asks the hub and ends the tour", Bool.show(holds(sends(U.Ui.act(uberstep(bots3()), "uber-promote", "b2")), "bots.uber")) ++ at(act3(uberstep(bots3()), "uber-promote", "b2")), "True" ++ end())
+    C.Check.str("uberbot: promote marks the tour done", M.Setting.get(U.Ui.state(act3(uberstep(bots3()), "uber-promote", "b2")), "onboard.done", ""), "1")
+    C.Check.str("uberbot: create opens the form for it and ends the tour", U.Ui.scratch(ui(U.Ui.act(uberstep(logged()), "uber-new", "")), "@bnew") ++ U.Ui.scratch(act(uberstep(logged()), "uber-new"), "@uber.new") ++ at(act(uberstep(logged()), "uber-new")), "11" ++ end())
+    C.Check.str("uberbot: create keeps the keyboard in the name field", focus(U.Ui.act(uberstep(logged()), "uber-new", "")), "focus:bot-name")
+    C.Check.str("uberbot: the form hints at it", U.Bots.name.hint(act(uberstep(logged()), "uber-new")) ++ "|" ++ U.Bots.name.hint(U.Ui.init(1n)), "Name your uberbot|Name")
+    C.Check.str("uberbot: the form's request carries uber", Bool.show(holds(sends(U.Ui.act(act3(act(uberstep(logged()), "uber-new"), "bfield", "name\u{1f}Ace"), "bot-create", "")), "\"uber\":true")), "True")
+    C.Check.str("uberbot: an ordinary new bot does not", Bool.show(holds(sends(U.Ui.act(act3(U.Ui.init(1n), "bfield", "name\u{1f}Ace"), "bot-create", "")), "uber")), "False")
+    C.Check.str("uberbot: closing the form by + forgets it", U.Ui.scratch(act(act(act(uberstep(logged()), "uber-new"), "bot-new"), "bot-new"), "@uber.new"), "")
+    C.Check.str("uberbot: a stray promote with no tour just asks", at(act3(done(), "uber-promote", "b2")) ++ Bool.show(holds(sends(U.Ui.act(done(), "uber-promote", "b2")), "bots.uber")), end() ++ "True")
+    C.Check.str("uberbot: back from it", at(act(uberstep(logged()), "ob-back")), "8")
+    C.Check.str("uberbot: the phone screen carries the choices", J.Json.show(J.Json.get_obj(J.Json.get_obj(S.Mob.screen(uberstep(logged())), "tour"), "choices")), "[{\"label\":\"Create my uberbot\",\"action\":\"uber-new\",\"value\":\"\"}]")
     # Settings' Tailscale row
     C.Check.str("tailscale off: the flag", U.Tail.label(tn("off", "")) ++ "|" ++ U.Tail.note(tn("off", "")), "Tailscale: off|Listening on 127.0.0.1:3787 only: started with --no-tailscale.")
     C.Check.str("tailscale not connected: no pairing link", U.Tail.label(tn("on", "")) ++ "|" ++ U.Tail.note(tn("on", "")), "Tailscale: not connected|Listening on 127.0.0.1:3787 only. Sign in to Tailscale, then restart Backplane.")

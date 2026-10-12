@@ -636,6 +636,8 @@ button.mic.starting, button.mic.stopping { border-color: var(--bad); color: var(
 .tour .count { color: var(--faint); font-size: 12px; }
 .tour-title { font-weight: 600; }
 .tour-body { margin: 0; color: var(--dim); line-height: 1.5; }
+.tour-choices { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.tour-choices:empty { display: none; }
 .tour-btns { display: flex; align-items: center; gap: 6px; margin-top: 4px; position: sticky; bottom: -14px; padding: 8px 0 0; background: var(--raise); }
 .tour button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tour-btns .gap { flex: 1; }

@@ -1736,12 +1736,21 @@ def View.aside.if(open: Bool, +kind: String, +u: U.Ui) -> List<&2, D.Node>:
 # over the dimming. host.js makes it modal: the page behind is inert, focus
 # stays in the dialog, and the keys go through app.bend's tour_key (Enter
 # and the right arrow next, the left arrow back, Esc skip).
-def View.tour.card(+i: Nat, +body: String) -> List<&2, D.Node>:
+# the uberbot step's choices (client.bend's Tour.choices): one button each
+def View.tour.choices(cs: List<&2, U.TChoice>) -> List<&2, D.Node>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case U.TChoice{+l, a, v} <> t:
+      D.Dom.button("", a, v, l, l) <> View.tour.choices(t)
+
+def View.tour.card(+i: Nat, +body: String, cs: List<&2, U.TChoice>) -> List<&2, D.Node>:
   [D.El{"div", "", [D.At{"class", "tour-back"}], Nil{}},
     D.El{"div", "tour", [D.At{"class", "tour"}, D.At{"role", "dialog"}, D.At{"aria-modal", "true"}, D.At{"aria-labelledby", "tour-title"}], [
       D.Dom.span("count", OB.Ob.counter(i)),
       D.El{"div", "tour-title", [D.At{"class", "tour-title"}, D.At{"id", "tour-title"}], [D.Txt{OB.Ob.title(i)}]},
       D.El{"p", "", [D.At{"class", "tour-body"}], [D.Txt{body}]},
+      D.El{"div", "", [D.At{"class", "tour-choices"}], View.tour.choices(cs)},
       D.El{"div", "", [D.At{"class", "tour-btns"}], [
         D.Dom.button("", "ob-skip", "", "End the tour (Esc)", "Skip"),
         D.Dom.span("gap", ""),
@@ -1751,7 +1760,7 @@ def View.tour.card(+i: Nat, +body: String) -> List<&2, D.Node>:
 def View.tour.k(on: Bool, +i: Nat, +u: U.Ui) -> List<&2, D.Node>:
   match on:
     case True{}:
-      View.tour.card(i, U.Tour.body(1n, u))
+      View.tour.card(i, U.Tour.body(1n, u), U.Tour.choices(u))
     case False{}:
       Nil{}
 

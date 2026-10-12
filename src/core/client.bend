@@ -5461,11 +5461,20 @@ def Bots.bfield(u: Ui, +v: String) -> Ui:
 def Bots.flag(+u: Ui, +k: String) -> Ui:
   Ui.scratch_set(u, k, Bool.pick(String, String.eq(Ui.scratch(u, k), "1"), "", "1"))
 
+# the new bot form was opened by the tour's "Create my uberbot" (scratch
+# "@uber.new"): the request asks the hub to make the bot the uberbot too
+def Bots.uber.new(+u: Ui) -> List<&2, J.KV>:
+  Bool.pick(List<&2, J.KV>, String.eq(Ui.scratch(u, "@uber.new"), "1"), [J.KV{"uber", J.Flag{True{}}}], Nil{})
+
 def Bots.create(+u: Ui) -> Act:
-  Ui.rpc(Bots.fields.clear(Ui.scratch_set(u, "@bnew", ""), ["name", "persona"]), "bots.create",
-    [J.KV{"name", J.Str{String.trim(Bots.field(u, "name"))}}, J.KV{"persona", J.Str{Bots.field(u, "persona")}},
+  Ui.rpc(Bots.fields.clear(Ui.scratch_set(Ui.scratch_set(u, "@bnew", ""), "@uber.new", ""), ["name", "persona"]), "bots.create",
+    List.append(&2, J.KV, [J.KV{"name", J.Str{String.trim(Bots.field(u, "name"))}}, J.KV{"persona", J.Str{Bots.field(u, "persona")}},
      J.KV{"provider", J.Str{Bool.pick(String, String.is_empty(Bots.field(u, "provider")), M.Setting.get(Ui.state.of(u), "agent.provider", "claude"), Bots.field(u, "provider"))}},
-     J.KV{"model", J.Str{Bots.field(u, "model")}}])
+     J.KV{"model", J.Str{Bots.field(u, "model")}}], Bots.uber.new(u)))
+
+# the form's name field hint
+def Bots.name.hint(+u: Ui) -> String:
+  Bool.pick(String, String.eq(Ui.scratch(u, "@uber.new"), "1"), "Name your uberbot", "Name")
 
 def Bots.cur(+u: Ui) -> String:
   Ui.scratch(u, "@bot")
@@ -7098,7 +7107,7 @@ def Bots.act(i: Nat, +u: Ui, +value: String) -> Act:
     case 1n:
       Bots.tab.k(String.eq(value, "settings"), Ui.scratch_set(u, "@btab", value))
     case 2n:
-      Act{Bots.flag(u, "@bnew"), [Focus{"bot-name"}]}
+      Act{Bots.flag(Ui.scratch_set(u, "@uber.new", ""), "@bnew"), [Focus{"bot-name"}]}
     case 3n:
       Bots.create(u)
     case 4n:
@@ -7528,9 +7537,82 @@ def Tour.on(+u: Ui) -> Bool:
 def Tour.days(+u: Ui) -> String:
   Nat.show(Nat.div(M.Scratch.window(Ui.state(u)), 86400n))
 
+# The uberbot step (core/onboard.bend's Ob.uber): what it offers depends on
+# the bots here. "have": an uberbot is set; "pick": bots, none set; "none":
+# no bots. A bot is counted by the entries of its thread (only while the
+# tour is up; M.State.mine reads the thread's own index).
+type Used is Data:
+  Used{n: Nat, bot: BT.Bot}
+
+# most used first, ties the oldest first
+def Used.before(a: Used, b: Used) -> Bool:
+  match a b:
+    case Used{+na, ba} Used{+nb, bb}:
+      Bool.pick(Bool, Nat.is_gt(na, nb), True{}, Bool.pick(Bool, Nat.is_eq(na, nb), BT.Bot.before(ba, bb), False{}))
+
+def Tour.used(bs: List<&2, BT.Bot>, +st: M.State) -> List<&2, Used>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case +b <> t:
+      Used{List.length(&2, M.Entry, M.State.mine(st, BT.Bot.thread(b))), b} <> Tour.used(t, st)
+
+# this machine's bots, the most used first
+def Tour.ranked(+st: M.State) -> List<&2, Used>:
+  List.sort(~Used, ~Used.before, Tour.used(BT.World.bots.here(M.State.bots(st)), st))
+
+def Tour.uber.case.k(+have: String, any: Bool) -> String:
+  Bool.pick(String, Bool.not(String.is_empty(have)), "have", Bool.pick(String, any, "pick", "none"))
+
+def Tour.uber.case(+u: Ui) -> String:
+  Tour.uber.case.k(UB.Uber.bot(Ui.state.of(u)), Bool.not(List.is_empty(&2, BT.Bot, BT.World.bots.here(M.State.bots(Ui.state.of(u))))))
+
+def Tour.uber.name.k(uc: String, +first: String, +have: String) -> String:
+  Bool.pick(String, String.eq(uc, "have"), have, first)
+
+def Tour.uber.first(us: List<&2, Used>) -> String:
+  match us:
+    case Used{_, b} <> _:
+      BT.Bot.name(b)
+    case Nil{}:
+      ""
+
+# the name the words use: the uberbot's, or the bot used most
+def Tour.uber.name(+u: Ui) -> String:
+  Tour.uber.name.k(Tour.uber.case(u), Tour.uber.first(Tour.ranked(Ui.state.of(u))), BT.Bot.name(BT.World.bot(M.State.bots(Ui.state.of(u)), UB.Uber.bot(Ui.state.of(u)))))
+
+# a choice on the tour's card: a button that sends an action
+type TChoice is Data:
+  TChoice{label: String, action: String, value: String}
+
+def Tour.pick.one(first: Bool, +b: BT.Bot) -> TChoice:
+  TChoice{Bool.pick(String, first, "Make " ++ BT.Bot.name(b) ++ " my uberbot", "Make " ++ BT.Bot.name(b)), "uber-promote", BT.Bot.id(b)}
+
+def Tour.picks(us: List<&2, Used>, first: Bool) -> List<&2, TChoice>:
+  match us:
+    case Nil{}:
+      Nil{}
+    case Used{_, b} <> t:
+      Tour.pick.one(first, b) <> Tour.picks(t, False{})
+
+def Tour.choices.k(+uc: String, +st: M.State) -> List<&2, TChoice>:
+  Bool.pick(List<&2, TChoice>, String.eq(uc, "none"), [TChoice{"Create my uberbot", "uber-new", ""}],
+    Bool.pick(List<&2, TChoice>, String.eq(uc, "pick"), List.append(&2, TChoice, Tour.picks(List.take(&2, Used, Tour.ranked(st), 3n), True{}), [TChoice{"Create a new one", "uber-new", ""}]), Nil{}))
+
+# the buttons under the uberbot step's words (none on other steps)
+def Tour.choices.on(on: Bool, +u: Ui) -> List<&2, TChoice>:
+  match on:
+    case True{}:
+      Tour.choices.k(Tour.uber.case(u), Ui.state.of(u))
+    case False{}:
+      Nil{}
+
+def Tour.choices(+u: Ui) -> List<&2, TChoice>:
+  Tour.choices.on(Nat.is_eq(Tour.at(u), OB.Ob.uber()), u)
+
 # the step's words for a kind of client (0 window, 1 web, 2 phone)
 def Tour.body(+k: Nat, +u: Ui) -> String:
-  OB.Ob.body(k, Tour.days(u), Tour.at(u))
+  OB.Ob.body.uber(k, Tour.days(u), Tour.uber.case(u), Tour.uber.name(u), Tour.at(u))
 
 def Tour.target.k(+g: String, open: Bool) -> String:
   Bool.pick(String, Bool.and(String.eq(g, "head"), Bool.not(open)), "", g)
@@ -7633,6 +7715,11 @@ def Uber.show(+u: Ui) -> Act:
 def Uber.bot.at(+u: Ui, +value: String) -> Act:
   Bots.select(Ui.scratch_set(u, "@btab", Maybe.default(&2, String, List.get(&2, String, String.split(value, '|'), 1n), "")), Maybe.default(&2, String, List.head(&2, String, String.split(value, '|')), ""))
 
+# "uber-new": the new bot form opens for the uberbot (the tour's "Create my
+# uberbot"): Settings shut, "@uber.new" set so the request carries uber
+def Uber.new(+u: Ui) -> Act:
+  Act{Ui.scratch_set(Ui.scratch_set(Ui.flag_off(u, "settings"), "@bnew", "1"), "@uber.new", "1"), [Focus{"bot-name"}]}
+
 def Uber.act.k(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 0n:
@@ -7643,13 +7730,15 @@ def Uber.act.k(i: Nat, +u: Ui, +value: String) -> Act:
       Ui.rpc(u, "bots.uber", [J.KV{"bot", J.Str{""}}])
     case 3n:
       Uber.bot.at(u, value)
+    case 4n:
+      Uber.new(u)
     case _:
       Act{u, Nil{}}
 
 def Uber.act.go(route: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match route:
     case True{}:
-      Uber.act.k(C.Codec.pos(["uber", "uber-promote", "uber-demote", "uber-bot"], action), u, value)
+      Uber.act.k(C.Codec.pos(["uber", "uber-promote", "uber-demote", "uber-bot", "uber-new"], action), u, value)
     case False{}:
       Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)
 
@@ -7683,12 +7772,38 @@ def Ui.act.t(tour: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Ui.act.p(String.eq(action, "proj-on"), u, action, value)
 
+# A choice on the tour's uberbot step does its action, then ends the tour
+# like Done (the action's own commands come after the tour's focus).
+def Tour.choose.fin(f: Act, cs: List<&2, Cmd>) -> Act:
+  match f:
+    case Act{u, fs}:
+      Act{u, List.append(&2, Cmd, fs, cs)}
+
+def Tour.choose.k(a: Act) -> Act:
+  match a:
+    case Act{u, cs}:
+      Tour.choose.fin(Tour.finish(u), cs)
+
+def Ui.act.c(choice: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match choice:
+    case True{}:
+      Tour.choose.k(Ui.act.t(False{}, u, action, value))
+    case False{}:
+      Ui.act.t(String.starts_with(action, "ob-"), u, action, value)
+
+def Ui.act.u(pick: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match pick:
+    case True{}:
+      Ui.act.c(Nat.is_eq(Tour.at(u), OB.Ob.uber()), u, action, value)
+    case False{}:
+      Ui.act.c(False{}, u, action, value)
+
 def Ui.act.s(close: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match close:
     case True{}:
       Skills.close(u)
     case False{}:
-      Ui.act.t(String.starts_with(action, "ob-"), u, action, value)
+      Ui.act.u(Nat.is_lt(C.Codec.pos(["uber-promote", "uber-new"], action), 2n), u, action, value)
 
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
   Ui.act.s(String.eq(action, "skill-close"), u, action, value)

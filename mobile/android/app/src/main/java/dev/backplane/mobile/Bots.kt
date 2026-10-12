@@ -178,7 +178,7 @@ fun NewBotDialog(m: AppModel, f: NewBot) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(name, { name = it; m.field("name", it) }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text("Name") })
+                    label = { Text(f.hint) })
                 OutlinedTextField(persona, { persona = it; m.field("persona", it) }, Modifier.fillMaxWidth(), minLines = 3, maxLines = 8,
                     label = { Text("Persona") })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

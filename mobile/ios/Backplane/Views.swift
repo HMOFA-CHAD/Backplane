@@ -1075,6 +1075,9 @@ struct TourSheet: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            ForEach(tour.choices, id: \.label) { c in
+                Button(c.label) { model.act(c.action, c.value) }.buttonStyle(.bordered)
+            }
             HStack {
                 Button(tour.skip) { model.act("ob-skip") }
                 Spacer()

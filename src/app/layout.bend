@@ -5266,8 +5266,19 @@ def Tour.bar.k(over: Bool, +nl: U32, +nv: U32, +off: U32, +x: U32, +y: U32) -> O
 def Tour.bar(+nl: U32, +nv: U32, +off: U32, +x: U32, +y: U32) -> Out:
   Tour.bar.k(U32.is_gt(nl, nv), nl, nv, off, x, y)
 
+# the uberbot step's choices (client.bend's Tour.choices): a button each,
+# one above the other, their hits the choice's own action and value
+def Tour.choices(cs: List<&2, U.TChoice>, +ty: Ty, +x: U32, +y: U32) -> Out:
+  match cs:
+    case Nil{}:
+      Out.none()
+    case U.TChoice{l, a, v} <> t:
+      Out.cat(Lay.button(ty, D.Clip.all(), x, y, l, T.Th.accent(), a, v), Tour.choices(t, ty, x, (y + 34 : U32)))
+
 def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
   +u = S.Nui.ui(n)
+  +cs = U.Tour.choices(u)
+  +cr = {(U32.from_nat(List.length(&2, U.TChoice, cs)) * 34 : U32) : U32}
   +i = U.Tour.at(u)
   +g = U.Tour.target(0n, u)
   +body = U.Tour.body(0n, u)
@@ -5282,8 +5293,8 @@ def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
   +all = Ty.wrap(ty, 0n, Bool.pick(String, compact, title ++ ": " ++ body, body), U32.dim(cw, 32))
   +nl = {U32.from_nat(List.length(&2, String, all)) : U32}
   +top = {Bool.pick(U32, compact, 8, (38 + th : U32)) : U32}
-  +nv = {U32.max(1, U32.min(nl, (U32.dim(avail, (top + 60 : U32)) / 22 : U32))) : U32}
-  +ch = {(top + 60 + nv * 22 : U32) : U32}
+  +nv = {U32.max(1, U32.min(nl, (U32.dim(avail, (top + 60 + cr : U32)) / 22 : U32))) : U32}
+  +ch = {(top + 60 + nv * 22 + cr : U32) : U32}
   +cy = {U32.min(96, U32.dim(hh, (ch + 12 : U32))) : U32}
   +by = {(cy + ch - 44 : U32) : U32}
   +bt = {(cy + top : U32) : U32}
@@ -5297,6 +5308,7 @@ def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
       Bool.pick(List<&2, R.Op>, compact, Nil{}, Tour.lines(tl, ty, 1n, 28, T.Th.text(), D.Clip.all(), (cx + 16 : U32), (cy + 30 : U32))),
       Tour.lines(all, ty, 0n, 22, Bool.pick(U32, compact, T.Th.text(), T.Th.dim()), D.Clip{(cx + 16 : U32), bt, (cx + cw - 16 : U32), (bt + nv * 22 : U32)}, (cx + 16 : U32), (bt - off * 22 : U32))])),
     Tour.bar(nl, nv, off, (cx + cw - 8 : U32), bt),
+    Tour.choices(cs, ty, (cx + 16 : U32), (bt + nv * 22 + 8 : U32)),
     Lay.button(ty, D.Clip.all(), (cx + 16 : U32), by, "Skip", T.Th.soft(), "ob-skip", ""),
     Tour.back(Nat.is_gt(i, 0n), ty, (nx - 6 - Lay.button.w(ty, "Back") : U32), by),
     Lay.button(ty, D.Clip.all(), nx, by, nb, T.Th.accent(), "ob-next", "")])

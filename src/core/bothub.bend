@@ -460,11 +460,17 @@ def Bots.seed.go(s: String, +acc: Nat) -> Nat:
 def Bots.seed(s: String) -> Nat:
   Bots.seed.go(String.to_lower(s), 7n)
 
+# "uber": true (the tour's "Create my uberbot"): once the bot is logged, the
+# same backup and promotion as bots.uber; its reply goes to no client (the
+# create already answered), and a failed backup leaves a plain bot
+def Bots.create.uber(on: Bool, +bot: String) -> List<&2, B.Out>:
+  Bool.pick(List<&2, B.Out>, on, [B.BotFx{"uber", bot, "0", "0"}], Nil{})
+
 def Bots.create.go(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +name: String, +bot: String, +th: String) -> B.Step:
   B.Step{[M.ThreadCreated{th, "", name, M.Local{}, "", "", J.Json.get_str(p, "provider", M.Setting.get(s, "agent.provider", "claude")),
       J.Json.get_str(p, "model", M.Setting.get(s, "agent.model", "")), now},
     M.BotSet{bot, name, th, Maybe.default(&2, Nat, Nat.read(J.Json.as_raw(J.Json.get(p, "look"), "")), Bots.seed(name)), J.Json.get_str(p, "persona", ""), now}],
-    [Bots.ok(client, id, [J.KV{"bot", J.Str{bot}}]), B.BotFx{"home", bot, th, ""}]}
+    List.append(&2, B.Out, [Bots.ok(client, id, [J.KV{"bot", J.Str{bot}}]), B.BotFx{"home", bot, th, ""}], Bots.create.uber(J.Json.get_bool(p, "uber", False{}), bot))}
 
 def Bots.create.k(ok: Bool, free: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +name: String) -> B.Step:
   match ok free:

@@ -118,7 +118,7 @@ struct NewBotSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Name", text: $name)
+                    TextField(form.hint, text: $name)
                         .onChange(of: name) { _, t in model.field("name", t) }
                     TextField("Persona", text: $persona, axis: .vertical)
                         .lineLimit(3...10)

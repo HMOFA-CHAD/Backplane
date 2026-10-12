@@ -58,6 +58,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
@@ -271,7 +272,12 @@ fun App(m: AppModel) {
                     Text(t.title)
                 }
             },
-            text = { Column(Modifier.verticalScroll(rememberScrollState())) { Text(t.body) } },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(t.body)
+                    for (c in t.choices) OutlinedButton(onClick = { m.act(c.action, c.value) }, Modifier.fillMaxWidth().padding(top = 8.dp)) { Text(c.label) }
+                }
+            },
             confirmButton = { TextButton(onClick = { m.act("ob-next") }) { Text(t.next) } },
             dismissButton = {
                 Row {

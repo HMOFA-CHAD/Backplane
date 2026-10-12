@@ -49,7 +49,11 @@ data class Renaming(val id: String, val title: String, val text: String, val yes
 // the first-run tour's step on screen (core/onboard.bend): the counter
 // ("3 of 8"), title and text, the buttons' labels; actions "ob-skip",
 // "ob-back" (not on the first step) and "ob-next"
-data class Tour(val counter: String, val title: String, val body: String, val next: String, val back: String, val skip: String, val first: Boolean)
+data class Tour(val counter: String, val title: String, val body: String, val next: String, val back: String, val skip: String, val first: Boolean,
+    // the uberbot step's buttons: each sends its action and value as they are
+    val choices: List<TourChoice> = emptyList())
+
+data class TourChoice(val label: String, val action: String, val value: String)
 
 // the list's search, always at its top: its query ("proj-find-q"), the hint
 data class Search(val open: Boolean, val query: String, val hint: String)
@@ -299,7 +303,7 @@ data class RoomRow(val id: String, val name: String, val members: Int, val sel: 
 // the new bot form: its fields ("bfield" name, persona, provider),
 // "bot-create" makes it, "form-close" "@bnew" drops it
 data class ProviderChoice(val label: String, val provider: String, val on: Boolean)
-data class NewBot(val name: String, val persona: String, val provider: String, val providers: List<ProviderChoice>)
+data class NewBot(val name: String, val persona: String, val provider: String, val providers: List<ProviderChoice>, val hint: String = "Name")
 
 // the new room form: "bfield" rname, "room-pick" a bot's id, "room-save"
 data class RoomPick(val id: String, val name: String, val on: Boolean)
@@ -594,7 +598,8 @@ fun parseScreen(o: JSONObject) = Screen(
     },
     o.optJSONObject("newBot")?.let { f ->
         NewBot(f.optString("name"), f.optString("persona"), f.optString("provider"),
-            f.optJSONArray("providers").map { ProviderChoice(it.optString("label"), it.optString("provider"), it.optBoolean("on")) })
+            f.optJSONArray("providers").map { ProviderChoice(it.optString("label"), it.optString("provider"), it.optBoolean("on")) },
+            f.optString("hint", "Name"))
     },
     o.optJSONObject("newRoom")?.let { f ->
         NewRoom(f.optString("name"), f.optJSONArray("picks").map { RoomPick(it.optString("id"), it.optString("name"), it.optBoolean("on")) })
@@ -628,7 +633,8 @@ fun parseScreen(o: JSONObject) = Screen(
         Renaming(it.optString("id"), it.optString("title"), it.optString("text"), it.optString("yes"), it.optString("no"))
     },
     tour = o.optJSONObject("tour")?.let {
-        Tour(it.optString("counter"), it.optString("title"), it.optString("body"), it.optString("next"), it.optString("back"), it.optString("skip"), it.optBoolean("first"))
+        Tour(it.optString("counter"), it.optString("title"), it.optString("body"), it.optString("next"), it.optString("back"), it.optString("skip"), it.optBoolean("first"),
+            it.optJSONArray("choices")?.let { a -> (0 until a.length()).map { i -> a.getJSONObject(i).let { c -> TourChoice(c.optString("label"), c.optString("action"), c.optString("value")) } } } ?: emptyList())
     },
 )
 

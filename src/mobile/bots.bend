@@ -86,7 +86,7 @@ def MBots.new.k(open: Bool, +u: U.Ui) -> J.Json:
     case False{}:
       J.Null{}
     case True{}:
-      J.Json.obj([J.KV{"name", J.Json.str(B.BU.field(u, "name"))}, J.KV{"persona", J.Json.str(B.BU.field(u, "persona"))},
+      J.Json.obj([J.KV{"name", J.Json.str(B.BU.field(u, "name"))}, J.KV{"hint", J.Json.str(U.Bots.name.hint(u))}, J.KV{"persona", J.Json.str(B.BU.field(u, "persona"))},
         J.KV{"provider", J.Json.str(MBots.provider(u))}, J.KV{"providers", J.Json.arr(MBots.providers(U.Chip.providers(), MBots.provider(u)))}])
 
 # the new bot form ("bot-new" opens it, "bfield" fills it, "bot-create"),

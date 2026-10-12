@@ -928,11 +928,20 @@ def Mob.renaming(+u: U.Ui) -> J.Json:
 
 # the first-run tour (core/onboard.bend), while a step is on screen: its
 # number, count and counter, its title and text, and the buttons (actions
-# "ob-back", "ob-next", "ob-skip", sent with no value to the hub in focus)
+# "ob-back", "ob-next", "ob-skip", sent with no value to the hub in focus),
+# and the choices of the uberbot step (label, action, value: sent as they are)
+def Mob.tour.choices(cs: List<&2, U.TChoice>) -> List<&2, J.Json>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case U.TChoice{l, a, v} <> t:
+      J.Json.obj([J.KV{"label", J.Json.str(l)}, J.KV{"action", J.Json.str(a)}, J.KV{"value", J.Json.str(v)}]) <> Mob.tour.choices(t)
+
 def Mob.tour.k(+i: Nat, +u: U.Ui) -> J.Json:
   J.Json.obj([J.KV{"step", J.Json.nat(i)}, J.KV{"count", J.Json.nat(OB.Ob.count())}, J.KV{"counter", J.Json.str(OB.Ob.counter(i))},
     J.KV{"title", J.Json.str(OB.Ob.title(i))}, J.KV{"body", J.Json.str(U.Tour.body(2n, u))}, J.KV{"first", J.Json.bool(Nat.is_eq(i, 0n))},
-    J.KV{"next", J.Json.str(OB.Ob.forward(i))}, J.KV{"back", J.Json.str("Back")}, J.KV{"skip", J.Json.str("Skip")}])
+    J.KV{"next", J.Json.str(OB.Ob.forward(i))}, J.KV{"back", J.Json.str("Back")}, J.KV{"skip", J.Json.str("Skip")},
+    J.KV{"choices", J.Json.arr(Mob.tour.choices(U.Tour.choices(u)))}])
 
 def Mob.tour.at(live: Bool, +i: Nat, +u: U.Ui) -> J.Json:
   match live:
