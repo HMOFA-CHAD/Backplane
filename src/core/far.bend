@@ -413,10 +413,10 @@ def Fr.lasts.merge(ks: List<&2, String>, +from: Map<&2, Nat>, m: Map<&2, Nat>) -
 # numbers (lasts), and the newest catalog each link sent (link → its JSON
 # text), for clients that join while a mirror is catching up
 type Cx is Data:
-  Cx{lasts: Map<&2, Nat>, cats: Map<&2, String>}
+  Cx{lasts: Map<&2, Nat>, cats: Map<&2, String>, ub: Map<&2, String>}
 
 def Cx.empty() -> Cx:
-  Cx{Map.new(&2, Nat), Map.new(&2, String)}
+  Cx{Map.new(&2, Nat), Map.new(&2, String), Map.new(&2, String)}
 
 # The catalog: every project this hub shares, so a mirror can list them
 # all at once, in their place, before their threads arrive: its title,
@@ -1601,30 +1601,43 @@ def Fh.feed.add(f: Fh, ls: List<&2, Line>) -> Fh:
 # was committed since on top; its projects' numbers join the commits'
 def Fh.feed.ready(f: Fh, fd: Feed) -> Fh:
   match f fd:
-    case Fh{ms, os, _, e, p, ep, Cx{la, ca}} Feed{ls, +fl}:
-      Fh{ms, os, Some{List.append(&2, Line, e, ls)}, Nil{}, p, ep, Cx{Fr.lasts.merge(Map.keys(&2, Nat, fl), fl, la), ca}}
+    case Fh{ms, os, _, e, p, ep, Cx{la, ca, ub}} Feed{ls, +fl}:
+      Fh{ms, os, Some{List.append(&2, Line, e, ls)}, Nil{}, p, ep, Cx{Fr.lasts.merge(Map.keys(&2, Nat, fl), fl, la), ca, ub}}
 
 # a commit's changes counted into the projects' numbers
 def Fh.lasts.add(f: Fh, cs: List<&2, M.Change>, +seq: Nat, +s: M.State) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p, ep, Cx{la, ca}}:
-      Fh{ms, os, fd, e, p, ep, Cx{Fr.lasts.add(cs, seq, s, la), ca}}
+    case Fh{ms, os, fd, e, p, ep, Cx{la, ca, ub}}:
+      Fh{ms, os, fd, e, p, ep, Cx{Fr.lasts.add(cs, seq, s, la), ca, ub}}
 
 def Fh.lasts(f: Fh) -> Map<&2, Nat>:
   match f:
-    case Fh{_, _, _, _, _, _, Cx{la, _}}:
+    case Fh{_, _, _, _, _, _, Cx{la, _, _}}:
       la
 
 # the newest catalog a link sent ("" for none), and keeping one
 def Fh.cat(+f: Fh, +link: String) -> String:
   match f:
-    case Fh{_, _, _, _, _, _, Cx{_, ca}}:
+    case Fh{_, _, _, _, _, _, Cx{_, ca, _}}:
       Fr.str.got(Map.get(String, "", ca, link))
 
 def Fh.cat.set(f: Fh, +link: String, +text: String) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p, ep, Cx{la, +ca}}:
-      Fh{ms, os, fd, e, p, ep, Cx{la, Bool.pick(Map<&2, String>, String.is_empty(text), ca, Map.set(&2, String, ca, link, text))}}
+    case Fh{ms, os, fd, e, p, ep, Cx{la, +ca, ub}}:
+      Fh{ms, os, fd, e, p, ep, Cx{la, Bool.pick(Map<&2, String>, String.is_empty(text), ca, Map.set(&2, String, ca, link, text)), ub}}
+
+# What the uberbot's sync keeps in memory, not in the log (ubersync.bend,
+# server.bend): when the holder was last heard, which machines answered,
+# each link's last version vector and whether a request is out
+def Fh.ub(+f: Fh, +k: String) -> String:
+  match f:
+    case Fh{_, _, _, _, _, _, Cx{_, _, ub}}:
+      Fr.str.got(Map.get(String, "", ub, k))
+
+def Fh.ub.set(f: Fh, +k: String, +v: String) -> Fh:
+  match f:
+    case Fh{ms, os, fd, e, p, ep, Cx{la, ca, ub}}:
+      Fh{ms, os, fd, e, p, ep, Cx{la, ca, Map.set(&2, String, ub, k, v)}}
 
 def Fh.pulling(+f: Fh, +link: String) -> Bool:
   match f:

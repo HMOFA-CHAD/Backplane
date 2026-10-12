@@ -4,6 +4,7 @@ import ./bot.bend as BT
 import ./json.bend as J
 import ./ubop.bend as UO
 import ./uber.bend as UB
+import ./far.bend as FR
 
 # One uberbot on several machines (docs/uber.md, "Sync")
 # -------------------------------------------------------
@@ -334,3 +335,349 @@ def Ub.commit.go(os: List<&2, UO.UOp>, +st: M.State) -> List<&2, M.Change>:
 
 def Ub.commit(ls: List<&2, String>, +st: M.State) -> List<&2, M.Change>:
   Ub.commit.go(Ub.parse(ls), st)
+
+# Making ops from what the uberbot does
+# -------------------------------------
+# A change to the uberbot's memory, space, page, name or look, or to one
+# of its routines, made on this machine (by its own tools or a client) goes
+# to the log with an op. Changes derived from another machine's ops never
+# come through here.
+
+def Ub.rbot(+st: M.State, +id: String) -> String:
+  BT.Routine.bot(BT.World.routine(M.State.bots(st), id))
+
+def Ub.body.routine(+st: M.State, +id: String, +name: String, +cron: String, +prompt: String, +on: Bool) -> String:
+  UO.Ub.b.routine(Ub.gid(Ub.me(st), id), name, cron, prompt, on, Ub.pin(st, Ub.gid(Ub.me(st), id)))
+
+def Ub.body.k(mine: Bool, b: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, mine, [b], Nil{})
+
+# the op bodies one local change calls for (none for a change that is not
+# the uberbot's)
+def Ub.body(+st: M.State, +c: M.Change) -> List<&2, String>:
+  match c:
+    case M.MemorySaved{+bot, +key, +kind, +text, +tags, _}:
+      Ub.body.k(UB.Uber.is(st, bot), UO.Ub.b.mem(key, kind, text, tags))
+    case M.MemoryForgot{+bot, +key, _}:
+      Ub.body.k(UB.Uber.is(st, bot), UO.Ub.b.forget(key))
+    case M.SpaceSet{+bot, +spec, _}:
+      Ub.body.k(UB.Uber.is(st, bot), UO.Ub.b.space(spec))
+    case M.SpacePageSet{+bot, +html, _}:
+      Ub.body.k(UB.Uber.is(st, bot), UO.Ub.b.page(html))
+    case M.BotSet{+id, +name, _, +look, +persona, _}:
+      Ub.body.k(UB.Uber.is(st, id), UO.Ub.b.who(name, look, persona))
+    case M.RoutineSet{+id, +bot, +name, +cron, +prompt, +on, _}:
+      Ub.body.k(UB.Uber.is(st, bot), Ub.body.routine(st, id, name, cron, prompt, on))
+    case M.RoutineDeleted{+id, _}:
+      Ub.body.k(UB.Uber.is(st, Ub.rbot(st, id)), UO.Ub.b.routine_del(Ub.gid(Ub.me(st), id)))
+    case _:
+      Nil{}
+
+def Ub.bodies(cs: List<&2, M.Change>, +st: M.State) -> List<&2, String>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case +c <> t:
+      List.append(&2, String, Ub.body(st, c), Ub.bodies(t, st))
+
+# the changes and, after them, the ops they call for
+def Ub.also(+st: M.State, +now: Nat, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  List.append(&2, M.Change, cs, Ub.ops(st, now, Ub.bodies(cs, st)))
+
+# a routine pinned to a machine ("" takes the pin off): the op alone
+def Ub.pin.set.k(mine: Bool, r: BT.Routine, +st: M.State, +now: Nat, +gid: String, +pin: String) -> List<&2, M.Change>:
+  match r:
+    case BT.Routine{_, _, +name, +cron, +prompt, +on, _, _, _}:
+      Bool.pick(List<&2, M.Change>, mine, Ub.ops(st, now, [UO.Ub.b.routine(gid, name, cron, prompt, on, pin)]), Nil{})
+
+def Ub.pin.set(+st: M.State, +now: Nat, +id: String, +pin: String) -> List<&2, M.Change>:
+  Ub.pin.set.k(UB.Uber.is(st, Ub.rbot(st, id)), BT.World.routine(M.State.bots(st), id), st, now, Ub.gid(Ub.me(st), id), pin)
+
+# The first ops of an uberbot
+# ---------------------------
+# Promoted here, it logs everything it has so a machine that joins gets it
+# from the log: its name and look, each memory, its space and page, its
+# routines, that it holds the conversation (term 1) and where it lives.
+
+def Ub.init.mem(ms: List<&2, BT.Mem>) -> List<&2, String>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case BT.Mem{_, +key, +kind, +text, +tags, _, _} <> t:
+      UO.Ub.b.mem(key, kind, text, tags) <> Ub.init.mem(t)
+
+def Ub.init.routines(rs: List<&2, BT.Routine>, +me: String) -> List<&2, String>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case BT.Routine{+id, _, +name, +cron, +prompt, +on, _, _, _} <> t:
+      UO.Ub.b.routine(Ub.gid(me, id), name, cron, prompt, on, "") <> Ub.init.routines(t, me)
+
+def Ub.init.opt(+yes: Bool, +b: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, yes, [b], Nil{})
+
+def Ub.init.bot(b: BT.Bot, +st: M.State, +me: String) -> List<&2, String>:
+  match b:
+    case BT.Bot{+id, +name, +th, +look, +persona, _, _}:
+      List.concat(&2, String, [[UO.Ub.b.who(name, look, persona)], Ub.init.mem(BT.World.mems(M.State.bots(st), id)),
+        Ub.init.opt(Bool.not(String.is_empty(BT.World.space(M.State.bots(st), id))), UO.Ub.b.space(BT.World.space(M.State.bots(st), id))),
+        Ub.init.opt(Bool.not(String.is_empty(BT.Page.html(BT.World.spage(M.State.bots(st), id)))), UO.Ub.b.page(BT.Page.html(BT.World.spage(M.State.bots(st), id)))),
+        Ub.init.routines(BT.World.routines(M.State.bots(st), id), me),
+        [UO.Ub.b.lease(me, 1n), UO.Ub.b.bind(me, id, th, name)]])
+
+def Ub.init.bodies(+st: M.State, +bot: String) -> List<&2, String>:
+  Ub.init.bot(BT.World.bot(M.State.bots(st), bot), st, Ub.me(st))
+
+def Ub.init.k(go: Bool, +st: M.State, +now: Nat) -> List<&2, M.Change>:
+  match go:
+    case True{}:
+      Ub.ops(st, now, Ub.init.bodies(st, UB.Uber.bot(st)))
+    case False{}:
+      Nil{}
+
+# the ops of an uberbot that has none yet (promoted before this machine had
+# an id, or before ops existed); the ones of a machine that joined have its
+# bind already and are left alone
+def Ub.init(+st: M.State, +now: Nat) -> List<&2, M.Change>:
+  Ub.init.k(Bool.and(Ub.on(st), Nat.is_eq(Ub.vv.of(st, Ub.uid(st), Ub.me(st)), 0n)), st, now)
+
+# a bot made the uberbot at `now` under `uid`: UberSet, then its ops (the
+# state is the one before UberSet)
+def Ub.promoted(+st: M.State, +bot: String, +uid: String, +now: Nat) -> List<&2, M.Change>:
+  M.UberSet{bot, uid, now} <> Ub.ops.with(st, uid, now, Ub.init.bodies(st, bot))
+
+# Joining
+# -------
+# A machine with no uberbot is offered one (setting uber.offer, JSON {uid,
+# name, look, machine, link}): joining makes a replica bot with that name
+# and look, ties it to the uid and says where it lives; the first exchange
+# fills it from the others' ops.
+
+def Ub.offer(+st: M.State) -> J.Json:
+  UO.Ub.json(M.Setting.get(st, "uber.offer", ""))
+
+type Join is Data:
+  Join{err: String, name: String, look: Nat}
+
+def Ub.join.k(on: Bool, some: Bool, have: Bool, +name: String, +look: Nat) -> Join:
+  match on some have:
+    case True{} True{} False{}:
+      Join{"", name, look}
+    case True{} True{} True{}:
+      Join{"this machine has an uberbot already; make it not the uberbot first", name, look}
+    case _ _ _:
+      Join{"that uberbot is not on offer here", name, look}
+
+def Ub.join.of(+o: J.Json, +uid: String, +have: String) -> Join:
+  Ub.join.k(String.eq(UO.Ub.field(o, "uid"), uid), Bool.not(String.is_empty(uid)), Bool.not(String.is_empty(have)), UO.Ub.field(o, "name"), UO.Ub.nat(o, "look"))
+
+# can this machine join `uid`: an error text, or the name and look
+def Ub.join(+st: M.State, +uid: String) -> Join:
+  Ub.join.of(Ub.offer(st), uid, UB.Uber.bot(st))
+
+def Join.err(j: Join) -> String:
+  match j:
+    case Join{e, _, _}:
+      e
+
+def Join.name(j: Join) -> String:
+  match j:
+    case Join{_, n, _}:
+      n
+
+def Join.look(j: Join) -> Nat:
+  match j:
+    case Join{_, _, l}:
+      l
+
+# the changes that tie a new replica bot (thread `th`) to `uid`
+def Ub.joined(+st: M.State, +bot: String, +th: String, +name: String, +uid: String, +now: Nat) -> List<&2, M.Change>:
+  M.UberSet{bot, uid, now} <> M.SettingSet{"uber.offer", "", now} <> Ub.ops.with(st, uid, now, [UO.Ub.b.bind(Ub.me(st), bot, th, name)])
+
+# Where the uberbot lives
+# -----------------------
+
+# the replica's bot on a machine (its bind op), "" if unknown
+def Ub.bound(+st: M.State, +machine: String) -> String:
+  UO.Ub.field(UO.Ub.json(M.Setting.get(st, UO.Ub.key.reg(Ub.uid(st), "bind:" ++ machine), "")), "bot")
+
+def Ub.bound.thread(+st: M.State, +machine: String) -> String:
+  UO.Ub.field(UO.Ub.json(M.Setting.get(st, UO.Ub.key.reg(Ub.uid(st), "bind:" ++ machine), "")), "thread")
+
+# the link a machine was reached over (set when its exchange first came
+# in; "" before)
+def Ub.link(+st: M.State, +machine: String) -> String:
+  M.Setting.get(st, "uber.link." ++ Ub.uid(st) ++ "." ++ machine, "")
+
+def Ub.far.id(+link: String, +id: String, +ok: Bool) -> String:
+  Bool.pick(String, ok, FR.Fr.id(link, id), "")
+
+def Ub.far.one(+st: M.State, +machine: String) -> String:
+  Ub.far.id(Ub.link(st, machine), Ub.bound(st, machine), Bool.and(Bool.not(String.is_empty(Ub.link(st, machine))), Bool.not(String.is_empty(Ub.bound(st, machine)))))
+
+def Ub.far.go(ms: List<&2, String>, +st: M.State) -> List<&2, String>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case +m <> t:
+      BT.Post.keep(String, Bool.not(String.is_empty(Ub.far.one(st, m))), Ub.far.one(st, m), Ub.far.go(t, st))
+
+# the bot ids on other machines that are this uberbot's replicas
+# (`<link>~<bot>`), so a client does not list them as bots of their own
+def Ub.far(+st: M.State) -> List<&2, String>:
+  Ub.far.go(Ub.origins(st, Ub.uid(st)), st)
+
+def Ub.far.is.go(xs: List<&2, String>, +id: String) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case +x <> t:
+      Bool.or(String.eq(x, id), Ub.far.is.go(t, id))
+
+def Ub.far.is(+st: M.State, +id: String) -> Bool:
+  Bool.and(FR.Fr.is(id), Ub.far.is.go(Ub.far(st), id))
+
+# the thread the uberbot's Chat tab shows: its own while this machine holds
+# the conversation (or the holder is not known to be elsewhere), else the
+# holder's, as the mirror here has it (`<link>~<thread>`)
+def Ub.chat.k(here: Bool, +own: String, +far: String) -> String:
+  Bool.pick(String, Bool.or(here, String.is_empty(far)), own, far)
+
+def Ub.chat.far(+st: M.State, +holder: String) -> String:
+  Bool.pick(String, Bool.or(String.is_empty(Ub.link(st, holder)), String.is_empty(Ub.bound.thread(st, holder))), "", FR.Fr.id(Ub.link(st, holder), Ub.bound.thread(st, holder)))
+
+def Ub.chat(+st: M.State) -> String:
+  Ub.chat.k(Ub.holder.me(st), BT.Bot.thread(BT.World.bot(M.State.bots(st), UB.Uber.bot(st))), Ub.chat.far(st, Ub.holder(st)))
+
+# Talking to another machine
+# --------------------------
+# One request, uber.sync, over /far/rpc. Both ways carry the same body:
+# {uid, machine, name, vv, ops, beat, offer}; the answer has the same
+# shape (the caller's vv says which ops the answerer sends back).
+
+def Ub.beat(+st: M.State) -> Bool:
+  Bool.and(Ub.on(st), Ub.holder.me(st))
+
+def Ub.offer.k(some: Bool, +b: BT.Bot, +uid: String) -> J.Json:
+  match some:
+    case True{}:
+      J.Json.obj([J.KV{"uid", J.Str{uid}}, J.KV{"name", J.Str{BT.Bot.name(b)}}, J.KV{"look", J.Json.nat(BT.Bot.look(b))}])
+    case False{}:
+      J.Null{}
+
+def Ub.offer.obj(+st: M.State) -> J.Json:
+  Ub.offer.k(Bool.not(String.is_empty(UB.Uber.bot(st))), BT.World.bot(M.State.bots(st), UB.Uber.bot(st)), Ub.uid(st))
+
+def Ub.lines.go(xs: List<&2, String>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      J.Str{x} <> Ub.lines.go(t)
+
+def Ub.lines(xs: List<&2, String>) -> J.Json:
+  J.Json.arr(Ub.lines.go(xs))
+
+# the object both sides send: what this machine is, has and lacks
+def Ub.sync.obj(+st: M.State, +name: String, +vv: J.Json) -> J.Json:
+  J.Json.obj([J.KV{"uid", J.Str{Ub.uid(st)}}, J.KV{"machine", J.Str{Ub.me(st)}}, J.KV{"name", J.Str{name}}, J.KV{"vv", Ub.vv(st)},
+    J.KV{"ops", Ub.lines(Ub.lacking(st, vv))}, J.KV{"beat", J.Flag{Ub.beat(st)}}, J.KV{"offer", Ub.offer.obj(st)}])
+
+# the request to a machine whose version vector was last `pvv` (JSON text,
+# "" if never heard)
+def Ub.sync.req(+st: M.State, +name: String, +pvv: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"m", J.Str{"uber.sync"}}, J.KV{"id", J.Num{"0"}}, J.KV{"p", Ub.sync.obj(st, name, UO.Ub.json(pvv))}]))
+
+# the answer to a request's object
+def Ub.sync.ans(+st: M.State, +name: String, +p: J.Json) -> String:
+  J.Json.show(Ub.sync.obj(st, name, J.Json.get_obj(p, "vv")))
+
+type SyncIn is Data:
+  SyncIn{changes: List<&2, M.Change>, machine: String, same: Bool, beat: Bool, vv: String, more: Bool}
+
+def SyncIn.changes(s: SyncIn) -> List<&2, M.Change>:
+  match s:
+    case SyncIn{c, _, _, _, _, _}:
+      c
+
+def SyncIn.machine(s: SyncIn) -> String:
+  match s:
+    case SyncIn{_, m, _, _, _, _}:
+      m
+
+def SyncIn.same(s: SyncIn) -> Bool:
+  match s:
+    case SyncIn{_, _, x, _, _, _}:
+      x
+
+def SyncIn.beat(s: SyncIn) -> Bool:
+  match s:
+    case SyncIn{_, _, _, x, _, _}:
+      x
+
+def SyncIn.vv(s: SyncIn) -> String:
+  match s:
+    case SyncIn{_, _, _, _, x, _}:
+      x
+
+# the exchange is not over: this machine still lacks ops the other has
+def SyncIn.more(s: SyncIn) -> Bool:
+  match s:
+    case SyncIn{_, _, _, _, _, x}:
+      x
+
+def Ub.ops.of(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      J.Json.as_str(Some{x}, "") <> Ub.ops.of(t)
+
+def Ub.set.if(same: Bool, +k: String, +v: String, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, same, Nil{}, [M.SettingSet{k, v, now}])
+
+def Ub.offer.put(+st: M.State, +v: String, +now: Nat) -> List<&2, M.Change>:
+  Ub.set.if(String.eq(M.Setting.get(st, "uber.offer", ""), v), "uber.offer", v, now)
+
+def Ub.offer.keep.k(+of: J.Json, +st: M.State, +machine: String, +link: String, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, Bool.and(Bool.not(String.is_empty(UO.Ub.field(of, "uid"))), String.is_empty(UB.Uber.bot(st))),
+    Ub.offer.put(st, J.Json.show(J.Json.obj([J.KV{"uid", J.Str{UO.Ub.field(of, "uid")}}, J.KV{"name", J.Str{UO.Ub.field(of, "name")}},
+      J.KV{"look", J.Json.nat(UO.Ub.nat(of, "look"))}, J.KV{"machine", J.Str{machine}}, J.KV{"link", J.Str{link}}])), now), Nil{})
+
+# the offer a machine with no uberbot keeps
+def Ub.offer.keep(+st: M.State, +p: J.Json, +link: String, +now: Nat) -> List<&2, M.Change>:
+  Ub.offer.keep.k(J.Json.get_obj(p, "offer"), st, UO.Ub.field(p, "machine"), link, now)
+
+def Ub.take.same(+st: M.State, +p: J.Json, +link: String, +now: Nat) -> List<&2, M.Change>:
+  List.concat(&2, M.Change, [Ub.commit(Ub.ops.of(J.Json.elems(J.Json.get_obj(p, "ops"))), st),
+    Ub.set.if(String.eq(Ub.link(st, UO.Ub.field(p, "machine")), link), "uber.link." ++ Ub.uid(st) ++ "." ++ UO.Ub.field(p, "machine"), link, now),
+    Ub.set.if(String.is_empty(M.Setting.get(st, "uber.offer", "")), "uber.offer", "", now)])
+
+def Ub.take.k(same: Bool, +st: M.State, +p: J.Json, +link: String, +now: Nat) -> List<&2, M.Change>:
+  match same:
+    case True{}:
+      Ub.take.same(st, p, link, now)
+    case False{}:
+      Ub.offer.keep(st, p, link, now)
+
+# whether a machine's object is of this machine's uberbot
+def Ub.same(+st: M.State, +p: J.Json) -> Bool:
+  Bool.and(Ub.on(st), Bool.and(Bool.not(String.is_empty(UO.Ub.field(p, "uid"))), String.eq(UO.Ub.field(p, "uid"), Ub.uid(st))))
+
+def Ub.lacks.go(os: List<&2, String>, +st: M.State, +vv: J.Json) -> Bool:
+  match os:
+    case Nil{}:
+      False{}
+    case +o <> t:
+      Bool.or(Nat.is_gt(UO.Ub.nat(vv, o), Ub.vv.of(st, Ub.uid(st), o)), Ub.lacks.go(t, st, vv))
+
+# whether the other machine has ops this one lacks (a full batch came)
+def Ub.lacks(+st: M.State, +p: J.Json) -> Bool:
+  Ub.lacks.go(Ub.origins(st, Ub.uid(st)), st, J.Json.get_obj(p, "vv"))
+
+# what a machine's object (a request, or the answer to ours) does here: the
+# changes to log, who sent it and whether it is of this uberbot, whether it
+# held the conversation (beat), its version vector
+def Ub.take(+st: M.State, +p: J.Json, +link: String, +now: Nat) -> SyncIn:
+  SyncIn{Ub.take.k(Ub.same(st, p), st, p, link, now), UO.Ub.field(p, "machine"), Ub.same(st, p), Bool.and(Ub.same(st, p), J.Json.get_bool(p, "beat", False{})),
+    J.Json.show(J.Json.get_obj(p, "vv")), Bool.and(Ub.same(st, p), Ub.lacks(st, p))}
