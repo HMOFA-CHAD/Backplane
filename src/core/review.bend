@@ -609,17 +609,10 @@ def Rv.line(ls: List<&2, String>) -> String:
     case +h <> _:
       h
 
-def Rv.chars(+s: String) -> List<&2, String>:
-  match s:
-    case SNil{}:
-      Nil{}
-    case SCon{+h, +t}:
-      SCon{h, SNil{}} <> Rv.chars(t)
-
 def Rv.cut.k(long: Bool, +s: String) -> String:
   match long:
     case True{}:
-      String.join(List.take(&2, String, Rv.chars(s), 72n), "") ++ "..."
+      String.take(s, 72n) ++ "..."
     case False{}:
       s
 
