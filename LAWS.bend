@@ -88,6 +88,7 @@ import ./src/core/live.bend as LV
 import ./src/core/farlive.bend as FLV
 import ./src/core/qr.bend as QR
 import ./src/core/layers.bend as LY
+import ./src/core/slash.bend as SL
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -6369,3 +6370,25 @@ law lyr_kind_base:
 # not kept and never the active one
 law lyr_masks_only:
   {LY.Masks.off(LY.Lyr.masks(0, 4096, LY.Focus{12, 2})) == 37736447 : U32}
+
+# Slash commands in the composer (slash.bend)
+law slash_typing_word:
+  {SL.Slash.typing("/gi") == True{} : Bool}
+
+law slash_typing_alone:
+  {SL.Slash.typing("/") == True{} : Bool}
+
+law slash_not_after_space:
+  {SL.Slash.typing("/give >a") == False{} : Bool}
+
+law slash_not_midline:
+  {SL.Slash.typing("hi /gi") == False{} : Bool}
+
+law slash_claude_prefix:
+  {SL.Slash.names(SL.Slash.cmds(True{}, "c")) == ["/compact", "/context"] : List<&2, String>}
+
+law slash_others_own_only:
+  {SL.Slash.names(SL.Slash.cmds(False{}, "")) == ["/btw", "/give"] : List<&2, String>}
+
+law slash_none_unknown:
+  {SL.Slash.names(SL.Slash.cmds(True{}, "zz")) == [] : List<&2, String>}
