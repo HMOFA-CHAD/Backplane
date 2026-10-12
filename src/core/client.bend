@@ -7527,8 +7527,33 @@ def Tour.done(+st: M.State) -> Bool:
 def Tour.ready(+u: Ui) -> Bool:
   Bool.and(Bool.and(Nat.is_gt(Ui.seq(u), 0n), String.eq(Ui.scratch(u, "@sync"), "1")), String.is_empty(Ui.scratch(u, "@boot")))
 
+# The uberbot step alone: an install that finished the tour before it had
+# that step (or demoted its uberbot) is asked once more, until the step has
+# been answered (the hub setting "onboard.uber": Done, Skip or a choice, in
+# the full tour too). Only while no uberbot is set, only for a tour that came
+# up by itself, and (like it) only once this connection's state has arrived.
+def Tour.answered(+st: M.State) -> Bool:
+  String.eq(M.Setting.get(st, "onboard.uber", ""), "1")
+
+def Tour.single.k(+st: M.State, +raw: String) -> Bool:
+  Bool.and(Bool.and(Tour.done(st), Bool.not(Tour.answered(st))), Bool.and(String.is_empty(UB.Uber.bot(st)), Bool.not(OB.Ob.manual(raw))))
+
+def Tour.single(+u: Ui) -> Bool:
+  Bool.and(Tour.ready(u), Tour.single.k(Ui.state.of(u), Ui.scratch(u, "@tour")))
+
+def Tour.at.k(+i: Nat, up: Bool) -> Nat:
+  Bool.pick(Nat, Bool.and(Nat.is_eq(i, OB.Ob.count()), up), OB.Ob.uber(), i)
+
 def Tour.at(+u: Ui) -> Nat:
-  OB.Ob.at(Tour.ready(u), Tour.done(Ui.state(u)), Ui.scratch(u, "@tour"))
+  Tour.at.k(OB.Ob.at(Tour.ready(u), Tour.done(Ui.state(u)), Ui.scratch(u, "@tour")), Tour.single(u))
+
+# what the card says: no "10 of 10" for a step asked alone
+def Tour.counter(+u: Ui) -> String:
+  Bool.pick(String, Tour.single(u), "", OB.Ob.counter(Tour.at(u)))
+
+# whether the card has a Back (not the first step, not a step alone)
+def Tour.back(+u: Ui) -> Bool:
+  Bool.and(Nat.is_gt(Tour.at(u), 0n), Bool.not(Tour.single(u)))
 
 def Tour.on(+u: Ui) -> Bool:
   OB.Ob.live(Tour.at(u))
@@ -7654,8 +7679,19 @@ def Tour.leave(a: Act, +field: String) -> Act:
     case Act{u, cs}:
       Act{u, Focus{field} <> cs}
 
+# the tour is over, and its uberbot step answered ("onboard.uber")
+def Tour.finish.cat(a: Act, cs: List<&2, Cmd>) -> Act:
+  match a:
+    case Act{u, fs}:
+      Act{u, List.append(&2, Cmd, cs, fs)}
+
+def Tour.finish.both(a: Act) -> Act:
+  match a:
+    case Act{u, cs}:
+      Tour.finish.cat(Ui.setting(u, "onboard.uber=1"), cs)
+
 def Tour.finish(+u: Ui) -> Act:
-  Tour.leave(Ui.setting(Ui.scratch_set(u, "@tour", ""), "onboard.done=1"), Tour.focus(u))
+  Tour.leave(Tour.finish.both(Ui.setting(Ui.scratch_set(u, "@tour", ""), "onboard.done=1")), Tour.focus(u))
 
 # to step i (by hand or not as the tour was), or (past the last) the end
 def Tour.go.k(live: Bool, +i: Nat, +u: Ui) -> Act:
@@ -7674,12 +7710,20 @@ def Tour.open.k(+u: Ui) -> Act:
 def Tour.open(+u: Ui) -> Act:
   Tour.open.k(Ui.flag_off(u, "settings"))
 
+# Back goes nowhere on the first step or a step asked alone
+def Tour.back.k(has: Bool, +u: Ui) -> Act:
+  match has:
+    case True{}:
+      Tour.go(OB.Ob.back(Tour.at(u)), u)
+    case False{}:
+      Act{u, Nil{}}
+
 def Tour.act.k(i: Nat, +u: Ui) -> Act:
   match i:
     case 0n:
       Tour.go(OB.Ob.next(Tour.at(u)), u)
     case 1n:
-      Tour.go(OB.Ob.back(Tour.at(u)), u)
+      Tour.back.k(Tour.back(u), u)
     case 2n:
       Tour.finish(u)
     case 3n:

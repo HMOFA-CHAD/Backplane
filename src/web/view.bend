@@ -1744,23 +1744,30 @@ def View.tour.choices(cs: List<&2, U.TChoice>) -> List<&2, D.Node>:
     case U.TChoice{+l, a, v} <> t:
       D.Dom.button("", a, v, l, l) <> View.tour.choices(t)
 
-def View.tour.card(+i: Nat, +body: String, cs: List<&2, U.TChoice>) -> List<&2, D.Node>:
+def View.tour.back(on: Bool) -> D.Node:
+  match on:
+    case True{}:
+      D.Dom.button("", "ob-back", "", "The step before (left arrow)", "Back")
+    case False{}:
+      D.Dom.span("gap", "")
+
+def View.tour.card(+i: Nat, +body: String, cs: List<&2, U.TChoice>, +counter: String, back: Bool) -> List<&2, D.Node>:
   [D.El{"div", "", [D.At{"class", "tour-back"}], Nil{}},
     D.El{"div", "tour", [D.At{"class", "tour"}, D.At{"role", "dialog"}, D.At{"aria-modal", "true"}, D.At{"aria-labelledby", "tour-title"}], [
-      D.Dom.span("count", OB.Ob.counter(i)),
+      D.Dom.span("count", counter),
       D.El{"div", "tour-title", [D.At{"class", "tour-title"}, D.At{"id", "tour-title"}], [D.Txt{OB.Ob.title(i)}]},
       D.El{"p", "", [D.At{"class", "tour-body"}], [D.Txt{body}]},
       D.El{"div", "", [D.At{"class", "tour-choices"}], View.tour.choices(cs)},
       D.El{"div", "", [D.At{"class", "tour-btns"}], [
         D.Dom.button("", "ob-skip", "", "End the tour (Esc)", "Skip"),
         D.Dom.span("gap", ""),
-        D.Dom.button("", "ob-back", "", "The step before (left arrow)", "Back"),
+        View.tour.back(back),
         D.Dom.button("primary", "ob-next", "", "Next step (Enter or right arrow)", OB.Ob.forward(i))]}]}]
 
 def View.tour.k(on: Bool, +i: Nat, +u: U.Ui) -> List<&2, D.Node>:
   match on:
     case True{}:
-      View.tour.card(i, U.Tour.body(1n, u), U.Tour.choices(u))
+      View.tour.card(i, U.Tour.body(1n, u), U.Tour.choices(u), U.Tour.counter(u), U.Tour.back(u))
     case False{}:
       Nil{}
 

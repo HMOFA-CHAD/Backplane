@@ -8049,3 +8049,21 @@ def Laws.onboard_uber_pick_most_used():
 
 def Laws.onboard_uber_have_quiet():
   {==}
+
+def Laws.onboard_uber_existing_shows():
+  {==}
+
+def Laws.onboard_uber_existing_cached():
+  {==}
+
+def Laws.onboard_uber_answered_quiet():
+  {==}
+
+def Laws.onboard_uber_have_no_ask():
+  {==}
+
+def Laws.onboard_uber_skip_answers():
+  {==}
+
+def Laws.onboard_uber_single_no_back():
+  {==}

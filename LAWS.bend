@@ -5672,9 +5672,10 @@ law onboard_next_step:
 law onboard_back_step:
   {OBD.Ob.back(3n) == 2n : Nat}
 
-# next from the last step ends it, and the end stays the end
+# next from the last step ends it, and the end stays the end. Stated for
+# whatever the step count is: the last step is `count - 1`, not a number
 law onboard_next_ends:
-  {OBD.Ob.live(OBD.Ob.next(9n)) == False{} : Bool}
+  {OBD.Ob.live(OBD.Ob.next(Nat.sub(OBD.Ob.count(), 1n))) == False{} : Bool}
 
 law onboard_end_stays:
   {OBD.Ob.next(OBD.Ob.count()) == OBD.Ob.count() : Nat}
@@ -5730,8 +5731,9 @@ law onboard_syms:
 def OnbUi.log() -> M.State:
   M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}], M.State.empty())
 
+# a tour finished with every step answered (onboard.uber too)
 def OnbUi.done() -> M.State:
-  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.SettingSet{"onboard.done", "1", 2n}], M.State.empty())
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.SettingSet{"onboard.done", "1", 2n}, M.SettingSet{"onboard.uber", "1", 2n}], M.State.empty())
 
 def OnbUi.synced(st: M.State) -> U.Ui:
   U.Ui.scratch_set(U.Ui.adopt.raw(U.Ui.init(1n), st), "@sync", "1")
@@ -6475,3 +6477,30 @@ law onboard_uber_pick_most_used:
 # with an uberbot the step offers nothing to choose
 law onboard_uber_have_quiet:
   {List.is_empty(&2, U.TChoice, U.Tour.choices(OnbUber.step(M.State.replay([M.UberSet{"b1", "u1-a", 200n}], OnbUber.bots())))) == True{} : Bool}
+
+# an install that finished the tour before the uberbot step, with no
+# uberbot: the step comes up alone, once its state has arrived ...
+def OnbUber.old() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.SettingSet{"onboard.done", "1", 2n}], M.State.empty())
+
+law onboard_uber_existing_shows:
+  {U.Tour.at(OnbUi.synced(OnbUber.old())) == OBD.Ob.uber() : Nat}
+
+# ... never from a cached state
+law onboard_uber_existing_cached:
+  {U.Tour.at(U.Ui.adopt.raw(U.Ui.init(1n), OnbUber.old())) == OBD.Ob.count() : Nat}
+
+# once answered it does not come up by itself
+law onboard_uber_answered_quiet:
+  {U.Tour.at(OnbUi.synced(M.State.replay([M.SettingSet{"onboard.uber", "1", 3n}], OnbUber.old()))) == OBD.Ob.count() : Nat}
+
+# nor with an uberbot
+law onboard_uber_have_no_ask:
+  {U.Tour.at(OnbUi.synced(M.State.replay([M.UberSet{"b1", "u1-a", 200n}], M.State.replay([M.SettingSet{"onboard.done", "1", 2n}], OnbUber.bots())))) == OBD.Ob.count() : Nat}
+
+# Skip answers it, and a step asked alone has no Back
+law onboard_uber_skip_answers:
+  {U.Tour.answered(U.Ui.state(OnbUi.after(U.Ui.act(OnbUi.synced(OnbUber.old()), "ob-skip", "")))) == True{} : Bool}
+
+law onboard_uber_single_no_back:
+  {U.Tour.back(OnbUi.synced(OnbUber.old())) == False{} : Bool}

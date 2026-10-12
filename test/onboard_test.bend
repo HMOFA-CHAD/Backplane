@@ -41,11 +41,15 @@ def logged() -> M.State:
   M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}], M.State.empty())
 
 def finished() -> M.State:
-  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.SettingSet{"onboard.done", "1", 2n}], M.State.empty())
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.SettingSet{"onboard.done", "1", 2n}, M.SettingSet{"onboard.uber", "1", 2n}], M.State.empty())
 
 # a client that holds this connection's state, with no setting yet
 def fresh() -> U.Ui:
   U.Ui.scratch_set(U.Ui.adopt.raw(U.Ui.init(1000n), logged()), "@sync", "1")
+
+# done long ago, before the uberbot step: no onboard.uber
+def old() -> U.Ui:
+  U.Ui.scratch_set(U.Ui.adopt.raw(U.Ui.init(1000n), M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.SettingSet{"onboard.done", "1", 2n}], M.State.empty())), "@sync", "1")
 
 def done() -> U.Ui:
   U.Ui.scratch_set(U.Ui.adopt.raw(U.Ui.init(1000n), finished()), "@sync", "1")
@@ -137,7 +141,7 @@ def main() -> IO(Unit):
     C.Check.str("back stays at the first", at(act(fresh(), "ob-back")), "0")
     C.Check.str("a move sends nothing", sent(U.Ui.act(fresh(), "ob-next", "")), "0")
     C.Check.str("skip ends it", at(act(fresh(), "ob-skip")), end())
-    C.Check.str("skip tells the hub", sent(U.Ui.act(fresh(), "ob-skip", "")), "2")
+    C.Check.str("skip tells the hub", sent(U.Ui.act(fresh(), "ob-skip", "")), "3")
     C.Check.str("skip is kept as a setting", M.Setting.get(U.Ui.state(act(fresh(), "ob-skip")), "onboard.done", ""), "1")
     C.Check.str("last step reads Done", OB.Ob.forward(9n) ++ " " ++ OB.Ob.forward(8n), "Done Next")
     C.Check.str("next from the last ends it", Bool.show(OB.Ob.live(OB.Ob.next(9n))), "False")
@@ -158,6 +162,16 @@ def main() -> IO(Unit):
     C.Check.str("skip with a remote chat showing focuses its field", focus(U.Ui.act(U.Bots.views(U.Ui.select.k(fresh(), "t1"), "", "", "x"), "ob-skip", "")), "focus:remote-send")
     C.Check.str("skip with Settings up focuses nothing", focus(U.Ui.act(U.Ui.flag_on(U.Ui.select.k(fresh(), "t1"), "settings"), "ob-skip", "")), "focus:")
     C.Check.str("no thread's head under a remote chat", U.Tour.target(0n, U.Ui.scratch_set(U.Bots.views(U.Ui.select.k(fresh(), "t1"), "", "", "x"), "@tour", "m3")), "")
+    # the uberbot step alone, for an install that finished the tour before it
+    C.Check.str("existing: shows alone", at(old()) ++ "|" ++ U.Tour.counter(old()) ++ "|" ++ Bool.show(U.Tour.back(old())), "9||False")
+    C.Check.str("existing: not from a cached state", at(U.Ui.unsync(old())), end())
+    C.Check.str("existing: back goes nowhere", at(act(old(), "ob-back")), "9")
+    C.Check.str("existing: Done answers it", at(act(old(), "ob-next")) ++ M.Setting.get(U.Ui.state(act(old(), "ob-next")), "onboard.uber", ""), end() ++ "1")
+    C.Check.str("existing: Skip answers it", at(act(old(), "ob-skip")) ++ M.Setting.get(U.Ui.state(act(old(), "ob-skip")), "onboard.uber", ""), end() ++ "1")
+    C.Check.str("existing: a choice answers it", at(act3(old(), "uber-new", "")) ++ M.Setting.get(U.Ui.state(act3(old(), "uber-new", "")), "onboard.uber", ""), end() ++ "1")
+    C.Check.str("existing: the full tour's Skip sets both", M.Setting.get(U.Ui.state(act(fresh(), "ob-skip")), "onboard.uber", ""), "1")
+    C.Check.str("existing: an uberbot is not asked", at(U.Ui.adopt.raw(old(), M.State.replay([M.UberSet{"b1", "u1-a", 9n}, M.SettingSet{"onboard.done", "1", 9n}], bots3()))), end())
+    C.Check.str("existing: the full tour says 10 of 10 at its end", U.Tour.counter(act(fresh(), "ob-next")), "2 of 10")
     # the uberbot step
     C.Check.str("uberbot: the last step", OB.Ob.title(9n) ++ "|" ++ OB.Ob.target(0n, 9n) ++ "|" ++ OB.Ob.target(2n, 9n), "Your uberbot|sidebar|")
     C.Check.str("uberbot: no choices on other steps", labels(U.Tour.choices(fresh())), ".")

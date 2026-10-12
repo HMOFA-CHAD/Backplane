@@ -5304,13 +5304,13 @@ def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
   Out.all([
     Out{Tour.dim(Tour.rect(g, hh, Lay.x1(n)), ww, hh), [Lay.hit(0, 0, ww, hh, "", "")]},
     Out{Lay.box(D.Clip.all(), cx, cy, cw, ch, 0, T.Th.panel(), T.Th.line()), [Lay.hit(cx, cy, cw, ch, "ob-scroll", Nat.show(U32.to_nat(U32.dim(nl, nv))))]},
-    Out.ops(List.concat(&2, R.Op, [Ty.text(ty, 2n, OB.Ob.counter(i), D.Clip.all(), Bool.pick(U32, compact, (cx + 16 + Lay.button.w(ty, "Skip") + 12 : U32), (cx + 16 : U32)), Bool.pick(U32, compact, (by + 4 : U32), (cy + 8 : U32)), 20, T.Th.faint()),
+    Out.ops(List.concat(&2, R.Op, [Ty.text(ty, 2n, U.Tour.counter(u), D.Clip.all(), Bool.pick(U32, compact, (cx + 16 + Lay.button.w(ty, "Skip") + 12 : U32), (cx + 16 : U32)), Bool.pick(U32, compact, (by + 4 : U32), (cy + 8 : U32)), 20, T.Th.faint()),
       Bool.pick(List<&2, R.Op>, compact, Nil{}, Tour.lines(tl, ty, 1n, 28, T.Th.text(), D.Clip.all(), (cx + 16 : U32), (cy + 30 : U32))),
       Tour.lines(all, ty, 0n, 22, Bool.pick(U32, compact, T.Th.text(), T.Th.dim()), D.Clip{(cx + 16 : U32), bt, (cx + cw - 16 : U32), (bt + nv * 22 : U32)}, (cx + 16 : U32), (bt - off * 22 : U32))])),
     Tour.bar(nl, nv, off, (cx + cw - 8 : U32), bt),
     Tour.choices(cs, ty, (cx + 16 : U32), (bt + nv * 22 + 8 : U32)),
     Lay.button(ty, D.Clip.all(), (cx + 16 : U32), by, "Skip", T.Th.soft(), "ob-skip", ""),
-    Tour.back(Nat.is_gt(i, 0n), ty, (nx - 6 - Lay.button.w(ty, "Back") : U32), by),
+    Tour.back(U.Tour.back(u), ty, (nx - 6 - Lay.button.w(ty, "Back") : U32), by),
     Lay.button(ty, D.Clip.all(), nx, by, nb, T.Th.accent(), "ob-next", "")])
 
 def Lay.tour.if(open: Bool, +ty: Ty, +n: S.Nui, +w: U32, +h: U32) -> Out:

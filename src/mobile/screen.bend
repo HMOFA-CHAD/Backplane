@@ -938,8 +938,8 @@ def Mob.tour.choices(cs: List<&2, U.TChoice>) -> List<&2, J.Json>:
       J.Json.obj([J.KV{"label", J.Json.str(l)}, J.KV{"action", J.Json.str(a)}, J.KV{"value", J.Json.str(v)}]) <> Mob.tour.choices(t)
 
 def Mob.tour.k(+i: Nat, +u: U.Ui) -> J.Json:
-  J.Json.obj([J.KV{"step", J.Json.nat(i)}, J.KV{"count", J.Json.nat(OB.Ob.count())}, J.KV{"counter", J.Json.str(OB.Ob.counter(i))},
-    J.KV{"title", J.Json.str(OB.Ob.title(i))}, J.KV{"body", J.Json.str(U.Tour.body(2n, u))}, J.KV{"first", J.Json.bool(Nat.is_eq(i, 0n))},
+  J.Json.obj([J.KV{"step", J.Json.nat(i)}, J.KV{"count", J.Json.nat(OB.Ob.count())}, J.KV{"counter", J.Json.str(U.Tour.counter(u))},
+    J.KV{"title", J.Json.str(OB.Ob.title(i))}, J.KV{"body", J.Json.str(U.Tour.body(2n, u))}, J.KV{"first", J.Json.bool(Bool.not(U.Tour.back(u)))},
     J.KV{"next", J.Json.str(OB.Ob.forward(i))}, J.KV{"back", J.Json.str("Back")}, J.KV{"skip", J.Json.str("Skip")},
     J.KV{"choices", J.Json.arr(Mob.tour.choices(U.Tour.choices(u)))}])
 
