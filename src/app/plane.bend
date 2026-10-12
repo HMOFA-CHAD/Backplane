@@ -107,17 +107,6 @@ def Pl.sect(+rs: List<&2, P.PRow>, +label: String, +more: Nat, +side: Bool, +ty:
 def Pl.len(rs: List<&2, P.PRow>) -> Nat:
   List.length(&2, P.PRow, rs)
 
-def Pl.busy.n(+s: String) -> Nat:
-  Bool.pick(Nat, Bool.or(String.eq(s, "work"), String.eq(s, "talk")), 1n, 0n)
-
-# bots at work
-def Pl.busy(rs: List<&2, P.PRow>) -> Nat:
-  match rs:
-    case Nil{}:
-      0n
-    case P.PRow{_, _, _, _, _, _, _, +s, _, _} <> t:
-      Nat.add(Pl.busy.n(s), Pl.busy(t))
-
 # Strip
 # -----
 
@@ -146,7 +135,7 @@ def Pl.strip.if(on: Bool, +p: P.Plane, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32) 
       L.Out.all([
         Pl.cell(ty, c, Pl.len(P.Plane.need(p)), "Need you", True{}, x, y),
         Pl.cell(ty, c, Pl.len(P.Plane.run(p)), "Running", False{}, (x + 130 : U32), y),
-        Pl.cell(ty, c, Pl.busy(P.Plane.bots(p)), "Bots working", False{}, (x + 260 : U32), y),
+        Pl.cell(ty, c, P.Plane.working(p), "Bots working", False{}, (x + 260 : U32), y),
         Pl.cell(ty, c, Pl.len(P.Plane.rooms(p)), "Unread rooms", False{}, (x + 390 : U32), y),
         L.Out.ops(Pl.machines(P.Plane.machines(p), ty, c, x, (y + 56 : U32)))])
     case False{}:

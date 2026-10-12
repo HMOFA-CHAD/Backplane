@@ -749,8 +749,12 @@ def Bv.plane.got(p: PW) -> PC.Plane:
     case _:
       Bv.plane.none()
 
+def Bv.plane.snd(r: Map<&2, PW> & PW) -> PW:
+  (_, p) = r
+  p
+
 def Bv.plane.get(+ws: Map<&2, PW>) -> PC.Plane:
-  Bv.plane.got(Map.get(PW, PWPlane{"", Bv.plane.none()}, ws, "@plane"))
+  Bv.plane.got(Bv.plane.snd(Map.get(PW, PWPlane{"", Bv.plane.none()}, ws, "@plane")))
 
 def Bv.sd.w(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +n: S.Nui, +ws: Map<&2, PW>) -> Sd:
   Sd{ty, cats, F.Fm.fs(n), S.Nui.ms_of(n), BU.BU.open(S.Nui.ui(n), "@bnew"), BU.BU.open(S.Nui.ui(n), "@rnew"), BU.BU.rows(S.Nui.ui(n)), BU.BU.rooms(S.Nui.ui(n)),
@@ -1020,7 +1024,7 @@ def Bv.plane.key.of(p: PW) -> String:
       ""
 
 def Bv.plane.key(+ws: Map<&2, PW>) -> String:
-  Bv.plane.key.of(Map.get(PW, PWPlane{"", Bv.plane.none()}, ws, "@plane"))
+  Bv.plane.key.of(Bv.plane.snd(Map.get(PW, PWPlane{"", Bv.plane.none()}, ws, "@plane")))
 
 def Bv.plane.keep.k(same: Bool, +ws: Map<&2, PW>, +u: U.Ui, +key: String) -> Map<&2, PW>:
   match same:
