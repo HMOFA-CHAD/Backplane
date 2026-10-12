@@ -1634,6 +1634,11 @@ def Fh.ub(+f: Fh, +k: String) -> String:
     case Fh{_, _, _, _, _, _, Cx{_, _, ub}}:
       Fr.str.got(Map.get(String, "", ub, k))
 
+def Fh.ub.map(f: Fh) -> Map<&2, String>:
+  match f:
+    case Fh{_, _, _, _, _, _, Cx{_, _, ub}}:
+      ub
+
 def Fh.ub.set(f: Fh, +k: String, +v: String) -> Fh:
   match f:
     case Fh{ms, os, fd, e, p, ep, Cx{la, ca, ub}}:

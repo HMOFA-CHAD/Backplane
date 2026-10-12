@@ -5,6 +5,7 @@ import ./json.bend as J
 import ./ubop.bend as UO
 import ./uber.bend as UB
 import ./far.bend as FR
+import ./handoff.bend as HD
 
 # One uberbot on several machines (docs/uber.md, "Sync")
 # -------------------------------------------------------
@@ -620,7 +621,7 @@ def SyncIn.vv(s: SyncIn) -> String:
     case SyncIn{_, _, _, _, x, _}:
       x
 
-# the exchange is not over: this machine still lacks ops the other has
+# the exchange is not over: one side still lacks ops the other has
 def SyncIn.more(s: SyncIn) -> Bool:
   match s:
     case SyncIn{_, _, _, _, _, x}:
@@ -675,9 +676,77 @@ def Ub.lacks.go(os: List<&2, String>, +st: M.State, +vv: J.Json) -> Bool:
 def Ub.lacks(+st: M.State, +p: J.Json) -> Bool:
   Ub.lacks.go(Ub.origins(st, Ub.uid(st)), st, J.Json.get_obj(p, "vv"))
 
+def Ub.owes.go(os: List<&2, String>, +st: M.State, +vv: J.Json) -> Bool:
+  match os:
+    case Nil{}:
+      False{}
+    case +o <> t:
+      Bool.or(Nat.is_gt(Ub.vv.of(st, Ub.uid(st), o), UO.Ub.nat(vv, o)), Ub.owes.go(t, st, vv))
+
+# whether this machine has ops the other lacks (its vv is behind ours)
+def Ub.owes(+st: M.State, +p: J.Json) -> Bool:
+  Ub.owes.go(Ub.origins(st, Ub.uid(st)), st, J.Json.get_obj(p, "vv"))
+
 # what a machine's object (a request, or the answer to ours) does here: the
 # changes to log, who sent it and whether it is of this uberbot, whether it
 # held the conversation (beat), its version vector
 def Ub.take(+st: M.State, +p: J.Json, +link: String, +now: Nat) -> SyncIn:
   SyncIn{Ub.take.k(Ub.same(st, p), st, p, link, now), UO.Ub.field(p, "machine"), Ub.same(st, p), Bool.and(Ub.same(st, p), J.Json.get_bool(p, "beat", False{})),
-    J.Json.show(J.Json.get_obj(p, "vv")), Bool.and(Ub.same(st, p), Ub.lacks(st, p))}
+    J.Json.show(J.Json.get_obj(p, "vv")), Bool.and(Ub.same(st, p), Bool.or(Ub.lacks(st, p), Ub.owes(st, p)))}
+
+# What a machine remembers of the others (not in the log)
+# --------------------------------------------------------
+# The server keeps a map (far.bend's Cx.ub): per machine when it last
+# answered (up.<m>) and when it last said it holds the conversation
+# (heard.<m>), when this hub first ticked (boot), and per link the version
+# vector it last reported (pvv.<link>), whether a request is out (busy.<link>)
+# and whether another is wanted when it ends (again.<link>).
+
+def Ub.net.get(+um: Map<&2, String>, +k: String) -> String:
+  FR.Fr.str.got(Map.get(String, "", um, k))
+
+def Ub.net.nat(+um: Map<&2, String>, +k: String) -> Nat:
+  M.Switch.num(Ub.net.get(um, k), 0n)
+
+# a machine answered within this many seconds counts as reachable
+def Ub.reach.window() -> Nat:
+  180n
+
+def Ub.reach.go(os: List<&2, String>, +um: Map<&2, String>, +me: String, +now: Nat) -> List<&2, String>:
+  match os:
+    case Nil{}:
+      Nil{}
+    case +o <> t:
+      BT.Post.keep(String, Bool.and(Bool.not(String.eq(o, me)), Nat.is_ge(Nat.add(Ub.net.nat(um, "up." ++ o), Ub.reach.window()), now)), o, Ub.reach.go(t, um, me, now))
+
+# the machines of this uberbot that answered lately
+def Ub.reach(+um: Map<&2, String>, +st: M.State, +now: Nat) -> List<&2, String>:
+  Ub.reach.go(Ub.origins(st, Ub.uid(st)), um, Ub.me(st), now)
+
+def Time.max(+a: Nat, +b: Nat) -> Nat:
+  M.Time.max(a, b)
+
+# seconds since the holder was last heard to hold (or since this hub began
+# to tick: a restart does not count as the holder's silence)
+def Ub.quiet(+um: Map<&2, String>, +st: M.State, +now: Nat) -> Nat:
+  Nat.sub(now, Time.max(Ub.net.nat(um, "heard." ++ Ub.holder(st)), Ub.net.nat(um, "boot")))
+
+# whether this machine takes the lease now
+def Ub.takes(+um: Map<&2, String>, +st: M.State, +now: Nat, +grace: Nat) -> Bool:
+  Ub.takeover(st, Ub.quiet(um, st, now), grace, Ub.first(Ub.reach(um, st, now), Ub.me(st), Ub.holder(st)))
+
+# taking the lease: its op, and the old holder's last entries (text, ""
+# when the mirror had none) queued ahead of the next message
+def Ub.takeover.cs(+st: M.State, +now: Nat, +text: String) -> List<&2, M.Change>:
+  List.append(&2, M.Change, Ub.ops(st, now, [Ub.lease.body(st)]),
+    Bool.pick(List<&2, M.Change>, String.is_empty(text), Nil{},
+      [M.TurnQueued{BT.Bot.thread(BT.World.bot(M.State.bots(st), UB.Uber.bot(st))), HD.Hand.prefix() ++ "uber:" ++ Nat.show(Ub.term(st)), text, now}]))
+
+# the thread the old holder kept (as the mirror here has it), for the handoff
+def Ub.handoff.thread(+st: M.State) -> String:
+  Ub.chat.far(st, Ub.holder(st))
+
+# what an exchange tells this hub to remember: (key, value) pairs
+def Ub.net.note(+machine: String, +same: Bool, +beat: Bool, +now: Nat) -> List<&2, J.KV>:
+  List.append(&2, J.KV, Bool.pick(List<&2, J.KV>, same, [J.KV{"up." ++ machine, J.Json.nat(now)}], Nil{}),
+    Bool.pick(List<&2, J.KV>, beat, [J.KV{"heard." ++ machine, J.Json.nat(now)}], Nil{}))
