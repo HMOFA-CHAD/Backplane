@@ -13,6 +13,9 @@ import ./layout.bend as L
 import ./cats.bend as CA
 import ./forms.bend as F
 import ./space.bend as SV
+import ./plane.bend as PV
+import ../core/plane.bend as PC
+import ../core/uber.bend as UB
 import ../core/eq.bend as Q
 
 # The bots in the window (docs/bots.md): their cats under the projects in
@@ -122,10 +125,10 @@ def Bv.rrows(rs: List<&2, BU.RRow>, +ty: L.Ty, +c: D.Clip, +y: U32) -> L.Col:
 # what the sidebar's bots section needs, gathered before the sidebar's
 # layout calls it (one value, so the call back holds little)
 type Sd is Data:
-  Sd{ty: L.Ty, cats: Map<&2, CA.CatF>, f: F.FS, ms: Nat, bn: Bool, rn: Bool, rows: List<&2, BU.BRow>, rooms: List<&2, BU.RRow>}
+  Sd{ty: L.Ty, cats: Map<&2, CA.CatF>, f: F.FS, ms: Nat, bn: Bool, rn: Bool, rows: List<&2, BU.BRow>, rooms: List<&2, BU.RRow>, up: Maybe<&2, BU.BRow>, cn: String}
 
 def Bv.sd(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +n: S.Nui) -> Sd:
-  Sd{ty, cats, F.Fm.fs(n), S.Nui.ms_of(n), BU.BU.open(S.Nui.ui(n), "@bnew"), BU.BU.open(S.Nui.ui(n), "@rnew"), BU.BU.rows(S.Nui.ui(n)), BU.BU.rooms(S.Nui.ui(n))}
+  Sd{ty, cats, F.Fm.fs(n), S.Nui.ms_of(n), BU.BU.open(S.Nui.ui(n), "@bnew"), BU.BU.open(S.Nui.ui(n), "@rnew"), BU.BU.rows(S.Nui.ui(n)), BU.BU.rooms(S.Nui.ui(n)), BU.BU.uber(S.Nui.ui(n)), ""}
 
 def Bv.side.k(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +f: F.FS, +ms: Nat, +bn: Bool, +rn: Bool, rows: List<&2, BU.BRow>, rooms: List<&2, BU.RRow>, +c: D.Clip, +y: U32) -> L.Col:
   L.Lay.col.cat(L.Out.cat(L.Out.ops([D.Draw.rect(c, 12, (y + 4 : U32), 240, 1, T.Th.line(), 255)]), Bv.head(ty, c, "Bots", "bot-new", bn, (y + 10 : U32))),
@@ -138,11 +141,40 @@ def Bv.side.k(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +f: F.FS, +ms: Nat, +bn: Bool,
 # the sidebar under the projects: a rule, the cats, then the rooms
 def Bv.side.of(sd: Sd, +c: D.Clip, +y: U32) -> L.Col:
   match sd:
-    case Sd{+ty, +cats, +f, +ms, +bn, +rn, rows, rooms}:
+    case Sd{+ty, +cats, +f, +ms, +bn, +rn, rows, rooms, _, _}:
       Bv.side.k(ty, cats, f, ms, bn, rn, rows, rooms, c, y)
 
 def Bv.side(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +n: S.Nui, +c: D.Clip, +y: U32) -> L.Col:
   Bv.side.of(Bv.sd(ty, cats, n), c, y)
+
+# The uberbot's row above the search field (nothing when there is none):
+# its cat, its name and, under it, what waits on the person and what runs
+def Bv.uber.h() -> U32:
+  48
+
+def Bv.uber.row(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +ms: Nat, r: BU.BRow, +cn: String, +c: D.Clip) -> L.Out:
+  match r:
+    case BU.BRow{_, _, _, +look, +mood, _, +sel, _, _, _}:
+      L.Out{List.concat(&2, R.Op, [
+          Bool.pick(List<&2, R.Op>, sel, [D.Draw.rect(c, 6, 54, 252, 42, T.Th.raise(), 255), D.Draw.rect(c, 6, 54, 2, 42, T.Th.accent(), 255)], Nil{}),
+          CA.Cats.draw(cats, look, mood, ms, c, 14, 60, 28),
+          L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, BU.BU.row.title(r), 192), c, 50, 54, 24, Bool.pick(U32, sel, T.Th.text(), T.Th.soft())),
+          L.Ty.text(ty, 2n, L.Ty.fit(ty, 2n, Bool.pick(String, String.is_empty(cn), "Nothing needs you", cn), 192), c, 50, 74, 20, Bool.pick(U32, String.is_empty(cn), T.Th.faint(), T.Th.dim()))]),
+        [L.Lay.hit(0, 52, 264, 44, "uber", "")]}
+
+def Bv.uber.out(sd: Sd) -> L.Out:
+  match sd:
+    case Sd{+ty, +cats, _, +ms, _, _, _, _, Some{r}, +cn}:
+      Bv.uber.row(ty, cats, ms, r, cn, D.Clip{0, 52, 264, 100})
+    case _:
+      L.Out.none()
+
+def Bv.uber.top(sd: Sd) -> U32:
+  match sd:
+    case Sd{_, _, _, _, _, _, _, _, Some{_}, _}:
+      Bv.uber.h()
+    case _:
+      0
 
 # the selected cat is also drawn large at the top of its view
 def Bv.warm.sel(sel: Bool, c: Map<&2, CA.CatF>, +look: Nat, +mood: String, +clock: Nat) -> Map<&2, CA.CatF>:
@@ -167,8 +199,15 @@ def Bv.warm.go(rs: List<&2, BU.BRow>, c: Map<&2, CA.CatF>, +clock: Nat) -> Map<&
       +at = Bv.warm.at(mood, clock)
       Bv.warm.go(t, Bv.warm.sel(sel, CA.Cats.warm(c, look, mood, 28, at), look, mood, at), clock)
 
+def Bv.uber.rows(m: Maybe<&2, BU.BRow>) -> List<&2, BU.BRow>:
+  match m:
+    case Some{r}:
+      [r]
+    case None{}:
+      Nil{}
+
 def Bv.warm(+u: U.Ui, c: Map<&2, CA.CatF>, +clock: Nat) -> Map<&2, CA.CatF>:
-  Bv.warm.go(BU.BU.rows(u), c, clock)
+  Bv.warm.go(List.append(&2, BU.BRow, Bv.uber.rows(BU.BU.uber(u)), BU.BU.rows(u)), c, clock)
 
 def Bv.info.nat(+n: S.Nui, +k: String) -> Nat:
   Maybe.default(&2, Nat, Nat.read(U.Ui.info(S.Nui.ui(n), k)), 0n)
@@ -185,7 +224,7 @@ def Bv.present(+n: S.Nui, +ms: Nat) -> Bool:
 
 # a shown cat moves, the window has the keys and someone is there
 def Bv.awake(+n: S.Nui, +ms: Nat) -> Bool:
-  Bool.and(Bool.and(Bool.and(S.Nui.has_focus(n), Bool.not(S.Lbx.on(n))), Bv.present(n, ms)), BU.BU.moving(S.Nui.ui(n)))
+  Bool.and(Bool.and(Bool.and(S.Nui.has_focus(n), Bool.not(S.Lbx.on(n))), Bv.present(n, ms)), Bool.or(BU.BU.moving(S.Nui.ui(n)), BU.BU.moving.go(Bv.uber.rows(BU.BU.uber(S.Nui.ui(n))))))
 
 # the cats hold still while the person types, scrolls or points: a cat
 # frame is a whole frame, and 30 of them a second took the cores keys and
@@ -646,12 +685,17 @@ def Bv.pane.k(k: Nat, +ty: L.Ty, +f: F.FS, +b: BT.Bot, +c: D.Clip, +x: U32, +w: 
     case _:
       Bv.stab(ty, f, b, c, x, w, y)
 
-def Bv.bot.k(k: Nat, +ty: L.Ty, +memo: L.TLMemo, +n: S.Nui, +b: BT.Bot, +x0: U32, +x1: U32) -> L.Out:
+def Bv.bot.k(k: Nat, +ty: L.Ty, +memo: L.TLMemo, +pl: PC.Plane, +n: S.Nui, +b: BT.Bot, +x0: U32, +x1: U32) -> L.Out:
   match k:
     case 0n:
       L.Out.hits_below(Bv.hy(), L.Lay.thread.at(ty, memo, n, x0, x1, (Bv.hy() - 52 : U32)))
     case 2n:
       Bv.browser(ty, S.Nui.ui(n), BT.Bot.id(b), BT.Bot.name(b), x0, x1, (Bv.hy() + 16 : U32), S.Nui.height(n))
+    case 7n:
+      +top = {(Bv.hy() + 24 : U32) : U32}
+      +off = Bv.off(S.Nui.ui(n))
+      Bv.pane(PV.Pl.draw(pl, ty, D.Clip{x0, Bv.hy(), x1, S.Nui.height(n)}, (x0 + 24 : U32), (x1 - x0 - 48 : U32), top, off, L.U32.dim(S.Nui.height(n), top), U.Side.now(S.Nui.ui(n))),
+        x0, x1, Bv.hy(), off, S.Nui.height(n))
     case +j:
       +top = {(Bv.hy() + 24 : U32) : U32}
       +off = Bv.off(S.Nui.ui(n))
@@ -660,16 +704,16 @@ def Bv.bot.k(k: Nat, +ty: L.Ty, +memo: L.TLMemo, +n: S.Nui, +b: BT.Bot, +x0: U32
 
 # a bot, here or mirrored from a linked machine: its header, then the tab
 # BU.head picks (the tabs it has)
-def Bv.bot.h(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +hd: BU.Head, +x0: U32, +x1: U32) -> L.Out:
+def Bv.bot.h(+ty: L.Ty, +memo: L.TLMemo, +pl: PC.Plane, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +hd: BU.Head, +x0: U32, +x1: U32) -> L.Out:
   +u = S.Nui.ui(n)
   +st = U.Ui.state(u)
   +th = BT.Bot.thread(b)
-  L.Out.cat(Bv.bot.k(Bv.tab.n(BU.Head.tab(hd)), ty, memo, n, b, x0, x1),
+  L.Out.cat(Bv.bot.k(Bv.tab.n(BU.Head.tab(hd)), ty, memo, pl, n, b, x0, x1),
     Bv.header(ty, cats, u, S.Nui.ms_of(n), hd, " · " ++ M.Thread.provider(U.Ui.thread(st, th)),
       Bv.stop(Bv.busy(U.Side.status(st, U.Ui.thread(st, th))), ty, Bv.right(BU.Head.viewer(hd), ty, x1)), x0, x1))
 
-def Bv.bot(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +x0: U32, +x1: U32) -> L.Out:
-  Bv.bot.h(ty, memo, cats, n, b, BU.BU.head.bot(S.Nui.ui(n), b), x0, x1)
+def Bv.bot(+ty: L.Ty, +memo: L.TLMemo, +pl: PC.Plane, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +x0: U32, +x1: U32) -> L.Out:
+  Bv.bot.h(ty, memo, pl, cats, n, b, BU.BU.head.bot(S.Nui.ui(n), b), x0, x1)
 
 # Rooms and bots elsewhere
 # ------------------------
@@ -689,9 +733,29 @@ type PW is Data:
   PW{ok: Bool, text: String, lines: List<&2, String>}
   PWGroup{posts: List<&2, Map<&2, PW>>}
   PWKeys{keys: List<&2, String>}
+  PWPlane{key: String, plane: PC.Plane}
 
 def Bv.wraps.none() -> Map<&2, PW>:
   Map.new(&2, PW)
+
+# the plane kept with the posts (Bv.plane.keep), an empty one before any
+def Bv.plane.none() -> PC.Plane:
+  PC.Plane{Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, 0n, Nil{}}
+
+def Bv.plane.got(p: PW) -> PC.Plane:
+  match p:
+    case PWPlane{_, pl}:
+      pl
+    case _:
+      Bv.plane.none()
+
+def Bv.plane.get(+ws: Map<&2, PW>) -> PC.Plane:
+  Bv.plane.got(Map.get(PW, PWPlane{"", Bv.plane.none()}, ws, "@plane"))
+
+def Bv.sd.w(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +n: S.Nui, +ws: Map<&2, PW>) -> Sd:
+  Sd{ty, cats, F.Fm.fs(n), S.Nui.ms_of(n), BU.BU.open(S.Nui.ui(n), "@bnew"), BU.BU.open(S.Nui.ui(n), "@rnew"), BU.BU.rows(S.Nui.ui(n)), BU.BU.rooms(S.Nui.ui(n)),
+    BU.BU.uber(S.Nui.ui(n)), PC.Plane.counts(Bv.plane.get(ws))}
+
 
 def Bv.wrap.key(+id: String, +w: U32) -> String:
   id ++ ":" ++ U32.show(w)
@@ -845,7 +909,7 @@ def Bv.view(v: BU.View, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws
     case BU.VThread{}:
       None{}
     case BU.VBot{b}:
-      Some{Bv.bot(ty, memo, cats, n, b, 264, x1)}
+      Some{Bv.bot(ty, memo, Bv.plane.get(ws), cats, n, b, 264, x1)}
     case BU.VRoom{r}:
       Some{Bv.room(ty, ws, n, r, 264, x1)}
     case BU.VRemote{+id}:
@@ -865,13 +929,13 @@ def Bv.main.w(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, 
 def Bv.main(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui) -> Maybe<&2, L.Out>:
   Bv.main.w(ty, memo, cats, Bv.wraps.none(), n)
 
-def Bv.frame.k(sd: Sd, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> L.Out:
-  L.Lay.frame.x(ty, memo, n, c => y => Bv.side.of(sd, c, y), Bv.main.w(ty, memo, cats, ws, n))
+def Bv.frame.k(+sd: Sd, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> L.Out:
+  L.Lay.frame.u(ty, memo, n, Bv.uber.out(sd), Bv.uber.top(sd), c => y => Bv.side.of(sd, c, y), Bv.main.w(ty, memo, cats, ws, n))
 
 # the whole window, topmost first, with the bots in it; ws: the posts
 # wrapped for the frame before (Bv.wraps)
 def Bv.frame.w(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> L.Out:
-  Bv.frame.k(Bv.sd(ty, cats, n), ty, memo, cats, ws, n)
+  Bv.frame.k(Bv.sd.w(ty, cats, n, ws), ty, memo, cats, ws, n)
 
 # (every post wrapped afresh)
 def Bv.frame(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui) -> L.Out:
@@ -946,5 +1010,35 @@ def Bv.wraps.k(settings: Bool, +ty: L.Ty, +n: S.Nui, +ws: Map<&2, PW>) -> Map<&2
     case False{}:
       Bv.wraps.of(BU.BU.view(S.Nui.ui(n)), S.Nui.ui(n), ws, ty, Bv.pane.w(264, L.Lay.x1(n)))
 
+# The status plane, built again only when its key changes (core's
+# Plane.key) and only while there is an uberbot
+def Bv.plane.key.of(p: PW) -> String:
+  match p:
+    case PWPlane{+k, _}:
+      k
+    case _:
+      ""
+
+def Bv.plane.key(+ws: Map<&2, PW>) -> String:
+  Bv.plane.key.of(Map.get(PW, PWPlane{"", Bv.plane.none()}, ws, "@plane"))
+
+def Bv.plane.keep.k(same: Bool, +ws: Map<&2, PW>, +u: U.Ui, +key: String) -> Map<&2, PW>:
+  match same:
+    case True{}:
+      ws
+    case False{}:
+      Map.set(&2, PW, ws, "@plane", PWPlane{key, PC.Plane.of(u, U.Side.now(u))})
+
+def Bv.plane.keep(+ws: Map<&2, PW>, +u: U.Ui) -> Map<&2, PW>:
+  +key = {PC.Plane.key(u, U.Side.now(u)) : String}
+  Bv.plane.keep.k(String.eq(Bv.plane.key(ws), key), ws, u, key)
+
+def Bv.plane.refresh(m: Maybe<&2, BU.BRow>, +ws: Map<&2, PW>, +u: U.Ui) -> Map<&2, PW>:
+  match m:
+    case Some{_}:
+      Bv.plane.keep(ws, u)
+    case None{}:
+      ws
+
 def Bv.wraps(+ty: L.Ty, +n: S.Nui, +ws: Map<&2, PW>) -> Map<&2, PW>:
-  Bv.wraps.k(U.Ui.flag(S.Nui.ui(n), "settings"), ty, n, ws)
+  Bv.plane.refresh(BU.BU.uber(S.Nui.ui(n)), Bv.wraps.k(U.Ui.flag(S.Nui.ui(n), "settings"), ty, n, ws), S.Nui.ui(n))
