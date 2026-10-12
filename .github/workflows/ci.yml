@@ -13,22 +13,47 @@ permissions:
   contents: read
 
 jobs:
-  laws:
-    name: Check and prove
+  check:
+    name: Type-check
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bend
-      - run: scripts/check.sh
+      - run: CHECK_JOBS=$(nproc) scripts/check.sh check
+
+  proof:
+    name: Prove laws
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-bend
+      - run: scripts/check.sh proof
+
+  # Kept as the single gate other jobs depend on; it passes when both
+  # halves above pass, so the check and the proof run in parallel on
+  # separate runners instead of one after the other in one job.
+  laws:
+    name: Check and prove
+    needs: [check, proof]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "type-check and proof both passed"
 
   test:
-    name: Tests
+    name: Tests ${{ matrix.shard }}/4
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      TEST_SHARD: ${{ matrix.shard }}
+      TEST_SHARD_COUNT: "4"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bend
       - uses: oven-sh/setup-bun@v2
-      - run: scripts/test.sh
+      - run: TEST_JOBS=$(nproc) scripts/test.sh
 
   build:
     name: Build ${{ matrix.target }}
