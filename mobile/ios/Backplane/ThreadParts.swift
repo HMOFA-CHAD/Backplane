@@ -433,28 +433,33 @@ struct ComposerExtras: View {
             let hot = skills.firstIndex(where: { $0.on == true }) ?? 0
             VStack(spacing: 0) {
                 Divider()
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(Array(skills.enumerated()), id: \.element) { i, k in
-                                Button { model.act("skill", k.name) } label: {
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(k.name).font(.subheadline.monospaced().weight(.semibold)).lineLimit(1)
-                                        if !k.desc.isEmpty {
-                                            Text(k.desc).font(.caption).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
-                                        }
+                // the rows as they are while they fit, else scrolling within
+                // about five rows (a bare ScrollView takes all the height offered)
+                let rows =
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(skills.enumerated()), id: \.element) { i, k in
+                            Button { model.act("skill", k.name) } label: {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(k.name).font(.subheadline.monospaced().weight(.semibold)).lineLimit(1)
+                                    if !k.desc.isEmpty {
+                                        Text(k.desc).font(.caption).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
                                     }
-                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                                    .padding(.leading, 12).padding(.trailing, 56).padding(.vertical, 4)
-                                    .background(i == hot ? Color.accentColor.opacity(0.15) : Color.clear)
-                                    .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
-                                .id(i)
-                                .accessibilityLabel(k.desc.isEmpty ? k.name : k.name + ", " + k.desc)
-                                .accessibilityAddTraits(i == hot ? [.isSelected] : [])
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .padding(.leading, 12).padding(.trailing, 56).padding(.vertical, 4)
+                                .background(i == hot ? Color.accentColor.opacity(0.15) : Color.clear)
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
+                            .id(i)
+                            .accessibilityLabel(k.desc.isEmpty ? k.name : k.name + ", " + k.desc)
+                            .accessibilityAddTraits(i == hot ? [.isSelected] : [])
                         }
+                    }
+                ScrollViewReader { proxy in
+                    ViewThatFits(in: .vertical) {
+                        rows
+                        ScrollView { rows }
                     }
                     .frame(maxHeight: 5 * 48)
                     .onChange(of: hot) { _, i in withAnimation { proxy.scrollTo(i) } }
