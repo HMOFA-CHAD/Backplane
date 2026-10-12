@@ -39,6 +39,14 @@ if [ "${TEST_SHARD_COUNT:-1}" -gt 1 ]; then
   tests=" $tests"
 fi
 
+# milliseconds since the epoch; macOS's date has no %N, so perl there
+now_ms() {
+  case $(date +%N) in
+    *[!0-9]*|"") perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000' ;;
+    *) echo $(( $(date +%s%N) / 1000000 )) ;;
+  esac
+}
+
 work=$(mktemp -d .bend-test.XXXXXX)
 trap 'rm -rf "$work"' 0 1 2 15
 
@@ -53,11 +61,12 @@ for t in $tests; do
     wait $1 || true
     shift
   fi
-  ( s=$(date +%s%N)
-    BUN_JSC_forceRAMSize=4294967296 nice -n 19 bend "$t" >"$work/$i.out" 2>&1
-    echo $? >"$work/$i.rc"
-    e=$(date +%s%N)
-    echo $(( (e - s) / 1000000 )) >"$work/$i.dur" ) &
+  ( s=$(now_ms)
+    rc=0
+    BUN_JSC_forceRAMSize=4294967296 nice -n 19 bend "$t" >"$work/$i.out" 2>&1 || rc=$?
+    echo $rc >"$work/$i.rc"
+    e=$(now_ms)
+    echo $(( e - s )) >"$work/$i.dur" ) &
   set -- "$@" $!
   i=$(( i + 1 ))
 done
@@ -70,7 +79,9 @@ if [ -n "${TEST_TIMINGS_OUT:-}" ]; then
   : >"$TEST_TIMINGS_OUT"
   i=0
   for t in $tests; do
-    awk -v ms="$(cat "$work/$i.dur")" -v t="$t" 'BEGIN { printf "%.2f %s\n", ms / 1000, t }' >>"$TEST_TIMINGS_OUT"
+    ms=$(cat "$work/$i.dur" 2>/dev/null || true)
+    case $ms in ""|*[!0-9]*) echo "test.sh: no duration for $t" >&2; exit 1 ;; esac
+    awk -v ms="$ms" -v t="$t" 'BEGIN { printf "%.2f %s\n", ms / 1000, t }' >>"$TEST_TIMINGS_OUT"
     i=$(( i + 1 ))
   done
   sort -rn -o "$TEST_TIMINGS_OUT" "$TEST_TIMINGS_OUT"

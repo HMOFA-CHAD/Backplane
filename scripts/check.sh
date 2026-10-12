@@ -63,7 +63,7 @@ start=$(date +%s)
 # In all mode, start the proof now so it overlaps the type-check.
 proof_pid=""
 if [ "$mode" = all ]; then
-  ( bend PROOF.bend >"$work/proof.out" 2>&1; echo $? >"$work/proof.rc" ) &
+  ( rc=0; bend PROOF.bend >"$work/proof.out" 2>&1 || rc=$?; echo $rc >"$work/proof.rc" ) &
   proof_pid=$!
 fi
 
@@ -91,7 +91,8 @@ if [ "$mode" != proof ]; then
   i=0
   pids=""
   for m in "$work"/m/manifest-*.bend; do
-    ( BUN_JSC_forceRAMSize=4294967296 nice -n 19 bend "$m" --check-only >"$work/m$i.out" 2>&1 ) &
+    ( BUN_JSC_forceRAMSize=4294967296 nice -n 19 bend "$m" --check-only >"$work/m$i.out" 2>&1
+      echo $? >"$work/m$i.rc" ) &
     pids="$pids $!"
     i=$(( i + 1 ))
     if [ $(( i % jobs )) -eq 0 ]; then
@@ -99,28 +100,31 @@ if [ "$mode" != proof ]; then
       pids=""
     fi
   done
-  ( check_one LAWS.bend >"$work/laws.out" 2>&1; echo $? >"$work/laws.rc" ) &
+  ( rc=0; check_one LAWS.bend >"$work/laws.out" 2>&1 || rc=$?; echo $rc >"$work/laws.rc" ) &
   pids="$pids $!"
   for p in $pids; do wait $p || true; done
   bad=0
   i=0
   for m in "$work"/m/manifest-*.bend; do
+    # a manifest passes only with its own success verdict and status: a
+    # checker killed before writing anything must not count as a pass
     out=$(cat "$work/m$i.out")
-    case $out in
-      *"All terms check"*|"") ;;
-      *) echo "$m:"; echo "$out"; bad=1 ;;
+    rc=$(cat "$work/m$i.rc" 2>/dev/null || echo missing)
+    case $rc$out in
+      "0"*"All terms check"*) ;;
+      *) echo "$m (status $rc):"; echo "$out"; bad=1 ;;
     esac
     i=$(( i + 1 ))
   done
   cat "$work/laws.out"
-  if [ "$(cat "$work/laws.rc")" != 0 ]; then fail=1; fi
+  if [ "$(cat "$work/laws.rc" 2>/dev/null || echo missing)" != 0 ]; then fail=1; fi
   if [ $bad = 1 ]; then
     echo "check.sh: a manifest check failed; re-checking every file to name it"
     fail=0
     while IFS= read -r f; do
       check_one "$f" || fail=1
     done <"$work/files.txt"
-    if [ "$(cat "$work/laws.rc")" != 0 ]; then fail=1; fi
+    if [ "$(cat "$work/laws.rc" 2>/dev/null || echo missing)" != 0 ]; then fail=1; fi
   fi
   echo "check: $(( $(date +%s) - start ))s"
 fi
@@ -130,9 +134,9 @@ if [ "$mode" = proof ]; then
   bend PROOF.bend || fail=1
   echo "proof: $(( $(date +%s) - pstart ))s"
 elif [ "$mode" = all ]; then
-  wait $proof_pid
+  wait $proof_pid || true
   cat "$work/proof.out"
-  if [ "$(cat "$work/proof.rc")" != 0 ]; then fail=1; fi
+  if [ "$(cat "$work/proof.rc" 2>/dev/null || echo missing)" != 0 ]; then fail=1; fi
   echo "proof: overlapped with check, total $(( $(date +%s) - start ))s"
 fi
 
