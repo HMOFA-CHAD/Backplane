@@ -3694,6 +3694,12 @@ law bots_moving_cat_follows_clock:
   for +c: Nat
   {BV.Bv.warm.at("work", c) == c : Nat}
 
+# input holds the cats still for a whole Bv.calm, so their frames never
+# compete with keys or the wheel
+law bots_cats_calm_on_input:
+  for +ms: Nat
+  {BV.Bv.calm.after(ms, ms) == BV.Bv.calm() : Nat}
+
 # Threads elsewhere (far.bend)
 # ----------------------------
 # A thing on a linked machine is named by the link and its own id there,

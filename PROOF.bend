@@ -6008,6 +6008,10 @@ def Laws.bots_away_cat_posed_once(c):
 def Laws.bots_moving_cat_follows_clock(c):
   {==}
 
+def Laws.bots_cats_calm_on_input(ms):
+  %Equal.sym(Nat, Nat.sub(ms, ms), 0n, sub_self(ms)) : {Nat.sub(1000n, _) == 1000n : Nat}
+  {==}
+
 def Laws.far_id_parts():
   {==}
 

@@ -282,17 +282,19 @@ def Shell.blink.k(go: Bool, +n: N.Nui, +q: Chan(ShellMsg), +wait: Nat, +ms: Nat)
 def Cats.gap() -> Nat:
   33n
 
-def Shell.cats.k(go: Bool, +n: N.Nui, +q: Chan(ShellMsg), +ms: Nat) -> IO(N.Nui):
+# while input holds the cats still (BV.Bv.calm), the next asks for the
+# frame after it
+def Shell.cats.k(go: Bool, +n: N.Nui, +q: Chan(ShellMsg), +wait: Nat, +ms: Nat) -> IO(N.Nui):
   match go:
     case True{}:
       do IO<N.Nui>:
-        IO.spawn(Unit, Timer.blink(q, Cats.gap()))
-        return N.Nui.with_ui(n, U.Ui.info_set(N.Nui.ui(n), "cat.due", Nat.show(Nat.add(ms, Cats.gap()))))
+        IO.spawn(Unit, Timer.blink(q, wait))
+        return N.Nui.with_ui(n, U.Ui.info_set(N.Nui.ui(n), "cat.due", Nat.show(Nat.add(ms, wait))))
     case False{}:
       IO.pure(N.Nui, n)
 
 def Shell.cats(+n: N.Nui, +q: Chan(ShellMsg), +ms: Nat) -> IO(N.Nui):
-  Shell.cats.k(Bool.and(BV.Bv.moving(n, ms), Nat.is_le(Maybe.default(&2, Nat, Nat.read(U.Ui.info(N.Nui.ui(n), "cat.due")), 0n), ms)), n, q, ms)
+  Shell.cats.k(Bool.and(BV.Bv.awake(n, ms), Nat.is_le(Maybe.default(&2, Nat, Nat.read(U.Ui.info(N.Nui.ui(n), "cat.due")), 0n), ms)), n, q, Nat.add(BV.Bv.calm.left(n, ms), Cats.gap()), ms)
 
 def Shell.blink(+n: N.Nui, +q: Chan(ShellMsg), +ms: Nat) -> IO(N.Nui):
   Shell.blink.k(Bool.and(Nat.is_gt(N.Blink.wait(n, ms), 0n), Nat.is_le(Maybe.default(&2, Nat, Nat.read(U.Ui.info(N.Nui.ui(n), "caret.due")), 0n), ms)),

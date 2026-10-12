@@ -183,10 +183,26 @@ def Bv.idle() -> Nat:
 def Bv.present(+n: S.Nui, +ms: Nat) -> Bool:
   Nat.is_le(Nat.sub(ms, Bv.info.nat(n, "act.at")), Bv.idle())
 
-# frames for the cats: while a shown cat moves, the window has the keys
-# and someone is there
-def Bv.moving(+n: S.Nui, +ms: Nat) -> Bool:
+# a shown cat moves, the window has the keys and someone is there
+def Bv.awake(+n: S.Nui, +ms: Nat) -> Bool:
   Bool.and(Bool.and(Bool.and(S.Nui.has_focus(n), Bool.not(S.Lbx.on(n))), Bv.present(n, ms)), BU.BU.moving(S.Nui.ui(n)))
+
+# the cats hold still while the person types, scrolls or points: a cat
+# frame is a whole frame, and 30 of them a second took the cores keys and
+# the sidebar's wheel wait for
+def Bv.calm() -> Nat:
+  1000n
+
+# how long until the cats move again, input last at `at` (0: they may now)
+def Bv.calm.after(+ms: Nat, +at: Nat) -> Nat:
+  Nat.sub(Bv.calm(), Nat.sub(ms, at))
+
+def Bv.calm.left(+n: S.Nui, +ms: Nat) -> Nat:
+  Bv.calm.after(ms, Bv.info.nat(n, "act.at"))
+
+# frames for the cats: awake, and no input for Bv.calm
+def Bv.moving(+n: S.Nui, +ms: Nat) -> Bool:
+  Bool.and(Bv.awake(n, ms), Nat.is_eq(Bv.calm.left(n, ms), 0n))
 
 # the cats' clock ("cat.clock"): a frame at or past the next cat frame
 # ("cat.due", main.bend's Shell.cats) while a cat moves sets it to its
