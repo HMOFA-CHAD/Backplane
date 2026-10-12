@@ -38,6 +38,8 @@ import ./src/gfx/raster.bend as R
 import ./src/gfx/draw.bend as D
 import ./src/app/layout.bend as L
 import ./src/core/eq.bend as Q
+import ./src/core/uber.bend as UBR
+import ./src/core/plane.bend as PLN
 import ./src/core/svg.bend as SVG
 import ./src/core/icons.bend as ICO
 import ./src/core/tools.bend as TOOL
@@ -6392,3 +6394,45 @@ law slash_others_own_only:
 
 law slash_none_unknown:
   {SL.Slash.names(SL.Slash.cmds(True{}, "zz")) == [] : List<&2, String>}
+# --- uberbot: uber_*, plane_* (thread t1791834693) ---
+
+# a bot on another machine is never made the uberbot, and nothing is logged
+law uber_promote_far_refused:
+  for +st: M.State
+  {UBR.Promo.log(UBR.Uber.promote(st, "p1~b9", "u1-a", 5n)) == Nil{} : List<&2, M.Change>}
+
+# a demotion leaves no uberbot
+law uber_demote_clears:
+  {UBR.Uber.bot(M.State.replay([M.UberSet{"b1", "u1-a", 5n}, M.UberSet{"", "", 6n}], UBR.Uber.demo())) == "" : String}
+
+# a promotion of a live bot of this machine makes it the uberbot
+law uber_promote_sets:
+  {UBR.Uber.bot(M.State.replay([M.UberSet{"b2", "u1-a", 5n}], UBR.Uber.demo())) == "b2" : String}
+
+# the uberbot already promoted is not promoted again
+law uber_promote_again_nothing:
+  {UBR.Promo.log(UBR.Uber.promote(M.State.replay([M.UberSet{"b2", "u1-a", 5n}], UBR.Uber.demo()), "b2", "u2-b", 6n)) == Nil{} : List<&2, M.Change>}
+
+# each thread and bot row of the status plane is there once
+law plane_each_once:
+  for +u: U.Ui
+  for +now: Nat
+  {ON.Once.distinct(ON.Once.keys(PLN.PRow, PLN.Plane.all.keyed(u, now))) == True{} : Bool}
+
+# and in the sections, no thread in two of them
+law plane_sections_once:
+  {ON.Once.distinct(PLN.Plane.threads.ids(PLN.Plane.of(PLN.Plane.demo(), 200000n))) == True{} : Bool}
+
+# what waits on the person comes in urgency order
+law plane_need_ranked:
+  {PLN.Plane.ranked(PLN.Plane.need(PLN.Plane.of(PLN.Plane.demo(), 200000n))) == True{} : Bool}
+
+# a click on a thread's row selects that thread
+law plane_hit_opens:
+  for +t: M.Thread
+  for +at: Nat
+  for +pt: String
+  for +u: U.Ui
+  for +ix: U.SIx
+  for +st: M.State
+  {PLN.Plane.hit(PLN.Plane.thread.t(t, at, pt, u, ix, st)) == "select " ++ M.Thread.id(t) : String}

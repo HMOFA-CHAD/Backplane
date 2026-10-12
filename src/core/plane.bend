@@ -412,3 +412,41 @@ def Plane.machine.of(rs: List<&2, PRow>) -> String:
       m
     case _:
       ""
+
+# need, run and the rest are each in urgency order: no row waits on the
+# person less than the one after it (law plane_need_ranked)
+def Plane.ranked.head(a: PRow, t: List<&2, PRow>) -> Bool:
+  match t:
+    case Nil{}:
+      True{}
+    case +b <> _:
+      Nat.is_ge(Plane.rank(PRow.state(a)), Plane.rank(PRow.state(b)))
+
+def Plane.ranked(rs: List<&2, PRow>) -> Bool:
+  match rs:
+    case Nil{}:
+      True{}
+    case +a <> +t:
+      Bool.and(Plane.ranked.head(a, t), Plane.ranked(t))
+
+# what a click on a thread's row sends, "action value" (law plane_hit_opens)
+def Plane.hit(r: PRow) -> String:
+  match r:
+    case PRow{_, _, +a, +v, _, _, _, _, _, _}:
+      a ++ " " ++ v
+
+# every thread id in need, run and idle
+def Plane.threads.ids(+p: Plane) -> List<&2, String>:
+  List.append(&2, String, Plane.ids(Plane.need(p)), List.append(&2, String, Plane.ids(Plane.run(p)), Plane.ids(Plane.idle(p))))
+
+# a client for the laws: threads in every state, a bot at work, a room, a routine
+def Plane.demo() -> U.Ui:
+  U.Ui.far.st(U.Ui.init(200000n), M.State.replay([M.ProjectCreated{"p1", "One", "/a", 1n},
+    M.ThreadCreated{"t1", "p1", "A", M.Local{}, "", "", "claude", "", 199000n}, M.TurnChanged{"t1", M.Running{}, 199001n}, M.AskOpened{"a1", "t1", "approval", "Bash", "ls", "", 199002n},
+    M.ThreadCreated{"t2", "p1", "B", M.Local{}, "", "", "claude", "", 199100n}, M.AskOpened{"a2", "t2", "input", "", "?", "", 199101n},
+    M.ThreadCreated{"t3", "p1", "C", M.Local{}, "", "", "claude", "", 199200n}, M.TurnChanged{"t3", M.Failed{}, 199201n},
+    M.ThreadCreated{"t4", "p1", "D", M.Local{}, "", "", "claude", "", 199300n}, M.TurnChanged{"t4", M.Running{}, 199301n},
+    M.ThreadCreated{"t6", "p1", "F", M.Local{}, "", "", "claude", "", 199500n}, M.TurnChanged{"t6", M.Completed{}, 199501n},
+    M.ThreadCreated{"bt1", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Kit", "bt1", 7n, "", 100n}, M.TurnChanged{"bt1", M.Running{}, 199900n},
+    M.RoomSet{"r1", "ops", "b1", 150n}, M.RoomPosted{"m1", "r1", "b1", "hello", 0n, 199800n},
+    M.RoutineSet{"rt1", "b1", "Digest", "0 9 * * *", "sum up", True{}, 160n}], M.State.empty()))

@@ -67,3 +67,9 @@ def Uber.promote.k(empty: Bool, live: Bool, +bot: String, +raw: String, +have: S
 
 def Uber.promote(+st: M.State, +bot: String, +uid: String, +now: Nat) -> Promo:
   Uber.promote.k(String.is_empty(bot), Uber.live(st, bot), bot, M.Setting.get(st, "uber.bot", ""), M.Setting.get(st, "uber.uid", ""), uid, now)
+
+# a state for the laws: two bots here and one elsewhere
+def Uber.demo() -> M.State:
+  M.State.replay([M.ThreadCreated{"t1", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Kit", "t1", 7n, "", 100n},
+    M.ThreadCreated{"t2", "", "Pip", M.Local{}, "", "", "claude", "", 101n}, M.BotSet{"b2", "Pip", "t2", 8n, "", 101n},
+    M.ThreadCreated{"t3", "", "Far", M.Local{}, "", "", "claude", "", 102n}, M.BotSet{"p1~b9", "Far", "t3", 9n, "", 102n}], M.State.empty())

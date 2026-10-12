@@ -58,6 +58,7 @@ import ./src/core/google.bend as GO
 import ./src/core/cat.bend as CAT
 import ./src/core/voice.bend as VO
 import ./src/core/once.bend as ON
+import ./src/core/plane.bend as PLN
 
 # Lemmas
 # ------
@@ -8012,4 +8013,28 @@ def Laws.slash_others_own_only():
   {==}
 
 def Laws.slash_none_unknown():
+# --- uberbot: uber_*, plane_* (thread t1791834693) ---
+
+def Laws.uber_promote_far_refused(st):
+  {==}
+
+def Laws.uber_demote_clears():
+  {==}
+
+def Laws.uber_promote_sets():
+  {==}
+
+def Laws.uber_promote_again_nothing():
+  {==}
+
+def Laws.plane_each_once(u, now):
+  Laws.once_distinct(PLN.PRow, PLN.Plane.all.keyed(u, now))
+
+def Laws.plane_sections_once():
+  {==}
+
+def Laws.plane_need_ranked():
+  {==}
+
+def Laws.plane_hit_opens(t, at, pt, u, ix, st):
   {==}
