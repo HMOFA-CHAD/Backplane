@@ -3,6 +3,7 @@ import ./check.bend as C
 import ../src/core/model.bend as M
 import ../src/core/client.bend as U
 import ../src/core/far.bend as FR
+import ../src/core/botui.bend as BU
 import ../src/core/plane.bend as PL
 
 # The status plane: its sections, their order, the counts line and the
@@ -45,6 +46,13 @@ def machines(rs: List<&2, PL.PMach>) -> String:
     case Nil{}:
       ""
 
+def row(m: Maybe<&2, BU.BRow>) -> String:
+  match m:
+    case Some{BU.BRow{_, n, _, _, _, _, _, _, _, _}}:
+      n
+    case None{}:
+      "none"
+
 def ids(rs: List<&2, PL.PRow>) -> String:
   match rs:
     case Nil{}:
@@ -81,6 +89,8 @@ def main() -> IO(Unit):
     C.Check.str("with its machine", PL.Plane.machine.of(PL.Plane.run(PL.Plane.of(far(False{}), now()))), "desk")
     C.Check.str("away it asks for nothing", ids(PL.Plane.idle(PL.Plane.of(far(True{}), now()))), "L~t1,t6,")
     C.Check.str("machines", machines(PL.Plane.machines(PL.Plane.of(ui([M.PeerSet{"L", "desk", "http://desk:3787", False{}, 5n}]), now()))), "This machine:here,desk:syncing,")
+    C.Check.str("the uberbot is not among the bots", ids(PL.Plane.bots(PL.Plane.of(ui([M.UberSet{"b2", "u1-a", 5n}]), now()))), "b1,")
+    C.Check.str("it has its own row", row(BU.BU.uber(ui([M.UberSet{"b2", "u1-a", 5n}]))), "Pip")
     C.Check.str("a thread opens by select", PL.Plane.act.of(PL.Plane.need(p)), "select t1")
     C.Check.str("the key changes with the minute", Bool.pick(String, String.eq(PL.Plane.key(ui(Nil{}), now()), PL.Plane.key(ui(Nil{}), 200090n)), "same", "differs"), "differs")
     C.Check.str("and with the log", Bool.pick(String, String.eq(PL.Plane.key(ui(Nil{}), now()), PL.Plane.key(ui([M.SettingSet{"x", "y", 3n}]), now())), "same", "differs"), "differs")
