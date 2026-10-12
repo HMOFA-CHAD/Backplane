@@ -1543,22 +1543,35 @@ def View.hist.walk(b: U.HBar, +u: U.Ui) -> D.Node:
 def View.hist.key(+layer: U32, +label: String) -> D.Node:
   D.El{"span", "", [D.At{"class", "key"}], [D.El{"i", "", [D.At{"style", "background:" ++ View.hex(LO.Look.mark.color(False{}, layer))}], Nil{}}, D.Txt{label}]}
 
-def View.hist.cmp(b: U.HBar) -> D.Node:
+# Old / Diff / New (client.bend's Rv.showing), the legend only under Diff
+def View.hist.as(+showing: String, +as: String, +label: String) -> D.Node:
+  D.Dom.button(Bool.pick(String, String.eq(showing, as), "hbtn on", "hbtn"), "rv-as", as, "Show the " ++ label ++ " version", label)
+
+def View.hist.legend(on: Bool) -> List<&2, D.Node>:
+  match on:
+    case True{}:
+      [View.hist.key(26, "Removed"), View.hist.key(27, "Changed"), View.hist.key(28, "Added")]
+    case False{}:
+      Nil{}
+
+def View.hist.cmp(b: U.HBar, +u: U.Ui) -> D.Node:
   match b:
     case U.HBar{_, _, _, _, _, _, _, _, _, _, +a, +bb, +menu}:
+      +showing = {U.Rv.showing(u) : String}
       D.El{"div", "", [D.At{"class", "hist cmp"}], [
         D.El{"div", "", [D.At{"class", "hist-row"}], [
           D.Dom.button(Bool.pick(String, String.eq(menu, "a"), "hbtn side on", "hbtn side"), "cmp-side", "a", "Pick the old version", "Old: " ++ a),
           D.Dom.button(Bool.pick(String, String.eq(menu, "b"), "hbtn side on", "hbtn side"), "cmp-side", "b", "Pick the new version", "New: " ++ bb),
           D.Dom.span("grow", ""), D.Dom.button("hbtn", "cmp-close", "", "Back to the file as it is now", "Close")]},
-        D.El{"div", "", [D.At{"class", "hist-legend"}], [View.hist.key(26, "Removed"), View.hist.key(27, "Changed"), View.hist.key(28, "Added")]}]}
+        D.El{"div", "", [D.At{"class", "hist-legend"}], List.append(&2, D.Node, View.hist.legend(String.eq(showing, "diff")),
+          [D.Dom.span("grow", ""), View.hist.as(showing, "old", "Old"), View.hist.as(showing, "diff", "Diff"), View.hist.as(showing, "new", "New")])}]}
 
 def View.hist.k(on: Bool, cmp: Bool, b: U.HBar, +u: U.Ui) -> List<&2, D.Node>:
   match on cmp:
     case False{} _:
       Nil{}
     case True{} True{}:
-      [View.hist.cmp(b)]
+      [View.hist.cmp(b, u)]
     case True{} False{}:
       [View.hist.walk(b, u)]
 
@@ -1573,11 +1586,16 @@ def View.hist.rows(rs: List<&2, U.HRow>) -> List<&2, D.Node>:
     case U.HRow{+l, +sub, +v} <> t:
       D.El{"button", "", [D.At{"class", "row"}, D.At{"data-value", v}, D.On{"click", "cmp-pick"}], [D.Dom.span("name", l), D.Dom.span("sub", sub)]} <> View.hist.rows(t)
 
+# a ref typed in: Enter sends rv-ref "<side>\t<text>" (host.js's data-pre)
+def View.hist.ref(+side: String) -> D.Node:
+  D.El{"input", "rvref", [D.At{"id", "rvref"}, D.At{"class", "field"}, D.At{"placeholder", "Commit, branch or tag"}, D.At{"autocomplete", "off"}, D.At{"spellcheck", "false"},
+    D.At{"data-enter", "rv-ref"}, D.At{"data-pre", Bool.pick(String, String.eq(side, "b"), "b\t", "a\t")}], Nil{}}
+
 def View.hist.menu.k(open: Bool, +u: U.Ui, +side: String) -> List<&2, D.Node>:
   match open:
     case True{}:
       [D.El{"div", "", [D.At{"class", "hist-scrim"}, D.At{"data-value", ""}, D.On{"click", "cmp-shut"}], Nil{}},
-       D.El{"div", "", [D.At{"class", "hist-menu"}], D.Dom.span("head", Bool.pick(String, String.eq(side, "b"), "Compare with (new)", "Compare from (old)")) <> View.hist.rows(U.Hs.menu(u, side))}]
+       D.El{"div", "", [D.At{"class", "hist-menu"}], D.Dom.span("head", Bool.pick(String, String.eq(side, "b"), "Compare with (new)", "Compare from (old)")) <> (View.hist.ref(side) <> View.hist.rows(U.Hs.menu(u, side)))}]
     case False{}:
       Nil{}
 

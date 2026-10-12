@@ -70,8 +70,21 @@ def visit(+u: U.Ui, +url: String) -> String:
 def wanted(+u: U.Ui, +hash: String) -> U.Ui:
   Bool.pick(U.Ui, String.starts_with(hash, "#bot="), U.Want.bot(u, String.drop(hash, 5n)), u)
 
-def act(u: U.Ui, action: String, value: String) -> U.Act:
-  U.Solid.sync(U.Ui.act(u, action, value))
+def Rv.focus.k(a: U.Act, cs: List<&2, U.Cmd>) -> U.Act:
+  match a:
+    case U.Act{+u, +ds}:
+      U.Act{u, List.append(&2, U.Cmd, cs, ds)}
+
+# a layer focus that moved: a comparison's marks follow it (core's rv-bits)
+def Rv.focus(on: Bool, a: U.Act) -> U.Act:
+  match on a:
+    case True{} U.Act{+u, +cs}:
+      Rv.focus.k(U.Ui.act(u, "rv-bits", U32.show(U.Rv.bits(U.Lfocus.kind(u), U.Lfocus.of(u)))), cs)
+    case False{} +x:
+      x
+
+def act(u: U.Ui, +action: String, value: String) -> U.Act:
+  Rv.focus(Bool.or(String.eq(action, "view-layer-pick"), String.eq(action, "view-layer-mode")), U.Solid.sync(U.Ui.act(u, action, value)))
 
 def view(u: U.Ui) -> D.Node:
   V.View.page(u)
