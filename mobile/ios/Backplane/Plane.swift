@@ -45,7 +45,7 @@ private func planeStatus(_ s: String) -> String {
     }
 }
 
-private func tap(_ model: AppModel, _ r: PlaneRow) {
+@MainActor private func tap(_ model: AppModel, _ r: PlaneRow) {
     if r.kind == "thread" { model.navigate([r.value]) } else { model.act(r.act, r.value) }
 }
 
@@ -73,6 +73,7 @@ struct UberCardRow: View {
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
             }
         }
+        .buttonStyle(.plain)
         .listRowBackground(Color.accentColor.opacity(card.sel ? 0.22 : 0.10))
         .accessibilityLabel("\(card.name), \(card.counts ?? "")")
     }
@@ -99,6 +100,7 @@ private struct PlaneThread: View {
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
             }
         }
+        .buttonStyle(.plain)
         .opacity(row.away ? 0.5 : 1)
     }
 }
@@ -107,11 +109,16 @@ private struct PlaneThread: View {
 private struct PlaneBot: View {
     let model: AppModel
     let row: PlaneRow
+    // in the Bots section its state is a mood; among the threads, a phase
+    let mood: Bool
 
     var body: some View {
         Button { tap(model, row) } label: {
             HStack(spacing: 10) {
-                MoodDot(mood: row.state).frame(width: 18)
+                Group {
+                    if mood { MoodDot(mood: row.state) } else { StatusDot(state: "", status: planeStatus(row.state)) }
+                }
+                .frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(row.title).foregroundStyle(.primary).lineLimit(1)
                     let line = [row.sub, row.machine ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
@@ -122,6 +129,7 @@ private struct PlaneBot: View {
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
             }
         }
+        .buttonStyle(.plain)
         .opacity(row.away ? 0.5 : 1)
     }
 }
@@ -140,6 +148,7 @@ private struct PlaneRoom: View {
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
             }
         }
+        .buttonStyle(.plain)
     }
 }
 
@@ -164,6 +173,7 @@ private struct PlaneRoutine: View {
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
             }
         }
+        .buttonStyle(.plain)
         .opacity(row.away ? 0.5 : 1)
     }
 }
@@ -171,10 +181,11 @@ private struct PlaneRoutine: View {
 private struct PlaneAny: View {
     let model: AppModel
     let row: PlaneRow
+    var mood = false
 
     var body: some View {
         switch row.kind {
-        case "bot": PlaneBot(model: model, row: row)
+        case "bot": PlaneBot(model: model, row: row, mood: mood)
         case "room": PlaneRoom(model: model, row: row)
         case "routine": PlaneRoutine(model: model, row: row)
         default: PlaneThread(model: model, row: row)
@@ -210,9 +221,9 @@ struct PlaneSections: View {
     let full: Bool
     @State private var idleOpen = true
 
-    private func section(_ name: String, _ rows: [PlaneRow]) -> some View {
+    private func section(_ name: String, _ rows: [PlaneRow], mood: Bool = false) -> some View {
         Section {
-            ForEach(rows) { PlaneAny(model: model, row: $0) }
+            ForEach(rows) { PlaneAny(model: model, row: $0, mood: mood) }
         } header: {
             PlaneLabel(text: name, count: rows.count)
         }
@@ -236,7 +247,7 @@ struct PlaneSections: View {
                 }
             }
         }
-        if !plane.bots.isEmpty { section("Bots", plane.bots) }
+        if !plane.bots.isEmpty { section("Bots", plane.bots, mood: true) }
         if !plane.rooms.isEmpty { section("Rooms", plane.rooms) }
         if !plane.routines.isEmpty { section("Routines", plane.routines) }
         if full && plane.need.isEmpty && plane.run.isEmpty && plane.idleN == 0 && plane.bots.isEmpty && plane.rooms.isEmpty && plane.routines.isEmpty {

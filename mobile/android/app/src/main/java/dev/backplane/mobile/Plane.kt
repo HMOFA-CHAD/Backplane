@@ -130,7 +130,7 @@ private fun PlaneLabel(text: String, count: Int?, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun PlaneItem(m: AppModel, r: PlaneRow) {
+private fun PlaneItem(m: AppModel, r: PlaneRow, mood: Boolean = false) {
     val go: () -> Unit = { m.act(r.act, r.value) }
     when (r.kind) {
         "room" -> ListItem(
@@ -150,7 +150,13 @@ private fun PlaneItem(m: AppModel, r: PlaneRow) {
             },
             modifier = Modifier.alpha(if (r.away) 0.5f else 1f).clickable(onClick = go),
         )
-        "bot" -> ListItem(
+        "bot" -> if (!mood) ListItem(
+            headlineContent = { Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            supportingContent = { if (line(r).isNotEmpty()) Text(line(r), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingContent = { StatusDot("", planeStatus(r.state)) },
+            trailingContent = { Text(r.ago, style = MaterialTheme.typography.labelMedium) },
+            modifier = Modifier.alpha(if (r.away) 0.5f else 1f).clickable(onClick = go),
+        ) else ListItem(
             headlineContent = { Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             supportingContent = { if (line(r).isNotEmpty()) Text(line(r), maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingContent = { Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { MoodDot(r.state) } },
@@ -167,10 +173,10 @@ private fun PlaneItem(m: AppModel, r: PlaneRow) {
     }
 }
 
-private fun LazyListScope.planeSection(m: AppModel, key: String, name: String, rows: List<PlaneRow>) {
+private fun LazyListScope.planeSection(m: AppModel, key: String, name: String, rows: List<PlaneRow>, mood: Boolean = false) {
     if (rows.isEmpty()) return
     item(key = "pl:$key") { PlaneLabel(name, rows.size) }
-    items(rows, key = { "pl:$key:${it.kind}:${it.id}" }) { PlaneItem(m, it) }
+    items(rows, key = { "pl:$key:${it.kind}:${it.id}" }) { PlaneItem(m, it, mood) }
 }
 
 // the plane as list items. On the home list (full false) it is what waits
@@ -195,7 +201,7 @@ fun LazyListScope.planeSections(m: AppModel, p: PlaneModel, full: Boolean, idleO
             }
         }
     }
-    planeSection(m, "bots", "Bots", p.bots)
+    planeSection(m, "bots", "Bots", p.bots, true)
     planeSection(m, "rooms", "Rooms", p.rooms)
     planeSection(m, "routines", "Routines", p.routines)
     if (full && p.need.isEmpty() && p.run.isEmpty() && p.idleN == 0 && p.bots.isEmpty() && p.rooms.isEmpty() && p.routines.isEmpty()) {
