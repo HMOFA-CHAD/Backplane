@@ -6416,8 +6416,9 @@ law uber_promote_again_nothing:
 # each thread and bot row of the status plane is there once
 law plane_each_once:
   for +u: U.Ui
+  for +ix: U.SIx
   for +now: Nat
-  {ON.Once.distinct(ON.Once.keys(PLN.PRow, PLN.Plane.all.keyed(u, now))) == True{} : Bool}
+  {ON.Once.distinct(ON.Once.keys(PLN.PRow, PLN.Plane.all.keyed(u, ix, now))) == True{} : Bool}
 
 # and in the sections, no thread in two of them
 law plane_sections_once:

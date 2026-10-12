@@ -243,13 +243,13 @@ def Plane.bkys(rs: List<&2, PRow>) -> List<&2, O.Ky<PRow>>:
       Plane.bky(r) <> Plane.bkys(t)
 
 # the thread rows and the bots' own, before each is kept once
-def Plane.all.src(+u: U.Ui, +now: Nat) -> List<&2, O.Ky<PRow>>:
-  List.append(&2, O.Ky<PRow>, Plane.kys(Plane.threads(U.Active.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now, ""), u, U.Side.ix(U.Ui.state(u)), U.Ui.state(u))),
-    Plane.bkys(Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, U.Side.ix(U.Ui.state(u)), U.Ui.state(u))))
+def Plane.all.src(+u: U.Ui, +ix: U.SIx, +now: Nat) -> List<&2, O.Ky<PRow>>:
+  List.append(&2, O.Ky<PRow>, Plane.kys(Plane.threads(U.Active.rows.ix(U.Ui.state(u), ix, now, ""), u, ix, U.Ui.state(u))),
+    Plane.bkys(Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, ix, U.Ui.state(u))))
 
 # ... and kept once (law plane_each_once)
-def Plane.all.keyed(+u: U.Ui, +now: Nat) -> List<&2, O.Ky<PRow>>:
-  O.Once.of(PRow, Plane.all.src(u, now))
+def Plane.all.keyed(+u: U.Ui, +ix: U.SIx, +now: Nat) -> List<&2, O.Ky<PRow>>:
+  O.Once.of(PRow, Plane.all.src(u, ix, now))
 
 # Bots
 # ----
@@ -357,19 +357,22 @@ def Plane.machines.of(+u: U.Ui) -> List<&2, PMach>:
 def Plane.sort(rs: List<&2, PRow>) -> List<&2, PRow>:
   List.sort(~PRow, ~Plane.before, rs)
 
-def Plane.of.i(+idle: List<&2, PRow>, +all: List<&2, PRow>, +u: U.Ui, +now: Nat) -> Plane:
+def Plane.of.i(+idle: List<&2, PRow>, +all: List<&2, PRow>, +u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
   Plane{Plane.sort(Plane.part(all, 0n)), List.sort(~PRow, ~Plane.newer, Plane.part(all, 1n)),
     Plane.bot.rows(BU.BU.rows(u), U.Ui.state(u)),
     List.sort(~PRow, ~Plane.newer, Plane.rooms.go(BT.World.rooms(M.State.bots(U.Ui.state(u))), u)),
-    List.sort(~PRow, ~Plane.due.before, Plane.routines.go(BT.World.routines.all(M.State.bots(U.Ui.state(u))), u, U.Side.ix(U.Ui.state(u)), now)),
+    List.sort(~PRow, ~Plane.due.before, Plane.routines.go(BT.World.routines.all(M.State.bots(U.Ui.state(u))), u, ix, now)),
     List.take(&2, PRow, idle, Plane.idle.max()), List.length(&2, PRow, idle), Plane.machines.of(u)}
 
-def Plane.of.k(+all: List<&2, PRow>, +u: U.Ui, +now: Nat) -> Plane:
-  Plane.of.i(Plane.sort(Plane.recent(Plane.part(all, 2n), now)), all, u, now)
+def Plane.of.k(+all: List<&2, PRow>, +u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
+  Plane.of.i(Plane.sort(Plane.recent(Plane.part(all, 2n), now)), all, u, ix, now)
 
-# the status plane as of `now`
+def Plane.of.x(+u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
+  Plane.of.k(O.Once.vals(PRow, Plane.all.keyed(u, ix, now)), u, ix, now)
+
+# the status plane as of `now` (the sidebar's index built once)
 def Plane.of(+u: U.Ui, +now: Nat) -> Plane:
-  Plane.of.k(O.Once.vals(PRow, Plane.all.keyed(u, now)), u, now)
+  Plane.of.x(u, U.Side.ix(U.Ui.state(u)), now)
 
 # Cheap to compute, and different whenever the plane can be: the log's
 # sequence, each machine's head and whether it answers, and the minute

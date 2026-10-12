@@ -5215,9 +5215,10 @@ def Bots.select(+u: Ui, +id: String) -> Act:
 
 # Rooms seen: the setting room.seen.<room> is the time (seconds) the person
 # last opened it; its unread posts are those after it that they did not
-# write. Opening a room with some unread says so; one with none sends nothing.
+# write (a room never opened: those of the last day, not its whole past).
+# Opening a room with some unread says so; one with none sends nothing.
 def Rooms.seen(+u: Ui, +room: String) -> Nat:
-  Maybe.default(&2, Nat, Nat.read(M.Setting.get(Side.st(u), "room.seen." ++ room, "")), 0n)
+  Maybe.default(&2, Nat, Nat.read(M.Setting.get(Side.st(u), "room.seen." ++ room, "")), Nat.sub(Side.now(u), 86400n))
 
 def Rooms.unread(+u: Ui, +room: String) -> Nat:
   BT.World.unread(M.State.bots(Side.st(u)), room, Rooms.seen(u, room))
