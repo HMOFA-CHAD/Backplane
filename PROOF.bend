@@ -7991,3 +7991,19 @@ def Laws.lyr_kind_base():
 
 def Laws.lyr_masks_only():
   {==}
+
+# Design review: comparing
+def Laws.rv_diff_on_all(a, b):
+  {==}
+
+def Laws.rv_mark_on_all(olds, news):
+  {==}
+
+def Laws.rv_sheet_plain():
+  {==}
+
+def Laws.rv_sheet_compared():
+  {==}
+
+def Laws.rv_bits_plain(kind):
+  {==}

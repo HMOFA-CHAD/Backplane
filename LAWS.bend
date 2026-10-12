@@ -6369,3 +6369,31 @@ law lyr_kind_base:
 # not kept and never the active one
 law lyr_masks_only:
   {LY.Masks.off(LY.Lyr.masks(0, 4096, LY.Focus{12, 2})) == 37736447 : U32}
+
+# Design review: comparing (core/hist.bend, client.bend's Rv.*)
+# ---------------------------------------------------------------
+
+# a comparison on no layers in particular is the plain comparison, and
+# marks every layer
+law rv_diff_on_all:
+  for a: String
+  for b: String
+  {HS.Hist.diff.on(a, b, 0) == HS.Hist.diff(a, b) : String}
+
+law rv_mark_on_all:
+  for olds: List<&2, B.Item>
+  for news: List<&2, B.Item>
+  {HS.Hist.mark.on(0, olds, news) == HS.Hist.mark(olds, news) : List<&2, B.Item>}
+
+# a sheet picked outside a comparison is the sheet; inside one, that sheet
+# compared in both versions
+law rv_sheet_plain:
+  {U.Rv.sheet("/t/root.kicad_sch", "/t/kid.kicad_sch") == "/t/kid.kicad_sch" : String}
+
+law rv_sheet_compared:
+  {U.Rv.sheet(HS.Hist.diff(HS.Hist.git("/g", "c", "/t", "root.kicad_sch"), "/t/root.kicad_sch"), "/t/kid.kicad_sch") == HS.Hist.diff(HS.Hist.git("/g", "c", "/t", "kid.kicad_sch"), "/t/kid.kicad_sch") : String}
+
+# with no layer standing out, a comparison is about every layer
+law rv_bits_plain:
+  for kind: U32
+  {U.Rv.bits(kind, LY.Lyr.plain()) == 0 : U32}
