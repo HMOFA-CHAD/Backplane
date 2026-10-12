@@ -236,3 +236,25 @@ def Ub.b.lease(+holder: String, +term: Nat) -> String:
 def Ub.b.bind(+machine: String, +bot: String, +thread: String, +name: String) -> String:
   J.Json.show(J.Json.obj([J.KV{"k", J.Str{"bind"}}, J.KV{"machine", J.Str{machine}}, J.KV{"bot", J.Str{bot}}, J.KV{"thread", J.Str{thread}},
     J.KV{"name", J.Str{name}}]))
+
+# the origins list (space separated) with one more, kept sorted so the same
+# ops in any order leave the same list
+def Ub.le(a: String, b: String) -> Bool:
+  Cmp.is_le(Ub.stamp.cmp(a, b))
+
+def Ub.origins.keep(hit: Bool, x: String, rest: List<&2, String>) -> List<&2, String>:
+  match hit:
+    case True{}:
+      x <> rest
+    case False{}:
+      rest
+
+def Ub.origins.nonempty(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      Ub.origins.keep(Bool.not(String.is_empty(x)), x, Ub.origins.nonempty(t))
+
+def Ub.origins.add(+cur: String, +o: String) -> String:
+  String.join(List.sort(~String, ~Ub.le, o <> Ub.origins.nonempty(String.split(cur, ' '))), " ")

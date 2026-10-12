@@ -1502,9 +1502,7 @@ def State.uber.body(+s: State, +uid: String, +origin: String, +stamp: String, +o
   State.uber.body.k(String.eq(UO.Ub.op.kind(op), "fired"), s, uid, origin, stamp, op, UO.Ub.op.key(op))
 
 def State.uber.origins(+s: State, +uid: String, +origin: String, +n: Nat) -> State:
-  Bool.pick(State, Nat.is_eq(n, 1n),
-    State.setting(s, UO.Ub.key.origins(uid), Bool.pick(String, String.is_empty(Setting.get(s, UO.Ub.key.origins(uid), "")), origin,
-      Setting.get(s, UO.Ub.key.origins(uid), "") ++ " " ++ origin)), s)
+  Bool.pick(State, Nat.is_eq(n, 1n), State.setting(s, UO.Ub.key.origins(uid), UO.Ub.origins.add(Setting.get(s, UO.Ub.key.origins(uid), ""), origin)), s)
 
 def State.uber.hlc(+s: State, +uid: String, +stamp: String) -> State:
   Bool.pick(State, UO.Ub.stamp.gt(stamp, Setting.get(s, UO.Ub.key.hlc(uid), "")), State.setting(s, UO.Ub.key.hlc(uid), stamp), s)
