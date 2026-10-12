@@ -550,6 +550,36 @@ def Ub.chat.far(+st: M.State, +holder: String) -> String:
 def Ub.chat(+st: M.State) -> String:
   Ub.chat.k(Ub.holder.me(st), BT.Bot.thread(BT.World.bot(M.State.bots(st), UB.Uber.bot(st))), Ub.chat.far(st, Ub.holder(st)))
 
+# the uberbot's thread on a machine, as the mirror here has it ("" if not
+# known), and whether `sel` is one of the uberbot's threads: its own, or a
+# replica's elsewhere (so its view stays up when the lease moves)
+def Ub.thread.far(+st: M.State, +machine: String) -> String:
+  Bool.pick(String, Bool.or(String.is_empty(Ub.link(st, machine)), String.is_empty(Ub.bound.thread(st, machine))), "", FR.Fr.id(Ub.link(st, machine), Ub.bound.thread(st, machine)))
+
+def Ub.chat.any(ms: List<&2, String>, +st: M.State, +sel: String) -> Bool:
+  match ms:
+    case Nil{}:
+      False{}
+    case +m <> t:
+      Bool.or(Bool.and(Bool.not(String.is_empty(sel)), String.eq(Ub.thread.far(st, m), sel)), Ub.chat.any(t, st, sel))
+
+def Ub.chat.is(+st: M.State, +sel: String) -> Bool:
+  Bool.or(Bool.and(Bool.not(String.is_empty(sel)), String.eq(BT.Bot.thread(BT.World.bot(M.State.bots(st), UB.Uber.bot(st))), sel)),
+    Ub.chat.any(Ub.origins(st, Ub.uid(st)), st, sel))
+
+def Ub.links.has(ms: List<&2, String>, +st: M.State, +link: String) -> Bool:
+  match ms:
+    case Nil{}:
+      False{}
+    case +m <> t:
+      Bool.or(String.eq(Ub.link(st, m), link), Ub.links.has(t, st, link))
+
+# a client's mirror row of a bot on another machine (its link and name) is
+# the uberbot's replica there
+def Ub.far.named(+st: M.State, +link: String, +name: String) -> Bool:
+  Bool.and(Bool.and(Bool.not(String.is_empty(link)), Bool.not(String.is_empty(Ub.uid(st)))),
+    Bool.and(Ub.links.has(Ub.origins(st, Ub.uid(st)), st, link), String.eq(String.to_lower(name), String.to_lower(BT.Bot.name(BT.World.bot(M.State.bots(st), UB.Uber.bot(st)))))))
+
 # Talking to another machine
 # --------------------------
 # One request, uber.sync, over /far/rpc. Both ways carry the same body:
