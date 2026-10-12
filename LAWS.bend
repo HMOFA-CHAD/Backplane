@@ -92,6 +92,7 @@ import ./src/core/bom.bend as BOM
 import ./src/core/cad.bend as CAD
 import ./src/core/checks.bend as CHK
 import ./src/core/release.bend as REL
+import ./src/core/review.bend as RV
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -6540,3 +6541,63 @@ law release_dir_in_repo:
 
 law release_gh_command:
   {REL.Release.gh("v1", "n.md", ["f"]) == ["gh", "release", "create", "v1", "--title", "v1", "--notes-file", "n.md", "--verify-tag", "f"] : List<&2, String>}
+# Design review (review.bend)
+
+# no ops, no comments, and nothing to tell an agent
+law review_fold_empty:
+  {RV.Review.fold([]) == [] : List<&2, RV.Comment>}
+
+law review_prompt_none:
+  {RV.Review.prompt([]) == "" : String}
+
+# an op on an id nobody added changes nothing
+law review_unknown_ignored:
+  {RV.Review.fold([RV.Resolve{"zz", "p"}, RV.Edit{"zz", "x"}, RV.Drop{"zz"}]) == [] : List<&2, RV.Comment>}
+
+# add, then resolve: not open any more
+law review_resolve:
+  {RV.Review.count.open(RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Resolve{"a", "p"}])) == 0n : Nat}
+
+# resolve, then reopen: open again
+law review_reopen:
+  {RV.Review.count.open(RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Resolve{"a", "p"}, RV.Reopen{"a", "p"}])) == 1n : Nat}
+
+# a resolved comment is told to no agent
+law review_prompt_resolved:
+  {RV.Review.prompt(RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Resolve{"a", "p"}])) == "" : String}
+
+# drop removes the comment and the replies to it
+law review_drop:
+  {RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Add{RV.Review.mk("b", "a")}, RV.Drop{"a"}]) == [] : List<&2, RV.Comment>}
+
+# a reply joins its root and is no pin of its own
+law review_reply_no_pin:
+  {List.length(&2, RV.Pin, RV.Review.pins(RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Add{RV.Review.mk("b", "a")}]), "f", "")) == 1n : Nat}
+
+law review_reply_counted:
+  {RV.Review.pin.count(RV.Rv.pin(RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Add{RV.Review.mk("b", "a")}]), RV.Review.mk("a", ""))) == 1n : Nat}
+
+# a reply to nothing is dropped
+law review_orphan_ignored:
+  {RV.Review.fold([RV.Add{RV.Review.mk("b", "a")}]) == [] : List<&2, RV.Comment>}
+
+# an op (but an add, whose numbers print as floats) reads back the same
+law review_roundtrip_resolve:
+  {RV.Review.op.of("resolve", RV.Review.op.resolve("c1", "claude"), 3n) == Some{RV.Resolve{"c1", "claude"}} : Maybe<&2, RV.Op>}
+
+law review_roundtrip_edit:
+  {RV.Review.op.of("edit", RV.Review.op.edit("c1", "a b"), 3n) == Some{RV.Edit{"c1", "a b"}} : Maybe<&2, RV.Op>}
+
+law review_roundtrip_drop:
+  {RV.Review.op.of("drop", RV.Review.op.drop("c1"), 3n) == Some{RV.Drop{"c1"}} : Maybe<&2, RV.Op>}
+
+# an Act of another tone is no review op
+law review_other_tone:
+  {RV.Review.of(M.Act{"x", "t", "tool", "add", "{}", 1n}) == None{} : Maybe<&2, RV.Op>}
+
+# a pin moved only when its item is among the changed
+law review_moved:
+  {RV.Review.moved(RV.Review.mk("a", ""), ["i"]) == True{} : Bool}
+
+law review_not_moved:
+  {RV.Review.moved(RV.Review.mk("a", ""), ["j"]) == False{} : Bool}
