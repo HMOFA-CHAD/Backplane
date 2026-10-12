@@ -58,6 +58,7 @@ import ../core/desk.bend as DK
 import ../core/notice.bend as NO
 import ../core/hist.bend as HI
 import ../core/emb.bend as EM
+import ./review.bend as RVS
 import ../core/cmds.bend as CM
 import ../core/outbox.bend as OB
 import ../core/live.bend as LV
@@ -2268,9 +2269,22 @@ def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U
     case _:
       GitJob.run.git(tx, job, inbox, client, id, thread, cwd, a, b, home)
 
+# design review's jobs (server/review.bend), answered as they finish
+def RvJob.reply(r: RVS.Res, +inbox: Chan(Msg), +client: U32, +id: String) -> IO(Unit):
+  match r:
+    case RVS.Res{ok, +o}:
+      GitJob.reply(inbox, client, id, ok, o)
+
+def GitJob.run.r(rv: Bool, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
+  match rv:
+    case True{}:
+      IO.bind(RVS.Res, Unit, RVS.RvJob.run(job, thread, cwd, a, b, home), r => RvJob.reply(r, inbox, client, id))
+    case False{}:
+      GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs", "open", "dir", "pdf"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
+
 # a job the hub asked for: a git job, or one of the sidebar's
 def GitJob.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
-  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs", "open", "dir", "pdf"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
+  GitJob.run.r(String.starts_with(job, "rv."), tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # Grok (grok agent stdio, ACP) and Muse (muse serve, MSP)
 # -------------------------------------------------------

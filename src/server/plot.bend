@@ -572,10 +572,10 @@ def Pv.side(+kind: U32, bs: List<&2, U32>) -> Maybe<&2, List<&2, B.Item>>:
     case +b <> t:
       Pv.parse.k(U32.is_eq(kind, 1), b <> t)
 
-def Pv.mark(a: Maybe<&2, List<&2, B.Item>>, b: Maybe<&2, List<&2, B.Item>>) -> Maybe<&2, List<&2, B.Item>>:
+def Pv.mark(+bits: U32, a: Maybe<&2, List<&2, B.Item>>, b: Maybe<&2, List<&2, B.Item>>) -> Maybe<&2, List<&2, B.Item>>:
   match a b:
     case Some{+oa} Some{+nb}:
-      Some{HS.Hist.mark(oa, nb)}
+      Some{HS.Hist.mark.on(bits, oa, nb)}
     case _ _:
       None{}
 
@@ -586,7 +586,7 @@ def Pv.child.diff(+kind: U32, +path: String, +infos: String) -> IO(Unit):
   do IO<Unit>:
     +a : List<&2, U32> <- GT.Git.version(HS.Hist.old(path))
     +b : List<&2, U32> <- GT.Git.version(HS.Hist.new(path))
-    Pv.child.k(Pv.plot(Pv.mark(Pv.side(kind, a), Pv.side(kind, b)), U32.or(kind, LO.Look.diff())), 0, infos)
+    Pv.child.k(Pv.plot(Pv.mark(HS.Hist.bits(path), Pv.side(kind, a), Pv.side(kind, b)), U32.or(kind, LO.Look.diff())), 0, infos)
 
 def Pv.child.plot(+kind: U32, +path: String, +infos: String) -> IO(Unit):
   Bool.pick(IO(Unit), Nat.is_eq(HS.Hist.kind(path), 2n), Pv.child.diff(kind, path, infos), Pv.child.one(kind, path, infos))

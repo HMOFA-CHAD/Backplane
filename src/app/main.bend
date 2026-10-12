@@ -1352,8 +1352,8 @@ def Watch.sent.v(m: Maybe<&2, List<&2, B.Item>>, fixed: Bool, +key: String, +q: 
     case _ _:
       Watch.sent(m, key, q)
 
-def Watch.mark(a: Maybe<&2, List<&2, B.Item>>, b: Maybe<&2, List<&2, B.Item>>) -> Maybe<&2, List<&2, B.Item>>:
-  PV.Pv.mark(a, b)
+def Watch.mark(+bits: U32, a: Maybe<&2, List<&2, B.Item>>, b: Maybe<&2, List<&2, B.Item>>) -> Maybe<&2, List<&2, B.Item>>:
+  PV.Pv.mark(bits, a, b)
 
 def Watch.version.of(bs: List<&2, U32>, +path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
   do IO<Unit>:
@@ -1366,7 +1366,7 @@ def Watch.version(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
 # a comparison (core/hist.bend): the new version's items marked against
 # the old one's (none when it cannot be read: the file is new)
 def Watch.compare.of(a: List<&2, U32>, b: List<&2, U32>, +path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
-  Watch.sent.v(Watch.sorted(Watch.mark(PV.Pv.side(Src.kind(key), a), PV.Pv.side(Src.kind(key), b))), PV.Pv.stamp.fixed(path), key, q)
+  Watch.sent.v(Watch.sorted(Watch.mark(HS.Hist.bits(path), PV.Pv.side(Src.kind(key), a), PV.Pv.side(Src.kind(key), b))), PV.Pv.stamp.fixed(path), key, q)
 
 def Watch.compare(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
   do IO<Unit>:

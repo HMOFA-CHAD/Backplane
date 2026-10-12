@@ -4440,6 +4440,18 @@ def Solid.off.key(+u: Ui) -> String:
 def Solid.off(+u: Ui) -> U32:
   Maybe.default(&2, U32, U32.read(Ui.scratch(u, Solid.off.key(u))), 0)
 
+# a sheet picked while a comparison shows: that sheet compared (the same
+# versions, the same layers); anything else as picked
+def Rv.sheet.k(cmp: Bool, +cur: String, +file: String) -> String:
+  match cmp:
+    case True{}:
+      HI.Hist.sheet(cur, file)
+    case False{}:
+      file
+
+def Rv.sheet(+cur: String, +file: String) -> String:
+  Rv.sheet.k(Bool.and(Nat.is_eq(HI.Hist.kind(cur), 2n), Bool.not(String.is_empty(file))), cur, file)
+
 # "mech" opens Mech (the part in 3D), "mech-part" shows another part,
 # "mech-3d" a part in 3D, "mech-refresh" asks for the parts again,
 # "mech-renders" shows a part's pictures, "mech-render" asks the hub to
@@ -4465,7 +4477,7 @@ def Mpage.act(i: Nat, +u: Ui, +value: String) -> Act:
     case 6n:
       Act{Ui.view_put(u, value, ""), Nil{}}
     case 7n:
-      Act{Ui.view_put(u, "schematic", value), Nil{}}
+      Act{Ui.view_put(u, "schematic", Rv.sheet(Ui.view_get(u, "view.path"), value)), Nil{}}
     case 8n:
       Act{Ui.scratch_set(u, Solid.off.key(u), U32.show(U32.xor(Solid.off(u), U32.shln(1, U32.to_nat(Maybe.default(&2, U32, U32.read(value), 31)))))), Nil{}}
     # (past the table: an action no one takes)
@@ -5882,8 +5894,9 @@ def Hs.at(+u: Ui, +ss: List<&2, HI.Step>) -> Nat:
 def Hs.diff(+u: Ui) -> Bool:
   String.eq(Hs.get(u, "hist.diff"), "1")
 
+# (a comparison on show, or one of its sides: "cmp.as:<t>" old or new)
 def Hs.cmp(+u: Ui) -> Bool:
-  Bool.and(Bool.not(String.is_empty(Hs.get(u, "cmp.a"))), Nat.is_eq(HI.Hist.kind(Hs.path(u)), 2n))
+  Bool.and(Bool.not(String.is_empty(Hs.get(u, "cmp.a"))), Bool.or(Nat.is_eq(HI.Hist.kind(Hs.path(u)), 2n), Bool.not(String.is_empty(Hs.get(u, "cmp.as")))))
 
 def Hs.playing(+u: Ui) -> Bool:
   Bool.not(String.is_empty(Hs.get(u, "hist.play")))
@@ -5900,7 +5913,7 @@ def Hs.keep.live(+u: Ui) -> Ui:
   Hs.keep(Nat.is_eq(HI.Hist.kind(Hs.path(u)), 0n), u, Hs.path(u))
 
 def Hs.clear.cmp(u: Ui) -> Ui:
-  Hs.set(Hs.set(Hs.set(Hs.set(u, "cmp.a", ""), "cmp.b", ""), "cmp.al", ""), "cmp.bl", "")
+  Hs.set(Hs.set(Hs.set(Hs.set(Hs.set(u, "cmp.a", ""), "cmp.b", ""), "cmp.al", ""), "cmp.bl", ""), "cmp.as", "")
 
 # show a step (as it was, or compared with the one before)
 def Hs.show(+u: Ui, +s: HI.Step, +k: Nat) -> Ui:
@@ -6098,10 +6111,14 @@ def Hs.row.steps(ss: List<&2, HI.Step>, +side: String, +es: List<&2, M.Entry>, +
 def Hs.ref.label(+r: HI.Ref) -> String:
   match r:
     case HI.Ref{+k, +l, _}:
-      Bool.pick(String, String.eq(k, "turn"), "Turn " ++ HI.Hist.at(List.reverse(&2, String, String.split(l, '/')), 0n), l)
+      Bool.pick(String, String.eq(k, "turn"), "Turn " ++ HI.Hist.at(List.reverse(&2, String, String.split(l, '/')), 0n),
+        Bool.pick(String, String.eq(k, "base"), "Branch point · " ++ l, l))
 
+# (a base is where the checked-out branch left the main one: compared with
+# it, a pull request's whole change; a tag is a release)
 def Hs.ref.kind(+k: String) -> String:
-  Bool.pick(String, String.eq(k, "head"), "the commit checked out", Bool.pick(String, String.eq(k, "branch"), "branch", Bool.pick(String, String.eq(k, "turn"), "this thread, at the end of a turn", "commit")))
+  Bool.pick(String, String.eq(k, "head"), "the commit checked out", Bool.pick(String, String.eq(k, "branch"), "branch", Bool.pick(String, String.eq(k, "turn"), "this thread, at the end of a turn",
+    Bool.pick(String, String.eq(k, "tag"), "tag", Bool.pick(String, String.eq(k, "base"), "where this branch left it", "commit")))))
 
 # (turn 0 is the thread before it began)
 def Hs.ref.sub(+k: String, +label: String) -> String:
@@ -6147,8 +6164,9 @@ def Hs.side.spec(+commit: String, +git: String, +top: String, +abs: String) -> S
 def Hs.cmp.side(+u: Ui, +side: String) -> String:
   Bool.pick(String, String.is_empty(Hs.get(u, "cmp." ++ side)), Hs.live.abs(u), Hs.get(u, "cmp." ++ side))
 
+# (on the layers "cmp.bits:<t>" names: the active layer's, 0 every one)
 def Hs.cmp.path(+u: Ui) -> String:
-  HI.Hist.diff(Hs.cmp.side(u, "a"), Hs.cmp.side(u, "b"))
+  HI.Hist.diff.on(Hs.cmp.side(u, "a"), Hs.cmp.side(u, "b"), Maybe.default(&2, U32, U32.read(Hs.get(u, "cmp.bits")), 0))
 
 def Hs.cmp.show(+u: Ui) -> Ui:
   Ui.scratch_set(Ui.view_put(u, Hs.kname(Hs.kind(u)), Hs.cmp.path(u)), "@cmp.menu", "")
@@ -6170,7 +6188,7 @@ def Hs.pick.k(bad: Bool, +u: Ui, +side: String, +spec: String, +label: String) -
     case True{}:
       Ui.error_set(u, "This file is not in the repository, so it cannot be compared.")
     case False{}:
-      Hs.cmp.show(Hs.cmp.fill(Hs.set(Hs.set(Hs.set(Hs.set(Hs.cmp.fresh(Hs.keep.live(u)), "hist.at", ""), "hist.play", ""), "cmp." ++ side, spec), "cmp." ++ side ++ "l", label)))
+      Hs.cmp.show(Hs.cmp.fill(Hs.set(Hs.set(Hs.set(Hs.set(Hs.set(Hs.cmp.fresh(Hs.keep.live(u)), "hist.at", ""), "hist.play", ""), "cmp." ++ side, spec), "cmp." ++ side ++ "l", label), "cmp.as", "")))
 
 def Hs.pick.v(+u: Ui, +xs: List<&2, String>) -> Ui:
   +side = Bool.pick(String, String.eq(HI.Hist.at(xs, 0n), "b"), "b", "a")
@@ -6201,8 +6219,94 @@ def Hs.refs.store(has: Bool, u: Ui, +o: J.Json) -> Ui:
     case False{}:
       u
 
+# Design review: comparing (docs/design-review.md)
+# -------------------------------------------------
+# Actions "rv-…" route here before the action table (Rv.act). A
+# comparison shows as Old, Diff or New ("rv-as": old, diff, new; kept as
+# "cmp.as:<t>", "" the diff): one canvas, the same family, so a flip only
+# changes what is drawn. "rv-bits" restricts its marks to some layers (the
+# clients send the active layer's, Rv.bits; 0 every layer). "rv-ref" asks
+# the hub for any commit, branch or tag typed in ("<side>\t<text>",
+# history.resolve), and its answer is picked like a menu row.
+
+def Rv.as.path(+u: Ui, +as: String) -> String:
+  Bool.pick(String, String.eq(as, "old"), Hs.cmp.side(u, "a"), Bool.pick(String, String.eq(as, "new"), Hs.cmp.side(u, "b"), Hs.cmp.path(u)))
+
+def Rv.as.k(on: Bool, +u: Ui, +as: String) -> Ui:
+  match on:
+    case True{}:
+      +v = Bool.pick(String, Bool.or(String.eq(as, "old"), String.eq(as, "new")), as, "")
+      Ui.view_put(Hs.set(u, "cmp.as", v), Hs.kname(Hs.kind(u)), Rv.as.path(u, v))
+    case False{}:
+      u
+
+def Rv.as(+u: Ui, +as: String) -> Ui:
+  Rv.as.k(Hs.cmp(u), u, as)
+
+# which of Old, Diff and New shows ("" none: no comparison)
+def Rv.showing(+u: Ui) -> String:
+  Bool.pick(String, Hs.cmp(u), Bool.pick(String, String.is_empty(Hs.get(u, "cmp.as")), "diff", Hs.get(u, "cmp.as")), "")
+
+# the layers a focus is about, as a comparison's bits (0 when no layer
+# stands out): the active one and those kept with it
+def Rv.bits(+kind: U32, +f: LY.Focus) -> U32:
+  Bool.pick(U32, Bool.and(LY.Lyr.on(f), Bool.not(U32.is_eq(kind, 1))), LY.Lyr.kept(kind, f), 0)
+
+def Rv.bits.k(diff: Bool, +u: Ui, +bits: String) -> Ui:
+  match diff:
+    case True{}:
+      Ui.view_put(Hs.set(u, "cmp.bits", bits), Hs.kname(Hs.kind(u)), Hs.cmp.path(Hs.set(u, "cmp.bits", bits)))
+    case False{}:
+      Hs.set(u, "cmp.bits", bits)
+
+def Rv.bits.set(+u: Ui, +bits: String) -> Ui:
+  Rv.bits.k(Bool.and(Hs.cmp(u), String.is_empty(Hs.get(u, "cmp.as"))), u, Bool.pick(String, String.eq(bits, "0"), "", bits))
+
+def Rv.ref.ask(+u: Ui, +side: String, +text: String) -> Act:
+  Ui.rpc(Ui.scratch_set(u, "@cmp.menu", ""), "history.resolve", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"side", J.Str{side}}, J.KV{"ref", J.Str{text}}])
+
+def Rv.ref.k(blank: Bool, +u: Ui, +side: String, +text: String) -> Act:
+  match blank:
+    case True{}:
+      Act{u, Nil{}}
+    case False{}:
+      Rv.ref.ask(u, side, text)
+
+def Rv.ref(+u: Ui, +xs: List<&2, String>) -> Act:
+  Rv.ref.k(String.is_empty(String.trim(HI.Hist.at(xs, 1n))), u, Bool.pick(String, String.eq(HI.Hist.at(xs, 0n), "b"), "b", "a"), String.trim(HI.Hist.at(xs, 1n)))
+
+# the hub's answer: {resolved: {thread, side, ref, commit, git, top}}, a
+# version picked for its side (on its own thread only)
+def Rv.reply.k(+o: J.Json, +u: Ui) -> Ui:
+  Bool.pick(Ui, String.eq(J.Json.get_str(o, "thread", ""), Ui.sel(u)),
+    Hs.pick(u, Hs.row.value(J.Json.get_str(o, "side", "a"), J.Json.get_str(o, "commit", ""), J.Json.get_str(o, "ref", ""), J.Json.get_str(o, "git", ""), J.Json.get_str(o, "top", ""))), u)
+
+def Rv.reply.has(+o: J.Json) -> Bool:
+  Bool.not(String.eq(J.Json.show(Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(o, "result"), "resolved"), J.Null{})), "null"))
+
+def Rv.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
+  match has:
+    case True{}:
+      Rv.reply.k(J.Json.get_obj(J.Json.get_obj(o, "result"), "resolved"), u)
+    case False{}:
+      u
+
+def Rv.act.k(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n:
+      Act{Rv.as(u, value), Nil{}}
+    case 1n:
+      Act{Rv.bits.set(u, value), Nil{}}
+    case 2n:
+      Rv.ref(u, String.split(value, '\t'))
+    case _:
+      Act{u, Nil{}}
+
+def Rv.act(+u: Ui, +action: String, +value: String) -> Act:
+  Rv.act.k(C.Codec.pos(["rv-as", "rv-bits", "rv-ref"], action), u, value)
+
 def Ui.reply.skills(u: Ui, +o: J.Json) -> Ui:
-  Fv.reply(Fm.has(J.Json.get_obj(o, "result"), "farView"), Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Hs.refs.store(Hs.refs.has(o), Ui.reply.body(u, o), o), o), o), J.Json.get_obj(o, "result"))
+  Rv.reply(Rv.reply.has(o), Fv.reply(Fm.has(J.Json.get_obj(o, "result"), "farView"), Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Hs.refs.store(Hs.refs.has(o), Ui.reply.body(u, o), o), o), o), J.Json.get_obj(o, "result")), o)
 
 # The bar
 # -------
@@ -7551,8 +7655,16 @@ def Ui.act.t(tour: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Ui.act.p(String.eq(action, "proj-on"), u, action, value)
 
+# (design review's "rv-" actions route before the rest: Rv.act)
+def Ui.act.r(rv: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match rv:
+    case True{}:
+      Rv.act(u, action, value)
+    case False{}:
+      Ui.act.t(String.starts_with(action, "ob-"), u, action, value)
+
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Ui.act.t(String.starts_with(action, "ob-"), u, action, value)
+  Ui.act.r(String.starts_with(action, "rv-"), u, action, value)
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

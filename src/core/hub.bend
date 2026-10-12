@@ -859,6 +859,19 @@ def Desk.request(look: Bool, +client: U32, +id: String, +p: J.Json) -> Step:
     case False{}:
       Step.outs([Reply.err(client, id, "unknown method")])
 
+# Design review (docs/design-review.md): requests the server answers from
+# the thread's folder (server/review.bend's RvJob, jobs "rv.…").
+# history.resolve {thread, side, ref}: any commit, branch or tag typed in
+def Rv.methods() -> List<&2, String>:
+  ["history.resolve"]
+
+def Rv.request(i: Nat, +s: M.State, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
+  match i:
+    case 0n:
+      Hub.git(s, client, id, "rv.resolve", J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "side", "a"), J.Json.get_str(p, "ref", ""))
+    case _:
+      Desk.request(String.eq(m, "desk.look"), client, id, p)
+
 def Hub.media(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
@@ -873,7 +886,7 @@ def Hub.media(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.J
     case 3n:
       Hub.git(s, client, id, "refs", J.Json.get_str(p, "thread", ""), "", "")
     case _:
-      Desk.request(String.eq(m, "desk.look"), client, id, p)
+      Rv.request(C.Codec.pos(Rv.methods(), m), s, client, id, p, m)
 
 def Hub.methods() -> List<&2, String>:
   ["project.add", "project.remove", "thread.create", "turn.start", "turn.interrupt",
