@@ -3864,7 +3864,7 @@ def Hb.walk(+ty: Ty, +u: U.Ui, b: U.HBar, +x0: U32, +x1: U32, +y: U32) -> Out:
       +xs = {Bool.pick(U32, wide, x1, (x1 - 16 - Hb.chips.w(ty, Nat.is_gt(at, 0n)) : U32)) : U32}
       Out.all([Hb.ground(x0, x1, y, 96), Hb.controls(ty, title, pl, df, at, wide, x0, x1, (y + 8 : U32)),
         Hb.scrub(ty, U.Hs.track(u), n, at, x0, x1, (y + 46 : U32)),
-        Hb.said(Nat.is_eq(at, 0n), ty, Bool.pick(String, Nat.is_eq(at, 0n), "The live file. Each tick is a change the agent made; play to watch them.",
+        Hb.said(Nat.is_eq(at, 0n), ty, Bool.pick(String, Nat.is_eq(at, 0n), U.Hs.live.said(n),
           Bool.pick(String, String.is_empty(said), label, said)), x0, xs, (y + 62 : U32)),
         Hb.chips.if(Bool.not(wide), ty, df, at, xs, (y + 62 : U32))])
 

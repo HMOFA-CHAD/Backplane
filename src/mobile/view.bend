@@ -669,7 +669,7 @@ def Hist.json.k(b: U.HBar, +u: U.Ui) -> J.Json:
   match b:
     case U.HBar{_, +n, +at, +title, +entry, +label, +said, +pl, +df, +cmp, +a, +bb, +menu}:
       J.Json.obj([J.KV{"n", J.Num{Nat.show(n)}}, J.KV{"at", J.Num{Nat.show(at)}}, J.KV{"title", J.Str{title}}, J.KV{"entry", J.Str{entry}},
-        J.KV{"said", J.Str{Bool.pick(String, Nat.is_eq(at, 0n), "The live file. Each tick is a change the agent made; play to watch them.", Bool.pick(String, String.is_empty(said), label, said))}},
+        J.KV{"said", J.Str{Bool.pick(String, Nat.is_eq(at, 0n), U.Hs.live.said(n), Bool.pick(String, String.is_empty(said), label, said))}},
         J.KV{"playing", J.Json.bool(pl)}, J.KV{"diff", J.Json.bool(df)}, J.KV{"cmp", J.Json.bool(cmp)}, J.KV{"a", J.Str{a}}, J.KV{"b", J.Str{bb}}, J.KV{"side", J.Str{menu}}, J.KV{"as", J.Str{U.Rv.showing(u)}},
         J.KV{"ticks", J.Json.arr(Hist.ticks(U.Hs.track(u), 0n, at))}, J.KV{"menu", Hist.menu(menu, u)},
         J.KV{"keys", J.Json.arr([J.Num{U32.show(LO.Look.mark.color(False{}, 26))}, J.Num{U32.show(LO.Look.mark.color(False{}, 27))}, J.Num{U32.show(LO.Look.mark.color(False{}, 28))}])}])

@@ -66,6 +66,7 @@ def main() -> IO(Unit):
   +u = base()
   +cmp = act(u, "cmp-pick", "a\tc1\tv1\t/r/.git\t/r")
   +f = {LY.Focus{12, 1} : LY.Focus}
+  +sch = act(U.Ui.view_put(u, "schematic", "/r/root.kicad_sch"), "cmp-pick", "a\tc1\tv1\t/r/.git\t/r")
   do IO<Unit>:
     # paths
     C.Check.str("diff on no layers is a plain diff", H.Hist.diff.on("x", "y", 0), "diff\nx\ny")
@@ -114,3 +115,9 @@ def main() -> IO(Unit):
     # tags and the branch point
     C.Check.str("tag and base refs", String.join(labels(H.Hist.refs("base\torigin/main\tm1\ntag\tv1.0\tt1\n")), ","), "Branch point · origin/main,v1.0")
     C.Check.str("tag and base kinds", U.Hs.ref.kind("tag") ++ "|" ++ U.Hs.ref.kind("base"), "tag|where this branch left it")
+    # every board can be compared, steps or not
+    C.Check.str("the bar shows with no steps", Bool.show(U.HBar.on(U.Hs.bar.for(u, True{}))), "True")
+    C.Check.str("the live words with no steps", U.Hs.live.said(0n), "The live file. Compare it with any commit, branch or tag.")
+    # a sheet picked while Old shows: Diff then compares that sheet
+    C.Check.str("old, a sheet, then diff", path(act(U.Ui.view_put(act(sch, "rv-as", "old"), "schematic", H.Hist.sheet(path(act(sch, "rv-as", "old")), "/r/kid.kicad_sch")), "rv-as", "diff")),
+      H.Hist.diff(H.Hist.git("/r/.git", "c1", "/r", "kid.kicad_sch"), "/r/kid.kicad_sch"))

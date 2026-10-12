@@ -6229,8 +6229,16 @@ def Hs.refs.store(has: Bool, u: Ui, +o: J.Json) -> Ui:
 # the hub for any commit, branch or tag typed in ("<side>\t<text>",
 # history.resolve), and its answer is picked like a menu row.
 
+# a side at the sheet on show (a sheet picked while Old or New shows keeps
+# its place when the flip moves on)
+def Rv.side.at(+u: Ui, +side: String) -> String:
+  HI.Hist.sheet(Hs.cmp.side(u, side), HI.Hist.family(Hs.path(u)))
+
+def Rv.diff.at(+u: Ui) -> String:
+  HI.Hist.diff.on(Rv.side.at(u, "a"), Rv.side.at(u, "b"), Maybe.default(&2, U32, U32.read(Hs.get(u, "cmp.bits")), 0))
+
 def Rv.as.path(+u: Ui, +as: String) -> String:
-  Bool.pick(String, String.eq(as, "old"), Hs.cmp.side(u, "a"), Bool.pick(String, String.eq(as, "new"), Hs.cmp.side(u, "b"), Hs.cmp.path(u)))
+  Bool.pick(String, String.eq(as, "old"), Rv.side.at(u, "a"), Bool.pick(String, String.eq(as, "new"), Rv.side.at(u, "b"), Rv.diff.at(u)))
 
 def Rv.as.k(on: Bool, +u: Ui, +as: String) -> Ui:
   match on:
@@ -6255,7 +6263,7 @@ def Rv.bits(+kind: U32, +f: LY.Focus) -> U32:
 def Rv.bits.k(diff: Bool, +u: Ui, +bits: String) -> Ui:
   match diff:
     case True{}:
-      Ui.view_put(Hs.set(u, "cmp.bits", bits), Hs.kname(Hs.kind(u)), Hs.cmp.path(Hs.set(u, "cmp.bits", bits)))
+      Ui.view_put(Hs.set(u, "cmp.bits", bits), Hs.kname(Hs.kind(u)), Rv.diff.at(Hs.set(u, "cmp.bits", bits)))
     case False{}:
       Hs.set(u, "cmp.bits", bits)
 
@@ -6310,12 +6318,18 @@ def Ui.reply.skills(u: Ui, +o: J.Json) -> Ui:
 
 # The bar
 # -------
+# (shown under every board and schematic, so any of them can be compared
+# with another version: docs/design-review.md)
 # What every client's viewer shows under a board or schematic with a
 # history (or a comparison on show): on, the track's length and the
 # position (0 live), what the step followed and what was said before it.
 
 type HBar is Data:
   HBar{on: Bool, n: Nat, at: Nat, title: String, entry: String, label: String, said: String, playing: Bool, diff: Bool, cmp: Bool, a: String, b: String, menu: String}
+
+# what the bar says while the live file shows, every client the same
+def Hs.live.said(+n: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(n, 0n), "The live file. Compare it with any commit, branch or tag.", "The live file. Each tick is a change the agent made; play to watch them.")
 
 def Hs.said.line(+s: String) -> String:
   HI.Hist.line(s)
@@ -6327,7 +6341,7 @@ def Hs.bar.k(m: Maybe<&2, HI.Step>, +u: Ui, +n: Nat, +at: Nat, +es: List<&2, M.E
         HI.Hist.anchor(es, s), HI.Hist.label(es, HI.Hist.anchor(es, s)), Hs.said.line(HI.Hist.said(es, HI.Hist.anchor(es, s))),
         Hs.playing(u), Hs.diff(u), False{}, "", "", Ui.scratch(u, "@cmp.menu")}
     case None{}:
-      HBar{Bool.or(Nat.is_gt(n, 0n), Hs.cmp(u)), n, 0n, Bool.pick(String, Hs.cmp(u), "Comparing", "Live · " ++ Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " step", " steps")),
+      HBar{True{}, n, 0n, Bool.pick(String, Hs.cmp(u), "Comparing", Bool.pick(String, Nat.is_eq(n, 0n), "Live", "Live · " ++ Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " step", " steps"))),
         "", "", "", Hs.playing(u), Hs.diff(u), Hs.cmp(u), Hs.get(u, "cmp.al"), Bool.pick(String, String.is_empty(Hs.get(u, "cmp.bl")), "Working copy", Hs.get(u, "cmp.bl")), Ui.scratch(u, "@cmp.menu")}
 
 def HBar.on(b: HBar) -> Bool:

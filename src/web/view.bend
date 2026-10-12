@@ -1519,7 +1519,7 @@ def View.hist.ticks(ss: List<&2, HS.Step>, +i: Nat, +n: Nat, +at: Nat) -> List<&
 def View.hist.said(live: Bool, +text: String) -> List<&2, D.Node>:
   match live:
     case True{}:
-      [D.Dom.span("said", "The live file. Each tick is a change the agent made; play to watch them.")]
+      [D.Dom.span("said", text)]
     case False{}:
       [WI.WIcon.button("icon", "hist-jump", "", "Go to this point of the thread", "message-square", 16, ""),
        D.El{"button", "", [D.At{"class", "said"}, D.At{"title", "Go to this point of the thread"}, D.At{"data-value", ""}, D.On{"click", "hist-jump"}], [D.Txt{text}]}]
@@ -1538,7 +1538,7 @@ def View.hist.walk(b: U.HBar, +u: U.Ui) -> D.Node:
           D.Dom.button(Bool.pick(String, df, "hbtn on", "hbtn"), "hist-diff", "", "Mark what each step changed", "Changes"),
           D.Dom.button("hbtn", "cmp", "a", "Compare two versions of the file", "Compare")], View.hist.live(at))},
         D.El{"div", "", [D.At{"class", "hist-scrub"}], View.hist.ticks(U.Hs.track(u), 0n, n, at)},
-        D.El{"div", "", [D.At{"class", "hist-said"}], View.hist.said(Nat.is_eq(at, 0n), Bool.pick(String, String.is_empty(said), label, said))}]}
+        D.El{"div", "", [D.At{"class", "hist-said"}], View.hist.said(Nat.is_eq(at, 0n), Bool.pick(String, Nat.is_eq(at, 0n), U.Hs.live.said(n), Bool.pick(String, String.is_empty(said), label, said)))}]}
 
 def View.hist.key(+layer: U32, +label: String) -> D.Node:
   D.El{"span", "", [D.At{"class", "key"}], [D.El{"i", "", [D.At{"style", "background:" ++ View.hex(LO.Look.mark.color(False{}, layer))}], Nil{}}, D.Txt{label}]}
