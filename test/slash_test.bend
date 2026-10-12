@@ -3,6 +3,7 @@ import ./check.bend as C
 import ../src/core/model.bend as M
 import ../src/core/slash.bend as S
 import ../src/core/client.bend as U
+import ../src/app/nui.bend as N
 
 # Slash commands in the composer: `/` as a lone word offers the commands
 # (Claude's own only in a Claude thread) then the skills; Esc shuts the
@@ -65,6 +66,18 @@ def lit(rs: List<&2, U.SkillRow>) -> String:
     case U.SkillRow{_, _, False{}} <> t:
       lit(t)
 
+# the window: a key pressed in the focused composer
+def stepped(s: N.Step) -> N.Nui:
+  match s:
+    case N.Step{n2, _, _}:
+      n2
+
+def press(+n: N.Nui, +code: U32) -> N.Nui:
+  stepped(N.Nui.key(n, code, 0, 0))
+
+def win(u: U.Ui) -> N.Nui:
+  N.Nui.with_focus(N.Nui.init(u, 1200, 800), "composer")
+
 # what the web draws: the same rows, marked and shut as the window's
 def web(u: U.Ui) -> List<&2, U.SkillRow>:
   match u:
@@ -83,6 +96,8 @@ def main() -> IO(Unit):
   +picked = ui(U.Ui.act(typed(c, "/gi"), "skill", ""))
   +clicked = ui(U.Ui.act(c1, "skill", "/context"))
   +down = ui(U.Ui.act(c2, "skill-move", "down"))
+  +wd = press(win(c2), N.Key.down())
+  +we = press(win(c2), N.Key.escape())
   +d1 = typed(c, "$p")
   +dclosed = ui(U.Ui.act(d1, "skill-close", ""))
   do IO<Unit>:
@@ -114,3 +129,6 @@ def main() -> IO(Unit):
     C.Check.str("enter takes the lit row", U.Ui.draft_text(ui(U.Ui.act(down, "skill", ""))), "/context ")
     C.Check.str("web lit like the window", lit(web(down)), "/context")
     C.Check.str("web shut by esc", names(web(closed)), "")
+    C.Check.str("window down moves the light", lit(U.Ui.skills(N.Nui.ui(wd))), "/context")
+    C.Check.str("window esc shuts", names(U.Ui.skills(N.Nui.ui(we))), "")
+    C.Check.str("window esc keeps the composer", N.Nui.focus_of(we), "composer")
