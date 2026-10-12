@@ -4,6 +4,8 @@ import ../src/core/model.bend as M
 import ../src/core/codec.bend as K
 import ../src/core/json.bend as J
 import ../src/core/uber.bend as UB
+import ../src/core/hub.bend as B
+import ../src/core/bothub.bend as BH
 
 # The uberbot: its event, its codec and promotion (laws uber_*).
 
@@ -42,6 +44,25 @@ def dec.k(m: Maybe<&2, J.Json>) -> Maybe<&2, M.Change>:
 def dec(+s: String) -> Maybe<&2, M.Change>:
   dec.k(J.Json.parse(s))
 
+def fx(os: List<&2, B.Out>) -> String:
+  match os:
+    case Nil{}:
+      ""
+    case B.BotFx{k, _, _, _} <> t:
+      "fx:" ++ k ++ " " ++ fx(t)
+    case B.Send{_, text} <> t:
+      "send:" ++ J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), "t", "") ++ " " ++ fx(t)
+    case _ <> t:
+      "out " ++ fx(t)
+
+def step(st: B.Step) -> String:
+  match st:
+    case B.Step{cs, os}:
+      tags(cs) ++ "| " ++ fx(os)
+
+def ask(+s: M.State, +bot: String) -> B.Step:
+  BH.Bots.request(s, 500n, 1, Maybe.default(&2, J.Json, J.Json.parse("{\"id\":1,\"m\":\"bots.uber\",\"p\":{\"bot\":\"" ++ bot ++ "\"}}"), J.Null{}))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +c : M.Change = M.UberSet{"b1", "u5-ab", 9n}
@@ -65,3 +86,7 @@ def main() -> IO(Unit):
     C.Check.str("a deleted uberbot is none", UB.Uber.bot(st([M.UberSet{"b1", "u1-a", 200n}, M.BotDeleted{"b1", 250n}])), "")
     C.Check.str("a far id set is none", UB.Uber.bot(st([M.UberSet{"p1~b9", "u1-a", 200n}])), "")
     C.Check.str("uid", UB.Uber.uid(77n, "ff"), "u77-ff")
+    C.Check.str("bots.uber promotes after a backup", step(ask(st(Nil{}), "b1")), "| fx:uber ")
+    C.Check.str("a far bot is an error", step(ask(st(Nil{}), "p1~b9")), "| send:reply ")
+    C.Check.str("the uberbot again is just ok", step(ask(s1, "b1")), "| send:reply ")
+    C.Check.str("demoting logs at once", step(ask(s1, "")), "UberSet;| send:reply ")
