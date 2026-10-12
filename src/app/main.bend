@@ -41,6 +41,7 @@ import ../core/hist.bend as HS
 import ./rvw.bend as RW
 import ../core/rview.bend as RV
 import ../server/git.bend as GT
+import ../server/review.bend as RVC
 
 # `backplane`: the hub, the web server (for other devices), and the native
 # window as client 0. Window events and hub messages meet in one queue; a
@@ -2333,8 +2334,9 @@ def start.go(+xs: List<&2, String>) -> IO(Unit):
 def start(args: List<String>) -> IO(Unit):
   start.go(S.Names.copy(args))
 
-# (`--plot KIND FILE` is the hub's own board reader, src/server/plot.bend)
+# (`--plot KIND FILE` is the hub's own board reader, src/server/plot.bend;
+# `--review bom OLD NEW` design review's, src/server/review.bend)
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
-    PV.Pv.main(args, a => start(a))
+    RVC.Rvc.main(args, a2 => PV.Pv.main(a2, a => start(a)))

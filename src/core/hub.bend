@@ -861,14 +861,17 @@ def Desk.request(look: Bool, +client: U32, +id: String, +p: J.Json) -> Step:
 
 # Design review (docs/design-review.md): requests the server answers from
 # the thread's folder (server/review.bend's RvJob, jobs "rv.…").
-# history.resolve {thread, side, ref}: any commit, branch or tag typed in
+# history.resolve {thread, side, ref}: any commit, branch or tag typed in;
+# review.bom {thread, a, b}: a BOM, or the change between two versions
 def Rv.methods() -> List<&2, String>:
-  ["history.resolve"]
+  ["history.resolve", "review.bom"]
 
 def Rv.request(i: Nat, +s: M.State, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
       Hub.git(s, client, id, "rv.resolve", J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "side", "a"), J.Json.get_str(p, "ref", ""))
+    case 1n:
+      Hub.git(s, client, id, "rv.bom", J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "a", ""), J.Json.get_str(p, "b", ""))
     case _:
       Desk.request(String.eq(m, "desk.look"), client, id, p)
 

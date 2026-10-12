@@ -1940,8 +1940,22 @@ def AgentJob.write(+tx: AG.Tx, +d: String, +title: String) -> IO(String):
   Bool.pick(IO(String), Bool.or(String.is_empty(String.trim(d)), GT.Git.failed(d)), IO.pure(String, title),
     IO.bind(String, String, OneShot.run(tx, AG.Commit.system(), AG.Commit.input(title, d)), a => IO.pure(String, AG.Commit.message(a, title))))
 
+# design review: a pull request just opened gets its parts change
+# (server/review.bend's RvJob.pr) after the answer
+def GitJob.pr.url(+r: String) -> String:
+  String.trim(String.drop(GT.Git.last_line(r), 4n))
+
+def GitJob.pr.note(+inbox: Chan(Msg), +thread: String, +what: String) -> IO(Unit):
+  Bool.pick(IO(Unit), String.is_empty(what), IO.pure(Unit, Unit{}), GitJob.note(inbox, thread, "info", what))
+
+def GitJob.text.pr(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +what: String, +r: String) -> IO(Unit):
+  do IO<Unit>:
+    GitJob.text.k(inbox, client, id, thread, what, r)
+    Bool.pick(IO(Unit), Bool.and(Bool.not(GT.Git.failed(r)), String.starts_with(GT.Git.last_line(r), "pr: http")),
+      IO.bind(String, Unit, RVS.RvJob.pr(cwd, GitJob.pr.url(r)), w => GitJob.pr.note(inbox, thread, w)), IO.pure(Unit, Unit{}))
+
 def AgentJob.commit(+msg: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +action: String) -> IO(Unit):
-  IO.bind(String, Unit, GT.Git.act(cwd, action, msg, "", ""), r => GitJob.text.k(inbox, client, id, thread, action, r))
+  IO.bind(String, Unit, GT.Git.act(cwd, action, msg, "", ""), r => GitJob.text.pr(inbox, client, id, thread, cwd, action, r))
 
 # Commit & push / Open PR with a message written from the thread's diff
 # (checkpoint 0 against the work tree); the thread's title when there is
@@ -1965,7 +1979,7 @@ def GitJob.go(i: Nat, +tx: AG.Tx, +inbox: Chan(Msg), +client: U32, +id: String, 
     case 4n:
       IO.bind(String, Unit, GT.Git.checkpoint.revert(cwd, thread, Maybe.default(&2, Nat, Nat.read(a), 0n)), r => GitJob.text.k(inbox, client, id, thread, "reverted to turn " ++ a, r))
     case 5n:
-      IO.bind(String, Unit, GT.Git.act(cwd, a, Bool.pick(String, String.is_empty(b), "Backplane: changes from this thread", b), "", ""), r => GitJob.text.k(inbox, client, id, thread, a, r))
+      IO.bind(String, Unit, GT.Git.act(cwd, a, Bool.pick(String, String.is_empty(b), "Backplane: changes from this thread", b), "", ""), r => GitJob.text.pr(inbox, client, id, thread, cwd, a, r))
     case 6n:
       IO.bind(String, Unit, GT.Git.status(cwd), r => GitJob.reply(inbox, client, id, True{}, J.Json.obj([J.KV{"status", J.Str{r}}, J.KV{"thread", J.Str{thread}}])))
     case 7n:

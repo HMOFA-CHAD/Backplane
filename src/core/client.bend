@@ -6299,6 +6299,115 @@ def Rv.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
     case False{}:
       u
 
+# Design review: the Review tab
+# ------------------------------
+# A viewer kind of its own ("review"), its path the page on show (Rp.pages:
+# "bom"). A page is a report the hub writes as Markdown (review.bom: the
+# BOM, or what changed between the two versions a comparison picked, kept
+# until it is closed), which every client draws with its own Markdown.
+# Kept per thread and page in the info map: "rp.md:<t>:<page>",
+# "rp.err:<t>:<page>", "rp.title:<t>:<page>"; the page being asked for is
+# the scratch's "@rp.busy:<t>". "rv-page" shows a page and asks for it,
+# "rv-run" asks again, "rv-bom" (the comparison bar's BOM) opens the BOM.
+
+def Rp.pages() -> List<&2, String>:
+  ["bom"]
+
+def Rp.label(+page: String) -> String:
+  Bool.pick(String, String.eq(page, "bom"), "BOM", page)
+
+# the page on show ("" when the tab is not)
+def Rp.page(+u: Ui) -> String:
+  Bool.pick(String, String.eq(Ui.view_get(u, "view.kind"), "review"), Bool.pick(String, String.is_empty(Ui.view_get(u, "view.path")), "bom", Ui.view_get(u, "view.path")), "")
+
+def Rp.key(+u: Ui, +k: String, +page: String) -> String:
+  k ++ ":" ++ Ui.sel(u) ++ ":" ++ page
+
+# a comparison picked (and not closed) is what the BOM page compares
+def Rp.compared(+u: Ui) -> Bool:
+  Bool.not(String.is_empty(Hs.get(u, "cmp.a")))
+
+def Rp.bom.title(+u: Ui) -> String:
+  Bool.pick(String, Rp.compared(u),
+    "BOM change · " ++ Hs.get(u, "cmp.al") ++ " → " ++ Bool.pick(String, String.is_empty(Hs.get(u, "cmp.bl")), "Working copy", Hs.get(u, "cmp.bl")),
+    "BOM · Working copy")
+
+def Rp.ask.bom(+u: Ui) -> Act:
+  Ui.rpc(Ui.info_set(Ui.scratch_set(u, "@rp.busy:" ++ Ui.sel(u), "bom"), Rp.key(u, "rp.title", "bom"), Rp.bom.title(u)), "review.bom",
+    [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"a", J.Str{Bool.pick(String, Rp.compared(u), Hs.get(u, "cmp.a"), "")}}, J.KV{"b", J.Str{Bool.pick(String, Rp.compared(u), Hs.get(u, "cmp.b"), "")}}])
+
+def Rp.ask(+u: Ui, +page: String) -> Act:
+  Bool.pick(Act, String.eq(page, "bom"), Rp.ask.bom(u), Act{u, Nil{}})
+
+def Rp.open(+u: Ui, +page: String) -> Act:
+  Rp.ask(Ui.view_put(u, "review", page), page)
+
+# the hub's answer: {report: {thread, page, md, err}}
+def Rp.store(+u: Ui, +r: J.Json) -> Ui:
+  +k = J.Json.get_str(r, "thread", "") ++ ":" ++ J.Json.get_str(r, "page", "")
+  Ui.scratch_set(Ui.info_set(Ui.info_set(u, "rp.md:" ++ k, J.Json.get_str(r, "md", "")), "rp.err:" ++ k, J.Json.get_str(r, "err", "")),
+    "@rp.busy:" ++ J.Json.get_str(r, "thread", ""), "")
+
+def Rp.reply.has(+o: J.Json) -> Bool:
+  Bool.not(String.eq(J.Json.show(Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(o, "result"), "report"), J.Null{})), "null"))
+
+def Rp.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
+  match has:
+    case True{}:
+      Rp.store(u, J.Json.get_obj(J.Json.get_obj(o, "result"), "report"))
+    case False{}:
+      u
+
+# what every client draws: the pages (their labels and which is on), the
+# title, the report's Markdown, why it failed, whether it is being made
+type RpTab is Data:
+  RpTab{page: String, label: String, on: Bool}
+
+type RpView is Data:
+  RpView{page: String, tabs: List<&2, RpTab>, title: String, md: String, err: String, busy: Bool}
+
+def Rp.tabs(ps: List<&2, String>, +cur: String) -> List<&2, RpTab>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      RpTab{p, Rp.label(p), String.eq(p, cur)} <> Rp.tabs(t, cur)
+
+def Rp.view(+u: Ui) -> RpView:
+  +page = Rp.page(u)
+  RpView{page, Rp.tabs(Rp.pages(), page), Ui.info(u, Rp.key(u, "rp.title", page)), Ui.info(u, Rp.key(u, "rp.md", page)), Ui.info(u, Rp.key(u, "rp.err", page)),
+    String.eq(Ui.scratch(u, "@rp.busy:" ++ Ui.sel(u)), page)}
+
+def RpView.md(v: RpView) -> String:
+  match v:
+    case RpView{_, _, _, md, _, _}:
+      md
+
+def RpView.title(v: RpView) -> String:
+  match v:
+    case RpView{_, _, t, _, _, _}:
+      t
+
+def RpView.err(v: RpView) -> String:
+  match v:
+    case RpView{_, _, _, _, e, _}:
+      e
+
+def RpView.busy(v: RpView) -> Bool:
+  match v:
+    case RpView{_, _, _, _, _, b}:
+      b
+
+def RpView.tabs(v: RpView) -> List<&2, RpTab>:
+  match v:
+    case RpView{_, ts, _, _, _, _}:
+      ts
+
+# what the page says while it has nothing to show
+def RpView.note(+v: RpView) -> String:
+  Bool.pick(String, RpView.busy(v), "Reading the design…",
+    Bool.pick(String, String.is_empty(RpView.err(v)), Bool.pick(String, String.is_empty(RpView.md(v)), "Nothing yet.", ""), RpView.err(v)))
+
 def Rv.act.k(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 0n:
@@ -6307,14 +6416,20 @@ def Rv.act.k(i: Nat, +u: Ui, +value: String) -> Act:
       Act{Rv.bits.set(u, value), Nil{}}
     case 2n:
       Rv.ref(u, String.split(value, '\t'))
+    case 3n:
+      Rp.open(u, Bool.pick(String, String.is_empty(value), "bom", value))
+    case 4n:
+      Rp.ask(u, Rp.page(u))
+    case 5n:
+      Rp.open(u, "bom")
     case _:
       Act{u, Nil{}}
 
 def Rv.act(+u: Ui, +action: String, +value: String) -> Act:
-  Rv.act.k(C.Codec.pos(["rv-as", "rv-bits", "rv-ref"], action), u, value)
+  Rv.act.k(C.Codec.pos(["rv-as", "rv-bits", "rv-ref", "rv-page", "rv-run", "rv-bom"], action), u, value)
 
 def Ui.reply.skills(u: Ui, +o: J.Json) -> Ui:
-  Rv.reply(Rv.reply.has(o), Fv.reply(Fm.has(J.Json.get_obj(o, "result"), "farView"), Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Hs.refs.store(Hs.refs.has(o), Ui.reply.body(u, o), o), o), o), J.Json.get_obj(o, "result")), o)
+  Rp.reply(Rp.reply.has(o), Rv.reply(Rv.reply.has(o), Fv.reply(Fm.has(J.Json.get_obj(o, "result"), "farView"), Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Hs.refs.store(Hs.refs.has(o), Ui.reply.body(u, o), o), o), o), J.Json.get_obj(o, "result")), o), o)
 
 # The bar
 # -------
