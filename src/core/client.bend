@@ -2219,8 +2219,9 @@ def Skills.pick(+rs: List<&2, SkillRow>, +v: String) -> String:
 def Skills.complete(+draft: String, +word: String) -> String:
   String.take(draft, Nat.sub(String.length(draft), String.length(Skills.token(draft)))) ++ word ++ " "
 
+# the composer keeps the keyboard (the web draws the page again)
 def Ui.skill.k(+word: String, +u: Ui) -> Act:
-  Bool.pick(Act, String.is_empty(word), Act{u, Nil{}}, Ui.draft.set(u, Skills.complete(Ui.draft_text(u), word)))
+  Bool.pick(Act, String.is_empty(word), Act{u, Nil{}}, Ui.also(Ui.draft.set(u, Skills.complete(Ui.draft_text(u), word)), [Focus{"composer"}]))
 
 # complete the word being typed
 def Ui.skill(+u: Ui, +v: String) -> Act:
@@ -3333,8 +3334,9 @@ def Btw.reply.of(+u: Ui) -> String:
 def Btw.text(+a: String) -> String:
   Bool.pick(String, String.is_empty(a), "Thinking…", a)
 
+# the composer keeps the keyboard (the web draws the page again)
 def Skills.close(+u: Ui) -> Act:
-  Act{Ui.info_set(u, "sk.off", Skills.on(Ui.sel(u), Ui.draft_text(u))), Nil{}}
+  Act{Ui.info_set(u, "sk.off", Skills.on(Ui.sel(u), Ui.draft_text(u))), [Focus{"composer"}]}
 
 def Skills.want(a: Act) -> Act:
   match a:

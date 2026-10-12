@@ -54,6 +54,20 @@ def skills() -> String:
 def start(+t: String) -> U.Ui:
   U.Ui.info_set(U.Ui.info_set(ui(U.Ui.select(U.Ui.fold(log(), U.Ui.init(1000000n)), t)), "skills", skills()), "skills.for", t)
 
+def focus.in(cs: List<&2, U.Cmd>) -> String:
+  match cs:
+    case Nil{}:
+      ""
+    case U.Focus{f} <> _:
+      f
+    case _ <> t:
+      focus.in(t)
+
+def focus(a: U.Act) -> String:
+  match a:
+    case U.Act{_, cs}:
+      focus.in(cs)
+
 def typed(u: U.Ui, d: String) -> U.Ui:
   ui(U.Ui.draft(u, d))
 
@@ -132,3 +146,5 @@ def main() -> IO(Unit):
     C.Check.str("window down moves the light", lit(U.Ui.skills(N.Nui.ui(wd))), "/context")
     C.Check.str("window esc shuts", names(U.Ui.skills(N.Nui.ui(we))), "")
     C.Check.str("window esc keeps the composer", N.Nui.focus_of(we), "composer")
+    C.Check.str("esc keeps the keyboard", focus(U.Ui.act(c1, "skill-close", "")), "composer")
+    C.Check.str("a completion keeps the keyboard", focus(U.Ui.act(typed(c, "/gi"), "skill", "")), "composer")

@@ -123,11 +123,16 @@ function patch(el, v) {
     } else {
       node = create(k);
     }
-    const at = el.childNodes[i];
-    if (at !== node) el.insertBefore(node, at ?? null);
     next.push({ v: k, node });
   }
+  // the nodes that went go first, so a kept one already in its place is
+  // never moved: moving the focused field (the composer, when the menu
+  // above it shuts) takes the keyboard from it
   for (const p of prev) if (!p.used && p.node.parentNode === el) el.removeChild(p.node);
+  for (let i = 0; i < next.length; i += 1) {
+    const at = el.childNodes[i];
+    if (at !== next[i].node) el.insertBefore(next[i].node, at ?? null);
+  }
   for (const p of next) p.used = false;
   el.__kids = next;
   el.__v = v;
