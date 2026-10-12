@@ -429,24 +429,46 @@ struct ComposerExtras: View {
             .padding(.horizontal).padding(.top, 8)
         }
         if !skills.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(skills.enumerated()), id: \.element) { i, k in
-                    Button { model.act("skill", k.name) } label: {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(k.name).font(.subheadline.bold()).lineLimit(1)
-                            if !k.desc.isEmpty {
-                                Text(k.desc).font(.caption).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
+            // Bend marks the highlighted row; the first one is it only when none is marked
+            let hot = skills.firstIndex(where: { $0.on == true }) ?? 0
+            VStack(spacing: 0) {
+                Divider()
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(skills.enumerated()), id: \.element) { i, k in
+                                Button { model.act("skill", k.name) } label: {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(k.name).font(.subheadline.monospaced().weight(.semibold)).lineLimit(1)
+                                        if !k.desc.isEmpty {
+                                            Text(k.desc).font(.caption).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                    .padding(.leading, 12).padding(.trailing, 56).padding(.vertical, 4)
+                                    .background(i == hot ? Color.accentColor.opacity(0.15) : Color.clear)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .id(i)
+                                .accessibilityLabel(k.desc.isEmpty ? k.name : k.name + ", " + k.desc)
+                                .accessibilityAddTraits(i == hot ? [.isSelected] : [])
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(k.on ?? (i == 0) ? Color.secondary.opacity(0.15) : Color.clear)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .frame(maxHeight: 5 * 48)
+                    .onChange(of: hot) { _, i in withAnimation { proxy.scrollTo(i) } }
                 }
             }
-            .padding(.vertical, 4)
+            .overlay(alignment: .topTrailing) {
+                Button { model.act("skill-close") } label: {
+                    Image(systemName: "xmark").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close suggestions")
+            }
+            .background(Color(.secondarySystemBackground))
         }
         if !atts.isEmpty || !up.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
