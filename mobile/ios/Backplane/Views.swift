@@ -403,7 +403,7 @@ struct ProjectsView: View {
             if !screen.hubs.isEmpty { BotsSection(model: model, screen: screen) }
         }
         .overlay {
-            if screen.projects.isEmpty && screen.bots.isEmpty && screen.rooms.isEmpty {
+            if screen.projects.isEmpty && screen.bots.isEmpty && screen.rooms.isEmpty && screen.uber == nil {
                 // a hub still catching up has not said what there is yet
                 if let h = screen.hubs.first(where: { (model.conn[$0.key]?.phase ?? .connecting) != .online }), !screen.online {
                     VStack(spacing: 12) {

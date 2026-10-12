@@ -545,7 +545,7 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snacks) },
     ) { pad ->
-        if (s.projects.isEmpty() && s.bots.isEmpty() && s.rooms.isEmpty()) {
+        if (s.projects.isEmpty() && s.bots.isEmpty() && s.rooms.isEmpty() && s.uber == null) {
             Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
                 Text(s.empty, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
             }
