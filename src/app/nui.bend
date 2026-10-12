@@ -823,6 +823,22 @@ def Nui.lfocus(+n: Nui) -> LY.Focus:
 def Nui.lfocus.bits(+n: Nui) -> U32:
   LY.Lyr.kind.with(0, Nui.lfocus(n))
 
+# Design review: a comparison's marks follow the active layer (client.bend's
+# Rv.bits through the core action rv-bits)
+def Rvw.bits(+n: Nui, +f: LY.Focus) -> Step:
+  Nui.act(n, "rv-bits", U32.show(U.Rv.bits(Vw.kind(Nui.vw(n)), f)))
+
+def Rvw.cat(cs: List<&2, NCmd>, s: Step) -> Step:
+  match s:
+    case Step{+n, +ds, d}:
+      Step{n, List.append(&2, NCmd, cs, ds), True{}}
+
+# Reset layers: every layer is compared again
+def Rvw.reset(s: Step) -> Step:
+  match s:
+    case Step{+n, cs, d}:
+      Rvw.cat(cs, Nui.act(n, "rv-bits", "0"))
+
 # the viewer's light ground (its sun/moon button, "@vw.light"), and the
 # window's light theme (Settings, Appearance: the hub's "ui.theme")
 def Nui.vlight(+n: Nui) -> Bool:
@@ -1610,7 +1626,7 @@ def Nui.goto(+n: Nui, +pid: String) -> Step:
 
 # the focus changed: the scene is drawn again under it
 def Nui.lfocus.set(+n: Nui, +f: LY.Focus) -> Step:
-  Step{Nui.with_vw(Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Nui.lfocus.key(n), LY.Lyr.show(f))), Vw.stale(Nui.vw(n))), Nil{}, True{}}
+  Rvw.bits(Nui.with_vw(Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Nui.lfocus.key(n), LY.Lyr.show(f))), Vw.stale(Nui.vw(n))), f)
 
 # the kind of the scene on show (0 a board, 1 a schematic)
 def Nui.look.kind(+n: Nui) -> U32:
@@ -2485,7 +2501,7 @@ def Nui.sheet.at(+n: Nui) -> Nat:
 # show tree row i (a new scene: it fades in and refits)
 def Nui.sheet.go(+n: Nui, +i: Nat) -> Step:
   Step{Nui.with_vw(Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), "@vw.at", Nat.show(i))),
-    Vw.kind_set(Nui.vw(n), 1, HI.Hier.file(Nui.rows(n), i))), Nil{}, True{}}
+    Vw.kind_set(Nui.vw(n), 1, U.Rv.sheet(Vw.path(Nui.vw(n)), HI.Hier.file(Nui.rows(n), i)))), Nil{}, True{}}
 
 def Nui.sheet.open(m: Maybe<&2, Nat>, +n: Nui) -> Step:
   match m:
@@ -2499,7 +2515,7 @@ def Nui.layers.set(+n: Nui, +flip: U32) -> Step:
 
 # Reset layers: every layer as it is by default, no focus
 def Nui.layers.reset(+n: Nui) -> Step:
-  Nui.layers.set(Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Nui.lfocus.key(n), "")), 0)
+  Rvw.reset(Nui.layers.set(Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Nui.lfocus.key(n), "")), 0))
 
 
 # the viewer's sun/moon button: its own light or dark ground, whatever

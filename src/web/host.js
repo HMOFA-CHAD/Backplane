@@ -376,6 +376,8 @@ function valueOf(el) {
     f.value = "";
     return sp + "\u001f" + t;
   }
+  const pre = el.getAttribute("data-pre");
+  if (pre !== null) return pre + (el.value ?? "");
   const v = el.getAttribute("data-value");
   if (v === null) return el.value ?? "";
   if (v === "@term-size") return termSize();

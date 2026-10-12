@@ -619,6 +619,8 @@ button.mic.starting, button.mic.stopping { border-color: var(--bad); color: var(
 .hist-menu { position: absolute; left: 12px; bottom: 8px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 16px); overflow: auto; background: var(--raise); border: 1px solid var(--line); pointer-events: auto; display: flex; flex-direction: column; }
 .hist-menu .head { color: var(--faint); padding: 6px 12px; font-size: 12px; }
 .hist-menu .row { display: flex; gap: 10px; align-items: baseline; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); padding: 6px 12px; color: var(--text); min-width: 0; }
+.hist-menu .field { margin: 0 12px 6px; padding: 4px 8px; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 0; }
+.hist-legend { align-items: center; }
 .hist-menu .row:hover { background: var(--panel); }
 .hist-menu .row .name { flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hist-menu .row .sub { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
