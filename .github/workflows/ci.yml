@@ -13,26 +13,51 @@ permissions:
   contents: read
 
 jobs:
-  laws:
-    name: Check and prove
+  check:
+    name: Type-check
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bend
-      - run: scripts/check.sh
+      - run: CHECK_JOBS=$(nproc) scripts/check.sh check
+
+  proof:
+    name: Prove laws
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-bend
+      - run: scripts/check.sh proof
+
+  # Kept as the single gate other jobs depend on; it passes when both
+  # halves above pass, so the check and the proof run in parallel on
+  # separate runners instead of one after the other in one job.
+  laws:
+    name: Check and prove
+    needs: [check, proof]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "type-check and proof both passed"
 
   test:
-    name: Tests
+    name: Tests ${{ matrix.shard }}/4
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      TEST_SHARD: ${{ matrix.shard }}
+      TEST_SHARD_COUNT: "4"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bend
       - uses: oven-sh/setup-bun@v2
-      - run: scripts/test.sh
+      - run: TEST_JOBS=$(nproc) scripts/test.sh
 
   build:
     name: Build ${{ matrix.target }}
-    needs: [laws]
+    # runs beside "laws" (which checks every file); nothing is published here
     strategy:
       fail-fast: false
       matrix:
@@ -47,8 +72,9 @@ jobs:
       - uses: ./.github/actions/setup-bend
       - uses: oven-sh/setup-bun@v2
       - name: Swap for the compile
-        # clang takes about 20 GB to compile the app's C (one large file);
-        # the Linux runners have 16, so without swap the compile can be killed
+        # bend's emit of the app takes 16-22 GB; the Linux runners have 16, so
+        # without swap it can be killed. (The clang compiles no longer need
+        # it: scripts/build-app.sh cuts the C into 16 units of about 2.5 GB.)
         if: runner.os == 'Linux'
         # the swap file goes on /mnt when the runner has it, and never takes
         # more than the free space less 8 GB (a full disk kills the runner)
@@ -72,8 +98,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-19 libx11-dev
           sudo ln -sf /usr/bin/clang-19 /usr/local/bin/clang
+      - name: Object cache
+        # the compiled C units, by hash of their text (scripts/cc-unit.sh): an
+        # unchanged unit is not compiled again. Never holds the Google client
+        # (a unit that includes it is not cached).
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/backplane-bend/obj
+          key: objs-${{ matrix.target }}-${{ github.sha }}
+          restore-keys: objs-${{ matrix.target }}-
       - run: clang --version
       - run: scripts/build.sh
+        env:
+          BACKPLANE_SKIP_CHECK: "1" # the laws job checks every file
       - run: scripts/smoke.sh
       - uses: actions/upload-artifact@v4
         with:
