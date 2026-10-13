@@ -122,7 +122,7 @@ try {
   const lines = readFileSync(join(home, "events.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const sets2 = lines.filter((x) => x.$ === "WorkSet" && x.thread === th2 && x.kind === "bg");
   const fin = sets2.at(-1);
-  check(sets2.length >= 2 && !!fin && String(fin.value) === "", `after the restart the rows are gone (${sets2.length} sets, last "${fin?.rows ?? ""}")`);
+  check(sets2.length >= 2 && !!fin && String(fin.rows) === "", `after the restart the rows are gone (${sets2.length} sets, last "${fin?.rows ?? ""}")`);
   const aside = lines.filter((x) => x.$ === "SettingSet" && x.key === `lostbg.${th2}`);
   check(aside.length >= 1 || existsSync(log), "the rows were put aside until the agent is told (or told at once)");
   const told2 = lines.filter((x) => x.$ === "MessagePosted" && x.thread === th2 && String(x.text).includes("ended your background work")).length;
