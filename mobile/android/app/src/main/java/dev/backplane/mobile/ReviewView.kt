@@ -10,11 +10,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -54,6 +60,25 @@ fun ReviewScreen(m: AppModel, v: Viewer, r: ReviewPage) {
         Button(onClick = { m.act("rv-run", "") }, enabled = !r.busy, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
             Icon(Icons.Filled.Refresh, null)
             Text("  Refresh")
+        }
+    }
+}
+
+// The viewer's source choices, each as wide as its words (six of them do not
+// fit a phone side by side), the row scrolling sideways, the picked one in view
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChoiceRow(choices: List<Choice>, picked: String, modifier: Modifier = Modifier, pick: (String) -> Unit) {
+    val scroll = rememberScrollState()
+    LaunchedEffect(picked) { if (picked == choices.lastOrNull()?.value) scroll.scrollTo(scroll.maxValue) else scroll.scrollTo(0) }
+    Row(modifier.horizontalScroll(scroll)) {
+        SingleChoiceSegmentedButtonRow {
+            choices.forEachIndexed { i, c ->
+                SegmentedButton(selected = c.value == picked, onClick = { pick(c.value) },
+                    shape = SegmentedButtonDefaults.itemShape(i, choices.size), icon = {}) {
+                    Text(c.label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium)
+                }
+            }
         }
     }
 }

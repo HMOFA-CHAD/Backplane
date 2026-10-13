@@ -284,10 +284,18 @@ def View.mech.act(+u: U.Ui, +action: String, +value: String, v: String) -> U.Act
   View.mech.to(U.Ui.act(u, action, value), v)
 
 # a new connection watches nothing: ask again once online
-def View.online.k(on: Bool, u: U.Ui) -> U.Act:
+# (a Review tab kept across a launch asks for its page again)
+def View.online.rv(rv: Bool, a: U.Act) -> U.Act:
+  match rv a:
+    case True{} U.Act{+u, cs}:
+      View.join(U.Rp.ask(u, "bom"), cs)
+    case False{} _:
+      a
+
+def View.online.k(on: Bool, +u: U.Ui) -> U.Act:
   match on:
     case True{}:
-      View.sync(U.Act{U.Ui.scratch_set(u, "@view.at", ""), Nil{}})
+      View.online.rv(String.eq(View.kind(u), "review"), View.sync(U.Act{U.Ui.scratch_set(u, "@view.at", ""), Nil{}}))
     case False{}:
       U.Act{u, Nil{}}
 
