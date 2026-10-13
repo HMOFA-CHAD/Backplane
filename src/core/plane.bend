@@ -395,7 +395,7 @@ def Plane.arow.at(r: U.ARow) -> Nat:
       at
 
 def Plane.shows(+state: String, +at: Nat, +now: Nat, +idle: Bool) -> Bool:
-  Bool.or(Nat.is_lt(Plane.sec(state), 2n), Bool.and(idle, Bool.not(Nat.is_le(now, Nat.add(at, Plane.idle.age())))))
+  Bool.or(Nat.is_lt(Plane.sec(state), 2n), Bool.and(idle, Nat.is_le(now, Nat.add(at, Plane.idle.age()))))
 
 def Plane.threads.m(show: Bool, r: U.ARow, +state: String, +u: U.Ui, +st: M.State, rest: List<&2, PRow>) -> List<&2, PRow>:
   match show:
