@@ -977,7 +977,6 @@ function connect() {
     heard = BigInt(Date.now());
     backoff = 250;
     ui = App.online(ui, true);
-    deskCheck();
     later();
   };
   s.onmessage = (e) => {

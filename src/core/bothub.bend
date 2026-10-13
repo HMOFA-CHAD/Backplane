@@ -2084,7 +2084,7 @@ def Bots.notify.t(empty: Bool, +s: M.State, +now: Nat, +thread: String, +reason:
     case True{}:
       MR.fail("Say what the person should know.")
     case False{}:
-      Bots.notify.k(reason, s, now, thread, NO.Turn.of(M.State.mine(s, thread), thread), text)
+      Bots.notify.k(reason, s, now, thread, NO.Turn.of.state(s, thread), text)
 
 # a bot's notify_person call
 def Bots.notify(+s: M.State, +now: Nat, +b: BT.Bot, +reason: String, +text: String) -> MC.Res:

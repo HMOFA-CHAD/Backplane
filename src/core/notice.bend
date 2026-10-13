@@ -329,7 +329,7 @@ def Notice.of.bot.t(+s: M.State, +t: Turn, +name: String, +thread: String, +fail
 def Notice.of.bot(+s: M.State, b: BT.Bot, +thread: String, +failed: Bool, local: Bool) -> Notice:
   match b:
     case BT.Bot{_, +name, _, _, _, _, _}:
-      Notice.of.bot.t(s, Turn.of(M.State.entries.all(s), thread), name, thread, failed, local)
+      Notice.of.bot.t(s, Turn.of(M.State.mine(s, thread), thread), name, thread, failed, local)
 
 def Notice.of.k(m: Maybe<&2, BT.Bot>, +s: M.State, +thread: String, +failed: Bool, local: Bool) -> Notice:
   match m:
@@ -342,6 +342,35 @@ def Notice.of.k(m: Maybe<&2, BT.Bot>, +s: M.State, +thread: String, +failed: Boo
 # "fail", and the key its alert replaces others under
 def Notice.of(+s: M.State, +thread: String, +failed: Bool, local: Bool) -> Notice:
   Notice.of.k(BT.World.of_thread(M.State.bots(s), thread), s, thread, failed, local)
+
+# Messages waiting behind this turn are not its trigger. Legacy Notice.of
+# retains its rule; bot enforcement reads this queued-aware version.
+def Turn.skip(qs: List<&2, M.QItem>, acc: String) -> String:
+  match qs:
+    case Nil{}:
+      acc
+    case M.QItem{m, _} <> t:
+      Turn.skip(t, acc ++ "\n" ++ m ++ "\n")
+
+def Turn.queued(+skip: String, +id: String) -> Bool:
+  String.contains(skip, "\n" ++ id ++ "\n")
+
+def Turn.scan.skip(es: List<&2, M.Entry>, +id: String, +skip: String, done: Bool, acc: Turn) -> Turn:
+  match es done:
+    case _ True{}:
+      acc
+    case Nil{} False{}:
+      acc
+    case M.Msg{+mid, +th, M.User{}, text, at} <> t False{}:
+      +hit = Bool.and(String.eq(th, id), Bool.not(Turn.queued(skip, mid)))
+      Turn.scan.skip(t, id, skip, hit, Turn.user(hit, text, at, acc))
+    case M.Act{_, +th, _, +kind, _, _} <> t False{}:
+      Turn.scan.skip(t, id, skip, False{}, Turn.act(Bool.and(String.eq(th, id), Turn.posts(kind)), acc))
+    case _ <> t False{}:
+      Turn.scan.skip(t, id, skip, False{}, acc)
+
+def Turn.of.state(+s: M.State, +thread: String) -> Turn:
+  Turn.scan.skip(M.State.mine(s, thread), thread, Turn.skip(M.Queue.items(s, thread), ""), False{}, Turn{False{}, "", 0n})
 
 # Policy
 # ------

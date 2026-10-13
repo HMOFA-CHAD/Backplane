@@ -23,7 +23,7 @@ object Notes {
 
     fun channels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(TURNS, "Finished turns", NotificationManager.IMPORTANCE_DEFAULT))
+        nm.createNotificationChannel(NotificationChannel(TURNS, "Personal alerts", NotificationManager.IMPORTANCE_DEFAULT))
         nm.createNotificationChannel(NotificationChannel(LIVE, "Agents working", NotificationManager.IMPORTANCE_LOW).apply {
             setShowBadge(false)
         })
@@ -63,7 +63,12 @@ object Notes {
             .setContentTitle(c.title)
             .setContentText(c.body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(c.body))
-            .setCategory(if (c.kind == "fail") NotificationCompat.CATEGORY_ERROR else NotificationCompat.CATEGORY_STATUS)
+            .setCategory(when (c.kind) {
+                "fail" -> NotificationCompat.CATEGORY_ERROR
+                "ask", "reminder" -> NotificationCompat.CATEGORY_REMINDER
+                "note" -> NotificationCompat.CATEGORY_MESSAGE
+                else -> NotificationCompat.CATEGORY_STATUS
+            })
             .setContentIntent(open(ctx, c.thread, id(c.thread)))
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
