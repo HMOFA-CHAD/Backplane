@@ -1,4 +1,5 @@
 import Base
+import ./src/core/exe.bend as EX
 import ./src/core/wake.bend as WAK
 import ./src/core/bothub.bend as BHS
 import ./src/core/bot.bend as BOT
@@ -7389,3 +7390,27 @@ law deploy_cut_requester_no_second:
 # cancel clears the wait
 law deploy_cancel_clears:
   {DP.Deploy.waiting(H.Deploy.demo.again(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), H.Deploy.cancel(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n))) == False{} : Bool}
+
+# ---- phone-sch-viewer: exe path ----
+
+# a replaced binary's path loses the kernel's " (deleted)"; a child of it
+# runs through /proc/self/exe (phone viewers: "No such file or directory")
+law exe_path_plain:
+  {EX.Exe.path("/a/backplane") == "/a/backplane" : String}
+
+law exe_path_deleted:
+  {EX.Exe.path("/a/backplane (deleted)") == "/a/backplane" : String}
+
+law exe_child_plain:
+  {EX.Exe.child("/a/backplane") == "/a/backplane" : String}
+
+law exe_child_deleted:
+  {EX.Exe.child("/a/backplane (deleted)") == "/proc/self/exe" : String}
+
+law exe_gone_plain:
+  {EX.Exe.gone("/a/backplane") == False{} : Bool}
+
+law exe_gone_deleted:
+  {EX.Exe.gone("/a/backplane (deleted)") == True{} : Bool}
+
+# ---- end phone-sch-viewer: exe path ----

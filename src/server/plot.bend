@@ -1,4 +1,5 @@
 import Base
+import ../core/exe.bend as EX
 import ./host.bend as H
 import ./kicad.bend as K
 import ../core/mech.bend as MC
@@ -648,7 +649,7 @@ def Pv.tree.say(r: PR.Ran, +client: U32, +root: String, +out: Chan(POut)) -> IO(
 
 def Pv.tree.k(+file: String, +client: U32, +root: String, +out: Chan(POut)) -> IO(Unit):
   Bool.pick(IO(Unit), String.is_empty(file), IO.pure(Unit, Unit{}),
-    IO.bind(String, Unit, H.Sys.exe_path(), exe => IO.bind(PR.Ran, Unit, PR.Proc.run(exe, ["--plot-tree", file], "/"), r => Pv.tree.say(r, client, root, out))))
+    IO.bind(String, Unit, H.Sys.exe_path(), exe => IO.bind(PR.Ran, Unit, PR.Proc.run(EX.Exe.child(exe), ["--plot-tree", file], "/"), r => Pv.tree.say(r, client, root, out))))
 
 def Pv.tree(+client: U32, +root: String, +path: String, +out: Chan(POut)) -> IO(Unit):
   IO.bind(K.Files, Unit, K.Files.read(root), f => Pv.tree.k(Tree.root(f, Bool.pick(String, Nat.is_eq(HS.Hist.kind(path), 1n), path, "")), client, root, out))
@@ -778,7 +779,7 @@ def Pv.read(+key: String, +kind: U32, +path: String, +q: Chan(PMsg), +dir: Strin
   do IO<Unit>:
     st : U32 & U32 <- Pv.stamp.of(path)
     exe : String <- H.Sys.exe_path()
-    r : PR.Ran <- PR.Proc.run(exe, ["--plot", U32.show(kind), path, Pv.infos(dir, key)], "/")
+    r : PR.Ran <- PR.Proc.run(EX.Exe.child(exe), ["--plot", U32.show(kind), path, Pv.infos(dir, key)], "/")
     Pv.read.k(st, r, key, kind, q)
 
 # Polling
@@ -958,7 +959,7 @@ def Pv.info.done(r: PR.Ran, +client: U32, +id: String, +out: Chan(POut)) -> IO(U
 def Pv.info(+client: U32, +id: String, +file: String, +sig: U32, +idx: Nat, +out: Chan(POut)) -> IO(Unit):
   do IO<Unit>:
     exe : String <- H.Sys.exe_path()
-    r : PR.Ran <- PR.Proc.run(exe, ["--plot-info", file, U32.show(sig), Nat.show(idx)], "/")
+    r : PR.Ran <- PR.Proc.run(EX.Exe.child(exe), ["--plot-info", file, U32.show(sig), Nat.show(idx)], "/")
     Pv.info.done(r, client, id, out)
 
 def Pv.handle(st: PSt, m: PMsg, +q: Chan(PMsg), +out: Chan(POut), +dir: String) -> IO(PSt):
