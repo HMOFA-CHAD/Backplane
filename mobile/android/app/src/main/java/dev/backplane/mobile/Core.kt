@@ -48,6 +48,52 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     var lastUber by mutableStateOf<UberCard?>(null)
     var lastPlane by mutableStateOf<PlaneModel?>(null)
         private set
+    data class Opening(val nav: String, val title: String, val cat: String, val kind: String)
+    var opening by mutableStateOf<Opening?>(null)
+        private set
+    var leaving by mutableStateOf(false)
+        private set
+    private var pushed = Long.MIN_VALUE
+    private var tapAt = 0L
+    private var firstMs = 0L
+    val seenThreads = mutableStateMapOf<String, ThreadView>()
+    val seenBots = mutableStateMapOf<String, BotView>()
+    val seenPages = mutableStateMapOf<String, Screen>()
+    private val threadOrder = java.util.ArrayDeque<String>()
+    private val botOrder = java.util.ArrayDeque<String>()
+    private val pageOrder = java.util.ArrayDeque<String>()
+
+    companion object {
+        fun nav(s: Screen): String = s.bot?.let { if (it.kind != "bot") "@${it.kind}:${it.id}" else s.sel } ?: s.sel
+    }
+
+    fun open(nav: String, action: String, value: String, title: String, cat: String = "", kind: String = "thread") {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (nav.isEmpty() || opening?.nav == nav || (!leaving && screen?.let { Core.nav(it) } == nav) ||
+            (pushed != Long.MIN_VALUE && now - pushed < 350)) return
+        pushed = now
+        tapAt = now
+        leaving = false
+        val rig = cat.ifEmpty { screen?.bots?.firstOrNull { it.nav == nav }?.cat ?: screen?.uber?.takeIf { it.nav == nav }?.cat ?: "" }
+        opening = Opening(nav, title, rig, kind)
+        firstMs = android.os.SystemClock.elapsedRealtime() - tapAt
+        dispatch(action, value)
+    }
+
+    fun back() {
+        opening = null
+        leaving = true
+        tapAt = 0L
+        act("select", "")
+    }
+
+    private fun <T> remember(nav: String, value: T, map: MutableMap<String, T>, order: java.util.ArrayDeque<String>) {
+        map[nav] = value
+        order.remove(nav)
+        order.addLast(nav)
+        if (order.size > 24) map.remove(order.removeFirst())
+    }
+
     // the composer's text, owned here so typing never waits on Bend
     var composer by mutableStateOf("")
         private set
@@ -192,7 +238,12 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         ).also { it.start() }
     }
 
+    private fun dispatch(action: String, value: String) {
+        scope.launch { apply(engine.act(action, value)) }
+    }
+
     fun act(action: String, value: String = "") {
+        if (opening != null) return
         // a web address a settings row offers (Antigravity's sign-in):
         // opened in the browser here, never sent to the engine
         if (action == "open-url") {
@@ -201,7 +252,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
                 runCatching { app.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, u).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
             return
         }
-        scope.launch { apply(engine.act(action, value)) }
+        dispatch(action, value)
     }
 
     // an action whose effect shows only with what the hub answers (a key
@@ -299,6 +350,18 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
             if (typing == 0) composer = next.thread?.draft ?: ""
             val was = screen?.sel
             screen = next
+            val nav = nav(next)
+            if (nav.isNotEmpty()) {
+                next.thread?.let { remember(nav, it, seenThreads, threadOrder) }
+                next.bot?.let { remember(nav, it, seenBots, botOrder) }
+                remember(nav, next.copy(projects = emptyList(), bots = emptyList(), rooms = emptyList()), seenPages, pageOrder)
+            }
+            if (opening?.nav == nav) {
+                android.util.Log.i("Backplane", "tap $nav first $firstMs ms full ${android.os.SystemClock.elapsedRealtime() - tapAt} ms")
+                opening = null
+                tapAt = 0L
+            }
+            if (leaving && nav.isEmpty()) leaving = false
             if (next.uber == null) { lastUber = null; lastPlane = null }
             else if (next.plane != null) { lastUber = next.uber; lastPlane = next.plane }
             if (next.hub != shownHub) {

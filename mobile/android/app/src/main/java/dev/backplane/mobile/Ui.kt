@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -96,6 +97,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -136,8 +139,47 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+
+// A cached destination has no input until its matching screen arrives.
+// The Back control sits outside the inert content, so opening is cancellable.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OpeningDestination(m: AppModel, s: Screen, o: Core.Opening) {
+    val page = m.seenPages[o.nav]
+    Scaffold(topBar = {
+        TopAppBar(title = { Text(o.title) }, navigationIcon = {
+            IconButton(onClick = { m.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+        })
+    }) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding).clearAndSetSemantics { }) {
+            val b = m.seenBots[o.nav]
+            val t = m.seenThreads[o.nav]
+            if (b != null && page != null) BotDestination(m, page, b)
+            else if (t != null) ThreadScreen(m, page ?: s.copy(thread = t, bot = null), t)
+            else Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (o.cat.isNotEmpty()) BotCat(m, o.cat, 48.dp)
+                    Text(o.title, style = MaterialTheme.typography.titleLarge)
+                }
+                repeat(6) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.fillMaxWidth(0.65f).height(18.dp).background(MaterialTheme.colorScheme.surfaceVariant))
+                        Box(Modifier.fillMaxWidth().height(12.dp).background(MaterialTheme.colorScheme.surfaceVariant))
+                    }
+                }
+            }
+            // Covers cached fields, buttons and scroll gestures, not Back.
+            Box(Modifier.fillMaxSize().pointerInput(o.nav) {
+                awaitPointerEventScope {
+                    while (true) { awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } }
+                }
+            })
+        }
+    }
+}
 
 @Composable
 fun App(m: AppModel) {
@@ -156,8 +198,13 @@ fun App(m: AppModel) {
         }
         // New Thread: its page at once, waiting for the hub's thread
         s.making && !leftNew -> {
-            BackHandler { leftNew = true; m.act("select", "") }
-            MakingScreen { leftNew = true; m.act("select", "") }
+            BackHandler { leftNew = true; m.back() }
+            MakingScreen { leftNew = true; m.back() }
+        }
+        m.leaving -> Projects(m, s, onPair = { pairing = true })
+        m.opening != null -> {
+            BackHandler { m.back() }
+            OpeningDestination(m, s, m.opening!!)
         }
         s.thread != null && s.thread.viewer.open == "files" && s.thread.viewer.files != null -> {
             BackHandler { m.act("view", "") }
@@ -186,11 +233,11 @@ fun App(m: AppModel) {
         }
         // a bot (its chat is its thread), a room, or a bot on a linked machine
         s.bot != null -> {
-            BackHandler { m.act("select", "") }
+            BackHandler { m.back() }
             BotDestination(m, s, s.bot)
         }
         s.thread != null -> {
-            BackHandler { m.act("select", "") }
+            BackHandler { m.back() }
             ThreadScreen(m, s, s.thread)
         }
         else -> Projects(m, s, onPair = { pairing = true })
@@ -249,7 +296,7 @@ fun App(m: AppModel) {
             text = {
                 Column {
                     s.island.lines.forEach { l ->
-                        TextButton(onClick = { m.picking = false; m.act("select", l.thread) }, modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { m.picking = false; m.open(l.thread, "select", l.thread, l.title) }, modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.fillMaxWidth()) {
                                 Text(l.title.ifEmpty { l.doing }, maxLines = 1)
                                 Text(l.doing, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, maxLines = 1)
@@ -478,7 +525,7 @@ private fun ThreadRow(m: AppModel, r: Row) {
                 modifier = Modifier.alpha(if (r.faded) 0.45f else 1f).combinedClickableCompat(onLong = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     m.act("row-menu", r.id)
-                }) { m.act("select", r.id) },
+                }) { m.open(r.id, "select", r.id, r.title) },
             )
         }
         Box(Modifier.align(Alignment.TopEnd)) {
@@ -823,7 +870,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
         // opaque, so the entries scrolled under it (a bot's cat and tabs) never show through
         topBar = { Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
             TopAppBar(
-                navigationIcon = { IconButton(onClick = { m.act("select", "") }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                navigationIcon = { IconButton(onClick = { m.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 title = {
                     Column {
                         Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis)

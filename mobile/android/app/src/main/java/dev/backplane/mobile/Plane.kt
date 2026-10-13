@@ -55,13 +55,13 @@ import org.json.JSONObject
 
 // the uberbot's card: a bot's row with the plane's counts
 data class UberCard(
-    val id: String, val name: String, val mood: String, val cat: String, val counts: String, val sel: Boolean,
+    val id: String, val name: String, val mood: String, val cat: String, val counts: String, val sel: Boolean, val nav: String = "",
 )
 
 // kind: thread, bot, room, routine; act and value are what a tap sends
 data class PlaneRow(
     val kind: String, val id: String, val act: String, val value: String, val title: String, val sub: String,
-    val state: String, val ago: String, val machine: String, val away: Boolean,
+    val state: String, val ago: String, val machine: String, val away: Boolean, val nav: String = "",
 )
 
 data class PlaneMachine(val name: String, val state: String)
@@ -81,11 +81,11 @@ private fun planeRows(a: JSONArray?): List<PlaneRow> =
     if (a == null) emptyList() else (0 until a.length()).map {
         val o = a.getJSONObject(it)
         PlaneRow(o.optString("kind"), o.optString("id"), o.optString("act"), o.optString("value"), o.optString("title"),
-            o.optString("sub"), o.optString("state"), o.optString("ago"), o.optString("machine"), o.optBoolean("away"))
+            o.optString("sub"), o.optString("state"), o.optString("ago"), o.optString("machine"), o.optBoolean("away"), o.optString("nav"))
     }
 
 fun parseUber(o: JSONObject) = UberCard(
-    o.optString("id"), o.optString("name"), o.optString("mood"), o.optString("cat"), o.optString("counts"), o.optBoolean("sel"),
+    o.optString("id"), o.optString("name"), o.optString("mood"), o.optString("cat"), o.optString("counts"), o.optBoolean("sel"), o.optString("nav"),
 )
 
 fun parsePlane(o: JSONObject) = PlaneModel(
@@ -125,7 +125,7 @@ fun UberCardRow(m: AppModel, c: UberCard) {
         },
         leadingContent = { BotCat(m, c.cat, 48.dp) },
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = if (c.sel) 0.22f else 0.10f)),
-        modifier = Modifier.clickable { m.act("uber", c.id) },
+        modifier = Modifier.clickable { m.open(c.nav, "uber", c.id, c.name, c.cat, "bot") },
     )
 }
 
@@ -140,7 +140,7 @@ private fun PlaneLabel(text: String, count: Int?, modifier: Modifier = Modifier)
 
 @Composable
 private fun PlaneItem(m: AppModel, r: PlaneRow, mood: Boolean = false) {
-    val go: () -> Unit = { m.act(r.act, r.value) }
+    val go: () -> Unit = { if (r.nav.isNotEmpty()) m.open(r.nav, r.act, r.value, r.title, kind = r.kind) else m.act(r.act, r.value) }
     when (r.kind) {
         "room" -> ListItem(
             headlineContent = { Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
