@@ -75,7 +75,8 @@ def Rv.focus.k(a: U.Act, cs: List<&2, U.Cmd>) -> U.Act:
     case U.Act{+u, +ds}:
       U.Act{u, List.append(&2, U.Cmd, ds, cs)}
 
-# a layer focus that moved: a comparison's marks follow it (core's rv-bits)
+# a layer focus that moved: a comparison's marks follow it (core's rv-bits),
+# before Solid.sync, so the watch it sends is for the comparison's new path
 def Rv.focus(on: Bool, a: U.Act) -> U.Act:
   match on a:
     case True{} U.Act{+u, +cs}:
@@ -84,7 +85,7 @@ def Rv.focus(on: Bool, a: U.Act) -> U.Act:
       x
 
 def act(u: U.Ui, +action: String, value: String) -> U.Act:
-  Rv.focus(Bool.or(String.eq(action, "view-layer-pick"), String.eq(action, "view-layer-mode")), U.Solid.sync(U.Ui.act(u, action, value)))
+  U.Solid.sync(Rv.focus(Bool.or(String.eq(action, "view-layer-pick"), String.eq(action, "view-layer-mode")), U.Ui.act(u, action, value)))
 
 def view(u: U.Ui) -> D.Node:
   V.View.page(u)
