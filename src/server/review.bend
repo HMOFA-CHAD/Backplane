@@ -9,6 +9,8 @@ import ./host.bend as H
 import ./kicad.bend as K
 import ./git.bend as GT
 import ./gh.bend as GH
+import ../core/cad.bend as CAD
+import ../core/checks.bend as CHK
 
 # Design review's jobs (docs/design-review.md): what the hub asks of a
 # thread's folder for comparisons, BOMs, checks and releases (core's
@@ -119,6 +121,169 @@ def Rvc.bom.k(one: Bool, +a: String, +b: String) -> IO(String):
 def Rvc.bom(+a: String, +b: String) -> IO(Unit):
   IO.bind(String, Unit, Rvc.bom.k(String.is_empty(a), a, b), md => IO.print(md))
 
+# Design checks (core/checks.bend, cad.bend)
+# ------------------------------------------
+# `backplane --review checks DIR COMMIT HOME TRIGGER`: the project in DIR
+# (COMMIT "" its files as they are; else that commit, taken out with git
+# archive into a folder of its own and removed after), checked in this
+# child: KiCad's ERC and DRC (kicad-cli, Cad.kicad.checks), the BOM rules,
+# the checklist (.backplane/checklist.md, else Checklist.default), and the
+# custom checks .backplane/checks.json runs on TRIGGER (manual, pr,
+# release). It prints {md, gate, line, tasks}: the report, why the gate
+# fails ("" it passes), the one-line summary, the checklist's boxes (the
+# clients draw them as boxes to tick, so the Markdown leaves them out).
+
+def Rvc.env(r: Result<&1, &1, U32 & String, String>) -> String:
+  match r:
+    case Done{+v}:
+      v
+    case Fail{_}:
+      ""
+
+def Rvc.rt.cli(r: K.Rt) -> String:
+  match r:
+    case K.Rt{+c, _, _, _}:
+      c
+
+def Rvc.cli(+home: String) -> IO(String):
+  do IO<String>:
+    r : Result<&1, &1, U32 & String, String> <- IO.get_env("BACKPLANE_KICAD_CLI")
+    exe : String <- H.Sys.exe_dir()
+    rt : K.Rt <- K.Rt.resolve(Rvc.env(r), exe, home)
+    return Rvc.rt.cli(rt)
+
+def Rvc.pcb(f: K.Files) -> String:
+  match f:
+    case K.Files{_, +pcb, _, _}:
+      pcb
+
+# a folder for the reports, and the commit's files when one is asked
+def Rvc.prep.sh() -> String:
+  String.join([
+    "set -e",
+    "t=$(mktemp -d \"${TMPDIR:-/tmp}/bp-review.XXXXXX\")",
+    "if [ -n \"$2\" ]; then",
+    "  cd \"$1\"",
+    "  p=$(git rev-parse --show-prefix 2>/dev/null || true)",
+    "  mkdir \"$t/src\"",
+    "  git archive --format=tar \"$2\" | tar -x -C \"$t/src\"",
+    "  printf '%s\\n%s\\n' \"$t\" \"$t/src/$p\"",
+    "else",
+    "  printf '%s\\n%s\\n' \"$t\" \"$1\"",
+    "fi"], "\n")
+
+def Rvc.vars(+cli: String, +pcb: String, +sch: String, +out: String) -> List<&2, CAD.Var>:
+  [CAD.Var{"cli", cli}, CAD.Var{"pcb", pcb}, CAD.Var{"sch", sch}, CAD.Var{"out", out}]
+
+# one KiCad check: its findings, or why it could not run
+def Rvc.chk.read(r: P.Ran, +id: String, +text: String) -> List<&2, CHK.Finding>:
+  match r:
+    case P.Ran{0, _}:
+      Bool.pick(List<&2, CHK.Finding>, String.eq(id, "erc"), CHK.Checks.erc(text), CHK.Checks.drc(text))
+    case P.Ran{_, +out}:
+      [CHK.Checks.finding(id, "warning", "not_run", String.trim(String.take(out, 300n)), "")]
+
+def Rvc.chk.k(+argv: List<&2, String>, +id: String, +report: String, +dir: String) -> IO(List<&2, CHK.Finding>):
+  match argv:
+    case Nil{}:
+      IO.pure(List<&2, CHK.Finding>, Nil{})
+    case +c <> +rest:
+      do IO<List<&2, CHK.Finding>>:
+        r : P.Ran <- K.KiCad.run(c, rest)
+        text : String <- K.Io.text(report)
+        return Rvc.chk.read(r, id, text)
+
+def Rvc.chk(c: CAD.Chk, +vars: List<&2, CAD.Var>, +out: String, +pcb: String, +sch: String, +dir: String) -> IO(List<&2, CHK.Finding>):
+  match c:
+    case CAD.Chk{+id, _, +argv, +report, _}:
+      Bool.pick(IO(List<&2, CHK.Finding>), String.is_empty(Bool.pick(String, String.eq(id, "erc"), sch, pcb)), IO.pure(List<&2, CHK.Finding>, Nil{}),
+        Rvc.chk.k(CAD.Cad.fill(argv, vars), id, out ++ "/" ++ report, dir))
+
+def Rvc.chks(cs: List<&2, CAD.Chk>, +vars: List<&2, CAD.Var>, +out: String, +pcb: String, +sch: String, +dir: String, acc: List<&2, CHK.Finding>) -> IO(List<&2, CHK.Finding>):
+  match cs:
+    case Nil{}:
+      IO.pure(List<&2, CHK.Finding>, acc)
+    case c <> t:
+      IO.bind(List<&2, CHK.Finding>, List<&2, CHK.Finding>, Rvc.chk(c, vars, out, pcb, sch, dir), fs => Rvc.chks(t, vars, out, pcb, sch, dir, List.append(&2, CHK.Finding, acc, fs)))
+
+def Rvc.bomf(fs: List<&2, BM.Fnd>) -> List<&2, CHK.Finding>:
+  match fs:
+    case Nil{}:
+      Nil{}
+    case BM.Fnd{+id, +sev, +ref, +msg} <> t:
+      CHK.Checks.finding("bom", sev, id, ref ++ ": " ++ msg, "") <> Rvc.bomf(t)
+
+# the custom checks, each run in the project's folder
+def Rvc.run.done(r: P.Ran, +name: String) -> CHK.Run:
+  match r:
+    case P.Ran{c, +out}:
+      CHK.Run{name, U32.is_eq(c, 0), String.trim(String.take(out, 4000n))}
+
+def Rvc.runs(cs: List<&2, CHK.Custom>, +dir: String, acc: List<&2, CHK.Run>) -> IO(List<&2, CHK.Run>):
+  match cs:
+    case Nil{}:
+      IO.pure(List<&2, CHK.Run>, List.reverse(&2, CHK.Run, acc))
+    case CHK.Custom{+name, +run, _} <> t:
+      IO.bind(P.Ran, List<&2, CHK.Run>, P.Proc.run("sh", ["-c", run], dir), r => Rvc.runs(t, dir, Rvc.run.done(r, name) <> acc))
+
+def Rvc.cfg(c: CHK.Config) -> List<&2, CHK.Custom>:
+  match c:
+    case CHK.Config{cs, _}:
+      cs
+
+def Rvc.gate(c: CHK.Config) -> CHK.Gate:
+  match c:
+    case CHK.Config{_, g}:
+      g
+
+def Rvc.task(t: CHK.Task) -> J.Json:
+  match t:
+    case CHK.Task{+tx, d, +g}:
+      J.Json.obj([J.KV{"text", J.Str{tx}}, J.KV{"done", J.Flag{d}}, J.KV{"group", J.Str{g}}])
+
+def Rvc.tasks(ts: List<&2, CHK.Task>) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      Rvc.task(x) <> Rvc.tasks(t)
+
+def Rvc.checks.out(+fs: List<&2, CHK.Finding>, +tasks: List<&2, CHK.Task>, +runs: List<&2, CHK.Run>, +g: CHK.Gate) -> String:
+  J.Json.show(J.Json.obj([J.KV{"md", J.Str{CHK.Checks.md(fs, Nil{}, runs)}}, J.KV{"gate", J.Str{CHK.Checks.gate.all(fs, tasks, runs, g)}},
+    J.KV{"line", J.Str{CHK.Checks.line(fs)}}, J.KV{"tasks", J.Json.arr(Rvc.tasks(tasks))}]))
+
+def Rvc.or(+text: String, +d: String) -> String:
+  Bool.pick(String, String.is_empty(String.trim(text)), d, text)
+
+def Rvc.checks.in(+out: String, +dir: String, +home: String, +trigger: String) -> IO(String):
+  do IO<String>:
+    cli : String <- Rvc.cli(home)
+    +f : K.Files <- K.Files.read(dir)
+    +pcb : String = Rvc.pcb(f)
+    +sch : String = Rvc.sch(f)
+    kc : List<&2, CHK.Finding> <- Rvc.chks(CAD.Cad.kicad.checks(), Rvc.vars(cli, pcb, sch, out), out, pcb, sch, dir, Nil{})
+    ps : List<&2, BM.Part> <- Rvc.parts(sch)
+    cl : String <- K.Io.text(dir ++ "/.backplane/checklist.md")
+    cj : String <- K.Io.text(dir ++ "/.backplane/checks.json")
+    +cfg : CHK.Config = CHK.Checks.config(cj)
+    runs : List<&2, CHK.Run> <- Rvc.runs(CHK.Checks.for(Rvc.cfg(cfg), trigger), dir, Nil{})
+    return Rvc.checks.out(List.append(&2, CHK.Finding, kc, Rvc.bomf(BM.Bom.rules(ps))), CHK.Checklist.parse(Rvc.or(cl, CHK.Checklist.default())), runs, Rvc.gate(cfg))
+
+def Rvc.checks.k(r: P.Ran, +home: String, +trigger: String) -> IO(Unit):
+  match r:
+    case P.Ran{0, +out}:
+      +ls = String.split(String.trim(out), '\n')
+      do IO<Unit>:
+        text : String <- Rvc.checks.in(HI.Hist.at(ls, 0n), HI.Hist.at(ls, 1n), home, trigger)
+        IO.print(text)
+        gone : P.Ran <- P.Proc.run("rm", ["-rf", HI.Hist.at(ls, 0n)], "/")
+        return Unit{}
+    case P.Ran{_, +out}:
+      IO.print(J.Json.show(J.Json.obj([J.KV{"err", J.Str{Rvc.or(String.trim(out), "could not take out that commit")}}])))
+
+def Rvc.checks(+dir: String, +commit: String, +home: String, +trigger: String) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Rvc.prep.sh(), "sh", dir, commit], "/"), r => Rvc.checks.k(r, home, trigger))
+
 def Rvc.args.copy(xs: List<String>) -> List<&2, String>:
   match xs:
     case Nil{}:
@@ -137,6 +302,8 @@ def Rvc.main.k(xs: List<&2, String>, go: List<String> -> IO(Unit)) -> IO(Unit):
   match xs:
     case "--review" <> "bom" <> a <> b <> _:
       Rvc.bom(a, b)
+    case "--review" <> "checks" <> d <> c <> h <> t <> _:
+      Rvc.checks(d, c, h, t)
     case +x:
       go(Rvc.args.back(x))
 
@@ -171,6 +338,59 @@ def RvJob.bom.k(+sch: String, +thread: String, +a: String, +b: String) -> IO(Res
 # the project (the one on show), read at its root schematic
 def RvJob.bom(+thread: String, +cwd: String, +a: String, +b: String) -> IO(Res):
   IO.bind(K.Files, Res, K.Files.read(cwd), f => RvJob.bom.k(Rvc.sch(f), thread, a, b))
+
+# review.checks {thread, commit, trigger}: the design checks, in the child
+def RvJob.checks.k(r: P.Ran, +thread: String) -> Res:
+  match r:
+    case P.Ran{_, +out}:
+      +o = Maybe.default(&2, J.Json, J.Json.parse(String.trim(out)), J.Null{})
+      Res{True{}, J.Json.obj([J.KV{"report", J.Json.obj([J.KV{"thread", J.Str{thread}}, J.KV{"page", J.Str{"checks"}}, J.KV{"md", J.Str{J.Json.get_str(o, "md", "")}},
+        J.KV{"err", J.Str{Bool.pick(String, String.eq(J.Json.show(o), "null"), Rvc.or(String.trim(String.take(out, 300n)), "the checks did not run"), J.Json.get_str(o, "err", ""))}},
+        J.KV{"gate", J.Str{J.Json.get_str(o, "gate", "")}}, J.KV{"line", J.Str{J.Json.get_str(o, "line", "")}},
+        J.KV{"tasks", Maybe.default(&2, J.Json, J.Json.get(o, "tasks"), J.Json.arr(Nil{}))}])}])}
+
+def RvJob.checks(+thread: String, +cwd: String, +commit: String, +trigger: String, +home: String) -> IO(Res):
+  Bool.pick(IO(Res), Bool.or(String.is_empty(cwd), String.starts_with(commit, "-")), IO.pure(Res, Res.err("no project folder")),
+    IO.bind(P.Ran, Res, Rvc.run(["--review", "checks", cwd, commit, home, Rvc.or(trigger, "manual")]), r => IO.pure(Res, RvJob.checks.k(r, thread))))
+
+# review.tick {thread, index}: a checklist box ticked or cleared, in the
+# project's .backplane/checklist.md (made from the default list the first
+# time); the boxes as they are now
+def Rvc.write.done(r: File & Result<&1, &1, U32 & String, Unit>) -> IO(Bool):
+  match r:
+    case (f, Done{_}):
+      do IO<Bool>:
+        File.close(f)
+        return True{}
+    case (f, Fail{_}):
+      do IO<Bool>:
+        File.close(f)
+        return False{}
+
+def Rvc.write.opened(r: Result<&1, &1, U32 & String, File>, text: String) -> IO(Bool):
+  match r:
+    case Done{f}:
+      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Bool, File.write(f, text), Rvc.write.done)
+    case Fail{_}:
+      IO.pure(Bool, False{})
+
+def Rvc.write(+path: String, text: String) -> IO(Bool):
+  IO.bind(Result<&1, &1, U32 & String, File>, Bool, File.open(path, "w"), r => Rvc.write.opened(r, text))
+
+def RvJob.tick.k(ok: Bool, +thread: String, +text: String) -> Res:
+  match ok:
+    case True{}:
+      Res{True{}, J.Json.obj([J.KV{"ticked", J.Json.obj([J.KV{"thread", J.Str{thread}}, J.KV{"tasks", J.Json.arr(Rvc.tasks(CHK.Checklist.parse(text)))}])}])}
+    case False{}:
+      Res.err("the checklist could not be written")
+
+def RvJob.tick(+thread: String, +cwd: String, +index: String) -> IO(Res):
+  do IO<Res>:
+    old : String <- K.Io.text(cwd ++ "/.backplane/checklist.md")
+    +text : String = CHK.Checklist.toggle(Rvc.or(old, CHK.Checklist.default()), Maybe.default(&2, Nat, Nat.read(index), 0n))
+    made : P.Ran <- P.Proc.run("mkdir", ["-p", cwd ++ "/.backplane"], "/")
+    ok : Bool <- Rvc.write(cwd ++ "/.backplane/checklist.md", text)
+    return RvJob.tick.k(ok, thread, text)
 
 # A pull request's parts change
 # -----------------------------
@@ -231,11 +451,15 @@ def RvJob.go(i: Nat, +thread: String, +cwd: String, +a: String, +b: String, +hom
       RvJob.resolve(thread, cwd, a, b)
     case 1n:
       RvJob.bom(thread, cwd, a, b)
+    case 2n:
+      RvJob.checks(thread, cwd, a, b, home)
+    case 3n:
+      Bool.pick(IO(Res), String.is_empty(cwd), IO.pure(Res, Res.err("no project folder")), RvJob.tick(thread, cwd, a))
     case _:
       IO.pure(Res, Res.err("unknown review job"))
 
 def RvJob.names() -> List<&2, String>:
-  ["rv.resolve", "rv.bom"]
+  ["rv.resolve", "rv.bom", "rv.checks", "rv.tick"]
 
 # a job by name ("rv.resolve", …)
 def RvJob.run(+job: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Res):

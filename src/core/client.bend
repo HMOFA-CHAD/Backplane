@@ -6311,10 +6311,10 @@ def Rv.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
 # "rv-run" asks again, "rv-bom" (the comparison bar's BOM) opens the BOM.
 
 def Rp.pages() -> List<&2, String>:
-  ["bom"]
+  ["bom", "checks"]
 
 def Rp.label(+page: String) -> String:
-  Bool.pick(String, String.eq(page, "bom"), "BOM", page)
+  Bool.pick(String, String.eq(page, "bom"), "BOM", Bool.pick(String, String.eq(page, "checks"), "Checks", page))
 
 # the page on show ("" when the tab is not)
 def Rp.page(+u: Ui) -> String:
@@ -6336,27 +6336,82 @@ def Rp.ask.bom(+u: Ui) -> Act:
   Ui.rpc(Ui.info_set(Ui.scratch_set(u, "@rp.busy:" ++ Ui.sel(u), "bom"), Rp.key(u, "rp.title", "bom"), Rp.bom.title(u)), "review.bom",
     [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"a", J.Str{Bool.pick(String, Rp.compared(u), Hs.get(u, "cmp.a"), "")}}, J.KV{"b", J.Str{Bool.pick(String, Rp.compared(u), Hs.get(u, "cmp.b"), "")}}])
 
+# the design checks run on the working copy, or on the new side of a
+# comparison when that is a commit
+def Rp.commit(+u: Ui) -> String:
+  Bool.pick(String, Nat.is_eq(HI.Hist.kind(Hs.get(u, "cmp.b")), 1n), HI.Hist.git.commit(Hs.get(u, "cmp.b")), "")
+
+def Rp.checks.title(+u: Ui) -> String:
+  "Checks · " ++ Bool.pick(String, String.is_empty(Rp.commit(u)), "Working copy", Hs.get(u, "cmp.bl"))
+
+def Rp.ask.checks(+u: Ui) -> Act:
+  Ui.rpc(Ui.info_set(Ui.scratch_set(u, "@rp.busy:" ++ Ui.sel(u), "checks"), Rp.key(u, "rp.title", "checks"), Rp.checks.title(u)), "review.checks",
+    [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"commit", J.Str{Rp.commit(u)}}, J.KV{"trigger", J.Str{"manual"}}])
+
 def Rp.ask(+u: Ui, +page: String) -> Act:
-  Bool.pick(Act, String.eq(page, "bom"), Rp.ask.bom(u), Act{u, Nil{}})
+  Bool.pick(Act, String.eq(page, "bom"), Rp.ask.bom(u), Bool.pick(Act, String.eq(page, "checks"), Rp.ask.checks(u), Act{u, Nil{}}))
 
 def Rp.open(+u: Ui, +page: String) -> Act:
   Rp.ask(Ui.view_put(u, "review", page), page)
 
-# the hub's answer: {report: {thread, page, md, err}}
+# the hub's answer: {report: {thread, page, md, err}}, a check's with
+# {gate, line, tasks} too
 def Rp.store(+u: Ui, +r: J.Json) -> Ui:
   +k = J.Json.get_str(r, "thread", "") ++ ":" ++ J.Json.get_str(r, "page", "")
-  Ui.scratch_set(Ui.info_set(Ui.info_set(u, "rp.md:" ++ k, J.Json.get_str(r, "md", "")), "rp.err:" ++ k, J.Json.get_str(r, "err", "")),
+  Ui.scratch_set(Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(u, "rp.md:" ++ k, J.Json.get_str(r, "md", "")), "rp.err:" ++ k, J.Json.get_str(r, "err", "")),
+    "rp.gate:" ++ k, J.Json.get_str(r, "gate", "")), "rp.line:" ++ k, J.Json.get_str(r, "line", "")), "rp.tasks:" ++ k, J.Json.show(Maybe.default(&2, J.Json, J.Json.get(r, "tasks"), J.Json.arr(Nil{})))),
     "@rp.busy:" ++ J.Json.get_str(r, "thread", ""), "")
+
+# a box ticked: {ticked: {thread, tasks}}
+def Rp.ticked(+u: Ui, +r: J.Json) -> Ui:
+  Ui.info_set(u, "rp.tasks:" ++ J.Json.get_str(r, "thread", "") ++ ":checks", J.Json.show(Maybe.default(&2, J.Json, J.Json.get(r, "tasks"), J.Json.arr(Nil{}))))
+
+def Rp.ticked.has(+o: J.Json) -> Bool:
+  Bool.not(String.eq(J.Json.show(Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(o, "result"), "ticked"), J.Null{})), "null"))
+
+def Rp.ticked.k(has: Bool, u: Ui, +o: J.Json) -> Ui:
+  match has:
+    case True{}:
+      Rp.ticked(u, J.Json.get_obj(J.Json.get_obj(o, "result"), "ticked"))
+    case False{}:
+      u
 
 def Rp.reply.has(+o: J.Json) -> Bool:
   Bool.not(String.eq(J.Json.show(Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(o, "result"), "report"), J.Null{})), "null"))
 
-def Rp.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
+def Rp.reply.k(has: Bool, u: Ui, +o: J.Json) -> Ui:
   match has:
     case True{}:
       Rp.store(u, J.Json.get_obj(J.Json.get_obj(o, "result"), "report"))
     case False{}:
       u
+
+def Rp.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
+  Rp.ticked.k(Rp.ticked.has(o), Rp.reply.k(has, u, o), o)
+
+# The checks page: why the gate fails ("" it passes), the one-line summary,
+# and the checklist's boxes (each ticked with "rv-tick" and its index)
+type RpTask is Data:
+  RpTask{index: Nat, text: String, done: Bool, group: String}
+
+def Rp.gate(+u: Ui) -> String:
+  Ui.info(u, Rp.key(u, "rp.gate", "checks"))
+
+def Rp.line(+u: Ui) -> String:
+  Ui.info(u, Rp.key(u, "rp.line", "checks"))
+
+def Rp.task.list(xs: List<&2, J.Json>, +i: Nat) -> List<&2, RpTask>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      RpTask{i, J.Json.get_str(x, "text", ""), J.Json.get_bool(x, "done", False{}), J.Json.get_str(x, "group", "")} <> Rp.task.list(t, 1n+i)
+
+def Rp.tasks(+u: Ui) -> List<&2, RpTask>:
+  Rp.task.list(J.Json.elems(Maybe.default(&2, J.Json, J.Json.parse(Ui.info(u, Rp.key(u, "rp.tasks", "checks"))), J.Json.arr(Nil{}))), 0n)
+
+def Rp.tick(+u: Ui, +i: String) -> Act:
+  Ui.rpc(u, "review.tick", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"index", J.Num{Nat.show(Maybe.default(&2, Nat, Nat.read(i), 0n))}}])
 
 # what every client draws: the pages (their labels and which is on), the
 # title, the report's Markdown, why it failed, whether it is being made
@@ -6422,11 +6477,13 @@ def Rv.act.k(i: Nat, +u: Ui, +value: String) -> Act:
       Rp.ask(u, Rp.page(u))
     case 5n:
       Rp.open(u, "bom")
+    case 6n:
+      Rp.tick(u, value)
     case _:
       Act{u, Nil{}}
 
 def Rv.act(+u: Ui, +action: String, +value: String) -> Act:
-  Rv.act.k(C.Codec.pos(["rv-as", "rv-bits", "rv-ref", "rv-page", "rv-run", "rv-bom"], action), u, value)
+  Rv.act.k(C.Codec.pos(["rv-as", "rv-bits", "rv-ref", "rv-page", "rv-run", "rv-bom", "rv-tick"], action), u, value)
 
 def Ui.reply.skills(u: Ui, +o: J.Json) -> Ui:
   Rp.reply(Rp.reply.has(o), Rv.reply(Rv.reply.has(o), Fv.reply(Fm.has(J.Json.get_obj(o, "result"), "farView"), Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Hs.refs.store(Hs.refs.has(o), Ui.reply.body(u, o), o), o), o), J.Json.get_obj(o, "result")), o), o)
