@@ -104,3 +104,8 @@ def main() -> IO(Unit):
     C.Check.str("rv-run asks again", Bool.show(String.contains(sent(U.Ui.act(rv, "rv-run", "")), "review.bom")), "True")
     C.Check.str("no page off the tab", U.Rp.page(u), "")
     C.Check.str("the tabs", String.join(tabs(U.RpView.tabs(U.Rp.view(rv))), ","), "BOM*")
+    # back from the Review tab to the board: the comparison as it was
+    C.Check.str("back to the board keeps the comparison", path(act(act(cmp, "rv-bom", ""), "view-kind", "board")), H.Hist.diff(git("c1"), "/r/b.kicad_pcb"))
+    C.Check.str("as Old when Old showed", path(act(act(act(cmp, "rv-as", "old"), "rv-bom", ""), "view-kind", "board")), git("c1"))
+    C.Check.str("the schematic tab is another file", path(act(act(cmp, "rv-bom", ""), "view-kind", "schematic")), "")
+    C.Check.str("the window's tab too", U.Ui.view_get(U.Ui.view_pick.back(act(cmp, "rv-bom", ""), "board"), "view.path"), H.Hist.diff(git("c1"), "/r/b.kicad_pcb"))

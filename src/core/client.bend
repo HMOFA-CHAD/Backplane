@@ -4452,6 +4452,32 @@ def Rv.sheet.k(cmp: Bool, +cur: String, +file: String) -> String:
 def Rv.sheet(+cur: String, +file: String) -> String:
   Rv.sheet.k(Bool.and(Nat.is_eq(HI.Hist.kind(cur), 2n), Bool.not(String.is_empty(file))), cur, file)
 
+# back on the Board or Schematic tab while a comparison of that kind is
+# open (the Review tab between): it shows again as it was (Old, Diff or
+# New); else the project's own file ("")
+def Rv.back.k(same: Bool, +u: Ui) -> String:
+  match same:
+    case True{}:
+      +bits = Maybe.default(&2, U32, U32.read(Ui.view_get(u, "cmp.bits")), 0)
+      Bool.pick(String, String.eq(Ui.view_get(u, "cmp.as"), "old"), Ui.view_get(u, "cmp.a"),
+        Bool.pick(String, String.eq(Ui.view_get(u, "cmp.as"), "new"), Ui.view_get(u, "cmp.b"), HI.Hist.diff.on(Ui.view_get(u, "cmp.a"), Ui.view_get(u, "cmp.b"), bits)))
+    case False{}:
+      ""
+
+def Rv.back(+u: Ui, +kind: String) -> String:
+  Rv.back.k(Bool.and(Bool.not(String.is_empty(Ui.view_get(u, "cmp.a"))),
+    Bool.and(Bool.or(String.eq(kind, "board"), String.eq(kind, "schematic")),
+      Nat.is_eq(HI.Hist.ext(HI.Hist.family(Ui.view_get(u, "cmp.f"))), Bool.pick(Nat, String.eq(kind, "schematic"), 1n, 0n)))), u)
+
+# the window's tab picked: the same, keeping a comparison (Rv.back)
+def Ui.view_pick.p(u: Ui, +kind: String, +path: String) -> Ui:
+  match u:
+    case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, +nf, ob, tr}:
+      Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, Viewer.put(nf, sel, kind, path), ob, tr}
+
+def Ui.view_pick.back(+u: Ui, +kind: String) -> Ui:
+  Ui.view_pick.p(u, kind, Rv.back(u, kind))
+
 # "mech" opens Mech (the part in 3D), "mech-part" shows another part,
 # "mech-3d" a part in 3D, "mech-refresh" asks for the parts again,
 # "mech-renders" shows a part's pictures, "mech-render" asks the hub to
@@ -4475,7 +4501,7 @@ def Mpage.act(i: Nat, +u: Ui, +value: String) -> Act:
       Ui.rpc(Ui.scratch_set(Ui.scratch_set(u, "@mech.busy:" ++ Ui.sel(u), value), "@mech.err:" ++ Ui.sel(u), ""), "mech.render",
         [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"path", J.Str{value}}])
     case 6n:
-      Act{Ui.view_put(u, value, ""), Nil{}}
+      Act{Ui.view_put(u, value, Rv.back(u, value)), Nil{}}
     case 7n:
       Act{Ui.view_put(u, "schematic", Rv.sheet(Ui.view_get(u, "view.path"), value)), Nil{}}
     case 8n:

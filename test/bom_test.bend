@@ -131,6 +131,7 @@ def main() -> IO(Unit):
     C.Check.str("quote doubles quotes", B.Bom.q("5\" tall"), "\"5\"\" tall\"")
     C.Check.str("plain cell", B.Bom.q("10k"), "10k")
     C.Check.str("md", B.Bom.md(B.Bom.group(p2())), "| Reference | Qty | Value | Footprint | MPN | Manufacturer | DNP |\n| --- | --- | --- | --- | --- | --- | --- |\n| C2 | 1 | 1u | Capacitor_SMD:C_0603 |  |  |  |\n| D1 | 1 | LED | LED_SMD:LED_0603 |  | Acme |  |\n| R1 | 1 | 4k7 | Resistor_SMD:R_0603 | RC-C |  |  |\n| R2 | 1 | 10k | Resistor_SMD:R_0603 | RC-A |  |  |\n| R10 | 1 | 22k | Resistor_SMD:R_0603 | RC-B |  | yes |\n| U1 | 1 | OPA2 | Package_SO:SOIC-8 | OPA2134 |  |  |\n")
+    C.Check.str("md leaves out empty columns", B.Bom.md([B.Line{["R1"], 1n, "10k", "R_0603", "", "", False{}}]), "| Reference | Qty | Value | Footprint |\n| --- | --- | --- | --- |\n| R1 | 1 | 10k | R_0603 |\n")
     C.Check.str("md turns pipes to slashes", B.Bom.c("a|b"), "a/b")
     C.Check.str("diff self", chg(dd), "")
     C.Check.str("diff", chg(d), "C1:removed:value[100n>]footprint[Capacitor_SMD:C_0402>] C2:added:value[>1u]footprint[>Capacitor_SMD:C_0603] D1:changed:LCSC[>C2286] R1:changed:value[10k>4k7]mpn[RC-A>RC-C] R10:changed:dnp[no>yes] ")

@@ -269,15 +269,19 @@ def Rvc.checks.in(+out: String, +dir: String, +home: String, +trigger: String) -
     runs : List<&2, CHK.Run> <- Rvc.runs(CHK.Checks.for(Rvc.cfg(cfg), trigger), dir, Nil{})
     return Rvc.checks.out(List.append(&2, CHK.Finding, kc, Rvc.bomf(BM.Bom.rules(ps))), CHK.Checklist.parse(Rvc.or(cl, CHK.Checklist.default())), runs, Rvc.gate(cfg))
 
+def Rvc.checks.done(+text: String, +tmp: String) -> IO(Unit):
+  do IO<Unit>:
+    IO.print(text)
+    gone : P.Ran <- P.Proc.run("rm", ["-rf", tmp], "/")
+    return Unit{}
+
+def Rvc.checks.go(+ls: List<&2, String>, +home: String, +trigger: String) -> IO(Unit):
+  IO.bind(String, Unit, Rvc.checks.in(HI.Hist.at(ls, 0n), HI.Hist.at(ls, 1n), home, trigger), text => Rvc.checks.done(text, HI.Hist.at(ls, 0n)))
+
 def Rvc.checks.k(r: P.Ran, +home: String, +trigger: String) -> IO(Unit):
   match r:
     case P.Ran{0, +out}:
-      +ls = String.split(String.trim(out), '\n')
-      do IO<Unit>:
-        text : String <- Rvc.checks.in(HI.Hist.at(ls, 0n), HI.Hist.at(ls, 1n), home, trigger)
-        IO.print(text)
-        gone : P.Ran <- P.Proc.run("rm", ["-rf", HI.Hist.at(ls, 0n)], "/")
-        return Unit{}
+      Rvc.checks.go(String.split(String.trim(out), '\n'), home, trigger)
     case P.Ran{_, +out}:
       IO.print(J.Json.show(J.Json.obj([J.KV{"err", J.Str{Rvc.or(String.trim(out), "could not take out that commit")}}])))
 

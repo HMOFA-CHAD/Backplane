@@ -2565,7 +2565,7 @@ def Nui.vw_act.more(i: Nat, +n: Nui, +value: String) -> Step:
 def Nui.vw_act.k(i: Nat, +n: Nui, +value: String) -> Step:
   match i:
     case 0n:
-      Step{Nui.with_ui(n, U.Ui.view_pick(Nui.ui(n), View.name(Maybe.default(&2, U32, U32.read(value), 0)))), Nil{}, True{}}
+      Step{Nui.with_ui(n, U.Ui.view_pick.back(Nui.ui(n), View.name(Maybe.default(&2, U32, U32.read(value), 0)))), Nil{}, True{}}
     case 1n:
       Step{Nui.with_vw(n, Vw.pick_set(Nui.vw(n), "")), Nil{}, True{}}
     case 2n:

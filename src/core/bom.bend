@@ -1052,9 +1052,56 @@ def Bom.rows.md(ls: List<&2, Line>) -> String:
     case l <> t:
       Bom.row.md(Bom.line.cells(l)) ++ Bom.rows.md(t)
 
+# the columns a table keeps: MPN, Manufacturer and DNP only when some line
+# has one (an empty column only squeezes the others on a phone)
+type Cols is Data:
+  Cols{mpn: Bool, mfr: Bool, dnp: Bool}
+
+def Bom.cols.go(ls: List<&2, Line>, m: Bool, f: Bool, d: Bool) -> Cols:
+  match ls:
+    case Nil{}:
+      Cols{m, f, d}
+    case Line{_, _, _, _, +mp, +mf, +dn} <> t:
+      Bom.cols.go(t, Bool.or(m, Bool.not(String.is_empty(mp))), Bool.or(f, Bool.not(String.is_empty(mf))), Bool.or(d, dn))
+
+def Bom.cols(ls: List<&2, Line>) -> Cols:
+  Bom.cols.go(ls, False{}, False{}, False{})
+
+def Bom.keep.k(on: Bool, +c: String, rest: List<&2, String>) -> List<&2, String>:
+  match on:
+    case True{}:
+      c <> rest
+    case False{}:
+      rest
+
+# a row's seven cells, the last three as the columns say
+def Bom.keep(cs: List<&2, String>, k: Cols) -> List<&2, String>:
+  match cs k:
+    case +r <> +q <> +v <> +f <> +m <> +mf <> +d <> _ Cols{km, kf, kd}:
+      r <> q <> v <> f <> Bom.keep.k(km, m, Bom.keep.k(kf, mf, Bom.keep.k(kd, d, Nil{})))
+    case +x _:
+      x
+
+def Bom.rows.md.k(ls: List<&2, Line>, +k: Cols) -> String:
+  match ls:
+    case Nil{}:
+      ""
+    case l <> t:
+      Bom.row.md(Bom.keep(Bom.line.cells(l), k)) ++ Bom.rows.md.k(t, k)
+
+def Bom.rule(cs: List<&2, String>) -> List<&2, String>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case _ <> t:
+      "---" <> Bom.rule(t)
+
+def Bom.md.k(+k: Cols, ls: List<&2, Line>) -> String:
+  Bom.row.md(Bom.keep(["Reference", "Qty", "Value", "Footprint", "MPN", "Manufacturer", "DNP"], k)) ++ Bom.row.md(Bom.rule(Bom.keep(["", "", "", "", "", "", ""], k))) ++ Bom.rows.md.k(ls, k)
+
 # a BOM's lines as a GFM table
-def Bom.md(ls: List<&2, Line>) -> String:
-  Bom.row.md(["Reference", "Qty", "Value", "Footprint", "MPN", "Manufacturer", "DNP"]) ++ "| --- | --- | --- | --- | --- | --- | --- |\n" ++ Bom.rows.md(ls)
+def Bom.md(+ls: List<&2, Line>) -> String:
+  Bom.md.k(Bom.cols(ls), ls)
 
 def Bom.line.k(total: Nat, a: Nat, r: Nat, c: Nat) -> String:
   match total:
