@@ -8684,3 +8684,38 @@ def Laws.told_quiet_record_nothing():
   {==}
 
 # ---- end told-rules-board ----
+def Laws.deploy_waits_for_tool():
+  {==}
+
+def Laws.deploy_waits_for_lock():
+  {==}
+
+def Laws.deploy_goes_when_clear():
+  {==}
+
+def Laws.deploy_go_clears_wait():
+  {==}
+
+def Laws.deploy_go_writes_done():
+  {==}
+
+def Laws.deploy_idle_nothing():
+  {==}
+
+def Laws.deploy_after_note_once():
+  {==}
+
+def Laws.deploy_after_clears():
+  {==}
+
+def Laws.deploy_after_second_start_quiet():
+  {==}
+
+def Laws.deploy_requester_bot_thread():
+  {==}
+
+def Laws.deploy_cut_requester_no_second():
+  {==}
+
+def Laws.deploy_cancel_clears():
+  {==}

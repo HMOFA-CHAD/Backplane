@@ -15,6 +15,8 @@ import ./ubersync.bend as UBS
 import ./notice.bend as NO
 import ./wake.bend as WK
 import ./told.bend as TLD
+import ./deploy.bend as DP
+import ./version.bend as VER
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -93,6 +95,12 @@ type Out is Data:
   # the owner's other machines (not persisted)
   Alerted{thread: String}
   WakePoll{prs: List<&2, String>, files: List<&2, String>}
+  # a deploy waits and no tool call runs: look at the build locks (the server
+  # answers with Msg DeployLocks, Hub.deploy_locks)
+  DeployProbe{}
+  # the deploy goes: swap the staged package in (when stage is set), then
+  # restart into it
+  DeployGo{stage: String}
 
 type Step is Data:
   Step{changes: List<&2, M.Change>, outs: List<&2, Out>}
@@ -218,6 +226,10 @@ def Reply.made(+client: U32, +id: String, +thread: String) -> Out:
 
 def Reply.err(+client: U32, +id: String, msg: String) -> Out:
   Send{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{False{}}}, J.KV{"error", J.Str{msg}}]))}
+
+# the answer to a request that returns a value
+def Reply.data(+client: U32, +id: String, +v: J.Json) -> Out:
+  Send{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}, J.KV{"result", v}]))}
 
 def Step.reply(+client: U32, +id: String, cs: List<&2, M.Change>) -> Step:
   Step{cs, [Reply.ok(client, id)]}
@@ -996,7 +1008,7 @@ def Hub.methods() -> List<&2, String>:
    "thread.settle", "thread.unsettle", "thread.archive", "thread.unarchive",
    "thread.pin", "thread.unpin", "thread.rename", "thread.delete", "kicad.watch", "thread.modes", "app.update", "setting.set", "kicad.install",
    "ask.answer", "device.register", "device.drop", "kicad.info", "queue.resume",
-   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel"]
+   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status"]
 
 # Agent output (Claude stream-json)
 # ---------------------------------
@@ -3702,6 +3714,177 @@ def Update.held.w(waiting: Bool, +s: M.State, +now: Nat) -> Step:
 def Update.held(+s: M.State, +now: Nat) -> Step:
   Update.held.w(Bool.not(String.is_empty(M.Setting.get(s, "update.restart", ""))), s, now)
 
+# Deploying
+# ---------
+# A deploy (core/deploy.bend) waits for no tool call in flight and the
+# build locks free, then the hub swaps the staged package in and restarts
+# into it; the turns it cuts resume (Carry). deploy.wait is the waiting
+# request, deploy.done what the next start reads once (laws deploy_*).
+
+def Deploy.probe(+s: M.State) -> List<&2, Out>:
+  Bool.pick(List<&2, Out>, Nat.is_eq(DP.Deploy.count(s), 0n), [DeployProbe{}], Nil{})
+
+# a note to the requester thread (none for the person: by is empty)
+def Deploy.tell(+s: M.State, +now: Nat, +by: String, +text: String) -> Step:
+  Bool.pick(Step, String.is_empty(by), Step.none(), Lr.send(s, now, "deploy", by, text))
+
+def Deploy.stage.ok(+stage: String) -> Bool:
+  Bool.or(String.is_empty(stage), String.starts_with(stage, "/"))
+
+def Deploy.ask(+s: M.State, +now: Nat, +by: String, +note: String, +stage: String) -> Step:
+  Step{[M.SettingSet{"deploy.wait", DP.Deploy.line(by, note, stage, VER.Version.current(), now, False{}, False{}, ""), now}], Deploy.probe(s)}
+
+def Deploy.restart(ok: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +stage: String, +note: String) -> Step:
+  match ok:
+    case True{}:
+      Step.before(Nil{}, [Reply.ok(client, id)], Deploy.ask(s, now, "", note, stage))
+    case False{}:
+      Step.outs([Reply.err(client, id, "stage must be an absolute path")])
+
+def Deploy.cancel(+s: M.State, +now: Nat) -> Step:
+  Step{[M.SettingSet{"deploy.wait", "", now}], Nil{}}
+
+# the go: deploy.done is written (with the threads this cuts) before the
+# Out, and the wait cleared, in one step
+def Deploy.go(+line: String, +s: M.State, +now: Nat) -> Step:
+  Step{[M.SettingSet{"deploy.done", DP.Deploy.line(DP.Deploy.by(line), DP.Deploy.note(line), DP.Deploy.stage(line), DP.Deploy.from(line),
+      DP.Deploy.since(line), DP.Deploy.noted(line), DP.Deploy.locked(line), DP.Deploy.running(s)), now}, M.SettingSet{"deploy.wait", "", now}],
+    [DeployGo{DP.Deploy.stage(line)}]}
+
+def Deploy.lock.set(same: Bool, free: Bool, +line: String, +now: Nat) -> Step:
+  match same:
+    case True{}:
+      Step.none()
+    case False{}:
+      Step{[M.SettingSet{"deploy.wait", DP.Deploy.with(line, DP.Deploy.noted(line), Bool.not(free)), now}], Nil{}}
+
+def Deploy.check.k(go: Bool, clear: Bool, +free: Bool, +line: String, +s: M.State, +now: Nat) -> Step:
+  match go:
+    case True{}:
+      Deploy.go(line, s, now)
+    case False{}:
+      Deploy.lock.set(Bool.or(Bool.not(clear), Bool.pick(Bool, free, Bool.not(DP.Deploy.locked(line)), DP.Deploy.locked(line))), free, line, now)
+
+def Deploy.check.w(waiting: Bool, +clear: Bool, +free: Bool, +s: M.State, +now: Nat) -> Step:
+  match waiting:
+    case True{}:
+      Deploy.check.k(Bool.and(clear, free), clear, free, DP.Deploy.wait(s), s, now)
+    case False{}:
+      Step.none()
+
+# the build locks were looked at (free: both are): goes when nothing runs
+# a tool call and they are free, else remembers whether a lock holds it
+def Deploy.check(+s: M.State, +now: Nat, free: Bool) -> Step:
+  Deploy.check.w(DP.Deploy.waiting(s), Nat.is_eq(DP.Deploy.count(s), 0n), free, s, now)
+
+def Deploy.slow.k(due: Bool, +line: String, +s: M.State, +now: Nat) -> Step:
+  match due:
+    case True{}:
+      Step.cat(Step{[M.SettingSet{"deploy.wait", DP.Deploy.with(line, True{}, DP.Deploy.locked(line)), now}], Nil{}},
+        Deploy.tell(s, now, DP.Deploy.by(line), DP.Deploy.slow.text(DP.Deploy.count(s), DP.Deploy.locked(line))))
+    case False{}:
+      Step.none()
+
+def Deploy.tick.w(waiting: Bool, +s: M.State, +now: Nat) -> Step:
+  match waiting:
+    case True{}:
+      Step.cat(Deploy.slow.k(Bool.and(Bool.not(DP.Deploy.noted(DP.Deploy.wait(s))), Nat.is_ge(now, Nat.add(DP.Deploy.since(DP.Deploy.wait(s)), DP.Deploy.slow()))), DP.Deploy.wait(s), s, now),
+        Step.outs(Deploy.probe(s)))
+    case False{}:
+      Step.none()
+
+# the tick's look at a waiting deploy
+def Deploy.tick(+s: M.State, +now: Nat) -> Step:
+  Deploy.tick.w(DP.Deploy.waiting(s), s, now)
+
+def Deploy.after.w(go: Bool, +line: String, +s: M.State, +now: Nat) -> Step:
+  match go:
+    case True{}:
+      Step.cat(Step{[M.SettingSet{"deploy.done", "", now}], Nil{}},
+        Bool.pick(Step, DP.Deploy.in(line, DP.Deploy.by(line)), Step.none(), Deploy.tell(s, now, DP.Deploy.by(line), DP.Deploy.after.text(line, VER.Version.current()))))
+    case False{}:
+      Step.none()
+
+# at start: a deploy that restarted the hub is told once to its requester
+# (the threads it cut got the words with their continue message), and
+# deploy.done is cleared
+def Deploy.after(+s: M.State, +now: Nat) -> Step:
+  Deploy.after.w(Bool.not(String.is_empty(DP.Deploy.done(s))), DP.Deploy.done(s), s, now)
+
+# the swap failed: nothing restarted
+def Deploy.failed(+s: M.State, +now: Nat, +err: String) -> Step:
+  Step.cat(Step{[M.SettingSet{"deploy.done", "", now}], Nil{}},
+    Deploy.tell(s, now, DP.Deploy.by(DP.Deploy.done(s)), "[Backplane] Your deploy could not be installed (" ++ err ++ "). Nothing was restarted."))
+
+# demos for the laws and tests (t0 asks; t1 runs, inside a tool call or not)
+def Deploy.demo.line(+by: String) -> String:
+  DP.Deploy.line(by, "dev.sh", "", "0.9.0", 5n, False{}, False{}, "t1")
+
+def Deploy.demo.changes(tool: Bool, +key: String, +line: String) -> List<&2, M.Change>:
+  List.concat(&2, M.Change, [[M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t0", "p1", "boss", M.Local{}, "", "", "claude", "", 1n},
+    M.ThreadCreated{"t1", "p1", "work", M.Local{}, "", "", "claude", "", 1n}, M.TurnChanged{"t1", M.Running{}, 3n}],
+    Bool.pick(List<&2, M.Change>, tool, [M.ActivityLogged{"t1", "a1", "tool", "Bash", "make", 4n}], Nil{}),
+    Bool.pick(List<&2, M.Change>, String.is_empty(line), Nil{}, [M.SettingSet{key, line, 5n}])])
+
+# tool: t1 is inside a tool call; the line is deploy.wait
+def Deploy.demo(tool: Bool, +line: String) -> M.State:
+  M.State.replay(Deploy.demo.changes(tool, "deploy.wait", line), M.State.empty())
+
+# the state at a start after a deploy by `by` (deploy.done set)
+def Deploy.demo.done(+by: String) -> M.State:
+  M.State.replay(Deploy.demo.changes(False{}, "deploy.done", Deploy.demo.line(by)), M.State.empty())
+
+def Deploy.demo.gos(os: List<&2, Out>) -> Nat:
+  match os:
+    case Nil{}:
+      0n
+    case DeployGo{_} <> t:
+      1n+Deploy.demo.gos(t)
+    case _ <> t:
+      Deploy.demo.gos(t)
+
+def Deploy.demo.go(st: Step) -> Nat:
+  match st:
+    case Step{_, os}:
+      Deploy.demo.gos(os)
+
+# the settings a step sets to nothing (key), and to something
+def Deploy.demo.sets(cs: List<&2, M.Change>, +key: String, +empty: Bool) -> Nat:
+  match cs:
+    case Nil{}:
+      0n
+    case M.SettingSet{+k, +v, _} <> t:
+      Nat.add(Bool.pick(Nat, Bool.and(String.eq(k, key), Bool.pick(Bool, empty, String.is_empty(v), Bool.not(String.is_empty(v)))), 1n, 0n), Deploy.demo.sets(t, key, empty))
+    case _ <> t:
+      Deploy.demo.sets(t, key, empty)
+
+def Deploy.demo.cs(st: Step) -> List<&2, M.Change>:
+  match st:
+    case Step{cs, _}:
+      cs
+
+# messages a step posts
+def Deploy.demo.posts(cs: List<&2, M.Change>) -> Nat:
+  match cs:
+    case Nil{}:
+      0n
+    case M.MessagePosted{_, _, _, _, _} <> t:
+      1n+Deploy.demo.posts(t)
+    case _ <> t:
+      Deploy.demo.posts(t)
+
+def Deploy.demo.notes(st: Step) -> Nat:
+  Deploy.demo.posts(Deploy.demo.cs(st))
+
+# the step again over the state it made
+def Deploy.demo.again(+s: M.State, st: Step) -> M.State:
+  M.State.replay(Deploy.demo.cs(st), s)
+
+# a bot (its thread "tb", no project) asked
+def Deploy.demo.bot() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"tb", "", "Bub", M.Local{}, "", "", "claude", "", 1n}, M.BotSet{"b1", "Bub", "tb", 0n, "", 1n},
+    M.SettingSet{"deploy.done", Deploy.demo.line("tb"), 5n}], M.State.empty())
+
 def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
@@ -3776,6 +3959,12 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
       Step.reply(client, id, Bool.pick(List<&2, M.Change>, String.eq(J.Json.get_str(WK.Wake.get(s, J.Json.get_str(p, "id", "")), "by", ""), J.Json.get_str(p, "thread", "")), [M.WakeDropped{J.Json.get_str(p, "id", ""), now}], Nil{}))
     case 32n:
       Step.before(Nil{}, [Reply.ok(client, id)], Task.cancel.user(Maybe.default(&2, M.Task, Task.of_child(s, J.Json.get_str(p, "child", "")), M.Task.blank("")), s, now))
+    case 34n:
+      Deploy.restart(Deploy.stage.ok(J.Json.get_str(p, "stage", "")), s, now, client, id, J.Json.get_str(p, "stage", ""), J.Json.get_str(p, "note", ""))
+    case 35n:
+      Step.before(Nil{}, [Reply.ok(client, id)], Deploy.cancel(s, now))
+    case 36n:
+      Step.outs([Reply.data(client, id, DP.Deploy.status(s))])
     case _:
       Hub.more(C.Codec.pos(Hub.methods.git(), m), s, now, client, id, p, m)
 
@@ -4062,7 +4251,7 @@ def Hub.tick.k(+s: M.State, +now: Nat, +kids: Map<&2, Nat>) -> Step:
         Step.join(Wt.stale(Map.values(&2, M.Thread, ts), s, now), Scratch.sweep(Map.values(&2, M.Thread, ts), kids, s, now, M.Scratch.window(s))))
 
 def Hub.tick(+s: M.State, +now: Nat) -> Step:
-  Step.join(Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now)), Step.cat(Lr.far.tick(s), Wake.poll(s)))
+  Step.join(Step.join(Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now)), Step.cat(Lr.far.tick(s), Wake.poll(s))), Deploy.tick(s, now))
 
 # Asks keep their thread busy
 # ---------------------------
@@ -4116,6 +4305,10 @@ def Carry.restart(es: List<&2, M.Entry>) -> Bool:
 
 # progress since the last carry: the newest entry, past restart notes, is
 # anything but the continue message
+# the continue message, with a deploy's words after it or not
+def Carry.is(+text: String) -> Bool:
+  String.eq(String.take(text, String.length(M.Carry.text())), M.Carry.text())
+
 def Carry.fresh.go(es: List<&2, M.Entry>, skip: Bool) -> Bool:
   match es skip:
     case Nil{} _:
@@ -4123,7 +4316,7 @@ def Carry.fresh.go(es: List<&2, M.Entry>, skip: Bool) -> Bool:
     case _ <> +t True{}:
       Carry.fresh.go(t, Carry.restart(t))
     case M.Msg{_, _, _, +text, _} <> _ False{}:
-      Bool.not(String.eq(text, M.Carry.text()))
+      Bool.not(Carry.is(text))
     case _ False{}:
       True{}
 
@@ -4482,7 +4675,7 @@ def Hub.recover(+s: M.State, +now: Nat) -> Step:
 def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match go:
     case True{}:
-      Step.after(Hub.post(s, now, th, Hub.id("c", now, Hub.seq(s)), M.User{}, M.Carry.text()),
+      Step.after(Hub.post(s, now, th, Hub.id("c", now, Hub.seq(s)), M.User{}, M.Carry.text() ++ DP.Deploy.suffix(s, VER.Version.current())),
         [M.ActivityLogged{th, Hub.id("r", now, 1n+Hub.seq(s)), "info", "restart", "Continuing after the restart", now}])
     case False{}:
       Step.none()
@@ -4552,7 +4745,7 @@ def Carry.go(on: Bool, +before: M.State, +after: M.State, +now: Nat) -> Step:
 # before: the state Hub.recover started from; after: once its step applied
 # (turns carried on and lost work told, Rec.burst() threads at most)
 def Hub.carry(+before: M.State, +after: M.State, +now: Nat) -> Step:
-  Carry.go(M.Carry.on(after), before, after, now)
+  Step.cat(Carry.go(M.Carry.on(after), before, after, now), Deploy.after(after, now))
 
 def Rel.k(run: Bool, live: Bool, r: Rec, +now: Nat, +th: String) -> Rec:
   match run live r:
@@ -4779,7 +4972,7 @@ def Gen.stale(+tagged: String, +current: String) -> Bool:
 
 # the tools that only read
 def Gen.reads(+tool: String) -> Bool:
-  Nat.is_lt(C.Codec.pos(["orchestrator_capabilities", "task_status", "thread_list", "thread_read", "thread_wait", "thread_wait_now", "work_list", "project_list", "machine_list", "plane_read", "told_check", "task_board_list"], tool), 12n)
+  Nat.is_lt(C.Codec.pos(["orchestrator_capabilities", "task_status", "thread_list", "thread_read", "thread_wait", "thread_wait_now", "work_list", "project_list", "machine_list", "plane_read", "told_check", "task_board_list", "deploy_status"], tool), 13n)
 
 # an MCP request that changes something: a tools/call of any tool that does
 # not only read (initialize, tools/list and the like change nothing)

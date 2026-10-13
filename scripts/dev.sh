@@ -11,12 +11,16 @@
 #                                  service restarted
 #   scripts/dev.sh install h@host  the same onto another machine over ssh
 #                                  (same os/arch; restarts backplane-bend there)
+#                                  Neither restarts at once: the running hub is
+#                                  asked (POST /mcp/deploy on loopback) to swap
+#                                  the staged package in and restart at a safe
+#                                  point, when no tool call is running and the
+#                                  build locks are free (docs/deploy.md); the
+#                                  turns it cuts resume. "deploy queued" is
+#                                  printed and the script ends.
 #   scripts/dev.sh install --force [h@host]
-#                                  install even while threads work: without it
-#                                  install refuses while the running hub's
-#                                  /hello says "busy" (threads running a turn
-#                                  or waiting on background work, which the
-#                                  restart would cut off)
+#                                  the old way: install and restart now (also
+#                                  what happens when no hub answers)
 #
 # The dev run keeps to itself: its own home (BACKPLANE_DEV_HOME, default
 # ~/.backplane-dev, never ~/.backplane-bend), port 3788 (BACKPLANE_DEV_PORT),
@@ -141,46 +145,46 @@ stage() {
   return 0
 }
 
-# how many threads the hub answering /hello says run or wait on work
-# (CBOR: the "busy" key's unsigned integer; 0 when it does not say)
-busy_js() {
-  printf %s 'const b=new Uint8Array(await Bun.stdin.arrayBuffer());const k=[0x64,0x62,0x75,0x73,0x79];let n=0;for(let i=0;i+5<b.length;i++){if(k.every((x,j)=>b[i+j]===x)){const h=b[i+5];n=h<24?h:h===24?b[i+6]:h===25?(b[i+6]<<8)|b[i+7]:0;break}}console.log(n)'
+# the request that queues a deploy of the package in $1 on a hub (the MCP
+# route from loopback is trusted; "deploy" is no thread, so the person asked)
+deploy_post() {
+  body=$(printf '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"deploy_restart","arguments":{"stage":"%s","note":"dev.sh install"}}}' "$1")
+  printf "curl -s --max-time 10 -X POST -H 'content-type: application/json' -H 'accept: application/json' --data '%s' http://127.0.0.1:%s/mcp/deploy" "$body" "${BACKPLANE_INSTALL_PORT:-3787}"
 }
 
-busy_of() {
-  bun -e "$(busy_js)"
+hello_cmd() {
+  printf 'curl -s --max-time 5 -o /dev/null -w %%{http_code} http://127.0.0.1:%s/hello' "${BACKPLANE_INSTALL_PORT:-3787}"
 }
 
-# refuse to restart a hub whose threads are at work, unless --force
-check_busy() {
-  [ "$force" = 1 ] && return 0
-  n=$(eval "$1" 2>/dev/null | busy_of 2>/dev/null || echo 0)
-  if [ "${n:-0}" -gt 0 ]; then
-    say "the hub has $n thread(s) at work; an install restarts it and cuts them off. Try again later, or pass --force."
-    exit 1
-  fi
+links() {
+  mkdir -p "$HOME/.local/bin"
+  ln -sf "$prefix/backplane" "$HOME/.local/bin/backplane"
+  ln -sf "$prefix/backplane-serve" "$HOME/.local/bin/backplane-serve"
 }
 
 install_local() {
-  hello="curl -s --max-time 5 http://127.0.0.1:${BACKPLANE_INSTALL_PORT:-3787}/hello"
-  check_busy "$hello"
   build_dist
   stage
-  # the build takes minutes: look again right before the files are replaced
-  check_busy "$hello"
+  if [ "$force" != 1 ] && [ "$(eval "$(hello_cmd)" 2>/dev/null)" = 200 ]; then
+    # the staged package moves out of the checkout (a worktree may go
+    # before the hub gets to it) into a folder of its own
+    sd=$(mktemp -d "${TMPDIR:-/tmp}/bp-deploy.XXXXXX")
+    cp -R build/dev-pkg/. "$sd"
+    links
+    if eval "$(deploy_post "$sd")" | grep -q scheduled; then
+      say "deploy queued: restarts at a safe point (no tool call running, build locks free); staged in $sd"
+      return 0
+    fi
+    say "the hub did not take the deploy: installing directly"
+    rm -rf "$sd"
+  fi
   install_into | sh -s "$PWD/build/dev-pkg" "$prefix"
   say "installed into $prefix"
   if systemctl --user is-active --quiet backplane.service 2>/dev/null; then
     # the restart ends every session inside the app (this one too, if it
     # runs there), so it waits a few seconds for this script to finish
-    # (and looks once more then: a turn may have started meanwhile)
-    if [ "$force" = 1 ]; then
-      systemd-run --user --quiet --on-active=5 systemctl --user restart backplane.service
-    else
-      bun_bin=$(command -v bun)
-      systemd-run --user --quiet --on-active=5 sh -c "n=\$(curl -s --max-time 5 http://127.0.0.1:${BACKPLANE_INSTALL_PORT:-3787}/hello | '$bun_bin' -e '$(busy_js)' 2>/dev/null || echo 0); if [ \"\${n:-0}\" -gt 0 ]; then echo \"backplane.service not restarted: \$n thread(s) at work\" | systemd-cat -t backplane-install; else systemctl --user restart backplane.service; fi"
-    fi
-    say "backplane.service restarts in 5 s (unless threads are at work then)"
+    systemd-run --user --quiet --on-active=5 systemctl --user restart backplane.service
+    say "backplane.service restarts in 5 s"
   else
     say "run: backplane"
   fi
@@ -188,15 +192,19 @@ install_local() {
 
 install_remote() {
   host=$1
-  check_busy "ssh $host curl -s --max-time 5 http://127.0.0.1:${BACKPLANE_INSTALL_PORT:-3787}/hello"
   build_dist
   stage
   rdir=$(ssh "$host" mktemp -d)
   tar -C build/dev-pkg -czf - . | ssh "$host" tar -C "$rdir" -xzf -
-  # the build and copy take minutes: look again before the files are replaced
-  check_busy "ssh $host curl -s --max-time 5 http://127.0.0.1:${BACKPLANE_INSTALL_PORT:-3787}/hello"
+  if [ "$force" != 1 ] && [ "$(ssh "$host" "$(hello_cmd)" 2>/dev/null)" = 200 ]; then
+    ssh "$host" 'mkdir -p "$HOME/.local/bin"; ln -sf "$HOME/.local/share/backplane/backplane" "$HOME/.local/bin/backplane"; ln -sf "$HOME/.local/share/backplane/backplane-serve" "$HOME/.local/bin/backplane-serve"'
+    if ssh "$host" "$(deploy_post "$rdir")" | grep -q scheduled; then
+      say "deploy queued on $host: restarts at a safe point; staged in $rdir"
+      return 0
+    fi
+    say "the hub on $host did not take the deploy: installing directly"
+  fi
   install_into | ssh "$host" sh -s "$rdir" '$HOME/.local/share/backplane'
-  check_busy "ssh $host curl -s --max-time 5 http://127.0.0.1:${BACKPLANE_INSTALL_PORT:-3787}/hello"
   ssh "$host" "rm -rf $rdir; systemctl --user restart backplane-bend.service 2>/dev/null || systemctl --user restart backplane.service 2>/dev/null || true"
   say "installed on $host"
 }

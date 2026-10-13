@@ -136,6 +136,10 @@ type Msg is Data:
   # an update is installed: the hub decides, as it is now, whether to restart
   # (force: the person asked, or the wait ran out)
   UpdateReady{force: Bool}
+  # a waiting deploy's look at the build locks (free: neither is held),
+  # and a failed swap of its staged package (core/deploy.bend, hub.bend's Deploy.*)
+  DeployLocks{free: Bool}
+  DeployFailed{err: String}
   ModelsFound{models: String, text: String}
   MachinesFound{machines: String}
   # the tailnet listener is up: the pairing link clients show in Settings
@@ -2943,13 +2947,75 @@ def Names.copy(xs: List<String>) -> List<&2, String>:
 # the install is done: the hub is asked, and restarts only if nothing has
 # started work since the update began (Hub.update_ready, Restart{}); with
 # its own arguments, not its name (Bend 2.0.36's IO.args() starts with it)
-def Upgrade.restart(+inbox: Chan(Msg)) -> IO(Unit):
+def Upgrade.restart.at(+path: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Upgrade.say(inbox, Upgrade.note([J.KV{"state", J.Str{"restarting"}}]))
-    path : String <- H.Sys.exe_path()
     args : List<String> <- IO.args()
     r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(path, Names.copy(RVS.Rvc.args.drop(args)))
     Upgrade.exec(r, inbox)
+
+def Upgrade.restart(+inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(String, Unit, H.Sys.exe_path(), path => Upgrade.restart.at(path, inbox))
+
+# Safe deploy (hub.bend's Deploy.*, docs/deploy.md)
+# -------------------------------------------------
+# A waiting deploy asks, each tick that no tool call runs, whether the
+# build locks are free (BACKPLANE_DEPLOY_LOCKS, colon-separated, for tests;
+# default the machine-wide build locks: flock -n on each; where flock(1)
+# is missing they count as free). When it goes, the staged package is
+# moved into the running install's folder the way scripts/dev.sh's
+# install_into does (renames; web.old kept), then the hub restarts in place.
+
+def Deploy.locks.sh() -> String:
+  "command -v flock >/dev/null 2>&1 || exit 0; for l in $(echo \"$1\" | tr ':' ' '); do [ -e \"$l\" ] || continue; flock -n \"$l\" true || exit 1; done; exit 0"
+
+def Deploy.probe.k(r: P.Ran, +inbox: Chan(Msg)) -> IO(Unit):
+  match r:
+    case P.Ran{+code, _}:
+      do IO<Unit>:
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, DeployLocks{U32.is_eq(code, 0)})
+        return Unit{}
+
+def Deploy.probe.l(+locks: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Deploy.locks.sh(), "sh", locks], "/"), r => Deploy.probe.k(r, inbox))
+
+def Deploy.probe(+inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(String, Unit, Env.get("BACKPLANE_DEPLOY_LOCKS", "/tmp/bp-bend.lock:/tmp/bp-wt-build.lock"), l => Deploy.probe.l(l, inbox))
+
+def Deploy.swap.sh() -> String:
+  "set -eu; src=$1; prefix=$2; [ -d \"$src\" ] || { echo \"no staged package at $src\"; exit 1; }; mkdir -p \"$prefix\"; if [ -d \"$src/web\" ]; then rm -rf \"$prefix/web.old\"; [ -d \"$prefix/web\" ] && mv \"$prefix/web\" \"$prefix/web.old\"; mv \"$src/web\" \"$prefix/web\"; fi; for f in backplane backplane-serve backplane-browser backplane-step2glb backplane-voice LICENSE; do if [ -e \"$src/$f\" ]; then mv -f \"$src/$f\" \"$prefix/$f\"; fi; done; rmdir \"$src\" 2>/dev/null || true; exit 0"
+
+def Deploy.swapped(ok: Bool, +out: String, +path: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match ok:
+    case True{}:
+      Upgrade.restart.at(path, inbox)
+    case False{}:
+      do IO<Unit>:
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, DeployFailed{String.take(String.trim(out), 300n)})
+        return Unit{}
+
+def Deploy.swap.k(r: P.Ran, +path: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match r:
+    case P.Ran{+code, +out}:
+      Deploy.swapped(U32.is_eq(code, 0), out, path, inbox)
+
+def Deploy.swap(+stage: String, +exe: String, +path: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Deploy.swap.sh(), "sh", stage, exe], "/"), r => Deploy.swap.k(r, path, inbox))
+
+def Deploy.go.k(none: Bool, +stage: String, +exe: String, +path: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match none:
+    case True{}:
+      Upgrade.restart.at(path, inbox)
+    case False{}:
+      Deploy.swap(stage, exe, path, inbox)
+
+# (the running binary's path is read before the swap: once its file is
+# replaced the kernel reads it back with " (deleted)" after it)
+def Deploy.go.p(+stage: String, +exe: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(String, Unit, H.Sys.exe_path(), path => Deploy.go.k(String.is_empty(stage), stage, exe, path, inbox))
+
+def Deploy.go(+stage: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(String, Unit, H.Sys.exe_dir(), exe => Deploy.go.p(stage, exe, inbox))
 
 def Upgrade.done.k(ok: Bool, force: Bool, +err: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ok:
@@ -7188,6 +7254,14 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         IO.spawn(Unit, Upgrade.go(Net.managed(Cfg.net(cfg)), True{}, Cfg.home(cfg), M.Setting.get(st, "update.channel", "stable"), inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.DeployProbe{}:
+      do IO<Hub>:
+        IO.spawn(Unit, Deploy.probe(inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.DeployGo{+stage}:
+      do IO<Hub>:
+        IO.spawn(Unit, Deploy.go(stage, inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.Restart{}:
       do IO<Hub>:
         IO.spawn(Unit, Upgrade.restart(inbox))
@@ -9687,6 +9761,10 @@ def Msg.kind(m: Msg) -> String:
       "update_check"
     case UpdateReady{_}:
       "update_ready"
+    case DeployLocks{_}:
+      "deploy_locks"
+    case DeployFailed{_}:
+      "deploy_failed"
     case Mcp{_, _, _}:
       "mcp"
     case Announce{_}:
@@ -10038,6 +10116,29 @@ def Hub.update_ready.k(p: M.State & Hub, force: Bool, +now: Nat) -> IO(Hub):
 def Hub.update_ready(h: Hub, force: Bool, +now: Nat) -> IO(Hub):
   Hub.update_ready.k(Hub.state(h), force, now)
 
+def Hub.deploy_locks.k(p: M.State & Hub, free: Bool, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.step(h, B.Deploy.check(st, now, free))
+
+def Hub.deploy_locks(h: Hub, free: Bool, +now: Nat) -> IO(Hub):
+  Hub.deploy_locks.k(Hub.state(h), free, now)
+
+# (a waiting deploy is looked at with every heartbeat, not only the minute's
+# tick: a tool call that ends lets it go within 15 s)
+def Hub.deploy_poll.k(p: M.State & Hub, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.step(h, B.Deploy.tick(st, now))
+
+def Hub.deploy_poll(h: Hub, +now: Nat) -> IO(Hub):
+  Hub.deploy_poll.k(Hub.state(h), now)
+
+def Hub.deploy_failed.k(p: M.State & Hub, +err: String, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.step(h, B.Deploy.failed(st, now, err))
+
+def Hub.deploy_failed(h: Hub, err: String, +now: Nat) -> IO(Hub):
+  Hub.deploy_failed.k(Hub.state(h), err, now)
+
 def Hub.launch.sent(p: M.State & Hub, +key: String, +now: Nat) -> IO(Hub):
   (st, h) = p
   Hub.step(h, B.Lr.far.sent(st, now, key))
@@ -10050,6 +10151,10 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.update_check(h)
     case UpdateReady{force}:
       Hub.update_ready(h, force, now)
+    case DeployLocks{free}:
+      Hub.deploy_locks(h, free, now)
+    case DeployFailed{err}:
+      Hub.deploy_failed(h, err, now)
     case Mcp{thread, body, reply}:
       Hub.mcp.g(h, B.Tag.thread(thread), body, reply, now)
     case Announce{text}:
@@ -10081,7 +10186,7 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case Tick{}:
       Hub.tick(h, now)
     case Heart{}:
-      IO.bind(Hub, Hub, Hub.broadcast(h, DK.Alive.frame()), h2 => Hub.uber.beat(h2, now))
+      IO.bind(Hub, Hub, IO.bind(Hub, Hub, Hub.broadcast(h, DK.Alive.frame()), h2 => Hub.uber.beat(h2, now)), h3 => Hub.deploy_poll(h3, now))
     case AutoView{thread, fs}:
       Hub.autoview(h, thread, fs)
     case ClaudePid{thread, pid, gen}:

@@ -1,6 +1,7 @@
 import Base
 import ../../src/core/client.bend as U
 import ../../src/core/model.bend as M
+import ../../src/core/deploy.bend as DP
 import ../../src/app/nui.bend as N
 import ../../src/app/layout.bend as L
 import ../../src/app/bots.bend as BV
@@ -68,6 +69,10 @@ def log(+k: Nat) -> List<&2, M.Change>:
 # this machine (mA) has the uberbot and machine mB holds its conversation
 def homelog() -> List<&2, M.Change>:
   [M.SettingSet{"machine.id", "mA", at()}, M.UberOp{"u1-x", "mB", 1n, "0000001790.000000.mB", "{\"k\":\"lease\",\"holder\":\"mB\",\"term\":2}", at()}]
+
+# a deploy waiting (core/deploy.bend): the plane's "Restart pending" row
+def deploylog() -> List<&2, M.Change>:
+  [M.SettingSet{"deploy.wait", DP.Deploy.line("", "dev.sh install", "/tmp/stage", "0.1.0", at(), False{}, True{}, ""), at()}]
 
 def act.k(a: U.Act) -> U.Ui:
   match a:
@@ -142,6 +147,7 @@ def main() -> IO(Unit):
     shot(ty, dir, "side", u, 1400, 900)
     shot(ty, dir, "status", us, 1400, 900)
     shot(ty, dir, "status-narrow", us, 900, 800)
+    shot(ty, dir, "status-deploy", U.Ui.fold(deploylog(), us), 1400, 900)
     shot(ty, dir, "status-home", U.Ui.fold(homelog(), us), 1400, 900)
     +t0 : Nat <- IO.now()
     +c : Nat = timed(5n, ty, N.Nui.init(us, 1400, 900), 0n)
