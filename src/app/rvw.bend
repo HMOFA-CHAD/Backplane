@@ -69,7 +69,7 @@ def Rvw.lane(ls: List<&2, String>, +url: String, +thread: String, +root: String,
 def Rvw.lane.job(ls: List<&2, String>, +url: String, +thread: String, +root: String, +cache: String, +out: Chan(List<&2, String>)) -> IO(Unit):
   do IO<Unit>:
     +r : List<&2, String> <- Rvw.lane(ls, url, thread, root, cache)
-    ok : Bool <- Chan.send(List<&2, String>, out, r)
+    ok : Result<&1, &1, List<&2, String>, Unit> <- Chan.send(List<&2, String>, out, r)
     return Unit{}
 
 # the files in four lanes at once; the lines that came

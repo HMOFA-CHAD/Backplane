@@ -128,7 +128,17 @@ type Kept is Data:
 
 # the boards being watched and the fonts
 type Aux is Data:
-  Aux{watched: List<&2, String>, ty: L.Ty, tie: Tie, kept: Kept}
+  Aux{watched: List<&2, String>, ty: List<&2, L.Ty>, tie: Tie, kept: List<&2, Kept>}
+
+def Kept.none() -> Kept:
+  Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none()}
+
+def Kept.of(ks: List<&2, Kept>) -> Kept:
+  match ks:
+    case Nil{}:
+      Kept.none()
+    case k <> _:
+      k
 
 type Shell is Type:
   Shell{nui: N.Nui, win: Window, dirty: Bool, queued: Bool, q: Chan(ShellMsg), inbox: Chan(S.Msg), aux: Aux}
@@ -136,7 +146,7 @@ type Shell is Type:
 def Pump.got(r: Window & List<&2, U32>, +q: Chan(ShellMsg), k: Window -> IO(Unit)) -> IO(Unit):
   (w, ws) = r
   do IO<Unit>:
-    ok : Bool <- Chan.send(ShellMsg, q, FromWin{ws})
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, FromWin{ws})
     k(w)
 
 # Feeders
@@ -153,21 +163,21 @@ def Fwd.got(m: Maybe<&1, S.Wire>, +q: Chan(ShellMsg), +tag: String, k: Unit -> I
   match m:
     case Some{S.WText{t}}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(ShellMsg, q, FromHub{tag, t})
+        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, FromHub{tag, t})
         k(Unit{})
     case Some{S.WState{st, h}}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(ShellMsg, q, FromHubSt{tag, st, h})
+        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, FromHubSt{tag, st, h})
         k(Unit{})
     case Some{S.WItems{hd, pl, _, xs, tl, _}}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(ShellMsg, q, FromHub{tag, hd ++ pl ++ String.join(xs, ",") ++ tl})
+        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, FromHub{tag, hd ++ pl ++ String.join(xs, ",") ++ tl})
         k(Unit{})
     case Some{_}:
       k(Unit{})
     case None{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(ShellMsg, q, Gone{tag})
+        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Gone{tag})
         return Unit{}
 
 # every 32 frames the hub hears how many this client took (its credit,
@@ -177,7 +187,7 @@ def Fwd.told(due: Bool, +hub: Chan(S.Msg), +gen: U32, +n: Nat) -> IO(Unit):
   match due:
     case True{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(S.Msg, hub, S.Drained{0, gen, n, 0n})
+        ok : Result<&1, &1, S.Msg, Unit> <- Chan.send(S.Msg, hub, S.Drained{0, gen, n, 0n})
         return Unit{}
     case False{}:
       IO.pure(Unit, Unit{})
@@ -204,7 +214,7 @@ def Fwd.gen() -> IO(U32):
 def Timer.once(+q: Chan(ShellMsg), +wait: Nat) -> IO(Unit):
   do IO<Unit>:
     IO.sleep(U32.from_nat(wait))
-    ok : Bool <- Chan.send(ShellMsg, q, Frame{})
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Frame{})
     return Unit{}
 
 def Frame.gap() -> Nat:
@@ -217,13 +227,13 @@ def Frame.wait(+last: Nat, +now: Nat) -> Nat:
   Nat.sub(Frame.gap(), Nat.sub(now, last))
 
 def Frame.soon(+q: Chan(ShellMsg), +wait: Nat) -> IO(Unit):
-  Bool.pick(IO(Unit), Nat.is_eq(wait, 0n), IO.bind(Bool, Unit, Chan.send(ShellMsg, q, Frame{}), _ => IO.pure(Unit, Unit{})), IO.spawn(Unit, Timer.once(q, wait)))
+  Bool.pick(IO(Unit), Nat.is_eq(wait, 0n), IO.bind(Result<&1, &1, ShellMsg, Unit>, Unit, Chan.send(ShellMsg, q, Frame{}), _ => IO.pure(Unit, Unit{})), IO.spawn(Unit, Timer.once(q, wait)))
 
 # the caret's next toggle
 def Timer.blink(+q: Chan(ShellMsg), wait: Nat) -> IO(Unit):
   do IO<Unit>:
     IO.sleep(U32.from_nat(wait))
-    ok : Bool <- Chan.send(ShellMsg, q, Blink{})
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Blink{})
     return Unit{}
 
 # Drawing
@@ -327,13 +337,13 @@ def Pics.sent.ok(got: U32 & U32 & List<&2, U32>, +q: Chan(ShellMsg), +tag: Strin
   (w, rest) = got
   (h, rgb) = rest
   do IO<Unit>:
-    ok : Bool <- Chan.send(ShellMsg, q, PicOk{tag, path, w, h, rgb})
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, PicOk{tag, path, w, h, rgb})
     return Unit{}
 
 def Pics.sent.err(e: U32 & String, +q: Chan(ShellMsg), +tag: String, +path: String) -> IO(Unit):
   (_, why) = e
   do IO<Unit>:
-    ok : Bool <- Chan.send(ShellMsg, q, PicErr{tag, path, why})
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, PicErr{tag, path, why})
     return Unit{}
 
 def Pics.sent(r: Result<&1, &1, U32 & String, U32 & U32 & List<&2, U32>>, +q: Chan(ShellMsg), +tag: String, +path: String) -> IO(Unit):
@@ -388,7 +398,7 @@ def Pics.fetched(r: P.Ran, +q: Chan(ShellMsg), +tag: String, +path: String) -> I
         return Unit{}
     case P.Ran{_, _}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(ShellMsg, q, PicErr{tag, path, "that machine did not send it"})
+        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, PicErr{tag, path, "that machine did not send it"})
         return Unit{}
 
 # the file an image key names on this machine
@@ -616,7 +626,7 @@ def Shell.joined(+i2: Chan(S.Msg), +q: Chan(ShellMsg), +tag: String, since: Nat,
   do IO<Unit>:
     +out : Chan(S.Wire) <- Chan.new(S.Wire, 8192)
     +gen : U32 <- Fwd.gen()
-    ok : Bool <- Chan.send(S.Msg, i2, S.Join{0, out, since, origin, gen, 0})
+    ok : Result<&1, &1, S.Msg, Unit> <- Chan.send(S.Msg, i2, S.Join{0, out, since, origin, gen, 0})
     IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, tag, i2, gen, 0n))
 
 # Save the departing installed state before an input step replaces it.
@@ -636,18 +646,18 @@ def Shell.connect.k(t: Tie, a: Shell, +url: String) -> IO(Shell):
     case Tie{+home, _, _, +n, ks} Shell{+nu, w, d, qd, +q, +i, Aux{ws, ty, _, fr}}:
       do IO<Shell>:
         +cache : List<&2, U.HubView> = TieKeep.cache(ks)
-        ok : Bool <- Chan.send(S.Msg, i, S.Leave{0})
+        ok : Result<&1, &1, S.Msg, Unit> <- Chan.send(S.Msg, i, S.Leave{0})
         +tag : String = url ++ "#" ++ Nat.show(n)
         +pre : String <- RW.Rvw.pre(url)
         +nu2 : N.Nui = Shell.remote.set(N.Nui.connection(nu, tag, U.HubCache.get(cache, url)), url, pre)
         +i2 : Chan(S.Msg) <- Shell.hub(String.is_empty(url), home, url, Shell.local(nu))
         Shell.joined(i2, q, tag, U.Ui.seq(N.Nui.ui(nu2)), U.Ui.info(N.Nui.ui(nu2), "origin"))
-        return Shell{N.Nui.desk.reset(nu2), w, True{}, qd, q, i2, Aux{ws, ty, Tie{home, url, tag, 1n+n, [TieKeep{Map.new(&2, BM.Bitmap), Map.new(&2, Bool), cache}]}, Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none()}}}
+        return Shell{N.Nui.desk.reset(nu2), w, True{}, qd, q, i2, Aux{ws, ty, Tie{home, url, tag, 1n+n, [TieKeep{Map.new(&2, BM.Bitmap), Map.new(&2, Bool), cache}]}, [Kept.none()]}}
 
 def Shell.retry.later(+q: Chan(ShellMsg), +tag: String) -> IO(Unit):
   do IO<Unit>:
     IO.sleep(3000)
-    ok : Bool <- Chan.send(ShellMsg, q, Retry{tag})
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Retry{tag})
     return Unit{}
 
 # the caret toggled: the next frame redraws it
@@ -691,10 +701,17 @@ def Shell.has(ws: List<&2, String>, +r: String) -> Bool:
     case w <> t:
       Bool.or(String.eq(w, r), Shell.has(t, r))
 
+def Aux.ty.of(t: List<&2, L.Ty>) -> L.Ty:
+  match t:
+    case Nil{}:
+      L.Ty.none()
+    case h <> _:
+      h
+
 def Aux.ty(a: Aux) -> L.Ty:
   match a:
     case Aux{_, t, _, _}:
-      t
+      Aux.ty.of(t)
 
 def Aux.watched(a: Aux) -> List<&2, String>:
   match a:
@@ -755,7 +772,7 @@ def Shell.notified.k(open: Bool, +q: Chan(ShellMsg), thread: String) -> IO(Unit)
   match open:
     case True{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(ShellMsg, q, Opened{thread})
+        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Opened{thread})
         return Unit{}
     case False{}:
       IO.pure(Unit, Unit{})
@@ -834,14 +851,14 @@ def Drafts.load(u: U.Ui, +dir: String) -> IO(U.Ui):
 def Timer.due(+q: Chan(ShellMsg), +ms: Nat, +action: String, +value: String) -> IO(Unit):
   do IO<Unit>:
     IO.sleep(U32.from_nat(ms))
-    ok : Bool <- Chan.send(ShellMsg, q, Due{action, value})
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Due{action, value})
     return Unit{}
 
 def Shell.cmd(a: Shell, c: N.NCmd) -> IO(Shell):
   match a c:
     case Shell{n, w, d, qd, q, +i, wa} N.NSend{t}:
       do IO<Shell>:
-        ok : Bool <- Chan.send(S.Msg, i, S.Rpc{0, t})
+        ok : Result<&1, &1, S.Msg, Unit> <- Chan.send(S.Msg, i, S.Rpc{0, t})
         return Shell{n, w, d, qd, q, i, wa}
     case Shell{n, w, d, qd, q, i, wa} N.NCopy{t}:
       do IO<Shell>:
@@ -1049,7 +1066,7 @@ def Watch.file(+key: String) -> IO(String):
 
 def Watch.say(+key: String, +text: String, +q: Chan(ShellMsg)) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(ShellMsg, q, Status{key, text})
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Status{key, text})
     return Unit{}
 
 def Watch.sorted(m: Maybe<&2, List<&2, B.Item>>) -> Maybe<&2, List<&2, B.Item>>:
@@ -1063,7 +1080,7 @@ def Watch.sent(m: Maybe<&2, List<&2, B.Item>>, +key: String, +q: Chan(ShellMsg))
   match m:
     case Some{xs}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(ShellMsg, q, Board{key, xs})
+        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Board{key, xs})
         return Unit{}
     case None{}:
       IO.pure(Unit, Unit{})
@@ -1129,7 +1146,7 @@ def Watch.glb.done(r: P.Ran, +glb: String, +key: String, +q: Chan(ShellMsg)) -> 
     case P.Ran{0, _}:
       do IO<Unit>:
         bs : List<&2, U32> <- S.Files.read(glb)
-        ok : Bool <- Chan.send(ShellMsg, q, Mesh3{key, FA.Scene3.of_model(MS.Model.of(Watch.glb.up(MC.Mech.is_step(Src.at(key, 2n)), G.Mesh.tris(G.Glb.parse(bs)))))})
+        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Mesh3{key, FA.Scene3.of_model(MS.Model.of(Watch.glb.up(MC.Mech.is_step(Src.at(key, 2n)), G.Mesh.tris(G.Glb.parse(bs)))))})
         return Unit{}
     case P.Ran{_, out}:
       Watch.say(key, "3D export failed: " ++ String.take(String.trim(out), 160n), q)
@@ -1178,7 +1195,7 @@ def Parts.send(+ts: List<&2, G.Tri3>, +key: String, +t0: Nat, +q: Chan(ShellMsg)
       IO.pure(Unit, Unit{})
     case _:
       do IO<Unit>:
-        ok : Bool <- Chan.send(ShellMsg, q, Parts3{key, t0, ts})
+        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Parts3{key, t0, ts})
         return Unit{}
 
 type PCtx is Data:
@@ -1275,7 +1292,7 @@ def Watch.pcb3.k(items: Maybe<&2, List<&2, B.Item>>, p: Maybe<&2, P3.Pcb3>, +pat
   match items p:
     case Some{+its} Some{+pc}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(ShellMsg, q, Mesh3{key, FA.Scene3.board(FA.Face3.of(its, pc), now)})
+        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Mesh3{key, FA.Scene3.board(FA.Face3.of(its, pc), now)})
         Parts.start(P3.Pcb3.groups(pc), path, key, now, q)
     case _ _:
       IO.pure(Unit, Unit{})
@@ -1328,7 +1345,7 @@ def Watch.mesh(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
 def Tree.send(+root: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
   do IO<Unit>:
     tab : List<&2, HI.Kids> <- PV.Tree.load(64n, [root], Nil{})
-    ok : Bool <- Chan.send(ShellMsg, q, Sheets{key, HI.Hier.show(HI.Hier.rows(tab, root))})
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Sheets{key, HI.Hier.show(HI.Hier.rows(tab, root))})
     return Unit{}
 
 def Watch.tree(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
@@ -1465,7 +1482,7 @@ def Watch.h(h: BM.BmHead) -> U32:
 def Watch.shot(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
   do IO<Unit>:
     +bs : List<&2, U32> <- S.Files.read(path)
-    ok : Bool <- Chan.send(ShellMsg, q, Shot{key, BM.Bitmap.load(bs, 0, 0, Watch.w(BM.Bitmap.head(bs)), Watch.h(BM.Bitmap.head(bs)))})
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Shot{key, BM.Bitmap.load(bs, 0, 0, Watch.w(BM.Bitmap.head(bs)), Watch.h(BM.Bitmap.head(bs)))})
     return Unit{}
 
 def Watch.shots.k(changed: Bool, +seq: U32, +key: String, +path: String, +q: Chan(ShellMsg), k: U32 -> IO(Unit)) -> IO(Unit):
@@ -1550,7 +1567,7 @@ def Watch.follow.done(g: RW.Got, +key: String, +q: Chan(ShellMsg), +tag: String)
       do IO<Unit>:
         Bool.pick(IO(Unit), ok, IO.pure(Unit, Unit{}), Watch.say(key, why, q))
         Bool.pick(IO(Unit), ok, IO.pure(Unit, Unit{}), IO.sleep(5000))
-        sent : Bool <- Chan.send(ShellMsg, q, RvGot{key, tag, ver, reread})
+        sent : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, RvGot{key, tag, ver, reread})
         return Unit{}
 
 def Watch.follow(+key: String, +q: Chan(ShellMsg), +spec: String, +have: String) -> IO(Unit):
@@ -1713,7 +1730,7 @@ def Shell.base3(draft: Bool, +ww: U32, +hh: U32, +x0: U32, ts: FA.Scene3, +c: MS
 def Shell.base(+ww: U32, +hh: U32, +x0: U32, +ss: List<&2, V.Seen>, +v: V.View, +now: Nat, +flip: U32, +fk: U32, +drag: Bool, x: V.Vx) -> Image:
   match x:
     case V.Vx{2, _, ts, c, _, _, _, _, _, _, bm}:
-      R.Frame.over(ww, hh, [D.Draw.rect(D.Clip.all(), 264, 0, (x0 - 264 : U32), hh, L.Theme.ground(flip), 255)], Shell.base3(drag, ww, hh, x0, ts, c, now, V.Look.ground(flip)))
+      R.Frame.over(ww, hh, [D.Draw.rect(D.Clip.all(), 264, 0, (x0 - 264 : U32), hh, L.Theme.ground(flip), 255)], Shell.base3(drag, ww, hh, x0, ts, V.Vx.cam(c), now, V.Look.ground(flip)))
     case V.Vx{3, _, _, _, _, _, _, _, _, _, bm}:
       Shell.shot.base(ww, hh, x0, flip, bm)
     case V.Vx{+k, _, _, _, _, _, _, _, _, _, bm}:
@@ -1765,45 +1782,79 @@ def Shell.image(pa: Bool, +ops: List<&2, R.Op>, +vw: V.Vw, +ww: U32, +hh: U32, +
     case False{}:
       TI.Frame.plan(ww, hh, L.Theme.ops(V.Look.ui(flip), ops), Pics.over(hs, pics, Nil{}, ww, hh, Pix{L.Theme.ground(flip)}), prev, dy)
 
-def Aux.frames(a: Aux) -> TI.Frames:
+def Aux.kept(a: Aux) -> Kept:
   match a:
-    case Aux{_, _, _, Kept{f, _, _, _, _}}:
+    case Aux{_, _, _, k}:
+      Kept.of(k)
+
+def Aux.with_kept(a: Aux, k: Kept) -> Aux:
+  match a:
+    case Aux{ws, ty, ti, _}:
+      Aux{ws, ty, ti, [k]}
+
+def Kept.frames(k: Kept) -> TI.Frames:
+  match k:
+    case Kept{f, _, _, _, _}:
       f
 
-def Aux.memos(a: Aux) -> List<&2, L.TLMemo>:
-  match a:
-    case Aux{_, _, _, Kept{_, m, _, _, _}}:
+def Kept.with_frames(k: Kept, f: TI.Frames) -> Kept:
+  match k:
+    case Kept{_, m, cs, pk, wr}:
+      Kept{f, m, cs, pk, wr}
+
+def Aux.frames(a: Aux) -> TI.Frames:
+  Kept.frames(Aux.kept(a))
+
+def Aux.with_frames(+a: Aux, f: TI.Frames) -> Aux:
+  Aux.with_kept(a, Kept.with_frames(Aux.kept(a), f))
+
+def Kept.memos(k: Kept) -> List<&2, L.TLMemo>:
+  match k:
+    case Kept{_, m, _, _, _}:
       m
 
-def Aux.with_frames(a: Aux, f: TI.Frames) -> Aux:
-  match a:
-    case Aux{ws, ty, ti, Kept{_, m, cs, pk, wr}}:
-      Aux{ws, ty, ti, Kept{f, m, cs, pk, wr}}
+def Kept.with_memos(k: Kept, m: List<&2, L.TLMemo>) -> Kept:
+  match k:
+    case Kept{f, _, cs, pk, wr}:
+      Kept{f, m, cs, pk, wr}
 
-def Aux.with_memos(a: Aux, m: List<&2, L.TLMemo>) -> Aux:
-  match a:
-    case Aux{ws, ty, ti, Kept{f, _, cs, pk, wr}}:
-      Aux{ws, ty, ti, Kept{f, m, cs, pk, wr}}
+def Aux.memos(a: Aux) -> List<&2, L.TLMemo>:
+  Kept.memos(Aux.kept(a))
 
-def Aux.cats(a: Aux) -> Map<&2, CA.CatF>:
-  match a:
-    case Aux{_, _, _, Kept{_, _, cs, _, _}}:
+def Aux.with_memos(+a: Aux, m: List<&2, L.TLMemo>) -> Aux:
+  Aux.with_kept(a, Kept.with_memos(Aux.kept(a), m))
+
+def Kept.cats(k: Kept) -> Map<&2, CA.CatF>:
+  match k:
+    case Kept{_, _, cs, _, _}:
       cs
 
-def Aux.with_cats(a: Aux, cs: Map<&2, CA.CatF>) -> Aux:
-  match a:
-    case Aux{ws, ty, ti, Kept{f, m, _, pk, wr}}:
-      Aux{ws, ty, ti, Kept{f, m, cs, pk, wr}}
+def Kept.with_cats(k: Kept, cs: Map<&2, CA.CatF>) -> Kept:
+  match k:
+    case Kept{f, m, _, pk, wr}:
+      Kept{f, m, cs, pk, wr}
 
-def Aux.wraps(a: Aux) -> Map<&2, BV.PW>:
-  match a:
-    case Aux{_, _, _, Kept{_, _, _, _, wr}}:
+def Aux.cats(a: Aux) -> Map<&2, CA.CatF>:
+  Kept.cats(Aux.kept(a))
+
+def Aux.with_cats(+a: Aux, cs: Map<&2, CA.CatF>) -> Aux:
+  Aux.with_kept(a, Kept.with_cats(Aux.kept(a), cs))
+
+def Kept.wraps(k: Kept) -> Map<&2, BV.PW>:
+  match k:
+    case Kept{_, _, _, _, wr}:
       wr
 
-def Aux.with_wraps(a: Aux, wr: Map<&2, BV.PW>) -> Aux:
-  match a:
-    case Aux{ws, ty, ti, Kept{f, m, cs, pk, _}}:
-      Aux{ws, ty, ti, Kept{f, m, cs, pk, wr}}
+def Kept.with_wraps(k: Kept, wr: Map<&2, BV.PW>) -> Kept:
+  match k:
+    case Kept{f, m, cs, pk, _}:
+      Kept{f, m, cs, pk, wr}
+
+def Aux.wraps(a: Aux) -> Map<&2, BV.PW>:
+  Kept.wraps(Aux.kept(a))
+
+def Aux.with_wraps(+a: Aux, wr: Map<&2, BV.PW>) -> Aux:
+  Aux.with_kept(a, Kept.with_wraps(Aux.kept(a), wr))
 
 # frames go on while a fade, a hover ease or a lightbox ease runs
 def Shell.anim(+n: N.Nui, +ms: Nat) -> Bool:
@@ -1918,7 +1969,7 @@ def Lay.ops(o: L.Out) -> List<&2, R.Op>:
 def Aux.with_ty(a: Aux, t: L.Ty) -> Aux:
   match a:
     case Aux{ws, _, ti, k}:
-      Aux{ws, t, ti, k}
+      Aux{ws, [t], ti, k}
 
 # Match before calling Lay.memos: a hidden timeline does no wrapping.
 def Shell.memos(visible: Bool, ty: L.Ty, n: N.Nui, ms: List<&2, L.TLMemo>) -> List<&2, L.TLMemo>:
@@ -2059,15 +2110,21 @@ def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
     case Opened{th}:
       Shell.clicked(a, th)
 
-def Aux.park(a: Aux) -> N.Park:
-  match a:
-    case Aux{_, _, _, Kept{_, _, _, pk, _}}:
+def Kept.park(k: Kept) -> N.Park:
+  match k:
+    case Kept{_, _, _, pk, _}:
       Maybe.default(&2, N.Park, List.head(&2, N.Park, pk), N.Park.init())
 
-def Aux.with_park(a: Aux, pk: N.Park) -> Aux:
-  match a:
-    case Aux{ws, ty, ti, Kept{f, m, cs, _, wr}}:
-      Aux{ws, ty, ti, Kept{f, m, cs, [pk], wr}}
+def Kept.with_park(k: Kept, pk: N.Park) -> Kept:
+  match k:
+    case Kept{f, m, cs, _, wr}:
+      Kept{f, m, cs, [pk], wr}
+
+def Aux.park(a: Aux) -> N.Park:
+  Kept.park(Aux.kept(a))
+
+def Aux.with_park(+a: Aux, pk: N.Park) -> Aux:
+  Aux.with_kept(a, Kept.with_park(Aux.kept(a), pk))
 
 def Shell.parked(r: N.Nui & N.Park, w: Window, qd: Bool, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux) -> Shell:
   (n, pk) = r
@@ -2180,8 +2237,8 @@ def Shell.fonts(m: Maybe<&1, L.Ty>) -> IO(L.Ty):
 
 # the first join: the in-process hub hands its state over (JoinHere); a
 # hub joined over a link sends its log like any other machine's
-def Shell.join.first(+inbox: Chan(S.Msg), +out: Chan(S.Wire), +lo: String, +gen: U32) -> IO(Bool):
-  Bool.pick(IO(Bool), String.is_empty(lo), Chan.send(S.Msg, inbox, S.JoinHere{0, out, gen}), Chan.send(S.Msg, inbox, S.Join{0, out, 0n, "", gen, 0}))
+def Shell.join.first(+inbox: Chan(S.Msg), +out: Chan(S.Wire), +lo: String, +gen: U32) -> IO(Result<&1, &1, S.Msg, Unit>):
+  Bool.pick(IO(Result<&1, &1, S.Msg, Unit>), String.is_empty(lo), Chan.send(S.Msg, inbox, S.JoinHere{0, out, gen}), Chan.send(S.Msg, inbox, S.Join{0, out, 0n, "", gen, 0}))
 
 def Shell.twin(r: Window & Window, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String) -> IO(Unit):
   (ev, pw) = r
@@ -2190,13 +2247,13 @@ def Shell.twin(r: Window & Window, +inbox: Chan(S.Msg), +drafts: String, +fq: Ch
     +out : Chan(S.Wire) <- Chan.new(S.Wire, 8192)
     t : U32 <- H.Clock.epoch()
     +gen : U32 <- Fwd.gen()
-    ok : Bool <- Shell.join.first(inbox, out, lo, gen)
+    ok : Result<&1, &1, S.Msg, Unit> <- Shell.join.first(inbox, out, lo, gen)
     IO.spawn(Unit, Pump.loop(S.Fuel.forever(), ev, q))
     IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, "#0", inbox, gen, 0n))
     got : Maybe<&1, L.Ty> <- Chan.recv(L.Ty, fq)
     ty : L.Ty <- Shell.fonts(got)
     ui : U.Ui <- Drafts.load(U.Ui.info_set(U.Ui.init(U32.to_nat(t)), "local.hub", lo), drafts)
-    a : Shell <- Shell.later(Shell{N.Nui.init(ui, 1400, 900), pw, True{}, False{}, q, inbox, Aux{Nil{}, ty, Tie{inbox, "", "#0", 1n, TieKeep.empty()}, Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none()}}})
+    a : Shell <- Shell.later(Shell{N.Nui.init(ui, 1400, 900), pw, True{}, False{}, q, inbox, Aux{Nil{}, [ty], Tie{inbox, "", "#0", 1n, TieKeep.empty()}, [Kept.none()]}})
     Shell.loop(S.Fuel.forever(), a)
 
 def Shell.opened(r: Result<&1, &1, U32 & String, Window>, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String) -> IO(Unit):
@@ -2209,7 +2266,7 @@ def Shell.opened(r: Result<&1, &1, U32 & String, Window>, +inbox: Chan(S.Msg), +
 def Start.fonts(+fq: Chan(L.Ty)) -> IO(Unit):
   do IO<Unit>:
     ty : L.Ty <- L.Ty.load()
-    ok : Bool <- Chan.send(L.Ty, fq, ty)
+    ok : Result<&1, &1, L.Ty, Unit> <- Chan.send(L.Ty, fq, ty)
     return Unit{}
 
 # `--headless`: no window even with a display; the hub, the web client and

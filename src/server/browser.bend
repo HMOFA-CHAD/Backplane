@@ -78,7 +78,7 @@ def Browser.fail(+error: String) -> String:
 
 def Browser.say(+reply: Chan(String), +text: String) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(String, reply, text)
+    ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, text)
     return Unit{}
 
 # Reading the helper
@@ -90,14 +90,14 @@ def Browser.lines(ls: List<&2, String>, +q: Chan(BMsg)) -> IO(Unit):
       IO.pure(Unit, Unit{})
     case l <> t:
       do IO<Unit>:
-        ok : Bool <- Chan.send(BMsg, q, BLine{l})
+        ok : Result<&1, &1, BMsg, Unit> <- Chan.send(BMsg, q, BLine{l})
         Browser.lines(t, q)
 
 def Browser.end(s: Socket, +pid: U32, +q: Chan(BMsg)) -> IO(Unit):
   do IO<Unit>:
     Socket.close(s)
     code : U32 <- H.Proc.wait(pid)
-    ok : Bool <- Chan.send(BMsg, q, BDead{})
+    ok : Result<&1, &1, BMsg, Unit> <- Chan.send(BMsg, q, BDead{})
     return Unit{}
 
 def Browser.fed(r: U.Lines & List<&2, String>, s: Socket, +q: Chan(BMsg), k: Socket -> U.Lines -> IO(Unit)) -> IO(Unit):
@@ -153,7 +153,7 @@ def Browser.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +
         +input : Chan(String) <- Chan.new(String, 256)
         IO.spawn(Unit, Browser.writer(Browser.forever(), wr, input))
         IO.spawn(Unit, Browser.reader(Browser.forever(), rd, U.Lines.new(), pid, q))
-        ok : Bool <- Chan.send(String, input, "{\"id\":\"frames\",\"op\":\"frames\",\"on\":true,\"maxFps\":8}")
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, input, "{\"id\":\"frames\",\"op\":\"frames\",\"on\":true,\"maxFps\":8}")
         return Some{input}
     case Fail{_}:
       do IO<Maybe<&2, Chan(String)>>:
@@ -200,7 +200,7 @@ def Browser.sent(m: Maybe<&2, Chan(String)>, +line: String, +id: Nat, +reply: Ch
   match m b:
     case Some{+c} Br{_, ps, n, exe, home}:
       do IO<Br>:
-        ok : Bool <- Chan.send(String, c, line)
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, c, line)
         return Br{Some{c}, Pend{Nat.show(id), reply} <> ps, n, exe, home}
     case None{} Br{_, ps, n, exe, home}:
       do IO<Br>:
@@ -370,7 +370,7 @@ def Browser.paged(+page: String, args: J.Json) -> J.Json:
 def Browser.ask_on(+q: Chan(BMsg), +page: String, +op: String, args: J.Json) -> IO(String):
   do IO<String>:
     +reply : Chan(String) <- Chan.new(String, 1)
-    ok : Bool <- Chan.send(BMsg, q, BCall{op, Browser.paged(page, args), reply})
+    ok : Result<&1, &1, BMsg, Unit> <- Chan.send(BMsg, q, BCall{op, Browser.paged(page, args), reply})
     m : Maybe<&1, String> <- Chan.recv(String, reply)
     return Maybe.default(&1, String, m, Browser.fail("no reply"))
 

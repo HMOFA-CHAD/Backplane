@@ -41,7 +41,7 @@ def Link.port(+url: String) -> U32:
 
 def Link.say(+out: Chan(S.Wire), +text: String) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(S.Wire, out, S.WText{text})
+    ok : Result<&1, &1, S.Wire, Unit> <- Chan.send(S.Wire, out, S.WText{text})
     return Unit{}
 
 # the link is down: say why (a note the window shows), then hang up

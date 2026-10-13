@@ -206,7 +206,7 @@ static __attribute__((unused)) Term fx_list(Env e, const u32* ws, u64 n) {
   return xs;
 }
 
-#ifdef CID_FONT_FIND
+#ifdef CID(Font.find)
 
 // the best system font for a fontconfig pattern ("DejaVu Sans Mono",
 // "monospace:weight=bold"): (family, (file, index))
@@ -248,12 +248,12 @@ Term font_find_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) font_find_use(void) {
-  io_eff(CID_FONT_FIND, font_find_run, 0);
+  io_eff(CID(Font.find), font_find_run);
 }
 
 #endif
 
-#ifdef CID_FONT_OPEN
+#ifdef CID(Font.open)
 
 // a face of the font file at px pixels per em
 Term font_open_run(Env e, Term* f, IoWork* w) {
@@ -284,12 +284,12 @@ Term font_open_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) font_open_use(void) {
-  io_eff(CID_FONT_OPEN, font_open_run, 0);
+  io_eff(CID(Font.open), font_open_run);
 }
 
 #endif
 
-#ifdef CID_FONT_METRICS
+#ifdef CID(Font.metrics)
 
 Term font_metrics_run(Env e, Term* f, IoWork* w) {
   FxFace* face = fx_face((u32)f[0]);
@@ -303,12 +303,12 @@ Term font_metrics_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) font_metrics_use(void) {
-  io_eff(CID_FONT_METRICS, font_metrics_run, 0);
+  io_eff(CID(Font.metrics), font_metrics_run);
 }
 
 #endif
 
-#ifdef CID_FONT_GLYPH
+#ifdef CID(Font.glyph)
 
 // Fallback faces
 // --------------
@@ -473,12 +473,12 @@ Term font_glyph_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) font_glyph_use(void) {
-  io_eff(CID_FONT_GLYPH, font_glyph_run, 0);
+  io_eff(CID(Font.glyph), font_glyph_run);
 }
 
 #endif
 
-#ifdef CID_FONT_KERN
+#ifdef CID(Font.kern)
 
 Term font_kern_run(Env e, Term* f, IoWork* w) {
   FxFace* face = fx_face((u32)f[0]);
@@ -494,7 +494,7 @@ Term font_kern_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) font_kern_use(void) {
-  io_eff(CID_FONT_KERN, font_kern_run, 0);
+  io_eff(CID(Font.kern), font_kern_run);
 }
 
 #endif

@@ -450,7 +450,16 @@ def Ops.pick(keep: Bool, +p: B.Prim, +layer: U32, +v: View, +c: D.Clip, +fade: U
 # the source (Src.key) the scene belongs to; `busy` a status line; (px,
 # py) where the pointer went down; `path` a file an agent asked to show
 type Vx is Data:
-  Vx{kind: U32, pick: String, tris: FA.Scene3, cam: MS.Cam, shown: String, busy: String, px: U32, py: U32, path: String, seen: String, bmp: BM.Bitmap}
+  Vx{kind: U32, pick: String, tris: FA.Scene3, cam: List<&2, MS.Cam>, shown: String, busy: String, px: U32, py: U32, path: String, seen: String, bmp: BM.Bitmap}
+
+# the camera sits behind a List: the window's state flattens to no more
+# fields than the emitter's arity (247 in bend 2.0.36)
+def Vx.cam(cs: List<&2, MS.Cam>) -> MS.Cam:
+  match cs:
+    case Nil{}:
+      MS.Cam.at(0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.8)
+    case c <> _:
+      c
 
 # Viewer state (held by the window's state)
 # ----------------------------------------
@@ -463,7 +472,7 @@ type Vw is Data:
   Vw{scene: List<&2, Seen>, view: View, fitted: Bool, root: String, drag: Bool, lx: U32, ly: U32, base: Image, fresh: Bool, cut: Nat, x: Vx}
 
 def Vx.init() -> Vx:
-  Vx{0, "", FA.Scene3.none(), MS.Cam.at(0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.8), "", "", 0, 0, "", "", BM.Bitmap{0, 0, 0n, Pix{0}, 0, 0, 0, 0}}
+  Vx{0, "", FA.Scene3.none(), [MS.Cam.at(0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.8)], "", "", 0, 0, "", "", BM.Bitmap{0, 0, 0n, Pix{0}, 0, 0, 0, 0}}
 
 def Vw.init() -> Vw:
   Vw{Nil{}, View{1.0, 0.0, 0.0}, False{}, "", False{}, 0, 0, Pix{0}, False{}, 0n, Vx.init()}

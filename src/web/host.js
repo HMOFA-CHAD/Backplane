@@ -9,6 +9,11 @@ import App from "./app.bend";
 import * as Solid from "./solid.js";
 import * as Plot2d from "./plot2d.js";
 import * as Wire from "./wire.js";
+import { T, is, learnJson, learnDom } from "./wire.js";
+
+// the constructors' tags as this bundle names them (wire.js)
+learnJson(App.json_tags());
+learnDom(App.dom_tags());
 
 // bytes <-> Bend List<U32>
 function toList(u8) {
@@ -24,7 +29,7 @@ function fromList(xs) {
 }
 
 function* each(list) {
-  for (let xs = list; xs && xs.$ === "Con"; xs = xs.tail) yield xs.head;
+  for (let xs = list; xs && is(xs, "Con"); xs = xs.tail) yield xs.head;
 }
 
 // DOM patch
@@ -37,9 +42,9 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const SVG_TAGS = new Set(["svg", "path"]);
 
 function create(v) {
-  if (v.$ === "Txt") return document.createTextNode(v.text);
+  if (is(v, "Txt")) return document.createTextNode(v.text);
   const el = SVG_TAGS.has(v.tag) ? document.createElementNS(SVG_NS, v.tag) : document.createElement(v.tag);
-  el.__v = { $: "El", tag: v.tag, key: v.key, attrs: { $: "Nil" }, kids: { $: "Nil" } };
+  el.__v = { $: T.El, tag: v.tag, key: v.key, attrs: { $: "Nil" }, kids: { $: "Nil" } };
   el.__kids = [];
   patch(el, v);
   return el;
@@ -60,7 +65,7 @@ function catUri(name) {
 function setAttrs(el, oldAttrs, attrs) {
   const seen = new Set();
   for (const a of each(attrs)) {
-    if (a.$ === "At") {
+    if (is(a, "At")) {
       seen.add(a.name);
       if (a.name === "value") {
         if (el.value !== a.value) el.value = a.value;
@@ -75,7 +80,7 @@ function setAttrs(el, oldAttrs, attrs) {
     }
   }
   for (const a of each(oldAttrs)) {
-    const name = a.$ === "At" ? a.name : "data-on-" + a.event;
+    const name = is(a, "At") ? a.name : "data-on-" + a.event;
     if (!seen.has(name)) {
       if (name === "value") el.value = "";
       else el.removeAttribute(name);
@@ -84,7 +89,7 @@ function setAttrs(el, oldAttrs, attrs) {
 }
 
 function same(a, b) {
-  return a.$ === b.$ && (a.$ === "Txt" || (a.tag === b.tag && a.key === b.key));
+  return a.$ === b.$ && (is(a, "Txt") || (a.tag === b.tag && a.key === b.key));
 }
 
 // make el (whose last vnode is el.__v) match v
@@ -96,7 +101,7 @@ function patch(el, v) {
   const byKey = new Map();
   const free = [];
   for (const p of prev) {
-    if (p.v.$ === "El" && p.v.key) byKey.set(p.v.tag + "\u0000" + p.v.key, p);
+    if (is(p.v, "El") && p.v.key) byKey.set(p.v.tag + "\u0000" + p.v.key, p);
     else free.push(p);
   }
   const next = [];
@@ -104,7 +109,7 @@ function patch(el, v) {
   for (let i = 0; i < kids.length; i += 1) {
     const k = kids[i];
     let hit = null;
-    if (k.$ === "El" && k.key) {
+    if (is(k, "El") && k.key) {
       hit = byKey.get(k.tag + "\u0000" + k.key) ?? null;
       if (hit) byKey.delete(k.tag + "\u0000" + k.key);
     } else {
@@ -114,7 +119,7 @@ function patch(el, v) {
     let node;
     if (hit) {
       node = hit.node;
-      if (k.$ === "Txt") {
+      if (is(k, "Txt")) {
         if (node.nodeValue !== k.text) node.nodeValue = k.text;
       } else if (hit.v !== k) {
         patch(node, k);
@@ -151,7 +156,7 @@ function patch(el, v) {
 // ----
 
 const root = document.getElementById("root");
-root.__v = { $: "El", tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Nil" } };
+root.__v = { $: T.El, tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Nil" } };
 root.__kids = [];
 
 const now = () => BigInt(Math.floor(Date.now() / 1000));
@@ -167,7 +172,7 @@ const cid = (() => {
 })();
 
 // the wire's dictionaries (core/cbor.bend), for wire.js
-const listOf = (l) => { const out = []; for (let x = l; x && x.$ === "Con"; x = x.tail) out.push(x.head); return out; };
+const listOf = (l) => { const out = []; for (let x = l; x && is(x, "Con"); x = x.tail) out.push(x.head); return out; };
 const KEYS = listOf(App.cbor_keys());
 const WORDS = listOf(App.cbor_words());
 
@@ -207,7 +212,7 @@ function render() {
   const pinned = tl ? tl.scrollHeight - tl.scrollTop - tl.clientHeight < 40 : true;
   const anchor = tl && !pinned ? anchorOf(tl) : null;
   const fromEnd = tl ? tl.scrollHeight - tl.scrollTop : 0;
-  patch(root, { $: "El", tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: App.view(ui), tail: { $: "Nil" } } });
+  patch(root, { $: T.El, tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: App.view(ui), tail: { $: "Nil" } } });
   const tl2 = document.getElementById("timeline");
   if (tl2 && (scroll || pinned)) tl2.scrollTop = tl2.scrollHeight;
   // read further up, the view stays on what is read: text streaming in
@@ -284,27 +289,27 @@ function copy(text) {
 
 function run(cmds) {
   for (const c of each(cmds)) {
-    if (c.$ === "Send") {
+    if (is(c, "Send")) {
       if (socket && socket.readyState === 1) socket.send(fromList(App.wire_out(c.text)));
-    } else if (c.$ === "Copy") {
+    } else if (is(c, "Copy")) {
       copy(c.text);
-    } else if (c.$ === "Focus") {
+    } else if (is(c, "Focus")) {
       focus = c.id; // after the next render, which may create it
       later();
-    } else if (c.$ === "Connect") {
+    } else if (is(c, "Connect")) {
       // another machine's hub serves its own page; "" is this one
       if (c.url) location.href = App.visit(ui, c.url);
-    } else if (c.$ === "Scroll") {
+    } else if (is(c, "ScrollEnd")) {
       scroll = true;
-    } else if (c.$ === "Notify") {
+    } else if (is(c, "Notify")) {
       notify(c);
-    } else if (c.$ === "Later") {
+    } else if (is(c, "Later")) {
       // a client action come due (the history playing)
       setTimeout(() => dispatch(c.action, c.value), Number(c.ms));
-    } else if (c.$ === "Jump") {
+    } else if (is(c, "Jump")) {
       jump = c.id; // after the next render, which opens its folds
       later();
-    } else if (c.$ === "Keep") {
+    } else if (is(c, "Keep")) {
       // written at once: a crash or a closed tab loses nothing typed
       try {
         if (c.text) localStorage.setItem(DRAFT + c.thread, c.text);
@@ -357,7 +362,7 @@ function notify(c) {
 function dispatch(action, value) {
   const r = App.act(ui, action, value);
   ui = r.ui;
-  const did = r.cmds && r.cmds.$ === "Con";
+  const did = r.cmds && is(r.cmds, "Con");
   run(r.cmds);
   deskCheck();
   if (action === "draft") laterPart();
@@ -919,7 +924,7 @@ try { localStorage.removeItem("backplane-log"); } catch {} // the copy kept befo
 
 // the number in field k of a frame's top object, as Bend's Json holds it
 function field(j, k) {
-  for (let c = j && j.fields; c && c.$ === "Field"; c = c.tail) if (c.key === k) return c.value && c.value.raw;
+  for (let c = j && j.fields; c && is(c, "Field"); c = c.tail) if (c.key === k) return c.value && c.value.raw;
   return undefined;
 }
 

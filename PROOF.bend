@@ -98,17 +98,20 @@ def u32_cmp_refl(x):
     case U32{+w}:
       word_cmp_refl(32n, w)
 
-law eq_fin_rec:
-  for -h1: Char
-  for -h2: Char
-  for r: (String & String) & Cmp
-  {String.eq.fin(String.cmp.rec(h1, h2, r)) == String.eq.fin(r) : Bool}
+# a string compares equal to itself, handing both copies back
+law string_cmp_refl:
+  for +s: String
+  {String.cmp(s, s) == ((s, s), EQ{}) : (String & String) & Cmp}
 
-def eq_fin_rec(h1, h2, r):
-  match r:
-    case (ab, c):
-      match ab:
-        case (a, b):
+def string_cmp_refl(s):
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+h, +t}:
+      match h:
+        case Chr{+x}:
+          %Equal.sym(Cmp, U32.cmp(x, x), EQ{}, u32_cmp_refl(x)) : {String.cmp.fin(t, t, ((Chr{x}, Chr{x}), _)) == ((SCon{Chr{x}, t}, SCon{Chr{x}, t}), EQ{}) : (String & String) & Cmp}
+          %Equal.sym((String & String) & Cmp, String.cmp(t, t), ((t, t), EQ{}), string_cmp_refl(t)) : {String.cmp.rec(Chr{x}, Chr{x}, _) == ((SCon{Chr{x}, t}, SCon{Chr{x}, t}), EQ{}) : (String & String) & Cmp}
           {==}
 
 # False is not True
@@ -220,16 +223,8 @@ def put_count(sh, t, s):
 # ----
 
 def Laws.string_eq_refl(s):
-  match s:
-    case SNil{}:
-      {==}
-    case SCon{+h, +t}:
-      match h:
-        case Chr{+x}:
-          %Equal.sym(Cmp, U32.cmp(x, x), EQ{}, u32_cmp_refl(x)) : {String.eq.fin(String.cmp.fin(t, t, ((Chr{x}, Chr{x}), _))) == True{} : Bool}
-          Equal.trans(Bool, String.eq.fin(String.cmp.rec(Chr{x}, Chr{x}, String.cmp(t, t))),
-            String.eq.fin(String.cmp(t, t)), True{},
-            eq_fin_rec(Chr{x}, Chr{x}, String.cmp(t, t)), Laws.string_eq_refl(t))
+  %Equal.sym((String & String) & Cmp, String.cmp(s, s), ((s, s), EQ{}), string_cmp_refl(s)) : {Cmp.is_eq(Pair.snd(String & String, Cmp, _)) == True{} : Bool}
+  {==}
 
 def Laws.settle_at_window(last, w):
   Nat.ge_refl(Nat.add(last, w))
@@ -903,22 +898,6 @@ def Laws.island_idle_empty(ts, es, h):
       Laws.island_idle_empty(t, es, h)
     case M.Thread{id, p, ti, c, a, M.Failed{}, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de} <> t:
       Laws.island_idle_empty(t, es, h)
-
-# a string compares equal to itself, handing both copies back
-law string_cmp_refl:
-  for +s: String
-  {String.cmp(s, s) == ((s, s), EQ{}) : (String & String) & Cmp}
-
-def string_cmp_refl(s):
-  match s:
-    case SNil{}:
-      {==}
-    case SCon{+h, +t}:
-      match h:
-        case Chr{+x}:
-          %Equal.sym(Cmp, U32.cmp(x, x), EQ{}, u32_cmp_refl(x)) : {String.cmp.fin(t, t, ((Chr{x}, Chr{x}), _)) == ((SCon{Chr{x}, t}, SCon{Chr{x}, t}), EQ{}) : (String & String) & Cmp}
-          %Equal.sym((String & String) & Cmp, String.cmp(t, t), ((t, t), EQ{}), string_cmp_refl(t)) : {String.cmp.rec(Chr{x}, Chr{x}, _) == ((SCon{Chr{x}, t}, SCon{Chr{x}, t}), EQ{}) : (String & String) & Cmp}
-          {==}
 
 def Laws.device_token_never_sent(tok, p, k, th, e, b, at):
   {==}
@@ -5396,7 +5375,7 @@ law cat_mod_lt:
   for +r: Nat
   for -bp: Nat
   for e: {Nat.add(r, m) == bp : Nat}
-  {Nat.is_lt(Nat.mod.fin(Nat.divmod.go(n, m, d, r)), 1n+bp) == True{} : Bool}
+  {Nat.is_lt(Pair.snd(Nat, Nat, Nat.divmod.go(n, m, d, r)), 1n+bp) == True{} : Bool}
 
 def cat_mod_lt(n, m, d, r, bp, e):
   match n m:

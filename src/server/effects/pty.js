@@ -6,3 +6,6 @@ function pty_spawn(cmd, args, cwd, cols, rows) {
 function pty_resize(socket, cols, rows) {
   return socket;
 }
+
+io_eff(CID(Pty.spawn), pty_spawn);
+io_eff(CID(Pty.resize), pty_resize);
