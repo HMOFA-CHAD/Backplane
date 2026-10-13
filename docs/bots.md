@@ -196,7 +196,9 @@ in three cases only (`src/core/notice.bend`, `Policy.*`, laws `policy_*`,
    alert per settle, key `turn-<thread>`. A failure counts when the person
    must act: the turn they started failed.
 3. **Scheduled.** A bot's `notify_person` with reason `reminder` or
-   `digest` in a turn a routine started.
+   `digest` in a turn a routine started, or a reminder that came due
+   (`Policy.reminder`: kind `reminder`, key `remind-<id>`, never held by a
+   desk).
 
 Everything else alerts no one and stays visible in the app (unread,
 badges, the Status plane): intermediate turn ends, progress, turns woken by

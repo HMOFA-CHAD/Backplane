@@ -668,6 +668,18 @@ def Policy.merged.k(on: Bool, p: Per, +post: M.State, +now: Nat, +thread: String
     case Per{+pid, _, _}:
       Policy.merged.a(on, post, now, thread, url, Policy.merged.m(pid, Alert.memory(post, thread)))
 
+def Policy.reminder.k(on: Bool, +s: M.State, +now: Nat, +thread: String, +id: String, +text: String) -> List<&2, M.Change>:
+  match on:
+    case True{}:
+      [Alert.set(s, now, thread, "reminder", "remind-" ++ id, Alert.memory(s, thread), Alert.text(text, 500n))]
+    case False{}:
+      [Alert.set(s, now, thread, "", "", Alert.memory(s, thread), "")]
+
+# a reminder the person scheduled came due (remind_person's Reminded): the
+# record, key remind-<id>, never held by a desk; the memory is left alone
+def Policy.reminder(+s: M.State, +now: Nat, +thread: String, +id: String, +text: String) -> List<&2, M.Change>:
+  Policy.reminder.k(Policy.on(s, "reminders"), s, now, thread, id, text)
+
 # the thread's branch merged: the work settled
 def Policy.merged(+post: M.State, +now: Nat, +thread: String, +url: String) -> List<&2, M.Change>:
   Policy.merged.k(Policy.on(post, "settled"), Policy.person(post, thread), post, now, thread, url)
@@ -848,3 +860,8 @@ def Policy.demo.all() -> String:
 
 def Policy.demo.link() -> Bool:
   Bool.or(Policy.direct("t:x:1", "do it"), Policy.direct("m1", "[routine: daily]\ngo"))
+
+# a reminder due: its kind, with the setting on (the default) and off
+def Policy.demo.reminder() -> String:
+  +s = Policy.demo.s(Policy.demo.ask())
+  Policy.said(Policy.reminder(s, 40n, "t1", "r7", "Call the bank")) ++ " " ++ Policy.said(Policy.reminder(Policy.demo.fold(s, Nil{}, [M.SettingSet{"notify.reminders", "off", 39n}]), 40n, "t1", "r7", "Call the bank"))

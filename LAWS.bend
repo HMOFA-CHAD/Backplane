@@ -7166,4 +7166,9 @@ law policy_phone_boot_quiet:
   {Hb.Did.alerts(Hb.One.pol(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n})])),
       U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.SettingSet{"alert.t1", Nt.Note.demo.rec("done"), 3n})]))) == [] : List<&2, J.Json>}
 
+# a reminder that came due records a reminder (the setting on, the
+# default), or no kind (off)
+law policy_reminder_alerts:
+  {NO.Policy.demo.reminder() == "reminder _" : String}
+
 # ---- end notif-policy ----

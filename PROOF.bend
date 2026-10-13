@@ -8561,4 +8561,7 @@ def Laws.policy_phone_turn_end_quiet():
 def Laws.policy_phone_boot_quiet():
   {==}
 
+def Laws.policy_reminder_alerts():
+  {==}
+
 # ---- end notif-policy ----
