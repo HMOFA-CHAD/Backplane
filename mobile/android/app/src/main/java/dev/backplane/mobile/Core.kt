@@ -42,6 +42,11 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     var links by mutableStateOf(loadLinks())
         private set
     var screen by mutableStateOf<Screen?>(null)
+    // the last status plane the hub sent, drawn while a screen carries none (the
+    // hub builds the plane only for the list and the Status tab, so going back
+    // from a thread shows this one at once)
+    var lastUber by mutableStateOf<UberCard?>(null)
+    var lastPlane by mutableStateOf<PlaneModel?>(null)
         private set
     // the composer's text, owned here so typing never waits on Bend
     var composer by mutableStateOf("")
@@ -285,6 +290,8 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
             if (typing == 0) composer = next.thread?.draft ?: ""
             val was = screen?.sel
             screen = next
+            if (next.uber == null) { lastUber = null; lastPlane = null }
+            else if (next.plane != null) { lastUber = next.uber; lastPlane = next.plane }
             if (next.hub != shownHub) {
                 shownHub = next.hub
                 plots.reset()

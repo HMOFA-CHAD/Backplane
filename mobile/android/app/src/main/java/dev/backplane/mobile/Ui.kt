@@ -555,9 +555,9 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
             // active view threads by title or project)
             s.search?.let { f -> item(key = "find") { SearchField(m, f, s.projects.firstOrNull()?.id) } }
             // the uberbot's card, and the status plane under it
-            s.uber?.let { u ->
+            m.uber(s)?.let { u ->
                 item(key = "uber") { UberCardRow(m, u) }
-                s.plane?.let { planeSections(m, it, false) }
+                m.plane(s)?.let { planeSections(m, it, false) }
                 item(key = "d:uber") { HorizontalDivider() }
             }
             if (s.view == "active") {

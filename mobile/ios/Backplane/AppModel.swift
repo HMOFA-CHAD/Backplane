@@ -27,6 +27,15 @@ final class AppModel {
     private(set) var links: [String] = UserDefaults.standard.stringArray(forKey: "links")
         ?? UserDefaults.standard.string(forKey: "link").map { [$0] } ?? []
     private(set) var screen: Screen?
+    // the last status plane the hub sent, drawn while a screen carries none (the
+    // hub builds the plane only for the list and the Status tab, so going back
+    // from a thread shows this one at once)
+    private(set) var lastUber: UberCard?
+    private(set) var lastPlane: PlaneModel?
+
+    // the card and the plane to draw: the screen's, else the last it carried
+    func uber(_ s: Screen) -> UberCard? { s.plane != nil ? s.uber : (s.uber == nil ? nil : lastUber ?? s.uber) }
+    func plane(_ s: Screen) -> PlaneModel? { s.plane ?? (s.uber == nil ? nil : lastPlane) }
     // the island tapped while several threads work: which one to open
     var picking = false
     // the board viewer's plots, which come straight from the socket
@@ -451,6 +460,7 @@ final class AppModel {
         if let s = o.screen {
             if typing == 0 { composer = s.thread?.draft ?? "" }
             screen = s
+            if s.uber == nil { lastUber = nil; lastPlane = nil } else if s.plane != nil { lastUber = s.uber; lastPlane = s.plane }
             if let t = s.thread, !s.sel.isEmpty { remember(s.sel, t) }
             if s.hub != shownHub {
                 shownHub = s.hub

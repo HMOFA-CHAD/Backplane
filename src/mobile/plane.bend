@@ -59,6 +59,10 @@ def MPlane.json(+p: PL.Plane, +now: Nat) -> J.Json:
     J.KV{"routines", J.Json.arr(MPlane.rows(PL.Plane.routines(p), now))}, J.KV{"machines", J.Json.arr(MPlane.mach(PL.Plane.machines(p)))}])
 
 # the uberbot's card: a bot's row (MBots.row) with the plane's counts
+# the card with no counts (while the plane is not built)
+def MPlane.bare(r: B.BRow) -> J.Json:
+  MB.MBots.row(r)
+
 def MPlane.card.k(j: J.Json, +counts: String) -> J.Json:
   match j:
     case J.Obj{fs}:

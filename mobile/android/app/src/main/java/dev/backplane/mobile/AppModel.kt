@@ -10,6 +10,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     val links get() = core.links
     val screen get() = core.screen
+    // the card and the plane to draw: the screen's, else the last it carried
+    fun uber(s: Screen): UberCard? = if (s.plane != null) s.uber else if (s.uber != null) core.lastUber ?: s.uber else null
+    fun plane(s: Screen): PlaneModel? = s.plane ?: if (s.uber != null) core.lastPlane else null
     val composer get() = core.composer
     val scrolls get() = core.scrolls
     val jump get() = core.jump

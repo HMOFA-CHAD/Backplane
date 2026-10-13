@@ -255,7 +255,7 @@ struct BotScreen: View {
     @ViewBuilder private var content: some View {
         switch bot.tab ?? "chat" {
         case "status":
-            StatusTab(model: model, plane: model.screen?.plane).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
+            StatusTab(model: model, plane: model.screen.flatMap { model.plane($0) }).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
         case "space":
             if let p = bot.page {
                 SpacePage(model: model, page: p).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)

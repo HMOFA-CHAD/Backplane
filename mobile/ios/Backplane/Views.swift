@@ -372,9 +372,9 @@ struct ProjectsView: View {
             if let f = screen.search {
                 Section { SearchField(model: model, search: f, first: screen.projects.first?.id) }
             }
-            if let u = screen.uber {
+            if let u = model.uber(screen) {
                 Section { UberCardRow(model: model, card: u) }
-                if let p = screen.plane { PlaneSections(model: model, plane: p, full: false) }
+                if let p = model.plane(screen) { PlaneSections(model: model, plane: p, full: false) }
             }
             if screen.view == "active" {
                 let rows = screen.active ?? []
