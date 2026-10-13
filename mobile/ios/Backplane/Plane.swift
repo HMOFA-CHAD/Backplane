@@ -347,3 +347,42 @@ struct StatusTab: View {
         .overlay { if plane == nil { ProgressView() } }
     }
 }
+
+// The Home tab: the uberbot's card, then the plane in full (what needs you,
+// what runs, the bots, rooms and routines, the idle threads). With no
+// uberbot there is no plane: the tab offers to make one.
+struct HomeTab: View {
+    let model: AppModel
+    let screen: Screen
+
+    var body: some View {
+        let card = model.uber(screen)
+        List {
+            if let u = card {
+                Section { UberCardRow(model: model, card: u) }
+                if let p = model.plane(screen) {
+                    Section { PlaneStrip(model: model, plane: p) }
+                    PlaneSections(model: model, plane: p, full: true)
+                }
+            }
+        }
+        .overlay {
+            if card == nil {
+                if screen.hubs.isEmpty || screen.projects.isEmpty && screen.bots.isEmpty {
+                    ProgressView().opacity(screen.online ? 0 : 1)
+                } else {
+                    ContentUnavailableView {
+                        Label("No uberbot", systemImage: "pawprint")
+                    } description: {
+                        Text("Your uberbot keeps the whole picture: what needs you, what runs, your bots and routines.")
+                    } actions: {
+                        Button("Make an uberbot") { model.act("uber-new") }.buttonStyle(.borderedProminent)
+                    }
+                }
+            } else if model.plane(screen) == nil {
+                ProgressView()
+            }
+        }
+        .navigationTitle("Home")
+    }
+}

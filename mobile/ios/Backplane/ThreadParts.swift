@@ -955,50 +955,43 @@ private struct SetFieldView: View {
     }
 }
 
-struct SettingsSheet: View {
+// The hub's settings rows (src/mobile/screen.bend's Mob.settings.of), as
+// the Hub settings page draws them. Rows about this device (`local`) are
+// App settings' business and are left out.
+struct HubSettingsRows: View {
     let model: AppModel
-    let settings: Settings
-    let version: String
+    let rows: [SetRow]
 
     var body: some View {
-        NavigationStack {
-            Form {
-                ForEach(settings.rows, id: \.self) { r in
-                    Section {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(r.label)
-                            if !r.note.isEmpty { Text(r.note).font(.footnote).foregroundStyle(.secondary) }
-                            ForEach(r.fields ?? [], id: \.self) { f in SetFieldView(model: model, field: f) }
-                            if let q = r.qr, !q.isEmpty {
-                                VStack(spacing: 6) {
-                                    QRCodeView(rows: q)
-                                    if let n = r.qrnote { Text(n).font(.footnote).foregroundStyle(.secondary) }
-                                }
-                                .frame(maxWidth: .infinity)
-                                .onTapGesture { model.act("flag", "pairqr") }
-                            }
-                            if !r.buttons.isEmpty {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 6) {
-                                        ForEach(r.buttons, id: \.self) { b in
-                                            if b.on {
-                                                Button(b.label) { model.act(b.action, b.value) }.buttonStyle(.borderedProminent)
-                                            } else {
-                                                Button(b.label) { model.act(b.action, b.value) }.buttonStyle(.bordered)
-                                            }
-                                        }
+        ForEach(rows.filter { !($0.local ?? false) }, id: \.self) { r in
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(r.label)
+                    if !r.note.isEmpty { Text(r.note).font(.footnote).foregroundStyle(.secondary) }
+                    ForEach(r.fields ?? [], id: \.self) { f in SetFieldView(model: model, field: f) }
+                    if let q = r.qr, !q.isEmpty {
+                        VStack(spacing: 6) {
+                            QRCodeView(rows: q)
+                            if let n = r.qrnote { Text(n).font(.footnote).foregroundStyle(.secondary) }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .onTapGesture { model.act("flag", "pairqr") }
+                    }
+                    if !r.buttons.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(r.buttons, id: \.self) { b in
+                                    if b.on {
+                                        Button(b.label) { model.act(b.action, b.value) }.buttonStyle(.borderedProminent)
+                                    } else {
+                                        Button(b.label) { model.act(b.action, b.value) }.buttonStyle(.bordered)
                                     }
                                 }
                             }
                         }
-                        .padding(.vertical, 4)
                     }
                 }
-            }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { model.act("flag", "settings") } }
+                .padding(.vertical, 4)
             }
         }
     }
