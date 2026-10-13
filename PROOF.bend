@@ -8616,3 +8616,56 @@ def Laws.notify_rows_defaults():
 
 # ---- end notif-policy ----
 
+# ---- told-rules-board ----
+def Laws.told_setting_empty_removes():
+  {==}
+
+def Laws.told_mark_key_norm():
+  {==}
+
+def Laws.told_check_finds_marked():
+  {==}
+
+def Laws.told_check_text_overlap():
+  {==}
+
+def Laws.told_prune_old():
+  {==}
+
+def Laws.told_quiet_end_marks_nothing():
+  {==}
+
+def Laws.rules_block_empty_when_none():
+  {==}
+
+def Laws.rules_block_scoped():
+  {==}
+
+def Laws.rules_refuse_enforced():
+  {==}
+
+def Laws.rules_word_unlocks():
+  {==}
+
+def Laws.rules_mcp_prefix():
+  {==}
+
+def Laws.rules_off_ignored():
+  {==}
+
+def Laws.tb_order_open_first():
+  {==}
+
+def Laws.tb_import_checkbox():
+  {==}
+
+def Laws.tb_import_idempotent():
+  {==}
+
+def Laws.tb_update_merges():
+  {==}
+
+def Laws.tb_due_shape():
+  {==}
+
+# ---- end told-rules-board ----

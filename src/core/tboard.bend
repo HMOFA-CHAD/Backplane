@@ -389,14 +389,14 @@ def Tb.res.pick(+given: Bool, +r: RL.RS, +old: String) -> RL.RS:
 def Tb.clean.skip(+h: String, +n: Nat) -> Bool:
   Bool.or(String.is_empty(String.trim(h)), Nat.is_ge(n, 20n))
 
-def Tb.clean.put(skip: Bool, h: String, rest: List<&2, String>) -> List<&2, String>:
+def Tb.clean.put(+skip: Bool, +h: String, +rest: List<&2, String>) -> List<&2, String>:
   match skip:
     case True{}:
       rest
     case False{}:
       h <> rest
 
-def Tb.clean(xs: List<&2, String>, +n: Nat) -> List<&2, String>:
+def Tb.clean(+xs: List<&2, String>, +n: Nat) -> List<&2, String>:
   match xs:
     case Nil{}:
       Nil{}
@@ -508,7 +508,7 @@ def Tb.indent.ws(+c: U32) -> Bool:
   Bool.or(U32.is_eq(c, 32), U32.is_eq(c, 9))
 
 # how many leading spaces and tabs a line has
-def Tb.indent(s: String, going: Bool, +n: Nat) -> Nat:
+def Tb.indent(+s: String, +going: Bool, +n: Nat) -> Nat:
   match s going:
     case _ False{}:
       n
@@ -518,7 +518,7 @@ def Tb.indent(s: String, going: Bool, +n: Nat) -> Nat:
       Tb.indent(t, Tb.indent.ws(c), Bool.pick(Nat, Tb.indent.ws(c), Nat.add(n, 1n), n))
 
 # the leading digits of a line
-def Tb.lead(s: String, going: Bool, +n: Nat) -> Nat:
+def Tb.lead(+s: String, +going: Bool, +n: Nat) -> Nat:
   match s going:
     case _ False{}:
       n
@@ -531,7 +531,7 @@ def Tb.hash(+c: U32) -> Bool:
   U32.is_eq(c, 35)
 
 # how many leading # a line has
-def Tb.hashes(s: String, going: Bool, +n: Nat) -> Nat:
+def Tb.hashes(+s: String, +going: Bool, +n: Nat) -> Nat:
   match s going:
     case _ False{}:
       n
@@ -843,3 +843,53 @@ def Tb.import.e(+pr: RL.RS, +ow: RL.RS, +s: M.State, +now: Nat, +by: String, +ma
 # is not added again and counts in `dups`.
 def Tb.import(+s: M.State, +now: Nat, +by: String, +markdown: String, +project: String, +owner: String) -> TbImp:
   Tb.import.e(RL.Rules.proj.res(s, String.trim(project)), Tb.owner.res(s, String.trim(owner)), s, now, by, markdown, Bool.not(String.is_empty(String.trim(project))))
+
+def Tb.demo.apply(+r: TbImp, +s: M.State) -> M.State:
+  match r:
+    case TbImp{_, _, _, cs, _}:
+      M.State.replay(cs, s)
+
+# Examples the laws read
+# ----------------------
+
+# the board after importing a markdown list (as the person, at 1000)
+def Tb.demo.import(+md: String, +s: M.State) -> M.State:
+  Tb.demo.apply(Tb.import(s, 1000n, "person", md, "", ""), s)
+
+# what an import did: items added, duplicates, the lines skipped
+def Tb.demo.summary(+r: TbImp) -> String:
+  match r:
+    case TbImp{a, d, sk, _, _}:
+      Nat.show(a) ++ " " ++ Nat.show(d) ++ " " ++ String.join(sk, " / ")
+
+def Tb.demo.line(+t: TbItem) -> String:
+  Tb.status(t) ++ " " ++ Tb.group(t) ++ " " ++ Tb.title(t)
+
+def Tb.demo.lines.go(+xs: List<&2, TbItem>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case t <> r:
+      Tb.demo.line(t) <> Tb.demo.lines.go(r)
+
+# the items in board order, "status group title" each
+def Tb.demo.lines(+s: M.State) -> String:
+  String.join(Tb.demo.lines.go(Tb.order(Tb.all(s))), ";")
+
+# one item, "Fix it" with a note, and the same after a request that only
+# gives its status
+def Tb.demo.item() -> M.State:
+  M.State.replay([M.SettingSet{"board.i1", "{\"title\":\"Fix it\",\"status\":\"todo\",\"notes\":\"a note\",\"at\":5}", 5n}], M.State.empty())
+
+def Tb.demo.updated.k(+r: TbR) -> M.State:
+  match r:
+    case TbOk{_, cs}:
+      M.State.replay(cs, Tb.demo.item())
+    case TbErr{_}:
+      Tb.demo.item()
+
+def Tb.demo.updated() -> M.State:
+  Tb.demo.updated.k(Tb.update(Tb.demo.item(), 9n, "person", "i1", Maybe.default(&2, J.Json, J.Json.parse("{\"status\":\"doing\"}"), J.Null{})))
+
+def Tb.demo.merged(+s: M.State) -> String:
+  Tb.title(Maybe.default(&2, TbItem, Tb.get(s, "i1"), Tb.blank("?", 0n))) ++ "|" ++ Tb.notes(Maybe.default(&2, TbItem, Tb.get(s, "i1"), Tb.blank("?", 0n))) ++ "|" ++ Tb.status(Maybe.default(&2, TbItem, Tb.get(s, "i1"), Tb.blank("?", 0n)))

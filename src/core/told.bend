@@ -358,11 +358,14 @@ def Told.check.out(+st: CS) -> List<&2, Told>:
     case CS{_, _, acc}:
       List.reverse(&2, Told, acc)
 
+def Told.check.d(+day: Nat, +s: M.State, +now: Nat, key: String, text: String, days: Nat) -> List<&2, Told>:
+  Told.check.out(Told.check.go(Told.all(s), Nat.sub(now, Nat.mul(Told.days(days), day)), Told.key.norm(key), Told.words(text), CS{0n, False{}, Nil{}}))
+
 # The records of the last `days` days (default 7, at most 30) that have
 # this key (normalized), or whose words overlap the text's (Told.same);
 # newest first, at most ten.
-def Told.check(+s: M.State, +now: Nat, +key: String, +text: String, +days: Nat) -> List<&2, Told>:
-  Told.check.out(Told.check.go(Told.all(s), Nat.sub(now, Nat.mul(Told.days(days), 86400n)), Told.key.norm(key), Told.words(text), CS{0n, False{}, Nil{}}))
+def Told.check(+s: M.State, +now: Nat, key: String, text: String, days: Nat) -> List<&2, Told>:
+  Told.check.d(86400n, s, now, key, text, days)
 
 # Pruning
 # -------
@@ -450,18 +453,21 @@ def Told.prune.drop(+gone: Bool, +k: String, +now: Nat, +rest: List<&2, M.Change
     case False{}:
       rest
 
-def Told.prune.go(+xs: List<&2, TK>, +i: Nat, +now: Nat) -> List<&2, M.Change>:
+def Told.prune.go(xs: List<&2, TK>, +keep: Nat, +max: Nat, +i: Nat, +now: Nat) -> List<&2, M.Change>:
   match xs:
     case Nil{}:
       Nil{}
     case TK{+k, +at} <> t:
-      Told.prune.drop(Bool.or(Nat.is_ge(i, Told.max()), Nat.is_lt(Nat.add(at, Told.keep()), now)), k, now, Told.prune.go(t, Nat.add(i, 1n), now))
+      Told.prune.drop(Bool.or(Nat.is_ge(i, max), Nat.is_lt(Nat.add(at, keep), now)), k, now, Told.prune.go(t, keep, max, Nat.add(i, 1n), now))
 
 # Removing: a record older than 30 days, and the oldest ones beyond the
 # newest 2000. Reads only the keys (a record's time is in its id), so the
 # minute tick costs one pass over the settings' keys.
+def Told.prune.at(+keep: Nat, +max: Nat, +s: M.State, +now: Nat) -> List<&2, M.Change>:
+  Told.prune.go(List.sort(~TK, ~Told.tk.newer, Told.tk.read(M.Setting.keys(s), s, Nil{})), keep, max, 0n, now)
+
 def Told.prune(+s: M.State, +now: Nat) -> List<&2, M.Change>:
-  Told.prune.go(List.sort(~TK, ~Told.tk.newer, Told.tk.read(M.Setting.keys(s), s, Nil{})), 0n, now)
+  Told.prune.at(Told.keep(), Told.max(), s, now)
 
 # Turns
 # -----
@@ -520,3 +526,19 @@ def Told.alert.s(+stopped: Bool, +s: M.State, +now: Nat, +thread: String, +state
 # turn's end. A stopped turn alerts no one, and marks nothing.
 def Told.alert(+s: M.State, +now: Nat, +thread: String, +state: String) -> List<&2, M.Change>:
   Told.alert.s(Bool.or(String.eq(state, "stopped"), String.is_empty(state)), s, now, thread, state)
+
+# Examples the laws read
+# ----------------------
+
+# one record, marked at 1000: key "  Lunch: Kane!!  ", the text, channel digest
+def Told.demo.marked() -> M.State:
+  M.State.replay(Told.mark(M.State.empty(), 1000n, "  Lunch: Kane!!  ", "Kane lunch in ATL Wed 10/28", "digest", ""), M.State.empty())
+
+def Told.demo.first(+s: M.State) -> Told:
+  Maybe.default(&2, Told, List.head(&2, Told, Told.all(s)), Told{"", "", "", "", "", 0n})
+
+# a bot woken by a room message that posted nothing: its turn's end is quiet
+def Told.demo.chatter() -> M.State:
+  M.State.replay([M.ThreadCreated{"tb", "", "Bub", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Bub", "tb", 0n, "", 100n},
+    M.MessagePosted{"tb", "u1", M.User{}, "[message from Pebble@backplane in #ring-requests]\nshort version", 1000n}, M.TurnChanged{"tb", M.Running{}, 1000n},
+    M.MessagePosted{"tb", "m1", M.Assistant{}, "Noted.", 1004n}, M.TurnChanged{"tb", M.Completed{}, 1005n}], M.State.empty())

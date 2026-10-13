@@ -625,3 +625,36 @@ def Rules.set.of(+r: Rule) -> List<&2, M.Change>:
 
 def Rules.drop(+id: String, +now: Nat) -> List<&2, M.Change>:
   [M.SettingSet{"rule." ++ id, "", now}]
+
+# Examples the laws read
+# ----------------------
+
+# Miso's thread t-miso, Tofu's t-tofu, t-pb in project p1, t-other in none;
+# `rules` are saved settings (their ids are r1, r2...)
+def Rules.demo.base() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "Power board", "/tmp/power", 1n}, M.ThreadCreated{"t-miso", "", "Miso", M.Local{}, "", "", "claude", "", 1n},
+    M.BotSet{"b-miso", "Miso", "t-miso", 0n, "", 1n}, M.ThreadCreated{"t-tofu", "", "Tofu", M.Local{}, "", "", "claude", "", 1n}, M.BotSet{"b-tofu", "Tofu", "t-tofu", 0n, "", 1n},
+    M.ThreadCreated{"t-pb", "p1", "Rev C", M.Local{}, "", "", "claude", "", 1n}, M.ThreadCreated{"t-other", "", "Other", M.Local{}, "", "", "claude", "", 1n}], M.State.empty())
+
+def Rules.demo.put(+s: M.State, +r: Rule) -> M.State:
+  M.State.replay(Rules.set.of(r), s)
+
+# Miso's rule, and one for project p1
+def Rules.demo.scoped() -> M.State:
+  Rules.demo.put(Rules.demo.put(Rules.demo.base(), Rule{"r1", "Miso only", "b-miso", "", "", False{}, "", True{}, 10n, "person"}),
+    Rule{"r2", "Power only", "", "p1", "", False{}, "", True{}, 11n, "person"})
+
+# Miso may not bot_send unless the person says sudo
+def Rules.demo.enforced() -> M.State:
+  Rules.demo.put(Rules.demo.base(), Rule{"r1", "No spending", "b-miso", "", "bot_send", True{}, "sudo", True{}, 10n, "person"})
+
+# the same rule, turned off
+def Rules.demo.off() -> M.State:
+  Rules.demo.put(Rules.demo.base(), Rule{"r1", "No spending", "b-miso", "", "bot_send", True{}, "sudo", False{}, 10n, "person"})
+
+def Rules.demo.say(+s: M.State, +thread: String, +text: String) -> M.State:
+  M.State.replay([M.MessagePosted{thread, "u9", M.User{}, text, 20n}], s)
+
+# a tools/call of `tool`
+def Rules.demo.call(+tool: String) -> String:
+  "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"" ++ tool ++ "\",\"arguments\":{}}}"
