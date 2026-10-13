@@ -45,7 +45,7 @@ def Park.send(t: Taken, +answer: String) -> IO(List<&2, Parked>):
   match t:
     case Taken{Some{Parked{_, +body, reply}}, rest}:
       do IO<List<&2, Parked>>:
-        ok : Bool <- Chan.send(String, reply, Park.reply(body, answer))
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, Park.reply(body, answer))
         return rest
     case Taken{None{}, rest}:
       IO.pure(List<&2, Parked>, rest)

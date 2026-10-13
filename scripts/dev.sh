@@ -30,6 +30,7 @@
 # later nightly) and never with an older one.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/bendok.sh
 export PATH="$HOME/.bend/bin:$HOME/.bun/bin:$PATH"
 # 4 clang jobs at -O3 passed 28 GB here; 2 stay near 12 GB
 export BACKPLANE_JOBS=${BACKPLANE_JOBS:-2}
@@ -41,8 +42,7 @@ home=${BACKPLANE_DEV_HOME:-$HOME/.backplane-dev}
 say() { printf '\033[1mdev:\033[0m %s\n' "$*"; }
 
 check() {
-  out=$(bend "$1" --check-only 2>&1) || { echo "$out"; exit 1; }
-  case $out in *"All terms check"*) ;; *) echo "$out"; exit 1 ;; esac
+  bend_check "$1" || exit 1
 }
 
 build_web() {

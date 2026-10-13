@@ -48,11 +48,10 @@ function sock_recv_bytes(socket, max, k) {
     }
     return io_tup(socket, io_done(host_list(Array.from(b.subarray(0, n)))));
   };
-  return go();
-}
-
-function sock_recv_bytes_need() {
-  return { read: true };
+  // park before the first read, as the C twin does: a socket with a steady
+  // backlog must not keep the loop from polling other connections and timers
+  io_park_on(socket, false, k, go);
+  return undefined;
 }
 
 // the next n bytes of the socket appended to the file at path
@@ -85,11 +84,9 @@ function sock_save(socket, path, n, k) {
     fs.closeSync(out);
     return io_tup(socket, io_done({ $: "Unit" }));
   };
-  return go();
-}
-
-function sock_save_need() {
-  return { read: true };
+  if (left <= 0) return go();
+  io_park_on(socket, false, k, go);
+  return undefined;
 }
 
 function host_send(socket, b) {
@@ -431,3 +428,35 @@ function sock_send_cbor(socket, text, keys, words, ms, k) {
   for (let j = b.length - 1; j >= 0; j -= 1) xs = { $: "Con", head: b[j], tail: xs };
   return sock_send_until(socket, xs, ms, k);
 }
+
+io_eff(CID(Clock.epoch), clock_epoch);
+io_eff(CID(Sock.recv_bytes), sock_recv_bytes);
+io_eff(CID(Sock.save), sock_save);
+io_eff(CID(Sock.send_bytes), sock_send_bytes);
+io_eff(CID(Sock.send_until), sock_send_until);
+io_eff(CID(Sock.send_cbor), sock_send_cbor);
+io_eff(CID(Json.cbor_frame), json_cbor_frame);
+io_eff(CID(Sock.send_items), sock_send_items);
+io_eff(CID(Json.items_frames), json_items_frames);
+io_eff(CID(Sock.send_text), sock_send_text);
+io_eff(CID(Sock.dup), sock_dup);
+io_eff(CID(Sock.peer), sock_peer);
+io_eff(CID(Sock.shutdown), sock_shutdown);
+io_eff(CID(Proc.spawn), proc_spawn);
+io_eff(CID(Proc.wait), proc_wait);
+io_eff(CID(Proc.kill), proc_kill);
+io_eff(CID(Proc.exited), proc_exited);
+io_eff(CID(Sock.shut_read), sock_shut_read);
+io_eff(CID(Sock.raw), sock_raw);
+io_eff(CID(Fd.shut), fd_shut);
+io_eff(CID(Fd.close), fd_close);
+io_eff(CID(FS.stat), fs_stat);
+io_eff(CID(FS.list), fs_list);
+io_eff(CID(FS.mkdirs), fs_mkdirs);
+io_eff(CID(FS.rename), fs_rename);
+io_eff(CID(FS.remove), fs_remove);
+io_eff(CID(FS.chmod), fs_chmod);
+io_eff(CID(Net.listen), net_listen);
+io_eff(CID(Sys.exe_dir), sys_exe_dir);
+io_eff(CID(Sys.exec), sys_exec);
+io_eff(CID(Sys.exe_path), sys_exe_path);

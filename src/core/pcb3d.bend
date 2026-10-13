@@ -15,7 +15,7 @@ import ./strokefont.bend as ST
 # solder mask and its opacity (0..255), silkscreen, the finish on bare
 # copper (pads), and copper under the mask
 type Look is Data:
-  Look{body: U32, mask: U32, mask_a: U32, silk: U32, finish: U32, copper: U32}
+  BoardLook{body: U32, mask: U32, mask_a: U32, silk: U32, finish: U32, copper: U32}
 
 # a footprint's model: the file as the board names it (${VARS} and all)
 # and the transform from the model's millimetres to the world
@@ -39,7 +39,7 @@ def Rgb.of(+r: U32, +g: U32, +b: U32) -> U32:
   U32.or(U32.shln(r, 16n), U32.or(U32.shln(g, 8n), b))
 
 def Look.default() -> Look:
-  Look{Rgb.of(109, 116, 75), Rgb.of(20, 51, 36), 212, Rgb.of(245, 245, 245), Rgb.of(178, 156, 0), Rgb.of(184, 115, 50)}
+  BoardLook{Rgb.of(109, 116, 75), Rgb.of(20, 51, 36), 212, Rgb.of(245, 245, 245), Rgb.of(178, 156, 0), Rgb.of(184, 115, 50)}
 
 def Hex.digit(+c: U32) -> U32:
   Bool.pick(U32, U32.is_le(c, 57), (c - 48 : U32), Bool.pick(U32, U32.is_ge(c, 97), (c - 87 : U32), (c - 55 : U32)))
@@ -99,9 +99,9 @@ def Stack.body.go(xs: List<&2, S.Sx>, +dv: U32) -> U32:
 
 def Stack.look(+st: S.Sx, d: Look) -> Look:
   match d:
-    case Look{+body, +mask, +ma, +silk, _, +copper}:
+    case BoardLook{+body, +mask, +ma, +silk, _, +copper}:
       +ls = S.Sx.all(S.Sx.args(st), "layer")
-      Look{Stack.body.go(ls, body), Stack.color.go(ls, "Top Solder Mask", mask), ma, Stack.color.go(ls, "Top Silk Screen", silk),
+      BoardLook{Stack.body.go(ls, body), Stack.color.go(ls, "Top Solder Mask", mask), ma, Stack.color.go(ls, "Top Silk Screen", silk),
         Look.finish(S.Sx.attr(st, "copper_finish")), copper}
 
 # Model placement
