@@ -97,3 +97,17 @@ def Xref.read(+o: J.Json, +ins: List<&2, FR.In>) -> String:
     Xref.read.m(Xref.pick(ins, FR.Fr.link(J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "threadId", ""))),
       J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "threadId", ""),
       U32.to_nat(J.Json.get_u32(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "limit", 40)))))
+
+# The uberbot's conversation handed over (docs/uber.md): the last 20
+# entries of the thread the old holder kept, read from its mirror here
+# ("<link>~<thread>"), as the context queued ahead of the new holder's
+# next message; "" when that mirror is not here
+def Xref.handoff.k(r: MC.Res, +holder: String) -> String:
+  match r:
+    case MC.Res{True{}, +body, _}:
+      "<handoff>\nYou are now the machine that holds this conversation; " ++ holder ++ " held it until now. Its last entries, so the conversation goes on:\n" ++ J.Json.show(body) ++ "\n</handoff>"
+    case MC.Res{False{}, _, _}:
+      ""
+
+def Xref.handoff(+thread: String, +holder: String, +ins: List<&2, FR.In>) -> String:
+  Bool.pick(String, FR.Fr.is(thread), Xref.handoff.k(Xref.read.m(Xref.pick(ins, FR.Fr.link(thread)), thread, 20n), holder), "")

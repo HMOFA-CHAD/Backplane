@@ -30,6 +30,7 @@ import ./onboard.bend as OB
 import ./layers.bend as LY
 import ./slash.bend as SL
 import ./uber.bend as UB
+import ./ubersync.bend as US
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -5243,10 +5244,15 @@ def Bots.views(u: Ui, +bot: String, +room: String, +remote: String) -> Ui:
   Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@bot", bot), "@room", room), "@remote", remote), "@del", ""), "@bot.want", ""), "@thread.want", "")
 
 # a bot shown: its thread is selected, its tab kept
-def Bots.select.k(m: Maybe<&2, BT.Bot>, u: Ui) -> Act:
+# the thread a bot's Chat tab shows: its own, but the uberbot's is where the
+# conversation runs now (ubersync.bend's Ub.chat: the holder's, as mirrored)
+def Bots.chat.of(+st: M.State, +id: String, +th: String) -> String:
+  Bool.pick(String, UB.Uber.is(st, id), US.Ub.chat(st), th)
+
+def Bots.select.k(m: Maybe<&2, BT.Bot>, +u: Ui) -> Act:
   match m:
     case Some{BT.Bot{+i, _, +th, _, _, _, _}}:
-      Act{Ui.flag_off(Bots.views(Bots.sel.set(u, th), i, "", ""), "settings"), [Focus{"composer"}, ScrollEnd{}]}
+      Act{Ui.flag_off(Bots.views(Bots.sel.set(u, Bots.chat.of(Ui.state.of(u), i, th)), i, "", ""), "settings"), [Focus{"composer"}, ScrollEnd{}]}
     case None{}:
       Act{u, Nil{}}
 
@@ -7540,11 +7546,17 @@ def Timeline.visible(settings: Bool, selected: Bool, thread: Bool) -> Bool:
     case _ _ _:
       False{}
 
+# whether `sel` is the thread a bot's view is on: its own, or (the
+# uberbot, whose conversation runs on one machine at a time) any of its
+# replicas' (ubersync.bend's Ub.chat.is)
+def Bots.chat.is(+st: M.State, +id: String, +th: String, +sel: String) -> Bool:
+  Bool.or(String.eq(th, sel), Bool.and(UB.Uber.is(st, id), US.Ub.chat.is(st, sel)))
+
 # (the uberbot with no tab picked shows its Status, not its chat)
 def Timeline.bot(m: Maybe<&2, BT.Bot>, +u: Ui) -> Bool:
   match m:
     case Some{BT.Bot{+bid, _, +th, _, _, _, _}}:
-      Bool.or(Bool.not(String.eq(th, Ui.sel(u))), Bool.or(Bool.and(String.is_empty(Ui.scratch(u, "@btab")), Bool.not(UB.Uber.is(Ui.state.of(u), bid))), String.eq(Ui.scratch(u, "@btab"), "chat")))
+      Bool.or(Bool.not(Bots.chat.is(Ui.state.of(u), bid, th, Ui.sel(u))), Bool.or(Bool.and(String.is_empty(Ui.scratch(u, "@btab")), Bool.not(UB.Uber.is(Ui.state.of(u), bid))), String.eq(Ui.scratch(u, "@btab"), "chat")))
     case None{}:
       True{}
 

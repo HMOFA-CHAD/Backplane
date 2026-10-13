@@ -40,6 +40,12 @@ def lap() -> List<&2, M.Change>:
     M.ThreadCreated{"t9", "p9", "Nine", M.Local{}, "", "", "claude", "", 199700n}, M.TurnChanged{"t9", M.Running{}, 199701n},
     M.ThreadCreated{"t8", "p9", "Eight", M.Local{}, "", "", "claude", "", 199600n}, M.AskOpened{"a8", "t8", "input", "", "?", "", 199601n}]
 
+# the uberbot's replica on another machine (mirrored here as p2~b2): the
+# machine mB tied it to the uid, and an exchange came in over link p2
+def replica() -> List<&2, M.Change>:
+  List.append(&2, M.Change, box(), [M.UberOp{"u1-a", "mB", 1n, "0000000100.000000.mB", "{\"k\":\"bind\",\"machine\":\"mB\",\"bot\":\"b2\",\"thread\":\"t2\",\"name\":\"Kit\"}", 100n},
+    M.SettingSet{"uber.link.u1-a.mB", "p2", 101n}, M.ThreadCreated{"p2~t2", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"p2~b2", "Kit", "p2~t2", 7n, "", 100n}])
+
 def one(+cs: List<&2, M.Change>) -> H.Hubs:
   H.Hubs.after(H.Hubs.recv(H.Hubs.set(H.Hubs.init(now(), "c"), ["box:3787"]), "box:3787", log(cs)))
 
@@ -93,3 +99,6 @@ def main() -> IO(Unit):
     C.Check.str("another tab of the uberbot: none", J.Json.show(J.Json.get_obj(H.Hubs.screen(go(go(one(box()), "uber", "box:3787|b1"), "bot-tab", "chat")), "plane")), "null")
     C.Check.str("the card's tap goes to its hub", H.Hubs.cur(go(go(two(), "select", "lap:3787|t9"), "uber", uber(two(), "id"))), "box:3787")
     C.Check.str("it shows the status tab", J.Json.get_str(J.Json.get_obj(H.Hubs.screen(go(two(), "uber", uber(two(), "id"))), "bot"), "tab", ""), "status")
+    C.Check.str("without the replica a mirrored bot is listed", sec(one(List.append(&2, M.Change, box(), [M.ThreadCreated{"p3~t2", "", "Pip", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"p3~b2", "Pip", "p3~t2", 3n, "", 100n}])), "bots", "id"), "box:3787|p3~b2;")
+    C.Check.str("the uberbot's replica elsewhere is not under Bots", sec(one(replica()), "bots", "id"), "")
+    C.Check.str("nor on the Status tab", sec(go(one(replica()), "uber", "box:3787|b1"), "bots", "id"), "")
