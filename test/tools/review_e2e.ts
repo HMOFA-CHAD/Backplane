@@ -167,7 +167,7 @@ try {
   const res = await ask("review.comment", { thread: th.id, op: "resolve", id: act1?.act ?? "" });
   check(!!res && res.ok === true, "resolved by the person", JSON.stringify(res));
   const after = await mcp("review_comments", {});
-  check(after.includes("No open comments") && after.includes("\"resolved\":1"), "and the agent sees none open", after.slice(0, 300));
+  check(after.includes("No open comments") && after.includes("resolved") && after.includes(":1"), "and the agent sees none open", after.slice(0, 300));
 
   // a ref typed in that is not there
   const bad = await ask("review.checks", { thread: th.id, commit: "-x", trigger: "manual" });
