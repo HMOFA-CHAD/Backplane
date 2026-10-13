@@ -781,9 +781,101 @@ struct Out: Decodable, @unchecked Sendable {
     }
 
     // an answer; with screen false only its commands (a newer screen follows)
+    // The commands are decoded on their own: they carry the frames the hubs
+    // wait for, so a screen Swift cannot read never drops them (the last
+    // screen stays up, and the failure is logged with its path)
     static func decode(_ text: String, screen: Bool) -> Out? {
         let d = Data(text.utf8)
-        if screen { return try? JSONDecoder().decode(Out.self, from: d) }
-        return (try? JSONDecoder().decode(Cmds.self, from: d)).map { Out(screen: nil, cmds: $0.cmds) }
+        let cmds: [Cmd]
+        do { cmds = try JSONDecoder().decode(Cmds.self, from: d).cmds } catch {
+            NSLog("Backplane answer unreadable: %@", String(describing: error))
+            return nil
+        }
+        guard screen else { return Out(screen: nil, cmds: cmds) }
+        do {
+            let s = try JSONDecoder().decode(ScreenOnly.self, from: d)
+            return Out(screen: s.screen, cmds: cmds)
+        } catch {
+            NSLog("Backplane screen unreadable: %@", String(describing: error))
+            return Out(screen: nil, cmds: cmds)
+        }
+    }
+
+    private struct ScreenOnly: Decodable {
+        let screen: Screen?
+    }
+}
+
+// One value that may fail to decode on its own (nil then), so one bad item
+// or section never takes the screen around it with it
+struct Lossy<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) throws {
+        do { value = try T(from: decoder) } catch {
+            NSLog("Backplane skipped %@ at %@: %@", String(describing: T.self),
+                  decoder.codingPath.map(\.stringValue).joined(separator: "."), String(describing: error))
+            value = nil
+        }
+    }
+}
+
+extension KeyedDecodingContainer {
+    // a section: absent, null or unreadable is nil
+    func lossy<T: Decodable>(_ key: Key) -> T? {
+        ((try? decodeIfPresent(Lossy<T>.self, forKey: key)) ?? nil)?.value
+    }
+    // a list: absent, null or unreadable is empty; unreadable items are skipped
+    func lossyList<T: Decodable>(_ key: Key) -> [T] {
+        (((try? decodeIfPresent([Lossy<T>].self, forKey: key)) ?? nil) ?? []).compactMap(\.value)
+    }
+}
+
+// The screen as Bend sends it (src/mobile/screen.bend). Every field is read
+// on its own: a field Bend leaves out or a shape this build does not know
+// costs that field, never the whole screen (a blank app).
+extension Screen {
+    private enum K: String, CodingKey {
+        case online, version, error, note, sel, empty, hub, hubs, found, projects, view, making, active, older, settled,
+             rowMenu, bots, rooms, uber, plane, newBot, newRoom, bot, deleting, removing, renaming, tour, search,
+             folders, settings, find, island, islands, thread, theme
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        online = c.lossy(.online) ?? false
+        version = c.lossy(.version) ?? ""
+        error = c.lossy(.error) ?? ""
+        note = c.lossy(.note) ?? ""
+        sel = c.lossy(.sel) ?? ""
+        empty = c.lossy(.empty) ?? ""
+        hub = c.lossy(.hub) ?? ""
+        hubs = c.lossyList(.hubs)
+        found = c.lossyList(.found)
+        projects = c.lossyList(.projects)
+        view = c.lossy(.view)
+        making = c.lossy(.making)
+        active = c.lossy(.active).map { (l: [Lossy<Row>]) in l.compactMap(\.value) }
+        older = c.lossy(.older)
+        settled = c.lossy(.settled)
+        rowMenu = c.lossy(.rowMenu)
+        bots = c.lossyList(.bots)
+        rooms = c.lossyList(.rooms)
+        uber = c.lossy(.uber)
+        plane = c.lossy(.plane)
+        newBot = c.lossy(.newBot)
+        newRoom = c.lossy(.newRoom)
+        bot = c.lossy(.bot)
+        deleting = c.lossy(.deleting)
+        removing = c.lossy(.removing)
+        renaming = c.lossy(.renaming)
+        tour = c.lossy(.tour)
+        search = c.lossy(.search)
+        folders = c.lossy(.folders)
+        settings = c.lossy(.settings)
+        find = c.lossy(.find)
+        island = c.lossy(.island) ?? IslandAttributes.ContentState(running: 0, headline: "", lines: [])
+        islands = c.lossy(.islands).map { (l: [Lossy<HubIsland>]) in l.compactMap(\.value) }
+        thread = c.lossy(.thread)
+        theme = c.lossy(.theme)
     }
 }
