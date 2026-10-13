@@ -4284,19 +4284,11 @@ def Rcw.note.if(none: Bool, +at: String, +ty: Ty, +n: S.Nui, +v: V.View, +x0: U3
 def Rcw.note(+at: String, +ty: Ty, +n: S.Nui, +v: V.View, +x0: U32, +x1: U32, +y1: U32) -> Out:
   Rcw.note.if(String.is_empty(at), at, ty, n, v, x0, x1, y1)
 
-# the open comment waits while the Compare menu is open (the menu wins)
-def Rcw.hide(menu: Bool, m: Maybe<&2, U.RcOpen>) -> Maybe<&2, U.RcOpen>:
-  match menu:
-    case True{}:
-      None{}
-    case False{}:
-      m
-
 def Rcw.all(+ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +y1: U32) -> Out:
   +u = S.Nui.ui(n)
   Out.all([Rcw.pins(U.Rc.pins(u), ty, Rcw.view(S.Nui.vw(n)), U.Rc.sel(u), x0, x1, y1),
     Rcw.note(U.Rc.at(u), ty, n, Rcw.view(S.Nui.vw(n)), x0, x1, y1),
-    Rcw.open(Rcw.hide(Bool.not(String.is_empty(U.Ui.scratch(u, "@cmp.menu"))), U.Rc.open(u)), ty, n, x0, x1, y1)])
+    Rcw.open(U.Rc.open(u), ty, n, x0, x1, y1)])
 
 def Rcw.if(on: Bool, +ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +y1: U32) -> Out:
   match on:
@@ -4468,7 +4460,7 @@ def Lay.viewer.b(+ty: Ty, +n: S.Nui, +b: U.HBar, +x0: U32, +x1: U32, +h: U32) ->
     Hb.draw(ty, n, S.Nui.ui(n), b, Lay.scene(n), x0, x1, h),
     Fv.k(S.Vw.kind(S.Nui.vw(n)), ty, S.Nui.ui(n), x0, x1, h),
     Rpw.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 9), ty, n, x0, x1, h),
-    Rcw.if(U32.is_lt(S.Vw.kind(S.Nui.vw(n)), 2), ty, n, x0, x1, (h - Hb.h(b) : U32))])
+    Rcw.if(Bool.and(U32.is_lt(S.Vw.kind(S.Nui.vw(n)), 2), String.is_empty(U.Ui.scratch(S.Nui.ui(n), "@cmp.menu"))), ty, n, x0, x1, (h - Hb.h(b) : U32))])
 
 # the viewer, with the design history's bar at its foot when it has one
 # (only a board or a schematic: the native kind agrees with the client's)
