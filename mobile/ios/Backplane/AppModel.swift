@@ -36,8 +36,6 @@ final class AppModel {
     // the card and the plane to draw: the screen's, else the last it carried
     func uber(_ s: Screen) -> UberCard? { s.plane != nil ? s.uber : (s.uber == nil ? nil : lastUber ?? s.uber) }
     func plane(_ s: Screen) -> PlaneModel? { s.plane ?? (s.uber == nil ? nil : lastPlane) }
-    // the island tapped while several threads work: which one to open
-    var picking = false
     // the board viewer's plots, which come straight from the socket
     let plots = PlotStore()
     // the composer's text, owned here so typing never waits on Bend
@@ -521,9 +519,8 @@ final class AppModel {
         if url.host == "open" {
             let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let id = q.first { $0.name == "thread" }?.value ?? ""
+            // (an older Live Activity's "pick=1" opens the app as it was)
             if !id.isEmpty { act("select", id) }
-            // the island with several threads: pick one (backplane://open?pick=1)
-            else if q.contains(where: { $0.name == "pick" }), (screen?.island.lines.count ?? 0) > 1 { picking = true }
         } else if url.host != "google" {
             // (backplane://google ends a Google sign-in: GoogleLoop)
             pair(url.absoluteString)

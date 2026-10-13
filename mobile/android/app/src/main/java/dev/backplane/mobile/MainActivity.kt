@@ -41,12 +41,10 @@ class MainActivity : ComponentActivity() {
         threadFrom(intent)
     }
 
-    // a tapped alert opens its thread; the live status with several, asks which
+    // a tapped alert opens its thread; the live status with several opens
+    // the app as it was (an older one's "pick" extra is dropped unread)
     private fun threadFrom(intent: Intent?) {
-        if (intent?.getBooleanExtra(Notes.EXTRA_PICK, false) == true) {
-            intent.removeExtra(Notes.EXTRA_PICK)
-            model.picking = true
-        }
+        intent?.removeExtra(Notes.EXTRA_PICK)
         val id = intent?.getStringExtra(Notes.EXTRA_THREAD) ?: return
         intent.removeExtra(Notes.EXTRA_THREAD)
         model.act("select", id)

@@ -20,18 +20,19 @@ private struct Mark: View {
 
 // a thread to open, or with pick the app asks which (a tap can only open
 // the app; the island expands on a long press)
-private func link(_ thread: String, pick: Bool = false) -> URL? {
+private func link(_ thread: String) -> URL? {
     var c = URLComponents()
     c.scheme = "backplane"
     c.host = "open"
-    c.queryItems = [pick ? URLQueryItem(name: "pick", value: "1") : URLQueryItem(name: "thread", value: thread)]
+    c.queryItems = [URLQueryItem(name: "thread", value: thread)]
     return c.url
 }
 
-// a tap anywhere: the thread when one works, else the app asks which (the
-// expanded island and the lock screen open one by its row)
+// a tap anywhere: the thread when one works, else the app as it was (it
+// never asks which: a list of every working thread over the app, shown
+// when it was opened from here, was more in the way than a help)
 private func tap(_ s: IslandAttributes.ContentState) -> URL? {
-    s.lines.count == 1 ? link(s.lines[0].thread) : link("", pick: true)
+    s.lines.count == 1 ? link(s.lines[0].thread) : nil
 }
 
 // each thread its own row, a tap on it opens that thread. The hub sends

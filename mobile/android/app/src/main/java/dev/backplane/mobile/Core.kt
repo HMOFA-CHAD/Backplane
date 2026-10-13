@@ -103,8 +103,6 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     // the same entry shown twice scrolls twice
     var jump by mutableStateOf<Jump?>(null)
         private set
-    // the live status tapped while several threads work: which one to open
-    var picking by mutableStateOf(false)
     // a jump waiting for a screen that holds its entry (the jump opens folds
     // and pages first), and how many more screens it waits
     private var jumping: String? = null
