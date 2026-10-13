@@ -365,6 +365,9 @@ function dispatch(action, value) {
   return did;
 }
 
+// a right click on the plot starts a review note there (client.bend's Rc)
+Plot2d.onPlace((place) => dispatch("rv-note", place));
+
 // how many terminal cells fit: the thread pane's width, 40% of the height
 function termSize() {
   let probe = document.getElementById("term-probe");

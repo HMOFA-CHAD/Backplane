@@ -253,7 +253,7 @@ def Rvc.tasks(ts: List<&2, CHK.Task>) -> List<&2, J.Json>:
       Rvc.task(x) <> Rvc.tasks(t)
 
 def Rvc.checks.out(+fs: List<&2, CHK.Finding>, +tasks: List<&2, CHK.Task>, +runs: List<&2, CHK.Run>, +g: CHK.Gate) -> String:
-  J.Json.show(J.Json.obj([J.KV{"md", J.Str{CHK.Checks.md(fs, tasks, runs)}}, J.KV{"gate", J.Str{CHK.Checks.gate.all(fs, tasks, runs, g)}},
+  J.Json.show(J.Json.obj([J.KV{"md", J.Str{CHK.Checks.md(fs, Nil{}, runs)}}, J.KV{"gate", J.Str{CHK.Checks.gate.all(fs, tasks, runs, g)}},
     J.KV{"line", J.Str{CHK.Checks.line(fs)}}, J.KV{"tasks", J.Json.arr(Rvc.tasks(tasks))}]))
 
 def Rvc.or(+text: String, +d: String) -> String:

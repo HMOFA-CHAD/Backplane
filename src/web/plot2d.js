@@ -168,6 +168,14 @@ class View {
       this.later();
     }, { passive: false });
     canvas.addEventListener("dblclick", () => this.fit());
+    // a right click asks to comment there: the place in mm (the plot's own
+    // coordinates); the page decides what to do (host.js)
+    canvas.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const b = canvas.getBoundingClientRect();
+      const x = (e.clientX - b.left - this.ox) / this.scale, y = (e.clientY - b.top - this.oy) / this.scale;
+      if (placed && Number.isFinite(x) && Number.isFinite(y)) placed(`${x.toFixed(4)}\t${y.toFixed(4)}\t\t`);
+    });
     // a new size refits the view, unless the user has moved it
     new ResizeObserver(() => { if (!this.fitted || !this.touched) this.fit(); else this.later(); }).observe(canvas);
   }
@@ -197,7 +205,22 @@ class View {
     requestAnimationFrame(() => { this.queued = false; this.draw(); });
   }
 
+  // review comments' pins and the note form sit on the stage at their place
+  // in mm (data-x, data-y), moved with the view
+  pins() {
+    const stage = this.canvas.parentElement;
+    if (!stage) return;
+    const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
+    for (const el of stage.querySelectorAll("[data-x][data-y]")) {
+      const sx = this.ox + Number(el.dataset.x) * this.scale, sy = this.oy + Number(el.dataset.y) * this.scale;
+      el.style.left = `${sx}px`;
+      el.style.top = `${sy}px`;
+      el.style.visibility = sx >= 0 && sy >= 0 && sx <= w && sy <= h ? "visible" : "hidden";
+    }
+  }
+
   draw() {
+    this.pins();
     const c = this.canvas, dpr = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(c.clientWidth * dpr)), h = Math.max(1, Math.round(c.clientHeight * dpr));
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
@@ -255,6 +278,13 @@ class View {
 }
 
 let view = null;
+let placed = null;
+let noteSeen = false;
+
+// the page's answer to a right click (host.js)
+export function onPlace(fn) {
+  placed = fn;
+}
 
 // the Layers menu lists only the layers the plot has something on
 function present(p) {
@@ -270,6 +300,11 @@ export function mount(canvas) {
   const off = Number(canvas.dataset.off || 0), dim = Number(canvas.dataset.dim || 0), lift = Number(canvas.dataset.lift ?? 255);
   if (off !== view.off || dim !== view.dim || lift !== view.lift) { view.off = off; view.dim = dim; view.lift = lift; view.later(); }
   present(view.plot);
+  view.pins();
+  // a note form that has just come up takes the keyboard
+  const note = document.querySelector(".rc-note input");
+  if (note && !noteSeen) note.focus();
+  noteSeen = !!note;
   view.fade = Number(canvas.dataset.fade || 0);
   const key = canvas.dataset.key || "";
   if (key !== view.key) {
