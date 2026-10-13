@@ -28,8 +28,21 @@ struct ReviewScreen: View {
             if let blocks = page.blocks, !blocks.isEmpty, !page.busy {
                 ScrollView {
                     if let c = page.checks { ChecksBoxes(model: model, checks: c).padding([.horizontal, .top]) }
+                    if let r = page.release { ReleaseBox(model: model, form: r, busy: page.busy).padding([.horizontal, .top]) }
                     MarkdownView(blocks: blocks).padding()
                 }
+            } else if let r = page.release {
+                ScrollView {
+                    ReleaseBox(model: model, form: r, busy: page.busy).padding([.horizontal, .top])
+                    VStack {
+                        if page.busy { ProgressView() }
+                        Text(page.note).foregroundStyle(r.err.isEmpty ? Color.secondary : Color.red)
+                            .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("release-note")
+                    }
+                    .padding()
+                }
+                .scrollDismissesKeyboard(.interactively)
             } else {
                 VStack {
                     if page.busy { ProgressView() }
@@ -37,14 +50,54 @@ struct ReviewScreen: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            Divider()
-            Button { model.act("rv-run", "") } label: {
-                Label("Refresh", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
+            if page.release == nil {
+                Divider()
+                Button { model.act("rv-run", "") } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(page.busy)
+                .padding()
+            }
+        }
+    }
+}
+
+// The Release page's form: the tag (empty releases the proposed one), two
+// switches that are off until the person turns them on (Publish on GitHub
+// pushes the tag and makes a GitHub release), and the button. The tag goes
+// to Bend as the field "rltag" while it is typed.
+struct ReleaseBox: View {
+    let model: AppModel
+    let form: ReleaseForm
+    let busy: Bool
+    @State private var text = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TextField(form.next, text: $text)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.go)
+                .onSubmit { if !busy { model.act("rv-release", "") } }
+                .onChange(of: text) { _, t in model.field("rltag", t) }
+                .accessibilityIdentifier("release-tag")
+            Toggle("Publish on GitHub", isOn: Binding(get: { form.publish }, set: { _ in model.act("rv-release-pub", "") }))
+                .accessibilityIdentifier("release-pub")
+            Toggle("Release even if checks fail", isOn: Binding(get: { form.force }, set: { _ in model.act("rv-release-force", "") }))
+                .accessibilityIdentifier("release-force")
+            Button { model.act("rv-release", "") } label: {
+                Text("Make release " + form.tag).frame(maxWidth: .infinity, minHeight: 32)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(page.busy)
-            .padding()
+            .disabled(busy || form.tag.isEmpty)
+            .accessibilityIdentifier("release-make")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        #if DEBUG
+        .onAppear { if let t = ProcessInfo.processInfo.environment["BACKPLANE_RLTAG"] { text = t } }
+        #endif
     }
 }
 

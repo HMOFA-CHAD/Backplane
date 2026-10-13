@@ -792,14 +792,29 @@ def Rv.checks(on: Bool, +u: U.Ui) -> J.Json:
     case False{}:
       J.Null{}
 
-def Rv.json.k(+v: U.RpView, +rb: J.Json, +checks: J.Json) -> J.Json:
+# the Release page's form (client.bend's Rl.form): the tag that will be
+# made (the field "rltag", else the proposed one), the proposed one, the two
+# toggles ("rv-release-pub", "rv-release-force"); "rv-release" makes it
+def Rv.release.form(f: U.RlForm, +err: String) -> J.Json:
+  match f:
+    case U.RlForm{+tag, +next, publish, force}:
+      J.Json.obj([J.KV{"tag", J.Str{tag}}, J.KV{"next", J.Str{next}}, J.KV{"publish", J.Flag{publish}}, J.KV{"force", J.Flag{force}}, J.KV{"err", J.Str{err}}])
+
+def Rv.release(on: Bool, +u: U.Ui) -> J.Json:
+  match on:
+    case True{}:
+      Rv.release.form(U.Rl.form(u), U.RpView.err(U.Rp.view(u)))
+    case False{}:
+      J.Null{}
+
+def Rv.json.k(+v: U.RpView, +rb: J.Json, +checks: J.Json, +release: J.Json) -> J.Json:
   J.Json.obj([J.KV{"tabs", J.Json.arr(Rv.tabs(U.RpView.tabs(v)))}, J.KV{"title", J.Str{U.RpView.title(v)}}, J.KV{"busy", J.Flag{U.RpView.busy(v)}},
-    J.KV{"note", J.Str{U.RpView.note(v)}}, J.KV{"blocks", rb}, J.KV{"checks", checks}])
+    J.KV{"note", J.Str{U.RpView.note(v)}}, J.KV{"blocks", rb}, J.KV{"checks", checks}, J.KV{"release", release}])
 
 def Rv.json(on: Bool, +u: U.Ui, +rb: J.Json) -> J.Json:
   match on:
     case True{}:
-      Rv.json.k(U.Rp.view(u), rb, Rv.checks(String.eq(U.Rp.page(u), "checks"), u))
+      Rv.json.k(U.Rp.view(u), rb, Rv.checks(String.eq(U.Rp.page(u), "checks"), u), Rv.release(String.eq(U.Rp.page(u), "release"), u))
     case False{}:
       J.Null{}
 

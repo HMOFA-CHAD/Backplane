@@ -329,6 +329,15 @@ struct ReviewPage: Decodable {
     let busy: Bool
     let blocks: [Block]?
     let checks: ReviewChecks?
+    let release: ReleaseForm?
+}
+
+// the Release page's form: the tag that will be made (the field, else the
+// proposed one), the proposed one, and the two toggles
+struct ReleaseForm: Decodable {
+    let tag, next: String
+    let publish, force: Bool
+    let err: String
 }
 
 // the Files tab: where the folder is, its rows (a tap sends action with
