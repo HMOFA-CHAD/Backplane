@@ -12,6 +12,7 @@ import ../core/hist.bend as HS
 import ../core/fm.bend as FM
 import ../core/images.bend as IM
 import ../core/layers.bend as LY
+import ../core/review.bend as RVW
 
 # The phones' board viewer, as the Bend client decides it. The viewer
 # shows the selected thread's project board, schematic or 3D model
@@ -761,19 +762,64 @@ def Rv.tabs(ts: List<&2, U.RpTab>) -> List<&2, J.Json>:
     case U.RpTab{+p, +l, +on} <> t:
       J.Json.obj([J.KV{"page", J.Str{p}}, J.KV{"label", J.Str{l}}, J.KV{"on", J.Flag{on}}]) <> Rv.tabs(t)
 
-def Rv.json.k(+v: U.RpView, +rb: J.Json) -> J.Json:
+# the Checks page's boxes (client.bend's Rp.tasks): each with the index
+# "rv-tick" takes, its words, whether it is ticked and its heading
+def Rv.tasks(ts: List<&2, U.RpTask>) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case U.RpTask{+i, +text, +done, +group} <> t:
+      J.Json.obj([J.KV{"index", J.Num{Nat.show(i)}}, J.KV{"text", J.Str{text}}, J.KV{"done", J.Flag{done}}, J.KV{"group", J.Str{group}}]) <> Rv.tasks(t)
+
+def Rv.checks(on: Bool, +u: U.Ui) -> J.Json:
+  match on:
+    case True{}:
+      J.Json.obj([J.KV{"gate", J.Str{U.Rp.gate(u)}}, J.KV{"line", J.Str{U.Rp.line(u)}}, J.KV{"tasks", J.Json.arr(Rv.tasks(U.Rp.tasks(u)))}])
+    case False{}:
+      J.Null{}
+
+def Rv.json.k(+v: U.RpView, +rb: J.Json, +checks: J.Json) -> J.Json:
   J.Json.obj([J.KV{"tabs", J.Json.arr(Rv.tabs(U.RpView.tabs(v)))}, J.KV{"title", J.Str{U.RpView.title(v)}}, J.KV{"busy", J.Flag{U.RpView.busy(v)}},
-    J.KV{"note", J.Str{U.RpView.note(v)}}, J.KV{"blocks", rb}])
+    J.KV{"note", J.Str{U.RpView.note(v)}}, J.KV{"blocks", rb}, J.KV{"checks", checks}])
 
 def Rv.json(on: Bool, +u: U.Ui, +rb: J.Json) -> J.Json:
   match on:
     case True{}:
-      Rv.json.k(U.Rp.view(u), rb)
+      Rv.json.k(U.Rp.view(u), rb, Rv.checks(String.eq(U.Rp.page(u), "checks"), u))
     case False{}:
       J.Null{}
 
+# Review comments in the viewer (client.bend's Rc): the pins of the file on
+# show (places in mm of the file's own coordinates), the one open with its
+# replies, and the place waiting for its note ("" none)
+def Rc.pins(ps: List<&2, RVW.Pin>) -> List<&2, J.Json>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case RVW.Pin{+id, +x, +y, _, _, +r, +n} <> t:
+      J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"x", J.Num{F32.show(x)}}, J.KV{"y", J.Num{F32.show(y)}}, J.KV{"resolved", J.Flag{r}}, J.KV{"count", J.Num{Nat.show(n)}}]) <> Rc.pins(t)
+
+def Rc.replies(rs: List<&2, String>) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      +ps = String.split(r, Chr{31})
+      J.Json.obj([J.KV{"text", J.Str{Maybe.default(&2, String, List.get(&2, String, ps, 0n), "")}}, J.KV{"by", J.Str{Maybe.default(&2, String, List.get(&2, String, ps, 1n), "")}}]) <> Rc.replies(t)
+
+def Rc.open.json(m: Maybe<&2, U.RcOpen>) -> J.Json:
+  match m:
+    case Some{U.RcOpen{+id, +text, +by, +place, +r, +rs}}:
+      J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"text", J.Str{text}}, J.KV{"by", J.Str{by}}, J.KV{"place", J.Str{place}}, J.KV{"resolved", J.Flag{r}}, J.KV{"replies", J.Json.arr(Rc.replies(rs))}])
+    case None{}:
+      J.Null{}
+
+def Rc.json(+u: U.Ui) -> J.Json:
+  J.Json.obj([J.KV{"pins", J.Json.arr(Rc.pins(U.Rc.pins(u)))}, J.KV{"open", Rc.open.json(U.Rc.open(u))}, J.KV{"at", J.Str{U.Rc.at(u)}}])
+
 def View.json(+u: U.Ui, +rb: J.Json) -> J.Json:
   J.Json.obj([J.KV{"open", J.Str{Bool.pick(String, Bool.or(Bool.or(Bool.or(Bool.not(String.is_empty(View.want(u))), View.mech(u)), View.fm(u)), String.eq(View.kind(u), "review")), View.kind(u), "")}}, J.KV{"key", J.Str{View.want(u)}},
+    J.KV{"comments", Rc.json(u)},
     J.KV{"review", Rv.json(String.eq(View.kind(u), "review"), u, rb)},
     J.KV{"files", Files.json(String.eq(View.kind(u), "files"), u)}, J.KV{"file", File.json(Bool.or(String.eq(View.kind(u), "image"), String.eq(View.kind(u), "pdf")), u)},
     J.KV{"layers", J.Str{Bool.pick(String, View.mech(u), "", View.layers.at(View.kind(u), U.Ui.root(u), View.src(u)))}},
