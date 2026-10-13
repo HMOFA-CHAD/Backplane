@@ -145,7 +145,12 @@ struct NoteSheet: View {
         .padding()
         .presentationDetents([.height(230)])
         .presentationBackgroundInteraction(.enabled)
-        .onAppear { focus = true }
+        .onAppear {
+            focus = true
+            #if DEBUG
+            if let t = ProcessInfo.processInfo.environment["BACKPLANE_NOTE"] { text = t }
+            #endif
+        }
     }
 }
 
@@ -199,6 +204,9 @@ struct CommentSheet: View {
                 .accessibilityIdentifier("resolve")
         }
         .padding()
+        #if DEBUG
+        .onAppear { if let t = ProcessInfo.processInfo.environment["BACKPLANE_REPLY"] { text = t } }
+        #endif
         .presentationDetents([.height(320), .large])
         .presentationBackgroundInteraction(.enabled(upThrough: .height(320)))
     }

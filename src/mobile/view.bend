@@ -247,8 +247,30 @@ def View.hist.act.r(shows: Bool, +u: U.Ui, +action: String, +value: String) -> U
     case False{}:
       View.hist.act.k(u, action, value)
 
+# The file the plot on screen draws ("rv-fam", its family from the plot
+# message): the phone's viewer shows the project's own board or schematic
+# with no path of its own, so review comments (client.bend's Rc.rel, the
+# file they are pinned to) take it from here. A version's path (history)
+# is left alone.
+def View.fam.set(set: Bool, +u: U.Ui, +fam: String) -> U.Act:
+  match set:
+    case True{}:
+      U.Act{U.Ui.view_get.set(u, "view.path", fam), Nil{}}
+    case False{}:
+      U.Act{u, Nil{}}
+
+def View.fam(+u: U.Ui, +fam: String) -> U.Act:
+  View.fam.set(Bool.and(String.starts_with(fam, "/"), Bool.and(Nat.is_eq(HS.Hist.kind(U.Ui.view_get(u, "view.path")), 0n), Bool.not(String.eq(U.Ui.view_get(u, "view.path"), fam)))), u, fam)
+
+def View.hist.act.f(fam: Bool, +u: U.Ui, +action: String, +value: String) -> U.Act:
+  match fam:
+    case True{}:
+      View.fam(u, value)
+    case False{}:
+      View.hist.act.r(View.rv.shows(action), u, action, value)
+
 def View.hist.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
-  View.hist.act.r(View.rv.shows(action), u, action, value)
+  View.hist.act.f(String.eq(action, "rv-fam"), u, action, value)
 
 # (the Mechanical page, "mech", is the client's: its view is set there,
 # and the parts asked for; a view picked by hand shows the project's own

@@ -724,8 +724,13 @@ final class PlotCanvas: MTKView {
 
     // a long press on the board: where in the file's mm (2D views only)
     @objc private func held(_ g: UILongPressGestureRecognizer) {
-        guard g.state == .began, !three, renderer.scale > 0 else { return }
-        let q = (SIMD2(Float(g.location(in: self).x), Float(g.location(in: self).y)) - renderer.off) / renderer.scale
+        guard g.state == .began else { return }
+        hold(at: g.location(in: self))
+    }
+
+    func hold(at p: CGPoint) {
+        guard !three, renderer.scale > 0 else { return }
+        let q = (SIMD2(Float(p.x), Float(p.y)) - renderer.off) / renderer.scale
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         onNote(Double(q.x) / 1000, Double(q.y) / 1000)
     }
@@ -908,6 +913,12 @@ struct PlotCanvasView: UIViewRepresentable {
                 let xy = t.split(separator: ",").compactMap { Double($0) }
                 if xy.count == 2 { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { c.tap(at: CGPoint(x: xy[0], y: xy[1])) } }
             }
+            if let t = ProcessInfo.processInfo.environment["BACKPLANE_HOLD"], !context.coordinator.held {
+                // a long press there (points), as a finger would
+                context.coordinator.held = true
+                let xy = t.split(separator: ",").compactMap { Double($0) }
+                if xy.count == 2 { DispatchQueue.main.asyncAfter(deadline: .now() + 6) { c.hold(at: CGPoint(x: xy[0], y: xy[1])) } }
+            }
             #endif
         }
         if three, let m = mesh, m.at != context.coordinator.mesh {
@@ -931,6 +942,7 @@ struct PlotCanvasView: UIViewRepresentable {
         var mesh: Date?
         var picked = ""
         var tapped = false
+        var held = false
     }
 }
 
@@ -1094,6 +1106,10 @@ struct PlotScreen: View {
         }
         .preferredColorScheme(viewer.light == true ? .light : .dark)
         .statusBarHidden()
+        // the file the plot draws, for review comments' file (Bend's "rv-fam")
+        .onChange(of: f.flatMap { $0.none.isEmpty ? $0.fam : nil } ?? "", initial: true) { _, fam in
+            if !fam.isEmpty, viewer.open == "board" || viewer.open == "schematic" { model.act("rv-fam", fam) }
+        }
         // a note for a new comment, and the comment open
         .sheet(isPresented: Binding(get: { !(viewer.comments?.at ?? "").isEmpty },
                                     set: { if !$0, !(model.screen?.thread?.viewer.comments?.at ?? "").isEmpty { model.act("rv-note-shut", "") } })) {
