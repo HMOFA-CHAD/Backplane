@@ -9829,12 +9829,28 @@ def Hub.google.p(prep: Bool, ask: Bool, h: Hub, +thread: String, +o: J.Json, +re
     case False{} h2:
       Hub.google.k(ask, h2, thread, o, reply, now)
 
-def Hub.google(bot: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
-  match bot h:
-    case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+def Hub.google.ok(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.google.p(Bool.or(String.eq(Gg.tool(o), "calendar_update"), String.eq(Gg.tool(o), "calendar_delete")),
         Bool.and(GG.Google.asks(Gg.tool(o)), Bool.not(MC.Perm.session_ok(M.Asks.all(st), thread, Gg.tool(o)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
-    case False{} _:
+
+# alerts Google would refuse go back to the agent before anyone is asked
+def Hub.google.v(fine: Bool, +err: String, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match fine:
+    case True{}:
+      Hub.google.ok(h, thread, o, reply, now)
+    case False{}:
+      do IO<Hub>:
+        Gg.say(reply, J.Json.get_obj(o, "id"), False{}, err)
+        return h
+
+def Hub.google(bot: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match bot:
+    case True{}:
+      +err = GG.Cal.check(Gg.args(o))
+      Hub.google.v(String.is_empty(err), err, h, thread, o, reply, now)
+    case False{}:
       do IO<Hub>:
         Gg.say(reply, J.Json.get_obj(o, "id"), False{}, "only bots have this tool")
         return h

@@ -1640,6 +1640,69 @@ def Tool.def(name: String, desc: String, props: List<&2, J.KV>, req: List<&2, St
   J.Json.obj([J.KV{"name", J.Str{name}}, J.KV{"description", J.Str{desc}},
     J.KV{"inputSchema", J.Json.obj([J.KV{"type", J.Str{"object"}}, J.KV{"properties", J.Json.obj(props)}, J.KV{"required", J.Json.arr(Tool.strs(req))}])}])
 
+# Alerts the agent gave that Google would refuse: why, or "" when fine
+def Cal.rem.mins(m: Maybe<&2, Nat>) -> String:
+  match m:
+    case Some{+n}:
+      Bool.pick(String, Nat.is_gt(n, 40320n), "an alert's minutes are 0 to 40320", "")
+    case None{}:
+      "an alert's minutes are a whole number"
+
+def Cal.rem.raw(+raw: String) -> String:
+  Bool.pick(String, Bool.or(String.contains(raw, "."), Bool.or(String.contains(raw, "-"), Bool.or(String.contains(raw, "e"), String.contains(raw, "E")))),
+    "an alert's minutes are a whole number", Cal.rem.mins(Nat.read(raw)))
+
+def Cal.rem.min(m: Maybe<&2, J.Json>) -> String:
+  match m:
+    case Some{J.Num{+raw}}:
+      Cal.rem.raw(raw)
+    case _:
+      "each alert needs its minutes"
+
+def Cal.rem.obj(+o: J.Json) -> String:
+  Bool.pick(String, Bool.or(String.eq(J.Json.get_str(o, "method", "popup"), "popup"), String.eq(J.Json.get_str(o, "method", "popup"), "email")),
+    Cal.rem.min(J.Json.get(o, "minutes")), "an alert's method is popup or email")
+
+def Cal.rem.one(r: J.Json) -> String:
+  match r:
+    case J.Num{+raw}:
+      Cal.rem.raw(raw)
+    case J.Obj{fs}:
+      Cal.rem.obj(J.Obj{fs})
+    case _:
+      "each alert is {method, minutes} or a number of minutes"
+
+def Cal.rem.all(xs: List<&2, J.Json>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case h <> t:
+      Str.or(Cal.rem.one(h), Cal.rem.all(t))
+
+def Cal.rem.list(+xs: List<&2, J.Json>) -> String:
+  Bool.pick(String, Nat.is_gt(List.length(&2, J.Json, xs), 5n), "at most 5 alerts", Cal.rem.all(xs))
+
+def Cal.rem.of(m: Maybe<&2, J.Json>) -> String:
+  match m:
+    case Some{J.Arr{items}}:
+      Cal.rem.list(J.Json.to_list(items))
+    case Some{_}:
+      "reminders is a list"
+    case None{}:
+      ""
+
+def Cal.check.k(+e: String) -> String:
+  Bool.pick(String, String.is_empty(e), "", "error: " ++ e)
+
+# calendar_create / calendar_update's arguments: "" or an error for the
+# agent, before the person is asked anything
+def Cal.check(+a: J.Json) -> String:
+  Cal.check.k(Cal.rem.of(J.Json.get(a, "reminders")))
+
+# the account line an approval starts with ("" for the first account)
+def Cal.acct(+a: J.Json) -> String:
+  Bool.pick(String, String.is_empty(J.Json.get_str(a, "account", "")), "", "Account: " ++ J.Json.get_str(a, "account", "") ++ "\n")
+
 def Cal.reminders.prop() -> J.KV:
   J.KV{"reminders", J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"maxItems", J.Json.nat(5n)}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"object"}}, J.KV{"properties", J.Json.obj([
     Tool.prop("method", "string", "popup or email."), Tool.prop("minutes", "number", "Minutes before the start, 0 to 40320.")])}])},

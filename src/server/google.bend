@@ -907,9 +907,9 @@ def Gt.prep.ok(update: Bool, +old: J.Json, +args: J.Json) -> String:
   match update:
     case True{}:
       +res = G.Cal.resolve(old, args)
-      J.Json.show(J.Json.obj([J.KV{"args", res}, J.KV{"detail", J.Str{G.Cal.change.detail(old, res)}}]))
+      J.Json.show(J.Json.obj([J.KV{"args", res}, J.KV{"detail", J.Str{G.Cal.acct(args) ++ G.Cal.change.detail(old, res)}}]))
     case False{}:
-      J.Json.show(J.Json.obj([J.KV{"args", G.Cal.resolve.del(old, args)}, J.KV{"detail", J.Str{G.Cal.delete.detail(old)}}]))
+      J.Json.show(J.Json.obj([J.KV{"args", G.Cal.resolve.del(old, args)}, J.KV{"detail", J.Str{G.Cal.acct(args) ++ G.Cal.delete.detail(old)}}]))
 
 def Gt.prep.k(ok: Bool, gone: Bool, update: Bool, r: GResp, +id: String, +args: J.Json) -> String:
   match ok gone:
