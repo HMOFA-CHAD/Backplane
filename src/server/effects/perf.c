@@ -240,7 +240,7 @@ static __attribute__((unused)) void perf_trace_note(const char* line, uint64_t n
 // Perf.us
 // -------
 
-#ifdef CID_PERF_US
+#ifdef CID(Perf.us)
 
 // microseconds since the first reading, as a U32 (it wraps after 71
 // minutes; a span is the wrapping difference, so it stays right)
@@ -249,7 +249,7 @@ Term perf_us_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) perf_us_use(void) {
-  io_eff(CID_PERF_US, perf_us_run, 0);
+  io_eff(CID(Perf.us), perf_us_run);
 }
 
 #endif
@@ -257,7 +257,7 @@ static void __attribute__((constructor)) perf_us_use(void) {
 // Perf.span: record now - t0 under name; answers now (the next span's t0)
 // ----------
 
-#ifdef CID_PERF_SPAN
+#ifdef CID(Perf.span)
 
 Term perf_span_run(Env e, Term* f, IoWork* w) {
   u64 len = 0;
@@ -272,7 +272,7 @@ Term perf_span_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) perf_span_use(void) {
-  io_eff(CID_PERF_SPAN, perf_span_run, 0);
+  io_eff(CID(Perf.span), perf_span_run);
 }
 
 #endif
@@ -280,7 +280,7 @@ static void __attribute__((constructor)) perf_span_use(void) {
 // Perf.add: record a value (a count, a size) under name
 // --------
 
-#ifdef CID_PERF_ADD
+#ifdef CID(Perf.add)
 
 Term perf_add_run(Env e, Term* f, IoWork* w) {
   u64 len = 0;
@@ -294,7 +294,7 @@ Term perf_add_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) perf_add_use(void) {
-  io_eff(CID_PERF_ADD, perf_add_run, 0);
+  io_eff(CID(Perf.add), perf_add_run);
 }
 
 #endif
@@ -302,7 +302,7 @@ static void __attribute__((constructor)) perf_add_use(void) {
 // Perf.set: a gauge (only its last value means anything)
 // --------
 
-#ifdef CID_PERF_SET
+#ifdef CID(Perf.set)
 
 Term perf_set_run(Env e, Term* f, IoWork* w) {
   u64 len = 0;
@@ -318,7 +318,7 @@ Term perf_set_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) perf_set_use(void) {
-  io_eff(CID_PERF_SET, perf_set_run, 0);
+  io_eff(CID(Perf.set), perf_set_run);
 }
 
 #endif
@@ -328,7 +328,7 @@ static void __attribute__((constructor)) perf_set_use(void) {
 // is done)
 // ---------------------
 
-#ifdef CID_PERF_MARK
+#ifdef CID(Perf.mark)
 
 Term perf_mark_run(Env e, Term* f, IoWork* w) {
   u64 len = 0;
@@ -342,12 +342,12 @@ Term perf_mark_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) perf_mark_use(void) {
-  io_eff(CID_PERF_MARK, perf_mark_run, 0);
+  io_eff(CID(Perf.mark), perf_mark_run);
 }
 
 #endif
 
-#ifdef CID_PERF_DONE
+#ifdef CID(Perf.done)
 
 Term perf_done_run(Env e, Term* f, IoWork* w) {
   u64 len = 0;
@@ -365,7 +365,7 @@ Term perf_done_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) perf_done_use(void) {
-  io_eff(CID_PERF_DONE, perf_done_run, 0);
+  io_eff(CID(Perf.done), perf_done_run);
 }
 
 #endif
@@ -375,7 +375,7 @@ static void __attribute__((constructor)) perf_done_use(void) {
 // plus proc.rss_kb, proc.cpu_us and proc.up_us read now
 // ---------
 
-#ifdef CID_PERF_TAKE
+#ifdef CID(Perf.take)
 
 static void perf_row(char** buf, size_t* len, size_t* cap, const PerfStat* s) {
   char line[PERF_NAME + 64 + PERF_BUCKETS * 21];
@@ -438,7 +438,7 @@ Term perf_take_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) perf_take_use(void) {
-  io_eff(CID_PERF_TAKE, perf_take_run, 0);
+  io_eff(CID(Perf.take), perf_take_run);
 }
 
 #endif
@@ -447,7 +447,7 @@ static void __attribute__((constructor)) perf_take_use(void) {
 // the ring Perf.logs answers
 // ---------
 
-#ifdef CID_PERF_EMIT
+#ifdef CID(Perf.emit)
 
 Term perf_emit_run(Env e, Term* f, IoWork* w) {
   u64 len = 0;
@@ -474,7 +474,7 @@ Term perf_emit_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) perf_emit_use(void) {
-  io_eff(CID_PERF_EMIT, perf_emit_run, 0);
+  io_eff(CID(Perf.emit), perf_emit_run);
 }
 
 #endif
@@ -482,7 +482,7 @@ static void __attribute__((constructor)) perf_emit_use(void) {
 // Perf.logs: the last lines emitted, oldest first
 // ---------
 
-#ifdef CID_PERF_LOGS
+#ifdef CID(Perf.logs)
 
 Term perf_logs_run(Env e, Term* f, IoWork* w) {
   size_t len = 0;
@@ -508,7 +508,7 @@ Term perf_logs_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) perf_logs_use(void) {
-  io_eff(CID_PERF_LOGS, perf_logs_run, 0);
+  io_eff(CID(Perf.logs), perf_logs_run);
 }
 
 #endif

@@ -127,6 +127,10 @@ def Theme.ground(+flip: U32) -> U32:
 type Ty is Data:
   Ty{cache: Map<&2, X.TG>, ui: X.Face, bold: X.Face, meta: X.Face, body: X.Face, code: X.Face}
 
+# a type with only the bitmap font (never used: Aux keeps the real one)
+def Ty.none() -> Ty:
+  Ty{Map.new(&2, X.TG), X.Text.bitmap(), X.Text.bitmap(), X.Text.bitmap(), X.Text.bitmap(), X.Text.bitmap()}
+
 # the type with glyphs added to its cache (the faces' ASCII tables stay)
 def Ty.with_cache(t: Ty, c: Map<&2, X.TG>) -> Ty:
   match t:

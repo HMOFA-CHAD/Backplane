@@ -167,7 +167,7 @@ def Nui.effects(cs: List<&2, U.Cmd>, n: Nui) -> Nui:
       n
     case U.Focus{+id} <> t Nui{u, w, h, mx, my, sd, sc, ca, _, pa, hi, ms, vw}:
       Nui.effects(t, Nui{u, w, h, mx, my, sd, sc, ca, Fld.alias(id), pa, hi, ms, vw})
-    case U.Scroll{} <> t Nui{u, w, h, mx, my, sd, _, ca, fo, pa, hi, ms, vw}:
+    case U.ScrollEnd{} <> t Nui{u, w, h, mx, my, sd, _, ca, fo, pa, hi, ms, vw}:
       Nui.effects(t, Nui{u, w, h, mx, my, sd, 0, ca, fo, pa, hi, ms, vw})
     case U.Jump{_} <> t Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}:
       Nui.effects(t, Nui{U.Ui.scratch_set(u, "@jump.go", "1"), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw})
@@ -461,12 +461,14 @@ def Vw.scene.k(same: Bool, t: FA.Scene3) -> FA.Scene3:
     case False{}:
       FA.Scene3.none()
 
+# (another kind of view starting over forgets the source it showed, so
+# coming back to it, from the Review tab say, reads it again)
 def Vw.kind_set.k(keep: Bool, v: V.Vw, +k: U32, +path: String) -> V.Vw:
   match keep v:
     case True{} V.Vw{s, vi, f, r, d, lx, ly, b, fr, cu, V.Vx{_, p, t, c, sh, bu, px, py, _, se, bm}}:
       V.Vw{s, vi, f, r, d, lx, ly, b, fr, cu, V.Vx{k, p, t, c, sh, bu, px, py, path, se, bm}}
-    case False{} V.Vw{_, vi, _, r, d, lx, ly, b, _, cu, V.Vx{+k0, _, t, c, sh, bu, px, py, +p0, se, bm}}:
-      V.Vw{Nil{}, V.View{1.0, 0.0, 0.0}, False{}, "", d, lx, ly, b, False{}, cu, V.Vx{k, "", Vw.scene.k(Bool.and(U32.is_eq(k, k0), String.eq(path, p0)), t), c, sh, bu, px, py, path, se, bm}}
+    case False{} V.Vw{_, vi, _, r, d, lx, ly, b, _, cu, V.Vx{+k0, _, t, c, +sh, bu, px, py, +p0, se, bm}}:
+      V.Vw{Nil{}, V.View{1.0, 0.0, 0.0}, False{}, "", d, lx, ly, b, False{}, cu, V.Vx{k, "", Vw.scene.k(Bool.and(U32.is_eq(k, k0), String.eq(path, p0)), t), c, Bool.pick(String, U32.is_eq(k, k0), sh, ""), bu, px, py, path, se, bm}}
 
 def Vw.path(v: V.Vw) -> String:
   match v:
@@ -990,34 +992,34 @@ def Pnl.unit(+p: Pnl, +c: MS.Cam) -> F32:
 def Vx.drag(x: V.Vx, +m: U32, +dx: F32, +dy: F32, +pn: Pnl) -> V.Vx:
   match x:
     case V.Vx{k, p, t, +c, sh, bu, +px, +py, pa, se, bm}:
-      V.Vx{k, p, t, Cam.drag(m, c, dx, dy, Pnl.unit(pn, c), Pnl.cx(pn, px), Pnl.cy(pn, py)), sh, bu, px, py, pa, se, bm}
+      V.Vx{k, p, t, [Cam.drag(m, V.Vx.cam(c), dx, dy, Pnl.unit(pn, V.Vx.cam(c)), Pnl.cx(pn, px), Pnl.cy(pn, py))], sh, bu, px, py, pa, se, bm}
 
 def Vx.wheel(x: V.Vx, +f: F32, +mx: U32, +my: U32, +pn: Pnl) -> V.Vx:
   match x:
     case V.Vx{k, p, t, +c, sh, bu, px, py, pa, se, bm}:
-      V.Vx{k, p, t, MS.Cam.zoom_at(c, f, Pnl.cx(pn, mx), Pnl.cy(pn, my), Pnl.unit(pn, c)), sh, bu, px, py, pa, se, bm}
+      V.Vx{k, p, t, [MS.Cam.zoom_at(V.Vx.cam(c), f, Pnl.cx(pn, mx), Pnl.cy(pn, my), Pnl.unit(pn, V.Vx.cam(c)))], sh, bu, px, py, pa, se, bm}
 
 def Vx.key(x: V.Vx, +a: U32, +pn: Pnl) -> V.Vx:
   match x:
     case V.Vx{k, p, t, +c, sh, bu, px, py, pa, se, bm}:
-      V.Vx{k, p, t, Cam.key(a, c, Pnl.unit(pn, c)), sh, bu, px, py, pa, se, bm}
+      V.Vx{k, p, t, [Cam.key(a, V.Vx.cam(c), Pnl.unit(pn, V.Vx.cam(c)))], sh, bu, px, py, pa, se, bm}
 
 def Vx.zoom(x: V.Vx, +f: F32) -> V.Vx:
   match x:
-    case V.Vx{k, p, t, c, sh, bu, px, py, pa, se, bm}:
-      V.Vx{k, p, t, MS.Cam.zoom(c, F32.div(1.0, f)), sh, bu, px, py, pa, se, bm}
+    case V.Vx{k, p, t, +c, sh, bu, px, py, pa, se, bm}:
+      V.Vx{k, p, t, [MS.Cam.zoom(V.Vx.cam(c), F32.div(1.0, f))], sh, bu, px, py, pa, se, bm}
 
 # a new scene, seen from the first side
 def Vx.fit(x: V.Vx) -> V.Vx:
   match x:
     case V.Vx{k, p, +t, _, sh, bu, px, py, pa, se, bm}:
-      V.Vx{k, p, t, FA.Scene3.fit(t), sh, bu, px, py, pa, se, bm}
+      V.Vx{k, p, t, [FA.Scene3.fit(t)], sh, bu, px, py, pa, se, bm}
 
 # zoom to fit, turned as it is
 def Vx.refit(x: V.Vx) -> V.Vx:
   match x:
-    case V.Vx{k, p, +t, c, sh, bu, px, py, pa, se, bm}:
-      V.Vx{k, p, t, FA.Scene3.refit(t, c), sh, bu, px, py, pa, se, bm}
+    case V.Vx{k, p, +t, +c, sh, bu, px, py, pa, se, bm}:
+      V.Vx{k, p, t, [FA.Scene3.refit(t, V.Vx.cam(c))], sh, bu, px, py, pa, se, bm}
 
 # a drag pans a board or schematic and moves a 3D model's camera (the
 # modifiers pick how, Drag.mode)
@@ -2385,7 +2387,7 @@ def Nui.paste.e(none: Bool, +key: String, +n: Nui, text: String) -> Step:
 def Nui.paste(+n: Nui, text: String) -> Step:
   Nui.paste.e(String.is_empty(EM.Emb.focused(Nui.focus_of(n))), EM.Emb.focused(Nui.focus_of(n)), n, text)
 
-def Nui.key.3d.k(none: Bool, +n: Nui, +a: U32) -> Step:
+def Nui.key.view3.k(none: Bool, +n: Nui, +a: U32) -> Step:
   match none:
     case True{}:
       Step{n, Nil{}, False{}}
@@ -2393,10 +2395,10 @@ def Nui.key.3d.k(none: Bool, +n: Nui, +a: U32) -> Step:
       Step{Nui.with_vw(n, Vw.key(Nui.vw(n), a, Nui.pnl(n))), Nil{}, True{}}
 
 # the 3D viewer's keys (Key3.act), when it is open and no field has focus
-def Nui.key.3d(on: Bool, +n: Nui, +code: U32, +mods: U32) -> Step:
+def Nui.key.view3(on: Bool, +n: Nui, +code: U32, +mods: U32) -> Step:
   match on:
     case True{}:
-      Nui.key.3d.k(U32.is_eq(Key3.act(code, mods), 0), n, Key3.act(code, mods))
+      Nui.key.view3.k(U32.is_eq(Key3.act(code, mods), 0), n, Key3.act(code, mods))
     case False{}:
       Step{n, Nil{}, False{}}
 
@@ -2405,7 +2407,7 @@ def Nui.key.free(nofocus: Bool, fit: Bool, +n: Nui, +code: U32, +text: U32, +mod
     case True{} True{}:
       Step{Nui.with_vw(n, Vw.refit(Nui.vw(n))), Nil{}, True{}}
     case True{} False{}:
-      Nui.key.3d(Bool.and(Nui.panel(n), U32.is_eq(Vw.kind(Nui.vw(n)), 2)), n, code, mods)
+      Nui.key.view3(Bool.and(Nui.panel(n), U32.is_eq(Vw.kind(Nui.vw(n)), 2)), n, code, mods)
     case _ _:
       Nui.field.k(String.eq(Nui.focus_of(n), "composer"), Nui.in_path(n), n, Nui.mark(n), code, text, mods)
 

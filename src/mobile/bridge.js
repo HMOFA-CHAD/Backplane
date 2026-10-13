@@ -11,10 +11,13 @@
 // wire format; its dictionaries come from there).
 
 import App from "./app.bend";
-import { cbor as decode } from "../web/wire.js";
+import { cbor as decode, is, kind, learnJson } from "../web/wire.js";
+
+// the Json constructors' tags, as this bundle names them (wire.js)
+learnJson(App.json_tags());
 
 function* each(list) {
-  for (let xs = list; xs && xs.$ === "Con"; xs = xs.tail) yield xs.head;
+  for (let xs = list; xs && is(xs, "Con"); xs = xs.tail) yield xs.head;
 }
 
 const secs = (n) => BigInt(Math.floor(Number(n)));
@@ -111,7 +114,7 @@ function restore() {
 // a Bend JSON value (core/json.bend: Arr/Obj hold Item/Field chains ending
 // in End) as a plain JS value, for the engine's own JSON.stringify
 function plain(j) {
-  switch (j.$) {
+  switch (kind(j)) {
     case "Null":
       return null;
     case "Flag":
@@ -124,12 +127,12 @@ function plain(j) {
       return j.text;
     case "Arr": {
       const a = [];
-      for (let c = j.items; c.$ === "Item"; c = c.tail) a.push(plain(c.head));
+      for (let c = j.items; is(c, "Item"); c = c.tail) a.push(plain(c.head));
       return a;
     }
     case "Obj": {
       const o = {};
-      for (let c = j.fields; c.$ === "Field"; c = c.tail) o[c.key] = plain(c.value);
+      for (let c = j.fields; is(c, "Field"); c = c.tail) o[c.key] = plain(c.value);
       return o;
     }
     default:
@@ -146,16 +149,16 @@ function out(cmds, quiet, alerts) {
   const cs = [];
   for (const h of each(cmds)) {
     const c = h.cmd;
-    if (c.$ === "Send") cs.push({ type: "send", hub: h.hub, data: App.wire(c.text) });
-    else if (c.$ === "Copy") cs.push({ type: "copy", text: c.text });
-    else if (c.$ === "Focus") cs.push({ type: "focus", id: c.id });
-    else if (c.$ === "Scroll") cs.push({ type: "scroll" });
+    if (is(c, "Send")) cs.push({ type: "send", hub: h.hub, data: App.wire(c.text) });
+    else if (is(c, "Copy")) cs.push({ type: "copy", text: c.text });
+    else if (is(c, "Focus")) cs.push({ type: "focus", id: c.id });
+    else if (is(c, "ScrollEnd")) cs.push({ type: "scroll" });
     // a client action come due (the design history playing), back to the hub that asked
-    else if (c.$ === "Later") cs.push({ type: "later", ms: Number(c.ms), action: c.action, value: h.hub + "|" + c.value });
+    else if (is(c, "Later")) cs.push({ type: "later", ms: Number(c.ms), action: c.action, value: h.hub + "|" + c.value });
     // show an entry of the thread (the history's way back to it)
-    else if (c.$ === "Jump") cs.push({ type: "jump", id: c.id });
+    else if (is(c, "Jump")) cs.push({ type: "jump", id: c.id });
     // the native side writes it down at once; "" forgets it
-    else if (c.$ === "Keep") {
+    else if (is(c, "Keep")) {
       const key = h.hub + "|" + c.thread;
       if (c.text) kept[key] = c.text;
       else delete kept[key];

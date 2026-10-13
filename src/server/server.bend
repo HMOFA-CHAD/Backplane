@@ -503,7 +503,7 @@ def Wire.offer.k(c: Client, w: Wire, +n: Nat) -> IO(Maybe<&2, Client>):
   match c:
     case Client{i, +o, l, +r, k}:
       do IO<Maybe<&2, Client>>:
-        ok : Bool <- Chan.send(Wire, o, w)
+        ok : Result<&1, &1, Wire, Unit> <- Chan.send(Wire, o, w)
         +r2 : OB.Cr = OB.Cr.offer(r, Bool.pick(Nat, OB.Cr.native(r), 0n, n))
         Wire.kept(OB.Cr.over(r2), Client{i, o, l, r2, k})
 
@@ -616,7 +616,7 @@ type All is Data:
 # the send runs on a fiber of its own and the hub goes on
 def Self.post.go(+inbox: Chan(Msg), m: Msg) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(Msg, inbox, m)
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, m)
     return Unit{}
 
 def Self.post(+inbox: Chan(Msg), m: Msg) -> IO(Unit):
@@ -719,7 +719,7 @@ def Agent.lines(ls: List<&2, String>, +thread: String, +inbox: Chan(Msg)) -> IO(
       IO.pure(Unit, Unit{})
     case l <> t:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, AgentLine{thread, l})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AgentLine{thread, l})
         Agent.lines(t, thread, inbox)
 
 def Agent.end(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -727,7 +727,7 @@ def Agent.end(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
     +why : String = B.Exit.why(code)
-    ok : Bool <- Chan.send(Msg, inbox, AgentGone{thread, code, pid, why})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AgentGone{thread, code, pid, why})
     return Unit{}
 
 def Agent.pause(streaming: Bool) -> IO(Unit):
@@ -908,7 +908,7 @@ def Conn.told(due: Bool, +w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg)) -> I
   match due:
     case True{}:
       do IO<OB.Wr>:
-        ok : Bool <- Chan.send(Msg, inbox, Drained{id, gen, OB.Wr.n(w), OB.Wr.b(w)})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Drained{id, gen, OB.Wr.n(w), OB.Wr.b(w)})
         return OB.Wr.said(w)
     case False{}:
       IO.pure(OB.Wr, w)
@@ -931,7 +931,7 @@ def Conn.writer(fuel: Nat, s: Socket, +out: Chan(Wire), w: OB.Wr, +id: U32, +gen
 def Conn.leave(s: Socket, +id: U32, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Socket.close(s)
-    ok : Bool <- Chan.send(Msg, inbox, Leave{id})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Leave{id})
     return Unit{}
 
 # a request's CBOR as the JSON text the hub reads
@@ -989,7 +989,7 @@ def Conn.scan(fuel: Nat, st: Scan, +last: Nat, +now: Nat) -> Scan:
 # a ping passed on to the hub
 def Conn.ping(p: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +now: Nat) -> IO(Maybe<&2, Nat>):
   do IO<Maybe<&2, Nat>>:
-    ok : Bool <- Chan.send(Msg, inbox, Ping{id, p})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Ping{id, p})
     return Some{now}
 
 # what a frame the hub must hear does: None ends the connection, else the
@@ -998,7 +998,7 @@ def Conn.frame.k(bin: Bool, close: Bool, ping: Bool, p: List<&2, U32>, +id: U32,
   match bin close ping:
     case True{} _ _:
       do IO<Maybe<&2, Nat>>:
-        ok : Bool <- Chan.send(Msg, inbox, Rpc{id, Conn.cbor.json(CB.Cbor.decode(p))})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Rpc{id, Conn.cbor.json(CB.Cbor.decode(p))})
         return Some{last}
     case False{} True{} _:
       IO.pure(Maybe<&2, Nat>, None{})
@@ -1055,7 +1055,7 @@ def Conn.raw(r: Socket & U32, rd: Socket, rest: List<&2, U32>, +id: U32, +inbox:
   do IO<Unit>:
     +out : Chan(Wire) <- Chan.new(Wire, 1024)
     IO.spawn(Unit, Conn.writer(Fuel.forever(), wr, out, OB.Wr.new(), id, id, inbox))
-    ok : Bool <- Chan.send(Msg, inbox, Join{id, out, since, origin, id, fd})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Join{id, out, since, origin, id, fd})
     Conn.reader(Fuel.forever(), rd, rest, id, inbox, 0n, 0n)
 
 def Conn.ws.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String) -> IO(Unit):
@@ -1134,7 +1134,7 @@ def Mcp.answer(m: Maybe<&1, String>, s: Socket) -> IO(Unit):
 def Mcp.ask(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +reply : Chan(String) <- Chan.new(String, 1)
-    ok : Bool <- Chan.send(Msg, inbox, Mcp{thread, body, reply})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Mcp{thread, body, reply})
     m : Maybe<&1, String> <- Chan.recv(String, reply)
     Mcp.answer(m, s)
 
@@ -1287,7 +1287,7 @@ def Hub.gen(+st: M.State, +now: Nat) -> String:
 # process, so none outlives its generation.
 def Agent.watch.end(+code: U32, s: Socket, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(Msg, inbox, AgentExited{thread, gen, code})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AgentExited{thread, gen, code})
     IO.sleep(2000)
     s2 : Socket <- H.Sock.shut_read(s)
     Socket.close(s2)
@@ -1353,7 +1353,7 @@ def Hub.agent_send(m: Maybe<&2, Agent>, line: String) -> IO(Unit):
   match m:
     case Some{Agent{_, input, _, _, _}}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(String, input, line)
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, input, line)
         return Unit{}
     case None{}:
       IO.pure(Unit, Unit{})
@@ -1445,7 +1445,7 @@ def Hub.desk(h: Hub, +client: U32, +thread: String, +focused: Bool) -> IO(Hub):
     case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        +cl2 : List<&2, Client> = Clients.look(cl, client, DK.Look{True{}, thread, focused, now})
+        +cl2 : List<&2, Client> = Clients.look(cl, client, DK.DeskView{True{}, thread, focused, now})
         cl3 : List<&2, Client> <- Desk.say(DK.Desk.text(Clients.looks(cl), now), cl2, now)
         return Hub{st, f, ls, cl3, as, inbox, cfg, note}
 
@@ -1535,7 +1535,7 @@ def Cfg.prompt(c: Cfg) -> String:
 def Codex.failed(e: U32 & String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   (_, msg) = e
   do IO<Unit>:
-    ok : Bool <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, "{\"type\":\"turn.failed\",\"message\":" ++ J.Json.show(J.Str{"could not start codex: " ++ msg}) ++ "}"})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, "{\"type\":\"turn.failed\",\"message\":" ++ J.Json.show(J.Str{"could not start codex: " ++ msg}) ++ "}"})
     return Unit{}
 
 # whether a Codex event line ends the turn
@@ -1548,7 +1548,7 @@ def Codex.lines(ls: List<&2, String>, +ended: Bool, +thread: String, +inbox: Cha
       IO.pure(Bool, ended)
     case +l <> t:
       do IO<Bool>:
-        ok : Bool <- Chan.send(Msg, inbox, AgentLine{thread, l})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AgentLine{thread, l})
         Codex.lines(t, Bool.or(ended, Codex.ends(l)), thread, inbox)
 
 def Codex.fed(r: U.Lines & List<&2, String>, s: Socket, +ended: Bool, +thread: String, +inbox: Chan(Msg), k: Socket -> U.Lines -> Bool -> IO(Unit)) -> IO(Unit):
@@ -1627,7 +1627,7 @@ def FsJob.ok(+r: J.Json) -> Bool:
 
 def GitJob.say(+inbox: Chan(Msg), +m: String, p: List<&2, J.KV>) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(Msg, inbox, Rpc{0, J.Json.show(J.Json.obj([J.KV{"id", J.Num{"0"}}, J.KV{"m", J.Str{m}}, J.KV{"p", J.Json.obj(p)}]))})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Rpc{0, J.Json.show(J.Json.obj([J.KV{"id", J.Num{"0"}}, J.KV{"m", J.Str{m}}, J.KV{"p", J.Json.obj(p)}]))})
     return Unit{}
 
 def GitJob.note(+inbox: Chan(Msg), +thread: String, +tone: String, +summary: String) -> IO(Unit):
@@ -1635,7 +1635,7 @@ def GitJob.note(+inbox: Chan(Msg), +thread: String, +tone: String, +summary: Str
 
 def GitJob.reply(+inbox: Chan(Msg), +client: U32, +id: String, +ok: Bool, r: J.Json) -> IO(Unit):
   do IO<Unit>:
-    sent : Bool <- Chan.send(Msg, inbox, Push{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{ok}}, J.KV{"result", r}]))})
+    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{ok}}, J.KV{"result", r}]))})
     return Unit{}
 
 def FsJob.answer(+inbox: Chan(Msg), +client: U32, +id: String, +r: J.Json) -> IO(Unit):
@@ -1660,7 +1660,7 @@ def FsJob.create(r: P.Ran, +inbox: Chan(Msg), +client: U32, +id: String) -> IO(U
   match r:
     case P.Ran{0, out}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, Rpc{client, J.Json.show(J.Json.obj([J.KV{"id", J.Num{id}}, J.KV{"m", J.Str{"project.create"}},
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Rpc{client, J.Json.show(J.Json.obj([J.KV{"id", J.Num{id}}, J.KV{"m", J.Str{"project.create"}},
           J.KV{"p", J.Json.obj([J.KV{"path", J.Str{FsJob.last(String.lines(String.trim(out)))}}])}]))})
         return Unit{}
     case P.Ran{_, out}:
@@ -2103,9 +2103,9 @@ def Ticker.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
       IO.pure(Unit, Unit{})
     case 1n+f:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, Tick{})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Tick{})
         tz : P.Ran <- P.Proc.run("date", ["+%z"], "/")
-        ok2 : Bool <- Chan.send(Msg, inbox, BotTick{Snooze.tz(tz)})
+        ok2 : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, BotTick{Snooze.tz(tz)})
         IO.sleep(60000)
         Ticker.loop(f, inbox)
 
@@ -2118,7 +2118,7 @@ def Heart.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
     case 1n+f:
       do IO<Unit>:
         IO.sleep(U32.from_nat(DK.Alive.every()))
-        ok : Bool <- Chan.send(Msg, inbox, Heart{})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Heart{})
         Heart.loop(f, inbox)
 
 # every five seconds the hub beats: held progress lines land (Hub.beat)
@@ -2129,7 +2129,7 @@ def Beat.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
     case 1n+f:
       do IO<Unit>:
         IO.sleep(5000)
-        ok : Bool <- Chan.send(Msg, inbox, Beat{})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Beat{})
         Beat.loop(f, inbox)
 
 # snooze until 9:00 tomorrow here: the hub hears the time as thread.snooze
@@ -2169,7 +2169,7 @@ def KiCadJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +cwd: String, +ho
 def StepJob.log(+inbox: Chan(Msg), +thread: String, +id: String, +rec: String) -> IO(Unit):
   do IO<Unit>:
     now : Nat <- Now.nat()
-    ok : Bool <- Chan.send(Msg, inbox, Commit{[M.ActivityLogged{thread, id, HI.Step.tone(), "kicad", rec, now}]})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Commit{[M.ActivityLogged{thread, id, HI.Step.tone(), "kicad", rec, now}]})
     return Unit{}
 
 def StepJob.done(+inbox: Chan(Msg), +thread: String, +entry: String, +out: String) -> IO(Unit):
@@ -2359,7 +2359,7 @@ def Grok.report(ls: List<&2, String>, +thread: String, +inbox: Chan(Msg)) -> IO(
       IO.pure(Unit, Unit{})
     case l <> t:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, AgentLine{thread, l})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AgentLine{thread, l})
         Grok.report(t, thread, inbox)
 
 def Grok.write(ls: List<&2, String>, +input: Chan(String)) -> IO(Unit):
@@ -2368,7 +2368,7 @@ def Grok.write(ls: List<&2, String>, +input: Chan(String)) -> IO(Unit):
       IO.pure(Unit, Unit{})
     case l <> t:
       do IO<Unit>:
-        ok : Bool <- Chan.send(String, input, l)
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, input, l)
         Grok.write(t, input)
 
 def Grok.acp(o: AC.AcpOut) -> AC.Acp:
@@ -2394,7 +2394,7 @@ def Grok.answered(m: Maybe<&1, String>, +input: Chan(String)) -> IO(Unit):
 def Grok.ask.one(+line: String, +thread: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +reply : Chan(String) <- Chan.new(String, 1)
-    ok : Bool <- Chan.send(Msg, inbox, Mcp{thread, line, reply})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Mcp{thread, line, reply})
     m : Maybe<&1, String> <- Chan.recv(String, reply)
     Grok.answered(m, input)
 
@@ -2430,7 +2430,7 @@ def Turn.end(s: Socket, +pid: U32, +tag: String, +gen: String, +inbox: Chan(Msg)
   do IO<Unit>:
     Socket.close(s)
     code : U32 <- H.Proc.wait(pid)
-    ok : Bool <- Chan.send(Msg, inbox, TurnDone{tag})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TurnDone{tag})
     return Unit{}
 
 # a per-turn process that ended before its turn did: reaped, and a signal
@@ -2447,8 +2447,8 @@ def Turn.close(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String) 
 def Turn.failed(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +msg : String <- Turn.close(s, pid, tag, gen, dflt)
-    ok : Bool <- Chan.send(Msg, inbox, AgentLine{tag, AC.Acp.failed(msg)})
-    ok2 : Bool <- Chan.send(Msg, inbox, TurnDone{tag})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AgentLine{tag, AC.Acp.failed(msg)})
+    ok2 : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TurnDone{tag})
     return Unit{}
 
 # output closed: a turn that never ended fails; the exit itself is not news
@@ -2491,7 +2491,7 @@ def Codex.read(started: U32 & Socket, +thread: String, +gen: String, +inbox: Cha
   do IO<Unit>:
     s2 : Socket <- H.Sock.shutdown(s)
     +input : Chan(String) <- Chan.new(String, 1)
-    ok : Bool <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
     s3 : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(s2), d => Agent.watch.start(d, pid, thread, gen, inbox))
     Codex.reader(Fuel.forever(), s3, U.Lines.new(), False{}, pid, B.Tag.of(thread, pid), gen, inbox)
 
@@ -2574,7 +2574,7 @@ def Grok.dup.failed(e: U32 & String, rd: Socket, +cmd: String, +pid: U32, +threa
   do IO<Unit>:
     Socket.close(rd)
     Proc.kill(pid, 15)
-    ok : Bool <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, AC.Acp.failed("could not start " ++ cmd ++ ": " ++ msg)})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, AC.Acp.failed("could not start " ++ cmd ++ ": " ++ msg)})
     return Unit{}
 
 def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -2584,8 +2584,8 @@ def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: 
       do IO<Unit>:
         +input : Chan(String) <- Chan.new(String, 64)
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
-        ok : Bool <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
-        ok2 : Bool <- Chan.send(String, input, MS.Proto.init(t))
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
+        ok2 : Result<&1, &1, String, Unit> <- Chan.send(String, input, MS.Proto.init(t))
         rd2 : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd), d => Agent.watch.start(d, pid, thread, gen, inbox))
         Grok.reader(Fuel.forever(), rd2, U.Lines.new(), AC.Acp.new(), t, pid, B.Tag.of(thread, pid), gen, input, inbox)
     case Fail{e}:
@@ -2598,7 +2598,7 @@ def Grok.started.ok(started: U32 & Socket, +t: MS.Proto, +thread: String, +gen: 
 def Grok.failed(e: U32 & String, +p: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   (_, msg) = e
   do IO<Unit>:
-    ok : Bool <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, AC.Acp.failed("could not start " ++ MS.Proto.cmd(p) ++ ": " ++ msg ++ ". " ++ MS.Proto.install(p))})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, AC.Acp.failed("could not start " ++ MS.Proto.cmd(p) ++ ": " ++ msg ++ ". " ++ MS.Proto.install(p))})
     return Unit{}
 
 def Grok.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +t: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -2624,7 +2624,7 @@ def Upgrade.note(kvs: List<&2, J.KV>) -> String:
 
 def Upgrade.say(+inbox: Chan(Msg), text: String) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(Msg, inbox, Announce{text})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Announce{text})
     return Unit{}
 
 def Upgrade.exec.fail(e: U32 & String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -2657,7 +2657,7 @@ def Upgrade.check(fuel: Nat, +wait: U32, +inbox: Chan(Msg)) -> IO(Unit):
     case 1n+f:
       do IO<Unit>:
         IO.sleep(wait)
-        ok : Bool <- Chan.send(Msg, inbox, UpdateCheck{})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, UpdateCheck{})
         Upgrade.check(f, 3600000, inbox)
 
 def Upgrade.start.go(on: Bool, +inbox: Chan(Msg)) -> IO(Unit):
@@ -2833,7 +2833,7 @@ def Tailnet.https.k(none: Bool, +name: String, +token: String, +inbox: Chan(Msg)
     case False{}:
       do IO<Unit>:
         IO.print("Backplane over HTTPS on your tailnet: " ++ TN.Tailnet.link("https://" ++ name, token))
-        ok : Bool <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report("reachable", TN.Tailnet.link("https://" ++ name, token))})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report("reachable", TN.Tailnet.link("https://" ++ name, token))})
         return Unit{}
 
 def Tailnet.https(on: Bool, +port: U32, +token: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -2923,20 +2923,21 @@ def Names.copy(xs: List<String>) -> List<&2, String>:
       x <> Names.copy(t)
 
 # the install is done: the hub is asked, and restarts only if nothing has
-# started work since the update began (Hub.update_ready, Restart{})
+# started work since the update began (Hub.update_ready, Restart{}); with
+# its own arguments, not its name (Bend 2.0.36's IO.args() starts with it)
 def Upgrade.restart(+inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Upgrade.say(inbox, Upgrade.note([J.KV{"state", J.Str{"restarting"}}]))
     path : String <- H.Sys.exe_path()
     args : List<String> <- IO.args()
-    r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(path, Names.copy(args))
+    r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(path, Names.copy(RVS.Rvc.args.drop(args)))
     Upgrade.exec(r, inbox)
 
 def Upgrade.done.k(ok: Bool, force: Bool, +err: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ok:
     case True{}:
       do IO<Unit>:
-        sent : Bool <- Chan.send(Msg, inbox, UpdateReady{force})
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, UpdateReady{force})
         return Unit{}
     case False{}:
       Upgrade.say(inbox, Upgrade.note([J.KV{"error", J.Str{err}}]))
@@ -2987,7 +2988,7 @@ def Park.put(m: Maybe<&2, Chan(PK.PMsg)>, +msg: PK.PMsg) -> IO(Unit):
   match m:
     case Some{q}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(PK.PMsg, q, msg)
+        ok : Result<&1, &1, PK.PMsg, Unit> <- Chan.send(PK.PMsg, q, msg)
         return Unit{}
     case None{}:
       IO.pure(Unit, Unit{})
@@ -2999,7 +3000,7 @@ def Hub.drop_dead(ts: List<&2, String>, +inbox: Chan(Msg)) -> IO(Unit):
     case Nil{}:
       IO.pure(Unit, Unit{})
     case t <> rest:
-      IO.bind(Bool, Unit, Chan.send(Msg, inbox, Rpc{0, PU.Push.drop_request(t)}), _ => Hub.drop_dead(rest, inbox))
+      IO.bind(Result<&1, &1, Msg, Unit>, Unit, Chan.send(Msg, inbox, Rpc{0, PU.Push.drop_request(t)}), _ => Hub.drop_dead(rest, inbox))
 
 def Hub.island(+home: String, st: M.State, +inbox: Chan(Msg)) -> IO(Unit):
   IO.bind(List<&2, String>, Unit, PU.Push.island.dead(home, st), ds => Hub.drop_dead(ds, inbox))
@@ -3044,7 +3045,7 @@ def Hub.mcp.send(later: Bool, +park: String, +body: String, +text: String, +repl
       Park.put(Cfg.pk(cfg), PK.PPark{park, body, reply})
     case False{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(String, reply, text)
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, text)
         return Unit{}
 
 def Net.with_br(n: Net, q: Chan(BR.BMsg)) -> Net:
@@ -3077,11 +3078,11 @@ def Term.fwd.got(m: Maybe<&1, TM.TOut>, +inbox: Chan(Msg), k: Unit -> IO(Unit)) 
   match m:
     case Some{TM.TOut{th, bs}}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, TermOut{th, bs})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TermOut{th, bs})
         k(Unit{})
     case Some{TM.TTo{c, key, co, ro, bs}}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, TermTo{c, key, co, ro, bs})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TermTo{c, key, co, ro, bs})
         k(Unit{})
     case None{}:
       IO.pure(Unit, Unit{})
@@ -3097,7 +3098,7 @@ def Term.put(m: Maybe<&2, Chan(TM.TMsg)>, +msg: TM.TMsg) -> IO(Unit):
   match m:
     case Some{q}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(TM.TMsg, q, msg)
+        ok : Result<&1, &1, TM.TMsg, Unit> <- Chan.send(TM.TMsg, q, msg)
         return Unit{}
     case None{}:
       IO.pure(Unit, Unit{})
@@ -3110,11 +3111,11 @@ def Plot.fwd.got(m: Maybe<&1, PV.POut>, +inbox: Chan(Msg), k: Unit -> IO(Unit)) 
   match m:
     case Some{PV.POut{client, text}}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, Push{client, text})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, text})
         k(Unit{})
     case Some{PV.PBin{client, bs}}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, PushBin{client, bs})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, PushBin{client, bs})
         k(Unit{})
     case None{}:
       IO.pure(Unit, Unit{})
@@ -3130,7 +3131,7 @@ def Plot.put(m: Maybe<&2, Chan(PV.PMsg)>, +msg: PV.PMsg) -> IO(Unit):
   match m:
     case Some{q}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(PV.PMsg, q, msg)
+        ok : Result<&1, &1, PV.PMsg, Unit> <- Chan.send(PV.PMsg, q, msg)
         return Unit{}
     case None{}:
       IO.pure(Unit, Unit{})
@@ -3397,7 +3398,7 @@ def Claude.prep(on: Bool, h: Hub, +thread: String, +u: String) -> Hub:
 def Files.prepared(+thread: String, +cwd: String, +inbox: Chan(Msg)) -> IO(K.Files):
   do IO<K.Files>:
     +fs : K.Files <- K.Files.read(cwd)
-    ok : Bool <- Chan.send(Msg, inbox, AutoView{thread, fs})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AutoView{thread, fs})
     return fs
 
 # one Codex turn: the thread's skills join its instructions and its
@@ -3498,11 +3499,11 @@ def Preview.run.k(m: Maybe<&2, Chan(BR.BMsg)>, +page: String, +id: String, +op: 
     case Some{q}:
       do IO<Unit>:
         line : String <- BR.Browser.ask_on(q, page, op, args)
-        ok : Bool <- Chan.send(String, reply, Preview.answer(id, line))
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, Preview.answer(id, line))
         return Unit{}
     case None{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(String, reply, Preview.answer(id, BR.Browser.fail("no browser in this Backplane")))
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, Preview.answer(id, BR.Browser.fail("no browser in this Backplane")))
         return Unit{}
 
 # a preview_* tool call, answered by the browser off the hub's thread, on
@@ -3579,7 +3580,7 @@ def Hub.att_dir(h: Hub, +thread: String, +reply: Chan(String)) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
-        ok : Bool <- Chan.send(String, reply, AT.Att.dir(Cfg.home(cfg), thread))
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, AT.Att.dir(Cfg.home(cfg), thread))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 # the owner's other machines changed: every client hears
@@ -3785,7 +3786,7 @@ def Machines.ask(+status: String, +port: U32, +extra: String) -> IO(String):
 
 def Machines.tell(+inbox: Chan(Msg), +now: String, +last: String) -> IO(String):
   Bool.pick(IO(String), String.eq(now, last), IO.pure(String, last),
-    IO.bind(Bool, String, Chan.send(Msg, inbox, MachinesFound{now}), ok => IO.pure(String, now)))
+    IO.bind(Result<&1, &1, Msg, Unit>, String, Chan.send(Msg, inbox, MachinesFound{now}), ok => IO.pure(String, now)))
 
 def Machines.loop(fuel: Nat, +inbox: Chan(Msg), +port: U32, +extra: String, +last: String) -> IO(Unit):
   match fuel:
@@ -4100,7 +4101,7 @@ def Refresh.news(news: Bool, +ms: String, +mt: String, +inbox: Chan(Msg), +cache
   match news:
     case True{}:
       do IO<String>:
-        ok : Bool <- Chan.send(Msg, inbox, ModelsFound{ms, mt})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, ModelsFound{ms, mt})
         w : String <- Token.save(cache, BT.Cache.of(ms, mt))
         return ms
     case False{}:
@@ -4476,7 +4477,7 @@ def Media.claude(+inbox: Chan(Msg), +thread: String, +cwd: String, +text: String
   do IO<Unit>:
     ims : List<&2, AT.Img> <- Media.imgs(AT.Att.images(text), Nil{})
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    ok : Bool <- Chan.send(Msg, inbox, AgentWrite{thread, B.Claude.tag(AT.Att.claude(AG.Mention.expand("claude", text, ss), ims), uuid), gen})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AgentWrite{thread, B.Claude.tag(AT.Att.claude(AG.Mention.expand("claude", text, ss), ims), uuid), gen})
     return Unit{}
 
 # a Git out: the media jobs here (an upload piece runs on the hub, so the
@@ -4504,7 +4505,7 @@ def Media.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: St
 def Wait.next(stop: Bool, text: String, +reply: Chan(String), k: Unit -> IO(Unit)) -> IO(Unit):
   match stop:
     case True{}:
-      IO.bind(Bool, Unit, Chan.send(String, reply, text), ok => IO.pure(Unit, Unit{}))
+      IO.bind(Result<&1, &1, String, Unit>, Unit, Chan.send(String, reply, text), ok => IO.pure(Unit, Unit{}))
     case False{}:
       IO.bind(Unit, Unit, IO.sleep(1000), k)
 
@@ -4522,7 +4523,7 @@ def Wait.loop(+fuel: Nat, +end: Nat, +thread: String, +check: String, +reply: Ch
     case 1n+f:
       do IO<Unit>:
         +r2 : Chan(String) <- Chan.new(String, 1)
-        ok : Bool <- Chan.send(Msg, inbox, Mcp{thread, check, r2})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Mcp{thread, check, r2})
         m : Maybe<&1, String> <- Chan.recv(String, r2)
         t : Nat <- Now.nat()
         Wait.got(m, Bool.or(Nat.is_eq(f, 0n), Nat.is_ge(t, end)), reply, _ => Wait.loop(f, end, thread, check, reply, inbox))
@@ -4802,7 +4803,7 @@ def Bot.attach(claude: Bool, +cfg: Cfg, +st: M.State, +now: Nat, +thread: String
 
 def BotJob.reply(+inbox: Chan(Msg), +client: U32, +id: String, +ok: Bool, kvs: List<&2, J.KV>) -> IO(Unit):
   do IO<Unit>:
-    sent : Bool <- Chan.send(Msg, inbox, Push{client, J.Json.show(J.Json.obj(List.append(&2, J.KV, [J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{ok}}], kvs)))})
+    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, J.Json.show(J.Json.obj(List.append(&2, J.KV, [J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{ok}}], kvs)))})
     return Unit{}
 
 def BotJob.fail(+inbox: Chan(Msg), +client: U32, +id: String, msg: String) -> IO(Unit):
@@ -4825,7 +4826,7 @@ def BotJob.home.k(safe: Bool, +inbox: Chan(Msg), +dir: String, +bot: String, +th
         mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(path)
         r : P.Ran <- P.Proc.run("git", ["init", "-q"], path)
         +now : Nat <- Now.nat()
-        ok : Bool <- Chan.send(Msg, inbox, Commit{[M.WorktreeSet{thread, "", path, now}]})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Commit{[M.WorktreeSet{thread, "", path, now}]})
         return Unit{}
     case False{}:
       Log.info("bots: not a folder name: " ++ bot)
@@ -4869,7 +4870,7 @@ def BotJob.uber.done(ok: Bool, +inbox: Chan(Msg), +client: U32, +id: String, +bo
   match ok:
     case True{}:
       do IO<Unit>:
-        sent : Bool <- Chan.send(Msg, inbox, Commit{[M.UberSet{bot, uid, now}]})
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Commit{[M.UberSet{bot, uid, now}]})
         BotJob.reply(inbox, client, id, True{}, [J.KV{"uid", J.Str{uid}}])
     case False{}:
       BotJob.fail(inbox, client, id, "could not back the bot up; nothing changed")
@@ -4929,7 +4930,7 @@ def BotJob.linked.k(ok: Bool, +name: String, +code: Nat, +body: String, +inbox: 
     case True{}:
       do IO<Unit>:
         +shown : String = Bool.pick(String, String.is_empty(name), peer, name)
-        sent : Bool <- Chan.send(Msg, inbox, Commit{[M.PeerSet{peer, shown, url, False{}, now}]})
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Commit{[M.PeerSet{peer, shown, url, False{}, now}]})
         BotJob.reply(inbox, client, id, True{}, [J.KV{"peer", J.Str{peer}}, J.KV{"name", J.Str{shown}}])
     case False{}:
       do IO<Unit>:
@@ -5168,7 +5169,7 @@ def VoiceJob.fwd(m: Maybe<&1, String>, +inbox: Chan(Msg), +client: U32, k: Unit 
   match m:
     case Some{+text}:
       do IO<Unit>:
-        sent : Bool <- Chan.send(Msg, inbox, Push{client, text})
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, text})
         VoiceJob.fwd.k(String.contains(text, "\"ev\":\"idle\""), k)
     case None{}:
       IO.pure(Unit, Unit{})
@@ -5195,7 +5196,7 @@ def VoiceJob.stopped(on: Bool, +inbox: Chan(Msg), +client: U32, +id: String, +th
     case False{}:
       do IO<Unit>:
         BotJob.reply(inbox, client, id, True{}, Nil{})
-        sent : Bool <- Chan.send(Msg, inbox, Push{client, VO.Vo.msg(thread, "idle", Nil{})})
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, VO.Vo.msg(thread, "idle", Nil{})})
         return Unit{}
 
 def VoiceJob.op(i: Nat, +inbox: Chan(Msg), +home: String, +p: J.Json, +client: U32, +id: String) -> IO(Unit):
@@ -5281,7 +5282,7 @@ def EmbNote.ask(m: Maybe<&2, Chan(TM.TMsg)>, +thread: String) -> IO(String):
     case Some{q}:
       do IO<String>:
         +r : Chan(String) <- Chan.new(String, 1)
-        ok : Bool <- Chan.send(TM.TMsg, q, TM.TNote{thread, r})
+        ok : Result<&1, &1, TM.TMsg, Unit> <- Chan.send(TM.TMsg, q, TM.TNote{thread, r})
         a : Maybe<&1, String> <- Chan.recv(String, r)
         return Maybe.default(&1, String, a, "")
     case None{}:
@@ -5340,7 +5341,7 @@ def EmbNote.claude(user: Bool, +cfg: Cfg, +st: M.State, +thread: String, +line: 
 def TermRead.ask(+q: Chan(TM.TMsg), +key: String) -> IO(String):
   do IO<String>:
     +r : Chan(String) <- Chan.new(String, 1)
-    ok : Bool <- Chan.send(TM.TMsg, q, TM.TRead{key, r})
+    ok : Result<&1, &1, TM.TMsg, Unit> <- Chan.send(TM.TMsg, q, TM.TRead{key, r})
     a : Maybe<&1, String> <- Chan.recv(String, r)
     return Maybe.default(&1, String, a, "gone\n")
 
@@ -5353,9 +5354,9 @@ def TermRead.got(last: Bool, +text: String, +rid: String, +reply: Chan(String), 
   match last:
     case False{}:
       Bool.pick(IO(Unit), String.starts_with(text, "running\n"), IO.bind(Unit, Unit, IO.sleep(250), k),
-        IO.bind(Bool, Unit, Chan.send(String, reply, TermRead.answer(rid, text)), ok => IO.pure(Unit, Unit{})))
+        IO.bind(Result<&1, &1, String, Unit>, Unit, Chan.send(String, reply, TermRead.answer(rid, text)), ok => IO.pure(Unit, Unit{})))
     case True{}:
-      IO.bind(Bool, Unit, Chan.send(String, reply, TermRead.answer(rid, text)), ok => IO.pure(Unit, Unit{}))
+      IO.bind(Result<&1, &1, String, Unit>, Unit, Chan.send(String, reply, TermRead.answer(rid, text)), ok => IO.pure(Unit, Unit{}))
 
 def TermRead.loop(fuel: Nat, +q: Chan(TM.TMsg), +key: String, +rid: String, +reply: Chan(String)) -> IO(Unit):
   match fuel:
@@ -5369,7 +5370,7 @@ def TermRead.run(m: Maybe<&2, Chan(TM.TMsg)>, +key: String, +wait: Nat, +rid: St
     case Some{q}:
       TermRead.loop(Nat.div(Nat.min(wait, 120000n), 250n), q, key, rid, reply)
     case None{}:
-      IO.bind(Bool, Unit, Chan.send(String, reply, TermRead.answer(rid, "gone\n")), ok => IO.pure(Unit, Unit{}))
+      IO.bind(Result<&1, &1, String, Unit>, Unit, Chan.send(String, reply, TermRead.answer(rid, "gone\n")), ok => IO.pure(Unit, Unit{}))
 
 def TermRead.is(+o: J.Json) -> Bool:
   Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "terminal_read"))
@@ -5446,7 +5447,7 @@ def Watch.detail(+kind: String, +status: String, +dir: String, +tail: String) ->
 def Watch.report(+inbox: Chan(Msg), +thread: String, +id: String, +kind: String, +status: String, +dir: String) -> IO(Unit):
   do IO<Unit>:
     tr : P.Ran <- P.Proc.run("sh", ["-c", Watch.tail.sh(), "sh", dir], "/")
-    ok : Bool <- Chan.send(Msg, inbox, WatchEnded{thread, id, status, Watch.detail(kind, status, dir, Watch.tail.text(tr))})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, WatchEnded{thread, id, status, Watch.detail(kind, status, dir, Watch.tail.text(tr))})
     return Unit{}
 
 # a check's verdict: "running" carries on, "stop" (unwatched) ends quietly,
@@ -5471,7 +5472,7 @@ def Watch.ident.post(same: Bool, +inbox: Chan(Msg), +thread: String, +id: String
       IO.pure(Unit, Unit{})
     case False{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, WatchIdent{thread, id, ident})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, WatchIdent{thread, id, ident})
         return Unit{}
 
 def Watch.got.k(+ls: List<&2, String>, +ident: String, +thread: String, +id: String, +kind: String, +dir: String, +inbox: Chan(Msg), k: String -> IO(Unit)) -> IO(Unit):
@@ -5504,7 +5505,7 @@ def Watch.launched(r: P.Ran, +thread: String, +id: String, +inbox: Chan(Msg)) ->
   match r:
     case P.Ran{_, out}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, WatchLaunched{thread, id})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, WatchLaunched{thread, id})
         return Unit{}
 
 def Watch.start(run: Bool, +home: String, +thread: String, +id: String, +target: String, +cwd: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -5595,7 +5596,7 @@ def Far.file(+home: String, +link: String) -> String:
 
 def Far.send(+inbox: Chan(Msg), m: Msg) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(Msg, inbox, m)
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, m)
     return Unit{}
 
 def Far.code(r: BN.Resp) -> Nat:
@@ -5666,7 +5667,7 @@ def Far.mcp.job(+id: J.Json, +link: String, +body: String, +home: String, +url: 
     now : Nat <- Now.nat()
     +n : String <- BN.Bn.random(4n)
     +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/rpc", True{}, FR.Fr.nonced(body, n))
-    ok : Bool <- Chan.send(String, reply, FM.Fm.answer(id, link, Far.code(r), Far.body(r)))
+    ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, FM.Fm.answer(id, link, Far.code(r), Far.body(r)))
     return Unit{}
 
 # this hub's shared lines, made from its log (newest first)
@@ -6412,7 +6413,7 @@ def Hub.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, h: Hub, +thread: 
 # not start does.
 def Claude.fail(+thread: String, +gen: String, +msg: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(Msg, inbox, ClaudeFail{thread, gen, msg})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, ClaudeFail{thread, gen, msg})
     return Unit{}
 
 def Claude.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +thread: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
@@ -6421,7 +6422,7 @@ def Claude.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t
     case Done{wr}:
       do IO<Unit>:
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
-        ok : Bool <- Chan.send(Msg, inbox, ClaudePid{thread, pid, gen})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, ClaudePid{thread, pid, gen})
         rd : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd0), d => Agent.watch.start(d, pid, thread, gen, inbox))
         Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, gen, B.Tag.of(thread, pid), inbox)
     case Fail{_}:
@@ -6448,7 +6449,7 @@ def Claude.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: Strin
 def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +fs : K.Files <- K.Files.read(cwd)
-    ok : Bool <- Chan.send(Msg, inbox, AutoView{thread, fs})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AutoView{thread, fs})
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
     res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 0)
     Claude.started(res, thread, gen, input, inbox)
@@ -7401,7 +7402,7 @@ def Bot.dir.job(+peer: String, +url: String, +pname: String, +home: String, +inb
     +now : Nat <- Now.nat()
     r : BN.Resp <- BN.Bn.dir.fetch(home, url, peer, now)
     seen : Nat <- Now.nat()
-    ok : Bool <- Chan.send(Msg, inbox, BotsFound{peer, url, BN.Bn.fetched(r, peer, pname, seen)})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, BotsFound{peer, url, BN.Bn.fetched(r, peer, pname, seen)})
     return Unit{}
 
 def Bot.dir.launch(ids: List<&2, String>, +st: M.State, +cfg: Cfg, +inbox: Chan(Msg)) -> IO(Unit):
@@ -7569,7 +7570,7 @@ def Bot.cap.of(+ct: String) -> Nat:
 
 def Bot.answer(+reply: Chan(List<&2, U32>), bs: List<&2, U32>) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(List<&2, U32>, reply, bs)
+    ok : Result<&1, &1, List<&2, U32>, Unit> <- Chan.send(List<&2, U32>, reply, bs)
     return Unit{}
 
 def Hub.answer(h: Hub, +reply: Chan(List<&2, U32>), bs: List<&2, U32>) -> IO(Hub):
@@ -7710,7 +7711,7 @@ def Far.fs.take(m: Maybe<&1, Msg>, +reply: Chan(List<&2, U32>), +inbox: Chan(Msg
       Bot.answer(reply, Bot.json("200 OK", text))
     case Some{Rpc{_, +text}}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, FarDo{text, reply})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, FarDo{text, reply})
         return Unit{}
     case _:
       Bot.answer(reply, Bot.json("200 OK", "{\"t\":\"reply\",\"id\":0,\"ok\":false,\"error\":\"no answer from that machine's folders\"}"))
@@ -7785,7 +7786,7 @@ def Far.view.git(+st: M.State, +job: String, +thread: String, +cwd: String, +a: 
   do IO<Unit>:
     +pin : Chan(Msg) <- Chan.new(Msg, 8)
     Jobs.run(AG.Text.of(st), job, pin, 0, "0", thread, cwd, a, b, home)
-    ok : Bool <- Chan.send(Msg, pin, Announce{""})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, pin, Announce{""})
     m : Maybe<&1, Msg> <- Chan.recv(Msg, pin)
     Far.view.relay(m, reply)
 
@@ -7926,7 +7927,7 @@ def Bot.me(+link: Bool) -> IO(String):
 # replay key (or "") back to the hub
 def Bot.refuse(+id: String, +key: String, body: String, +reply: Chan(List<&2, U32>), +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(Msg, inbox, BotVerified{"hook", id, key, body, "", reply})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, BotVerified{"hook", id, key, body, "", reply})
     return Unit{}
 
 # a form (the Pebble Index ring's) becomes a JSON object; any other body
@@ -7950,7 +7951,7 @@ def Bot.heard(+home: String, +kind: String, +id: String, +key: String, +ct: Stri
     +nonce : String <- BN.Bn.random(6n)
     +heard : String <- VO.Vo.ring(home, nonce, ct, body, raw)
     +none : Chan(List<&2, U32>) <- Chan.new(List<&2, U32>, 1)
-    ok : Bool <- Chan.send(Msg, inbox, BotVerified{kind, id, key, Bot.bearer.body(form, heard, size), me, none})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, BotVerified{kind, id, key, Bot.bearer.body(form, heard, size), me, none})
     return Unit{}
 
 def Bot.verify.go(heard: Bool, +home: String, +kind: String, +id: String, +key: String, +ct: String, +body: String, raw: List<&2, U32>, +me: String,
@@ -7960,7 +7961,7 @@ def Bot.verify.go(heard: Bool, +home: String, +kind: String, +id: String, +key: 
       Bot.heard(home, kind, id, key, ct, body, raw, me, False{}, "", reply, inbox)
     case False{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, BotVerified{kind, id, key, body, me, reply})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, BotVerified{kind, id, key, body, me, reply})
         return Unit{}
 
 # the replay key: a form with a recording is checked over its bytes (the
@@ -8311,7 +8312,7 @@ def Conn.bot.ask(s: Socket, rq: BotReq, body: String, +ct: String, raw: List<&2,
     case BotReq{k, a, p, t, sg, g, d}:
       do IO<Unit>:
         +reply : Chan(List<&2, U32>) <- Chan.new(List<&2, U32>, 1)
-        ok : Bool <- Chan.send(Msg, inbox, BotHttp{k, a, p, t, sg, g, d, body, ct, raw, reply})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, BotHttp{k, a, p, t, sg, g, d, body, ct, raw, reply})
         m : Maybe<&1, List<&2, U32>> <- Chan.recv(List<&2, U32>, reply)
         Conn.bot.answer(m, s)
 
@@ -8467,7 +8468,7 @@ def Upload.gate(ok: Bool, big: Bool, s: Socket, +cont: Bool, +thread: String, +n
     case True{} False{}:
       do IO<Unit>:
         +reply : Chan(String) <- Chan.new(String, 1)
-        sent : Bool <- Chan.send(Msg, inbox, AttDir{thread, reply})
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AttDir{thread, reply})
         m : Maybe<&1, String> <- Chan.recv(String, reply)
         s2 : Socket <- Upload.go(Bool.and(cont, List.is_empty(&2, U32, rest)), s)
         Upload.into(m, s2, thread, name, len, rest)
@@ -8579,12 +8580,12 @@ def Tailnet.listened(r: Result<&1, &1, U32 & String, Listener>, +host: String, +
         w : P.Ran <- P.Proc.run("tailscale", ["whois", "--json", ip], "/")
         +owner : String = TN.Tailnet.login(Tailnet.out(w))
         IO.print("Backplane on your tailnet: http://" ++ ip ++ ":" ++ U32.show(port) ++ "/ (" ++ Bool.pick(String, String.is_empty(owner), "pairing token " ++ token, owner ++ "'s devices, or pairing token " ++ token) ++ ")")
-        ok : Bool <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report("reachable", TN.Tailnet.link("http://" ++ ip ++ ":" ++ U32.show(port), token))})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report("reachable", TN.Tailnet.link("http://" ++ ip ++ ":" ++ U32.show(port), token))})
         IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 2147483648, web, inbox, False{}, token, owner))
     case Fail{_}:
       do IO<Unit>:
         Log.info("could not listen on the tailnet address " ++ ip)
-        ok : Bool <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report(Bool.pick(String, Tailnet.covered(host, ip), "reachable", "unavailable"), "")})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report(Bool.pick(String, Tailnet.covered(host, ip), "reachable", "unavailable"), "")})
         return Unit{}
 
 def Tailnet.listen.k(none: Bool, +host: String, +ip: String, +port: U32, +web: String, +inbox: Chan(Msg), +token: String) -> IO(Unit):
@@ -8592,7 +8593,7 @@ def Tailnet.listen.k(none: Bool, +host: String, +ip: String, +port: U32, +web: S
     case True{}:
       do IO<Unit>:
         Log.info("tailscale is not up (tailscale ip -4 gave nothing)")
-        ok : Bool <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report("unavailable", "")})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report("unavailable", "")})
         return Unit{}
     case False{}:
       IO.bind(Result<&1, &1, U32 & String, Listener>, Unit, H.Net.listen(ip, port), r => Tailnet.listened(r, host, ip, port, web, inbox, token))
@@ -8628,7 +8629,7 @@ def Gg.args(+o: J.Json) -> J.Json:
 
 def Gg.say(+reply: Chan(String), +id: J.Json, +ok: Bool, text: String) -> IO(Unit):
   do IO<Unit>:
-    sent : Bool <- Chan.send(String, reply, MC.Mcp.result(id, J.Json.obj([J.KV{"content", J.Json.arr([J.Json.obj([J.KV{"type", J.Str{"text"}}, J.KV{"text", J.Str{text}}])])},
+    sent : Result<&1, &1, String, Unit> <- Chan.send(String, reply, MC.Mcp.result(id, J.Json.obj([J.KV{"content", J.Json.arr([J.Json.obj([J.KV{"type", J.Str{"text"}}, J.KV{"text", J.Str{text}}])])},
       J.KV{"isError", J.Flag{Bool.not(ok)}}])))
     return Unit{}
 
@@ -8702,7 +8703,7 @@ def Np.ran(r: P.Ran, +inbox: Chan(Msg), +thread: String, +name: String, +id: J.J
   match r:
     case P.Ran{0, out}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, NewProject{thread, FsJob.last(String.lines(String.trim(out))), name, J.Json.show(id), reply})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, NewProject{thread, FsJob.last(String.lines(String.trim(out))), name, J.Json.show(id), reply})
         return Unit{}
     case P.Ran{_, out}:
       Gg.say(reply, id, False{}, "error: " ++ String.trim(out))
@@ -8778,7 +8779,7 @@ def Hub.mcp.x(x: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply
   match x h:
     case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
-        sent : Bool <- Chan.send(String, reply, XR.Xref.read(o, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg)))))
+        sent : Result<&1, &1, String, Unit> <- Chan.send(String, reply, XR.Xref.read(o, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg)))))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case False{} _:
       Hub.mcp.tr(TermRead.is(o), h, thread, o, body, reply, now)
@@ -8954,7 +8955,7 @@ def Hub.mcp.gate(refused: Bool, h: Hub, +thread: String, +body: String, +reply: 
   match refused:
     case True{}:
       do IO<Hub>:
-        ok : Bool <- Chan.send(String, reply, Hub.mcp.stale(body))
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, Hub.mcp.stale(body))
         return h
     case False{}:
       Hub.mcp(h, thread, body, reply, now)
@@ -9279,14 +9280,14 @@ def Bulk.fill(n: Nat, +tok: Chan(Unit)) -> IO(Unit):
       IO.pure(Unit, Unit{})
     case 1n+k:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Unit, tok, Unit{})
+        ok : Result<&1, &1, Unit, Unit> <- Chan.send(Unit, tok, Unit{})
         Bulk.fill(k, tok)
 
 def Bulk.moved(m: Maybe<&1, Msg>, +pri: Chan(Msg), k: Unit -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{msg}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, pri, Bulk{msg})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, pri, Bulk{msg})
         k(Unit{})
     case None{}:
       IO.pure(Unit, Unit{})
@@ -9307,7 +9308,7 @@ def Bulk.fwd(fuel: Nat, +inbox: Chan(Msg), +pri: Chan(Msg), +tok: Chan(Unit)) ->
 
 def Bulk.back(+tok: Chan(Unit), h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(Unit, tok, Unit{})
+    ok : Result<&1, &1, Unit, Unit> <- Chan.send(Unit, tok, Unit{})
     k(h)
 
 # each message's handling is timed as hub.<kind> (docs/perf.md)
@@ -9444,7 +9445,7 @@ def Shot.fwd.got(m: Maybe<&1, String>, +inbox: Chan(Msg), k: Unit -> IO(Unit)) -
   match m:
     case Some{+line}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, Shot{BR.Browser.shot(line)})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Shot{BR.Browser.shot(line)})
         k(Unit{})
     case None{}:
       IO.pure(Unit, Unit{})
@@ -9467,7 +9468,7 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
         +tok : Chan(Unit) <- Chan.new(Unit, 32)
         Bulk.fill(Bulk.room(), tok)
         IO.spawn(Unit, Bulk.fwd(Fuel.forever(), inbox, pri, tok))
-        rc : Bool <- Chan.send(Msg, inbox, Recover{})
+        rc : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Recover{})
         +bq : Chan(BR.BMsg) <- Chan.new(BR.BMsg, 256)
         bexe : String <- Browser.exe()
         # page-frame events from the browser, broadcast by the hub as {"t":"shot",...}

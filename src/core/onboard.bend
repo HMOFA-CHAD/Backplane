@@ -94,7 +94,7 @@ def Ob.phone(+k: Nat) -> Bool:
 # Backplane starts and Settings says which of on, not connected or off, as the hub reports it
 # (client.bend's Tail.*). The thread buttons are tools.bend's, named by
 # their labels (test/onboard_test.bend ties them).
-def Ob.body.0(+k: Nat) -> String:
+def Ob.body.s0(+k: Nat) -> String:
   match k:
     case 2n:
       "A short tour of what is where. Skip it any time; More, Settings shows it again."
@@ -103,25 +103,25 @@ def Ob.body.0(+k: Nat) -> String:
     case _:
       "A short tour of what is where. Enter goes on, Esc skips it, and Settings shows it again."
 
-def Ob.body.1(+k: Nat, +d: String) -> String:
+def Ob.body.s1(+k: Nat, +d: String) -> String:
   "A project is a folder, usually a KiCad project. Add one with " ++ Bool.pick(String, Ob.phone(k), "the folder-plus button on the project list", "+ at the top of the sidebar")
     ++ ". Scratch holds chats with no project. It is temporary: a thread left alone for " ++ d ++ " days is deleted with its folder, unless pinned."
 
-def Ob.body.2() -> String:
+def Ob.body.s2() -> String:
   "A thread is a conversation with an agent working on a project. Git projects use separate worktrees by default; without git, or in local mode, threads share the project folder. Runs of tool calls fold into one row, and delegated work shows under Subagents."
 
-def Ob.body.3(+k: Nat) -> String:
+def Ob.body.s3(+k: Nat) -> String:
   Bool.pick(String, Ob.phone(k), "In a thread's toolbar menu, Settle takes it out of the active list. Snooze hides it until later. Fork starts a new thread from it. The viewer shows the board, schematic, 3D and files. Pin, archive and delete are there too.",
     "Settle takes a thread out of the active list. Snooze hides it until later. Fork starts a new thread from this one. Viewer opens the board, schematic, 3D and files beside it. Pin, archive and delete are there too.")
 
-def Ob.body.4(+k: Nat) -> String:
+def Ob.body.s4(+k: Nat) -> String:
   "A bot is an agent that stays between chats, with a name, a cat and a memory. Add one under Bots in the " ++ Bool.pick(String, Ob.phone(k), "list", "sidebar")
     ++ ", then mention it in any message: @scout look at the BOM."
 
-def Ob.body.5() -> String:
+def Ob.body.s5() -> String:
   "Backplane runs the Claude Code, Codex, Grok or Muse Code command-line program: install one and sign in to it on the machine that runs this hub. Settings shows whether each is found, not whether you are signed in. Choose the provider and model in a thread's composer, or in Settings for new threads."
 
-def Ob.body.6(+k: Nat) -> String:
+def Ob.body.s6(+k: Nat) -> String:
   "API keys for other services are kept in a file on the hub's machine that agents running there could read. They are told not to print them; nothing enforces it. "
     ++ Bool.pick(String, Ob.phone(k), "Dictation's OpenAI key is set in Settings on a computer or the web page.", "Dictation needs an OpenAI key, set under Voice in Settings.")
 
@@ -131,12 +131,12 @@ def Ob.body.6(+k: Nat) -> String:
 # asks the other to link, which only your own devices may, and the two
 # then mirror each other's projects and threads: far.bend). Settings' row
 # is client.bend's Mate.title().
-def Ob.body.7(+k: Nat) -> String:
+def Ob.body.s7(+k: Nat) -> String:
   Bool.pick(String, Ob.phone(k),
     "Each home folder runs one hub. Hubs on your computers find each other over Tailscale and sync each other's projects and threads in the background, so any one of them shows them all. A project still loading is faded and says syncing. In a message, >desktop: names a thread on the machine called desktop. The Hubs button lists the hubs this phone is paired with; this phone needs Tailscale on the same tailnet.",
     "Each home folder runs one hub. With Tailscale signed in when Backplane starts, the hub listens on your tailnet and every two minutes asks your other online machines whether Backplane runs there. Tailscale vouches that they are yours, so the hubs link by themselves and sync each other's projects and threads into this sidebar in the background: no switching. A project still loading is faded and says syncing; the rest work meanwhile. In a message, >desktop: names a thread on the machine called desktop. Settings, Your machines shows each one and turns sync off for any of them. Settings also says Tailscale: on, not connected (sign in, then restart Backplane) or off (started with --no-tailscale).")
 
-def Ob.body.8(+k: Nat) -> String:
+def Ob.body.s8(+k: Nat) -> String:
   Bool.pick(String, Ob.phone(k),
     "On the hub's computer open Settings, Pairing link, QR code. Here, Hubs, Scan QR code pairs it. This phone needs Tailscale on the same tailnet. A browser can open a hub's web address too.",
     "To pair a phone, install Tailscale on it and join the same tailnet. Then open Settings, Pairing link, QR code and scan it with the Backplane app or the phone's camera. Settings shows the link when Backplane has one. A browser on a tailnet device can open this hub's web address too.")
@@ -149,43 +149,43 @@ def Ob.body.8(+k: Nat) -> String:
 def Ob.uber() -> Nat:
   9n
 
-def Ob.body.9.lead() -> String:
+def Ob.body.s9.lead() -> String:
   "Your uberbot is the cat you talk to first: it sees every project, thread, bot and machine, and its Status tab shows what runs and what waits on you."
 
-def Ob.body.9(+k: Nat, +uc: String, +name: String) -> String:
+def Ob.body.s9(+k: Nat, +uc: String, +name: String) -> String:
   Bool.pick(String, String.eq(uc, "have"), name ++ " is your uberbot. Click it at the top of the " ++ Bool.pick(String, Ob.phone(k), "list", "sidebar") ++ " for the Status of everything.",
     Bool.pick(String, String.eq(uc, "join"), "Another of your machines has an uberbot, " ++ name ++ ".",
-      Bool.pick(String, String.eq(uc, "pick"), Ob.body.9.lead() ++ " Make one of your bots the uberbot: " ++ name ++ " is the one you use most. You can change it later.",
-        Ob.body.9.lead() ++ " Create it now; you can rename it later.")))
+      Bool.pick(String, String.eq(uc, "pick"), Ob.body.s9.lead() ++ " Make one of your bots the uberbot: " ++ name ++ " is the one you use most. You can change it later.",
+        Ob.body.s9.lead() ++ " Create it now; you can rename it later.")))
 
 def Ob.body(+k: Nat, +d: String, i: Nat) -> String:
   match i:
     case 0n:
-      Ob.body.0(k)
+      Ob.body.s0(k)
     case 1n:
-      Ob.body.1(k, d)
+      Ob.body.s1(k, d)
     case 2n:
-      Ob.body.2()
+      Ob.body.s2()
     case 3n:
-      Ob.body.3(k)
+      Ob.body.s3(k)
     case 4n:
-      Ob.body.4(k)
+      Ob.body.s4(k)
     case 5n:
-      Ob.body.5()
+      Ob.body.s5()
     case 6n:
-      Ob.body.6(k)
+      Ob.body.s6(k)
     case 7n:
-      Ob.body.7(k)
+      Ob.body.s7(k)
     case 8n:
-      Ob.body.8(k)
+      Ob.body.s8(k)
     case 9n:
-      Ob.body.9(k, "none", "")
+      Ob.body.s9(k, "none", "")
     case _:
       ""
 
 # the words of step i for a case of the uberbot step; other steps ignore it
 def Ob.body.uber(+k: Nat, +d: String, +uc: String, +name: String, +i: Nat) -> String:
-  Bool.pick(String, Nat.is_eq(i, Ob.uber()), Ob.body.9(k, uc, name), Ob.body(k, d, i))
+  Bool.pick(String, Nat.is_eq(i, Ob.uber()), Ob.body.s9(k, uc, name), Ob.body(k, d, i))
 
 # digits in a client's text (anything else, the "m", is skipped)
 def Ob.num(s: String, +acc: Nat) -> Nat:

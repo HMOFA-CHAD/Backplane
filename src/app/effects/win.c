@@ -572,7 +572,7 @@ static void win_nudge(AppWin* a) {
 // the pending events as a flat list of words, five per event (kind, a,
 // b, c, d); Bend's Win.decode turns them into WinEv (a module's
 // constructor ids depend on its path, so C only speaks words)
-#ifdef CID_WIN_WORDS
+#ifdef CID(Win.words)
 static Term win_list(Env e, AppWin* a) {
   Term list = term_pak(CID_NIL, 0);
   for (u64 i = (u64)a->n * 5; i > 0;) {
@@ -584,7 +584,7 @@ static Term win_list(Env e, AppWin* a) {
 }
 #endif
 
-#ifdef CID_WIN_OPEN
+#ifdef CID(Win.open)
 
 Term win_open_run(Env e, Term* f, IoWork* w) {
   u64 n = 0;
@@ -653,12 +653,12 @@ Term win_open_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) win_open_use(void) {
-  io_eff(CID_WIN_OPEN, win_open_run, 0);
+  io_eff(CID(Win.open), win_open_run);
 }
 
 #endif
 
-#ifdef CID_WIN_WORDS
+#ifdef CID(Win.words)
 
 static Term win_words_more(Env e, IoWork* w) {
   AppWin* a = (AppWin*)w->hand;
@@ -679,21 +679,21 @@ Term win_words_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) win_words_use(void) {
-  io_eff(CID_WIN_WORDS, win_words_run, 0);
+  io_eff(CID(Win.words), win_words_run);
 }
 
 #endif
 
-#ifdef CID_WIN_PRESENT
+#ifdef CID(Win.present)
 
 // fill the part of an n x n region at (x, y) that lies in the w x h frame,
 // marking each 64 px block in which a pixel changed (dirty is dw wide)
-static void win_fill(Corpus H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Term t, u32 x, u32 y, u32 n) {
+static void win_fill(u64* H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Term t, u32 x, u32 y, u32 n) {
   if (x >= w || y >= h) {
     return;
   }
   if (term_tag(t) == TAG_CTR && n > 1) {
-    Loc l = term_rfc(t) ? H[term_loc(t)] >> 24 : term_loc(t);
+    u64 l = term_rfc(t) ? H[term_loc(t)] >> 24 : term_loc(t);
     u32 m = n / 2;
     win_fill(H, pix, w, h, dirty, dw, H[l + 0], x, y, m);
     win_fill(H, pix, w, h, dirty, dw, H[l + 1], x + m, y, m);
@@ -702,7 +702,7 @@ static void win_fill(Corpus H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Term t
     return;
   }
   while (term_tag(t) == TAG_CTR) {
-    Loc l = term_rfc(t) ? H[term_loc(t)] >> 24 : term_loc(t);
+    u64 l = term_rfc(t) ? H[term_loc(t)] >> 24 : term_loc(t);
     t = H[l];
   }
   u32 c  = (u32)term_loc(t) & 0xFFFFFF;
@@ -753,7 +753,7 @@ static void win_put(AppWin* a) {
 }
 
 // the node a term names (a shared one through its count cell)
-static inline Loc win_src(Corpus H, Term t) {
+static inline u64 win_src(u64* H, Term t) {
   return term_rfc(t) ? H[term_loc(t)] >> 24 : term_loc(t);
 }
 
@@ -761,7 +761,7 @@ static inline Loc win_src(Corpus H, Term t) {
 // shown (old, whose pixels the buffer holds): a region that is the very
 // same node in both is skipped. Both trees are alive here, so one node
 // can't stand for two images.
-static void win_fill_diff(Corpus H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Term t, Term old, u32 x, u32 y, u32 n) {
+static void win_fill_diff(u64* H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Term t, Term old, u32 x, u32 y, u32 n) {
   if (x >= w || y >= h) {
     return;
   }
@@ -769,8 +769,8 @@ static void win_fill_diff(Corpus H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, T
     win_fill(H, pix, w, h, dirty, dw, t, x, y, n);
     return;
   }
-  Loc l = win_src(H, t);
-  Loc o = win_src(H, old);
+  u64 l = win_src(H, t);
+  u64 o = win_src(H, old);
   if (l == o) {
     return;
   }
@@ -852,12 +852,12 @@ Term win_present_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) win_present_use(void) {
-  io_eff(CID_WIN_PRESENT, win_present_run, 0);
+  io_eff(CID(Win.present), win_present_run);
 }
 
 #endif
 
-#ifdef CID_WIN_SHOW
+#ifdef CID(Win.show)
 
 // the window's frame, and the last one it showed (the buffer holds it)
 Term win_show_run(Env e, Term* f, IoWork* w) {
@@ -867,12 +867,12 @@ Term win_show_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) win_show_use(void) {
-  io_eff(CID_WIN_SHOW, win_show_run, 0);
+  io_eff(CID(Win.show), win_show_run);
 }
 
 #endif
 
-#ifdef CID_WIN_COPY
+#ifdef CID(Win.copy)
 
 // own the clipboard with this text
 Term win_copy_run(Env e, Term* f, IoWork* w) {
@@ -886,12 +886,12 @@ Term win_copy_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) win_copy_use(void) {
-  io_eff(CID_WIN_COPY, win_copy_run, 0);
+  io_eff(CID(Win.copy), win_copy_run);
 }
 
 #endif
 
-#ifdef CID_WIN_PASTE
+#ifdef CID(Win.paste)
 
 // ask for the clipboard; it arrives later as WPaste. Only while this
 // window still owns it is the last copy pasted directly; otherwise the
@@ -913,12 +913,12 @@ Term win_paste_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) win_paste_use(void) {
-  io_eff(CID_WIN_PASTE, win_paste_run, 0);
+  io_eff(CID(Win.paste), win_paste_run);
 }
 
 #endif
 
-#ifdef CID_WIN_PASTED
+#ifdef CID(Win.pasted)
 
 // the text of the last paste event
 Term win_pasted_run(Env e, Term* f, IoWork* w) {
@@ -927,12 +927,12 @@ Term win_pasted_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) win_pasted_use(void) {
-  io_eff(CID_WIN_PASTED, win_pasted_run, 0);
+  io_eff(CID(Win.pasted), win_pasted_run);
 }
 
 #endif
 
-#ifdef CID_WIN_DROPPED
+#ifdef CID(Win.dropped)
 
 // the text/uri-list of the last drop event
 Term win_dropped_run(Env e, Term* f, IoWork* w) {
@@ -941,12 +941,12 @@ Term win_dropped_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) win_dropped_use(void) {
-  io_eff(CID_WIN_DROPPED, win_dropped_run, 0);
+  io_eff(CID(Win.dropped), win_dropped_run);
 }
 
 #endif
 
-#ifdef CID_WIN_SIZE
+#ifdef CID(Win.size)
 
 Term win_size_run(Env e, Term* f, IoWork* w) {
   AppWin* a = (AppWin*)io_hand_v(f[0]);
@@ -954,12 +954,12 @@ Term win_size_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) win_size_use(void) {
-  io_eff(CID_WIN_SIZE, win_size_run, 0);
+  io_eff(CID(Win.size), win_size_run);
 }
 
 #endif
 
-#ifdef CID_WIN_TWIN
+#ifdef CID(Win.twin)
 
 // a second handle on the same window: one computation waits for events
 // while another presents frames
@@ -968,12 +968,12 @@ Term win_twin_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) win_twin_use(void) {
-  io_eff(CID_WIN_TWIN, win_twin_run, 0);
+  io_eff(CID(Win.twin), win_twin_run);
 }
 
 #endif
 
-#ifdef CID_WIN_TITLE
+#ifdef CID(Win.title)
 
 Term win_title_run(Env e, Term* f, IoWork* w) {
   AppWin* a = (AppWin*)io_hand_v(f[0]);
@@ -987,7 +987,7 @@ Term win_title_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) win_title_use(void) {
-  io_eff(CID_WIN_TITLE, win_title_run, 0);
+  io_eff(CID(Win.title), win_title_run);
 }
 
 #endif
@@ -996,12 +996,12 @@ static void __attribute__((constructor)) win_title_use(void) {
 
 // No window on this platform yet (macOS gets its own AppKit twin).
 
-#ifdef CID_WIN_OPEN
+#ifdef CID(Win.open)
 Term win_open_run(Env e, Term* f, IoWork* w) {
   return io_fail(e, ENOTSUP, "the native window is Linux-only for now; run `backplane serve`");
 }
 static void __attribute__((constructor)) win_open_use(void) {
-  io_eff(CID_WIN_OPEN, win_open_run, 0);
+  io_eff(CID(Win.open), win_open_run);
 }
 #endif
 

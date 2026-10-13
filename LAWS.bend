@@ -4267,15 +4267,15 @@ law desk_unfocused_never:
   for at: Nat
   for thread: String
   for now: Nat
-  {DK.Look.sees(DK.Look{d, th, False{}, at}, thread, now) == False{} : Bool}
+  {DK.Look.sees(DK.DeskView{d, th, False{}, at}, thread, now) == False{} : Bool}
 
 # a focused desk watches its thread while in use, and stops once a window
 # passes with no word from it
 law desk_look_fresh:
-  {DK.Look.sees(DK.Look{True{}, "t", True{}, 100n}, "t", 279n) == True{} : Bool}
+  {DK.Look.sees(DK.DeskView{True{}, "t", True{}, 100n}, "t", 279n) == True{} : Bool}
 
 law desk_look_expires:
-  {DK.Look.sees(DK.Look{True{}, "t", True{}, 100n}, "t", 280n) == False{} : Bool}
+  {DK.Look.sees(DK.DeskView{True{}, "t", True{}, 100n}, "t", 280n) == False{} : Bool}
 
 # a thread a desk watches raises no push alert
 law desk_seen_holds:

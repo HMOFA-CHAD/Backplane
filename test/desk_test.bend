@@ -20,7 +20,7 @@ def show.to(m: Maybe<&2, U32>) -> String:
 # client 1: the web page, focused on t1 since 100; client 2: the window,
 # not focused, last used at 150; client 3: a phone
 def looks() -> List<&2, DK.At>:
-  [DK.At{1, DK.Look{True{}, "t1", True{}, 100n}}, DK.At{2, DK.Look{True{}, "t2", False{}, 150n}}, DK.At{3, DK.Look.none()}]
+  [DK.At{1, DK.DeskView{True{}, "t1", True{}, 100n}}, DK.At{2, DK.DeskView{True{}, "t2", False{}, 150n}}, DK.At{3, DK.Look.none()}]
 
 def state() -> M.State:
   M.State.replay([M.ThreadCreated{"tw", "", "Watched work", M.Local{}, "", "", "claude", "", 100n},

@@ -315,9 +315,19 @@ def Rvc.main.k(xs: List<&2, String>, go: List<String> -> IO(Unit)) -> IO(Unit):
     case +x:
       go(Rvc.args.back(x))
 
+# the arguments after the program's name: Bend 2.0.36's IO.args() starts
+# with argv[0], which the --plot and --review children (and every flag
+# match after them) must not see
+def Rvc.args.drop(xs: List<String>) -> List<String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case _ <> t:
+      t
+
 # the program's arguments: a --review child's, or the program's own (go)
 def Rvc.main(xs: List<String>, go: List<String> -> IO(Unit)) -> IO(Unit):
-  Rvc.main.k(Rvc.args.copy(xs), go)
+  Rvc.main.k(Rvc.args.copy(Rvc.args.drop(xs)), go)
 
 # the child, run from the hub: its Markdown, or why it failed
 def Rvc.run(+args: List<&2, String>) -> IO(P.Ran):

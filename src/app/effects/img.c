@@ -7,7 +7,7 @@
 // Barrett (public domain, or MIT; its licence is at its end), inlined here
 // because an effect's C is pasted into the program's one C file.
 
-#ifdef CID_IMGFX_DECODE
+#ifdef CID(Imgfx.decode)
 
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
@@ -8068,7 +8068,7 @@ Term imgfx_decode_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) imgfx_decode_use(void) {
-  io_eff(CID_IMGFX_DECODE, imgfx_decode_run, 0);
+  io_eff(CID(Imgfx.decode), imgfx_decode_run);
 }
 
 #endif

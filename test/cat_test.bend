@@ -187,12 +187,12 @@ def values(fs: List<&2, C.FPart>, +ms: Nat) -> String:
 
 def coat(l: C.Look) -> String:
   match l:
-    case C.Look{_, n, _, _, _, _, _, _, _, _, _, _, _}:
+    case C.CatLook{_, n, _, _, _, _, _, _, _, _, _, _, _}:
       n
 
 def index(l: C.Look) -> Nat:
   match l:
-    case C.Look{i, _, _, _, _, _, _, _, _, _, _, _, _}:
+    case C.CatLook{i, _, _, _, _, _, _, _, _, _, _, _, _}:
       i
 
 def main() -> IO(Unit):
