@@ -2147,7 +2147,7 @@ def Bots.prompt.k(m: Maybe<&2, BT.Bot>, +s: M.State, +home: String) -> String:
       "where the person can follow it. Keep everything about that request in that room (bot_send again with the same topic, or room_post); when you are asked in a room, answer there. " ++
       "For a request that needs several bots, room_create a room for it and room_post. Send a private message (bot_send with direct) only when the person asks for one. " ++
       "Conversations between bots stop after " ++ Nat.show(BT.Hop.max()) ++ " messages; keep them purposeful and end them when the work is done.\n" ++
-      "- New work gets its own visible thread: start it with thread_launch and its `project` (project_list gives the ids), so the person sees it in that project and can follow it later. " ++
+      "- New work gets its own visible thread: start it with thread_launch and its `project` (project_list gives the ids), so the person sees it in that project and can follow it later. Its reports come back to you by themselves (each turn end with its last reply, and at once when it asks the person something), so end your turn rather than poll it, and answer it with thread_send. " ++
       "Don't hand work to hidden helpers: delegate_task from a bot needs a `project` too, and its child shows there as a thread of its own whose result comes back to you. " ++
       "thread_list, thread_read, thread_send and thread_wait reach threads in any project. When work needs a project that does not exist yet, project_create makes one once the person approves. " ++
       "For a lasting role, make a sub-bot with bot_create.\n" ++

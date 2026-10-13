@@ -706,12 +706,12 @@ def Mob.subs.k(+open: Bool, +th: String, +rs: List<&2, SB.SubRow>) -> J.Json:
 def Mob.subs(+info: Map<&2, String>, +th: String, +rs: List<&2, SB.SubRow>) -> J.Json:
   Bool.pick(J.Json, List.is_empty(&2, SB.SubRow, rs), J.Null{}, Mob.subs.k(SB.Subs.panel.open(info, th, rs), th, rs))
 
-def Mob.parent(none: Bool, +st: M.State, +p: String) -> J.Json:
+def Mob.parent(none: Bool, +st: M.State, +thread: String, +p: String) -> J.Json:
   match none:
     case True{}:
       J.Null{}
     case False{}:
-      Mob.link(p, "← delegated by " ++ U.Tasks.title(st, p), p)
+      Mob.link(p, U.Tasks.up.label(st, thread, p), p)
 
 # the skills a `$` being typed may complete to ("skill" with the name)
 def Mob.skills(rs: List<&2, U.SkillRow>) -> List<&2, J.Json>:
@@ -870,7 +870,7 @@ def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: 
         J.KV{"state", J.Json.str(Mob.state(turn))},
         J.KV{"tools", J.Json.arr(Mob.head(V.View.running(turn), pinned, TO.Tools.settled(o, Nat.is_gt(sa, ua)), archived, Bool.not(String.is_empty(M.Fork.source(st, id)))))},
         J.KV{"menu", J.Json.arr(Mob.menu(id, M.Snooze.on(now, U.Side.until(st, id))))},
-        J.KV{"parent", Mob.parent(String.is_empty(U.Tasks.parent(st, id)), st, U.Tasks.parent(st, id))},
+        J.KV{"parent", Mob.parent(String.is_empty(U.Tasks.up(st, id)), st, id, U.Tasks.up(st, id))},
         J.KV{"subs", Mob.subs(nf, id, SB.Subs.rows(st, nf, id))},
         J.KV{"entries", J.Json.arr(Mob.paged.es(pg, st, id, nf, drafts, V.View.running(turn)))},
         J.KV{"earlier", J.Json.nat(U.Win.hidden(pg))},

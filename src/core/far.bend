@@ -159,6 +159,8 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.SpacePageSet{Fr.id(l, bot), html, at}}
     case M.WorkSet{+thread, kind, rows, at}:
       Some{M.WorkSet{Fr.id(l, thread), kind, rows, at}}
+    case M.ThreadLaunched{+id, +by, report, at}:
+      Some{M.ThreadLaunched{Fr.id(l, id), Fr.sender(l, by), report, at}}
     case _:
       None{}
 
@@ -296,6 +298,8 @@ def Fr.shared(+s: M.State, c: M.Change) -> Bool:
       True{}
     case M.WorkSet{+thread, _, _, _}:
       Fr.thread.shared(s, thread)
+    case M.ThreadLaunched{+id, _, _, _}:
+      Fr.thread.shared(s, id)
     case _:
       False{}
 
@@ -376,6 +380,8 @@ def Fr.scope(+s: M.State, c: M.Change) -> String:
       Fr.scope.th(s, thread)
     case M.WorkSet{+thread, _, _, _}:
       Fr.scope.th(s, thread)
+    case M.ThreadLaunched{+id, _, _, _}:
+      Fr.scope.th(s, id)
     case _:
       ""
 

@@ -8378,3 +8378,54 @@ def Laws.plane_list_same():
 
 def Laws.plane_list_same_rich():
   {==}
+
+def Laws.launch_reports_turn_end():
+  {==}
+
+def Laws.launch_ask_at_once():
+  {==}
+
+def Laws.launch_fail_told():
+  {==}
+
+def Laws.launch_once_per_end():
+  {==}
+
+def Laws.launch_muted_quiet():
+  {==}
+
+def Laws.launch_waits_for_work():
+  {==}
+
+def Laws.launch_said_quiet():
+  {==}
+
+def Laws.launch_own_stop_quiet():
+  {==}
+
+def Laws.launch_stop_told():
+  {==}
+
+def Laws.launch_queued_in_order():
+  {==}
+
+def Laws.launch_loop_bounded():
+  {==}
+
+def Laws.launch_far_once():
+  {==}
+
+def Laws.launch_far_order():
+  {==}
+
+def Laws.launch_list_once():
+  {==}
+
+def Laws.launched_up_launcher():
+  {==}
+
+def Laws.subs_launched_live_kept():
+  {==}
+
+def Laws.notice_report_quiet():
+  {==}

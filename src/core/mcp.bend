@@ -108,13 +108,13 @@ def Mcp.tools() -> J.Json:
       [Tool.prop("threadId", "string", "The thread to read."), Tool.prop("limit", "number", "How many entries (default 40).")], ["threadId"]),
     Tool.def("thread_send", "Send a message to another thread in this project, or on another machine by its <link>~<id>. mode auto (default) starts a turn there, or waits in its queue while one runs; queue always waits for the running turn; steer sends it into the running turn (Codex, Grok and Muse restart the turn with it).",
       [Tool.prop("threadId", "string", "The thread."), Tool.prop("text", "string", "The message."), Tool.prop("mode", "string", "auto, queue or steer.")], ["threadId", "text"]),
-    Tool.def("thread_launch", "Start a new top-level thread in this project, or in `project` (not a child of this one: the user sees it in the sidebar like their own) with a first message, on any provider/model. Bots must name the project. Answers its threadId; follow it with thread_wait or thread_read. With `machine`, it starts on that other machine of the person's, in its project named by `project` (machine_list).",
-      [Tool.prop("prompt", "string", "The first message, complete."), Tool.prop("title", "string", "A short title (default: from the prompt)."),
+    Tool.def("thread_launch", "Start a new top-level thread in this project, or in `project` (not a child of this one: the user sees it in the sidebar like their own) with a first message, on any provider/model. Bots must name the project. Answers its threadId. Its reports come to you by themselves, as a message that wakes you: each time its turn ends (completed, failed or interrupted, with its last reply), and at once when it asks the person something; so end your turn instead of polling, and answer it with thread_send. report false launches it without reports; thread_update turns them off or on later. With `machine`, it starts on that other machine of the person's, in its project named by `project` (machine_list).",
+      [Tool.prop("prompt", "string", "The first message, complete."), Tool.prop("title", "string", "A short title (default: from the prompt)."), Tool.prop("report", "boolean", "Whether its turn ends and asks are reported to you (default true)."),
        Tool.prop("provider", "string", "claude, codex, grok or muse (default: the user's default)."), Tool.prop("model", "string", "Model (default: the provider's default)."),
        Tool.prop("project", "string", "The project's name or id (default: this thread's; bots must give one); on another machine its <link>~<id> from machine_list."),
        Tool.prop("machine", "string", "Start it on another machine of the person's, in its project of that name (machine_list).")], ["prompt"]),
-    Tool.def("thread_update", "Rename a thread in this project (this one by default), or with no title have its title written again from its first message.",
-      [Tool.prop("threadId", "string", "The thread (default: this one)."), Tool.prop("title", "string", "The new title; empty to regenerate it.")], Nil{}),
+    Tool.def("thread_update", "Rename a thread in this project (this one by default), or with no title have its title written again from its first message. With report (and no title), turn the reports of a thread you launched off (false) or on again (true).",
+      [Tool.prop("threadId", "string", "The thread (default: this one)."), Tool.prop("title", "string", "The new title; empty to regenerate it."), Tool.prop("report", "boolean", "For a thread you launched: whether its reports come to you.")], Nil{}),
     Tool.def("thread_wait", "Wait until a thread in this project has finished its turn and has nothing queued, or until timeoutMs passes. Answers its state, whether it is done, and its last reply.",
       [Tool.prop("threadId", "string", "The thread."), Tool.prop("timeoutMs", "number", "How long to wait at most (default 30000, at most 600000).")], ["threadId"]),
     Tool.def("thread_interrupt", "Stop the running turn of a thread in this project.",
@@ -399,11 +399,20 @@ def Mcp.delegate.b(bot: Bool, none: Bool, +s: M.State, +now: Nat, +thread: Strin
 
 # a new top-level thread with its first message (it waits for its
 # worktree like any new thread)
-def Mcp.launch.go(+s: M.State, +now: Nat, +th: String, +from: String, +project: String, +env: String, +provider: String, +model: String, +title: String, +prompt: String) -> Res:
+# (the launcher is kept with the thread, so its turn ends and asks are
+# reported back: hub.bend's Launch.tell)
+def Mcp.launch.cs(+c: M.Change, +th: String, +by: String, +report: Bool, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, String.is_empty(by), [c], [c, M.ThreadLaunched{th, by, report, now}])
+
+def Mcp.launch.note(+by: String, +report: Bool) -> String:
+  Bool.pick(String, Bool.and(report, Bool.not(String.is_empty(by))), "Its reports will come to you as messages when its turn ends or it asks the person something. End your turn instead of polling.", "")
+
+def Mcp.launch.go(+s: M.State, +now: Nat, +th: String, +from: String, +by: String, +report: Bool, +project: String, +env: String, +provider: String, +model: String, +title: String, +prompt: String) -> Res:
   +c = {M.ThreadCreated{th, project, title, B.Hub.new.env(M.Scratch.is(project), env), "", B.Hub.new.wt(M.Scratch.is(project), B.Hub.project.root(B.Hub.project(s, project)), th), provider, model, now} : M.Change}
-  +s1 = {M.State.replay([c], s) : M.State}
-  Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{th}}, J.KV{"title", J.Str{title}}, J.KV{"provider", J.Str{provider}}, J.KV{"state", J.Str{"started"}}]),
-    B.Step.before([c], B.Hub.new.outs(M.Scratch.is(project), th, B.Hub.project.root(B.Hub.project(s, project)), env),
+  +cs = {Mcp.launch.cs(c, th, by, report, now) : List<&2, M.Change>}
+  +s1 = {M.State.replay(cs, s) : M.State}
+  Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{th}}, J.KV{"title", J.Str{title}}, J.KV{"provider", J.Str{provider}}, J.KV{"state", J.Str{"started"}}, J.KV{"note", J.Str{Mcp.launch.note(by, report)}}]),
+    B.Step.before(cs, B.Hub.new.outs(M.Scratch.is(project), th, B.Hub.project.root(B.Hub.project(s, project)), env),
       B.Hub.post(s1, now, th, Mcp.from.id(from, B.Hub.id("m", now, B.Hub.seq(s1))), M.User{}, prompt))}
 
 # a project by id or name (any case)
@@ -438,25 +447,30 @@ def Mcp.delegate(+s: M.State, +now: Nat, +thread: String, +p: J.Json) -> Res:
 def Mcp.launch.proj(+s: M.State, +thread: String, +name: String) -> String:
   Bool.pick(String, Bool.or(Mcp.bot(s, thread), Bool.not(String.is_empty(name))), Mcp.project.find(s, name), Mcp.proj(s, thread))
 
-def Mcp.launch.k(empty: Bool, +s: M.State, +now: Nat, +thread: String, +p: J.Json) -> Res:
+def Mcp.launch.k(empty: Bool, +s: M.State, +now: Nat, +thread: String, +by: String, +p: J.Json) -> Res:
   match empty:
     case True{}:
       Res.fail("a prompt is needed")
     case False{}:
-      Mcp.launch.go(s, now, B.Hub.id("t", now, B.Hub.seq(s)), Bool.pick(String, Mcp.bot(s, thread), thread, ""), Mcp.launch.proj(s, thread, J.Json.get_str(p, "project", "")), M.Setting.get(s, "thread.env", "auto"),
+      Mcp.launch.go(s, now, B.Hub.id("t", now, B.Hub.seq(s)), Bool.pick(String, Mcp.bot(s, thread), thread, ""), by, J.Json.get_bool(p, "report", True{}), Mcp.launch.proj(s, thread, J.Json.get_str(p, "project", "")), M.Setting.get(s, "thread.env", "auto"),
         Mcp.or(J.Json.get_str(p, "provider", ""), M.Setting.get(s, "agent.provider", "claude")),
         Mcp.or(J.Json.get_str(p, "model", ""), Bool.pick(String, String.is_empty(J.Json.get_str(p, "provider", "")), M.Setting.get(s, "agent.model", ""), "")),
         Mcp.or(J.Json.get_str(p, "title", ""), B.Hub.title.of(J.Json.get_str(p, "prompt", ""))), J.Json.get_str(p, "prompt", ""))
 
-def Mcp.launch.b(bad: Bool, +s: M.State, +now: Nat, +thread: String, +p: J.Json) -> Res:
+def Mcp.launch.b(bad: Bool, +s: M.State, +now: Nat, +thread: String, +by: String, +p: J.Json) -> Res:
   match bad:
     case True{}:
       Res.fail("name an existing project (project_list shows them)")
     case False{}:
-      Mcp.launch.k(String.is_empty(String.trim(J.Json.get_str(p, "prompt", ""))), s, now, thread, p)
+      Mcp.launch.k(String.is_empty(String.trim(J.Json.get_str(p, "prompt", ""))), s, now, thread, by, p)
+
+# by: who hears its reports (the caller's thread; a caller on another
+# machine as <link>~<thread>, fmcp.bend)
+def Mcp.launch.by(+s: M.State, +now: Nat, +thread: String, +by: String, +p: J.Json) -> Res:
+  Mcp.launch.b(String.is_empty(Mcp.launch.proj(s, thread, J.Json.get_str(p, "project", ""))), s, now, thread, by, p)
 
 def Mcp.launch(+s: M.State, +now: Nat, +thread: String, +p: J.Json) -> Res:
-  Mcp.launch.b(String.is_empty(Mcp.launch.proj(s, thread, J.Json.get_str(p, "project", ""))), s, now, thread, p)
+  Mcp.launch.by(s, now, thread, thread, p)
 
 def Mcp.first.k(e: M.Entry, +th: String, rest: String) -> String:
   match e:
@@ -485,6 +499,34 @@ def Mcp.update.k(ok: Bool, regen: Bool, +s: M.State, +now: Nat, +target: String,
 
 def Mcp.update(+s: M.State, +now: Nat, +thread: String, +target: String, +title: String) -> Res:
   Mcp.update.k(Mcp.same_project(s, thread, target), String.is_empty(String.trim(title)), s, now, target, String.trim(title))
+
+# 0: not given, 1: true, 2: false
+def Mcp.flag(m: Maybe<&2, J.Json>) -> Nat:
+  match m:
+    case Some{J.Flag{True{}}}:
+      1n
+    case Some{J.Flag{False{}}}:
+      2n
+    case Some{J.Str{+v}}:
+      Bool.pick(Nat, String.eq(v, "true"), 1n, Bool.pick(Nat, String.eq(v, "false"), 2n, 0n))
+    case _:
+      0n
+
+# a launched thread's reports turned off or on (its launcher stays)
+def Mcp.report.k(ok: Bool, +s: M.State, +now: Nat, +target: String, +on: Bool) -> Res:
+  match ok:
+    case True{}:
+      Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{target}}, J.KV{"report", J.Flag{on}}]), B.Step{[M.ThreadLaunched{target, M.Launch.by(s, target), on, now}], Nil{}}}
+    case False{}:
+      Res.fail("nobody launched that thread, so it has no reports to change")
+
+def Mcp.update.r(f: Nat, +s: M.State, +now: Nat, +thread: String, +target: String, +title: String) -> Res:
+  match f:
+    case 0n:
+      Mcp.update(s, now, thread, target, title)
+    case _:
+      Bool.pick(Res, String.is_empty(String.trim(title)), Mcp.report.k(Bool.not(String.is_empty(M.Launch.by(s, target))), s, now, target, Nat.is_eq(f, 1n)),
+        Mcp.update(s, now, thread, target, title))
 
 def Mcp.pick(hit: Bool, +text: String, +acc: String) -> String:
   match hit:
@@ -538,7 +580,8 @@ def Mcp.wait.k(ok: Bool, +s: M.State, +target: String) -> Res:
     case False{}:
       Res.fail("that thread is not in this project")
 
-def Mcp.interrupt.k(ok: Bool, run: Bool, +s: M.State, +now: Nat, +target: String) -> Res:
+# (from: the caller, which is not told back that it stopped its own launch)
+def Mcp.interrupt.f(ok: Bool, run: Bool, +s: M.State, +now: Nat, +from: String, +target: String) -> Res:
   match ok run:
     case False{} _:
       Res.fail("that thread is not in this project")
@@ -546,7 +589,10 @@ def Mcp.interrupt.k(ok: Bool, run: Bool, +s: M.State, +now: Nat, +target: String
       Res.ok(J.Json.obj([J.KV{"threadId", J.Str{target}}, J.KV{"state", J.Str{"not running"}}]))
     case True{} True{}:
       Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{target}}, J.KV{"state", J.Str{"interrupted"}}]),
-        B.Retire.stop(s, now, target, Nil{})}
+        B.Retire.stop.f(s, now, target, from, Nil{})}
+
+def Mcp.interrupt.k(ok: Bool, run: Bool, +s: M.State, +now: Nat, +target: String) -> Res:
+  Mcp.interrupt.f(ok, run, s, now, "", target)
 
 # a message to another thread with a follow-up mode; auto is the inbox
 # (it never interrupts, law inbox_never_interrupts)
@@ -649,11 +695,11 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
     case 8n:
       Mcp.launch(s, now, thread, a)
     case 9n:
-      Mcp.update(s, now, thread, Mcp.or(J.Json.get_str(a, "threadId", ""), thread), J.Json.get_str(a, "title", ""))
+      Mcp.update.r(Mcp.flag(J.Json.get(a, "report")), s, now, thread, Mcp.or(J.Json.get_str(a, "threadId", ""), thread), J.Json.get_str(a, "title", ""))
     case 10n:
       Mcp.wait.k(Mcp.same_project(s, thread, J.Json.get_str(a, "threadId", "")), s, J.Json.get_str(a, "threadId", ""))
     case 11n:
-      Mcp.interrupt.k(Mcp.same_project(s, thread, J.Json.get_str(a, "threadId", "")), B.Hub.running(B.Hub.thread(s, J.Json.get_str(a, "threadId", ""))), s, now, J.Json.get_str(a, "threadId", ""))
+      Mcp.interrupt.f(Mcp.same_project(s, thread, J.Json.get_str(a, "threadId", "")), B.Hub.running(B.Hub.thread(s, J.Json.get_str(a, "threadId", ""))), s, now, thread, J.Json.get_str(a, "threadId", ""))
     case 12n:
       Mcp.wait.k(Mcp.same_project(s, thread, J.Json.get_str(a, "threadId", "")), s, J.Json.get_str(a, "threadId", ""))
     case 13n:

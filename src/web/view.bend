@@ -568,9 +568,9 @@ def View.subs(+info: Map<&2, String>, +th: String, +rs: List<&2, SB.SubRow>) -> 
   Bool.pick(List<&2, D.Node>, List.is_empty(&2, SB.SubRow, rs), Nil{},
     [View.subs.k(SB.Subs.busy(SB.Subs.live(rs)), SB.Subs.panel.open(info, th, rs), th, rs)])
 
-def View.parent(+st: M.State, +p: String) -> List<&2, D.Node>:
+def View.parent(+st: M.State, +thread: String, +p: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, String.is_empty(p), Nil{},
-    [D.El{"button", "", [D.At{"class", "parent"}, D.At{"data-value", p}, D.On{"click", "select"}], [D.Txt{"← delegated by " ++ U.Tasks.title(st, p)}]}])
+    [D.El{"button", "", [D.At{"class", "parent"}, D.At{"data-value", p}, D.On{"click", "select"}], [D.Txt{U.Tasks.up.label(st, thread, p)}]}])
 
 # Asks: what the agent waits on the user for
 
@@ -1297,7 +1297,7 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
         D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
         View.top(hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), [
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
-          D.Dom.cat(View.parent(st, U.Tasks.parent(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(nf, id, SB.Subs.rows(st, nf, id)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
+          D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(nf, id, SB.Subs.rows(st, nf, id)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
           D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(tr, st, id, now)), D.Dom.cat(View.sending(pend),
             View.live.k(String.is_empty(U.Str.get(live, id)), U.Side.phase(st, U.Ui.thread(st, id)), U.Str.get(live, id)))))))},
         View.asks.box(st, id, U.Str.get(drafts, sel)),

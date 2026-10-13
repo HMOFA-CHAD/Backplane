@@ -192,6 +192,9 @@ type Msg is Data:
   # a bot's answer to a person elsewhere, captured at its turn's end
   # (hub.bend's BotReply): sent and logged now
   Replied{thread: String, to: String, text: String}
+  # a report to a launcher on another machine was taken there (hub.bend's
+  # Lr.far.*): its line leaves the outbox
+  LaunchSent{key: String}
   # time to start the threads a restart left marked (B.Rec.release): after
   # each turn's end and each minute
   Release{}
@@ -6616,6 +6619,68 @@ def Far.shown.o(m: Maybe<&2, J.Json>, +st: M.State, +cfg: Cfg) -> IO(Unit):
 def Far.shown(+st: M.State, +cfg: Cfg, +text: String) -> IO(Unit):
   Bool.pick(IO(Unit), String.starts_with(text, "{\"t\":\"view\""), Far.shown.o(J.Json.parse(text), st, cfg), IO.pure(Unit, Unit{}))
 
+# Reports to launchers elsewhere
+# ------------------------------
+# One outbox line (hub.bend's Lr.far.line) sent to the launcher's machine as
+# launch_report (fmcp.bend's Fm.report): "" when that machine took it. A
+# machine that did not keeps its later lines back too, so they arrive in
+# order when it is back (the minute tick sends the outbox again).
+def Lr.far.text(m: Maybe<&2, J.Json>) -> String:
+  match m:
+    case Some{J.Str{+t}}:
+      t
+    case _:
+      ""
+
+def Lr.far.body(+link: String, +l: String) -> String:
+  FM.Fm.request(link, "launch_report", FR.Fr.id(link, M.Bg.field(l, 2n)),
+    J.Json.obj([J.KV{"threadId", J.Str{M.Bg.field(l, 1n)}}, J.KV{"key", J.Str{M.Bg.field(l, 0n)}}, J.KV{"text", J.Str{Lr.far.text(J.Json.parse(M.Bg.field(l, 3n)))}}]))
+
+def Lr.far.res(m: Maybe<&2, J.Json>) -> String:
+  match m:
+    case Some{+o}:
+      Bool.pick(String, J.Json.get_bool(J.Json.get_obj(o, "mcp"), "ok", False{}), "", "not taken")
+    case None{}:
+      "not understood"
+
+def Lr.far.ask(+home: String, +url: String, +link: String, +body: String) -> IO(String):
+  do IO<String>:
+    now : Nat <- Now.nat()
+    +n : String <- BN.Bn.random(4n)
+    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/rpc", True{}, FR.Fr.nonced(body, n))
+    return Bool.pick(String, Nat.is_eq(Far.code(r), 200n), Lr.far.res(J.Json.parse(Far.body(r))), "away")
+
+def Lr.far.one(+l: String, +st: M.State, +cfg: Cfg) -> IO(String):
+  +link = FR.Fr.link(M.Bg.field(l, 1n))
+  Bool.pick(IO(String), Far.own.id(st, cfg, link), Lr.far.ask(Cfg.home(cfg), Bot.peer.url(st, link), link, Lr.far.body(link, l)), IO.pure(String, "sync with that machine is off here"))
+
+def Lr.far.held(bad: List<&2, String>, +link: String) -> Bool:
+  match bad:
+    case Nil{}:
+      False{}
+    case +b <> t:
+      Bool.or(String.eq(b, link), Lr.far.held(t, link))
+
+def Lr.far.done(+err: String, +key: String, +inbox: Chan(Msg)) -> IO(Unit):
+  Bool.pick(IO(Unit), String.is_empty(err), Far.send(inbox, LaunchSent{key}), IO.pure(Unit, Unit{}))
+
+def Lr.far.try(held: Bool, +l: String, +st: M.State, +cfg: Cfg) -> IO(String):
+  match held:
+    case True{}:
+      IO.pure(String, "held")
+    case False{}:
+      Lr.far.one(l, st, cfg)
+
+def Lr.far.run(ls: List<&2, String>, +bad: List<&2, String>, +st: M.State, +cfg: Cfg, +inbox: Chan(Msg)) -> IO(Unit):
+  match ls:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case +l <> t:
+      do IO<Unit>:
+        +err : String <- Lr.far.try(Lr.far.held(bad, FR.Fr.link(M.Bg.field(l, 1n))), l, st, cfg)
+        Lr.far.done(err, M.Bg.field(l, 0n), inbox)
+        Lr.far.run(t, Bool.pick(List<&2, String>, String.is_empty(err), bad, FR.Fr.link(M.Bg.field(l, 1n)) <> bad), st, cfg, inbox)
+
 def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
   match h o:
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.Send{+client, +text}:
@@ -6704,6 +6769,11 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         Far.note.out(Hub{st, f, ls, cl2, as, inbox, cfg, note}, thread, state, seen)
     # a bot's answer to a person elsewhere, captured by the step that left
     # its thread ready (hub.bend's Answer.out)
+    # reports to launchers on other machines, sent in order
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.LaunchFar{}:
+      do IO<Hub>:
+        IO.spawn(Unit, Lr.far.run(B.Lr.far.lines(st), Nil{}, st, cfg, inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.BotReply{+thread, +to, +text, _}:
       do IO<Hub>:
         Self.post(inbox, Replied{thread, to, text})
@@ -9252,6 +9322,8 @@ def Msg.kind(m: Msg) -> String:
       "far_do"
     case Replied{_, _, _}:
       "replied"
+    case LaunchSent{_}:
+      "launch_sent"
     case Release{}:
       "release"
     case SpawnFailed{_, _, _}:
@@ -9480,6 +9552,10 @@ def Hub.update_ready.k(p: M.State & Hub, force: Bool, +now: Nat) -> IO(Hub):
 def Hub.update_ready(h: Hub, force: Bool, +now: Nat) -> IO(Hub):
   Hub.update_ready.k(Hub.state(h), force, now)
 
+def Hub.launch.sent(p: M.State & Hub, +key: String, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.step(h, B.Lr.far.sent(st, now, key))
+
 def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
   match m:
     case AgentWrite{thread, line, gen}:
@@ -9584,6 +9660,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.far.do(J.Json.parse(text), h, text, reply, now)
     case Replied{+thread, +to, +text}:
       Hub.replied(Hub.state(h), thread, to, text, now)
+    case LaunchSent{+key}:
+      Hub.launch.sent(Hub.state(h), key, now)
     case Release{}:
       Hub.release(Hub.state(h), now)
     case SpawnFailed{thread, gen, line}:

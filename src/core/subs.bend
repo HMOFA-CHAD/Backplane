@@ -251,7 +251,7 @@ def Subs.cancel(r: SubRow) -> String:
   match r:
     case SubRow{_, +agent, _, +who, +word, _, +live, _, _, _}:
       Bool.pick(String, Bool.and(agent, Bool.and(String.eq(who, "watch"), Bool.and(live, Bool.not(Bool.or(String.eq(word, "cancelling"), String.eq(word, "unknown")))))), "work-cancel",
-        Bool.pick(String, Bool.and(Bool.not(agent), live), "task-cancel", ""))
+        Bool.pick(String, Bool.and(Bool.not(agent), Bool.and(live, Bool.not(String.starts_with(who, "launched")))), "task-cancel", ""))
 
 # the agent's own subagents: those at work in the order they started, then
 # the work Backplane watches for it, then the newest finished ones
@@ -290,9 +290,42 @@ def Subs.tasks(ts: List<&2, M.Task>, +st: M.State) -> List<&2, SubRow>:
     case t <> rest:
       Subs.task(t, st) <> Subs.tasks(rest, st)
 
-# every row of a thread's subagents: its delegated tasks, then the agent's
+# Launched threads (thread_launch, client.bend's Launched): each a row like
+# a delegated task's (a click opens it), "launched" before its model; every
+# one at work or waiting on the person, then the newest finished ones
+# (law subs_launched_live_kept)
+def Subs.launched.kept() -> Nat:
+  5n
+
+def Subs.launch.row(+t: M.Thread, +st: M.State, +id: String) -> SubRow:
+  +live = U.Launched.live(t)
+  SubRow{id, False{}, U.Tasks.title(st, id), U.Launched.who(t), U.Launched.word(t), Subs.latest(live, st, id), live, False{}, 0n, Nil{}}
+
+def Subs.launch.k(shown: Bool, live: Bool, +st: M.State, +id: String, +n: Nat, +rest: List<&2, SubRow>) -> List<&2, SubRow>:
+  match shown live:
+    case False{} _:
+      rest
+    case True{} True{}:
+      Subs.launch.row(U.Ui.thread(st, id), st, id) <> rest
+    case True{} False{}:
+      Bool.pick(List<&2, SubRow>, Nat.is_lt(n, Subs.launched.kept()), Subs.launch.row(U.Ui.thread(st, id), st, id) <> rest, rest)
+
+# newest first; n: the finished ones already listed
+def Subs.launch.go(ids: List<&2, String>, +st: M.State, +n: Nat) -> List<&2, SubRow>:
+  match ids:
+    case Nil{}:
+      Nil{}
+    case +id <> t:
+      Subs.launch.k(U.Launched.shown(U.Ui.thread(st, id), id), U.Launched.live(U.Ui.thread(st, id)), st, id, n,
+        Subs.launch.go(t, st, Bool.pick(Nat, Bool.and(U.Launched.shown(U.Ui.thread(st, id), id), Bool.not(U.Launched.live(U.Ui.thread(st, id)))), 1n+n, n)))
+
+def Subs.launched(+st: M.State, +th: String) -> List<&2, SubRow>:
+  Subs.launch.go(List.reverse(&2, String, M.Launch.of(st, th)), st, 0n)
+
+# every row of a thread's subagents: its delegated tasks, the threads it
+# launched, then the agent's
 def Subs.rows(+st: M.State, +info: Map<&2, String>, +th: String) -> List<&2, SubRow>:
-  List.append(&2, SubRow, Subs.tasks(U.Tasks.of(st, th), st), Subs.agents(st, info, th))
+  List.concat(&2, SubRow, [Subs.tasks(U.Tasks.of(st, th), st), Subs.launched(st, th), Subs.agents(st, info, th)])
 
 def Subs.live(rs: List<&2, SubRow>) -> Nat:
   match rs:

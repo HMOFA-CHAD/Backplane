@@ -146,11 +146,14 @@ def Turn.start(t: Turn) -> Nat:
     case Turn{_, _, s}:
       s
 
-# woken by a message from a room or a bot (bothub.bend's Bots.note)
+# woken by a message from a room or a bot (bothub.bend's Bots.note), or by
+# a report from a thread it launched (hub.bend's Lr.head): the launched
+# thread alerted for itself, so a bot turn that only read the report and
+# answered nothing new to the person is chatter (law notice_report_quiet)
 def Turn.msg(t: Turn) -> Bool:
   match t:
     case Turn{_, +tr, _}:
-      String.starts_with(tr, "[message from ")
+      Bool.or(String.starts_with(tr, "[message from "), String.starts_with(tr, "[Backplane] Launched thread "))
 
 # The exchange
 # ------------
