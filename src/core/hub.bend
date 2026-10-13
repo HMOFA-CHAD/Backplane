@@ -112,6 +112,10 @@ type Out is Data:
   # the deploy goes: swap the staged package in (when stage is set), then
   # restart into it
   DeployGo{stage: String}
+  # a request about a bot's browser and what it is taught (core/teach.bend):
+  # the server keeps the driver and the draft, so it answers (m is
+  # bots.browser or bots.teach, p the request's params as JSON text)
+  Teach{client: U32, id: String, m: String, p: String}
 
 type Step is Data:
   Step{changes: List<&2, M.Change>, outs: List<&2, Out>}
