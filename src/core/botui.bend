@@ -606,16 +606,20 @@ def BU.sans(bs: List<&2, BT.Bot>, +id: String) -> List<&2, BT.Bot>:
       BU.sans.k(String.eq(BT.Bot.id(b), id), b, BU.sans(t, id))
 
 # the bots without the uberbot's replicas on other machines (US.Ub.far)
-def BU.sans.far.go(bs: List<&2, BT.Bot>, +far: List<&2, String>) -> List<&2, BT.Bot>:
+# (a replica is a bot of another machine: the others are never looked up)
+def BU.sans.far.hit(far: Bool, +st: M.State, +id: String) -> Bool:
+  match far:
+    case True{}:
+      US.Ub.far.is(st, id)
+    case False{}:
+      False{}
+
+def BU.sans.far(bs: List<&2, BT.Bot>, +st: M.State) -> List<&2, BT.Bot>:
   match bs:
     case Nil{}:
       Nil{}
     case +b <> t:
-      BT.Post.keep(BT.Bot, Bool.not(Bool.and(FR.Fr.is(BT.Bot.id(b)), US.Ub.far.is.go(far, BT.Bot.id(b)))), b, BU.sans.far.go(t, far))
-
-# (the replicas are worked out once, not for every bot)
-def BU.sans.far(bs: List<&2, BT.Bot>, +st: M.State) -> List<&2, BT.Bot>:
-  BU.sans.far.go(bs, US.Ub.far(st))
+      BT.Post.keep(BT.Bot, Bool.not(BU.sans.far.hit(FR.Fr.is(BT.Bot.id(b)), st, BT.Bot.id(b))), b, BU.sans.far(t, st))
 
 # the rows without the uberbot's replicas that machines report
 def BU.sans.rows(rs: List<&2, BRow>, +st: M.State) -> List<&2, BRow>:
