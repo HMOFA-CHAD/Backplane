@@ -13,6 +13,7 @@ import ./emb.bend as EM
 import ./far.bend as FR
 import ./ubersync.bend as UBS
 import ./notice.bend as NO
+import ./wake.bend as WK
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -90,6 +91,7 @@ type Out is Data:
   # reads it and pushes the alert, shows it on the desk used last and tells
   # the owner's other machines (not persisted)
   Alerted{thread: String}
+  WakePoll{prs: List<&2, String>, files: List<&2, String>}
 
 type Step is Data:
   Step{changes: List<&2, M.Change>, outs: List<&2, Out>}
@@ -991,7 +993,7 @@ def Hub.methods() -> List<&2, String>:
    "thread.settle", "thread.unsettle", "thread.archive", "thread.unarchive",
    "thread.pin", "thread.unpin", "thread.rename", "thread.delete", "kicad.watch", "thread.modes", "app.update", "setting.set", "kicad.install",
    "ask.answer", "device.register", "device.drop", "kicad.info", "queue.resume",
-   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel"]
+   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel"]
 
 # Agent output (Claude stream-json)
 # ---------------------------------
@@ -3161,10 +3163,185 @@ def Lr.tell.k(on: Bool, +s: M.State, +now: Nat, +thread: String, +from: String, 
 # a step about a thread, with its report to the launcher after it (from:
 # the thread whose call made the step, "" for an agent's own line or the
 # person)
+# harness-coord: wakes. A matching step sends one message through Lr.send.
+def Wake.fire.k(fresh: Bool, +s: M.State, +now: Nat, +id: String, +key: String, +events: List<&2, String>, +text: String) -> Step:
+  match fresh:
+    case False{}:
+      Step.none()
+    case True{}:
+      +o = WK.Wake.get(s, id)
+      Step.before(WK.Wake.mark(id, key, J.Json.get_bool(o, "once", True{}), now), Nil{}, Lr.send(s, now, Bool.pick(String, String.eq(J.Json.get_str(o, "kind", ""), "thread"), J.Json.get_str(o, "target", ""), J.Json.get_str(o, "by", "")), J.Json.get_str(o, "by", ""), WK.Wake.note(o, text, events)))
+
+def Wake.thread.end.key(cs: List<&2, M.Change>, +th: String) -> String:
+  match cs:
+    case Nil{}:
+      ""
+    case M.TurnChanged{+t, +state, +at} <> rest:
+      Bool.pick(String, Bool.and(String.eq(t, th), Nat.is_gt(Lr.one(M.TurnChanged{t, state, at}, th, 0n), 0n)), t ++ ":" ++ Nat.show(at) ++ ":" ++ Nat.show(Lr.one(M.TurnChanged{t, state, at}, th, 0n)), Wake.thread.end.key(rest, th))
+    case _ <> rest:
+      Wake.thread.end.key(rest, th)
+
+def Wake.thread.ask.key(cs: List<&2, M.Change>, +th: String) -> String:
+  match cs:
+    case Nil{}:
+      ""
+    case M.AskOpened{+id, +t, _, _, _, _, at} <> rest:
+      Bool.pick(String, String.eq(t, th), t ++ ":ask:" ++ id ++ ":" ++ Nat.show(at), Wake.thread.ask.key(rest, th))
+    case _ <> rest:
+      Wake.thread.ask.key(rest, th)
+
+def Wake.ended(cs: List<&2, M.Change>, +th: String) -> Nat:
+  match cs:
+    case Nil{}:
+      0n
+    case +c <> t:
+      Bool.pick(Nat, Nat.is_gt(Lr.one(c, th, 0n), 0n), Lr.one(c, th, 0n), Wake.ended(t, th))
+
+def Wake.thread.events(+s: M.State, +th: String, +cs: List<&2, M.Change>) -> List<&2, String>:
+  +end = Wake.ended(cs, th)
+  List.concat(&2, String, [Bool.pick(List<&2, String>, Nat.is_gt(end, 0n), ["end"], Nil{}),
+    Bool.pick(List<&2, String>, Nat.is_eq(end, 1n), ["done"], Nil{}),
+    Bool.pick(List<&2, String>, Nat.is_eq(end, 2n), ["fail"], Nil{}),
+    Bool.pick(List<&2, String>, Bool.not(String.is_empty(Wake.thread.ask.key(cs, th))), ["ask"], Nil{}),
+    Bool.pick(List<&2, String>, Bool.and(Nat.is_gt(end, 0n), Bool.and(Nat.is_eq(M.Work.busy(s, th), 0n), Bool.and(Bool.not(M.Queue.waiting(s, th)), Bool.not(Hub.running(Hub.thread(s, th)))))), ["idle"], Nil{})])
+
+def Wake.thread.text(+s: M.State, +th: String, +cs: List<&2, M.Change>) -> String:
+  "thread \"" ++ Lr.title(Hub.thread(s, th)) ++ "\" (" ++ th ++ ") " ++
+    Bool.pick(String, Nat.is_gt(Wake.ended(cs, th), 0n), "ended its turn (" ++ Lr.word(Wake.ended(cs, th), "") ++ "). Its last reply: " ++ String.take(Lr.reply(Answer.of(M.State.mine(s, th), th)), Lr.cut()), "opened an ask: " ++ Lr.ask(cs, th))
+
+def Wake.poll.k(empty: Bool, prs: List<&2, String>, files: List<&2, String>) -> Step:
+  match empty:
+    case True{}:
+      Step.none()
+    case False{}:
+      Step.outs([WakePoll{prs, files}])
+
+def Wake.poll(+s: M.State) -> Step:
+  +prs = WK.Wake.targets(M.Wake.ids(s, "wakes.poll"), s, "pr", Nil{})
+  +files = WK.Wake.targets(M.Wake.ids(s, "wakes.poll"), s, "file", Nil{})
+  Wake.poll.k(Bool.and(Nat.is_eq(List.length(&2, String, prs), 0n), Nat.is_eq(List.length(&2, String, files), 0n)), prs, files)
+
+# The first stat is the subscription's baseline; exists may fire immediately.
+def Wake.file.events(+base: String, +stamp: String) -> List<&2, String>:
+  List.concat(&2, String, [Bool.pick(List<&2, String>, String.eq(stamp, "missing"), Nil{}, ["exists"]),
+    Bool.pick(List<&2, String>, Bool.and(Bool.not(String.is_empty(base)), Bool.not(String.eq(base, stamp))), ["changed"], Nil{})])
+
+# Drops accompany every deletion, including scratch expiry and bot deletion.
+def Wake.deleted.go(cs: List<&2, M.Change>, +s: M.State, +now: Nat) -> List<&2, M.Change>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case M.ThreadDeleted{th, at} <> t:
+      List.append(&2, M.Change, WK.Wake.drop(WK.Wake.by(s, th), at), Wake.deleted.go(t, s, now))
+    case _ <> t:
+      Wake.deleted.go(t, s, now)
+
+def Wake.deleted(+s: M.State, st: Step) -> Step:
+  match st:
+    case Step{+cs, os}:
+      Step{List.append(&2, M.Change, cs, Wake.deleted.go(cs, s, 0n)), os}
+
+# an archived or deleted thread is told nothing
+def Lost.live(t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de}:
+      Bool.not(Bool.or(ar, de))
+
+def Wake.fire(+s: M.State, +now: Nat, +id: String, +key: String, +actual: List<&2, String>, +text: String) -> Step:
+  +events = WK.Wake.select(WK.Wake.events(WK.Wake.get(s, id)), actual)
+  Wake.fire.k(Bool.and(WK.Wake.fresh(s, id, key, events), Bool.and(Hub.owns(s, J.Json.get_str(WK.Wake.get(s, id), "by", "")), Lost.live(Hub.thread(s, J.Json.get_str(WK.Wake.get(s, id), "by", ""))))), s, now, id, key, events, text)
+
+# State moves between subscriptions so several waking the same thread queue safely.
+def Wake.deliver(ids: List<&2, String>, +s: M.State, +now: Nat, +key: String, +events: List<&2, String>, +text: String, +st: Step) -> Step:
+  match ids:
+    case Nil{}:
+      st
+    case id <> t:
+      Wake.deliver(t, s, now, key, events, text, Step.cat(st, Wake.fire(M.State.replay(Queue.changes(st), s), now, id, key, events, text)))
+
+def Wake.thread.fire(+s: M.State, +now: Nat, +id: String, +signals: List<&2, WK.WakeSignal>, +text: String) -> Step:
+  +matches = WK.Wake.signal.unseen(signals, s, id, WK.Wake.events(WK.Wake.get(s, id)))
+  +events = WK.Wake.signal.events(matches)
+  +st = Wake.fire.k(Bool.and(Nat.is_gt(List.length(&2, String, events), 0n), Bool.and(Hub.owns(s, J.Json.get_str(WK.Wake.get(s, id), "by", "")), Lost.live(Hub.thread(s, J.Json.get_str(WK.Wake.get(s, id), "by", ""))))), s, now, id, String.join(WK.Wake.signal.keys(matches), "|"), events, text)
+  Step.before(Bool.pick(List<&2, M.Change>, Nat.is_gt(List.length(&2, M.Change, Queue.changes(st)), 0n), WK.Wake.signal.mark(matches, id, now), Nil{}), Nil{}, st)
+
+def Wake.thread.deliver(ids: List<&2, String>, +s: M.State, +now: Nat, +signals: List<&2, WK.WakeSignal>, +text: String, +st: Step) -> Step:
+  match ids:
+    case Nil{}:
+      st
+    case id <> t:
+      Wake.thread.deliver(t, s, now, signals, text, Step.cat(st, Wake.thread.fire(M.State.replay(Queue.changes(st), s), now, id, signals, text)))
+
+def Wake.thread.after.changed(hit: Bool, +s: M.State, +now: Nat, +th: String, +cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
+  match hit:
+    case False{}:
+      Step{cs, os}
+    case True{}:
+      +s1 = M.State.replay(cs, s)
+      Wake.thread.deliver(WK.Wake.on(s1, "thread", th), s, now, WK.Wake.signals(Wake.thread.events(s1, th, cs), Wake.thread.end.key(cs, th), Wake.thread.ask.key(cs, th)), Wake.thread.text(s1, th, cs), Step{cs, os})
+
+def Wake.thread.after.st(+s: M.State, +now: Nat, +th: String, st: Step) -> Step:
+  match st:
+    case Step{+cs, os}:
+      Wake.thread.after.changed(Bool.or(Nat.is_gt(Wake.ended(cs, th), 0n), Bool.not(String.is_empty(Wake.thread.ask.key(cs, th)))), s, now, th, cs, os)
+
+def Wake.thread.after.k(ids: List<&2, String>, +s: M.State, +now: Nat, +th: String, st: Step) -> Step:
+  match ids:
+    case Nil{}:
+      st
+    case _ <> _:
+      Wake.thread.after.st(s, now, th, st)
+
+def Wake.thread.after(+s: M.State, +now: Nat, +th: String, st: Step) -> Step:
+  Wake.thread.after.k(WK.Wake.on(s, "thread", th), s, now, th, st)
+
+def Wake.pr.fire(+s: M.State, +now: Nat, +id: String, +target: String, +p: WK.PrSeen) -> Step:
+  +events = WK.Wake.pr.unseen(WK.Wake.select(WK.Wake.events(WK.Wake.get(s, id)), WK.Wake.pr.events(p)), s, id, p)
+  +st = Wake.fire.k(Bool.and(Nat.is_gt(List.length(&2, String, events), 0n), Bool.and(Hub.owns(s, J.Json.get_str(WK.Wake.get(s, id), "by", "")), Lost.live(Hub.thread(s, J.Json.get_str(WK.Wake.get(s, id), "by", ""))))), s, now, id, target ++ ":" ++ WK.Wake.pr.key(p), events, WK.Wake.pr.text(target, p))
+  Step.before(Bool.pick(List<&2, M.Change>, Nat.is_gt(List.length(&2, M.Change, Queue.changes(st)), 0n), WK.Wake.pr.mark(events, id, p, now), Nil{}), Nil{}, st)
+
+def Wake.pr.go(ids: List<&2, String>, +s: M.State, +now: Nat, +target: String, +p: WK.PrSeen, +st: Step) -> Step:
+  match ids:
+    case Nil{}:
+      st
+    case id <> t:
+      Wake.pr.go(t, s, now, target, p, Step.cat(st, Wake.pr.fire(M.State.replay(Queue.changes(st), s), now, id, target, p)))
+
+def Wake.pr(+s: M.State, +now: Nat, +target: String, +p: WK.PrSeen) -> Step:
+  Wake.pr.go(WK.Wake.on(s, "pr", target), s, now, target, p, Step.none())
+
+def Wake.file.one(+s: M.State, +now: Nat, +id: String, +target: String, +stamp: String) -> Step:
+  +base = M.Setting.get(s, "wake.base." ++ id, "")
+  Step.before(Bool.pick(List<&2, M.Change>, String.is_empty(base), [M.SettingSet{"wake.base." ++ id, stamp, now}], Nil{}), Nil{}, Wake.fire(s, now, id, target ++ ":" ++ stamp, Wake.file.events(base, stamp), "file " ++ target ++ " (" ++ stamp ++ ")"))
+
+def Wake.file.go(ids: List<&2, String>, +s: M.State, +now: Nat, +target: String, +stamp: String, +st: Step) -> Step:
+  match ids:
+    case Nil{}:
+      st
+    case id <> t:
+      Wake.file.go(t, s, now, target, stamp, Step.cat(st, Wake.file.one(M.State.replay(Queue.changes(st), s), now, id, target, stamp)))
+
+def Wake.file(+s: M.State, +now: Nat, +target: String, +stamp: String) -> Step:
+  Wake.file.go(WK.Wake.on(s, "file", target), s, now, target, stamp, Step.none())
+
+def Wake.after.go(cs: List<&2, M.Change>, +s: M.State, +st: Step) -> Step:
+  match cs:
+    case Nil{}:
+      st
+    case M.TurnChanged{th, _, at} <> t:
+      Wake.after.go(t, s, Wake.thread.after(s, at, th, st))
+    case M.AskOpened{_, th, _, _, _, _, at} <> t:
+      Wake.after.go(t, s, Wake.thread.after(s, at, th, st))
+    case _ <> t:
+      Wake.after.go(t, s, st)
+
+def Wake.after(+s: M.State, +st: Step) -> Step:
+  Wake.deleted(s, Wake.after.go(Queue.changes(st), s, st))
+
 def Launch.tell.from(+s: M.State, +now: Nat, +thread: String, +from: String, st: Step) -> Step:
   match st:
     case Step{+cs, os}:
-      Lr.tell.k(M.Launch.reports(s, thread), s, now, thread, from, cs, os)
+      Wake.thread.after(s, now, thread, Lr.tell.k(M.Launch.reports(s, thread), s, now, thread, from, cs, os))
 
 def Launch.tell(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
   Launch.tell.from(s, now, thread, "", st)
@@ -3207,12 +3384,6 @@ def Hub.interrupt(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: St
 def Retire.archive(+s: M.State, +now: Nat, +th: String, base: Step) -> Step:
   Retire.turn(Hub.running(Hub.thread(s, th)), s, now, th,
     Step.also(Step.after(base, List.append(&2, M.Change, Retire.asks(M.Asks.all(s), th, now), Bg.clear(s, th, now))), Retire.answers(M.Asks.all(s), th)))
-
-# an archived or deleted thread is told nothing
-def Lost.live(t: M.Thread) -> Bool:
-  match t:
-    case M.Thread{_, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de}:
-      Bool.not(Bool.or(ar, de))
 
 # the note itself: to an idle thread it starts a turn; behind a running
 # turn or a held queue it waits
@@ -3358,9 +3529,13 @@ def Watch.end.k(found: Bool, timeout: Bool, +l: String, +s: M.State, +now: Nat, 
 # watched work ended (status: "exit <code>", "gone", "timeout", or the
 # file's "found"): told once, from the row that is still there; a timeout
 # keeps it, ended with outcome unknown (laws watch_end_*, watch_timeout_*)
-def Watch.end(+s: M.State, +now: Nat, +th: String, +id: String, +status: String, +detail: String) -> Step:
+def Watch.end.raw(+s: M.State, +now: Nat, +th: String, +id: String, +status: String, +detail: String) -> Step:
   Watch.end.k(Bool.and(Bool.not(String.is_empty(Watch.find(M.Work.watch(s, th), id))), Bool.not(M.Bg.ended(Watch.find(M.Work.watch(s, th), id)))),
     String.eq(status, "timeout"), Watch.find(M.Work.watch(s, th), id), s, now, th, id, status, detail)
+
+def Watch.end(+s: M.State, +now: Nat, +th: String, +id: String, +status: String, +detail: String) -> Step:
+  +st = Watch.end.raw(s, now, th, id, status, detail)
+  Wake.deliver(WK.Wake.on(s, "work", id), s, now, id ++ ":" ++ Nat.show(now) ++ ":" ++ status, Bool.pick(List<&2, String>, Nat.is_gt(List.length(&2, M.Change, Queue.changes(st)), 0n), ["end"], Nil{}), "work " ++ id ++ " ended: " ++ status ++ ". " ++ detail, st)
 
 def Watch.cancel.k(live: Bool, +l: String, +s: M.State, +now: Nat, +th: String, +id: String) -> Step:
   match live:
@@ -3594,6 +3769,8 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
     # the person stops watched work or a delegated task from its row
     case 31n:
       Step.before(Nil{}, [Reply.ok(client, id)], Watch.cancel(s, now, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "id", "")))
+    case 33n:
+      Step.reply(client, id, Bool.pick(List<&2, M.Change>, String.eq(J.Json.get_str(WK.Wake.get(s, J.Json.get_str(p, "id", "")), "by", ""), J.Json.get_str(p, "thread", "")), [M.WakeDropped{J.Json.get_str(p, "id", ""), now}], Nil{}))
     case 32n:
       Step.before(Nil{}, [Reply.ok(client, id)], Task.cancel.user(Maybe.default(&2, M.Task, Task.of_child(s, J.Json.get_str(p, "child", "")), M.Task.blank("")), s, now))
     case _:
@@ -3780,10 +3957,20 @@ def Bg.gone(live: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
 # an agent process ended; a turn still running ends with it, and the
 # background work it owned is told lost (behind the failed turn's queue
 # when one ran: law gone_idle_told)
+def Wake.exit.k(needed: Bool, +s: M.State, +now: Nat, +thread: String, +code: U32, +st: Step) -> Step:
+  match needed:
+    case True{}:
+      Wake.deliver(WK.Wake.on(s, "thread", thread), s, now, thread ++ ":exit:" ++ Nat.show(now) ++ ":" ++ U32.show(code), ["fail"], "thread \"" ++ Lr.title(Hub.thread(s, thread)) ++ "\" (" ++ thread ++ ") agent exited with code " ++ U32.show(code), st)
+    case False{}:
+      st
+
+def Wake.exit(+s: M.State, +now: Nat, +thread: String, +code: U32, +st: Step) -> Step:
+  Wake.exit.k(Bool.and(Bool.not(U32.is_eq(code, 0)), Bool.and(Bool.not(String.eq(C.Turn.name(M.Thread.turn(Hub.thread(s, thread))), "failed")), Nat.is_eq(Wake.ended(Queue.changes(st), thread), 0n))), s, now, thread, code, st)
+
 def Hub.agent_gone.why(+s: M.State, +now: Nat, +thread: String, +code: U32, +why: String) -> Step:
-  Step.before(Nil{}, Retire.answers(M.Asks.all(s), thread),
+  Wake.exit(s, now, thread, code, Step.before(Nil{}, Retire.answers(M.Asks.all(s), thread),
     Step.cat(Step.after(Launch.tell(s, now, thread, Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code, why))))),
-      Retire.asks(M.Asks.all(s), thread, now)), Bg.gone(Lost.live(Hub.thread(s, thread)), s, now, thread)))
+      Retire.asks(M.Asks.all(s), thread, now)), Bg.gone(Lost.live(Hub.thread(s, thread)), s, now, thread))))
 
 def Hub.agent_gone(+s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:
   Hub.agent_gone.why(s, now, thread, code, "")
@@ -3872,7 +4059,7 @@ def Hub.tick.k(+s: M.State, +now: Nat, +kids: Map<&2, Nat>) -> Step:
         Step.join(Wt.stale(Map.values(&2, M.Thread, ts), s, now), Scratch.sweep(Map.values(&2, M.Thread, ts), kids, s, now, M.Scratch.window(s))))
 
 def Hub.tick(+s: M.State, +now: Nat) -> Step:
-  Step.join(Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now)), Lr.far.tick(s))
+  Step.join(Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now)), Step.cat(Lr.far.tick(s), Wake.poll(s)))
 
 # Asks keep their thread busy
 # ---------------------------
@@ -4808,3 +4995,43 @@ def Alerts.demo.end.k(st: Step) -> String:
 def Alerts.demo.end() -> String:
   +s = NO.Policy.demo.s(NO.Policy.demo.cat([NO.Policy.demo.base(), NO.Policy.demo.run("t1", "m1", "do it", 10n)]))
   Alerts.demo.end.k(Ended.out(s, 13n, "t1", Step{NO.Policy.demo.done("t1", 12n), Nil{}}))
+
+# Small replayed states used by the wake laws and tests.
+def Wake.demo(+once: Bool, +events: List<&2, String>) -> M.State:
+  M.State.replay([M.ThreadCreated{"tb", "", "Bot", M.Local{}, "", "", "claude", "", 1n}, M.BotSet{"bot", "Bot", "tb", 0n, "", 1n},
+    M.ThreadCreated{"t1", "", "Fix DRC", M.Local{}, "", "", "claude", "", 1n}, M.TurnChanged{"t1", M.Running{}, 2n}, M.MessagePosted{"t1", "a1", M.Assistant{}, "DRC fixed", 3n},
+    M.WakeSet{"w1", "tb", "thread", "t1", events, once, "review it", 4n}], M.State.empty())
+
+def Wake.demo.end() -> List<&2, M.Change>:
+  [M.TurnChanged{"t1", M.Completed{}, 9n}]
+
+def Wake.demo.step(+s: M.State) -> Step:
+  Launch.tell(s, 9n, "t1", Step{Wake.demo.end(), Nil{}})
+
+def Wake.demo.count(+s: M.State) -> Nat:
+  Lr.count(Queue.changes(Wake.demo.step(s)), "tb")
+
+def Wake.demo.twice() -> Nat:
+  +s = Wake.demo(False{}, ["end"])
+  Wake.demo.count(M.State.replay(Queue.changes(Wake.demo.step(s)), s))
+
+def Wake.demo.dropped() -> Nat:
+  +s = Wake.demo(True{}, ["end"])
+  List.length(&2, String, WK.Wake.by(M.State.replay(Queue.changes(Wake.demo.step(s)), s), "tb"))
+
+def Wake.demo.pr() -> M.State:
+  M.State.replay([M.WakeSet{"wp", "tb", "pr", "owner/repo#7", ["merged", "ci"], False{}, "", 4n}], Wake.demo(True{}, ["end"]))
+
+def Wake.demo.merged() -> WK.PrSeen:
+  WK.PrSeen{"MERGED", "now", "abc", "passed", ["pcb.kicad_pcb"], "7", "Route board", "checks-1", ""}
+
+def Wake.demo.pr.twice() -> Nat:
+  +s = Wake.demo.pr()
+  +st = Wake.pr(s, 9n, "owner/repo#7", Wake.demo.merged())
+  Lr.count(Queue.changes(Wake.pr(M.State.replay(Queue.changes(st), s), 10n, "owner/repo#7", Wake.demo.merged())), "tb")
+
+def Wake.demo.partial() -> Nat:
+  +s = Wake.demo(False{}, ["ask", "end", "done"])
+  +cs = {M.AskOpened{"q1", "t1", "question", "AskUserQuestion", "review?", "", 9n} <> Wake.demo.end() : List<&2, M.Change>}
+  +after = M.State.replay(Queue.changes(Launch.tell(s, 9n, "t1", Step{cs, Nil{}})), s)
+  Lr.count(Queue.changes(Launch.tell(after, 9n, "t1", Step{Wake.demo.end(), Nil{}})), "tb")

@@ -10,6 +10,7 @@ import ./handoff.bend as HD
 import ./bot.bend as BT
 import ./emb.bend as EM
 import ./utf8.bend as U8
+import ./wake.bend as WK
 
 # The Backplane MCP server, as a decider. Each agent session gets its own
 # endpoint (/mcp/<thread>), so every call knows which thread is asking. A
@@ -115,7 +116,7 @@ def Mcp.tools() -> J.Json:
        Tool.prop("machine", "string", "Start it on another machine of the person's, in its project of that name (machine_list).")], ["prompt"]),
     Tool.def("thread_update", "Rename a thread in this project (this one by default), or with no title have its title written again from its first message. With report (and no title), turn the reports of a thread you launched off (false) or on again (true).",
       [Tool.prop("threadId", "string", "The thread (default: this one)."), Tool.prop("title", "string", "The new title; empty to regenerate it."), Tool.prop("report", "boolean", "For a thread you launched: whether its reports come to you.")], Nil{}),
-    Tool.def("thread_wait", "Wait until a thread in this project has finished its turn and has nothing queued, or until timeoutMs passes. Answers its state, whether it is done, and its last reply.",
+    Tool.def("thread_wait", "Wait until a thread in this project has finished its turn and has nothing queued, or until timeoutMs passes. Answers its state, whether it is done, and its last reply. For anything longer than a few minutes use wake_on instead and end your turn.",
       [Tool.prop("threadId", "string", "The thread."), Tool.prop("timeoutMs", "number", "How long to wait at most (default 30000, at most 600000).")], ["threadId"]),
     Tool.def("thread_interrupt", "Stop the running turn of a thread in this project.",
       [Tool.prop("threadId", "string", "The thread.")], ["threadId"]),
@@ -132,6 +133,11 @@ def Mcp.tools() -> J.Json:
       [Tool.prop("id", "string", "The terminal's id."), Tool.prop("text", "string", "The bytes to send, as text.")], ["id", "text"]),
     Tool.def("terminal_close", "Stop a terminal of this chat (its program is hung up; the user can start it again).",
       [Tool.prop("id", "string", "The terminal's id.")], ["id"]),
+    Tool.def("wake_on", "Subscribe to a local thread, work id, PR or absolute file path. A matching event posts a message in your thread and wakes you; end your turn instead of polling. Thread targets elsewhere are not supported yet.",
+      [Tool.prop("kind", "string", "thread, work, pr or file."), Tool.prop("target", "string", "Thread/work id, owner/repo#N (or #N in a project), or absolute path."),
+       J.KV{"events", J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"string"}}])}])}, Tool.prop("once", "boolean", "Drop after delivery (default true)."), Tool.prop("note", "string", "Include this reminder in the wake message.")], ["kind", "target"]),
+    Tool.def("wake_list", "List your wake subscriptions.", Nil{}, Nil{}),
+    Tool.def("wake_cancel", "Cancel one of your wake subscriptions.", [Tool.prop("id", "string", "The subscription id.")], ["id"]),
     Tool.def("work_run", "Start long or detached work (a build, a test run, a job on another machine) so Backplane owns it: when it ends you are woken with its exit code and the end of its output; if a restart of Backplane cuts it off you are told it was lost and can start it again. Use this instead of `&`, nohup or disown, then end your turn; never poll or sleep-wait.",
       [Tool.prop("command", "string", "The shell command, run in this thread's folder."), Tool.prop("note", "string", "What it is, in a few words."), Tool.prop("timeoutSec", "number", "Give up watching after this long (the work keeps running; the outcome is then unknown).")], ["command"]),
     Tool.def("work_watch", "Have Backplane watch work that is already running and wake you when it ends: kind pid (a process) or file (a file that will contain the token this call returns). Then end your turn.",
@@ -613,7 +619,7 @@ def Mcp.send.k(ok: Bool, +s: M.State, +now: Nat, +thread: String, +target: Strin
 
 def Mcp.names() -> List<&2, String>:
   ["orchestrator_capabilities", "delegate_task", "task_status", "task_cancel", "thread_list", "thread_read", "thread_send", "viewer_show",
-   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment"]
+   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment", "wake_on", "wake_list", "wake_cancel"]
 
 # Watched work (hub.bend's Watch.*): work_run, work_watch, work_list,
 # work_cancel, work_unwatch; each answers once its row is stored (the
@@ -673,6 +679,43 @@ def Mcp.review.do(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json)
     case False{}:
       Res.fail("review_comment needs op (add, resolve, reopen, edit, drop), text for add and edit, id for the rest")
 
+def Mcp.wake.events(+a: J.Json, +kind: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, Maybe.is_some(&2, J.Json, J.Json.get(a, "events")), WK.Wake.events(a), WK.Wake.defaults(kind))
+
+def Mcp.wake.on.k(+error: String, +s: M.State, +now: Nat, +by: String, +a: J.Json, +events: List<&2, String>) -> Res:
+  match error:
+    case SNil{}:
+      +id = B.Hub.id("w", now, B.Hub.seq(s))
+      +kind = J.Json.get_str(a, "kind", "")
+      +target = J.Json.get_str(a, "target", "")
+      +once = J.Json.get_bool(a, "once", True{})
+      +note = J.Json.get_str(a, "note", "")
+      Res{True{}, M.Wake.record(id, by, kind, target, events, once, note, now), B.Step{List.append(&2, M.Change, [M.WakeSet{id, by, kind, target, events, once, note, now}], Bool.pick(List<&2, M.Change>, Bool.and(String.eq(kind, "file"), Bool.not(String.is_empty(J.Json.get_str(a, "_baseline", "")))), [M.SettingSet{"wake.base." ++ id, J.Json.get_str(a, "_baseline", ""), now}], Nil{})),
+        Bool.pick(List<&2, B.Out>, String.eq(kind, "file"), [B.WakePoll{Nil{}, [target]}], Nil{})}}
+    case SCon{_, _}:
+      Res.fail(error)
+
+def Mcp.wake.error(+s: M.State, +by: String, +kind: String, +target: String, +events: List<&2, String>) -> String:
+  +error = WK.Wake.error(by, kind, target, events)
+  Bool.pick(String, Bool.not(String.is_empty(error)), error,
+    Bool.pick(String, Bool.and(String.eq(kind, "thread"), Bool.not(B.Hub.owns(s, target))), "no such local target thread", ""))
+
+def Mcp.wake.on(+s: M.State, +now: Nat, +by: String, +a: J.Json) -> Res:
+  +kind = J.Json.get_str(a, "kind", "")
+  +target = J.Json.get_str(a, "target", "")
+  +events = Mcp.wake.events(a, kind)
+  Mcp.wake.on.k(Mcp.wake.error(s, by, kind, target, events), s, now, by, a, events)
+
+def Mcp.wake.cancel.k(ok: Bool, +now: Nat, +id: String) -> Res:
+  match ok:
+    case True{}:
+      Res{True{}, J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"cancelled", J.Flag{True{}}}]), B.Step{[M.WakeDropped{id, now}], Nil{}}}
+    case False{}:
+      Res.fail("no such wake subscription owned by this thread")
+
+def Mcp.wake.cancel(+s: M.State, +now: Nat, +by: String, +id: String) -> Res:
+  Mcp.wake.cancel.k(Bool.and(Bool.not(String.is_empty(id)), String.eq(J.Json.get_str(WK.Wake.get(s, id), "by", ""), by)), now, id)
+
 def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +a: J.Json) -> Res:
   match i:
     case 0n:
@@ -720,6 +763,12 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
       Mcp.work.unwatch(B.Watch.find(M.Work.watch(s, thread), J.Json.get_str(a, "id", "")), s, now, thread, J.Json.get_str(a, "id", ""))
     case 21n:
       Mcp.review.list(RVW.Review.of_state(s, thread))
+    case 23n:
+      Mcp.wake.on(s, now, thread, a)
+    case 24n:
+      Res.ok(J.Json.obj([J.KV{"wakes", J.Json.arr(WK.Wake.list(WK.Wake.by(s, thread), s))}]))
+    case 25n:
+      Mcp.wake.cancel(s, now, thread, J.Json.get_str(a, "id", ""))
     case 22n:
       Mcp.review.do(RVW.Review.op.ok(J.Json.get_str(a, "op", ""), a), s, now, thread, a)
     case _:

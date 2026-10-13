@@ -3,6 +3,8 @@ import ./model.bend as M
 import ./fold.bend as FO
 import ./client.bend as U
 import ./diff.bend as DF
+import ./wake.bend as WK
+import ./json.bend as J
 
 # Subagents
 # ---------
@@ -250,8 +252,11 @@ def Subs.word(r: SubRow) -> String:
 def Subs.cancel(r: SubRow) -> String:
   match r:
     case SubRow{_, +agent, _, +who, +word, _, +live, _, _, _}:
-      Bool.pick(String, Bool.and(agent, Bool.and(String.eq(who, "watch"), Bool.and(live, Bool.not(Bool.or(String.eq(word, "cancelling"), String.eq(word, "unknown")))))), "work-cancel",
-        Bool.pick(String, Bool.and(Bool.not(agent), Bool.and(live, Bool.not(String.starts_with(who, "launched")))), "task-cancel", ""))
+      Bool.pick(String, String.eq(who, "wake"), "wake-cancel", Bool.pick(String, Bool.and(agent, Bool.and(String.eq(who, "watch"), Bool.and(live, Bool.not(Bool.or(String.eq(word, "cancelling"), String.eq(word, "unknown")))))), "work-cancel",
+        Bool.pick(String, Bool.and(Bool.not(agent), Bool.and(live, Bool.not(String.starts_with(who, "launched")))), "task-cancel", "")))
+
+def Subs.cancel.word(+act: String) -> String:
+  Bool.pick(String, String.eq(act, "wake-cancel"), "Cancel", "Stop")
 
 # the agent's own subagents: those at work in the order they started, then
 # the work Backplane watches for it, then the newest finished ones
@@ -324,15 +329,36 @@ def Subs.launched(+st: M.State, +th: String) -> List<&2, SubRow>:
 
 # every row of a thread's subagents: its delegated tasks, the threads it
 # launched, then the agent's
+# A waiting subscription is an openable row without a thread to select.
+def Subs.wake.row(+o: J.Json) -> SubRow:
+  SubRow{J.Json.get_str(o, "id", ""), True{}, J.Json.get_str(o, "kind", "") ++ " " ++ J.Json.get_str(o, "target", ""), "wake", "waiting on", J.Json.get_str(o, "note", "") ++ " (" ++ String.join(WK.Wake.events(o), ", ") ++ ")", True{}, False{}, 0n, Nil{}}
+
+def Subs.wake.go(ids: List<&2, String>, +st: M.State) -> List<&2, SubRow>:
+  match ids:
+    case Nil{}:
+      Nil{}
+    case id <> t:
+      Subs.wake.row(WK.Wake.get(st, id)) <> Subs.wake.go(t, st)
+
+def Subs.wakes(+st: M.State, +th: String) -> List<&2, SubRow>:
+  Subs.wake.go(WK.Wake.by(st, th), st)
+
 def Subs.rows(+st: M.State, +info: Map<&2, String>, +th: String) -> List<&2, SubRow>:
-  List.concat(&2, SubRow, [Subs.tasks(U.Tasks.of(st, th), st), Subs.launched(st, th), Subs.agents(st, info, th)])
+  List.concat(&2, SubRow, [Subs.tasks(U.Tasks.of(st, th), st), Subs.launched(st, th), Subs.wakes(st, th), Subs.agents(st, info, th)])
 
 def Subs.live(rs: List<&2, SubRow>) -> Nat:
   match rs:
     case Nil{}:
       0n
-    case SubRow{_, _, _, _, _, _, live, _, _, _} <> t:
-      Nat.add(Bool.pick(Nat, live, 1n, 0n), Subs.live(t))
+    case SubRow{_, _, _, +who, _, _, +live, _, _, _} <> t:
+      Nat.add(Bool.pick(Nat, Bool.and(live, Bool.not(String.eq(who, "wake"))), 1n, 0n), Subs.live(t))
+
+def Subs.waiting(rs: List<&2, SubRow>) -> Nat:
+  match rs:
+    case Nil{}:
+      0n
+    case SubRow{_, _, _, who, _, _, _, _, _, _} <> t:
+      Nat.add(Bool.pick(Nat, String.eq(who, "wake"), 1n, 0n), Subs.waiting(t))
 
 # "3 at work", or "" with none
 def Subs.busy(+n: Nat) -> String:
@@ -349,7 +375,7 @@ def Subs.panel.key(+th: String) -> String:
   "subs:" ++ th
 
 def Subs.panel.open(+info: Map<&2, String>, +th: String, +rs: List<&2, SubRow>) -> Bool:
-  FO.Fold.open(FO.Fold.user(info, Subs.panel.key(th)), Nat.is_gt(Subs.live(rs), 0n))
+  FO.Fold.open(FO.Fold.user(info, Subs.panel.key(th)), Nat.is_gt(Nat.add(Subs.live(rs), Subs.waiting(rs)), 0n))
 
 # what a click on the head asks
 def Subs.panel.ask(+open: Bool, +th: String) -> String:
@@ -357,7 +383,8 @@ def Subs.panel.ask(+open: Bool, +th: String) -> String:
 
 # the head's word: "3 at work", else "3 done"
 def Subs.panel.word(+rs: List<&2, SubRow>) -> String:
-  Subs.or(Subs.busy(Subs.live(rs)), Nat.show(List.length(&2, SubRow, rs)) ++ " done")
+  Bool.pick(String, Nat.is_gt(Subs.waiting(rs), 0n), Nat.show(Subs.waiting(rs)) ++ " waiting" ++ Bool.pick(String, Nat.is_gt(Subs.live(rs), 0n), " · " ++ Subs.busy(Subs.live(rs)), ""),
+    Subs.or(Subs.busy(Subs.live(rs)), Nat.show(List.length(&2, SubRow, rs)) ++ " done"))
 
 # the rows a panel shows: all of them open, none shut
 def Subs.panel.rows(open: Bool, rs: List<&2, SubRow>) -> List<&2, SubRow>:

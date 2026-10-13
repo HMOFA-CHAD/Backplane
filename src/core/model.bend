@@ -260,6 +260,8 @@ type Change is Data:
   # whether its turn ends, asks and failures go back to `by` (Launch below).
   # Again later with the same `by`: the report choice changes (thread_update)
   ThreadLaunched{id: String, by: String, report: Bool, at: Nat}
+  WakeSet{id: String, by: String, kind: String, target: String, events: List<&2, String>, once: Bool, note: String, at: Nat}
+  WakeDropped{id: String, at: Nat}
 
 # the later of two times. Base's Nat.max recurses once per unit and
 # overflows at epoch scale; Nat.is_ge compiles to a machine comparison.
@@ -1415,6 +1417,59 @@ def Launch.of(s: State, +by: String) -> List<&2, String>:
 def Launch.fold(+s: State, +id: String, +by: String, report: Bool) -> State:
   State.setting(State.setting(s, Launch.key(id), Launch.val(by, report)), Launch.list.key(by), Launch.add(Setting.get(s, Launch.list.key(by), ""), id))
 
+# Wake subscriptions: indexes contain ids, records live under wake.<id>.
+def Wake.strs(xs: List<&2, String>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      J.Str{x} <> Wake.strs(t)
+
+def Wake.record(+id: String, +by: String, +kind: String, +target: String, events: List<&2, String>, once: Bool, note: String, at: Nat) -> J.Json:
+  J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"by", J.Str{by}}, J.KV{"kind", J.Str{kind}}, J.KV{"target", J.Str{target}}, J.KV{"events", J.Json.arr(Wake.strs(events))}, J.KV{"once", J.Flag{once}}, J.KV{"note", J.Str{note}}, J.KV{"created", J.Num{Nat.show(at)}}])
+
+def Wake.get(s: State, +id: String) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(Setting.get(s, "wake." ++ id, "")), J.Null{})
+
+def Wake.ids(s: State, +key: String) -> List<&2, String>:
+  Launch.lines(Setting.get(s, key, ""))
+
+def Wake.index(+s: State, +key: String, +id: String) -> State:
+  State.setting(s, key, Launch.add(Setting.get(s, key, ""), id))
+
+def Wake.poll.add(poll: Bool, +s: State, +id: String) -> State:
+  match poll:
+    case True{}:
+      Wake.index(s, "wakes.poll", id)
+    case False{}:
+      s
+
+def Wake.fold(+s: State, +id: String, +by: String, +kind: String, +target: String, events: List<&2, String>, once: Bool, note: String, at: Nat) -> State:
+  Wake.poll.add(Bool.or(String.eq(kind, "pr"), String.eq(kind, "file")), Wake.index(Wake.index(State.setting(s, "wake." ++ id, J.Json.show(Wake.record(id, by, kind, target, events, once, note, at))), "wakes.by." ++ by, id), "wakes.on." ++ kind ++ ":" ++ target, id), id)
+
+def Wake.keep.k(hit: Bool, +id: String, rest: List<&2, String>) -> List<&2, String>:
+  match hit:
+    case True{}:
+      rest
+    case False{}:
+      id <> rest
+
+def Wake.keep(xs: List<&2, String>, +id: String) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +h <> t:
+      Wake.keep.k(String.eq(h, id), h, Wake.keep(t, id))
+
+def Wake.unindex(+s: State, +key: String, +id: String) -> State:
+  State.setting(s, key, String.join(Wake.keep(Wake.ids(s, key), id), "\n"))
+
+def Wake.drop.record(+o: J.Json, +s: State, +id: String) -> State:
+  State.setting(Wake.unindex(Wake.unindex(Wake.unindex(s, "wakes.poll", id), "wakes.by." ++ J.Json.get_str(o, "by", ""), id), "wakes.on." ++ J.Json.get_str(o, "kind", "") ++ ":" ++ J.Json.get_str(o, "target", ""), id), "wake." ++ id, "")
+
+def Wake.drop(+s: State, +id: String) -> State:
+  Wake.drop.record(Wake.get(s, id), s, id)
+
 # Forks
 # -----
 # A fork remembers its source thread (the setting fork.<id>).
@@ -1729,6 +1784,10 @@ def State.apply.go(s: State, e: Change) -> State:
       State.uberop(s, uid, origin, n, stamp, op, at)
     case ThreadLaunched{+id, +by, report, _}:
       Launch.fold(s, id, by, report)
+    case WakeSet{id, by, kind, target, events, once, note, at}:
+      Wake.fold(s, id, by, kind, target, events, once, note, at)
+    case WakeDropped{id, _}:
+      Wake.drop(s, id)
     case TodosSet{+th, todos, _}:
       State.setting(s, "todos." ++ th, todos)
     case ProviderSet{+id, +p, m, _}:

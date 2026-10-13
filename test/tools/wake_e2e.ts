@@ -199,4 +199,7 @@ try {
   if (process.env.KEEP) console.log(root); else rmSync(root, { recursive: true, force: true });
 }
 console.log(fail ? `${fail} failed` : "all ok");
-process.exit(fail ? 1 : 0);
+if (fail) process.exit(1);
+// The subscriptions increment adds its own throwaway hub after the existing
+// background-work wake regression checks above.
+await import("./wake_subscription_e2e.ts");
