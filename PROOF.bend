@@ -8612,6 +8612,8 @@ def Laws.policy_reminder_alerts():
   {==}
 
 def Laws.notify_rows_defaults():
+  {==}
+
 def Laws.island_compact_one_line():
   {==}
 
