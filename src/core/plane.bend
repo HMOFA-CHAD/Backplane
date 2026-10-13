@@ -414,8 +414,15 @@ def Plane.threads.f(rs: List<&2, U.ARow>, +u: U.Ui, +ix: U.SIx, +st: M.State, +i
     case +r <> t:
       Plane.threads.k(r, Plane.thread.st(r, ix, st), u, ix, st, idle, now, Plane.threads.f(t, u, ix, st, idle, now))
 
+# the live rows of the Active gather, unsorted and unfiltered: the plane
+# orders its own sections, and the settled rows are not in it
+def Plane.live(g: U.AParts) -> List<&2, U.ARow>:
+  match g:
+    case U.AParts{l, _}:
+      l
+
 def Plane.all.vals(+u: U.Ui, +ix: U.SIx, +now: Nat, +idle: Bool) -> List<&2, PRow>:
-  List.append(&2, PRow, Plane.threads.f(U.Active.rows.ix(U.Ui.state(u), ix, now, ""), u, ix, U.Ui.state(u), idle, now),
+  List.append(&2, PRow, Plane.threads.f(Plane.live(U.Active.gather.ix(U.Side.rows.ix(U.Ui.state(u), ix, now), U.Ui.state(u), ix, now, U.AParts{Nil{}, Nil{}})), u, ix, U.Ui.state(u), idle, now),
     Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, ix, U.Ui.state(u)))
 
 # the idle threads, only when they are wanted (the Status tab shows them)
