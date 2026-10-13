@@ -262,9 +262,12 @@ def Rep.busy(ds: List<&2, Day>, +best: Nat, +bn: Nat) -> String:
 def Nat.min.small(+a: Nat, +b: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_le(a, b), a, b)
 
+def Rep.permille(+m: Nat) -> String:
+  Nat.show(Nat.div(m, 10n)) ++ "." ++ Nat.show(Nat.mod(m, 10n)) ++ "%"
+
 def Rep.percent(+before: Nat, +after: Nat) -> String:
   Bool.pick(String, Nat.is_eq(before, 0n), "n/a",
-    Nat.show(Nat.div(Nat.mul(Nat.sub(before, Nat.min.small(after, before)), 1000n), before)) ++ " per mille")
+    Rep.permille(Nat.div(Nat.mul(Nat.sub(before, Nat.min.small(after, before)), 1000n), before)))
 
 def Rep.num(s: String, +acc: Nat) -> Nat:
   match s:

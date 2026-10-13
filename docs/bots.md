@@ -182,38 +182,87 @@ phone with several hubs each row also carries its machine.
 
 ## Notifications
 
-One item, one alert (`src/core/notice.bend`, laws `notice_*`). A turn's end
-alerts the person unless it is part of a room exchange they read in the
-room:
+The person is alerted (the phones' APNs push, the phones' own alerts,
+desktop notifications, and the same relayed to the owner's other machines)
+in three cases only (`src/core/notice.bend`, `Policy.*`, laws `policy_*`,
+`notify_*`):
 
-- A failed turn always alerts.
-- A thread that is not a bot's alerts when it finishes.
-- A bot with an open ask (waiting on the person) alerts.
-- A bot turn that posted in a room, or sent to a bot, alerts only if its
-  post opened the room's exchange: no other bot posted in the room since the
-  person's last post there, or in the last 5 minutes. Its key is
-  `room-<room id>`, the same on every linked machine, so apps and APNs
-  replace one alert with the next instead of stacking them.
-- A bot turn woken by a room or bot message that posted nothing is quiet.
-- A bot turn the person started in the bot's own thread, or a routine's,
-  alerts as before (`turn-<thread>`).
+1. **Needs you.** An ask opens for the person (any kind: a tool approval,
+   a plan, a question, an input, a Google approval, a browser task that
+   is stuck), or a bot calls `notify_person` with reason `needs_you`. It
+   alerts when the ask opens, under the key `ask-<thread>`.
+2. **Settled.** Work the person gave a thread is finished: its turn
+   completed with everything it waits on done, or its branch merged. One
+   alert per settle, key `turn-<thread>`. A failure counts when the person
+   must act: the turn they started failed.
+3. **Scheduled.** A bot's `notify_person` with reason `reminder` or
+   `digest` in a turn a routine started.
 
-A hub counts only its own bots' posts (it pushes only for its own threads). A
-phone paired with several hubs counts every bot, so only the hub whose bot
-answered first raises the alert. A held push is logged as
-`backplane: push alert held for <thread>`.
+Everything else alerts no one and stays visible in the app (unread,
+badges, the Status plane): intermediate turn ends, progress, turns woken by
+rooms or bots, posts between bots, reports to launcher threads,
+routines that do not call `notify_person`, delegated-task notes, stops,
+and failures of turns the person did not start.
+
+**Settle once.** The person's message in a thread is the newest user
+message typed by them (`Policy.person`: not a link `t:<from>:<n>`, not a
+`[message from …]`, `[routine: …]` or `[Backplane] …` note, except
+`[message from person@…]`, the person typing from another machine). A turn
+end settles it when the thread is ready (`Policy.ready`: not running,
+nothing queued, no child tasks, background or watched work, no open ask,
+no reporting launched thread still working) and the message is not the
+one already settled (the settle memory). So a thread that launched helpers
+and ended its turn early alerts once, at the end of the turn the last
+report wakes; a bot's routine or room turn after the person's message
+settled alerts nothing. Stopping a thread ends its episode quietly.
+
+**The record.** The hub writes each alert as the setting `alert.<thread>`
+in the step that causes it (`Alert.*`): `kind\tkey\tsettled\tstamp\ttext`,
+kind `ask`, `done`, `fail`, `merged`, `note` (`notify_person`) or empty (a
+settle whose setting is off, which still counts as settled). Every step
+passes through `Alerts.changes` (an `AskOpened` gets its record) and
+`Alerts.outs` (a record with a kind raises the `Alerted` out) before it is
+stored, so alerts come from one place. The server's `Alerted` pushes to the
+phones (`Push.note.*`, collapse id the record's key), shows the desktop
+notification on the desk used last and tells the owner's other machines;
+`TurnEnded` only updates the island. A phone alerts for a thread when its
+record changed in the frame it folded and the new kind is not empty
+(`Note.ralerts`; never at a cold join or a saved state). The apps show the
+record's text (a note, an ask's tool and detail, a merge's url) or the
+thread's last reply.
+
+**Settings** (hub settings, `on`/`off`): `notify.needs` (on), `notify.settled`
+(on), `notify.reminders` (on), `notify.all` (off: also alert whatever the
+older rule `Notice.of` alerted, room exchanges and every turn of a plain
+thread, as before this policy).
+
+**Bots.** `notify_person {text, reason}`: `needs_you` (once per turn),
+`done` (work the person gave the bot in its own thread, once per message;
+the turn's end then alerts nothing more), `reminder` or `digest` (only in a
+turn a routine started, once per turn). Anything else is refused with the
+reason (`Bots.notify`); with the matching setting off the call succeeds and
+records no kind.
+
+A held alert is logged as `backplane: push alert held for <thread> (a desk
+in use is showing it)`.
 
 ### Desks
 
 The window and the web page are desks (`src/core/desk.bend`). Each tells
 the hub which thread it shows and whether it has the focus, when either
-changes and at most once a minute while in use. A thread a focused desk
-shows, used in the last 3 minutes, is being watched: its turn's end raises
-no phone alert (neither the APNs push nor the phone's own), and no desktop
-notification. Any other alert also shows as a desktop notification on the
-desk used last: the browser's notifications (the page asks for permission
-on the first click or key; macOS, Windows, Linux) or `notify-send` from the
-Linux window. Clicking it opens the thread.
+changes and at most once a minute while in use. A desk is in use only after
+the person's input: keys, the pointer, the wheel, focus changes. A redraw,
+a resize, an expose, a drag passing over, a timer or the window closing is
+not (`Nui.input`, laws `desk_redraw_not_input`, `desk_key_input`). A thread
+a focused desk shows, used in the last 3 minutes, is being watched: an ask,
+a settle, a failure or a merge for it raises no phone alert (neither the
+APNs push nor the phone's own), no desktop notification and no note to the
+owner's other machines. A `notify_person` note is never held. Any other
+alert also shows as a desktop notification on the desk used last: the
+browser's notifications (the page asks for permission on the first click or
+key; macOS, Windows, Linux) or `notify-send` from the Linux window.
+Clicking it opens the thread.
+
 ## Mentions in threads
 
 In any thread's composer (web, window, phones) a word that starts with a
