@@ -5,6 +5,7 @@ import ../src/core/codec.bend as K
 import ../src/core/json.bend as J
 import ../src/core/client.bend as U
 import ../src/mobile/hubs.bend as H
+import ../src/core/ubop.bend as UO
 
 # The status plane on the phones: the uberbot's card and the plane in the
 # screen, merged over paired hubs (laws hubs_plane_*).
@@ -70,6 +71,27 @@ def uber(+h: H.Hubs, +field: String) -> String:
 def go(+h: H.Hubs, +a: String, +v: String) -> H.Hubs:
   H.Hubs.after(H.Hubs.act(h, a, v))
 
+# the uberbot's Status tab (the list carries only the count, with an empty plane)
+def stat(+cs: List<&2, M.Change>) -> H.Hubs:
+  go(one(cs), "uber", "box:3787|b1")
+
+# box, on machine mA, its uberbot's conversation held by mB
+def homebox() -> List<&2, M.Change>:
+  List.append(&2, M.Change, box(), [M.SettingSet{"machine.id", "mA", 171n}, M.UberOp{"u1-a", "mB", 1n, UO.Ub.stamp.make(172n, 0n, "mB"), UO.Ub.b.lease("mB", 2n), 172n}])
+
+def home(+h: H.Hubs) -> J.Json:
+  J.Json.get_obj(J.Json.get_obj(H.Hubs.screen(h), "plane"), "home")
+
+# the hubs that were sent bots.uber_home
+def homes(cs: List<&2, H.HCmd>) -> String:
+  match cs:
+    case H.HCmd{+h, U.Send{+t}} <> r:
+      Bool.pick(String, String.contains(t, "bots.uber_home"), h ++ ";", "") ++ homes(r)
+    case _ <> r:
+      homes(r)
+    case Nil{}:
+      ""
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("no uberbot, no card", J.Json.show(J.Json.get_obj(H.Hubs.screen(one(lap())), "uber")), "null")
@@ -77,15 +99,15 @@ def main() -> IO(Unit):
     C.Check.str("the card", uber(one(box()), "name"), "Kit")
     C.Check.str("its counts", uber(one(box()), "counts"), "1 need you · 2 running")
     C.Check.str("its cat", uber(one(box()), "cat"), "7:work")
-    C.Check.str("needs you", sec(one(box()), "need", "id"), "box:3787|t1;")
-    C.Check.str("a tap opens the thread", sec(one(box()), "need", "act"), "select;")
-    C.Check.str("with the hub's value", sec(one(box()), "need", "value"), "box:3787|t1;")
-    C.Check.str("running", sec(one(box()), "run", "id"), "box:3787|b1;box:3787|t4;")
+    C.Check.str("needs you", sec(stat(box()), "need", "id"), "box:3787|t1;")
+    C.Check.str("a tap opens the thread", sec(stat(box()), "need", "act"), "select;")
+    C.Check.str("with the hub's value", sec(stat(box()), "need", "value"), "box:3787|t1;")
+    C.Check.str("running", sec(stat(box()), "run", "id"), "box:3787|b1;box:3787|t4;")
     C.Check.str("no idle threads off the status tab", sec(one(box()), "idle", "id"), "")
     C.Check.str("idle on the status tab", sec(go(one(box()), "uber", "box:3787|b1"), "idle", "id"), "box:3787|t6;")
-    C.Check.str("the room", sec(one(box()), "rooms", "id"), "box:3787|r1;")
-    C.Check.str("the routine opens its bot's tab", sec(one(box()), "routines", "value"), "box:3787|b1|routines;")
-    C.Check.str("one hub, no machine on a row", sec(one(box()), "need", "machine"), ";")
+    C.Check.str("the room", sec(stat(box()), "rooms", "id"), "box:3787|r1;")
+    C.Check.str("the routine opens its bot's tab", sec(stat(box()), "routines", "value"), "box:3787|b1|routines;")
+    C.Check.str("one hub, no machine on a row", sec(stat(box()), "need", "machine"), ";")
     C.Check.str("two hubs: waiting, most urgent first", sec(two(), "need", "id"), "box:3787|t1;lap:3787|t8;")
     C.Check.str("two hubs: running, newest first", sec(two(), "run", "id"), "box:3787|b1;lap:3787|t9;box:3787|t4;")
     C.Check.str("rows name their machine", sec(two(), "run", "machine"), "box;lap;box;")
@@ -94,11 +116,17 @@ def main() -> IO(Unit):
     C.Check.str("a thread open: no plane", J.Json.show(J.Json.get_obj(H.Hubs.screen(go(one(box()), "select", "box:3787|t1")), "plane")), "null")
     C.Check.str("a thread open: the card stays", uber(go(one(box()), "select", "box:3787|t1"), "name"), "Kit")
     C.Check.str("a thread open: its counts wait for the plane", uber(go(one(box()), "select", "box:3787|t1"), "counts"), "")
+    C.Check.str("the list: the rows that need you and run", sec(one(box()), "need", "id") ++ sec(one(box()), "run", "id"), "box:3787|t1;box:3787|b1;box:3787|t4;")
+    C.Check.str("the list: no idle threads", sec(one(box()), "idle", "id"), "")
     C.Check.str("back at the list: the plane", sec(go(go(one(box()), "select", "box:3787|t1"), "select", ""), "need", "id"), "box:3787|t1;")
     C.Check.str("the status tab: the plane", sec(go(one(box()), "uber", "box:3787|b1"), "need", "id"), "box:3787|t1;")
     C.Check.str("another tab of the uberbot: none", J.Json.show(J.Json.get_obj(H.Hubs.screen(go(go(one(box()), "uber", "box:3787|b1"), "bot-tab", "chat")), "plane")), "null")
     C.Check.str("the card's tap goes to its hub", H.Hubs.cur(go(go(two(), "select", "lap:3787|t9"), "uber", uber(two(), "id"))), "box:3787")
     C.Check.str("it shows the status tab", J.Json.get_str(J.Json.get_obj(H.Hubs.screen(go(two(), "uber", uber(two(), "id"))), "bot"), "tab", ""), "status")
-    C.Check.str("without the replica a mirrored bot is listed", sec(one(List.append(&2, M.Change, box(), [M.ThreadCreated{"p3~t2", "", "Pip", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"p3~b2", "Pip", "p3~t2", 3n, "", 100n}])), "bots", "id"), "box:3787|p3~b2;")
-    C.Check.str("the uberbot's replica elsewhere is not under Bots", sec(one(replica()), "bots", "id"), "")
+    C.Check.str("without the replica a mirrored bot is listed", sec(stat(List.append(&2, M.Change, box(), [M.ThreadCreated{"p3~t2", "", "Pip", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"p3~b2", "Pip", "p3~t2", 3n, "", 100n}])), "bots", "id"), "box:3787|p3~b2;")
+    C.Check.str("the uberbot's replica elsewhere is not under Bots", sec(stat(replica()), "bots", "id"), "")
     C.Check.str("nor on the Status tab", sec(go(one(replica()), "uber", "box:3787|b1"), "bots", "id"), "")
+    C.Check.str("home: the conversation is held elsewhere, the offer is made", J.Json.show(home(stat(homebox()))),
+      "{\"name\":\"another machine\",\"here\":false,\"line\":\"Home: another machine\",\"button\":true,\"label\":\"Make this the home\",\"act\":\"uber-home\",\"value\":\"box:3787|b1\"}")
+    C.Check.str("home: no machine id yet, no home", J.Json.show(home(stat(box()))), "null")
+    C.Check.str("home: the offer goes to its hub", homes(H.Hubs.cmds(H.Hubs.act(go(two(), "select", "lap:3787|t9"), "uber-home", "box:3787|b1"))), "box:3787;")

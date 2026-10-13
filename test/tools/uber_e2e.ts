@@ -112,6 +112,19 @@ const ops = (c: Client) => c.seen.filter((x) => x.$ === "UberOp").map((x) => ({ 
 const leases = (c: Client) => ops(c).filter((o) => o.body.k === "lease");
 const routineRuns = (c: Client, thread: string) => c.seen.filter((x) => x.$ === "MessagePosted" && x.thread === thread && String(x.text).startsWith("[routine:"));
 
+// an MCP tools/call from the agent of a thread (the hub's /mcp/<thread>)
+let mcpId = 0;
+async function mcp(h: Hub, thread: string, name: string, args: object): Promise<{ isError: boolean; text: string }> {
+  const r: any = await fetch(`http://127.0.0.1:${h.port}/mcp/${thread}`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: ++mcpId, method: "tools/call", params: { name, arguments: args } }),
+  }).then((x) => x.json());
+  const text = String(r.result?.content?.[0]?.text ?? "");
+  let body = text;
+  try { body = JSON.parse(text)?.text ?? text; } catch {}
+  return { isError: !!r.result?.isError || !!r.error, text: body };
+}
+
 const pa = freePort();
 const pb = freePort();
 const a: Hub = { name: "alpha", home: join(root, "alpha"), port: pa, peers: `http://127.0.0.1:${pb}`, proc: null };
@@ -183,6 +196,29 @@ try {
   const sets = ops(ca).filter((o) => o.origin === idA).map((o) => o.n);
   check("alpha's ops are numbered 1, 2, 3...", sets.every((n, i) => n === i + 1), sets);
 
+  // plane_read: a thread waiting on an approval is under "Needs you", here and,
+  // asked of beta by machine, with alpha's link on its id
+  const planePath = join(root, "plane");
+  mkdirSync(planePath);
+  await rpc(ca, "project.add", { path: planePath });
+  const pcP = await until(5000, () => ca.seen.find((c) => c.$ === "ProjectCreated" && c.root === planePath));
+  await rpc(ca, "thread.create", { project: pcP?.id, title: "WAITS ON YOU" });
+  const tP = await until(5000, () => ca.seen.find((c) => c.$ === "ThreadCreated" && c.project === pcP?.id && c.title === "WAITS ON YOU"));
+  const waiting = tP?.id as string;
+  void fetch(`http://127.0.0.1:${pa}/mcp/${waiting}`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 900, method: "tools/call", params: { name: "permission_prompt", arguments: { tool_name: "Bash", input: { command: "ls" } } } }),
+  }).catch(() => {});
+  const asked = await until(10000, () => ca.seen.find((c) => c.$ === "AskOpened" && c.thread === waiting));
+  const kitThread = ca.seen.find((c) => c.$ === "BotSet" && c.id === kitBot && c.thread)?.thread as string;
+  const pr = await mcp(a, kitThread, "plane_read", {});
+  check("plane_read lists the thread waiting on an approval under Needs you", !!asked && !pr.isError && pr.text.includes("Needs you (1)") && pr.text.includes(`- ${waiting} · approval · WAITS ON YOU`), pr);
+  const linkAB = cb.seen.find((c) => c.$ === "PeerSet" && !c.revoked)?.id as string;
+  const prB = await mcp(b, bthread, "plane_read", { machine: "alpha" });
+  check("asked of beta by machine, the same thread with alpha's link on its id", !prB.isError && prB.text.includes(`- ${linkAB}~${waiting} · approval · WAITS ON YOU`) && prB.text.includes("Status plane of alpha"), [linkAB, prB]);
+  const prH = await mcp(b, bthread, "plane_read", {});
+  check("beta's own plane does not hold it", !prH.isError && !prH.text.includes(waiting), prH);
+
   // a routine made on alpha (every minute) runs on the holder only
   const athread = ca.seen.find((c) => c.$ === "BotSet" && c.id === kitBot && c.thread)?.thread as string;
   const routine = await rpc(ca, "bots.routine", { bot: kitBot, name: "tick", cron: "* * * * *", prompt: "say tick", on: true });
@@ -222,6 +258,21 @@ try {
   check("alpha no longer runs the routine", routineRuns(ca, athread).length === mark, [mark, routineRuns(ca, athread).length]);
   check("beta does", routineRuns(cb, bthread).length > markB, [markB, routineRuns(cb, bthread).length]);
   void before;
+
+  // "Make this the home": alpha takes the lease back while beta is up and holds it
+  const homed = await rpc(ca, "bots.uber_home", {});
+  check("bots.uber_home on alpha is taken", !!homed?.ok, homed);
+  const mine = await until(20000, () => leases(ca).find((o) => o.body.holder === idA && o.body.term === 3));
+  check("alpha logs the lease one term on (term 3)", !!mine, leases(ca).map((o) => o.body));
+  const downB = await until(150000, () => leases(cb).find((o) => o.body.holder === idA && o.body.term === 3));
+  check("beta learns of it and steps down", !!downB, leases(cb).map((o) => o.body));
+  const noop = await rpc(ca, "bots.uber_home", {});
+  check("asking again, as the holder, changes nothing", !!noop?.ok && leases(ca).filter((o) => o.body.term === 4).length === 0, [noop, leases(ca).map((o) => o.body)]);
+  const markA = routineRuns(ca, athread).length;
+  const markB2 = routineRuns(cb, bthread).length;
+  await sleep(130000);
+  check("the routine runs on alpha again", routineRuns(ca, athread).length > markA, [markA, routineRuns(ca, athread).length]);
+  check("and not on beta", routineRuns(cb, bthread).length === markB2, [markB2, routineRuns(cb, bthread).length]);
 } finally {
   if (process.env.UBER_E2E_DUMP) {
     mkdirSync(process.env.UBER_E2E_DUMP, { recursive: true });

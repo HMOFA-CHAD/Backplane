@@ -197,6 +197,26 @@ def Ub.takeover(+st: M.State, +heard_ago: Nat, +grace: Nat, first: Bool) -> Bool
 def Ub.lease.body(+st: M.State) -> String:
   UO.Ub.b.lease(Ub.me(st), Nat.add(Ub.term(st), 1n))
 
+# "Make this the home": the person makes this machine hold the conversation
+# now, not after a silence. The lease moves here one term on; the old holder
+# learns it at its next exchange and steps down by the higher-term rule.
+# Nothing when this machine holds it already or there is no uberbot here.
+def Ub.home.k(go: Bool, +st: M.State, +now: Nat) -> List<&2, M.Change>:
+  match go:
+    case True{}:
+      Ub.ops(st, now, [Ub.lease.body(st)])
+    case False{}:
+      Nil{}
+
+def Ub.home(+st: M.State, +now: Nat) -> List<&2, M.Change>:
+  Ub.home.k(Bool.and(Ub.on(st), Bool.not(Ub.holder.me(st))), st, now)
+
+# the old holder's last entries (text, "" when the mirror had none), queued
+# ahead of this machine's next message as in a takeover
+def Ub.handoff.cs(+st: M.State, +now: Nat, +text: String) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, String.is_empty(text), Nil{},
+    [M.TurnQueued{BT.Bot.thread(BT.World.bot(M.State.bots(st), UB.Uber.bot(st))), HD.Hand.prefix() ++ "uber:" ++ Nat.show(Ub.term(st)), text, now}])
+
 # seconds between the holder's beats: a quarter of the grace, a minute at most
 # (the minute tick already beats every minute; this is faster only when the
 # grace is small)
@@ -823,6 +843,17 @@ def Ub.digest(+st: M.State) -> String:
 # are folded (law uber_seed_once)
 def Ub.seed.n(+st: M.State, +now: Nat) -> String:
   Nat.show(List.length(&2, M.Change, Ub.init(st, now))) ++ "," ++ Nat.show(List.length(&2, M.Change, Ub.init(M.State.replay(Ub.init(st, now), st), now)))
+
+# machine mB holds the conversation at term 2 (mA is this machine)
+def Ub.demo.away() -> M.State:
+  M.State.replay([Ub.demo.op("mB", 1n, 1001n, UO.Ub.b.lease("mB", 2n))], Ub.demo.a())
+
+# who holds the conversation, and at which term, once this machine took it
+def Ub.home.after(+st: M.State, +now: Nat) -> String:
+  Ub.holder(M.State.replay(Ub.home(st, now), st)) ++ "," ++ Nat.show(Ub.term(M.State.replay(Ub.home(st, now), st)))
+
+def Ub.home.count(+st: M.State, +now: Nat) -> Nat:
+  List.length(&2, M.Change, Ub.home(st, now))
 
 def Ub.demo.fold(+cs: List<&2, M.Change>) -> String:
   Ub.digest(M.State.replay(cs, Ub.demo.a()))

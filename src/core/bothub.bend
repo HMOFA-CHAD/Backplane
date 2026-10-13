@@ -12,6 +12,7 @@ import ./refs.bend as RF
 import ./handoff.bend as HD
 import ./uber.bend as UB
 import ./review.bend as RVW
+import ./plane.bend as PLN
 import ./ubersync.bend as US
 import ./ubop.bend as UO
 
@@ -801,7 +802,7 @@ def Reply.request(+thread: String, +state: String) -> String:
 def Bots.methods() -> List<&2, String>:
   ["bots.create", "bots.edit", "bots.delete", "bots.say", "bots.room", "bots.room_delete", "bots.post", "bots.routine", "bots.routine_delete",
    "bots.routine_run", "bots.hook", "bots.hook_revoke", "bots.forget", "bots.remember", "bots.space", "bots.invite", "bots.join", "bots.unpeer",
-   "bots.google", "bots.tell", "bots.hook_token", "bots.voice", "bots.answered", "bots.give", "bots.uber", "bots.uber_join", "bots.pin"]
+   "bots.google", "bots.tell", "bots.hook_token", "bots.voice", "bots.answered", "bots.give", "bots.uber", "bots.uber_join", "bots.pin", "bots.uber_home"]
 
 def Bots.is(+m: String) -> Bool:
   String.starts_with(m, "bots.")
@@ -1001,6 +1002,20 @@ def Bots.pin.k(cs: List<&2, M.Change>, +client: U32, +id: String) -> B.Step:
 def Bots.pin(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> B.Step:
   Bots.pin.k(US.Ub.pin.set(s, now, J.Json.get_str(p, "routine", ""), Bool.pick(String, String.eq(J.Json.get_str(p, "pin", ""), "here"), US.Ub.me(s), J.Json.get_str(p, "pin", ""))), client, id)
 
+# bots.uber_home {}: this machine takes the conversation now (ubersync.bend's
+# Ub.home). The lease is logged at once; the server then queues the old
+# holder's last entries ahead of the next message (BotFx "uber-home", with
+# the old holder), as it does for a takeover.
+def Bots.uber_home.k(cs: List<&2, M.Change>, +s: M.State, +client: U32, +id: String) -> B.Step:
+  match cs:
+    case Nil{}:
+      Bool.pick(B.Step, US.Ub.on(s), B.Step.outs([B.Reply.ok(client, id)]), Bots.err(client, id, "this machine has no uberbot"))
+    case c <> t:
+      B.Step{c <> t, [B.Reply.ok(client, id), B.BotFx{"uber-home", US.Ub.holder(s), "", ""}]}
+
+def Bots.uber_home(+s: M.State, +now: Nat, +client: U32, +id: String) -> B.Step:
+  Bots.uber_home.k(US.Ub.home(s, now), s, client, id)
+
 def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> B.Step:
   match i:
     case 0n:
@@ -1059,6 +1074,8 @@ def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p
       Bots.uber_join(s, now, client, id, J.Json.get_str(p, "uid", ""))
     case 26n:
       Bots.pin(s, now, client, id, p)
+    case 27n:
+      Bots.uber_home(s, now, client, id)
     case _:
       Bots.err(client, id, "unknown bots request")
 
@@ -1324,11 +1341,13 @@ def Bots.tools() -> List<&2, J.Json>:
      [MC.Tool.prop("name", "string", "Its name: 1 to 24 letters, digits, - or _."), MC.Tool.prop("persona", "string", "Who it is and what it does, in a few sentences."),
       MC.Tool.prop("provider", "string", "claude, codex, grok or muse (default: yours)."), MC.Tool.prop("model", "string", "Its model (default: the provider's).")], ["name", "persona"]),
    MC.Tool.def("voice_dictionary_add", "Add a term (a name, part number, word) to the person's voice dictionary, which Backplane's transcription (their desktop microphone and Pebble ring) takes as hints. Use it when a voice note marks words as possibly misheard and the person tells you the right spelling.",
-     [MC.Tool.prop("term", "string", "The term, spelled as it should be written.")], ["term"])]
+     [MC.Tool.prop("term", "string", "The term, spelled as it should be written.")], ["term"]),
+   MC.Tool.def("plane_read", "Read the status plane as text: what waits on the person (approvals, questions, failures, most urgent first), what runs, the bots, the rooms with unread posts and the routines, here, with the ids thread_read and thread_send take. With `machine` (machine_list shows them), that other machine of the person's own plane instead, its ids made <link>~<id>. idle lists the day's idle threads too.",
+     [MC.Tool.prop("machine", "string", "Another machine's name (or link id): read its plane."), MC.Tool.prop("idle", "boolean", "Also list the threads idle in the last day (default: only their count).")], Nil{})]
 
 def Bots.names() -> List<&2, String>:
   ["bot_whoami", "bot_list", "bot_send", "room_list", "room_create", "room_post", "room_read", "memory_save", "memory_recall", "memory_forget",
-   "memory_list", "space_set", "space_get", "routine_list", "routine_set", "routine_delete", "project_list", "bot_create", "voice_dictionary_add", "space_page"]
+   "memory_list", "space_set", "space_get", "routine_list", "routine_set", "routine_delete", "project_list", "bot_create", "voice_dictionary_add", "space_page", "plane_read"]
 
 def Bots.tool.is(+name: String) -> Bool:
   Nat.is_lt(C.Codec.pos(Bots.names(), name), List.length(&2, String, Bots.names()))
@@ -2042,6 +2061,8 @@ def Bots.call.k(i: Nat, +s: M.State, +now: Nat, +dir: J.Json, +b: BT.Bot, +a: J.
     case 19n:
       Bots.page.set(Nat.is_gt(String.length(J.Json.get_str(a, "html", "")), SP.Space.max_page()), String.is_empty(J.Json.get_str(a, "html", "")),
         now, BT.Bot.id(b), J.Json.get_str(a, "html", ""))
+    case 20n:
+      MR.ok(J.Json.obj([J.KV{"text", J.Str{PLN.Plane.read(s, now, "", "this machine", J.Json.get_bool(a, "idle", False{}))}}]))
     case _:
       MR.fail("unknown tool")
 
@@ -2111,7 +2132,7 @@ def Bots.mcp(+s: M.State, +now: Nat, +thread: String, +models: J.Json, +version:
 # said to the uberbot only
 def Bots.prompt.uber(yes: Bool) -> String:
   Bool.pick(String, yes, "\n# You are the uberbot\n\nThe person made you their main interface across all their projects, machines and bots: they come to you first. " ++
-    "machine_list shows their machines; thread_list, thread_launch and thread_send reach threads on any of them; bot_send reaches the bots here and name@machine. " ++
+    "machine_list shows their machines; thread_list, thread_launch and thread_send reach threads on any of them; bot_send reaches the bots here and name@machine; plane_read lists what waits on them and what runs. " ++
     "Keep track of what runs where and what waits on them, and answer for it.\n", "")
 
 def Bots.prompt.k(m: Maybe<&2, BT.Bot>, +s: M.State, +home: String) -> String:

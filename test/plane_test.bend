@@ -5,6 +5,8 @@ import ../src/core/client.bend as U
 import ../src/core/far.bend as FR
 import ../src/core/botui.bend as BU
 import ../src/core/plane.bend as PL
+import ../src/core/ubersync.bend as UBS
+import ../src/core/ubop.bend as UO
 import ../src/core/json.bend as J
 import ../src/mobile/plane.bend as MP
 
@@ -69,6 +71,21 @@ def states(rs: List<&2, PL.PRow>) -> String:
     case r <> t:
       PL.PRow.state(r) ++ "," ++ states(t)
 
+def cmds(a: U.Act) -> List<&2, U.Cmd>:
+  match a:
+    case U.Act{_, cs}:
+      cs
+
+# the text of every request a step sent
+def sends.of(cs: List<&2, U.Cmd>) -> String:
+  match cs:
+    case U.Send{t} <> r:
+      t ++ "|" ++ sends.of(r)
+    case _ <> r:
+      sends.of(r)
+    case Nil{}:
+      ""
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +p : PL.Plane = PL.Plane.of(ui(Nil{}), now())
@@ -84,6 +101,22 @@ def main() -> IO(Unit):
     C.Check.str("a running routine first", ids(PL.Plane.routines(p)), "rt1,rt2,")
     C.Check.str("routine states", states(PL.Plane.routines(p)), "working,idle,")
     C.Check.str("counts", PL.Plane.counts(p), "3 need you · 3 running")
+    C.Check.str("the count without rows", PL.Plane.tally.words(ui(Nil{}), now()), "3 need you · 3 running")
+    C.Check.str("every way to be need or run", PL.Plane.tally.words(PL.Plane.demo.rich(), 200000n), PL.Plane.counts(PL.Plane.of(PL.Plane.demo.rich(), 200000n)))
+    C.Check.str("... is what it is", PL.Plane.counts(PL.Plane.of(PL.Plane.demo.rich(), 200000n)), "5 need you · 6 running")
+    C.Check.str("a thread elsewhere counts", PL.Plane.tally.words(far(False{}), now()), "3 need you · 4 running")
+    C.Check.str("the plane as text, need first", PL.Plane.text(p, "", "this machine", now(), False{}),
+      "Status plane of this machine\nNeeds you (3)\n- t1 · approval · A · One · 16m ago\n- t2 · question · B · One · 15m ago\n- t3 · failed · C · One · 13m ago\nRunning (3)\n- b1 · working · Kit · 1m ago\n- t5 · queued · E · One · 10m ago\n- t4 · working · D · One · 11m ago\nBots (2)\n- b1 · work · Kit · working · 1m ago\n- b2 · sleep · Pip · 2d ago\nRooms with unread posts (1)\n- r1 · unread · ops · 1 unread · 3m ago\nRoutines (2)\n- rt1 · working · Digest · daily at 09:00 · next in 1h\n- rt2 · idle · Poll · every 15 minutes · next in 11m\nIdle in the last day: 1 (plane_read with idle: true lists them).\n")
+    C.Check.str("need before run in the text", Bool.show(PL.Plane.text.need_first(p, now())), "True")
+    C.Check.str("ids of another machine carry its link", Bool.show(String.contains(PL.Plane.text(p, "L", "desk", now(), True{}), "- L~t1 ")) ++ Bool.show(String.contains(PL.Plane.text(p, "L", "desk", now(), True{}), "- L~t6 ")), "TrueTrue")
+    C.Check.str("a hub reads its own plane", PL.Plane.read(M.State.replay(demo(), M.State.empty()), now(), "", "x", False{}), PL.Plane.text(PL.Plane.of(U.Ui.far.st(U.Ui.init(now()), M.State.replay(demo(), M.State.empty())), now()), "", "x", now(), False{}))
+    C.Check.str("home: no uberbot, no line", PL.Plane.home.words(ui(Nil{})), "")
+    C.Check.str("home: the lease is held elsewhere, the holder unnamed", PL.Plane.home.words(U.Ui.far.st(U.Ui.init(now()), UBS.Ub.demo.away())), "Home: another machine | Make this the home")
+    C.Check.str("home: named by its link", PL.Plane.home.words(U.Ui.info_set(U.Ui.far.st(U.Ui.init(now()), M.State.replay([M.SettingSet{"uber.link.u1-x.mB", "L", 5n}], UBS.Ub.demo.away())), "far.name.L", "desk")), "Home: desk | Make this the home")
+    C.Check.str("home: here, no offer", PL.Plane.home.words(U.Ui.far.st(U.Ui.init(now()), M.State.replay([UBS.Ub.demo.op("mA", 1n, 1002n, UO.Ub.b.lease("mA", 3n))], UBS.Ub.demo.away()))), "Home: This machine")
+    C.Check.str("home: no lease yet, here", PL.Plane.home.words(U.Ui.far.st(U.Ui.init(now()), UBS.Ub.demo.a())), "Home: This machine")
+    C.Check.str("uber-home asks the hub", Bool.show(String.contains(sends.of(cmds(U.Ui.act(ui(Nil{}), "uber-home", ""))), "bots.uber_home")), "True")
+    C.Check.str("the list's plane has the plane's need and run rows", Bool.show(PL.Plane.list.same(ui(Nil{}), now())) ++ Bool.show(PL.Plane.list.same(PL.Plane.demo.rich(), now())), "TrueTrue")
     C.Check.str("nothing to count", PL.Plane.counts(PL.Plane.of(U.Ui.far.st(U.Ui.init(now()), M.State.empty()), now())), "")
     C.Check.str("unread", Nat.show(U.Rooms.unread(ui(Nil{}), "r1")), "1")
     C.Check.str("seen", Nat.show(U.Rooms.unread(ui([M.SettingSet{"room.seen.r1", "199800", 199900n}]), "r1")), "0")

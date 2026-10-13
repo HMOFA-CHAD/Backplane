@@ -29,10 +29,18 @@ struct PlaneMachine: Decodable, Hashable {
     let name, state: String
 }
 
+// where the uberbot's conversation is held; Bend says whether to offer
+// "Make this the home" (button), and what a tap sends (act, value)
+struct PlaneHome: Decodable {
+    let name, line, label, act, value: String
+    let here, button: Bool
+}
+
 struct PlaneModel: Decodable {
     let need, run, idle, bots, rooms, routines: [PlaneRow]
     let idleN, working: Int
     let machines: [PlaneMachine]
+    let home: PlaneHome?
 }
 
 // a thread row's dot, from the plane's states
@@ -260,8 +268,9 @@ struct PlaneSections: View {
 // The Status tab
 // --------------
 
-// counters, then the machines, in one card
+// counters, then the machines and where the conversation is held, in one card
 private struct PlaneStrip: View {
+    let model: AppModel
     let plane: PlaneModel
 
     private func counter(_ n: Int, _ label: String, _ tint: Color) -> some View {
@@ -303,6 +312,14 @@ private struct PlaneStrip: View {
                     }
                 }
             }
+            if let h = plane.home {
+                HStack(spacing: 10) {
+                    Text(h.line).font(.caption).foregroundStyle(.secondary)
+                    if h.button {
+                        Button(h.label) { model.act(h.act, h.value) }.buttonStyle(.bordered).controlSize(.small)
+                    }
+                }
+            }
         }
         .padding(.vertical, 4)
     }
@@ -315,7 +332,7 @@ struct StatusTab: View {
     var body: some View {
         List {
             if let p = plane {
-                Section { PlaneStrip(plane: p) }
+                Section { PlaneStrip(model: model, plane: p) }
                 PlaneSections(model: model, plane: p, full: true)
             }
         }

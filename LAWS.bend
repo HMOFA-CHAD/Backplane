@@ -6828,3 +6828,58 @@ law uber_superseded_keeps:
 # an uberbot promoted before ops existed is seeded once: its first ops are logged, and none again after they are folded
 law uber_seed_once:
   {UBS.Ub.seed.n(UBS.Ub.demo.a(), 3000n) == "3,0" : String}
+
+# --- uberbot inc 3: plane_tally_*, plane_text_*, uber_home_* ---
+
+# a thread's rows from the index (one pass over the settings) are the rows its own lookups find
+law side_work_ix_eq:
+  {U.Side.phases.ix(U.Ui.threads(U.Side.demo.work()), U.Side.ix(U.Side.demo.work()), U.Side.demo.work()) == U.Side.phases(U.Ui.threads(U.Side.demo.work()), U.Side.demo.work()) : List<&2, M.Phase>}
+
+# the count the phones' list makes without building rows is the plane's count
+law plane_tally_counts:
+  {PLN.Plane.tally.same(PLN.Plane.demo(), 200000n) == True{} : Bool}
+
+# also when threads are need or run by a pending tool, a queued message, background rows or a child task
+law plane_tally_counts_rich:
+  {PLN.Plane.tally.same(PLN.Plane.demo.rich(), 200000n) == True{} : Bool}
+
+# plane_read: every need row comes before every run row in the text
+law plane_text_need_first:
+  {PLN.Plane.text.need_first(PLN.Plane.of(PLN.Plane.demo(), 200000n), 200000n) == True{} : Bool}
+
+law plane_text_need_first_rich:
+  {PLN.Plane.text.need_first(PLN.Plane.of(PLN.Plane.demo.rich(), 200000n), 200000n) == True{} : Bool}
+
+# plane_read names no machine: this hub reads its own; one it names (and none is linked) is never sent
+law fmc_plan_plane_read_here:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("plane_read", J.Json.obj(Nil{})), M.State.empty(), Nil{}, "t0")) == "here" : String}
+
+law fmc_plan_plane_read_unlinked_never_sent:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("plane_read", J.Json.obj([J.KV{"machine", J.Str{"beta"}}])), M.State.empty(), Nil{}, "t0")) == "answer" : String}
+
+# an owner takes plane_read from its machines
+law fmc_plane_read_allowed:
+  {FMC.Fm.allowed(Fx.ask("plane_read")) == True{} : Bool}
+
+# "Make this the home": this machine takes the lease one term on
+law uber_home_takes_term:
+  {UBS.Ub.home.after(UBS.Ub.demo.away(), 2000n) == "mA,3" : String}
+
+# and does nothing where it holds it already, where no lease was ever taken, or with no uberbot
+law uber_home_holder_nothing:
+  {Nat.add(Nat.add(UBS.Ub.home.count(UBS.Ub.demo.a(), 2000n), UBS.Ub.home.count(M.State.replay([UBS.Ub.demo.op("mA", 1n, 1001n, UBO.Ub.b.lease("mA", 2n))], UBS.Ub.demo.a()), 2000n)), UBS.Ub.home.count(M.State.empty(), 2000n)) == 0n : Nat}
+
+# the Status strip offers "Make this the home" where the uberbot is here and its conversation is not
+law plane_home_button:
+  {PLN.Plane.home.button(PLN.Plane.home(U.Ui.far.st(U.Ui.init(2000n), UBS.Ub.demo.away()))) == True{} : Bool}
+
+# and not where this machine holds it, or has no uberbot
+law plane_home_button_held:
+  {Bool.or(PLN.Plane.home.button(PLN.Plane.home(U.Ui.far.st(U.Ui.init(2000n), UBS.Ub.demo.a()))), PLN.Plane.home.button(PLN.Plane.home(U.Ui.far.st(U.Ui.init(2000n), M.State.empty())))) == False{} : Bool}
+
+# the phones' list plane has the rows of the plane that need the person or run, in the same order
+law plane_list_same:
+  {PLN.Plane.list.same(PLN.Plane.demo(), 200000n) == True{} : Bool}
+
+law plane_list_same_rich:
+  {PLN.Plane.list.same(PLN.Plane.demo.rich(), 200000n) == True{} : Bool}

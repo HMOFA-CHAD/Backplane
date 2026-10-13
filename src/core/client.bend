@@ -1511,7 +1511,7 @@ def PSlot.rows(xs: List<&2, PSlot>) -> List<&2, SRow>:
 # Side.* answer by walking the state (laws side_*_ix_eq, subs_count_ix_eq).
 
 type SIx is Data:
-  SIx{by: Map<&2, List<&2, M.Thread>>, asks: Map<&2, List<&2, M.Ask>>, kids: Map<&2, Nat>}
+  SIx{by: Map<&2, List<&2, M.Thread>>, asks: Map<&2, List<&2, M.Ask>>, kids: Map<&2, Nat>, work: Map<&2, Nat>}
 
 def SIx.push.k(r: Map<&2, List<&2, M.Thread>> & List<&2, M.Thread>, +k: String, t: M.Thread) -> Map<&2, List<&2, M.Thread>>:
   (m, xs) = r
@@ -1555,7 +1555,7 @@ def SIx.asks.go(as: List<&2, M.Ask>, m: Map<&2, List<&2, M.Ask>>) -> Map<&2, Lis
 # parent, not in their project)
 def Side.ix(+st: M.State) -> SIx:
   SIx{SIx.by.go(List.reverse(&2, M.Thread, Kids.keep(Ui.threads(st), Kids.set(st))), Map.new(&2, List<&2, M.Thread>)),
-    SIx.asks.go(List.reverse(&2, M.Ask, M.Asks.all(st)), Map.new(&2, List<&2, M.Ask>)), M.Work.kids.map(st)}
+    SIx.asks.go(List.reverse(&2, M.Ask, M.Asks.all(st)), Map.new(&2, List<&2, M.Ask>)), M.Work.kids.map(st), M.Work.rows.map(st)}
 
 def SIx.list.k(r: Map<&2, List<&2, M.Thread>> & List<&2, M.Thread>) -> List<&2, M.Thread>:
   (_, xs) = r
@@ -1563,7 +1563,7 @@ def SIx.list.k(r: Map<&2, List<&2, M.Thread>> & List<&2, M.Thread>) -> List<&2, 
 
 def SIx.mine(+ix: SIx, +pid: String) -> List<&2, M.Thread>:
   match ix:
-    case SIx{by, _, _}:
+    case SIx{by, _, _, _}:
       SIx.list.k(Map.get(List<&2, M.Thread>, Nil{}, by, pid))
 
 def SIx.asks.k(r: Map<&2, List<&2, M.Ask>> & List<&2, M.Ask>) -> List<&2, M.Ask>:
@@ -1573,14 +1573,20 @@ def SIx.asks.k(r: Map<&2, List<&2, M.Ask>> & List<&2, M.Ask>) -> List<&2, M.Ask>
 # a thread's open asks
 def SIx.open(+ix: SIx, +th: String) -> List<&2, M.Ask>:
   match ix:
-    case SIx{_, as, _}:
+    case SIx{_, as, _, _}:
       SIx.asks.k(Map.get(List<&2, M.Ask>, Nil{}, as, th))
 
 # a parent's unfinished child tasks
 def SIx.kids(+ix: SIx, +th: String) -> Nat:
   match ix:
-    case SIx{_, _, ks}:
+    case SIx{_, _, ks, _}:
       M.Work.kids.at.k(Map.get(Nat, 0n, ks, th))
+
+# a thread's own rows, background and watched (Work.rows, from the index)
+def SIx.work(+ix: SIx, +th: String) -> Nat:
+  match ix:
+    case SIx{_, _, _, wk}:
+      M.Work.kids.at.k(Map.get(Nat, 0n, wk, th))
 
 def Side.latest(ts: List<&2, M.Thread>, +acc: Nat) -> Nat:
   match ts:
@@ -2693,7 +2699,7 @@ def Side.status.ix(+ix: SIx, +st: M.State, t: M.Thread) -> M.Status:
 
 def Side.phase.ix.k(+st: M.State, +ix: SIx, +id: String, turn: M.TurnState, +pending: Nat, +as: List<&2, M.Ask>) -> M.Phase:
   M.Phase.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(as, "approval")),
-    Bool.or(Asks.kind(as, "input"), Asks.kind(as, "plan")), Nat.add(SIx.kids(ix, id), M.Work.rows(st, id)), turn,
+    Bool.or(Asks.kind(as, "input"), Asks.kind(as, "plan")), Nat.add(SIx.kids(ix, id), SIx.work(ix, id)), turn,
     M.Queue.waiting(st, id))
 
 # Side.phase from the index (law side_phase_ix_eq)
@@ -2914,6 +2920,10 @@ def Side.demo() -> M.State:
     M.TaskDelegated{"k1", "t3", "t4", 1n, "claude", "", 11n}, M.TaskDelegated{"k2", "t1", "t5", 1n, "claude", "", 12n}, M.TaskStateSet{"k2", M.TaskDone{}, "ok", 13n},
     M.AskOpened{"a1", "t1", "approval", "Bash", "ls", "", 14n}, M.AskOpened{"a2", "t2", "input", "", "?", "", 15n}, M.AskOpened{"a3", "t3", "plan", "", "p", "", 16n},
     M.AskClosed{"a3", "yes", 17n}], M.State.empty())
+
+# the same with background rows on t1 (two) and watched work on t4
+def Side.demo.work() -> M.State:
+  M.State.replay([M.SettingSet{"bg.t1", "k1\tsleeping", 20n}, M.SettingSet{"watch.t1", "w1\twatching", 21n}, M.SettingSet{"watch.t4", "w2\tx", 22n}], Side.demo())
 
 def Side.phases(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, M.Phase>:
   match ts:
@@ -8345,6 +8355,8 @@ def Uber.bot.at(+u: Ui, +value: String) -> Act:
 def Uber.new(+u: Ui) -> Act:
   Act{Ui.scratch_set(Ui.scratch_set(Ui.flag_off(u, "settings"), "@bnew", "1"), "@uber.new", "1"), [Focus{"bot-name"}]}
 
+# "uber-home" asks the hub (bots.uber_home) to make this machine hold the
+# uberbot's conversation (the Status strip's "Make this the home").
 def Uber.act.k(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 0n:
@@ -8357,13 +8369,15 @@ def Uber.act.k(i: Nat, +u: Ui, +value: String) -> Act:
       Uber.bot.at(u, value)
     case 4n:
       Uber.new(u)
+    case 5n:
+      Ui.rpc(u, "bots.uber_home", Nil{})
     case _:
       Act{u, Nil{}}
 
 def Uber.act.go(route: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match route:
     case True{}:
-      Uber.act.k(C.Codec.pos(["uber", "uber-promote", "uber-demote", "uber-bot", "uber-new"], action), u, value)
+      Uber.act.k(C.Codec.pos(["uber", "uber-promote", "uber-demote", "uber-bot", "uber-new", "uber-home"], action), u, value)
     case False{}:
       Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)
 

@@ -694,7 +694,7 @@ def Bv.bot.k(k: Nat, +ty: L.Ty, +memo: L.TLMemo, +pl: PC.Plane, +n: S.Nui, +b: B
     case 7n:
       +top = {(Bv.hy() + 24 : U32) : U32}
       +off = Bv.off(S.Nui.ui(n))
-      Bv.pane(PV.Pl.draw(pl, ty, D.Clip{x0, Bv.hy(), x1, S.Nui.height(n)}, (x0 + 24 : U32), (x1 - x0 - 48 : U32), top, off, L.U32.dim(S.Nui.height(n), top), U.Side.now(S.Nui.ui(n))),
+      Bv.pane(PV.Pl.draw(pl, PC.Plane.home(S.Nui.ui(n)), ty, D.Clip{x0, Bv.hy(), x1, S.Nui.height(n)}, (x0 + 24 : U32), (x1 - x0 - 48 : U32), top, off, L.U32.dim(S.Nui.height(n), top), U.Side.now(S.Nui.ui(n))),
         x0, x1, Bv.hy(), off, S.Nui.height(n))
     case +j:
       +top = {(Bv.hy() + 24 : U32) : U32}
@@ -734,6 +734,7 @@ type PW is Data:
   PWGroup{posts: List<&2, Map<&2, PW>>}
   PWKeys{keys: List<&2, String>}
   PWPlane{key: String, plane: PC.Plane}
+  PWCounts{key: String, words: String}
 
 def Bv.wraps.none() -> Map<&2, PW>:
   Map.new(&2, PW)
@@ -756,9 +757,20 @@ def Bv.plane.snd(r: Map<&2, PW> & PW) -> PW:
 def Bv.plane.get(+ws: Map<&2, PW>) -> PC.Plane:
   Bv.plane.got(Bv.plane.snd(Map.get(PW, PWPlane{"", Bv.plane.none()}, ws, "@plane")))
 
+# the sidebar row's count, kept beside the plane (it is not built unless the Status tab shows)
+def Bv.plane.words.got(p: PW) -> String:
+  match p:
+    case PWCounts{_, w}:
+      w
+    case _:
+      ""
+
+def Bv.plane.words(+ws: Map<&2, PW>) -> String:
+  Bv.plane.words.got(Bv.plane.snd(Map.get(PW, PWCounts{"", ""}, ws, "@plane.n")))
+
 def Bv.sd.w(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +n: S.Nui, +ws: Map<&2, PW>) -> Sd:
   Sd{ty, cats, F.Fm.fs(n), S.Nui.ms_of(n), BU.BU.open(S.Nui.ui(n), "@bnew"), BU.BU.open(S.Nui.ui(n), "@rnew"), BU.BU.rows(S.Nui.ui(n)), BU.BU.rooms(S.Nui.ui(n)),
-    BU.BU.uber(S.Nui.ui(n)), PC.Plane.counts(Bv.plane.get(ws))}
+    BU.BU.uber(S.Nui.ui(n)), Bv.plane.words(ws)}
 
 
 def Bv.wrap.key(+id: String, +w: U32) -> String:
@@ -1026,15 +1038,33 @@ def Bv.plane.key.of(p: PW) -> String:
 def Bv.plane.key(+ws: Map<&2, PW>) -> String:
   Bv.plane.key.of(Bv.plane.snd(Map.get(PW, PWPlane{"", Bv.plane.none()}, ws, "@plane")))
 
+# whether the uberbot's Status tab is up (the only place the plane is drawn)
+def Bv.plane.shown.k(v: BU.View, +u: U.Ui) -> Bool:
+  match v:
+    case BU.VBot{+b}:
+      String.eq(BU.BU.tab.of(u, BT.Bot.id(b)), "status")
+    case _:
+      False{}
+
+def Bv.plane.shown(+u: U.Ui) -> Bool:
+  Bv.plane.shown.k(BU.BU.view(u), u)
+
+def Bv.plane.build(shown: Bool, +u: U.Ui) -> PC.Plane:
+  match shown:
+    case True{}:
+      PC.Plane.of(u, U.Side.now(u))
+    case False{}:
+      Bv.plane.none()
+
 def Bv.plane.keep.k(same: Bool, +ws: Map<&2, PW>, +u: U.Ui, +key: String) -> Map<&2, PW>:
   match same:
     case True{}:
       ws
     case False{}:
-      Map.set(&2, PW, ws, "@plane", PWPlane{key, PC.Plane.of(u, U.Side.now(u))})
+      Map.set(&2, PW, Map.set(&2, PW, ws, "@plane", PWPlane{key, Bv.plane.build(Bv.plane.shown(u), u)}), "@plane.n", PWCounts{key, PC.Plane.tally.words(u, U.Side.now(u))})
 
 def Bv.plane.keep(+ws: Map<&2, PW>, +u: U.Ui) -> Map<&2, PW>:
-  +key = {PC.Plane.key(u, U.Side.now(u)) : String}
+  +key = {PC.Plane.key(u, U.Side.now(u)) ++ Bool.pick(String, Bv.plane.shown(u), "|s", "") : String}
   Bv.plane.keep.k(String.eq(Bv.plane.key(ws), key), ws, u, key)
 
 def Bv.plane.refresh(m: Maybe<&2, BU.BRow>, +ws: Map<&2, PW>, +u: U.Ui) -> Map<&2, PW>:

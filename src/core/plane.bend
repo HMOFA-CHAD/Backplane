@@ -7,6 +7,7 @@ import ./once.bend as O
 import ./client.bend as U
 import ./botui.bend as BU
 import ./uber.bend as UB
+import ./ubersync.bend as US
 
 # The status plane (docs/uber.md)
 # -------------------------------
@@ -549,3 +550,384 @@ def Plane.demo() -> U.Ui:
     M.ThreadCreated{"bt1", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Kit", "bt1", 7n, "", 100n}, M.TurnChanged{"bt1", M.Running{}, 199900n},
     M.RoomSet{"r1", "ops", "b1", 150n}, M.RoomPosted{"m1", "r1", "b1", "hello", 0n, 199800n},
     M.RoutineSet{"rt1", "b1", "Digest", "0 9 * * *", "sum up", True{}, 160n}], M.State.empty()))
+
+# The count alone
+# ---------------
+# The phones' list shows only "3 need you · 7 running" of the plane, so it
+# counts instead of building rows (no titles, machines, sorts or JSON). A
+# thread's phase is the costly part (five lookups), so it is worked out only
+# for a thread that can be need or run: its turn running or failed, an
+# approval pending, or its id among those that have an open ask, an unfinished
+# child task, something queued or background rows (Plane.hot, from the index). Every other
+# thread's phase is complete, stopped or idle. Law plane_tally_counts.
+
+type PTally is Data:
+  PTally{need: Nat, run: Nat}
+
+def PTally.need(t: PTally) -> Nat:
+  match t:
+    case PTally{n, _}:
+      n
+
+def PTally.run(t: PTally) -> Nat:
+  match t:
+    case PTally{_, r}:
+      r
+
+# a state counted into the tally: need (0), run (1), the rest (2) as Plane.sec
+def Plane.tally.add(n: Nat, t: PTally) -> PTally:
+  match n t:
+    case 0n PTally{+a, +b}:
+      PTally{1n+a, b}
+    case 1n PTally{+a, +b}:
+      PTally{a, 1n+b}
+    case _ x:
+      x
+
+def Plane.hot.put.k(none: Bool, +id: String, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match none:
+    case True{}:
+      m
+    case False{}:
+      Map.set(&2, Bool, m, id, True{})
+
+def Plane.hot.put(+id: String, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  Plane.hot.put.k(String.is_empty(id), id, m)
+
+def Plane.hot.ids(ids: List<&2, String>, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match ids:
+    case Nil{}:
+      m
+    case +i <> t:
+      Plane.hot.ids(t, Plane.hot.put(i, m))
+
+def Plane.hot.sx(ix: U.SIx, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match ix:
+    case U.SIx{_, +as, +ks, +wk}:
+      Plane.hot.ids(Map.keys(&2, List<&2, M.Ask>, as), Plane.hot.ids(Map.keys(&2, Nat, ks), Plane.hot.ids(Map.keys(&2, Nat, wk), m)))
+
+# the ids that can be need or run beyond what a thread's own turn and pending say
+def Plane.hot(+st: M.State, ix: U.SIx) -> Map<&2, Bool>:
+  Plane.hot.sx(ix, Plane.hot.ids(M.Queue.threads(st), Map.new(&2, Bool)))
+
+def Plane.turn.hot(t: M.TurnState) -> Bool:
+  match t:
+    case M.Running{}:
+      True{}
+    case M.Failed{}:
+      True{}
+    case _:
+      False{}
+
+def Plane.hot.get(r: Map<&2, Bool> & Bool) -> Bool:
+  (_, b) = r
+  b
+
+def Plane.hot.has(m: Map<&2, Bool>, +id: String) -> Bool:
+  Plane.hot.get(Map.get(Bool, False{}, m, id))
+
+def Plane.maybe.k(own: Bool, m: Map<&2, Bool>, +id: String) -> Bool:
+  match own:
+    case True{}:
+      True{}
+    case False{}:
+      Plane.hot.has(m, id)
+
+# whether a thread can be need or run (its phase is worked out only then)
+def Plane.maybe(t: M.Thread, m: Map<&2, Bool>) -> Bool:
+  match t:
+    case M.Thread{+id, _, _, _, _, +turn, +pending, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Plane.maybe.k(Bool.or(Plane.turn.hot(turn), Nat.is_gt(pending, 0n)), m, id)
+
+def Plane.tally.t(r: Bool, +t: M.Thread, +ix: U.SIx, +st: M.State, acc: PTally) -> PTally:
+  match r:
+    case True{}:
+      Plane.tally.add(Plane.sec(Plane.asking(Plane.state(U.Side.phase.ix(ix, st, t)), ix, M.Thread.id(t))), acc)
+    case False{}:
+      acc
+
+def Plane.tally.ts(ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +m: Map<&2, Bool>, acc: PTally) -> PTally:
+  match ts:
+    case Nil{}:
+      acc
+    case +t <> r:
+      Plane.tally.ts(r, ix, st, m, Plane.tally.t(Plane.maybe(t, m), t, ix, st, acc))
+
+# the live shelves of every project, as Active.gather walks them
+def Plane.tally.rows(rs: List<&2, U.SRow>, +ix: U.SIx, +st: M.State, +m: Map<&2, Bool>, acc: PTally) -> PTally:
+  match rs:
+    case Nil{}:
+      acc
+    case U.SRow{_, _, M.Shelves{+p, +a, _, _, _}} <> t:
+      Plane.tally.rows(t, ix, st, m, Plane.tally.ts(a, ix, st, m, Plane.tally.ts(p, ix, st, m, acc)))
+
+# the bots' own threads count as the plane's bot rows do
+def Plane.tally.bots(rs: List<&2, PRow>, acc: PTally) -> PTally:
+  match rs:
+    case Nil{}:
+      acc
+    case +r <> t:
+      Plane.tally.bots(t, Plane.tally.add(Plane.sec(PRow.state(r)), acc))
+
+# what the plane would count as needing the person and running, from the
+# sidebar's rows (Side.rows.ix, which the screen has made)
+def Plane.tally(+u: U.Ui, +ix: U.SIx, +rows: List<&2, U.SRow>) -> PTally:
+  Plane.tally.bots(Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, ix, U.Ui.state(u)),
+    Plane.tally.rows(rows, ix, U.Ui.state(u), Plane.hot(U.Ui.state(u), ix), PTally{0n, 0n}))
+
+def Plane.counts.t(+t: PTally) -> String:
+  Plane.counts.join(Plane.counts.part(PTally.need(t), "need you"), Plane.counts.part(PTally.run(t), "running"))
+
+# a client for the count's laws: what each way to be need or run looks like
+# (an open approval, a question, a failed turn, a pending tool, a turn at work,
+# a message queued, background rows, an unfinished child task, a bot at
+# work), and threads that are neither
+def Plane.demo.rich() -> U.Ui:
+  U.Ui.far.st(U.Ui.init(200000n), M.State.replay([M.ProjectCreated{"p1", "One", "/a", 1n},
+    M.ThreadCreated{"t1", "p1", "A", M.Local{}, "", "", "claude", "", 199000n}, M.TurnChanged{"t1", M.Running{}, 199001n}, M.AskOpened{"a1", "t1", "approval", "Bash", "ls", "", 199002n},
+    M.ThreadCreated{"t2", "p1", "B", M.Local{}, "", "", "claude", "", 199100n}, M.AskOpened{"a2", "t2", "input", "", "?", "", 199101n},
+    M.ThreadCreated{"t3", "p1", "C", M.Local{}, "", "", "claude", "", 199200n}, M.TurnChanged{"t3", M.Failed{}, 199201n},
+    M.ThreadCreated{"t4", "p1", "D", M.Local{}, "", "", "claude", "", 199300n}, M.TurnChanged{"t4", M.Running{}, 199301n},
+    M.ThreadCreated{"t5", "p1", "E", M.Local{}, "", "", "claude", "", 199400n}, M.TurnQueued{"t5", "q1", "next", 199401n},
+    M.ThreadCreated{"t6", "p1", "F", M.Local{}, "", "", "claude", "", 199500n}, M.TurnChanged{"t6", M.Completed{}, 199501n},
+    M.ThreadCreated{"t7", "p1", "G", M.Local{}, "", "", "claude", "", 199510n}, M.TurnChanged{"t7", M.Interrupted{}, 199511n},
+    M.ThreadCreated{"t8", "p1", "H", M.Local{}, "", "", "claude", "", 199520n}, M.SettingSet{"bg.t8", "k1\tsleeping", 199521n},
+    M.ThreadCreated{"t9", "p1", "I", M.Local{}, "", "", "claude", "", 199530n}, M.ThreadCreated{"t10", "p1", "J", M.Local{}, "", "", "claude", "", 199531n},
+    M.TaskDelegated{"k2", "t9", "t10", 1n, "claude", "", 199532n},
+    M.ThreadCreated{"t11", "p1", "K", M.Local{}, "", "", "claude", "", 199540n}, M.PendingChanged{"t11", 1n, 199541n},
+    M.ThreadCreated{"t12", "p1", "L", M.Local{}, "", "", "claude", "", 100n},
+    M.ThreadCreated{"t13", "p1", "M", M.Local{}, "", "", "claude", "", 199550n}, M.SettingSet{"watch.t13", "w1\twatching", 199551n},
+    M.ThreadCreated{"bt1", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Kit", "bt1", 7n, "", 100n}, M.TurnChanged{"bt1", M.Running{}, 199900n},
+    M.ThreadCreated{"bt2", "", "Pip", M.Local{}, "", "", "claude", "", 101n}, M.BotSet{"b2", "Pip", "bt2", 8n, "", 101n}, M.AskOpened{"a3", "bt2", "approval", "Bash", "ls", "", 199901n}], M.State.empty()))
+
+# the count made without rows is the count of the plane
+def Plane.tally.same(+u: U.Ui, +now: Nat) -> Bool:
+  String.eq(Plane.counts.t(Plane.tally(u, U.Side.ix(U.Ui.state(u)), U.Side.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now))), Plane.counts(Plane.of(u, now)))
+
+def Plane.tally.words(+u: U.Ui, +now: Nat) -> String:
+  Plane.counts.t(Plane.tally(u, U.Side.ix(U.Ui.state(u)), U.Side.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now)))
+
+# The plane as text
+# -----------------
+# What an agent reads with plane_read (bothub.bend's tool, fmcp.bend for
+# another machine): each section a heading and a line a row, need first, then
+# run, bots, rooms with news, routines, and the idle threads' count (or the
+# threads, when asked). A row starts with the id the thread tools take; `pre`
+# is the link of the machine that has it ("" for this one), so an id read on
+# another machine already works here (<link>~<id>).
+
+# the plane of a hub, from its state alone (no client: its idle threads too)
+def Plane.of.st(+st: M.State, +now: Nat) -> Plane:
+  Plane.of.f(U.Ui.far.st(U.Ui.init(now), st), U.Side.ix(st), now, True{})
+
+def Plane.text.id(+pre: String, +id: String) -> String:
+  Bool.pick(String, String.is_empty(pre), id, FR.Fr.id(pre, id))
+
+# " · s", or nothing for an empty s
+def Plane.text.part(+s: String) -> String:
+  Bool.pick(String, String.is_empty(s), "", " · " ++ s)
+
+def Plane.text.ago(+now: Nat, +at: Nat) -> String:
+  Bool.pick(String, Nat.is_lt(Nat.sub(now, at), 60n), "just now", M.Time.ago(now, at) ++ " ago")
+
+# the last activity of a row, or when a routine is next due (`at` of a routine)
+def Plane.text.when(+kind: String, +at: Nat, +now: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(at, 0n), "",
+    Bool.pick(String, String.eq(kind, "routine"), Bool.pick(String, Nat.is_gt(at, now), "next in " ++ M.Time.ago(at, now), "due now"), Plane.text.ago(now, at)))
+
+def Plane.text.row(r: PRow, +pre: String, +now: Nat) -> String:
+  match r:
+    case PRow{+kind, +id, _, _, +title, +sub, +machine, +state, +at, _}:
+      "- " ++ Plane.text.id(pre, id) ++ " · " ++ state ++ " · " ++ title ++ Plane.text.part(sub) ++ Plane.text.part(Bool.pick(String, String.is_empty(machine), "", "on " ++ machine))
+        ++ Plane.text.part(Plane.text.when(kind, at, now)) ++ "\n"
+
+def Plane.text.rows(rs: List<&2, PRow>, +pre: String, +now: Nat) -> String:
+  match rs:
+    case Nil{}:
+      ""
+    case +r <> t:
+      Plane.text.row(r, pre, now) ++ Plane.text.rows(t, pre, now)
+
+def Plane.text.sec.k(none: Bool, +head: String, +rs: List<&2, PRow>, +pre: String, +now: Nat) -> String:
+  match none:
+    case True{}:
+      ""
+    case False{}:
+      head ++ " (" ++ Nat.show(List.length(&2, PRow, rs)) ++ ")\n" ++ Plane.text.rows(rs, pre, now)
+
+def Plane.text.sec(+head: String, +rs: List<&2, PRow>, +pre: String, +now: Nat) -> String:
+  Plane.text.sec.k(List.is_empty(&2, PRow, rs), head, rs, pre, now)
+
+def Plane.text.machs(ms: List<&2, PMach>) -> List<&2, String>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case PMach{+n, +s} <> t:
+      (n ++ " (" ++ s ++ ")") <> Plane.text.machs(t)
+
+# (only when there are other machines)
+def Plane.text.machines.k(many: Bool, ms: List<&2, PMach>) -> String:
+  match many:
+    case True{}:
+      "Machines: " ++ String.join(Plane.text.machs(ms), ", ") ++ "\n"
+    case False{}:
+      ""
+
+def Plane.text.idle.k(shown: Bool, +n: Nat, rs: List<&2, PRow>, +pre: String, +now: Nat) -> String:
+  match shown:
+    case True{}:
+      Plane.text.sec("Idle in the last day", rs, pre, now)
+    case False{}:
+      Bool.pick(String, Nat.is_eq(n, 0n), "", "Idle in the last day: " ++ Nat.show(n) ++ " (plane_read with idle: true lists them).\n")
+
+def Plane.text(+p: Plane, +pre: String, +name: String, +now: Nat, +idle: Bool) -> String:
+  "Status plane of " ++ name ++ "\n"
+    ++ Bool.pick(String, Bool.and(List.is_empty(&2, PRow, Plane.need(p)), List.is_empty(&2, PRow, Plane.run(p))), "Nothing needs you and nothing is running.\n", "")
+    ++ Plane.text.sec("Needs you", Plane.need(p), pre, now) ++ Plane.text.sec("Running", Plane.run(p), pre, now)
+    ++ Plane.text.sec("Bots", Plane.bots(p), pre, now) ++ Plane.text.sec("Rooms with unread posts", Plane.rooms(p), pre, now)
+    ++ Plane.text.sec("Routines", Plane.routines(p), pre, now) ++ Plane.text.idle.k(idle, Plane.idle_n(p), Plane.idle(p), pre, now)
+    ++ Plane.text.machines.k(Nat.is_gt(List.length(&2, PMach, Plane.machines(p)), 1n), Plane.machines(p))
+
+# a hub's plane as text: this machine's (pre "") or, for another machine
+# asking, ids made its own with the link
+def Plane.read(+st: M.State, +now: Nat, +pre: String, +name: String, +idle: Bool) -> String:
+  Plane.text(Plane.of.st(st, now), pre, name, now, idle)
+
+# where the needle first starts in the text (the text's length when it does not)
+def Plane.text.at(t: String, +needle: String, +i: Nat, hit: Bool) -> Nat:
+  match t hit:
+    case _ True{}:
+      i
+    case SNil{} False{}:
+      i
+    case SCon{_, +rest} False{}:
+      Plane.text.at(rest, needle, 1n+i, String.starts_with(rest, needle))
+
+def Plane.text.pos(+t: String, +needle: String) -> Nat:
+  Plane.text.at(t, needle, 0n, String.starts_with(t, needle))
+
+# the latest and the earliest start of the rows of these ids ("- <id> ·")
+def Plane.text.last(rs: List<&2, PRow>, +t: String, +acc: Nat) -> Nat:
+  match rs:
+    case Nil{}:
+      acc
+    case PRow{_, +i, _, _, _, _, _, _, _, _} <> r:
+      Plane.text.last(r, t, M.Time.max(acc, Plane.text.pos(t, "- " ++ i ++ " ·")))
+
+def Plane.text.first(rs: List<&2, PRow>, +t: String, +acc: Nat) -> Nat:
+  match rs:
+    case Nil{}:
+      acc
+    case PRow{_, +i, _, _, _, _, _, _, _, _} <> r:
+      Plane.text.first(r, t, Bool.pick(Nat, Nat.is_le(acc, Plane.text.pos(t, "- " ++ i ++ " ·")), acc, Plane.text.pos(t, "- " ++ i ++ " ·")))
+
+# every need row is before every run row in the text (law plane_text_need_first)
+def Plane.text.need_first(+p: Plane, +now: Nat) -> Bool:
+  Nat.is_lt(Plane.text.last(Plane.need(p), Plane.text(p, "", "x", now, True{}), 0n), Plane.text.first(Plane.run(p), Plane.text(p, "", "x", now, True{}), String.length(Plane.text(p, "", "x", now, True{}))))
+
+# Where the conversation is held
+# ------------------------------
+# The uberbot's conversation runs on one machine, the lease holder (ubersync.bend).
+# The Status strip says which ("Home: desk") and, on a machine that has the
+# uberbot but not the conversation, offers "Make this the home" (the action
+# uber-home, bots.uber_home). Whether to offer it is decided here, for every
+# client (law plane_home_button).
+
+type PHome is Data:
+  PHome{on: Bool, name: String, here: Bool}
+
+def PHome.on(h: PHome) -> Bool:
+  match h:
+    case PHome{o, _, _}:
+      o
+
+def PHome.here(h: PHome) -> Bool:
+  match h:
+    case PHome{_, _, he}:
+      he
+
+def PHome.name(h: PHome) -> String:
+  match h:
+    case PHome{_, n, _}:
+      n
+
+def Plane.home.label() -> String:
+  "Make this the home"
+
+def Plane.home.peer(ps: List<&2, BT.Peer>, +link: String) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case +p <> t:
+      Bool.pick(String, String.eq(BT.Peer.id(p), link), BT.Peer.name(p), Plane.home.peer(t, link))
+
+# this machine's name, as the machine switcher has it
+def Plane.machine.this(+u: U.Ui) -> String:
+  Maybe.default(&2, String, List.head(&2, String, Plane.machine.names(U.Machines.rows(u))), "This machine")
+
+# the holder's name: the name its link carries here, else the peer's
+def Plane.home.other(+u: U.Ui, +link: String) -> String:
+  Plane.mach.name(u, link, Bool.pick(String, String.is_empty(Plane.home.peer(BU.BU.peers.of(u), link)), "another machine", Plane.home.peer(BU.BU.peers.of(u), link)))
+
+def Plane.home.of(here: Bool, +u: U.Ui) -> String:
+  match here:
+    case True{}:
+      Plane.machine.this(u)
+    case False{}:
+      Plane.home.other(u, US.Ub.link(U.Ui.state(u), US.Ub.holder(U.Ui.state(u))))
+
+def Plane.home(+u: U.Ui) -> PHome:
+  PHome{US.Ub.on(U.Ui.state(u)), Plane.home.of(US.Ub.holder.me(U.Ui.state(u)), u), US.Ub.holder.me(U.Ui.state(u))}
+
+# the offer: an uberbot here, the conversation held elsewhere
+def Plane.home.button(+h: PHome) -> Bool:
+  Bool.and(PHome.on(h), Bool.not(PHome.here(h)))
+
+# "Home: desk" ("" with no uberbot here)
+def Plane.home.line(+h: PHome) -> String:
+  Bool.pick(String, PHome.on(h), "Home: " ++ PHome.name(h), "")
+
+# the line and the offer, for the laws and tests
+def Plane.home.words(+u: U.Ui) -> String:
+  Plane.home.line(Plane.home(u)) ++ Bool.pick(String, Plane.home.button(Plane.home(u)), " | " ++ Plane.home.label(), "")
+
+# The list's plane
+# ----------------
+# What the phones' home list draws (need, run, bots, rooms, routines; no idle
+# threads) from the index and the sidebar's rows the screen has made: a
+# thread's phase and row are worked out only for a thread that can be need
+# or run (Plane.maybe). Law plane_list_same.
+
+def Plane.list.row(+state: String, +t: M.Thread, +pt: String, +u: U.Ui, rest: List<&2, PRow>) -> List<&2, PRow>:
+  Plane.keep(Nat.is_gt(Plane.sec(state), 1n), Plane.thread.k(U.Ui.far.away(u, M.Thread.id(t)), M.Thread.id(t), U.Active.title(t), pt, U.Ui.far.name(u, M.Thread.id(t)), state, U.Active.activity(t)), rest)
+
+def Plane.list.keep(r: Bool, +t: M.Thread, +pt: String, +ix: U.SIx, +st: M.State, +u: U.Ui, rest: List<&2, PRow>) -> List<&2, PRow>:
+  match r:
+    case True{}:
+      Plane.list.row(Plane.asking(Plane.state(U.Side.phase.ix(ix, st, t)), ix, M.Thread.id(t)), t, pt, u, rest)
+    case False{}:
+      rest
+
+def Plane.list.ts(ts: List<&2, M.Thread>, +pt: String, +ix: U.SIx, +st: M.State, +m: Map<&2, Bool>, +u: U.Ui, rest: List<&2, PRow>) -> List<&2, PRow>:
+  match ts:
+    case Nil{}:
+      rest
+    case +t <> r:
+      Plane.list.keep(Plane.maybe(t, m), t, pt, ix, st, u, Plane.list.ts(r, pt, ix, st, m, u, rest))
+
+def Plane.list.rows(rs: List<&2, U.SRow>, +ix: U.SIx, +st: M.State, +m: Map<&2, Bool>, +u: U.Ui) -> List<&2, PRow>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.SRow{_, M.Project{_, +ti, _, _, _}, M.Shelves{+p, +a, _, _, _}} <> t:
+      Plane.list.ts(p, ti, ix, st, m, u, Plane.list.ts(a, ti, ix, st, m, u, Plane.list.rows(t, ix, st, m, u)))
+
+def Plane.of.l(+u: U.Ui, +ix: U.SIx, +rows: List<&2, U.SRow>, +now: Nat) -> Plane:
+  Plane.of.i(Nil{}, List.append(&2, PRow, Plane.list.rows(rows, ix, U.Ui.state(u), Plane.hot(U.Ui.state(u), ix), u), Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, ix, U.Ui.state(u))), u, ix, now)
+
+# the list's need and run rows are the plane's, in the same order
+def Plane.list.ids(+p: Plane) -> String:
+  String.join(Plane.ids(Plane.need(p)), ",") ++ "|" ++ String.join(Plane.ids(Plane.run(p)), ",")
+
+def Plane.list.same(+u: U.Ui, +now: Nat) -> Bool:
+  String.eq(Plane.list.ids(Plane.of.l(u, U.Side.ix(U.Ui.state(u)), U.Side.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now), now)), Plane.list.ids(Plane.of(u, now)))

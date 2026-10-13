@@ -96,6 +96,17 @@ def main() -> IO(Unit):
       "answer {\"error\":\"the machine box is away; try again when it is back\"}")
     C.Check.str("machine_list names the machines and their projects", body(plan("machine_list", Nil{}, ins)),
       "answer {\"machines\":[{\"machine\":\"this\",\"state\":\"here\",\"projects\":[]},{\"machine\":\"box\",\"link\":\"p1\",\"state\":\"here\",\"projects\":[{\"id\":\"p1~p\",\"name\":\"board\",\"folder\":\"/b\"}]}],\"note\":\"Name a machine in thread_list and thread_launch (`machine`), or use the ids shown here (<link>~<id>) with thread_send, thread_read, thread_wait and thread_interrupt.\"}")
+    # plane_read: this machine's plane here, another machine's from its owner
+    C.Check.str("plane_read without a machine is read here", body(plan("plane_read", Nil{}, ins)), "here")
+    C.Check.str("plane_read of a machine asks it, with its link and name for the ids", body(plan("plane_read", [J.KV{"machine", J.Str{"Box"}}, J.KV{"idle", J.Flag{True{}}}], ins)),
+      "p1 {\"id\":0,\"m\":\"mcp.call\",\"p\":{\"tool\":\"plane_read\",\"from\":\"p1~t0\",\"args\":{\"as\":\"p1\",\"name\":\"box\",\"machine\":\"Box\",\"idle\":true}}}")
+    C.Check.str("plane_read of a machine away is an error", body(plan("plane_read", [J.KV{"machine", J.Str{"Box"}}], [FR.In.away.set(mirror(), True{})])),
+      "answer {\"error\":\"the machine box is away; try again when it is back\"}")
+    C.Check.str("the owner answers plane_read for its machines", Bool.show(F.Fm.permit(s, asked("plane_read", Nil{}))), "True")
+    +pr : String = said(F.Fm.serve(s, 100n, 1, asked("plane_read", [J.KV{"as", J.Str{"p1"}}, J.KV{"name", J.Str{"box"}}])))
+    C.Check.str("... in the caller's ids", pr, "{\"t\":\"reply\",\"id\":0,\"ok\":true,\"mcp\":{\"ok\":true,\"body\":{\"text\":\"Status plane of box\\nNothing needs you and nothing is running.\\nIdle in the last day: 1 (plane_read with idle: true lists them).\\n\"}}}")
+    +pi : String = said(F.Fm.serve(s, 100n, 1, asked("plane_read", [J.KV{"as", J.Str{"p1"}}, J.KV{"idle", J.Flag{True{}}}])))
+    C.Check.str("... with idle threads and the link's ids", Bool.show(String.contains(pi, "- p1~pt ")) ++ Bool.show(String.contains(pi, " layout")), "TrueTrue")
     # the answer, in the caller's ids
     +reply : String = said(F.Fm.serve(s, 100n, 1, asked("thread_list", Nil{})))
     C.Check.str("an answer's ids carry the link", Bool.show(String.contains(F.Fm.answer(J.Num{"4"}, "p1", 200n, reply), "\\\"id\\\":\\\"p1~pt\\\"")) ++ Bool.show(String.contains(F.Fm.answer(J.Num{"4"}, "p1", 200n, reply), "\"id\":4")), "TrueTrue")

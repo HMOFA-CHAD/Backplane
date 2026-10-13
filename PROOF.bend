@@ -8334,3 +8334,47 @@ def Laws.uber_superseded_keeps():
 
 def Laws.uber_seed_once():
   {==}
+
+# --- uberbot inc 3: plane_tally_*, plane_text_*, uber_home_* ---
+
+def Laws.side_work_ix_eq():
+  {==}
+
+def Laws.plane_tally_counts():
+  {==}
+
+def Laws.plane_tally_counts_rich():
+  {==}
+
+def Laws.plane_text_need_first():
+  {==}
+
+def Laws.plane_text_need_first_rich():
+  {==}
+
+def Laws.fmc_plan_plane_read_here():
+  {==}
+
+def Laws.fmc_plan_plane_read_unlinked_never_sent():
+  {==}
+
+def Laws.fmc_plane_read_allowed():
+  {==}
+
+def Laws.uber_home_takes_term():
+  {==}
+
+def Laws.uber_home_holder_nothing():
+  {==}
+
+def Laws.plane_home_button():
+  {==}
+
+def Laws.plane_home_button_held():
+  {==}
+
+def Laws.plane_list_same():
+  {==}
+
+def Laws.plane_list_same_rich():
+  {==}
