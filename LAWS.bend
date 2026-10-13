@@ -7033,3 +7033,142 @@ law mnav_bot_thread:
   for some: {String.is_empty(thread) == False{} : Bool}
   for own: {Hb.Hubs.nav.tag(thread) == False{} : Bool}
   {Hb.Hubs.nav.bot(hub, BU.BRow{id, "", thread, 0n, "idle", "", False{}, False{}, "", ""}) == Hb.Hubs.id(hub, thread) : String}
+# ---- notif-policy ----
+
+# a bot turn woken by a room message that posts, a routine's turn, a
+# launched thread's end that reports to its launcher, a delegated task's
+# note, an intermediate end with background work out and a stop write no
+# record that alerts
+law policy_no_alert_unless:
+  {NO.Policy.demo.quiet() == 0n : Nat}
+
+# the person's message, a completed ready turn: one done; the turn a report wakes afterwards alerts nothing
+law policy_settle_once:
+  {NO.Policy.demo.once() == "done -" : String}
+
+# a turn that ends while a reporting launched thread still works alerts nothing; the turn its report wakes alerts once
+law policy_settle_after_launch:
+  {NO.Policy.demo.launch() == "- done" : String}
+
+# a failure after the person's message alerts; a failed routine turn after it settled does not
+law policy_fail_person_only:
+  {NO.Policy.demo.fail.p() == "fail -" : String}
+
+# an ask opened for the person records an ask (needs on), or no kind (needs off)
+law policy_ask_alerts:
+  {NO.Policy.demo.ask.k(NO.Policy.demo.s(NO.Policy.demo.ask())) == "ask _" : String}
+
+# and the step tells the server once; with needs off it tells no one
+law policy_ask_alerted_out:
+  {H.Alerts.demo.asks(False{}) == 1n : Nat}
+
+law policy_ask_off_silent:
+  {H.Alerts.demo.asks(True{}) == 0n : Nat}
+
+# a merge found records merged and tells the server
+law policy_merge_alerts:
+  {H.Alerts.demo.merge() == "merged 1" : String}
+
+# a turn end that settles records done and tells the server
+law policy_end_alerted:
+  {H.Alerts.demo.end() == "done 1" : String}
+
+# with settled off the completed case records no kind but moves the memory; on again, the old episode does not alert
+law policy_setting_off:
+  {NO.Policy.demo.off() == "_ m1 -" : String}
+
+# with notify.all on the older rule alerts a room exchange's turn again
+law policy_all_legacy:
+  {NO.Policy.demo.all() == "done room-r1" : String}
+
+# a message with a link id or a routine's text is not the person's message
+law policy_link_not_person:
+  {NO.Policy.demo.link() == False{} : Bool}
+
+# the person's own text, or typed from another machine, is
+law policy_person_direct:
+  {Bool.and(NO.Policy.direct("m1", "do it"), NO.Policy.direct("m2", "[message from person@desk]\nhi")) == True{} : Bool}
+
+# notify_person refuses an unknown reason and a reminder outside a routine
+law notify_refuses_chatter:
+  {BHS.Notify.demo.chatter() == "refused refused refused" : String}
+
+# a reminder or digest goes through only in a routine's turn
+law notify_reminder_routine_only:
+  {BHS.Notify.demo.routine() == "note note refused" : String}
+
+# needs_you alerts once in a turn
+law notify_needs_you_once:
+  {BHS.Notify.demo.once() == "note refused" : String}
+
+# done tells the person once and the turn's end then alerts nothing
+law notify_done_settles:
+  {BHS.Notify.demo.done() == "note refused -" : String}
+
+# with the setting off the call succeeds and records no kind
+law notify_setting_off:
+  {BHS.Notify.demo.off() == "_" : String}
+
+# a redraw or a resize is not the person using the window: an open,
+# focused window stops holding phone alerts once they stop using it
+law desk_redraw_not_input:
+  {N.Nui.input([W.WExpose{}, W.WSize{800, 600}, W.WDragLeave{}]) == False{} : Bool}
+
+law desk_key_input:
+  for c: U32
+  for t: U32
+  for m: U32
+  for d: Bool
+  for k: U32
+  for rest: List<&2, W.WinEv>
+  {N.Nui.input(W.WKey{c, t, m, d, k} <> rest) == True{} : Bool}
+
+# a phone alerts when a thread's record changed and has a kind
+law policy_phone_raises:
+  {List.length(&2, J.Json, Nt.Note.ralerts(U.Ui.threads(Nt.Note.demo.s(Nt.Note.demo.rec("done"))), [Nt.RSeen{"t1", ""}], Nt.Note.demo.s(Nt.Note.demo.rec("done")), "")) == 1n : Nat}
+
+# the same record again alerts no one
+law policy_phone_same_none:
+  {List.length(&2, J.Json, Nt.Note.ralerts(U.Ui.threads(Nt.Note.demo.s(Nt.Note.demo.rec("done"))), [Nt.RSeen{"t1", Nt.Note.demo.rec("done")}], Nt.Note.demo.s(Nt.Note.demo.rec("done")), "")) == 0n : Nat}
+
+# a record with no kind alerts no one
+law policy_phone_empty_none:
+  {List.length(&2, J.Json, Nt.Note.ralerts(U.Ui.threads(Nt.Note.demo.s(Nt.Note.demo.rec(""))), [Nt.RSeen{"t1", ""}], Nt.Note.demo.s(Nt.Note.demo.rec("")), "")) == 0n : Nat}
+
+# a thread the frame did not touch alerts no one
+law policy_phone_unseen_none:
+  {List.length(&2, J.Json, Nt.Note.ralerts(U.Ui.threads(Nt.Note.demo.s(Nt.Note.demo.rec("done"))), [], Nt.Note.demo.s(Nt.Note.demo.rec("done")), "")) == 0n : Nat}
+
+# a desk watching the thread holds a done
+law policy_phone_watched_held:
+  {List.length(&2, J.Json, Nt.Note.ralerts(U.Ui.threads(Nt.Note.demo.s(Nt.Note.demo.rec("done"))), [Nt.RSeen{"t1", ""}], Nt.Note.demo.s(Nt.Note.demo.rec("done")), "t1")) == 0n : Nat}
+
+# but not a note
+law policy_phone_note_not_held:
+  {List.length(&2, J.Json, Nt.Note.ralerts(U.Ui.threads(Nt.Note.demo.s(Nt.Note.demo.rec("note"))), [Nt.RSeen{"t1", ""}], Nt.Note.demo.s(Nt.Note.demo.rec("note")), "t1")) == 1n : Nat}
+
+# a frame that carries only a record names its thread
+law policy_phone_ids_record:
+  {Hb.One.pol.ids([J.Json.obj([J.KV{"key", J.Str{"alert.t1"}}, J.KV{"value", J.Str{"x"}}])], []) == ["t1"] : List<&2, String>}
+
+# through a hub's frame: the record raises one alert
+law policy_phone_frame_raises:
+  {List.length(&2, J.Json, Hb.Did.alerts(Hb.One.pol(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", False{}, False{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])),
+      U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n}), C.Change.encode(M.SettingSet{"alert.t1", Nt.Note.demo.rec("done"), 3n})])))) == 1n : Nat}
+
+# and a turn's end alone raises none
+law policy_phone_turn_end_quiet:
+  {Hb.Did.alerts(Hb.One.pol(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", False{}, False{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])),
+      U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})]))) == [] : List<&2, J.Json>}
+
+# a log still arriving is history: no alert
+law policy_phone_boot_quiet:
+  {Hb.Did.alerts(Hb.One.pol(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n})])),
+      U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.SettingSet{"alert.t1", Nt.Note.demo.rec("done"), 3n})]))) == [] : List<&2, J.Json>}
+
+# a reminder that came due records a reminder (the setting on, the
+# default), or no kind (off)
+law policy_reminder_alerts:
+  {NO.Policy.demo.reminder() == "reminder _" : String}
+
+# ---- end notif-policy ----

@@ -2935,6 +2935,32 @@ def Nui.desk.k(a: U.Act, n: Nui) -> Step:
     case U.Act{u, +cs}:
       Step{Nui.with_ui(n, u), Nui.cmds(cs), False{}}
 
+# the person's own input: what keeps a desk in use (core/desk.bend). A
+# redraw, a resize, a drag passing over or the window closing is not: a
+# window left open and focused stops holding the phone's alerts once the
+# person stops using it (law desk_redraw_not_input)
+def Nui.input.one(e: W.WinEv) -> Bool:
+  match e:
+    case W.WExpose{}:
+      False{}
+    case W.WSize{_, _}:
+      False{}
+    case W.WQuit{}:
+      False{}
+    case W.WDragOver{_, _}:
+      False{}
+    case W.WDragLeave{}:
+      False{}
+    case _:
+      True{}
+
+def Nui.input(es: List<&2, W.WinEv>) -> Bool:
+  match es:
+    case Nil{}:
+      False{}
+    case e <> t:
+      Bool.or(Nui.input.one(e), Nui.input(t))
+
 def Nui.desk(+n: Nui, +now: Nat) -> Step:
   Nui.desk.k(U.Ui.desk(Nui.ui(n), Nui.has_focus(n), now), n)
 

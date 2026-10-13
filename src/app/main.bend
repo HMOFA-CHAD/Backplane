@@ -1022,11 +1022,19 @@ def Shell.desk(a: Shell) -> IO(Shell):
     t : U32 <- H.Clock.epoch()
     Shell.desk.k(a, U32.to_nat(t))
 
-def Shell.events(es: List<&2, W.WinEv>, a: Shell) -> IO(Shell):
+def Shell.desk.if(input: Bool, a: Shell) -> IO(Shell):
+  match input:
+    case True{}:
+      Shell.desk(a)
+    case False{}:
+      IO.pure(Shell, a)
+
+# only the person's input (N.Nui.input) may say the desk's look again
+def Shell.events(+es: List<&2, W.WinEv>, a: Shell) -> IO(Shell):
   do IO<Shell>:
     ms : Nat <- IO.now()
     a2 : Shell <- Shell.events.go(es, Shell.acted(a, ms))
-    Shell.desk(a2)
+    Shell.desk.if(N.Nui.input(es), a2)
 
 # a desktop notification clicked: its thread opens
 def Shell.clicked(a: Shell, +thread: String) -> IO(Shell):

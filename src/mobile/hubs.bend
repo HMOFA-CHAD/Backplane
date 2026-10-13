@@ -393,12 +393,64 @@ def One.got.all(+u: U.Ui, +o: J.Json) -> Did:
 def One.got(+u: U.Ui, +o: J.Json) -> Did:
   One.got.d(String.eq(J.Json.get_str(o, "t", ""), "delta"), u, o)
 
+# The same by the policy: the alerts a frame raised are the alert records
+# it changed (core/notice.bend; N.Note.ralerts)
+def One.pol.k(+seen: List<&2, N.RSeen>, a: U.Act) -> Did:
+  match a:
+    case U.Act{+u, cmds}:
+      Did{U.Act{u, cmds}, N.Note.ralerts(U.Ui.threads(S.Mob.st(u)), seen, S.Mob.st(u), U.Ui.info(u, "desk"))}
+
+def One.pol.b(booting: Bool, +seen: List<&2, N.RSeen>, +a: U.Act) -> Did:
+  match booting:
+    case True{}:
+      Did{a, Nil{}}
+    case False{}:
+      One.pol.k(seen, a)
+
+def One.pol.ids.one(+x: String, +acc: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(x), acc, x <> acc)
+
+# (a record's setting names its thread: alert.<id>)
+def One.pol.key(+k: String) -> String:
+  Bool.pick(String, String.starts_with(k, "alert."), String.drop(k, 6n), "")
+
+def One.pol.ids.k(+t: String, +i: String, +k: String, +acc: List<&2, String>) -> List<&2, String>:
+  One.pol.ids.one(One.pol.key(k), One.pol.ids.one(i, One.pol.ids.one(t, acc)))
+
+def One.pol.ids(xs: List<&2, J.Json>, acc: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      acc
+    case +x <> rest:
+      One.pol.ids(rest, One.pol.ids.k(J.Json.get_str(x, "thread", ""), J.Json.get_str(x, "id", ""), J.Json.get_str(x, "key", ""), acc))
+
+def One.pol.seen.k(changes: Bool, +u: U.Ui, +o: J.Json) -> List<&2, N.RSeen>:
+  match changes:
+    case True{}:
+      N.Note.rseen.ids(One.pol.ids(J.Json.elems(J.Json.get_obj(o, "items")), Nil{}), S.Mob.st(u))
+    case False{}:
+      N.Note.rseen(U.Ui.threads(S.Mob.st(u)), S.Mob.st(u))
+
+def One.pol.d(delta: Bool, +u: U.Ui, +o: J.Json) -> Did:
+  match delta:
+    case True{}:
+      Did{One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))), Nil{}}
+    case False{}:
+      One.pol.b(U.Boot.on(u), One.pol.seen.k(String.eq(J.Json.get_str(o, "t", ""), "changes"), u, o), One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))))
+
+# the same comparing every thread (law policy_phone_ids_same)
+def One.pol.all(+u: U.Ui, +o: J.Json) -> Did:
+  One.pol.b(U.Boot.on(u), N.Note.rseen(U.Ui.threads(S.Mob.st(u)), S.Mob.st(u)), One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))))
+
+def One.pol(+u: U.Ui, +o: J.Json) -> Did:
+  One.pol.d(String.eq(J.Json.get_str(o, "t", ""), "delta"), u, o)
+
 def One.run(op: Op, +u: U.Ui) -> Did:
   match op:
     case Do{+a, +v}:
       Did{One.act(u, a, v), Nil{}}
     case Got{+o}:
-      One.got(u, o)
+      One.pol(u, o)
     case On{b}:
       Did{VW.View.online(S.Mob.heard.set(u), b), Nil{}}
     case Tick{now}:
