@@ -73,6 +73,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     val foreground get() = started > 0
 
     init {
+        engine.onFlush = { out -> scope.launch { apply(out) } }
         app.registerActivityLifecycleCallbacks(this)
         val t0 = android.os.SystemClock.elapsedRealtime()
         fun since() = android.os.SystemClock.elapsedRealtime() - t0

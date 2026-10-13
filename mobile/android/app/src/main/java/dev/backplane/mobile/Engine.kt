@@ -179,37 +179,65 @@ class Engine(private val app: android.content.Context, private val source: Strin
     // a screen was dropped that way: the next recv builds one even for a
     // frame that changes nothing on screen (bridge.js's owed)
     private val owe = java.util.concurrent.atomic.AtomicBoolean(false)
-    // when a screen was last built: a long burst (a cold join, the whole
-    // log) still draws one a second, so the list fills in as it arrives
-    @Volatile private var built = 0L
+    // Only the bend thread owns these. Timers enqueue background work;
+    // they never evaluate JavaScript themselves or delay a person call.
+    private val timer = android.os.Handler(android.os.Looper.getMainLooper())
+    private val window = 250L
+    private var built = 0L
+    private var flushPending = false
+    var onFlush: ((Reply) -> Unit)? = null
+
+    private fun scheduleFlush() {
+        if (flushPending) return
+        flushPending = true
+        val delay = maxOf(0L, window - (android.os.SystemClock.elapsedRealtime() - built))
+        timer.postDelayed({ worker.enqueue(false) { flushReady() } }, delay)
+    }
+
+    private fun flushReady() {
+        flushPending = false
+        if (worker.personWaiting || android.os.SystemClock.elapsedRealtime() - built < window) {
+            scheduleFlush()
+            return
+        }
+        val began = android.os.SystemClock.elapsedRealtime()
+        val o = JSONObject(eval("Backplane.flush(${owe.get()})"))
+        val raw = o.optJSONObject("screen")
+        val stale = raw != null && worker.personWaiting
+        if (raw != null) { built = began; owe.set(stale) }
+        if (stale) scheduleFlush()
+        val s = if (stale) null else runCatching { raw?.let(::parseScreen) }
+            .onFailure { android.util.Log.w("Backplane", "screen unreadable: $it") }.getOrNull()
+        onFlush?.invoke(Reply(s, parseCmds(o)))
+    }
 
     private suspend fun call(expr: String, person: Boolean = false): String =
         queued(person) { eval(expr) }
 
-    // parsed here, off the main thread: a thread's screen is large.
-    // late: the call to make, told as it runs whether newer calls wait
-    // behind this one (its screen would be dropped anyway) and whether a
-    // screen was dropped since the last such call
+    // Parse off the main thread; commands survive every discarded screen.
     private suspend fun out(expr: String, screen: Boolean = true, person: Boolean = false, late: ((Boolean, Boolean) -> String)? = null): Reply {
         val ahead = if (person) personAhead else backgroundAhead
         if (screen) ahead.incrementAndGet()
         return queued(person) {
-            // due: a second since the last screen, so this one is drawn even
-            // with newer calls waiting
-            val due = late != null && android.os.SystemClock.elapsedRealtime() - built > 1000
-            val e = late?.invoke(worker.personWaiting || (backgroundAhead.get() > 1 && !due), owe.getAndSet(false)) ?: expr
             val t0 = android.os.SystemClock.elapsedRealtime()
-            val text = eval(e)
+            val withheld = late != null && (worker.personWaiting || t0 - built < window)
+            val e = late?.invoke(withheld, owe.getAndSet(false)) ?: expr
+            val text = try { eval(e) } catch (t: Throwable) {
+                if (screen) ahead.decrementAndGet()
+                throw t
+            }
             val ms = android.os.SystemClock.elapsedRealtime() - t0
-            // a slow step of the Bend client, for finding what to make faster
             if (ms > 100) android.util.Log.i("Backplane", "slow ${e.substringBefore('(')}: $ms ms")
             val remaining = if (screen) ahead.decrementAndGet() else 0
-            val stale = screen && if (person) remaining > 0 else worker.personWaiting || (remaining > 0 && !due)
-            if (stale) owe.set(true) else if (screen) built = android.os.SystemClock.elapsedRealtime()
             val o = JSONObject(text)
-            // the commands carry the frames the hubs wait for: a screen this
-            // build cannot read costs that screen (the last stays up), never them
-            val s = if (stale) null else runCatching { o.optJSONObject("screen")?.let(::parseScreen) }
+            val raw = o.optJSONObject("screen")
+            val stale = raw != null && (if (person) remaining > 0 else worker.personWaiting)
+            if (raw != null) {
+                if (!person) built = t0
+                owe.set(stale)
+            }
+            if (withheld || stale) scheduleFlush()
+            val s = if (stale) null else runCatching { raw?.let(::parseScreen) }
                 .onFailure { android.util.Log.w("Backplane", "screen unreadable: $it") }.getOrNull()
             Reply(s, parseCmds(o))
         }

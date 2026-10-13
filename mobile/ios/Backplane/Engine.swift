@@ -61,9 +61,45 @@ final class Engine: @unchecked Sendable {
     // a screen was dropped that way: the next recv builds one even for a
     // frame that changes nothing on screen (bridge.js's owed)
     private var owe = false
-    // when a screen was last built: a long burst (a cold join, the whole
-    // log) still draws one a second, so the list fills in as it arrives
+    // Background streaming screens have a 250 ms window. An owed screen
+    // flushes even if no further frame arrives; person calls bypass it.
+    private static let window: UInt64 = 250_000_000
     private var built: UInt64 = 0
+    private var flushPending = false
+    var onFlush: (@Sendable (Out?) -> Void)?
+
+    private func scheduleFlush() {
+        let delay: UInt64? = lock.withLock {
+            guard !flushPending else { return nil }
+            flushPending = true
+            let elapsed = DispatchTime.now().uptimeNanoseconds &- built
+            return elapsed >= Self.window ? 0 : Self.window - elapsed
+        }
+        guard let delay else { return }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + .nanoseconds(Int(delay))) { [weak self] in
+            guard let self else { return }
+            self.queue.async(person: false) { self.flushReady() }
+        }
+    }
+
+    // Runs only on the engine thread. bridge.flush builds nothing unless
+    // a visible change was withheld or a real screen was dropped.
+    private func flushReady() {
+        let ready = lock.withLock {
+            flushPending = false
+            return DispatchTime.now().uptimeNanoseconds &- built >= Self.window
+        }
+        guard ready, !queue.personWaiting else { scheduleFlush(); return }
+        let began = DispatchTime.now().uptimeNanoseconds
+        let forced = lock.withLock { owe }
+        let text = context().objectForKeyedSubscript("Backplane")?.invokeMethod("flush", withArguments: [forced])?.toString() ?? "{}"
+        let out = Out.decode(text, screen: true)
+        guard out?.screen != nil else { onFlush?(out); return }
+        let stale = queue.personWaiting
+        lock.withLock { built = began; owe = stale }
+        if stale { scheduleFlush() }
+        onFlush?(stale ? Out.decode(text, screen: false) : out)
+    }
 
     // late: the arguments decided on the queue, as the call runs
     private func call<T>(_ name: String, _ args: [Any], person: Bool = false, late: (() -> [Any])? = nil, _ finish: @escaping (String) -> T) async -> T {
@@ -80,31 +116,35 @@ final class Engine: @unchecked Sendable {
         }
     }
 
-    // decoded here, off the main thread: a thread's screen is large
-    // quiet: when newer calls wait behind this one, it is made with a last
-    // argument true, and builds no screen (it would be dropped anyway)
-    // (a quiet call is told both, as its last two arguments)
+    // Commands are always delivered. Screens become stale only for newer
+    // person work, never because hub frames wait behind a tap.
     private func out(_ name: String, _ args: [Any], screen: Bool = true, person: Bool = false, quiet: Bool = false) async -> Out? {
         if screen { lock.withLock { if person { personAhead += 1 } else { backgroundAhead += 1 } } }
-        // due: a second since the last screen, so this one is drawn even
-        // with newer calls waiting
-        var due = false
+        var withheld = false
+        var began: UInt64 = 0
         let late: (() -> [Any])? = quiet ? {
             self.lock.withLock {
+                began = DispatchTime.now().uptimeNanoseconds
+                withheld = self.queue.personWaiting || began &- self.built < Self.window
                 let o = self.owe
                 self.owe = false
-                due = DispatchTime.now().uptimeNanoseconds &- self.built > 1_000_000_000
-                return args + [self.queue.personWaiting || (self.backgroundAhead > 1 && !due), o]
+                return args + [withheld, o]
             }
         } : nil
         return await call(name, args, person: person, late: late) { text in
-            let stale = screen && self.lock.withLock {
-                if person { self.personAhead -= 1 } else { self.backgroundAhead -= 1 }
-                let drop = person ? self.personAhead > 0 : (self.queue.personWaiting || (self.backgroundAhead > 0 && !due))
-                if drop { self.owe = true } else { self.built = DispatchTime.now().uptimeNanoseconds }
+            let decoded = Out.decode(text, screen: true)
+            let hasScreen = decoded?.screen != nil
+            let stale = self.lock.withLock {
+                if screen { if person { self.personAhead -= 1 } else { self.backgroundAhead -= 1 } }
+                let drop = hasScreen && (person ? self.personAhead > 0 : self.queue.personWaiting)
+                if hasScreen {
+                    if !person { self.built = began == 0 ? DispatchTime.now().uptimeNanoseconds : began }
+                    self.owe = drop
+                }
                 return drop
             }
-            return Out.decode(text, screen: !stale)
+            if withheld || stale { self.scheduleFlush() }
+            return stale ? Out.decode(text, screen: false) : decoded
         }
     }
 

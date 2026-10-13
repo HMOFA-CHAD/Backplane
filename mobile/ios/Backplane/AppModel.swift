@@ -132,6 +132,9 @@ final class AppModel {
     }
 
     init() {
+        engine.onFlush = { [weak self] out in
+            Task { @MainActor [weak self] in self?.apply(out) }
+        }
         #if DEBUG
         if let l = ProcessInfo.processInfo.environment["BACKPLANE_LINK"] { links = l.split(separator: " ").map(String.init) }
         #endif
