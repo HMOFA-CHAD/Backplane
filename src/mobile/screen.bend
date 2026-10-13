@@ -1265,9 +1265,13 @@ def Mob.screen.go(+focus: Bool, +u: U.Ui, +ix: U.SIx, +g: U.SGroups, +side: MSid
         J.KV{"newRoom", newroom},
         J.KV{"bot", bot}])
 
-def Mob.screen.ix(+focus: Bool, +u: U.Ui, +ix: U.SIx) -> J.Json:
-  Mob.screen.go(focus, u, ix, U.Side.groups(U.Side.shown.ix(U.Ui.state.of(u), ix, Mob.now(u), U.Find.q(Mob.open(u), Mob.scratch(u))), Mob.now(u)),
+# (the sidebar's rows, Side.rows.ix, made by the caller when it needs them too)
+def Mob.screen.ixr(+focus: Bool, +u: U.Ui, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
+  Mob.screen.go(focus, u, ix, U.Side.groups(U.Find.rows(rows, U.Find.q(Mob.open(u), Mob.scratch(u))), Mob.now(u)),
     Mob.side(String.eq(U.Side.view(U.Ui.state.of(u)), "active"), ix, U.Ui.state.of(u), Mob.now(u), U.Find.q(Mob.open(u), Mob.scratch(u)), Mob.open(u)))
+
+def Mob.screen.ix(+focus: Bool, +u: U.Ui, +ix: U.SIx) -> J.Json:
+  Mob.screen.ixr(focus, u, ix, U.Side.rows.ix(U.Ui.state.of(u), ix, Mob.now(u)))
 
 # (what every row asks of the whole state is gathered once a screen:
 # core's Side.ix)

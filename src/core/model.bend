@@ -1166,6 +1166,18 @@ def Setting.get(s: State, +k: String, d: String) -> String:
     case State{_, _, _, _, _, sg, qu, ak, _, _, _}:
       State.get.k(Map.get(String, d, sg, k))
 
+# the threads with something queued (even handed-over context alone), and the
+# key of every setting (the status plane counts only the threads these can touch)
+def Queue.threads(s: State) -> List<&2, String>:
+  match s:
+    case State{_, _, _, _, _, _, qu, _, _, _, _}:
+      Map.keys(&2, List<&2, QItem>, qu)
+
+def Setting.keys(s: State) -> List<&2, String>:
+  match s:
+    case State{_, _, _, _, _, sg, _, _, _, _, _}:
+      Map.keys(&2, String, sg)
+
 # The "restart.continue" setting: after a restart, a turn the restart cut
 # short goes on by itself (on unless "off"; hub.bend's Carry)
 def Carry.on(+s: State) -> Bool:

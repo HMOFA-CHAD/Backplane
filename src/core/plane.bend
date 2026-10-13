@@ -549,3 +549,170 @@ def Plane.demo() -> U.Ui:
     M.ThreadCreated{"bt1", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Kit", "bt1", 7n, "", 100n}, M.TurnChanged{"bt1", M.Running{}, 199900n},
     M.RoomSet{"r1", "ops", "b1", 150n}, M.RoomPosted{"m1", "r1", "b1", "hello", 0n, 199800n},
     M.RoutineSet{"rt1", "b1", "Digest", "0 9 * * *", "sum up", True{}, 160n}], M.State.empty()))
+
+# The count alone
+# ---------------
+# The phones' list shows only "3 need you · 7 running" of the plane, so it
+# counts instead of building rows (no titles, machines, sorts or JSON). A
+# thread's phase is the costly part (five lookups), so it is worked out only
+# for a thread that can be need or run: its turn running or failed, an
+# approval pending, or its id among those that have an open ask, an unfinished
+# child task, something queued or background rows (Plane.hot). Every other
+# thread's phase is complete, stopped or idle. Law plane_tally_counts.
+
+type PTally is Data:
+  PTally{need: Nat, run: Nat}
+
+def PTally.need(t: PTally) -> Nat:
+  match t:
+    case PTally{n, _}:
+      n
+
+def PTally.run(t: PTally) -> Nat:
+  match t:
+    case PTally{_, r}:
+      r
+
+# a state counted into the tally: need (0), run (1), the rest (2) as Plane.sec
+def Plane.tally.add(n: Nat, t: PTally) -> PTally:
+  match n t:
+    case 0n PTally{+a, +b}:
+      PTally{1n+a, b}
+    case 1n PTally{+a, +b}:
+      PTally{a, 1n+b}
+    case _ x:
+      x
+
+# the ids a setting key names: "bg.<id>" and "watch.<id>" (a thread's background rows)
+def Plane.hot.id(+k: String, +pre: String) -> String:
+  Bool.pick(String, String.starts_with(k, pre), String.drop(k, String.length(pre)), "")
+
+def Plane.hot.put.k(none: Bool, +id: String, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match none:
+    case True{}:
+      m
+    case False{}:
+      Map.set(&2, Bool, m, id, True{})
+
+def Plane.hot.put(+id: String, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  Plane.hot.put.k(String.is_empty(id), id, m)
+
+def Plane.hot.ids(ids: List<&2, String>, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match ids:
+    case Nil{}:
+      m
+    case +i <> t:
+      Plane.hot.ids(t, Plane.hot.put(i, m))
+
+def Plane.hot.keys(ks: List<&2, String>, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match ks:
+    case Nil{}:
+      m
+    case +k <> t:
+      Plane.hot.keys(t, Plane.hot.put(Plane.hot.id(k, "bg."), Plane.hot.put(Plane.hot.id(k, "watch."), m)))
+
+def Plane.hot.sx(ix: U.SIx, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match ix:
+    case U.SIx{_, +as, +ks}:
+      Plane.hot.ids(Map.keys(&2, List<&2, M.Ask>, as), Plane.hot.ids(Map.keys(&2, Nat, ks), m))
+
+# the ids that can be need or run beyond what a thread's own turn and pending say
+def Plane.hot(+st: M.State, ix: U.SIx) -> Map<&2, Bool>:
+  Plane.hot.sx(ix, Plane.hot.ids(M.Queue.threads(st), Plane.hot.keys(M.Setting.keys(st), Map.new(&2, Bool))))
+
+def Plane.turn.hot(t: M.TurnState) -> Bool:
+  match t:
+    case M.Running{}:
+      True{}
+    case M.Failed{}:
+      True{}
+    case _:
+      False{}
+
+def Plane.hot.get(r: Map<&2, Bool> & Bool) -> Bool:
+  (_, b) = r
+  b
+
+def Plane.hot.has(m: Map<&2, Bool>, +id: String) -> Bool:
+  Plane.hot.get(Map.get(Bool, False{}, m, id))
+
+def Plane.maybe.k(own: Bool, m: Map<&2, Bool>, +id: String) -> Bool:
+  match own:
+    case True{}:
+      True{}
+    case False{}:
+      Plane.hot.has(m, id)
+
+# whether a thread can be need or run (its phase is worked out only then)
+def Plane.maybe(t: M.Thread, m: Map<&2, Bool>) -> Bool:
+  match t:
+    case M.Thread{+id, _, _, _, _, +turn, +pending, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Plane.maybe.k(Bool.or(Plane.turn.hot(turn), Nat.is_gt(pending, 0n)), m, id)
+
+def Plane.tally.t(r: Bool, +t: M.Thread, +ix: U.SIx, +st: M.State, acc: PTally) -> PTally:
+  match r:
+    case True{}:
+      Plane.tally.add(Plane.sec(Plane.asking(Plane.state(U.Side.phase.ix(ix, st, t)), ix, M.Thread.id(t))), acc)
+    case False{}:
+      acc
+
+def Plane.tally.ts(ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +m: Map<&2, Bool>, acc: PTally) -> PTally:
+  match ts:
+    case Nil{}:
+      acc
+    case +t <> r:
+      Plane.tally.ts(r, ix, st, m, Plane.tally.t(Plane.maybe(t, m), t, ix, st, acc))
+
+# the live shelves of every project, as Active.gather walks them
+def Plane.tally.rows(rs: List<&2, U.SRow>, +ix: U.SIx, +st: M.State, +m: Map<&2, Bool>, acc: PTally) -> PTally:
+  match rs:
+    case Nil{}:
+      acc
+    case U.SRow{_, _, M.Shelves{+p, +a, _, _, _}} <> t:
+      Plane.tally.rows(t, ix, st, m, Plane.tally.ts(a, ix, st, m, Plane.tally.ts(p, ix, st, m, acc)))
+
+# the bots' own threads count as the plane's bot rows do
+def Plane.tally.bots(rs: List<&2, PRow>, acc: PTally) -> PTally:
+  match rs:
+    case Nil{}:
+      acc
+    case +r <> t:
+      Plane.tally.bots(t, Plane.tally.add(Plane.sec(PRow.state(r)), acc))
+
+# what the plane would count as needing the person and running, from the
+# sidebar's rows (Side.rows.ix, which the screen has made)
+def Plane.tally(+u: U.Ui, +ix: U.SIx, +rows: List<&2, U.SRow>) -> PTally:
+  Plane.tally.bots(Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, ix, U.Ui.state(u)),
+    Plane.tally.rows(rows, ix, U.Ui.state(u), Plane.hot(U.Ui.state(u), ix), PTally{0n, 0n}))
+
+def Plane.counts.t(+t: PTally) -> String:
+  Plane.counts.join(Plane.counts.part(PTally.need(t), "need you"), Plane.counts.part(PTally.run(t), "running"))
+
+# a client for the count's laws: what each way to be need or run looks like
+# (an open approval, a question, a failed turn, a pending tool, a turn at work,
+# a message queued, background rows, an unfinished child task, a bot at
+# work), and threads that are neither
+def Plane.demo.rich() -> U.Ui:
+  U.Ui.far.st(U.Ui.init(200000n), M.State.replay([M.ProjectCreated{"p1", "One", "/a", 1n},
+    M.ThreadCreated{"t1", "p1", "A", M.Local{}, "", "", "claude", "", 199000n}, M.TurnChanged{"t1", M.Running{}, 199001n}, M.AskOpened{"a1", "t1", "approval", "Bash", "ls", "", 199002n},
+    M.ThreadCreated{"t2", "p1", "B", M.Local{}, "", "", "claude", "", 199100n}, M.AskOpened{"a2", "t2", "input", "", "?", "", 199101n},
+    M.ThreadCreated{"t3", "p1", "C", M.Local{}, "", "", "claude", "", 199200n}, M.TurnChanged{"t3", M.Failed{}, 199201n},
+    M.ThreadCreated{"t4", "p1", "D", M.Local{}, "", "", "claude", "", 199300n}, M.TurnChanged{"t4", M.Running{}, 199301n},
+    M.ThreadCreated{"t5", "p1", "E", M.Local{}, "", "", "claude", "", 199400n}, M.TurnQueued{"t5", "q1", "next", 199401n},
+    M.ThreadCreated{"t6", "p1", "F", M.Local{}, "", "", "claude", "", 199500n}, M.TurnChanged{"t6", M.Completed{}, 199501n},
+    M.ThreadCreated{"t7", "p1", "G", M.Local{}, "", "", "claude", "", 199510n}, M.TurnChanged{"t7", M.Interrupted{}, 199511n},
+    M.ThreadCreated{"t8", "p1", "H", M.Local{}, "", "", "claude", "", 199520n}, M.SettingSet{"bg.t8", "k1\tsleeping", 199521n},
+    M.ThreadCreated{"t9", "p1", "I", M.Local{}, "", "", "claude", "", 199530n}, M.ThreadCreated{"t10", "p1", "J", M.Local{}, "", "", "claude", "", 199531n},
+    M.TaskDelegated{"k2", "t9", "t10", 1n, "claude", "", 199532n},
+    M.ThreadCreated{"t11", "p1", "K", M.Local{}, "", "", "claude", "", 199540n}, M.PendingChanged{"t11", 1n, 199541n},
+    M.ThreadCreated{"t12", "p1", "L", M.Local{}, "", "", "claude", "", 100n},
+    M.ThreadCreated{"t13", "p1", "M", M.Local{}, "", "", "claude", "", 199550n}, M.SettingSet{"watch.t13", "w1\twatching", 199551n},
+    M.ThreadCreated{"bt1", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Kit", "bt1", 7n, "", 100n}, M.TurnChanged{"bt1", M.Running{}, 199900n},
+    M.ThreadCreated{"bt2", "", "Pip", M.Local{}, "", "", "claude", "", 101n}, M.BotSet{"b2", "Pip", "bt2", 8n, "", 101n}, M.AskOpened{"a3", "bt2", "approval", "Bash", "ls", "", 199901n}], M.State.empty()))
+
+# the count made without rows is the count of the plane
+def Plane.tally.same(+u: U.Ui, +now: Nat) -> Bool:
+  String.eq(Plane.counts.t(Plane.tally(u, U.Side.ix(U.Ui.state(u)), U.Side.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now))), Plane.counts(Plane.of(u, now)))
+
+def Plane.tally.words(+u: U.Ui, +now: Nat) -> String:
+  Plane.counts.t(Plane.tally(u, U.Side.ix(U.Ui.state(u)), U.Side.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now)))

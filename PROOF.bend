@@ -8334,3 +8334,11 @@ def Laws.uber_superseded_keeps():
 
 def Laws.uber_seed_once():
   {==}
+
+# --- uberbot inc 3: plane_tally_*, plane_text_*, uber_home_* ---
+
+def Laws.plane_tally_counts():
+  {==}
+
+def Laws.plane_tally_counts_rich():
+  {==}

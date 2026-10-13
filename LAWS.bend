@@ -6828,3 +6828,13 @@ law uber_superseded_keeps:
 # an uberbot promoted before ops existed is seeded once: its first ops are logged, and none again after they are folded
 law uber_seed_once:
   {UBS.Ub.seed.n(UBS.Ub.demo.a(), 3000n) == "3,0" : String}
+
+# --- uberbot inc 3: plane_tally_*, plane_text_*, uber_home_* ---
+
+# the count the phones' list makes without building rows is the plane's count
+law plane_tally_counts:
+  {PLN.Plane.tally.same(PLN.Plane.demo(), 200000n) == True{} : Bool}
+
+# also when threads are need or run by a pending tool, a queued message, background rows or a child task
+law plane_tally_counts_rich:
+  {PLN.Plane.tally.same(PLN.Plane.demo.rich(), 200000n) == True{} : Bool}

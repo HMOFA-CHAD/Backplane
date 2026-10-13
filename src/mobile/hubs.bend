@@ -811,6 +811,14 @@ def Hubs.pl.card.k(m: Maybe<&2, BU.BRow>, +p: PL.Plane, +k: String) -> J.Json:
     case None{}:
       J.Null{}
 
+# the card with the count of the list (no plane built: core's Plane.tally)
+def Hubs.pl.card.c(m: Maybe<&2, BU.BRow>, +counts: String, +k: String) -> J.Json:
+  match m:
+    case Some{r}:
+      Hubs.pl.q(MPL.MPlane.card.c(r, counts), k)
+    case None{}:
+      J.Null{}
+
 def Hubs.pl.fill.p(+p: PL.Plane, +fs: J.Json, +u: U.Ui, +k: String) -> J.Json:
   J.Obj{Hubs.pl.put(Hubs.pl.put(fs, "plane", MPL.MPlane.json(p, S.Mob.now(u))), "uber", Hubs.pl.card.k(BU.BU.uber(u), p, k))}
 
@@ -825,22 +833,35 @@ def Hubs.pl.card.n(m: Maybe<&2, BU.BRow>, +k: String) -> J.Json:
 def Hubs.pl.fill.n(+fs: J.Json, +u: U.Ui, +k: String) -> J.Json:
   J.Obj{Hubs.pl.put(fs, "uber", Hubs.pl.card.n(BU.BU.uber(u), k))}
 
-def Hubs.pl.fill.w(want: Bool, +fs: J.Json, +u: U.Ui, +k: String, +idle: Bool) -> J.Json:
+# The list of a phone with one hub needs only the card's count, so it gets
+# the count and an empty plane (the apps take the card as fresh when a plane
+# comes with it); the Status tab and several hubs get the plane.
+def Hubs.pl.fill.t(+fs: J.Json, +u: U.Ui, +k: String, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
+  J.Obj{Hubs.pl.put(Hubs.pl.put(fs, "plane", MPL.MPlane.none()), "uber", Hubs.pl.card.c(BU.BU.uber(u), PL.Plane.counts.t(PL.Plane.tally(u, ix, rows)), k))}
+
+def Hubs.pl.fill.l(lite: Bool, +fs: J.Json, +u: U.Ui, +k: String, +idle: Bool, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
+  match lite:
+    case True{}:
+      Hubs.pl.fill.t(fs, u, k, ix, rows)
+    case False{}:
+      Hubs.pl.fill.p(PL.Plane.of.f(u, ix, S.Mob.now(u), idle), fs, u, k)
+
+def Hubs.pl.fill.w(want: Bool, +fs: J.Json, +u: U.Ui, +k: String, +idle: Bool, +lite: Bool, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
   match want:
     case True{}:
-      Hubs.pl.fill.p(PL.Plane.of.f(u, U.Side.ix(U.Ui.state(u)), S.Mob.now(u), idle), fs, u, k)
+      Hubs.pl.fill.l(lite, fs, u, k, idle, ix, rows)
     case False{}:
       Hubs.pl.fill.n(fs, u, k)
 
-def Hubs.pl.fill.k(any: Bool, +want: Bool, +j: J.Json, +u: U.Ui, +k: String, +idle: Bool) -> J.Json:
+def Hubs.pl.fill.k(any: Bool, +want: Bool, +j: J.Json, +u: U.Ui, +k: String, +idle: Bool, +lite: Bool, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
   match any j:
     case True{} J.Obj{+fs}:
-      Hubs.pl.fill.w(want, fs, u, k, idle)
+      Hubs.pl.fill.w(want, fs, u, k, idle, lite, ix, rows)
     case _ x:
       x
 
-def Hubs.pl.fill(+any: Bool, +want: Bool, +j: J.Json, +u: U.Ui, +k: String, +idle: Bool) -> J.Json:
-  Hubs.pl.fill.k(any, want, j, u, k, idle)
+def Hubs.pl.fill(+any: Bool, +want: Bool, +j: J.Json, +u: U.Ui, +k: String, +idle: Bool, +lite: Bool, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
+  Hubs.pl.fill.k(any, want, j, u, k, idle, lite, ix, rows)
 
 # whether the plane is on screen: the focused hub shows its list (nothing
 # selected) or the uberbot's Status tab. Every other screen (a thread, a room,
@@ -882,15 +903,26 @@ type Shown is Data:
 
 # (a hub out of focus builds no thread, bot or viewer: the merged screen
 # reads those from the hub in focus only)
-def Hubs.shown.go(hs: List<&2, Hub>, +cur: String, +any: Bool, +want: Bool, +idle: Bool) -> List<&2, Shown>:
+# (the index of the state and the sidebar's rows are made once and shared by
+# the screen and the plane)
+def Hubs.shown.r(+k: String, +u: U.Ui, +cur: String, +any: Bool, +want: Bool, +idle: Bool, +lite: Bool, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
+  Hubs.pl.fill(any, want, Q.all(S.Mob.screen.ixr(String.eq(k, cur), u, ix, rows), k), u, k, idle, lite, ix, rows)
+
+def Hubs.shown.ix(+k: String, +u: U.Ui, +cur: String, +any: Bool, +want: Bool, +idle: Bool, +lite: Bool, +ix: U.SIx) -> J.Json:
+  Hubs.shown.r(k, u, cur, any, want, idle, lite, ix, U.Side.rows.ix(U.Ui.state(u), ix, S.Mob.now(u)))
+
+def Hubs.shown.go(hs: List<&2, Hub>, +cur: String, +any: Bool, +want: Bool, +idle: Bool, +lite: Bool) -> List<&2, Shown>:
   match hs:
     case Nil{}:
       Nil{}
     case Hub{+k, +u} <> t:
-      Shown{k, Hubs.name(k, u), Hubs.pl.fill(any, want, Q.all(S.Mob.screen.f(String.eq(k, cur), u), k), u, k, idle)} <> Hubs.shown.go(t, cur, any, want, idle)
+      Shown{k, Hubs.name(k, u), Hubs.shown.ix(k, u, cur, any, want, idle, lite, U.Side.ix(U.Ui.state(u)))} <> Hubs.shown.go(t, cur, any, want, idle, lite)
+
+def Hubs.shown.l(+hs: List<&2, Hub>, +cur: String, +want: Bool, +idle: Bool) -> List<&2, Shown>:
+  Hubs.shown.go(hs, cur, Hubs.pl.any(hs), want, idle, Bool.and(Bool.not(idle), Nat.is_eq(List.length(&2, Hub, hs), 1n)))
 
 def Hubs.shown.w(+hs: List<&2, Hub>, +cur: String, +want: Bool) -> List<&2, Shown>:
-  Hubs.shown.go(hs, cur, Hubs.pl.any(hs), want, Hubs.pl.status(hs, cur))
+  Hubs.shown.l(hs, cur, want, Hubs.pl.status(hs, cur))
 
 def Hubs.shown(+hs: List<&2, Hub>, +cur: String) -> List<&2, Shown>:
   Hubs.shown.w(hs, cur, Hubs.pl.want(hs, cur))
