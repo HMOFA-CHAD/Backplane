@@ -46,6 +46,8 @@ def main() -> IO(Unit):
     C.Check.str("recover then carry: nothing left aside", Nat.show(List.length(&2, String, H.Lost.stash(H.Carry.after(bg(True{}), 10n), "t1"))), "0")
     C.Check.str("recover, continuing off: no row at work", Nat.show(M.Bg.running(M.Bg.of(H.Rec.after(bg(False{}), 10n), "t1"))), "0")
     C.Check.str("six threads restart: only those that run are listed", island(H.Carry.after(H.Lost.many(), 10n)), "[{\"thread\":\"a1\",\"title\":\"a1\",\"doing\":\"Working\"},{\"thread\":\"a2\",\"title\":\"a2\",\"doing\":\"Working\"},{\"thread\":\"a3\",\"title\":\"a3\",\"doing\":\"Working\"},{\"thread\":\"a4\",\"title\":\"a4\",\"doing\":\"Working\"}]")
+    C.Check.str("recover: rows an earlier restart left ended go", island(H.Rec.after(H.Lost.stale(False{}), 10n)), "[]")
+    C.Check.str("the same before: they list the thread", island(H.Lost.stale(False{})), "[{\"thread\":\"t1\",\"title\":\"t1\",\"doing\":\"waiting on 1\"}]")
     # a delegated child still running keeps its parent on the island
     C.Check.str("a child and a shell: parent waits on 2", Nat.show(M.Work.busy(parent(), "t0")), "2")
     C.Check.str("exit: the child still keeps the parent waiting", Nat.show(M.Work.busy(gone(parent(), "t0"), "t0")), "1")

@@ -5039,10 +5039,21 @@ def Rec.lost.k(has: Bool, live: Bool, on: Bool, +s: M.State, +now: Nat, +th: Str
     case True{} True{} True{}:
       Rec.lost.on(Bool.not(String.is_empty(Resume.why(s, th))), s, now, th)
 
+# rows left ended with an unknown outcome by an earlier restart (told
+# already) wait for nothing: their owner is gone, and they go at the next
+# (laws lostwork_recover_old_rows_go)
+def Rec.lost.old(old: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  match old:
+    case True{}:
+      Step{Bg.clear(s, th, now), Nil{}}
+    case False{}:
+      Step.none()
+
 def Rec.lost.one(r: Rec, +now: Nat, +th: String) -> Rec:
   match r:
     case Rec{+s, cs, os}:
-      Rec.add(Rec{s, cs, os}, Rec.lost.k(Lost.new(Lost.of(s, th)), Lost.live(Hub.thread(s, th)), M.Carry.on(s), s, now, th))
+      Rec.add(Rec.add(Rec{s, cs, os}, Rec.lost.k(Lost.new(Lost.of(s, th)), Lost.live(Hub.thread(s, th)), M.Carry.on(s), s, now, th)),
+        Rec.lost.old(Bool.and(Bool.not(Lost.new(Lost.of(s, th))), Bool.not(List.is_empty(&2, String, M.Bg.of(s, th)))), s, now, th))
 
 def Rec.lost(ts: List<&2, String>, r: Rec, +now: Nat) -> Rec:
   match ts:
@@ -5230,6 +5241,10 @@ def Lost.released(+on: Bool) -> M.State:
 
 def Lost.marked() -> M.State:
   M.State.replay(List.append(&2, M.Change, Resume.set(Lost.demo(True{}, False{}), 4n, "t1", "restart"), [M.TurnQueued{"t1", "q1", "held", 4n}]), Lost.demo(True{}, False{}))
+
+# a thread whose background shell an earlier restart left ended, outcome unknown
+def Lost.stale(+on: Bool) -> M.State:
+  M.State.replay([M.WorkSet{"t1", "bg", M.Bg.line("b1", M.Bg.ended.mark() ++ "unknown"), 5n}], Lost.demo(on, False{}))
 
 # the agent of thread th exited
 def Lost.exited(+s: M.State, +th: String) -> M.State:

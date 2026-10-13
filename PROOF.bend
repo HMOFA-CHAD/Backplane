@@ -8988,3 +8988,9 @@ def Laws.lostwork_recover_still_told():
 
 def Laws.lostwork_recover_nothing_left_aside():
   {==}
+
+def Laws.lostwork_recover_old_rows_go():
+  {==}
+
+def Laws.lostwork_recover_old_rows_go_off():
+  {==}

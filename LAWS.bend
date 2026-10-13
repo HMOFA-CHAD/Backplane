@@ -7738,3 +7738,9 @@ law lostwork_recover_still_told:
 
 law lostwork_recover_nothing_left_aside:
   {List.length(&2, String, H.Lost.stash(H.Carry.after(H.Lost.demo(True{}, False{}), 10n), "t1")) == 0n : Nat}
+
+law lostwork_recover_old_rows_go:
+  {M.Bg.live(M.Bg.of(H.Rec.after(H.Lost.stale(True{}), 10n), "t1")) == 0n : Nat}
+
+law lostwork_recover_old_rows_go_off:
+  {M.Bg.live(M.Bg.of(H.Rec.after(H.Lost.stale(False{}), 10n), "t1")) == 0n : Nat}
