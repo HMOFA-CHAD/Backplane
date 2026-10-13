@@ -1046,6 +1046,7 @@ private fun PlotScreen(m: AppModel, v: Viewer) {
     val f = m.plots.frame?.takeIf { it.key == v.layers || (v.hist != null && it.none.isEmpty() && plotHead(it.key) == plotHead(v.layers)) }
     val mesh = m.plots.mesh?.takeIf { it.key == v.key }
     Column(Modifier.fillMaxSize().background(Color(0xFF000000.toInt() or v.bg))) {
+    var cam by remember { mutableStateOf(floatArrayOf(0f, 0f, 0f)) }
     Box(Modifier.weight(1f).fillMaxWidth()) {
         // a part alone gets a surface of its own: nothing of a board is left on it
         key(if (v.layers.isEmpty()) v.key else "") {
@@ -1056,6 +1057,8 @@ private fun PlotScreen(m: AppModel, v: Viewer) {
             s.tap = v.tap
             s.fadeMs = v.fade
             s.onPick = { m.act("view-pick", it) }
+            s.onNote = { x, y -> m.act("rv-note", "%.3f\t%.3f\t\t".format(java.util.Locale.ROOT, x, y)) }
+            s.onCamera = { x, y, k -> cam = floatArrayOf(x, y, k) }
             s.renderer.top = v.top
             s.renderer.bottom = v.bottom
             s.renderer.orbit.fov = v.fov
@@ -1084,6 +1087,7 @@ private fun PlotScreen(m: AppModel, v: Viewer) {
                 Text(v.note, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp), color = Color.Gray,
                     style = MaterialTheme.typography.labelMedium)
         }
+        v.comments?.let { c -> if (v.open == "board" || v.open == "schematic") PinLayer(m, c.pins, cam) }
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             ChoiceRow(v.choices, v.open, Modifier.weight(1f)) { m.act("view", it) }
@@ -1097,6 +1101,9 @@ private fun PlotScreen(m: AppModel, v: Viewer) {
     v.hist?.let { h -> HistoryBar(m, h, v.light) }
     }
     v.hist?.let { h -> h.menu?.let { rows -> HistMenu(m, h.side, rows) } }
+    v.comments?.let { c ->
+        if (c.at.isNotEmpty()) NoteSheet(m, c.at) else c.open?.let { CommentSheet(m, it) }
+    }
 }
 
 // a plot key's kind and project (a version's key keeps both)

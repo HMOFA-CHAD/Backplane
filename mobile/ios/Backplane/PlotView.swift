@@ -515,6 +515,12 @@ final class PlotCanvas: MTKView {
     var fadeMs: Double = 220
     var chunks: [PlotChunk] = []
     var onPick: (String) -> Void = { _ in }
+    // review comments: a long press at a place (mm of the file) asks for a
+    // note; a pin is a button over the plot that follows the camera
+    var onNote: (Double, Double) -> Void = { _, _ in }
+    var onPin: (String) -> Void = { _ in }
+    private var pins: [ReviewPin] = []
+    private var pinViews: [String: UIButton] = [:]
     private var fitted = false
     private var shownFam = ""
     private var fadeFrom: Date?
@@ -539,7 +545,9 @@ final class PlotCanvas: MTKView {
         twice.numberOfTapsRequired = 2
         let once = UITapGestureRecognizer(target: self, action: #selector(picked(_:)))
         once.require(toFail: twice)
-        for g in [pinch, pan, twist, twice, once] as [UIGestureRecognizer] {
+        let hold = UILongPressGestureRecognizer(target: self, action: #selector(held(_:)))
+        hold.minimumPressDuration = 0.6
+        for g in [pinch, pan, twist, twice, once, hold] as [UIGestureRecognizer] {
             g.delegate = self
             addGestureRecognizer(g)
         }
@@ -714,6 +722,65 @@ final class PlotCanvas: MTKView {
         return (SIMD2(q.x, q.y), above ? renderer.top : renderer.bottom)
     }
 
+    // a long press on the board: where in the file's mm (2D views only)
+    @objc private func held(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began, !three, renderer.scale > 0 else { return }
+        let q = (SIMD2(Float(g.location(in: self).x), Float(g.location(in: self).y)) - renderer.off) / renderer.scale
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        onNote(Double(q.x) / 1000, Double(q.y) / 1000)
+    }
+
+    // the pins: thumb-sized buttons on the plot's own transform, moved
+    // whenever the camera moves (setNeedsDisplay), no redraw of the plot
+    func setPins(_ ps: [ReviewPin]) {
+        guard ps != pins else { return }
+        pins = ps
+        let ids = Set(ps.map { $0.id })
+        for (id, v) in pinViews where !ids.contains(id) { v.removeFromSuperview(); pinViews[id] = nil }
+        for p in ps where pinViews[p.id] == nil {
+            let b = UIButton(type: .custom)
+            b.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+            let box = UIView(frame: CGRect(x: 11, y: 11, width: 22, height: 22))
+            box.isUserInteractionEnabled = false
+            box.tag = 1
+            let n = UILabel(frame: box.bounds)
+            n.font = .systemFont(ofSize: 11, weight: .bold)
+            n.textColor = .white
+            n.textAlignment = .center
+            n.tag = 2
+            box.addSubview(n)
+            b.addSubview(box)
+            b.accessibilityIdentifier = "pin-" + p.id
+            b.addAction(UIAction { [weak self] _ in self?.onPin(p.id) }, for: .touchUpInside)
+            addSubview(b)
+            pinViews[p.id] = b
+        }
+        for p in ps {
+            guard let b = pinViews[p.id], let box = b.viewWithTag(1), let n = box.viewWithTag(2) as? UILabel else { continue }
+            box.backgroundColor = tintColor.withAlphaComponent(p.resolved ? 0.4 : 1)
+            box.layer.borderColor = UIColor.white.cgColor
+            box.layer.borderWidth = 1.5
+            n.text = p.count > 0 ? String(p.count) : ""
+            b.accessibilityLabel = "Comment" + (p.count > 0 ? ", \(p.count) replies" : "")
+        }
+        layoutPins()
+    }
+
+    private func layoutPins() {
+        for p in pins {
+            guard let b = pinViews[p.id] else { continue }
+            b.isHidden = three
+            let x = CGFloat(Float(p.x) * 1000 * renderer.scale + renderer.off.x)
+            let y = CGFloat(Float(p.y) * 1000 * renderer.scale + renderer.off.y)
+            b.center = CGPoint(x: x, y: y)
+        }
+    }
+
+    override func setNeedsDisplay() {
+        super.setNeedsDisplay()
+        layoutPins()
+    }
+
     @objc private func picked(_ g: UITapGestureRecognizer) {
         tap(at: g.location(in: self))
     }
@@ -792,6 +859,8 @@ struct PlotCanvasView: UIViewRepresentable {
     let mesh: MeshFrame?
     let viewer: Viewer
     let pick: (String) -> Void
+    var onNote: (Double, Double) -> Void = { _, _ in }
+    var onPin: (String) -> Void = { _ in }
 
     func makeUIView(context: Context) -> UIView {
         guard let c = PlotCanvas(canvas: .zero) else {
@@ -811,6 +880,9 @@ struct PlotCanvasView: UIViewRepresentable {
         c.tap = viewer.tap
         c.fadeMs = Double(viewer.fade)
         c.onPick = pick
+        c.onNote = onNote
+        c.onPin = onPin
+        c.setPins(viewer.comments?.pins ?? [])
         c.renderer.top = viewer.top
         c.renderer.bottom = viewer.bottom
         c.renderer.orbit.fov = viewer.fov
@@ -971,7 +1043,9 @@ struct PlotScreen: View {
         VStack(spacing: 0) {
         ZStack(alignment: .top) {
             Color(rgb: viewer.bg).ignoresSafeArea()
-            PlotCanvasView(frame: f?.none.isEmpty == true ? f : nil, mesh: m, viewer: viewer) { model.act("view-pick", $0) }
+            PlotCanvasView(frame: f?.none.isEmpty == true ? f : nil, mesh: m, viewer: viewer, pick: { model.act("view-pick", $0) },
+                           onNote: { x, y in model.act("rv-note", String(format: "%.3f\t%.3f\t\t", x, y)) },
+                           onPin: { model.act("rv-pin", $0) })
                 .id(viewer.layers.isEmpty ? viewer.key : "")
                 .ignoresSafeArea()
             // Mech with no part to show: what the page says
@@ -1020,6 +1094,15 @@ struct PlotScreen: View {
         }
         .preferredColorScheme(viewer.light == true ? .light : .dark)
         .statusBarHidden()
+        // a note for a new comment, and the comment open
+        .sheet(isPresented: Binding(get: { !(viewer.comments?.at ?? "").isEmpty },
+                                    set: { if !$0, !(model.screen?.thread?.viewer.comments?.at ?? "").isEmpty { model.act("rv-note-shut", "") } })) {
+            NoteSheet(model: model, at: viewer.comments?.at ?? "")
+        }
+        .sheet(isPresented: Binding(get: { viewer.comments?.open != nil && (viewer.comments?.at ?? "").isEmpty },
+                                    set: { if !$0, model.screen?.thread?.viewer.comments?.open != nil { model.act("rv-pin", "") } })) {
+            if let o = model.screen?.thread?.viewer.comments?.open { CommentSheet(model: model, open: o).id(o.id) }
+        }
         // a comparison's version menu; let go, it shuts
         .sheet(isPresented: Binding(get: { viewer.hist?.menu != nil },
                                     set: { if !$0, model.screen?.thread?.viewer.hist?.menu != nil { model.act("cmp-shut", "") } })) {

@@ -32,6 +32,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 
 // The viewer's Review tab (client.bend's Rp, mobile/view.bend's Rv.json): a
 // chip per page, the page's title and the report as Markdown (the apps'
@@ -48,7 +71,10 @@ fun ReviewScreen(m: AppModel, v: Viewer, r: ReviewPage) {
         HorizontalDivider()
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (r.blocks.isNotEmpty() && !r.busy) {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { Markdown(r.blocks) }
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+                    r.checks?.let { ChecksBoxes(m, it) }
+                    Markdown(r.blocks)
+                }
             } else {
                 Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     if (r.busy) CircularProgressIndicator()
@@ -78,6 +104,113 @@ fun ChoiceRow(choices: List<Choice>, picked: String, modifier: Modifier = Modifi
                     shape = SegmentedButtonDefaults.itemShape(i, choices.size), icon = {}) {
                     Text(c.label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium)
                 }
+            }
+        }
+    }
+}
+
+// The Checks page's gate and checklist: a red "Fails: ..." or a green
+// "Passes", then the boxes as checkboxes under their headings. A tap sends
+// "rv-tick" index; the hub writes .backplane/checklist.md and answers the
+// boxes, so a box shows what the hub says.
+@Composable
+fun ChecksBoxes(m: AppModel, c: ReviewChecks) {
+    val pass = c.gate.isEmpty()
+    Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        Text(if (pass) "Passes" else "Fails: " + c.gate, color = if (pass) Color(0xFF2E9E4F) else Color(0xFFD93025),
+            style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 8.dp).testTag("checks-gate"))
+        var last: String? = null
+        for (t in c.tasks) {
+            if (t.group != last) {
+                last = t.group
+                if (t.group.isNotEmpty()) Text(t.group, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
+            }
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { m.act("rv-tick", t.index.toString()) }.testTag("task-" + t.index),
+                verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(t.done, onCheckedChange = { m.act("rv-tick", t.index.toString()) })
+                Text(t.text, Modifier.weight(1f).padding(start = 4.dp))
+            }
+        }
+    }
+}
+
+// A pin is a square in the accent colour (dimmed when resolved) with its
+// reply count, in a 48 dp touch area, placed with the plot's own transform
+// (the camera the surface reports), so it follows pan and zoom.
+@Composable
+fun PinLayer(m: AppModel, pins: List<ReviewPin>, cam: FloatArray) {
+    if (cam[2] <= 0f) return
+    val accent = MaterialTheme.colorScheme.primary
+    val half = with(androidx.compose.ui.platform.LocalDensity.current) { 24.dp.roundToPx() }
+    for (p in pins) {
+        val x = (p.x * 1000f * cam[2] + cam[0]).roundToInt() - half
+        val y = (p.y * 1000f * cam[2] + cam[1]).roundToInt() - half
+        Box(Modifier.offset { IntOffset(x, y) }.size(48.dp).clickable { m.act("rv-pin", p.id) }.testTag("pin-" + p.id),
+            contentAlignment = Alignment.Center) {
+            Box(Modifier.size(24.dp).background(if (p.resolved) accent.copy(alpha = 0.4f) else accent).border(1.5.dp, Color.White),
+                contentAlignment = Alignment.Center) {
+                if (p.count > 0) Text(p.count.toString(), color = Color.White, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+// The note for a new comment, a bottom sheet that leaves the board in view
+// (partial, no scrim, the keyboard lifts it). The text goes to Bend as the
+// field "rcnote" while it is typed; Send posts it.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NoteSheet(m: AppModel, at: String) {
+    var text by remember { mutableStateOf("") }
+    val parts = at.split("\t")
+    val place = if (parts.size >= 2) "at %.2f, %.2f mm".format(java.util.Locale.ROOT, parts[0].toFloatOrNull() ?: 0f, parts[1].toFloatOrNull() ?: 0f) else ""
+    val focus = remember { FocusRequester() }
+    ModalBottomSheet(onDismissRequest = { m.act("rv-note-shut", "") }, sheetState = rememberModalBottomSheetState(),
+        scrimColor = Color.Transparent, modifier = Modifier.imePadding()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Comment", style = MaterialTheme.typography.titleMedium)
+                Text("  " + place, color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { m.act("rv-note-shut", "") }) { Text("Cancel") }
+            }
+            OutlinedTextField(text, onValueChange = { text = it; m.field("rcnote", it) }, placeholder = { Text("Write a note") },
+                modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag("note-field"), maxLines = 4)
+            Button(onClick = { m.act("rv-note-send", "") }, enabled = text.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("note-send")) { Text("Send") }
+        }
+    }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+}
+
+// The open comment: its words, who, the replies, a reply field, Resolve or
+// Reopen, Close. No scrim, so the pin stays in view above the sheet.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CommentSheet(m: AppModel, o: ReviewOpen) {
+    var text by remember(o.id) { mutableStateOf("") }
+    ModalBottomSheet(onDismissRequest = { m.act("rv-pin", "") }, sheetState = rememberModalBottomSheetState(),
+        scrimColor = Color.Transparent, modifier = Modifier.imePadding()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(o.by, style = MaterialTheme.typography.titleMedium)
+                if (o.resolved) Text("  Resolved", color = Color(0xFF2E9E4F), style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { m.act("rv-pin", "") }) { Text("Close") }
+            }
+            if (o.place.isNotEmpty()) Text(o.place, color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.labelMedium)
+            Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(o.text)
+                for (r in o.replies) Column(Modifier.padding(start = 12.dp)) {
+                    Text(r.by, color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.labelSmall)
+                    Text(r.text)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(text, onValueChange = { text = it; m.field("rcreply", it) }, placeholder = { Text("Reply") },
+                    modifier = Modifier.weight(1f).testTag("reply-field"), maxLines = 3)
+                Button(onClick = { m.act("rv-reply-send", ""); text = "" }, enabled = text.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp).testTag("reply-send")) { Text("Reply") }
+            }
+            OutlinedButton(onClick = { m.act(if (o.resolved) "rv-reopen" else "rv-resolve", o.id) }, modifier = Modifier.heightIn(min = 48.dp).testTag("resolve")) {
+                Text(if (o.resolved) "Reopen" else "Resolve")
             }
         }
     }
