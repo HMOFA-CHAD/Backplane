@@ -77,17 +77,17 @@ def start() -> Run:
 
 # the sign-in, line by line
 type SRun is Data:
-  SRun{s: G.Sign, sends: List<&2, String>, says: List<&2, String>}
+  SRun{s: G.AgySign, sends: List<&2, String>, says: List<&2, String>}
 
-def SRun.add(o: G.SignOut, +ss: List<&2, String>, +ys: List<&2, String>) -> SRun:
+def SRun.add(o: G.AgySignOut, +ss: List<&2, String>, +ys: List<&2, String>) -> SRun:
   match o:
-    case G.SignOut{s, a, b}:
+    case G.AgySignOut{s, a, b}:
       SRun{s, List.append(&2, String, ss, a), List.append(&2, String, ys, b)}
 
 def SRun.step(r: SRun, +l: String) -> SRun:
   match r:
     case SRun{s, +ss, +ys}:
-      SRun.add(G.Sign.line(s, "oauth-personal", "/home/me/.backplane", l), ss, ys)
+      SRun.add(G.AgySign.line(s, "oauth-personal", "/home/me/.backplane", l), ss, ys)
 
 def sreplay(ls: List<&2, String>, r: SRun) -> SRun:
   match ls:
@@ -109,7 +109,7 @@ def says(r: SRun) -> List<&2, String>:
 def sdone(r: SRun) -> String:
   match r:
     case SRun{s, _, _}:
-      yes(G.Sign.done(s))
+      yes(G.AgySign.done(s))
 
 def lines.r(r: U.Lines & List<&2, String>) -> List<&2, String>:
   (_, ls) = r
@@ -153,7 +153,7 @@ def main() -> IO(Unit):
     +sign : List<&2, String> <- file("test/fixtures/antigravity/signin.jsonl")
     +r1 : Run = replay(fresh, start(), turn("", "gemini-3.1-pro-low"))
     +r2 : Run = replay(res, start(), turn("b2edf953-0194-476f-8e17-e65a3bc9c466", ""))
-    +rs : SRun = sreplay(sign, SRun{G.Sign.new(), Nil{}, Nil{}})
+    +rs : SRun = sreplay(sign, SRun{G.AgySign.new(), Nil{}, Nil{}})
     C.Check.str("fixtures read", Nat.show(List.length(&2, String, fresh)) ++ "," ++ Nat.show(List.length(&2, String, res)) ++ "," ++ Nat.show(List.length(&2, String, sign)), "8,5,4")
     # a fresh turn: authenticate, session/new with Backplane's MCP, the mode, the model, the prompt
     C.Check.str("agy init", method(G.Agy.init()), "initialize")
@@ -199,8 +199,8 @@ def main() -> IO(Unit):
     C.Check.str("sign url", String.take(nth(says(rs), 0n), 60n), "url\thttps://accounts.google.com/o/oauth2/v2/auth?response_ty")
     C.Check.str("sign ok", String.take(nth(says(rs), 1n), 40n), "ok\t{\"models\":[{\"id\":\"gemini-3.8-flash-hi")
     C.Check.str("sign done", sdone(rs), "yes")
-    C.Check.str("sign foreign url", nth(says(sreplay(["BACKPLANE-SIGNIN https://evil.example/o/oauth2/v2/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A1%2F&state=x"], SRun{G.Sign.new(), Nil{}, Nil{}})), 0n), "fail\tAntigravity gave a sign-in address that is not Google's")
-    C.Check.str("sign subscription", nth(says(sreplay(["{\"jsonrpc\":\"2.0\",\"id\":4,\"error\":{\"code\":-32000,\"message\":\"SUBSCRIPTION_REQUIRED: x\"}}"], SRun{G.Sign.new(), Nil{}, Nil{}})), 0n), "fail\tGoogle needs an eligible Antigravity plan for this account.")
+    C.Check.str("sign foreign url", nth(says(sreplay(["BACKPLANE-SIGNIN https://evil.example/o/oauth2/v2/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A1%2F&state=x"], SRun{G.AgySign.new(), Nil{}, Nil{}})), 0n), "fail\tAntigravity gave a sign-in address that is not Google's")
+    C.Check.str("sign subscription", nth(says(sreplay(["{\"jsonrpc\":\"2.0\",\"id\":4,\"error\":{\"code\":-32000,\"message\":\"SUBSCRIPTION_REQUIRED: x\"}}"], SRun{G.AgySign.new(), Nil{}, Nil{}})), 0n), "fail\tGoogle needs an eligible Antigravity plan for this account.")
     # the way back from Google
     C.Check.str("cb ok", yes(G.Agy.callback.ok(url(), "http://127.0.0.1:38117/?state=STATE123&code=4%2F0Ab&scope=x")), "yes")
     C.Check.str("cb error ok", yes(G.Agy.callback.ok(url(), "http://127.0.0.1:38117/?state=STATE123&error=access_denied")), "yes")

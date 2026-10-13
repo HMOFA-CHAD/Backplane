@@ -1,6 +1,7 @@
 import Base
 import ./json.bend as J
 import ./acp.bend as AC
+import ./agy.bend as AG
 
 # Muse Code over MSP (the Muse Session Protocol: JSON-RPC over stdio,
 # `muse serve`), one process per turn: initialize, the initialized note,
@@ -373,12 +374,14 @@ def Msp.mode.k(i: Nat) -> String:
 
 # The protocol a runner speaks
 # ----------------------------
-# Grok over ACP or Muse over MSP: the same process handling, its own
-# lines, command and words.
+# Grok over ACP, Muse over MSP or Google's Antigravity agent over ACP
+# (agy.bend, through its runner script): the same process handling, its
+# own lines, command and words.
 
 type Proto is Data:
   PAcp{t: AC.AcpTurn}
   PMsp{t: MspTurn}
+  PAgy{t: AG.AgyTurn}
 
 def Proto.line(a: AC.Acp, +p: Proto, line: String) -> AC.AcpOut:
   match p:
@@ -386,6 +389,8 @@ def Proto.line(a: AC.Acp, +p: Proto, line: String) -> AC.AcpOut:
       AC.Acp.line(a, t, line)
     case PMsp{t}:
       Msp.line(a, t, line)
+    case PAgy{t}:
+      AG.Agy.line(a, t, line)
 
 def Proto.init(p: Proto) -> String:
   match p:
@@ -393,14 +398,28 @@ def Proto.init(p: Proto) -> String:
       AC.Acp.init()
     case PMsp{_}:
       Msp.init()
+    case PAgy{_}:
+      AG.Agy.init()
 
-# the program it runs
+# the program it runs (Antigravity's runner is a script, agy.bend)
 def Proto.cmd(p: Proto) -> String:
   match p:
     case PAcp{_}:
       "grok"
     case PMsp{_}:
       "muse"
+    case PAgy{_}:
+      "sh"
+
+# its name in what the person reads
+def Proto.name(p: Proto) -> String:
+  match p:
+    case PAcp{_}:
+      "grok"
+    case PMsp{_}:
+      "muse"
+    case PAgy{_}:
+      "antigravity"
 
 def Proto.install(p: Proto) -> String:
   match p:
@@ -408,3 +427,15 @@ def Proto.install(p: Proto) -> String:
       "Install Grok Build with `curl -fsSL https://x.ai/cli/install.sh | bash`, then `grok login`."
     case PMsp{_}:
       "Install Muse Code, then sign in with `muse login`."
+    case PAgy{_}:
+      "Install it under Settings › Antigravity."
+
+# why a process that ended before its turn did may have
+def Proto.gone(p: Proto) -> String:
+  match p:
+    case PAcp{_}:
+      "grok exited before the turn ended (is it signed in? run `grok login`)"
+    case PMsp{_}:
+      "muse exited before the turn ended (is it signed in? run `muse login`)"
+    case PAgy{_}:
+      "antigravity exited before the turn ended (is it installed and signed in? see Settings › Antigravity)"

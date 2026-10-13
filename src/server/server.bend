@@ -15,6 +15,8 @@ import ./kicad.bend as K
 import ./browser.bend as BR
 import ../core/acp.bend as AC
 import ../core/msp.bend as MS
+import ../core/agy.bend as AGY
+import ./agyio.bend as AGX
 import ../core/cbor.bend as CB
 import ./push.bend as PU
 import ./park.bend as PK
@@ -2536,8 +2538,8 @@ def Grok.fed(r: U.Lines & List<&2, String>, s: Socket, a: AC.Acp, +t: MS.Proto, 
   IO.bind(AC.Acp, Unit, Grok.lines(ls, a, t, thread, input, inbox), a2 => Grok.after(a2, s, carry, pid, thread, gen, inbox, k))
 
 # the agent closed its output before the turn ended
-def Grok.gone(s: Socket, +cmd: String, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  Turn.failed(s, pid, thread, gen, cmd ++ " exited before the turn ended (is it signed in? run `" ++ cmd ++ " login`)", inbox)
+def Grok.gone(s: Socket, +why: String, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  Turn.failed(s, pid, thread, gen, why, inbox)
 
 def Grok.last.k(done: Bool, s: Socket, +cmd: String, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   match done:
@@ -2556,7 +2558,7 @@ def Grok.last(carry: U.Lines, s: Socket, a: AC.Acp, +t: MS.Proto, +pid: U32, +th
   do IO<Unit>:
     +rest : String = U.Lines.rest(carry)
     a2 : AC.Acp <- Grok.lines(Bool.pick(List<&2, String>, String.is_empty(String.trim(rest)), Nil{}, [rest]), a, t, thread, input, inbox)
-    Grok.last.a(a2, s, MS.Proto.cmd(t), pid, thread, gen, inbox)
+    Grok.last.a(a2, s, MS.Proto.gone(t), pid, thread, gen, inbox)
 
 def Grok.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, a: AC.Acp, +t: MS.Proto, +pid: U32, +thread: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg),
     k: Socket -> U.Lines -> AC.Acp -> IO(Unit)) -> IO(Unit):
@@ -2599,7 +2601,7 @@ def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: 
         rd2 : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd), d => Agent.watch.start(d, pid, thread, gen, inbox))
         Grok.reader(Fuel.forever(), rd2, U.Lines.new(), AC.Acp.new(), t, pid, B.Tag.of(thread, pid), gen, input, inbox)
     case Fail{e}:
-      Grok.dup.failed(e, rd, MS.Proto.cmd(t), pid, thread, gen, inbox)
+      Grok.dup.failed(e, rd, MS.Proto.name(t), pid, thread, gen, inbox)
 
 def Grok.started.ok(started: U32 & Socket, +t: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   (+pid, s) = started
@@ -2608,7 +2610,7 @@ def Grok.started.ok(started: U32 & Socket, +t: MS.Proto, +thread: String, +gen: 
 def Grok.failed(e: U32 & String, +p: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   (_, msg) = e
   do IO<Unit>:
-    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, AC.Acp.failed("could not start " ++ MS.Proto.cmd(p) ++ ": " ++ msg ++ ". " ++ MS.Proto.install(p))})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, AC.Acp.failed("could not start " ++ MS.Proto.name(p) ++ ": " ++ msg ++ ". " ++ MS.Proto.install(p))})
     return Unit{}
 
 def Grok.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +t: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -3439,6 +3441,34 @@ def Muse.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Stri
       MS.PMsp{MS.MspTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("muse", text, ss), session,
         Muse.mode(r), AG.Effort.of("muse", Hub.effort_of(st, thread)), gen}}, cwd, thread, gen, inbox)
 
+# one Antigravity turn: Grok's runner over Google's own agent (agy.bend),
+# started through its runner script with the sign-in the settings name
+# (agy.auth, agy.account, agy.gcp.project, agy.gcp.location)
+def Agt.mode(r: M.RuntimeMode) -> String:
+  match r:
+    case M.Supervised{}:
+      AGY.Agy.mode.k(0n)
+    case M.AcceptEdits{}:
+      AGY.Agy.mode.k(1n)
+    case M.AutoMode{}:
+      AGY.Agy.mode.k(2n)
+    case M.FullAccess{}:
+      AGY.Agy.mode.k(3n)
+
+def Agt.args(+home: String, +st: M.State) -> List<&2, String>:
+  AGY.Agy.args(AGX.Agx.root(home), AKS.Ak.path(home), M.Setting.get(st, "agy.auth", ""), M.Setting.get(st, "agy.account", ""),
+    M.Setting.get(st, "agy.gcp.project", ""), M.Setting.get(st, "agy.gcp.location", ""))
+
+def Agt.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
+    +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
+    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    w : Bool <- AGX.Agx.write(AGX.Agx.root(Cfg.home(cfg)))
+    Grok.run(Agt.args(Cfg.home(cfg), st),
+      MS.PAgy{AGY.AgyTurn{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("antigravity", text, ss), session, Grok.asks(r)},
+        AGY.Agy.method(M.Setting.get(st, "agy.auth", "")), Agt.mode(r), model}}, cwd, thread, gen, inbox)
+
 def Term.nums(bs: List<&2, U32>) -> List<&2, String>:
   match bs:
     case Nil{}:
@@ -3939,6 +3969,9 @@ def Models.text3(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, Str
 def Models.text4(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>) -> String:
   Models.join(Models.text3(cl, cx, gk), Models.line("muse", ms))
 
+def Models.text5(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, +ag: List<&2, String>) -> String:
+  Models.join(Models.text4(cl, cx, gk, ms), Models.line("antigravity", ag))
+
 # what the providers offer: the models JSON clients read, and a line for
 # the agents' prompt
 type Found is Data:
@@ -4123,9 +4156,11 @@ def Refresh.found(fd: Found, +inbox: Chan(Msg), +cache: String, +last: String) -
     case Found{+ms, +mt}:
       Refresh.news(BT.Models.news(ms, last), ms, mt, inbox, cache, last)
 
-def Models.found(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, about: J.Json) -> Found:
-  Found{J.Json.show(J.Json.obj([J.KV{"claude", Models.strs(cl)}, J.KV{"codex", Models.strs(cx)}, J.KV{"grok", Models.strs(gk)}, J.KV{"muse", Models.strs(ms)}, J.KV{"about", about}])),
-    Models.text4(cl, cx, gk, ms)}
+# (Antigravity's "agy": what is installed and its accounts, AGY.Agy.info.json)
+def Models.found(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, +ag: List<&2, String>, agy: J.Json, about: J.Json) -> Found:
+  Found{J.Json.show(J.Json.obj([J.KV{"claude", Models.strs(cl)}, J.KV{"codex", Models.strs(cx)}, J.KV{"grok", Models.strs(gk)}, J.KV{"muse", Models.strs(ms)}, J.KV{"antigravity", Models.strs(ag)},
+    J.KV{"agy", agy}, J.KV{"about", about}])),
+    Models.text5(cl, cx, gk, ms, ag)}
 
 def Models.boot(ks: String & List<&2, Q.Skill>, +rt: K.Rt, fd: Found, +fc: String) -> Boot:
   (kdir, skills) = ks
@@ -4268,7 +4303,7 @@ def Claude.about(+cli: String, +xs: List<&2, J.Json>) -> J.Json:
 
 # which providers are installed and what models they offer (at start, and
 # again every Models.every() ms: new models appear without a restart)
-def Models.detect(+user: String) -> IO(Found):
+def Models.detect(+user: String, +home: String) -> IO(Found):
   do IO<Found>:
     cl : P.Ran <- P.Proc.run("sh", ["-c", "command -v claude"], "/")
     cx : P.Ran <- P.Proc.run("sh", ["-c", "command -v codex"], "/")
@@ -4282,27 +4317,28 @@ def Models.detect(+user: String) -> IO(Found):
     vm : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v muse >/dev/null && tmo 10 muse --version")], "/")
     +xs : List<&2, J.Json> = Claude.listed(pc)
     +mx : List<&2, J.Json> = Muse.catalog(mu)
-    return Models.found(Claude.models(Main.has(cl), xs), Models.on(Main.has(cx), Models.codex(cache)), Models.grok(gk), Models.muse(mx),
+    +ag : AGY.AgyInfo <- AGX.Agx.probe(AGX.Agx.root(home))
+    return Models.found(Claude.models(Main.has(cl), xs), Models.on(Main.has(cx), Models.codex(cache)), Models.grok(gk), Models.muse(mx), AGY.Agy.info.models(ag), AGY.Agy.info.json(ag),
       J.Json.obj([J.KV{"claude", Claude.about(About.cli(vc), xs)}, J.KV{"codex", About.one(About.cli(vx), About.codex(cache))}, J.KV{"grok", About.one(About.cli(vg), About.grok(gk))},
-        J.KV{"muse", About.one(About.cli(vm), About.muse(mx))}]))
+        J.KV{"muse", About.one(About.cli(vm), About.muse(mx))}, J.KV{"antigravity", AGY.Agy.info.about(ag)}]))
 
 # the first probe runs at once (the window is up by then), the next ones
 # every Models.every() ms
-def Refresh.loop(fuel: Nat, +inbox: Chan(Msg), +user: String, +cache: String, +last: String) -> IO(Unit):
+def Refresh.loop(fuel: Nat, +inbox: Chan(Msg), +user: String, +home: String, +cache: String, +last: String) -> IO(Unit):
   match fuel:
     case 0n:
       IO.pure(Unit, Unit{})
     case 1n+f:
       do IO<Unit>:
-        fd : Found <- Models.detect(user)
+        fd : Found <- Models.detect(user, home)
         now : String <- Refresh.found(fd, inbox, cache, last)
         IO.sleep(Models.every())
-        Refresh.loop(f, inbox, user, cache, now)
+        Refresh.loop(f, inbox, user, home, cache, now)
 
 def Refresh.start(+inbox: Chan(Msg), +cfg: Cfg) -> IO(Unit):
   do IO<Unit>:
     user : String <- Env.get("HOME", "")
-    IO.spawn(Unit, Refresh.loop(Fuel.forever(), inbox, user, Models.cache(Cfg.home(cfg)), Net.models(Cfg.net(cfg))))
+    IO.spawn(Unit, Refresh.loop(Fuel.forever(), inbox, user, Cfg.home(cfg), Models.cache(Cfg.home(cfg)), Net.models(Cfg.net(cfg))))
 
 def Main.prepare(+user: String, +exe: String) -> IO(Boot):
   do IO<Boot>:
@@ -5209,6 +5245,258 @@ def VoiceJob.stopped(on: Bool, +inbox: Chan(Msg), +client: U32, +id: String, +th
         sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, VO.Vo.msg(thread, "idle", Nil{})})
         return Unit{}
 
+# Antigravity (core/agy.bend, server/agyio.bend)
+# ----------------------------------------------
+# Settings' "agy" requests (through bots.voice, op "agy", its "do"):
+# install the pinned agent, sign in (or check a key) with the method the
+# client names, take Google's way back pasted from another device, cancel,
+# sign out or forget an account. What happens goes to the client that
+# asked as info "agy.job" (JSON: what, state, msg, url); what is installed
+# and signed in goes to every client in the models info, read again after
+# each.
+
+def AgyJob.info(+client: U32, +inbox: Chan(Msg), +what: String, +state: String, +msg: String, +url: String) -> IO(Unit):
+  do IO<Unit>:
+    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"info"}}, J.KV{"info", J.Json.obj([J.KV{"agy.job",
+      J.Str{J.Json.show(J.Json.obj([J.KV{"what", J.Str{what}}, J.KV{"state", J.Str{state}}, J.KV{"msg", J.Str{msg}}, J.KV{"url", J.Str{url}}]))}}])}]))})
+    return Unit{}
+
+def AgyJob.found(fd: Found, +inbox: Chan(Msg)) -> IO(Unit):
+  match fd:
+    case Found{ms, mt}:
+      do IO<Unit>:
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, ModelsFound{ms, mt})
+        return Unit{}
+
+# the models info read again, for every client
+def AgyJob.refresh(+inbox: Chan(Msg), +home: String) -> IO(Unit):
+  do IO<Unit>:
+    user : String <- Env.get("HOME", "")
+    fd : Found <- Models.detect(user, home)
+    AgyJob.found(fd, inbox)
+
+def AgyJob.installed(+err: String, +client: U32, +inbox: Chan(Msg), +home: String) -> IO(Unit):
+  do IO<Unit>:
+    AgyJob.info(client, inbox, "install", Bool.pick(String, String.is_empty(err), "done", "failed"),
+      Bool.pick(String, String.is_empty(err), "Antigravity " ++ AGY.Agy.version() ++ " is installed.", err), "")
+    AgyJob.refresh(inbox, home)
+
+def AgyJob.install(+client: U32, +id: String, +inbox: Chan(Msg), +home: String) -> IO(Unit):
+  do IO<Unit>:
+    BotJob.reply(inbox, client, id, True{}, Nil{})
+    AgyJob.info(client, inbox, "install", "running", "Downloading Google's Antigravity agent " ++ AGY.Agy.version() ++ " (a few hundred MB) and checking it against Backplane's pinned SHA-256.", "")
+    +err : String <- AGX.Agx.install(AGX.Agx.root(home))
+    AgyJob.installed(err, client, inbox, home)
+
+# The sign-in's process: its lines through AgySign.line, what it says to
+# the client; it ends once signed in or failed, or when its output closes
+
+def AgyJob.said.k(i: Nat, +rest: String, +browser: Bool, +client: U32, +inbox: Chan(Msg), +home: String) -> IO(Unit):
+  match i:
+    case 0n:
+      do IO<Unit>:
+        ok : Bool <- BN.Bf.secret(AGX.Agx.root(home) ++ "/signin.url", rest)
+        AgyJob.info(client, inbox, "signin", "waiting", "Open Google's sign-in and approve it. On another device the last page will not load: copy its address and paste it here.", rest)
+    case 1n:
+      do IO<Unit>:
+        ok : Bool <- AGX.Agx.models.save(AGX.Agx.root(home), rest)
+        AgyJob.info(client, inbox, "signin", "done", Bool.pick(String, browser, "Signed in with Google.", "Connected to Antigravity."), "")
+        AgyJob.refresh(inbox, home)
+    case _:
+      AgyJob.info(client, inbox, "signin", "failed", rest, "")
+
+def AgyJob.said(+say: String, +browser: Bool, +client: U32, +inbox: Chan(Msg), +home: String) -> IO(Unit):
+  AgyJob.said.k(C.Codec.pos(["url", "ok", "fail"], AGY.Agy.base(String.split(say, '\t'))), String.drop(say, 1n+String.length(AGY.Agy.base(String.split(say, '\t')))), browser, client, inbox, home)
+
+def AgyJob.says(ys: List<&2, String>, +browser: Bool, +client: U32, +inbox: Chan(Msg), +home: String) -> IO(Unit):
+  match ys:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case +y <> t:
+      IO.bind(Unit, Unit, AgyJob.said(y, browser, client, inbox, home), u => AgyJob.says(t, browser, client, inbox, home))
+
+def AgyJob.sends(xs: List<&2, String>, +input: Chan(String)) -> IO(Unit):
+  match xs:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case +x <> t:
+      do IO<Unit>:
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, input, x)
+        AgyJob.sends(t, input)
+
+type AgyCtx is Data:
+  AgyCtx{method: String, client: U32, home: String}
+
+def AgyCtx.method(c: AgyCtx) -> String:
+  match c:
+    case AgyCtx{m, _, _}:
+      m
+
+def AgyCtx.client(c: AgyCtx) -> U32:
+  match c:
+    case AgyCtx{_, cl, _}:
+      cl
+
+def AgyCtx.home(c: AgyCtx) -> String:
+  match c:
+    case AgyCtx{_, _, h}:
+      h
+
+def AgyJob.out(o: AGY.AgySignOut, +cx: AgyCtx, +input: Chan(String), +inbox: Chan(Msg)) -> IO(AGY.AgySign):
+  match o:
+    case AGY.AgySignOut{sg, xs, ys}:
+      do IO<AGY.AgySign>:
+        AgyJob.sends(xs, input)
+        AgyJob.says(ys, AGY.Agy.browser(AgyCtx.method(cx)), AgyCtx.client(cx), inbox, AgyCtx.home(cx))
+        return sg
+
+def AgyJob.lines(ls: List<&2, String>, sg: AGY.AgySign, +cx: AgyCtx, +input: Chan(String), +inbox: Chan(Msg)) -> IO(AGY.AgySign):
+  match ls:
+    case Nil{}:
+      IO.pure(AGY.AgySign, sg)
+    case l <> rest:
+      IO.bind(AGY.AgySign, AGY.AgySign, AgyJob.out(AGY.AgySign.line(sg, AgyCtx.method(cx), AgyCtx.home(cx), l), cx, input, inbox), s2 => AgyJob.lines(rest, s2, cx, input, inbox))
+
+# the process is done with: stopped, reaped, its pid file gone; a sign-in
+# that never finished says so
+def AgyJob.end(s: Socket, +sg: AGY.AgySign, +pid: U32, +cx: AgyCtx, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    Proc.kill(pid, 15)
+    Socket.close(s)
+    code : U32 <- H.Proc.wait(pid)
+    BN.Bf.rm(AGX.Agx.pidfile(AGX.Agx.root(AgyCtx.home(cx))))
+    BN.Bf.rm(AGX.Agx.root(AgyCtx.home(cx)) ++ "/signin.url")
+    Bool.pick(IO(Unit), AGY.AgySign.done(sg), IO.pure(Unit, Unit{}),
+      AgyJob.info(AgyCtx.client(cx), inbox, "signin", "failed", "The sign-in stopped before it finished.", ""))
+
+def AgyJob.next(done: Bool, s: Socket, carry: U.Lines, sg: AGY.AgySign, +pid: U32, +cx: AgyCtx, +inbox: Chan(Msg), k: Socket -> U.Lines -> AGY.AgySign -> IO(Unit)) -> IO(Unit):
+  match done:
+    case True{}:
+      AgyJob.end(s, sg, pid, cx, inbox)
+    case False{}:
+      k(s, carry, sg)
+
+def AgyJob.after(+sg: AGY.AgySign, s: Socket, carry: U.Lines, +pid: U32, +cx: AgyCtx, +inbox: Chan(Msg), k: Socket -> U.Lines -> AGY.AgySign -> IO(Unit)) -> IO(Unit):
+  AgyJob.next(AGY.AgySign.done(sg), s, carry, sg, pid, cx, inbox, k)
+
+def AgyJob.fed(r: U.Lines & List<&2, String>, s: Socket, sg: AGY.AgySign, +pid: U32, +cx: AgyCtx, +input: Chan(String), +inbox: Chan(Msg),
+    k: Socket -> U.Lines -> AGY.AgySign -> IO(Unit)) -> IO(Unit):
+  (carry, ls) = r
+  IO.bind(AGY.AgySign, Unit, AgyJob.lines(ls, sg, cx, input, inbox), s2 => AgyJob.after(s2, s, carry, pid, cx, inbox, k))
+
+def AgyJob.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, sg: AGY.AgySign, +pid: U32, +cx: AgyCtx, +input: Chan(String), +inbox: Chan(Msg),
+    k: Socket -> U.Lines -> AGY.AgySign -> IO(Unit)) -> IO(Unit):
+  (s, res) = r
+  match res:
+    case Done{Nil{}}:
+      AgyJob.end(s, sg, pid, cx, inbox)
+    case Done{bs}:
+      AgyJob.fed(U.Lines.feed(carry, bs), s, sg, pid, cx, input, inbox, k)
+    case Fail{_}:
+      AgyJob.end(s, sg, pid, cx, inbox)
+
+def AgyJob.reader(fuel: Nat, s: Socket, carry: U.Lines, sg: AGY.AgySign, +pid: U32, +cx: AgyCtx, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      AgyJob.end(s, sg, pid, cx, inbox)
+    case 1n+f:
+      IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 65536),
+        r => AgyJob.got(r, carry, sg, pid, cx, input, inbox, s2 => c2 => g2 => AgyJob.reader(f, s2, c2, g2, pid, cx, input, inbox)))
+
+def AgyJob.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +cx: AgyCtx, +inbox: Chan(Msg)) -> IO(Unit):
+  (rd, res) = r
+  match res:
+    case Done{wr}:
+      do IO<Unit>:
+        +input : Chan(String) <- Chan.new(String, 16)
+        IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, input, AGY.Agy.init())
+        AgyJob.reader(Fuel.forever(), rd, U.Lines.new(), AGY.AgySign.new(), pid, cx, input, inbox)
+    case Fail{_}:
+      AgyJob.end(rd, AGY.AgySign.new(), pid, cx, inbox)
+
+def AgyJob.spawned.ok(started: U32 & Socket, +cx: AgyCtx, +inbox: Chan(Msg)) -> IO(Unit):
+  (+pid, s) = started
+  do IO<Unit>:
+    ok : Bool <- BN.Bf.secret(AGX.Agx.pidfile(AGX.Agx.root(AgyCtx.home(cx))), U32.show(pid))
+    IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Unit, H.Sock.dup(s), d => AgyJob.duped(d, pid, cx, inbox))
+
+def AgyJob.spawn.failed(e: U32 & String, +cx: AgyCtx, +inbox: Chan(Msg)) -> IO(Unit):
+  (_, msg) = e
+  AgyJob.info(AgyCtx.client(cx), inbox, "signin", "failed", "Antigravity could not start: " ++ msg, "")
+
+def AgyJob.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, +cx: AgyCtx, +inbox: Chan(Msg)) -> IO(Unit):
+  match r:
+    case Done{started}:
+      AgyJob.spawned.ok(started, cx, inbox)
+    case Fail{e}:
+      AgyJob.spawn.failed(e, cx, inbox)
+
+# the sign-in in progress, stopped (server/agyio.bend's Agx.cancel)
+def AgyJob.cancel(+home: String) -> IO(Unit):
+  AGX.Agx.cancel(AGX.Agx.root(home))
+
+# a sign-in (or a key's check) with what the client names: one at a time
+# (an earlier one is stopped first), five minutes at most
+def AgyJob.signin(+p: J.Json, +client: U32, +id: String, +inbox: Chan(Msg), +home: String) -> IO(Unit):
+  do IO<Unit>:
+    BotJob.reply(inbox, client, id, True{}, Nil{})
+    AgyJob.cancel(home)
+    w : Bool <- AGX.Agx.write(AGX.Agx.root(home))
+    +m : String = AGY.Agy.method(J.Json.get_str(p, "method", ""))
+    AgyJob.info(client, inbox, "signin", "running", Bool.pick(String, AGY.Agy.browser(m), "Starting Google's sign-in…", "Checking Antigravity with the " ++ AGY.Agy.label(m) ++ "…"), "")
+    IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit,
+      H.Proc.spawn("sh", PT.Port.timeout("300" <> "sh" <> AGY.Agy.args(AGX.Agx.root(home), AKS.Ak.path(home), m, J.Json.get_str(p, "account", ""), J.Json.get_str(p, "project", ""), J.Json.get_str(p, "location", ""))), AGX.Agx.root(home), 0),
+      r => AgyJob.spawned(r, AgyCtx{m, client, home}, inbox))
+
+def AgyJob.back.sent(+err: String, +client: U32, +id: String, +inbox: Chan(Msg)) -> IO(Unit):
+  Bool.pick(IO(Unit), String.is_empty(err), BotJob.reply(inbox, client, id, True{}, Nil{}), BotJob.fail(inbox, client, id, err))
+
+# the sign-in in progress, stopped
+# Google's way back, pasted: taken only for the sign-in that asked, then
+# fetched here
+def AgyJob.back.k(+pending: String, +back: String, +client: U32, +id: String, +inbox: Chan(Msg)) -> IO(Unit):
+  Bool.pick(IO(Unit), AGY.Agy.callback.ok(pending, back),
+    IO.bind(String, Unit, AGX.Agx.forward(String.trim(back)), e => AgyJob.back.sent(e, client, id, inbox)),
+    BotJob.fail(inbox, client, id, "That address is not this sign-in's way back from Google: copy the whole address of the page Google sent you to."))
+
+def AgyJob.back(+back: String, +client: U32, +id: String, +inbox: Chan(Msg), +home: String) -> IO(Unit):
+  IO.bind(String, Unit, BN.Bf.text(AGX.Agx.root(home) ++ "/signin.url"), u => AgyJob.back.k(String.trim(u), back, client, id, inbox))
+
+def AgyJob.out.done(+client: U32, +id: String, +inbox: Chan(Msg), +home: String, +msg: String) -> IO(Unit):
+  do IO<Unit>:
+    BotJob.reply(inbox, client, id, True{}, Nil{})
+    AgyJob.info(client, inbox, "signout", "done", msg, "")
+    AgyJob.refresh(inbox, home)
+
+def AgyJob.op(i: Nat, +p: J.Json, +client: U32, +id: String, +inbox: Chan(Msg), +home: String) -> IO(Unit):
+  match i:
+    case 0n:
+      do IO<Unit>:
+        BotJob.reply(inbox, client, id, True{}, Nil{})
+        AgyJob.refresh(inbox, home)
+    case 1n:
+      AgyJob.install(client, id, inbox, home)
+    case 2n:
+      AgyJob.signin(p, client, id, inbox, home)
+    case 3n:
+      AgyJob.back(J.Json.get_str(p, "url", ""), client, id, inbox, home)
+    case 4n:
+      do IO<Unit>:
+        AgyJob.cancel(home)
+        BotJob.reply(inbox, client, id, True{}, Nil{})
+    case 5n:
+      IO.bind(Unit, Unit, AGX.Agx.signout(AGX.Agx.root(home), J.Json.get_str(p, "account", ""), False{}),
+        u => AgyJob.out.done(client, id, inbox, home, "Signed out of " ++ AGY.Agy.acct(J.Json.get_str(p, "account", "")) ++ "."))
+    case 6n:
+      IO.bind(Unit, Unit, AGX.Agx.signout(AGX.Agx.root(home), J.Json.get_str(p, "account", ""), True{}),
+        u => AgyJob.out.done(client, id, inbox, home, "Removed " ++ AGY.Agy.acct(J.Json.get_str(p, "account", "")) ++ "."))
+    case _:
+      BotJob.fail(inbox, client, id, "unknown antigravity request")
+
+def AgyJob.go(+p: J.Json, +inbox: Chan(Msg), +home: String, +client: U32, +id: String) -> IO(Unit):
+  AgyJob.op(C.Codec.pos(["status", "install", "signin", "back", "cancel", "signout", "forget"], J.Json.get_str(p, "do", "")), p, client, id, inbox, home)
+
 def VoiceJob.op(i: Nat, +inbox: Chan(Msg), +home: String, +p: J.Json, +client: U32, +id: String) -> IO(Unit):
   match i:
     case 0n:
@@ -5232,11 +5520,14 @@ def VoiceJob.op(i: Nat, +inbox: Chan(Msg), +home: String, +p: J.Json, +client: U
       IO.bind(String, Unit, AKS.Ak.add(home, J.Json.get_str(p, "name", ""), J.Json.get_str(p, "value", "")), e => VoiceJob.done(e, inbox, home, client, id))
     case 9n:
       IO.bind(String, Unit, AKS.Ak.del(home, J.Json.get_str(p, "name", "")), e => VoiceJob.done(e, inbox, home, client, id))
+    # Settings' Antigravity (AgyJob)
+    case 10n:
+      AgyJob.go(p, inbox, home, client, id)
     case _:
       BotJob.fail(inbox, client, id, "unknown voice request")
 
 def VoiceJob.go(+p: J.Json, +inbox: Chan(Msg), +home: String, +client: U32, +id: String) -> IO(Unit):
-  VoiceJob.op(C.Codec.pos(["status", "key", "unkey", "dict", "add", "start", "stop", "devices", "api-add", "api-del"], J.Json.get_str(p, "op", "")), inbox, home, p, client, id)
+  VoiceJob.op(C.Codec.pos(["status", "key", "unkey", "dict", "add", "start", "stop", "devices", "api-add", "api-del", "agy"], J.Json.get_str(p, "op", "")), inbox, home, p, client, id)
 
 def VoiceJob.run(+inbox: Chan(Msg), +home: String, +params: String, +client: U32, +id: String) -> IO(Unit):
   VoiceJob.go(Maybe.default(&2, J.Json, J.Json.parse(params), J.Null{}), inbox, home, client, id)
@@ -6742,6 +7033,13 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +t2 : String = Far.turn(cfg, st, now, thread, text)
         +g : String = Hub.gen(st, now)
         IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Muse.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
+        Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.AgyTurn{+thread, +cwd, +model, +session, r, +text}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        +t2 : String = Far.turn(cfg, st, now, thread, text)
+        +g : String = Hub.gen(st, now)
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Agt.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.Await{+thread, +id, +kind, +target, +ident, +deadline, +cwd}:
       do IO<Hub>:

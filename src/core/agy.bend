@@ -533,57 +533,57 @@ def Agy.cache(+r: J.Json) -> String:
 # What it says: "url\t<address>" (a Google sign-in to open), "ok\t<cache>"
 # or "fail\t<why>"; done once ok or fail.
 
-type Sign is Data:
-  Sign{url: String, done: Bool}
+type AgySign is Data:
+  AgySign{url: String, done: Bool}
 
-type SignOut is Data:
-  SignOut{s: Sign, send: List<&2, String>, say: List<&2, String>}
+type AgySignOut is Data:
+  AgySignOut{s: AgySign, send: List<&2, String>, say: List<&2, String>}
 
-def Sign.new() -> Sign:
-  Sign{"", False{}}
+def AgySign.new() -> AgySign:
+  AgySign{"", False{}}
 
-def Sign.done(s: Sign) -> Bool:
+def AgySign.done(s: AgySign) -> Bool:
   match s:
-    case Sign{_, d}:
+    case AgySign{_, d}:
       d
 
-def Sign.url(s: Sign) -> String:
+def AgySign.url(s: AgySign) -> String:
   match s:
-    case Sign{u, _}:
+    case AgySign{u, _}:
       u
 
-def Sign.fail(s: Sign, +why: String) -> SignOut:
+def AgySign.fail(s: AgySign, +why: String) -> AgySignOut:
   match s:
-    case Sign{u, _}:
-      SignOut{Sign{u, True{}}, Nil{}, ["fail\t" ++ why]}
+    case AgySign{u, _}:
+      AgySignOut{AgySign{u, True{}}, Nil{}, ["fail\t" ++ why]}
 
 # Google's words made plain where they matter
 def Agy.sign.why(+msg: String) -> String:
   Bool.pick(String, String.contains(msg, "SUBSCRIPTION_REQUIRED"), "Google needs an eligible Antigravity plan for this account.",
     Bool.pick(String, Bool.or(String.contains(msg, "access_denied"), String.contains(msg, "cancelled")), "Google's sign-in was not approved.", msg))
 
-def Sign.why(+o: J.Json) -> String:
+def AgySign.why(+o: J.Json) -> String:
   Agy.sign.why(J.Json.get_str(J.Json.get_obj(o, "error"), "message", "Antigravity could not sign in"))
 
-def Sign.reply.k(i: Nat, ok: Bool, s: Sign, +m: String, +home: String, +o: J.Json) -> SignOut:
+def AgySign.reply.k(i: Nat, ok: Bool, s: AgySign, +m: String, +home: String, +o: J.Json) -> AgySignOut:
   match i ok:
     case 1n True{}:
-      SignOut{s, [Agy.auth(m)], Nil{}}
+      AgySignOut{s, [Agy.auth(m)], Nil{}}
     case 4n True{}:
-      SignOut{s, [Agy.new.rpc(2n, home, J.Json.arr(Nil{}))], Nil{}}
+      AgySignOut{s, [Agy.new.rpc(2n, home, J.Json.arr(Nil{}))], Nil{}}
     case 2n True{}:
-      SignOut{Sign{Sign.url(s), True{}}, Nil{}, ["ok\t" ++ Agy.cache(J.Json.get_obj(o, "result"))]}
+      AgySignOut{AgySign{AgySign.url(s), True{}}, Nil{}, ["ok\t" ++ Agy.cache(J.Json.get_obj(o, "result"))]}
     case _ False{}:
-      Sign.fail(s, Sign.why(o))
+      AgySign.fail(s, AgySign.why(o))
     case _ True{}:
-      SignOut{s, Nil{}, Nil{}}
+      AgySignOut{s, Nil{}, Nil{}}
 
-def Sign.url.k(ok: Bool, s: Sign, +u: String) -> SignOut:
+def AgySign.url.k(ok: Bool, s: AgySign, +u: String) -> AgySignOut:
   match ok:
     case True{}:
-      SignOut{Sign{u, Sign.done(s)}, Nil{}, ["url\t" ++ u]}
+      AgySignOut{AgySign{u, AgySign.done(s)}, Nil{}, ["url\t" ++ u]}
     case False{}:
-      Sign.fail(s, "Antigravity gave a sign-in address that is not Google's")
+      AgySign.fail(s, "Antigravity gave a sign-in address that is not Google's")
 
 # The way back from Google
 # ------------------------
@@ -600,31 +600,31 @@ def Agy.hex(+c: U32) -> U32:
 
 # percent-decoding (and + as a space), for a query's values: a walk
 # whose state says whether a % (and its first digit) came before
-type Pc is Data:
-  Pc{st: Nat, hi: U32, out: U32, has: Bool}
+type AgyPc is Data:
+  AgyPc{st: Nat, hi: U32, out: U32, has: Bool}
 
-def Agy.pc.k(st: Nat, +c: U32, +hi: U32) -> Pc:
+def Agy.pc.k(st: Nat, +c: U32, +hi: U32) -> AgyPc:
   match st:
     case 0n:
-      Bool.pick(Pc, U32.is_eq(c, 37), Pc{1n, 0, 0, False{}}, Pc{0n, 0, Bool.pick(U32, U32.is_eq(c, 43), 32, c), True{}})
+      Bool.pick(AgyPc, U32.is_eq(c, 37), AgyPc{1n, 0, 0, False{}}, AgyPc{0n, 0, Bool.pick(U32, U32.is_eq(c, 43), 32, c), True{}})
     case 1n:
-      Pc{2n, Agy.hex(c), 0, False{}}
+      AgyPc{2n, Agy.hex(c), 0, False{}}
     case _:
-      Pc{0n, 0, ((hi * 16 : U32) + Agy.hex(c) : U32), True{}}
+      AgyPc{0n, 0, ((hi * 16 : U32) + Agy.hex(c) : U32), True{}}
 
-def Agy.pc.step(+c: U32, p: Pc) -> Pc:
+def Agy.pc.step(+c: U32, p: AgyPc) -> AgyPc:
   match p:
-    case Pc{st, hi, _, _}:
+    case AgyPc{st, hi, _, _}:
       Agy.pc.k(st, c, hi)
 
-def Agy.pc.emit(p: Pc, rest: String) -> String:
+def Agy.pc.emit(p: AgyPc, rest: String) -> String:
   match p:
-    case Pc{_, _, o, True{}}:
+    case AgyPc{_, _, o, True{}}:
       SCon{Chr{o}, rest}
-    case Pc{_, _, _, False{}}:
+    case AgyPc{_, _, _, False{}}:
       rest
 
-def Agy.unpct.go(s: String, +p: Pc) -> String:
+def Agy.unpct.go(s: String, +p: AgyPc) -> String:
   match s:
     case SNil{}:
       SNil{}
@@ -632,7 +632,7 @@ def Agy.unpct.go(s: String, +p: Pc) -> String:
       Agy.pc.emit(Agy.pc.step(c, p), Agy.unpct.go(t, Agy.pc.step(c, p)))
 
 def Agy.unpct(s: String) -> String:
-  Agy.unpct.go(s, Pc{0n, 0, 0, False{}})
+  Agy.unpct.go(s, AgyPc{0n, 0, 0, False{}})
 
 def Agy.after(xs: List<&2, String>) -> String:
   match xs:
@@ -681,22 +681,22 @@ def Agy.url.ok(+u: String) -> Bool:
   Bool.and(Bool.and(String.starts_with(u, "https://accounts.google.com/o/oauth2/v2/auth?"), Nat.is_lt(String.length(u), 16384n)),
     Bool.and(Bool.not(String.contains(u, " ")), Bool.and(String.starts_with(Agy.redirect(u), "http://127.0.0.1:"), Bool.not(String.is_empty(Agy.param(u, "state"))))))
 
-def Sign.plain(+s: Sign, +line: String) -> SignOut:
-  Bool.pick(SignOut, String.starts_with(line, "BACKPLANE-SIGNIN "), Sign.url.k(Agy.url.ok(String.trim(String.drop(line, 17n))), s, String.trim(String.drop(line, 17n))),
-    Bool.pick(SignOut, String.starts_with(line, "BACKPLANE-MISSING"), Sign.fail(s, Agy.missing.msg()), SignOut{s, Nil{}, Nil{}}))
+def AgySign.plain(+s: AgySign, +line: String) -> AgySignOut:
+  Bool.pick(AgySignOut, String.starts_with(line, "BACKPLANE-SIGNIN "), AgySign.url.k(Agy.url.ok(String.trim(String.drop(line, 17n))), s, String.trim(String.drop(line, 17n))),
+    Bool.pick(AgySignOut, String.starts_with(line, "BACKPLANE-MISSING"), AgySign.fail(s, Agy.missing.msg()), AgySignOut{s, Nil{}, Nil{}}))
 
-def Sign.parsed(m: Maybe<&2, J.Json>, +s: Sign, +meth: String, +home: String, +line: String) -> SignOut:
+def AgySign.parsed(m: Maybe<&2, J.Json>, +s: AgySign, +meth: String, +home: String, +line: String) -> AgySignOut:
   match m:
     case Some{+o}:
-      Bool.pick(SignOut, String.is_empty(J.Json.get_str(o, "method", "")), Sign.reply.k(Agy.id(o), String.eq(J.Json.show(J.Json.get_obj(o, "error")), "null"), s, meth, home, o),
-        SignOut{s, Nil{}, Nil{}})
+      Bool.pick(AgySignOut, String.is_empty(J.Json.get_str(o, "method", "")), AgySign.reply.k(Agy.id(o), String.eq(J.Json.show(J.Json.get_obj(o, "error")), "null"), s, meth, home, o),
+        AgySignOut{s, Nil{}, Nil{}})
     case None{}:
-      Sign.plain(s, String.trim(line))
+      AgySign.plain(s, String.trim(line))
 
 # one line from the agent while signing in with method m (home: where its
 # probe session opens)
-def Sign.line(s: Sign, +m: String, +home: String, +line: String) -> SignOut:
-  Sign.parsed(Agy.parse(line), s, m, home, line)
+def AgySign.line(s: AgySign, +m: String, +home: String, +line: String) -> AgySignOut:
+  AgySign.parsed(Agy.parse(line), s, m, home, line)
 
 def Agy.count(+u: String, +name: String) -> Nat:
   List.length(&2, String, Agy.params(Agy.query(u), name))
