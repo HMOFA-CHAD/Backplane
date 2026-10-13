@@ -2923,13 +2923,14 @@ def Names.copy(xs: List<String>) -> List<&2, String>:
       x <> Names.copy(t)
 
 # the install is done: the hub is asked, and restarts only if nothing has
-# started work since the update began (Hub.update_ready, Restart{})
+# started work since the update began (Hub.update_ready, Restart{}); with
+# its own arguments, not its name (Bend 2.0.36's IO.args() starts with it)
 def Upgrade.restart(+inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Upgrade.say(inbox, Upgrade.note([J.KV{"state", J.Str{"restarting"}}]))
     path : String <- H.Sys.exe_path()
     args : List<String> <- IO.args()
-    r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(path, Names.copy(args))
+    r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(path, Names.copy(RVS.Rvc.args.drop(args)))
     Upgrade.exec(r, inbox)
 
 def Upgrade.done.k(ok: Bool, force: Bool, +err: String, +inbox: Chan(Msg)) -> IO(Unit):
