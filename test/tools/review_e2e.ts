@@ -1,0 +1,158 @@
+// Design review end to end (docs/design-review.md): a headless hub, a
+// repository made from KiCad's ecc83 demo (tag v1, then two values
+// changed), and a client over the socket. Checks that the hub answers a
+// BOM and a BOM change (review.bom, through a `--review bom` child), runs
+// the design checks on the working copy and on a commit (review.checks:
+// kicad-cli's ERC and DRC, the BOM rules, the checklist, a custom check),
+// and ticks a checklist box into the repository (review.tick).
+//
+//   bun test/tools/review_e2e.ts [BINARY] [WIREDIR]
+//
+// BINARY defaults to build/backplane, WIREDIR to build/wire (bend
+// test/wire/index.html -o build/wire). Needs git, kicad-cli and the demo
+// (/usr/share/kicad/demos/ecc83). KEEP=1 keeps the temp folder.
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+const [bin = "build/backplane", wire = "build/wire"] = process.argv.slice(2);
+for (const f of readdirSync(wire).filter((f) => f.endsWith(".js"))) (0, eval)(readFileSync(`${wire}/${f}`, "utf8"));
+const W = (globalThis as any).Wire;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const demo = "/usr/share/kicad/demos/ecc83";
+
+const root = mkdtempSync(join(tmpdir(), "bp-review-"));
+const fake = join(root, "bin");
+mkdirSync(fake);
+for (const n of ["claude", "codex", "grok", "muse"]) {
+  writeFileSync(join(fake, n), "#!/bin/sh\nexit 1\n");
+  chmodSync(join(fake, n), 0o755);
+}
+const home = join(root, "home");
+const git = (cwd: string, ...a: string[]) => Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd }).stdout.toString();
+
+const proj = join(root, "board");
+mkdirSync(proj);
+for (const f of ["ecc83-pp.kicad_pcb", "ecc83-pp.kicad_sch", "ecc83-pp.kicad_pro"]) cpSync(join(demo, f), join(proj, f));
+git(proj, "init", "-q", "-b", "main");
+git(proj, "add", ".");
+git(proj, "commit", "-qm", "rev A");
+git(proj, "tag", "-a", "v1", "-m", "v1");
+const sch = join(proj, "ecc83-pp.kicad_sch");
+writeFileSync(sch, readFileSync(sch, "utf8").replace('(property "Value" "47K"', '(property "Value" "56K"'));
+mkdirSync(join(proj, ".backplane"));
+writeFileSync(join(proj, ".backplane/checks.json"), JSON.stringify({ checks: [{ name: "says hi", run: "echo hi; exit 3", on: ["manual"] }] }));
+git(proj, "add", ".");
+git(proj, "commit", "-qm", "rev B: R4 56K");
+const head = git(proj, "rev-parse", "HEAD").trim();
+const v1 = git(proj, "rev-parse", "v1^{commit}").trim();
+
+function freePort(): number {
+  const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const p = s.port;
+  s.stop(true);
+  return p;
+}
+const until = async <T>(ms: number, f: () => T | undefined) => {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = f();
+    if (v) return v;
+    if (Date.now() > end) return undefined;
+    await sleep(100);
+  }
+};
+
+let fail = 0;
+const check = (ok: boolean, what: string, more = "") => {
+  console.log(`${ok ? "ok  " : "FAIL"} ${what}${ok || !more ? "" : ": " + more}`);
+  if (!ok) fail++;
+};
+
+const port = freePort();
+const proc = Bun.spawn([resolve(bin), "--home", home, "--port", String(port), "--no-tailscale"], {
+  env: { ...process.env, DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_PEERS: "", PATH: `${fake}:${process.env.PATH}` },
+  stdout: "ignore",
+  stderr: "ignore",
+});
+try {
+  for (let i = 0; i < 300; i++) {
+    try { if ((await fetch(`http://127.0.0.1:${port}/hello`)).status === 200) break; } catch {}
+    await sleep(100);
+  }
+  const seen: any[] = [];
+  const replies = new Map<number, any>();
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  ws.binaryType = "arraybuffer";
+  ws.onmessage = (e) => {
+    const text = typeof e.data === "string";
+    let o: any = null;
+    try { o = JSON.parse(text ? (e.data as string) : W.decode(new Uint8Array(e.data as ArrayBuffer))); } catch {}
+    for (const c of o?.items ?? []) seen.push(c);
+    if (o?.t === "reply") replies.set(Number(o.id), o);
+  };
+  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  let id = 0;
+  const send = (m: string, p: object) => { ws.send(W.encode(JSON.stringify({ id: ++id, m, p }))); return id; };
+  const ask = async (m: string, p: object, ms = 60000) => { const q = send(m, p); return await until(ms, () => replies.get(q)); };
+
+  send("project.add", { path: proj });
+  const pc = await until(10000, () => seen.find((c) => c.$ === "ProjectCreated"));
+  if (!pc) throw new Error("no project");
+  send("thread.create", { project: pc.id, title: "review", env: "local" });
+  const th = await until(10000, () => seen.find((c) => c.$ === "ThreadCreated"));
+  if (!th) throw new Error("no thread");
+
+  // versions as the clients name them: the thread's git folder and top
+  // (its worktree) from history.refs
+  const refs = (await ask("history.refs", { thread: th.id }))?.result ?? {};
+  const top: string = refs.top ?? "";
+  const spec = (c: string, rel: string) => `git\t${refs.git}\t${c}\t${top.length}\t${top}/${rel}`;
+  check(!!refs.git && top.length > 0, "the thread's folder", JSON.stringify(refs).slice(0, 200));
+
+  // a BOM, then the change since v1
+  const t0 = Date.now();
+  const one = (await ask("review.bom", { thread: th.id, a: "", b: "" }))?.result?.report;
+  check(!!one && one.page === "bom" && one.thread === th.id, "review.bom answers a report", JSON.stringify(one)?.slice(0, 200));
+  check(!!one && /^11 parts in \d+ lines/.test(one.md), "the working copy's BOM: 11 parts", one?.md?.slice(0, 80));
+  check(!!one && one.md.includes("| R4 | 1 | 56K |"), "with R4's new value", one?.md);
+  check(!!one && !one.md.includes("| MPN |"), "and no empty MPN column", one?.md?.split("\n").slice(2, 4).join(" / "));
+  console.log(`     (a BOM in ${Date.now() - t0} ms)`);
+  const chg = (await ask("review.bom", { thread: th.id, a: spec(v1, "ecc83-pp.kicad_pcb"), b: "" }))?.result?.report;
+  check(!!chg && chg.md.startsWith("0 added, 0 removed, 1 changed"), "the change since v1: one part", chg?.md?.slice(0, 120));
+  check(!!chg && chg.md.includes("R4") && chg.md.includes("47K") && chg.md.includes("56K"), "R4 47K → 56K", chg?.md);
+  const none = (await ask("review.bom", { thread: th.id, a: spec(head, "ecc83-pp.kicad_sch"), b: "" }))?.result?.report;
+  check(!!none && none.md.trim() === "No changes", "HEAD against the working copy: no change", none?.md);
+
+  // the design checks
+  const t1 = Date.now();
+  const ck = (await ask("review.checks", { thread: th.id, commit: "", trigger: "manual" }, 120000))?.result?.report;
+  console.log(`     (checks in ${Date.now() - t1} ms)`);
+  check(!!ck && ck.page === "checks" && !ck.err, "review.checks answers a report", JSON.stringify(ck)?.slice(0, 300));
+  check(!!ck && /ERC|DRC/.test(ck.md) && /ERC|DRC/.test(ck.line), "with KiCad's ERC and DRC", ck?.line);
+  check(!!ck && ck.md.includes("says hi") && /exit|fail/i.test(ck.md), "and the custom check that failed", ck?.md?.slice(-400));
+  check(!!ck && ck.gate.includes("Custom: 1 failed"), "which fails the gate", ck?.gate);
+  check(!!ck && Array.isArray(ck.tasks) && ck.tasks.length >= 10 && ck.tasks.every((t: any) => !t.done), "the default checklist, nothing ticked", JSON.stringify(ck?.tasks?.slice(0, 2)));
+  const atv1 = (await ask("review.checks", { thread: th.id, commit: v1, trigger: "manual" }, 120000))?.result?.report;
+  check(!!atv1 && !atv1.err && !atv1.md.includes("says hi"), "checks on v1 run that commit (no custom check yet)", JSON.stringify(atv1)?.slice(0, 300));
+  check(readdirSync(tmpdir()).filter((f) => f.startsWith("bp-review.")).length === 0, "and leave no folder behind");
+
+  // a box ticked lands in the repository
+  const tk = (await ask("review.tick", { thread: th.id, index: 1 }))?.result?.ticked;
+  check(!!tk && tk.tasks[1]?.done === true && tk.tasks[0]?.done === false, "a box ticked", JSON.stringify(tk?.tasks?.slice(0, 2)));
+  const file = join(top, ".backplane/checklist.md");
+  check(existsSync(file) && readFileSync(file, "utf8").split("\n").filter((l) => l.includes("[x]")).length === 1, "into the thread's .backplane/checklist.md", existsSync(file) ? readFileSync(file, "utf8").slice(0, 200) : "missing");
+  const tk2 = (await ask("review.tick", { thread: th.id, index: 1 }))?.result?.ticked;
+  check(!!tk2 && tk2.tasks[1]?.done === false, "and cleared again");
+
+  // a ref typed in that is not there
+  const bad = await ask("review.checks", { thread: th.id, commit: "-x", trigger: "manual" });
+  check(!!bad && bad.ok === false, "a commit like an option is refused", JSON.stringify(bad));
+  ws.close();
+} finally {
+  proc.kill(9);
+  await proc.exited;
+  if (process.env.KEEP) console.log(root); else rmSync(root, { recursive: true, force: true });
+}
+console.log(fail ? `${fail} failed` : "all ok");
+process.exit(fail ? 1 : 0);
