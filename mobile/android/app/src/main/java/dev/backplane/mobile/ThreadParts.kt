@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -971,37 +972,30 @@ fun FindSheet(m: AppModel, f: Find) {
 
 // the hub's settings, as the desktop has them
 @OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun SettingsSheet(m: AppModel, st: Settings) {
-    Sheet("Settings", { m.act("flag", "settings") }, closeLabel = "Done") { pad ->
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
-            items(st.rows) { r ->
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(r.label, style = MaterialTheme.typography.bodyLarge)
-                    if (r.note.isNotEmpty()) Text(r.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    for (f in r.fields) {
-                        var t by remember(r.label, f.name) { mutableStateOf(f.value) }
-                        OutlinedTextField(t, { t = it; m.field(f.name, it) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(f.hint) },
-                            visualTransformation = if (f.secret) PasswordVisualTransformation() else VisualTransformation.None,
-                            keyboardOptions = KeyboardOptions(keyboardType = if (f.secret) KeyboardType.Password else KeyboardType.Ascii, autoCorrectEnabled = false))
-                    }
-                    if (r.buttons.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        for (b in r.buttons) {
-                            if (b.on) Button(onClick = { m.act(b.action, b.value) }, shape = corner) { Text(b.label) }
-                            else OutlinedButton(onClick = { m.act(b.action, b.value) }, shape = corner) { Text(b.label) }
-                        }
-                    }
-                    if (r.qr.isNotEmpty()) Column(Modifier.fillMaxWidth().clickable { m.act("flag", "pairqr") },
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        QrCode(r.qr, Modifier.fillMaxWidth())
-                        if (r.qrnote.isNotEmpty()) Text(r.qrnote, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    }
-                }
-                HorizontalDivider()
+fun LazyListScope.hubSettingsRows(m: AppModel, rows: List<SetRow>) {
+    items(rows.filter { !it.local }) { r ->
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(r.label, style = MaterialTheme.typography.bodyLarge)
+            if (r.note.isNotEmpty()) Text(r.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+            for (f in r.fields) {
+                var t by remember(r.label, f.name) { mutableStateOf(f.value) }
+                OutlinedTextField(t, { t = it; m.field(f.name, it) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(f.hint) },
+                    visualTransformation = if (f.secret) PasswordVisualTransformation() else VisualTransformation.None,
+                    keyboardOptions = KeyboardOptions(keyboardType = if (f.secret) KeyboardType.Password else KeyboardType.Ascii, autoCorrectEnabled = false))
             }
-            // the last row clears the navigation bar
-            item { Spacer(Modifier.navigationBarsPadding().height(24.dp)) }
+            if (r.buttons.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (b in r.buttons) {
+                    if (b.on) Button(onClick = { m.act(b.action, b.value) }, shape = corner) { Text(b.label) }
+                    else OutlinedButton(onClick = { m.act(b.action, b.value) }, shape = corner) { Text(b.label) }
+                }
+            }
+            if (r.qr.isNotEmpty()) Column(Modifier.fillMaxWidth().clickable { m.act("flag", "pairqr") },
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                QrCode(r.qr, Modifier.fillMaxWidth())
+                if (r.qrnote.isNotEmpty()) Text(r.qrnote, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+            }
         }
+        HorizontalDivider()
     }
 }
 

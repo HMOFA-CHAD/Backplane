@@ -31,7 +31,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             // once paired, ask to post alerts
             LaunchedEffect(model.links.isNotEmpty()) { if (model.links.isNotEmpty()) askNotify() }
-            Theme(model.screen?.theme ?: "") { App(model) }
+            Theme(AppSettings.appearance) { App(model) }
         }
     }
 
@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// the hub's theme (Settings, Theme), or the phone's own when it has none
+// this device's appearance (App settings): light, dark, or the system's
 @Composable
 fun Theme(theme: String, content: @Composable () -> Unit) {
     val dark = when (theme) { "light" -> false; "dark" -> true; else -> isSystemInDarkTheme() }

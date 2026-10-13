@@ -116,55 +116,6 @@ fun BotCat(m: AppModel, key: String, size: Dp) {
     CatView(m.cats[key] ?: emptyList(), size)
 }
 
-// The list
-// --------
-
-fun LazyListScope.botsSection(m: AppModel, s: Screen) {
-    item(key = "bots") {
-        var menu by remember { mutableStateOf(false) }
-        ListItem(
-            headlineContent = { Text("Bots", style = MaterialTheme.typography.titleMedium) },
-            trailingContent = {
-                Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Add, "New bot or room") }
-                    DropdownMenu(menu, { menu = false }) {
-                        // with several hubs, a bot or room is made on the one chosen
-                        val many = s.hubs.size > 1
-                        for (h in if (many) s.hubs else s.hubs.take(1)) {
-                            val v = if (many) h.key + "|" else ""
-                            val on = if (many) " on " + h.name else ""
-                            DropdownMenuItem(text = { Text("New bot$on") }, onClick = { menu = false; m.act("bot-new", v) })
-                            DropdownMenuItem(text = { Text("New room$on") }, onClick = { menu = false; m.act("room-new", v) })
-                        }
-                    }
-                }
-            },
-        )
-    }
-    items(s.bots, key = { "b:" + it.id }) { b ->
-        ListItem(
-            headlineContent = { Text(b.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            supportingContent = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MoodDot(b.mood)
-                    Text(listOf(b.note, b.peer, b.machine).filter { it.isNotEmpty() }.joinToString(" · "),
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            },
-            leadingContent = { BotCat(m, b.cat, 40.dp) },
-            modifier = Modifier.alpha(if (b.mood == "away") 0.5f else 1f)
-                .clickable { m.open(b.nav, b.act, b.id, b.name, b.cat, if (b.remote) "remote" else "bot") },
-        )
-    }
-    items(s.rooms, key = { "r:" + it.id }) { r ->
-        ListItem(
-            headlineContent = { Text(r.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            supportingContent = { Text(listOf("${r.members}", r.machine).filter { it.isNotEmpty() }.joinToString(" · ")) },
-            leadingContent = { Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { Icon(Icons.Filled.Forum, null) } },
-            modifier = Modifier.clickable { m.open(r.nav, "room", r.id, r.name, kind = "room") },
-        )
-    }
-}
 
 // Forms
 // -----

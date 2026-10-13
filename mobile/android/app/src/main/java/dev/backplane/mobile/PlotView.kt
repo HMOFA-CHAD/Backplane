@@ -857,7 +857,7 @@ class PlotSurface(context: Context) : GLSurfaceView(context) {
 
         override fun onLongPress(e: MotionEvent) {
             if (three || renderer.scale <= 0f) return
-            performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            if (AppSettings.haptics) performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
             onNote((e.x - renderer.offX) / renderer.scale / 1000f, (e.y - renderer.offY) / renderer.scale / 1000f)
         }
 
