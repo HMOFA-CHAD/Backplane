@@ -73,7 +73,7 @@ def wanted(+u: U.Ui, +hash: String) -> U.Ui:
 def Rv.focus.k(a: U.Act, cs: List<&2, U.Cmd>) -> U.Act:
   match a:
     case U.Act{+u, +ds}:
-      U.Act{u, List.append(&2, U.Cmd, cs, ds)}
+      U.Act{u, List.append(&2, U.Cmd, ds, cs)}
 
 # a layer focus that moved: a comparison's marks follow it (core's rv-bits)
 def Rv.focus(on: Bool, a: U.Act) -> U.Act:
