@@ -197,6 +197,12 @@ def Ub.takeover(+st: M.State, +heard_ago: Nat, +grace: Nat, first: Bool) -> Bool
 def Ub.lease.body(+st: M.State) -> String:
   UO.Ub.b.lease(Ub.me(st), Nat.add(Ub.term(st), 1n))
 
+# seconds between the holder's beats: a quarter of the grace, a minute at most
+# (the minute tick already beats every minute; this is faster only when the
+# grace is small)
+def Ub.beat.every(+grace: Nat) -> Nat:
+  Ub.cap(60n, Nat.div(grace, 4n))
+
 # seconds a holder may be quiet before another machine takes over
 def Ub.grace() -> Nat:
   600n
@@ -810,7 +816,8 @@ def Ub.demo.op(+origin: String, +n: Nat, +secs: Nat, +body: String) -> M.Change:
 # the registers and counts a state ends with
 def Ub.digest(+st: M.State) -> String:
   M.Setting.get(st, "uber.r.u1-x.mem:color", "-") ++ "|" ++ M.Setting.get(st, "uber.rs.u1-x.mem:color", "-") ++ "|" ++ M.Setting.get(st, "uber.r.u1-x.lease", "-") ++ "|" ++
-    M.Setting.get(st, "uber.vv.u1-x.mA", "-") ++ "|" ++ M.Setting.get(st, "uber.vv.u1-x.mB", "-") ++ "|" ++ M.Setting.get(st, "uber.origins.u1-x", "-")
+    M.Setting.get(st, "uber.vv.u1-x.mA", "-") ++ "|" ++ M.Setting.get(st, "uber.vv.u1-x.mB", "-") ++ "|" ++ M.Setting.get(st, "uber.origins.u1-x", "-") ++ "|" ++
+    M.Setting.get(st, "uber.op.u1-x.mA.1", "-") ++ "|" ++ M.Setting.get(st, "uber.op.u1-x.mB.1", "-") ++ "|" ++ M.Setting.get(st, "uber.rn.u1-x.mem:color", "-")
 
 def Ub.demo.fold(+cs: List<&2, M.Change>) -> String:
   Ub.digest(M.State.replay(cs, Ub.demo.a()))

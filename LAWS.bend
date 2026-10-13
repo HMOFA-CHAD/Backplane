@@ -6817,3 +6817,10 @@ law uber_derived_no_ops:
   for +o: J.Json
   for +at: Nat
   {UBS.Ub.noops(UBS.Ub.derive.k(win, st, o, at)) == True{} : Bool}
+
+# an op a later one superseded is kept as a nop, and the register holds the later one
+law uber_superseded_nop:
+  {M.Setting.get(M.State.replay([UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.mem("color", "fact", "blue", "")), UBS.Ub.demo.op("mB", 1n, 1001n, UBO.Ub.b.mem("color", "fact", "red", ""))], UBS.Ub.demo.a()), "uber.op.u1-x.mA.1", "-") == UBO.Ub.line.nop("u1-x", "mA", 1n, UBO.Ub.stamp.make(1000n, 0n, "mA")) : String}
+
+law uber_superseded_keeps:
+  {M.Setting.get(M.State.replay([UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.mem("color", "fact", "blue", "")), UBS.Ub.demo.op("mB", 1n, 1001n, UBO.Ub.b.mem("color", "fact", "red", ""))], UBS.Ub.demo.a()), "uber.r.u1-x.mem:color", "-") == UBO.Ub.b.mem("color", "fact", "red", "") : String}

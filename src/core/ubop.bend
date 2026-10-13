@@ -258,3 +258,15 @@ def Ub.origins.nonempty(xs: List<&2, String>) -> List<&2, String>:
 
 def Ub.origins.add(+cur: String, +o: String) -> String:
   String.join(List.sort(~String, ~Ub.le, o <> Ub.origins.nonempty(String.split(cur, ' '))), " ")
+
+# Compaction: the op that held a register before a later one wrote it, and an
+# op that lost, are kept as a nop (same uid, origin, n and stamp; no body),
+# so n stays contiguous and a peer that lacks them still counts them
+def Ub.key.rn(+uid: String, +key: String) -> String:
+  "uber.rn." ++ uid ++ "." ++ key
+
+def Ub.nop() -> String:
+  "{\"k\":\"nop\"}"
+
+def Ub.line.nop(+uid: String, +origin: String, +n: Nat, +stamp: String) -> String:
+  Ub.line(uid, origin, n, stamp, Ub.nop(), 0n)

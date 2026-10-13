@@ -7786,21 +7786,28 @@ def Hub.uber.do.k(init: Bool, h: Hub, +now: Nat) -> IO(Hub):
     case False{}:
       Uber.kick(h)
 
-def Hub.uber.beat.k(beat: Bool, h: Hub) -> IO(Hub):
-  match beat:
+# the machine that holds the uberbot's conversation says so to the others
+# between the minute's ticks when the grace is short (min(60 s, grace/4);
+# the Heart message comes every 15 s), so a short silence is not a lapse
+def Hub.uber.beat.k(go: Bool, h: Hub, +now: Nat) -> IO(Hub):
+  match go:
     case True{}:
-      Uber.kick(h)
+      Uber.kick(Uber.mem.set(h, "beatat", Nat.show(now)))
     case False{}:
       IO.pure(Hub, h)
 
-# every 15 s the machine that holds the uberbot's conversation says so to
-# the others, so a short silence is not a lapse
-def Hub.uber.beat.p(p: M.State & Hub) -> IO(Hub):
+def Hub.uber.beat.s(p: M.State & Hub, +um: Map<&2, String>, +now: Nat, +every: Nat) -> IO(Hub):
   (st, h) = p
-  Hub.uber.beat.k(UBS.Ub.beat(st), h)
+  Hub.uber.beat.k(Bool.and(UBS.Ub.beat(st), Bool.and(Nat.is_lt(every, 60n), Nat.is_ge(Nat.sub(now, UBS.Ub.net.nat(um, "beatat")), every))), h, now)
 
-def Hub.uber.beat(h: Hub) -> IO(Hub):
-  Hub.uber.beat.p(Hub.state(h))
+def Hub.uber.beat.m(p: Map<&2, String> & Hub, +now: Nat, +every: Nat) -> IO(Hub):
+  (+um, h) = p
+  Hub.uber.beat.s(Hub.state(h), um, now, every)
+
+def Hub.uber.beat(h: Hub, +now: Nat) -> IO(Hub):
+  do IO<Hub>:
+    +g : String <- Uber.grace()
+    Hub.uber.beat.m(Uber.mem.map(h), now, UBS.Ub.beat.every(Uber.grace.n(g)))
 
 def Hub.uber.do(h: Hub, +what: String, +now: Nat) -> IO(Hub):
   Hub.uber.do.k(String.eq(what, "init"), h, now)
@@ -9496,7 +9503,7 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case Tick{}:
       Hub.tick(h, now)
     case Heart{}:
-      IO.bind(Hub, Hub, Hub.broadcast(h, DK.Alive.frame()), h2 => Hub.uber.beat(h2))
+      IO.bind(Hub, Hub, Hub.broadcast(h, DK.Alive.frame()), h2 => Hub.uber.beat(h2, now))
     case AutoView{thread, fs}:
       Hub.autoview(h, thread, fs)
     case ClaudePid{thread, pid, gen}:

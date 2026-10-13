@@ -1469,16 +1469,28 @@ def State.woke(+s: State, +bot: String, +hop: Nat) -> State:
 # same ops in any order leave the same registers. A "fired" op keeps the
 # highest slot a routine ran for (uber.fired...) and who ran it.
 
-def State.uber.reg.k(win: Bool, +s: State, +uid: String, +key: String, +stamp: String, +op: String) -> State:
+# the op that held the register before is now a nop line
+def State.uber.nop.k(ps: List<&2, String>, +s: State, +uid: String, +ostamp: String) -> State:
+  match ps:
+    case +o <> +c <> Nil{}:
+      State.setting(s, UO.Ub.key.op(uid, o, Switch.num(c, 0n)), UO.Ub.line.nop(uid, o, Switch.num(c, 0n), ostamp))
+    case _:
+      s
+
+def State.uber.nop(+s: State, +uid: String, +rn: String, +ostamp: String) -> State:
+  State.uber.nop.k(String.split(rn, '.'), s, uid, ostamp)
+
+def State.uber.reg.k(win: Bool, +s: State, +uid: String, +key: String, +stamp: String, +op: String, +origin: String, +n: Nat) -> State:
   match win:
     case True{}:
-      State.setting(State.setting(s, UO.Ub.key.reg(uid, key), op), UO.Ub.key.stamp(uid, key), stamp)
+      State.setting(State.setting(State.setting(State.uber.nop(s, uid, Setting.get(s, UO.Ub.key.rn(uid, key), ""), Setting.get(s, UO.Ub.key.stamp(uid, key), "")),
+        UO.Ub.key.reg(uid, key), op), UO.Ub.key.stamp(uid, key), stamp), UO.Ub.key.rn(uid, key), origin ++ "." ++ Nat.show(n))
     case False{}:
       s
 
-def State.uber.reg(+s: State, +uid: String, +key: String, +stamp: String, +op: String) -> State:
+def State.uber.reg(+s: State, +uid: String, +key: String, +stamp: String, +op: String, +origin: String, +n: Nat) -> State:
   State.uber.reg.k(UO.Ub.newer(key, op, stamp, Setting.get(s, UO.Ub.key.reg(uid, key), ""), Setting.get(s, UO.Ub.key.stamp(uid, key), "")),
-    s, uid, key, stamp, op)
+    s, uid, key, stamp, op, origin, n)
 
 def State.uber.fired.k(win: Bool, +s: State, +uid: String, +origin: String, +gid: String, +slot: Nat) -> State:
   match win:
@@ -1491,15 +1503,15 @@ def State.uber.fired(+s: State, +uid: String, +origin: String, +o: J.Json) -> St
   State.uber.fired.k(Nat.is_gt(UO.Ub.nat(o, "slot"), Switch.num(Setting.get(s, UO.Ub.key.fired(uid, UO.Ub.field(o, "routine")), "0"), 0n)),
     s, uid, origin, UO.Ub.field(o, "routine"), UO.Ub.nat(o, "slot"))
 
-def State.uber.body.k(fired: Bool, +s: State, +uid: String, +origin: String, +stamp: String, +op: String, +key: String) -> State:
+def State.uber.body.k(fired: Bool, +s: State, +uid: String, +origin: String, +n: Nat, +stamp: String, +op: String, +key: String) -> State:
   match fired:
     case True{}:
       State.uber.fired(s, uid, origin, UO.Ub.json(op))
     case False{}:
-      Bool.pick(State, String.is_empty(key), s, State.uber.reg(s, uid, key, stamp, op))
+      Bool.pick(State, String.is_empty(key), s, State.uber.reg(s, uid, key, stamp, op, origin, n))
 
-def State.uber.body(+s: State, +uid: String, +origin: String, +stamp: String, +op: String) -> State:
-  State.uber.body.k(String.eq(UO.Ub.op.kind(op), "fired"), s, uid, origin, stamp, op, UO.Ub.op.key(op))
+def State.uber.body(+s: State, +uid: String, +origin: String, +n: Nat, +stamp: String, +op: String) -> State:
+  State.uber.body.k(String.eq(UO.Ub.op.kind(op), "fired"), s, uid, origin, n, stamp, op, UO.Ub.op.key(op))
 
 def State.uber.origins(+s: State, +uid: String, +origin: String, +n: Nat) -> State:
   Bool.pick(State, Nat.is_eq(n, 1n), State.setting(s, UO.Ub.key.origins(uid), UO.Ub.origins.add(Setting.get(s, UO.Ub.key.origins(uid), ""), origin)), s)
@@ -1507,18 +1519,31 @@ def State.uber.origins(+s: State, +uid: String, +origin: String, +n: Nat) -> Sta
 def State.uber.hlc(+s: State, +uid: String, +stamp: String) -> State:
   Bool.pick(State, UO.Ub.stamp.gt(stamp, Setting.get(s, UO.Ub.key.hlc(uid), "")), State.setting(s, UO.Ub.key.hlc(uid), stamp), s)
 
+# an op that lost its register is kept as a nop at once
+def State.uber.line(keep: Bool, +uid: String, +origin: String, +n: Nat, +stamp: String, +op: String, +at: Nat) -> String:
+  match keep:
+    case True{}:
+      UO.Ub.line(uid, origin, n, stamp, op, at)
+    case False{}:
+      UO.Ub.line.nop(uid, origin, n, stamp)
+
+def State.uber.keep.k(free: Bool, +s: State, +uid: String, +stamp: String, +op: String, +key: String) -> Bool:
+  Bool.or(free, UO.Ub.newer(key, op, stamp, Setting.get(s, UO.Ub.key.reg(uid, key), ""), Setting.get(s, UO.Ub.key.stamp(uid, key), "")))
+
+def State.uber.keep(+s: State, +uid: String, +stamp: String, +op: String) -> Bool:
+  State.uber.keep.k(Bool.or(String.eq(UO.Ub.op.kind(op), "fired"), String.is_empty(UO.Ub.op.key(op))), s, uid, stamp, op, UO.Ub.op.key(op))
+
 def State.uberop.k(ok: Bool, +s: State, +uid: String, +origin: String, +n: Nat, +stamp: String, +op: String, +at: Nat) -> State:
   match ok:
     case True{}:
       State.uber.body(State.uber.hlc(State.uber.origins(State.setting(State.setting(s, UO.Ub.key.vv(uid, origin), Nat.show(n)),
-        UO.Ub.key.op(uid, origin, n), UO.Ub.line(uid, origin, n, stamp, op, at)), uid, origin, n), uid, stamp), uid, origin, stamp, op)
+        UO.Ub.key.op(uid, origin, n), State.uber.line(State.uber.keep(s, uid, stamp, op), uid, origin, n, stamp, op, at)), uid, origin, n), uid, stamp), uid, origin, n, stamp, op)
     case False{}:
       s
 
 def State.uberop(+s: State, +uid: String, +origin: String, +n: Nat, +stamp: String, +op: String, +at: Nat) -> State:
   State.uberop.k(Bool.and(Nat.is_eq(n, Nat.add(Switch.num(Setting.get(s, UO.Ub.key.vv(uid, origin), "0"), 0n), 1n)), Bool.not(String.is_empty(origin))),
     s, uid, origin, n, stamp, op, at)
-
 
 def State.apply.go(s: State, e: Change) -> State:
   match e:

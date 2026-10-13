@@ -8325,3 +8325,9 @@ def Laws.uber_derived_no_ops(win, st, o, at):
       Laws.uber_derive_n_no_ops(UBS.Ub.kind.n(UBO.Ub.field(o, "k")), UBR.Uber.bot(st), UBS.Ub.me(st), o, at)
     case False{}:
       {==}
+
+def Laws.uber_superseded_nop():
+  {==}
+
+def Laws.uber_superseded_keeps():
+  {==}
