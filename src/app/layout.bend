@@ -1047,6 +1047,30 @@ def TL.tw(rs: List<&2, TRow>, ws: List<&2, U32>, +ty: Ty) -> List<&2, U32>:
     case TRow{_, cs} <> t:
       TL.tw(t, TL.tw.row(cs, ws, ty), ty)
 
+# the longest word in a cell, as a width (a column never goes narrower)
+def TL.word(ws: List<&2, String>, +ty: Ty, +acc: U32) -> U32:
+  match ws:
+    case Nil{}:
+      acc
+    case +w <> t:
+      TL.word(t, ty, U32.max(acc, Ty.width(ty, 3n, w)))
+
+def TL.mw.row(cs: List<&2, String>, ms: List<&2, U32>, +ty: Ty) -> List<&2, U32>:
+  match cs ms:
+    case Nil{} +rest:
+      rest
+    case +c <> ct Nil{}:
+      (TL.word(String.split(c, ' '), ty, 0) + 16 : U32) <> TL.mw.row(ct, Nil{}, ty)
+    case +c <> ct +m <> mt:
+      U32.max(m, (TL.word(String.split(c, ' '), ty, 0) + 16 : U32)) <> TL.mw.row(ct, mt, ty)
+
+def TL.mw(rs: List<&2, TRow>, ms: List<&2, U32>, +ty: Ty) -> List<&2, U32>:
+  match rs:
+    case Nil{}:
+      ms
+    case TRow{_, cs} <> t:
+      TL.mw(t, TL.mw.row(cs, ms, ty), ty)
+
 def TL.sum(ws: List<&2, U32>, +acc: U32) -> U32:
   match ws:
     case Nil{}:
@@ -1064,19 +1088,19 @@ def TL.small(ws: List<&2, U32>, +share: U32, +acc: U32) -> U32:
 
 # a column no wider than share keeps its width; the wider ones split the
 # rest of the panel in proportion
-def TL.scale(ws: List<&2, U32>, +share: U32, +rest: U32, +big: U32) -> List<&2, U32>:
-  match ws:
-    case Nil{}:
+def TL.scale(ws: List<&2, U32>, ms: List<&2, U32>, +share: U32, +rest: U32, +big: U32) -> List<&2, U32>:
+  match ws ms:
+    case +w <> t +m <> mt:
+      Bool.pick(U32, U32.is_gt(w, share), U32.max(m, U32.max(48, ((w * rest : U32) / U32.max(big, 1) : U32))), w) <> TL.scale(t, mt, share, rest, big)
+    case _ _:
       Nil{}
-    case +w <> t:
-      Bool.pick(U32, U32.is_gt(w, share), U32.max(48, ((w * rest : U32) / U32.max(big, 1) : U32)), w) <> TL.scale(t, share, rest, big)
 
-def TL.fit.k(+ws: List<&2, U32>, +px: U32, +total: U32, +share: U32) -> List<&2, U32>:
-  TL.scale(ws, share, U32.dim(px, TL.small(ws, share, 0)), U32.dim(total, TL.small(ws, share, 0)))
+def TL.fit.k(+ws: List<&2, U32>, ms: List<&2, U32>, +px: U32, +total: U32, +share: U32) -> List<&2, U32>:
+  TL.scale(ws, ms, share, U32.dim(px, TL.small(ws, share, 0)), U32.dim(total, TL.small(ws, share, 0)))
 
 # the widths shrunk to the panel when they are wider
-def TL.fit(+ws: List<&2, U32>, +px: U32, +total: U32) -> List<&2, U32>:
-  Bool.pick(List<&2, U32>, U32.is_gt(total, px), TL.fit.k(ws, px, total, (px / U32.max(U32.from_nat(List.length(&2, U32, ws)), 1) : U32)), ws)
+def TL.fit(+ws: List<&2, U32>, ms: List<&2, U32>, +px: U32, +total: U32) -> List<&2, U32>:
+  Bool.pick(List<&2, U32>, U32.is_gt(total, px), TL.fit.k(ws, ms, px, total, (px / U32.max(U32.from_nat(List.length(&2, U32, ws)), 1) : U32)), ws)
 
 def TL.enc(ws: List<&2, U32>) -> String:
   match ws:
@@ -1135,7 +1159,7 @@ def TL.table.k(+rs: List<&2, TRow>, +ws: List<&2, U32>, +ty: Ty) -> List<&2, TLi
 def TL.table(+ty: Ty, ns: List<&2, N.Node>, +px: U32) -> List<&2, TLine>:
   +rs = TL.trows(ns)
   +ws = TL.tw(rs, Nil{}, ty)
-  TL.table.k(rs, TL.fit(ws, U32.dim(px, 1), TL.sum(ws, 0)), ty)
+  TL.table.k(rs, TL.fit(ws, TL.mw(rs, Nil{}, ty), U32.dim(px, 1), TL.sum(ws, 0)), ty)
 
 # a table line's cells, each in its column, with a rule left of each
 def TL.cells.draw(cs: List<&2, String>, ws: String, +ty: Ty, +c: D.Clip, +x: U32, +y: U32, +h: U32, +color: U32) -> List<&2, R.Op>:
@@ -4260,11 +4284,19 @@ def Rcw.note.if(none: Bool, +at: String, +ty: Ty, +n: S.Nui, +v: V.View, +x0: U3
 def Rcw.note(+at: String, +ty: Ty, +n: S.Nui, +v: V.View, +x0: U32, +x1: U32, +y1: U32) -> Out:
   Rcw.note.if(String.is_empty(at), at, ty, n, v, x0, x1, y1)
 
+# the open comment waits while the Compare menu is open (the menu wins)
+def Rcw.hide(menu: Bool, m: Maybe<&2, U.RcOpen>) -> Maybe<&2, U.RcOpen>:
+  match menu:
+    case True{}:
+      None{}
+    case False{}:
+      m
+
 def Rcw.all(+ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +y1: U32) -> Out:
   +u = S.Nui.ui(n)
   Out.all([Rcw.pins(U.Rc.pins(u), ty, Rcw.view(S.Nui.vw(n)), U.Rc.sel(u), x0, x1, y1),
     Rcw.note(U.Rc.at(u), ty, n, Rcw.view(S.Nui.vw(n)), x0, x1, y1),
-    Rcw.open(U.Rc.open(u), ty, n, x0, x1, y1)])
+    Rcw.open(Rcw.hide(Bool.not(String.is_empty(U.Ui.scratch(u, "@cmp.menu"))), U.Rc.open(u)), ty, n, x0, x1, y1)])
 
 def Rcw.if(on: Bool, +ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +y1: U32) -> Out:
   match on:
