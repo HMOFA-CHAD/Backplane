@@ -8728,7 +8728,9 @@ def Laws.deploy_cut_requester_no_second():
   {==}
 
 def Laws.deploy_cancel_clears():
-# routines-cal: calendar
+  {==}
+
+# routines-cal
 def Laws.cal_patch_only_given():
   {==}
 
