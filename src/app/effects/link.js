@@ -64,3 +64,6 @@ function link_poll(socket, ms, k) {
   };
   return go();
 }
+
+io_eff(CID(Link.connect), link_connect);
+io_eff(CID(Link.poll), link_poll);

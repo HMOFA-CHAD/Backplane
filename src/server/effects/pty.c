@@ -13,27 +13,27 @@
 // calls (the runtime is multi-threaded), so PATH search and the environment
 // are prepared before fork. Windows answers ENOSYS (ConPTY is not wired).
 
-#if defined(CID_PTY_SPAWN) || defined(CID_PTY_RESIZE)
+#if defined(CID(Pty.spawn)) || defined(CID(Pty.resize))
 
 #if defined(_WIN32)
 
-#ifdef CID_PTY_SPAWN
+#ifdef CID(Pty.spawn)
 Term pty_spawn_run(Env e, Term* f, IoWork* w) {
   return io_fail(e, ENOSYS, NULL);
 }
 
 static void __attribute__((constructor)) pty_spawn_use(void) {
-  io_eff(CID_PTY_SPAWN, pty_spawn_run, 0);
+  io_eff(CID(Pty.spawn), pty_spawn_run);
 }
 #endif
 
-#ifdef CID_PTY_RESIZE
+#ifdef CID(Pty.resize)
 Term pty_resize_run(Env e, Term* f, IoWork* w) {
   return f[0];
 }
 
 static void __attribute__((constructor)) pty_resize_use(void) {
-  io_eff(CID_PTY_RESIZE, pty_resize_run, 0);
+  io_eff(CID(Pty.resize), pty_resize_run);
 }
 #endif
 
@@ -60,7 +60,7 @@ static void pty_size(int fd, u32 cols, u32 rows) {
   ioctl(fd, TIOCSWINSZ, &ws);
 }
 
-#ifdef CID_PTY_SPAWN
+#ifdef CID(Pty.spawn)
 
 // cmd then args as a NULL-ended argv; *ok is 0 when one holds a NUL
 static char** pty_argv(Env e, Term cmd, Term xs, int* ok) {
@@ -295,12 +295,12 @@ Term pty_spawn_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) pty_spawn_use(void) {
-  io_eff(CID_PTY_SPAWN, pty_spawn_run, 0);
+  io_eff(CID(Pty.spawn), pty_spawn_run);
 }
 
 #endif
 
-#ifdef CID_PTY_RESIZE
+#ifdef CID(Pty.resize)
 
 Term pty_resize_run(Env e, Term* f, IoWork* w) {
   int fd = (int)io_hand_v(f[0]);
@@ -309,7 +309,7 @@ Term pty_resize_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) pty_resize_use(void) {
-  io_eff(CID_PTY_RESIZE, pty_resize_run, 0);
+  io_eff(CID(Pty.resize), pty_resize_run);
 }
 
 #endif

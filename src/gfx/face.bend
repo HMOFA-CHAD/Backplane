@@ -340,7 +340,7 @@ def Face3.walls(f: Face3) -> List<&2, G.Tri3>:
   match f:
     case FNone{}:
       Nil{}
-    case Face3{+thick, P.Look{+body, _, _, _, +fin, _}, o, L4{_, _, _, _, hs, _}, _}:
+    case Face3{+thick, P.BoardLook{+body, _, _, _, +fin, _}, o, L4{_, _, _, _, hs, _}, _}:
       Wall.all(o, 0.0, thick, Wall.rgb(body), Wall.holes(hs, 0.0, thick, Wall.rgb(fin), Nil{}))
 
 # a board as a scene: its face, and its walls as the first triangles
@@ -631,7 +631,7 @@ def Face.light(+v: MS.View, +up: Bool) -> F32:
 # Face.open(); and what shows through openings (bare board, bare copper)
 def Face.ops(+o: List<&2, B.Prim>, l: L4, +lk: P.Look, +v: MS.View, +h: F32, +k: F32, +clip: D.Clip) -> MS.FaceOps:
   match l lk:
-    case L4{cu, silk, +op, bare, holes, cand} P.Look{+body, +mask, +ma, +sk, +fin, +cop}:
+    case L4{cu, silk, +op, bare, holes, cand} P.BoardLook{+body, +mask, +ma, +sk, +fin, +cop}:
       MS.FaceOps{Face.prims(holes, v, h, clip, MS.Face.key(),
           Face.prims(bare, v, h, clip, Face.lit(fin, k),
             Face.prims(op, v, h, clip, MS.Face.open(),

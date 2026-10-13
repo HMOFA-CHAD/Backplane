@@ -26,6 +26,7 @@
 # and memory for parallelism when the single check is the bottleneck).
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/bendok.sh
 export BEND_NO_TELEMETRY=1
 mode=${1:-all}
 case $mode in
@@ -47,13 +48,14 @@ trap 'rm -rf "$work"' 0 1 2 15
 # failed check, but the script has always judged by the text).
 # Prints nothing on success; on failure prints the report, returns 1.
 check_one() {
-  out=$(bend "$1" --check-only 2>&1) || true
+  crc=0
+  out=$(bend "$1" --check-only 2>&1) || crc=$?
   case $out in
-    *"All terms check"*|"") return 0 ;;
     *"TODO"*)
       if [ "$1" = LAWS.bend ]; then return 0; fi
       echo "$1: $out"; return 1 ;;
-    *) echo "$1:"; echo "$out"; return 1 ;;
+    *) bend_verdict "$crc" "$out" && return 0
+      echo "$1 (status $crc):"; echo "$out"; return 1 ;;
   esac
 }
 
@@ -91,8 +93,8 @@ if [ "$mode" != proof ]; then
   i=0
   pids=""
   for m in "$work"/m/manifest-*.bend; do
-    ( BUN_JSC_forceRAMSize=4294967296 nice -n 19 bend "$m" --check-only >"$work/m$i.out" 2>&1
-      echo $? >"$work/m$i.rc" ) &
+    ( rc=0; BUN_JSC_forceRAMSize=4294967296 nice -n 19 bend "$m" --check-only >"$work/m$i.out" 2>&1 || rc=$?
+      echo $rc >"$work/m$i.rc" ) &
     pids="$pids $!"
     i=$(( i + 1 ))
     if [ $(( i % jobs )) -eq 0 ]; then
@@ -110,10 +112,7 @@ if [ "$mode" != proof ]; then
     # checker killed before writing anything must not count as a pass
     out=$(cat "$work/m$i.out")
     rc=$(cat "$work/m$i.rc" 2>/dev/null || echo missing)
-    case $rc$out in
-      "0"*"All terms check"*) ;;
-      *) echo "$m (status $rc):"; echo "$out"; bad=1 ;;
-    esac
+    bend_verdict "$rc" "$out" || { echo "$m (status $rc):"; echo "$out"; bad=1; }
     i=$(( i + 1 ))
   done
   cat "$work/laws.out"
@@ -131,12 +130,14 @@ fi
 
 if [ "$mode" = proof ]; then
   pstart=$(date +%s)
-  bend PROOF.bend || fail=1
+  prc=0; pout=$(bend PROOF.bend 2>&1) || prc=$?
+  echo "$pout"
+  bend_verdict "$prc" "$pout" || fail=1
   echo "proof: $(( $(date +%s) - pstart ))s"
 elif [ "$mode" = all ]; then
   wait $proof_pid || true
   cat "$work/proof.out"
-  if [ "$(cat "$work/proof.rc" 2>/dev/null || echo missing)" != 0 ]; then fail=1; fi
+  bend_verdict "$(cat "$work/proof.rc" 2>/dev/null || echo missing)" "$(cat "$work/proof.out")" || fail=1
   echo "proof: overlapped with check, total $(( $(date +%s) - start ))s"
 fi
 

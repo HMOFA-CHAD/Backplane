@@ -109,3 +109,13 @@ function perf_emit(line) {
 function perf_logs() {
   return perf_state().ring.map((l) => l + "\n").join("");
 }
+
+io_eff(CID(Perf.us), perf_us);
+io_eff(CID(Perf.span), perf_span);
+io_eff(CID(Perf.add), perf_add);
+io_eff(CID(Perf.set), perf_set);
+io_eff(CID(Perf.mark), perf_mark);
+io_eff(CID(Perf.done), perf_done);
+io_eff(CID(Perf.take), perf_take);
+io_eff(CID(Perf.emit), perf_emit);
+io_eff(CID(Perf.logs), perf_logs);

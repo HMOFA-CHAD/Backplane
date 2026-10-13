@@ -79,14 +79,14 @@ static __attribute__((unused)) Term host_send_more(Env e, IoWork* w) {
 // Clock
 // =====
 
-#ifdef CID_CLOCK_EPOCH
+#ifdef CID(Clock.epoch)
 
 Term clock_epoch_run(Env e, Term* f, IoWork* w) {
   return (Term)(uint32_t)time(NULL);
 }
 
 static void __attribute__((constructor)) clock_epoch_use(void) {
-  io_eff(CID_CLOCK_EPOCH, clock_epoch_run, 0);
+  io_eff(CID(Clock.epoch), clock_epoch_run);
 }
 
 #endif
@@ -94,7 +94,7 @@ static void __attribute__((constructor)) clock_epoch_use(void) {
 // Sock
 // ====
 
-#ifdef CID_SOCK_RECV_BYTES
+#ifdef CID(Sock.recv_bytes)
 
 static Term sock_recv_bytes_more(Env e, IoWork* w) {
   int fd  = (int)w->hand;
@@ -114,16 +114,18 @@ Term sock_recv_bytes_run(Env e, Term* f, IoWork* w) {
   w->made = f[1] < INT32_MAX ? (intptr_t)f[1] : INT32_MAX;
   w->made = w->made > 0 ? w->made : 1;
   w->data = io_mem(malloc((size_t)w->made));
-  return sock_recv_bytes_more(e, w);
+  // park before the first try: a socket with a steady backlog would never
+  // let the loop poll (the C side of bend 2.0.36 has no IO_READ need)
+  return io_wait_on(w, (int)w->hand, POLLIN, 0, sock_recv_bytes_more);
 }
 
 static void __attribute__((constructor)) sock_recv_bytes_use(void) {
-  io_eff(CID_SOCK_RECV_BYTES, sock_recv_bytes_run, IO_READ);
+  io_eff(CID(Sock.recv_bytes), sock_recv_bytes_run);
 }
 
 #endif
 
-#ifdef CID_SOCK_SAVE
+#ifdef CID(Sock.save)
 
 // Copies what is left (w->size bytes) from the socket to the file w->made,
 // a piece at a time, parking while the socket has nothing.
@@ -173,16 +175,16 @@ Term sock_save_run(Env e, Term* f, IoWork* w) {
   w->size = (u64)(uint32_t)f[2];
   w->code = 0;
   w->data = io_mem(malloc(65536));
-  return sock_save_more(e, w);
+  return w->size ? io_wait_on(w, (int)w->hand, POLLIN, 0, sock_save_more) : sock_save_more(e, w);
 }
 
 static void __attribute__((constructor)) sock_save_use(void) {
-  io_eff(CID_SOCK_SAVE, sock_save_run, IO_READ);
+  io_eff(CID(Sock.save), sock_save_run);
 }
 
 #endif
 
-#ifdef CID_SOCK_SEND_BYTES
+#ifdef CID(Sock.send_bytes)
 
 Term sock_send_bytes_run(Env e, Term* f, IoWork* w) {
   u64  cap = 256;
@@ -211,12 +213,12 @@ Term sock_send_bytes_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sock_send_bytes_use(void) {
-  io_eff(CID_SOCK_SEND_BYTES, sock_send_bytes_run, 0);
+  io_eff(CID(Sock.send_bytes), sock_send_bytes_run);
 }
 
 #endif
 
-#ifdef CID_SOCK_SEND_UNTIL
+#ifdef CID(Sock.send_until)
 
 // Like Sock.send_bytes, with a deadline: a peer that stops reading cannot
 // hold the writer past it. The deadline is renewed after every write that
@@ -285,12 +287,12 @@ Term sock_send_until_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sock_send_until_use(void) {
-  io_eff(CID_SOCK_SEND_UNTIL, sock_send_until_run, 0);
+  io_eff(CID(Sock.send_until), sock_send_until_run);
 }
 
 #endif
 
-#ifdef CID_SOCK_SEND_TEXT
+#ifdef CID(Sock.send_text)
 
 // A String sent as UTF-8, never raising SIGPIPE.
 Term sock_send_text_run(Env e, Term* f, IoWork* w) {
@@ -302,12 +304,12 @@ Term sock_send_text_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sock_send_text_use(void) {
-  io_eff(CID_SOCK_SEND_TEXT, sock_send_text_run, 0);
+  io_eff(CID(Sock.send_text), sock_send_text_run);
 }
 
 #endif
 
-#ifdef CID_SOCK_DUP
+#ifdef CID(Sock.dup)
 
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -345,12 +347,12 @@ Term sock_dup_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sock_dup_use(void) {
-  io_eff(CID_SOCK_DUP, sock_dup_run, 0);
+  io_eff(CID(Sock.dup), sock_dup_run);
 }
 
 #endif
 
-#ifdef CID_SOCK_PEER
+#ifdef CID(Sock.peer)
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -372,12 +374,12 @@ Term sock_peer_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sock_peer_use(void) {
-  io_eff(CID_SOCK_PEER, sock_peer_run, 0);
+  io_eff(CID(Sock.peer), sock_peer_run);
 }
 
 #endif
 
-#ifdef CID_SOCK_SHUTDOWN
+#ifdef CID(Sock.shutdown)
 
 // Ends our writing side (the peer reads EOF); reading continues.
 Term sock_shutdown_run(Env e, Term* f, IoWork* w) {
@@ -387,7 +389,7 @@ Term sock_shutdown_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sock_shutdown_use(void) {
-  io_eff(CID_SOCK_SHUTDOWN, sock_shutdown_run, 0);
+  io_eff(CID(Sock.shutdown), sock_shutdown_run);
 }
 
 #endif
@@ -395,7 +397,7 @@ static void __attribute__((constructor)) sock_shutdown_use(void) {
 // Proc
 // ====
 
-#if defined(CID_PROC_SPAWN) || defined(CID_SYS_EXEC)
+#if defined(CID(Proc.spawn)) || defined(CID(Sys.exec))
 
 static char** host_argv(Env e, Term cmd, Term xs, int* ok) {
   u64 cap = 8, n = 0, len = 0;
@@ -420,7 +422,7 @@ static char** host_argv(Env e, Term cmd, Term xs, int* ok) {
 
 #endif
 
-#ifdef CID_PROC_SPAWN
+#ifdef CID(Proc.spawn)
 
 // Starts cmd (searched on PATH) in cwd. Its stdin and stdout are one end of
 // a socketpair; we keep the other, non-blocking. stderr: 0 discards it, 1
@@ -487,12 +489,12 @@ Term proc_spawn_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) proc_spawn_use(void) {
-  io_eff(CID_PROC_SPAWN, proc_spawn_run, 0);
+  io_eff(CID(Proc.spawn), proc_spawn_run);
 }
 
 #endif
 
-#ifdef CID_PROC_WAIT
+#ifdef CID(Proc.wait)
 
 static void proc_wait_call(IoWork* w) {
   int st = 0;
@@ -514,12 +516,12 @@ Term proc_wait_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) proc_wait_use(void) {
-  io_eff(CID_PROC_WAIT, proc_wait_run, 0);
+  io_eff(CID(Proc.wait), proc_wait_run);
 }
 
 #endif
 
-#ifdef CID_PROC_EXITED
+#ifdef CID(Proc.exited)
 
 // Proc.exited: the exit code of a child that has exited (left unreaped:
 // WNOWAIT), 4294967295 while it runs; one already reaped reads 255.
@@ -539,12 +541,12 @@ Term proc_exited_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) proc_exited_use(void) {
-  io_eff(CID_PROC_EXITED, proc_exited_run, 0);
+  io_eff(CID(Proc.exited), proc_exited_run);
 }
 
 #endif
 
-#ifdef CID_SOCK_SHUT_READ
+#ifdef CID(Sock.shut_read)
 
 // Ends our reading side: a read blocked on this socket returns 0.
 Term sock_shut_read_run(Env e, Term* f, IoWork* w) {
@@ -554,12 +556,12 @@ Term sock_shut_read_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sock_shut_read_use(void) {
-  io_eff(CID_SOCK_SHUT_READ, sock_shut_read_run, 0);
+  io_eff(CID(Sock.shut_read), sock_shut_read_run);
 }
 
 #endif
 
-#ifdef CID_SOCK_RAW
+#ifdef CID(Sock.raw)
 
 // A raw descriptor on the same socket (a dup, close-on-exec), for the hub
 // to shut a client's connection at once from outside its writer
@@ -574,12 +576,12 @@ Term sock_raw_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sock_raw_use(void) {
-  io_eff(CID_SOCK_RAW, sock_raw_run, 0);
+  io_eff(CID(Sock.raw), sock_raw_run);
 }
 
 #endif
 
-#ifdef CID_FD_SHUT
+#ifdef CID(Fd.shut)
 
 // Shuts the socket under a raw descriptor both ways (every handle on it:
 // a writer blocked on it fails, its reader reads the end) and closes the
@@ -594,12 +596,12 @@ Term fd_shut_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) fd_shut_use(void) {
-  io_eff(CID_FD_SHUT, fd_shut_run, 0);
+  io_eff(CID(Fd.shut), fd_shut_run);
 }
 
 #endif
 
-#ifdef CID_FD_CLOSE
+#ifdef CID(Fd.close)
 
 // Closes a raw descriptor (never 0, 1 or 2); the socket stays as it is.
 Term fd_close_run(Env e, Term* f, IoWork* w) {
@@ -611,12 +613,12 @@ Term fd_close_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) fd_close_use(void) {
-  io_eff(CID_FD_CLOSE, fd_close_run, 0);
+  io_eff(CID(Fd.close), fd_close_run);
 }
 
 #endif
 
-#ifdef CID_PROC_KILL
+#ifdef CID(Proc.kill)
 
 Term proc_kill_run(Env e, Term* f, IoWork* w) {
   kill((pid_t)(uint32_t)f[0], (int)(uint32_t)f[1]);
@@ -624,7 +626,7 @@ Term proc_kill_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) proc_kill_use(void) {
-  io_eff(CID_PROC_KILL, proc_kill_run, 0);
+  io_eff(CID(Proc.kill), proc_kill_run);
 }
 
 #endif
@@ -632,7 +634,7 @@ static void __attribute__((constructor)) proc_kill_use(void) {
 // FS
 // ==
 
-#ifdef CID_FS_STAT
+#ifdef CID(FS.stat)
 
 // (kind, (size, mtime)): kind 0 file, 1 directory, 2 other.
 Term fs_stat_run(Env e, Term* f, IoWork* w) {
@@ -652,12 +654,12 @@ Term fs_stat_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) fs_stat_use(void) {
-  io_eff(CID_FS_STAT, fs_stat_run, 0);
+  io_eff(CID(FS.stat), fs_stat_run);
 }
 
 #endif
 
-#ifdef CID_FS_LIST
+#ifdef CID(FS.list)
 
 // The names in a directory, without "." and "..", in no set order.
 Term fs_list_run(Env e, Term* f, IoWork* w) {
@@ -683,12 +685,12 @@ Term fs_list_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) fs_list_use(void) {
-  io_eff(CID_FS_LIST, fs_list_run, 0);
+  io_eff(CID(FS.list), fs_list_run);
 }
 
 #endif
 
-#ifdef CID_FS_MKDIRS
+#ifdef CID(FS.mkdirs)
 
 // mkdir -p
 Term fs_mkdirs_run(Env e, Term* f, IoWork* w) {
@@ -710,12 +712,12 @@ Term fs_mkdirs_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) fs_mkdirs_use(void) {
-  io_eff(CID_FS_MKDIRS, fs_mkdirs_run, 0);
+  io_eff(CID(FS.mkdirs), fs_mkdirs_run);
 }
 
 #endif
 
-#ifdef CID_FS_RENAME
+#ifdef CID(FS.rename)
 
 // Atomic within a filesystem: writers stage a file, then rename it over.
 Term fs_rename_run(Env e, Term* f, IoWork* w) {
@@ -730,12 +732,12 @@ Term fs_rename_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) fs_rename_use(void) {
-  io_eff(CID_FS_RENAME, fs_rename_run, 0);
+  io_eff(CID(FS.rename), fs_rename_run);
 }
 
 #endif
 
-#ifdef CID_FS_REMOVE
+#ifdef CID(FS.remove)
 
 // Removes a file or an empty directory.
 Term fs_remove_run(Env e, Term* f, IoWork* w) {
@@ -747,12 +749,12 @@ Term fs_remove_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) fs_remove_use(void) {
-  io_eff(CID_FS_REMOVE, fs_remove_run, 0);
+  io_eff(CID(FS.remove), fs_remove_run);
 }
 
 #endif
 
-#ifdef CID_FS_CHMOD
+#ifdef CID(FS.chmod)
 
 Term fs_chmod_run(Env e, Term* f, IoWork* w) {
   u64 n = 0;
@@ -763,7 +765,7 @@ Term fs_chmod_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) fs_chmod_use(void) {
-  io_eff(CID_FS_CHMOD, fs_chmod_run, 0);
+  io_eff(CID(FS.chmod), fs_chmod_run);
 }
 
 #endif
@@ -771,7 +773,7 @@ static void __attribute__((constructor)) fs_chmod_use(void) {
 // Net
 // ===
 
-#ifdef CID_NET_LISTEN
+#ifdef CID(Net.listen)
 
 // TCP.listen binds every interface; the harness runs agents with shell
 // access, so it listens on the host it is told (127.0.0.1 by default).
@@ -801,7 +803,7 @@ Term net_listen_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) net_listen_use(void) {
-  io_eff(CID_NET_LISTEN, net_listen_run, 0);
+  io_eff(CID(Net.listen), net_listen_run);
 }
 
 #endif
@@ -809,7 +811,7 @@ static void __attribute__((constructor)) net_listen_use(void) {
 // Sys
 // ===
 
-#if defined(CID_SYS_EXE_DIR) || defined(CID_SYS_EXE_PATH)
+#if defined(CID(Sys.exe_dir)) || defined(CID(Sys.exe_path))
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
@@ -835,7 +837,7 @@ static ssize_t host_exe(char* buf, size_t cap) {
 
 #endif
 
-#ifdef CID_SYS_EXE_PATH
+#ifdef CID(Sys.exe_path)
 
 Term sys_exe_path_run(Env e, Term* f, IoWork* w) {
   char buf[4096];
@@ -844,12 +846,12 @@ Term sys_exe_path_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sys_exe_path_use(void) {
-  io_eff(CID_SYS_EXE_PATH, sys_exe_path_run, 0);
+  io_eff(CID(Sys.exe_path), sys_exe_path_run);
 }
 
 #endif
 
-#ifdef CID_SYS_EXE_DIR
+#ifdef CID(Sys.exe_dir)
 
 // The directory holding the running binary ("" when unknown).
 Term sys_exe_dir_run(Env e, Term* f, IoWork* w) {
@@ -864,12 +866,12 @@ Term sys_exe_dir_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sys_exe_dir_use(void) {
-  io_eff(CID_SYS_EXE_DIR, sys_exe_dir_run, 0);
+  io_eff(CID(Sys.exe_dir), sys_exe_dir_run);
 }
 
 #endif
 
-#ifdef CID_SYS_EXEC
+#ifdef CID(Sys.exec)
 
 // Replace this process with path (argv[0] = path, then args). Descriptors
 // are close-on-exec, so agents see their stdin close and exit. Answers only
@@ -890,7 +892,7 @@ Term sys_exec_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sys_exec_use(void) {
-  io_eff(CID_SYS_EXEC, sys_exec_run, 0);
+  io_eff(CID(Sys.exec), sys_exec_run);
 }
 
 #endif
@@ -907,7 +909,7 @@ static void __attribute__((constructor)) sys_exec_use(void) {
 // are the same (test/native/cbor_frame_test.bend). Bend's parser is lenient
 // about malformed text (it skips commas and colons) and this one is not.
 
-#if defined(CID_SOCK_SEND_CBOR) || defined(CID_JSON_CBOR_FRAME) || defined(CID_SOCK_SEND_ITEMS) || defined(CID_JSON_ITEMS_FRAMES)
+#if defined(CID(Sock.send_cbor)) || defined(CID(Json.cbor_frame)) || defined(CID(Sock.send_items)) || defined(CID(Json.items_frames))
 
 typedef struct { uint8_t* p; size_t n, cap; int bad; } JcBuf;
 typedef struct { const char* p[128]; size_t n[128]; int len; } JcDict;
@@ -1258,7 +1260,7 @@ static int ji_run(Env e, Term* f, JcBuf* out) {
   return ok;
 }
 
-#ifdef CID_JSON_CBOR_FRAME
+#ifdef CID(Json.cbor_frame)
 
 Term json_cbor_frame_run(Env e, Term* f, IoWork* w) {
   u64 tn, kn, wn;
@@ -1274,12 +1276,12 @@ Term json_cbor_frame_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) json_cbor_frame_use(void) {
-  io_eff(CID_JSON_CBOR_FRAME, json_cbor_frame_run, 0);
+  io_eff(CID(Json.cbor_frame), json_cbor_frame_run);
 }
 
 #endif
 
-#if defined(CID_SOCK_SEND_CBOR) || defined(CID_SOCK_SEND_ITEMS)
+#if defined(CID(Sock.send_cbor)) || defined(CID(Sock.send_items))
 
 // as sock_send_until_more: data holds the deadline and span, then the frame
 static Term sock_send_cbor_more(Env e, IoWork* w) {
@@ -1307,7 +1309,7 @@ static Term sock_send_cbor_more(Env e, IoWork* w) {
 
 #endif
 
-#ifdef CID_SOCK_SEND_CBOR
+#ifdef CID(Sock.send_cbor)
 
 Term sock_send_cbor_run(Env e, Term* f, IoWork* w) {
   u64 tn, kn, wn;
@@ -1332,12 +1334,12 @@ Term sock_send_cbor_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sock_send_cbor_use(void) {
-  io_eff(CID_SOCK_SEND_CBOR, sock_send_cbor_run, 0);
+  io_eff(CID(Sock.send_cbor), sock_send_cbor_run);
 }
 
 #endif
 
-#ifdef CID_JSON_ITEMS_FRAMES
+#ifdef CID(Json.items_frames)
 
 Term json_items_frames_run(Env e, Term* f, IoWork* w) {
   JcBuf out = {0};
@@ -1348,12 +1350,12 @@ Term json_items_frames_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) json_items_frames_use(void) {
-  io_eff(CID_JSON_ITEMS_FRAMES, json_items_frames_run, 0);
+  io_eff(CID(Json.items_frames), json_items_frames_run);
 }
 
 #endif
 
-#ifdef CID_SOCK_SEND_ITEMS
+#ifdef CID(Sock.send_items)
 
 // as sock_send_cbor: data holds the deadline and span, then the frames
 Term sock_send_items_run(Env e, Term* f, IoWork* w) {
@@ -1376,7 +1378,7 @@ Term sock_send_items_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) sock_send_items_use(void) {
-  io_eff(CID_SOCK_SEND_ITEMS, sock_send_items_run, 0);
+  io_eff(CID(Sock.send_items), sock_send_items_run);
 }
 
 #endif

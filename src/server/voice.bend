@@ -167,7 +167,7 @@ def Vo.line(+line: String, +thread: String, +ds: List<&2, String>) -> String:
 
 def Vo.send(+out: Chan(String), +text: String) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(String, out, text)
+    ok : Result<&1, &1, String, Unit> <- Chan.send(String, out, text)
     return Unit{}
 
 def Vo.put(+text: String, +out: Chan(String)) -> IO(Unit):
