@@ -1816,7 +1816,7 @@ def View.review.v(+v: U.RpView, +extra: List<&2, D.Node>) -> List<&2, D.Node>:
 # The Release page (client.bend's Rl): the tag field (Enter makes the
 # release; empty means the proposed tag), two toggles, the button, and why
 # not (red) above the report
-def View.release.toggle(+label: String, on: Bool, +act: String) -> D.Node:
+def View.release.toggle(+label: String, +on: Bool, +act: String) -> D.Node:
   D.El{"button", act, [D.At{"class", "rc-task" ++ Bool.pick(String, on, " done", "")}, D.At{"data-value", ""}, D.At{"aria-pressed", Bool.pick(String, on, "true", "false")}, D.On{"click", act}],
     [D.El{"span", "", [D.At{"class", "rc-box"}], [D.Txt{Bool.pick(String, on, "✓", "")}]}, D.Txt{label}]}
 
