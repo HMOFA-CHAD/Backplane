@@ -55,6 +55,17 @@ final class AppModel {
     // answers an older action never pulls a thread back open
     private(set) var path: [String] = []
     @ObservationIgnored private var shownSel = ""
+    // the bot, room or remote bot last tapped ("bot", "room", "remote" and
+    // its row's id), until a screen shows it: it opens then even when the
+    // selection matches the last screen's (a swipe back whose own screen
+    // was dropped, or never came, before the tap)
+    @ObservationIgnored private var tapped: String?
+    // when the stack last popped, and a push waiting for that pop's
+    // animation (about half a second) to end: SwiftUI drops a push made
+    // during it, and its stack then shows the list while path says the
+    // page is open
+    @ObservationIgnored private var popped = Date.distantPast
+    @ObservationIgnored private var pending: [String]?
     // a new thread's page was opened while the hub makes it
     @ObservationIgnored private var shownMaking = false
     // the hub whose plots are drawn: frames from any other are dropped
@@ -251,6 +262,7 @@ final class AppModel {
     }
 
     func act(_ action: String, _ value: String = "") {
+        if Self.opens.contains(action) { tapped = value }
         run { await $0.act(action, value) }
     }
 
@@ -296,7 +308,10 @@ final class AppModel {
     }
 
     func navigate(_ p: [String]) {
+        if p.count < path.count { popped = Date() }
         path = p
+        tapped = nil
+        pending = nil
         act("select", p.last ?? "")
     }
 
@@ -330,6 +345,34 @@ final class AppModel {
     func hubURL(_ path: String, query: [URLQueryItem] = [], token: Bool = true) -> URL? {
         guard let s = screen, let l = links.first(where: { Pairing.key($0) == s.hub }) else { return nil }
         return Pairing.http(l, path: path, query: query, token: token)
+    }
+
+    // the actions that open a bot's, a room's or a remote bot's page
+    static let opens: Set<String> = ["bot", "room", "remote"]
+
+    // whether the screen shows what was tapped (the row's id is its hub's
+    // key and the bot's id, the screen's bot its id alone) while the stack
+    // does not
+    private func shows(tapped s: Screen, _ nav: String) -> Bool {
+        guard let t = tapped, let b = s.bot, !nav.isEmpty, t == b.id || t.hasSuffix("|" + b.id) else { return false }
+        tapped = nil
+        return (pending ?? path) != [nav]
+    }
+
+    // the stack moved to p by a screen; a push waits out a pop's animation
+    private func show(_ p: [String]) {
+        let wait = popped.timeIntervalSinceNow + 0.8
+        guard wait > 0, p.count > path.count else {
+            pending = nil
+            path = p
+            return
+        }
+        pending = p
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            guard let self, self.pending == p else { return }
+            self.pending = nil
+            self.path = p
+        }
     }
 
     // the page of a thread asked for and not yet made
@@ -414,9 +457,9 @@ final class AppModel {
                 plots.reset()
             }
             let nav = Self.nav(s)
-            if nav != shownSel {
+            if nav != shownSel || shows(tapped: s, nav) {
                 shownSel = nav
-                path = nav.isEmpty ? [] : [nav]
+                show(nav.isEmpty ? [] : [nav])
             }
             // New Thread: its page opens at once and waits there for the
             // hub's thread (the selection above replaces it); a failure
@@ -450,9 +493,12 @@ final class AppModel {
             if opening == nil, let a = acting, s.thread != nil {
                 acting = nil
                 Task {
-                    for step in a.components(separatedBy: ";;") where !step.isEmpty {
-                        try? await Task.sleep(for: .seconds(2))
+                    for var step in a.components(separatedBy: ";;") where !step.isEmpty {
+                        // "!step": at once, not two seconds after the one before
+                        if step.hasPrefix("!") { step.removeFirst() } else { try? await Task.sleep(for: .seconds(2)) }
                         let kv = step.split(separator: "=", maxSplits: 1).map(String.init)
+                        // "@back": what a swipe back does
+                        if kv[0] == "@back" { navigate(Array(path.dropLast())); continue }
                         // "@attach": a noisy PNG big enough to go up in several pieces
                         if kv[0] == "@attach" {
                             let img = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 400)).image { c in
