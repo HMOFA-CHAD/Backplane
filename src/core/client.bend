@@ -6471,17 +6471,17 @@ def Rc.need(+u: Ui) -> Bool:
   Bool.and(Bool.and(Bool.not(String.is_empty(Ui.sel(u))), Bool.and(Nat.is_lt(Hs.kind(u), 2n), Bool.not(String.eq(Ui.view_get(u, "view.kind"), "review")))),
     Bool.and(Bool.and(String.is_empty(HI.Hist.family(Ui.view_get(u, "view.path"))), String.is_empty(Hs.get(u, "refs"))), String.is_empty(Ui.scratch(u, "@rc.refs:" ++ Ui.sel(u)))))
 
+def Rc.sync.join(a: Act, cs: List<&2, Cmd>) -> Act:
+  match a:
+    case Act{u, ds}:
+      Act{u, List.append(&2, Cmd, cs, ds)}
+
 def Rc.sync.k(need: Bool, a: Act) -> Act:
   match need a:
     case True{} Act{+u, cs}:
       Rc.sync.join(Ui.rpc(Ui.scratch_set(u, "@rc.refs:" ++ Ui.sel(u), "1"), "history.refs", [J.KV{"thread", J.Str{Ui.sel(u)}}]), cs)
     case False{} +x:
       x
-
-def Rc.sync.join(a: Act, cs: List<&2, Cmd>) -> Act:
-  match a:
-    case Act{u, ds}:
-      Act{u, List.append(&2, Cmd, cs, ds)}
 
 def Rc.sync.of(a: Act) -> Act:
   match a:
