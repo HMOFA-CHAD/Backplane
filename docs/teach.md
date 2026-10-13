@@ -77,8 +77,8 @@ Running -pause(kind,q)-> Waiting(ask) -Take over-> PersonDrives -Hand back-> Run
 ```
 
 A pause is an ask of kind `browser`; the MCP reply is parked until it
-closes. A risky step goes on only by Confirm. Each pause alerts once (key
-`task-<run>-<n>`).
+closes. A risky step goes on only by Confirm. Each pause alerts once, as
+a needs-you alert.
 
 ## Protocol (hub requests, info keys, asks)
 
@@ -142,7 +142,9 @@ is `<slug>-<seconds>`, its files `<home>/bots/<id>/tasks/<slug>/runs/<run>/`
 (`log.jsonl`, `<n>.jpg`, `pause-<n>.jpg`); the newest twenty runs are kept.
 `GET /bots/<id>/tasks/shot?run=<run>&n=<n>` (or `&f=<file>`) serves a
 picture behind the same auth as `screen.jpg`, only from that bot's folder.
-A pause alerts once per `task-<run>-<n>`: a desktop notification (kind
-`ask`) to the desk used last, and an APNs alert whose payload is mutable and
-carries the screenshot's path as a top-level `image`. Test:
+A pause alerts the person through the notification policy (docs/bots.md
+"Notifications"): its ask is a needs-you alert, key `ask-<thread>`, whose
+text is the pause's question (`Alert.ask.say` in core/notice.bend). The
+screenshot shows in the stuck card on every client; a push that carries the
+picture (an iOS notification service extension) is a follow-up. Test:
 `bun test/tools/teach_e2e.ts`.
