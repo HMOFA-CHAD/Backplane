@@ -4,6 +4,7 @@ import ../src/core/model.bend as M
 import ../src/core/codec.bend as K
 import ../src/core/json.bend as J
 import ../src/core/client.bend as U
+import ../src/core/notice.bend as NO
 import ../src/mobile/hubs.bend as H
 import ../src/mobile/app.bend as A
 import ../src/mobile/screen.bend as S
@@ -78,6 +79,11 @@ def changes(cs: List<&2, M.Change>) -> J.Json:
 def delta(+th: String) -> J.Json:
   J.Json.obj([J.KV{"t", J.Json.str("delta")}, J.KV{"thread", J.Json.str(th)}, J.KV{"text", J.Json.str("tok")}])
 
+# a turn's end as the hub writes it: with the thread's alert record (the
+# phone alerts for the record, not the turn: core/notice.bend)
+def settled(+th: String) -> List<&2, M.Change>:
+  [M.TurnChanged{th, M.Completed{}, 300n}, M.SettingSet{NO.Alert.key(th), NO.Alert.line("done", "turn-" ++ th, "m1", "300.9", ""), 300n}]
+
 def alerts(a: H.HAct) -> Nat:
   match a:
     case H.HAct{_, _, als}:
@@ -115,14 +121,16 @@ def main() -> IO(Unit):
     C.Check.str("a split join's chunk raises no alert", Nat.show(alerts(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, True{}, [M.TurnChanged{"t2", M.Completed{}, 300n}])))), "0")
     C.Check.str("a catch-up chunk of a live client raises no alert", Nat.show(alerts(H.Hubs.recv(busy(), "box:3787", chunk("changes", False{}, True{}, [M.TurnChanged{"t2", M.Completed{}, 300n}])))), "0")
     C.Check.str("a split join's last chunk raises no alert", Nat.show(alerts(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, False{}, [M.TurnChanged{"t2", M.Completed{}, 300n}])))), "0")
-    C.Check.str("after a split join a turn's end alerts", Nat.show(alerts(H.Hubs.recv(H.Hubs.after(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, False{}, Nil{}))), "box:3787", changes([M.TurnChanged{"t2", M.Completed{}, 300n}])))), "1")
+    C.Check.str("after a split join a settled turn alerts", Nat.show(alerts(H.Hubs.recv(H.Hubs.after(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, False{}, Nil{}))), "box:3787", changes(settled("t2"))))), "1")
     C.Check.str("a split join holds what one log holds", Nat.show(U.Ui.seq(H.Hubs.ui(H.Hubs.after(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, False{}, [M.TurnChanged{"t2", M.Completed{}, 300n}]))), "box:3787"))), "4")
     # every paired hub's messages redraw the merged screen; streamed text
     # only for the thread open on the hub in focus
     C.Check.str("an unfocused completion redraws", yes(A.shows(busy(), "box:3787", changes([M.TurnChanged{"t2", M.Completed{}, 300n}]))), "yes")
     C.Check.str("an unfocused approval redraws", yes(A.shows(busy(), "box:3787", changes([M.AskOpened{"a1", "t2", "approval", "Bash", "ls", "", 300n}]))), "yes")
     C.Check.str("unfocused streamed text does not", yes(A.shows(busy(), "box:3787", delta("t2"))), "no")
-    C.Check.str("an unfocused completion alerts", Nat.show(alerts(H.Hubs.recv(busy(), "box:3787", changes([M.TurnChanged{"t2", M.Completed{}, 300n}])))), "1")
+    C.Check.str("an unfocused settled turn alerts", Nat.show(alerts(H.Hubs.recv(busy(), "box:3787", changes(settled("t2"))))), "1")
+    C.Check.str("a turn's end alone does not", Nat.show(alerts(H.Hubs.recv(busy(), "box:3787", changes([M.TurnChanged{"t2", M.Completed{}, 300n}])))), "0")
+    C.Check.str("the same record again does not", Nat.show(alerts(H.Hubs.recv(H.Hubs.after(H.Hubs.recv(busy(), "box:3787", changes(settled("t2")))), "box:3787", changes([M.SettingSet{NO.Alert.key("t2"), NO.Alert.line("done", "turn-t2", "m1", "300.9", ""), 301n}])))), "0")
     C.Check.str("streamed text alerts nothing", Nat.show(alerts(H.Hubs.recv(busy(), "box:3787", delta("t2")))), "0")
     C.Check.str("connecting raises no old alerts", Nat.show(alerts(H.Hubs.recv(H.Hubs.set(H.Hubs.init(0n, "c"), ["box:3787"]), "box:3787",
       log([M.ProjectCreated{"p2", "Box", "/box", 50n}, M.ThreadCreated{"t2", "p2", "Two", M.Local{}, "", "", "claude", "", 100n}, M.TurnChanged{"t2", M.Completed{}, 120n}], "")))), "0")

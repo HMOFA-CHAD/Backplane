@@ -713,6 +713,10 @@ def Policy.said.v(+v: String) -> String:
 def Policy.said(cs: List<&2, M.Change>) -> String:
   Policy.said.v(Policy.val(cs, False{}, ""))
 
+# the kind of the alert record in a list of changes ("" none, or no kind)
+def Policy.kind(cs: List<&2, M.Change>) -> String:
+  Alert.kind(Alert.parse(Policy.val(cs, False{}, "")))
+
 # does a list of changes hold a record that alerts
 def Policy.loud(+cs: List<&2, M.Change>) -> Bool:
   Bool.not(Bool.or(String.eq(Policy.said(cs), "-"), String.eq(Policy.said(cs), "_")))
