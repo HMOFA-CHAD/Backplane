@@ -1722,7 +1722,7 @@ def View.review.body(has: Bool, +v: U.RpView) -> D.Node:
       D.El{"div", "review-body", [D.At{"class", "review-body"}], [D.Dom.span("fm-note", U.RpView.note(v))]}
 
 def View.review.v(+v: U.RpView) -> List<&2, D.Node>:
-  [D.El{"div", "", [D.At{"class", "fm-bar"}], List.append(&2, D.Node, View.review.tabs(U.RpView.tabs(v)),
+  [D.El{"div", "", [D.At{"class", "fm-bar review-pane"}], List.append(&2, D.Node, View.review.tabs(U.RpView.tabs(v)),
      [D.Dom.span("fm-file", U.RpView.title(v) ++ Bool.pick(String, U.RpView.busy(v), " · reading…", "")), D.El{"span", "", [D.At{"class", "grow"}], Nil{}},
       D.Dom.button("", "rv-run", "", "Read the design again", "Refresh")])},
    View.review.body(Bool.not(String.is_empty(U.RpView.md(v))), v)]

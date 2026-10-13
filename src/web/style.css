@@ -257,6 +257,7 @@ button.fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowra
 .fm-row .fm-size { color: var(--faint); font-size: 12px; font-family: var(--mono); }
 /* the Review tab: the report's Markdown, scrolling in the pane */
 .fm-bar .crumb.on { color: var(--text); }
+.review-pane .fm-bar .fm-file { margin-left: 10px; color: var(--dim); }
 .review-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 12px; }
 .review-body.body table { display: table; font-size: 12px; }
 .review-body.body td, .review-body.body th { font-family: var(--mono); }
