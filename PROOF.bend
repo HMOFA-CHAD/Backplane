@@ -8337,6 +8337,9 @@ def Laws.uber_seed_once():
 
 # --- uberbot inc 3: plane_tally_*, plane_text_*, uber_home_* ---
 
+def Laws.side_work_ix_eq():
+  {==}
+
 def Laws.plane_tally_counts():
   {==}
 

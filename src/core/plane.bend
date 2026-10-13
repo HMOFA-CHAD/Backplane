@@ -557,7 +557,7 @@ def Plane.demo() -> U.Ui:
 # thread's phase is the costly part (five lookups), so it is worked out only
 # for a thread that can be need or run: its turn running or failed, an
 # approval pending, or its id among those that have an open ask, an unfinished
-# child task, something queued or background rows (Plane.hot). Every other
+# child task, something queued or background rows (Plane.hot, from the index). Every other
 # thread's phase is complete, stopped or idle. Law plane_tally_counts.
 
 type PTally is Data:
@@ -583,10 +583,6 @@ def Plane.tally.add(n: Nat, t: PTally) -> PTally:
     case _ x:
       x
 
-# the ids a setting key names: "bg.<id>" and "watch.<id>" (a thread's background rows)
-def Plane.hot.id(+k: String, +pre: String) -> String:
-  Bool.pick(String, String.starts_with(k, pre), String.drop(k, String.length(pre)), "")
-
 def Plane.hot.put.k(none: Bool, +id: String, m: Map<&2, Bool>) -> Map<&2, Bool>:
   match none:
     case True{}:
@@ -604,21 +600,14 @@ def Plane.hot.ids(ids: List<&2, String>, m: Map<&2, Bool>) -> Map<&2, Bool>:
     case +i <> t:
       Plane.hot.ids(t, Plane.hot.put(i, m))
 
-def Plane.hot.keys(ks: List<&2, String>, m: Map<&2, Bool>) -> Map<&2, Bool>:
-  match ks:
-    case Nil{}:
-      m
-    case +k <> t:
-      Plane.hot.keys(t, Plane.hot.put(Plane.hot.id(k, "bg."), Plane.hot.put(Plane.hot.id(k, "watch."), m)))
-
 def Plane.hot.sx(ix: U.SIx, m: Map<&2, Bool>) -> Map<&2, Bool>:
   match ix:
-    case U.SIx{_, +as, +ks}:
-      Plane.hot.ids(Map.keys(&2, List<&2, M.Ask>, as), Plane.hot.ids(Map.keys(&2, Nat, ks), m))
+    case U.SIx{_, +as, +ks, +wk}:
+      Plane.hot.ids(Map.keys(&2, List<&2, M.Ask>, as), Plane.hot.ids(Map.keys(&2, Nat, ks), Plane.hot.ids(Map.keys(&2, Nat, wk), m)))
 
 # the ids that can be need or run beyond what a thread's own turn and pending say
 def Plane.hot(+st: M.State, ix: U.SIx) -> Map<&2, Bool>:
-  Plane.hot.sx(ix, Plane.hot.ids(M.Queue.threads(st), Plane.hot.keys(M.Setting.keys(st), Map.new(&2, Bool))))
+  Plane.hot.sx(ix, Plane.hot.ids(M.Queue.threads(st), Map.new(&2, Bool)))
 
 def Plane.turn.hot(t: M.TurnState) -> Bool:
   match t:

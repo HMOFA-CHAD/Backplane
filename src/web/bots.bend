@@ -536,7 +536,7 @@ def WB.uber.k(r: BI.BRow, +counts: String) -> D.Node:
 def WB.uber.m(m: Maybe<&2, BI.BRow>, +u: U.Ui) -> List<&2, D.Node>:
   match m:
     case Some{r}:
-      [WB.uber.k(r, PL.Plane.counts(PL.Plane.of(u, U.Side.now(u))))]
+      [WB.uber.k(r, PL.Plane.tally.words(u, U.Side.now(u)))]
     case None{}:
       Nil{}
 

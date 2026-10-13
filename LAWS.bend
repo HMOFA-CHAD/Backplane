@@ -6831,6 +6831,10 @@ law uber_seed_once:
 
 # --- uberbot inc 3: plane_tally_*, plane_text_*, uber_home_* ---
 
+# a thread's rows from the index (one pass over the settings) are the rows its own lookups find
+law side_work_ix_eq:
+  {U.Side.phases.ix(U.Ui.threads(U.Side.demo.work()), U.Side.ix(U.Side.demo.work()), U.Side.demo.work()) == U.Side.phases(U.Ui.threads(U.Side.demo.work()), U.Side.demo.work()) : List<&2, M.Phase>}
+
 # the count the phones' list makes without building rows is the plane's count
 law plane_tally_counts:
   {PLN.Plane.tally.same(PLN.Plane.demo(), 200000n) == True{} : Bool}

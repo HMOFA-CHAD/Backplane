@@ -95,7 +95,7 @@ def Frame.ix(+st: M.State) -> Nat:
 
 def SIx.size(ix: U.SIx) -> Nat:
   match ix:
-    case U.SIx{by, as, ks}:
+    case U.SIx{by, as, ks, _}:
       Nat.add(List.length(&2, List<&2, M.Thread>, Map.values(&2, List<&2, M.Thread>, by)), List.length(&2, Nat, Map.values(&2, Nat, ks)))
 
 def Frame.rows(+st: M.State) -> Nat:

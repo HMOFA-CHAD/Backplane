@@ -2661,6 +2661,32 @@ def Work.kids.map(+s: State) -> Map<&2, Nat>:
     case State{_, _, _, _, +tk, _, _, _, _, _, _}:
       Work.kids.fold(Map.values(&2, Task, tk), Map.new(&2, Nat))
 
+# every thread's own rows (Work.rows) in one pass over the settings that hold
+# them ("bg.<thread>", "watch.<thread>"), for the screens that ask of many
+# threads: a lookup in this small map beats two in the settings
+def Work.rows.id(+k: String, +pre: String) -> String:
+  Bool.pick(String, String.starts_with(k, pre), String.drop(k, String.length(pre)), "")
+
+def Work.rows.put.k(none: Bool, +s: State, +th: String, m: Map<&2, Nat>) -> Map<&2, Nat>:
+  match none:
+    case True{}:
+      m
+    case False{}:
+      Map.set(&2, Nat, m, th, Work.rows(s, th))
+
+def Work.rows.put(+s: State, +th: String, m: Map<&2, Nat>) -> Map<&2, Nat>:
+  Work.rows.put.k(String.is_empty(th), s, th, m)
+
+def Work.rows.go(ks: List<&2, String>, +s: State, m: Map<&2, Nat>) -> Map<&2, Nat>:
+  match ks:
+    case Nil{}:
+      m
+    case +k <> t:
+      Work.rows.go(t, s, Work.rows.put(s, Work.rows.id(k, "bg."), Work.rows.put(s, Work.rows.id(k, "watch."), m)))
+
+def Work.rows.map(+s: State) -> Map<&2, Nat>:
+  Work.rows.go(Setting.keys(s), s, Map.new(&2, Nat))
+
 def Work.kids.at.k(r: Map<&2, Nat> & Nat) -> Nat:
   (_, n) = r
   n
