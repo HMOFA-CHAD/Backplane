@@ -152,14 +152,18 @@ def main() -> IO(Unit):
     C.Check.str("stopped marks nothing", Nat.show(told.in(TD.Told.alert(plain(), 2000n, "tw", "stopped"))), "0")
     C.Check.str("no state marks nothing", Nat.show(told.in(TD.Told.alert(plain(), 2000n, "tw", ""))), "0")
     C.Check.str("quiet end marks nothing", Nat.show(told.in(TD.Told.alert(chatter(), 2000n, "tb", "completed"))), "0")
-    C.Check.str("quiet end still fails loudly", Nat.show(told.in(TD.Told.alert(chatter(), 2000n, "tb", "failed"))), "1")
-    C.Check.str("bot alert carries the bot", TD.Told.bot(Maybe.default(&2, TD.Told, List.head(&2, TD.Told, TD.Told.all(more(chatter(), TD.Told.alert(chatter(), 2000n, "tb", "failed")))), TD.Told{"", "", "", "", "", 0n})), "b1")
-    # the hub's Ended.out marks it, with the turn's own changes applied
-    +end : B.Step = B.Ended.out(more(plain(), [M.MessagePosted{"tw", "u2", M.User{}, "again", 3000n}, M.TurnChanged{"tw", M.Running{}, 3000n}]), 3010n, "tw",
+    # a bot turn the person started that fails alerts (the policy's fail), and is marked with the bot
+    +asked : M.State = more(chatter(), [M.MessagePosted{"tb", "u5", M.User{}, "order the parts", 1500n}, M.TurnChanged{"tb", M.Running{}, 1500n}])
+    C.Check.str("person's bot turn fails loudly", Nat.show(told.in(TD.Told.alert(asked, 2000n, "tb", "failed"))), "1")
+    C.Check.str("bot alert carries the bot", TD.Told.bot(Maybe.default(&2, TD.Told, List.head(&2, TD.Told, TD.Told.all(more(asked, TD.Told.alert(asked, 2000n, "tb", "failed")))), TD.Told{"", "", "", "", "", 0n})), "b1")
+    # the hub marks it: Ended.out writes the alert record, and Alerts.changes
+    # (every step passes through it before it is stored) marks the record
+    +pre : M.State = more(plain(), [M.MessagePosted{"tw", "u2", M.User{}, "again", 3000n}, M.TurnChanged{"tw", M.Running{}, 3000n}])
+    +end : B.Step = B.Ended.out(pre, 3010n, "tw",
       B.Step{[M.MessagePosted{"tw", "m2", M.Assistant{}, "Second answer.", 3005n}, M.TurnChanged{"tw", M.Completed{}, 3006n}], Nil{}})
-    C.Check.str("hub marks the end", Nat.show(told.in(cs.of(end))), "1")
-    C.Check.str("hub marks what the turn said", yes(String.contains(tags(cs.of(end)), "SettingSet:told.")), "yes")
-    C.Check.str("hub quiet end", Nat.show(told.in(cs.of(B.Ended.out(chatter(), 3010n, "tb", B.Step{[M.MessagePosted{"tb", "m2", M.Assistant{}, "Ok.", 3005n}, M.TurnChanged{"tb", M.Completed{}, 3006n}], Nil{}})))), "0")
+    C.Check.str("hub marks the end", Nat.show(told.in(B.Alerts.changes(pre, cs.of(end)))), "1")
+    C.Check.str("hub marks what the turn said", yes(String.contains(tags(B.Alerts.changes(pre, cs.of(end))), "SettingSet:told.")), "yes")
+    C.Check.str("hub quiet end", Nat.show(told.in(B.Alerts.changes(chatter(), cs.of(B.Ended.out(chatter(), 3010n, "tb", B.Step{[M.MessagePosted{"tb", "m2", M.Assistant{}, "Ok.", 3005n}, M.TurnChanged{"tb", M.Completed{}, 3006n}], Nil{}}))))), "0")
     # the minute tick prunes
     C.Check.str("tick prunes", Nat.show(told.in(cs.of(BH.Bots.tick(p, Nat.add(1000n, Nat.mul(31n, day())), BH.Tz{0n, True{}})))), "1")
     C.Check.str("tick quiet", Nat.show(told.in(cs.of(BH.Bots.tick(p, 2000n, BH.Tz{0n, True{}})))), "0")
