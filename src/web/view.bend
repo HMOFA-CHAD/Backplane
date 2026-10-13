@@ -27,6 +27,7 @@ import ../core/review.bend as RVW
 import ../core/emb.bend as EM
 import ../core/qr.bend as QR
 import ../core/onboard.bend as OB
+import ../core/review.bend as RV
 
 # Ui -> Node. Every decision (order, shelf, status) comes from core defs
 # with laws behind them; this file only lays them out.
@@ -1603,14 +1604,99 @@ def View.hist.menu.k(open: Bool, +u: U.Ui, +side: String) -> List<&2, D.Node>:
 def View.hist.menu(+u: U.Ui) -> D.Node:
   D.El{"div", "", [D.At{"class", "hist-over"}], View.hist.menu.k(Bool.not(String.is_empty(U.Ui.scratch(u, "@cmp.menu"))), u, U.Ui.scratch(u, "@cmp.menu"))}
 
+# Review comments (client.bend's Rc), over the canvas: a pin at each place
+# (plot2d.js puts them where the plot's own transform says: data-x, data-y in
+# mm), the note being written and the open comment as cards. A right click
+# on the plot starts a note (plot2d.js, "rv-note" with the place).
+def View.rc.pin(p: RV.Pin, +sel: String) -> D.Node:
+  match p:
+    case RV.Pin{+id, +x, +y, _, _, +res, +cnt}:
+      D.El{"button", "rcp:" ++ id, [D.At{"class", "rc-pin" ++ Bool.pick(String, res, " res", "") ++ Bool.pick(String, String.eq(id, sel), " sel", "")}, D.At{"data-x", F32.show(x)}, D.At{"data-y", F32.show(y)},
+        D.At{"data-value", id}, D.At{"title", "Open the comment"}, D.On{"click", "rv-pin"}], Bool.pick(List<&2, D.Node>, Nat.is_gt(cnt, 0n), [D.Txt{Nat.show(cnt)}], Nil{})}
+
+def View.rc.pins(ps: List<&2, RV.Pin>, +sel: String) -> List<&2, D.Node>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      View.rc.pin(p, sel) <> View.rc.pins(t, sel)
+
+def View.rc.reps(rs: List<&2, String>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      D.El{"div", "", [D.At{"class", "rc-reply"}], [D.Dom.span("by", Maybe.default(&2, String, List.get(&2, String, String.split(r, '\u{1f}'), 1n), "")),
+        D.Txt{Maybe.default(&2, String, List.get(&2, String, String.split(r, '\u{1f}'), 0n), "")}]} <> View.rc.reps(t)
+
+def View.rc.open.k(o: U.RcOpen, +u: U.Ui) -> D.Node:
+  match o:
+    case U.RcOpen{+id, +text, +by, +place, +res, +reps}:
+      D.El{"div", "rc-open", [D.At{"class", "rc-card rc-open"}],
+        List.concat(&2, D.Node, [[D.El{"div", "", [D.At{"class", "rc-head"}], [D.Dom.span("what", by ++ " · " ++ place ++ Bool.pick(String, res, " · resolved", "")), D.Dom.button("rc-x", "rv-pin", "", "Close", "×")]},
+          D.El{"div", "", [D.At{"class", "rc-text"}], [D.Txt{text}]}],
+          View.rc.reps(reps),
+          [WB.WB.input("rcreply", "rcreply", U.Ui.scratch(u, "@f.rcreply"), "Reply", "rv-reply-send"),
+           D.El{"div", "", [D.At{"class", "rc-row"}], [D.Dom.button("primary", "rv-reply-send", "", "Send the reply", "Reply"),
+             D.Dom.button("", Bool.pick(String, res, "rv-reopen", "rv-resolve"), id, Bool.pick(String, res, "Open it again", "Mark it done"), Bool.pick(String, res, "Reopen", "Resolve"))]}]])}
+
+def View.rc.open(m: Maybe<&2, U.RcOpen>, +u: U.Ui) -> List<&2, D.Node>:
+  match m:
+    case Some{+o}:
+      [View.rc.open.k(o, u)]
+    case None{}:
+      Nil{}
+
+def View.rc.note.k(+xs: List<&2, String>, +u: U.Ui) -> List<&2, D.Node>:
+  [D.El{"span", "rc-draft", [D.At{"class", "rc-pin draft"}, D.At{"data-x", Maybe.default(&2, String, List.get(&2, String, xs, 0n), "0")}, D.At{"data-y", Maybe.default(&2, String, List.get(&2, String, xs, 1n), "0")}], Nil{}},
+   D.El{"div", "rc-note", [D.At{"class", "rc-card rc-note"}, D.At{"data-x", Maybe.default(&2, String, List.get(&2, String, xs, 0n), "0")}, D.At{"data-y", Maybe.default(&2, String, List.get(&2, String, xs, 1n), "0")}],
+    [D.El{"div", "", [D.At{"class", "rc-head"}], [D.Dom.span("what", "Comment here")]},
+     WB.WB.input("rcnote", "rcnote", U.Ui.scratch(u, "@f.rcnote"), "Note", "rv-note-send"),
+     D.El{"div", "", [D.At{"class", "rc-row"}], [D.Dom.button("primary", "rv-note-send", "", "Pin the comment here", "Send"), D.Dom.button("", "rv-note-shut", "", "Do not comment", "Cancel")]}]}]
+
+def View.rc.note.if(none: Bool, +at: String, +u: U.Ui) -> List<&2, D.Node>:
+  match none:
+    case True{}:
+      Nil{}
+    case False{}:
+      View.rc.note.k(String.split(at, '\t'), u)
+
+def View.rc.note(+at: String, +u: U.Ui) -> List<&2, D.Node>:
+  View.rc.note.if(String.is_empty(at), at, u)
+
+def View.rc(+u: U.Ui) -> List<&2, D.Node>:
+  List.concat(&2, D.Node, [View.rc.pins(U.Rc.pins(u), U.Rc.sel(u)), View.rc.note(U.Rc.at(u), u), View.rc.open(U.Rc.open(u), u)])
+
+# The Checks page: the gate line, then the checklist's boxes under their
+# group's heading; a click ticks one ("rv-tick" and its index)
+def View.rc.tasks(ts: List<&2, U.RpTask>, +prev: String) -> List<&2, D.Node>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case U.RpTask{+i, +text, +done, +group} <> t:
+      List.append(&2, D.Node, Bool.pick(List<&2, D.Node>, Bool.and(Bool.not(String.is_empty(group)), Bool.not(String.eq(group, prev))), [D.Dom.span("rc-group", group)], Nil{}),
+        D.El{"button", "rct:" ++ Nat.show(i), [D.At{"class", "rc-task" ++ Bool.pick(String, done, " done", "")}, D.At{"data-value", Nat.show(i)}, D.At{"title", Bool.pick(String, done, "Untick", "Tick")}, D.On{"click", "rv-tick"}],
+          [D.El{"span", "", [D.At{"class", "rc-box"}], [D.Txt{Bool.pick(String, done, "✓", "")}]}, D.Txt{text}]} <> View.rc.tasks(t, group))
+
+def View.rc.checks.k(on: Bool, +u: U.Ui) -> List<&2, D.Node>:
+  match on:
+    case True{}:
+      [D.El{"div", "", [D.At{"class", "rc-checks"}], D.El{"div", "", [D.At{"class", Bool.pick(String, String.is_empty(U.Rp.gate(u)), "rc-gate ok", "rc-gate bad")}],
+        [D.Txt{Bool.pick(String, String.is_empty(U.Rp.gate(u)), "Passes", "Fails: " ++ U.Rp.gate(u))}]} <> View.rc.tasks(U.Rp.tasks(u), "")}]
+    case False{}:
+      Nil{}
+
+def View.rc.checks(+u: U.Ui) -> List<&2, D.Node>:
+  View.rc.checks.k(Bool.and(String.eq(U.Rp.page(u), "checks"), Bool.not(String.is_empty(U.RpView.md(U.Rp.view(u))))), u)
+
 # a board or schematic: host.js (plot2d.js) draws the hub's plot of it on
 # the canvas whose data-key it carries, less the layers data-off names
 def View.plot(+u: U.Ui, +what: List<&2, D.Node>) -> List<&2, D.Node>:
   View.bar(List.append(&2, D.Node, what, [View.layers(String.eq(U.Solid.kind(u), "schematic"), Nat.is_eq(HS.Hist.kind(U.Ui.view_get(u, "view.path")), 2n), U.Solid.off(u), U.Lfocus.of(u))]), "drag or two fingers to pan · wheel or pinch to zoom · double-click to fit")
-   <> D.El{"div", "", [D.At{"class", "viewer-stage"}], [D.El{"canvas", "plot", [D.At{"id", "plot"}, D.At{"data-key", U.Solid.want(u)},
+   <> D.El{"div", "", [D.At{"class", "viewer-stage"}], D.El{"canvas", "plot", [D.At{"id", "plot"}, D.At{"data-key", U.Solid.want(u)},
         D.At{"data-off", U32.show(LY.Masks.off(LY.Lyr.masks(U.Lfocus.kind(u), U.Solid.off(u), U.Lfocus.of(u))))},
         D.At{"data-dim", U32.show(LY.Masks.dim(LY.Lyr.masks(U.Lfocus.kind(u), U.Solid.off(u), U.Lfocus.of(u))))}, D.At{"data-lift", U32.show(LY.Lyr.top(U.Lfocus.of(u)))},
-        D.At{"data-fade", Nat.show(U.Hs.fade())}, D.At{"data-fam", HS.Hist.key.family(U.Solid.want(u))}], Nil{}}, View.hist.menu(u)]}
+        D.At{"data-fade", Nat.show(U.Hs.fade())}, D.At{"data-fam", HS.Hist.key.family(U.Solid.want(u))}], Nil{}} <> (View.hist.menu(u) <> View.rc(u))}
    <> View.hist(U.Hs.bar(u), u)
 
 # over a part in 3D: the thread's parts and Renders; the board: its name
@@ -1715,21 +1801,21 @@ def View.review.tabs(ts: List<&2, U.RpTab>) -> List<&2, D.Node>:
     case U.RpTab{+p, +l, +on} <> t:
       D.Dom.button(Bool.pick(String, on, "crumb on", "crumb"), "rv-page", p, l, l) <> View.review.tabs(t)
 
-def View.review.body(has: Bool, +v: U.RpView) -> D.Node:
+def View.review.body(has: Bool, +v: U.RpView, +extra: List<&2, D.Node>) -> D.Node:
   match has:
     case True{}:
-      D.El{"div", "review-body", [D.At{"class", "review-body body"}], D.Md.render(U.RpView.md(v))}
+      D.El{"div", "review-body", [D.At{"class", "review-body body"}], List.append(&2, D.Node, extra, D.Md.render(U.RpView.md(v)))}
     case False{}:
       D.El{"div", "review-body", [D.At{"class", "review-body"}], [D.Dom.span("fm-note", U.RpView.note(v))]}
 
-def View.review.v(+v: U.RpView) -> List<&2, D.Node>:
+def View.review.v(+v: U.RpView, +extra: List<&2, D.Node>) -> List<&2, D.Node>:
   [D.El{"div", "", [D.At{"class", "fm-bar review-pane"}], List.append(&2, D.Node, View.review.tabs(U.RpView.tabs(v)),
      [D.Dom.span("fm-file", U.RpView.title(v) ++ Bool.pick(String, U.RpView.busy(v), " · reading…", "")), D.El{"span", "", [D.At{"class", "grow"}], Nil{}},
       D.Dom.button("", "rv-run", "", "Read the design again", "Refresh")])},
-   View.review.body(Bool.not(String.is_empty(U.RpView.md(v))), v)]
+   View.review.body(Bool.not(String.is_empty(U.RpView.md(v))), v, extra)]
 
 def View.review(+u: U.Ui) -> List<&2, D.Node>:
-  View.review.v(U.Rp.view(u))
+  View.review.v(U.Rp.view(u), View.rc.checks(u))
 
 def View.aside.k(i: Nat, +u: U.Ui) -> List<&2, D.Node>:
   match i:
