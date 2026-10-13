@@ -9,6 +9,7 @@ import ./mcp.bend as MC
 import ./xref.bend as XR
 import ./handoff.bend as HD
 import ./bothub.bend as BH
+import ./plane.bend as PLN
 
 # Agents across machines: the thread tools reaching another machine
 # ------------------------------------------------------------------
@@ -31,7 +32,7 @@ import ./bothub.bend as BH
 
 # the tools a remote agent may call here (thread_wait is its poll)
 def Fm.names() -> List<&2, String>:
-  ["thread_send", "thread_wait_now", "thread_interrupt", "thread_update", "thread_list", "thread_launch", "project_list", "machine_list", "thread_read", "thread_handoff"]
+  ["thread_send", "thread_wait_now", "thread_interrupt", "thread_update", "thread_list", "thread_launch", "project_list", "machine_list", "thread_read", "thread_handoff", "plane_read"]
 
 # a request from another machine: `mcp.call` of one of the tools the owner's
 # machines may call here (machine_list is each hub's own answer)
@@ -39,7 +40,7 @@ def Fm.is(+o: J.Json) -> Bool:
   String.eq(J.Json.get_str(o, "m", ""), "mcp.call")
 
 def Fm.remote.k(+i: Nat) -> Bool:
-  Bool.or(Nat.is_lt(i, 7n), Bool.and(Nat.is_ge(i, 8n), Nat.is_lt(i, 10n)))
+  Bool.or(Nat.is_lt(i, 7n), Bool.and(Nat.is_ge(i, 8n), Nat.is_lt(i, 11n)))
 
 def Fm.remote(+tool: String) -> Bool:
   Fm.remote.k(C.Codec.pos(Fm.names(), tool))
@@ -144,6 +145,10 @@ def Fm.hand(+s: M.State, +now: Nat, +from: String, +a: J.Json) -> MC.Res:
     Fm.hand.project(FR.Fr.project.shared(s, Fm.pick.p(s, J.Json.get_str(a, "project", ""))), s, now, from, Fm.pick.p(s, J.Json.get_str(a, "project", "")), a),
     Fm.hand.thread(FR.Fr.thread.shared(s, J.Json.get_str(a, "threadId", "")), s, now, from, J.Json.get_str(a, "threadId", ""), a))
 
+# (the machine the plane is of: what it answers to the one that asked)
+def Fm.plane.name(+name: String) -> String:
+  Bool.pick(String, String.is_empty(name), "that machine", name)
+
 def Fm.call.k(i: Nat, +s: M.State, +now: Nat, +from: String, +a: J.Json, +id: String, +ok: Bool) -> MC.Res:
   match i:
     case 0n:
@@ -164,6 +169,8 @@ def Fm.call.k(i: Nat, +s: M.State, +now: Nat, +from: String, +a: J.Json, +id: St
       Fm.say(ok, MC.Mcp.read.k(ok, s, id, M.Switch.num(J.Json.as_raw(J.Json.get(a, "limit"), "40"), 40n)))
     case 9n:
       Fm.hand(s, now, from, a)
+    case 10n:
+      MC.Res.ok(J.Json.obj([J.KV{"text", J.Str{PLN.Plane.read(s, now, J.Json.get_str(a, "as", ""), Fm.plane.name(J.Json.get_str(a, "name", "")), J.Json.get_bool(a, "idle", False{}))}}]))
     case _:
       MC.Res.fail("unknown tool")
 
@@ -287,10 +294,27 @@ def Fm.plan.read.i(m: Maybe<&2, FR.In>, +word: String, +tool: String, +thread: S
 def Fm.plan.read(+word: String, +ins: List<&2, FR.In>, +tool: String, +thread: String, a: J.Json) -> Plan:
   Bool.pick(Plan, String.is_empty(word), PHere{}, Fm.plan.read.i(XR.Xref.pick(ins, RF.Slug.of(word)), word, tool, thread, a))
 
+# plane_read of another machine: its plane, ids made its link's, under its name here
+def Fm.plane.args(a: J.Json, +link: String, +name: String) -> J.Json:
+  J.Obj{J.Field{"as", J.Str{link}, J.Field{"name", J.Str{name}, FR.Fr.obj.fields(a)}}}
+
+def Fm.plan.pi(m: Maybe<&2, FR.In>, +word: String, +tool: String, +thread: String, a: J.Json) -> Plan:
+  match m:
+    case Some{+i}:
+      Bool.pick(Plan, FR.In.away(i), PAnswer{MC.Res.fail("the machine " ++ FR.In.name.of(i) ++ " is away; try again when it is back")},
+        PFar{FR.In.link(i), Fm.request(FR.In.link(i), tool, FR.Fr.id(FR.In.link(i), thread), Fm.plane.args(a, FR.In.link(i), FR.In.name.of(i)))})
+    case None{}:
+      PAnswer{MC.Res.fail("no machine of yours called " ++ word ++ " is linked here (machine_list shows them)")}
+
+def Fm.plan.pw(+word: String, +ins: List<&2, FR.In>, +tool: String, +thread: String, a: J.Json) -> Plan:
+  Bool.pick(Plan, String.is_empty(word), PHere{}, Fm.plan.pi(XR.Xref.pick(ins, RF.Slug.of(word)), word, tool, thread, a))
+
 def Fm.plan.k(i: Nat, +s: M.State, +ins: List<&2, FR.In>, +tool: String, +thread: String, +a: J.Json) -> Plan:
   match i:
-    case 10n:
+    case 11n:
       PHere{}
+    case 10n:
+      Fm.plan.pw(Fm.word(i, a), ins, tool, thread, a)
     case 9n:
       PHere{}
     case 8n:

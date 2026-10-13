@@ -705,3 +705,121 @@ def Plane.tally.same(+u: U.Ui, +now: Nat) -> Bool:
 
 def Plane.tally.words(+u: U.Ui, +now: Nat) -> String:
   Plane.counts.t(Plane.tally(u, U.Side.ix(U.Ui.state(u)), U.Side.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now)))
+
+# The plane as text
+# -----------------
+# What an agent reads with plane_read (bothub.bend's tool, fmcp.bend for
+# another machine): each section a heading and a line a row, need first, then
+# run, bots, rooms with news, routines, and the idle threads' count (or the
+# threads, when asked). A row starts with the id the thread tools take; `pre`
+# is the link of the machine that has it ("" for this one), so an id read on
+# another machine already works here (<link>~<id>).
+
+# the plane of a hub, from its state alone (no client: its idle threads too)
+def Plane.of.st(+st: M.State, +now: Nat) -> Plane:
+  Plane.of.f(U.Ui.far.st(U.Ui.init(now), st), U.Side.ix(st), now, True{})
+
+def Plane.text.id(+pre: String, +id: String) -> String:
+  Bool.pick(String, String.is_empty(pre), id, FR.Fr.id(pre, id))
+
+# " · s", or nothing for an empty s
+def Plane.text.part(+s: String) -> String:
+  Bool.pick(String, String.is_empty(s), "", " · " ++ s)
+
+def Plane.text.ago(+now: Nat, +at: Nat) -> String:
+  Bool.pick(String, Nat.is_lt(Nat.sub(now, at), 60n), "just now", M.Time.ago(now, at) ++ " ago")
+
+# the last activity of a row, or when a routine is next due (`at` of a routine)
+def Plane.text.when(+kind: String, +at: Nat, +now: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(at, 0n), "",
+    Bool.pick(String, String.eq(kind, "routine"), Bool.pick(String, Nat.is_gt(at, now), "next in " ++ M.Time.ago(at, now), "due now"), Plane.text.ago(now, at)))
+
+def Plane.text.row(r: PRow, +pre: String, +now: Nat) -> String:
+  match r:
+    case PRow{+kind, +id, _, _, +title, +sub, +machine, +state, +at, _}:
+      "- " ++ Plane.text.id(pre, id) ++ " · " ++ state ++ " · " ++ title ++ Plane.text.part(sub) ++ Plane.text.part(Bool.pick(String, String.is_empty(machine), "", "on " ++ machine))
+        ++ Plane.text.part(Plane.text.when(kind, at, now)) ++ "\n"
+
+def Plane.text.rows(rs: List<&2, PRow>, +pre: String, +now: Nat) -> String:
+  match rs:
+    case Nil{}:
+      ""
+    case +r <> t:
+      Plane.text.row(r, pre, now) ++ Plane.text.rows(t, pre, now)
+
+def Plane.text.sec.k(none: Bool, +head: String, +rs: List<&2, PRow>, +pre: String, +now: Nat) -> String:
+  match none:
+    case True{}:
+      ""
+    case False{}:
+      head ++ " (" ++ Nat.show(List.length(&2, PRow, rs)) ++ ")\n" ++ Plane.text.rows(rs, pre, now)
+
+def Plane.text.sec(+head: String, +rs: List<&2, PRow>, +pre: String, +now: Nat) -> String:
+  Plane.text.sec.k(List.is_empty(&2, PRow, rs), head, rs, pre, now)
+
+def Plane.text.machs(ms: List<&2, PMach>) -> List<&2, String>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case PMach{+n, +s} <> t:
+      (n ++ " (" ++ s ++ ")") <> Plane.text.machs(t)
+
+# (only when there are other machines)
+def Plane.text.machines.k(many: Bool, ms: List<&2, PMach>) -> String:
+  match many:
+    case True{}:
+      "Machines: " ++ String.join(Plane.text.machs(ms), ", ") ++ "\n"
+    case False{}:
+      ""
+
+def Plane.text.idle.k(shown: Bool, +n: Nat, rs: List<&2, PRow>, +pre: String, +now: Nat) -> String:
+  match shown:
+    case True{}:
+      Plane.text.sec("Idle in the last day", rs, pre, now)
+    case False{}:
+      Bool.pick(String, Nat.is_eq(n, 0n), "", "Idle in the last day: " ++ Nat.show(n) ++ " (plane_read with idle: true lists them).\n")
+
+def Plane.text(+p: Plane, +pre: String, +name: String, +now: Nat, +idle: Bool) -> String:
+  "Status plane of " ++ name ++ "\n"
+    ++ Bool.pick(String, Bool.and(List.is_empty(&2, PRow, Plane.need(p)), List.is_empty(&2, PRow, Plane.run(p))), "Nothing needs you and nothing is running.\n", "")
+    ++ Plane.text.sec("Needs you", Plane.need(p), pre, now) ++ Plane.text.sec("Running", Plane.run(p), pre, now)
+    ++ Plane.text.sec("Bots", Plane.bots(p), pre, now) ++ Plane.text.sec("Rooms with unread posts", Plane.rooms(p), pre, now)
+    ++ Plane.text.sec("Routines", Plane.routines(p), pre, now) ++ Plane.text.idle.k(idle, Plane.idle_n(p), Plane.idle(p), pre, now)
+    ++ Plane.text.machines.k(Nat.is_gt(List.length(&2, PMach, Plane.machines(p)), 1n), Plane.machines(p))
+
+# a hub's plane as text: this machine's (pre "") or, for another machine
+# asking, ids made its own with the link
+def Plane.read(+st: M.State, +now: Nat, +pre: String, +name: String, +idle: Bool) -> String:
+  Plane.text(Plane.of.st(st, now), pre, name, now, idle)
+
+# where the needle first starts in the text (the text's length when it does not)
+def Plane.text.at(t: String, +needle: String, +i: Nat, hit: Bool) -> Nat:
+  match t hit:
+    case _ True{}:
+      i
+    case SNil{} False{}:
+      i
+    case SCon{_, +rest} False{}:
+      Plane.text.at(rest, needle, 1n+i, String.starts_with(rest, needle))
+
+def Plane.text.pos(+t: String, +needle: String) -> Nat:
+  Plane.text.at(t, needle, 0n, String.starts_with(t, needle))
+
+# the latest and the earliest start of the rows of these ids ("- <id> ·")
+def Plane.text.last(rs: List<&2, PRow>, +t: String, +acc: Nat) -> Nat:
+  match rs:
+    case Nil{}:
+      acc
+    case PRow{_, +i, _, _, _, _, _, _, _, _} <> r:
+      Plane.text.last(r, t, M.Time.max(acc, Plane.text.pos(t, "- " ++ i ++ " ·")))
+
+def Plane.text.first(rs: List<&2, PRow>, +t: String, +acc: Nat) -> Nat:
+  match rs:
+    case Nil{}:
+      acc
+    case PRow{_, +i, _, _, _, _, _, _, _, _} <> r:
+      Plane.text.first(r, t, Bool.pick(Nat, Nat.is_le(acc, Plane.text.pos(t, "- " ++ i ++ " ·")), acc, Plane.text.pos(t, "- " ++ i ++ " ·")))
+
+# every need row is before every run row in the text (law plane_text_need_first)
+def Plane.text.need_first(+p: Plane, +now: Nat) -> Bool:
+  Nat.is_lt(Plane.text.last(Plane.need(p), Plane.text(p, "", "x", now, True{}), 0n), Plane.text.first(Plane.run(p), Plane.text(p, "", "x", now, True{}), String.length(Plane.text(p, "", "x", now, True{}))))

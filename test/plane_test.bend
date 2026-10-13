@@ -88,6 +88,11 @@ def main() -> IO(Unit):
     C.Check.str("every way to be need or run", PL.Plane.tally.words(PL.Plane.demo.rich(), 200000n), PL.Plane.counts(PL.Plane.of(PL.Plane.demo.rich(), 200000n)))
     C.Check.str("... is what it is", PL.Plane.counts(PL.Plane.of(PL.Plane.demo.rich(), 200000n)), "5 need you · 6 running")
     C.Check.str("a thread elsewhere counts", PL.Plane.tally.words(far(False{}), now()), "3 need you · 4 running")
+    C.Check.str("the plane as text, need first", PL.Plane.text(p, "", "this machine", now(), False{}),
+      "Status plane of this machine\nNeeds you (3)\n- t1 · approval · A · One · 16m ago\n- t2 · question · B · One · 15m ago\n- t3 · failed · C · One · 13m ago\nRunning (3)\n- b1 · working · Kit · 1m ago\n- t5 · queued · E · One · 10m ago\n- t4 · working · D · One · 11m ago\nBots (2)\n- b1 · work · Kit · working · 1m ago\n- b2 · sleep · Pip · 2d ago\nRooms with unread posts (1)\n- r1 · unread · ops · 1 unread · 3m ago\nRoutines (2)\n- rt1 · working · Digest · daily at 09:00 · next in 1h\n- rt2 · idle · Poll · every 15 minutes · next in 11m\nIdle in the last day: 1 (plane_read with idle: true lists them).\n")
+    C.Check.str("need before run in the text", Bool.show(PL.Plane.text.need_first(p, now())), "True")
+    C.Check.str("ids of another machine carry its link", Bool.show(String.contains(PL.Plane.text(p, "L", "desk", now(), True{}), "- L~t1 ")) ++ Bool.show(String.contains(PL.Plane.text(p, "L", "desk", now(), True{}), "- L~t6 ")), "TrueTrue")
+    C.Check.str("a hub reads its own plane", PL.Plane.read(M.State.replay(demo(), M.State.empty()), now(), "", "x", False{}), PL.Plane.text(PL.Plane.of(U.Ui.far.st(U.Ui.init(now()), M.State.replay(demo(), M.State.empty())), now()), "", "x", now(), False{}))
     C.Check.str("nothing to count", PL.Plane.counts(PL.Plane.of(U.Ui.far.st(U.Ui.init(now()), M.State.empty()), now())), "")
     C.Check.str("unread", Nat.show(U.Rooms.unread(ui(Nil{}), "r1")), "1")
     C.Check.str("seen", Nat.show(U.Rooms.unread(ui([M.SettingSet{"room.seen.r1", "199800", 199900n}]), "r1")), "0")

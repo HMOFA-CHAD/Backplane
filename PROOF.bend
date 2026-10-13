@@ -8345,3 +8345,18 @@ def Laws.plane_tally_counts():
 
 def Laws.plane_tally_counts_rich():
   {==}
+
+def Laws.plane_text_need_first():
+  {==}
+
+def Laws.plane_text_need_first_rich():
+  {==}
+
+def Laws.fmc_plan_plane_read_here():
+  {==}
+
+def Laws.fmc_plan_plane_read_unlinked_never_sent():
+  {==}
+
+def Laws.fmc_plane_read_allowed():
+  {==}

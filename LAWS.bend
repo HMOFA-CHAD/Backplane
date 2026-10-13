@@ -6842,3 +6842,21 @@ law plane_tally_counts:
 # also when threads are need or run by a pending tool, a queued message, background rows or a child task
 law plane_tally_counts_rich:
   {PLN.Plane.tally.same(PLN.Plane.demo.rich(), 200000n) == True{} : Bool}
+
+# plane_read: every need row comes before every run row in the text
+law plane_text_need_first:
+  {PLN.Plane.text.need_first(PLN.Plane.of(PLN.Plane.demo(), 200000n), 200000n) == True{} : Bool}
+
+law plane_text_need_first_rich:
+  {PLN.Plane.text.need_first(PLN.Plane.of(PLN.Plane.demo.rich(), 200000n), 200000n) == True{} : Bool}
+
+# plane_read names no machine: this hub reads its own; one it names (and none is linked) is never sent
+law fmc_plan_plane_read_here:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("plane_read", J.Json.obj(Nil{})), M.State.empty(), Nil{}, "t0")) == "here" : String}
+
+law fmc_plan_plane_read_unlinked_never_sent:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("plane_read", J.Json.obj([J.KV{"machine", J.Str{"beta"}}])), M.State.empty(), Nil{}, "t0")) == "answer" : String}
+
+# an owner takes plane_read from its machines
+law fmc_plane_read_allowed:
+  {FMC.Fm.allowed(Fx.ask("plane_read")) == True{} : Bool}
