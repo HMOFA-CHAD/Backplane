@@ -6993,10 +6993,11 @@ def Timeline.visible(settings: Bool, selected: Bool, thread: Bool) -> Bool:
     case _ _ _:
       False{}
 
+# (the uberbot with no tab picked shows its Status, not its chat)
 def Timeline.bot(m: Maybe<&2, BT.Bot>, +u: Ui) -> Bool:
   match m:
-    case Some{BT.Bot{_, _, +th, _, _, _, _}}:
-      Bool.or(Bool.not(String.eq(th, Ui.sel(u))), Bool.or(String.is_empty(Ui.scratch(u, "@btab")), String.eq(Ui.scratch(u, "@btab"), "chat")))
+    case Some{BT.Bot{+bid, _, +th, _, _, _, _}}:
+      Bool.or(Bool.not(String.eq(th, Ui.sel(u))), Bool.or(Bool.and(String.is_empty(Ui.scratch(u, "@btab")), Bool.not(UB.Uber.is(Ui.state.of(u), bid))), String.eq(Ui.scratch(u, "@btab"), "chat")))
     case None{}:
       True{}
 
