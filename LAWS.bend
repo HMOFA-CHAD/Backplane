@@ -98,6 +98,7 @@ import ./src/core/checks.bend as CHK
 import ./src/core/release.bend as REL
 import ./src/core/review.bend as RV
 import ./src/core/slash.bend as SL
+import ./src/core/agy.bend as AGY
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -6963,3 +6964,41 @@ law notice_report_quiet:
 # project (and the bot may send to it)
 law launch_send_launcher:
   {H.Lr.may(M.State.replay([M.ThreadLaunched{"t1", "tb", True{}, 1n}], M.State.empty()), "t1", "tb") == True{} : Bool}
+# Google Antigravity (core/agy.bend)
+# ----------------------------------
+
+law interrupt_antigravity_stops:
+  for +th: String
+  for r: String
+  {H.Stop.outs("antigravity", th, r) == [H.AgentStop{th}] : List<&2, H.Out>}
+
+# an Antigravity thread's turn is one run of Google's agent (over ACP)
+law antigravity_run_turn:
+  for +th: String
+  for +cwd: String
+  for +m: String
+  for +s: String
+  for +r: M.RuntimeMode
+  for i: M.InteractionMode
+  for +t: String
+  for u: String
+  {H.Hub.run.k(4n, th, cwd, "antigravity", m, s, r, i, t, u) == [H.AgyTurn{th, cwd, m, s, r, t}] : List<&2, H.Out>}
+
+# its permission modes: supervised asks, full access allows everything
+law agy_mode_supervised_asks:
+  {AGY.Agy.mode.k(0n) == "default" : String}
+
+law agy_mode_full_allows:
+  {AGY.Agy.mode.k(3n) == "yolo" : String}
+
+# an API key is the default sign-in, and a Google account carries Google's warning
+law agy_default_api_key:
+  {AGY.Agy.method("") == "gemini-api-key" : String}
+
+law agy_google_warns:
+  {AGY.Agy.note.k(3n) == AGY.Agy.warn() : String}
+
+# no address is ever fetched for a sign-in that did not ask
+law agy_callback_needs_signin:
+  for b: String
+  {AGY.Agy.callback.ok("", b) == False{} : Bool}

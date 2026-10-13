@@ -24,6 +24,7 @@ import ./review.bend as RVW
 import ./release.bend as REL
 import ./links.bend as LK
 import ./apikeys.bend as AK
+import ./agy.bend as AGY
 import ./diff.bend as DF
 import ./fm.bend as FM
 import ./onboard.bend as OB
@@ -3495,7 +3496,7 @@ def Effort.chips(+info: String, +provider: String, +model: String) -> List<&2, S
 # clients: a chip's value starting with "@" is a provider.
 
 def Chip.providers() -> List<&2, String>:
-  ["@claude", "@codex", "@grok", "@muse"]
+  ["@claude", "@codex", "@grok", "@muse", "@antigravity"]
 
 def Chip.all(+info: String, +provider: String, +model: String) -> List<&2, String>:
   List.append(&2, String, Chip.providers(), Effort.chips(info, provider, model))
@@ -7095,6 +7096,198 @@ def ApiKeys.dots(s: String) -> String:
     case SCon{_, t}:
       SCon{'•', ApiKeys.dots(t)}
 
+# Antigravity (core/agy.bend) in Settings: one list of rows all four
+# clients draw (each a label, a note, fields and buttons). The agent and
+# its accounts come from the models info ("agy"), the job in progress from
+# the hub's answer to this client ("agy.job"), the method and account from
+# the settings agy.auth and agy.account (an API key unless set; a Google
+# account carries Google's warning). Actions "agy-*" go to the hub as
+# bots.voice op "agy" (server.bend's AgyJob); a key goes to the API keys
+# file under the method's name (GEMINI_API_KEY or GOOGLE_API_KEY) and is
+# never kept in the client's state.
+
+type AgBtn is Data:
+  AgBtn{label: String, action: String, value: String, on: Bool}
+
+type AgField is Data:
+  AgField{name: String, hint: String, secret: Bool, value: String, enter: String}
+
+type AgRow is Data:
+  AgRow{label: String, note: String, fields: List<&2, AgField>, btns: List<&2, AgBtn>}
+
+def Agv.info(+u: Ui) -> J.Json:
+  J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(Ui.info(u, "models")), J.Null{}), "agy")
+
+def Agv.job(+u: Ui) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(Ui.info(u, "agy.job")), J.Null{})
+
+def Agv.method(+u: Ui) -> String:
+  AGY.Agy.method(M.Setting.get(Ui.state.of(u), "agy.auth", ""))
+
+def Agv.acct(+u: Ui) -> String:
+  AGY.Agy.acct(M.Setting.get(Ui.state.of(u), "agy.account", ""))
+
+def Agv.strs(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      J.Json.as_str(Some{x}, "") <> Agv.strs(t)
+
+def Agv.has(xs: List<&2, String>, +x: String) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case +h <> t:
+      Bool.or(String.eq(h, x), Agv.has(t, x))
+
+def Agv.accts(+u: Ui) -> List<&2, String>:
+  Agv.strs(J.Json.elems(J.Json.get_obj(Agv.info(u), "accts")))
+
+def Agv.signed(+u: Ui) -> Bool:
+  Agv.has(Agv.strs(J.Json.elems(J.Json.get_obj(Agv.info(u), "signed"))), Agv.acct(u))
+
+def Agv.busy(+u: Ui, +what: String) -> Bool:
+  Bool.and(String.eq(J.Json.get_str(Agv.job(u), "what", ""), what), String.eq(J.Json.get_str(Agv.job(u), "state", ""), "running"))
+
+def Agv.have(+u: Ui) -> String:
+  J.Json.get_str(Agv.info(u), "have", "")
+
+# what Settings says about the agent itself
+def Agv.install.note(+u: Ui) -> String:
+  Bool.pick(String, Agv.busy(u, "install"), J.Json.get_str(Agv.job(u), "msg", ""),
+    Bool.pick(String, String.eq(J.Json.get_str(Agv.job(u), "what", ""), "install"), J.Json.get_str(Agv.job(u), "msg", "") ++ " ", "")
+      ++ Bool.pick(String, Bool.not(String.is_empty(Agv.have(u))), "Google's own agent, Antigravity " ++ Agv.have(u) ++ ", installed. Backplane runs it; it signs in by itself.",
+        Bool.pick(String, Bool.not(String.is_empty(J.Json.get_str(Agv.info(u), "old", ""))), "Antigravity " ++ J.Json.get_str(Agv.info(u), "old", "") ++ " is installed; Backplane now pins " ++ AGY.Agy.version() ++ ".",
+          Bool.pick(String, J.Json.get_bool(Agv.info(u), "plat", True{}), "Not installed. Backplane downloads Google's agent (agy_acp_server " ++ AGY.Agy.version() ++ ", from the ACP registry, a few hundred MB) and checks its pinned SHA-256.",
+            "Google has no Antigravity build for this machine."))))
+
+def Agv.install.btns(+u: Ui) -> List<&2, AgBtn>:
+  Bool.pick(List<&2, AgBtn>, Bool.or(Agv.busy(u, "install"), Bool.not(J.Json.get_bool(Agv.info(u), "plat", True{}))), Nil{},
+    [AgBtn{Bool.pick(String, String.is_empty(Agv.have(u)), Bool.pick(String, String.is_empty(J.Json.get_str(Agv.info(u), "old", "")), "Install", "Update to " ++ AGY.Agy.version()), "Reinstall"),
+      "agy-install", "", String.is_empty(Agv.have(u))}])
+
+def Agv.methods(ms: List<&2, String>, +cur: String) -> List<&2, AgBtn>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case +m <> t:
+      AgBtn{AGY.Agy.label(m), "setting", "agy.auth=" ++ m, String.eq(m, cur)} <> Agv.methods(t, cur)
+
+# the key the method reads, from the API keys (names only)
+def Agv.key.row(+u: Ui) -> List<&2, AgRow>:
+  Bool.pick(List<&2, AgRow>, String.is_empty(AGY.Agy.key(Agv.method(u))), Nil{},
+    [AgRow{AGY.Agy.key(Agv.method(u)), Bool.pick(String, Agv.has(ApiKeys.names(u), AGY.Agy.key(Agv.method(u))), "Saved in API keys. Check it to list the models it offers.",
+        "Not saved yet. It goes to this machine's API keys file; no client shows it again."),
+      [AgField{"agykey", "Paste the key", True{}, Ui.scratch(u, "@f.agykey"), "agy-key"}],
+      [AgBtn{"Save key", "agy-key", "", False{}}, AgBtn{"Check", "agy-signin", "", True{}}]}])
+
+def Agv.gcp.note(+p: String, +l: String) -> String:
+  Bool.pick(String, Bool.and(String.is_empty(p), String.is_empty(l)), "Not set.", "Project " ++ AGY.Agy.or(p, "not set") ++ ", location " ++ AGY.Agy.or(l, "not set") ++ ".")
+
+def Agv.gcp.row(+u: Ui) -> List<&2, AgRow>:
+  Bool.pick(List<&2, AgRow>, Bool.not(AGY.Agy.gcp(Agv.method(u))), Nil{},
+    [AgRow{"Google Cloud project", Agv.gcp.note(M.Setting.get(Ui.state.of(u), "agy.gcp.project", ""), M.Setting.get(Ui.state.of(u), "agy.gcp.location", "")),
+      [AgField{"agyproj", "Project ID", False{}, Ui.scratch(u, "@f.agyproj"), "agy-gcp"}, AgField{"agyloc", "Location, e.g. us-central1", False{}, Ui.scratch(u, "@f.agyloc"), "agy-gcp"}],
+      [AgBtn{"Save", "agy-gcp", "", False{}}]}])
+
+def Agv.acct.btns(xs: List<&2, String>, +cur: String) -> List<&2, AgBtn>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +a <> t:
+      AgBtn{a, "setting", "agy.account=" ++ a, String.eq(a, cur)} <> Agv.acct.btns(t, cur)
+
+def Agv.accts.shown(+u: Ui) -> List<&2, String>:
+  Bool.pick(List<&2, String>, Agv.has(Agv.accts(u), Agv.acct(u)), Agv.accts(u), List.append(&2, String, Agv.accts(u), [Agv.acct(u)]))
+
+def Agv.google.row(+u: Ui) -> List<&2, AgRow>:
+  Bool.pick(List<&2, AgRow>, Bool.not(AGY.Agy.browser(Agv.method(u))), Nil{},
+    [AgRow{"Account", Agv.acct(u) ++ Bool.pick(String, Agv.signed(u), ": signed in. The agent keeps its own sign-in; Backplane never sees it.", ": not signed in."),
+      [AgField{"agyacct", "Another account's name", False{}, Ui.scratch(u, "@f.agyacct"), "agy-acct"}],
+      List.concat(&2, AgBtn, [Agv.acct.btns(Agv.accts.shown(u), Agv.acct(u)), [AgBtn{"Add account", "agy-acct", "", False{}}, AgBtn{"Sign in with Google", "agy-signin", "", True{}}],
+        Bool.pick(List<&2, AgBtn>, Agv.signed(u), [AgBtn{"Sign out", "agy-signout", Agv.acct(u), False{}}], Nil{}),
+        Bool.pick(List<&2, AgBtn>, Agv.has(Agv.accts(u), Agv.acct(u)), [AgBtn{"Remove", "agy-forget", Agv.acct(u), False{}}], Nil{})])}])
+
+def Agv.job.k(i: Nat, +u: Ui, +j: J.Json) -> List<&2, AgRow>:
+  match i:
+    case 0n:
+      [AgRow{"Sign-in", J.Json.get_str(j, "msg", ""), Nil{}, [AgBtn{"Cancel", "agy-cancel", "", False{}}]}]
+    case 1n:
+      [AgRow{"Sign-in", J.Json.get_str(j, "msg", ""), [AgField{"agyback", "Paste the address Google sent you to", False{}, Ui.scratch(u, "@f.agyback"), "agy-back"}],
+        [AgBtn{"Open Google's sign-in", "open-url", J.Json.get_str(j, "url", ""), True{}}, AgBtn{"Continue", "agy-back", "", False{}}, AgBtn{"Cancel", "agy-cancel", "", False{}}]}]
+    case 2n:
+      [AgRow{"Sign-in", J.Json.get_str(j, "msg", ""), Nil{}, Nil{}}]
+    case 3n:
+      [AgRow{"Sign-in failed", J.Json.get_str(j, "msg", ""), Nil{}, Nil{}}]
+    case _:
+      Nil{}
+
+# the sign-in in progress (or just finished): what it says, its link and
+# the field for Google's way back
+def Agv.job.row(+u: Ui) -> List<&2, AgRow>:
+  Bool.pick(List<&2, AgRow>, Bool.or(String.eq(J.Json.get_str(Agv.job(u), "what", ""), "signin"), String.eq(J.Json.get_str(Agv.job(u), "what", ""), "signout")),
+    Agv.job.k(C.Codec.pos(["running", "waiting", "done", "failed"], J.Json.get_str(Agv.job(u), "state", "")), u, Agv.job(u)), Nil{})
+
+# every row, in order
+def Agv.rows(+u: Ui) -> List<&2, AgRow>:
+  List.concat(&2, AgRow, [
+    [AgRow{"Antigravity", Agv.install.note(u), Nil{}, Agv.install.btns(u)},
+     AgRow{"Sign in with", AGY.Agy.note(Agv.method(u)), Nil{}, Agv.methods(AGY.Agy.methods(), Agv.method(u))}],
+    Agv.key.row(u), Agv.gcp.row(u), Agv.google.row(u), Agv.job.row(u)])
+
+def Agv.rpc(u: Ui, +what: String, kvs: List<&2, J.KV>) -> Act:
+  Voice.rpc(u, "agy", J.KV{"do", J.Str{what}} <> kvs)
+
+def Agv.signin(+u: Ui) -> Act:
+  Agv.rpc(u, "signin", [J.KV{"method", J.Str{Agv.method(u)}}, J.KV{"account", J.Str{Agv.acct(u)}},
+    J.KV{"project", J.Str{M.Setting.get(Ui.state.of(u), "agy.gcp.project", "")}}, J.KV{"location", J.Str{M.Setting.get(Ui.state.of(u), "agy.gcp.location", "")}}])
+
+def Agv.then.k(b: Act, cs: List<&2, Cmd>) -> Act:
+  match b:
+    case Act{u2, cs2}:
+      Act{u2, List.append(&2, Cmd, cs, cs2)}
+
+# a second setting after an action
+def Agv.then(a: Act, +kv: String) -> Act:
+  match a:
+    case Act{u, cs}:
+      Agv.then.k(Ui.setting(u, kv), cs)
+
+def Agv.gcp(+u: Ui) -> Act:
+  Agv.then(Ui.setting(Ui.scratch_set(Ui.scratch_set(u, "@f.agyproj", ""), "@f.agyloc", ""), "agy.gcp.project=" ++ AGY.Agy.or(String.trim(Ui.scratch(u, "@f.agyproj")), M.Setting.get(Ui.state.of(u), "agy.gcp.project", ""))),
+    "agy.gcp.location=" ++ AGY.Agy.or(String.trim(Ui.scratch(u, "@f.agyloc")), M.Setting.get(Ui.state.of(u), "agy.gcp.location", "")))
+
+def Agv.key(+u: Ui) -> Act:
+  Voice.rpc(Ui.scratch_set(u, "@f.agykey", ""), "api-add", [J.KV{"name", J.Str{AGY.Agy.key(Agv.method(u))}}, J.KV{"value", J.Str{String.trim(Ui.scratch(u, "@f.agykey"))}}])
+
+def Agv.act.k(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n:
+      Agv.rpc(u, "install", Nil{})
+    case 1n:
+      Agv.signin(u)
+    case 2n:
+      Agv.rpc(Ui.scratch_set(u, "@f.agyback", ""), "back", [J.KV{"url", J.Str{String.trim(Ui.scratch(u, "@f.agyback"))}}])
+    case 3n:
+      Agv.rpc(u, "cancel", Nil{})
+    case 4n:
+      Agv.rpc(u, "signout", [J.KV{"account", J.Str{value}}])
+    case 5n:
+      Agv.rpc(u, "forget", [J.KV{"account", J.Str{value}}])
+    case 6n:
+      Agv.key(u)
+    case 7n:
+      Agv.gcp(u)
+    case 8n:
+      Ui.setting(Ui.scratch_set(u, "@f.agyacct", ""), "agy.account=" ++ AGY.Agy.acct(Ui.scratch(u, "@f.agyacct")))
+    case _:
+      Agv.rpc(u, "status", Nil{})
+
+# an "agy-" action
+def Agv.act(+u: Ui, +action: String, +value: String) -> Act:
+  Agv.act.k(C.Codec.pos(["agy-install", "agy-signin", "agy-back", "agy-cancel", "agy-signout", "agy-forget", "agy-key", "agy-gcp", "agy-acct"], action), u, value)
+
 # past the phone's upload: the viewer's history (Hs.act, from 31)
 def Upload.rest(hist: Bool, +i: Nat, +u: Ui, +value: String) -> Act:
   match hist:
@@ -8520,12 +8713,20 @@ def Ui.act.r(rv: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Ui.act.u(Nat.is_lt(C.Codec.pos(["uber-promote", "uber-new"], action), 2n), u, action, value)
 
+# (Antigravity's "agy-" actions route before the rest too: Agv.act)
+def Ui.act.g(agy: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match agy:
+    case True{}:
+      Agv.act(u, action, value)
+    case False{}:
+      Ui.act.r(String.starts_with(action, "rv-"), u, action, value)
+
 def Ui.act.s(close: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match close:
     case True{}:
       Skills.close(u)
     case False{}:
-      Ui.act.r(String.starts_with(action, "rv-"), u, action, value)
+      Ui.act.g(String.starts_with(action, "agy-"), u, action, value)
 
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
   Rc.sync.of(Ui.act.s(String.eq(action, "skill-close"), u, action, value))

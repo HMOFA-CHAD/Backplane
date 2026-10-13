@@ -1097,7 +1097,7 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
   J.Json.obj([J.KV{"rows", J.Json.arr(List.append(&2, J.Json, List.append(&2, J.Json, [
     Mob.set.row(Mob.set.days.label(M.Setting.get(st, "settle.days", "3")), "Threads idle this long move to Settled. They stay saved.", Mob.set.days(M.Setting.get(st, "settle.days", "3"))),
     Mob.set.row("Continue after a restart", "Turns a restart cuts short go on by themselves.", Mob.set.chips(["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue")),
-    Mob.set.row("Provider for new threads", Bool.pick(String, String.is_empty(U.Models.cli(models, prov)), prov ++ " is not installed", U.Models.cli(models, prov)), Mob.set.chips(["claude", "codex", "grok", "muse"], prov, "agent.provider")),
+    Mob.set.row("Provider for new threads", Bool.pick(String, String.is_empty(U.Models.cli(models, prov)), prov ++ " is not installed", U.Models.cli(models, prov)), Mob.set.chips(["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider")),
     Mob.set.row("Model for new threads", Bool.pick(String, String.is_empty(model), "default", model) ++ ": " ++ U.Models.label_of(models, prov, model), Mob.set.chips("" <> U.Models.list(models, prov), model, "agent.model")),
     Mob.set.row(U.KiCad.cli.label(nf), U.KiCad.cli.note(nf), Bool.pick(List<&2, J.Json>, String.is_empty(U.Str.get(nf, "kicad.fork")), [Mob.set.btn("Install Backplane KiCad", "kicad-install", "", False{})], Nil{})),
     Mob.set.row(U.FreeCAD.label(nf), U.FreeCAD.note(nf), Nil{}),
@@ -1109,6 +1109,32 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
     Mob.set.row("Update channel", "Stable takes releases; nightly also takes the daily builds.", Mob.set.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
     Mob.set.row("Backplane " ++ v, U.Update.line.w(st, nf, note), Mob.update.btn(U.Update.btn(st, nf, note)))])), more))}])
 
+# Antigravity (client.bend's Agv.rows), as every client draws them: a
+# button "open-url" the app opens in the browser itself
+def Mob.agy.btns(bs: List<&2, U.AgBtn>) -> List<&2, J.Json>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case U.AgBtn{+l, +a, +v, on} <> t:
+      Mob.set.btn(l, a, v, on) <> Mob.agy.btns(t)
+
+def Mob.agy.fields(fs: List<&2, U.AgField>) -> List<&2, J.Json>:
+  match fs:
+    case Nil{}:
+      Nil{}
+    case U.AgField{+n, +h, sec, +v, _} <> t:
+      Mob.set.field(n, h, sec, v) <> Mob.agy.fields(t)
+
+def Mob.agy.rows(rs: List<&2, U.AgRow>) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.AgRow{+l, +n, fs, bs} <> t:
+      Mob.set.row.f(l, n, Mob.agy.fields(fs), Mob.agy.btns(bs)) <> Mob.agy.rows(t)
+
+def Mob.agy(+u: U.Ui) -> List<&2, J.Json>:
+  Mob.agy.rows(U.Agv.rows(u))
+
 def Mob.settings.k(+u: U.Ui, more: List<&2, J.Json>) -> J.Json:
   match u:
     case U.Ui{+st, _, _, _, _, _, _, _, _, +v, _, _, _, +note, +nf, _, _}:
@@ -1118,7 +1144,7 @@ def Mob.settings.k(+u: U.Ui, more: List<&2, J.Json>) -> J.Json:
 def Mob.settings(open: Bool, +u: U.Ui) -> J.Json:
   match open:
     case True{}:
-      Mob.settings.k(u, List.append(&2, J.Json, Mob.keys(u), [Mob.set.row("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [Mob.set.btn("Show the tour", "ob-open", "", False{})])]))
+      Mob.settings.k(u, List.concat(&2, J.Json, [Mob.keys(u), Mob.agy(u), [Mob.set.row("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [Mob.set.btn("Show the tour", "ob-open", "", False{})])]]))
     case False{}:
       J.Null{}
 

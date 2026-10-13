@@ -271,6 +271,12 @@ final class AppModel {
     }
 
     func act(_ action: String, _ value: String = "") {
+        // a web address a settings row offers (Antigravity's sign-in):
+        // opened in the browser here, never sent to the engine
+        if action == "open-url" {
+            if let u = URL(string: value), u.scheme == "https" || u.scheme == "http" { UIApplication.shared.open(u) }
+            return
+        }
         if Self.opens.contains(action) { tapped = value }
         run { await $0.act(action, value) }
     }
