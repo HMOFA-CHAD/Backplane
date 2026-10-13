@@ -3,3 +3,5 @@
 function gf_baked(name) {
   return "";
 }
+
+io_eff(CID(Gf.baked), gf_baked);

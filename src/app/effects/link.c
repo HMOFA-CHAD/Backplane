@@ -11,7 +11,7 @@
 #define MSG_NOSIGNAL 0
 #endif
 
-#ifdef CID_LINK_CONNECT
+#ifdef CID(Link.connect)
 
 typedef struct {
   char* host;
@@ -128,11 +128,11 @@ Term link_connect_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) link_connect_use(void) {
-  io_eff(CID_LINK_CONNECT, link_connect_run, 0);
+  io_eff(CID(Link.connect), link_connect_run);
 }
 #endif
 
-#ifdef CID_LINK_POLL
+#ifdef CID(Link.poll)
 static Term link_poll_end(Env e, IoWork* w, Term result) {
   free(w->data);
   return io_tup(e, io_hand(w->hand), result);
@@ -140,7 +140,7 @@ static Term link_poll_end(Env e, IoWork* w, Term result) {
 
 static Term link_poll_more(Env e, IoWork* w) {
   int fd = (int)w->hand;
-  u64 deadline = io_wait_time(w);
+  u64 deadline = w->time;
   ssize_t n = recv(fd, w->data, (size_t)w->made, 0);
   if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
     return io_tick() < deadline ? io_wait_on(w, fd, POLLIN, deadline, link_poll_more)
@@ -160,6 +160,6 @@ Term link_poll_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) link_poll_use(void) {
-  io_eff(CID_LINK_POLL, link_poll_run, 0);
+  io_eff(CID(Link.poll), link_poll_run);
 }
 #endif

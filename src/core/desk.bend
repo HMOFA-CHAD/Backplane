@@ -21,20 +21,20 @@ def Desk.beat() -> Nat:
 # one client's look: whether it is a desk at all, the thread it shows,
 # whether it has the focus, and when it last said so (the hub's clock)
 type Look is Data:
-  Look{desk: Bool, thread: String, focused: Bool, at: Nat}
+  DeskView{desk: Bool, thread: String, focused: Bool, at: Nat}
 
 # a client that never said desk.look (a phone)
 def Look.none() -> Look:
-  Look{False{}, "", False{}, 0n}
+  DeskView{False{}, "", False{}, 0n}
 
 def Look.at(l: Look) -> Nat:
   match l:
-    case Look{_, _, _, a}:
+    case DeskView{_, _, _, a}:
       a
 
 def Look.desk(l: Look) -> Bool:
   match l:
-    case Look{d, _, _, _}:
+    case DeskView{d, _, _, _}:
       d
 
 def Look.sees.k(focused: Bool, +th: String, +at: Nat, +thread: String, +now: Nat) -> Bool:
@@ -47,14 +47,14 @@ def Look.sees.k(focused: Bool, +th: String, +at: Nat, +thread: String, +now: Nat
 # does this look watch thread now
 def Look.sees(l: Look, +thread: String, +now: Nat) -> Bool:
   match l:
-    case Look{True{}, +th, f, +at}:
+    case DeskView{True{}, +th, f, +at}:
       Look.sees.k(f, th, at, thread, now)
-    case Look{False{}, _, _, _}:
+    case DeskView{False{}, _, _, _}:
       False{}
 
 # a desk.look request's params, stamped now
 def Look.of(+p: J.Json, +now: Nat) -> Look:
-  Look{True{}, J.Json.get_str(p, "thread", ""), J.Json.get_bool(p, "focused", False{}), now}
+  DeskView{True{}, J.Json.get_str(p, "thread", ""), J.Json.get_bool(p, "focused", False{}), now}
 
 # every client's look, with its id
 type At is Data:
@@ -76,7 +76,7 @@ def Desk.thread.k(sees: Bool, +th: String, rest: List<&2, String>) -> List<&2, S
 
 def Desk.look.thread(l: Look) -> String:
   match l:
-    case Look{_, th, _, _}:
+    case DeskView{_, th, _, _}:
       th
 
 def Desk.threads.go(xs: List<&2, At>, +now: Nat) -> List<&2, String>:
@@ -95,7 +95,7 @@ def Desk.text(xs: List<&2, At>, +now: Nat) -> String:
 def Desk.lead.k(later: Bool, +c: U32, +at: Nat, best: Maybe<&2, At>) -> Maybe<&2, At>:
   match later:
     case True{}:
-      Some{At{c, Look{True{}, "", False{}, at}}}
+      Some{At{c, DeskView{True{}, "", False{}, at}}}
     case False{}:
       best
 

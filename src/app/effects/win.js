@@ -32,3 +32,15 @@ function win_pasted(win) {
 function win_dropped(win) {
   return io_tup(win, "");
 }
+
+io_eff(CID(Win.open), win_open);
+io_eff(CID(Win.words), win_words);
+io_eff(CID(Win.present), win_present);
+io_eff(CID(Win.show), win_show);
+io_eff(CID(Win.copy), win_copy);
+io_eff(CID(Win.paste), win_paste);
+io_eff(CID(Win.pasted), win_pasted);
+io_eff(CID(Win.dropped), win_dropped);
+io_eff(CID(Win.size), win_size);
+io_eff(CID(Win.twin), win_twin);
+io_eff(CID(Win.title), win_title);

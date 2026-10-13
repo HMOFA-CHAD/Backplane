@@ -16,7 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef CID_GF_BAKED
+#ifdef CID(Gf.baked)
 
 Term gf_baked_run(Env e, Term* f, IoWork* w) {
   u64 len = 0;
@@ -32,7 +32,7 @@ Term gf_baked_run(Env e, Term* f, IoWork* w) {
 }
 
 static void __attribute__((constructor)) gf_baked_use(void) {
-  io_eff(CID_GF_BAKED, gf_baked_run, 0);
+  io_eff(CID(Gf.baked), gf_baked_run);
 }
 
 #endif

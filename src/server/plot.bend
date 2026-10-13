@@ -67,12 +67,12 @@ def Pv.fuel() -> Nat:
 
 def Pv.say(+out: Chan(POut), +client: U32, text: String) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(POut, out, POut{client, text})
+    ok : Result<&1, &1, POut, Unit> <- Chan.send(POut, out, POut{client, text})
     return Unit{}
 
 def Pv.bin(+out: Chan(POut), +client: U32, bs: List<&2, U32>) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(POut, out, PBin{client, bs})
+    ok : Result<&1, &1, POut, Unit> <- Chan.send(POut, out, PBin{client, bs})
     return Unit{}
 
 # Sources
@@ -704,7 +704,7 @@ def Pv.got.err(r: PR.Ran) -> String:
 def Pv.read.k(sm: U32 & U32, +r: PR.Ran, +key: String, +kind: U32, +q: Chan(PMsg)) -> IO(Unit):
   (sz, mt) = sm
   do IO<Unit>:
-    ok : Bool <- Chan.send(PMsg, q, PGot{key, sz, mt, Pv.got.ran(r, kind), Pv.got.err(r)})
+    ok : Result<&1, &1, PMsg, Unit> <- Chan.send(PMsg, q, PGot{key, sz, mt, Pv.got.ran(r, kind), Pv.got.err(r)})
     return Unit{}
 
 # read and plot a file in a child process (the stamp is taken first, so a
@@ -834,7 +834,7 @@ def Pv.poll(ss: List<&2, Src>, +q: Chan(PMsg), +dir: String) -> IO(List<&2, Src>
 def Pv.later(+q: Chan(PMsg)) -> IO(Unit):
   do IO<Unit>:
     IO.sleep(150)
-    ok : Bool <- Chan.send(PMsg, q, PPoll{})
+    ok : Result<&1, &1, PMsg, Unit> <- Chan.send(PMsg, q, PPoll{})
     return Unit{}
 
 # the next poll, while anything is watched
@@ -872,7 +872,7 @@ def Pv.start(polling: Bool, +q: Chan(PMsg)) -> IO(Bool):
       IO.pure(Bool, True{})
     case False{}:
       do IO<Bool>:
-        ok : Bool <- Chan.send(PMsg, q, PPoll{})
+        ok : Result<&1, &1, PMsg, Unit> <- Chan.send(PMsg, q, PPoll{})
         return True{}
 
 def Pv.none(+kind: U32) -> String:

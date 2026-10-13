@@ -5,8 +5,8 @@
 # The iOS app is built on a Mac: mobile/ios/build.sh (see mobile/README.md).
 set -eu
 cd "$(dirname "$0")/.."
-out=$(bend src/mobile/app.bend --check-only 2>&1) || { echo "$out"; exit 1; }
-case $out in *"All terms check"*) ;; *) echo "$out"; exit 1 ;; esac
+. scripts/bendok.sh
+bend_check src/mobile/app.bend || exit 1
 rm -rf build/mobile-web
 bend src/mobile/index.html -o build/mobile-web >/dev/null
 mkdir -p mobile/build/assets

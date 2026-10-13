@@ -233,7 +233,7 @@ def Fvs.lane(ls: List<&2, String>, +home: String, +link: String, +url: String, +
 def Fvs.lane.job(ls: List<&2, String>, +home: String, +link: String, +url: String, +thread: String, +cache: String, +out: Chan(List<&2, String>)) -> IO(Unit):
   do IO<Unit>:
     +r : List<&2, String> <- Fvs.lane(ls, home, link, url, thread, cache)
-    ok : Bool <- Chan.send(List<&2, String>, out, r)
+    ok : Result<&1, &1, List<&2, String>, Unit> <- Chan.send(List<&2, String>, out, r)
     return Unit{}
 
 def Fvs.pick.k(mine: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:

@@ -85,6 +85,12 @@ def shows(+hs: H.Hubs, +key: String, +o: J.Json) -> Bool:
 def cat(+look: Nat, +mood: String) -> String:
   J.Json.show(MB.MBots.rig(look, mood))
 
+# A value of each Json constructor, for wire.js: bend 2.0.36 tags a module's
+# constructors with their file ("../core/json.Str"), so the JavaScript that
+# builds Json learns the tags from Bend instead of spelling them.
+def json_tags() -> J.Json:
+  J.Arr{J.Item{J.Null{}, J.Item{J.Flag{False{}}, J.Item{J.Num{"0"}, J.Item{J.Str{""}, J.Item{J.Obj{J.Field{"", J.Null{}, J.End{}}}, J.End{}}}}}}}
+
 def cbor_keys() -> List<&2, String>:
   CB.Cbor.keys()
 

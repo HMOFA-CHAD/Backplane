@@ -60,7 +60,7 @@ type Cmd is Data:
   Send{text: String}
   Copy{text: String}
   Focus{id: String}
-  Scroll{}
+  ScrollEnd{}
   # talk to another machine's hub ("" is this machine's own)
   Connect{url: String}
   # a thread's draft as it now is: the host writes it down at once (a file,
@@ -1021,7 +1021,7 @@ def Ui.send.t(u: Ui, text: String, +mode: String) -> Act:
   match u:
     case Ui{st, +sel, dr, live, op, on, +now, ad, pa, v, +rid, w, er, note, +nf, ob, tr}:
       Ui.also(Ui.rpc.keep(Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, sel, ""), "@att:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr},
-        "turn.start", [J.KV{"thread", J.Str{sel}}, J.KV{"text", J.Str{text}}, J.KV{"msg", J.Str{Ui.msg_id(Str.get(nf, "cid"), now, rid)}}, J.KV{"mode", J.Str{mode}}]), List.append(&2, Cmd, Draft.keep(sel, ""), [Scroll{}]))
+        "turn.start", [J.KV{"thread", J.Str{sel}}, J.KV{"text", J.Str{text}}, J.KV{"msg", J.Str{Ui.msg_id(Str.get(nf, "cid"), now, rid)}}, J.KV{"mode", J.Str{mode}}]), List.append(&2, Cmd, Draft.keep(sel, ""), [ScrollEnd{}]))
 
 # the add form shut (the folder goes to Proj.adding)
 def Ui.add_project(u: Ui) -> Ui:
@@ -1154,7 +1154,7 @@ def Ui.reselect(+old: String, +u: Ui) -> Ui:
 
 # (Ui.act brings the thread's own panel); a thread chosen leaves Settings
 def Ui.select(u: Ui, +id: String) -> Act:
-  Act{Ui.flag_off(Ui.select.k(u, id), "settings"), [Focus{"composer"}, Scroll{}]}
+  Act{Ui.flag_off(Ui.select.k(u, id), "settings"), [Focus{"composer"}, ScrollEnd{}]}
 
 def Ui.reselect.act(+old: String, a: Act) -> Act:
   match a:
@@ -5185,7 +5185,7 @@ def Bots.say.clear(u: Ui) -> Ui:
       Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, sel, ""), "@att:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
 
 def Bots.say(u: Ui, +bot: String, text: String) -> Act:
-  Ui.also(Ui.rpc.keep.msg(Bots.say.clear(u), "bots.say", [J.KV{"bot", J.Str{bot}}, J.KV{"text", J.Str{text}}]), [Scroll{}])
+  Ui.also(Ui.rpc.keep.msg(Bots.say.clear(u), "bots.say", [J.KV{"bot", J.Str{bot}}, J.KV{"text", J.Str{text}}]), [ScrollEnd{}])
 
 def Ui.send.b(empty: Bool, b: Maybe<&2, BT.Bot>, u: Ui, text: String, +mode: String) -> Act:
   match empty b:
@@ -5244,7 +5244,7 @@ def Bots.views(u: Ui, +bot: String, +room: String, +remote: String) -> Ui:
 def Bots.select.k(m: Maybe<&2, BT.Bot>, u: Ui) -> Act:
   match m:
     case Some{BT.Bot{+i, _, +th, _, _, _, _}}:
-      Act{Ui.flag_off(Bots.views(Bots.sel.set(u, th), i, "", ""), "settings"), [Focus{"composer"}, Scroll{}]}
+      Act{Ui.flag_off(Bots.views(Bots.sel.set(u, th), i, "", ""), "settings"), [Focus{"composer"}, ScrollEnd{}]}
     case None{}:
       Act{u, Nil{}}
 
@@ -5274,7 +5274,7 @@ def Rooms.mark(+n: Nat, a: Act, +id: String) -> Act:
       Rooms.mark.go(a, id)
 
 def Bots.room.select(+u: Ui, +id: String) -> Act:
-  Rooms.mark(Rooms.unread(u, id), Act{Ui.flag_off(Bots.views(u, "", id, ""), "settings"), [Focus{"room-post"}, Scroll{}]}, id)
+  Rooms.mark(Rooms.unread(u, id), Act{Ui.flag_off(Bots.views(u, "", id, ""), "settings"), [Focus{"room-post"}, ScrollEnd{}]}, id)
 
 # A bot elsewhere on one of the owner's machines opens there: the window
 # switches to that machine's hub and shows the bot with all its tabs (its
@@ -5483,7 +5483,7 @@ def Mate.lead(+u: Ui) -> String:
     "Projects and threads on these machines sync into this sidebar in the background, so you never have to switch. Turn one off to keep it apart.")
 
 def Far.chat(u: Ui, +id: String) -> Act:
-  Act{Bots.views(u, "", "", id), [Focus{"remote-send"}, Scroll{}]}
+  Act{Bots.views(u, "", "", id), [Focus{"remote-send"}, ScrollEnd{}]}
 
 # "name\u001ftext": a form field
 def Bots.bfield.k(ps: List<&2, String>, u: Ui) -> Ui:
@@ -5598,7 +5598,7 @@ def Bots.room.post.k(empty: Bool, +u: Ui) -> Act:
     case True{}:
       Act{u, Nil{}}
     case False{}:
-      Ui.also(Ui.rpc.keep.msg(Ui.scratch_set(u, "@f.rpost", ""), "bots.post", [J.KV{"room", J.Str{Ui.scratch(u, "@room")}}, J.KV{"text", J.Str{Bots.field(u, "rpost")}}]), [Scroll{}])
+      Ui.also(Ui.rpc.keep.msg(Ui.scratch_set(u, "@f.rpost", ""), "bots.post", [J.KV{"room", J.Str{Ui.scratch(u, "@room")}}, J.KV{"text", J.Str{Bots.field(u, "rpost")}}]), [ScrollEnd{}])
 
 def Bots.room.post(+u: Ui) -> Act:
   Bots.room.post.k(String.is_empty(String.trim(Bots.field(u, "rpost"))), u)
@@ -5608,7 +5608,7 @@ def Bots.remote.send.k(empty: Bool, +u: Ui) -> Act:
     case True{}:
       Act{u, Nil{}}
     case False{}:
-      Ui.also(Ui.rpc.keep.msg(Ui.scratch_set(u, "@f.rtext", ""), "bots.tell", [J.KV{"to", J.Str{Ui.scratch(u, "@remote")}}, J.KV{"text", J.Str{Bots.field(u, "rtext")}}]), [Scroll{}])
+      Ui.also(Ui.rpc.keep.msg(Ui.scratch_set(u, "@f.rtext", ""), "bots.tell", [J.KV{"to", J.Str{Ui.scratch(u, "@remote")}}, J.KV{"text", J.Str{Bots.field(u, "rtext")}}]), [ScrollEnd{}])
 
 def Bots.remote.send(+u: Ui) -> Act:
   Bots.remote.send.k(String.is_empty(String.trim(Bots.field(u, "rtext"))), u)
@@ -7406,7 +7406,7 @@ def Page.earlier(+u: Ui, +value: String) -> Ui:
 def Bots.tab.with(a: Act) -> Act:
   match a:
     case Act{u, cs}:
-      Act{u, Scroll{} <> cs}
+      Act{u, ScrollEnd{} <> cs}
 
 # a bot's tab; Settings asks Google's status too, so the accounts signed
 # in (perhaps in a browser since) are the hub's
@@ -7415,7 +7415,7 @@ def Bots.tab.k(settings: Bool, u: Ui) -> Act:
     case True{}:
       Bots.tab.with(Bots.google.rpc(u, "status", ""))
     case False{}:
-      Act{u, [Scroll{}]}
+      Act{u, [ScrollEnd{}]}
 
 def Bots.act(i: Nat, +u: Ui, +value: String) -> Act:
   match i:

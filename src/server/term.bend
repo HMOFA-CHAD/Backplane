@@ -41,11 +41,11 @@ def Term.emit.k(emb: Bool, +q: Chan(TMsg), +out: Chan(TOut), +thread: String, +p
   match emb:
     case True{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(TMsg, q, TFed{thread, pid, bs})
+        ok : Result<&1, &1, TMsg, Unit> <- Chan.send(TMsg, q, TFed{thread, pid, bs})
         return Unit{}
     case False{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(TOut, out, TOut{thread, bs})
+        ok : Result<&1, &1, TOut, Unit> <- Chan.send(TOut, out, TOut{thread, bs})
         return Unit{}
 
 # a chat terminal's bytes go through the actor first
@@ -63,7 +63,7 @@ def Term.end(s: Socket, +thread: String, +pid: U32, +q: Chan(TMsg), +out: Chan(T
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
     Term.emit(q, out, thread, pid, U.Utf8.encode("\r\n[process exited " ++ U32.show(code) ++ "]\r\n"))
-    ok : Bool <- Chan.send(TMsg, q, TGone{thread, pid, code})
+    ok : Result<&1, &1, TMsg, Unit> <- Chan.send(TMsg, q, TGone{thread, pid, code})
     return Unit{}
 
 # Reading a shell
@@ -177,7 +177,7 @@ def Term.send.go(ts: List<&2, Term>, hit: Bool, +thread: String, bs: List<&2, U3
   match ts hit:
     case Term{_, i, _, _, _} <> _ True{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(List<&2, U32>, i, bs)
+        ok : Result<&1, &1, List<&2, U32>, Unit> <- Chan.send(List<&2, U32>, i, bs)
         return Unit{}
     case _ <> +rest False{}:
       Term.send.go(rest, Term.hit(rest, thread), thread, bs)
@@ -455,7 +455,7 @@ def Et.ran(m: Maybe<&2, Term>, +ts: List<&2, Term>, +es: List<&2, ETerm>, +key: 
 def Et.spawn(+ts: List<&2, Term>, +es: List<&2, ETerm>, +key: String, +ti: String, +cwd: String, +cmd: String, +c: U32, +r: U32, +shell: String,
     +q: Chan(TMsg), +out: Chan(TOut), k: TS -> IO(Unit)) -> IO(Unit):
   do IO<Unit>:
-    ok : Bool <- Chan.send(TOut, out, TTo{Et.all(), key, c, r, Nil{}})
+    ok : Result<&1, &1, TOut, Unit> <- Chan.send(TOut, out, TTo{Et.all(), key, c, r, Nil{}})
     res : Result<&1, &1, U32 & String, U32 & Socket> <- PT.Pty.spawn(shell, ["-lc", E.Emb.script(cmd, shell)], cwd, c, r)
     mt : Maybe<&2, Term> <- Term.spawned(res, key, c, r, q, out)
     k(Et.ran(mt, ts, es, key, ti, c, r))
@@ -483,7 +483,7 @@ def Et.fed.k(same: Bool, +ts: List<&2, Term>, +es: List<&2, ETerm>, +key: String
       +v2 = VT.Vt.feed(v, bs)
       do IO<Unit>:
         Term.reply(ts, key, VT.Vt.replies(v2))
-        ok : Bool <- Chan.send(TOut, out, TOut{key, bs})
+        ok : Result<&1, &1, TOut, Unit> <- Chan.send(TOut, out, TOut{key, bs})
         k(TS{ts, Et.put(es, ETerm{key, ti, VT.Vt.drain(v2), Et.stays(seen, st), E.Emb.after(st, bs), pid})})
     case False{}:
       k(TS{ts, es})
@@ -522,11 +522,11 @@ def Et.snap.k(m: Maybe<&2, ETerm>, +client: U32, +key: String, +out: Chan(TOut))
   match m:
     case Some{ETerm{_, _, +v, _, _, _}}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(TOut, out, TTo{client, key, VT.Vt.cols(v), VT.Vt.rows(v), E.Emb.snap(v)})
+        ok : Result<&1, &1, TOut, Unit> <- Chan.send(TOut, out, TTo{client, key, VT.Vt.cols(v), VT.Vt.rows(v), E.Emb.snap(v)})
         return Unit{}
     case None{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(TOut, out, TTo{client, key, E.Emb.cols(0), E.Emb.rows(0), Nil{}})
+        ok : Result<&1, &1, TOut, Unit> <- Chan.send(TOut, out, TTo{client, key, E.Emb.cols(0), E.Emb.rows(0), Nil{}})
         return Unit{}
 
 def Et.state(+e: ETerm) -> String:
@@ -538,11 +538,11 @@ def Et.read.k(m: Maybe<&2, ETerm>, +reply: Chan(String)) -> IO(Unit):
   match m:
     case Some{+e}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(String, reply, Et.state(e) ++ "\n" ++ Et.report(e))
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, Et.state(e) ++ "\n" ++ Et.report(e))
         return Unit{}
     case None{}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(String, reply, "gone\n")
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, "gone\n")
         return Unit{}
 
 def Et.seen(m: Maybe<&2, ETerm>, es: List<&2, ETerm>) -> List<&2, ETerm>:
@@ -595,7 +595,7 @@ def Term.step(m: Maybe<&1, TMsg>, st: TS, +shell: String, +home: String, +q: Cha
       IO.bind(List<&2, ETerm>, Unit, Et.load(es, home, key), e2 => Et.readed(e2, ts, key, reply, k))
     case Some{TNote{+th, +reply}} TS{ts, +es}:
       do IO<Unit>:
-        ok : Bool <- Chan.send(String, reply, E.Emb.note(Et.reports(es, "x:" ++ th ++ ":")))
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, E.Emb.note(Et.reports(es, "x:" ++ th ++ ":")))
         k(TS{ts, Et.mark(es, "x:" ++ th ++ ":")})
     case Some{TKill{+key}} TS{+ts, +es}:
       IO.bind(Unit, Unit, Term.kill(Term.pid(ts, key)), u => k(TS{ts, Et.stopping(Et.find(es, key), es)}))

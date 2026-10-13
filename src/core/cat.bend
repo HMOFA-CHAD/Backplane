@@ -41,7 +41,7 @@ type Part is Data:
 # pattern: 0 solid, 1 tabby, 2 light chest, 3 tuxedo / bicolour, 4 pointed,
 # 5 calico
 type Look is Data:
-  Look{index: Nat, coat: String, pat: U32, fur: U32, fur2: U32, light: U32, ear: U32, nose: U32, eye: U32, eye2: U32, line: U32, whisk: U32, collar: U32}
+  CatLook{index: Nat, coat: String, pat: U32, fur: U32, fur2: U32, light: U32, ear: U32, nose: U32, eye: U32, eye2: U32, line: U32, whisk: U32, collar: U32}
 
 type Coat is Data:
   Coat{name: String, pat: U32, fur: String, fur2: String, light: String, ear: String, nose: String, eye: String, eye2: String, line: String, whisk: String}
@@ -137,7 +137,7 @@ def Cat.look.index(+seed: Nat) -> Nat:
 def Cat.look.k(+i: Nat, c: Coat, +collar: String) -> Look:
   match c:
     case Coat{name, +pat, fur, fur2, light, ear, nose, eye, eye2, line, whisk}:
-      Look{i, name, pat, Cat.hex(fur), Cat.hex(fur2), Cat.hex(light), Cat.hex(ear), Cat.hex(nose), Cat.hex(eye), Cat.hex(eye2), Cat.hex(line), Cat.hex(whisk), Cat.hex(collar)}
+      CatLook{i, name, pat, Cat.hex(fur), Cat.hex(fur2), Cat.hex(light), Cat.hex(ear), Cat.hex(nose), Cat.hex(eye), Cat.hex(eye2), Cat.hex(line), Cat.hex(whisk), Cat.hex(collar)}
 
 def Cat.look(+seed: Nat) -> Look:
   +i = Cat.look.index(seed)
@@ -508,7 +508,7 @@ def Cat.extras(+m: U32) -> List<&2, Part>:
 
 def Cat.rig.k(lk: Look, +m: U32) -> List<&2, Part>:
   match lk:
-    case Look{_, _, +pat, +fur, +fur2, +light, +ear, +nose, +eye, +eye2, +line, +whisk, +collar}:
+    case CatLook{_, _, +pat, +fur, +fur2, +light, +ear, +nose, +eye, +eye2, +line, +whisk, +collar}:
       +all = Cat.g.all(m)
       +head = Cat.ext(Anim, all, Cat.g.head(m))
       +pc = Cat.pc(pat, 3, light, Cat.pc(pat, 4, fur2, fur))
