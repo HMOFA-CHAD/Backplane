@@ -466,6 +466,12 @@ struct Tour: Decodable, Equatable {
     let step, count: Int
     let counter, title, body, next, back, skip: String
     let first: Bool
+    // the uberbot step's buttons: each sends its action and value as they are
+    let choices: [TourChoice]
+}
+
+struct TourChoice: Decodable, Equatable {
+    let label, action, value: String
 }
 
 // a thread being renamed: its id, the alert's title, the title so far, the
@@ -567,7 +573,7 @@ struct ProviderChoice: Decodable, Hashable {
 }
 
 struct NewBot: Decodable {
-    let name, persona, provider: String
+    let name, hint, persona, provider: String
     let providers: [ProviderChoice]
 }
 
@@ -675,6 +681,9 @@ struct Screen: Decodable {
     let rowMenu: RowMenu?
     let bots: [BotRow]
     let rooms: [RoomRow]
+    // the uberbot's card and the status plane (Plane.swift); none without an uberbot
+    let uber: UberCard?
+    let plane: PlaneModel?
     let newBot: NewBot?
     let newRoom: NewRoom?
     let bot: BotView?

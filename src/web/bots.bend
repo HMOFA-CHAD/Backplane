@@ -8,6 +8,8 @@ import ../core/client.bend as U
 import ../core/bot.bend as BT
 import ../core/botui.bend as BI
 import ../core/cron.bend as CR
+import ../core/plane.bend as PL
+import ../core/uber.bend as UB
 
 # The bots on the web (docs/bots.md): the sidebar's cats and rooms, a bot's
 # header, tabs and tab bodies, a room, a bot on another machine. What is
@@ -115,7 +117,7 @@ def WB.bot.form(open: Bool, +u: U.Ui) -> List<&2, D.Node>:
   match open:
     case True{}:
       [WB.div("bform", [
-        WB.input("bot-name", "name", BI.BU.field(u, "name"), "Name", "bot-create"),
+        WB.input("bot-name", "name", BI.BU.field(u, "name"), U.Bots.name.hint(u), "bot-create"),
         WB.area("bot-persona", "persona", BI.BU.field(u, "persona"), "Persona: who it is, what it does"),
         WB.div("chips-row", WB.pchips(["claude", "codex", "grok", "muse"], WB.prov(u))),
         WB.btns([D.Dom.button("primary", "bot-create", "", "Make the bot", "Create"), D.Dom.button("", "bot-new", "", "Cancel", "Cancel")])])]
@@ -519,6 +521,121 @@ def WB.body.k(i: Nat, +u: U.Ui, +b: BT.Bot) -> D.Node:
 # a tab other than Chat
 def WB.body(+u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:
   D.El{"div", "bot-body:" ++ tab, [D.At{"class", "bot-body"}], [WB.body.k(WB.pos(["space", "browser", "memory", "routines", "hooks"], tab, 0n), u, b)]}
+
+# The uberbot (docs/uber.md)
+# --------------------------
+
+# its sidebar row, pinned above the search: its cat, its name and what
+# waits on the person (Plane.counts); a click does action "uber"
+def WB.uber.k(r: BI.BRow, +counts: String) -> D.Node:
+  match r:
+    case BI.BRow{+id, +name, _, +look, +mood, _, sel, _, _, _}:
+      D.El{"div", "uber:" ++ id, [D.At{"class", Bool.pick(String, sel, "bot-row uber-row on", "bot-row uber-row")}, D.At{"title", id}, D.At{"data-value", id}, D.On{"click", "uber"}],
+        [WC.WCat.img(look, mood, 28), WB.div("bot-text", [D.Dom.span("bot-name", name), D.Dom.span("uber-counts", Bool.pick(String, String.is_empty(counts), BI.Mood.note(mood), counts))])]}
+
+def WB.uber.m(m: Maybe<&2, BI.BRow>, +u: U.Ui) -> List<&2, D.Node>:
+  match m:
+    case Some{r}:
+      [WB.uber.k(r, PL.Plane.counts(PL.Plane.of(u, U.Side.now(u))))]
+    case None{}:
+      Nil{}
+
+# no uberbot, no row
+def WB.uber(+u: U.Ui) -> List<&2, D.Node>:
+  WB.uber.m(BI.BU.uber(u), u)
+
+# the dot of a row: thread states and bot moods alike
+def WB.pdot(+s: String) -> String:
+  Bool.pick(String, Bool.or(String.eq(s, "approval"), String.eq(s, "wait")), "dot approval",
+    Bool.pick(String, String.eq(s, "question"), "dot input",
+      Bool.pick(String, Bool.or(String.eq(s, "failed"), String.eq(s, "error")), "dot failed",
+        Bool.pick(String, Bool.or(String.eq(s, "working"), Bool.or(String.eq(s, "work"), String.eq(s, "talk"))), "dot working",
+          Bool.pick(String, Bool.or(String.eq(s, "queued"), String.eq(s, "think")), "dot queued",
+            Bool.pick(String, String.eq(s, "unread"), "dot waiting", "dot"))))))
+
+def WB.pago(+kind: String, +now: Nat, +at: Nat) -> String:
+  Bool.pick(String, Bool.or(String.eq(kind, "routine"), Bool.or(Nat.is_eq(at, 0n), Nat.is_gt(at, now))), "", U.Time.ago(now, at))
+
+# one row: a button for what a click sends (act, val), a fixed height
+def WB.prow(r: PL.PRow, +now: Nat) -> D.Node:
+  match r:
+    case PL.PRow{+kind, +id, +act, +val, +title, +sub, +machine, +state, +at, away}:
+      D.El{"button", kind ++ ":" ++ id, [D.At{"class", Bool.pick(String, away, "plane-row away", "plane-row")}, D.At{"title", title}, D.At{"data-value", val}, D.On{"click", act}],
+        [D.Dom.span(WB.pdot(state), ""), D.Dom.span("title", title), D.Dom.span("sub", sub), D.Dom.span("mach", machine), D.Dom.span("ago", WB.pago(kind, now, at))]}
+
+def WB.prows(rs: List<&2, PL.PRow>, +now: Nat) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      WB.prow(r, now) <> WB.prows(t, now)
+
+# a labelled section; none of it when it is empty
+def WB.psec(+label: String, rs: List<&2, PL.PRow>, +more: Nat, +now: Nat) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case _ <> _:
+      [WB.div("plane-sec", D.Dom.span("plane-label", label) <> List.append(&2, D.Node, WB.prows(rs, now), D.Dom.when(Nat.is_gt(more, 0n), D.Dom.span("plane-more", "+" ++ Nat.show(more) ++ " more"))))]
+
+def WB.pcount(+label: String, +n: Nat) -> D.Node:
+  WB.div(Bool.pick(String, Nat.is_eq(n, 0n), "plane-count", "plane-count on"), [D.Dom.span("n", Nat.show(n)), D.Dom.span("l", label)])
+
+def WB.pmach(m: PL.PMach) -> D.Node:
+  match m:
+    case PL.PMach{+name, +state}:
+      WB.div("plane-mach " ++ state, [D.Dom.span(Bool.pick(String, String.eq(state, "here"), "dot working", Bool.pick(String, String.eq(state, "syncing"), "dot queued", "dot")), ""), D.Dom.span("", name)])
+
+def WB.pmachs(ms: List<&2, PL.PMach>) -> List<&2, D.Node>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case m <> t:
+      WB.pmach(m) <> WB.pmachs(t)
+
+# the strip: the counters and the machines
+def WB.pstrip(+p: PL.Plane) -> D.Node:
+  WB.div("plane-strip", [
+    WB.pcount("Need you", List.length(&2, PL.PRow, PL.Plane.need(p))),
+    WB.pcount("Running", List.length(&2, PL.PRow, PL.Plane.run(p))),
+    WB.pcount("Bots working", PL.Plane.working(p)),
+    WB.pcount("Unread rooms", List.length(&2, PL.PRow, PL.Plane.rooms(p))),
+    WB.div("plane-machs", WB.pmachs(PL.Plane.machines(p)))])
+
+def WB.pidle.more(+shown: Nat, +n: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_gt(n, shown), Nat.sub(n, shown), 0n)
+
+def WB.pempty(+p: PL.Plane) -> Bool:
+  Bool.and(List.is_empty(&2, PL.PRow, PL.Plane.need(p)), Bool.and(List.is_empty(&2, PL.PRow, PL.Plane.run(p)), List.is_empty(&2, PL.PRow, PL.Plane.idle(p))))
+
+def WB.plane.k(+p: PL.Plane, +now: Nat) -> D.Node:
+  WB.div("plane", [
+    WB.pstrip(p),
+    WB.div("plane-grid", [
+      WB.div("plane-main", List.concat(&2, D.Node, [
+        WB.psec("Needs you", PL.Plane.need(p), 0n, now),
+        WB.psec("Running", PL.Plane.run(p), 0n, now),
+        WB.psec("Idle", PL.Plane.idle(p), WB.pidle.more(List.length(&2, PL.PRow, PL.Plane.idle(p)), PL.Plane.idle_n(p)), now),
+        D.Dom.when(WB.pempty(p), WB.note("Nothing active"))])),
+      WB.div("plane-side", List.concat(&2, D.Node, [
+        WB.psec("Bots", PL.Plane.bots(p), 0n, now),
+        WB.psec("Rooms", PL.Plane.rooms(p), 0n, now),
+        WB.psec("Routines", PL.Plane.routines(p), 0n, now)]))])])
+
+# the Status tab's body
+def WB.plane(+u: U.Ui) -> D.Node:
+  WB.plane.k(PL.Plane.of(u, U.Side.now(u)), U.Side.now(u))
+
+# a tab's body: Status here, the others in WB.body; only the one shown is built
+def WB.main.k(status: Bool, +u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:
+  match status:
+    case True{}:
+      D.El{"div", "bot-body:status", [D.At{"class", "bot-body"}], [WB.plane(u)]}
+    case False{}:
+      WB.body(u, b, tab)
+
+def WB.main(+u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:
+  WB.main.k(String.eq(tab, "status"), u, b, tab)
 
 # Rooms and bots elsewhere
 # ------------------------

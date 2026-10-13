@@ -174,6 +174,7 @@ def main() -> IO(Unit):
     +s : M.State = two()
     C.Check.str("create", st.tags(ask(M.State.empty(), 1000n, "bots.create", "{\"name\":\"Miso\"}")), "ThreadCreated BotSet | send:reply fx:home ")
     C.Check.str("two bots", Nat.show(List.length(&2, BT.Bot, BT.World.bots(M.State.bots(s)))), "2")
+    C.Check.str("create as the uberbot (the tour): the backup job follows", st.tags(ask(M.State.empty(), 1000n, "bots.create", "{\"name\":\"Miso\",\"uber\":true}")), "ThreadCreated BotSet | send:reply fx:home fx:uber ")
     C.Check.str("name taken", st.tags(ask(s, 1002n, "bots.create", "{\"name\":\"miso\"}")), "| send:reply ")
     C.Check.str("bad name", st.tags(ask(s, 1002n, "bots.create", "{\"name\":\"has space\"}")), "| send:reply ")
     C.Check.str("bot thread", yes(BT.World.is_bot_thread(M.State.bots(s), th.of(s, "Tofu"))), "yes")

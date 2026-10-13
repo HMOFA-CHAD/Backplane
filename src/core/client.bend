@@ -27,6 +27,7 @@ import ./fm.bend as FM
 import ./onboard.bend as OB
 import ./layers.bend as LY
 import ./slash.bend as SL
+import ./uber.bend as UB
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -3059,12 +3060,25 @@ def Menu.kind(+m: String) -> String:
 def Menu.id(+m: String) -> String:
   String.drop(m, 2n)
 
+# a bot's menu ("bot-menu id", kept as "b:<id>"): the person makes a bot
+# of this machine the uberbot, or not (core/uber.bend)
+def Menu.bot(+st: M.State, +id: String) -> List<&2, MItem>:
+  Bool.pick(List<&2, MItem>, UB.Uber.is(st, id), [MItem{"Not uberbot", "uber-demote", "", ""}],
+    Bool.pick(List<&2, MItem>, UB.Uber.live(st, id), [MItem{"Make uberbot", "uber-promote", id, ""}], Nil{}))
+
+def Menu.items.b(bot: Bool, +u: Ui, +id: String) -> List<&2, MItem>:
+  match bot:
+    case True{}:
+      Menu.bot(Side.st(u), id)
+    case False{}:
+      Menu.thread(Side.st(u), Side.now(u), id, String.eq(Ui.scratch(u, "@del"), id))
+
 def Menu.items.t(file: Bool, +u: Ui, +id: String) -> List<&2, MItem>:
   match file:
     case True{}:
       Menu.file(id)
     case False{}:
-      Menu.thread(Side.st(u), Side.now(u), id, String.eq(Ui.scratch(u, "@del"), id))
+      Menu.items.b(String.eq(Menu.kind(Menu.open(u)), "b"), u, id)
 
 def Menu.items.k(thread: Bool, +u: Ui, +id: String, rich: Bool) -> List<&2, MItem>:
   match thread:
@@ -3080,7 +3094,8 @@ def Menu.items(+u: Ui, rich: Bool) -> List<&2, MItem>:
 # its heading: the thread's title, the project's name or the file's path
 def Menu.title(+u: Ui) -> String:
   Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "t"), Active.title(Ui.thread(Side.st(u), Menu.id(Menu.open(u)))),
-    Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "f"), Menu.id(Menu.open(u)), Ui.project_title(Side.st(u), Menu.id(Menu.open(u)))))
+    Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "f"), Menu.id(Menu.open(u)),
+      Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "b"), BT.Bot.name(BT.World.bot(M.State.bots(Side.st(u)), Menu.id(Menu.open(u)))), Ui.project_title(Side.st(u), Menu.id(Menu.open(u))))))
 
 # opening one disarms any delete or remove; the same again shuts it
 def Menu.set(+u: Ui, +m: String) -> Ui:
@@ -3088,7 +3103,7 @@ def Menu.set(+u: Ui, +m: String) -> Ui:
 
 def Menu.actions() -> List<&2, String>:
   ["row-menu", "proj-menu", "menu-close", "row-pin", "row-unpin", "row-archive", "row-unarchive", "side-older", "side-settled",
-   "file-menu", "file-open", "file-reveal", "file-copy", "row-rename", "rename-save", "rename-no"]
+   "file-menu", "file-open", "file-reveal", "file-copy", "row-rename", "rename-save", "rename-no", "bot-menu"]
 
 # a file link's path where the hub finds it: in the selected thread's folder
 # when relative (core/links.bend's Link.file.abs)
@@ -3171,6 +3186,8 @@ def Menu.act.k(i: Nat, +u: Ui, +value: String) -> Act:
       Ren.save(u, value)
     case 15n:
       Act{Ren.clear(u), Nil{}}
+    case 16n:
+      Act{Menu.set(u, "b:" ++ value), Nil{}}
     case _:
       Menu.shut(Ui.rpc(u, "thread.unarchive", [J.KV{"thread", J.Str{value}}]))
 
@@ -5234,8 +5251,30 @@ def Bots.select.k(m: Maybe<&2, BT.Bot>, u: Ui) -> Act:
 def Bots.select(+u: Ui, +id: String) -> Act:
   Bots.select.k(BT.World.find.id(BT.World.bot(M.State.bots(Ui.state.of(u)), id)), u)
 
-def Bots.room.select(u: Ui, +id: String) -> Act:
-  Act{Ui.flag_off(Bots.views(u, "", id, ""), "settings"), [Focus{"room-post"}, Scroll{}]}
+# Rooms seen: the setting room.seen.<room> is the time (seconds) the person
+# last opened it; its unread posts are those after it that they did not
+# write (a room never opened: those of the last day, not its whole past).
+# Opening a room with some unread says so; one with none sends nothing.
+def Rooms.seen(+u: Ui, +room: String) -> Nat:
+  Maybe.default(&2, Nat, Nat.read(M.Setting.get(Side.st(u), "room.seen." ++ room, "")), Nat.sub(Side.now(u), 86400n))
+
+def Rooms.unread(+u: Ui, +room: String) -> Nat:
+  BT.World.unread(M.State.bots(Side.st(u)), room, Rooms.seen(u, room))
+
+def Rooms.mark.go(a: Act, +id: String) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Ui.also(Ui.setting(u, "room.seen." ++ id ++ "=" ++ Nat.show(Side.now(u))), cs)
+
+def Rooms.mark(+n: Nat, a: Act, +id: String) -> Act:
+  match n:
+    case 0n:
+      a
+    case 1n+_:
+      Rooms.mark.go(a, id)
+
+def Bots.room.select(+u: Ui, +id: String) -> Act:
+  Rooms.mark(Rooms.unread(u, id), Act{Ui.flag_off(Bots.views(u, "", id, ""), "settings"), [Focus{"room-post"}, Scroll{}]}, id)
 
 # A bot elsewhere on one of the owner's machines opens there: the window
 # switches to that machine's hub and shows the bot with all its tabs (its
@@ -5460,11 +5499,20 @@ def Bots.bfield(u: Ui, +v: String) -> Ui:
 def Bots.flag(+u: Ui, +k: String) -> Ui:
   Ui.scratch_set(u, k, Bool.pick(String, String.eq(Ui.scratch(u, k), "1"), "", "1"))
 
+# the new bot form was opened by the tour's "Create my uberbot" (scratch
+# "@uber.new"): the request asks the hub to make the bot the uberbot too
+def Bots.uber.new(+u: Ui) -> List<&2, J.KV>:
+  Bool.pick(List<&2, J.KV>, String.eq(Ui.scratch(u, "@uber.new"), "1"), [J.KV{"uber", J.Flag{True{}}}], Nil{})
+
 def Bots.create(+u: Ui) -> Act:
-  Ui.rpc(Bots.fields.clear(Ui.scratch_set(u, "@bnew", ""), ["name", "persona"]), "bots.create",
-    [J.KV{"name", J.Str{String.trim(Bots.field(u, "name"))}}, J.KV{"persona", J.Str{Bots.field(u, "persona")}},
+  Ui.rpc(Bots.fields.clear(Ui.scratch_set(Ui.scratch_set(u, "@bnew", ""), "@uber.new", ""), ["name", "persona"]), "bots.create",
+    List.append(&2, J.KV, [J.KV{"name", J.Str{String.trim(Bots.field(u, "name"))}}, J.KV{"persona", J.Str{Bots.field(u, "persona")}},
      J.KV{"provider", J.Str{Bool.pick(String, String.is_empty(Bots.field(u, "provider")), M.Setting.get(Ui.state.of(u), "agent.provider", "claude"), Bots.field(u, "provider"))}},
-     J.KV{"model", J.Str{Bots.field(u, "model")}}])
+     J.KV{"model", J.Str{Bots.field(u, "model")}}], Bots.uber.new(u)))
+
+# the form's name field hint
+def Bots.name.hint(+u: Ui) -> String:
+  Bool.pick(String, String.eq(Ui.scratch(u, "@uber.new"), "1"), "Name your uberbot", "Name")
 
 def Bots.cur(+u: Ui) -> String:
   Ui.scratch(u, "@bot")
@@ -7261,10 +7309,11 @@ def Timeline.visible(settings: Bool, selected: Bool, thread: Bool) -> Bool:
     case _ _ _:
       False{}
 
+# (the uberbot with no tab picked shows its Status, not its chat)
 def Timeline.bot(m: Maybe<&2, BT.Bot>, +u: Ui) -> Bool:
   match m:
-    case Some{BT.Bot{_, _, +th, _, _, _, _}}:
-      Bool.or(Bool.not(String.eq(th, Ui.sel(u))), Bool.or(String.is_empty(Ui.scratch(u, "@btab")), String.eq(Ui.scratch(u, "@btab"), "chat")))
+    case Some{BT.Bot{+bid, _, +th, _, _, _, _}}:
+      Bool.or(Bool.not(String.eq(th, Ui.sel(u))), Bool.or(Bool.and(String.is_empty(Ui.scratch(u, "@btab")), Bool.not(UB.Uber.is(Ui.state.of(u), bid))), String.eq(Ui.scratch(u, "@btab"), "chat")))
     case None{}:
       True{}
 
@@ -7375,7 +7424,7 @@ def Bots.act(i: Nat, +u: Ui, +value: String) -> Act:
     case 1n:
       Bots.tab.k(String.eq(value, "settings"), Ui.scratch_set(u, "@btab", value))
     case 2n:
-      Act{Bots.flag(u, "@bnew"), [Focus{"bot-name"}]}
+      Act{Bots.flag(Ui.scratch_set(u, "@uber.new", ""), "@bnew"), [Focus{"bot-name"}]}
     case 3n:
       Bots.create(u)
     case 4n:
@@ -7795,8 +7844,33 @@ def Tour.done(+st: M.State) -> Bool:
 def Tour.ready(+u: Ui) -> Bool:
   Bool.and(Bool.and(Nat.is_gt(Ui.seq(u), 0n), String.eq(Ui.scratch(u, "@sync"), "1")), String.is_empty(Ui.scratch(u, "@boot")))
 
+# The uberbot step alone: an install that finished the tour before it had
+# that step (or demoted its uberbot) is asked once more, until the step has
+# been answered (the hub setting "onboard.uber": Done, Skip or a choice, in
+# the full tour too). Only while no uberbot is set, only for a tour that came
+# up by itself, and (like it) only once this connection's state has arrived.
+def Tour.answered(+st: M.State) -> Bool:
+  String.eq(M.Setting.get(st, "onboard.uber", ""), "1")
+
+def Tour.single.k(+st: M.State, +raw: String) -> Bool:
+  Bool.and(Bool.and(Tour.done(st), Bool.not(Tour.answered(st))), Bool.and(String.is_empty(UB.Uber.bot(st)), Bool.not(OB.Ob.manual(raw))))
+
+def Tour.single(+u: Ui) -> Bool:
+  Bool.and(Tour.ready(u), Tour.single.k(Ui.state.of(u), Ui.scratch(u, "@tour")))
+
+def Tour.at.k(+i: Nat, up: Bool) -> Nat:
+  Bool.pick(Nat, Bool.and(Nat.is_eq(i, OB.Ob.count()), up), OB.Ob.uber(), i)
+
 def Tour.at(+u: Ui) -> Nat:
-  OB.Ob.at(Tour.ready(u), Tour.done(Ui.state(u)), Ui.scratch(u, "@tour"))
+  Tour.at.k(OB.Ob.at(Tour.ready(u), Tour.done(Ui.state(u)), Ui.scratch(u, "@tour")), Tour.single(u))
+
+# what the card says: no "10 of 10" for a step asked alone
+def Tour.counter(+u: Ui) -> String:
+  Bool.pick(String, Tour.single(u), "", OB.Ob.counter(Tour.at(u)))
+
+# whether the card has a Back (not the first step, not a step alone)
+def Tour.back(+u: Ui) -> Bool:
+  Bool.and(Nat.is_gt(Tour.at(u), 0n), Bool.not(Tour.single(u)))
 
 def Tour.on(+u: Ui) -> Bool:
   OB.Ob.live(Tour.at(u))
@@ -7805,9 +7879,82 @@ def Tour.on(+u: Ui) -> Bool:
 def Tour.days(+u: Ui) -> String:
   Nat.show(Nat.div(M.Scratch.window(Ui.state(u)), 86400n))
 
+# The uberbot step (core/onboard.bend's Ob.uber): what it offers depends on
+# the bots here. "have": an uberbot is set; "pick": bots, none set; "none":
+# no bots. A bot is counted by the entries of its thread (only while the
+# tour is up; M.State.mine reads the thread's own index).
+type Used is Data:
+  Used{n: Nat, bot: BT.Bot}
+
+# most used first, ties the oldest first
+def Used.before(a: Used, b: Used) -> Bool:
+  match a b:
+    case Used{+na, ba} Used{+nb, bb}:
+      Bool.pick(Bool, Nat.is_gt(na, nb), True{}, Bool.pick(Bool, Nat.is_eq(na, nb), BT.Bot.before(ba, bb), False{}))
+
+def Tour.used(bs: List<&2, BT.Bot>, +st: M.State) -> List<&2, Used>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case +b <> t:
+      Used{List.length(&2, M.Entry, M.State.mine(st, BT.Bot.thread(b))), b} <> Tour.used(t, st)
+
+# this machine's bots, the most used first
+def Tour.ranked(+st: M.State) -> List<&2, Used>:
+  List.sort(~Used, ~Used.before, Tour.used(BT.World.bots.here(M.State.bots(st)), st))
+
+def Tour.uber.case.k(+have: String, any: Bool) -> String:
+  Bool.pick(String, Bool.not(String.is_empty(have)), "have", Bool.pick(String, any, "pick", "none"))
+
+def Tour.uber.case(+u: Ui) -> String:
+  Tour.uber.case.k(UB.Uber.bot(Ui.state.of(u)), Bool.not(List.is_empty(&2, BT.Bot, BT.World.bots.here(M.State.bots(Ui.state.of(u))))))
+
+def Tour.uber.name.k(uc: String, +first: String, +have: String) -> String:
+  Bool.pick(String, String.eq(uc, "have"), have, first)
+
+def Tour.uber.first(us: List<&2, Used>) -> String:
+  match us:
+    case Used{_, b} <> _:
+      BT.Bot.name(b)
+    case Nil{}:
+      ""
+
+# the name the words use: the uberbot's, or the bot used most
+def Tour.uber.name(+u: Ui) -> String:
+  Tour.uber.name.k(Tour.uber.case(u), Tour.uber.first(Tour.ranked(Ui.state.of(u))), BT.Bot.name(BT.World.bot(M.State.bots(Ui.state.of(u)), UB.Uber.bot(Ui.state.of(u)))))
+
+# a choice on the tour's card: a button that sends an action
+type TChoice is Data:
+  TChoice{label: String, action: String, value: String}
+
+def Tour.pick.one(first: Bool, +b: BT.Bot) -> TChoice:
+  TChoice{Bool.pick(String, first, "Make " ++ BT.Bot.name(b) ++ " my uberbot", "Make " ++ BT.Bot.name(b)), "uber-promote", BT.Bot.id(b)}
+
+def Tour.picks(us: List<&2, Used>, first: Bool) -> List<&2, TChoice>:
+  match us:
+    case Nil{}:
+      Nil{}
+    case Used{_, b} <> t:
+      Tour.pick.one(first, b) <> Tour.picks(t, False{})
+
+def Tour.choices.k(+uc: String, +st: M.State) -> List<&2, TChoice>:
+  Bool.pick(List<&2, TChoice>, String.eq(uc, "none"), [TChoice{"Create my uberbot", "uber-new", ""}],
+    Bool.pick(List<&2, TChoice>, String.eq(uc, "pick"), List.append(&2, TChoice, Tour.picks(List.take(&2, Used, Tour.ranked(st), 3n), True{}), [TChoice{"Create a new one", "uber-new", ""}]), Nil{}))
+
+# the buttons under the uberbot step's words (none on other steps)
+def Tour.choices.on(on: Bool, +u: Ui) -> List<&2, TChoice>:
+  match on:
+    case True{}:
+      Tour.choices.k(Tour.uber.case(u), Ui.state.of(u))
+    case False{}:
+      Nil{}
+
+def Tour.choices(+u: Ui) -> List<&2, TChoice>:
+  Tour.choices.on(Nat.is_eq(Tour.at(u), OB.Ob.uber()), u)
+
 # the step's words for a kind of client (0 window, 1 web, 2 phone)
 def Tour.body(+k: Nat, +u: Ui) -> String:
-  OB.Ob.body(k, Tour.days(u), Tour.at(u))
+  OB.Ob.body.uber(k, Tour.days(u), Tour.uber.case(u), Tour.uber.name(u), Tour.at(u))
 
 def Tour.target.k(+g: String, open: Bool) -> String:
   Bool.pick(String, Bool.and(String.eq(g, "head"), Bool.not(open)), "", g)
@@ -7849,8 +7996,19 @@ def Tour.leave(a: Act, +field: String) -> Act:
     case Act{u, cs}:
       Act{u, Focus{field} <> cs}
 
+# the tour is over, and its uberbot step answered ("onboard.uber")
+def Tour.finish.cat(a: Act, cs: List<&2, Cmd>) -> Act:
+  match a:
+    case Act{u, fs}:
+      Act{u, List.append(&2, Cmd, cs, fs)}
+
+def Tour.finish.both(a: Act) -> Act:
+  match a:
+    case Act{u, cs}:
+      Tour.finish.cat(Ui.setting(u, "onboard.uber=1"), cs)
+
 def Tour.finish(+u: Ui) -> Act:
-  Tour.leave(Ui.setting(Ui.scratch_set(u, "@tour", ""), "onboard.done=1"), Tour.focus(u))
+  Tour.leave(Tour.finish.both(Ui.setting(Ui.scratch_set(u, "@tour", ""), "onboard.done=1")), Tour.focus(u))
 
 # to step i (by hand or not as the tour was), or (past the last) the end
 def Tour.go.k(live: Bool, +i: Nat, +u: Ui) -> Act:
@@ -7869,12 +8027,20 @@ def Tour.open.k(+u: Ui) -> Act:
 def Tour.open(+u: Ui) -> Act:
   Tour.open.k(Ui.flag_off(u, "settings"))
 
+# Back goes nowhere on the first step or a step asked alone
+def Tour.back.k(has: Bool, +u: Ui) -> Act:
+  match has:
+    case True{}:
+      Tour.go(OB.Ob.back(Tour.at(u)), u)
+    case False{}:
+      Act{u, Nil{}}
+
 def Tour.act.k(i: Nat, +u: Ui) -> Act:
   match i:
     case 0n:
       Tour.go(OB.Ob.next(Tour.at(u)), u)
     case 1n:
-      Tour.go(OB.Ob.back(Tour.at(u)), u)
+      Tour.back.k(Tour.back(u), u)
     case 2n:
       Tour.finish(u)
     case 3n:
@@ -7893,20 +8059,64 @@ def Tour.act.on(on: Bool, +u: Ui, +action: String) -> Act:
 def Tour.act(+u: Ui, +action: String) -> Act:
   Tour.act.on(Tour.on(u), u, action)
 
+# The uberbot (core/uber.bend, docs/uber.md): "uber" shows its Status tab,
+# "uber-promote <bot>" and "uber-demote" ask the hub (bots.uber), which backs
+# the bot up before it logs the promotion. Routed ahead of the action table.
+def Uber.show.k(none: Bool, +u: Ui, +id: String) -> Act:
+  match none:
+    case True{}:
+      Act{u, Nil{}}
+    case False{}:
+      Bots.select(Ui.scratch_set(u, "@btab", "status"), id)
+
+def Uber.show(+u: Ui) -> Act:
+  Uber.show.k(String.is_empty(UB.Uber.bot(Ui.state.of(u))), u, UB.Uber.bot(Ui.state.of(u)))
+
+# "uber-bot <bot>|<tab>": a bot with a tab shown (a routine's row)
+def Uber.bot.at(+u: Ui, +value: String) -> Act:
+  Bots.select(Ui.scratch_set(u, "@btab", Maybe.default(&2, String, List.get(&2, String, String.split(value, '|'), 1n), "")), Maybe.default(&2, String, List.head(&2, String, String.split(value, '|')), ""))
+
+# "uber-new": the new bot form opens for the uberbot (the tour's "Create my
+# uberbot"): Settings shut, "@uber.new" set so the request carries uber
+def Uber.new(+u: Ui) -> Act:
+  Act{Ui.scratch_set(Ui.scratch_set(Ui.flag_off(u, "settings"), "@bnew", "1"), "@uber.new", "1"), [Focus{"bot-name"}]}
+
+def Uber.act.k(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n:
+      Uber.show(u)
+    case 1n:
+      Ui.rpc(u, "bots.uber", [J.KV{"bot", J.Str{value}}])
+    case 2n:
+      Ui.rpc(u, "bots.uber", [J.KV{"bot", J.Str{""}}])
+    case 3n:
+      Uber.bot.at(u, value)
+    case 4n:
+      Uber.new(u)
+    case _:
+      Act{u, Nil{}}
+
+def Uber.act.go(route: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match route:
+    case True{}:
+      Uber.act.k(C.Codec.pos(["uber", "uber-promote", "uber-demote", "uber-bot", "uber-new"], action), u, value)
+    case False{}:
+      Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)
+
 # a user action with its value
 def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Act:
   match menu:
     case True{}:
       Menu.act.k(i, u, value)
     case False{}:
-      Menu.after(action, Ui.reselect.act(Ui.sel(u), Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)))
+      Menu.after(action, Ui.reselect.act(Ui.sel(u), Uber.act.go(String.starts_with(action, "uber"), u, action, value)))
 
 def Ui.act.e(emb: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match emb:
     case True{}:
       Emb.act(u, action, value)
     case False{}:
-      Emb.sync.sel(Ui.sel(u), Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 16n), C.Codec.pos(Menu.actions(), action), u, action, value)))
+      Emb.sync.sel(Ui.sel(u), Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 17n), C.Codec.pos(Menu.actions(), action), u, action, value)))
 
 # the picker's machine row (routed before the action table)
 def Ui.act.p(pick: Bool, +u: Ui, +action: String, +value: String) -> Act:
@@ -7923,13 +8133,39 @@ def Ui.act.t(tour: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Ui.act.p(String.eq(action, "proj-on"), u, action, value)
 
+# A choice on the tour's uberbot step does its action, then ends the tour
+# like Done (the action's own commands come after the tour's focus).
+def Tour.choose.fin(f: Act, cs: List<&2, Cmd>) -> Act:
+  match f:
+    case Act{u, fs}:
+      Act{u, List.append(&2, Cmd, fs, cs)}
+
+def Tour.choose.k(a: Act) -> Act:
+  match a:
+    case Act{u, cs}:
+      Tour.choose.fin(Tour.finish(u), cs)
+
+def Ui.act.c(choice: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match choice:
+    case True{}:
+      Tour.choose.k(Ui.act.t(False{}, u, action, value))
+    case False{}:
+      Ui.act.t(String.starts_with(action, "ob-"), u, action, value)
+
+def Ui.act.u(pick: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match pick:
+    case True{}:
+      Ui.act.c(Nat.is_eq(Tour.at(u), OB.Ob.uber()), u, action, value)
+    case False{}:
+      Ui.act.c(False{}, u, action, value)
+
 # (design review's "rv-" actions route before the rest: Rv.act)
 def Ui.act.r(rv: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match rv:
     case True{}:
       Rv.act(u, action, value)
     case False{}:
-      Ui.act.t(String.starts_with(action, "ob-"), u, action, value)
+      Ui.act.u(Nat.is_lt(C.Codec.pos(["uber-promote", "uber-new"], action), 2n), u, action, value)
 
 def Ui.act.s(close: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match close:

@@ -3084,7 +3084,8 @@ def Nui.event.lb(open: Bool, +n: Nui, e: W.WinEv) -> Step:
 
 # The first-run tour (core/onboard.bend) is modal: Enter and the right
 # arrow go on, the left arrow goes back, Esc ends it (OB.Ob.sym), a press on
-# one of its buttons ("ob-" hits in layout.bend's Lay.tour) acts, and nothing
+# one of its buttons ("ob-" hits in layout.bend's Lay.tour, and the uberbot
+# step's "uber-" choices) acts, and nothing
 # else gets through but the window's own events: a resize, an expose, focus
 # lost or gained (so "@blur" stays true to the window), and the quit.
 # Every physical key (keycode) pressed while the tour is up is held in
@@ -3099,8 +3100,8 @@ def Tour.key(+name: String, +n: Nui) -> Step:
 
 def Tour.press(m: Maybe<&2, Hit>, +n: Nui) -> Step:
   match m:
-    case Some{Hit{_, _, _, _, +a, _}}:
-      Bool.pick(Step, Bool.and(String.starts_with(a, "ob-"), Bool.not(String.eq(a, "ob-scroll"))), Nui.act(n, a, ""), Step{n, Nil{}, False{}})
+    case Some{Hit{_, _, _, _, +a, +v}}:
+      Bool.pick(Step, Bool.or(Bool.and(String.starts_with(a, "ob-"), Bool.not(String.eq(a, "ob-scroll"))), String.starts_with(a, "uber-")), Nui.act(n, a, v), Step{n, Nil{}, False{}})
     case None{}:
       Step{n, Nil{}, False{}}
 

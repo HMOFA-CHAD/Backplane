@@ -38,6 +38,8 @@ import ./src/gfx/raster.bend as R
 import ./src/gfx/draw.bend as D
 import ./src/app/layout.bend as L
 import ./src/core/eq.bend as Q
+import ./src/core/uber.bend as UBR
+import ./src/core/plane.bend as PLN
 import ./src/core/svg.bend as SVG
 import ./src/core/icons.bend as ICO
 import ./src/core/tools.bend as TOOL
@@ -5675,9 +5677,10 @@ law onboard_next_step:
 law onboard_back_step:
   {OBD.Ob.back(3n) == 2n : Nat}
 
-# next from the last step ends it, and the end stays the end
+# next from the last step ends it, and the end stays the end. Stated for
+# whatever the step count is: the last step is `count - 1`, not a number
 law onboard_next_ends:
-  {OBD.Ob.live(OBD.Ob.next(8n)) == False{} : Bool}
+  {OBD.Ob.live(OBD.Ob.next(Nat.sub(OBD.Ob.count(), 1n))) == False{} : Bool}
 
 law onboard_end_stays:
   {OBD.Ob.next(OBD.Ob.count()) == OBD.Ob.count() : Nat}
@@ -5733,8 +5736,9 @@ law onboard_syms:
 def OnbUi.log() -> M.State:
   M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}], M.State.empty())
 
+# a tour finished with every step answered (onboard.uber too)
 def OnbUi.done() -> M.State:
-  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.SettingSet{"onboard.done", "1", 2n}], M.State.empty())
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.SettingSet{"onboard.done", "1", 2n}, M.SettingSet{"onboard.uber", "1", 2n}], M.State.empty())
 
 def OnbUi.synced(st: M.State) -> U.Ui:
   U.Ui.scratch_set(U.Ui.adopt.raw(U.Ui.init(1n), st), "@sync", "1")
@@ -6623,3 +6627,117 @@ law slash_others_own_only:
 
 law slash_none_unknown:
   {SL.Slash.names(SL.Slash.cmds(True{}, "zz")) == [] : List<&2, String>}
+
+# --- uberbot: uber_*, plane_* (thread t1791834693) ---
+
+# a bot on another machine is never made the uberbot, and nothing is logged
+law uber_promote_far_refused:
+  for +st: M.State
+  {UBR.Promo.log(UBR.Uber.promote(st, "p1~b9", "u1-a", 5n)) == Nil{} : List<&2, M.Change>}
+
+# a demotion leaves no uberbot
+law uber_demote_clears:
+  {UBR.Uber.bot(M.State.replay([M.UberSet{"b1", "u1-a", 5n}, M.UberSet{"", "", 6n}], UBR.Uber.demo())) == "" : String}
+
+# a promotion of a live bot of this machine makes it the uberbot
+law uber_promote_sets:
+  {UBR.Uber.bot(M.State.replay([M.UberSet{"b2", "u1-a", 5n}], UBR.Uber.demo())) == "b2" : String}
+
+# the uberbot already promoted is not promoted again
+law uber_promote_again_nothing:
+  {UBR.Promo.log(UBR.Uber.promote(M.State.replay([M.UberSet{"b2", "u1-a", 5n}], UBR.Uber.demo()), "b2", "u2-b", 6n)) == Nil{} : List<&2, M.Change>}
+
+# each thread and bot row of the status plane is there once
+law plane_each_once:
+  for +u: U.Ui
+  for +ix: U.SIx
+  for +now: Nat
+  {ON.Once.distinct(ON.Once.keys(PLN.PRow, PLN.Plane.all.keyed(u, ix, now))) == True{} : Bool}
+
+# and in the sections, no thread in two of them
+law plane_sections_once:
+  {ON.Once.distinct(PLN.Plane.threads.ids(PLN.Plane.of(PLN.Plane.demo(), 200000n))) == True{} : Bool}
+
+# what waits on the person comes in urgency order
+law plane_need_ranked:
+  {PLN.Plane.ranked(PLN.Plane.need(PLN.Plane.of(PLN.Plane.demo(), 200000n))) == True{} : Bool}
+
+# a click on a thread's row selects that thread
+law plane_hit_opens:
+  for +t: M.Thread
+  for +at: Nat
+  for +pt: String
+  for +u: U.Ui
+  for +ix: U.SIx
+  for +st: M.State
+  {PLN.Plane.hit(PLN.Plane.thread.t(t, at, pt, u, ix, st)) == "select " ++ M.Thread.id(t) : String}
+
+# --- uberbot onboarding: onboard_uber_* ---
+
+# the tour's last step, shown for a state; its choices as "action value;"
+def OnbUber.step(st: M.State) -> U.Ui:
+  U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.adopt.raw(U.Ui.init(1n), st), "@sync", "1"), "@tour", "9")
+
+def OnbUber.acts(cs: List<&2, U.TChoice>) -> String:
+  match cs:
+    case Nil{}:
+      ""
+    case U.TChoice{_, a, v} <> t:
+      a ++ " " ++ v ++ ";" ++ OnbUber.acts(t)
+
+# Kit said once, Pip and Zed three times (Pip older), none an uberbot
+def OnbUber.bots() -> M.State:
+  M.State.replay([M.ThreadCreated{"t1", "", "Kit", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Kit", "t1", 7n, "", 100n},
+    M.ThreadCreated{"t2", "", "Pip", M.Local{}, "", "", "claude", "", 101n}, M.BotSet{"b2", "Pip", "t2", 8n, "", 101n},
+    M.ThreadCreated{"t3", "", "Zed", M.Local{}, "", "", "claude", "", 102n}, M.BotSet{"b3", "Zed", "t3", 9n, "", 102n},
+    M.MessagePosted{"t1", "m1", M.User{}, "a", 110n},
+    M.MessagePosted{"t2", "m2", M.User{}, "a", 111n}, M.MessagePosted{"t2", "m3", M.User{}, "b", 112n}, M.MessagePosted{"t2", "m4", M.User{}, "c", 113n},
+    M.MessagePosted{"t3", "m5", M.User{}, "a", 114n}, M.MessagePosted{"t3", "m6", M.User{}, "b", 115n}, M.MessagePosted{"t3", "m7", M.User{}, "c", 116n}], M.State.empty())
+
+def OnbUber.first(cs: List<&2, U.TChoice>) -> String:
+  OnbUber.acts(List.take(&2, U.TChoice, cs, 1n))
+
+# with no bots here the only choice makes the uberbot
+law onboard_uber_none_creates:
+  {OnbUber.acts(U.Tour.choices(OnbUber.step(OnbUi.log()))) == "uber-new ;" : String}
+
+# with bots and no uberbot the first choice promotes the one used most
+# (ties: the oldest)
+law onboard_uber_pick_most_used:
+  {OnbUber.first(U.Tour.choices(OnbUber.step(OnbUber.bots()))) == "uber-promote b2;" : String}
+
+# with an uberbot the step offers nothing to choose
+law onboard_uber_have_quiet:
+  {List.is_empty(&2, U.TChoice, U.Tour.choices(OnbUber.step(M.State.replay([M.UberSet{"b1", "u1-a", 200n}], OnbUber.bots())))) == True{} : Bool}
+
+# an install that finished the tour before the uberbot step, with no
+# uberbot: the step comes up alone, once its state has arrived ...
+def OnbUber.old() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.SettingSet{"onboard.done", "1", 2n}], M.State.empty())
+
+law onboard_uber_existing_shows:
+  {U.Tour.at(OnbUi.synced(OnbUber.old())) == OBD.Ob.uber() : Nat}
+
+# ... never from a cached state
+law onboard_uber_existing_cached:
+  {U.Tour.at(U.Ui.adopt.raw(U.Ui.init(1n), OnbUber.old())) == OBD.Ob.count() : Nat}
+
+# once answered it does not come up by itself
+law onboard_uber_answered_quiet:
+  {U.Tour.at(OnbUi.synced(M.State.replay([M.SettingSet{"onboard.uber", "1", 3n}], OnbUber.old()))) == OBD.Ob.count() : Nat}
+
+# nor with an uberbot
+law onboard_uber_have_no_ask:
+  {U.Tour.at(OnbUi.synced(M.State.replay([M.UberSet{"b1", "u1-a", 200n}], M.State.replay([M.SettingSet{"onboard.done", "1", 2n}], OnbUber.bots())))) == OBD.Ob.count() : Nat}
+
+# Skip answers it, and a step asked alone has no Back
+law onboard_uber_skip_answers:
+  {U.Tour.answered(U.Ui.state(OnbUi.after(U.Ui.act(OnbUi.synced(OnbUber.old()), "ob-skip", "")))) == True{} : Bool}
+
+law onboard_uber_single_no_back:
+  {U.Tour.back(OnbUi.synced(OnbUber.old())) == False{} : Bool}
+
+# the phone's status plane lists each row once, whichever hubs reported it
+law hubs_plane_once:
+  for +rs: List<&2, J.Json>
+  {ON.Once.distinct(ON.Once.keys(J.Json, Hb.Hubs.pl.keyed(rs))) == True{} : Bool}

@@ -6,6 +6,7 @@ import ./bot.bend as BT
 import ./space.bend as SP
 import ./once.bend as O
 import ./far.bend as FR
+import ./uber.bend as UB
 
 # What the bots' screens show, for every client (the window, the web and
 # the phones draw from these; docs/bots.md). The sidebar's cats with their
@@ -356,13 +357,17 @@ def BU.tabs() -> List<&2, String>:
 def BU.tabs.of(+id: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, FR.Fr.is(id), ["chat", "space", "memory", "routines"], BU.tabs())
 
+# the uberbot's tabs: its status first
+def BU.tabs.for(+u: U.Ui, +id: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, UB.Uber.is(U.Ui.state(u), id), "status" <> BU.tabs.of(id), BU.tabs.of(id))
+
 def BU.tab.label(+t: String) -> String:
   Bool.pick(String, String.eq(t, "chat"), "Chat",
     Bool.pick(String, String.eq(t, "space"), "Space",
       Bool.pick(String, String.eq(t, "browser"), "Browser",
         Bool.pick(String, String.eq(t, "memory"), "Memory",
           Bool.pick(String, String.eq(t, "routines"), "Routines",
-            Bool.pick(String, String.eq(t, "hooks"), "Webhooks", "Settings"))))))
+            Bool.pick(String, String.eq(t, "hooks"), "Webhooks", Bool.pick(String, String.eq(t, "status"), "Status", "Settings")))))))
 
 def BU.tab.has(ts: List<&2, String>, +t: String) -> Bool:
   match ts:
@@ -375,9 +380,15 @@ def BU.tab.has(ts: List<&2, String>, +t: String) -> Bool:
 def BU.tab(+u: U.Ui) -> String:
   Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@btab")), "chat", U.Ui.scratch(u, "@btab"))
 
+# the tab when none is picked (or the one picked is not the bot's): the
+# uberbot's status, else chat
+def BU.tab.dflt(+u: U.Ui, +id: String) -> String:
+  Bool.pick(String, UB.Uber.is(U.Ui.state(u), id), "status", "chat")
+
 # the tab shown: the one picked, when this bot has it, else its chat
 def BU.tab.of(+u: U.Ui, +id: String) -> String:
-  Bool.pick(String, BU.tab.has(BU.tabs.of(id), BU.tab(u)), BU.tab(u), "chat")
+  Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@btab")), BU.tab.dflt(u, id),
+    Bool.pick(String, BU.tab.has(BU.tabs.for(u, id), BU.tab(u)), BU.tab(u), BU.tab.dflt(u, id)))
 
 def BU.space.none(paged: Bool, +name: String) -> SP.Space:
   match paged:
@@ -568,8 +579,35 @@ def BU.rows.go(bs: List<&2, BT.Bot>, +u: U.Ui, +st: M.State, +now: Nat, +sel: St
     case b <> t:
       BU.row(u, st, now, sel, all, b) <> BU.rows.go(t, u, st, now, sel, all)
 
+# the bots without the one with this id
+def BU.sans.k(same: Bool, b: BT.Bot, rest: List<&2, BT.Bot>) -> List<&2, BT.Bot>:
+  match same:
+    case True{}:
+      rest
+    case False{}:
+      b <> rest
+
+def BU.sans(bs: List<&2, BT.Bot>, +id: String) -> List<&2, BT.Bot>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case +b <> t:
+      BU.sans.k(String.eq(BT.Bot.id(b), id), b, BU.sans(t, id))
+
+# the uberbot is not in the list of bots (it has its own row, BU.uber)
 def BU.rows.here(+u: U.Ui, +bs: List<&2, BT.Bot>) -> List<&2, BRow>:
-  BU.rows.go(bs, u, U.Ui.state(u), U.Side.now(u), BU.bot.sel(u), BU.here(bs))
+  BU.rows.go(BU.sans(bs, UB.Uber.bot(U.Ui.state(u))), u, U.Ui.state(u), U.Side.now(u), BU.bot.sel(u), BU.here(bs))
+
+def BU.uber.of(m: Maybe<&2, BT.Bot>, +u: U.Ui) -> Maybe<&2, BRow>:
+  match m:
+    case Some{b}:
+      Some{BU.row(u, U.Ui.state(u), U.Side.now(u), BU.bot.sel(u), BU.here(BT.World.bots(M.State.bots(U.Ui.state(u)))), b)}
+    case None{}:
+      None{}
+
+# the uberbot's row, like any bot's (None while there is none)
+def BU.uber(+u: U.Ui) -> Maybe<&2, BRow>:
+  BU.uber.of(BT.World.find.id(BT.World.bot(M.State.bots(U.Ui.state(u)), UB.Uber.bot(U.Ui.state(u)))), u)
 
 # the sidebar's cats before each is kept once: this machine's bots (oldest
 # first), then those the linked machines report
@@ -674,7 +712,7 @@ def BU.head.m(remote: Bool, +u: U.Ui, +id: String, +title: String, +look: Nat, +
     case True{}:
       Head{title, look, mood, Mood.note(mood), ["chat"], "chat", False{}, False{}}
     case False{}:
-      Head{title, look, mood, Mood.note(mood), BU.tabs.of(id), BU.tab.of(u, id), BU.viewer.of(id), BU.owns(id)}
+      Head{title, look, mood, Mood.note(mood), BU.tabs.for(u, id), BU.tab.of(u, id), BU.viewer.of(id), BU.owns(id)}
 
 # the row a linked machine reports for a bot elsewhere (away, named by its
 # id, while none does)

@@ -318,24 +318,24 @@ def View.machines(many: Bool, +open: Bool, +rs: List<&2, U.MRow>) -> List<&2, D.
     case False{}:
       Nil{}
 
-def View.sidebar.k(+ms: List<&2, U.MRow>, +st: M.State, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, mi: List<&2, U.MItem>, bots: List<&2, D.Node>) -> D.Node:
+def View.sidebar.k(+ms: List<&2, U.MRow>, +st: M.State, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, mi: List<&2, U.MItem>, bots: List<&2, D.Node>, uber: List<&2, D.Node>) -> D.Node:
   D.El{"aside", "sidebar", [D.At{"class", "sidebar"}],
         D.Dom.cat([D.El{"div", "", [D.At{"class", "brand"}], [
             D.Dom.span(Bool.pick(String, on, "conn on", "conn"), ""),
             D.Dom.span("name", "Backplane"), D.Dom.span("ver", v),
             WI.WIcon.button("icon", "proj-open", "", "Add project", "plus", 16, "")]}],
-          D.Dom.cat(View.add(adding), D.Dom.cat(View.find(String.eq(U.Side.view(st), "active"), q),
+          D.Dom.cat(uber, D.Dom.cat(View.add(adding), D.Dom.cat(View.find(String.eq(U.Side.view(st), "active"), q),
             D.Dom.cat(View.list(String.eq(U.Side.view(st), "active"), q, open, st, sel, now, look, rm), D.Dom.cat(bots, D.Dom.cat(View.rmenu(mi),
             [D.El{"div", "", [D.At{"class", "foot"}], WI.WIcon.button("settings-link", "flag", "settings", "Settings", "settings", 16, "Settings")
-              <> View.machines(Nat.is_gt(List.length(&2, U.MRow, ms), 1n), U.Flag.get(open, "machines"), ms)}]))))))}
+              <> View.machines(Nat.is_gt(List.length(&2, U.MRow, ms), 1n), U.Flag.get(open, "machines"), ms)}])))))))}
 
-def View.sidebar.w(bots: List<&2, D.Node>, ms: List<&2, U.MRow>, mi: List<&2, U.MItem>, u: U.Ui) -> D.Node:
+def View.sidebar.w(bots: List<&2, D.Node>, uber: List<&2, D.Node>, ms: List<&2, U.MRow>, mi: List<&2, U.MItem>, u: U.Ui) -> D.Node:
   match u:
     case U.Ui{+st, +sel, +d, _, +open, +on, +now, +adding, _, +v, _, _, _, _, _, _, _}:
-      View.sidebar.k(ms, st, sel, open, on, now, adding, v, U.Str.get(d, "@look"), U.Str.get(d, "@rm"), U.Find.q(open, d), mi, bots)
+      View.sidebar.k(ms, st, sel, open, on, now, adding, v, U.Str.get(d, "@look"), U.Str.get(d, "@rm"), U.Find.q(open, d), mi, bots, uber)
 
 def View.sidebar.u(bots: List<&2, D.Node>, +u: U.Ui) -> D.Node:
-  View.sidebar.w(bots, U.Machines.rows(u), U.Menu.items(u, True{}), u)
+  View.sidebar.w(bots, WB.WB.uber(u), U.Machines.rows(u), U.Menu.items(u, True{}), u)
 
 def View.sidebar(+u: U.Ui) -> D.Node:
   View.sidebar.u(WB.WB.side(u), u)
@@ -1318,7 +1318,7 @@ def View.bot.k(chat: Bool, +u: U.Ui, +b: BT.Bot, +hd: BI.Head) -> D.Node:
     case True{}:
       View.thread.h(u, U.Ui.thread(U.Ui.state(u), BT.Bot.thread(b)), [WB.WB.head(u, b, hd), WB.WB.tabs(hd)])
     case False{}:
-      D.El{"main", "bot", [D.At{"class", "thread-view bot-view"}], [WB.WB.head(u, b, hd), WB.WB.tabs(hd), WB.WB.body(u, b, BI.Head.tab(hd))]}
+      D.El{"main", "bot", [D.At{"class", "thread-view bot-view"}], [WB.WB.head(u, b, hd), WB.WB.tabs(hd), WB.WB.main(u, b, BI.Head.tab(hd))]}
 
 def View.bot.h(+u: U.Ui, +b: BT.Bot, +hd: BI.Head) -> D.Node:
   View.bot.k(String.eq(BI.Head.tab(hd), "chat"), u, b, hd)
@@ -1782,22 +1782,38 @@ def View.aside.if(open: Bool, +kind: String, +u: U.Ui) -> List<&2, D.Node>:
 # over the dimming. host.js makes it modal: the page behind is inert, focus
 # stays in the dialog, and the keys go through app.bend's tour_key (Enter
 # and the right arrow next, the left arrow back, Esc skip).
-def View.tour.card(+i: Nat, +body: String) -> List<&2, D.Node>:
+# the uberbot step's choices (client.bend's Tour.choices): one button each
+def View.tour.choices(cs: List<&2, U.TChoice>) -> List<&2, D.Node>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case U.TChoice{+l, a, v} <> t:
+      D.Dom.button("", a, v, l, l) <> View.tour.choices(t)
+
+def View.tour.back(on: Bool) -> D.Node:
+  match on:
+    case True{}:
+      D.Dom.button("", "ob-back", "", "The step before (left arrow)", "Back")
+    case False{}:
+      D.Dom.span("gap", "")
+
+def View.tour.card(+i: Nat, +body: String, cs: List<&2, U.TChoice>, +counter: String, back: Bool) -> List<&2, D.Node>:
   [D.El{"div", "", [D.At{"class", "tour-back"}], Nil{}},
     D.El{"div", "tour", [D.At{"class", "tour"}, D.At{"role", "dialog"}, D.At{"aria-modal", "true"}, D.At{"aria-labelledby", "tour-title"}], [
-      D.Dom.span("count", OB.Ob.counter(i)),
+      D.Dom.span("count", counter),
       D.El{"div", "tour-title", [D.At{"class", "tour-title"}, D.At{"id", "tour-title"}], [D.Txt{OB.Ob.title(i)}]},
       D.El{"p", "", [D.At{"class", "tour-body"}], [D.Txt{body}]},
+      D.El{"div", "", [D.At{"class", "tour-choices"}], View.tour.choices(cs)},
       D.El{"div", "", [D.At{"class", "tour-btns"}], [
         D.Dom.button("", "ob-skip", "", "End the tour (Esc)", "Skip"),
         D.Dom.span("gap", ""),
-        D.Dom.button("", "ob-back", "", "The step before (left arrow)", "Back"),
+        View.tour.back(back),
         D.Dom.button("primary", "ob-next", "", "Next step (Enter or right arrow)", OB.Ob.forward(i))]}]}]
 
 def View.tour.k(on: Bool, +i: Nat, +u: U.Ui) -> List<&2, D.Node>:
   match on:
     case True{}:
-      View.tour.card(i, U.Tour.body(1n, u))
+      View.tour.card(i, U.Tour.body(1n, u), U.Tour.choices(u), U.Tour.counter(u), U.Tour.back(u))
     case False{}:
       Nil{}
 

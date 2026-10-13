@@ -58,6 +58,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
@@ -275,7 +276,12 @@ fun App(m: AppModel) {
                     Text(t.title)
                 }
             },
-            text = { Column(Modifier.verticalScroll(rememberScrollState())) { Text(t.body) } },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(t.body)
+                    for (c in t.choices) OutlinedButton(onClick = { m.act(c.action, c.value) }, Modifier.fillMaxWidth().padding(top = 8.dp)) { Text(c.label) }
+                }
+            },
             confirmButton = { TextButton(onClick = { m.act("ob-next") }) { Text(t.next) } },
             dismissButton = {
                 Row {
@@ -543,7 +549,7 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snacks) },
     ) { pad ->
-        if (s.projects.isEmpty() && s.bots.isEmpty() && s.rooms.isEmpty()) {
+        if (s.projects.isEmpty() && s.bots.isEmpty() && s.rooms.isEmpty() && s.uber == null) {
             Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
                 Text(s.empty, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
             }
@@ -552,6 +558,12 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
             // the search is always the list's first row (projects, or in the
             // active view threads by title or project)
             s.search?.let { f -> item(key = "find") { SearchField(m, f, s.projects.firstOrNull()?.id) } }
+            // the uberbot's card, and the status plane under it
+            m.uber(s)?.let { u ->
+                item(key = "uber") { UberCardRow(m, u) }
+                m.plane(s)?.let { planeSections(m, it, false) }
+                item(key = "d:uber") { HorizontalDivider() }
+            }
             if (s.view == "active") {
                 if (s.active.isEmpty() && s.settled == null) {
                     if (s.projects.isNotEmpty() && s.search?.query.isNullOrEmpty()) item(key = "none") {

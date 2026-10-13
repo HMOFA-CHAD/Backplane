@@ -64,6 +64,7 @@ import ../core/outbox.bend as OB
 import ../core/live.bend as LV
 import ../core/farlive.bend as FLV
 import ../core/qr.bend as QR
+import ../core/uber.bend as UB
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -4850,6 +4851,40 @@ def BotJob.scratch.gone(safe: Bool, +home: String, +thread: String) -> IO(Unit):
     case False{}:
       IO.pure(Unit, Unit{})
 
+# the backup before a bot is made the uberbot, in
+# <home>/backups/uber-<now>-<bot>: its home folder, and the log lines that
+# name it or its thread (the log itself is never touched)
+def BotJob.uber.sh() -> String:
+  "set -e; d=\"$1/backups/uber-$2-$3\"; mkdir -p \"$d\"; if [ -d \"$1/bots/$3\" ]; then cp -a \"$1/bots/$3\" \"$d/home\"; fi; grep -F -e \"$3\" -e \"$4\" \"$1/events.jsonl\" > \"$d/events.jsonl\" || [ $? -eq 1 ]"
+
+def BotJob.uber.ran(r: P.Ran) -> Bool:
+  match r:
+    case P.Ran{0, _}:
+      True{}
+    case P.Ran{_, _}:
+      False{}
+
+# only a backup that worked logs the promotion
+def BotJob.uber.done(ok: Bool, +inbox: Chan(Msg), +client: U32, +id: String, +bot: String, +uid: String, +now: Nat) -> IO(Unit):
+  match ok:
+    case True{}:
+      do IO<Unit>:
+        sent : Bool <- Chan.send(Msg, inbox, Commit{[M.UberSet{bot, uid, now}]})
+        BotJob.reply(inbox, client, id, True{}, [J.KV{"uid", J.Str{uid}}])
+    case False{}:
+      BotJob.fail(inbox, client, id, "could not back the bot up; nothing changed")
+
+def BotJob.uber(safe: Bool, +inbox: Chan(Msg), +home: String, +bot: String, +thread: String, +client: U32, +id: String) -> IO(Unit):
+  match safe:
+    case True{}:
+      do IO<Unit>:
+        +now : Nat <- Now.nat()
+        +seed : String <- BN.Bn.random(4n)
+        r : P.Ran <- P.Proc.run("sh", ["-c", BotJob.uber.sh(), "sh", home, Nat.show(now), bot, Bool.pick(String, String.is_empty(thread), bot, thread)], home)
+        BotJob.uber.done(BotJob.uber.ran(r), inbox, client, id, bot, UB.Uber.uid(now, seed), now)
+    case False{}:
+      BotJob.fail(inbox, client, id, "not a bot id")
+
 def BotJob.hooked(+secret: String, +inbox: Chan(Msg), +client: U32, +id: String, +hook: String) -> IO(Unit):
   Bool.pick(IO(Unit), String.is_empty(secret), BotJob.fail(inbox, client, id, "could not keep the webhook's secret"),
     BotJob.reply(inbox, client, id, True{}, [J.KV{"hook", J.Str{hook}}, J.KV{"secret", J.Str{secret}}, J.KV{"path", J.Str{"/hook/" ++ hook}}]))
@@ -5229,6 +5264,9 @@ def Bot.fx(i: Nat, +st: M.State, +inbox: Chan(Msg), +cfg: Cfg, +a: String, +b: S
       BotJob.scratch(BN.Bn.safe(a), inbox, Cfg.home(cfg) ++ "/scratch/", a)
     case 14n:
       IO.spawn(Unit, BotJob.scratch.gone(BN.Bn.safe(a), Cfg.home(cfg), a))
+    case 15n:
+      IO.spawn(Unit, BotJob.uber(Bool.and(BN.Bn.safe(a), Bool.or(String.is_empty(BO.Bot.thread(BO.World.bot(M.State.bots(st), a))), BN.Bn.safe(BO.Bot.thread(BO.World.bot(M.State.bots(st), a))))), inbox, Cfg.home(cfg), a,
+        BO.Bot.thread(BO.World.bot(M.State.bots(st), a)), BotJob.client(b), BotJob.id(c)))
     case _:
       IO.pure(Unit, Unit{})
 
@@ -6703,7 +6741,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.BotFx{+kind, +a, +b, +c}:
       do IO<Hub>:
-        Bot.fx(C.Codec.pos(["home", "gone", "hook", "unhook", "send", "invite", "join", "unpeer", "google", "token", "retoken", "untoken", "voice", "scratch", "scratch-gone"], kind), st, inbox, cfg, a, b, c)
+        Bot.fx(C.Codec.pos(["home", "gone", "hook", "unhook", "send", "invite", "join", "unpeer", "google", "token", "retoken", "untoken", "voice", "scratch", "scratch-gone", "uber"], kind), st, inbox, cfg, a, b, c)
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 def Hub.outs(os: List<&2, B.Out>, h: Hub) -> IO(Hub):
