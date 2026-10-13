@@ -2,6 +2,7 @@ import Base
 import ./model.bend as M
 import ./bot.bend as BT
 import ./far.bend as FR
+import ./json.bend as J
 
 # One item, one alert. When a turn ends, this decides whether it tells the
 # person (the hub's APNs push, the phone's own alert) and under which key.
@@ -894,3 +895,211 @@ def Policy.demo.link() -> Bool:
 def Policy.demo.reminder() -> String:
   +s = Policy.demo.s(Policy.demo.ask())
   Policy.said(Policy.reminder(s, 40n, "t1", "r7", "Call the bank")) ++ " " ++ Policy.said(Policy.reminder(Policy.demo.fold(s, Nil{}, [M.SettingSet{"notify.reminders", "off", 39n}]), 40n, "t1", "r7", "Call the bank"))
+
+# Compact live status. Only visible, running roots count. A delegated
+# child stays a child even after its task ends; launched threads likewise.
+# Mirrored threads count on their owning hub, so paired hubs never double
+# count them.
+# Bot turns count only when their current (unqueued) trigger is personal.
+# Equal message times choose the lexically smaller thread id, independent
+# of map/list order. No personal message means a count but no line.
+type Compact is Data:
+  Compact{running: Nat, thread: String, at: Nat}
+
+def Island.compact.children.go(ts: List<&2, M.Task>, acc: Map<&2, Bool>) -> Map<&2, Bool>:
+  match ts:
+    case Nil{}:
+      acc
+    case M.Task{_, _, child, _, _, _, _, _, _} <> t:
+      Island.compact.children.go(t, Map.set(&2, Bool, acc, child, True{}))
+
+def Island.compact.children(s: M.State) -> Map<&2, Bool>:
+  match s:
+    case M.State{_, _, _, _, tasks, _, _, _, _, _, _}:
+      Island.compact.children.go(Map.values(&2, M.Task, tasks), Map.new(&2, Bool))
+
+def Per.at(p: Per) -> Nat:
+  match p:
+    case Per{_, _, at}:
+      at
+
+# Inspect the newest unqueued user message, including its id: an old
+# direct message or an equal-time queued one cannot make a bot wake count.
+def Island.compact.trigger.pick(hit: Bool, mid: String, text: String, acc: Bool) -> Bool:
+  match hit:
+    case True{}:
+      Policy.direct(mid, text)
+    case False{}:
+      acc
+
+def Island.compact.trigger(es: List<&2, M.Entry>, +id: String, +skip: String, done: Bool, acc: Bool) -> Bool:
+  match es done:
+    case _ True{}:
+      acc
+    case Nil{} False{}:
+      acc
+    case M.Msg{+mid, +th, M.User{}, +text, _} <> t False{}:
+      +hit = Bool.and(String.eq(th, id), Bool.not(Turn.queued(skip, mid)))
+      Island.compact.trigger(t, id, skip, hit, Island.compact.trigger.pick(hit, mid, text, acc))
+    case _ <> t False{}:
+      Island.compact.trigger(t, id, skip, False{}, acc)
+
+def Island.compact.bot(b: Maybe<&2, BT.Bot>, +s: M.State, +id: String) -> Bool:
+  match b:
+    case None{}:
+      True{}
+    case Some{_}:
+      Island.compact.trigger(M.State.mine(s, id), id, Turn.skip(M.Queue.items(s, id), ""), False{}, False{})
+
+def Island.compact.child.k(r: Map<&2, Bool> & Bool) -> Bool:
+  (_, hit) = r
+  hit
+
+def Island.compact.child(children: Map<&2, Bool>, id: String) -> Bool:
+  Island.compact.child.k(Map.get(Bool, False{}, children, id))
+
+def Island.compact.keep(+s: M.State, +children: Map<&2, Bool>, t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{+id, _, _, _, _, M.Running{}, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de}:
+      Bool.and(Bool.not(Bool.or(Bool.or(ar, de), FR.Fr.is(id))), Bool.and(String.is_empty(M.Launch.by(s, id)),
+        Bool.and(Bool.not(Island.compact.child(children, id)),
+          Island.compact.bot(BT.World.of_thread(M.State.bots(s), id), s, id))))
+    case _:
+      False{}
+
+def Island.compact.lt(r: (String & String) & Cmp) -> Bool:
+  (_, c) = r
+  match c:
+    case LT{}:
+      True{}
+    case _:
+      False{}
+
+def Island.compact.newer(+id: String, +at: Nat, +old: String, +stamp: Nat) -> Bool:
+  Bool.and(Bool.not(String.is_empty(id)), Bool.or(String.is_empty(old),
+    Bool.or(Nat.is_gt(at, stamp), Bool.and(Nat.is_eq(at, stamp), Island.compact.lt(String.cmp(id, old))))))
+
+def Island.compact.choose(hit: Bool, n: Nat, id: String, at: Nat, old: String, stamp: Nat) -> Compact:
+  match hit:
+    case True{}:
+      Compact{n, id, at}
+    case False{}:
+      Compact{n, old, stamp}
+
+def Island.compact.add.p(p: Per, +id: String, c: Compact) -> Compact:
+  match p c:
+    case Per{pid, _, +at} Compact{n, +old, +stamp}:
+      +candidate = Bool.pick(String, String.is_empty(pid), "", id)
+      Island.compact.choose(Island.compact.newer(candidate, at, old, stamp), Nat.add(n, 1n), candidate, at, old, stamp)
+
+def Island.compact.add(keep: Bool, +s: M.State, +id: String, c: Compact) -> Compact:
+  match keep:
+    case False{}:
+      c
+    case True{}:
+      Island.compact.add.p(Policy.person(s, id), id, c)
+
+def Island.compact.go(ts: List<&2, M.Thread>, +s: M.State, +children: Map<&2, Bool>, acc: Compact) -> Compact:
+  match ts:
+    case Nil{}:
+      acc
+    case M.Thread{+id, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
+      Island.compact.go(t, s, children, Island.compact.add(Island.compact.keep(s, children, M.State.thread.get(s, id)), s, id, acc))
+
+def Island.compact.threads(s: M.State) -> List<&2, M.Thread>:
+  match s:
+    case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
+      Map.values(&2, M.Thread, ts)
+
+def Island.compact.of(+ts: List<&2, M.Thread>, +s: M.State) -> Compact:
+  Island.compact.go(ts, s, Island.compact.children(s), Compact{0n, "", 0n})
+
+def Island.compact.heard(heard: Bool, ts: List<&2, M.Thread>, s: M.State) -> Compact:
+  match heard:
+    case True{}:
+      Island.compact.of(ts, s)
+    case False{}:
+      Compact{0n, "", 0n}
+
+def Island.compact.count(c: Compact) -> Nat:
+  match c:
+    case Compact{n, _, _}:
+      n
+
+def Island.compact.id(c: Compact) -> String:
+  match c:
+    case Compact{_, id, _}:
+      id
+
+def Island.compact.at(c: Compact) -> Nat:
+  match c:
+    case Compact{_, _, at}:
+      at
+
+def Island.compact.headline(n: Nat) -> String:
+  match n:
+    case 0n:
+      "All agents idle"
+    case _:
+      Nat.show(n) ++ " running"
+
+def Island.compact.doing(es: List<&2, M.Entry>, +id: String, done: Bool, acc: String) -> String:
+  match es done:
+    case _ True{}:
+      acc
+    case Nil{} False{}:
+      acc
+    case M.Act{_, +th, _, kind, summary, _} <> t False{}:
+      Island.compact.doing(t, id, String.eq(th, id), Bool.pick(String, String.eq(th, id), Alert.clean(String.take(kind ++ " " ++ summary, 80n)), acc))
+    case _ <> t False{}:
+      Island.compact.doing(t, id, False{}, acc)
+
+def Island.compact.title(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, _, title, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Alert.clean(String.take(title, 60n))
+
+def Island.compact.line(none: Bool, +s: M.State, +id: String) -> List<&2, J.Json>:
+  match none:
+    case True{}:
+      Nil{}
+    case False{}:
+      [J.Json.obj([J.KV{"thread", J.Json.str(id)}, J.KV{"title", J.Json.str(Island.compact.title(M.State.thread.get(s, id)))},
+        J.KV{"doing", J.Json.str(Island.compact.doing(M.State.mine(s, id), id, False{}, "Working"))}])]
+
+def Island.compact.json(c: Compact, +s: M.State) -> J.Json:
+  match c:
+    case Compact{+n, +id, _}:
+      J.Json.obj([J.KV{"running", J.Json.nat(n)}, J.KV{"headline", J.Json.str(Island.compact.headline(n))},
+        J.KV{"lines", J.Json.arr(Island.compact.line(String.is_empty(id), s, id))}])
+
+def Island.compact.state(ts: List<&2, M.Thread>, +s: M.State) -> J.Json:
+  Island.compact.json(Island.compact.of(ts, s), s)
+
+# Small replays for the compact laws; these exercise the real model.
+def Island.compact.demo.thread(+id: String) -> M.Change:
+  M.ThreadCreated{id, "p1", id, M.Local{}, "", "", "claude", "", 1n}
+
+def Island.compact.demo.five() -> M.State:
+  Policy.demo.s(Policy.demo.cat([
+    [Island.compact.demo.thread("t1"), Island.compact.demo.thread("t2"), Island.compact.demo.thread("t3"), Island.compact.demo.thread("t4"), Island.compact.demo.thread("t5")],
+    Policy.demo.run("t1", "m1", "go", 5n), Policy.demo.run("t2", "m2", "go", 4n), Policy.demo.run("t3", "m3", "go", 3n),
+    Policy.demo.run("t4", "m4", "go", 2n), Policy.demo.run("t5", "m5", "go", 1n)]))
+
+def Island.compact.demo.children() -> M.State:
+  Policy.demo.s(Policy.demo.cat([
+    [Island.compact.demo.thread("t1"), Island.compact.demo.thread("t2"), Island.compact.demo.thread("t0"),
+     M.ThreadLaunched{"t1", "t0", True{}, 2n}, M.TaskDelegated{"k1", "t0", "t2", 1n, "claude", "", 2n}],
+    Policy.demo.run("t1", "m1", "go", 3n), Policy.demo.run("t2", "m2", "go", 4n)]))
+
+def Island.compact.demo.last() -> M.State:
+  Policy.demo.s(Policy.demo.cat([
+    [Island.compact.demo.thread("t1"), Island.compact.demo.thread("t2")],
+    Policy.demo.run("t1", "m1", "go", 4n), Policy.demo.run("t2", "m2", "go", 8n),
+    [M.ActivityLogged{"t1", "a1", "tool", "edit", "newer tool", 10n}, M.MessagePosted{"t2", M.Link.id("t1", "x"), M.User{}, "a newer thread message", 11n}]]))
+
+def Island.compact.demo.of(+s: M.State) -> Compact:
+  Island.compact.of(Island.compact.threads(s), s)
+
+def Island.compact.demo.json(+s: M.State) -> J.Json:
+  Island.compact.state(Island.compact.threads(s), s)

@@ -426,3 +426,14 @@ def Note.demo.rec(+kind: String) -> String:
 # thread t1 holding the record cur
 def Note.demo.s(+cur: String) -> M.State:
   M.State.replay([M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "claude", "", 1n}, M.SettingSet{"alert.t1", cur, 2n}], M.State.empty())
+
+# Production island content is shared with the hub. The older Note.island*
+# helpers above remain for the laws describing the legacy list/wait rule.
+def Note.compact.of(heard: Bool, ts: List<&2, M.Thread>, st: M.State) -> NO.Compact:
+  NO.Island.compact.heard(heard, ts, st)
+
+def Note.compact.json(c: NO.Compact, st: M.State) -> J.Json:
+  NO.Island.compact.json(c, st)
+
+def Note.compact(ts: List<&2, M.Thread>, +st: M.State) -> J.Json:
+  Note.compact.json(Note.compact.of(True{}, ts, st), st)

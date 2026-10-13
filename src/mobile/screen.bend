@@ -5,6 +5,7 @@ import ../core/client.bend as U
 import ../web/dom.bend as D
 import ../web/view.bend as V
 import ./notify.bend as N
+import ../core/notice.bend as NO
 import ./view.bend as VW
 import ./picker.bend as PK
 import ../core/todo.bend as TD
@@ -1264,6 +1265,7 @@ def Mob.tour.gate(covered: Bool, +u: U.Ui) -> J.Json:
 def Mob.screen.go(+focus: Bool, +u: U.Ui, +ix: U.SIx, +g: U.SGroups, +side: MSide) -> J.Json:
   match u:
     case U.Ui{+st, +sel, +dr, _, +o, +on, +now, _, _, +v, _, _, +e, +note, _, _, _}:
+      +compact = N.Note.compact.of(N.Note.heard(on, now, Mob.heard(u)), U.Ui.threads(st), st)
       +rmenu = Mob.rmenu(u)
       +deleting = Mob.deleting(u)
       +renaming = Mob.renaming(u)
@@ -1292,7 +1294,8 @@ def Mob.screen.go(+focus: Bool, +u: U.Ui, +ix: U.SIx, +g: U.SGroups, +side: MSid
         J.KV{"settings", settings},
         J.KV{"find", find},
         J.KV{"folders", folders},
-        J.KV{"island", N.Note.island.h(N.Note.heard(on, now, Mob.heard(u)), U.Ui.threads(st), st)},
+        J.KV{"island", N.Note.compact.json(compact, st)},
+        J.KV{"islandAt", J.Json.nat(NO.Island.compact.at(compact))},
         J.KV{"thread", thread},
         J.KV{"uber", J.Null{}},
         J.KV{"plane", J.Null{}},
