@@ -34,6 +34,10 @@
 //   launch       the same with thread_launch (BP_LAUNCH_ARGS, JSON, merged
 //                into its arguments), holding the turn BP_LAUNCH_HOLD_MS
 //                (0) before it ends; later commands as plain
+//   toolhold     the first command starts a Bash tool call and holds it
+//                BP_TOOL_MS (6000) before its result, then answers
+//   deploy       the first command calls the hub's deploy_restart (the MCP
+//                URL, BP_DEPLOY_ARGS, JSON, as its arguments), then ends
 // Every line read is appended to $FAKE_LOG ("IN <line>"), and "START pid".
 //
 //   test/tools/claude_standin.ts is run through a `claude` wrapper:
@@ -193,6 +197,33 @@ async function run(c: Cmd, firstOne: boolean) {
     log(`DELEGATED ${task.slice(0, 300)}`);
     say("DELEGATED");
     result("DELEGATED");
+    lc(c.uuid, "completed");
+    return;
+  }
+  if (firstOne && mode === "toolhold") {
+    const id = `toolu_${rnd()}`;
+    emit({ type: "assistant", message: { id: `msg_${rnd()}`, type: "message", role: "assistant", model: "claude-haiku-4-5-20251001",
+      content: [{ type: "tool_use", id, name: "Bash", input: { command: "make all" } }], usage: { input_tokens: 10, output_tokens: 5 } }, parent_tool_use_id: null, session_id: session, uuid: rnd() });
+    log("TOOL started");
+    await sleep(Number(process.env.BP_TOOL_MS ?? 6000));
+    emit({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "built" }] }, parent_tool_use_id: null, session_id: session, uuid: rnd() });
+    log("TOOL ended");
+    say("BUILT");
+    result("BUILT");
+    lc(c.uuid, "completed");
+    return;
+  }
+  if (firstOne && mode === "deploy") {
+    let got = "";
+    try {
+      const extra = JSON.parse(process.env.BP_DEPLOY_ARGS ?? "{}");
+      const r = await fetch(mcpUrl, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "deploy_restart", arguments: extra } }) });
+      got = await r.text();
+    } catch (e) { got = String(e); }
+    log(`DEPLOY ${got.slice(0, 400)}`);
+    say("SCHEDULED");
+    result("SCHEDULED");
     lc(c.uuid, "completed");
     return;
   }

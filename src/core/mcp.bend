@@ -4,6 +4,7 @@ import ./model.bend as M
 import ./review.bend as RVW
 import ./codec.bend as C
 import ./hub.bend as B
+import ./deploy.bend as DP
 import ./acp.bend as AC
 import ./msp.bend as MS
 import ./handoff.bend as HD
@@ -120,6 +121,10 @@ def Mcp.tools() -> J.Json:
       [Tool.prop("threadId", "string", "The thread."), Tool.prop("timeoutMs", "number", "How long to wait at most (default 30000, at most 600000).")], ["threadId"]),
     Tool.def("thread_interrupt", "Stop the running turn of a thread in this project.",
       [Tool.prop("threadId", "string", "The thread.")], ["threadId"]),
+    Tool.def("deploy_restart", "Restart the Backplane hub into a new build safely. Answers at once: the restart waits until no thread is inside a tool call (a build, an edit) and the build lock (/tmp/bp-bend.lock) is free, then goes; every turn it cuts resumes by itself. With stage, a directory holding the built package (backplane, backplane-serve, web/ ...) is swapped into the install first. You are woken after the restart with the new version: end your turn, do not wait.",
+      [Tool.prop("stage", "string", "Absolute path of a staged package to install first (default: the files are already in place)."), Tool.prop("note", "string", "Why, shown to the person.")], Nil{}),
+    Tool.def("deploy_status", "Whether a deploy_restart waits, who asked, and what it still waits for (tool calls in flight, the build lock).", Nil{}, Nil{}),
+    Tool.def("deploy_cancel", "Cancel a waiting deploy_restart.", Nil{}, Nil{}),
     Tool.def("viewer_show",
       "Show a file in the user's Backplane viewer panel: a .kicad_pcb on the Board tab (kind 3d: the board in 3D), a .kicad_sch on the Schematic tab, and any .step/.stp or .glb on the Mech tab, the 3D design tab (the model turned in 3D, the project's parts in mech/ beside it, their renders a tap away), wherever the file is. Use it after changing a design so the user sees the result; the viewer also follows the file live.",
       [Tool.prop("path", "string", "Absolute path of the file."), Tool.prop("kind", "string", "board, schematic, 3d (a board in 3D) or mech (a STEP or GLB); default from the extension.")], ["path"]),
@@ -619,7 +624,7 @@ def Mcp.send.k(ok: Bool, +s: M.State, +now: Nat, +thread: String, +target: Strin
 
 def Mcp.names() -> List<&2, String>:
   ["orchestrator_capabilities", "delegate_task", "task_status", "task_cancel", "thread_list", "thread_read", "thread_send", "viewer_show",
-   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment", "wake_on", "wake_list", "wake_cancel"]
+   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment", "wake_on", "wake_list", "wake_cancel", "deploy_restart", "deploy_status", "deploy_cancel"]
 
 # Watched work (hub.bend's Watch.*): work_run, work_watch, work_list,
 # work_cancel, work_unwatch; each answers once its row is stored (the
@@ -716,6 +721,16 @@ def Mcp.wake.cancel.k(ok: Bool, +now: Nat, +id: String) -> Res:
 def Mcp.wake.cancel(+s: M.State, +now: Nat, +by: String, +id: String) -> Res:
   Mcp.wake.cancel.k(Bool.and(Bool.not(String.is_empty(id)), String.eq(J.Json.get_str(WK.Wake.get(s, id), "by", ""), by)), now, id)
 
+# deploy_restart: scheduled at once; the hub restarts when no tool call runs
+# and the build locks are free, and wakes the requester after
+def Mcp.deploy.restart(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
+  match ok:
+    case True{}:
+      Res{True{}, J.Json.obj([J.KV{"state", J.Str{"scheduled"}}, J.KV{"next", J.Str{"Scheduled: the hub restarts when no tool call is running and the build lock is free. You will be woken after it, with the new version. End your turn."}}]),
+        B.Deploy.ask(s, now, Bool.pick(String, String.eq(thread, "deploy"), "", thread), J.Json.get_str(a, "note", ""), J.Json.get_str(a, "stage", ""))}
+    case False{}:
+      Res.fail("stage must be an absolute path")
+
 def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +a: J.Json) -> Res:
   match i:
     case 0n:
@@ -771,6 +786,12 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
       Mcp.wake.cancel(s, now, thread, J.Json.get_str(a, "id", ""))
     case 22n:
       Mcp.review.do(RVW.Review.op.ok(J.Json.get_str(a, "op", ""), a), s, now, thread, a)
+    case 26n:
+      Mcp.deploy.restart(B.Deploy.stage.ok(J.Json.get_str(a, "stage", "")), s, now, thread, a)
+    case 27n:
+      Res.ok(DP.Deploy.status(s))
+    case 28n:
+      Res{True{}, J.Json.obj([J.KV{"state", J.Str{"cancelled"}}]), B.Deploy.cancel(s, now)}
     case _:
       Res.fail("unknown tool")
 

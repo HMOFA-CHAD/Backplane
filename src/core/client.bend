@@ -1,4 +1,5 @@
 import Base
+import ./deploy.bend as DP
 import ./live.bend as LV
 import ./json.bend as J
 import ./model.bend as M
@@ -730,9 +731,13 @@ def Update.waits(+st: M.State) -> Nat:
 def Update.waits.line(+n: Nat, +nf: Map<&2, String>, +note: String) -> String:
   Bool.pick(String, Nat.is_eq(n, 0n), Update.line(nf, note), "Update waits for " ++ Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " thread", " threads") ++ " to finish their work.")
 
+# a deploy waiting for a safe point (core/deploy.bend) shows in its place
+def Update.line.d(+row: String, +n: Nat, +nf: Map<&2, String>, +note: String) -> String:
+  Bool.pick(String, String.is_empty(row), Update.waits.line(n, nf, note), row)
+
 # the version row's line, with the wait
 def Update.line.w(+st: M.State, +nf: Map<&2, String>, +note: String) -> String:
-  Update.waits.line(Update.waits(st), nf, note)
+  Update.line.d(DP.Deploy.row(st), Update.waits(st), nf, note)
 
 # which button the version row shows: 0 none (a packaged install),
 # 1 install an update offered, 2 check now, 3 update now (one waiting)
@@ -1143,7 +1148,7 @@ def Ui.actions() -> List<&2, String>:
    "attach-up", "attach-end",
    "hist-go", "hist-prev", "hist-next", "hist-first", "hist-last", "hist-play", "hist-tick", "hist-diff", "hist-live", "hist-jump",
    "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page", "update-now", "work-cancel", "task-cancel",
-   "view-layer-pick", "view-layer-mode", "skill-close", "wake-cancel"]
+   "view-layer-pick", "view-layer-mode", "skill-close", "wake-cancel", "deploy-cancel"]
 
 # Reading the client state
 # ------------------------
@@ -4415,6 +4420,9 @@ def Fm.act(i: Nat, +u: Ui, +value: String) -> Act:
       Lfocus.mode(u, value)
     case 12n:
       Ui.rpc(u, "wake.cancel", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"id", J.Str{value}}])
+    # (a restart waiting for a safe point is cancelled: the plane's row)
+    case 13n:
+      Ui.rpc(u, "deploy.cancel", Nil{})
     case _:
       Act{u, Nil{}}
 

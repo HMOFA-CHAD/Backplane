@@ -15,6 +15,7 @@ import ./src/app/nui.bend as N
 import ./src/app/bots.bend as BV
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
+import ./src/core/deploy.bend as DP
 import ./src/core/cmds.bend as CM
 import ./src/core/utf8.bend as UT
 import ./src/core/refs.bend as RF
@@ -7329,3 +7330,51 @@ law told_note_marked:
 law told_quiet_record_nothing:
   {List.length(&2, M.Change, TLD.Told.alerts([M.SettingSet{"alert.tb", NO.Alert.line("", "", "m1", "5.1", ""), 5n}], TLD.Told.demo.chatter(), 0n)) == 0n : Nat}
 # ---- end told-rules-board ----
+# harness-coord: deploy (hub.bend's Deploy.*, core/deploy.bend)
+# ------------------------------------------------------------
+
+# a deploy waits while a thread is inside a tool call
+law deploy_waits_for_tool:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(True{}, H.Deploy.demo.line("t0")), 9n, True{})) == 0n : Nat}
+
+# and while a build lock is held
+law deploy_waits_for_lock:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, False{})) == 0n : Nat}
+
+# with no tool call and the locks free it goes, once
+law deploy_goes_when_clear:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{})) == 1n : Nat}
+
+# the go clears the wait and writes deploy.done, each once
+law deploy_go_clears_wait:
+  {H.Deploy.demo.sets(H.Deploy.demo.cs(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{})), "deploy.wait", True{}) == 1n : Nat}
+
+law deploy_go_writes_done:
+  {H.Deploy.demo.sets(H.Deploy.demo.cs(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{})), "deploy.done", False{}) == 1n : Nat}
+
+# nothing waits: nothing goes
+law deploy_idle_nothing:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, ""), 9n, True{})) == 0n : Nat}
+
+# the start after a deploy tells the requester once and clears deploy.done
+law deploy_after_note_once:
+  {H.Deploy.demo.notes(H.Deploy.after(H.Deploy.demo.done("t0"), 9n)) == 1n : Nat}
+
+law deploy_after_clears:
+  {H.Deploy.demo.sets(H.Deploy.demo.cs(H.Deploy.after(H.Deploy.demo.done("t0"), 9n)), "deploy.done", True{}) == 1n : Nat}
+
+# a second start says nothing
+law deploy_after_second_start_quiet:
+  {H.Deploy.demo.notes(H.Deploy.after(H.Deploy.demo.again(H.Deploy.demo.done("t0"), H.Deploy.after(H.Deploy.demo.done("t0"), 9n)), 9n)) == 0n : Nat}
+
+# a bot's thread that asked is woken too
+law deploy_requester_bot_thread:
+  {H.Deploy.demo.notes(H.Deploy.after(H.Deploy.demo.bot(), 9n)) == 1n : Nat}
+
+# a thread the restart cut hears of it in its continue message, not in a second note
+law deploy_cut_requester_no_second:
+  {H.Deploy.demo.notes(H.Deploy.after(H.Deploy.demo.done("t1"), 9n)) == 0n : Nat}
+
+# cancel clears the wait
+law deploy_cancel_clears:
+  {DP.Deploy.waiting(H.Deploy.demo.again(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), H.Deploy.cancel(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n))) == False{} : Bool}

@@ -1,5 +1,6 @@
 import Base
 import ./model.bend as M
+import ./deploy.bend as DP
 import ./bot.bend as BT
 import ./far.bend as FR
 import ./cron.bend as CR
@@ -365,8 +366,17 @@ def Plane.machines.of(+u: U.Ui) -> List<&2, PMach>:
 def Plane.sort(rs: List<&2, PRow>) -> List<&2, PRow>:
   List.sort(~PRow, ~Plane.before, rs)
 
+def Plane.deploy.k(+line: String, +st: M.State) -> List<&2, PRow>:
+  Bool.pick(List<&2, PRow>, String.is_empty(line), Nil{},
+    [PRow{"deploy", "deploy", "deploy-cancel", "deploy", "Restart pending", DP.Deploy.blocking.line(DP.Deploy.count(st), DP.Deploy.locked(line)) ++ " · Cancel", "", "queued", DP.Deploy.since(line), False{}}])
+
+# a restart waiting for a safe point (core/deploy.bend): one row at the top
+# of what runs; a click on it cancels the deploy
+def Plane.deploy.rows(+st: M.State) -> List<&2, PRow>:
+  Plane.deploy.k(DP.Deploy.wait(st), st)
+
 def Plane.of.i(+idle: List<&2, PRow>, +all: List<&2, PRow>, +u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
-  Plane{Plane.sort(Plane.part(all, 0n)), List.sort(~PRow, ~Plane.newer, Plane.part(all, 1n)),
+  Plane{Plane.sort(Plane.part(all, 0n)), List.append(&2, PRow, Plane.deploy.rows(U.Ui.state(u)), List.sort(~PRow, ~Plane.newer, Plane.part(all, 1n))),
     Plane.bot.rows(BU.BU.rows(u), U.Ui.state(u)),
     List.sort(~PRow, ~Plane.newer, Plane.rooms.go(BT.World.rooms(M.State.bots(U.Ui.state(u))), u)),
     List.sort(~PRow, ~Plane.due.before, Plane.routines.go(BT.World.routines.all(M.State.bots(U.Ui.state(u))), u, ix, now)),
