@@ -1062,7 +1062,7 @@ def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p
       Bots.err(client, id, "unknown bots request")
 
 def Bots.request(+s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
-  Bots.request.k(C.Codec.pos(Bots.methods(), J.Json.get_str(o, "m", "")), s, now, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), J.Json.get_obj(o, "p"))
+  Bots.ub(Bots.request.k(C.Codec.pos(Bots.methods(), J.Json.get_str(o, "m", "")), s, now, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), J.Json.get_obj(o, "p")), s, now)
 
 # Webhooks and other machines
 # ---------------------------

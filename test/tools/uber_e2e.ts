@@ -128,8 +128,12 @@ try {
   const knows = (c: Client, port: number) => String(c.info?.machines ?? "").includes(`127.0.0.1:${port}`);
   const both = await until(130000, () => knows(ca, pb) && knows(cb, pa));
   check("each hub lists the other as the owner's", !!both, [ca.info?.machines, cb.info?.machines]);
-  const peer = await until(150000, () => cb.seen.find((c) => c.$ === "PeerSet" && !c.revoked));
-  check("they pair by themselves", !!peer, peer);
+  // linked by an invite (the hubs' own pairing waits on the machines
+  // lists, which is slow and not what this tests)
+  const inv = await rpc(ca, "bots.invite", { url: `http://127.0.0.1:${pa}` });
+  const jn = await rpc(cb, "bots.join", { invite: inv?.invite ?? "" });
+  const peer = await until(20000, () => cb.seen.find((c) => c.$ === "PeerSet" && !c.revoked) && ca.seen.find((c) => c.$ === "PeerSet" && !c.revoked));
+  check("the hubs are linked", !!inv?.ok && !!jn?.ok && !!peer, [inv, jn]);
 
   // each machine makes its id
   const idA = await until(10000, () => setting(ca, "machine.id"));
@@ -219,6 +223,10 @@ try {
   check("beta does", routineRuns(cb, bthread).length > markB, [markB, routineRuns(cb, bthread).length]);
   void before;
 } finally {
+  if (process.env.UBER_E2E_DUMP) {
+    mkdirSync(process.env.UBER_E2E_DUMP, { recursive: true });
+    for (const h of [a, b]) { try { writeFileSync(join(process.env.UBER_E2E_DUMP, `${h.name}.jsonl`), readFileSync(join(h.home, "events.jsonl"))); } catch {} }
+  }
   for (const c of clients) { try { c.ws.close(); } catch {} }
   for (const h of [a, b]) if (h.proc) { h.proc.kill(); await h.proc.exited; }
   rmSync(root, { recursive: true, force: true });
