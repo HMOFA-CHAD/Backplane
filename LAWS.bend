@@ -7224,3 +7224,10 @@ law wake_message_one_paragraph:
 
 law wake_event_independent_of_step:
   {H.Wake.demo.partial() == 0n : Nat}
+# The notification Settings show the policy defaults even before any setting is saved.
+law notify_rows_defaults:
+  {U.Notify.rows(M.State.empty()) == [
+    U.NotifyRow{"Needs me", "Approvals, questions and anything an agent is blocked on until you act.", "on", "notify.needs"},
+    U.NotifyRow{"Settled", "Work you gave a thread is finished, failed, or its branch merged. Once per piece of work.", "on", "notify.settled"},
+    U.NotifyRow{"Reminders", "Reminders and digests you scheduled.", "on", "notify.reminders"},
+    U.NotifyRow{"Everything", "Also every turn end and room exchange, as before.", "off", "notify.all"}] : List<&2, U.NotifyRow>}

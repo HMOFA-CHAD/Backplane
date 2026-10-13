@@ -8612,3 +8612,6 @@ def Laws.policy_reminder_alerts():
   {==}
 
 # ---- end notif-policy ----
+
+def Laws.notify_rows_defaults():
+  {==}

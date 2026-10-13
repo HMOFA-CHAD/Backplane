@@ -3154,6 +3154,45 @@ def Set.tour(+ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
     Set.row.r(ty, "Welcome tour", "The short walk through projects, threads, bots, your agents and your machines.", x, (y + 34 : U32), w, (bw + 22 : U32)),
     Lay.button(ty, D.Clip.all(), (x + w - 16 - bw : U32), (y + 44 : U32), "Show the tour", T.Th.soft(), "ob-open", "")])
 
+# Notify me for: wrap the notes and use the same heights for drawing and scrolling.
+def Set.notify.rh(r: U.NotifyRow, +ty: Ty, +w: U32) -> U32:
+  match r:
+    case U.NotifyRow{_, note, _, _}:
+      (32 + Set.agy.nh(ty, note, w) : U32)
+
+def Set.notify.row(r: U.NotifyRow, +ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
+  match r:
+    case U.NotifyRow{nm, note, +on, +key}:
+      Out.all([
+        Set.row.r(ty, nm, "", x, y, w, (Lay.button.w(ty, "On") + Lay.button.w(ty, "Off") + 22 : U32)),
+        Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Off") - 6 - Lay.button.w(ty, "On") : U32), (y + 2 : U32), "On", String.eq(on, "on"), "setting", key ++ "=on"),
+        Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Off") : U32), (y + 2 : U32), "Off", String.eq(on, "off"), "setting", key ++ "=off"),
+        Set.agy.lines(Ty.wrap(ty, 2n, note, (w - 32 : U32)), ty, (x + 16 : U32), (y + 26 : U32))])
+
+def Set.notify.rows(rs: List<&2, U.NotifyRow>, +ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
+  match rs:
+    case Nil{}:
+      Out.none()
+    case +r <> t:
+      Out.cat(Set.notify.row(r, ty, x, w, y), Set.notify.rows(t, ty, x, w, (y + Set.notify.rh(r, ty, w) : U32)))
+
+def Set.notify.sum(rs: List<&2, U.NotifyRow>, +ty: Ty, +w: U32) -> U32:
+  match rs:
+    case Nil{}:
+      0
+    case r <> t:
+      (Set.notify.rh(r, ty, w) + Set.notify.sum(t, ty, w) : U32)
+
+def Set.notify.h(+st: M.State, +ty: Ty, +w: U32) -> U32:
+  (90 + Set.agy.nh(ty, U.Notify.lead(), w) + Set.notify.sum(U.Notify.rows(st), ty, w) : U32)
+
+def Set.notify(+st: M.State, +ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
+  Out.all([
+    Set.head(ty, U.Notify.title(), x, y),
+    Set.card(x, (y + 32 : U32), w, (Set.notify.h(st, ty, w) - 56 : U32)),
+    Set.agy.lines(Ty.wrap(ty, 2n, U.Notify.lead(), (w - 32 : U32)), ty, (x + 16 : U32), (y + 38 : U32)),
+    Set.notify.rows(U.Notify.rows(st), ty, x, w, (y + 50 + Set.agy.nh(ty, U.Notify.lead(), w) : U32))])
+
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +w = {U32.min((x1 - x0 - 64 : U32), 720) : U32}
   +x = {(x0 + U32.shr((x1 - x0 - w : U32)) : U32) : U32}
@@ -3167,10 +3206,10 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 46 : U32) : U32}
-  +total = {(1156 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 132 : U32) : U32}
+  +total = {(1156 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
-  +b2 = {(b + 128 : U32) : U32}
+  +b2 = {(b + 128 + Set.notify.h(st, ty, w) : U32) : U32}
   +fu = M.Setting.get(st, "followup", "")
   Out.all([
     Out{Nil{}, [Lay.hit(x0, 52, (x1 - x0 : U32), (h - 52 : U32), "set-bg", U32.show(U32.dim(total, h)))]},
@@ -3184,6 +3223,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Steer") - 6 - Lay.button.w(ty, "Queue") : U32), (b + 188 : U32), "Queue", String.eq(fu, "queue"), "setting", "followup=queue"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Steer") : U32), (b + 188 : U32), "Steer", String.eq(fu, "steer"), "setting", "followup=steer"),
     Set.carry(ty, M.Carry.on(st), x, w, (b + 238 : U32)),
+    Set.notify(st, ty, x, w, (b + 320 : U32)),
     Set.head(ty, "Agents", x, (b2 + 192 : U32)),
     Set.card(x, (b2 + 224 : U32), w, (124 + dy : U32)),
     Set.row(ty, "Provider and model for new threads", Set.cli(U.Models.cli(U.Str.get(info, "models"), prov), prov) ++ ". Each thread keeps its own; change it from the composer.", x, (b2 + 226 : U32), w),
