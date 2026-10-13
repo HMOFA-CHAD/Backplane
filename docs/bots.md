@@ -50,6 +50,25 @@ that project. Declining makes nothing.
 setting `bot.parent.<id>`. Sub-bots go at most two levels below a bot a
 person made (law `bot_spawn_bounded`), and a bot keeps at most eight.
 
+## Launched threads report back
+
+A bot (or any thread) that starts work with `thread_launch` hears back by
+itself, the way `delegate_task` results arrive: each time the launched
+thread's turn ends it gets one message with the thread's title and id, its
+state (completed, waits for an answer, failed, interrupted) and its last
+reply cut to about 1.5 KB (`thread_read` for the rest), and an ask the thread
+opens for the person is passed on at once. The message wakes the launcher,
+or waits in its queue behind a running turn (the queue is in the log, so
+order survives a restart). `thread_launch {report: false}` launches quietly,
+and `thread_update {threadId, report: false|true}` changes it later. A
+thread that already wrote to its launcher in the turn, or one its launcher
+stopped itself, is not echoed back; twenty turns in a row started by the
+launcher with no word from the person end the reports with a note saying
+so. The uberbot hears on the machine that holds its conversation; a
+launcher on another machine is sent its reports in order, again each
+minute until that machine takes them. A bot turn woken only by a report
+sends the person no push: the launched thread alerted for itself.
+
 ## Conversation depth
 
 A message a bot sends carries a hop count: a human, a routine, a webhook or

@@ -288,9 +288,11 @@ def Change.encode(c: M.Change) -> J.Json:
       Change.obj("UberSet", [J.KV{"bot", J.Str{bot}}, J.KV{"uid", J.Str{uid}}, J.KV{"at", Codec.nat(at)}])
     case M.UberOp{uid, origin, n, stamp, op, at}:
       Change.obj("UberOp", [J.KV{"uid", J.Str{uid}}, J.KV{"origin", J.Str{origin}}, J.KV{"n", Codec.nat(n)}, J.KV{"stamp", J.Str{stamp}}, J.KV{"op", J.Str{op}}, J.KV{"at", Codec.nat(at)}])
+    case M.ThreadLaunched{id, by, report, at}:
+      Change.obj("ThreadLaunched", [J.KV{"id", J.Str{id}}, J.KV{"by", J.Str{by}}, J.KV{"report", J.Flag{report}}, J.KV{"at", Codec.nat(at)}])
 
 def Change.tags() -> List<&2, String>:
-  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet", "WorkSet", "UberSet", "UberOp"]
+  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet", "WorkSet", "UberSet", "UberOp", "ThreadLaunched"]
 
 def Change.decode.k(i: Nat, +o: J.Json) -> Maybe<&2, M.Change>:
   match i:
@@ -412,6 +414,8 @@ def Change.decode.k(i: Nat, +o: J.Json) -> Maybe<&2, M.Change>:
       Some{M.UberSet{J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "uid", ""), J.Json.get_nat(o, "at", 0n)}}
     case 58n:
       Some{M.UberOp{J.Json.get_str(o, "uid", ""), J.Json.get_str(o, "origin", ""), J.Json.get_nat(o, "n", 0n), J.Json.get_str(o, "stamp", ""), J.Json.get_str(o, "op", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 59n:
+      Some{M.ThreadLaunched{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "by", ""), J.Json.get_bool(o, "report", True{}), J.Json.get_nat(o, "at", 0n)}}
     case _:
       None{}
 
@@ -547,6 +551,8 @@ def Change.wire(c: M.Change) -> J.Json:
       Change.encode(M.UberSet{bot, uid, at})
     case M.UberOp{uid, origin, n, stamp, op, at}:
       Change.encode(M.UberOp{uid, origin, n, stamp, op, at})
+    case M.ThreadLaunched{id, by, report, at}:
+      Change.encode(M.ThreadLaunched{id, by, report, at})
 
 def Change.private(+tag: String) -> Bool:
   Bool.or(String.eq(tag, "DeviceRegistered"), String.eq(tag, "DeviceDropped"))

@@ -32,7 +32,7 @@ import ./plane.bend as PLN
 
 # the tools a remote agent may call here (thread_wait is its poll)
 def Fm.names() -> List<&2, String>:
-  ["thread_send", "thread_wait_now", "thread_interrupt", "thread_update", "thread_list", "thread_launch", "project_list", "machine_list", "thread_read", "thread_handoff", "plane_read"]
+  ["thread_send", "thread_wait_now", "thread_interrupt", "thread_update", "thread_list", "thread_launch", "project_list", "machine_list", "thread_read", "thread_handoff", "plane_read", "launch_report"]
 
 # a request from another machine: `mcp.call` of one of the tools the owner's
 # machines may call here (machine_list is each hub's own answer)
@@ -40,7 +40,7 @@ def Fm.is(+o: J.Json) -> Bool:
   String.eq(J.Json.get_str(o, "m", ""), "mcp.call")
 
 def Fm.remote.k(+i: Nat) -> Bool:
-  Bool.or(Nat.is_lt(i, 7n), Bool.and(Nat.is_ge(i, 8n), Nat.is_lt(i, 11n)))
+  Bool.or(Nat.is_lt(i, 7n), Bool.and(Nat.is_ge(i, 8n), Nat.is_lt(i, 12n)))
 
 def Fm.remote(+tool: String) -> Bool:
   Fm.remote.k(C.Codec.pos(Fm.names(), tool))
@@ -149,26 +149,58 @@ def Fm.hand(+s: M.State, +now: Nat, +from: String, +a: J.Json) -> MC.Res:
 def Fm.plane.name(+name: String) -> String:
   Bool.pick(String, String.is_empty(name), "that machine", name)
 
+# A launched thread's report from the machine it runs on, for its launcher
+# here (hub.bend's Lr.far.*): posted once per key, so a line the other
+# machine sends again posts nothing more (law launch_far_once)
+def Fm.report.k(here: Bool, had: Bool, +s: M.State, +now: Nat, +from: String, +to: String, +key: String, +text: String) -> MC.Res:
+  match here had:
+    case False{} _:
+      MC.Res.fail("no thread " ++ to ++ " here")
+    case True{} True{}:
+      MC.Res.ok(J.Json.obj([J.KV{"threadId", J.Str{to}}, J.KV{"state", J.Str{"had it"}}]))
+    case True{} False{}:
+      MC.Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{to}}, J.KV{"state", J.Str{"sent"}}]), B.Hub.inbox.id(s, now, from, to, M.User{}, text, B.Lr.msg(from, key))}
+
+def Fm.report(+s: M.State, +now: Nat, +from: String, +to: String, +key: String, +text: String) -> MC.Res:
+  Fm.report.k(B.Lr.exists(s, to), B.Hub.has_msg(M.State.mine(s, to), B.Lr.msg(from, key)), s, now, from, to, key, text)
+
+# the same report taken twice: how many messages reach t0
+def Fm.report.again(r: MC.Res) -> Nat:
+  match r:
+    case MC.Res{_, _, B.Step{+cs, _}}:
+      B.Lr.count(cs, "t0")
+
+def Fm.report.twice.k(r: MC.Res, +s: M.State) -> Nat:
+  match r:
+    case MC.Res{_, _, B.Step{+cs, _}}:
+      Nat.add(B.Lr.count(cs, "t0"), Fm.report.again(Fm.report(M.State.replay(cs, s), 10n, "L~t1", "t0", "k1", "x")))
+
+def Fm.report.twice() -> Nat:
+  +s = B.Lr.demo(True{})
+  Fm.report.twice.k(Fm.report(s, 9n, "L~t1", "t0", "k1", "x"), s)
+
 def Fm.call.k(i: Nat, +s: M.State, +now: Nat, +from: String, +a: J.Json, +id: String, +ok: Bool) -> MC.Res:
   match i:
     case 0n:
-      Fm.say(ok, MC.Mcp.send.k(ok, s, now, from, id, J.Json.get_str(a, "text", ""), J.Json.get_str(a, "mode", "")))
+      Fm.say(Bool.or(ok, B.Lr.may(s, from, id)), MC.Mcp.send.k(Bool.or(ok, B.Lr.may(s, from, id)), s, now, from, id, J.Json.get_str(a, "text", ""), J.Json.get_str(a, "mode", "")))
     case 1n:
       Fm.say(ok, MC.Mcp.wait.k(ok, s, id))
     case 2n:
-      Fm.say(ok, MC.Mcp.interrupt.k(ok, B.Hub.running(B.Hub.thread(s, id)), s, now, id))
+      Fm.say(ok, MC.Mcp.interrupt.f(ok, B.Hub.running(B.Hub.thread(s, id)), s, now, from, id))
     case 3n:
       Fm.say(ok, MC.Mcp.update.k(ok, String.is_empty(String.trim(J.Json.get_str(a, "title", ""))), s, now, id, String.trim(J.Json.get_str(a, "title", ""))))
     case 4n:
       Fm.list(s, J.Json.get_str(a, "project", ""))
     case 5n:
-      MC.Mcp.launch(s, now, "", a)
+      MC.Mcp.launch.by(s, now, "", from, a)
     case 6n:
       MC.Res.ok(J.Json.obj([J.KV{"projects", J.Json.arr(Fm.proj.rows(s))}]))
     case 8n:
       Fm.say(ok, MC.Mcp.read.k(ok, s, id, M.Switch.num(J.Json.as_raw(J.Json.get(a, "limit"), "40"), 40n)))
     case 9n:
       Fm.hand(s, now, from, a)
+    case 11n:
+      Fm.report(s, now, from, J.Json.get_str(a, "threadId", ""), J.Json.get_str(a, "key", ""), J.Json.get_str(a, "text", ""))
     case 10n:
       MC.Res.ok(J.Json.obj([J.KV{"text", J.Str{PLN.Plane.read(s, now, J.Json.get_str(a, "as", ""), Fm.plane.name(J.Json.get_str(a, "name", "")), J.Json.get_bool(a, "idle", False{}))}}]))
     case _:
@@ -311,6 +343,8 @@ def Fm.plan.pw(+word: String, +ins: List<&2, FR.In>, +tool: String, +thread: Str
 
 def Fm.plan.k(i: Nat, +s: M.State, +ins: List<&2, FR.In>, +tool: String, +thread: String, +a: J.Json) -> Plan:
   match i:
+    case 12n:
+      PHere{}
     case 11n:
       PHere{}
     case 10n:

@@ -255,6 +255,11 @@ type Change is Data:
   # n-th, stamped `stamp` (a hybrid logical clock, ubop.bend), `op` its
   # body as compact JSON; folded into settings under the uid (State.uberop)
   UberOp{uid: String, origin: String, n: Nat, stamp: String, op: String, at: Nat}
+  # thread `id` was started by `by` (thread_launch: the thread or bot thread
+  # that called it; a caller elsewhere as `<link>~<thread>`); `report`
+  # whether its turn ends, asks and failures go back to `by` (Launch below).
+  # Again later with the same `by`: the report choice changes (thread_update)
+  ThreadLaunched{id: String, by: String, report: Bool, at: Nat}
 
 # the later of two times. Base's Nat.max recurses once per unit and
 # overflows at epoch scale; Nat.is_ge compiles to a machine comparison.
@@ -1356,6 +1361,60 @@ def Usage.merge(+old: String, +used: Nat, +window: Nat) -> String:
 def State.usage(+s: State, +th: String, +used: Nat, +window: Nat) -> State:
   State.setting(s, Usage.key(th), Usage.merge(Setting.get(s, Usage.key(th), ""), used, window))
 
+# Launched threads
+# ----------------
+# A thread started by another (thread_launch) remembers who started it, as
+# the setting launch.<id>: "1" or "0" (whether it reports back) and then
+# the launcher. The launcher's list is the setting launched.<by>: its
+# launched threads one per line, oldest first, each once (law
+# launch_list_once).
+
+def Launch.key(+id: String) -> String:
+  "launch." ++ id
+
+def Launch.list.key(+by: String) -> String:
+  "launched." ++ by
+
+def Launch.val(+by: String, report: Bool) -> String:
+  Bool.pick(String, report, "1", "0") ++ by
+
+# who launched a thread ("" for one nobody launched)
+def Launch.by(s: State, +id: String) -> String:
+  String.drop(Setting.get(s, Launch.key(id), ""), 1n)
+
+# whether a launched thread reports back to its launcher
+def Launch.reports(s: State, +id: String) -> Bool:
+  +v = Setting.get(s, Launch.key(id), "")
+  Bool.and(String.starts_with(v, "1"), Nat.is_gt(String.length(v), 1n))
+
+def Launch.has(xs: List<&2, String>, +id: String) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case +x <> t:
+      Bool.or(String.eq(x, id), Launch.has(t, id))
+
+def Launch.lines(+v: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(v), Nil{}, String.split(v, '\n'))
+
+def Launch.add.k(had: Bool, +v: String, +id: String) -> String:
+  match had:
+    case True{}:
+      v
+    case False{}:
+      Bool.pick(String, String.is_empty(v), id, v ++ "\n" ++ id)
+
+# a launcher's list with one more thread (kept once)
+def Launch.add(+v: String, +id: String) -> String:
+  Launch.add.k(Launch.has(Launch.lines(v), id), v, id)
+
+# the threads `by` launched, oldest first
+def Launch.of(s: State, +by: String) -> List<&2, String>:
+  Launch.lines(Setting.get(s, Launch.list.key(by), ""))
+
+def Launch.fold(+s: State, +id: String, +by: String, report: Bool) -> State:
+  State.setting(State.setting(s, Launch.key(id), Launch.val(by, report)), Launch.list.key(by), Launch.add(Setting.get(s, Launch.list.key(by), ""), id))
+
 # Forks
 # -----
 # A fork remembers its source thread (the setting fork.<id>).
@@ -1668,6 +1727,8 @@ def State.apply.go(s: State, e: Change) -> State:
       State.setting(State.setting(s, "uber.bot", bot), "uber.uid", uid)
     case UberOp{+uid, +origin, +n, +stamp, +op, at}:
       State.uberop(s, uid, origin, n, stamp, op, at)
+    case ThreadLaunched{+id, +by, report, _}:
+      Launch.fold(s, id, by, report)
     case TodosSet{+th, todos, _}:
       State.setting(s, "todos." ++ th, todos)
     case ProviderSet{+id, +p, m, _}:

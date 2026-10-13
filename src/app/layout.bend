@@ -2550,14 +2550,14 @@ def Lay.subs(+ty: Ty, +all: List<&2, SB.SubRow>, +rs: List<&2, SB.SubRow>, +open
 def Subs.height(+all: List<&2, SB.SubRow>, +rs: List<&2, SB.SubRow>, +open: Bool) -> U32:
   Bool.pick(U32, List.is_empty(&2, SB.SubRow, all), 0, (Subs.box.h(rs, open) + 12 : U32))
 
-def Lay.parent.k(+ty: Ty, +p: String, +st: M.State, +x0: U32, +y: U32) -> Out:
-  +label = "← delegated by " ++ U.Tasks.title(st, p)
+def Lay.parent.k(+ty: Ty, +p: String, +st: M.State, +thread: String, +x0: U32, +y: U32) -> Out:
+  +label = U.Tasks.up.label(st, thread, p)
   Out.when(Bool.not(String.is_empty(p)),
     Out{Ty.text(ty, 2n, label, D.Clip.all(), x0, y, 28, T.Th.accent()), [Lay.hit(x0, y, (Ty.width(ty, 2n, label) + 8 : U32), 28, "select", p)]})
 
-# a child thread links back to its parent
+# a child thread links back to its parent, a launched one to its launcher
 def Lay.parent(+ty: Ty, +st: M.State, +thread: String, +x0: U32, +y: U32) -> Out:
-  Lay.parent.k(ty, U.Tasks.parent(st, thread), st, x0, y)
+  Lay.parent.k(ty, U.Tasks.up(st, thread), st, thread, x0, y)
 
 # Asks: what the agent waits on the user for
 # ------------------------------------------
@@ -5252,7 +5252,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +soff = Pane.clamp(Pane.off(pics, "subs:" ++ sel), List.length(&2, SB.SubRow, SB.Subs.panel.rows(sopen, ts)))
       +svis = Subs.vis(ts, sopen, soff, h)
       # the row under the header: the parent's link
-      +pl = {Bool.pick(U32, String.is_empty(U.Tasks.parent(st, sel)), 0, 32) : U32}
+      +pl = {Bool.pick(U32, String.is_empty(U.Tasks.up(st, sel)), 0, 32) : U32}
       +pins = U.Ec.pins(ec, st, sel)
       +top = {(52 + hy + pl + Subs.height(ts, svis, sopen) + Pins.height(pins) : U32) : U32}
       +asks = U.Asks.open(st, sel)

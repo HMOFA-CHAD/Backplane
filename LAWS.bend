@@ -6883,3 +6883,83 @@ law plane_list_same:
 
 law plane_list_same_rich:
   {PLN.Plane.list.same(PLN.Plane.demo.rich(), 200000n) == True{} : Bool}
+
+# Launched threads report back (hub.bend's Launch.tell, Lr.*)
+# ----------------------------------------------------------
+
+# a launched thread's turn end reaches its launcher once
+law launch_reports_turn_end:
+  {H.Lr.demo.tell(H.Lr.demo(True{}), H.Lr.demo.end()) == 1n : Nat}
+
+# an ask it opens reaches the launcher at once, before any turn end
+law launch_ask_at_once:
+  {H.Lr.demo.tell(H.Lr.demo(True{}), [M.AskOpened{"q1", "t1", "question", "AskUserQuestion", "which board?", "", 9n}]) == 1n : Nat}
+
+# a failure too
+law launch_fail_told:
+  {H.Lr.demo.tell(H.Lr.demo(True{}), [M.TurnChanged{"t1", M.Failed{}, 9n}]) == 1n : Nat}
+
+# a step that ends no turn and opens no ask tells nothing (one report per end)
+law launch_once_per_end:
+  {H.Lr.demo.tell(H.Lr.demo(True{}), [M.MessagePosted{"t1", "a2", M.Assistant{}, "more", 9n}]) == 0n : Nat}
+
+# reports turned off: the step is left as it was
+law launch_muted_quiet:
+  {H.Launch.tell(H.Lr.demo(False{}), 9n, "t1", H.Step{H.Lr.demo.end(), []}) == H.Step{H.Lr.demo.end(), []} : H.Step}
+
+# a turn that left work out of hand reports nothing yet (the one that
+# finishes the work does)
+law launch_waits_for_work:
+  {H.Lr.demo.tell(H.Lr.demo.k(True{}, False{}, False{}, [M.WorkSet{"t1", "bg", "a\tx", 2n}]), H.Lr.demo.end()) == 0n : Nat}
+
+# a thread that already wrote to its launcher this turn is not echoed
+law launch_said_quiet:
+  {H.Lr.demo.tell(H.Lr.demo.k(True{}, False{}, False{}, [M.MessagePosted{"t0", M.Link.id("t1", "m5"), M.User{}, "here it is", 2n}]), H.Lr.demo.end()) == 0n : Nat}
+
+# a launcher stopping its own thread is not told it stopped it
+law launch_own_stop_quiet:
+  {H.Lr.count(H.Queue.changes(H.Retire.stop.f(H.Lr.demo(True{}), 9n, "t1", "t0", [])), "t0") == 0n : Nat}
+
+# the person stopping it is told
+law launch_stop_told:
+  {H.Lr.count(H.Queue.changes(H.Retire.stop(H.Lr.demo(True{}), 9n, "t1", [])), "t0") == 1n : Nat}
+
+# reports to a busy launcher wait in its queue, one per end, in order (the
+# queue is in the log, so a restart keeps them)
+law launch_queued_in_order:
+  {H.Lr.demo.twice() == 2n : Nat}
+
+# back and forth with the launcher Lr.loops() times without the person:
+# the reports stop
+law launch_loop_bounded:
+  {H.Lr.demo.loop.on() == False{} : Bool}
+
+# a report from another machine posts once however often it is sent
+law launch_far_once:
+  {FMC.Fm.report.twice() == 1n : Nat}
+
+# the outbox keeps its order, and a line taken leaves it alone
+law launch_far_order:
+  {String.join(H.Lr.far.keep(["a\t1", "b\t2", "c\t3"], "b"), "|") == "a\t1|c\t3" : String}
+
+# a launcher lists each thread once
+law launch_list_once:
+  {M.Launch.add(M.Launch.add("a", "b"), "b") == "a\nb" : String}
+
+# a launched thread links back to its launcher
+law launched_up_launcher:
+  {U.Tasks.up(H.Lr.demo(True{}), "t1") == "t0" : String}
+
+# and its launcher lists it while it runs
+law subs_launched_live_kept:
+  {List.length(&2, SB.SubRow, SB.Subs.launched(H.Lr.demo(True{}), "t0")) == 1n : Nat}
+
+# a bot turn woken by a report is the launched thread's news, already
+# alerted: it is chatter
+law notice_report_quiet:
+  {NO.Turn.msg(NO.Turn{False{}, "[Backplane] Launched thread \"work\" (t1) completed.", 0n}) == True{} : Bool}
+
+# a thread a bot launched may thread_send the bot's thread, which is in no
+# project (and the bot may send to it)
+law launch_send_launcher:
+  {H.Lr.may(M.State.replay([M.ThreadLaunched{"t1", "tb", True{}, 1n}], M.State.empty()), "t1", "tb") == True{} : Bool}

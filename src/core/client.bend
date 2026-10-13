@@ -1446,6 +1446,81 @@ def Task.word(s: M.TaskState) -> String:
     case M.TaskCancelled{}:
       "cancelled"
 
+# Launched threads
+# ----------------
+# A thread started with thread_launch links back to its launcher the way a
+# delegated child links to its parent (every client's "parent" row), and
+# its launcher lists it with its state (subs.bend's Subs.launched). A
+# launcher is named as the person knows it: a bot by its name, a thread by
+# its title (law launched_by_bot_named).
+
+def Launched.title(+t: String) -> String:
+  Bool.pick(String, String.is_empty(t), "a thread on another machine", t)
+
+def Launched.bot(m: Maybe<&2, BT.Bot>, +st: M.State, +id: String) -> String:
+  match m:
+    case Some{+b}:
+      BT.Bot.name(b)
+    case None{}:
+      Launched.title(Tasks.title(st, id))
+
+# the launcher's name ("" for a thread nobody launched)
+def Launched.name(+st: M.State, +by: String) -> String:
+  Bool.pick(String, String.is_empty(by), "", Launched.bot(BT.World.of_thread(M.State.bots(st), by), st, by))
+
+# where a thread's link row goes: the parent that delegated it, else who
+# launched it ("" for neither)
+def Tasks.up(+st: M.State, +thread: String) -> String:
+  Bool.pick(String, String.is_empty(Tasks.parent(st, thread)), M.Launch.by(st, thread), Tasks.parent(st, thread))
+
+# the row's words
+def Tasks.up.label(+st: M.State, +thread: String, +p: String) -> String:
+  Bool.pick(String, String.is_empty(Tasks.parent(st, thread)), "← launched by " ++ Launched.name(st, p), "← delegated by " ++ Tasks.title(st, p))
+
+# a launched thread's state as its launcher's list says it
+def Launched.word.k(t: M.TurnState, +pending: Nat) -> String:
+  match t:
+    case M.Running{}:
+      "running"
+    case M.Failed{}:
+      "failed"
+    case M.Interrupted{}:
+      "stopped"
+    case M.Completed{}:
+      Bool.pick(String, Nat.is_gt(pending, 0n), "needs you", "done")
+    case _:
+      Bool.pick(String, Nat.is_gt(pending, 0n), "needs you", "idle")
+
+def Launched.word(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, _, _, _, _, turn, +pending, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Launched.word.k(turn, pending)
+
+# its row's second line: "launched · <model>"
+def Launched.who(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, +pr, +mo, _, _, _, _}:
+      "launched · " ++ Models.label(pr, mo)
+
+# at work or waiting on the person
+def Launched.live.k(t: M.TurnState, +pending: Nat) -> Bool:
+  match t:
+    case M.Running{}:
+      True{}
+    case _:
+      Nat.is_gt(pending, 0n)
+
+def Launched.live(t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{_, _, _, _, _, turn, +pending, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Launched.live.k(turn, pending)
+
+# still there to show: made, not deleted or archived
+def Launched.shown(t: M.Thread, +id: String) -> Bool:
+  match t:
+    case M.Thread{+i, _, _, _, _, _, _, archived, _, _, _, _, _, _, _, _, _, _, _, _, deleted}:
+      Bool.and(String.eq(i, id), Bool.not(Bool.or(archived, deleted)))
+
 # Asks
 # ----
 

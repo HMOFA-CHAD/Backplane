@@ -10,6 +10,8 @@ import ./todo.bend as TD
 import ./fm.bend as FM
 import ./refs.bend as RF
 import ./emb.bend as EM
+import ./far.bend as FR
+import ./ubersync.bend as UBS
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -78,6 +80,9 @@ type Out is Data:
   # a thread's streamed text: kept by the server (core/live.bend) until its
   # message is posted or its turn ends, and sent as a delta
   Live{thread: String, text: String}
+  # the outbox of reports to launchers on other machines (the setting
+  # launch.far, Lr.far.*) is due to be sent, in order
+  LaunchFar{}
 
 type Step is Data:
   Step{changes: List<&2, M.Change>, outs: List<&2, Out>}
@@ -2696,6 +2701,299 @@ def Task.finish.w(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
     case Step{+cs, os}:
       Task.finish.w.e(Task.ended.last(cs, thread), s, now, thread, cs, os)
 
+# Launched threads reporting back
+# -------------------------------
+# A thread started with thread_launch (model.bend's Launch) tells whoever
+# launched it, the way a delegated task's child does: when a step ends its
+# turn (completed, failed, interrupted) or opens an ask, a short note goes
+# to the launcher's thread through its inbox (Hub.inbox: a turn starts
+# there, or the note waits in its queue behind a running one; the queue is
+# in the log, so a restart keeps the order). One note per turn end at most
+# (law launch_once_per_end); none when the launcher turned reports off
+# (law launch_muted_quiet), when the turn left work out of hand (the turn
+# that finishes it reports; law launch_waits_for_work), or when the thread
+# already wrote to its launcher in this turn (law launch_said_quiet).
+# A launcher that goes back and forth with its thread Lr.loops() times
+# with no word from the person gets a last note and the reports stop
+# (law launch_loop_bounded). The uberbot's notes go to the machine that
+# holds its conversation (Ub.chat), and a launcher on another machine is
+# reached through the outbox below.
+
+# the most turns in a row a launcher's own messages start before reports stop
+def Lr.loops() -> Nat:
+  20n
+
+# how much of the last reply a note carries
+def Lr.cut() -> Nat:
+  1500n
+
+# 0: nothing, 1 completed, 2 failed, 3 interrupted (the thread's last turn change)
+def Lr.one(c: M.Change, +thread: String, acc: Nat) -> Nat:
+  match c:
+    case M.TurnChanged{+th, M.Completed{}, _}:
+      Bool.pick(Nat, String.eq(th, thread), 1n, acc)
+    case M.TurnChanged{+th, M.Failed{}, _}:
+      Bool.pick(Nat, String.eq(th, thread), 2n, acc)
+    case M.TurnChanged{+th, M.Interrupted{}, _}:
+      Bool.pick(Nat, String.eq(th, thread), 3n, acc)
+    case M.TurnChanged{+th, _, _}:
+      Bool.pick(Nat, String.eq(th, thread), 0n, acc)
+    case _:
+      acc
+
+def Lr.go(cs: List<&2, M.Change>, +thread: String, acc: Nat) -> Nat:
+  match cs:
+    case Nil{}:
+      acc
+    case c <> t:
+      Lr.go(t, thread, Lr.one(c, thread, acc))
+
+def Lr.ended(cs: List<&2, M.Change>, +thread: String) -> Nat:
+  Lr.go(cs, thread, 0n)
+
+def Lr.ask.k(hit: Bool, +kind: String, +tool: String, +detail: String, +rest: String) -> String:
+  match hit:
+    case True{}:
+      Bool.pick(String, String.is_empty(tool), kind, kind ++ " (" ++ tool ++ ")") ++ Bool.pick(String, String.is_empty(detail), "", ": " ++ String.take(detail, 600n))
+    case False{}:
+      rest
+
+# the first ask the step opened in the thread ("" for none)
+def Lr.ask(cs: List<&2, M.Change>, +thread: String) -> String:
+  match cs:
+    case Nil{}:
+      ""
+    case M.AskOpened{_, +th, +k, +tool, +d, _, _} <> t:
+      Lr.ask.k(String.eq(th, thread), k, tool, d, Lr.ask(t, thread))
+    case _ <> t:
+      Lr.ask(t, thread)
+
+# a report's message id: "t:<thread>:lr-<key>"
+def Lr.msg(+from: String, +key: String) -> String:
+  M.Link.id(from, "lr-" ++ key)
+
+def Lr.is(+id: String) -> Bool:
+  String.contains(id, ":lr-")
+
+def Lr.sent(+i: String, +t: String, +th: String, +to: String) -> Bool:
+  Bool.and(String.eq(t, to), Bool.and(String.eq(M.Link.from(i), th), Bool.not(Lr.is(i))))
+
+def Lr.said.go(es: List<&2, M.Entry>, +th: String, +to: String, done: Bool, acc: Bool) -> Bool:
+  match es done:
+    case _ True{}:
+      acc
+    case Nil{} False{}:
+      acc
+    case M.Msg{+i, +t, M.User{}, _, _} <> rest False{}:
+      Lr.said.go(rest, th, to, Bool.or(String.eq(t, th), Lr.sent(i, t, th, to)), Lr.sent(i, t, th, to))
+    case M.Msg{+i, +t, _, _, _} <> rest False{}:
+      Lr.said.go(rest, th, to, Lr.sent(i, t, th, to), Lr.sent(i, t, th, to))
+    case _ <> rest False{}:
+      Lr.said.go(rest, th, to, False{}, acc)
+
+# whether the thread wrote to `to` since its newest user message (its own
+# entries, newest first, hold what it sent; reports are not its words)
+def Lr.said(es: List<&2, M.Entry>, +th: String, +to: String) -> Bool:
+  Lr.said.go(es, th, to, False{}, False{})
+
+def Lr.trig.go(es: List<&2, M.Entry>, +th: String, done: Bool, +acc: String) -> String:
+  match es done:
+    case _ True{}:
+      acc
+    case Nil{} False{}:
+      acc
+    case M.Msg{+i, +t, M.User{}, _, _} <> rest False{}:
+      Lr.trig.go(rest, th, String.eq(t, th), Bool.pick(String, String.eq(t, th), i, acc))
+    case _ <> rest False{}:
+      Lr.trig.go(rest, th, False{}, acc)
+
+# the id of the thread's newest user message (what started its turn)
+def Lr.trig(es: List<&2, M.Entry>, +th: String) -> String:
+  Lr.trig.go(es, th, False{}, "")
+
+def Lr.reply(a: Answer) -> String:
+  match a:
+    case Answer{r, _}:
+      r
+
+def Lr.title(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, _, ti, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      ti
+
+def Lr.word(+e: Nat, +reply: String) -> String:
+  match e:
+    case 1n:
+      Bool.pick(String, String.ends_with(String.trim(reply), "?"), "finished its turn and waits for an answer", "completed")
+    case 2n:
+      "failed"
+    case _:
+      "was interrupted"
+
+def Lr.body(long: Bool, +reply: String, +id: String) -> String:
+  match long:
+    case True{}:
+      String.take(reply, Lr.cut()) ++ "…\n\n(cut short: thread_read " ++ id ++ " for the rest)"
+    case False{}:
+      reply
+
+def Lr.head(+id: String, +title: String) -> String:
+  "[Backplane] Launched thread \"" ++ title ++ "\" (" ++ id ++ ")"
+
+# the note for a turn's end: the state and the last reply, cut to Lr.cut()
+def Lr.note(+id: String, +title: String, +word: String, +reply: String) -> String:
+  Lr.head(id, title) ++ " " ++ word ++ Bool.pick(String, String.is_empty(String.trim(reply)), ".", ":\n\n" ++ Lr.body(Nat.is_gt(String.length(reply), Lr.cut()), reply, id))
+
+# the note for an ask: the thread waits on the person
+def Lr.ask.note(+id: String, +title: String, +ask: String) -> String:
+  Lr.head(id, title) ++ " needs the person: " ++ ask ++ "\nIt waits until they answer in that thread."
+
+# the last note before the reports stop
+def Lr.loop.note(+id: String) -> String:
+  "\n\nReports from this thread stop here: it went back and forth with you " ++ Nat.show(Lr.loops()) ++ " times with no word from the person. thread_update {threadId: " ++ id ++ ", report: true} starts them again."
+
+def Lr.n.key(+th: String) -> String:
+  "launch.n." ++ th
+
+# Where a report goes
+# -------------------
+
+# thread_send between threads a launch ties, whatever their projects (a
+# bot's thread has none): a launched thread to its launcher and back, and
+# any thread to the uberbot's own thread (here or a replica's elsewhere;
+# law launch_send_launcher)
+def Lr.may(+s: M.State, +from: String, +to: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(to)),
+    Bool.or(Bool.or(String.eq(M.Launch.by(s, from), to), String.eq(M.Launch.by(s, to), from)), UBS.Ub.chat.is(s, to)))
+
+
+# the uberbot's thread here or a replica's elsewhere: the thread that holds
+# its conversation now; anything else is itself
+def Lr.dest(+s: M.State, +by: String) -> String:
+  Bool.pick(String, UBS.Ub.chat.is(s, by), Bool.pick(String, String.is_empty(UBS.Ub.chat(s)), by, UBS.Ub.chat(s)), by)
+
+# The outbox for launchers on other machines: the setting launch.far, one
+# report a line ("key\tto\tfrom\ttext as JSON"), oldest first. The server
+# sends them in order (LaunchFar), each to its machine as launch_report
+# (fmcp.bend), drops a line once its machine took it (Lr.far.sent), and
+# tries the rest again each minute; the receiver keeps one message per key
+# (law launch_far_once), so a line sent twice posts once.
+def Lr.far.key() -> String:
+  "launch.far"
+
+def Lr.far.line(+key: String, +to: String, +from: String, +text: String) -> String:
+  key ++ "\t" ++ to ++ "\t" ++ from ++ "\t" ++ J.Json.show(J.Str{text})
+
+def Lr.far.add(+s: M.State, +line: String, +now: Nat) -> M.Change:
+  M.SettingSet{Lr.far.key(), Bool.pick(String, String.is_empty(M.Setting.get(s, Lr.far.key(), "")), line, M.Setting.get(s, Lr.far.key(), "") ++ "\n" ++ line), now}
+
+def Lr.far.keep.k(drop: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
+  match drop:
+    case True{}:
+      rest
+    case False{}:
+      l <> rest
+
+def Lr.far.keep(ls: List<&2, String>, +key: String) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Lr.far.keep.k(String.starts_with(l, key ++ "\t"), l, Lr.far.keep(t, key))
+
+def Lr.far.lines(+s: M.State) -> List<&2, String>:
+  M.Launch.lines(M.Setting.get(s, Lr.far.key(), ""))
+
+# the outbox once `key` was taken
+def Lr.far.sent(+s: M.State, +now: Nat, +key: String) -> Step:
+  Step{[M.SettingSet{Lr.far.key(), String.join(Lr.far.keep(Lr.far.lines(s), key), "\n"), now}], Nil{}}
+
+# each minute: the outbox is sent again while anything is in it
+def Lr.far.tick.k(none: Bool) -> Step:
+  match none:
+    case True{}:
+      Step.none()
+    case False{}:
+      Step.outs([LaunchFar{}])
+
+def Lr.far.tick(+s: M.State) -> Step:
+  Lr.far.tick.k(String.is_empty(M.Setting.get(s, Lr.far.key(), "")))
+
+# Delivering
+# ----------
+
+def Lr.exists(+s: M.State, +th: String) -> Bool:
+  String.eq(M.Thread.id(Hub.thread(s, th)), th)
+
+def Lr.send.here(ok: Bool, +s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
+  match ok:
+    case True{}:
+      Hub.inbox.id(s, now, thread, to, M.User{}, text, Lr.msg(thread, Hub.id("r", now, Hub.seq(s))))
+    case False{}:
+      Step.none()
+
+def Lr.send.k(far: Bool, +s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
+  match far:
+    case True{}:
+      Step{[Lr.far.add(s, Lr.far.line(Hub.id("r", now, Hub.seq(s)), to, thread, text), now)], [LaunchFar{}]}
+    case False{}:
+      Lr.send.here(Lr.exists(s, to), s, now, thread, to, text)
+
+# a note from thread to its launcher's thread `to`
+def Lr.send(+s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
+  Lr.send.k(FR.Fr.is(to), s, now, thread, to, text)
+
+# a turn's end: the counter of launcher-started turns moves on, and at
+# the bound the reports stop
+# the counter, written only when it moves
+def Lr.n.set(same: Bool, +thread: String, +n: Nat, +now: Nat) -> List<&2, M.Change>:
+  match same:
+    case True{}:
+      Nil{}
+    case False{}:
+      [M.SettingSet{Lr.n.key(thread), Nat.show(n), now}]
+
+def Lr.end.n(stop: Bool, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String, +n: Nat, +text: String) -> Step:
+  match stop:
+    case True{}:
+      Step.before([M.SettingSet{Lr.n.key(thread), "0", now}, M.ThreadLaunched{thread, by, False{}, now}], Nil{}, Lr.send(s, now, thread, to, text ++ Lr.loop.note(thread)))
+    case False{}:
+      Step.before(Lr.n.set(Nat.is_eq(n, M.Switch.num(M.Setting.get(s, Lr.n.key(thread), "0"), 0n)), thread, n, now), Nil{}, Lr.send(s, now, thread, to, text))
+
+def Lr.end.c(own: Bool, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String, +e: Nat) -> Step:
+  +n = {Bool.pick(Nat, own, Nat.add(M.Switch.num(M.Setting.get(s, Lr.n.key(thread), "0"), 0n), 1n), 0n) : Nat}
+  +reply = {Lr.reply(Answer.of(M.State.mine(s, thread), thread)) : String}
+  Lr.end.n(Nat.is_ge(n, Lr.loops()), s, now, thread, by, to, n, Lr.note(thread, Lr.title(Hub.thread(s, thread)), Lr.word(e, reply), reply))
+
+def Lr.end.k(quiet: Bool, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String, +e: Nat) -> Step:
+  match quiet:
+    case True{}:
+      Step.none()
+    case False{}:
+      Lr.end.c(Bool.and(String.eq(M.Link.from(Lr.trig(M.State.mine(s, thread), thread)), by), Bool.not(String.is_empty(by))), s, now, thread, by, to, e)
+
+# what the step tells the launcher (s: the state after the step)
+def Lr.what.e(none: Bool, +e: Nat, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String) -> Step:
+  match none:
+    case True{}:
+      Step.none()
+    case False{}:
+      Lr.end.k(Bool.or(Bool.and(Nat.is_eq(e, 1n), Nat.is_gt(M.Work.busy(s, thread), 0n)), Bool.and(Bool.not(FR.Fr.is(to)), Lr.said(M.State.mine(s, thread), thread, to))), s, now, thread, by, to, e)
+
+def Lr.what(asked: Bool, +ask: String, +e: Nat, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String) -> Step:
+  match asked:
+    case True{}:
+      Lr.send(s, now, thread, to, Lr.ask.note(thread, Lr.title(Hub.thread(s, thread)), ask))
+    case False{}:
+      Lr.what.e(Nat.is_eq(e, 0n), e, s, now, thread, by, to)
+
+def Lr.tell.q(quiet: Bool, +to: String, +ask: String, +e: Nat, +s1: M.State, +now: Nat, +thread: String) -> Step:
+  match quiet:
+    case True{}:
+      Step.none()
+    case False{}:
+      Lr.what(Bool.not(String.is_empty(ask)), ask, e, s1, now, thread, M.Launch.by(s1, thread), to)
+
 def Task.by.id.k(r: Map<&2, M.Task> & M.Task) -> M.Task:
   (_, t) = r
   t
@@ -2765,20 +3063,62 @@ def Retire.answers(as: List<&2, M.Ask>, +th: String) -> List<&2, Out>:
     case +a <> t:
       Retire.answer(Retire.hit(a, th), Retire.id(a), Retire.answers(t, th))
 
+def Step.cat(a: Step, b: Step) -> Step:
+  match a b:
+    case Step{cs, os} Step{c2, o2}:
+      Step{List.append(&2, M.Change, cs, c2), List.append(&2, Out, os, o2)}
+
+# (a launcher that stopped the thread itself is not told it was stopped)
+def Lr.tell.to(+to: String, +ask: String, +e: Nat, +s1: M.State, +now: Nat, +thread: String, +from: String, +cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
+  Step.cat(Step{cs, os}, Lr.tell.q(Bool.or(String.eq(to, thread), Bool.and(Bool.not(String.is_empty(from)), String.eq(from, M.Launch.by(s1, thread)))), to, ask, e, s1, now, thread))
+
+def Lr.tell.go(none: Bool, +ask: String, +e: Nat, +s: M.State, +now: Nat, +thread: String, +from: String, +cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
+  match none:
+    case True{}:
+      Step{cs, os}
+    case False{}:
+      Lr.tell.to(Lr.dest(s, M.Launch.by(s, thread)), ask, e, M.State.replay(cs, s), now, thread, from, cs, os)
+
+def Lr.tell.k(on: Bool, +s: M.State, +now: Nat, +thread: String, +from: String, +cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
+  match on:
+    case False{}:
+      Step{cs, os}
+    case True{}:
+      Lr.tell.go(Bool.and(String.is_empty(Lr.ask(cs, thread)), Nat.is_eq(Lr.ended(cs, thread), 0n)), Lr.ask(cs, thread), Lr.ended(cs, thread), s, now, thread, from, cs, os)
+
+# a step about a thread, with its report to the launcher after it (from:
+# the thread whose call made the step, "" for an agent's own line or the
+# person)
+def Launch.tell.from(+s: M.State, +now: Nat, +thread: String, +from: String, st: Step) -> Step:
+  match st:
+    case Step{+cs, os}:
+      Lr.tell.k(M.Launch.reports(s, thread), s, now, thread, from, cs, os)
+
+def Launch.tell(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
+  Launch.tell.from(s, now, thread, "", st)
+
 # a turn still running ends as interrupted, and its task with it; the
 # server is told, so a phone's Live Activity drops it (law
 # retire_stop_tells)
-def Retire.turn(run: Bool, +s: M.State, +now: Nat, +th: String, st: Step) -> Step:
+# (a launched thread's launcher hears of it, unless it stopped it itself:
+# from, the thread whose call stopped it)
+def Retire.turn.f(run: Bool, +s: M.State, +now: Nat, +th: String, +from: String, st: Step) -> Step:
   match run:
     case True{}:
-      Task.finish(s, now, th, Step.before([M.TurnChanged{th, M.Interrupted{}, now}], [TurnEnded{th, "stopped"}], st))
+      Launch.tell.from(s, now, th, from, Task.finish(s, now, th, Step.before([M.TurnChanged{th, M.Interrupted{}, now}], [TurnEnded{th, "stopped"}], st)))
     case False{}:
       st
 
+def Retire.turn(run: Bool, +s: M.State, +now: Nat, +th: String, st: Step) -> Step:
+  Retire.turn.f(run, s, now, th, "", st)
+
 # Stop: the running turn is interrupted (Stop.outs), its asks close
-def Retire.stop(+s: M.State, +now: Nat, +th: String, os: List<&2, Out>) -> Step:
-  Retire.turn(True{}, s, now, th, Step{Retire.asks(M.Asks.all(s), th, now),
+def Retire.stop.f(+s: M.State, +now: Nat, +th: String, +from: String, os: List<&2, Out>) -> Step:
+  Retire.turn.f(True{}, s, now, th, from, Step{Retire.asks(M.Asks.all(s), th, now),
     List.append(&2, Out, os, List.append(&2, Out, Stop.outs(Hub.provider(Hub.thread(s, th)), th, Hub.id("i", now, Hub.seq(s))), Retire.answers(M.Asks.all(s), th)))})
+
+def Retire.stop(+s: M.State, +now: Nat, +th: String, os: List<&2, Out>) -> Step:
+  Retire.stop.f(s, now, th, "", os)
 
 def Hub.interrupt.k(run: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +thread: String) -> Step:
   match run:
@@ -2795,11 +3135,6 @@ def Hub.interrupt(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: St
 def Retire.archive(+s: M.State, +now: Nat, +th: String, base: Step) -> Step:
   Retire.turn(Hub.running(Hub.thread(s, th)), s, now, th,
     Step.also(Step.after(base, List.append(&2, M.Change, Retire.asks(M.Asks.all(s), th, now), Bg.clear(s, th, now))), Retire.answers(M.Asks.all(s), th)))
-
-def Step.cat(a: Step, b: Step) -> Step:
-  match a b:
-    case Step{cs, os} Step{c2, o2}:
-      Step{List.append(&2, M.Change, cs, c2), List.append(&2, Out, os, o2)}
 
 # an archived or deleted thread is told nothing
 def Lost.live(t: M.Thread) -> Bool:
@@ -3117,7 +3452,6 @@ def Update.held.w(waiting: Bool, +s: M.State, +now: Nat) -> Step:
 def Update.held(+s: M.State, +now: Nat) -> Step:
   Update.held.w(Bool.not(String.is_empty(M.Setting.get(s, "update.restart", ""))), s, now)
 
-
 def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
@@ -3210,7 +3544,7 @@ def Hub.request_text(+s: M.State, +now: Nat, +client: U32, text: String) -> Step
 
 # one line of an agent's stdout
 def Hub.agent_line(+s: M.State, +now: Nat, +thread: String, line: String) -> Step:
-  Task.finish.w(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_line.k(Bool.not(String.eq(Hub.provider(Hub.thread(s, thread)), "claude")), s, now, thread, line))))
+  Launch.tell(s, now, thread, Task.finish.w(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_line.k(Bool.not(String.eq(Hub.provider(Hub.thread(s, thread)), "claude")), s, now, thread, line)))))
 
 # Claude's lines by the command ledger (core/cmds.bend)
 # ------------------------------------------------------
@@ -3289,7 +3623,7 @@ def Claude.line.v.k(v: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json,
       Claude.line.o(False{}, s, thread, now, o)
 
 def Hub.agent_line.v.k(v: Nat, +s: M.State, +now: Nat, +thread: String, +o: J.Json, +text: String) -> Step:
-  Task.finish.w(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Claude.line.v.k(v, s, thread, now, o, text))))
+  Launch.tell(s, now, thread, Task.finish.w(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Claude.line.v.k(v, s, thread, now, o, text)))))
 
 # one line of an agent's stdout with its verdict (o: the line parsed;
 # text: an ending's outcome, CM.Cmds.text)
@@ -3376,7 +3710,7 @@ def Bg.gone(live: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
 # when one ran: law gone_idle_told)
 def Hub.agent_gone.why(+s: M.State, +now: Nat, +thread: String, +code: U32, +why: String) -> Step:
   Step.before(Nil{}, Retire.answers(M.Asks.all(s), thread),
-    Step.cat(Step.after(Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code, why)))),
+    Step.cat(Step.after(Launch.tell(s, now, thread, Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code, why))))),
       Retire.asks(M.Asks.all(s), thread, now)), Bg.gone(Lost.live(Hub.thread(s, thread)), s, now, thread)))
 
 def Hub.agent_gone(+s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:
@@ -3466,7 +3800,7 @@ def Hub.tick.k(+s: M.State, +now: Nat, +kids: Map<&2, Nat>) -> Step:
         Step.join(Wt.stale(Map.values(&2, M.Thread, ts), s, now), Scratch.sweep(Map.values(&2, M.Thread, ts), kids, s, now, M.Scratch.window(s))))
 
 def Hub.tick(+s: M.State, +now: Nat) -> Step:
-  Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now))
+  Step.join(Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now)), Lr.far.tick(s))
 
 # Asks keep their thread busy
 # ---------------------------
@@ -3570,7 +3904,7 @@ def Rec.note(+th: String, +now: Nat, +seq: Nat, +text: String) -> M.Change:
 def Rec.turn.k(run: Bool, will: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match run will:
     case True{} False{}:
-      Task.finish(s, now, th, Step{[Rec.note(th, now, Hub.seq(s), "Backplane restarted before this turn finished"), M.TurnChanged{th, M.Interrupted{}, now}], Nil{}})
+      Launch.tell(s, now, th, Task.finish(s, now, th, Step{[Rec.note(th, now, Hub.seq(s), "Backplane restarted before this turn finished"), M.TurnChanged{th, M.Interrupted{}, now}], Nil{}}))
     case True{} True{}:
       Step{[Rec.note(th, now, Hub.seq(s), "Backplane restarted before this turn finished"), M.TurnChanged{th, M.Interrupted{}, now}], Nil{}}
     case False{} _:
@@ -4314,3 +4648,62 @@ def Retire.task(+s: M.State) -> Bool:
 def Retire.demo() -> M.State:
   M.State.replay([M.ThreadCreated{"t0", "p1", "x", M.Local{}, "", "", "codex", "", 1n}, M.TaskDelegated{"k1", "t0", "t1", 1n, "codex", "", 2n},
     M.AskOpened{"a2", "t1", "plan", "", "plan", "", 3n}], Rec.demo(M.Running{}))
+
+# Launched threads: the laws' examples
+# ------------------------------------
+
+# messages a step sends to a thread (posted, or queued behind its turn)
+def Lr.count(cs: List<&2, M.Change>, +th: String) -> Nat:
+  match cs:
+    case Nil{}:
+      0n
+    case M.MessagePosted{+t, _, _, _, _} <> rest:
+      Nat.add(Bool.pick(Nat, String.eq(t, th), 1n, 0n), Lr.count(rest, th))
+    case M.TurnQueued{+t, _, _, _} <> rest:
+      Nat.add(Bool.pick(Nat, String.eq(t, th), 1n, 0n), Lr.count(rest, th))
+    case _ <> rest:
+      Lr.count(rest, th)
+
+def Lr.queued(cs: List<&2, M.Change>, +th: String) -> Nat:
+  match cs:
+    case Nil{}:
+      0n
+    case M.TurnQueued{+t, _, _, _} <> rest:
+      Nat.add(Bool.pick(Nat, String.eq(t, th), 1n, 0n), Lr.queued(rest, th))
+    case _ <> rest:
+      Lr.queued(rest, th)
+
+# t0 launched t1 (report: whether it reports back) with t0's own message
+# (own) or the person's; t1 runs; t0 runs too (busy); more: changes after
+def Lr.demo.k(+report: Bool, +own: Bool, +busy: Bool, more: List<&2, M.Change>) -> M.State:
+  M.State.replay(List.concat(&2, M.Change, [[M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t0", "p1", "boss", M.Local{}, "", "", "claude", "", 1n},
+    M.ThreadCreated{"t1", "p1", "work", M.Local{}, "", "", "claude", "", 1n}, M.ThreadLaunched{"t1", "t0", report, 1n},
+    M.MessagePosted{"t1", Bool.pick(String, own, M.Link.id("t0", "m1"), "m1"), M.User{}, "go", 1n}, M.TurnChanged{"t1", M.Running{}, 1n},
+    M.MessagePosted{"t1", "a1", M.Assistant{}, "done it", 2n}], Bool.pick(List<&2, M.Change>, busy, [M.TurnChanged{"t0", M.Running{}, 2n}], Nil{}), more]), M.State.empty())
+
+def Lr.demo(+report: Bool) -> M.State:
+  Lr.demo.k(report, False{}, False{}, Nil{})
+
+# what t0 hears when t1's step has these changes
+def Lr.demo.tell(+s: M.State, cs: List<&2, M.Change>) -> Nat:
+  Lr.count(Queue.changes(Launch.tell(s, 9n, "t1", Step{cs, Nil{}})), "t0")
+
+def Lr.demo.end() -> List<&2, M.Change>:
+  [M.TurnChanged{"t1", M.Completed{}, 9n}]
+
+# t1's turn ends twice, t0 busy: both reports wait in t0's queue, in order
+def Lr.demo.twice.k(+s1: M.State) -> Nat:
+  Lr.queued(Queue.changes(Launch.tell(s1, 11n, "t1", Step{[M.TurnChanged{"t1", M.Completed{}, 11n}], Nil{}})), "t0")
+
+def Lr.demo.twice() -> Nat:
+  +s = Lr.demo.k(True{}, False{}, True{}, Nil{})
+  +st = Launch.tell(s, 9n, "t1", Step{Lr.demo.end(), Nil{}})
+  +s1 = M.State.replay(List.append(&2, M.Change, Queue.changes(st), [M.MessagePosted{"t1", "m2", M.User{}, "again", 10n}, M.TurnChanged{"t1", M.Running{}, 10n}]), s)
+  Nat.add(Lr.queued(Queue.changes(st), "t0"), Lr.demo.twice.k(s1))
+
+# the loop's bound: t0 started t1's turn Lr.loops() times in a row
+def Lr.demo.loop() -> M.State:
+  Lr.demo.k(True{}, True{}, False{}, [M.SettingSet{Lr.n.key("t1"), Nat.show(Nat.sub(Lr.loops(), 1n)), 1n}])
+
+def Lr.demo.loop.on() -> Bool:
+  M.Launch.reports(M.State.replay(Queue.changes(Launch.tell(Lr.demo.loop(), 9n, "t1", Step{Lr.demo.end(), Nil{}})), Lr.demo.loop()), "t1")

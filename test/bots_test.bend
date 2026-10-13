@@ -358,7 +358,7 @@ def main() -> IO(Unit):
     C.Check.str("bot sees project threads", yes(String.contains(call(pj, 1600n, th.of(pj, "Miso"), "thread_list", "{}"), "Rev C review")), "yes")
     C.Check.str("bot list hides bot threads", yes(String.contains(call(pj, 1600n, th.of(pj, "Miso"), "thread_list", "{}"), th.of(pj, "Tofu"))), "no")
     C.Check.str("bot launches in a project", st.tags(call.step(pj, 1600n, th.of(pj, "Miso"), "thread_launch", "{\"project\":\"power board\",\"prompt\":\"check the LDO\"}")),
-      "ThreadCreated MessagePosted TurnQueued | out ")
+      "ThreadCreated ThreadLaunched MessagePosted TurnQueued | out ")
     C.Check.str("launched thread is in the project", yes(String.contains(changes.show(tags.cs(call.step(pj, 1600n, th.of(pj, "Miso"), "thread_launch", "{\"project\":\"p1\",\"prompt\":\"check the LDO\"}"))), "\"project\":\"p1\"")), "yes")
     C.Check.str("launched message names the bot", yes(String.contains(changes.show(tags.cs(call.step(pj, 1600n, th.of(pj, "Miso"), "thread_launch", "{\"project\":\"p1\",\"prompt\":\"check the LDO\"}"))), "t:" ++ th.of(pj, "Miso"))), "yes")
     C.Check.str("bot must name a project", yes(String.contains(call(pj, 1600n, th.of(pj, "Miso"), "thread_launch", "{\"prompt\":\"x\"}"), "name an existing project")), "yes")

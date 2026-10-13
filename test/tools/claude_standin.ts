@@ -31,6 +31,9 @@
 //   delegate     the first command calls the hub's delegate_task (its MCP
 //                URL from --mcp-config) for a child "mode:plain child
 //                work", then ends; later commands as plain
+//   launch       the same with thread_launch (BP_LAUNCH_ARGS, JSON, merged
+//                into its arguments), holding the turn BP_LAUNCH_HOLD_MS
+//                (0) before it ends; later commands as plain
 // Every line read is appended to $FAKE_LOG ("IN <line>"), and "START pid".
 //
 //   test/tools/claude_standin.ts is run through a `claude` wrapper:
@@ -190,6 +193,21 @@ async function run(c: Cmd, firstOne: boolean) {
     log(`DELEGATED ${task.slice(0, 300)}`);
     say("DELEGATED");
     result("DELEGATED");
+    lc(c.uuid, "completed");
+    return;
+  }
+  if (firstOne && mode === "launch") {
+    let got = "";
+    try {
+      const extra = JSON.parse(process.env.BP_LAUNCH_ARGS ?? "{}");
+      const r = await fetch(mcpUrl, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "thread_launch", arguments: { prompt: process.env.BP_CHILD_PROMPT ?? "mode:plain child work", provider: "claude", title: "launched child", ...extra } } }) });
+      got = await r.text();
+    } catch (e) { got = String(e); }
+    log(`LAUNCHED ${got.slice(0, 400)}`);
+    await sleep(Number(process.env.BP_LAUNCH_HOLD_MS ?? 0));
+    say("LAUNCHED");
+    result("LAUNCHED");
     lc(c.uuid, "completed");
     return;
   }
