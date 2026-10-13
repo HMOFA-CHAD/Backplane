@@ -994,9 +994,22 @@ def State.put_task(s: State, t: Task) -> State:
   Task{+id, p, c, d, st, su, dl, pr, mo} = t
   State{ps, ts, es, n, Map.set(&2, Task, tk, id, Task{id, p, c, d, st, su, dl, pr, mo}), sg, qu, ak, dv, nv, bw}
 
-def State.setting(s: State, k: String, v: String) -> State:
+# keys of the ledgers (told.*, rule.*, board.*): an empty value removes the
+# key, so dropped records leave nothing in Setting.keys (law
+# told_setting_empty_removes)
+def Setting.ledger(+k: String) -> Bool:
+  Bool.or(Bool.or(String.starts_with(k, "told."), String.starts_with(k, "rule.")), String.starts_with(k, "board."))
+
+def State.setting.put(del: Bool, sg: Map<&2, String>, k: String, v: String) -> Map<&2, String>:
+  match del:
+    case True{}:
+      Map.del(&2, String, sg, k)
+    case False{}:
+      Map.set(&2, String, sg, k, v)
+
+def State.setting(s: State, +k: String, +v: String) -> State:
   State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw} = s
-  State{ps, ts, es, n, tk, Map.set(&2, String, sg, k, v), qu, ak, dv, nv, bw}
+  State{ps, ts, es, n, tk, State.setting.put(Bool.and(String.is_empty(v), Setting.ledger(k)), sg, k, v), qu, ak, dv, nv, bw}
 
 def Ask.blank(id: String) -> Ask:
   Ask{id, "", "", "", "", "", False{}, ""}
