@@ -6497,6 +6497,13 @@ def Rc.sync.k(need: Bool, a: Act) -> Act:
 
 # (only for a thread with comments to pin, or a note being started: other
 # threads ask nothing more)
+# (a phone back online asks at once: its kept state reopens the board with
+# no select, and the comments to pin may arrive only with the log)
+def Rc.sync.any(a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Rc.sync.k(Rc.need(u), Act{u, cs})
+
 def Rc.sync.of(a: Act) -> Act:
   match a:
     case Act{+u, cs}:

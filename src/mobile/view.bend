@@ -310,7 +310,7 @@ def View.online.rv(rv: Bool, a: U.Act) -> U.Act:
 def View.online.k(on: Bool, +u: U.Ui) -> U.Act:
   match on:
     case True{}:
-      View.online.rv(String.eq(View.kind(u), "review"), View.sync(U.Act{U.Ui.scratch_set(u, "@view.at", ""), Nil{}}))
+      U.Rc.sync.any(View.online.rv(String.eq(View.kind(u), "review"), View.sync(U.Act{U.Ui.scratch_set(u, "@view.at", ""), Nil{}})))
     case False{}:
       U.Act{u, Nil{}}
 

@@ -279,8 +279,9 @@ def One.act.k(i: Nat, +u: U.Ui, +action: String, +value: String) -> U.Act:
     case _:
       One.act.rest(Bool.or(Bool.or(String.starts_with(action, "hist-"), String.starts_with(action, "cmp")), String.starts_with(action, "rv-")), u, action, value)
 
+# (and the board's file asked for, to pin its comments: client.bend's Rc.sync)
 def One.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
-  One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders", "fm", "fm-cd", "fm-up", "fm-open", "fm-page", "view-layer-pick", "view-layer-mode"], action), u, action, value)
+  U.Rc.sync.of(One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders", "fm", "fm-cd", "fm-up", "fm-open", "fm-page", "view-layer-pick", "view-layer-mode"], action), u, action, value))
 
 # what a step does to one hub's client
 type Op is Data:
