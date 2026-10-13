@@ -4841,7 +4841,7 @@ def BotJob.uber.done(ok: Bool, +inbox: Chan(Msg), +client: U32, +id: String, +bo
   match ok:
     case True{}:
       do IO<Unit>:
-        sent : Bool <- Chan.send(Msg, inbox, Commit{[M.UberSet{bot, uid, now}]})
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Commit{[M.UberSet{bot, uid, now}]})
         BotJob.reply(inbox, client, id, True{}, [J.KV{"uid", J.Str{uid}}])
     case False{}:
       BotJob.fail(inbox, client, id, "could not back the bot up; nothing changed")
