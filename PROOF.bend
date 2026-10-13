@@ -8429,3 +8429,6 @@ def Laws.subs_launched_live_kept():
 
 def Laws.notice_report_quiet():
   {==}
+
+def Laws.launch_send_launcher():
+  {==}

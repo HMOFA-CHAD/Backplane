@@ -689,7 +689,7 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
       Mcp.read.k(Mcp.same_project(s, thread, J.Json.get_str(a, "threadId", "")), s, J.Json.get_str(a, "threadId", ""),
         Maybe.default(&2, Nat, Nat.read(J.Json.as_raw(J.Json.get(a, "limit"), "40")), 40n))
     case 6n:
-      Mcp.send.k(Mcp.same_project(s, thread, J.Json.get_str(a, "threadId", "")), s, now, thread, J.Json.get_str(a, "threadId", ""), J.Json.get_str(a, "text", ""), J.Json.get_str(a, "mode", ""))
+      Mcp.send.k(Bool.or(Mcp.same_project(s, thread, J.Json.get_str(a, "threadId", "")), B.Lr.may(s, thread, J.Json.get_str(a, "threadId", ""))), s, now, thread, J.Json.get_str(a, "threadId", ""), J.Json.get_str(a, "text", ""), J.Json.get_str(a, "mode", ""))
     case 7n:
       Mcp.view(thread, J.Json.get_str(a, "path", ""), J.Json.get_str(a, "kind", ""))
     case 8n:

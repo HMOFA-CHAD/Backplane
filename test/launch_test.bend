@@ -47,6 +47,18 @@ def sent.k(xs: List<&2, M.Change>) -> String:
     case _ <> rest:
       sent.k(rest)
 
+def sent.to.k(xs: List<&2, M.Change>, +th: String) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case M.MessagePosted{+t, _, _, +text, _} <> rest:
+      Bool.pick(String, String.eq(t, th), text, sent.to.k(rest, th))
+    case _ <> rest:
+      sent.to.k(rest, th)
+
+def sent.to(xs: List<&2, M.Change>, +th: String) -> String:
+  sent.to.k(xs, th)
+
 def told(+s: M.State, xs: List<&2, M.Change>) -> String:
   sent.k(cs(H.Launch.tell(s, 9n, "t1", H.Step{xs, Nil{}})))
 
@@ -62,6 +74,22 @@ def base() -> M.State:
 
 def launch(+s: M.State, +args: String) -> MC.Res:
   MC.Mcp.launch(s, 5n, "t0", Maybe.default(&2, J.Json, J.Json.parse(args), J.Null{}))
+
+# a bot (its thread "tb", no project) and two project threads
+def bots() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"tb", "", "Bub", M.Local{}, "", "", "claude", "", 1n},
+    M.BotSet{"b1", "Bub", "tb", 0n, "", 1n}, M.ThreadCreated{"tx", "p1", "other", M.Local{}, "", "", "claude", "", 1n}], M.State.empty())
+
+def tool.pos(+tool: String) -> Nat:
+  K.Codec.pos(MC.Mcp.names(), tool)
+
+def call(+s: M.State, +thread: String, +tool: String, +args: String) -> MC.Res:
+  MC.Mcp.call.k(tool.pos(tool), s, 20n, thread, J.Null{}, Maybe.default(&2, J.Json, J.Json.parse(args), J.Null{}))
+
+def ok(r: MC.Res) -> String:
+  match r:
+    case MC.Res{o, _, _}:
+      Bool.show(o)
 
 def long() -> String:
   String.repeat("x", 3000n)
@@ -130,6 +158,22 @@ def main() -> IO(Unit):
       "{\"id\":0,\"m\":\"mcp.call\",\"p\":{\"tool\":\"launch_report\",\"from\":\"L~t1\",\"args\":{\"threadId\":\"t9\",\"key\":\"k\",\"text\":\"x\"}}}")
     C.Check.str("far: a remote call", Bool.show(F.Fm.remote("launch_report")), "True")
     C.Check.str("far: a local tool stays here", Bool.show(String.eq(F.Fm.plan.name(F.Fm.plan.o(Maybe.default(&2, J.Json, J.Json.parse("{\"method\":\"tools/call\",\"params\":{\"name\":\"delegate_task\",\"arguments\":{\"project\":\"x~p\"}}}"), J.Null{}), d, Nil{}, "t0")), "here")), "True")
+    # a bot launches a project thread: it reports to the bot's thread,
+    # which belongs to no project
+    +b : M.State = bots()
+    +br : MC.Res = MC.Mcp.launch(b, 5n, "tb", Maybe.default(&2, J.Json, J.Json.parse("{\"project\":\"p1\",\"prompt\":\"check the LDO\",\"title\":\"ldo\"}"), J.Null{}))
+    +b1 : M.State = M.State.replay(List.concat(&2, M.Change, [res.cs(br), [M.WorktreeSkipped{"t5-4", 6n}, M.QueueTaken{"t5-4", 6n}, M.TurnChanged{"t5-4", M.Running{}, 6n}, M.MessagePosted{"t5-4", "a9", M.Assistant{}, "LDO is fine", 7n}]]), b)
+    C.Check.str("bot: the child's launcher is the bot's thread", M.Launch.by(b1, "t5-4"), "tb")
+    +bs : H.Step = H.Launch.tell(b1, 9n, "t5-4", H.Step{[M.TurnChanged{"t5-4", M.Completed{}, 9n}], Nil{}})
+    C.Check.str("bot: the report reaches the bot's thread", tags(cs(bs)), "TurnChanged SettingSet MessagePosted TurnChanged ")
+    C.Check.str("bot: in the bot's thread", sent.to(cs(bs), "tb"), "[Backplane] Launched thread \"ldo\" (t5-4) completed:\n\nLDO is fine")
+    C.Check.str("bot: the link row names the bot", U.Tasks.up.label(b1, "t5-4", "tb"), "← launched by Bub")
+    C.Check.str("bot: the child may thread_send the bot", ok(call(b1, "t5-4", "thread_send", "{\"threadId\":\"tb\",\"text\":\"done\"}")), "True")
+    C.Check.str("bot: another project thread may not", ok(call(b1, "tx", "thread_send", "{\"threadId\":\"tb\",\"text\":\"hi\"}")), "False")
+    +ub : M.State = M.State.replay([M.UberSet{"b1", "u1", 8n}], b1)
+    C.Check.str("uber: any thread may thread_send the uberbot", ok(call(ub, "tx", "thread_send", "{\"threadId\":\"tb\",\"text\":\"hi\"}")), "True")
+    C.Check.str("uber: across machines too", Bool.show(H.Lr.may(ub, "L~t7", "tb")), "True")
+    C.Check.str("a launcher may thread_send its launched thread", Bool.show(H.Lr.may(b1, "tb", "t5-4")), "True")
     # the clients
     C.Check.str("links back", U.Tasks.up(d, "t1"), "t0")
     C.Check.str("its words", U.Tasks.up.label(d, "t1", "t0"), "← launched by boss")

@@ -110,11 +110,12 @@ try {
   const reports = (th: string) => changes().filter((x) => x.$ === "MessagePosted" && x.thread === th && String(x.text).startsWith("[Backplane] Launched thread"));
   const launchedBy = (by: string) => changes().find((x) => x.$ === "ThreadLaunched" && x.by === by);
   c.send("project.add", { path: proj });
-  const pc = await until(10000, () => changes().find((x) => x.$ === "ProjectCreated"));
+  let pc: any = await until(10000, () => changes().find((x) => x.$ === "ProjectCreated"));
+  // (a reconnect replays the whole log, so threads are found by title)
   const made = async (title: string) => {
-    const n = changes().filter((x) => x.$ === "ThreadCreated").length;
+    await sleep(1500);
     c.send("thread.create", { project: pc.id, title, env: "local", provider: "claude" });
-    return (await until(10000, () => changes().filter((x) => x.$ === "ThreadCreated")[n]))?.id as string;
+    return (await until(10000, () => changes().find((x) => x.$ === "ThreadCreated" && x.title === title)))?.id as string;
   };
 
   // 1. a quick child

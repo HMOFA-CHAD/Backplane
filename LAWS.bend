@@ -6958,3 +6958,8 @@ law subs_launched_live_kept:
 # alerted: it is chatter
 law notice_report_quiet:
   {NO.Turn.msg(NO.Turn{False{}, "[Backplane] Launched thread \"work\" (t1) completed.", 0n}) == True{} : Bool}
+
+# a thread a bot launched may thread_send the bot's thread, which is in no
+# project (and the bot may send to it)
+law launch_send_launcher:
+  {H.Lr.may(M.State.replay([M.ThreadLaunched{"t1", "tb", True{}, 1n}], M.State.empty()), "t1", "tb") == True{} : Bool}

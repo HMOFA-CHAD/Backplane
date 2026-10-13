@@ -2858,6 +2858,15 @@ def Lr.n.key(+th: String) -> String:
 # Where a report goes
 # -------------------
 
+# thread_send between threads a launch ties, whatever their projects (a
+# bot's thread has none): a launched thread to its launcher and back, and
+# any thread to the uberbot's own thread (here or a replica's elsewhere;
+# law launch_send_launcher)
+def Lr.may(+s: M.State, +from: String, +to: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(to)),
+    Bool.or(Bool.or(String.eq(M.Launch.by(s, from), to), String.eq(M.Launch.by(s, to), from)), UBS.Ub.chat.is(s, to)))
+
+
 # the uberbot's thread here or a replica's elsewhere: the thread that holds
 # its conversation now; anything else is itself
 def Lr.dest(+s: M.State, +by: String) -> String:
