@@ -82,7 +82,7 @@ private fun fileIcon(name: String): ImageVector = when (name) {
 // the viewer's choices (Board, Schematic, 3D, Mech, Files) and its close button
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ViewerChoices(m: AppModel, v: Viewer) {
+fun ViewerChoices(m: AppModel, v: Viewer) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
             v.choices.forEachIndexed { i, c ->

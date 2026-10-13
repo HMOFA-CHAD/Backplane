@@ -164,6 +164,10 @@ fun App(m: AppModel) {
             BackHandler { m.act("fm") }
             FileScreen(m, s.thread.viewer, s.thread.viewer.file)
         }
+        s.thread != null && s.thread.viewer.open == "review" && s.thread.viewer.review != null -> {
+            BackHandler { m.act("view", "") }
+            ReviewScreen(m, s.thread.viewer, s.thread.viewer.review)
+        }
         s.thread != null && s.thread.viewer.open == "renders" && s.thread.viewer.mech != null -> {
             BackHandler { m.act("view", "") }
             MechScreen(m, s.thread.viewer, s.thread.viewer.mech)
@@ -1104,6 +1108,7 @@ private fun HistoryBar(m: AppModel, h: HistBar, light: Boolean) {
                     HistChip("Old: ${h.a}", h.side == "a", fg, accent, Modifier.weight(1f, fill = false)) { m.act("cmp-side", "a") }
                     HistChip("New: ${h.b}", h.side == "b", fg, accent, Modifier.weight(1f, fill = false)) { m.act("cmp-side", "b") }
                 }
+                HistChip("BOM", false, fg, accent) { m.act("rv-bom", "") }
                 HistChip("Close", false, fg, accent) { m.act("cmp-close", "") }
             }
             val shown = h.showing.ifEmpty { "diff" }
