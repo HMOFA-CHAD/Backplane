@@ -69,8 +69,18 @@ def localrows.go(js: List<&2, J.Json>) -> String:
   match js:
     case Nil{}:
       ""
-    case j <> t:
+    case +j <> t:
       Bool.pick(String, J.Json.get_bool(j, "local", False{}), J.Json.get_str(j, "label", "") ++ ";", "") ++ localrows.go(t)
+
+def notifyrows.go(js: List<&2, J.Json>) -> String:
+  match js:
+    case Nil{}:
+      ""
+    case +j <> t:
+      Bool.pick(String, J.Json.get_bool(j, "notify", False{}), J.Json.get_str(j, "label", "") ++ ";", "") ++ notifyrows.go(t)
+
+def notifyrows(+h: H.Hubs) -> String:
+  notifyrows.go(J.Json.elems(J.Json.get_obj(J.Json.get_obj(H.Hubs.screen(h), "settings"), "rows")))
 
 def localrows(+h: H.Hubs) -> String:
   localrows.go(J.Json.elems(J.Json.get_obj(J.Json.get_obj(H.Hubs.screen(h), "settings"), "rows")))
@@ -118,10 +128,12 @@ def main() -> IO(Unit):
     C.Check.str("an empty local view leaves it to the hub", view(H.Hubs.local(H.Hubs.local(one(hubactive()), "view", "projects"), "view", "")), "active")
     C.Check.str("a local view that is neither is ignored", view(H.Hubs.local(one(hubactive()), "view", "nonsense")), "active")
     C.Check.str("every hub takes the local view", view(H.Hubs.local(two(), "view", "active")), "active")
+    C.Check.str("the local view survives a state loaded from the phone's copy (Hubs.calm)", view(H.Hubs.stale(H.Hubs.local(one(hubactive()), "view", "projects"))), "projects")
     C.Check.str("through the app's exports", J.Json.get_str(A.screenj(A.local(one(hubactive()), "view", "projects")), "view", ""), "projects")
     C.Check.str("hub settings: shut at first", sets(one(box())), "shut")
     C.Check.str("hub settings: opened for a hub", sets(go(one(box()), "hub-settings", "box:3787|on")), "open")
     C.Check.str("hub settings: opened twice stays open", sets(go(go(one(box()), "hub-settings", "box:3787|on"), "hub-settings", "box:3787|on")), "open")
     C.Check.str("hub settings: shut again", sets(go(go(one(box()), "hub-settings", "box:3787|on"), "hub-settings", "box:3787|off")), "shut")
     C.Check.str("hub settings: the focus follows the named hub", H.Hubs.cur(go(two(), "hub-settings", "lap:3787|on")), "lap:3787")
+    C.Check.str("hub settings: Notify me for rows are marked notify", notifyrows(go(one(box()), "hub-settings", "box:3787|on")), "Notify me for;Needs me;Settled;Reminders;Everything;")
     C.Check.str("hub settings: Theme and Thread list are marked local", localrows(go(one(box()), "hub-settings", "box:3787|on")), "Theme;Thread list;Tour;")

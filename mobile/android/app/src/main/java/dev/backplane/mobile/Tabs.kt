@@ -56,6 +56,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -250,6 +251,9 @@ private fun AppSettingsPage(m: AppModel, s: Screen, onPair: () -> Unit, state: L
     var confirm by remember { mutableStateOf(false) }
     val list = AppSettings.threadList.ifEmpty { s.view }
     val allowed = Notes.allowed(ctx)
+    // ask the hub for its settings in the background (a select, on a tab change, closes it)
+    val askHub = s.hubs.firstOrNull { it.key == s.hub }?.key ?: s.hubs.firstOrNull()?.key
+    LaunchedEffect(askHub) { if (askHub != null) m.act("hub-settings", "$askHub|on") }
     val about = remember {
         runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).let { "${it.versionName} (${it.longVersionCode})" } }.getOrDefault("?")
     }
@@ -285,6 +289,13 @@ private fun AppSettingsPage(m: AppModel, s: Screen, onPair: () -> Unit, state: L
                             ctx.startActivity(Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(AndroidSettings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }) { Text("System settings") }
                     })
+            }
+            // what the hub alerts for: its settings, from the last screen that carried them
+            val nh = s.hubs.firstOrNull { it.key == s.hub } ?: s.hubs.firstOrNull()
+            val nrows = nh?.let { h -> (if (s.hub == h.key) s.settings?.rows else null) ?: m.hubSettings[h.key]?.rows }
+            if (nrows != null) hubSettingsRows(m, nrows, notify = true)
+            if (s.hubs.size > 1 && nh != null) item {
+                Text("Notify me for is a setting on ${nh.name}.", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
             }
             item { Header("Hubs") }
             item { ListItem(headlineContent = { Text("Hubs") }, supportingContent = { Text("${s.hubs.size} paired") }, modifier = Modifier.clickable(onClick = onPair)) }

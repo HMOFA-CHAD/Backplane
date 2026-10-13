@@ -972,8 +972,8 @@ fun FindSheet(m: AppModel, f: Find) {
 
 // the hub's settings, as the desktop has them
 @OptIn(ExperimentalLayoutApi::class)
-fun LazyListScope.hubSettingsRows(m: AppModel, rows: List<SetRow>) {
-    items(rows.filter { !it.local }) { r ->
+fun LazyListScope.hubSettingsRows(m: AppModel, rows: List<SetRow>, notify: Boolean = false) {
+    items(rows.filter { if (notify) it.notify else !(it.local || it.notify) }) { r ->
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(r.label, style = MaterialTheme.typography.bodyLarge)
             if (r.note.isNotEmpty()) Text(r.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)

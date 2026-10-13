@@ -572,6 +572,8 @@ struct SetRow: Codable, Hashable {
     let qrnote: String?
     // about this device, not the hub: App settings has it, the hub's page skips it
     let local: Bool?
+    // notif-policy's "Notify me for": drawn in App settings' Notifications section, not on the hub's page
+    let notify: Bool?
 }
 
 struct Settings: Codable, Equatable {

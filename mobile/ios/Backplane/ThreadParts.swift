@@ -961,10 +961,17 @@ private struct SetFieldView: View {
 struct HubSettingsRows: View {
     let model: AppModel
     let rows: [SetRow]
+    // the rows App settings draws itself are left out; with `notify`, only the notification policy's
+    var notify = false
+
+    // a row is a section of its own on the hub's page, a plain row in App settings' list
+    @ViewBuilder private func wrapped<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+        if notify { c() } else { Section { c() } }
+    }
 
     var body: some View {
-        ForEach(rows.filter { !($0.local ?? false) }, id: \.self) { r in
-            Section {
+        ForEach(rows.filter { notify ? ($0.notify ?? false) : !(($0.local ?? false) || ($0.notify ?? false)) }, id: \.self) { r in
+            wrapped {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(r.label)
                     if !r.note.isEmpty { Text(r.note).font(.footnote).foregroundStyle(.secondary) }

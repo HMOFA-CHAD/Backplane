@@ -219,6 +219,15 @@ struct AppSettingsTab: View {
         Binding(get: { settings.threadList.isEmpty ? (screen.view ?? "projects") : settings.threadList }, set: { model.threadList($0) })
     }
 
+    // the hub whose notification policy is shown: the one in focus
+    private var notifyHub: HubRow? { screen.hubs.first { $0.key == screen.hub } ?? screen.hubs.first }
+
+    private var notifyRows: [SetRow]? {
+        guard let h = notifyHub else { return nil }
+        let r = (screen.hub == h.key ? screen.settings?.rows : nil) ?? model.hubSettings[h.key]?.rows
+        return r
+    }
+
     private var notificationWord: String {
         switch notifications {
         case .authorized, .provisional, .ephemeral: "On"
@@ -258,7 +267,7 @@ struct AppSettingsTab: View {
             } footer: {
                 Text("Projects groups threads by project; Active lists what is going on, what needs you first. Automatic opens on Home with an uberbot, else Threads.")
             }
-            Section("Notifications") {
+            Section {
                 HStack {
                     Text("Notifications")
                     Spacer()
@@ -267,6 +276,12 @@ struct AppSettingsTab: View {
                 Button("Open system settings") {
                     if let u = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(u) }
                 }
+                // what the hub alerts for: its settings, from the last screen that carried them
+                if let r = notifyRows { HubSettingsRows(model: model, rows: r, notify: true) }
+            } header: {
+                Text("Notifications")
+            } footer: {
+                if screen.hubs.count > 1, let h = notifyHub { Text("Notify me for is a setting on \(h.name).") }
             }
             Section("Hubs") {
                 NavigationLink(value: "@hubs") {
@@ -307,7 +322,12 @@ struct AppSettingsTab: View {
         }
         .navigationTitle("Settings")
         .task { notifications = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus }
-        .onAppear { cacheBytes = model.cacheSize() }
+        .onAppear {
+            cacheBytes = model.cacheSize()
+            // ask the hub for its settings in the background; the rows above
+            // show the last ones meanwhile, and a select (a tab change) closes it
+            if let h = notifyHub { model.act("hub-settings", h.key + "|on") }
+        }
         .confirmationDialog("Clear the cached state?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Clear cached state", role: .destructive) { model.clearCache(); cacheBytes = 0 }
             Button("Cancel", role: .cancel) {}
