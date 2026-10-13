@@ -1054,17 +1054,17 @@ def Bom.rows.md(ls: List<&2, Line>) -> String:
 
 # the columns a table keeps: MPN, Manufacturer and DNP only when some line
 # has one (an empty column only squeezes the others on a phone)
-type Cols is Data:
-  Cols{mpn: Bool, mfr: Bool, dnp: Bool}
+type BomCols is Data:
+  BomCols{mpn: Bool, mfr: Bool, dnp: Bool}
 
-def Bom.cols.go(ls: List<&2, Line>, m: Bool, f: Bool, d: Bool) -> Cols:
+def Bom.cols.go(ls: List<&2, Line>, m: Bool, f: Bool, d: Bool) -> BomCols:
   match ls:
     case Nil{}:
-      Cols{m, f, d}
+      BomCols{m, f, d}
     case Line{_, _, _, _, +mp, +mf, +dn} <> t:
       Bom.cols.go(t, Bool.or(m, Bool.not(String.is_empty(mp))), Bool.or(f, Bool.not(String.is_empty(mf))), Bool.or(d, dn))
 
-def Bom.cols(ls: List<&2, Line>) -> Cols:
+def Bom.cols(ls: List<&2, Line>) -> BomCols:
   Bom.cols.go(ls, False{}, False{}, False{})
 
 def Bom.keep.k(on: Bool, +c: String, rest: List<&2, String>) -> List<&2, String>:
@@ -1074,20 +1074,25 @@ def Bom.keep.k(on: Bool, +c: String, rest: List<&2, String>) -> List<&2, String>
     case False{}:
       rest
 
-# a row's seven cells, the last three as the columns say
-def Bom.keep(cs: List<&2, String>, k: Cols) -> List<&2, String>:
-  match cs k:
-    case +r <> +q <> +v <> +f <> +m <> +mf <> +d <> _ Cols{km, kf, kd}:
-      r <> q <> v <> f <> Bom.keep.k(km, m, Bom.keep.k(kf, mf, Bom.keep.k(kd, d, Nil{})))
-    case +x _:
-      x
+def Bom.at(+xs: List<&2, String>, +i: Nat) -> String:
+  Maybe.default(&2, String, List.head(&2, String, List.drop(&2, String, xs, i)), "")
 
-def Bom.rows.md.k(ls: List<&2, Line>, +k: Cols) -> String:
+def Bom.keep.go(+cs: List<&2, String>, km: Bool, kf: Bool, kd: Bool) -> List<&2, String>:
+  List.append(&2, String, List.take(&2, String, cs, 4n),
+    Bom.keep.k(km, Bom.at(cs, 4n), Bom.keep.k(kf, Bom.at(cs, 5n), Bom.keep.k(kd, Bom.at(cs, 6n), Nil{}))))
+
+# a row's seven cells, the last three as the columns say
+def Bom.cells.pick(cs: List<&2, String>, k: BomCols) -> List<&2, String>:
+  match k:
+    case BomCols{km, kf, kd}:
+      Bom.keep.go(cs, km, kf, kd)
+
+def Bom.rows.md.k(ls: List<&2, Line>, +k: BomCols) -> String:
   match ls:
     case Nil{}:
       ""
     case l <> t:
-      Bom.row.md(Bom.keep(Bom.line.cells(l), k)) ++ Bom.rows.md.k(t, k)
+      Bom.row.md(Bom.cells.pick(Bom.line.cells(l), k)) ++ Bom.rows.md.k(t, k)
 
 def Bom.rule(cs: List<&2, String>) -> List<&2, String>:
   match cs:
@@ -1096,8 +1101,8 @@ def Bom.rule(cs: List<&2, String>) -> List<&2, String>:
     case _ <> t:
       "---" <> Bom.rule(t)
 
-def Bom.md.k(+k: Cols, ls: List<&2, Line>) -> String:
-  Bom.row.md(Bom.keep(["Reference", "Qty", "Value", "Footprint", "MPN", "Manufacturer", "DNP"], k)) ++ Bom.row.md(Bom.rule(Bom.keep(["", "", "", "", "", "", ""], k))) ++ Bom.rows.md.k(ls, k)
+def Bom.md.k(+k: BomCols, ls: List<&2, Line>) -> String:
+  Bom.row.md(Bom.cells.pick(["Reference", "Qty", "Value", "Footprint", "MPN", "Manufacturer", "DNP"], k)) ++ Bom.row.md(Bom.rule(Bom.cells.pick(["", "", "", "", "", "", ""], k))) ++ Bom.rows.md.k(ls, k)
 
 # a BOM's lines as a GFM table
 def Bom.md(+ls: List<&2, Line>) -> String:

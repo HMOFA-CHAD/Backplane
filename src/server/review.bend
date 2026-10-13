@@ -152,6 +152,11 @@ def Rvc.cli(+home: String) -> IO(String):
     rt : K.Rt <- K.Rt.resolve(Rvc.env(r), exe, home)
     return Rvc.rt.cli(rt)
 
+def Rvc.sch(f: K.Files) -> String:
+  match f:
+    case K.Files{_, _, +sch, _}:
+      sch
+
 def Rvc.pcb(f: K.Files) -> String:
   match f:
     case K.Files{_, +pcb, _, _}:
@@ -285,7 +290,7 @@ def Rvc.checks.k(r: P.Ran, +home: String, +trigger: String) -> IO(Unit):
     case P.Ran{_, +out}:
       IO.print(J.Json.show(J.Json.obj([J.KV{"err", J.Str{Rvc.or(String.trim(out), "could not take out that commit")}}])))
 
-def Rvc.checks(+dir: String, +commit: String, +home: String, +trigger: String) -> IO(Unit):
+def Rvc.check.run(+dir: String, +commit: String, +home: String, +trigger: String) -> IO(Unit):
   IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Rvc.prep.sh(), "sh", dir, commit], "/"), r => Rvc.checks.k(r, home, trigger))
 
 def Rvc.args.copy(xs: List<String>) -> List<&2, String>:
@@ -307,7 +312,7 @@ def Rvc.main.k(xs: List<&2, String>, go: List<String> -> IO(Unit)) -> IO(Unit):
     case "--review" <> "bom" <> a <> b <> _:
       Rvc.bom(a, b)
     case "--review" <> "checks" <> d <> c <> h <> t <> _:
-      Rvc.checks(d, c, h, t)
+      Rvc.check.run(d, c, h, t)
     case +x:
       go(Rvc.args.back(x))
 
@@ -318,11 +323,6 @@ def Rvc.main(xs: List<String>, go: List<String> -> IO(Unit)) -> IO(Unit):
 # the child, run from the hub: its Markdown, or why it failed
 def Rvc.run(+args: List<&2, String>) -> IO(P.Ran):
   IO.bind(String, P.Ran, H.Sys.exe_path(), exe => P.Proc.run(exe, args, "/"))
-
-def Rvc.sch(f: K.Files) -> String:
-  match f:
-    case K.Files{_, _, +sch, _}:
-      sch
 
 def RvJob.report(r: P.Ran, +thread: String, +page: String) -> Res:
   match r:
