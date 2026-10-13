@@ -372,6 +372,10 @@ struct ProjectsView: View {
             if let f = screen.search {
                 Section { SearchField(model: model, search: f, first: screen.projects.first?.id) }
             }
+            if let u = model.uber(screen) {
+                Section { UberCardRow(model: model, card: u) }
+                if let p = model.plane(screen) { PlaneSections(model: model, plane: p, full: false) }
+            }
             if screen.view == "active" {
                 let rows = screen.active ?? []
                 if rows.isEmpty && screen.settled == nil {
@@ -399,7 +403,7 @@ struct ProjectsView: View {
             if !screen.hubs.isEmpty { BotsSection(model: model, screen: screen) }
         }
         .overlay {
-            if screen.projects.isEmpty && screen.bots.isEmpty && screen.rooms.isEmpty {
+            if screen.projects.isEmpty && screen.bots.isEmpty && screen.rooms.isEmpty && screen.uber == nil {
                 // a hub still catching up has not said what there is yet
                 if let h = screen.hubs.first(where: { (model.conn[$0.key]?.phase ?? .connecting) != .online }), !screen.online {
                     VStack(spacing: 12) {
@@ -1074,6 +1078,9 @@ struct TourSheet: View {
                     Text(tour.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            ForEach(tour.choices, id: \.label) { c in
+                Button(c.label) { model.act(c.action, c.value) }.buttonStyle(.bordered)
             }
             HStack {
                 Button(tour.skip) { model.act("ob-skip") }

@@ -246,6 +246,9 @@ type Change is Data:
   # say bg.<thread> that way). Unlike a setting, it goes to the owner's
   # other machines with its thread (far.bend's Fr.shared)
   WorkSet{thread: String, kind: String, rows: String, at: Nat}
+  # the person made `bot` the uberbot (uber.bot), `uid` its id across
+  # machines (uber.uid); bot "" means no uberbot (uber.bot)
+  UberSet{bot: String, uid: String, at: Nat}
 
 # the later of two times. Base's Nat.max recurses once per unit and
 # overflows at epoch scale; Nat.is_ge compiles to a machine comparison.
@@ -1525,6 +1528,8 @@ def State.apply.go(s: State, e: Change) -> State:
       State.world((w => BT.World.spage_set(w, bot, html, at)), s)
     case WorkSet{+th, +kind, rows, _}:
       State.setting(s, kind ++ "." ++ th, rows)
+    case UberSet{bot, uid, _}:
+      State.setting(State.setting(s, "uber.bot", bot), "uber.uid", uid)
     case TodosSet{+th, todos, _}:
       State.setting(s, "todos." ++ th, todos)
     case ProviderSet{+id, +p, m, _}:

@@ -58,6 +58,7 @@ import ./src/core/google.bend as GO
 import ./src/core/cat.bend as CAT
 import ./src/core/voice.bend as VO
 import ./src/core/once.bend as ON
+import ./src/core/plane.bend as PLN
 
 # Lemmas
 # ------
@@ -8013,3 +8014,61 @@ def Laws.slash_others_own_only():
 
 def Laws.slash_none_unknown():
   {==}
+
+# --- uberbot: uber_*, plane_* (thread t1791834693) ---
+
+def Laws.uber_promote_far_refused(st):
+  {==}
+
+def Laws.uber_demote_clears():
+  {==}
+
+def Laws.uber_promote_sets():
+  {==}
+
+def Laws.uber_promote_again_nothing():
+  {==}
+
+def Laws.plane_each_once(u, ix, now):
+  Laws.once_distinct(PLN.PRow, PLN.Plane.all.src(u, ix, now))
+
+def Laws.plane_sections_once():
+  {==}
+
+def Laws.plane_need_ranked():
+  {==}
+
+def Laws.plane_hit_opens(t, at, pt, u, ix, st):
+  {==}
+
+# --- uberbot onboarding: onboard_uber_* ---
+
+def Laws.onboard_uber_none_creates():
+  {==}
+
+def Laws.onboard_uber_pick_most_used():
+  {==}
+
+def Laws.onboard_uber_have_quiet():
+  {==}
+
+def Laws.onboard_uber_existing_shows():
+  {==}
+
+def Laws.onboard_uber_existing_cached():
+  {==}
+
+def Laws.onboard_uber_answered_quiet():
+  {==}
+
+def Laws.onboard_uber_have_no_ask():
+  {==}
+
+def Laws.onboard_uber_skip_answers():
+  {==}
+
+def Laws.onboard_uber_single_no_back():
+  {==}
+
+def Laws.hubs_plane_once(rs):
+  Laws.once_distinct(J.Json, Hb.Hubs.pl.src(rs))

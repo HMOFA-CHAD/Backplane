@@ -588,11 +588,11 @@ def Lay.field(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +w: U32, +text: String, +fo
       Bool.pick(List<&2, R.Op>, Bool.and(focused, blink), [D.Draw.rect(c, (x + 8 + Ty.width(ty, 2n, String.take(vis, caret)) : U32), (y + 7 : U32), 1, 14, T.Th.accent(), 255)], Nil{})]),
     [Lay.hit(x, y, w, 28, "focus", id)]}
 
-def Lay.adding(+ty: Ty, adding: Bool, +path: String, +focused: Bool, +caret: Nat, +mark: Nat) -> Out:
+def Lay.adding(+ty: Ty, adding: Bool, +dy: U32, +path: String, +focused: Bool, +caret: Nat, +mark: Nat) -> Out:
   match adding:
     case True{}:
-      Out.cat(Lay.field(ty, D.Clip.all(), 12, 58, 186, path, focused, True{}, caret, mark, "/path/to/project", "project-path"),
-        Lay.button(ty, D.Clip.all(), 204, 58, "Add", T.Th.accent(), "add-project", path))
+      Out.cat(Lay.field(ty, D.Clip.all(), 12, (58 + dy : U32), 186, path, focused, True{}, caret, mark, "/path/to/project", "project-path"),
+        Lay.button(ty, D.Clip.all(), 204, (58 + dy : U32), "Add", T.Th.accent(), "add-project", path))
     case False{}:
       Out.none()
 
@@ -764,11 +764,11 @@ def Side.most(c: Col, +sd: U32, +bottom: U32) -> Out:
       Out.cat(o, Out{Nil{}, [Lay.hit(0, 0, 0, 0, "side-most", U32.show(U32.dim((y + sd + 8 : U32), bottom)))]})
 
 def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, +adding: Bool, +v: String,
-    +sd: U32, +caret: Nat, +mark: Nat, +focus: String, +path: String, +h: U32, +settings: Bool, +ms: List<&2, U.MRow>, +hint: String, +ids: List<&2, String>, +look: String, +rm: String, +q: String, more: D.Clip -> U32 -> Col) -> Out:
+    +sd: U32, +caret: Nat, +mark: Nat, +focus: String, +path: String, +h: U32, +settings: Bool, +ms: List<&2, U.MRow>, +hint: String, +ids: List<&2, String>, +look: String, +rm: String, +q: String, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
   +top = {D.Clip{0, 0, 264, 52} : D.Clip}
   +many = Nat.is_gt(List.length(&2, U.MRow, ms), 1n)
   +active = String.eq(U.Side.view(st), "active")
-  +yf = {Bool.pick(U32, adding, 96, 60) : U32}
+  +yf = {(Bool.pick(U32, adding, 96, 60) + uh : U32) : U32}
   +y0 = {(yf + 36 : U32) : U32}
   Out.all([
     Out.ops([D.Draw.rect(D.Clip.all(), 0, 0, 264, h, T.Th.panel(), 255), D.Draw.rect(D.Clip.all(), 263, 0, 1, h, T.Th.line(), 255),
@@ -777,7 +777,8 @@ def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +sel: String, +open: Map<&2
     Out.ops(List.append(&2, R.Op, Ty.text(ty, 1n, "Backplane", top, 30, 0, 52, T.Th.text()),
       Ty.text(ty, 2n, Ty.fit(ty, 2n, "v" ++ v, (158 - U32.min(Ty.width(ty, 1n, "Backplane"), 158) : U32)), top, (30 + Ty.width(ty, 1n, "Backplane") + 8 : U32), 0, 52, T.Th.faint()))),
     Out{Lay.icon(ty, "plus", top, 234, 18, T.Th.dim()), [Lay.hit(228, 12, 28, 28, "vw-projo", "")]},
-    Lay.adding(ty, adding, path, String.eq(focus, "project-path"), caret, mark),
+    utop,
+    Lay.adding(ty, adding, uh, path, String.eq(focus, "project-path"), caret, mark),
     Links.over(Lay.hints(hint, Side.most(Lay.col.then(Lay.side.list(active, ty, q, open, st, sel, now, look, rm,
       D.Clip{0, y0, 264, (h - 48 : U32)}, U32.sub(y0, sd)), more(D.Clip{0, y0, 264, (h - 48 : U32)})), sd, (h - 48 : U32)), ty, D.Clip{0, y0, 264, (h - 48 : U32)}, ids), U.Links.recent(st, now), now, D.Clip{0, y0, 264, (h - 48 : U32)}),
     Lay.finding(ty, active, yf, q, focus, caret, mark),
@@ -4154,12 +4155,15 @@ def Rm.draw.k(none: Bool, +ty: Ty, +u: U.Ui, +w: U32, +h: U32) -> Out:
 def Rm.draw(+ty: Ty, +u: U.Ui, +w: U32, +h: U32) -> Out:
   Rm.draw.k(String.is_empty(U.Menu.open(u)), ty, u, w, h)
 
-def Lay.sidebar.x(+ty: Ty, +n: S.Nui, +h: U32, more: D.Clip -> U32 -> Col) -> Out:
+def Lay.sidebar.u(+ty: Ty, +n: S.Nui, +h: U32, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
   match n:
     case S.Nui{U.Ui{+st, +sel, _, _, +open, on, +now, adding, _, +v, _, _, _, +note, _, _, _}, +w, _, _, _, +sd, _, +caret, +focus, +path, _, _, vw}:
       Out.all([Lay.sidebar.k(ty, D.Clip{0, 52, 264, h}, st, sel, open, on, now, adding, v, sd, caret, S.Nui.mark(n), focus, path, h, U.Flag.get(open, "settings"), U.Machines.rows(S.Nui.ui(n)),
         U.Ui.scratch(S.Nui.ui(n), "@hint"), Lay.hint.ids(String.eq(U.Ui.scratch(S.Nui.ui(n), "@hint"), "alt"), String.eq(U.Ui.scratch(S.Nui.ui(n), "@hint"), "ctrl"), S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@look"), U.Ui.scratch(S.Nui.ui(n), "@rm"),
-        U.Ui.scratch(S.Nui.ui(n), "@f.pq"), more), Lay.note(ty, note, h), Lay.ghost(ty, n), Rm.draw(ty, S.Nui.ui(n), w, h)])
+        U.Ui.scratch(S.Nui.ui(n), "@f.pq"), utop, uh, more), Lay.note(ty, note, h), Lay.ghost(ty, n), Rm.draw(ty, S.Nui.ui(n), w, h)])
+
+def Lay.sidebar.x(+ty: Ty, +n: S.Nui, +h: U32, more: D.Clip -> U32 -> Col) -> Out:
+  Lay.sidebar.u(ty, n, h, Out.none(), 0, more)
 
 # the sidebar with nothing under the projects
 def Lay.sidebar(+ty: Ty, +n: S.Nui, +h: U32) -> Out:
@@ -5262,8 +5266,19 @@ def Tour.bar.k(over: Bool, +nl: U32, +nv: U32, +off: U32, +x: U32, +y: U32) -> O
 def Tour.bar(+nl: U32, +nv: U32, +off: U32, +x: U32, +y: U32) -> Out:
   Tour.bar.k(U32.is_gt(nl, nv), nl, nv, off, x, y)
 
+# the uberbot step's choices (client.bend's Tour.choices): a button each,
+# one above the other, their hits the choice's own action and value
+def Tour.choices(cs: List<&2, U.TChoice>, +ty: Ty, +x: U32, +y: U32) -> Out:
+  match cs:
+    case Nil{}:
+      Out.none()
+    case U.TChoice{l, a, v} <> t:
+      Out.cat(Lay.button(ty, D.Clip.all(), x, y, l, T.Th.accent(), a, v), Tour.choices(t, ty, x, (y + 34 : U32)))
+
 def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
   +u = S.Nui.ui(n)
+  +cs = U.Tour.choices(u)
+  +cr = {(U32.from_nat(List.length(&2, U.TChoice, cs)) * 34 : U32) : U32}
   +i = U.Tour.at(u)
   +g = U.Tour.target(0n, u)
   +body = U.Tour.body(0n, u)
@@ -5278,8 +5293,8 @@ def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
   +all = Ty.wrap(ty, 0n, Bool.pick(String, compact, title ++ ": " ++ body, body), U32.dim(cw, 32))
   +nl = {U32.from_nat(List.length(&2, String, all)) : U32}
   +top = {Bool.pick(U32, compact, 8, (38 + th : U32)) : U32}
-  +nv = {U32.max(1, U32.min(nl, (U32.dim(avail, (top + 60 : U32)) / 22 : U32))) : U32}
-  +ch = {(top + 60 + nv * 22 : U32) : U32}
+  +nv = {U32.max(1, U32.min(nl, (U32.dim(avail, (top + 60 + cr : U32)) / 22 : U32))) : U32}
+  +ch = {(top + 60 + nv * 22 + cr : U32) : U32}
   +cy = {U32.min(96, U32.dim(hh, (ch + 12 : U32))) : U32}
   +by = {(cy + ch - 44 : U32) : U32}
   +bt = {(cy + top : U32) : U32}
@@ -5289,12 +5304,13 @@ def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
   Out.all([
     Out{Tour.dim(Tour.rect(g, hh, Lay.x1(n)), ww, hh), [Lay.hit(0, 0, ww, hh, "", "")]},
     Out{Lay.box(D.Clip.all(), cx, cy, cw, ch, 0, T.Th.panel(), T.Th.line()), [Lay.hit(cx, cy, cw, ch, "ob-scroll", Nat.show(U32.to_nat(U32.dim(nl, nv))))]},
-    Out.ops(List.concat(&2, R.Op, [Ty.text(ty, 2n, OB.Ob.counter(i), D.Clip.all(), Bool.pick(U32, compact, (cx + 16 + Lay.button.w(ty, "Skip") + 12 : U32), (cx + 16 : U32)), Bool.pick(U32, compact, (by + 4 : U32), (cy + 8 : U32)), 20, T.Th.faint()),
+    Out.ops(List.concat(&2, R.Op, [Ty.text(ty, 2n, U.Tour.counter(u), D.Clip.all(), Bool.pick(U32, compact, (cx + 16 + Lay.button.w(ty, "Skip") + 12 : U32), (cx + 16 : U32)), Bool.pick(U32, compact, (by + 4 : U32), (cy + 8 : U32)), 20, T.Th.faint()),
       Bool.pick(List<&2, R.Op>, compact, Nil{}, Tour.lines(tl, ty, 1n, 28, T.Th.text(), D.Clip.all(), (cx + 16 : U32), (cy + 30 : U32))),
       Tour.lines(all, ty, 0n, 22, Bool.pick(U32, compact, T.Th.text(), T.Th.dim()), D.Clip{(cx + 16 : U32), bt, (cx + cw - 16 : U32), (bt + nv * 22 : U32)}, (cx + 16 : U32), (bt - off * 22 : U32))])),
     Tour.bar(nl, nv, off, (cx + cw - 8 : U32), bt),
+    Tour.choices(cs, ty, (cx + 16 : U32), (bt + nv * 22 + 8 : U32)),
     Lay.button(ty, D.Clip.all(), (cx + 16 : U32), by, "Skip", T.Th.soft(), "ob-skip", ""),
-    Tour.back(Nat.is_gt(i, 0n), ty, (nx - 6 - Lay.button.w(ty, "Back") : U32), by),
+    Tour.back(U.Tour.back(u), ty, (nx - 6 - Lay.button.w(ty, "Back") : U32), by),
     Lay.button(ty, D.Clip.all(), nx, by, nb, T.Th.accent(), "ob-next", "")])
 
 def Lay.tour.if(open: Bool, +ty: Ty, +n: S.Nui, +w: U32, +h: U32) -> Out:
@@ -5306,11 +5322,11 @@ def Lay.tour.if(open: Bool, +ty: Ty, +n: S.Nui, +w: U32, +h: U32) -> Out:
 
 # the whole window, topmost first; `more` lays out what the sidebar shows
 # under the projects, `main` a main area in place of the usual one
-def Lay.frame.x(+ty: Ty, +memo: TLMemo, +n: S.Nui, more: D.Clip -> U32 -> Col, main: Maybe<&2, Out>) -> Out:
+def Lay.frame.u(+ty: Ty, +memo: TLMemo, +n: S.Nui, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col, main: Maybe<&2, Out>) -> Out:
   match n:
     case S.Nui{U.Ui{_, _, _, _, _, _, _, _, +pa, _, _, _, +err, note, _, _, _}, +w, +h, _, _, _, _, _, _, _, _, _, _}:
       # the main area and the sidebar are laid out at once
-      mn sb = Lay.main.m(main, ty, memo, Lay.shrink(n, Lay.term_h(n)), 264, Bool.pick(U32, pa, (264 + U32.shr((w - 264 : U32)) : U32), w)) Lay.sidebar.x(ty, n, h, more)
+      mn sb = Lay.main.m(main, ty, memo, Lay.shrink(n, Lay.term_h(n)), 264, Bool.pick(U32, pa, (264 + U32.shr((w - 264 : U32)) : U32), w)) Lay.sidebar.u(ty, n, h, utop, uh, more)
       Lay.rev(Out.all([
         mn,
         Lay.viewer.if(pa, ty, n, (264 + U32.shr((w - 264 : U32)) : U32), w, h),
@@ -5322,6 +5338,10 @@ def Lay.frame.x(+ty: Ty, +memo: TLMemo, +n: S.Nui, more: D.Clip -> U32 -> Col, m
         Lay.hover(U.Ui.info(S.Nui.ui(n), "hover"), S.Hover.alpha(n, S.Nui.ms_of(n))),
         Lay.perf.if(U.Ui.flag(S.Nui.ui(n), "perf"), ty, U.Ui.info(S.Nui.ui(n), "perf.hud"), w),
         Lay.tour.if(U.Tour.on(S.Nui.ui(n)), ty, n, w, h)]))
+
+# (nothing pinned above the sidebar's search field)
+def Lay.frame.x(+ty: Ty, +memo: TLMemo, +n: S.Nui, more: D.Clip -> U32 -> Col, main: Maybe<&2, Out>) -> Out:
+  Lay.frame.u(ty, memo, n, Out.none(), 0, more, main)
 
 def Lay.frame(+ty: Ty, +memo: TLMemo, +n: S.Nui) -> Out:
   Lay.frame.x(ty, memo, n, c => y => Col{Out.none(), y}, None{})
