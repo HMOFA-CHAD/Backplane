@@ -41,13 +41,6 @@ object Notes {
         return PendingIntent.getActivity(ctx, code, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
-    // opens the app asking which working thread to show
-    fun pick(ctx: Context, code: Int): PendingIntent {
-        val i = Intent(ctx, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            .putExtra(EXTRA_PICK, true)
-        return PendingIntent.getActivity(ctx, code, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-    }
 
     // one notification per key (src/core/notice.bend: "turn-<thread>", or
     // "room-<room>" for a room exchange, the same on every paired hub): a

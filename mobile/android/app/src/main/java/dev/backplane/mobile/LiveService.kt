@@ -115,7 +115,7 @@ class LiveService : Service() {
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             // one thread opens it; several, the app asks which
-            .setContentIntent(i.lines.singleOrNull()?.let { Notes.open(this, it.thread, ID) } ?: Notes.pick(this, ID))
+            .setContentIntent(i.lines.singleOrNull()?.let { Notes.open(this, it.thread, ID) } ?: Notes.open(this, "", ID))
             // Android 16: ask to be promoted to a status-bar chip
             // (Notification.EXTRA_REQUEST_PROMOTED_ONGOING; compileSdk 35 lacks it)
             .addExtras(Bundle().apply { putBoolean("android.requestPromotedOngoing", true) })
