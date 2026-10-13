@@ -7991,3 +7991,25 @@ def Laws.lyr_kind_base():
 
 def Laws.lyr_masks_only():
   {==}
+
+# Slash commands in the composer (slash.bend)
+def Laws.slash_typing_word():
+  {==}
+
+def Laws.slash_typing_alone():
+  {==}
+
+def Laws.slash_not_after_space():
+  {==}
+
+def Laws.slash_not_midline():
+  {==}
+
+def Laws.slash_claude_prefix():
+  {==}
+
+def Laws.slash_others_own_only():
+  {==}
+
+def Laws.slash_none_unknown():
+  {==}
