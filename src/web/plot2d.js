@@ -173,7 +173,8 @@ class View {
     canvas.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       const b = canvas.getBoundingClientRect();
-      const x = (e.clientX - b.left - this.ox) / this.scale, y = (e.clientY - b.top - this.oy) / this.scale;
+      // the plot's units are thousandths of a mm
+      const x = (e.clientX - b.left - this.ox) / this.scale / 1000, y = (e.clientY - b.top - this.oy) / this.scale / 1000;
       if (placed && Number.isFinite(x) && Number.isFinite(y)) placed(`${x.toFixed(4)}\t${y.toFixed(4)}\t\t`);
     });
     // a new size refits the view, unless the user has moved it
@@ -212,10 +213,12 @@ class View {
     if (!stage) return;
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     for (const el of stage.querySelectorAll("[data-x][data-y]")) {
-      const sx = this.ox + Number(el.dataset.x) * this.scale, sy = this.oy + Number(el.dataset.y) * this.scale;
-      el.style.left = `${sx}px`;
-      el.style.top = `${sy}px`;
-      el.style.visibility = sx >= 0 && sy >= 0 && sx <= w && sy <= h ? "visible" : "hidden";
+      const sx = this.ox + Number(el.dataset.x) * 1000 * this.scale, sy = this.oy + Number(el.dataset.y) * 1000 * this.scale;
+      // a card sits beside its place, kept inside the stage
+      const card = el.classList.contains("rc-card");
+      el.style.left = `${card ? Math.max(8, Math.min(sx + 16, w - el.offsetWidth - 8)) : sx}px`;
+      el.style.top = `${card ? Math.max(8, Math.min(sy + 16, h - el.offsetHeight - 8)) : sy}px`;
+      el.style.visibility = card || (sx >= 0 && sy >= 0 && sx <= w && sy <= h) ? "visible" : "hidden";
     }
   }
 

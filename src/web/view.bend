@@ -1647,7 +1647,8 @@ def View.rc.open(m: Maybe<&2, U.RcOpen>, +u: U.Ui) -> List<&2, D.Node>:
       Nil{}
 
 def View.rc.note.k(+xs: List<&2, String>, +u: U.Ui) -> List<&2, D.Node>:
-  [D.El{"div", "rc-note", [D.At{"class", "rc-card rc-note"}, D.At{"data-x", Maybe.default(&2, String, List.get(&2, String, xs, 0n), "0")}, D.At{"data-y", Maybe.default(&2, String, List.get(&2, String, xs, 1n), "0")}],
+  [D.El{"span", "rc-draft", [D.At{"class", "rc-pin draft"}, D.At{"data-x", Maybe.default(&2, String, List.get(&2, String, xs, 0n), "0")}, D.At{"data-y", Maybe.default(&2, String, List.get(&2, String, xs, 1n), "0")}], Nil{}},
+   D.El{"div", "rc-note", [D.At{"class", "rc-card rc-note"}, D.At{"data-x", Maybe.default(&2, String, List.get(&2, String, xs, 0n), "0")}, D.At{"data-y", Maybe.default(&2, String, List.get(&2, String, xs, 1n), "0")}],
     [D.El{"div", "", [D.At{"class", "rc-head"}], [D.Dom.span("what", "Comment here")]},
      WB.WB.input("rcnote", "rcnote", U.Ui.scratch(u, "@f.rcnote"), "Note", "rv-note-send"),
      D.El{"div", "", [D.At{"class", "rc-row"}], [D.Dom.button("primary", "rv-note-send", "", "Pin the comment here", "Send"), D.Dom.button("", "rv-note-shut", "", "Do not comment", "Cancel")]}]}]
@@ -1679,8 +1680,8 @@ def View.rc.tasks(ts: List<&2, U.RpTask>, +prev: String) -> List<&2, D.Node>:
 def View.rc.checks.k(on: Bool, +u: U.Ui) -> List<&2, D.Node>:
   match on:
     case True{}:
-      D.El{"div", "", [D.At{"class", Bool.pick(String, String.is_empty(U.Rp.gate(u)), "rc-gate ok", "rc-gate bad")}],
-        [D.Txt{Bool.pick(String, String.is_empty(U.Rp.gate(u)), "Passes", "Fails: " ++ U.Rp.gate(u))}]} <> View.rc.tasks(U.Rp.tasks(u), "")
+      [D.El{"div", "", [D.At{"class", "rc-checks"}], D.El{"div", "", [D.At{"class", Bool.pick(String, String.is_empty(U.Rp.gate(u)), "rc-gate ok", "rc-gate bad")}],
+        [D.Txt{Bool.pick(String, String.is_empty(U.Rp.gate(u)), "Passes", "Fails: " ++ U.Rp.gate(u))}]} <> View.rc.tasks(U.Rp.tasks(u), "")}]
     case False{}:
       Nil{}
 

@@ -4202,7 +4202,7 @@ def Rcw.reps(rs: List<&2, String>, +ty: Ty, +w: U32) -> List<&2, String>:
       List.append(&2, String, Ty.wrap(ty, 2n, Rcw.part(String.split(r, '\u{1f}'), 1n) ++ ": " ++ Rcw.part(String.split(r, '\u{1f}'), 0n), w), Rcw.reps(t, ty, w))
 
 # the open comment, top right
-def Rcw.open.k(+ty: Ty, +n: S.Nui, o: U.RcOpen, +x0: U32, +x1: U32) -> Out:
+def Rcw.open.k(+ty: Ty, +n: S.Nui, o: U.RcOpen, +x0: U32, +x1: U32, +y1: U32) -> Out:
   match o:
     case U.RcOpen{+id, +text, +by, +place, +res, +reps}:
       +cw = {U32.min(360, U32.dim((x1 - x0 : U32), 24)) : U32}
@@ -4210,8 +4210,8 @@ def Rcw.open.k(+ty: Ty, +n: S.Nui, o: U.RcOpen, +x0: U32, +x1: U32) -> Out:
       +ls = {Rcw.take(List.append(&2, String, Ty.wrap(ty, 2n, text, tw), Rcw.reps(reps, ty, tw)), 12n) : List<&2, String>}
       +nl = {U32.from_nat(List.length(&2, String, ls)) : U32}
       +ch = {(122 + nl * 20 : U32) : U32}
-      +cx = {(x1 - cw - 12 : U32) : U32}
-      +cy = {62 : U32}
+      +cx = {(x0 + 12 : U32) : U32}
+      +cy = {U32.max(62, U32.dim(y1, (ch + 8 : U32))) : U32}
       +fy = {(cy + 40 + nl * 20 + 8 : U32) : U32}
       +fid = {S.Fld.id("rcreply", "rv-reply-send", "") : String}
       Out.all([Rcw.card(cx, cy, cw, ch),
@@ -4222,10 +4222,10 @@ def Rcw.open.k(+ty: Ty, +n: S.Nui, o: U.RcOpen, +x0: U32, +x1: U32) -> Out:
         Lay.button(ty, D.Clip.all(), (cx + 12 : U32), (fy + 36 : U32), "Reply", T.Th.accent(), "rv-reply-send", ""),
         Lay.button(ty, D.Clip.all(), (cx + 20 + Lay.button.w(ty, "Reply") : U32), (fy + 36 : U32), Bool.pick(String, res, "Reopen", "Resolve"), T.Th.soft(), Bool.pick(String, res, "rv-reopen", "rv-resolve"), id)])
 
-def Rcw.open(m: Maybe<&2, U.RcOpen>, +ty: Ty, +n: S.Nui, +x0: U32, +x1: U32) -> Out:
+def Rcw.open(m: Maybe<&2, U.RcOpen>, +ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +y1: U32) -> Out:
   match m:
     case Some{+o}:
-      Rcw.open.k(ty, n, o, x0, x1)
+      Rcw.open.k(ty, n, o, x0, x1, y1)
     case None{}:
       Out.none()
 
@@ -4260,7 +4260,7 @@ def Rcw.all(+ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +y1: U32) -> Out:
   +u = S.Nui.ui(n)
   Out.all([Rcw.pins(U.Rc.pins(u), ty, Rcw.view(S.Nui.vw(n)), U.Rc.sel(u), x0, x1, y1),
     Rcw.note(U.Rc.at(u), ty, n, Rcw.view(S.Nui.vw(n)), x0, x1, y1),
-    Rcw.open(U.Rc.open(u), ty, n, x0, x1)])
+    Rcw.open(U.Rc.open(u), ty, n, x0, x1, y1)])
 
 def Rcw.if(on: Bool, +ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +y1: U32) -> Out:
   match on:
