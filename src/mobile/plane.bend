@@ -84,11 +84,6 @@ def MPlane.with.home(j: J.Json, +h: J.Json) -> J.Json:
     case x:
       x
 
-# a plane with nothing in it: the list of a phone with one hub sends this with
-# the card's count (the apps want a plane to take the card as fresh)
-def MPlane.none() -> J.Json:
-  MPlane.json(PL.Plane{Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, 0n, Nil{}}, 0n)
-
 # the uberbot's card: a bot's row (MBots.row) with the plane's counts
 # the card with no counts (while the plane is not built)
 def MPlane.bare(r: B.BRow) -> J.Json:
@@ -100,9 +95,6 @@ def MPlane.card.k(j: J.Json, +counts: String) -> J.Json:
       J.Obj{J.Field{"counts", J.Str{counts}, fs}}
     case x:
       x
-
-def MPlane.card.c(r: B.BRow, +counts: String) -> J.Json:
-  MPlane.card.k(MB.MBots.row(r), counts)
 
 def MPlane.card(r: B.BRow, +p: PL.Plane) -> J.Json:
   MPlane.card.k(MB.MBots.row(r), PL.Plane.counts(p))

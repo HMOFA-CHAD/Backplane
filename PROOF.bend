@@ -8372,3 +8372,9 @@ def Laws.plane_home_button():
 
 def Laws.plane_home_button_held():
   {==}
+
+def Laws.plane_list_same():
+  {==}
+
+def Laws.plane_list_same_rich():
+  {==}

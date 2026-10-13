@@ -116,6 +116,7 @@ def main() -> IO(Unit):
     C.Check.str("home: here, no offer", PL.Plane.home.words(U.Ui.far.st(U.Ui.init(now()), M.State.replay([UBS.Ub.demo.op("mA", 1n, 1002n, UO.Ub.b.lease("mA", 3n))], UBS.Ub.demo.away()))), "Home: This machine")
     C.Check.str("home: no lease yet, here", PL.Plane.home.words(U.Ui.far.st(U.Ui.init(now()), UBS.Ub.demo.a())), "Home: This machine")
     C.Check.str("uber-home asks the hub", Bool.show(String.contains(sends.of(cmds(U.Ui.act(ui(Nil{}), "uber-home", ""))), "bots.uber_home")), "True")
+    C.Check.str("the list's plane has the plane's need and run rows", Bool.show(PL.Plane.list.same(ui(Nil{}), now())) ++ Bool.show(PL.Plane.list.same(PL.Plane.demo.rich(), now())), "TrueTrue")
     C.Check.str("nothing to count", PL.Plane.counts(PL.Plane.of(U.Ui.far.st(U.Ui.init(now()), M.State.empty()), now())), "")
     C.Check.str("unread", Nat.show(U.Rooms.unread(ui(Nil{}), "r1")), "1")
     C.Check.str("seen", Nat.show(U.Rooms.unread(ui([M.SettingSet{"room.seen.r1", "199800", 199900n}]), "r1")), "0")

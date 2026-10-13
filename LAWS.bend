@@ -6876,3 +6876,10 @@ law plane_home_button:
 # and not where this machine holds it, or has no uberbot
 law plane_home_button_held:
   {Bool.or(PLN.Plane.home.button(PLN.Plane.home(U.Ui.far.st(U.Ui.init(2000n), UBS.Ub.demo.a()))), PLN.Plane.home.button(PLN.Plane.home(U.Ui.far.st(U.Ui.init(2000n), M.State.empty())))) == False{} : Bool}
+
+# the phones' list plane has the rows of the plane that need the person or run, in the same order
+law plane_list_same:
+  {PLN.Plane.list.same(PLN.Plane.demo(), 200000n) == True{} : Bool}
+
+law plane_list_same_rich:
+  {PLN.Plane.list.same(PLN.Plane.demo.rich(), 200000n) == True{} : Bool}

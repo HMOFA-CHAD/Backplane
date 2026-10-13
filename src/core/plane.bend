@@ -890,3 +890,44 @@ def Plane.home.line(+h: PHome) -> String:
 # the line and the offer, for the laws and tests
 def Plane.home.words(+u: U.Ui) -> String:
   Plane.home.line(Plane.home(u)) ++ Bool.pick(String, Plane.home.button(Plane.home(u)), " | " ++ Plane.home.label(), "")
+
+# The list's plane
+# ----------------
+# What the phones' home list draws (need, run, bots, rooms, routines; no idle
+# threads) from the index and the sidebar's rows the screen has made: a
+# thread's phase and row are worked out only for a thread that can be need
+# or run (Plane.maybe). Law plane_list_same.
+
+def Plane.list.row(+state: String, +t: M.Thread, +pt: String, +u: U.Ui, rest: List<&2, PRow>) -> List<&2, PRow>:
+  Plane.keep(Nat.is_gt(Plane.sec(state), 1n), Plane.thread.k(U.Ui.far.away(u, M.Thread.id(t)), M.Thread.id(t), U.Active.title(t), pt, U.Ui.far.name(u, M.Thread.id(t)), state, U.Active.activity(t)), rest)
+
+def Plane.list.keep(r: Bool, +t: M.Thread, +pt: String, +ix: U.SIx, +st: M.State, +u: U.Ui, rest: List<&2, PRow>) -> List<&2, PRow>:
+  match r:
+    case True{}:
+      Plane.list.row(Plane.asking(Plane.state(U.Side.phase.ix(ix, st, t)), ix, M.Thread.id(t)), t, pt, u, rest)
+    case False{}:
+      rest
+
+def Plane.list.ts(ts: List<&2, M.Thread>, +pt: String, +ix: U.SIx, +st: M.State, +m: Map<&2, Bool>, +u: U.Ui, rest: List<&2, PRow>) -> List<&2, PRow>:
+  match ts:
+    case Nil{}:
+      rest
+    case +t <> r:
+      Plane.list.keep(Plane.maybe(t, m), t, pt, ix, st, u, Plane.list.ts(r, pt, ix, st, m, u, rest))
+
+def Plane.list.rows(rs: List<&2, U.SRow>, +ix: U.SIx, +st: M.State, +m: Map<&2, Bool>, +u: U.Ui) -> List<&2, PRow>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.SRow{_, M.Project{_, +ti, _, _, _}, M.Shelves{+p, +a, _, _, _}} <> t:
+      Plane.list.ts(p, ti, ix, st, m, u, Plane.list.ts(a, ti, ix, st, m, u, Plane.list.rows(t, ix, st, m, u)))
+
+def Plane.of.l(+u: U.Ui, +ix: U.SIx, +rows: List<&2, U.SRow>, +now: Nat) -> Plane:
+  Plane.of.i(Nil{}, List.append(&2, PRow, Plane.list.rows(rows, ix, U.Ui.state(u), Plane.hot(U.Ui.state(u), ix), u), Plane.bots.go(BT.World.bots(M.State.bots(U.Ui.state(u))), u, ix, U.Ui.state(u))), u, ix, now)
+
+# the list's need and run rows are the plane's, in the same order
+def Plane.list.ids(+p: Plane) -> String:
+  String.join(Plane.ids(Plane.need(p)), ",") ++ "|" ++ String.join(Plane.ids(Plane.run(p)), ",")
+
+def Plane.list.same(+u: U.Ui, +now: Nat) -> Bool:
+  String.eq(Plane.list.ids(Plane.of.l(u, U.Side.ix(U.Ui.state(u)), U.Side.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now), now)), Plane.list.ids(Plane.of(u, now)))
