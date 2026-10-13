@@ -59,3 +59,5 @@ KiCad is the first adapter, built over `kicad-cli` 10 (`sch erc`, `pcb drc` with
 ## Status
 
 1. Compare anything: done (window, web, iOS, Android). Typed refs, tags and the branch point; per-layer marks follow the active layer; sheets keep comparing; Old / Diff / New; the bar under every board and schematic.
+2. BOM and BOM change: done. The Review tab on all four clients; a BOM of the working copy, or what changed between a comparison's versions (the BOM button in the comparison bar); BOM rules; a pull request Backplane opens gets its parts change as a comment.
+3. Design checks: the Checks page (ERC, DRC, BOM rules, the checklist read-only, custom checks, the gate) on the working copy or the comparison's new commit. Still to come: ticking boxes in the clients (the hub's `review.tick` is there), markers at a finding's place, an agent tool, checks on a pull request.
