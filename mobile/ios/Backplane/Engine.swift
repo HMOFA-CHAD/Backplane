@@ -6,7 +6,10 @@ import JavaScriptCore
 // log, the call throws, and the app keeps its empty first screen.
 private final class Worker: Thread, @unchecked Sendable {
     private let cond = NSCondition()
-    private var jobs: [() -> Void] = []
+    private var people: [() -> Void] = []
+    private var background: [() -> Void] = []
+
+    var personWaiting: Bool { cond.withLock { !people.isEmpty } }
 
     override init() {
         super.init()
@@ -16,9 +19,9 @@ private final class Worker: Thread, @unchecked Sendable {
         start()
     }
 
-    func async(_ f: @escaping () -> Void) {
+    func async(person: Bool, _ f: @escaping () -> Void) {
         cond.lock()
-        jobs.append(f)
+        if person { people.append(f) } else { background.append(f) }
         cond.signal()
         cond.unlock()
     }
@@ -26,8 +29,8 @@ private final class Worker: Thread, @unchecked Sendable {
     override func main() {
         while true {
             cond.lock()
-            while jobs.isEmpty { cond.wait() }
-            let f = jobs.removeFirst()
+            while people.isEmpty && background.isEmpty { cond.wait() }
+            let f = people.isEmpty ? background.removeFirst() : people.removeFirst()
             cond.unlock()
             f()
         }
@@ -53,7 +56,8 @@ final class Engine: @unchecked Sendable {
     // calls queued whose answer carries a screen: while one is, the screen
     // before it is out of date before it could be drawn, so it is skipped
     private let lock = NSLock()
-    private var ahead = 0
+    private var personAhead = 0
+    private var backgroundAhead = 0
     // a screen was dropped that way: the next recv builds one even for a
     // frame that changes nothing on screen (bridge.js's owed)
     private var owe = false
@@ -62,9 +66,9 @@ final class Engine: @unchecked Sendable {
     private var built: UInt64 = 0
 
     // late: the arguments decided on the queue, as the call runs
-    private func call<T>(_ name: String, _ args: [Any], late: (() -> [Any])? = nil, _ finish: @escaping (String) -> T) async -> T {
+    private func call<T>(_ name: String, _ args: [Any], person: Bool = false, late: (() -> [Any])? = nil, _ finish: @escaping (String) -> T) async -> T {
         await withCheckedContinuation { k in
-            queue.async {
+            queue.async(person: person) {
                 let b = self.context().objectForKeyedSubscript("Backplane")!
                 let t0 = DispatchTime.now().uptimeNanoseconds
                 let text = b.invokeMethod(name, withArguments: late?() ?? args)?.toString() ?? "{}"
@@ -80,8 +84,8 @@ final class Engine: @unchecked Sendable {
     // quiet: when newer calls wait behind this one, it is made with a last
     // argument true, and builds no screen (it would be dropped anyway)
     // (a quiet call is told both, as its last two arguments)
-    private func out(_ name: String, _ args: [Any], screen: Bool = true, quiet: Bool = false) async -> Out? {
-        if screen { lock.withLock { ahead += 1 } }
+    private func out(_ name: String, _ args: [Any], screen: Bool = true, person: Bool = false, quiet: Bool = false) async -> Out? {
+        if screen { lock.withLock { if person { personAhead += 1 } else { backgroundAhead += 1 } } }
         // due: a second since the last screen, so this one is drawn even
         // with newer calls waiting
         var due = false
@@ -90,13 +94,13 @@ final class Engine: @unchecked Sendable {
                 let o = self.owe
                 self.owe = false
                 due = DispatchTime.now().uptimeNanoseconds &- self.built > 1_000_000_000
-                return args + [self.ahead > 1 && !due, o]
+                return args + [self.queue.personWaiting || (self.backgroundAhead > 1 && !due), o]
             }
         } : nil
-        return await call(name, args, late: late) { text in
+        return await call(name, args, person: person, late: late) { text in
             let stale = screen && self.lock.withLock {
-                self.ahead -= 1
-                let drop = self.ahead > 0 && !due
+                if person { self.personAhead -= 1 } else { self.backgroundAhead -= 1 }
+                let drop = person ? self.personAhead > 0 : (self.queue.personWaiting || (self.backgroundAhead > 0 && !due))
                 if drop { self.owe = true } else { self.built = DispatchTime.now().uptimeNanoseconds }
                 return drop
             }
@@ -113,17 +117,17 @@ final class Engine: @unchecked Sendable {
     func register(at hub: String, _ kind: String, _ token: String, env: String, bundle: String) async -> Out? {
         await out("registerAt", [hub, "ios", token, kind, "", env, bundle], screen: false)
     }
-    func screen() async -> Out? { await out("screen", []) }
+    func screen() async -> Out? { await out("screen", [], person: true) }
     func recv(_ key: String, _ text: String) async -> Out? { await out("recv", [key, text], quiet: true) }
     // the whole client state as text (StateStore), and the state loaded back
     func save() async -> String { await call("save", []) { $0 } }
     func load(_ text: String) async -> Out? { await out("load", [text]) }
-    func act(_ action: String, _ value: String) async -> Out? { await out("act", [action, value]) }
-    func quiet(_ action: String, _ value: String) async -> Out? { await out("quiet", [action, value], screen: false) }
+    func act(_ action: String, _ value: String) async -> Out? { await out("act", [action, value], person: true) }
+    func quiet(_ action: String, _ value: String) async -> Out? { await out("quiet", [action, value], screen: false, person: true) }
     func online(_ key: String, _ b: Bool) async -> Out? { await out("online", [key, b]) }
     // a hub marked offline with no screen of its own (after load())
     func offline(_ key: String) async -> Out? { await out("online", [key, false, true], screen: false) }
     func tick(_ now: Int) async -> Out? { await out("tick", [now]) }
     // a cat's rig for its key ("look:mood")
-    func cat(_ key: String) async -> String { await call("cat", [key]) { $0 } }
+    func cat(_ key: String) async -> String { await call("cat", [key], person: true) { $0 } }
 }
