@@ -145,6 +145,30 @@ try {
   const tk2 = (await ask("review.tick", { thread: th.id, index: 1 }))?.result?.ticked;
   check(!!tk2 && tk2.tasks[1]?.done === false, "and cleared again");
 
+  // review comments: the person's over the socket, the agent's through MCP
+  const pc1 = await ask("review.comment", { thread: th.id, op: "add", file: "ecc83-pp.kicad_pcb", kind: "board", layer: "F.Cu", x: 141.6, y: 99.7, item: "", text: "Move C1 off the edge" });
+  check(!!pc1 && pc1.ok === true, "a person's comment is taken", JSON.stringify(pc1));
+  const act1 = await until(10000, () => seen.find((c) => c.$ === "ActivityLogged" && c.thread === th.id && c.tone === "review" && c.kind === "add"));
+  check(!!act1 && JSON.parse(act1.summary).text === "Move C1 off the edge" && JSON.parse(act1.summary).a.file === "ecc83-pp.kicad_pcb", "logged as a review Act", JSON.stringify(act1));
+  const empty = await ask("review.comment", { thread: th.id, op: "add", text: "  " });
+  check(!!empty && empty.ok === false, "an empty comment is refused", JSON.stringify(empty));
+  const token = readFileSync(join(home, "token"), "utf8").trim();
+  const mcp = async (name: string, args: any) => {
+    const r = await fetch(`http://127.0.0.1:${port}/mcp/${th.id}?token=${token}`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }) });
+    return await r.text();
+  };
+  const listed = await mcp("review_comments", {});
+  check(listed.includes("Move C1 off the edge") && listed.includes("review_comments"), "the agent reads it", listed.slice(0, 300));
+  const made = await mcp("review_comment", { op: "add", parent: act1?.act ?? "", file: "ecc83-pp.kicad_pcb", text: "Moved it 2 mm in" });
+  check(made.includes("\"id\"") && !made.includes("isError\":true"), "the agent answers it", made.slice(0, 300));
+  const rep = await until(10000, () => seen.find((c) => c.$ === "ActivityLogged" && c.thread === th.id && c.tone === "review" && c.summary.includes("Moved it 2 mm in")));
+  check(!!rep && JSON.parse(rep.summary).parent === act1?.act && JSON.parse(rep.summary).by === "claude", "as a reply by the agent", JSON.stringify(rep));
+  const res = await ask("review.comment", { thread: th.id, op: "resolve", id: act1?.act ?? "" });
+  check(!!res && res.ok === true, "resolved by the person", JSON.stringify(res));
+  const after = await mcp("review_comments", {});
+  check(after.includes("No open comments") && after.includes("\"resolved\":1"), "and the agent sees none open", after.slice(0, 300));
+
   // a ref typed in that is not there
   const bad = await ask("review.checks", { thread: th.id, commit: "-x", trigger: "manual" });
   check(!!bad && bad.ok === false, "a commit like an option is refused", JSON.stringify(bad));
