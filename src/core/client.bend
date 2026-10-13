@@ -19,6 +19,7 @@ import ./far.bend as FR
 import ./fview.bend as FV
 import ./farlive.bend as FLV
 import ./desk.bend as DK
+import ./notice.bend as NO
 import ./hist.bend as HI
 import ./review.bend as RVW
 import ./release.bend as REL
@@ -5422,6 +5423,25 @@ def Far.machine.k(+j: J.Json, +pname: String, +purl: String, +domain: String) ->
 
 def Far.machine(+j: J.Json, +pname: String, +purl: String) -> Maybe<&2, String>:
   Far.machine.k(j, pname, purl, J.Json.get_str(J.Json.get_obj(j, "self"), "domain", ""))
+
+# Notification Settings: the policy supplies values and defaults for every client.
+type NotifyRow is Data:
+  NotifyRow{name: String, note: String, on: String, key: String}
+
+def Notify.row(+st: M.State, name: String, note: String, +kind: String) -> NotifyRow:
+  NotifyRow{name, note, Bool.pick(String, NO.Policy.on(st, kind), "on", "off"), "notify." ++ kind}
+
+def Notify.rows(+st: M.State) -> List<&2, NotifyRow>:
+  [Notify.row(st, "Needs me", "Approvals, questions and anything an agent is blocked on until you act.", "needs"),
+   Notify.row(st, "Settled", "Work you gave a thread is finished, failed, or its branch merged. Once per piece of work.", "settled"),
+   Notify.row(st, "Reminders", "Reminders and digests you scheduled.", "reminders"),
+   Notify.row(st, "Everything", "Also every turn end and room exchange, as before.", "all")]
+
+def Notify.title() -> String:
+  "Notify me for"
+
+def Notify.lead() -> String:
+  "Phone and desktop alerts. The rest stays in the app as unread."
 
 # Pairing the owner's machines (Mate.*)
 # ----------------------------

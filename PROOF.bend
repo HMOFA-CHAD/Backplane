@@ -8611,4 +8611,8 @@ def Laws.policy_phone_boot_quiet():
 def Laws.policy_reminder_alerts():
   {==}
 
+def Laws.notify_rows_defaults():
+  {==}
+
 # ---- end notif-policy ----
+

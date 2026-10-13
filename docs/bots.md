@@ -182,6 +182,9 @@ phone with several hubs each row also carries its machine.
 
 ## Notifications
 
+Settings’ **Notify me for** section controls Needs me, Settled, Reminders
+and Everything on the window, web, iOS and Android.
+
 The person is alerted (the phones' APNs push, the phones' own alerts,
 desktop notifications, and the same relayed to the owner's other machines)
 in three cases only (`src/core/notice.bend`, `Policy.*`, laws `policy_*`,

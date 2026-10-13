@@ -811,6 +811,17 @@ def View.mates.go(rs: List<&2, U.MateRow>) -> List<&2, D.Node>:
 def View.mates(+u: U.Ui) -> List<&2, D.Node>:
   View.setrow(U.Mate.title(), U.Mate.lead(u), Nil{}) <> View.mates.go(U.Mate.rows(u))
 
+# Notification policy rows, shared with the window and phones.
+def View.notify.rows(rs: List<&2, U.NotifyRow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.NotifyRow{nm, note, on, key} <> t:
+      View.setrow(nm, note, View.chips(["on", "off"], on, key)) <> View.notify.rows(t)
+
+def View.notify(st: M.State) -> List<&2, D.Node>:
+  View.setrow(U.Notify.title(), U.Notify.lead(), Nil{}) <> View.notify.rows(U.Notify.rows(st))
+
 def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +ipc = M.Setting.get(st, "kicad.ipc", "on")
@@ -820,8 +831,9 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
       View.setrow("Settle after", "Threads idle this long move to Settled. They stay saved.", View.days(M.Setting.get(st, "settle.days", "3"))),
       View.setrow("Follow-ups while a turn runs", "Queue waits for the turn to end; steer sends into it. Ctrl+Enter does the other. Default: Claude steers, Codex, Grok and Muse queue.",
         View.chips(["", "queue", "steer"], M.Setting.get(st, "followup", ""), "followup")),
-      View.setrow("Continue after a restart", "Turns a restart cuts short go on by themselves.", View.chips(["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue")),
-      View.setrow("Provider for new threads", Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), prov ++ " is not installed", U.Models.cli(U.Str.get(nf, "models"), prov)) ++ ". Each thread keeps its own; change it from the composer.", View.chips(["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider")),
+      View.setrow("Continue after a restart", "Turns a restart cuts short go on by themselves.", View.chips(["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"))],
+      View.notify(st),
+      [View.setrow("Provider for new threads", Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), prov ++ " is not installed", U.Models.cli(U.Str.get(nf, "models"), prov)) ++ ". Each thread keeps its own; change it from the composer.", View.chips(["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider")),
       View.setrow("Model for new threads", Bool.pick(String, String.is_empty(M.Setting.get(st, "agent.model", "")), "default", M.Setting.get(st, "agent.model", "")) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), prov, M.Setting.get(st, "agent.model", "")), View.chips(U.Models.menu(U.Str.get(nf, "models"), prov), M.Setting.get(st, "agent.model", ""), "agent.model")),
       View.setrow("Writing: provider", "Titles threads, names branches and writes commit messages. A small model keeps this cheap.", View.chips(["claude", "codex", "grok", "muse"], U.TextGen.provider(st), "text.provider")),
       View.setrow("Writing: model", Bool.pick(String, String.is_empty(U.TextGen.model(st)), "default", U.TextGen.model(st)) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), U.TextGen.provider(st), U.TextGen.model(st)),
