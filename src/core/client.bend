@@ -6350,10 +6350,20 @@ def Hs.menu.k(open: Bool, +u: Ui, +side: String) -> Act:
 def Hs.refs.has(+o: J.Json) -> Bool:
   Bool.not(String.eq(J.Json.show(Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(o, "result"), "refs"), J.Null{})), "null"))
 
+# the project's own board and schematic are kept in the scratch too, which
+# a phone keeps across a relaunch: comments pin on them before the next
+# answer (Rc.file); empty answers leave what was kept
+def Hs.refs.keep.k(+k: String, +v: String, +u: Ui) -> Ui:
+  Bool.pick(Ui, String.is_empty(v), u, Ui.scratch_set(u, k, v))
+
+def Hs.refs.keep(u: Ui, +r: J.Json) -> Ui:
+  Hs.refs.keep.k("@rc.sch:" ++ J.Json.get_str(r, "thread", ""), J.Json.get_str(r, "sch", ""),
+    Hs.refs.keep.k("@rc.pcb:" ++ J.Json.get_str(r, "thread", ""), J.Json.get_str(r, "pcb", ""), u))
+
 def Hs.refs.store(has: Bool, u: Ui, +o: J.Json) -> Ui:
   match has:
     case True{}:
-      Ui.info_set(u, "refs:" ++ J.Json.get_str(J.Json.get_obj(o, "result"), "thread", ""), J.Json.show(J.Json.get_obj(o, "result")))
+      Hs.refs.keep(Ui.info_set(u, "refs:" ++ J.Json.get_str(J.Json.get_obj(o, "result"), "thread", ""), J.Json.show(J.Json.get_obj(o, "result"))), J.Json.get_obj(o, "result"))
     case False{}:
       u
 
@@ -6467,9 +6477,11 @@ def Rc.at(+u: Ui) -> String:
 
 # (a viewer on the project's own board or schematic names no file: the
 # hub's history.refs answer does, Rc.sync asks for it once)
+def Rc.own(+u: Ui) -> String:
+  Ui.scratch(u, Bool.pick(String, Nat.is_eq(Hs.kind(u), 1n), "@rc.sch:", "@rc.pcb:") ++ Ui.sel(u))
+
 def Rc.file(+u: Ui) -> String:
-  Bool.pick(String, String.is_empty(HI.Hist.family(Ui.view_get(u, "view.path"))),
-    J.Json.get_str(Hs.refs(u), Bool.pick(String, Nat.is_eq(Hs.kind(u), 1n), "sch", "pcb"), ""), HI.Hist.family(Ui.view_get(u, "view.path")))
+  Bool.pick(String, String.is_empty(HI.Hist.family(Ui.view_get(u, "view.path"))), Rc.own(u), HI.Hist.family(Ui.view_get(u, "view.path")))
 
 def Rc.rel(+u: Ui) -> String:
   +abs = Rc.file(u)
@@ -6481,7 +6493,7 @@ def Rc.rel(+u: Ui) -> String:
 # other)
 def Rc.need(+u: Ui) -> Bool:
   Bool.and(Bool.and(Bool.not(String.is_empty(Ui.sel(u))), Bool.and(Nat.is_lt(Hs.kind(u), 2n), Bool.not(String.eq(Ui.view_get(u, "view.kind"), "review")))),
-    Bool.and(Bool.and(String.is_empty(HI.Hist.family(Ui.view_get(u, "view.path"))), String.is_empty(Hs.get(u, "refs"))), String.is_empty(Ui.info(u, "rc.refs:" ++ Ui.sel(u)))))
+    Bool.and(Bool.and(String.is_empty(HI.Hist.family(Ui.view_get(u, "view.path"))), String.is_empty(Rc.own(u))), String.is_empty(Ui.info(u, "rc.refs:" ++ Ui.sel(u)))))
 
 def Rc.sync.join(a: Act, cs: List<&2, Cmd>) -> Act:
   match a:

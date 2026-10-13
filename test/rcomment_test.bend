@@ -110,6 +110,10 @@ def res.body(r: MC.Res) -> String:
     case MC.Res{+ok, +b, _}:
       Bool.show(ok) ++ " " ++ J.Json.show(b)
 
+# the hub's history.refs answer naming the project's board
+def refsr() -> String:
+  "{\"t\":\"reply\",\"id\":1,\"ok\":true,\"result\":{\"thread\":\"t\",\"git\":\"/r/.git\",\"top\":\"/r\",\"refs\":\"\",\"pcb\":\"/r/b.kicad_pcb\",\"sch\":\"/r/b.kicad_sch\"}}"
+
 def main() -> IO(Unit):
   +one = with([add("c1", "b.kicad_pcb", "Move R1 off the keepout", 2n)])
   +two = with([add("c1", "b.kicad_pcb", "Move R1 off the keepout", 2n), reply("c2", "c1", "Done, moved 2 mm", 3n), add("c3", "other.kicad_pcb", "elsewhere", 4n)])
@@ -139,4 +143,8 @@ def main() -> IO(Unit):
     C.Check.str("an unknown op is refused", Bool.show(RV.Review.op.ok("burn", J.Json.obj([J.KV{"id", J.Str{"c1"}}]))), "False")
     C.Check.str("the agent's tool lists them", String.take(res.body(MC.Mcp.review.list(RV.Review.of_state(st2([add("c1", "b.kicad_pcb", "Move R1", 2n)]), "t"))), 28n), "True {\"open\":1,\"resolved\":0,")
     C.Check.str("a note kept with no file shows on the project's own board", Nat.show(List.length(&2, RV.Pin, U.Rc.pins(U.Ui.view_put(with([add("c9", "", "early note", 2n)]), "board", "")))), "1")
-    C.Check.str("and once the hub named the file", Nat.show(List.length(&2, RV.Pin, U.Rc.pins(U.Ui.info_set(U.Ui.view_put(with([add("c9", "", "early note", 2n)]), "board", ""), "refs:t", "{\"pcb\":\"/r/b.kicad_pcb\"}")))), "1")
+    C.Check.str("and once the hub named the file", Nat.show(List.length(&2, RV.Pin, U.Rc.pins(recv(U.Ui.view_put(with([add("c9", "", "early note", 2n)]), "board", ""), refsr())))), "1")
+    C.Check.str("the board's own file is kept from the hub's answer", U.Rc.rel(recv(U.Ui.view_put(with([add("c1", "b.kicad_pcb", "x", 2n)]), "board", ""), refsr())), "b.kicad_pcb")
+    C.Check.str("and its pins show on the board opened by default", npins(recv(U.Ui.view_put(with([add("c1", "b.kicad_pcb", "x", 2n)]), "board", ""), refsr())), "1")
+    C.Check.str("kept, it is not asked again", sent(U.Ui.act(recv(U.Ui.view_put(with([add("c1", "b.kicad_pcb", "x", 2n)]), "board", ""), refsr()), "rv-pin", "")), "")
+    C.Check.str("not kept, opening the thread asks", Bool.show(String.contains(sent(U.Ui.act(U.Ui.adopt(U.Ui.init(0n), st2([add("c1", "b.kicad_pcb", "x", 2n)])), "select", "t")), "history.refs")), "True")
