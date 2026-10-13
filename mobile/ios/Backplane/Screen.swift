@@ -601,6 +601,7 @@ struct Found: Decodable, Hashable {
 // cat names its rig ("look:mood"), which the bridge gives once
 // (AppModel.cats).
 struct BotRow: Decodable, Identifiable {
+    let nav: String?
     let id, name, mood, note, peer, cat: String
     let act: String?
     let look: Int
@@ -610,6 +611,7 @@ struct BotRow: Decodable, Identifiable {
 
 // a room in the list ("room" sends its id)
 struct RoomRow: Decodable, Identifiable {
+    let nav: String?
     let id, name: String
     let members: Int
     let sel: Bool

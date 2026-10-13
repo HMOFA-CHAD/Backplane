@@ -13,6 +13,7 @@ import ../core/once.bend as O
 import ../core/far.bend as FR
 import ../core/plane.bend as PL
 import ./plane.bend as MPL
+import ./bots.bend as MB
 
 # The phone keeps every hub it paired with connected at once, each with
 # its own client (Ui). A hub's key is its socket's host:port, which the
@@ -75,6 +76,23 @@ def Hubs.id.k(none: Bool, +k: String, +s: String) -> String:
 def Hubs.id(+k: String, +s: String) -> String:
   Hubs.id.k(String.is_empty(s), k, s)
 
+# nav qualifies threads exactly as sel; room/remote ids stay the focused
+# hub's, just as the screen's bot.id does (Q leaves bot untouched).
+def Hubs.nav.tag(nav: String) -> Bool:
+  match nav:
+    case SCon{'@', SCon{'r', SCon{'o', SCon{'o', SCon{'m', SCon{':', _}}}}}}:
+      True{}
+    case SCon{'@', SCon{'r', SCon{'e', SCon{'m', SCon{'o', SCon{'t', SCon{'e', SCon{':', _}}}}}}}}:
+      True{}
+    case _:
+      False{}
+
+def Hubs.nav.qual(+hub: String, +nav: String) -> String:
+  Bool.pick(String, Hubs.nav.tag(nav), nav, Hubs.id(hub, nav))
+
+def Hubs.nav.bot(+hub: String, +row: BU.BRow) -> String:
+  Hubs.nav.qual(hub, MB.MBots.nav(row))
+
 # the hub a value names ("" when it names none), and the value without it
 def Hubs.key_of(+v: String) -> String:
   Maybe.default(&2, String, List.head(&2, String, String.split(v, '|')), "")
@@ -92,7 +110,8 @@ def Hubs.rest(+v: String) -> String:
 # what a field of the screen holds: 1 left alone (a thread's entries, the
 # viewer's, model picker's and project picker's own values; the bot, room
 # or remote bot shown and the bot and room forms, all of the hub in focus,
-# whose actions go there), 2 an id of this hub, 0 anything else
+# whose actions go there), 2 an id of this hub, 3 a destination nav (only
+# thread destinations qualify), 0 anything else
 # (asked of every field of the screen, thousands a screen: on a phone a
 # chain of every name tried for every key was a third of a screen. A hash
 # of the key's first two letters turns away two in three keys at once
@@ -164,7 +183,7 @@ def Q.kind.k(may: Bool, +k: String) -> Nat:
       0n
 
 def Q.kind(+k: String) -> Nat:
-  Q.kind.k(Q.may(k), k)
+  Bool.pick(Nat, String.eq(k, "nav"), 3n, Q.kind.k(Q.may(k), k))
 
 # whether every name is its own kind through Q.kind (law q_kind_names)
 def Q.own(ns: List<&2, QN>) -> Bool:
@@ -181,6 +200,8 @@ def Q.walk(j: J.Json, +p: String, mode: Nat) -> J.Json:
       x
     case J.Str{s} 2n:
       J.Str{Hubs.id(p, s)}
+    case J.Str{s} 3n:
+      J.Str{Hubs.nav.qual(p, s)}
     case J.Obj{fs} _:
       J.Obj{Q.walk(fs, p, 0n)}
     case J.Arr{xs} _:
@@ -761,7 +782,7 @@ def Hubs.pl.any(hs: List<&2, Hub>) -> Bool:
 def Hubs.pl.q.fields(fs: J.Json, +from: String) -> J.Json:
   match fs:
     case J.Field{+k, J.Str{+s}, t}:
-      J.Field{k, J.Str{Bool.pick(String, Bool.or(String.eq(k, "id"), String.eq(k, "value")), Hubs.id(from, s), s)}, Hubs.pl.q.fields(t, from)}
+      J.Field{k, J.Str{Bool.pick(String, String.eq(k, "nav"), Hubs.nav.qual(from, s), Bool.pick(String, Bool.or(String.eq(k, "id"), String.eq(k, "value")), Hubs.id(from, s), s))}, Hubs.pl.q.fields(t, from)}
     case J.Field{k, v, t}:
       J.Field{k, v, Hubs.pl.q.fields(t, from)}
     case x:
@@ -812,7 +833,7 @@ def Hubs.pl.card.k(m: Maybe<&2, BU.BRow>, +p: PL.Plane, +k: String) -> J.Json:
       J.Null{}
 
 def Hubs.pl.fill.p(+p: PL.Plane, +fs: J.Json, +u: U.Ui, +k: String) -> J.Json:
-  J.Obj{Hubs.pl.put(Hubs.pl.put(fs, "plane", MPL.MPlane.with.home(MPL.MPlane.json(p, S.Mob.now(u)), Hubs.pl.q(MPL.MPlane.home(u), k))), "uber", Hubs.pl.card.k(BU.BU.uber(u), p, k))}
+  J.Obj{Hubs.pl.put(Hubs.pl.put(fs, "plane", MPL.MPlane.with.home(MPL.MPlane.json(p, S.Mob.now(u), U.Ui.state(u)), Hubs.pl.q(MPL.MPlane.home(u), k))), "uber", Hubs.pl.card.k(BU.BU.uber(u), p, k))}
 
 # the card alone (no counts: they come from the plane)
 def Hubs.pl.card.n(m: Maybe<&2, BU.BRow>, +k: String) -> J.Json:

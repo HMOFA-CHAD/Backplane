@@ -49,7 +49,7 @@ struct BotsSection: View {
     var body: some View {
         Section {
             ForEach(screen.bots) { b in
-                Button { model.act(b.act ?? (b.remote ? "remote" : "bot"), b.id) } label: {
+                Button { model.open(nav: b.nav ?? "", action: b.act ?? (b.remote ? "remote" : "bot"), value: b.id, title: b.name, cat: b.cat, kind: b.remote ? "remote" : "bot") } label: {
                     HStack(spacing: 12) {
                         BotCat(model: model, key: b.cat, size: 36)
                         VStack(alignment: .leading, spacing: 2) {
@@ -69,7 +69,7 @@ struct BotsSection: View {
                 .opacity(b.mood == "away" ? 0.5 : 1)
             }
             ForEach(screen.rooms) { r in
-                Button { model.act("room", r.id) } label: {
+                Button { model.open(nav: r.nav ?? "", action: "room", value: r.id, title: r.name, kind: "room") } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "bubble.left.and.bubble.right").frame(width: 36).foregroundStyle(.secondary)
                         Text(r.name).foregroundStyle(.primary)
@@ -185,10 +185,13 @@ struct NewRoomSheet: View {
 struct BotDestination: View {
     let model: AppModel
     let bot: BotView
+    var live = true
+    var cachedThread: ThreadView?
+    var cachedPlane: PlaneModel?
 
     var body: some View {
         switch bot.kind {
-        case "bot": BotScreen(model: model, bot: bot)
+        case "bot": BotScreen(model: model, bot: bot, live: live, cachedThread: cachedThread, cachedPlane: cachedPlane)
         case "room": TalkScreen(model: model, bot: bot, field: "rpost", send: "room-post")
         default: TalkScreen(model: model, bot: bot, field: "rtext", send: "remote-send")
         }
@@ -222,6 +225,9 @@ private struct BotHeader: View {
 struct BotScreen: View {
     let model: AppModel
     let bot: BotView
+    var live = true
+    var cachedThread: ThreadView?
+    var cachedPlane: PlaneModel?
 
     var body: some View {
         content
@@ -255,7 +261,7 @@ struct BotScreen: View {
     @ViewBuilder private var content: some View {
         switch bot.tab ?? "chat" {
         case "status":
-            StatusTab(model: model, plane: model.screen.flatMap { model.plane($0) }).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
+            StatusTab(model: model, plane: live ? model.screen.flatMap { model.plane($0) } : cachedPlane).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
         case "space":
             if let p = bot.page {
                 SpacePage(model: model, page: p).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
@@ -273,7 +279,7 @@ struct BotScreen: View {
         case "settings":
             if let s = bot.settings { SettingsTab(model: model, bot: bot, settings: s).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline) }
         default:
-            if let t = model.screen?.thread { ThreadScreen(model: model, thread: t) }
+            if let t = live ? model.screen?.thread : cachedThread { ThreadScreen(model: model, thread: t, live: live) }
         }
     }
 }

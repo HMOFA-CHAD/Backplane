@@ -38,6 +38,22 @@ def MBots.ago(none: Bool, +now: Nat, +at: Nat) -> String:
 # for a bot with a thread, here or mirrored, "remote" for one only
 # reported; "remote" stays for apps that pick it themselves), "title" its
 # name as shown (with its machine when elsewhere)
+# ios-snappy: a bot's page is its thread, or a reported conversation.
+def MBots.nav.k(none: Bool, +id: String, +thread: String) -> String:
+  match none:
+    case True{}:
+      "@remote:" ++ id
+    case False{}:
+      thread
+
+def MBots.nav(+r: B.BRow) -> String:
+  match r:
+    case B.BRow{+id, _, +thread, _, _, _, _, _, _, _}:
+      MBots.nav.k(String.is_empty(thread), id, thread)
+
+def MBots.nav.room(+id: String) -> String:
+  "@room:" ++ id
+
 def MBots.row(+r: B.BRow) -> J.Json:
   match r:
     case B.BRow{+i, +n, _, +lk, +m, note, sel, +rem, peer, +l}:
@@ -45,7 +61,7 @@ def MBots.row(+r: B.BRow) -> J.Json:
         J.KV{"act", J.Json.str(B.BU.act(r))}, J.KV{"look", J.Json.nat(lk)},
         J.KV{"mood", J.Json.str(m)}, J.KV{"note", J.Json.str(note)}, J.KV{"sel", J.Json.bool(sel)},
         J.KV{"remote", J.Json.bool(rem)}, J.KV{"peer", J.Json.str(peer)}, J.KV{"cat", MBots.cat(lk, m)},
-        J.KV{"key", J.Json.str(B.BU.key.k(rem, i, n, l))}, J.KV{"link", J.Json.str(l)}])
+        J.KV{"key", J.Json.str(B.BU.key.k(rem, i, n, l))}, J.KV{"link", J.Json.str(l)}, J.KV{"nav", J.Json.str(MBots.nav(r))}])
 
 def MBots.rows(rs: List<&2, B.BRow>) -> List<&2, J.Json>:
   match rs:
@@ -56,8 +72,8 @@ def MBots.rows(rs: List<&2, B.BRow>) -> List<&2, J.Json>:
 
 def MBots.room(r: B.RRow) -> J.Json:
   match r:
-    case B.RRow{i, n, m, sel}:
-      J.Json.obj([J.KV{"id", J.Json.str(i)}, J.KV{"name", J.Json.str(n)}, J.KV{"members", J.Json.nat(m)}, J.KV{"sel", J.Json.bool(sel)}])
+    case B.RRow{+i, n, m, sel}:
+      J.Json.obj([J.KV{"id", J.Json.str(i)}, J.KV{"name", J.Json.str(n)}, J.KV{"members", J.Json.nat(m)}, J.KV{"sel", J.Json.bool(sel)}, J.KV{"nav", J.Json.str(MBots.nav.room(i))}])
 
 def MBots.rooms(rs: List<&2, B.RRow>) -> List<&2, J.Json>:
   match rs:

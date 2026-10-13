@@ -45,6 +45,7 @@ import ./src/gfx/face.bend as FA
 import ./src/core/glb.bend as G
 import ./src/mobile/picker.bend as MP
 import ./src/mobile/hubs.bend as Hb
+import ./src/mobile/bots.bend as MBN
 import ./src/core/space.bend as SPC
 import ./src/core/client.bend as U
 import ./src/core/menu.bend as MN
@@ -8453,3 +8454,18 @@ def Laws.agy_google_warns():
 def Laws.agy_callback_needs_signin(b):
   {==}
 
+
+# ios-snappy: nav
+def Laws.mnav_bot_sel(hub, id, tail):
+  {==}
+
+def Laws.mnav_room_local(hub, id):
+  {==}
+
+def Laws.mnav_remote_local(hub, id):
+  {==}
+
+def Laws.mnav_bot_thread(hub, id, thread, some, own):
+  %Equal.sym(Bool, String.is_empty(thread), False{}, some) : {Hb.Hubs.nav.qual(hub, MBN.MBots.nav.k(_, id, thread)) == Hb.Hubs.id(hub, thread) : String}
+  %Equal.sym(Bool, Hb.Hubs.nav.tag(thread), False{}, own) : {Bool.pick(String, _, thread, Hb.Hubs.id(hub, thread)) == Hb.Hubs.id(hub, thread) : String}
+  {==}
