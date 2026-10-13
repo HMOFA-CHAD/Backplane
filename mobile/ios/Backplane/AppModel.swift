@@ -356,8 +356,11 @@ final class AppModel {
         return Pairing.http(l, path: path, query: query, token: token)
     }
 
-    // the actions that open a bot's, a room's or a remote bot's page
-    static let opens: Set<String> = ["bot", "room", "remote"]
+    // the actions that open a bot's, a room's or a remote bot's page, and
+    // the uberbot's card ("uber": the uberbot is not in the bots list, so
+    // its card is the only way in; without it here, a swipe back whose own
+    // screen was dropped left the card unable to open it again)
+    static let opens: Set<String> = ["bot", "room", "remote", "uber"]
 
     // whether the screen shows what was tapped (the row's id is its hub's
     // key and the bot's id, the screen's bot its id alone) while the stack
