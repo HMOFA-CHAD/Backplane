@@ -15,6 +15,7 @@ import ../core/far.bend as FR
 import ../core/plane.bend as PL
 import ./plane.bend as MPL
 import ./bots.bend as MB
+import ./tabs.bend as MT
 
 # The phone keeps every hub it paired with connected at once, each with
 # its own client (Ui). A hub's key is its socket's host:port, which the
@@ -250,6 +251,19 @@ def One.act.rest(hist: Bool, +u: U.Ui, +action: String, +value: String) -> U.Act
     case False{}:
       VW.View.sync(U.Ui.act(u, action, value))
 
+# The hub's settings page of the Settings tab: "on" opens Settings (the flag
+# "settings") and "off" shuts it, each only when it is not so already (a
+# second "on" must not close it)
+def One.hubset.k(same: Bool, +u: U.Ui) -> U.Act:
+  match same:
+    case True{}:
+      U.Act{u, Nil{}}
+    case False{}:
+      U.Ui.act(u, "flag", "settings")
+
+def One.hubset(+u: U.Ui, +value: String) -> U.Act:
+  One.hubset.k(Bool.pick(Bool, String.eq(value, "on"), U.Ui.flag(u, "settings"), Bool.not(U.Ui.flag(u, "settings"))), u)
+
 def One.act.k(i: Nat, +u: U.Ui, +action: String, +value: String) -> U.Act:
   match i:
     case 0n:
@@ -298,12 +312,14 @@ def One.act.k(i: Nat, +u: U.Ui, +action: String, +value: String) -> U.Act:
       VW.View.layer.pick(u, value)
     case 22n:
       VW.View.layer.mode(u, value)
+    case 23n:
+      One.hubset(u, value)
     case _:
       One.act.rest(Bool.or(Bool.or(String.starts_with(action, "hist-"), String.starts_with(action, "cmp")), String.starts_with(action, "rv-")), u, action, value)
 
 # (and the board's file asked for, to pin its comments: client.bend's Rc.sync)
 def One.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
-  U.Rc.sync.of(One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders", "fm", "fm-cd", "fm-up", "fm-open", "fm-page", "view-layer-pick", "view-layer-mode"], action), u, action, value))
+  U.Rc.sync.of(One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders", "fm", "fm-cd", "fm-up", "fm-open", "fm-page", "view-layer-pick", "view-layer-mode", "hub-settings"], action), u, action, value))
 
 # what a step does to one hub's client
 type Op is Data:
@@ -634,6 +650,22 @@ def Hubs.now(hs: Hubs, now: Nat) -> Hubs:
     case Hubs{cid, _, cur, list}:
       Hubs{cid, now, cur, list}
 
+# A choice that belongs to this device (`Backplane.local(key, value)`, ios-snappy
+# tabs): left in every hub's scratch as @local.<key>, where the screen reads it
+# (screen.bend's Mob.view). The apps send it after load/start, after pairing
+# and on every change, so a hub added later has it at once.
+def Hubs.local.go(hs: List<&2, Hub>, +key: String, +value: String) -> List<&2, Hub>:
+  match hs:
+    case Nil{}:
+      Nil{}
+    case Hub{+k, u} <> t:
+      Hub{k, U.Ui.scratch_set(u, "@local." ++ key, value)} <> Hubs.local.go(t, key, value)
+
+def Hubs.local(hs: Hubs, +key: String, +value: String) -> Hubs:
+  match hs:
+    case Hubs{cid, now, cur, l}:
+      Hubs{cid, now, cur, Hubs.local.go(l, key, value)}
+
 def Hubs.tick(hs: Hubs, +now: Nat) -> HAct:
   Hubs.step(Hubs.now(hs, now), True{}, "", Tick{now})
 
@@ -651,16 +683,16 @@ def Hubs.register.at(hs: Hubs, +key: String, p: String, t: String, k: String, th
 
 # actions whose value names a row, a project, a bot or room, or (opening
 # the project picker or a bot or room form, adding a project) a hub: they
-# go to the hub it names; the first nine also bring it into focus, so the
+# go to the hub it names; the first twelve also bring it into focus, so the
 # picker's, the bot's and the forms' own actions follow it (the history's
 # playback ticks go to the hub that asked: bridge.js names it)
 def Hubs.routed(+action: String) -> Nat:
-  C.Codec.pos(["select", "new-thread", "picker-open", "bot", "room", "remote", "uber", "uber-bot", "bot-new", "room-new", "proj-go",
+  C.Codec.pos(["select", "new-thread", "picker-open", "bot", "room", "remote", "uber", "uber-bot", "bot-new", "room-new", "proj-go", "hub-settings",
     "row-settle", "row-unsettle", "row-snooze", "row-delete", "toggle-settled", "add-project", "proj-remove",
     "row-menu", "proj-menu", "row-pin", "row-unpin", "row-archive", "row-unarchive", "hist-tick", "row-rename", "rename-save", "uber-promote", "uber-home", "deploy-cancel"], action)
 
 def Hubs.moves() -> Nat:
-  11n
+  12n
 
 def Hubs.routes() -> Nat:
   30n
@@ -991,6 +1023,14 @@ def Hubs.pl.status(+hs: List<&2, Hub>, +cur: String) -> Bool:
     case Hub{+k, +u} <> t:
       Bool.pick(Bool, String.eq(k, cur), Hubs.pl.status.k(BU.BU.view(u), u), Hubs.pl.status(t, cur))
 
+# the hub's tabs (tabs.bend) as a field of its screen
+def Hubs.tabs.put(j: J.Json, t: J.Json) -> J.Json:
+  match j:
+    case J.Obj{fs}:
+      J.Obj{J.Field{"tabs", t, fs}}
+    case x:
+      x
+
 type Shown is Data:
   Shown{key: String, name: String, j: J.Json}
 
@@ -999,7 +1039,7 @@ type Shown is Data:
 # (the index of the state and the sidebar's rows are made once and shared by
 # the screen and the plane)
 def Hubs.shown.r(+k: String, +u: U.Ui, +cur: String, +any: Bool, +want: Bool, +idle: Bool, +lite: Bool, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
-  Hubs.pl.fill(any, want, Q.all(S.Mob.screen.ixr(String.eq(k, cur), u, ix, rows), k), u, k, idle, lite, ix, rows)
+  Hubs.tabs.put(Hubs.pl.fill(any, want, Q.all(S.Mob.screen.ixr(String.eq(k, cur), u, ix, rows), k), u, k, idle, lite, ix, rows), MT.MTab.json(u, ix, rows))
 
 def Hubs.shown.ix(+k: String, +u: U.Ui, +cur: String, +any: Bool, +want: Bool, +idle: Bool, +lite: Bool, +ix: U.SIx) -> J.Json:
   Hubs.shown.r(k, u, cur, any, want, idle, lite, ix, U.Side.rows.ix(U.Ui.state(u), ix, S.Mob.now(u)))
@@ -1918,6 +1958,29 @@ def Hubs.pl.kv(plane: J.Json) -> List<&2, J.KV>:
     case x:
       [J.KV{"plane", x}]
 
+# The tabs over every hub (tabs.bend): a badge is the sum of the hubs' (a
+# hub whose rows are mirrors another paired hub owns counts nothing twice, as
+# its plane's rows are dropped), the routines every hub's rows, each once,
+# the soonest due first
+def Hubs.tabs.sum(ss: List<&2, Shown>, +tab: String, acc: Nat) -> Nat:
+  match ss:
+    case Nil{}:
+      acc
+    case Shown{_, _, +j} <> t:
+      Hubs.tabs.sum(t, tab, Nat.add(acc, J.Json.get_nat(J.Json.get_obj(J.Json.get_obj(j, "tabs"), tab), "badge", 0n)))
+
+def Hubs.tabs.rows(ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool) -> List<&2, J.Json>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case Shown{+from, +name, +j} <> t:
+      List.append(&2, J.Json, Hubs.pl.rows(J.Json.elems(J.Json.get_obj(J.Json.get_obj(J.Json.get_obj(j, "tabs"), "routines"), "rows")), hs, from, many, name), Hubs.tabs.rows(t, hs, many))
+
+def Hubs.tabs(+ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool) -> J.Json:
+  J.Json.obj([J.KV{"home", MT.MTab.badge(Hubs.tabs.sum(ss, "home", 0n))}, J.KV{"bots", MT.MTab.badge(Hubs.tabs.sum(ss, "bots", 0n))},
+    J.KV{"routines", J.Json.obj([J.KV{"badge", J.Json.nat(Hubs.tabs.sum(ss, "routines", 0n))},
+      J.KV{"rows", J.Json.arr(Hubs.pl.once(List.sort(~J.Json, ~Hubs.pl.due.before, Hubs.tabs.rows(ss, hs, many))))}])}])
+
 def Hubs.screen.p(+pl: MPL.MUber, +ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J.Json:
   J.Json.obj(List.append(&2, J.KV, Hubs.pl.kv(MPL.MUber.plane(pl)), [J.KV{"online", J.Json.bool(Hubs.all_on(ss))}, J.KV{"version", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "version", ""))},
     J.KV{"error", J.Json.str(Hubs.said(ss, "error"))}, J.KV{"note", J.Json.str(Hubs.said(ss, "note"))},
@@ -1950,7 +2013,8 @@ def Hubs.screen.p(+pl: MPL.MUber, +ss: List<&2, Shown>, +cur: String, +list: Lis
     J.KV{"bot", Hubs.origin.focus(ss, cur, "bot")},
     J.KV{"hub", J.Json.str(cur)},
     J.KV{"hubs", J.Json.arr(Hubs.rows(ss))},
-    J.KV{"found", J.Json.arr(Hubs.found(list))}]))
+    J.KV{"found", J.Json.arr(Hubs.found(list))},
+    J.KV{"tabs", Hubs.tabs(ss, list, Nat.is_gt(List.length(&2, Shown, ss), 1n))}]))
 
 def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>, +want: Bool) -> J.Json:
   Hubs.screen.p(Hubs.pl.of(ss, list, cur, Nat.is_gt(List.length(&2, Shown, ss), 1n), want), ss, cur, list)

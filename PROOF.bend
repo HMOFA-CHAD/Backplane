@@ -9103,3 +9103,22 @@ def Laws.mobile_other_ask_standard(a, d, nf):
 
 def Laws.mobile_browser_card_only_browser(t, rest):
   {==}
+# ios-snappy: tabs
+def Laws.local_view_wins():
+  {==}
+
+def Laws.local_view_wins_projects():
+  {==}
+
+def Laws.local_view_unset_hub():
+  {==}
+
+def Laws.local_view_unset_hub_projects():
+  {==}
+
+def Laws.local_view_junk_ignored():
+  {==}
+
+def Laws.hub_settings_moves_focus():
+  {==}
+# ---- end ios-snappy tabs ----

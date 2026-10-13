@@ -7897,3 +7897,26 @@ law mobile_browser_card_only_browser:
   for t: U.TAsk
   for rest: List<&2, J.Json>
   {MBT.MBots.asks.m(False{}, t, rest) == rest : List<&2, J.Json>}
+# ios-snappy: tabs
+# a view the device chose wins over the hub's setting
+law local_view_wins:
+  {MSC.Mob.view.of("active", "projects") == "active" : String}
+
+law local_view_wins_projects:
+  {MSC.Mob.view.of("projects", "active") == "projects" : String}
+
+# with none chosen, the hub's setting is used
+law local_view_unset_hub:
+  {MSC.Mob.view.of("", "active") == "active" : String}
+
+law local_view_unset_hub_projects:
+  {MSC.Mob.view.of("", "projects") == "projects" : String}
+
+# something that is not a view is not chosen
+law local_view_junk_ignored:
+  {MSC.Mob.view.of("sideways", "active") == "active" : String}
+
+# the hub's settings page names a hub, so the action goes to it and moves the focus
+law hub_settings_moves_focus:
+  {Hb.Hubs.routed("hub-settings") == 11n : Nat}
+# ---- end ios-snappy tabs ----
