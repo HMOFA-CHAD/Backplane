@@ -6455,9 +6455,38 @@ def Rc.rel.k(under: Bool, +abs: String, +root: String) -> String:
     case False{}:
       abs
 
+# (a viewer on the project's own board or schematic names no file: the
+# hub's history.refs answer does, Rc.sync asks for it once)
+def Rc.file(+u: Ui) -> String:
+  Bool.pick(String, String.is_empty(HI.Hist.family(Ui.view_get(u, "view.path"))),
+    J.Json.get_str(Hs.refs(u), Bool.pick(String, Nat.is_eq(Hs.kind(u), 1n), "sch", "pcb"), ""), HI.Hist.family(Ui.view_get(u, "view.path")))
+
 def Rc.rel(+u: Ui) -> String:
-  +abs = HI.Hist.family(Ui.view_get(u, "view.path"))
+  +abs = Rc.file(u)
   Rc.rel.k(Bool.and(Bool.not(String.is_empty(Ui.root(u))), String.starts_with(abs, Ui.root(u) ++ "/")), abs, Ui.root(u))
+
+# whether the thread's board or schematic shows with no file named and the
+# hub has not been asked which it is
+def Rc.need(+u: Ui) -> Bool:
+  Bool.and(Bool.and(Bool.not(String.is_empty(Ui.sel(u))), Bool.and(Nat.is_lt(Hs.kind(u), 2n), Bool.not(String.eq(Ui.view_get(u, "view.kind"), "review")))),
+    Bool.and(Bool.and(String.is_empty(HI.Hist.family(Ui.view_get(u, "view.path"))), String.is_empty(Hs.get(u, "refs"))), String.is_empty(Ui.scratch(u, "@rc.refs:" ++ Ui.sel(u)))))
+
+def Rc.sync.k(need: Bool, a: Act) -> Act:
+  match need a:
+    case True{} Act{+u, cs}:
+      Rc.sync.join(Ui.rpc(Ui.scratch_set(u, "@rc.refs:" ++ Ui.sel(u), "1"), "history.refs", [J.KV{"thread", J.Str{Ui.sel(u)}}]), cs)
+    case False{} +x:
+      x
+
+def Rc.sync.join(a: Act, cs: List<&2, Cmd>) -> Act:
+  match a:
+    case Act{u, ds}:
+      Act{u, List.append(&2, Cmd, cs, ds)}
+
+def Rc.sync.of(a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Rc.sync.k(Rc.need(u), Act{u, cs})
 
 def Rc.pins(+u: Ui) -> List<&2, RVW.Pin>:
   RVW.Review.pins(Rc.all(u), Rc.rel(u), "")
@@ -8313,7 +8342,7 @@ def Ui.act.s(close: Bool, +u: Ui, +action: String, +value: String) -> Act:
       Ui.act.r(String.starts_with(action, "rv-"), u, action, value)
 
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Ui.act.s(String.eq(action, "skill-close"), u, action, value)
+  Rc.sync.of(Ui.act.s(String.eq(action, "skill-close"), u, action, value))
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

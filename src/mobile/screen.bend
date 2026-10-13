@@ -20,6 +20,7 @@ import ../core/onboard.bend as OB
 import ../core/botui.bend as B
 import ./bots.bend as MB
 import ../core/hist.bend as HS
+import ../core/review.bend as RVW
 import ../core/tools.bend as TO
 import ../core/emb.bend as EM
 
@@ -382,7 +383,7 @@ def Mob.act.k(term: Bool, +id: String, +th: String, +tone: String, +kind: String
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("emb")}, J.KV{"key", J.Json.str(EM.Emb.key(th, id))}, J.KV{"text", J.Json.str(EM.Emb.title(summary))}])
     case False{}:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("act")}, J.KV{"tone", J.Json.str(tone)},
-        J.KV{"label", J.Json.str(kind)}, J.KV{"text", J.Json.str(summary)}])
+        J.KV{"label", J.Json.str(RVW.Review.label(tone, kind, summary))}, J.KV{"text", J.Json.str(RVW.Review.say(tone, kind, summary))}])
 
 # a tool call or other activity; a design step (core/hist.bend) is a row
 # that shows it in the viewer ("hist-show" with its value)

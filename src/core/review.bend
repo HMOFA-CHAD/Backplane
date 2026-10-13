@@ -685,3 +685,24 @@ def Review.agent.k(+block: String, +text: String) -> String:
 
 def Review.agent(+s: M.State, +thread: String, +text: String) -> String:
   Review.agent.k(Review.prompt(Review.of_state(s, thread)), text)
+
+# In the thread
+# -------------
+# A review Act's row as every timeline shows it: a label and a line (any
+# other Act's own kind and summary, unchanged)
+
+def Review.say.k(+kind: String, +o: J.Json) -> String:
+  Bool.pick(String, String.eq(kind, Review.k.add()), J.Json.get_str(o, "text", ""),
+    Bool.pick(String, String.eq(kind, Review.k.edit()), J.Json.get_str(o, "text", ""),
+      Bool.pick(String, String.eq(kind, Review.k.resolve()), "a comment", Bool.pick(String, String.eq(kind, Review.k.reopen()), "a comment", "a comment"))))
+
+def Review.label.k(+kind: String, +o: J.Json) -> String:
+  Bool.pick(String, String.eq(kind, Review.k.add()), Bool.pick(String, String.is_empty(J.Json.get_str(o, "parent", "")), "Comment", "Reply"),
+    Bool.pick(String, String.eq(kind, Review.k.edit()), "Edited", Bool.pick(String, String.eq(kind, Review.k.resolve()), "Resolved",
+      Bool.pick(String, String.eq(kind, Review.k.reopen()), "Reopened", "Removed"))))
+
+def Review.label(+tone: String, +kind: String, +summary: String) -> String:
+  Bool.pick(String, String.eq(tone, Review.tone()), Review.label.k(kind, Maybe.default(&2, J.Json, J.Json.parse(summary), J.Null{})), kind)
+
+def Review.say(+tone: String, +kind: String, +summary: String) -> String:
+  Bool.pick(String, String.eq(tone, Review.tone()), Review.say.k(kind, Maybe.default(&2, J.Json, J.Json.parse(summary), J.Null{})), summary)
