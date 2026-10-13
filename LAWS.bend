@@ -93,6 +93,7 @@ import ./src/core/cad.bend as CAD
 import ./src/core/checks.bend as CHK
 import ./src/core/release.bend as REL
 import ./src/core/review.bend as RV
+import ./src/core/slash.bend as SL
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -6601,3 +6602,24 @@ law review_moved:
 
 law review_not_moved:
   {RV.Review.moved(RV.Review.mk("a", ""), ["j"]) == False{} : Bool}
+# Slash commands in the composer (slash.bend)
+law slash_typing_word:
+  {SL.Slash.typing("/gi") == True{} : Bool}
+
+law slash_typing_alone:
+  {SL.Slash.typing("/") == True{} : Bool}
+
+law slash_not_after_space:
+  {SL.Slash.typing("/give >a") == False{} : Bool}
+
+law slash_not_midline:
+  {SL.Slash.typing("hi /gi") == False{} : Bool}
+
+law slash_claude_prefix:
+  {SL.Slash.names(SL.Slash.cmds(True{}, "c")) == ["/compact", "/context"] : List<&2, String>}
+
+law slash_others_own_only:
+  {SL.Slash.names(SL.Slash.cmds(False{}, "")) == ["/btw", "/give"] : List<&2, String>}
+
+law slash_none_unknown:
+  {SL.Slash.names(SL.Slash.cmds(True{}, "zz")) == [] : List<&2, String>}

@@ -2325,6 +2325,11 @@ def Cq.vert(+code: U32, +mods: U32) -> String:
 def Cq.is_vert(+code: U32, +mods: U32) -> Bool:
   Bool.and(Bool.or(U32.is_eq(code, Key.up()), U32.is_eq(code, Key.down())), U32.is_eq(U32.and(mods, 6), 0))
 
+# Up/Down move the caret by lines only while the composer offers no menu;
+# with one, they move its highlight (Nui.composer.ar)
+def Cq.menu_free(vert: Bool, +n: Nui) -> Bool:
+  Bool.and(vert, Bool.not(Nui.skills_on(Nui.ui(n))))
+
 def Cq.at(+k: String, +x: U32, +y: U32) -> String:
   k ++ "," ++ U32.show(x) ++ "," ++ U32.show(y)
 
@@ -2346,7 +2351,7 @@ def Nui.composer.key(vert: Bool, n: Nui, +m: Nat, +code: U32, +text: U32, +mods:
 def Nui.field.k(comp: Bool, path: Bool, n: Nui, +m: Nat, +code: U32, +text: U32, +mods: U32) -> Step:
   match comp path n:
     case True{} _ +n2:
-      Nui.composer.key(Cq.is_vert(code, mods), n2, m, code, text, mods)
+      Nui.composer.key(Cq.menu_free(Cq.is_vert(code, mods), n2), n2, m, code, text, mods)
     case False{} True{} Nui{u, w, h, mx, my, sd, sc, +ca, fo, +pa, hi, ms, vw}:
       Nui.path.k(Ed.key(code, text, mods, pa, ca, m), Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw})
     case _ _ +n2:
@@ -2412,12 +2417,21 @@ def Esc.field(find: Bool, +n: Nui) -> Step:
     case False{}:
       Nui.focus(n, "")
 
+# Esc in the composer shuts the menu it offers (completions) and does
+# nothing else; with none shown it leaves the field
+def Esc.menu(menu: Bool, +n: Nui) -> Step:
+  match menu:
+    case True{}:
+      Nui.act(n, "skill-close", "")
+    case False{}:
+      Esc.field(String.eq(Nui.focus_of(n), Fld.id("pq", "proj-go", "")), n)
+
 def Nui.key.k(paste: Bool, esc: Bool, +n: Nui, +code: U32, +text: U32, +mods: U32) -> Step:
   match paste esc:
     case True{} _:
       Step{n, [NPaste{}], False{}}
     case False{} True{}:
-      Esc.field(String.eq(Nui.focus_of(n), Fld.id("pq", "proj-go", "")), n)
+      Esc.menu(Bool.and(String.eq(Nui.focus_of(n), "composer"), Nui.skills_on(Nui.ui(n))), n)
     case False{} False{}:
       Nui.key.free(String.is_empty(Nui.focus_of(n)), U32.is_eq(code, 102), n, code, text, mods)
 
