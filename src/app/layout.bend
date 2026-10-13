@@ -32,6 +32,7 @@ import ../core/badge.bend as BG
 import ../core/voice.bend as VC
 import ../core/mech.bend as MC
 import ../core/hist.bend as HS
+import ../core/review.bend as RVW
 import ../core/look.bend as LO
 import ../core/layers.bend as LY
 import ../core/tools.bend as TO
@@ -4637,9 +4638,9 @@ def TL.part.act(step: Bool, +ty: Ty, e: M.Entry, +px: U32) -> TLPart:
   match step e:
     case True{} M.Act{+id, _, _, _, _, _}:
       TLPart{[TLine{Ty.fit(ty, 2n, HS.Hist.row(e), (px - 22 : U32)), T.Th.accent(), 16, id, 0}], Nil{}, Nil{}}
-    case _ M.Act{_, _, +tone, kind, summary, _}:
+    case _ M.Act{_, _, +tone, +kind, +summary, _}:
       Bool.pick(TLPart, String.eq(tone, EM.Emb.tone()), TLPart{Nil{}, Nil{}, Nil{}},
-        TLPart{[TLine{Ty.fit(ty, 2n, kind ++ "  " ++ summary, px), Bool.pick(U32, String.eq(tone, "error"), T.Th.bad(), T.Th.dim()), 3, "", 0}], Nil{}, Nil{}})
+        TLPart{[TLine{Ty.fit(ty, 2n, RVW.Review.label(tone, kind, summary) ++ "  " ++ RVW.Review.say(tone, kind, summary), px), Bool.pick(U32, String.eq(tone, "error"), T.Th.bad(), T.Th.dim()), 3, "", 0}], Nil{}, Nil{}})
     case _ M.Msg{_, _, _, +text, _}:
       TLPart{[TLine{Ty.fit(ty, 2n, text, px), T.Th.dim(), 3, "", 0}], Nil{}, Nil{}}
 

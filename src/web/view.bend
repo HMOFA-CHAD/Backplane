@@ -23,6 +23,7 @@ import ../core/botui.bend as BI
 import ./bots.bend as WB
 import ../core/voice.bend as VC
 import ../core/hist.bend as HS
+import ../core/review.bend as RVW
 import ../core/emb.bend as EM
 import ../core/qr.bend as QR
 import ../core/onboard.bend as OB
@@ -1013,8 +1014,8 @@ def View.act.t(term: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
   match term e:
     case True{} M.Act{+id, +th, tone, kind, sum, +at}:
       View.emb(ec, st, M.Act{id, th, tone, kind, sum, at}, th)
-    case _ M.Act{+id, _, tone, kind, summary, _}:
-      D.El{"div", id, [D.At{"class", "act " ++ tone}, D.At{"data-id", id}], [D.Dom.span("kind", kind), D.Dom.span("summary", summary)]}
+    case _ M.Act{+id, _, +tone, +kind, +summary, _}:
+      D.El{"div", id, [D.At{"class", "act " ++ tone}, D.At{"data-id", id}], [D.Dom.span("kind", RVW.Review.label(tone, kind, summary)), D.Dom.span("summary", RVW.Review.say(tone, kind, summary))]}
     case _ M.Msg{+id, _, _, text, _}:
       D.El{"div", id, [D.At{"class", "act"}, D.At{"data-id", id}], [D.Dom.span("summary", text)]}
 
