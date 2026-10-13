@@ -8,8 +8,10 @@
 #                                other line. A checker killed before it printed
 #                                anything, or any other output, is a failure.
 #   bend_check FILE              --check-only, print the report unless it passes.
+# (bend also says when a newer version is out: "bend 2.0.37 is available:
+# run bend update", which is no part of the verdict)
 _bend_clean() {
-  _rest=$(printf '%s\n' "$1" | grep -v -E '^(All terms check\.?|ALL PROOFS CHECK|Use --verdict.*|SOME PROOFS FAIL|Error: [0-9]+ defs? (relies|rely) on unsafe or foreign code:|- [^ ]+|)$' || true)
+  _rest=$(printf '%s\n' "$1" | grep -v -E '^(All terms check\.?|ALL PROOFS CHECK|Use --verdict.*|SOME PROOFS FAIL|Error: [0-9]+ defs? (relies|rely) on unsafe or foreign code:|- [^ ]+|bend [0-9][0-9.]* is available: run bend update|)$' || true)
   [ -z "$_rest" ]
 }
 bend_verdict() {
