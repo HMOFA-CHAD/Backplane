@@ -1562,7 +1562,7 @@ def View.hist.cmp(b: U.HBar, +u: U.Ui) -> D.Node:
         D.El{"div", "", [D.At{"class", "hist-row"}], [
           D.Dom.button(Bool.pick(String, String.eq(menu, "a"), "hbtn side on", "hbtn side"), "cmp-side", "a", "Pick the old version", "Old: " ++ a),
           D.Dom.button(Bool.pick(String, String.eq(menu, "b"), "hbtn side on", "hbtn side"), "cmp-side", "b", "Pick the new version", "New: " ++ bb),
-          D.Dom.span("grow", ""), D.Dom.button("hbtn", "cmp-close", "", "Back to the file as it is now", "Close")]},
+          D.Dom.span("grow", ""), D.Dom.button("hbtn", "rv-bom", "", "The parts that changed between the two versions", "BOM"), D.Dom.button("hbtn", "cmp-close", "", "Back to the file as it is now", "Close")]},
         D.El{"div", "", [D.At{"class", "hist-legend"}], List.append(&2, D.Node, View.hist.legend(String.eq(showing, "diff")),
           [D.Dom.span("grow", ""), View.hist.as(showing, "old", "Old"), View.hist.as(showing, "diff", "Diff"), View.hist.as(showing, "new", "New")])}]}
 
@@ -1651,6 +1651,7 @@ def View.tabs(+cur: String) -> D.Node:
     View.tab(cur, "mech", "mech", "", "Mechanical parts: their renders, and each in 3D", "Mech"),
     View.tab(cur, "files", "fm", "", "The project's files: open a board, a model, an image or a PDF", "Files"),
     View.tab(cur, "diff", "diff", "", "What this thread changed (ctrl+d)", "Diff"),
+    View.tab(cur, "review", "rv-page", "bom", "Review the design: its parts, and what changed", "Review"),
     View.tab(cur, "browser", "view-kind", "browser", "What this thread's browser shows", "Browser"),
     D.El{"span", "", [D.At{"class", "grow"}], Nil{}},
     WI.WIcon.button("icon", "panel", "", "Close the viewer", "x", 16, "")]}
@@ -1704,6 +1705,31 @@ def View.pdf(+u: U.Ui) -> List<&2, D.Node>:
   [View.fm.head(u, [D.El{"a", "", [D.At{"class", "btn"}, D.At{"href", IM.Img.url(U.Ui.view_get(u, "view.path"))}, D.At{"target", "_blank"}], [D.Txt{"Open in a tab"}]}]),
    D.El{"iframe", "", [D.At{"class", "fm-pdf"}, D.At{"src", IM.Img.url(U.Ui.view_get(u, "view.path"))}, D.At{"title", U.Fm.name(u)}], Nil{}}]
 
+# The Review tab (client.bend's Rp): a button for each page, the title,
+# Refresh, then the report's Markdown (or why there is none)
+def View.review.tabs(ts: List<&2, U.RpTab>) -> List<&2, D.Node>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case U.RpTab{+p, +l, +on} <> t:
+      D.Dom.button(Bool.pick(String, on, "crumb on", "crumb"), "rv-page", p, l, l) <> View.review.tabs(t)
+
+def View.review.body(has: Bool, +v: U.RpView) -> D.Node:
+  match has:
+    case True{}:
+      D.El{"div", "review-body", [D.At{"class", "review-body body"}], D.Md.render(U.RpView.md(v))}
+    case False{}:
+      D.El{"div", "review-body", [D.At{"class", "review-body"}], [D.Dom.span("fm-note", U.RpView.note(v))]}
+
+def View.review.v(+v: U.RpView) -> List<&2, D.Node>:
+  [D.El{"div", "", [D.At{"class", "fm-bar"}], List.append(&2, D.Node, View.review.tabs(U.RpView.tabs(v)),
+     [D.Dom.span("fm-file", U.RpView.title(v) ++ Bool.pick(String, U.RpView.busy(v), " · reading…", "")), D.El{"span", "", [D.At{"class", "grow"}], Nil{}},
+      D.Dom.button("", "rv-run", "", "Read the design again", "Refresh")])},
+   View.review.body(Bool.not(String.is_empty(U.RpView.md(v))), v)]
+
+def View.review(+u: U.Ui) -> List<&2, D.Node>:
+  View.review.v(U.Rp.view(u))
+
 def View.aside.k(i: Nat, +u: U.Ui) -> List<&2, D.Node>:
   match i:
     case 0n:
@@ -1722,13 +1748,15 @@ def View.aside.k(i: Nat, +u: U.Ui) -> List<&2, D.Node>:
       View.image(u)
     case 8n:
       View.pdf(u)
+    case 9n:
+      View.review(u)
     case _:
       View.plot(u, [D.Dom.span("what", "The project's board"), View.kicad()])
 
 def View.aside.n(+kind: String) -> Nat:
   Bool.pick(Nat, String.eq(kind, "diff"), 0n, Bool.pick(Nat, String.eq(kind, "browser"), 1n, Bool.pick(Nat, String.eq(kind, "mech"), 2n,
     Bool.pick(Nat, String.eq(kind, "3d"), 3n, Bool.pick(Nat, String.eq(kind, "schematic"), 4n,
-      Bool.pick(Nat, String.eq(kind, "files"), 6n, Bool.pick(Nat, String.eq(kind, "image"), 7n, Bool.pick(Nat, String.eq(kind, "pdf"), 8n, 5n))))))))
+      Bool.pick(Nat, String.eq(kind, "files"), 6n, Bool.pick(Nat, String.eq(kind, "image"), 7n, Bool.pick(Nat, String.eq(kind, "pdf"), 8n, Bool.pick(Nat, String.eq(kind, "review"), 9n, 5n)))))))))
 
 # the side pane of the selected thread: the tabs, then what they show. Its
 # left edge is a handle that resizes it (host.js keeps the width per
