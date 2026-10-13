@@ -255,9 +255,13 @@ def Gc.data(has: Bool, +file: String) -> String:
     case False{}:
       ""
 
+# an explicit method (PATCH, DELETE) as a curl config line
+def Gc.method(+m: String) -> String:
+  Bool.pick(String, String.is_empty(m), "", "request = " ++ Gc.q(m) ++ "\n")
+
 # one request: its URL, headers, and a body file when there is a body
-def Gc.config(+url: String, hs: List<&2, String>, has: Bool, +body: String, +out: String) -> String:
-  "url = " ++ Gc.q(url) ++ "\n" ++ Gc.headers(hs) ++ Gc.data(has, body)
+def Gc.config(+url: String, hs: List<&2, String>, has: Bool, +body: String, +out: String, +method: String) -> String:
+  "url = " ++ Gc.q(url) ++ "\n" ++ Gc.method(method) ++ Gc.headers(hs) ++ Gc.data(has, body)
     ++ "output = " ++ Gc.q(out) ++ "\n" ++ "write-out = \"%{http_code}\"\n"
 
 # the status curl printed last, and what it said before it (its errors)
@@ -282,8 +286,8 @@ def Gc.body.put(has: Bool, +file: String, body: String) -> IO(Unit):
     case False{}:
       IO.pure(Unit, Unit{})
 
-# a request; the body (form or JSON, as the headers say) when not ""
-def Gc.req(+dir: String, +url: String, hs: List<&2, String>, +body: String) -> IO(GResp):
+# the same with an explicit method ("PATCH", "DELETE"; "" lets curl choose)
+def Gc.reqm(+dir: String, +url: String, hs: List<&2, String>, +body: String, +method: String) -> IO(GResp):
   do IO<GResp>:
     +name : String <- Gf.nonce(3n)
     +cfg : String = dir ++ "/g-" ++ name ++ ".curl"
@@ -291,7 +295,7 @@ def Gc.req(+dir: String, +url: String, hs: List<&2, String>, +body: String) -> I
     +out : String = dir ++ "/g-" ++ name ++ ".out"
     +has : Bool = Bool.not(String.is_empty(body))
     Gc.body.put(has, inp, body)
-    Gf.write(cfg, Gc.config(url, hs, has, inp, out))
+    Gf.write(cfg, Gc.config(url, hs, has, inp, out, method))
     r : P.Ran <- P.Proc.run("curl", ["-sS", "--max-time", "30", "-K", cfg], dir)
     +said : String = Gc.ran(r)
     text : String <- Gf.text(out)
@@ -299,6 +303,10 @@ def Gc.req(+dir: String, +url: String, hs: List<&2, String>, +body: String) -> I
     Gf.rm(inp)
     Gf.rm(out)
     return GResp{Gc.code(said), text, Gc.said(said)}
+
+# a request; the body (form or JSON, as the headers say) when not ""
+def Gc.req(+dir: String, +url: String, hs: List<&2, String>, +body: String) -> IO(GResp):
+  Gc.reqm(dir, url, hs, body, "")
 
 def Gc.ok(+code: String) -> Bool:
   String.starts_with(code, "2")
@@ -815,7 +823,7 @@ def Gt.people(m: Maybe<&2, J.Json>) -> List<&2, String>:
     case _:
       Nil{}
 
-# calendar_create {summary, start, end, description?, attendees?, all_day?, timeZone?}
+# calendar_create {summary, start, end, description?, attendees?, all_day?, timeZone?, location?, reminders?}
 def Gt.create(+args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String):
   +start = String.trim(J.Json.get_str(args, "start", ""))
   +end = String.trim(J.Json.get_str(args, "end", ""))
@@ -824,16 +832,127 @@ def Gt.create(+args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String
   Gt.need(Bool.or(String.is_empty(start), Bool.and(String.is_empty(end), Bool.not(all))), "start and end",
     IO.bind(GResp, String,
       Gc.req(dir, Ge.api(e, G.Google.cal_insert_path(Bool.not(List.is_empty(&2, String, who)))), Gh.json(tok),
-        G.Google.event_body(G.Str.or(J.Json.get_str(args, "summary", ""), "(no title)"), J.Json.get_str(args, "description", ""),
-          start, end, who, all, String.trim(J.Json.get_str(args, "timeZone", "")))),
+        G.Google.event_create(G.Str.or(J.Json.get_str(args, "summary", ""), "(no title)"), args, start, end, who, all)),
       r => IO.pure(String, Gc.answer(r, j => G.Google.created(j)))))
+
+# Calendar: update and delete (the hub has fetched the event, shown the
+# person the change, and passes the arguments as shown: G.Cal.resolve)
+
+# a missing or deleted event is a plain error, else the usual answer
+def Gt.cal.ans(ok: Bool, gone: Bool, +id: String, r: GResp, f: J.Json -> String) -> String:
+  match ok gone:
+    case True{} _:
+      Gc.answer(r, f)
+    case False{} True{}:
+      G.Cal.nosuch(id)
+    case False{} False{}:
+      Gc.fail(r)
+
+def Gt.cal.done(+r: GResp, +id: String, f: J.Json -> String) -> String:
+  match r:
+    case GResp{+code, _, _}:
+      Gt.cal.ans(Gc.ok(code), G.Cal.gone(code), id, r, f)
+
+def Gt.cal.id.k(ok: Bool, +id: String, act: String -> IO(String)) -> IO(String):
+  match ok:
+    case True{}:
+      act(id)
+    case False{}:
+      IO.pure(String, "error: invalid event id")
+
+# the id as given: required, with no '/' or whitespace
+def Gt.cal.id(+args: J.Json, act: String -> IO(String)) -> IO(String):
+  +id = String.trim(J.Json.get_str(args, "id", ""))
+  Gt.need(String.is_empty(id), "id", Gt.cal.id.k(G.Cal.id_ok(id), id, act))
+
+def Gt.update.k(+id: String, +args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String):
+  IO.bind(GResp, String,
+    Gc.reqm(dir, Ge.api(e, G.Google.cal_patch_path(id, G.Cal.told(args))), Gh.json(tok), J.Json.show(G.Google.event_patch(args)), "PATCH"),
+    r => IO.pure(String, Gt.cal.done(r, id, j => G.Google.updated(j))))
+
+# calendar_update {id, ...} (args as G.Cal.resolve made them)
+def Gt.update(+args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String):
+  Gt.cal.id(args, id => Gt.update.k(id, args, tok, dir, e))
+
+def Gt.cal.said(+s: String) -> String:
+  G.Str.or(s, "Deleted.")
+
+def Gt.delete.ans(ok: Bool, gone: Bool, +id: String, r: GResp, +said: String) -> String:
+  match ok gone:
+    case True{} _:
+      Gt.cal.said(said)
+    case False{} True{}:
+      G.Cal.nosuch(id)
+    case False{} False{}:
+      Gc.fail(r)
+
+def Gt.delete.done(+r: GResp, +id: String, +said: String) -> String:
+  match r:
+    case GResp{+code, _, _}:
+      Gt.delete.ans(Gc.ok(code), G.Cal.gone(code), id, r, said)
+
+def Gt.delete.k(+id: String, +args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String):
+  IO.bind(GResp, String,
+    Gc.reqm(dir, Ge.api(e, G.Google.cal_delete_path(id, G.Cal.told(args))), Gh.auth(tok), "", "DELETE"),
+    r => IO.pure(String, Gt.delete.done(r, id, J.Json.get_str(args, "_done", ""))))
+
+# calendar_delete {id} (args as G.Cal.resolve.del made them)
+def Gt.delete(+args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String):
+  Gt.cal.id(args, id => Gt.delete.k(id, args, tok, dir, e))
+
+# What the hub does before it asks the person: fetch the event and make
+# the arguments and the words to approve (a JSON object {args, detail}),
+# or an "error: ..." for the agent
+def Gt.prep.ok(update: Bool, +old: J.Json, +args: J.Json) -> String:
+  match update:
+    case True{}:
+      +res = G.Cal.resolve(old, args)
+      J.Json.show(J.Json.obj([J.KV{"args", res}, J.KV{"detail", J.Str{G.Cal.change.detail(old, res)}}]))
+    case False{}:
+      J.Json.show(J.Json.obj([J.KV{"args", G.Cal.resolve.del(old, args)}, J.KV{"detail", J.Str{G.Cal.delete.detail(old)}}]))
+
+def Gt.prep.k(ok: Bool, gone: Bool, update: Bool, r: GResp, +id: String, +args: J.Json) -> String:
+  match ok gone:
+    case True{} _:
+      match r:
+        case GResp{_, +body, _}:
+          Gt.prep.ok(update, Gc.json(body), args)
+    case False{} True{}:
+      G.Cal.nosuch(id)
+    case False{} False{}:
+      Gc.fail(r)
+
+def Gt.prep.gone(r: GResp) -> Bool:
+  match r:
+    case GResp{+code, _, _}:
+      G.Cal.gone(code)
+
+def Gt.prep.code(r: GResp, update: Bool, +id: String, +args: J.Json) -> String:
+  match r:
+    case GResp{+code, _, _}:
+      Gt.prep.k(Gc.ok(code), G.Cal.gone(code), update, r, id, args)
+
+def Gt.prep.get(update: Bool, +id: String, +args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String):
+  IO.bind(GResp, String, Gc.req(dir, Ge.api(e, G.Google.cal_event_path(id)), Gh.auth(tok), ""),
+    r => IO.pure(String, Gt.prep.code(r, update, id, args)))
+
+def Gt.prep.chk(none: Bool, update: Bool, +id: String, +args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String):
+  match none:
+    case True{}:
+      IO.pure(String, "error: nothing to change")
+    case False{}:
+      Gt.prep.get(update, id, args, tok, dir, e)
+
+def Gt.prep(+update: Bool, +args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String):
+  Gt.cal.id(args, id => Gt.prep.chk(Bool.and(update, G.Cal.nothing(G.Google.event_patch(args))), update, id, args, tok, dir, e))
 
 def Gt.id(+tool: String) -> Nat:
   Bool.pick(Nat, String.eq(tool, "gmail_search"), 1n,
     Bool.pick(Nat, String.eq(tool, "gmail_read"), 2n,
       Bool.pick(Nat, String.eq(tool, "gmail_send"), 3n,
         Bool.pick(Nat, String.eq(tool, "calendar_events"), 4n,
-          Bool.pick(Nat, String.eq(tool, "calendar_create"), 5n, 0n)))))
+          Bool.pick(Nat, String.eq(tool, "calendar_create"), 5n,
+            Bool.pick(Nat, String.eq(tool, "calendar_update"), 6n, Bool.pick(Nat, String.eq(tool, "calendar_delete"), 7n, 0n)))))))
 
 def Gt.run(n: Nat, +tool: String, +args: J.Json, +tok: String, +dir: String, +e: GEnds, +now: Nat) -> IO(String):
   match n:
@@ -847,6 +966,10 @@ def Gt.run(n: Nat, +tool: String, +args: J.Json, +tok: String, +dir: String, +e:
       Gt.events(args, tok, dir, e, now)
     case 5n:
       Gt.create(args, tok, dir, e)
+    case 6n:
+      Gt.update(args, tok, dir, e)
+    case 7n:
+      Gt.delete(args, tok, dir, e)
     case _:
       IO.pure(String, "error: no Google tool named " ++ tool)
 
@@ -868,6 +991,23 @@ def Google.call.k(list: Bool, +home: String, +tool: String, +args: J.Json) -> IO
       do IO<String>:
         a : GAccess <- Google.token(home, String.trim(J.Json.get_str(args, "account", "")))
         Gs.call.k(a, home, tool, args)
+
+def Gs.prep.k(a: GAccess, +home: String, update: Bool, +args: J.Json) -> IO(String):
+  match a:
+    case GErr{m}:
+      IO.pure(String, m)
+    case GOk{+tok}:
+      do IO<String>:
+        +e : GEnds <- Ge.get()
+        Gt.prep(update, args, tok, Gs.dir(home), e)
+
+# calendar_update / calendar_delete before the person is asked: the event
+# fetched, the arguments settled (G.Cal.resolve) and the words to approve,
+# as JSON {args, detail}; or "error: ..." for the agent
+def Google.prepare(+home: String, update: Bool, +args: J.Json) -> IO(String):
+  do IO<String>:
+    a : GAccess <- Google.token(home, String.trim(J.Json.get_str(args, "account", "")))
+    Gs.prep.k(a, home, update, args)
 
 # one MCP tool call (gmail_search, gmail_read, gmail_send, calendar_events,
 # calendar_create, google_accounts) as the account its "account" names

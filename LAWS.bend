@@ -7449,3 +7449,18 @@ law lock_ready_idempotent:
 
 law codec_lock_roundtrip:
   {C.Change.decode(C.Change.encode(M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}}, 4n})) == Some{M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}}, 4n}} : Maybe<&2, M.Change>}
+# routines-cal: calendar
+# an update with only a summary patches only the summary
+law cal_patch_only_given:
+  {J.Json.show(GO.Google.event_patch(J.Json.obj([J.KV{"id", J.Str{"ev1"}}, J.KV{"summary", J.Str{"New"}}]))) == "{\"summary\":\"New\"}" : String}
+
+# changing an event asks the person, like creating one
+law cal_update_asks:
+  {GO.Google.asks("calendar_update") == True{} : Bool}
+
+law cal_delete_asks:
+  {GO.Google.asks("calendar_delete") == True{} : Bool}
+
+# an event id with a slash is refused
+law cal_id_no_slash:
+  {GO.Cal.id_ok("a/b") == False{} : Bool}
