@@ -6682,7 +6682,7 @@ def Rl.flip(+u: Ui, +k: String) -> Ui:
   Ui.scratch_set(u, k ++ ":" ++ Ui.sel(u), Bool.pick(String, Rl.on(u, k), "", "1"))
 
 def Rl.ask(+u: Ui) -> Act:
-  Ui.rpc(Ui.info_set(Ui.scratch_set(u, "@rp.busy:" ++ Ui.sel(u), "release"), Rp.key(u, "rp.title", "release"), "Release " ++ Rl.tag(u)), "review.release",
+  Ui.rpc(Ui.info_set(Ui.scratch_set(u, "@rp.busy:" ++ Ui.sel(u), "release"), Rp.key(u, "rp.err", "release"), ""), "review.release",
     [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"tag", J.Str{Rl.tag(u)}}, J.KV{"publish", J.Flag{Rl.on(u, "@rl.pub")}}, J.KV{"force", J.Flag{Rl.on(u, "@rl.force")}}])
 
 # opening the page asks for the tags once (the next one is proposed)
@@ -6775,7 +6775,7 @@ def Rp.view.k(comments: Bool, +u: Ui, +page: String) -> RpView:
     case True{}:
       RpView{page, Rp.tabs(Rp.pages(), page), "Comments · " ++ Nat.show(Rc.count(u)) ++ " open", RVW.Review.md(Rc.all(u)), "", False{}}
     case False{}:
-      RpView{page, Rp.tabs(Rp.pages(), page), Ui.info(u, Rp.key(u, "rp.title", page)), Ui.info(u, Rp.key(u, "rp.md", page)), Ui.info(u, Rp.key(u, "rp.err", page)),
+      RpView{page, Rp.tabs(Rp.pages(), page), Bool.pick(String, String.eq(page, "release"), "Tag " ++ Rl.tag(u), Ui.info(u, Rp.key(u, "rp.title", page))), Ui.info(u, Rp.key(u, "rp.md", page)), Ui.info(u, Rp.key(u, "rp.err", page)),
         String.eq(Ui.scratch(u, "@rp.busy:" ++ Ui.sel(u)), page)}
 
 def Rp.view(+u: Ui) -> RpView:
