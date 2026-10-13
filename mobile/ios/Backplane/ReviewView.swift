@@ -87,11 +87,13 @@ struct ReleaseBox: View {
                 .accessibilityIdentifier("release-pub")
             Toggle("Release even if checks fail", isOn: Binding(get: { form.force }, set: { _ in model.act("rv-release-force", "") }))
                 .accessibilityIdentifier("release-force")
+            // the field is typed without a new screen, so the label follows the text here
+            let tag = text.trimmingCharacters(in: .whitespaces).isEmpty ? form.tag : text.trimmingCharacters(in: .whitespaces)
             Button { model.act("rv-release", "") } label: {
-                Text("Make release " + form.tag).frame(maxWidth: .infinity, minHeight: 32)
+                Text("Make release " + tag).frame(maxWidth: .infinity, minHeight: 32)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(busy || form.tag.isEmpty)
+            .disabled(busy || tag.isEmpty)
             .accessibilityIdentifier("release-make")
         }
         .frame(maxWidth: .infinity, alignment: .leading)

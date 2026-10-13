@@ -127,8 +127,10 @@ fun ReleaseBox(m: AppModel, f: ReleaseForm, busy: Boolean) {
             Text("Release even if checks fail", Modifier.weight(1f))
             Switch(f.force, onCheckedChange = { m.act("rv-release-force", "") }, modifier = Modifier.testTag("release-force"))
         }
-        Button(onClick = { m.act("rv-release", "") }, enabled = !busy && f.tag.isNotEmpty(),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("release-make")) { Text("Make release " + f.tag) }
+        // the field is typed without a new screen, so the label follows the text here
+        val tag = text.trim().ifEmpty { f.tag }
+        Button(onClick = { m.act("rv-release", "") }, enabled = !busy && tag.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("release-make")) { Text("Make release " + tag) }
     }
 }
 
