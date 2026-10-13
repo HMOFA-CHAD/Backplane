@@ -18,19 +18,6 @@ import ../src/core/xref.bend as UX
 def yes(b: Bool) -> String:
   Bool.pick(String, b, "yes", "no")
 
-def mk(+me: String, +bot: String, +th: String, +name: String) -> List<&2, M.Change>:
-  [M.ThreadCreated{th, "", name, M.Local{}, "", "", "claude", "", 100n}, M.BotSet{bot, name, th, 7n, "", 100n}, M.SettingSet{"machine.id", me, 100n},
-    M.UberSet{bot, "u1-x", 101n}]
-
-def sa(+extra: List<&2, M.Change>) -> M.State:
-  M.State.replay(List.append(&2, M.Change, mk("mA", "b1", "t1", "Kit"), extra), M.State.empty())
-
-def sb(+extra: List<&2, M.Change>) -> M.State:
-  M.State.replay(List.append(&2, M.Change, mk("mB", "b2", "t2", "Kit"), extra), M.State.empty())
-
-def op(+origin: String, +n: Nat, +secs: Nat, +ctr: Nat, +body: String) -> M.Change:
-  M.UberOp{"u1-x", origin, n, UO.Ub.stamp.make(secs, ctr, origin), body, secs}
-
 def g(+st: M.State, +k: String) -> String:
   M.Setting.get(st, k, "-")
 
@@ -46,6 +33,22 @@ def tags(cs: List<&2, M.Change>) -> String:
     case c <> t:
       J.Json.get_str(K.Change.encode(c), "$", "") ++ ";" ++ tags(t)
 
+def n(l: List<&2, String>) -> String:
+  Nat.show(List.length(&2, String, l))
+
+def mk(+me: String, +bot: String, +th: String, +name: String) -> List<&2, M.Change>:
+  [M.ThreadCreated{th, "", name, M.Local{}, "", "", "claude", "", 100n}, M.BotSet{bot, name, th, 7n, "", 100n}, M.SettingSet{"machine.id", me, 100n},
+    M.UberSet{bot, "u1-x", 101n}]
+
+def sa(+extra: List<&2, M.Change>) -> M.State:
+  M.State.replay(List.append(&2, M.Change, mk("mA", "b1", "t1", "Kit"), extra), M.State.empty())
+
+def sb(+extra: List<&2, M.Change>) -> M.State:
+  M.State.replay(List.append(&2, M.Change, mk("mB", "b2", "t2", "Kit"), extra), M.State.empty())
+
+def op(+origin: String, +n: Nat, +secs: Nat, +ctr: Nat, +body: String) -> M.Change:
+  M.UberOp{"u1-x", origin, n, UO.Ub.stamp.make(secs, ctr, origin), body, secs}
+
 def lines(cs: List<&2, M.Change>) -> List<&2, String>:
   match cs:
     case Nil{}:
@@ -55,15 +58,26 @@ def lines(cs: List<&2, M.Change>) -> List<&2, String>:
     case _ <> t:
       lines(t)
 
-def n(l: List<&2, String>) -> String:
-  Nat.show(List.length(&2, String, l))
-
 def first(cs: List<&2, M.Change>) -> String:
   match cs:
     case Nil{}:
       "none"
     case c <> t:
       J.Json.show(K.Change.encode(c))
+
+def mems(+k: Nat) -> List<&2, M.Change>:
+  match k:
+    case 0n:
+      Nil{}
+    case 1n+p:
+      M.MemorySaved{"b1", "k" ++ Nat.show(1n+p), "fact", "text" ++ Nat.show(1n+p), "", Nat.add(120n, 1n+p)} <> mems(p)
+
+def routines(+k: Nat) -> List<&2, M.Change>:
+  match k:
+    case 0n:
+      Nil{}
+    case 1n+p:
+      M.RoutineSet{"o" ++ Nat.show(1n+p), "b1", "R" ++ Nat.show(1n+p), "daily 09:00", "p", True{}, Nat.add(200n, 1n+p)} <> routines(p)
 
 def count(xs: List<&2, String>) -> Nat:
   List.length(&2, String, xs)
@@ -111,6 +125,19 @@ def main() -> IO(Unit):
     C.Check.str("same lines in the other order", dig(sa([m1, m2, m3, op("mB", 1n, 900n, 0n, UO.Ub.b.mem("color", "fact", "old", ""))])), dig(sa([m1, m2, op("mB", 1n, 900n, 0n, UO.Ub.b.mem("color", "fact", "old", "")), m3])))
     C.Check.str("a peer lacking them gets nops and the winner", tags(US.Ub.commit(US.Ub.lacking(s3, J.Json.obj(Nil{})), sb(Nil{}))), "UberOp;UberOp;UberOp;MemorySaved;")
     C.Check.str("grace beat", Nat.show(US.Ub.beat.every(600n)) ++ "," ++ Nat.show(US.Ub.beat.every(30n)) ++ "," ++ Nat.show(US.Ub.beat.every(100000n)), "60,7,60")
+    # a codec round trip
+    +opc : M.Change = M.UberOp{"u1-x", "mA", 3n, "0000000009.000001.mA", UO.Ub.b.forget("a"), 9n}
+    C.Check.str("UberOp round trip", J.Json.show(K.Change.encode(opc)), J.Json.show(K.Change.encode(Maybe.default(&2, M.Change, K.Change.decode(Maybe.default(&2, J.Json, J.Json.parse(J.Json.show(K.Change.encode(opc))), J.Null{})), blue))))
+    C.Check.str("UberOp literal", J.Json.show(K.Change.encode(Maybe.default(&2, M.Change, K.Change.decode(Maybe.default(&2, J.Json, J.Json.parse("{\"$\":\"UberOp\",\"uid\":\"u\",\"origin\":\"m\",\"n\":2,\"stamp\":\"s\",\"op\":\"{}\",\"at\":5}"), J.Null{})), blue))), "{\"$\":\"UberOp\",\"uid\":\"u\",\"origin\":\"m\",\"n\":2,\"stamp\":\"s\",\"op\":\"{}\",\"at\":5}")
+    C.Check.str("UberSet from before still decodes", J.Json.show(K.Change.encode(Maybe.default(&2, M.Change, K.Change.decode(Maybe.default(&2, J.Json, J.Json.parse("{\"$\":\"UberSet\",\"bot\":\"b\",\"uid\":\"u1\",\"at\":5}"), J.Null{})), blue))), "{\"$\":\"UberSet\",\"bot\":\"b\",\"uid\":\"u1\",\"at\":5}")
+    # seeding: a bot promoted before ops existed
+    C.Check.str("seeded once", US.Ub.seed.n(sa(Nil{}), 3000n), "3,0")
+    +real : M.State = M.State.replay(List.concat(&2, M.Change, [mk("mA", "b1", "t1", "Kit"), mems(17n), routines(6n)]), M.State.empty())
+    C.Check.str("a real-shaped state: one op each, plus who, lease, bind", US.Ub.seed.n(real, 3000n), "26,0")
+    C.Check.str("with its memories and routines in them", n(lines(US.Ub.init(real, 3000n))), "26")
+    C.Check.str("a machine with no id seeds nothing", US.Ub.seed.n(M.State.replay(List.take(&2, M.Change, mk("mA", "b1", "t1", "Kit"), 2n), M.State.empty()), 3000n), "0,0")
+    C.Check.str("a machine that joined is not seeded", US.Ub.seed.n(sa([op("mA", 1n, 1000n, 0n, UO.Ub.b.bind("mA", "b1", "t1", "Kit"))]), 3000n), "0,0")
+    C.Check.str("the seeded memory is on a joiner", BT.Mem.text(BT.World.mem(M.State.bots(M.State.replay(US.Ub.commit(US.Ub.lacking(M.State.replay(US.Ub.init(real, 3000n), real), J.Json.obj(Nil{})), sb(Nil{})), sb(Nil{}))), "b2", "k3")), "text3")
     +l1 : M.Change = op("mB", 1n, 2000n, 0n, UO.Ub.b.lease("mB", 2n))
     +l2 : M.Change = op("mA", 3n, 2001n, 0n, UO.Ub.b.lease("mA", 2n))
     +l3 : M.Change = op("mA", 3n, 1500n, 0n, UO.Ub.b.lease("mA", 3n))

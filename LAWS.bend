@@ -6824,3 +6824,7 @@ law uber_superseded_nop:
 
 law uber_superseded_keeps:
   {M.Setting.get(M.State.replay([UBS.Ub.demo.op("mA", 1n, 1000n, UBO.Ub.b.mem("color", "fact", "blue", "")), UBS.Ub.demo.op("mB", 1n, 1001n, UBO.Ub.b.mem("color", "fact", "red", ""))], UBS.Ub.demo.a()), "uber.r.u1-x.mem:color", "-") == UBO.Ub.b.mem("color", "fact", "red", "") : String}
+
+# an uberbot promoted before ops existed is seeded once: its first ops are logged, and none again after they are folded
+law uber_seed_once:
+  {UBS.Ub.seed.n(UBS.Ub.demo.a(), 3000n) == "3,0" : String}

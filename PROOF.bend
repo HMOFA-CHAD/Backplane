@@ -8331,3 +8331,6 @@ def Laws.uber_superseded_nop():
 
 def Laws.uber_superseded_keeps():
   {==}
+
+def Laws.uber_seed_once():
+  {==}

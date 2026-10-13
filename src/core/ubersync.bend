@@ -819,5 +819,10 @@ def Ub.digest(+st: M.State) -> String:
     M.Setting.get(st, "uber.vv.u1-x.mA", "-") ++ "|" ++ M.Setting.get(st, "uber.vv.u1-x.mB", "-") ++ "|" ++ M.Setting.get(st, "uber.origins.u1-x", "-") ++ "|" ++
     M.Setting.get(st, "uber.op.u1-x.mA.1", "-") ++ "|" ++ M.Setting.get(st, "uber.op.u1-x.mB.1", "-") ++ "|" ++ M.Setting.get(st, "uber.rn.u1-x.mem:color", "-")
 
+# how many ops seeding an uberbot logs, and how many it logs again once they
+# are folded (law uber_seed_once)
+def Ub.seed.n(+st: M.State, +now: Nat) -> String:
+  Nat.show(List.length(&2, M.Change, Ub.init(st, now))) ++ "," ++ Nat.show(List.length(&2, M.Change, Ub.init(M.State.replay(Ub.init(st, now), st), now)))
+
 def Ub.demo.fold(+cs: List<&2, M.Change>) -> String:
   Ub.digest(M.State.replay(cs, Ub.demo.a()))
