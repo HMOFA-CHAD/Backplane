@@ -585,12 +585,42 @@ def Hubs.recv(hs: Hubs, +key: String, o: J.Json) -> HAct:
 def Hubs.online(hs: Hubs, +key: String, b: Bool) -> HAct:
   Hubs.step(hs, False{}, key, On{b})
 
+# what a phone shows over its screens (sheets, menus, forms, questions,
+# an error) is this device's moment, never its state: the saved copy may
+# have been written while one was up (the app goes to the background with
+# Find open), and loading it put the sheet back over the app at every
+# launch. Each is shut on load: the flags Find, Settings, the pairing QR,
+# the key form and the folder picker; the scratch row menu, delete,
+# remove and rename questions, the bot, room and routine forms; the error.
+def Hubs.calm.flags(fs: List<&2, String>, u: U.Ui) -> U.Ui:
+  match fs:
+    case Nil{}:
+      u
+    case f <> t:
+      Hubs.calm.flags(t, U.Ui.flag_off(u, f))
+
+def Hubs.calm.keys(ks: List<&2, String>, u: U.Ui) -> U.Ui:
+  match ks:
+    case Nil{}:
+      u
+    case k <> t:
+      Hubs.calm.keys(t, U.Ui.scratch_set(u, k, ""))
+
+def Hubs.calm.flag_names() -> List<&2, String>:
+  ["palette", "settings", "pairqr", "keyform", "proj"]
+
+def Hubs.calm.scratch_names() -> List<&2, String>:
+  ["@menu", "@del", "@rm", "@ren", "@bnew", "@rnew", "@onew"]
+
+def Hubs.calm(u: U.Ui) -> U.Ui:
+  U.Ui.error_set(Hubs.calm.keys(Hubs.calm.scratch_names(), Hubs.calm.flags(Hubs.calm.flag_names(), u)), "")
+
 def Hubs.stale.go(l: List<&2, Hub>) -> List<&2, Hub>:
   match l:
     case Nil{}:
       Nil{}
     case Hub{+k, +u} <> t:
-      Hub{k, U.Ui.unsync(u)} <> Hubs.stale.go(t)
+      Hub{k, U.Ui.unsync(Hubs.calm(u))} <> Hubs.stale.go(t)
 
 # state loaded from the phone's saved copy: no hub has answered yet
 def Hubs.stale(hs: Hubs) -> Hubs:
