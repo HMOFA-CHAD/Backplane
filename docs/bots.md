@@ -268,6 +268,91 @@ browser's notifications (the page asks for permission on the first click or
 key; macOS, Windows, Linux) or `notify-send` from the Linux window.
 Clicking it opens the thread.
 
+## Already told
+
+A record of what the person has actually been told, so a bot's digest, a
+reminder or a second bot does not say it again (`src/core/told.bend`).
+Each record is the setting `told.<id>` holding `{key, text, channel, bot,
+at}`: the topic key (lower case, runs of characters outside
+`[a-z0-9._:-]` become `-`, 120 at most), what was said (280 characters at
+most), the channel (`alert`, `digest`, `room`, `chat`, `email` or `other`),
+the bot that said it (`""` for a thread that is no bot's) and when.
+
+Every alert is marked by itself. Since the notification policy, each one
+comes from a record `alert.<thread>` that some step writes with a kind
+(see Notifications): a settled turn, an ask, a failure, a merge, a
+`notify_person` note. `Told.after` (called from hub.bend's
+`Alerts.changes`, which every step passes through) marks each record that
+has a kind, under the record's key (`turn-<thread>`, `room-<room>`,
+`note-...`) with channel `alert`, the thread's bot, and the record's text
+or else the thread's title and the first line of its last reply. A quiet
+record marks nothing: a bot's chatter, a report from a launched thread
+(bot-to-bot), a stopped turn. Whether to alert stays `notify_person`'s
+policy; `told_*` only says what was already said. Agents use two tools, in every thread:
+
+- `told_check {key?, text?, days?}`: whether the key matches, or the words
+  of the text overlap a record's (at least 60% of the smaller set and 2
+  words) within `days` (default 7, at most 30). Answers `{told, matches:
+  [{key, text, channel, bot, at, ago}]}`.
+- `told_mark {key?, text, channel?}`: records it. Without a key one is made
+  from the text's first eight words. Answers `{key}`.
+
+Records live in the settings, on this machine only (they are not synced to
+the owner's other machines). The minute tick removes records older than 30
+days and all but the newest 2000 (`Told.prune`, reading only the keys: a
+record's time is in its id). An empty value removes a `told.*`, `rule.*`
+or `board.*` setting (`State.setting`), so none are left behind.
+
+## Standing rules
+
+What the person wants always done, or never done (`src/core/rules.bend`).
+A rule is the setting `rule.<id>` holding `{id, text, bot, project, tool,
+enforce, word, on, at, by}`: its words; the bot it is for (`""` all), the
+project (`""` all), tool patterns (names, or a prefix ending in `*`,
+separated by commas or spaces), whether it is enforced, the word that
+unlocks it, and whether it is on. The person edits them with `rules.set
+{rule}` (with an `id` it changes that rule) and `rules.drop {id}`; the
+reply carries a validation error (`bot` and `project` may be names).
+
+Every turn of every thread starts with the `<rules>` block of the rules
+that apply to it (`Rules.agent`, outermost in `Bots.turn`, before the
+memory block and the references). An enforced rule with a tool is also
+checked: the server's MCP gate (`Hub.mcp.gate`, `Rules.gate`) answers a
+call of a matching tool with an error saying which rule refuses it, and
+the permission prompt gets a deny, unless the person's latest message
+says the rule's word as a whole word (a message delivered from a room,
+bot, routine, webhook or space starts with `[` and never unlocks). A tool
+name matches as given or without its `mcp__<server>__` prefix. The reach
+is Backplane's own MCP tools and anything that asks permission; a
+provider's built-in tools in a bypass mode never reach the hub, so a rule
+on them can only be injected as words. Rules are settings, local to this
+machine (not synced to others).
+
+## Task board
+
+One shared list of what is to be done (`src/core/tboard.bend`). An item is
+the setting `board.<id>` holding `{id, title, status, owner, project, due,
+group, links, notes, at, updated, by}`: status `todo`, `doing`, `blocked`,
+`done` or `dropped`; the owner a bot's id (`""` is the person); the due
+date `YYYY-MM-DD`; at most 20 links and 4000 characters of notes. Agents
+in every thread have:
+
+- `task_board_list {status?, owner?, project?, group?, all?}`: open items
+  by default, in board order (open before closed, due first). `owner` may
+  be `me` or `person`. Answers `{text, items}`.
+- `task_board_add`, `task_board_update` (only the fields given change;
+  `notes_append` adds a line) and `task_board_remove` (prefer status
+  `dropped`, which keeps a record). Names or ids for owner and project.
+- `task_board_import {markdown, project?, owner?}`: checkbox items
+  (`- [ ]`, `- [x]`, `- [~]`, `- [!]`, `- [-]`; `*`, `+` and `1.` too)
+  become items, headings become groups (a heading naming a project also
+  sets the project), a due date at the end of a title is taken out of it,
+  indented lines under an item are its notes. Other lines are returned as
+  `skipped`; importing the same list again adds nothing.
+
+The person edits the board with `board.set {item}` (with an `id` it
+updates) and `board.drop {id}`. The items are settings, local to this
+machine (not synced to others).
 ## Mentions in threads
 
 In any thread's composer (web, window, phones) a word that starts with a

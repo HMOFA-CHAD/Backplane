@@ -72,6 +72,7 @@ import ../core/qr.bend as QR
 import ../core/uber.bend as UB
 import ../core/ubersync.bend as UBS
 import ../core/ubop.bend as UBO
+import ../core/rules.bend as RLS
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -9823,6 +9824,25 @@ def Hub.mcp.stale(+body: String) -> String:
   MC.McpOut.reply(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id"), J.Null{}),
     MC.Res.fail("stale process: this agent process is no longer the thread's, so it may read but not change anything")))
 
+# a standing rule that refuses the call (rules.bend's Rules.gate) answers
+# it here, at once, before any tool runs
+def Hub.mcp.rules.k(none: Bool, +msg: String, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match none:
+    case True{}:
+      Hub.mcp(h, thread, body, reply, now)
+    case False{}:
+      do IO<Hub>:
+        ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, msg)
+        return h
+
+def Hub.mcp.rules.m(+msg: String, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  Hub.mcp.rules.k(String.is_empty(msg), msg, h, thread, body, reply, now)
+
+def Hub.mcp.rules(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.mcp.rules.m(RLS.Rules.gate(st, thread, body), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, body, reply, now)
+
 def Hub.mcp.gate(refused: Bool, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match refused:
     case True{}:
@@ -9830,7 +9850,7 @@ def Hub.mcp.gate(refused: Bool, h: Hub, +thread: String, +body: String, +reply: 
         ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, Hub.mcp.stale(body))
         return h
     case False{}:
-      Hub.mcp(h, thread, body, reply, now)
+      Hub.mcp.rules(h, thread, body, reply, now)
 
 # an MCP call names its thread and the process's generation
 # ("<thread>.<gen>", B.Gen.*): one from a process the thread no longer

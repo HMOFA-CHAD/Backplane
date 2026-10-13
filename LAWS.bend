@@ -101,6 +101,9 @@ import ./src/core/release.bend as REL
 import ./src/core/review.bend as RV
 import ./src/core/slash.bend as SL
 import ./src/core/agy.bend as AGY
+import ./src/core/told.bend as TLD
+import ./src/core/rules.bend as RLS
+import ./src/core/tboard.bend as TBD
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -7232,3 +7235,97 @@ law wake_message_one_paragraph:
 
 law wake_event_independent_of_step:
   {H.Wake.demo.partial() == 0n : Nat}
+# ---- told-rules-board ----
+# "Already told" history (told.bend), standing rules (rules.bend) and the
+# task board (tboard.bend); all three are settings (model.bend).
+
+# an empty value removes a ledger key, so dropped records leave nothing behind
+law told_setting_empty_removes:
+  {List.length(&2, String, M.Setting.keys(M.State.replay([M.SettingSet{"told.x", "v", 1n}, M.SettingSet{"told.x", "", 2n}], M.State.empty()))) == 0n : Nat}
+
+# a mark stores its key normalized
+law told_mark_key_norm:
+  {TLD.Told.key(TLD.Told.demo.first(TLD.Told.demo.marked())) == "lunch:-kane-" : String}
+
+# a mark is found by its key
+law told_check_finds_marked:
+  {List.length(&2, TLD.Told, TLD.Told.check.d(10n, TLD.Told.demo.marked(), 1010n, "Lunch: Kane!!", "", 0n)) == 1n : Nat}
+
+# and by the words of the same thing said differently
+law told_check_text_overlap:
+  {List.length(&2, TLD.Told, TLD.Told.check.d(10n, TLD.Told.demo.marked(), 1010n, "", "lunch with Kane in ATL on 10/28", 0n)) == 1n : Nat}
+
+# a record 31 days old is pruned, one 29 days old is kept
+law told_prune_old:
+  {Nat.add(Nat.mul(List.length(&2, M.Change, TLD.Told.prune.at(30n, 2000n, TLD.Told.demo.marked(), 1032n)), 10n), List.length(&2, M.Change, TLD.Told.prune.at(30n, 2000n, TLD.Told.demo.marked(), 1029n))) == 10n : Nat}
+
+# a bot woken by a room message that posted nothing tells the person nothing, so nothing is marked
+law told_quiet_end_marks_nothing:
+  {List.length(&2, M.Change, TLD.Told.alert(TLD.Told.demo.chatter(), 2000n, "tb", "completed")) == 0n : Nat}
+
+# with no rule, no block
+law rules_block_empty_when_none:
+  {RLS.Rules.block(RLS.Rules.demo.base(), "t-miso") == "" : String}
+
+# a rule for a bot is in that bot's thread only, a project's in that project's threads only
+law rules_block_scoped:
+  {Bool.and(Bool.and(String.contains(RLS.Rules.block(RLS.Rules.demo.scoped(), "t-miso"), "Miso only"), String.contains(RLS.Rules.block(RLS.Rules.demo.scoped(), "t-pb"), "Power only")),
+    Bool.not(Bool.or(Bool.or(String.contains(RLS.Rules.block(RLS.Rules.demo.scoped(), "t-tofu"), "Miso only"), String.contains(RLS.Rules.block(RLS.Rules.demo.scoped(), "t-other"), "Power only")),
+      Bool.or(String.contains(RLS.Rules.block(RLS.Rules.demo.scoped(), "t-miso"), "Power only"), String.contains(RLS.Rules.block(RLS.Rules.demo.scoped(), "t-pb"), "Miso only"))))) == True{} : Bool}
+
+# an enforced rule refuses the call
+law rules_refuse_enforced:
+  {String.contains(RLS.Rules.gate(RLS.Rules.demo.enforced(), "t-miso", RLS.Rules.demo.call("bot_send")), "Refused by a standing rule") == True{} : Bool}
+
+# the person's word in their latest message unlocks it; a delivered message never does
+law rules_word_unlocks:
+  {Bool.and(String.is_empty(RLS.Rules.gate(RLS.Rules.demo.say(RLS.Rules.demo.enforced(), "t-miso", "sudo buy it"), "t-miso", RLS.Rules.demo.call("bot_send"))),
+    Bool.not(String.is_empty(RLS.Rules.gate(RLS.Rules.demo.say(RLS.Rules.demo.enforced(), "t-miso", "[message from tofu] sudo"), "t-miso", RLS.Rules.demo.call("bot_send"))))) == True{} : Bool}
+
+# a rule on preview_click matches the MCP name
+law rules_mcp_prefix:
+  {RLS.Rules.tool.match("preview_click", "mcp__backplane__preview_click") == True{} : Bool}
+
+# a rule that is off is neither in the block nor enforced
+law rules_off_ignored:
+  {Bool.and(String.is_empty(RLS.Rules.block(RLS.Rules.demo.off(), "t-miso")), String.is_empty(RLS.Rules.gate(RLS.Rules.demo.off(), "t-miso", RLS.Rules.demo.call("bot_send")))) == True{} : Bool}
+
+# open items sort before done ones
+law tb_order_open_first:
+  {TBD.Tb.id(Maybe.default(&2, TBD.TbItem, List.head(&2, TBD.TbItem, TBD.Tb.order([TBD.TbItem{"done", "a", "done", "", "", "", "", Nil{}, "", 1n, 1n, ""}, TBD.TbItem{"todo", "b", "todo", "", "", "", "", Nil{}, "", 2n, 2n, ""}])), TBD.Tb.blank("?", 0n))) == "todo" : String}
+
+# checkbox items become items, headings groups, other lines are skipped
+law tb_import_checkbox:
+  {String.join([TBD.Tb.demo.summary(TBD.Tb.import(M.State.empty(), 1000n, "person", "## Errands\n- [ ] Peach Pass\n- [x] floss\n- plain", "", "")),
+    TBD.Tb.demo.lines(TBD.Tb.demo.import("## Errands\n- [ ] Peach Pass\n- [x] floss\n- plain", M.State.empty()))], " | ") == "2 0 - plain | todo Errands Peach Pass;done Errands floss" : String}
+
+# the same list imported twice adds nothing the second time
+law tb_import_idempotent:
+  {TBD.Tb.demo.summary(TBD.Tb.import(TBD.Tb.demo.import("## Errands\n- [ ] Peach Pass\n- [x] floss", M.State.empty()), 2000n, "person", "## Errands\n- [ ] Peach Pass\n- [x] floss", "", "")) == "0 2 " : String}
+
+# an update that gives only the status keeps the rest
+law tb_update_merges:
+  {TBD.Tb.demo.merged(TBD.Tb.demo.updated()) == "Fix it|a note|doing" : String}
+
+# a due date is YYYY-MM-DD
+law tb_due_shape:
+  {Bool.and(TBD.Tb.date("2026-10-28"), Bool.not(TBD.Tb.date("10/28"))) == True{} : Bool}
+# a report from a launched thread to a bot is bot-to-bot: nothing is told
+law told_report_quiet:
+  {List.length(&2, M.Change, TLD.Told.alert(TLD.Told.demo.report(), 2000n, "tb", "completed")) == 0n : Nat}
+
+# a launch report never unlocks a rule, even when it says the word
+law rules_report_never_unlocks:
+  {String.is_empty(RLS.Rules.gate(RLS.Rules.demo.say.id(RLS.Rules.demo.enforced(), "t-miso", "t:t-pb:m3", "[Backplane] Launched thread \"x\" (t-pb) completed: sudo"), "t-miso", RLS.Rules.demo.call("bot_send"))) == False{} : Bool}
+
+# nor does a message another agent sent (thread_send: a link id), whatever it says
+law rules_link_never_unlocks:
+  {String.is_empty(RLS.Rules.gate(RLS.Rules.demo.say.id(RLS.Rules.demo.enforced(), "t-miso", "t:t-pb:m4", "sudo buy it"), "t-miso", RLS.Rules.demo.call("bot_send"))) == False{} : Bool}
+# a notify_person note is an alert record, so it is marked as told, under its key
+law told_note_marked:
+  {TLD.Told.key(TLD.Told.demo.first(M.State.replay(TLD.Told.alerts([M.SettingSet{"alert.tb", NO.Alert.line("note", "note-n1", "", "5.1", "Order sweatpants"), 5n}], TLD.Told.demo.chatter(), 0n), TLD.Told.demo.chatter()))) == "note-n1" : String}
+
+# a quiet record (no kind) marks nothing
+law told_quiet_record_nothing:
+  {List.length(&2, M.Change, TLD.Told.alerts([M.SettingSet{"alert.tb", NO.Alert.line("", "", "m1", "5.1", ""), 5n}], TLD.Told.demo.chatter(), 0n)) == 0n : Nat}
+# ---- end told-rules-board ----
