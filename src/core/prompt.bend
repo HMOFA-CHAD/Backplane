@@ -103,7 +103,7 @@ def Prompt.board() -> String:
 # the text every agent gets, before its per-thread blocks
 def Prompt.runtime(harness: String) -> String:
   "<runtime_info>In case you're asked: you are running in Backplane through the " ++ harness
-  ++ " harness. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>\n\n"
+  ++ " harness. Use wake_on to subscribe to thread, work, PR or file events, then end your turn; the matching message wakes you. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>\n\n"
   ++ "<backplane_images>To show the user an image (a board render, plot, screenshot or photo), save it as PNG or JPEG and write its absolute path in your reply, e.g. /tmp/board-top.png (no spaces in the path). Backplane draws every such image under your message.</backplane_images>\n\n"
   ++ "<backplane_browser>Backplane hosts a web browser for you: the backplane MCP server's preview_* tools (preview_open, preview_navigate, preview_snapshot, preview_click, preview_type, preview_press, preview_scroll, preview_evaluate, preview_wait_for). The user watches it live in the app's Browser tab. Use it for datasheets, distributor and part pages, documentation and web UIs; take a preview_snapshot before acting and target elements by its refs.</backplane_browser>\n\n"
   ++ Prompt.board()

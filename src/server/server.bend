@@ -22,6 +22,8 @@ import ./push.bend as PU
 import ./park.bend as PK
 import ./git.bend as GT
 import ./gh.bend as GH
+import ./wake.bend as WJ
+import ../core/wake.bend as WK
 import ./term.bend as TM
 import ./plot.bend as PV
 import ../core/agent.bend as AG
@@ -215,6 +217,7 @@ type Msg is Data:
   WatchLaunched{thread: String, id: String}
   WatchIdent{thread: String, id: String, ident: String}
   WatchEnded{thread: String, id: String, status: String, detail: String}
+  WakeSeen{kind: String, target: String, result: String}
   # a message from the hub's own inbox (agents' lines, jobs, its own
   # posts), passed on by Bulk.fwd behind a token (Bulk.*)
   Bulk{m: Msg}
@@ -2108,20 +2111,6 @@ def Snooze.tz(r: P.Ran) -> String:
     case _:
       "+0000"
 
-# a tick at start (threads idle past the window settle at once), then
-# every minute
-def Ticker.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
-  match fuel:
-    case 0n:
-      IO.pure(Unit, Unit{})
-    case 1n+f:
-      do IO<Unit>:
-        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Tick{})
-        tz : P.Ran <- P.Proc.run("date", ["+%z"], "/")
-        ok2 : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, BotTick{Snooze.tz(tz)})
-        IO.sleep(60000)
-        Ticker.loop(f, inbox)
-
 # a heartbeat every Alive.every() ms: the clients that hear nothing for
 # longer than Alive.limit() take the link for dead and reconnect
 def Heart.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
@@ -2163,6 +2152,21 @@ def Env.get(name: String, d: String) -> IO(String):
   do IO<String>:
     r : Result<&1, &1, U32 & String, String> <- IO.get_env(name)
     return Env.or(r, d)
+
+# a tick at start (threads idle past the window settle at once), then
+# every minute
+def Ticker.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+f:
+      do IO<Unit>:
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Tick{})
+        tz : P.Ran <- P.Proc.run("date", ["+%z"], "/")
+        ok2 : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, BotTick{Snooze.tz(tz)})
+        +delay : String <- Env.get("BACKPLANE_WAKE_TICK_MS", "60000")
+        IO.sleep(WK.Wake.tick.ms(delay))
+        Ticker.loop(f, inbox)
 
 # open the thread's KiCad project in the bundled KiCad
 def KiCadJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +cwd: String, +home: String) -> IO(Unit):
@@ -7004,6 +7008,34 @@ def Lr.far.run(ls: List<&2, String>, +bad: List<&2, String>, +st: M.State, +cfg:
         Lr.far.done(err, M.Bg.field(l, 0n), inbox)
         Lr.far.run(t, Bool.pick(List<&2, String>, String.is_empty(err), bad, FR.Fr.link(M.Bg.field(l, 1n)) <> bad), st, cfg, inbox)
 
+# One bounded job per distinct target, outside the hub loop.
+def WakeJob.pr.sent(+r: P.Ran, +target: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match r:
+    case P.Ran{0, out}:
+      Self.post(inbox, WakeSeen{"pr", target, out})
+    case _:
+      IO.pure(Unit, Unit{})
+
+def WakeJob.prs(xs: List<&2, String>, +cwd: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match xs:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case +h <> t:
+      do IO<Unit>:
+        r : P.Ran <- WJ.WakeJob.pr(h, cwd)
+        WakeJob.pr.sent(r, h, inbox)
+        WakeJob.prs(t, cwd, inbox)
+
+def WakeJob.files(xs: List<&2, String>, +inbox: Chan(Msg)) -> IO(Unit):
+  match xs:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case +h <> t:
+      do IO<Unit>:
+        stamp : String <- WJ.WakeJob.file(h)
+        Self.post(inbox, WakeSeen{"file", h, stamp})
+        WakeJob.files(t, inbox)
+
 def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
   match h o:
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.Send{+client, +text}:
@@ -7109,6 +7141,11 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     # a bot's answer to a person elsewhere, captured by the step that left
     # its thread ready (hub.bend's Answer.out)
     # reports to launchers on other machines, sent in order
+    case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.WakePoll{prs, files}:
+      do IO<Hub>:
+        IO.spawn(Unit, WakeJob.prs(prs, Cfg.home(cfg), inbox))
+        IO.spawn(Unit, WakeJob.files(files, inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.LaunchFar{}:
       do IO<Hub>:
         IO.spawn(Unit, Lr.far.run(B.Lr.far.lines(st), Nil{}, st, cfg, inbox))
@@ -7531,9 +7568,16 @@ def Hub.step.b(st: M.State, h: Hub, +cs: List<&2, M.Change>, os: List<&2, B.Out>
 def Hub.step.a(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   Hub.step.b(st, h, B.Alerts.changes(st, cs), os)
 
+# the step's wakes (hub.bend's Wake.after) first, so their messages get
+# alert records like any other change
+def Hub.step.wakes(step: B.Step, +st: M.State, h: Hub) -> IO(Hub & Bool):
+  match step:
+    case B.Step{cs, os}:
+      Hub.step.a(st, h, cs, os)
+
 def Hub.step.k(p: M.State & Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
-  (st, h) = p
-  Hub.step.a(st, h, cs, os)
+  (+st, h) = p
+  Hub.step.wakes(B.Wake.after(st, B.Step{cs, os}), st, h)
 
 # a step's changes are stored (with the pending counts they move), then
 # its effects run; answers whether it was stored
@@ -7789,12 +7833,81 @@ def Hub.mcp.k(o: MC.McpOut, h: Hub, +reply: Chan(String), +body: String) -> IO(H
     case MC.McpOut{+text, st, +park}:
       IO.bind(Hub & Bool, Hub, Hub.step.ok(h, st), r => Hub.mcp.after(r, park, body, text, reply))
 
-def Hub.mcp.hub(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+def Hub.mcp.hub.raw(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.mcp.k(BH.Bots.mcp(st, now, thread, Maybe.default(&2, J.Json, J.Json.parse(Cfg.models(cfg)), J.Null{}), Cfg.version(cfg),
           Maybe.default(&2, J.Json, J.Json.parse(BN.Bn.dir(Cfg.bn(cfg))), J.Json.arr(Nil{})), GG.Google.tool_defs(), body),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, body)
+
+# Resolve #N against the subscriber's project remote before persisting WakeSet.
+def WakeJob.repo.path(+url: String) -> String:
+  +path = Bool.pick(String, String.starts_with(url, "git@github.com:"), String.drop(url, 15n),
+    Bool.pick(String, String.starts_with(url, "https://github.com/"), String.drop(url, 19n),
+      Bool.pick(String, String.starts_with(url, "ssh://git@github.com/"), String.drop(url, 21n), "")))
+  Bool.pick(String, String.ends_with(path, ".git"), String.take(path, Nat.sub(String.length(path), 4n)), path)
+
+def WakeJob.resolve.body(+o: J.Json, +a: J.Json, +repo: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"jsonrpc", J.Str{"2.0"}}, J.KV{"id", J.Json.get_obj(o, "id")}, J.KV{"method", J.Str{"tools/call"}},
+    J.KV{"params", J.Json.obj([J.KV{"name", J.Str{"wake_on"}}, J.KV{"arguments", J.Json.obj([J.KV{"kind", J.Str{"pr"}},
+      J.KV{"target", J.Str{repo ++ J.Json.get_str(a, "target", "")}}, J.KV{"events", J.Json.arr(M.Wake.strs(MC.Mcp.wake.events(a, "pr")))},
+      J.KV{"once", J.Flag{J.Json.get_bool(a, "once", True{})}}, J.KV{"note", J.Str{J.Json.get_str(a, "note", "")}}])}])}]))
+
+def Hub.mcp.wake.resolve.raw(h: Hub, +thread: String, +o: J.Json, +a: J.Json, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        url : String <- GH.GhRun.url(B.Hub.project.root(B.Hub.project(st, MC.Mcp.project_of(B.Hub.thread(st, thread)))))
+        Hub.mcp.hub.raw(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, WakeJob.resolve.body(o, a, WakeJob.repo.path(url)), reply, now)
+
+def Hub.mcp.wake.project(has: Bool, h: Hub, +thread: String, +o: J.Json, +a: J.Json, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match has:
+    case True{}:
+      Hub.mcp.wake.resolve.raw(h, thread, o, a, body, reply, now)
+    case False{}:
+      Hub.mcp.hub.raw(h, thread, body, reply, now)
+
+def Hub.mcp.wake.resolve(h: Hub, +thread: String, +o: J.Json, +a: J.Json, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.mcp.wake.project(Bool.not(String.is_empty(MC.Mcp.project_of(B.Hub.thread(st, thread)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, a, body, reply, now)
+
+def Hub.mcp.wake.k(resolve: Bool, h: Hub, +thread: String, +o: J.Json, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match resolve:
+    case False{}:
+      Hub.mcp.hub.raw(h, thread, body, reply, now)
+    case True{}:
+      Hub.mcp.wake.resolve(h, thread, o, J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), body, reply, now)
+
+def Hub.mcp.hub.pr(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  +o = Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})
+  Hub.mcp.wake.k(Bool.and(String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "wake_on"),
+    Bool.and(String.eq(J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "kind", ""), "pr"),
+      String.starts_with(J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "target", ""), "#"))), h, thread, o, body, reply, now)
+
+# Snapshot a file before acknowledging wake_on so changes after its reply
+# cannot be swallowed by a late first poll. The core still handles exists.
+def WakeJob.file.body(+o: J.Json, +a: J.Json, +stamp: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"jsonrpc", J.Str{"2.0"}}, J.KV{"id", J.Json.get_obj(o, "id")}, J.KV{"method", J.Str{"tools/call"}},
+    J.KV{"params", J.Json.obj([J.KV{"name", J.Str{"wake_on"}}, J.KV{"arguments", J.Json.obj([J.KV{"kind", J.Str{"file"}},
+      J.KV{"target", J.Str{J.Json.get_str(a, "target", "")}}, J.KV{"events", J.Json.arr(M.Wake.strs(MC.Mcp.wake.events(a, "file")))},
+      J.KV{"once", J.Flag{J.Json.get_bool(a, "once", True{})}}, J.KV{"note", J.Str{J.Json.get_str(a, "note", "")}}, J.KV{"_baseline", J.Str{stamp}}])}])}]))
+
+def Hub.mcp.wake.file(h: Hub, +thread: String, +o: J.Json, +a: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  do IO<Hub>:
+    stamp : String <- WJ.WakeJob.file(J.Json.get_str(a, "target", ""))
+    Hub.mcp.hub.raw(h, thread, WakeJob.file.body(o, a, stamp), reply, now)
+
+def Hub.mcp.file.k(file: Bool, h: Hub, +thread: String, +o: J.Json, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match file:
+    case True{}:
+      Hub.mcp.wake.file(h, thread, o, J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), reply, now)
+    case False{}:
+      Hub.mcp.hub.pr(h, thread, body, reply, now)
+
+def Hub.mcp.hub(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  +o = Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})
+  Hub.mcp.file.k(Bool.and(String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "wake_on"), String.eq(J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "kind", ""), "file")), h, thread, o, body, reply, now)
 
 # the approved folder, resolved: added (or found) and the tool answered
 def Hub.newproj.made(h: Hub, +root: String, +name: String, +id: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
@@ -9687,6 +9800,8 @@ def Msg.kind(m: Msg) -> String:
       "watch_ident"
     case WatchEnded{_, _, _, _}:
       "watch_ended"
+    case WakeSeen{_, _, _}:
+      "wake_seen"
     case Bulk{_}:
       "bulk"
 
@@ -9868,6 +9983,10 @@ def Hub.beat(h: Hub, +now: Nat) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.beat.k(Beat.all(as, st, now, Beated{Nil{}, Nil{}}), Hub{st, f, ls, cl, Nil{}, inbox, cfg, note})
 
+def Hub.wake.seen(p: M.State & Hub, +kind: String, +target: String, +result: String, +now: Nat) -> IO(Hub):
+  (+st, h) = p
+  Hub.step(h, Bool.pick(B.Step, String.eq(kind, "pr"), B.Wake.pr(st, now, target, WK.Wake.pr.parse(result)), B.Wake.file(st, now, target, result)))
+
 def Hub.watched.k(i: Nat, +st: M.State, +thread: String, +id: String, +a: String, +b: String, +now: Nat) -> B.Step:
   match i:
     case 0n:
@@ -10025,6 +10144,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.watched(Hub.state(h), 1n, thread, id, ident, "", now)
     case WatchEnded{thread, id, status, detail}:
       Hub.watched(Hub.state(h), 2n, thread, id, status, detail, now)
+    case WakeSeen{kind, target, result}:
+      Hub.wake.seen(Hub.state(h), kind, target, result, now)
     # unwrapped by Hub.got, never nested
     case Bulk{_}:
       IO.pure(Hub, h)

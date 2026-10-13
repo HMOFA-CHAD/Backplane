@@ -8470,6 +8470,40 @@ def Laws.mnav_bot_thread(hub, id, thread, some, own):
   %Equal.sym(Bool, Hb.Hubs.nav.tag(thread), False{}, own) : {Bool.pick(String, _, thread, Hb.Hubs.id(hub, thread)) == Hb.Hubs.id(hub, thread) : String}
   {==}
 
+# harness-coord: wakes
+def Laws.wake_once_per_event():
+  {==}
+
+def Laws.wake_once_drops():
+  {==}
+
+def Laws.wake_two_events_one_message():
+  {==}
+
+def Laws.wake_not_self():
+  {==}
+
+def Laws.wake_bot_thread_delivered():
+  {==}
+
+def Laws.wake_pr_merged():
+  {==}
+
+def Laws.wake_pr_repeat_quiet():
+  {==}
+
+def Laws.codec_wake_roundtrip():
+  {==}
+
+def Laws.codec_wake_dropped_roundtrip():
+  {==}
+
+def Laws.wake_message_one_paragraph():
+  {==}
+
+def Laws.wake_event_independent_of_step():
+  {==}
+
 # harness-coord: CLI path
 def Laws.clipath_keeps_current():
   {==}

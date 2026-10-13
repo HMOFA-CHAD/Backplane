@@ -1,4 +1,5 @@
 import Base
+import ./src/core/wake.bend as WAK
 import ./src/core/bothub.bend as BHS
 import ./src/core/bot.bend as BOT
 import ./src/core/far.bend as FR
@@ -7189,3 +7190,37 @@ law clipath_idempotent:
 # nvm's newest node comes first, by version and not by text
 law clipath_nvm_newest_first:
   {CPA.CliPath.candidates("/h", ["/h/.nvm/versions/node/v9.11.2/bin", "/h/.nvm/versions/node/v24.13.1/bin", "/h/.nvm/versions/node/v18.0.0/bin"]) == ["/h/.nvm/versions/node/v24.13.1/bin", "/h/.nvm/versions/node/v18.0.0/bin", "/h/.nvm/versions/node/v9.11.2/bin"] : List<&2, String>}
+
+# harness-coord: wakes
+law wake_once_per_event:
+  {H.Wake.demo.twice() == 0n : Nat}
+
+law wake_once_drops:
+  {H.Wake.demo.dropped() == 0n : Nat}
+
+law wake_two_events_one_message:
+  {H.Wake.demo.count(H.Wake.demo(False{}, ["end", "done"])) == 1n : Nat}
+
+law wake_not_self:
+  {WAK.Wake.error("tb", "thread", "tb", ["end"]) == "a subscriber cannot wake itself" : String}
+
+law wake_bot_thread_delivered:
+  {H.Wake.demo.count(H.Wake.demo(True{}, ["end"])) == 1n : Nat}
+
+law wake_pr_merged:
+  {H.Lr.count(H.Queue.changes(H.Wake.pr(H.Wake.demo.pr(), 9n, "owner/repo#7", H.Wake.demo.merged())), "tb") == 1n : Nat}
+
+law wake_pr_repeat_quiet:
+  {H.Wake.demo.pr.twice() == 0n : Nat}
+
+law codec_wake_roundtrip:
+  {C.Change.decode(C.Change.encode(M.WakeSet{"w1", "tb", "thread", "t1", ["end", "done"], True{}, "note", 4n})) == Some{M.WakeSet{"w1", "tb", "thread", "t1", ["end", "done"], True{}, "note", 4n}} : Maybe<&2, M.Change>}
+
+law codec_wake_dropped_roundtrip:
+  {C.Change.decode(C.Change.encode(M.WakeDropped{"w1", 9n})) == Some{M.WakeDropped{"w1", 9n}} : Maybe<&2, M.Change>}
+
+law wake_message_one_paragraph:
+  {WAK.Wake.flat("one\ntwo\r\tthree", "") == "one two  three" : String}
+
+law wake_event_independent_of_step:
+  {H.Wake.demo.partial() == 0n : Nat}
