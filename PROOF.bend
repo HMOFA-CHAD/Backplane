@@ -8013,6 +8013,8 @@ def Laws.slash_others_own_only():
   {==}
 
 def Laws.slash_none_unknown():
+  {==}
+
 # --- uberbot: uber_*, plane_* (thread t1791834693) ---
 
 def Laws.uber_promote_far_refused(st):

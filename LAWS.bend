@@ -6396,6 +6396,7 @@ law slash_others_own_only:
 
 law slash_none_unknown:
   {SL.Slash.names(SL.Slash.cmds(True{}, "zz")) == [] : List<&2, String>}
+
 # --- uberbot: uber_*, plane_* (thread t1791834693) ---
 
 # a bot on another machine is never made the uberbot, and nothing is logged
