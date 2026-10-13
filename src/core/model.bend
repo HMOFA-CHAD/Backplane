@@ -2695,6 +2695,10 @@ def Work.kids.at.k(r: Map<&2, Nat> & Nat) -> Nat:
 def Work.busy.at(+m: Map<&2, Nat>, +s: State, +th: String) -> Nat:
   Nat.add(Work.kids.at.k(Map.get(Nat, 0n, m, th)), Work.rows(s, th))
 
+# Work.busy.at with the rows from Work.rows.map (one pass), not two lookups in the settings
+def Work.busy.m(+kids: Map<&2, Nat>, +rows: Map<&2, Nat>, +th: String) -> Nat:
+  Nat.add(Work.kids.at.k(Map.get(Nat, 0n, kids, th)), Work.kids.at.k(Map.get(Nat, 0n, rows, th)))
+
 def Work.row.title(+l: String) -> String:
   Bool.pick(String, String.is_empty(Bg.title(l)), Bg.doing(l), Bg.title(l))
 

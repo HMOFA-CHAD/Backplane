@@ -284,23 +284,27 @@ def Note.one.w(running: Bool, +busy: Nat, +id: String, +title: String, +es: List
 
 # an archived or deleted thread is never on the island (law
 # island_gone_hidden), as on the hub's pushed one (push.bend's Island.keep)
-def Note.one.g(gone: Bool, running: Bool, +kids: Map<&2, Nat>, +st: M.State, +id: String, +title: String) -> List<&2, J.Json>:
+def Note.one.g(gone: Bool, running: Bool, +kids: Map<&2, Nat>, +rows: Map<&2, Nat>, +st: M.State, +id: String, +title: String) -> List<&2, J.Json>:
   match gone:
     case True{}:
       Nil{}
     case False{}:
-      Note.one.w(running, M.Work.busy.at(kids, st, id), id, title, M.State.mine(st, id))
+      Note.one.w(running, M.Work.busy.m(kids, rows, id), id, title, M.State.mine(st, id))
 
 # (kids: M.Work.kids.map, the child tasks counted once per screen)
-def Note.lines.w(ts: List<&2, M.Thread>, +kids: Map<&2, Nat>, +st: M.State) -> List<&2, J.Json>:
+# (rows: M.Work.rows.map, every thread's own rows found in one pass)
+def Note.lines.r(ts: List<&2, M.Thread>, +kids: Map<&2, Nat>, +rows: Map<&2, Nat>, +st: M.State) -> List<&2, J.Json>:
   match ts:
     case Nil{}:
       Nil{}
     case M.Thread{+id, _, title, _, _, turn, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de} <> t:
-      List.append(&2, J.Json, Note.one.g(Bool.or(ar, de), Note.running(turn), kids, st, id, title), Note.lines.w(t, kids, st))
+      List.append(&2, J.Json, Note.one.g(Bool.or(ar, de), Note.running(turn), kids, rows, st, id, title), Note.lines.r(t, kids, rows, st))
+
+def Note.lines.w(ts: List<&2, M.Thread>, +kids: Map<&2, Nat>, +st: M.State) -> List<&2, J.Json>:
+  Note.lines.r(ts, kids, M.Work.rows.map(st), st)
 
 def Note.island.w(ts: List<&2, M.Thread>, +st: M.State) -> J.Json:
-  Note.island.k(Note.lines.w(ts, M.Work.kids.map(st), st))
+  Note.island.k(Note.lines.r(ts, M.Work.kids.map(st), M.Work.rows.map(st), st))
 
 # A hub the phone no longer reaches keeps its last state in the phone, and
 # a thread running then reads running forever (a hub stopped, or paired at
