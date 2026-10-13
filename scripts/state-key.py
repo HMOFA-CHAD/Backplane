@@ -83,6 +83,11 @@ try:
     h.update(subprocess.run(["bend", "version"], capture_output=True, text=True).stdout.split("\n")[0].encode())
 except OSError:
     pass
+# the epoch: raised to make every phone drop what it kept once, whatever
+# the types. 2: states folded by bridges before #75 could have lost a whole
+# frame (Switch.count overflowed the phone's stack), and a lost turn end
+# left weeks-old threads "working" on the island forever
+h.update(b"epoch 2\n")
 kept = sorted(seen, key=lambda pn: (os.path.relpath(pn[0], root), pn[1]))
 for path, name in kept:
     h.update((os.path.relpath(path, root) + "\n" + types[path][name]).encode())
