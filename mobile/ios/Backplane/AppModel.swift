@@ -58,7 +58,13 @@ final class AppModel {
     private(set) var seenPlanes: [String: PlaneModel] = [:]
     @ObservationIgnored private var botOrder: [String] = []
     private(set) var destination: TapDestination?
+    // the page the stack was last moved to by the person: until a screen
+    // shows it, screens of other selections (answers to older actions)
+    // leave the stack alone, so a tap then a swipe back never bounces;
+    // given up after 3 s (a page that never comes, a dropped screen), so a
+    // notification's select still moves the stack
     @ObservationIgnored private var awaitedNav: String?
+    @ObservationIgnored private var awaitedAt = Date.distantPast
     @ObservationIgnored private var pushed = Date.distantPast
     #if DEBUG
     @ObservationIgnored private var tapStart: (nav: String, at: UInt64, first: Int?, full: Int?)?
@@ -337,12 +343,15 @@ final class AppModel {
 
     // Every row opens through this point; Bend's nav is the destination key.
     func open(nav: String, action: String, value: String, title: String, cat: String = "", kind: String = "thread") {
-        guard !nav.isEmpty, path.last != nav, pending?.last != nav,
+        // a row from an older bridge has no nav: its page opens when its screen comes
+        guard !nav.isEmpty else { act(action, value); return }
+        guard path.last != nav, pending?.last != nav,
               Date().timeIntervalSince(pushed) >= 0.35 else { return }
         pushed = Date()
         let rig = cat.isEmpty ? (screen?.bots.first(where: { $0.nav == nav })?.cat ?? (screen?.uber?.nav == nav ? screen?.uber?.cat : nil) ?? "") : cat
         destination = TapDestination(nav: nav, title: title, cat: rig, kind: kind)
         awaitedNav = nav
+        awaitedAt = Date()
         #if DEBUG
         tapStart = (nav, DispatchTime.now().uptimeNanoseconds, nil, nil)
         #endif
@@ -355,6 +364,7 @@ final class AppModel {
         path = p
         destination = nil
         awaitedNav = p.last ?? ""
+        awaitedAt = Date()
         #if DEBUG
         tapStart = nil
         #endif
@@ -554,7 +564,7 @@ final class AppModel {
                 rememberBot(nav, b)
                 if let p = s.plane { seenPlanes[nav] = p }
             }
-            let accepted = awaitedNav == nil || awaitedNav == nav
+            let accepted = awaitedNav == nil || awaitedNav == nav || awaitedAt.timeIntervalSinceNow < -3
             if accepted {
                 awaitedNav = nil
                 if destination?.nav == nav { destination = nil }

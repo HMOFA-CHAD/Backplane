@@ -220,7 +220,11 @@ class Engine(private val app: android.content.Context, private val source: Strin
         if (screen) ahead.incrementAndGet()
         return queued(person) {
             val t0 = android.os.SystemClock.elapsedRealtime()
-            val withheld = late != null && (worker.personWaiting || t0 - built < window)
+            // a streaming frame builds at most one screen per window; a burst
+            // (a cold join, catching up) one a second, as before, while
+            // more frames wait behind this one
+            val withheld = late != null && (worker.personWaiting || t0 - built < window ||
+                (backgroundAhead.get() > 1 && t0 - built < 1000))
             val e = late?.invoke(withheld, owe.getAndSet(false)) ?: expr
             val text = try { eval(e) } catch (t: Throwable) {
                 if (screen) ahead.decrementAndGet()

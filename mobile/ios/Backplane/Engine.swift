@@ -64,6 +64,7 @@ final class Engine: @unchecked Sendable {
     // Background streaming screens have a 250 ms window. An owed screen
     // flushes even if no further frame arrives; person calls bypass it.
     private static let window: UInt64 = 250_000_000
+    private static let burst: UInt64 = 1_000_000_000
     private var built: UInt64 = 0
     private var flushPending = false
     var onFlush: (@Sendable (Out?) -> Void)?
@@ -125,15 +126,19 @@ final class Engine: @unchecked Sendable {
         let late: (() -> [Any])? = quiet ? {
             self.lock.withLock {
                 began = DispatchTime.now().uptimeNanoseconds
-                withheld = self.queue.personWaiting || began &- self.built < Self.window
+                // a streaming frame builds at most one screen per window;
+                // a burst (a cold join, catching up) one a second, as
+                // before, while more frames wait behind this one
+                let age = began &- self.built
+                withheld = self.queue.personWaiting || age < Self.window || (self.backgroundAhead > 1 && age < Self.burst)
                 let o = self.owe
                 self.owe = false
                 return args + [withheld, o]
             }
         } : nil
         return await call(name, args, person: person, late: late) { text in
-            let decoded = Out.decode(text, screen: true)
-            let hasScreen = decoded?.screen != nil
+            // (bridge.js writes the screen first: a null one is cheap to see)
+            let hasScreen = screen && !text.hasPrefix("{\"screen\":null")
             let stale = self.lock.withLock {
                 if screen { if person { self.personAhead -= 1 } else { self.backgroundAhead -= 1 } }
                 let drop = hasScreen && (person ? self.personAhead > 0 : self.queue.personWaiting)
@@ -144,7 +149,7 @@ final class Engine: @unchecked Sendable {
                 return drop
             }
             if withheld || stale { self.scheduleFlush() }
-            return stale ? Out.decode(text, screen: false) : decoded
+            return Out.decode(text, screen: !stale)
         }
     }
 

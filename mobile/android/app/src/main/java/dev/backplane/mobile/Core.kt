@@ -243,7 +243,13 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     }
 
     fun act(action: String, value: String = "") {
-        if (opening != null) return
+        // a page on its way takes no other action (a cached page is inert);
+        // given up after 3 s, so a page that never comes never freezes the app
+        if (opening != null) {
+            if (android.os.SystemClock.elapsedRealtime() - pushed < 3000) return
+            opening = null
+            tapAt = 0L
+        }
         // a web address a settings row offers (Antigravity's sign-in):
         // opened in the browser here, never sent to the engine
         if (action == "open-url") {
