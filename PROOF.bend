@@ -8011,6 +8011,8 @@ def Laws.rv_sheet_compared():
   {==}
 
 def Laws.rv_bits_plain(kind):
+  {==}
+
 # Design review (bom)
 
 def Laws.bom_nat_c2_c10():
@@ -8044,6 +8046,8 @@ def Laws.bom_diff_md_none():
   {==}
 
 def Laws.bom_md_pipe():
+  {==}
+
 # Design review (checks, cad, release)
 
 def Laws.cad_of_kicad_board():
@@ -8128,6 +8132,8 @@ def Laws.release_dir_in_repo():
   {==}
 
 def Laws.release_gh_command():
+  {==}
+
 # Design review (review.bend)
 
 def Laws.review_fold_empty():
@@ -8176,6 +8182,8 @@ def Laws.review_moved():
   {==}
 
 def Laws.review_not_moved():
+  {==}
+
 # Slash commands in the composer (slash.bend)
 def Laws.slash_typing_word():
   {==}
