@@ -8468,6 +8468,7 @@ def Laws.mnav_remote_local(hub, id):
 def Laws.mnav_bot_thread(hub, id, thread, some, own):
   %Equal.sym(Bool, String.is_empty(thread), False{}, some) : {Hb.Hubs.nav.qual(hub, MBN.MBots.nav.k(_, id, thread)) == Hb.Hubs.id(hub, thread) : String}
   %Equal.sym(Bool, Hb.Hubs.nav.tag(thread), False{}, own) : {Bool.pick(String, _, thread, Hb.Hubs.id(hub, thread)) == Hb.Hubs.id(hub, thread) : String}
+  {==}
 
 # harness-coord: wakes
 def Laws.wake_once_per_event():
