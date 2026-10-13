@@ -1827,7 +1827,7 @@ def View.release.k(f: U.RlForm, +v: U.RpView, +u: U.Ui) -> List<&2, D.Node>:
          [WB.WB.input("rltag", "rltag", U.Ui.scratch(u, "@f.rltag"), next, "rv-release"),
           View.release.toggle("Publish on GitHub", publish, "rv-release-pub"),
           View.release.toggle("Release even if checks fail", force, "rv-release-force"),
-          D.El{"button", "rv-release", [D.At{"class", "primary"}, D.At{"data-value", ""}, D.At{"disabled", Bool.pick(String, U.RpView.busy(v), "true", "")}, D.On{"click", "rv-release"}],
+          D.El{"button", "rv-release", List.append(&2, D.Attr, [D.At{"class", "primary"}, D.At{"data-value", ""}, D.On{"click", "rv-release"}], Bool.pick(List<&2, D.Attr>, U.RpView.busy(v), [D.At{"disabled", "true"}], Nil{})),
             [D.Txt{Bool.pick(String, U.RpView.busy(v), "Making release " ++ tag ++ "…", "Make release " ++ tag)}]}]},
        D.El{"div", "", [D.At{"class", "rc-gate bad"}], Bool.pick(List<&2, D.Node>, String.is_empty(U.RpView.err(v)), Nil{}, [D.Txt{U.RpView.err(v)}])}]
 
