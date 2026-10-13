@@ -11,6 +11,7 @@ import ./space.bend as SP
 import ./refs.bend as RF
 import ./handoff.bend as HD
 import ./uber.bend as UB
+import ./review.bend as RVW
 
 # Remote bot directories. A result replaces just its peer; a failure
 # keeps that peer's rows and their last-seen timestamps, marked away.
@@ -2077,4 +2078,4 @@ def Bots.turn.k(m: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +text: String) -> 
       text
 
 def Bots.turn(+s: M.State, +now: Nat, +thread: String, text: String) -> String:
-  Bots.turn.k(BT.World.of_thread(M.State.bots(s), thread), s, now, RF.Refs.agent(s, thread, text))
+  Bots.turn.k(BT.World.of_thread(M.State.bots(s), thread), s, now, RVW.Review.agent(s, thread, RF.Refs.agent(s, thread, text)))

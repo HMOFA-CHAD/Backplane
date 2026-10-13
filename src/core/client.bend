@@ -20,6 +20,7 @@ import ./fview.bend as FV
 import ./farlive.bend as FLV
 import ./desk.bend as DK
 import ./hist.bend as HI
+import ./review.bend as RVW
 import ./links.bend as LK
 import ./apikeys.bend as AK
 import ./diff.bend as DF
@@ -6429,6 +6430,124 @@ def Rv.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
     case False{}:
       u
 
+# Design review: comments
+# -----------------------
+# Comments pinned to a place in a design (core/review.bend), the thread's
+# own: the person's and its agent's. Every client draws the pins of the
+# file on show (Rc.pins, where it draws the board or the schematic) and
+# opens one with "rv-pin" (its id; "" shuts it: "@rc.sel:<t>"). A right
+# click or a long press on a place asks to comment there: "rv-note" with
+# "x\ty\tlayer\titem" (mm in the file's coordinates, the layer's name, the
+# key of the item under it), kept as "@rc.at:<t>" while the text is
+# written (field "@f.rcnote"); "rv-note-send" sends it (review.comment, op
+# add), "rv-note-shut" forgets it. "rv-reply-send" answers the open one
+# (field "@f.rcreply"), "rv-resolve" and "rv-reopen" take its id. The
+# Review tab's Comments page lists them all.
+
+def Rc.all(+u: Ui) -> List<&2, RVW.Comment>:
+  RVW.Review.of_state(Ui.state(u), Ui.sel(u))
+
+# the file on show, from the thread's folder (as the agent names it)
+def Rc.rel.k(under: Bool, +abs: String, +root: String) -> String:
+  match under:
+    case True{}:
+      String.drop(abs, 1n+String.length(root))
+    case False{}:
+      abs
+
+def Rc.rel(+u: Ui) -> String:
+  +abs = HI.Hist.family(Ui.view_get(u, "view.path"))
+  Rc.rel.k(Bool.and(Bool.not(String.is_empty(Ui.root(u))), String.starts_with(abs, Ui.root(u) ++ "/")), abs, Ui.root(u))
+
+def Rc.pins(+u: Ui) -> List<&2, RVW.Pin>:
+  RVW.Review.pins(Rc.all(u), Rc.rel(u), "")
+
+def Rc.sel(+u: Ui) -> String:
+  Ui.scratch(u, "@rc.sel:" ++ Ui.sel(u))
+
+def Rc.at(+u: Ui) -> String:
+  Ui.scratch(u, "@rc.at:" ++ Ui.sel(u))
+
+# the one open: its words, who and where, its replies (each "text\u001fby"),
+# whether it is resolved
+type RcOpen is Data:
+  RcOpen{id: String, text: String, by: String, place: String, resolved: Bool, replies: List<&2, String>}
+
+def Rc.reply.lines(rs: List<&2, RVW.Comment>) -> List<&2, String>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      (RVW.Rv.text(r) ++ SCon{Chr{31}, SNil{}} ++ RVW.Rv.by(r)) <> Rc.reply.lines(t)
+
+def Rc.find(cs: List<&2, RVW.Comment>, +id: String) -> Maybe<&2, RVW.Comment>:
+  match cs:
+    case Nil{}:
+      None{}
+    case +c <> t:
+      Bool.pick(Maybe<&2, RVW.Comment>, String.eq(RVW.Rv.id(c), id), Some{c}, Rc.find(t, id))
+
+def Rc.open.k(m: Maybe<&2, RVW.Comment>, +all: List<&2, RVW.Comment>) -> Maybe<&2, RcOpen>:
+  match m:
+    case Some{+c}:
+      Some{RcOpen{RVW.Rv.id(c), RVW.Rv.text(c), RVW.Rv.by(c), RVW.Rv.where(c), RVW.Rv.resolved(c), Rc.reply.lines(RVW.Review.replies(all, RVW.Rv.id(c)))}}
+    case None{}:
+      None{}
+
+def Rc.open(+u: Ui) -> Maybe<&2, RcOpen>:
+  Rc.open.k(Bool.pick(Maybe<&2, RVW.Comment>, String.is_empty(Rc.sel(u)), None{}, Rc.find(Rc.all(u), Rc.sel(u))), Rc.all(u))
+
+def Rc.count(+u: Ui) -> Nat:
+  RVW.Review.count.open(Rc.all(u))
+
+# the version a new comment is made on: a commit's, else the working copy
+def Rc.commit(+u: Ui) -> String:
+  Bool.pick(String, Nat.is_eq(HI.Hist.kind(Ui.view_get(u, "view.path")), 1n), HI.Hist.git.commit(Ui.view_get(u, "view.path")), "")
+
+# a number as JSON wants it (0 when it is not one)
+def Rc.num(+s: String) -> String:
+  Bool.pick(String, Maybe.is_some(&2, F32, F32.read(s)), s, "0")
+
+def Rc.send.k(+xs: List<&2, String>, +u: Ui, +text: String) -> Act:
+  Ui.rpc(Ui.scratch_set(Ui.scratch_set(u, "@rc.at:" ++ Ui.sel(u), ""), "@f.rcnote", ""), "review.comment",
+    [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"op", J.Str{"add"}}, J.KV{"file", J.Str{Rc.rel(u)}}, J.KV{"commit", J.Str{Rc.commit(u)}},
+     J.KV{"kind", J.Str{Hs.kname(Hs.kind(u))}}, J.KV{"layer", J.Str{HI.Hist.at(xs, 2n)}}, J.KV{"x", J.Num{Rc.num(HI.Hist.at(xs, 0n))}}, J.KV{"y", J.Num{Rc.num(HI.Hist.at(xs, 1n))}},
+     J.KV{"item", J.Str{HI.Hist.at(xs, 3n)}}, J.KV{"text", J.Str{text}}])
+
+def Rc.send(+u: Ui) -> Act:
+  Bool.pick(Act, Bool.or(String.is_empty(Rc.at(u)), String.is_empty(String.trim(Ui.scratch(u, "@f.rcnote")))), Act{u, Nil{}},
+    Rc.send.k(String.split(Rc.at(u), '\t'), u, String.trim(Ui.scratch(u, "@f.rcnote"))))
+
+def Rc.op(+u: Ui, +op: String, +id: String) -> Act:
+  Ui.rpc(u, "review.comment", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"op", J.Str{op}}, J.KV{"id", J.Str{id}}])
+
+def Rc.reply(+u: Ui) -> Act:
+  Bool.pick(Act, Bool.or(String.is_empty(Rc.sel(u)), String.is_empty(String.trim(Ui.scratch(u, "@f.rcreply")))), Act{u, Nil{}},
+    Ui.rpc(Ui.scratch_set(u, "@f.rcreply", ""), "review.comment", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"op", J.Str{"add"}}, J.KV{"parent", J.Str{Rc.sel(u)}},
+      J.KV{"file", J.Str{Rc.rel(u)}}, J.KV{"text", J.Str{String.trim(Ui.scratch(u, "@f.rcreply"))}}]))
+
+def Rc.act(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n:
+      Act{Ui.scratch_set(Ui.scratch_set(u, "@rc.at:" ++ Ui.sel(u), value), "@rc.sel:" ++ Ui.sel(u), ""), Nil{}}
+    case 1n:
+      Rc.send(u)
+    case 2n:
+      Act{Ui.scratch_set(u, "@rc.at:" ++ Ui.sel(u), ""), Nil{}}
+    case 3n:
+      Act{Ui.scratch_set(Ui.scratch_set(u, "@rc.sel:" ++ Ui.sel(u), value), "@rc.at:" ++ Ui.sel(u), ""), Nil{}}
+    case 4n:
+      Rc.reply(u)
+    case 5n:
+      Rc.op(u, "resolve", value)
+    case 6n:
+      Rc.op(u, "reopen", value)
+    case _:
+      Act{u, Nil{}}
+
+def Rc.actions() -> List<&2, String>:
+  ["rv-note", "rv-note-send", "rv-note-shut", "rv-pin", "rv-reply-send", "rv-resolve", "rv-reopen"]
+
 # Design review: the Review tab
 # ------------------------------
 # A viewer kind of its own ("review"), its path the page on show (Rp.pages:
@@ -6441,10 +6560,10 @@ def Rv.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
 # "rv-run" asks again, "rv-bom" (the comparison bar's BOM) opens the BOM.
 
 def Rp.pages() -> List<&2, String>:
-  ["bom", "checks"]
+  ["bom", "checks", "comments"]
 
 def Rp.label(+page: String) -> String:
-  Bool.pick(String, String.eq(page, "bom"), "BOM", Bool.pick(String, String.eq(page, "checks"), "Checks", page))
+  Bool.pick(String, String.eq(page, "bom"), "BOM", Bool.pick(String, String.eq(page, "checks"), "Checks", Bool.pick(String, String.eq(page, "comments"), "Comments", page)))
 
 # the page on show ("" when the tab is not)
 def Rp.page(+u: Ui) -> String:
@@ -6558,10 +6677,22 @@ def Rp.tabs(ps: List<&2, String>, +cur: String) -> List<&2, RpTab>:
     case +p <> t:
       RpTab{p, Rp.label(p), String.eq(p, cur)} <> Rp.tabs(t, cur)
 
+# (the Comments page is the thread's own: no hub report)
+def Rp.view.k(comments: Bool, +u: Ui, +page: String) -> RpView:
+  match comments:
+    case True{}:
+      RpView{page, Rp.tabs(Rp.pages(), page), "Comments · " ++ Nat.show(Rc.count(u)) ++ " open", RVW.Review.md(Rc.all(u)), "", False{}}
+    case False{}:
+      RpView{page, Rp.tabs(Rp.pages(), page), Ui.info(u, Rp.key(u, "rp.title", page)), Ui.info(u, Rp.key(u, "rp.md", page)), Ui.info(u, Rp.key(u, "rp.err", page)),
+        String.eq(Ui.scratch(u, "@rp.busy:" ++ Ui.sel(u)), page)}
+
 def Rp.view(+u: Ui) -> RpView:
-  +page = Rp.page(u)
-  RpView{page, Rp.tabs(Rp.pages(), page), Ui.info(u, Rp.key(u, "rp.title", page)), Ui.info(u, Rp.key(u, "rp.md", page)), Ui.info(u, Rp.key(u, "rp.err", page)),
-    String.eq(Ui.scratch(u, "@rp.busy:" ++ Ui.sel(u)), page)}
+  Rp.view.k(String.eq(Rp.page(u), "comments"), u, Rp.page(u))
+
+def RpView.page(v: RpView) -> String:
+  match v:
+    case RpView{p, _, _, _, _, _}:
+      p
 
 def RpView.md(v: RpView) -> String:
   match v:
@@ -6591,7 +6722,7 @@ def RpView.tabs(v: RpView) -> List<&2, RpTab>:
 # what the page says while it has nothing to show
 def RpView.note(+v: RpView) -> String:
   Bool.pick(String, RpView.busy(v), "Reading the design…",
-    Bool.pick(String, String.is_empty(RpView.err(v)), Bool.pick(String, String.is_empty(RpView.md(v)), "Nothing yet.", ""), RpView.err(v)))
+    Bool.pick(String, String.is_empty(RpView.err(v)), Bool.pick(String, String.is_empty(RpView.md(v)), Bool.pick(String, String.eq(RpView.page(v), "comments"), "No comments yet. Right-click a place on the board or schematic (long-press on a phone) to comment there.", "Nothing yet."), ""), RpView.err(v)))
 
 def Rv.act.k(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
@@ -6612,8 +6743,15 @@ def Rv.act.k(i: Nat, +u: Ui, +value: String) -> Act:
     case _:
       Act{u, Nil{}}
 
+def Rv.act.c(comment: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match comment:
+    case True{}:
+      Rc.act(C.Codec.pos(Rc.actions(), action), u, value)
+    case False{}:
+      Rv.act.k(C.Codec.pos(["rv-as", "rv-bits", "rv-ref", "rv-page", "rv-run", "rv-bom", "rv-tick"], action), u, value)
+
 def Rv.act(+u: Ui, +action: String, +value: String) -> Act:
-  Rv.act.k(C.Codec.pos(["rv-as", "rv-bits", "rv-ref", "rv-page", "rv-run", "rv-bom", "rv-tick"], action), u, value)
+  Rv.act.c(Nat.is_lt(C.Codec.pos(Rc.actions(), action), 7n), u, action, value)
 
 def Ui.reply.skills(u: Ui, +o: J.Json) -> Ui:
   Rp.reply(Rp.reply.has(o), Rv.reply(Rv.reply.has(o), Fv.reply(Fm.has(J.Json.get_obj(o, "result"), "farView"), Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Hs.refs.store(Hs.refs.has(o), Ui.reply.body(u, o), o), o), o), J.Json.get_obj(o, "result")), o), o)

@@ -654,3 +654,34 @@ def Review.issue.body(i: Issue) -> String:
 # a comment on "f" at (1, 2) mm on F.Cu, by "p" (for tests and laws)
 def Review.mk(+id: String, +parent: String) -> Comment:
   Comment{id, Anchor{"f", "", "board", "F.Cu", 1.0, 2.0, "i"}, "t", "p", 0n, parent, False{}}
+
+# Requests
+# --------
+# What a client (review.comment) or an agent (the review_comment tool)
+# asks, as the Act that records it: the op in the Act's kind, the op's JSON
+# its summary (Review.of reads it back). p is the request: {op, id, file,
+# commit, kind, layer, x, y, item, text, parent}; a new comment's id is the
+# Act's own (`aid`).
+
+def Review.op.summary(+op: String, +aid: String, +p: J.Json, +by: String) -> String:
+  Bool.pick(String, String.eq(op, Review.k.add()), Review.op.add(aid, Rv.anchor.read(p), J.Json.get_str(p, "text", ""), by, J.Json.get_str(p, "parent", "")),
+    Bool.pick(String, String.eq(op, Review.k.resolve()), Review.op.resolve(J.Json.get_str(p, "id", ""), by),
+      Bool.pick(String, String.eq(op, Review.k.reopen()), Review.op.reopen(J.Json.get_str(p, "id", ""), by),
+        Bool.pick(String, String.eq(op, Review.k.edit()), Review.op.edit(J.Json.get_str(p, "id", ""), J.Json.get_str(p, "text", "")),
+          Review.op.drop(J.Json.get_str(p, "id", ""))))))
+
+# whether a request is one to record: a known op, a text for an add or an
+# edit, an id for the rest
+def Review.op.ok(+op: String, +p: J.Json) -> Bool:
+  Bool.pick(Bool, Bool.or(String.eq(op, Review.k.add()), String.eq(op, Review.k.edit())), Bool.not(String.is_empty(String.trim(J.Json.get_str(p, "text", "")))),
+    Bool.and(Bool.or(Bool.or(String.eq(op, Review.k.resolve()), String.eq(op, Review.k.reopen())), String.eq(op, Review.k.drop())), Bool.not(String.is_empty(J.Json.get_str(p, "id", "")))))
+
+def Review.act(+thread: String, +aid: String, +p: J.Json, +by: String, +now: Nat) -> M.Change:
+  M.ActivityLogged{thread, aid, Review.tone(), J.Json.get_str(p, "op", ""), Review.op.summary(J.Json.get_str(p, "op", ""), aid, p, by), now}
+
+# a message as its agent reads it: the open comments after it
+def Review.agent.k(+block: String, +text: String) -> String:
+  Bool.pick(String, String.is_empty(block), text, text ++ "\n\n" ++ block)
+
+def Review.agent(+s: M.State, +thread: String, +text: String) -> String:
+  Review.agent.k(Review.prompt(Review.of_state(s, thread)), text)
