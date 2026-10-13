@@ -2005,7 +2005,7 @@ def Switch.ctx(none: Bool, +th: String, +msg: String, +text: String, +now: Nat) 
 
 def Switch.go(+s: M.State, +now: Nat, +client: U32, +id: String, +th: String, +from: String, +to: String) -> Step:
   +seen = M.Switch.seen(s, th, to)
-  +missed = Nat.sub(M.Switch.count(Hub.entries(s), th), seen)
+  +missed = Nat.sub(M.Switch.count(s, th), seen)
   Step{List.concat(&2, M.Change, [Switch.old(M.Queue.items(s, th), th, now), [M.ProviderSet{th, to, "", now}],
       Switch.ctx(Nat.is_eq(missed, 0n), th, HD.Hand.prefix() ++ "switch:" ++ Nat.show(Hub.seq(s)), HD.Hand.switch(Hub.entries(s), th, from, to, seen), now),
       [M.ActivityLogged{th, Hub.id("p", now, Hub.seq(s)), "info", "provider", "Now on " ++ to ++ Bool.pick(String, Nat.is_eq(missed, 0n), "", "; it gets what it missed with the next message"), now}]]),

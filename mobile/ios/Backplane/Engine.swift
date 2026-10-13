@@ -57,6 +57,9 @@ final class Engine: @unchecked Sendable {
     // a screen was dropped that way: the next recv builds one even for a
     // frame that changes nothing on screen (bridge.js's owed)
     private var owe = false
+    // when a screen was last built: a long burst (a cold join, the whole
+    // log) still draws one a second, so the list fills in as it arrives
+    private var built: UInt64 = 0
 
     // late: the arguments decided on the queue, as the call runs
     private func call<T>(_ name: String, _ args: [Any], late: (() -> [Any])? = nil, _ finish: @escaping (String) -> T) async -> T {
@@ -79,18 +82,23 @@ final class Engine: @unchecked Sendable {
     // (a quiet call is told both, as its last two arguments)
     private func out(_ name: String, _ args: [Any], screen: Bool = true, quiet: Bool = false) async -> Out? {
         if screen { lock.withLock { ahead += 1 } }
+        // due: a second since the last screen, so this one is drawn even
+        // with newer calls waiting
+        var due = false
         let late: (() -> [Any])? = quiet ? {
             self.lock.withLock {
                 let o = self.owe
                 self.owe = false
-                return args + [self.ahead > 1, o]
+                due = DispatchTime.now().uptimeNanoseconds &- self.built > 1_000_000_000
+                return args + [self.ahead > 1 && !due, o]
             }
         } : nil
         return await call(name, args, late: late) { text in
             let stale = screen && self.lock.withLock {
                 self.ahead -= 1
-                if self.ahead > 0 { self.owe = true }
-                return self.ahead > 0
+                let drop = self.ahead > 0 && !due
+                if drop { self.owe = true } else { self.built = DispatchTime.now().uptimeNanoseconds }
+                return drop
             }
             return Out.decode(text, screen: !stale)
         }

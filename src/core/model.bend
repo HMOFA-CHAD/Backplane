@@ -1216,13 +1216,20 @@ def Switch.of(e: Entry) -> String:
     case Act{_, t, _, _, _, _}:
       t
 
-# how many entries a thread has
-def Switch.count(es: List<&2, Entry>, +th: String) -> Nat:
+# how many of these entries are the thread's own, in a tail call: the
+# phones' JavaScript has a small stack, and a walk that added outside the
+# call overflowed it on a real log (one ProviderSet blanked the app)
+def Switch.count.go(es: List<&2, Entry>, +th: String, n: Nat) -> Nat:
   match es:
     case Nil{}:
-      0n
+      n
     case +e <> t:
-      Switch.count.k(String.eq(Switch.of(e), th), Switch.count(t, th))
+      Switch.count.go(t, th, Switch.count.k(String.eq(Switch.of(e), th), n))
+
+# how many entries a thread has: its own among those filed under it (Idx;
+# the messages it sent elsewhere are filed there too), never the whole log
+def Switch.count(s: State, +th: String) -> Nat:
+  Switch.count.go(State.mine(s, th), th, 0n)
 
 def Switch.prov(t: Thread) -> String:
   match t:
@@ -1253,7 +1260,7 @@ def State.thread.get(s: State, +id: String) -> Thread:
       State.thread.get.k(Map.get(Thread, Thread.blank(id), ts, id))
 
 def State.switch.k(+s: State, +th: String, +old: String, +oldse: String, +p: String, m: String) -> State:
-  +s1 = State.setting(State.setting(s, Switch.session.key(th, old), oldse), Switch.seen.key(th, old), Nat.show(Switch.count(State.entries.all(s), th)))
+  +s1 = State.setting(State.setting(s, Switch.session.key(th, old), oldse), Switch.seen.key(th, old), Nat.show(Switch.count(s, th)))
   State.thread((t => Switch.set(p, m, Setting.get(s1, Switch.session.key(th, p), ""), t)), s1, th)
 
 def State.switch(+s: State, +th: String, +p: String, m: String) -> State:

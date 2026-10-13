@@ -149,6 +149,9 @@ class Engine(private val app: android.content.Context, private val source: Strin
     // a screen was dropped that way: the next recv builds one even for a
     // frame that changes nothing on screen (bridge.js's owed)
     private val owe = java.util.concurrent.atomic.AtomicBoolean(false)
+    // when a screen was last built: a long burst (a cold join, the whole
+    // log) still draws one a second, so the list fills in as it arrives
+    @Volatile private var built = 0L
 
     private suspend fun call(expr: String): String =
         withContext(dispatcher) { eval(expr) }
@@ -160,16 +163,23 @@ class Engine(private val app: android.content.Context, private val source: Strin
     private suspend fun out(expr: String, screen: Boolean = true, late: ((Boolean, Boolean) -> String)? = null): Reply {
         if (screen) ahead.incrementAndGet()
         return withContext(dispatcher) {
-            val e = late?.invoke(ahead.get() > 1, owe.getAndSet(false)) ?: expr
+            // due: a second since the last screen, so this one is drawn even
+            // with newer calls waiting
+            val due = late != null && android.os.SystemClock.elapsedRealtime() - built > 1000
+            val e = late?.invoke(ahead.get() > 1 && !due, owe.getAndSet(false)) ?: expr
             val t0 = android.os.SystemClock.elapsedRealtime()
             val text = eval(e)
             val ms = android.os.SystemClock.elapsedRealtime() - t0
             // a slow step of the Bend client, for finding what to make faster
             if (ms > 100) android.util.Log.i("Backplane", "slow ${e.substringBefore('(')}: $ms ms")
+            val stale = screen && ahead.decrementAndGet() > 0 && !due
+            if (stale) owe.set(true) else if (screen) built = android.os.SystemClock.elapsedRealtime()
             val o = JSONObject(text)
-            val stale = screen && ahead.decrementAndGet() > 0
-            if (stale) owe.set(true)
-            Reply(if (stale) null else o.optJSONObject("screen")?.let(::parseScreen), parseCmds(o))
+            // the commands carry the frames the hubs wait for: a screen this
+            // build cannot read costs that screen (the last stays up), never them
+            val s = if (stale) null else runCatching { o.optJSONObject("screen")?.let(::parseScreen) }
+                .onFailure { android.util.Log.w("Backplane", "screen unreadable: $it") }.getOrNull()
+            Reply(s, parseCmds(o))
         }
     }
 

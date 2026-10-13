@@ -51,7 +51,8 @@ function bytes(b64) {
 // JSON.parse with a reviver recursed once per cell, overflowed the
 // engine's stack on a real log and lost the kept state at every launch.
 // Every object is a node in one array, named by its index; in a node a
-// value [i] is node i, ["<digits>"] a BigInt, anything else itself.
+// value [i] is node i, ["<digits>"] a natural (as BigInts were written),
+// anything else itself.
 // Shared parts are written once.
 function flat(root) {
   const ids = new Map();
@@ -88,7 +89,9 @@ function unflat(text) {
   const d = JSON.parse(text);
   if (!d || d.flat !== 1) throw new Error("state");
   const nodes = d.nodes;
-  const val = (x) => (Array.isArray(x) ? (typeof x[0] === "number" ? nodes[x[0]] : BigInt(x[0])) : x);
+  // a natural kept as a BigInt comes back as a Number: Bend's own form of a
+  // Nat inside (scripts/js-unmarshal.py hands the state across as it is)
+  const val = (x) => (Array.isArray(x) ? (typeof x[0] === "number" ? nodes[x[0]] : Number(x[0])) : x);
   for (const n of nodes) {
     if (Array.isArray(n)) for (let i = 0; i < n.length; i += 1) n[i] = val(n[i]);
     else for (const key in n) n[key] = val(n[key]);
