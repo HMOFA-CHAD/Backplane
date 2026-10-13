@@ -92,12 +92,12 @@ try {
   c.send("thread.create", { project: pc.id, title: "exits", env: "local", provider: "claude" });
   const th = (await until(10000, () => c.seen.find((x) => x.$ === "ThreadCreated" && x.title === "exits")))?.id as string;
   c.send("turn.start", { thread: th, text: "mode:bg-exit go", msg: "m-1" });
-  const filed = await until(15000, () => bgSets(c.seen, th).find((x) => String(x.value).length > 0));
+  const filed = await until(15000, () => bgSets(c.seen, th).find((x) => String(x.rows).length > 0));
   check(!!filed, "the background shell is filed as a row");
   const ended = await until(15000, () => {
     const sets = bgSets(c.seen, th);
-    const i = sets.findIndex((x) => String(x.value).length > 0);
-    return i >= 0 && sets.slice(i).find((x) => String(x.value) === "");
+    const i = sets.findIndex((x) => String(x.rows).length > 0);
+    return i >= 0 && sets.slice(i).find((x) => String(x.rows) === "");
   });
   check(!!ended, "the agent exited: the row is gone (WorkSet bg empty)");
   const told = await until(10000, () => c.seen.filter((x) => x.$ === "MessagePosted" && x.thread === th && String(x.text).includes("ended your background work")));
@@ -105,13 +105,13 @@ try {
   const n = c.seen.filter((x) => x.$ === "MessagePosted" && x.thread === th && String(x.text).includes("ended your background work")).length;
   check(!!told && n === 1, `the agent is told once (${n})`);
   const last = bgSets(c.seen, th).at(-1);
-  check(!last || String(last.value) === "", "the last bg row set is empty");
+  check(!last || String(last.rows) === "", "the last bg row set is empty");
 
   // 2. a shell at work when the hub dies
   c.send("thread.create", { project: pc.id, title: "restarts", env: "local", provider: "claude" });
   const th2 = (await until(10000, () => c.seen.find((x) => x.$ === "ThreadCreated" && x.title === "restarts")))?.id as string;
   c.send("turn.start", { thread: th2, text: "mode:bg go", msg: "m-2" });
-  await until(15000, () => bgSets(c.seen, th2).find((x) => String(x.value).length > 0));
+  await until(15000, () => bgSets(c.seen, th2).find((x) => String(x.rows).length > 0));
   await sleep(800);
   c.ws.close();
   await kill(hub);
@@ -122,7 +122,7 @@ try {
   const lines = readFileSync(join(home, "events.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const sets2 = lines.filter((x) => x.$ === "WorkSet" && x.thread === th2 && x.kind === "bg");
   const fin = sets2.at(-1);
-  check(sets2.length >= 2 && !!fin && String(fin.value) === "", `after the restart the rows are gone (${sets2.length} sets, last "${fin?.value ?? ""}")`);
+  check(sets2.length >= 2 && !!fin && String(fin.value) === "", `after the restart the rows are gone (${sets2.length} sets, last "${fin?.rows ?? ""}")`);
   const aside = lines.filter((x) => x.$ === "SettingSet" && x.key === `lostbg.${th2}`);
   check(aside.length >= 1 || existsSync(log), "the rows were put aside until the agent is told (or told at once)");
   const told2 = lines.filter((x) => x.$ === "MessagePosted" && x.thread === th2 && String(x.text).includes("ended your background work")).length;
