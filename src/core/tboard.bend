@@ -327,8 +327,11 @@ def Tb.text.nonempty(+xs: List<&2, String>) -> List<&2, String>:
 def Tb.text.join(+xs: List<&2, String>) -> String:
   String.join(Tb.text.nonempty(xs), "; ")
 
+def Tb.text.owner(+id: String, +s: M.State) -> String:
+  Bool.pick(String, String.is_empty(id), "", Tb.owner.name(s, id))
+
 def Tb.text.parts(+t: TbItem, +s: M.State) -> String:
-  Tb.text.join([Tb.id(t), Tb.text.at("@", Tb.owner.name(s, Tb.owner(t))), Tb.text.at("%", Tb.proj.name(s, Tb.project(t))), Tb.text.at("due ", Tb.due(t)), Tb.group(t)])
+  Tb.text.join([Tb.id(t), Tb.text.at("@", Tb.text.owner(Tb.owner(t), s)), Tb.text.at("%", Tb.proj.name(s, Tb.project(t))), Tb.text.at("due ", Tb.due(t)), Tb.group(t)])
 
 def Tb.text.one(+t: TbItem, +s: M.State) -> String:
   "[" ++ Tb.status(t) ++ "] " ++ Tb.title(t) ++ " (" ++ Tb.text.parts(t, s) ++ ")"
