@@ -9,6 +9,7 @@ import ./src/core/model.bend as M
 import ./src/app/viewer.bend as V
 import ./src/app/theme.bend as TH
 import ./src/core/semver.bend as SV
+import ./src/core/clipath.bend as CPA
 import ./src/app/nui.bend as N
 import ./src/app/bots.bend as BV
 import ./src/core/board.bend as B
@@ -7172,3 +7173,19 @@ law policy_reminder_alerts:
   {NO.Policy.demo.reminder() == "reminder _" : String}
 
 # ---- end notif-policy ----
+# harness-coord: CLI path
+# the merged PATH begins with the hub's own, unchanged
+law clipath_keeps_current:
+  {CPA.CliPath.merge("/usr/bin:/bin", "/home/h/.nvm/versions/node/v24.13.1/bin:/bin", ["/usr/local/bin"]) == "/usr/bin:/bin:/home/h/.nvm/versions/node/v24.13.1/bin:/usr/local/bin" : String}
+
+# entries the login PATH and the extras repeat appear once
+law clipath_no_dupes:
+  {CPA.CliPath.merge("/a", "/b:/a:/b", ["/c", "/b", "/c"]) == "/a:/b:/c" : String}
+
+# merging again changes nothing
+law clipath_idempotent:
+  {CPA.CliPath.merge(CPA.CliPath.merge("/usr/bin", "/l:/usr/bin", ["/x"]), "/l:/usr/bin", ["/x"]) == CPA.CliPath.merge("/usr/bin", "/l:/usr/bin", ["/x"]) : String}
+
+# nvm's newest node comes first, by version and not by text
+law clipath_nvm_newest_first:
+  {CPA.CliPath.candidates("/h", ["/h/.nvm/versions/node/v9.11.2/bin", "/h/.nvm/versions/node/v24.13.1/bin", "/h/.nvm/versions/node/v18.0.0/bin"]) == ["/h/.nvm/versions/node/v24.13.1/bin", "/h/.nvm/versions/node/v18.0.0/bin", "/h/.nvm/versions/node/v9.11.2/bin"] : List<&2, String>}

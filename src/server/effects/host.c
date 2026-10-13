@@ -851,6 +851,27 @@ static void __attribute__((constructor)) sys_exe_path_use(void) {
 
 #endif
 
+#ifdef CID(Env.put)
+
+// setenv(name, value, 1): processes started afterwards inherit it.
+Term env_put_run(Env e, Term* f, IoWork* w) {
+  u64 a = 0, b = 0;
+  char* name  = io_cstr(e, f[0], &a);
+  char* value = io_cstr(e, f[1], &b);
+  if (a > 0 && !io_nul(name, a) && !io_nul(value, b)) {
+    setenv(name, value, 1);
+  }
+  free(name);
+  free(value);
+  return host_unit();
+}
+
+static void __attribute__((constructor)) env_put_use(void) {
+  io_eff(CID(Env.put), env_put_run);
+}
+
+#endif
+
 #ifdef CID(Sys.exe_dir)
 
 // The directory holding the running binary ("" when unknown).

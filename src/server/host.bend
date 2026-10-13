@@ -158,6 +158,11 @@ def Net.listen(host: String, port: U32) -> IO(Result<&1, &1, U32 & String, Liste
   import "./effects/host.c"
   import "./effects/host.js"
 
+# set an environment variable of this process (children started later see it)
+def Env.put(name: String, value: String) -> IO(Unit):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
 # the directory holding the running binary
 def Sys.exe_dir() -> IO(String):
   import "./effects/host.c"

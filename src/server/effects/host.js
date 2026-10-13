@@ -281,6 +281,13 @@ function net_listen(host, port) {
   return io_fail(38);
 }
 
+function env_put(name, value) {
+  if (typeof process !== "undefined" && process.env) {
+    process.env[name] = value;
+  }
+  return { $: "Unit" };
+}
+
 function sys_exe_dir() {
   return require("path").dirname(process.argv[1] ?? "");
 }
@@ -457,6 +464,7 @@ io_eff(CID(FS.rename), fs_rename);
 io_eff(CID(FS.remove), fs_remove);
 io_eff(CID(FS.chmod), fs_chmod);
 io_eff(CID(Net.listen), net_listen);
+io_eff(CID(Env.put), env_put);
 io_eff(CID(Sys.exe_dir), sys_exe_dir);
 io_eff(CID(Sys.exec), sys_exec);
 io_eff(CID(Sys.exe_path), sys_exe_path);

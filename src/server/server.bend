@@ -26,6 +26,7 @@ import ./term.bend as TM
 import ./plot.bend as PV
 import ../core/agent.bend as AG
 import ../core/port.bend as PT
+import ../core/clipath.bend as CPA
 import ../core/tailnet.bend as TN
 import ../core/images.bend as IM
 import ../core/links.bend as LK
@@ -4313,23 +4314,68 @@ def Models.detect(+user: String, +home: String) -> IO(Found):
       J.Json.obj([J.KV{"claude", Claude.about(About.cli(vc), xs)}, J.KV{"codex", About.one(About.cli(vx), About.codex(cache))}, J.KV{"grok", About.one(About.cli(vg), About.grok(gk))},
         J.KV{"muse", About.one(About.cli(vm), About.muse(mx))}, J.KV{"antigravity", AGY.Agy.info.about(ag)}]))
 
-# the first probe runs at once (the window is up by then), the next ones
-# every Models.every() ms
-def Refresh.loop(fuel: Nat, +inbox: Chan(Msg), +user: String, +home: String, +cache: String, +last: String) -> IO(Unit):
+# The CLIs are looked for on PATH, which a launcher's or a service's hub
+# lacks the login shell's part of (nvm, volta...): before each detection the
+# login shell's PATH and the usual install directories are merged into ours,
+# so every child started afterwards sees them (src/core/clipath.bend).
+def Path.out(r: P.Ran) -> String:
+  match r:
+    case P.Ran{_, out}:
+      out
+
+def Path.set(same: Bool, +next: String) -> IO(Unit):
+  match same:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      H.Env.put("PATH", next)
+
+def Path.refresh(+home: String) -> IO(Unit):
+  do IO<Unit>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", CPA.CliPath.probe.sh()], "/")
+    +cur : String <- Env.get("PATH", "")
+    +next : String = CPA.CliPath.next(cur, home, Path.out(r))
+    Path.set(String.eq(cur, next), next)
+
+# which of the four CLIs are on PATH now (Antigravity's agy lives in
+# <home>/antigravity, AGX.Agx.probe, not on PATH), "claude codex " style
+def Models.present() -> IO(String):
+  do IO<String>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", "for c in claude codex grok muse; do command -v $c >/dev/null 2>&1 && printf '%s ' $c; done; true"], "/")
+    return Path.out(r)
+
+# a full detection when it is due, else nothing; answers the list kept
+def Refresh.step(due: Bool, +inbox: Chan(Msg), +user: String, +home: String, +cache: String, +last: String) -> IO(String):
+  match due:
+    case True{}:
+      do IO<String>:
+        fd : Found <- Models.detect(user, home)
+        Refresh.found(fd, inbox, cache, last)
+    case False{}:
+      IO.pure(String, last)
+
+# every minute the PATH is merged again and the CLIs present are compared
+# with those at the last full detection: a CLI installed or removed shows
+# at once; otherwise the full detection (versions, models) runs every
+# Models.every() ms, `left` minutes from now. The first runs at once (the
+# window is up by then).
+def Refresh.loop(fuel: Nat, +inbox: Chan(Msg), +user: String, +home: String, +cache: String, +last: String, +set: String, +left: Nat) -> IO(Unit):
   match fuel:
     case 0n:
       IO.pure(Unit, Unit{})
     case 1n+f:
       do IO<Unit>:
-        fd : Found <- Models.detect(user, home)
-        now : String <- Refresh.found(fd, inbox, cache, last)
-        IO.sleep(Models.every())
-        Refresh.loop(f, inbox, user, home, cache, now)
+        Path.refresh(user)
+        +here : String <- Models.present()
+        +due : Bool = Bool.or(Nat.is_eq(left, 0n), Bool.not(String.eq(here, set)))
+        now : String <- Refresh.step(due, inbox, user, home, cache, last)
+        IO.sleep(60000)
+        Refresh.loop(f, inbox, user, home, cache, now, here, Bool.pick(Nat, due, Nat.sub(Nat.div(U32.to_nat(Models.every()), 60000n), 1n), Nat.sub(left, 1n)))
 
 def Refresh.start(+inbox: Chan(Msg), +cfg: Cfg) -> IO(Unit):
   do IO<Unit>:
     user : String <- Env.get("HOME", "")
-    IO.spawn(Unit, Refresh.loop(Fuel.forever(), inbox, user, Cfg.home(cfg), Models.cache(Cfg.home(cfg)), Net.models(Cfg.net(cfg))))
+    IO.spawn(Unit, Refresh.loop(Fuel.forever(), inbox, user, Cfg.home(cfg), Models.cache(Cfg.home(cfg)), Net.models(Cfg.net(cfg)), "?", 0n))
 
 def Main.prepare(+user: String, +exe: String) -> IO(Boot):
   do IO<Boot>:
