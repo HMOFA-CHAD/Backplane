@@ -152,7 +152,10 @@ data class Find(val mode: String, val query: String, val rows: List<FolderRow>)
 // the Review tab: page chips ("rv-page" page), the title, the report's
 // Markdown nodes (empty: say note), whether it is being made
 data class ReviewTab(val page: String, val label: String, val on: Boolean)
-data class ReviewPage(val tabs: List<ReviewTab>, val title: String, val note: String, val busy: Boolean, val blocks: List<Block>, val checks: ReviewChecks? = null)
+data class ReviewPage(val tabs: List<ReviewTab>, val title: String, val note: String, val busy: Boolean, val blocks: List<Block>, val checks: ReviewChecks? = null, val release: ReleaseForm? = null)
+
+// the Release page's form: the tag that will be made (the field, else the proposed one), the proposed one, the two toggles, why not ("")
+data class ReleaseForm(val tag: String, val next: String, val publish: Boolean, val force: Boolean, val err: String, val text: String = "")
 
 // the Checks page's boxes ("rv-tick" index) and why the gate fails ("" it passes)
 data class ReviewTask(val index: Int, val text: String, val group: String, val done: Boolean)
@@ -551,6 +554,9 @@ private fun viewer(o: JSONObject) = Viewer(
             r.optJSONObject("checks")?.let { c ->
                 ReviewChecks(c.optString("gate"), c.optString("line"),
                     c.optJSONArray("tasks").map { ReviewTask(it.optInt("index"), it.optString("text"), it.optString("group"), it.optBoolean("done")) })
+            },
+            r.optJSONObject("release")?.let { f ->
+                ReleaseForm(f.optString("tag"), f.optString("next"), f.optBoolean("publish"), f.optBoolean("force"), f.optString("err"), f.optString("text"))
             })
     },
     comments = o.optJSONObject("comments")?.let { c ->

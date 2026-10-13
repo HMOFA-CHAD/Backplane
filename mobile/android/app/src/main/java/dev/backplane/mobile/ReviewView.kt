@@ -23,6 +23,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Switch
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -62,10 +64,14 @@ import kotlin.math.roundToInt
 // Refresh sits at the bottom, under the thumb.
 @Composable
 fun ReviewScreen(m: AppModel, v: Viewer, r: ReviewPage) {
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).statusBarsPadding().navigationBarsPadding()) {
+    // a Surface, so text with no colour of its own follows the theme (it was black on the dark surface)
+    androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         ViewerChoices(m, v)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (t in r.tabs) FilterChip(t.on, onClick = { m.act("rv-page", t.page) }, label = { Text(t.label) })
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (t in r.tabs) FilterChip(t.on, onClick = { m.act("rv-page", t.page) }, label = { Text(t.label) },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary))
         }
         Text(r.title, Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium, maxLines = 2)
         HorizontalDivider()
@@ -73,7 +79,15 @@ fun ReviewScreen(m: AppModel, v: Viewer, r: ReviewPage) {
             if (r.blocks.isNotEmpty() && !r.busy) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
                     r.checks?.let { ChecksBoxes(m, it) }
+                    r.release?.let { ReleaseBox(m, it, r.busy) }
                     Markdown(r.blocks)
+                }
+            } else if (r.release != null) {
+                Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
+                    ReleaseBox(m, r.release, r.busy)
+                    if (r.busy) CircularProgressIndicator()
+                    Text(r.note, color = if (r.release.err.isEmpty()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 8.dp).testTag("release-note"))
                 }
             } else {
                 Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -82,11 +96,41 @@ fun ReviewScreen(m: AppModel, v: Viewer, r: ReviewPage) {
                 }
             }
         }
-        HorizontalDivider()
-        Button(onClick = { m.act("rv-run", "") }, enabled = !r.busy, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-            Icon(Icons.Filled.Refresh, null)
-            Text("  Refresh")
+        if (r.release == null) {
+            HorizontalDivider()
+            Button(onClick = { m.act("rv-run", "") }, enabled = !r.busy, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                Icon(Icons.Filled.Refresh, null)
+                Text("  Refresh")
+            }
         }
+    }
+    }
+}
+
+// The Release page's form: the tag (empty releases the proposed one), two
+// switches off until the person turns them on (Publish on GitHub pushes the
+// tag and makes a GitHub release), and the button. The tag goes to Bend as
+// the field "rltag" while it is typed.
+@Composable
+fun ReleaseBox(m: AppModel, f: ReleaseForm, busy: Boolean) {
+    var text by remember { mutableStateOf(f.text) }
+    Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(text, onValueChange = { text = it; m.field("rltag", it) }, placeholder = { Text(f.next) },
+            singleLine = true, modifier = Modifier.fillMaxWidth().testTag("release-tag"),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Go),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = { if (!busy) m.act("rv-release", "") }))
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Publish on GitHub", Modifier.weight(1f))
+            Switch(f.publish, onCheckedChange = { m.act("rv-release-pub", "") }, modifier = Modifier.testTag("release-pub"))
+        }
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Release even if checks fail", Modifier.weight(1f))
+            Switch(f.force, onCheckedChange = { m.act("rv-release-force", "") }, modifier = Modifier.testTag("release-force"))
+        }
+        // the field is typed without a new screen, so the label follows the text here
+        val tag = text.trim().ifEmpty { f.tag }
+        Button(onClick = { m.act("rv-release", "") }, enabled = !busy && tag.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("release-make")) { Text("Make release " + tag) }
     }
 }
 
@@ -101,7 +145,11 @@ fun ChoiceRow(choices: List<Choice>, picked: String, modifier: Modifier = Modifi
         SingleChoiceSegmentedButtonRow {
             choices.forEachIndexed { i, c ->
                 SegmentedButton(selected = c.value == picked, onClick = { pick(c.value) },
-                    shape = SegmentedButtonDefaults.itemShape(i, choices.size), icon = {}) {
+                    shape = SegmentedButtonDefaults.itemShape(i, choices.size), icon = {},
+                    colors = SegmentedButtonDefaults.colors(activeContainerColor = MaterialTheme.colorScheme.primary,
+                        activeContentColor = MaterialTheme.colorScheme.onPrimary,
+                        inactiveContainerColor = MaterialTheme.colorScheme.surface,
+                        inactiveContentColor = MaterialTheme.colorScheme.onSurface)) {
                     Text(c.label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium)
                 }
             }
