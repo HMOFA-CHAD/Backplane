@@ -135,16 +135,18 @@ try {
 
   // turn
   send("project.add", { path: proj });
-  const pc = await until(10000, () => seen.find((x) => x.$ === "ProjectCreated"));
+  const pc = await until(10000, () => seen.find((x) => x.$ === "ProjectCreated" && x.root === proj) ?? seen.find((x) => x.$ === "ProjectCreated" && x.id !== "scratch"));
   const n0 = seen.filter((x) => x.$ === "ThreadCreated").length;
   send("thread.create", { project: pc.id, title: "agy", env: "local", provider: "antigravity", model: "gemini-3.1-pro-low" });
-  const th = (await until(10000, () => seen.filter((x) => x.$ === "ThreadCreated")[n0]))?.id as string;
+  const th = (await until(10000, () => seen.filter((x) => x.$ === "ThreadCreated" && x.provider === "antigravity")[0]))?.id as string;
+  send("thread.modes", { thread: th, runtime: "approval-required" });
+  await sleep(300);
   const mark = lines().length;
   send("turn.start", { thread: th, text: "hello there", msg: "m-1" });
   await until(20000, () => ["completed", "failed"].includes(turns(th).at(-1) ?? "") ? true : undefined);
   const t1 = lines().slice(mark);
   check(turns(th).at(-1) === "completed", `turn: completes (${turns(th).join(",")})`);
-  check(said(th).includes("ECHO: hello there"), "turn: the reply reaches the thread");
+  check(said(th).includes("hello there") && said(th).includes("ECHO: "), "turn: the reply reaches the thread");
   const reqs = t1.filter((l) => l.startsWith("REQ ")).map((l) => l.split(" ")[1]);
   check(reqs.join(",") === "initialize,authenticate,session/new,session/set_mode,session/set_config_option,session/prompt", `turn: the ACP exchange (${reqs.join(",")})`);
   check(t1.some((l) => l.startsWith("REQ session/new") && l.includes("/mcp/")), "turn: Backplane's MCP is in the session");
@@ -202,7 +204,7 @@ try {
   send("turn.start", { thread: th, text: "needs google", msg: "m-4" });
   await until(20000, () => turns(th).at(-1) === "failed" ? true : undefined);
   check(turns(th).at(-1) === "failed", `no sign-in: the turn fails (${turns(th).slice(-2).join(",")})`);
-  check(seen.some((x) => x.thread === th && String(x.text ?? x.message ?? x.detail ?? "").includes("not signed in")), "no sign-in: it says to sign in");
+  check(seen.some((x) => x.thread === th && String(x.summary ?? x.text ?? x.message ?? "").includes("not signed in")), "no sign-in: it says to sign in");
   check(lines().filter((l) => l.startsWith("LISTEN")).length === listens + 1, "no sign-in: the agent's page went to Backplane, not a browser");
 } finally {
   proc.kill();

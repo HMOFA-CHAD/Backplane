@@ -100,7 +100,9 @@ def Agy.install.err(+out: String) -> String:
 # when it ends), and BROWSER pointing back at itself: `agy.sh --open URL`
 # prints the sign-in address as one line, BACKPLANE-SIGNIN <url>, so a
 # browser never opens on the hub's machine by itself. A missing agent says
-# BACKPLANE-MISSING. Its stderr goes to <profile>/agy.log.
+# BACKPLANE-MISSING. Its stderr goes to <profile>/agy.log. (The agent runs
+# in the background so a stop reaches it; its stdin is passed through fd 3:
+# dash gives a background command /dev/null even with <&0.)
 def Agy.run.sh() -> String:
   "#!/bin/sh\n"
     ++ "# Backplane's runner for Google's Antigravity agent (src/core/agy.bend)\n"
@@ -116,7 +118,8 @@ def Agy.run.sh() -> String:
     ++ "[ -n \"$key\" ] && export \"$n=$key\"\n"
     ++ "export GEMINI_HOME=\"$p\" AGY_ACP_FORCE_FILE_STORAGE=1 PYTHONUNBUFFERED=1 TMPDIR=\"$t\" ANTIGRAVITY_HARNESS_PATH=\"$d/localharness_external\" BROWSER=\"'$0' --open %s\"\n"
     ++ "set -- \"$d/agy_acp_server.par\"; [ \"$(uname -s)\" = Linux ] && set -- \"$@\" --uid=\n"
-    ++ "\"$@\" <&0 2>\"$p/agy.log\" &\n"
+    ++ "exec 3<&0\n"
+    ++ "\"$@\" <&3 3<&- 2>\"$p/agy.log\" &\n"
     ++ "c=$!\n"
     ++ "trap 'kill $c 2>/dev/null' TERM INT HUP\n"
     ++ "wait $c; r=$?\n"
