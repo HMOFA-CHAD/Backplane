@@ -111,6 +111,7 @@ function project(name: string, repo: boolean): string {
     git(p, "add", ".");
     git(p, "commit", "-qm", "first");
     git(p, "branch", "-q", "rev-b");
+    git(p, "tag", "-a", "v1", "-m", "v1");
   }
   return p;
 }
@@ -240,6 +241,32 @@ try {
       const l4 = new Set((p4?.cs ?? []).filter((c: any) => typeof c === "object").map((c: any) => c.l));
       check(!!p4 && (l4.has(27) || l4.has(26)), "HEAD against the working copy marks the schematic's edit", JSON.stringify([...l4]) + (p4?.none ?? ""));
     }
+  }
+
+  // design review (docs/design-review.md): tags listed, any ref typed in
+  // resolved, a comparison on some layers only
+  if (s0 && s1) {
+    const rid = send("history.refs", { thread: a.th.id });
+    const res = (await until(10000, () => replies.get(rid)))?.result ?? {};
+    check(typeof res.refs === "string" && res.refs.includes("tag\tv1\t"), "refs list the tags", res.refs);
+    const v1 = git(a.proj, "rev-parse", "v1^{commit}").trim();
+    const q = send("history.resolve", { thread: a.th.id, side: "a", ref: "v1" });
+    const rr = (await until(10000, () => replies.get(q)))?.result?.resolved;
+    check(!!rr && rr.commit === v1 && rr.side === "a" && rr.ref === "v1" && rr.thread === a.th.id, "a tag typed in resolves to its commit", JSON.stringify(rr));
+    check(!!rr && rr.git.endsWith(".git") && rr.top.length > 0, "with the git dir and top a version needs", JSON.stringify(rr));
+    const bad = send("history.resolve", { thread: a.th.id, side: "b", ref: "no-such-ref" });
+    const rb = await until(10000, () => replies.get(bad));
+    check(!!rb && rb.ok === false && /no commit, branch or tag/.test(rb.result?.error ?? ""), "an unknown ref says so", JSON.stringify(rb));
+    const dash = send("history.resolve", { thread: a.th.id, side: "b", ref: "--output=/tmp/x" });
+    const rd = await until(10000, () => replies.get(dash));
+    check(!!rd && rd.ok === false, "a ref like an option is refused", JSON.stringify(rd));
+    // the same comparison on a layer nothing changed on marks nothing
+    const diff = `diff\n${spec(s0, "ecc83-pp.kicad_pcb")}\n${spec(s1, "ecc83-pp.kicad_pcb")}\n${1 << 30}`;
+    plots.length = 0;
+    send("kicad.watch", { kind: "board", root: s1.rec.t, path: diff });
+    const p5 = await until(20000, () => plots.find((p) => p.key?.startsWith("0|") && p.key.includes("diff") && (p.cs || p.none)));
+    const l5 = new Set((p5?.cs ?? []).filter((c: any) => typeof c === "object").map((c: any) => c.l));
+    check(!!p5 && !l5.has(26) && !l5.has(27) && !l5.has(28) && l5.size > 0, "a comparison on an untouched layer marks nothing and dims the rest", JSON.stringify([...l5]) + (p5?.none ?? ""));
   }
 
   // a folder outside git keeps its steps in .backplane/history.git

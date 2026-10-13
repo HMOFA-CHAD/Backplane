@@ -938,6 +938,7 @@ struct ThreadScreen: View {
             if let v = model.screen?.thread?.viewer {
                 if v.open == "files", let f = v.files { FilesScreen(model: model, viewer: v, page: f) }
                 else if v.open == "image" || v.open == "pdf", let f = v.file { FileScreen(model: model, viewer: v, file: f) }
+                else if v.open == "review", let r = v.review { ReviewScreen(model: model, viewer: v, page: r) }
                 else if v.open == "renders", let p = v.mech { MechScreen(model: model, viewer: v, page: p) } else { PlotScreen(model: model, viewer: v) }
             }
         }

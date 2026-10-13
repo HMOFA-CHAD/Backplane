@@ -3256,7 +3256,7 @@ def Lay.shown(+k: U32, +empty: Bool, +ts: FA.Scene3, b: BM.Bitmap) -> Bool:
       Bool.pick(Bool, U32.is_ge(k, 3), True{}, Bool.pick(Bool, U32.is_eq(k, 2), Bool.not(FA.Scene3.is_empty(ts)), Bool.not(empty)))
 
 def Lay.help(+k: U32) -> String:
-  Bool.pick(String, U32.is_eq(k, 5), "",
+  Bool.pick(String, Bool.or(U32.is_eq(k, 5), U32.is_eq(k, 9)), "",
   Bool.pick(String, U32.is_eq(k, 4), "wheel scroll",
   Bool.pick(String, U32.is_eq(k, 3), "what this thread's browser shows, live",
     Bool.pick(String, U32.is_eq(k, 2), "drag rotate · ctrl pan · shift zoom · alt roll · 1-7 views · f fit", "click inspect · drag pan · wheel zoom · f fit"))))
@@ -3376,11 +3376,12 @@ def Lay.viewer.k(+ty: Ty, +x0: U32, +x1: U32, +h: U32, +empty: Bool, x: V.Vx, +i
       +rw = Lay.button.w(ty, "Browser")
       +dw = Lay.button.w(ty, "Diff")
       +fw = Lay.button.w(ty, "Files")
-      +tabs = {(x0 + 72 + bw + sw + tw + mw + fw + rw + dw : U32) : U32}
+      +vw = Lay.button.w(ty, "Review")
+      +tabs = {(x0 + 80 + bw + sw + tw + mw + fw + rw + dw + vw : U32) : U32}
       +ko = Bool.and(Bool.and(Lay.kicad.on(k, empty, ts, bm), Bool.and(Bool.not(MC.Mech.is_model(p)), Bool.not(mech))),
         U32.is_le((tabs + Lay.kicad.w(ty, True{}) + 8 : U32), x1))
       +kw = Lay.kicad.w(ty, ko)
-      +room = Lay.room((x1 - x0 : U32), (88 + bw + sw + tw + mw + fw + rw + dw + kw : U32))
+      +room = Lay.room((x1 - x0 : U32), (96 + bw + sw + tw + mw + fw + rw + dw + vw + kw : U32))
       Out.all([
         Out.ops([D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 52, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255),
           D.Draw.rect(D.Clip.all(), x0, 0, 1, h, T.Th.line(), 255)]),
@@ -3388,9 +3389,10 @@ def Lay.viewer.k(+ty: Ty, +x0: U32, +x1: U32, +h: U32, +empty: Bool, x: V.Vx, +i
         Lay.fits(U32.is_le((x0 + 24 + bw + sw : U32), (x1 - 8 : U32)), Lay.tab(ty, "Schematic", 1, k, (x0 + 24 + bw : U32))),
         Lay.fits(U32.is_le((x0 + 32 + bw + sw + tw : U32), (x1 - 8 : U32)), Lay.chip(ty, (x0 + 32 + bw + sw : U32), 12, "3D", Bool.and(U32.is_eq(k, 2), Bool.not(mech)), "vw-kind", "2")),
         Lay.fits(U32.is_le((x0 + 40 + bw + sw + tw + mw : U32), (x1 - 8 : U32)), Lay.chip(ty, (x0 + 40 + bw + sw + tw : U32), 12, "Mech", Bool.or(U32.is_eq(k, 5), mech), "mech", "")),
-        Lay.fits(U32.is_le((x0 + 48 + bw + sw + tw + mw + fw : U32), (x1 - 8 : U32)), Lay.chip(ty, (x0 + 48 + bw + sw + tw + mw : U32), 12, "Files", U32.is_ge(k, 6), "fm", "")),
+        Lay.fits(U32.is_le((x0 + 48 + bw + sw + tw + mw + fw : U32), (x1 - 8 : U32)), Lay.chip(ty, (x0 + 48 + bw + sw + tw + mw : U32), 12, "Files", Bool.and(U32.is_ge(k, 6), U32.is_lt(k, 9)), "fm", "")),
         Lay.fits(U32.is_le((x0 + 56 + bw + sw + tw + mw + fw + rw : U32), (x1 - 8 : U32)), Lay.tab(ty, "Browser", 3, k, (x0 + 56 + bw + sw + tw + mw + fw : U32))),
         Lay.fits(U32.is_le((x0 + 64 + bw + sw + tw + mw + fw + rw + dw : U32), (x1 - 8 : U32)), Lay.tab(ty, "Diff", 4, k, (x0 + 64 + bw + sw + tw + mw + fw + rw : U32))),
+        Lay.fits(U32.is_le((x0 + 72 + bw + sw + tw + mw + fw + rw + dw + vw : U32), (x1 - 8 : U32)), Lay.chip(ty, (x0 + 72 + bw + sw + tw + mw + fw + rw + dw : U32), 12, "Review", U32.is_eq(k, 9), "rv-page", "bom")),
         Lay.diff.if(U32.is_eq(k, 4), ty, diff, x0, x1, h, scroll),
         Lay.kicad(ko, ty, x1),
         Lay.fits(U32.is_ge(room, 60), Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, help, room), D.Clip.all(),
@@ -3869,7 +3871,7 @@ def Hb.walk(+ty: Ty, +u: U.Ui, b: U.HBar, +x0: U32, +x1: U32, +y: U32) -> Out:
       +xs = {Bool.pick(U32, wide, x1, (x1 - 16 - Hb.chips.w(ty, Nat.is_gt(at, 0n)) : U32)) : U32}
       Out.all([Hb.ground(x0, x1, y, 96), Hb.controls(ty, title, pl, df, at, wide, x0, x1, (y + 8 : U32)),
         Hb.scrub(ty, U.Hs.track(u), n, at, x0, x1, (y + 46 : U32)),
-        Hb.said(Nat.is_eq(at, 0n), ty, Bool.pick(String, Nat.is_eq(at, 0n), "The live file. Each tick is a change the agent made; play to watch them.",
+        Hb.said(Nat.is_eq(at, 0n), ty, Bool.pick(String, Nat.is_eq(at, 0n), U.Hs.live.said(n),
           Bool.pick(String, String.is_empty(said), label, said)), x0, xs, (y + 62 : U32)),
         Hb.chips.if(Bool.not(wide), ty, df, at, xs, (y + 62 : U32))])
 
@@ -3885,18 +3887,44 @@ def Hb.legend(+ty: Ty, +x0: U32, +y: U32) -> Out:
 def Hb.side.label(+name: String, +v: String) -> String:
   name ++ ": " ++ Bool.pick(String, String.is_empty(v), "pick…", v)
 
-def Hb.compare(+ty: Ty, b: U.HBar, +ss: List<&2, V.Seen>, +x0: U32, +x1: U32, +y: U32) -> Out:
+# Design review: compare anything (client.bend's Rv.*). Old/Diff/New on the
+# legend row's right; the legend itself only for Diff.
+def Hb.legend.if(on: Bool, +ty: Ty, +x0: U32, +y: U32) -> Out:
+  match on:
+    case True{}:
+      Hb.legend(ty, x0, y)
+    case False{}:
+      Out.none()
+
+def Rvw.flip(+ty: Ty, +showing: String, +x1: U32, +y: U32) -> Out:
+  +wo = {Lay.button.w(ty, "Old") : U32}
+  +wd = {Lay.button.w(ty, "Diff") : U32}
+  +wn = {Lay.button.w(ty, "New") : U32}
+  +x = {(x1 - 16 - wo - wd - wn - 8 : U32) : U32}
+  Out.all([Lay.chip(ty, x, y, "Old", String.eq(showing, "old"), "rv-as", "old"),
+    Lay.chip(ty, (x + wo + 4 : U32), y, "Diff", String.eq(showing, "diff"), "rv-as", "diff"),
+    Lay.chip(ty, (x + wo + wd + 8 : U32), y, "New", String.eq(showing, "new"), "rv-as", "new")])
+
+# the ref field in the versions menu: Enter asks the hub (rv-ref "<side>\t<text>")
+def Rvw.ref(+ty: Ty, +n: S.Nui, +side: String, +x: U32, +y: U32, +w: U32) -> Out:
+  +id = {S.Fld.id("rvref", "rv-ref", side ++ "\t") : String}
+  Lay.field(ty, D.Clip.all(), x, y, w, U.Ui.scratch(S.Nui.ui(n), "@f.rvref"), String.eq(S.Nui.focus_of(n), id), S.Blink.on(n),
+    S.Nui.caret_of(n), S.Nui.mark(n), "Commit, branch or tag", id)
+
+def Hb.compare(+ty: Ty, +n: S.Nui, b: U.HBar, +ss: List<&2, V.Seen>, +x0: U32, +x1: U32, +y: U32) -> Out:
   match b:
     case U.HBar{_, _, _, _, _, _, _, _, _, _, +a, +bb, +menu}:
       +cw = Lay.button.w(ty, "Close")
-      +room = {Lay.room((x1 - x0 : U32), (cw + 64 : U32)) : U32}
+      +room = {Lay.room((x1 - x0 : U32), (cw + Lay.button.w(ty, "BOM") + 72 : U32)) : U32}
       +la = Ty.fit(ty, 2n, Hb.side.label("Old", a), U32.shr(room))
       +lb = Ty.fit(ty, 2n, Hb.side.label("New", bb), U32.shr(room))
       Out.all([Hb.ground(x0, x1, y, 72),
         Lay.chip(ty, (x0 + 16 : U32), (y + 8 : U32), la, String.eq(menu, "a"), "cmp-side", "a"),
         Lay.chip(ty, (x0 + 24 + Lay.button.w(ty, la) : U32), (y + 8 : U32), lb, String.eq(menu, "b"), "cmp-side", "b"),
         Lay.button(ty, D.Clip.all(), (x1 - 16 - cw : U32), (y + 8 : U32), "Close", T.Th.text(), "cmp-close", ""),
-        Hb.legend(ty, x0, (y + 40 : U32))])
+        Lay.button(ty, D.Clip.all(), (x1 - 24 - cw - Lay.button.w(ty, "BOM") : U32), (y + 8 : U32), "BOM", T.Th.text(), "rv-bom", ""),
+        Hb.legend.if(String.eq(U.Rv.showing(S.Nui.ui(n)), "diff"), ty, x0, (y + 40 : U32)),
+        Rvw.flip(ty, U.Rv.showing(S.Nui.ui(n)), x1, (y + 40 : U32))])
 
 # The menu of versions, above the bar: a row each (its name, then what it
 # is), as many as fit; a press outside shuts it
@@ -3913,30 +3941,31 @@ def Hb.rows(rs: List<&2, U.HRow>, +k: Nat, +ty: Ty, +x: U32, +w: U32, +y: U32) -
           [Lay.hit(x, y, w, 30, "cmp-pick", v)]},
         Hb.rows(t, j, ty, x, w, (y + 30 : U32))])
 
-def Hb.menu(+ty: Ty, +u: U.Ui, +side: String, +x0: U32, +x1: U32, +top: U32, +bot: U32) -> Out:
+def Hb.menu(+ty: Ty, +n: S.Nui, +u: U.Ui, +side: String, +x0: U32, +x1: U32, +top: U32, +bot: U32) -> Out:
   +rs = U.Hs.menu(u, side)
   +w = {U32.min((x1 - x0 - 32 : U32), 460) : U32}
-  +fit = {(Lay.room(bot, (top + 48 : U32)) / 30 : U32) : U32}
+  +fit = {(Lay.room(bot, (top + 82 : U32)) / 30 : U32) : U32}
   +k = U32.min(fit, U32.from_nat(List.length(&2, U.HRow, rs)))
-  +mh = {(k * 30 + 44 : U32) : U32}
+  +mh = {(k * 30 + 78 : U32) : U32}
   +y = {(bot - 8 - mh : U32) : U32}
   Out.all([Out{Nil{}, [Lay.hit(x0, 0, (x1 - x0 : U32), bot, "cmp-shut", "")]},
     Out{List.append(&2, R.Op, Lay.box(D.Clip.all(), (x0 + 16 : U32), y, w, mh, 6, T.Th.raise(), T.Th.line()),
         Ty.text(ty, 2n, Bool.pick(String, String.eq(side, "b"), "Compare with (new)", "Compare from (old)"), D.Clip.all(), (x0 + 28 : U32), (y + 6 : U32), 30, T.Th.faint())),
       [Lay.hit((x0 + 16 : U32), y, w, mh, "vw-panel", "")]},
-    Hb.rows(rs, U32.to_nat(k), ty, (x0 + 16 : U32), w, (y + 38 : U32))])
+    Rvw.ref(ty, n, side, (x0 + 28 : U32), (y + 34 : U32), (w - 24 : U32)),
+    Hb.rows(rs, U32.to_nat(k), ty, (x0 + 16 : U32), w, (y + 72 : U32))])
 
-def Hb.menu.if(open: Bool, +ty: Ty, +u: U.Ui, +side: String, +x0: U32, +x1: U32, +top: U32, +bot: U32) -> Out:
+def Hb.menu.if(open: Bool, +ty: Ty, +n: S.Nui, +u: U.Ui, +side: String, +x0: U32, +x1: U32, +top: U32, +bot: U32) -> Out:
   match open:
     case True{}:
-      Hb.menu(ty, u, side, x0, x1, top, bot)
+      Hb.menu(ty, n, u, side, x0, x1, top, bot)
     case False{}:
       Out.none()
 
-def Hb.body(cmp: Bool, +ty: Ty, +u: U.Ui, +b: U.HBar, +ss: List<&2, V.Seen>, +x0: U32, +x1: U32, +h: U32) -> Out:
+def Hb.body(cmp: Bool, +ty: Ty, +n: S.Nui, +u: U.Ui, +b: U.HBar, +ss: List<&2, V.Seen>, +x0: U32, +x1: U32, +h: U32) -> Out:
   match cmp:
     case True{}:
-      Hb.compare(ty, b, ss, x0, x1, (h - 72 : U32))
+      Hb.compare(ty, n, b, ss, x0, x1, (h - 72 : U32))
     case False{}:
       Hb.walk(ty, u, b, x0, x1, (h - 96 : U32))
 
@@ -3945,11 +3974,11 @@ def Hb.menu.side(b: U.HBar) -> String:
     case U.HBar{_, _, _, _, _, _, _, _, _, _, _, _, m}:
       m
 
-def Hb.draw.k(on: Bool, +ty: Ty, +u: U.Ui, +b: U.HBar, +ss: List<&2, V.Seen>, +x0: U32, +x1: U32, +h: U32) -> Out:
+def Hb.draw.k(on: Bool, +ty: Ty, +n: S.Nui, +u: U.Ui, +b: U.HBar, +ss: List<&2, V.Seen>, +x0: U32, +x1: U32, +h: U32) -> Out:
   match on:
     case True{}:
-      Out.cat(Hb.body(Hb.cmp(b), ty, u, b, ss, x0, x1, h),
-        Hb.menu.if(Bool.not(String.is_empty(Hb.menu.side(b))), ty, u, Hb.menu.side(b), x0, x1, 96, (h - Hb.h(b) : U32)))
+      Out.cat(Hb.body(Hb.cmp(b), ty, n, u, b, ss, x0, x1, h),
+        Hb.menu.if(Bool.not(String.is_empty(Hb.menu.side(b))), ty, n, u, Hb.menu.side(b), x0, x1, 96, (h - Hb.h(b) : U32)))
     case False{}:
       Out.none()
 
@@ -3961,8 +3990,8 @@ def Hb.for(on: Bool, +u: U.Ui) -> U.HBar:
       U.HBar{False{}, 0n, 0n, "", "", "", "", False{}, False{}, False{}, "", "", ""}
 
 # the bar at the panel's foot (h), when there is one
-def Hb.draw(+ty: Ty, +u: U.Ui, +b: U.HBar, +ss: List<&2, V.Seen>, +x0: U32, +x1: U32, +h: U32) -> Out:
-  Hb.draw.k(Hb.on(b), ty, u, b, ss, x0, x1, h)
+def Hb.draw(+ty: Ty, +n: S.Nui, +u: U.Ui, +b: U.HBar, +ss: List<&2, V.Seen>, +x0: U32, +x1: U32, +h: U32) -> Out:
+  Hb.draw.k(Hb.on(b), ty, n, u, b, ss, x0, x1, h)
 
 # The Files tab (client.bend's Fm): the folder's trail and Up, then its rows
 # (a page of them when long, with buttons for the rest); an image fitted in
@@ -4075,6 +4104,54 @@ def Fv.k(i: U32, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
     case _:
       Out.none()
 
+# The Review tab (client.bend's Rp): the page chips and Refresh, the title,
+# then the report's Markdown as the timeline lays it out, from the first
+# line shown (the wheel over it moves that by three, Pane with key rp:<thread>)
+def Rpw.chips(ts: List<&2, U.RpTab>, +ty: Ty, +x: U32, +x1: U32) -> Out:
+  match ts:
+    case Nil{}:
+      Out.none()
+    case U.RpTab{+p, +l, +on} <> t:
+      Out.cat(Lay.fits(U32.is_le((x + Lay.button.w(ty, l) : U32), x1), Lay.chip(ty, x, 64, l, on, "rv-page", p)), Rpw.chips(t, ty, (x + Lay.button.w(ty, l) + 4 : U32), x1))
+
+def Rpw.draw(ls: List<&2, TLine>, more: Bool, +ty: Ty, +c: D.Clip, +x0: U32, +x1: U32, +y: U32, +y1: U32) -> Out:
+  match ls more:
+    case TLine{+t, +co, +k, +cp, +bw} <> +rest True{}:
+      Out.cat(TL.draw(ty, TLine{t, co, k, cp, bw}, c, x0, x1, y),
+        Rpw.draw(rest, TL.more(rest, (y + TL.h(k) : U32), y1), ty, c, x0, x1, (y + TL.h(k) : U32), y1))
+    case _ _:
+      Out.none()
+
+def Rpw.body(has: Bool, +ty: Ty, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32, +h: U32) -> Out:
+  match has:
+    case True{}:
+      +ls = {TL.blocks(ty, N.Md.render(U.RpView.md(v)), U32.max((x1 - x0 - 32 : U32), 40)) : List<&2, TLine>}
+      +n = {List.length(&2, TLine, ls) : Nat}
+      +last = {Nat.sub(n, U32.to_nat(U32.min(U32.from_nat(n), (Lay.room(h, 142) / 24 : U32)))) : Nat}
+      +from = {Bool.pick(Nat, Nat.is_lt(off, last), off, last) : Nat}
+      Out.all([Rpw.draw(List.drop(&2, TLine, ls, from), True{}, ty, D.Clip{x0, 142, x1, h}, (x0 + 16 : U32), (x1 - 16 : U32), 142, h),
+        Out{Nil{}, [Lay.hit(x0, 142, (x1 - x0 : U32), Lay.room(h, 142), "pane", "rp:" ++ th ++ "|" ++ Nat.show(last))]}])
+    case False{}:
+      Out.ops(Ty.text(ty, 2n, U.RpView.note(v), D.Clip.all(), (x0 + 16 : U32), 150, 30, T.Th.faint()))
+
+def Rpw.page(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+  +v = {U.Rp.view(u) : U.RpView}
+  +rw = Lay.button.w(ty, "Refresh")
+  +th = {U.Ui.sel(u) : String}
+  Out.all([Out.ops([D.Draw.rect(D.Clip.all(), x0, 52, (x1 - x0 : U32), (h - 52 : U32), T.Th.panel(), 255)]),
+    Rpw.chips(U.RpView.tabs(v), ty, (x0 + 16 : U32), (x1 - 32 - rw : U32)),
+    Lay.button(ty, D.Clip.all(), (x1 - 16 - rw : U32), 64, "Refresh", T.Th.soft(), "rv-run", ""),
+    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, U.RpView.title(v) ++ Bool.pick(String, U.RpView.busy(v), " · reading…", ""), (x1 - x0 - 32 : U32)), D.Clip.all(), (x0 + 16 : U32), 102, 28, T.Th.dim())),
+    Out.ops([D.Draw.rect(D.Clip.all(), x0, 137, (x1 - x0 : U32), 1, T.Th.line(), 255)]),
+    Rpw.body(Bool.not(String.is_empty(U.RpView.md(v))), ty, v, th, Pane.off(U.Ui.infos(u), "rp:" ++ th), x0, x1, h)])
+
+def Rpw.if(open: Bool, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+  match open:
+    case True{}:
+      Rpw.page(ty, u, x0, x1, h)
+    case False{}:
+      Out.none()
+
 def Lay.viewer.b(+ty: Ty, +n: S.Nui, +b: U.HBar, +x0: U32, +x1: U32, +h: U32) -> Out:
   Out.all([
     Lay.mech.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 5), ty, S.Nui.ui(n), x0, x1, h),
@@ -4083,8 +4160,9 @@ def Lay.viewer.b(+ty: Ty, +n: S.Nui, +b: U.HBar, +x0: U32, +x1: U32, +h: U32) ->
     Lay.page.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 3), ty, S.Nui.ui(n), x0, x1, h),
     Side.k(U32.is_lt(S.Vw.kind(S.Nui.vw(n)), 2), ty, n, S.Vw.kind(S.Nui.vw(n)), Lay.scene(n), x0, x1, (h - Hb.h(b) : U32)),
     Side.ground.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 2), ty, n, x1),
-    Hb.draw(ty, S.Nui.ui(n), b, Lay.scene(n), x0, x1, h),
-    Fv.k(S.Vw.kind(S.Nui.vw(n)), ty, S.Nui.ui(n), x0, x1, h)])
+    Hb.draw(ty, n, S.Nui.ui(n), b, Lay.scene(n), x0, x1, h),
+    Fv.k(S.Vw.kind(S.Nui.vw(n)), ty, S.Nui.ui(n), x0, x1, h),
+    Rpw.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 9), ty, S.Nui.ui(n), x0, x1, h)])
 
 # the viewer, with the design history's bar at its foot when it has one
 # (only a board or a schematic: the native kind agrees with the client's)

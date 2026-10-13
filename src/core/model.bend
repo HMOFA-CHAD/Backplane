@@ -820,8 +820,27 @@ def Idx.step(step: Bool, ix: Map<&2, List<&2, Entry>>, +e: Entry) -> Map<&2, Lis
     case False{}:
       ix
 
+# a design review comment op (an Act of tone "review", core/review.bend) is
+# filed under "@review:<thread>" as well
+def Idx.review.key(+th: String) -> String:
+  "@review:" ++ th
+
+def Idx.is_review(e: Entry) -> Bool:
+  match e:
+    case Msg{_, _, _, _, _}:
+      False{}
+    case Act{_, _, +tone, _, _, _}:
+      String.eq(tone, "review")
+
+def Idx.review(rv: Bool, ix: Map<&2, List<&2, Entry>>, +e: Entry) -> Map<&2, List<&2, Entry>>:
+  match rv:
+    case True{}:
+      Idx.put(ix, Idx.review.key(Idx.thread(e)), e)
+    case False{}:
+      ix
+
 def Idx.post(ix: Map<&2, List<&2, Entry>>, +e: Entry) -> Map<&2, List<&2, Entry>>:
-  Idx.step(Idx.is_step(e), Idx.post.k(ix, Idx.thread(e), Link.from(Idx.id(e)), e), e)
+  Idx.review(Idx.is_review(e), Idx.step(Idx.is_step(e), Idx.post.k(ix, Idx.thread(e), Link.from(Idx.id(e)), e), e), e)
 
 # Projection
 # ----------
@@ -924,6 +943,12 @@ def State.steps(s: State, +th: String) -> List<&2, Entry>:
   match s:
     case State{_, _, _, _, _, _, _, _, _, _, bw}:
       Idx.get(Ext.by(Ext.of(bw)), Idx.steps.key(th))
+
+# a thread's design review ops (Acts of tone "review"), newest first
+def State.reviews(s: State, +th: String) -> List<&2, Entry>:
+  match s:
+    case State{_, _, _, _, _, _, _, _, _, _, bw}:
+      Idx.get(Ext.by(Ext.of(bw)), Idx.review.key(th))
 
 # every message between threads, newest first
 def State.links(s: State) -> List<&2, Entry>:

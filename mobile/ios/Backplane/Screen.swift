@@ -272,6 +272,22 @@ struct Viewer: Decodable {
     // the Files tab (open "files"), and an image or a PDF it opened
     let files: FilesPage?
     let file: FileView?
+    // the Review tab (open "review")
+    let review: ReviewPage?
+}
+
+// the Review tab: the page chips ("rv-page" page), the title, the report's
+// Markdown nodes (empty: say note), whether it is being made
+struct ReviewTab: Decodable, Hashable {
+    let page, label: String
+    let on: Bool
+}
+
+struct ReviewPage: Decodable {
+    let tabs: [ReviewTab]
+    let title, note: String
+    let busy: Bool
+    let blocks: [Block]?
 }
 
 // the Files tab: where the folder is, its rows (a tap sends action with
@@ -303,10 +319,16 @@ struct FileView: Decodable {
 // per step then the live file (id ""), that menu, and the legend's
 // colours (0xRRGGBB: removed, changed, added)
 struct HistBar: Decodable, Equatable {
+    enum CodingKeys: String, CodingKey {
+        case n, at, title, entry, said, playing, diff, cmp, a, b, side, ticks, menu, keys
+        case showing = "as"
+    }
     let n, at: Int
     let title, entry, said: String
     let playing, diff, cmp: Bool
     let a, b, side: String
+    // which of Old, Diff and New shows in a comparison (Rv.showing)
+    let showing: String?
     let ticks: [HistTick]
     let menu: [HistRow]?
     let keys: [UInt32]

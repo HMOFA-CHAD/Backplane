@@ -58,6 +58,10 @@ import ./src/core/google.bend as GO
 import ./src/core/cat.bend as CAT
 import ./src/core/voice.bend as VO
 import ./src/core/once.bend as ON
+import ./src/core/bom.bend as BOM
+import ./src/core/cad.bend as CAD
+import ./src/core/checks.bend as CHK
+import ./src/core/release.bend as REL
 import ./src/core/plane.bend as PLN
 
 # Lemmas
@@ -7970,6 +7974,193 @@ def Laws.lyr_kind_base():
   {==}
 
 def Laws.lyr_masks_only():
+  {==}
+
+# Design review: comparing
+def Laws.rv_diff_on_all(a, b):
+  {==}
+
+def Laws.rv_mark_on_all(olds, news):
+  {==}
+
+def Laws.rv_sheet_plain():
+  {==}
+
+def Laws.rv_sheet_compared():
+  {==}
+
+def Laws.rv_bits_plain(kind):
+  {==}
+
+# Design review (bom)
+
+def Laws.bom_nat_c2_c10():
+  {==}
+
+def Laws.bom_nat_r10_r2():
+  {==}
+
+def Laws.bom_diff_self():
+  {==}
+
+def Laws.bom_group_qty():
+  {==}
+
+def Laws.bom_group_csv():
+  {==}
+
+def Laws.bom_csv_quote():
+  {==}
+
+def Laws.bom_csv_quote_inner():
+  {==}
+
+def Laws.bom_csv_plain():
+  {==}
+
+def Laws.bom_diff_line():
+  {==}
+
+def Laws.bom_diff_md_none():
+  {==}
+
+def Laws.bom_md_pipe():
+  {==}
+
+# Design review (checks, cad, release)
+
+def Laws.cad_of_kicad_board():
+  {==}
+
+def Laws.cad_of_kicad_schematic():
+  {==}
+
+def Laws.cad_of_case_ignored():
+  {==}
+
+def Laws.cad_of_altium_not_drawn():
+  {==}
+
+def Laws.cad_of_unknown():
+  {==}
+
+def Laws.cad_fill_puts_vars_in():
+  {==}
+
+def Laws.cad_fill_keeps_other_braces():
+  {==}
+
+def Laws.cad_shell_quotes_a_quote():
+  {==}
+
+def Laws.cad_shell_words():
+  {==}
+
+def Laws.checklist_toggle_twice():
+  {==}
+
+def Laws.checklist_toggle_flips_one():
+  {==}
+
+def Laws.checklist_toggle_past_end():
+  {==}
+
+def Laws.checks_gate_no_findings():
+  {==}
+
+def Laws.checks_gate_no_findings_strict():
+  {==}
+
+def Laws.checks_md_empty():
+  {==}
+
+def Laws.checks_erc_error_counted():
+  {==}
+
+def Laws.release_next_dotted():
+  {==}
+
+def Laws.release_next_letter():
+  {==}
+
+def Laws.release_next_plain():
+  {==}
+
+def Laws.release_next_first():
+  {==}
+
+def Laws.release_tag_valid():
+  {==}
+
+def Laws.release_tag_no_space():
+  {==}
+
+def Laws.release_tag_no_dotdot():
+  {==}
+
+def Laws.release_tag_no_dash_lead():
+  {==}
+
+def Laws.release_tag_no_lock_end():
+  {==}
+
+def Laws.release_tag_not_empty():
+  {==}
+
+def Laws.release_dir_in_repo():
+  {==}
+
+def Laws.release_gh_command():
+  {==}
+
+# Design review (review.bend)
+
+def Laws.review_fold_empty():
+  {==}
+
+def Laws.review_prompt_none():
+  {==}
+
+def Laws.review_unknown_ignored():
+  {==}
+
+def Laws.review_resolve():
+  {==}
+
+def Laws.review_reopen():
+  {==}
+
+def Laws.review_prompt_resolved():
+  {==}
+
+def Laws.review_drop():
+  {==}
+
+def Laws.review_reply_no_pin():
+  {==}
+
+def Laws.review_reply_counted():
+  {==}
+
+def Laws.review_orphan_ignored():
+  {==}
+
+def Laws.review_roundtrip_resolve():
+  {==}
+
+def Laws.review_roundtrip_edit():
+  {==}
+
+def Laws.review_roundtrip_drop():
+  {==}
+
+def Laws.review_other_tone():
+  {==}
+
+def Laws.review_moved():
+  {==}
+
+def Laws.review_not_moved():
   {==}
 
 # Slash commands in the composer (slash.bend)

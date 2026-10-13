@@ -19,7 +19,7 @@ private func fileSymbol(_ name: String) -> String {
 }
 
 // the viewer's choices (Board, Schematic, 3D, Mech, Files) and its close button
-private struct ViewerChoices: View {
+struct ViewerChoices: View {
     let model: AppModel
     let viewer: Viewer
 

@@ -175,7 +175,8 @@ def View.sync(a: U.Act) -> U.Act:
   View.fv(View.sync.m(a))
 
 # a hub's answer to far.view: the viewer asks for the source again, now
-# that the folder is known
+# that the folder is known (and to history.resolve: the version it picked
+# is the source now)
 def View.far.k(far: Bool, a: U.Act) -> U.Act:
   match far a:
     case True{} +x:
@@ -183,8 +184,8 @@ def View.far.k(far: Bool, a: U.Act) -> U.Act:
     case False{} +x:
       x
 
-def View.far(o: J.Json, a: U.Act) -> U.Act:
-  View.far.k(U.Fm.has(J.Json.get_obj(o, "result"), "farView"), a)
+def View.far(+o: J.Json, a: U.Act) -> U.Act:
+  View.far.k(Bool.or(U.Fm.has(J.Json.get_obj(o, "result"), "farView"), U.Rv.reply.has(o)), a)
 
 # open a viewer ("board", "schematic", "3d") or close it (""); what was
 # picked is let go
@@ -224,8 +225,29 @@ def View.hist.show(show: Bool, a: U.Act) -> U.Act:
     case False{} _:
       a
 
-def View.hist.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
+def View.hist.act.k(+u: U.Ui, +action: String, +value: String) -> U.Act:
   View.hist.jump(String.eq(action, "hist-jump"), View.hist.show(String.eq(action, "hist-show"), U.Ui.act(View.as_client(u), action, value)))
+
+# The Review tab (client.bend's Rp): "rv-page" and the compare bar's
+# "rv-bom" show a page, and the phone's view follows to "review" (no
+# source to watch: View.key is empty for it)
+def View.rv.to(a: U.Act) -> U.Act:
+  match a:
+    case U.Act{+u, cs}:
+      View.join(View.open.k(u, "review"), cs)
+
+def View.rv.shows(+action: String) -> Bool:
+  Bool.or(String.eq(action, "rv-page"), String.eq(action, "rv-bom"))
+
+def View.hist.act.r(shows: Bool, +u: U.Ui, +action: String, +value: String) -> U.Act:
+  match shows:
+    case True{}:
+      View.rv.to(U.Ui.act(u, action, value))
+    case False{}:
+      View.hist.act.k(u, action, value)
+
+def View.hist.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
+  View.hist.act.r(View.rv.shows(action), u, action, value)
 
 # (the Mechanical page, "mech", is the client's: its view is set there,
 # and the parts asked for; a view picked by hand shows the project's own
@@ -237,12 +259,33 @@ def View.open.mech(mech: Bool, a: U.Act) -> U.Act:
     case False{} _:
       a
 
+# (back from the Review tab to the board or schematic, the client's view
+# comes back too, with a comparison still open: client.bend's Rv.back)
+def View.open.back.k(a: U.Act, +v: String) -> U.Act:
+  match a:
+    case U.Act{+u, cs}:
+      View.join(View.open.k(u, v), cs)
+
+def View.open.back(back: Bool, +u: U.Ui, +v: String) -> U.Act:
+  match back:
+    case True{}:
+      View.open.back.k(U.Ui.act(u, "view-kind", v), v)
+    case False{}:
+      View.open.k(u, v)
+
 def View.open.go(+u: U.Ui, +v: String) -> U.Act:
-  View.open.mech(String.eq(v, "mech"), View.open.k(u, v))
+  View.open.mech(String.eq(v, "mech"), View.open.back(Bool.and(String.eq(U.Ui.view_get(u, "view.kind"), "review"), Bool.or(String.eq(v, "board"), String.eq(v, "schematic"))), u, v))
 
 # (Files asks the hub for the folder last shown)
+def View.open.rv(rv: Bool, +u: U.Ui, +v: String) -> U.Act:
+  match rv:
+    case True{}:
+      View.hist.act(u, "rv-page", "bom")
+    case False{}:
+      View.open.go(u, v)
+
 def View.open(+u: U.Ui, +v: String) -> U.Act:
-  Bool.pick(U.Act, String.eq(v, "files"), View.fm.act(u, "fm", ""), View.open.go(u, v))
+  Bool.pick(U.Act, String.eq(v, "files"), View.fm.act(u, "fm", ""), View.open.rv(String.eq(v, "review"), u, v))
 
 # a Mech action the client takes (the part, its view), then the phone's
 # view on Mech ("mech") or Renders ("renders")
@@ -255,10 +298,18 @@ def View.mech.act(+u: U.Ui, +action: String, +value: String, v: String) -> U.Act
   View.mech.to(U.Ui.act(u, action, value), v)
 
 # a new connection watches nothing: ask again once online
-def View.online.k(on: Bool, u: U.Ui) -> U.Act:
+# (a Review tab kept across a launch asks for its page again)
+def View.online.rv(rv: Bool, a: U.Act) -> U.Act:
+  match rv a:
+    case True{} U.Act{+u, cs}:
+      View.join(U.Rp.ask(u, "bom"), cs)
+    case False{} _:
+      a
+
+def View.online.k(on: Bool, +u: U.Ui) -> U.Act:
   match on:
     case True{}:
-      View.sync(U.Act{U.Ui.scratch_set(u, "@view.at", ""), Nil{}})
+      View.online.rv(String.eq(View.kind(u), "review"), View.sync(U.Act{U.Ui.scratch_set(u, "@view.at", ""), Nil{}}))
     case False{}:
       U.Act{u, Nil{}}
 
@@ -346,7 +397,7 @@ def View.lkind(+u: U.Ui) -> U32:
   Bool.pick(U32, String.eq(View.kind(u), "schematic"), 1, 0)
 
 def View.focus.put(+u: U.Ui, +f: LY.Focus) -> U.Act:
-  U.Act{Pick.clear(U.Ui.scratch_set(u, View.focus.key(u), LY.Lyr.show(f))), Nil{}}
+  View.hist.act(Pick.clear(U.Ui.scratch_set(u, View.focus.key(u), LY.Lyr.show(f))), "rv-bits", U32.show(U.Rv.bits(View.lkind(u), f)))
 
 def View.layer.pick(+u: U.Ui, +v: String) -> U.Act:
   View.focus.put(u, LY.Lyr.pick(View.focus(u), LY.Lyr.num(v, LY.Lyr.none())))
@@ -434,10 +485,25 @@ def View.sheet.pick.k(hist: Bool, +u: U.Ui, +v: String) -> U.Act:
     case False{}:
       View.sheet.pick.u(u, v)
 
+# a sheet picked while a comparison shows keeps comparing: the same
+# versions of that sheet (design review, core's Hist.sheet)
+def View.sheet.cmp(+u: U.Ui, +i: Nat, +file: String) -> U.Act:
+  View.sheet.go(U.Ui.view_put(u, "schematic", HS.Hist.sheet(U.Ui.view_get(u, "view.path"), file)), i, file)
+
+def View.sheet.cmp.u(+u: U.Ui, +v: String) -> U.Act:
+  View.sheet.cmp(u, Maybe.default(&2, Nat, Nat.read(v), 0n), HI.Hier.file(View.rows(u), Maybe.default(&2, Nat, Nat.read(v), 0n)))
+
+def View.sheet.pick.c(cmp: Bool, +u: U.Ui, +v: String) -> U.Act:
+  match cmp:
+    case True{}:
+      View.sheet.cmp.u(u, v)
+    case False{}:
+      View.sheet.pick.k(View.hist(u), u, v)
+
 # (while a version shows, the live files come back first: the sheets
 # listed are the live design's)
 def View.sheet.pick(+u: U.Ui, +v: String) -> U.Act:
-  View.sheet.pick.k(View.hist(u), u, v)
+  View.sheet.pick.c(U.Hs.cmp(View.as_client(u)), u, v)
 
 def View.sheet.row(r: HI.Row, +i: Nat, +cur: String) -> J.Json:
   match r:
@@ -653,8 +719,8 @@ def Hist.json.k(b: U.HBar, +u: U.Ui) -> J.Json:
   match b:
     case U.HBar{_, +n, +at, +title, +entry, +label, +said, +pl, +df, +cmp, +a, +bb, +menu}:
       J.Json.obj([J.KV{"n", J.Num{Nat.show(n)}}, J.KV{"at", J.Num{Nat.show(at)}}, J.KV{"title", J.Str{title}}, J.KV{"entry", J.Str{entry}},
-        J.KV{"said", J.Str{Bool.pick(String, Nat.is_eq(at, 0n), "The live file. Each tick is a change the agent made; play to watch them.", Bool.pick(String, String.is_empty(said), label, said))}},
-        J.KV{"playing", J.Json.bool(pl)}, J.KV{"diff", J.Json.bool(df)}, J.KV{"cmp", J.Json.bool(cmp)}, J.KV{"a", J.Str{a}}, J.KV{"b", J.Str{bb}}, J.KV{"side", J.Str{menu}},
+        J.KV{"said", J.Str{Bool.pick(String, Nat.is_eq(at, 0n), U.Hs.live.said(n), Bool.pick(String, String.is_empty(said), label, said))}},
+        J.KV{"playing", J.Json.bool(pl)}, J.KV{"diff", J.Json.bool(df)}, J.KV{"cmp", J.Json.bool(cmp)}, J.KV{"a", J.Str{a}}, J.KV{"b", J.Str{bb}}, J.KV{"side", J.Str{menu}}, J.KV{"as", J.Str{U.Rv.showing(u)}},
         J.KV{"ticks", J.Json.arr(Hist.ticks(U.Hs.track(u), 0n, at))}, J.KV{"menu", Hist.menu(menu, u)},
         J.KV{"keys", J.Json.arr([J.Num{U32.show(LO.Look.mark.color(False{}, 26))}, J.Num{U32.show(LO.Look.mark.color(False{}, 27))}, J.Num{U32.show(LO.Look.mark.color(False{}, 28))}])}])
 
@@ -700,8 +766,29 @@ def File.json(on: Bool, +u: U.Ui) -> J.Json:
     case False{}:
       J.Null{}
 
-def View.json(+u: U.Ui) -> J.Json:
-  J.Json.obj([J.KV{"open", J.Str{Bool.pick(String, Bool.or(Bool.or(Bool.not(String.is_empty(View.want(u))), View.mech(u)), View.fm(u)), View.kind(u), "")}}, J.KV{"key", J.Str{View.want(u)}},
+# the Review tab as the apps draw it: the page chips, the title, the
+# report's Markdown as the timeline's nodes (or what to say without one)
+def Rv.tabs(ts: List<&2, U.RpTab>) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case U.RpTab{+p, +l, +on} <> t:
+      J.Json.obj([J.KV{"page", J.Str{p}}, J.KV{"label", J.Str{l}}, J.KV{"on", J.Flag{on}}]) <> Rv.tabs(t)
+
+def Rv.json.k(+v: U.RpView, +rb: J.Json) -> J.Json:
+  J.Json.obj([J.KV{"tabs", J.Json.arr(Rv.tabs(U.RpView.tabs(v)))}, J.KV{"title", J.Str{U.RpView.title(v)}}, J.KV{"busy", J.Flag{U.RpView.busy(v)}},
+    J.KV{"note", J.Str{U.RpView.note(v)}}, J.KV{"blocks", rb}])
+
+def Rv.json(on: Bool, +u: U.Ui, +rb: J.Json) -> J.Json:
+  match on:
+    case True{}:
+      Rv.json.k(U.Rp.view(u), rb)
+    case False{}:
+      J.Null{}
+
+def View.json(+u: U.Ui, +rb: J.Json) -> J.Json:
+  J.Json.obj([J.KV{"open", J.Str{Bool.pick(String, Bool.or(Bool.or(Bool.or(Bool.not(String.is_empty(View.want(u))), View.mech(u)), View.fm(u)), String.eq(View.kind(u), "review")), View.kind(u), "")}}, J.KV{"key", J.Str{View.want(u)}},
+    J.KV{"review", Rv.json(String.eq(View.kind(u), "review"), u, rb)},
     J.KV{"files", Files.json(String.eq(View.kind(u), "files"), u)}, J.KV{"file", File.json(Bool.or(String.eq(View.kind(u), "image"), String.eq(View.kind(u), "pdf")), u)},
     J.KV{"layers", J.Str{Bool.pick(String, View.mech(u), "", View.layers.at(View.kind(u), U.Ui.root(u), View.src(u)))}},
     J.KV{"hist", Hist.json(U.Hs.bar.for(View.as_client(u), Nat.is_lt(View.hist.num(View.kind(u)), 2n)), View.as_client(u))},
@@ -712,7 +799,7 @@ def View.json(+u: U.Ui) -> J.Json:
     J.KV{"parts", J.Flag{Bool.not(View.bare(u))}}, J.KV{"note", J.Str{View.note(u)}},
     J.KV{"choices", J.Json.arr(Bool.pick(List<&2, J.Json>, String.is_empty(U.Ui.root(u)), Nil{},
       [View.choice("Board", "board", View.kind(u)), View.choice("Schematic", "schematic", View.kind(u)), View.choice("3D", "3d", View.kind(u)), View.choice("Mech", "mech", Bool.pick(String, View.mech(u), "mech", "")),
-       View.choice("Files", "files", Bool.pick(String, View.fm(u), "files", ""))]))},
+       View.choice("Files", "files", Bool.pick(String, View.fm(u), "files", "")), View.choice("Review", "review", View.kind(u))]))},
     J.KV{"bg", J.Num{U32.show(View.bg(View.kind(u), View.light(u)))}}, J.KV{"light", J.Json.bool(View.light(u))}, J.KV{"look", J.Json.arr(View.look(View.light(u), View.kind(u)))}, J.KV{"fade", J.Num{Nat.show(V.Fade.ms())}}, J.KV{"margin", J.Num{"0.9"}},
     J.KV{"zmin", J.Num{"0.5"}}, J.KV{"zmax", J.Num{"0.5"}}, J.KV{"tap", J.Num{"14"}},
     J.KV{"top", J.Json.arr(View.nums(View.top()))}, J.KV{"bottom", J.Json.arr(View.nums(View.bottom()))},

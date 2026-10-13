@@ -149,6 +149,11 @@ data class Settings(val rows: List<SetRow>)
 data class Find(val mode: String, val query: String, val rows: List<FolderRow>)
 
 // the board viewer (src/mobile/view.bend): the source open ("" closed),
+// the Review tab: page chips ("rv-page" page), the title, the report's
+// Markdown nodes (empty: say note), whether it is being made
+data class ReviewTab(val page: String, val label: String, val on: Boolean)
+data class ReviewPage(val tabs: List<ReviewTab>, val title: String, val note: String, val busy: Boolean, val blocks: List<Block>)
+
 // the key its plots carry, the choices, and how to draw
 data class Choice(val label: String, val value: String, val on: Boolean)
 
@@ -178,6 +183,8 @@ data class Viewer(
     val hist: HistBar? = null,
     // the Files tab (open "files"), and an image or a PDF it opened
     val files: FilesPage? = null, val file: FileView? = null,
+    // the Review tab (open "review")
+    val review: ReviewPage? = null,
     // the layer focus (core/layers.bend): the layers drawn dimmed (a bit
     // each), the one drawn last (255 none), the list's All/Dim/Only (0-2)
     // and whether it has one (a board), and the Layers button's words
@@ -203,6 +210,8 @@ data class HistBar(
     val n: Int, val at: Int, val title: String, val entry: String, val said: String,
     val playing: Boolean, val diff: Boolean, val cmp: Boolean, val a: String, val b: String, val side: String,
     val ticks: List<HistTick>, val menu: List<HistRow>?, val keys: IntArray,
+    // which of Old, Diff and New shows in a comparison (Rv.showing)
+    val showing: String = "",
 )
 
 data class HistTick(val id: String, val on: Boolean)
@@ -515,7 +524,7 @@ private fun viewer(o: JSONObject) = Viewer(
             h.optBoolean("playing"), h.optBoolean("diff"), h.optBoolean("cmp"), h.optString("a"), h.optString("b"), h.optString("side"),
             h.optJSONArray("ticks").map { HistTick(it.optString("id"), it.optBoolean("on")) },
             h.optJSONArray("menu")?.let { a -> a.map { HistRow(it.optString("label"), it.optString("sub"), it.optString("value")) } },
-            ints(h.optJSONArray("keys")))
+            ints(h.optJSONArray("keys")), h.optString("as"))
     },
     files = o.optJSONObject("files")?.let { f ->
         FilesPage(f.optJSONArray("trail").map { FileCrumb(it.optString("label"), it.optString("action"), it.optString("value")) },
@@ -523,6 +532,10 @@ private fun viewer(o: JSONObject) = Viewer(
             f.optBoolean("ready"))
     },
     file = o.optJSONObject("file")?.let { FileView(it.optString("name"), it.optString("kind"), it.optString("url")) },
+    review = o.optJSONObject("review")?.let { r ->
+        ReviewPage(r.optJSONArray("tabs").map { ReviewTab(it.optString("page"), it.optString("label"), it.optBoolean("on")) },
+            r.optString("title"), r.optString("note"), r.optBoolean("busy"), blocks(r.optJSONArray("blocks")))
+    },
     dim = o.optInt("dim"), lift = o.optInt("lift", 255), layerMode = o.optInt("layerMode"), layerModes = o.optBoolean("layerModes"),
     layerHead = o.optString("layerHead", "Layers"),
 )

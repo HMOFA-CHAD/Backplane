@@ -753,3 +753,63 @@ def Step.row.k(m: Maybe<&2, Step>) -> String:
 # step is the design as it was before)
 def Hist.row(e: M.Entry) -> String:
   Step.row.k(Step.of(e))
+
+# Comparing by layer and by sheet (docs/design-review.md)
+# --------------------------------------------------------
+# A comparison may name the layers it is about: a fourth line, their bits
+# (layers.bend's Lyr.kept for the active layer), "diff\n<old>\n<new>\n<bits>".
+# Only items on those layers are marked; the rest of the new version is
+# drawn dimmed, as unchanged. No fourth line (or 0) marks every layer.
+
+def Hist.diff.on(+a: String, +b: String, +bits: U32) -> String:
+  Bool.pick(String, U32.is_eq(bits, 0), Hist.diff(a, b), Hist.diff(a, b) ++ "\n" ++ U32.show(bits))
+
+# a comparison's layers (0 all)
+def Hist.bits(+p: String) -> U32:
+  Maybe.default(&2, U32, U32.read(Hist.at(String.split(p, '\n'), 3n)), 0)
+
+def Mark.in(+bits: U32, +l: U32) -> Bool:
+  Bool.not(U32.is_eq(U32.and(bits, U32.shln(1, U32.to_nat(U32.min(l, 31)))), 0))
+
+def Mark.keep.k(hit: Bool, x: B.Item, rest: List<&2, B.Item>) -> List<&2, B.Item>:
+  match hit:
+    case True{}:
+      x <> rest
+    case False{}:
+      rest
+
+# the items on (want True) or off (False) the layers in bits, in order
+def Mark.only(xs: List<&2, B.Item>, +bits: U32, +want: Bool, acc: List<&2, B.Item>) -> List<&2, B.Item>:
+  match xs:
+    case Nil{}:
+      List.reverse(&2, B.Item, acc)
+    case B.Item{+k, +s, +l, p, i} <> t:
+      Mark.only(t, bits, want, Mark.keep.k(Bool.not(Bool.xor(Mark.in(bits, l), want)), B.Item{k, s, l, p, i}, acc))
+
+def Hist.mark.k(all: Bool, +bits: U32, +olds: List<&2, B.Item>, +news: List<&2, B.Item>) -> List<&2, B.Item>:
+  match all:
+    case True{}:
+      Hist.mark(olds, news)
+    case False{}:
+      List.append(&2, B.Item, Hist.mark(Mark.only(olds, bits, True{}, Nil{}), Mark.only(news, bits, True{}, Nil{})),
+        Mark.dims(Mark.only(news, bits, False{}, Nil{})))
+
+# the comparison of two versions on some layers (0 every layer)
+def Hist.mark.on(+bits: U32, +olds: List<&2, B.Item>, +news: List<&2, B.Item>) -> List<&2, B.Item>:
+  Hist.mark.k(U32.is_eq(bits, 0), bits, olds, news)
+
+# another sheet of the same versions: a file in a commit stays in its
+# commit, a comparison compares that sheet in both of its versions (an
+# old side that is "" (the file new) stays ""), the live file is the sheet
+def Hist.side.to(+p: String, +abs: String) -> String:
+  Bool.pick(String, String.is_empty(p), "", Hist.rebase(p, abs))
+
+def Hist.sheet.k(k: Nat, +p: String, +abs: String) -> String:
+  match k:
+    case 2n:
+      Hist.diff.on(Hist.side.to(Hist.old(p), abs), Hist.side.to(Hist.new(p), abs), Hist.bits(p))
+    case _:
+      Hist.rebase(p, abs)
+
+def Hist.sheet(+p: String, +file: String) -> String:
+  Hist.sheet.k(Hist.kind(p), p, Hist.abs(file))

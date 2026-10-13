@@ -279,6 +279,14 @@ def Mob.nodes.go(ns: List<&2, D.Node>, acc: List<&2, J.Json>) -> List<&2, J.Json
 def Mob.nodes(ns: List<&2, D.Node>) -> List<&2, J.Json>:
   List.reverse(&2, J.Json, Mob.nodes.go(ns, Nil{}))
 
+# the Review tab's report as nodes, only while that tab is open
+def Mob.review(on: Bool, +u: U.Ui) -> J.Json:
+  match on:
+    case True{}:
+      J.Json.arr(Mob.nodes(D.Md.render(U.RpView.md(U.Rp.view(u)))))
+    case False{}:
+      J.Null{}
+
 # a chip for an attachment line: its name, path, whether it is an image,
 # and where the hub serves it
 def Mob.chip(+p: String) -> J.Json:
@@ -891,7 +899,7 @@ def Mob.main(none: Bool, +u: U.Ui, +sel: String) -> J.Json:
     case True{}:
       J.Null{}
     case False{}:
-      Mob.thread(u, U.Ui.thread(Mob.st(u), sel), U.Ui.pending(u, sel), VW.View.json(u), U.Ui.atts(u, sel), U.Ui.uploading(u, sel),
+      Mob.thread(u, U.Ui.thread(Mob.st(u), sel), U.Ui.pending(u, sel), VW.View.json(u, Mob.review(String.eq(VW.View.kind(u), "review"), u)), U.Ui.atts(u, sel), U.Ui.uploading(u, sel),
         Mob.term(U.Ui.flag(u, "term"), u, sel), Mob.skills(U.Ui.skills(u)), U.Side.phase(Mob.st(u), U.Ui.thread(Mob.st(u), sel)), Mob.btw(u), J.Json.arr(Mob.embs(U.Emb.views(u, sel), u, sel)))
 
 def Mob.empty(n: Nat) -> String:

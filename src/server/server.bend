@@ -58,6 +58,7 @@ import ../core/desk.bend as DK
 import ../core/notice.bend as NO
 import ../core/hist.bend as HI
 import ../core/emb.bend as EM
+import ./review.bend as RVS
 import ../core/cmds.bend as CM
 import ../core/outbox.bend as OB
 import ../core/live.bend as LV
@@ -1940,8 +1941,22 @@ def AgentJob.write(+tx: AG.Tx, +d: String, +title: String) -> IO(String):
   Bool.pick(IO(String), Bool.or(String.is_empty(String.trim(d)), GT.Git.failed(d)), IO.pure(String, title),
     IO.bind(String, String, OneShot.run(tx, AG.Commit.system(), AG.Commit.input(title, d)), a => IO.pure(String, AG.Commit.message(a, title))))
 
+# design review: a pull request just opened gets its parts change
+# (server/review.bend's RvJob.pr) after the answer
+def GitJob.pr.url(+r: String) -> String:
+  String.trim(String.drop(GT.Git.last_line(r), 4n))
+
+def GitJob.pr.note(+inbox: Chan(Msg), +thread: String, +what: String) -> IO(Unit):
+  Bool.pick(IO(Unit), String.is_empty(what), IO.pure(Unit, Unit{}), GitJob.note(inbox, thread, "info", what))
+
+def GitJob.text.pr(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +what: String, +r: String) -> IO(Unit):
+  do IO<Unit>:
+    GitJob.text.k(inbox, client, id, thread, what, r)
+    Bool.pick(IO(Unit), Bool.and(Bool.not(GT.Git.failed(r)), String.starts_with(GT.Git.last_line(r), "pr: http")),
+      IO.bind(String, Unit, RVS.RvJob.pr(cwd, GitJob.pr.url(r)), w => GitJob.pr.note(inbox, thread, w)), IO.pure(Unit, Unit{}))
+
 def AgentJob.commit(+msg: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +action: String) -> IO(Unit):
-  IO.bind(String, Unit, GT.Git.act(cwd, action, msg, "", ""), r => GitJob.text.k(inbox, client, id, thread, action, r))
+  IO.bind(String, Unit, GT.Git.act(cwd, action, msg, "", ""), r => GitJob.text.pr(inbox, client, id, thread, cwd, action, r))
 
 # Commit & push / Open PR with a message written from the thread's diff
 # (checkpoint 0 against the work tree); the thread's title when there is
@@ -1965,7 +1980,7 @@ def GitJob.go(i: Nat, +tx: AG.Tx, +inbox: Chan(Msg), +client: U32, +id: String, 
     case 4n:
       IO.bind(String, Unit, GT.Git.checkpoint.revert(cwd, thread, Maybe.default(&2, Nat, Nat.read(a), 0n)), r => GitJob.text.k(inbox, client, id, thread, "reverted to turn " ++ a, r))
     case 5n:
-      IO.bind(String, Unit, GT.Git.act(cwd, a, Bool.pick(String, String.is_empty(b), "Backplane: changes from this thread", b), "", ""), r => GitJob.text.k(inbox, client, id, thread, a, r))
+      IO.bind(String, Unit, GT.Git.act(cwd, a, Bool.pick(String, String.is_empty(b), "Backplane: changes from this thread", b), "", ""), r => GitJob.text.pr(inbox, client, id, thread, cwd, a, r))
     case 6n:
       IO.bind(String, Unit, GT.Git.status(cwd), r => GitJob.reply(inbox, client, id, True{}, J.Json.obj([J.KV{"status", J.Str{r}}, J.KV{"thread", J.Str{thread}}])))
     case 7n:
@@ -2269,9 +2284,22 @@ def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U
     case _:
       GitJob.run.git(tx, job, inbox, client, id, thread, cwd, a, b, home)
 
+# design review's jobs (server/review.bend), answered as they finish
+def RvJob.reply(r: RVS.Res, +inbox: Chan(Msg), +client: U32, +id: String) -> IO(Unit):
+  match r:
+    case RVS.Res{ok, +o}:
+      GitJob.reply(inbox, client, id, ok, o)
+
+def GitJob.run.r(rv: Bool, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
+  match rv:
+    case True{}:
+      IO.bind(RVS.Res, Unit, RVS.RvJob.run(job, thread, cwd, a, b, home), r => RvJob.reply(r, inbox, client, id))
+    case False{}:
+      GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs", "open", "dir", "pdf"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
+
 # a job the hub asked for: a git job, or one of the sidebar's
 def GitJob.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
-  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs", "open", "dir", "pdf"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
+  GitJob.run.r(String.starts_with(job, "rv."), tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # Grok (grok agent stdio, ACP) and Muse (muse serve, MSP)
 # -------------------------------------------------------
@@ -2895,13 +2923,14 @@ def Names.copy(xs: List<String>) -> List<&2, String>:
       x <> Names.copy(t)
 
 # the install is done: the hub is asked, and restarts only if nothing has
-# started work since the update began (Hub.update_ready, Restart{})
+# started work since the update began (Hub.update_ready, Restart{}); with
+# its own arguments, not its name (Bend 2.0.36's IO.args() starts with it)
 def Upgrade.restart(+inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Upgrade.say(inbox, Upgrade.note([J.KV{"state", J.Str{"restarting"}}]))
     path : String <- H.Sys.exe_path()
     args : List<String> <- IO.args()
-    r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(path, Names.copy(args))
+    r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(path, Names.copy(RVS.Rvc.args.drop(args)))
     Upgrade.exec(r, inbox)
 
 def Upgrade.done.k(ok: Bool, force: Bool, +err: String, +inbox: Chan(Msg)) -> IO(Unit):

@@ -90,6 +90,11 @@ import ./src/core/live.bend as LV
 import ./src/core/farlive.bend as FLV
 import ./src/core/qr.bend as QR
 import ./src/core/layers.bend as LY
+import ./src/core/bom.bend as BOM
+import ./src/core/cad.bend as CAD
+import ./src/core/checks.bend as CHK
+import ./src/core/release.bend as REL
+import ./src/core/review.bend as RV
 import ./src/core/slash.bend as SL
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
@@ -6375,6 +6380,232 @@ law lyr_kind_base:
 law lyr_masks_only:
   {LY.Masks.off(LY.Lyr.masks(0, 4096, LY.Focus{12, 2})) == 37736447 : U32}
 
+# Design review: comparing (core/hist.bend, client.bend's Rv.*)
+# ---------------------------------------------------------------
+
+# a comparison on no layers in particular is the plain comparison, and
+# marks every layer
+law rv_diff_on_all:
+  for a: String
+  for b: String
+  {HS.Hist.diff.on(a, b, 0) == HS.Hist.diff(a, b) : String}
+
+law rv_mark_on_all:
+  for olds: List<&2, B.Item>
+  for news: List<&2, B.Item>
+  {HS.Hist.mark.on(0, olds, news) == HS.Hist.mark(olds, news) : List<&2, B.Item>}
+
+# a sheet picked outside a comparison is the sheet; inside one, that sheet
+# compared in both versions
+law rv_sheet_plain:
+  {U.Rv.sheet("/t/root.kicad_sch", "/t/kid.kicad_sch") == "/t/kid.kicad_sch" : String}
+
+law rv_sheet_compared:
+  {U.Rv.sheet(HS.Hist.diff(HS.Hist.git("/g", "c", "/t", "root.kicad_sch"), "/t/root.kicad_sch"), "/t/kid.kicad_sch") == HS.Hist.diff(HS.Hist.git("/g", "c", "/t", "kid.kicad_sch"), "/t/kid.kicad_sch") : String}
+
+# with no layer standing out, a comparison is about every layer
+law rv_bits_plain:
+  for kind: U32
+  {U.Rv.bits(kind, LY.Lyr.plain()) == 0 : U32}
+# Design review (bom)
+
+# references sort naturally: C2 before C10, and R10 after R2
+law bom_nat_c2_c10:
+  {BOM.Bom.before("C2", "C10") == True{} : Bool}
+
+law bom_nat_r10_r2:
+  {BOM.Bom.before("R10", "R2") == False{} : Bool}
+
+# a BOM compared with itself has no changes
+law bom_diff_self:
+  {BOM.Bom.diff(BOM.Bom.sample(), BOM.Bom.sample()) == Nil{} : List<&2, BOM.Chg>}
+
+# every BOM line's quantity is the number of its references
+law bom_group_qty:
+  {BOM.Bom.qty.ok(BOM.Bom.group(BOM.Bom.sample())) == True{} : Bool}
+
+# R1 and R2 are alike: one line "R1, R2" with quantity 2
+law bom_group_csv:
+  {BOM.Bom.csv(BOM.Bom.group(BOM.Bom.sample())) == "Reference,Qty,Value,Footprint,MPN,Manufacturer,DNP\nC1,1,1u,0402,,,\n\"R1, R2\",2,10k,0603,,,\n" : String}
+
+# a cell with a comma is quoted, a quote is doubled, a plain one is left
+law bom_csv_quote:
+  {BOM.Bom.q("a,b") == "\"a,b\"" : String}
+
+law bom_csv_quote_inner:
+  {BOM.Bom.q("5\" x") == "\"5\"\" x\"" : String}
+
+law bom_csv_plain:
+  {BOM.Bom.q("10k") == "10k" : String}
+
+# the diff summary line
+law bom_diff_line:
+  {BOM.Bom.line(3n, 1n, 2n) == "3 added, 1 removed, 2 changed" : String}
+
+law bom_diff_md_none:
+  {BOM.Bom.diff.md(BOM.Bom.sample(), BOM.Bom.sample()) == "No changes" : String}
+
+# a pipe in a cell is escaped
+law bom_md_pipe:
+  {BOM.Bom.c("a|b") == "a/b" : String}
+# Design review (checks, cad, release)
+# -------------------------------------
+
+# The CAD layer knows a KiCad board by its extension
+law cad_of_kicad_board:
+  {CAD.Cad.of("a/b.kicad_pcb") == CAD.Hit{"kicad", "board", True{}} : CAD.Hit}
+
+law cad_of_kicad_schematic:
+  {CAD.Cad.of("x.kicad_sch") == CAD.Hit{"kicad", "schematic", True{}} : CAD.Hit}
+
+law cad_of_case_ignored:
+  {CAD.Cad.of("X.KICAD_PRO") == CAD.Hit{"kicad", "project", True{}} : CAD.Hit}
+
+# a tool Backplane cannot run is recognised but marked not drawn
+law cad_of_altium_not_drawn:
+  {CAD.Cad.of("Main.PcbDoc") == CAD.Hit{"altium", "board", False{}} : CAD.Hit}
+
+law cad_of_unknown:
+  {CAD.Cad.of("readme.md") == CAD.Hit{"", "", False{}} : CAD.Hit}
+
+# a template's placeholders are replaced by their values
+law cad_fill_puts_vars_in:
+  {CAD.Cad.fill(["{cli}", "{out}/x.csv"], [CAD.Var{"cli", "k"}, CAD.Var{"out", "/o"}]) == ["k", "/o/x.csv"] : List<&2, String>}
+
+# a brace that names no variable passes through (KiCad's ${QUANTITY})
+law cad_fill_keeps_other_braces:
+  {CAD.Cad.fill(["${QUANTITY}"], [CAD.Var{"cli", "k"}]) == ["${QUANTITY}"] : List<&2, String>}
+
+# a single quote inside a word is written '\'' so sh reads it back
+law cad_shell_quotes_a_quote:
+  {CAD.Cad.quote("a'b") == "'a'\\''b'" : String}
+
+law cad_shell_words:
+  {CAD.Cad.shell(["a", "b c"]) == "'a' 'b c'" : String}
+
+# ticking a box and ticking it again gives the file back, byte for byte
+law checklist_toggle_twice:
+  {CHK.Checklist.toggle(CHK.Checklist.toggle("# A\n- [ ] x\n* [x] y\n", 1n), 1n) == "# A\n- [ ] x\n* [x] y\n" : String}
+
+law checklist_toggle_flips_one:
+  {CHK.Checklist.toggle("# A\n- [ ] x\n* [x] y\n", 1n) == "# A\n- [ ] x\n* [ ] y\n" : String}
+
+# a box that is not there changes nothing
+law checklist_toggle_past_end:
+  {CHK.Checklist.toggle("- [ ] x\n", 5n) == "- [ ] x\n" : String}
+
+# with no findings the gate passes
+law checks_gate_no_findings:
+  {CHK.Checks.gate(Nil{}, CHK.Checks.gate.default()) == "" : String}
+
+law checks_gate_no_findings_strict:
+  {CHK.Checks.gate(Nil{}, CHK.Gate{"warning", "warning", True{}}) == "" : String}
+
+law checks_md_empty:
+  {CHK.Checks.md(Nil{}, Nil{}, Nil{}) == "**Design checks:** No findings\n" : String}
+
+# an ERC report's violation becomes one finding of its severity
+law checks_erc_error_counted:
+  {CHK.Checks.count(CHK.Checks.erc("{\"sheets\":[{\"path\":\"/\",\"violations\":[{\"type\":\"t\",\"severity\":\"error\",\"description\":\"d\",\"items\":[]}]}]}"), "erc", "error") == 1n : Nat}
+
+# the next tag counts on from the newest one
+law release_next_dotted:
+  {REL.Release.next(["v1.1", "v1.2"]) == "v1.3" : String}
+
+law release_next_letter:
+  {REL.Release.next(["rev-A"]) == "rev-B" : String}
+
+law release_next_plain:
+  {REL.Release.next(["r7"]) == "r8" : String}
+
+law release_next_first:
+  {REL.Release.next(Nil{}) == "v1" : String}
+
+law release_tag_valid:
+  {REL.Release.valid("v1.2") == True{} : Bool}
+
+# git refuses these as tag names
+law release_tag_no_space:
+  {REL.Release.valid("a b") == False{} : Bool}
+
+law release_tag_no_dotdot:
+  {REL.Release.valid("a..b") == False{} : Bool}
+
+law release_tag_no_dash_lead:
+  {REL.Release.valid("-x") == False{} : Bool}
+
+law release_tag_no_lock_end:
+  {REL.Release.valid("x.lock") == False{} : Bool}
+
+law release_tag_not_empty:
+  {REL.Release.valid("") == False{} : Bool}
+
+# a release's outputs live in the repo's .backplane/releases/<tag>
+law release_dir_in_repo:
+  {REL.Release.dir("/r", "v1") == "/r/.backplane/releases/v1" : String}
+
+law release_gh_command:
+  {REL.Release.gh("v1", "n.md", ["f"]) == ["gh", "release", "create", "v1", "--title", "v1", "--notes-file", "n.md", "--verify-tag", "f"] : List<&2, String>}
+# Design review (review.bend)
+
+# no ops, no comments, and nothing to tell an agent
+law review_fold_empty:
+  {RV.Review.fold([]) == [] : List<&2, RV.Comment>}
+
+law review_prompt_none:
+  {RV.Review.prompt([]) == "" : String}
+
+# an op on an id nobody added changes nothing
+law review_unknown_ignored:
+  {RV.Review.fold([RV.Resolve{"zz", "p"}, RV.Edit{"zz", "x"}, RV.Drop{"zz"}]) == [] : List<&2, RV.Comment>}
+
+# add, then resolve: not open any more
+law review_resolve:
+  {RV.Review.count.open(RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Resolve{"a", "p"}])) == 0n : Nat}
+
+# resolve, then reopen: open again
+law review_reopen:
+  {RV.Review.count.open(RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Resolve{"a", "p"}, RV.Reopen{"a", "p"}])) == 1n : Nat}
+
+# a resolved comment is told to no agent
+law review_prompt_resolved:
+  {RV.Review.prompt(RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Resolve{"a", "p"}])) == "" : String}
+
+# drop removes the comment and the replies to it
+law review_drop:
+  {RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Add{RV.Review.mk("b", "a")}, RV.Drop{"a"}]) == [] : List<&2, RV.Comment>}
+
+# a reply joins its root and is no pin of its own
+law review_reply_no_pin:
+  {List.length(&2, RV.Pin, RV.Review.pins(RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Add{RV.Review.mk("b", "a")}]), "f", "")) == 1n : Nat}
+
+law review_reply_counted:
+  {RV.Review.pin.count(RV.Rv.pin(RV.Review.fold([RV.Add{RV.Review.mk("a", "")}, RV.Add{RV.Review.mk("b", "a")}]), RV.Review.mk("a", ""))) == 1n : Nat}
+
+# a reply to nothing is dropped
+law review_orphan_ignored:
+  {RV.Review.fold([RV.Add{RV.Review.mk("b", "a")}]) == [] : List<&2, RV.Comment>}
+
+# an op (but an add, whose numbers print as floats) reads back the same
+law review_roundtrip_resolve:
+  {RV.Review.op.of("resolve", RV.Review.op.resolve("c1", "claude"), 3n) == Some{RV.Resolve{"c1", "claude"}} : Maybe<&2, RV.Op>}
+
+law review_roundtrip_edit:
+  {RV.Review.op.of("edit", RV.Review.op.edit("c1", "a b"), 3n) == Some{RV.Edit{"c1", "a b"}} : Maybe<&2, RV.Op>}
+
+law review_roundtrip_drop:
+  {RV.Review.op.of("drop", RV.Review.op.drop("c1"), 3n) == Some{RV.Drop{"c1"}} : Maybe<&2, RV.Op>}
+
+# an Act of another tone is no review op
+law review_other_tone:
+  {RV.Review.of(M.Act{"x", "t", "tool", "add", "{}", 1n}) == None{} : Maybe<&2, RV.Op>}
+
+# a pin moved only when its item is among the changed
+law review_moved:
+  {RV.Review.moved(RV.Review.mk("a", ""), ["i"]) == True{} : Bool}
+
+law review_not_moved:
+  {RV.Review.moved(RV.Review.mk("a", ""), ["j"]) == False{} : Bool}
 # Slash commands in the composer (slash.bend)
 law slash_typing_word:
   {SL.Slash.typing("/gi") == True{} : Bool}

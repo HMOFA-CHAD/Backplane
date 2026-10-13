@@ -859,6 +859,28 @@ def Desk.request(look: Bool, +client: U32, +id: String, +p: J.Json) -> Step:
     case False{}:
       Step.outs([Reply.err(client, id, "unknown method")])
 
+# Design review (docs/design-review.md): requests the server answers from
+# the thread's folder (server/review.bend's RvJob, jobs "rv.…").
+# history.resolve {thread, side, ref}: any commit, branch or tag typed in;
+# review.bom {thread, a, b}: a BOM, or the change between two versions;
+# review.checks {thread, commit, trigger}: the design checks;
+# review.tick {thread, index}: a checklist box ticked or cleared
+def Rv.methods() -> List<&2, String>:
+  ["history.resolve", "review.bom", "review.checks", "review.tick"]
+
+def Rv.request(i: Nat, +s: M.State, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
+  match i:
+    case 0n:
+      Hub.git(s, client, id, "rv.resolve", J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "side", "a"), J.Json.get_str(p, "ref", ""))
+    case 1n:
+      Hub.git(s, client, id, "rv.bom", J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "a", ""), J.Json.get_str(p, "b", ""))
+    case 2n:
+      Hub.git(s, client, id, "rv.checks", J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "commit", ""), J.Json.get_str(p, "trigger", "manual"))
+    case 3n:
+      Hub.git(s, client, id, "rv.tick", J.Json.get_str(p, "thread", ""), J.Json.as_raw(J.Json.get(p, "index"), "0"), "")
+    case _:
+      Desk.request(String.eq(m, "desk.look"), client, id, p)
+
 def Hub.media(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
@@ -873,7 +895,7 @@ def Hub.media(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.J
     case 3n:
       Hub.git(s, client, id, "refs", J.Json.get_str(p, "thread", ""), "", "")
     case _:
-      Desk.request(String.eq(m, "desk.look"), client, id, p)
+      Rv.request(C.Codec.pos(Rv.methods(), m), s, client, id, p, m)
 
 def Hub.methods() -> List<&2, String>:
   ["project.add", "project.remove", "thread.create", "turn.start", "turn.interrupt",

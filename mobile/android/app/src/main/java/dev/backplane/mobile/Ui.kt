@@ -167,6 +167,10 @@ fun App(m: AppModel) {
             BackHandler { m.act("fm") }
             FileScreen(m, s.thread.viewer, s.thread.viewer.file)
         }
+        s.thread != null && s.thread.viewer.open == "review" && s.thread.viewer.review != null -> {
+            BackHandler { m.act("view", "") }
+            ReviewScreen(m, s.thread.viewer, s.thread.viewer.review)
+        }
         s.thread != null && s.thread.viewer.open == "renders" && s.thread.viewer.mech != null -> {
             BackHandler { m.act("view", "") }
             MechScreen(m, s.thread.viewer, s.thread.viewer.mech)
@@ -1082,12 +1086,7 @@ private fun PlotScreen(m: AppModel, v: Viewer) {
         }
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
-                v.choices.forEachIndexed { i, c ->
-                    SegmentedButton(selected = c.value == v.open, onClick = { m.act("view", c.value) },
-                        shape = SegmentedButtonDefaults.itemShape(i, v.choices.size), icon = {}) { Text(c.label, maxLines = 1, style = MaterialTheme.typography.labelMedium) }
-                }
-            }
+            ChoiceRow(v.choices, v.open, Modifier.weight(1f)) { m.act("view", it) }
             IconButton(onClick = { m.act("view", "") }) { Icon(Icons.Filled.Close, "Close", tint = if (v.light) Color.Black else Color.White) }
         }
         ViewerControls(m, v, f?.chunks?.map { it.layer }?.toSet() ?: emptySet(), Modifier.align(Alignment.TopStart).statusBarsPadding().padding(top = 56.dp))
@@ -1122,9 +1121,18 @@ private fun HistoryBar(m: AppModel, h: HistBar, light: Boolean) {
                     HistChip("Old: ${h.a}", h.side == "a", fg, accent, Modifier.weight(1f, fill = false)) { m.act("cmp-side", "a") }
                     HistChip("New: ${h.b}", h.side == "b", fg, accent, Modifier.weight(1f, fill = false)) { m.act("cmp-side", "b") }
                 }
+                HistChip("BOM", false, fg, accent) { m.act("rv-bom", "") }
                 HistChip("Close", false, fg, accent) { m.act("cmp-close", "") }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            val shown = h.showing.ifEmpty { "diff" }
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                val ways = listOf("old" to "Old", "diff" to "Diff", "new" to "New")
+                ways.forEachIndexed { i, w ->
+                    SegmentedButton(selected = shown == w.first, onClick = { m.act("rv-as", w.first) },
+                        shape = SegmentedButtonDefaults.itemShape(i, ways.size), icon = {}) { Text(w.second, maxLines = 1, style = MaterialTheme.typography.labelMedium) }
+                }
+            }
+            if (shown == "diff") Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 val names = listOf("Removed", "Changed", "Added")
                 for (i in 0 until minOf(names.size, h.keys.size)) Row(verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1204,7 +1212,14 @@ private fun HistMenu(m: AppModel, side: String, rows: List<HistRow>) {
         shape = androidx.compose.ui.graphics.RectangleShape) {
         Text(if (side == "a") "Compare from (old)" else "Compare with (new)", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             style = MaterialTheme.typography.titleMedium)
-        LazyColumn(Modifier.navigationBarsPadding()) {
+        // any commit, branch or tag (rv-ref "<side>\t<text>")
+        var ref by remember { mutableStateOf("") }
+        OutlinedTextField(ref, { ref = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), singleLine = true,
+            placeholder = { Text("Commit, branch or tag") },
+            shape = androidx.compose.ui.graphics.RectangleShape,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, imeAction = ImeAction.Go),
+            keyboardActions = KeyboardActions(onGo = { if (ref.isNotBlank()) m.act("rv-ref", side + "\t" + ref) }))
+        LazyColumn(Modifier.navigationBarsPadding().imePadding()) {
             items(rows) { r ->
                 ListItem(
                     headlineContent = { Text(r.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
