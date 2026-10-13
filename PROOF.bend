@@ -8614,6 +8614,15 @@ def Laws.policy_reminder_alerts():
 def Laws.notify_rows_defaults():
   {==}
 
+def Laws.island_compact_one_line():
+  {==}
+
+def Laws.island_no_children():
+  {==}
+
+def Laws.island_line_last_sent():
+  {==}
+
 # ---- end notif-policy ----
 
 # ---- told-rules-board ----

@@ -7184,6 +7184,17 @@ law notify_rows_defaults:
     U.NotifyRow{"Settled", "Work you gave a thread is finished, failed, or its branch merged. Once per piece of work.", "on", "notify.settled"},
     U.NotifyRow{"Reminders", "Reminders and digests you scheduled.", "on", "notify.reminders"},
     U.NotifyRow{"Everything", "Also every turn end and room exchange, as before.", "off", "notify.all"}] : List<&2, U.NotifyRow>}
+# The compact island counts roots but names only the latest direct send.
+# The earlier island laws retain their legacy helpers (including waiting
+# on work and listing three); production hub/phone content uses compact.
+law island_compact_one_line:
+  {List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(NO.Island.compact.demo.json(NO.Island.compact.demo.five()), "lines"))) == 1n : Nat}
+
+law island_no_children:
+  {NO.Island.compact.count(NO.Island.compact.demo.of(NO.Island.compact.demo.children())) == 0n : Nat}
+
+law island_line_last_sent:
+  {NO.Island.compact.id(NO.Island.compact.demo.of(NO.Island.compact.demo.last())) == "t2" : String}
 
 # ---- end notif-policy ----
 # harness-coord: CLI path

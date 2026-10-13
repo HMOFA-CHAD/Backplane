@@ -238,6 +238,10 @@ def Island.others(s: M.State, +thread: String) -> List<&2, M.Thread>:
     case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
       Island.running(Map.values(&2, M.Thread, ts), thread)
 
+# Production hub status uses the same compact record as the phone.
+def Island.content(+s: M.State) -> NO.Compact:
+  NO.Island.compact.of(NO.Island.compact.threads(s), s)
+
 def Island.line(t: M.Thread) -> J.Json:
   match t:
     case M.Thread{id, _, title, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
@@ -266,7 +270,7 @@ def Island.headline(n: Nat, +title: String) -> String:
     case 1n+1n+p:
       Nat.show(2n+p) ++ " agents working"
 
-# ActivityAttributes.ContentState: {running, headline, lines}, every thread
+# Legacy ActivityAttributes.ContentState: {running, headline, lines}, every thread
 # counted, the first NO.Notice.island.max() listed
 def Island.state(+ts: List<&2, M.Thread>) -> J.Json:
   J.Json.obj([J.KV{"running", J.Num{Nat.show(List.length(&2, M.Thread, ts))}},
@@ -464,8 +468,8 @@ def Push.send(+home: String, +st: M.State, +thread: String, +key: String, +kid: 
     +prefix : String = "push-" ++ Nat.show(now) ++ "-" ++ thread
     +jwt : String <- Jwt.sign(key, dir, prefix, Jwt.input(kid, team, now))
     base : String <- Push.env("BACKPLANE_APNS_URL")
-    +others : List<&2, M.Thread> = Island.others(st, thread)
-    +job : Job = Job{dir, base, jwt, now, thread, "", Island.state(others), List.is_empty(&2, M.Thread, others), ""}
+    +compact : NO.Compact = Island.content(st)
+    +job : Job = Job{dir, base, jwt, now, thread, "", NO.Island.compact.json(compact, st), Nat.is_eq(NO.Island.compact.count(compact), 0n), ""}
     Push.gate(String.is_empty(jwt), Push.devices(st), job, prefix)
 
 # phones are registered but the hub cannot push to them: say so, or a
@@ -509,8 +513,8 @@ def Push.island.send(+home: String, +st: M.State, +key: String, +kid: String, +t
     +prefix : String = "push-" ++ Nat.show(now) ++ "-island"
     +jwt : String <- Jwt.sign(key, dir, prefix, Jwt.input(kid, team, now))
     base : String <- Push.env("BACKPLANE_APNS_URL")
-    +others : List<&2, M.Thread> = Island.others(st, "@island")
-    +job : Job = Job{dir, base, jwt, now, "@island", "", Island.state(others), List.is_empty(&2, M.Thread, others), ""}
+    +compact : NO.Compact = Island.content(st)
+    +job : Job = Job{dir, base, jwt, now, "@island", "", NO.Island.compact.json(compact, st), Nat.is_eq(NO.Island.compact.count(compact), 0n), ""}
     Push.gate(String.is_empty(jwt), Push.devices(st), job, prefix)
 
 # only where an island can be: a configured key and a phone's Live
@@ -547,8 +551,15 @@ def Push.island.dead(+home: String, +st: M.State) -> IO(List<&2, String>):
 # whether the hourly beat is due (the hub's minute tick, in the first 90
 # seconds of an hour: a tick late by a few seconds still lands in one) and
 # any thread works
+def Push.island.beat.k(due: Bool, st: M.State) -> Bool:
+  match due:
+    case False{}:
+      False{}
+    case True{}:
+      Nat.is_gt(NO.Island.compact.count(Island.content(st)), 0n)
+
 def Push.island.beat(+st: M.State, +now: Nat) -> Bool:
-  Bool.and(Nat.is_lt(Nat.mod(now, 3600n), 90n), Bool.not(List.is_empty(&2, M.Thread, Island.others(st, "@island"))))
+  Push.island.beat.k(Nat.is_lt(Nat.mod(now, 3600n), 90n), st)
 
 # the island push for a turn that ended; answers the tokens APNs reported dead
 def Push.turn_ended.dead(+home: String, +st: M.State, +thread: String) -> IO(List<&2, String>):
@@ -597,8 +608,8 @@ def Push.note.send(+home: String, +st: M.State, +thread: String, +title: String,
     +prefix : String = "push-" ++ Nat.show(now) ++ "-" ++ thread
     +jwt : String <- Jwt.sign(pkey, dir, prefix, Jwt.input(kid, team, now))
     base : String <- Push.env("BACKPLANE_APNS_URL")
-    +others : List<&2, M.Thread> = Island.others(st, thread)
-    +job : Job = Job{dir, base, jwt, now, thread, Push.alert(thread, akey, title, body), Island.state(others), List.is_empty(&2, M.Thread, others), akey}
+    +compact : NO.Compact = Island.content(st)
+    +job : Job = Job{dir, base, jwt, now, thread, Push.alert(thread, akey, title, body), NO.Island.compact.json(compact, st), Nat.is_eq(NO.Island.compact.count(compact), 0n), akey}
     Push.gate(String.is_empty(jwt), Push.alerts.only(Push.devices(st)), job, prefix)
 
 def Push.note.go(ok: Bool, phones: Bool, +home: String, +st: M.State, +thread: String, +title: String, +body: String, +akey: String, +pkey: String, +kid: String, +team: String) -> IO(List<&2, String>):

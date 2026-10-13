@@ -5,6 +5,7 @@ import ../core/client.bend as U
 import ../core/codec.bend as C
 import ./screen.bend as S
 import ./notify.bend as N
+import ../core/notice.bend as NO
 import ./view.bend as VW
 import ./picker.bend as PK
 import ../core/botui.bend as BU
@@ -1353,8 +1354,44 @@ def Hubs.lines.once(+ls: List<&2, J.Json>) -> List<&2, J.Json>:
 # Each hub's own island, for iOS's Live Activity per hub: a hub pushes and
 # ends only its own (push.bend), so one machine going idle never ends or
 # overwrites another's. With several hubs the headline names the machine.
+# Merge counts separately from the one line: a hub may count roots with
+# no person message. The screen's islandAt is transient, never kept state.
+type HCompact is Data:
+  HCompact{lines: List<&2, J.Json>, at: Nat}
+
+def Hubs.compact.lines(c: HCompact) -> List<&2, J.Json>:
+  match c:
+    case HCompact{ls, _}:
+      ls
+
+def Hubs.compact.at(c: HCompact) -> Nat:
+  match c:
+    case HCompact{_, at}:
+      at
+
+def Hubs.compact.pick(hit: Bool, ls: List<&2, J.Json>, at: Nat, old: List<&2, J.Json>, stamp: Nat) -> HCompact:
+  match hit:
+    case True{}:
+      HCompact{ls, at}
+    case False{}:
+      HCompact{old, stamp}
+
+def Hubs.compact.go(ss: List<&2, Shown>, +n: Nat, +ls: List<&2, J.Json>, +stamp: Nat) -> J.Json:
+  match ss:
+    case Nil{}:
+      J.Json.obj([J.KV{"running", J.Json.nat(n)}, J.KV{"headline", J.Json.str(NO.Island.compact.headline(n))}, J.KV{"lines", J.Json.arr(ls)}])
+    case Shown{_, _, +j} <> t:
+      +i = J.Json.get_obj(j, "island")
+      +next = J.Json.elems(J.Json.get_obj(i, "lines"))
+      +at = J.Json.get_nat(j, "islandAt", 0n)
+      +picked = Hubs.compact.pick(NO.Island.compact.newer(J.Json.get_str(Maybe.default(&2, J.Json, List.head(&2, J.Json, next), J.Null{}), "thread", ""), at,
+        J.Json.get_str(Maybe.default(&2, J.Json, List.head(&2, J.Json, ls), J.Null{}), "thread", ""), stamp), next, at, ls, stamp)
+      Hubs.compact.go(t, Nat.add(n, J.Json.get_nat(i, "running", 0n)), Hubs.compact.lines(picked), Hubs.compact.at(picked))
+
 def Hubs.island.named(+many: Bool, +name: String, +i: J.Json) -> J.Json:
-  N.Note.island.k.named(J.Json.elems(J.Json.get_obj(i, "lines")), Bool.pick(String, many, name, ""))
+  J.Json.obj([J.KV{"running", J.Json.get_obj(i, "running")},
+    J.KV{"headline", J.Json.str(N.Note.named(J.Json.get_str(i, "headline", ""), Bool.pick(String, many, name, "")))},
+    J.KV{"lines", J.Json.get_obj(i, "lines")}])
 
 def Hubs.islands.go(ss: List<&2, Shown>, +many: Bool) -> List<&2, J.Json>:
   match ss:
@@ -1901,7 +1938,7 @@ def Hubs.screen.p(+pl: MPL.MUber, +ss: List<&2, Shown>, +cur: String, +list: Lis
     J.KV{"settings", J.Json.get_obj(Hubs.of(ss, cur), "settings")},
     J.KV{"tour", J.Json.get_obj(Hubs.of(ss, cur), "tour")},
     J.KV{"find", J.Json.get_obj(Hubs.of(ss, cur), "find")},
-    J.KV{"island", N.Note.island.k(Hubs.lines.once(Hubs.lines(ss)))},
+    J.KV{"island", Hubs.compact.go(ss, 0n, [], 0n)},
     J.KV{"islands", J.Json.arr(Hubs.islands(ss))},
     J.KV{"thread", Hubs.origin.focus(ss, cur, "thread")},
     J.KV{"uber", MPL.MUber.uber(pl)},
