@@ -152,7 +152,19 @@ data class Find(val mode: String, val query: String, val rows: List<FolderRow>)
 // the Review tab: page chips ("rv-page" page), the title, the report's
 // Markdown nodes (empty: say note), whether it is being made
 data class ReviewTab(val page: String, val label: String, val on: Boolean)
-data class ReviewPage(val tabs: List<ReviewTab>, val title: String, val note: String, val busy: Boolean, val blocks: List<Block>)
+data class ReviewPage(val tabs: List<ReviewTab>, val title: String, val note: String, val busy: Boolean, val blocks: List<Block>, val checks: ReviewChecks? = null)
+
+// the Checks page's boxes ("rv-tick" index) and why the gate fails ("" it passes)
+data class ReviewTask(val index: Int, val text: String, val group: String, val done: Boolean)
+data class ReviewChecks(val gate: String, val line: String, val tasks: List<ReviewTask>)
+
+// Review comments (client.bend's Rc): the pins, at places in mm of the
+// file's coordinates ("rv-pin" id opens one), the one open, and the place
+// waiting for its note ("x\ty\tlayer\titem", "" none)
+data class ReviewPin(val id: String, val x: Float, val y: Float, val resolved: Boolean, val count: Int)
+data class ReviewReply(val text: String, val by: String)
+data class ReviewOpen(val id: String, val text: String, val by: String, val place: String, val resolved: Boolean, val replies: List<ReviewReply>)
+data class ReviewComments(val pins: List<ReviewPin>, val open: ReviewOpen?, val at: String)
 
 // the key its plots carry, the choices, and how to draw
 data class Choice(val label: String, val value: String, val on: Boolean)
@@ -185,6 +197,7 @@ data class Viewer(
     val files: FilesPage? = null, val file: FileView? = null,
     // the Review tab (open "review")
     val review: ReviewPage? = null,
+    val comments: ReviewComments? = null,
     // the layer focus (core/layers.bend): the layers drawn dimmed (a bit
     // each), the one drawn last (255 none), the list's All/Dim/Only (0-2)
     // and whether it has one (a board), and the Layers button's words
@@ -534,7 +547,18 @@ private fun viewer(o: JSONObject) = Viewer(
     file = o.optJSONObject("file")?.let { FileView(it.optString("name"), it.optString("kind"), it.optString("url")) },
     review = o.optJSONObject("review")?.let { r ->
         ReviewPage(r.optJSONArray("tabs").map { ReviewTab(it.optString("page"), it.optString("label"), it.optBoolean("on")) },
-            r.optString("title"), r.optString("note"), r.optBoolean("busy"), blocks(r.optJSONArray("blocks")))
+            r.optString("title"), r.optString("note"), r.optBoolean("busy"), blocks(r.optJSONArray("blocks")),
+            r.optJSONObject("checks")?.let { c ->
+                ReviewChecks(c.optString("gate"), c.optString("line"),
+                    c.optJSONArray("tasks").map { ReviewTask(it.optInt("index"), it.optString("text"), it.optString("group"), it.optBoolean("done")) })
+            })
+    },
+    comments = o.optJSONObject("comments")?.let { c ->
+        ReviewComments(c.optJSONArray("pins").map { ReviewPin(it.optString("id"), it.optDouble("x").toFloat(), it.optDouble("y").toFloat(), it.optBoolean("resolved"), it.optInt("count")) },
+            c.optJSONObject("open")?.let { p ->
+                ReviewOpen(p.optString("id"), p.optString("text"), p.optString("by"), p.optString("place"), p.optBoolean("resolved"),
+                    p.optJSONArray("replies").map { ReviewReply(it.optString("text"), it.optString("by")) })
+            }, c.optString("at"))
     },
     dim = o.optInt("dim"), lift = o.optInt("lift", 255), layerMode = o.optInt("layerMode"), layerModes = o.optBoolean("layerModes"),
     layerHead = o.optString("layerHead", "Layers"),
