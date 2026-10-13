@@ -9835,10 +9835,13 @@ def Hub.mcp.rules.k(none: Bool, +msg: String, h: Hub, +thread: String, +body: St
         ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, msg)
         return h
 
+def Hub.mcp.rules.m(+msg: String, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  Hub.mcp.rules.k(String.is_empty(msg), msg, h, thread, body, reply, now)
+
 def Hub.mcp.rules(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.mcp.rules.k(String.is_empty(RLS.Rules.gate(st, thread, body)), RLS.Rules.gate(st, thread, body), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, body, reply, now)
+      Hub.mcp.rules.m(RLS.Rules.gate(st, thread, body), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, body, reply, now)
 
 def Hub.mcp.gate(refused: Bool, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match refused:

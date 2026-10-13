@@ -4779,7 +4779,7 @@ def Gen.stale(+tagged: String, +current: String) -> Bool:
 
 # the tools that only read
 def Gen.reads(+tool: String) -> Bool:
-  Nat.is_lt(C.Codec.pos(["orchestrator_capabilities", "task_status", "thread_list", "thread_read", "thread_wait", "thread_wait_now", "work_list", "project_list", "machine_list", "plane_read"], tool), 10n)
+  Nat.is_lt(C.Codec.pos(["orchestrator_capabilities", "task_status", "thread_list", "thread_read", "thread_wait", "thread_wait_now", "work_list", "project_list", "machine_list", "plane_read", "told_check", "task_board_list"], tool), 12n)
 
 # an MCP request that changes something: a tools/call of any tool that does
 # not only read (initialize, tools/list and the like change nothing)
