@@ -65,6 +65,8 @@ import ../core/live.bend as LV
 import ../core/farlive.bend as FLV
 import ../core/qr.bend as QR
 import ../core/uber.bend as UB
+import ../core/ubersync.bend as UBS
+import ../core/ubop.bend as UBO
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -141,6 +143,11 @@ type Msg is Data:
   Recover{}
   # changes a job off the hub made (a bot's home folder, a linked machine)
   Commit{changes: List<&2, M.Change>}
+  # the uberbot's sync (core/ubersync.bend): a step touched its log or
+  # promoted a bot ("kick": sync now; "init": log a new uberbot's first
+  # ops, then sync); another machine's answer to our uber.sync request
+  UberDo{what: String}
+  UberAnswer{link: String, code: Nat, body: String}
   # the minute tick for bots: routines and the linked machines' bots, with
   # this machine's UTC offset as `date +%z` prints it
   BotTick{tz: String}
@@ -7051,6 +7058,37 @@ def Hub.announce.far(r: Hub & List<&2, String>, cs: List<&2, M.Change>, +from: N
 def Hub.write_fail.note(+err: String) -> String:
   J.Json.show(J.Json.obj([J.KV{"t", J.Str{"update"}}, J.KV{"error", J.Str{"log write failed: " ++ err}}]))
 
+# a step touched the uberbot's log, or promoted a bot
+def Uber.touched.op(+n: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_eq(n, 1n), 1n, 2n)
+
+def Uber.touched(cs: List<&2, M.Change>) -> Nat:
+  match cs:
+    case Nil{}:
+      0n
+    case M.UberSet{_, _, _} <> t:
+      1n
+    case M.UberOp{_, _, _, _, _, _} <> t:
+      Uber.touched.op(Uber.touched(t))
+    case _ <> t:
+      Uber.touched(t)
+
+def Uber.after.k(n: Nat, h: Hub) -> IO(Hub):
+  match n h:
+    case 0n _:
+      IO.pure(Hub, h)
+    case 1n Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        Far.send(inbox, UberDo{"init"})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case _ Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        Far.send(inbox, UberDo{"kick"})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def Hub.uber.after(h: Hub, +cs: List<&2, M.Change>) -> IO(Hub):
+  Uber.after.k(Uber.touched(cs), h)
+
 def Hub.step.wrote(r: Hub & Wrote, +cs: List<&2, M.Change>, os: List<&2, B.Out>, +from: Nat) -> IO(Hub & Bool):
   (h, w) = r
   match w:
@@ -7059,7 +7097,8 @@ def Hub.step.wrote(r: Hub & Wrote, +cs: List<&2, M.Change>, os: List<&2, B.Out>,
         h1 : Hub <- Hub.busy.set(h)
         h2 : Hub <- Hub.announce.far((h1, fresh), cs, from)
         h3 : Hub <- Hub.outs(os, h2)
-        return (h3, True{})
+        h4 : Hub <- Hub.uber.after(h3, cs)
+        return (h4, True{})
     case Wrote{_, False{}, +err}:
       do IO<Hub & Bool>:
         PS.Log.error("hub", "log write failed: " ++ err)
@@ -7513,6 +7552,266 @@ def Hub.pair(h: Hub) -> IO(Hub):
         Pair.go(UC.Mate.due(Cfg.tailnet(cfg), Far.machines(cfg), BO.World.peers(M.State.bots(st)), st), inbox, cfg)
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
+# The uberbot's sync (core/ubersync.bend, docs/uber.md)
+# ------------------------------------------------------
+# One request, uber.sync over /far/rpc, to each of the owner's machines: on
+# a minute's tick (anti-entropy and the holder's heartbeat) and after any
+# step that logged an op or promoted a bot. One request is out per link;
+# one wanted meanwhile waits for it (again.<link>). What this hub remembers
+# of the others (answers, the holder's beat) is in memory (FR.Fh.ub), never
+# in the log.
+
+def Uber.mem.map.k(p: FR.Fh & Hub) -> Map<&2, String> & Hub:
+  (fh, h) = p
+  (FR.Fh.ub.map(fh), h)
+
+def Uber.mem.map(h: Hub) -> Map<&2, String> & Hub:
+  Uber.mem.map.k(Far.fh(h))
+
+def Uber.mem.put(p: FR.Fh & Hub, +k: String, +v: String) -> Hub:
+  (fh, h) = p
+  Far.with(h, FR.Fh.ub.set(fh, k, v))
+
+def Uber.mem.set(h: Hub, +k: String, +v: String) -> Hub:
+  Uber.mem.put(Far.fh(h), k, v)
+
+def Uber.mem.notes(ns: List<&2, J.KV>, h: Hub) -> Hub:
+  match ns:
+    case Nil{}:
+      h
+    case J.KV{+k, +v} <> t:
+      Uber.mem.notes(t, Uber.mem.set(h, k, J.Json.as_raw(Some{v}, "")))
+
+def Uber.job(+st: M.State, +link: String, +url: String, +pvv: String, +home: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    now : Nat <- Now.nat()
+    +name : String <- BN.Bn.name()
+    +n : String <- BN.Bn.random(4n)
+    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/rpc", True{}, FR.Fr.nonced(UBS.Ub.sync.req(st, name, pvv), n))
+    Far.send(inbox, UberAnswer{link, Far.code(r), Far.body(r)})
+
+def Uber.kick.go(h: Hub, +link: String, +url: String, +pvv: String) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Uber.job(st, link, url, pvv, Cfg.home(cfg), inbox))
+        return Uber.mem.set(Uber.mem.set(Hub{st, f, ls, cl, as, inbox, cfg, note}, "busy." ++ link, "1"), "again." ++ link, "")
+
+def Uber.kick.b(busy: Bool, h: Hub, +link: String, +url: String, +pvv: String) -> IO(Hub):
+  match busy:
+    case True{}:
+      IO.pure(Hub, Uber.mem.set(h, "again." ++ link, "1"))
+    case False{}:
+      Uber.kick.go(h, link, url, pvv)
+
+def Uber.kick.m(p: Map<&2, String> & Hub, +link: String, +url: String) -> IO(Hub):
+  (+um, h) = p
+  Uber.kick.b(Bool.not(String.is_empty(UBS.Ub.net.get(um, "busy." ++ link))), h, link, url, UBS.Ub.net.get(um, "pvv." ++ link))
+
+# a request to one machine now, or when the one out comes back
+def Uber.kick.one(h: Hub, +link: String, +url: String) -> IO(Hub):
+  Uber.kick.m(Uber.mem.map(h), link, url)
+
+def Uber.kick.all(ps: List<&2, BO.Peer>, h: Hub) -> IO(Hub):
+  match ps:
+    case Nil{}:
+      IO.pure(Hub, h)
+    case BO.Peer{+i, _, +u, _, _} <> t:
+      IO.bind(Hub, Hub, Uber.kick.one(h, i, u), h2 => Uber.kick.all(t, h2))
+
+def Uber.kick.on(on: Bool, h: Hub) -> IO(Hub):
+  match on h:
+    case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Uber.kick.all(Far.own.go(BO.World.peers(M.State.bots(st)), st, cfg), Hub{st, f, ls, cl, as, inbox, cfg, note})
+    case False{} _:
+      IO.pure(Hub, h)
+
+def Uber.kick.p(p: M.State & Hub) -> IO(Hub):
+  (st, h) = p
+  Uber.kick.on(UBS.Ub.on(st), h)
+
+# sync with every machine of the owner's (when this one has an uberbot)
+def Uber.kick(h: Hub) -> IO(Hub):
+  Uber.kick.p(Hub.state(h))
+
+def Uber.took.u(p: M.State & Hub, +link: String) -> IO(Hub):
+  (st, h) = p
+  Uber.kick.one(h, link, Bot.peer.url(st, link))
+
+def Uber.took.m(h: Hub, more: Bool, +link: String) -> IO(Hub):
+  match more:
+    case True{}:
+      Uber.took.u(Hub.state(h), link)
+    case False{}:
+      IO.pure(Hub, h)
+
+def Uber.took.n(h: Hub, +t: UBS.SyncIn, +link: String, +now: Nat) -> IO(Hub):
+  match t:
+    case UBS.SyncIn{_, +machine, +same, +beat, +vv, +more}:
+      Uber.took.m(Uber.mem.set(Uber.mem.notes(UBS.Ub.net.note(machine, same, beat, now), h), "pvv." ++ link, vv), more, link)
+
+def Uber.took.k(some: Bool, h: Hub, +t: UBS.SyncIn, +link: String, +now: Nat) -> IO(Hub):
+  match some:
+    case True{}:
+      IO.bind(Hub, Hub, Hub.step(h, B.Step{UBS.SyncIn.changes(t), Nil{}}), h2 => Uber.took.n(h2, t, link, now))
+    case False{}:
+      Uber.took.n(h, t, link, now)
+
+# what a machine's object did here: its changes logged, what was learned of
+# it remembered, and another round when either side still lacks ops
+def Uber.took(h: Hub, +t: UBS.SyncIn, +link: String, +now: Nat) -> IO(Hub):
+  Uber.took.k(Bool.not(List.is_empty(&2, M.Change, UBS.SyncIn.changes(t))), h, t, link, now)
+
+# a request wanted while one was out goes now
+def Uber.again.k(go: Bool, h: Hub, +link: String) -> IO(Hub):
+  match go:
+    case True{}:
+      Uber.took.u(Hub.state(h), link)
+    case False{}:
+      IO.pure(Hub, h)
+
+def Uber.again.p(p: Map<&2, String> & Hub, +link: String) -> IO(Hub):
+  (+um, h) = p
+  Uber.again.k(Bool.not(String.is_empty(UBS.Ub.net.get(um, "again." ++ link))), h, link)
+
+def Uber.answer.p(p: M.State & Hub, +o: J.Json, +link: String, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Uber.took(h, UBS.Ub.take(st, o, link, now), link, now)
+
+def Uber.answer.go(h: Hub, +o: J.Json, +link: String, +now: Nat) -> IO(Hub):
+  Uber.answer.p(Hub.state(h), o, link, now)
+
+def Hub.uber.answered(ok: Bool, m: Maybe<&2, J.Json>, h: Hub, +link: String, +now: Nat) -> IO(Hub):
+  match ok m:
+    case True{} Some{+o}:
+      Uber.answer.go(h, o, link, now)
+    case _ _:
+      IO.pure(Hub, h)
+
+# another machine's answer to our request
+def Hub.uber.answer(h: Hub, +link: String, +code: Nat, +body: String, +now: Nat) -> IO(Hub):
+  do IO<Hub>:
+    h2 : Hub <- Hub.uber.answered(Nat.is_eq(code, 200n), J.Json.parse(body), Uber.mem.set(h, "busy." ++ link, ""), link, now)
+    Uber.again.p(Uber.mem.map(h2), link)
+
+# This machine's id, made once
+def Hub.uber.ensure(empty: Bool, h: Hub, +now: Nat) -> IO(Hub):
+  match empty:
+    case True{}:
+      do IO<Hub>:
+        +seed : String <- BN.Bn.random(6n)
+        Hub.step(h, B.Step{[M.SettingSet{"machine.id", "m" ++ seed, now}], Nil{}})
+    case False{}:
+      IO.pure(Hub, h)
+
+def Uber.if(some: Bool, h: Hub, cs: List<&2, M.Change>) -> IO(Hub):
+  match some:
+    case True{}:
+      Hub.step(h, B.Step{cs, Nil{}})
+    case False{}:
+      IO.pure(Hub, h)
+
+def Uber.grace() -> IO(String):
+  Env.get("BACKPLANE_UBER_GRACE", "")
+
+def Uber.grace.n(+s: String) -> Nat:
+  Bool.pick(Nat, String.is_empty(s), UBS.Ub.grace(), M.Switch.num(s, 0n))
+
+def Uber.init.k(cs: List<&2, M.Change>, h: Hub) -> IO(Hub):
+  match cs:
+    case Nil{}:
+      IO.pure(Hub, h)
+    case c <> t:
+      Hub.step(h, B.Step{c <> t, Nil{}})
+
+def Uber.init.p(p: M.State & Hub, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Uber.init.k(UBS.Ub.init(st, now), h)
+
+# the uberbot's first ops, if it has none
+def Uber.init(h: Hub, +now: Nat) -> IO(Hub):
+  Uber.init.p(Hub.state(h), now)
+
+# the holder has been quiet for the grace and this machine is first of the
+# rest: it takes the lease, with the old holder's last entries from its
+# mirror
+def Uber.takeover.k(takes: Bool, h: Hub, +now: Nat) -> IO(Hub):
+  match takes h:
+    case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{UBS.Ub.takeover.cs(st, now, XR.Xref.handoff(UBS.Ub.handoff.thread(st), UBS.Ub.holder(st), FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg))))), Nil{}})
+    case False{} _:
+      IO.pure(Hub, h)
+
+def Uber.takeover.s(p: M.State & Hub, +um: Map<&2, String>, +now: Nat, +grace: Nat) -> IO(Hub):
+  (st, h) = p
+  Uber.takeover.k(UBS.Ub.takes(um, st, now, grace), h, now)
+
+def Uber.takeover.p(p: Map<&2, String> & Hub, +now: Nat, +grace: Nat) -> IO(Hub):
+  (+um, h) = p
+  Uber.takeover.s(Hub.state(h), um, now, grace)
+
+def Uber.boot.k(first: Bool, h: Hub, +now: Nat) -> IO(Hub):
+  match first:
+    case True{}:
+      IO.pure(Hub, Uber.mem.set(h, "boot", Nat.show(now)))
+    case False{}:
+      IO.pure(Hub, h)
+
+def Uber.boot.p(p: Map<&2, String> & Hub, +now: Nat) -> IO(Hub):
+  (+um, h) = p
+  Uber.boot.k(String.is_empty(UBS.Ub.net.get(um, "boot")), h, now)
+
+def Uber.boot(h: Hub, +now: Nat) -> IO(Hub):
+  Uber.boot.p(Uber.mem.map(h), now)
+
+# the minute: an id, the first ops, a takeover if it is time, then a round
+# with every machine (the holder's heartbeat and the anti-entropy)
+def Hub.uber.ensure.p(p: M.State & Hub, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.uber.ensure(String.is_empty(UBS.Ub.me(st)), h, now)
+
+def Hub.uber.tick(h: Hub, +now: Nat) -> IO(Hub):
+  do IO<Hub>:
+    h1 : Hub <- Hub.uber.ensure.p(Hub.state(h), now)
+    h2 : Hub <- Uber.boot(h1, now)
+    h3 : Hub <- Uber.init(h2, now)
+    +g : String <- Uber.grace()
+    h4 : Hub <- Uber.takeover.p(Uber.mem.map(h3), now, Uber.grace.n(g))
+    Uber.kick(h4)
+
+def Hub.uber.do.k(init: Bool, h: Hub, +now: Nat) -> IO(Hub):
+  match init:
+    case True{}:
+      IO.bind(Hub, Hub, Uber.init(h, now), h2 => Uber.kick(h2))
+    case False{}:
+      Uber.kick(h)
+
+# the machine that holds the uberbot's conversation says so to the others
+# between the minute's ticks when the grace is short (min(60 s, grace/4);
+# the Heart message comes every 15 s), so a short silence is not a lapse
+def Hub.uber.beat.k(go: Bool, h: Hub, +now: Nat) -> IO(Hub):
+  match go:
+    case True{}:
+      Uber.kick(Uber.mem.set(h, "beatat", Nat.show(now)))
+    case False{}:
+      IO.pure(Hub, h)
+
+def Hub.uber.beat.s(p: M.State & Hub, +um: Map<&2, String>, +now: Nat, +every: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.uber.beat.k(Bool.and(UBS.Ub.beat(st), Bool.and(Nat.is_lt(every, 60n), Nat.is_ge(Nat.sub(now, UBS.Ub.net.nat(um, "beatat")), every))), h, now)
+
+def Hub.uber.beat.m(p: Map<&2, String> & Hub, +now: Nat, +every: Nat) -> IO(Hub):
+  (+um, h) = p
+  Hub.uber.beat.s(Hub.state(h), um, now, every)
+
+def Hub.uber.beat(h: Hub, +now: Nat) -> IO(Hub):
+  do IO<Hub>:
+    +g : String <- Uber.grace()
+    Hub.uber.beat.m(Uber.mem.map(h), now, UBS.Ub.beat.every(Uber.grace.n(g)))
+
+def Hub.uber.do(h: Hub, +what: String, +now: Nat) -> IO(Hub):
+  Hub.uber.do.k(String.eq(what, "init"), h, now)
+
 # Routines keep their minute cadence; the ticker's first message also
 # refreshes directories immediately after the hub/window has opened.
 def Hub.bot_tick(h: Hub, +tz: String, +now: Nat) -> IO(Hub):
@@ -7521,7 +7820,8 @@ def Hub.bot_tick(h: Hub, +tz: String, +now: Nat) -> IO(Hub):
       do IO<Hub>:
         h2 : Hub <- Hub.dir.refresh(Hub{st, f, ls, cl, as, inbox, cfg, note}, "")
         h3 : Hub <- Hub.pair(h2)
-        Hub.step(h3, BH.Bots.tick(st, now, BH.Tz{M.Snooze.tz.secs(tz), M.Snooze.tz.east(tz)}))
+        h4 : Hub <- Hub.step(h3, BH.Bots.tick(st, now, BH.Tz{M.Snooze.tz.secs(tz), M.Snooze.tz.east(tz)}))
+        Hub.uber.tick(h4, now)
 
 # Discovery and signed inbound traffic are return signals. Fetch just the
 # returning peer, and never bounce every successful directory request.
@@ -7580,6 +7880,17 @@ def Hub.answer(h: Hub, +reply: Chan(List<&2, U32>), bs: List<&2, U32>) -> IO(Hub
 
 def Bot.json(+status: String, +text: String) -> List<&2, U32>:
   W.Http.response(status, "application/json", U.Utf8.encode(text), "")
+
+# POST /far/rpc uber.sync: the answer is what the asking machine lacks
+def Hub.uber.in(h: Hub, +link: String, +o: J.Json, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        +name : String <- BN.Bn.name()
+        +p : J.Json = J.Json.get_obj(o, "p")
+        +ans : String = UBS.Ub.sync.ans(st, name, p)
+        h2 : Hub <- Uber.took(Hub{st, f, ls, cl, as, inbox, cfg, note}, UBS.Ub.take(st, p, link, now), link, now)
+        Hub.answer(h2, reply, Bot.json("200 OK", ans))
 
 # The requests between hubs
 # -------------------------
@@ -7881,10 +8192,18 @@ def Hub.far.rpc.s(show: Bool, +arg: String, view: Bool, +st: M.State, h: Hub, +o
     case False{}:
       Hub.far.rpc.v(view, st, h, o, text, reply, now)
 
+# (uber.sync is the uberbot's: the owner's machines exchange its ops)
+def Hub.far.rpc.u(uber: Bool, show: Bool, +arg: String, view: Bool, +st: M.State, h: Hub, +o: J.Json, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
+  match uber:
+    case True{}:
+      Hub.uber.in(h, arg, o, reply, now)
+    case False{}:
+      Hub.far.rpc.s(show, arg, view, st, h, o, text, reply, now)
+
 def Hub.far.rpc(ok: Bool, +arg: String, m: Maybe<&2, J.Json>, h: Hub, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
   match ok m h:
     case True{} Some{+o} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.far.rpc.s(FV.Fv.show.is(J.Json.get_str(o, "m", "")), arg, FV.Fv.read(J.Json.get_str(o, "m", "")), st, Hub{st, f, ls, cl, as, inbox, cfg, note}, o, text, reply, now)
+      Hub.far.rpc.u(String.eq(J.Json.get_str(o, "m", ""), "uber.sync"), FV.Fv.show.is(J.Json.get_str(o, "m", "")), arg, FV.Fv.read(J.Json.get_str(o, "m", "")), st, Hub{st, f, ls, cl, as, inbox, cfg, note}, o, text, reply, now)
     case True{} None{} _:
       Hub.answer(h, reply, W.Http.text("400 Bad Request", "not JSON"))
     case False{} _ _:
@@ -8794,7 +9113,6 @@ def Hub.mcp.far(own: Bool, h: Hub, +link: String, +rq: String, +o: J.Json, body:
     case False{} _:
       Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), MC.Res.fail("sync with that machine is off here")), h, reply, body)
 
-
 # a tool call for a machine of the owner's goes there (fmcp.bend); machine_list
 # is answered here; any other runs as before
 def Hub.mcp.f(p: FM.Plan, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
@@ -8876,6 +9194,10 @@ def Msg.kind(m: Msg) -> String:
       "recover"
     case Commit{_}:
       "commit"
+    case UberDo{_}:
+      "uber_do"
+    case UberAnswer{_, _, _}:
+      "uber_answer"
     case BotTick{_}:
       "bot_tick"
     case BotsFound{_, _, _}:
@@ -9181,7 +9503,7 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case Tick{}:
       Hub.tick(h, now)
     case Heart{}:
-      Hub.broadcast(h, DK.Alive.frame())
+      IO.bind(Hub, Hub, Hub.broadcast(h, DK.Alive.frame()), h2 => Hub.uber.beat(h2, now))
     case AutoView{thread, fs}:
       Hub.autoview(h, thread, fs)
     case ClaudePid{thread, pid, gen}:
@@ -9204,6 +9526,10 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.link(h, lk)
     case Commit{cs}:
       Hub.step(h, B.Step{cs, Nil{}})
+    case UberDo{what}:
+      Hub.uber.do(h, what, now)
+    case UberAnswer{link, code, body}:
+      Hub.uber.answer(h, link, code, body, now)
     case BotTick{tz}:
       Hub.bot_tick(h, tz, now)
     case BotsFound{peer, url, result}:

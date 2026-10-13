@@ -11,6 +11,8 @@ import ./space.bend as SP
 import ./refs.bend as RF
 import ./handoff.bend as HD
 import ./uber.bend as UB
+import ./ubersync.bend as US
+import ./ubop.bend as UO
 
 # Remote bot directories. A result replaces just its peer; a failure
 # keeps that peer's rows and their last-seen timestamps, marked away.
@@ -673,6 +675,14 @@ def Bots.mentions.k(dup: Bool, +s: M.State, +now: Nat, +p: J.Json) -> B.Step:
 def Bots.mentions.p(+s: M.State, +now: Nat, +p: J.Json) -> B.Step:
   Bots.mentions.k(B.Hub.dup(Bool.not(String.is_empty(J.Json.get_str(p, "msg", ""))), s, J.Json.get_str(p, "msg", "")), s, now, p)
 
+# What the uberbot does on this machine (its memory, space, page, name,
+# routines) is logged with an op for the machines that share it
+# (ubersync.bend, docs/uber.md)
+def Bots.ub(st: B.Step, +s: M.State, +now: Nat) -> B.Step:
+  match st:
+    case B.Step{+cs, os}:
+      B.Step{US.Ub.also(s, now, cs), os}
+
 def Bots.hub.k(turn: Bool, +s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
   match turn:
     case True{}:
@@ -682,7 +692,7 @@ def Bots.hub.k(turn: Bool, +s: M.State, +now: Nat, +client: U32, +o: J.Json) -> 
 
 # a request for the hub's decider; a sent message's mentions come after it
 def Bots.hub(+s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
-  Bots.hub.k(Bool.and(String.eq(J.Json.get_str(o, "m", ""), "turn.start"), RF.Refs.maybe(J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""))), s, now, client, o)
+  Bots.ub(Bots.hub.k(Bool.and(String.eq(J.Json.get_str(o, "m", ""), "turn.start"), RF.Refs.maybe(J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""))), s, now, client, o), s, now)
 
 def Bots.routine.id(+s: M.State, +now: Nat, +id: String) -> String:
   Bool.pick(String, String.is_empty(id), B.Hub.id("o", now, B.Hub.seq(s)), id)
@@ -790,7 +800,7 @@ def Reply.request(+thread: String, +state: String) -> String:
 def Bots.methods() -> List<&2, String>:
   ["bots.create", "bots.edit", "bots.delete", "bots.say", "bots.room", "bots.room_delete", "bots.post", "bots.routine", "bots.routine_delete",
    "bots.routine_run", "bots.hook", "bots.hook_revoke", "bots.forget", "bots.remember", "bots.space", "bots.invite", "bots.join", "bots.unpeer",
-   "bots.google", "bots.tell", "bots.hook_token", "bots.voice", "bots.answered", "bots.give", "bots.uber"]
+   "bots.google", "bots.tell", "bots.hook_token", "bots.voice", "bots.answered", "bots.give", "bots.uber", "bots.uber_join", "bots.pin"]
 
 def Bots.is(+m: String) -> Bool:
   String.starts_with(m, "bots.")
@@ -956,6 +966,40 @@ def Give.step(+s: M.State, +now: Nat, +client: U32, +id: String, +src: String, +
   Give.done(Give.go(RF.Refs.found(s, src, text), 0n, s, now, src,
     HD.Hand.give(B.Hub.entries(s), src, HD.Hand.title(B.Hub.thread(s, src)), Give.note(text))), client, id)
 
+# Joining an uberbot another machine offered (setting uber.offer), and
+# pinning one of its routines to a machine
+# (bots.uber_join {uid}, bots.pin {routine, pin}; ubersync.bend)
+
+def Bots.uber_join.go(+s: M.State, +now: Nat, +client: U32, +id: String, +uid: String, +name: String, +look: Nat, +bot: String, +th: String) -> B.Step:
+  B.Step{List.append(&2, M.Change, [M.ThreadCreated{th, "", name, M.Local{}, "", "", M.Setting.get(s, "agent.provider", "claude"), M.Setting.get(s, "agent.model", ""), now},
+      M.BotSet{bot, name, th, look, "", now}], US.Ub.joined(s, bot, th, name, uid, now)),
+    [Bots.ok(client, id, [J.KV{"bot", J.Str{bot}}]), B.BotFx{"home", bot, th, ""}]}
+
+def Bots.uber_join.k(+err: String, ok: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +uid: String, +name: String, +look: Nat) -> B.Step:
+  Bool.pick(B.Step, String.is_empty(err),
+    Bool.pick(B.Step, ok, Bots.uber_join.go(s, now, client, id, uid, name, look, B.Hub.id("b", now, B.Hub.seq(s)), B.Hub.id("t", now, B.Hub.seq(s))),
+      Bots.err(client, id, "this machine has a bot called " ++ name ++ " already; rename it first")),
+    Bots.err(client, id, err))
+
+def Bots.uber_join.j(j: US.Join, +s: M.State, +now: Nat, +client: U32, +id: String, +uid: String) -> B.Step:
+  match j:
+    case US.Join{+err, +name, +look}:
+      Bots.uber_join.k(Bool.pick(String, String.is_empty(US.Ub.me(s)), "this machine has no id yet; try again in a moment", err),
+        Bool.and(Bots.name.ok(name), Bots.name.free(s, name)), s, now, client, id, uid, name, look)
+
+def Bots.uber_join(+s: M.State, +now: Nat, +client: U32, +id: String, +uid: String) -> B.Step:
+  Bots.uber_join.j(US.Ub.join(s, uid), s, now, client, id, uid)
+
+def Bots.pin.k(cs: List<&2, M.Change>, +client: U32, +id: String) -> B.Step:
+  match cs:
+    case Nil{}:
+      Bots.err(client, id, "only the uberbot's routines can be pinned")
+    case c <> t:
+      B.Step.reply(client, id, c <> t)
+
+def Bots.pin(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> B.Step:
+  Bots.pin.k(US.Ub.pin.set(s, now, J.Json.get_str(p, "routine", ""), Bool.pick(String, String.eq(J.Json.get_str(p, "pin", ""), "here"), US.Ub.me(s), J.Json.get_str(p, "pin", ""))), client, id)
+
 def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> B.Step:
   match i:
     case 0n:
@@ -1010,11 +1054,15 @@ def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p
       Give.step(s, now, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "text", ""))
     case 24n:
       Bots.uber(s, now, client, id, J.Json.get_str(p, "bot", ""))
+    case 25n:
+      Bots.uber_join(s, now, client, id, J.Json.get_str(p, "uid", ""))
+    case 26n:
+      Bots.pin(s, now, client, id, p)
     case _:
       Bots.err(client, id, "unknown bots request")
 
 def Bots.request(+s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
-  Bots.request.k(C.Codec.pos(Bots.methods(), J.Json.get_str(o, "m", "")), s, now, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), J.Json.get_obj(o, "p"))
+  Bots.ub(Bots.request.k(C.Codec.pos(Bots.methods(), J.Json.get_str(o, "m", "")), s, now, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), J.Json.get_obj(o, "p")), s, now)
 
 # Webhooks and other machines
 # ---------------------------
@@ -1193,10 +1241,35 @@ def Bots.due(r: BT.Routine, +now: Nat, +tz: Tz) -> Bool:
     case BT.Routine{_, _, _, cron, _, on, +last, _, deleted}:
       Bool.and(Bool.and(on, Bool.not(deleted)), Bots.due.k(CR.Cron.parse(cron), last, now, tz))
 
-def Bots.tick.one(due: Bool, +s: M.State, +now: Nat, +i: Nat, r: BT.Routine) -> B.Step:
+# the next time a routine is scheduled for after its last run (0: never)
+def Bots.slot.k(m: Maybe<&2, CR.Cron>, +last: Nat, +tz: Tz) -> Nat:
+  match m tz:
+    case Some{+c} Tz{+off, +east}:
+      CR.Cron.next(c, last, off, east)
+    case None{} _:
+      0n
+
+# an uberbot's routine that is due runs here only when this machine is the
+# one for it (US.Ub.fires), and says so with a "fired" op for the others
+def Bots.tick.uber(fires: Bool, +s: M.State, +now: Nat, +i: Nat, +r: BT.Routine, +gid: String, +slot: Nat) -> B.Step:
+  match fires:
+    case True{}:
+      Step.cat(Bots.fire(s, now, i, r), B.Step{US.Ub.ops(s, now, [UO.Ub.b.fired(gid, slot)]), Nil{}})
+    case False{}:
+      B.Step.none()
+
+def Bots.tick.gate(uber: Bool, +s: M.State, +now: Nat, +i: Nat, +r: BT.Routine, +tz: Tz) -> B.Step:
+  match uber:
+    case True{}:
+      Bots.tick.uber(US.Ub.fires(s, US.Ub.gid(US.Ub.me(s), BT.Routine.id(r)), Bots.slot.k(CR.Cron.parse(BT.Routine.cron(r)), BT.Routine.last(r), tz)),
+        s, now, i, r, US.Ub.gid(US.Ub.me(s), BT.Routine.id(r)), Bots.slot.k(CR.Cron.parse(BT.Routine.cron(r)), BT.Routine.last(r), tz))
+    case False{}:
+      Bots.fire(s, now, i, r)
+
+def Bots.tick.one(due: Bool, +s: M.State, +now: Nat, +i: Nat, +r: BT.Routine, +tz: Tz) -> B.Step:
   match due:
     case True{}:
-      Bots.fire(s, now, i, r)
+      Bots.tick.gate(UB.Uber.is(s, BT.Routine.bot(r)), s, now, i, r, tz)
     case False{}:
       B.Step.none()
 
@@ -1205,7 +1278,7 @@ def Bots.tick.go(rs: List<&2, BT.Routine>, +i: Nat, +s: M.State, +now: Nat, +tz:
     case Nil{}:
       B.Step.none()
     case +r <> t:
-      Step.cat(Bots.tick.one(Bots.due(r, now, tz), s, now, i, r), Bots.tick.go(t, 1n+i, s, now, tz))
+      Step.cat(Bots.tick.one(Bots.due(r, now, tz), s, now, i, r, tz), Bots.tick.go(t, 1n+i, s, now, tz))
 
 # the minute tick: every due routine runs once
 def Bots.tick(+s: M.State, +now: Nat, +tz: Tz) -> B.Step:
@@ -2004,12 +2077,18 @@ def Bots.route(+s: M.State, +thread: String, +o: J.Json) -> Route:
   Bots.route.k(BT.World.is_bot_thread(M.State.bots(s), thread), String.eq(J.Json.get_str(o, "method", ""), "tools/list"),
     Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), Bots.tool.is(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""))))
 
+# a tool call's step, with the ops for what it did to the uberbot
+def Bots.mcp.ub(o: MC.McpOut, +s: M.State, +now: Nat) -> MC.McpOut:
+  match o:
+    case MC.McpOut{reply, st, park}:
+      MC.McpOut{reply, Bots.ub(st, s, now), park}
+
 def Bots.mcp.k(r: Route, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +version: String, +dir: J.Json, +extra: List<&2, J.Json>, +o: J.Json) -> MC.McpOut:
   match r:
     case RList{}:
       MC.McpOut{Bots.list(J.Json.get_obj(o, "id"), extra), B.Step.none(), ""}
     case RCall{}:
-      Bots.call(s, now, dir, thread, J.Json.get_obj(o, "id"), J.Json.get_obj(o, "params"))
+      Bots.mcp.ub(Bots.call(s, now, dir, thread, J.Json.get_obj(o, "id"), J.Json.get_obj(o, "params")), s, now)
     case RPass{}:
       MC.Mcp.handle(s, now, thread, models, version, o)
 

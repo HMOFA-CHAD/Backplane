@@ -703,6 +703,21 @@ def Routine.bot(r: Routine) -> String:
     case Routine{_, b, _, _, _, _, _, _, _}:
       b
 
+def Routine.id(r: Routine) -> String:
+  match r:
+    case Routine{i, _, _, _, _, _, _, _, _}:
+      i
+
+def Routine.cron(r: Routine) -> String:
+  match r:
+    case Routine{_, _, _, c, _, _, _, _, _}:
+      c
+
+def Routine.last(r: Routine) -> Nat:
+  match r:
+    case Routine{_, _, _, _, _, _, l, _, _}:
+      l
+
 def World.routines.all(+w: World) -> List<&2, Routine>:
   match w:
     case World{_, _, _, _, ro, _, _, _, _, _, _}:

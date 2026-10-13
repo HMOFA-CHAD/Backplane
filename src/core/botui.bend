@@ -7,6 +7,7 @@ import ./space.bend as SP
 import ./once.bend as O
 import ./far.bend as FR
 import ./uber.bend as UB
+import ./ubersync.bend as US
 
 # What the bots' screens show, for every client (the window, the web and
 # the phones draw from these; docs/bots.md). The sidebar's cats with their
@@ -289,6 +290,16 @@ def BU.rooms.keyed(+u: U.Ui) -> List<&2, RK<RRow>>:
 def BU.rooms(+u: U.Ui) -> List<&2, RRow>:
   BU.once.vals(RRow, BU.rooms.keyed(u))
 
+def BRow.link(r: BRow) -> String:
+  match r:
+    case BRow{_, _, _, _, _, _, _, _, _, l}:
+      l
+
+def BRow.name(r: BRow) -> String:
+  match r:
+    case BRow{_, n, _, _, _, _, _, _, _, _}:
+      n
+
 def BRow.moving(r: BRow) -> Bool:
   match r:
     case BRow{_, _, _, _, +m, _, _, _, _, _}:
@@ -317,17 +328,17 @@ def BU.view.bot.k(same: Bool, b: BT.Bot) -> View:
     case False{}:
       VThread{}
 
-def BU.view.bot(m: Maybe<&2, BT.Bot>, +sel: String) -> View:
+def BU.view.bot(m: Maybe<&2, BT.Bot>, +u: U.Ui, +sel: String) -> View:
   match m:
     case Some{+b}:
-      BU.view.bot.k(String.eq(BT.Bot.thread(b), sel), b)
+      BU.view.bot.k(U.Bots.chat.is(U.Ui.state(u), BT.Bot.id(b), BT.Bot.thread(b), sel), b)
     case None{}:
       VThread{}
 
 def BU.view.far(none: Bool, +u: U.Ui) -> View:
   match none:
     case True{}:
-      BU.view.bot(BT.World.find.id(BT.World.bot(M.State.bots(U.Ui.state(u)), BU.bot.sel(u))), U.Ui.sel(u))
+      BU.view.bot(BT.World.find.id(BT.World.bot(M.State.bots(U.Ui.state(u)), BU.bot.sel(u))), u, U.Ui.sel(u))
     case False{}:
       VRemote{BU.remote.sel(u)}
 
@@ -594,9 +605,26 @@ def BU.sans(bs: List<&2, BT.Bot>, +id: String) -> List<&2, BT.Bot>:
     case +b <> t:
       BU.sans.k(String.eq(BT.Bot.id(b), id), b, BU.sans(t, id))
 
-# the uberbot is not in the list of bots (it has its own row, BU.uber)
+# the bots without the uberbot's replicas on other machines (US.Ub.far)
+def BU.sans.far(bs: List<&2, BT.Bot>, +st: M.State) -> List<&2, BT.Bot>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case +b <> t:
+      BT.Post.keep(BT.Bot, Bool.not(US.Ub.far.is(st, BT.Bot.id(b))), b, BU.sans.far(t, st))
+
+# the rows without the uberbot's replicas that machines report
+def BU.sans.rows(rs: List<&2, BRow>, +st: M.State) -> List<&2, BRow>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      BT.Post.keep(BRow, Bool.not(US.Ub.far.named(st, BRow.link(r), BRow.name(r))), r, BU.sans.rows(t, st))
+
+# the uberbot is not in the list of bots (it has its own row, BU.uber), nor
+# are its replicas on other machines
 def BU.rows.here(+u: U.Ui, +bs: List<&2, BT.Bot>) -> List<&2, BRow>:
-  BU.rows.go(BU.sans(bs, UB.Uber.bot(U.Ui.state(u))), u, U.Ui.state(u), U.Side.now(u), BU.bot.sel(u), BU.here(bs))
+  BU.rows.go(BU.sans.far(BU.sans(bs, UB.Uber.bot(U.Ui.state(u))), U.Ui.state(u)), u, U.Ui.state(u), U.Side.now(u), BU.bot.sel(u), BU.here(bs))
 
 def BU.uber.of(m: Maybe<&2, BT.Bot>, +u: U.Ui) -> Maybe<&2, BRow>:
   match m:
@@ -612,7 +640,7 @@ def BU.uber(+u: U.Ui) -> Maybe<&2, BRow>:
 # the sidebar's cats before each is kept once: this machine's bots (oldest
 # first), then those the linked machines report
 def BU.rows.all(+u: U.Ui) -> List<&2, O.Ky<BRow>>:
-  List.append(&2, O.Ky<BRow>, BU.kys(BU.rows.here(u, BT.World.bots(M.State.bots(U.Ui.state(u))))), BU.kys(BU.remote.all(u)))
+  List.append(&2, O.Ky<BRow>, BU.kys(BU.rows.here(u, BT.World.bots(M.State.bots(U.Ui.state(u))))), BU.kys(BU.sans.rows(BU.remote.all(u), U.Ui.state(u))))
 
 def BU.rows.keyed(+u: U.Ui) -> List<&2, O.Ky<BRow>>:
   O.Once.of(BRow, BU.rows.all(u))
