@@ -14,6 +14,7 @@ import ./far.bend as FR
 import ./ubersync.bend as UBS
 import ./notice.bend as NO
 import ./wake.bend as WK
+import ./told.bend as TLD
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -178,8 +179,10 @@ def Alerts.changes.k(has: Bool, +st: M.State, +cs: List<&2, M.Change>) -> List<&
       cs
 
 # the step's changes with the records of the asks it opens
+# with what the person was told (told.bend's Told.after: every record that
+# alerts is marked, under its key)
 def Alerts.changes(+st: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
-  Alerts.changes.k(Alerts.has(cs), st, cs)
+  TLD.Told.after(st, Alerts.changes.k(Alerts.has(cs), st, cs))
 
 # a record that alerts: its setting key starts "alert." and its kind (the
 # value's first field) is not empty

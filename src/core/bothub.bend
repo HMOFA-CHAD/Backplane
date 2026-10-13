@@ -16,6 +16,9 @@ import ./review.bend as RVW
 import ./plane.bend as PLN
 import ./ubersync.bend as US
 import ./ubop.bend as UO
+import ./told.bend as TLD
+import ./rules.bend as RLS
+import ./ledger.bend as LG
 
 # Remote bot directories. A result replaces just its peer; a failure
 # keeps that peer's rows and their last-seen timestamps, marked away.
@@ -694,8 +697,15 @@ def Bots.hub.k(turn: Bool, +s: M.State, +now: Nat, +client: U32, +o: J.Json) -> 
       B.Hub.request(s, now, client, o)
 
 # a request for the hub's decider; a sent message's mentions come after it
+def Bots.hub.l(ledger: Bool, +s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
+  match ledger:
+    case True{}:
+      LG.Ledger.request(s, now, client, o)
+    case False{}:
+      Bots.ub(Bots.hub.k(Bool.and(String.eq(J.Json.get_str(o, "m", ""), "turn.start"), RF.Refs.maybe(J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""))), s, now, client, o), s, now)
+
 def Bots.hub(+s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
-  Bots.ub(Bots.hub.k(Bool.and(String.eq(J.Json.get_str(o, "m", ""), "turn.start"), RF.Refs.maybe(J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""))), s, now, client, o), s, now)
+  Bots.hub.l(LG.Ledger.method(J.Json.get_str(o, "m", "")), s, now, client, o)
 
 def Bots.routine.id(+s: M.State, +now: Nat, +id: String) -> String:
   Bool.pick(String, String.is_empty(id), B.Hub.id("o", now, B.Hub.seq(s)), id)
@@ -1301,7 +1311,7 @@ def Bots.tick.go(rs: List<&2, BT.Routine>, +i: Nat, +s: M.State, +now: Nat, +tz:
 
 # the minute tick: every due routine runs once
 def Bots.tick(+s: M.State, +now: Nat, +tz: Tz) -> B.Step:
-  Bots.tick.go(BT.World.routines.all(M.State.bots(s)), 0n, s, now, tz)
+  Step.cat(Bots.tick.go(BT.World.routines.all(M.State.bots(s)), 0n, s, now, tz), B.Step{TLD.Told.prune(s, now), Nil{}})
 
 # The bots' tools
 # ---------------
@@ -2156,24 +2166,36 @@ def Bots.call(+s: M.State, +now: Nat, +dir: J.Json, +thread: String, +id: J.Json
 
 # tools/list for a bot's agent: Backplane's tools and the bots' own
 def Bots.list(+id: J.Json, +extra: List<&2, J.Json>) -> String:
-  MC.Mcp.result(id, J.Json.obj([J.KV{"tools", J.Json.arr(List.concat(&2, J.Json, [J.Json.elems(J.Json.get_obj(MC.Mcp.tools(), "tools")), Bots.tools(), [Bots.newproj.def()], extra]))}]))
+  MC.Mcp.result(id, J.Json.obj([J.KV{"tools", J.Json.arr(List.concat(&2, J.Json, [J.Json.elems(J.Json.get_obj(MC.Mcp.tools(), "tools")), LG.Ledger.tools(), Bots.tools(), [Bots.newproj.def()], extra]))}]))
+
+# tools/list for a thread that is no bot's: Backplane's tools and the ledgers'
+def Bots.list.plain(+id: J.Json) -> String:
+  MC.Mcp.result(id, J.Json.obj([J.KV{"tools", J.Json.arr(List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(MC.Mcp.tools(), "tools")), LG.Ledger.tools()))}]))
 
 type Route is Data:
   RList{}
   RCall{}
   RPass{}
+  RLedger{}
+  RPlain{}
 
-def Bots.route.k(bot: Bool, list: Bool, call: Bool) -> Route:
-  match bot list call:
-    case True{} True{} _:
+# the ledger tools (told_*, task_board_*) are every thread's, so they come
+# first; a bot's own tools are a bot's
+def Bots.route.k(ledger: Bool, bot: Bool, list: Bool, call: Bool) -> Route:
+  match ledger bot list call:
+    case True{} _ _ _:
+      RLedger{}
+    case False{} True{} True{} _:
       RList{}
-    case True{} False{} True{}:
+    case False{} True{} False{} True{}:
       RCall{}
-    case _ _ _:
+    case False{} False{} True{} _:
+      RPlain{}
+    case _ _ _ _:
       RPass{}
 
 def Bots.route(+s: M.State, +thread: String, +o: J.Json) -> Route:
-  Bots.route.k(BT.World.is_bot_thread(M.State.bots(s), thread), String.eq(J.Json.get_str(o, "method", ""), "tools/list"),
+  Bots.route.k(LG.Ledger.is(o), BT.World.is_bot_thread(M.State.bots(s), thread), String.eq(J.Json.get_str(o, "method", ""), "tools/list"),
     Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), Bots.tool.is(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""))))
 
 # a tool call's step, with the ops for what it did to the uberbot
@@ -2188,6 +2210,10 @@ def Bots.mcp.k(r: Route, +s: M.State, +now: Nat, +thread: String, +models: J.Jso
       MC.McpOut{Bots.list(J.Json.get_obj(o, "id"), extra), B.Step.none(), ""}
     case RCall{}:
       Bots.mcp.ub(Bots.call(s, now, dir, thread, J.Json.get_obj(o, "id"), J.Json.get_obj(o, "params")), s, now)
+    case RLedger{}:
+      LG.Ledger.call(s, now, thread, J.Json.get_obj(o, "id"), J.Json.get_obj(o, "params"))
+    case RPlain{}:
+      MC.McpOut{Bots.list.plain(J.Json.get_obj(o, "id")), B.Step.none(), ""}
     case RPass{}:
       MC.Mcp.handle(s, now, thread, models, version, o)
 
@@ -2257,7 +2283,7 @@ def Bots.turn.k(m: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +text: String) -> 
       text
 
 def Bots.turn(+s: M.State, +now: Nat, +thread: String, text: String) -> String:
-  Bots.turn.k(BT.World.of_thread(M.State.bots(s), thread), s, now, RVW.Review.agent(s, thread, RF.Refs.agent(s, thread, text)))
+  RLS.Rules.agent(s, thread, Bots.turn.k(BT.World.of_thread(M.State.bots(s), thread), s, now, RVW.Review.agent(s, thread, RF.Refs.agent(s, thread, text))))
 
 # notify_person: the laws' examples
 # ---------------------------------
