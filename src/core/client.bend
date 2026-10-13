@@ -1148,7 +1148,7 @@ def Ui.actions() -> List<&2, String>:
    "attach-up", "attach-end",
    "hist-go", "hist-prev", "hist-next", "hist-first", "hist-last", "hist-play", "hist-tick", "hist-diff", "hist-live", "hist-jump",
    "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page", "update-now", "work-cancel", "task-cancel",
-   "view-layer-pick", "view-layer-mode", "skill-close", "wake-cancel", "deploy-cancel"]
+   "view-layer-pick", "view-layer-mode", "skill-close", "wake-cancel", "deploy-cancel", "lock-release", "lock-cancel"]
 
 # Reading the client state
 # ------------------------
@@ -4418,6 +4418,10 @@ def Fm.act(i: Nat, +u: Ui, +value: String) -> Act:
       Lfocus.pick(u, value)
     case 10n:
       Lfocus.mode(u, value)
+    case 14n:
+      Ui.rpc(u, "lock.release", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"name", J.Str{value}}])
+    case 15n:
+      Ui.rpc(u, "lock.cancel", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"name", J.Str{value}}])
     case 12n:
       Ui.rpc(u, "wake.cancel", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"id", J.Str{value}}])
     # (a restart waiting for a safe point is cancelled: the plane's row)

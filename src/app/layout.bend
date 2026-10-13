@@ -2388,8 +2388,8 @@ def Pins.height(vs: List<&2, EM.EV>) -> U32:
 
 def Sa.color(+word: String) -> U32:
   Bool.pick(U32, String.eq(word, "running"), T.Th.accent(),
-    Bool.pick(U32, Bool.or(String.eq(word, "done"), String.eq(word, "reporting")), T.Th.ok(),
-    Bool.pick(U32, Bool.or(String.eq(word, "waiting on"), Bool.or(String.eq(word, "watching"), String.eq(word, "launching"))), T.Th.accent(),
+    Bool.pick(U32, Bool.or(String.eq(word, "held"), Bool.or(String.eq(word, "done"), String.eq(word, "reporting"))), T.Th.ok(),
+    Bool.pick(U32, Bool.or(Bool.or(String.eq(word, "waiting"), String.eq(word, "waiting on")), Bool.or(String.eq(word, "watching"), String.eq(word, "launching"))), T.Th.accent(),
       Bool.pick(U32, String.eq(word, "queued"), T.Th.faint(),
         Bool.pick(U32, Bool.or(String.eq(word, "cancelled"), String.eq(word, "cancelling")), T.Th.warn(), T.Th.bad())))))
 

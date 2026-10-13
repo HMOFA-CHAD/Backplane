@@ -1,4 +1,5 @@
 import Base
+import ./src/core/locks.bend as LCK
 import ./src/gfx/text.bend as X
 import ./src/core/bothub.bend as BHS
 import ./src/core/bot.bend as BOT
@@ -8727,6 +8728,40 @@ def Laws.deploy_cut_requester_no_second():
   {==}
 
 def Laws.deploy_cancel_clears():
+
+# harness-coord: locks
+
+def Laws.lock_exclusive(l):
+  match l:
+    case LCK.NamedLock{None{}, _, _}:
+      {==}
+    case LCK.NamedLock{Some{_}, _, _}:
+      {==}
+
+def Laws.lock_fifo(holder, first, rest):
+  {==}
+
+def Laws.lock_holder_only(l):
+  {==}
+
+def Laws.lock_release_next():
+  {==}
+
+def Laws.lock_deleted_holder_frees():
+  {==}
+
+def Laws.lock_work_releases():
+  {==}
+
+def Laws.lock_grant_once():
+  {==}
+
+def Laws.lock_ready_idempotent(l):
+  match l:
+    case LCK.NamedLock{_, _, _}:
+      {==}
+
+def Laws.codec_lock_roundtrip():
   {==}
 # ---- phone-sch-viewer: exe path ----
 

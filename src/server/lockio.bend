@@ -1,0 +1,19 @@
+import Base
+
+# Nonblocking POSIX flock guard. A captured child holds each granted flock;
+# a pipe ties its lifetime to the hub, including a hub killed with SIGKILL.
+def Guard.take(name: String, holder: String, home: String, script: String) -> IO(Bool):
+  import "./effects/locks.c"
+  import "./effects/locks.js"
+
+def Guard.drop(name: String, holder: String) -> IO(Unit):
+  import "./effects/locks.c"
+  import "./effects/locks.js"
+
+# Keep the flock until a detached owned job stops, even on hub SIGKILL.
+# PID and start identity come from the existing work runner's own files.
+def Guard.cleanup() -> String:
+  "d=$1/work/$2\ncase $2 in w-*) ;; *) exit 0 ;; esac\n# A committed job may still be in its launch fiber when the hub dies.\nif [ -e \"$d/intent\" ]; then\n  : > \"$d/cancel\"\n  for attempt in 1 2; do\n    [ -s \"$d/pid\" ] && [ -s \"$d/pidid\" ] && break\n    sleep 1\n  done\nfi\npid_id() {\n  q=$1\n  if [ -r \"/proc/$q/stat\" ]; then\n    b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)\n    st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20)\n    echo \"$b:$st\"\n  elif ps -p \"$q\" >/dev/null 2>&1; then\n    ps -o lstart= -p \"$q\" | tr -s ' ' '_'\n  fi\n}\np=$(cat \"$d/pid\" 2>/dev/null)\nsaved=$(cat \"$d/pidid\" 2>/dev/null)\n[ -n \"$p\" ] && [ \"$p\" -gt 1 ] 2>/dev/null && [ -n \"$saved\" ] && [ \"$(pid_id \"$p\")\" = \"$saved\" ] || exit 0\nkill -TERM \"-$p\" 2>/dev/null || :\nkill -TERM \"$p\" 2>/dev/null || :\nfor attempt in 1 2; do\n  if kill -0 \"-$p\" 2>/dev/null || kill -0 \"$p\" 2>/dev/null; then sleep 1; else exit 0; fi\ndone\nkill -KILL \"-$p\" 2>/dev/null || :\n[ \"$(pid_id \"$p\")\" != \"$saved\" ] || kill -KILL \"$p\" 2>/dev/null || :\nfor attempt in 1 2; do\n  if kill -0 \"-$p\" 2>/dev/null || kill -0 \"$p\" 2>/dev/null; then sleep 1; else break; fi\ndone\nexit 0\n"
+
+def Guard.script() -> String:
+  "cat >/dev/null\n" ++ Guard.cleanup()

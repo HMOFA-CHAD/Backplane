@@ -1,5 +1,7 @@
 import Base
 import ../core/exe.bend as EX
+import ./lockio.bend as LG
+import ../core/locks.bend as LCK
 import ./host.bend as H
 import ./proc.bend as P
 import ../core/json.bend as J
@@ -95,6 +97,8 @@ type Wire is Data:
   WItems{head: String, plain: String, split: String, items: List<&2, String>, tail: String, ends: Bool}
 
 type Msg is Data:
+  LockProbe{name: String, holder: String}
+  LockHttp{op: String, body: String, reply: Chan(String)}
   Announce{text: String}
   Mcp{thread: String, body: String, reply: Chan(String)}
   # gen: the connection's generation (a socket's id; the window's client 0
@@ -1153,12 +1157,15 @@ def Mcp.answer(m: Maybe<&1, String>, s: Socket) -> IO(Unit):
     case None{}:
       Conn.finish(s, W.Http.text("503 Service Unavailable", "the hub is gone"))
 
-def Mcp.ask(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Mcp.ask.raw(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +reply : Chan(String) <- Chan.new(String, 1)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Mcp{thread, body, reply})
     m : Maybe<&1, String> <- Chan.recv(String, reply)
     Mcp.answer(m, s)
+
+def Mcp.ask(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+  Mcp.ask.raw(s, body, thread, inbox)
 
 def Mcp.body.k(full: Bool, s: Socket, +buf: List<&2, U32>, +thread: String, +inbox: Chan(Msg), k: Socket -> List<&2, U32> -> IO(Unit)) -> IO(Unit):
   match full:
@@ -4196,13 +4203,87 @@ def Conn.route.k(ws: Bool, s: Socket, req: W.Request, rest: List<&2, U32>, +web:
     case False{} W.Request{_, +p, +hs}:
       Conn.get.k(Conn.pos(["/hello", "/img", "/debug/perf", "/debug/perf.json", "/debug/log"], W.Http.route(p), 0n), s, web, p, String.contains(W.Http.header_of(hs, "accept-encoding"), "gzip"), Conn.allowed(trusted, hs, p, token))
 
-def Conn.route.mcp(mcp: Bool, s: Socket, +req: W.Request, rest: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
+def LockHttp.wait.next(waiting: Bool, s: Socket, +text: String, +body: String, +inbox: Chan(Msg), k: Maybe<&1, String> -> Socket -> IO(Unit)) -> IO(Unit):
+  match waiting:
+    case False{}:
+      Mcp.answer(Some{text}, s)
+    case True{}:
+      do IO<Unit>:
+        IO.sleep(1000)
+        +reply : Chan(String) <- Chan.new(String, 1)
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, LockHttp{"status", body, reply})
+        m : Maybe<&1, String> <- Chan.recv(String, reply)
+        k(m, s)
+
+# Long polling belongs to the HTTP connection; the hub remains responsive.
+def LockHttp.wait.more(m: Maybe<&1, String>, s: Socket, +body: String, +inbox: Chan(Msg), k: Maybe<&1, String> -> Socket -> IO(Unit)) -> IO(Unit):
+  match m:
+    case Some{+text}:
+      LockHttp.wait.next(Bool.and(Bool.not(J.Json.get_bool(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), "held", False{})), Bool.not(String.contains(text, "\"error\""))), s, text, body, inbox, k)
+    case None{}:
+      Mcp.answer(None{}, s)
+
+def LockHttp.wait(fuel: Nat, m: Maybe<&1, String>, s: Socket, +body: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      Mcp.answer(m, s)
+    case 1n+f:
+      LockHttp.wait.more(m, s, body, inbox, m2 => s2 => LockHttp.wait(f, m2, s2, body, inbox))
+
+def LockHttp.ask(s: Socket, +body: String, +op: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +reply : Chan(String) <- Chan.new(String, 1)
+    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, LockHttp{op, body, reply})
+    m : Maybe<&1, String> <- Chan.recv(String, reply)
+    LockHttp.wait(Bool.pick(Nat, Bool.and(String.eq(op, "acquire"), J.Json.get_bool(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "wait", False{})), 25n, 0n), m, s, body, inbox)
+
+def LockHttp.body.k(full: Bool, s: Socket, +buf: List<&2, U32>, +op: String, +inbox: Chan(Msg), k: Socket -> List<&2, U32> -> IO(Unit)) -> IO(Unit):
+  match full:
+    case True{}:
+      LockHttp.ask(s, U.Utf8.decode(buf), op, inbox)
+    case False{}:
+      IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 65536), r => Mcp.got(r, buf, k))
+
+def LockHttp.body(fuel: Nat, s: Socket, +buf: List<&2, U32>, +len: Nat, +op: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      Conn.finish(s, W.Http.text("413 Payload Too Large", "too large"))
+    case 1n+f:
+      LockHttp.body.k(Nat.is_ge(List.length(&2, U32, buf), len), s, buf, op, inbox, s2 => b2 => LockHttp.body(f, s2, b2, len, op, inbox))
+
+def LockHttp.gate(local: Bool, s: Socket, +op: String, +len: Nat, rest: List<&2, U32>, +inbox: Chan(Msg)) -> IO(Unit):
+  match local:
+    case True{}:
+      LockHttp.body(4n, s, rest, len, op, inbox)
+    case False{}:
+      Conn.finish(s, W.Http.text("403 Forbidden", "locks require loopback"))
+
+def LockHttp.peer(r: Socket & String, +op: String, +len: Nat, rest: List<&2, U32>, +inbox: Chan(Msg)) -> IO(Unit):
+  (s, peer) = r
+  LockHttp.gate(String.starts_with(peer, "127."), s, op, len, rest, inbox)
+
+def Conn.route.mcp.raw(mcp: Bool, s: Socket, +req: W.Request, rest: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
   match mcp req:
     case True{} W.Request{_, +p, +hs}:
       Mcp.gate(Conn.allowed(trusted, hs, p, token), s, String.drop(W.Http.route(p), 5n),
         Maybe.default(&2, Nat, Nat.read(W.Http.header_of(hs, "content-length")), 0n), rest, inbox)
     case False{} _:
       Conn.route.k(Conn.is_ws(req), s, req, rest, web, id, inbox, trusted, token)
+
+def Conn.is_lock(req: W.Request) -> Bool:
+  match req:
+    case W.Request{m, p, _}:
+      Bool.and(String.eq(m, "POST"), String.starts_with(W.Http.route(p), "/lock/"))
+
+def Conn.route.lock(lock: Bool, s: Socket, +req: W.Request, rest: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
+  match lock req:
+    case True{} W.Request{_, +p, hs}:
+      IO.bind(Socket & String, Unit, H.Sock.peer(s), r => LockHttp.peer(r, String.drop(W.Http.route(p), 6n), J.Json.get_nat(J.Json.obj([J.KV{"n", J.Num{W.Http.header_of(hs, "content-length")}}]), "n", 0n), rest, inbox))
+    case False{} _:
+      Conn.route.mcp.raw(Conn.is_mcp(req), s, req, rest, web, id, inbox, trusted, token)
+
+def Conn.route.mcp(mcp: Bool, s: Socket, +req: W.Request, rest: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
+  Conn.route.lock(Conn.is_lock(req), s, req, rest, web, id, inbox, trusted, token)
 
 def Refresh.news(news: Bool, +ms: String, +mt: String, +inbox: Chan(Msg), +cache: String, +last: String) -> IO(String):
   match news:
@@ -5812,13 +5893,13 @@ def Watch.dir(+home: String, +id: String) -> String:
   home ++ "/work/" ++ id
 
 def Watch.launch.sh() -> String:
-  "d=$1; c=$2; cmd=$3\npid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nmkdir -p \"$d\" || { echo gone; exit 0; }\n[ -e \"$d/code\" ] && { echo running; exit 0; }\nif [ -e \"$d/started\" ]; then { [ -e \"$d/out\" ] || [ -e \"$d/how\" ]; } && { echo running; exit 0; }; fi\nprintf '%s\\n' \"$cmd\" > \"$d/cmd\"\n{ printf ': > \"%s/out\"\\n' \"$d\"; printf 'cd \"%s\" || exit 127\\n' \"$c\"; printf 'sh \"%s/cmd\" > \"%s/out\" 2>&1\\n' \"$d\" \"$d\"; printf 'echo $? > \"%s/code.tmp\" && mv \"%s/code.tmp\" \"%s/code\"\\n' \"$d\" \"$d\" \"$d\"; } > \"$d/run.sh\"\n: > \"$d/started\"\nif command -v setsid >/dev/null 2>&1; then setsid nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nelse perl -MPOSIX -e 'POSIX::setsid(); exec {$ARGV[0]} @ARGV or exit 127' nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nfi\necho $! > \"$d/pid\"\npid_id $! > \"$d/pidid\"\necho pid > \"$d/how\"\necho running\n"
+  "d=$1; c=$2; cmd=$3\npid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nmkdir -p \"$d\" || { echo gone; exit 0; }\n[ -e \"$d/cancel\" ] && { echo gone; exit 0; }\n[ -e \"$d/code\" ] && { echo running; exit 0; }\nif [ -e \"$d/started\" ]; then { [ -e \"$d/out\" ] || [ -e \"$d/how\" ]; } && { echo running; exit 0; }; fi\nprintf '%s\\n' \"$cmd\" > \"$d/cmd\"\n{ printf ': > \"%s/out\"\\n' \"$d\"; printf 'cd \"%s\" || exit 127\\n' \"$c\"; printf '[ -e \"%s/cancel\" ] && exit 143\\n' \"$d\"; printf 'sh \"%s/cmd\" > \"%s/out\" 2>&1\\n' \"$d\" \"$d\"; printf 'echo $? > \"%s/code.tmp\" && mv \"%s/code.tmp\" \"%s/code\"\\n' \"$d\" \"$d\" \"$d\"; } > \"$d/run.sh\"\n: > \"$d/started\"\nif command -v setsid >/dev/null 2>&1; then setsid nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nelse perl -MPOSIX -e 'POSIX::setsid(); exec {$ARGV[0]} @ARGV or exit 127' nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nfi\necho $! > \"$d/pid\"\npid_id $! > \"$d/pidid\"\necho pid > \"$d/how\"\necho running\n"
 
 def Watch.check.sh() -> String:
-  "k=$1; t=$2; id=$3; d=$4\ncase $k in\nrun)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  p=$(cat \"$d/pid\" 2>/dev/null); [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null && { echo running; exit 0; }\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  echo gone ;;\npid)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  if [ -r \"/proc/$t/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$t/stat\" | cut -d' ' -f20); n=\"$b:$st\"\n  elif ps -p \"$t\" >/dev/null 2>&1; then n=$(ps -o lstart= -p \"$t\" | tr -s ' ' '_')\n  else echo gone; exit 0; fi\n  [ \"$id\" = - ] && { echo \"ident $n\"; echo running; exit 0; }\n  [ \"$n\" = \"$id\" ] && echo running || echo gone ;;\nfile)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -f \"$t\" ] && grep -qF \"$id\" \"$t\" 2>/dev/null && { echo found; exit 0; }\n  echo running ;;\n*) echo gone ;;\nesac\n"
+  "k=$1; t=$2; id=$3; d=$4\ncase $k in\nrun)\n  if [ -e \"$d/cancel\" ]; then\n    (\nd=$4\n# A committed job may still be in its launch fiber when the hub dies.\nif [ -e \"$d/intent\" ]; then\n  : > \"$d/cancel\"\n  for attempt in 1 2; do\n    [ -s \"$d/pid\" ] && [ -s \"$d/pidid\" ] && break\n    sleep 1\n  done\nfi\npid_id() {\n  q=$1\n  if [ -r \"/proc/$q/stat\" ]; then\n    b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)\n    st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20)\n    echo \"$b:$st\"\n  elif ps -p \"$q\" >/dev/null 2>&1; then\n    ps -o lstart= -p \"$q\" | tr -s ' ' '_'\n  fi\n}\np=$(cat \"$d/pid\" 2>/dev/null)\nsaved=$(cat \"$d/pidid\" 2>/dev/null)\n[ -n \"$p\" ] && [ \"$p\" -gt 1 ] 2>/dev/null && [ -n \"$saved\" ] && [ \"$(pid_id \"$p\")\" = \"$saved\" ] || exit 0\nkill -TERM \"-$p\" 2>/dev/null || :\nkill -TERM \"$p\" 2>/dev/null || :\nfor attempt in 1 2; do\n  if kill -0 \"-$p\" 2>/dev/null || kill -0 \"$p\" 2>/dev/null; then sleep 1; else exit 0; fi\ndone\nkill -KILL \"-$p\" 2>/dev/null || :\n[ \"$(pid_id \"$p\")\" != \"$saved\" ] || kill -KILL \"$p\" 2>/dev/null || :\nfor attempt in 1 2; do\n  if kill -0 \"-$p\" 2>/dev/null || kill -0 \"$p\" 2>/dev/null; then sleep 1; else break; fi\ndone\nexit 0\n\n    )\n  fi\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  p=$(cat \"$d/pid\" 2>/dev/null); [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null && { echo running; exit 0; }\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  echo gone ;;\npid)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  if [ -r \"/proc/$t/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$t/stat\" | cut -d' ' -f20); n=\"$b:$st\"\n  elif ps -p \"$t\" >/dev/null 2>&1; then n=$(ps -o lstart= -p \"$t\" | tr -s ' ' '_')\n  else echo gone; exit 0; fi\n  [ \"$id\" = - ] && { echo \"ident $n\"; echo running; exit 0; }\n  [ \"$n\" = \"$id\" ] && echo running || echo gone ;;\nfile)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -f \"$t\" ] && grep -qF \"$id\" \"$t\" 2>/dev/null && { echo found; exit 0; }\n  echo running ;;\n*) echo gone ;;\nesac\n"
 
 def Watch.stop.sh() -> String:
-  "pid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nk=$1; t=$2; id=$3; d=$4\nmkdir -p \"$d\"\ncase $k in\nunwatch) : > \"$d/stop\" ;;\nrun) p=$(cat \"$d/pid\" 2>/dev/null); n=$(pid_id \"$p\"); [ -n \"$p\" ] && [ \"$p\" -gt 1 ] && [ -n \"$n\" ] && [ \"$n\" = \"$(cat \"$d/pidid\" 2>/dev/null)\" ] && { kill -TERM \"-$p\" 2>/dev/null; kill -TERM \"$p\" 2>/dev/null; } ;;\npid) [ \"$t\" -gt 1 ] 2>/dev/null && [ \"$id\" != - ] && [ \"$(pid_id \"$t\")\" = \"$id\" ] && kill -TERM \"$t\" 2>/dev/null ;;\nesac\ntrue\n"
+  "pid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nk=$1; t=$2; id=$3; d=$4\nmkdir -p \"$d\"\ncase $k in\nunwatch) : > \"$d/stop\" ;;\nrun) : > \"$d/cancel\"; p=$(cat \"$d/pid\" 2>/dev/null); n=$(pid_id \"$p\"); [ -n \"$p\" ] && [ \"$p\" -gt 1 ] && [ -n \"$n\" ] && [ \"$n\" = \"$(cat \"$d/pidid\" 2>/dev/null)\" ] && { kill -TERM \"-$p\" 2>/dev/null; kill -TERM \"$p\" 2>/dev/null; } ;;\npid) [ \"$t\" -gt 1 ] 2>/dev/null && [ \"$id\" != - ] && [ \"$(pid_id \"$t\")\" = \"$id\" ] && kill -TERM \"$t\" 2>/dev/null ;;\nesac\ntrue\n"
 
 def Watch.tail.sh() -> String:
   "d=$1; [ -e \"$d/out\" ] && tail -c 2048 \"$d/out\"; true\n"
@@ -5895,23 +5976,32 @@ def Watch.got.k(+ls: List<&2, String>, +ident: String, +thread: String, +id: Str
 def Watch.got(r: P.Ran, +ident: String, +thread: String, +id: String, +kind: String, +dir: String, +inbox: Chan(Msg), k: String -> IO(Unit)) -> IO(Unit):
   Watch.got.k(Watch.lines(Watch.ran(r)), ident, thread, id, kind, dir, inbox, k)
 
-def Watch.tick(late: Bool, +ident: String, +home: String, +thread: String, +id: String, +kind: String, +target: String, +inbox: Chan(Msg), k: String -> IO(Unit)) -> IO(Unit):
+def Watch.timeout.next(locked: Bool, +ident: String, k: String -> IO(Unit)) -> IO(Unit):
+  match locked:
+    case True{}:
+      k(ident)
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Watch.tick(late: Bool, +locked: Bool, +ident: String, +home: String, +thread: String, +id: String, +kind: String, +target: String, +inbox: Chan(Msg), k: String -> IO(Unit)) -> IO(Unit):
   match late:
     case True{}:
-      Watch.report(inbox, thread, id, kind, "timeout", Watch.dir(home, id))
+      do IO<Unit>:
+        Watch.report(inbox, thread, id, kind, "timeout", Watch.dir(home, id))
+        Watch.timeout.next(locked, ident, k)
     case False{}:
       IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Watch.check.sh(), "sh", kind, target, ident, Watch.dir(home, id)], "/"),
         r => Watch.got(r, ident, thread, id, kind, Watch.dir(home, id), inbox, k))
 
 # the watcher: a check every 2 s until the work ends, its deadline passes,
 # or it is no longer watched
-def Watch.loop(fuel: Nat, +ident: String, +home: String, +thread: String, +id: String, +kind: String, +target: String, +deadline: Nat, +inbox: Chan(Msg)) -> IO(Unit):
+def Watch.loop(fuel: Nat, +locked: Bool, +ident: String, +home: String, +thread: String, +id: String, +kind: String, +target: String, +deadline: Nat, +inbox: Chan(Msg)) -> IO(Unit):
   match fuel:
     case 0n:
       IO.pure(Unit, Unit{})
     case 1n+f:
-      IO.bind(Nat, Unit, Now.nat(), now => Watch.tick(Bool.and(Nat.is_gt(deadline, 0n), Nat.is_ge(now, deadline)), ident, home, thread, id, kind, target, inbox,
-        i2 => Watch.loop(f, i2, home, thread, id, kind, target, deadline, inbox)))
+      IO.bind(Nat, Unit, Now.nat(), +now => Watch.tick(Bool.and(Nat.is_gt(deadline, 0n), Nat.is_ge(now, deadline)), locked, ident, home, thread, id, kind, target, inbox,
+        i2 => Watch.loop(f, locked, i2, home, thread, id, kind, target, Bool.pick(Nat, Bool.and(locked, Bool.and(Nat.is_gt(deadline, 0n), Nat.is_ge(now, deadline))), 0n, deadline), inbox)))
 
 def Watch.launched(r: P.Ran, +thread: String, +id: String, +inbox: Chan(Msg)) -> IO(Unit):
   match r:
@@ -5929,10 +6019,25 @@ def Watch.start(run: Bool, +home: String, +thread: String, +id: String, +target:
 
 # an Await: a work_run's command launched (unless it ran already), then
 # watched
-def Watch.job(+home: String, +thread: String, +id: String, +kind: String, +target: String, +ident: String, +deadline: Nat, +cwd: String, +inbox: Chan(Msg)) -> IO(Unit):
+def LockJob.later(+inbox: Chan(Msg), +name: String, +holder: String) -> IO(Unit):
+  do IO<Unit>:
+    IO.sleep(100)
+    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, LockProbe{name, holder})
+    return Unit{}
+
+def Watch.intent(locked: Bool, +home: String, +id: String) -> IO(Unit):
+  match locked:
+    case True{}:
+      do IO<Unit>:
+        r : P.Ran <- P.Proc.run("sh", ["-c", "mkdir -p \"$1\" && : > \"$1/intent\"", "sh", Watch.dir(home, id)], "/")
+        return Unit{}
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Watch.job(+locked: Bool, +home: String, +thread: String, +id: String, +kind: String, +target: String, +ident: String, +deadline: Nat, +cwd: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Watch.start(String.eq(kind, "run"), home, thread, id, target, cwd, inbox)
-    Watch.loop(Fuel.forever(), ident, home, thread, id, kind, target, deadline, inbox)
+    Watch.loop(Fuel.forever(), locked, ident, home, thread, id, kind, target, deadline, inbox)
 
 def Watch.stop.job(+home: String, +id: String, +kind: String, +target: String, +ident: String) -> IO(Unit):
   do IO<Unit>:
@@ -7173,9 +7278,15 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +g : String = Hub.gen(st, now)
         IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Agt.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.LockGuard{+name, old, +holder}:
+      do IO<Hub>:
+        LG.Guard.drop(name, old)
+        IO.spawn(Unit, LockJob.later(inbox, name, holder))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.Await{+thread, +id, +kind, +target, +ident, +deadline, +cwd}:
       do IO<Hub>:
-        IO.spawn(Unit, Watch.job(Cfg.home(cfg), thread, id, kind, target, ident, deadline, cwd, inbox))
+        Watch.intent(B.Locks.work.has(st, id), Cfg.home(cfg), id)
+        IO.spawn(Unit, Watch.job(B.Locks.work.has(st, id), Cfg.home(cfg), thread, id, kind, target, ident, deadline, cwd, inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.WatchStop{_, +id, +kind, +target, +ident}:
       do IO<Hub>:
@@ -7653,7 +7764,7 @@ def Hub.step.wakes(step: B.Step, +st: M.State, h: Hub) -> IO(Hub & Bool):
 
 def Hub.step.k(p: M.State & Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   (+st, h) = p
-  Hub.step.wakes(B.Wake.after(st, B.Step{cs, os}), st, h)
+  IO.bind(Nat, Hub & Bool, Now.nat(), now => Hub.step.wakes(B.Locks.after(st, now, B.Wake.after(st, B.Step{cs, os})), st, h))
 
 # a step's changes are stored (with the pending counts they move), then
 # its effects run; answers whether it was stored
@@ -7909,12 +8020,63 @@ def Hub.mcp.k(o: MC.McpOut, h: Hub, +reply: Chan(String), +body: String) -> IO(H
     case MC.McpOut{+text, st, +park}:
       IO.bind(Hub & Bool, Hub, Hub.step.ok(h, st), r => Hub.mcp.after(r, park, body, text, reply))
 
-def Hub.mcp.hub.raw(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+def Hub.mcp.hub.normal(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.mcp.k(BH.Bots.mcp(st, now, thread, Maybe.default(&2, J.Json, J.Json.parse(Cfg.models(cfg)), J.Null{}), Cfg.version(cfg),
           Maybe.default(&2, J.Json, J.Json.parse(BN.Bn.dir(Cfg.bn(cfg))), J.Json.arr(Nil{})), GG.Google.tool_defs(), body),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, body)
+
+def LockTool.preflight(free: Bool, +name: String, +holder: String, +home: String) -> IO(Bool):
+  match free:
+    case True{}:
+      LG.Guard.take(name, holder, home, LG.Guard.script())
+    case False{}:
+      IO.pure(Bool, False{})
+
+def LockTool.args(a: J.Json, +ready: Bool) -> J.Json:
+  match a:
+    case J.Obj{fields}:
+      J.Obj{J.Field{"_lockReady", J.Flag{ready}, fields}}
+    case _:
+      J.Json.obj([J.KV{"_lockReady", J.Flag{ready}}])
+
+def LockTool.body(+o: J.Json, +a: J.Json, ready: Bool) -> String:
+  J.Json.show(J.Json.obj([J.KV{"jsonrpc", J.Str{"2.0"}}, J.KV{"id", Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{})}, J.KV{"method", J.Str{"tools/call"}}, J.KV{"params", J.Json.obj([J.KV{"name", J.Str{J.Json.get_str(J.Json.get_obj(o, "params"), "name", "")}}, J.KV{"arguments", LockTool.args(a, ready)}])}]))
+
+# A failed log write or rejected command must relinquish a preflight guard.
+def LockTool.cleanup.keep(keep: Bool, h: Hub, +name: String, +holder: String) -> IO(Hub):
+  match keep:
+    case True{}:
+      IO.pure(Hub, h)
+    case False{}:
+      do IO<Hub>:
+        LG.Guard.drop(name, holder)
+        return h
+
+def LockTool.cleanup(h: Hub, +name: String, +holder: String) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      LockTool.cleanup.keep(String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder), Hub{st, f, ls, cl, as, inbox, cfg, note}, name, holder)
+
+def Hub.mcp.lock.k(lock: Bool, h: Hub, +thread: String, +o: J.Json, +a: J.Json, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match lock h:
+    case False{} _:
+      Hub.mcp.hub.normal(h, thread, body, reply, now)
+    case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +iswork : Bool = String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "work_run")
+        +name : String = J.Json.get_str(a, Bool.pick(String, iswork, "lock", "name"), "")
+        +holder : String = Bool.pick(String, iswork, B.Watch.id(st, thread), thread)
+        +ready : Bool <- LockTool.preflight(Bool.and(Bool.and(LCK.Lock.name.valid(name), Bool.or(Bool.not(iswork), Bool.not(String.is_empty(String.trim(J.Json.get_str(a, "command", "")))))), Bool.or(String.is_empty(LCK.Lock.owner(M.Locks.get(st, name))), String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder))), name, holder, Cfg.home(cfg))
+        h2 : Hub <- Hub.mcp.hub.normal(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, LockTool.body(o, a, ready), reply, now)
+        LockTool.cleanup(h2, name, holder)
+
+def Hub.mcp.hub.raw(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  +o = Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})
+  +a = J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments")
+  +name = J.Json.get_str(J.Json.get_obj(o, "params"), "name", "")
+  Hub.mcp.lock.k(Bool.or(String.eq(name, "lock_acquire"), Bool.and(String.eq(name, "work_run"), Bool.not(String.is_empty(J.Json.get_str(a, "lock", ""))))), h, thread, o, a, body, reply, now)
 
 # Resolve #N against the subscriber's project remote before persisting WakeSet.
 def WakeJob.repo.path(+url: String) -> String:
@@ -9756,6 +9918,10 @@ def Hub.mcp(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: 
 
 def Msg.kind(m: Msg) -> String:
   match m:
+    case LockProbe{_, _}:
+      "lock_probe"
+    case LockHttp{_, _, _}:
+      "lock_http"
     case AgentWrite{_, _, _}:
       "agent_write"
     case UpdateCheck{}:
@@ -10144,8 +10310,92 @@ def Hub.launch.sent(p: M.State & Hub, +key: String, +now: Nat) -> IO(Hub):
   (st, h) = p
   Hub.step(h, B.Lr.far.sent(st, now, key))
 
+def Hub.lock.probe.after.k(pending: Bool, h: Hub, +name: String, +holder: String) -> IO(Hub):
+  match pending h:
+    case True{} Hub{s, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, LockJob.later(inbox, name, holder))
+        return Hub{s, f, ls, cl, as, inbox, cfg, note}
+    case False{} _:
+      IO.pure(Hub, h)
+
+def Hub.lock.probe.after(h: Hub, +name: String, +holder: String) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.lock.probe.after.k(Bool.and(String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder), Bool.not(LCK.Lock.ready(M.Locks.get(st, name)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, name, holder)
+
+def Hub.lock.probe.taken(taken: Bool, h: Hub, +st: M.State, +name: String, +holder: String, +now: Nat) -> IO(Hub):
+  match taken h:
+    case True{} _:
+      IO.bind(Hub, Hub, Hub.step(h, B.Locks.ready(st, now, name, holder)), h2 => Hub.lock.probe.after(h2, name, holder))
+    case False{} Hub{s, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, LockJob.later(inbox, name, holder))
+        return Hub{s, f, ls, cl, as, inbox, cfg, note}
+
+def Hub.lock.probe.take(h: Hub, +st: M.State, +name: String, +holder: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{s, f, ls, cl, as, inbox, +cfg, note}:
+      IO.bind(Bool, Hub, LG.Guard.take(name, holder, Cfg.home(cfg), LG.Guard.script()), taken => Hub.lock.probe.taken(taken, Hub{s, f, ls, cl, as, inbox, cfg, note}, st, name, holder, now))
+
+def Hub.lock.probe.k(own: Bool, h: Hub, +st: M.State, +name: String, +holder: String, +now: Nat) -> IO(Hub):
+  match own:
+    case False{}:
+      IO.pure(Hub, h)
+    case True{}:
+      Hub.lock.probe.take(h, st, name, holder, now)
+
+def Hub.lock.probe(h: Hub, +name: String, +holder: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.lock.probe.k(Bool.and(Bool.not(String.is_empty(holder)), String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder)), Hub{st, f, ls, cl, as, inbox, cfg, note}, st, name, holder, now)
+
+def LockHttp.step(op: String, +s: M.State, +now: Nat, +name: String, +holder: String, +note: String, +ready: Bool) -> B.Step:
+  match op:
+    case "acquire":
+      B.Locks.put(s, now, name, LCK.Lock.renew(LCK.Lock.acquire(M.Locks.get(s, name), LCK.LockParty{holder, "client", "", note, now, Nat.add(now, 90n)}, ready), holder, Nat.add(now, 90n)))
+    case "renew":
+      B.Locks.put(s, now, name, LCK.Lock.renew(M.Locks.get(s, name), holder, Nat.add(now, 90n)))
+    case "release":
+      B.Locks.release(s, now, name, holder)
+    case "cancel":
+      B.Locks.cancel(s, now, name, holder)
+    case _:
+      B.Step.none()
+
+def Hub.lock.http.done(r: Hub & Bool, +name: String, +holder: String, +reply: Chan(String)) -> IO(Hub):
+  (h, ok) = r
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        sent : Result<&1, &1, String, Unit> <- Chan.send(String, reply, J.Json.show(Bool.pick(J.Json, ok, B.Locks.answer(M.Locks.get(st, name), holder), J.Json.obj([J.KV{"error", J.Str{"log write failed"}}]))))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def Hub.lock.http.valid(valid: Bool, h: Hub, +op: String, +a: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match valid h:
+    case False{} _:
+      do IO<Hub>:
+        sent : Result<&1, &1, String, Unit> <- Chan.send(String, reply, "{\"error\":\"invalid lock request\"}")
+        return h
+    case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +name : String = J.Json.get_str(a, "name", "")
+        +holder : String = J.Json.get_str(a, "holder", "")
+        +ready : Bool <- LockTool.preflight(Bool.and(String.eq(op, "acquire"), Bool.or(String.is_empty(LCK.Lock.owner(M.Locks.get(st, name))), String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder))), name, holder, Cfg.home(cfg))
+        r : Hub & Bool <- Hub.step.ok(Hub{st, f, ls, cl, as, inbox, cfg, note}, LockHttp.step(op, st, now, name, holder, J.Json.get_str(a, "note", ""), ready))
+        h2 : Hub <- Hub.lock.http.done(r, name, holder, reply)
+        LockTool.cleanup(h2, name, holder)
+
+def Hub.lock.http(h: Hub, +op: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  +a = Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})
+  Hub.lock.http.valid(Bool.and(LCK.Lock.name.valid(J.Json.get_str(a, "name", "")), Bool.and(String.starts_with(J.Json.get_str(a, "holder", ""), "pid:"), M.Launch.has(["acquire", "renew", "release", "cancel", "status"], op))), h, op, a, reply, now)
+
 def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
   match m:
+    case LockProbe{name, holder}:
+      Hub.lock.probe(h, name, holder, now)
+    case LockHttp{op, body, reply}:
+      Hub.lock.http(h, op, body, reply, now)
     case AgentWrite{thread, line, gen}:
       Hub.agent_write(h, thread, line, gen)
     case UpdateCheck{}:
@@ -10187,7 +10437,7 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case Tick{}:
       Hub.tick(h, now)
     case Heart{}:
-      IO.bind(Hub, Hub, IO.bind(Hub, Hub, Hub.broadcast(h, DK.Alive.frame()), h2 => Hub.uber.beat(h2, now)), h3 => Hub.deploy_poll(h3, now))
+      IO.bind(Hub, Hub, IO.bind(Hub, Hub, IO.bind(Hub, Hub, Hub.step(h, B.Step.none()), h1 => Hub.broadcast(h1, DK.Alive.frame())), h2 => Hub.uber.beat(h2, now)), h3 => Hub.deploy_poll(h3, now))
     case AutoView{thread, fs}:
       Hub.autoview(h, thread, fs)
     case ClaudePid{thread, pid, gen}:

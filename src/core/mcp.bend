@@ -1,4 +1,5 @@
 import Base
+import ./locks.bend as LK
 import ./json.bend as J
 import ./model.bend as M
 import ./review.bend as RVW
@@ -144,9 +145,13 @@ def Mcp.tools() -> J.Json:
     Tool.def("wake_list", "List your wake subscriptions.", Nil{}, Nil{}),
     Tool.def("wake_cancel", "Cancel one of your wake subscriptions.", [Tool.prop("id", "string", "The subscription id.")], ["id"]),
     Tool.def("work_run", "Start long or detached work (a build, a test run, a job on another machine) so Backplane owns it: when it ends you are woken with its exit code and the end of its output; if a restart of Backplane cuts it off you are told it was lost and can start it again. Use this instead of `&`, nohup or disown, then end your turn; never poll or sleep-wait.",
-      [Tool.prop("command", "string", "The shell command, run in this thread's folder."), Tool.prop("note", "string", "What it is, in a few words."), Tool.prop("timeoutSec", "number", "Give up watching after this long (the work keeps running; the outcome is then unknown).")], ["command"]),
+      [Tool.prop("command", "string", "The shell command, run in this thread's folder."), Tool.prop("lock", "string", "Optional named FIFO lock, held until work ends."), Tool.prop("note", "string", "What it is, in a few words."), Tool.prop("timeoutSec", "number", "Give up watching after this long (the work keeps running; the outcome is then unknown).")], ["command"]),
     Tool.def("work_watch", "Have Backplane watch work that is already running and wake you when it ends: kind pid (a process) or file (a file that will contain the token this call returns). Then end your turn.",
       [Tool.prop("kind", "string", "pid or file."), Tool.prop("target", "string", "The pid, or the file's path."), Tool.prop("note", "string", "What it is."), Tool.prop("timeoutSec", "number", "Give up watching after this long.")], ["kind", "target"]),
+    Tool.def("lock_acquire", "Acquire a named FIFO lock without blocking; if queued, end your turn and wait for the grant message.", [Tool.prop("name", "string", "Lock name"), Tool.prop("note", "string", "Purpose")], ["name"]),
+    Tool.def("lock_release", "Release your named lock, granting the next waiter.", [Tool.prop("name", "string", "Lock name")], ["name"]),
+    Tool.def("lock_cancel", "Leave a named lock queue.", [Tool.prop("name", "string", "Lock name")], ["name"]),
+    Tool.def("lock_list", "List named lock holders, timestamps, notes and FIFO waiters.", Nil{}, Nil{}),
     Tool.def("work_list", "List the work Backplane watches for this thread (work_run and work_watch), with each one's state.", Nil{}, Nil{}),
     Tool.def("work_cancel", "Stop work started with work_run (or a watched unit or pid). It shows as cancelling until its end is confirmed.",
       [Tool.prop("id", "string", "The work's id.")], ["id"]),
@@ -624,7 +629,16 @@ def Mcp.send.k(ok: Bool, +s: M.State, +now: Nat, +thread: String, +target: Strin
 
 def Mcp.names() -> List<&2, String>:
   ["orchestrator_capabilities", "delegate_task", "task_status", "task_cancel", "thread_list", "thread_read", "thread_send", "viewer_show",
-   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment", "wake_on", "wake_list", "wake_cancel", "deploy_restart", "deploy_status", "deploy_cancel"]
+   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment", "wake_on", "wake_list", "wake_cancel", "deploy_restart", "deploy_status", "deploy_cancel", "lock_acquire", "lock_release", "lock_list", "lock_cancel"]
+
+def Mcp.lock.acquire(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
+  match ok:
+    case False{}:
+      Res.fail("lock name must contain 1..64 letters, digits, hyphens or underscores")
+    case True{}:
+      +name = J.Json.get_str(a, "name", "")
+      +st = B.Locks.acquire(s, now, name, LK.LockParty{thread, "thread", thread, J.Json.get_str(a, "note", ""), now, 0n}, J.Json.get_bool(a, "_lockReady", False{}))
+      Res{True{}, B.Locks.answer(M.Locks.get(M.State.replay(B.Queue.changes(st), s), name), thread), st}
 
 # Watched work (hub.bend's Watch.*): work_run, work_watch, work_list,
 # work_cancel, work_unwatch; each answers once its row is stored (the
@@ -643,14 +657,25 @@ def Mcp.work.rows(ls: List<&2, String>) -> List<&2, J.Json>:
     case +l <> t:
       Mcp.work.json(l) <> Mcp.work.rows(t)
 
+def Mcp.work.start.k(locked: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> B.Step:
+  match locked:
+    case True{}:
+      B.Locks.work.start(s, now, thread, a, J.Json.get_bool(a, "_lockReady", False{}))
+    case False{}:
+      B.Watch.start(s, now, thread, "run", J.Json.get_str(a, "command", ""), Mcp.or(J.Json.get_str(a, "note", ""), J.Json.get_str(a, "command", "")), Mcp.secs(a))
+
+def Mcp.work.start(+s: M.State, +now: Nat, +thread: String, +a: J.Json) -> B.Step:
+  Mcp.work.start.k(Bool.not(String.is_empty(J.Json.get_str(a, "lock", ""))), s, now, thread, a)
+
 def Mcp.work.run(empty: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
   match empty:
     case True{}:
       Res.fail("command is required")
     case False{}:
-      Res{True{}, J.Json.obj([J.KV{"id", J.Str{B.Watch.id(s, thread)}}, J.KV{"state", J.Str{"launching"}},
-          J.KV{"next", J.Str{"End your turn: you will be woken with the outcome."}}]),
-        B.Watch.start(s, now, thread, "run", J.Json.get_str(a, "command", ""), Mcp.or(J.Json.get_str(a, "note", ""), J.Json.get_str(a, "command", "")), Mcp.secs(a))}
+      +st = Mcp.work.start(s, now, thread, a)
+      +s1 = M.State.replay(B.Queue.changes(st), s)
+      Res{True{}, J.Json.obj([J.KV{"id", J.Str{B.Watch.id(s, thread)}}, J.KV{"state", J.Str{B.Watch.state(B.Watch.find(M.Work.watch(s1, thread), B.Watch.id(s, thread)))}},
+          J.KV{"next", J.Str{"End your turn: you will be woken with the outcome."}}]), st}
 
 def Mcp.work.watch(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
   match ok:
@@ -666,7 +691,7 @@ def Mcp.work.cancel(+l: String, +s: M.State, +now: Nat, +thread: String, +id: St
     Res{True{}, J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"state", J.Str{"cancelling"}}]), B.Watch.cancel(s, now, thread, id)})
 
 def Mcp.work.unwatch(+l: String, +s: M.State, +now: Nat, +thread: String, +id: String) -> Res:
-  Bool.pick(Res, String.is_empty(l), Res.fail("no such work"),
+  Bool.pick(Res, Bool.or(String.is_empty(l), B.Locks.work.has(s, id)), Res.fail("no such work, or it owns a lock; cancel locked work instead"),
     Res{True{}, J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"state", J.Str{B.Watch.unwatch.text()}}]), B.Watch.unwatch(s, now, thread, id)})
 
 # Design review comments (core/review.bend): the agent reads them and
@@ -767,7 +792,7 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
     case 15n:
       Mcp.term.op(String.is_empty(EM.Emb.sum(M.State.mine(s, thread), J.Json.get_str(a, "id", ""))), False{}, thread, J.Json.get_str(a, "id", ""), "")
     case 16n:
-      Mcp.work.run(String.is_empty(String.trim(J.Json.get_str(a, "command", ""))), s, now, thread, a)
+      Mcp.work.run(Bool.or(String.is_empty(String.trim(J.Json.get_str(a, "command", ""))), Bool.and(Bool.not(String.is_empty(J.Json.get_str(a, "lock", ""))), Bool.not(LK.Lock.name.valid(J.Json.get_str(a, "lock", ""))))), s, now, thread, a)
     case 17n:
       Mcp.work.watch(Nat.is_lt(C.Codec.pos(["pid", "file"], J.Json.get_str(a, "kind", "")), 2n), s, now, thread, a)
     case 18n:
@@ -782,6 +807,14 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
       Mcp.wake.on(s, now, thread, a)
     case 24n:
       Res.ok(J.Json.obj([J.KV{"wakes", J.Json.arr(WK.Wake.list(WK.Wake.by(s, thread), s))}]))
+    case 29n:
+      Mcp.lock.acquire(LK.Lock.name.valid(J.Json.get_str(a, "name", "")), s, now, thread, a)
+    case 30n:
+      Res{True{}, J.Json.obj([J.KV{"released", J.Flag{String.eq(LK.Lock.owner(M.Locks.get(s, J.Json.get_str(a, "name", ""))), thread)}}]), B.Locks.release(s, now, J.Json.get_str(a, "name", ""), thread)}
+    case 31n:
+      Res.ok(J.Json.obj([J.KV{"locks", J.Json.arr(B.Locks.list.go(M.Locks.names(s), s))}]))
+    case 32n:
+      Res{True{}, J.Json.obj([J.KV{"cancelled", J.Flag{True{}}}]), B.Locks.cancel(s, now, J.Json.get_str(a, "name", ""), thread)}
     case 25n:
       Mcp.wake.cancel(s, now, thread, J.Json.get_str(a, "id", ""))
     case 22n:

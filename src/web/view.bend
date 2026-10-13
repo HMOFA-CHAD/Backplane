@@ -536,7 +536,7 @@ def View.sub.act(agent: Bool, +open: Bool, +key: String) -> List<&2, D.Attr>:
 
 # a row's Stop (SB.Subs.cancel): beside the row, not inside its click
 def View.sub.stop(+act: String, +key: String) -> List<&2, D.Node>:
-  D.Dom.when(Bool.not(String.is_empty(act)), D.Dom.button("sub-stop", act, key, "Cancel this subscription or stop work", SB.Subs.cancel.word(act)))
+  D.Dom.when(Bool.not(String.is_empty(act)), D.Dom.button("sub-stop", act, key, Bool.pick(String, String.starts_with(act, "lock-"), SB.Subs.cancel.word(act) ++ " this lock request", "Cancel this subscription or stop work"), SB.Subs.cancel.word(act)))
 
 def View.sub.k(r: SB.SubRow, +act: String) -> D.Node:
   match r:

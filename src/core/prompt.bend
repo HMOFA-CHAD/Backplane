@@ -206,7 +206,7 @@ def Prompt.orchestration(may: Bool, +models: String) -> String:
 
 # how to wait for work that runs on (laws prompt_background_work*)
 def Prompt.background() -> String:
-  "<background_work>Backplane wakes you itself when an Agent, background shell or monitor task ends. End your turn instead of polling, sleeping or checking in a loop. After a restart you are told what was lost. Start long or detached work with the backplane MCP tool `work_run`, or register what you already started with `work_watch`, then end your turn: Backplane wakes you with the outcome. Never poll or sleep-wait. Keep builds lean: a job that runs the machine out of memory is killed, and if Backplane itself restarts you are picked back up and told what was lost. To use another model, prefer `delegate_task`.</background_work>"
+  "<background_work>Backplane wakes you itself when an Agent, background shell or monitor task ends. End your turn instead of polling, sleeping or checking in a loop. After a restart you are told what was lost. Start long or detached work with the backplane MCP tool `work_run`, or register what you already started with `work_watch`, then end your turn: Backplane wakes you with the outcome. Heavy jobs that must not run at once (builds, long test runs) share a named lock: start them with `work_run` and `lock: \"<name>\"`, or take it with `lock_acquire` and end your turn (a message tells you when it is yours; `lock_release` after), instead of a bare flock. Never poll or sleep-wait. Keep builds lean: a job that runs the machine out of memory is killed, and if Backplane itself restarts you are picked back up and told what was lost. To use another model, prefer `delegate_task`.</background_work>"
 
 # Claude Code arguments
 # ---------------------

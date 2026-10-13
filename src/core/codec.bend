@@ -1,4 +1,5 @@
 import Base
+import ./locks.bend as LK
 import ./json.bend as J
 import ./model.bend as M
 
@@ -290,13 +291,15 @@ def Change.encode(c: M.Change) -> J.Json:
       Change.obj("UberOp", [J.KV{"uid", J.Str{uid}}, J.KV{"origin", J.Str{origin}}, J.KV{"n", Codec.nat(n)}, J.KV{"stamp", J.Str{stamp}}, J.KV{"op", J.Str{op}}, J.KV{"at", Codec.nat(at)}])
     case M.WakeSet{id, by, kind, target, events, once, note, at}:
       Change.obj("WakeSet", [J.KV{"id", J.Str{id}}, J.KV{"by", J.Str{by}}, J.KV{"kind", J.Str{kind}}, J.KV{"target", J.Str{target}}, J.KV{"events", J.Json.arr(M.Wake.strs(events))}, J.KV{"once", J.Flag{once}}, J.KV{"note", J.Str{note}}, J.KV{"at", Codec.nat(at)}])
+    case M.LockChanged{name, l, at}:
+      Change.obj("LockChanged", [J.KV{"name", J.Str{name}}, J.KV{"lock", LK.Lock.json(l)}, J.KV{"at", Codec.nat(at)}])
     case M.WakeDropped{id, at}:
       Change.obj("WakeDropped", [J.KV{"id", J.Str{id}}, J.KV{"at", Codec.nat(at)}])
     case M.ThreadLaunched{id, by, report, at}:
       Change.obj("ThreadLaunched", [J.KV{"id", J.Str{id}}, J.KV{"by", J.Str{by}}, J.KV{"report", J.Flag{report}}, J.KV{"at", Codec.nat(at)}])
 
 def Change.tags() -> List<&2, String>:
-  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet", "WorkSet", "UberSet", "UberOp", "ThreadLaunched", "WakeSet", "WakeDropped"]
+  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet", "WorkSet", "UberSet", "UberOp", "ThreadLaunched", "WakeSet", "WakeDropped", "LockChanged"]
 
 def Codec.wake.events(xs: List<&2, J.Json>) -> List<&2, String>:
   match xs:
@@ -427,6 +430,8 @@ def Change.decode.k(i: Nat, +o: J.Json) -> Maybe<&2, M.Change>:
       Some{M.UberOp{J.Json.get_str(o, "uid", ""), J.Json.get_str(o, "origin", ""), J.Json.get_nat(o, "n", 0n), J.Json.get_str(o, "stamp", ""), J.Json.get_str(o, "op", ""), J.Json.get_nat(o, "at", 0n)}}
     case 60n:
       Some{M.WakeSet{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "by", ""), J.Json.get_str(o, "kind", ""), J.Json.get_str(o, "target", ""), Codec.wake.events(J.Json.elems(J.Json.get_obj(o, "events"))), J.Json.get_bool(o, "once", True{}), J.Json.get_str(o, "note", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 62n:
+      Some{M.LockChanged{J.Json.get_str(o, "name", ""), LK.Lock.read(J.Json.get_obj(o, "lock")), J.Json.get_nat(o, "at", 0n)}}
     case 61n:
       Some{M.WakeDropped{J.Json.get_str(o, "id", ""), J.Json.get_nat(o, "at", 0n)}}
     case 59n:
@@ -568,6 +573,8 @@ def Change.wire(c: M.Change) -> J.Json:
       Change.encode(M.UberOp{uid, origin, n, stamp, op, at})
     case M.WakeSet{id, by, kind, target, events, once, note, at}:
       Change.encode(M.WakeSet{id, by, kind, target, events, once, note, at})
+    case M.LockChanged{name, l, at}:
+      Change.encode(M.LockChanged{name, l, at})
     case M.WakeDropped{id, at}:
       Change.encode(M.WakeDropped{id, at})
     case M.ThreadLaunched{id, by, report, at}:

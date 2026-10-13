@@ -628,7 +628,7 @@ def WB.plane.k(+p: PL.Plane, +h: PL.PHome, +now: Nat) -> D.Node:
       WB.div("plane-side", List.concat(&2, D.Node, [
         WB.psec("Bots", PL.Plane.bots(p), 0n, now),
         WB.psec("Rooms", PL.Plane.rooms(p), 0n, now),
-        WB.psec("Routines", PL.Plane.routines(p), 0n, now)]))])])
+        WB.psec("Locks", PL.Plane.locks(p), 0n, now), WB.psec("Routines", PL.Plane.routines(p), 0n, now)]))])])
 
 # the Status tab's body
 def WB.plane(+u: U.Ui) -> D.Node:

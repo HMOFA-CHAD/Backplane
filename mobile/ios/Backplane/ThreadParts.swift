@@ -265,8 +265,8 @@ struct EntryRow: View {
 private func subColor(_ state: String) -> Color {
     switch state {
     case "running": PhaseColor.accent
-    case "done", "reporting": PhaseColor.ok
-    case "watching", "launching", "waiting on": PhaseColor.accent
+    case "done", "reporting", "held": PhaseColor.ok
+    case "watching", "launching", "waiting on", "waiting": PhaseColor.accent
     case "queued": PhaseColor.faint
     case "cancelled", "cancelling": PhaseColor.warn
     default: PhaseColor.bad
