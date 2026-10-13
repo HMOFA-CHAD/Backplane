@@ -1805,7 +1805,7 @@ def View.review.body(has: Bool, +v: U.RpView, +extra: List<&2, D.Node>) -> D.Nod
     case True{}:
       D.El{"div", "review-body", [D.At{"class", "review-body body"}], List.append(&2, D.Node, extra, D.Md.render(U.RpView.md(v)))}
     case False{}:
-      D.El{"div", "review-body", [D.At{"class", "review-body"}], [D.Dom.span("fm-note", U.RpView.note(v))]}
+      D.El{"div", "review-body", [D.At{"class", "review-body"}], List.append(&2, D.Node, extra, [D.Dom.span("fm-note", Bool.pick(String, String.eq(U.RpView.page(v), "release"), Bool.pick(String, U.RpView.busy(v), "", Bool.pick(String, String.is_empty(U.RpView.err(v)), U.RpView.note(v), "")), U.RpView.note(v)))])}
 
 def View.review.v(+v: U.RpView, +extra: List<&2, D.Node>) -> List<&2, D.Node>:
   [D.El{"div", "", [D.At{"class", "fm-bar review-pane"}], List.append(&2, D.Node, View.review.tabs(U.RpView.tabs(v)),
@@ -1813,8 +1813,36 @@ def View.review.v(+v: U.RpView, +extra: List<&2, D.Node>) -> List<&2, D.Node>:
       D.Dom.button("", "rv-run", "", "Read the design again", "Refresh")])},
    View.review.body(Bool.not(String.is_empty(U.RpView.md(v))), v, extra)]
 
+# The Release page (client.bend's Rl): the tag field (Enter makes the
+# release; empty means the proposed tag), two toggles, the button, and why
+# not (red) above the report
+def View.release.toggle(+label: String, on: Bool, +act: String) -> D.Node:
+  D.El{"button", act, [D.At{"class", "rc-task" ++ Bool.pick(String, on, " done", "")}, D.At{"data-value", ""}, D.At{"aria-pressed", Bool.pick(String, on, "true", "false")}, D.On{"click", act}],
+    [D.El{"span", "", [D.At{"class", "rc-box"}], [D.Txt{Bool.pick(String, on, "✓", "")}]}, D.Txt{label}]}
+
+def View.release.k(f: U.RlForm, +v: U.RpView, +u: U.Ui) -> List<&2, D.Node>:
+  match f:
+    case U.RlForm{+tag, +next, +publish, +force}:
+      [D.El{"div", "", [D.At{"class", "rc-checks rl-form"}],
+         [WB.WB.input("rltag", "rltag", U.Ui.scratch(u, "@f.rltag"), next, "rv-release"),
+          View.release.toggle("Publish on GitHub", publish, "rv-release-pub"),
+          View.release.toggle("Release even if checks fail", force, "rv-release-force"),
+          D.El{"button", "rv-release", [D.At{"class", "primary"}, D.At{"data-value", ""}, D.At{"disabled", Bool.pick(String, U.RpView.busy(v), "true", "")}, D.On{"click", "rv-release"}],
+            [D.Txt{Bool.pick(String, U.RpView.busy(v), "Making release " ++ tag ++ "…", "Make release " ++ tag)}]}]},
+       D.El{"div", "", [D.At{"class", "rc-gate bad"}], Bool.pick(List<&2, D.Node>, String.is_empty(U.RpView.err(v)), Nil{}, [D.Txt{U.RpView.err(v)}])}]
+
+def View.release(+u: U.Ui) -> List<&2, D.Node>:
+  View.release.k(U.Rl.form(u), U.Rp.view(u), u)
+
+def View.review.x(rel: Bool, +u: U.Ui) -> List<&2, D.Node>:
+  match rel:
+    case True{}:
+      View.release(u)
+    case False{}:
+      View.rc.checks(u)
+
 def View.review(+u: U.Ui) -> List<&2, D.Node>:
-  View.review.v(U.Rp.view(u), View.rc.checks(u))
+  View.review.v(U.Rp.view(u), View.review.x(String.eq(U.Rp.page(u), "release"), u))
 
 def View.aside.k(i: Nat, +u: U.Ui) -> List<&2, D.Node>:
   match i:

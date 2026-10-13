@@ -722,3 +722,9 @@ button.mic.starting, button.mic.stopping { border-color: var(--bad); color: var(
 .rc-task.done .rc-box { background: var(--accent); border-color: var(--accent); }
 .rc-checks { margin-bottom: 14px; }
 .rc-pin.draft { background: var(--warn); pointer-events: none; }
+
+/* the Release page */
+.rl-form { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.rl-form .field { width: min(300px, 100%); padding: 4px 8px; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 0; }
+.rl-form button.primary { padding: 5px 12px; }
+.rl-form button.primary[disabled] { opacity: .5; cursor: default; }
