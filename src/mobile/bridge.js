@@ -203,6 +203,12 @@ globalThis.Backplane = {
   screen() {
     return out(null);
   },
+  // The native 250 ms streaming timer. Off-screen frames owe nothing, so
+  // this is a cheap no-op unless a visible state was withheld or dropped.
+  flush(owe) {
+    if (owe === true) owed = true;
+    return out(null, !owed);
+  },
   // a cat's rig (JSON text) for the key a screen names it by, "look:mood"
   cat(key) {
     const i = String(key).indexOf(":");

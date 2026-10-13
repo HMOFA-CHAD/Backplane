@@ -319,11 +319,11 @@ data class Found(val name: String, val url: String)
 // bridge gives once (Core.cats).
 data class BotRow(
     val id: String, val name: String, val mood: String, val note: String, val peer: String, val cat: String,
-    val look: Int, val sel: Boolean, val remote: Boolean, val machine: String, val act: String,
+    val look: Int, val sel: Boolean, val remote: Boolean, val machine: String, val act: String, val nav: String = "",
 )
 
 // a room in the list ("room" sends its id)
-data class RoomRow(val id: String, val name: String, val members: Int, val sel: Boolean, val machine: String)
+data class RoomRow(val id: String, val name: String, val members: Int, val sel: Boolean, val machine: String, val nav: String = "")
 
 // the new bot form: its fields ("bfield" name, persona, provider),
 // "bot-create" makes it, "form-close" "@bnew" drops it
@@ -636,10 +636,10 @@ fun parseScreen(o: JSONObject) = Screen(
     o.optJSONArray("bots").map {
         BotRow(it.optString("id"), it.optString("name"), it.optString("mood"), it.optString("note"), it.optString("peer"),
             it.optString("cat"), it.optInt("look"), it.optBoolean("sel"), it.optBoolean("remote"), it.optString("machine"),
-            it.optString("act", if (it.optBoolean("remote")) "remote" else "bot"))
+            it.optString("act", if (it.optBoolean("remote")) "remote" else "bot"), it.optString("nav"))
     },
     o.optJSONArray("rooms").map {
-        RoomRow(it.optString("id"), it.optString("name"), it.optInt("members"), it.optBoolean("sel"), it.optString("machine"))
+        RoomRow(it.optString("id"), it.optString("name"), it.optInt("members"), it.optBoolean("sel"), it.optString("machine"), it.optString("nav"))
     },
     o.optJSONObject("newBot")?.let { f ->
         NewBot(f.optString("name"), f.optString("persona"), f.optString("provider"),

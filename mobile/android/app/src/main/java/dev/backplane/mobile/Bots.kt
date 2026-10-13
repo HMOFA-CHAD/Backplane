@@ -152,7 +152,7 @@ fun LazyListScope.botsSection(m: AppModel, s: Screen) {
             },
             leadingContent = { BotCat(m, b.cat, 40.dp) },
             modifier = Modifier.alpha(if (b.mood == "away") 0.5f else 1f)
-                .clickable { m.act(b.act, b.id) },
+                .clickable { m.open(b.nav, b.act, b.id, b.name, b.cat, if (b.remote) "remote" else "bot") },
         )
     }
     items(s.rooms, key = { "r:" + it.id }) { r ->
@@ -160,7 +160,7 @@ fun LazyListScope.botsSection(m: AppModel, s: Screen) {
             headlineContent = { Text(r.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             supportingContent = { Text(listOf("${r.members}", r.machine).filter { it.isNotEmpty() }.joinToString(" · ")) },
             leadingContent = { Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { Icon(Icons.Filled.Forum, null) } },
-            modifier = Modifier.clickable { m.act("room", r.id) },
+            modifier = Modifier.clickable { m.open(r.nav, "room", r.id, r.name, kind = "room") },
         )
     }
 }
@@ -272,7 +272,7 @@ private fun BotScreen(m: AppModel, s: Screen, b: BotView) {
         Column {
             TopAppBar(
                 title = { Text(b.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = { IconButton(onClick = { m.act("select", "") }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                navigationIcon = { IconButton(onClick = { m.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
             )
             BotTabs(m, b)
         }
@@ -582,7 +582,7 @@ private fun TalkScreen(m: AppModel, b: BotView, field: String, send: String) {
                                 color = MaterialTheme.colorScheme.outline, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     },
-                    navigationIcon = { IconButton(onClick = { m.act("select", "") }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                    navigationIcon = { IconButton(onClick = { m.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                     actions = {
                         if (b.kind == "room") Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }

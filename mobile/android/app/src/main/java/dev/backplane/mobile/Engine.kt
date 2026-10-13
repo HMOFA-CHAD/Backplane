@@ -2,10 +2,11 @@ package dev.backplane.mobile
 
 import com.whl.quickjs.android.QuickJSLoader
 import com.whl.quickjs.wrapper.QuickJSContext
-import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 import org.json.JSONObject
-import java.util.concurrent.Executors
+
 import java.util.concurrent.atomic.AtomicInteger
 
 // A JavaScript runtime the Bend client runs in: evaluate an expression,
@@ -74,6 +75,29 @@ class V8Js(private val iso: androidx.javascriptengine.JavaScriptIsolate, private
     }
 }
 
+// A single engine thread, with FIFO order in each lane. Person work can
+// overtake queued hub frames; a running JavaScript call finishes first.
+private class Worker : Thread(null, null, "bend", 64L shl 20) {
+    private val monitor = java.lang.Object()
+    private val people = java.util.ArrayDeque<() -> Unit>()
+    private val background = java.util.ArrayDeque<() -> Unit>()
+    val personWaiting: Boolean get() = synchronized(monitor) { people.isNotEmpty() }
+    init { start() }
+    fun enqueue(person: Boolean, job: () -> Unit) = synchronized(monitor) {
+        (if (person) people else background).addLast(job)
+        monitor.notify()
+    }
+    override fun run() {
+        while (true) {
+            val job = synchronized(monitor) {
+                while (people.isEmpty() && background.isEmpty()) monitor.wait()
+                (if (people.isNotEmpty()) people else background).removeFirst()
+            }
+            job()
+        }
+    }
+}
+
 // The Bend client (bridge.js) on one thread of its own: in V8 where the
 // WebView offers it, else in QuickJS.
 // Every call answers {"screen": ..., "cmds": [...]} as a string, except
@@ -84,8 +108,13 @@ class V8Js(private val iso: androidx.javascriptengine.JavaScriptIsolate, private
 // dir: parsing and compiling 1.3 MB of JavaScript took half a second at
 // every launch.
 class Engine(private val app: android.content.Context, private val source: String, private val cid: String, private val drafts: String, private val dir: java.io.File) {
-    private val thread = Executors.newSingleThreadExecutor { Thread(null, it, "bend", 64L shl 20) }
-    private val dispatcher = thread.asCoroutineDispatcher()
+    private val worker = Worker()
+
+    private suspend fun <T> queued(person: Boolean, f: () -> T): T = suspendCoroutine { k ->
+        worker.enqueue(person) {
+            try { k.resume(f()) } catch (t: Throwable) { k.resumeWithException(t) }
+        }
+    }
     private var ctx: Js? = null
     // V8's sandbox died once: QuickJS for the rest of this process
     private var noV8 = false
@@ -145,39 +174,74 @@ class Engine(private val app: android.content.Context, private val source: Strin
 
     // calls queued whose answer carries a screen: while one is, the screen
     // before it is out of date before it could be drawn, so it is skipped
-    private val ahead = AtomicInteger(0)
+    private val personAhead = AtomicInteger(0)
+    private val backgroundAhead = AtomicInteger(0)
     // a screen was dropped that way: the next recv builds one even for a
     // frame that changes nothing on screen (bridge.js's owed)
     private val owe = java.util.concurrent.atomic.AtomicBoolean(false)
-    // when a screen was last built: a long burst (a cold join, the whole
-    // log) still draws one a second, so the list fills in as it arrives
-    @Volatile private var built = 0L
+    // Only the bend thread owns these. Timers enqueue background work;
+    // they never evaluate JavaScript themselves or delay a person call.
+    private val timer = android.os.Handler(android.os.Looper.getMainLooper())
+    private val window = 250L
+    private var built = 0L
+    private var flushPending = false
+    var onFlush: ((Reply) -> Unit)? = null
 
-    private suspend fun call(expr: String): String =
-        withContext(dispatcher) { eval(expr) }
+    private fun scheduleFlush() {
+        if (flushPending) return
+        flushPending = true
+        val delay = maxOf(0L, window - (android.os.SystemClock.elapsedRealtime() - built))
+        timer.postDelayed({ worker.enqueue(false) { flushReady() } }, delay)
+    }
 
-    // parsed here, off the main thread: a thread's screen is large.
-    // late: the call to make, told as it runs whether newer calls wait
-    // behind this one (its screen would be dropped anyway) and whether a
-    // screen was dropped since the last such call
-    private suspend fun out(expr: String, screen: Boolean = true, late: ((Boolean, Boolean) -> String)? = null): Reply {
+    private fun flushReady() {
+        flushPending = false
+        if (worker.personWaiting || android.os.SystemClock.elapsedRealtime() - built < window) {
+            scheduleFlush()
+            return
+        }
+        val began = android.os.SystemClock.elapsedRealtime()
+        val o = JSONObject(eval("Backplane.flush(${owe.get()})"))
+        val raw = o.optJSONObject("screen")
+        val stale = raw != null && worker.personWaiting
+        if (raw != null) { built = began; owe.set(stale) }
+        if (stale) scheduleFlush()
+        val s = if (stale) null else runCatching { raw?.let(::parseScreen) }
+            .onFailure { android.util.Log.w("Backplane", "screen unreadable: $it") }.getOrNull()
+        onFlush?.invoke(Reply(s, parseCmds(o)))
+    }
+
+    private suspend fun call(expr: String, person: Boolean = false): String =
+        queued(person) { eval(expr) }
+
+    // Parse off the main thread; commands survive every discarded screen.
+    private suspend fun out(expr: String, screen: Boolean = true, person: Boolean = false, late: ((Boolean, Boolean) -> String)? = null): Reply {
+        val ahead = if (person) personAhead else backgroundAhead
         if (screen) ahead.incrementAndGet()
-        return withContext(dispatcher) {
-            // due: a second since the last screen, so this one is drawn even
-            // with newer calls waiting
-            val due = late != null && android.os.SystemClock.elapsedRealtime() - built > 1000
-            val e = late?.invoke(ahead.get() > 1 && !due, owe.getAndSet(false)) ?: expr
+        return queued(person) {
             val t0 = android.os.SystemClock.elapsedRealtime()
-            val text = eval(e)
+            // a streaming frame builds at most one screen per window; a burst
+            // (a cold join, catching up) one a second, as before, while
+            // more frames wait behind this one
+            val withheld = late != null && (worker.personWaiting || t0 - built < window ||
+                (backgroundAhead.get() > 1 && t0 - built < 1000))
+            val e = late?.invoke(withheld, owe.getAndSet(false)) ?: expr
+            val text = try { eval(e) } catch (t: Throwable) {
+                if (screen) ahead.decrementAndGet()
+                throw t
+            }
             val ms = android.os.SystemClock.elapsedRealtime() - t0
-            // a slow step of the Bend client, for finding what to make faster
             if (ms > 100) android.util.Log.i("Backplane", "slow ${e.substringBefore('(')}: $ms ms")
-            val stale = screen && ahead.decrementAndGet() > 0 && !due
-            if (stale) owe.set(true) else if (screen) built = android.os.SystemClock.elapsedRealtime()
+            val remaining = if (screen) ahead.decrementAndGet() else 0
             val o = JSONObject(text)
-            // the commands carry the frames the hubs wait for: a screen this
-            // build cannot read costs that screen (the last stays up), never them
-            val s = if (stale) null else runCatching { o.optJSONObject("screen")?.let(::parseScreen) }
+            val raw = o.optJSONObject("screen")
+            val stale = raw != null && (if (person) remaining > 0 else worker.personWaiting)
+            if (raw != null) {
+                if (!person) built = t0
+                owe.set(stale)
+            }
+            if (withheld || stale) scheduleFlush()
+            val s = if (stale) null else runCatching { raw?.let(::parseScreen) }
                 .onFailure { android.util.Log.w("Backplane", "screen unreadable: $it") }.getOrNull()
             Reply(s, parseCmds(o))
         }
@@ -188,19 +252,19 @@ class Engine(private val app: android.content.Context, private val source: Strin
     // the paired hubs' keys, in order
     suspend fun hubs(keys: List<String>) = out("Backplane.hubs(${org.json.JSONArray(keys)})")
     suspend fun resume(key: String) = call("Backplane.resume(${q(key)})")
-    suspend fun screen() = out("Backplane.screen()")
+    suspend fun screen() = out("Backplane.screen()", person = true)
     // a binary frame from hub key, as base64
     suspend fun recv(key: String, data: String) =
         out("", late = { quiet, owed -> "Backplane.recv(${q(key)}, ${q(data)}, $quiet, $owed)" })
     // the whole client state as text (StateStore), and the state loaded back
     suspend fun save() = call("Backplane.save()")
     suspend fun load(text: String) = out("Backplane.load(${q(text)})")
-    suspend fun act(action: String, value: String) = out("Backplane.act(${q(action)}, ${q(value)})")
-    suspend fun quiet(action: String, value: String) = out("Backplane.quiet(${q(action)}, ${q(value)})", screen = false)
+    suspend fun act(action: String, value: String) = out("Backplane.act(${q(action)}, ${q(value)})", person = true)
+    suspend fun quiet(action: String, value: String) = out("Backplane.quiet(${q(action)}, ${q(value)})", screen = false, person = true)
     suspend fun online(key: String, b: Boolean) = out("Backplane.online(${q(key)}, $b)")
     // a hub marked offline with no screen of its own (after load())
     suspend fun offline(key: String) = out("Backplane.online(${q(key)}, false, true)", screen = false)
     suspend fun tick(now: Long) = out("Backplane.tick($now)")
     // a cat's rig (JSON text) for its key ("look:mood")
-    suspend fun cat(key: String) = call("Backplane.cat(${q(key)})")
+    suspend fun cat(key: String) = call("Backplane.cat(${q(key)})", person = true)
 }

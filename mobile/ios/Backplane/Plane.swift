@@ -8,6 +8,7 @@ import SwiftUI
 
 // the uberbot's card: a bot's row with the plane's counts
 struct UberCard: Decodable {
+    let nav: String?
     let id, name, mood, note, cat: String
     let counts: String?
     let look: Int
@@ -15,13 +16,14 @@ struct UberCard: Decodable {
 }
 
 struct PlaneRow: Decodable, Identifiable {
+    let nav: String?
     let kind, rid, act, value, title, sub, state, ago: String
     let machine: String?
     let away: Bool
     var id: String { kind + ":" + rid }
 
     private enum CodingKeys: String, CodingKey {
-        case kind, rid = "id", act, value, title, sub, state, ago, machine, away
+        case nav, kind, rid = "id", act, value, title, sub, state, ago, machine, away
     }
 }
 
@@ -54,7 +56,11 @@ private func planeStatus(_ s: String) -> String {
 }
 
 @MainActor private func tap(_ model: AppModel, _ r: PlaneRow) {
-    if r.kind == "thread" { model.navigate([r.value]) } else { model.act(r.act, r.value) }
+    if let nav = r.nav, !nav.isEmpty {
+        model.open(nav: nav, action: r.act, value: r.value, title: r.title, kind: r.kind)
+    } else if r.kind == "thread" {
+        model.open(nav: r.value, action: r.act, value: r.value, title: r.title)
+    } else { model.act(r.act, r.value) }
 }
 
 // The home list's card
@@ -65,7 +71,7 @@ struct UberCardRow: View {
     let card: UberCard
 
     var body: some View {
-        Button { model.act("uber", card.id) } label: {
+        Button { model.open(nav: card.nav ?? "", action: "uber", value: card.id, title: card.name, cat: card.cat, kind: "bot") } label: {
             HStack(spacing: 12) {
                 BotCat(model: model, key: card.cat, size: 40)
                 VStack(alignment: .leading, spacing: 2) {

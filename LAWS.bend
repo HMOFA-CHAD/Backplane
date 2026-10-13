@@ -7002,3 +7002,34 @@ law agy_google_warns:
 law agy_callback_needs_signin:
   for b: String
   {AGY.Agy.callback.ok("", b) == False{} : Bool}
+
+# ios-snappy: nav
+# The bot row's nav, qualified by its hub, is the same qualified thread
+# sel the opened screen carries. This example has an arbitrary t-prefixed
+# thread id; the general law below covers all untagged nonempty threads.
+# Room and reported bot keys stay local.
+law mnav_bot_sel:
+  for +hub: String
+  for +id: String
+  for +tail: String
+  {Hb.Hubs.nav.bot(hub, BU.BRow{id, "", "t" ++ tail, 0n, "idle", "", False{}, False{}, "", ""}) == Hb.Hubs.id(hub, "t" ++ tail) : String}
+
+law mnav_room_local:
+  for +hub: String
+  for +id: String
+  {Hb.Hubs.nav.qual(hub, "@room:" ++ id) == "@room:" ++ id : String}
+
+law mnav_remote_local:
+  for +hub: String
+  for +id: String
+  {Hb.Hubs.nav.qual(hub, "@remote:" ++ id) == "@remote:" ++ id : String}
+
+# Every valid bot thread qualifies exactly like the opened screen's sel.
+# The reserved room/remote prefixes name other destination kinds.
+law mnav_bot_thread:
+  for +hub: String
+  for +id: String
+  for +thread: String
+  for some: {String.is_empty(thread) == False{} : Bool}
+  for own: {Hb.Hubs.nav.tag(thread) == False{} : Bool}
+  {Hb.Hubs.nav.bot(hub, BU.BRow{id, "", thread, 0n, "idle", "", False{}, False{}, "", ""}) == Hb.Hubs.id(hub, thread) : String}

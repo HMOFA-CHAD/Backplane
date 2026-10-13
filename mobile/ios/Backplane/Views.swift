@@ -38,7 +38,7 @@ struct RootView: View {
                 // the island tapped while several threads work: which to open
                 .confirmationDialog(model.screen?.island.headline ?? "", isPresented: $model.picking, titleVisibility: .visible) {
                     ForEach(model.screen?.island.lines ?? [], id: \.thread) { l in
-                        Button(l.title.isEmpty ? l.doing : l.title) { model.act("select", l.thread) }
+                        Button(l.title.isEmpty ? l.doing : l.title) { model.open(nav: l.thread, action: "select", value: l.thread, title: l.title) }
                     }
                 }
         } else {
@@ -325,7 +325,7 @@ private struct ThreadRow: View {
         }
         .contentShape(Rectangle())
         .opacity(row.faded == true ? 0.45 : 1)
-        .onTapGesture { model.navigate([row.id]) }
+        .onTapGesture { model.open(nav: row.id, action: "select", value: row.id, title: row.title) }
         .onLongPressGesture(minimumDuration: 0.4) {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             model.act("row-menu", row.id)
@@ -648,19 +648,37 @@ struct ThreadDestination: View {
     var body: some View {
         if selected, let b = model.screen?.bot {
             BotDestination(model: model, bot: b)
+        } else if !selected, let b = model.seenBots[id] {
+            BotDestination(model: model, bot: b, live: false, cachedThread: model.seen[id], cachedPlane: model.seenPlanes[id]).allowsHitTesting(false)
         } else if let t = selected ? model.screen?.thread : model.seen[id] {
-            ThreadScreen(model: model, thread: t, live: selected).id(id)
+            ThreadScreen(model: model, thread: t, live: selected).id(id).allowsHitTesting(selected)
         } else {
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 12) {
+                    if let d = model.destination, d.nav == id, !d.cat.isEmpty {
+                        BotCat(model: model, key: d.cat, size: 48)
+                    }
+                    Text(title).font(.headline)
+                }
+                ForEach(0..<6) { _ in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Conversation content").font(.headline)
+                        Text("The latest messages will appear here.")
+                    }.redacted(reason: .placeholder)
+                }
+                Spacer()
+            }
+            .padding().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .allowsHitTesting(false)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
     // the row's title in the list, while nothing of the thread is known
     private var title: String {
         if id == AppModel.making { return "New thread" }
+        if let d = model.destination, d.nav == id { return d.title }
         for p in model.screen?.projects ?? [] {
             for r in p.threads + p.snoozed + p.settled + (p.archived ?? []) where r.id == id { return r.title }
         }
@@ -726,7 +744,7 @@ struct ThreadScreen: View {
                         Color.clear.frame(height: 1).background(GeometryReader { g in
                             Color.clear.onChange(of: g.frame(in: .named("timeline")).minY) { _, y in
                                 markY = y
-                                if y > -400 && keepAt == nil {
+                                if live && y > -400 && keepAt == nil {
                                     keepAt = thread.entries.first?.id
                                     model.act("earlier", "")
                                 }
@@ -781,7 +799,7 @@ struct ThreadScreen: View {
             // a page of entries the timeline does not draw (todo steps, a
             // fold's calls) moves nothing: still at the top, the next is asked for
             .onChange(of: thread.earlier) {
-                guard let k = keepAt, k == thread.entries.first?.id else { return }
+                guard live, let k = keepAt, k == thread.entries.first?.id else { return }
                 keepAt = nil
                 if (thread.earlier ?? 0) > 0 && markY > -400 { keepAt = k; model.act("earlier", "") }
             }
