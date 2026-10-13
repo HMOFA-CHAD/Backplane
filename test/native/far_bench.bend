@@ -14,6 +14,7 @@ import ../../src/core/far.bend as FR
 import ../../src/core/bot.bend as BT
 import ../../src/app/bots.bend as BV
 import ../../src/app/cats.bend as CA
+import ../../src/server/argv.bend as AV
 
 # Choosing a bot that lives on another machine, timed on a real event log:
 # the log's own bots and their threads are made a linked machine's mirror
@@ -151,7 +152,7 @@ def first_far(bs: List<&2, BT.Bot>) -> String:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +file : String = path(args)
     +bs : List<&2, U32> <- S.Files.read(file)
     +ld : ST.Loaded = ST.Store.load(S.Store.lines(bs), ST.Loaded{M.State.empty(), Nil{}})

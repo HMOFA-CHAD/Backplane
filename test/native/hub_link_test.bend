@@ -5,6 +5,7 @@ import ../../src/server/server.bend as S
 import ../../src/server/host.bend as H
 import ../../src/core/json.bend as J
 import ../../src/core/utf8.bend as U
+import ../../src/server/argv.bend as AV
 
 # Native network regression probe (temporary hubs only):
 #   scripts/build-app.sh test/native/hub_link_test.bend build/hub_link_test
@@ -96,4 +97,4 @@ def Probe.args(xs: List<&1, String>) -> IO(Unit):
     case Nil{}: IO.print("pass a temporary hub URL or whois")
 
 def main() -> IO(Unit):
-  IO.bind(List<&1, String>, Unit, IO.args(), Probe.args)
+  IO.bind(List<&1, String>, Unit, AV.Argv.args(), Probe.args)

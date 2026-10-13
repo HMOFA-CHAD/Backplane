@@ -11,6 +11,7 @@ import ../../src/app/bots.bend as BV
 import ../../src/app/cats.bend as CA
 import ../../src/core/json.bend as J
 import ../../src/core/utf8.bend as U8
+import ../../src/server/argv.bend as AV
 
 # Typing in the window, timed: each key goes through the same steps as in
 # the app (the event, the timeline memo, layout, the tiles redrawn) with
@@ -344,7 +345,7 @@ def passes(+r: Nat, +i: Nat, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +k: Kept, +acc:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +as : List<&2, String> = copy(args)
     +ty : L.Ty <- L.Ty.load()
     +a : Nat <- IO.now()

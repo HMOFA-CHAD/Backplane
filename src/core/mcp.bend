@@ -1,6 +1,7 @@
 import Base
 import ./json.bend as J
 import ./model.bend as M
+import ./review.bend as RVW
 import ./codec.bend as C
 import ./hub.bend as B
 import ./acp.bend as AC
@@ -139,7 +140,14 @@ def Mcp.tools() -> J.Json:
     Tool.def("work_cancel", "Stop work started with work_run (or a watched unit or pid). It shows as cancelling until its end is confirmed.",
       [Tool.prop("id", "string", "The work's id.")], ["id"]),
     Tool.def("work_unwatch", "Stop watching work without stopping it: it may still run, and you will not be told when it ends.",
-      [Tool.prop("id", "string", "The work's id.")], ["id"])]
+      [Tool.prop("id", "string", "The work's id.")], ["id"]),
+    Tool.def("review_comments", "The design review comments on this thread's design (a person's or an agent's, pinned to a place on a board layer or a schematic sheet): the open ones with their replies, and how many are resolved.",
+      Nil{}, Nil{}),
+    Tool.def("review_comment", "Comment on the design, pinned to a place (op add: file, x, y in mm in the file's own coordinates, layer for a board, text), or answer (op add with parent), resolve, reopen, edit or drop a comment by its id. The person sees it pinned in the viewer.",
+      [Tool.prop("op", "string", "add, resolve, reopen, edit or drop."), Tool.prop("id", "string", "The comment (resolve, reopen, edit, drop)."),
+       Tool.prop("parent", "string", "The comment answered (an add that is a reply)."), Tool.prop("file", "string", "The board or schematic, from this thread's folder."),
+       Tool.prop("x", "number", "X in mm."), Tool.prop("y", "number", "Y in mm."), Tool.prop("layer", "string", "A board's layer (F.Cu, B.Silkscreen...)."),
+       Tool.prop("text", "string", "What the comment says.")], ["op"])]
     , List.append(&2, J.Json, Mcp.preview_tools(), [Tool.def("permission_prompt", "Internal to Backplane: asks the user before a tool runs. Do not call it yourself.",
       [Tool.prop("tool_name", "string", "The tool."), Tool.prop("input", "object", "Its input."), Tool.prop("tool_use_id", "string", "The call.")], ["tool_name", "input"])])))}])
 
@@ -559,7 +567,7 @@ def Mcp.send.k(ok: Bool, +s: M.State, +now: Nat, +thread: String, +target: Strin
 
 def Mcp.names() -> List<&2, String>:
   ["orchestrator_capabilities", "delegate_task", "task_status", "task_cancel", "thread_list", "thread_read", "thread_send", "viewer_show",
-   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch"]
+   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment"]
 
 # Watched work (hub.bend's Watch.*): work_run, work_watch, work_list,
 # work_cancel, work_unwatch; each answers once its row is stored (the
@@ -603,6 +611,21 @@ def Mcp.work.cancel(+l: String, +s: M.State, +now: Nat, +thread: String, +id: St
 def Mcp.work.unwatch(+l: String, +s: M.State, +now: Nat, +thread: String, +id: String) -> Res:
   Bool.pick(Res, String.is_empty(l), Res.fail("no such work"),
     Res{True{}, J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"state", J.Str{B.Watch.unwatch.text()}}]), B.Watch.unwatch(s, now, thread, id)})
+
+# Design review comments (core/review.bend): the agent reads them and
+# writes its own, the same Acts a person's make
+def Mcp.review.list(+cs: List<&2, RVW.Comment>) -> Res:
+  Res.ok(J.Json.obj([J.KV{"open", J.Num{Nat.show(RVW.Review.count.open(cs))}}, J.KV{"resolved", J.Num{Nat.show(List.length(&2, RVW.Comment, RVW.Review.resolved(cs)))}},
+    J.KV{"text", J.Str{Bool.pick(String, String.is_empty(RVW.Review.prompt(cs)), "No open comments.", RVW.Review.prompt(cs))}}]))
+
+def Mcp.review.do(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
+  match ok:
+    case True{}:
+      +aid = B.Hub.id("r", now, B.Hub.seq(s))
+      Res{True{}, J.Json.obj([J.KV{"id", J.Str{Bool.pick(String, String.eq(J.Json.get_str(a, "op", ""), "add"), aid, J.Json.get_str(a, "id", ""))}}]),
+        B.Step{[RVW.Review.act(thread, aid, a, B.Hub.provider(B.Hub.thread(s, thread)), now)], Nil{}}}
+    case False{}:
+      Res.fail("review_comment needs op (add, resolve, reopen, edit, drop), text for add and edit, id for the rest")
 
 def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +a: J.Json) -> Res:
   match i:
@@ -649,6 +672,10 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
       Mcp.work.cancel(B.Watch.find(M.Work.watch(s, thread), J.Json.get_str(a, "id", "")), s, now, thread, J.Json.get_str(a, "id", ""))
     case 20n:
       Mcp.work.unwatch(B.Watch.find(M.Work.watch(s, thread), J.Json.get_str(a, "id", "")), s, now, thread, J.Json.get_str(a, "id", ""))
+    case 21n:
+      Mcp.review.list(RVW.Review.of_state(s, thread))
+    case 22n:
+      Mcp.review.do(RVW.Review.op.ok(J.Json.get_str(a, "op", ""), a), s, now, thread, a)
     case _:
       Res.fail("unknown tool")
 

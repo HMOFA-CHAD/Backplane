@@ -3,6 +3,7 @@ import ../../src/gfx/text.bend as X
 import ../../src/app/bots.bend as BV
 import ../../src/app/layout.bend as L
 import ../../src/core/bot.bend as BT
+import ../../src/server/argv.bend as AV
 
 # Each invocation measures one fresh process, with ASCII warmed as in the
 # window. Construction/font loading are outside the timer; all lines are
@@ -109,4 +110,4 @@ def run(a: String & String) -> IO(Unit):
     measure(Bool.or(String.eq(kind, "cache"), String.eq(kind, "current")), kind, n, s, ft, c)
 
 def main() -> IO(Unit):
-  IO.bind(List<String>, Unit, IO.args(), as => run(arg(as)))
+  IO.bind(List<String>, Unit, AV.Argv.args(), as => run(arg(as)))

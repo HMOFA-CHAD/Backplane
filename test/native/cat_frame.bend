@@ -3,6 +3,7 @@ import ../../src/core/cat.bend as C
 import ../../src/gfx/cat.bend as G
 import ../../src/gfx/draw.bend as D
 import ../../src/gfx/raster.bend as R
+import ../../src/server/argv.bend as AV
 
 # Every mood for a few looks, at 96 and 32 pixels, posed at a time, into a
 # PPM (default /tmp/cat_frame.ppm). Also times one cat's frame work.
@@ -63,7 +64,7 @@ def bench(+n: Nat, +fs: List<&2, C.FPart>, +px: U32, +acc: U32) -> U32:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    a : List<String> <- IO.args()
+    a : List<String> <- AV.Argv.args()
     +args : List<&2, String> = copy(a)
     +t : Nat = Maybe.default(&2, Nat, Nat.read(arg(args, 0n, "0")), 0n)
     t0 : Nat <- IO.now()

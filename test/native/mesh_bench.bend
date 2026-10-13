@@ -2,6 +2,7 @@ import Base
 import ../../src/core/glb.bend as G
 import ../../src/gfx/mesh.bend as M
 import ../../src/gfx/draw.bend as D
+import ../../src/server/argv.bend as AV
 
 # The 3D viewer's frame time at a window's size, over a few orbits.
 #   scripts/build-app.sh test/native/mesh_bench.bend build/mesh_bench
@@ -64,7 +65,7 @@ def go(r: File & Result<&1, &1, U32 & String, List<&2, U32>>, +w: U32, +h: U32) 
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    as : List<&1, String> <- IO.args()
+    as : List<&1, String> <- AV.Argv.args()
     +args : List<&2, String> = many(as)
     +path : String = Maybe.default(&2, String, List.head(&2, String, args), "/tmp/glb.glb")
     f : File <- IO.try(File, File.open(path, "r"))

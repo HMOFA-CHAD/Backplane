@@ -14,6 +14,7 @@ import ../../src/core/utf8.bend as U8
 import ../../src/core/botui.bend as BU
 import ../../src/core/bot.bend as BT
 import ../../src/gfx/draw.bend as D
+import ../../src/server/argv.bend as AV
 
 # A bot's screens on a real log, timed as the window makes each frame
 # (prepare, the timeline memo, layout, the tiles): from a thread, the
@@ -341,7 +342,7 @@ def snap(none: Bool, +dir: String, +name: String, +k: Kept) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +as : List<&2, String> = copy(args)
     +ty : L.Ty <- L.Ty.load()
     +a : Nat <- IO.now()

@@ -41,7 +41,7 @@ git(proj, "tag", "-a", "v1", "-m", "v1");
 const sch = join(proj, "ecc83-pp.kicad_sch");
 writeFileSync(sch, readFileSync(sch, "utf8").replace('(property "Value" "47K"', '(property "Value" "56K"'));
 mkdirSync(join(proj, ".backplane"));
-writeFileSync(join(proj, ".backplane/checks.json"), JSON.stringify({ checks: [{ name: "says hi", run: "echo hi; exit 3", on: ["manual"] }] }));
+writeFileSync(join(proj, ".backplane/checks.json"), JSON.stringify({ checks: [{ name: "says hi", run: "echo hi; exit 3", on: ["manual", "release"] }] }));
 git(proj, "add", ".");
 git(proj, "commit", "-qm", "rev B: R4 56K");
 const head = git(proj, "rev-parse", "HEAD").trim();
@@ -144,6 +144,53 @@ try {
   check(existsSync(file) && readFileSync(file, "utf8").split("\n").filter((l) => l.includes("[x]")).length === 1, "into the thread's .backplane/checklist.md", existsSync(file) ? readFileSync(file, "utf8").slice(0, 200) : "missing");
   const tk2 = (await ask("review.tick", { thread: th.id, index: 1 }))?.result?.ticked;
   check(!!tk2 && tk2.tasks[1]?.done === false, "and cleared again");
+
+  // review comments: the person's over the socket, the agent's through MCP
+  const pc1 = await ask("review.comment", { thread: th.id, op: "add", file: "ecc83-pp.kicad_pcb", kind: "board", layer: "F.Cu", x: 141.6, y: 99.7, item: "", text: "Move C1 off the edge" });
+  check(!!pc1 && pc1.ok === true, "a person's comment is taken", JSON.stringify(pc1));
+  const act1 = await until(10000, () => seen.find((c) => c.$ === "ActivityLogged" && c.thread === th.id && c.tone === "review" && c.kind === "add"));
+  check(!!act1 && JSON.parse(act1.summary).text === "Move C1 off the edge" && JSON.parse(act1.summary).a.file === "ecc83-pp.kicad_pcb", "logged as a review Act", JSON.stringify(act1));
+  const empty = await ask("review.comment", { thread: th.id, op: "add", text: "  " });
+  check(!!empty && empty.ok === false, "an empty comment is refused", JSON.stringify(empty));
+  const token = readFileSync(join(home, "token"), "utf8").trim();
+  const mcp = async (name: string, args: any) => {
+    const r = await fetch(`http://127.0.0.1:${port}/mcp/${th.id}?token=${token}`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }) });
+    return await r.text();
+  };
+  const listed = await mcp("review_comments", {});
+  check(listed.includes("Move C1 off the edge") && listed.includes("review_comments"), "the agent reads it", listed.slice(0, 300));
+  const made = await mcp("review_comment", { op: "add", parent: act1?.act ?? "", file: "ecc83-pp.kicad_pcb", text: "Moved it 2 mm in" });
+  check(made.includes("\"id\"") && !made.includes("isError\":true"), "the agent answers it", made.slice(0, 300));
+  const rep = await until(10000, () => seen.find((c) => c.$ === "ActivityLogged" && c.thread === th.id && c.tone === "review" && c.summary.includes("Moved it 2 mm in")));
+  check(!!rep && JSON.parse(rep.summary).parent === act1?.act && JSON.parse(rep.summary).by === "claude", "as a reply by the agent", JSON.stringify(rep));
+  const res = await ask("review.comment", { thread: th.id, op: "resolve", id: act1?.act ?? "" });
+  check(!!res && res.ok === true, "resolved by the person", JSON.stringify(res));
+  const after = await mcp("review_comments", {});
+  check(after.includes("No open comments") && after.includes("resolved") && after.includes(":1"), "and the agent sees none open", after.slice(0, 300));
+
+  // a release: the checks gate it, forced it is made, never published unasked
+  const gated = (await ask("review.release", { thread: th.id, tag: "v2", publish: false, force: false }, 180000))?.result?.report;
+  check(!!gated && gated.err.startsWith("No release: the checks fail"), "a release is refused while the checks fail", JSON.stringify(gated)?.slice(0, 300));
+  check(!git(top, "tag", "--list", "v2").includes("v2"), "and makes no tag");
+  const t2 = Date.now();
+  const rel = (await ask("review.release", { thread: th.id, tag: "v2", publish: false, force: true }, 300000))?.result?.report;
+  console.log(`     (a release in ${Date.now() - t2} ms)`);
+  check(!!rel && rel.page === "release" && !rel.err, "forced, the release is made", JSON.stringify(rel)?.slice(0, 400));
+  check(git(top, "tag", "--list", "v2").includes("v2"), "with its tag");
+  const rdir = join(top, ".backplane/releases/v2");
+  const has = (f: string) => existsSync(join(rdir, f));
+  check(has("notes.md") && has("manifest.json"), "notes and a manifest", rdir);
+  const outs = existsSync(rdir) ? Bun.spawnSync(["find", rdir, "-type", "f"]).stdout.toString() : "";
+  check(/\.gbr|\.g[tb][lso]|-F_Cu/i.test(outs) && /\.drl/.test(outs), "Gerbers and drill files", outs.slice(0, 400));
+  check(/cpl\.csv/.test(outs) && /bom\.csv/.test(outs) && /\.step/.test(outs) && /\.pdf/.test(outs), "CPL, BOM, STEP and PDFs", outs.slice(0, 600));
+  const notes = has("notes.md") ? readFileSync(join(rdir, "notes.md"), "utf8") : "";
+  check(notes.startsWith("# v2") && notes.includes("Changes since v1") && notes.includes("R4"), "notes name the tag before and the BOM change", notes.slice(0, 400));
+  check(!!rel && rel.md.includes("**Files**") && !rel.md.includes("Published"), "and nothing is published", rel?.md?.slice(-300));
+  const again = (await ask("review.release", { thread: th.id, tag: "v2", publish: false, force: true }, 60000))?.result?.report;
+  check(!!again && again.err.includes("tag could not be made"), "a tag that exists is refused", JSON.stringify(again)?.slice(0, 300));
+  const badtag = (await ask("review.release", { thread: th.id, tag: "v 3..", publish: false, force: true }))?.result?.report;
+  check(!!badtag && badtag.err.includes("not a tag name"), "a bad tag name is refused", JSON.stringify(badtag));
 
   // a ref typed in that is not there
   const bad = await ask("review.checks", { thread: th.id, commit: "-x", trigger: "manual" });

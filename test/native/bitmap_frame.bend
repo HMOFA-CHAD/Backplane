@@ -2,6 +2,7 @@ import Base
 import ../../src/gfx/raster.bend as R
 import ../../src/gfx/draw.bend as D
 import ../../src/gfx/bitmap.bend as B
+import ../../src/server/argv.bend as AV
 
 # A browser frame file (tools/browser, --frames FILE) in a 1400 x 900 frame:
 # 1:1 in a panel on the right, half size on the left, UI chrome around and
@@ -72,7 +73,7 @@ def go(r: File & Result<&1, &1, U32 & String, List<&2, U32>>) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     f : File <- IO.try(File, File.open(Maybe.default(&1, String, List.head(&1, String, args), "/tmp/frame.rgb"), "r"))
     t0 : Nat <- IO.now()
     r : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_bytes(f, 100000000)

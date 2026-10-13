@@ -7,6 +7,7 @@ import ../../src/app/layout.bend as L
 import ../../src/gfx/raster.bend as R
 import ../../src/gfx/draw.bend as D
 import ../../src/app/theme.bend as T
+import ../../src/server/argv.bend as AV
 
 def items(ls: List<&2, String>) -> List<&2, J.Json>:
   match ls:
@@ -67,7 +68,7 @@ def go(r: File & Result<&1, &1, U32 & String, List<&2, U32>>, +sel: String, +pat
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     f : File <- IO.try(File, File.open("/tmp/bp-home/events.jsonl", "r"))
     r : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_bytes(f, 100000000)
     go(r, Maybe.default(&1, String, List.head(&1, String, args), ""), "/tmp/ui.ppm")

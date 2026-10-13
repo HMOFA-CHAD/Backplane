@@ -274,6 +274,46 @@ struct Viewer: Decodable {
     let file: FileView?
     // the Review tab (open "review")
     let review: ReviewPage?
+    // the review comments of the file on show
+    let comments: ReviewComments?
+}
+
+// Review comments (client.bend's Rc): the pins, at places in mm of the
+// file's coordinates ("rv-pin" id opens one), the one open, and the place
+// waiting for its note ("x\ty\tlayer\titem", "" none)
+struct ReviewPin: Decodable, Hashable {
+    let id: String
+    let x, y: Double
+    let resolved: Bool
+    let count: Int
+}
+
+struct ReviewReply: Decodable, Hashable {
+    let text, by: String
+}
+
+struct ReviewOpen: Decodable, Hashable {
+    let id, text, by, place: String
+    let resolved: Bool
+    let replies: [ReviewReply]
+}
+
+struct ReviewComments: Decodable {
+    let pins: [ReviewPin]
+    let open: ReviewOpen?
+    let at: String
+}
+
+// the Checks page's boxes ("rv-tick" index) and why the gate fails ("" it passes)
+struct ReviewTask: Decodable, Hashable {
+    let index: Int
+    let text, group: String
+    let done: Bool
+}
+
+struct ReviewChecks: Decodable {
+    let gate, line: String
+    let tasks: [ReviewTask]
 }
 
 // the Review tab: the page chips ("rv-page" page), the title, the report's
@@ -288,6 +328,17 @@ struct ReviewPage: Decodable {
     let title, note: String
     let busy: Bool
     let blocks: [Block]?
+    let checks: ReviewChecks?
+    let release: ReleaseForm?
+}
+
+// the Release page's form: the tag that will be made (the field, else the
+// proposed one), the proposed one, and the two toggles
+struct ReleaseForm: Decodable {
+    let tag, next: String
+    let publish, force: Bool
+    let err: String
+    let text: String?
 }
 
 // the Files tab: where the folder is, its rows (a tap sends action with

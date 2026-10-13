@@ -2827,13 +2827,40 @@ def Row.menu.k(row: Bool, proj: Bool, file: Bool, +n: Nui, +value: String, +x: U
     case False{} False{}:
       Row.menu.f(file, n, value, x, y)
 
+# Review comments (client.bend's Rc): a right-click on the board or the
+# schematic starts a note at that place, "rv-note" with "x\ty\tlayer\titem"
+# (mm in the file's coordinates, the item under the pointer), and puts the
+# keyboard in the note's field
+def Rcw.at(v: V.Vw, +x: U32, +y: U32, +fk: U32, +flip: U32) -> String:
+  match v:
+    case V.Vw{+ss, V.View{+z, +ox, +oy}, _, _, _, _, _, _, _, _, V.Vx{+k, _, _, _, _, _, _, _, _, _, _}}:
+      F32.show(F32.div(F32.sub(U32.to_f32(x), ox), z)) ++ "\t" ++ F32.show(F32.div(F32.sub(U32.to_f32(y), oy), z)) ++ "\t\t"
+        ++ V.Pick.at(ss, V.View{z, ox, oy}, U32.to_f32(x), U32.to_f32(y), U32.or(k, fk), flip)
+
+def Rcw.start(s: Step) -> Step:
+  match s:
+    case Step{n, cs, d}:
+      Step{Nui.with_caret(Nui.with_focus(n, Fld.id("rcnote", "rv-note-send", "")), 0n), cs, d}
+
+# a right press on nothing (Row.menu's None): on the board or schematic,
+# a note at that place; elsewhere nothing
+def Rcw.none(on: Bool, +n: Nui, +x: U32, +y: U32) -> Step:
+  match on:
+    case True{}:
+      Rcw.start(Nui.act(n, "rv-note", Rcw.at(Nui.vw(n), x, y, Nui.lfocus.bits(n), Nui.flip(n))))
+    case False{}:
+      Step{n, Nil{}, False{}}
+
+def Rcw.here(+n: Nui, +x: U32, +y: U32) -> Bool:
+  Bool.and(Bool.and(Nui.in_viewer(n, x), U32.is_ge(y, 52)), U32.is_lt(Vw.kind(Nui.vw(n)), 2))
+
 def Row.menu(m: Maybe<&2, Hit>, +n: Nui, +x: U32, +y: U32) -> Step:
   match m:
     case Some{Hit{_, _, _, _, +action, +value}}:
       Row.menu.k(Bool.and(String.eq(action, "select"), U32.is_lt(x, 264)),
         Bool.and(Bool.or(String.eq(action, "project"), String.eq(action, "look")), U32.is_lt(x, 264)), String.eq(action, "file-open"), n, value, x, y)
     case None{}:
-      Step{n, Nil{}, False{}}
+      Rcw.none(Rcw.here(n, x, y), n, x, y)
 
 # a press on the viewer's own buttons is a click, elsewhere in it a drag
 def Nui.press(viewer: Bool, +n: Nui, +x: U32, +y: U32) -> Step:

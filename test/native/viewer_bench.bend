@@ -17,6 +17,7 @@ import ../../src/gfx/tiles.bend as TI
 import ../../src/gfx/bitmap.bend as BM
 import ../../src/gfx/draw.bend as D
 import ../../src/gfx/fresh.bend as FR
+import ../../src/server/argv.bend as AV
 
 # The board or schematic viewer, timed: each step goes through the same
 # work as a frame in the app (the event, the viewer's base, the memo,
@@ -343,6 +344,6 @@ def go(+path: String, +w: U32, +h: U32) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +xs : List<&2, String> = copy(args)
     go(Maybe.default(&2, String, List.head(&2, String, xs), "x"), arg.u(xs, 1n, 2560), arg.u(xs, 2n, 1400))

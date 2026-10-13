@@ -636,6 +636,10 @@ class PlotSurface(context: Context) : GLSurfaceView(context) {
     var fadeMs = 220f
     var chunks: List<PlotChunk> = emptyList()
     var onPick: (String) -> Unit = {}
+    // review comments: a long press at a place (mm of the file) asks for a
+    // note; the pins follow the camera (offX, offY, scale) via onCamera
+    var onNote: (Float, Float) -> Unit = { _, _ -> }
+    var onCamera: (Float, Float, Float) -> Unit = { _, _, _ -> }
     private var fitted = false
     private var shownFam = ""
     private var fadeFrom = 0L
@@ -657,6 +661,11 @@ class PlotSurface(context: Context) : GLSurfaceView(context) {
     }
 
     private val three get() = renderer.three
+
+    override fun requestRender() {
+        super.requestRender()
+        onCamera(renderer.offX, renderer.offY, if (three) 0f else renderer.scale)
+    }
 
     // the zoom that shows the whole box, and the range around it (pixels)
     private val fit: Float
@@ -844,6 +853,12 @@ class PlotSurface(context: Context) : GLSurfaceView(context) {
             flingY = vy
             run()
             return true
+        }
+
+        override fun onLongPress(e: MotionEvent) {
+            if (three || renderer.scale <= 0f) return
+            performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            onNote((e.x - renderer.offX) / renderer.scale / 1000f, (e.y - renderer.offY) / renderer.scale / 1000f)
         }
 
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {

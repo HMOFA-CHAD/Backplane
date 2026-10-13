@@ -12,6 +12,7 @@ import ../../src/server/server.bend as SV
 import ../../src/gfx/raster.bend as R
 import ../../src/server/plot.bend as PV
 import ../../src/gfx/draw.bend as D
+import ../../src/server/argv.bend as AV
 
 # The viewer on a hierarchical schematic, without a window: load the
 # sheet tree as the window does, open the layer and sheet list, go into
@@ -86,5 +87,5 @@ def go(+root: String) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     go(Maybe.default(&1, String, List.head(&1, String, args), "x"))

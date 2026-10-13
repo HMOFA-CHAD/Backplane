@@ -32,6 +32,7 @@ import ../core/badge.bend as BG
 import ../core/voice.bend as VC
 import ../core/mech.bend as MC
 import ../core/hist.bend as HS
+import ../core/review.bend as RVW
 import ../core/look.bend as LO
 import ../core/layers.bend as LY
 import ../core/tools.bend as TO
@@ -1046,6 +1047,30 @@ def TL.tw(rs: List<&2, TRow>, ws: List<&2, U32>, +ty: Ty) -> List<&2, U32>:
     case TRow{_, cs} <> t:
       TL.tw(t, TL.tw.row(cs, ws, ty), ty)
 
+# the longest word in a cell, as a width (a column never goes narrower)
+def TL.word(ws: List<&2, String>, +ty: Ty, +acc: U32) -> U32:
+  match ws:
+    case Nil{}:
+      acc
+    case +w <> t:
+      TL.word(t, ty, U32.max(acc, Ty.width(ty, 3n, w)))
+
+def TL.mw.row(cs: List<&2, String>, ms: List<&2, U32>, +ty: Ty) -> List<&2, U32>:
+  match cs ms:
+    case Nil{} +rest:
+      rest
+    case +c <> ct Nil{}:
+      (TL.word(String.split(c, ' '), ty, 0) + 16 : U32) <> TL.mw.row(ct, Nil{}, ty)
+    case +c <> ct +m <> mt:
+      U32.max(m, (TL.word(String.split(c, ' '), ty, 0) + 16 : U32)) <> TL.mw.row(ct, mt, ty)
+
+def TL.mw(rs: List<&2, TRow>, ms: List<&2, U32>, +ty: Ty) -> List<&2, U32>:
+  match rs:
+    case Nil{}:
+      ms
+    case TRow{_, cs} <> t:
+      TL.mw(t, TL.mw.row(cs, ms, ty), ty)
+
 def TL.sum(ws: List<&2, U32>, +acc: U32) -> U32:
   match ws:
     case Nil{}:
@@ -1063,19 +1088,19 @@ def TL.small(ws: List<&2, U32>, +share: U32, +acc: U32) -> U32:
 
 # a column no wider than share keeps its width; the wider ones split the
 # rest of the panel in proportion
-def TL.scale(ws: List<&2, U32>, +share: U32, +rest: U32, +big: U32) -> List<&2, U32>:
-  match ws:
-    case Nil{}:
+def TL.scale(ws: List<&2, U32>, ms: List<&2, U32>, +share: U32, +rest: U32, +big: U32) -> List<&2, U32>:
+  match ws ms:
+    case +w <> t +m <> mt:
+      Bool.pick(U32, U32.is_gt(w, share), U32.max(m, U32.max(48, ((w * rest : U32) / U32.max(big, 1) : U32))), w) <> TL.scale(t, mt, share, rest, big)
+    case _ _:
       Nil{}
-    case +w <> t:
-      Bool.pick(U32, U32.is_gt(w, share), U32.max(48, ((w * rest : U32) / U32.max(big, 1) : U32)), w) <> TL.scale(t, share, rest, big)
 
-def TL.fit.k(+ws: List<&2, U32>, +px: U32, +total: U32, +share: U32) -> List<&2, U32>:
-  TL.scale(ws, share, U32.dim(px, TL.small(ws, share, 0)), U32.dim(total, TL.small(ws, share, 0)))
+def TL.fit.k(+ws: List<&2, U32>, ms: List<&2, U32>, +px: U32, +total: U32, +share: U32) -> List<&2, U32>:
+  TL.scale(ws, ms, share, U32.dim(px, TL.small(ws, share, 0)), U32.dim(total, TL.small(ws, share, 0)))
 
 # the widths shrunk to the panel when they are wider
-def TL.fit(+ws: List<&2, U32>, +px: U32, +total: U32) -> List<&2, U32>:
-  Bool.pick(List<&2, U32>, U32.is_gt(total, px), TL.fit.k(ws, px, total, (px / U32.max(U32.from_nat(List.length(&2, U32, ws)), 1) : U32)), ws)
+def TL.fit(+ws: List<&2, U32>, ms: List<&2, U32>, +px: U32, +total: U32) -> List<&2, U32>:
+  Bool.pick(List<&2, U32>, U32.is_gt(total, px), TL.fit.k(ws, ms, px, total, (px / U32.max(U32.from_nat(List.length(&2, U32, ws)), 1) : U32)), ws)
 
 def TL.enc(ws: List<&2, U32>) -> String:
   match ws:
@@ -1134,7 +1159,7 @@ def TL.table.k(+rs: List<&2, TRow>, +ws: List<&2, U32>, +ty: Ty) -> List<&2, TLi
 def TL.table(+ty: Ty, ns: List<&2, N.Node>, +px: U32) -> List<&2, TLine>:
   +rs = TL.trows(ns)
   +ws = TL.tw(rs, Nil{}, ty)
-  TL.table.k(rs, TL.fit(ws, U32.dim(px, 1), TL.sum(ws, 0)), ty)
+  TL.table.k(rs, TL.fit(ws, TL.mw(rs, Nil{}, ty), U32.dim(px, 1), TL.sum(ws, 0)), ty)
 
 # a table line's cells, each in its column, with a rule left of each
 def TL.cells.draw(cs: List<&2, String>, ws: String, +ty: Ty, +c: D.Clip, +x: U32, +y: U32, +h: U32, +color: U32) -> List<&2, R.Op>:
@@ -4134,7 +4159,279 @@ def Rpw.body(has: Bool, +ty: Ty, +v: U.RpView, +th: String, +off: Nat, +x0: U32,
     case False{}:
       Out.ops(Ty.text(ty, 2n, U.RpView.note(v), D.Clip.all(), (x0 + 16 : U32), 150, 30, T.Th.faint()))
 
-def Rpw.page(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+# Review comments and the checklist in the window (client.bend's Rc and Rp).
+# Pins are drawn over the board or schematic from the view's own transform
+# (a handful of squares, no scene redraw); a click on one opens it
+# ("rv-pin"), a right click on the viewer starts a note (nui.bend's Rcw).
+# The note form, the open comment and the Checks page's boxes follow.
+type Crow is Data:
+  Crow{kind: U32, text: String, index: Nat, done: Bool}
+
+def Rcw.view(v: V.Vw) -> V.View:
+  match v:
+    case V.Vw{_, vi, _, _, _, _, _, _, _, _, _}:
+      vi
+
+def Rcw.part(xs: List<&2, String>, +i: Nat) -> String:
+  Maybe.default(&2, String, List.get(&2, String, xs, i), "")
+
+def Rcw.f(+s: String) -> F32:
+  Maybe.default(&2, F32, F32.read(s), 0.0)
+
+def Rcw.sq(+ty: Ty, +x: U32, +y: U32, +fill: U32, +line: U32, +cnt: Nat, +sel: Bool) -> List<&2, R.Op>:
+  List.concat(&2, R.Op, [Bool.pick(List<&2, R.Op>, sel, [D.Draw.rect(D.Clip.all(), (x - 2 : U32), (y - 2 : U32), 20, 20, T.Th.text(), 255)], Nil{}),
+    Lay.box(D.Clip.all(), x, y, 16, 16, 0, fill, line),
+    Bool.pick(List<&2, R.Op>, Nat.is_gt(cnt, 0n), Ty.text(ty, 1n, Nat.show(cnt), D.Clip.all(), (x + 4 : U32), y, 16, T.Th.bg()), Nil{})])
+
+def Rcw.pin.in(on: Bool, +ty: Ty, +id: String, +res: Bool, +cnt: Nat, +sel: Bool, +ux: U32, +uy: U32) -> Out:
+  match on:
+    case True{}:
+      Out{Rcw.sq(ty, (ux - 8 : U32), (uy - 8 : U32), Bool.pick(U32, res, T.Th.panel(), T.Th.accent()), Bool.pick(U32, res, T.Th.faint(), T.Th.bg()), cnt, sel),
+        [Lay.hit((ux - 8 : U32), (uy - 8 : U32), 16, 16, "rv-pin", id)]}
+    case False{}:
+      Out.none()
+
+def Rcw.pin.at(+sx: F32, +sy: F32, +ty: Ty, +id: String, +res: Bool, +cnt: Nat, +sel: Bool, +x0: U32, +x1: U32, +y1: U32) -> Out:
+  Rcw.pin.in(Bool.and(Bool.and(F32.is_ge(sx, U32.to_f32((x0 + 10 : U32))), F32.is_le(sx, U32.to_f32(U32.dim(x1, 10)))),
+      Bool.and(F32.is_ge(sy, 62.0), F32.is_le(sy, U32.to_f32(U32.dim(y1, 10))))),
+    ty, id, res, cnt, sel, D.Draw.floor(sx), D.Draw.floor(sy))
+
+def Rcw.pins(ps: List<&2, RVW.Pin>, +ty: Ty, +v: V.View, +sel: String, +x0: U32, +x1: U32, +y1: U32) -> Out:
+  match ps:
+    case Nil{}:
+      Out.none()
+    case RVW.Pin{+id, +px, +py, _, _, +res, +cnt} <> t:
+      Out.cat(Rcw.pins(t, ty, v, sel, x0, x1, y1),
+        Rcw.pin.at(V.View.x(v, px), V.View.y(v, py), ty, id, res, cnt, String.eq(id, sel), x0, x1, y1))
+
+# a card: bordered panel, and a hit under its buttons so a press on it never drags the view
+def Rcw.card(+x: U32, +y: U32, +w: U32, +h: U32) -> Out:
+  Out{Lay.box(D.Clip.all(), x, y, w, h, 0, T.Th.panel(), T.Th.line()), [Lay.hit(x, y, w, h, "noop", "")]}
+
+def Rcw.lines(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32, +color: U32) -> List<&2, R.Op>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case l <> t:
+      List.append(&2, R.Op, Ty.text(ty, 2n, l, D.Clip.all(), x, y, 20, color), Rcw.lines(t, ty, x, (y + 20 : U32), color))
+
+def Rcw.take(ls: List<&2, String>, +n: Nat) -> List<&2, String>:
+  match ls n:
+    case +l <> +t 1n+k:
+      l <> Rcw.take(t, k)
+    case _ _:
+      Nil{}
+
+def Rcw.reps(rs: List<&2, String>, +ty: Ty, +w: U32) -> List<&2, String>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      List.append(&2, String, Ty.wrap(ty, 2n, Rcw.part(String.split(r, '\u{1f}'), 1n) ++ ": " ++ Rcw.part(String.split(r, '\u{1f}'), 0n), w), Rcw.reps(t, ty, w))
+
+# the open comment, top right
+def Rcw.open.k(+ty: Ty, +n: S.Nui, o: U.RcOpen, +x0: U32, +x1: U32, +y1: U32) -> Out:
+  match o:
+    case U.RcOpen{+id, +text, +by, +place, +res, +reps}:
+      +cw = {U32.min(360, U32.dim((x1 - x0 : U32), 24)) : U32}
+      +tw = {U32.dim(cw, 24) : U32}
+      +ls = {Rcw.take(List.append(&2, String, Ty.wrap(ty, 2n, text, tw), Rcw.reps(reps, ty, tw)), 12n) : List<&2, String>}
+      +nl = {U32.from_nat(List.length(&2, String, ls)) : U32}
+      +ch = {(122 + nl * 20 : U32) : U32}
+      +cx = {(x0 + 12 : U32) : U32}
+      +cy = {U32.max(62, U32.dim(y1, (ch + 8 : U32))) : U32}
+      +fy = {(cy + 40 + nl * 20 + 8 : U32) : U32}
+      +fid = {S.Fld.id("rcreply", "rv-reply-send", "") : String}
+      Out.all([Rcw.card(cx, cy, cw, ch),
+        Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, by ++ " · " ++ place ++ Bool.pick(String, res, " · resolved", ""), U32.dim(tw, 24)), D.Clip.all(), (cx + 12 : U32), (cy + 6 : U32), 24, T.Th.dim())),
+        Out{Lay.icon(ty, "x", D.Clip.all(), (cx + cw - 26 : U32), (cy + 10 : U32), T.Th.dim()), [Lay.hit((cx + cw - 32 : U32), (cy + 4 : U32), 28, 28, "rv-pin", "")]},
+        Out.ops(Rcw.lines(ls, ty, (cx + 12 : U32), (cy + 38 : U32), T.Th.text())),
+        Lay.field(ty, D.Clip.all(), (cx + 12 : U32), fy, tw, U.Ui.scratch(S.Nui.ui(n), "@f.rcreply"), String.eq(S.Nui.focus_of(n), fid), S.Blink.on(n), S.Nui.caret_of(n), S.Nui.mark(n), "Reply", fid),
+        Lay.button(ty, D.Clip.all(), (cx + 12 : U32), (fy + 36 : U32), "Reply", T.Th.accent(), "rv-reply-send", ""),
+        Lay.button(ty, D.Clip.all(), (cx + 20 + Lay.button.w(ty, "Reply") : U32), (fy + 36 : U32), Bool.pick(String, res, "Reopen", "Resolve"), T.Th.soft(), Bool.pick(String, res, "rv-reopen", "rv-resolve"), id)])
+
+def Rcw.open(m: Maybe<&2, U.RcOpen>, +ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +y1: U32) -> Out:
+  match m:
+    case Some{+o}:
+      Rcw.open.k(ty, n, o, x0, x1, y1)
+    case None{}:
+      Out.none()
+
+# the note being written: a marker at its place and the form beside it
+def Rcw.note.k(+ty: Ty, +n: S.Nui, +v: V.View, +xs: List<&2, String>, +x0: U32, +x1: U32, +y1: U32) -> Out:
+  +sx = {V.View.x(v, Rcw.f(Rcw.part(xs, 0n))) : F32}
+  +sy = {V.View.y(v, Rcw.f(Rcw.part(xs, 1n))) : F32}
+  +ux = {D.Draw.floor(F32.max(sx, 0.0)) : U32}
+  +uy = {D.Draw.floor(F32.max(sy, 0.0)) : U32}
+  +cw = {U32.min(340, U32.dim((x1 - x0 : U32), 24)) : U32}
+  +cx = {U32.max((x0 + 8 : U32), U32.min((ux + 16 : U32), U32.dim(x1, (cw + 8 : U32)))) : U32}
+  +cy = {U32.max(62, U32.min((uy + 16 : U32), U32.dim(y1, 138))) : U32}
+  +fid = {S.Fld.id("rcnote", "rv-note-send", "") : String}
+  Out.all([Out.ops(Rcw.sq(ty, U32.dim(ux, 8), U32.dim(uy, 8), T.Th.warn(), T.Th.bg(), 0n, False{})),
+    Rcw.card(cx, cy, cw, 124),
+    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, "Comment here", U32.dim(cw, 24)), D.Clip.all(), (cx + 12 : U32), (cy + 6 : U32), 24, T.Th.dim())),
+    Lay.field(ty, D.Clip.all(), (cx + 12 : U32), (cy + 38 : U32), U32.dim(cw, 24), U.Ui.scratch(S.Nui.ui(n), "@f.rcnote"), String.eq(S.Nui.focus_of(n), fid), S.Blink.on(n), S.Nui.caret_of(n), S.Nui.mark(n), "Note", fid),
+    Lay.button(ty, D.Clip.all(), (cx + 12 : U32), (cy + 78 : U32), "Send", T.Th.accent(), "rv-note-send", ""),
+    Lay.button(ty, D.Clip.all(), (cx + 20 + Lay.button.w(ty, "Send") : U32), (cy + 78 : U32), "Cancel", T.Th.soft(), "rv-note-shut", "")])
+
+def Rcw.note.if(none: Bool, +at: String, +ty: Ty, +n: S.Nui, +v: V.View, +x0: U32, +x1: U32, +y1: U32) -> Out:
+  match none:
+    case True{}:
+      Out.none()
+    case False{}:
+      Rcw.note.k(ty, n, v, String.split(at, '\t'), x0, x1, y1)
+
+def Rcw.note(+at: String, +ty: Ty, +n: S.Nui, +v: V.View, +x0: U32, +x1: U32, +y1: U32) -> Out:
+  Rcw.note.if(String.is_empty(at), at, ty, n, v, x0, x1, y1)
+
+def Rcw.all(+ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +y1: U32) -> Out:
+  +u = S.Nui.ui(n)
+  Out.all([Rcw.pins(U.Rc.pins(u), ty, Rcw.view(S.Nui.vw(n)), U.Rc.sel(u), x0, x1, y1),
+    Rcw.note(U.Rc.at(u), ty, n, Rcw.view(S.Nui.vw(n)), x0, x1, y1),
+    Rcw.open(U.Rc.open(u), ty, n, x0, x1, y1)])
+
+def Rcw.if(on: Bool, +ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +y1: U32) -> Out:
+  match on:
+    case True{}:
+      Rcw.all(ty, n, x0, x1, y1)
+    case False{}:
+      Out.none()
+
+# The Checks page: the gate line, then the checklist's boxes grouped by
+# their heading (a click ticks one: "rv-tick" and its index), then the
+# report's Markdown, all scrolling by rows of 24 px. Kinds: 0 passes, 1
+# fails, 2 a group's heading, 3 a box and its first line, 4 its next lines.
+def Rcw.wrows(ls: List<&2, String>, +i: Nat, +d: Bool, +first: Bool) -> List<&2, Crow>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Crow{Bool.pick(U32, first, 3, 4), l, i, d} <> Rcw.wrows(t, i, d, False{})
+
+def Rcw.thead(+g: String, +prev: String) -> List<&2, Crow>:
+  Bool.pick(List<&2, Crow>, Bool.and(Bool.not(String.is_empty(g)), Bool.not(String.eq(g, prev))), [Crow{2, g, 0n, False{}}], Nil{})
+
+def Rcw.trows(ts: List<&2, U.RpTask>, +prev: String, +ty: Ty, +w: U32) -> List<&2, Crow>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case U.RpTask{+i, +text, +done, +group} <> t:
+      List.append(&2, Crow, Rcw.thead(group, prev), List.append(&2, Crow, Rcw.wrows(Ty.wrap(ty, 2n, text, w), i, done, True{}), Rcw.trows(t, group, ty, w)))
+
+def Rcw.tick(+x: U32, +y: U32) -> List<&2, R.Op>:
+  [D.Draw.rect(D.Clip.all(), (x + 3 : U32), (y + 8 : U32), 2, 2, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), (x + 4 : U32), (y + 9 : U32), 2, 2, T.Th.bg(), 255),
+   D.Draw.rect(D.Clip.all(), (x + 5 : U32), (y + 10 : U32), 2, 2, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), (x + 6 : U32), (y + 9 : U32), 2, 2, T.Th.bg(), 255),
+   D.Draw.rect(D.Clip.all(), (x + 7 : U32), (y + 8 : U32), 2, 2, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), (x + 8 : U32), (y + 7 : U32), 2, 2, T.Th.bg(), 255),
+   D.Draw.rect(D.Clip.all(), (x + 9 : U32), (y + 6 : U32), 2, 2, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), (x + 10 : U32), (y + 5 : U32), 2, 2, T.Th.bg(), 255),
+   D.Draw.rect(D.Clip.all(), (x + 11 : U32), (y + 4 : U32), 2, 2, T.Th.bg(), 255)]
+
+def Rcw.box(+x: U32, +y: U32, +done: Bool) -> List<&2, R.Op>:
+  List.append(&2, R.Op, Lay.box(D.Clip.all(), x, y, 16, 16, 0, Bool.pick(U32, done, T.Th.accent(), T.Th.bg()), Bool.pick(U32, done, T.Th.accent(), T.Th.dim())),
+    Bool.pick(List<&2, R.Op>, done, Rcw.tick(x, y), Nil{}))
+
+def Rcw.row(+r: Crow, +ty: Ty, +x0: U32, +x1: U32, +y: U32) -> Out:
+  match r:
+    case Crow{0, +t, _, _}:
+      Out.ops(Ty.text(ty, 2n, t, D.Clip.all(), x0, y, 24, T.Th.ok()))
+    case Crow{1, +t, _, _}:
+      Out.ops(Ty.text(ty, 2n, t, D.Clip.all(), x0, y, 24, T.Th.bad()))
+    case Crow{2, +t, _, _}:
+      Out.ops(Ty.text(ty, 2n, t, D.Clip.all(), x0, y, 24, T.Th.faint()))
+    case Crow{3, +t, +i, +d}:
+      Out{List.append(&2, R.Op, Rcw.box(x0, (y + 4 : U32), d), Ty.text(ty, 2n, t, D.Clip.all(), (x0 + 26 : U32), y, 24, Bool.pick(U32, d, T.Th.dim(), T.Th.text()))),
+        [Lay.hit(x0, y, (x1 - x0 : U32), 24, "rv-tick", Nat.show(i))]}
+    case Crow{5, _, _, _}:
+      Out.none()
+    case Crow{_, +t, +i, +d}:
+      Out{Ty.text(ty, 2n, t, D.Clip.all(), (x0 + 26 : U32), y, 24, Bool.pick(U32, d, T.Th.dim(), T.Th.text())),
+        [Lay.hit(x0, y, (x1 - x0 : U32), 24, "rv-tick", Nat.show(i))]}
+
+def Rcw.rdraw(rs: List<&2, Crow>, +ty: Ty, +x0: U32, +x1: U32, +y: U32, +room: Nat) -> Out:
+  match rs room:
+    case +r <> +t 1n+k:
+      Out.cat(Rcw.row(r, ty, x0, x1, y), Rcw.rdraw(t, ty, x0, x1, (y + 24 : U32), k))
+    case _ _:
+      Out.none()
+
+def Rcw.checks(+ty: Ty, +u: U.Ui, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32, +h: U32) -> Out:
+  +why = {U.Rp.gate(u) : String}
+  +head = {Crow{Bool.pick(U32, String.is_empty(why), 0, 1), Bool.pick(String, String.is_empty(why), "Passes", Ty.fit(ty, 2n, "Fails: " ++ why, U32.dim((x1 - x0 : U32), 32))), 0n, False{}} : Crow}
+  +rows = {head <> List.append(&2, Crow, Rcw.trows(U.Rp.tasks(u), "", ty, U32.dim((x1 - x0 : U32), 90)), [Crow{5, "", 0n, False{}}]) : List<&2, Crow>}
+  +ls = {TL.blocks(ty, N.Md.render(U.RpView.md(v)), U32.max((x1 - x0 - 32 : U32), 40)) : List<&2, TLine>}
+  +n1 = {List.length(&2, Crow, rows) : Nat}
+  +total = {Nat.add(n1, List.length(&2, TLine, ls)) : Nat}
+  +room = {U32.to_nat((Lay.room(h, 142) / 24 : U32)) : Nat}
+  +last = {Nat.sub(total, Bool.pick(Nat, Nat.is_lt(total, room), total, room)) : Nat}
+  +from = {Bool.pick(Nat, Nat.is_lt(off, last), off, last) : Nat}
+  +f1 = {Bool.pick(Nat, Nat.is_lt(from, n1), from, n1) : Nat}
+  +s1 = {Nat.sub(n1, f1) : Nat}
+  +shown = {Bool.pick(Nat, Nat.is_lt(s1, room), s1, room) : Nat}
+  Out.all([Out{Nil{}, [Lay.hit(x0, 142, (x1 - x0 : U32), Lay.room(h, 142), "pane", "rp:" ++ th ++ "|" ++ Nat.show(last))]},
+    Rcw.rdraw(List.drop(&2, Crow, rows, f1), ty, (x0 + 16 : U32), (x1 - 16 : U32), 142, room),
+    Rpw.draw(List.drop(&2, TLine, ls, Nat.sub(from, f1)), True{}, ty, D.Clip{x0, 142, x1, h}, (x0 + 16 : U32), (x1 - 16 : U32), (142 + U32.from_nat(shown) * 24 : U32), h)])
+
+def Rcw.body(on: Bool, has: Bool, +ty: Ty, +u: U.Ui, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32, +h: U32) -> Out:
+  match on:
+    case True{}:
+      Rcw.checks(ty, u, v, th, off, x0, x1, h)
+    case False{}:
+      Rpw.body(has, ty, v, th, off, x0, x1, h)
+
+# The Release page (client.bend's Rl): the tag field (empty releases the
+# proposed one), the two toggles (Publish is off until the person turns it
+# on), the button, then the error in red and the report's Markdown
+def Rlw.lines(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32, +color: U32) -> Out:
+  match ls:
+    case Nil{}:
+      Out.none()
+    case +l <> t:
+      Out.cat(Out.ops(Ty.text(ty, 2n, l, D.Clip.all(), x, y, 24, color)), Rlw.lines(t, ty, x, (y + 24 : U32), color))
+
+def Rlw.toggle(+ty: Ty, +x: U32, +y: U32, +on: Bool, +label: String, action: String) -> Out:
+  Out{List.append(&2, R.Op, Rcw.box(x, y, on), Ty.text(ty, 2n, label, D.Clip.all(), (x + 26 : U32), (y - 4 : U32), 24, T.Th.text())),
+    [Lay.hit(x, (y - 4 : U32), (Ty.width(ty, 2n, label) + 26 : U32), 24, action, "")]}
+
+def Rlw.make(busy: Bool, +ty: Ty, +x: U32, +y: U32, +label: String) -> Out:
+  match busy:
+    case True{}:
+      Out{List.append(&2, R.Op, Lay.box(D.Clip.all(), x, y, Lay.button.w(ty, label), 28, 6, T.Th.raise(), T.Th.line()), Ty.text(ty, 2n, label, D.Clip.all(), (x + 10 : U32), y, 28, T.Th.faint())), Nil{}}
+    case False{}:
+      Lay.button(ty, D.Clip.all(), x, y, label, T.Th.accent(), "rv-release", "")
+
+def Rlw.report(+ty: Ty, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32, +y: U32, +h: U32) -> Out:
+  +es = {Bool.pick(List<&2, String>, String.is_empty(U.RpView.err(v)), Nil{}, Ty.wrap(ty, 2n, U.RpView.err(v), U32.max((x1 - x0 - 32 : U32), 40))) : List<&2, String>}
+  +ne = {List.length(&2, String, es) : Nat}
+  +y1 = {(y + U32.from_nat(ne) * 24 : U32) : U32}
+  +ls = {TL.blocks(ty, N.Md.render(U.RpView.md(v)), U32.max((x1 - x0 - 32 : U32), 40)) : List<&2, TLine>}
+  +n = {List.length(&2, TLine, ls) : Nat}
+  +last = {Nat.sub(n, U32.to_nat(U32.min(U32.from_nat(n), (Lay.room(h, y1) / 24 : U32)))) : Nat}
+  +from = {Bool.pick(Nat, Nat.is_lt(off, last), off, last) : Nat}
+  Out.all([Rlw.lines(es, ty, (x0 + 16 : U32), y, T.Th.bad()),
+    Rpw.draw(List.drop(&2, TLine, ls, from), True{}, ty, D.Clip{x0, y1, x1, h}, (x0 + 16 : U32), (x1 - 16 : U32), y1, h),
+    Out{Nil{}, [Lay.hit(x0, y1, (x1 - x0 : U32), Lay.room(h, y1), "pane", "rp:" ++ th ++ "|" ++ Nat.show(last))]}])
+
+def Rlw.page(f: U.RlForm, +ty: Ty, +n: S.Nui, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32, +h: U32) -> Out:
+  match f:
+    case U.RlForm{+tag, +next, +publish, +force}:
+      +fid = {S.Fld.id("rltag", "rv-release", "") : String}
+      Out.all([Lay.field(ty, D.Clip.all(), (x0 + 16 : U32), 150, U32.min(300, U32.dim((x1 - x0 : U32), 32)), U.Ui.scratch(S.Nui.ui(n), "@f.rltag"), String.eq(S.Nui.focus_of(n), fid), S.Blink.on(n), S.Nui.caret_of(n), S.Nui.mark(n), next, fid),
+        Rlw.toggle(ty, (x0 + 16 : U32), 196, publish, "Publish on GitHub", "rv-release-pub"),
+        Rlw.toggle(ty, (x0 + 16 : U32), 224, force, "Release even if checks fail", "rv-release-force"),
+        Rlw.make(U.RpView.busy(v), ty, (x0 + 16 : U32), 254, Bool.pick(String, U.RpView.busy(v), "Making release " ++ tag ++ "…", "Make release " ++ tag)),
+        Out.ops([D.Draw.rect(D.Clip.all(), x0, 292, (x1 - x0 : U32), 1, T.Th.line(), 255)]),
+        Bool.pick(Out, Bool.and(String.is_empty(U.RpView.md(v)), String.is_empty(U.RpView.err(v))),
+          Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, U.RpView.note(v), U32.dim((x1 - x0 : U32), 32)), D.Clip.all(), (x0 + 16 : U32), 300, 30, T.Th.faint())),
+          Rlw.report(ty, v, th, off, x0, x1, 300, h))])
+
+def Rlw.sel(rel: Bool, +ty: Ty, +n: S.Nui, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32, +h: U32) -> Out:
+  match rel:
+    case True{}:
+      Rlw.page(U.Rl.form(S.Nui.ui(n)), ty, n, v, th, off, x0, x1, h)
+    case False{}:
+      Rcw.body(Bool.and(String.eq(U.RpView.page(v), "checks"), Bool.not(String.is_empty(U.RpView.md(v)))), Bool.not(String.is_empty(U.RpView.md(v))), ty, S.Nui.ui(n), v, th, off, x0, x1, h)
+
+def Rpw.page(+ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +h: U32) -> Out:
+  +u = {S.Nui.ui(n) : U.Ui}
   +v = {U.Rp.view(u) : U.RpView}
   +rw = Lay.button.w(ty, "Refresh")
   +th = {U.Ui.sel(u) : String}
@@ -4143,12 +4440,12 @@ def Rpw.page(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
     Lay.button(ty, D.Clip.all(), (x1 - 16 - rw : U32), 64, "Refresh", T.Th.soft(), "rv-run", ""),
     Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, U.RpView.title(v) ++ Bool.pick(String, U.RpView.busy(v), " · reading…", ""), (x1 - x0 - 32 : U32)), D.Clip.all(), (x0 + 16 : U32), 102, 28, T.Th.dim())),
     Out.ops([D.Draw.rect(D.Clip.all(), x0, 137, (x1 - x0 : U32), 1, T.Th.line(), 255)]),
-    Rpw.body(Bool.not(String.is_empty(U.RpView.md(v))), ty, v, th, Pane.off(U.Ui.infos(u), "rp:" ++ th), x0, x1, h)])
+    Rlw.sel(String.eq(U.RpView.page(v), "release"), ty, n, v, th, Pane.off(U.Ui.infos(u), "rp:" ++ th), x0, x1, h)])
 
-def Rpw.if(open: Bool, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+def Rpw.if(open: Bool, +ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +h: U32) -> Out:
   match open:
     case True{}:
-      Rpw.page(ty, u, x0, x1, h)
+      Rpw.page(ty, n, x0, x1, h)
     case False{}:
       Out.none()
 
@@ -4162,7 +4459,8 @@ def Lay.viewer.b(+ty: Ty, +n: S.Nui, +b: U.HBar, +x0: U32, +x1: U32, +h: U32) ->
     Side.ground.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 2), ty, n, x1),
     Hb.draw(ty, n, S.Nui.ui(n), b, Lay.scene(n), x0, x1, h),
     Fv.k(S.Vw.kind(S.Nui.vw(n)), ty, S.Nui.ui(n), x0, x1, h),
-    Rpw.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 9), ty, S.Nui.ui(n), x0, x1, h)])
+    Rpw.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 9), ty, n, x0, x1, h),
+    Rcw.if(Bool.and(U32.is_lt(S.Vw.kind(S.Nui.vw(n)), 2), String.is_empty(U.Ui.scratch(S.Nui.ui(n), "@cmp.menu"))), ty, n, x0, x1, (h - Hb.h(b) : U32))])
 
 # the viewer, with the design history's bar at its foot when it has one
 # (only a board or a schematic: the native kind agrees with the client's)
@@ -4419,9 +4717,9 @@ def TL.part.act(step: Bool, +ty: Ty, e: M.Entry, +px: U32) -> TLPart:
   match step e:
     case True{} M.Act{+id, _, _, _, _, _}:
       TLPart{[TLine{Ty.fit(ty, 2n, HS.Hist.row(e), (px - 22 : U32)), T.Th.accent(), 16, id, 0}], Nil{}, Nil{}}
-    case _ M.Act{_, _, +tone, kind, summary, _}:
+    case _ M.Act{_, _, +tone, +kind, +summary, _}:
       Bool.pick(TLPart, String.eq(tone, EM.Emb.tone()), TLPart{Nil{}, Nil{}, Nil{}},
-        TLPart{[TLine{Ty.fit(ty, 2n, kind ++ "  " ++ summary, px), Bool.pick(U32, String.eq(tone, "error"), T.Th.bad(), T.Th.dim()), 3, "", 0}], Nil{}, Nil{}})
+        TLPart{[TLine{Ty.fit(ty, 2n, RVW.Review.label(tone, kind, summary) ++ "  " ++ RVW.Review.say(tone, kind, summary), px), Bool.pick(U32, String.eq(tone, "error"), T.Th.bad(), T.Th.dim()), 3, "", 0}], Nil{}, Nil{}})
     case _ M.Msg{_, _, _, +text, _}:
       TLPart{[TLine{Ty.fit(ty, 2n, text, px), T.Th.dim(), 3, "", 0}], Nil{}, Nil{}}
 

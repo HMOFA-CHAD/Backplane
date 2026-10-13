@@ -1,6 +1,7 @@
 import Base
 import ./json.bend as J
 import ./model.bend as M
+import ./review.bend as RVW
 import ./codec.bend as C
 import ./attach.bend as AT
 import ./agent.bend as AG
@@ -864,11 +865,21 @@ def Desk.request(look: Bool, +client: U32, +id: String, +p: J.Json) -> Step:
 # history.resolve {thread, side, ref}: any commit, branch or tag typed in;
 # review.bom {thread, a, b}: a BOM, or the change between two versions;
 # review.checks {thread, commit, trigger}: the design checks;
-# review.tick {thread, index}: a checklist box ticked or cleared
+# review.tick {thread, index}: a checklist box ticked or cleared;
+# review.comment {thread, op, ...}: a comment added, answered, resolved,
+# reopened, edited or dropped (core/review.bend's Review.act), by the person;
+# review.release {thread, tag, publish, force}: a release (server/review.bend)
 def Rv.methods() -> List<&2, String>:
-  ["history.resolve", "review.bom", "review.checks", "review.tick"]
+  ["history.resolve", "review.bom", "review.checks", "review.tick", "review.comment", "review.release"]
 
-def Rv.request(i: Nat, +s: M.State, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
+def Rv.comment.k(ok: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
+  match ok:
+    case True{}:
+      Step.reply(client, id, [RVW.Review.act(J.Json.get_str(p, "thread", ""), Hub.id("r", now, Hub.seq(s)), p, "person", now)])
+    case False{}:
+      Step.outs([Reply.err(client, id, "a comment needs its text (or the comment it is about)")])
+
+def Rv.request(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
       Hub.git(s, client, id, "rv.resolve", J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "side", "a"), J.Json.get_str(p, "ref", ""))
@@ -878,6 +889,11 @@ def Rv.request(i: Nat, +s: M.State, +client: U32, +id: String, +p: J.Json, +m: S
       Hub.git(s, client, id, "rv.checks", J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "commit", ""), J.Json.get_str(p, "trigger", "manual"))
     case 3n:
       Hub.git(s, client, id, "rv.tick", J.Json.get_str(p, "thread", ""), J.Json.as_raw(J.Json.get(p, "index"), "0"), "")
+    case 4n:
+      Rv.comment.k(Bool.and(RVW.Review.op.ok(J.Json.get_str(p, "op", ""), p), Bool.not(String.is_empty(J.Json.get_str(p, "thread", "")))), s, now, client, id, p)
+    case 5n:
+      Hub.git(s, client, id, "rv.release", J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "tag", ""),
+        Bool.pick(String, J.Json.get_bool(p, "publish", False{}), "p", "") ++ Bool.pick(String, J.Json.get_bool(p, "force", False{}), "f", ""))
     case _:
       Desk.request(String.eq(m, "desk.look"), client, id, p)
 
@@ -895,7 +911,7 @@ def Hub.media(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.J
     case 3n:
       Hub.git(s, client, id, "refs", J.Json.get_str(p, "thread", ""), "", "")
     case _:
-      Rv.request(C.Codec.pos(Rv.methods(), m), s, client, id, p, m)
+      Rv.request(C.Codec.pos(Rv.methods(), m), s, now, client, id, p, m)
 
 def Hub.methods() -> List<&2, String>:
   ["project.add", "project.remove", "thread.create", "turn.start", "turn.interrupt",

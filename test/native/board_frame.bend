@@ -3,6 +3,7 @@ import ../../src/core/board.bend as B
 import ../../src/app/viewer.bend as V
 import ../../src/gfx/raster.bend as R
 import ../../src/gfx/draw.bend as D
+import ../../src/server/argv.bend as AV
 
 def items(m: Maybe<&2, List<&2, B.Item>>) -> List<&2, B.Item>:
   match m:
@@ -82,7 +83,7 @@ def go(r: File & Result<&1, &1, U32 & String, List<&2, U32>>) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     f : File <- IO.try(File, File.open(Maybe.default(&1, String, List.head(&1, String, args), "x"), "r"))
     r : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_bytes(f, 200000000)
     go(r)
