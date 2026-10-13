@@ -169,6 +169,29 @@ try {
   const after = await mcp("review_comments", {});
   check(after.includes("No open comments") && after.includes("resolved") && after.includes(":1"), "and the agent sees none open", after.slice(0, 300));
 
+  // a release: the checks gate it, forced it is made, never published unasked
+  const gated = (await ask("review.release", { thread: th.id, tag: "v2", publish: false, force: false }, 180000))?.result?.report;
+  check(!!gated && gated.err.startsWith("No release: the checks fail"), "a release is refused while the checks fail", JSON.stringify(gated)?.slice(0, 300));
+  check(!git(top, "tag", "--list", "v2").includes("v2"), "and makes no tag");
+  const t2 = Date.now();
+  const made = (await ask("review.release", { thread: th.id, tag: "v2", publish: false, force: true }, 300000))?.result?.report;
+  console.log(`     (a release in ${Date.now() - t2} ms)`);
+  check(!!made && made.page === "release" && !made.err, "forced, the release is made", JSON.stringify(made)?.slice(0, 400));
+  check(git(top, "tag", "--list", "v2").includes("v2"), "with its tag");
+  const rdir = join(top, ".backplane/releases/v2");
+  const has = (f: string) => existsSync(join(rdir, f));
+  check(has("notes.md") && has("manifest.json"), "notes and a manifest", rdir);
+  const listed = existsSync(rdir) ? Bun.spawnSync(["find", rdir, "-type", "f"]).stdout.toString() : "";
+  check(/\.gbr|\.g[tb][lso]|-F_Cu/i.test(listed) && /\.drl/.test(listed), "Gerbers and drill files", listed.slice(0, 400));
+  check(/cpl\.csv/.test(listed) && /bom\.csv/.test(listed) && /\.step/.test(listed) && /\.pdf/.test(listed), "CPL, BOM, STEP and PDFs", listed.slice(0, 600));
+  const notes = has("notes.md") ? readFileSync(join(rdir, "notes.md"), "utf8") : "";
+  check(notes.startsWith("# v2") && notes.includes("Changes since v1") && notes.includes("R4"), "notes name the tag before and the BOM change", notes.slice(0, 400));
+  check(!!made && made.md.includes("**Files**") && !made.md.includes("Published"), "and nothing is published", made?.md?.slice(-300));
+  const again = (await ask("review.release", { thread: th.id, tag: "v2", publish: false, force: true }, 60000))?.result?.report;
+  check(!!again && again.err.includes("tag could not be made"), "a tag that exists is refused", JSON.stringify(again)?.slice(0, 300));
+  const badtag = (await ask("review.release", { thread: th.id, tag: "v 3..", publish: false, force: true }))?.result?.report;
+  check(!!badtag && badtag.err.includes("not a tag name"), "a bad tag name is refused", JSON.stringify(badtag));
+
   // a ref typed in that is not there
   const bad = await ask("review.checks", { thread: th.id, commit: "-x", trigger: "manual" });
   check(!!bad && bad.ok === false, "a commit like an option is refused", JSON.stringify(bad));

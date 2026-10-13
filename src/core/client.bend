@@ -21,6 +21,7 @@ import ./farlive.bend as FLV
 import ./desk.bend as DK
 import ./hist.bend as HI
 import ./review.bend as RVW
+import ./release.bend as REL
 import ./links.bend as LK
 import ./apikeys.bend as AK
 import ./diff.bend as DF
@@ -6591,10 +6592,10 @@ def Rc.actions() -> List<&2, String>:
 # "rv-run" asks again, "rv-bom" (the comparison bar's BOM) opens the BOM.
 
 def Rp.pages() -> List<&2, String>:
-  ["bom", "checks", "comments"]
+  ["bom", "checks", "comments", "release"]
 
 def Rp.label(+page: String) -> String:
-  Bool.pick(String, String.eq(page, "bom"), "BOM", Bool.pick(String, String.eq(page, "checks"), "Checks", Bool.pick(String, String.eq(page, "comments"), "Comments", page)))
+  Bool.pick(String, String.eq(page, "bom"), "BOM", Bool.pick(String, String.eq(page, "checks"), "Checks", Bool.pick(String, String.eq(page, "comments"), "Comments", Bool.pick(String, String.eq(page, "release"), "Release", page))))
 
 # the page on show ("" when the tab is not)
 def Rp.page(+u: Ui) -> String:
@@ -6628,8 +6629,53 @@ def Rp.ask.checks(+u: Ui) -> Act:
   Ui.rpc(Ui.info_set(Ui.scratch_set(u, "@rp.busy:" ++ Ui.sel(u), "checks"), Rp.key(u, "rp.title", "checks"), Rp.checks.title(u)), "review.checks",
     [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"commit", J.Str{Rp.commit(u)}}, J.KV{"trigger", J.Str{"manual"}}])
 
+# The Release page: a tag (the field "@f.rltag", else the next one after
+# the repository's tags, REL.Release.next over history.refs' tags), whether
+# to publish it on GitHub ("@rl.pub:<t>") and to release even when the
+# checks fail ("@rl.force:<t>"); "rv-release" asks the hub (review.release),
+# "rv-release-pub" and "rv-release-force" turn those on and off
+type RlForm is Data:
+  RlForm{tag: String, next: String, publish: Bool, force: Bool}
+
+def Rl.tags.k(tag: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
+  match tag:
+    case True{}:
+      l <> rest
+    case False{}:
+      rest
+
+def Rl.tags(rs: List<&2, HI.Ref>) -> List<&2, String>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case HI.Ref{+k, +l, _} <> t:
+      Rl.tags.k(String.eq(k, "tag"), l, Rl.tags(t))
+
+def Rl.next(+u: Ui) -> String:
+  REL.Release.next(Rl.tags(HI.Hist.refs(J.Json.get_str(Hs.refs(u), "refs", ""))))
+
+def Rl.tag(+u: Ui) -> String:
+  Bool.pick(String, String.is_empty(String.trim(Ui.scratch(u, "@f.rltag"))), Rl.next(u), String.trim(Ui.scratch(u, "@f.rltag")))
+
+def Rl.on(+u: Ui, +k: String) -> Bool:
+  String.eq(Ui.scratch(u, k ++ ":" ++ Ui.sel(u)), "1")
+
+def Rl.form(+u: Ui) -> RlForm:
+  RlForm{Rl.tag(u), Rl.next(u), Rl.on(u, "@rl.pub"), Rl.on(u, "@rl.force")}
+
+def Rl.flip(+u: Ui, +k: String) -> Ui:
+  Ui.scratch_set(u, k ++ ":" ++ Ui.sel(u), Bool.pick(String, Rl.on(u, k), "", "1"))
+
+def Rl.ask(+u: Ui) -> Act:
+  Ui.rpc(Ui.info_set(Ui.scratch_set(u, "@rp.busy:" ++ Ui.sel(u), "release"), Rp.key(u, "rp.title", "release"), "Release " ++ Rl.tag(u)), "review.release",
+    [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"tag", J.Str{Rl.tag(u)}}, J.KV{"publish", J.Flag{Rl.on(u, "@rl.pub")}}, J.KV{"force", J.Flag{Rl.on(u, "@rl.force")}}])
+
+# opening the page asks for the tags once (the next one is proposed)
+def Rl.open(+u: Ui) -> Act:
+  Bool.pick(Act, String.is_empty(Hs.get(u, "refs")), Ui.rpc(u, "history.refs", [J.KV{"thread", J.Str{Ui.sel(u)}}]), Act{u, Nil{}})
+
 def Rp.ask(+u: Ui, +page: String) -> Act:
-  Bool.pick(Act, String.eq(page, "bom"), Rp.ask.bom(u), Bool.pick(Act, String.eq(page, "checks"), Rp.ask.checks(u), Act{u, Nil{}}))
+  Bool.pick(Act, String.eq(page, "bom"), Rp.ask.bom(u), Bool.pick(Act, String.eq(page, "checks"), Rp.ask.checks(u), Bool.pick(Act, String.eq(page, "release"), Rl.open(u), Act{u, Nil{}})))
 
 def Rp.open(+u: Ui, +page: String) -> Act:
   Rp.ask(Ui.view_put(u, "review", page), page)
@@ -6753,7 +6799,8 @@ def RpView.tabs(v: RpView) -> List<&2, RpTab>:
 # what the page says while it has nothing to show
 def RpView.note(+v: RpView) -> String:
   Bool.pick(String, RpView.busy(v), "Reading the design…",
-    Bool.pick(String, String.is_empty(RpView.err(v)), Bool.pick(String, String.is_empty(RpView.md(v)), Bool.pick(String, String.eq(RpView.page(v), "comments"), "No comments yet. Right-click a place on the board or schematic (long-press on a phone) to comment there.", "Nothing yet."), ""), RpView.err(v)))
+    Bool.pick(String, String.is_empty(RpView.err(v)), Bool.pick(String, String.is_empty(RpView.md(v)), Bool.pick(String, String.eq(RpView.page(v), "comments"), "No comments yet. Right-click a place on the board or schematic (long-press on a phone) to comment there.",
+      Bool.pick(String, String.eq(RpView.page(v), "release"), "Tag this design and make its fabrication outputs: Gerbers, drill, CPL, BOM, PDFs and STEP, in .backplane/releases.", "Nothing yet.")), ""), RpView.err(v)))
 
 def Rv.act.k(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
@@ -6771,6 +6818,12 @@ def Rv.act.k(i: Nat, +u: Ui, +value: String) -> Act:
       Rp.open(u, "bom")
     case 6n:
       Rp.tick(u, value)
+    case 7n:
+      Rl.ask(u)
+    case 8n:
+      Act{Rl.flip(u, "@rl.pub"), Nil{}}
+    case 9n:
+      Act{Rl.flip(u, "@rl.force"), Nil{}}
     case _:
       Act{u, Nil{}}
 
@@ -6779,7 +6832,7 @@ def Rv.act.c(comment: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case True{}:
       Rc.act(C.Codec.pos(Rc.actions(), action), u, value)
     case False{}:
-      Rv.act.k(C.Codec.pos(["rv-as", "rv-bits", "rv-ref", "rv-page", "rv-run", "rv-bom", "rv-tick"], action), u, value)
+      Rv.act.k(C.Codec.pos(["rv-as", "rv-bits", "rv-ref", "rv-page", "rv-run", "rv-bom", "rv-tick", "rv-release", "rv-release-pub", "rv-release-force"], action), u, value)
 
 def Rv.act(+u: Ui, +action: String, +value: String) -> Act:
   Rv.act.c(Nat.is_lt(C.Codec.pos(Rc.actions(), action), 7n), u, action, value)

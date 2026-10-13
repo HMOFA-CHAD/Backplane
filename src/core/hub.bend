@@ -867,9 +867,10 @@ def Desk.request(look: Bool, +client: U32, +id: String, +p: J.Json) -> Step:
 # review.checks {thread, commit, trigger}: the design checks;
 # review.tick {thread, index}: a checklist box ticked or cleared;
 # review.comment {thread, op, ...}: a comment added, answered, resolved,
-# reopened, edited or dropped (core/review.bend's Review.act), by the person
+# reopened, edited or dropped (core/review.bend's Review.act), by the person;
+# review.release {thread, tag, publish, force}: a release (server/review.bend)
 def Rv.methods() -> List<&2, String>:
-  ["history.resolve", "review.bom", "review.checks", "review.tick", "review.comment"]
+  ["history.resolve", "review.bom", "review.checks", "review.tick", "review.comment", "review.release"]
 
 def Rv.comment.k(ok: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
   match ok:
@@ -890,6 +891,9 @@ def Rv.request(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.
       Hub.git(s, client, id, "rv.tick", J.Json.get_str(p, "thread", ""), J.Json.as_raw(J.Json.get(p, "index"), "0"), "")
     case 4n:
       Rv.comment.k(Bool.and(RVW.Review.op.ok(J.Json.get_str(p, "op", ""), p), Bool.not(String.is_empty(J.Json.get_str(p, "thread", "")))), s, now, client, id, p)
+    case 5n:
+      Hub.git(s, client, id, "rv.release", J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "tag", ""),
+        Bool.pick(String, J.Json.get_bool(p, "publish", False{}), "p", "") ++ Bool.pick(String, J.Json.get_bool(p, "force", False{}), "f", ""))
     case _:
       Desk.request(String.eq(m, "desk.look"), client, id, p)
 
