@@ -1106,10 +1106,6 @@ struct PlotScreen: View {
         }
         .preferredColorScheme(viewer.light == true ? .light : .dark)
         .statusBarHidden()
-        // the file the plot draws, for review comments' file (Bend's "rv-fam")
-        .onChange(of: f.flatMap { $0.none.isEmpty ? $0.fam : nil } ?? "", initial: true) { _, fam in
-            if !fam.isEmpty, viewer.open == "board" || viewer.open == "schematic" { model.act("rv-fam", fam) }
-        }
         // a note for a new comment, and the comment open
         .sheet(isPresented: Binding(get: { !(viewer.comments?.at ?? "").isEmpty },
                                     set: { if !$0, !(model.screen?.thread?.viewer.comments?.at ?? "").isEmpty { model.act("rv-note-shut", "") } })) {

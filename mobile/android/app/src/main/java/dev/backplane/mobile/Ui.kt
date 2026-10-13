@@ -1047,9 +1047,6 @@ private fun PlotScreen(m: AppModel, v: Viewer) {
     val mesh = m.plots.mesh?.takeIf { it.key == v.key }
     Column(Modifier.fillMaxSize().background(Color(0xFF000000.toInt() or v.bg))) {
     var cam by remember { mutableStateOf(floatArrayOf(0f, 0f, 0f)) }
-    // the file the plot draws, for review comments' file (Bend's "rv-fam")
-    val fam = f?.takeIf { it.none.isEmpty() }?.fam ?: ""
-    LaunchedEffect(fam, v.open) { if (fam.isNotEmpty() && (v.open == "board" || v.open == "schematic")) m.act("rv-fam", fam) }
     Box(Modifier.weight(1f).fillMaxWidth()) {
         // a part alone gets a surface of its own: nothing of a board is left on it
         key(if (v.layers.isEmpty()) v.key else "") {
