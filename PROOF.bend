@@ -8668,4 +8668,13 @@ def Laws.tb_update_merges():
 def Laws.tb_due_shape():
   {==}
 
+def Laws.told_report_quiet():
+  {==}
+
+def Laws.rules_report_never_unlocks():
+  {==}
+
+def Laws.rules_link_never_unlocks():
+  {==}
+
 # ---- end told-rules-board ----

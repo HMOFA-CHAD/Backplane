@@ -542,3 +542,11 @@ def Told.demo.chatter() -> M.State:
   M.State.replay([M.ThreadCreated{"tb", "", "Bub", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Bub", "tb", 0n, "", 100n},
     M.MessagePosted{"tb", "u1", M.User{}, "[message from Pebble@backplane in #ring-requests]\nshort version", 1000n}, M.TurnChanged{"tb", M.Running{}, 1000n},
     M.MessagePosted{"tb", "m1", M.Assistant{}, "Noted.", 1004n}, M.TurnChanged{"tb", M.Completed{}, 1005n}], M.State.empty())
+
+# the same bot woken by a report from a thread it launched (hub.bend's
+# Lr.head): bot-to-bot, the launched thread alerted for itself
+def Told.demo.report() -> M.State:
+  M.State.replay([M.ThreadCreated{"tb", "", "Bub", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Bub", "tb", 0n, "", 100n},
+    M.MessagePosted{"tb", "t:tw:m9", M.User{}, "[Backplane] Launched thread \"work\" (tw) completed.", 1000n}, M.TurnChanged{"tb", M.Running{}, 1000n},
+    M.MessagePosted{"tb", "m1", M.Assistant{}, "Noted.", 1004n}, M.TurnChanged{"tb", M.Completed{}, 1005n}], M.State.empty())
+

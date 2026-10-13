@@ -330,18 +330,34 @@ def Rules.agent(+s: M.State, +thread: String, +text: String) -> String:
 # The person's word
 # -----------------
 
-# the text of the thread's newest message from the person
-def Rules.last.go(+es: List<&2, M.Entry>) -> String:
-  match es:
-    case Nil{}:
-      ""
-    case M.Msg{_, _, M.User{}, text, _} <> _:
-      text
-    case _ <> t:
-      Rules.last.go(t)
+# the text of the thread's newest user message, as the person's word: one
+# another thread sent (thread_send, a launch report: its id is a link,
+# M.Link.id) reads as "[" so it never unlocks anything; a message this
+# thread sent elsewhere (filed here too) is skipped
+def Rules.last.of(+id: String, +text: String) -> String:
+  Bool.pick(String, String.is_empty(M.Link.from(id)), text, "[from " ++ M.Link.from(id) ++ "]")
+
+def Rules.last.pick(+mine: Bool, +id: String, +text: String, +acc: String) -> String:
+  match mine:
+    case True{}:
+      Rules.last.of(id, text)
+    case False{}:
+      acc
+
+# the walk (newest first) stops at the thread's own newest user message
+def Rules.last.go(+es: List<&2, M.Entry>, +thread: String, +done: Bool, +acc: String) -> String:
+  match es done:
+    case _ True{}:
+      acc
+    case Nil{} False{}:
+      acc
+    case M.Msg{+id, +th, M.User{}, +text, _} <> t False{}:
+      Rules.last.go(t, thread, String.eq(th, thread), Rules.last.pick(String.eq(th, thread), id, text, acc))
+    case _ <> t False{}:
+      Rules.last.go(t, thread, False{}, acc)
 
 def Rules.person.last(+s: M.State, +thread: String) -> String:
-  Rules.last.go(M.State.mine(s, thread))
+  Rules.last.go(M.State.mine(s, thread), thread, False{}, "")
 
 def Rules.alnum(+c: U32) -> Bool:
   Bool.or(Bool.or(Bool.and(U32.is_ge(c, 97), U32.is_le(c, 122)), Bool.and(U32.is_ge(c, 65), U32.is_le(c, 90))), Bool.and(U32.is_ge(c, 48), U32.is_le(c, 57)))
@@ -658,3 +674,8 @@ def Rules.demo.say(+s: M.State, +thread: String, +text: String) -> M.State:
 # a tools/call of `tool`
 def Rules.demo.call(+tool: String) -> String:
   "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"" ++ tool ++ "\",\"arguments\":{}}}"
+
+# a user message under a given id (a link id is another thread's)
+def Rules.demo.say.id(+s: M.State, +thread: String, +id: String, +text: String) -> M.State:
+  M.State.replay([M.MessagePosted{thread, id, M.User{}, text, 20n}], s)
+
