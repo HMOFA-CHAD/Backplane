@@ -3051,6 +3051,101 @@ def Set.mates(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
     Set.row(ty, "Sync", U.Mate.lead(u), x, (y + 34 : U32), w),
     Out.all(Set.mates.rows(U.Mate.rows(u), ty, x, w, (y + 86 : U32)))])
 
+# Antigravity (client.bend's Agv.rows): each row its label, its note
+# wrapped, its fields side by side (a secret shown as dots), its buttons
+# wrapping; the card holds them all
+def Set.agy.btns(bs: List<&2, U.AgBtn>, +ty: Ty, +x0: U32, +x1: U32, +x: U32, +y: U32) -> Out:
+  match bs:
+    case Nil{}:
+      Out.none()
+    case U.AgBtn{+l, +a, +v, on} <> t:
+      +cx = {Bool.pick(U32, Set.wraps(ty, l, x0, x1, x), x0, x) : U32}
+      +cy = {Bool.pick(U32, Set.wraps(ty, l, x0, x1, x), (y + 34 : U32), y) : U32}
+      Out.cat(Lay.chip(ty, cx, cy, l, on, a, v), Set.agy.btns(t, ty, x0, x1, (cx + Lay.button.w(ty, l) + 8 : U32), cy))
+
+def Set.agy.brows(bs: List<&2, U.AgBtn>, +ty: Ty, +x0: U32, +x1: U32, +x: U32) -> U32:
+  match bs:
+    case Nil{}:
+      0
+    case U.AgBtn{+l, _, _, _} <> t:
+      +cx = {Bool.pick(U32, Set.wraps(ty, l, x0, x1, x), x0, x) : U32}
+      (Bool.pick(U32, Set.wraps(ty, l, x0, x1, x), 1, 0) + Set.agy.brows(t, ty, x0, x1, (cx + Lay.button.w(ty, l) + 8 : U32)) : U32)
+
+def Set.agy.field(+ty: Ty, +n: S.Nui, +f: U.AgField, +x: U32, +y: U32, +w: U32) -> Out:
+  match f:
+    case U.AgField{+nm, +h, sec, +v, +e}:
+      +id = S.Fld.id(nm, e, "")
+      Lay.field(ty, D.Clip.all(), x, y, w, Bool.pick(String, sec, U.ApiKeys.dots(v), v), String.eq(S.Nui.focus_of(n), id), S.Blink.on(n), S.Nui.caret_of(n), S.Nui.mark(n), h, id)
+
+def Set.agy.fields(fs: List<&2, U.AgField>, +ty: Ty, +n: S.Nui, +x: U32, +y: U32, +fw: U32) -> Out:
+  match fs:
+    case Nil{}:
+      Out.none()
+    case +f <> t:
+      Out.cat(Set.agy.field(ty, n, f, x, y, fw), Set.agy.fields(t, ty, n, (x + fw + 8 : U32), y, fw))
+
+def Set.agy.lines(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32) -> Out:
+  match ls:
+    case Nil{}:
+      Out.none()
+    case +l <> t:
+      Out.cat(Out.ops(Ty.text(ty, 2n, l, D.Clip.all(), x, y, 20, T.Th.faint())), Set.agy.lines(t, ty, x, (y + 20 : U32)))
+
+def Set.agy.fh(fs: List<&2, U.AgField>) -> U32:
+  Bool.pick(U32, List.is_empty(&2, U.AgField, fs), 0, 36)
+
+def Set.agy.bh(+bs: List<&2, U.AgBtn>, +ty: Ty, +x: U32, +w: U32) -> U32:
+  Bool.pick(U32, List.is_empty(&2, U.AgBtn, bs), 0, (34 + (Set.agy.brows(bs, ty, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32))
+
+def Set.agy.nh(+ty: Ty, +note: String, +w: U32) -> U32:
+  (U32.from_nat(List.length(&2, String, Ty.wrap(ty, 2n, note, (w - 32 : U32)))) * 20 : U32)
+
+# a row's height
+def Set.agy.rh(r: U.AgRow, +ty: Ty, +x: U32, +w: U32) -> U32:
+  match r:
+    case U.AgRow{_, +nt, fs, bs}:
+      (36 + Set.agy.nh(ty, nt, w) + Set.agy.fh(fs) + Set.agy.bh(bs, ty, x, w) : U32)
+
+def Set.agy.fw(+fs: List<&2, U.AgField>, +w: U32) -> U32:
+  ((w - 32 - (U32.from_nat(Nat.sub(List.length(&2, U.AgField, fs), 1n)) * 8 : U32) : U32) / U32.max(U32.from_nat(List.length(&2, U.AgField, fs)), 1) : U32)
+
+def Set.agy.row(r: U.AgRow, +ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
+  match r:
+    case U.AgRow{+l, +nt, +fs, bs}:
+      +ny = {(y + 26 : U32) : U32}
+      +fy = {(ny + Set.agy.nh(ty, nt, w) + 4 : U32) : U32}
+      +by = {(fy + Set.agy.fh(fs) : U32) : U32}
+      Out.all([
+        Out.ops(Ty.text(ty, 0n, Ty.fit(ty, 0n, l, (w - 32 : U32)), D.Clip.all(), (x + 16 : U32), y, 28, T.Th.soft())),
+        Set.agy.lines(Ty.wrap(ty, 2n, nt, (w - 32 : U32)), ty, (x + 16 : U32), ny),
+        Set.agy.fields(fs, ty, n, (x + 16 : U32), fy, Set.agy.fw(fs, w)),
+        Set.agy.btns(bs, ty, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), by)])
+
+def Set.agy.rows(rs: List<&2, U.AgRow>, +ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
+  match rs:
+    case Nil{}:
+      Out.none()
+    case +r <> t:
+      Out.cat(Set.agy.row(r, ty, n, x, w, y), Set.agy.rows(t, ty, n, x, w, (y + Set.agy.rh(r, ty, x, w) : U32)))
+
+def Set.agy.sum(rs: List<&2, U.AgRow>, +ty: Ty, +x: U32, +w: U32) -> U32:
+  match rs:
+    case Nil{}:
+      0
+    case +r <> t:
+      (Set.agy.rh(r, ty, x, w) + Set.agy.sum(t, ty, x, w) : U32)
+
+# the section's height, its head included
+def Set.agy.h(+ty: Ty, +n: S.Nui, +x: U32, +w: U32) -> U32:
+  (52 + Set.agy.sum(U.Agv.rows(S.Nui.ui(n)), ty, x, w) : U32)
+
+def Set.agy(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
+  +rs = U.Agv.rows(S.Nui.ui(n))
+  Out.all([
+    Set.head(ty, "Antigravity", x, y),
+    Set.card(x, (y + 32 : U32), w, (Set.agy.sum(rs, ty, x, w) + 10 : U32)),
+    Set.agy.rows(rs, ty, n, x, w, (y + 38 : U32))])
+
 def Set.tour(+ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
   +bw = Lay.button.w(ty, "Show the tour")
   Out.all([
@@ -3072,7 +3167,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 46 : U32) : U32}
-  +total = {(1156 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + 132 : U32) : U32}
+  +total = {(1156 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
   +b2 = {(b + 128 : U32) : U32}
@@ -3092,7 +3187,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Set.head(ty, "Agents", x, (b2 + 192 : U32)),
     Set.card(x, (b2 + 224 : U32), w, (124 + dy : U32)),
     Set.row(ty, "Provider and model for new threads", Set.cli(U.Models.cli(U.Str.get(info, "models"), prov), prov) ++ ". Each thread keeps its own; change it from the composer.", x, (b2 + 226 : U32), w),
-    Set.chips(ty, ["claude", "codex", "grok", "muse"], prov, "agent.provider", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 274 : U32)),
+    Set.chips(ty, ["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 274 : U32)),
     Set.chips(ty, ms, M.Setting.get(st, "agent.model", ""), "agent.model", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 308 : U32)),
     Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line(U.Models.label_of(U.Str.get(info, "models"), prov, M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", "")), (w - 32 : U32)),
       D.Clip.all(), (x + 16 : U32), (b2 + 318 + dy : U32), 24, T.Th.dim())),
@@ -3132,7 +3227,8 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Set.voice(ty, st, n, x, w, (b2 + 1010 + dy + fy : U32)),
     Set.mates(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) : U32)),
     Set.keys(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) : U32)),
-    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + 16 : U32))])),
+    Set.agy(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + 16 : U32)),
+    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 16 : U32))])),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 51, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255)],
       Ty.text(ty, 0n, "Settings", D.Clip.all(), (x0 + 24 : U32), 0, 52, T.Th.text())), Nil{}},
     Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Close") : U32), 12, "Close", T.Th.soft(), "flag", "settings"),

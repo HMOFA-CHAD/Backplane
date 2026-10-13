@@ -728,6 +728,41 @@ def View.keys.form(open: Bool, +u: U.Ui) -> List<&2, D.Node>:
     case False{}:
       Nil{}
 
+# Antigravity (client.bend's Agv.rows): a row's fields and buttons; its
+# "open-url" button is a link that opens in a new tab
+def View.agy.btn(+b: U.AgBtn) -> D.Node:
+  match b:
+    case U.AgBtn{+l, +a, +v, on}:
+      Bool.pick(D.Node, String.eq(a, "open-url"),
+        D.El{"a", "", [D.At{"class", "btn primary"}, D.At{"href", v}, D.At{"target", "_blank"}, D.At{"rel", "noopener noreferrer"}], [D.Txt{l}]},
+        D.Dom.button(Bool.pick(String, on, "on", ""), a, v, l, l))
+
+def View.agy.btns(bs: List<&2, U.AgBtn>) -> List<&2, D.Node>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case +b <> t:
+      View.agy.btn(b) <> View.agy.btns(t)
+
+def View.agy.field(+f: U.AgField) -> D.Node:
+  match f:
+    case U.AgField{+n, +h, sec, +v, +e}:
+      Bool.pick(D.Node, sec, WB.WB.secret("agy-" ++ n, n, v, h), WB.WB.input("agy-" ++ n, n, v, h, e))
+
+def View.agy.fields(fs: List<&2, U.AgField>) -> List<&2, D.Node>:
+  match fs:
+    case Nil{}:
+      Nil{}
+    case +f <> t:
+      View.agy.field(f) <> View.agy.fields(t)
+
+def View.agy.rows(rs: List<&2, U.AgRow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.AgRow{+l, +n, fs, bs} <> t:
+      View.setrow(l, n, List.append(&2, D.Node, View.agy.fields(fs), View.agy.btns(bs))) <> View.agy.rows(t)
+
 def View.keys.set(+u: U.Ui) -> List<&2, D.Node>:
   List.concat(&2, D.Node, [
     [View.setrow("API keys", U.ApiKeys.note(u),
@@ -786,7 +821,7 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
       View.setrow("Follow-ups while a turn runs", "Queue waits for the turn to end; steer sends into it. Ctrl+Enter does the other. Default: Claude steers, Codex, Grok and Muse queue.",
         View.chips(["", "queue", "steer"], M.Setting.get(st, "followup", ""), "followup")),
       View.setrow("Continue after a restart", "Turns a restart cuts short go on by themselves.", View.chips(["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue")),
-      View.setrow("Provider for new threads", Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), prov ++ " is not installed", U.Models.cli(U.Str.get(nf, "models"), prov)) ++ ". Each thread keeps its own; change it from the composer.", View.chips(["claude", "codex", "grok", "muse"], prov, "agent.provider")),
+      View.setrow("Provider for new threads", Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), prov ++ " is not installed", U.Models.cli(U.Str.get(nf, "models"), prov)) ++ ". Each thread keeps its own; change it from the composer.", View.chips(["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider")),
       View.setrow("Model for new threads", Bool.pick(String, String.is_empty(M.Setting.get(st, "agent.model", "")), "default", M.Setting.get(st, "agent.model", "")) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), prov, M.Setting.get(st, "agent.model", "")), View.chips(U.Models.menu(U.Str.get(nf, "models"), prov), M.Setting.get(st, "agent.model", ""), "agent.model")),
       View.setrow("Writing: provider", "Titles threads, names branches and writes commit messages. A small model keeps this cheap.", View.chips(["claude", "codex", "grok", "muse"], U.TextGen.provider(st), "text.provider")),
       View.setrow("Writing: model", Bool.pick(String, String.is_empty(U.TextGen.model(st)), "default", U.TextGen.model(st)) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), U.TextGen.provider(st), U.TextGen.model(st)),
@@ -802,7 +837,7 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
         D.Dom.when(Bool.not(String.is_empty(U.Pair.link(nf))), D.Dom.copy(U.Pair.link(nf)))))],
       View.pair.qr(U.Ui.flag(u, "pairqr"), nf),
       [View.setrow("Update channel", "Stable takes releases; nightly also takes the daily builds.", View.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
-      View.setrow("Backplane " ++ v, U.Update.line.w(st, nf, note), View.update.btn(U.Update.btn(st, nf, note)))], View.voice.set(u, st), View.keys.set(u), [View.setrow("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [D.Dom.button("", "ob-open", "", "Show the tour again", "Show the tour")])]])}]}
+      View.setrow("Backplane " ++ v, U.Update.line.w(st, nf, note), View.update.btn(U.Update.btn(st, nf, note)))], View.voice.set(u, st), View.keys.set(u), View.agy.rows(U.Agv.rows(u)), [View.setrow("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [D.Dom.button("", "ob-open", "", "Show the tour again", "Show the tour")])]])}]}
 
 def View.empty(n: Nat) -> D.Node:
   D.El{"main", "empty", [D.At{"class", "empty"}], [D.Txt{Bool.pick(String, Nat.is_eq(n, 0n), "Add a project with + to start.", "Pick a thread, or start one with + next to a project.")}]}

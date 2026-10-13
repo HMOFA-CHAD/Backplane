@@ -8432,3 +8432,24 @@ def Laws.notice_report_quiet():
 
 def Laws.launch_send_launcher():
   {==}
+def Laws.interrupt_antigravity_stops(th, r):
+  {==}
+
+def Laws.antigravity_run_turn(th, cwd, m, s, r, i, t, u):
+  {==}
+
+def Laws.agy_mode_supervised_asks():
+  {==}
+
+def Laws.agy_mode_full_allows():
+  {==}
+
+def Laws.agy_default_api_key():
+  {==}
+
+def Laws.agy_google_warns():
+  {==}
+
+def Laws.agy_callback_needs_signin(b):
+  {==}
+

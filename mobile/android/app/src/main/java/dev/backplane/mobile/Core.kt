@@ -192,6 +192,14 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     }
 
     fun act(action: String, value: String = "") {
+        // a web address a settings row offers (Antigravity's sign-in):
+        // opened in the browser here, never sent to the engine
+        if (action == "open-url") {
+            val u = android.net.Uri.parse(value)
+            if (u.scheme == "https" || u.scheme == "http")
+                runCatching { app.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, u).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            return
+        }
         scope.launch { apply(engine.act(action, value)) }
     }
 
