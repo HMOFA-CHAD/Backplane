@@ -795,15 +795,15 @@ def Rv.checks(on: Bool, +u: U.Ui) -> J.Json:
 # the Release page's form (client.bend's Rl.form): the tag that will be
 # made (the field "rltag", else the proposed one), the proposed one, the two
 # toggles ("rv-release-pub", "rv-release-force"); "rv-release" makes it
-def Rv.release.form(f: U.RlForm, +err: String) -> J.Json:
+def Rv.release.form(f: U.RlForm, +err: String, +text: String) -> J.Json:
   match f:
     case U.RlForm{+tag, +next, publish, force}:
-      J.Json.obj([J.KV{"tag", J.Str{tag}}, J.KV{"next", J.Str{next}}, J.KV{"publish", J.Flag{publish}}, J.KV{"force", J.Flag{force}}, J.KV{"err", J.Str{err}}])
+      J.Json.obj([J.KV{"tag", J.Str{tag}}, J.KV{"next", J.Str{next}}, J.KV{"publish", J.Flag{publish}}, J.KV{"force", J.Flag{force}}, J.KV{"err", J.Str{err}}, J.KV{"text", J.Str{text}}])
 
 def Rv.release(on: Bool, +u: U.Ui) -> J.Json:
   match on:
     case True{}:
-      Rv.release.form(U.Rl.form(u), U.RpView.err(U.Rp.view(u)))
+      Rv.release.form(U.Rl.form(u), U.RpView.err(U.Rp.view(u)), U.Ui.scratch(u, "@f.rltag"))
     case False{}:
       J.Null{}
 

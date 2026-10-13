@@ -338,6 +338,7 @@ struct ReleaseForm: Decodable {
     let tag, next: String
     let publish, force: Bool
     let err: String
+    let text: String?
 }
 
 // the Files tab: where the folder is, its rows (a tap sends action with

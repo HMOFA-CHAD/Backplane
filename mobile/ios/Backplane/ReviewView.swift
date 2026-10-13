@@ -97,9 +97,12 @@ struct ReleaseBox: View {
             .accessibilityIdentifier("release-make")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        #if DEBUG
-        .onAppear { if let t = ProcessInfo.processInfo.environment["BACKPLANE_RLTAG"] { text = t } }
-        #endif
+        .onAppear {
+            text = form.text ?? ""
+            #if DEBUG
+            if let t = ProcessInfo.processInfo.environment["BACKPLANE_RLTAG"] { text = t }
+            #endif
+        }
     }
 }
 

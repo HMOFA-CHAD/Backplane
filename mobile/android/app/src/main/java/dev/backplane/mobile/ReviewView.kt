@@ -113,7 +113,7 @@ fun ReviewScreen(m: AppModel, v: Viewer, r: ReviewPage) {
 // the field "rltag" while it is typed.
 @Composable
 fun ReleaseBox(m: AppModel, f: ReleaseForm, busy: Boolean) {
-    var text by remember { mutableStateOf("") }
+    var text by remember { mutableStateOf(f.text) }
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(text, onValueChange = { text = it; m.field("rltag", it) }, placeholder = { Text(f.next) },
             singleLine = true, modifier = Modifier.fillMaxWidth().testTag("release-tag"),
