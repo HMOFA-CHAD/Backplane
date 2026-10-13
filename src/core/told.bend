@@ -8,8 +8,8 @@ import ./notice.bend as NO
 # "told.<id>" holding {"key","text","channel","bot","at"}: the topic key
 # (normalized), what was said, where (alert, digest, room, chat, email or
 # other), the bot that said it ("" for a thread that is no bot's or the hub
-# itself) and when. A turn's end that alerts the person marks itself
-# (Told.alert, called from the hub's Ended.out); agents mark what they say
+# itself) and when. Every alert record the hub writes is marked (Told.after,
+# from hub.bend's Alerts.changes); agents mark what they say
 # and check before they say it again (core/ledger.bend's told_mark and
 # told_check). The minute tick removes records older than Told.keep()
 # seconds, and all but the newest Told.max() (Told.prune). They are
@@ -500,32 +500,58 @@ def Told.botid(+m: Maybe<&2, BT.Bot>) -> String:
 def Told.line(+title: String, +line: String) -> String:
   Bool.pick(String, String.is_empty(line), title, title ++ ": " ++ line)
 
-def Told.alert.k(+quiet: Bool, +s: M.State, +now: Nat, +thread: String, +key: String) -> List<&2, M.Change>:
-  match quiet:
+# Alerts
+# ------
+# Every alert comes from one place since the notification policy
+# (notice.bend's Policy, hub.bend's Alerts.*): a step writes the thread's
+# record "alert.<thread>" with a kind, and the server alerts for it. So the
+# person was told exactly what those records say: each one with a kind is
+# marked here, under the record's key ("turn-<thread>", "room-<room>",
+# "note-..."), channel alert, the thread's bot, and the record's text (a
+# note's, an ask's, a merge's url) or else the thread's title with the
+# first line of its last reply. A quiet record (no kind) marks nothing: a
+# bot's chatter, a report from a launched thread, a stopped turn.
+
+def Told.alerting(+k: String, +v: String) -> Bool:
+  Bool.and(String.starts_with(k, "alert."), Bool.and(Bool.not(String.is_empty(v)), Bool.not(String.starts_with(v, "\t"))))
+
+def Told.rec.said(+title: String, +said: String, +s: M.State, +thread: String) -> String:
+  Bool.pick(String, String.is_empty(said), Told.line(title, Told.first(Told.last(M.State.mine(s, thread)))), Told.line(title, said))
+
+def Told.rec.key(+key: String, +thread: String) -> String:
+  Bool.pick(String, String.is_empty(key), "turn-" ++ thread, key)
+
+def Told.rec.mark(+s: M.State, +i: Nat, +thread: String, +r: NO.AlertRec, +at: Nat) -> List<&2, M.Change>:
+  Told.mark.set(Told.new.id(at, Told.seq(s)) ++ "-" ++ Nat.show(i), at, Told.key.norm(Told.rec.key(NO.Alert.rkey(r), thread)),
+    Told.text.cut(Told.rec.said(Told.title(M.State.thread.get(s, thread)), NO.Alert.rtext(r), s, thread)), "alert", Told.botid(BT.World.of_thread(M.State.bots(s), thread)))
+
+def Told.alerts.one(+hit: Bool, +s: M.State, +i: Nat, +k: String, +v: String, +at: Nat) -> List<&2, M.Change>:
+  match hit:
     case True{}:
-      Nil{}
+      Told.rec.mark(s, i, String.drop(k, 6n), NO.Alert.parse(v), at)
     case False{}:
-      Told.mark(s, now, key, Told.line(Told.title(M.State.thread.get(s, thread)), Told.first(Told.last(M.State.mine(s, thread)))), "alert", Told.botid(BT.World.of_thread(M.State.bots(s), thread)))
-
-def Told.alert.n(+n: NO.Notice, +s: M.State, +now: Nat, +thread: String) -> List<&2, M.Change>:
-  match n:
-    case NO.Notice{+kind, key}:
-      Told.alert.k(String.is_empty(kind), s, now, thread, key)
-
-def Told.alert.s(+stopped: Bool, +s: M.State, +now: Nat, +thread: String, +state: String) -> List<&2, M.Change>:
-  match stopped:
-    case True{}:
       Nil{}
-    case False{}:
-      Told.alert.n(NO.Notice.of(s, thread, String.eq(state, "failed"), True{}), s, now, thread)
 
-# A turn's end that alerts the person (a notice that is not the quiet one,
-# notice.bend) is marked as told, under the notice's key: "turn-<thread>"
-# or "room-<room>", channel alert, the thread's bot, and the thread's
-# title with the first line of its last reply. `s` is the state after the
-# turn's end. A stopped turn alerts no one, and marks nothing.
+# the marks for a step's changes: one per record that alerts (`s` is the
+# state before them; i keeps ids apart within the step)
+def Told.alerts(cs: List<&2, M.Change>, +s: M.State, +i: Nat) -> List<&2, M.Change>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case M.SettingSet{+k, +v, +at} <> t:
+      List.append(&2, M.Change, Told.alerts.one(Told.alerting(k, v), s, i, k, v, at), Told.alerts(t, s, 1n+i))
+    case _ <> t:
+      Told.alerts(t, s, 1n+i)
+
+# a step's changes with what they told the person (hub.bend's
+# Alerts.changes, which every step passes through before it is stored)
+def Told.after(+st: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  List.append(&2, M.Change, cs, Told.alerts(cs, st, 0n))
+
+# what a turn's end marks: the records its end writes (the same
+# NO.Policy.end the hub's Ended.out uses), marked as above
 def Told.alert(+s: M.State, +now: Nat, +thread: String, +state: String) -> List<&2, M.Change>:
-  Told.alert.s(Bool.or(String.eq(state, "stopped"), String.is_empty(state)), s, now, thread, state)
+  Told.alerts(NO.Policy.end(s, now, thread, state), s, 0n)
 
 # Examples the laws read
 # ----------------------

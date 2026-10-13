@@ -278,11 +278,17 @@ at}`: the topic key (lower case, runs of characters outside
 most), the channel (`alert`, `digest`, `room`, `chat`, `email` or `other`),
 the bot that said it (`""` for a thread that is no bot's) and when.
 
-A turn's end that alerts the person (the same decision as the push and the
-phone's alert, `notice.bend`) marks itself in the hub's `Ended.out`: key
-`turn-<thread>` or `room-<room>`, channel `alert`, text the thread's title
-and the first line of its last reply. A quiet end, and a stopped turn,
-mark nothing. Agents use two tools, in every thread:
+Every alert is marked by itself. Since the notification policy, each one
+comes from a record `alert.<thread>` that some step writes with a kind
+(see Notifications): a settled turn, an ask, a failure, a merge, a
+`notify_person` note. `Told.after` (called from hub.bend's
+`Alerts.changes`, which every step passes through) marks each record that
+has a kind, under the record's key (`turn-<thread>`, `room-<room>`,
+`note-...`) with channel `alert`, the thread's bot, and the record's text
+or else the thread's title and the first line of its last reply. A quiet
+record marks nothing: a bot's chatter, a report from a launched thread
+(bot-to-bot), a stopped turn. Whether to alert stays `notify_person`'s
+policy; `told_*` only says what was already said. Agents use two tools, in every thread:
 
 - `told_check {key?, text?, days?}`: whether the key matches, or the words
   of the text overlap a record's (at least 60% of the smaller set and 2

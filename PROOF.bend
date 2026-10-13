@@ -8677,4 +8677,10 @@ def Laws.rules_report_never_unlocks():
 def Laws.rules_link_never_unlocks():
   {==}
 
+def Laws.told_note_marked():
+  {==}
+
+def Laws.told_quiet_record_nothing():
+  {==}
+
 # ---- end told-rules-board ----
