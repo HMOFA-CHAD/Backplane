@@ -802,7 +802,7 @@ def Reply.request(+thread: String, +state: String) -> String:
 def Bots.methods() -> List<&2, String>:
   ["bots.create", "bots.edit", "bots.delete", "bots.say", "bots.room", "bots.room_delete", "bots.post", "bots.routine", "bots.routine_delete",
    "bots.routine_run", "bots.hook", "bots.hook_revoke", "bots.forget", "bots.remember", "bots.space", "bots.invite", "bots.join", "bots.unpeer",
-   "bots.google", "bots.tell", "bots.hook_token", "bots.voice", "bots.answered", "bots.give", "bots.uber", "bots.uber_join", "bots.pin"]
+   "bots.google", "bots.tell", "bots.hook_token", "bots.voice", "bots.answered", "bots.give", "bots.uber", "bots.uber_join", "bots.pin", "bots.uber_home"]
 
 def Bots.is(+m: String) -> Bool:
   String.starts_with(m, "bots.")
@@ -1002,6 +1002,20 @@ def Bots.pin.k(cs: List<&2, M.Change>, +client: U32, +id: String) -> B.Step:
 def Bots.pin(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> B.Step:
   Bots.pin.k(US.Ub.pin.set(s, now, J.Json.get_str(p, "routine", ""), Bool.pick(String, String.eq(J.Json.get_str(p, "pin", ""), "here"), US.Ub.me(s), J.Json.get_str(p, "pin", ""))), client, id)
 
+# bots.uber_home {}: this machine takes the conversation now (ubersync.bend's
+# Ub.home). The lease is logged at once; the server then queues the old
+# holder's last entries ahead of the next message (BotFx "uber-home", with
+# the old holder), as it does for a takeover.
+def Bots.uber_home.k(cs: List<&2, M.Change>, +s: M.State, +client: U32, +id: String) -> B.Step:
+  match cs:
+    case Nil{}:
+      Bool.pick(B.Step, US.Ub.on(s), B.Step.outs([B.Reply.ok(client, id)]), Bots.err(client, id, "this machine has no uberbot"))
+    case c <> t:
+      B.Step{c <> t, [B.Reply.ok(client, id), B.BotFx{"uber-home", US.Ub.holder(s), "", ""}]}
+
+def Bots.uber_home(+s: M.State, +now: Nat, +client: U32, +id: String) -> B.Step:
+  Bots.uber_home.k(US.Ub.home(s, now), s, client, id)
+
 def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> B.Step:
   match i:
     case 0n:
@@ -1060,6 +1074,8 @@ def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p
       Bots.uber_join(s, now, client, id, J.Json.get_str(p, "uid", ""))
     case 26n:
       Bots.pin(s, now, client, id, p)
+    case 27n:
+      Bots.uber_home(s, now, client, id)
     case _:
       Bots.err(client, id, "unknown bots request")
 

@@ -126,10 +126,27 @@ def Pl.machines(ms: List<&2, P.PMach>, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32) 
         L.Ty.text(ty, 2n, n, c, (x + 14 : U32), y, 28, Bool.pick(U32, String.eq(s, "here"), T.Th.soft(), T.Th.faint())),
         Pl.machines(t, ty, c, (x + 14 + L.Ty.width(ty, 2n, n) + 20 : U32), y)])
 
-def Pl.strip.h(+p: P.Plane) -> U32:
+# where the machines go, and under them the home line (core's Plane.home)
+def Pl.strip.mh(+p: P.Plane) -> U32:
   Bool.pick(U32, List.is_empty(&2, P.PMach, P.Plane.machines(p)), 56, 92)
 
-def Pl.strip.if(on: Bool, +p: P.Plane, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32) -> L.Out:
+def Pl.strip.h(+p: P.Plane, +h: P.PHome) -> U32:
+  (Pl.strip.mh(p) + Bool.pick(U32, P.PHome.on(h), 36, 0) : U32)
+
+# "Home: desk" and, on a machine that is not the home, the button that makes it
+def Pl.home.btn(offer: Bool, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32) -> L.Out:
+  match offer:
+    case True{}:
+      L.Lay.button(ty, c, x, y, P.Plane.home.label(), T.Th.text(), "uber-home", "")
+    case False{}:
+      L.Out.none()
+
+def Pl.home(+h: P.PHome, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32) -> L.Out:
+  +line = {P.Plane.home.line(h) : String}
+  L.Out.cat(L.Out.ops(L.Ty.text(ty, 2n, line, c, x, y, 28, T.Th.soft())),
+    Pl.home.btn(P.Plane.home.button(h), ty, c, (x + L.Ty.width(ty, 2n, line) + 20 : U32), y))
+
+def Pl.strip.if(on: Bool, +p: P.Plane, +h: P.PHome, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32) -> L.Out:
   match on:
     case True{}:
       L.Out.all([
@@ -137,13 +154,14 @@ def Pl.strip.if(on: Bool, +p: P.Plane, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32) 
         Pl.cell(ty, c, Pl.len(P.Plane.run(p)), "Running", False{}, (x + 130 : U32), y),
         Pl.cell(ty, c, P.Plane.working(p), "Bots working", False{}, (x + 260 : U32), y),
         Pl.cell(ty, c, Pl.len(P.Plane.rooms(p)), "Unread rooms", False{}, (x + 390 : U32), y),
-        L.Out.ops(Pl.machines(P.Plane.machines(p), ty, c, x, (y + 56 : U32)))])
+        L.Out.ops(Pl.machines(P.Plane.machines(p), ty, c, x, (y + 56 : U32))),
+        Bool.pick(L.Out, P.PHome.on(h), Pl.home(h, ty, c, x, (y + Pl.strip.mh(p) : U32)), L.Out.none())])
     case False{}:
       L.Out.none()
 
-def Pl.strip(+p: P.Plane, +ty: L.Ty, +c: D.Clip, +x: U32, +rel: U32, +top: U32, +off: U32, +vh: U32) -> L.Out:
+def Pl.strip(+p: P.Plane, +h: P.PHome, +ty: L.Ty, +c: D.Clip, +x: U32, +rel: U32, +top: U32, +off: U32, +vh: U32) -> L.Out:
   +y = {(top + rel - off : U32) : U32}
-  Pl.strip.if(Pl.vis(rel, Pl.strip.h(p), off, vh), p, ty, c, x, y)
+  Pl.strip.if(Pl.vis(rel, Pl.strip.h(p, h), off, vh), p, h, ty, c, x, y)
 
 # Columns
 # -------
@@ -183,8 +201,8 @@ def Pl.cols(+wide: Bool, +p: P.Plane, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +
 
 # The status plane from top (scrolled up by off) in x..x+w; the column's y
 # is where it ends
-def Pl.draw(+p: P.Plane, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +top: U32, +off: U32, +vh: U32, +now: Nat) -> L.Col:
-  +sh = Pl.strip.h(p)
-  L.Lay.col.cat(Pl.strip(p, ty, c, x, 0, top, off, vh),
+def Pl.draw(+p: P.Plane, +hm: P.PHome, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +top: U32, +off: U32, +vh: U32, +now: Nat) -> L.Col:
+  +sh = Pl.strip.h(p, hm)
+  L.Lay.col.cat(Pl.strip(p, hm, ty, c, x, 0, top, off, vh),
     L.Lay.col.then(Pl.cols(U32.is_ge(w, Pl.wide()), p, ty, c, x, w, (sh + 8 : U32), top, off, vh, now), y =>
       L.Col{L.Out.none(), (top + y - off : U32)}))

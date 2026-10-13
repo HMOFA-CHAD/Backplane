@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -65,10 +66,15 @@ data class PlaneRow(
 
 data class PlaneMachine(val name: String, val state: String)
 
+// where the uberbot's conversation is held; Bend says whether to offer
+// "Make this the home" (button) and what a tap sends (act, value)
+data class PlaneHome(val name: String, val line: String, val label: String, val act: String, val value: String, val here: Boolean, val button: Boolean)
+
 data class PlaneModel(
     val need: List<PlaneRow>, val run: List<PlaneRow>, val idle: List<PlaneRow>, val bots: List<PlaneRow>,
     val rooms: List<PlaneRow>, val routines: List<PlaneRow>, val idleN: Int, val working: Int,
     val machines: List<PlaneMachine>,
+    val home: PlaneHome?,
 )
 
 private fun planeRows(a: JSONArray?): List<PlaneRow> =
@@ -88,6 +94,9 @@ fun parsePlane(o: JSONObject) = PlaneModel(
     o.optInt("idleN"), o.optInt("working"),
     o.optJSONArray("machines").let { a ->
         if (a == null) emptyList() else (0 until a.length()).map { PlaneMachine(a.getJSONObject(it).optString("name"), a.getJSONObject(it).optString("state")) }
+    },
+    o.optJSONObject("home")?.let {
+        PlaneHome(it.optString("name"), it.optString("line"), it.optString("label"), it.optString("act"), it.optString("value"), it.optBoolean("here"), it.optBoolean("button"))
     },
 )
 
@@ -225,7 +234,7 @@ private fun Counter(n: Int, label: String, tint: Color, modifier: Modifier) {
 }
 
 @Composable
-private fun PlaneStrip(p: PlaneModel) {
+private fun PlaneStrip(m: AppModel, p: PlaneModel) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Counter(p.need.size, "Need you", PhaseColor.warn, Modifier.weight(1f))
@@ -247,6 +256,12 @@ private fun PlaneStrip(p: PlaneModel) {
                 }
             }
         }
+        p.home?.let { h ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(h.line, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (h.button) OutlinedButton(onClick = { m.act(h.act, h.value) }) { Text(h.label) }
+            }
+        }
     }
     HorizontalDivider()
 }
@@ -259,7 +274,7 @@ fun StatusTab(m: AppModel, p: PlaneModel?) {
         return
     }
     LazyColumn(Modifier.fillMaxSize()) {
-        item(key = "pl:strip") { PlaneStrip(p) }
+        item(key = "pl:strip") { PlaneStrip(m, p) }
         planeSections(m, p, true, idleOpen) { idleOpen = !idleOpen }
     }
 }

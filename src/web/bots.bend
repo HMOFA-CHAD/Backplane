@@ -594,13 +594,21 @@ def WB.pmachs(ms: List<&2, PL.PMach>) -> List<&2, D.Node>:
       WB.pmach(m) <> WB.pmachs(t)
 
 # the strip: the counters and the machines
-def WB.pstrip(+p: PL.Plane) -> D.Node:
-  WB.div("plane-strip", [
+# where the conversation is held, and the offer to make this machine the
+# home (core's Plane.home decides)
+def WB.phome(+h: PL.PHome) -> List<&2, D.Node>:
+  Bool.pick(List<&2, D.Node>, PL.PHome.on(h),
+    [WB.div("plane-home", List.concat(&2, D.Node, [[D.Dom.span("", PL.Plane.home.line(h))],
+      Bool.pick(List<&2, D.Node>, PL.Plane.home.button(h), [D.Dom.button("plane-home-btn", "uber-home", "", PL.Plane.home.label(), PL.Plane.home.label())], Nil{})]))],
+    Nil{})
+
+def WB.pstrip(+p: PL.Plane, +h: PL.PHome) -> D.Node:
+  WB.div("plane-strip", List.concat(&2, D.Node, [[
     WB.pcount("Need you", List.length(&2, PL.PRow, PL.Plane.need(p))),
     WB.pcount("Running", List.length(&2, PL.PRow, PL.Plane.run(p))),
     WB.pcount("Bots working", PL.Plane.working(p)),
     WB.pcount("Unread rooms", List.length(&2, PL.PRow, PL.Plane.rooms(p))),
-    WB.div("plane-machs", WB.pmachs(PL.Plane.machines(p)))])
+    WB.div("plane-machs", WB.pmachs(PL.Plane.machines(p)))], WB.phome(h)]))
 
 def WB.pidle.more(+shown: Nat, +n: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_gt(n, shown), Nat.sub(n, shown), 0n)
@@ -608,9 +616,9 @@ def WB.pidle.more(+shown: Nat, +n: Nat) -> Nat:
 def WB.pempty(+p: PL.Plane) -> Bool:
   Bool.and(List.is_empty(&2, PL.PRow, PL.Plane.need(p)), Bool.and(List.is_empty(&2, PL.PRow, PL.Plane.run(p)), List.is_empty(&2, PL.PRow, PL.Plane.idle(p))))
 
-def WB.plane.k(+p: PL.Plane, +now: Nat) -> D.Node:
+def WB.plane.k(+p: PL.Plane, +h: PL.PHome, +now: Nat) -> D.Node:
   WB.div("plane", [
-    WB.pstrip(p),
+    WB.pstrip(p, h),
     WB.div("plane-grid", [
       WB.div("plane-main", List.concat(&2, D.Node, [
         WB.psec("Needs you", PL.Plane.need(p), 0n, now),
@@ -624,7 +632,7 @@ def WB.plane.k(+p: PL.Plane, +now: Nat) -> D.Node:
 
 # the Status tab's body
 def WB.plane(+u: U.Ui) -> D.Node:
-  WB.plane.k(PL.Plane.of(u, U.Side.now(u)), U.Side.now(u))
+  WB.plane.k(PL.Plane.of(u, U.Side.now(u)), PL.Plane.home(u), U.Side.now(u))
 
 # a tab's body: Status here, the others in WB.body; only the one shown is built
 def WB.main.k(status: Bool, +u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:

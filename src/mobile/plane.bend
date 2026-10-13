@@ -58,6 +58,32 @@ def MPlane.json(+p: PL.Plane, +now: Nat) -> J.Json:
     J.KV{"working", J.Json.nat(PL.Plane.working(p))}, J.KV{"bots", J.Json.arr(MPlane.rows(PL.Plane.bots(p), now))}, J.KV{"rooms", J.Json.arr(MPlane.rows(PL.Plane.rooms(p), now))},
     J.KV{"routines", J.Json.arr(MPlane.rows(PL.Plane.routines(p), now))}, J.KV{"machines", J.Json.arr(MPlane.mach(PL.Plane.machines(p)))}])
 
+# where the conversation is held (core's Plane.home): null with no uberbot
+# here; "button" says whether to offer "Make this the home" (a tap sends
+# act with value, the uberbot's id, which routes it to its hub)
+def MPlane.home.k(+h: PL.PHome, +id: String) -> J.Json:
+  Bool.pick(J.Json, PL.PHome.on(h),
+    J.Json.obj([J.KV{"name", J.Json.str(PL.PHome.name(h))}, J.KV{"here", J.Json.bool(PL.PHome.here(h))}, J.KV{"line", J.Json.str(PL.Plane.home.line(h))},
+      J.KV{"button", J.Json.bool(PL.Plane.home.button(h))}, J.KV{"label", J.Json.str(PL.Plane.home.label())}, J.KV{"act", J.Json.str("uber-home")}, J.KV{"value", J.Json.str(id)}]),
+    J.Null{})
+
+def MPlane.home.m(m: Maybe<&2, B.BRow>, +u: U.Ui) -> J.Json:
+  match m:
+    case Some{B.BRow{+i, _, _, _, _, _, _, _, _, _}}:
+      MPlane.home.k(PL.Plane.home(u), i)
+    case None{}:
+      J.Null{}
+
+def MPlane.home(+u: U.Ui) -> J.Json:
+  MPlane.home.m(B.BU.uber(u), u)
+
+def MPlane.with.home(j: J.Json, +h: J.Json) -> J.Json:
+  match j:
+    case J.Obj{fs}:
+      J.Obj{J.Field{"home", h, fs}}
+    case x:
+      x
+
 # a plane with nothing in it: the list of a phone with one hub sends this with
 # the card's count (the apps want a plane to take the card as fresh)
 def MPlane.none() -> J.Json:

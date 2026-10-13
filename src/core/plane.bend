@@ -7,6 +7,7 @@ import ./once.bend as O
 import ./client.bend as U
 import ./botui.bend as BU
 import ./uber.bend as UB
+import ./ubersync.bend as US
 
 # The status plane (docs/uber.md)
 # -------------------------------
@@ -823,3 +824,69 @@ def Plane.text.first(rs: List<&2, PRow>, +t: String, +acc: Nat) -> Nat:
 # every need row is before every run row in the text (law plane_text_need_first)
 def Plane.text.need_first(+p: Plane, +now: Nat) -> Bool:
   Nat.is_lt(Plane.text.last(Plane.need(p), Plane.text(p, "", "x", now, True{}), 0n), Plane.text.first(Plane.run(p), Plane.text(p, "", "x", now, True{}), String.length(Plane.text(p, "", "x", now, True{}))))
+
+# Where the conversation is held
+# ------------------------------
+# The uberbot's conversation runs on one machine, the lease holder (ubersync.bend).
+# The Status strip says which ("Home: desk") and, on a machine that has the
+# uberbot but not the conversation, offers "Make this the home" (the action
+# uber-home, bots.uber_home). Whether to offer it is decided here, for every
+# client (law plane_home_button).
+
+type PHome is Data:
+  PHome{on: Bool, name: String, here: Bool}
+
+def PHome.on(h: PHome) -> Bool:
+  match h:
+    case PHome{o, _, _}:
+      o
+
+def PHome.here(h: PHome) -> Bool:
+  match h:
+    case PHome{_, _, he}:
+      he
+
+def PHome.name(h: PHome) -> String:
+  match h:
+    case PHome{_, n, _}:
+      n
+
+def Plane.home.label() -> String:
+  "Make this the home"
+
+def Plane.home.peer(ps: List<&2, BT.Peer>, +link: String) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case +p <> t:
+      Bool.pick(String, String.eq(BT.Peer.id(p), link), BT.Peer.name(p), Plane.home.peer(t, link))
+
+# this machine's name, as the machine switcher has it
+def Plane.machine.this(+u: U.Ui) -> String:
+  Maybe.default(&2, String, List.head(&2, String, Plane.machine.names(U.Machines.rows(u))), "This machine")
+
+# the holder's name: the name its link carries here, else the peer's
+def Plane.home.other(+u: U.Ui, +link: String) -> String:
+  Plane.mach.name(u, link, Bool.pick(String, String.is_empty(Plane.home.peer(BU.BU.peers.of(u), link)), "another machine", Plane.home.peer(BU.BU.peers.of(u), link)))
+
+def Plane.home.of(here: Bool, +u: U.Ui) -> String:
+  match here:
+    case True{}:
+      Plane.machine.this(u)
+    case False{}:
+      Plane.home.other(u, US.Ub.link(U.Ui.state(u), US.Ub.holder(U.Ui.state(u))))
+
+def Plane.home(+u: U.Ui) -> PHome:
+  PHome{US.Ub.on(U.Ui.state(u)), Plane.home.of(US.Ub.holder.me(U.Ui.state(u)), u), US.Ub.holder.me(U.Ui.state(u))}
+
+# the offer: an uberbot here, the conversation held elsewhere
+def Plane.home.button(+h: PHome) -> Bool:
+  Bool.and(PHome.on(h), Bool.not(PHome.here(h)))
+
+# "Home: desk" ("" with no uberbot here)
+def Plane.home.line(+h: PHome) -> String:
+  Bool.pick(String, PHome.on(h), "Home: " ++ PHome.name(h), "")
+
+# the line and the offer, for the laws and tests
+def Plane.home.words(+u: U.Ui) -> String:
+  Plane.home.line(Plane.home(u)) ++ Bool.pick(String, Plane.home.button(Plane.home(u)), " | " ++ Plane.home.label(), "")

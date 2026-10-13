@@ -694,7 +694,7 @@ def Bv.bot.k(k: Nat, +ty: L.Ty, +memo: L.TLMemo, +pl: PC.Plane, +n: S.Nui, +b: B
     case 7n:
       +top = {(Bv.hy() + 24 : U32) : U32}
       +off = Bv.off(S.Nui.ui(n))
-      Bv.pane(PV.Pl.draw(pl, ty, D.Clip{x0, Bv.hy(), x1, S.Nui.height(n)}, (x0 + 24 : U32), (x1 - x0 - 48 : U32), top, off, L.U32.dim(S.Nui.height(n), top), U.Side.now(S.Nui.ui(n))),
+      Bv.pane(PV.Pl.draw(pl, PC.Plane.home(S.Nui.ui(n)), ty, D.Clip{x0, Bv.hy(), x1, S.Nui.height(n)}, (x0 + 24 : U32), (x1 - x0 - 48 : U32), top, off, L.U32.dim(S.Nui.height(n), top), U.Side.now(S.Nui.ui(n))),
         x0, x1, Bv.hy(), off, S.Nui.height(n))
     case +j:
       +top = {(Bv.hy() + 24 : U32) : U32}

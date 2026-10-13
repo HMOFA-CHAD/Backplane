@@ -8350,6 +8350,8 @@ def Uber.show(+u: Ui) -> Act:
 def Uber.bot.at(+u: Ui, +value: String) -> Act:
   Bots.select(Ui.scratch_set(u, "@btab", Maybe.default(&2, String, List.get(&2, String, String.split(value, '|'), 1n), "")), Maybe.default(&2, String, List.head(&2, String, String.split(value, '|')), ""))
 
+# "uber-home" asks the hub (bots.uber_home) to make this machine hold the
+# uberbot's conversation (the Status strip's "Make this the home").
 # "uber-new": the new bot form opens for the uberbot (the tour's "Create my
 # uberbot"): Settings shut, "@uber.new" set so the request carries uber
 def Uber.new(+u: Ui) -> Act:
@@ -8367,13 +8369,15 @@ def Uber.act.k(i: Nat, +u: Ui, +value: String) -> Act:
       Uber.bot.at(u, value)
     case 4n:
       Uber.new(u)
+    case 5n:
+      Ui.rpc(u, "bots.uber_home", Nil{})
     case _:
       Act{u, Nil{}}
 
 def Uber.act.go(route: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match route:
     case True{}:
-      Uber.act.k(C.Codec.pos(["uber", "uber-promote", "uber-demote", "uber-bot", "uber-new"], action), u, value)
+      Uber.act.k(C.Codec.pos(["uber", "uber-promote", "uber-demote", "uber-bot", "uber-new", "uber-home"], action), u, value)
     case False{}:
       Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)
 

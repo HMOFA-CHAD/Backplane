@@ -5275,6 +5275,8 @@ def Bot.fx(i: Nat, +st: M.State, +inbox: Chan(Msg), +cfg: Cfg, +a: String, +b: S
     case 15n:
       IO.spawn(Unit, BotJob.uber(Bool.and(BN.Bn.safe(a), Bool.or(String.is_empty(BO.Bot.thread(BO.World.bot(M.State.bots(st), a))), BN.Bn.safe(BO.Bot.thread(BO.World.bot(M.State.bots(st), a))))), inbox, Cfg.home(cfg), a,
         BO.Bot.thread(BO.World.bot(M.State.bots(st), a)), BotJob.client(b), BotJob.id(c)))
+    case 16n:
+      Self.post(inbox, UberDo{"home:" ++ a})
     case _:
       IO.pure(Unit, Unit{})
 
@@ -6749,7 +6751,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.BotFx{+kind, +a, +b, +c}:
       do IO<Hub>:
-        Bot.fx(C.Codec.pos(["home", "gone", "hook", "unhook", "send", "invite", "join", "unpeer", "google", "token", "retoken", "untoken", "voice", "scratch", "scratch-gone", "uber"], kind), st, inbox, cfg, a, b, c)
+        Bot.fx(C.Codec.pos(["home", "gone", "hook", "unhook", "send", "invite", "join", "unpeer", "google", "token", "retoken", "untoken", "voice", "scratch", "scratch-gone", "uber", "uber-home"], kind), st, inbox, cfg, a, b, c)
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 def Hub.outs(os: List<&2, B.Out>, h: Hub) -> IO(Hub):
@@ -7809,8 +7811,22 @@ def Hub.uber.beat(h: Hub, +now: Nat) -> IO(Hub):
     +g : String <- Uber.grace()
     Hub.uber.beat.m(Uber.mem.map(h), now, UBS.Ub.beat.every(Uber.grace.n(g)))
 
+# this machine was made the home (bots.uber_home): the old holder's last
+# entries, from its mirror, wait ahead of the next message
+def Uber.home.take(h: Hub, +old: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{UBS.Ub.handoff.cs(st, now, XR.Xref.handoff(UBS.Ub.chat.far(st, old), old, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg))))), Nil{}})
+
+def Hub.uber.do.h(home: Bool, h: Hub, +what: String, +now: Nat) -> IO(Hub):
+  match home:
+    case True{}:
+      Uber.home.take(h, String.drop(what, 5n), now)
+    case False{}:
+      Hub.uber.do.k(String.eq(what, "init"), h, now)
+
 def Hub.uber.do(h: Hub, +what: String, +now: Nat) -> IO(Hub):
-  Hub.uber.do.k(String.eq(what, "init"), h, now)
+  Hub.uber.do.h(String.starts_with(what, "home:"), h, what, now)
 
 # Routines keep their minute cadence; the ticker's first message also
 # refreshes directories immediately after the hub/window has opened.

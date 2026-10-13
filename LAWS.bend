@@ -6860,3 +6860,19 @@ law fmc_plan_plane_read_unlinked_never_sent:
 # an owner takes plane_read from its machines
 law fmc_plane_read_allowed:
   {FMC.Fm.allowed(Fx.ask("plane_read")) == True{} : Bool}
+
+# "Make this the home": this machine takes the lease one term on
+law uber_home_takes_term:
+  {UBS.Ub.home.after(UBS.Ub.demo.away(), 2000n) == "mA,3" : String}
+
+# and does nothing where it holds it already, where no lease was ever taken, or with no uberbot
+law uber_home_holder_nothing:
+  {Nat.add(Nat.add(UBS.Ub.home.count(UBS.Ub.demo.a(), 2000n), UBS.Ub.home.count(M.State.replay([UBS.Ub.demo.op("mA", 1n, 1001n, UBO.Ub.b.lease("mA", 2n))], UBS.Ub.demo.a()), 2000n)), UBS.Ub.home.count(M.State.empty(), 2000n)) == 0n : Nat}
+
+# the Status strip offers "Make this the home" where the uberbot is here and its conversation is not
+law plane_home_button:
+  {PLN.Plane.home.button(PLN.Plane.home(U.Ui.far.st(U.Ui.init(2000n), UBS.Ub.demo.away()))) == True{} : Bool}
+
+# and not where this machine holds it, or has no uberbot
+law plane_home_button_held:
+  {Bool.or(PLN.Plane.home.button(PLN.Plane.home(U.Ui.far.st(U.Ui.init(2000n), UBS.Ub.demo.a()))), PLN.Plane.home.button(PLN.Plane.home(U.Ui.far.st(U.Ui.init(2000n), M.State.empty())))) == False{} : Bool}
