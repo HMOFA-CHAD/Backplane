@@ -4246,7 +4246,7 @@ def Rcw.note.k(+ty: Ty, +n: S.Nui, +v: V.View, +xs: List<&2, String>, +x0: U32, 
   +fid = {S.Fld.id("rcnote", "rv-note-send", "") : String}
   Out.all([Out.ops(Rcw.sq(ty, U32.dim(ux, 8), U32.dim(uy, 8), T.Th.warn(), T.Th.bg(), 0n, False{})),
     Rcw.card(cx, cy, cw, 124),
-    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, "Comment here" ++ Bool.pick(String, String.is_empty(Rcw.part(xs, 3n)), "", " · " ++ Rcw.part(xs, 3n)), U32.dim(cw, 24)), D.Clip.all(), (cx + 12 : U32), (cy + 6 : U32), 24, T.Th.dim())),
+    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, "Comment here", U32.dim(cw, 24)), D.Clip.all(), (cx + 12 : U32), (cy + 6 : U32), 24, T.Th.dim())),
     Lay.field(ty, D.Clip.all(), (cx + 12 : U32), (cy + 38 : U32), U32.dim(cw, 24), U.Ui.scratch(S.Nui.ui(n), "@f.rcnote"), String.eq(S.Nui.focus_of(n), fid), S.Blink.on(n), S.Nui.caret_of(n), S.Nui.mark(n), "Note", fid),
     Lay.button(ty, D.Clip.all(), (cx + 12 : U32), (cy + 78 : U32), "Send", T.Th.accent(), "rv-note-send", ""),
     Lay.button(ty, D.Clip.all(), (cx + 20 + Lay.button.w(ty, "Send") : U32), (cy + 78 : U32), "Cancel", T.Th.soft(), "rv-note-shut", "")])
@@ -4317,6 +4317,8 @@ def Rcw.row(+r: Crow, +ty: Ty, +x0: U32, +x1: U32, +y: U32) -> Out:
     case Crow{3, +t, +i, +d}:
       Out{List.append(&2, R.Op, Rcw.box(x0, (y + 4 : U32), d), Ty.text(ty, 2n, t, D.Clip.all(), (x0 + 26 : U32), y, 24, Bool.pick(U32, d, T.Th.dim(), T.Th.text()))),
         [Lay.hit(x0, y, (x1 - x0 : U32), 24, "rv-tick", Nat.show(i))]}
+    case Crow{5, _, _, _}:
+      Out.none()
     case Crow{_, +t, +i, +d}:
       Out{Ty.text(ty, 2n, t, D.Clip.all(), (x0 + 26 : U32), y, 24, Bool.pick(U32, d, T.Th.dim(), T.Th.text())),
         [Lay.hit(x0, y, (x1 - x0 : U32), 24, "rv-tick", Nat.show(i))]}
@@ -4331,7 +4333,7 @@ def Rcw.rdraw(rs: List<&2, Crow>, +ty: Ty, +x0: U32, +x1: U32, +y: U32, +room: N
 def Rcw.checks(+ty: Ty, +u: U.Ui, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32, +h: U32) -> Out:
   +why = {U.Rp.gate(u) : String}
   +head = {Crow{Bool.pick(U32, String.is_empty(why), 0, 1), Bool.pick(String, String.is_empty(why), "Passes", Ty.fit(ty, 2n, "Fails: " ++ why, U32.dim((x1 - x0 : U32), 32))), 0n, False{}} : Crow}
-  +rows = {head <> Rcw.trows(U.Rp.tasks(u), "", ty, U32.dim((x1 - x0 : U32), 90)) : List<&2, Crow>}
+  +rows = {head <> List.append(&2, Crow, Rcw.trows(U.Rp.tasks(u), "", ty, U32.dim((x1 - x0 : U32), 90)), [Crow{5, "", 0n, False{}}]) : List<&2, Crow>}
   +ls = {TL.blocks(ty, N.Md.render(U.RpView.md(v)), U32.max((x1 - x0 - 32 : U32), 40)) : List<&2, TLine>}
   +n1 = {List.length(&2, Crow, rows) : Nat}
   +total = {Nat.add(n1, List.length(&2, TLine, ls)) : Nat}
