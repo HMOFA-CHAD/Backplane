@@ -6455,6 +6455,9 @@ def Rc.rel.k(under: Bool, +abs: String, +root: String) -> String:
     case False{}:
       abs
 
+def Rc.at(+u: Ui) -> String:
+  Ui.scratch(u, "@rc.at:" ++ Ui.sel(u))
+
 # (a viewer on the project's own board or schematic names no file: the
 # hub's history.refs answer does, Rc.sync asks for it once)
 def Rc.file(+u: Ui) -> String:
@@ -6483,19 +6486,18 @@ def Rc.sync.k(need: Bool, a: Act) -> Act:
     case False{} +x:
       x
 
+# (only for a thread with comments to pin, or a note being started: other
+# threads ask nothing more)
 def Rc.sync.of(a: Act) -> Act:
   match a:
     case Act{+u, cs}:
-      Rc.sync.k(Rc.need(u), Act{u, cs})
+      Rc.sync.k(Bool.and(Rc.need(u), Bool.or(Bool.not(String.is_empty(Rc.at(u))), Bool.not(List.is_empty(&2, RVW.Comment, Rc.all(u))))), Act{u, cs})
 
 def Rc.pins(+u: Ui) -> List<&2, RVW.Pin>:
   RVW.Review.pins(Rc.all(u), Rc.rel(u), "")
 
 def Rc.sel(+u: Ui) -> String:
   Ui.scratch(u, "@rc.sel:" ++ Ui.sel(u))
-
-def Rc.at(+u: Ui) -> String:
-  Ui.scratch(u, "@rc.at:" ++ Ui.sel(u))
 
 # the one open: its words, who and where, its replies (each "text\u001fby"),
 # whether it is resolved

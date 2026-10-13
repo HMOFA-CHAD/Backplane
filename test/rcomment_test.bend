@@ -137,4 +137,4 @@ def main() -> IO(Unit):
     C.Check.str("an add needs its text", Bool.show(RV.Review.op.ok("add", J.Json.obj([J.KV{"text", J.Str{"  "}}]))), "False")
     C.Check.str("a resolve needs its id", Bool.show(RV.Review.op.ok("resolve", J.Json.obj(Nil{}))) ++ Bool.show(RV.Review.op.ok("resolve", J.Json.obj([J.KV{"id", J.Str{"c1"}}]))), "FalseTrue")
     C.Check.str("an unknown op is refused", Bool.show(RV.Review.op.ok("burn", J.Json.obj([J.KV{"id", J.Str{"c1"}}]))), "False")
-    C.Check.str("the agent's tool lists them", String.take(res.body(MC.Mcp.review.list(RV.Review.of_state(st2([add("c1", "b.kicad_pcb", "Move R1", 2n)]), "t"))), 29n), "True {\"open\":1,\"resolved\":0,")
+    C.Check.str("the agent's tool lists them", String.take(res.body(MC.Mcp.review.list(RV.Review.of_state(st2([add("c1", "b.kicad_pcb", "Move R1", 2n)]), "t"))), 28n), "True {\"open\":1,\"resolved\":0,")

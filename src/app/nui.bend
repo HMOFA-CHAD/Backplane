@@ -2827,14 +2827,6 @@ def Row.menu.k(row: Bool, proj: Bool, file: Bool, +n: Nui, +value: String, +x: U
     case False{} False{}:
       Row.menu.f(file, n, value, x, y)
 
-def Row.menu(m: Maybe<&2, Hit>, +n: Nui, +x: U32, +y: U32) -> Step:
-  match m:
-    case Some{Hit{_, _, _, _, +action, +value}}:
-      Row.menu.k(Bool.and(String.eq(action, "select"), U32.is_lt(x, 264)),
-        Bool.and(Bool.or(String.eq(action, "project"), String.eq(action, "look")), U32.is_lt(x, 264)), String.eq(action, "file-open"), n, value, x, y)
-    case None{}:
-      Step{n, Nil{}, False{}}
-
 # Review comments (client.bend's Rc): a right-click on the board or the
 # schematic starts a note at that place, "rv-note" with "x\ty\tlayer\titem"
 # (mm in the file's coordinates, the item under the pointer), and puts the
@@ -2850,15 +2842,25 @@ def Rcw.start(s: Step) -> Step:
     case Step{n, cs, d}:
       Step{Nui.with_caret(Nui.with_focus(n, Fld.id("rcnote", "rv-note-send", "")), 0n), cs, d}
 
-def Rcw.menu(on: Bool, +n: Nui, +x: U32, +y: U32) -> Step:
+# a right press on nothing (Row.menu's None): on the board or schematic,
+# a note at that place; elsewhere nothing
+def Rcw.none(on: Bool, +n: Nui, +x: U32, +y: U32) -> Step:
   match on:
     case True{}:
       Rcw.start(Nui.act(n, "rv-note", Rcw.at(Nui.vw(n), x, y, Nui.lfocus.bits(n), Nui.flip(n))))
     case False{}:
-      Row.menu(Hit.find(Nui.hits(n), x, y), n, x, y)
+      Step{n, Nil{}, False{}}
 
 def Rcw.here(+n: Nui, +x: U32, +y: U32) -> Bool:
-  Bool.and(Bool.and(Nui.in_viewer(n, x), U32.is_ge(y, 52)), Bool.and(U32.is_lt(Vw.kind(Nui.vw(n)), 2), Nui.nohit(Hit.find(Nui.hits(n), x, y))))
+  Bool.and(Bool.and(Nui.in_viewer(n, x), U32.is_ge(y, 52)), U32.is_lt(Vw.kind(Nui.vw(n)), 2))
+
+def Row.menu(m: Maybe<&2, Hit>, +n: Nui, +x: U32, +y: U32) -> Step:
+  match m:
+    case Some{Hit{_, _, _, _, +action, +value}}:
+      Row.menu.k(Bool.and(String.eq(action, "select"), U32.is_lt(x, 264)),
+        Bool.and(Bool.or(String.eq(action, "project"), String.eq(action, "look")), U32.is_lt(x, 264)), String.eq(action, "file-open"), n, value, x, y)
+    case None{}:
+      Rcw.none(Rcw.here(n, x, y), n, x, y)
 
 # a press on the viewer's own buttons is a click, elsewhere in it a drag
 def Nui.press(viewer: Bool, +n: Nui, +x: U32, +y: U32) -> Step:
@@ -2956,7 +2958,7 @@ def Nui.event(+n: Nui, e: W.WinEv) -> Step:
     case W.WButton{+x, +y, 1, False{}}:
       Sel.end(Row.release(Bool.not(String.is_empty(Row.id(n))), n, x, y))
     case W.WButton{+x, +y, 3, True{}}:
-      Rcw.menu(Rcw.here(n, x, y), Menu.press(Hit.find(Nui.hits(n), x, y), n), x, y)
+      Row.menu(Hit.find(Nui.hits(n), x, y), Menu.press(Hit.find(Nui.hits(n), x, y), n), x, y)
     case W.WButton{+x, +y, 2, True{}}:
       Nui.mpress(Nui.in_viewer(n, x), n, x, y)
     case W.WButton{+x, +y, 2, False{}}:
