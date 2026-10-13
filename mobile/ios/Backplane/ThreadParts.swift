@@ -410,6 +410,8 @@ struct FlowButtons: View {
 struct ComposerExtras: View {
     let model: AppModel
     let thread: ThreadView
+    // an iPhone on its side: little room above the keyboard
+    @Environment(\.verticalSizeClass) private var height
 
     var body: some View {
         let atts = thread.attaching ?? []
@@ -433,8 +435,10 @@ struct ComposerExtras: View {
             let hot = skills.firstIndex(where: { $0.on == true }) ?? 0
             VStack(spacing: 0) {
                 Divider()
-                // the rows as they are while they fit, else scrolling within
-                // about five rows (a bare ScrollView takes all the height offered)
+                // up to four rows as they are, more scroll within about five
+                // (a ScrollView takes all the height offered it); on its side,
+                // a row and a half
+                let short = height == .compact
                 let rows =
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(skills.enumerated()), id: \.element) { i, k in
@@ -456,13 +460,14 @@ struct ComposerExtras: View {
                             .accessibilityAddTraits(i == hot ? [.isSelected] : [])
                         }
                     }
-                ScrollViewReader { proxy in
-                    ViewThatFits(in: .vertical) {
-                        rows
+                if skills.count <= (short ? 1 : 4) {
+                    rows
+                } else {
+                    ScrollViewReader { proxy in
                         ScrollView { rows }
+                            .frame(height: short ? 72 : 5 * 48)
+                            .onChange(of: hot) { _, i in withAnimation { proxy.scrollTo(i) } }
                     }
-                    .frame(maxHeight: 5 * 48)
-                    .onChange(of: hot) { _, i in withAnimation { proxy.scrollTo(i) } }
                 }
             }
             .overlay(alignment: .topTrailing) {

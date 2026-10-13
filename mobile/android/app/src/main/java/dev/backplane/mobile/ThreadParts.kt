@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -518,10 +520,15 @@ fun ComposerExtras(m: AppModel, t: ThreadView) {
         val hot = t.skills.indexOfFirst { it.on }.coerceAtLeast(0)
         val list = rememberLazyListState()
         LaunchedEffect(hot) { list.animateScrollToItem(hot) }
+        // about five rows, fewer when the keyboard leaves little room (landscape)
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val ime = with(density) { WindowInsets.ime.getBottom(density).toDp() }
+        val room = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp - ime
+        val cap = (room * 0.4f).coerceIn(48.dp, 240.dp)
         Column {
             HorizontalDivider()
             Box {
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 240.dp), state = list) {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = cap), state = list) {
                     itemsIndexed(t.skills) { i, k ->
                         val sel = i == hot
                         val label = if (k.desc.isEmpty()) k.name else k.name + ", " + k.desc
