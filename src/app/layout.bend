@@ -1047,6 +1047,30 @@ def TL.tw(rs: List<&2, TRow>, ws: List<&2, U32>, +ty: Ty) -> List<&2, U32>:
     case TRow{_, cs} <> t:
       TL.tw(t, TL.tw.row(cs, ws, ty), ty)
 
+# the longest word in a cell, as a width (a column never goes narrower)
+def TL.word(ws: List<&2, String>, +ty: Ty, +acc: U32) -> U32:
+  match ws:
+    case Nil{}:
+      acc
+    case +w <> t:
+      TL.word(t, ty, U32.max(acc, Ty.width(ty, 3n, w)))
+
+def TL.mw.row(cs: List<&2, String>, ms: List<&2, U32>, +ty: Ty) -> List<&2, U32>:
+  match cs ms:
+    case Nil{} +rest:
+      rest
+    case +c <> ct Nil{}:
+      (TL.word(String.split(c, ' '), ty, 0) + 16 : U32) <> TL.mw.row(ct, Nil{}, ty)
+    case +c <> ct +m <> mt:
+      U32.max(m, (TL.word(String.split(c, ' '), ty, 0) + 16 : U32)) <> TL.mw.row(ct, mt, ty)
+
+def TL.mw(rs: List<&2, TRow>, ms: List<&2, U32>, +ty: Ty) -> List<&2, U32>:
+  match rs:
+    case Nil{}:
+      ms
+    case TRow{_, cs} <> t:
+      TL.mw(t, TL.mw.row(cs, ms, ty), ty)
+
 def TL.sum(ws: List<&2, U32>, +acc: U32) -> U32:
   match ws:
     case Nil{}:
@@ -1064,19 +1088,19 @@ def TL.small(ws: List<&2, U32>, +share: U32, +acc: U32) -> U32:
 
 # a column no wider than share keeps its width; the wider ones split the
 # rest of the panel in proportion
-def TL.scale(ws: List<&2, U32>, +share: U32, +rest: U32, +big: U32) -> List<&2, U32>:
-  match ws:
-    case Nil{}:
+def TL.scale(ws: List<&2, U32>, ms: List<&2, U32>, +share: U32, +rest: U32, +big: U32) -> List<&2, U32>:
+  match ws ms:
+    case +w <> t +m <> mt:
+      Bool.pick(U32, U32.is_gt(w, share), U32.max(m, U32.max(48, ((w * rest : U32) / U32.max(big, 1) : U32))), w) <> TL.scale(t, mt, share, rest, big)
+    case _ _:
       Nil{}
-    case +w <> t:
-      Bool.pick(U32, U32.is_gt(w, share), U32.max(48, ((w * rest : U32) / U32.max(big, 1) : U32)), w) <> TL.scale(t, share, rest, big)
 
-def TL.fit.k(+ws: List<&2, U32>, +px: U32, +total: U32, +share: U32) -> List<&2, U32>:
-  TL.scale(ws, share, U32.dim(px, TL.small(ws, share, 0)), U32.dim(total, TL.small(ws, share, 0)))
+def TL.fit.k(+ws: List<&2, U32>, ms: List<&2, U32>, +px: U32, +total: U32, +share: U32) -> List<&2, U32>:
+  TL.scale(ws, ms, share, U32.dim(px, TL.small(ws, share, 0)), U32.dim(total, TL.small(ws, share, 0)))
 
 # the widths shrunk to the panel when they are wider
-def TL.fit(+ws: List<&2, U32>, +px: U32, +total: U32) -> List<&2, U32>:
-  Bool.pick(List<&2, U32>, U32.is_gt(total, px), TL.fit.k(ws, px, total, (px / U32.max(U32.from_nat(List.length(&2, U32, ws)), 1) : U32)), ws)
+def TL.fit(+ws: List<&2, U32>, ms: List<&2, U32>, +px: U32, +total: U32) -> List<&2, U32>:
+  Bool.pick(List<&2, U32>, U32.is_gt(total, px), TL.fit.k(ws, ms, px, total, (px / U32.max(U32.from_nat(List.length(&2, U32, ws)), 1) : U32)), ws)
 
 def TL.enc(ws: List<&2, U32>) -> String:
   match ws:
@@ -1135,7 +1159,7 @@ def TL.table.k(+rs: List<&2, TRow>, +ws: List<&2, U32>, +ty: Ty) -> List<&2, TLi
 def TL.table(+ty: Ty, ns: List<&2, N.Node>, +px: U32) -> List<&2, TLine>:
   +rs = TL.trows(ns)
   +ws = TL.tw(rs, Nil{}, ty)
-  TL.table.k(rs, TL.fit(ws, U32.dim(px, 1), TL.sum(ws, 0)), ty)
+  TL.table.k(rs, TL.fit(ws, TL.mw(rs, Nil{}, ty), U32.dim(px, 1), TL.sum(ws, 0)), ty)
 
 # a table line's cells, each in its column, with a rule left of each
 def TL.cells.draw(cs: List<&2, String>, ws: String, +ty: Ty, +c: D.Clip, +x: U32, +y: U32, +h: U32, +color: U32) -> List<&2, R.Op>:
@@ -4353,7 +4377,61 @@ def Rcw.body(on: Bool, has: Bool, +ty: Ty, +u: U.Ui, +v: U.RpView, +th: String, 
     case False{}:
       Rpw.body(has, ty, v, th, off, x0, x1, h)
 
-def Rpw.page(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+# The Release page (client.bend's Rl): the tag field (empty releases the
+# proposed one), the two toggles (Publish is off until the person turns it
+# on), the button, then the error in red and the report's Markdown
+def Rlw.lines(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32, +color: U32) -> Out:
+  match ls:
+    case Nil{}:
+      Out.none()
+    case +l <> t:
+      Out.cat(Out.ops(Ty.text(ty, 2n, l, D.Clip.all(), x, y, 24, color)), Rlw.lines(t, ty, x, (y + 24 : U32), color))
+
+def Rlw.toggle(+ty: Ty, +x: U32, +y: U32, +on: Bool, +label: String, action: String) -> Out:
+  Out{List.append(&2, R.Op, Rcw.box(x, y, on), Ty.text(ty, 2n, label, D.Clip.all(), (x + 26 : U32), (y - 4 : U32), 24, T.Th.text())),
+    [Lay.hit(x, (y - 4 : U32), (Ty.width(ty, 2n, label) + 26 : U32), 24, action, "")]}
+
+def Rlw.make(busy: Bool, +ty: Ty, +x: U32, +y: U32, +label: String) -> Out:
+  match busy:
+    case True{}:
+      Out{List.append(&2, R.Op, Lay.box(D.Clip.all(), x, y, Lay.button.w(ty, label), 28, 6, T.Th.raise(), T.Th.line()), Ty.text(ty, 2n, label, D.Clip.all(), (x + 10 : U32), y, 28, T.Th.faint())), Nil{}}
+    case False{}:
+      Lay.button(ty, D.Clip.all(), x, y, label, T.Th.accent(), "rv-release", "")
+
+def Rlw.report(+ty: Ty, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32, +y: U32, +h: U32) -> Out:
+  +es = {Bool.pick(List<&2, String>, String.is_empty(U.RpView.err(v)), Nil{}, Ty.wrap(ty, 2n, U.RpView.err(v), U32.max((x1 - x0 - 32 : U32), 40))) : List<&2, String>}
+  +ne = {List.length(&2, String, es) : Nat}
+  +y1 = {(y + U32.from_nat(ne) * 24 : U32) : U32}
+  +ls = {TL.blocks(ty, N.Md.render(U.RpView.md(v)), U32.max((x1 - x0 - 32 : U32), 40)) : List<&2, TLine>}
+  +n = {List.length(&2, TLine, ls) : Nat}
+  +last = {Nat.sub(n, U32.to_nat(U32.min(U32.from_nat(n), (Lay.room(h, y1) / 24 : U32)))) : Nat}
+  +from = {Bool.pick(Nat, Nat.is_lt(off, last), off, last) : Nat}
+  Out.all([Rlw.lines(es, ty, (x0 + 16 : U32), y, T.Th.bad()),
+    Rpw.draw(List.drop(&2, TLine, ls, from), True{}, ty, D.Clip{x0, y1, x1, h}, (x0 + 16 : U32), (x1 - 16 : U32), y1, h),
+    Out{Nil{}, [Lay.hit(x0, y1, (x1 - x0 : U32), Lay.room(h, y1), "pane", "rp:" ++ th ++ "|" ++ Nat.show(last))]}])
+
+def Rlw.page(f: U.RlForm, +ty: Ty, +n: S.Nui, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32, +h: U32) -> Out:
+  match f:
+    case U.RlForm{+tag, +next, +publish, +force}:
+      +fid = {S.Fld.id("rltag", "rv-release", "") : String}
+      Out.all([Lay.field(ty, D.Clip.all(), (x0 + 16 : U32), 150, U32.min(300, U32.dim((x1 - x0 : U32), 32)), U.Ui.scratch(S.Nui.ui(n), "@f.rltag"), String.eq(S.Nui.focus_of(n), fid), S.Blink.on(n), S.Nui.caret_of(n), S.Nui.mark(n), next, fid),
+        Rlw.toggle(ty, (x0 + 16 : U32), 196, publish, "Publish on GitHub", "rv-release-pub"),
+        Rlw.toggle(ty, (x0 + 16 : U32), 224, force, "Release even if checks fail", "rv-release-force"),
+        Rlw.make(U.RpView.busy(v), ty, (x0 + 16 : U32), 254, Bool.pick(String, U.RpView.busy(v), "Making release " ++ tag ++ "…", "Make release " ++ tag)),
+        Out.ops([D.Draw.rect(D.Clip.all(), x0, 292, (x1 - x0 : U32), 1, T.Th.line(), 255)]),
+        Bool.pick(Out, Bool.and(String.is_empty(U.RpView.md(v)), String.is_empty(U.RpView.err(v))),
+          Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, U.RpView.note(v), U32.dim((x1 - x0 : U32), 32)), D.Clip.all(), (x0 + 16 : U32), 300, 30, T.Th.faint())),
+          Rlw.report(ty, v, th, off, x0, x1, 300, h))])
+
+def Rlw.sel(rel: Bool, +ty: Ty, +n: S.Nui, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32, +h: U32) -> Out:
+  match rel:
+    case True{}:
+      Rlw.page(U.Rl.form(S.Nui.ui(n)), ty, n, v, th, off, x0, x1, h)
+    case False{}:
+      Rcw.body(Bool.and(String.eq(U.RpView.page(v), "checks"), Bool.not(String.is_empty(U.RpView.md(v)))), Bool.not(String.is_empty(U.RpView.md(v))), ty, S.Nui.ui(n), v, th, off, x0, x1, h)
+
+def Rpw.page(+ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +h: U32) -> Out:
+  +u = {S.Nui.ui(n) : U.Ui}
   +v = {U.Rp.view(u) : U.RpView}
   +rw = Lay.button.w(ty, "Refresh")
   +th = {U.Ui.sel(u) : String}
@@ -4362,12 +4440,12 @@ def Rpw.page(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
     Lay.button(ty, D.Clip.all(), (x1 - 16 - rw : U32), 64, "Refresh", T.Th.soft(), "rv-run", ""),
     Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, U.RpView.title(v) ++ Bool.pick(String, U.RpView.busy(v), " · reading…", ""), (x1 - x0 - 32 : U32)), D.Clip.all(), (x0 + 16 : U32), 102, 28, T.Th.dim())),
     Out.ops([D.Draw.rect(D.Clip.all(), x0, 137, (x1 - x0 : U32), 1, T.Th.line(), 255)]),
-    Rcw.body(Bool.and(String.eq(U.RpView.page(v), "checks"), Bool.not(String.is_empty(U.RpView.md(v)))), Bool.not(String.is_empty(U.RpView.md(v))), ty, u, v, th, Pane.off(U.Ui.infos(u), "rp:" ++ th), x0, x1, h)])
+    Rlw.sel(String.eq(U.RpView.page(v), "release"), ty, n, v, th, Pane.off(U.Ui.infos(u), "rp:" ++ th), x0, x1, h)])
 
-def Rpw.if(open: Bool, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+def Rpw.if(open: Bool, +ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +h: U32) -> Out:
   match open:
     case True{}:
-      Rpw.page(ty, u, x0, x1, h)
+      Rpw.page(ty, n, x0, x1, h)
     case False{}:
       Out.none()
 
@@ -4381,8 +4459,8 @@ def Lay.viewer.b(+ty: Ty, +n: S.Nui, +b: U.HBar, +x0: U32, +x1: U32, +h: U32) ->
     Side.ground.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 2), ty, n, x1),
     Hb.draw(ty, n, S.Nui.ui(n), b, Lay.scene(n), x0, x1, h),
     Fv.k(S.Vw.kind(S.Nui.vw(n)), ty, S.Nui.ui(n), x0, x1, h),
-    Rpw.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 9), ty, S.Nui.ui(n), x0, x1, h),
-    Rcw.if(U32.is_lt(S.Vw.kind(S.Nui.vw(n)), 2), ty, n, x0, x1, (h - Hb.h(b) : U32))])
+    Rpw.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 9), ty, n, x0, x1, h),
+    Rcw.if(Bool.and(U32.is_lt(S.Vw.kind(S.Nui.vw(n)), 2), String.is_empty(U.Ui.scratch(S.Nui.ui(n), "@cmp.menu"))), ty, n, x0, x1, (h - Hb.h(b) : U32))])
 
 # the viewer, with the design history's bar at its foot when it has one
 # (only a board or a schematic: the native kind agrees with the client's)
