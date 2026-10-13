@@ -164,6 +164,10 @@ fun App(m: AppModel) {
             BackHandler { m.act("fm") }
             FileScreen(m, s.thread.viewer, s.thread.viewer.file)
         }
+        s.thread != null && s.thread.viewer.open == "review" && s.thread.viewer.review != null -> {
+            BackHandler { m.act("view", "") }
+            ReviewScreen(m, s.thread.viewer, s.thread.viewer.review)
+        }
         s.thread != null && s.thread.viewer.open == "renders" && s.thread.viewer.mech != null -> {
             BackHandler { m.act("view", "") }
             MechScreen(m, s.thread.viewer, s.thread.viewer.mech)
@@ -1064,12 +1068,7 @@ private fun PlotScreen(m: AppModel, v: Viewer) {
         }
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
-                v.choices.forEachIndexed { i, c ->
-                    SegmentedButton(selected = c.value == v.open, onClick = { m.act("view", c.value) },
-                        shape = SegmentedButtonDefaults.itemShape(i, v.choices.size), icon = {}) { Text(c.label, maxLines = 1, style = MaterialTheme.typography.labelMedium) }
-                }
-            }
+            ChoiceRow(v.choices, v.open, Modifier.weight(1f)) { m.act("view", it) }
             IconButton(onClick = { m.act("view", "") }) { Icon(Icons.Filled.Close, "Close", tint = if (v.light) Color.Black else Color.White) }
         }
         ViewerControls(m, v, f?.chunks?.map { it.layer }?.toSet() ?: emptySet(), Modifier.align(Alignment.TopStart).statusBarsPadding().padding(top = 56.dp))
@@ -1104,6 +1103,7 @@ private fun HistoryBar(m: AppModel, h: HistBar, light: Boolean) {
                     HistChip("Old: ${h.a}", h.side == "a", fg, accent, Modifier.weight(1f, fill = false)) { m.act("cmp-side", "a") }
                     HistChip("New: ${h.b}", h.side == "b", fg, accent, Modifier.weight(1f, fill = false)) { m.act("cmp-side", "b") }
                 }
+                HistChip("BOM", false, fg, accent) { m.act("rv-bom", "") }
                 HistChip("Close", false, fg, accent) { m.act("cmp-close", "") }
             }
             val shown = h.showing.ifEmpty { "diff" }

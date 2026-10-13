@@ -1050,6 +1050,7 @@ struct HistBarView: View {
                     chip("Old: " + hist.a, on: hist.side == "a") { model.act("cmp-side", "a") }
                     chip("New: " + hist.b, on: hist.side == "b") { model.act("cmp-side", "b") }
                     Spacer(minLength: 0)
+                    chip("BOM", on: false) { model.act("rv-bom", "") }
                     chip("Close", on: false) { model.act("cmp-close", "") }
                 }
                 Picker("Show", selection: Binding(get: { hist.showing ?? "diff" }, set: { model.act("rv-as", $0) })) {

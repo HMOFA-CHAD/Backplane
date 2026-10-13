@@ -272,6 +272,22 @@ struct Viewer: Decodable {
     // the Files tab (open "files"), and an image or a PDF it opened
     let files: FilesPage?
     let file: FileView?
+    // the Review tab (open "review")
+    let review: ReviewPage?
+}
+
+// the Review tab: the page chips ("rv-page" page), the title, the report's
+// Markdown nodes (empty: say note), whether it is being made
+struct ReviewTab: Decodable, Hashable {
+    let page, label: String
+    let on: Bool
+}
+
+struct ReviewPage: Decodable {
+    let tabs: [ReviewTab]
+    let title, note: String
+    let busy: Bool
+    let blocks: [Block]?
 }
 
 // the Files tab: where the folder is, its rows (a tap sends action with
