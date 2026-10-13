@@ -345,3 +345,84 @@ def Note.busy.st(ts: List<&2, M.Thread>, +st: M.State) -> Bool:
       False{}
     case M.Thread{+id, _, _, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
       Bool.or(Note.busy.k(Note.running(turn), M.Work.busy(st, id)), Note.busy.st(t, st))
+
+# The alerts of the policy (core/notice.bend)
+# --------------------------------------------
+# A phone alerts for a thread when the thread's alert record (setting
+# alert.<id>) differs from what it held before the frame was folded in and
+# the new kind is not empty, unless a desk in use is watching the thread
+# and the kind is one a watcher holds (laws policy_phone_*). The turn's
+# state decides nothing here: the hub wrote the record.
+
+# the record each touched thread held before a frame
+type RSeen is Data:
+  RSeen{id: String, rec: String}
+
+def Note.rseen.ids(ids: List<&2, String>, +st: M.State) -> List<&2, RSeen>:
+  match ids:
+    case Nil{}:
+      Nil{}
+    case +id <> t:
+      RSeen{id, M.Setting.get(st, NO.Alert.key(id), "")} <> Note.rseen.ids(t, st)
+
+def Note.rseen(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, RSeen>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case M.Thread{+id, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
+      RSeen{id, M.Setting.get(st, NO.Alert.key(id), "")} <> Note.rseen(t, st)
+
+# did the thread's record change since it was seen (a thread not seen did
+# not change: its frame did not touch it)
+def Note.rchg(ss: List<&2, RSeen>, +id: String, +cur: String, done: Bool, r: Bool) -> Bool:
+  match ss done:
+    case _ True{}:
+      r
+    case Nil{} False{}:
+      False{}
+    case RSeen{+i, +x} <> t False{}:
+      Note.rchg(t, id, cur, String.eq(i, id), Bool.not(String.eq(x, cur)))
+
+def Note.rbody.k(none: Bool, +own: String, +kind: String, +es: List<&2, M.Entry>, +id: String) -> String:
+  match none:
+    case True{}:
+      Note.body(kind, Note.said(es, id, False{}, ""))
+    case False{}:
+      own
+
+def Note.rbody(+rec: NO.AlertRec, +es: List<&2, M.Entry>, +id: String) -> String:
+  Note.rbody.k(String.is_empty(NO.Alert.body(rec)), NO.Alert.body(rec), NO.Alert.kind(rec), es, id)
+
+def Note.ralert.r(quiet: Bool, +rec: NO.AlertRec, +id: String, +title: String, +es: List<&2, M.Entry>, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match quiet:
+    case True{}:
+      rest
+    case False{}:
+      J.Json.obj([J.KV{"thread", J.Json.str(id)}, J.KV{"title", J.Json.str(title)}, J.KV{"kind", J.Json.str(NO.Alert.kind(rec))},
+        J.KV{"body", J.Json.str(Note.rbody(rec, es, id))}, J.KV{"key", J.Json.str(NO.Alert.rkey(rec))}]) <> rest
+
+def Note.ralert.q(+rec: NO.AlertRec, +id: String, +title: String, +es: List<&2, M.Entry>, +desk: String, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  Note.ralert.r(Bool.or(String.is_empty(NO.Alert.kind(rec)), Bool.and(DK.Desk.watched(desk, id), NO.Alert.holds(NO.Alert.kind(rec)))), rec, id, title, es, rest)
+
+def Note.ralert.k(changed: Bool, +cur: String, +id: String, +title: String, +es: List<&2, M.Entry>, +desk: String, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match changed:
+    case False{}:
+      rest
+    case True{}:
+      Note.ralert.q(NO.Alert.parse(cur), id, title, es, desk, rest)
+
+# the alerts a server message raised, from the records it changed
+def Note.ralerts(ts: List<&2, M.Thread>, +seen: List<&2, RSeen>, +st: M.State, +desk: String) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case M.Thread{+id, _, title, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
+      Note.ralert.k(Note.rchg(seen, id, M.Setting.get(st, NO.Alert.key(id), ""), False{}, False{}), M.Setting.get(st, NO.Alert.key(id), ""), id, title, M.State.mine(st, id), desk, Note.ralerts(t, seen, st, desk))
+
+# the policy's examples (for the laws)
+def Note.demo.rec(+kind: String) -> String:
+  NO.Alert.line(kind, "turn-t1", "m1", "1.1", "")
+
+# thread t1 holding the record cur
+def Note.demo.s(+cur: String) -> M.State:
+  M.State.replay([M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "claude", "", 1n}, M.SettingSet{"alert.t1", cur, 2n}], M.State.empty())

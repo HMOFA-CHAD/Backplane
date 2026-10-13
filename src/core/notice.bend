@@ -141,6 +141,11 @@ def Turn.posted(t: Turn) -> Bool:
     case Turn{p, _, _}:
       p
 
+def Turn.trigger(t: Turn) -> String:
+  match t:
+    case Turn{_, tr, _}:
+      tr
+
 def Turn.start(t: Turn) -> Nat:
   match t:
     case Turn{_, _, s}:
@@ -337,3 +342,505 @@ def Notice.of.k(m: Maybe<&2, BT.Bot>, +s: M.State, +thread: String, +failed: Boo
 # "fail", and the key its alert replaces others under
 def Notice.of(+s: M.State, +thread: String, +failed: Bool, local: Bool) -> Notice:
   Notice.of.k(BT.World.of_thread(M.State.bots(s), thread), s, thread, failed, local)
+
+# Policy
+# ------
+# The person is alerted only when needed (an ask), when work settles (a
+# turn completed with everything the thread waits on done, or its branch
+# merged), or for a reminder or digest they scheduled. Everything above
+# (Notice.of) is the older rule, kept for notify.all. The hub writes each
+# alert as the thread's record (setting alert.<thread>) in the step that
+# causes it; every client follows the record (laws policy_*).
+
+# the setting notify.<name>: needs, settled and reminders default on, all
+# off; an unknown name is off
+def Policy.known(+name: String) -> Bool:
+  Bool.or(Bool.or(String.eq(name, "needs"), String.eq(name, "settled")), Bool.or(String.eq(name, "reminders"), String.eq(name, "all")))
+
+def Policy.dflt(+name: String) -> Bool:
+  Bool.not(String.eq(name, "all"))
+
+def Policy.on.k(known: Bool, dflt: Bool, +v: String) -> Bool:
+  Bool.and(known, Bool.pick(Bool, String.eq(v, "on"), True{}, Bool.pick(Bool, String.eq(v, "off"), False{}, dflt)))
+
+def Policy.on(s: M.State, +name: String) -> Bool:
+  Policy.on.k(Policy.known(name), Policy.dflt(name), M.Setting.get(s, "notify." ++ name, ""))
+
+# The alert record
+# ----------------
+# `<kind>\t<key>\t<settled>\t<stamp>\t<text>`: kind ask, done, fail, merged,
+# note or "" (a settle that alerted no one); key the alert's collapse id;
+# settled the id of the last person message whose work settled; stamp
+# `<now>.<seq>`, so two records are never equal; text for note, ask and
+# merged (the url).
+
+type AlertRec is Data:
+  AlertRec{kind: String, key: String, settled: String, stamp: String, text: String}
+
+type Cut is Data:
+  Cut{field: String, rest: String}
+
+def Alert.key(+thread: String) -> String:
+  "alert." ++ thread
+
+def Alert.line(+kind: String, +key: String, +settled: String, +stamp: String, +text: String) -> String:
+  kind ++ "\t" ++ key ++ "\t" ++ settled ++ "\t" ++ stamp ++ "\t" ++ text
+
+def Alert.seq(s: M.State) -> Nat:
+  match s:
+    case M.State{_, _, _, n, _, _, _, _, _, _, _}:
+      n
+
+# a text as one line, cut to max characters
+def Alert.clean(+t: String) -> String:
+  match t:
+    case SNil{}:
+      ""
+    case SCon{+c, r}:
+      Bool.pick(String, Bool.or(Char.is_eq(c, Chr{9}), Char.is_eq(c, Chr{10})), " ", SCon{c, SNil{}}) ++ Alert.clean(r)
+
+def Alert.text(+t: String, +max: Nat) -> String:
+  Alert.clean(String.take(String.trim(t), max))
+
+def Alert.set(s: M.State, +now: Nat, +thread: String, +kind: String, +key: String, +settled: String, +text: String) -> M.Change:
+  M.SettingSet{Alert.key(thread), Alert.line(kind, key, settled, Nat.show(now) ++ "." ++ Nat.show(Alert.seq(s)), text), now}
+
+# where the first tab is (the length when none), one tail walk
+def Alert.tab(s: String, stop: Bool, +n: Nat) -> Nat:
+  match s stop:
+    case _ True{}:
+      n
+    case SNil{} False{}:
+      n
+    case SCon{Chr{+c}, t} False{}:
+      Alert.tab(t, Nat.is_eq(U32.to_nat(c), 9n), Bool.pick(Nat, Nat.is_eq(U32.to_nat(c), 9n), n, 1n+n))
+
+def Alert.cut.k(+s: String, +i: Nat) -> Cut:
+  Cut{String.take(s, i), String.drop(s, 1n+i)}
+
+# the first field (up to a tab) and the rest
+def Alert.cut(+s: String) -> Cut:
+  Alert.cut.k(s, Alert.tab(s, False{}, 0n))
+
+def Alert.p4(+kind: String, +key: String, +settled: String, c: Cut) -> AlertRec:
+  match c:
+    case Cut{+stamp, +text}:
+      AlertRec{kind, key, settled, stamp, text}
+
+def Alert.p3(+kind: String, +key: String, c: Cut) -> AlertRec:
+  match c:
+    case Cut{+settled, r}:
+      Alert.p4(kind, key, settled, Alert.cut(r))
+
+def Alert.p2(+kind: String, c: Cut) -> AlertRec:
+  match c:
+    case Cut{+key, r}:
+      Alert.p3(kind, key, Alert.cut(r))
+
+def Alert.p1(c: Cut) -> AlertRec:
+  match c:
+    case Cut{+kind, r}:
+      Alert.p2(kind, Alert.cut(r))
+
+def Alert.parse(v: String) -> AlertRec:
+  Alert.p1(Alert.cut(v))
+
+# an absent record reads as all empty
+def Alert.get(s: M.State, +thread: String) -> AlertRec:
+  Alert.parse(M.Setting.get(s, Alert.key(thread), ""))
+
+def Alert.kind(r: AlertRec) -> String:
+  match r:
+    case AlertRec{k, _, _, _, _}:
+      k
+
+def Alert.rkey(r: AlertRec) -> String:
+  match r:
+    case AlertRec{_, k, _, _, _}:
+      k
+
+def Alert.rsettled(r: AlertRec) -> String:
+  match r:
+    case AlertRec{_, _, s, _, _}:
+      s
+
+def Alert.rstamp(r: AlertRec) -> String:
+  match r:
+    case AlertRec{_, _, _, s, _}:
+      s
+
+def Alert.rtext(r: AlertRec) -> String:
+  match r:
+    case AlertRec{_, _, _, _, t}:
+      t
+
+# the settle memory
+def Alert.memory(s: M.State, +thread: String) -> String:
+  Alert.rsettled(Alert.get(s, thread))
+
+# the leading digits of a stamp (when the record was written)
+def Alert.digit(+c: U32) -> Bool:
+  Bool.and(Nat.is_ge(U32.to_nat(c), 48n), Nat.is_le(U32.to_nat(c), 57n))
+
+def Alert.num(s: String, +acc: Nat, go: Bool) -> Nat:
+  match s go:
+    case _ False{}:
+      acc
+    case SNil{} True{}:
+      acc
+    case SCon{Chr{+c}, t} True{}:
+      Alert.num(t, Bool.pick(Nat, Alert.digit(c), Nat.add(Nat.mul(acc, 10n), U32.to_nat((c - 48 : U32))), acc), Alert.digit(c))
+
+def Alert.at(r: AlertRec) -> Nat:
+  Alert.num(Alert.rstamp(r), 0n, True{})
+
+# kinds a watching desk holds (a note never is)
+def Alert.holds(+kind: String) -> Bool:
+  Bool.or(Bool.or(String.eq(kind, "ask"), String.eq(kind, "done")), Bool.or(String.eq(kind, "fail"), String.eq(kind, "merged")))
+
+# the record's alert for a client: Notice{kind, key} ("" kind: none)
+def Alert.notice(+r: AlertRec) -> Notice:
+  Notice{Alert.kind(r), Alert.rkey(r)}
+
+# The person's message
+# --------------------
+
+type Per is Data:
+  Per{id: String, text: String, at: Nat}
+
+def Per.none() -> Per:
+  Per{"", "", 0n}
+
+def Per.id(p: Per) -> String:
+  match p:
+    case Per{i, _, _}:
+      i
+
+def Per.text(p: Per) -> String:
+  match p:
+    case Per{_, t, _}:
+      t
+
+# typed by the person: not a link (a message a thread sent) and not a
+# bracketed note ([message from …], [routine: …], [Backplane] …), except
+# the person typing from another machine
+def Policy.direct(+id: String, +text: String) -> Bool:
+  Bool.and(String.is_empty(M.Link.from(id)),
+    Bool.or(Bool.not(String.starts_with(text, "[")), String.starts_with(text, "[message from person@")))
+
+def Policy.person.pick(hit: Bool, p: Per, acc: Per) -> Per:
+  match hit:
+    case True{}:
+      p
+    case False{}:
+      acc
+
+def Policy.person.go(es: List<&2, M.Entry>, +thread: String, done: Bool, acc: Per) -> Per:
+  match es done:
+    case _ True{}:
+      acc
+    case Nil{} False{}:
+      acc
+    case M.Msg{+id, +th, M.User{}, +text, +at} <> t False{}:
+      Policy.person.go(t, thread, Bool.and(String.eq(th, thread), Policy.direct(id, text)), Policy.person.pick(Bool.and(String.eq(th, thread), Policy.direct(id, text)), Per{id, text, at}, acc))
+    case _ <> t False{}:
+      Policy.person.go(t, thread, False{}, acc)
+
+# the newest message the person typed in a thread
+def Policy.person(s: M.State, +thread: String) -> Per:
+  Policy.person.go(M.State.mine(s, thread), thread, False{}, Per.none())
+
+# the thread's person message has not settled yet
+def Policy.fresh(+p: Per, +mem: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(Per.id(p))), Bool.not(String.eq(Per.id(p), mem)))
+
+# no thread it launched with reports on still works
+def Policy.launched(+post: M.State, ids: List<&2, String>, ok: Bool) -> Bool:
+  match ids ok:
+    case _ False{}:
+      False{}
+    case Nil{} True{}:
+      True{}
+    case +id <> t True{}:
+      Policy.launched(post, t, Bool.not(Bool.and(M.Launch.reports(post, id), Bool.not(M.Work.ready(post, id)))))
+
+# the thread's work is all done: it does not run, nothing is queued,
+# nothing is out, no ask is open, no reporting helper works
+def Policy.ready(+post: M.State, +thread: String) -> Bool:
+  Bool.and(Bool.and(M.Work.ready(post, thread), Bool.not(Ask.open(post, thread))), Policy.launched(post, M.Launch.of(post, thread), True{}))
+
+# The decision
+# ------------
+
+# 0 nothing, 1 done, 2 fail, 3 the episode ends quietly (stopped)
+def Policy.decide(fresh: Bool, +ready: Bool, +state: String) -> Nat:
+  match fresh:
+    case False{}:
+      0n
+    case True{}:
+      Bool.pick(Nat, String.eq(state, "completed"), Bool.pick(Nat, ready, 1n, 0n),
+        Bool.pick(Nat, String.eq(state, "failed"), 2n, Bool.pick(Nat, Bool.and(ready, Bool.or(String.eq(state, "interrupted"), String.eq(state, "stopped"))), 3n, 0n)))
+
+def Policy.fin.m(same: Bool, +post: M.State, +now: Nat, +thread: String, +mem: String) -> List<&2, M.Change>:
+  match same:
+    case True{}:
+      Nil{}
+    case False{}:
+      [Alert.set(post, now, thread, "", "", mem, "")]
+
+# no alert: the memory moves, if it did
+def Policy.fin.q(+post: M.State, +now: Nat, +thread: String, +mem: String, +old: String) -> List<&2, M.Change>:
+  Policy.fin.m(String.eq(mem, old), post, now, thread, mem)
+
+def Policy.fin.k(none: Bool, +kind: String, +key: String, +post: M.State, +now: Nat, +thread: String, +mem: String, +old: String) -> List<&2, M.Change>:
+  match none:
+    case True{}:
+      Policy.fin.q(post, now, thread, mem, old)
+    case False{}:
+      [Alert.set(post, now, thread, kind, key, mem, "")]
+
+def Policy.fin.n(n: Notice, +post: M.State, +now: Nat, +thread: String, +mem: String, +old: String) -> List<&2, M.Change>:
+  match n:
+    case Notice{+kind, +key}:
+      Policy.fin.k(String.is_empty(kind), kind, key, post, now, thread, mem, old)
+
+def Policy.fin.l(all: Bool, +post: M.State, +now: Nat, +thread: String, +failed: Bool, +mem: String, +old: String) -> List<&2, M.Change>:
+  match all:
+    case True{}:
+      Policy.fin.n(Notice.of(post, thread, failed, True{}), post, now, thread, mem, old)
+    case False{}:
+      Policy.fin.q(post, now, thread, mem, old)
+
+# an alert of kind (when its setting is on), else the quiet record; with
+# notify.all the older rule may still alert
+def Policy.settle.k(on: Bool, +kind: String, +post: M.State, +now: Nat, +thread: String, +mem: String, +old: String) -> List<&2, M.Change>:
+  match on:
+    case True{}:
+      [Alert.set(post, now, thread, kind, Notice.turn(thread), mem, "")]
+    case False{}:
+      Policy.fin.l(Policy.on(post, "all"), post, now, thread, String.eq(kind, "fail"), mem, old)
+
+def Policy.end.n(n: Nat, +post: M.State, +now: Nat, +thread: String, +pid: String, +mem: String, +failed: Bool) -> List<&2, M.Change>:
+  match n:
+    case 0n:
+      Policy.fin.l(Policy.on(post, "all"), post, now, thread, failed, mem, mem)
+    case 1n:
+      Policy.settle.k(Policy.on(post, "settled"), "done", post, now, thread, pid, mem)
+    case 2n:
+      Policy.settle.k(Policy.on(post, "settled"), "fail", post, now, thread, pid, mem)
+    case _:
+      Policy.fin.l(Policy.on(post, "all"), post, now, thread, failed, pid, mem)
+
+def Policy.end.p(p: Per, +post: M.State, +now: Nat, +thread: String, +state: String) -> List<&2, M.Change>:
+  match p:
+    case Per{+pid, _, _}:
+      Policy.end.n(Policy.decide(Policy.fresh(p, Alert.memory(post, thread)), Policy.ready(post, thread), state), post, now, thread, pid, Alert.memory(post, thread), String.eq(state, "failed"))
+
+# what a turn's end records (post: the state after the step; state:
+# completed, failed, interrupted or stopped): zero or one setting
+def Policy.end(+post: M.State, +now: Nat, +thread: String, +state: String) -> List<&2, M.Change>:
+  Policy.end.p(Policy.person(post, thread), post, now, thread, state)
+
+def Policy.ask.k(on: Bool, +post: M.State, +now: Nat, +thread: String, +tool: String, +detail: String) -> List<&2, M.Change>:
+  match on:
+    case True{}:
+      [Alert.set(post, now, thread, "ask", "ask-" ++ FR.Fr.local(thread), Alert.memory(post, thread),
+        Alert.text(Bool.pick(String, String.is_empty(tool), detail, tool ++ " " ++ detail), 180n))]
+    case False{}:
+      [Alert.set(post, now, thread, "", "", Alert.memory(post, thread), "")]
+
+# an ask opened for the person
+def Policy.ask(+post: M.State, +now: Nat, +thread: String, +tool: String, +detail: String) -> List<&2, M.Change>:
+  Policy.ask.k(Policy.on(post, "needs"), post, now, thread, tool, detail)
+
+def Policy.merged.m(+pid: String, +old: String) -> String:
+  Bool.pick(String, String.is_empty(pid), old, pid)
+
+def Policy.merged.a(on: Bool, +post: M.State, +now: Nat, +thread: String, +url: String, +mem: String) -> List<&2, M.Change>:
+  match on:
+    case True{}:
+      [Alert.set(post, now, thread, "merged", Notice.turn(thread), mem, Alert.text(url, 300n))]
+    case False{}:
+      [Alert.set(post, now, thread, "", "", mem, "")]
+
+def Policy.merged.k(on: Bool, p: Per, +post: M.State, +now: Nat, +thread: String, +url: String) -> List<&2, M.Change>:
+  match p:
+    case Per{+pid, _, _}:
+      Policy.merged.a(on, post, now, thread, url, Policy.merged.m(pid, Alert.memory(post, thread)))
+
+# the thread's branch merged: the work settled
+def Policy.merged(+post: M.State, +now: Nat, +thread: String, +url: String) -> List<&2, M.Change>:
+  Policy.merged.k(Policy.on(post, "settled"), Policy.person(post, thread), post, now, thread, url)
+
+def Alert.body.k(+kind: String, +text: String) -> String:
+  Bool.pick(String, String.eq(kind, "merged"), "Merged: " ++ Bool.pick(String, String.is_empty(text), "its branch", text),
+    Bool.pick(String, String.eq(kind, "ask"), "Needs you" ++ Bool.pick(String, String.is_empty(text), "", ": " ++ text), text))
+
+# the body of a record's alert when the record has text of its own
+def Alert.body(+r: AlertRec) -> String:
+  Alert.body.k(Alert.kind(r), Alert.rtext(r))
+
+# Policy examples (for the laws and tests)
+# ----------------------------------------
+
+def Policy.val.pick(hit: Bool, +v: String, +acc: String) -> String:
+  match hit:
+    case True{}:
+      v
+    case False{}:
+      acc
+
+# the first alert record in a list of changes ("" when none)
+def Policy.val(cs: List<&2, M.Change>, done: Bool, +acc: String) -> String:
+  match cs done:
+    case _ True{}:
+      acc
+    case Nil{} False{}:
+      acc
+    case M.SettingSet{+k, +v, _} <> t False{}:
+      Policy.val(t, String.starts_with(k, "alert."), Policy.val.pick(String.starts_with(k, "alert."), v, acc))
+    case _ <> t False{}:
+      Policy.val(t, False{}, acc)
+
+def Policy.said.k(none: Bool, +kind: String) -> String:
+  Bool.pick(String, none, "-", Bool.pick(String, String.is_empty(kind), "_", kind))
+
+def Policy.said.v(+v: String) -> String:
+  Policy.said.k(String.is_empty(v), Alert.kind(Alert.parse(v)))
+
+# what a list of changes records: "-" nothing, "_" a record with no kind,
+# else its kind
+def Policy.said(cs: List<&2, M.Change>) -> String:
+  Policy.said.v(Policy.val(cs, False{}, ""))
+
+# does a list of changes hold a record that alerts
+def Policy.loud(+cs: List<&2, M.Change>) -> Bool:
+  Bool.not(Bool.or(String.eq(Policy.said(cs), "-"), String.eq(Policy.said(cs), "_")))
+
+def Policy.demo.s(cs: List<&2, M.Change>) -> M.State:
+  M.State.replay(cs, M.State.empty())
+
+def Policy.demo.cat(xss: List<&2, List<&2, M.Change>>) -> List<&2, M.Change>:
+  match xss:
+    case Nil{}:
+      Nil{}
+    case xs <> t:
+      List.append(&2, M.Change, xs, Policy.demo.cat(t))
+
+# two threads: t1 (the person's) and t0 (its launcher in some examples)
+def Policy.demo.base() -> List<&2, M.Change>:
+  [M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "claude", "", 1n},
+   M.ThreadCreated{"t0", "p1", "boss", M.Local{}, "", "", "claude", "", 1n}]
+
+# a message to a thread and its turn running
+def Policy.demo.run(+th: String, +id: String, +text: String, +at: Nat) -> List<&2, M.Change>:
+  [M.MessagePosted{th, id, M.User{}, text, at}, M.TurnChanged{th, M.Running{}, at}]
+
+# the turn answers and completes
+def Policy.demo.done(+th: String, +at: Nat) -> List<&2, M.Change>:
+  [M.MessagePosted{th, "a" ++ Nat.show(at), M.Assistant{}, "ok", at}, M.TurnChanged{th, M.Completed{}, at}]
+
+def Policy.demo.fail(+th: String, +at: Nat) -> List<&2, M.Change>:
+  [M.TurnChanged{th, M.Failed{}, at}]
+
+# the person asked t1 something and its turn completed
+def Policy.demo.ask() -> List<&2, M.Change>:
+  Policy.demo.cat([Policy.demo.base(), Policy.demo.run("t1", "m1", "do it", 10n), Policy.demo.done("t1", 12n)])
+
+# the record a turn end writes, folded in
+def Policy.demo.fold(+s: M.State, cs: List<&2, M.Change>, more: List<&2, M.Change>) -> M.State:
+  M.State.replay(List.append(&2, M.Change, cs, more), s)
+
+# a bot (Bub, thread tb) in a room, woken by a message that is not the person's
+def Policy.demo.bot() -> List<&2, M.Change>:
+  [M.ThreadCreated{"tb", "", "Bub", M.Local{}, "", "", "claude", "", 100n}, M.BotSet{"b1", "Bub", "tb", 0n, "", 100n}, M.RoomSet{"r1", "ring", "b1", 100n}]
+
+def Policy.demo.room() -> List<&2, M.Change>:
+  Policy.demo.cat([Policy.demo.bot(), [M.RoomPosted{"p0", "r1", "you", "hi", 0n, 1000n}],
+    Policy.demo.run("tb", "u1", "[message from you in #ring]\nhi", 1000n),
+    [M.ActivityLogged{"tb", "a1", "tool", "mcp__backplane__room_post", "mcp__backplane__room_post", 1005n}, M.RoomPosted{"p1", "r1", "Bub", "hello", 2n, 1005n}],
+    Policy.demo.done("tb", 1006n)])
+
+def Policy.demo.count(bs: List<&2, Bool>) -> Nat:
+  match bs:
+    case Nil{}:
+      0n
+    case b <> t:
+      Nat.add(Bool.pick(Nat, b, 1n, 0n), Policy.demo.count(t))
+
+# the cases that alert no one: a bot woken by a room message that posts, a
+# routine's turn, a launched thread's end that reports to its launcher, a
+# delegated task's note, an intermediate end with background work out, a
+# stop (counted: the cases that alert)
+def Policy.demo.quiet() -> Nat:
+  +room = Policy.loud(Policy.end(Policy.demo.s(Policy.demo.room()), 1007n, "tb", "completed"))
+  +routine = Policy.loud(Policy.end(Policy.demo.s(Policy.demo.cat([Policy.demo.base(), Policy.demo.run("t1", "r1", "[routine: daily]\ngo", 10n), Policy.demo.done("t1", 12n)])), 13n, "t1", "completed"))
+  +launched = Policy.loud(Policy.end(Policy.demo.s(Policy.demo.cat([Policy.demo.base(), [M.ThreadLaunched{"t1", "t0", True{}, 2n}],
+    Policy.demo.run("t0", "m0", "do it", 3n), Policy.demo.run("t1", M.Link.id("t0", "m1"), "go", 4n), Policy.demo.done("t1", 12n)])), 13n, "t1", "completed"))
+  +task = Policy.loud(Policy.end(Policy.demo.s(Policy.demo.cat([Policy.demo.base(), Policy.demo.run("t1", "n1", "[Backplane] Task finished: x", 10n), Policy.demo.done("t1", 12n)])), 13n, "t1", "completed"))
+  +bg = Policy.loud(Policy.end(Policy.demo.s(Policy.demo.cat([Policy.demo.ask(), [M.WorkSet{"t1", "bg", "a\tx", 12n}]])), 13n, "t1", "completed"))
+  +stop = Policy.loud(Policy.end(Policy.demo.s(Policy.demo.cat([Policy.demo.base(), Policy.demo.run("t1", "m1", "do it", 10n), [M.TurnChanged{"t1", M.Interrupted{}, 12n}]])), 13n, "t1", "stopped"))
+  Policy.demo.count([room, routine, launched, task, bg, stop])
+
+def Policy.demo.once.k(+cs: List<&2, M.Change>, s2: M.State) -> String:
+  Policy.said(cs) ++ " " ++ Policy.said(Policy.end(s2, 16n, "t1", "completed"))
+
+# the person's message, a completed ready turn: one done; the turn that a
+# report wakes afterwards alerts nothing
+def Policy.demo.once() -> String:
+  +s1 = Policy.demo.s(Policy.demo.ask())
+  +cs = Policy.end(s1, 13n, "t1", "completed")
+  Policy.demo.once.k(cs, Policy.demo.fold(s1, cs, Policy.demo.cat([Policy.demo.run("t1", M.Link.id("t0", "r1"), "[Backplane] Launched thread \"w\" (t2) completed.", 14n), Policy.demo.done("t1", 15n)])))
+
+def Policy.demo.launch.k(+cs1: List<&2, M.Change>, s2: M.State) -> String:
+  Policy.said(cs1) ++ " " ++ Policy.said(Policy.end(s2, 17n, "t1", "completed"))
+
+# t1 launched t2 (reporting) and ends its own turn while t2 still runs:
+# nothing; t2 done, the turn its report wakes completes: one done
+def Policy.demo.launch() -> String:
+  +s1 = Policy.demo.s(Policy.demo.cat([Policy.demo.base(), [M.ThreadCreated{"t2", "p1", "w", M.Local{}, "", "", "claude", "", 1n}, M.ThreadLaunched{"t2", "t1", True{}, 2n}],
+    Policy.demo.run("t1", "m1", "do it", 10n), Policy.demo.run("t2", M.Link.id("t1", "m1"), "go", 10n), Policy.demo.done("t1", 12n)]))
+  +cs1 = Policy.end(s1, 13n, "t1", "completed")
+  Policy.demo.launch.k(cs1, Policy.demo.fold(s1, cs1, Policy.demo.cat([Policy.demo.done("t2", 14n),
+    Policy.demo.run("t1", M.Link.id("t2", "r1"), "[Backplane] Launched thread \"w\" (t2) completed.", 15n), Policy.demo.done("t1", 16n)])))
+
+def Policy.demo.fail.k(+cs: List<&2, M.Change>, s2: M.State) -> String:
+  Policy.said(cs) ++ " " ++ Policy.said(Policy.end(s2, 22n, "t1", "failed"))
+
+# a failed turn after the person's message alerts; a failed routine turn
+# after that message settled alerts nothing
+def Policy.demo.fail.p() -> String:
+  +s1 = Policy.demo.s(Policy.demo.cat([Policy.demo.base(), Policy.demo.run("t1", "m1", "do it", 10n), Policy.demo.fail("t1", 12n)]))
+  +s0 = Policy.demo.s(Policy.demo.ask())
+  +cs0 = Policy.end(s0, 13n, "t1", "completed")
+  Policy.demo.fail.k(Policy.end(s1, 13n, "t1", "failed"), Policy.demo.fold(s0, cs0, Policy.demo.cat([Policy.demo.run("t1", "r1", "[routine: daily]\ngo", 20n), Policy.demo.fail("t1", 21n)])))
+
+# an ask opened (needs on, the default; then off): the record's kind
+def Policy.demo.ask.k(+s: M.State) -> String:
+  Policy.said(Policy.ask(s, 20n, "t1", "Bash", "ls")) ++ " " ++ Policy.said(Policy.ask(Policy.demo.fold(s, Nil{}, [M.SettingSet{"notify.needs", "off", 19n}]), 20n, "t1", "Bash", "ls"))
+
+def Policy.demo.off.k(+cs: List<&2, M.Change>, +mem: String, s2: M.State) -> String:
+  Policy.said(cs) ++ " " ++ mem ++ " " ++ Policy.said(Policy.end(s2, 17n, "t1", "completed"))
+
+def Policy.demo.val(cs: List<&2, M.Change>) -> String:
+  Policy.val(cs, False{}, "")
+
+# with settled off: the completed case records no kind but the memory
+# moves; on again, the old episode does not alert
+def Policy.demo.off() -> String:
+  +s1 = Policy.demo.s(Policy.demo.cat([[M.SettingSet{"notify.settled", "off", 1n}], Policy.demo.ask()]))
+  +cs = Policy.end(s1, 13n, "t1", "completed")
+  Policy.demo.off.k(cs, Alert.rsettled(Alert.parse(Policy.demo.val(cs))), Policy.demo.fold(s1, cs, Policy.demo.cat([[M.SettingSet{"notify.settled", "on", 14n}],
+    Policy.demo.run("t1", M.Link.id("t0", "r1"), "[Backplane] note", 15n), Policy.demo.done("t1", 16n)])))
+
+def Policy.demo.all.k(+cs: List<&2, M.Change>) -> String:
+  Policy.said(cs) ++ " " ++ Alert.rkey(Alert.parse(Policy.demo.val(cs)))
+
+# with notify.all on, the room exchange's turn (the older rule alerts it)
+# alerts again, under the room's key
+def Policy.demo.all() -> String:
+  +s = Policy.demo.s(Policy.demo.cat([[M.SettingSet{"notify.all", "on", 1n}], Policy.demo.room()]))
+  Policy.demo.all.k(Policy.end(s, 1007n, "tb", "completed"))
+
+def Policy.demo.link() -> Bool:
+  Bool.or(Policy.direct("t:x:1", "do it"), Policy.direct("m1", "[routine: daily]\ngo"))

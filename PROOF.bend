@@ -8469,3 +8469,96 @@ def Laws.mnav_bot_thread(hub, id, thread, some, own):
   %Equal.sym(Bool, String.is_empty(thread), False{}, some) : {Hb.Hubs.nav.qual(hub, MBN.MBots.nav.k(_, id, thread)) == Hb.Hubs.id(hub, thread) : String}
   %Equal.sym(Bool, Hb.Hubs.nav.tag(thread), False{}, own) : {Bool.pick(String, _, thread, Hb.Hubs.id(hub, thread)) == Hb.Hubs.id(hub, thread) : String}
   {==}
+# ---- notif-policy ----
+
+def Laws.policy_no_alert_unless():
+  {==}
+
+def Laws.policy_settle_once():
+  {==}
+
+def Laws.policy_settle_after_launch():
+  {==}
+
+def Laws.policy_fail_person_only():
+  {==}
+
+def Laws.policy_ask_alerts():
+  {==}
+
+def Laws.policy_ask_alerted_out():
+  {==}
+
+def Laws.policy_ask_off_silent():
+  {==}
+
+def Laws.policy_merge_alerts():
+  {==}
+
+def Laws.policy_end_alerted():
+  {==}
+
+def Laws.policy_setting_off():
+  {==}
+
+def Laws.policy_all_legacy():
+  {==}
+
+def Laws.policy_link_not_person():
+  {==}
+
+def Laws.policy_person_direct():
+  {==}
+
+def Laws.notify_refuses_chatter():
+  {==}
+
+def Laws.notify_reminder_routine_only():
+  {==}
+
+def Laws.notify_needs_you_once():
+  {==}
+
+def Laws.notify_done_settles():
+  {==}
+
+def Laws.notify_setting_off():
+  {==}
+
+def Laws.desk_redraw_not_input():
+  {==}
+
+def Laws.desk_key_input(c, t, m, d, k, rest):
+  {==}
+
+def Laws.policy_phone_raises():
+  {==}
+
+def Laws.policy_phone_same_none():
+  {==}
+
+def Laws.policy_phone_empty_none():
+  {==}
+
+def Laws.policy_phone_unseen_none():
+  {==}
+
+def Laws.policy_phone_watched_held():
+  {==}
+
+def Laws.policy_phone_note_not_held():
+  {==}
+
+def Laws.policy_phone_ids_record():
+  {==}
+
+def Laws.policy_phone_frame_raises():
+  {==}
+
+def Laws.policy_phone_turn_end_quiet():
+  {==}
+
+def Laws.policy_phone_boot_quiet():
+  {==}
+
+# ---- end notif-policy ----

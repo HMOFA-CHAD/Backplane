@@ -12,6 +12,7 @@ import ./refs.bend as RF
 import ./emb.bend as EM
 import ./far.bend as FR
 import ./ubersync.bend as UBS
+import ./notice.bend as NO
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -85,6 +86,10 @@ type Out is Data:
   # the outbox of reports to launchers on other machines (the setting
   # launch.far, Lr.far.*) is due to be sent, in order
   LaunchFar{}
+  # an alert record of the thread was written (Alert.outs): the server
+  # reads it and pushes the alert, shows it on the desk used last and tells
+  # the owner's other machines (not persisted)
+  Alerted{thread: String}
 
 type Step is Data:
   Step{changes: List<&2, M.Change>, outs: List<&2, Out>}
@@ -136,6 +141,64 @@ def Island.outs.k(due: Bool, os: List<&2, Out>) -> List<&2, Out>:
 # a step's outputs, with the island pushed after them when the step moved it
 def Island.outs(+cs: List<&2, M.Change>, +os: List<&2, Out>) -> List<&2, Out>:
   Island.outs.k(Bool.and(Island.touch(cs), Bool.not(Island.told(os))), os)
+
+# Alerts
+# ------
+# Every step passes through here before it is stored (the server's
+# Hub.step.ok): an ask opened for the person gets its record in the same
+# step (NO.Policy.ask), and every record written with a kind tells the
+# server (Alerted), so alerts come from one place whatever path made them
+# (laws policy_ask_alerts, policy_alerted_*).
+
+def Alerts.has(cs: List<&2, M.Change>) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case M.AskOpened{_, _, _, _, _, _, _} <> _:
+      True{}
+    case _ <> t:
+      Alerts.has(t)
+
+def Alerts.asks(+post: M.State, cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case M.AskOpened{_, +th, _, +tool, +d, _, +at} <> t:
+      List.append(&2, M.Change, NO.Policy.ask(post, at, th, tool, d), Alerts.asks(post, t))
+    case _ <> t:
+      Alerts.asks(post, t)
+
+def Alerts.changes.k(has: Bool, +st: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  match has:
+    case True{}:
+      List.append(&2, M.Change, cs, Alerts.asks(M.State.replay(cs, st), cs))
+    case False{}:
+      cs
+
+# the step's changes with the records of the asks it opens
+def Alerts.changes(+st: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  Alerts.changes.k(Alerts.has(cs), st, cs)
+
+# a record that alerts: its setting key starts "alert." and its kind (the
+# value's first field) is not empty
+def Alerts.is(+k: String, +v: String) -> Bool:
+  Bool.and(String.starts_with(k, "alert."), Bool.not(String.starts_with(v, "\t")))
+
+def Alerts.add(hit: Bool, +k: String, os: List<&2, Out>) -> List<&2, Out>:
+  match hit:
+    case True{}:
+      List.append(&2, Out, os, [Alerted{String.drop(k, 6n)}])
+    case False{}:
+      os
+
+def Alerts.outs(cs: List<&2, M.Change>, os: List<&2, Out>) -> List<&2, Out>:
+  match cs:
+    case Nil{}:
+      os
+    case M.SettingSet{+k, +v, _} <> t:
+      Alerts.outs(t, Alerts.add(Alerts.is(k, v), k, os))
+    case _ <> t:
+      Alerts.outs(t, os)
 
 # Replies
 # -------
@@ -837,8 +900,9 @@ def Wt.start.k(go: Bool, +first: Bool, +t: M.Thread, +cwd: String, +queued: Stri
 def Merge.found(due: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +url: String) -> Step:
   match due:
     case True{}:
-      Step.reply(client, id, [M.ThreadMerged{thread, url, now},
-        M.ActivityLogged{thread, Hub.id("g", now, Hub.seq(s)), "info", "git", "merged" ++ Bool.pick(String, String.is_empty(url), "", ": " ++ url), now}])
+      Step.reply(client, id, List.append(&2, M.Change, [M.ThreadMerged{thread, url, now},
+        M.ActivityLogged{thread, Hub.id("g", now, Hub.seq(s)), "info", "git", "merged" ++ Bool.pick(String, String.is_empty(url), "", ": " ++ url), now}],
+        NO.Policy.merged(s, now, thread, url)))
     case False{}:
       Step.outs([Reply.ok(client, id)])
 
@@ -2466,14 +2530,19 @@ def Answer.demo(busy: Bool) -> M.State:
     M.MessagePosted{"t1", "m1", M.User{}, "[message from person@desk]\nhey", 2n}, M.MessagePosted{"t1", "m2", M.Assistant{}, "hi", 3n},
     M.TurnChanged{"t1", M.Completed{}, 3n}], Bool.pick(List<&2, M.Change>, busy, [M.WorkSet{"t1", "bg", "a\tx", 3n}], Nil{})), M.State.empty())
 
+# post: the state after the step; the policy's record (core/notice.bend)
+# is written with it
+def Ended.out.p(+post: M.State, +s: M.State, +now: Nat, +state: String, +thread: String, +cwd: String, +cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
+  Step{List.append(&2, M.Change, List.append(&2, M.Change, cs, Sum.at(RF.Sum.due(s, thread, now), thread, now)), NO.Policy.end(post, now, thread, state)),
+    List.append(&2, Out, os, TurnEnded{thread, state} <> Git{0, "", "step", thread, cwd, "", ""} <> Git{0, "", "checkpoint", thread, cwd, "", ""}
+      <> List.append(&2, Out, Sum.out(RF.Sum.due(s, thread, now), s, thread, "thread"), Answer.out(String.eq(state, "completed"), post, thread)))}
+
 def Ended.out.k(none: Bool, +s: M.State, +now: Nat, +state: String, +thread: String, +cwd: String, st: Step) -> Step:
   match none st:
     case True{} _:
       st
     case False{} Step{+cs, os}:
-      Step{List.append(&2, M.Change, cs, Sum.at(RF.Sum.due(s, thread, now), thread, now)),
-        List.append(&2, Out, os, TurnEnded{thread, state} <> Git{0, "", "step", thread, cwd, "", ""} <> Git{0, "", "checkpoint", thread, cwd, "", ""}
-          <> List.append(&2, Out, Sum.out(RF.Sum.due(s, thread, now), s, thread, "thread"), Answer.out(String.eq(state, "completed"), M.State.replay(cs, s), thread)))}
+      Ended.out.p(M.State.replay(cs, s), s, now, state, thread, cwd, cs, os)
 
 def Ended.out.s(+s: M.State, +now: Nat, +state: String, +thread: String, +cwd: String, st: Step) -> Step:
   Ended.out.k(String.is_empty(state), s, now, state, thread, cwd, st)
@@ -2869,7 +2938,6 @@ def Lr.n.key(+th: String) -> String:
 def Lr.may(+s: M.State, +from: String, +to: String) -> Bool:
   Bool.and(Bool.not(String.is_empty(to)),
     Bool.or(Bool.or(String.eq(M.Launch.by(s, from), to), String.eq(M.Launch.by(s, to), from)), UBS.Ub.chat.is(s, to)))
-
 
 # the uberbot's thread here or a replica's elsewhere: the thread that holds
 # its conversation now; anything else is itself
@@ -4711,3 +4779,32 @@ def Lr.demo.loop() -> M.State:
 
 def Lr.demo.loop.on() -> Bool:
   M.Launch.reports(M.State.replay(Queue.changes(Launch.tell(Lr.demo.loop(), 9n, "t1", Step{Lr.demo.end(), Nil{}})), Lr.demo.loop()), "t1")
+
+# Alerts: the laws' examples
+# --------------------------
+
+# the asks a step opens (needs on, or off): the Alerted outs it gets
+def Alerts.demo.asks(off: Bool) -> Nat:
+  +s = M.State.replay(Bool.pick(List<&2, M.Change>, off, [M.SettingSet{"notify.needs", "off", 1n}], Nil{}), NO.Policy.demo.s(NO.Policy.demo.ask()))
+  List.length(&2, Out, Alerts.outs(Alerts.changes(s, [M.AskOpened{"k1", "t1", "approval", "Bash", "ls", "", 20n}]), Nil{}))
+
+def Alerts.demo.merge.k(st: Step) -> String:
+  match st:
+    case Step{+cs, _}:
+      NO.Policy.said(cs) ++ " " ++ Nat.show(List.length(&2, Out, Alerts.outs(cs, Nil{})))
+
+# a merge found: its record's kind and the Alerted outs of the step
+def Alerts.demo.merge() -> String:
+  +s = NO.Policy.demo.s(NO.Policy.demo.ask())
+  Alerts.demo.merge.k(Merge.found(True{}, s, 30n, 0, "i", "t1", "http://x/pull/1"))
+
+def Alerts.demo.end.k(st: Step) -> String:
+  match st:
+    case Step{+cs, _}:
+      NO.Policy.said(cs) ++ " " ++ Nat.show(List.length(&2, Out, Alerts.outs(cs, Nil{})))
+
+# a turn that ends (the person's message, a completed ready turn): the
+# step's record and its Alerted out
+def Alerts.demo.end() -> String:
+  +s = NO.Policy.demo.s(NO.Policy.demo.cat([NO.Policy.demo.base(), NO.Policy.demo.run("t1", "m1", "do it", 10n)]))
+  Alerts.demo.end.k(Ended.out(s, 13n, "t1", Step{NO.Policy.demo.done("t1", 12n), Nil{}}))

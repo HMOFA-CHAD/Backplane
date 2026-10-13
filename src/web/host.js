@@ -305,7 +305,7 @@ function run(cmds) {
       notify(c);
     } else if (is(c, "Later")) {
       // a client action come due (the history playing)
-      setTimeout(() => dispatch(c.action, c.value), Number(c.ms));
+      setTimeout(() => dispatch(c.action, c.value, true), Number(c.ms));
     } else if (is(c, "Jump")) {
       jump = c.id; // after the next render, which opens its folds
       later();
@@ -359,12 +359,13 @@ function notify(c) {
 
 // run an action; answers whether it did anything (a key it did nothing
 // with stays the browser's)
-function dispatch(action, value) {
+function dispatch(action, value, timer) {
   const r = App.act(ui, action, value);
   ui = r.ui;
   const did = r.cmds && is(r.cmds, "Con");
   run(r.cmds);
-  deskCheck();
+  // a timer is not the person: only their input keeps this desk in use
+  if (!timer) deskCheck();
   if (action === "draft") laterPart();
   else later();
   return did;

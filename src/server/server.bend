@@ -3017,37 +3017,28 @@ def Hub.drop_dead(ts: List<&2, String>, +inbox: Chan(Msg)) -> IO(Unit):
 def Hub.island(+home: String, st: M.State, +inbox: Chan(Msg)) -> IO(Unit):
   IO.bind(List<&2, String>, Unit, PU.Push.island.dead(home, st), ds => Hub.drop_dead(ds, inbox))
 
-def Hub.phone(+home: String, st: M.State, +thread: String, +state: String, seen: Bool, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(List<&2, String>, Unit, PU.Push.turn_ended.dead(home, st, thread, state, seen), ds => Hub.drop_dead(ds, inbox))
+def Hub.phone(+home: String, st: M.State, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(List<&2, String>, Unit, PU.Push.turn_ended.dead(home, st, thread), ds => Hub.drop_dead(ds, inbox))
 
-def Desk.tell.go(quiet: Bool, +n: NO.Notice, +cl: List<&2, Client>, +c: U32, +st: M.State, +thread: String, +state: String) -> IO(List<&2, Client>):
-  match quiet:
-    case True{}:
-      IO.pure(List<&2, Client>, cl)
-    case False{}:
-      Wire.to(cl, c, DK.Desk.notify(thread, PU.Push.title(B.Hub.thread(st, thread)),
-        PU.Push.body(String.eq(state, "failed"), PU.Push.first(B.Task.last(st, thread))), NO.Notice.kind(n), NO.Notice.key(n)))
-
-def Desk.tell.k(+n: NO.Notice, +cl: List<&2, Client>, +c: U32, +st: M.State, +thread: String, +state: String) -> IO(List<&2, Client>):
-  Desk.tell.go(String.is_empty(NO.Notice.kind(n)), n, cl, c, st, thread, state)
-
-# a stopped turn (Stop, archive, delete) is no news to a desk; the phones'
-# island still hears of it (as one a desk sees: no alert, only the update)
-def Desk.to.stop(stop: Bool, m: Maybe<&2, U32>) -> Maybe<&2, U32>:
-  match stop:
+def Desk.lead.held(seen: Bool, m: Maybe<&2, U32>) -> Maybe<&2, U32>:
+  match seen:
     case True{}:
       None{}
     case False{}:
       m
 
-# a turn's end as a desktop notification, on the desk used last, when it
-# is news (core/notice.bend, as for phones) and no desk watches the thread
-def Desk.tell(m: Maybe<&2, U32>, +cl: List<&2, Client>, +st: M.State, +thread: String, +state: String) -> IO(List<&2, Client>):
+def Desk.tell.to(m: Maybe<&2, U32>, +cl: List<&2, Client>, +st: M.State, +thread: String, +rec: NO.AlertRec) -> IO(List<&2, Client>):
   match m:
     case Some{+c}:
-      Desk.tell.k(NO.Notice.of(st, thread, String.eq(state, "failed"), True{}), cl, c, st, thread, state)
+      Wire.to(cl, c, DK.Desk.notify(thread, PU.Push.title(B.Hub.thread(st, thread)), PU.Push.alert.body(st, thread, rec), NO.Alert.kind(rec), NO.Alert.rkey(rec)))
     case None{}:
       IO.pure(List<&2, Client>, cl)
+
+# an alert as a desktop notification on the desk used last: none when a
+# desk watches the thread and the alert is one a watcher holds (a note is
+# never held)
+def Desk.tell(seen: Bool, +cl: List<&2, Client>, +st: M.State, +thread: String, +rec: NO.AlertRec) -> IO(List<&2, Client>):
+  Desk.tell.to(Desk.lead.held(seen, DK.Desk.lead(Clients.looks(cl))), cl, st, thread, rec)
 
 # the reply now, or (for a request that waits on the user) parked until
 # the ask it opened is answered
@@ -6274,30 +6265,25 @@ def Far.note.go(ps: List<&2, BO.Peer>, +home: String, +n: J.Json) -> IO(Unit):
         IO.spawn(Unit, Far.note.job(i, n, home, u))
         Far.note.go(t, home, n)
 
-# (the title and preview are read only when the note goes: a turn's end
-# with no peer to tell reads nothing of its reply)
-def Far.note.k(send: Bool, h: Hub, +n: NO.Notice, +thread: String, +state: String) -> IO(Hub):
+# (the title and body are read only when the note goes: an alert with no
+# peer to tell reads nothing of its reply)
+def Far.note.k(send: Bool, h: Hub, +rec: NO.AlertRec, +thread: String) -> IO(Hub):
   match send h:
     case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
-        Far.note.go(Far.own.go(BO.World.peers(M.State.bots(st)), st, cfg), Cfg.home(cfg), FLV.FL.note.json(thread, NO.Notice.kind(n), NO.Notice.key(n),
-          PU.Push.title(B.Hub.thread(st, thread)), PU.Push.body(String.eq(state, "failed"), PU.Push.first(String.take(B.Task.last(st, thread), 4000n)))))
+        Far.note.go(Far.own.go(BO.World.peers(M.State.bots(st)), st, cfg), Cfg.home(cfg), FLV.FL.note.json(thread, NO.Alert.kind(rec), NO.Alert.rkey(rec),
+          PU.Push.title(B.Hub.thread(st, thread)), PU.Push.alert.body(st, thread, rec)))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case False{} _:
       IO.pure(Hub, h)
 
-def Far.note.n(+n: NO.Notice, h: Hub, +thread: String, +state: String, seen: Bool) -> IO(Hub):
+# an alert was raised here and nobody here is watching it: the owner's
+# other machines raise it too (once per machine, under the alert's one key)
+def Far.note.out(h: Hub, +rec: NO.AlertRec, +thread: String, seen: Bool) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      Far.note.k(Bool.and(Bool.and(Bool.not(seen), Bool.not(List.is_empty(&2, BO.Peer, Far.own.go(BO.World.peers(M.State.bots(st)), st, cfg)))), Bool.and(FR.Fr.thread.shared(st, thread), Bool.not(String.is_empty(NO.Notice.kind(n))))),
-        Hub{st, f, ls, cl, as, inbox, cfg, note}, n, thread, state)
-
-# a turn ended here and nobody here is watching it: the owner's other
-# machines raise it too (once per machine, under the alert's one key)
-def Far.note.out(h: Hub, +thread: String, +state: String, seen: Bool) -> IO(Hub):
-  match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Far.note.n(NO.Notice.of(st, thread, String.eq(state, "failed"), True{}), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, state, seen)
+      Far.note.k(Bool.and(Bool.and(Bool.not(seen), Bool.not(List.is_empty(&2, BO.Peer, Far.own.go(BO.World.peers(M.State.bots(st)), st, cfg)))), FR.Fr.thread.shared(st, thread)),
+        Hub{st, f, ls, cl, as, inbox, cfg, note}, rec, thread)
 
 # the phones of this hub hear of a far turn's end
 def Far.note.push(+home: String, st: M.State, +thread: String, +title: String, +body: String, +akey: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -7056,15 +7042,24 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         IO.spawn(Unit, Hub.island(Cfg.home(cfg), st, inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.TurnEnded{+thread, +state}:
+    # the island only: the alert, if the turn raised one, is its own out
+    # (Alerted), written with the thread's record
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.TurnEnded{+thread, _}:
+      do IO<Hub>:
+        IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, inbox))
+        Self.post(inbox, Release{})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    # an alert record was written: the phones' push, the desk used last and
+    # the owner's other machines, unless a desk in use is showing the thread
+    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.Alerted{+thread}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        +stop : Bool = String.eq(state, "stopped")
-        +seen : Bool = Bool.or(stop, DK.Desk.seen(Clients.looks(cl), thread, now))
-        cl2 : List<&2, Client> <- Desk.tell(Desk.to.stop(stop, DK.Desk.to(Clients.looks(cl), thread, now)), cl, st, thread, state)
-        IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, state, seen, inbox))
-        Self.post(inbox, Release{})
-        Far.note.out(Hub{st, f, ls, cl2, as, inbox, cfg, note}, thread, state, seen)
+        +rec : NO.AlertRec = NO.Alert.get(st, thread)
+        +seen : Bool = Bool.and(NO.Alert.holds(NO.Alert.kind(rec)), DK.Desk.seen(Clients.looks(cl), thread, now))
+        PU.Push.held(seen, thread)
+        cl2 : List<&2, Client> <- Desk.tell(seen, cl, st, thread, rec)
+        IO.spawn(Unit, Far.note.push(Cfg.home(cfg), st, thread, PU.Push.title(B.Hub.thread(st, thread)), PU.Push.alert.body(st, thread, rec), DK.Desk.hold(seen, NO.Alert.rkey(rec)), inbox))
+        Far.note.out(Hub{st, f, ls, cl2, as, inbox, cfg, note}, rec, thread, seen)
     # a bot's answer to a person elsewhere, captured by the step that left
     # its thread ready (hub.bend's Answer.out)
     # reports to launchers on other machines, sent in order
@@ -7482,16 +7477,24 @@ def Hub.step.go(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out
     r : Hub & Wrote <- Hub.commit.w(cs2, h)
     Hub.step.wrote(r, cs2, os, M.State.seq(st))
 
+def Hub.step.b(st: M.State, h: Hub, +cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
+  Hub.step.go(st, h, cs, B.Island.outs(cs, B.Alerts.outs(cs, os)))
+
+# the asks the step opens get their alert records, and every record written
+# tells the server (hub.bend's Alerts)
+def Hub.step.a(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
+  Hub.step.b(st, h, B.Alerts.changes(st, cs), os)
+
 def Hub.step.k(p: M.State & Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   (st, h) = p
-  Hub.step.go(st, h, cs, os)
+  Hub.step.a(st, h, cs, os)
 
 # a step's changes are stored (with the pending counts they move), then
 # its effects run; answers whether it was stored
 def Hub.step.ok(h: Hub, s: B.Step) -> IO(Hub & Bool):
   match s:
     case B.Step{+cs, +os}:
-      Hub.step.k(Hub.state(h), cs, B.Island.outs(cs, os))
+      Hub.step.k(Hub.state(h), cs, os)
 
 def Hub.step.drop(r: Hub & Bool) -> Hub:
   (h, _) = r
@@ -8316,8 +8319,8 @@ def Far.note.in.k(+o: J.Json, h: Hub, +link: String, +reply: Chan(List<&2, U32>)
       do IO<Hub>:
         +now : Nat <- Now.nat()
         +farid : String = FR.Fr.id(link, J.Json.get_str(o, "th", ""))
-        +seen : Bool = DK.Desk.seen(Clients.looks(cl), farid, now)
-        cl2 : List<&2, Client> <- Far.note.desk(DK.Desk.to(Clients.looks(cl), farid, now), cl, farid, o)
+        +seen : Bool = Bool.and(NO.Alert.holds(J.Json.get_str(o, "kind", "")), DK.Desk.seen(Clients.looks(cl), farid, now))
+        cl2 : List<&2, Client> <- Far.note.desk(Desk.lead.held(seen, DK.Desk.lead(Clients.looks(cl))), cl, farid, o)
         IO.spawn(Unit, Far.note.push(Cfg.home(cfg), st, farid, J.Json.get_str(o, "title", ""), J.Json.get_str(o, "body", ""), DK.Desk.hold(seen, J.Json.get_str(o, "key", "")), inbox))
         Bot.answer(reply, Bot.json("200 OK", "{\"ok\":true}"))
         return Hub{st, f, ls, cl2, as, inbox, cfg, note}
