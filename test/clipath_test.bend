@@ -26,6 +26,7 @@ def main() -> IO(Unit):
       Show.list(CP.CliPath.candidates("/home/h", ["/usr/local/bin", "/home/h/.cargo/bin", "/home/h/.local/bin", "/home/h/.nvm/versions/node/v20.1.0/bin", "/home/h/.volta/bin"])),
       "/home/h/.nvm/versions/node/v20.1.0/bin|/home/h/.volta/bin|/home/h/.local/bin|/home/h/.cargo/bin|/usr/local/bin")
     C.Check.str("candidates macos", Show.list(CP.CliPath.candidates("/Users/k", ["/opt/homebrew/bin", "/usr/local/bin", "/Users/k/.bun/bin", "/elsewhere"])), "/Users/k/.bun/bin|/opt/homebrew/bin|/usr/local/bin")
+    C.Check.str("candidates nvm minor and patch order", Show.list(CP.CliPath.candidates("/h", ["/h/.nvm/versions/node/v24.9.9/bin", "/h/.nvm/versions/node/v24.13.0/bin", "/h/.nvm/versions/node/v24.13.1/bin"])), "/h/.nvm/versions/node/v24.13.1/bin|/h/.nvm/versions/node/v24.13.0/bin|/h/.nvm/versions/node/v24.9.9/bin")
     C.Check.str("candidates none", Show.list(CP.CliPath.candidates("/home/h", Nil{})), "")
     C.Check.str("candidates other home's nvm ignored", Show.list(CP.CliPath.candidates("/home/h", ["/home/z/.nvm/versions/node/v20.1.0/bin"])), "")
     C.Check.str("parse", Show.probe(CP.CliPath.parse("login\t/a:/b\ndir\t/x\ndir\t/y\n")), "/a:/b#/x|/y")
