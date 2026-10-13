@@ -259,8 +259,22 @@ def View.open.mech(mech: Bool, a: U.Act) -> U.Act:
     case False{} _:
       a
 
+# (back from the Review tab to the board or schematic, the client's view
+# comes back too, with a comparison still open: client.bend's Rv.back)
+def View.open.back.k(a: U.Act, +v: String) -> U.Act:
+  match a:
+    case U.Act{+u, cs}:
+      View.join(View.open.k(u, v), cs)
+
+def View.open.back(back: Bool, +u: U.Ui, +v: String) -> U.Act:
+  match back:
+    case True{}:
+      View.open.back.k(U.Ui.act(u, "view-kind", v), v)
+    case False{}:
+      View.open.k(u, v)
+
 def View.open.go(+u: U.Ui, +v: String) -> U.Act:
-  View.open.mech(String.eq(v, "mech"), View.open.k(u, v))
+  View.open.mech(String.eq(v, "mech"), View.open.back(Bool.and(String.eq(U.Ui.view_get(u, "view.kind"), "review"), Bool.or(String.eq(v, "board"), String.eq(v, "schematic"))), u, v))
 
 # (Files asks the hub for the folder last shown)
 def View.open.rv(rv: Bool, +u: U.Ui, +v: String) -> U.Act:
