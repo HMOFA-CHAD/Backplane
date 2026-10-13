@@ -2,6 +2,7 @@ import Base
 import ../../src/core/board.bend as B
 import ../../src/core/schematic.bend as SC
 import ../../src/core/plot.bend as P
+import ../../src/server/argv.bend as AV
 
 # plot_bench FILE: how long a board (or .kicad_sch) takes to become the
 # phone's first message, by stage, and how big that message is
@@ -58,7 +59,7 @@ def runs(n: Nat, +path: String) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +path : String = Maybe.default(&1, String, List.head(&1, String, args), "x")
     n : Result<&1, &1, U32 & String, String> <- IO.get_env("BACKPLANE_BENCH_RUNS")
     runs(Maybe.default(&2, Nat, Nat.read(Result.default(&1, &1, U32 & String, String, n, "1")), 1n), path)

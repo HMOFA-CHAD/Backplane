@@ -4,6 +4,7 @@ import ../../src/core/utf8.bend as U8
 import ../../src/core/client.bend as U
 import ../../src/app/nui.bend as S
 import ../../src/app/layout.bend as L
+import ../../src/server/argv.bend as AV
 
 # Hit regions another one covers: lays a frame out from an event log (as
 # ui_snap does, with the timeline's memo) and samples every region on a
@@ -177,5 +178,5 @@ def go(+as: List<&2, String>) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     go(copy(args))

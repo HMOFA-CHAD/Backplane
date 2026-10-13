@@ -10,6 +10,7 @@ import ../../src/gfx/tiles.bend as TI
 import ../../src/server/server.bend as S
 import ../../src/core/store.bend as ST
 import ../../src/core/json.bend as J
+import ../../src/server/argv.bend as AV
 
 # Scrolling the timeline, timed: each wheel notch goes through the same
 # steps as in the app (the event, the timeline memo, layout, the tiles
@@ -196,7 +197,7 @@ def main.k(none: Bool, +file: String, +ty: L.Ty) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +file : String = path(args)
     +ty : L.Ty <- L.Ty.load()
     main.k(String.is_empty(file), file, ty)

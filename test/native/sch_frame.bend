@@ -4,6 +4,7 @@ import ../../src/core/schematic.bend as Sch
 import ../../src/app/viewer.bend as V
 import ../../src/gfx/raster.bend as R
 import ../../src/gfx/draw.bend as D
+import ../../src/server/argv.bend as AV
 
 # Headless schematic render: parse, fit, rasterize, write a PPM.
 #   sch_frame FILE.kicad_sch [OUT.ppm] [W H] [x0 y0 x1 y1 (mm, to zoom)]
@@ -89,7 +90,7 @@ def strs(xs: List<String>) -> List<&2, String>:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +xs : List<&2, String> = strs(args)
     f : File <- IO.try(File, File.open(arg.s(xs, 0n, "x"), "r"))
     r : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_bytes(f, 200000000)

@@ -2,6 +2,7 @@ import Base
 import ../../src/core/model.bend as M
 import ../../src/core/client.bend as U
 import ../../src/core/subs.bend as SB
+import ../../src/server/argv.bend as AV
 
 # What a sidebar frame asks of the whole state, on a big one: 100
 # projects, 3000 threads, 5000 asks, 800 delegated tasks. "old" walks the
@@ -137,4 +138,4 @@ def Bench.main(xs: List<&1, String>) -> IO(Unit):
       Bench.run(m, M.Switch.num(n, 0n))
 
 def main() -> IO(Unit):
-  IO.bind(List<&1, String>, Unit, IO.args(), xs => Bench.main(xs))
+  IO.bind(List<&1, String>, Unit, AV.Argv.args(), xs => Bench.main(xs))

@@ -1,6 +1,7 @@
 import Base
 import ../../src/app/rvw.bend as RW
 import ../../src/core/rview.bend as RV
+import ../../src/server/argv.bend as AV
 
 # The window's side of a remote hub (src/app/rvw.bend) against a running hub:
 # one round of RW.Rvw.sync, then a version of a file of a commit.
@@ -33,6 +34,6 @@ def copy(xs: List<&1, String>) -> List<&2, String>:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<&1, String> <- IO.args()
+    args : List<&1, String> <- AV.Argv.args()
     +xs : List<&2, String> = copy(args)
     run(arg(xs, 0n), arg(xs, 2n), arg(xs, 1n), arg(xs, 5n), arg(xs, 3n), arg(xs, 4n))

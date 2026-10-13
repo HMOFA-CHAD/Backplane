@@ -10,6 +10,7 @@ import ../../src/gfx/raster.bend as R
 import ../../src/gfx/tiles.bend as TI
 import ../../src/app/bots.bend as BV
 import ../../src/app/cats.bend as CA
+import ../../src/server/argv.bend as AV
 
 # Many agents streaming, as the window sees it: 50 running threads, and a
 # stream of hub messages dealt round robin over them (text deltas; every
@@ -191,7 +192,7 @@ def pass(+name: String, +sel: String, +n: Nat, +ty: L.Ty, +base: U.Ui) -> IO(Uni
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +as : List<&2, String> = copy(args)
     +n : Nat = Maybe.default(&2, Nat, Nat.read(arg(as, 0n)), 1000n)
     +ty : L.Ty <- L.Ty.load()

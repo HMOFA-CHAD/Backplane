@@ -9,6 +9,7 @@ import ../../src/core/glb.bend as G
 import ../../src/server/server.bend as S
 import ../../src/app/parts3.bend as PT
 import ../../src/server/host.bend as H
+import ../../src/server/argv.bend as AV
 
 # A board drawn in 3D straight from its .kicad_pcb, its models loaded the
 # way the viewer loads them (one after another here), timed.
@@ -149,7 +150,7 @@ def go(r: File & Result<&1, &1, U32 & String, List<&2, U32>>, +w: U32, +h: U32, 
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    as : List<&1, String> <- IO.args()
+    as : List<&1, String> <- AV.Argv.args()
     +args : List<&2, String> = many(as)
     +path : String = Maybe.default(&2, String, List.head(&2, String, args), "board.kicad_pcb")
     f : File <- IO.try(File, File.open(path, "r"))

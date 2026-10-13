@@ -27,7 +27,6 @@ import ../core/review.bend as RVW
 import ../core/emb.bend as EM
 import ../core/qr.bend as QR
 import ../core/onboard.bend as OB
-import ../core/review.bend as RV
 
 # Ui -> Node. Every decision (order, shelf, status) comes from core defs
 # with laws behind them; this file only lays them out.
@@ -1608,13 +1607,13 @@ def View.hist.menu(+u: U.Ui) -> D.Node:
 # (plot2d.js puts them where the plot's own transform says: data-x, data-y in
 # mm), the note being written and the open comment as cards. A right click
 # on the plot starts a note (plot2d.js, "rv-note" with the place).
-def View.rc.pin(p: RV.Pin, +sel: String) -> D.Node:
+def View.rc.pin(p: RVW.Pin, +sel: String) -> D.Node:
   match p:
-    case RV.Pin{+id, +x, +y, _, _, +res, +cnt}:
+    case RVW.Pin{+id, +x, +y, _, _, +res, +cnt}:
       D.El{"button", "rcp:" ++ id, [D.At{"class", "rc-pin" ++ Bool.pick(String, res, " res", "") ++ Bool.pick(String, String.eq(id, sel), " sel", "")}, D.At{"data-x", F32.show(x)}, D.At{"data-y", F32.show(y)},
         D.At{"data-value", id}, D.At{"title", "Open the comment"}, D.On{"click", "rv-pin"}], Bool.pick(List<&2, D.Node>, Nat.is_gt(cnt, 0n), [D.Txt{Nat.show(cnt)}], Nil{})}
 
-def View.rc.pins(ps: List<&2, RV.Pin>, +sel: String) -> List<&2, D.Node>:
+def View.rc.pins(ps: List<&2, RVW.Pin>, +sel: String) -> List<&2, D.Node>:
   match ps:
     case Nil{}:
       Nil{}

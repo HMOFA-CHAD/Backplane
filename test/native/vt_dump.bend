@@ -2,6 +2,7 @@ import Base
 import ../../src/core/vt.bend as V
 import ../../src/server/host.bend as H
 import ../../src/server/pty.bend as P
+import ../../src/server/argv.bend as AV
 
 # Runs a command on an 80x24 pty for a moment (then SIGKILL), feeds what it
 # drew into the emulator, and prints the screen: a quick look at how real
@@ -84,5 +85,5 @@ def run(xs: List<&2, String>) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    xs : List<String> <- IO.args()
+    xs : List<String> <- AV.Argv.args()
     run(args.copy(xs))

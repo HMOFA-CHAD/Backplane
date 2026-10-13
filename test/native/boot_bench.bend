@@ -10,6 +10,7 @@ import ../../src/app/theme.bend as T
 import ../../src/gfx/raster.bend as R
 import ../../src/gfx/tiles.bend as TI
 import ../../src/app/win.bend as W
+import ../../src/server/argv.bend as AV
 
 # Start-up, timed step by step on a real event log, as the app does it
 # before its first frame: read, parse, replay, the log message for the
@@ -234,7 +235,7 @@ def same_frame(+ty: L.Ty, +u1: U.Ui, +u2: U.Ui, +th: String) -> Bool:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +file : String = path(args)
     +t0 : Nat <- IO.now()
     +bs : List<&2, U32> <- S.Files.read(file)

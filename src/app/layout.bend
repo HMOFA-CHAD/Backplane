@@ -38,7 +38,6 @@ import ../core/layers.bend as LY
 import ../core/tools.bend as TO
 import ../core/emb.bend as EM
 import ../core/onboard.bend as OB
-import ../core/review.bend as RV
 
 # Nui -> draw ops and hit regions. Ops are gathered bottom-up (paint
 # order) and reversed once into the topmost-first order the rasterizer
@@ -4173,11 +4172,11 @@ def Rcw.pin.at(+sx: F32, +sy: F32, +ty: Ty, +id: String, +res: Bool, +cnt: Nat, 
       Bool.and(F32.is_ge(sy, 62.0), F32.is_le(sy, U32.to_f32(U32.dim(y1, 10))))),
     ty, id, res, cnt, sel, D.Draw.floor(sx), D.Draw.floor(sy))
 
-def Rcw.pins(ps: List<&2, RV.Pin>, +ty: Ty, +v: V.View, +sel: String, +x0: U32, +x1: U32, +y1: U32) -> Out:
+def Rcw.pins(ps: List<&2, RVW.Pin>, +ty: Ty, +v: V.View, +sel: String, +x0: U32, +x1: U32, +y1: U32) -> Out:
   match ps:
     case Nil{}:
       Out.none()
-    case RV.Pin{+id, +px, +py, _, _, +res, +cnt} <> t:
+    case RVW.Pin{+id, +px, +py, _, _, +res, +cnt} <> t:
       Out.cat(Rcw.pins(t, ty, v, sel, x0, x1, y1),
         Rcw.pin.at(V.View.x(v, px), V.View.y(v, py), ty, id, res, cnt, String.eq(id, sel), x0, x1, y1))
 

@@ -2,6 +2,7 @@ import Base
 import ../check.bend as C
 import ../../src/server/proc.bend as P
 import ../../src/server/gh.bend as GH
+import ../../src/server/argv.bend as AV
 
 # gh with several accounts, against a fake gh (fake) or the real one
 # (real, read-only: lists this repository's merged pull requests).
@@ -87,6 +88,6 @@ def go(args: List<&1, String>) -> IO(Bool):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<&1, String> <- IO.args()
+    args : List<&1, String> <- AV.Argv.args()
     ok : Bool <- go(args)
     finish(ok)

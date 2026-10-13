@@ -3,6 +3,7 @@ import ../../src/core/client.bend as U
 import ../../src/core/model.bend as M
 import ../../src/core/json.bend as J
 import ../../src/core/utf8.bend as U8
+import ../../src/server/argv.bend as AV
 
 # The sidebar's rows, timed on a real log: Side.rows and its parts, 20
 # times each (ms for all 20).
@@ -82,7 +83,7 @@ def rep.all(+r: Nat, +st: M.State, +now: Nat) -> Nat:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +as : List<&2, String> = copy(args)
     bs : List<&2, U32> <- read(arg(as, 0n))
     +u : U.Ui = real(bs)

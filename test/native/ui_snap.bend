@@ -7,6 +7,7 @@ import ../../src/app/layout.bend as L
 import ../../src/gfx/raster.bend as R
 import ../../src/gfx/draw.bend as D
 import ../../src/app/theme.bend as T
+import ../../src/server/argv.bend as AV
 
 # A frame of the window from an event log and an info message, as a PPM,
 # with no window (its timeline and its theme as the window draws them): `ui_snap EVENTS INFO THREAD FLAGS OUT` (the INFO file may hold
@@ -110,5 +111,5 @@ def go(+as: List<&2, String>) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     go(copy(args))

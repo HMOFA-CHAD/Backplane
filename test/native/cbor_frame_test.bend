@@ -5,6 +5,7 @@ import ../../src/core/cbor.bend as CB
 import ../../src/server/kicad.bend as K
 import ../../src/core/diff.bend as DF
 import ../../src/core/outbox.bend as OB
+import ../../src/server/argv.bend as AV
 
 # host.c's Json.cbor_frame (the bytes Sock.send_cbor sends) against Bend's
 # W.Ws.cbor, the same frame: every line of an event log wrapped as a join
@@ -128,7 +129,7 @@ def Cf.items.report(+what: String, +bad: Nat, +n: Nat) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +path : String = Cf.path(args)
     e : Nat <- Cf.all(Cf.edges(), 0n)
     IO.print("edge cases: " ++ Nat.show(e) ++ " differ of " ++ Nat.show(List.length(&2, String, Cf.edges())))

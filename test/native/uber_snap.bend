@@ -8,6 +8,7 @@ import ../../src/app/cats.bend as CA
 import ../../src/app/theme.bend as T
 import ../../src/gfx/raster.bend as R
 import ../../src/gfx/draw.bend as D
+import ../../src/server/argv.bend as AV
 
 # The bots' screens with no window: a made-up log (a project, four bots,
 # two rooms, posts, memory, routines, webhooks, a space), each screen as a
@@ -127,7 +128,7 @@ def timed(+k: Nat, +ty: L.Ty, +n: N.Nui, +acc: Nat) -> Nat:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    args : List<String> <- IO.args()
+    args : List<String> <- AV.Argv.args()
     +as : List<&2, String> = copy(args)
     +dir : String = arg(as, 0n, "/tmp")
     +k : Nat = Maybe.default(&2, Nat, Nat.read(arg(as, 1n, "40")), 40n)
