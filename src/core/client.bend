@@ -6494,8 +6494,17 @@ def Rc.sync.of(a: Act) -> Act:
     case Act{+u, cs}:
       Rc.sync.k(Bool.and(Rc.need(u), Bool.or(Bool.not(String.is_empty(Rc.at(u))), Bool.not(List.is_empty(&2, RVW.Comment, Rc.all(u))))), Act{u, cs})
 
+# (a note sent before the hub named the project's own file was kept with
+# no file: the viewer on that file shows it too)
+def Rc.pins.k(own: Bool, +u: Ui) -> List<&2, RVW.Pin>:
+  match own:
+    case True{}:
+      List.append(&2, RVW.Pin, RVW.Review.pins(Rc.all(u), Rc.rel(u), ""), RVW.Review.pins(Rc.all(u), "", ""))
+    case False{}:
+      RVW.Review.pins(Rc.all(u), Rc.rel(u), "")
+
 def Rc.pins(+u: Ui) -> List<&2, RVW.Pin>:
-  RVW.Review.pins(Rc.all(u), Rc.rel(u), "")
+  Rc.pins.k(Bool.and(String.is_empty(HI.Hist.family(Ui.view_get(u, "view.path"))), Bool.not(String.is_empty(Rc.rel(u)))), u)
 
 def Rc.sel(+u: Ui) -> String:
   Ui.scratch(u, "@rc.sel:" ++ Ui.sel(u))

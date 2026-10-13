@@ -138,3 +138,5 @@ def main() -> IO(Unit):
     C.Check.str("a resolve needs its id", Bool.show(RV.Review.op.ok("resolve", J.Json.obj(Nil{}))) ++ Bool.show(RV.Review.op.ok("resolve", J.Json.obj([J.KV{"id", J.Str{"c1"}}]))), "FalseTrue")
     C.Check.str("an unknown op is refused", Bool.show(RV.Review.op.ok("burn", J.Json.obj([J.KV{"id", J.Str{"c1"}}]))), "False")
     C.Check.str("the agent's tool lists them", String.take(res.body(MC.Mcp.review.list(RV.Review.of_state(st2([add("c1", "b.kicad_pcb", "Move R1", 2n)]), "t"))), 28n), "True {\"open\":1,\"resolved\":0,")
+    C.Check.str("a note kept with no file shows on the project's own board", Nat.show(List.length(&2, RV.Pin, U.Rc.pins(U.Ui.view_put(with([add("c9", "", "early note", 2n)]), "board", "")))), "0")
+    C.Check.str("and once the hub named the file", Nat.show(List.length(&2, RV.Pin, U.Rc.pins(U.Ui.info_set(U.Ui.view_put(with([add("c9", "", "early note", 2n)]), "board", ""), "refs:t", "{\"pcb\":\"/r/b.kicad_pcb\"}")))), "1")
