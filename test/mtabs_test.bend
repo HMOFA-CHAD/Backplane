@@ -118,7 +118,7 @@ def main() -> IO(Unit):
     C.Check.str("routines: one row", routines(one(box()), "title"), "Digest;")
     C.Check.str("routines: opens its bot's tab", routines(one(box()), "value"), "box:3787|b1|routines;")
     C.Check.str("routines: its bot", routines(one(box()), "bot"), "Kit;")
-    C.Check.str("routines: when", routines(one(box()), "sub"), "Every day at 09:00;")
+    C.Check.str("routines: when", routines(one(box()), "sub"), "daily at 09:00;")
     C.Check.str("routines: the hub's id on the row", routines(two(), "id"), "box:3787|rt1;")
     C.Check.str("routines: none on a hub without", routines(one(lap()), "id"), "")
     C.Check.str("no local view: the hub's, projects", view(one(box())), "projects")

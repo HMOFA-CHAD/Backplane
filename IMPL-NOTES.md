@@ -50,4 +50,11 @@ Android (`mobile/android/.../mobile`)
 | `drafts`, `cid`, `asked-notify` | app internals | unchanged (not user-facing) |
 
 ## Results
-(filled in at the end)
+On the tree rebased onto origin/main (#83, #85, #86, #84, #89, #90, #91):
+- `bend test/mtabs_test.bend`: 27 ok, 0 FAIL. mnav 34 ok, mbots 44 ok, hubs 78 ok, mplane 35 ok, onboard 96 ok (no FAIL).
+- `scripts/check.sh`: status 0 (336 files, "proof: overlapped with check, total 82s"; the "SOME PROOFS FAIL / 30 defs rely on unsafe or foreign code" lines are the known foreign-effect notice). Laws 1430 = main's 1424 + 6.
+- `scripts/build-mobile.sh`: bridge.js 2630918 bytes, `dist/backplane-android.apk` 18874988 bytes, status 0.
+- Swift: xcodebuild Debug simulator build on hs-mac-mini (`backplane-ios-snappy-a3`) compiles (no errors). Kotlin: `gradlew compileDebugKotlin` clean.
+- Screenshots (iPhone 17 Pro simulator `bp-snappy-a3`, light and dark, against a throwaway hub on port 3813 on a copy of the sandbox log; the 3811 sandbox hub was down, and I did not start it): `build/shots/{home,threads,bots,routines,settings}-{light,dark}.png`, `build/shots/hub-settings-dark.png`.
+- `Hubs.calm` closes the hub settings page's flag already (it is the existing `settings` flag); no new overlay flag or scratch was added, and `@local.view` survives it (test line).
+- Not done: Android was compiled, not run on a device or emulator; the Routines | Board segment (no `board` in the screen yet).
