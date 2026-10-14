@@ -8730,19 +8730,6 @@ def Laws.deploy_cut_requester_no_second():
 def Laws.deploy_cancel_clears():
   {==}
 
-# routines-cal
-def Laws.cal_patch_only_given():
-  {==}
-
-def Laws.cal_update_asks():
-  {==}
-
-def Laws.cal_delete_asks():
-  {==}
-
-def Laws.cal_id_no_slash():
-  {==}
-
 # harness-coord: locks
 
 def Laws.lock_exclusive(l):
