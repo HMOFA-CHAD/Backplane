@@ -40,14 +40,27 @@ trap cleanup 0
 trap 'exit 129' 1
 trap 'exit 130' 2
 trap 'exit 143' 15
+lost_note() { case $(printf '%s' "$1" | tr -d ' \n\r\t') in *'"requeued":true'*) echo 'bp-lock: the hub had lost this waiter; queued again' >&2 ;; esac; }
 # The wait belongs to this helper, never to an agent's MCP call.
-n=0
+n=0 down=0
 while ! held "$answer"; do
   sleep 1
   n=$((n + 1))
-  if [ "$n" -ge 30 ]; then post renew >/dev/null; n=0; fi
-  answer=$(post status) || { echo 'hub disappeared while waiting' >&2; exit 1; }
-  case "$answer" in *'"error"'*) echo "$answer" >&2; exit 1 ;; esac
+  if [ "$n" -ge 30 ]; then
+    n=0
+    # A hub that is restarting is not the end of the wait: status retries below.
+    if r=$(post renew 2>/dev/null); then lost_note "$r"; fi
+  fi
+  if next=$(post status 2>/dev/null); then
+    down=0
+    answer=$next
+    case "$answer" in *'"error"'*) echo "$answer" >&2; exit 1 ;; esac
+    lost_note "$answer"
+  else
+    [ "$down" -gt 0 ] || down=$(date +%s)
+    # Give a restarting hub two minutes before giving up.
+    [ $(($(date +%s) - down)) -lt 120 ] || { echo 'hub disappeared while waiting' >&2; exit 1; }
+  fi
 done
 "$@" &
 cmd_pid=$!

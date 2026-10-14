@@ -8737,9 +8737,9 @@ def Laws.deploy_cancel_clears():
 
 def Laws.lock_exclusive(l):
   match l:
-    case LCK.NamedLock{None{}, _, _}:
+    case LCK.NamedLock{None{}, _, _, _}:
       {==}
-    case LCK.NamedLock{Some{_}, _, _}:
+    case LCK.NamedLock{Some{_}, _, _, _}:
       {==}
 
 def Laws.lock_fifo(holder, first, rest):
@@ -8762,10 +8762,24 @@ def Laws.lock_grant_once():
 
 def Laws.lock_ready_idempotent(l):
   match l:
-    case LCK.NamedLock{_, _, _}:
+    case LCK.NamedLock{_, _, _, _}:
       {==}
 
 def Laws.codec_lock_roundtrip():
+  {==}
+
+# harness-coord: locks fix
+
+def Laws.lock_status_requeues_lost_client():
+  {==}
+
+def Laws.lock_renew_requeues_lost_client():
+  {==}
+
+def Laws.lock_requeue_keeps_fifo_for_others():
+  {==}
+
+def Laws.lock_restart_extends_client_leases():
   {==}
 # ---- phone-sch-viewer: exe path ----
 
