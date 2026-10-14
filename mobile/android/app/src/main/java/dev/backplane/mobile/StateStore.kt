@@ -32,7 +32,6 @@ class StateStore(private val root: File, bridge: String) {
     // the hub settings page's last rows, by hub (JSON beside the state)
     val settingsFile = File(root, "hub-settings.json")
 
-
     val path: File get() = file
 
     // written beside it, then put in its place
