@@ -126,6 +126,9 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .msg.assistant .body > :first-child { margin-top: 0; }
 .msg.assistant .body > :last-child { margin-bottom: 0; }
 .msg.live { opacity: 0.9; }
+.msg .stamp { display: block; color: var(--faint); font-size: 11px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.msg .stamp:empty { display: none; }
+.msg.user .stamp { text-align: right; }
 .body p { margin: 0 0 8px; white-space: pre-wrap; }
 .body code { font-family: var(--mono); font-size: 12px; background: var(--raise); padding: 0 3px; }
 .body h3, .body h4, .body h5 { margin: 12px 0 6px; }

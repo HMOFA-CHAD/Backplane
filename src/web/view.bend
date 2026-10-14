@@ -29,6 +29,7 @@ import ../core/qr.bend as QR
 import ../core/onboard.bend as OB
 import ../core/sched.bend as SCH
 import ../core/tz.bend as TZ
+import ../core/stamp.bend as STP
 
 # Ui -> Node. Every decision (order, shelf, status) comes from core defs
 # with laws behind them; this file only lays them out.
@@ -1117,44 +1118,48 @@ def View.act(step: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
     case _ M.Msg{+id, _, _, text, _}:
       D.El{"div", id, [D.At{"class", "act"}, D.At{"data-id", id}], [D.Dom.span("summary", text)]}
 
-def View.entry.own(e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
+def View.entry.s(e: M.Entry, +st: M.State, +ec: U.Ec, +stamp: String) -> D.Node:
   match e:
     case M.Msg{+id, _, M.User{}, +text, _}:
-      D.El{"div", id, [D.At{"class", "msg user"}, D.At{"data-id", id}], D.Dom.cat(View.user_body(text), [D.Dom.copy(AT.Att.body(text))])}
+      D.El{"div", id, [D.At{"class", "msg user"}, D.At{"data-id", id}], D.Dom.cat(View.user_body(text), [D.Dom.span("stamp", stamp), D.Dom.copy(AT.Att.body(text))])}
     case M.Msg{+id, _, _, +text, _}:
-      D.El{"div", id, [D.At{"class", "msg assistant"}, D.At{"data-id", id}], D.Dom.cat([D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}], D.Dom.cat(View.images(IM.Img.paths(text)), [D.Dom.copy(text)]))}
+      D.El{"div", id, [D.At{"class", "msg assistant"}, D.At{"data-id", id}], D.Dom.cat([D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}], D.Dom.cat(View.images(IM.Img.paths(text)), [D.Dom.span("stamp", stamp), D.Dom.copy(text)]))}
     case M.Act{+id, +th, +tone, +kind, +summary, +at}:
       View.act(String.eq(tone, HS.Step.tone()), M.Act{id, th, tone, kind, summary, at}, st, ec)
 
+# an entry of the thread itself, with the time under a message (core/stamp.bend)
+def View.entry.own(+e: M.Entry, +st: M.State, +ec: U.Ec, +sp: STP.Stamps) -> D.Node:
+  View.entry.s(e, st, ec, STP.Stamp.text(sp, e))
+
 # an entry of this thread (headed by the thread that sent it) or a message
 # this thread sent to another (a link)
-def View.entry.k(mine: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> List<&2, D.Node>:
+def View.entry.k(mine: Bool, e: M.Entry, +st: M.State, +ec: U.Ec, +sp: STP.Stamps) -> List<&2, D.Node>:
   match mine e:
     case True{} M.Msg{+id, t, r, x, at}:
-      List.append(&2, D.Node, View.from.k(String.is_empty(M.Link.from(id)), M.Link.from(id), st), [View.entry.own(M.Msg{id, t, r, x, at}, st, ec)])
+      List.append(&2, D.Node, View.from.k(String.is_empty(M.Link.from(id)), M.Link.from(id), st), [View.entry.own(M.Msg{id, t, r, x, at}, st, ec, sp)])
     case True{} _:
-      [View.entry.own(e, st, ec)]
+      [View.entry.own(e, st, ec, sp)]
     case False{} M.Msg{_, +t, _, x, _}:
       [View.link("out", "→ " ++ U.Tasks.title(st, t) ++ ": " ++ DF.Diff.first(x), t)]
     case False{} _:
       Nil{}
 
-def View.entry(+e: M.Entry, +st: M.State, +sel: String, +ec: U.Ec) -> List<&2, D.Node>:
-  View.entry.k(String.eq(View.entry_thread(e), sel), e, st, ec)
+def View.entry(+e: M.Entry, +st: M.State, +sel: String, +ec: U.Ec, +sp: STP.Stamps) -> List<&2, D.Node>:
+  View.entry.k(String.eq(View.entry_thread(e), sel), e, st, ec, sp)
 
-def View.entries.r(es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st: M.State, +sel: String, +ec: U.Ec) -> List<&2, D.Node>:
+def View.entries.r(es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st: M.State, +sel: String, +ec: U.Ec, +sp: STP.Stamps) -> List<&2, D.Node>:
   match es rs:
     case Nil{} _:
       Nil{}
     case e <> t r <> rt:
-      List.append(&2, D.Node, View.role(r, View.entry(e, st, sel, ec)), View.entries.r(t, rt, st, sel, ec))
+      List.append(&2, D.Node, View.role(r, View.entry(e, st, sel, ec, sp)), View.entries.r(t, rt, st, sel, ec, sp))
     case e <> t Nil{}:
-      List.append(&2, D.Node, View.entry(e, st, sel, ec), View.entries.r(t, Nil{}, st, sel, ec))
+      List.append(&2, D.Node, View.entry(e, st, sel, ec, sp), View.entries.r(t, Nil{}, st, sel, ec, sp))
 
 # a thread's entries, its runs of tool calls folded (the last stays open
 # while its turn runs)
 def View.entries.e(+es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool, +ec: U.Ec) -> List<&2, D.Node>:
-  View.entries.r(es, FO.Fold.roles(es, info, running), st, sel, ec)
+  View.entries.r(es, FO.Fold.roles(es, info, running), st, sel, ec, STP.Stamps.of(es, st, FO.Fold.now(info), running))
 
 def View.entries(+es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool) -> List<&2, D.Node>:
   View.entries.e(es, st, sel, info, running, U.Ec.none())
