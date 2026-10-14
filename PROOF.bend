@@ -8948,6 +8948,7 @@ def Laws.deploy_goes_between_calls():
   {==}
 
 def Laws.deploy_waits_open_call():
+  {==}
 # ios-snappy: lost work
 
 def Laws.lostwork_exit_clears():
