@@ -28,7 +28,7 @@ def es() -> List<&2, M.Entry>:
   [u("u1", 0n), a("a1", 30n), act("x1", 40n), a("a2", 433n), act("x2", 440n), u("u2", 1000n), a("a3", 1010n)]
 
 def ss(+es: List<&2, M.Entry>, +r: Z.TzRule, +now: Nat, +running: Bool) -> S.Stamps:
-  S.Stamps{r, now, S.Stamp.ends(es, running)}
+  S.Stamps.at(r, now, S.Stamp.ends(es, running))
 
 # the stamp of entry i
 def st(+es: List<&2, M.Entry>, +r: Z.TzRule, +now: Nat, +running: Bool, +i: Nat) -> String:

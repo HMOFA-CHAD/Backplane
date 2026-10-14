@@ -13,8 +13,10 @@ import ./sched.bend as SCH
 # after it, up to their next one. A page that starts mid-turn has no
 # message to count from, so its last reply says only when it finished.
 
+# today: the day it is now on the person's wall clock (days since the
+# epoch), worked out once a page
 type Stamps is Data:
-  Stamps{rule: TZ.TzRule, now: Nat, ends: Map<&2, Nat>}
+  Stamps{rule: TZ.TzRule, today: Nat, ends: Map<&2, Nat>}
 
 # Turns' last replies
 # -------------------
@@ -53,10 +55,13 @@ def Stamp.ends.go(es: List<&2, M.Entry>, open: Bool, +held: String, ends: Map<&2
 def Stamp.ends(+es: List<&2, M.Entry>, +running: Bool) -> Map<&2, Nat>:
   Stamp.ends.go(List.reverse(&2, M.Entry, es), Bool.not(running), "", Map.new(&2, Nat))
 
+def Stamps.at(+r: TZ.TzRule, +now: Nat, ends: Map<&2, Nat>) -> Stamps:
+  Stamps{r, Nat.div(TZ.Tz.wall(r, now), 86400n), ends}
+
 # what a client needs to stamp a page of entries: the person's zone, the
 # time now (seconds) and the turns' ends
 def Stamps.of(+es: List<&2, M.Entry>, +st: M.State, +now: Nat, +running: Bool) -> Stamps:
-  Stamps{SCH.Sched.person(st, 0n, True{}), now, Stamp.ends(es, running)}
+  Stamps.at(SCH.Sched.person(st, 0n, True{}), now, Stamp.ends(es, running))
 
 # Showing
 # -------
@@ -72,9 +77,9 @@ def Stamp.clock.k(today: Bool, +w: Nat) -> String:
       TZ.Tz.show.dt(w)
 
 # "14:05" on the day it is now, "Mon 13 Oct 14:05" on another
-def Stamp.clock(+r: TZ.TzRule, +now: Nat, +at: Nat) -> String:
+def Stamp.clock(+r: TZ.TzRule, +today: Nat, +at: Nat) -> String:
   +w = TZ.Tz.wall(r, at)
-  Stamp.clock.k(Nat.is_eq(Nat.div(w, 86400n), Nat.div(TZ.Tz.wall(r, now), 86400n)), w)
+  Stamp.clock.k(Nat.is_eq(Nat.div(w, 86400n), today), w)
 
 def Stamp.done.k(known: Bool, +clock: String, +start: Nat, +at: Nat) -> String:
   match known:
@@ -95,9 +100,9 @@ def Stamp.start(r: Map<&2, Nat> & Nat) -> Nat:
 # what shows under an entry: a message's time, nothing for the rest
 def Stamp.text(+s: Stamps, e: M.Entry) -> String:
   match s e:
-    case Stamps{+r, +now, _} M.Msg{_, _, M.User{}, _, +at}:
-      Stamp.clock(r, now, at)
-    case Stamps{+r, +now, +ends} M.Msg{+id, _, M.Assistant{}, _, +at}:
-      Stamp.reply(Stamp.start(Map.get(Nat, 0n, ends, id)), Stamp.clock(r, now, at), at)
+    case Stamps{+r, +today, _} M.Msg{_, _, M.User{}, _, +at}:
+      Stamp.clock(r, today, at)
+    case Stamps{+r, +today, +ends} M.Msg{+id, _, M.Assistant{}, _, +at}:
+      Stamp.reply(Stamp.start(Map.get(Nat, 0n, ends, id)), Stamp.clock(r, today, at), at)
     case _ _:
       ""
