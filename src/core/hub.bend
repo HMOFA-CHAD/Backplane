@@ -141,6 +141,12 @@ def Island.touch(cs: List<&2, M.Change>) -> Bool:
       True{}
     case M.ThreadDeleted{_, _} <> _:
       True{}
+    # a thread's background rows cleared (its agent or the hub that owned
+    # them is gone: Bg.gone, Rec.lost*): what it waited on is no more, so
+    # the Live Activity drops its "waiting on N" now, not at the next beat.
+    # Only a clear: rows change at every subagent step, and each push costs
+    case M.WorkSet{_, +kind, +v, _} <> t:
+      Bool.or(Bool.and(String.eq(kind, "bg"), String.is_empty(v)), Island.touch(t))
     case _ <> t:
       Island.touch(t)
 
@@ -4496,26 +4502,54 @@ def Lost.unknown(ls: List<&2, String>) -> List<&2, String>:
     case +l <> t:
       (M.Bg.line(M.Bg.field(l, 0n), M.Bg.ended.mark() ++ "unknown") ++ M.Bg.rest(l)) <> Lost.unknown(t)
 
+# Work lost at a restart is put aside, out of the thread's rows, until the
+# agent is told (laws lostwork_*): the phones' island counts a thread's rows
+# (M.Work.busy), and work whose owner died is nobody's to wait on. The
+# stash holds the rows as Bg.show writes them.
+def Lost.key(+th: String) -> String:
+  "lostbg." ++ th
+
+def Lost.stash(+s: M.State, +th: String) -> List<&2, String>:
+  M.Bg.lines(M.Setting.get(s, Lost.key(th), ""))
+
+# the work to tell: what was put aside, and any rows filed since
+def Lost.of(+s: M.State, +th: String) -> List<&2, String>:
+  List.append(&2, String, Lost.stash(s, th), M.Bg.of(s, th))
+
+# the rows put aside, and the stash emptied (nothing for a thread with none)
+def Lost.aside(+s: M.State, +now: Nat, +th: String) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, List.is_empty(&2, String, Lost.of(s, th)), Nil{},
+    [M.SettingSet{Lost.key(th), M.Bg.show(Lost.of(s, th)), now}, M.WorkSet{th, "bg", "", now}])
+
+def Lost.unstash(+s: M.State, +now: Nat, +th: String) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, List.is_empty(&2, String, Lost.stash(s, th)), Nil{}, [M.SettingSet{Lost.key(th), "", now}])
+
 def Bg.lost.k(has: Bool, on: Bool, +s: M.State, +now: Nat, +th: String, +why: String, +ls: List<&2, String>) -> Step:
   match has on:
     case False{} _:
       Step.none()
     case True{} True{}:
-      Step.cat(Lost.note(M.Queue.waiting(s, th), s, now, th, Lost.text(ls, why)), Step{[M.WorkSet{th, "bg", "", now}], Nil{}})
+      Step.cat(Lost.note(M.Queue.waiting(s, th), s, now, th, Lost.text(ls, why)), Step{List.append(&2, M.Change, [M.WorkSet{th, "bg", "", now}], Lost.unstash(s, now, th)), Nil{}})
     case True{} False{}:
-      Step{[M.ActivityLogged{th, Hub.id("l", now, Hub.seq(s)), "info", "lost", Lost.text(ls, why), now}, M.WorkSet{th, "bg", M.Bg.show(Lost.unknown(ls)), now}], Nil{}}
+      Step{List.append(&2, M.Change, [M.ActivityLogged{th, Hub.id("l", now, Hub.seq(s)), "info", "lost", Lost.text(ls, why), now}, M.WorkSet{th, "bg", M.Bg.show(Lost.unknown(M.Bg.of(s, th))), now}], Lost.unstash(s, now, th)), Nil{}}
 
 # a thread's background work lost (why: "restart", "exit", "replaced"):
 # told once; nothing for a thread with none new, or archived or deleted
 def Bg.lost(+s: M.State, +now: Nat, +th: String, +why: String) -> Step:
-  Bg.lost.k(Bool.and(Lost.new(M.Bg.of(s, th)), Lost.live(Hub.thread(s, th))), M.Carry.on(s), s, now, th, why, M.Bg.of(s, th))
+  Bg.lost.k(Bool.and(Lost.new(Lost.of(s, th)), Lost.live(Hub.thread(s, th))), M.Carry.on(s), s, now, th, why, Lost.of(s, th))
 
-def Bg.gone(live: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+# the agent's process is gone, and with it every row it filed: told (a live
+# thread), then none left, whatever restart.continue says (law
+# lostwork_exit_clears)
+def Bg.gone.k(live: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match live:
     case True{}:
       Bg.lost(s, now, th, "exit")
     case False{}:
-      Step{Bg.clear(s, th, now), Nil{}}
+      Step.none()
+
+def Bg.gone(live: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  Step.cat(Bg.gone.k(live, s, now, th), Step{Bg.clear(s, th, now), Nil{}})
 
 # an agent process ended; a turn still running ends with it, and the
 # background work it owned is told lost (behind the failed turn's queue
@@ -4984,18 +5018,19 @@ def Resume.clear(+s: M.State, +now: Nat, +th: String) -> List<&2, M.Change>:
 def Rec.lost.again(give: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match give:
     case True{}:
-      Step{List.append(&2, M.Change, [M.ActivityLogged{th, Hub.id("l", now, Hub.seq(s)), "info", "lost", Lost.text(M.Bg.of(s, th), "restart"), now},
-        M.WorkSet{th, "bg", M.Bg.show(Lost.unknown(M.Bg.of(s, th))), now}, M.SettingSet{Resume.n.key(th), "0", now}], Resume.clear(s, now, th)), Nil{}}
+      Step{List.append(&2, M.Change, [M.ActivityLogged{th, Hub.id("l", now, Hub.seq(s)), "info", "lost", Lost.text(Lost.of(s, th), "restart"), now},
+        M.WorkSet{th, "bg", "", now}, M.SettingSet{Resume.n.key(th), "0", now}], List.append(&2, M.Change, Lost.unstash(s, now, th), Resume.clear(s, now, th))), Nil{}}
     case False{}:
-      Step{[M.SettingSet{Resume.n.key(th), Nat.show(1n+Resume.n(s, th)), now}], Nil{}}
+      Step{List.append(&2, M.Change, [M.SettingSet{Resume.n.key(th), Nat.show(1n+Resume.n(s, th)), now}], Lost.aside(s, now, th)), Nil{}}
 
 # a restart found a thread's work lost: with the setting off it is logged
-# (Bg.lost); else it is marked to be told (a marker already there counts
-# a restart it outlived, and on the second it is only logged)
+# (Bg.lost); else it is put aside (Lost.aside) and the thread marked to be
+# told (a marker already there counts a restart it outlived, and on the
+# second it is only logged)
 def Rec.lost.on(again: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match again:
     case False{}:
-      Step{Resume.set(s, now, th, "restart"), Nil{}}
+      Step{List.append(&2, M.Change, Resume.set(s, now, th, "restart"), Lost.aside(s, now, th)), Nil{}}
     case True{}:
       Rec.lost.again(Nat.is_ge(1n+Resume.n(s, th), 2n), s, now, th)
 
@@ -5010,10 +5045,21 @@ def Rec.lost.k(has: Bool, live: Bool, on: Bool, +s: M.State, +now: Nat, +th: Str
     case True{} True{} True{}:
       Rec.lost.on(Bool.not(String.is_empty(Resume.why(s, th))), s, now, th)
 
+# rows left ended with an unknown outcome by an earlier restart (told
+# already) wait for nothing: their owner is gone, and they go at the next
+# (laws lostwork_recover_old_rows_go)
+def Rec.lost.old(old: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  match old:
+    case True{}:
+      Step{Bg.clear(s, th, now), Nil{}}
+    case False{}:
+      Step.none()
+
 def Rec.lost.one(r: Rec, +now: Nat, +th: String) -> Rec:
   match r:
     case Rec{+s, cs, os}:
-      Rec.add(Rec{s, cs, os}, Rec.lost.k(Lost.new(M.Bg.of(s, th)), Lost.live(Hub.thread(s, th)), M.Carry.on(s), s, now, th))
+      Rec.add(Rec.add(Rec{s, cs, os}, Rec.lost.k(Lost.new(Lost.of(s, th)), Lost.live(Hub.thread(s, th)), M.Carry.on(s), s, now, th)),
+        Rec.lost.old(Bool.and(Bool.not(Lost.new(Lost.of(s, th))), Bool.not(List.is_empty(&2, String, M.Bg.of(s, th)))), s, now, th))
 
 def Rec.lost(ts: List<&2, String>, r: Rec, +now: Nat) -> Rec:
   match ts:
@@ -5201,6 +5247,40 @@ def Lost.released(+on: Bool) -> M.State:
 
 def Lost.marked() -> M.State:
   M.State.replay(List.append(&2, M.Change, Resume.set(Lost.demo(True{}, False{}), 4n, "t1", "restart"), [M.TurnQueued{"t1", "q1", "held", 4n}]), Lost.demo(True{}, False{}))
+
+# a thread whose background shell an earlier restart left ended, outcome unknown
+def Lost.stale(+on: Bool) -> M.State:
+  M.State.replay([M.WorkSet{"t1", "bg", M.Bg.line("b1", M.Bg.ended.mark() ++ "unknown"), 5n}], Lost.demo(on, False{}))
+
+# the agent of thread th exited
+def Lost.exited(+s: M.State, +th: String) -> M.State:
+  M.State.replay(Queue.changes(Hub.agent_gone(s, 9n, th, 0)), s)
+
+# an idle thread t0 with a background shell and a running child task
+def Lost.parent() -> M.State:
+  M.State.replay([M.WorkSet{"t0", "bg", "b1\tsleep 60\tc1\tsleep 60\tshell", 3n}], Task.demo(False{}))
+
+def Lost.open.go(ids: List<&2, String>, +s: M.State) -> Nat:
+  match ids:
+    case Nil{}:
+      0n
+    case +i <> t:
+      Nat.add(M.Bg.running(M.Bg.of(s, i)), Lost.open.go(t, s))
+
+# how many background rows are at work, over every thread
+def Lost.open(+s: M.State) -> Nat:
+  Lost.open.go(Rec.ids(Rec.threads(s)), s)
+
+def Lost.held.go(ids: List<&2, String>, +s: M.State) -> Nat:
+  match ids:
+    case Nil{}:
+      0n
+    case +i <> t:
+      Nat.add(M.Bg.live(M.Bg.of(s, i)), Lost.held.go(t, s))
+
+# how many background rows are filed (ended ones too: they count as work)
+def Lost.held(+s: M.State) -> Nat:
+  Lost.held.go(Rec.ids(Rec.threads(s)), s)
 
 def Lost.running.go(ids: List<&2, String>, +s: M.State) -> Nat:
   match ids:

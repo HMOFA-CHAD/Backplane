@@ -22,6 +22,8 @@
 //   tail-nonl    an old CLI whose last line, its result, has no newline,
 //                then exit with a child holding stdout
 //   exit-now     the process exits (3) as the first command starts
+//   bg-exit      the first command starts a background shell, answers,
+//                and the process exits (0) 600 ms later, the shell with it
 //   oom          the first command allocates 20 MB blocks (600 MB at most,
 //                touched) until the kernel ends it; BP_ALLOC_MB (600)
 //   plain        each command: init, an answer, its result
@@ -157,6 +159,15 @@ async function run(c: Cmd, firstOne: boolean) {
   if (firstOne && mode === "exit-now") {
     log(`EXIT ${process.pid}`);
     process.exit(3);
+  }
+  if (firstOne && mode === "bg-exit") {
+    bgStart();
+    say("STARTED");
+    result("STARTED");
+    lc(c.uuid, "completed");
+    log(`EXIT ${process.pid}`);
+    setTimeout(() => process.exit(0), 600);
+    return;
   }
   if (firstOne && mode === "tail-nonl") {
     say("TAIL");

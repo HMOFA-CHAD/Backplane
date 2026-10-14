@@ -7693,3 +7693,54 @@ law deploy_goes_between_calls:
 # and it waits while a call is open
 law deploy_waits_open_call:
   {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, H.Deploy.demo.open(True{}))) == 0n : Nat}
+# ios-snappy: lost work
+# Background work whose owner died is ended, so the phones' island (which
+# counts a thread's rows, M.Work.busy) stops listing it: the agent's exit
+# leaves none of its rows (a delegated child's task and watched work are
+# not the agent's, and stay), a restart leaves none at work, and with
+# restart.continue on none at all: they are put aside (Lost.aside) until
+# the agent is told, once.
+law lostwork_exit_clears:
+  {M.Bg.live(M.Bg.of(H.Lost.exited(H.Lost.demo(True{}, False{}), "t1"), "t1")) == 0n : Nat}
+
+law lostwork_exit_clears_off:
+  {M.Bg.live(M.Bg.of(H.Lost.exited(H.Lost.demo(False{}, False{}), "t1"), "t1")) == 0n : Nat}
+
+law lostwork_exit_clears_running:
+  {M.Bg.live(M.Bg.of(H.Lost.exited(H.Lost.demo(True{}, True{}), "t1"), "t1")) == 0n : Nat}
+
+law lostwork_exit_keeps_child:
+  {M.Work.busy(H.Lost.exited(H.Lost.parent(), "t0"), "t0") == 1n : Nat}
+
+law lostwork_exit_keeps_watch:
+  {M.Work.rows(H.Lost.exited(H.Watch.demo.at(False{}, "t1"), "t1"), "t1") == 1n : Nat}
+
+law lostwork_exit_island_hides:
+  {J.Json.show(J.Json.arr(Nt.Note.lines.w([H.Hub.thread(H.Lost.exited(H.Lost.demo(False{}, False{}), "t1"), "t1")], M.Work.kids.map(H.Lost.exited(H.Lost.demo(False{}, False{}), "t1")), H.Lost.exited(H.Lost.demo(False{}, False{}), "t1")))) == "[]" : String}
+
+law lostwork_recover_none_open:
+  {H.Lost.open(H.Rec.after(H.Lost.many(), 10n)) == 0n : Nat}
+
+law lostwork_recover_none_open_off:
+  {H.Lost.open(H.Rec.after(M.State.replay([M.SettingSet{"restart.continue", "off", 9n}], H.Lost.many()), 10n)) == 0n : Nat}
+
+law lostwork_recover_none_held:
+  {H.Lost.held(H.Rec.after(H.Lost.many(), 10n)) == 0n : Nat}
+
+law lostwork_recover_none_held_carried:
+  {H.Lost.held(H.Carry.after(H.Lost.many(), 10n)) == 0n : Nat}
+
+law lostwork_recover_island_hides:
+  {J.Json.show(J.Json.arr(Nt.Note.lines.w([H.Hub.thread(H.Rec.after(H.Lost.demo(True{}, False{}), 10n), "t1")], M.Work.kids.map(H.Rec.after(H.Lost.demo(True{}, False{}), 10n)), H.Rec.after(H.Lost.demo(True{}, False{}), 10n)))) == "[]" : String}
+
+law lostwork_recover_still_told:
+  {H.Lost.told(M.State.mine(H.Carry.after(H.Lost.demo(True{}, False{}), 10n), "t1")) == 1n : Nat}
+
+law lostwork_recover_nothing_left_aside:
+  {List.length(&2, String, H.Lost.stash(H.Carry.after(H.Lost.demo(True{}, False{}), 10n), "t1")) == 0n : Nat}
+
+law lostwork_recover_old_rows_go:
+  {M.Bg.live(M.Bg.of(H.Rec.after(H.Lost.stale(True{}), 10n), "t1")) == 0n : Nat}
+
+law lostwork_recover_old_rows_go_off:
+  {M.Bg.live(M.Bg.of(H.Rec.after(H.Lost.stale(False{}), 10n), "t1")) == 0n : Nat}
