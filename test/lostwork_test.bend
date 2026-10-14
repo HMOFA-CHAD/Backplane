@@ -54,3 +54,9 @@ def main() -> IO(Unit):
     C.Check.str("exit: the child task stays open", Bool.show(H.Task.marked(H.Queue.changes(H.Hub.agent_gone(parent(), 9n, "t0", 0)), "k1")), "False")
     # watched work belongs to the hub, not the agent
     C.Check.str("exit leaves watched work", Nat.show(M.Work.rows(gone(H.Watch.demo.at(False{}, "t1"), "t1"), "t1")), "1")
+    # the Live Activity is pushed again when a thread's rows are cleared, and
+    # only then (rows change at every subagent step)
+    C.Check.str("island touched by rows cleared", Bool.show(H.Island.touch([M.WorkSet{"t1", "bg", "", 3n}])), "True")
+    C.Check.str("island not touched by rows set", Bool.show(H.Island.touch([M.WorkSet{"t1", "bg", "b1\tsleep 60", 3n}])), "False")
+    C.Check.str("island not touched by watch rows", Bool.show(H.Island.touch([M.WorkSet{"t1", "watch", "", 3n}])), "False")
+    C.Check.str("island touched by an agent exit with rows", Bool.show(H.Island.touch(H.Queue.changes(H.Hub.agent_gone(parent(), 9n, "t0", 0)))), "True")

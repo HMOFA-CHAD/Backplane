@@ -141,6 +141,12 @@ def Island.touch(cs: List<&2, M.Change>) -> Bool:
       True{}
     case M.ThreadDeleted{_, _} <> _:
       True{}
+    # a thread's background rows cleared (its agent or the hub that owned
+    # them is gone: Bg.gone, Rec.lost*): what it waited on is no more, so
+    # the Live Activity drops its "waiting on N" now, not at the next beat.
+    # Only a clear: rows change at every subagent step, and each push costs
+    case M.WorkSet{_, +kind, +v, _} <> t:
+      Bool.or(Bool.and(String.eq(kind, "bg"), String.is_empty(v)), Island.touch(t))
     case _ <> t:
       Island.touch(t)
 
