@@ -826,7 +826,7 @@ def Bv.runs.head(some: Bool, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32) -> L.Out:
 def Bv.ttab(+ty: L.Ty, +f: F.FS, +bot: String, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   +u = F.FS.ui(f)
   +ts = U.Teach.tasks(u, bot)
-  +rs = List.take(&2, U.TRun, U.Teach.runs(u, bot), 8n)
+  +rs = List.take(&2, U.TRun, U.Teach.runs.shown(u, bot), 8n)
   L.Lay.col.cat(L.Out.cat(Bv.h2(ty, c, "Tasks", x, y),
       Bv.faint(ty, c, Bool.pick(String, List.is_empty(&2, U.TTask, ts), "None yet. Teach one in the Browser tab, or tell it in chat.", "Open one to run it. A routine can run it too."), x, w, (y + 30 : U32))),
     L.Lay.col.then(Bv.tasks(ts, ty, f, c, x, w, (y + 60 : U32)), +y2 =>

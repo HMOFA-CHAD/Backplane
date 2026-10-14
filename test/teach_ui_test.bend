@@ -162,6 +162,7 @@ def main() -> IO(Unit):
     C.Check.str("only the typed non-secret value is a chip", chips(U.Ui.info_set(plain(), "teach.draft.b1", draft())), "1=A123;")
     C.Check.str("tasks", tasks.go(U.Teach.tasks(plain(), "b1")), "jlcpcb|Check order|Look up an order|1|False|False|ok;")
     C.Check.str("runs, newest log of each", runs.go(U.Teach.runs(plain(), "b1")), "r1|jlcpcb|ok|3|done|/bots/b1/tasks/shot?run=r1&n=2;")
+    C.Check.str("runs shown by the task's name", runs.go(U.Teach.runs.shown(plain(), "b1")), "r1|Check order|ok|3|done|/bots/b1/tasks/shot?run=r1&n=2;")
     C.Check.str("open a task", tasks.go(U.Teach.tasks(act(plain(), "tk-open", "jlcpcb"), "b1")), "jlcpcb|Check order|Look up an order|1|True|False|ok;")
     C.Check.str("delete asks first", tasks.go(U.Teach.tasks(act(plain(), "tk-del", "jlcpcb"), "b1")), "jlcpcb|Check order|Look up an order|1|False|True|ok;")
     C.Check.str("delete twice deletes", sent(U.Ui.act(act(plain(), "tk-del", "jlcpcb"), "tk-del", "jlcpcb")), "{\"id\":0,\"m\":\"bots.task\",\"p\":{\"bot\":\"b1\",\"op\":\"delete\",\"slug\":\"jlcpcb\"}}")

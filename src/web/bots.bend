@@ -342,7 +342,7 @@ def WB.runs.go(rs: List<&2, U.TRun>) -> List<&2, D.Node>:
 
 def WB.tasks(+u: U.Ui, +b: BT.Bot) -> D.Node:
   +ts = U.Teach.tasks(u, BT.Bot.id(b))
-  +rs = List.take(&2, U.TRun, U.Teach.runs(u, BT.Bot.id(b)), 8n)
+  +rs = List.take(&2, U.TRun, U.Teach.runs.shown(u, BT.Bot.id(b)), 8n)
   WB.div("bot-list", D.Dom.cat([WB.note(Bool.pick(String, List.is_empty(&2, U.TTask, ts), "None yet. Teach one in the Browser tab, or tell it in chat.", "Open one to run it. A routine can run it too."))],
     D.Dom.cat(WB.tasks.go(ts, u),
       D.Dom.cat(D.Dom.when(Bool.not(List.is_empty(&2, U.TRun, rs)), D.Dom.span("tk-title", "Recent runs")), WB.runs.go(rs)))))

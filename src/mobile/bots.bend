@@ -355,7 +355,7 @@ def MBots.runs(rs: List<&2, U.TRun>) -> List<&2, J.Json>:
 
 def MBots.tasks.tab(+u: U.Ui, +id: String) -> J.Json:
   J.Json.obj([J.KV{"items", J.Json.arr(MBots.tasks(U.Teach.tasks(u, id), u))},
-    J.KV{"runs", J.Json.arr(MBots.runs(List.take(&2, U.TRun, U.Teach.runs(u, id), 8n)))}])
+    J.KV{"runs", J.Json.arr(MBots.runs(List.take(&2, U.TRun, U.Teach.runs.shown(u, id), 8n)))}])
 
 def MBots.space.k(none: Bool, +at: Nat, +u: U.Ui, b: BT.Bot, +id: String) -> List<&2, J.KV>:
   match none:

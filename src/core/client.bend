@@ -9047,6 +9047,32 @@ def Teach.runs.of(st: M.State, +thread: String) -> List<&2, TRun>:
 def Teach.runs(+u: Ui, +bot: String) -> List<&2, TRun>:
   Teach.runs.of(Ui.state(u), BT.Bot.thread(BT.World.bot(M.State.bots(Ui.state(u)), bot)))
 
+# a run row titled by its task's name (the slug when the task is gone)
+def Teach.run.name.k(m: Maybe<&2, TK.TkTask>, +slug: String) -> String:
+  match m:
+    case Some{TK.TkTask{_, +name, _, _, _, _, _, _, _, _}}:
+      Bool.pick(String, String.is_empty(name), slug, name)
+    case None{}:
+      slug
+
+def Teach.run.name(m: Maybe<&2, String>, +slug: String) -> String:
+  match m:
+    case Some{+j}:
+      Teach.run.name.k(TK.Task.read(j), slug)
+    case None{}:
+      slug
+
+def Teach.runs.named(rs: List<&2, TRun>, +w: BT.World, +bot: String) -> List<&2, TRun>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case TRun{+r, +sl, +st, +n, +sm, +sh} <> t:
+      TRun{r, Teach.run.name(BT.World.task(w, bot, sl), sl), st, n, sm, sh} <> Teach.runs.named(t, w, bot)
+
+# the runs as the clients list them: each titled by its task's name
+def Teach.runs.shown(+u: Ui, +bot: String) -> List<&2, TRun>:
+  Teach.runs.named(Teach.runs(u, bot), M.State.bots(Ui.state(u)), bot)
+
 def Teach.last(rs: List<&2, TRun>, +slug: String) -> String:
   match rs:
     case Nil{}:
