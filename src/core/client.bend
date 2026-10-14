@@ -34,6 +34,10 @@ import ./layers.bend as LY
 import ./slash.bend as SL
 import ./uber.bend as UB
 import ./ubersync.bend as US
+import ./cron.bend as CR
+import ./tz.bend as TZ
+import ./when.bend as WH
+import ./sched.bend as SC
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -5764,24 +5768,50 @@ def Bots.space.link.k(ps: List<&2, String>, u: Ui) -> Act:
 def Bots.space.link(u: Ui, +v: String) -> Act:
   Bots.space.link.k(String.split(v, '\u{1f}'), u)
 
+# What the form's When field says, in the person's zone: a schedule, a
+# one-time phrase, or what is wrong with it (core/sched.bend's Sched.hint)
+def Routine.hint(+u: Ui) -> String:
+  SC.Sched.hint(Ui.state.of(u), Bots.field(u, "ocron"), Side.now(u), 0n, True{})
+
+# the key the text goes under: a schedule is `cron`, a time `at`
+def Routine.key.k(cron: Bool, at: Bool) -> String:
+  match cron at:
+    case True{} _:
+      "cron"
+    case False{} True{}:
+      "at"
+    case False{} False{}:
+      "cron"
+
+def Routine.key(+u: Ui, +text: String) -> String:
+  Routine.key.k(BT.Maybe.is(CR.Cron, CR.Cron.parse(text)), BT.Maybe.is(Nat, WH.When.parse(text, Side.now(u), SC.Sched.person(Ui.state.of(u), 0n, True{}))))
+
 def Bots.routine.save(+u: Ui) -> Act:
   Ui.rpc(Bots.fields.clear(Ui.scratch_set(u, "@onew", ""), ["oid", "oname", "ocron", "oprompt"]), "bots.routine",
     [J.KV{"bot", J.Str{Bots.cur(u)}}, J.KV{"routine", J.Str{Bots.field(u, "oid")}}, J.KV{"name", J.Str{Bool.pick(String, String.is_empty(Bots.field(u, "oname")), "routine", Bots.field(u, "oname"))}},
-     J.KV{"cron", J.Str{Bots.field(u, "ocron")}}, J.KV{"prompt", J.Str{Bots.field(u, "oprompt")}}, J.KV{"on", J.Flag{True{}}}])
+     J.KV{Routine.key(u, String.trim(Bots.field(u, "ocron"))), J.Str{String.trim(Bots.field(u, "ocron"))}}, J.KV{"prompt", J.Str{Bots.field(u, "oprompt")}}, J.KV{"on", J.Flag{True{}}}])
 
 def Bots.routine.of(+u: Ui, +id: String) -> BT.Routine:
   BT.World.routine(M.State.bots(Ui.state.of(u)), id)
 
 def Bots.routine.toggle(+u: Ui, r: BT.Routine) -> Act:
   match r:
-    case BT.Routine{i, b, n, c, p, on, _, _, _}:
-      Ui.rpc(u, "bots.routine", [J.KV{"bot", J.Str{b}}, J.KV{"routine", J.Str{i}}, J.KV{"name", J.Str{n}}, J.KV{"cron", J.Str{c}}, J.KV{"prompt", J.Str{p}}, J.KV{"on", J.Flag{Bool.not(on)}}])
+    case BT.Routine{i, b, n, c, p, on, _, _, _, _, _, _, _, _}:
+      Ui.rpc(u, "bots.routine", [J.KV{"bot", J.Str{b}}, J.KV{"routine", J.Str{i}}, J.KV{"name", J.Str{n}}, J.KV{"cron", J.Str{c}}, J.KV{"prompt", J.Str{p}}, J.KV{"on", J.Flag{Bool.not(on)}}, J.KV{"keep", J.Flag{True{}}}])
+
+def Routine.edit.when.k(once: Bool, rule: TZ.TzRule, +t: Nat, +c: String) -> String:
+  Bool.pick(String, once, String.take(TZ.Tz.iso(rule, t), 16n), c)
+
+# the When field of a routine being changed: its schedule, or a one-time
+# routine's moment as a local time ("2026-10-14T09:00")
+def Routine.edit.when(+s: M.State, +r: BT.Routine, +c: String) -> String:
+  Routine.edit.when.k(Nat.is_gt(BT.Routine.once(r), 0n), SC.Sched.person(s, 0n, True{}), BT.Routine.once(r), c)
 
 # a routine's fields into the form, to change it
-def Bots.routine.edit(u: Ui, r: BT.Routine) -> Ui:
+def Bots.routine.edit(+u: Ui, r: BT.Routine) -> Ui:
   match r:
-    case BT.Routine{i, _, n, c, p, _, _, _, _}:
-      Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@onew", "1"), "@f.oid", i), "@f.oname", n), "@f.ocron", c), "@f.oprompt", p)
+    case BT.Routine{+i, _, +n, +c, +p, _, _, _, _, _, _, _, _, _}:
+      Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@onew", "1"), "@f.oid", i), "@f.oname", n), "@f.ocron", Routine.edit.when(Ui.state.of(u), r, c)), "@f.oprompt", p)
 
 def Bots.hook.new(+u: Ui) -> Act:
   Ui.rpc(Bots.fields.clear(Ui.scratch_set(u, "@hook.secret", ""), ["hname"]), "bots.hook",
@@ -8762,8 +8792,72 @@ def Ui.act.s(close: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Ui.act.g(String.starts_with(action, "agy-"), u, action, value)
 
+# The time zone (Settings, all clients)
+# ---------------------------------------
+# The person's zone: the one they or a bot set (person.tz), else the one a
+# phone reported (person.tz.device), else the hub machine's. The row shows
+# "Europe/Helsinki · EEST +03:00 · from your phone", a field for a zone name
+# with Set ("tz-set", field @f.tzname) and Automatic ("tz-auto", on while a
+# zone is set). A phone reports its zone ("tz-report" with the zone, sent to
+# every paired hub). An error from the hub shows under the row (@tz.try).
+
+def Tzs.er(u: Ui) -> String:
+  match u:
+    case Ui{_, _, _, _, _, _, _, _, _, _, _, _, er, _, _, _, _}:
+      er
+
+def Tzs.source(+s: String) -> String:
+  Bool.pick(String, String.eq(s, "set"), "set", Bool.pick(String, String.eq(s, "phone"), "from your phone", Bool.pick(String, String.eq(s, "machine"), "this machine", "nothing reported yet")))
+
+def Tzs.off(+u: Ui) -> TZ.TzOff:
+  TZ.Tz.off(SC.Sched.person(Ui.state.of(u), 0n, True{}), Side.now(u))
+
+# "Europe/Helsinki · EEST +03:00 · from your phone"
+def Tzs.line(+u: Ui) -> String:
+  SC.Zone.person(Ui.state.of(u)) ++ " · " ++ TZ.Tz.abbr(Tzs.off(u)) ++ " " ++ TZ.Tz.offset.text(Tzs.off(u)) ++ " · " ++ Tzs.source(SC.Zone.source(Ui.state.of(u)))
+
+def Tzs.auto(+u: Ui) -> Bool:
+  Bool.not(String.is_empty(M.Setting.get(Ui.state.of(u), "person.tz", "")))
+
+# the error shows only while the zone tried (@tz.try) is not the one set:
+# once the hub takes it, a later unrelated error stays off this row
+def Tzs.err(+u: Ui) -> String:
+  Bool.pick(String, Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@tz.try"))),
+    Bool.not(String.eq(Ui.scratch(u, "@tz.try"), M.Setting.get(Ui.state.of(u), "person.tz", "")))), Tzs.er(u), "")
+
+def Tzs.set.k(ok: Bool, +u: Ui, +zone: String) -> Act:
+  match ok:
+    case True{}:
+      Ui.rpc(Ui.scratch_set(u, "@tz.try", zone), "zone.set", [J.KV{"zone", J.Str{zone}}])
+    case False{}:
+      Act{Ui.error_set(Ui.scratch_set(u, "@tz.try", Bool.pick(String, String.is_empty(zone), "?", zone)), "That is not a time zone name (like Europe/Helsinki)"), Nil{}}
+
+def Tzs.set(+u: Ui) -> Act:
+  Tzs.set.k(SC.Zone.valid(String.trim(Bots.field(u, "tzname"))), u, String.trim(Bots.field(u, "tzname")))
+
+def Tzs.act.k(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n:
+      Tzs.set(u)
+    case 1n:
+      Ui.rpc(Ui.scratch_set(Ui.scratch_set(u, "@f.tzname", ""), "@tz.try", ""), "zone.set", [J.KV{"zone", J.Str{"auto"}}])
+    case 2n:
+      Ui.rpc(u, "zone.report", [J.KV{"zone", J.Str{value}}])
+    case _:
+      Act{u, Nil{}}
+
+def Tzs.act(+u: Ui, +action: String, +value: String) -> Act:
+  Tzs.act.k(C.Codec.pos(["tz-set", "tz-auto", "tz-report"], action), u, value)
+
+def Ui.act.z(tz: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match tz:
+    case True{}:
+      Tzs.act(u, action, value)
+    case False{}:
+      Ui.act.s(String.eq(action, "skill-close"), u, action, value)
+
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Rc.sync.of(Ui.act.s(String.eq(action, "skill-close"), u, action, value))
+  Rc.sync.of(Ui.act.z(String.starts_with(action, "tz-"), u, action, value))
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

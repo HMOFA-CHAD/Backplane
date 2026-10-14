@@ -12,6 +12,9 @@ import ./refs.bend as RF
 import ./emb.bend as EM
 import ./far.bend as FR
 import ./ubersync.bend as UBS
+import ./bot.bend as BT
+import ./tz.bend as TZ
+import ./sched.bend as SC
 import ./notice.bend as NO
 import ./wake.bend as WK
 import ./told.bend as TLD
@@ -962,7 +965,40 @@ def Desk.request(look: Bool, +client: U32, +id: String, +p: J.Json) -> Step:
 # reopened, edited or dropped (core/review.bend's Review.act), by the person;
 # review.release {thread, tag, publish, force}: a release (server/review.bend)
 def Rv.methods() -> List<&2, String>:
-  ["history.resolve", "review.bom", "review.checks", "review.tick", "review.comment", "review.release"]
+  ["history.resolve", "review.bom", "review.checks", "review.tick", "review.comment", "review.release", "zone.report", "zone.set"]
+
+# The person's time zone (core/sched.bend's Zone.*)
+# zone.report {zone}: a phone says where it is; kept as person.tz.device when
+# it differs (the server looks the zone's rules up on its tick).
+# zone.set {zone}: Settings sets the person's own ("" or "auto" follows the
+# phone); a zone the hub has no rules for yet is looked up first
+# (BotFx "zone"), and set only if that works.
+
+def Zone.report.k(ok: Bool, same: Bool, +client: U32, +id: String, +zone: String, +now: Nat) -> Step:
+  match ok same:
+    case False{} _:
+      Step.outs([Reply.err(client, id, "not a time zone name")])
+    case True{} True{}:
+      Step.outs([Reply.ok(client, id)])
+    case True{} False{}:
+      Step.reply(client, id, [M.SettingSet{"person.tz.device", zone, now}])
+
+def Zone.report(+s: M.State, +now: Nat, +client: U32, +id: String, +zone: String) -> Step:
+  Zone.report.k(SC.Zone.valid(zone), String.eq(M.Setting.get(s, "person.tz.device", ""), zone), client, id, zone, now)
+
+def Zone.set.k(auto: Bool, ok: Bool, known: Bool, +client: U32, +id: String, +zone: String, +now: Nat) -> Step:
+  match auto ok known:
+    case True{} _ _:
+      Step.reply(client, id, [M.SettingSet{"person.tz", "", now}])
+    case False{} False{} _:
+      Step.outs([Reply.err(client, id, "that is not a time zone name (like Europe/Helsinki)")])
+    case False{} True{} True{}:
+      Step.reply(client, id, [M.SettingSet{"person.tz", zone, now}])
+    case False{} True{} False{}:
+      Step.outs([BotFx{"zone", zone, U32.show(client), id}])
+
+def Zone.set(+s: M.State, +now: Nat, +client: U32, +id: String, +zone: String) -> Step:
+  Zone.set.k(Bool.or(String.is_empty(zone), String.eq(zone, "auto")), SC.Zone.valid(zone), BT.Maybe.is(TZ.TzRule, SC.Zone.rule(s, zone)), client, id, zone, now)
 
 def Rv.comment.k(ok: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
   match ok:
@@ -986,6 +1022,10 @@ def Rv.request(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.
     case 5n:
       Hub.git(s, client, id, "rv.release", J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "tag", ""),
         Bool.pick(String, J.Json.get_bool(p, "publish", False{}), "p", "") ++ Bool.pick(String, J.Json.get_bool(p, "force", False{}), "f", ""))
+    case 6n:
+      Zone.report(s, now, client, id, String.trim(J.Json.get_str(p, "zone", "")))
+    case 7n:
+      Zone.set(s, now, client, id, String.trim(J.Json.get_str(p, "zone", "")))
     case _:
       Desk.request(String.eq(m, "desk.look"), client, id, p)
 

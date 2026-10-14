@@ -3,6 +3,7 @@ import ./json.bend as J
 import ./model.bend as M
 import ./client.bend as U
 import ./bot.bend as BT
+import ./sched.bend as SC
 import ./space.bend as SP
 import ./once.bend as O
 import ./far.bend as FR
@@ -430,8 +431,10 @@ def BU.mems(+u: U.Ui, +bot: String) -> List<&2, BT.Mem>:
 def BU.page(+u: U.Ui, +bot: String) -> BT.Page:
   BT.World.spage(M.State.bots(U.Ui.state(u)), bot)
 
+# a bot's routines in the order its list shows them: pending by next fire,
+# then off ones, then done ones, newest first (core/sched.bend)
 def BU.routines(+u: U.Ui, +bot: String) -> List<&2, BT.Routine>:
-  BT.World.routines(M.State.bots(U.Ui.state(u)), bot)
+  SC.Sched.order(U.Ui.state(u), BT.World.routines(M.State.bots(U.Ui.state(u)), bot), U.Side.now(u), 0n, True{})
 
 def BU.hooks(+u: U.Ui, +bot: String) -> List<&2, BT.Hook>:
   BT.World.hooks(M.State.bots(U.Ui.state(u)), bot)

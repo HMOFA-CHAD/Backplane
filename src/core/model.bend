@@ -264,6 +264,18 @@ type Change is Data:
   WakeSet{id: String, by: String, kind: String, target: String, events: List<&2, String>, once: Bool, note: String, at: Nat}
   WakeDropped{id: String, at: Nat}
   LockChanged{name: String, lock: LK.NamedLock, at: Nat}
+  # routines-cal (core/sched.bend). A routine's plan, logged right after a
+  # RoutineSet: `once` the UTC instant of a one-time fire (0: repeats), `tz`
+  # "" (the machine's offset, as before), "person" or an IANA zone, `kind`
+  # "" (a prompt to the bot) or "remind" (an alert to the person). It
+  # clears done and slot. RoutineSlot: the zone's wall clock at the last
+  # fire of a zoned routine. RoutineDone: a one-time routine fired.
+  # Reminded: a reminder was delivered into `thread` (an Act of tone
+  # "remind"); it wakes no agent.
+  RoutinePlan{id: String, once: Nat, tz: String, kind: String, at: Nat}
+  RoutineSlot{id: String, slot: Nat, at: Nat}
+  RoutineDone{id: String, at: Nat}
+  Reminded{id: String, bot: String, thread: String, text: String, at: Nat}
 
 # the later of two times. Base's Nat.max recurses once per unit and
 # overflows at epoch scale; Nat.is_ge compiles to a machine comparison.
@@ -1815,6 +1827,14 @@ def State.apply.go(s: State, e: Change) -> State:
       Wake.drop(s, id)
     case LockChanged{name, l, _}:
       Locks.fold(s, name, l)
+    case RoutinePlan{id, once, tz, kind, _}:
+      State.world((w => BT.World.routine_plan(w, id, once, tz, kind)), s)
+    case RoutineSlot{id, slot, _}:
+      State.world((w => BT.World.routine_slot(w, id, slot)), s)
+    case RoutineDone{id, _}:
+      State.world((w => BT.World.routine_done(w, id)), s)
+    case Reminded{+id, _, thread, text, +at}:
+      State.post(s, Act{"remind:" ++ id ++ ":" ++ Nat.show(at), thread, "remind", "reminder", text, at})
     case TodosSet{+th, todos, _}:
       State.setting(s, "todos." ++ th, todos)
     case ProviderSet{+id, +p, m, _}:

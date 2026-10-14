@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -156,7 +157,7 @@ private fun PlaneItem(m: AppModel, r: PlaneRow, mood: Boolean = false) {
             leadingContent = {
                 Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
                     if (r.state == "working") CircularProgressIndicator(Modifier.size(16.dp), color = PhaseColor.accent, strokeWidth = 2.dp)
-                    else Icon(Icons.Filled.Schedule, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
+                    else Icon(if (r.state == "reminder") Icons.Filled.Notifications else Icons.Filled.Schedule, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
                 }
             },
             modifier = Modifier.alpha(if (r.away) 0.5f else 1f).clickable(onClick = go),

@@ -236,6 +236,18 @@ struct EntryRow: View {
                 Text(entry.text).lineLimit(1).font(.callout)
             }
             .buttonStyle(.borderless)
+        // a reminder the hub delivered: a bell, Reminder, the text and when
+        case "reminder":
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "bell")
+                Text("Reminder").foregroundStyle(.tertiary)
+                Text(entry.text)
+                Spacer()
+                Text(entry.when ?? "").foregroundStyle(.tertiary)
+            }
+            .font(.caption)
+            .foregroundStyle(Color.accentColor)
+            .frame(maxWidth: .infinity, alignment: .leading)
         // a design step: shows it in the viewer
         case "step":
             Button { model.act("hist-show", entry.value ?? "") } label: {

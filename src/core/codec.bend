@@ -297,9 +297,17 @@ def Change.encode(c: M.Change) -> J.Json:
       Change.obj("WakeDropped", [J.KV{"id", J.Str{id}}, J.KV{"at", Codec.nat(at)}])
     case M.ThreadLaunched{id, by, report, at}:
       Change.obj("ThreadLaunched", [J.KV{"id", J.Str{id}}, J.KV{"by", J.Str{by}}, J.KV{"report", J.Flag{report}}, J.KV{"at", Codec.nat(at)}])
+    case M.RoutinePlan{id, once, tz, kind, at}:
+      Change.obj("RoutinePlan", [J.KV{"id", J.Str{id}}, J.KV{"once", Codec.nat(once)}, J.KV{"tz", J.Str{tz}}, J.KV{"kind", J.Str{kind}}, J.KV{"at", Codec.nat(at)}])
+    case M.RoutineSlot{id, slot, at}:
+      Change.obj("RoutineSlot", [J.KV{"id", J.Str{id}}, J.KV{"slot", Codec.nat(slot)}, J.KV{"at", Codec.nat(at)}])
+    case M.RoutineDone{id, at}:
+      Change.obj("RoutineDone", [J.KV{"id", J.Str{id}}, J.KV{"at", Codec.nat(at)}])
+    case M.Reminded{id, bot, thread, text, at}:
+      Change.obj("Reminded", [J.KV{"id", J.Str{id}}, J.KV{"bot", J.Str{bot}}, J.KV{"thread", J.Str{thread}}, J.KV{"text", J.Str{text}}, J.KV{"at", Codec.nat(at)}])
 
 def Change.tags() -> List<&2, String>:
-  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet", "WorkSet", "UberSet", "UberOp", "ThreadLaunched", "WakeSet", "WakeDropped", "LockChanged"]
+  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet", "WorkSet", "UberSet", "UberOp", "ThreadLaunched", "WakeSet", "WakeDropped", "LockChanged", "RoutinePlan", "RoutineSlot", "RoutineDone", "Reminded"]
 
 def Codec.wake.events(xs: List<&2, J.Json>) -> List<&2, String>:
   match xs:
@@ -436,6 +444,14 @@ def Change.decode.k(i: Nat, +o: J.Json) -> Maybe<&2, M.Change>:
       Some{M.WakeDropped{J.Json.get_str(o, "id", ""), J.Json.get_nat(o, "at", 0n)}}
     case 59n:
       Some{M.ThreadLaunched{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "by", ""), J.Json.get_bool(o, "report", True{}), J.Json.get_nat(o, "at", 0n)}}
+    case 63n:
+      Some{M.RoutinePlan{J.Json.get_str(o, "id", ""), J.Json.get_nat(o, "once", 0n), J.Json.get_str(o, "tz", ""), J.Json.get_str(o, "kind", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 64n:
+      Some{M.RoutineSlot{J.Json.get_str(o, "id", ""), J.Json.get_nat(o, "slot", 0n), J.Json.get_nat(o, "at", 0n)}}
+    case 65n:
+      Some{M.RoutineDone{J.Json.get_str(o, "id", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 66n:
+      Some{M.Reminded{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "text", ""), J.Json.get_nat(o, "at", 0n)}}
     case _:
       None{}
 
@@ -579,6 +595,14 @@ def Change.wire(c: M.Change) -> J.Json:
       Change.encode(M.WakeDropped{id, at})
     case M.ThreadLaunched{id, by, report, at}:
       Change.encode(M.ThreadLaunched{id, by, report, at})
+    case M.RoutinePlan{id, once, tz, kind, at}:
+      Change.encode(M.RoutinePlan{id, once, tz, kind, at})
+    case M.RoutineSlot{id, slot, at}:
+      Change.encode(M.RoutineSlot{id, slot, at})
+    case M.RoutineDone{id, at}:
+      Change.encode(M.RoutineDone{id, at})
+    case M.Reminded{id, bot, thread, text, at}:
+      Change.encode(M.Reminded{id, bot, thread, text, at})
 
 def Change.private(+tag: String) -> Bool:
   Bool.or(String.eq(tag, "DeviceRegistered"), String.eq(tag, "DeviceDropped"))

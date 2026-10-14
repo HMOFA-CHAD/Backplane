@@ -119,6 +119,10 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     init {
         engine.onFlush = { out -> scope.launch { apply(out) } }
         app.registerActivityLifecycleCallbacks(this)
+        // a changed zone is reported at once (hubs keep it for routines and reminders)
+        androidx.core.content.ContextCompat.registerReceiver(app, object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context, i: android.content.Intent) { act("tz-report", java.time.ZoneId.systemDefault().id) }
+        }, android.content.IntentFilter(android.content.Intent.ACTION_TIMEZONE_CHANGED), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         val t0 = android.os.SystemClock.elapsedRealtime()
         fun since() = android.os.SystemClock.elapsedRealtime() - t0
         scope.launch {
@@ -222,6 +226,8 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
             onOpen = {
                 if (shownHub == key) plots.reset()
                 scope.launch { apply(engine.online(key, true)) }
+                // where the person is: every hub keeps the phone's zone (routines follow it)
+                act("tz-report", java.time.ZoneId.systemDefault().id)
             },
             // plots go straight to the viewer, never through the Bend
             // client, and only the hub in focus draws

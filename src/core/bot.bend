@@ -22,7 +22,7 @@ type Hook is Data:
   Hook{id: String, bot: String, name: String, created: Nat, revoked: Bool, last: Nat, count: Nat}
 
 type Routine is Data:
-  Routine{id: String, bot: String, name: String, cron: String, prompt: String, on: Bool, last: Nat, created: Nat, deleted: Bool}
+  Routine{id: String, bot: String, name: String, cron: String, prompt: String, on: Bool, last: Nat, created: Nat, deleted: Bool, once: Nat, tz: String, kind: String, done: Bool, slot: Nat}
 
 type Mem is Data:
   Mem{bot: String, key: String, kind: String, text: String, tags: String, created: Nat, updated: Nat}
@@ -73,7 +73,7 @@ def Hook.blank(id: String) -> Hook:
   Hook{id, "", "", 0n, True{}, 0n, 0n}
 
 def Routine.blank(id: String) -> Routine:
-  Routine{id, "", "", "", "", False{}, 0n, 0n, True{}}
+  Routine{id, "", "", "", "", False{}, 0n, 0n, True{}, 0n, "", "", False{}, 0n}
 
 def Peer.blank(id: String) -> Peer:
   Peer{id, "", "", 0n, True{}}
@@ -211,10 +211,18 @@ def Routine.clock(was_on: Bool, on: Bool, +last: Nat, +at: Nat) -> Nat:
     case _ _:
       last
 
+# a routine's slot (the zone's wall clock at its last fire) restarts with its clock
+def Routine.slot.keep(was_on: Bool, on: Bool, +slot: Nat) -> Nat:
+  match was_on on:
+    case False{} True{}:
+      0n
+    case _ _:
+      slot
+
 def World.routine_set.k(w: World, +id: String, bot: String, name: String, cron: String, prompt: String, +on: Bool, +at: Nat, old: Routine) -> World:
   match old:
-    case Routine{_, +ob, _, _, _, was_on, +last, +created, +deleted}:
-      World.routines.set(w, id, Routine{id, Bot.keep.k(ob, bot), name, cron, prompt, on, Routine.clock(Bool.and(was_on, Bool.not(deleted)), on, last, at), Bool.pick(Nat, deleted, at, created), False{}})
+    case Routine{_, +ob, _, _, _, +was_on, +last, +created, +deleted, +once, tz, kind, done, +slot}:
+      World.routines.set(w, id, Routine{id, Bot.keep.k(ob, bot), name, cron, prompt, on, Routine.clock(Bool.and(was_on, Bool.not(deleted)), on, last, at), Bool.pick(Nat, deleted, at, created), False{}, once, tz, kind, done, Routine.slot.keep(Bool.and(was_on, Bool.not(deleted)), on, slot)})
 
 # made or edited; a routine's clock starts when it is made or turned on, so
 # a new routine never fires for times before it existed
@@ -223,19 +231,45 @@ def World.routine_set(+w: World, +id: String, bot: String, name: String, cron: S
 
 def World.routine_deleted.k(w: World, +id: String, r: Routine) -> World:
   match r:
-    case Routine{i, b, n, c, p, o, l, cr, _}:
-      World.routines.set(w, id, Routine{i, b, n, c, p, o, l, cr, True{}})
+    case Routine{i, b, n, c, p, o, l, cr, _, on1, tz, kd, dn, sl}:
+      World.routines.set(w, id, Routine{i, b, n, c, p, o, l, cr, True{}, on1, tz, kd, dn, sl})
 
 def World.routine_deleted(+w: World, +id: String) -> World:
   World.routine_deleted.k(w, id, World.routine(w, id))
 
 def World.routine_fired.k(w: World, +id: String, +at: Nat, r: Routine) -> World:
   match r:
-    case Routine{i, b, n, c, p, o, _, cr, d}:
-      World.routines.set(w, id, Routine{i, b, n, c, p, o, at, cr, d})
+    case Routine{i, b, n, c, p, o, _, cr, d, on1, tz, kd, dn, sl}:
+      World.routines.set(w, id, Routine{i, b, n, c, p, o, at, cr, d, on1, tz, kd, dn, sl})
 
 def World.routine_fired(+w: World, +id: String, +at: Nat) -> World:
   World.routine_fired.k(w, id, at, World.routine(w, id))
+
+# RoutinePlan: when it fires once (0: repeats), in which zone, what it does;
+# a plan makes a routine pending again
+def World.routine_plan.k(w: World, +id: String, +once: Nat, tz: String, kind: String, r: Routine) -> World:
+  match r:
+    case Routine{i, b, n, c, p, o, l, cr, d, _, _, _, _, _}:
+      World.routines.set(w, id, Routine{i, b, n, c, p, o, l, cr, d, once, tz, kind, False{}, 0n})
+
+def World.routine_plan(+w: World, +id: String, +once: Nat, tz: String, kind: String) -> World:
+  World.routine_plan.k(w, id, once, tz, kind, World.routine(w, id))
+
+def World.routine_slot.k(w: World, +id: String, +slot: Nat, r: Routine) -> World:
+  match r:
+    case Routine{i, b, n, c, p, o, l, cr, d, on1, tz, kd, dn, _}:
+      World.routines.set(w, id, Routine{i, b, n, c, p, o, l, cr, d, on1, tz, kd, dn, slot})
+
+def World.routine_slot(+w: World, +id: String, +slot: Nat) -> World:
+  World.routine_slot.k(w, id, slot, World.routine(w, id))
+
+def World.routine_done.k(w: World, +id: String, r: Routine) -> World:
+  match r:
+    case Routine{i, b, n, c, p, o, l, cr, d, on1, tz, kd, _, sl}:
+      World.routines.set(w, id, Routine{i, b, n, c, p, o, l, cr, d, on1, tz, kd, True{}, sl})
+
+def World.routine_done(+w: World, +id: String) -> World:
+  World.routine_done.k(w, id, World.routine(w, id))
 
 def Mem.at(+bot: String, +key: String) -> String:
   bot ++ "/" ++ key
@@ -695,28 +729,73 @@ def World.hooks(+w: World, +bot: String) -> List<&2, Hook>:
 
 def Routine.live(r: Routine) -> Bool:
   match r:
-    case Routine{_, _, _, _, _, _, _, _, d}:
+    case Routine{_, _, _, _, _, _, _, _, d, _, _, _, _, _}:
       Bool.not(d)
 
 def Routine.bot(r: Routine) -> String:
   match r:
-    case Routine{_, b, _, _, _, _, _, _, _}:
+    case Routine{_, b, _, _, _, _, _, _, _, _, _, _, _, _}:
       b
 
 def Routine.id(r: Routine) -> String:
   match r:
-    case Routine{i, _, _, _, _, _, _, _, _}:
+    case Routine{i, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       i
 
 def Routine.cron(r: Routine) -> String:
   match r:
-    case Routine{_, _, _, c, _, _, _, _, _}:
+    case Routine{_, _, _, c, _, _, _, _, _, _, _, _, _, _}:
       c
 
 def Routine.last(r: Routine) -> Nat:
   match r:
-    case Routine{_, _, _, _, _, _, l, _, _}:
+    case Routine{_, _, _, _, _, _, l, _, _, _, _, _, _, _}:
       l
+
+def Routine.name(r: Routine) -> String:
+  match r:
+    case Routine{_, _, n, _, _, _, _, _, _, _, _, _, _, _}:
+      n
+
+def Routine.prompt(r: Routine) -> String:
+  match r:
+    case Routine{_, _, _, _, p, _, _, _, _, _, _, _, _, _}:
+      p
+
+def Routine.on(r: Routine) -> Bool:
+  match r:
+    case Routine{_, _, _, _, _, o, _, _, _, _, _, _, _, _}:
+      o
+
+def Routine.created(r: Routine) -> Nat:
+  match r:
+    case Routine{_, _, _, _, _, _, _, c, _, _, _, _, _, _}:
+      c
+
+def Routine.once(r: Routine) -> Nat:
+  match r:
+    case Routine{_, _, _, _, _, _, _, _, _, o, _, _, _, _}:
+      o
+
+def Routine.tz(r: Routine) -> String:
+  match r:
+    case Routine{_, _, _, _, _, _, _, _, _, _, t, _, _, _}:
+      t
+
+def Routine.kind(r: Routine) -> String:
+  match r:
+    case Routine{_, _, _, _, _, _, _, _, _, _, _, k, _, _}:
+      k
+
+def Routine.done(r: Routine) -> Bool:
+  match r:
+    case Routine{_, _, _, _, _, _, _, _, _, _, _, _, d, _}:
+      d
+
+def Routine.slot(r: Routine) -> Nat:
+  match r:
+    case Routine{_, _, _, _, _, _, _, _, _, _, _, _, _, s}:
+      s
 
 def World.routines.all(+w: World) -> List<&2, Routine>:
   match w:

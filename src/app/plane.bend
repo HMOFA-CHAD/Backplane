@@ -42,13 +42,18 @@ def Pl.row.thread(+ty: L.Ty, +c: D.Clip, +title: String, +sub: String, +machine:
     L.Ty.text(ty, 2n, machine, c, (x + w - 8 - aw - mw : U32), y, 30, T.Th.faint()),
     L.Ty.text(ty, 2n, age, c, (x + w - 8 - aw : U32), y, 30, T.Th.dim())])
 
+# a row's mark: a dot for its state, a bell for a reminder
+def Pl.mark(+ty: L.Ty, +c: D.Clip, +state: String, +x: U32, +y: U32) -> List<&2, R.Op>:
+  Bool.pick(List<&2, R.Op>, String.eq(state, "reminder"), L.Lay.icon(ty, "bell", c, (x + 1 : U32), (y + 7 : U32), T.Th.accent()),
+    [D.Draw.disc(c, U32.to_f32((x + 8 : U32)), U32.to_f32((y + 15 : U32)), 4.0, Pl.dot(state), 255)])
+
 # a side row: dot, title, and what it says at the right
 def Pl.row.side(+ty: L.Ty, +c: D.Clip, +title: String, +sub: String, +machine: String, +state: String, +x: U32, +w: U32, +y: U32) -> List<&2, R.Op>:
   +sw = L.Ty.width(ty, 2n, sub)
   +sc = {L.U32.dim(w, 40) : U32}
   +sp = {U32.min(sw, (sc / 2 : U32)) : U32}
   +tt = {L.Ty.fit(ty, 0n, title ++ Bool.pick(String, String.is_empty(machine), "", " · " ++ machine), L.U32.dim(sc, (sp + 12 : U32))) : String}
-  List.concat(&2, R.Op, [[D.Draw.disc(c, U32.to_f32((x + 8 : U32)), U32.to_f32((y + 15 : U32)), 4.0, Pl.dot(state), 255)],
+  List.concat(&2, R.Op, [Pl.mark(ty, c, state, x, y),
     L.Ty.text(ty, 0n, tt, c, (x + 22 : U32), y, 30, T.Th.text()),
     L.Ty.text(ty, 2n, L.Ty.fit(ty, 2n, sub, sp), c, (x + w - 8 - L.Ty.width(ty, 2n, L.Ty.fit(ty, 2n, sub, sp)) : U32), y, 30, T.Th.dim())])
 

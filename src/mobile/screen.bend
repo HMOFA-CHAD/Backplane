@@ -24,6 +24,8 @@ import ../core/hist.bend as HS
 import ../core/review.bend as RVW
 import ../core/tools.bend as TO
 import ../core/emb.bend as EM
+import ../core/sched.bend as SCH
+import ../core/tz.bend as TZ
 
 # Ui -> the screen the phone apps draw, as JSON. SwiftUI and Compose map
 # it onto native lists, toolbars and text fields; every decision (order,
@@ -421,14 +423,38 @@ def Mob.from(none: Bool, +id: String, +from: String, +st: M.State) -> List<&2, J
     case False{}:
       [Mob.link(id ++ ":from", "← from " ++ U.Tasks.title(st, from), from)]
 
+# a reminder (a Reminded in the log): kind "reminder", its text and when,
+# in the person's zone
+def Mob.remind.is(e: M.Entry) -> Bool:
+  match e:
+    case M.Act{_, _, +tone, _, _, _}:
+      String.eq(tone, "remind")
+    case _:
+      False{}
+
+def Mob.remind(e: M.Entry, +st: M.State) -> J.Json:
+  match e:
+    case M.Act{+id, _, _, _, +text, +at}:
+      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("reminder")}, J.KV{"text", J.Json.str(text)},
+        J.KV{"when", J.Json.str(TZ.Tz.show.nz(SCH.Sched.person(st, 0n, True{}), at))}])
+    case _:
+      J.Json.obj([J.KV{"kind", J.Json.str("act")}])
+
+def Mob.entry.r(rem: Bool, +e: M.Entry, +st: M.State, +dr: Map<&2, String>) -> List<&2, J.Json>:
+  match rem:
+    case True{}:
+      [Mob.remind(e, st)]
+    case False{}:
+      [Mob.own(e, dr)]
+
 # what an entry shows as, as the web's View.entry.k: this thread's own
 # (headed by the thread that sent it), or a message it sent to another
-def Mob.entry.k(mine: Bool, e: M.Entry, +st: M.State, +dr: Map<&2, String>) -> List<&2, J.Json>:
+def Mob.entry.k(mine: Bool, +e: M.Entry, +st: M.State, +dr: Map<&2, String>) -> List<&2, J.Json>:
   match mine e:
     case True{} M.Msg{+id, t, r, x, at}:
       List.append(&2, J.Json, Mob.from(String.is_empty(M.Link.from(id)), id, M.Link.from(id), st), [Mob.own(M.Msg{id, t, r, x, at}, dr)])
     case True{} _:
-      [Mob.own(e, dr)]
+      Mob.entry.r(Mob.remind.is(e), e, st, dr)
     case False{} M.Msg{+id, +t, _, x, _}:
       [Mob.link(id, "→ " ++ U.Tasks.title(st, t) ++ ": " ++ DF.Diff.first(x), t)]
     case False{} _:
@@ -1032,6 +1058,13 @@ def Mob.keys.form(open: Bool, +u: U.Ui) -> List<&2, J.Json>:
     case False{}:
       Nil{}
 
+# the time zone (client.bend's Tzs): the row shows it; a field and Set; Automatic
+# while one is set; an error from the hub under it
+def Mob.tz(+u: U.Ui) -> List<&2, J.Json>:
+  [Mob.set.row.f("Time zone", U.Tzs.line(u), [Mob.set.field("tzname", "Europe/Helsinki", False{}, U.Ui.scratch(u, "@f.tzname"))],
+     List.append(&2, J.Json, [Mob.set.btn("Set", "tz-set", "", True{})], Bool.pick(List<&2, J.Json>, U.Tzs.auto(u), [Mob.set.btn("Automatic", "tz-auto", "", False{})], Nil{}))),
+   Mob.set.row("", U.Tzs.err(u), Nil{})]
+
 def Mob.keys(+u: U.Ui) -> List<&2, J.Json>:
   List.concat(&2, J.Json, [[Mob.set.row("API keys", U.ApiKeys.note(u), [Mob.set.btn("Add API key", "flag", "keyform", U.Ui.flag(u, "keyform")), Mob.set.btn("View API keys", "flag", "keys", U.Ui.flag(u, "keys"))])],
     Mob.keys.form(U.Ui.flag(u, "keyform"), u), Mob.keys.list(U.Ui.flag(u, "keys"), u)])
@@ -1156,7 +1189,7 @@ def Mob.settings.k(+u: U.Ui, more: List<&2, J.Json>) -> J.Json:
 def Mob.settings(open: Bool, +u: U.Ui) -> J.Json:
   match open:
     case True{}:
-      Mob.settings.k(u, List.concat(&2, J.Json, [Mob.keys(u), Mob.agy(u), [Mob.set.row("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [Mob.set.btn("Show the tour", "ob-open", "", False{})])]]))
+      Mob.settings.k(u, List.concat(&2, J.Json, [Mob.keys(u), Mob.agy(u), Mob.tz(u), [Mob.set.row("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [Mob.set.btn("Show the tour", "ob-open", "", False{})])]]))
     case False{}:
       J.Null{}
 

@@ -113,6 +113,8 @@ struct Entry: Decodable, Identifiable {
     let value: String?
     // a terminal in the chat (kind "emb"): its item in the thread's embs
     let key: String?
+    // a reminder (kind "reminder"): when, in the person's zone
+    let when: String?
 }
 
 // what the agent waits on the user for: an approval, a question or a
@@ -652,12 +654,16 @@ struct BotMemory: Decodable, Hashable {
 struct BotRoutine: Decodable, Hashable {
     let id, name, cron, when, prompt, last: String
     let on: Bool
+    // routines-cal: routine, once or reminder; what it says next, in the person's zone
+    let kind, label, next, rel, zone, doneText: String?
+    let done: Bool?
 }
 
 // the routine form ("routine-edit" id, or "" for a new one, opens it)
 struct RoutineForm: Decodable {
     let open: Bool
     let id, name, cron, prompt: String
+    let hint: String?
 }
 
 struct BotHook: Decodable, Hashable {

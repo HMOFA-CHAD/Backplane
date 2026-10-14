@@ -75,6 +75,8 @@ import ../core/qr.bend as QR
 import ../core/uber.bend as UB
 import ../core/ubersync.bend as UBS
 import ../core/ubop.bend as UBO
+import ../core/sched.bend as SCH
+import ../core/tz.bend as TZN
 import ../core/rules.bend as RLS
 
 # The server. One hub computation owns the read model and the event log;
@@ -3118,6 +3120,143 @@ def Desk.tell.to(m: Maybe<&2, U32>, +cl: List<&2, Client>, +st: M.State, +thread
     case None{}:
       IO.pure(List<&2, Client>, cl)
 
+# Time zones
+# ----------
+# The hub looks a zone's POSIX rule up in the system's zoneinfo (the footer
+# line of its TZif file, `tail -n 1`), so routines and the person's zone
+# follow daylight saving. A zone it cannot read that way but the system
+# knows is taken as the offset it has now. A name is checked first
+# (SCH.Zone.valid): letters, digits, _ + - between slashes, nothing else.
+
+def ZoneJob.path(+name: String) -> String:
+  "/usr/share/zoneinfo/" ++ name
+
+def ZoneJob.footer(r: P.Ran) -> String:
+  match r:
+    case P.Ran{0, out}:
+      String.trim(out)
+    case P.Ran{_, _}:
+      ""
+
+def ZoneJob.offset.k(+z: String) -> String:
+  Bool.pick(String, Bool.and(Nat.is_eq(String.length(z), 5n), Bool.or(String.starts_with(z, "+"), String.starts_with(z, "-"))), SCH.Zone.fixed.rule(z), "")
+
+# date +%z of a zone the system knows: +hhmm / -hhmm, else ""
+def ZoneJob.offset(r: P.Ran) -> String:
+  match r:
+    case P.Ran{0, out}:
+      ZoneJob.offset.k(String.trim(out))
+    case P.Ran{_, _}:
+      ""
+
+def ZoneJob.fallback(+name: String) -> IO(String):
+  do IO<String>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", "[ -f \"$2\" ] && TZ=\"$1\" date +%z", "sh", name, ZoneJob.path(name)], "/")
+    return ZoneJob.offset(r)
+
+def ZoneJob.rule.k(ok: Bool, +line: String, +name: String) -> IO(String):
+  match ok:
+    case True{}:
+      IO.pure(String, line)
+    case False{}:
+      ZoneJob.fallback(name)
+
+def ZoneJob.rule.v(valid: Bool, +name: String) -> IO(String):
+  match valid:
+    case True{}:
+      do IO<String>:
+        r : P.Ran <- P.Proc.run("tail", ["-n", "1", ZoneJob.path(name)], "/")
+        +line : String = ZoneJob.footer(r)
+        ZoneJob.rule.k(BO.Maybe.is(TZN.TzRule, TZN.Tz.parse(line)), line, name)
+    case False{}:
+      IO.pure(String, "")
+
+# a zone's rule, "" when the name is not valid or the system does not know it
+def ZoneJob.rule(+name: String) -> IO(String):
+  ZoneJob.rule.v(SCH.Zone.valid(name), name)
+
+# this machine's own zone: $TZ, else /etc/localtime's target, else /etc/timezone
+def ZoneJob.machine.sh() -> String:
+  "z=${TZ#:}; if [ -z \"$z\" ]; then l=$(readlink /etc/localtime 2>/dev/null); case $l in */zoneinfo/*) z=${l#*zoneinfo/};; esac; fi; if [ -z \"$z\" ] && [ -f /etc/timezone ]; then z=$(cat /etc/timezone); fi; echo \"$z\""
+
+def ZoneJob.machine.zone(+z: String) -> String:
+  Bool.pick(String, SCH.Zone.valid(z), z, "")
+
+def ZoneJob.machine() -> IO(String):
+  do IO<String>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", ZoneJob.machine.sh()], "/")
+    return ZoneJob.machine.zone(ZoneJob.footer(r))
+
+# the setting for a zone's rule when it differs from the one held
+def ZoneJob.log(+name: String, +rule: String, +old: String, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, Bool.or(String.is_empty(rule), String.eq(rule, old)), Nil{}, [M.SettingSet{"tz.rule." ++ name, rule, now}])
+
+def ZoneJob.one.k(parts: List<&2, String>, +now: Nat) -> IO(List<&2, M.Change>):
+  match parts:
+    case +name <> +old <> Nil{}:
+      IO.bind(String, List<&2, M.Change>, ZoneJob.rule(name), rule => IO.pure(List<&2, M.Change>, ZoneJob.log(name, rule, old, now)))
+    case +name <> Nil{}:
+      IO.bind(String, List<&2, M.Change>, ZoneJob.rule(name), rule => IO.pure(List<&2, M.Change>, ZoneJob.log(name, rule, "", now)))
+    case _:
+      IO.pure(List<&2, M.Change>, Nil{})
+
+# one "name<tab>rule held" line of work
+def ZoneJob.one(line: String, +now: Nat) -> IO(List<&2, M.Change>):
+  ZoneJob.one.k(String.split(line, Chr{9}), now)
+
+def ZoneJob.each(xs: List<&2, String>, +now: Nat, acc: List<&2, M.Change>) -> IO(List<&2, M.Change>):
+  match xs:
+    case Nil{}:
+      IO.pure(List<&2, M.Change>, acc)
+    case +l <> t:
+      IO.bind(List<&2, M.Change>, List<&2, M.Change>, ZoneJob.one(l, now), c => ZoneJob.each(t, now, List.append(&2, M.Change, acc, c)))
+
+def ZoneJob.machine.log(+z: String, +old: String, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, Bool.or(String.is_empty(z), String.eq(z, old)), Nil{}, [M.SettingSet{"tz.machine", z, now}])
+
+def ZoneJob.machine.log.go(detect: Bool, +old: String, +now: Nat) -> IO(List<&2, M.Change>):
+  match detect:
+    case True{}:
+      IO.bind(String, List<&2, M.Change>, ZoneJob.machine(), z => IO.pure(List<&2, M.Change>, ZoneJob.machine.log(z, old, now)))
+    case False{}:
+      IO.pure(List<&2, M.Change>, Nil{})
+
+def ZoneJob.send(cs: List<&2, M.Change>, +inbox: Chan(Msg)) -> IO(Unit):
+  match cs:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case _ <> _:
+      do IO<Unit>:
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Commit{cs})
+        return Unit{}
+
+# the rules of the zones in `todo`, this machine's zone when `detect`, and
+# the day's mark when `mark`: one Commit with what changed
+def ZoneJob.run(+inbox: Chan(Msg), todo: List<&2, String>, detect: Bool, +old: String, mark: Bool, +now: Nat) -> IO(Unit):
+  do IO<Unit>:
+    cs1 : List<&2, M.Change> <- ZoneJob.each(todo, now, Nil{})
+    cs2 : List<&2, M.Change> <- ZoneJob.machine.log.go(detect, old, now)
+    ZoneJob.send(List.concat(&2, M.Change, [cs1, cs2, Bool.pick(List<&2, M.Change>, mark, [M.SettingSet{"tz.checked", Nat.show(now), now}], Nil{})]), inbox)
+
+# the minute tick: zones with no rule yet are looked up at once, all of them
+# (and this machine's own) once a day
+def Hub.zone.run(go: Bool, +inbox: Chan(Msg), todo: List<&2, String>, detect: Bool, +old: String, mark: Bool, +now: Nat) -> IO(Unit):
+  match go:
+    case True{}:
+      IO.spawn(Unit, ZoneJob.run(inbox, todo, detect, old, mark, now))
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Hub.zone.tick.k(+stale: Bool, +st: M.State, +inbox: Chan(Msg), +now: Nat) -> IO(Unit):
+  Hub.zone.run(Bool.or(stale, Bool.or(Bool.not(List.is_empty(&2, String, SCH.Zone.todo(st, stale))), String.is_empty(M.Setting.get(st, "tz.machine", "")))),
+    inbox, SCH.Zone.todo(st, stale), Bool.or(stale, String.is_empty(M.Setting.get(st, "tz.machine", ""))), M.Setting.get(st, "tz.machine", ""), stale, now)
+
+def Hub.zone.tick(h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        Hub.zone.tick.k(SCH.Zone.stale(st, now), st, inbox, now)
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
 # an alert as a desktop notification on the desk used last: none when a
 # desk watches the thread and the alert is one a watcher holds (a note is
 # never held)
@@ -5049,6 +5188,25 @@ def BotJob.reply(+inbox: Chan(Msg), +client: U32, +id: String, +ok: Bool, kvs: L
 def BotJob.fail(+inbox: Chan(Msg), +client: U32, +id: String, msg: String) -> IO(Unit):
   BotJob.reply(inbox, client, id, False{}, [J.KV{"error", J.Str{msg}}])
 
+def ZoneJob.set.ok(none: Bool, +rule: String, +name: String, +old: String, +inbox: Chan(Msg), +client: U32, +id: String, +now: Nat) -> IO(Unit):
+  match none:
+    case True{}:
+      BotJob.fail(inbox, client, id, "I don't know a time zone called " ++ name)
+    case False{}:
+      do IO<Unit>:
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Commit{List.append(&2, M.Change, ZoneJob.log(name, rule, old, now), [M.SettingSet{"person.tz", name, now}])})
+        BotJob.reply(inbox, client, id, True{}, [J.KV{"zone", J.Str{name}}])
+
+# zone.set: the person's zone, once the system knows it
+def ZoneJob.set.done(+rule: String, +name: String, +old: String, +inbox: Chan(Msg), +client: U32, +id: String, +now: Nat) -> IO(Unit):
+  ZoneJob.set.ok(String.is_empty(rule), rule, name, old, inbox, client, id, now)
+
+def ZoneJob.set(+inbox: Chan(Msg), +name: String, +old: String, +client: U32, +id: String) -> IO(Unit):
+  do IO<Unit>:
+    +now : Nat <- Now.nat()
+    rule : String <- ZoneJob.rule(name)
+    ZoneJob.set.done(rule, name, old, inbox, client, id, now)
+
 def BotJob.client(+b: String) -> U32:
   Maybe.default(&2, U32, U32.read(b), 0)
 
@@ -5765,6 +5923,8 @@ def Bot.fx(i: Nat, +st: M.State, +inbox: Chan(Msg), +cfg: Cfg, +a: String, +b: S
         BO.Bot.thread(BO.World.bot(M.State.bots(st), a)), BotJob.client(b), BotJob.id(c)))
     case 16n:
       Self.post(inbox, UberDo{"home:" ++ a})
+    case 17n:
+      IO.spawn(Unit, ZoneJob.set(inbox, a, M.Setting.get(st, "tz.rule." ++ a, ""), BotJob.client(b), BotJob.id(c)))
     case _:
       IO.pure(Unit, Unit{})
 
@@ -7388,7 +7548,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.BotFx{+kind, +a, +b, +c}:
       do IO<Hub>:
-        Bot.fx(C.Codec.pos(["home", "gone", "hook", "unhook", "send", "invite", "join", "unpeer", "google", "token", "retoken", "untoken", "voice", "scratch", "scratch-gone", "uber", "uber-home"], kind), st, inbox, cfg, a, b, c)
+        Bot.fx(C.Codec.pos(["home", "gone", "hook", "unhook", "send", "invite", "join", "unpeer", "google", "token", "retoken", "untoken", "voice", "scratch", "scratch-gone", "uber", "uber-home", "zone"], kind), st, inbox, cfg, a, b, c)
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 def Hub.outs(os: List<&2, B.Out>, h: Hub) -> IO(Hub):
@@ -8609,7 +8769,8 @@ def Hub.bot_tick(h: Hub, +tz: String, +now: Nat) -> IO(Hub):
         h2 : Hub <- Hub.dir.refresh(Hub{st, f, ls, cl, as, inbox, cfg, note}, "")
         h3 : Hub <- Hub.pair(h2)
         h4 : Hub <- Hub.step(h3, BH.Bots.tick(st, now, BH.Tz{M.Snooze.tz.secs(tz), M.Snooze.tz.east(tz)}))
-        Hub.uber.tick(h4, now)
+        h5 : Hub <- Hub.zone.tick(h4, now)
+        Hub.uber.tick(h5, now)
 
 # Discovery and signed inbound traffic are return signals. Fetch just the
 # returning peer, and never bounce every successful directory request.

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -365,23 +366,30 @@ private fun RoutinesTab(m: AppModel, b: BotView) {
         items(b.routines, key = { it.id }) { r ->
             var menu by remember { mutableStateOf(false) }
             ListItem(
+                modifier = if (r.done) Modifier.alpha(0.55f) else Modifier,
                 headlineContent = { Text(r.name, fontWeight = FontWeight.SemiBold) },
                 supportingContent = {
                     Column {
-                        Text(r.schedule, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelMedium)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (r.kind == "reminder") Icon(Icons.Filled.Notifications, null, Modifier.size(14.dp))
+                            Tag(r.label)
+                            Text(r.schedule, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelMedium)
+                        }
+                        if (r.done) Text(r.doneText, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                        else if (r.next.isNotEmpty()) Text(
+                            "Next " + r.next + (if (r.rel.isEmpty()) "" else " · " + r.rel) + (if (r.zone == "your time") "" else " · " + r.zone),
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
                         Text(r.prompt, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (r.last.isNotEmpty()) Text("last " + r.last, style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline)
                     }
                 },
                 trailingContent = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Switch(r.on, { m.act("routine-toggle", r.id) })
+                        if (!r.done) Switch(r.on, { m.act("routine-toggle", r.id) })
                         Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
                             DropdownMenu(menu, { menu = false }) {
-                                DropdownMenuItem(text = { Text("Run now") }, onClick = { menu = false; m.act("routine-run", r.id) })
-                                DropdownMenuItem(text = { Text("Edit") }, onClick = { menu = false; m.act("routine-edit", r.id) })
+                                if (!r.done) DropdownMenuItem(text = { Text("Run now") }, onClick = { menu = false; m.act("routine-run", r.id) })
+                                if (!r.done) DropdownMenuItem(text = { Text("Edit") }, onClick = { menu = false; m.act("routine-edit", r.id) })
                                 DropdownMenuItem(text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                                     onClick = { menu = false; m.act("routine-delete", r.id) })
                             }
@@ -409,8 +417,8 @@ private fun RoutineDialog(m: AppModel, f: RoutineForm) {
                 OutlinedTextField(name, { name = it; m.field("oname", it) }, Modifier.fillMaxWidth(), singleLine = true,
                     label = { Text("Name") })
                 OutlinedTextField(cron, { cron = it; m.field("ocron", it) }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text("When") }, placeholder = { Text("0 9 * * 1-5") },
-                    supportingText = { Text("Cron, @daily, every 15m, weekdays 08:00") },
+                    label = { Text("When") }, placeholder = { Text("daily 09:30 · tomorrow 9am · in 2h") },
+                    supportingText = { Text(f.hint.ifEmpty { "A schedule (daily 09:30, every 15m, cron) or a time (tomorrow 9am, in 2h)" }) },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false))
                 OutlinedTextField(prompt, { prompt = it; m.field("oprompt", it) }, Modifier.fillMaxWidth(), minLines = 3, maxLines = 10,

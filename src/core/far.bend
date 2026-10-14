@@ -149,6 +149,14 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.RoutineDeleted{Fr.id(l, id), at}}
     case M.RoutineFired{+id, at}:
       Some{M.RoutineFired{Fr.id(l, id), at}}
+    case M.RoutinePlan{+id, once, tz, kind, at}:
+      Some{M.RoutinePlan{Fr.id(l, id), once, tz, kind, at}}
+    case M.RoutineSlot{+id, slot, at}:
+      Some{M.RoutineSlot{Fr.id(l, id), slot, at}}
+    case M.RoutineDone{+id, at}:
+      Some{M.RoutineDone{Fr.id(l, id), at}}
+    case M.Reminded{+id, +bot, +thread, text, at}:
+      Some{M.Reminded{Fr.id(l, id), Fr.id(l, bot), Fr.id(l, thread), text, at}}
     case M.MemorySaved{+bot, key, kind, text, tags, at}:
       Some{M.MemorySaved{Fr.id(l, bot), key, kind, text, tags, at}}
     case M.MemoryForgot{+bot, key, at}:
@@ -287,6 +295,14 @@ def Fr.shared(+s: M.State, c: M.Change) -> Bool:
     case M.RoutineDeleted{_, _}:
       True{}
     case M.RoutineFired{_, _}:
+      True{}
+    case M.RoutinePlan{_, _, _, _, _}:
+      True{}
+    case M.RoutineSlot{_, _, _}:
+      True{}
+    case M.RoutineDone{_, _}:
+      True{}
+    case M.Reminded{_, _, _, _, _}:
       True{}
     case M.MemorySaved{_, _, _, _, _, _}:
       True{}

@@ -169,6 +169,23 @@ def room.of(+s: M.State, +name: String) -> BT.Room:
 def hidden(+s: M.State) -> Nat:
   Nat.sub(List.length(&2, M.Thread, U.Ui.threads(s)), List.length(&2, M.Thread, U.Kids.keep(U.Ui.threads(s), U.Kids.set(s))))
 
+# a person's zone: Helsinki, with the rules of New York known too
+def zst() -> M.State:
+  M.State.replay([M.SettingSet{"tz.rule.Europe/Helsinki", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1n}, M.SettingSet{"tz.rule.America/New_York", "EST5EDT,M3.2.0,M11.1.0", 1n},
+    M.SettingSet{"person.tz", "Europe/Helsinki", 1n}], two())
+
+def tick(+s: M.State, +now: Nat) -> B.Step:
+  BH.Bots.tick(s, now, BH.Tz{0n, True{}})
+
+def routine.json(+s: M.State, +now: Nat) -> String:
+  call(s, now, th.of(s, "Miso"), "routine_list", "{}")
+
+def rid(+s: M.State) -> String:
+  BT.Routine.id(Maybe.default(&2, BT.Routine, List.head(&2, BT.Routine, BT.World.routines(M.State.bots(s), id.of(s, "Miso"))), BT.Routine.blank("?")))
+
+def hub.ask(+s: M.State, +now: Nat, +m: String, +p: String) -> B.Step:
+  BH.Bots.hub(s, now, 1, req(m, p))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +s : M.State = two()
@@ -238,9 +255,68 @@ def main() -> IO(Unit):
     +o : M.State = made(s, 1000n, "bots.routine", "{\"bot\":\"" ++ id.of(s, "Miso") ++ "\",\"name\":\"check mail\",\"cron\":\"every 15m\",\"prompt\":\"Look at the inbox\"}")
     C.Check.str("routine bad", st.tags(ask(s, 1000n, "bots.routine", "{\"bot\":\"" ++ id.of(s, "Miso") ++ "\",\"cron\":\"whenever\",\"prompt\":\"x\"}")), "| send:reply ")
     C.Check.str("routine not yet", st.tags(BH.Bots.tick(o, 1500n, BH.Tz{0n, True{}})), "| ")
-    C.Check.str("routine due", st.tags(BH.Bots.tick(o, 1860n, BH.Tz{0n, True{}})), "RoutineFired BotWoke MessagePosted TurnChanged | out out out out ")
+    C.Check.str("routine due", st.tags(BH.Bots.tick(o, 1860n, BH.Tz{0n, True{}})), "RoutineFired RoutineSlot BotWoke MessagePosted TurnChanged | out out out out ")
     C.Check.str("routine once", st.tags(BH.Bots.tick(run(o, BH.Bots.tick(o, 1860n, BH.Tz{0n, True{}})), 1900n, BH.Tz{0n, True{}})), "| ")
     C.Check.str("routine by bot", yes(String.contains(call(s, 1000n, th.of(s, "Tofu"), "routine_set", "{\"name\":\"r\",\"schedule\":\"daily 09:30\",\"prompt\":\"p\"}"), "daily at 09:30")), "yes")
+    # routines-cal: one-time routines, reminders and zones
+    +z : M.State = zst()
+    +zd : M.State = made(z, 1791892800n, "bots.routine", "{\"bot\":\"" ++ id.of(z, "Miso") ++ "\",\"name\":\"digest\",\"cron\":\"daily 09:30\",\"prompt\":\"news\"}")
+    C.Check.str("zoned: 09:29:59 not yet", st.tags(tick(zd, 1791959399n)), "| ")
+    C.Check.str("zoned: 09:30 Helsinki summer", st.tags(tick(zd, 1791959400n)), "RoutineFired RoutineSlot BotWoke MessagePosted TurnChanged | out out out out ")
+    +zw : M.State = made(z, 1797163200n, "bots.routine", "{\"bot\":\"" ++ id.of(z, "Miso") ++ "\",\"name\":\"digest\",\"cron\":\"daily 09:30\",\"prompt\":\"news\"}")
+    C.Check.str("zoned: 07:29:59Z not yet in winter", st.tags(tick(zw, 1797233399n)), "| ")
+    C.Check.str("zoned: 09:30 Helsinki winter", st.tags(tick(zw, 1797233400n)), "RoutineFired RoutineSlot BotWoke MessagePosted TurnChanged | out out out out ")
+    +zf : M.State = run(zd, tick(zd, 1791959400n))
+    C.Check.str("zoned: not again", st.tags(tick(zf, 1791959460n)), "| ")
+    C.Check.str("zoned: next day", st.tags(tick(zf, 1792045800n)), "RoutineFired RoutineSlot BotWoke MessagePosted TurnQueued | ")
+    +zn : M.State = M.State.replay([M.SettingSet{"person.tz", "America/New_York", 1791959500n}], zf)
+    C.Check.str("zone change west does not refire at once", st.tags(tick(zn, 1791959520n)), "| ")
+    C.Check.str("zone change west does not refire at 09:30 there", st.tags(tick(zn, 1791984600n)), "| ")
+    C.Check.str("zone change west fires the next day", st.tags(tick(zn, 1792071000n)), "RoutineFired RoutineSlot BotWoke MessagePosted TurnQueued | ")
+    +rm : M.State = run(z, call.step(z, 1791957600n, th.of(z, "Miso"), "remind_person", "{\"at\":\"in 20m\",\"text\":\"stand up\"}"))
+    C.Check.str("remind_person logs a reminder routine", st.tags(call.step(z, 1791957600n, th.of(z, "Miso"), "remind_person", "{\"at\":\"in 20m\",\"text\":\"stand up\"}")), "RoutineSet RoutinePlan | ")
+    C.Check.str("remind_person says when", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "remind_person", "{\"at\":\"in 20m\",\"text\":\"stand up\"}"), "I'll remind them Wed 14 Oct 09:20 EEST (in 20m): stand up")), "yes")
+    C.Check.str("reminder: not before", st.tags(tick(rm, 1791958799n)), "| ")
+    C.Check.str("reminder: Reminded RoutineFired RoutineDone and its alert record, no turn", st.tags(tick(rm, 1791958800n)), "Reminded RoutineFired RoutineDone SettingSet | ")
+    C.Check.str("reminder: the alert is a reminder", yes(String.contains(changes.show(tags.cs(tick(rm, 1791958800n))), "reminder\\tremind-")), "yes")
+    +rmoff : M.State = M.State.replay([M.SettingSet{"notify.reminders", "off", 1791957700n}], rm)
+    C.Check.str("reminder: alerts turned off leave an empty kind", yes(String.contains(changes.show(tags.cs(tick(rmoff, 1791958800n))), "\"value\":\"\\t\\t")), "yes")
+    C.Check.str("reminder: once", st.tags(tick(run(rm, tick(rm, 1791958800n)), 1791958900n)), "| ")
+    C.Check.str("reminder lands in the bot's thread", yes(String.contains(changes.show(tags.cs(tick(rm, 1791958800n))), "\"thread\":\"" ++ th.of(z, "Miso") ++ "\"")), "yes")
+    C.Check.str("reminder: listed as a reminder", yes(String.contains(routine.json(rm, 1791957700n), "kind\\\":\\\"reminder")), "yes")
+    C.Check.str("reminder: done in the list", yes(String.contains(routine.json(run(rm, tick(rm, 1791958800n)), 1791958900n), "done\\\":true")), "yes")
+    C.Check.str("reminder: deletable", st.tags(call.step(rm, 1791957700n, th.of(z, "Miso"), "routine_delete", "{\"id\":\"" ++ rid(rm) ++ "\"}")), "RoutineDeleted | ")
+    C.Check.str("remind_person needs text", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "remind_person", "{\"at\":\"in 20m\",\"text\":\" \"}"), "what to remind")), "yes")
+    C.Check.str("remind_person past time", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "remind_person", "{\"at\":\"2026-01-01T09:00\",\"text\":\"x\"}"), "I can read")), "yes")
+    +on : M.State = run(z, call.step(z, 1791957600n, th.of(z, "Miso"), "routine_set", "{\"name\":\"once\",\"at\":\"in 20m\",\"prompt\":\"look\"}"))
+    C.Check.str("routine_set at: plan logged", st.tags(call.step(z, 1791957600n, th.of(z, "Miso"), "routine_set", "{\"name\":\"once\",\"at\":\"in 20m\",\"prompt\":\"look\"}")), "RoutineSet RoutinePlan | ")
+    C.Check.str("routine_set at: says when", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "routine_set", "{\"name\":\"once\",\"at\":\"in 20m\",\"prompt\":\"look\"}"), "once, Wed 14 Oct 09:20 EEST (in 20m)")), "yes")
+    C.Check.str("routine_set at: fires and is done", st.tags(tick(on, 1791958800n)), "RoutineFired RoutineDone BotWoke MessagePosted TurnChanged | out out out out ")
+    C.Check.str("routine_set at: only once", st.tags(tick(run(on, tick(on, 1791958800n)), 1791959000n)), "| ")
+    C.Check.str("routine_set schedule says when", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "routine_set", "{\"name\":\"r\",\"schedule\":\"daily 09:30\",\"prompt\":\"p\"}"), "daily at 09:30, your time (Europe/Helsinki); next Wed 14 Oct 09:30 EEST")), "yes")
+    C.Check.str("routine_set both", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "routine_set", "{\"name\":\"r\",\"schedule\":\"daily 09:30\",\"at\":\"in 2h\",\"prompt\":\"p\"}"), "not both")), "yes")
+    C.Check.str("routine_set neither", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "routine_set", "{\"name\":\"r\",\"prompt\":\"p\"}"), "give a schedule")), "yes")
+    C.Check.str("routine_set bad time", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "routine_set", "{\"name\":\"r\",\"at\":\"whenever\",\"prompt\":\"p\"}"), "I can read")), "yes")
+    C.Check.str("routine_set bad zone", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "routine_set", "{\"name\":\"r\",\"schedule\":\"daily 09:30\",\"tz\":\"../x\",\"prompt\":\"p\"}"), "not a time zone")), "yes")
+    C.Check.str("routine_set machine zone is stored empty", yes(String.contains(changes.show(tags.cs(call.step(z, 1791957600n, th.of(z, "Miso"), "routine_set", "{\"name\":\"r\",\"schedule\":\"daily 09:30\",\"tz\":\"machine\",\"prompt\":\"p\"}"))), "\"tz\":\"\"")), "yes")
+    C.Check.str("routine_set edit keeps the zone", yes(String.contains(changes.show(tags.cs(call.step(run(z, call.step(z, 1791957600n, th.of(z, "Miso"), "routine_set", "{\"name\":\"r\",\"schedule\":\"daily 09:30\",\"tz\":\"America/New_York\",\"prompt\":\"p\"}")), 1791957700n, th.of(z, "Miso"), "routine_set", "{\"id\":\"" ++ rid(run(z, call.step(z, 1791957600n, th.of(z, "Miso"), "routine_set", "{\"name\":\"r\",\"schedule\":\"daily 09:30\",\"tz\":\"America/New_York\",\"prompt\":\"p\"}"))) ++ "\",\"name\":\"r\",\"schedule\":\"daily 10:00\",\"prompt\":\"p\"}"))), "\"tz\":\"America/New_York\"")), "yes")
+    C.Check.str("person_timezone", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "person_timezone", "{}"), "\\\"zone\\\":\\\"Europe/Helsinki\\\"")), "yes")
+    C.Check.str("person_timezone abbreviation", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "person_timezone", "{}"), "EEST")), "yes")
+    C.Check.str("person_timezone set known", st.tags(call.step(z, 1791957600n, th.of(z, "Miso"), "person_timezone", "{\"zone\":\"America/New_York\"}")), "SettingSet | ")
+    C.Check.str("person_timezone set unknown looks it up", st.tags(call.step(z, 1791957600n, th.of(z, "Miso"), "person_timezone", "{\"zone\":\"Asia/Tokyo\"}")), "| fx:zone ")
+    C.Check.str("person_timezone auto", st.tags(call.step(z, 1791957600n, th.of(z, "Miso"), "person_timezone", "{\"zone\":\"auto\"}")), "SettingSet | ")
+    C.Check.str("person_timezone bad name", st.tags(call.step(z, 1791957600n, th.of(z, "Miso"), "person_timezone", "{\"zone\":\"a b\"}")), "| ")
+    C.Check.str("zone.report logs the device zone", st.tags(hub.ask(z, 1791957600n, "zone.report", "{\"zone\":\"Asia/Tokyo\"}")), "SettingSet | send:reply ")
+    C.Check.str("zone.report same zone", st.tags(hub.ask(run(z, hub.ask(z, 1791957600n, "zone.report", "{\"zone\":\"Asia/Tokyo\"}")), 1791957700n, "zone.report", "{\"zone\":\"Asia/Tokyo\"}")), "| send:reply ")
+    C.Check.str("zone.report bad name", st.tags(hub.ask(z, 1791957600n, "zone.report", "{\"zone\":\"x y\"}")), "| send:reply ")
+    C.Check.str("zone.set known", st.tags(hub.ask(z, 1791957600n, "zone.set", "{\"zone\":\"America/New_York\"}")), "SettingSet | send:reply ")
+    C.Check.str("zone.set unknown looks it up", st.tags(hub.ask(z, 1791957600n, "zone.set", "{\"zone\":\"Asia/Tokyo\"}")), "| fx:zone ")
+    C.Check.str("zone.set auto", st.tags(hub.ask(z, 1791957600n, "zone.set", "{\"zone\":\"auto\"}")), "SettingSet | send:reply ")
+    C.Check.str("zone.set bad", st.tags(hub.ask(z, 1791957600n, "zone.set", "{\"zone\":\"/etc\"}")), "| send:reply ")
+    # an old log: a routine with no plan behaves as before
+    +lg : M.State = M.State.replay([M.RoutineSet{"o1", id.of(s, "Miso"), "old", "every 15m", "p", True{}, 1000n}], s)
+    C.Check.str("old log: not due early", st.tags(tick(lg, 1500n)), "| ")
+    C.Check.str("old log: due as before, no slot", st.tags(tick(lg, 1860n)), "RoutineFired BotWoke MessagePosted TurnChanged | out out out out ")
     # webhooks
     +h : M.State = made(s, 1000n, "bots.hook", "{\"bot\":\"" ++ id.of(s, "Tofu") ++ "\",\"name\":\"github\"}")
     C.Check.str("hook make", st.tags(ask(s, 1000n, "bots.hook", "{\"bot\":\"" ++ id.of(s, "Tofu") ++ "\",\"name\":\"github\"}")), "HookSet | fx:hook ")

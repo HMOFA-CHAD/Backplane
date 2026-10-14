@@ -4,6 +4,8 @@ import ../core/client.bend as U
 import ../core/bot.bend as BT
 import ../core/botui.bend as BU
 import ../core/cron.bend as CR
+import ../core/sched.bend as SC
+import ../core/tz.bend as TZ
 import ../core/cat.bend as CT
 import ../gfx/raster.bend as R
 import ../gfx/draw.bend as D
@@ -346,59 +348,86 @@ def Bv.memory(+ty: L.Ty, +u: U.Ui, +bot: String, +c: D.Clip, +x: U32, +w: U32, +
 def Bv.onoff(+on: Bool) -> String:
   Bool.pick(String, on, "On", "Off")
 
-def Bv.routine(+ty: L.Ty, r: BT.Routine, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
-  match r:
-    case BT.Routine{+id, _, +name, +cron, +prompt, +on, +last, _, _}:
-      +b1 = L.Lay.button.w(ty, "Delete")
-      +b2 = L.Lay.button.w(ty, "Edit")
-      +b3 = L.Lay.button.w(ty, "Run now")
-      +b4 = L.Lay.button.w(ty, Bv.onoff(on))
-      +bx = {(x + w - 12 - b1 - b2 - b3 - b4 - 18 : U32) : U32}
-      L.Col{L.Out.all([
-          L.Out.ops(L.Lay.box(c, x, y, w, 90, 0, T.Th.panel(), T.Th.line())),
-          L.Out.ops(L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, name, L.U32.dim((bx - x : U32), 24)), c, (x + 12 : U32), (y + 8 : U32), 28, Bool.pick(U32, on, T.Th.text(), T.Th.dim()))),
-          F.Fm.chip(ty, c, bx, (y + 8 : U32), Bv.onoff(on), on, "routine-toggle", id),
-          F.Fm.button(ty, c, (bx + b4 + 6 : U32), (y + 8 : U32), "Run now", T.Th.soft(), "routine-run", id),
-          F.Fm.button(ty, c, (bx + b4 + b3 + 12 : U32), (y + 8 : U32), "Edit", T.Th.soft(), "routine-edit", id),
-          F.Fm.button(ty, c, (bx + b4 + b3 + b2 + 18 : U32), (y + 8 : U32), "Delete", T.Th.soft(), "routine-delete", id),
-          Bv.faint(ty, c, CR.Cron.describe(cron), (x + 12 : U32), (w - 24 : U32), (y + 40 : U32)),
-          L.Out.ops(L.Ty.text(ty, 2n, L.Ty.fit(ty, 2n, prompt, (w - 24 : U32)), c, (x + 12 : U32), (y + 62 : U32), 20, T.Th.soft()))]),
-        (y + 98 : U32)}
+# a routine's card: its name and buttons, a kind chip (a bell for a
+# reminder) with when it runs, when it is next (in the person's zone) or when
+# it was done, and the prompt
+def Bv.kind.chip(+ty: L.Ty, +c: D.Clip, +x: U32, +y: U32, +kind: String, +label: String, +dim: Bool) -> L.Out:
+  +bell = {String.eq(kind, "reminder") : Bool}
+  +cw = {(L.Lay.button.w(ty, label) + Bool.pick(U32, bell, 18, 0) : U32) : U32}
+  L.Out.ops(List.concat(&2, R.Op, [L.Lay.box(c, x, y, cw, 22, 0, T.Th.raise(), T.Th.line()),
+    Bool.pick(List<&2, R.Op>, bell, L.Lay.icon(ty, "bell", c, (x + 6 : U32), (y + 3 : U32), Bool.pick(U32, dim, T.Th.faint(), T.Th.accent())), Nil{}),
+    L.Ty.text(ty, 2n, label, c, (x + 10 + Bool.pick(U32, bell, 18, 0) : U32), y, 22, Bool.pick(U32, dim, T.Th.faint(), T.Th.dim()))]))
 
-# a routine of a bot elsewhere: its hub runs it on asking, nothing more
-def Bv.routine.far(+ty: L.Ty, r: BT.Routine, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
-  match r:
-    case BT.Routine{+id, _, +name, +cron, +prompt, +on, _, _, _}:
-      +b3 = L.Lay.button.w(ty, "Run now")
-      +bx = {(x + w - 12 - b3 : U32) : U32}
-      L.Col{L.Out.all([
-          L.Out.ops(L.Lay.box(c, x, y, w, 90, 0, T.Th.panel(), T.Th.line())),
-          L.Out.ops(L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, name, L.U32.dim((bx - x : U32), 24)), c, (x + 12 : U32), (y + 8 : U32), 28, Bool.pick(U32, on, T.Th.text(), T.Th.dim()))),
-          F.Fm.button(ty, c, bx, (y + 8 : U32), "Run now", T.Th.soft(), "routine-run", id),
-          Bv.faint(ty, c, CR.Cron.describe(cron) ++ Bool.pick(String, on, "", " · off"), (x + 12 : U32), (w - 24 : U32), (y + 40 : U32)),
-          L.Out.ops(L.Ty.text(ty, 2n, L.Ty.fit(ty, 2n, prompt, (w - 24 : U32)), c, (x + 12 : U32), (y + 62 : U32), 20, T.Th.soft()))]),
-        (y + 98 : U32)}
+def Bv.chip.w(+ty: L.Ty, +kind: String, +label: String) -> U32:
+  (L.Lay.button.w(ty, label) + Bool.pick(U32, String.eq(kind, "reminder"), 18, 0) : U32)
 
-def Bv.routine.k(own: Bool, +ty: L.Ty, r: BT.Routine, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+# the next line: "Next Wed 14 Oct 09:30 EEST · in 3h", the zone when it is not yours; "Done · ..." when done
+def Bv.next.text(+next: String, +rel: String, +zone: String, +done: Bool, +dtext: String, +on: Bool) -> String:
+  Bool.pick(String, done, dtext, Bool.pick(String, String.is_empty(next), Bool.pick(String, on, "", "Off"),
+    "Next " ++ next ++ Bool.pick(String, String.is_empty(rel), "", " · " ++ rel) ++ Bool.pick(String, String.eq(zone, "your time"), "", " · " ++ zone)))
+
+# the line under the chip: a repeating routine's next time, Off, or Done;
+# none for a pending one-time routine, whose time is on the chip's line
+def Bv.routine.gap(w0: SC.SRow, +on: Bool) -> U32:
+  match w0:
+    case SC.SRow{_, _, _, +next, _, _, +done, _}:
+      Bool.pick(U32, Bool.or(done, Bool.or(Bool.not(on), Bool.not(String.is_empty(next)))), 22, 0)
+
+def Bv.routine.lines(+ty: L.Ty, w0: SC.SRow, +prompt: String, +on: Bool, +gap: U32, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Out:
+  match w0:
+    case SC.SRow{+kind, +label, +when, +next, +rel, +zone, +done, +dtext}:
+      +dim = {Bool.or(done, Bool.not(on)) : Bool}
+      L.Out.all([Bv.kind.chip(ty, c, (x + 12 : U32), (y + 34 : U32), kind, label, dim),
+        Bv.faint(ty, c, when, (x + 12 + Bv.chip.w(ty, kind, label) + 8 : U32), (w - 24 - Bv.chip.w(ty, kind, label) - 8 : U32), (y + 36 : U32)),
+        Bv.faint(ty, c, Bv.next.text(next, rel, zone, done, dtext, on), (x + 12 : U32), (w - 24 : U32), (y + 60 : U32)),
+        L.Out.ops(L.Ty.text(ty, 2n, L.Ty.fit(ty, 2n, prompt, (w - 24 : U32)), c, (x + 12 : U32), (y + 60 + gap : U32), 20, T.Th.soft()))])
+
+def Bv.routine.btns(+ty: L.Ty, +done: Bool, +on: Bool, +c: D.Clip, +x: U32, +w: U32, +y: U32, +id: String) -> L.Out:
+  match done:
+    case True{}:
+      F.Fm.button(ty, c, (x + w - 12 - L.Lay.button.w(ty, "Delete") : U32), (y + 8 : U32), "Delete", T.Th.soft(), "routine-delete", id)
+    case False{}:
+      L.Out.all([
+          F.Fm.chip(ty, c, (x + w - 12 - L.Lay.button.w(ty, "Delete") - L.Lay.button.w(ty, "Edit") - L.Lay.button.w(ty, "Run now") - L.Lay.button.w(ty, Bv.onoff(on)) - 18 : U32), (y + 8 : U32), Bv.onoff(on), on, "routine-toggle", id),
+          F.Fm.button(ty, c, (x + w - 12 - L.Lay.button.w(ty, "Delete") - L.Lay.button.w(ty, "Edit") - L.Lay.button.w(ty, "Run now") - 12 : U32), (y + 8 : U32), "Run now", T.Th.soft(), "routine-run", id),
+          F.Fm.button(ty, c, (x + w - 12 - L.Lay.button.w(ty, "Delete") - L.Lay.button.w(ty, "Edit") - 6 : U32), (y + 8 : U32), "Edit", T.Th.soft(), "routine-edit", id),
+          F.Fm.button(ty, c, (x + w - 12 - L.Lay.button.w(ty, "Delete") : U32), (y + 8 : U32), "Delete", T.Th.soft(), "routine-delete", id)])
+
+# buttons: all for a bot here; a bot elsewhere's hub runs it on asking, nothing more
+def Bv.routine.own(own: Bool, +ty: L.Ty, +done: Bool, +on: Bool, +c: D.Clip, +x: U32, +w: U32, +y: U32, +id: String) -> L.Out:
   match own:
     case True{}:
-      Bv.routine(ty, r, now, c, x, w, y)
+      Bv.routine.btns(ty, done, on, c, x, w, y, id)
     case False{}:
-      Bv.routine.far(ty, r, c, x, w, y)
+      F.Fm.button(ty, c, (x + w - 12 - L.Lay.button.w(ty, "Run now") : U32), (y + 8 : U32), "Run now", T.Th.soft(), "routine-run", id)
 
-def Bv.routines(rs: List<&2, BT.Routine>, +ty: L.Ty, +own: Bool, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+def Bv.routine.card.k(+ty: L.Ty, +w0: SC.SRow, +r: BT.Routine, +own: Bool, +gap: U32, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+  L.Col{L.Out.all([
+      L.Out.ops(L.Lay.box(c, x, y, w, (86 + gap : U32), 0, T.Th.panel(), T.Th.line())),
+      L.Out.ops(L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, BT.Routine.name(r), (w - 40 : U32)), c, (x + 12 : U32), (y + 6 : U32), 28, Bool.pick(U32, Bool.or(BT.Routine.done(r), Bool.not(BT.Routine.on(r))), T.Th.dim(), T.Th.text()))),
+      Bv.routine.own(own, ty, BT.Routine.done(r), BT.Routine.on(r), c, x, w, y, BT.Routine.id(r)),
+      Bv.routine.lines(ty, w0, BT.Routine.prompt(r), BT.Routine.on(r), gap, c, x, w, y)]),
+    (y + 94 + gap : U32)}
+
+def Bv.routine.card(+ty: L.Ty, +w0: SC.SRow, +r: BT.Routine, +own: Bool, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+  Bv.routine.card.k(ty, w0, r, own, Bv.routine.gap(w0, BT.Routine.on(r)), c, x, w, y)
+
+def Bv.routine.k(own: Bool, +ty: L.Ty, +u: U.Ui, +r: BT.Routine, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
+  Bv.routine.card(ty, SC.Sched.row(U.Ui.state(u), r, now, 0n, True{}), r, own, c, x, w, y)
+
+def Bv.routines(rs: List<&2, BT.Routine>, +ty: L.Ty, +u: U.Ui, +own: Bool, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   match rs:
     case Nil{}:
       L.Col{L.Out.none(), y}
     case r <> t:
-      L.Lay.col.then(Bv.routine.k(own, ty, r, now, c, x, w, y), y2 => Bv.routines(t, ty, own, now, c, x, w, y2))
+      L.Lay.col.then(Bv.routine.k(own, ty, u, r, now, c, x, w, y), y2 => Bv.routines(t, ty, u, own, now, c, x, w, y2))
 
 def Bv.oform(+ty: L.Ty, +f: F.FS, +editing: Bool, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   L.Col{L.Out.all([
       L.Out.ops(L.Ty.text(ty, 0n, Bool.pick(String, editing, "Change routine", "New routine"), c, x, y, 28, T.Th.soft())),
       F.Fm.field(ty, f, c, x, (y + 32 : U32), U32.min(w, 280), "oname", "routine-save", "", "Name"),
-      F.Fm.field(ty, f, c, (x + U32.min(w, 280) + 8 : U32), (y + 32 : U32), L.U32.dim(w, (U32.min(w, 280) + 8 : U32)), "ocron", "routine-save", "", "When: @daily, 0 9 * * 1-5"),
-      Bv.faint(ty, c, CR.Cron.describe(F.Fm.text(f, "ocron")), (x + U32.min(w, 280) + 8 : U32), w, (y + 62 : U32)),
+      F.Fm.field(ty, f, c, (x + U32.min(w, 280) + 8 : U32), (y + 32 : U32), L.U32.dim(w, (U32.min(w, 280) + 8 : U32)), "ocron", "routine-save", "", "When: daily 09:30, in 2h, tomorrow 9am"),
+      Bv.faint(ty, c, U.Routine.hint(F.FS.ui(f)), x, w, (y + 62 : U32)),
       F.Fm.area(ty, f, c, x, (y + 86 : U32), w, 4n, "oprompt", "routine-save", "", "What it should do each time"),
       F.Fm.button(ty, c, x, (y + 186 : U32), Bool.pick(String, editing, "Save", "Add routine"), T.Th.accent(), "routine-save", "")]),
     (y + 230 : U32)}
@@ -414,9 +443,9 @@ def Bv.oform.if(own: Bool, +ty: L.Ty, +f: F.FS, +editing: Bool, +c: D.Clip, +x: 
 def Bv.rtab(+ty: L.Ty, +f: F.FS, +bot: String, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   +rs = BU.BU.routines(F.FS.ui(f), bot)
   L.Lay.col.cat(L.Out.cat(Bv.h2(ty, c, "Routines", x, y),
-      Bv.faint(ty, c, Bool.pick(String, List.is_empty(&2, BT.Routine, rs), "None yet. A routine gives it a prompt on a schedule, in this hub's time zone.",
-        "Each runs once when due, even after the hub was off."), x, w, (y + 30 : U32))),
-    L.Lay.col.then(Bv.routines(rs, ty, BU.BU.owns(bot), U.Side.now(F.FS.ui(f)), c, x, w, (y + 60 : U32)), y2 =>
+      Bv.faint(ty, c, Bool.pick(String, List.is_empty(&2, BT.Routine, rs), "None yet. A routine gives it a prompt on a schedule, or once, in your time (" ++ SC.Zone.person(U.Ui.state(F.FS.ui(f))) ++ ").",
+        "Times are your time (" ++ SC.Zone.person(U.Ui.state(F.FS.ui(f))) ++ "). Each runs once when due, even after the hub was off."), x, w, (y + 30 : U32))),
+    L.Lay.col.then(Bv.routines(rs, ty, F.FS.ui(f), BU.BU.owns(bot), U.Side.now(F.FS.ui(f)), c, x, w, (y + 60 : U32)), y2 =>
       Bv.oform.if(BU.BU.owns(bot), ty, f, BU.BU.open(F.FS.ui(f), "@onew"), c, x, w, (y2 + 12 : U32))))
 
 # Webhooks
@@ -771,7 +800,6 @@ def Bv.plane.words(+ws: Map<&2, PW>) -> String:
 def Bv.sd.w(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +n: S.Nui, +ws: Map<&2, PW>) -> Sd:
   Sd{ty, cats, F.Fm.fs(n), S.Nui.ms_of(n), BU.BU.open(S.Nui.ui(n), "@bnew"), BU.BU.open(S.Nui.ui(n), "@rnew"), BU.BU.rows(S.Nui.ui(n)), BU.BU.rooms(S.Nui.ui(n)),
     BU.BU.uber(S.Nui.ui(n)), Bv.plane.words(ws)}
-
 
 def Bv.wrap.key(+id: String, +w: U32) -> String:
   id ++ ":" ++ U32.show(w)

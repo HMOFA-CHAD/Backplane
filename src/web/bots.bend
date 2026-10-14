@@ -8,6 +8,7 @@ import ../core/client.bend as U
 import ../core/bot.bend as BT
 import ../core/botui.bend as BI
 import ../core/cron.bend as CR
+import ../core/sched.bend as SC
 import ../core/plane.bend as PL
 import ../core/uber.bend as UB
 
@@ -273,45 +274,67 @@ def WB.routine.btns(own: Bool, +id: String, +on: Bool) -> List<&2, D.Node>:
     case False{}:
       [D.Dom.button("", "routine-run", id, "Run it now", "Run now")]
 
-def WB.routine(r: BT.Routine, +own: Bool, +now: Nat) -> D.Node:
-  match r:
-    case BT.Routine{+id, _, name, +cron, prompt, +on, +last, _, _}:
-      D.El{"div", "ro:" ++ id, [D.At{"class", Bool.pick(String, on, "item", "item off")}], [
-        WB.div("item-main", [D.Dom.span("item-key", name), D.Dom.span("item-when", WB.when(cron)), D.Dom.span("item-text", prompt)]),
-        D.El{"span", "", [D.At{"class", "ago"}, D.At{"title", "Last run"}], [D.Txt{WB.ago(now, last)}]},
-        WB.div("item-btns", WB.routine.btns(own, id, on))]}
+# the kind chip: Repeats, Once, or Reminder with a bell
+def WB.kind.chip(+kind: String, +label: String) -> D.Node:
+  D.El{"span", "", [D.At{"class", "kind kind-" ++ kind}], D.Dom.cat(D.Dom.when(String.eq(kind, "reminder"), WI.WIcon.svg("bell", 12)), [D.Txt{label}])}
 
-def WB.routines.go(rs: List<&2, BT.Routine>, +own: Bool, +now: Nat) -> List<&2, D.Node>:
+# "Next Wed 14 Oct 09:30 EEST · in 3h", the zone when it is not yours; "Done · ..." when done
+def WB.next.text(+next: String, +rel: String, +zone: String, +done: Bool, +dtext: String, +on: Bool) -> String:
+  Bool.pick(String, done, dtext, Bool.pick(String, String.is_empty(next), Bool.pick(String, on, "", "Off"),
+    "Next " ++ next ++ Bool.pick(String, String.is_empty(rel), "", " · " ++ rel) ++ Bool.pick(String, String.eq(zone, "your time"), "", " · " ++ zone)))
+
+# a done routine keeps only Delete
+def WB.routine.btns.d(done: Bool, own: Bool, +id: String, +on: Bool) -> List<&2, D.Node>:
+  match done:
+    case True{}:
+      [D.Dom.button("", "routine-delete", id, "Delete", "Delete")]
+    case False{}:
+      WB.routine.btns(own, id, on)
+
+def WB.routine.row(w: SC.SRow, +id: String, name: String, prompt: String, +on: Bool, +own: Bool) -> D.Node:
+  match w:
+    case SC.SRow{+kind, +label, +when, +next, +rel, +zone, +done, +dtext}:
+      D.El{"div", "ro:" ++ id, [D.At{"class", "item" ++ Bool.pick(String, done, " done", Bool.pick(String, on, "", " off"))}], [
+        WB.div("item-main", [D.Dom.span("item-key", name),
+          WB.div("item-kind", [WB.kind.chip(kind, label), D.Dom.span("item-when", when)]),
+          D.Dom.span("item-next", WB.next.text(next, rel, zone, done, dtext, on)), D.Dom.span("item-text", prompt)]),
+        WB.div("item-btns", WB.routine.btns.d(done, own, id, on))]}
+
+def WB.routine(+u: U.Ui, +r: BT.Routine, +own: Bool, +now: Nat) -> D.Node:
+  WB.routine.row(SC.Sched.row(U.Ui.state(u), r, now, 0n, True{}), BT.Routine.id(r), BT.Routine.name(r), BT.Routine.prompt(r), BT.Routine.on(r), own)
+
+def WB.routines.go(rs: List<&2, BT.Routine>, +u: U.Ui, +own: Bool, +now: Nat) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       Nil{}
     case r <> t:
-      WB.routine(r, own, now) <> WB.routines.go(t, own, now)
+      WB.routine(u, r, own, now) <> WB.routines.go(t, u, own, now)
 
 def WB.cron.hint.k(empty: Bool, bad: Bool, +d: String) -> List<&2, D.Node>:
   match empty bad:
     case True{} _:
       Nil{}
     case False{} True{}:
-      [D.Dom.span("hint bad", "Not a schedule")]
+      [D.Dom.span("hint bad", d)]
     case False{} False{}:
       [D.Dom.span("hint", d)]
 
-# what the schedule being typed means
-def WB.cron.hint(+s: String) -> List<&2, D.Node>:
-  WB.cron.hint.k(String.is_empty(String.trim(s)), String.is_empty(CR.Cron.describe(s)), CR.Cron.describe(s))
+# what the schedule or time being typed means, in your zone (U.Routine.hint);
+# an error when it is neither
+def WB.cron.hint(+u: U.Ui) -> List<&2, D.Node>:
+  WB.cron.hint.k(String.is_empty(String.trim(BI.BU.field(u, "ocron"))), String.starts_with(U.Routine.hint(u), "I can read"), U.Routine.hint(u))
 
 def WB.rform(+u: U.Ui) -> D.Node:
   WB.div("bform wide", D.Dom.cat([
     WB.input("routine-name", "oname", BI.BU.field(u, "oname"), "Name", ""),
-    WB.input("routine-cron", "ocron", BI.BU.field(u, "ocron"), "every 15m · daily 09:30 · weekdays 08:00 · cron", "")],
-    D.Dom.cat(WB.cron.hint(BI.BU.field(u, "ocron")), [
+    WB.input("routine-cron", "ocron", BI.BU.field(u, "ocron"), "every 15m · daily 09:30 · tomorrow 9am · in 2h · cron", "")],
+    D.Dom.cat(WB.cron.hint(u), [
     WB.area("routine-prompt", "oprompt", BI.BU.field(u, "oprompt"), "What to do each time"),
     WB.btns([D.Dom.button("primary", "routine-save", "", "Save the routine", Bool.pick(String, String.is_empty(BI.BU.field(u, "oid")), "Add routine", "Save routine")),
       D.Dom.button("", "routine-edit", "", "Clear the form", "Clear")])])))
 
 def WB.routines(+u: U.Ui, +b: BT.Bot) -> D.Node:
-  WB.div("bot-list", List.append(&2, D.Node, WB.routines.go(BI.BU.routines(u, BT.Bot.id(b)), BI.BU.owns(BT.Bot.id(b)), U.Side.now(u)), D.Dom.when(BI.BU.owns(BT.Bot.id(b)), WB.rform(u))))
+  WB.div("bot-list", List.append(&2, D.Node, WB.routines.go(BI.BU.routines(u, BT.Bot.id(b)), u, BI.BU.owns(BT.Bot.id(b)), U.Side.now(u)), D.Dom.when(BI.BU.owns(BT.Bot.id(b)), WB.rform(u))))
 
 # Webhooks
 def WB.page(+u: U.Ui) -> String:
@@ -556,12 +579,16 @@ def WB.pdot(+s: String) -> String:
 def WB.pago(+kind: String, +now: Nat, +at: Nat) -> String:
   Bool.pick(String, Bool.or(String.eq(kind, "routine"), Bool.or(Nat.is_eq(at, 0n), Nat.is_gt(at, now))), "", U.Time.ago(now, at))
 
+# a row's mark: a dot for its state, a bell for a reminder
+def WB.pmark(+state: String) -> D.Node:
+  Bool.pick(D.Node, String.eq(state, "reminder"), D.El{"span", "", [D.At{"class", "pbell"}], [WI.WIcon.svg("bell", 12)]}, D.Dom.span(WB.pdot(state), ""))
+
 # one row: a button for what a click sends (act, val), a fixed height
 def WB.prow(r: PL.PRow, +now: Nat) -> D.Node:
   match r:
     case PL.PRow{+kind, +id, +act, +val, +title, +sub, +machine, +state, +at, away}:
       D.El{"button", kind ++ ":" ++ id, [D.At{"class", Bool.pick(String, away, "plane-row away", "plane-row")}, D.At{"title", title}, D.At{"data-value", val}, D.On{"click", act}],
-        [D.Dom.span(WB.pdot(state), ""), D.Dom.span("title", title), D.Dom.span("sub", sub), D.Dom.span("mach", machine), D.Dom.span("ago", WB.pago(kind, now, at))]}
+        [WB.pmark(state), D.Dom.span("title", title), D.Dom.span("sub", sub), D.Dom.span("mach", machine), D.Dom.span("ago", WB.pago(kind, now, at))]}
 
 def WB.prows(rs: List<&2, PL.PRow>, +now: Nat) -> List<&2, D.Node>:
   match rs:
