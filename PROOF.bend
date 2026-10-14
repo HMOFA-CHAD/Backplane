@@ -8886,3 +8886,5 @@ def Laws.task_slug_nonempty(x):
       {==}
 
 def Laws.task_slug_empty():
+  {==}
+
