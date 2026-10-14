@@ -154,6 +154,8 @@ final class Engine: @unchecked Sendable {
     }
 
     func start(_ cid: String, _ drafts: String) async -> Out? { await out("start", [cid, drafts]) }
+    // a choice of this device that Bend draws by ("view": "projects" or "active")
+    func local(_ key: String, _ value: String) async -> Out? { await out("local", [key, value], person: true) }
     func hubs(_ keys: [String]) async -> Out? { await out("hubs", [keys]) }
     func resume(_ key: String) async -> String { await call("resume", [key]) { $0 } }
     func register(_ kind: String, _ token: String, env: String, bundle: String) async -> Out? {

@@ -1027,6 +1027,16 @@ def Mob.set.chips(xs: List<&2, String>, +cur: String, +key: String) -> List<&2, 
 def Mob.set.row(+label: String, +note: String, btns: List<&2, J.Json>) -> J.Json:
   J.Json.obj([J.KV{"label", J.Json.str(label)}, J.KV{"note", J.Json.str(note)}, J.KV{"buttons", J.Json.arr(btns)}])
 
+# A row about this device, not the hub (ios-snappy: the apps keep these in
+# App settings and skip the row in the hub's page): `local` marks it
+# A hub setting the apps draw in App settings' Notifications section instead of the
+# hub's page (notif-policy's "Notify me for"): `notify` marks it
+def Mob.set.row.n(+label: String, +note: String, btns: List<&2, J.Json>) -> J.Json:
+  J.Json.obj([J.KV{"label", J.Json.str(label)}, J.KV{"note", J.Json.str(note)}, J.KV{"buttons", J.Json.arr(btns)}, J.KV{"notify", J.Json.bool(True{})}])
+
+def Mob.set.row.l(+label: String, +note: String, btns: List<&2, J.Json>) -> J.Json:
+  J.Json.obj([J.KV{"label", J.Json.str(label)}, J.KV{"note", J.Json.str(note)}, J.KV{"buttons", J.Json.arr(btns)}, J.KV{"local", J.Json.bool(True{})}])
+
 # a row with fields to type in: each sends "bfield" (name, text) as it is
 # typed; a secret one shows dots
 def Mob.set.field(+name: String, +hint: String, secret: Bool, +value: String) -> J.Json:
@@ -1131,10 +1141,10 @@ def Mob.notify.rows(rs: List<&2, U.NotifyRow>) -> List<&2, J.Json>:
     case Nil{}:
       Nil{}
     case U.NotifyRow{nm, note, on, key} <> t:
-      Mob.set.row(nm, note, Mob.set.chips(["on", "off"], on, key)) <> Mob.notify.rows(t)
+      Mob.set.row.n(nm, note, Mob.set.chips(["on", "off"], on, key)) <> Mob.notify.rows(t)
 
 def Mob.notify(st: M.State) -> List<&2, J.Json>:
-  Mob.set.row(U.Notify.title(), U.Notify.lead(), Nil{}) <> Mob.notify.rows(U.Notify.rows(st))
+  Mob.set.row.n(U.Notify.title(), U.Notify.lead(), Nil{}) <> Mob.notify.rows(U.Notify.rows(st))
 
 def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String, more: List<&2, J.Json>) -> J.Json:
   +prov = M.Setting.get(st, "agent.provider", "claude")
@@ -1148,8 +1158,8 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
     Mob.set.row(U.KiCad.cli.label(nf), U.KiCad.cli.note(nf), Bool.pick(List<&2, J.Json>, String.is_empty(U.Str.get(nf, "kicad.fork")), [Mob.set.btn("Install Backplane KiCad", "kicad-install", "", False{})], Nil{})),
     Mob.set.row(U.FreeCAD.label(nf), U.FreeCAD.note(nf), Nil{}),
     Mob.set.row(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, J.Json>, U.KiCad.ipc.ready(nf), Mob.set.chips(["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{})),
-    Mob.set.row("Theme", "Unset, the phone follows its own system.", Mob.set.chips(["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme")),
-    Mob.set.row("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", Mob.set.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
+    Mob.set.row.l("Theme", "Unset, the phone follows its own system.", Mob.set.chips(["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme")),
+    Mob.set.row.l("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", Mob.set.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
     Mob.set.row(U.Tail.label(nf), U.Tail.note(nf), Nil{})]]), List.append(&2, J.Json, Mob.mates(u), [
     Mob.set.pair(U.Ui.flag(u, "pairqr"), nf),
     Mob.set.row("Update channel", "Stable takes releases; nightly also takes the daily builds.", Mob.set.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
@@ -1190,7 +1200,7 @@ def Mob.settings.k(+u: U.Ui, more: List<&2, J.Json>) -> J.Json:
 def Mob.settings(open: Bool, +u: U.Ui) -> J.Json:
   match open:
     case True{}:
-      Mob.settings.k(u, List.concat(&2, J.Json, [Mob.keys(u), Mob.agy(u), Mob.tz(u), [Mob.set.row("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [Mob.set.btn("Show the tour", "ob-open", "", False{})])]]))
+      Mob.settings.k(u, List.concat(&2, J.Json, [Mob.keys(u), Mob.agy(u), Mob.tz(u), [Mob.set.row.l("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [Mob.set.btn("Show the tour", "ob-open", "", False{})])]]))
     case False{}:
       J.Null{}
 
@@ -1240,6 +1250,15 @@ def Mob.scratch(u: U.Ui) -> Map<&2, String>:
   match u:
     case U.Ui{_, _, dr, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       dr
+
+# ios-snappy: tabs. The thread list's view ("projects" or "active") is the
+# device's own choice when it has made one (`Backplane.local("view", ..)`
+# leaves it in each hub's scratch as @local.view), else the hub's setting
+def Mob.view.of(+local: String, +hub: String) -> String:
+  Bool.pick(String, Bool.or(String.eq(local, "projects"), String.eq(local, "active")), local, hub)
+
+def Mob.view(+u: U.Ui) -> String:
+  Mob.view.of(U.Ui.scratch(u, "@local.view"), U.Side.view(U.Ui.state.of(u)))
 
 # the whole screen. A hub out of focus (focus False) builds no thread, bot
 # or viewer (null: the merged screen reads them from the hub in focus),
@@ -1316,7 +1335,7 @@ def Mob.screen.go(+focus: Bool, +u: U.Ui, +ix: U.SIx, +g: U.SGroups, +side: MSid
         J.KV{"empty", J.Json.str(Mob.empty(List.length(&2, M.Project, U.Ui.projects(st))))},
         J.KV{"projects", J.Json.arr(Mob.grouped(g, o, ix, st, now, U.Find.q(o, dr)))},
         J.KV{"older", Mob.older(g, o, U.Find.q(o, dr))},
-        J.KV{"view", J.Json.str(U.Side.view(st))},
+        J.KV{"view", J.Json.str(Mob.view(u))},
         J.KV{"active", J.Json.arr(MSide.rows(side))},
         J.KV{"settled", MSide.settled(side)},
         J.KV{"rowMenu", rmenu},
@@ -1342,7 +1361,7 @@ def Mob.screen.go(+focus: Bool, +u: U.Ui, +ix: U.SIx, +g: U.SGroups, +side: MSid
 # (the sidebar's rows, Side.rows.ix, made by the caller when it needs them too)
 def Mob.screen.ixr(+focus: Bool, +u: U.Ui, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
   Mob.screen.go(focus, u, ix, U.Side.groups(U.Find.rows(rows, U.Find.q(Mob.open(u), Mob.scratch(u))), Mob.now(u)),
-    Mob.side(String.eq(U.Side.view(U.Ui.state.of(u)), "active"), ix, U.Ui.state.of(u), Mob.now(u), U.Find.q(Mob.open(u), Mob.scratch(u)), Mob.open(u)))
+    Mob.side(String.eq(Mob.view(u), "active"), ix, U.Ui.state.of(u), Mob.now(u), U.Find.q(Mob.open(u), Mob.scratch(u)), Mob.open(u)))
 
 def Mob.screen.ix(+focus: Bool, +u: U.Ui, +ix: U.SIx) -> J.Json:
   Mob.screen.ixr(focus, u, ix, U.Side.rows.ix(U.Ui.state.of(u), ix, Mob.now(u)))

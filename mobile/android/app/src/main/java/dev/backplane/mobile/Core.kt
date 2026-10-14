@@ -53,6 +53,18 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         private set
     var leaving by mutableStateOf(false)
         private set
+    // The tab bar. A page (a thread, a bot) opens over the bar from the tab it
+    // belongs to, and Back returns to that tab's list; each tab keeps its own
+    // scroll position (Tabs.kt). A tap opens in the tab it is on, except from
+    // Home, where a thread goes to Threads and a bot, room or routine to Bots
+    var tab by mutableStateOf(Tab.Threads)
+        private set
+    private var started0 = false
+    // the tab a tapped page was opened in, until its screen comes
+    private var openedIn: Pair<String, Tab>? = null
+    // the hub settings page's last rows, by hub, on disk beside the kept state
+    val hubSettings = mutableStateMapOf<String, Settings>()
+    private var cleared = false
     private var pushed = Long.MIN_VALUE
     private var tapAt = 0L
     private var firstMs = 0L
@@ -74,10 +86,70 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         pushed = now
         tapAt = now
         leaving = false
+        val dest = destination(kind, action)
+        openedIn = nav to dest
+        tab = dest
         val rig = cat.ifEmpty { screen?.bots?.firstOrNull { it.nav == nav }?.cat ?: screen?.uber?.takeIf { it.nav == nav }?.cat ?: "" }
         opening = Opening(nav, title, rig, kind)
         firstMs = android.os.SystemClock.elapsedRealtime() - tapAt
         dispatch(action, value)
+    }
+
+    // where a tap on a row opens its page (see tab)
+    private fun destination(kind: String, action: String): Tab {
+        if (tab != Tab.Home) return tab
+        return when (kind) {
+            "thread" -> Tab.Threads
+            "bot" -> if (action == "uber") Tab.Home else Tab.Bots
+            "room", "remote", "routine" -> Tab.Bots
+            else -> tab
+        }
+    }
+
+    // where a page selected from elsewhere (a notification, a link, a link in
+    // a thread) opens: a bot's thread, a room or a remote bot in Bots, the
+    // uberbot's on Home, any other thread in Threads (Bend says which: the
+    // screen's bot, and the uber card's sel)
+    private fun destination(s: Screen, nav: String): Tab {
+        openedIn?.let { if (it.first == nav) return it.second }
+        return if (s.bot != null) (if (s.uber?.sel == true) Tab.Home else Tab.Bots) else Tab.Threads
+    }
+
+    fun selectTab(t: Tab) {
+        tab = t
+    }
+
+    // the thread list's view, for Bend to draw (the device's own choice)
+    fun threadList(v: String) {
+        AppSettings.putThreadList(v)
+        scope.launch { apply(engine.local("view", v)) }
+    }
+
+    // App settings, Cache: the kept state's size, and forgetting it (the next
+    // launch fetches each hub's log again; nothing is kept again before)
+    fun cacheSize(): Long = kept.size() + (if (kept.settingsFile.exists()) kept.settingsFile.length() else 0L)
+
+    fun clearCache() {
+        cleared = true
+        kept.clear()
+        kept.settingsFile.delete()
+        hubSettings.clear()
+    }
+
+    private fun keepHubSettings() {
+        if (cleared) return
+        val o = JSONObject()
+        for ((k, v) in hubSettings) o.put(k, settingsJson(v))
+        val f = kept.settingsFile
+        scope.launch(Dispatchers.IO) { runCatching { f.writeText(o.toString()) } }
+    }
+
+    private fun loadHubSettings() {
+        val f = kept.settingsFile
+        runCatching {
+            val o = JSONObject(f.readText())
+            for (k in o.keys()) hubSettings[k] = parseSettings(o.getJSONObject(k))
+        }
     }
 
     fun back() {
@@ -117,6 +189,8 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     val foreground get() = started > 0
 
     init {
+        AppSettings.init(app)
+        loadHubSettings()
         engine.onFlush = { out -> scope.launch { apply(out) } }
         app.registerActivityLifecycleCallbacks(this)
         // a changed zone is reported at once (hubs keep it for routines and reminders)
@@ -127,6 +201,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         fun since() = android.os.SystemClock.elapsedRealtime() - t0
         scope.launch {
             apply(engine.screen())
+            apply(engine.local("view", AppSettings.threadList))
             android.util.Log.i("Backplane", "engine ready ${since()} ms")
         }
         scope.launch {
@@ -142,6 +217,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
             if (kept.has()) {
                 android.util.Log.i("Backplane", "state ${kept.path.length()} bytes")
                 apply(engine.loadFrom(kept.path))
+                apply(engine.local("view", AppSettings.threadList))
                 android.util.Log.i("Backplane", "state loaded ${since()} ms")
                 for (l in links) Pairing.key(l)?.let { apply(engine.offline(it)) }
             }
@@ -165,7 +241,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     // the state written down when it changed (the app may be stopped at any
     // time once in the background)
     private fun keep() {
-        if (!dirty) return
+        if (!dirty || cleared) return
         dirty = false
         scope.launch {
             if (engine.saveTo(kept.tmp)) kept.commit()
@@ -212,6 +288,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         for (k in hubs.keys.toList()) if (k !in keyed) hubs.remove(k)?.stop()
         scope.launch {
             apply(engine.hubs(keyed.keys.toList()))
+            apply(engine.local("view", AppSettings.threadList))
             for ((k, l) in keyed) if (k !in hubs) open(k, l)
         }
     }
@@ -378,8 +455,17 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         out.screen?.let { next ->
             if (typing == 0) composer = next.thread?.draft ?: ""
             val was = screen?.sel
+            val wasNav = screen?.let { nav(it) } ?: ""
             screen = next
             val nav = nav(next)
+            if (!started0) {
+                started0 = true
+                AppSettings.migrate(next.theme, next.view)
+                tab = Tab.entries.firstOrNull { it.name == AppSettings.defaultTab && it != Tab.Settings } ?: if (next.uber == null) Tab.Threads else Tab.Home
+                scope.launch { apply(engine.local("view", AppSettings.threadList)) }
+            }
+            next.settings?.let { st -> if (next.hub.isNotEmpty() && hubSettings[next.hub] != st) { hubSettings[next.hub] = st; keepHubSettings() } }
+            if (nav.isNotEmpty() && nav != wasNav) { tab = destination(next, nav); if (openedIn?.first == nav) openedIn = null }
             if (nav.isNotEmpty()) {
                 next.thread?.let { remember(nav, it, seenThreads, threadOrder) }
                 next.bot?.let { remember(nav, it, seenBots, botOrder) }

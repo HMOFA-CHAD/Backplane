@@ -196,6 +196,12 @@ globalThis.Backplane = {
     restore();
     return out(null);
   },
+  // a choice that belongs to this device, not the hub (the thread list's
+  // "view": "projects" or "active"; "" leaves it to the hub's setting)
+  local(key, value) {
+    hubs = App.local(hubs, key, value);
+    return out(null);
+  },
   // hub k's socket query: resume from what this app already holds
   resume(k) {
     return JSON.stringify({ since: App.seq(hubs, k), origin: App.origin(hubs, k) });

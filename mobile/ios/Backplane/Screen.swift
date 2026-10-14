@@ -550,29 +550,33 @@ struct FolderRow: Decodable, Hashable {
 }
 
 // settings: rows of a label, a note and buttons (each sends action with value)
-struct SetButton: Decodable, Hashable {
+struct SetButton: Codable, Hashable {
     let label, action, value: String
     let on: Bool
 }
 
 // a field to type in: each change goes out as "bfield" (name, text); a
 // secret one shows dots
-struct SetField: Decodable, Hashable {
+struct SetField: Codable, Hashable {
     let name, hint: String
     let secret: Bool
     let value: String
 }
 
-struct SetRow: Decodable, Hashable {
+struct SetRow: Codable, Hashable {
     let label, note: String
     let buttons: [SetButton]
     let fields: [SetField]?
     // the pairing code's rows ("1" dark) while it is shown, and what to do with it
     let qr: [String]?
     let qrnote: String?
+    // about this device, not the hub: App settings has it, the hub's page skips it
+    let local: Bool?
+    // notif-policy's "Notify me for": drawn in App settings' Notifications section, not on the hub's page
+    let notify: Bool?
 }
 
-struct Settings: Decodable {
+struct Settings: Codable, Equatable {
     let rows: [SetRow]
 }
 
@@ -816,8 +820,37 @@ struct Screen: Decodable {
     // Hubs.islands); island above is all of them, for the picker
     let islands: [HubIsland]?
     let thread: ThreadView?
-    // the hub's theme ("light", "dark"; empty follows the phone's)
+    // the hub's theme ("light", "dark"; empty follows the phone's): read only
+    // once, to carry it into App settings (AppSettings.migrate)
     let theme: String?
+    // the tab bar's badges and the routines (src/mobile/tabs.bend)
+    let tabs: TabsInfo?
+}
+
+struct TabBadge: Decodable {
+    let badge: Int
+}
+
+// a routine of any bot, as a row of the Routines tab: a tap opens its bot's
+// Routines tab (nav, act, value, as a plane row's)
+struct RoutineRow: Decodable, Identifiable {
+    let nav: String?
+    let id, act, value, title, sub, state, ago: String
+    let bot, machine: String?
+    let away: Bool?
+    // the kind of schedule (a recurring routine, a one-time one, a reminder), its
+    // label ("Once", "Reminder"…), the time zone it runs in, and a done one's line
+    let sched, label, zone, doneText: String?
+}
+
+struct RoutinesInfo: Decodable {
+    let badge: Int
+    let rows: [RoutineRow]
+}
+
+struct TabsInfo: Decodable {
+    let home, bots: TabBadge?
+    let routines: RoutinesInfo?
 }
 
 struct Cmd: Decodable {
@@ -901,7 +934,7 @@ extension Screen {
     private enum K: String, CodingKey {
         case online, version, error, note, sel, empty, hub, hubs, found, projects, view, making, active, older, settled,
              rowMenu, bots, rooms, uber, plane, newBot, newRoom, bot, deleting, removing, renaming, tour, search,
-             folders, settings, find, island, islands, thread, theme
+             folders, settings, find, island, islands, thread, theme, tabs
     }
 
     init(from decoder: Decoder) throws {
@@ -941,5 +974,6 @@ extension Screen {
         islands = c.lossy(.islands).map { (l: [Lossy<HubIsland>]) in l.compactMap(\.value) }
         thread = c.lossy(.thread)
         theme = c.lossy(.theme)
+        tabs = c.lossy(.tabs)
     }
 }

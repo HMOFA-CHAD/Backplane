@@ -117,7 +117,7 @@ final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsD
         guard !done, let code = objects.compactMap({ $0 as? AVMetadataMachineReadableCodeObject }).first?.stringValue,
               Pairing.key(code) != nil else { return }
         done = true
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        Haptics.success()
         found?(code)
     }
 }

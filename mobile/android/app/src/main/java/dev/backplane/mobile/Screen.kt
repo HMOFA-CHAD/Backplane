@@ -147,8 +147,21 @@ data class SetButton(val label: String, val action: String, val value: String, v
 data class SetField(val name: String, val hint: String, val secret: Boolean, val value: String)
 // qr: the pairing code's rows ('1' dark) while it is shown
 data class SetRow(val label: String, val note: String, val buttons: List<SetButton>, val fields: List<SetField> = emptyList(),
-                  val qr: List<String> = emptyList(), val qrnote: String = "")
+                  val qr: List<String> = emptyList(), val qrnote: String = "",
+                  // about this device, not the hub: App settings has it, the hub's page skips it
+                  val local: Boolean = false,
+                  // notif-policy's "Notify me for": drawn in App settings' Notifications section, not on the hub's page
+                  val notify: Boolean = false)
 data class Settings(val rows: List<SetRow>)
+
+// the tab bar's badges and every bot's routines (src/mobile/tabs.bend)
+data class RoutineRow(
+    val nav: String, val id: String, val act: String, val value: String, val title: String, val sub: String,
+    val state: String, val ago: String, val bot: String, val machine: String, val away: Boolean,
+    // a one-time routine or reminder, the time zone it runs in, and a done one's line
+    val sched: String = "", val zone: String = "", val doneText: String = "",
+)
+data class Tabs(val home: Int = 0, val bots: Int = 0, val routines: Int = 0, val routineRows: List<RoutineRow> = emptyList())
 
 // thread search ("search") or the file picker ("files"): its query and rows
 data class Find(val mode: String, val query: String, val rows: List<FolderRow>)
@@ -416,6 +429,7 @@ data class Screen(
     val making: Boolean = false,
     // the uberbot's card and the status plane (Plane.kt); none without an uberbot
     val uber: UberCard? = null, val plane: PlaneModel? = null,
+    val tabs: Tabs = Tabs(),
 )
 
 data class Cmd(
@@ -701,14 +715,7 @@ fun parseScreen(o: JSONObject) = Screen(
         NewRoom(f.optString("name"), f.optJSONArray("picks").map { RoomPick(it.optString("id"), it.optString("name"), it.optBoolean("on")) })
     },
     o.optJSONObject("bot")?.let(::botView),
-    o.optJSONObject("settings")?.let { st ->
-        Settings(st.optJSONArray("rows").map { r ->
-            SetRow(r.optString("label"), r.optString("note"),
-                r.optJSONArray("buttons").map { SetButton(it.optString("label"), it.optString("action"), it.optString("value"), it.optBoolean("on")) },
-                r.optJSONArray("fields").map { SetField(it.optString("name"), it.optString("hint"), it.optBoolean("secret"), it.optString("value")) },
-                r.optJSONArray("qr")?.let { q -> List(q.length()) { q.optString(it) } } ?: emptyList(), r.optString("qrnote"))
-        })
-    },
+    o.optJSONObject("settings")?.let(::parseSettings),
     o.optJSONObject("find")?.let { Find(it.optString("mode"), it.optString("query"), folderRows(it.optJSONArray("rows"))) },
     o.optJSONObject("removing")?.let {
         Deleting(it.optString("id"), it.optString("title"), it.optString("body"), it.optString("yes"), it.optString("no"))
@@ -717,6 +724,7 @@ fun parseScreen(o: JSONObject) = Screen(
     o.optString("theme"),
     view = o.optString("view").ifEmpty { "projects" },
     making = o.optBoolean("making"),
+    tabs = o.optJSONObject("tabs")?.let(::parseTabs) ?: Tabs(),
     uber = o.optJSONObject("uber")?.let(::parseUber),
     plane = o.optJSONObject("plane")?.let(::parsePlane),
     active = o.optJSONArray("active").map(::row),
@@ -733,6 +741,31 @@ fun parseScreen(o: JSONObject) = Screen(
     tour = o.optJSONObject("tour")?.let {
         Tour(it.optString("counter"), it.optString("title"), it.optString("body"), it.optString("next"), it.optString("back"), it.optString("skip"), it.optBoolean("first"),
             it.optJSONArray("choices")?.let { a -> (0 until a.length()).map { i -> a.getJSONObject(i).let { c -> TourChoice(c.optString("label"), c.optString("action"), c.optString("value")) } } } ?: emptyList())
+    },
+)
+
+fun parseSettings(st: JSONObject) = Settings(st.optJSONArray("rows").map { r ->
+    SetRow(r.optString("label"), r.optString("note"),
+        r.optJSONArray("buttons").map { SetButton(it.optString("label"), it.optString("action"), it.optString("value"), it.optBoolean("on")) },
+        r.optJSONArray("fields").map { SetField(it.optString("name"), it.optString("hint"), it.optBoolean("secret"), it.optString("value")) },
+        r.optJSONArray("qr")?.let { q -> List(q.length()) { q.optString(it) } } ?: emptyList(), r.optString("qrnote"), r.optBoolean("local"), r.optBoolean("notify"))
+})
+
+// settings written back as the JSON the screen carries them in (the hub page's cache)
+fun settingsJson(st: Settings): JSONObject = JSONObject().put("rows", JSONArray(st.rows.map { r ->
+    JSONObject().put("label", r.label).put("note", r.note).put("local", r.local).put("notify", r.notify).put("qrnote", r.qrnote)
+        .put("buttons", JSONArray(r.buttons.map { JSONObject().put("label", it.label).put("action", it.action).put("value", it.value).put("on", it.on) }))
+        .put("fields", JSONArray(r.fields.map { JSONObject().put("name", it.name).put("hint", it.hint).put("secret", it.secret).put("value", it.value) }))
+        .put("qr", JSONArray(r.qr))
+}))
+
+fun parseTabs(o: JSONObject) = Tabs(
+    o.optJSONObject("home")?.optInt("badge") ?: 0, o.optJSONObject("bots")?.optInt("badge") ?: 0,
+    o.optJSONObject("routines")?.optInt("badge") ?: 0,
+    o.optJSONObject("routines")?.optJSONArray("rows").map {
+        RoutineRow(it.optString("nav"), it.optString("id"), it.optString("act"), it.optString("value"), it.optString("title"), it.optString("sub"),
+            it.optString("state"), it.optString("ago"), it.optString("bot"), it.optString("machine"), it.optBoolean("away"),
+            it.optString("sched"), it.optString("zone"), it.optString("doneText"))
     },
 )
 

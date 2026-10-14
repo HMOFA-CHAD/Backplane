@@ -17,6 +17,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val seenPages get() = core.seenPages
     fun open(nav: String, action: String, value: String, title: String, cat: String = "", kind: String = "thread") = core.open(nav, action, value, title, cat, kind)
     fun back() = core.back()
+    val tab get() = core.tab
+    fun selectTab(t: Tab) = core.selectTab(t)
+    fun threadList(v: String) = core.threadList(v)
+    val hubSettings get() = core.hubSettings
+    fun cacheSize() = core.cacheSize()
+    fun clearCache() = core.clearCache()
     // the card and the plane to draw: the screen's, else the last it carried
     fun uber(s: Screen): UberCard? = if (s.plane != null) s.uber else if (s.uber != null) core.lastUber ?: s.uber else null
     fun plane(s: Screen): PlaneModel? = s.plane ?: if (s.uber != null) core.lastPlane else null

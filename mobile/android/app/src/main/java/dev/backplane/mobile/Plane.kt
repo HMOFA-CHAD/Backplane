@@ -282,3 +282,33 @@ fun StatusTab(m: AppModel, p: PlaneModel?) {
         planeSections(m, p, true, idleOpen) { idleOpen = !idleOpen }
     }
 }
+
+// The Home tab: the uberbot's card, then the plane in full (what needs you,
+// what runs, the bots, rooms and routines, the idle threads). With no
+// uberbot there is no plane: the tab offers to make one.
+@Composable
+fun HomeTab(m: AppModel, s: Screen, state: androidx.compose.foundation.lazy.LazyListState) {
+    var idleOpen by remember { mutableStateOf(true) }
+    val card = m.uber(s)
+    val plane = m.plane(s)
+    if (card == null) {
+        Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            if (s.projects.isEmpty() && s.bots.isEmpty()) CircularProgressIndicator()
+            else {
+                Text("No uberbot", style = MaterialTheme.typography.titleMedium)
+                Text("Your uberbot keeps the whole picture: what needs you, what runs, your bots and routines.",
+                    Modifier.padding(vertical = 12.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                androidx.compose.material3.Button(onClick = { m.act("uber-new") }) { Text("Make an uberbot") }
+            }
+        }
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize(), state = state) {
+        item(key = "uber") { UberCardRow(m, card) }
+        if (plane == null) item(key = "pl:wait") { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+        else {
+            item(key = "pl:strip") { PlaneStrip(m, plane) }
+            planeSections(m, plane, true, idleOpen) { idleOpen = !idleOpen }
+        }
+    }
+}

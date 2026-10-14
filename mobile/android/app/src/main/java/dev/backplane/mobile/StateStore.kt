@@ -9,7 +9,7 @@ import java.io.File
 // with their hash, scripts/state-key.py): a new build with the same types
 // keeps it, one with other types starts afresh rather than load a state it
 // may not read. A bridge.js without the key names it by its whole text.
-class StateStore(root: File, bridge: String) {
+class StateStore(private val root: File, bridge: String) {
     private val file = File(root, Regex("BackplaneStateKey = \"([0-9a-f]+)\"").find(bridge)?.let { "state-${it.groupValues[1]}.json" }
         ?: "state-%08x-%d.json".format(bridge.hashCode(), bridge.length))
 
@@ -21,6 +21,16 @@ class StateStore(root: File, bridge: String) {
 
     // (never read whole into this process: Engine.loadFrom streams it)
     fun has(): Boolean = file.exists() && file.length() > 0
+
+    // the kept state's size on disk (App settings, Cache), and forgetting it
+    fun size(): Long = if (file.exists()) file.length() else 0L
+
+    fun clear() {
+        file.delete()
+    }
+
+    // the hub settings page's last rows, by hub (JSON beside the state)
+    val settingsFile = File(root, "hub-settings.json")
 
     val path: File get() = file
 

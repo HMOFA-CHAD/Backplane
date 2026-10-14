@@ -43,6 +43,19 @@ struct StateStore {
         return t
     }
 
+    // the kept state's size on disk (App settings, Cache)
+    func size() -> Int {
+        ((try? FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent(name).path)[.size]) as? Int) ?? 0
+    }
+
+    // forgotten: the next launch fetches each hub's log again
+    func clear() {
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
+    }
+
+    // the hub settings page's last rows, by hub (kept as JSON beside the state)
+    var settingsFile: URL { dir.appendingPathComponent("hub-settings.json") }
+
     func save(_ text: String) {
         guard !text.isEmpty else { return }
         try? Data(text.utf8).write(to: dir.appendingPathComponent(name), options: .atomic)
