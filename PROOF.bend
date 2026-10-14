@@ -8739,9 +8739,9 @@ def Laws.deploy_cancel_clears():
 
 def Laws.lock_exclusive(l):
   match l:
-    case LCK.NamedLock{None{}, _, _}:
+    case LCK.NamedLock{None{}, _, _, _}:
       {==}
-    case LCK.NamedLock{Some{_}, _, _}:
+    case LCK.NamedLock{Some{_}, _, _, _}:
       {==}
 
 def Laws.lock_fifo(holder, first, rest):
@@ -8764,10 +8764,24 @@ def Laws.lock_grant_once():
 
 def Laws.lock_ready_idempotent(l):
   match l:
-    case LCK.NamedLock{_, _, _}:
+    case LCK.NamedLock{_, _, _, _}:
       {==}
 
 def Laws.codec_lock_roundtrip():
+  {==}
+
+# harness-coord: locks fix
+
+def Laws.lock_status_requeues_lost_client():
+  {==}
+
+def Laws.lock_renew_requeues_lost_client():
+  {==}
+
+def Laws.lock_requeue_keeps_fifo_for_others():
+  {==}
+
+def Laws.lock_restart_extends_client_leases():
   {==}
 # ---- phone-sch-viewer: exe path ----
 
@@ -8939,3 +8953,188 @@ def Laws.ask_head_other_tool():
 def Laws.ask_head_cal_update():
   {==}
 # end gmail: replies, attachments, drafts
+# harness-coord: deploy inflight
+def Laws.tool_open_shut_pair():
+  {==}
+
+def Laws.tool_turn_end_clears():
+  {==}
+
+def Laws.deploy_goes_between_calls():
+  {==}
+
+def Laws.deploy_waits_open_call():
+  {==}
+# ios-snappy: lost work
+
+def Laws.lostwork_exit_clears():
+  {==}
+
+def Laws.lostwork_exit_clears_off():
+  {==}
+
+def Laws.lostwork_exit_clears_running():
+  {==}
+
+def Laws.lostwork_exit_keeps_child():
+  {==}
+
+def Laws.lostwork_exit_keeps_watch():
+  {==}
+
+def Laws.lostwork_exit_island_hides():
+  {==}
+
+def Laws.lostwork_recover_none_open():
+  {==}
+
+def Laws.lostwork_recover_none_open_off():
+  {==}
+
+def Laws.lostwork_recover_none_held():
+  {==}
+
+def Laws.lostwork_recover_none_held_carried():
+  {==}
+
+def Laws.lostwork_recover_island_hides():
+  {==}
+
+def Laws.lostwork_recover_still_told():
+  {==}
+
+def Laws.lostwork_recover_nothing_left_aside():
+  {==}
+
+def Laws.lostwork_recover_old_rows_go():
+  {==}
+
+def Laws.lostwork_recover_old_rows_go_off():
+  {==}
+
+def Laws.teach_mode_idle():
+  {==}
+
+def Laws.teach_mode_recording():
+  {==}
+
+def Laws.teach_mode_review():
+  {==}
+
+def Laws.teach_mode_takeover():
+  {==}
+
+def Laws.teach_input_only_when_driving(d):
+  {==}
+
+def Laws.teach_bot_drives_no_input():
+  {==}
+
+def Laws.teach_risky_confirms():
+  {==}
+
+def Laws.teach_plain_continues():
+  {==}
+
+def Laws.teach_risky_default_options():
+  {==}
+
+def Laws.teach_risky_button(id):
+  {==}
+
+def Laws.teach_secret_no_chip(act, l):
+  {==}
+
+def Laws.teach_secret_row_no_chip(n, t, l, c, m, p):
+  {==}
+
+def Laws.teach_tasks_tab():
+  {==}
+
+def Laws.teach_clock():
+  {==}
+
+def Laws.teach_preview_refused_teaching():
+  {==}
+
+def Laws.teach_preview_refused_takeover():
+  {==}
+
+def Laws.teach_preview_other_bot_free():
+  {==}
+
+def Laws.teach_preview_allowed_idle():
+  {==}
+
+def Laws.teach_handback_returns_browser():
+  {==}
+
+def Laws.teach_info_idle():
+  {==}
+
+def Laws.teach_info_recording():
+  {==}
+
+def Laws.teach_info_review():
+  {==}
+
+def Laws.teach_pause_options_risky():
+  {==}
+
+def Laws.teach_pause_options_plain():
+  {==}
+
+def Laws.teach_scale_corner():
+  {==}
+
+def Laws.teach_scale_middle():
+  {==}
+
+def Laws.teach_run_no_slash():
+  {==}
+
+def Laws.teach_run_no_dots():
+  {==}
+
+def Laws.teach_file_no_traversal():
+  {==}
+
+def Laws.teach_run_slug_roundtrip():
+  {==}
+
+def Laws.teach_recording_expires():
+  {==}
+
+def Laws.teach_recording_not_early():
+  {==}
+
+def Laws.teach_draft_secret_no_value():
+  {==}
+
+def Laws.mobile_browser_ask_card(a, d, nf):
+  {==}
+
+def Laws.mobile_other_ask_standard(a, d, nf):
+  {==}
+
+def Laws.mobile_browser_card_only_browser(t, rest):
+  {==}
+# ios-snappy: tabs
+def Laws.local_view_wins():
+  {==}
+
+def Laws.local_view_wins_projects():
+  {==}
+
+def Laws.local_view_unset_hub():
+  {==}
+
+def Laws.local_view_unset_hub_projects():
+  {==}
+
+def Laws.local_view_junk_ignored():
+  {==}
+
+def Laws.hub_settings_moves_focus():
+  {==}
+# ---- end ios-snappy tabs ----

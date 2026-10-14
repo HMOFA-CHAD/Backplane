@@ -111,6 +111,8 @@ import ./src/core/told.bend as TLD
 import ./src/core/rules.bend as RLS
 import ./src/core/tboard.bend as TBD
 import ./src/core/task.bend as TSK
+import ./src/core/teach.bend as TCH
+import ./src/mobile/bots.bend as MBT
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -7352,26 +7354,26 @@ law told_quiet_record_nothing:
 
 # a deploy waits while a thread is inside a tool call
 law deploy_waits_for_tool:
-  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(True{}, H.Deploy.demo.line("t0")), 9n, True{})) == 0n : Nat}
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(True{}, H.Deploy.demo.line("t0")), 9n, True{}, H.Deploy.demo.open(True{}))) == 0n : Nat}
 
 # and while a build lock is held
 law deploy_waits_for_lock:
-  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, False{})) == 0n : Nat}
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, False{}, Nil{})) == 0n : Nat}
 
 # with no tool call and the locks free it goes, once
 law deploy_goes_when_clear:
-  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{})) == 1n : Nat}
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, Nil{})) == 1n : Nat}
 
 # the go clears the wait and writes deploy.done, each once
 law deploy_go_clears_wait:
-  {H.Deploy.demo.sets(H.Deploy.demo.cs(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{})), "deploy.wait", True{}) == 1n : Nat}
+  {H.Deploy.demo.sets(H.Deploy.demo.cs(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, Nil{})), "deploy.wait", True{}) == 1n : Nat}
 
 law deploy_go_writes_done:
-  {H.Deploy.demo.sets(H.Deploy.demo.cs(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{})), "deploy.done", False{}) == 1n : Nat}
+  {H.Deploy.demo.sets(H.Deploy.demo.cs(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, Nil{})), "deploy.done", False{}) == 1n : Nat}
 
 # nothing waits: nothing goes
 law deploy_idle_nothing:
-  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, ""), 9n, True{})) == 0n : Nat}
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, ""), 9n, True{}, Nil{})) == 0n : Nat}
 
 # the start after a deploy tells the requester once and clears deploy.done
 law deploy_after_note_once:
@@ -7429,7 +7431,7 @@ law lock_fifo:
   for holder: LCK.LockParty
   for first: LCK.LockParty
   for rest: List<&2, LCK.LockParty>
-  {LCK.Lock.holder(LCK.Lock.release.k(True{}, LCK.NamedLock{Some{holder}, first <> rest, True{}})) == Some{first} : Maybe<&2, LCK.LockParty>}
+  {LCK.Lock.holder(LCK.Lock.release.k(True{}, LCK.NamedLock{Some{holder}, first <> rest, True{}, None{}})) == Some{first} : Maybe<&2, LCK.LockParty>}
 
 law lock_holder_only:
   for l: LCK.NamedLock
@@ -7452,7 +7454,23 @@ law lock_ready_idempotent:
   {LCK.Lock.mark(LCK.Lock.mark(l)) == LCK.Lock.mark(l) : LCK.NamedLock}
 
 law codec_lock_roundtrip:
-  {C.Change.decode(C.Change.encode(M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}}, 4n})) == Some{M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}}, 4n}} : Maybe<&2, M.Change>}
+  {C.Change.decode(C.Change.encode(M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}, None{}}, 4n})) == Some{M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}, None{}}, 4n}} : Maybe<&2, M.Change>}
+
+# harness-coord: locks fix
+# A client party the record lost is queued again by its next status or renew,
+# never answered with an invisible held:false; others keep their order.
+law lock_status_requeues_lost_client:
+  {H.Locks.demo.requeue("status", "pid:9") == "2:1:lost" : String}
+
+law lock_renew_requeues_lost_client:
+  {H.Locks.demo.requeue("renew", "pid:9") == "2:1:lost" : String}
+
+law lock_requeue_keeps_fifo_for_others:
+  {Bool.and(String.eq(H.Locks.demo.requeue("status", "pid:9"), "2:1:lost"), Nat.is_eq(H.Locks.demo.requeue.twice(), 2n)) == True{} : Bool}
+
+# a restart gives every client party a fresh 90 s lease, so the downtime never prunes a live helper
+law lock_restart_extends_client_leases:
+  {H.Locks.demo.lease() == "96:1" : String}
 
 # routines-cal: calendar
 # an update with only a summary patches only the summary
@@ -7674,3 +7692,247 @@ law ask_head_cal_update:
   {U.Ask.head("approval", "calendar_update", "x") == "Change this event?" : String}
 
 # end gmail: replies, attachments, drafts
+# harness-coord: deploy inflight (hub.bend's Tools.*, core/deploy.bend's Open.*)
+# ---------------------------------------------------------------------------
+
+# a tool_use line opens its call and a tool_result line shuts the same call,
+# each once (nothing else opens or shuts it)
+law tool_open_shut_pair:
+  {H.Tools.demo.pair() == 11n : Nat}
+
+# a turn that ends shuts every call of its thread
+law tool_turn_end_clears:
+  {H.Tools.demo.ends() == 1n : Nat}
+
+# a deploy with no call open goes, though the newest entry of the running thread is a tool call
+law deploy_goes_between_calls:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(True{}, H.Deploy.demo.line("t0")), 9n, True{}, H.Deploy.demo.open(False{}))) == 1n : Nat}
+
+# and it waits while a call is open
+law deploy_waits_open_call:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, H.Deploy.demo.open(True{}))) == 0n : Nat}
+# ios-snappy: lost work
+# Background work whose owner died is ended, so the phones' island (which
+# counts a thread's rows, M.Work.busy) stops listing it: the agent's exit
+# leaves none of its rows (a delegated child's task and watched work are
+# not the agent's, and stay), a restart leaves none at work, and with
+# restart.continue on none at all: they are put aside (Lost.aside) until
+# the agent is told, once.
+law lostwork_exit_clears:
+  {M.Bg.live(M.Bg.of(H.Lost.exited(H.Lost.demo(True{}, False{}), "t1"), "t1")) == 0n : Nat}
+
+law lostwork_exit_clears_off:
+  {M.Bg.live(M.Bg.of(H.Lost.exited(H.Lost.demo(False{}, False{}), "t1"), "t1")) == 0n : Nat}
+
+law lostwork_exit_clears_running:
+  {M.Bg.live(M.Bg.of(H.Lost.exited(H.Lost.demo(True{}, True{}), "t1"), "t1")) == 0n : Nat}
+
+law lostwork_exit_keeps_child:
+  {M.Work.busy(H.Lost.exited(H.Lost.parent(), "t0"), "t0") == 1n : Nat}
+
+law lostwork_exit_keeps_watch:
+  {M.Work.rows(H.Lost.exited(H.Watch.demo.at(False{}, "t1"), "t1"), "t1") == 1n : Nat}
+
+law lostwork_exit_island_hides:
+  {J.Json.show(J.Json.arr(Nt.Note.lines.w([H.Hub.thread(H.Lost.exited(H.Lost.demo(False{}, False{}), "t1"), "t1")], M.Work.kids.map(H.Lost.exited(H.Lost.demo(False{}, False{}), "t1")), H.Lost.exited(H.Lost.demo(False{}, False{}), "t1")))) == "[]" : String}
+
+law lostwork_recover_none_open:
+  {H.Lost.open(H.Rec.after(H.Lost.many(), 10n)) == 0n : Nat}
+
+law lostwork_recover_none_open_off:
+  {H.Lost.open(H.Rec.after(M.State.replay([M.SettingSet{"restart.continue", "off", 9n}], H.Lost.many()), 10n)) == 0n : Nat}
+
+law lostwork_recover_none_held:
+  {H.Lost.held(H.Rec.after(H.Lost.many(), 10n)) == 0n : Nat}
+
+law lostwork_recover_none_held_carried:
+  {H.Lost.held(H.Carry.after(H.Lost.many(), 10n)) == 0n : Nat}
+
+law lostwork_recover_island_hides:
+  {J.Json.show(J.Json.arr(Nt.Note.lines.w([H.Hub.thread(H.Rec.after(H.Lost.demo(True{}, False{}), 10n), "t1")], M.Work.kids.map(H.Rec.after(H.Lost.demo(True{}, False{}), 10n)), H.Rec.after(H.Lost.demo(True{}, False{}), 10n)))) == "[]" : String}
+
+law lostwork_recover_still_told:
+  {H.Lost.told(M.State.mine(H.Carry.after(H.Lost.demo(True{}, False{}), 10n), "t1")) == 1n : Nat}
+
+law lostwork_recover_nothing_left_aside:
+  {List.length(&2, String, H.Lost.stash(H.Carry.after(H.Lost.demo(True{}, False{}), 10n), "t1")) == 0n : Nat}
+
+law lostwork_recover_old_rows_go:
+  {M.Bg.live(M.Bg.of(H.Rec.after(H.Lost.stale(True{}), 10n), "t1")) == 0n : Nat}
+
+law lostwork_recover_old_rows_go_off:
+  {M.Bg.live(M.Bg.of(H.Rec.after(H.Lost.stale(False{}), 10n), "t1")) == 0n : Nat}
+
+# Teaching a bot browser tasks, in the clients (client.bend's Teach.*; docs/teach.md)
+
+# the Browser tab's strip: idle, recording, in review, the person has the browser
+law teach_mode_idle:
+  {U.Teach.mode.of("", "") == 0n : Nat}
+
+law teach_mode_recording:
+  {U.Teach.mode.of("rec 100 2", "teach") == 1n : Nat}
+
+law teach_mode_review:
+  {U.Teach.mode.of("review", "teach") == 2n : Nat}
+
+law teach_mode_takeover:
+  {U.Teach.mode.of("", "takeover") == 3n : Nat}
+
+# the frame takes the person's input exactly while they drive
+law teach_input_only_when_driving:
+  for +d: String
+  {U.Teach.driving(d) == Bool.not(String.is_empty(d)) : Bool}
+
+law teach_bot_drives_no_input:
+  {U.Teach.driving("") == False{} : Bool}
+
+# a risky pause goes on only by Confirm, never Continue
+law teach_risky_confirms:
+  {U.Teach.choice.safe(True{}, "continue") == "confirm" : String}
+
+law teach_plain_continues:
+  {U.Teach.choice.safe(False{}, "continue") == "continue" : String}
+
+law teach_risky_default_options:
+  {U.Teach.choices("", True{}) == ["confirm", "skip", "stop"] : List<&2, String>}
+
+law teach_risky_button:
+  for +id: String
+  {U.Teach.ask.btns(["continue"], id, True{}) == [U.TBtn{"Confirm", "answer", id ++ "|confirm", True{}}] : List<&2, U.TBtn>}
+
+# a secret's step is never a chip the person could make a parameter
+law teach_secret_no_chip:
+  for +act: String
+  for +l: String
+  {U.Teach.chip(act, TSK.VSecret{l}) == "" : String}
+
+law teach_secret_row_no_chip:
+  for +n: Nat
+  for +t: String
+  for +l: String
+  for +c: String
+  for +m: Bool
+  for +p: String
+  {U.Teach.chip.ok(U.TStepRow{n, t, l, c, True{}, m, p}) == False{} : Bool}
+
+# the Tasks tab sits right after Browser, and a bot elsewhere has neither
+law teach_tasks_tab:
+  {BU.BU.tabs() == ["chat", "space", "browser", "tasks", "memory", "routines", "hooks", "settings"] : List<&2, String>}
+
+law teach_clock:
+  {U.Teach.clock(160n) == "2:40" : String}
+
+# Teaching a bot's browser (src/core/teach.bend, docs/teach.md)
+
+# while the person teaches, the bot's preview calls are refused
+law teach_preview_refused_teaching:
+  {TCH.Teach.bot_may(TCH.Teach.put(TCH.Teach.empty(), TCH.Teach.start("b1", 5n)), "b1") == False{} : Bool}
+
+# and while they take the browser over
+law teach_preview_refused_takeover:
+  {TCH.Teach.bot_may(TCH.Teach.put(TCH.Teach.empty(), TCH.Teach.takeover(TCH.Teach.blank("b1"))), "b1") == False{} : Bool}
+
+# another bot's browser is its own
+law teach_preview_other_bot_free:
+  {TCH.Teach.bot_may(TCH.Teach.put(TCH.Teach.empty(), TCH.Teach.start("b1", 5n)), "b2") == True{} : Bool}
+
+law teach_preview_allowed_idle:
+  {TCH.Teach.bot_may(TCH.Teach.empty(), "b1") == True{} : Bool}
+
+# handing back gives the browser to the bot again
+law teach_handback_returns_browser:
+  {TCH.Teach.bot_may(TCH.Teach.put(TCH.Teach.empty(), TCH.Teach.handback(TCH.Teach.takeover(TCH.Teach.blank("b1")))), "b1") == True{} : Bool}
+
+# the info text of the teach state
+law teach_info_idle:
+  {TCH.Teach.mode.text(TCH.Teach.blank("b1")) == "" : String}
+
+law teach_info_recording:
+  {TCH.Teach.mode.text(TCH.Teach.start("b1", 5n)) == "rec 5 0" : String}
+
+law teach_info_review:
+  {TCH.Teach.mode.text(TCH.Teach.stop(TCH.Teach.start("b1", 5n))) == "review" : String}
+
+# a risky pause is confirmed, any other continued; both may be skipped or stopped
+law teach_pause_options_risky:
+  {TCH.Pause.options(True{}) == "confirm\nskip\nstop" : String}
+
+law teach_pause_options_plain:
+  {TCH.Pause.options(False{}) == "continue\nskip\nstop" : String}
+
+# a click at the frame's corner lands inside the page
+law teach_scale_corner:
+  {TSK.Task.scale(1000n, 1000n, 1000n, 1000n, 1280n, 800n) == TSK.TkPt{1279n, 799n} : TSK.TkPt}
+
+law teach_scale_middle:
+  {TSK.Task.scale(500n, 500n, 1000n, 1000n, 1280n, 800n) == TSK.TkPt{640n, 400n} : TSK.TkPt}
+
+# a run's folder and a picture's name are plain names: no / and no ..
+law teach_run_no_slash:
+  {TCH.Teach.run.ok("a/b-1") == False{} : Bool}
+
+law teach_run_no_dots:
+  {TCH.Teach.run.ok("..-1") == False{} : Bool}
+
+law teach_file_no_traversal:
+  {TCH.Teach.file.ok("../x.jpg") == False{} : Bool}
+
+law teach_run_slug_roundtrip:
+  {TCH.Teach.run.slug(TCH.Teach.run.id("a-b", 5n)) == "a-b" : String}
+
+# a recording stops by itself after ten minutes, not before
+law teach_recording_expires:
+  {TCH.Teach.expired(TCH.Teach.start("b1", 100n), 700n) == True{} : Bool}
+
+law teach_recording_not_early:
+  {TCH.Teach.expired(TCH.Teach.start("b1", 100n), 699n) == False{} : Bool}
+
+# a draft's secret step carries no value
+law teach_draft_secret_no_value:
+  {String.contains(TCH.Teach.draft.text(TCH.Teach.add(TCH.Teach.start("b1", 1n), J.Json.obj([J.KV{"do", J.Str{"type"}}, J.KV{"secret", J.Flag{True{}}}, J.KV{"value", J.Str{"hunter2"}}]))), "hunter2") == False{} : Bool}
+
+# Browser tasks on the phones
+# ---------------------------
+
+# a pause is the browser card (its picture and the person's choices);
+# every other ask keeps the standard card
+law mobile_browser_ask_card:
+  for +a: M.Ask
+  for +d: String
+  for +nf: Map<&2, String>
+  {MSC.Mob.ask.k(True{}, a, d, nf) == MBT.MBots.ask(U.Teach.ask.from(a, nf)) : J.Json}
+
+law mobile_other_ask_standard:
+  for +a: M.Ask
+  for +d: String
+  for +nf: Map<&2, String>
+  {MSC.Mob.ask.k(False{}, a, d, nf) == MSC.Mob.ask.std(a, d) : J.Json}
+
+# a card on the Browser tab is added only for a browser ask
+law mobile_browser_card_only_browser:
+  for t: U.TAsk
+  for rest: List<&2, J.Json>
+  {MBT.MBots.asks.m(False{}, t, rest) == rest : List<&2, J.Json>}
+# ios-snappy: tabs
+# a view the device chose wins over the hub's setting
+law local_view_wins:
+  {MSC.Mob.view.of("active", "projects") == "active" : String}
+
+law local_view_wins_projects:
+  {MSC.Mob.view.of("projects", "active") == "projects" : String}
+
+# with none chosen, the hub's setting is used
+law local_view_unset_hub:
+  {MSC.Mob.view.of("", "active") == "active" : String}
+
+law local_view_unset_hub_projects:
+  {MSC.Mob.view.of("", "projects") == "projects" : String}
+
+# something that is not a view is not chosen
+law local_view_junk_ignored:
+  {MSC.Mob.view.of("sideways", "active") == "active" : String}
+
+# the hub's settings page names a hub, so the action goes to it and moves the focus
+law hub_settings_moves_focus:
+  {Hb.Hubs.routed("hub-settings") == 11n : Nat}
+# ---- end ios-snappy tabs ----

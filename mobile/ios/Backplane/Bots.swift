@@ -39,72 +39,6 @@ struct BotCat: View {
     }
 }
 
-// The list
-// --------
-
-struct BotsSection: View {
-    let model: AppModel
-    let screen: Screen
-
-    var body: some View {
-        Section {
-            ForEach(screen.bots) { b in
-                Button { model.open(nav: b.nav ?? "", action: b.act ?? (b.remote ? "remote" : "bot"), value: b.id, title: b.name, cat: b.cat, kind: b.remote ? "remote" : "bot") } label: {
-                    HStack(spacing: 12) {
-                        BotCat(model: model, key: b.cat, size: 36)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(b.name).foregroundStyle(.primary)
-                            HStack(spacing: 5) {
-                                MoodDot(mood: b.mood)
-                                Text([b.note, b.peer, b.machine ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .lineLimit(1)
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                    }
-                }
-                .opacity(b.mood == "away" ? 0.5 : 1)
-            }
-            ForEach(screen.rooms) { r in
-                Button { model.open(nav: r.nav ?? "", action: "room", value: r.id, title: r.name, kind: "room") } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "bubble.left.and.bubble.right").frame(width: 36).foregroundStyle(.secondary)
-                        Text(r.name).foregroundStyle(.primary)
-                        Spacer()
-                        Label("\(r.members)", systemImage: "person.2").font(.caption).foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                    }
-                }
-            }
-        } header: {
-            HStack {
-                Text("Bots")
-                Spacer()
-                Menu {
-                    // with several hubs, a bot or room is made on the one chosen
-                    if screen.hubs.count > 1 {
-                        ForEach(screen.hubs, id: \.key) { h in
-                            Menu(h.name) {
-                                Button("New bot", systemImage: "cat") { model.act("bot-new", h.key + "|") }
-                                Button("New room", systemImage: "bubble.left.and.bubble.right") { model.act("room-new", h.key + "|") }
-                            }
-                        }
-                    } else {
-                        Button("New bot", systemImage: "cat") { model.act("bot-new") }
-                        Button("New room", systemImage: "bubble.left.and.bubble.right") { model.act("room-new") }
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .accessibilityLabel("New bot or room")
-            }
-        }
-    }
-}
-
 // Forms
 // -----
 
@@ -269,7 +203,9 @@ struct BotScreen: View {
                 SpaceView(space: s) { model.act($0, $1) }.navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
             }
         case "browser":
-            BrowserTab(model: model, browser: bot.browser).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
+            BrowserTab(model: model, browser: bot.browser, name: bot.name).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
+        case "tasks":
+            TasksTab(model: model, tasks: bot.tasks).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
         case "memory":
             MemoryTab(model: model, items: bot.memory ?? []).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
         case "routines":
@@ -280,32 +216,6 @@ struct BotScreen: View {
             if let s = bot.settings { SettingsTab(model: model, bot: bot, settings: s).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline) }
         default:
             if let t = live ? model.screen?.thread : cachedThread { ThreadScreen(model: model, thread: t, live: live) }
-        }
-    }
-}
-
-// the bot's page, as the hub's latest frame (fetched again when n moves)
-private struct BrowserTab: View {
-    let model: AppModel
-    let browser: BotBrowser?
-    @State private var image: UIImage?
-
-    private var url: URL? {
-        browser.flatMap { model.hubURL($0.url, query: [URLQueryItem(name: "n", value: $0.n)]) }
-    }
-
-    var body: some View {
-        ScrollView {
-            if let image {
-                Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity)
-            } else {
-                ContentUnavailableView("No page yet", systemImage: "globe")
-            }
-        }
-        .task(id: url) {
-            guard let u = url, let (d, r) = try? await URLSession.shared.data(from: u),
-                  (r as? HTTPURLResponse)?.statusCode == 200, let i = UIImage(data: d) else { return }
-            image = i
         }
     }
 }

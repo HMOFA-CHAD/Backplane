@@ -106,6 +106,10 @@ def wire(text: String) -> String:
 def act(+hs: H.Hubs, +action: String, +value: String) -> H.HAct:
   H.Hubs.act(hs, action, value)
 
+# a choice of this device (ios-snappy tabs): the thread list's view
+def local(hs: H.Hubs, key: String, value: String) -> H.Hubs:
+  H.Hubs.local(hs, key, value)
+
 def screen(+hs: H.Hubs) -> String:
   J.Json.show(H.Hubs.screen(hs))
 

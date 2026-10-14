@@ -103,9 +103,19 @@ type Out is Data:
   # a deploy waits and no tool call runs: look at the build locks (the server
   # answers with Msg DeployLocks, Hub.deploy_locks)
   DeployProbe{}
+  # a tool call of a thread started / ended, or every call of a thread ended
+  # (its turn, its agent): the server keeps the open ones in memory for the
+  # deploy check (core/deploy.bend's Open.*); never written to the log
+  ToolOpen{thread: String, call: String}
+  ToolShut{thread: String, call: String}
+  ToolsGone{thread: String}
   # the deploy goes: swap the staged package in (when stage is set), then
   # restart into it
   DeployGo{stage: String}
+  # a request about a bot's browser and what it is taught (core/teach.bend):
+  # the server keeps the driver and the draft, so it answers (m is
+  # bots.browser or bots.teach, p the request's params as JSON text)
+  Teach{client: U32, id: String, m: String, p: String}
 
 type Step is Data:
   Step{changes: List<&2, M.Change>, outs: List<&2, Out>}
@@ -135,6 +145,12 @@ def Island.touch(cs: List<&2, M.Change>) -> Bool:
       True{}
     case M.ThreadDeleted{_, _} <> _:
       True{}
+    # a thread's background rows cleared (its agent or the hub that owned
+    # them is gone: Bg.gone, Rec.lost*): what it waited on is no more, so
+    # the Live Activity drops its "waiting on N" now, not at the next beat.
+    # Only a clear: rows change at every subagent step, and each push costs
+    case M.WorkSet{_, +kind, +v, _} <> t:
+      Bool.or(Bool.and(String.eq(kind, "bg"), String.is_empty(v)), Island.touch(t))
     case _ <> t:
       Island.touch(t)
 
@@ -1667,6 +1683,109 @@ def Steps.after.if(on: Bool, st: Step, +thread: String, +cwd: String) -> Step:
     case False{}:
       st
 
+# Open tool calls
+# ---------------
+# Where a tool call starts and ends, the hub tells the server (ToolOpen,
+# ToolShut) and the server keeps the open ones in memory, for the safe
+# deploy (core/deploy.bend): Claude's tool_use block opens, the tool_result
+# block of the same id shuts; Codex's item.started opens and item.completed
+# shuts; Grok's, Muse's and Antigravity's logged call opens and its
+# "tool.done" shuts. A turn's end, an archive or a delete shuts every call of
+# the thread (ToolsGone). The requester's own deploy_* call is never opened.
+# Nothing here is written to the log (laws tool_*).
+
+def Tools.open.k(go: Bool, +thread: String, +id: String, rest: List<&2, Out>) -> List<&2, Out>:
+  match go:
+    case True{}:
+      ToolOpen{thread, id} <> rest
+    case False{}:
+      rest
+
+# the tool calls the changes log for a thread's own timeline
+def Tools.opens(cs: List<&2, M.Change>, +thread: String) -> List<&2, Out>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case M.ActivityLogged{+th, +id, +tone, +kind, _, _} <> t:
+      Tools.open.k(Bool.and(Bool.and(String.eq(th, thread), String.eq(tone, "tool")), Bool.not(String.contains(kind, "deploy_"))), thread, id, Tools.opens(t, thread))
+    case _ <> t:
+      Tools.opens(t, thread)
+
+def Tools.step(st: Step, +thread: String) -> Step:
+  match st:
+    case Step{+cs, os}:
+      Step{cs, List.append(&2, Out, os, Tools.opens(cs, thread))}
+
+def Tools.shut.k(go: Bool, +thread: String, +id: String, rest: List<&2, Out>) -> List<&2, Out>:
+  match go:
+    case True{}:
+      ToolShut{thread, id} <> rest
+    case False{}:
+      rest
+
+# Claude: every tool result of a line ends its call
+def Tools.shuts(bs: List<&2, J.Json>, +thread: String) -> List<&2, Out>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case +b <> t:
+      Tools.shut.k(String.eq(J.Json.get_str(b, "type", ""), "tool_result"), thread, J.Json.get_str(b, "tool_use_id", ""), Tools.shuts(t, thread))
+
+def Tools.kind(+t: String) -> Bool:
+  Bool.or(String.eq(t, "command_execution"), String.eq(t, "file_change"))
+
+# Codex-like lines (acp: Grok, Muse, Antigravity log the call when it starts
+# and end it at "tool.done"; Codex logs it when it completes)
+def Tools.line.k(i: Nat, acp: Bool, +thread: String, +id: String, +kind: Bool) -> List<&2, Out>:
+  match i:
+    case 1n:
+      Bool.pick(List<&2, Out>, Bool.and(kind, Bool.not(String.is_empty(id))), Bool.pick(List<&2, Out>, acp, [ToolOpen{thread, id}], [ToolShut{thread, id}]), Nil{})
+    case 5n:
+      Bool.pick(List<&2, Out>, Bool.and(kind, Bool.and(Bool.not(acp), Bool.not(String.is_empty(id)))), [ToolOpen{thread, id}], Nil{})
+    case 6n:
+      Bool.pick(List<&2, Out>, String.is_empty(id), Nil{}, [ToolShut{thread, id}])
+    case _:
+      Nil{}
+
+def Tools.line.id(i: Nat, +o: J.Json) -> String:
+  Bool.pick(String, Nat.is_eq(i, 6n), J.Json.get_str(o, "id", ""), J.Json.get_str(J.Json.get_obj(o, "item"), "id", ""))
+
+def Tools.line(+i: Nat, acp: Bool, +thread: String, +o: J.Json) -> List<&2, Out>:
+  Tools.line.k(i, acp, thread, Tools.line.id(i, o), Tools.kind(J.Json.get_str(J.Json.get_obj(o, "item"), "type", "")))
+
+def Tools.gone.k(go: Bool, +th: String, rest: List<&2, Out>) -> List<&2, Out>:
+  match go:
+    case True{}:
+      ToolsGone{th} <> rest
+    case False{}:
+      rest
+
+def Tools.ended(st: M.TurnState) -> Bool:
+  match st:
+    case M.Running{}:
+      False{}
+    case _:
+      True{}
+
+# the changes that end a thread's calls: a turn that is not running, an
+# archive, a delete
+def Tools.gone(cs: List<&2, M.Change>) -> List<&2, Out>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case M.TurnChanged{+th, st, _} <> t:
+      Tools.gone.k(Tools.ended(st), th, Tools.gone(t))
+    case M.ThreadArchived{+th, +b, _} <> t:
+      Tools.gone.k(b, th, Tools.gone(t))
+    case M.ThreadDeleted{+th, _} <> t:
+      ToolsGone{th} <> Tools.gone(t)
+    case _ <> t:
+      Tools.gone(t)
+
+# the step's outputs, with the calls of the threads it ended shut after them
+def Tools.outs(+cs: List<&2, M.Change>, +os: List<&2, Out>) -> List<&2, Out>:
+  List.append(&2, Out, os, Tools.gone(cs))
+
 # A subagent's own lines (parent_tool_use_id names the Agent call that
 # started it): what it writes and the tools it calls go to its log, not the
 # thread's timeline, and its partial text, tool results and usage are not
@@ -1717,11 +1836,12 @@ def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -
     case 1n:
       Claude.stream.if(Hub.running(Hub.thread(s, thread)), thread, J.Json.get_obj(o, "event"))
     case 2n:
-      Claude.assistant.t(s, thread, now, J.Json.get_obj(o, "message"), J.Json.get_str(o, "uuid", ""))
+      Tools.step(Claude.assistant.t(s, thread, now, J.Json.get_obj(o, "message"), J.Json.get_str(o, "uuid", "")), thread)
     case 3n:
       Step.after(Claude.result.if(Hub.running(Hub.thread(s, thread)), thread, now, o), Usage.window(s, thread, now, o))
     case 4n:
-      Step.also(Claude.named(s, thread, now, o), Steps.claude(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), thread, Hub.cwd(s, Hub.thread(s, thread))))
+      Step.also(Step.also(Claude.named(s, thread, now, o), Steps.claude(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), thread, Hub.cwd(s, Hub.thread(s, thread)))),
+        Tools.shuts(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), thread))
     case _:
       Step.none()
 
@@ -2439,12 +2559,20 @@ def Codex.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now: 
 def Hub.acp_like(+p: String) -> Bool:
   Bool.or(Bool.or(String.eq(p, "grok"), String.eq(p, "muse")), String.eq(p, "antigravity"))
 
+# the open-call outs of a Codex-like line, after its step
+def Tools.codex(acp: Bool, m: Maybe<&2, J.Json>, st: Step, +thread: String) -> Step:
+  match m:
+    case Some{+o}:
+      Step.also(st, Tools.line(Codex.kind(J.Json.get_str(o, "type", "")), acp, thread, o))
+    case None{}:
+      st
+
 # a Codex, Grok or Muse line counts only while its thread's turn runs: what a
 # stopped turn's process still says is old news (law stopped_turn_quiet)
-def Hub.agent_line.c(run: Bool, +s: M.State, +now: Nat, +thread: String, line: String) -> Step:
+def Hub.agent_line.c(run: Bool, +s: M.State, +now: Nat, +thread: String, +line: String) -> Step:
   match run:
     case True{}:
-      Steps.after.if(Bool.not(Hub.acp_like(Hub.provider(Hub.thread(s, thread)))), Codex.line.parsed(J.Json.parse(line), s, thread, now), thread, Hub.cwd(s, Hub.thread(s, thread)))
+      Tools.codex(Hub.acp_like(Hub.provider(Hub.thread(s, thread))), J.Json.parse(line), Steps.after.if(Bool.not(Hub.acp_like(Hub.provider(Hub.thread(s, thread)))), Codex.line.parsed(J.Json.parse(line), s, thread, now), thread, Hub.cwd(s, Hub.thread(s, thread))), thread)
     case False{}:
       Step.none()
 
@@ -3790,8 +3918,8 @@ def Update.held(+s: M.State, +now: Nat) -> Step:
 # into it; the turns it cuts resume (Carry). deploy.wait is the waiting
 # request, deploy.done what the next start reads once (laws deploy_*).
 
-def Deploy.probe(+s: M.State) -> List<&2, Out>:
-  Bool.pick(List<&2, Out>, Nat.is_eq(DP.Deploy.count(s), 0n), [DeployProbe{}], Nil{})
+def Deploy.probe() -> List<&2, Out>:
+  [DeployProbe{}]
 
 # a note to the requester thread (none for the person: by is empty)
 def Deploy.tell(+s: M.State, +now: Nat, +by: String, +text: String) -> Step:
@@ -3801,7 +3929,7 @@ def Deploy.stage.ok(+stage: String) -> Bool:
   Bool.or(String.is_empty(stage), String.starts_with(stage, "/"))
 
 def Deploy.ask(+s: M.State, +now: Nat, +by: String, +note: String, +stage: String) -> Step:
-  Step{[M.SettingSet{"deploy.wait", DP.Deploy.line(by, note, stage, VER.Version.current(), now, False{}, False{}, ""), now}], Deploy.probe(s)}
+  Step{[M.SettingSet{"deploy.wait", DP.Deploy.line(by, note, stage, VER.Version.current(), now, False{}, False{}, ""), now}], Deploy.probe()}
 
 def Deploy.restart(ok: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +stage: String, +note: String) -> Step:
   match ok:
@@ -3820,37 +3948,38 @@ def Deploy.go(+line: String, +s: M.State, +now: Nat) -> Step:
       DP.Deploy.since(line), DP.Deploy.noted(line), DP.Deploy.locked(line), DP.Deploy.running(s)), now}, M.SettingSet{"deploy.wait", "", now}],
     [DeployGo{DP.Deploy.stage(line)}]}
 
-def Deploy.lock.set(same: Bool, free: Bool, +line: String, +now: Nat) -> Step:
+def Deploy.lock.set(same: Bool, free: Bool, +line: String, +open: String, +now: Nat) -> Step:
   match same:
     case True{}:
       Step.none()
     case False{}:
-      Step{[M.SettingSet{"deploy.wait", DP.Deploy.with(line, DP.Deploy.noted(line), Bool.not(free)), now}], Nil{}}
+      Step{[M.SettingSet{"deploy.wait", DP.Deploy.with(line, DP.Deploy.noted(line), Bool.not(free), open), now}], Nil{}}
 
-def Deploy.check.k(go: Bool, clear: Bool, +free: Bool, +line: String, +s: M.State, +now: Nat) -> Step:
+def Deploy.check.k(go: Bool, +free: Bool, +line: String, +open: String, +s: M.State, +now: Nat) -> Step:
   match go:
     case True{}:
       Deploy.go(line, s, now)
     case False{}:
-      Deploy.lock.set(Bool.or(Bool.not(clear), Bool.pick(Bool, free, Bool.not(DP.Deploy.locked(line)), DP.Deploy.locked(line))), free, line, now)
+      Deploy.lock.set(Bool.and(Bool.pick(Bool, free, Bool.not(DP.Deploy.locked(line)), DP.Deploy.locked(line)), String.eq(DP.Deploy.open(line), open)), free, line, open, now)
 
-def Deploy.check.w(waiting: Bool, +clear: Bool, +free: Bool, +s: M.State, +now: Nat) -> Step:
+def Deploy.check.w(waiting: Bool, +clear: Bool, +free: Bool, +open: String, +s: M.State, +now: Nat) -> Step:
   match waiting:
     case True{}:
-      Deploy.check.k(Bool.and(clear, free), clear, free, DP.Deploy.wait(s), s, now)
+      Deploy.check.k(Bool.and(clear, free), free, DP.Deploy.wait(s), open, s, now)
     case False{}:
       Step.none()
 
-# the build locks were looked at (free: both are): goes when nothing runs
-# a tool call and they are free, else remembers whether a lock holds it
-def Deploy.check(+s: M.State, +now: Nat, free: Bool) -> Step:
-  Deploy.check.w(DP.Deploy.waiting(s), Nat.is_eq(DP.Deploy.count(s), 0n), free, s, now)
+# the build locks were looked at (free: both are): goes when no tool call is
+# open (the hub's in-memory list) and they are free, else remembers whether
+# a lock holds it and what is open, for the plane and deploy_status
+def Deploy.check(+s: M.State, +now: Nat, free: Bool, +open: List<&2, String>) -> Step:
+  Deploy.check.w(DP.Deploy.waiting(s), Nat.is_eq(DP.Open.count(open), 0n), free, DP.Open.threads(open), s, now)
 
 def Deploy.slow.k(due: Bool, +line: String, +s: M.State, +now: Nat) -> Step:
   match due:
     case True{}:
-      Step.cat(Step{[M.SettingSet{"deploy.wait", DP.Deploy.with(line, True{}, DP.Deploy.locked(line)), now}], Nil{}},
-        Deploy.tell(s, now, DP.Deploy.by(line), DP.Deploy.slow.text(DP.Deploy.count(s), DP.Deploy.locked(line))))
+      Step.cat(Step{[M.SettingSet{"deploy.wait", DP.Deploy.with(line, True{}, DP.Deploy.locked(line), DP.Deploy.open(line)), now}], Nil{}},
+        Deploy.tell(s, now, DP.Deploy.by(line), DP.Deploy.slow.text(DP.Deploy.count(line), DP.Deploy.locked(line))))
     case False{}:
       Step.none()
 
@@ -3858,7 +3987,7 @@ def Deploy.tick.w(waiting: Bool, +s: M.State, +now: Nat) -> Step:
   match waiting:
     case True{}:
       Step.cat(Deploy.slow.k(Bool.and(Bool.not(DP.Deploy.noted(DP.Deploy.wait(s))), Nat.is_ge(now, Nat.add(DP.Deploy.since(DP.Deploy.wait(s)), DP.Deploy.slow()))), DP.Deploy.wait(s), s, now),
-        Step.outs(Deploy.probe(s)))
+        Step.outs(Deploy.probe()))
     case False{}:
       Step.none()
 
@@ -3895,9 +4024,14 @@ def Deploy.demo.changes(tool: Bool, +key: String, +line: String) -> List<&2, M.C
     Bool.pick(List<&2, M.Change>, tool, [M.ActivityLogged{"t1", "a1", "tool", "Bash", "make", 4n}], Nil{}),
     Bool.pick(List<&2, M.Change>, String.is_empty(line), Nil{}, [M.SettingSet{key, line, 5n}])])
 
-# tool: t1 is inside a tool call; the line is deploy.wait
+# tool: t1's newest entry is a tool call (the log shows nothing of whether
+# it is open: that is the hub's list, Deploy.demo.open); the line is deploy.wait
 def Deploy.demo(tool: Bool, +line: String) -> M.State:
   M.State.replay(Deploy.demo.changes(tool, "deploy.wait", line), M.State.empty())
+
+# the hub's open calls: t1 is inside one, or between two
+def Deploy.demo.open(open: Bool) -> List<&2, String>:
+  Bool.pick(List<&2, String>, open, DP.Open.add(Nil{}, "t1", "a1"), Nil{})
 
 # the state at a start after a deploy by `by` (deploy.done set)
 def Deploy.demo.done(+by: String) -> M.State:
@@ -3954,16 +4088,57 @@ def Deploy.demo.bot() -> M.State:
   M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"tb", "", "Bub", M.Local{}, "", "", "claude", "", 1n}, M.BotSet{"b1", "Bub", "tb", 0n, "", 1n},
     M.SettingSet{"deploy.done", Deploy.demo.line("tb"), 5n}], M.State.empty())
 
+# Open tool calls, for the laws: the outs of a Claude line on a running thread
+def Tools.demo.os(st: Step) -> List<&2, Out>:
+  match st:
+    case Step{_, os}:
+      os
+
+def Tools.demo.outs(+line: String) -> List<&2, Out>:
+  Tools.demo.os(Claude.line.parsed(J.Json.parse(line), Deploy.demo(False{}, ""), "t1", 9n))
+
+def Tools.demo.use() -> String:
+  "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"Bash\",\"input\":{\"command\":\"make\"}}]}}"
+
+def Tools.demo.result() -> String:
+  "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_1\",\"content\":\"ok\"}]}}"
+
+# how many opens (shut: False) or shuts (True) of a call
+def Tools.demo.count(os: List<&2, Out>, +shut: Bool, +call: String) -> Nat:
+  match os:
+    case Nil{}:
+      0n
+    case ToolOpen{_, +c} <> t:
+      Nat.add(Bool.pick(Nat, Bool.and(Bool.not(shut), String.eq(c, call)), 1n, 0n), Tools.demo.count(t, shut, call))
+    case ToolShut{_, +c} <> t:
+      Nat.add(Bool.pick(Nat, Bool.and(shut, String.eq(c, call)), 1n, 0n), Tools.demo.count(t, shut, call))
+    case _ <> t:
+      Tools.demo.count(t, shut, call)
+
+# the tool_use line opens its call once and shuts nothing; its tool_result
+# line shuts the same call once and opens nothing: 0 + 0 + 10 + 1 = 11
+def Tools.demo.pair() -> Nat:
+  Nat.add(Nat.add(Nat.mul(1000n, Tools.demo.count(Tools.demo.outs(Tools.demo.use()), True{}, "toolu_1")), Nat.mul(100n, Tools.demo.count(Tools.demo.outs(Tools.demo.result()), False{}, "toolu_1"))),
+    Nat.add(Nat.mul(10n, Tools.demo.count(Tools.demo.outs(Tools.demo.use()), False{}, "toolu_1")), Tools.demo.count(Tools.demo.outs(Tools.demo.result()), True{}, "toolu_1")))
+
+# a turn's end: the ToolsGone outs of one thread
+def Tools.demo.ends() -> Nat:
+  List.length(&2, Out, Tools.outs([M.TurnChanged{"t1", M.Completed{}, 5n}], Nil{}))
+
 # harness-coord: locks. Grants and work launches share the log write boundary.
 def Locks.answer(+l: LK.NamedLock, +id: String) -> J.Json:
   J.Json.obj([J.KV{"held", J.Flag{Bool.and(String.eq(LK.Lock.owner(l), id), LK.Lock.ready(l))}}, J.KV{"position", J.Num{Nat.show(LK.Lock.position(l, id))}}, J.KV{"holder", J.Str{LK.Lock.owner(l)}}])
+
+# A client the record had lost is queued again, and its answer says so.
+def Locks.answer.re(+l: LK.NamedLock, +id: String, requeued: Bool) -> J.Json:
+  Bool.pick(J.Json, requeued, J.Json.obj([J.KV{"held", J.Flag{Bool.and(String.eq(LK.Lock.owner(l), id), LK.Lock.ready(l))}}, J.KV{"position", J.Num{Nat.show(LK.Lock.position(l, id))}}, J.KV{"holder", J.Str{LK.Lock.owner(l)}}, J.KV{"requeued", J.Flag{True{}}}]), Locks.answer(l, id))
 
 def Locks.list.go(names: List<&2, String>, +s: M.State) -> List<&2, J.Json>:
   match names:
     case Nil{}:
       Nil{}
     case +name <> t:
-      J.Json.obj([J.KV{"name", J.Str{name}}, J.KV{"holder", LK.Lock.holder.json(LK.Lock.holder(M.Locks.get(s, name)))}, J.KV{"waiters", J.Json.arr(LK.Lock.parties.json(LK.Lock.waiters(M.Locks.get(s, name))))}, J.KV{"ready", J.Flag{LK.Lock.ready(M.Locks.get(s, name))}}]) <> Locks.list.go(t, s)
+      J.Json.obj(List.append(&2, J.KV, [J.KV{"name", J.Str{name}}, J.KV{"holder", LK.Lock.holder.json(LK.Lock.holder(M.Locks.get(s, name)))}, J.KV{"waiters", J.Json.arr(LK.Lock.parties.json(LK.Lock.waiters(M.Locks.get(s, name))))}, J.KV{"ready", J.Flag{LK.Lock.ready(M.Locks.get(s, name))}}], LK.Lock.outside.kv(LK.Lock.outside(M.Locks.get(s, name))))) <> Locks.list.go(t, s)
 
 def Locks.put(+s: M.State, +now: Nat, +name: String, +l: LK.NamedLock) -> Step:
   Step{[M.LockChanged{name, l, now}], Nil{}}
@@ -3983,6 +4158,29 @@ def Locks.release(+s: M.State, +now: Nat, +name: String, +id: String) -> Step:
 
 def Locks.cancel(+s: M.State, +now: Nat, +name: String, +id: String) -> Step:
   Locks.put(s, now, name, LK.Lock.cancel(M.Locks.get(s, name), id))
+
+# The shell helper's three calls. A renew or status from a client the record no
+# longer holds queues it again (like acquire), never an invisible held:false.
+def Locks.http.party(+holder: String, +note: String, +now: Nat) -> LK.LockParty:
+  LK.LockParty{holder, "client", "", note, now, Nat.add(now, 90n)}
+
+def Locks.http.lost(op: String, +l: LK.NamedLock, +holder: String) -> Bool:
+  Bool.and(M.Launch.has(["renew", "status"], op), Bool.not(LK.Lock.has(l, holder)))
+
+def Locks.http.step(op: String, +s: M.State, +now: Nat, +name: String, +holder: String, +note: String, +ready: Bool) -> Step:
+  match op:
+    case "acquire":
+      Locks.put(s, now, name, LK.Lock.renew(LK.Lock.acquire(M.Locks.get(s, name), Locks.http.party(holder, note, now), ready), holder, Nat.add(now, 90n)))
+    case "renew":
+      Locks.put(s, now, name, LK.Lock.renew(LK.Lock.acquire(M.Locks.get(s, name), Locks.http.party(holder, note, now), ready), holder, Nat.add(now, 90n)))
+    case "status":
+      Locks.acquire(s, now, name, Locks.http.party(holder, note, now), ready)
+    case "release":
+      Locks.release(s, now, name, holder)
+    case "cancel":
+      Locks.cancel(s, now, name, holder)
+    case _:
+      Step.none()
 
 def Locks.work.start(+s: M.State, +now: Nat, +th: String, +a: J.Json, +ready: Bool) -> Step:
   +name = J.Json.get_str(a, "lock", "")
@@ -4025,6 +4223,27 @@ def Locks.ready.k(ok: Bool, +s: M.State, +now: Nat, +name: String) -> Step:
 def Locks.ready(+s: M.State, +now: Nat, +name: String, +id: String) -> Step:
   Locks.ready.k(Bool.and(String.eq(LK.Lock.owner(M.Locks.get(s, name)), id), Bool.not(LK.Lock.ready(M.Locks.get(s, name)))), s, now, name)
 
+def Locks.outside.same(old: Maybe<&2, LK.LockParty>, +pid: Nat, +cmd: String) -> Bool:
+  match old:
+    case Some{LK.LockParty{+id, _, _, +note, _, _}}:
+      Bool.and(String.eq(id, Nat.show(pid)), String.eq(note, cmd))
+    case None{}:
+      False{}
+
+# The hub could not take the guard: who holds the flock outside it (pid 0 = unknown).
+def Locks.outside.k(ok: Bool, +l: LK.NamedLock, +old: Maybe<&2, LK.LockParty>, +s: M.State, +now: Nat, +name: String, +pid: Nat, +cmd: String) -> Step:
+  match ok:
+    case False{}:
+      Step.none()
+    case True{}:
+      +same = Bool.pick(Bool, Nat.is_eq(pid, 0n), False{}, Locks.outside.same(old, pid, cmd))
+      +o = {Bool.pick(Maybe<&2, LK.LockParty>, Nat.is_eq(pid, 0n), None{}, Bool.pick(Maybe<&2, LK.LockParty>, same, old, Some{LK.LockParty{Nat.show(pid), "outside", "", cmd, now, 0n}})) : Maybe<&2, LK.LockParty>}
+      Bool.pick(Step, String.eq(J.Json.show(LK.Lock.json(LK.Lock.outside.set(l, o))), J.Json.show(LK.Lock.json(l))), Step.none(), Locks.put(s, now, name, LK.Lock.outside.set(l, o)))
+
+def Locks.outside(+s: M.State, +now: Nat, +name: String, +id: String, +pid: Nat, +cmd: String) -> Step:
+  +l = M.Locks.get(s, name)
+  Locks.outside.k(Bool.and(String.eq(LK.Lock.owner(l), id), Bool.not(LK.Lock.ready(l))), l, LK.Lock.outside(l), s, now, name, pid, cmd)
+
 def Locks.live(+s: M.State, +now: Nat, +p: LK.LockParty) -> Bool:
   Bool.pick(Bool, String.eq(LK.Lock.kind(p), "client"), Nat.is_gt(LK.Lock.lease(p), now),
     Bool.and(Hub.owns(s, LK.Lock.thread(p)), Bool.and(Lost.live(Hub.thread(s, LK.Lock.thread(p))),
@@ -4037,17 +4256,18 @@ def Locks.prune.q(q: List<&2, LK.LockParty>, +s: M.State, +now: Nat) -> List<&2,
     case +p <> t:
       List.append(&2, LK.LockParty, Bool.pick(List<&2, LK.LockParty>, Locks.live(s, now, p), [p], Nil{}), Locks.prune.q(t, s, now))
 
-def Locks.prune.h(h: Maybe<&2, LK.LockParty>, +q: List<&2, LK.LockParty>, +r: Bool, +s: M.State, +now: Nat) -> LK.NamedLock:
+def Locks.prune.h(h: Maybe<&2, LK.LockParty>, +q: List<&2, LK.LockParty>, +r: Bool, o: Maybe<&2, LK.LockParty>, +s: M.State, +now: Nat) -> LK.NamedLock:
   match h:
     case None{}:
       LK.Lock.promote(q)
     case Some{+p}:
-      Bool.pick(LK.NamedLock, Locks.live(s, now, p), LK.NamedLock{Some{p}, q, r}, LK.Lock.expire(LK.NamedLock{Some{p}, q, r}, LK.Lock.id(p)))
+      +k = {LK.NamedLock{Some{p}, q, r, o} : LK.NamedLock}
+      Bool.pick(LK.NamedLock, Locks.live(s, now, p), k, LK.Lock.expire(k, LK.Lock.id(p)))
 
 def Locks.prune(l: LK.NamedLock, +s: M.State, +now: Nat) -> LK.NamedLock:
   match l:
-    case LK.NamedLock{h, q, r}:
-      Locks.prune.h(h, Locks.prune.q(q, s, now), r, s, now)
+    case LK.NamedLock{h, q, r, o}:
+      Locks.prune.h(h, Locks.prune.q(q, s, now), r, o, s, now)
 
 def Locks.wait.work(same: Bool, +s: M.State, +now: Nat, +th: String, +id: String, +word: String) -> Step:
   match same:
@@ -4335,26 +4555,54 @@ def Lost.unknown(ls: List<&2, String>) -> List<&2, String>:
     case +l <> t:
       (M.Bg.line(M.Bg.field(l, 0n), M.Bg.ended.mark() ++ "unknown") ++ M.Bg.rest(l)) <> Lost.unknown(t)
 
+# Work lost at a restart is put aside, out of the thread's rows, until the
+# agent is told (laws lostwork_*): the phones' island counts a thread's rows
+# (M.Work.busy), and work whose owner died is nobody's to wait on. The
+# stash holds the rows as Bg.show writes them.
+def Lost.key(+th: String) -> String:
+  "lostbg." ++ th
+
+def Lost.stash(+s: M.State, +th: String) -> List<&2, String>:
+  M.Bg.lines(M.Setting.get(s, Lost.key(th), ""))
+
+# the work to tell: what was put aside, and any rows filed since
+def Lost.of(+s: M.State, +th: String) -> List<&2, String>:
+  List.append(&2, String, Lost.stash(s, th), M.Bg.of(s, th))
+
+# the rows put aside, and the stash emptied (nothing for a thread with none)
+def Lost.aside(+s: M.State, +now: Nat, +th: String) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, List.is_empty(&2, String, Lost.of(s, th)), Nil{},
+    [M.SettingSet{Lost.key(th), M.Bg.show(Lost.of(s, th)), now}, M.WorkSet{th, "bg", "", now}])
+
+def Lost.unstash(+s: M.State, +now: Nat, +th: String) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, List.is_empty(&2, String, Lost.stash(s, th)), Nil{}, [M.SettingSet{Lost.key(th), "", now}])
+
 def Bg.lost.k(has: Bool, on: Bool, +s: M.State, +now: Nat, +th: String, +why: String, +ls: List<&2, String>) -> Step:
   match has on:
     case False{} _:
       Step.none()
     case True{} True{}:
-      Step.cat(Lost.note(M.Queue.waiting(s, th), s, now, th, Lost.text(ls, why)), Step{[M.WorkSet{th, "bg", "", now}], Nil{}})
+      Step.cat(Lost.note(M.Queue.waiting(s, th), s, now, th, Lost.text(ls, why)), Step{List.append(&2, M.Change, [M.WorkSet{th, "bg", "", now}], Lost.unstash(s, now, th)), Nil{}})
     case True{} False{}:
-      Step{[M.ActivityLogged{th, Hub.id("l", now, Hub.seq(s)), "info", "lost", Lost.text(ls, why), now}, M.WorkSet{th, "bg", M.Bg.show(Lost.unknown(ls)), now}], Nil{}}
+      Step{List.append(&2, M.Change, [M.ActivityLogged{th, Hub.id("l", now, Hub.seq(s)), "info", "lost", Lost.text(ls, why), now}, M.WorkSet{th, "bg", M.Bg.show(Lost.unknown(M.Bg.of(s, th))), now}], Lost.unstash(s, now, th)), Nil{}}
 
 # a thread's background work lost (why: "restart", "exit", "replaced"):
 # told once; nothing for a thread with none new, or archived or deleted
 def Bg.lost(+s: M.State, +now: Nat, +th: String, +why: String) -> Step:
-  Bg.lost.k(Bool.and(Lost.new(M.Bg.of(s, th)), Lost.live(Hub.thread(s, th))), M.Carry.on(s), s, now, th, why, M.Bg.of(s, th))
+  Bg.lost.k(Bool.and(Lost.new(Lost.of(s, th)), Lost.live(Hub.thread(s, th))), M.Carry.on(s), s, now, th, why, Lost.of(s, th))
 
-def Bg.gone(live: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+# the agent's process is gone, and with it every row it filed: told (a live
+# thread), then none left, whatever restart.continue says (law
+# lostwork_exit_clears)
+def Bg.gone.k(live: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match live:
     case True{}:
       Bg.lost(s, now, th, "exit")
     case False{}:
-      Step{Bg.clear(s, th, now), Nil{}}
+      Step.none()
+
+def Bg.gone(live: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  Step.cat(Bg.gone.k(live, s, now, th), Step{Bg.clear(s, th, now), Nil{}})
 
 # an agent process ended; a turn still running ends with it, and the
 # background work it owned is told lost (behind the failed turn's queue
@@ -4823,18 +5071,19 @@ def Resume.clear(+s: M.State, +now: Nat, +th: String) -> List<&2, M.Change>:
 def Rec.lost.again(give: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match give:
     case True{}:
-      Step{List.append(&2, M.Change, [M.ActivityLogged{th, Hub.id("l", now, Hub.seq(s)), "info", "lost", Lost.text(M.Bg.of(s, th), "restart"), now},
-        M.WorkSet{th, "bg", M.Bg.show(Lost.unknown(M.Bg.of(s, th))), now}, M.SettingSet{Resume.n.key(th), "0", now}], Resume.clear(s, now, th)), Nil{}}
+      Step{List.append(&2, M.Change, [M.ActivityLogged{th, Hub.id("l", now, Hub.seq(s)), "info", "lost", Lost.text(Lost.of(s, th), "restart"), now},
+        M.WorkSet{th, "bg", "", now}, M.SettingSet{Resume.n.key(th), "0", now}], List.append(&2, M.Change, Lost.unstash(s, now, th), Resume.clear(s, now, th))), Nil{}}
     case False{}:
-      Step{[M.SettingSet{Resume.n.key(th), Nat.show(1n+Resume.n(s, th)), now}], Nil{}}
+      Step{List.append(&2, M.Change, [M.SettingSet{Resume.n.key(th), Nat.show(1n+Resume.n(s, th)), now}], Lost.aside(s, now, th)), Nil{}}
 
 # a restart found a thread's work lost: with the setting off it is logged
-# (Bg.lost); else it is marked to be told (a marker already there counts
-# a restart it outlived, and on the second it is only logged)
+# (Bg.lost); else it is put aside (Lost.aside) and the thread marked to be
+# told (a marker already there counts a restart it outlived, and on the
+# second it is only logged)
 def Rec.lost.on(again: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match again:
     case False{}:
-      Step{Resume.set(s, now, th, "restart"), Nil{}}
+      Step{List.append(&2, M.Change, Resume.set(s, now, th, "restart"), Lost.aside(s, now, th)), Nil{}}
     case True{}:
       Rec.lost.again(Nat.is_ge(1n+Resume.n(s, th), 2n), s, now, th)
 
@@ -4849,10 +5098,21 @@ def Rec.lost.k(has: Bool, live: Bool, on: Bool, +s: M.State, +now: Nat, +th: Str
     case True{} True{} True{}:
       Rec.lost.on(Bool.not(String.is_empty(Resume.why(s, th))), s, now, th)
 
+# rows left ended with an unknown outcome by an earlier restart (told
+# already) wait for nothing: their owner is gone, and they go at the next
+# (laws lostwork_recover_old_rows_go)
+def Rec.lost.old(old: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  match old:
+    case True{}:
+      Step{Bg.clear(s, th, now), Nil{}}
+    case False{}:
+      Step.none()
+
 def Rec.lost.one(r: Rec, +now: Nat, +th: String) -> Rec:
   match r:
     case Rec{+s, cs, os}:
-      Rec.add(Rec{s, cs, os}, Rec.lost.k(Lost.new(M.Bg.of(s, th)), Lost.live(Hub.thread(s, th)), M.Carry.on(s), s, now, th))
+      Rec.add(Rec.add(Rec{s, cs, os}, Rec.lost.k(Lost.new(Lost.of(s, th)), Lost.live(Hub.thread(s, th)), M.Carry.on(s), s, now, th)),
+        Rec.lost.old(Bool.and(Bool.not(Lost.new(Lost.of(s, th))), Bool.not(List.is_empty(&2, String, M.Bg.of(s, th)))), s, now, th))
 
 def Rec.lost(ts: List<&2, String>, r: Rec, +now: Nat) -> Rec:
   match ts:
@@ -4886,7 +5146,9 @@ def Locks.recover.go(names: List<&2, String>, +s: M.State, +now: Nat, +st: Step)
     case +name <> t:
       +l = M.Locks.get(s, name)
       +ps = List.append(&2, LK.LockParty, LK.Lock.holder.list(LK.Lock.holder(l)), LK.Lock.waiters(l))
-      Locks.recover.go(t, s, now, Step.cat(Locks.recover.parties(ps, s, now, st), Step{Nil{}, Bool.pick(List<&2, Out>, String.is_empty(LK.Lock.owner(l)), Nil{}, [LockGuard{name, "", LK.Lock.owner(l)}])}))
+      +l2 = LK.Lock.extend(l, Nat.add(now, 90n))
+      +same = String.eq(J.Json.show(LK.Lock.json(l)), J.Json.show(LK.Lock.json(l2)))
+      Locks.recover.go(t, s, now, Step.cat(Locks.recover.parties(ps, s, now, st), Step{Bool.pick(List<&2, M.Change>, same, Nil{}, [M.LockChanged{name, l2, now}]), Bool.pick(List<&2, Out>, String.is_empty(LK.Lock.owner(l)), Nil{}, [LockGuard{name, "", LK.Lock.owner(l)}])}))
 
 def Locks.recover(+s: M.State, +now: Nat) -> Step:
   Locks.recover.go(M.Locks.names(s), s, now, Step.none())
@@ -5040,6 +5302,40 @@ def Lost.released(+on: Bool) -> M.State:
 
 def Lost.marked() -> M.State:
   M.State.replay(List.append(&2, M.Change, Resume.set(Lost.demo(True{}, False{}), 4n, "t1", "restart"), [M.TurnQueued{"t1", "q1", "held", 4n}]), Lost.demo(True{}, False{}))
+
+# a thread whose background shell an earlier restart left ended, outcome unknown
+def Lost.stale(+on: Bool) -> M.State:
+  M.State.replay([M.WorkSet{"t1", "bg", M.Bg.line("b1", M.Bg.ended.mark() ++ "unknown"), 5n}], Lost.demo(on, False{}))
+
+# the agent of thread th exited
+def Lost.exited(+s: M.State, +th: String) -> M.State:
+  M.State.replay(Queue.changes(Hub.agent_gone(s, 9n, th, 0)), s)
+
+# an idle thread t0 with a background shell and a running child task
+def Lost.parent() -> M.State:
+  M.State.replay([M.WorkSet{"t0", "bg", "b1\tsleep 60\tc1\tsleep 60\tshell", 3n}], Task.demo(False{}))
+
+def Lost.open.go(ids: List<&2, String>, +s: M.State) -> Nat:
+  match ids:
+    case Nil{}:
+      0n
+    case +i <> t:
+      Nat.add(M.Bg.running(M.Bg.of(s, i)), Lost.open.go(t, s))
+
+# how many background rows are at work, over every thread
+def Lost.open(+s: M.State) -> Nat:
+  Lost.open.go(Rec.ids(Rec.threads(s)), s)
+
+def Lost.held.go(ids: List<&2, String>, +s: M.State) -> Nat:
+  match ids:
+    case Nil{}:
+      0n
+    case +i <> t:
+      Nat.add(M.Bg.live(M.Bg.of(s, i)), Lost.held.go(t, s))
+
+# how many background rows are filed (ended ones too: they count as work)
+def Lost.held(+s: M.State) -> Nat:
+  Lost.held.go(Rec.ids(Rec.threads(s)), s)
 
 def Lost.running.go(ids: List<&2, String>, +s: M.State) -> Nat:
   match ids:
@@ -5477,6 +5773,14 @@ def Locks.demo() -> M.State:
 def Locks.demo.party(+id: String) -> LK.LockParty:
   LK.LockParty{id, "thread", id, "build", 2n, 0n}
 
+# a client waiting behind a held lock, its lease about to lapse
+def Locks.demo.client() -> M.State:
+  M.State.replay([M.LockChanged{"bend", LK.Lock.acquire(LK.Lock.acquire(LK.Lock.empty(), Locks.demo.party("ta"), True{}), LK.LockParty{"pid:1", "client", "", "bp-lock.sh", 2n, 5n}, False{}), 3n}], Locks.demo())
+
+def Locks.demo.recovered() -> M.State:
+  +s = Locks.demo.client()
+  M.State.replay(Queue.changes(Locks.recover(s, 6n)), s)
+
 def Locks.demo.queue() -> M.State:
   M.State.replay([M.LockChanged{"bend", LK.Lock.acquire(LK.Lock.acquire(LK.Lock.empty(), Locks.demo.party("ta"), True{}), Locks.demo.party("tb"), False{}), 3n}], Locks.demo())
 
@@ -5491,6 +5795,26 @@ def Locks.demo.grant() -> Step:
 def Locks.demo.twice() -> Nat:
   +s = M.State.replay(Queue.changes(Locks.demo.grant()), Locks.demo.release())
   Lr.count(Queue.changes(Locks.after(s, 6n, Locks.ready(s, 6n, "bend", "tb"))), "tb")
+
+# a client the record never heard of calls status/renew: queued after the others
+def Locks.demo.requeue(+op: String, +want: String) -> String:
+  +s = Locks.demo.queue()
+  +l = M.Locks.get(s, "bend")
+  +s2 = M.State.replay(Queue.changes(Locks.http.step(op, s, 10n, "bend", want, "bp-lock.sh", False{})), s)
+  +l2 = M.Locks.get(s2, "bend")
+  Nat.show(LK.Lock.position(l2, want)) ++ ":" ++ Nat.show(LK.Lock.position(l2, "tb")) ++ ":" ++ Bool.pick(String, Locks.http.lost(op, l, want), "lost", "kept")
+
+# the lost party's own calls keep it queued once (no second entry)
+def Locks.demo.requeue.twice() -> Nat:
+  +s = M.State.replay(Queue.changes(Locks.http.step("status", Locks.demo.queue(), 10n, "bend", "pid:9", "x", False{})), Locks.demo.queue())
+  +s2 = M.State.replay(Queue.changes(Locks.http.step("status", s, 11n, "bend", "pid:9", "x", False{})), s)
+  List.length(&2, LK.LockParty, LK.Lock.waiters(M.Locks.get(s2, "bend")))
+
+def Locks.demo.lease() -> String:
+  +s = Locks.demo.recovered()
+  +s2 = M.State.replay(Queue.changes(Locks.after(s, 6n, Step.none())), s)
+  +l = M.Locks.get(s2, "bend")
+  Nat.show(LK.Lock.lease(Maybe.default(&2, LK.LockParty, List.head(&2, LK.LockParty, LK.Lock.waiters(l)), Locks.demo.party("none")))) ++ ":" ++ Nat.show(LK.Lock.position(l, "pid:1"))
 
 def Locks.demo.deleted() -> String:
   +s = Locks.demo.queue()

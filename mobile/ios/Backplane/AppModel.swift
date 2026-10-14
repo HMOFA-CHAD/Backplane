@@ -76,7 +76,27 @@ final class AppModel {
     // the navigation stack's path: moved at once by a tap or a swipe back,
     // and by the screen only when its selection changes, so a screen that
     // answers an older action never pulls a thread back open
-    private(set) var path: [String] = []
+    // Each tab has its own stack, kept across tab switches; `path` is the
+    // one of the tab on screen (the pages of a tab are Bend's nav keys, or
+    // "@hub:<key>" for a hub's settings page, which is the app's alone)
+    private(set) var stacks: [AppTab: [String]] = [:]
+    private(set) var tab: AppTab = .threads
+    private(set) var path: [String] {
+        get { stacks[tab] ?? [] }
+        set { stacks[tab] = newValue }
+    }
+    // the tab a page was opened in by a tap (a routine opens its bot in the
+    // Routines tab, not the Bots tab a bot's page would otherwise go to)
+    @ObservationIgnored private var opened: (nav: String, tab: AppTab)?
+    // the first screen of this launch chooses the tab and carries the hub's
+    // theme and thread list into App settings
+    @ObservationIgnored private var started = false
+    @ObservationIgnored private var sentView = false
+    let settings = AppSettings.shared
+    // the hub settings page: each hub's last rows, on disk beside the kept state
+    private(set) var hubSettings: [String: Settings] = [:]
+    // Clear cached state was pressed: nothing is kept again until the next launch
+    @ObservationIgnored private var cleared = false
     @ObservationIgnored private var shownSel = ""
     // the bot, room or remote bot last tapped ("bot", "room", "remote" and
     // its row's id), until a screen shows it: it opens then even when the
@@ -146,14 +166,17 @@ final class AppModel {
         NotificationCenter.default.addObserver(forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main) { [weak self] _ in
             self?.act("tz-report", TimeZone.current.identifier)
         }
-        notifier.viewing = { [weak self] id in self?.active == true && self?.screen?.sel == id }
+        notifier.viewing = { [weak self] id in self?.active == true && self?.tab != .settings && self?.screen?.sel == id }
+        if let d = try? Data(contentsOf: kept.settingsFile), let m = try? JSONDecoder().decode([String: Settings].self, from: d) { hubSettings = m }
         let e = engine
         Task {
             apply(await e.start(Self.cid, UserDefaults.standard.string(forKey: "drafts") ?? "{}"))
+            apply(await e.local("view", settings.threadList))
             // the state kept at the last launch: the screen shows at once, and
             // each hub then sends only what came since
             if let text = kept.load() {
                 apply(await e.load(text))
+                apply(await e.local("view", settings.threadList))
                 for l in links { if let k = Pairing.key(l) { apply(await e.offline(k)) } }
             }
             ready = true
@@ -229,6 +252,7 @@ final class AppModel {
         let fresh = keys.contains { hubs[$0] == nil }
         Task {
             apply(await e.hubs(keys))
+            apply(await e.local("view", settings.threadList))
             for (k, l) in keyed where hubs[k] == nil { open(k, l) }
             // a hub paired later learns this phone's push tokens too
             if fresh {
@@ -351,6 +375,9 @@ final class AppModel {
         guard path.last != nav, pending?.last != nav,
               Date().timeIntervalSince(pushed) >= 0.35 else { return }
         pushed = Date()
+        let dest = destination(kind: kind, action: action)
+        opened = (nav, dest)
+        if dest != tab { switchTab(dest) }
         let rig = cat.isEmpty ? (screen?.bots.first(where: { $0.nav == nav })?.cat ?? (screen?.uber?.nav == nav ? screen?.uber?.cat : nil) ?? "") : cat
         destination = TapDestination(nav: nav, title: title, cat: rig, kind: kind)
         awaitedNav = nav
@@ -365,6 +392,8 @@ final class AppModel {
     func navigate(_ p: [String]) {
         if p.count < path.count { popped = Date() }
         path = p
+        // a hub's settings page is the app's own: nothing to select
+        if tab == .settings { return }
         destination = nil
         awaitedNav = p.last ?? ""
         awaitedAt = Date()
@@ -374,6 +403,51 @@ final class AppModel {
         tapped = nil
         pending = nil
         act("select", p.last ?? "")
+    }
+
+    // Tabs
+    // ----
+
+    // a page that is the app's alone (a hub's settings), not a Bend selection
+    static func local(_ nav: String) -> Bool { nav.hasPrefix("@hub") || nav == making }
+
+    // where a tap on a row opens its page. From Home a thread goes to
+    // Threads and a bot, room or routine to Bots (the uberbot's own card
+    // stays on Home); any other tab keeps its page in its own stack.
+    private func destination(kind: String, action: String) -> AppTab {
+        guard tab == .home else { return tab }
+        switch kind {
+        case "thread": return .threads
+        case "bot": return action == "uber" ? .home : .bots
+        case "room", "remote", "routine": return .bots
+        default: return tab
+        }
+    }
+
+    // where a page selected from elsewhere (a notification, a link, the
+    // island, a link in a thread) opens: a bot's thread, a room or a
+    // remote bot in Bots, the uberbot's on Home, any other thread in Threads
+    // (Bend says which: the screen's bot, and the uber card's sel)
+    private func destination(_ s: Screen, _ nav: String) -> AppTab {
+        if let o = opened, o.nav == nav { return o.tab }
+        if nav == Self.making { return tab }
+        if s.bot != nil { return s.uber?.sel == true ? .home : .bots }
+        return .threads
+    }
+
+    // the tab on screen changes: it shows its own stack at once, and Bend
+    // selects what that stack ends with (the page is cached, so it draws
+    // now and goes live when its screen comes); an empty stack selects nothing
+    func switchTab(_ t: AppTab) {
+        guard t != tab else { return }
+        tab = t
+        let top = path.last(where: { !Self.local($0) }) ?? ""
+        pending = nil
+        awaitedNav = top
+        awaitedAt = Date()
+        shownSel = top
+        tapped = nil
+        act("select", top)
     }
 
     // a thread's screen kept for the next time it is opened (the last 24)
@@ -535,10 +609,33 @@ final class AppModel {
     // the state written down when it changed (the app may be ended at any
     // time once in the background)
     func keep() {
-        guard dirty, ready else { return }
+        guard dirty, ready, !cleared else { return }
         dirty = false
         let e = engine, k = kept
         Task { k.save(await e.save()) }
+    }
+
+    // the hub settings page's rows, kept as JSON beside the state
+    private func keepHubSettings() {
+        guard !cleared, let d = try? JSONEncoder().encode(hubSettings) else { return }
+        try? d.write(to: kept.settingsFile, options: .atomic)
+    }
+
+    // App settings, Cache: the kept state's size, and forgetting it (the next
+    // launch fetches each hub's log again; nothing is written again before)
+    func cacheSize() -> Int { kept.size() + ((try? Data(contentsOf: kept.settingsFile).count) ?? 0) }
+
+    func clearCache() {
+        cleared = true
+        kept.clear()
+        try? FileManager.default.removeItem(at: kept.settingsFile)
+        hubSettings = [:]
+    }
+
+    // the thread list's view, for Bend to draw (the device's own choice)
+    func threadList(_ v: String) {
+        settings.threadList = v
+        run { await $0.local("view", v) }
     }
 
     func foreground(_ yes: Bool) {
@@ -561,6 +658,13 @@ final class AppModel {
                 shownHub = s.hub
                 plots.reset()
             }
+            if !started {
+                started = true
+                settings.migrate(theme: s.theme, view: s.view)
+                if let t = AppTab(rawValue: settings.defaultTab), t != .settings { tab = t } else { tab = s.uber == nil ? .threads : .home }
+                if !sentView { sentView = true; run { await $0.local("view", AppSettings.shared.threadList) } }
+            }
+            if let st = s.settings, !s.hub.isEmpty, hubSettings[s.hub] != st { hubSettings[s.hub] = st; keepHubSettings() }
             let nav = Self.nav(s)
             if let b = s.bot, !nav.isEmpty {
                 rememberBot(nav, b)
@@ -577,7 +681,16 @@ final class AppModel {
                 let tappedPage = shows(tapped: s, nav)
                 if nav != shownSel || tappedPage {
                     shownSel = nav
-                    show(nav.isEmpty ? [] : [nav])
+                    if nav.isEmpty {
+                        // nothing selected: the pages of Bend's selection go, the app's own stay
+                        let own = path.filter(Self.local)
+                        if own != path { show(own) }
+                    } else {
+                        let dest = destination(s, nav)
+                        if dest != tab { tab = dest }
+                        show([nav])
+                        if opened?.nav == nav { opened = nil }
+                    }
                 }
             }
             // New Thread: its page opens at once and waits there for the
@@ -631,6 +744,9 @@ final class AppModel {
                             }
                             continue
                         }
+                        // "@tab=<home|threads|bots|routines|settings>": the tab bar's tap; "@push=<page>" pushes a page of this tab
+                        if kv[0] == "@tab", kv.count > 1, let t = AppTab(rawValue: kv[1]) { switchTab(t); continue }
+                        if kv[0] == "@push", kv.count > 1 { navigate(path + [kv[1]]); continue }
                         // "@back": what a swipe back does
                         if kv[0] == "@back" { navigate(Array(path.dropLast())); continue }
                         // "@attach": a noisy PNG big enough to go up in several pieces

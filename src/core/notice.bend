@@ -671,11 +671,23 @@ def Policy.end.p(p: Per, +post: M.State, +now: Nat, +thread: String, +state: Str
 def Policy.end(+post: M.State, +now: Nat, +thread: String, +state: String) -> List<&2, M.Change>:
   Policy.end.p(Policy.person(post, thread), post, now, thread, state)
 
+# what an ask's alert says: a paused browser task (core/teach.bend's pause,
+# tool task_pause) its one-line question, any other its tool and detail
+def Alert.ask.say.k(pause: Bool, +tool: String, +detail: String) -> String:
+  match pause:
+    case True{}:
+      J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(detail), J.Null{}), "question", "")
+    case False{}:
+      Bool.pick(String, String.is_empty(tool), detail, tool ++ " " ++ detail)
+
+def Alert.ask.say(+tool: String, +detail: String) -> String:
+  Alert.ask.say.k(String.eq(tool, "task_pause"), tool, detail)
+
 def Policy.ask.k(on: Bool, +post: M.State, +now: Nat, +thread: String, +tool: String, +detail: String) -> List<&2, M.Change>:
   match on:
     case True{}:
       [Alert.set(post, now, thread, "ask", "ask-" ++ FR.Fr.local(thread), Alert.memory(post, thread),
-        Alert.text(Bool.pick(String, String.is_empty(tool), detail, tool ++ " " ++ detail), 180n))]
+        Alert.text(Alert.ask.say(tool, detail), 180n))]
     case False{}:
       [Alert.set(post, now, thread, "", "", Alert.memory(post, thread), "")]
 

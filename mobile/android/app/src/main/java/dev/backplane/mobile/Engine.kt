@@ -39,8 +39,26 @@ class V8Js(private val iso: androidx.javascriptengine.JavaScriptIsolate, private
         }
     }
 
+    // Without the transaction limit an answer still comes back whole, and the
+    // sandbox refuses one over 20 MB (EvaluationResultSizeLimitExceeded: the
+    // kept state of a real log is 35 MB, and save() crashed the app every 30
+    // s). An answer over BIG is left in __r and read in BIG slices; a script
+    // over BIG goes in through __s.
+    private fun evaluateBig(expr: String): String {
+        val code = "(function(){var r = String($expr); if (r.length <= $BIG) return '-' + r; globalThis.__r = r; return '+' + r.length})()"
+        val first = if (expr.length <= BIG) run(code)
+        else { push(expr); run("(function(){var r = String((0, eval)(__s)); __s = ''; if (r.length <= $BIG) return '-' + r; globalThis.__r = r; return '+' + r.length})()") }
+        if (first.startsWith("-")) return first.substring(1)
+        val n = first.substring(1).toInt()
+        val sb = StringBuilder(n)
+        var i = 0
+        while (i < n) { sb.append(run("__r.slice($i, ${i + BIG})")); i += BIG }
+        run("__r = ''")
+        return sb.toString()
+    }
+
     override fun evaluate(expr: String): String {
-        if (big) return run("String($expr)")
+        if (big) return evaluateBig(expr)
         val n = if (expr.length <= SLICE) run("globalThis.__r = String($expr); String(__r.length)").toInt()
         else { push(expr); run("globalThis.__r = String((0, eval)(__s)); __s = ''; String(__r.length)").toInt() }
         if (n <= SLICE) return run("__r")
@@ -53,13 +71,16 @@ class V8Js(private val iso: androidx.javascriptengine.JavaScriptIsolate, private
 
     // a script too long for one transaction goes in as string slices
     fun load(source: String) {
-        if (big) { run(source); return }
+        if (big && source.length <= BIG) { run(source); return }
         push(source)
         run("(0, eval)(__s); __s = ''")
     }
 
     companion object {
         const val SLICE = 200_000
+        // characters per answer slice without the transaction limit: at most
+        // 3 bytes each in UTF-8, so a slice stays well under the 20 MB cap
+        const val BIG = 4_000_000
 
         // V8 when the device's WebView offers the sandbox, else null
         fun open(app: android.content.Context, source: String): V8Js? = runCatching {
@@ -74,6 +95,9 @@ class V8Js(private val iso: androidx.javascriptengine.JavaScriptIsolate, private
         }.onFailure { android.util.Log.w("Backplane", "V8 sandbox unavailable: $it") }.getOrNull()
     }
 }
+
+// characters per slice when the kept state moves between its file and the engine
+private const val KEEP = 1_000_000
 
 // A single engine thread, with FIFO order in each lane. Person work can
 // overtake queued hub frames; a running JavaScript call finishes first.
@@ -251,6 +275,8 @@ class Engine(private val app: android.content.Context, private val source: Strin
 
     // the paired hubs' keys, in order
     suspend fun hubs(keys: List<String>) = out("Backplane.hubs(${org.json.JSONArray(keys)})")
+    // a choice of this device that Bend draws by ("view": "projects" or "active")
+    suspend fun local(key: String, value: String) = out("Backplane.local(${q(key)}, ${q(value)})", person = true)
     suspend fun resume(key: String) = call("Backplane.resume(${q(key)})")
     suspend fun screen() = out("Backplane.screen()", person = true)
     // a binary frame from hub key, as base64
@@ -259,6 +285,47 @@ class Engine(private val app: android.content.Context, private val source: Strin
     // the whole client state as text (StateStore), and the state loaded back
     suspend fun save() = call("Backplane.save()")
     suspend fun load(text: String) = out("Backplane.load(${q(text)})")
+
+    // The kept state straight to and from its file, a slice at a time: a real
+    // log's state is ~35 MB, and as one Java string (read whole, then quoted
+    // into the call) it ran a phone out of heap at launch, as one V8 answer it
+    // was over the sandbox's 20 MB. A slice never ends inside a surrogate
+    // pair (the sandbox carries text as UTF-8).
+    suspend fun saveTo(file: java.io.File): Boolean = queued(false) {
+        val n = eval("(globalThis.__k = String(Backplane.save()), String(__k.length))").toInt()
+        if (n == 0) return@queued false
+        file.bufferedWriter().use { w ->
+            var i = 0
+            while (i < n) {
+                val r = eval("(function(){var e = Math.min($i + $KEEP, __k.length); var c = __k.charCodeAt(e - 1); if (e < __k.length && c >= 0xD800 && c <= 0xDBFF) e--; return e + '|' + __k.slice($i, e)})()")
+                val bar = r.indexOf('|')
+                w.write(r, bar + 1, r.length - bar - 1)
+                i = r.substring(0, bar).toInt()
+            }
+        }
+        eval("(globalThis.__k = '', '')")
+        true
+    }
+
+    suspend fun loadFrom(file: java.io.File): Reply {
+        queued(false) {
+            eval("(globalThis.__k = '', '')")
+            file.bufferedReader().use { r ->
+                val buf = CharArray(KEEP)
+                var carry = ""
+                while (true) {
+                    val k = r.read(buf)
+                    if (k < 0) break
+                    var piece = carry + String(buf, 0, k)
+                    carry = ""
+                    if (Character.isHighSurrogate(piece.last())) { carry = piece.takeLast(1); piece = piece.dropLast(1) }
+                    eval("(__k += ${q(piece)}, '')")
+                }
+                if (carry.isNotEmpty()) eval("(__k += ${q(carry)}, '')")
+            }
+        }
+        return out("(function(){var t = __k; __k = ''; return Backplane.load(t)})()")
+    }
     suspend fun act(action: String, value: String) = out("Backplane.act(${q(action)}, ${q(value)})", person = true)
     suspend fun quiet(action: String, value: String) = out("Backplane.quiet(${q(action)}, ${q(value)})", screen = false, person = true)
     suspend fun online(key: String, b: Boolean) = out("Backplane.online(${q(key)}, $b)")

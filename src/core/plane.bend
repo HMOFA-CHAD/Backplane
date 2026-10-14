@@ -81,17 +81,25 @@ def Plane.locks(p: Plane) -> List<&2, PRow>:
     case Plane{_, _, _, _, _, _, _, _, ls}:
       ls
 
-def Plane.lock.row(+name: String, +p: LK.LockParty, +n: Nat, +ready: Bool, +st: M.State, +now: Nat) -> PRow:
+# "held by <thread> 5m ago", or the process outside the hub that holds the flock
+def Plane.lock.who(o: Maybe<&2, LK.LockParty>, +title: String, +p: LK.LockParty, +now: Nat) -> String:
+  match o:
+    case Some{LK.LockParty{+pid, _, _, +cmd, _, _}}:
+      "held outside the hub by pid " ++ pid ++ " (" ++ cmd ++ ")"
+    case None{}:
+      "held by " ++ title ++ " " ++ M.Time.ago(now, LK.Lock.since(p))
+
+def Plane.lock.row(+name: String, +p: LK.LockParty, +n: Nat, +ready: Bool, o: Maybe<&2, LK.LockParty>, +st: M.State, +now: Nat) -> PRow:
   +th = LK.Lock.thread(p)
   +title = Bool.pick(String, String.is_empty(th), LK.Lock.id(p), U.Active.title(U.Ui.thread(st, th)))
-  PRow{"lock", name, Bool.pick(String, String.is_empty(th), "", "select"), th, name ++ " · held by " ++ title ++ " " ++ M.Time.ago(now, LK.Lock.since(p)) ++ " · " ++ Nat.show(n) ++ " waiting", LK.Lock.note(p), "", Bool.pick(String, ready, "working", "queued"), 0n, False{}}
+  PRow{"lock", name, Bool.pick(String, String.is_empty(th), "", "select"), th, name ++ " · " ++ Plane.lock.who(o, title, p, now) ++ " · " ++ Nat.show(n) ++ " waiting", LK.Lock.note(p), "", Bool.pick(String, ready, "working", "queued"), 0n, False{}}
 
 def Plane.lock.h(h: Maybe<&2, LK.LockParty>, +name: String, +l: LK.NamedLock, +st: M.State, +now: Nat, rest: List<&2, PRow>) -> List<&2, PRow>:
   match h:
     case None{}:
       rest
     case Some{p}:
-      Plane.lock.row(name, p, List.length(&2, LK.LockParty, LK.Lock.waiters(l)), LK.Lock.ready(l), st, now) <> rest
+      Plane.lock.row(name, p, List.length(&2, LK.LockParty, LK.Lock.waiters(l)), LK.Lock.ready(l), LK.Lock.outside(l), st, now) <> rest
 
 def Plane.lock.go(names: List<&2, String>, +st: M.State, +now: Nat) -> List<&2, PRow>:
   match names:
@@ -104,6 +112,11 @@ def PRow.id(r: PRow) -> String:
   match r:
     case PRow{_, i, _, _, _, _, _, _, _, _}:
       i
+
+def PRow.title(r: PRow) -> String:
+  match r:
+    case PRow{_, _, _, _, t, _, _, _, _, _}:
+      t
 
 def PRow.state(r: PRow) -> String:
   match r:
@@ -394,7 +407,7 @@ def Plane.sort(rs: List<&2, PRow>) -> List<&2, PRow>:
 
 def Plane.deploy.k(+line: String, +st: M.State) -> List<&2, PRow>:
   Bool.pick(List<&2, PRow>, String.is_empty(line), Nil{},
-    [PRow{"deploy", "deploy", "deploy-cancel", "deploy", "Restart pending", DP.Deploy.blocking.line(DP.Deploy.count(st), DP.Deploy.locked(line)) ++ " · Cancel", "", "queued", DP.Deploy.since(line), False{}}])
+    [PRow{"deploy", "deploy", "deploy-cancel", "deploy", "Restart pending", DP.Deploy.blocking.line(DP.Deploy.count(line), DP.Deploy.locked(line)) ++ " · Cancel", "", "queued", DP.Deploy.since(line), False{}}])
 
 # a restart waiting for a safe point (core/deploy.bend): one row at the top
 # of what runs; a click on it cancels the deploy

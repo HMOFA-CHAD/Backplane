@@ -84,6 +84,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -201,7 +203,7 @@ fun App(m: AppModel) {
             BackHandler { leftNew = true; m.back() }
             MakingScreen { leftNew = true; m.back() }
         }
-        m.leaving -> Projects(m, s, onPair = { pairing = true })
+        m.leaving -> Tabs(m, s, onPair = { pairing = true })
         m.opening != null -> {
             BackHandler { m.back() }
             OpeningDestination(m, s, m.opening!!)
@@ -240,7 +242,7 @@ fun App(m: AppModel) {
             BackHandler { m.back() }
             ThreadScreen(m, s, s.thread)
         }
-        else -> Projects(m, s, onPair = { pairing = true })
+        else -> Tabs(m, s, onPair = { pairing = true })
     } }
     if (s == null || m.links.isEmpty()) return
     val d = s.deleting
@@ -316,7 +318,6 @@ fun App(m: AppModel) {
             },
         )
     }
-    s.settings?.let { SettingsSheet(m, it) }
     s.find?.let { FindSheet(m, it) }
     // a row's, a project's or (in a thread) a file link's menu
     s.rowMenu?.let { RowMenuSheet(m, it) }
@@ -501,7 +502,7 @@ private fun ThreadRow(m: AppModel, r: Row) {
                 },
                 // a long press asks for the row's menu (the screen's rowMenu)
                 modifier = Modifier.alpha(if (r.faded) 0.45f else 1f).combinedClickableCompat(onLong = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (AppSettings.haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     m.act("row-menu", r.id)
                 }) { m.open(r.id, "select", r.id, r.title) },
             )
@@ -530,7 +531,7 @@ internal fun Modifier.combinedClickableCompat(onLong: (() -> Unit)? = null, onCl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
+internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyListState = rememberLazyListState()) {
     val snacks = remember { SnackbarHostState() }
     var choosing by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
@@ -540,7 +541,7 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Backplane")
+                        Text("Threads")
                         Text(if (s.online) "Connected" else "Connecting…",
                             style = MaterialTheme.typography.labelMedium,
                             color = if (s.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
@@ -566,7 +567,7 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
                             DropdownMenuItem(text = { Text("Search threads") }, leadingIcon = { Icon(Icons.Filled.Search, null) },
                                 onClick = { more = false; m.act("find-open", "search") })
                             DropdownMenuItem(text = { Text("Settings") }, leadingIcon = { Icon(Icons.Filled.Settings, null) },
-                                onClick = { more = false; m.act("flag", "settings") })
+                                onClick = { more = false; m.selectTab(Tab.Settings) })
                         }
                     }
                 },
@@ -574,21 +575,15 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snacks) },
     ) { pad ->
-        if (s.projects.isEmpty() && s.bots.isEmpty() && s.rooms.isEmpty() && s.uber == null) {
+        if (s.projects.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
                 Text(s.empty, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
             }
         }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
+        LazyColumn(Modifier.fillMaxSize(), state = state, contentPadding = pad) {
             // the search is always the list's first row (projects, or in the
             // active view threads by title or project)
             s.search?.let { f -> item(key = "find") { SearchField(m, f, s.projects.firstOrNull()?.id) } }
-            // the uberbot's card, and the status plane under it
-            m.uber(s)?.let { u ->
-                item(key = "uber") { UberCardRow(m, u) }
-                m.plane(s)?.let { planeSections(m, it, false) }
-                item(key = "d:uber") { HorizontalDivider() }
-            }
             if (s.view == "active") {
                 if (s.active.isEmpty() && s.settled == null) {
                     if (s.projects.isNotEmpty() && s.search?.query.isNullOrEmpty()) item(key = "none") {
@@ -626,7 +621,7 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
                                 IconButton(onClick = { m.act("new-thread", p.id) }) { Icon(Icons.Filled.Add, "New thread") }
                             },
                             modifier = Modifier.combinedClickableCompat(onLong = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                if (AppSettings.haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 m.act("proj-menu", p.id)
                             }) {},
                             // quiet (no live thread): faded, as on iOS
@@ -681,12 +676,9 @@ private fun Projects(m: AppModel, s: Screen, onPair: () -> Unit) {
                     item(key = "d:older") { HorizontalDivider() }
                 }
             }
-            if (s.hubs.isNotEmpty()) botsSection(m, s)
         }
     }
     s.folders?.let { FolderPicker(m, it) }
-    s.newBot?.let { NewBotDialog(m, it) }
-    s.newRoom?.let { NewRoomDialog(m, it) }
 }
 
 // a long-pressed row's or project's menu, or a tapped file link's: an item sends its action (Delete

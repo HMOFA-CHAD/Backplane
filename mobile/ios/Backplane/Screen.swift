@@ -124,12 +124,16 @@ struct Entry: Decodable, Identifiable {
 struct AskButton: Decodable, Hashable {
     let label, value: String
     let primary: Bool
+    // what it sends ("" or none is "answer"; a browser card's Take over is "tk-takeover")
+    let action: String?
 }
 
 struct Ask: Decodable, Identifiable {
     let id, kind, head, detail: String
     let blocks: [Block]
     let buttons: [AskButton]
+    // a browser task's pause: the hub path of its screenshot
+    let image: String?
 }
 
 // the subagent panel (src/core/subs.bend): what the thread delegated and
@@ -548,29 +552,33 @@ struct FolderRow: Decodable, Hashable {
 }
 
 // settings: rows of a label, a note and buttons (each sends action with value)
-struct SetButton: Decodable, Hashable {
+struct SetButton: Codable, Hashable {
     let label, action, value: String
     let on: Bool
 }
 
 // a field to type in: each change goes out as "bfield" (name, text); a
 // secret one shows dots
-struct SetField: Decodable, Hashable {
+struct SetField: Codable, Hashable {
     let name, hint: String
     let secret: Bool
     let value: String
 }
 
-struct SetRow: Decodable, Hashable {
+struct SetRow: Codable, Hashable {
     let label, note: String
     let buttons: [SetButton]
     let fields: [SetField]?
     // the pairing code's rows ("1" dark) while it is shown, and what to do with it
     let qr: [String]?
     let qrnote: String?
+    // about this device, not the hub: App settings has it, the hub's page skips it
+    let local: Bool?
+    // notif-policy's "Notify me for": drawn in App settings' Notifications section, not on the hub's page
+    let notify: Bool?
 }
 
-struct Settings: Decodable {
+struct Settings: Codable, Equatable {
     let rows: [SetRow]
 }
 
@@ -695,6 +703,54 @@ struct BotSettings: Decodable {
 // the hub's latest frame of the bot's page: n changes with every new one
 struct BotBrowser: Decodable {
     let url, n: String
+    // browser tasks (src/core/client.bend's Teach.*): the strip (mode 0 idle,
+    // 1 recording, 2 save sheet, 3 the person has the browser), its buttons
+    // (each sends its own action), whether the frame takes input ("bb-click"
+    // "x y" in thousandths, "bb-scroll" dy, "bb-type", "bb-key", "bb-nav"
+    // with the field bburl, "bb-back", "bb-reload"), the fields' text, the
+    // sheet's rows, and the pauses waiting on the person
+    let mode: Int?
+    let title, clock, bburl, tknote, tkname, tkdesc: String?
+    let steps: Int?
+    let btns: [TBtn]?
+    let input: Bool?
+    let rows: [TStep]?
+    let asks: [Ask]?
+}
+
+struct TBtn: Decodable, Hashable {
+    let label, action, value: String
+    let primary: Bool
+}
+
+struct TStep: Decodable, Identifiable, Hashable {
+    let n: Int
+    let text, chip, pname, field: String
+    let secret, marked: Bool
+    var id: Int { n }
+}
+
+// the Tasks tab: a card each (open: its run form, one field per param), then the recent runs
+struct TaskParam: Decodable, Hashable {
+    let field, label, example, value: String
+}
+
+struct TaskItem: Decodable, Identifiable, Hashable {
+    let slug, name, desc, last: String
+    let open, asking: Bool
+    let params: [TaskParam]
+    var id: String { slug }
+}
+
+struct TaskRun: Decodable, Identifiable, Hashable {
+    let run, slug, status, summary: String
+    let shots: [String]
+    var id: String { run }
+}
+
+struct BotTasks: Decodable {
+    let items: [TaskItem]
+    let runs: [TaskRun]
 }
 
 struct BotPost: Decodable, Identifiable {
@@ -715,6 +771,7 @@ struct BotView: Decodable {
     let space: SpaceModel?
     let page: SpacePageModel?
     let browser: BotBrowser?
+    let tasks: BotTasks?
     let memory: [BotMemory]?
     let routines: [BotRoutine]?
     let routine: RoutineForm?
@@ -765,8 +822,37 @@ struct Screen: Decodable {
     // Hubs.islands); island above is all of them, for the picker
     let islands: [HubIsland]?
     let thread: ThreadView?
-    // the hub's theme ("light", "dark"; empty follows the phone's)
+    // the hub's theme ("light", "dark"; empty follows the phone's): read only
+    // once, to carry it into App settings (AppSettings.migrate)
     let theme: String?
+    // the tab bar's badges and the routines (src/mobile/tabs.bend)
+    let tabs: TabsInfo?
+}
+
+struct TabBadge: Decodable {
+    let badge: Int
+}
+
+// a routine of any bot, as a row of the Routines tab: a tap opens its bot's
+// Routines tab (nav, act, value, as a plane row's)
+struct RoutineRow: Decodable, Identifiable {
+    let nav: String?
+    let id, act, value, title, sub, state, ago: String
+    let bot, machine: String?
+    let away: Bool?
+    // the kind of schedule (a recurring routine, a one-time one, a reminder), its
+    // label ("Once", "Reminder"…), the time zone it runs in, and a done one's line
+    let sched, label, zone, doneText: String?
+}
+
+struct RoutinesInfo: Decodable {
+    let badge: Int
+    let rows: [RoutineRow]
+}
+
+struct TabsInfo: Decodable {
+    let home, bots: TabBadge?
+    let routines: RoutinesInfo?
 }
 
 struct Cmd: Decodable {
@@ -850,7 +936,7 @@ extension Screen {
     private enum K: String, CodingKey {
         case online, version, error, note, sel, empty, hub, hubs, found, projects, view, making, active, older, settled,
              rowMenu, bots, rooms, uber, plane, newBot, newRoom, bot, deleting, removing, renaming, tour, search,
-             folders, settings, find, island, islands, thread, theme
+             folders, settings, find, island, islands, thread, theme, tabs
     }
 
     init(from decoder: Decoder) throws {
@@ -890,5 +976,6 @@ extension Screen {
         islands = c.lossy(.islands).map { (l: [Lossy<HubIsland>]) in l.compactMap(\.value) }
         thread = c.lossy(.thread)
         theme = c.lossy(.theme)
+        tabs = c.lossy(.tabs)
     }
 }

@@ -47,6 +47,28 @@ def work.timeout() -> String:
   +s = H.Locks.demo.work()
   L.Lock.owner(M.Locks.get(M.State.replay(H.Queue.changes(H.Locks.after(s, 4n, H.Watch.end(s, 4n, "ta", H.Watch.id(H.Locks.demo(), "ta"), "timeout", ""))), s), "bend"))
 
+def outside() -> M.State:
+  +s = H.Locks.demo.release()
+  M.State.replay(H.Queue.changes(H.Locks.outside(s, 7n, "bend", "tb", 3662856n, "flock /tmp/bp-bend.lock sh verify.sh")), s)
+
+def outside.cleared() -> M.State:
+  +s = outside()
+  M.State.replay(H.Queue.changes(H.Locks.ready(s, 8n, "bend", "tb")), s)
+
+def has.outside.k(o: Maybe<&2, L.LockParty>) -> Bool:
+  match o:
+    case None{}:
+      False{}
+    case Some{_}:
+      True{}
+
+def has.outside(+l: L.NamedLock) -> Bool:
+  has.outside.k(L.Lock.outside(l))
+
+def outside.quiet() -> Nat:
+  +s = outside()
+  List.length(&2, M.Change, H.Queue.changes(H.Locks.outside(s, 9n, "bend", "tb", 3662856n, "flock /tmp/bp-bend.lock sh verify.sh")))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("free acquire grants", L.Lock.owner(queue()), "ta")
@@ -75,3 +97,14 @@ def main() -> IO(Unit):
     C.Check.str("waiting lock counts as waiting", Nat.show(S.Subs.waiting([S.Subs.lock.row("bend", queue(), "tb")])), "1")
     C.Check.str("waiting lock is not running work", Nat.show(S.Subs.live([S.Subs.lock.row("bend", queue(), "tb")])), "0")
     C.Check.str("invalid path name rejected", bool(L.Lock.name.valid("../bend")), "false")
+    C.Check.str("status requeues a lost client", H.Locks.demo.requeue("status", "pid:9"), "2:1:lost")
+    C.Check.str("renew requeues a lost client", H.Locks.demo.requeue("renew", "pid:9"), "2:1:lost")
+    C.Check.str("known waiter is not requeued", H.Locks.demo.requeue("status", "tb"), "1:1:kept")
+    C.Check.str("requeue happens once", Nat.show(H.Locks.demo.requeue.twice()), "2")
+    C.Check.str("restart extends client leases", H.Locks.demo.lease(), "96:1")
+    C.Check.str("outside holder recorded", L.Lock.id(Maybe.default(&2, L.LockParty, L.Lock.outside(M.Locks.get(outside(), "bend")), party("none"))) ++ "|" ++ L.Lock.note(Maybe.default(&2, L.LockParty, L.Lock.outside(M.Locks.get(outside(), "bend")), party("none"))), "3662856|flock /tmp/bp-bend.lock sh verify.sh")
+    C.Check.str("outside holder repeat writes nothing", Nat.show(outside.quiet()), "0")
+    C.Check.str("outside cleared when guard taken", bool(has.outside(M.Locks.get(outside.cleared(), "bend"))), "false")
+    C.Check.str("outside holder in lock_list", bool(String.contains(J.Json.show(J.Json.arr(H.Locks.list.go(M.Locks.names(outside()), outside()))), "\"outside\":{\"pid\":3662856,\"cmd\":\"flock /tmp/bp-bend.lock sh verify.sh\"")), "true")
+    C.Check.str("outside holder in plane row", bool(String.contains(P.PRow.title(Maybe.default(&2, P.PRow, List.head(&2, P.PRow, P.Plane.locks(P.Plane.of.st(outside(), 9n))), P.PRow{"", "", "", "", "", "", "", "", 0n, False{}})), "bend · held outside the hub by pid 3662856 (flock /tmp/bp-bend.lock sh verify.sh) · 0 waiting")), "true")
+    C.Check.str("outside codec round trip", bool(round(M.LockChanged{"bend", L.Lock.outside.set(queue(), Some{L.LockParty{"12", "outside", "", "flock x", 3n, 0n}}), 5n})), "true")

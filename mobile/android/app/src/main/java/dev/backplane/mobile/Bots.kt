@@ -116,55 +116,6 @@ fun BotCat(m: AppModel, key: String, size: Dp) {
     CatView(m.cats[key] ?: emptyList(), size)
 }
 
-// The list
-// --------
-
-fun LazyListScope.botsSection(m: AppModel, s: Screen) {
-    item(key = "bots") {
-        var menu by remember { mutableStateOf(false) }
-        ListItem(
-            headlineContent = { Text("Bots", style = MaterialTheme.typography.titleMedium) },
-            trailingContent = {
-                Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Add, "New bot or room") }
-                    DropdownMenu(menu, { menu = false }) {
-                        // with several hubs, a bot or room is made on the one chosen
-                        val many = s.hubs.size > 1
-                        for (h in if (many) s.hubs else s.hubs.take(1)) {
-                            val v = if (many) h.key + "|" else ""
-                            val on = if (many) " on " + h.name else ""
-                            DropdownMenuItem(text = { Text("New bot$on") }, onClick = { menu = false; m.act("bot-new", v) })
-                            DropdownMenuItem(text = { Text("New room$on") }, onClick = { menu = false; m.act("room-new", v) })
-                        }
-                    }
-                }
-            },
-        )
-    }
-    items(s.bots, key = { "b:" + it.id }) { b ->
-        ListItem(
-            headlineContent = { Text(b.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            supportingContent = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MoodDot(b.mood)
-                    Text(listOf(b.note, b.peer, b.machine).filter { it.isNotEmpty() }.joinToString(" · "),
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            },
-            leadingContent = { BotCat(m, b.cat, 40.dp) },
-            modifier = Modifier.alpha(if (b.mood == "away") 0.5f else 1f)
-                .clickable { m.open(b.nav, b.act, b.id, b.name, b.cat, if (b.remote) "remote" else "bot") },
-        )
-    }
-    items(s.rooms, key = { "r:" + it.id }) { r ->
-        ListItem(
-            headlineContent = { Text(r.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            supportingContent = { Text(listOf("${r.members}", r.machine).filter { it.isNotEmpty() }.joinToString(" · ")) },
-            leadingContent = { Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { Icon(Icons.Filled.Forum, null) } },
-            modifier = Modifier.clickable { m.open(r.nav, "room", r.id, r.name, kind = "room") },
-        )
-    }
-}
 
 // Forms
 // -----
@@ -282,7 +233,8 @@ private fun BotScreen(m: AppModel, s: Screen, b: BotView) {
             when (b.tab) {
                 "status" -> StatusTab(m, m.plane(s))
                 "space" -> if (b.page != null) SpacePage(m, b.page) else b.space?.let { SpaceView(it) { a, v -> m.act(a, v) } }
-                "browser" -> BrowserTab(m, b.browser)
+                "browser" -> BrowserTab(m, b)
+                "tasks" -> TasksTab(m, b)
                 "memory" -> MemoryTab(m, b.memory)
                 "routines" -> RoutinesTab(m, b)
                 "hooks" -> HooksTab(m, b)
@@ -296,34 +248,6 @@ private fun BotScreen(m: AppModel, s: Screen, b: BotView) {
 private fun Empty(text: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
-    }
-}
-
-// the bot's page, as the hub's latest frame (fetched again when n moves)
-@Composable
-private fun BrowserTab(m: AppModel, b: BotBrowser?) {
-    val url = b?.let { m.hubUrl(it.url, "n=" + it.n) }
-    var image by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(url) {
-        if (url == null) return@LaunchedEffect
-        val got = withContext(Dispatchers.IO) {
-            runCatching {
-                val c = URL(url).openConnection() as HttpURLConnection
-                c.connectTimeout = 5000
-                c.readTimeout = 15000
-                try {
-                    if (c.responseCode == 200) c.inputStream.use { BitmapFactory.decodeStream(it) } else null
-                } finally {
-                    c.disconnect()
-                }
-            }.getOrNull()
-        }
-        if (got != null) image = got.asImageBitmap()
-    }
-    val img = image
-    if (img == null) Empty("No page yet")
-    else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Image(img, "The bot's page", Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
     }
 }
 

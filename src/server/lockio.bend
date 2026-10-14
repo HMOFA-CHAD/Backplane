@@ -17,3 +17,9 @@ def Guard.cleanup() -> String:
 
 def Guard.script() -> String:
   "cat >/dev/null\n" ++ Guard.cleanup()
+
+# Who holds the flock outside the hub: {"pid":N,"cmd":"..."} on stdout, or nothing.
+# Linux reads /proc/locks for a FLOCK on the file's inode, macOS asks lsof.
+# A lock the hub itself holds (the sh's parent) is not "outside".
+def Guard.who() -> String:
+  "f=${BACKPLANE_LOCK_DIR:-/tmp}/bp-$1.lock\n[ -e \"$f\" ] || exit 0\npid=\nif [ -r /proc/locks ]; then\n  ino=$(stat -c %i \"$f\" 2>/dev/null) || exit 0\n  pid=$(awk -v i=\"$ino\" -v me=\"$PPID\" '$2==\"FLOCK\" { n=split($6,a,\":\"); if (a[n]==i && $5!=me) { print $5; exit } }' /proc/locks)\n  [ -n \"$pid\" ] && cmd=$(tr '\\000' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null | cut -c1-120)\nelif command -v lsof >/dev/null 2>&1; then\n  pid=$(lsof -t \"$f\" 2>/dev/null | grep -v \"^$PPID$\" | head -1)\n  [ -n \"$pid\" ] && cmd=$(ps -o command= -p \"$pid\" 2>/dev/null | cut -c1-120)\nfi\n[ -n \"$pid\" ] || exit 0\ncmd=$(printf '%s' \"$cmd\" | tr -d '\\000-\\037' | sed 's/\\\\/\\\\\\\\/g;s/\"/\\\\\"/g')\nprintf '{\"pid\":%s,\"cmd\":\"%s\"}' \"$pid\" \"$cmd\"\n"

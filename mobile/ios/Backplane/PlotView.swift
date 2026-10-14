@@ -731,7 +731,7 @@ final class PlotCanvas: MTKView {
     func hold(at p: CGPoint) {
         guard !three, renderer.scale > 0 else { return }
         let q = (SIMD2(Float(p.x), Float(p.y)) - renderer.off) / renderer.scale
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        Haptics.impact()
         onNote(Double(q.x) / 1000, Double(q.y) / 1000)
     }
 

@@ -22,6 +22,8 @@
 //   tail-nonl    an old CLI whose last line, its result, has no newline,
 //                then exit with a child holding stdout
 //   exit-now     the process exits (3) as the first command starts
+//   bg-exit      the first command starts a background shell, answers,
+//                and the process exits (0) 600 ms later, the shell with it
 //   oom          the first command allocates 20 MB blocks (600 MB at most,
 //                touched) until the kernel ends it; BP_ALLOC_MB (600)
 //   plain        each command: init, an answer, its result
@@ -36,6 +38,9 @@
 //                (0) before it ends; later commands as plain
 //   toolhold     the first command starts a Bash tool call and holds it
 //                BP_TOOL_MS (6000) before its result, then answers
+//   toolgap      the first command runs two tool calls in a row with no text
+//                between, each answered at once, and sleeps BP_GAP_MS (30000)
+//                between them, outside any tool call, then answers
 //   deploy       the first command calls the hub's deploy_restart (the MCP
 //                URL, BP_DEPLOY_ARGS, JSON, as its arguments), then ends
 // Every line read is appended to $FAKE_LOG ("IN <line>"), and "START pid".
@@ -155,6 +160,15 @@ async function run(c: Cmd, firstOne: boolean) {
     log(`EXIT ${process.pid}`);
     process.exit(3);
   }
+  if (firstOne && mode === "bg-exit") {
+    bgStart();
+    say("STARTED");
+    result("STARTED");
+    lc(c.uuid, "completed");
+    log(`EXIT ${process.pid}`);
+    setTimeout(() => process.exit(0), 600);
+    return;
+  }
   if (firstOne && mode === "tail-nonl") {
     say("TAIL");
     process.stdout.write(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "TAIL", session_id: session, uuid: rnd() }));
@@ -210,6 +224,25 @@ async function run(c: Cmd, firstOne: boolean) {
     log("TOOL ended");
     say("BUILT");
     result("BUILT");
+    lc(c.uuid, "completed");
+    return;
+  }
+  if (firstOne && mode === "toolgap") {
+    const call = async (n: number) => {
+      const id = `toolu_${rnd()}`;
+      emit({ type: "assistant", message: { id: `msg_${rnd()}`, type: "message", role: "assistant", model: "claude-haiku-4-5-20251001",
+        content: [{ type: "tool_use", id, name: "Bash", input: { command: `make step${n}` } }], usage: { input_tokens: 10, output_tokens: 5 } }, parent_tool_use_id: null, session_id: session, uuid: rnd() });
+      log(`GAP tool ${n} started`);
+      await sleep(300);
+      emit({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "ok" }] }, parent_tool_use_id: null, session_id: session, uuid: rnd() });
+      log(`GAP tool ${n} ended`);
+    };
+    await call(1);
+    await sleep(Number(process.env.BP_GAP_MS ?? 30000));
+    log("GAP over");
+    await call(2);
+    say("GAPPED");
+    result("GAPPED");
     lc(c.uuid, "completed");
     return;
   }

@@ -19,9 +19,6 @@ struct RootView: View {
             NavigationStack { PairView(link: "") { model.pair($0) } }
         } else if let s = model.screen {
             asked(s)
-                .sheet(isPresented: settingsShown) {
-                    if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "") }
-                }
                 .sheet(isPresented: findShown) {
                     if let f = model.screen?.find { FindSheet(model: model, find: f) }
                 }
@@ -38,11 +35,6 @@ struct RootView: View {
         } else {
             ProgressView()
         }
-    }
-
-    // split up so Swift type-checks each part in reasonable time
-    private var settingsShown: Binding<Bool> {
-        Binding(get: { model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })
     }
 
     // the first-run tour (core/onboard.bend): up while the screen carries a
@@ -73,12 +65,7 @@ struct RootView: View {
     }
 
     private func stack(_ s: Screen) -> some View {
-        NavigationStack(path: Binding(get: { model.path }, set: { model.navigate($0) })) {
-            ProjectsView(model: model, screen: s, pairing: $pairing)
-                .navigationDestination(for: String.self) { id in
-                    ThreadDestination(model: model, id: id)
-                }
-        }
+        AppTabs(model: model, screen: s, pairing: $pairing)
         .alert(s.error, isPresented: Binding(get: { !s.error.isEmpty }, set: { if !$0 { model.act("dismiss") } })) {
             Button("OK") { model.act("dismiss") }
         }
@@ -321,7 +308,7 @@ private struct ThreadRow: View {
         .opacity(row.faded == true ? 0.45 : 1)
         .onTapGesture { model.open(nav: row.id, action: "select", value: row.id, title: row.title) }
         .onLongPressGesture(minimumDuration: 0.4) {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Haptics.impact()
             model.act("row-menu", row.id)
         }
         .accessibilityElement(children: .combine)
@@ -366,10 +353,6 @@ struct ProjectsView: View {
             if let f = screen.search {
                 Section { SearchField(model: model, search: f, first: screen.projects.first?.id) }
             }
-            if let u = model.uber(screen) {
-                Section { UberCardRow(model: model, card: u) }
-                if let p = model.plane(screen) { PlaneSections(model: model, plane: p, full: false) }
-            }
             if screen.view == "active" {
                 let rows = screen.active ?? []
                 if rows.isEmpty && screen.settled == nil {
@@ -394,10 +377,9 @@ struct ProjectsView: View {
                 ForEach(screen.projects) { p in projectSection(p) }
                 if let o = screen.older { foldRow("Older", o, "side-older") }
             }
-            if !screen.hubs.isEmpty { BotsSection(model: model, screen: screen) }
         }
         .overlay {
-            if screen.projects.isEmpty && screen.bots.isEmpty && screen.rooms.isEmpty && screen.uber == nil {
+            if screen.projects.isEmpty {
                 // a hub still catching up has not said what there is yet
                 if let h = screen.hubs.first(where: { (model.conn[$0.key]?.phase ?? .connecting) != .online }), !screen.online {
                     VStack(spacing: 12) {
@@ -409,7 +391,7 @@ struct ProjectsView: View {
                 }
             }
         }
-        .navigationTitle("Backplane")
+        .navigationTitle("Threads")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 HubsPill(model: model, hubs: screen.hubs) { pairing = true }
@@ -427,7 +409,7 @@ struct ProjectsView: View {
                 Button { pairing = true } label: { Image(systemName: "link") }.accessibilityLabel("Hubs")
                 Menu {
                     Button("Search threads", systemImage: "magnifyingglass") { model.act("find-open", "search") }
-                    Button("Settings", systemImage: "gear") { model.act("flag", "settings") }
+                    Button("Settings", systemImage: "gear") { model.switchTab(.settings) }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .accessibilityLabel("More")
             }
@@ -448,12 +430,6 @@ struct ProjectsView: View {
         .onChange(of: screen.rowMenu) { _, m in if m == nil { shutMenu = nil } }
         .sheet(isPresented: Binding(get: { screen.folders != nil }, set: { if !$0 { model.act("proj-close") } })) {
             if let f = screen.folders { FoldersSheet(model: model, folders: f) }
-        }
-        .sheet(isPresented: Binding(get: { screen.newBot != nil }, set: { if !$0 { model.act("form-close", "@bnew") } })) {
-            if let f = model.screen?.newBot { NewBotSheet(model: model, form: f) }
-        }
-        .sheet(isPresented: Binding(get: { screen.newRoom != nil }, set: { if !$0 { model.act("form-close", "@rnew") } })) {
-            if let f = model.screen?.newRoom { NewRoomSheet(model: model, form: f) }
         }
     }
 
@@ -526,7 +502,7 @@ struct ProjectsView: View {
             }
             .contentShape(Rectangle())
             .onLongPressGesture(minimumDuration: 0.4) {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                Haptics.impact()
                 model.act("proj-menu", p.id)
             }
             .accessibilityAction(named: "Menu") { model.act("proj-menu", p.id) }

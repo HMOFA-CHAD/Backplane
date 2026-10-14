@@ -9,6 +9,9 @@
 //      continue message.
 //   2. A build lock (BACKPLANE_DEPLOY_LOCKS) is held by flock for 7 s: B2's
 //      deploy_restart waits for it, then goes.
+//   3. D runs two tool calls in a row with no text between and sleeps 30 s
+//      between them (outside any tool call): B3's deploy_restart goes in that
+//      gap, not after D's turn.
 //
 //   bun test/tools/deploy_e2e.ts [BINARY] [WIREDIR]      (port 3792)
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -20,7 +23,7 @@ for (const f of readdirSync(wire).filter((f) => f.endsWith(".js"))) (0, eval)(re
 const W = (globalThis as any).Wire;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const PORT = 3792;
+const PORT = Number(process.env.E2E_PORT ?? 3792);
 const root = mkdtempSync(join(tmpdir(), "bp-deploy-"));
 const fake = join(root, "bin");
 const log = join(root, "claude.log");
@@ -189,6 +192,21 @@ try {
   check(notes(B2).length === 1, `B2 is told once (${notes(B2).length})`);
   const again = await fetch(`http://127.0.0.1:${PORT}/hello`);
   check(again.status === 200, "the hub is listening");
+
+  // 3. between two tool calls of one turn the deploy goes
+  const S3 = stage("S3");
+  deployArgs = JSON.stringify({ stage: S3, note: "e2e three" });
+  await restart();
+  await sleep(500);
+  const D = await made("gap runner");
+  const B3 = await made("deployer three");
+  c.send("turn.start", { thread: D, text: "mode:toolgap go", msg: "d-1" });
+  const gapStart = await until(15000, () => /GAP tool 1 ended/.test(read(log)) ? true : undefined);
+  check(!!gapStart, "D's first tool call ran and ended");
+  const t3 = Date.now();
+  c.send("turn.start", { thread: B3, text: "mode:deploy go", msg: "b-3" });
+  const swapped3 = await until(25000, () => read(join(prefix, "LICENSE")) === "S3" ? true : undefined);
+  check(!!swapped3 && !read(log).includes("GAP over"), `the deploy goes in the gap, before D's second call (${Date.now() - t3} ms, newest entry is a tool Act)`);
 } finally {
   if (lockHolder) { try { process.kill(lockHolder.pid, "SIGKILL"); } catch {} }
   if (hub) await kill(hub);
