@@ -27,6 +27,8 @@ import ../core/review.bend as RVW
 import ../core/emb.bend as EM
 import ../core/qr.bend as QR
 import ../core/onboard.bend as OB
+import ../core/sched.bend as SCH
+import ../core/tz.bend as TZ
 
 # Ui -> Node. Every decision (order, shelf, status) comes from core defs
 # with laws behind them; this file only lays them out.
@@ -763,6 +765,22 @@ def View.agy.rows(rs: List<&2, U.AgRow>) -> List<&2, D.Node>:
     case U.AgRow{+l, +n, fs, bs} <> t:
       View.setrow(l, n, List.append(&2, D.Node, View.agy.fields(fs), View.agy.btns(bs))) <> View.agy.rows(t)
 
+# the time zone: where the person is (their phone reports it, or they set
+# it); a field for a zone name, Set, and Automatic (on while one is set)
+# Automatic: off (disabled) while the zone already follows the phone
+def View.tz.auto(on: Bool) -> D.Node:
+  match on:
+    case True{}:
+      D.Dom.button("", "tz-auto", "", "Follow your phone again", "Automatic")
+    case False{}:
+      D.El{"button", "", [D.At{"class", ""}, D.At{"title", "Already following your phone"}, D.At{"disabled", "disabled"}], [D.Txt{"Automatic"}]}
+
+def View.tz.set(+u: U.Ui) -> List<&2, D.Node>:
+  [View.setrow("Time zone", U.Tzs.line(u),
+    [WB.WB.input("tzname", "tzname", U.Ui.scratch(u, "@f.tzname"), "Europe/Helsinki", "tz-set"), D.Dom.button("primary", "tz-set", "", "Use this time zone", "Set"),
+     View.tz.auto(U.Tzs.auto(u))]),
+   View.setrow("", U.Tzs.err(u), Nil{})]
+
 def View.keys.set(+u: U.Ui) -> List<&2, D.Node>:
   List.concat(&2, D.Node, [
     [View.setrow("API keys", U.ApiKeys.note(u),
@@ -849,7 +867,7 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
         D.Dom.when(Bool.not(String.is_empty(U.Pair.link(nf))), D.Dom.copy(U.Pair.link(nf)))))],
       View.pair.qr(U.Ui.flag(u, "pairqr"), nf),
       [View.setrow("Update channel", "Stable takes releases; nightly also takes the daily builds.", View.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
-      View.setrow("Backplane " ++ v, U.Update.line.w(st, nf, note), View.update.btn(U.Update.btn(st, nf, note)))], View.voice.set(u, st), View.keys.set(u), View.agy.rows(U.Agv.rows(u)), [View.setrow("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [D.Dom.button("", "ob-open", "", "Show the tour again", "Show the tour")])]])}]}
+      View.setrow("Backplane " ++ v, U.Update.line.w(st, nf, note), View.update.btn(U.Update.btn(st, nf, note)))], View.voice.set(u, st), View.keys.set(u), View.agy.rows(U.Agv.rows(u)), View.tz.set(u), [View.setrow("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [D.Dom.button("", "ob-open", "", "Show the tour again", "Show the tour")])]])}]}
 
 def View.empty(n: Nat) -> D.Node:
   D.El{"main", "empty", [D.At{"class", "empty"}], [D.Txt{Bool.pick(String, Nat.is_eq(n, 0n), "Add a project with + to start.", "Pick a thread, or start one with + next to a project.")}]}
@@ -1056,12 +1074,21 @@ def View.emb.ev(+ev: EM.EV, +ec: U.Ec, +th: String) -> D.Node:
 def View.emb(+ec: U.Ec, +st: M.State, +e: M.Entry, +th: String) -> D.Node:
   View.emb.ev(U.Ec.view(ec, st, e), ec, th)
 
+# a reminder: a bell, Reminder, the text and when, in the person's zone
+def View.act.g(rem: Bool, +id: String, +tone: String, +kind: String, +summary: String, +at: Nat, +st: M.State) -> D.Node:
+  match rem:
+    case True{}:
+      D.El{"div", id, [D.At{"class", "act remind entry-remind"}, D.At{"data-id", id}],
+        [WI.WIcon.svg("bell", 14), D.Dom.span("kind", "Reminder"), D.Dom.span("summary", summary), D.Dom.span("when", TZ.Tz.show.nz(SCH.Sched.person(st, 0n, True{}), at))]}
+    case False{}:
+      D.El{"div", id, [D.At{"class", "act " ++ tone}, D.At{"data-id", id}], [D.Dom.span("kind", RVW.Review.label(tone, kind, summary)), D.Dom.span("summary", RVW.Review.say(tone, kind, summary))]}
+
 def View.act.t(term: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
   match term e:
     case True{} M.Act{+id, +th, tone, kind, sum, +at}:
       View.emb(ec, st, M.Act{id, th, tone, kind, sum, at}, th)
-    case _ M.Act{+id, _, +tone, +kind, +summary, _}:
-      D.El{"div", id, [D.At{"class", "act " ++ tone}, D.At{"data-id", id}], [D.Dom.span("kind", RVW.Review.label(tone, kind, summary)), D.Dom.span("summary", RVW.Review.say(tone, kind, summary))]}
+    case _ M.Act{+id, _, +tone, +kind, +summary, +at}:
+      View.act.g(String.eq(tone, "remind"), id, tone, kind, summary, at, st)
     case _ M.Msg{+id, _, _, text, _}:
       D.El{"div", id, [D.At{"class", "act"}, D.At{"data-id", id}], [D.Dom.span("summary", text)]}
 

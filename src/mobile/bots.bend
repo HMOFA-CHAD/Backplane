@@ -6,6 +6,7 @@ import ../core/codec.bend as C
 import ../core/bot.bend as BT
 import ../core/botui.bend as B
 import ../core/cron.bend as CR
+import ../core/sched.bend as SC
 import ../core/cat.bend as CT
 import ./space.bend as MS
 
@@ -152,26 +153,31 @@ def MBots.mems(ms: List<&2, BT.Mem>, +now: Nat) -> List<&2, J.Json>:
     case m <> t:
       MBots.mem(m, now) <> MBots.mems(t, now)
 
-def MBots.routine(r: BT.Routine, +now: Nat) -> J.Json:
-  match r:
-    case BT.Routine{i, _, n, +c, p, on, +last, _, _}:
-      J.Json.obj([J.KV{"id", J.Json.str(i)}, J.KV{"name", J.Json.str(n)}, J.KV{"cron", J.Json.str(c)},
-        J.KV{"when", J.Json.str(CR.Cron.describe(c))}, J.KV{"prompt", J.Json.str(p)}, J.KV{"on", J.Json.bool(on)},
-        J.KV{"last", J.Json.str(MBots.ago(Nat.is_eq(last, 0n), now, last))}])
+def MBots.routine.row(w: SC.SRow, +r: BT.Routine, +now: Nat) -> J.Json:
+  match w:
+    case SC.SRow{kind, label, when, next, rel, zone, done, dtext}:
+      J.Json.obj([J.KV{"id", J.Json.str(BT.Routine.id(r))}, J.KV{"name", J.Json.str(BT.Routine.name(r))}, J.KV{"cron", J.Json.str(BT.Routine.cron(r))},
+        J.KV{"when", J.Json.str(when)}, J.KV{"prompt", J.Json.str(BT.Routine.prompt(r))}, J.KV{"on", J.Json.bool(BT.Routine.on(r))},
+        J.KV{"last", J.Json.str(MBots.ago(Nat.is_eq(BT.Routine.last(r), 0n), now, BT.Routine.last(r)))},
+        J.KV{"kind", J.Json.str(kind)}, J.KV{"label", J.Json.str(label)}, J.KV{"next", J.Json.str(next)}, J.KV{"rel", J.Json.str(rel)},
+        J.KV{"zone", J.Json.str(zone)}, J.KV{"done", J.Json.bool(done)}, J.KV{"doneText", J.Json.str(dtext)}])
 
-def MBots.routines(rs: List<&2, BT.Routine>, +now: Nat) -> List<&2, J.Json>:
+def MBots.routine(+u: U.Ui, +r: BT.Routine, +now: Nat) -> J.Json:
+  MBots.routine.row(SC.Sched.row(U.Ui.state(u), r, now, 0n, True{}), r, now)
+
+def MBots.routines(+u: U.Ui, rs: List<&2, BT.Routine>, +now: Nat) -> List<&2, J.Json>:
   match rs:
     case Nil{}:
       Nil{}
     case r <> t:
-      MBots.routine(r, now) <> MBots.routines(t, now)
+      MBots.routine(u, r, now) <> MBots.routines(u, t, now)
 
 # the routine form: open ("routine-edit" fills it, "routine-save"), its
 # fields ("bfield" oname, ocron, oprompt); id is "" for a new one
 def MBots.routine.form(+u: U.Ui) -> J.Json:
   J.Json.obj([J.KV{"open", J.Json.bool(B.BU.open(u, "@onew"))}, J.KV{"id", J.Json.str(B.BU.field(u, "oid"))},
     J.KV{"name", J.Json.str(B.BU.field(u, "oname"))}, J.KV{"cron", J.Json.str(B.BU.field(u, "ocron"))},
-    J.KV{"prompt", J.Json.str(B.BU.field(u, "oprompt"))}])
+    J.KV{"prompt", J.Json.str(B.BU.field(u, "oprompt"))}, J.KV{"hint", J.Json.str(U.Routine.hint(u))}])
 
 def MBots.hook(h: BT.Hook, +now: Nat) -> J.Json:
   match h:
@@ -256,7 +262,7 @@ def MBots.tab.k(i: Nat, +u: U.Ui, b: BT.Bot, +id: String, +persona: String, +now
     case 3n:
       [J.KV{"memory", J.Json.arr(MBots.mems(B.BU.mems(u, id), now))}]
     case 4n:
-      [J.KV{"routines", J.Json.arr(MBots.routines(B.BU.routines(u, id), now))}, J.KV{"routine", MBots.routine.form(u)}]
+      [J.KV{"routines", J.Json.arr(MBots.routines(u, B.BU.routines(u, id), now))}, J.KV{"routine", MBots.routine.form(u)}]
     case 5n:
       [J.KV{"hooks", J.Json.arr(MBots.hooks(B.BU.hooks(u, id), now))}, J.KV{"secret", J.Json.str(U.Ui.scratch(u, "@hook.secret"))},
        J.KV{"secretFor", J.Json.str(U.Ui.scratch(u, "@hook.id"))}, J.KV{"token", J.Json.str(U.Ui.scratch(u, "@hook.token"))},

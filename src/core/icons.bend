@@ -102,7 +102,9 @@ def Icon.all() -> List<&2, IDef>:
    IDef{"archive", [Icon.s("M2 3h20v5H2z"), Icon.s("M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"), Icon.s("M10 12h4")]},
    IDef{"trash", [Icon.s("M3 6h18"), Icon.s("M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"), Icon.s("M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"), Icon.s("M10 11v6"), Icon.s("M14 11v6")]},
    IDef{"git-fork", [Icon.s("M9 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0"), Icon.s("M3 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0"), Icon.s("M15 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0"), Icon.s("M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"), Icon.s("M12 12v3")]},
-   IDef{"undo", [Icon.s("M9 14 4 9l5-5"), Icon.s("M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11")]}]
+   IDef{"undo", [Icon.s("M9 14 4 9l5-5"), Icon.s("M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11")]},
+   IDef{"bell", [Icon.s("M10.268 21a2 2 0 0 0 3.464 0"), Icon.s("M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326")]},
+   IDef{"repeat", [Icon.s("m17 2 4 4-4 4"), Icon.s("M3 11v-1a4 4 0 0 1 4-4h14"), Icon.s("m7 22-4-4 4-4"), Icon.s("M21 13v1a4 4 0 0 1-4 4H3")]}]
 
 def Icon.pick(hit: Bool, ls: List<&2, Layer>, found: List<&2, Layer>) -> List<&2, Layer>:
   match hit:
@@ -137,7 +139,7 @@ def Icon.used() -> List<&2, String>:
   ["plus", "x", "chevron-down", "chevron-right", "settings", "paperclip", "arrow-up", "stop", "mic", "search", "sun", "moon",
    "play", "pause", "chevron-left", "skip-back", "skip-forward", "history", "git-compare", "message-square",
    "pin", "circle-check", "clock", "archive", "trash", "git-fork", "undo", "terminal", "panel-right", "diff",
-   "folder", "file", "file-text", "image", "circuit-board", "cpu", "box"]
+   "folder", "file", "file-text", "image", "circuit-board", "cpu", "box", "bell", "repeat"]
 
 def Icon.missing.k(none: Bool, +n: String, rest: List<&2, String>) -> List<&2, String>:
   match none:

@@ -259,3 +259,17 @@ def main() -> IO(Unit):
     C.Check.str("join: has one already", US.Join.err(US.Ub.join(M.State.replay([M.SettingSet{"uber.offer", "{\"uid\":\"u1-x\",\"name\":\"Kit\",\"look\":7}", 9n}], sb(Nil{})), "u1-x")), "this machine has an uberbot already; make it not the uberbot first")
     C.Check.str("handoff of a thread that is not elsewhere", yes(String.is_empty(UX.Xref.handoff("t2", "mB", Nil{}))), "yes")
     C.Check.str("handoff with no mirror", yes(String.is_empty(UX.Xref.handoff("p2~t2", "mB", Nil{}))), "yes")
+    # routines-cal: a routine's plan and a reminder travel as ops
+    C.Check.str("also: a routine with its plan is one op", tags(US.Ub.also(s0, 3000n, [M.RoutineSet{"o1", "b1", "R", "", "stand up", True{}, 3000n}, M.RoutinePlan{"o1", 1791979200n, "person", "remind", 3000n}])), "RoutineSet;RoutinePlan;UberOp;")
+    +pl : List<&2, M.Change> = [op("mA", 1n, 1100n, 0n, UO.Ub.b.routine.plan("mA:r2", "stand up", "", "stand up", True{}, "", 1791979200n, "person", "remind"))]
+    C.Check.str("a planned routine arrives with its plan", tags(US.Ub.commit(lines(pl), sB)), "UberOp;RoutineSet;RoutinePlan;")
+    +sB5 : M.State = M.State.replay(US.Ub.commit(lines(pl), sB), sB)
+    C.Check.str("the plan's fields", Nat.show(BT.Routine.once(BT.World.routine(M.State.bots(sB5), "mA:r2"))) ++ "|" ++ BT.Routine.tz(BT.World.routine(M.State.bots(sB5), "mA:r2")) ++ "|" ++ BT.Routine.kind(BT.World.routine(M.State.bots(sB5), "mA:r2")), "1791979200|person|remind")
+    +fire2 : List<&2, M.Change> = [op("mA", 2n, 1200n, 0n, UO.Ub.b.fired("mA:r2", 1791979200n))]
+    C.Check.str("a fired reminder is done on the other machine too", tags(US.Ub.commit(lines(fire2), sB5)), "UberOp;RoutineFired;RoutineDone;")
+    +sB6 : M.State = M.State.replay(US.Ub.commit(lines(fire2), sB5), sB5)
+    C.Check.str("and it is not fired again there", yes(US.Ub.fires(sB6, "mA:r2", 1791979200n)), "no")
+    +zl : List<&2, M.Change> = [op("mA", 1n, 1100n, 0n, UO.Ub.b.routine.plan("mA:r3", "digest", "daily 09:30", "news", True{}, "", 0n, "person", ""))]
+    +sB7 : M.State = M.State.replay(US.Ub.commit(lines(zl), sB), sB)
+    C.Check.str("a zoned routine's fire carries its slot", tags(US.Ub.commit(lines([op("mA", 2n, 1200n, 0n, UO.Ub.b.fired("mA:r3", 34200n))]), sB7)), "UberOp;RoutineFired;RoutineSlot;")
+    C.Check.str("an old routine op carries no plan", tags(US.Ub.commit(lines([op("mA", 1n, 1100n, 0n, UO.Ub.b.routine("mA:r4", "old", "daily 09:00", "p", True{}, ""))]), sB)), "UberOp;RoutineSet;")

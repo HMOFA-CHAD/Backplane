@@ -176,7 +176,7 @@ private struct PlaneRoutine: View {
             HStack(spacing: 10) {
                 Group {
                     if row.state == "working" { ProgressView().controlSize(.mini).tint(PhaseColor.accent) }
-                    else { Image(systemName: "clock").font(.caption).foregroundStyle(.secondary) }
+                    else { Image(systemName: row.state == "reminder" ? "bell" : "clock").font(.caption).foregroundStyle(.secondary) }
                 }
                 .frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {

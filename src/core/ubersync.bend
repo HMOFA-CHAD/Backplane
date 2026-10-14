@@ -263,6 +263,40 @@ def Ub.wins(+st: M.State, +o: J.Json, +op: String, +stamp: String) -> Bool:
 # the changes to the replica when the op wins; none when it loses (and
 # never an op: what is derived from another machine's op is not made
 # again as one)
+# a replica's changes for a routine op: the routine and, when the op
+# carries a plan, its plan
+def Ub.derive.plan(has: Bool, +lid: String, +o: J.Json, +at: Nat) -> List<&2, M.Change>:
+  match has:
+    case True{}:
+      [M.RoutinePlan{lid, UO.Ub.nat(o, "once"), UO.Ub.field(o, "tz"), UO.Ub.field(o, "kind"), at}]
+    case False{}:
+      Nil{}
+
+def Ub.derive.fired.k(once: Bool, zoned: Bool, lid: String, slot: Nat, at: Nat) -> List<&2, M.Change>:
+  match once zoned:
+    case True{} _:
+      [M.RoutineDone{lid, at}]
+    case False{} True{}:
+      [M.RoutineSlot{lid, slot, at}]
+    case False{} False{}:
+      Nil{}
+
+# what a fired op leaves on a replica besides RoutineFired: a one-time routine is
+# done, a zoned one is at the op's slot
+def Ub.derive.fired(+r: BT.Routine, +lid: String, +slot: Nat, +at: Nat) -> List<&2, M.Change>:
+  Ub.derive.fired.k(Nat.is_gt(BT.Routine.once(r), 0n), Bool.and(Bool.not(String.is_empty(BT.Routine.tz(r))), Nat.is_gt(slot, 0n)), lid, slot, at)
+
+# what a routine op adds beyond Ub.derive.n: its plan, and for a fired op
+# that one-time routines are done and zoned ones at the op's slot
+def Ub.derive.more(n: Nat, +me: String, +o: J.Json, +st: M.State, +at: Nat) -> List<&2, M.Change>:
+  match n:
+    case 5n:
+      Ub.derive.plan(BT.Maybe.is(J.Json, J.Json.get(o, "tz")), Ub.lid(me, UO.Ub.field(o, "id")), o, at)
+    case 7n:
+      Ub.derive.fired(BT.World.routine(M.State.bots(st), Ub.lid(me, UO.Ub.field(o, "routine"))), Ub.lid(me, UO.Ub.field(o, "routine")), UO.Ub.nat(o, "slot"), at)
+    case _:
+      Nil{}
+
 def Ub.derive.n(n: Nat, +b: String, +me: String, +o: J.Json, +at: Nat) -> List<&2, M.Change>:
   match n:
     case 0n:
@@ -291,8 +325,19 @@ def Ub.derive.k(win: Bool, +st: M.State, +o: J.Json, +at: Nat) -> List<&2, M.Cha
     case False{}:
       Nil{}
 
+# the changes of a winning op, then what a routine op adds (its plan, done, slot)
+def Ub.derive.x(win: Bool, +st: M.State, +o: J.Json, +at: Nat) -> List<&2, M.Change>:
+  match win:
+    case True{}:
+      Ub.derive.more(Ub.kind.n(UO.Ub.field(o, "k")), Ub.me(st), o, st, at)
+    case False{}:
+      Nil{}
+
+def Ub.derive.w(+win: Bool, +st: M.State, +o: J.Json, +at: Nat) -> List<&2, M.Change>:
+  List.append(&2, M.Change, Ub.derive.k(win, st, o, at), Ub.derive.x(win, st, o, at))
+
 def Ub.derive.o(+st: M.State, +op: String, +stamp: String, +at: Nat) -> List<&2, M.Change>:
-  Ub.derive.k(Ub.wins(st, UO.Ub.json(op), op, stamp), st, UO.Ub.json(op), at)
+  Ub.derive.w(Ub.wins(st, UO.Ub.json(op), op, stamp), st, UO.Ub.json(op), at)
 
 def Ub.derive(+st: M.State, +o: UO.UOp) -> List<&2, M.Change>:
   Ub.derive.o(st, UO.UOp.op(o), UO.UOp.stamp(o), UO.UOp.at(o))
@@ -376,6 +421,9 @@ def Ub.rbot(+st: M.State, +id: String) -> String:
 def Ub.body.routine(+st: M.State, +id: String, +name: String, +cron: String, +prompt: String, +on: Bool) -> String:
   UO.Ub.b.routine(Ub.gid(Ub.me(st), id), name, cron, prompt, on, Ub.pin(st, Ub.gid(Ub.me(st), id)))
 
+def Ub.body.routine.plan(+st: M.State, +id: String, +name: String, +cron: String, +prompt: String, +on: Bool, +once: Nat, +tz: String, +kind: String) -> String:
+  UO.Ub.b.routine.plan(Ub.gid(Ub.me(st), id), name, cron, prompt, on, Ub.pin(st, Ub.gid(Ub.me(st), id)), once, tz, kind)
+
 def Ub.body.k(mine: Bool, b: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, mine, [b], Nil{})
 
@@ -404,6 +452,8 @@ def Ub.bodies(cs: List<&2, M.Change>, +st: M.State) -> List<&2, String>:
   match cs:
     case Nil{}:
       Nil{}
+    case M.RoutineSet{+id, +bot, +name, +cron, +prompt, +on, _} <> M.RoutinePlan{_, +once, +tz, +kind, _} <> t:
+      List.append(&2, String, Ub.body.k(UB.Uber.is(st, bot), Ub.body.routine.plan(st, id, name, cron, prompt, on, once, tz, kind)), Ub.bodies(t, st))
     case +c <> t:
       List.append(&2, String, Ub.body(st, c), Ub.bodies(t, st))
 
@@ -414,8 +464,8 @@ def Ub.also(+st: M.State, +now: Nat, +cs: List<&2, M.Change>) -> List<&2, M.Chan
 # a routine pinned to a machine ("" takes the pin off): the op alone
 def Ub.pin.set.k(mine: Bool, r: BT.Routine, +st: M.State, +now: Nat, +gid: String, +pin: String) -> List<&2, M.Change>:
   match r:
-    case BT.Routine{_, _, +name, +cron, +prompt, +on, _, _, _}:
-      Bool.pick(List<&2, M.Change>, mine, Ub.ops(st, now, [UO.Ub.b.routine(gid, name, cron, prompt, on, pin)]), Nil{})
+    case BT.Routine{_, _, +name, +cron, +prompt, +on, _, _, _, +once, +tz, +kind, _, _}:
+      Bool.pick(List<&2, M.Change>, mine, Ub.ops(st, now, [UO.Ub.b.routine.plan(gid, name, cron, prompt, on, pin, once, tz, kind)]), Nil{})
 
 def Ub.pin.set(+st: M.State, +now: Nat, +id: String, +pin: String) -> List<&2, M.Change>:
   Ub.pin.set.k(UB.Uber.is(st, Ub.rbot(st, id)), BT.World.routine(M.State.bots(st), id), st, now, Ub.gid(Ub.me(st), id), pin)
@@ -437,8 +487,8 @@ def Ub.init.routines(rs: List<&2, BT.Routine>, +me: String) -> List<&2, String>:
   match rs:
     case Nil{}:
       Nil{}
-    case BT.Routine{+id, _, +name, +cron, +prompt, +on, _, _, _} <> t:
-      UO.Ub.b.routine(Ub.gid(me, id), name, cron, prompt, on, "") <> Ub.init.routines(t, me)
+    case BT.Routine{+id, _, +name, +cron, +prompt, +on, _, _, _, +once, +tz, +kind, _, _} <> t:
+      UO.Ub.b.routine.plan(Ub.gid(me, id), name, cron, prompt, on, "", once, tz, kind) <> Ub.init.routines(t, me)
 
 def Ub.init.opt(+yes: Bool, +b: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, yes, [b], Nil{})

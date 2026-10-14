@@ -40,6 +40,12 @@ def log() -> List<&2, M.Change>:
      M.MemorySaved{"b0", "reviews", "pref", "Wants a summary of open PRs every morning, short, no emoji.", "", at()},
      M.RoutineSet{"o0", "b0", "Morning summary", "0 9 * * 1-5", "Summarize open PRs and the fab queue.", True{}, at()},
      M.RoutineSet{"o1", "b0", "Weekly cleanup", "@weekly", "Close stale branches.", False{}, at()},
+     M.SettingSet{"tz.rule.Europe/Helsinki", "EET-2EEST,M3.5.0/3,M10.5.0/4", at()}, M.SettingSet{"person.tz", "Europe/Helsinki", at()},
+     M.RoutinePlan{"o0", 0n, "person", "", at()},
+     M.RoutineSet{"o2", "b0", "Check the stencil order", "", "Ask OSH Stencils for the tracking number.", True{}, at()}, M.RoutinePlan{"o2", Nat.add(at(), 90000n), "person", "", at()},
+     M.RoutineSet{"o3", "b0", "Call the fab about the panel", "", "Call the fab about the panel", True{}, at()}, M.RoutinePlan{"o3", Nat.add(at(), 7200n), "person", "remind", at()},
+     M.RoutineSet{"o4", "b0", "Stand up", "", "Stand up", True{}, at()}, M.RoutinePlan{"o4", Nat.add(at(), 60n), "person", "remind", at()},
+     M.RoutineFired{"o4", Nat.add(at(), 60n)}, M.RoutineDone{"o4", Nat.add(at(), 60n)},
      M.HookSet{"h0", "b0", "GitHub pushes", False{}, at()},
      M.SpaceSet{"b0", space(), at()}]])
 
@@ -149,6 +155,7 @@ def main() -> IO(Unit):
     shot(ty, dir, "browser", "bot=b0;bot-tab=browser", "")
     shot(ty, dir, "memory", "bot=b0;bot-tab=memory", "")
     shot(ty, dir, "routines", "bot=b0;bot-tab=routines", "")
+    shot(ty, dir, "routine-form", "bot=b0;bot-tab=routines;routine-edit=;@f.ocron=tomorrow 9am", "")
     shot(ty, dir, "hooks", "bot=b0;bot-tab=hooks", "")
     shot(ty, dir, "settings", "bot=b0;bot-tab=settings;bfield=persona" ++ sep() ++ "Watches the repo and the fab queue.", "")
     shot(ty, dir, "google", "bot=b0;bot-tab=settings;@google=Connected as cat@example.com, dog@example.com (Gmail and Calendar).;@google.accts=cat@example.com|dog@example.com", "")

@@ -348,18 +348,32 @@ private struct RoutinesTab: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(r.name).font(.subheadline.weight(.semibold))
-                        Text(r.when).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            // kind chip: Repeats, Once, or Reminder with a bell
+                            Label(r.label ?? "Repeats", systemImage: r.kind == "reminder" ? "bell" : (r.kind == "once" ? "clock" : "repeat"))
+                                .font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(Color.secondary.opacity(0.15))
+                            Text(r.when).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        }
+                        if r.done == true {
+                            Text(r.doneText ?? "Done").font(.caption).foregroundStyle(.secondary)
+                        } else if let n = r.next, !n.isEmpty {
+                            Text("Next " + n + ((r.rel ?? "").isEmpty ? "" : " · " + r.rel!) + ((r.zone ?? "your time") == "your time" ? "" : " · " + r.zone!))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         Text(r.prompt).font(.caption).lineLimit(2)
-                        if !r.last.isEmpty { Text("last " + r.last).font(.caption2).foregroundStyle(.secondary) }
                     }
                     Spacer()
-                    Toggle("On", isOn: Binding(get: { r.on }, set: { _ in model.act("routine-toggle", r.id) })).labelsHidden()
+                    if r.done != true {
+                        Toggle("On", isOn: Binding(get: { r.on }, set: { _ in model.act("routine-toggle", r.id) })).labelsHidden()
+                    }
                 }
+                .opacity(r.done == true ? 0.55 : 1)
                 .contentShape(.rect)
                 .onTapGesture { model.act("routine-edit", r.id) }
                 .swipeActions {
                     Button("Delete", role: .destructive) { model.act("routine-delete", r.id) }
-                    Button("Run") { model.act("routine-run", r.id) }.tint(.indigo)
+                    if r.done != true { Button("Run") { model.act("routine-run", r.id) }.tint(.indigo) }
                 }
             }
         }
@@ -381,7 +395,7 @@ private struct RoutineSheet: View {
             Form {
                 TextField("Name", text: $name).onChange(of: name) { _, t in model.field("oname", t) }
                 Section {
-                    TextField("0 9 * * 1-5", text: $cron)
+                    TextField("daily 09:30 · tomorrow 9am · in 2h", text: $cron)
                         .font(.body.monospaced())
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -389,7 +403,7 @@ private struct RoutineSheet: View {
                 } header: {
                     Text("When")
                 } footer: {
-                    Text("Cron, @daily, every 15m, weekdays 08:00")
+                    Text((form.hint ?? "").isEmpty ? "A schedule (daily 09:30, every 15m, cron) or a time (tomorrow 9am, in 2h)" : form.hint!)
                 }
                 Section("Prompt") {
                     TextField("What to do", text: $prompt, axis: .vertical)

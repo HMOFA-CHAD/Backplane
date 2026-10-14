@@ -93,7 +93,7 @@ data class Entry(
     val id: String, val kind: String, val text: String,
     val tone: String, val label: String, val blocks: List<Block>,
     val attachments: List<Chip> = emptyList(), val images: List<Shot> = emptyList(),
-    val open: Boolean = false, val value: String = "", val key: String = "",
+    val open: Boolean = false, val value: String = "", val key: String = "", val at: String = "",
 )
 
 // what the agent waits on the user for: an approval, a question or a
@@ -340,9 +340,12 @@ data class BotMemory(val key: String, val kind: String, val text: String, val ta
 data class BotRoutine(
     val id: String, val name: String, val cron: String, val schedule: String, val prompt: String,
     val last: String, val on: Boolean,
+    // routines-cal: routine, once or reminder; what it says next, in the person's zone
+    val kind: String = "routine", val label: String = "Repeats", val next: String = "", val rel: String = "",
+    val zone: String = "your time", val done: Boolean = false, val doneText: String = "",
 )
 // the routine form ("routine-edit" id, or "" for a new one, opens it)
-data class RoutineForm(val open: Boolean, val id: String, val name: String, val cron: String, val prompt: String)
+data class RoutineForm(val open: Boolean, val id: String, val name: String, val cron: String, val prompt: String, val hint: String = "")
 data class BotHook(val id: String, val name: String, val path: String, val last: String, val count: Int)
 data class BotPeer(val id: String, val name: String, val url: String)
 // Google's sign-in state and the OAuth client's fields ("google" op)
@@ -436,7 +439,7 @@ private fun entry(o: JSONObject) = Entry(
     o.optString("label"), blocks(o.optJSONArray("blocks")),
     chips(o.optJSONArray("attachments")),
     o.optJSONArray("images").map { Shot(it.optString("path"), it.optString("url")) },
-    o.optBoolean("open"), o.optString("value"), o.optString("key"),
+    o.optBoolean("open"), o.optString("value"), o.optString("key"), o.optString("when"),
 )
 
 private fun tool(o: JSONObject) = Tool(
@@ -591,10 +594,11 @@ private fun botView(o: JSONObject) = BotView(
     },
     o.optJSONArray("routines").map {
         BotRoutine(it.optString("id"), it.optString("name"), it.optString("cron"), it.optString("when"), it.optString("prompt"),
-            it.optString("last"), it.optBoolean("on"))
+            it.optString("last"), it.optBoolean("on"), it.optString("kind", "routine"), it.optString("label", "Repeats"), it.optString("next"),
+            it.optString("rel"), it.optString("zone", "your time"), it.optBoolean("done"), it.optString("doneText"))
     },
     o.optJSONObject("routine")?.let {
-        RoutineForm(it.optBoolean("open"), it.optString("id"), it.optString("name"), it.optString("cron"), it.optString("prompt"))
+        RoutineForm(it.optBoolean("open"), it.optString("id"), it.optString("name"), it.optString("cron"), it.optString("prompt"), it.optString("hint"))
     },
     o.optJSONArray("hooks").map {
         BotHook(it.optString("id"), it.optString("name"), it.optString("path"), it.optString("last"), it.optInt("count"))

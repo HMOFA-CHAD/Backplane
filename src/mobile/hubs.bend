@@ -669,7 +669,7 @@ def Hubs.routes() -> Nat:
 # to confirm); the project search is every hub's at once, since the list
 # it filters spans them all ("proj-find", "proj-find-q", unrouted, go to all)
 def Hubs.everywhere(+action: String) -> Bool:
-  Nat.is_lt(C.Codec.pos(["dismiss", "delete-no", "proj-keep", "proj-find", "proj-find-q", "menu-close", "side-older", "side-settled", "rename-no"], action), 9n)
+  Nat.is_lt(C.Codec.pos(["dismiss", "delete-no", "proj-keep", "proj-find", "proj-find-q", "menu-close", "side-older", "side-settled", "rename-no", "tz-report"], action), 10n)
 
 # The merged phone sidebar has one view preference across paired hubs.
 def Hubs.every.op(op: Op) -> Bool:

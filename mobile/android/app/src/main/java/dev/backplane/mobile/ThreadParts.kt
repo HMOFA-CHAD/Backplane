@@ -76,6 +76,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Difference
 import androidx.compose.material.icons.filled.FindInPage
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Error
@@ -406,6 +407,13 @@ fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
         "link" -> Text(e.text, Modifier.clickable { m.act("select", e.value) }.padding(vertical = 2.dp),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // a reminder the hub delivered: a bell, Reminder, the text and when
+        "reminder" -> Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Filled.Notifications, "Reminder", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+            Text(e.text, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text(e.at, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+        }
         // a design step: shows it in the viewer
         "step" -> Row(Modifier.fillMaxWidth().clickable { m.act("hist-show", e.value) }.padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

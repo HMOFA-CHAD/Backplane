@@ -38,6 +38,8 @@ import ../core/layers.bend as LY
 import ../core/tools.bend as TO
 import ../core/emb.bend as EM
 import ../core/onboard.bend as OB
+import ../core/sched.bend as SCH
+import ../core/tz.bend as TZ
 
 # Nui -> draw ops and hit regions. Ops are gathered bottom-up (paint
 # order) and reversed once into the topmost-first order the rasterizer
@@ -860,6 +862,8 @@ def TL.h.k(k: Nat) -> U32:
       26
     case 26n:
       26
+    case 27n:
+      24
     case _:
       10
 
@@ -1490,6 +1494,8 @@ def TL.draw.k(+ty: Ty, k: Nat, +text: String, +color: U32, +copy: String, +bw: U
     case 26n:
       Out{List.append(&2, R.Op, Lay.icon(ty, "pin", c, x0, (y + 5 : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, 26, color)),
         [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), 26, "emb-pin", copy)]}
+    case 27n:
+      Out.ops(List.append(&2, R.Op, Lay.icon(ty, "bell", c, x0, (y + 4 : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, 24, color)))
     case _:
       Out.ops(Ty.text(ty, 3n, text, c, x0, y, 23, color))
 
@@ -2957,6 +2963,27 @@ def Set.keys(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
     Set.keys.form(U.Ui.flag(u, "keyform"), ty, n, x, w, (y + 88 : U32)),
     Set.keys.list(U.Ui.flag(u, "keys"), u, ty, x, w, (y + 88 + fh : U32))])
 
+# Time zone: where the person is (a phone reports it, or they set it), with
+# a field for a zone name, Set, and Automatic
+def Set.tz.h() -> U32:
+  150
+
+def Set.tz(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
+  +u = S.Nui.ui(n)
+  +id = S.Fld.id("tzname", "tz-set", "")
+  +aw = Lay.button.w(ty, "Automatic")
+  +sw = Lay.button.w(ty, "Set")
+  Out.all([
+    Set.head(ty, "Time zone", x, y),
+    Set.card(x, (y + 32 : U32), w, 108),
+    Set.row.r(ty, "Time zone", U.Tzs.line(u), x, (y + 34 : U32), w, (aw + 22 : U32)),
+    Bool.pick(Out, U.Tzs.auto(u), Lay.button(ty, D.Clip.all(), (x + w - 16 - aw : U32), (y + 44 : U32), "Automatic", T.Th.soft(), "tz-auto", ""),
+      Out.ops(Ty.text(ty, 2n, "Automatic", D.Clip.all(), (x + w - 6 - aw : U32), (y + 44 : U32), 28, T.Th.faint()))),
+    Lay.field(ty, D.Clip.all(), (x + 16 : U32), (y + 74 : U32), (w - 32 - sw - 8 : U32), U.Ui.scratch(u, "@f.tzname"), String.eq(S.Nui.focus_of(n), id), S.Blink.on(n),
+      S.Nui.caret_of(n), S.Nui.mark(n), "A zone name, e.g. Europe/Helsinki", id),
+    Lay.button(ty, D.Clip.all(), (x + w - 16 - sw : U32), (y + 74 : U32), "Set", T.Th.accent(), "tz-set", ""),
+    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, U.Tzs.err(u), (w - 32 : U32)), D.Clip.all(), (x + 16 : U32), (y + 110 : U32), 20, T.Th.faint()))])
+
 # the version row's button (U.Update.btn)
 def Set.update.btn(i: Nat, +ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
   match i:
@@ -3206,7 +3233,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 46 : U32) : U32}
-  +total = {(1156 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 132 : U32) : U32}
+  +total = {(1156 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
   +b2 = {(b + 128 + Set.notify.h(st, ty, w) : U32) : U32}
@@ -3268,7 +3295,8 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Set.mates(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) : U32)),
     Set.keys(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) : U32)),
     Set.agy(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + 16 : U32)),
-    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 16 : U32))])),
+    Set.tz(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 16 : U32)),
+    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 16 : U32))])),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 51, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255)],
       Ty.text(ty, 0n, "Settings", D.Clip.all(), (x0 + 24 : U32), 0, 52, T.Th.text())), Nil{}},
     Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Close") : U32), 12, "Close", T.Th.soft(), "flag", "settings"),
@@ -4921,12 +4949,34 @@ def TL.entry.t(term: Bool, +ty: Ty, +e: M.Entry, +st: M.State, +px: U32, +pics: 
     case False{}:
       TL.part.join(ty, p, pics, px)
 
+# a reminder (a Reminded in the log): a bell, the text and when, in the person's zone
+def TL.remind.is(e: M.Entry) -> Bool:
+  match e:
+    case M.Act{_, _, +tone, _, _, _}:
+      String.eq(tone, "remind")
+    case _:
+      False{}
+
+def TL.remind.line(+ty: Ty, e: M.Entry, +st: M.State, +px: U32) -> List<&2, TLine>:
+  match e:
+    case M.Act{_, _, _, _, +text, +at}:
+      [TLine{Ty.fit(ty, 2n, "Reminder  " ++ text ++ "  ·  " ++ TZ.Tz.show.nz(SCH.Sched.person(st, 0n, True{}), at), (px - 26 : U32)), T.Th.accent(), 27, "", 0}]
+    case _:
+      Nil{}
+
+def TL.entry.r(rem: Bool, +ty: Ty, +e: M.Entry, +st: M.State, +px: U32, +pics: Map<&2, String>, p: TLPart) -> List<&2, TLine>:
+  match rem:
+    case True{}:
+      TL.remind.line(ty, e, st, px)
+    case False{}:
+      TL.entry.t(EM.Emb.is(e), ty, e, st, px, pics, p)
+
 def TL.entry.p(mine: Bool, +ty: Ty, e: M.Entry, +st: M.State, +px: U32, +pics: Map<&2, String>, p: TLPart) -> List<&2, TLine>:
   match mine e:
     case True{} M.Msg{+id, _, _, _, _}:
       List.append(&2, TLine, TL.from.k(String.is_empty(M.Link.from(id)), M.Link.from(id), st, px, ty), TL.part.join(ty, p, pics, px))
     case True{} +a:
-      TL.entry.t(EM.Emb.is(a), ty, a, st, px, pics, p)
+      TL.entry.r(TL.remind.is(a), ty, a, st, px, pics, p)
     case False{} M.Msg{_, +t, _, +x, _}:
       [TLine{Ty.fit(ty, 2n, "→ " ++ U.Tasks.title(st, t) ++ ":  " ++ TL.first_line(x), px), T.Th.accent(), 10, t, 0}]
     case False{} _:

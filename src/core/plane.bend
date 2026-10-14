@@ -5,6 +5,7 @@ import ./deploy.bend as DP
 import ./bot.bend as BT
 import ./far.bend as FR
 import ./cron.bend as CR
+import ./sched.bend as SC
 import ./once.bend as O
 import ./client.bend as U
 import ./botui.bend as BU
@@ -328,29 +329,29 @@ def Plane.rooms.go(rs: List<&2, BT.Room>, +u: U.Ui) -> List<&2, PRow>:
 # Routines
 # --------
 
-def Plane.routine.next(m: Maybe<&2, CR.Cron>, +now: Nat) -> Nat:
-  match m:
-    case Some{c}:
-      CR.Cron.next(c, now, 0n, True{})
-    case None{}:
-      0n
-
 # a busy bot's routine that fired within the window is running
 def Plane.routine.run(busy: Bool, +last: Nat, +now: Nat) -> Bool:
   Bool.and(Bool.and(busy, Nat.is_gt(last, 0n)), Nat.is_le(now, Nat.add(last, Plane.routine.window())))
 
-def Plane.routine.k(on: Bool, run: Bool, +id: String, +bot: String, +name: String, +cron: String, +machine: String, +next: Nat, away: Bool, rest: List<&2, PRow>) -> List<&2, PRow>:
-  match on:
+# a routine's row: what it does, and when it is next (in the person's zone)
+# (a one-time routine's `when` is already its time: shown once)
+def Plane.routine.sub(w: SC.SRow) -> String:
+  match w:
+    case SC.SRow{+kind, _, +when, +next, _, _, _, _}:
+      when ++ Bool.pick(String, Bool.or(String.is_empty(next), Bool.not(String.eq(kind, "routine"))), "", " · " ++ next)
+
+def Plane.routine.k(show: Bool, run: Bool, remind: Bool, +id: String, +bot: String, +name: String, +sub: String, +machine: String, +next: Nat, away: Bool, rest: List<&2, PRow>) -> List<&2, PRow>:
+  match show:
     case True{}:
-      PRow{"routine", id, "uber-bot", bot ++ "|routines", name, CR.Cron.describe(cron), machine, Bool.pick(String, run, "working", "idle"), next, away} <> rest
+      PRow{"routine", id, "uber-bot", bot ++ "|routines", name, sub, machine, Bool.pick(String, run, "working", Bool.pick(String, remind, "reminder", "idle")), next, away} <> rest
     case False{}:
       rest
 
-def Plane.routine.t(r: BT.Routine, +u: U.Ui, +ix: U.SIx, +now: Nat, rest: List<&2, PRow>) -> List<&2, PRow>:
-  match r:
-    case BT.Routine{+id, +bot, +name, +cron, _, on, +last, _, _}:
-      Plane.routine.k(on, Plane.routine.run(Nat.is_gt(Plane.sec(Plane.state(U.Side.phase.ix(ix, U.Ui.state(u), U.Ui.thread(U.Ui.state(u), BT.Bot.thread(BT.World.bot(M.State.bots(U.Ui.state(u)), bot)))))), 0n), last, now),
-        id, bot, name, cron, U.Ui.far.name(u, bot), Plane.routine.next(CR.Cron.parse(cron), now), U.Ui.far.away(u, bot), rest)
+def Plane.routine.t(+r: BT.Routine, +u: U.Ui, +ix: U.SIx, +now: Nat, rest: List<&2, PRow>) -> List<&2, PRow>:
+  Plane.routine.k(Bool.and(BT.Routine.on(r), Bool.not(BT.Routine.done(r))),
+    Plane.routine.run(Nat.is_gt(Plane.sec(Plane.state(U.Side.phase.ix(ix, U.Ui.state(u), U.Ui.thread(U.Ui.state(u), BT.Bot.thread(BT.World.bot(M.State.bots(U.Ui.state(u)), BT.Routine.bot(r))))))), 0n), BT.Routine.last(r), now),
+    String.eq(BT.Routine.kind(r), "remind"), BT.Routine.id(r), BT.Routine.bot(r), BT.Routine.name(r), Plane.routine.sub(SC.Sched.row(U.Ui.state(u), r, now, 0n, True{})), U.Ui.far.name(u, BT.Routine.bot(r)),
+    SC.Sched.next(U.Ui.state(u), r, now, 0n, True{}), U.Ui.far.away(u, BT.Routine.bot(r)), rest)
 
 def Plane.routines.go(rs: List<&2, BT.Routine>, +u: U.Ui, +ix: U.SIx, +now: Nat) -> List<&2, PRow>:
   match rs:

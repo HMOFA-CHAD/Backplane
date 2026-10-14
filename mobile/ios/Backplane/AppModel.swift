@@ -143,6 +143,9 @@ final class AppModel {
         if let l = ProcessInfo.processInfo.environment["BACKPLANE_LINK"] { links = l.split(separator: " ").map(String.init) }
         #endif
         notifier.open = { [weak self] id in self?.act("select", id) }
+        NotificationCenter.default.addObserver(forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.act("tz-report", TimeZone.current.identifier)
+        }
         notifier.viewing = { [weak self] id in self?.active == true && self?.screen?.sel == id }
         let e = engine
         Task {
@@ -248,6 +251,8 @@ final class AppModel {
                 if self?.shownHub == key { self?.plots.reset() }
                 self?.conn[key, default: HubConn()].phase = .syncing
                 self?.run { await $0.online(key, true) }
+                // where the person is: every hub keeps the phone's zone (routines follow it)
+                self?.act("tz-report", TimeZone.current.identifier)
             },
             // plots go straight to the viewer, never through the Bend client,
             // and only the hub in focus draws

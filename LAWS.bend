@@ -1,4 +1,7 @@
 import Base
+import ./src/core/tz.bend as TZ
+import ./src/core/when.bend as WH
+import ./src/core/sched.bend as SCH
 import ./src/core/exe.bend as EX
 import ./src/core/locks.bend as LCK
 import ./src/core/wake.bend as WAK
@@ -7465,3 +7468,87 @@ law cal_delete_asks:
 # an event id with a slash is refused
 law cal_id_no_slash:
   {GO.Cal.id_ok("a/b") == False{} : Bool}
+
+# routines-cal: one-time routines, zones
+
+# a fixed rule's wall clock is the instant shifted by its offset
+law tz_fixed_wall:
+  for east: Bool
+  for +secs: Nat
+  for +t: Nat
+  {TZ.Tz.wall(TZ.Tz.fixed(east, secs), t) == M.Snooze.local(east, t, secs) : Nat}
+
+# a done routine is never due, whatever else it is
+law sched_done_never:
+  for +s: M.State
+  for +id: String
+  for +bot: String
+  for +name: String
+  for +cron: String
+  for +prompt: String
+  for +on: Bool
+  for +last: Nat
+  for +created: Nat
+  for +deleted: Bool
+  for +once: Nat
+  for +tz: String
+  for +kind: String
+  for +slot: Nat
+  for +now: Nat
+  for +mo: Nat
+  for +me: Bool
+  {SCH.Sched.due(s, BOT.Routine{id, bot, name, cron, prompt, on, last, created, deleted, once, tz, kind, True{}, slot}, now, mo, me) == False{} : Bool}
+
+# a pending one-time routine is due exactly when its time has come
+law sched_once_due:
+  for +s: M.State
+  for +id: String
+  for +bot: String
+  for +name: String
+  for +cron: String
+  for +prompt: String
+  for +last: Nat
+  for +created: Nat
+  for +k: Nat
+  for +tz: String
+  for +kind: String
+  for +slot: Nat
+  for +now: Nat
+  for +mo: Nat
+  for +me: Bool
+  {SCH.Sched.due(s, BOT.Routine{id, bot, name, cron, prompt, True{}, last, created, False{}, 1n+k, tz, kind, False{}, slot}, now, mo, me) == Nat.is_ge(now, 1n+k) : Bool}
+
+# a routine with no plan (the machine's offset, repeating) is due exactly when Bots.due said so
+law sched_legacy_same:
+  for +s: M.State
+  for +id: String
+  for +bot: String
+  for +name: String
+  for +cron: String
+  for +prompt: String
+  for +on: Bool
+  for +last: Nat
+  for +created: Nat
+  for +deleted: Bool
+  for +kind: String
+  for +slot: Nat
+  for +now: Nat
+  for +mo: Nat
+  for +me: Bool
+  {SCH.Sched.due(s, BOT.Routine{id, bot, name, cron, prompt, on, last, created, deleted, 0n, "", kind, False{}, slot}, now, mo, me) == BHS.Bots.due(BOT.Routine{id, bot, name, cron, prompt, on, last, created, deleted, 0n, "", kind, False{}, slot}, now, BHS.Tz{mo, me}) : Bool}
+
+# a zoned routine that fired at wall clock `slot` is not due at any later instant whose wall clock is no later: no slot twice, even when the zone moves west
+law sched_zoned_once_per_slot:
+  for c: CR.Cron
+  for +rule: TZ.TzRule
+  for +last: Nat
+  for +now2: Nat
+  for +slot: Nat
+  {Bool.and(Nat.is_gt(slot, 0n), Bool.and(Nat.is_le(TZ.Tz.wall(rule, now2), slot), SCH.Sched.due.w(c, rule, last, now2, slot))) == False{} : Bool}
+
+# in 20 minutes is 1200 seconds from now
+law when_in_minutes:
+  {WH.When.parse("in 20m", 1000n, TZ.Tz.utc0()) == Some{2200n} : Maybe<&2, Nat>}
+
+law when_in_hours:
+  {WH.When.parse("in 2h", 1000n, TZ.Tz.utc0()) == Some{8200n} : Maybe<&2, Nat>}

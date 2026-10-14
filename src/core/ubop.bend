@@ -224,6 +224,13 @@ def Ub.b.routine(+id: String, +name: String, +cron: String, +prompt: String, +on
   J.Json.show(J.Json.obj([J.KV{"k", J.Str{"routine"}}, J.KV{"id", J.Str{id}}, J.KV{"name", J.Str{name}}, J.KV{"cron", J.Str{cron}},
     J.KV{"prompt", J.Str{prompt}}, J.KV{"on", J.Flag{on}}, J.KV{"pin", J.Str{pin}}]))
 
+# a routine with its plan (routines-cal): when it fires once (0: repeats),
+# in which zone ("" = this machine's offset, "person" or a zone), what it
+# does ("" a prompt, "remind"). A body without these keys is a legacy one.
+def Ub.b.routine.plan(+id: String, +name: String, +cron: String, +prompt: String, +on: Bool, +pin: String, +once: Nat, +tz: String, +kind: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"k", J.Str{"routine"}}, J.KV{"id", J.Str{id}}, J.KV{"name", J.Str{name}}, J.KV{"cron", J.Str{cron}},
+    J.KV{"prompt", J.Str{prompt}}, J.KV{"on", J.Flag{on}}, J.KV{"pin", J.Str{pin}}, J.KV{"once", J.Json.nat(once)}, J.KV{"tz", J.Str{tz}}, J.KV{"kind", J.Str{kind}}]))
+
 def Ub.b.routine_del(+id: String) -> String:
   J.Json.show(J.Json.obj([J.KV{"k", J.Str{"routine-del"}}, J.KV{"id", J.Str{id}}]))
 

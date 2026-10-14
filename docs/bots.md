@@ -517,10 +517,48 @@ URL, so Hold & talk and Double click & hold can go to different bots.
 
 ## Routines
 
-A routine is a cron line (5 fields, the hub's time zone, `*`, lists,
-ranges, steps, and `@hourly`/`@daily`/`@weekly`) and a prompt. The hub's
-minute tick fires a due routine once (`RoutineFired` records it), even
-after being off for a while (one catch-up run, never a burst).
+A routine is a cron line (5 fields, `*`, lists, ranges, steps, and
+`@hourly`/`@daily`/`@weekly`) and a prompt. The hub's minute tick fires a
+due routine once (`RoutineFired` records it), even after being off for a
+while (one catch-up run, never a burst).
+
+**Time.** A routine made through `routine_set` or the forms follows the
+person's time zone (`tz: "person"`): its cron line is the wall clock there,
+daylight saving included, so `30 9 * * *` is 09:30 wherever they are. `tz`
+may name an IANA zone instead; `machine` (stored as `""`) is the old
+behaviour, the hub machine's offset from `date +%z`, and is what a routine
+with no plan event has (nothing is migrated). A zoned routine remembers the
+zone's wall clock at its last fire (`RoutineSlot`) and fires once per
+wall-clock slot: a zone that moves west never repeats a slot, one that moves
+east fires one catch-up, DST fall-back fires 03:30 once, spring-forward fires
+it once at 04:00 (`Sched.due`, laws `sched_*`).
+
+**Once and reminders.** `routine_set` with `at` (`2026-10-14T09:00`,
+`in 20m`, `tomorrow 9am`, `monday 09:30`, `17:30`; `When.parse`) fires once at
+that instant and is then done (`RoutineDone`): it stays in the list, greyed,
+and never fires again; setting it again with a new time makes it pending.
+`remind_person {at, text}` makes a routine of kind `remind`: no agent turn;
+the hub logs `Reminded` (an entry in the bot's thread: a bell, the text, the
+time) then `RoutineFired` and `RoutineDone`, and alerts the person once
+(APNs under the key `remind-<id>`, the desk used last, the phones' own alerts
+on a live frame), whatever a desk is watching.
+
+**Events** (appended to the log, codec tags 59..62): `RoutinePlan{id, once,
+tz, kind}` after a `RoutineSet` (a `RoutineSet` alone keeps the plan),
+`RoutineSlot{id, slot}`, `RoutineDone{id}`, `Reminded{id, bot, thread, text}`.
+
+**The person's zone.** `person.tz` (set by hand, `person_timezone`, or
+`zone.set`) beats `person.tz.device` (a phone's report, `zone.report`, sent
+to every paired hub at connect and when the zone changes), which beats
+`tz.machine` (the hub machine's own), then UTC (`Zone.person`, `Zone.source`).
+Settings shows "Time zone" on every client with a field, Set and Automatic.
+
+**Showing.** `Sched.row` gives every client the same row: a kind chip
+(Repeats, Once, Reminder with a bell), when, `Next ... · in 3h` in the
+person's zone, the zone when it is not theirs, and `Done · ...`; a bot's list
+is pending by next fire, then off, then done (`Sched.order`). The forms'
+live hint is `Sched.hint`. `test/sched_test.bend`, `test/tz_test.bend`,
+`test/when_test.bend`.
 
 ## Memory
 
@@ -695,8 +733,15 @@ the signed headers on stdin and the body in a 0600 file under
 others is `BACKPLANE_NAME`, else its host name; its address is its
 MagicDNS name on the tailnet (same port), else its listen address.
 
-Every minute the hub runs due routines (`date +%z` for the time zone)
-and asks each linked machine for its bots; the merged list is the info
+Every minute the hub runs due routines (legacy ones by `date +%z`, the rest
+by their zone's rule) and resolves time zones: a zone's POSIX rule is the
+footer line of `/usr/share/zoneinfo/<name>` (`tail -n 1`), kept as the setting
+`tz.rule.<name>`; one the system knows only by offset is taken as the offset
+it has (`TZ=<name> date +%z`). It resolves the person's, the phone's and the
+machine's zones (`tz.machine`) and the ones live routines name, those with no
+rule at once and all of them once a day (`tz.checked`); a name is checked
+first (letters, digits, `_+-` between slashes, at most 64 characters). It also
+asks each linked machine for its bots; the merged list is the info
 key `bots.remote` (a machine that does not answer keeps its bots, away).
 `test/tools/bots_e2e.ts` runs two hubs against each other; `test/tools/newproj_e2e.ts` runs project_create on one.
 

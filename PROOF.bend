@@ -1,4 +1,7 @@
 import Base
+import ./src/core/tz.bend as TZ
+import ./src/core/when.bend as WH
+import ./src/core/sched.bend as SCH
 import ./src/core/locks.bend as LCK
 import ./src/gfx/text.bend as X
 import ./src/core/bothub.bend as BHS
@@ -8797,4 +8800,60 @@ def Laws.cal_delete_asks():
   {==}
 
 def Laws.cal_id_no_slash():
+  {==}
+
+# routines-cal: one-time routines, zones
+def Laws.tz_fixed_wall(east, secs, t):
+  {==}
+
+def Laws.sched_done_never(s, id, bot, name, cron, prompt, on, last, created, deleted, once, tz, kind, slot, now, mo, me):
+  {==}
+
+def Laws.sched_once_due(s, id, bot, name, cron, prompt, last, created, k, tz, kind, slot, now, mo, me):
+  {==}
+
+# the machine's offset reads a schedule the same either way
+def sched_legacy_k(m: Maybe<&2, CR.Cron>, last: Nat, now: Nat, mo: Nat, me: Bool) -> {SCH.Sched.cron.due(m, last, now, mo, me) == BHS.Bots.due.k(m, last, now, BHS.Tz{mo, me}) : Bool}:
+  match m:
+    case Some{c}:
+      {==}
+    case None{}:
+      {==}
+
+def Laws.sched_legacy_same(s, id, bot, name, cron, prompt, on, last, created, deleted, kind, slot, now, mo, me):
+  match on deleted:
+    case True{} True{}:
+      {==}
+    case True{} False{}:
+      sched_legacy_k(CR.Cron.parse(cron), last, now, mo, me)
+    case False{} _:
+      {==}
+
+# a schedule is not due at a time no later than the one it last fired at
+def due_not_later(o: Cmp, +x: Nat, +now: Nat) -> {Bool.and(Cmp.is_le(o), CR.Cron.due.k(o, x, now)) == False{} : Bool}:
+  match o:
+    case LT{}:
+      {==}
+    case EQ{}:
+      {==}
+    case GT{}:
+      {==}
+
+def due_not_after(+c: CR.Cron, +last: Nat, +now: Nat, +off: Nat, +east: Bool) -> {Bool.and(Nat.is_le(now, last), CR.Cron.due(c, last, now, off, east)) == False{} : Bool}:
+  due_not_later(Nat.cmp(now, last), CR.Cron.next(c, last, off, east), now)
+
+def due_slot(+g: Bool, +w2: Nat, +slot: Nat, +wl: Nat, +c: CR.Cron) -> {Bool.and(g, Bool.and(Nat.is_le(w2, slot), CR.Cron.due(c, Bool.pick(Nat, g, slot, wl), w2, 0n, True{}))) == False{} : Bool}:
+  match g:
+    case True{}:
+      due_not_after(c, slot, w2, 0n, True{})
+    case False{}:
+      {==}
+
+def Laws.sched_zoned_once_per_slot(c, rule, last, now2, slot):
+  due_slot(Nat.is_gt(slot, 0n), TZ.Tz.wall(rule, now2), slot, TZ.Tz.wall(rule, last), c)
+
+def Laws.when_in_minutes():
+  {==}
+
+def Laws.when_in_hours():
   {==}
