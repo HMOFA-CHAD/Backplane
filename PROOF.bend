@@ -8785,3 +8785,16 @@ def Laws.exe_gone_deleted():
   {==}
 
 # ---- end phone-sch-viewer: exe path ----
+
+# routines-cal
+def Laws.cal_patch_only_given():
+  {==}
+
+def Laws.cal_update_asks():
+  {==}
+
+def Laws.cal_delete_asks():
+  {==}
+
+def Laws.cal_id_no_slash():
+  {==}

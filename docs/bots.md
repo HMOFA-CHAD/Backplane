@@ -589,8 +589,27 @@ Gmail and Calendar through Google's APIs, not the browser: OAuth 2.0 for
 installed apps with PKCE and a loopback redirect to the hub
 (`/oauth/google`), or paste the redirected URL when the browser is on
 another device. Tools: `gmail_search`, `gmail_read`, `gmail_send`
-(asks you first), `calendar_events`, `calendar_create` (asks you first),
-`google_accounts`.
+(asks you first), `calendar_events` (each event shows its id),
+`calendar_create` (asks you first), `calendar_update` (asks you first),
+`calendar_delete` (asks you first), `google_accounts`.
+
+`calendar_create` and `calendar_update` take `reminders`: up to five
+`{method: "popup"|"email", minutes: 0..40320}` (a bare number is a popup that
+many minutes ahead). Given, they replace the calendar's default alerts; `[]`
+means no alerts; omitted leaves the defaults. `calendar_update` also takes
+`default_reminders: true` to give the defaults back, and changes only the
+fields it is given (`attendees` replaces the list; `start` without `end`
+keeps the event's length). Guests are told (`sendUpdates=all`) when the event
+or the change has attendees. A missing event answers `error: no event with id
+<id>`.
+
+For update and delete the hub fetches the event off its loop first
+(`Gt.prep`, `Google.prepare`), settles the arguments (`Cal.resolve`) and
+posts `CalAsk`, which opens the approval with the change in words
+(`Cal.change.detail`: old `=>` new for time, title, place, alerts,
+attendees; `Cal.delete.detail`). After you accept (or a session approval),
+exactly those arguments run. A failed fetch answers the agent and opens no
+ask.
 
 Google always sends the browser back to `127.0.0.1:<port>`, so a sign-in
 started on another machine's hub (a phone, or a window linked to that

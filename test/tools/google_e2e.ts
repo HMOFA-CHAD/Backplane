@@ -48,6 +48,13 @@ const b64u = (s: string) => Buffer.from(s).toString("base64url");
 const grants: Record<string, string>[] = [];
 const revoked: string[] = [];
 const bearers: string[] = [];
+const calendarCalls: { method: string; path: string; updates: string | null; body: any }[] = [];
+const calendar: Record<string, any> = {
+  ev1: { id: "ev1", summary: "Board bring-up", start: { dateTime: "2026-09-28T09:00:00Z" }, end: { dateTime: "2026-09-28T10:00:00Z" }, attendees: [{ email: "a@x.com" }, { email: "b@y.com" }], reminders: { useDefault: true } },
+  slow: { id: "slow", summary: "Slow preview", start: { dateTime: "2026-09-28T09:00:00Z" }, end: { dateTime: "2026-09-28T10:00:00Z" } },
+  alone: { id: "alone", summary: "Solo", start: { dateTime: "2026-09-28T09:00:00Z" }, end: { dateTime: "2026-09-28T10:00:00Z" } },
+  "ev+_20261014T090000Z": { id: "ev+_20261014T090000Z", summary: "Instance", start: { dateTime: "2026-10-14T09:00:00Z" }, end: { dateTime: "2026-10-14T10:00:00Z" } },
+};
 // the code names the account: 4/0Ab* signs in cat, 4/0Ad* dog
 const who = (code: string) => (code.startsWith("4/0Ad") ? "dog" : "cat");
 const google = Bun.serve({
@@ -68,8 +75,25 @@ const google = Bun.serve({
       return new Response("{}");
     }
     if (u.pathname === "/gmail/v1/users/me/messages") return Response.json({ resultSizeEstimate: 0 });
-    if (u.pathname === "/calendar/v3/calendars/primary/events")
-      return Response.json({ timeZone: "UTC", items: [{ id: "ev1", summary: "Board bring-up", start: { dateTime: "2026-09-28T09:00:00Z" }, end: { dateTime: "2026-09-28T10:00:00Z" } }] });
+    if (u.pathname.startsWith("/calendar/v3/calendars/primary/events")) {
+      const body = req.method === "PATCH" || req.method === "POST" ? await req.json() : null;
+      calendarCalls.push({ method: req.method, path: u.pathname, updates: u.searchParams.get("sendUpdates"), body });
+      if (u.pathname === "/calendar/v3/calendars/primary/events") {
+        if (req.method === "POST") return Response.json({ id: "created", ...body });
+        return Response.json({ timeZone: "UTC", items: Object.values(calendar) });
+      }
+      const id = decodeURIComponent(u.pathname.split("/").at(-1)!);
+      if (!calendar[id]) return Response.json({ error: { message: "Not found" } }, { status: id === "gone" ? 410 : 404 });
+      if (req.method === "GET") {
+        if (id === "slow") await sleep(800);
+        return Response.json(calendar[id]);
+      }
+      if (req.method === "PATCH") {
+        calendar[id] = { ...calendar[id], ...body };
+        return Response.json(calendar[id]);
+      }
+      if (req.method === "DELETE") { delete calendar[id]; return new Response(null, { status: 204 }); }
+    }
     return new Response("not here", { status: 404 });
   },
 });
@@ -86,7 +110,7 @@ for (const n of ["claude", "codex", "grok", "muse"]) {
 type Hub = { port: number; proc: ReturnType<typeof Bun.spawn>; ws: WebSocket; seen: any[]; replies: Map<number, any>; n: number };
 async function start(name: string, env: Record<string, string>): Promise<Hub> {
   const port = freePort();
-  const proc = Bun.spawn([resolve(bin), "--home", join(root, name), "--port", String(port), "--no-tailscale"], {
+  const proc = Bun.spawn([resolve(bin), "--home", join(root, name), "--port", String(port), "--no-tailscale", "--headless", "--foreground"], {
     env: { ...process.env, HOME: join(root, "user"), DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_PEERS: "",
       BACKPLANE_GOOGLE_OAUTH: G, BACKPLANE_GOOGLE_API: G, PATH: `${fake}:${process.env.PATH}`, ...env },
     stdout: "ignore",
@@ -122,6 +146,23 @@ const tool = (h: Hub, th: string, name: string, args: object = {}) =>
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name, arguments: args } }),
   }).then((r) => r.json()).then((r: any) => String(r?.result?.content?.[0]?.text ?? JSON.stringify(r)));
+
+async function close(h: Hub) {
+  h.ws?.close();
+  h.proc.kill();
+  await h.proc.exited;
+}
+async function approval(h: Hub, th: string, name: string, args: object, answer: string, inspect?: (ask: any) => void): Promise<string> {
+  const before = h.seen.length;
+  const result = tool(h, th, name, args);
+  const ask = await until(10000, () => h.seen.slice(before).find((c) => c.$ === "AskOpened" && c.tool === name));
+  check(`${name} opens approval`, !!ask && ask.kind === "approval", ask);
+  if (ask) {
+    inspect?.(ask);
+    await rpc(h, "ask.answer", { id: ask.id, answer });
+  }
+  return await Promise.race([result, sleep(10000).then(() => "error: test timeout")]);
+}
 
 const hubs: Hub[] = [];
 try {
@@ -174,6 +215,87 @@ try {
   check("calendar_events works on the shared link", ev.includes("Board bring-up"), ev);
   const gm = await tool(a, th, "gmail_search");
   check("gmail tools run on the shared link", gm.includes("No messages"), gm);
+
+  // Calendar mutations: preview, park, and execute the exact approved plan.
+  calendarCalls.length = 0;
+  const beforeSlow = a.seen.length;
+  const slowResult = tool(a, th, "calendar_update", { id: "slow", summary: "Delayed change" });
+  await until(8000, () => calendarCalls.find((c) => c.path.endsWith("/slow")));
+  const statusStart = Date.now();
+  const duringFetch = await op(a, "status");
+  check("hub answers while preview GET waits", duringFetch?.ok && Date.now() - statusStart < 650, [duringFetch, Date.now() - statusStart]);
+  const slowAsk = await until(10000, () => a.seen.slice(beforeSlow).find((c) => c.$ === "AskOpened" && c.tool === "calendar_update"));
+  check("slow fetch eventually opens approval", !!slowAsk, slowAsk);
+  if (slowAsk) await rpc(a, "ask.answer", { id: slowAsk.id, answer: "decline" });
+  check("slow preview declined", (await Promise.race([slowResult, sleep(10000).then(() => "timeout")])).includes("declined"));
+
+  calendarCalls.length = 0;
+  const denied = await approval(a, th, "calendar_update", { id: "ev1", summary: "Denied" }, "decline", (ask) => {
+    check("update preview names event and title change", ask.detail.includes('Change "Board bring-up"') && ask.detail.includes("Title: Board bring-up  =>  Denied") && ask.detail.includes("Guests will be told."), ask.detail);
+    check("GET before approval, no write", calendarCalls.length === 1 && calendarCalls[0].method === "GET", calendarCalls);
+  });
+  check("declined update performs no PATCH", denied.includes("declined") && calendarCalls.every((c) => c.method === "GET"), [denied, calendarCalls]);
+
+  calendarCalls.length = 0;
+  const updated = await approval(a, th, "calendar_update", { id: "ev1", summary: "Review v2", start: "2026-10-15T14:00:00Z", reminders: [10, { method: "email", minutes: 1440 }], attendees: [] }, "accept", (ask) => {
+    check("preview contains preserved end, alerts and guests", ask.detail.includes("Thu 15 Oct 14:00 -> 15:00") && ask.detail.includes("popup 10 min") && ask.detail.includes("email 1 day") && ask.detail.includes("Attendees:"), ask.detail);
+    // The event changes while approval is open: the patch must keep the
+    // fetched one-hour duration and notification decision, without a second GET.
+    calendar.ev1.end.dateTime = "2026-09-28T12:00:00Z";
+    calendar.ev1.attendees = [];
+  });
+  const patch = calendarCalls.find((c) => c.method === "PATCH");
+  check("accepted update replies with event", updated.startsWith("Updated:\n") && updated.includes("Review v2"), updated);
+  check("exact prepared PATCH uses original duration and guests", calendarCalls.filter((c) => c.method === "GET").length === 1 && patch?.updates === "all" && patch.body.end.dateTime === "2026-10-15T15:00:00Z" && patch.body.attendees.length === 0 && patch.body.reminders.overrides[1].method === "email", calendarCalls);
+  check("patch leaves omitted fields alone", !Object.hasOwn(patch?.body ?? {}, "location") && !Object.hasOwn(patch?.body ?? {}, "description"), patch?.body);
+
+  const beforeBad = a.seen.filter((c) => c.$ === "AskOpened").length;
+  calendarCalls.length = 0;
+  for (const name of ["calendar_update", "calendar_delete"]) {
+    for (const id of ["missing", "gone"]) {
+      const r = await tool(a, th, name, { id, summary: "x" });
+      check(`${name} ${id} fetch error`, r === `error: no event with id ${id}`, r);
+    }
+  }
+  check("fetch errors open no asks", a.seen.filter((c) => c.$ === "AskOpened").length === beforeBad);
+  calendarCalls.length = 0;
+  for (const args of [{}, { id: "a/b" }, { id: "a b" }]) {
+    check("delete rejects invalid id before GET", (await tool(a, th, "calendar_delete", args)).startsWith("error:"));
+  }
+  check("update rejects empty patch", await tool(a, th, "calendar_update", { id: "ev1" }) === "error: nothing to change");
+  check("update rejects invalid alerts", (await tool(a, th, "calendar_update", { id: "ev1", reminders: [40321] })).startsWith("error:"));
+  check("update rejects unreadable fields", (await tool(a, th, "calendar_update", { id: "ev1", location: null })).startsWith("error:"));
+  check("invalid mutations do not touch API or ask", calendarCalls.length === 0 && a.seen.filter((c) => c.$ === "AskOpened").length === beforeBad, calendarCalls);
+
+  calendarCalls.length = 0;
+  const made = await approval(a, th, "calendar_create", { summary: "With alerts", start: "2026-10-15T14:00:00Z", end: "2026-10-15T15:00:00Z", reminders: [10], location: "Lab" }, "accept", (ask) => {
+    check("create preview includes alerts and location", ask.detail.includes("Alerts: popup 10 min") && ask.detail.includes("Where: Lab"), ask.detail);
+    check("create waits for approval", calendarCalls.length === 0);
+  });
+  const post = calendarCalls.find((c) => c.method === "POST");
+  check("create POST has location and reminders", made.startsWith("Created:") && post?.body.location === "Lab" && post.body.reminders.useDefault === false && post.body.reminders.overrides[0].minutes === 10, [made, post]);
+
+  calendarCalls.length = 0;
+  const inst = await approval(a, th, "calendar_update", { id: "ev+_20261014T090000Z", location: "Desk", default_reminders: true }, "session");
+  check("instance id encoded on GET and PATCH, no guests", inst.startsWith("Updated:") && calendarCalls.length === 2 && calendarCalls.every((c) => c.path.includes("ev%2B_20261014T090000Z")) && calendarCalls[1].updates === "none" && calendarCalls[1].body.reminders.useDefault === true, calendarCalls);
+  const beforeSession = a.seen.filter((c) => c.$ === "AskOpened").length;
+  calendarCalls.length = 0;
+  const session = await tool(a, th, "calendar_update", { id: "alone", reminders: [] });
+  check("session approval still fetches and patches without asking", session.startsWith("Updated:") && calendarCalls.map((c) => c.method).join(",") === "GET,PATCH" && calendarCalls[1].updates === "none" && JSON.stringify(calendarCalls[1].body.reminders) === '{"useDefault":false}' && a.seen.filter((c) => c.$ === "AskOpened").length === beforeSession, [session, calendarCalls]);
+
+  calendarCalls.length = 0;
+  const deleted = await approval(a, th, "calendar_delete", { id: "alone" }, "accept", (ask) => {
+    check("delete preview includes title/time and no guests", ask.detail.startsWith('Delete "Solo"') && !ask.detail.includes("guests will be told"), ask.detail);
+    check("delete not run before approval", calendarCalls.length === 1 && calendarCalls[0].method === "GET", calendarCalls);
+  });
+  check("DELETE and compact reply", deleted.startsWith("Deleted: Solo (") && calendarCalls.map((c) => c.method).join(",") === "GET,DELETE" && calendarCalls[1].updates === "none", [deleted, calendarCalls]);
+  calendar.ev1.attendees = [{ email: "a@x.com" }, { email: "b@y.com" }];
+  calendarCalls.length = 0;
+  const vanished = await approval(a, th, "calendar_delete", { id: "ev1" }, "accept", (ask) => {
+    check("delete preview warns guests", ask.detail.includes("2 guests will be told."), ask.detail);
+    delete calendar.ev1;
+  });
+  check("DELETE 404 after approval maps error", vanished === "error: no event with id ev1" && calendarCalls[1]?.updates === "all", [vanished, calendarCalls]);
 
   // a phone signs in through its own loopback listener: the sign-in
   // begins with the phone's redirect and finishes with what it caught
@@ -245,6 +367,8 @@ try {
   await tool(l, lset?.thread ?? "", "calendar_events");
   check("and its token still works", bearers.includes("Bearer at-old"), bearers);
 
+  await close(l);
+  hubs.splice(hubs.indexOf(l), 1);
   const b = await start("bare", {});
   hubs.push(b);
   const s5 = await op(b, "status");
@@ -253,9 +377,7 @@ try {
   check("no shared client: connect asks for one", c5?.ok === false || String(c5?.error ?? "").includes("no shared Google client"), c5);
 } finally {
   for (const h of hubs) {
-    h.ws?.close();
-    h.proc.kill();
-    await h.proc.exited;
+    await close(h);
   }
   google.stop(true);
   rmSync(root, { recursive: true, force: true });

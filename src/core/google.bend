@@ -1184,12 +1184,6 @@ def Cal.opt(+k: String, +v: String) -> List<&2, J.KV>:
 def Cal.attendees(+xs: List<&2, String>) -> List<&2, J.KV>:
   Bool.pick(List<&2, J.KV>, List.is_empty(&2, String, xs), Nil{}, [J.KV{"attendees", J.Json.arr(Cal.who(xs))}])
 
-# events.insert's body
-def Google.event_body(summary: String, +description: String, +start: String, +end: String, +attendees: List<&2, String>, +all_day: Bool, +tz: String) -> String:
-  J.Json.show(J.Json.obj(List.concat(&2, J.KV, [[J.KV{"summary", J.Str{summary}}], Cal.opt("description", description),
-    [J.KV{"start", Cal.at(all_day, start, tz)}, J.KV{"end", Cal.at(all_day, Cal.end(all_day, start, end), tz)}],
-    Cal.attendees(attendees)])))
-
 def Cal.when(+o: J.Json) -> String:
   Str.or(J.Json.get_str(o, "dateTime", ""), J.Json.get_str(o, "date", ""))
 
@@ -1225,6 +1219,409 @@ def Google.events(+j: J.Json) -> String:
 def Google.created(+e: J.Json) -> String:
   "Created:\n" ++ Google.event_line(e) ++ Bool.pick(String, String.is_empty(J.Json.get_str(e, "htmlLink", "")), "", "\n  " ++ J.Json.get_str(e, "htmlLink", ""))
 
+# Calendar: alerts, update, delete (routines-cal)
+# ----------------------------------------------
+
+# an event id as the agent gave it: not empty, no '/' and no whitespace
+def Cal.id_ok(+id: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(id)), Bool.and(Bool.not(String.contains(id, "/")),
+    Bool.and(Bool.not(String.contains(id, " ")), Bool.and(Bool.not(String.contains(id, "\t")), Bool.not(String.contains(id, "\n"))))))
+
+def Cal.notify(any: Bool) -> String:
+  match any:
+    case True{}:
+      "all"
+    case False{}:
+      "none"
+
+# one event (ids may carry '_' and recurrence suffixes: percent-encoded)
+def Google.cal_event_path(+id: String) -> String:
+  "/calendar/v3/calendars/primary/events/" ++ Url.encode(id)
+
+# events.patch; guests are told when `any` (the event or the change has some)
+def Google.cal_patch_path(+id: String, any: Bool) -> String:
+  Google.cal_event_path(id) ++ "?sendUpdates=" ++ Cal.notify(any)
+
+def Google.cal_delete_path(+id: String, any: Bool) -> String:
+  Google.cal_event_path(id) ++ "?sendUpdates=" ++ Cal.notify(any)
+
+# Google answers a missing (or deleted) event with 404 or 410
+def Cal.gone(+code: String) -> Bool:
+  Bool.or(String.eq(code, "404"), String.eq(code, "410"))
+
+def Cal.nosuch(+id: String) -> String:
+  "error: no event with id " ++ id
+
+# Strings
+def Cal.keep(+s: String, +rest: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(String.trim(s)), rest, String.trim(s) <> rest)
+
+def Cal.trims(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case h <> t:
+      Cal.keep(h, Cal.trims(t))
+
+def Cal.jstrs(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case h <> t:
+      Cal.keep(J.Json.as_str(Some{h}, ""), Cal.jstrs(t))
+
+# attendees as a JSON array of emails, or one comma-separated string
+def Cal.emails(m: Maybe<&2, J.Json>) -> List<&2, String>:
+  match m:
+    case Some{J.Arr{xs}}:
+      Cal.jstrs(J.Json.to_list(xs))
+    case Some{J.Str{s}}:
+      Cal.trims(String.split(s, ','))
+    case _:
+      Nil{}
+
+def Cal.has(m: Maybe<&2, J.Json>) -> Bool:
+  match m:
+    case Some{_}:
+      True{}
+    case None{}:
+      False{}
+
+# Alerts
+# an alert's minutes, at most 28 days (Google's limit)
+def Cal.clamp(+n: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_gt(n, 40320n), 40320n, n)
+
+def Cal.rem1.of(+method: String, +minutes: Nat) -> J.Json:
+  J.Json.obj([J.KV{"method", J.Str{Bool.pick(String, String.eq(method, "email"), "email", "popup")}}, J.KV{"minutes", J.Json.nat(Cal.clamp(minutes))}])
+
+# a bare number is a popup that many minutes ahead
+def Cal.rem1(r: J.Json) -> J.Json:
+  match r:
+    case J.Num{+raw}:
+      Cal.rem1.of("popup", Maybe.default(&2, Nat, Nat.read(raw), 0n))
+    case +other:
+      Cal.rem1.of(J.Json.get_str(other, "method", "popup"), J.Json.get_nat(other, "minutes", 10n))
+
+# at most 5 overrides
+def Cal.rems(n: Nat, xs: List<&2, J.Json>) -> List<&2, J.Json>:
+  match n xs:
+    case 1n+k h <> t:
+      Cal.rem1(h) <> Cal.rems(k, t)
+    case _ _:
+      Nil{}
+
+def Cal.reminders.of(+xs: List<&2, J.Json>) -> List<&2, J.KV>:
+  Bool.pick(List<&2, J.KV>, List.is_empty(&2, J.Json, xs),
+    [J.KV{"reminders", J.Json.obj([J.KV{"useDefault", J.Flag{False{}}}])}],
+    [J.KV{"reminders", J.Json.obj([J.KV{"useDefault", J.Flag{False{}}}, J.KV{"overrides", J.Json.arr(xs)}])}])
+
+# reminders: given -> the overrides (none for []); omitted -> nothing
+def Cal.reminders(m: Maybe<&2, J.Json>) -> List<&2, J.KV>:
+  match m:
+    case Some{J.Arr{items}}:
+      Cal.reminders.of(Cal.rems(5n, J.Json.to_list(items)))
+    case _:
+      Nil{}
+
+def Cal.rem_kv.k(dflt: Bool, a: J.Json) -> List<&2, J.KV>:
+  match dflt:
+    case True{}:
+      [J.KV{"reminders", J.Json.obj([J.KV{"useDefault", J.Flag{True{}}}])}]
+    case False{}:
+      Cal.reminders(J.Json.get(a, "reminders"))
+
+# default_reminders: true gives the calendar's own alerts back
+def Cal.rem_kv(+a: J.Json) -> List<&2, J.KV>:
+  Cal.rem_kv.k(J.Json.get_bool(a, "default_reminders", False{}), a)
+
+# events.insert's body, with alerts and a place
+def Google.event_body.x(summary: String, +description: String, +start: String, +end: String, +attendees: List<&2, String>, +all_day: Bool, +tz: String, +location: String, rem: List<&2, J.KV>) -> String:
+  J.Json.show(J.Json.obj(List.concat(&2, J.KV, [[J.KV{"summary", J.Str{summary}}], Cal.opt("description", description), Cal.opt("location", location),
+    [J.KV{"start", Cal.at(all_day, start, tz)}, J.KV{"end", Cal.at(all_day, Cal.end(all_day, start, end), tz)}],
+    Cal.attendees(attendees), rem])))
+
+# events.insert's body
+def Google.event_body(summary: String, +description: String, +start: String, +end: String, +attendees: List<&2, String>, +all_day: Bool, +tz: String) -> String:
+  Google.event_body.x(summary, description, start, end, attendees, all_day, tz, "", Nil{})
+
+# calendar_create's arguments as events.insert's body
+def Google.event_create(+summary: String, +a: J.Json, +start: String, +end: String, +who: List<&2, String>, +all_day: Bool) -> String:
+  Google.event_body.x(summary, J.Json.get_str(a, "description", ""), start, end, who, all_day, String.trim(J.Json.get_str(a, "timeZone", "")),
+    J.Json.get_str(a, "location", ""), Cal.reminders(J.Json.get(a, "reminders")))
+
+# Patch: only what was given
+def Cal.str_kv.k(m: Maybe<&2, J.Json>, +k: String) -> List<&2, J.KV>:
+  match m:
+    case Some{J.Str{s}}:
+      [J.KV{k, J.Str{s}}]
+    case _:
+      Nil{}
+
+def Cal.str_kv(a: J.Json, +k: String) -> List<&2, J.KV>:
+  Cal.str_kv.k(J.Json.get(a, k), k)
+
+def Cal.time_kv.k(+all: Bool, +s: String, +e: String, +tz: String) -> List<&2, J.KV>:
+  List.append(&2, J.KV,
+    Bool.pick(List<&2, J.KV>, String.is_empty(s), Nil{}, [J.KV{"start", Cal.at(all, s, tz)}]),
+    Bool.pick(List<&2, J.KV>, Bool.and(String.is_empty(e), Bool.not(Bool.and(all, Bool.not(String.is_empty(s))))), Nil{},
+      [J.KV{"end", Cal.at(all, Bool.pick(String, String.is_empty(s), e, Cal.end(all, s, e)), tz)}]))
+
+def Cal.time_kv(+a: J.Json) -> List<&2, J.KV>:
+  Cal.time_kv.k(J.Json.get_bool(a, "all_day", False{}), String.trim(J.Json.get_str(a, "start", "")), String.trim(J.Json.get_str(a, "end", "")), String.trim(J.Json.get_str(a, "timeZone", "")))
+
+def Cal.att_kv(m: Maybe<&2, J.Json>) -> List<&2, J.KV>:
+  match m:
+    case Some{+v}:
+      [J.KV{"attendees", J.Json.arr(Cal.who(Cal.emails(Some{v})))}]
+    case None{}:
+      Nil{}
+
+# events.patch's body from calendar_update's arguments
+def Google.event_patch(+a: J.Json) -> J.Json:
+  J.Json.obj(List.concat(&2, J.KV, [Cal.str_kv(a, "summary"), Cal.str_kv(a, "description"), Cal.str_kv(a, "location"),
+    Cal.time_kv(a), Cal.att_kv(J.Json.get(a, "attendees")), Cal.rem_kv(a)]))
+
+# nothing to change
+def Cal.nothing(p: J.Json) -> Bool:
+  match p:
+    case J.Obj{J.End{}}:
+      True{}
+    case _:
+      False{}
+
+# Wall clock arithmetic ("2026-10-14T09:00:00-07:00")
+def Cal.local(+s: String) -> Nat:
+  Nat.add(Nat.mul(Date.days(Date.num(s, 0n, 4n), Date.num(s, 5n, 2n), Date.num(s, 8n, 2n)), 86400n),
+    Nat.add(Nat.mul(Date.num(s, 11n, 2n), 3600n), Nat.add(Nat.mul(Date.num(s, 14n, 2n), 60n), Date.num(s, 17n, 2n))))
+
+# the offset text at its end: Z, +hh:mm, -hh:mm, or nothing
+def Cal.suf(+s: String) -> String:
+  +n = String.length(s)
+  +tail = String.drop(s, Nat.sub(n, 6n))
+  Bool.pick(String, String.ends_with(s, "Z"), "Z",
+    Bool.pick(String, Bool.and(Nat.is_gt(n, 19n), Bool.or(String.starts_with(tail, "+"), String.starts_with(tail, "-"))), tail, ""))
+
+# seconds from a fixed origin (the offset applied)
+def Cal.utc(+s: String) -> Nat:
+  +f = Cal.suf(s)
+  +off = Nat.add(Nat.mul(Date.num(f, 1n, 2n), 3600n), Nat.mul(Date.num(f, 4n, 2n), 60n))
+  Bool.pick(Nat, String.starts_with(f, "-"), Nat.add(Nat.add(Cal.local(s), 100000n), off), Nat.sub(Nat.add(Cal.local(s), 100000n), off))
+
+# the end of an event of the length old_s..old_e that starts at new_s
+def Cal.shifted(+old_s: String, +old_e: String, +new_s: String) -> String:
+  +t = Date.iso(Nat.add(Cal.local(new_s), Nat.sub(Cal.utc(old_e), Cal.utc(old_s))))
+  String.take(t, Nat.sub(String.length(t), 1n)) ++ Cal.suf(new_s)
+
+def Cal.attendees.n(e: J.Json) -> Nat:
+  List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(e, "attendees")))
+
+# the object with these fields in front (the first of a key wins)
+def Cal.with.go(kvs: List<&2, J.KV>, fs: J.Json) -> J.Json:
+  match kvs:
+    case Nil{}:
+      fs
+    case J.KV{k, v} <> t:
+      Cal.with.go(t, J.Field{k, v, fs})
+
+def Cal.with(o: J.Json, kvs: List<&2, J.KV>) -> J.Json:
+  match o:
+    case J.Obj{fs}:
+      J.Obj{Cal.with.go(List.reverse(&2, J.KV, kvs), fs)}
+    case _:
+      J.Json.obj(kvs)
+
+# The arguments as they will run: a start without an end keeps the length
+# of the fetched event, and whether guests are told is settled
+def Cal.resolve(+old: J.Json, +a: J.Json) -> J.Json:
+  +s = String.trim(J.Json.get_str(a, "start", ""))
+  +e = String.trim(J.Json.get_str(a, "end", ""))
+  +need = Bool.and(Bool.and(Bool.not(String.is_empty(s)), String.is_empty(e)),
+    Bool.and(Bool.not(J.Json.get_bool(a, "all_day", False{})), Bool.not(String.is_empty(J.Json.get_str(J.Json.get_obj(old, "start"), "dateTime", "")))))
+  +told = Bool.or(Nat.is_gt(Cal.attendees.n(old), 0n), Bool.not(List.is_empty(&2, String, Cal.emails(J.Json.get(a, "attendees")))))
+  Cal.with(a, List.append(&2, J.KV, [J.KV{"_notify", J.Flag{told}}],
+    Bool.pick(List<&2, J.KV>, need,
+      [J.KV{"end", J.Str{Cal.shifted(J.Json.get_str(J.Json.get_obj(old, "start"), "dateTime", ""), J.Json.get_str(J.Json.get_obj(old, "end"), "dateTime", ""), s)}}], Nil{})))
+
+# whether guests are told (settled by Cal.resolve / Cal.resolve.del)
+def Cal.told(a: J.Json) -> Bool:
+  J.Json.get_bool(a, "_notify", False{})
+
+# What the person reads
+def Cal.dow(n: Nat) -> String:
+  match n:
+    case 0n:
+      "Sun"
+    case 1n:
+      "Mon"
+    case 2n:
+      "Tue"
+    case 3n:
+      "Wed"
+    case 4n:
+      "Thu"
+    case 5n:
+      "Fri"
+    case _:
+      "Sat"
+
+def Cal.mon(n: Nat) -> String:
+  match n:
+    case 1n:
+      "Jan"
+    case 2n:
+      "Feb"
+    case 3n:
+      "Mar"
+    case 4n:
+      "Apr"
+    case 5n:
+      "May"
+    case 6n:
+      "Jun"
+    case 7n:
+      "Jul"
+    case 8n:
+      "Aug"
+    case 9n:
+      "Sep"
+    case 10n:
+      "Oct"
+    case 11n:
+      "Nov"
+    case _:
+      "Dec"
+
+# "Tue 14 Oct" from a date or dateTime
+def Cal.day(+s: String) -> String:
+  Cal.dow(Nat.mod(Nat.add(Date.days(Date.num(s, 0n, 4n), Date.num(s, 5n, 2n), Date.num(s, 8n, 2n)), 4n), 7n)) ++ " "
+    ++ Nat.show(Date.num(s, 8n, 2n)) ++ " " ++ Cal.mon(Date.num(s, 5n, 2n))
+
+def Cal.hm(+s: String) -> String:
+  String.take(String.drop(s, 11n), 5n)
+
+def Cal.prev_day(+s: String) -> String:
+  Date.ymd(Date.civil(Nat.sub(Date.days(Date.num(s, 0n, 4n), Date.num(s, 5n, 2n), Date.num(s, 8n, 2n)), 1n)))
+
+def Cal.nice.day(+s: String, +e: String) -> String:
+  Cal.day(s) ++ Bool.pick(String, String.eq(String.take(e, 10n), Date.next_day(String.take(s, 10n))), "",
+    " -> " ++ Cal.day(Cal.prev_day(String.take(e, 10n)))) ++ " (all day)"
+
+def Cal.nice.timed(+s: String, +e: String) -> String:
+  Cal.day(s) ++ " " ++ Cal.hm(s) ++ " -> "
+    ++ Bool.pick(String, String.eq(String.take(s, 10n), String.take(e, 10n)), "", Cal.day(e) ++ " ") ++ Cal.hm(e)
+
+# "Tue 14 Oct 09:00 -> 10:00"; a date alone is an all-day event
+def Cal.nice(+s: String, +e: String) -> String:
+  Bool.pick(String, Nat.is_le(String.length(s), 10n), Cal.nice.day(s, e), Cal.nice.timed(s, e))
+
+def Cal.event_when(+ev: J.Json) -> String:
+  Cal.nice(Cal.when(J.Json.get_obj(ev, "start")), Cal.when(J.Json.get_obj(ev, "end")))
+
+def Cal.unit(+n: Nat, +u: String) -> String:
+  Nat.show(n) ++ " " ++ u ++ Bool.pick(String, Nat.is_eq(n, 1n), "", "s")
+
+def Cal.mins(+n: Nat) -> String:
+  Bool.pick(String, Bool.and(Nat.is_gt(n, 0n), Nat.is_eq(Nat.mod(n, 1440n), 0n)), Cal.unit(Nat.div(n, 1440n), "day"),
+    Bool.pick(String, Bool.and(Nat.is_gt(n, 0n), Nat.is_eq(Nat.mod(n, 60n), 0n)), Cal.unit(Nat.div(n, 60n), "hour"), Nat.show(n) ++ " min"))
+
+def Cal.alert1(+r: J.Json) -> String:
+  J.Json.get_str(r, "method", "popup") ++ " " ++ Cal.mins(J.Json.get_nat(r, "minutes", 0n))
+
+def Cal.alert_list(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case h <> t:
+      Cal.alert1(h) <> Cal.alert_list(t)
+
+def Cal.alerts.k(dflt: Bool, +xs: List<&2, J.Json>) -> String:
+  Bool.pick(String, dflt, "default", Bool.pick(String, List.is_empty(&2, J.Json, xs), "none", String.join(Cal.alert_list(xs), ", ")))
+
+# a reminders object ({useDefault, overrides}) as words
+def Cal.alerts(+rm: J.Json) -> String:
+  Cal.alerts.k(J.Json.get_bool(rm, "useDefault", True{}), J.Json.elems(J.Json.get_obj(rm, "overrides")))
+
+# the alerts a change sets, or "" when it leaves them
+def Cal.alerts.new(+a: J.Json) -> String:
+  +kv = Cal.rem_kv(a)
+  Bool.pick(String, List.is_empty(&2, J.KV, kv), "", Cal.alerts(J.Json.get_obj(J.Json.obj(kv), "reminders")))
+
+def Cal.join_lines(xs: List<&2, String>) -> String:
+  String.join(Cal.trims(xs), "\n")
+
+def Cal.diff(given: Bool, +label: String, +old: String, +new: String) -> String:
+  Bool.pick(String, Bool.and(given, Bool.not(String.eq(old, new))), label ++ ": " ++ old ++ "  =>  " ++ new, "")
+
+def Cal.email_of(xs: List<&2, J.Json>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case h <> t:
+      J.Str{J.Json.get_str(h, "email", "")} <> Cal.email_of(t)
+
+def Cal.emails.of(e: J.Json) -> List<&2, J.Json>:
+  Cal.email_of(J.Json.elems(J.Json.get_obj(e, "attendees")))
+
+def Cal.guests(e: J.Json) -> String:
+  String.join(Cal.jstrs(Cal.emails.of(e)), ", ")
+
+def Cal.new_start(+old: J.Json, +a: J.Json) -> String:
+  +s = String.trim(J.Json.get_str(a, "start", ""))
+  Bool.pick(String, String.is_empty(s), Cal.when(J.Json.get_obj(old, "start")),
+    Bool.pick(String, J.Json.get_bool(a, "all_day", False{}), String.take(s, 10n), s))
+
+def Cal.new_end(+old: J.Json, +a: J.Json) -> String:
+  +s = String.trim(J.Json.get_str(a, "start", ""))
+  +e = String.trim(J.Json.get_str(a, "end", ""))
+  Bool.pick(String, Bool.and(J.Json.get_bool(a, "all_day", False{}), Bool.not(String.is_empty(s))), Cal.end(True{}, String.take(s, 10n), e),
+    Bool.pick(String, String.is_empty(e), Cal.when(J.Json.get_obj(old, "end")), e))
+
+def Cal.time_line(+old: J.Json, +a: J.Json) -> String:
+  Cal.diff(Bool.or(Cal.has(J.Json.get(a, "start")), Cal.has(J.Json.get(a, "end"))), "Time", Cal.event_when(old), Cal.nice(Cal.new_start(old, a), Cal.new_end(old, a)))
+
+def Cal.title(+e: J.Json) -> String:
+  Str.or(J.Json.get_str(e, "summary", ""), "(no title)")
+
+def Cal.told.line(+a: J.Json) -> String:
+  Bool.pick(String, Cal.told(a), "Guests will be told.", "")
+
+# what the person approves for calendar_update (a is Cal.resolve's)
+def Cal.change.detail(+old: J.Json, +a: J.Json) -> String:
+  Cal.join_lines(["Change \"" ++ Cal.title(old) ++ "\" (" ++ Cal.event_when(old) ++ ")",
+    Cal.time_line(old, a),
+    Cal.diff(Cal.has(J.Json.get(a, "summary")), "Title", Cal.title(old), Str.or(J.Json.get_str(a, "summary", ""), "(no title)")),
+    Cal.diff(Cal.has(J.Json.get(a, "location")), "Where", Str.or(J.Json.get_str(old, "location", ""), "(none)"), Str.or(J.Json.get_str(a, "location", ""), "(none)")),
+    Cal.diff(Cal.has(J.Json.get(a, "description")), "Details", Str.or(Str.cap(J.Json.get_str(old, "description", ""), 200n), "(none)"), Str.or(Str.cap(J.Json.get_str(a, "description", ""), 200n), "(none)")),
+    Cal.diff(Bool.not(String.is_empty(Cal.alerts.new(a))), "Alerts", Cal.alerts(J.Json.get_obj(old, "reminders")), Cal.alerts.new(a)),
+    Cal.diff(Cal.has(J.Json.get(a, "attendees")), "Attendees", Str.or(Cal.guests(old), "(none)"), Str.or(String.join(Cal.emails(J.Json.get(a, "attendees")), ", "), "(none)")),
+    Cal.told.line(a)])
+
+def Cal.guest_line(+n: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(n, 0n), "", Cal.unit(n, "guest") ++ " will be told.")
+
+# what the person approves for calendar_delete
+def Cal.delete.detail(+old: J.Json) -> String:
+  Cal.join_lines(["Delete \"" ++ Cal.title(old) ++ "\" (" ++ Cal.event_when(old) ++ ")", Cal.guest_line(Cal.attendees.n(old))])
+
+# what the person approves for calendar_create
+def Cal.create.detail(+a: J.Json) -> String:
+  J.Json.get_str(a, "summary", "") ++ "\n" ++ J.Json.get_str(a, "start", "") ++ " to " ++ J.Json.get_str(a, "end", "") ++
+    Bool.pick(String, List.is_empty(&2, J.Json, J.Json.elems(J.Json.get_obj(a, "attendees"))), "", "\nInvites: " ++ J.Json.show(J.Json.get_obj(a, "attendees")))
+    ++ Bool.pick(String, String.is_empty(J.Json.get_str(a, "location", "")), "", "\nWhere: " ++ J.Json.get_str(a, "location", ""))
+    ++ Bool.pick(String, String.is_empty(Cal.alerts.new(a)), "", "\nAlerts: " ++ Cal.alerts.new(a))
+
+# events.patch's answer, what it is now
+def Google.updated(+e: J.Json) -> String:
+  "Updated:\n" ++ Google.event_line(e)
+
+# events.delete's answer is empty: say what went, from the event fetched
+def Google.deleted(+old: J.Json) -> String:
+  "Deleted: " ++ Cal.title(old) ++ " (" ++ Cal.event_when(old) ++ ")"
+
+def Cal.resolve.del(+old: J.Json, +a: J.Json) -> J.Json:
+  Cal.with(a, [J.KV{"_notify", J.Flag{Nat.is_gt(Cal.attendees.n(old), 0n)}}, J.KV{"_done", J.Str{Google.deleted(old)}}])
+
 # MCP tools
 # ---------
 
@@ -1243,15 +1640,83 @@ def Tool.def(name: String, desc: String, props: List<&2, J.KV>, req: List<&2, St
   J.Json.obj([J.KV{"name", J.Str{name}}, J.KV{"description", J.Str{desc}},
     J.KV{"inputSchema", J.Json.obj([J.KV{"type", J.Str{"object"}}, J.KV{"properties", J.Json.obj(props)}, J.KV{"required", J.Json.arr(Tool.strs(req))}])}])
 
+# Alerts the agent gave that Google would refuse: why, or "" when fine
+def Cal.rem.mins(m: Maybe<&2, Nat>) -> String:
+  match m:
+    case Some{+n}:
+      Bool.pick(String, Nat.is_gt(n, 40320n), "an alert's minutes are 0 to 40320", "")
+    case None{}:
+      "an alert's minutes are a whole number"
+
+def Cal.rem.raw(+raw: String) -> String:
+  Bool.pick(String, Bool.or(String.contains(raw, "."), Bool.or(String.contains(raw, "-"), Bool.or(String.contains(raw, "e"), String.contains(raw, "E")))),
+    "an alert's minutes are a whole number", Cal.rem.mins(Nat.read(raw)))
+
+def Cal.rem.min(m: Maybe<&2, J.Json>) -> String:
+  match m:
+    case Some{J.Num{+raw}}:
+      Cal.rem.raw(raw)
+    case _:
+      "each alert needs its minutes"
+
+def Cal.rem.obj(+o: J.Json) -> String:
+  Bool.pick(String, Bool.or(String.eq(J.Json.get_str(o, "method", "popup"), "popup"), String.eq(J.Json.get_str(o, "method", "popup"), "email")),
+    Cal.rem.min(J.Json.get(o, "minutes")), "an alert's method is popup or email")
+
+def Cal.rem.one(r: J.Json) -> String:
+  match r:
+    case J.Num{+raw}:
+      Cal.rem.raw(raw)
+    case J.Obj{fs}:
+      Cal.rem.obj(J.Obj{fs})
+    case _:
+      "each alert is {method, minutes} or a number of minutes"
+
+def Cal.rem.all(xs: List<&2, J.Json>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case h <> t:
+      Str.or(Cal.rem.one(h), Cal.rem.all(t))
+
+def Cal.rem.list(+xs: List<&2, J.Json>) -> String:
+  Bool.pick(String, Nat.is_gt(List.length(&2, J.Json, xs), 5n), "at most 5 alerts", Cal.rem.all(xs))
+
+def Cal.rem.of(m: Maybe<&2, J.Json>) -> String:
+  match m:
+    case Some{J.Arr{items}}:
+      Cal.rem.list(J.Json.to_list(items))
+    case Some{_}:
+      "reminders is a list"
+    case None{}:
+      ""
+
+def Cal.check.k(+e: String) -> String:
+  Bool.pick(String, String.is_empty(e), "", "error: " ++ e)
+
+# calendar_create / calendar_update's arguments: "" or an error for the
+# agent, before the person is asked anything
+def Cal.check(+a: J.Json) -> String:
+  Cal.check.k(Cal.rem.of(J.Json.get(a, "reminders")))
+
+# the account line an approval starts with ("" for the first account)
+def Cal.acct(+a: J.Json) -> String:
+  Bool.pick(String, String.is_empty(J.Json.get_str(a, "account", "")), "", "Account: " ++ J.Json.get_str(a, "account", "") ++ "\n")
+
+def Cal.reminders.prop() -> J.KV:
+  J.KV{"reminders", J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"maxItems", J.Json.nat(5n)}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"object"}}, J.KV{"properties", J.Json.obj([
+    Tool.prop("method", "string", "popup or email."), Tool.prop("minutes", "number", "Minutes before the start, 0 to 40320.")])}])},
+    J.KV{"description", J.Str{"Alerts, at most 5: {method: popup|email, minutes} (a bare number is a popup that many minutes ahead). [] means no alerts; omitted keeps the calendar's defaults."}}])}
+
 def Google.tool_names() -> List<&2, String>:
-  ["gmail_search", "gmail_read", "gmail_send", "calendar_events", "calendar_create", "google_accounts"]
+  ["gmail_search", "gmail_read", "gmail_send", "calendar_events", "calendar_create", "calendar_update", "calendar_delete", "google_accounts"]
 
 def Tool.account() -> J.KV:
   Tool.prop("account", "string", "Which connected Google account, by address (see google_accounts); default the first.")
 
 # the tools that act for the user; the hub asks the user before each call
 def Google.asks(+tool: String) -> Bool:
-  Bool.or(String.eq(tool, "gmail_send"), String.eq(tool, "calendar_create"))
+  Bool.or(Bool.or(String.eq(tool, "gmail_send"), String.eq(tool, "calendar_create")), Bool.or(String.eq(tool, "calendar_update"), String.eq(tool, "calendar_delete")))
 
 def Google.tool_defs() -> List<&2, J.Json>:
   [Tool.def("gmail_search", "Search the user's Gmail (Gmail search syntax, e.g. 'from:alice is:unread newer_than:7d'). Lists id, date, from, subject and snippet; read one with gmail_read.",
@@ -1261,7 +1726,7 @@ def Google.tool_defs() -> List<&2, J.Json>:
    Tool.def("gmail_send", "Send a plain-text email from the user's Gmail. The user is asked to approve every send first.",
      [Tool.prop("to", "string", "Recipients, comma-separated."), Tool.prop("subject", "string", "Subject."),
       Tool.prop("body", "string", "Plain-text body."), Tool.prop("cc", "string", "Cc recipients, comma-separated (optional)."), Tool.account()], ["to", "subject", "body"]),
-   Tool.def("calendar_events", "List events on the user's primary Google Calendar, recurring ones expanded, soonest first.",
+   Tool.def("calendar_events", "List events on the user's primary Google Calendar, recurring ones expanded, soonest first. Each event shows its id, for calendar_update and calendar_delete.",
      [Tool.prop("from", "string", "Start, RFC 3339 (e.g. 2026-09-24T09:00:00-07:00) or a date; default now."),
       Tool.prop("to", "string", "End, RFC 3339 or a date; default a week after from."),
       Tool.prop("max", "number", "How many (default 20, at most 50)."), Tool.prop("query", "string", "Free-text filter (optional)."), Tool.account()], Nil{}),
@@ -1272,8 +1737,18 @@ def Google.tool_defs() -> List<&2, J.Json>:
       Tool.prop("description", "string", "Details (optional)."),
       J.KV{"attendees", J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"string"}}])}, J.KV{"description", J.Str{"Attendee emails (optional)."}}])},
       Tool.prop("all_day", "boolean", "An all-day event (optional)."),
-      Tool.prop("timeZone", "string", "IANA time zone, e.g. America/Los_Angeles, for times without an offset (optional)."), Tool.account()],
+      Tool.prop("timeZone", "string", "IANA time zone, e.g. America/Los_Angeles, for times without an offset (optional)."),
+      Tool.prop("location", "string", "Where (optional)."), Cal.reminders.prop(), Tool.account()],
      ["summary", "start", "end"]),
+   Tool.def("calendar_update", "Change an event on the user's primary Google Calendar (ids are in calendar_events); only the fields given change. Giving start without end keeps the event's length. Guests are told. The user is asked to approve it first.",
+     [Tool.prop("id", "string", "The event id from calendar_events."), Tool.prop("summary", "string", "New title."), Tool.prop("description", "string", "New details."),
+      Tool.prop("location", "string", "New place."), Tool.prop("start", "string", "New start, RFC 3339 with an offset, or YYYY-MM-DD when all_day."),
+      Tool.prop("end", "string", "New end, same form as start."), Tool.prop("all_day", "boolean", "The times are dates (an all-day event)."),
+      Tool.prop("timeZone", "string", "IANA time zone for times without an offset."),
+      J.KV{"attendees", J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"string"}}])}, J.KV{"description", J.Str{"Attendee emails; replaces the whole list ([] removes everyone)."}}])},
+      Cal.reminders.prop(), Tool.prop("default_reminders", "boolean", "true gives the event the calendar's default alerts back."), Tool.account()], ["id"]),
+   Tool.def("calendar_delete", "Delete an event from the user's primary Google Calendar (ids are in calendar_events); guests are told. The user is asked to approve it first.",
+     [Tool.prop("id", "string", "The event id from calendar_events."), Tool.account()], ["id"]),
    Tool.def("google_accounts", "List the Google accounts connected in Settings, by address; the first is the default the other tools use.", Nil{}, Nil{})]
 
 # The loopback page

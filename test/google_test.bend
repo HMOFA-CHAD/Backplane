@@ -51,6 +51,12 @@ def sample.latin() -> String:
 def sample.meta() -> String:
   "[{\"id\": \"a1\", \"threadId\": \"a1\", \"labelIds\": [\"INBOX\", \"UNREAD\"], \"snippet\": \"It&#39;s done\", \"payload\": {\"mimeType\": \"multipart/alternative\", \"headers\": [{\"name\": \"From\", \"value\": \"Alice <alice@example.com>\"}, {\"name\": \"Subject\", \"value\": \"Done\"}, {\"name\": \"Date\", \"value\": \"Mon, 21 Sep 2026 10:00:00 -0700\"}]}}, {\"id\": \"a2\", \"threadId\": \"a2\", \"labelIds\": [\"INBOX\"], \"snippet\": \"See attached\", \"payload\": {\"mimeType\": \"multipart/mixed\", \"headers\": [{\"name\": \"from\", \"value\": \"carol@example.com\"}, {\"name\": \"subject\", \"value\": \"Quote\"}, {\"name\": \"date\", \"value\": \"Sun, 20 Sep 2026 08:00:00 +0000\"}]}}]"
 
+def sample.cal() -> String:
+  "{\"id\": \"ev1\", \"summary\": \"Design review\", \"start\": {\"dateTime\": \"2026-10-14T09:00:00-07:00\"}, \"end\": {\"dateTime\": \"2026-10-14T10:00:00-07:00\"}, \"attendees\": [{\"email\": \"a@x.com\"}, {\"email\": \"b@y.com\"}], \"reminders\": {\"useDefault\": true}}"
+
+def sample.cal.solo() -> String:
+  "{\"id\": \"ev1\", \"summary\": \"Standup\", \"start\": {\"dateTime\": \"2026-10-14T09:00:00-07:00\"}, \"end\": {\"dateTime\": \"2026-10-14T09:15:00-07:00\"}, \"reminders\": {\"useDefault\": true}}"
+
 def sample.list() -> String:
   "{\"messages\": [{\"id\": \"a1\", \"threadId\": \"a1\"}, {\"id\": \"a2\", \"threadId\": \"a2\"}], \"resultSizeEstimate\": 2}"
 
@@ -135,9 +141,66 @@ def main() -> IO(Unit):
     C.Check.str("iso epoch", G.Date.iso(0n), "1970-01-01T00:00:00Z")
     C.Check.str("next day leap", G.Date.next_day("2000-02-28"), "2000-02-29")
     C.Check.str("next day march", G.Date.next_day("2026-02-28"), "2026-03-01")
-    C.Check.str("tools", String.join(G.Google.tool_names(), ","), "gmail_search,gmail_read,gmail_send,calendar_events,calendar_create,google_accounts")
-    C.Check.str("tool defs", Nat.show(List.length(&2, J.Json, G.Google.tool_defs())), "6")
+    C.Check.str("tools", String.join(G.Google.tool_names(), ","), "gmail_search,gmail_read,gmail_send,calendar_events,calendar_create,calendar_update,calendar_delete,google_accounts")
+    C.Check.str("tool defs", Nat.show(List.length(&2, J.Json, G.Google.tool_defs())), "8")
     C.Check.str("asks", show.bool(Bool.and(G.Google.asks("gmail_send"), Bool.not(G.Google.asks("gmail_read")))), "true")
+    # calendar update, delete and alerts (routines-cal)
+    C.Check.str("asks update delete", show.bool(Bool.and(G.Google.asks("calendar_update"), Bool.and(G.Google.asks("calendar_delete"), Bool.not(G.Google.asks("calendar_events"))))), "true")
+    C.Check.str("patch path", G.Google.cal_patch_path("ev1_20261014T090000Z", True{}), "/calendar/v3/calendars/primary/events/ev1_20261014T090000Z?sendUpdates=all")
+    C.Check.str("patch path none", G.Google.cal_patch_path("ev1", False{}), "/calendar/v3/calendars/primary/events/ev1?sendUpdates=none")
+    C.Check.str("delete path", G.Google.cal_delete_path("a b", True{}), "/calendar/v3/calendars/primary/events/a%20b?sendUpdates=all")
+    C.Check.str("get path", G.Google.cal_event_path("x%y"), "/calendar/v3/calendars/primary/events/x%25y")
+    C.Check.str("id ok", show.bool(G.Cal.id_ok("abc_2026")), "true")
+    C.Check.str("id slash", show.bool(G.Cal.id_ok("a/b")), "false")
+    C.Check.str("id space", show.bool(G.Cal.id_ok("a b")), "false")
+    C.Check.str("id empty", show.bool(G.Cal.id_ok("")), "false")
+    C.Check.str("gone", show.bool(Bool.and(G.Cal.gone("404"), Bool.and(G.Cal.gone("410"), Bool.not(G.Cal.gone("500"))))), "true")
+    C.Check.str("no such", G.Cal.nosuch("ev9"), "error: no event with id ev9")
+    # alerts on create
+    C.Check.str("create alerts", G.Google.event_create("Review", json("{\"reminders\": [{\"method\": \"popup\", \"minutes\": 10}, {\"method\": \"email\", \"minutes\": 1440}], \"location\": \"Room 4\"}"), "2026-09-24T09:00:00-07:00", "2026-09-24T10:00:00-07:00", Nil{}, False{}),
+      "{\"summary\":\"Review\",\"location\":\"Room 4\",\"start\":{\"dateTime\":\"2026-09-24T09:00:00-07:00\"},\"end\":{\"dateTime\":\"2026-09-24T10:00:00-07:00\"},\"reminders\":{\"useDefault\":false,\"overrides\":[{\"method\":\"popup\",\"minutes\":10},{\"method\":\"email\",\"minutes\":1440}]}}")
+    C.Check.str("create shorthand", G.Google.event_create("R", json("{\"reminders\": [10, 60]}"), "2026-09-24", "", Nil{}, True{}),
+      "{\"summary\":\"R\",\"start\":{\"date\":\"2026-09-24\"},\"end\":{\"date\":\"2026-09-25\"},\"reminders\":{\"useDefault\":false,\"overrides\":[{\"method\":\"popup\",\"minutes\":10},{\"method\":\"popup\",\"minutes\":60}]}}")
+    C.Check.str("create no alerts", G.Google.event_create("R", json("{\"reminders\": []}"), "2026-09-24", "", Nil{}, True{}),
+      "{\"summary\":\"R\",\"start\":{\"date\":\"2026-09-24\"},\"end\":{\"date\":\"2026-09-25\"},\"reminders\":{\"useDefault\":false}}")
+    C.Check.str("create default alerts", G.Google.event_create("R", json("{}"), "2026-09-24", "", Nil{}, True{}),
+      "{\"summary\":\"R\",\"start\":{\"date\":\"2026-09-24\"},\"end\":{\"date\":\"2026-09-25\"}}")
+    C.Check.str("alerts max five", J.Json.show(G.Google.event_patch(json("{\"reminders\": [1,2,3,4,5,6,99999]}"))),
+      "{\"reminders\":{\"useDefault\":false,\"overrides\":[{\"method\":\"popup\",\"minutes\":1},{\"method\":\"popup\",\"minutes\":2},{\"method\":\"popup\",\"minutes\":3},{\"method\":\"popup\",\"minutes\":4},{\"method\":\"popup\",\"minutes\":5}]}}")
+    C.Check.str("alerts clamp", J.Json.show(G.Google.event_patch(json("{\"reminders\": [{\"method\": \"email\", \"minutes\": 99999}]}"))),
+      "{\"reminders\":{\"useDefault\":false,\"overrides\":[{\"method\":\"email\",\"minutes\":40320}]}}")
+    # patch bodies
+    C.Check.str("patch summary only", J.Json.show(G.Google.event_patch(json("{\"id\": \"ev1\", \"summary\": \"New\"}"))), "{\"summary\":\"New\"}")
+    C.Check.str("patch nothing", show.bool(G.Cal.nothing(G.Google.event_patch(json("{\"id\": \"ev1\", \"account\": \"a@x.org\"}")))), "true")
+    C.Check.str("patch default alerts", J.Json.show(G.Google.event_patch(json("{\"default_reminders\": true}"))), "{\"reminders\":{\"useDefault\":true}}")
+    C.Check.str("patch no alerts", J.Json.show(G.Google.event_patch(json("{\"reminders\": []}"))), "{\"reminders\":{\"useDefault\":false}}")
+    C.Check.str("patch time", J.Json.show(G.Google.event_patch(json("{\"start\": \"2026-10-15T14:00:00-07:00\", \"end\": \"2026-10-15T15:00:00-07:00\", \"timeZone\": \"America/Los_Angeles\"}"))),
+      "{\"start\":{\"dateTime\":\"2026-10-15T14:00:00-07:00\",\"timeZone\":\"America/Los_Angeles\"},\"end\":{\"dateTime\":\"2026-10-15T15:00:00-07:00\",\"timeZone\":\"America/Los_Angeles\"}}")
+    C.Check.str("patch all day", J.Json.show(G.Google.event_patch(json("{\"start\": \"2026-10-15\", \"all_day\": true, \"location\": \"Home\"}"))),
+      "{\"location\":\"Home\",\"start\":{\"date\":\"2026-10-15\"},\"end\":{\"date\":\"2026-10-16\"}}")
+    C.Check.str("patch attendees", J.Json.show(G.Google.event_patch(json("{\"attendees\": [\"a@x.com\"]}"))), "{\"attendees\":[{\"email\":\"a@x.com\"}]}")
+    C.Check.str("patch attendees clear", J.Json.show(G.Google.event_patch(json("{\"attendees\": []}"))), "{\"attendees\":[]}")
+    # start alone keeps the length
+    C.Check.str("shifted", G.Cal.shifted("2026-10-14T09:00:00-07:00", "2026-10-14T10:30:00-07:00", "2026-10-15T14:00:00-07:00"), "2026-10-15T15:30:00-07:00")
+    C.Check.str("shifted offset", G.Cal.shifted("2026-10-14T09:00:00-07:00", "2026-10-14T10:00:00-07:00", "2026-10-15T23:30:00+02:00"), "2026-10-16T00:30:00+02:00")
+    C.Check.str("resolve end", J.Json.show(J.Json.get_obj(G.Cal.resolve(json(sample.cal()), json("{\"id\": \"ev1\", \"start\": \"2026-10-15T14:00:00-07:00\"}")), "end")), "\"2026-10-15T15:00:00-07:00\"")
+    C.Check.str("resolve notify", show.bool(G.Cal.told(G.Cal.resolve(json(sample.cal()), json("{\"id\": \"ev1\", \"summary\": \"x\"}")))), "true")
+    C.Check.str("resolve no guests", show.bool(G.Cal.told(G.Cal.resolve(json(sample.cal.solo()), json("{\"id\": \"ev1\", \"summary\": \"x\"}")))), "false")
+    C.Check.str("resolve new guests", show.bool(G.Cal.told(G.Cal.resolve(json(sample.cal.solo()), json("{\"id\": \"ev1\", \"attendees\": [\"z@x.com\"]}")))), "true")
+    # what the person approves
+    C.Check.str("nice", G.Cal.nice("2026-10-14T09:00:00-07:00", "2026-10-14T10:00:00-07:00"), "Wed 14 Oct 09:00 -> 10:00")
+    C.Check.str("nice days", G.Cal.nice("2026-10-14T22:00:00-07:00", "2026-10-15T01:00:00-07:00"), "Wed 14 Oct 22:00 -> Thu 15 Oct 01:00")
+    C.Check.str("nice all day", G.Cal.nice("2026-10-14", "2026-10-15"), "Wed 14 Oct (all day)")
+    C.Check.str("nice all days", G.Cal.nice("2026-10-14", "2026-10-17"), "Wed 14 Oct -> Fri 16 Oct (all day)")
+    C.Check.str("change detail", G.Cal.change.detail(json(sample.cal()), G.Cal.resolve(json(sample.cal()), json("{\"id\": \"ev1\", \"start\": \"2026-10-15T14:00:00-07:00\", \"summary\": \"Design review (v2)\", \"reminders\": [{\"method\": \"popup\", \"minutes\": 10}, {\"method\": \"email\", \"minutes\": 1440}], \"attendees\": [\"a@x.com\"]}"))),
+      "Change \"Design review\" (Wed 14 Oct 09:00 -> 10:00)\nTime: Wed 14 Oct 09:00 -> 10:00  =>  Thu 15 Oct 14:00 -> 15:00\nTitle: Design review  =>  Design review (v2)\nAlerts: default  =>  popup 10 min, email 1 day\nAttendees: a@x.com, b@y.com  =>  a@x.com\nGuests will be told.")
+    C.Check.str("change detail small", G.Cal.change.detail(json(sample.cal.solo()), G.Cal.resolve(json(sample.cal.solo()), json("{\"id\": \"ev1\", \"default_reminders\": true}"))),
+      "Change \"Standup\" (Wed 14 Oct 09:00 -> 09:15)")
+    C.Check.str("delete detail", G.Cal.delete.detail(json(sample.cal())), "Delete \"Design review\" (Wed 14 Oct 09:00 -> 10:00)\n2 guests will be told.")
+    C.Check.str("delete detail solo", G.Cal.delete.detail(json(sample.cal.solo())), "Delete \"Standup\" (Wed 14 Oct 09:00 -> 09:15)")
+    C.Check.str("deleted", J.Json.get_str(G.Cal.resolve.del(json(sample.cal()), json("{\"id\": \"ev1\"}")), "_done", ""), "Deleted: Design review (Wed 14 Oct 09:00 -> 10:00)")
+    C.Check.str("create detail", G.Cal.create.detail(json("{\"summary\": \"R\", \"start\": \"s\", \"end\": \"e\", \"location\": \"Room 4\", \"reminders\": [10]}")), "R\ns to e\nWhere: Room 4\nAlerts: popup 10 min")
+    C.Check.str("updated", G.Google.updated(json(sample.cal())), "Updated:\n- 2026-10-14T09:00:00-07:00 -> 2026-10-14T10:00:00-07:00  Design review\n  id ev1, 2 attendees")
     C.Check.str("own client wins", G.Client.id(G.Google.client(G.Client{"mine", "s"}, G.Client{"shared", "t"})), "mine")
     C.Check.str("shared client stands in", G.Client.id(G.Google.client(G.Client{"", ""}, G.Client{"shared", "t"})), "shared")
     C.Check.str("half a client is none", G.Client.id(G.Google.client(G.Client{"mine", ""}, G.Client{"shared", "t"})), "shared")
@@ -164,4 +227,12 @@ def main() -> IO(Unit):
     C.Check.str("accts pick named", G.Acct.email(Maybe.default(&2, G.Acct, G.Accts.pick(G.Accts.of(file), "b@x.org"), G.Acct{"none", "", "", 0n})), "b@x.org")
     C.Check.str("accts pick missing", G.Acct.email(Maybe.default(&2, G.Acct, G.Accts.pick(G.Accts.of(file), "z@x.org"), G.Acct{"none", "", "", 0n})), "none")
     C.Check.str("accts line", G.Accts.line("{\"accounts\":[\"a@x.org\",\"b@x.org\"]}"), "a@x.org\nb@x.org")
+    C.Check.str("cal check none", G.Cal.check(json("{\"summary\":\"x\"}")), "")
+    C.Check.str("cal check ok", G.Cal.check(json("{\"reminders\":[10,{\"method\":\"email\",\"minutes\":1440}]}")), "")
+    C.Check.str("cal check too far", G.Cal.check(json("{\"reminders\":[40321]}")), "error: an alert's minutes are 0 to 40320")
+    C.Check.str("cal check method", G.Cal.check(json("{\"reminders\":[{\"method\":\"sms\",\"minutes\":5}]}")), "error: an alert's method is popup or email")
+    C.Check.str("cal check six", G.Cal.check(json("{\"reminders\":[1,2,3,4,5,6]}")), "error: at most 5 alerts")
+    C.Check.str("cal check fraction", G.Cal.check(json("{\"reminders\":[1.5]}")), "error: an alert's minutes are a whole number")
+    C.Check.str("cal check not list", G.Cal.check(json("{\"reminders\":10}")), "error: reminders is a list")
+    C.Check.str("cal acct", G.Cal.acct(json("{\"account\":\"b@x.org\"}")), "Account: b@x.org\n")
     C.Check.str("accts text", G.Accts.text(["a@x.org", "b@x.org"]), "Connected Google accounts (the first is the default):\na@x.org\nb@x.org")

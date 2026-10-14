@@ -183,6 +183,10 @@ type Msg is Data:
   # a bot's new project, approved by the person, its folder made and
   # resolved: the hub adds it and answers the tool call (`id` as JSON)
   NewProject{thread: String, root: String, name: String, id: String, reply: Chan(String)}
+  # a calendar_update or calendar_delete, its event fetched off the hub:
+  # the arguments as they will run and the words the person approves
+  # (`id` as JSON); `ask` is false when a session approval covers it
+  CalAsk{thread: String, tool: String, args: String, detail: String, id: String, reply: Chan(String), ask: Bool}
   # a phone's upload (POST /attach) asks where a thread's attachments go
   AttDir{thread: String, reply: Chan(String)}
   # threads elsewhere (far.bend): this hub's feed made from its log; a
@@ -9760,13 +9764,47 @@ def Gg.detail.k(send: Bool, +a: J.Json) -> String:
       "To: " ++ J.Json.get_str(a, "to", "") ++ Bool.pick(String, String.is_empty(J.Json.get_str(a, "cc", "")), "", "\nCc: " ++ J.Json.get_str(a, "cc", "")) ++
         "\nSubject: " ++ J.Json.get_str(a, "subject", "") ++ "\n\n" ++ String.take(J.Json.get_str(a, "body", ""), 1500n)
     case False{}:
-      J.Json.get_str(a, "summary", "") ++ "\n" ++ J.Json.get_str(a, "start", "") ++ " to " ++ J.Json.get_str(a, "end", "") ++
-        Bool.pick(String, List.is_empty(&2, J.Json, J.Json.elems(J.Json.get_obj(a, "attendees"))), "", "\nInvites: " ++ J.Json.show(J.Json.get_obj(a, "attendees")))
+      GG.Cal.create.detail(a)
 
 # what the user approves: the mail's recipients, subject and text, or the event
 def Gg.detail(+o: J.Json) -> String:
   Bool.pick(String, String.is_empty(J.Json.get_str(Gg.args(o), "account", "")), "", "Account: " ++ J.Json.get_str(Gg.args(o), "account", "") ++ "\n")
     ++ Gg.detail.k(String.eq(Gg.tool(o), "gmail_send"), Gg.args(o))
+
+# Calendar update and delete: the event is fetched off the hub first, so
+# the person sees what changes; CalAsk comes back to open the ask
+def Gc2.json(+s: String) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(s), J.Null{})
+
+def Cp.ask.k(obj: Bool, ask: Bool, +inbox: Chan(Msg), +thread: String, +tool: String, +id: J.Json, +reply: Chan(String), +r: String) -> IO(Unit):
+  match obj:
+    case True{}:
+      do IO<Unit>:
+        +j : J.Json = Gc2.json(r)
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, CalAsk{thread, tool, J.Json.show(J.Json.get_obj(j, "args")), J.Json.get_str(j, "detail", ""), J.Json.show(id), reply, ask})
+        return Unit{}
+    case False{}:
+      Gg.say(reply, id, False{}, r)
+
+def Cp.ask(ask: Bool, +inbox: Chan(Msg), +thread: String, +tool: String, +id: J.Json, +reply: Chan(String), +r: String) -> IO(Unit):
+  Cp.ask.k(String.starts_with(r, "{"), ask, inbox, thread, tool, id, reply, r)
+
+def Cp.run(ask: Bool, +inbox: Chan(Msg), +home: String, +thread: String, +tool: String, +args: J.Json, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(String, Unit, GS.Google.prepare(home, String.eq(tool, "calendar_update"), args), r => Cp.ask(ask, inbox, thread, tool, id, reply, r))
+
+def Hub.cal.ask(ask: Bool, h: Hub, +thread: String, +tool: String, +args: J.Json, +detail: String, +id: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match ask h:
+    case False{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Gg.call(Cfg.home(cfg), tool, args, id, reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
+        +r2 : Chan(String) <- Chan.new(String, 1)
+        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
+        IO.spawn(Unit, Gg.wait(r2, Cfg.home(cfg), tool, args, id, reply))
+        Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", tool, detail, "", now}], Nil{}})
 
 def Hub.google.k(ask: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match ask h:
@@ -9782,11 +9820,37 @@ def Hub.google.k(ask: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(St
         IO.spawn(Unit, Gg.wait(r2, Cfg.home(cfg), Gg.tool(o), Gg.args(o), J.Json.get_obj(o, "id"), reply))
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", Gg.tool(o), Gg.detail(o), "", now}], Nil{}})
 
+def Hub.google.p(prep: Bool, ask: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match prep h:
+    case True{} Hub{st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Cp.run(ask, inbox, Cfg.home(cfg), thread, Gg.tool(o), Gg.args(o), J.Json.get_obj(o, "id"), reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case False{} h2:
+      Hub.google.k(ask, h2, thread, o, reply, now)
+
+def Hub.google.ok(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.google.p(Bool.or(String.eq(Gg.tool(o), "calendar_update"), String.eq(Gg.tool(o), "calendar_delete")),
+        Bool.and(GG.Google.asks(Gg.tool(o)), Bool.not(MC.Perm.session_ok(M.Asks.all(st), thread, Gg.tool(o)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
+
+# alerts Google would refuse go back to the agent before anyone is asked
+def Hub.google.v(fine: Bool, +err: String, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match fine:
+    case True{}:
+      Hub.google.ok(h, thread, o, reply, now)
+    case False{}:
+      do IO<Hub>:
+        Gg.say(reply, J.Json.get_obj(o, "id"), False{}, err)
+        return h
+
 def Hub.google(bot: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
-  match bot h:
-    case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.google.k(Bool.and(GG.Google.asks(Gg.tool(o)), Bool.not(MC.Perm.session_ok(M.Asks.all(st), thread, Gg.tool(o)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
-    case False{} _:
+  match bot:
+    case True{}:
+      +err = GG.Cal.check(Gg.args(o))
+      Hub.google.v(String.is_empty(err), err, h, thread, o, reply, now)
+    case False{}:
       do IO<Hub>:
         Gg.say(reply, J.Json.get_obj(o, "id"), False{}, "only bots have this tool")
         return h
@@ -10004,6 +10068,8 @@ def Msg.kind(m: Msg) -> String:
       "shot"
     case NewProject{_, _, _, _, _}:
       "new_project"
+    case CalAsk{_, _, _, _, _, _, _}:
+      "cal_ask"
     case AttDir{_, _}:
       "att_dir"
     case FarFeed{_, _}:
@@ -10476,6 +10542,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.bot_verified(h, kind, arg, key, body, me, reply, now)
     case NewProject{_, root, name, id, reply}:
       Hub.newproj.made(h, root, name, id, reply, now)
+    case CalAsk{thread, tool, args, detail, id, reply, ask}:
+      Hub.cal.ask(ask, h, thread, tool, Gc2.json(args), detail, Gc2.json(id), reply, now)
     case Shot{text}:
       Hub.broadcast(h, text)
     case AttDir{thread, reply}:
