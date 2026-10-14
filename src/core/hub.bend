@@ -4129,12 +4129,16 @@ def Tools.demo.ends() -> Nat:
 def Locks.answer(+l: LK.NamedLock, +id: String) -> J.Json:
   J.Json.obj([J.KV{"held", J.Flag{Bool.and(String.eq(LK.Lock.owner(l), id), LK.Lock.ready(l))}}, J.KV{"position", J.Num{Nat.show(LK.Lock.position(l, id))}}, J.KV{"holder", J.Str{LK.Lock.owner(l)}}])
 
+# A client the record had lost is queued again, and its answer says so.
+def Locks.answer.re(+l: LK.NamedLock, +id: String, requeued: Bool) -> J.Json:
+  Bool.pick(J.Json, requeued, J.Json.obj([J.KV{"held", J.Flag{Bool.and(String.eq(LK.Lock.owner(l), id), LK.Lock.ready(l))}}, J.KV{"position", J.Num{Nat.show(LK.Lock.position(l, id))}}, J.KV{"holder", J.Str{LK.Lock.owner(l)}}, J.KV{"requeued", J.Flag{True{}}}]), Locks.answer(l, id))
+
 def Locks.list.go(names: List<&2, String>, +s: M.State) -> List<&2, J.Json>:
   match names:
     case Nil{}:
       Nil{}
     case +name <> t:
-      J.Json.obj([J.KV{"name", J.Str{name}}, J.KV{"holder", LK.Lock.holder.json(LK.Lock.holder(M.Locks.get(s, name)))}, J.KV{"waiters", J.Json.arr(LK.Lock.parties.json(LK.Lock.waiters(M.Locks.get(s, name))))}, J.KV{"ready", J.Flag{LK.Lock.ready(M.Locks.get(s, name))}}]) <> Locks.list.go(t, s)
+      J.Json.obj(List.append(&2, J.KV, [J.KV{"name", J.Str{name}}, J.KV{"holder", LK.Lock.holder.json(LK.Lock.holder(M.Locks.get(s, name)))}, J.KV{"waiters", J.Json.arr(LK.Lock.parties.json(LK.Lock.waiters(M.Locks.get(s, name))))}, J.KV{"ready", J.Flag{LK.Lock.ready(M.Locks.get(s, name))}}], LK.Lock.outside.kv(LK.Lock.outside(M.Locks.get(s, name))))) <> Locks.list.go(t, s)
 
 def Locks.put(+s: M.State, +now: Nat, +name: String, +l: LK.NamedLock) -> Step:
   Step{[M.LockChanged{name, l, now}], Nil{}}
@@ -4154,6 +4158,29 @@ def Locks.release(+s: M.State, +now: Nat, +name: String, +id: String) -> Step:
 
 def Locks.cancel(+s: M.State, +now: Nat, +name: String, +id: String) -> Step:
   Locks.put(s, now, name, LK.Lock.cancel(M.Locks.get(s, name), id))
+
+# The shell helper's three calls. A renew or status from a client the record no
+# longer holds queues it again (like acquire), never an invisible held:false.
+def Locks.http.party(+holder: String, +note: String, +now: Nat) -> LK.LockParty:
+  LK.LockParty{holder, "client", "", note, now, Nat.add(now, 90n)}
+
+def Locks.http.lost(op: String, +l: LK.NamedLock, +holder: String) -> Bool:
+  Bool.and(M.Launch.has(["renew", "status"], op), Bool.not(LK.Lock.has(l, holder)))
+
+def Locks.http.step(op: String, +s: M.State, +now: Nat, +name: String, +holder: String, +note: String, +ready: Bool) -> Step:
+  match op:
+    case "acquire":
+      Locks.put(s, now, name, LK.Lock.renew(LK.Lock.acquire(M.Locks.get(s, name), Locks.http.party(holder, note, now), ready), holder, Nat.add(now, 90n)))
+    case "renew":
+      Locks.put(s, now, name, LK.Lock.renew(LK.Lock.acquire(M.Locks.get(s, name), Locks.http.party(holder, note, now), ready), holder, Nat.add(now, 90n)))
+    case "status":
+      Locks.acquire(s, now, name, Locks.http.party(holder, note, now), ready)
+    case "release":
+      Locks.release(s, now, name, holder)
+    case "cancel":
+      Locks.cancel(s, now, name, holder)
+    case _:
+      Step.none()
 
 def Locks.work.start(+s: M.State, +now: Nat, +th: String, +a: J.Json, +ready: Bool) -> Step:
   +name = J.Json.get_str(a, "lock", "")
@@ -4196,6 +4223,27 @@ def Locks.ready.k(ok: Bool, +s: M.State, +now: Nat, +name: String) -> Step:
 def Locks.ready(+s: M.State, +now: Nat, +name: String, +id: String) -> Step:
   Locks.ready.k(Bool.and(String.eq(LK.Lock.owner(M.Locks.get(s, name)), id), Bool.not(LK.Lock.ready(M.Locks.get(s, name)))), s, now, name)
 
+def Locks.outside.same(old: Maybe<&2, LK.LockParty>, +pid: Nat, +cmd: String) -> Bool:
+  match old:
+    case Some{LK.LockParty{+id, _, _, +note, _, _}}:
+      Bool.and(String.eq(id, Nat.show(pid)), String.eq(note, cmd))
+    case None{}:
+      False{}
+
+# The hub could not take the guard: who holds the flock outside it (pid 0 = unknown).
+def Locks.outside.k(ok: Bool, +l: LK.NamedLock, +old: Maybe<&2, LK.LockParty>, +s: M.State, +now: Nat, +name: String, +pid: Nat, +cmd: String) -> Step:
+  match ok:
+    case False{}:
+      Step.none()
+    case True{}:
+      +same = Bool.pick(Bool, Nat.is_eq(pid, 0n), False{}, Locks.outside.same(old, pid, cmd))
+      +o = {Bool.pick(Maybe<&2, LK.LockParty>, Nat.is_eq(pid, 0n), None{}, Bool.pick(Maybe<&2, LK.LockParty>, same, old, Some{LK.LockParty{Nat.show(pid), "outside", "", cmd, now, 0n}})) : Maybe<&2, LK.LockParty>}
+      Bool.pick(Step, String.eq(J.Json.show(LK.Lock.json(LK.Lock.outside.set(l, o))), J.Json.show(LK.Lock.json(l))), Step.none(), Locks.put(s, now, name, LK.Lock.outside.set(l, o)))
+
+def Locks.outside(+s: M.State, +now: Nat, +name: String, +id: String, +pid: Nat, +cmd: String) -> Step:
+  +l = M.Locks.get(s, name)
+  Locks.outside.k(Bool.and(String.eq(LK.Lock.owner(l), id), Bool.not(LK.Lock.ready(l))), l, LK.Lock.outside(l), s, now, name, pid, cmd)
+
 def Locks.live(+s: M.State, +now: Nat, +p: LK.LockParty) -> Bool:
   Bool.pick(Bool, String.eq(LK.Lock.kind(p), "client"), Nat.is_gt(LK.Lock.lease(p), now),
     Bool.and(Hub.owns(s, LK.Lock.thread(p)), Bool.and(Lost.live(Hub.thread(s, LK.Lock.thread(p))),
@@ -4208,17 +4256,18 @@ def Locks.prune.q(q: List<&2, LK.LockParty>, +s: M.State, +now: Nat) -> List<&2,
     case +p <> t:
       List.append(&2, LK.LockParty, Bool.pick(List<&2, LK.LockParty>, Locks.live(s, now, p), [p], Nil{}), Locks.prune.q(t, s, now))
 
-def Locks.prune.h(h: Maybe<&2, LK.LockParty>, +q: List<&2, LK.LockParty>, +r: Bool, +s: M.State, +now: Nat) -> LK.NamedLock:
+def Locks.prune.h(h: Maybe<&2, LK.LockParty>, +q: List<&2, LK.LockParty>, +r: Bool, o: Maybe<&2, LK.LockParty>, +s: M.State, +now: Nat) -> LK.NamedLock:
   match h:
     case None{}:
       LK.Lock.promote(q)
     case Some{+p}:
-      Bool.pick(LK.NamedLock, Locks.live(s, now, p), LK.NamedLock{Some{p}, q, r}, LK.Lock.expire(LK.NamedLock{Some{p}, q, r}, LK.Lock.id(p)))
+      +k = {LK.NamedLock{Some{p}, q, r, o} : LK.NamedLock}
+      Bool.pick(LK.NamedLock, Locks.live(s, now, p), k, LK.Lock.expire(k, LK.Lock.id(p)))
 
 def Locks.prune(l: LK.NamedLock, +s: M.State, +now: Nat) -> LK.NamedLock:
   match l:
-    case LK.NamedLock{h, q, r}:
-      Locks.prune.h(h, Locks.prune.q(q, s, now), r, s, now)
+    case LK.NamedLock{h, q, r, o}:
+      Locks.prune.h(h, Locks.prune.q(q, s, now), r, o, s, now)
 
 def Locks.wait.work(same: Bool, +s: M.State, +now: Nat, +th: String, +id: String, +word: String) -> Step:
   match same:
@@ -5097,7 +5146,9 @@ def Locks.recover.go(names: List<&2, String>, +s: M.State, +now: Nat, +st: Step)
     case +name <> t:
       +l = M.Locks.get(s, name)
       +ps = List.append(&2, LK.LockParty, LK.Lock.holder.list(LK.Lock.holder(l)), LK.Lock.waiters(l))
-      Locks.recover.go(t, s, now, Step.cat(Locks.recover.parties(ps, s, now, st), Step{Nil{}, Bool.pick(List<&2, Out>, String.is_empty(LK.Lock.owner(l)), Nil{}, [LockGuard{name, "", LK.Lock.owner(l)}])}))
+      +l2 = LK.Lock.extend(l, Nat.add(now, 90n))
+      +same = String.eq(J.Json.show(LK.Lock.json(l)), J.Json.show(LK.Lock.json(l2)))
+      Locks.recover.go(t, s, now, Step.cat(Locks.recover.parties(ps, s, now, st), Step{Bool.pick(List<&2, M.Change>, same, Nil{}, [M.LockChanged{name, l2, now}]), Bool.pick(List<&2, Out>, String.is_empty(LK.Lock.owner(l)), Nil{}, [LockGuard{name, "", LK.Lock.owner(l)}])}))
 
 def Locks.recover(+s: M.State, +now: Nat) -> Step:
   Locks.recover.go(M.Locks.names(s), s, now, Step.none())
@@ -5722,6 +5773,14 @@ def Locks.demo() -> M.State:
 def Locks.demo.party(+id: String) -> LK.LockParty:
   LK.LockParty{id, "thread", id, "build", 2n, 0n}
 
+# a client waiting behind a held lock, its lease about to lapse
+def Locks.demo.client() -> M.State:
+  M.State.replay([M.LockChanged{"bend", LK.Lock.acquire(LK.Lock.acquire(LK.Lock.empty(), Locks.demo.party("ta"), True{}), LK.LockParty{"pid:1", "client", "", "bp-lock.sh", 2n, 5n}, False{}), 3n}], Locks.demo())
+
+def Locks.demo.recovered() -> M.State:
+  +s = Locks.demo.client()
+  M.State.replay(Queue.changes(Locks.recover(s, 6n)), s)
+
 def Locks.demo.queue() -> M.State:
   M.State.replay([M.LockChanged{"bend", LK.Lock.acquire(LK.Lock.acquire(LK.Lock.empty(), Locks.demo.party("ta"), True{}), Locks.demo.party("tb"), False{}), 3n}], Locks.demo())
 
@@ -5736,6 +5795,26 @@ def Locks.demo.grant() -> Step:
 def Locks.demo.twice() -> Nat:
   +s = M.State.replay(Queue.changes(Locks.demo.grant()), Locks.demo.release())
   Lr.count(Queue.changes(Locks.after(s, 6n, Locks.ready(s, 6n, "bend", "tb"))), "tb")
+
+# a client the record never heard of calls status/renew: queued after the others
+def Locks.demo.requeue(+op: String, +want: String) -> String:
+  +s = Locks.demo.queue()
+  +l = M.Locks.get(s, "bend")
+  +s2 = M.State.replay(Queue.changes(Locks.http.step(op, s, 10n, "bend", want, "bp-lock.sh", False{})), s)
+  +l2 = M.Locks.get(s2, "bend")
+  Nat.show(LK.Lock.position(l2, want)) ++ ":" ++ Nat.show(LK.Lock.position(l2, "tb")) ++ ":" ++ Bool.pick(String, Locks.http.lost(op, l, want), "lost", "kept")
+
+# the lost party's own calls keep it queued once (no second entry)
+def Locks.demo.requeue.twice() -> Nat:
+  +s = M.State.replay(Queue.changes(Locks.http.step("status", Locks.demo.queue(), 10n, "bend", "pid:9", "x", False{})), Locks.demo.queue())
+  +s2 = M.State.replay(Queue.changes(Locks.http.step("status", s, 11n, "bend", "pid:9", "x", False{})), s)
+  List.length(&2, LK.LockParty, LK.Lock.waiters(M.Locks.get(s2, "bend")))
+
+def Locks.demo.lease() -> String:
+  +s = Locks.demo.recovered()
+  +s2 = M.State.replay(Queue.changes(Locks.after(s, 6n, Step.none())), s)
+  +l = M.Locks.get(s2, "bend")
+  Nat.show(LK.Lock.lease(Maybe.default(&2, LK.LockParty, List.head(&2, LK.LockParty, LK.Lock.waiters(l)), Locks.demo.party("none")))) ++ ":" ++ Nat.show(LK.Lock.position(l, "pid:1"))
 
 def Locks.demo.deleted() -> String:
   +s = Locks.demo.queue()

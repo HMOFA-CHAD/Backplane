@@ -6,10 +6,10 @@ type LockParty is Data:
   LockParty{id: String, kind: String, thread: String, note: String, since: Nat, lease: Nat}
 
 type NamedLock is Data:
-  NamedLock{holder: Maybe<&2, LockParty>, waiters: List<&2, LockParty>, ready: Bool}
+  NamedLock{holder: Maybe<&2, LockParty>, waiters: List<&2, LockParty>, ready: Bool, outside: Maybe<&2, LockParty>}
 
 def Lock.empty() -> NamedLock:
-  NamedLock{None{}, Nil{}, False{}}
+  NamedLock{None{}, Nil{}, False{}, None{}}
 
 def Lock.id(p: LockParty) -> String:
   match p:
@@ -65,18 +65,23 @@ def Lock.parties.read(ps: List<&2, J.Json>) -> List<&2, LockParty>:
 
 def Lock.holder(l: NamedLock) -> Maybe<&2, LockParty>:
   match l:
-    case NamedLock{h, _, _}:
+    case NamedLock{h, _, _, _}:
       h
 
 def Lock.waiters(l: NamedLock) -> List<&2, LockParty>:
   match l:
-    case NamedLock{_, q, _}:
+    case NamedLock{_, q, _, _}:
       q
 
 def Lock.ready(l: NamedLock) -> Bool:
   match l:
-    case NamedLock{_, _, r}:
+    case NamedLock{_, _, r, _}:
       r
+
+def Lock.outside(l: NamedLock) -> Maybe<&2, LockParty>:
+  match l:
+    case NamedLock{_, _, _, o}:
+      o
 
 def Lock.owner.h(h: Maybe<&2, LockParty>) -> String:
   match h:
@@ -95,10 +100,25 @@ def Lock.holder.json(h: Maybe<&2, LockParty>) -> J.Json:
     case Some{p}:
       Lock.party.json(p)
 
+# Who holds the OS flock outside the hub: id = pid, note = command line.
+def Lock.outside.kv(o: Maybe<&2, LockParty>) -> List<&2, J.KV>:
+  match o:
+    case None{}:
+      Nil{}
+    case Some{LockParty{id, _, _, note, since, _}}:
+      [J.KV{"outside", J.Json.obj([J.KV{"pid", J.Num{id}}, J.KV{"cmd", J.Str{note}}, J.KV{"since", J.Num{Nat.show(since)}}])}]
+
+def Lock.outside.read(+o: J.Json) -> Maybe<&2, LockParty>:
+  match o:
+    case J.Null{}:
+      None{}
+    case _:
+      Some{LockParty{Nat.show(J.Json.get_nat(o, "pid", 0n)), "outside", "", J.Json.get_str(o, "cmd", ""), J.Json.get_nat(o, "since", 0n), 0n}}
+
 def Lock.json(l: NamedLock) -> J.Json:
   match l:
-    case NamedLock{h, q, r}:
-      J.Json.obj([J.KV{"holder", Lock.holder.json(h)}, J.KV{"waiters", J.Json.arr(Lock.parties.json(q))}, J.KV{"ready", J.Flag{r}}])
+    case NamedLock{h, q, r, o}:
+      J.Json.obj(List.append(&2, J.KV, [J.KV{"holder", Lock.holder.json(h)}, J.KV{"waiters", J.Json.arr(Lock.parties.json(q))}, J.KV{"ready", J.Flag{r}}], Lock.outside.kv(o)))
 
 def Lock.holder.read(o: J.Json) -> Maybe<&2, LockParty>:
   match o:
@@ -108,7 +128,7 @@ def Lock.holder.read(o: J.Json) -> Maybe<&2, LockParty>:
       Some{Lock.party.read(o)}
 
 def Lock.read(+o: J.Json) -> NamedLock:
-  NamedLock{Lock.holder.read(J.Json.get_obj(o, "holder")), Lock.parties.read(J.Json.elems(J.Json.get_obj(o, "waiters"))), J.Json.get_bool(o, "ready", False{})}
+  NamedLock{Lock.holder.read(J.Json.get_obj(o, "holder")), Lock.parties.read(J.Json.elems(J.Json.get_obj(o, "waiters"))), J.Json.get_bool(o, "ready", False{}), Lock.outside.read(J.Json.get_obj(o, "outside"))}
 
 def Lock.position.q(q: List<&2, LockParty>, +id: String, +n: Nat) -> Nat:
   match q:
@@ -127,10 +147,10 @@ def Lock.acquire.k(had: Bool, l: NamedLock, +p: LockParty, +ready: Bool) -> Name
   match had l:
     case True{} _:
       l
-    case False{} NamedLock{None{}, Nil{}, _}:
-      NamedLock{Some{p}, Nil{}, ready}
-    case False{} NamedLock{h, q, r}:
-      NamedLock{h, List.append(&2, LockParty, q, [p]), r}
+    case False{} NamedLock{None{}, Nil{}, _, _}:
+      NamedLock{Some{p}, Nil{}, ready, None{}}
+    case False{} NamedLock{h, q, r, o}:
+      NamedLock{h, List.append(&2, LockParty, q, [p]), r, o}
 
 def Lock.acquire(+l: NamedLock, +p: LockParty, ready: Bool) -> NamedLock:
   Lock.acquire.k(Lock.has(l, Lock.id(p)), l, p, ready)
@@ -140,11 +160,11 @@ def Lock.promote(q: List<&2, LockParty>) -> NamedLock:
     case Nil{}:
       Lock.empty()
     case h <> t:
-      NamedLock{Some{h}, t, False{}}
+      NamedLock{Some{h}, t, False{}, None{}}
 
 def Lock.release.k(own: Bool, l: NamedLock) -> NamedLock:
   match own l:
-    case True{} NamedLock{_, q, _}:
+    case True{} NamedLock{_, q, _, _}:
       Lock.promote(q)
     case False{} _:
       l
@@ -161,8 +181,8 @@ def Lock.cancel.q(q: List<&2, LockParty>, +id: String) -> List<&2, LockParty>:
 
 def Lock.cancel(l: NamedLock, +id: String) -> NamedLock:
   match l:
-    case NamedLock{h, q, r}:
-      NamedLock{h, Lock.cancel.q(q, id), r}
+    case NamedLock{h, q, r, o}:
+      NamedLock{h, Lock.cancel.q(q, id), r, o}
 
 # Expiry also removes a queued party, so retired owners cannot re-enter.
 def Lock.expire(+l: NamedLock, +id: String) -> NamedLock:
@@ -189,13 +209,47 @@ def Lock.renew.h(h: Maybe<&2, LockParty>, +id: String, +lease: Nat) -> Maybe<&2,
 
 def Lock.renew(l: NamedLock, +id: String, +lease: Nat) -> NamedLock:
   match l:
-    case NamedLock{h, q, r}:
-      NamedLock{Lock.renew.h(h, id, lease), Lock.renew.q(q, id, lease), r}
+    case NamedLock{h, q, r, o}:
+      NamedLock{Lock.renew.h(h, id, lease), Lock.renew.q(q, id, lease), r, o}
 
+# The guard is taken: nobody outside the hub holds the flock any more.
 def Lock.mark(l: NamedLock) -> NamedLock:
   match l:
-    case NamedLock{h, q, _}:
-      NamedLock{h, q, True{}}
+    case NamedLock{h, q, _, _}:
+      NamedLock{h, q, True{}, None{}}
+
+def Lock.outside.set(l: NamedLock, o: Maybe<&2, LockParty>) -> NamedLock:
+  match l:
+    case NamedLock{h, q, r, _}:
+      NamedLock{h, q, r, o}
+
+# After a restart every client party gets a fresh lease: the downtime must not
+# prune a live helper. Whoever held the flock outside is probed again.
+def Lock.extend.p(p: LockParty, +lease: Nat) -> LockParty:
+  match p:
+    case LockParty{id, "client", th, n, s, _}:
+      LockParty{id, "client", th, n, s, lease}
+    case _:
+      p
+
+def Lock.extend.q(q: List<&2, LockParty>, +lease: Nat) -> List<&2, LockParty>:
+  match q:
+    case Nil{}:
+      Nil{}
+    case h <> t:
+      Lock.extend.p(h, lease) <> Lock.extend.q(t, lease)
+
+def Lock.extend.h(h: Maybe<&2, LockParty>, +lease: Nat) -> Maybe<&2, LockParty>:
+  match h:
+    case None{}:
+      None{}
+    case Some{p}:
+      Some{Lock.extend.p(p, lease)}
+
+def Lock.extend(l: NamedLock, +lease: Nat) -> NamedLock:
+  match l:
+    case NamedLock{h, q, r, _}:
+      NamedLock{Lock.extend.h(h, lease), Lock.extend.q(q, lease), r, None{}}
 
 def Lock.name.chars(s: String) -> Bool:
   match s:

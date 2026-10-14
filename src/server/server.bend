@@ -11331,6 +11331,13 @@ def Hub.lock.probe.after(h: Hub, +name: String, +holder: String) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.lock.probe.after.k(Bool.and(String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder), Bool.not(LCK.Lock.ready(M.Locks.get(st, name)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, name, holder)
 
+# The guard could not be taken: record who holds the flock outside the hub.
+def Hub.lock.probe.who(r: P.Ran, h: Hub, +st: M.State, +name: String, +holder: String, +now: Nat) -> IO(Hub):
+  match r:
+    case P.Ran{_, +out}:
+      +j = Maybe.default(&2, J.Json, J.Json.parse(out), J.Null{})
+      Hub.step(h, B.Locks.outside(st, now, name, holder, J.Json.get_nat(j, "pid", 0n), J.Json.get_str(j, "cmd", "")))
+
 def Hub.lock.probe.taken(taken: Bool, h: Hub, +st: M.State, +name: String, +holder: String, +now: Nat) -> IO(Hub):
   match taken h:
     case True{} _:
@@ -11338,7 +11345,8 @@ def Hub.lock.probe.taken(taken: Bool, h: Hub, +st: M.State, +name: String, +hold
     case False{} Hub{s, f, ls, cl, as, +inbox, cfg, note}:
       do IO<Hub>:
         IO.spawn(Unit, LockJob.later(inbox, name, holder))
-        return Hub{s, f, ls, cl, as, inbox, cfg, note}
+        r : P.Ran <- P.Proc.run("sh", ["-c", LG.Guard.who(), "sh", name], "/")
+        Hub.lock.probe.who(r, Hub{s, f, ls, cl, as, inbox, cfg, note}, st, name, holder, now)
 
 def Hub.lock.probe.take(h: Hub, +st: M.State, +name: String, +holder: String, +now: Nat) -> IO(Hub):
   match h:
@@ -11357,25 +11365,12 @@ def Hub.lock.probe(h: Hub, +name: String, +holder: String, +now: Nat) -> IO(Hub)
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.lock.probe.k(Bool.and(Bool.not(String.is_empty(holder)), String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder)), Hub{st, f, ls, cl, as, inbox, cfg, note}, st, name, holder, now)
 
-def LockHttp.step(op: String, +s: M.State, +now: Nat, +name: String, +holder: String, +note: String, +ready: Bool) -> B.Step:
-  match op:
-    case "acquire":
-      B.Locks.put(s, now, name, LCK.Lock.renew(LCK.Lock.acquire(M.Locks.get(s, name), LCK.LockParty{holder, "client", "", note, now, Nat.add(now, 90n)}, ready), holder, Nat.add(now, 90n)))
-    case "renew":
-      B.Locks.put(s, now, name, LCK.Lock.renew(M.Locks.get(s, name), holder, Nat.add(now, 90n)))
-    case "release":
-      B.Locks.release(s, now, name, holder)
-    case "cancel":
-      B.Locks.cancel(s, now, name, holder)
-    case _:
-      B.Step.none()
-
-def Hub.lock.http.done(r: Hub & Bool, +name: String, +holder: String, +reply: Chan(String)) -> IO(Hub):
+def Hub.lock.http.done(r: Hub & Bool, +name: String, +holder: String, requeued: Bool, +reply: Chan(String)) -> IO(Hub):
   (h, ok) = r
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       do IO<Hub>:
-        sent : Result<&1, &1, String, Unit> <- Chan.send(String, reply, J.Json.show(Bool.pick(J.Json, ok, B.Locks.answer(M.Locks.get(st, name), holder), J.Json.obj([J.KV{"error", J.Str{"log write failed"}}]))))
+        sent : Result<&1, &1, String, Unit> <- Chan.send(String, reply, J.Json.show(Bool.pick(J.Json, ok, B.Locks.answer.re(M.Locks.get(st, name), holder, requeued), J.Json.obj([J.KV{"error", J.Str{"log write failed"}}]))))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 def Hub.lock.http.valid(valid: Bool, h: Hub, +op: String, +a: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
@@ -11388,9 +11383,10 @@ def Hub.lock.http.valid(valid: Bool, h: Hub, +op: String, +a: J.Json, +reply: Ch
       do IO<Hub>:
         +name : String = J.Json.get_str(a, "name", "")
         +holder : String = J.Json.get_str(a, "holder", "")
-        +ready : Bool <- LockTool.preflight(Bool.and(String.eq(op, "acquire"), Bool.or(String.is_empty(LCK.Lock.owner(M.Locks.get(st, name))), String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder))), name, holder, Cfg.home(cfg))
-        r : Hub & Bool <- Hub.step.ok(Hub{st, f, ls, cl, as, inbox, cfg, note}, LockHttp.step(op, st, now, name, holder, J.Json.get_str(a, "note", ""), ready))
-        h2 : Hub <- Hub.lock.http.done(r, name, holder, reply)
+        +lost : Bool = B.Locks.http.lost(op, M.Locks.get(st, name), holder)
+        +ready : Bool <- LockTool.preflight(Bool.and(Bool.or(String.eq(op, "acquire"), lost), Bool.or(String.is_empty(LCK.Lock.owner(M.Locks.get(st, name))), String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder))), name, holder, Cfg.home(cfg))
+        r : Hub & Bool <- Hub.step.ok(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Locks.http.step(op, st, now, name, holder, J.Json.get_str(a, "note", ""), ready))
+        h2 : Hub <- Hub.lock.http.done(r, name, holder, lost, reply)
         LockTool.cleanup(h2, name, holder)
 
 def Hub.lock.http(h: Hub, +op: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):

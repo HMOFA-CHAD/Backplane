@@ -7431,7 +7431,7 @@ law lock_fifo:
   for holder: LCK.LockParty
   for first: LCK.LockParty
   for rest: List<&2, LCK.LockParty>
-  {LCK.Lock.holder(LCK.Lock.release.k(True{}, LCK.NamedLock{Some{holder}, first <> rest, True{}})) == Some{first} : Maybe<&2, LCK.LockParty>}
+  {LCK.Lock.holder(LCK.Lock.release.k(True{}, LCK.NamedLock{Some{holder}, first <> rest, True{}, None{}})) == Some{first} : Maybe<&2, LCK.LockParty>}
 
 law lock_holder_only:
   for l: LCK.NamedLock
@@ -7454,7 +7454,23 @@ law lock_ready_idempotent:
   {LCK.Lock.mark(LCK.Lock.mark(l)) == LCK.Lock.mark(l) : LCK.NamedLock}
 
 law codec_lock_roundtrip:
-  {C.Change.decode(C.Change.encode(M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}}, 4n})) == Some{M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}}, 4n}} : Maybe<&2, M.Change>}
+  {C.Change.decode(C.Change.encode(M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}, None{}}, 4n})) == Some{M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}, None{}}, 4n}} : Maybe<&2, M.Change>}
+
+# harness-coord: locks fix
+# A client party the record lost is queued again by its next status or renew,
+# never answered with an invisible held:false; others keep their order.
+law lock_status_requeues_lost_client:
+  {H.Locks.demo.requeue("status", "pid:9") == "2:1:lost" : String}
+
+law lock_renew_requeues_lost_client:
+  {H.Locks.demo.requeue("renew", "pid:9") == "2:1:lost" : String}
+
+law lock_requeue_keeps_fifo_for_others:
+  {Bool.and(String.eq(H.Locks.demo.requeue("status", "pid:9"), "2:1:lost"), Nat.is_eq(H.Locks.demo.requeue.twice(), 2n)) == True{} : Bool}
+
+# a restart gives every client party a fresh 90 s lease, so the downtime never prunes a live helper
+law lock_restart_extends_client_leases:
+  {H.Locks.demo.lease() == "96:1" : String}
 
 # routines-cal: calendar
 # an update with only a summary patches only the summary

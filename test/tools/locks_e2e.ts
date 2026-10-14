@@ -113,6 +113,37 @@ try {
   await sleep(500);
   check((await post("status", "reverse", "pid:reverse@e2e")).held, "OS grant becomes visible when raw flock ends");
   await post("release", "reverse", "pid:reverse@e2e");
+  // The record loses a waiting helper: its next status queues it again, visibly, and it is granted in turn.
+  await post("acquire", "lost", "pid:front@e2e");
+  const lostErr = join(root, "lost.err"), lostMarker = join(root, "lost-ran");
+  const lostHelper = Bun.spawn([resolve("scripts/bp-lock.sh"), "lost", "--", "sh", "-c", `touch '${lostMarker}'`], { env, stdout: "ignore", stderr: Bun.file(lostErr) });
+  owned.push(lostHelper);
+  const waiterOf = async () => (await call(a, "lock_list", {})).locks.find((l: any) => l.name === "lost")?.waiters.find((w: any) => w.note === "bp-lock.sh");
+  let party: any; for (let i = 0; i < 100 && !party; i++) { party = await waiterOf(); if (!party) await sleep(100); }
+  check(!!party, "bp-lock helper waits in the lock list");
+  await post("cancel", "lost", party.id);
+  check(!(await waiterOf()), "the record dropped the waiting helper");
+  for (let i = 0; i < 60 && !(await waiterOf()); i++) await sleep(100);
+  check(!!(await waiterOf()), "the helper's next status queues it again (visible in lock_list)");
+  const lostRaw = await post("status", "lost", "pid:ghost@e2e");
+  check(lostRaw.requeued === true && lostRaw.held === false && lostRaw.position === 2, "status of an unknown client requeues it behind the others");
+  check((await post("renew", "lost", "pid:ghost2@e2e")).requeued === true, "renew of an unknown client requeues it");
+  check((await post("status", "lost", "pid:ghost@e2e")).requeued !== true, "a queued client is not requeued again");
+  await post("cancel", "lost", "pid:ghost@e2e"); await post("cancel", "lost", "pid:ghost2@e2e");
+  await post("release", "lost", "pid:front@e2e");
+  check(await lostHelper.exited === 0 && existsSync(lostMarker), "the requeued helper is granted in turn");
+  // A raw flock outside the hub holds the file: the lock list names its pid and command.
+  const extHeld = join(root, "ext-held");
+  const ext = spawn(["flock", join(locks, "bp-ext.lock"), "sh", "-c", `touch '${extHeld}'; sleep 4`]);
+  await until(10000, () => existsSync(extHeld) ? true : undefined, "outside holder starts");
+  check(!(await post("acquire", "ext", "pid:ext@e2e")).held, "hub queues behind an outside flock holder");
+  let outside: any; for (let i = 0; i < 100 && !outside; i++) { outside = (await call(a, "lock_list", {})).locks.find((l: any) => l.name === "ext")?.outside; if (!outside) await sleep(100); }
+  check(outside?.pid === ext.pid && String(outside?.cmd).includes("sleep 4"), `lock_list shows the outside holder (${JSON.stringify(outside)})`);
+  await ext.exited;
+  for (let i = 0; i < 100 && !(await post("status", "ext", "pid:ext@e2e")).held; i++) await sleep(100);
+  check((await post("status", "ext", "pid:ext@e2e")).held === true, "the queue proceeds when the outside holder exits");
+  check((await call(a, "lock_list", {})).locks.find((l: any) => l.name === "ext")?.outside === undefined, "the outside holder is cleared once the guard is taken");
+  await post("release", "ext", "pid:ext@e2e");
   // SIGKILL has no cleanup trap: a stopped renewal must free the lock in 90s.
   const childFile = join(root, "lease-child.pid");
   const killed = spawn([resolve("scripts/bp-lock.sh"), "lease", "--", "sh", "-c", `echo $$ > '${childFile}'; exec sleep 180`]);
@@ -125,6 +156,12 @@ try {
   const next = spawn([resolve("scripts/bp-lock.sh"), "lease", "--", "sh", "-c", `touch '${expiry}'`]);
   await until(120000, () => existsSync(expiry) ? true : undefined, "killed helper lease expires");
   check(await next.exited === 0 && Date.now() - started >= 85000, `killed helper frees lock after lease (${Math.round((Date.now() - started) / 1000)}s)`);
+  // A helper waiting while the hub restarts survives it (see the restart below).
+  await post("acquire", "survive", "pid:holder@e2e");
+  const surviveMarker = join(root, "survive-ran");
+  const survivor = Bun.spawn([resolve("scripts/bp-lock.sh"), "survive", "--", "sh", "-c", `touch '${surviveMarker}'`], { env, stdout: "ignore", stderr: "inherit" });
+  owned.push(survivor);
+  await sleep(28000); // past the first long-poll acquire: the helper is in its own status loop
   // A restart loses queued locked work; it must not become an unguarded launch.
   await call(b, "lock_acquire", { name: "restart" });
   const restartMarker = join(root, "restart-must-not-run");
@@ -133,6 +170,10 @@ try {
   hub = Bun.spawn([resolve(bin), "--home", home, "--port", String(port), "--no-tailscale", "--foreground", "--headless"], { env, stdout: "ignore", stderr: Bun.file(join(root, "hub-restart.log")) });
   await waitHub(); await sleep(1000);
   check(!existsSync(restartMarker), "restart never starts queued locked work");
+  check(!existsSync(surviveMarker), "a helper waiting through the restart has not run");
+  check(survivor.exitCode === null, `a helper waiting through the restart is still alive (exit ${survivor.exitCode})`);
+  await post("release", "survive", "pid:holder@e2e");
+  check(await survivor.exited === 0 && existsSync(surviveMarker), "the helper that waited through the restart is granted");
   check(content(join(home, "events.jsonl")).includes("lost on restart"), "restart records and reports lost locked work");
   const crashPidFile = join(root, "crash-work.pid"), crashRaw = join(root, "crash-raw");
   await call(a, "work_run", { command: `echo $$ > '${crashPidFile}'; exec sleep 180`, lock: "crash-work" });
