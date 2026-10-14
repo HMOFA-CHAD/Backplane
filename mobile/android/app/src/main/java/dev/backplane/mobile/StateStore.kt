@@ -19,12 +19,15 @@ class StateStore(root: File, bridge: String) {
         File(root, "logs").deleteRecursively()
     }
 
-    fun load(): String? = if (file.exists()) file.readText().takeIf { it.isNotEmpty() } else null
+    // (never read whole into this process: Engine.loadFrom streams it)
+    fun has(): Boolean = file.exists() && file.length() > 0
 
-    fun save(text: String) {
-        if (text.isEmpty()) return
-        val tmp = File(file.path + ".tmp")
-        tmp.writeText(text)
-        tmp.renameTo(file)
+    val path: File get() = file
+
+    // written beside it, then put in its place
+    val tmp: File get() = File(file.path + ".tmp")
+
+    fun commit() {
+        if (tmp.length() > 0) tmp.renameTo(file)
     }
 }

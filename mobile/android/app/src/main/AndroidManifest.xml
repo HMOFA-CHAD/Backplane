@@ -11,6 +11,7 @@
 
     <!-- the hub is reached over the tailnet (WireGuard), as plain ws:// -->
     <application
+        android:largeHeap="true"
         android:name=".BackplaneApp"
         android:label="Backplane"
         android:icon="@mipmap/ic_launcher"
