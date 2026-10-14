@@ -143,4 +143,4 @@ def main() -> IO(Unit):
     C.Check.str("hub settings: Theme and Thread list are marked local", localrows(go(one(box()), "hub-settings", "box:3787|on")), "Theme;Thread list;Tour;")
     C.Check.str("routines: a recurring and a one-time reminder", routines(one(reminded()), "title"), "Dentist;Digest;")
     C.Check.str("routines: the one-time one is a reminder", routines(one(reminded()), "state"), "reminder;idle;")
-    C.Check.str("routines: Sched's kind", routines(one(reminded()), "sched"), "remind;routine;")
+    C.Check.str("routines: Sched's kind", routines(one(reminded()), "sched"), "reminder;routine;")
