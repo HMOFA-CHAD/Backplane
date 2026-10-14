@@ -838,6 +838,9 @@ struct RoutineRow: Decodable, Identifiable {
     let id, act, value, title, sub, state, ago: String
     let bot, machine: String?
     let away: Bool?
+    // the kind of schedule (a recurring routine, a one-time one, a reminder), its
+    // label ("Once", "Reminder"…), the time zone it runs in, and a done one's line
+    let sched, label, zone, doneText: String?
 }
 
 struct RoutinesInfo: Decodable {

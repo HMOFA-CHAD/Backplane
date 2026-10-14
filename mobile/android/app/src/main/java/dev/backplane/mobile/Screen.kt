@@ -158,6 +158,8 @@ data class Settings(val rows: List<SetRow>)
 data class RoutineRow(
     val nav: String, val id: String, val act: String, val value: String, val title: String, val sub: String,
     val state: String, val ago: String, val bot: String, val machine: String, val away: Boolean,
+    // a one-time routine or reminder, the time zone it runs in, and a done one's line
+    val sched: String = "", val zone: String = "", val doneText: String = "",
 )
 data class Tabs(val home: Int = 0, val bots: Int = 0, val routines: Int = 0, val routineRows: List<RoutineRow> = emptyList())
 
@@ -762,7 +764,8 @@ fun parseTabs(o: JSONObject) = Tabs(
     o.optJSONObject("routines")?.optInt("badge") ?: 0,
     o.optJSONObject("routines")?.optJSONArray("rows").map {
         RoutineRow(it.optString("nav"), it.optString("id"), it.optString("act"), it.optString("value"), it.optString("title"), it.optString("sub"),
-            it.optString("state"), it.optString("ago"), it.optString("bot"), it.optString("machine"), it.optBoolean("away"))
+            it.optString("state"), it.optString("ago"), it.optString("bot"), it.optString("machine"), it.optBoolean("away"),
+            it.optString("sched"), it.optString("zone"), it.optString("doneText"))
     },
 )
 

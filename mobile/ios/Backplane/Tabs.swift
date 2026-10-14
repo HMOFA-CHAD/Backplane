@@ -169,8 +169,17 @@ struct RoutinesPage: View {
     let model: AppModel
     let screen: Screen
 
+    private static func icon(_ state: String) -> String {
+        switch state {
+        case "off": "pause.circle"
+        case "done": "checkmark.circle"
+        case "reminder": "bell"
+        default: "clock.arrow.circlepath"
+        }
+    }
+
     private func when(_ r: RoutineRow) -> String {
-        [r.sub, r.ago.isEmpty ? "" : "last " + r.ago + " ago"].filter { !$0.isEmpty }.joined(separator: " · ")
+        [r.state == "done" ? (r.doneText ?? "") : r.sub, r.zone ?? "", r.ago.isEmpty ? "" : "last " + r.ago + " ago"].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     var body: some View {
@@ -179,8 +188,8 @@ struct RoutinesPage: View {
             ForEach(rows) { r in
                 Button { model.open(nav: r.nav ?? "", action: r.act, value: r.value, title: r.bot ?? r.title, kind: "routine") } label: {
                     HStack(spacing: 12) {
-                        Image(systemName: r.state == "off" ? "pause.circle" : "clock.arrow.circlepath")
-                            .frame(width: 24).foregroundStyle(r.state == "off" ? Color.secondary : PhaseColor.accent)
+                        Image(systemName: Self.icon(r.state))
+                            .frame(width: 24).foregroundStyle(r.state == "off" || r.state == "done" ? Color.secondary : PhaseColor.accent)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(r.title).foregroundStyle(.primary).lineLimit(1)
                             Text([r.bot ?? "", r.machine ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -190,7 +199,7 @@ struct RoutinesPage: View {
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                     }
                 }
-                .opacity((r.away ?? false) || r.state == "off" ? 0.5 : 1)
+                .opacity((r.away ?? false) || r.state == "off" || r.state == "done" ? 0.5 : 1)
             }
         }
         .overlay {

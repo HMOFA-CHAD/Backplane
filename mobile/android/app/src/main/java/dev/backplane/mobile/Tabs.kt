@@ -25,6 +25,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
@@ -226,11 +228,11 @@ private fun RoutinesPage(m: AppModel, s: Screen, state: LazyListState) {
                     supportingContent = {
                         Column {
                             Text(listOf(r.bot, r.machine).filter { it.isNotEmpty() }.joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(listOf(r.sub, if (r.ago.isEmpty()) "" else "last ${r.ago} ago").filter { it.isNotEmpty() }.joinToString(" · "), maxLines = 2)
+                            Text(listOf(if (r.state == "done") r.doneText else r.sub, r.zone, if (r.ago.isEmpty()) "" else "last ${r.ago} ago").filter { it.isNotEmpty() }.joinToString(" · "), maxLines = 2)
                         }
                     },
-                    leadingContent = { Icon(Icons.Filled.Schedule, null) },
-                    modifier = Modifier.alpha(if (off || r.away) 0.5f else 1f)
+                    leadingContent = { Icon(when (r.state) { "reminder" -> Icons.Filled.Notifications; "done" -> Icons.Filled.CheckCircle; else -> Icons.Filled.Schedule }, null) },
+                    modifier = Modifier.alpha(if (off || r.state == "done" || r.away) 0.5f else 1f)
                         .clickable { m.open(r.nav, r.act, r.value, r.bot.ifEmpty { r.title }, kind = "routine") },
                 )
             }
