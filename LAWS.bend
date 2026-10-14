@@ -110,6 +110,7 @@ import ./src/core/agy.bend as AGY
 import ./src/core/told.bend as TLD
 import ./src/core/rules.bend as RLS
 import ./src/core/tboard.bend as TBD
+import ./src/core/task.bend as TSK
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -7552,3 +7553,57 @@ law when_in_minutes:
 
 law when_in_hours:
   {WH.When.parse("in 2h", 1000n, TZ.Tz.utc0()) == Some{8200n} : Maybe<&2, Nat>}
+# Browser task skills (src/core/task.bend, docs/teach.md)
+
+# a recorded step in a secret field keeps only the field's label, whatever value came with it
+law task_secret_never_stored:
+  for +v: String
+  for +label: String
+  {TSK.TkStep.value_of(True{}, v, label) == TSK.VSecret{label} : TSK.TkValue}
+
+# a risky step is not continued past, only confirmed
+law task_risky_needs_confirm:
+  for +n: Nat
+  for +kind: String
+  {TSK.Run.step(TSK.Waiting{n, kind, True{}}, TSK.Answer{"continue"}) == TSK.Waiting{n, kind, True{}} : TSK.TkRun}
+
+law run_confirm_runs:
+  for +n: Nat
+  for +k: String
+  for +r: Bool
+  {TSK.Run.step(TSK.Waiting{n, k, r}, TSK.Answer{"confirm"}) == TSK.Running{n} : TSK.TkRun}
+
+# a run that waits asks the person once: nothing after a pause alerts again
+law run_stuck_alerts_once:
+  for +n: Nat
+  for +k: String
+  for +r: Bool
+  for +s: TSK.TkRun
+  {TSK.Run.alerts(TSK.Waiting{n, k, r}, s) == False{} : Bool}
+
+# and a pause from running does
+law run_pause_alerts:
+  for +n: Nat
+  for +k: String
+  for +r: Bool
+  {TSK.Run.alerts(TSK.Running{n}, TSK.Waiting{n, k, r}) == True{} : Bool}
+
+# Stop task ends a pause
+law run_stop_ends:
+  for +n: Nat
+  for +k: String
+  for +r: Bool
+  {TSK.Run.step(TSK.Waiting{n, k, r}, TSK.Answer{"stop"}) == TSK.Ended{"stopped"} : TSK.TkRun}
+
+# while the person drives, the bot's calls do nothing
+law drive_person_locks_bot:
+  for +w: String
+  {TSK.Drive.can_bot(TSK.DPerson{w}) == False{} : Bool}
+
+# a slug is never empty
+law task_slug_nonempty:
+  for +x: String
+  {String.is_empty(TSK.Tk.slug.or(x)) == False{} : Bool}
+
+law task_slug_empty:
+  {TSK.Task.slug("") == "task" : String}

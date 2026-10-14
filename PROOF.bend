@@ -8857,3 +8857,34 @@ def Laws.when_in_minutes():
 
 def Laws.when_in_hours():
   {==}
+def Laws.task_secret_never_stored(v, label):
+  {==}
+
+def Laws.task_risky_needs_confirm(n, kind):
+  {==}
+
+def Laws.run_confirm_runs(n, k, r):
+  {==}
+
+def Laws.run_stuck_alerts_once(n, k, r, s):
+  {==}
+
+def Laws.run_pause_alerts(n, k, r):
+  {==}
+
+def Laws.run_stop_ends(n, k, r):
+  {==}
+
+def Laws.drive_person_locks_bot(w):
+  {==}
+
+def Laws.task_slug_nonempty(x):
+  match x:
+    case SNil{}:
+      {==}
+    case SCon{c, t}:
+      {==}
+
+def Laws.task_slug_empty():
+  {==}
+
