@@ -2,6 +2,7 @@ import Base
 import ./bot.bend as BT
 import ./json.bend as J
 import ./ubop.bend as UO
+import ./locks.bend as LK
 
 # The product's state, event-sourced. Every change is a Change appended to
 # the log; the read model is `replay(log)`. Events are persisted forever:
@@ -262,6 +263,7 @@ type Change is Data:
   ThreadLaunched{id: String, by: String, report: Bool, at: Nat}
   WakeSet{id: String, by: String, kind: String, target: String, events: List<&2, String>, once: Bool, note: String, at: Nat}
   WakeDropped{id: String, at: Nat}
+  LockChanged{name: String, lock: LK.NamedLock, at: Nat}
 
 # the later of two times. Base's Nat.max recurses once per unit and
 # overflows at epoch scale; Nat.is_ge compiles to a machine comparison.
@@ -1430,6 +1432,16 @@ def Launch.of(s: State, +by: String) -> List<&2, String>:
 def Launch.fold(+s: State, +id: String, +by: String, report: Bool) -> State:
   State.setting(State.setting(s, Launch.key(id), Launch.val(by, report)), Launch.list.key(by), Launch.add(Setting.get(s, Launch.list.key(by), ""), id))
 
+# Lock records and the name index are projections, never timeline scans.
+def Locks.names(s: State) -> List<&2, String>:
+  Launch.lines(Setting.get(s, "locks.names", ""))
+
+def Locks.get(s: State, +name: String) -> LK.NamedLock:
+  LK.Lock.read(Maybe.default(&2, J.Json, J.Json.parse(Setting.get(s, "lock." ++ name, "")), J.Null{}))
+
+def Locks.fold(+s: State, +name: String, l: LK.NamedLock) -> State:
+  State.setting(State.setting(s, "lock." ++ name, J.Json.show(LK.Lock.json(l))), "locks.names", Launch.add(Setting.get(s, "locks.names", ""), name))
+
 # Wake subscriptions: indexes contain ids, records live under wake.<id>.
 def Wake.strs(xs: List<&2, String>) -> List<&2, J.Json>:
   match xs:
@@ -1801,6 +1813,8 @@ def State.apply.go(s: State, e: Change) -> State:
       Wake.fold(s, id, by, kind, target, events, once, note, at)
     case WakeDropped{id, _}:
       Wake.drop(s, id)
+    case LockChanged{name, l, _}:
+      Locks.fold(s, name, l)
     case TodosSet{+th, todos, _}:
       State.setting(s, "todos." ++ th, todos)
     case ProviderSet{+id, +p, m, _}:

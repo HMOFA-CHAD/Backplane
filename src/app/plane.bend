@@ -59,10 +59,17 @@ def Pl.row.ops(side: Bool, +title: String, +sub: String, +machine: String, +stat
     case False{}:
       Pl.row.thread(ty, c, title, sub, machine, state, at, now, x, w, y)
 
+def Pl.row.kind(lock: Bool, +side: Bool, +title: String, +sub: String, +machine: String, +state: String, +at: Nat, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +y: U32, +now: Nat) -> List<&2, R.Op>:
+  match lock:
+    case True{}:
+      List.append(&2, R.Op, [D.Draw.disc(c, U32.to_f32((x + 8 : U32)), U32.to_f32((y + 15 : U32)), 4.0, Pl.dot(state), 255)], L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, title, L.U32.dim(w, 34)), c, (x + 22 : U32), y, 30, T.Th.text()))
+    case False{}:
+      Pl.row.ops(side, title, sub, machine, state, at, ty, c, x, w, y, now)
+
 def Pl.row(side: Bool, r: P.PRow, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +y: U32, +now: Nat) -> L.Out:
   match r:
-    case P.PRow{_, _, +act, +val, +title, +sub, +machine, +state, +at, _}:
-      L.Out{List.append(&2, R.Op, Pl.row.ops(side, title, sub, machine, state, at, ty, c, x, w, y, now), [D.Draw.rect(c, x, (y + 29 : U32), w, 1, T.Th.line(), 255)]),
+    case P.PRow{+kind, _, +act, +val, +title, +sub, +machine, +state, +at, _}:
+      L.Out{List.append(&2, R.Op, Pl.row.kind(String.eq(kind, "lock"), side, title, sub, machine, state, at, ty, c, x, w, y, now), [D.Draw.rect(c, x, (y + 29 : U32), w, 1, T.Th.line(), 255)]),
         [L.Lay.hit(x, y, w, 30, act, val)]}
 
 def Pl.row.if(on: Bool, side: Bool, r: P.PRow, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +y: U32, +now: Nat) -> L.Out:
@@ -179,7 +186,8 @@ def Pl.main(+p: P.Plane, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +rel: U32, +to
     L.Lay.col.then(L.Col{L.Out.none(), Bool.pick(U32, quiet, (rel + 40 : U32), rel)}, r1 =>
       L.Lay.col.then(Pl.sect(P.Plane.need(p), "NEEDS YOU", 0n, False{}, ty, c, x, w, r1, top, off, vh, now), r2 =>
         L.Lay.col.then(Pl.sect(P.Plane.run(p), "RUNNING", 0n, False{}, ty, c, x, w, r2, top, off, vh, now), r3 =>
-          Pl.sect(P.Plane.idle(p), "IDLE " ++ Nat.show(P.Plane.idle_n(p)), Nat.sub(P.Plane.idle_n(p), Pl.len(P.Plane.idle(p))), False{}, ty, c, x, w, r3, top, off, vh, now)))))
+          L.Lay.col.then(Pl.sect(P.Plane.locks(p), "LOCKS", 0n, False{}, ty, c, x, w, r3, top, off, vh, now), r4 =>
+            Pl.sect(P.Plane.idle(p), "IDLE " ++ Nat.show(P.Plane.idle_n(p)), Nat.sub(P.Plane.idle_n(p), Pl.len(P.Plane.idle(p))), False{}, ty, c, x, w, r4, top, off, vh, now))))))
 
 def Pl.side(+p: P.Plane, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +rel: U32, +top: U32, +off: U32, +vh: U32, +now: Nat) -> L.Col:
   L.Lay.col.then(Pl.sect(P.Plane.bots(p), "BOTS", 0n, True{}, ty, c, x, w, rel, top, off, vh, now), r2 =>

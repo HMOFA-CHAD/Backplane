@@ -1,5 +1,6 @@
 import Base
 import ./src/core/exe.bend as EX
+import ./src/core/locks.bend as LCK
 import ./src/core/wake.bend as WAK
 import ./src/core/bothub.bend as BHS
 import ./src/core/bot.bend as BOT
@@ -7414,3 +7415,37 @@ law exe_gone_deleted:
   {EX.Exe.gone("/a/backplane (deleted)") == True{} : Bool}
 
 # ---- end phone-sch-viewer: exe path ----
+# harness-coord: locks
+# The holder count is structural for every representable lock.
+law lock_exclusive:
+  for l: LCK.NamedLock
+  {Nat.is_le(LCK.Lock.count(l), 1n) == True{} : Bool}
+
+law lock_fifo:
+  for holder: LCK.LockParty
+  for first: LCK.LockParty
+  for rest: List<&2, LCK.LockParty>
+  {LCK.Lock.holder(LCK.Lock.release.k(True{}, LCK.NamedLock{Some{holder}, first <> rest, True{}})) == Some{first} : Maybe<&2, LCK.LockParty>}
+
+law lock_holder_only:
+  for l: LCK.NamedLock
+  {LCK.Lock.release.k(False{}, l) == l : LCK.NamedLock}
+
+law lock_release_next:
+  {H.Lr.count(H.Queue.changes(H.Locks.demo.grant()), "tb") == 1n : Nat}
+
+law lock_deleted_holder_frees:
+  {H.Locks.demo.deleted() == "tb" : String}
+
+law lock_work_releases:
+  {H.Locks.demo.work.end() == "" : String}
+
+law lock_grant_once:
+  {H.Locks.demo.twice() == 0n : Nat}
+
+law lock_ready_idempotent:
+  for l: LCK.NamedLock
+  {LCK.Lock.mark(LCK.Lock.mark(l)) == LCK.Lock.mark(l) : LCK.NamedLock}
+
+law codec_lock_roundtrip:
+  {C.Change.decode(C.Change.encode(M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}}, 4n})) == Some{M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}}, 4n}} : Maybe<&2, M.Change>}

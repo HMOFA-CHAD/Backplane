@@ -17,6 +17,7 @@ import ./wake.bend as WK
 import ./told.bend as TLD
 import ./deploy.bend as DP
 import ./version.bend as VER
+import ./locks.bend as LK
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -24,6 +25,7 @@ import ./version.bend as VER
 
 # what the server must do after a step
 type Out is Data:
+  LockGuard{name: String, old: String, holder: String}
   # to one client
   Send{client: U32, text: String}
   # to every client
@@ -1008,7 +1010,7 @@ def Hub.methods() -> List<&2, String>:
    "thread.settle", "thread.unsettle", "thread.archive", "thread.unarchive",
    "thread.pin", "thread.unpin", "thread.rename", "thread.delete", "kicad.watch", "thread.modes", "app.update", "setting.set", "kicad.install",
    "ask.answer", "device.register", "device.drop", "kicad.info", "queue.resume",
-   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status"]
+   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status", "lock.release", "lock.cancel"]
 
 # Agent output (Claude stream-json)
 # ---------------------------------
@@ -3544,9 +3546,26 @@ def Watch.end.k(found: Bool, timeout: Bool, +l: String, +s: M.State, +now: Nat, 
 # watched work ended (status: "exit <code>", "gone", "timeout", or the
 # file's "found"): told once, from the row that is still there; a timeout
 # keeps it, ended with outcome unknown (laws watch_end_*, watch_timeout_*)
+# A timeout reports uncertainty, but cannot free a lock over live work.
+def Locks.work.has.go(names: List<&2, String>, +s: M.State, +id: String) -> Bool:
+  match names:
+    case Nil{}:
+      False{}
+    case name <> t:
+      Bool.or(LK.Lock.has(M.Locks.get(s, name), id), Locks.work.has.go(t, s, id))
+
+def Locks.work.has(+s: M.State, +id: String) -> Bool:
+  Locks.work.has.go(M.Locks.names(s), s, id)
+
+def Watch.end.locked(timeout: Bool, +s: M.State, +now: Nat, +th: String, +id: String, +status: String, +detail: String) -> Step:
+  match timeout:
+    case True{}:
+      Step.cat(Step{[Watch.put(th, now, Watch.set(M.Work.watch(s, th), id, "watching (timed out, still running)"))], Nil{}}, Watch.tell(s, now, th, Watch.text(M.Bg.title(Watch.find(M.Work.watch(s, th), id)), "timed out, still running, lock retained", detail)))
+    case False{}:
+      Watch.end.k(Bool.and(Bool.not(String.is_empty(Watch.find(M.Work.watch(s, th), id))), Bool.not(M.Bg.ended(Watch.find(M.Work.watch(s, th), id)))), String.eq(status, "timeout"), Watch.find(M.Work.watch(s, th), id), s, now, th, id, status, detail)
+
 def Watch.end.raw(+s: M.State, +now: Nat, +th: String, +id: String, +status: String, +detail: String) -> Step:
-  Watch.end.k(Bool.and(Bool.not(String.is_empty(Watch.find(M.Work.watch(s, th), id))), Bool.not(M.Bg.ended(Watch.find(M.Work.watch(s, th), id)))),
-    String.eq(status, "timeout"), Watch.find(M.Work.watch(s, th), id), s, now, th, id, status, detail)
+  Watch.end.locked(Bool.and(String.eq(status, "timeout"), Locks.work.has(s, id)), s, now, th, id, status, detail)
 
 def Watch.end(+s: M.State, +now: Nat, +th: String, +id: String, +status: String, +detail: String) -> Step:
   +st = Watch.end.raw(s, now, th, id, status, detail)
@@ -3562,9 +3581,19 @@ def Watch.cancel.k(live: Bool, +l: String, +s: M.State, +now: Nat, +th: String, 
 # owned work stopped: the row says "cancelling" until its watcher
 # confirms the end (then "cancelled") or that it cannot know (law
 # watch_cancel_keeps_until_confirmed)
-def Watch.cancel(+s: M.State, +now: Nat, +th: String, +id: String) -> Step:
+def Watch.cancel.raw(+s: M.State, +now: Nat, +th: String, +id: String) -> Step:
   Watch.cancel.k(Bool.and(Bool.not(String.is_empty(Watch.find(M.Work.watch(s, th), id))), Bool.not(M.Bg.ended(Watch.find(M.Work.watch(s, th), id)))),
     Watch.find(M.Work.watch(s, th), id), s, now, th, id)
+
+def Watch.cancel.queued(waiting: Bool, +s: M.State, +now: Nat, +th: String, +id: String) -> Step:
+  match waiting:
+    case True{}:
+      Step.cat(Step{[Watch.put(th, now, M.Bg.drop(M.Work.watch(s, th), id))], Nil{}}, Watch.tell(s, now, th, Watch.text(M.Bg.title(Watch.find(M.Work.watch(s, th), id)), "cancelled", "")))
+    case False{}:
+      Watch.cancel.raw(s, now, th, id)
+
+def Watch.cancel(+s: M.State, +now: Nat, +th: String, +id: String) -> Step:
+  Watch.cancel.queued(String.starts_with(Watch.state(Watch.find(M.Work.watch(s, th), id)), "waiting for lock"), s, now, th, id)
 
 # no longer watched: it may still run, and its watcher stops (law
 # watch_unwatch_says_may_run)
@@ -3601,7 +3630,7 @@ def Watch.rearm.rows(ls: List<&2, String>, +th: String, +cwd: String) -> List<&2
     case Nil{}:
       Nil{}
     case +l <> t:
-      Watch.rearm.one(M.Bg.ended(l), l, th, cwd, Watch.rearm.rows(t, th, cwd))
+      Watch.rearm.one(Bool.or(M.Bg.ended(l), String.starts_with(Watch.state(l), "waiting for lock")), l, th, cwd, Watch.rearm.rows(t, th, cwd))
 
 def Watch.rearm.go(ts: List<&2, M.Thread>, +s: M.State) -> List<&2, Out>:
   match ts:
@@ -3885,6 +3914,143 @@ def Deploy.demo.bot() -> M.State:
   M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"tb", "", "Bub", M.Local{}, "", "", "claude", "", 1n}, M.BotSet{"b1", "Bub", "tb", 0n, "", 1n},
     M.SettingSet{"deploy.done", Deploy.demo.line("tb"), 5n}], M.State.empty())
 
+# harness-coord: locks. Grants and work launches share the log write boundary.
+def Locks.answer(+l: LK.NamedLock, +id: String) -> J.Json:
+  J.Json.obj([J.KV{"held", J.Flag{Bool.and(String.eq(LK.Lock.owner(l), id), LK.Lock.ready(l))}}, J.KV{"position", J.Num{Nat.show(LK.Lock.position(l, id))}}, J.KV{"holder", J.Str{LK.Lock.owner(l)}}])
+
+def Locks.list.go(names: List<&2, String>, +s: M.State) -> List<&2, J.Json>:
+  match names:
+    case Nil{}:
+      Nil{}
+    case +name <> t:
+      J.Json.obj([J.KV{"name", J.Str{name}}, J.KV{"holder", LK.Lock.holder.json(LK.Lock.holder(M.Locks.get(s, name)))}, J.KV{"waiters", J.Json.arr(LK.Lock.parties.json(LK.Lock.waiters(M.Locks.get(s, name))))}, J.KV{"ready", J.Flag{LK.Lock.ready(M.Locks.get(s, name))}}]) <> Locks.list.go(t, s)
+
+def Locks.put(+s: M.State, +now: Nat, +name: String, +l: LK.NamedLock) -> Step:
+  Step{[M.LockChanged{name, l, now}], Nil{}}
+
+def Locks.acquire(+s: M.State, +now: Nat, +name: String, +party: LK.LockParty, +ready: Bool) -> Step:
+  Bool.pick(Step, LK.Lock.has(M.Locks.get(s, name), LK.Lock.id(party)), Step.none(), Locks.put(s, now, name, LK.Lock.acquire(M.Locks.get(s, name), party, ready)))
+
+def Locks.release.k(own: Bool, +s: M.State, +now: Nat, +name: String, +id: String) -> Step:
+  match own:
+    case True{}:
+      Locks.put(s, now, name, LK.Lock.release(M.Locks.get(s, name), id))
+    case False{}:
+      Step.none()
+
+def Locks.release(+s: M.State, +now: Nat, +name: String, +id: String) -> Step:
+  Locks.release.k(String.eq(LK.Lock.owner(M.Locks.get(s, name)), id), s, now, name, id)
+
+def Locks.cancel(+s: M.State, +now: Nat, +name: String, +id: String) -> Step:
+  Locks.put(s, now, name, LK.Lock.cancel(M.Locks.get(s, name), id))
+
+def Locks.work.start(+s: M.State, +now: Nat, +th: String, +a: J.Json, +ready: Bool) -> Step:
+  +name = J.Json.get_str(a, "lock", "")
+  +id = Watch.id(s, th)
+  +party = {LK.LockParty{id, "work", th, J.Json.get_str(a, "note", J.Json.get_str(a, "command", "")), now, 0n} : LK.LockParty}
+  +l = LK.Lock.acquire(M.Locks.get(s, name), party, ready)
+  +held = Bool.and(String.eq(LK.Lock.owner(l), id), LK.Lock.ready(l))
+  Step{[M.LockChanged{name, l, now}, Watch.put(th, now, List.append(&2, String, M.Work.watch(s, th), [Watch.line(id, Bool.pick(String, held, "launching", LK.Lock.wait.word(name, LK.Lock.position(l, id))), "" ++ LK.Lock.note(party), "run", J.Json.get_str(a, "command", ""), "-", Watch.deadline.of(now, M.Switch.num(J.Json.as_raw(J.Json.get(a, "timeoutSec"), "0"), 0n)))]))],
+    Bool.pick(List<&2, Out>, held, [Await{th, id, "run", J.Json.get_str(a, "command", ""), "-", Watch.deadline.of(now, M.Switch.num(J.Json.as_raw(J.Json.get(a, "timeoutSec"), "0"), 0n)), Hub.cwd(s, Hub.thread(s, th))}], Nil{})}
+
+def Locks.work.grant(+s: M.State, +now: Nat, +p: LK.LockParty) -> Step:
+  +th = LK.Lock.thread(p)
+  +id = LK.Lock.id(p)
+  +l = Watch.find(M.Work.watch(s, th), id)
+  Step{[Watch.put(th, now, Watch.set(M.Work.watch(s, th), id, "launching"))], [Await{th, id, Watch.kind(l), Watch.target(l), Watch.ident(l), Watch.deadline(l), Hub.cwd(s, Hub.thread(s, th))}]}
+
+def Locks.grant.kind(kind: String, +s: M.State, +now: Nat, +name: String, +p: LK.LockParty) -> Step:
+  match kind:
+    case "thread":
+      Lr.send(s, now, "lock:" ++ name, LK.Lock.thread(p), "Lock " ++ name ++ " is yours (waited " ++ M.Time.ago(now, LK.Lock.since(p)) ++ "). Release it with lock_release when done.")
+    case "work":
+      Locks.work.grant(s, now, p)
+    case _:
+      Step.none()
+
+def Locks.grant(needed: Bool, h: Maybe<&2, LK.LockParty>, +s: M.State, +now: Nat, +name: String) -> Step:
+  match needed h:
+    case True{} Some{+p}:
+      Locks.grant.kind(LK.Lock.kind(p), s, now, name, p)
+    case _ _:
+      Step.none()
+
+def Locks.ready.k(ok: Bool, +s: M.State, +now: Nat, +name: String) -> Step:
+  match ok:
+    case True{}:
+      Locks.put(s, now, name, LK.Lock.mark(M.Locks.get(s, name)))
+    case False{}:
+      Step.none()
+
+def Locks.ready(+s: M.State, +now: Nat, +name: String, +id: String) -> Step:
+  Locks.ready.k(Bool.and(String.eq(LK.Lock.owner(M.Locks.get(s, name)), id), Bool.not(LK.Lock.ready(M.Locks.get(s, name)))), s, now, name)
+
+def Locks.live(+s: M.State, +now: Nat, +p: LK.LockParty) -> Bool:
+  Bool.pick(Bool, String.eq(LK.Lock.kind(p), "client"), Nat.is_gt(LK.Lock.lease(p), now),
+    Bool.and(Hub.owns(s, LK.Lock.thread(p)), Bool.and(Lost.live(Hub.thread(s, LK.Lock.thread(p))),
+      Bool.pick(Bool, String.eq(LK.Lock.kind(p), "work"), Bool.and(Bool.not(String.is_empty(Watch.find(M.Work.watch(s, LK.Lock.thread(p)), LK.Lock.id(p)))), Bool.not(M.Bg.ended(Watch.find(M.Work.watch(s, LK.Lock.thread(p)), LK.Lock.id(p))))), True{}))))
+
+def Locks.prune.q(q: List<&2, LK.LockParty>, +s: M.State, +now: Nat) -> List<&2, LK.LockParty>:
+  match q:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      List.append(&2, LK.LockParty, Bool.pick(List<&2, LK.LockParty>, Locks.live(s, now, p), [p], Nil{}), Locks.prune.q(t, s, now))
+
+def Locks.prune.h(h: Maybe<&2, LK.LockParty>, +q: List<&2, LK.LockParty>, +r: Bool, +s: M.State, +now: Nat) -> LK.NamedLock:
+  match h:
+    case None{}:
+      LK.Lock.promote(q)
+    case Some{+p}:
+      Bool.pick(LK.NamedLock, Locks.live(s, now, p), LK.NamedLock{Some{p}, q, r}, LK.Lock.expire(LK.NamedLock{Some{p}, q, r}, LK.Lock.id(p)))
+
+def Locks.prune(l: LK.NamedLock, +s: M.State, +now: Nat) -> LK.NamedLock:
+  match l:
+    case LK.NamedLock{h, q, r}:
+      Locks.prune.h(h, Locks.prune.q(q, s, now), r, s, now)
+
+def Locks.wait.work(same: Bool, +s: M.State, +now: Nat, +th: String, +id: String, +word: String) -> Step:
+  match same:
+    case True{}:
+      Step.none()
+    case False{}:
+      Step{[Watch.put(th, now, Watch.set(M.Work.watch(s, th), id, word))], Nil{}}
+
+def Locks.wait.party(work: Bool, +p: LK.LockParty, +s: M.State, +now: Nat, +name: String, +n: Nat) -> Step:
+  match work:
+    case True{}:
+      +word = LK.Lock.wait.word(name, n)
+      Locks.wait.work(String.eq(Watch.state(Watch.find(M.Work.watch(s, LK.Lock.thread(p)), LK.Lock.id(p))), word), s, now, LK.Lock.thread(p), LK.Lock.id(p), word)
+    case False{}:
+      Step.none()
+
+def Locks.wait.go(q: List<&2, LK.LockParty>, +s: M.State, +now: Nat, +name: String, +n: Nat, +st: Step) -> Step:
+  match q:
+    case Nil{}:
+      st
+    case +p <> t:
+      Locks.wait.go(t, s, now, name, 1n+n, Step.cat(st, Locks.wait.party(String.eq(LK.Lock.kind(p), "work"), p, M.State.replay(Queue.changes(st), s), now, name, n)))
+
+def Locks.after.one(+before: M.State, +s: M.State, +now: Nat, +name: String) -> Step:
+  +old = M.Locks.get(before, name)
+  +current = M.Locks.get(s, name)
+  +l = Locks.prune(current, s, now)
+  +changed = Bool.not(String.eq(LK.Lock.owner(old), LK.Lock.owner(l)))
+  +cs = Bool.pick(List<&2, M.Change>, String.eq(J.Json.show(LK.Lock.json(current)), J.Json.show(LK.Lock.json(l))), Nil{}, [M.LockChanged{name, l, now}])
+  +s1 = M.State.replay(cs, s)
+  Step.cat(Step.cat(Step{cs, Bool.pick(List<&2, Out>, changed, [LockGuard{name, LK.Lock.owner(old), LK.Lock.owner(l)}], Nil{})}, Locks.wait.go(LK.Lock.waiters(l), s1, now, name, 1n, Step.none())),
+    Locks.grant(Bool.and(LK.Lock.ready(l), Bool.and(Bool.not(changed), Bool.not(LK.Lock.ready(old)))), LK.Lock.holder(l), s1, now, name))
+
+def Locks.after.go(names: List<&2, String>, +before: M.State, +now: Nat, +st: Step) -> Step:
+  match names:
+    case Nil{}:
+      st
+    case name <> t:
+      Locks.after.go(t, before, now, Step.cat(st, Locks.after.one(before, M.State.replay(Queue.changes(st), before), now, name)))
+
+def Locks.after(+s: M.State, +now: Nat, +st: Step) -> Step:
+  Locks.after.go(M.Locks.names(M.State.replay(Queue.changes(st), s)), s, now, st)
+
 def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
@@ -3955,6 +4121,10 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
     # the person stops watched work or a delegated task from its row
     case 31n:
       Step.before(Nil{}, [Reply.ok(client, id)], Watch.cancel(s, now, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "id", "")))
+    case 37n:
+      Step.before(Nil{}, [Reply.ok(client, id)], Locks.release(s, now, J.Json.get_str(p, "name", ""), J.Json.get_str(p, "thread", "")))
+    case 38n:
+      Step.before(Nil{}, [Reply.ok(client, id)], Locks.cancel(s, now, J.Json.get_str(p, "name", ""), J.Json.get_str(p, "thread", "")))
     case 33n:
       Step.reply(client, id, Bool.pick(List<&2, M.Change>, String.eq(J.Json.get_str(WK.Wake.get(s, J.Json.get_str(p, "id", "")), "by", ""), J.Json.get_str(p, "thread", "")), [M.WakeDropped{J.Json.get_str(p, "id", ""), now}], Nil{}))
     case 32n:
@@ -4655,12 +4825,40 @@ def Rec.lost(ts: List<&2, String>, r: Rec, +now: Nat) -> Rec:
 # running end (a carried child's task stays open), asks close, torn task
 # deliveries are finished, and lost background work is logged or marked
 # to be told (Hub.carry and Rec.release tell it)
+def Locks.recover.party(p: LK.LockParty, +s: M.State, +now: Nat) -> Step:
+  match p:
+    case LK.LockParty{+id, "work", +th, _, _, _}:
+      Watch.end.raw(s, now, th, id, "lost on restart", "The lock was released; start the work again if needed.")
+    case _:
+      Step.none()
+
+def Locks.recover.parties(ps: List<&2, LK.LockParty>, +s: M.State, +now: Nat, +st: Step) -> Step:
+  match ps:
+    case Nil{}:
+      st
+    case p <> t:
+      Locks.recover.parties(t, s, now, Step.cat(st, Locks.recover.party(p, M.State.replay(Queue.changes(st), s), now)))
+
+def Locks.recover.go(names: List<&2, String>, +s: M.State, +now: Nat, +st: Step) -> Step:
+  match names:
+    case Nil{}:
+      st
+    case +name <> t:
+      +l = M.Locks.get(s, name)
+      +ps = List.append(&2, LK.LockParty, LK.Lock.holder.list(LK.Lock.holder(l)), LK.Lock.waiters(l))
+      Locks.recover.go(t, s, now, Step.cat(Locks.recover.parties(ps, s, now, st), Step{Nil{}, Bool.pick(List<&2, Out>, String.is_empty(LK.Lock.owner(l)), Nil{}, [LockGuard{name, "", LK.Lock.owner(l)}])}))
+
+def Locks.recover(+s: M.State, +now: Nat) -> Step:
+  Locks.recover.go(M.Locks.names(s), s, now, Step.none())
+
 def Hub.recover.k(+s: M.State, +now: Nat) -> Step:
   Rec.step(Rec.lost(Rec.ids(Rec.threads(s)), Rec.repair(Rec.turns(Rec.ids(Rec.threads(s)), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), s, now), s, now), now))
 
 # (and every watched work still open is watched again: Watch.rearm)
 def Hub.recover(+s: M.State, +now: Nat) -> Step:
-  Step.cat(Step{Nil{}, Watch.rearm(s)}, Hub.recover.k(s, now))
+  +locks = Locks.recover(s, now)
+  +s1 = M.State.replay(Queue.changes(locks), s)
+  Step.cat(locks, Step.cat(Step{Nil{}, Watch.rearm(s1)}, Hub.recover.k(s1, now)))
 
 # Carrying on
 # -----------
@@ -5231,3 +5429,38 @@ def Wake.demo.partial() -> Nat:
   +cs = {M.AskOpened{"q1", "t1", "question", "AskUserQuestion", "review?", "", 9n} <> Wake.demo.end() : List<&2, M.Change>}
   +after = M.State.replay(Queue.changes(Launch.tell(s, 9n, "t1", Step{cs, Nil{}})), s)
   Lr.count(Queue.changes(Launch.tell(after, 9n, "t1", Step{Wake.demo.end(), Nil{}})), "tb")
+
+# Compact fixtures for the lock laws: real state fold, grant path and work end.
+def Locks.demo() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "P", "/p", 1n}, M.ThreadCreated{"ta", "p1", "A", M.Local{}, "", "", "claude", "", 1n}, M.ThreadCreated{"tb", "p1", "B", M.Local{}, "", "", "claude", "", 1n}], M.State.empty())
+
+def Locks.demo.party(+id: String) -> LK.LockParty:
+  LK.LockParty{id, "thread", id, "build", 2n, 0n}
+
+def Locks.demo.queue() -> M.State:
+  M.State.replay([M.LockChanged{"bend", LK.Lock.acquire(LK.Lock.acquire(LK.Lock.empty(), Locks.demo.party("ta"), True{}), Locks.demo.party("tb"), False{}), 3n}], Locks.demo())
+
+def Locks.demo.release() -> M.State:
+  +s = Locks.demo.queue()
+  M.State.replay(Queue.changes(Locks.after(s, 4n, Locks.release(s, 4n, "bend", "ta"))), s)
+
+def Locks.demo.grant() -> Step:
+  +s = Locks.demo.release()
+  Locks.after(s, 5n, Locks.ready(s, 5n, "bend", "tb"))
+
+def Locks.demo.twice() -> Nat:
+  +s = M.State.replay(Queue.changes(Locks.demo.grant()), Locks.demo.release())
+  Lr.count(Queue.changes(Locks.after(s, 6n, Locks.ready(s, 6n, "bend", "tb"))), "tb")
+
+def Locks.demo.deleted() -> String:
+  +s = Locks.demo.queue()
+  LK.Lock.owner(M.Locks.get(M.State.replay(Queue.changes(Locks.after(s, 4n, Step{[M.ThreadDeleted{"ta", 4n}], Nil{}})), s), "bend"))
+
+def Locks.demo.work() -> M.State:
+  +s = Locks.demo()
+  +a = J.Json.obj([J.KV{"lock", J.Str{"bend"}}, J.KV{"command", J.Str{"true"}}])
+  M.State.replay(Queue.changes(Locks.work.start(s, 3n, "ta", a, True{})), s)
+
+def Locks.demo.work.end() -> String:
+  +s = Locks.demo.work()
+  LK.Lock.owner(M.Locks.get(M.State.replay(Queue.changes(Locks.after(s, 4n, Watch.end(s, 4n, "ta", Watch.id(Locks.demo(), "ta"), "exit 0", ""))), s), "bend"))

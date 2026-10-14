@@ -1,4 +1,5 @@
 import Base
+import ./locks.bend as LK
 import ./model.bend as M
 import ./deploy.bend as DP
 import ./bot.bend as BT
@@ -32,47 +33,71 @@ type PMach is Data:
   PMach{name: String, state: String}
 
 type Plane is Data:
-  Plane{need: List<&2, PRow>, run: List<&2, PRow>, bots: List<&2, PRow>, rooms: List<&2, PRow>, routines: List<&2, PRow>, idle: List<&2, PRow>, idle_n: Nat, machines: List<&2, PMach>}
+  Plane{need: List<&2, PRow>, run: List<&2, PRow>, bots: List<&2, PRow>, rooms: List<&2, PRow>, routines: List<&2, PRow>, idle: List<&2, PRow>, idle_n: Nat, machines: List<&2, PMach>, locks: List<&2, PRow>}
 
 def Plane.need(p: Plane) -> List<&2, PRow>:
   match p:
-    case Plane{n, _, _, _, _, _, _, _}:
+    case Plane{n, _, _, _, _, _, _, _, _}:
       n
 
 def Plane.run(p: Plane) -> List<&2, PRow>:
   match p:
-    case Plane{_, r, _, _, _, _, _, _}:
+    case Plane{_, r, _, _, _, _, _, _, _}:
       r
 
 def Plane.bots(p: Plane) -> List<&2, PRow>:
   match p:
-    case Plane{_, _, b, _, _, _, _, _}:
+    case Plane{_, _, b, _, _, _, _, _, _}:
       b
 
 def Plane.rooms(p: Plane) -> List<&2, PRow>:
   match p:
-    case Plane{_, _, _, r, _, _, _, _}:
+    case Plane{_, _, _, r, _, _, _, _, _}:
       r
 
 def Plane.routines(p: Plane) -> List<&2, PRow>:
   match p:
-    case Plane{_, _, _, _, r, _, _, _}:
+    case Plane{_, _, _, _, r, _, _, _, _}:
       r
 
 def Plane.idle(p: Plane) -> List<&2, PRow>:
   match p:
-    case Plane{_, _, _, _, _, i, _, _}:
+    case Plane{_, _, _, _, _, i, _, _, _}:
       i
 
 def Plane.idle_n(p: Plane) -> Nat:
   match p:
-    case Plane{_, _, _, _, _, _, n, _}:
+    case Plane{_, _, _, _, _, _, n, _, _}:
       n
 
 def Plane.machines(p: Plane) -> List<&2, PMach>:
   match p:
-    case Plane{_, _, _, _, _, _, _, m}:
+    case Plane{_, _, _, _, _, _, _, m, _}:
       m
+
+def Plane.locks(p: Plane) -> List<&2, PRow>:
+  match p:
+    case Plane{_, _, _, _, _, _, _, _, ls}:
+      ls
+
+def Plane.lock.row(+name: String, +p: LK.LockParty, +n: Nat, +ready: Bool, +st: M.State, +now: Nat) -> PRow:
+  +th = LK.Lock.thread(p)
+  +title = Bool.pick(String, String.is_empty(th), LK.Lock.id(p), U.Active.title(U.Ui.thread(st, th)))
+  PRow{"lock", name, Bool.pick(String, String.is_empty(th), "", "select"), th, name ++ " · held by " ++ title ++ " " ++ M.Time.ago(now, LK.Lock.since(p)) ++ " · " ++ Nat.show(n) ++ " waiting", LK.Lock.note(p), "", Bool.pick(String, ready, "working", "queued"), 0n, False{}}
+
+def Plane.lock.h(h: Maybe<&2, LK.LockParty>, +name: String, +l: LK.NamedLock, +st: M.State, +now: Nat, rest: List<&2, PRow>) -> List<&2, PRow>:
+  match h:
+    case None{}:
+      rest
+    case Some{p}:
+      Plane.lock.row(name, p, List.length(&2, LK.LockParty, LK.Lock.waiters(l)), LK.Lock.ready(l), st, now) <> rest
+
+def Plane.lock.go(names: List<&2, String>, +st: M.State, +now: Nat) -> List<&2, PRow>:
+  match names:
+    case Nil{}:
+      Nil{}
+    case +name <> t:
+      Plane.lock.h(LK.Lock.holder(M.Locks.get(st, name)), name, M.Locks.get(st, name), st, now, Plane.lock.go(t, st, now))
 
 def PRow.id(r: PRow) -> String:
   match r:
@@ -380,7 +405,7 @@ def Plane.of.i(+idle: List<&2, PRow>, +all: List<&2, PRow>, +u: U.Ui, +ix: U.SIx
     Plane.bot.rows(BU.BU.rows(u), U.Ui.state(u)),
     List.sort(~PRow, ~Plane.newer, Plane.rooms.go(BT.World.rooms(M.State.bots(U.Ui.state(u))), u)),
     List.sort(~PRow, ~Plane.due.before, Plane.routines.go(BT.World.routines.all(M.State.bots(U.Ui.state(u))), u, ix, now)),
-    List.take(&2, PRow, idle, Plane.idle.max()), List.length(&2, PRow, idle), Plane.machines.of(u)}
+    List.take(&2, PRow, idle, Plane.idle.max()), List.length(&2, PRow, idle), Plane.machines.of(u), Plane.lock.go(M.Locks.names(U.Ui.state(u)), U.Ui.state(u), now)}
 
 def Plane.of.k(+all: List<&2, PRow>, +u: U.Ui, +ix: U.SIx, +now: Nat) -> Plane:
   Plane.of.i(Plane.sort(Plane.recent(Plane.part(all, 2n), now)), all, u, ix, now)
@@ -795,7 +820,7 @@ def Plane.text(+p: Plane, +pre: String, +name: String, +now: Nat, +idle: Bool) -
     ++ Bool.pick(String, Bool.and(List.is_empty(&2, PRow, Plane.need(p)), List.is_empty(&2, PRow, Plane.run(p))), "Nothing needs you and nothing is running.\n", "")
     ++ Plane.text.sec("Needs you", Plane.need(p), pre, now) ++ Plane.text.sec("Running", Plane.run(p), pre, now)
     ++ Plane.text.sec("Bots", Plane.bots(p), pre, now) ++ Plane.text.sec("Rooms with unread posts", Plane.rooms(p), pre, now)
-    ++ Plane.text.sec("Routines", Plane.routines(p), pre, now) ++ Plane.text.idle.k(idle, Plane.idle_n(p), Plane.idle(p), pre, now)
+    ++ Plane.text.sec("Locks", Plane.locks(p), pre, now) ++ Plane.text.sec("Routines", Plane.routines(p), pre, now) ++ Plane.text.idle.k(idle, Plane.idle_n(p), Plane.idle(p), pre, now)
     ++ Plane.text.machines.k(Nat.is_gt(List.length(&2, PMach, Plane.machines(p)), 1n), Plane.machines(p))
 
 # a hub's plane as text: this machine's (pre "") or, for another machine
