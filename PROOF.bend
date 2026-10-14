@@ -8888,3 +8888,52 @@ def Laws.task_slug_nonempty(x):
 def Laws.task_slug_empty():
   {==}
 
+# gmail: replies, attachments, drafts
+def Laws.gmail_reply_subject_adds_re():
+  {==}
+
+def Laws.gmail_reply_subject_keeps_re():
+  {==}
+
+def Laws.gmail_references_appends():
+  {==}
+
+def Laws.gmail_reply_to_prefers_reply_to():
+  {==}
+
+def Laws.gmail_mime_type_pdf():
+  {==}
+
+def Laws.gmail_mime_type_default():
+  {==}
+
+def Laws.gmail_signed_plain():
+  {==}
+
+def Laws.gmail_signed_html_escapes():
+  {==}
+
+def Laws.gmail_signed_empty_unchanged():
+  {==}
+
+def Laws.gmail_draft_no_ask():
+  {==}
+
+def Laws.gmail_size_kb():
+  {==}
+
+def Laws.gmail_review_omits_empty_cc():
+  {==}
+
+def Laws.ask_head_gmail():
+  {==}
+
+def Laws.ask_head_draft():
+  {==}
+
+def Laws.ask_head_other_tool():
+  {==}
+
+def Laws.ask_head_cal_update():
+  {==}
+# end gmail: replies, attachments, drafts

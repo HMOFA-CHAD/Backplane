@@ -219,9 +219,18 @@ def MBots.strs(xs: List<&2, String>) -> List<&2, J.Json>:
     case x <> t:
       J.Json.str(x) <> MBots.strs(t)
 
+# each account's signature, in the order of the accounts
+def MBots.sigs(xs: List<&2, String>, +u: U.Ui) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      J.Json.str(U.Bots.sig.of(u, x)) <> MBots.sigs(t, u)
+
 def MBots.google(+u: U.Ui) -> J.Json:
   J.Json.obj([J.KV{"status", J.Json.str(U.Ui.scratch(u, "@google"))}, J.KV{"url", J.Json.str(U.Ui.scratch(u, "@google.url"))},
-    MBots.str(u, "gid"), MBots.str(u, "gsecret"), MBots.str(u, "gpaste"), J.KV{"accounts", J.Json.arr(MBots.strs(U.Bots.google.accts(u)))}])
+    MBots.str(u, "gid"), MBots.str(u, "gsecret"), MBots.str(u, "gpaste"), J.KV{"accounts", J.Json.arr(MBots.strs(U.Bots.google.accts(u)))},
+    J.KV{"sigFor", J.Json.str(U.Bots.sig.editing(u))}, J.KV{"sigText", J.Json.str(B.BU.field(u, "gsig"))}, J.KV{"sigs", J.Json.arr(MBots.sigs(U.Bots.google.accts(u), u))}])
 
 # the persona (and the field that changes it, "bfield" persona then
 # "bot-edit"), Google, and the linked machines ("peer-invite" with purl,

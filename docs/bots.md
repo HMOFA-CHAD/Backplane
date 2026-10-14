@@ -627,9 +627,10 @@ Gmail and Calendar through Google's APIs, not the browser: OAuth 2.0 for
 installed apps with PKCE and a loopback redirect to the hub
 (`/oauth/google`), or paste the redirected URL when the browser is on
 another device. Tools: `gmail_search`, `gmail_read`, `gmail_send`
-(asks you first), `calendar_events` (each event shows its id),
-`calendar_create` (asks you first), `calendar_update` (asks you first),
-`calendar_delete` (asks you first), `google_accounts`.
+(asks you first), `gmail_draft` (asks nobody: it sends nothing),
+`calendar_events` (each event shows its id), `calendar_create` (asks you
+first), `calendar_update` (asks you first), `calendar_delete` (asks you
+first), `google_accounts`.
 
 `calendar_create` and `calendar_update` take `reminders`: up to five
 `{method: "popup"|"email", minutes: 0..40320}` (a bare number is a popup that
@@ -648,6 +649,46 @@ posts `CalAsk`, which opens the approval with the change in words
 attendees; `Cal.delete.detail`). After you accept (or a session approval),
 exactly those arguments run. A failed fetch answers the agent and opens no
 ask.
+
+Mail. `gmail_send` and `gmail_draft` take `to`, `cc`, `bcc`, `subject`,
+`body`, `html` (the body is HTML; sent as `multipart/alternative` with its
+text), `reply_to` (a message id) or `thread` (a conversation id; its last
+message), `attachments` (absolute paths, a JSON array or one
+comma-separated string), `draft` and `account`. A reply carries
+`In-Reply-To` and `References` and joins the original's conversation
+(`threadId`); `subject` defaults to `Re: <original>` (not twice) and `to` to
+the original's `Reply-To`, else its sender. Attachments: at most 20, each
+and all together at most 18 MB (`Gmail.att_max`); the hub never reads their
+bytes into Bend: a shell step probes them (`Gm.probe.sh`) and assembles the
+message on disk (`base64 | tr | fold | awk`, `Gm.assemble.sh`) in a folder
+`<home>/secrets/gm-<nonce>` (0700, removed after the send or the refusal),
+and every message goes up by Gmail's media upload
+(`/upload/gmail/v1/users/me/messages/send?uploadType=multipart`, drafts:
+`.../drafts` to create, `PUT .../drafts/<id>` to replace). `gmail_draft`
+answers `Draft saved (draft id X, ...)`; `gmail_send {draft: X}` sends it as
+it is (any other content argument is an error) after the same approval.
+
+The approval shows the whole email, prepared off the hub's loop
+(`Gm.run`, which posts `GmailAsk` back to the hub): Account, From, To, Cc,
+Bcc, Subject, In reply to, Attachments (names and sizes), Format, then the
+body in full (up to 20000 characters; an HTML body as its text, then
+"(sent as HTML)"), the signature included (`Gmail.review`, `Gmail.draft_review`).
+What is shown is the file that is sent: nothing is composed again after
+the answer. Errors (an unreadable reply original, a bad attachment) go to
+the agent before anything is asked. The head is one text for every client
+(`Ask.head`: "Send this email?", "Send this draft?", "Create this event?",
+else "Allow <tool>?"); the window wraps the detail (at most 14 lines, the
+rest scroll with the wheel, pane `ask:<id>`), the web scrolls it (50vh),
+the phones scroll it in a 300-point box.
+
+Signature: the hub setting `gmail.sig.<address>` (not a secret), appended to
+a message composed by `gmail_send` or `gmail_draft` (`Gmail.signed`: plain
+text after a blank line, HTML escaped after two `<br>`); never to a draft
+being sent. Settings: each Google account has a Signature button
+(`google` action `sig-edit:<address>`, then `sig-save`, which writes the
+setting; an empty text removes it, `sig-cancel`).
+Laws `gmail_*`, `ask_head_*`; tests `test/google_test.bend`,
+`bun test/tools/google_e2e.ts`.
 
 Google always sends the browser back to `127.0.0.1:<port>`, so a sign-in
 started on another machine's hub (a phone, or a window linked to that

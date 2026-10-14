@@ -492,8 +492,9 @@ fun AskCard(m: AppModel, a: Ask) {
                 Text(a.head, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             }
             if (a.blocks.isNotEmpty()) Box(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) { Markdown(a.blocks) }
-            else if (a.detail.isNotEmpty()) Text(a.detail, style = MaterialTheme.typography.labelMedium.copy(fontFamily = mono),
-                maxLines = 8, overflow = TextOverflow.Ellipsis)
+            else if (a.detail.isNotEmpty()) Box(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+                Text(a.detail, style = MaterialTheme.typography.labelMedium.copy(fontFamily = mono))
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (b in a.buttons) {
                     if (b.primary) Button(onClick = { m.act("answer", b.value) }, shape = corner) { Text(b.label) }

@@ -1709,7 +1709,7 @@ def Cal.reminders.prop() -> J.KV:
     J.KV{"description", J.Str{"Alerts, at most 5: {method: popup|email, minutes} (a bare number is a popup that many minutes ahead). [] means no alerts; omitted keeps the calendar's defaults."}}])}
 
 def Google.tool_names() -> List<&2, String>:
-  ["gmail_search", "gmail_read", "gmail_send", "calendar_events", "calendar_create", "calendar_update", "calendar_delete", "google_accounts"]
+  ["gmail_search", "gmail_read", "gmail_send", "gmail_draft", "calendar_events", "calendar_create", "calendar_update", "calendar_delete", "google_accounts"]
 
 def Tool.account() -> J.KV:
   Tool.prop("account", "string", "Which connected Google account, by address (see google_accounts); default the first.")
@@ -1718,14 +1718,31 @@ def Tool.account() -> J.KV:
 def Google.asks(+tool: String) -> Bool:
   Bool.or(Bool.or(String.eq(tool, "gmail_send"), String.eq(tool, "calendar_create")), Bool.or(String.eq(tool, "calendar_update"), String.eq(tool, "calendar_delete")))
 
+def Tool.array(+name: String, desc: String) -> J.KV:
+  J.KV{name, J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"string"}}])}, J.KV{"description", J.Str{desc}}])}
+
+# gmail_send's and gmail_draft's arguments
+def Gmail.compose_props() -> List<&2, J.KV>:
+  [Tool.prop("to", "string", "Recipients, comma-separated (a reply defaults to the original's Reply-To, else its sender)."),
+   Tool.prop("subject", "string", "Subject (a reply defaults to Re: the original's)."),
+   Tool.prop("body", "string", "The text; HTML when html is true. The account's signature is added after it."),
+   Tool.prop("html", "boolean", "The body is HTML (sent with a plain-text version too); default plain text."),
+   Tool.prop("cc", "string", "Cc recipients, comma-separated (optional)."), Tool.prop("bcc", "string", "Bcc recipients, comma-separated (optional)."),
+   Tool.prop("reply_to", "string", "A message id (from gmail_search) to reply to, in its conversation (optional)."),
+   Tool.prop("thread", "string", "A conversation id to reply to; answers its last message (optional)."),
+   Tool.array("attachments", "Absolute paths of files to attach, each and all together at most 18 MB (optional)."),
+   Tool.prop("draft", "string", "A draft id: gmail_draft replaces it; gmail_send sends it as it is, with no other content arguments (optional)."),
+   Tool.account()]
+
 def Google.tool_defs() -> List<&2, J.Json>:
   [Tool.def("gmail_search", "Search the user's Gmail (Gmail search syntax, e.g. 'from:alice is:unread newer_than:7d'). Lists id, date, from, subject and snippet; read one with gmail_read.",
      [Tool.prop("query", "string", "Gmail search query; empty lists the newest mail."), Tool.prop("max", "number", "How many (default 10, at most 25)."), Tool.account()], Nil{}),
    Tool.def("gmail_read", "Read one Gmail message by id: headers, attachment names and its text (at most 20 KB).",
      [Tool.prop("id", "string", "A message id from gmail_search."), Tool.account()], ["id"]),
-   Tool.def("gmail_send", "Send a plain-text email from the user's Gmail. The user is asked to approve every send first.",
-     [Tool.prop("to", "string", "Recipients, comma-separated."), Tool.prop("subject", "string", "Subject."),
-      Tool.prop("body", "string", "Plain-text body."), Tool.prop("cc", "string", "Cc recipients, comma-separated (optional)."), Tool.account()], ["to", "subject", "body"]),
+   Tool.def("gmail_send", "Send an email from the user's Gmail, as a new message or a reply in its conversation, with attachments if asked. The user is asked to approve every send first and sees the whole email. With draft, sends a draft made by gmail_draft as it is.",
+     Gmail.compose_props(), Nil{}),
+   Tool.def("gmail_draft", "Save an email as a draft in the user's Gmail (nothing is sent, the user is not asked): same arguments as gmail_send. The user reviews it in Gmail; send it with gmail_send {draft}. With draft, replaces that draft.",
+     Gmail.compose_props(), Nil{}),
    Tool.def("calendar_events", "List events on the user's primary Google Calendar, recurring ones expanded, soonest first. Each event shows its id, for calendar_update and calendar_delete.",
      [Tool.prop("from", "string", "Start, RFC 3339 (e.g. 2026-09-24T09:00:00-07:00) or a date; default now."),
       Tool.prop("to", "string", "End, RFC 3339 or a date; default a week after from."),
@@ -1865,3 +1882,430 @@ def Google.loopback(+url: String) -> Bool:
 # loopback, else the hub's own
 def Google.redirect.pick(+asked: String, +own: String) -> String:
   Bool.pick(String, Google.loopback(asked), asked, own)
+
+# Composing mail: replies, attachments, drafts, signatures, HTML
+# ---------------------------------------------------------------
+# gmail_send and gmail_draft build one RFC 822 message. Its text pieces are
+# made here; the bytes of attachments never enter Bend (the server's shell
+# step base64-encodes each file between the pieces, src/server/google.bend).
+
+# the message a reply answers: ids, its Message-ID and References, who wrote it
+type Gorig is Data:
+  Gorig{id: String, thread: String, msgid: String, refs: String, subject: String, from: String, replyto: String}
+
+# a messages.get answer (format=metadata)
+def Gmail.orig(+m: J.Json) -> Gorig:
+  +p = J.Json.get_obj(m, "payload")
+  Gorig{J.Json.get_str(m, "id", ""), J.Json.get_str(m, "threadId", ""), String.trim(Mail.hdr(p, "message-id")), String.trim(Mail.hdr(p, "references")),
+    Mail.hdr(p, "subject"), Mail.hdr(p, "from"), Mail.hdr(p, "reply-to")}
+
+def Gmail.last.go(xs: List<&2, J.Json>, acc: J.Json) -> J.Json:
+  match xs:
+    case Nil{}:
+      acc
+    case +x <> t:
+      Gmail.last.go(t, x)
+
+# a threads.get answer (format=metadata): its last message
+def Gmail.orig_thread(+j: J.Json) -> Gorig:
+  Gmail.orig(Gmail.last.go(J.Json.elems(J.Json.get_obj(j, "messages")), j))
+
+def Gorig.id(o: Gorig) -> String:
+  match o:
+    case Gorig{id, _, _, _, _, _, _}:
+      id
+
+def Gorig.thread(o: Gorig) -> String:
+  match o:
+    case Gorig{_, t, _, _, _, _, _}:
+      t
+
+def Gorig.msgid(o: Gorig) -> String:
+  match o:
+    case Gorig{_, _, m, _, _, _, _}:
+      m
+
+def Gorig.refs(o: Gorig) -> String:
+  match o:
+    case Gorig{_, _, _, r, _, _, _}:
+      r
+
+def Gorig.subject(o: Gorig) -> String:
+  match o:
+    case Gorig{_, _, _, _, s, _, _}:
+      s
+
+def Gorig.from(o: Gorig) -> String:
+  match o:
+    case Gorig{_, _, _, _, _, f, _}:
+      f
+
+def Gorig.replyto(o: Gorig) -> String:
+  match o:
+    case Gorig{_, _, _, _, _, _, r}:
+      r
+
+def Gmail.meta_q() -> String:
+  "format=metadata&metadataHeaders=Message-ID&metadataHeaders=References&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Reply-To&metadataHeaders=To&metadataHeaders=Cc"
+
+def Gmail.msg_path(id: String) -> String:
+  Gmail.path.go() ++ "/messages/" ++ Url.encode(id) ++ "?" ++ Gmail.meta_q()
+
+def Gmail.thread_path(id: String) -> String:
+  Gmail.path.go() ++ "/threads/" ++ Url.encode(id) ++ "?" ++ Gmail.meta_q()
+
+def Gmail.draft_path(id: String) -> String:
+  Gmail.path.go() ++ "/drafts/" ++ Url.encode(id) ++ "?format=full"
+
+def Gmail.draft_send_path() -> String:
+  Gmail.path.go() ++ "/drafts/send"
+
+def Gmail.upload_send() -> String:
+  "/upload/gmail/v1/users/me/messages/send?uploadType=multipart"
+
+def Gmail.upload_drafts() -> String:
+  "/upload/gmail/v1/users/me/drafts?uploadType=multipart"
+
+def Gmail.upload_draft(id: String) -> String:
+  "/upload/gmail/v1/users/me/drafts/" ++ Url.encode(id) ++ "?uploadType=multipart"
+
+def Gmail.re.k(has: Bool, +s: String) -> String:
+  match has:
+    case True{}:
+      s
+    case False{}:
+      "Re: " ++ s
+
+# a reply's subject: the one given, else the original's with "Re: " unless
+# it has one already (any case)
+def Gmail.reply_subject(+given: String, +orig: String) -> String:
+  Bool.pick(String, String.is_empty(String.trim(given)),
+    Gmail.re.k(String.eq(String.to_lower(String.take(String.trim(orig), 3n)), "re:"), String.trim(orig)), given)
+
+# the References of a reply: the original's, then its Message-ID
+def Gmail.references(+refs: String, +msgid: String) -> String:
+  String.trim(refs ++ " " ++ msgid)
+
+# who a reply goes to: the original's Reply-To, else its From
+def Gmail.reply_to_addr(+replyto: String, +from: String) -> String:
+  Bool.pick(String, String.is_empty(String.trim(replyto)), from, replyto)
+
+# the digits of a text as a number (other characters end the walk's growth)
+def Gmail.num(s: String, +acc: Nat) -> Nat:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{Chr{+c}, t}:
+      Gmail.num(t, Bool.pick(Nat, Bool.and(U32.is_ge(c, 48), U32.is_le(c, 57)), Nat.add(Nat.mul(acc, 10n), Nat.sub(U32.to_nat(c), 48n)), acc))
+
+def Gmail.size.tenths(small: Bool, +t: Nat) -> String:
+  match small:
+    case True{}:
+      Nat.show(Nat.div(t, 10n)) ++ "." ++ Nat.show(Nat.mod(t, 10n)) ++ " MB"
+    case False{}:
+      Nat.show(Nat.div(t, 10n)) ++ " MB"
+
+def Gmail.size.mb(+n: Nat) -> String:
+  +t = Nat.div(Nat.mul(n, 10n), 1048576n)
+  Gmail.size.tenths(Nat.is_lt(t, 100n), t)
+
+def Gmail.size.k(kb: Bool, +n: Nat) -> String:
+  match kb:
+    case True{}:
+      Nat.show(Nat.div(Nat.add(n, 512n), 1024n)) ++ " KB"
+    case False{}:
+      Gmail.size.mb(n)
+
+def Gmail.size.b(small: Bool, +n: Nat) -> String:
+  match small:
+    case True{}:
+      Nat.show(n) ++ " B"
+    case False{}:
+      Gmail.size.k(Nat.is_lt(n, 1024000n), n)
+
+# a byte count for a person: 512 B, 182 KB, 2.5 MB, 14 MB
+def Gmail.size(+n: Nat) -> String:
+  Gmail.size.b(Nat.is_lt(n, 1024n), n)
+
+# the most an attachment, and all of them together, may be (raw bytes: base64
+# makes them a third more, under Gmail's 25 MB)
+def Gmail.att_max() -> Nat:
+  18874368n
+
+def Gmail.att_count() -> Nat:
+  20n
+
+def Gmail.last_str(xs: List<&2, String>, acc: String) -> String:
+  match xs:
+    case Nil{}:
+      acc
+    case x <> t:
+      Gmail.last_str(t, x)
+
+# the part of a path after its last '/'
+def Gmail.basename(+p: String) -> String:
+  Gmail.last_str(String.split(p, '/'), "")
+
+# a file name's extension in lower case ("" for none)
+def Gmail.ext(+name: String) -> String:
+  Bool.pick(String, String.contains(name, "."), String.to_lower(Gmail.last_str(String.split(name, '.'), "")), "")
+
+def Gmail.is_ext(+e: String, +a: String, +b: String) -> Bool:
+  Bool.or(String.eq(e, a), String.eq(e, b))
+
+def Gmail.mime_type.k(+e: String) -> String:
+  Bool.pick(String, String.eq(e, "pdf"), "application/pdf",
+  Bool.pick(String, String.eq(e, "png"), "image/png",
+  Bool.pick(String, Gmail.is_ext(e, "jpg", "jpeg"), "image/jpeg",
+  Bool.pick(String, String.eq(e, "gif"), "image/gif",
+  Bool.pick(String, String.eq(e, "svg"), "image/svg+xml",
+  Bool.pick(String, String.eq(e, "txt"), "text/plain",
+  Bool.pick(String, String.eq(e, "csv"), "text/csv",
+  Bool.pick(String, Gmail.is_ext(e, "html", "htm"), "text/html",
+  Bool.pick(String, String.eq(e, "json"), "application/json",
+  Bool.pick(String, String.eq(e, "zip"), "application/zip",
+  Bool.pick(String, String.eq(e, "gz"), "application/gzip",
+  Bool.pick(String, Gmail.is_ext(e, "step", "stp"), "model/step",
+  Bool.pick(String, String.starts_with(e, "kicad_"), "text/plain", "application/octet-stream")))))))))))))
+
+# a file's content type from its extension
+def Gmail.mime_type(+name: String) -> String:
+  Gmail.mime_type.k(Gmail.ext(name))
+
+# a file name that survives a quoted header: printable ASCII, no quotes or
+# backslashes (anything else becomes '_')
+def Gmail.fallback.go(s: String, acc: String) -> String:
+  match s:
+    case SNil{}:
+      String.reverse(acc)
+    case SCon{Chr{+c}, t}:
+      Gmail.fallback.go(t, SCon{Chr{Bool.pick(U32, Bool.or(Bool.or(U32.is_lt(c, 32), U32.is_gt(c, 126)), Bool.or(U32.is_eq(c, 34), U32.is_eq(c, 92))), 95, c)}, acc})
+
+def Gmail.fallback(s: String) -> String:
+  Gmail.fallback.go(s, "")
+
+# one attachment's part headers (RFC 2231 filename* beside an ASCII fallback
+# when the name is not plain), up to the blank line before the base64
+def Gmail.att_head(+b: String, +path: String) -> String:
+  +name = Gmail.basename(path)
+  +fb = Gmail.fallback(name)
+  "--" ++ b ++ "\r\nContent-Type: " ++ Gmail.mime_type(name) ++ "; name=\"" ++ fb ++ "\"\r\nContent-Disposition: attachment; filename=\"" ++ fb ++ "\""
+    ++ Bool.pick(String, String.eq(fb, name), "", "; filename*=UTF-8''" ++ Url.encode(name))
+    ++ "\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+
+def Gmail.att_heads(paths: List<&2, String>, +b: String) -> List<&2, String>:
+  match paths:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      Gmail.att_head(b, p) <> Gmail.att_heads(t, b)
+
+def Gmail.paths.strs(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      J.Json.as_str(Some{x}, "") <> Gmail.paths.strs(t)
+
+def Gmail.paths.clean(xs: List<&2, String>, +acc: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      List.reverse(&2, String, acc)
+    case +x <> t:
+      Gmail.paths.clean(t, Bool.pick(List<&2, String>, String.is_empty(String.trim(x)), acc, String.trim(x) <> acc))
+
+# the attachments argument: a JSON array of paths, or one comma-separated string
+def Gmail.paths(m: Maybe<&2, J.Json>) -> List<&2, String>:
+  match m:
+    case Some{J.Arr{xs}}:
+      Gmail.paths.clean(Gmail.paths.strs(J.Json.to_list(xs)), Nil{})
+    case Some{J.Str{s}}:
+      Gmail.paths.clean(String.split(s, ','), Nil{})
+    case _:
+      Nil{}
+
+# base64 of a text as UTF-8 with CRLF line breaks, lines of 76, each ended
+def Gmail.b64lines(+s: String) -> String:
+  String.join(Str.split_every(S.B64.encode(U.Utf8.encode(String.join(Str.lines(s), "\r\n"))), 76n), "\r\n") ++ "\r\n"
+
+# one UTF-8 text part, headers and body
+def Gmail.text_part(+ctype: String, +text: String) -> String:
+  "Content-Type: " ++ ctype ++ "; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" ++ Gmail.b64lines(text)
+
+# the signature after a body: plain text after a blank line; in HTML after
+# two line breaks, escaped, its own line breaks kept. Nothing when it is empty.
+def Gmail.signed(html: Bool, +body: String, +sig: String) -> String:
+  Bool.pick(String, String.is_empty(String.trim(sig)), body,
+    Bool.pick(String, html, body ++ "<br><br>" ++ String.join(Str.lines(Html.esc(sig)), "<br>"), body ++ "\n\n" ++ sig))
+
+# what follows the message headers: the text part, or text and HTML as
+# multipart/alternative (boundary ba)
+def Gmail.body_block(html: Bool, +body: String, +ba: String) -> String:
+  Bool.pick(String, html,
+    "Content-Type: multipart/alternative; boundary=\"" ++ ba ++ "\"\r\n\r\n--" ++ ba ++ "\r\n" ++ Gmail.text_part("text/plain", Html.to_text(body))
+      ++ "--" ++ ba ++ "\r\n" ++ Gmail.text_part("text/html", body) ++ "--" ++ ba ++ "--\r\n",
+    Gmail.text_part("text/plain", body))
+
+def Gmail.hdr_line(name: String, +v: String) -> String:
+  Bool.pick(String, String.is_empty(String.trim(v)), "", name ++ ": " ++ Mail.clean(v) ++ "\r\n")
+
+# the message headers (each value through Mail.clean), MIME-Version last
+def Gmail.headers(+from: String, +to: String, +cc: String, +bcc: String, +subject: String, +irt: String, +refs: String) -> String:
+  Gmail.hdr_line("From", from) ++ "To: " ++ Mail.clean(to) ++ "\r\n" ++ Gmail.hdr_line("Cc", cc) ++ Gmail.hdr_line("Bcc", bcc)
+    ++ "Subject: " ++ Mail.subject(subject) ++ "\r\n" ++ Gmail.hdr_line("In-Reply-To", irt) ++ Gmail.hdr_line("References", refs)
+    ++ "MIME-Version: 1.0\r\n"
+
+# a message in text pieces: head (the whole message when it has no
+# attachments), then for each attachment the text before its base64, then
+# the closing boundary
+type GParts is Data:
+  GParts{head: String, atts: List<&2, String>, tail: String}
+
+def Gmail.compose.k(none: Bool, +h: String, +blk: String, paths: List<&2, String>, +b: String) -> GParts:
+  match none:
+    case True{}:
+      GParts{h ++ blk, Nil{}, ""}
+    case False{}:
+      GParts{h ++ "Content-Type: multipart/mixed; boundary=\"" ++ b ++ "\"\r\n\r\n--" ++ b ++ "\r\n" ++ blk, Gmail.att_heads(paths, b), "--" ++ b ++ "--\r\n"}
+
+# the nonce makes the boundaries (=_bp_<nonce>, =_bpa_<nonce> inside it): base64 and our headers cannot hold "=_bp"
+def Gmail.compose(+from: String, +to: String, +cc: String, +bcc: String, +subject: String, +irt: String, +refs: String, html: Bool, +body: String,
+    +paths: List<&2, String>, +nonce: String) -> GParts:
+  Gmail.compose.k(List.is_empty(&2, String, paths), Gmail.headers(from, to, cc, bcc, subject, irt, refs),
+    Gmail.body_block(html, body, "=_bpa_" ++ nonce), paths, "=_bp_" ++ nonce)
+
+def GParts.head(p: GParts) -> String:
+  match p:
+    case GParts{h, _, _}:
+      h
+
+def GParts.atts(p: GParts) -> List<&2, String>:
+  match p:
+    case GParts{_, a, _}:
+      a
+
+def GParts.tail(p: GParts) -> String:
+  match p:
+    case GParts{_, _, t}:
+      t
+
+# the JSON part of a media upload: the thread a message joins, if any
+def Gmail.meta_msg(+thread: String) -> List<&2, J.KV>:
+  Bool.pick(List<&2, J.KV>, String.is_empty(thread), Nil{}, [J.KV{"threadId", J.Str{thread}}])
+
+def Gmail.json_send(+thread: String) -> String:
+  J.Json.show(J.Json.obj(Gmail.meta_msg(thread)))
+
+# drafts.create's (draft "") or drafts.update's JSON part
+def Gmail.json_draft(+draft: String, +thread: String) -> String:
+  J.Json.show(J.Json.obj(List.append(&2, J.KV, Bool.pick(List<&2, J.KV>, String.is_empty(draft), Nil{}, [J.KV{"id", J.Str{draft}}]), [J.KV{"message", J.Json.obj(Gmail.meta_msg(thread))}])))
+
+def Gmail.upload_head(+bnd: String, +json: String) -> String:
+  "--" ++ bnd ++ "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" ++ json ++ "\r\n--" ++ bnd ++ "\r\nContent-Type: message/rfc822\r\n\r\n"
+
+def Gmail.upload_tail(+bnd: String) -> String:
+  "\r\n--" ++ bnd ++ "--\r\n"
+
+# the Content-Type header of a media upload
+def Gmail.upload_type(+bnd: String) -> String:
+  "Content-Type: multipart/related; boundary=\"" ++ bnd ++ "\""
+
+# Attachment checks: the shell step prints a line a file, "ok <bytes>" or
+# why not; these read those lines against the paths asked for
+def Gmail.att_one(+path: String, +line: String) -> String:
+  Bool.pick(String, Bool.not(String.starts_with(path, "/")), path ++ " is not an absolute path",
+    Bool.pick(String, String.starts_with(line, "ok "),
+      Bool.pick(String, Nat.is_gt(Gmail.num(line, 0n), Gmail.att_max()), path ++ " is over " ++ Gmail.size(Gmail.att_max()), ""),
+      Bool.pick(String, String.starts_with(line, "unreadable"), path ++ " cannot be read", path ++ " is not an existing file")))
+
+def Gmail.att_sizes(ls: List<&2, String>) -> List<&2, Nat>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Gmail.num(l, 0n) <> Gmail.att_sizes(t)
+
+def Gmail.sum(xs: List<&2, Nat>, +acc: Nat) -> Nat:
+  match xs:
+    case Nil{}:
+      acc
+    case +x <> t:
+      Gmail.sum(t, Nat.add(acc, x))
+
+def Gmail.att_err.go(ps: List<&2, String>, ls: List<&2, String>, +acc: String) -> String:
+  match ps ls:
+    case +p <> pt +l <> lt:
+      Gmail.att_err.go(pt, lt, Bool.pick(String, String.is_empty(acc), Gmail.att_one(p, l), acc))
+    case _ _:
+      acc
+
+# the first thing wrong with the attachments ("" for none): too many, a path
+# that is not absolute, missing, unreadable or over the limit, or too much in all
+def Gmail.att_err(+ps: List<&2, String>, +ls: List<&2, String>) -> String:
+  +e = Gmail.att_err.go(ps, ls, "")
+  Bool.pick(String, Nat.is_gt(List.length(&2, String, ps), Gmail.att_count()), "at most " ++ Nat.show(Gmail.att_count()) ++ " attachments",
+    Bool.pick(String, String.is_empty(e),
+      Bool.pick(String, Nat.is_gt(Gmail.sum(Gmail.att_sizes(ls), 0n), Gmail.att_max()), "the attachments are over " ++ Gmail.size(Gmail.att_max()) ++ " in all", ""), e))
+
+def Gmail.att_line.go(names: List<&2, String>, sizes: List<&2, Nat>) -> List<&2, String>:
+  match names sizes:
+    case +n <> nt +s <> st:
+      (n ++ " (" ++ Gmail.size(s) ++ ")") <> Gmail.att_line.go(nt, st)
+    case _ _:
+      Nil{}
+
+# names and sizes as "a.pdf (182 KB), b.csv (2 KB)"
+def Gmail.att_line(names: List<&2, String>, sizes: List<&2, Nat>) -> String:
+  String.join(Gmail.att_line.go(names, sizes), ", ")
+
+def Gmail.names(ps: List<&2, String>) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      Gmail.basename(p) <> Gmail.names(t)
+
+# the original a reply answers, as one line
+def Gmail.inreply(+subject: String, +from: String) -> String:
+  Bool.pick(String, Bool.and(String.is_empty(String.trim(subject)), String.is_empty(String.trim(from))), "",
+    "\"" ++ Mail.clean(subject) ++ "\" from " ++ Mail.clean(from))
+
+def Gmail.shown.cap(+s: String, +n: Nat) -> String:
+  +len = String.length(s)
+  Bool.pick(String, Nat.is_gt(len, n), String.take(s, n) ++ "… (" ++ Nat.show(Nat.sub(len, n)) ++ " more characters)", s)
+
+# the body as the person reads it before approving: all of it up to 20000
+# characters; an HTML body as its text, then a note
+def Gmail.shown(html: Bool, +body: String) -> String:
+  Bool.pick(String, html, Gmail.shown.cap(Html.to_text(body), Google.body_cap()) ++ "\n\n(sent as HTML)", Gmail.shown.cap(body, Google.body_cap()))
+
+# what the person approves: every header that matters and the whole text.
+# draft "" for a message composed now, else the id of the draft being sent
+def Gmail.review(+draft: String, +account: String, +from: String, +to: String, +cc: String, +bcc: String, +subject: String, +inreply: String,
+    +atts: String, +html: Bool, +body: String) -> String:
+  Mail.line("Draft", draft) ++ Mail.line("Account", account) ++ Mail.line("From", from) ++ Mail.line("To", to) ++ Mail.line("Cc", cc)
+    ++ Mail.line("Bcc", bcc) ++ Mail.line("Subject", subject) ++ Mail.line("In reply to", inreply) ++ Mail.line("Attachments", atts)
+    ++ Mail.line("Format", Bool.pick(String, html, "HTML", "")) ++ "\n" ++ Gmail.shown(html, body)
+
+# the attachments of a draft (format=full), "name (182 KB)" each
+def Gmail.part_atts(ps: List<&2, J.Json>, +acc: List<&2, String>) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      List.reverse(&2, String, acc)
+    case +p <> t:
+      Gmail.part_atts(t, Bool.pick(List<&2, String>, String.is_empty(J.Json.get_str(p, "filename", "")), acc,
+        (J.Json.get_str(p, "filename", "") ++ " (" ++ Gmail.size(J.Json.get_nat(J.Json.get_obj(p, "body"), "size", 0n)) ++ ")") <> acc))
+
+# a drafts.get answer (format=full) as the approval to send it
+def Gmail.draft_review(+account: String, +j: J.Json) -> String:
+  +m = J.Json.get_obj(j, "message")
+  +p = J.Json.get_obj(m, "payload")
+  +ps = Mime.parts(p)
+  Gmail.review(J.Json.get_str(j, "id", ""), account, Mail.hdr(p, "from"), Mail.hdr(p, "to"), Mail.hdr(p, "cc"), Mail.hdr(p, "bcc"),
+    Mail.hdr(p, "subject"), "", String.join(Gmail.part_atts(ps, Nil{}), ", "), False{}, Mime.body(ps, J.Json.get_str(m, "snippet", "")))
+
+# drafts.create's / update's answer, for the agent
+def Gmail.draft_saved(+j: J.Json) -> String:
+  "Draft saved (draft id " ++ J.Json.get_str(j, "id", "") ++ ", message id " ++ J.Json.get_str(J.Json.get_obj(j, "message"), "id", "")
+    ++ ", thread " ++ J.Json.get_str(J.Json.get_obj(j, "message"), "threadId", "") ++ "). The person can review it in Gmail; send it with gmail_send {draft: \""
+    ++ J.Json.get_str(j, "id", "") ++ "\"}."

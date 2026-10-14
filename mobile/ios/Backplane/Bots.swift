@@ -489,6 +489,7 @@ private struct SettingsTab: View {
     @State private var gid = ""
     @State private var gsecret = ""
     @State private var gpaste = ""
+    @State private var gsig = ""
     @State private var purl = ""
     @State private var join = ""
     @State private var deleting = false
@@ -504,11 +505,25 @@ private struct SettingsTab: View {
             Section {
                 if !settings.google.status.isEmpty { Text(settings.google.status).font(.subheadline) }
                 ForEach(settings.google.accounts, id: \.self) { a in
-                    HStack {
-                        Text(a).lineLimit(1)
-                        Spacer()
-                        Button("Sign out", role: .destructive) { model.act("google", "signout:" + a) }
-                            .buttonStyle(.borderless)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(a).lineLimit(1)
+                            Spacer()
+                            Button("Signature") { model.act("google", "sig-edit:" + a) }
+                                .buttonStyle(.borderless)
+                            Button("Sign out", role: .destructive) { model.act("google", "signout:" + a) }
+                                .buttonStyle(.borderless)
+                        }
+                        if settings.google.sigFor == a {
+                            TextField("— Sent by Backplane on behalf of " + a, text: $gsig, axis: .vertical)
+                                .lineLimit(2...6)
+                                .onChange(of: gsig) { _, t in model.field("gsig", t) }
+                                .onAppear { gsig = settings.google.sigText }
+                            HStack {
+                                Button("Save") { model.act("google", "sig-save") }.buttonStyle(.borderless)
+                                Button("Cancel") { model.act("google", "sig-cancel") }.buttonStyle(.borderless)
+                            }
+                        }
                     }
                 }
                 Button(settings.google.accounts.isEmpty ? "Connect Google" : "Add account") { GoogleLoop.shared.start { model.act($0, $1) } }

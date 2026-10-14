@@ -2571,10 +2571,41 @@ def Lay.parent(+ty: Ty, +st: M.State, +thread: String, +x0: U32, +y: U32) -> Out
 def Ask.plan_lines(+ty: Ty, +text: String, +px: U32) -> List<&2, String>:
   List.take(&2, String, Ty.wrap(ty, 4n, text, px), 8n)
 
+# an approval's detail wraps (font 4, mono) in at most Ask.cap() lines; the
+# rest scroll with the wheel (the pane "ask:<id>")
+def Ask.cap() -> Nat:
+  14n
+
+def Ask.lines.k(approval: Bool, +ty: Ty, +d: String, +px: U32) -> List<&2, String>:
+  match approval:
+    case True{}:
+      Ty.wrap(ty, 4n, d, px)
+    case False{}:
+      Nil{}
+
+def Ask.lines(+ty: Ty, +k: String, +d: String, +px: U32) -> List<&2, String>:
+  Ask.lines.k(String.eq(k, "approval"), ty, d, px)
+
+# the lines shown: all up to the cap, never none
+def Ask.shown(+n: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_lt(n, Ask.cap()), Bool.pick(Nat, Nat.is_eq(n, 0n), 1n, n), Ask.cap())
+
+# the first line shown, kept so the last line of the detail ends the pane
+def Ask.off(+off: Nat, +n: Nat, +show: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_gt(Nat.add(off, show), n), Nat.sub(n, show), off)
+
+def Ask.h.k(approval: Bool, +n: Nat) -> U32:
+  match approval:
+    case True{}:
+      (54 + (U32.from_nat(Ask.shown(n)) * 21 : U32) : U32)
+    case False{}:
+      76
+
 def Ask.h(+ty: Ty, a: M.Ask, +px: U32) -> U32:
   match a:
     case M.Ask{_, _, +k, _, +d, _, _, _}:
-      Bool.pick(U32, String.eq(k, "plan"), (U32.from_nat(List.length(&2, String, Ask.plan_lines(ty, d, px))) * 21 + 76 : U32), 76)
+      Bool.pick(U32, String.eq(k, "plan"), (U32.from_nat(List.length(&2, String, Ask.plan_lines(ty, d, px))) * 21 + 76 : U32),
+        Ask.h.k(String.eq(k, "approval"), List.length(&2, String, Ask.lines(ty, k, d, px))))
 
 def Asks.h(+ty: Ty, as: List<&2, M.Ask>, +px: U32) -> U32:
   match as:
@@ -2613,24 +2644,59 @@ def Ask.choices(+k: String, +id: String, +o: String, +draft: String) -> List<&2,
         List.reverse(&2, S.Hit, Ask.opts(String.split(o, '\n'), id))),
       [S.Hit{0, 0, 0, 0, "Allow", id ++ "|accept"}, S.Hit{0, 0, 0, 0, "Allow for session", id ++ "|session"}, S.Hit{0, 0, 0, 0, "Deny", id ++ "|decline"}]))
 
-def Ask.card(+ty: Ty, a: M.Ask, +draft: String, +x0: U32, +x1: U32, +y: U32) -> Out:
+def Ask.text.lines(+ty: Ty, ls: List<&2, String>, +x0: U32, +y: U32) -> Out:
+  match ls:
+    case Nil{}:
+      Out.none()
+    case l <> t:
+      Out.cat(Out.ops(Ty.text(ty, 4n, l, D.Clip.all(), (x0 + 14 : U32), y, 21, T.Th.text())), Ask.text.lines(ty, t, x0, (y + 21 : U32)))
+
+# the detail of an approval, from its first line shown
+def Ask.detail(+ty: Ty, +id: String, ls: List<&2, String>, +n: Nat, +show: Nat, +off: Nat, +x0: U32, +x1: U32, +y: U32, +h: U32) -> Out:
+  Out.all([Ask.text.lines(ty, List.take(&2, String, List.drop(&2, String, ls, off), show), x0, (y + 26 : U32)),
+    Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), h, "pane", "ask:" ++ id ++ "|" ++ Nat.show(Nat.sub(n, show)))]}])
+
+def Ask.approval(+ty: Ty, +id: String, +ls: List<&2, String>, +info: Map<&2, String>, +x0: U32, +x1: U32, +y: U32, +h: U32) -> Out:
+  +n = List.length(&2, String, ls)
+  +show = Ask.shown(n)
+  Ask.detail(ty, id, ls, n, show, Ask.off(Pane.off(info, "ask:" ++ id), n, show), x0, x1, y, h)
+
+def Ask.body.k(plan: Bool, approval: Bool, +ty: Ty, +k: String, +id: String, +d: String, +info: Map<&2, String>, +x0: U32, +x1: U32, +y: U32, +h: U32) -> Out:
+  match plan approval:
+    case True{} _:
+      Lay.plan.lines(ty, Ask.plan_lines(ty, d, (x1 - x0 - 32 : U32)), x0, (y + 28 : U32))
+    case False{} True{}:
+      Ask.approval(ty, id, Ask.lines(ty, k, d, (x1 - x0 - 32 : U32)), info, x0, x1, y, h)
+    case False{} False{}:
+      Out.ops(Ty.text(ty, 3n, Ty.fit(ty, 4n, d, (x1 - x0 - 28 : U32)), D.Clip.all(), (x0 + 14 : U32), (y + 26 : U32), 22, T.Th.text()))
+
+def Ask.body(+ty: Ty, +k: String, +id: String, +d: String, +info: Map<&2, String>, +x0: U32, +x1: U32, +y: U32, +h: U32) -> Out:
+  Ask.body.k(String.eq(k, "plan"), String.eq(k, "approval"), ty, k, id, d, info, x0, x1, y, h)
+
+# "· 1–14 of 30" after the head while the detail scrolls
+def Ask.range(+ty: Ty, +info: Map<&2, String>, +k: String, +id: String, +d: String, +px: U32) -> String:
+  +ls = Ask.lines(ty, k, d, px)
+  +n = List.length(&2, String, ls)
+  +show = Ask.shown(n)
+  Bool.pick(String, String.eq(k, "approval"), Pane.range(Ask.off(Pane.off(info, "ask:" ++ id), n, show), show, n), "")
+
+def Ask.card(+ty: Ty, a: M.Ask, +draft: String, +info: Map<&2, String>, +x0: U32, +x1: U32, +y: U32) -> Out:
   match a:
     case M.Ask{+id, _, +k, +tool, +d, +o, _, _}:
       +h = Ask.h(ty, M.Ask{id, "", k, tool, d, o, True{}, ""}, (x1 - x0 - 32 : U32))
-      +head = Bool.pick(String, String.eq(k, "plan"), "Proposed plan", Bool.pick(String, String.eq(k, "input"), "The agent asks", "Allow " ++ tool ++ "?"))
+      +head = U.Ask.head(k, tool, d) ++ Ask.range(ty, info, k, id, d, (x1 - x0 - 32 : U32))
       Out.all([
         Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), h, 0, T.Th.panel(), T.Th.warn())),
         Out.ops(Ty.text(ty, 2n, head, D.Clip.all(), (x0 + 14 : U32), (y + 4 : U32), 22, T.Th.warn())),
-        Bool.pick(Out, String.eq(k, "plan"), Lay.plan.lines(ty, Ask.plan_lines(ty, d, (x1 - x0 - 32 : U32)), x0, (y + 28 : U32)),
-          Out.ops(Ty.text(ty, Bool.pick(Nat, String.eq(k, "approval"), 4n, 3n), Ty.fit(ty, 4n, d, (x1 - x0 - 28 : U32)), D.Clip.all(), (x0 + 14 : U32), (y + 26 : U32), 22, T.Th.text()))),
+        Ask.body(ty, k, id, d, info, x0, x1, y, h),
         Ask.buttons(ty, Ask.choices(k, id, o, draft), (y + h - 36 : U32), (x1 - 12 : U32))])
 
-def Lay.asks(+ty: Ty, as: List<&2, M.Ask>, +draft: String, +x0: U32, +x1: U32, +y: U32) -> Out:
+def Lay.asks(+ty: Ty, as: List<&2, M.Ask>, +draft: String, +info: Map<&2, String>, +x0: U32, +x1: U32, +y: U32) -> Out:
   match as:
     case Nil{}:
       Out.none()
     case +a <> t:
-      Out.cat(Ask.card(ty, a, draft, x0, x1, y), Lay.asks(ty, t, draft, x0, x1, (y + Ask.h(ty, a, (x1 - x0 - 32 : U32)) + 8 : U32)))
+      Out.cat(Ask.card(ty, a, draft, info, x0, x1, y), Lay.asks(ty, t, draft, info, x0, x1, (y + Ask.h(ty, a, (x1 - x0 - 32 : U32)) + 8 : U32)))
 
 # A side question (/btw) and its answer, in a card over the composer until
 # closed; its answer wraps to at most Btw.rows() lines
@@ -5469,7 +5535,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)) ++ U.Usage.tail(st, sel), rs, atts, up, path),
           Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
           Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
-          Lay.asks(ty, asks, draft, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
+          Lay.asks(ty, asks, draft, pics, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
           Btw.card.if(Bool.not(String.is_empty(bq)), ty, bq, ba, cx0, cx1, (h - 132 - qh - eh - bh + 4 : U32)),
           Lay.picker(picking, ty, U.Models.menu(info, pr), mo, info, pr, cx0, cx1, (h - 128 - eh : U32), (60 + hy : U32), U.Chip.all(info, pr, mo), U.Effort.of(st, sel), moff)])
       Out.cat(tl, ch)

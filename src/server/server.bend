@@ -189,6 +189,9 @@ type Msg is Data:
   # the arguments as they will run and the words the person approves
   # (`id` as JSON); `ask` is false when a session approval covers it
   CalAsk{thread: String, tool: String, args: String, detail: String, id: String, reply: Chan(String), ask: Bool}
+  # a bot's gmail_send prepared off the hub (the message written, the
+  # whole email as `detail`): the hub asks the person, then sends `plan`
+  GmailAsk{thread: String, tool: String, detail: String, plan: String, id: String, reply: Chan(String)}
   # a phone's upload (POST /attach) asks where a thread's attachments go
   AttDir{thread: String, reply: Chan(String)}
   # threads elsewhere (far.bend): this hub's feed made from its log; a
@@ -9996,11 +9999,97 @@ def Hub.google.ok(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +no
       Hub.google.p(Bool.or(String.eq(Gg.tool(o), "calendar_update"), String.eq(Gg.tool(o), "calendar_delete")),
         Bool.and(GG.Google.asks(Gg.tool(o)), Bool.not(MC.Perm.session_ok(M.Asks.all(st), thread, Gg.tool(o)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
 
+# the hub's settings gmail.sig.<address> as a JSON object (not secrets)
+def Gg.sigs.go(ks: List<&2, String>, +st: M.State, +acc: List<&2, J.KV>) -> List<&2, J.KV>:
+  match ks:
+    case Nil{}:
+      acc
+    case +k <> t:
+      Gg.sigs.go(t, st, Bool.pick(List<&2, J.KV>, String.starts_with(k, "gmail.sig."), J.KV{k, J.Str{M.Setting.get(st, k, "")}} <> acc, acc))
+
+def Gg.sigs(+st: M.State) -> J.Json:
+  J.Json.obj(Gg.sigs.go(M.Setting.keys(st), st, Nil{}))
+
+# the prepared folder goes when the hub never took the ask
+def Gg.gmail.sent(r: Result<&1, &1, Msg, Unit>, +home: String, +plan: String) -> IO(Unit):
+  match r:
+    case Done{_}:
+      IO.pure(Unit, Unit{})
+    case Fail{_}:
+      GS.Gm.drop(home, plan)
+
+def Gg.gmail.k(p: GS.GPrep, +home: String, +inbox: Chan(Msg), +thread: String, +tool: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  match p:
+    case GS.GFail{m}:
+      Gg.say(reply, id, False{}, m)
+    case GS.GDone{m}:
+      Gg.said(m, id, reply)
+    case GS.GAsk{d, +plan}:
+      do IO<Unit>:
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, GmailAsk{thread, tool, d, plan, J.Json.show(id), reply})
+        Gg.gmail.sent(ok, home, plan)
+
+# gmail_send / gmail_draft prepared off the hub (core/google.bend's
+# Gmail.*, server/google.bend's Gm.run), then the ask is opened by the hub
+def Gg.gmail(+home: String, +tool: String, +args: J.Json, +sigs: J.Json, +inbox: Chan(Msg), +thread: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(GS.GPrep, Unit, GS.Gm.run(home, tool, args, sigs), p => Gg.gmail.k(p, home, inbox, thread, tool, id, reply))
+
+def Gg.gsend(+home: String, +plan: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(String, Unit, GS.Gm.send(home, plan), t => Gg.said(t, id, reply))
+
+def Gg.gdrop(+home: String, +plan: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(Unit, Unit, GS.Gm.drop(home, plan), u => Gg.say(reply, id, False{}, "The user declined this."))
+
+def Gg.gwait.k(m: Maybe<&1, String>, +home: String, +plan: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  match m:
+    case Some{+answer}:
+      Bool.pick(IO(Unit), Bool.or(String.eq(answer, "accept"), String.eq(answer, "session")), Gg.gsend(home, plan, id, reply), Gg.gdrop(home, plan, id, reply))
+    case None{}:
+      GS.Gm.drop(home, plan)
+
+def Gg.gwait(+r2: Chan(String), +home: String, +plan: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(Maybe<&1, String>, Unit, Chan.recv(String, r2), m => Gg.gwait.k(m, home, plan, id, reply))
+
+def Hub.gmail.k(ask: Bool, h: Hub, +thread: String, +tool: String, +detail: String, +plan: String, +id: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match ask h:
+    case False{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Gg.gsend(Cfg.home(cfg), plan, id, reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
+        +r2 : Chan(String) <- Chan.new(String, 1)
+        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
+        IO.spawn(Unit, Gg.gwait(r2, Cfg.home(cfg), plan, id, reply))
+        Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", tool, detail, "", now}], Nil{}})
+
+# the prepared email arrived: asked about (unless the session allows the tool), then sent
+def Hub.gmail.ask(h: Hub, +thread: String, +tool: String, +detail: String, +plan: String, +idtxt: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.gmail.k(Bool.and(GG.Google.asks(tool), Bool.not(MC.Perm.session_ok(M.Asks.all(st), thread, tool))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, tool, detail, plan,
+        Maybe.default(&2, J.Json, J.Json.parse(idtxt), J.Null{}), reply, now)
+
+def Hub.gmail.start(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String)) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Gg.gmail(Cfg.home(cfg), Gg.tool(o), Gg.args(o), Gg.sigs(st), inbox, thread, J.Json.get_obj(o, "id"), reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def Hub.google.m(mail: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match mail h:
+    case True{} _:
+      Hub.gmail.start(h, thread, o, reply)
+    case False{} _:
+      Hub.google.ok(h, thread, o, reply, now)
+
 # alerts Google would refuse go back to the agent before anyone is asked
 def Hub.google.v(fine: Bool, +err: String, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match fine:
     case True{}:
-      Hub.google.ok(h, thread, o, reply, now)
+      Hub.google.m(Bool.or(String.eq(Gg.tool(o), "gmail_send"), String.eq(Gg.tool(o), "gmail_draft")), h, thread, o, reply, now)
     case False{}:
       do IO<Hub>:
         Gg.say(reply, J.Json.get_obj(o, "id"), False{}, err)
@@ -10231,6 +10320,8 @@ def Msg.kind(m: Msg) -> String:
       "new_project"
     case CalAsk{_, _, _, _, _, _, _}:
       "cal_ask"
+    case GmailAsk{_, _, _, _, _, _}:
+      "gmail_ask"
     case AttDir{_, _}:
       "att_dir"
     case FarFeed{_, _}:
@@ -10705,6 +10796,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.newproj.made(h, root, name, id, reply, now)
     case CalAsk{thread, tool, args, detail, id, reply, ask}:
       Hub.cal.ask(ask, h, thread, tool, Gc2.json(args), detail, Gc2.json(id), reply, now)
+    case GmailAsk{thread, tool, detail, plan, id, reply}:
+      Hub.gmail.ask(h, thread, tool, detail, plan, id, reply, now)
     case Shot{text}:
       Hub.broadcast(h, text)
     case AttDir{thread, reply}:

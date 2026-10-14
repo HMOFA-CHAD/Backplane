@@ -383,7 +383,7 @@ struct AskCard: View {
             if !ask.blocks.isEmpty {
                 ScrollView { MarkdownView(blocks: ask.blocks).font(.callout) }.frame(maxHeight: 220)
             } else if !ask.detail.isEmpty {
-                Text(ask.detail).font(.caption.monospaced()).lineLimit(8).textSelection(.enabled)
+                ScrollView { Text(ask.detail).font(.caption.monospaced()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 300)
             }
             FlowButtons(buttons: ask.buttons) { model.act("answer", $0.value) }
         }
