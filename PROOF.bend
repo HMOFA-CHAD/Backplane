@@ -8728,6 +8728,7 @@ def Laws.deploy_cut_requester_no_second():
   {==}
 
 def Laws.deploy_cancel_clears():
+  {==}
 
 # harness-coord: locks
 
