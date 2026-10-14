@@ -565,9 +565,9 @@ law resume_is_replay:
   for s: M.State
   {M.State.replay(List.append(&2, M.Change, a, b), s) == M.State.replay(b, M.State.replay(a, s)) : M.State}
 
-# a message for a Codex or Grok thread whose turn is running starts no
-# agent: it is stored and waits (one turn at a time per session)
-law queue_never_concurrent:
+# a message for a running thread is delivered into the turn at once; no
+# message ever waits (Hub.deliver)
+law post_running_delivers:
   for +s: M.State
   for +now: Nat
   for +th: String
@@ -575,8 +575,47 @@ law queue_never_concurrent:
   for role: M.Role
   for +text: String
   for h1: {H.Hub.running(H.Hub.thread(s, th)) == True{} : Bool}
-  for h2: {String.eq(H.Hub.provider(H.Hub.thread(s, th)), "claude") == False{} : Bool}
-  {H.Step.outs_of(H.Hub.post(s, now, th, msg, role, text)) == [] : List<&2, H.Out>}
+  for h2: {M.Worktree.pending(H.Hub.thread(s, th), now) == False{} : Bool}
+  {H.Hub.post(s, now, th, msg, role, text) == H.Hub.deliver.r(True{}, s, now, th, msg, role, text) : H.Step}
+
+# whatever the thread runs, delivery holds nothing back
+law deliver_never_waits:
+  for run: Bool
+  for +s: M.State
+  for +now: Nat
+  for +th: String
+  for +msg: String
+  for role: M.Role
+  for +text: String
+  {H.Deliver.held(H.Queue.changes(H.Hub.deliver(run, False{}, s, now, th, msg, role, text))) == False{} : Bool}
+
+law deliver_held_go:
+  for b: Bool
+  for +th: String
+  for +now: Nat
+  {H.Deliver.held(List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, b, [], [M.QueueTaken{th, now}]), [M.TurnChanged{th, M.Running{}, now}])) == False{} : Bool}
+
+law deliver_held_steer:
+  for b1: Bool
+  for b2: Bool
+  for +th: String
+  for +id: String
+  for +now: Nat
+  {H.Deliver.held(List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, b1, [], [M.QueueTaken{th, now}]), List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, b2, [], [M.ActivityLogged{th, id, "info", "steer", "Steered: the turn starts again with this message", now}]), [M.TurnChanged{th, M.Running{}, now}]))) == False{} : Bool}
+
+law deliver_held_steer_k:
+  for c: Bool
+  for +s: M.State
+  for +now: Nat
+  for +th: String
+  for +msg: String
+  for role: M.Role
+  for +text: String
+  {H.Deliver.held(H.Queue.changes(H.Hub.deliver.steer(c, s, now, th, msg, role, text))) == False{} : Bool}
+
+# Claude takes it on its input, mid-turn
+law deliver_claude_running:
+  {H.Queue.changes(H.Hub.post(H.Demo.state("claude", M.Running{}), 5n, "t1", "m1", M.User{}, "hi")) == [M.MessagePosted{"t1", "m1", M.User{}, "hi", 5n}, M.TurnChanged{"t1", M.Running{}, 5n}] : List<&2, M.Change>}
 
 # a message the server already stored (resent after a dropped link) is not
 # stored again, and starts nothing
@@ -614,17 +653,19 @@ law task_finish_not_ended_same:
   for h: {H.Task.ended(cs) == H.NotEnded{} : H.Ended}
   {H.Task.finish(s, now, thread, H.Step{cs, os}) == H.Step{cs, os} : H.Step}
 
-# a message from another thread never interrupts the target's running turn,
-# whatever its provider: it waits in the target's inbox
-law inbox_never_interrupts:
+# a message from another thread is delivered into the target's running
+# turn like any other
+law inbox_running_delivers:
   for +s: M.State
   for +now: Nat
   for +from: String
   for +to: String
   for role: M.Role
   for +text: String
-  for h: {H.Hub.running(H.Hub.thread(s, to)) == True{} : Bool}
-  {H.Step.outs_of(H.Hub.inbox(s, now, from, to, role, text)) == [] : List<&2, H.Out>}
+  for +msg: String
+  for h1: {H.Hub.running(H.Hub.thread(s, to)) == True{} : Bool}
+  for h2: {M.Worktree.pending(H.Hub.thread(s, to), now) == False{} : Bool}
+  {H.Hub.inbox.id(s, now, from, to, role, text, msg) == H.Hub.deliver.r(True{}, s, now, to, msg, role, text) : H.Step}
 # Worktrees
 # ---------
 
@@ -2442,29 +2483,30 @@ law tag_untagged_heard:
   for r: Maybe<&2, U32>
   {H.Tag.heard(None{}, r) == True{} : Bool}
 
-# Follow-ups: queue or steer
-# --------------------------
+# Follow-ups
+# ----------
 
-# unset, Claude steers and the others queue; a setting wins; ctrl+Enter
-# does the other
+# every message steers a running turn: no setting, provider or ctrl+Enter
+# makes one wait
 law follow_default_claude:
   {U.Follow.mode("", "claude", False{}) == "steer" : String}
 
 law follow_default_codex:
-  {U.Follow.mode("", "codex", False{}) == "queue" : String}
+  {U.Follow.mode("", "codex", False{}) == "steer" : String}
 
 law follow_setting_queue:
   for +p: String
-  {U.Follow.mode("queue", p, False{}) == "queue" : String}
+  {U.Follow.mode("queue", p, False{}) == "steer" : String}
 
 law follow_setting_steer:
   for +p: String
   {U.Follow.mode("steer", p, False{}) == "steer" : String}
 
-law follow_alt_flips:
+law follow_alt_same:
   for +s: String
   for +p: String
-  {U.Follow.mode(s, p, True{}) == U.Follow.flip(U.Follow.mode(s, p, False{})) : String}
+  for a: Bool
+  {U.Follow.mode(s, p, a) == "steer" : String}
 
 # the send button is Stop only while a turn runs with nothing typed: an
 # idle thread or a typed message always sends, and Stop interrupts
@@ -2482,11 +2524,15 @@ law follow_stop_running:
 law follow_stop_interrupts:
   {U.Follow.act(True{}) == "interrupt" : String}
 
-# with a turn running, "queue" stores the message for later and runs
-# nothing, even for Claude, which would take it in place
-law queue_mode_waits:
-  {H.Hub.post.mode("queue", H.Demo.state("claude", M.Running{}), 5n, "t1", "m1", M.User{}, "hi")
-    == H.Step{[M.MessagePosted{"t1", "m1", M.User{}, "hi", 5n}, M.TurnQueued{"t1", "m1", "hi", 5n}], []} : H.Step}
+# an older client's "queue" mode delivers at once like any message
+law queue_mode_delivers:
+  for +s: M.State
+  for +now: Nat
+  for +th: String
+  for +msg: String
+  for role: M.Role
+  for +text: String
+  {H.Hub.post.mode("queue", s, now, th, msg, role, text) == H.Hub.post(s, now, th, msg, role, text) : H.Step}
 
 # steering Claude sends into its running process; a Codex or Grok turn is
 # stopped and starts again with the message
@@ -5029,8 +5075,9 @@ law lost_off_logs_and_keeps:
 law gone_idle_told:
   {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_gone(H.Lost.demo(True{}, False{}), 9n, "t1", 0)), H.Lost.demo(True{}, False{})), "t1")) == True{} : Bool}
 
-law gone_running_queues:
-  {M.Queue.waiting(M.State.replay(H.Queue.changes(H.Hub.agent_gone(H.Lost.demo(True{}, True{}), 9n, "t1", 0)), H.Lost.demo(True{}, True{})), "t1") == True{} : Bool}
+# an agent gone mid-turn: its lost work is told at once, in a turn of its own
+law gone_running_told:
+  {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_gone(H.Lost.demo(True{}, True{}), 9n, "t1", 0)), H.Lost.demo(True{}, True{})), "t1")) == True{} : Bool}
 
 law replaced_told_once:
   {H.Bg.lost(M.State.replay(H.Queue.changes(H.Bg.lost(H.Lost.demo(True{}, True{}), 9n, "t1", "replaced")), H.Lost.demo(True{}, True{})), 10n, "t1", "replaced") == H.Step{[], []} : H.Step}
@@ -5186,8 +5233,8 @@ law watch_end_once:
 law watch_end_wakes_idle:
   {H.Hub.running(H.Hub.thread(H.Watch.again(H.Watch.demo(False{}), H.Watch.end(H.Watch.demo(False{}), 9n, "t1", "w-1", "exit 4", "")), "t1")) == True{} : Bool}
 
-law watch_end_queues_running:
-  {M.Queue.waiting(H.Watch.again(H.Watch.demo(True{}), H.Watch.end(H.Watch.demo(True{}), 9n, "t1", "w-1", "exit 4", "")), "t1") == True{} : Bool}
+law watch_end_delivers_running:
+  {M.Queue.waiting(H.Watch.again(H.Watch.demo(True{}), H.Watch.end(H.Watch.demo(True{}), 9n, "t1", "w-1", "exit 4", "")), "t1") == False{} : Bool}
 
 law watch_timeout_unknown_not_success:
   {M.Bg.status(M.Setting.get(H.Watch.again(H.Watch.demo(False{}), H.Watch.end(H.Watch.demo(False{}), 9n, "t1", "w-1", "timeout", "")), "watch.t1", "")) == "unknown" : String}
@@ -6941,9 +6988,8 @@ law launch_own_stop_quiet:
 law launch_stop_told:
   {H.Lr.count(H.Queue.changes(H.Retire.stop(H.Lr.demo(True{}), 9n, "t1", [])), "t0") == 1n : Nat}
 
-# reports to a busy launcher wait in its queue, one per end, in order (the
-# queue is in the log, so a restart keeps them)
-law launch_queued_in_order:
+# reports to a busy launcher reach it at once, one per end, in order
+law launch_delivered_in_order:
   {H.Lr.demo.twice() == 2n : Nat}
 
 # back and forth with the launcher Lr.loops() times without the person:

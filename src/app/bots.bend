@@ -848,8 +848,6 @@ def Bv.busy(s: M.Status) -> Bool:
   match s:
     case M.StWorking{}:
       True{}
-    case M.StQueued{}:
-      True{}
     case M.StWaiting{}:
       True{}
     case _:

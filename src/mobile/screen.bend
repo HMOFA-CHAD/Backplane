@@ -608,8 +608,8 @@ def Mob.qbtns(bs: List<&2, U.QBtn>) -> List<&2, J.Json>:
     case U.QBtn{l, a, v} <> t:
       J.Json.obj([J.KV{"label", J.Json.str(l)}, J.KV{"action", J.Json.str(a)}, J.KV{"value", J.Json.str(v)}]) <> Mob.qbtns(t)
 
-# the queue above the composer: each waiting message with its buttons
-# (U.Qu.buttons)
+# context handed over, above the composer (M.Queue.context), with its
+# buttons (U.Qu.row_buttons)
 def Mob.queue(qs: List<&2, M.QItem>, +first: Bool, +run: Bool) -> List<&2, J.Json>:
   match qs:
     case Nil{}:
@@ -924,8 +924,8 @@ def Mob.thread(render: Bool, u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J
         J.KV{"earlier", J.Json.nat(U.Win.hidden(pg))},
         J.KV{"sending", J.Json.arr(Mob.strs(pend))},
         J.KV{"asks", J.Json.arr(Mob.asks(U.Asks.open(st, id), U.Str.get(drafts, sel), nf))},
-        J.KV{"queued", J.Json.str(M.Queue.of(st, id))},
-        J.KV{"queue", J.Json.arr(Mob.queue(M.Queue.items(st, id), True{}, V.View.running(turn)))},
+        J.KV{"queued", J.Json.str("")},
+        J.KV{"queue", J.Json.arr(Mob.queue(M.Queue.context(M.Queue.items(st, id)), True{}, V.View.running(turn)))},
         J.KV{"todos", Mob.todos(nf, id, U.Todos.shown(st, id, V.View.running(turn)))},
         J.KV{"live", Mob.live.k(render, U.Str.get(live, id))},
         J.KV{"working", J.Json.str(Bool.pick(String, String.is_empty(U.Str.get(live, id)), M.Phase.label(ph), ""))},

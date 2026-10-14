@@ -109,8 +109,8 @@ def Mcp.tools() -> J.Json:
     Tool.def("machine_list", "List the person's machines linked to this one (this one first), whether each is here or away, and each one's projects with ids you can give thread_launch. A thread elsewhere has an id like <link>~<id>; thread_send, thread_read, thread_wait, thread_interrupt and thread_update take it, so you can work with a thread on any of their machines.", Nil{}, Nil{}),
     Tool.def("thread_read", "Read a thread's timeline in this project (or on another machine, by its <link>~<id>): messages and tool activity, oldest first (the last `limit` entries).",
       [Tool.prop("threadId", "string", "The thread to read."), Tool.prop("limit", "number", "How many entries (default 40).")], ["threadId"]),
-    Tool.def("thread_send", "Send a message to another thread in this project, or on another machine by its <link>~<id>. mode auto (default) starts a turn there, or waits in its queue while one runs; queue always waits for the running turn; steer sends it into the running turn (Codex, Grok and Muse restart the turn with it).",
-      [Tool.prop("threadId", "string", "The thread."), Tool.prop("text", "string", "The message."), Tool.prop("mode", "string", "auto, queue or steer.")], ["threadId", "text"]),
+    Tool.def("thread_send", "Send a message to another thread in this project, or on another machine by its <link>~<id>. It is delivered at once: an idle thread starts a turn with it, a running turn takes it (Codex, Grok and Muse restart the turn with it).",
+      [Tool.prop("threadId", "string", "The thread."), Tool.prop("text", "string", "The message.")], ["threadId", "text"]),
     Tool.def("thread_launch", "Start a new top-level thread in this project, or in `project` (not a child of this one: the user sees it in the sidebar like their own) with a first message, on any provider/model. Bots must name the project. Answers its threadId. Its reports come to you by themselves, as a message that wakes you: each time its turn ends (completed, failed or interrupted, with its last reply), and at once when it asks the person something; so end your turn instead of polling, and answer it with thread_send. report false launches it without reports; thread_update turns them off or on later. With `machine`, it starts on that other machine of the person's, in its project named by `project` (machine_list).",
       [Tool.prop("prompt", "string", "The first message, complete."), Tool.prop("title", "string", "A short title (default: from the prompt)."), Tool.prop("report", "boolean", "Whether its turn ends and asks are reported to you (default true)."),
        Tool.prop("provider", "string", "claude, codex, grok, muse or antigravity (default: the user's default)."), Tool.prop("model", "string", "Model (default: the provider's default)."),
@@ -118,7 +118,7 @@ def Mcp.tools() -> J.Json:
        Tool.prop("machine", "string", "Start it on another machine of the person's, in its project of that name (machine_list).")], ["prompt"]),
     Tool.def("thread_update", "Rename a thread in this project (this one by default), or with no title have its title written again from its first message. With report (and no title), turn the reports of a thread you launched off (false) or on again (true).",
       [Tool.prop("threadId", "string", "The thread (default: this one)."), Tool.prop("title", "string", "The new title; empty to regenerate it."), Tool.prop("report", "boolean", "For a thread you launched: whether its reports come to you.")], Nil{}),
-    Tool.def("thread_wait", "Wait until a thread in this project has finished its turn and has nothing queued, or until timeoutMs passes. Answers its state, whether it is done, and its last reply. For anything longer than a few minutes use wake_on instead and end your turn.",
+    Tool.def("thread_wait", "Wait until a thread in this project has finished its turn, or until timeoutMs passes. Answers its state, whether it is done, and its last reply. For anything longer than a few minutes use wake_on instead and end your turn.",
       [Tool.prop("threadId", "string", "The thread."), Tool.prop("timeoutMs", "number", "How long to wait at most (default 30000, at most 600000).")], ["threadId"]),
     Tool.def("thread_interrupt", "Stop the running turn of a thread in this project.",
       [Tool.prop("threadId", "string", "The thread.")], ["threadId"]),
@@ -568,9 +568,9 @@ def Mcp.last.go(es: List<&2, M.Entry>, +th: String, done: Bool, +acc: String) ->
 def Mcp.last(es: List<&2, M.Entry>, +th: String) -> String:
   Mcp.last.go(es, th, False{}, "")
 
-# whether a thread is done: no turn running and nothing queued to run
+# whether a thread is done: no turn running or starting
 def Mcp.done(+s: M.State, +th: String) -> Bool:
-  Bool.and(Bool.not(B.Hub.running(B.Hub.thread(s, th))), Bool.not(M.Queue.waiting(s, th)))
+  Bool.and(Bool.not(B.Hub.running(B.Hub.thread(s, th))), Bool.not(M.Queue.starting(s, th)))
 
 # done, and nothing out of hand either (model.bend's Work.ready): a turn
 # that left a subagent, background shell or watched work running is not

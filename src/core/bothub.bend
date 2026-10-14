@@ -231,10 +231,10 @@ def Bots.bot(+s: M.State, +id: String) -> BT.Bot:
 def Bots.msg.id(+from: String, +msg: String) -> String:
   Bool.pick(String, String.is_empty(from), msg, M.Link.id(from, msg))
 
-# a message into a bot's thread: it waits while the bot works (it never
-# interrupts a turn), and its id names the sender for the link visuals
+# a message into a bot's thread, delivered at once (B.Hub.deliver: a
+# running turn takes it); its id names the sender for the link visuals
 def Bots.inbox(+s: M.State, +now: Nat, +from: String, +to: String, +msg: String, +text: String) -> B.Step:
-  B.Hub.post.go(B.Hub.running(B.Hub.thread(s, to)), B.Hub.thread(s, to), B.Hub.cwd(s, B.Hub.thread(s, to)), M.Queue.of(s, to), now, to,
+  B.Hub.deliver(B.Hub.running(B.Hub.thread(s, to)), M.Worktree.pending(B.Hub.thread(s, to), now), s, now, to,
     Bots.msg.id(from, msg), M.User{}, text)
 
 # wake a bot with a message at a conversation depth
@@ -1639,7 +1639,7 @@ def Bots.asks(xs: List<&2, M.Ask>, +th: String, +kind: String) -> Bool:
 def Bots.status.t(t: M.Thread, +s: M.State, +th: String) -> M.Status:
   match t:
     case M.Thread{_, _, _, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      M.Status.of(Bots.asks(M.Asks.all(s), th, "approval"), Bots.asks(M.Asks.all(s), th, "question"), turn, Bool.not(String.is_empty(M.Queue.of(s, th))))
+      M.Status.of(Bots.asks(M.Asks.all(s), th, "approval"), Bots.asks(M.Asks.all(s), th, "question"), turn, M.Queue.starting(s, th))
 
 def Bots.status(+s: M.State, +th: String) -> M.Status:
   Bots.status.t(B.Hub.thread(s, th), s, th)

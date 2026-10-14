@@ -953,39 +953,24 @@ def Ui.rpc.keep.msg(u: Ui, +m: String, +p: List<&2, J.KV>) -> Act:
 
 # Follow-ups
 # ----------
-# While a turn runs, a message either waits in the queue or steers the
-# turn. The "followup" setting picks ("queue" or "steer"); unset, each
-# provider keeps its way (Claude steers, Codex, Grok and Muse queue). Ctrl+Enter
-# does the other one for that message (laws follow_*).
+# A message is delivered at once (hub.bend's Hub.deliver): while a turn
+# runs it steers that turn, so the send button says Steer; with none
+# running it says Send. There is no queue and no mode to pick; the hub
+# ignores the mode older clients still send (laws follow_*).
 
-def Follow.flip(+m: String) -> String:
-  Bool.pick(String, String.eq(m, "queue"), "steer", "queue")
-
-def Follow.base(+setting: String, +provider: String) -> String:
-  Bool.pick(String, Bool.or(String.eq(setting, "queue"), String.eq(setting, "steer")), setting,
-    Bool.pick(String, String.eq(provider, "claude"), "steer", "queue"))
-
-def Follow.mode.k(alt: Bool, +m: String) -> String:
-  match alt:
-    case True{}:
-      Follow.flip(m)
-    case False{}:
-      m
-
-# the mode a message is sent with
 def Follow.mode(+setting: String, +provider: String, alt: Bool) -> String:
-  Follow.mode.k(alt, Follow.base(setting, provider))
+  "steer"
 
-# what the send button says: Send, or while a turn runs what Enter does
-def Follow.label.k(run: Bool, +mode: String) -> String:
+# what the send button says: Send, or while a turn runs Steer
+def Follow.label.k(run: Bool) -> String:
   match run:
     case True{}:
-      Bool.pick(String, String.eq(mode, "queue"), "Queue", "Steer")
+      "Steer"
     case False{}:
       "Send"
 
 def Follow.label(+st: M.State, +sel: String, run: Bool) -> String:
-  Follow.label.k(run, Follow.mode(M.Setting.get(st, "followup", ""), M.Thread.provider(Ui.thread(st, sel)), False{}))
+  Follow.label.k(run)
 
 # While a turn runs and nothing is typed or attached, the send button is
 # Stop: sending would do nothing there (laws follow_stop_*)
@@ -1448,7 +1433,7 @@ def Tasks.parent(+st: M.State, +thread: String) -> String:
 def Task.word(s: M.TaskState) -> String:
   match s:
     case M.TaskQueued{}:
-      "queued"
+      "starting"
     case M.TaskRunning{}:
       "running"
     case M.TaskDone{}:
@@ -2770,7 +2755,7 @@ def Asks.question(+as: List<&2, M.Ask>) -> Bool:
 def Side.status.k(+st: M.State, +id: String, turn: M.TurnState, +pending: Nat, +as: List<&2, M.Ask>) -> M.Status:
   M.Status.wait.f(Nat.is_gt(M.Work.rows(st, id), 0n), M.Status.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(as, "approval")),
     Asks.question(as), turn,
-    M.Queue.waiting(st, id)))
+    M.Queue.starting(st, id)))
 
 def Side.status(+st: M.State, t: M.Thread) -> M.Status:
   match t:
@@ -2789,7 +2774,7 @@ def Side.live(ts: List<&2, M.Task>) -> Nat:
 def Side.phase.k(+st: M.State, +id: String, turn: M.TurnState, +pending: Nat, +as: List<&2, M.Ask>) -> M.Phase:
   M.Phase.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(as, "approval")),
     Asks.question(as), Nat.add(Side.live(Tasks.of(st, id)), M.Work.rows(st, id)), turn,
-    M.Queue.waiting(st, id))
+    M.Queue.starting(st, id))
 
 def Side.phase(+st: M.State, t: M.Thread) -> M.Phase:
   match t:
@@ -2805,7 +2790,7 @@ def Side.status.ix(+ix: SIx, +st: M.State, t: M.Thread) -> M.Status:
 def Side.phase.ix.k(+st: M.State, +ix: SIx, +id: String, turn: M.TurnState, +pending: Nat, +as: List<&2, M.Ask>) -> M.Phase:
   M.Phase.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(as, "approval")),
     Asks.question(as), Nat.add(SIx.kids(ix, id), SIx.work(ix, id)), turn,
-    M.Queue.waiting(st, id))
+    M.Queue.starting(st, id))
 
 # Side.phase from the index (law side_phase_ix_eq)
 def Side.phase.ix(+ix: SIx, +st: M.State, t: M.Thread) -> M.Phase:
@@ -2893,8 +2878,6 @@ def Urg.rank(p: M.Phase) -> Nat:
     case M.PhComplete{}:
       5n
     case M.PhStopped{}:
-      4n
-    case M.PhQueued{}:
       4n
     case M.PhWorking{}:
       2n

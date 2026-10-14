@@ -1972,10 +1972,72 @@ def Hub.more(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Js
     case _:
       Hub.fs(C.Codec.pos(Hub.methods.fs(), m), s, now, client, id, p, m)
 
-# a message for a thread's agent: it starts a turn, or, while a Codex or
-# Grok turn runs (one turn at a time) or the thread's worktree is still
-# being made, it is stored and waits in the thread's queue (Claude takes
-# input mid-turn itself)
+def Steer.stop(+provider: String, +thread: String) -> List<&2, Out>:
+  Bool.pick(List<&2, Out>, String.eq(provider, "claude"), Nil{}, [AgentStop{thread}])
+
+def Steer.note(+provider: String, +thread: String, +now: Nat, +seq: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, String.eq(provider, "claude"), Nil{},
+    [M.ActivityLogged{thread, Hub.id("s", now, seq), "info", "steer", "Steered: the turn starts again with this message", now}])
+
+# the running turn takes `text` now (the message itself is already posted)
+def Steer.go(+t: M.Thread, +cwd: String, +now: Nat, +seq: Nat, +thread: String, +text: String) -> Step:
+  Step{List.append(&2, M.Change, Steer.note(Hub.provider(t), thread, now, seq), [M.TurnChanged{thread, M.Running{}, now}]),
+    List.append(&2, Out, Steer.stop(Hub.provider(t), thread), Hub.run(t, cwd, text, Hub.uuid(now, thread ++ "/s/" ++ Nat.show(seq))))}
+
+# Delivery
+# --------
+# A message for a thread, from the person, a bot, another thread or
+# Backplane itself, is delivered at once; it never waits behind a running
+# turn (law deliver_never_waits). An idle thread starts a turn with it. A
+# running turn takes it: Claude on its input, mid-turn; a Codex, Grok,
+# Muse or Antigravity turn cannot, so its process stops and the turn starts
+# again on the same session with it (Steer.go, law steer_codex_restarts).
+# Only a thread whose worktree is still being made holds it, and starts
+# with it as soon as the worktree is there (Wt.start). Whatever the thread
+# held (handed-over context, or messages from logs older than this rule)
+# goes with it.
+
+def Hub.deliver.steer(claude: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
+  match claude:
+    case True{}:
+      Hub.post.go(False{}, Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread, msg, role, text)
+    case False{}:
+      Step.before(M.MessagePosted{thread, msg, role, text, now} <> Bool.pick(List<&2, M.Change>, String.is_empty(M.Queue.of(s, thread)), Nil{}, [M.QueueTaken{thread, now}]), Nil{},
+        Steer.go(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), now, Hub.seq(s), thread, M.Queue.join(M.Queue.of(s, thread), text)))
+
+def Hub.deliver.r(run: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
+  match run:
+    case True{}:
+      Hub.deliver.steer(String.eq(Hub.provider(Hub.thread(s, thread)), "claude"), s, now, thread, msg, role, text)
+    case False{}:
+      Hub.post.go(False{}, Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread, msg, role, text)
+
+# running: the thread's turn runs; pending: its worktree is being made
+def Hub.deliver(run: Bool, pending: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
+  match pending:
+    case True{}:
+      Hub.post.go(True{}, Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread, msg, role, text)
+    case False{}:
+      Hub.deliver.r(run, s, now, thread, msg, role, text)
+
+# whether changes hold a message back for later (a TurnQueued that is not
+# handed-over context); law deliver_never_waits
+def Deliver.held.one(c: M.Change) -> Bool:
+  match c:
+    case M.TurnQueued{_, +m, _, _}:
+      Bool.not(String.starts_with(m, "handoff:"))
+    case _:
+      False{}
+
+def Deliver.held(cs: List<&2, M.Change>) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case c <> t:
+      Bool.or(Deliver.held.one(c), Deliver.held(t))
+
+# a message for a thread's agent, delivered (Hub.deliver); a thread whose
+# worktree was removed has it made again first
 def Hub.thread_project(t: M.Thread) -> String:
   match t:
     case M.Thread{_, p, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
@@ -1995,8 +2057,7 @@ def Hub.post.v(revive: Bool, +running: Bool, +pending: Bool, +s: M.State, +now: 
     case True{}:
       Step.before(Nil{}, [Wt.revive(s, thread)], Hub.post.go(True{}, Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread, msg, role, text))
     case False{}:
-      Hub.post.go(Bool.or(Bool.and(running, Bool.not(String.eq(Hub.provider(Hub.thread(s, thread)), "claude"))), pending),
-        Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread, msg, role, text)
+      Hub.deliver(running, pending, s, now, thread, msg, role, text)
 
 def Hub.post.w(+running: Bool, gone: Bool, +pending: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   Hub.post.v(Hub.revive(running, gone, pending), running, pending, s, now, thread, msg, role, text)
@@ -2004,18 +2065,17 @@ def Hub.post.w(+running: Bool, gone: Bool, +pending: Bool, +s: M.State, +now: Na
 def Hub.post(+s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   Hub.post.w(Hub.running(Hub.thread(s, thread)), M.Worktree.gone(Hub.thread(s, thread)), M.Worktree.pending(Hub.thread(s, thread), now), s, now, thread, msg, role, text)
 
-# a message from another thread (thread_send, a delegated task's result):
-# it lands in the target's inbox and waits while the target works, for
-# every provider (it never interrupts a running turn, Claude's included);
-# its id names the sender, which is what the link visuals read
+# a message from another thread (thread_send, a delegated task's result,
+# a launched thread's report, a wake): delivered like any other
+# (Hub.deliver); its id names the sender, which is what the link visuals
+# read
 def Hub.inbox.v(revive: Bool, +running: Bool, +pending: Bool, +s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String, +msg: String) -> Step:
   match revive:
     case True{}:
       Step.before(Nil{}, [Wt.revive(s, to)], Hub.post.go(True{}, Hub.thread(s, to), Hub.cwd(s, Hub.thread(s, to)), M.Queue.of(s, to), now, to,
         msg, role, text))
     case False{}:
-      Hub.post.go(Bool.or(running, pending), Hub.thread(s, to), Hub.cwd(s, Hub.thread(s, to)), M.Queue.of(s, to), now, to,
-        msg, role, text)
+      Hub.deliver(running, pending, s, now, to, msg, role, text)
 
 def Hub.inbox.w(+running: Bool, gone: Bool, +pending: Bool, +s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String, +msg: String) -> Step:
   Hub.inbox.v(Hub.revive(running, gone, pending), running, pending, s, now, from, to, role, text, msg)
@@ -2071,54 +2131,14 @@ def Hub.turn.m(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: Strin
 def Hub.turn(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +text: String, +msg: String) -> Step:
   Hub.turn.m(s, now, client, id, thread, text, Bool.pick(String, String.is_empty(msg), Hub.id("m", now, Hub.seq(s)), msg), Bool.not(String.is_empty(msg)))
 
-# Follow-ups: queue or steer
-# --------------------------
-# A message sent while a turn runs either waits in the queue for a later
-# turn or steers the running one. Claude takes it in place, on its input;
-# a Codex or Grok turn cannot, so its process stops and the turn starts
-# again on the same session with the steering message (law
-# steer_codex_restarts). With no turn running, either starts at once.
-# "auto" (or no mode) keeps the provider's default: Claude steers, the
-# others queue.
+# Follow-up modes
+# ---------------
+# Older clients and tools name a mode ("queue", "steer", "auto"). Every
+# mode delivers the message at once (Hub.deliver): there is no queue.
 
-def Steer.stop(+provider: String, +thread: String) -> List<&2, Out>:
-  Bool.pick(List<&2, Out>, String.eq(provider, "claude"), Nil{}, [AgentStop{thread}])
-
-def Steer.note(+provider: String, +thread: String, +now: Nat, +seq: Nat) -> List<&2, M.Change>:
-  Bool.pick(List<&2, M.Change>, String.eq(provider, "claude"), Nil{},
-    [M.ActivityLogged{thread, Hub.id("s", now, seq), "info", "steer", "Steered: the turn starts again with this message", now}])
-
-# the running turn takes `text` now (the message itself is already posted)
-def Steer.go(+t: M.Thread, +cwd: String, +now: Nat, +seq: Nat, +thread: String, +text: String) -> Step:
-  Step{List.append(&2, M.Change, Steer.note(Hub.provider(t), thread, now, seq), [M.TurnChanged{thread, M.Running{}, now}]),
-    List.append(&2, Out, Steer.stop(Hub.provider(t), thread), Hub.run(t, cwd, text, Hub.uuid(now, thread ++ "/s/" ++ Nat.show(seq))))}
-
-def Hub.post.q(run: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
-  match run:
-    case True{}:
-      Step{[M.MessagePosted{thread, msg, role, text, now}, M.TurnQueued{thread, msg, text, now}], Nil{}}
-    case False{}:
-      Hub.post(s, now, thread, msg, role, text)
-
-def Hub.post.st(run: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
-  match run:
-    case True{}:
-      Step.before([M.MessagePosted{thread, msg, role, text, now}], Nil{}, Steer.go(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), now, Hub.seq(s), thread, text))
-    case False{}:
-      Hub.post(s, now, thread, msg, role, text)
-
-def Hub.post.mode.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
-  match i:
-    case 0n:
-      Hub.post.q(Hub.running(Hub.thread(s, thread)), s, now, thread, msg, role, text)
-    case 1n:
-      Hub.post.st(Hub.running(Hub.thread(s, thread)), s, now, thread, msg, role, text)
-    case _:
-      Hub.post(s, now, thread, msg, role, text)
-
-# a message with its follow-up mode: "queue", "steer", or "auto"
+# a message with a follow-up mode, which no longer changes anything
 def Hub.post.mode(+mode: String, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
-  Hub.post.mode.k(C.Codec.pos(["queue", "steer"], mode), s, now, thread, msg, role, text)
+  Hub.post(s, now, thread, msg, role, text)
 
 def Hub.turnx.go(+mode: String, +s: M.State, +t: M.Thread, +now: Nat, +client: U32, +id: String, +thread: String, +msg: String, +text: String) -> Step:
   match t:
@@ -3571,14 +3591,9 @@ def Retire.archive(+s: M.State, +now: Nat, +th: String, base: Step) -> Step:
   Retire.turn(Hub.running(Hub.thread(s, th)), s, now, th,
     Step.also(Step.after(base, List.append(&2, M.Change, Retire.asks(M.Asks.all(s), th, now), Bg.clear(s, th, now))), Retire.answers(M.Asks.all(s), th)))
 
-# the note itself: to an idle thread it starts a turn; behind a running
-# turn or a held queue it waits
-def Lost.note(held: Bool, +s: M.State, +now: Nat, +th: String, +text: String) -> Step:
-  match held:
-    case True{}:
-      Hub.post.go(True{}, Hub.thread(s, th), Hub.cwd(s, Hub.thread(s, th)), M.Queue.of(s, th), now, th, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))), M.System{}, text)
-    case False{}:
-      Hub.inbox.id(s, now, "backplane", th, M.System{}, text, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))))
+# the note itself, delivered like any message (Hub.deliver)
+def Lost.note(+s: M.State, +now: Nat, +th: String, +text: String) -> Step:
+  Hub.inbox.id(s, now, "backplane", th, M.System{}, text, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))))
 
 # Watched work
 # ------------
@@ -3693,7 +3708,7 @@ def Watch.text(+note: String, +word: String, +detail: String) -> String:
 def Watch.tell.k(live: Bool, +s: M.State, +now: Nat, +th: String, +text: String) -> Step:
   match live:
     case True{}:
-      Lost.note(Bool.or(Hub.running(Hub.thread(s, th)), M.Queue.waiting(s, th)), s, now, th, text)
+      Lost.note(s, now, th, text)
     case False{}:
       Step.none()
 
@@ -4517,8 +4532,7 @@ def Hub.agent_line.v(v: Nat, +s: M.State, +now: Nat, +thread: String, +line: Str
 # task, and its rows go in the same step (laws recover_lost_*, gone_*,
 # replaced_*). With "restart.continue" off nothing is started: an Act
 # says the same, and the rows stay, ended with status "unknown", until a
-# turn ends them. A thread with a queue held (after a Stop) gets the note
-# queued behind it, never drained.
+# turn ends them. The note is delivered like any message (Lost.note).
 
 def Lost.why(+why: String) -> String:
   Bool.pick(String, String.eq(why, "restart"), "A restart of Backplane",
@@ -4583,7 +4597,7 @@ def Bg.lost.k(has: Bool, on: Bool, +s: M.State, +now: Nat, +th: String, +why: St
     case False{} _:
       Step.none()
     case True{} True{}:
-      Step.cat(Lost.note(M.Queue.waiting(s, th), s, now, th, Lost.text(ls, why)), Step{List.append(&2, M.Change, [M.WorkSet{th, "bg", "", now}], Lost.unstash(s, now, th)), Nil{}})
+      Step.cat(Lost.note(s, now, th, Lost.text(ls, why)), Step{List.append(&2, M.Change, [M.WorkSet{th, "bg", "", now}], Lost.unstash(s, now, th)), Nil{}})
     case True{} False{}:
       Step{List.append(&2, M.Change, [M.ActivityLogged{th, Hub.id("l", now, Hub.seq(s)), "info", "lost", Lost.text(ls, why), now}, M.WorkSet{th, "bg", M.Bg.show(Lost.unknown(M.Bg.of(s, th))), now}], Lost.unstash(s, now, th)), Nil{}}
 
@@ -4618,10 +4632,15 @@ def Wake.exit.k(needed: Bool, +s: M.State, +now: Nat, +thread: String, +code: U3
 def Wake.exit(+s: M.State, +now: Nat, +thread: String, +code: U32, +st: Step) -> Step:
   Wake.exit.k(Bool.and(Bool.not(U32.is_eq(code, 0)), Bool.and(Bool.not(String.eq(C.Turn.name(M.Thread.turn(Hub.thread(s, thread))), "failed")), Nat.is_eq(Wake.ended(Queue.changes(st), thread), 0n))), s, now, thread, code, st)
 
-def Hub.agent_gone.why(+s: M.State, +now: Nat, +thread: String, +code: U32, +why: String) -> Step:
+# (the lost work is told against the state after the turn ended, so the
+# note starts a turn of its own: law gone_running_told)
+def Hub.agent_gone.m(+main: Step, +s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:
   Wake.exit(s, now, thread, code, Step.before(Nil{}, Retire.answers(M.Asks.all(s), thread),
-    Step.cat(Step.after(Launch.tell(s, now, thread, Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code, why))))),
-      Retire.asks(M.Asks.all(s), thread, now)), Bg.gone(Lost.live(Hub.thread(s, thread)), s, now, thread))))
+    Step.cat(Step.after(main, Retire.asks(M.Asks.all(s), thread, now)), Bg.gone(Lost.live(Hub.thread(s, thread)), M.State.replay(Queue.changes(main), s), now, thread))))
+
+def Hub.agent_gone.why(+s: M.State, +now: Nat, +thread: String, +code: U32, +why: String) -> Step:
+  Hub.agent_gone.m(Launch.tell(s, now, thread, Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code, why))))),
+    s, now, thread, code)
 
 def Hub.agent_gone(+s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:
   Hub.agent_gone.why(s, now, thread, code, "")
@@ -4872,9 +4891,9 @@ def Carry.will(+before: M.State, +th: String) -> Bool:
 # After a restart nothing the old process held is left: no agent runs, no
 # request waits parked for an answer. Every turn still marked running ends
 # as interrupted (a delegated child's task fails, and its parent hears of
-# it) and every open ask closes unanswered (laws recover_*). Queued
-# messages stay held until the user resumes them (queue.resume) or sends
-# another, unless the turn carries on (Carry, below).
+# it) and every open ask closes unanswered (laws recover_*). Anything a
+# thread held from an older log goes with its next turn (Carry, below, or
+# the next message).
 
 type Rec is Data:
   Rec{s: M.State, cs: List<&2, M.Change>, os: List<&2, Out>}
@@ -5790,15 +5809,15 @@ def Lr.demo.tell(+s: M.State, cs: List<&2, M.Change>) -> Nat:
 def Lr.demo.end() -> List<&2, M.Change>:
   [M.TurnChanged{"t1", M.Completed{}, 9n}]
 
-# t1's turn ends twice, t0 busy: both reports wait in t0's queue, in order
+# t1's turn ends twice, t0 busy: both reports reach t0 at once, in order
 def Lr.demo.twice.k(+s1: M.State) -> Nat:
-  Lr.queued(Queue.changes(Launch.tell(s1, 11n, "t1", Step{[M.TurnChanged{"t1", M.Completed{}, 11n}], Nil{}})), "t0")
+  Lr.count(Queue.changes(Launch.tell(s1, 11n, "t1", Step{[M.TurnChanged{"t1", M.Completed{}, 11n}], Nil{}})), "t0")
 
 def Lr.demo.twice() -> Nat:
   +s = Lr.demo.k(True{}, False{}, True{}, Nil{})
   +st = Launch.tell(s, 9n, "t1", Step{Lr.demo.end(), Nil{}})
   +s1 = M.State.replay(List.append(&2, M.Change, Queue.changes(st), [M.MessagePosted{"t1", "m2", M.User{}, "again", 10n}, M.TurnChanged{"t1", M.Running{}, 10n}]), s)
-  Nat.add(Lr.queued(Queue.changes(st), "t0"), Lr.demo.twice.k(s1))
+  Nat.add(Lr.count(Queue.changes(st), "t0"), Lr.demo.twice.k(s1))
 
 # the loop's bound: t0 started t1's turn Lr.loops() times in a row
 def Lr.demo.loop() -> M.State:
