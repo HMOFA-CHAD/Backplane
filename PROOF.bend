@@ -8948,6 +8948,54 @@ def Laws.deploy_goes_between_calls():
   {==}
 
 def Laws.deploy_waits_open_call():
+  {==}
+# ios-snappy: lost work
+
+def Laws.lostwork_exit_clears():
+  {==}
+
+def Laws.lostwork_exit_clears_off():
+  {==}
+
+def Laws.lostwork_exit_clears_running():
+  {==}
+
+def Laws.lostwork_exit_keeps_child():
+  {==}
+
+def Laws.lostwork_exit_keeps_watch():
+  {==}
+
+def Laws.lostwork_exit_island_hides():
+  {==}
+
+def Laws.lostwork_recover_none_open():
+  {==}
+
+def Laws.lostwork_recover_none_open_off():
+  {==}
+
+def Laws.lostwork_recover_none_held():
+  {==}
+
+def Laws.lostwork_recover_none_held_carried():
+  {==}
+
+def Laws.lostwork_recover_island_hides():
+  {==}
+
+def Laws.lostwork_recover_still_told():
+  {==}
+
+def Laws.lostwork_recover_nothing_left_aside():
+  {==}
+
+def Laws.lostwork_recover_old_rows_go():
+  {==}
+
+def Laws.lostwork_recover_old_rows_go_off():
+  {==}
+
 def Laws.teach_mode_idle():
   {==}
 
@@ -9054,50 +9102,4 @@ def Laws.mobile_other_ask_standard(a, d, nf):
   {==}
 
 def Laws.mobile_browser_card_only_browser(t, rest):
-  {==}
-# ios-snappy: lost work
-
-def Laws.lostwork_exit_clears():
-  {==}
-
-def Laws.lostwork_exit_clears_off():
-  {==}
-
-def Laws.lostwork_exit_clears_running():
-  {==}
-
-def Laws.lostwork_exit_keeps_child():
-  {==}
-
-def Laws.lostwork_exit_keeps_watch():
-  {==}
-
-def Laws.lostwork_exit_island_hides():
-  {==}
-
-def Laws.lostwork_recover_none_open():
-  {==}
-
-def Laws.lostwork_recover_none_open_off():
-  {==}
-
-def Laws.lostwork_recover_none_held():
-  {==}
-
-def Laws.lostwork_recover_none_held_carried():
-  {==}
-
-def Laws.lostwork_recover_island_hides():
-  {==}
-
-def Laws.lostwork_recover_still_told():
-  {==}
-
-def Laws.lostwork_recover_nothing_left_aside():
-  {==}
-
-def Laws.lostwork_recover_old_rows_go():
-  {==}
-
-def Laws.lostwork_recover_old_rows_go_off():
   {==}
