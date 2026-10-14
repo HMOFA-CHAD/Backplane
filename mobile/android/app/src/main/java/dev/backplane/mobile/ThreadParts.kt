@@ -375,6 +375,12 @@ private fun MessageMenu(m: AppModel, text: String, open: Boolean, close: () -> U
     }
 }
 
+// when a message was sent, or a turn finished (core/stamp.bend)
+@Composable
+private fun Stamp(s: String) {
+    if (s.isNotEmpty()) Text(s, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+}
+
 @Composable
 fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
     var menu by remember(e.text) { mutableStateOf(false) }
@@ -390,6 +396,7 @@ fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
                 MessageMenu(m, e.text, menu) { menu = false }
             }
             for (c in e.attachments) ChipView(m, c, show)
+            Stamp(e.stamp)
         }
         "assistant" -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Box {
@@ -397,6 +404,7 @@ fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
                 MessageMenu(m, e.text, menu) { menu = false }
             }
             for (i in e.images) Thumb(m, i.url, show)
+            Stamp(e.stamp)
         }
         "fold" -> Row(Modifier.fillMaxWidth().clickable { m.act("fold", e.value) }.padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

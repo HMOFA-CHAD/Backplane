@@ -26,6 +26,7 @@ import ../core/tools.bend as TO
 import ../core/emb.bend as EM
 import ../core/sched.bend as SCH
 import ../core/tz.bend as TZ
+import ../core/stamp.bend as STP
 
 # Ui -> the screen the phone apps draw, as JSON. SwiftUI and Compose map
 # it onto native lists, toolbars and text fields; every decision (order,
@@ -401,16 +402,21 @@ def Mob.act(step: Bool, e: M.Entry) -> J.Json:
 
 # an entry of the thread itself: a user message is what was written and
 # its attachments; a reply its markdown and the images it names
-def Mob.own(e: M.Entry, +dr: Map<&2, String>) -> J.Json:
+def Mob.own.s(e: M.Entry, +dr: Map<&2, String>, +stamp: String) -> J.Json:
   match e:
     case M.Msg{id, _, M.User{}, +text, _}:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("user")}, J.KV{"text", J.Json.str(AT.Att.body(text))},
-        J.KV{"attachments", J.Json.arr(Mob.chips(AT.Att.paths(text)))}])
+        J.KV{"attachments", J.Json.arr(Mob.chips(AT.Att.paths(text)))}, J.KV{"stamp", J.Json.str(stamp)}])
     case M.Msg{+id, _, _, +text, _}:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("assistant")}, J.KV{"text", J.Json.str(text)},
-        J.KV{"blocks", J.Json.arr(Mob.nodes(D.Md.render(text)))}, J.KV{"images", J.Json.arr(Mob.imgs(dr, id))}])
+        J.KV{"blocks", J.Json.arr(Mob.nodes(D.Md.render(text)))}, J.KV{"images", J.Json.arr(Mob.imgs(dr, id))}, J.KV{"stamp", J.Json.str(stamp)}])
     case M.Act{+id, +th, +tone, +kind, +summary, +at}:
       Mob.act(String.eq(tone, HS.Step.tone()), M.Act{id, th, tone, kind, summary, at})
+
+# with the time under a message (core/stamp.bend; "stamp", empty for the
+# rest)
+def Mob.own(+e: M.Entry, +dr: Map<&2, String>, +sp: STP.Stamps) -> J.Json:
+  Mob.own.s(e, dr, STP.Stamp.text(sp, e))
 
 # a row that opens another thread (value: its id)
 def Mob.link(+id: String, +text: String, +to: String) -> J.Json:
@@ -440,28 +446,28 @@ def Mob.remind(e: M.Entry, +st: M.State) -> J.Json:
     case _:
       J.Json.obj([J.KV{"kind", J.Json.str("act")}])
 
-def Mob.entry.r(rem: Bool, +e: M.Entry, +st: M.State, +dr: Map<&2, String>) -> List<&2, J.Json>:
+def Mob.entry.r(rem: Bool, +e: M.Entry, +st: M.State, +dr: Map<&2, String>, +sp: STP.Stamps) -> List<&2, J.Json>:
   match rem:
     case True{}:
       [Mob.remind(e, st)]
     case False{}:
-      [Mob.own(e, dr)]
+      [Mob.own(e, dr, sp)]
 
 # what an entry shows as, as the web's View.entry.k: this thread's own
 # (headed by the thread that sent it), or a message it sent to another
-def Mob.entry.k(mine: Bool, +e: M.Entry, +st: M.State, +dr: Map<&2, String>) -> List<&2, J.Json>:
+def Mob.entry.k(mine: Bool, +e: M.Entry, +st: M.State, +dr: Map<&2, String>, +sp: STP.Stamps) -> List<&2, J.Json>:
   match mine e:
     case True{} M.Msg{+id, t, r, x, at}:
-      List.append(&2, J.Json, Mob.from(String.is_empty(M.Link.from(id)), id, M.Link.from(id), st), [Mob.own(M.Msg{id, t, r, x, at}, dr)])
+      List.append(&2, J.Json, Mob.from(String.is_empty(M.Link.from(id)), id, M.Link.from(id), st), [Mob.own(M.Msg{id, t, r, x, at}, dr, sp)])
     case True{} _:
-      Mob.entry.r(Mob.remind.is(e), e, st, dr)
+      Mob.entry.r(Mob.remind.is(e), e, st, dr, sp)
     case False{} M.Msg{+id, +t, _, x, _}:
       [Mob.link(id, "→ " ++ U.Tasks.title(st, t) ++ ": " ++ DF.Diff.first(x), t)]
     case False{} _:
       Nil{}
 
-def Mob.entry(+e: M.Entry, +st: M.State, +sel: String, +dr: Map<&2, String>) -> List<&2, J.Json>:
-  Mob.entry.k(String.eq(V.View.entry_thread(e), sel), e, st, dr)
+def Mob.entry(+e: M.Entry, +st: M.State, +sel: String, +dr: Map<&2, String>, +sp: STP.Stamps) -> List<&2, J.Json>:
+  Mob.entry.k(String.eq(V.View.entry_thread(e), sel), e, st, dr, sp)
 
 # a run of tool calls as one row; "fold" with its value opens or shuts it
 def Mob.fold(+id: String, +label: String, +open: Bool) -> J.Json:
@@ -500,20 +506,20 @@ def Mob.role(r: FO.Role, xs: List<&2, J.Json>, acc: List<&2, J.Json>) -> List<&2
           Mob.fold(id, label, False{}) <> acc
 
 # a thread's entries, tail-recursive (a thread can hold thousands)
-def Mob.entries.go(es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st: M.State, +sel: String, +dr: Map<&2, String>, acc: List<&2, J.Json>) -> List<&2, J.Json>:
+def Mob.entries.go(es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st: M.State, +sel: String, +dr: Map<&2, String>, +sp: STP.Stamps, acc: List<&2, J.Json>) -> List<&2, J.Json>:
   match es rs:
     case Nil{} _:
       acc
     case e <> t r <> rt:
-      Mob.entries.go(t, rt, st, sel, dr, Mob.role(r, Mob.entry(e, st, sel, dr), acc))
+      Mob.entries.go(t, rt, st, sel, dr, sp, Mob.role(r, Mob.entry(e, st, sel, dr, sp), acc))
     case e <> t Nil{}:
-      Mob.entries.go(t, Nil{}, st, sel, dr, Mob.onto(Mob.entry(e, st, sel, dr), acc))
+      Mob.entries.go(t, Nil{}, st, sel, dr, sp, Mob.onto(Mob.entry(e, st, sel, dr, sp), acc))
 
 # oldest first, runs of tool calls folded (the last stays open while its
 # turn runs); a reply's images are the ones found when it came
 # (Mob.imgs.seen)
 def Mob.entries(+es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +dr: Map<&2, String>, +running: Bool) -> List<&2, J.Json>:
-  List.reverse(&2, J.Json, Mob.entries.go(es, FO.Fold.roles(es, info, running), st, sel, dr, Nil{}))
+  List.reverse(&2, J.Json, Mob.entries.go(es, FO.Fold.roles(es, info, running), st, sel, dr, STP.Stamps.of(es, st, FO.Fold.now(info), running), Nil{}))
 
 # a toolbar button (core/tools.bend): its icon, what it says, what it does
 # (tip) and the action it sends

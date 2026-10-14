@@ -40,6 +40,7 @@ import ../core/emb.bend as EM
 import ../core/onboard.bend as OB
 import ../core/sched.bend as SCH
 import ../core/tz.bend as TZ
+import ../core/stamp.bend as STP
 
 # Nui -> draw ops and hit regions. Ops are gathered bottom-up (paint
 # order) and reversed once into the topmost-first order the rasterizer
@@ -803,7 +804,8 @@ def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +sel: String, +open: Map<&2
 # 9 code bottom, 10 a message sent to another thread, 11 the thread a
 # message came from (copy holds the other thread), 12 an image row, 13 a
 # line with links, 14 a run of tool calls folded into one row (copy holds
-# what a click asks, FO.Fold.ask; w is 1 when the run is open). w is a user
+# what a click asks, FO.Fold.ask; w is 1 when the run is open), 28 the time
+# under a user message (a reply's is its footer's text). w is a user
 # bubble's width
 type TLine is Data:
   TLine{text: String, color: U32, kind: U32, copy: String, w: U32}
@@ -864,6 +866,8 @@ def TL.h.k(k: Nat) -> U32:
       26
     case 27n:
       24
+    case 28n:
+      20
     case _:
       10
 
@@ -1447,7 +1451,9 @@ def TL.draw.k(+ty: Ty, k: Nat, +text: String, +color: U32, +copy: String, +bw: U
     case 6n:
       Out.ops([D.Draw.rect(c, (x1 - bw : U32), y, bw, 10, T.Th.raise(), 255)])
     case 7n:
-      TL.copy(ty, c, x1, y, 22, copy)
+      Out.cat(Out.ops(Ty.text(ty, 2n, text, c, x0, y, 22, T.Th.faint())), TL.copy(ty, c, x1, y, 22, copy))
+    case 28n:
+      Out.ops(Ty.text(ty, 2n, text, c, (x1 - Ty.width(ty, 2n, text) - 4 : U32), y, 20, T.Th.faint()))
     case 4n:
       Out.none()
     case 3n:
@@ -5150,10 +5156,46 @@ def TL.entry.r(rem: Bool, +ty: Ty, +e: M.Entry, +st: M.State, +px: U32, +pics: M
     case False{}:
       TL.entry.t(EM.Emb.is(e), ty, e, st, px, pics, p)
 
-def TL.entry.p(mine: Bool, +ty: Ty, e: M.Entry, +st: M.State, +px: U32, +pics: Map<&2, String>, p: TLPart) -> List<&2, TLine>:
+# The time under a message (core/stamp.bend): a user message's on a line
+# of its own under the bubble (kind 28, before its gap), a reply's in its
+# footer (kind 7)
+def TL.stamp.hit(+user: Bool, +k: U32) -> Bool:
+  Bool.pick(Bool, user, U32.is_eq(k, 4), U32.is_eq(k, 7))
+
+def TL.stamp.line(hit: Bool, user: Bool, l: TLine, +stamp: String) -> List<&2, TLine>:
+  match hit user l:
+    case False{} _ _:
+      [l]
+    case True{} True{} _:
+      [TLine{stamp, T.Th.faint(), 28, "", 0}, l]
+    case True{} False{} TLine{_, c, k, cp, w}:
+      [TLine{stamp, c, k, cp, w}]
+
+def TL.stamp.at(ls: List<&2, TLine>, +user: Bool, +stamp: String) -> List<&2, TLine>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case TLine{+x, +c, +k, +cp, +w} <> t:
+      List.append(&2, TLine, TL.stamp.line(TL.stamp.hit(user, k), user, TLine{x, c, k, cp, w}, stamp), TL.stamp.at(t, user, stamp))
+
+def TL.stamp.on(none: Bool, ls: List<&2, TLine>, +user: Bool, +stamp: String) -> List<&2, TLine>:
+  match none:
+    case True{}:
+      ls
+    case False{}:
+      TL.stamp.at(ls, user, stamp)
+
+def TL.is.user(r: M.Role) -> Bool:
+  match r:
+    case M.User{}:
+      True{}
+    case _:
+      False{}
+
+def TL.entry.q(mine: Bool, +ty: Ty, e: M.Entry, +st: M.State, +px: U32, +pics: Map<&2, String>, p: TLPart, +stamp: String) -> List<&2, TLine>:
   match mine e:
-    case True{} M.Msg{+id, _, _, _, _}:
-      List.append(&2, TLine, TL.from.k(String.is_empty(M.Link.from(id)), M.Link.from(id), st, px, ty), TL.part.join(ty, p, pics, px))
+    case True{} M.Msg{+id, _, r, _, _}:
+      List.append(&2, TLine, TL.from.k(String.is_empty(M.Link.from(id)), M.Link.from(id), st, px, ty), TL.stamp.on(String.is_empty(stamp), TL.part.join(ty, p, pics, px), TL.is.user(r), stamp))
     case True{} +a:
       TL.entry.r(TL.remind.is(a), ty, a, st, px, pics, p)
     case False{} M.Msg{_, +t, _, +x, _}:
@@ -5161,8 +5203,11 @@ def TL.entry.p(mine: Bool, +ty: Ty, e: M.Entry, +st: M.State, +px: U32, +pics: M
     case False{} _:
       Nil{}
 
-def TL.entry(+ty: Ty, +e: M.Entry, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>) -> List<&2, TLine>:
-  TL.entry.p(TL.mine_of(e, sel), ty, e, st, px, pics, TL.part(TL.mine_of(e, sel), ty, e, px))
+def TL.entry.p(mine: Bool, +ty: Ty, +e: M.Entry, +st: M.State, +px: U32, +pics: Map<&2, String>, p: TLPart, +sp: STP.Stamps) -> List<&2, TLine>:
+  TL.entry.q(mine, ty, e, st, px, pics, p, STP.Stamp.text(sp, e))
+
+def TL.entry(+ty: Ty, +e: M.Entry, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>, +sp: STP.Stamps) -> List<&2, TLine>:
+  TL.entry.p(TL.mine_of(e, sel), ty, e, st, px, pics, TL.part(TL.mine_of(e, sel), ty, e, px), sp)
 
 # Tool calls folded
 # -----------------
@@ -5513,32 +5558,36 @@ def TL.mark(hit: Bool, ls: List<&2, TLine>) -> List<&2, TLine>:
       ls
 
 # the entries, each as its role says (one with no role as it is)
-def TL.entries.r(+ty: Ty, es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>) -> List<&2, TLine>:
+def TL.entries.r(+ty: Ty, es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>, +sp: STP.Stamps) -> List<&2, TLine>:
   match es rs:
     case Nil{} _:
       Nil{}
     case +e <> t r <> rt:
-      List.append(&2, TLine, TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), TL.role(r, ty, TL.entry(ty, e, st, sel, px, pics), px)), TL.entries.r(ty, t, rt, st, sel, px, pics))
+      List.append(&2, TLine, TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), TL.role(r, ty, TL.entry(ty, e, st, sel, px, pics, sp), px)), TL.entries.r(ty, t, rt, st, sel, px, pics, sp))
     case +e <> t Nil{}:
-      List.append(&2, TLine, TL.entry(ty, e, st, sel, px, pics), TL.entries.r(ty, t, Nil{}, st, sel, px, pics))
+      List.append(&2, TLine, TL.entry(ty, e, st, sel, px, pics, sp), TL.entries.r(ty, t, Nil{}, st, sel, px, pics, sp))
+
+# the times under the messages (the clock is the client's last tick)
+def TL.stamps(+es: List<&2, M.Entry>, +st: M.State, +sel: String, +pics: Map<&2, String>) -> STP.Stamps:
+  STP.Stamps.of(es, st, FO.Fold.now(pics), TL.turn(U.Ui.thread(st, sel)))
 
 # the timeline from scratch
 def TL.entries(+ty: Ty, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>) -> List<&2, TLine>:
-  TL.entries.r(ty, es, TL.roles(es, st, sel, pics), st, sel, px, pics)
+  TL.entries.r(ty, es, TL.roles(es, st, sel, pics), st, sel, px, pics, TL.stamps(es, st, sel, pics))
 
 # the memo's items, each as its role says
-def TL.entries.mr(+ty: Ty, its: List<&2, TLE>, rs: List<&2, FO.Role>, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>) -> List<&2, TLine>:
+def TL.entries.mr(+ty: Ty, its: List<&2, TLE>, rs: List<&2, FO.Role>, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>, +sp: STP.Stamps) -> List<&2, TLine>:
   match its rs:
     case Nil{} _:
       Nil{}
     case TLE{+e, p} <> t r <> rt:
-      List.append(&2, TLine, TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), TL.role(r, ty, TL.entry.p(TL.mine_of(e, sel), ty, e, st, px, pics, p), px)), TL.entries.mr(ty, t, rt, st, sel, px, pics))
+      List.append(&2, TLine, TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), TL.role(r, ty, TL.entry.p(TL.mine_of(e, sel), ty, e, st, px, pics, p, sp), px)), TL.entries.mr(ty, t, rt, st, sel, px, pics, sp))
     case TLE{+e, p} <> t Nil{}:
-      List.append(&2, TLine, TL.entry.p(TL.mine_of(e, sel), ty, e, st, px, pics, p), TL.entries.mr(ty, t, Nil{}, st, sel, px, pics))
+      List.append(&2, TLine, TL.entry.p(TL.mine_of(e, sel), ty, e, st, px, pics, p, sp), TL.entries.mr(ty, t, Nil{}, st, sel, px, pics, sp))
 
 # the timeline from the memo's items
 def TL.entries.m(+ty: Ty, +its: List<&2, TLE>, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>) -> List<&2, TLine>:
-  TL.entries.mr(ty, its, TL.roles(TL.memo.es(its), st, sel, pics), st, sel, px, pics)
+  TL.entries.mr(ty, its, TL.roles(TL.memo.es(its), st, sel, pics), st, sel, px, pics, TL.stamps(TL.memo.es(its), st, sel, pics))
 
 def TL.memo.lines.k(same: Bool, +ty: Ty, m: TLMemo, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>) -> List<&2, TLine>:
   match same m:

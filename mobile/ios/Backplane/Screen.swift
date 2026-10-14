@@ -115,6 +115,8 @@ struct Entry: Decodable, Identifiable {
     let key: String?
     // a reminder (kind "reminder"): when, in the person's zone
     let when: String?
+    // a message: when it was sent, or the turn finished (core/stamp.bend)
+    let stamp: String?
 }
 
 // what the agent waits on the user for: an approval, a question or a
