@@ -139,10 +139,9 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         // the state kept at the last launch first: the screen shows at once,
         // and each hub then sends only what came since
         scope.launch {
-            val text = withContext(Dispatchers.IO) { kept.load() }
-            android.util.Log.i("Backplane", "state read ${since()} ms (${text?.length ?: 0} chars)")
-            if (text != null) {
-                apply(engine.load(text))
+            if (kept.has()) {
+                android.util.Log.i("Backplane", "state ${kept.path.length()} bytes")
+                apply(engine.loadFrom(kept.path))
                 android.util.Log.i("Backplane", "state loaded ${since()} ms")
                 for (l in links) Pairing.key(l)?.let { apply(engine.offline(it)) }
             }
@@ -154,9 +153,8 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
             scope.launch {
                 for (h in hubs.values) h.stop()
                 hubs.clear()
-                val text = withContext(Dispatchers.IO) { kept.load() }
-                if (text != null) {
-                    apply(engine.load(text))
+                if (kept.has()) {
+                    apply(engine.loadFrom(kept.path))
                     for (l in links) Pairing.key(l)?.let { apply(engine.offline(it)) }
                 }
                 connect()
@@ -170,8 +168,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         if (!dirty) return
         dirty = false
         scope.launch {
-            val text = engine.save()
-            withContext(Dispatchers.IO) { kept.save(text) }
+            if (engine.saveTo(kept.tmp)) kept.commit()
         }
     }
 
