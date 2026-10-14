@@ -513,7 +513,17 @@ private fun SettingsTab(m: AppModel, b: BotView, st: BotSettings) {
         st.google.accounts.forEach { a ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(a, Modifier.weight(1f), maxLines = 1)
+                TextButton(onClick = { m.act("google", "sig-edit:$a") }) { Text("Signature") }
                 TextButton(onClick = { m.act("google", "signout:$a") }) { Text("Sign out", color = MaterialTheme.colorScheme.error) }
+            }
+            if (st.google.sigFor == a) {
+                var gsig by remember(a) { mutableStateOf(st.google.sigText) }
+                OutlinedTextField(gsig, { gsig = it; m.field("gsig", it) }, Modifier.fillMaxWidth(), minLines = 2, maxLines = 6,
+                    placeholder = { Text("— Sent by Backplane on behalf of $a") })
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { m.act("google", "sig-save") }, shape = square) { Text("Save") }
+                    TextButton(onClick = { m.act("google", "sig-cancel") }) { Text("Cancel") }
+                }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

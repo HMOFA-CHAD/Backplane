@@ -2738,6 +2738,19 @@ def Palette.kind(+a: String) -> String:
 # Row status
 # ----------
 
+# the head of an approval card, one text for every client: "Send this email?"
+# for gmail_send ("Send this draft?" when its detail starts with "Draft:"),
+# "Create/Change/Delete this event?" for calendar_create/update/delete,
+# "Allow <tool>?" for any other tool
+def Ask.head.tool(+tool: String, +d: String) -> String:
+  Bool.pick(String, String.eq(tool, "gmail_send"), Bool.pick(String, String.starts_with(d, "Draft:"), "Send this draft?", "Send this email?"),
+    Bool.pick(String, String.eq(tool, "calendar_create"), "Create this event?",
+      Bool.pick(String, String.eq(tool, "calendar_update"), "Change this event?",
+        Bool.pick(String, String.eq(tool, "calendar_delete"), "Delete this event?", "Allow " ++ tool ++ "?"))))
+
+def Ask.head(+k: String, +tool: String, +d: String) -> String:
+  Bool.pick(String, String.eq(k, "plan"), "Proposed plan", Bool.pick(String, String.eq(k, "input"), "The agent asks", Ask.head.tool(tool, d)))
+
 def Asks.kind(as: List<&2, M.Ask>, +k: String) -> Bool:
   match as:
     case Nil{}:
@@ -5839,6 +5852,36 @@ def Bots.google.rpc(+u: Ui, +op: String, +account: String) -> Act:
 def Bots.google.loop(+port: String) -> String:
   "http://127.0.0.1:" ++ port ++ "/oauth/google"
 
+# An account's signature (gmail_send and gmail_draft add it after the body):
+# the hub setting "gmail.sig.<address>". "sig-edit:<address>" opens it ("@gsig"
+# names the account, the field "gsig" holds its text), "sig-save" writes it
+# (an empty text removes it), "sig-cancel" shuts the editor.
+def Bots.sig.key(+a: String) -> String:
+  "gmail.sig." ++ a
+
+def Bots.sig.of(+u: Ui, +a: String) -> String:
+  M.Setting.get(Ui.state(u), Bots.sig.key(a), "")
+
+# the address whose signature is being edited ("" for none)
+def Bots.sig.editing(+u: Ui) -> String:
+  Ui.scratch(u, "@gsig")
+
+def Bots.sig.edit(+u: Ui, +a: String) -> Act:
+  Act{Ui.scratch_set(Ui.scratch_set(u, "@gsig", a), "@f.gsig", Bots.sig.of(u, a)), Nil{}}
+
+def Bots.sig.save.k(none: Bool, +u: Ui, +a: String) -> Act:
+  match none:
+    case True{}:
+      Act{u, Nil{}}
+    case False{}:
+      Ui.setting(Ui.scratch_set(Ui.scratch_set(u, "@gsig", ""), "@f.gsig", ""), Bots.sig.key(a) ++ "=" ++ Bots.field(u, "gsig"))
+
+def Bots.sig.save(+u: Ui) -> Act:
+  Bots.sig.save.k(String.is_empty(Bots.sig.editing(u)), u, Bots.sig.editing(u))
+
+def Bots.sig.cancel(+u: Ui) -> Act:
+  Act{Ui.scratch_set(Ui.scratch_set(u, "@gsig", ""), "@f.gsig", ""), Nil{}}
+
 def Bots.google.op(i: Nat, +u: Ui, +op: String) -> Act:
   match i:
     case 0n:
@@ -5847,13 +5890,20 @@ def Bots.google.op(i: Nat, +u: Ui, +op: String) -> Act:
       Bots.google.rpc.x(u, "connect", "", "", Bots.google.loop(String.drop(op, 8n)))
     case 2n:
       Bots.google.rpc.x(u, "finish", "", String.drop(op, 5n), "")
+    case 3n:
+      Bots.sig.edit(u, String.drop(op, 9n))
+    case 4n:
+      Bots.sig.save(u)
+    case 5n:
+      Bots.sig.cancel(u)
     case _:
       Bots.google.rpc(u, op, "")
 
 # "signout:<address>" signs one account out; "disconnect" signs out every one
 def Bots.google.at(+op: String) -> Nat:
   Bool.pick(Nat, String.starts_with(op, "signout:"), 0n,
-    Bool.pick(Nat, String.starts_with(op, "connect@"), 1n, Bool.pick(Nat, String.starts_with(op, "done:"), 2n, 3n)))
+    Bool.pick(Nat, String.starts_with(op, "connect@"), 1n, Bool.pick(Nat, String.starts_with(op, "done:"), 2n,
+      Bool.pick(Nat, String.starts_with(op, "sig-edit:"), 3n, Bool.pick(Nat, String.eq(op, "sig-save"), 4n, Bool.pick(Nat, String.eq(op, "sig-cancel"), 5n, 6n))))))
 
 def Bots.google(+u: Ui, +op: String) -> Act:
   Bots.google.op(Bots.google.at(op), u, op)

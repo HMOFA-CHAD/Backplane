@@ -63,6 +63,12 @@ def sample.list() -> String:
 def sample.events() -> String:
   "{\"kind\": \"calendar#events\", \"summary\": \"bob@example.com\", \"timeZone\": \"America/Los_Angeles\", \"items\": [{\"id\": \"ev1\", \"status\": \"confirmed\", \"htmlLink\": \"https://www.google.com/calendar/event?eid=ZXYx\", \"summary\": \"Standup\", \"location\": \"Room 4\", \"start\": {\"dateTime\": \"2026-09-24T09:00:00-07:00\", \"timeZone\": \"America/Los_Angeles\"}, \"end\": {\"dateTime\": \"2026-09-24T09:15:00-07:00\"}, \"attendees\": [{\"email\": \"a@example.com\"}, {\"email\": \"b@example.com\"}]}, {\"id\": \"ev2\", \"status\": \"confirmed\", \"start\": {\"date\": \"2026-09-25\"}, \"end\": {\"date\": \"2026-09-26\"}}]}"
 
+def sample.orig() -> String:
+  "{\"id\": \"m2\", \"threadId\": \"t1\", \"labelIds\": [\"INBOX\"], \"payload\": {\"headers\": [{\"name\": \"Message-Id\", \"value\": \"<m2@mail.x>\"}, {\"name\": \"References\", \"value\": \"<m1@mail.x>\"}, {\"name\": \"Subject\", \"value\": \"Invoice 1042\"}, {\"name\": \"From\", \"value\": \"Alice <alice@example.com>\"}, {\"name\": \"Reply-To\", \"value\": \"billing@example.com\"}]}}"
+
+def sample.thread() -> String:
+  "{\"id\": \"t1\", \"messages\": [{\"id\": \"m1\", \"threadId\": \"t1\", \"payload\": {\"headers\": [{\"name\": \"Message-ID\", \"value\": \"<m1@mail.x>\"}]}}, " ++ sample.orig() ++ "]}"
+
 def sample.tok() -> String:
   "{\"access_token\": \"ya29.a0AfB\", \"expires_in\": 3599, \"refresh_token\": \"1//0gXyz\", \"scope\": \"openid email\", \"token_type\": \"Bearer\", \"id_token\": \"eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiAiaHR0cHM6Ly9hY2NvdW50cy5nb29nbGUuY29tIiwgImVtYWlsIjogIm1lQGV4YW1wbGUuY29tIn0.c2ln\"}"
 
@@ -105,6 +111,71 @@ def main() -> IO(Unit):
     C.Check.str("send body round trip", U.Utf8.decode(G.Gb64.decode(J.Json.get_str(json(G.Google.send_body("bob@x.org", "", "Héllo", "hi\nthere")), "raw", ""))),
       G.Google.mime("bob@x.org", "", "Héllo", "hi\nthere"))
     C.Check.str("split every", String.join(G.Str.split_every("abcdefg", 3n), ","), "abc,def,g")
+    # replies
+    C.Check.str("reply subject adds Re", G.Gmail.reply_subject("", "Invoice 1042"), "Re: Invoice 1042")
+    C.Check.str("reply subject keeps Re", G.Gmail.reply_subject("", "RE: Invoice 1042"), "RE: Invoice 1042")
+    C.Check.str("reply subject given", G.Gmail.reply_subject("Thanks", "Invoice 1042"), "Thanks")
+    C.Check.str("references", G.Gmail.references("<a@x> <b@x>", "<c@x>"), "<a@x> <b@x> <c@x>")
+    C.Check.str("references none", G.Gmail.references("", "<c@x>"), "<c@x>")
+    C.Check.str("reply to prefers reply-to", G.Gmail.reply_to_addr("r@x.org", "f@x.org"), "r@x.org")
+    C.Check.str("reply to from", G.Gmail.reply_to_addr(" ", "f@x.org"), "f@x.org")
+    +o : G.Gorig = G.Gmail.orig(json(sample.orig()))
+    C.Check.str("orig", G.Gorig.id(o) ++ "|" ++ G.Gorig.thread(o) ++ "|" ++ G.Gorig.msgid(o) ++ "|" ++ G.Gorig.refs(o) ++ "|" ++ G.Gorig.subject(o) ++ "|" ++ G.Gorig.from(o) ++ "|" ++ G.Gorig.replyto(o),
+      "m2|t1|<m2@mail.x>|<m1@mail.x>|Invoice 1042|Alice <alice@example.com>|billing@example.com")
+    +ot : G.Gorig = G.Gmail.orig_thread(json(sample.thread()))
+    C.Check.str("orig of thread is the last", G.Gorig.id(ot) ++ "|" ++ G.Gorig.msgid(ot), "m2|<m2@mail.x>")
+    C.Check.str("msg path", G.Gmail.msg_path("m 2"), "/gmail/v1/users/me/messages/m%202?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Reply-To&metadataHeaders=To&metadataHeaders=Cc")
+    # attachments
+    C.Check.str("mime pdf", G.Gmail.mime_type("/a/Invoice.PDF"), "application/pdf")
+    C.Check.str("mime step", G.Gmail.mime_type("board.stp"), "model/step")
+    C.Check.str("mime kicad", G.Gmail.mime_type("x.kicad_pcb"), "text/plain")
+    C.Check.str("mime default", G.Gmail.mime_type("archive.xyz"), "application/octet-stream")
+    C.Check.str("mime no ext", G.Gmail.mime_type("Makefile"), "application/octet-stream")
+    C.Check.str("basename", G.Gmail.basename("/tmp/x/report.csv"), "report.csv")
+    C.Check.str("att head", G.Gmail.att_head("=_bp_n", "/tmp/a/timesheet.csv"),
+      "--=_bp_n\r\nContent-Type: text/csv; name=\"timesheet.csv\"\r\nContent-Disposition: attachment; filename=\"timesheet.csv\"\r\nContent-Transfer-Encoding: base64\r\n\r\n")
+    C.Check.str("att head unicode", G.Gmail.att_head("B", "/tmp/Prüfung \"x\".pdf"),
+      "--B\r\nContent-Type: application/pdf; name=\"Pr_fung _x_.pdf\"\r\nContent-Disposition: attachment; filename=\"Pr_fung _x_.pdf\"; filename*=UTF-8''Pr%C3%BCfung%20%22x%22.pdf\r\nContent-Transfer-Encoding: base64\r\n\r\n")
+    C.Check.str("paths array", String.join(G.Gmail.paths(Some{json("[\"/a\", \" /b \", \"\"]")}), "|"), "/a|/b")
+    C.Check.str("paths string", String.join(G.Gmail.paths(Some{J.Str{"/a, /b"}}), "|"), "/a|/b")
+    C.Check.str("att ok", G.Gmail.att_err(["/a", "/b"], ["ok 10", "ok 2000"]), "")
+    C.Check.str("att relative", G.Gmail.att_err(["a.pdf"], ["ok 10"]), "a.pdf is not an absolute path")
+    C.Check.str("att missing", G.Gmail.att_err(["/a", "/nope"], ["ok 10", "missing"]), "/nope is not an existing file")
+    C.Check.str("att unreadable", G.Gmail.att_err(["/a"], ["unreadable"]), "/a cannot be read")
+    C.Check.str("att over", G.Gmail.att_err(["/big"], ["ok 19000000"]), "/big is over 18 MB")
+    C.Check.str("att over in all", G.Gmail.att_err(["/a", "/b"], ["ok 10000000", "ok 10000000"]), "the attachments are over 18 MB in all")
+    C.Check.str("sizes", G.Gmail.size(0n) ++ "|" ++ G.Gmail.size(2048n) ++ "|" ++ G.Gmail.size(186368n) ++ "|" ++ G.Gmail.size(2621440n) ++ "|" ++ G.Gmail.size(14680064n), "0 B|2 KB|182 KB|2.5 MB|14 MB")
+    C.Check.str("att line", G.Gmail.att_line(["a.pdf", "b.csv"], [186368n, 2048n]), "a.pdf (182 KB), b.csv (2 KB)")
+    # signatures
+    C.Check.str("signed plain", G.Gmail.signed(False{}, "hi", "-- me"), "hi\n\n-- me")
+    C.Check.str("signed html", G.Gmail.signed(True{}, "<p>hi</p>", "A <b>\nB"), "<p>hi</p><br><br>A &lt;b&gt;<br>B")
+    C.Check.str("signed empty", G.Gmail.signed(True{}, "hi", " \n"), "hi")
+    # the message
+    C.Check.str("headers", G.Gmail.headers("me@x.org", "a@x.org", "", "c@x.org", "Re: Hi", "<m@x>", "<r@x> <m@x>"),
+      "From: me@x.org\r\nTo: a@x.org\r\nBcc: c@x.org\r\nSubject: Re: Hi\r\nIn-Reply-To: <m@x>\r\nReferences: <r@x> <m@x>\r\nMIME-Version: 1.0\r\n")
+    C.Check.str("headers no injection", G.Gmail.headers("me@x.org", "a@x.org\r\nBcc: e@x.org", "", "", "hi\nBcc: f@x.org", "", ""),
+      "From: me@x.org\r\nTo: a@x.org  Bcc: e@x.org\r\nSubject: hi Bcc: f@x.org\r\nMIME-Version: 1.0\r\n")
+    +plain : G.GParts = G.Gmail.compose("me@x.org", "a@x.org", "", "", "Hi", "", "", False{}, "hi\nthere", Nil{}, "n1")
+    C.Check.str("compose plain", G.GParts.head(plain),
+      "From: me@x.org\r\nTo: a@x.org\r\nSubject: Hi\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\naGkNCnRoZXJl\r\n")
+    +alt : G.GParts = G.Gmail.compose("me@x.org", "a@x.org", "", "", "Hi", "", "", True{}, "<b>hi</b>", ["/t/a.txt"], "n1")
+    C.Check.str("compose alternative in mixed", G.GParts.head(alt),
+      "From: me@x.org\r\nTo: a@x.org\r\nSubject: Hi\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"=_bp_n1\"\r\n\r\n--=_bp_n1\r\nContent-Type: multipart/alternative; boundary=\"=_bpa_n1\"\r\n\r\n--=_bpa_n1\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\naGk=\r\n--=_bpa_n1\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\nPGI+aGk8L2I+\r\n--=_bpa_n1--\r\n")
+    C.Check.str("compose tail", G.GParts.tail(alt), "--=_bp_n1--\r\n")
+    C.Check.str("compose att count", Nat.show(List.length(&2, String, G.GParts.atts(alt))), "1")
+    C.Check.str("json send", G.Gmail.json_send("t1") ++ G.Gmail.json_send(""), "{\"threadId\":\"t1\"}{}")
+    C.Check.str("json draft", G.Gmail.json_draft("", "t1") ++ G.Gmail.json_draft("d9", ""), "{\"message\":{\"threadId\":\"t1\"}}{\"id\":\"d9\",\"message\":{}}")
+    C.Check.str("upload head", G.Gmail.upload_head("U", "{}"), "--U\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{}\r\n--U\r\nContent-Type: message/rfc822\r\n\r\n")
+    # the approval
+    C.Check.str("review plain", G.Gmail.review("", "me@x.org", "me@x.org", "a@x.org", "", "", "Hi", "", "", False{}, "hello"),
+      "Account: me@x.org\nFrom: me@x.org\nTo: a@x.org\nSubject: Hi\n\nhello")
+    C.Check.str("review html reply", G.Gmail.review("", "me@x.org", "me@x.org", "a@x.org", "b@x.org", "c@x.org", "Re: Invoice", G.Gmail.inreply("Invoice", "Alice <a@x.org>"),
+      G.Gmail.att_line(["i.pdf"], [186368n]), True{}, "<p>Hi <b>there</b></p>"),
+      "Account: me@x.org\nFrom: me@x.org\nTo: a@x.org\nCc: b@x.org\nBcc: c@x.org\nSubject: Re: Invoice\nIn reply to: \"Invoice\" from Alice <a@x.org>\nAttachments: i.pdf (182 KB)\nFormat: HTML\n\nHi there\n\n(sent as HTML)")
+    C.Check.str("review draft", G.Gmail.review("r-1", "me@x.org", "me@x.org", "a@x.org", "", "", "Hi", "", "", False{}, "text"),
+      "Draft: r-1\nAccount: me@x.org\nFrom: me@x.org\nTo: a@x.org\nSubject: Hi\n\ntext")
+    C.Check.str("review long body", G.Gmail.shown(False{}, G.Str.cap("x", 1n)), "x")
+    C.Check.str("draft tool does not ask", show.bool(Bool.or(G.Google.asks("gmail_draft"), Bool.not(G.Google.asks("gmail_send")))), "false")
     # mail we read
     C.Check.str("msg full", G.Google.msg_full(json(sample.full())),
       "id: 18c1\nthread: 18c0\nFrom: Alice <alice@example.com>\nTo: bob@example.com\nDate: Mon, 21 Sep 2026 10:00:00 -0700\nSubject: Board review\nLabels: INBOX, UNREAD\nAttachments: board.pdf (application/pdf, 12345 bytes)\n\nHello Bob,\n\nThe board is ready. Café at 3?\n\n-- Alice\n")
@@ -141,8 +212,8 @@ def main() -> IO(Unit):
     C.Check.str("iso epoch", G.Date.iso(0n), "1970-01-01T00:00:00Z")
     C.Check.str("next day leap", G.Date.next_day("2000-02-28"), "2000-02-29")
     C.Check.str("next day march", G.Date.next_day("2026-02-28"), "2026-03-01")
-    C.Check.str("tools", String.join(G.Google.tool_names(), ","), "gmail_search,gmail_read,gmail_send,calendar_events,calendar_create,calendar_update,calendar_delete,google_accounts")
-    C.Check.str("tool defs", Nat.show(List.length(&2, J.Json, G.Google.tool_defs())), "8")
+    C.Check.str("tools", String.join(G.Google.tool_names(), ","), "gmail_search,gmail_read,gmail_send,gmail_draft,calendar_events,calendar_create,calendar_update,calendar_delete,google_accounts")
+    C.Check.str("tool defs", Nat.show(List.length(&2, J.Json, G.Google.tool_defs())), "9")
     C.Check.str("asks", show.bool(Bool.and(G.Google.asks("gmail_send"), Bool.not(G.Google.asks("gmail_read")))), "true")
     # calendar update, delete and alerts (routines-cal)
     C.Check.str("asks update delete", show.bool(Bool.and(G.Google.asks("calendar_update"), Bool.and(G.Google.asks("calendar_delete"), Bool.not(G.Google.asks("calendar_events"))))), "true")

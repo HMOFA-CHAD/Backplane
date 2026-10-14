@@ -5,7 +5,9 @@
 // sign-in; a bot's tools run; a second sign-in adds a second account, and
 // a tool's "account" picks whose token it uses; one account signs out
 // alone; a secrets file from before accounts still works; a client of the
-// user's own wins; a build with no shared client says so. Prints "ok ..."
+// user's own wins; a build with no shared client says so. Then mail: replies,
+// attachments, drafts, signatures, HTML and the whole email in the approval,
+// against a stand-in Gmail that keeps what is uploaded. Prints "ok ..."
 // / "FAIL ..." lines.
 //
 //   bun test/tools/google_e2e.ts [BINARY] [WIREDIR]
@@ -13,7 +15,7 @@
 // BINARY defaults to build/backplane and must be built with
 // BACKPLANE_GOOGLE_BAKE=0; WIREDIR to build/wire (bend
 // test/wire/index.html -o build/wire).
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, mkdirSync, openSync, ftruncateSync, closeSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -55,8 +57,40 @@ const calendar: Record<string, any> = {
   alone: { id: "alone", summary: "Solo", start: { dateTime: "2026-09-28T09:00:00Z" }, end: { dateTime: "2026-09-28T10:00:00Z" } },
   "ev+_20261014T090000Z": { id: "ev+_20261014T090000Z", summary: "Instance", start: { dateTime: "2026-10-14T09:00:00Z" }, end: { dateTime: "2026-10-14T10:00:00Z" } },
 };
+const uploads: { method: string; path: string; query: string; ctype: string; body: string }[] = [];
+const sends: string[] = [];
 // the code names the account: 4/0Ab* signs in cat, 4/0Ad* dog
 const who = (code: string) => (code.startsWith("4/0Ad") ? "dog" : "cat");
+
+// a MIME entity read back: headers (lower case, unfolded), body, and the parts of a multipart
+type Part = { h: Record<string, string>; body: string; parts: Part[] };
+function parseMime(s: string): Part {
+  const i = s.indexOf("\r\n\r\n");
+  const h: Record<string, string> = {};
+  for (const l of s.slice(0, i).replace(/\r\n[ \t]+/g, " ").split("\r\n")) {
+    const j = l.indexOf(":");
+    if (j > 0) h[l.slice(0, j).toLowerCase()] = l.slice(j + 1).trim();
+  }
+  const body = s.slice(i + 4);
+  const parts: Part[] = [];
+  const m = /boundary="?([^";]+)"?/.exec(h["content-type"] ?? "");
+  if (m && (h["content-type"] ?? "").startsWith("multipart/")) {
+    for (const seg of body.split("--" + m[1]).slice(1)) {
+      if (seg.startsWith("--")) break;
+      parts.push(parseMime(seg.replace(/^\r\n/, "").replace(/\r\n$/, "")));
+    }
+  }
+  return { h, body, parts };
+}
+const bytesOf = (p: Part) => Buffer.from(p.body.replace(/\s+/g, ""), "base64");
+const textOf = (p: Part) => bytesOf(p).toString("utf8");
+// an upload: the JSON part and the message
+const upload = (u: { ctype: string; body: string }) => {
+  const r = parseMime(`content-type: ${u.ctype}\r\n\r\n${u.body}`);
+  return { json: JSON.parse(r.parts[0].body.trim()), msg: parseMime(r.parts[1].body), head: r.parts[1].h };
+};
+// the draft's message id: Gmail gives an updated draft a new one
+let draftMid = "dm1";
 const google = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
@@ -75,6 +109,28 @@ const google = Bun.serve({
       return new Response("{}");
     }
     if (u.pathname === "/gmail/v1/users/me/messages") return Response.json({ resultSizeEstimate: 0 });
+    if (u.pathname === "/gmail/v1/users/me/messages/m2")
+      return Response.json({ id: "m2", threadId: "t1", labelIds: ["INBOX"], payload: { headers: [
+        { name: "Message-Id", value: "<m2@mail.x>" }, { name: "References", value: "<m1@mail.x>" }, { name: "Subject", value: "Invoice 1042" },
+        { name: "From", value: "Alice <alice@example.com>" }, { name: "Reply-To", value: "billing@example.com" }] } });
+    if (u.pathname === "/gmail/v1/users/me/threads/t1")
+      return Response.json({ id: "t1", messages: [
+        { id: "m1", threadId: "t1", payload: { headers: [{ name: "Message-ID", value: "<m1@mail.x>" }, { name: "From", value: "me@example.com" }] } },
+        { id: "m2", threadId: "t1", payload: { headers: [{ name: "Message-ID", value: "<m2@mail.x>" }, { name: "References", value: "<m1@mail.x>" }, { name: "Subject", value: "Invoice 1042" }, { name: "From", value: "Alice <alice@example.com>" }] } }] });
+    if (u.pathname === "/gmail/v1/users/me/drafts/r-1")
+      return Response.json({ id: "r-1", message: { id: draftMid, threadId: "t9", snippet: "Draft body", payload: { mimeType: "multipart/mixed", headers: [
+        { name: "From", value: "me@example.com" }, { name: "To", value: "alice@example.com" }, { name: "Subject", value: "Quote" }], parts: [
+        { mimeType: "text/plain", filename: "", body: { size: 15, data: b64u("Draft body text") } },
+        { mimeType: "application/pdf", filename: "quote.pdf", body: { size: 12345, attachmentId: "x" } }] } } });
+    if (u.pathname === "/gmail/v1/users/me/drafts/send" && req.method === "POST") {
+      sends.push(await req.text());
+      return Response.json({ id: "sent-d", threadId: "t9" });
+    }
+    if (u.pathname.startsWith("/upload/gmail/")) {
+      uploads.push({ method: req.method, path: u.pathname, query: u.search, ctype: req.headers.get("content-type") ?? "", body: Buffer.from(await req.arrayBuffer()).toString("latin1") });
+      if (u.pathname.includes("/drafts")) return Response.json({ id: "r-1", message: { id: "dm1", threadId: "t9" } });
+      return Response.json({ id: "sent1", threadId: "t1" });
+    }
     if (u.pathname.startsWith("/calendar/v3/calendars/primary/events")) {
       const body = req.method === "PATCH" || req.method === "POST" ? await req.json() : null;
       calendarCalls.push({ method: req.method, path: u.pathname, updates: u.searchParams.get("sendUpdates"), body });
@@ -107,22 +163,25 @@ for (const n of ["claude", "codex", "grok", "muse"]) {
   chmodSync(join(fake, n), 0o755);
 }
 
-type Hub = { port: number; proc: ReturnType<typeof Bun.spawn>; ws: WebSocket; seen: any[]; replies: Map<number, any>; n: number };
+type Hub = { port: number; proc: ReturnType<typeof Bun.spawn>; ws: WebSocket; seen: any[]; replies: Map<number, any>; n: number; log: string[] };
 async function start(name: string, env: Record<string, string>): Promise<Hub> {
   const port = freePort();
   const proc = Bun.spawn([resolve(bin), "--home", join(root, name), "--port", String(port), "--no-tailscale", "--headless", "--foreground"], {
     env: { ...process.env, HOME: join(root, "user"), DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_PEERS: "",
       BACKPLANE_GOOGLE_OAUTH: G, BACKPLANE_GOOGLE_API: G, PATH: `${fake}:${process.env.PATH}`, ...env },
-    stdout: "ignore",
-    stderr: process.env.E2E_LOG ? "inherit" : "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
   });
+  const log: string[] = [];
+  for (const st of [proc.stdout, proc.stderr] as any[])
+    (async () => { for await (const c of st) { log.push(Buffer.from(c).toString()); if (process.env.E2E_LOG) process.stderr.write(c); } })();
   for (let i = 0; i < 100; i++) {
     try {
       if ((await fetch(`http://127.0.0.1:${port}/hello`)).status === 200) break;
     } catch {}
     await sleep(100);
   }
-  const h: Hub = { port, proc, ws: null as any, seen: [], replies: new Map(), n: 0 };
+  const h: Hub = { port, proc, ws: null as any, seen: [], replies: new Map(), n: 0, log };
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
   ws.binaryType = "arraybuffer";
   ws.onmessage = (e) => {
@@ -375,6 +434,165 @@ try {
   check("no shared client: status says so", String(s5?.google).includes("no shared Google client"), s5);
   const c5 = await op(b, "connect");
   check("no shared client: connect asks for one", c5?.ok === false || String(c5?.error ?? "").includes("no shared Google client"), c5);
+
+  // Mail: replies, attachments, drafts, a signature, HTML, the whole email in the approval
+  mkdirSync(join(root, "mail", "secrets"), { recursive: true });
+  writeFileSync(join(root, "mail", "secrets", "google.json"), JSON.stringify({ client_id: "own-id", client_secret: "own-secret",
+    accounts: [{ email: "me@example.com", refresh_token: "rt-me-secret", access_token: "at-me-secret", expiry: 4102444800 }], pending_verifier: "", pending_state: "", redirect: "" }));
+  const m = await start("mail", {});
+  hubs.push(m);
+  const mbot = await rpc(m, "bots.create", { name: "nori" });
+  const mset = await until(8000, () => m.seen.find((x) => x.$ === "BotSet" && x.id === mbot?.bot));
+  const mt: string = mset?.thread ?? "";
+  check("a bot to send mail", !!mt, mbot);
+  const sig = "— Sent by Backplane\non behalf of Me";
+  await rpc(m, "setting.set", { key: "gmail.sig.me@example.com", value: sig });
+  const handled = new Set<string>();
+  const nextAsk = async (pred: (c: any) => boolean = () => true) => {
+    const a = await until(15000, () => m.seen.find((c) => c.$ === "AskOpened" && !handled.has(c.id) && c.tool === "gmail_send" && pred(c)));
+    if (a) handled.add(a.id);
+    return a;
+  };
+  const asks = () => m.seen.filter((c) => c.$ === "AskOpened").length;
+  const files = join(root, "files");
+  mkdirSync(files);
+
+  // a reply: Reply-To, Re: subject, the original's conversation, the whole body, the signature
+  const long = "Line one.\n" + "x".repeat(1800) + "\nEND-OF-BODY";
+  const p1 = tool(m, mt, "gmail_send", { reply_to: "m2", body: long });
+  const a1 = await nextAsk();
+  const d1 = String(a1?.detail ?? "");
+  check("reply: the approval has the account and From", d1.includes("Account: me@example.com\nFrom: me@example.com\n"), d1.slice(0, 200));
+  check("reply: To defaults to the Reply-To", d1.includes("To: billing@example.com\n"), d1.slice(0, 200));
+  check("reply: Subject is Re: the original's", d1.includes("Subject: Re: Invoice 1042\n"), d1.slice(0, 200));
+  check("reply: In reply to names the original", d1.includes('In reply to: "Invoice 1042" from Alice <alice@example.com>\n'), d1.slice(0, 300));
+  check("reply: the whole body is shown (over 1500 characters)", d1.includes("END-OF-BODY"), d1.length);
+  check("reply: the signature is shown", d1.includes("— Sent by Backplane\non behalf of Me"), d1.slice(-120));
+  check("reply: the head says it is an email", a1?.kind === "approval" && a1?.tool === "gmail_send", a1);
+  const n0 = uploads.length;
+  check("reply: nothing sent before the answer", n0 === 0, uploads.length);
+  await rpc(m, "ask.answer", { id: a1?.id, answer: "accept" });
+  const r1 = await p1;
+  check("reply: sent, the agent is told", r1.startsWith("Sent (message id sent1, thread t1)"), r1);
+  const u1 = uploads.at(-1)!;
+  check("reply: uploaded by media upload", u1?.method === "POST" && u1.path === "/upload/gmail/v1/users/me/messages/send" && u1.query === "?uploadType=multipart" && u1.ctype.startsWith("multipart/related"), u1 && [u1.method, u1.path, u1.query, u1.ctype]);
+  const m1 = u1 ? upload(u1) : null;
+  check("reply: the request carries the threadId", m1?.json?.threadId === "t1", m1?.json);
+  check("reply: In-Reply-To and References", m1?.msg.h["in-reply-to"] === "<m2@mail.x>" && m1?.msg.h["references"] === "<m1@mail.x> <m2@mail.x>", m1?.msg.h);
+  check("reply: From, To, Subject", m1?.msg.h["from"] === "me@example.com" && m1?.msg.h["to"] === "billing@example.com" && m1?.msg.h["subject"] === "Re: Invoice 1042", m1?.msg.h);
+  const t1 = m1 ? textOf(m1.msg) : "";
+  check("reply: the sent text is what was shown", t1.includes("END-OF-BODY") && t1.endsWith("on behalf of Me"), t1.slice(-80));
+
+  // a reply to a conversation answers its last message
+  const p1b = tool(m, mt, "gmail_send", { thread: "t1", to: "carol@example.com", subject: "Own subject", body: "ok" });
+  const a1b = await nextAsk();
+  check("thread reply: the given subject and To stay", String(a1b?.detail).includes("To: carol@example.com\nSubject: Own subject\n") && String(a1b?.detail).includes('In reply to: "Invoice 1042"'), a1b?.detail);
+  await rpc(m, "ask.answer", { id: a1b?.id, answer: "accept" });
+  await p1b;
+  const m1b = upload(uploads.at(-1)!);
+  check("thread reply: threadId and In-Reply-To of the last message", m1b.json.threadId === "t1" && m1b.msg.h["in-reply-to"] === "<m2@mail.x>", [m1b.json, m1b.msg.h]);
+
+  // two attachments, byte for byte
+  const pdf = join(files, "invoice-1042.pdf");
+  const pdfBytes = Buffer.alloc(186368);
+  for (let i = 0; i < pdfBytes.length; i++) pdfBytes[i] = (i * 131 + (i >> 8)) & 255;
+  writeFileSync(pdf, pdfBytes);
+  const csv = join(files, "timesheet.csv");
+  writeFileSync(csv, "day,hours\nmon,8\n");
+  const p2 = tool(m, mt, "gmail_send", { to: "alice@example.com", cc: "bob@example.com", bcc: "carol@example.com", subject: "Invoice", body: "Attached.", attachments: [pdf, csv] });
+  const a2 = await nextAsk();
+  const d2 = String(a2?.detail ?? "");
+  check("attachments: names and sizes in the approval", d2.includes("Attachments: invoice-1042.pdf (182 KB), timesheet.csv (16 B)\n"), d2);
+  check("attachments: Cc and Bcc are shown", d2.includes("Cc: bob@example.com\nBcc: carol@example.com\n"), d2);
+  await rpc(m, "ask.answer", { id: a2?.id, answer: "accept" });
+  const r2 = await p2;
+  check("attachments: sent", r2.startsWith("Sent ("), r2);
+  const m2 = upload(uploads.at(-1)!);
+  check("attachments: the request has no thread", Object.keys(m2.json).length === 0, m2.json);
+  check("attachments: multipart/mixed, the text then each file", m2.msg.h["content-type"].startsWith("multipart/mixed") && m2.msg.parts.length === 3, m2.msg.parts.map((x) => x.h["content-type"]));
+  check("attachments: Bcc is in the message", m2.msg.h["bcc"] === "carol@example.com" && m2.msg.h["cc"] === "bob@example.com", m2.msg.h);
+  check("attachments: the text part", textOf(m2.msg.parts[0]).startsWith("Attached."), textOf(m2.msg.parts[0]));
+  check("attachments: the PDF's bytes are the file's", bytesOf(m2.msg.parts[1]).equals(pdfBytes) && m2.msg.parts[1].h["content-type"].startsWith("application/pdf") && m2.msg.parts[1].h["content-disposition"].includes('filename="invoice-1042.pdf"'),
+    [bytesOf(m2.msg.parts[1]).length, m2.msg.parts[1].h]);
+  check("attachments: the CSV's bytes are the file's", textOf(m2.msg.parts[2]) === "day,hours\nmon,8\n" && m2.msg.parts[2].h["content-type"].startsWith("text/csv"), m2.msg.parts[2].h);
+  check("attachments: base64 lines are at most 76 characters", m2.msg.parts[1].body.split("\r\n").every((l) => l.length <= 76 && !l.startsWith("--") || l.startsWith("--")), "");
+
+  // attachment errors: before anything is asked or sent
+  const big = join(files, "big.bin");
+  { const fd = openSync(big, "w"); ftruncateSync(fd, 19 * 1024 * 1024); closeSync(fd); }
+  const asks0 = asks(), ups0 = uploads.length;
+  const e1 = await tool(m, mt, "gmail_send", { to: "a@example.com", subject: "s", body: "b", attachments: [join(files, "nope.pdf")] });
+  const e2 = await tool(m, mt, "gmail_send", { to: "a@example.com", subject: "s", body: "b", attachments: ["relative/file.pdf"] });
+  const e3 = await tool(m, mt, "gmail_send", { to: "a@example.com", subject: "s", body: "b", attachments: [big] });
+  const e4 = await tool(m, mt, "gmail_send", { to: "a@example.com", subject: "s", body: "b", attachments: [files] });
+  check("a missing file is an error naming it", e1.startsWith("error:") && e1.includes("nope.pdf") && e1.includes("not an existing file"), e1);
+  check("a relative path is an error", e2.startsWith("error:") && e2.includes("relative/file.pdf") && e2.includes("not an absolute path"), e2);
+  check("an oversize file is an error", e3.startsWith("error:") && e3.includes("big.bin") && e3.includes("18 MB"), e3);
+  check("a folder is not a file", e4.startsWith("error:") && e4.includes("not an existing file"), e4);
+  check("no ask and no upload for any of them", asks() === asks0 && uploads.length === ups0, [asks(), asks0, uploads.length, ups0]);
+
+  // HTML
+  const p3 = tool(m, mt, "gmail_send", { to: "alice@example.com", subject: "Hello", body: "<p>Hi <b>there</b></p>", html: true });
+  const a3 = await nextAsk();
+  const d3 = String(a3?.detail ?? "");
+  check("html: the approval shows the text and says HTML", d3.includes("Format: HTML\n") && d3.includes("Hi there") && d3.includes("(sent as HTML)") && !d3.includes("<b>"), d3);
+  check("html: the signature is escaped HTML after the body", d3.includes("Hi there"), d3);
+  await rpc(m, "ask.answer", { id: a3?.id, answer: "accept" });
+  await p3;
+  const m3 = upload(uploads.at(-1)!);
+  check("html: multipart/alternative, text then html", m3.msg.h["content-type"].startsWith("multipart/alternative") && m3.msg.parts.length === 2
+    && m3.msg.parts[0].h["content-type"].startsWith("text/plain") && m3.msg.parts[1].h["content-type"].startsWith("text/html"), m3.msg.parts.map((x) => x.h["content-type"]));
+  check("html: the html part is the body and the signature", textOf(m3.msg.parts[1]).startsWith("<p>Hi <b>there</b></p><br><br>— Sent by Backplane<br>on behalf of Me"), textOf(m3.msg.parts[1]));
+  check("html: the text part is its text", textOf(m3.msg.parts[0]).startsWith("Hi there"), textOf(m3.msg.parts[0]));
+
+  // declined: nothing is sent, nothing is left on disk
+  const ups1 = uploads.length;
+  const p4 = tool(m, mt, "gmail_send", { to: "alice@example.com", subject: "No", body: "Never" });
+  const a4 = await nextAsk();
+  await rpc(m, "ask.answer", { id: a4?.id, answer: "decline" });
+  const r4 = await p4;
+  check("declined: the agent is told", r4.includes("declined"), r4);
+  await sleep(300);
+  check("declined: nothing uploaded", uploads.length === ups1, uploads.length);
+  check("no prepared message is left in secrets", readdirSync(join(root, "mail", "secrets")).every((f) => !f.startsWith("gm-")), readdirSync(join(root, "mail", "secrets")));
+
+  // drafts: no ask; create, replace, then send as it is
+  const asks1 = asks();
+  const dr = await tool(m, mt, "gmail_draft", { to: "alice@example.com", subject: "Quote", body: "Draft text", reply_to: "m2" });
+  check("draft: saved without asking", dr.startsWith("Draft saved (draft id r-1, message id dm1, thread t9)") && dr.includes('gmail_send {draft: "r-1"}') && asks() === asks1, dr);
+  const ud = uploads.at(-1)!;
+  check("draft: created by the drafts media upload", ud.method === "POST" && ud.path === "/upload/gmail/v1/users/me/drafts" && ud.query === "?uploadType=multipart", [ud.method, ud.path, ud.query]);
+  const md = upload(ud);
+  check("draft: the JSON part has the message's thread", md.json?.message?.threadId === "t1" && md.json.id === undefined, md.json);
+  check("draft: the message has the signature", textOf(md.msg).includes("Draft text") && textOf(md.msg).endsWith("on behalf of Me"), textOf(md.msg));
+  const dr2 = await tool(m, mt, "gmail_draft", { to: "alice@example.com", subject: "Quote", body: "Draft text 2", draft: "r-1" });
+  const ud2 = uploads.at(-1)!;
+  const md2 = upload(ud2);
+  check("draft: replaced with PUT", dr2.startsWith("Draft saved") && ud2.method === "PUT" && ud2.path === "/upload/gmail/v1/users/me/drafts/r-1" && md2.json.id === "r-1", [ud2.method, ud2.path, md2.json]);
+  const bad = await tool(m, mt, "gmail_send", { draft: "r-1", body: "extra" });
+  check("a draft is sent as it is", bad.startsWith("error:") && bad.includes("send a draft as it is"), bad);
+  const ps = tool(m, mt, "gmail_send", { draft: "r-1" });
+  const ask5 = await nextAsk();
+  const ds = String(ask5?.detail ?? "");
+  check("sending a draft: the approval starts with the draft", ds.startsWith("Draft: r-1\nAccount: me@example.com\nFrom: me@example.com\nTo: alice@example.com\nSubject: Quote\nAttachments: quote.pdf (12 KB)\n\nDraft body text"), ds);
+  const ups2 = uploads.length;
+  await rpc(m, "ask.answer", { id: ask5?.id, answer: "accept" });
+  const rs = await ps;
+  check("sending a draft: drafts.send with its id", rs.startsWith("Sent (message id sent-d, thread t9)") && sends.length === 1 && JSON.parse(sends[0]).id === "r-1" && uploads.length === ups2, [rs, sends]);
+  const pc = tool(m, mt, "gmail_send", { draft: "r-1" });
+  const ask6 = await nextAsk();
+  draftMid = "dm2";
+  await rpc(m, "ask.answer", { id: ask6?.id, answer: "accept" });
+  const rc = await pc;
+  draftMid = "dm1";
+  check("a draft changed after review is not sent", rc.startsWith("error:") && rc.includes("changed") && sends.length === 1, [rc, sends.length]);
+
+  // no token or secret in the log, the output or the approvals
+  const events = readFileSync(join(root, "mail", "events.jsonl"), "utf8");
+  const mout = m.log.join("");
+  const secrets = ["at-me-secret", "rt-me-secret", "own-secret"];
+  check("no token appears in events.jsonl", secrets.every((x) => !events.includes(x)), secrets.filter((x) => events.includes(x)));
+  check("no token appears in the hub's output", secrets.every((x) => !mout.includes(x)), secrets.filter((x) => mout.includes(x)));
 } finally {
   for (const h of hubs) {
     await close(h);

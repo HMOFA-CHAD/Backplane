@@ -454,13 +454,21 @@ def WB.gown.k(open: Bool, +u: U.Ui) -> List<&2, D.Node>:
       Nil{}
 
 # one signed-in account and its own sign-out
-def WB.gaccts(xs: List<&2, String>) -> List<&2, D.Node>:
+def WB.gsig(+u: U.Ui, +e: String) -> List<&2, D.Node>:
+  Bool.pick(List<&2, D.Node>, String.eq(U.Bots.sig.editing(u), e),
+    [WB.div("bform wide", [WB.area("google-sig", "gsig", BI.BU.field(u, "gsig"), "— Sent by Backplane on behalf of " ++ e),
+      WB.btns([D.Dom.button("primary", "google", "sig-save", "Save the signature (empty removes it)", "Save"), D.Dom.button("", "google", "sig-cancel", "Close without saving", "Cancel")])])],
+    Nil{})
+
+def WB.gaccts(xs: List<&2, String>, +u: U.Ui) -> List<&2, D.Node>:
   match xs:
     case Nil{}:
       Nil{}
     case +e <> t:
-      D.El{"div", "gacct:" ++ e, [D.At{"class", "item"}], [WB.div("item-main", [D.Dom.span("item-key", e)]),
-        WB.div("item-btns", [D.Dom.button("", "google", "signout:" ++ e, "Sign out " ++ e, "Sign out")])]} <> WB.gaccts(t)
+      D.El{"div", "gacct:" ++ e, [D.At{"class", "item"}], [WB.div("item-main", [D.Dom.span("item-key", e),
+          D.Dom.span("item-url", Bool.pick(String, String.is_empty(U.Bots.sig.of(u, e)), "No signature", U.Bots.sig.of(u, e)))]),
+        WB.div("item-btns", [D.Dom.button("", "google", "sig-edit:" ++ e, "Edit the signature added to mail sent from " ++ e, "Signature"),
+          D.Dom.button("", "google", "signout:" ++ e, "Sign out " ++ e, "Sign out")])]} <> List.append(&2, D.Node, WB.gsig(u, e), WB.gaccts(t, u))
 
 # Google: connect (sign in in a new tab; again for another account; paste
 # the page it lands on when that tab is on another device), status, and
@@ -471,7 +479,7 @@ def WB.google(+u: U.Ui) -> D.Node:
     [WB.btns([D.Dom.button("primary", "google", "connect", "Sign in with Google", Bool.pick(String, List.is_empty(&2, String, U.Bots.google.accts(u)), "Connect Google", "Add account")),
        D.Dom.button("", "google", "status", "Check the connection", "Status"),
        D.Dom.button("", "bfield", WB.bf("gown", "1"), "Use an OAuth client of your own", "Own client")])],
-    WB.gaccts(U.Bots.google.accts(u)),
+    WB.gaccts(U.Bots.google.accts(u), u),
     WB.gown.k(Bool.not(String.is_empty(BI.BU.field(u, "gown"))), u),
     WB.gurl(U.Ui.scratch(u, "@google.url")),
     Bool.pick(List<&2, D.Node>, String.is_empty(U.Ui.scratch(u, "@google.url")), Nil{}, [

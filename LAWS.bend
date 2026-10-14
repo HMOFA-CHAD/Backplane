@@ -7607,3 +7607,70 @@ law task_slug_nonempty:
 
 law task_slug_empty:
   {TSK.Task.slug("") == "task" : String}
+# gmail: replies, attachments, drafts
+
+# a reply with no subject given answers "Re: <original>"
+law gmail_reply_subject_adds_re:
+  {GO.Gmail.reply_subject("", "Invoice 1042") == "Re: Invoice 1042" : String}
+
+# an original that already starts with Re: (any case) is not prefixed again
+law gmail_reply_subject_keeps_re:
+  {GO.Gmail.reply_subject("", "RE: Invoice 1042") == "RE: Invoice 1042" : String}
+
+# a reply's References are the original's, then its Message-ID
+law gmail_references_appends:
+  {GO.Gmail.references("<a@x> <b@x>", "<c@x>") == "<a@x> <b@x> <c@x>" : String}
+
+# a reply goes to the original's Reply-To, not its From
+law gmail_reply_to_prefers_reply_to:
+  {GO.Gmail.reply_to_addr("r@x.org", "f@x.org") == "r@x.org" : String}
+
+# an attachment's type comes from its extension, in any case
+law gmail_mime_type_pdf:
+  {GO.Gmail.mime_type("Invoice.PDF") == "application/pdf" : String}
+
+# an unknown extension is a binary file
+law gmail_mime_type_default:
+  {GO.Gmail.mime_type("archive.xyz") == "application/octet-stream" : String}
+
+# a plain-text signature follows the body after a blank line
+law gmail_signed_plain:
+  {GO.Gmail.signed(False{}, "hi", "-- me") == "hi\n\n-- me" : String}
+
+# an HTML signature is escaped text after two line breaks
+law gmail_signed_html_escapes:
+  {GO.Gmail.signed(True{}, "<p>hi</p>", "A <b>") == "<p>hi</p><br><br>A &lt;b&gt;" : String}
+
+# no signature, no change
+law gmail_signed_empty_unchanged:
+  {GO.Gmail.signed(True{}, "hi", " ") == "hi" : String}
+
+# saving a draft sends nothing and asks nobody
+law gmail_draft_no_ask:
+  {GO.Google.asks("gmail_draft") == False{} : Bool}
+
+# sizes are shown for a person
+law gmail_size_kb:
+  {GO.Gmail.size(2048n) == "2 KB" : String}
+
+# the approval leaves out a line with nothing to say
+law gmail_review_omits_empty_cc:
+  {GO.Gmail.review("", "a@x.org", "a@x.org", "b@x.org", "", "", "Hi", "", "", False{}, "text") == "Account: a@x.org\nFrom: a@x.org\nTo: b@x.org\nSubject: Hi\n\ntext" : String}
+
+# the approval of a send reads "Send this email?" on every client
+law ask_head_gmail:
+  {U.Ask.head("approval", "gmail_send", "To: a") == "Send this email?" : String}
+
+# and of a draft "Send this draft?"
+law ask_head_draft:
+  {U.Ask.head("approval", "gmail_send", "Draft: r1") == "Send this draft?" : String}
+
+# any other tool keeps "Allow <tool>?"
+law ask_head_other_tool:
+  {U.Ask.head("approval", "Bash", "ls") == "Allow Bash?" : String}
+
+# a calendar change reads as one
+law ask_head_cal_update:
+  {U.Ask.head("approval", "calendar_update", "x") == "Change this event?" : String}
+
+# end gmail: replies, attachments, drafts

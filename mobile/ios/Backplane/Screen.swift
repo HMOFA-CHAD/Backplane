@@ -679,6 +679,9 @@ struct BotPeer: Decodable, Hashable {
 struct BotGoogle: Decodable {
     let status, url, gid, gsecret, gpaste: String
     let accounts: [String]
+    // the account whose signature is being edited ("" for none), its text, and each account's saved signature
+    let sigFor, sigText: String
+    let sigs: [String]
 }
 
 struct BotSettings: Decodable {

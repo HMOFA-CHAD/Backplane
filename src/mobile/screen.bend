@@ -659,15 +659,6 @@ def Mob.ask.btns(i: Nat, +id: String, +o: String, +draft: String) -> List<&2, J.
     case _:
       [Mob.btn("Allow", id ++ "|accept", True{}), Mob.btn("Allow for session", id ++ "|session", False{}), Mob.btn("Deny", id ++ "|decline", False{})]
 
-def Mob.ask.head(i: Nat, +tool: String) -> String:
-  match i:
-    case 0n:
-      "Proposed plan"
-    case 1n:
-      "The agent asks"
-    case _:
-      "Allow " ++ tool ++ "?"
-
 def Mob.ask.body(plan: Bool, +d: String) -> List<&2, J.Json>:
   match plan:
     case True{}:
@@ -679,7 +670,7 @@ def Mob.ask(a: M.Ask, +draft: String) -> J.Json:
   match a:
     case M.Ask{+id, _, +k, +tool, +d, +o, _, _}:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str(k)},
-        J.KV{"head", J.Json.str(Mob.ask.head(C.Codec.pos(["plan", "input"], k), tool))},
+        J.KV{"head", J.Json.str(U.Ask.head(k, tool, d))},
         J.KV{"detail", J.Json.str(Bool.pick(String, String.eq(k, "plan"), "", d))},
         J.KV{"blocks", J.Json.arr(Mob.ask.body(String.eq(k, "plan"), d))},
         J.KV{"buttons", J.Json.arr(Mob.ask.btns(C.Codec.pos(["plan", "input"], k), id, o, draft))}])

@@ -776,15 +776,6 @@ def Gt.read(+args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String):
 def Gt.sent(+j: J.Json) -> String:
   "Sent (message id " ++ J.Json.get_str(j, "id", "") ++ ", thread " ++ J.Json.get_str(j, "threadId", "") ++ ")."
 
-# gmail_send {to, subject, body, cc?} (the hub has asked the user)
-def Gt.send(+args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String):
-  +to = String.trim(J.Json.get_str(args, "to", ""))
-  Gt.need(String.is_empty(to), "to",
-    IO.bind(GResp, String,
-      Gc.req(dir, Ge.api(e, G.Google.gmail_send_path()), Gh.json(tok),
-        G.Google.send_body(to, J.Json.get_str(args, "cc", ""), J.Json.get_str(args, "subject", ""), J.Json.get_str(args, "body", ""))),
-      r => IO.pure(String, Gc.answer(r, j => Gt.sent(j)))))
-
 # default window: from now (or the from given) for a week
 def Gt.until(+from: String, +to: String, +now: Nat) -> String:
   Bool.pick(String, String.is_empty(to),
@@ -946,6 +937,435 @@ def Gt.prep.chk(none: Bool, update: Bool, +id: String, +args: J.Json, +tok: Stri
 def Gt.prep(+update: Bool, +args: J.Json, +tok: String, +dir: String, +e: GEnds) -> IO(String):
   Gt.cal.id(args, id => Gt.prep.chk(Bool.and(update, G.Cal.nothing(G.Google.event_patch(args))), update, id, args, tok, dir, e))
 
+# Mail we send
+# ------------
+# gmail_send and gmail_draft are prepared off the hub's loop (Gm.run): the
+# account is resolved, the reply's original or the draft read, the
+# attachments probed by a shell step (their bytes never enter Bend), the
+# whole message written to a folder under secrets (0700) and shown to the
+# person as text. After they approve, Gm.send uploads exactly that file.
+
+type GPrep is Data:
+  GFail{msg: String}
+  GAsk{detail: String, plan: String}
+  GDone{msg: String}
+
+# the account, the token for it, the tool and its arguments
+type GJob is Data:
+  GJob{email: String, tok: String, home: String, tool: String, args: J.Json}
+
+# the message as the person sees it: to, cc, bcc, subject, html, the
+# signed body, In-Reply-To, References, the thread it joins, the line for
+# "In reply to", the attachments' paths
+type GMsg is Data:
+  GMsg{to: String, cc: String, bcc: String, subject: String, html: Bool, body: String, irt: String, refs: String, thread: String, inreply: String, paths: List<&2, String>}
+
+# the original a reply answers
+type GOrigR is Data:
+  GNoReply{}
+  GReply{o: G.Gorig}
+  GOrigErr{msg: String}
+
+def GJob.email(j: GJob) -> String:
+  match j:
+    case GJob{e, _, _, _, _}:
+      e
+
+def GJob.tok(j: GJob) -> String:
+  match j:
+    case GJob{_, t, _, _, _}:
+      t
+
+def GJob.home(j: GJob) -> String:
+  match j:
+    case GJob{_, _, h, _, _}:
+      h
+
+def GJob.tool(j: GJob) -> String:
+  match j:
+    case GJob{_, _, _, t, _}:
+      t
+
+def GJob.args(j: GJob) -> J.Json:
+  match j:
+    case GJob{_, _, _, _, a}:
+      a
+
+def GMsg.to(m: GMsg) -> String:
+  match m:
+    case GMsg{x, _, _, _, _, _, _, _, _, _, _}:
+      x
+
+def GMsg.cc(m: GMsg) -> String:
+  match m:
+    case GMsg{_, x, _, _, _, _, _, _, _, _, _}:
+      x
+
+def GMsg.bcc(m: GMsg) -> String:
+  match m:
+    case GMsg{_, _, x, _, _, _, _, _, _, _, _}:
+      x
+
+def GMsg.subject(m: GMsg) -> String:
+  match m:
+    case GMsg{_, _, _, x, _, _, _, _, _, _, _}:
+      x
+
+def GMsg.html(m: GMsg) -> Bool:
+  match m:
+    case GMsg{_, _, _, _, x, _, _, _, _, _, _}:
+      x
+
+def GMsg.body(m: GMsg) -> String:
+  match m:
+    case GMsg{_, _, _, _, _, x, _, _, _, _, _}:
+      x
+
+def GMsg.irt(m: GMsg) -> String:
+  match m:
+    case GMsg{_, _, _, _, _, _, x, _, _, _, _}:
+      x
+
+def GMsg.refs(m: GMsg) -> String:
+  match m:
+    case GMsg{_, _, _, _, _, _, _, x, _, _, _}:
+      x
+
+def GMsg.thread(m: GMsg) -> String:
+  match m:
+    case GMsg{_, _, _, _, _, _, _, _, x, _, _}:
+      x
+
+def GMsg.inreply(m: GMsg) -> String:
+  match m:
+    case GMsg{_, _, _, _, _, _, _, _, _, x, _}:
+      x
+
+def GMsg.paths(m: GMsg) -> List<&2, String>:
+  match m:
+    case GMsg{_, _, _, _, _, _, _, _, _, _, x}:
+      x
+
+def Gm.probe.sh() -> String:
+  "for f in \"$@\"; do if [ -f \"$f\" ]; then if [ -r \"$f\" ]; then printf 'ok %s\\n' \"$(wc -c < \"$f\" | tr -d ' ')\"; else echo unreadable; fi; else echo missing; fi; done"
+
+# $1: the file to make; then pairs: t FILE (a text piece) or f FILE (a file's base64, lines of 76, CRLF)
+def Gm.assemble.sh() -> String:
+  "out=$1; shift; : > \"$out\" || exit 1; while [ $# -ge 2 ]; do case $1 in t) cat \"$2\" >> \"$out\" || exit 1;; f) base64 < \"$2\" | tr -d '\\n' | fold -w 76 | awk '{printf \"%s\\r\\n\", $0}' >> \"$out\" || exit 1;; esac; shift 2; done"
+
+def Gm.dir(+home: String, +nonce: String) -> String:
+  Gs.dir(home) ++ "/gm-" ++ nonce
+
+def Gm.clean.k(ok: Bool, +dir: String) -> IO(Unit):
+  match ok:
+    case True{}:
+      IO.bind(P.Ran, Unit, P.Proc.run("rm", ["-rf", dir], ""), r => IO.pure(Unit, Unit{}))
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+# a prepared message's folder removed (only one of ours)
+def Gm.clean(+home: String, +dir: String) -> IO(Unit):
+  Gm.clean.k(String.starts_with(dir, Gs.dir(home) ++ "/gm-"), dir)
+
+# the text before each attachment written to a file; the arguments for the
+# assembling script, reversed
+def Gm.att_files(hs: List<&2, String>, ps: List<&2, String>, +dir: String, +i: Nat, acc: List<&2, String>) -> IO(List<&2, String>):
+  match hs ps:
+    case +h <> ht +p <> pt:
+      do IO<List<&2, String>>:
+        +f : String = dir ++ "/a" ++ Nat.show(i)
+        Gf.write(f, h)
+        Gm.att_files(ht, pt, dir, Nat.add(i, 1n), p <> "f" <> f <> "t" <> acc)
+    case _ _:
+      IO.pure(List<&2, String>, acc)
+
+def Gm.built(r: P.Ran) -> Bool:
+  match r:
+    case P.Ran{0, _}:
+      True{}
+    case P.Ran{_, _}:
+      False{}
+
+# the upload body (a multipart/related request: the JSON part, then the
+# message) written to out
+def Gm.build(+dir: String, +out: String, +parts: G.GParts, +json: String, +bnd: String, ps: List<&2, String>) -> IO(Bool):
+  do IO<Bool>:
+    Gf.write(dir ++ "/p0", G.Gmail.upload_head(bnd, json) ++ G.GParts.head(parts))
+    Gf.write(dir ++ "/pz", G.GParts.tail(parts) ++ G.Gmail.upload_tail(bnd))
+    acc : List<&2, String> <- Gm.att_files(G.GParts.atts(parts), ps, dir, 0n, Nil{})
+    +args : List<&2, String> = List.append(&2, String, ["-c", Gm.assemble.sh(), "sh", out, "t", dir ++ "/p0"], List.append(&2, String, List.reverse(&2, String, acc), ["t", dir ++ "/pz"]))
+    r : P.Ran <- P.Proc.run("sh", args, dir)
+    return Gm.built(r)
+
+# a request whose body is a file (and so may be big): the method, a longer deadline
+def Gc.configf(+url: String, hs: List<&2, String>, +method: String, +body: String, +out: String, +secs: Nat) -> String:
+  "url = " ++ Gc.q(url) ++ "\n" ++ Gc.headers(hs) ++ "request = " ++ Gc.q(method) ++ "\n" ++ "data-binary = " ++ Gc.q("@" ++ body) ++ "\n"
+    ++ "max-time = " ++ Nat.show(secs) ++ "\n" ++ "output = " ++ Gc.q(out) ++ "\n" ++ "write-out = \"%{http_code}\"\n"
+
+def Gc.reqfile(+dir: String, +url: String, hs: List<&2, String>, +method: String, +body: String, +secs: Nat) -> IO(GResp):
+  do IO<GResp>:
+    +name : String <- Gf.nonce(3n)
+    +cfg : String = dir ++ "/g-" ++ name ++ ".curl"
+    +out : String = dir ++ "/g-" ++ name ++ ".out"
+    Gf.write(cfg, Gc.configf(url, hs, method, body, out, secs))
+    r : P.Ran <- P.Proc.run("curl", ["-sS", "-K", cfg], dir)
+    +said : String = Gc.ran(r)
+    text : String <- Gf.text(out)
+    Gf.rm(cfg)
+    Gf.rm(out)
+    return GResp{Gc.code(said), text, Gc.said(said)}
+
+def Gm.argn(+args: J.Json, +k: String) -> String:
+  String.trim(J.Json.get_str(args, k, ""))
+
+# any argument that makes a message
+def Gm.content(+args: J.Json) -> Bool:
+  Bool.or(Bool.or(Bool.or(Bool.not(String.is_empty(Gm.argn(args, "to"))), Bool.not(String.is_empty(Gm.argn(args, "cc")))),
+    Bool.or(Bool.not(String.is_empty(Gm.argn(args, "bcc"))), Bool.not(String.is_empty(Gm.argn(args, "subject"))))),
+    Bool.or(Bool.or(Bool.not(String.is_empty(J.Json.get_str(args, "body", ""))), J.Json.get_bool(args, "html", False{})),
+      Bool.or(Bool.or(Bool.not(String.is_empty(Gm.argn(args, "reply_to"))), Bool.not(String.is_empty(Gm.argn(args, "thread")))),
+        Bool.not(List.is_empty(&2, String, G.Gmail.paths(J.Json.get(args, "attachments")))))))
+
+def Gm.plan(+kind: String, +account: String, +dir: String, +bnd: String, +url: String, +draft: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"kind", J.Str{kind}}, J.KV{"account", J.Str{account}}, J.KV{"dir", J.Str{dir}}, J.KV{"bnd", J.Str{bnd}},
+    J.KV{"url", J.Str{url}}, J.KV{"draft", J.Str{draft}}]))
+
+def Gm.upload.method(+draft: String) -> String:
+  Bool.pick(String, String.is_empty(draft), "POST", "PUT")
+
+def Gm.upload.path(+draft: String) -> String:
+  Bool.pick(String, String.is_empty(draft), G.Gmail.upload_drafts(), G.Gmail.upload_draft(draft))
+
+# the message saved as a draft: the upload at once, nobody is asked
+def Gm.save(+job: GJob, +dir: String, +bnd: String, +draft: String) -> IO(GPrep):
+  do IO<GPrep>:
+    e : GEnds <- Ge.get()
+    +r : GResp <- Gc.reqfile(Gs.dir(GJob.home(job)), Ge.api(e, Gm.upload.path(draft)), [("Authorization: Bearer " ++ GJob.tok(job)), G.Gmail.upload_type(bnd)], Gm.upload.method(draft), dir ++ "/upload", 120n)
+    Gm.clean(GJob.home(job), dir)
+    return GDone{Gc.answer(r, j => G.Gmail.draft_saved(j))}
+
+def Gm.show(+job: GJob, +msg: GMsg, sizes: List<&2, Nat>) -> String:
+  G.Gmail.review("", GJob.email(job), GJob.email(job), G.Mail.clean(GMsg.to(msg)), G.Mail.clean(GMsg.cc(msg)), G.Mail.clean(GMsg.bcc(msg)), G.Mail.clean(GMsg.subject(msg)),
+    GMsg.inreply(msg), G.Gmail.att_line(G.Gmail.names(GMsg.paths(msg)), sizes), GMsg.html(msg), GMsg.body(msg))
+
+def Gm.assemble.done(draft_tool: Bool, +job: GJob, +msg: GMsg, sizes: List<&2, Nat>, +dir: String, +bnd: String) -> IO(GPrep):
+  match draft_tool:
+    case True{}:
+      Gm.save(job, dir, bnd, Gm.argn(GJob.args(job), "draft"))
+    case False{}:
+      IO.pure(GPrep, GAsk{Gm.show(job, msg, sizes), Gm.plan("send", GJob.email(job), dir, bnd, G.Gmail.upload_send(), "")})
+
+def Gm.assemble.k(ok: Bool, +job: GJob, +msg: GMsg, sizes: List<&2, Nat>, +dir: String, +bnd: String) -> IO(GPrep):
+  match ok:
+    case False{}:
+      IO.bind(Unit, GPrep, Gm.clean(GJob.home(job), dir), u => IO.pure(GPrep, GFail{"error: could not build the message (is `base64` available?)"}))
+    case True{}:
+      Gm.assemble.done(String.eq(GJob.tool(job), "gmail_draft"), job, msg, sizes, dir, bnd)
+
+# the message on disk, a folder of its own
+def Gm.assemble(+job: GJob, +msg: GMsg, sizes: List<&2, Nat>) -> IO(GPrep):
+  do IO<GPrep>:
+    +nonce : String <- Gf.nonce(5n)
+    +dir : String = Gm.dir(GJob.home(job), nonce)
+    mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir)
+    cm : Result<&1, &1, U32 & String, Unit> <- H.FS.chmod(dir, 448)
+    +bnd : String = "=_bpu_" ++ nonce
+    +json : String = Bool.pick(String, String.eq(GJob.tool(job), "gmail_draft"), G.Gmail.json_draft(Gm.argn(GJob.args(job), "draft"), GMsg.thread(msg)), G.Gmail.json_send(GMsg.thread(msg)))
+    ok : Bool <- Gm.build(dir, dir ++ "/upload", G.Gmail.compose(GJob.email(job), GMsg.to(msg), GMsg.cc(msg), GMsg.bcc(msg), GMsg.subject(msg), GMsg.irt(msg), GMsg.refs(msg), GMsg.html(msg), GMsg.body(msg), GMsg.paths(msg), nonce), json, bnd, GMsg.paths(msg))
+    Gm.assemble.k(ok, job, msg, sizes, dir, bnd)
+
+def Gm.probe.k(err: String, +job: GJob, +msg: GMsg, sizes: List<&2, Nat>) -> IO(GPrep):
+  match err:
+    case SNil{}:
+      Gm.assemble(job, msg, sizes)
+    case _:
+      IO.pure(GPrep, GFail{"error: attachment: " ++ err})
+
+def Gm.probe.go(none: Bool, job: GJob, msg: GMsg, +paths: List<&2, String>) -> IO(GPrep):
+  match none:
+    case True{}:
+      Gm.assemble(job, msg, Nil{})
+    case False{}:
+      do IO<GPrep>:
+        r : P.Ran <- P.Proc.run("sh", List.append(&2, String, ["-c", Gm.probe.sh(), "sh"], paths), "")
+        +ls : List<&2, String> = String.lines(String.trim(Gc.ran(r)))
+        Gm.probe.k(G.Gmail.att_err(paths, ls), job, msg, G.Gmail.att_sizes(ls))
+
+# the attachments checked by the shell (they exist, can be read, fit), then the message
+def Gm.probe(+job: GJob, +msg: GMsg) -> IO(GPrep):
+  Gm.probe.go(List.is_empty(&2, String, GMsg.paths(msg)), job, msg, GMsg.paths(msg))
+
+# what is wrong with the message before any file is looked at ("" for nothing)
+def Gm.problem(+to: String, +body: String, +paths: List<&2, String>) -> String:
+  Bool.pick(String, String.is_empty(to), "error: to is required (or reply_to / thread to reply)",
+    Bool.pick(String, Bool.and(String.is_empty(body), List.is_empty(&2, String, paths)), "error: body is required", ""))
+
+def Gm.check(err: String, job: GJob, msg: GMsg) -> IO(GPrep):
+  match err:
+    case SNil{}:
+      Gm.probe(job, msg)
+    case _:
+      IO.pure(GPrep, GFail{err})
+
+def Gm.msg.k(+args: J.Json, +reply: Bool, +o: G.Gorig, +sig: String) -> GMsg:
+  +to = Bool.pick(String, String.is_empty(Gm.argn(args, "to")), Bool.pick(String, reply, G.Gmail.reply_to_addr(G.Gorig.replyto(o), G.Gorig.from(o)), ""), Gm.argn(args, "to"))
+  +html = J.Json.get_bool(args, "html", False{})
+  GMsg{to, Gm.argn(args, "cc"), Gm.argn(args, "bcc"),
+    Bool.pick(String, reply, G.Gmail.reply_subject(J.Json.get_str(args, "subject", ""), G.Gorig.subject(o)), J.Json.get_str(args, "subject", "")),
+    html, G.Gmail.signed(html, J.Json.get_str(args, "body", ""), sig),
+    Bool.pick(String, reply, G.Gorig.msgid(o), ""), Bool.pick(String, reply, G.Gmail.references(G.Gorig.refs(o), G.Gorig.msgid(o)), ""),
+    Bool.pick(String, reply, G.Gorig.thread(o), ""),
+    Bool.pick(String, reply, G.Gmail.inreply(G.Gorig.subject(o), G.Gorig.from(o)), ""),
+    G.Gmail.paths(J.Json.get(args, "attachments"))}
+
+def Gm.msg(+job: GJob, reply: Bool, +o: G.Gorig, +sig: String) -> GMsg:
+  Gm.msg.k(GJob.args(job), reply, o, sig)
+
+def Gm.compose.chk(+job: GJob, +msg: GMsg) -> IO(GPrep):
+  Gm.check(Gm.problem(GMsg.to(msg), J.Json.get_str(GJob.args(job), "body", ""), GMsg.paths(msg)), job, msg)
+
+def Gm.compose.go(+job: GJob, reply: Bool, +o: G.Gorig, +sig: String) -> IO(GPrep):
+  Gm.compose.chk(job, Gm.msg(job, reply, o, sig))
+
+def Gm.compose.r(r: GOrigR, +job: GJob, +sig: String) -> IO(GPrep):
+  match r:
+    case GNoReply{}:
+      Gm.compose.go(job, False{}, G.Gorig{"", "", "", "", "", "", ""}, sig)
+    case GReply{+o}:
+      Gm.compose.go(job, True{}, o, sig)
+    case GOrigErr{m}:
+      IO.pure(GPrep, GFail{m})
+
+def Gm.orig.of(+o: G.Gorig) -> GOrigR:
+  Bool.pick(GOrigR, String.is_empty(G.Gorig.msgid(o)), GOrigErr{"error: the message to reply to has no Message-ID"}, GReply{o})
+
+def Gm.orig.kk(ok: Bool, r: GResp, thread: Bool) -> GOrigR:
+  match ok r:
+    case False{} r2:
+      GOrigErr{"error: could not read the message to reply to: " ++ Gc.fail(r2)}
+    case True{} GResp{_, +body, _}:
+      Gm.orig.of(Bool.pick(G.Gorig, thread, G.Gmail.orig_thread(Gc.json(body)), G.Gmail.orig(Gc.json(body))))
+
+def Gm.orig.k(+r: GResp, thread: Bool) -> GOrigR:
+  Gm.orig.kk(Gc.okr(r), r, thread)
+
+def Gm.orig.get(no_msg: Bool, no_thread: Bool, +tok: String, +dir: String, +e: GEnds, +id: String, +th: String) -> IO(GOrigR):
+  match no_msg no_thread:
+    case True{} True{}:
+      IO.pure(GOrigR, GNoReply{})
+    case True{} False{}:
+      IO.bind(GResp, GOrigR, Gc.req(dir, Ge.api(e, G.Gmail.thread_path(th)), Gh.auth(tok), ""), r => IO.pure(GOrigR, Gm.orig.k(r, True{})))
+    case False{} _:
+      IO.bind(GResp, GOrigR, Gc.req(dir, Ge.api(e, G.Gmail.msg_path(id)), Gh.auth(tok), ""), r => IO.pure(GOrigR, Gm.orig.k(r, False{})))
+
+# the message (reply_to) or conversation (thread) a reply answers
+def Gm.orig(+job: GJob, +e: GEnds) -> IO(GOrigR):
+  Gm.orig.get(String.is_empty(Gm.argn(GJob.args(job), "reply_to")), String.is_empty(Gm.argn(GJob.args(job), "thread")), GJob.tok(job), Gs.dir(GJob.home(job)), e,
+    Gm.argn(GJob.args(job), "reply_to"), Gm.argn(GJob.args(job), "thread"))
+
+def Gm.compose(+job: GJob, +sigs: J.Json) -> IO(GPrep):
+  do IO<GPrep>:
+    e : GEnds <- Ge.get()
+    r : GOrigR <- Gm.orig(job, e)
+    Gm.compose.r(r, job, J.Json.get_str(sigs, "gmail.sig." ++ GJob.email(job), ""))
+
+def Gm.draft_send.k(ok: Bool, r: GResp, +email: String, +draft: String) -> IO(GPrep):
+  match ok r:
+    case False{} r2:
+      IO.pure(GPrep, GFail{"error: could not read the draft: " ++ Gc.fail(r2)})
+    case True{} GResp{_, +body, _}:
+      IO.pure(GPrep, GAsk{G.Gmail.draft_review(email, Gc.json(body)), Gm.plan("draft_send", email, "", "", J.Json.get_str(J.Json.get_obj(Gc.json(body), "message"), "id", ""), draft)})
+
+# gmail_send {draft}: the draft read, to be shown
+def Gm.draft_send(+job: GJob) -> IO(GPrep):
+  match job:
+    case GJob{+email, +tok, +home, _, +args}:
+      do IO<GPrep>:
+        e : GEnds <- Ge.get()
+        +r : GResp <- Gc.req(Gs.dir(home), Ge.api(e, G.Gmail.draft_path(Gm.argn(args, "draft"))), Gh.auth(tok), "")
+        Gm.draft_send.k(Gc.okr(r), r, email, Gm.argn(args, "draft"))
+
+def Gm.run.go(a: GAccess, draft_send: Bool, +email: String, +home: String, +tool: String, +args: J.Json, +sigs: J.Json) -> IO(GPrep):
+  match a draft_send:
+    case GErr{m} _:
+      IO.pure(GPrep, GFail{m})
+    case GOk{+tok} True{}:
+      Gm.draft_send(GJob{email, tok, home, tool, args})
+    case GOk{+tok} False{}:
+      Gm.compose(GJob{email, tok, home, tool, args}, sigs)
+
+def Gm.run.acct(m: Maybe<&2, G.Acct>, +accts: List<&2, G.Acct>, +home: String, +tool: String, +args: J.Json, +sigs: J.Json) -> IO(GPrep):
+  match m:
+    case None{}:
+      IO.pure(GPrep, GFail{Gs.missing(Gm.argn(args, "account"), accts)})
+    case Some{+a}:
+      do IO<GPrep>:
+        +email : String = G.Acct.email(a)
+        t : GAccess <- Google.token(home, email)
+        Gm.run.go(t, Bool.and(String.eq(tool, "gmail_send"), Bool.not(String.is_empty(Gm.argn(args, "draft")))), email, home, tool, args, sigs)
+
+def Gm.run.k(clash: Bool, +home: String, +tool: String, +args: J.Json, +sigs: J.Json) -> IO(GPrep):
+  match clash:
+    case True{}:
+      IO.pure(GPrep, GFail{"error: send a draft as it is, or update it with gmail_draft first"})
+    case False{}:
+      do IO<GPrep>:
+        +accts : List<&2, G.Acct> <- Gs.accts(home)
+        Gm.run.acct(G.Accts.pick(accts, Gm.argn(args, "account")), accts, home, tool, args, sigs)
+
+# gmail_send / gmail_draft prepared. sigs: the hub's settings gmail.sig.<address> as a JSON object
+def Gm.run(+home: String, +tool: String, +args: J.Json, +sigs: J.Json) -> IO(GPrep):
+  Gm.run.k(Bool.and(Bool.and(String.eq(tool, "gmail_send"), Bool.not(String.is_empty(Gm.argn(args, "draft")))), Gm.content(args)), home, tool, args, sigs)
+
+def Gm.send.req(draft_send: Bool, +sdir: String, +e: GEnds, +tok: String, +dir: String, +bnd: String, +url: String, +draft: String) -> IO(GResp):
+  match draft_send:
+    case True{}:
+      Gc.req(sdir, Ge.api(e, G.Gmail.draft_send_path()), Gh.json(tok), J.Json.show(J.Json.obj([J.KV{"id", J.Str{draft}}])))
+    case False{}:
+      Gc.reqfile(sdir, Ge.api(e, url), [("Authorization: Bearer " ++ tok), G.Gmail.upload_type(bnd)], "POST", dir ++ "/upload", 120n)
+
+def Gm.send.go(same: Bool, draft_send: Bool, +home: String, +e: GEnds, +tok: String, +dir: String, +bnd: String, +url: String, +draft: String) -> IO(String):
+  match same:
+    case False{}:
+      IO.pure(String, "error: the draft changed after the person reviewed it; ask to send it again")
+    case True{}:
+      IO.bind(GResp, String, Gm.send.req(draft_send, Gs.dir(home), e, tok, dir, bnd, url, draft), r => IO.pure(String, Gc.answer(r, j => Gt.sent(j))))
+
+# the draft's message id now ("" when it cannot be read)
+def Gm.draft.mid(draft_send: Bool, +home: String, +e: GEnds, +tok: String, +draft: String) -> IO(String):
+  match draft_send:
+    case False{}:
+      IO.pure(String, "")
+    case True{}:
+      IO.bind(GResp, String, Gc.req(Gs.dir(home), Ge.api(e, G.Gmail.draft_path(draft)), Gh.auth(tok), ""),
+        r => IO.pure(String, J.Json.get_str(J.Json.get_obj(Gc.json(Gc.bodyof(r)), "message"), "id", "")))
+
+# a draft is sent only as it was reviewed: updating a draft gives it a new
+# message id, which the plan (url) kept
+def Gm.send.tok(a: GAccess, +home: String, +kind: String, +dir: String, +bnd: String, +url: String, +draft: String) -> IO(String):
+  match a:
+    case GErr{m}:
+      IO.pure(String, m)
+    case GOk{+tok}:
+      do IO<String>:
+        +e : GEnds <- Ge.get()
+        +ds : Bool = String.eq(kind, "draft_send")
+        +mid : String <- Gm.draft.mid(ds, home, e, tok, draft)
+        Gm.send.go(Bool.or(Bool.not(ds), String.eq(mid, url)), ds, home, e, tok, dir, bnd, url, draft)
+
+# the approved message sent (the plan Gm.run made); its folder removed either way
+def Gm.send(+home: String, +plan: String) -> IO(String):
+  +j = Gc.json(plan)
+  do IO<String>:
+    a : GAccess <- Google.token(home, J.Json.get_str(j, "account", ""))
+    +r : String <- Gm.send.tok(a, home, J.Json.get_str(j, "kind", ""), J.Json.get_str(j, "dir", ""), J.Json.get_str(j, "bnd", ""), J.Json.get_str(j, "url", ""), J.Json.get_str(j, "draft", ""))
+    Gm.clean(home, J.Json.get_str(j, "dir", ""))
+    return r
+
+# a message the person declined: its folder removed
+def Gm.drop(+home: String, +plan: String) -> IO(Unit):
+  Gm.clean(home, J.Json.get_str(Gc.json(plan), "dir", ""))
+
 def Gt.id(+tool: String) -> Nat:
   Bool.pick(Nat, String.eq(tool, "gmail_search"), 1n,
     Bool.pick(Nat, String.eq(tool, "gmail_read"), 2n,
@@ -960,8 +1380,6 @@ def Gt.run(n: Nat, +tool: String, +args: J.Json, +tok: String, +dir: String, +e:
       Gt.search(args, tok, dir, e)
     case 2n:
       Gt.read(args, tok, dir, e)
-    case 3n:
-      Gt.send(args, tok, dir, e)
     case 4n:
       Gt.events(args, tok, dir, e, now)
     case 5n:
