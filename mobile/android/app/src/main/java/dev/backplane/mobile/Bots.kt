@@ -366,7 +366,6 @@ private fun RoutinesTab(m: AppModel, b: BotView) {
         items(b.routines, key = { it.id }) { r ->
             var menu by remember { mutableStateOf(false) }
             ListItem(
-                modifier = if (r.done) Modifier.alpha(0.55f) else Modifier,
                 headlineContent = { Text(r.name, fontWeight = FontWeight.SemiBold) },
                 supportingContent = {
                     Column {
@@ -396,7 +395,8 @@ private fun RoutinesTab(m: AppModel, b: BotView) {
                         }
                     }
                 },
-                modifier = Modifier.clickable { m.act("routine-edit", r.id) },
+                // a done routine is faded
+                modifier = Modifier.alpha(if (r.done) 0.55f else 1f).clickable { m.act("routine-edit", r.id) },
             )
             HorizontalDivider()
         }

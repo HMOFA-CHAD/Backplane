@@ -336,6 +336,24 @@ private struct MemoryTab: View {
     }
 }
 
+// a routine's kind chip icon: a bell for a reminder, a clock for a one-time
+// routine, else repeat
+private func routineIcon(_ kind: String?) -> String {
+    switch kind {
+    case "reminder": return "bell"
+    case "once": return "clock"
+    default: return "repeat"
+    }
+}
+
+// "Next Tue 14 Oct 09:30 EEST · in 3h", with the routine's zone when it is not the person's
+private func routineNext(_ next: String, _ rel: String?, _ zone: String?) -> String {
+    var s = "Next " + next
+    if let rel = rel, !rel.isEmpty { s += " · " + rel }
+    if let zone = zone, zone != "your time" { s += " · " + zone }
+    return s
+}
+
 private struct RoutinesTab: View {
     let model: AppModel
     let items: [BotRoutine]
@@ -350,7 +368,7 @@ private struct RoutinesTab: View {
                         Text(r.name).font(.subheadline.weight(.semibold))
                         HStack(spacing: 6) {
                             // kind chip: Repeats, Once, or Reminder with a bell
-                            Label(r.label ?? "Repeats", systemImage: r.kind == "reminder" ? "bell" : (r.kind == "once" ? "clock" : "repeat"))
+                            Label(r.label ?? "Repeats", systemImage: routineIcon(r.kind))
                                 .font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(Color.secondary.opacity(0.15))
                             Text(r.when).font(.caption.monospaced()).foregroundStyle(.secondary)
@@ -358,7 +376,7 @@ private struct RoutinesTab: View {
                         if r.done == true {
                             Text(r.doneText ?? "Done").font(.caption).foregroundStyle(.secondary)
                         } else if let n = r.next, !n.isEmpty {
-                            Text("Next " + n + ((r.rel ?? "").isEmpty ? "" : " · " + r.rel!) + ((r.zone ?? "your time") == "your time" ? "" : " · " + r.zone!))
+                            Text(routineNext(n, r.rel, r.zone))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Text(r.prompt).font(.caption).lineLimit(2)
