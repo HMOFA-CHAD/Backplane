@@ -7449,6 +7449,7 @@ law lock_ready_idempotent:
 
 law codec_lock_roundtrip:
   {C.Change.decode(C.Change.encode(M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}}, 4n})) == Some{M.LockChanged{"bend", LCK.NamedLock{Some{LCK.LockParty{"ta", "thread", "ta", "build", 2n, 0n}}, [LCK.LockParty{"tb", "thread", "tb", "next", 3n, 0n}], True{}}, 4n}} : Maybe<&2, M.Change>}
+
 # routines-cal: calendar
 # an update with only a summary patches only the summary
 law cal_patch_only_given:
