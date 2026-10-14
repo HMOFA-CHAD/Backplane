@@ -484,6 +484,7 @@ fun SubsView(m: AppModel, subs: Subs) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AskCard(m: AppModel, a: Ask) {
+    if (a.kind == "browser") { BrowserAsk(m, a); return }
     Surface(color = orange.copy(alpha = 0.14f), shape = corner, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -497,8 +498,8 @@ fun AskCard(m: AppModel, a: Ask) {
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (b in a.buttons) {
-                    if (b.primary) Button(onClick = { m.act("answer", b.value) }, shape = corner) { Text(b.label) }
-                    else OutlinedButton(onClick = { m.act("answer", b.value) }, shape = corner) { Text(b.label) }
+                    if (b.primary) Button(onClick = { m.act(b.action.ifEmpty { "answer" }, b.value) }, shape = corner) { Text(b.label) }
+                    else OutlinedButton(onClick = { m.act(b.action.ifEmpty { "answer" }, b.value) }, shape = corner) { Text(b.label) }
                 }
             }
         }

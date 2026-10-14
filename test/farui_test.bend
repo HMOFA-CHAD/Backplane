@@ -150,7 +150,7 @@ def main() -> IO(Unit):
     C.Check.str("its header", head(BU.BU.head(k, BU.BU.view(k))), "Kit · box|idle|chat,space,memory,routines|chat|False|False")
     C.Check.str("remote action opens the mirror", view(BU.BU.view(go(u, "remote", "Kit@box"))), "bot p1~b1")
     C.Check.str("a tab it lacks falls back to chat", BU.BU.tab.of(go(k, "bot-tab", "browser"), "p1~b1") ++ " " ++ BU.BU.tab.of(go(k, "bot-tab", "memory"), "p1~b1"), "chat memory")
-    C.Check.str("a bot here keeps every tab", head(BU.BU.head(go(u, "bot", "b9"), BU.BU.view(go(u, "bot", "b9")))), "Pip|sleep|chat,space,browser,memory,routines,hooks,settings|chat|True|True")
+    C.Check.str("a bot here keeps every tab", head(BU.BU.head(go(u, "bot", "b9"), BU.BU.view(go(u, "bot", "b9")))), "Pip|sleep|chat,space,browser,tasks,memory,routines,hooks,settings|chat|True|True")
     C.Check.str("away while its machine is", head(BU.BU.head(recv(k, far(True{})), BU.BU.view(recv(k, far(True{}))))), "Kit · box (away)|away|chat,space,memory,routines|chat|False|False")
     # a bot only reported: the bot view with its chat alone
     +n : U.Ui = go(u, "remote", "Nori@box")

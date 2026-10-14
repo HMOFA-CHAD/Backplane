@@ -49,13 +49,16 @@ object Notes {
 
     private fun key(c: Cmd) = c.key.ifEmpty { "turn-" + c.thread }
 
-    fun turn(ctx: Context, c: Cmd) {
+    fun turn(ctx: Context, c: Cmd, picture: android.graphics.Bitmap? = null) {
         if (!allowed(ctx)) return
         val n = NotificationCompat.Builder(ctx, TURNS)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(c.title)
             .setContentText(c.body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(c.body))
+            .setStyle(
+                if (picture != null) NotificationCompat.BigPictureStyle().bigPicture(picture).setSummaryText(c.body)
+                else NotificationCompat.BigTextStyle().bigText(c.body),
+            )
             .setCategory(when (c.kind) {
                 "fail" -> NotificationCompat.CATEGORY_ERROR
                 "ask", "reminder" -> NotificationCompat.CATEGORY_REMINDER

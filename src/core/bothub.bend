@@ -22,6 +22,8 @@ import ./when.bend as WH
 import ./told.bend as TLD
 import ./rules.bend as RLS
 import ./ledger.bend as LG
+import ./task.bend as TK
+import ./teach.bend as TE
 
 # Remote bot directories. A result replaces just its peer; a failure
 # keeps that peer's rows and their last-seen timestamps, marked away.
@@ -957,7 +959,7 @@ def Reply.request(+thread: String, +state: String) -> String:
 def Bots.methods() -> List<&2, String>:
   ["bots.create", "bots.edit", "bots.delete", "bots.say", "bots.room", "bots.room_delete", "bots.post", "bots.routine", "bots.routine_delete",
    "bots.routine_run", "bots.hook", "bots.hook_revoke", "bots.forget", "bots.remember", "bots.space", "bots.invite", "bots.join", "bots.unpeer",
-   "bots.google", "bots.tell", "bots.hook_token", "bots.voice", "bots.answered", "bots.give", "bots.uber", "bots.uber_join", "bots.pin", "bots.uber_home"]
+   "bots.google", "bots.tell", "bots.hook_token", "bots.voice", "bots.answered", "bots.give", "bots.uber", "bots.uber_join", "bots.pin", "bots.uber_home", "bots.browser", "bots.teach", "bots.task"]
 
 def Bots.is(+m: String) -> Bool:
   String.starts_with(m, "bots.")
@@ -1182,6 +1184,58 @@ def Bots.routine.run.k(pending: Bool, +s: M.State, +now: Nat, +client: U32, +id:
 def Bots.routine.run(+s: M.State, +now: Nat, +client: U32, +id: String, +r: BT.Routine) -> B.Step:
   Bots.routine.run.k(Bool.and(BT.Routine.live(r), Bool.not(BT.Routine.done(r))), s, now, client, id, r)
 
+# Teaching (core/teach.bend)
+# --------------------------
+# bots.browser and bots.teach are answered by the server, which keeps the
+# driver and the draft (B.Teach); bots.task runs or deletes a task skill.
+
+def Bots.teach.out(live: Bool, +client: U32, +id: String, +m: String, +p: J.Json) -> B.Step:
+  match live:
+    case True{}:
+      B.Step.outs([B.Teach{client, id, m, J.Json.show(p)}])
+    case False{}:
+      Bots.err(client, id, "no such bot")
+
+# the params of a task run, as the text the bot hears ({} when none)
+def Bots.task.params(p: J.Json) -> String:
+  match p:
+    case J.Obj{_}:
+      J.Json.show(p)
+    case _:
+      "{}"
+
+def Bots.task.has(m: Maybe<&2, String>) -> Bool:
+  match m:
+    case Some{_}:
+      True{}
+    case None{}:
+      False{}
+
+def Bots.task.run(has: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +bot: String, +slug: String, +params: String) -> B.Step:
+  match has:
+    case True{}:
+      B.Step.before(Nil{}, [B.Reply.ok(client, id)], Bots.wake(s, now, "", Bots.bot(s, bot), Bots.msg(now, B.Hub.seq(s), 0n), TE.Teach.run_msg(slug, params), 0n))
+    case False{}:
+      Bots.err(client, id, "no such task")
+
+def Bots.task.op(code: Nat, has: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +bot: String, +slug: String, +p: J.Json) -> B.Step:
+  match code:
+    case 0n:
+      Bots.task.run(has, s, now, client, id, bot, slug, Bots.task.params(J.Json.get_obj(p, "params")))
+    case 1n:
+      B.Step{[M.TaskDeleted{bot, slug, now}], [B.Reply.ok(client, id), B.BotFx{"task-gone", bot, slug, ""}]}
+    case _:
+      Bots.err(client, id, "unknown task request")
+
+# bots.task {bot, op: run | delete, slug, params?}
+def Bots.task.req(live: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> B.Step:
+  match live:
+    case True{}:
+      Bots.task.op(C.Codec.pos(["run", "delete"], J.Json.get_str(p, "op", "")), Bots.task.has(BT.World.task(M.State.bots(s), J.Json.get_str(p, "bot", ""), J.Json.get_str(p, "slug", ""))),
+        s, now, client, id, J.Json.get_str(p, "bot", ""), J.Json.get_str(p, "slug", ""), p)
+    case False{}:
+      Bots.err(client, id, "no such bot")
+
 def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> B.Step:
   match i:
     case 0n:
@@ -1242,6 +1296,12 @@ def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p
       Bots.pin(s, now, client, id, p)
     case 27n:
       Bots.uber_home(s, now, client, id)
+    case 28n:
+      Bots.teach.out(Bots.live(s, J.Json.get_str(p, "bot", "")), client, id, "bots.browser", p)
+    case 29n:
+      Bots.teach.out(Bots.live(s, J.Json.get_str(p, "bot", "")), client, id, "bots.teach", p)
+    case 30n:
+      Bots.task.req(Bots.live(s, J.Json.get_str(p, "bot", "")), s, now, client, id, p)
     case _:
       Bots.err(client, id, "unknown bots request")
 
@@ -1539,9 +1599,32 @@ def Bots.tools() -> List<&2, J.Json>:
    MC.Tool.def("person_timezone", "The person's time zone: with no `zone`, the zone, where it comes from (set, phone, machine), its offset and abbreviation now, and their local time now. With `zone` (a name like Europe/Helsinki; auto goes back to following their phone) it changes it.",
      [MC.Tool.prop("zone", "string", "A zone name, or auto.")], Nil{})]
 
+# Task skills (core/task.bend, docs/teach.md)
+def Bots.task.list(ty: String, desc: String) -> J.Json:
+  J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"object"}}])}, J.KV{"description", J.Str{desc}}])
+
+def Bots.task.tools() -> List<&2, J.Json>:
+  [MC.Tool.def("task_list", "List your browser task skills: slug, name, description and the parameters each takes.", Nil{}, Nil{}),
+   MC.Tool.def("task_get", "Read one of your browser task skills: its steps (each aimed at an element by role, name, label, text, with the selectors to try), parameters and notes.",
+     [MC.Tool.prop("slug", "string", "The task's slug.")], ["slug"]),
+   MC.Tool.def("task_save", "Make or change a browser task skill. Fields you give replace the stored ones; the rest stay. Steps are {do: navigate|click|type|select|press|scroll|wait|note|check, target: {role, name, label, placeholder, text, testid, css, nth, near}, value: a literal, \"{{param}}\" or {secret: label}, url, wait: {url, text}, risk: none|send|purchase|delete|submit|confirm, note}. Describe what the task is for, say how to tell it worked, and mark decision points in the notes.",
+     [MC.Tool.prop("slug", "string", "Its slug (default: made from the name)."), MC.Tool.prop("name", "string", "A short name."), MC.Tool.prop("description", "string", "What it does and when to use it."),
+      J.KV{"params", Bots.task.list("array", "Parameters: {name, label, kind: text, example}.")}, J.KV{"steps", Bots.task.list("array", "The steps, in order.")}], ["slug"]),
+   MC.Tool.def("task_delete", "Delete one of your browser task skills.", [MC.Tool.prop("slug", "string", "The task's slug.")], ["slug"]),
+   MC.Tool.def("task_run", "Start a run of a task skill with its parameters. Answers the plan: each step with the selectors to try, best first. Then do the steps with the preview_* tools, log the key ones with task_step, ask the person with task_pause when you must, and end with task_end.",
+     [MC.Tool.prop("slug", "string", "The task's slug."), J.KV{"params", J.Json.obj([J.KV{"type", J.Str{"object"}}, J.KV{"description", J.Str{"Values for the task's parameters, by name."}}])}], ["slug"]),
+   MC.Tool.def("task_step", "Log a step of a run: its number, whether it worked and a note. With shot, the page's picture is kept (never right after a secret field).",
+     [MC.Tool.prop("run", "string", "The run id task_run gave."), MC.Tool.prop("n", "number", "The step's number."), MC.Tool.prop("ok", "boolean", "Whether it worked."),
+      MC.Tool.prop("note", "string", "What happened."), MC.Tool.prop("shot", "boolean", "Keep a screenshot.")], ["run", "n", "ok"]),
+   MC.Tool.def("task_pause", "Ask the person during a run and wait for the answer: a login, CAPTCHA, 2FA, a payment, a secret, a risky step (a purchase, send, deletion or confirmation: always risky true) or after retries failed. They get your question with a screenshot, may take the browser over, and answer continue, skip or stop (confirm instead of continue for a risky step). Never do a risky step without confirm.",
+     [MC.Tool.prop("run", "string", "The run id."), MC.Tool.prop("kind", "string", "login, captcha, 2fa, payment, secret, risky or stuck."), MC.Tool.prop("question", "string", "One line for the person."),
+      MC.Tool.prop("n", "number", "The step you are on."), MC.Tool.prop("risky", "boolean", "The step buys, sends, deletes or confirms something.")], ["run", "kind", "question"]),
+   MC.Tool.def("task_end", "End a run: status ok, failed or stopped, and a one-line summary of what it found or did.",
+     [MC.Tool.prop("run", "string", "The run id."), MC.Tool.prop("status", "string", "ok, failed or stopped."), MC.Tool.prop("summary", "string", "What happened, in a line.")], ["run", "status"])]
+
 def Bots.names() -> List<&2, String>:
   ["bot_whoami", "bot_list", "bot_send", "room_list", "room_create", "room_post", "room_read", "memory_save", "memory_recall", "memory_forget",
-   "memory_list", "space_set", "space_get", "routine_list", "routine_set", "routine_delete", "project_list", "bot_create", "voice_dictionary_add", "space_page", "plane_read", "notify_person", "remind_person", "person_timezone"]
+   "memory_list", "space_set", "space_get", "routine_list", "routine_set", "routine_delete", "project_list", "bot_create", "voice_dictionary_add", "space_page", "plane_read", "notify_person", "remind_person", "person_timezone", "task_list", "task_get", "task_save", "task_delete", "task_run", "task_step", "task_pause", "task_end"]
 
 def Bots.tool.is(+name: String) -> Bool:
   Nat.is_lt(C.Codec.pos(Bots.names(), name), List.length(&2, String, Bots.names()))
@@ -2361,6 +2444,24 @@ def Bots.notify.t(empty: Bool, +s: M.State, +now: Nat, +thread: String, +reason:
 def Bots.notify(+s: M.State, +now: Nat, +b: BT.Bot, +reason: String, +text: String) -> MC.Res:
   Bots.notify.t(String.is_empty(text), s, now, BT.Bot.thread(b), reason, text)
 
+def Bots.task.get(m: Maybe<&2, J.Json>) -> MC.Res:
+  match m:
+    case Some{j}:
+      MR.ok(j)
+    case None{}:
+      MR.fail("no such task: task_list shows yours")
+
+def Bots.task.save(sv: TE.Saved, +bot: String, +now: Nat) -> MC.Res:
+  match sv:
+    case TE.Saved{True{}, _, +slug, +json}:
+      MR.step(J.Json.obj([J.KV{"ok", J.Flag{True{}}}, J.KV{"slug", J.Str{slug}}]),
+        B.Step{[M.TaskSet{bot, slug, json, now}], [B.BotFx{"task-file", bot, slug, json}]})
+    case TE.Saved{False{}, +err, _, _}:
+      MR.fail(err)
+
+def Bots.task.del(+bot: String, +slug: String, +now: Nat) -> MC.Res:
+  MR.step(MR.said("deleted " ++ slug), B.Step{[M.TaskDeleted{bot, slug, now}], [B.BotFx{"task-gone", bot, slug, ""}]})
+
 def Bots.call.k(i: Nat, +s: M.State, +now: Nat, +dir: J.Json, +b: BT.Bot, +a: J.Json) -> MC.Res:
   match i:
     case 0n:
@@ -2415,6 +2516,14 @@ def Bots.call.k(i: Nat, +s: M.State, +now: Nat, +dir: J.Json, +b: BT.Bot, +a: J.
       Bots.remind.tool(s, now, BT.Bot.id(b), a)
     case 23n:
       Bots.tz.tool(s, now, String.trim(J.Json.get_str(a, "zone", "")))
+    case 24n:
+      MR.ok(J.Json.arr(TE.Teach.rows.json(BT.World.tasks_of(M.State.bots(s), BT.Bot.id(b)))))
+    case 25n:
+      Bots.task.get(TE.Teach.get.res(BT.World.task(M.State.bots(s), BT.Bot.id(b), TK.Task.slug(J.Json.get_str(a, "slug", "")))))
+    case 26n:
+      Bots.task.save(TE.Teach.save(BT.World.task(M.State.bots(s), BT.Bot.id(b), TE.Teach.slug.of(J.Json.get_str(a, "slug", ""), J.Json.get_str(a, "name", ""))), a, now), BT.Bot.id(b), now)
+    case 27n:
+      Bots.task.del(BT.Bot.id(b), TK.Task.slug(J.Json.get_str(a, "slug", "")), now)
     case _:
       MR.fail("unknown tool")
 
@@ -2431,7 +2540,7 @@ def Bots.call(+s: M.State, +now: Nat, +dir: J.Json, +thread: String, +id: J.Json
 
 # tools/list for a bot's agent: Backplane's tools and the bots' own
 def Bots.list(+id: J.Json, +extra: List<&2, J.Json>) -> String:
-  MC.Mcp.result(id, J.Json.obj([J.KV{"tools", J.Json.arr(List.concat(&2, J.Json, [J.Json.elems(J.Json.get_obj(MC.Mcp.tools(), "tools")), LG.Ledger.tools(), Bots.tools(), [Bots.newproj.def()], extra]))}]))
+  MC.Mcp.result(id, J.Json.obj([J.KV{"tools", J.Json.arr(List.concat(&2, J.Json, [J.Json.elems(J.Json.get_obj(MC.Mcp.tools(), "tools")), LG.Ledger.tools(), Bots.tools(), Bots.task.tools(), [Bots.newproj.def()], extra]))}]))
 
 # tools/list for a thread that is no bot's: Backplane's tools and the ledgers'
 def Bots.list.plain(+id: J.Json) -> String:
@@ -2529,6 +2638,10 @@ def Bots.prompt.k(m: Maybe<&2, BT.Bot>, +s: M.State, +home: String) -> String:
       "- The browser (preview_* tools) is your own tab; people can watch it live. Logins you make there persist.\n" ++
       "- Alerts: the person gets a phone alert only when (1) they are needed (an ask or approval, or notify_person needs_you), (2) work they gave you is finished (your turn's end does it; or notify_person done once), or (3) a reminder or digest they scheduled (notify_person reminder/digest inside that routine's turn). " ++
       "Your other replies, room posts and routine runs alert no one; they show in the app. Don't call notify_person for progress, chatter or anything already said.\n" ++
+      "- Browser task skills: the person can show you a task in your browser or tell you one, and you keep it as a task skill (task_list, task_get, task_save, task_delete). Each turn may start with a <tasks> block listing yours (slug, name, what it does, its parameters). " ++
+      "To run one, task_run it with its parameters and follow the plan: use the steps as a plan, prefer each step's locators in order, and when one fails read the page again with preview_snapshot and find the element by its meaning. " ++
+      "Log the key steps with task_step and end with task_end. Call task_pause (it waits for the person and gives you their answer) for a login, a CAPTCHA, 2FA, a payment, a secret, a risky step (a purchase, a send, a deletion, a confirmation: always risky true), or when retries fail. " ++
+      "Never complete a purchase, send or deletion without a confirm answer. While the person has the browser (teaching or taking over) your preview_* calls are refused; wait for it back.\n" ++
       "- Your home folder is yours: keep scripts, notes and files there.\n" ++ Bots.prompt.uber(UB.Uber.is(s, i))
     case None{}:
       ""
@@ -2542,10 +2655,14 @@ def Bots.turn.b(+block: String, +text: String) -> String:
 
 # the text a turn starts with: a bot's memory block first, then the
 # message with what it references (refs.bend's Refs.agent)
+# the memory block and the tasks block, one after the other
+def Bots.turn.j(+mem: String, +tasks: String) -> String:
+  Bool.pick(String, String.is_empty(mem), tasks, Bool.pick(String, String.is_empty(tasks), mem, mem ++ "\n\n" ++ tasks))
+
 def Bots.turn.k(m: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +text: String) -> String:
   match m:
-    case Some{b}:
-      Bots.turn.b(BT.Mem.block(BT.World.mems(M.State.bots(s), BT.Bot.id(b)), text, now), text)
+    case Some{+b}:
+      Bots.turn.b(Bots.turn.j(BT.Mem.block(BT.World.mems(M.State.bots(s), BT.Bot.id(b)), text, now), TE.Teach.block(BT.World.tasks_of(M.State.bots(s), BT.Bot.id(b)))), text)
     case None{}:
       text
 
