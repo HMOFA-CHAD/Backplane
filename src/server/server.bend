@@ -655,7 +655,13 @@ def Wire.behind(c: Client) -> Bool:
 # behind goes back to taking it, from `at`, Cr.catch); 2 streamed text
 # (none for a client taking its log: the live text comes with its end)
 type All is Data:
-  All{kind: Nat, at: Nat, fl: Nat, inbox: List<&2, Chan(Msg)>}
+  All{kind: Nat, log: List<&2, String>, fresh: Nat, fl: Nat, inbox: List<&2, Chan(Msg)>}
+
+# where a client too far behind takes its log up again: the log's length
+# before the changes. Counted only for such a client: counting the whole
+# log (100k lines) for every step cost ~30 ms each
+def All.at(+log: List<&2, String>, +fresh: Nat) -> Nat:
+  Nat.sub(List.length(&2, String, log), fresh)
 
 # A message the hub sends itself. The hub fiber is the inbox's only
 # reader, so a send into a full inbox (4096 slots) would park it for good:
@@ -690,10 +696,10 @@ def Wire.post(qs: List<&2, Chan(Msg)>, +m: Msg) -> IO(Unit):
 
 def Wire.catch(c: Client, +a: All) -> IO(Maybe<&2, Client>):
   match c a:
-    case Client{+i, o, l, +r, k} All{_, +at, +fl, +qs}:
+    case Client{+i, o, l, +r, k} All{_, +log, +fresh, +fl, +qs}:
       do IO<Maybe<&2, Client>>:
         Wire.post(qs, JoinMore{i, OB.Cr.gen(r)})
-        return Some{Client{i, o, l, OB.Cr.wait.set(OB.Cr.catch(r, at, fl), True{}), k}}
+        return Some{Client{i, o, l, OB.Cr.wait.set(OB.Cr.catch(r, All.at(log, fresh), fl), True{}), k}}
 
 def Wire.all.k3(behind: Bool, +c: Client, +a: All, +text: String, +bs: List<&2, U32>, +n: Nat) -> IO(Maybe<&2, Client>):
   match behind:
@@ -715,7 +721,7 @@ def Wire.all.k2(kind: Nat, booting: Bool, +c: Client, +a: All, +text: String, +b
 
 def All.kind(+a: All) -> Nat:
   match a:
-    case All{k, _, _, _}:
+    case All{k, _, _, _, _}:
       k
 
 def Wire.all.go(cs: List<&2, Client>, +text: String, +bs: List<&2, U32>, +n: Nat, +a: All) -> IO(List<&2, Client>):
@@ -743,17 +749,18 @@ def Wire.all.of(+cs: List<&2, Client>, +text: String, +a: All) -> IO(List<&2, Cl
   Wire.all.k(Clients.socket(cs), cs, text, a)
 
 def Wire.all(+cs: List<&2, Client>, +text: String) -> IO(List<&2, Client>):
-  Wire.all.of(cs, text, All{0n, 0n, 0n, Nil{}})
+  Wire.all.of(cs, text, All{0n, Nil{}, 0n, 0n, Nil{}})
 
 # streamed text: none for a client taking its log
 def Wire.delta(+cs: List<&2, Client>, +text: String) -> IO(List<&2, Client>):
-  Wire.all.of(cs, text, All{2n, 0n, 0n, Nil{}})
+  Wire.all.of(cs, text, All{2n, Nil{}, 0n, 0n, Nil{}})
 
 # log changes: every client but those taking their log (they get them with
-# the rest of it); one too far behind goes back to taking it from item at
-# (the log's length before these changes), the far mirrors left out
-def Wire.changes(+cs: List<&2, Client>, +text: String, +at: Nat, +fl: Nat, +inbox: Chan(Msg)) -> IO(List<&2, Client>):
-  Wire.all.of(cs, text, All{1n, at, fl, [inbox]})
+# the rest of it); one too far behind goes back to taking it from the log's
+# length before these changes (log: the log with them, fresh: how many),
+# the far mirrors left out
+def Wire.changes(+cs: List<&2, Client>, +text: String, +log: List<&2, String>, +fresh: Nat, +fl: Nat, +inbox: Chan(Msg)) -> IO(List<&2, Client>):
+  Wire.all.of(cs, text, All{1n, log, fresh, fl, [inbox]})
 
 # Agent processes
 # ---------------
@@ -1436,6 +1443,15 @@ def Hub.busy.set(h: Hub) -> IO(Hub):
         PS.Perf.set("hub.busy", U32.from_nat(M.Work.threads(st)))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
+# the busy count taken again only when the step's changes can move it
+# (hub.bend's Busy.moved): a walk over every thread is no per-line cost
+def Hub.busy.if(moved: Bool, h: Hub) -> IO(Hub):
+  match moved:
+    case True{}:
+      Hub.busy.set(h)
+    case False{}:
+      IO.pure(Hub, h)
+
 def Cfg.version(c: Cfg) -> String:
   match c:
     case Cfg{_, _, _, _, _, _, v, nt}:
@@ -1837,14 +1853,21 @@ def RmJob.top(+top: String, +inbox: Chan(Msg), +thread: String, +root: String, +
   Bool.pick(IO(Unit), Bool.not(M.Worktree.ours(top ++ "/")), Log.info("worktree not ours, kept: " ++ top),
     IO.bind(String, Unit, GT.Git.worktree.remove_force(root, top), r => RmJob.done(r, inbox, thread, branch)))
 
-def RmJob.saved(+cp: String, +inbox: Chan(Msg), +thread: String, +wt: String, +root: String, +branch: String) -> IO(Unit):
+def RmJob.saved(+cp: String, +inbox: Chan(Msg), +thread: String, +top: String, +root: String, +branch: String) -> IO(Unit):
   Bool.pick(IO(Unit), GT.Git.failed(cp), Log.info("worktree kept, no checkpoint: " ++ cp),
-    IO.bind(String, Unit, GT.Git.root(wt), top => RmJob.top(top, inbox, thread, root, branch)))
+    RmJob.top(top, inbox, thread, root, branch))
+
+# whether the folder is a worktree of ours is asked before its last state is
+# saved: a folder that is not (it is kept) took a new checkpoint ref each
+# tick, for every such thread, forever
+def RmJob.ours(+top: String, +inbox: Chan(Msg), +thread: String, +wt: String, +root: String, +branch: String) -> IO(Unit):
+  Bool.pick(IO(Unit), Bool.not(M.Worktree.ours(top ++ "/")), PS.Log.debug("hub", "worktree not ours, kept: " ++ top),
+    IO.bind(Nat, Unit, GitJob.count(wt, thread), n => IO.bind(String, Unit, GT.Git.checkpoint.capture(wt, thread, n), cp => RmJob.saved(cp, inbox, thread, top, root, branch))))
 
 def RmJob.there(r: P.Ran, +inbox: Chan(Msg), +thread: String, +wt: String, +root: String, +branch: String) -> IO(Unit):
   match r:
     case P.Ran{0, _}:
-      IO.bind(Nat, Unit, GitJob.count(wt, thread), n => IO.bind(String, Unit, GT.Git.checkpoint.capture(wt, thread, n), cp => RmJob.saved(cp, inbox, thread, wt, root, branch)))
+      IO.bind(String, Unit, GT.Git.root(wt), top => RmJob.ours(top, inbox, thread, wt, root, branch))
     case _:
       GitJob.say(inbox, "thread.unrooted", [J.KV{"thread", J.Str{thread}}])
 
@@ -5120,13 +5143,13 @@ def Hub.commit.w(+cs: List<&2, M.Change>, h: Hub) -> IO(Hub & Wrote):
     case _ Hub{st, f, ls, cl, as, +inbox, +cfg, note}:
       Hub.commit.gate(String.is_empty(BN.Bn.broken(Cfg.bn(cfg))), cs, st, f, ls, cl, as, inbox, cfg, note)
 
-def Hub.commit.b(r: Hub & List<&2, String>) -> IO(Hub & List<&2, String>):
+def Hub.commit.b(r: Hub & List<&2, String>, moved: Bool) -> IO(Hub & List<&2, String>):
   (h, fr) = r
-  IO.bind(Hub, Hub & List<&2, String>, Hub.busy.set(h), h2 => IO.pure(Hub & List<&2, String>, (h2, fr)))
+  IO.bind(Hub, Hub & List<&2, String>, Hub.busy.if(moved, h), h2 => IO.pure(Hub & List<&2, String>, (h2, fr)))
 
 # persist changes, fold them in; answers the hub and the new lines (newest first)
 def Hub.commit(+cs: List<&2, M.Change>, h: Hub, fresh: List<&2, String>) -> IO(Hub & List<&2, String>):
-  IO.bind(Hub & Wrote, Hub & List<&2, String>, Hub.commit.w(cs, h), r => Hub.commit.b(Hub.commit.r(r, fresh)))
+  IO.bind(Hub & Wrote, Hub & List<&2, String>, Hub.commit.w(cs, h), r => Hub.commit.b(Hub.commit.r(r, fresh), B.Busy.moved(cs)))
 
 def Cfg.host(c: Cfg) -> String:
   match c:
@@ -7269,7 +7292,7 @@ def Hub.announce(r: Hub & List<&2, String>) -> IO(Hub):
       IO.pure(Hub, h)
     case Hub{st, f, +ls, cl, as, +inbox, +cfg, note} +l <> +t:
       do IO<Hub>:
-        cl2 : List<&2, Client> <- Wire.changes(cl, Hub.changes_msg(List.reverse(&2, String, l <> t)), Nat.sub(List.length(&2, String, ls), List.length(&2, String, l <> t)),
+        cl2 : List<&2, Client> <- Wire.changes(cl, Hub.changes_msg(List.reverse(&2, String, l <> t)), ls, List.length(&2, String, l <> t),
           List.length(&2, FR.In, Far.mirrors(cfg)), inbox)
         return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
@@ -7595,7 +7618,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         Far.live.out(Hub{st, f, ls, cl2, as, inbox, Live.with(cfg, LV.Live.add.at(Live.of(cfg), thread, text, Nat.mul(now, 1000n))), note}, thread, off, text, now)
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note} B.Broadcast{+text}:
       do IO<Hub>:
-        cl2 : List<&2, Client> <- Wire.all.of(cl, text, All{Bool.pick(Nat, String.starts_with(text, "{\"t\":\"delta"), 2n, 0n), 0n, 0n, Nil{}})
+        cl2 : List<&2, Client> <- Wire.all.of(cl, text, All{Bool.pick(Nat, String.starts_with(text, "{\"t\":\"delta"), 2n, 0n), Nil{}, 0n, 0n, Nil{}})
         Far.shown(st, cfg, text)
         return Hub{st, f, ls, cl2, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, +as, inbox, cfg, note} B.AgentStart{+thread, +cwd, _, +model, +session, r, i}:
@@ -8111,9 +8134,13 @@ def Hub.step.wrote(r: Hub & Wrote, +cs: List<&2, M.Change>, os: List<&2, B.Out>,
   match w:
     case Wrote{+fresh, True{}, _}:
       do IO<Hub & Bool>:
-        h1 : Hub <- Hub.busy.set(h)
+        t0 : U32 <- PS.Perf.us()
+        h1 : Hub <- Hub.busy.if(B.Busy.moved(cs), h)
+        t1 : U32 <- PS.Perf.span("hub.step.busy", t0)
         h2 : Hub <- Hub.announce.far((h1, fresh), cs, from)
+        t2 : U32 <- PS.Perf.span("hub.step.far", t1)
         h3 : Hub <- Hub.outs(os, h2)
+        t3 : U32 <- PS.Perf.span("hub.step.outs", t2)
         h4 : Hub <- Hub.uber.after(h3, cs)
         return (h4, True{})
     case Wrote{_, False{}, +err}:
@@ -8125,8 +8152,11 @@ def Hub.step.wrote(r: Hub & Wrote, +cs: List<&2, M.Change>, os: List<&2, B.Out>,
 
 def Hub.step.go(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   do IO<Hub & Bool>:
+    t0 : U32 <- PS.Perf.us()
     +cs2 : List<&2, M.Change> = B.Pend.fix(st, cs)
+    t1 : U32 <- PS.Perf.span("hub.step.pend", t0)
     r : Hub & Wrote <- Hub.commit.w(cs2, h)
+    t2 : U32 <- PS.Perf.span("hub.step.commit", t1)
     Hub.step.wrote(r, cs2, os, M.State.seq(st))
 
 def Hub.step.b(st: M.State, h: Hub, +cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):

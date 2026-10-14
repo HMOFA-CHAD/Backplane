@@ -4752,6 +4752,62 @@ def Pend.go(cs: List<&2, M.Change>, +before: M.State, +after: M.State) -> List<&
 def Pend.fix(+s: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
   List.append(&2, M.Change, cs, Pend.go(cs, s, M.State.replay(cs, s)))
 
+# The busy count
+# --------------
+# /hello's busy count (M.Work.threads) walks every thread, its tasks and
+# its rows: 35 ms on a real log, and the server once took it after every
+# step, an agent's streamed line included. It is taken again only after a
+# step whose changes can move it. What M.Work.threads reads: each
+# thread's turn, archive and deletion, the tasks, and the settings bg.<th>
+# and watch.<th>. A change that touches none of those leaves it as it was
+# (laws busy_*); anything not listed here counts as moving it.
+def Busy.inert(c: M.Change) -> Bool:
+  match c:
+    case M.MessagePosted{_, _, _, _, _}:
+      True{}
+    case M.ActivityLogged{_, _, _, _, _, _}:
+      True{}
+    case M.UsageSet{_, _, _, _}:
+      True{}
+    case M.TodosSet{_, _, _}:
+      True{}
+    case M.SessionSet{_, _, _}:
+      True{}
+    case M.ModesSet{_, _, _, _, _}:
+      True{}
+    case M.ThreadRenamed{_, _, _}:
+      True{}
+    case M.PendingChanged{_, _, _}:
+      True{}
+    case M.LockChanged{_, _, _}:
+      True{}
+    case M.SettingSet{+k, _, _}:
+      Bool.not(Bool.or(String.starts_with(k, "bg."), String.starts_with(k, "watch.")))
+    case _:
+      False{}
+
+def Busy.moved.go(cs: List<&2, M.Change>, acc: Bool) -> Bool:
+  match cs:
+    case Nil{}:
+      acc
+    case c <> t:
+      Busy.moved.go(t, Bool.or(acc, Bool.not(Busy.inert(c))))
+
+# whether a step's changes can move the busy count
+def Busy.moved(cs: List<&2, M.Change>) -> Bool:
+  Busy.moved.go(cs, False{})
+
+# for the laws: a thread running, one waiting on a background row, one done
+def Busy.demo() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "claude", "", 1n},
+    M.ThreadCreated{"t2", "p1", "y", M.Local{}, "", "", "claude", "", 1n}, M.ThreadCreated{"t3", "p1", "z", M.Local{}, "", "", "claude", "", 1n},
+    M.TurnChanged{"t1", M.Running{}, 2n}, M.WorkSet{"t2", "bg", "a\tx\tc1\tsleep 8\tshell", 2n}, M.TurnChanged{"t3", M.Completed{}, 2n}], M.State.empty())
+
+# what a streaming turn writes: text, a tool row, usage, todos, a session
+def Busy.demo.stream() -> List<&2, M.Change>:
+  [M.MessagePosted{"t1", "m1", M.Assistant{}, "hello", 3n}, M.ActivityLogged{"t1", "u1", "tool", "Bash", "ls", 3n}, M.UsageSet{"t1", 10n, 100n, 3n},
+    M.TodosSet{"t1", "[]", 3n}, M.SessionSet{"t1", "S1", 3n}, M.PendingChanged{"t1", 0n, 3n}, M.SettingSet{"agent.model", "opus", 3n}]
+
 # whether the newest entry is the "restart" note Carry.k adds after its
 # message (it is no progress)
 def Carry.restart(es: List<&2, M.Entry>) -> Bool:
