@@ -744,6 +744,9 @@ final class AppModel {
                             }
                             continue
                         }
+                        // "@tab=<home|threads|bots|routines|settings>": the tab bar's tap; "@push=<page>" pushes a page of this tab
+                        if kv[0] == "@tab", kv.count > 1, let t = AppTab(rawValue: kv[1]) { switchTab(t); continue }
+                        if kv[0] == "@push", kv.count > 1 { navigate(path + [kv[1]]); continue }
                         // "@back": what a swipe back does
                         if kv[0] == "@back" { navigate(Array(path.dropLast())); continue }
                         // "@attach": a noisy PNG big enough to go up in several pieces

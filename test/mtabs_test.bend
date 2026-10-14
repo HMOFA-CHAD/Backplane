@@ -91,15 +91,15 @@ def tabs(+h: H.Hubs) -> J.Json:
 def badge(+h: H.Hubs, +tab: String) -> String:
   J.Json.show(J.Json.get_obj(J.Json.get_obj(tabs(h), tab), "badge"))
 
-def routines(+h: H.Hubs, +field: String) -> String:
-  strs(J.Json.elems(J.Json.get_obj(J.Json.get_obj(tabs(h), "routines"), "rows")), field)
-
 def strs(js: List<&2, J.Json>, +key: String) -> String:
   match js:
     case Nil{}:
       ""
     case j <> t:
       J.Json.get_str(j, key, "") ++ ";" ++ strs(t, key)
+
+def routines(+h: H.Hubs, +field: String) -> String:
+  strs(J.Json.elems(J.Json.get_obj(J.Json.get_obj(tabs(h), "routines"), "rows")), field)
 
 def view(+h: H.Hubs) -> String:
   J.Json.get_str(H.Hubs.screen(h), "view", "")
