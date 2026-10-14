@@ -94,6 +94,7 @@ data class Entry(
     val tone: String, val label: String, val blocks: List<Block>,
     val attachments: List<Chip> = emptyList(), val images: List<Shot> = emptyList(),
     val open: Boolean = false, val value: String = "", val key: String = "", val at: String = "",
+    val stamp: String = "",
 )
 
 // what the agent waits on the user for: an approval, a question or a
@@ -440,6 +441,7 @@ private fun entry(o: JSONObject) = Entry(
     chips(o.optJSONArray("attachments")),
     o.optJSONArray("images").map { Shot(it.optString("path"), it.optString("url")) },
     o.optBoolean("open"), o.optString("value"), o.optString("key"), o.optString("when"),
+    o.optString("stamp"),
 )
 
 private fun tool(o: JSONObject) = Tool(

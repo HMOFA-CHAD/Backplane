@@ -198,6 +198,13 @@ struct EntryRow: View {
         row.sheet(isPresented: $selecting) { SelectSheet(model: model, text: entry.text) }
     }
 
+    // when a message was sent, or a turn finished
+    @ViewBuilder private var stamp: some View {
+        if let s = entry.stamp, !s.isEmpty {
+            Text(s).font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
+        }
+    }
+
     @ViewBuilder private var row: some View {
         switch entry.kind {
         case "user":
@@ -209,6 +216,7 @@ struct EntryRow: View {
                         .contextMenu { menu }
                 }
                 ForEach(entry.attachments ?? [], id: \.self) { ChipView(model: model, chip: $0, show: show) }
+                stamp
             }
             .padding(.leading, 48)
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -216,6 +224,7 @@ struct EntryRow: View {
             VStack(alignment: .leading, spacing: 8) {
                 MarkdownView(blocks: entry.blocks ?? [])
                 ForEach(entry.images ?? [], id: \.self) { Thumb(model: model, url: $0.url, show: show) }
+                stamp
             }
             .contextMenu { menu }
         case "fold":
