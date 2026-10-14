@@ -1,4 +1,5 @@
 import Base
+import ./src/core/stamp.bend as STP
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
 import ./src/core/sched.bend as SCH
@@ -2978,25 +2979,26 @@ law tl_entries_roles:
   for +sel: String
   for +px: U32
   for +pics: Map<&2, String>
-  {L.TL.entries.mr(ty, L.TL.memo.make(ty, es, px, sel), rs, st, sel, px, pics) == L.TL.entries.r(ty, es, rs, st, sel, px, pics) : List<&2, L.TLine>}
+  for +sp: STP.Stamps
+  {L.TL.entries.mr(ty, L.TL.memo.make(ty, es, px, sel), rs, st, sel, px, pics, sp) == L.TL.entries.r(ty, es, rs, st, sel, px, pics, sp) : List<&2, L.TLine>}
 
-def tl_entries_roles(ty, es, rs, st, sel, px, pics):
+def tl_entries_roles(ty, es, rs, st, sel, px, pics, sp):
   match es:
     case Nil{}:
       {==}
     case +e <> +t:
       match rs:
         case Nil{}:
-          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.entry(ty, e, st, sel, px, pics), x),
-            L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), Nil{}, st, sel, px, pics), L.TL.entries.r(ty, t, Nil{}, st, sel, px, pics), tl_entries_roles(ty, t, Nil{}, st, sel, px, pics))
+          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.entry(ty, e, st, sel, px, pics, sp), x),
+            L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), Nil{}, st, sel, px, pics, sp), L.TL.entries.r(ty, t, Nil{}, st, sel, px, pics, sp), tl_entries_roles(ty, t, Nil{}, st, sel, px, pics, sp))
         case +r <> +rt:
-          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), L.TL.role(r, ty, L.TL.entry(ty, e, st, sel, px, pics), px)), x),
-            L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), rt, st, sel, px, pics), L.TL.entries.r(ty, t, rt, st, sel, px, pics), tl_entries_roles(ty, t, rt, st, sel, px, pics))
+          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), L.TL.role(r, ty, L.TL.entry(ty, e, st, sel, px, pics, sp), px)), x),
+            L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), rt, st, sel, px, pics, sp), L.TL.entries.r(ty, t, rt, st, sel, px, pics, sp), tl_entries_roles(ty, t, rt, st, sel, px, pics, sp))
 
 def tl_entries_memo(ty, es, st, sel, px, pics):
   %Equal.sym(List<&2, M.Entry>, L.TL.memo.es(L.TL.memo.make(ty, es, px, sel)), es, tl_memo_es(ty, es, px, sel))
-    : {L.TL.entries.mr(ty, L.TL.memo.make(ty, es, px, sel), L.TL.roles(_, st, sel, pics), st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
-  tl_entries_roles(ty, es, L.TL.roles(es, st, sel, pics), st, sel, px, pics)
+    : {L.TL.entries.mr(ty, L.TL.memo.make(ty, es, px, sel), L.TL.roles(_, st, sel, pics), st, sel, px, pics, L.TL.stamps(_, st, sel, pics)) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
+  tl_entries_roles(ty, es, L.TL.roles(es, st, sel, pics), st, sel, px, pics, L.TL.stamps(es, st, sel, pics))
 
 law tl_lines_k:
   for s: Bool
