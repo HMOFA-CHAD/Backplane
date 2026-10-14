@@ -7352,26 +7352,26 @@ law told_quiet_record_nothing:
 
 # a deploy waits while a thread is inside a tool call
 law deploy_waits_for_tool:
-  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(True{}, H.Deploy.demo.line("t0")), 9n, True{})) == 0n : Nat}
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(True{}, H.Deploy.demo.line("t0")), 9n, True{}, H.Deploy.demo.open(True{}))) == 0n : Nat}
 
 # and while a build lock is held
 law deploy_waits_for_lock:
-  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, False{})) == 0n : Nat}
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, False{}, Nil{})) == 0n : Nat}
 
 # with no tool call and the locks free it goes, once
 law deploy_goes_when_clear:
-  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{})) == 1n : Nat}
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, Nil{})) == 1n : Nat}
 
 # the go clears the wait and writes deploy.done, each once
 law deploy_go_clears_wait:
-  {H.Deploy.demo.sets(H.Deploy.demo.cs(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{})), "deploy.wait", True{}) == 1n : Nat}
+  {H.Deploy.demo.sets(H.Deploy.demo.cs(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, Nil{})), "deploy.wait", True{}) == 1n : Nat}
 
 law deploy_go_writes_done:
-  {H.Deploy.demo.sets(H.Deploy.demo.cs(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{})), "deploy.done", False{}) == 1n : Nat}
+  {H.Deploy.demo.sets(H.Deploy.demo.cs(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, Nil{})), "deploy.done", False{}) == 1n : Nat}
 
 # nothing waits: nothing goes
 law deploy_idle_nothing:
-  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, ""), 9n, True{})) == 0n : Nat}
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, ""), 9n, True{}, Nil{})) == 0n : Nat}
 
 # the start after a deploy tells the requester once and clears deploy.done
 law deploy_after_note_once:
@@ -7674,3 +7674,22 @@ law ask_head_cal_update:
   {U.Ask.head("approval", "calendar_update", "x") == "Change this event?" : String}
 
 # end gmail: replies, attachments, drafts
+# harness-coord: deploy inflight (hub.bend's Tools.*, core/deploy.bend's Open.*)
+# ---------------------------------------------------------------------------
+
+# a tool_use line opens its call and a tool_result line shuts the same call,
+# each once (nothing else opens or shuts it)
+law tool_open_shut_pair:
+  {H.Tools.demo.pair() == 11n : Nat}
+
+# a turn that ends shuts every call of its thread
+law tool_turn_end_clears:
+  {H.Tools.demo.ends() == 1n : Nat}
+
+# a deploy with no call open goes, though the newest entry of the running thread is a tool call
+law deploy_goes_between_calls:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(True{}, H.Deploy.demo.line("t0")), 9n, True{}, H.Deploy.demo.open(False{}))) == 1n : Nat}
+
+# and it waits while a call is open
+law deploy_waits_open_call:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, H.Deploy.demo.open(True{}))) == 0n : Nat}

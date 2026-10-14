@@ -10,6 +10,7 @@ import ../core/http.bend as W
 import ../core/model.bend as M
 import ../core/codec.bend as C
 import ../core/hub.bend as B
+import ../core/deploy.bend as DP
 import ../core/prompt.bend as Q
 import ../core/mcp.bend as MC
 import ./update.bend as UP
@@ -5002,6 +5003,19 @@ def Cfg.with_bn(c: Cfg, b: BN.Bn) -> Cfg:
 def Live.with(+cfg: Cfg, lv: List<&2, LV.Buf>) -> Cfg:
   Cfg.with_bn(cfg, BN.Bn.with_live(Cfg.bn(cfg), lv))
 
+# the tool calls open now (core/deploy.bend's Open.*), kept in memory only:
+# after a restart there are none, which is right, the old processes are gone
+def Tools.of(+cfg: Cfg) -> List<&2, String>:
+  BN.Bn.tools(Cfg.bn(cfg))
+
+def Tools.with(+cfg: Cfg, tl: List<&2, String>) -> Cfg:
+  Cfg.with_bn(cfg, BN.Bn.with_tools(Cfg.bn(cfg), tl))
+
+def Hub.tools(h: Hub) -> List<&2, String> & Hub:
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      (Tools.of(cfg), Hub{st, f, ls, cl, as, inbox, cfg, note})
+
 # A step is one append. A write that fails is taken back: the log is cut to
 # the length it had before (`truncate`, a short process), so none of the
 # step stays on disk and no torn line is joined by a later write. When the
@@ -7401,10 +7415,16 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +l1 : String = Bot.line(Bool.or(BO.World.is_bot_thread(M.State.bots(st), thread), RF.Refs.maybe(line)), cfg, st, now, thread, line)
         +l2 : String <- EmbNote.claude(EmbNote.user(l1), cfg, st, thread, l1)
         Line.skills(String.contains(l2, "$"), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, l2, B.Hub.cwd(st, B.Hub.thread(st, thread)))
-    case Hub{st, f, ls, cl, +as, inbox, cfg, note} B.AgentStop{+thread}:
+    case Hub{st, f, ls, cl, +as, inbox, +cfg, note} B.AgentStop{+thread}:
       do IO<Hub>:
         Hub.agent_stop(Agents.get(as, thread))
-        return Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}
+        return Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, Tools.with(cfg, DP.Open.gone(Tools.of(cfg), thread)), note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.ToolOpen{+thread, +call}:
+      IO.pure(Hub, Hub{st, f, ls, cl, as, inbox, Tools.with(cfg, DP.Open.add(Tools.of(cfg), thread, call)), note})
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.ToolShut{+thread, +call}:
+      IO.pure(Hub, Hub{st, f, ls, cl, as, inbox, Tools.with(cfg, DP.Open.shut(Tools.of(cfg), thread, call)), note})
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.ToolsGone{+thread}:
+      IO.pure(Hub, Hub{st, f, ls, cl, as, inbox, Tools.with(cfg, DP.Open.gone(Tools.of(cfg), thread)), note})
     case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.PlotInfo{+client, +id, +key, +at, +idx}:
       do IO<Hub>:
         Plot.put(Cfg.pv(cfg), PV.PInfo{client, id, key, at, idx})
@@ -7915,7 +7935,7 @@ def Hub.step.go(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out
     Hub.step.wrote(r, cs2, os, M.State.seq(st))
 
 def Hub.step.b(st: M.State, h: Hub, +cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
-  Hub.step.go(st, h, cs, B.Island.outs(cs, B.Alerts.outs(cs, os)))
+  Hub.step.go(st, h, cs, B.Island.outs(cs, B.Alerts.outs(cs, B.Tools.outs(cs, os))))
 
 # the asks the step opens get their alert records, and every record written
 # tells the server (hub.bend's Alerts)
@@ -10601,12 +10621,16 @@ def Hub.update_ready.k(p: M.State & Hub, force: Bool, +now: Nat) -> IO(Hub):
 def Hub.update_ready(h: Hub, force: Bool, +now: Nat) -> IO(Hub):
   Hub.update_ready.k(Hub.state(h), force, now)
 
-def Hub.deploy_locks.k(p: M.State & Hub, free: Bool, +now: Nat) -> IO(Hub):
+def Hub.deploy_locks.k(p: M.State & Hub, free: Bool, open: List<&2, String>, +now: Nat) -> IO(Hub):
   (st, h) = p
-  Hub.step(h, B.Deploy.check(st, now, free))
+  Hub.step(h, B.Deploy.check(st, now, free, open))
+
+def Hub.deploy_locks.t(p: List<&2, String> & Hub, free: Bool, +now: Nat) -> IO(Hub):
+  (tl, h) = p
+  Hub.deploy_locks.k(Hub.state(h), free, tl, now)
 
 def Hub.deploy_locks(h: Hub, free: Bool, +now: Nat) -> IO(Hub):
-  Hub.deploy_locks.k(Hub.state(h), free, now)
+  Hub.deploy_locks.t(Hub.tools(h), free, now)
 
 # (a waiting deploy is looked at with every heartbeat, not only the minute's
 # tick: a tool call that ends lets it go within 15 s)

@@ -8937,3 +8937,15 @@ def Laws.ask_head_other_tool():
 def Laws.ask_head_cal_update():
   {==}
 # end gmail: replies, attachments, drafts
+# harness-coord: deploy inflight
+def Laws.tool_open_shut_pair():
+  {==}
+
+def Laws.tool_turn_end_clears():
+  {==}
+
+def Laws.deploy_goes_between_calls():
+  {==}
+
+def Laws.deploy_waits_open_call():
+  {==}
