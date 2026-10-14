@@ -685,7 +685,7 @@ def Mob.ask.k(web: Bool, a: M.Ask, +draft: String, nf: Map<&2, String>) -> J.Jso
 def Mob.ask(+a: M.Ask, +draft: String, nf: Map<&2, String>) -> J.Json:
   Mob.ask.k(String.eq(MB.MBots.ask.kind(a), "browser"), a, draft, nf)
 
-def Mob.asks(as: List<&2, M.Ask>, +draft: String, nf: Map<&2, String>) -> List<&2, J.Json>:
+def Mob.asks(as: List<&2, M.Ask>, +draft: String, +nf: Map<&2, String>) -> List<&2, J.Json>:
   match as:
     case Nil{}:
       Nil{}
