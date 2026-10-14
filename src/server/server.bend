@@ -1,4 +1,5 @@
 import Base
+import ../core/exe.bend as EX
 import ./host.bend as H
 import ./proc.bend as P
 import ../core/json.bend as J
@@ -2951,7 +2952,7 @@ def Upgrade.restart.at(+path: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Upgrade.say(inbox, Upgrade.note([J.KV{"state", J.Str{"restarting"}}]))
     args : List<String> <- IO.args()
-    r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(path, Names.copy(RVS.Rvc.args.drop(args)))
+    r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(EX.Exe.path(path), Names.copy(RVS.Rvc.args.drop(args)))
     Upgrade.exec(r, inbox)
 
 def Upgrade.restart(+inbox: Chan(Msg)) -> IO(Unit):

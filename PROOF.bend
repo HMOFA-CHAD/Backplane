@@ -8728,3 +8728,24 @@ def Laws.deploy_cut_requester_no_second():
 
 def Laws.deploy_cancel_clears():
   {==}
+# ---- phone-sch-viewer: exe path ----
+
+def Laws.exe_path_plain():
+  {==}
+
+def Laws.exe_path_deleted():
+  {==}
+
+def Laws.exe_child_plain():
+  {==}
+
+def Laws.exe_child_deleted():
+  {==}
+
+def Laws.exe_gone_plain():
+  {==}
+
+def Laws.exe_gone_deleted():
+  {==}
+
+# ---- end phone-sch-viewer: exe path ----

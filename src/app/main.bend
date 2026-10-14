@@ -1,4 +1,5 @@
 import Base
+import ../core/exe.bend as EX
 import ../server/server.bend as S
 import ../server/host.bend as H
 import ../core/prompt.bend as Q
@@ -2318,7 +2319,7 @@ def Start.detach.k(free: Bool, +held: String, +dir: String, +xs: List<&2, String
       do IO<Unit>:
         +exe : String <- H.Sys.exe_path()
         +log : String = dir ++ "/headless.log"
-        r : P.Ran <- P.Proc.run("sh", List.append(&2, String, ["-c", Start.detach.sh(), "sh", log, exe], xs), "/")
+        r : P.Ran <- P.Proc.run("sh", List.append(&2, String, ["-c", Start.detach.sh(), "sh", log, EX.Exe.path(exe)], xs), "/")
         Start.detached(r, log)
     case False{}:
       IO.print("Backplane already runs for " ++ dir ++ " (pid " ++ S.Lock.word(held, 0n) ++ ", port " ++ S.Lock.word(held, 1n) ++ "); nothing was started")

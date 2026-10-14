@@ -1,4 +1,5 @@
 import Base
+import ../core/exe.bend as EX
 import ./proc.bend as P
 import ../core/json.bend as J
 import ../core/hist.bend as HI
@@ -472,7 +473,7 @@ def Rvc.main(xs: List<String>, go: List<String> -> IO(Unit)) -> IO(Unit):
 
 # the child, run from the hub: its Markdown, or why it failed
 def Rvc.run(+args: List<&2, String>) -> IO(P.Ran):
-  IO.bind(String, P.Ran, H.Sys.exe_path(), exe => P.Proc.run(exe, args, "/"))
+  IO.bind(String, P.Ran, H.Sys.exe_path(), exe => P.Proc.run(EX.Exe.child(exe), args, "/"))
 
 def RvJob.report(r: P.Ran, +thread: String, +page: String) -> Res:
   match r:
