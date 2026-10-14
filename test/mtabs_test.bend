@@ -108,6 +108,10 @@ def view(+h: H.Hubs) -> String:
 def hubactive() -> List<&2, M.Change>:
   List.append(&2, M.Change, box(), [M.SettingSet{"sidebar.view", "active", 175n}])
 
+# box with a one-time reminder (remind_person) that is not due yet
+def reminded() -> List<&2, M.Change>:
+  List.append(&2, M.Change, box(), [M.RoutineSet{"rt2", "b1", "Dentist", "", "call", True{}, 161n}, M.RoutinePlan{"rt2", 300000n, "", "remind", 162n}])
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("home badge: what needs you", badge(one(box()), "home"), "1")
@@ -137,3 +141,6 @@ def main() -> IO(Unit):
     C.Check.str("hub settings: the focus follows the named hub", H.Hubs.cur(go(two(), "hub-settings", "lap:3787|on")), "lap:3787")
     C.Check.str("hub settings: Notify me for rows are marked notify", notifyrows(go(one(box()), "hub-settings", "box:3787|on")), "Notify me for;Needs me;Settled;Reminders;Everything;")
     C.Check.str("hub settings: Theme and Thread list are marked local", localrows(go(one(box()), "hub-settings", "box:3787|on")), "Theme;Thread list;Tour;")
+    C.Check.str("routines: a recurring and a one-time reminder", routines(one(reminded()), "title"), "Digest;Dentist;")
+    C.Check.str("routines: the one-time one is a reminder", routines(one(reminded()), "state"), "idle;reminder;")
+    C.Check.str("routines: Sched's kind", routines(one(reminded()), "sched"), "routine;remind;")
