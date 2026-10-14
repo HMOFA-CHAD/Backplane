@@ -456,6 +456,7 @@ def Change.decode.k(i: Nat, +o: J.Json) -> Maybe<&2, M.Change>:
       Some{M.RoutineDone{J.Json.get_str(o, "id", ""), J.Json.get_nat(o, "at", 0n)}}
     case 66n:
       Some{M.Reminded{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "text", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 67n:
       Some{M.TaskSet{J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "slug", ""), J.Json.get_str(o, "json", ""), J.Json.get_nat(o, "at", 0n)}}
     case 68n:
       Some{M.TaskDeleted{J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "slug", ""), J.Json.get_nat(o, "at", 0n)}}
