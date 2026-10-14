@@ -110,7 +110,10 @@ struct BotsTab: View {
                                 Spacer()
                                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                             }
+                            .contentShape(Rectangle())
                         }
+                        // plain: a List's button tints its whole label (names read as links)
+                        .buttonStyle(.plain)
                         .opacity(b.mood == "away" ? 0.5 : 1)
                     }
                 }
@@ -125,7 +128,9 @@ struct BotsTab: View {
                                 Label("\(r.members)", systemImage: "person.2").font(.caption).foregroundStyle(.secondary)
                                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                             }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -198,7 +203,9 @@ struct RoutinesPage: View {
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                     }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .opacity((r.away ?? false) || r.state == "off" || r.state == "done" ? 0.5 : 1)
             }
         }
