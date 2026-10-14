@@ -26,11 +26,20 @@ for both, then swaps the new package in and restarts in place.
 ## How it waits
 
 The request is the private setting `deploy.wait`, one JSON line (`by`, `note`,
-`stage`, `from`, `since`, `noted`, `locked`). Each tick, while it waits:
+`stage`, `from`, `since`, `noted`, `locked`, `open`). Each tick, while it waits:
 
-1. `Deploy.inflight` (core/deploy.bend): the live threads running a turn whose
-   newest entry is a tool call's Act (the next words or call end it). The
-   requester's own `deploy_*` call does not count.
+1. The hub's open tool calls, in memory only (core/deploy.bend `Open.*`; the
+   server's `Bn.tools`). A call opens where its Act is posted (`ToolOpen`:
+   Claude's `tool_use` block, Codex's `item.started`, Grok's/Muse's logged
+   call) and shuts at its result (`ToolShut`: the `tool_result` block, Codex's
+   `item.completed`, ACP's `tool.done`); a turn's end, an archive, a delete or a
+   stopped agent shuts every call of the thread (`ToolsGone`). None of it is in
+   the log, and after a restart the list is empty (the old processes are
+   gone). A thread between two calls has none open, so a deploy goes then,
+   however long its turn. The requester's own `deploy_*` call is never opened;
+   a subagent's Agent/Task call stays open until its result. The wait line
+   records what was open at the last look (`open`) for the plane row,
+   `deploy_status` and the 30-minute note.
 2. With none, the server asks the locks (`flock -n` on each path of
    `BACKPLANE_DEPLOY_LOCKS`, colon-separated, default the two build locks;
    without flock(1) they count as free) and answers `Deploy.check`.
@@ -52,4 +61,4 @@ At start `Deploy.after` reads `deploy.done`: it clears it and tells the
 requester once. A thread the restart cut gets the words appended to its
 continue message instead (`Deploy.suffix` in `Carry.k`), so no thread gets two.
 
-Laws `deploy_*`; tests `test/deploy_test.bend`, `bun test/tools/deploy_e2e.ts`.
+Laws `deploy_*`, `tool_*`; tests `test/deploy_test.bend`, `bun test/tools/deploy_e2e.ts`.

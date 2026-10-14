@@ -394,7 +394,7 @@ def Plane.sort(rs: List<&2, PRow>) -> List<&2, PRow>:
 
 def Plane.deploy.k(+line: String, +st: M.State) -> List<&2, PRow>:
   Bool.pick(List<&2, PRow>, String.is_empty(line), Nil{},
-    [PRow{"deploy", "deploy", "deploy-cancel", "deploy", "Restart pending", DP.Deploy.blocking.line(DP.Deploy.count(st), DP.Deploy.locked(line)) ++ " · Cancel", "", "queued", DP.Deploy.since(line), False{}}])
+    [PRow{"deploy", "deploy", "deploy-cancel", "deploy", "Restart pending", DP.Deploy.blocking.line(DP.Deploy.count(line), DP.Deploy.locked(line)) ++ " · Cancel", "", "queued", DP.Deploy.since(line), False{}}])
 
 # a restart waiting for a safe point (core/deploy.bend): one row at the top
 # of what runs; a click on it cancels the deploy

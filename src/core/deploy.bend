@@ -22,10 +22,15 @@ def Deploy.slow() -> Nat:
 # the line: who asked (a thread id, "" for the person or a script), the
 # note, the staged package ("" when the files are in place), the version
 # before, when asked, whether the requester was told it is slow, whether
-# the build lock was held at the last look, and (done) the threads cut
-def Deploy.line(+by: String, +note: String, +stage: String, +from: String, +since: Nat, noted: Bool, locked: Bool, +cut: String) -> String:
+# the build lock was held at the last look, (done) the threads cut, and the
+# tool calls in flight at the last look (one thread id per call, comma-joined;
+# the hub's in-memory list, Open.* below)
+def Deploy.line.o(+by: String, +note: String, +stage: String, +from: String, +since: Nat, noted: Bool, locked: Bool, +cut: String, +open: String) -> String:
   J.Json.show(J.Json.obj([J.KV{"by", J.Str{by}}, J.KV{"note", J.Str{note}}, J.KV{"stage", J.Str{stage}}, J.KV{"from", J.Str{from}},
-    J.KV{"since", J.Str{Nat.show(since)}}, J.KV{"noted", J.Flag{noted}}, J.KV{"locked", J.Flag{locked}}, J.KV{"cut", J.Str{cut}}]))
+    J.KV{"since", J.Str{Nat.show(since)}}, J.KV{"noted", J.Flag{noted}}, J.KV{"locked", J.Flag{locked}}, J.KV{"cut", J.Str{cut}}, J.KV{"open", J.Str{open}}]))
+
+def Deploy.line(+by: String, +note: String, +stage: String, +from: String, +since: Nat, noted: Bool, locked: Bool, +cut: String) -> String:
+  Deploy.line.o(by, note, stage, from, since, noted, locked, cut, "")
 
 def Deploy.obj(+line: String) -> J.Json:
   Maybe.default(&2, J.Json, J.Json.parse(line), J.Null{})
@@ -63,6 +68,9 @@ def Deploy.locked(+line: String) -> Bool:
 def Deploy.cut(+line: String) -> String:
   J.Json.get_str(Deploy.obj(line), "cut", "")
 
+def Deploy.open(+line: String) -> String:
+  J.Json.get_str(Deploy.obj(line), "open", "")
+
 # whether a thread id is in a comma-joined list
 def Deploy.has(ids: List<&2, String>, +id: String) -> Bool:
   match ids:
@@ -76,17 +84,79 @@ def Deploy.in(+line: String, +id: String) -> Bool:
 
 # Tool calls in flight
 # --------------------
-# The model does not log a tool call's end, but a running thread whose
-# newest entry is the Act of a tool call (past the call, the agent's next
-# words or call come after it) is inside one. The requester's own
-# deploy_* call does not count. Per thread, never a walk of all entries.
+# The hub knows when a tool call starts and ends (hub.bend's ToolOpen and
+# ToolShut, ToolsGone at a turn's end) and keeps the open ones in memory,
+# never in the log: a list of "thread<TAB>call" entries (Open.*). A thread
+# between two calls has none open, so a deploy goes then, however long its
+# turn. The requester's own deploy_* call is never opened (Tools.opens).
 
-def Deploy.tool(es: List<&2, M.Entry>) -> Bool:
-  match es:
-    case M.Act{_, _, +tone, +kind, _, _} <> _:
-      Bool.and(String.eq(tone, "tool"), Bool.not(String.contains(kind, "deploy_")))
-    case _:
+def Open.key(+th: String, +call: String) -> String:
+  th ++ "\t" ++ call
+
+def Open.has(xs: List<&2, String>, +key: String) -> Bool:
+  match xs:
+    case Nil{}:
       False{}
+    case +x <> t:
+      Bool.or(String.eq(x, key), Open.has(t, key))
+
+def Open.cons(has: Bool, +key: String, xs: List<&2, String>) -> List<&2, String>:
+  match has:
+    case True{}:
+      xs
+    case False{}:
+      key <> xs
+
+def Open.add.k(has: Bool, xs: List<&2, String>, +key: String) -> List<&2, String>:
+  Open.cons(has, key, xs)
+
+# a call opens (once: opening it again changes nothing)
+def Open.add(+xs: List<&2, String>, +th: String, +call: String) -> List<&2, String>:
+  Open.add.k(Open.has(xs, Open.key(th, call)), xs, Open.key(th, call))
+
+def Open.keep(drop: Bool, +x: String, rest: List<&2, String>) -> List<&2, String>:
+  match drop:
+    case True{}:
+      rest
+    case False{}:
+      x <> rest
+
+# a call ends
+def Open.shut(xs: List<&2, String>, +th: String, +call: String) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      Open.keep(String.eq(x, Open.key(th, call)), x, Open.shut(t, th, call))
+
+# every call of a thread ends (its turn ended, its agent went)
+def Open.gone(xs: List<&2, String>, +th: String) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      Open.keep(String.starts_with(x, th ++ "\t"), x, Open.gone(t, th))
+
+def Open.count(xs: List<&2, String>) -> Nat:
+  List.length(&2, String, xs)
+
+def Open.threads.go(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      Maybe.default(&2, String, List.head(&2, String, String.split(x, '\t')), "") <> Open.threads.go(t)
+
+# the threads of the open calls, one id per call, comma-joined
+def Open.threads(xs: List<&2, String>) -> String:
+  String.join(Open.threads.go(xs), ",")
+
+def Deploy.count.k(+open: String) -> Nat:
+  Bool.pick(Nat, String.is_empty(open), 0n, List.length(&2, String, String.split(open, ',')))
+
+# the calls the line recorded at the last look
+def Deploy.count(+line: String) -> Nat:
+  Deploy.count.k(Deploy.open(line))
 
 def Deploy.mark(go: Bool, +id: String, rest: List<&2, String>) -> List<&2, String>:
   match go:
@@ -95,30 +165,19 @@ def Deploy.mark(go: Bool, +id: String, rest: List<&2, String>) -> List<&2, Strin
     case False{}:
       rest
 
-# the live threads running a turn (tools: only those inside a tool call)
-def Deploy.ids(+tools: Bool, ts: List<&2, M.Thread>, +s: M.State) -> List<&2, String>:
+# the live threads running a turn
+def Deploy.ids(ts: List<&2, M.Thread>, +s: M.State) -> List<&2, String>:
   match ts:
     case Nil{}:
       Nil{}
     case M.Thread{+id, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de} <> t:
-      Deploy.mark(Bool.and(Bool.not(Bool.or(ar, de)), Bool.and(M.State.running.k(M.State.thread.get(s, id)),
-        Bool.or(Bool.not(tools), Deploy.tool(M.State.mine(s, id))))), id, Deploy.ids(tools, t, s))
-
-def Deploy.threads(+tools: Bool, +s: M.State) -> List<&2, String>:
-  match s:
-    case M.State{_, +ts, _, _, _, _, _, _, _, _, _}:
-      Deploy.ids(tools, Map.values(&2, M.Thread, ts), s)
-
-# the threads inside a tool call
-def Deploy.inflight(+s: M.State) -> List<&2, String>:
-  Deploy.threads(True{}, s)
-
-def Deploy.count(+s: M.State) -> Nat:
-  List.length(&2, String, Deploy.inflight(s))
+      Deploy.mark(Bool.and(Bool.not(Bool.or(ar, de)), M.State.running.k(M.State.thread.get(s, id))), id, Deploy.ids(t, s))
 
 # the threads a restart now would cut
 def Deploy.running(+s: M.State) -> String:
-  String.join(Deploy.threads(False{}, s), ",")
+  match s:
+    case M.State{_, +ts, _, _, _, _, _, _, _, _, _}:
+      String.join(Deploy.ids(Map.values(&2, M.Thread, ts), s), ",")
 
 # Words
 # -----
@@ -134,12 +193,12 @@ def Deploy.blocking(+n: Nat, +locked: Bool) -> String:
 def Deploy.blocking.line(+n: Nat, +locked: Bool) -> String:
   Deploy.blocking(n, locked)
 
-def Deploy.row.k(+line: String, +s: M.State) -> String:
-  Bool.pick(String, String.is_empty(line), "", "Restart pending · " ++ Deploy.blocking.line(Deploy.count(s), Deploy.locked(line)))
+def Deploy.row.k(+line: String) -> String:
+  Bool.pick(String, String.is_empty(line), "", "Restart pending · " ++ Deploy.blocking.line(Deploy.count(line), Deploy.locked(line)))
 
 # the plane's and Settings' line while a deploy waits ("" when none does)
 def Deploy.row(+s: M.State) -> String:
-  Deploy.row.k(Deploy.wait(s), s)
+  Deploy.row.k(Deploy.wait(s))
 
 # who asked, for a note: " by <thread> (note)" or ""
 def Deploy.who(+by: String, +note: String) -> String:
@@ -162,14 +221,14 @@ def Deploy.suffix(+s: M.State, +to: String) -> String:
   Deploy.suffix.k(Deploy.done(s), to)
 
 # the line again with the noted and locked flags set
-def Deploy.with(+line: String, noted: Bool, locked: Bool) -> String:
-  Deploy.line(Deploy.by(line), Deploy.note(line), Deploy.stage(line), Deploy.from(line), Deploy.since(line), noted, locked, Deploy.cut(line))
+def Deploy.with(+line: String, noted: Bool, locked: Bool, +open: String) -> String:
+  Deploy.line.o(Deploy.by(line), Deploy.note(line), Deploy.stage(line), Deploy.from(line), Deploy.since(line), noted, locked, Deploy.cut(line), open)
 
-def Deploy.status.k(+line: String, +s: M.State) -> J.Json:
+def Deploy.status.k(+line: String) -> J.Json:
   J.Json.obj([J.KV{"waiting", J.Flag{Bool.not(String.is_empty(line))}}, J.KV{"by", J.Str{Deploy.by(line)}}, J.KV{"note", J.Str{Deploy.note(line)}},
-    J.KV{"since", J.Str{Nat.show(Deploy.since(line))}}, J.KV{"inflight", J.Num{Nat.show(Deploy.count(s))}},
-    J.KV{"threads", J.Str{String.join(Deploy.inflight(s), ",")}}, J.KV{"buildLock", J.Flag{Deploy.locked(line)}}, J.KV{"text", J.Str{Deploy.row.k(line, s)}}])
+    J.KV{"since", J.Str{Nat.show(Deploy.since(line))}}, J.KV{"inflight", J.Num{Nat.show(Deploy.count(line))}},
+    J.KV{"threads", J.Str{Deploy.open(line)}}, J.KV{"buildLock", J.Flag{Deploy.locked(line)}}, J.KV{"text", J.Str{Deploy.row.k(line)}}])
 
 # what deploy.status and the deploy_status tool answer
 def Deploy.status(+s: M.State) -> J.Json:
-  Deploy.status.k(Deploy.wait(s), s)
+  Deploy.status.k(Deploy.wait(s))
