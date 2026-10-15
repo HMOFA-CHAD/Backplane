@@ -74,16 +74,47 @@ def View.rows(ps: List<&2, M.Project>, +ts: List<&2, M.Thread>) -> List<&2, PRow
 def View.note(+badge: String, +other: String) -> D.Node:
   Bool.pick(D.Node, String.is_empty(badge), D.Dom.span("ago", other), D.Dom.span("ago agents", badge))
 
+# A piece of the page left for the host to make: a "bp-memo" element keyed
+# like the node it stands for, its attributes all it is made from ("fn"
+# first, saying how), its one child a text. host.js makes it with
+# app.bend's make (View.make) and keeps what it made while the element stays
+# the same, attributes and text, so a piece is made once, not every frame
+# (a message's markdown, links and images were most of one), and patch
+# skips it whole. View.expand makes them all in Bend, keeping nothing (the
+# tests).
+def View.memo(+key: String, as: List<&2, D.Attr>, +text: String) -> D.Node:
+  D.El{"bp-memo", key, as, [D.Txt{text}]}
+
+def View.attr(as: List<&2, D.Attr>, +name: String) -> String:
+  match as:
+    case Nil{}:
+      ""
+    case D.At{+n, +v} <> t:
+      Bool.pick(String, String.eq(n, name), v, View.attr(t, name))
+    case _ <> t:
+      View.attr(t, name)
+
+def View.txt(ns: List<&2, D.Node>) -> String:
+  match ns:
+    case D.Txt{+x} <> _:
+      x
+    case _:
+      ""
+
 def View.row.k(+id: String, +title: String, +ago: String, +badge: String, +dot: String, +sel: String, +movable: Bool) -> D.Node:
   D.El{"div", id, [D.At{"class", Bool.pick(String, String.eq(id, sel), "thread on", "thread")}, D.At{"data-value", id}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
     D.Dom.cat([D.Dom.span("dot " ++ dot, ""), D.Dom.span("title", title)],
       D.Dom.cat(Bool.pick(List<&2, D.Node>, movable, [D.El{"span", "", [D.At{"class", "moves"}], [D.Dom.button("move", "move", id ++ "|up", "Move up", "↑"), D.Dom.button("move", "move", id ++ "|down", "Move down", "↓")]}], Nil{}),
         [View.note(badge, ago)]))}
 
+# a sidebar row is made by the host from these alone (View.make)
+def View.row.m(+id: String, +title: String, +ago: String, +badge: String, +dot: String, +sel: String, +movable: Bool) -> D.Node:
+  View.memo(id, [D.At{"fn", "row"}, D.At{"ago", ago}, D.At{"badge", badge}, D.At{"dot", dot}, D.At{"on", Bool.pick(String, String.eq(id, sel), "1", "")}, D.At{"mov", Bool.pick(String, movable, "1", "")}], title)
+
 def View.row(+t: M.Thread, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> D.Node:
   match t:
     case M.Thread{+id, _, +title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      View.row.k(id, U.Label.title(st, id, title), Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), SB.Subs.badge(SB.Subs.count.ix(ix, st, id)), M.Phase.name(U.Side.phase.ix(ix, st, t)), sel, movable)
+      View.row.m(id, U.Label.title(st, id, title), Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), SB.Subs.badge(SB.Subs.count.ix(ix, st, id)), M.Phase.name(U.Side.phase.ix(ix, st, t)), sel, movable)
 
 def View.rows_in(ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> List<&2, D.Node>:
   match ts:
@@ -265,8 +296,8 @@ def View.list.k(active: Bool, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st:
       View.groups(U.Side.groups(U.Side.shown.ix(st, ix, now, q), now), q, open, ix, st, sel, now, look, rm)
 
 # (what every row asks of the whole state is gathered once: core's Side.ix)
-def View.list(active: Bool, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
-  View.list.k(active, q, open, U.Side.ix(st), st, sel, now, look, rm)
+def View.list(active: Bool, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+  View.list.k(active, q, open, ix, st, sel, now, look, rm)
 
 # the search, always at the top of the list
 def View.find(+active: Bool, +q: String) -> List<&2, D.Node>:
@@ -322,24 +353,29 @@ def View.machines(many: Bool, +open: Bool, +rs: List<&2, U.MRow>) -> List<&2, D.
     case False{}:
       Nil{}
 
-def View.sidebar.k(+ms: List<&2, U.MRow>, +st: M.State, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, mi: List<&2, U.MItem>, bots: List<&2, D.Node>, uber: List<&2, D.Node>) -> D.Node:
+def View.sidebar.k(+ms: List<&2, U.MRow>, +ix: U.SIx, +st: M.State, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, mi: List<&2, U.MItem>, bots: List<&2, D.Node>, uber: List<&2, D.Node>) -> D.Node:
   D.El{"aside", "sidebar", [D.At{"class", "sidebar"}],
         D.Dom.cat([D.El{"div", "", [D.At{"class", "brand"}], [
             D.Dom.span(Bool.pick(String, on, "conn on", "conn"), ""),
             D.Dom.span("name", "Backplane"), D.Dom.span("ver", v),
             WI.WIcon.button("icon", "proj-open", "", "Add project", "plus", 16, "")]}],
           D.Dom.cat(uber, D.Dom.cat(View.add(adding), D.Dom.cat(View.find(String.eq(U.Side.view(st), "active"), q),
-            D.Dom.cat(View.list(String.eq(U.Side.view(st), "active"), q, open, st, sel, now, look, rm), D.Dom.cat(bots, D.Dom.cat(View.rmenu(mi),
+            D.Dom.cat(View.list(String.eq(U.Side.view(st), "active"), q, open, ix, st, sel, now, look, rm), D.Dom.cat(bots, D.Dom.cat(View.rmenu(mi),
             [D.El{"div", "", [D.At{"class", "foot"}], WI.WIcon.button("settings-link", "flag", "settings", "Settings", "settings", 16, "Settings")
               <> View.machines(Nat.is_gt(List.length(&2, U.MRow, ms), 1n), U.Flag.get(open, "machines"), ms)}])))))))}
 
-def View.sidebar.w(bots: List<&2, D.Node>, uber: List<&2, D.Node>, ms: List<&2, U.MRow>, mi: List<&2, U.MItem>, u: U.Ui) -> D.Node:
+def View.sidebar.w(bots: List<&2, D.Node>, uber: List<&2, D.Node>, ms: List<&2, U.MRow>, mi: List<&2, U.MItem>, +ix: U.SIx, u: U.Ui) -> D.Node:
   match u:
     case U.Ui{+st, +sel, +d, _, +open, +on, +now, +adding, _, +v, _, _, _, _, _, _, _}:
-      View.sidebar.k(ms, st, sel, open, on, now, adding, v, U.Str.get(d, "@look"), U.Str.get(d, "@rm"), U.Find.q(open, d), mi, bots, uber)
+      View.sidebar.k(ms, ix, st, sel, open, on, now, adding, v, U.Str.get(d, "@look"), U.Str.get(d, "@rm"), U.Find.q(open, d), mi, bots, uber)
+
+# the sidebar's index (Side.ix: every thread and ask of the state) is made
+# once a frame, for the list and the uberbot's counts both
+def View.sidebar.x(bots: List<&2, D.Node>, +u: U.Ui, +ix: U.SIx) -> D.Node:
+  View.sidebar.w(bots, WB.WB.uber(u, ix), U.Machines.rows(u), U.Menu.items(u, True{}), ix, u)
 
 def View.sidebar.u(bots: List<&2, D.Node>, +u: U.Ui) -> D.Node:
-  View.sidebar.w(bots, WB.WB.uber(u), U.Machines.rows(u), U.Menu.items(u, True{}), u)
+  View.sidebar.x(bots, u, U.Side.ix(U.Ui.state(u)))
 
 def View.sidebar(+u: U.Ui) -> D.Node:
   View.sidebar.u(WB.WB.side(u), u)
@@ -386,20 +422,42 @@ def View.mine(es: List<&2, M.Entry>, +th: String, acc: List<&2, M.Entry>) -> Lis
     case +e <> t:
       View.mine(t, th, View.mine.k(Bool.or(String.eq(View.entry_thread(e), th), String.eq(M.Link.from(View.entry_id(e)), th)), e, acc))
 
-def View.phase.k(idle: Bool, +label: String, +name: String) -> List<&2, D.Node>:
+def View.phase.k(idle: Bool, +label: String, +name: String, +key: String) -> List<&2, D.Node>:
   match idle:
     case True{}:
       Nil{}
     case False{}:
-      [D.El{"div", "live", [D.At{"class", "phase " ++ name}], [D.El{"span", "", [D.At{"class", "dot " ++ name}], Nil{}}, D.Txt{label}]}]
+      [D.El{"div", key, [D.At{"class", "phase " ++ name}], [D.El{"span", "", [D.At{"class", "dot " ++ name}], Nil{}}, D.Txt{label}]}]
 
-# the reply streaming in, else the thread's phase
-def View.live.k(empty: Bool, +ph: M.Phase, text: String) -> List<&2, D.Node>:
+# the reply streaming in (made by the host from its text, View.make)
+def View.live.n(+key: String, +text: String) -> D.Node:
+  D.El{"div", key, [D.At{"class", "msg assistant live"}], [D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}]}
+
+# the reply streaming in, else the thread's phase (keyed "live:<thread>":
+# a delta redraws this row alone, app.bend's live)
+def View.live.k(empty: Bool, +ph: M.Phase, text: String, +key: String) -> List<&2, D.Node>:
   match empty:
     case False{}:
-      [D.El{"div", "live", [D.At{"class", "msg assistant live"}], [D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}]}]
+      [View.memo(key, [D.At{"fn", "live"}], text)]
     case True{}:
-      View.phase.k(String.is_empty(M.Phase.label(ph)), M.Phase.label(ph), M.Phase.name(ph))
+      View.phase.k(String.is_empty(M.Phase.label(ph)), M.Phase.label(ph), M.Phase.name(ph), key)
+
+def View.live.of(+st: M.State, +live: Map<&2, String>, +id: String) -> List<&2, D.Node>:
+  View.live.k(String.is_empty(U.Str.get(live, id)), U.Side.phase(st, U.Ui.thread(st, id)), U.Str.get(live, id), "live:" ++ id)
+
+def View.one(ns: List<&2, D.Node>) -> D.Node:
+  match ns:
+    case n <> _:
+      n
+    case Nil{}:
+      D.Txt{""}
+
+# the selected thread's live row alone (app.bend's live: host.js redraws
+# it in place for a delta)
+def View.live.u(u: U.Ui) -> D.Node:
+  match u:
+    case U.Ui{+st, +sel, _, +live, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      View.one(View.live.of(st, live, sel))
 
 def View.running(t: M.TurnState) -> Bool:
   match t:
@@ -1107,13 +1165,28 @@ def View.emb(+ec: U.Ec, +st: M.State, +e: M.Entry, +th: String) -> D.Node:
   View.emb.ev(U.Ec.view(ec, st, e), ec, th)
 
 # a reminder: a bell, Reminder, the text and when, in the person's zone
+# an act's two spans: a review comment's from its JSON (core/review.bend),
+# parsed only when it is one (Review.label/say pick after parsing, and every
+# tool call is an act)
+def View.act.spans(review: Bool, +tone: String, +kind: String, +summary: String) -> List<&2, D.Node>:
+  match review:
+    case True{}:
+      [D.Dom.span("kind", RVW.Review.label(tone, kind, summary)), D.Dom.span("summary", RVW.Review.say(tone, kind, summary))]
+    case False{}:
+      [D.Dom.span("kind", kind), D.Dom.span("summary", summary)]
+
+# an act (a tool call, an error...): made by the host from these alone
+# (View.make)
+def View.act.n(+id: String, +tone: String, +kind: String, +summary: String) -> D.Node:
+  D.El{"div", id, [D.At{"class", "act " ++ tone}, D.At{"data-id", id}], View.act.spans(String.eq(tone, RVW.Review.tone()), tone, kind, summary)}
+
 def View.act.g(rem: Bool, +id: String, +tone: String, +kind: String, +summary: String, +at: Nat, +st: M.State) -> D.Node:
   match rem:
     case True{}:
       D.El{"div", id, [D.At{"class", "act remind entry-remind"}, D.At{"data-id", id}],
         [WI.WIcon.svg("bell", 14), D.Dom.span("kind", "Reminder"), D.Dom.span("summary", summary), D.Dom.span("when", TZ.Tz.show.nz(SCH.Sched.person(st, 0n, True{}), at))]}
     case False{}:
-      D.El{"div", id, [D.At{"class", "act " ++ tone}, D.At{"data-id", id}], [D.Dom.span("kind", RVW.Review.label(tone, kind, summary)), D.Dom.span("summary", RVW.Review.say(tone, kind, summary))]}
+      View.memo(id, [D.At{"fn", "act"}, D.At{"tone", tone}, D.At{"kind", kind}], summary)
 
 def View.act.t(term: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
   match term e:
@@ -1149,12 +1222,70 @@ def View.act(step: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
     case _ M.Msg{+id, _, _, text, _}:
       D.El{"div", id, [D.At{"class", "act"}, D.At{"data-id", id}], [D.Dom.span("summary", text)]}
 
+# A message: a person's ("u") or anyone else's, made from its id, text and
+# stamp alone
+def View.msg.k(user: Bool, +id: String, +text: String, +stamp: String) -> D.Node:
+  match user:
+    case True{}:
+      D.El{"div", id, [D.At{"class", "msg user"}, D.At{"data-id", id}], D.Dom.cat(View.user_body(text), [D.Dom.span("stamp", stamp), D.Dom.copy(AT.Att.body(text))])}
+    case False{}:
+      D.El{"div", id, [D.At{"class", "msg assistant"}, D.At{"data-id", id}], D.Dom.cat([D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}], D.Dom.cat(View.images(IM.Img.paths(text)), [D.Dom.span("stamp", stamp), D.Dom.copy(text)]))}
+
+def View.msg(+id: String, +who: String, +text: String, +stamp: String) -> D.Node:
+  View.msg.k(String.eq(who, "u"), id, text, stamp)
+
+def View.make.r(row: Bool, +k: String, +as: List<&2, D.Attr>, +text: String) -> D.Node:
+  match row:
+    case True{}:
+      View.row.k(k, text, View.attr(as, "ago"), View.attr(as, "badge"), View.attr(as, "dot"), Bool.pick(String, String.eq(View.attr(as, "on"), "1"), k, ""), String.eq(View.attr(as, "mov"), "1"))
+    case False{}:
+      View.act.n(k, View.attr(as, "tone"), View.attr(as, "kind"), text)
+
+def View.make.l(live: Bool, +fn: String, +k: String, +as: List<&2, D.Attr>, +text: String) -> D.Node:
+  match live:
+    case True{}:
+      View.live.n(k, text)
+    case False{}:
+      View.make.r(String.eq(fn, "row"), k, as, text)
+
+def View.make.f(msg: Bool, +fn: String, +k: String, +as: List<&2, D.Attr>, +text: String) -> D.Node:
+  match msg:
+    case True{}:
+      View.msg(k, View.attr(as, "who"), text, View.attr(as, "stamp"))
+    case False{}:
+      View.make.l(String.eq(fn, "live"), fn, k, as, text)
+
+# the node a bp-memo element stands for
+def View.make(n: D.Node) -> D.Node:
+  match n:
+    case D.El{_, +k, +as, +ks}:
+      View.make.f(String.eq(View.attr(as, "fn"), "msg"), View.attr(as, "fn"), k, as, View.txt(ks))
+    case D.Txt{t}:
+      D.Txt{t}
+
+def View.expand.one(memo: Bool, n: D.Node) -> D.Node:
+  match memo:
+    case True{}:
+      View.make(n)
+    case False{}:
+      n
+
+# the nodes with every bp-memo made
+def View.expand(ns: List<&2, D.Node>) -> List<&2, D.Node>:
+  match ns:
+    case Nil{}:
+      Nil{}
+    case D.El{+t, +k, +as, ks} <> r:
+      View.expand.one(String.eq(t, "bp-memo"), D.El{t, k, as, View.expand(ks)}) <> View.expand(r)
+    case +n <> r:
+      n <> View.expand(r)
+
 def View.entry.s(e: M.Entry, +st: M.State, +ec: U.Ec, +stamp: String) -> D.Node:
   match e:
     case M.Msg{+id, _, M.User{}, +text, _}:
-      D.El{"div", id, [D.At{"class", "msg user"}, D.At{"data-id", id}], D.Dom.cat(View.user_body(text), [D.Dom.span("stamp", stamp), D.Dom.copy(AT.Att.body(text))])}
+      View.memo(id, [D.At{"fn", "msg"}, D.At{"who", "u"}, D.At{"stamp", stamp}], text)
     case M.Msg{+id, _, _, +text, _}:
-      D.El{"div", id, [D.At{"class", "msg assistant"}, D.At{"data-id", id}], D.Dom.cat([D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}], D.Dom.cat(View.images(IM.Img.paths(text)), [D.Dom.span("stamp", stamp), D.Dom.copy(text)]))}
+      View.memo(id, [D.At{"fn", "msg"}, D.At{"who", "a"}, D.At{"stamp", stamp}], text)
     case M.Act{+id, +th, +tone, +kind, +summary, +at}:
       View.act(String.eq(tone, HS.Step.tone()), M.Act{id, th, tone, kind, summary, at}, st, ec)
 
@@ -1411,7 +1542,7 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
           D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(nf, id, SB.Subs.rows(st, nf, id)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
           D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(tr, st, id, now)), D.Dom.cat(View.sending(pend),
-            View.live.k(String.is_empty(U.Str.get(live, id)), U.Side.phase(st, U.Ui.thread(st, id)), U.Str.get(live, id)))))))},
+            View.live.of(st, live, id))))))},
         View.asks.box(st, id, U.Str.get(drafts, sel), nf),
         View.todos(nf, id, U.Todos.shown(st, id, View.running(turn))),
         View.queued(M.Queue.items(st, id), View.running(turn)),

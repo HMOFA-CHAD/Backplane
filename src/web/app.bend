@@ -154,12 +154,34 @@ def wire_out(text: String) -> List<&2, U32>:
 def show(j: J.Json) -> String:
   J.Json.show(j)
 
-# whether a message can change the page (another thread's streamed text
-# cannot: U.Ui.shows), and its kind ("log", "changes", "delta"...): the
-# host renders and keeps the log only when these say so
-def shows(+u: U.Ui, +o: J.Json) -> Bool:
-  U.Ui.shows(u, o)
+# what a message changes on the page: "" nothing (U.Ui.shows says no: a
+# heartbeat, another thread's streamed text; or a delta_end, which the Ui
+# does not fold), "live" only the shown thread's streaming row (a delta:
+# U.Ui.delta adds to that thread's live text, and only that row draws it,
+# view.bend's View.live.of), else "page"
+def part.k(shows: Bool, +kind: String) -> String:
+  match shows:
+    case False{}:
+      ""
+    case True{}:
+      Bool.pick(String, String.eq(kind, "delta"), "live", Bool.pick(String, String.eq(kind, "delta_end"), "", "page"))
 
+def part(+u: U.Ui, +o: J.Json) -> String:
+  part.k(U.Ui.shows(u, o), J.Json.get_str(o, "t", ""))
+
+# the selected thread's live row as the page draws it, keyed
+# "live:<thread>": host.js patches the timeline's row with that key in place,
+# and draws the page when there is none
+def live(u: U.Ui) -> D.Node:
+  V.View.live.u(u)
+
+# the node a "bp-memo" element of the page stands for (view.bend's
+# View.memo): host.js keeps it while the element stays the same
+def make(n: D.Node) -> D.Node:
+  V.View.make(n)
+
+# a message's kind ("log", "changes", "delta"...): the host keeps only the
+# log and its changes
 def kind(+j: J.Json) -> String:
   J.Json.get_str(j, "t", "")
 

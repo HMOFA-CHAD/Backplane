@@ -701,16 +701,18 @@ def WB.uber.k(r: BI.BRow, +counts: String) -> D.Node:
       D.El{"div", "uber:" ++ id, [D.At{"class", Bool.pick(String, sel, "bot-row uber-row on", "bot-row uber-row")}, D.At{"title", id}, D.At{"data-value", id}, D.On{"click", "uber"}],
         [WC.WCat.img(look, mood, 28), WB.div("bot-text", [D.Dom.span("bot-name", name), D.Dom.span("uber-counts", Bool.pick(String, String.is_empty(counts), BI.Mood.note(mood), counts))])]}
 
-def WB.uber.m(m: Maybe<&2, BI.BRow>, +u: U.Ui) -> List<&2, D.Node>:
+# (the counts are Plane.tally.words with the sidebar's index, made once a
+# frame for both)
+def WB.uber.m(m: Maybe<&2, BI.BRow>, +u: U.Ui, +ix: U.SIx) -> List<&2, D.Node>:
   match m:
     case Some{r}:
-      [WB.uber.k(r, PL.Plane.tally.words(u, U.Side.now(u)))]
+      [WB.uber.k(r, PL.Plane.counts.t(PL.Plane.tally(u, ix, U.Side.rows.ix(U.Ui.state(u), ix, U.Side.now(u)))))]
     case None{}:
       Nil{}
 
 # no uberbot, no row
-def WB.uber(+u: U.Ui) -> List<&2, D.Node>:
-  WB.uber.m(BI.BU.uber(u), u)
+def WB.uber(+u: U.Ui, +ix: U.SIx) -> List<&2, D.Node>:
+  WB.uber.m(BI.BU.uber(u), u, ix)
 
 # the dot of a row: thread states and bot moods alike
 def WB.pdot(+s: String) -> String:
