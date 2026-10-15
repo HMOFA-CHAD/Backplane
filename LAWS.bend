@@ -8143,7 +8143,7 @@ law adopt_demo_kept:
   {AD.Adopt.kept(AD.Adopt.demo(True{})) == ["t1"] : List<&2, String>}
 
 law adopt_demo_stopped:
-  {AD.Adopt.stopped(AD.Adopt.demo(True{})) == [4343n, 6000n] : List<&2, Nat>}
+  {AD.Adopt.stopped(AD.Adopt.demo(True{})) == [43n, 60n] : List<&2, Nat>}
 
 law adopt_off_stops_all_live:
   {Bool.and(List.is_empty(&2, String, AD.Adopt.kept(AD.Adopt.demo(False{}))), Nat.is_eq(List.length(&2, Nat, AD.Adopt.stopped(AD.Adopt.demo(False{}))), 3n)) == True{} : Bool}
@@ -8154,7 +8154,7 @@ law adopt_one_per_thread:
 # another process under the same pid (start identity differs), or pid 0 or
 # 1, is never signalled nor adopted
 law adopt_mismatch_left:
-  {AD.Adopt.stopped(AD.Adopt.decide([AD.AEntry{"t", 77n, "b:1", 9n, True{}, "g", "k", CM.Cmds.new()}], ["b:2"], True{})) == [] : List<&2, Nat>}
+  {AD.Adopt.stopped(AD.Adopt.decide([AD.AEntry{"t", 7n, "b:1", 9n, True{}, "g", "k", CM.Cmds.new()}], ["b:2"], True{})) == [] : List<&2, Nat>}
 
 law adopt_low_pid_left:
   {Bool.and(List.is_empty(&2, Nat, AD.Adopt.stopped(AD.Adopt.decide([AD.AEntry{"t", 1n, "b:1", 9n, False{}, "g", "k", CM.Cmds.new()}, AD.AEntry{"u", 0n, "b:1", 9n, False{}, "g", "k", CM.Cmds.new()}], ["b:1", "b:1"], True{}))),

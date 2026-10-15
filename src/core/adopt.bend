@@ -204,10 +204,10 @@ def Adopt.dup(xs: List<&2, String>) -> Bool:
 # ----------------------
 
 def Adopt.demo.record() -> String:
-  "t1\t4242\tb:100\t9\nt1\t4343\tb:200\t10\nt2\t5000\tb:300\t11\nt3\t0\t\t12\nt4\t6000\tb:400\t13\n"
+  "t1\t42\tb:100\t9\nt1\t43\tb:200\t10\nt2\t50\tb:300\t11\nt3\t0\t\t12\nt4\t60\tb:400\t13\n"
 
 def Adopt.demo.handoff() -> String:
-  Adopt.hand.line("t1", 4242n, "g1", "k1", CM.Cmds.demo.kept()) ++ "\n" ++ Adopt.hand.line("t1", 4343n, "g2", "k2", CM.Cmds.new()) ++ "\n" ++ Adopt.hand.line("t2", 5000n, "g3", "k3", CM.Cmds.new()) ++ "\n"
+  Adopt.hand.line("t1", 42n, "g1", "k1", CM.Cmds.demo.kept()) ++ "\n" ++ Adopt.hand.line("t1", 43n, "g2", "k2", CM.Cmds.new()) ++ "\n" ++ Adopt.hand.line("t2", 50n, "g3", "k3", CM.Cmds.new()) ++ "\n"
 
 # t1 twice (both live), t2 now another process, t3 pid 0, t4 live but
 # not handed off (a crash restart)
