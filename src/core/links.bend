@@ -459,12 +459,53 @@ def Link.mid(+w: String, +lead: Nat, +trail: Nat) -> String:
 # is checked as a file first; its remaining id words use exact boundaries.
 # Image state crosses whitespace words, so alt text and targets stay text.
 def Link.idchar(+c: Char) -> Bool:
-  Bool.or(Bool.or(Char.is_alpha(c), Char.is_digit(c)), Bool.or(U32.is_eq(Link.code(c), 95), Bool.or(U32.is_eq(Link.code(c), 45), U32.is_eq(Link.code(c), 126))))
+  Bool.or(Bool.or(Char.is_alpha(c), Char.is_digit(c)), Bool.or(U32.is_eq(Link.code(c), 46), Bool.or(U32.is_eq(Link.code(c), 95), Bool.or(U32.is_eq(Link.code(c), 45), U32.is_eq(Link.code(c), 126)))))
 
-def Link.ids.end(m: Maybe<&2, R.Ref>, txt: String, +w: String, out: List<&2, Piece>, image: Nat, bang: Bool) -> Bw:
+def Link.ids.part(m: Maybe<&2, R.Ref>, txt: String, +w: String, out: List<&2, Piece>, image: Nat, bang: Bool) -> Bw:
   match m:
     case Some{r}: Bw{"", "", PRef{String.reverse(w), R.Ref.uri(r), True{}} <> Link.text(txt, out), image, bang}
     case None{}: Bw{String.append(w, txt), "", out, image, bang}
+
+def Link.ids.part.flush(st: Bw) -> Bw:
+  match st:
+    case Bw{txt, SNil{}, out, image, bang}: Bw{txt, "", out, image, bang}
+    case Bw{txt, +w, out, image, bang}: Link.ids.part(R.Ref.bare(String.reverse(w)), txt, w, out, image, bang)
+
+def Link.ids.dot.push(st: Bw) -> Bw:
+  match st:
+    case Bw{txt, w, out, image, bang}: Bw{SCon{'.', txt}, w, out, image, bang}
+
+def Link.ids.dot.step(dot: Bool, st: Bw, c: Char) -> Bw:
+  match dot st:
+    case True{} _: Link.ids.dot.push(Link.ids.part.flush(st))
+    case False{} Bw{txt, w, out, image, bang}: Bw{txt, SCon{c, w}, out, image, bang}
+
+def Link.ids.dot.go(s: String, st: Bw) -> Bw:
+  match s:
+    case SNil{}: Link.ids.part.flush(st)
+    case SCon{+c, t}: Link.ids.dot.go(t, Link.ids.dot.step(Char.is_eq(c, '.'), st, c))
+
+def Link.ids.retry(dot: Bool, txt: String, w: String, out: List<&2, Piece>, image: Nat, bang: Bool) -> Bw:
+  match dot:
+    case True{}: Link.ids.dot.go(String.reverse(w), Bw{txt, "", out, image, bang})
+    case False{}: Bw{String.append(w, txt), "", out, image, bang}
+
+def Link.ids.edge(m: Maybe<&2, R.Ref>, txt: String, +w: String, out: List<&2, Piece>, image: Nat, bang: Bool, +trail: Nat) -> Bw:
+  match m:
+    case Some{r}: Bw{String.take(w, trail), "", PRef{String.reverse(String.drop(w, trail)), R.Ref.uri(r), True{}} <> Link.text(txt, out), image, bang}
+    case None{}: Link.ids.retry(True{}, txt, w, out, image, bang)
+
+def Link.ids.miss(dot: Bool, txt: String, +w: String, out: List<&2, Piece>, image: Nat, bang: Bool) -> Bw:
+  match dot:
+    case True{}: Link.ids.edge(R.Ref.bare(String.reverse(String.drop(w, Link.tail(w, 0n, True{})))), txt, w, out, image, bang, Link.tail(w, 0n, True{}))
+    case False{}: Bw{String.append(w, txt), "", out, image, bang}
+
+# A dot can belong to a machine prefix. Try the complete candidate first,
+# then without sentence punctuation, before splitting internal dots.
+def Link.ids.end(m: Maybe<&2, R.Ref>, txt: String, +w: String, out: List<&2, Piece>, image: Nat, bang: Bool) -> Bw:
+  match m:
+    case Some{r}: Bw{"", "", PRef{String.reverse(w), R.Ref.uri(r), True{}} <> Link.text(txt, out), image, bang}
+    case None{}: Link.ids.miss(String.contains(w, "."), txt, w, out, image, bang)
 
 def Link.ids.test(muted: Bool, txt: String, +w: String, out: List<&2, Piece>, image: Nat, bang: Bool) -> Bw:
   match muted:

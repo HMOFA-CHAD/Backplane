@@ -82,3 +82,6 @@ def main() -> IO(Unit):
     C.Check.str("ref file segments", Show("/tmp/t1-2 src/t1-2.txt"), "</tmp/t1-2|/tmp/t1-2> <src/t1-2.txt|src/t1-2.txt>")
     C.Check.str("ref canonical pct", Show("backplane://thread/t%3a1"), "{backplane://thread/t%3a1|backplane://thread/t%3A1|0}")
     C.Check.str("ref direct Dom link", Web.shows([D.Dom.link("thread", "http://h/#/thread/t1-2")]), "<a class=ref href=backplane://thread/t1-2 data-ref=backplane://thread/t1-2 data-bare=0>thread</a>")
+    C.Check.str("ref dotted remote", Show("desk.local~t1-2,b3-4"), "{desk.local~t1-2|backplane://thread/desk.local~t1-2|1},{b3-4|backplane://bot/b3-4|1}")
+    C.Check.str("ref dot boundary", Show("t1-2.t3-4"), "{t1-2|backplane://thread/t1-2|1}.{t3-4|backplane://thread/t3-4|1}")
+    C.Check.str("ref dotted remote sentence", Show("desk.local~t1-2. Next"), "{desk.local~t1-2|backplane://thread/desk.local~t1-2|1}. Next")
