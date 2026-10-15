@@ -46,9 +46,10 @@ low=${BACKPLANE_LOW_MEM:-0}
 # desktop sessions). BUN_JSC_forceRAMSize tells it a smaller machine; it is
 # a sizing hint, not a cap. The app's emit, measured (2026-10-15, bend
 # 2.0.36, the same C byte for byte at each hint; peak RSS, wall):
-#   12 GiB: 12.1 GB, 196 s   8 GiB: 8.5 GB, 224 s
+#   12 GiB: 11.2 GB, 157 s   8 GiB: 8.8 GB, 186 s
 #   6 GiB: 7.3 GB, ~250 s    5 GiB: 7.2 GB, 225 s    4 GiB: 7.1 GB, 228 s
-# Below 8 GiB the peak barely moves: the live heap sets a ~7 GB floor
+# Below 8 GiB the peak barely moves, near 7 GB: a ~3 GB live heap plus
+# what bend's whole-program passes leave between collections
 # (bp-coord/build-memory). The emit and the compiles run one after the
 # other; one clang at a time peaks near 3 GB.
 [ "$low" = 1 ] && hint=4294967296 || hint=8589934592
