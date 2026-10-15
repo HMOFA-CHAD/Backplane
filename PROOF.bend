@@ -2,6 +2,7 @@ import Base
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/mail.bend as ML # mail 1
+import ./src/core/mailbody.bend as MB # mail 2a
 import ./src/core/stamp.bend as STP
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
@@ -10718,8 +10719,6 @@ def Laws.tok_add_one_turn():
 
 def Laws.tok_add_no_cost():
 # ---- mail 2a ----
-import ./src/core/mailbody.bend as MB
-import ./src/core/ref.bend as MBR
 
 def Laws.body_line_terminated(b):
   {==}

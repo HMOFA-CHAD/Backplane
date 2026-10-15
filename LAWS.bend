@@ -3,6 +3,7 @@ import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/usage.bend as UZ
 import ./src/core/mail.bend as ML # mail 1
+import ./src/core/mailbody.bend as MB # mail 2a
 import ./src/core/ref.bend as REF
 # ---- i18n cjk ----
 import ./src/core/cjk.bend as CJK
@@ -8958,8 +8959,6 @@ law ime_commit_event_id:
 
 # ---- end i18n ime ----
 # ---- mail 2a ----
-import ./src/core/mailbody.bend as MB
-import ./src/core/ref.bend as MBR
 
 # JSON escaping's no-interior-newline property is exercised on long,
 # adversarial strings in mailbody_test; this law fixes framing exactly.
@@ -8991,4 +8990,4 @@ law recover_missing_header:
 law body_path_encoded_segment:
   for +home: String
   for +conv: String
-  {MB.Body.path(home, conv) == home ++ "/mail/" ++ MBR.Ref.pct(conv) ++ ".jsonl" : String}
+  {MB.Body.path(home, conv) == home ++ "/mail/" ++ REF.Ref.pct(conv) ++ ".jsonl" : String}

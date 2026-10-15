@@ -242,7 +242,7 @@ def Scan.conv(s: Scan) -> String:
   match s:
     case Scan{c, _, _, _, _, _, _, _, _, _}: c
 
-def Scan.unique(s: Scan, +body: MB.Body, size: U32) -> Scan:
+def Scan.unique(s: Scan, +body: MB.Body, +size: U32) -> Scan:
   match s:
     case Scan{c, b, n, page, os, +at, stop, +rec, box, cs}:
       Scan.apply(rec, Scan{c, b, n, page, Map.set(&2, BodyOffset, os, ML.Mail.id(MB.Body.mail(body)), BodyOffset{at, size}), U32.add(at, size), stop, rec, box, cs}, body)

@@ -6,7 +6,7 @@ import ../src/core/model.bend as M
 import ../src/core/json.bend as J
 
 # Fixtures shared by the real filesystem tests. Delimiters are intentional.
-def fixture(id: String, conv: String, text: String, at: Nat) -> MB.Body:
+def fixture(id: String, conv: String, text: String, +at: Nat) -> MB.Body:
   MB.Body{ML.Conv{conv, "subject", "pair", ["bot:a", "thread:b"], "p", ["tag"], 0n, at, 1n}, ML.Mail{id, conv, "bot:a", "thread:b", "thread", "", "act", "header", 0n, at}, text}
 
 def encoded(b: Maybe<&2, MB.Body>) -> String:
