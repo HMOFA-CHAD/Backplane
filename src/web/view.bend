@@ -621,7 +621,7 @@ def View.subs.go(rs: List<&2, SB.SubRow>) -> List<&2, D.Node>:
 # head opens and shuts it; done, it folds to the head (subs.bend's panel)
 def View.subs.k(+busy: String, +open: Bool, +th: String, +rs: List<&2, SB.SubRow>) -> D.Node:
   D.El{"div", "subs", [D.At{"class", "subs" ++ Bool.pick(String, String.is_empty(busy), "", " busy") ++ Bool.pick(String, open, "", " shut")}],
-    WI.WIcon.after("subs-head", "fold", SB.Subs.panel.ask(open, th), Bool.pick(String, open, "Hide the subagents", "Show the subagents"),
+    WI.WIcon.after("subs-head", SB.Subs.panel.action(open), SB.Subs.panel.ask(open, th, rs), Bool.pick(String, open, "Hide the subagents", "Show the subagents"),
       "Subagents · " ++ SB.Subs.panel.word(rs), Bool.pick(String, open, "chevron-down", "chevron-right"), 14)
       <> View.subs.go(SB.Subs.panel.rows(open, rs))}
 
@@ -1540,7 +1540,7 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
         D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
         View.top(hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), [
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
-          D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(nf, id, SB.Subs.rows(st, nf, id)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
+          D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(nf, id, SB.Subs.rows(st, nf, id, now)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
           D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(tr, st, id, now)), D.Dom.cat(View.sending(pend),
             View.live.of(st, live, id))))))},
         View.asks.box(st, id, U.Str.get(drafts, sel), nf),

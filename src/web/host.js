@@ -230,6 +230,22 @@ for (let i = 0; i < localStorage.length; i += 1) {
   const k = localStorage.key(i);
   if (k && k.startsWith(DRAFT)) ui = App.restore(ui, k.slice(DRAFT.length), localStorage.getItem(k) ?? "");
 }
+// Per-thread panel choices belong to this browser, never to hub settings.
+const SUBS_CHOICE = "backplane-subs:";
+function restoreSubs() {
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(SUBS_CHOICE)) {
+        const thread = k.slice(SUBS_CHOICE.length);
+        const choice = localStorage.getItem(k) ?? "";
+        if (choice === "1") ui = App.act(ui, "subs-open", thread).ui;
+        else if (choice.startsWith("0")) ui = App.act(ui, "subs-shut", thread + "\t" + choice.slice(1)).ui;
+      }
+    }
+  } catch {}
+}
+restoreSubs();
 let socket = null;
 let queued = false;
 let scroll = false;
@@ -436,6 +452,13 @@ function dispatch(action, value, timer) {
   const r = App.act(ui, action, value);
   if (PERF) PERF.act.push([pnow() - t0, action]);
   ui = r.ui;
+  if (action === "subs-shut" || action === "subs-open") {
+    try {
+      const sep = value.indexOf("\t");
+      const thread = action === "subs-open" ? value : value.slice(0, sep);
+      localStorage.setItem(SUBS_CHOICE + thread, action === "subs-open" ? "1" : "0" + value.slice(sep + 1));
+    } catch {}
+  }
   const did = r.cmds && is(r.cmds, "Con");
   run(r.cmds);
   // a timer is not the person: only their input keeps this desk in use
@@ -1074,6 +1097,7 @@ const restored = opened.then(() => new Promise((done) => {
     r.onsuccess = () => {
       try {
         for (const buf of r.result ?? []) ui = App.recv(ui, Wire.cbor(new Uint8Array(buf), KEYS, WORDS)).ui;
+        restoreSubs();
         // a saved log is not this connection's: the hub's own log says when
         if ((r.result ?? []).length) ui = App.unsync(ui);
       } catch {}
@@ -1128,6 +1152,7 @@ function connect() {
     keep(t, j, bytes);
     const r = App.recv(ui, j);
     ui = r.ui;
+    if (t === "log" && Number(field(j, "since") ?? 0) === 0) restoreSubs();
     let acts = false;
     for (const _ of each(r.cmds)) {
       acts = true;

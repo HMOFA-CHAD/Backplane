@@ -2401,8 +2401,8 @@ def Pins.height(vs: List<&2, EM.EV>) -> U32:
 def Sa.color(+word: String) -> U32:
   Bool.pick(U32, String.eq(word, "running"), T.Th.accent(),
     Bool.pick(U32, Bool.or(String.eq(word, "held"), Bool.or(String.eq(word, "done"), String.eq(word, "reporting"))), T.Th.ok(),
-    Bool.pick(U32, Bool.or(Bool.or(String.eq(word, "waiting"), String.eq(word, "waiting on")), Bool.or(String.eq(word, "watching"), String.eq(word, "launching"))), T.Th.accent(),
-      Bool.pick(U32, String.eq(word, "queued"), T.Th.faint(),
+    Bool.pick(U32, Bool.or(Bool.or(Bool.or(String.eq(word, "waiting"), String.eq(word, "waiting on")), String.eq(word, "needs you")), Bool.or(String.eq(word, "watching"), String.eq(word, "launching"))), T.Th.accent(),
+      Bool.pick(U32, Bool.or(String.is_empty(word), String.eq(word, "queued")), T.Th.faint(),
         Bool.pick(U32, Bool.or(String.eq(word, "cancelled"), String.eq(word, "cancelling")), T.Th.warn(), T.Th.bad())))))
 
 def Sa.steps.n(+ss: List<&2, SB.SubStep>) -> U32:
@@ -2551,7 +2551,7 @@ def Lay.subs.k(some: Bool, +ty: Ty, +all: List<&2, SB.SubRow>, +rs: List<&2, SB.
         Out.ops(Ty.text(ty, 2n, "Subagents", D.Clip.all(), (x0 + 12 : U32), y, 32, Bool.pick(U32, on, T.Th.text(), T.Th.faint()))),
         Out.ops(Ty.text(ty, 2n, word, D.Clip.all(), (x1 - Ty.width(ty, 2n, word) - 36 : U32), y, 32, Bool.pick(U32, on, T.Th.accent(), T.Th.faint()))),
         Out.ops(Lay.icon(ty, Bool.pick(String, open, "chevron-down", "chevron-right"), D.Clip.all(), (x1 - 28 : U32), (y + 8 : U32), T.Th.faint())),
-        Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), 30, "fold", SB.Subs.panel.ask(open, th))]},
+        Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), 30, SB.Subs.panel.action(open), SB.Subs.panel.ask(open, th, all))]},
         Sa.rows(ty, rs, x0, x1, (y + 30 : U32))])
     case False{}:
       Out.none()
@@ -5670,7 +5670,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
       +cx0 = {(x0 + U32.shr((x1 - x0 - cw : U32)) : U32) : U32}
       +cx1 = {(cx0 + cw : U32) : U32}
-      +ts = SB.Subs.rows(st, pics, sel)
+      +ts = SB.Subs.rows(st, pics, sel, now)
       +sopen = SB.Subs.panel.open(pics, sel, ts)
       +soff = Pane.clamp(Pane.off(pics, "subs:" ++ sel), List.length(&2, SB.SubRow, SB.Subs.panel.rows(sopen, ts)))
       +svis = Subs.vis(ts, sopen, soff, h)

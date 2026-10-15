@@ -30,7 +30,7 @@ type SubRow is Data:
 # (model.bend's Bg.kind), what it was asked, how it ended ("" while it
 # runs), how many steps it took and its newest steps (oldest first)
 type SubAgg is Data:
-  SubAgg{call: String, kind: String, title: String, end: String, n: Nat, steps: List<&2, SubStep>}
+  SubAgg{call: String, kind: String, title: String, end: String, n: Nat, steps: List<&2, SubStep>, at: Nat}
 
 # how many log entries a frame reads, and steps a row shows
 def Subs.window() -> Nat:
@@ -38,10 +38,6 @@ def Subs.window() -> Nat:
 
 def Subs.shown() -> Nat:
   6n
-
-# finished subagents still listed (the newest)
-def Subs.done_kept() -> Nat:
-  3n
 
 # a step's first line, in one walk that stops at the first break (splitting
 # a subagent's 20 KB step recursed once per character and overflowed the
@@ -54,7 +50,7 @@ def Subs.line(+t: String) -> String:
 
 def Agg.call(a: SubAgg) -> String:
   match a:
-    case SubAgg{c, _, _, _, _, _}:
+    case SubAgg{c, _, _, _, _, _, _}:
       c
 
 # a step taken, kept while fewer than Subs.shown() are (the walk goes newest
@@ -62,66 +58,13 @@ def Agg.call(a: SubAgg) -> String:
 def Agg.step(+kind: String, +text: String, +n: Nat, +ss: List<&2, SubStep>) -> List<&2, SubStep>:
   Bool.pick(List<&2, SubStep>, Nat.is_lt(n, Subs.shown()), SubStep{kind, Subs.line(text)} <> ss, ss)
 
-# "start:<kind>" names its kind ("start" alone, none)
-def Agg.upd(i: Nat, a: SubAgg, +kind: String, +text: String) -> SubAgg:
-  match i a:
-    case 0n SubAgg{c, _, _, e, n, ss}:
-      SubAgg{c, String.drop(kind, 6n), text, e, n, ss}
-    case 1n SubAgg{c, k, ti, _, n, ss}:
-      SubAgg{c, k, ti, text, n, ss}
-    case _ SubAgg{c, k, ti, e, +n, ss}:
-      SubAgg{c, k, ti, e, 1n+n, Agg.step(kind, text, n, ss)}
-
 def Agg.kind(+kind: String) -> Nat:
   Bool.pick(Nat, String.starts_with(kind, "start"), 0n, Bool.pick(Nat, String.eq(kind, "end"), 1n, 2n))
-
-def Agg.upd.if(hit: Bool, a: SubAgg, +kind: String, +text: String) -> SubAgg:
-  match hit:
-    case True{}:
-      Agg.upd(Agg.kind(kind), a, kind, text)
-    case False{}:
-      a
-
-def Agg.fresh(done: Bool, +call: String, +kind: String, +text: String) -> List<&2, SubAgg>:
-  match done:
-    case True{}:
-      Nil{}
-    case False{}:
-      [Agg.upd(Agg.kind(kind), SubAgg{call, "", "", "", 0n, Nil{}}, kind, text)]
-
-# an entry of call's put to its subagent, or a new one last
-def Agg.put(as: List<&2, SubAgg>, +call: String, +kind: String, +text: String, +done: Bool) -> List<&2, SubAgg>:
-  match as:
-    case Nil{}:
-      Agg.fresh(done, call, kind, text)
-    case +a <> t:
-      +hit = Bool.and(Bool.not(done), String.eq(Agg.call(a), call))
-      Agg.upd.if(hit, a, kind, text) <> Agg.put(t, call, kind, text, Bool.or(done, hit))
-
-def Agg.entry(e: M.Entry, as: List<&2, SubAgg>) -> List<&2, SubAgg>:
-  match e:
-    case M.Act{_, _, +call, +kind, +text, _}:
-      Agg.put(as, call, kind, text, False{})
-    case M.Msg{_, _, _, _, _}:
-      as
-
-def Agg.walk(k: Nat, es: List<&2, M.Entry>, as: List<&2, SubAgg>) -> List<&2, SubAgg>:
-  match k es:
-    case 0n _:
-      as
-    case 1n+_ Nil{}:
-      as
-    case 1n+j e <> t:
-      Agg.walk(j, t, Agg.entry(e, as))
-
-# a thread's subagents from their log, the most recently busy first
-def Subs.aggs(+st: M.State, +th: String) -> List<&2, SubAgg>:
-  Agg.walk(Subs.window(), M.State.mine(st, M.Bg.log(th)), Nil{})
 
 def Agg.find(as: List<&2, SubAgg>, +call: String) -> SubAgg:
   match as:
     case Nil{}:
-      SubAgg{call, "", "", "", 0n, Nil{}}
+      SubAgg{call, "", "", "", 0n, Nil{}, 0n}
     case +a <> t:
       Bool.pick(SubAgg, String.eq(Agg.call(a), call), a, Agg.find(t, call))
 
@@ -129,7 +72,7 @@ def Agg.find(as: List<&2, SubAgg>, +call: String) -> SubAgg:
 # ----
 
 def Subs.fold(+call: String) -> String:
-  "sub:" ++ call
+  Bool.pick(String, String.starts_with(call, "subs.done:"), call, "sub:" ++ call)
 
 # whether a subagent's steps show: as the person left them, else while it
 # runs
@@ -150,6 +93,59 @@ def Subs.steps(open: Bool, ss: List<&2, SubStep>) -> List<&2, SubStep>:
 def Subs.or(+a: String, +b: String) -> String:
   Bool.pick(String, String.is_empty(a), b, a)
 
+# "start:<kind>" names its kind ("start" alone, none)
+def Agg.upd(i: Nat, a: SubAgg, +kind: String, +text: String, +at: Nat) -> SubAgg:
+  match i a:
+    case 0n SubAgg{c, _, _, e, n, ss, tm}:
+      SubAgg{c, String.drop(kind, 6n), Subs.line(text), e, n, ss, tm}
+    case 1n SubAgg{c, k, ti, +en, n, ss, +tm}:
+      SubAgg{c, k, ti, Subs.or(en, text), n, ss, Bool.pick(Nat, String.is_empty(en), at, tm)}
+    case _ SubAgg{c, k, ti, e, +n, ss, tm}:
+      SubAgg{c, k, ti, e, 1n+n, Agg.step(kind, text, n, ss), tm}
+
+def Agg.upd.if(hit: Bool, a: SubAgg, +kind: String, +text: String, +at: Nat) -> SubAgg:
+  match hit:
+    case True{}:
+      Agg.upd(Agg.kind(kind), a, kind, text, at)
+    case False{}:
+      a
+
+def Agg.fresh(done: Bool, +call: String, +kind: String, +text: String, +at: Nat) -> List<&2, SubAgg>:
+  match done:
+    case True{}:
+      Nil{}
+    case False{}:
+      [Agg.upd(Agg.kind(kind), SubAgg{call, "", "", "", 0n, Nil{}, 0n}, kind, text, at)]
+
+# an entry of call's put to its subagent, or a new one last
+def Agg.put(as: List<&2, SubAgg>, +call: String, +kind: String, +text: String, +at: Nat, +done: Bool) -> List<&2, SubAgg>:
+  match as:
+    case Nil{}:
+      Agg.fresh(done, call, kind, text, at)
+    case +a <> t:
+      +hit = Bool.and(Bool.not(done), String.eq(Agg.call(a), call))
+      Agg.upd.if(hit, a, kind, text, at) <> Agg.put(t, call, kind, text, at, Bool.or(done, hit))
+
+def Agg.entry(e: M.Entry, as: List<&2, SubAgg>) -> List<&2, SubAgg>:
+  match e:
+    case M.Act{_, _, +call, +kind, +text, at}:
+      Agg.put(as, call, kind, text, at, False{})
+    case M.Msg{_, _, _, _, _}:
+      as
+
+def Agg.walk(k: Nat, es: List<&2, M.Entry>, as: List<&2, SubAgg>) -> List<&2, SubAgg>:
+  match k es:
+    case 0n _:
+      as
+    case 1n+_ Nil{}:
+      as
+    case 1n+j e <> t:
+      Agg.walk(j, t, Agg.entry(e, as))
+
+# a thread's subagents from their log, the most recently busy first
+def Subs.aggs(+st: M.State, +th: String) -> List<&2, SubAgg>:
+  Agg.walk(Subs.window(), M.State.mine(st, M.Bg.log(th)), Nil{})
+
 # the word for how a subagent ended
 def Subs.ended(+status: String) -> String:
   Bool.pick(String, String.eq(status, "completed"), "done",
@@ -160,12 +156,48 @@ def Subs.ended(+status: String) -> String:
 def Subs.named(+kind: String, +title: String) -> String:
   Bool.pick(String, Bool.or(String.is_empty(kind), String.eq(kind, "subagent")), title, kind ++ ": " ++ title)
 
+# Untitled live work gets its kind and first known step, never a bare label.
+def Subs.first_step(ss: List<&2, SubStep>) -> String:
+  match ss:
+    case Nil{}:
+      ""
+    case SubStep{+kind, text} <> _:
+      Subs.or(text, kind)
+
+# 24 hours in epoch seconds. Unknown times stay; missing starts are separately hidden.
+def Subs.age() -> Nat:
+  86400n
+
+def Subs.old(+now: Nat, +at: Nat) -> Bool:
+  Bool.and(Nat.is_gt(at, 0n), Nat.is_gt(Nat.sub(now, at), Subs.age()))
+
+def Subs.keep(keep: Bool, row: SubRow, rest: List<&2, SubRow>) -> List<&2, SubRow>:
+  match keep:
+    case True{}:
+      row <> rest
+    case False{}:
+      rest
+
+def Subs.known(+title: String) -> Bool:
+  Bool.not(Bool.or(String.is_empty(title), Bool.or(String.eq(title, "Subagent"), String.eq(title, "subagent"))))
+
+def Agg.kept(a: SubAgg, +now: Nat) -> Bool:
+  match a:
+    case SubAgg{_, _, +title, _, _, _, at}:
+      Bool.and(Subs.known(Subs.line(title)), Bool.not(Subs.old(now, at)))
+
+def Subs.asked(+title: String, +logged: String) -> String:
+  Bool.pick(String, Subs.known(Subs.line(title)), title, logged)
+
+def Subs.title(+kind: String, +title: String, +ss: List<&2, SubStep>, +doing: String) -> String:
+  Bool.pick(String, Bool.not(Subs.known(Subs.line(title))), Subs.or(kind, "subagent") ++ ": " ++ Subs.or(Subs.first_step(ss), Subs.or(Subs.line(doing), "working")), Subs.named(kind, Subs.line(title)))
+
 def Subs.agg.row(a: SubAgg, +info: Map<&2, String>, +kind: String, +title: String, +doing: String, +live: Bool) -> SubRow:
   match a:
-    case SubAgg{+call, +k, ti, +en, n, ss}:
+    case SubAgg{+call, +k, ti, +en, n, +ss, _}:
       +open = Subs.open(info, call, live)
       +kd = Subs.or(kind, k)
-      SubRow{call, True{}, Subs.named(kd, Subs.or(Subs.or(title, ti), "Subagent")), Subs.or(kd, "subagent"), Bool.pick(String, live, "running", Subs.ended(en)),
+      SubRow{call, True{}, Subs.title(kd, Subs.asked(title, ti), ss, doing), Subs.or(kd, "subagent"), Bool.pick(String, live, "running", Subs.ended(en)),
         doing, live, open, n, Subs.steps(open, ss)}
 
 # what an ended row (M.Bg.ended: finished, its outcome not yet handed to
@@ -197,29 +229,27 @@ def Subs.calls(ls: List<&2, String>) -> List<&2, String>:
     case Nil{}:
       Nil{}
     case +l <> t:
-      M.Bg.call(l) <> Subs.calls(t)
+      Subs.or(M.Bg.call(l), M.Bg.field(l, 0n)) <> Subs.calls(t)
+
+def Subs.has.go(xs: List<&2, String>, +x: String, found: Bool) -> Bool:
+  match xs found:
+    case _ True{}:
+      True{}
+    case Nil{} False{}:
+      False{}
+    case +y <> t False{}:
+      Subs.has.go(t, x, String.eq(x, y))
 
 def Subs.has(xs: List<&2, String>, +x: String) -> Bool:
-  match xs:
-    case Nil{}:
-      False{}
-    case +y <> t:
-      Bool.or(String.eq(x, y), Subs.has(t, x))
+  Subs.has.go(xs, x, False{})
 
-def Subs.done.k(busy: Bool, a: SubAgg, +info: Map<&2, String>, rest: List<&2, SubRow>) -> List<&2, SubRow>:
-  match busy:
-    case True{}:
-      rest
-    case False{}:
-      Subs.agg.row(a, info, "", "", "", False{}) <> rest
-
-# the finished ones: those in the log that are not at work
-def Subs.done(as: List<&2, SubAgg>, +busy: List<&2, String>, +info: Map<&2, String>) -> List<&2, SubRow>:
+# Finished agents without their start in the bounded window are omitted.
+def Subs.done(as: List<&2, SubAgg>, +busy: List<&2, String>, +info: Map<&2, String>, +now: Nat) -> List<&2, SubRow>:
   match as:
     case Nil{}:
       Nil{}
     case +a <> t:
-      Subs.done.k(Subs.has(busy, Agg.call(a)), a, info, Subs.done(t, busy, info))
+      Subs.keep(Bool.and(Bool.not(Subs.has(busy, Agg.call(a))), Agg.kept(a, now)), Subs.agg.row(a, info, "", "", "", False{}), Subs.done(t, busy, info, now))
 
 # watched work (hub.bend's Watch.*: work_run, work_watch): a row a
 # piece, kind "watch", its state the word ("launching", "watching",
@@ -254,17 +284,17 @@ def Subs.cancel(r: SubRow) -> String:
   match r:
     case SubRow{_, +agent, _, +who, +word, _, +live, _, _, _}:
       Bool.pick(String, String.eq(who, "lock"), Bool.pick(String, String.eq(word, "held"), "lock-release", "lock-cancel"), Bool.pick(String, String.eq(who, "wake"), "wake-cancel", Bool.pick(String, Bool.and(agent, Bool.and(String.eq(who, "watch"), Bool.and(live, Bool.not(Bool.or(String.eq(word, "cancelling"), String.eq(word, "unknown")))))), "work-cancel",
-        Bool.pick(String, Bool.and(Bool.not(agent), Bool.and(live, Bool.not(String.starts_with(who, "launched")))), "task-cancel", ""))))
+        Bool.pick(String, Bool.and(Bool.not(agent), Bool.and(live, Bool.not(String.starts_with(who, "launched · ")))), "task-cancel", ""))))
 
 def Subs.cancel.word(+act: String) -> String:
   Bool.pick(String, String.eq(act, "lock-release"), "Release", Bool.pick(String, Bool.or(String.eq(act, "lock-cancel"), String.eq(act, "wake-cancel")), "Cancel", "Stop"))
 
 # the agent's own subagents: those at work in the order they started, then
 # the work Backplane watches for it, then the newest finished ones
-def Subs.agents(+st: M.State, +info: Map<&2, String>, +th: String) -> List<&2, SubRow>:
+def Subs.agents(+st: M.State, +info: Map<&2, String>, +th: String, +now: Nat) -> List<&2, SubRow>:
   +as = Subs.aggs(st, th)
   +ls = M.Bg.of(st, th)
-  List.concat(&2, SubRow, [Subs.bg.rows(ls, as, info), Subs.watch.rows(M.Work.watch(st, th), info), List.take(&2, SubRow, Subs.done(as, Subs.calls(ls), info), Subs.done_kept())])
+  List.concat(&2, SubRow, [Subs.bg.rows(ls, as, info), Subs.watch.rows(M.Work.watch(st, th), info), Subs.done(as, Subs.calls(ls), info, now)])
 
 # what a thread did last: its newest entry's first line
 def Subs.latest.of(es: List<&2, M.Entry>) -> String:
@@ -283,50 +313,134 @@ def Subs.latest(live: Bool, +st: M.State, +th: String) -> String:
     case False{}:
       ""
 
-def Subs.task(t: M.Task, +st: M.State) -> SubRow:
+# Ask/approval and queued/monitored work are derived from the same thread phase as the sidebar.
+def Subs.needs(p: M.Phase) -> Bool:
+  match p:
+    case M.PhApproval{}:
+      True{}
+    case M.PhInput{}:
+      True{}
+    case _:
+      False{}
+
+def Subs.phase.live(p: M.Phase) -> Bool:
+  match p:
+    case M.PhWorking{}:
+      True{}
+    case M.PhQueued{}:
+      True{}
+    case M.PhMonitoring{_}:
+      True{}
+    case M.PhApproval{}:
+      True{}
+    case M.PhInput{}:
+      True{}
+    case M.PhIdle{}:
+      True{}
+    case _:
+      False{}
+
+def Subs.model.first(s: String, acc: String) -> String:
+  match s:
+    case SNil{}:
+      String.reverse(acc)
+    case SCon{'-', _}:
+      String.reverse(acc)
+    case SCon{c, t}:
+      Subs.model.first(t, SCon{c, acc})
+
+def Subs.model.family(model: String) -> String:
+  Subs.model.first(model, "")
+
+def Subs.model(+provider: String, +model: String) -> String:
+  +mo = Subs.or(model, "default")
+  +short = Bool.pick(String, String.starts_with(mo, "claude-"), String.drop(mo, 7n), mo)
+  +family = Bool.pick(String, String.starts_with(mo, "claude-"), Subs.or(Subs.model.family(short), "default"), mo)
+  Bool.pick(String, String.eq(provider, "claude"), family, provider ++ " · " ++ mo)
+
+def Subs.launch.who(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, pr, mo, _, _, _, _}:
+      "launched · " ++ Subs.model(pr, mo)
+
+def Subs.task(t: M.Task, +st: M.State, +ix: U.SIx) -> SubRow:
   match t:
     case M.Task{_, _, +child, _, +s, _, _, +pr, +mo}:
+      +ph = U.Side.phase.ix(ix, st, U.Ui.thread(st, child))
+      +needs = Subs.needs(ph)
       +live = Bool.not(M.TaskState.terminal(s))
-      SubRow{child, False{}, U.Tasks.title(st, child), U.Models.label(pr, mo), U.Task.word(s), Subs.latest(live, st, child), live, False{}, 0n, Nil{}}
+      SubRow{child, False{}, U.Tasks.title(st, child), Subs.model(pr, mo), Bool.pick(String, needs, "needs you", U.Task.word(s)), Subs.latest(Bool.or(needs, live), st, child), live, False{}, 0n, Nil{}}
 
-def Subs.tasks(ts: List<&2, M.Task>, +st: M.State) -> List<&2, SubRow>:
+# when a task's or launched thread's work last moved: its thread's
+# activity (model.bend's Thread.turned/touched: the newest turn change or
+# person's message). The log has the time; nothing is folded into settings
+# or the state for it, so far sharing, settings sync and the phones' kept
+# state are unchanged. 0 (no such thread) is an unknown time, never old.
+def Subs.thread.at(t: M.Thread) -> Nat:
+  match t:
+    case M.Thread{_, _, _, _, at, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      at
+
+def Subs.end(+st: M.State, +child: String) -> Nat:
+  Subs.thread.at(U.Ui.thread(st, child))
+
+def Subs.task.kept(t: M.Task, +st: M.State, +now: Nat, +ix: U.SIx) -> Bool:
+  match t:
+    case M.Task{_, _, +child, _, s, _, _, _, _}:
+      Bool.or(Bool.or(Bool.not(M.TaskState.terminal(s)), Subs.needs(U.Side.phase.ix(ix, st, U.Ui.thread(st, child)))),
+        Bool.not(Subs.old(now, Subs.end(st, child))))
+
+def Subs.tasks(ts: List<&2, M.Task>, +st: M.State, +now: Nat, +ix: U.SIx) -> List<&2, SubRow>:
   match ts:
     case Nil{}:
       Nil{}
-    case t <> rest:
-      Subs.task(t, st) <> Subs.tasks(rest, st)
+    case +t <> rest:
+      Subs.keep(Subs.task.kept(t, st, now, ix), Subs.task(t, st, ix), Subs.tasks(rest, st, now, ix))
 
 # Launched threads (thread_launch, client.bend's Launched): each a row like
 # a delegated task's (a click opens it), "launched" before its model; every
 # one at work or waiting on the person, then the newest finished ones
 # (law subs_launched_live_kept)
-def Subs.launched.kept() -> Nat:
-  5n
+def Subs.launch.word(p: M.Phase, fallback: String) -> String:
+  match p:
+    case M.PhWorking{}:
+      "running"
+    case M.PhQueued{}:
+      "queued"
+    case M.PhMonitoring{_}:
+      "watching"
+    case M.PhApproval{}:
+      "needs you"
+    case M.PhInput{}:
+      "needs you"
+    case M.PhIdle{}:
+      "launching"
+    case _:
+      fallback
 
-def Subs.launch.row(+t: M.Thread, +st: M.State, +id: String) -> SubRow:
-  +live = U.Launched.live(t)
-  SubRow{id, False{}, U.Tasks.title(st, id), U.Launched.who(t), U.Launched.word(t), Subs.latest(live, st, id), live, False{}, 0n, Nil{}}
+def Subs.launch.row(+t: M.Thread, +st: M.State, +id: String, +ix: U.SIx) -> SubRow:
+  +ph = U.Side.phase.ix(ix, st, t)
+  +live = Subs.phase.live(ph)
+  SubRow{id, False{}, U.Tasks.title(st, id), Subs.launch.who(t), Subs.launch.word(ph, U.Launched.word(t)), Subs.latest(live, st, id), live, False{}, 0n, Nil{}}
 
-def Subs.launch.k(shown: Bool, live: Bool, +st: M.State, +id: String, +n: Nat, +rest: List<&2, SubRow>) -> List<&2, SubRow>:
-  match shown live:
-    case False{} _:
-      rest
-    case True{} True{}:
-      Subs.launch.row(U.Ui.thread(st, id), st, id) <> rest
-    case True{} False{}:
-      Bool.pick(List<&2, SubRow>, Nat.is_lt(n, Subs.launched.kept()), Subs.launch.row(U.Ui.thread(st, id), st, id) <> rest, rest)
-
-# newest first; n: the finished ones already listed
-def Subs.launch.go(ids: List<&2, String>, +st: M.State, +n: Nat) -> List<&2, SubRow>:
+# Newest first, all live/attention rows and every finished row younger than the age limit.
+def Subs.launch.go(ids: List<&2, String>, +st: M.State, +now: Nat, +ix: U.SIx) -> List<&2, SubRow>:
   match ids:
     case Nil{}:
       Nil{}
     case +id <> t:
-      Subs.launch.k(U.Launched.shown(U.Ui.thread(st, id), id), U.Launched.live(U.Ui.thread(st, id)), st, id, n,
-        Subs.launch.go(t, st, Bool.pick(Nat, Bool.and(U.Launched.shown(U.Ui.thread(st, id), id), Bool.not(U.Launched.live(U.Ui.thread(st, id)))), 1n+n, n)))
+      +thread = U.Ui.thread(st, id)
+      Subs.keep(Bool.and(U.Launched.shown(thread, id), Bool.or(Subs.phase.live(U.Side.phase.ix(ix, st, thread)), Bool.not(Subs.old(now, Subs.end(st, id))))),
+        Subs.launch.row(thread, st, id, ix), Subs.launch.go(t, st, now, ix))
 
+# The child phases share one index rather than rescanning every ask/task
+# for each row. Project rows are unnecessary for phase queries.
+def Subs.index(+st: M.State) -> U.SIx:
+  U.SIx{Map.new(&2, List<&2, M.Thread>), U.SIx.asks.go(List.reverse(&2, M.Ask, M.Asks.all(st)), Map.new(&2, List<&2, M.Ask>)), M.Work.kids.map(st), M.Work.rows.map(st)}
+
+# Kept for callers that inspect launched rows directly; panel rows supply their clock.
 def Subs.launched(+st: M.State, +th: String) -> List<&2, SubRow>:
-  Subs.launch.go(List.reverse(&2, String, M.Launch.of(st, th)), st, 0n)
+  Subs.launch.go(List.reverse(&2, String, M.Launch.of(st, th)), st, 0n, Subs.index(st))
 
 # every row of a thread's subagents: its delegated tasks, the threads it
 # launched, then the agent's
@@ -355,22 +469,102 @@ def Subs.locks.go(names: List<&2, String>, +st: M.State, +th: String) -> List<&2
     case +name <> t:
       List.append(&2, SubRow, Bool.pick(List<&2, SubRow>, LK.Lock.has(M.Locks.get(st, name), th), [Subs.lock.row(name, M.Locks.get(st, name), th)], Nil{}), Subs.locks.go(t, st, th))
 
-def Subs.rows(+st: M.State, +info: Map<&2, String>, +th: String) -> List<&2, SubRow>:
-  List.concat(&2, SubRow, [Subs.tasks(U.Tasks.of(st, th), st), Subs.launched(st, th), Subs.wakes(st, th), Subs.locks.go(M.Locks.names(st), st, th), Subs.agents(st, info, th)])
+# Successful/stopped finishes fold away; failures remain visible as attention.
+def Subs.finished(+word: String) -> Bool:
+  Subs.has(["done", "completed", "stopped", "cancelled"], word)
+
+def Subs.is_done(r: SubRow) -> Bool:
+  match r:
+    case SubRow{_, _, _, _, word, _, live, _, _, _}:
+      Bool.and(Bool.not(live), Subs.finished(word))
+
+def Subs.attention(r: SubRow) -> Bool:
+  match r:
+    case SubRow{+key, _, _, +who, +word, _, +live, _, _, _}:
+      Bool.and(Bool.not(String.starts_with(key, "subs.done:")),
+        Bool.or(Bool.and(Bool.not(live), Bool.not(Subs.finished(word))),
+          Bool.or(String.eq(word, "needs you"), Bool.or(String.eq(who, "wake"), Bool.and(String.eq(who, "lock"), String.eq(word, "waiting"))))))
+
+def Subs.is_live(r: SubRow) -> Bool:
+  match r:
+    case SubRow{_, _, _, _, _, _, live, _, _, _}:
+      live
+
+def Subs.partition(rs: List<&2, SubRow>, +done: Bool) -> List<&2, SubRow>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      Subs.keep(Bool.not(Bool.xor(Subs.is_done(r), done)), r, Subs.partition(t, done))
+
+def Subs.done.key(+th: String) -> String:
+  "subs.done:" ++ th
+
+def Subs.done.toggle(+th: String, +n: Nat, +open: Bool) -> SubRow:
+  SubRow{Subs.done.key(th), True{}, Nat.show(n) ++ " done", "", "", "", False{}, open, n, Nil{}}
+
+def Subs.finished.rows(open: Bool, rs: List<&2, SubRow>) -> List<&2, SubRow>:
+  match open:
+    case True{}:
+      rs
+    case False{}:
+      Nil{}
+
+def Subs.finish(some: Bool, +info: Map<&2, String>, +th: String, +done: List<&2, SubRow>) -> List<&2, SubRow>:
+  match some:
+    case False{}:
+      Nil{}
+    case True{}:
+      +open = FO.Fold.open(FO.Fold.user(info, Subs.done.key(th)), False{})
+      Subs.done.toggle(th, List.length(&2, SubRow, done), open) <> Subs.finished.rows(open, done)
+
+def Subs.priority(+r: SubRow) -> Nat:
+  Bool.pick(Nat, Subs.is_live(r), Bool.pick(Nat, Subs.attention(r), 1n, 0n), Bool.pick(Nat, String.eq(Subs.word(r), "needs you"), 1n, 2n))
+
+def Subs.current(rs: List<&2, SubRow>, +priority: Nat) -> List<&2, SubRow>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      Subs.keep(Bool.and(Bool.not(Subs.is_done(r)), Nat.is_eq(Subs.priority(r), priority)), r, Subs.current(t, priority))
+
+def Subs.group(+rs: List<&2, SubRow>, +info: Map<&2, String>, +th: String) -> List<&2, SubRow>:
+  +done = Subs.partition(rs, True{})
+  List.concat(&2, SubRow, [Subs.current(rs, 0n), Subs.current(rs, 1n), Subs.current(rs, 2n), Subs.finish(Bool.not(List.is_empty(&2, SubRow, done)), info, th, done)])
+
+def Subs.children(some: Bool, +ts: List<&2, M.Task>, +ids: List<&2, String>, +st: M.State, +now: Nat) -> List<&2, SubRow>:
+  match some:
+    case False{}:
+      Nil{}
+    case True{}:
+      +ix = Subs.index(st)
+      List.append(&2, SubRow, Subs.tasks(ts, st, now, ix), Subs.launch.go(List.reverse(&2, String, ids), st, now, ix))
+
+def Subs.rows(+st: M.State, +info: Map<&2, String>, +th: String, +now: Nat) -> List<&2, SubRow>:
+  +ts = U.Tasks.of(st, th)
+  +ids = M.Launch.of(st, th)
+  Subs.group(List.concat(&2, SubRow, [Subs.children(Bool.or(Bool.not(List.is_empty(&2, M.Task, ts)), Bool.not(List.is_empty(&2, String, ids))), ts, ids, st, now), Subs.wakes(st, th), Subs.locks.go(M.Locks.names(st), st, th), Subs.agents(st, info, th, now)]), info, th)
 
 def Subs.live(rs: List<&2, SubRow>) -> Nat:
   match rs:
     case Nil{}:
       0n
-    case SubRow{_, _, _, +who, +word, _, +live, _, _, _} <> t:
-      Nat.add(Bool.pick(Nat, Bool.and(live, Bool.not(Bool.or(String.eq(who, "wake"), Bool.and(String.eq(who, "lock"), String.eq(word, "waiting"))))), 1n, 0n), Subs.live(t))
+    case +r <> t:
+      Nat.add(Bool.pick(Nat, Bool.and(Subs.is_live(r), Bool.not(Subs.attention(r))), 1n, 0n), Subs.live(t))
 
 def Subs.waiting(rs: List<&2, SubRow>) -> Nat:
   match rs:
     case Nil{}:
       0n
-    case SubRow{_, _, _, +who, +word, _, _, _, _, _} <> t:
-      Nat.add(Bool.pick(Nat, Bool.or(String.eq(who, "wake"), Bool.and(String.eq(who, "lock"), String.eq(word, "waiting"))), 1n, 0n), Subs.waiting(t))
+    case +r <> t:
+      Nat.add(Bool.pick(Nat, Subs.attention(r), 1n, 0n), Subs.waiting(t))
+
+def Subs.finished_n(rs: List<&2, SubRow>) -> Nat:
+  match rs:
+    case Nil{}:
+      0n
+    case SubRow{+key, _, _, _, _, _, _, _, +n, _} <> t:
+      Nat.add(Bool.pick(Nat, String.starts_with(key, "subs.done:"), n, 0n), Subs.finished_n(t))
 
 # "3 at work", or "" with none
 def Subs.busy(+n: Nat) -> String:
@@ -378,25 +572,76 @@ def Subs.busy(+n: Nat) -> String:
 
 # The panel as a whole
 # --------------------
-# Open while anything in it is at work; once all of it is done it folds to
-# its head ("3 done"), so finished subagents never hold the top of the
-# thread. A click on the head opens or shuts it (the "fold" action, key
-# subs:<thread>), and the person's choice holds until they click again.
+# Open while work needs attention. A manual shut snapshots the current
+# work; only a new work/attention signature overrides that choice. The
+# device-local choice lives under subs:<thread> in Ui.info.
 
 def Subs.panel.key(+th: String) -> String:
   "subs:" ++ th
 
+# A waiting signature differs from a running signature, so an existing
+# child that starts asking for input reopens a shut panel too.
+def Subs.signature(+r: SubRow) -> String:
+  Bool.pick(String, Subs.attention(r), "attention:", "live:") ++ Subs.key(r)
+
+def Subs.keys(rs: List<&2, SubRow>) -> List<&2, String>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      List.append(&2, String, Bool.pick(List<&2, String>, Bool.or(Subs.is_live(r), Subs.attention(r)), [Subs.signature(r)], Nil{}), Subs.keys(t))
+
+# Closing while a row needs attention also acknowledges its ordinary live
+# identity: resolving the ask must not reopen the panel by itself.
+def Subs.recorded_keys(rs: List<&2, SubRow>) -> List<&2, String>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      +known = Bool.pick(List<&2, String>, Subs.attention(r), ["live:" ++ Subs.key(r), Subs.signature(r)], [Subs.signature(r)])
+      List.append(&2, String, Bool.pick(List<&2, String>, Bool.or(Subs.is_live(r), Subs.attention(r)), known, Nil{}), Subs.recorded_keys(t))
+
+# Tail-recursive scan of current keys; an absent key reopens the panel.
+def Subs.new_keys.go(ks: List<&2, String>, +recorded: List<&2, String>, fresh: Bool) -> Bool:
+  match ks fresh:
+    case _ True{}:
+      True{}
+    case Nil{} False{}:
+      False{}
+    case +k <> t False{}:
+      Subs.new_keys.go(t, recorded, Bool.not(Subs.has(recorded, k)))
+
+def Subs.new_keys(ks: List<&2, String>, +recorded: List<&2, String>) -> Bool:
+  Subs.new_keys.go(ks, recorded, False{})
+
+# Split snapshots with a tail call per character (Base.split uses the JS stack).
+def Subs.saved(s: String, acc: String, keys: List<&2, String>) -> List<&2, String>:
+  match s:
+    case SNil{}:
+      List.reverse(&2, String, String.reverse(acc) <> keys)
+    case SCon{'\u{001f}', t}:
+      Subs.saved(t, "", String.reverse(acc) <> keys)
+    case SCon{c, t}:
+      Subs.saved(t, SCon{c, acc}, keys)
+
+def Subs.panel.chosen(+choice: String, +rs: List<&2, SubRow>) -> Bool:
+  Bool.pick(Bool, String.eq(choice, "1"), True{},
+    Bool.pick(Bool, String.starts_with(choice, "0"), Subs.new_keys(Subs.keys(rs), Subs.saved(String.drop(choice, 1n), "", Nil{})),
+      Nat.is_gt(Nat.add(Subs.live(rs), Subs.waiting(rs)), 0n)))
+
 def Subs.panel.open(+info: Map<&2, String>, +th: String, +rs: List<&2, SubRow>) -> Bool:
-  FO.Fold.open(FO.Fold.user(info, Subs.panel.key(th)), Nat.is_gt(Nat.add(Subs.live(rs), Subs.waiting(rs)), 0n))
+  Subs.panel.chosen(U.Str.get(info, Subs.panel.key(th)), rs)
 
-# what a click on the head asks
-def Subs.panel.ask(+open: Bool, +th: String) -> String:
-  FO.Fold.ask(open, Subs.panel.key(th))
+def Subs.panel.action(open: Bool) -> String:
+  Bool.pick(String, open, "subs-shut", "subs-open")
 
-# the head's word: "3 at work", else "3 done"
+def Subs.panel.ask(+open: Bool, +th: String, +rs: List<&2, SubRow>) -> String:
+  Bool.pick(String, open, th ++ "\t" ++ String.join(Subs.recorded_keys(rs), "\u{001f}"), th)
+
+# Finished count comes from the toggle, never counting it twice when expanded.
 def Subs.panel.word(+rs: List<&2, SubRow>) -> String:
   Bool.pick(String, Nat.is_gt(Subs.waiting(rs), 0n), Nat.show(Subs.waiting(rs)) ++ " waiting" ++ Bool.pick(String, Nat.is_gt(Subs.live(rs), 0n), " · " ++ Subs.busy(Subs.live(rs)), ""),
-    Subs.or(Subs.busy(Subs.live(rs)), Nat.show(List.length(&2, SubRow, rs)) ++ " done"))
+    Subs.or(Subs.busy(Subs.live(rs)), Nat.show(Subs.finished_n(rs)) ++ " done"))
 
 # the rows a panel shows: all of them open, none shut
 def Subs.panel.rows(open: Bool, rs: List<&2, SubRow>) -> List<&2, SubRow>:

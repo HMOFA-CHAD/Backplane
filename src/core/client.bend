@@ -310,7 +310,7 @@ def Local.keep(+old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
 # machine's log keeps none of them (Local.keep runs on a switch too)
 # (laws reset_keeps_viewer, reset_new_origin_drops_viewer)
 def Reset.prefixes() -> List<&2, String>:
-  ["view.", "panel:", "panel.hand:", "diff:", "fold:", "hist.at:", "hist.back:", "hist.diff:", "cmp.a:", "cmp.b:", "cmp.al", "cmp.bl", "fm.want:"]
+  ["subs:", "view.", "panel:", "panel.hand:", "diff:", "fold:", "hist.at:", "hist.back:", "hist.diff:", "cmp.a:", "cmp.b:", "cmp.al", "cmp.bl", "fm.want:"]
 
 def Reset.hit(ps: List<&2, String>, +k: String, found: Bool) -> Bool:
   match ps found:
@@ -9488,8 +9488,32 @@ def Ui.act.z(tz: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Ui.act.s(String.eq(action, "skill-close"), u, action, value)
 
+# Only inspect the thread prefix, leaving the potentially long key snapshot alone.
+def Ui.subs.thread(s: String, acc: String) -> String:
+  match s:
+    case SNil{}:
+      String.reverse(acc)
+    case SCon{'\t', _}:
+      String.reverse(acc)
+    case SCon{c, t}:
+      Ui.subs.thread(t, SCon{c, acc})
+
+# Device-local panel choice, including the live/attention signatures at shut.
+def Ui.subs.shut(u: Ui, +value: String) -> Ui:
+  +th = Ui.subs.thread(value, "")
+  Ui.info_set(u, "subs:" ++ th, "0" ++ String.drop(value, Nat.add(String.length(th), 1n)))
+
+def Ui.act.subs(shut: Bool, open: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match shut open:
+    case True{} _:
+      Act{Ui.subs.shut(u, value), Nil{}}
+    case False{} True{}:
+      Act{Ui.info_set(u, "subs:" ++ value, "1"), Nil{}}
+    case False{} False{}:
+      Ui.act.z(String.starts_with(action, "tz-"), u, action, value)
+
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Rc.sync.of(Ui.act.z(String.starts_with(action, "tz-"), u, action, value))
+  Rc.sync.of(Ui.act.subs(String.eq(action, "subs-shut"), String.eq(action, "subs-open"), u, action, value))
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

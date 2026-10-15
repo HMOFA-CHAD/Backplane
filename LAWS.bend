@@ -4245,21 +4245,22 @@ law bg_call_title:
 law subs_agent_at_work:
   {SB.Subs.rows(M.State.replay([M.SettingSet{"bg.t1", "a\tRunning ls\tc1\tList files\tsubagent", 1n},
       M.ActivityLogged{"@sub:t1", "c1/start:subagent", "c1", "start:subagent", "List files", 1n}, M.ActivityLogged{"@sub:t1", "c1/u1", "c1", "Bash", "ls\n-la", 2n}], M.State.empty()),
-    Map.new(&2, String), "t1")
+    Map.new(&2, String), "t1", 3n)
     == [SB.SubRow{"c1", True{}, "List files", "subagent", "running", "Running ls", True{}, True{}, 1n, [SB.SubStep{"Bash", "ls"}]}] : List<&2, SB.SubRow>}
 
-# a finished one stays listed, shut, with how it ended
+# a finished one stays listed behind the shut "N done" toggle (changed
+# by ui-panel-paste-lag spec 1: finished rows fold under one toggle row)
 law subs_agent_done_shut:
   {SB.Subs.rows(M.State.replay([M.ActivityLogged{"@sub:t1", "c1/start:subagent", "c1", "start:subagent", "List files", 1n},
       M.ActivityLogged{"@sub:t1", "c1/u1", "c1", "Bash", "ls", 2n}, M.ActivityLogged{"@sub:t1", "c1/end", "c1", "end", "completed", 3n}], M.State.empty()),
-    Map.new(&2, String), "t1")
-    == [SB.SubRow{"c1", True{}, "List files", "subagent", "done", "", False{}, False{}, 1n, []}] : List<&2, SB.SubRow>}
+    Map.new(&2, String), "t1", 3n)
+    == [SB.SubRow{"subs.done:t1", True{}, "1 done", "", "", "", False{}, False{}, 1n, []}] : List<&2, SB.SubRow>}
 
 
 # a background shell is listed by its kind, and is not an agent in the
 # sidebar's count
 law subs_shell_named:
-  {SB.Subs.rows(M.State.replay([M.SettingSet{"bg.t1", "b\tRunning\tc2\tscripts/check.sh\tshell", 1n}], M.State.empty()), Map.new(&2, String), "t1")
+  {SB.Subs.rows(M.State.replay([M.SettingSet{"bg.t1", "b\tRunning\tc2\tscripts/check.sh\tshell", 1n}], M.State.empty()), Map.new(&2, String), "t1", 3n)
     == [SB.SubRow{"c2", True{}, "shell: scripts/check.sh", "shell", "running", "Running", True{}, True{}, 0n, []}] : List<&2, SB.SubRow>}
 
 law subs_shell_not_agent:
@@ -8044,3 +8045,32 @@ law hubs_lean_no_live:
 law hubs_lean_keeps_state:
   {U.Ui.seq(Hb.Hubs.lean.ui(U.Ui.delta(U.Ui.init(0n), "t1", "words"))) == U.Ui.seq(U.Ui.delta(U.Ui.init(0n), "t1", "words")) : Nat}
 # ---- end perf-lead: phone-lean ----
+# ui-panel-paste-lag: subagents
+
+law subs_finished_hidden:
+  for rs: List<&2, SB.SubRow>
+  {SB.Subs.finished.rows(False{}, rs) == Nil{} : List<&2, SB.SubRow>}
+
+law subs_ageout_hidden:
+  for now: Nat
+  for at: Nat
+  for old: {SB.Subs.old(now, at) == True{} : Bool}
+  {SB.Agg.kept(SB.SubAgg{"c", "subagent", "Inspect", "completed", 0n, Nil{}, at}, now) == False{} : Bool}
+
+law subs_old_row_not_listed:
+  {SB.Subs.done([SB.SubAgg{"c", "subagent", "Inspect", "completed", 0n, Nil{}, 1n}], Nil{}, Map.new(&2, String), 86402n) == Nil{} : List<&2, SB.SubRow>}
+
+law subs_panel_new_reopens:
+  {SB.Subs.panel.chosen("0live:old", [SB.SubRow{"new", True{}, "Inspect", "subagent", "running", "", True{}, False{}, 0n, Nil{}}]) == True{} : Bool}
+
+law subs_panel_shrinks_shut:
+  {SB.Subs.panel.chosen("0live:old\u{001f}live:kept", [SB.SubRow{"kept", True{}, "Inspect", "subagent", "running", "", True{}, False{}, 0n, Nil{}}]) == False{} : Bool}
+
+law subs_panel_attention_reopens:
+  {SB.Subs.panel.chosen("0live:old", [SB.SubRow{"old", True{}, "Inspect", "subagent", "needs you", "", True{}, False{}, 0n, Nil{}}]) == True{} : Bool}
+
+law subs_model_alias:
+  {SB.Subs.model("claude", "claude-opus-5-5") == SB.Subs.model("claude", "opus") : String}
+
+law subs_panel_resolved_stays_shut:
+  {SB.Subs.panel.chosen("0live:old\u{001f}attention:old", [SB.SubRow{"old", True{}, "Inspect", "subagent", "running", "", True{}, False{}, 0n, Nil{}}]) == False{} : Bool}
