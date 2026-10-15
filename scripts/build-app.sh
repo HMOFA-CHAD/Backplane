@@ -8,7 +8,9 @@
 # compiles them side by side at low priority, so the machine stays usable.
 # Builds on this machine share one lock (/tmp/bp-wt-build.lock, as the
 # agents' builds do), so only one runs at a time, and stay on 4 cores.
-#   BACKPLANE_JOBS  parallel compiles (default 4)
+#   BACKPLANE_JOBS  parallel compiles (default 4; 1 with BACKPLANE_LOW_MEM=1)
+#   BACKPLANE_LOW_MEM=1  for small machines: bend's heap told 6 GiB and one
+#                     compile at a time (slower; see the emit note below)
 #   BACKPLANE_CPUS  the cores builds may use (default 0-3; "" for any)
 #   BACKPLANE_CFLAGS  (default: -O3, as bend -o)
 #   BACKPLANE_UNITS   C units the segments are dealt into (default 16)
@@ -37,12 +39,17 @@ fi
 src=$1
 out=$2
 cd "$(dirname "$0")/.."
-jobs=${BACKPLANE_JOBS:-4}
+low=${BACKPLANE_LOW_MEM:-0}
+[ "$low" = 1 ] && jobs=${BACKPLANE_JOBS:-1} || jobs=${BACKPLANE_JOBS:-4}
 # bend is a Bun program: JavaScriptCore sizes its heap to the machine's RAM
 # and let the app's emit grow past 28 GB (systemd-oomd then killed whole
-# desktop sessions). Told the machine has 12 GB, it peaks near 12 GB and
-# takes a few seconds longer.
-export BUN_JSC_forceRAMSize=${BUN_JSC_forceRAMSize:-12884901888}
+# desktop sessions). BUN_JSC_forceRAMSize tells it a smaller machine; it is
+# a sizing hint, not a cap. The app's emit, measured (2026-10-15, bend
+# 2.0.36, the same C byte for byte at each hint; peak RSS, wall):
+#   12 GiB: 12.1 GB, 196 s   8 GiB: 8.5 GB, 224 s   6 GiB: 7.3 GB, 347 s
+# (bp-coord/build-memory). The emit and the compiles run one after the other.
+[ "$low" = 1 ] && hint=6442450944 || hint=8589934592
+export BUN_JSC_forceRAMSize=${BUN_JSC_forceRAMSize:-$hint}
 cpus=${BACKPLANE_CPUS-0-3}
 pin=""
 if [ -n "$cpus" ] && command -v taskset >/dev/null 2>&1; then
