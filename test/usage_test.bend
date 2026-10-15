@@ -45,15 +45,15 @@ def show(rs: List<&2, UZ.URow>) -> String:
 def boat(+st: M.State, +cache: String, +stat: String, +now: Nat) -> String:
   show(UZ.Bj.rows(st, UZ.Bj.info(cache, stat), now))
 
-def many(+n: Nat) -> String:
-  "{\"running\":" ++ Nat.show(n) ++ ",\"orphans\":0,\"today\":{\"cost_cs\":0,\"reserved_open_cs\":0},\"jobs\":[" ++ String.join(many.go(n), ",") ++ "]}"
-
 def many.go(n: Nat) -> List<&2, String>:
   match n:
     case 0n:
       Nil{}
     case 1n+k:
       "{\"state\":\"running\",\"size\":\"small\",\"started_at\":5,\"reserved_cs\":1}" <> many.go(k)
+
+def many(+n: Nat) -> String:
+  "{\"running\":" ++ Nat.show(n) ++ ",\"orphans\":0,\"today\":{\"cost_cs\":0,\"reserved_open_cs\":0},\"jobs\":[" ++ String.join(many.go(n), ",") ++ "]}"
 
 def count.go(ls: List<&2, String>, +p: String) -> Nat:
   match ls:
