@@ -1,5 +1,6 @@
 import Base
 import ./src/core/mail.bend as ML # mail 1
+import ./src/core/ref.bend as REF
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
 import ./src/core/sched.bend as SCH
@@ -8462,3 +8463,153 @@ law mail_origin_keeps_outputs:
   {H.Step.outs_of(H.Origin.step(st, thread, msg, origin, at)) == H.Step.outs_of(st) : List<&2, H.Out>}
 
 # ---- end mail 1 ----
+# ---- links (ref) ----
+
+law ref_uri_parse_thread:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.msg("p1~t17-2", "m:é"))) == Some{REF.Ref.msg("p1~t17-2", "m:é")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_bot:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.bot("b1-2"))) == Some{REF.Ref.bot("b1-2")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_room:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.room("r1-2"))) == Some{REF.Ref.room("r1-2")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_person:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.person())) == Some{REF.Ref.person()} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_project:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.project("p1-2"))) == Some{REF.Ref.project("p1-2")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_routine:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.routine("o1-2"))) == Some{REF.Ref.routine("o1-2")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_task:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.task("b1-2-3"))) == Some{REF.Ref.task("b1-2-3")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_pr:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.pr("p1-2", "42"))) == Some{REF.Ref.pr("p1-2", "42")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_work:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.work("w1"))) == Some{REF.Ref.work("w1")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_file:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.file("p1-2", ["dir name", "a/b", "é.txt"]))) == Some{REF.Ref.file("p1-2", ["dir name", "a/b", "é.txt"])} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_machine:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.machine("p1"))) == Some{REF.Ref.machine("p1")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_conv:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.conv("pair:bot:b1|thread:t2"))) == Some{REF.Ref.conv("pair:bot:b1|thread:t2")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_mail:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.mail("pair:bot:b1|thread:t2", "m5"))) == Some{REF.Ref.mail("pair:bot:b1|thread:t2", "m5")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_mailroom:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.mailroom("*"))) == Some{REF.Ref.mailroom("*")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_decision:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.decision("b1", "d:é"))) == Some{REF.Ref.decision("b1", "d:é")} : Maybe<&2, REF.Ref>}
+
+law ref_uri_parse_charter:
+  {REF.Ref.parse(REF.Ref.uri(REF.Ref.charter("b1"))) == Some{REF.Ref.charter("b1")} : Maybe<&2, REF.Ref>}
+
+law ref_web_parse:
+  {REF.Ref.parse(REF.Ref.web("http://h:3787", REF.Ref.msg("p1~t17-2", "m:é"))) == Some{REF.Ref.msg("p1~t17-2", "m:é")} : Maybe<&2, REF.Ref>}
+
+law ref_web_parse_slash:
+  {REF.Ref.parse(REF.Ref.web("http://h:3787/", REF.Ref.msg("p1~t17-2", "m:é"))) == Some{REF.Ref.msg("p1~t17-2", "m:é")} : Maybe<&2, REF.Ref>}
+
+law ref_addr_roundtrip_thread:
+  {REF.Ref.of_addr(REF.Ref.addr(REF.Ref.thread("p1~t17-2"))) == Some{REF.Ref.thread("p1~t17-2")} : Maybe<&2, REF.Ref>}
+
+law ref_addr_roundtrip_bot:
+  {REF.Ref.of_addr(REF.Ref.addr(REF.Ref.bot("b1-2"))) == Some{REF.Ref.bot("b1-2")} : Maybe<&2, REF.Ref>}
+
+law ref_addr_roundtrip_room:
+  {REF.Ref.of_addr(REF.Ref.addr(REF.Ref.room("r1-2"))) == Some{REF.Ref.room("r1-2")} : Maybe<&2, REF.Ref>}
+
+law ref_addr_roundtrip_person:
+  {REF.Ref.of_addr(REF.Ref.addr(REF.Ref.person())) == Some{REF.Ref.person()} : Maybe<&2, REF.Ref>}
+
+law ref_addr_roundtrip_mail:
+  {REF.Ref.of_addr(REF.Ref.addr(REF.Ref.mail("pair:bot:b1|thread:t2", "m5"))) == Some{REF.Ref.mail("pair:bot:b1|thread:t2", "m5")} : Maybe<&2, REF.Ref>}
+
+law ref_addr_roundtrip_conv:
+  {REF.Ref.of_addr(REF.Ref.addr(REF.Ref.conv("pair:bot:b1|thread:t2"))) == Some{REF.Ref.conv("pair:bot:b1|thread:t2")} : Maybe<&2, REF.Ref>}
+
+law ref_thread_addr:
+  for id: String
+  {REF.Ref.addr(REF.Ref.thread(id)) == "thread:" ++ id : String}
+
+law ref_pct_safe:
+  {REF.Ref.unpct(REF.Ref.pct("AZaz09-._~")) == "AZaz09-._~" : String}
+
+law ref_pct_bytes:
+  {REF.Ref.unpct(REF.Ref.pct(":|/ é%")) == ":|/ é%" : String}
+
+law ref_pct_three:
+  {REF.Ref.unpct(REF.Ref.pct("€")) == "€" : String}
+
+law ref_pct_four:
+  {REF.Ref.unpct(REF.Ref.pct("😀")) == "😀" : String}
+
+law ref_pct_encoding:
+  {REF.Ref.pct(":|/ é%") == "%3A%7C%2F%20%C3%A9%25" : String}
+
+law ref_pct_malformed:
+  {REF.Ref.unpct("%zz % %A %2z %%41") == "%zz % %A %2z %A" : String}
+
+law ref_unknown_kind:
+  {REF.Ref.parse("backplane://nope/x") == None{} : Maybe<&2, REF.Ref>}
+
+law ref_no_script:
+  for s: String
+  {REF.Ref.parse("javascript:" ++ s) == None{} : Maybe<&2, REF.Ref>}
+
+law ref_legacy_open:
+  {REF.Ref.parse("backplane://open?thread=p1~t17-2") == Some{REF.Ref.thread("p1~t17-2")} : Maybe<&2, REF.Ref>}
+
+law ref_bare_thread:
+  {REF.Ref.bare("t1-2") == Some{REF.Ref.thread("t1-2")} : Maybe<&2, REF.Ref>}
+
+law ref_bare_bot:
+  {REF.Ref.bare("b1-2") == Some{REF.Ref.bot("b1-2")} : Maybe<&2, REF.Ref>}
+
+law ref_bare_task:
+  {REF.Ref.bare("b1-2-3") == Some{REF.Ref.task("b1-2-3")} : Maybe<&2, REF.Ref>}
+
+law ref_bare_project:
+  {REF.Ref.bare("p1-2") == Some{REF.Ref.project("p1-2")} : Maybe<&2, REF.Ref>}
+
+law ref_bare_room:
+  {REF.Ref.bare("r1-2") == Some{REF.Ref.room("r1-2")} : Maybe<&2, REF.Ref>}
+
+law ref_bare_routine:
+  {REF.Ref.bare("o1-2") == Some{REF.Ref.routine("o1-2")} : Maybe<&2, REF.Ref>}
+
+law ref_bare_remote:
+  {REF.Ref.bare("p1~t17-2") == Some{REF.Ref.thread("p1~t17-2")} : Maybe<&2, REF.Ref>}
+
+law ref_bare_not_short:
+  {REF.Ref.bare("t12") == None{} : Maybe<&2, REF.Ref>}
+
+law ref_bare_not_word:
+  {REF.Ref.bare("the") == None{} : Maybe<&2, REF.Ref>}
+
+law ref_bare_not_incomplete:
+  {REF.Ref.bare("t1-") == None{} : Maybe<&2, REF.Ref>}
+
+law ref_bare_not_unknown:
+  {REF.Ref.bare("x1-2") == None{} : Maybe<&2, REF.Ref>}
+
+law link_ref_uri:
+  {LK.Link.pieces("see backplane://thread/t1-2 now") == [LK.PText{"see "}, LK.PRef{"backplane://thread/t1-2", "backplane://thread/t1-2", False{}}, LK.PText{" now"}] : List<&2, LK.Piece>}
+
+law link_ref_bare:
+  {LK.Link.pieces("see t1-2 now") == [LK.PText{"see "}, LK.PRef{"t1-2", "backplane://thread/t1-2", True{}}, LK.PText{" now"}] : List<&2, LK.Piece>}
+
+law link_ref_md:
+  {LK.Link.pieces("[thread](backplane://thread/t1-2)") == [LK.PRef{"thread", "backplane://thread/t1-2", False{}}] : List<&2, LK.Piece>}
+
+law link_ref_plain_unchanged:
+  {LK.Link.pieces("a line with no refs") == [LK.PText{"a line with no refs"}] : List<&2, LK.Piece>}

@@ -651,6 +651,8 @@ document.addEventListener("input", (e) => {
   dispatch(el.getAttribute("data-text"), forKey(el) + v);
 });
 
+document.addEventListener("click", (e) => { if (e.target.closest?.("a.ref")) e.preventDefault(); });
+
 for (const ev of EVENTS) {
   document.addEventListener(ev, (e) => {
     const el = e.target.closest?.(`[data-on-${ev}]`);
