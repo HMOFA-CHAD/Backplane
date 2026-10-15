@@ -8310,3 +8310,56 @@ law plan_cut_same:
   for +n: U32
   {T.Tiles.plan2(k, e, ops, base, prev, p, rx, ry, n) == T.Tiles.plan(k, e, ops, base, prev, p, rx, ry, n) : T.Plan}
 # ---- end gfx-runs ----
+# ---- sent-draft: what was sent never comes back to the composer ----
+# clearing a draft tells the host to forget its copy, in the same step
+law draft_clear_tells_host:
+  for u: U.Ui
+  {U.Act.cmds(U.Draft.clear(u)) == U.Draft.keep(U.Ui.sel(u), "") : List<&2, U.Cmd>}
+
+law draft_clear_empties:
+  {U.Draft.of(U.Act.ui(U.Draft.clear(U.Act.ui(U.Ui.draft.set(U.Bots.sel.set(U.Ui.init(0n), "t1"), "hello"))))) == "" : String}
+
+# every way a draft is sent forgets the kept copy first: a message, a
+# bot's message, /btw and /give
+law draft_send_forgets_first:
+  for u: U.Ui
+  for text: String
+  for +mode: String
+  {List.head(&2, U.Cmd, U.Act.cmds(U.Ui.send.t(U.Bots.sel.set(u, "t1"), text, mode))) == Some{U.Keep{"t1", ""}} : Maybe<&2, U.Cmd>}
+
+law draft_bot_say_forgets_first:
+  for u: U.Ui
+  for +bot: String
+  for text: String
+  {List.head(&2, U.Cmd, U.Act.cmds(U.Bots.say(U.Bots.sel.set(u, "t1"), bot, text))) == Some{U.Keep{"t1", ""}} : Maybe<&2, U.Cmd>}
+
+law draft_btw_forgets_first:
+  for u: U.Ui
+  for +q: String
+  {List.head(&2, U.Cmd, U.Act.cmds(U.Btw.ask.k(U.Bots.sel.set(u, "t1"), q))) == Some{U.Keep{"t1", ""}} : Maybe<&2, U.Cmd>}
+
+law draft_give_forgets_first:
+  for u: U.Ui
+  for +text: String
+  {List.head(&2, U.Cmd, U.Act.cmds(U.Give.ask(U.Bots.sel.set(u, "t1"), text))) == Some{U.Keep{"t1", ""}} : Maybe<&2, U.Cmd>}
+
+# a draft read back is the text sent when the person's newest message is
+# it, alone or with attachments after it; an empty draft never is
+law draft_stale_same:
+  {U.Draft.same("hello", " hello\n") == True{} : Bool}
+
+law draft_stale_with_attachments:
+  {U.Draft.same("hello\n\n[a.png](/x/a.png)", "hello") == True{} : Bool}
+
+law draft_stale_longer_is_not:
+  {U.Draft.same("hello there", "hello") == False{} : Bool}
+
+law draft_stale_empty_never:
+  for +said: String
+  {U.Draft.same(said, "") == False{} : Bool}
+
+# the newest of the person's messages in the thread, other threads and
+# replies skipped
+law draft_stale_last:
+  {U.Draft.last([M.Msg{"m4", "t1", M.Assistant{}, "reply", 4n}, M.Msg{"m3", "t2", M.User{}, "elsewhere", 3n}, M.Msg{"m2", "t1", M.User{}, "b", 2n}, M.Msg{"m1", "t1", M.User{}, "a", 1n}], "t1") == Some{"b"} : Maybe<&2, String>}
+# ---- end sent-draft ----

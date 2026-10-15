@@ -926,16 +926,145 @@ def Ui.draft.set(u: Ui, +text: String) -> Act:
     case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
       Act{Ui{st, sel, Map.set(&2, String, dr, sel, text), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, Draft.keep(sel, text)}
 
-# a kept draft, read back by the host when it starts
-def Ui.restore(u: Ui, +id: String, saved: String) -> Ui:
+# a kept draft, read back by the host when it starts; what was read is
+# marked ("@kept:<thread>") so Draft.stale can tell it was never touched
+def Ui.restore(u: Ui, +id: String, +saved: String) -> Ui:
   match u:
     case Ui{st, sel, +dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      Ui{st, sel, Map.set(&2, String, dr, id, Draft.pick(Str.get(dr, id), saved)), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, id, Draft.pick(Str.get(dr, id), saved)), "@kept:" ++ id, saved), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+
+# Sending empties the draft in the same step that sends it, and that step
+# also tells the host to forget its kept copy (a Keep of ""), so text that
+# went out is never read back (laws draft_clear_*). Every way a draft is
+# sent goes through Draft.clear: a message, a bot's (bots.say), /btw, /give.
+def Draft.clear(u: Ui) -> Act:
+  match u:
+    case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Act{Ui{st, sel, Map.set(&2, String, dr, sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, Draft.keep(sel, "")}
+
+# the same with the thread's attachments, which went out with it
+def Draft.sent.k(a: Act) -> Act:
+  match a:
+    case Act{Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, cs}:
+      Act{Ui{st, sel, Map.set(&2, String, dr, "@att:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, cs}
+
+def Draft.sent(u: Ui) -> Act:
+  Draft.sent.k(Draft.clear(u))
+
+# the commands of a step that came first, before those of the next
+def Ui.first(cs: List<&2, Cmd>, a: Act) -> Act:
+  match a:
+    case Act{u, more}:
+      Act{u, List.append(&2, Cmd, cs, more)}
+
+# A draft read back from before this fix may be text that was sent (a
+# bot's thread once kept it after sending). When its thread is opened and
+# the draft is still exactly what was read back, and the thread's newest
+# message from the person is that text, it is forgotten (laws draft_stale_*).
+
+def Draft.user(r: M.Role) -> Bool:
+  match r:
+    case M.User{}:
+      True{}
+    case _:
+      False{}
+
+def Draft.said.k(mine: Bool, text: String) -> Maybe<&2, String>:
+  match mine:
+    case True{}:
+      Some{text}
+    case False{}:
+      None{}
+
+# a person's message in thread th, else None
+def Draft.said(e: M.Entry, +th: String) -> Maybe<&2, String>:
+  match e:
+    case M.Msg{_, t, r, text, _}:
+      Draft.said.k(Bool.and(String.eq(t, th), Draft.user(r)), text)
+    case M.Act{_, _, _, _, _, _}:
+      None{}
+
+# the newest such message (entries come newest first; the walk stops there)
+def Draft.last.go(es: List<&2, M.Entry>, +th: String, got: Maybe<&2, String>) -> Maybe<&2, String>:
+  match es got:
+    case _ Some{x}:
+      Some{x}
+    case Nil{} None{}:
+      None{}
+    case e <> t None{}:
+      Draft.last.go(t, th, Draft.said(e, th))
+
+def Draft.last(es: List<&2, M.Entry>, +th: String) -> Maybe<&2, String>:
+  Draft.last.go(es, th, None{})
+
+# whether the message said is the draft d (alone, or with attachments after it)
+def Draft.same(+said: String, +d: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(String.trim(d))),
+    Bool.or(String.eq(String.trim(said), String.trim(d)), String.starts_with(String.trim(said), String.trim(d) ++ "\n\n")))
+
+def Ui.state.at(u: Ui) -> M.State:
+  match u:
+    case Ui{st, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      st
+
+def Ui.sel.at(u: Ui) -> String:
+  match u:
+    case Ui{_, sel, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      sel
+
+# the selected thread's draft, and what was read back for it
+def Draft.of(u: Ui) -> String:
+  match u:
+    case Ui{_, +sel, dr, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Str.get(dr, sel)
+
+def Draft.mark(u: Ui) -> String:
+  match u:
+    case Ui{_, +sel, dr, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Str.get(dr, "@kept:" ++ sel)
 
 def Ui.also(a: Act, more: List<&2, Cmd>) -> Act:
   match a:
     case Act{u, cs}:
       Act{u, List.append(&2, Cmd, cs, more)}
+
+# the mark goes once the draft has been checked against the thread
+def Draft.unmark(a: Act) -> Act:
+  match a:
+    case Act{Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, cs}:
+      Act{Ui{st, sel, Map.set(&2, String, dr, "@kept:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, cs}
+
+def Draft.stale.k(sent: Bool, u: Ui) -> Act:
+  match sent:
+    case True{}:
+      Draft.unmark(Draft.clear(u))
+    case False{}:
+      Draft.unmark(Act{u, Nil{}})
+
+def Draft.stale.m(m: Maybe<&2, String>, +u: Ui, +d: String) -> Act:
+  match m:
+    case Some{said}:
+      Draft.stale.k(Draft.same(said, d), u)
+    case None{}:
+      Act{u, Nil{}}
+
+# (only a draft still as it was read back is looked at)
+def Draft.stale.u(fresh: Bool, +u: Ui) -> Act:
+  match fresh:
+    case True{}:
+      Draft.stale.m(Draft.last(M.State.mine(Ui.state.at(u), Ui.sel.at(u)), Ui.sel.at(u)), u, Draft.of(u))
+    case False{}:
+      Act{u, Nil{}}
+
+# the thread now selected, checked
+def Draft.stale(+u: Ui) -> Act:
+  Draft.stale.u(Bool.and(Bool.not(String.is_empty(Draft.mark(u))), String.eq(Draft.mark(u), Draft.of(u))), u)
+
+# a step that selected a thread, its draft checked after it
+def Draft.stale.after(a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Ui.also(Draft.stale(u), cs)
 
 # a message's id, made here so a resend is recognised: this client, the
 # second and the request number
@@ -1017,11 +1146,20 @@ def Follow.act(stop: Bool) -> String:
     case False{}:
       "send"
 
-def Ui.send.t(u: Ui, text: String, +mode: String) -> Act:
+def Ui.send.rpc(u: Ui, text: String, +mode: String) -> Act:
   match u:
     case Ui{st, +sel, dr, live, op, on, +now, ad, pa, v, +rid, w, er, note, +nf, ob, tr}:
-      Ui.also(Ui.rpc.keep(Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, sel, ""), "@att:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr},
-        "turn.start", [J.KV{"thread", J.Str{sel}}, J.KV{"text", J.Str{text}}, J.KV{"msg", J.Str{Ui.msg_id(Str.get(nf, "cid"), now, rid)}}, J.KV{"mode", J.Str{mode}}]), List.append(&2, Cmd, Draft.keep(sel, ""), [ScrollEnd{}]))
+      Ui.also(Ui.rpc.keep(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr},
+        "turn.start", [J.KV{"thread", J.Str{sel}}, J.KV{"text", J.Str{text}}, J.KV{"msg", J.Str{Ui.msg_id(Str.get(nf, "cid"), now, rid)}}, J.KV{"mode", J.Str{mode}}]), [ScrollEnd{}])
+
+def Ui.send.t.k(a: Act, text: String, +mode: String) -> Act:
+  match a:
+    case Act{u, cs}:
+      Ui.first(cs, Ui.send.rpc(u, text, mode))
+
+# the draft and attachments emptied, the host told, the message sent: one step
+def Ui.send.t(u: Ui, text: String, +mode: String) -> Act:
+  Ui.send.t.k(Draft.sent(u), text, mode)
 
 # the add form shut (the folder goes to Proj.adding)
 def Ui.add_project(u: Ui) -> Ui:
@@ -1163,7 +1301,7 @@ def Ui.reselect(+old: String, +u: Ui) -> Ui:
 
 # (Ui.act brings the thread's own panel); a thread chosen leaves Settings
 def Ui.select(u: Ui, +id: String) -> Act:
-  Act{Ui.flag_off(Ui.select.k(u, id), "settings"), [Focus{"composer"}, ScrollEnd{}]}
+  Draft.stale.after(Act{Ui.flag_off(Ui.select.k(u, id), "settings"), [Focus{"composer"}, ScrollEnd{}]})
 
 def Ui.reselect.act(+old: String, a: Act) -> Act:
   match a:
@@ -3463,11 +3601,19 @@ def Skills.fetch(need: Bool, a: Act) -> Act:
 # "@btw.a:t", "" while it is being answered); the card above the composer
 # shows them until closed ("btw-close")
 
-def Btw.ask.k(u: Ui, +q: String) -> Act:
+def Btw.ask.go(u: Ui, +q: String) -> Act:
   match u:
     case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      Ui.also(Ui.rpc(Ui{st, sel, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, dr, sel, ""), "@btw:" ++ sel, q), "@btw.a:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr},
-        "thread.btw", [J.KV{"thread", J.Str{sel}}, J.KV{"q", J.Str{q}}]), Draft.keep(sel, ""))
+      Ui.rpc(Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, "@btw:" ++ sel, q), "@btw.a:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr},
+        "thread.btw", [J.KV{"thread", J.Str{sel}}, J.KV{"q", J.Str{q}}])
+
+def Btw.ask.d(a: Act, +q: String) -> Act:
+  match a:
+    case Act{u, cs}:
+      Ui.first(cs, Btw.ask.go(u, q))
+
+def Btw.ask.k(u: Ui, +q: String) -> Act:
+  Btw.ask.d(Draft.clear(u), q)
 
 # "/btw" with no question asks nothing
 def Btw.ask(+u: Ui, +q: String) -> Act:
@@ -5339,14 +5485,14 @@ def Bots.fields.clear.go(ks: List<&2, String>, u: Ui) -> Ui:
 def Bots.fields.clear(u: Ui, ks: List<&2, String>) -> Ui:
   Bots.fields.clear.go(ks, u)
 
-# the draft (and attachments) of the selected thread cleared
-def Bots.say.clear(u: Ui) -> Ui:
-  match u:
-    case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, sel, ""), "@att:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+def Bots.say.k(a: Act, +bot: String, text: String) -> Act:
+  match a:
+    case Act{u, cs}:
+      Ui.first(cs, Ui.also(Ui.rpc.keep.msg(u, "bots.say", [J.KV{"bot", J.Str{bot}}, J.KV{"text", J.Str{text}}]), [ScrollEnd{}]))
 
+# (the clear goes to the host too: a bot's thread once kept its sent text)
 def Bots.say(u: Ui, +bot: String, text: String) -> Act:
-  Ui.also(Ui.rpc.keep.msg(Bots.say.clear(u), "bots.say", [J.KV{"bot", J.Str{bot}}, J.KV{"text", J.Str{text}}]), [ScrollEnd{}])
+  Bots.say.k(Draft.sent(u), bot, text)
 
 def Ui.send.b(empty: Bool, b: Maybe<&2, BT.Bot>, u: Ui, text: String, +mode: String) -> Act:
   match empty b:
@@ -5376,11 +5522,19 @@ def Ui.send.btw(btw: Bool, +u: Ui, alt: Bool) -> Act:
     case False{}:
       Ui.send.go(u, alt)
 
-def Give.ask(u: Ui, +text: String) -> Act:
+def Give.ask.go(u: Ui, +text: String) -> Act:
   match u:
     case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      Ui.also(Ui.rpc(Ui{st, sel, Map.set(&2, String, dr, sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr},
-        "bots.give", [J.KV{"thread", J.Str{sel}}, J.KV{"text", J.Str{text}}]), Draft.keep(sel, ""))
+      Ui.rpc(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr},
+        "bots.give", [J.KV{"thread", J.Str{sel}}, J.KV{"text", J.Str{text}}])
+
+def Give.ask.d(a: Act, +text: String) -> Act:
+  match a:
+    case Act{u, cs}:
+      Ui.first(cs, Give.ask.go(u, text))
+
+def Give.ask(u: Ui, +text: String) -> Act:
+  Give.ask.d(Draft.clear(u), text)
 
 def Ui.send.give(give: Bool, +u: Ui, alt: Bool) -> Act:
   match give:
@@ -5410,7 +5564,7 @@ def Bots.chat.of(+st: M.State, +id: String, +th: String) -> String:
 def Bots.select.k(m: Maybe<&2, BT.Bot>, +u: Ui) -> Act:
   match m:
     case Some{BT.Bot{+i, _, +th, _, _, _, _}}:
-      Act{Ui.flag_off(Bots.views(Bots.sel.set(u, Bots.chat.of(Ui.state.of(u), i, th)), i, "", ""), "settings"), [Focus{"composer"}, ScrollEnd{}]}
+      Draft.stale.after(Act{Ui.flag_off(Bots.views(Bots.sel.set(u, Bots.chat.of(Ui.state.of(u), i, th)), i, "", ""), "settings"), [Focus{"composer"}, ScrollEnd{}]})
     case None{}:
       Act{u, Nil{}}
 

@@ -10239,3 +10239,47 @@ def Laws.frame_par_exact(w, h, ops, base, prev, dy):
     case T.FSome{pw, ph, pt}:
       frame_par_k(Bool.and(U32.is_eq(pw, w), U32.is_eq(ph, h)), w, h, ops, base, pt, dy)
 # ---- end gfx-runs ----
+# ---- sent-draft ----
+def Laws.draft_clear_tells_host(u):
+  match u:
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      {==}
+
+def Laws.draft_clear_empties():
+  {==}
+
+def Laws.draft_send_forgets_first(u, text, mode):
+  match u:
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      {==}
+
+def Laws.draft_bot_say_forgets_first(u, bot, text):
+  match u:
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      {==}
+
+def Laws.draft_btw_forgets_first(u, q):
+  match u:
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      {==}
+
+def Laws.draft_give_forgets_first(u, text):
+  match u:
+    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      {==}
+
+def Laws.draft_stale_same():
+  {==}
+
+def Laws.draft_stale_with_attachments():
+  {==}
+
+def Laws.draft_stale_longer_is_not():
+  {==}
+
+def Laws.draft_stale_empty_never(said):
+  {==}
+
+def Laws.draft_stale_last():
+  {==}
+# ---- end sent-draft ----
