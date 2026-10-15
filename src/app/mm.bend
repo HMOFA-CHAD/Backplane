@@ -213,7 +213,7 @@ def Mm.memo.ok(+op: Map<&2, Bool>, +sel: String, +tr: Map<&2, VT.Vt>) -> Bool:
 def Mm.key.go(+n: N.Nui, +t: TouchK, +rels: List<&2, String>) -> String:
   match n:
     case N.Nui{U.Ui{+st, +sel, +dr, +live, +op, on, +now, ad, pa, v, rid, w, er, note, +nf, +ob, _}, +ww, +hh, _, _, _, sc, ca, fo, path, +hi, _, _}:
-      "s" ++ Mm.stamps(sel <> rels, t)
+      "s" ++ Mm.stamps(sel <> rels, t) ++ "|lang" ++ L.TL.locale(N.Nui.ui(n))
         ++ "|g" ++ Nat.show(TouchK.g(t)) ++ "|t" ++ Mm.when(st, sel, now, rels) ++ "|w" ++ U32.show(ww) ++ "," ++ U32.show(hh) ++ "," ++ U32.show(sc) ++ "," ++ Nat.show(ca) ++ "," ++ fo ++ "," ++ path
         ++ "|x" ++ U32.show(Mm.x1(pa, ww)) ++ "|cs" ++ N.Cs.region(hi) ++ "|ch" ++ Mm.hit(L.Comp.hit(hi))
         ++ "|u" ++ Mm.b(on) ++ Mm.b(ad) ++ Mm.b(pa) ++ Mm.b(w) ++ "," ++ v ++ "," ++ Nat.show(rid) ++ "," ++ er ++ "," ++ note
@@ -349,7 +349,7 @@ def Sm.caret(+fo: String, +ca: Nat) -> String:
 def Sm.key(+n: N.Nui, +t: TouchK) -> String:
   match n:
     case N.Nui{U.Ui{_, +sel, _, _, +op, on, now, ad, pa, v, rid, w, er, note, +nf, +ob, _}, +ww, +hh, _, _, sd, _, ca, +fo, path, _, _, _}:
-      "n" ++ Nat.show(TouchK.n(t)) ++ "|" ++ sel ++ "|t" ++ Nat.show(now) ++ "|w" ++ U32.show(ww) ++ "," ++ U32.show(hh) ++ "," ++ U32.show(sd) ++ "," ++ Sm.caret(fo, ca) ++ "," ++ fo ++ "," ++ path
+      "n" ++ Nat.show(TouchK.n(t)) ++ "|" ++ sel ++ "|lang" ++ L.TL.locale(N.Nui.ui(n)) ++ "|t" ++ Nat.show(now) ++ "|w" ++ U32.show(ww) ++ "," ++ U32.show(hh) ++ "," ++ U32.show(sd) ++ "," ++ Sm.caret(fo, ca) ++ "," ++ fo ++ "," ++ path
         ++ "|u" ++ Mm.b(on) ++ Mm.b(ad) ++ Mm.b(pa) ++ Mm.b(w) ++ "," ++ v ++ "," ++ Nat.show(rid) ++ "," ++ er ++ "," ++ note
         ++ "|f" ++ Mm.flags(Map.to_list(&2, Bool, op)) ++ "|o" ++ Mm.strs(Map.to_list(&2, String, ob))
         ++ "|i" ++ Mm.info(Map.to_list(&2, String, nf))
