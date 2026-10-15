@@ -91,6 +91,6 @@ def main() -> IO(Unit):
       "claude · claude-opus-5-5 this month | 3 turns · 9 in, 4k cache read, 3k cache write · 7 out (0 reasoning) · $0.0009\n" ++
       "codex · gpt-6.1-sol this month | 3 turns · 17k in, 17k cache read, 0 cache write · 11 out (0 reasoning) · cost not reported\n" ++
       "demo this month | 6 turns · 17k in, 21k cache read, 3k cache write · 18 out (0 reasoning) · $0.0009 for 3 of them\n" ++
-      "Codex work | 3 turns · 17k in, 17k cache read, 0 cache write · 11 out (0 reasoning) · cost not reported\n" ++
-      "Claude work | 3 turns · 9 in, 4k cache read, 3k cache write · 7 out (0 reasoning) · $0.0009\n" ++
+      "Codex work so far | 3 turns · 17k in, 17k cache read, 0 cache write · 11 out (0 reasoning) · cost not reported\n" ++
+      "Claude work so far | 3 turns · 9 in, 4k cache read, 3k cache write · 7 out (0 reasoning) · $0.0009\n" ++
       "Counted since | 2026-10-15 (UTC); earlier turns were not recorded. Costs are Claude's own figures at API prices, not a bill; Codex reports none.\n")

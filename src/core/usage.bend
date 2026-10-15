@@ -509,7 +509,7 @@ def TkT.some(t: TkT) -> Bool:
 def TkT.row(t: TkT) -> URow:
   match t:
     case TkT{ti, +v}:
-      URow{ti, Tk.note(v), ""}
+      URow{ti ++ " so far", Tk.note(v), ""}
 
 def Tk.threads.all(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, TkT>:
   match ts:
