@@ -4,6 +4,7 @@ import ../mailbody_test.bend as B
 import ../check.bend as C
 import ../../src/server/mailstore.bend as S
 import ../../src/server/perf.bend as P
+import ../../src/server/host.bend as H
 import ../../src/core/mailbody.bend as MB
 
 def bench_result(r: S.StoreResult<Bool>, n: Nat, home: String, text: String, k: Unit -> IO(Unit)) -> IO(Unit):
@@ -22,6 +23,12 @@ def bench(+n: Nat, +home: String, +text: String) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
+    # host.c currently emits join helpers unconditionally, while their CBOR
+    # buffer dependency is conditional. Exercise that existing codec here so
+    # this small native target includes the same dependency as the real hub.
+    # No socket, hub or user data is touched by this in-memory frame check.
+    frame : List<&2, U32> <- H.Json.cbor_frame("null", "", "")
+    C.Check.str("host effect linkage frame", Nat.show(List.length(&2, U32, frame)), "3")
     T.main()
     +home : String <- T.home()
     t0 : U32 <- P.Perf.us()

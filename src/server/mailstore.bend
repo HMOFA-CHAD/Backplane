@@ -76,7 +76,7 @@ def MailStore.tail(fuel: Nat, file: File, t: Tail) -> IO(File & Result<&2, &2, S
     case 0n _: IO.pure(File & Result<&2, &2, String, Tail>, (file, Fail{"tail scan exhausted"}))
     case 1n+k Tail{+pos, cut, found, False{}, row}:
       do IO<File & Result<&2, &2, String, Tail>>:
-        +start : U32 = U32.sub(pos, 16384)
+        +start : U32 = Bool.pick(U32, U32.is_lt(pos, 16384), 0, U32.sub(pos, 16384))
         r : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_at(file, start, U32.sub(pos, start))
         got : File & Result<&2, &2, String, Tail> <- MailStore.tail.chunk(r, Tail{pos, cut, found, False{}, row})
         MailStore.tail.next(got, f => t => MailStore.tail(k, f, t))
@@ -280,7 +280,7 @@ def MailStore.duplicate.equal(equal: Bool, s: Scan, size: U32) -> Result<&2, &2,
 def MailStore.duplicate.body(prior: Maybe<&2, MB.Body>, s: Scan, b: MB.Body, size: U32) -> Result<&2, &2, String, Scan>:
   match prior:
     case None{}: Fail{"invalid original duplicate record"}
-    case Some{old}: MailStore.duplicate.equal(String.eq(MB.Body.line(old), MB.Body.line(b)), s, size)
+    case Some{old}: MailStore.duplicate.equal(MB.Body.same(MB.Body.line(old), MB.Body.line(b)), s, size)
 
 def MailStore.duplicate.got(r: File & Result<&2, &2, String, List<&2, U32>>, s: Scan, b: MB.Body, size: U32) -> IO(File & Result<&2, &2, String, Scan>):
   (file, got) = r

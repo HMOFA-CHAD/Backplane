@@ -17,7 +17,7 @@ def encoded(b: Maybe<&2, MB.Body>) -> String:
 def long(n: Nat, +s: String) -> String:
   match n:
     case 0n: s
-    case 1n+k: long(k, s ++ s)
+    case 1n+k: long(k, String.reverse.go(String.reverse(s), s))
 
 def newlines(s: String, n: Nat) -> Nat:
   match s:
@@ -46,11 +46,16 @@ def recovered_ids(cs: List<&2, M.Change>) -> String:
     case M.MailPosted{id, _, _, _, _, _, _, _, _, _} <> t: id ++ recovered_ids(t)
     case _ <> t: recovered_ids(t)
 
+# The generic test helper compares with Base.String.eq, which itself has
+# non-tail recursion. Compare long protocol outputs without that stack cost.
+def check_long(name: String, got: String, want: String) -> IO(Unit):
+  C.Check.str(name, Bool.show(MB.Body.same(got, want)), "True")
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +text : String = long(15n, "雪😀\n\"{\"text\":true}\\")
     +b : MB.Body = fixture("m", "c", text, 0n)
-    C.Check.str("unicode quotes newline JSON and long exact roundtrip", encoded(MB.Body.parse(MB.Body.line(b))), MB.Body.line(b))
+    check_long("unicode quotes newline JSON and long exact roundtrip", encoded(MB.Body.parse(MB.Body.line(b))), MB.Body.line(b))
     C.Check.str("one literal newline terminator", Nat.show(newlines(MB.Body.line(b), 0n)), "1")
     +arrays : MB.Body = MB.Body{ML.Conv{"c", "", "", ["a|b", "c\nd", "雪"], "", ["x,y", "z\nq"], 0n, 0n, 0n}, ML.Mail{"m", "c", "", "", "", "", "fyi", "", 0n, 0n}, ""}
     C.Check.str("array delimiters preserved", encoded(MB.Body.decode(MB.Body.encode(arrays))), MB.Body.line(arrays))
@@ -71,7 +76,7 @@ def main() -> IO(Unit):
     rejection("negative conv count", field(MB.Body.encode(b), "conv", field(MB.Body.conv.encode(MB.Body.conv(b)), "n", J.Num{"-1"})))
     rejection("fraction conv time", field(MB.Body.encode(b), "conv", field(MB.Body.conv.encode(MB.Body.conv(b)), "made", J.Num{"0.5"})))
     +extra : J.Json = J.Json.obj([J.KV{"v", J.Num{"1"}}, J.KV{"conv", MB.Body.conv.encode(MB.Body.conv(b))}, J.KV{"mail", MB.Body.mail.encode(MB.Body.mail(b))}, J.KV{"text", J.Str{text}}, J.KV{"future", J.Flag{True{}}}])
-    C.Check.str("extra field tolerated", encoded(MB.Body.decode(extra)), MB.Body.line(b))
+    check_long("extra field tolerated", encoded(MB.Body.decode(extra)), MB.Body.line(b))
     C.Check.str("hostile path one segment", MB.Body.path("/tmp/h", "../a:b|%雪;$(x)"), "/tmp/h/mail/..%2Fa%3Ab%7C%25%E9%9B%AA%3B%24%28x%29.jsonl")
     C.Check.str("percent not double interpreted", MB.Body.path("H", "%2f/.."), "H/mail/%252f%2F...jsonl")
     C.Check.str("recovery same id", recovered_ids(MB.Body.recover(b, ML.Box.empty())), "m")

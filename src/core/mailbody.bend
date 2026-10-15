@@ -147,8 +147,22 @@ def Body.parse(s: String) -> Maybe<&2, Body>:
     j : J.Json <- J.Json.parse(s)
     Body.decode(j)
 
+# Exact, tail-recursive comparison for arbitrarily long body records. Base's
+# String.eq rebuilds its input after comparing each tail and exhausts the stack.
+# Carry the verdict in the recursive walk to stop at the first mismatch.
+def Body.same.go(a: String, b: String, same: Bool) -> Bool:
+  match a b same:
+    case _ _ False{}: False{}
+    case SNil{} SNil{} True{}: True{}
+    case SCon{Chr{x}, t} SCon{Chr{y}, u} True{}: Body.same.go(t, u, U32.is_eq(x, y))
+    case _ _ _: False{}
+
+def Body.same(a: String, b: String) -> Bool:
+  Body.same.go(a, b, True{})
+
 def Body.line(b: Body) -> String:
-  J.Json.show(Body.encode(b)) ++ "\n"
+  # Emit directly onto the terminator. Base's ++ recurses once per character.
+  J.Json.emit(Body.encode(b), True{}, "\n")
 
 # ConvSet's legacy wire representation is newline-delimited. The body
 # journal preserves the original arrays, including delimiters, losslessly.

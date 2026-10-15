@@ -63,10 +63,16 @@ def inject(path: String, text: String) -> IO(Unit):
     r : File & Result<&1, &1, U32 & String, Unit> <- File.write(f, text)
     inject_close(r)
 
+def append_status(r: S.StoreResult<Bool>) -> String:
+  match r:
+    case S.Stored{_}: "ok"
+    case S.Missing{path}: "missing: " ++ path
+    case S.StoreError{path, reason}: "error: " ++ path ++ ": " ++ reason
+
 def app(+home: String, +id: String, conv: String, text: String, at: Nat) -> IO(Unit):
   do IO<Unit>:
     r : S.StoreResult<Bool> <- S.MailStore.append(home, B.fixture(id, conv, text, at))
-    C.Check.str("append " ++ id, status(Bool, r), "ok")
+    C.Check.str("append " ++ id, append_status(r), "ok")
 
 def main() -> IO(Unit):
   do IO<Unit>:
