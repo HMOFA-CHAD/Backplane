@@ -22,6 +22,7 @@ import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
 import ./src/core/deploy.bend as DP
 import ./src/core/cmds.bend as CM
+import ./src/core/adopt.bend as AD
 import ./src/core/utf8.bend as UT
 import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
@@ -8133,3 +8134,44 @@ law paste_full_piece_size:
 law paste_key_length:
   for word: U32
   {String.length(AT.Att.paste.key(word)) == 8n : Nat}
+# ---- agent-adopt ----
+# A restart in place keeps each Claude process it can (adopt.bend): one
+# handed off, still the same process (start identity), its thread not
+# taken already. One that runs but cannot be kept is stopped; one that is
+# gone or is now another process (or pid 0 or 1) is never signalled.
+law adopt_demo_kept:
+  {AD.Adopt.kept(AD.Adopt.demo(True{})) == ["t1"] : List<&2, String>}
+
+law adopt_demo_stopped:
+  {AD.Adopt.stopped(AD.Adopt.demo(True{})) == [4343n, 6000n] : List<&2, Nat>}
+
+law adopt_off_stops_all_live:
+  {Bool.and(List.is_empty(&2, String, AD.Adopt.kept(AD.Adopt.demo(False{}))), Nat.is_eq(List.length(&2, Nat, AD.Adopt.stopped(AD.Adopt.demo(False{}))), 3n)) == True{} : Bool}
+
+law adopt_one_per_thread:
+  {AD.Adopt.dup(AD.Adopt.kept(AD.Adopt.demo(True{}))) == False{} : Bool}
+
+# another process under the same pid (start identity differs), or pid 0 or
+# 1, is never signalled nor adopted
+law adopt_mismatch_left:
+  {AD.Adopt.stopped(AD.Adopt.decide([AD.AEntry{"t", 77n, "b:1", 9n, True{}, "g", "k", CM.Cmds.new()}], ["b:2"], True{})) == [] : List<&2, Nat>}
+
+law adopt_low_pid_left:
+  {Bool.and(List.is_empty(&2, Nat, AD.Adopt.stopped(AD.Adopt.decide([AD.AEntry{"t", 1n, "b:1", 9n, False{}, "g", "k", CM.Cmds.new()}, AD.AEntry{"u", 0n, "b:1", 9n, False{}, "g", "k", CM.Cmds.new()}], ["b:1", "b:1"], True{}))),
+    List.is_empty(&2, String, AD.Adopt.kept(AD.Adopt.decide([AD.AEntry{"t", 1n, "b:1", 9n, True{}, "g", "k", CM.Cmds.new()}], ["b:1"], True{})))) == True{} : Bool}
+
+# a kept agent's ledger comes through the handoff as it was
+law cmds_json_round:
+  {CM.Cmds.read(CM.Cmds.json(CM.Cmds.demo.kept())) == CM.Cmds.demo.kept() : CM.Cmds}
+
+# recovery never ends, posts into or carries on a kept agent's turn (no
+# second process starts for it); without the agent kept it carries on
+law adopt_kept_turn_runs:
+  {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Adopt.recovered(H.Rec.demo(M.Running{}), 10n, ["t1"])), H.Rec.demo(M.Running{})), "t1")) == True{} : Bool}
+
+law adopt_kept_never_carried:
+  {H.Adopt.touches(H.Queue.changes(H.Adopt.recovered(H.Rec.demo(M.Running{}), 10n, ["t1"])), "t1") == False{} : Bool}
+
+law adopt_not_kept_carried:
+  {H.Adopt.touches(H.Queue.changes(H.Adopt.recovered(H.Rec.demo(M.Running{}), 10n, [])), "t1") == True{} : Bool}
+# ---- end agent-adopt ----

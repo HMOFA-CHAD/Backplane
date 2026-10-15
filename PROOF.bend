@@ -9480,3 +9480,34 @@ def Laws.paste_full_piece_size(prefix, rest):
 
 def Laws.paste_key_length(word):
   {==}
+# ---- agent-adopt ----
+def Laws.adopt_demo_kept():
+  {==}
+
+def Laws.adopt_demo_stopped():
+  {==}
+
+def Laws.adopt_off_stops_all_live():
+  {==}
+
+def Laws.adopt_one_per_thread():
+  {==}
+
+def Laws.adopt_mismatch_left():
+  {==}
+
+def Laws.adopt_low_pid_left():
+  {==}
+
+def Laws.cmds_json_round():
+  {==}
+
+def Laws.adopt_kept_turn_runs():
+  {==}
+
+def Laws.adopt_kept_never_carried():
+  {==}
+
+def Laws.adopt_not_kept_carried():
+  {==}
+# ---- end agent-adopt ----

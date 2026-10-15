@@ -602,3 +602,43 @@ def Cmds.l.lc(+u: String, +state: String) -> String:
 # a ledger in lifecycle mode with one command at st
 def Cmds.one(+u: String, +st: Nat, +wake: Bool) -> Cmds:
   Cmds{[Cmd{u, st, False{}, ""}], 1n, wake}
+
+# Kept across a restart
+# ---------------------
+# A Claude process the hub keeps through a restart in place (adopt.bend)
+# keeps its ledger: written as JSON before the exec and read back after,
+# so its lines are judged as before (law cmds_json_round).
+
+def Cmd.json(c: Cmd) -> J.Json:
+  match c:
+    case Cmd{u, st, e, x}:
+      J.Json.obj([J.KV{"u", J.Str{u}}, J.KV{"s", J.Json.nat(st)}, J.KV{"e", J.Json.bool(e)}, J.KV{"t", J.Str{x}}])
+
+def Cmds.json.cs(cs: List<&2, Cmd>) -> List<&2, J.Json>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case c <> t:
+      Cmd.json(c) <> Cmds.json.cs(t)
+
+def Cmds.json(c: Cmds) -> J.Json:
+  match c:
+    case Cmds{cs, m, w}:
+      J.Json.obj([J.KV{"cs", J.Json.arr(Cmds.json.cs(cs))}, J.KV{"m", J.Json.nat(m)}, J.KV{"w", J.Json.bool(w)}])
+
+def Cmd.read(+o: J.Json) -> Cmd:
+  Cmd{J.Json.get_str(o, "u", ""), J.Json.get_nat(o, "s", 0n), J.Json.get_bool(o, "e", False{}), J.Json.get_str(o, "t", "")}
+
+def Cmds.read.cs(os: List<&2, J.Json>) -> List<&2, Cmd>:
+  match os:
+    case Nil{}:
+      Nil{}
+    case +o <> t:
+      Cmd.read(o) <> Cmds.read.cs(t)
+
+def Cmds.read(+o: J.Json) -> Cmds:
+  Cmds{Cmds.read.cs(J.Json.elems(J.Json.get_obj(o, "cs"))), J.Json.get_nat(o, "m", 0n), J.Json.get_bool(o, "w", False{})}
+
+# a ledger with a command started and one resulted (for the laws)
+def Cmds.demo.kept() -> Cmds:
+  Cmds{[Cmd{"u1", 2n, False{}, ""}, Cmd{"u2", 3n, True{}, "it \"failed\"\n"}], 1n, True{}}

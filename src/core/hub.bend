@@ -21,6 +21,7 @@ import ./told.bend as TLD
 import ./deploy.bend as DP
 import ./version.bend as VER
 import ./locks.bend as LK
+import ./adopt.bend as AD
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -5227,14 +5228,28 @@ def Locks.recover.go(names: List<&2, String>, +s: M.State, +now: Nat, +st: Step)
 def Locks.recover(+s: M.State, +now: Nat) -> Step:
   Locks.recover.go(M.Locks.names(s), s, now, Step.none())
 
-def Hub.recover.k(+s: M.State, +now: Nat) -> Step:
-  Rec.step(Rec.lost(Rec.ids(Rec.threads(s)), Rec.repair(Rec.turns(Rec.ids(Rec.threads(s)), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), s, now), s, now), now))
+# the threads but those whose agent the restart kept (adopt.bend): their
+# turns still run, their work is still theirs
+def Rec.but(ids: List<&2, String>, +kept: List<&2, String>) -> List<&2, String>:
+  match ids:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      List.append(&2, String, Bool.pick(List<&2, String>, AD.Adopt.in(kept, x), Nil{}, [x]), Rec.but(t, kept))
+
+def Hub.recover.k(+s: M.State, +now: Nat, +kept: List<&2, String>) -> Step:
+  Rec.step(Rec.lost(Rec.but(Rec.ids(Rec.threads(s)), kept), Rec.repair(Rec.turns(Rec.but(Rec.ids(Rec.threads(s)), kept), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), s, now), s, now), now))
 
 # (and every watched work still open is watched again: Watch.rearm)
-def Hub.recover(+s: M.State, +now: Nat) -> Step:
+# kept: the threads whose agent process the restart kept (adopted): their
+# turns are not ended, their work not lost, nothing carries them on
+def Hub.recover.a(+s: M.State, +now: Nat, +kept: List<&2, String>) -> Step:
   +locks = Locks.recover(s, now)
   +s1 = M.State.replay(Queue.changes(locks), s)
-  Step.cat(locks, Step.cat(Step{Nil{}, Watch.rearm(s1)}, Hub.recover.k(s1, now)))
+  Step.cat(locks, Step.cat(Step{Nil{}, Watch.rearm(s1)}, Hub.recover.k(s1, now, kept)))
+
+def Hub.recover(+s: M.State, +now: Nat) -> Step:
+  Hub.recover.a(s, now, Nil{})
 
 # Carrying on
 # -----------
@@ -5309,17 +5324,20 @@ def Cr.step(c: Cr) -> Step:
     case Cr{r, _}:
       Rec.step(r)
 
-def Carry.go(on: Bool, +before: M.State, +after: M.State, +now: Nat) -> Step:
+def Carry.go(on: Bool, +before: M.State, +after: M.State, +now: Nat, +kept: List<&2, String>) -> Step:
   match on:
     case True{}:
-      Cr.step(Carry.all(Rec.ids(Rec.threads(before)), Cr{Rec{after, Nil{}, Nil{}}, Rec.burst()}, before, now))
+      Cr.step(Carry.all(Rec.but(Rec.ids(Rec.threads(before)), kept), Cr{Rec{after, Nil{}, Nil{}}, Rec.burst()}, before, now))
     case False{}:
       Step.none()
 
 # before: the state Hub.recover started from; after: once its step applied
 # (turns carried on and lost work told, Rec.burst() threads at most)
+def Hub.carry.a(+before: M.State, +after: M.State, +now: Nat, +kept: List<&2, String>) -> Step:
+  Step.cat(Carry.go(M.Carry.on(after), before, after, now, kept), Deploy.after(after, now))
+
 def Hub.carry(+before: M.State, +after: M.State, +now: Nat) -> Step:
-  Step.cat(Carry.go(M.Carry.on(after), before, after, now), Deploy.after(after, now))
+  Hub.carry.a(before, after, now, Nil{})
 
 def Rel.k(run: Bool, live: Bool, r: Rec, +now: Nat, +th: String) -> Rec:
   match run live r:
@@ -5663,6 +5681,24 @@ def Carry.after.k(+before: M.State, +after: M.State, +now: Nat) -> M.State:
 # the recovery scenario carried on: the state after both steps
 def Carry.after(+s: M.State, +now: Nat) -> M.State:
   Carry.after.k(s, Rec.after(s, now), now)
+
+# a restart that kept the agents of `kept` (adopt.bend): recovery and
+# carrying on, as one step (for the laws)
+def Adopt.recovered(+s: M.State, +now: Nat, +kept: List<&2, String>) -> Step:
+  +r = Hub.recover.a(s, now, kept)
+  Step.cat(r, Hub.carry.a(s, M.State.replay(Queue.changes(r), s), now, kept))
+
+# whether changes end, start or post into thread th's turn
+def Adopt.touches(cs: List<&2, M.Change>, +th: String) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case M.TurnChanged{+t, _, _} <> rest:
+      Bool.or(String.eq(t, th), Adopt.touches(rest, th))
+    case M.MessagePosted{+t, _, _, _, _} <> rest:
+      Bool.or(String.eq(t, th), Adopt.touches(rest, th))
+    case _ <> rest:
+      Adopt.touches(rest, th)
 
 # the running scenario with more changes on top (for the carry laws)
 def Carry.demo(cs: List<&2, M.Change>) -> M.State:
