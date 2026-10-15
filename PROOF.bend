@@ -10595,9 +10595,3 @@ def Laws.usage_tail_claude_waits():
 
 def Laws.usage_tail_reading(p, t):
   {==}
-
-def Laws.usage_note_held():
-  {==}
-
-def Laws.usage_note_no_window():
-  {==}

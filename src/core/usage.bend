@@ -231,10 +231,11 @@ def Bj.cache.k(ok: Bool, +old: J.Json, nw: J.Json, +now: Nat) -> String:
 def Bj.cache.next(+old: String, +out: String, +now: Nat) -> String:
   Bj.cache.k(Bj.valid(Bj.parse(out)), Bj.parse(old), Bj.parse(out), now)
 
-# whether to ask Boat again: Refresh (force) waits Bj.again() since the
-# last try, an open Settings Bj.every()
+# whether to ask Boat again: at once when it never was; Refresh (force)
+# waits Bj.again() since the last try, an open Settings Bj.every()
 def Bj.due(+old: String, force: Bool, +now: Nat) -> Bool:
-  Nat.is_ge(Nat.sub(now, Bj.nat(Bj.parse(old), "at")), Bool.pick(Nat, force, Bj.again(), Bj.every()))
+  Bool.or(Nat.is_eq(Bj.nat(Bj.parse(old), "at"), 0n),
+    Nat.is_ge(Nat.sub(now, Bj.nat(Bj.parse(old), "at")), Bool.pick(Nat, force, Bj.again(), Bj.every())))
 
 # what clients get (info "boat.usage"): the cache and the job status
 def Bj.info(+cache: String, +status: String) -> String:

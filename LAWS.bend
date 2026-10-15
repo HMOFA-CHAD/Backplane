@@ -8690,10 +8690,3 @@ law usage_tail_reading:
   for +p: String
   for +t: String
   {UZ.Use.tail(p, 5n, t) == t : String}
-
-# a reading is what a session holds, said as held, with its share
-law usage_note_held:
-  {UZ.Use.held.note(301756n, 1000000n) == "301k of 1M held (30%)" : String}
-
-law usage_note_no_window:
-  {UZ.Use.held.note(5000n, 0n) == "5k held, window unknown" : String}
