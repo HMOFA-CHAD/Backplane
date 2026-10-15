@@ -542,96 +542,61 @@ def Text.run(s: String, +cache: Map<&2, TG>, +f: Face, +c: D.Clip, +x: U32, +pen
 
 # Runs
 # ----
-# A line of text is one op: its glyphs as an R.Run tree (in string order,
-# from the run's top-left corner), shaded glyph by glyph exactly as one op
-# per glyph was (raster.bend's Run.px). Glyphs a frame still wants follow
-# it as want ops.
+# A line of text is one op: its glyphs as an R.Run tree (in string order),
+# shaded glyph by glyph exactly as one op per glyph was (raster.bend's
+# Run.px). A glyph sits in the run's own coordinates: from the pen's start
+# x and the baseline, less 32768 each (so every glyph lies right of and
+# below the origin), and a moved run moves no glyph. Glyphs a frame still
+# wants follow the run as want ops.
 
+# the glyphs placed so far (last first), the box they cover in the frame,
+# and the wants
 type RAcc is Data:
-  RAcc{gs: List<&2, R.Run>, ws: List<&2, R.Op>}
+  RAcc{gs: List<&2, R.Run>, x0: U32, y0: U32, x1: U32, y1: U32, ws: List<&2, R.Op>}
 
-type RBox is Data:
-  RBox{x0: U32, y0: U32, x1: U32, y1: U32}
+def RAcc.put.k(empty: Bool, +lx: U32, +ly: U32, +w: U32, +h: U32, d: Nat, m: R.Mask, +x: U32, +base: U32, a: RAcc) -> RAcc:
+  match empty a:
+    case True{} _:
+      a
+    case False{} RAcc{gs, +x0, +y0, +x1, +y1, ws}:
+      RAcc{R.RGlyph{lx, ly, w, h, d, m} <> gs, U32.min(x0, (x + lx - 32768 : U32)), U32.min(y0, (base + ly - 32768 : U32)),
+        U32.max(x1, (x + lx + w - 32768 : U32)), U32.max(y1, (base + ly + h - 32768 : U32)), ws}
 
-def Text.place.k(empty: Bool, +gx: U32, +gy: U32, +w: U32, +h: U32, d: Nat, m: R.Mask, gs: List<&2, R.Run>) -> List<&2, R.Run>:
-  match empty:
-    case True{}:
-      gs
-    case False{}:
-      R.RGlyph{gx, gy, w, h, d, m} <> gs
-
-# one glyph with its pen at pixel x on the baseline, placed in the frame
-# (as Text.op placed it: an empty one, or one left of the frame, draws
-# nothing)
-def Text.place(g: TG, +x: U32, +base: U32, gs: List<&2, R.Run>) -> List<&2, R.Run>:
+# one glyph, its pen pen pixels from x on the baseline (as Text.op placed
+# it; an empty one, one left of the frame or one above its top draws
+# nothing, as there)
+def RAcc.put(g: TG, +x: U32, +pen: U32, +base: U32, a: RAcc) -> RAcc:
   match g:
     case TG{_, +l, +t, +w, +h, d, m}:
-      Text.place.k(Bool.or(U32.is_eq((w * h : U32), 0), U32.is_lt((x + l : U32), 32768)), (x + l - 32768 : U32), (base + 32768 - t : U32), w, h, d, m, gs)
+      RAcc.put.k(Bool.or(Bool.or(U32.is_eq((w * h : U32), 0), U32.is_lt((x + pen + l : U32), 32768)), U32.is_lt((base + 32768 : U32), t)),
+        (pen + l : U32), (65536 - t : U32), w, h, d, m, x, base, a)
 
-# the glyphs of s placed (last first) and the wants, pen from x
-def Text.glyphs(s: String, +cache: Map<&2, TG>, +f: Face, +x: U32, +pen: U32, +base: U32, gs: List<&2, R.Run>, ws: List<&2, R.Op>) -> RAcc:
+def RAcc.want(+id: U32, +cp: U32, +miss: U32, a: RAcc) -> RAcc:
+  match a:
+    case RAcc{gs, x0, y0, x1, y1, ws}:
+      RAcc{gs, x0, y0, x1, y1, Want.op(id, cp, miss) <> ws}
+
+def RAcc.want.k(missing: Bool, +id: U32, +cp: U32, +miss: U32, a: RAcc) -> RAcc:
+  match missing:
+    case True{}:
+      RAcc.want(id, cp, miss, a)
+    case False{}:
+      a
+
+# the glyphs of s placed, pen from x (26.6) on the baseline
+def Text.glyphs(s: String, +cache: Map<&2, TG>, +f: Face, +x: U32, +pen: U32, +base: U32, a: RAcc) -> RAcc:
   match s:
     case SNil{}:
-      RAcc{gs, ws}
+      a
     case SCon{Chr{+cp}, t}:
       +g = Text.get(cache, f, cp)
-      Text.glyphs(t, cache, f, x, (pen + TG.adv(g) : U32), base, Text.place(g, (x + Text.px(pen) : U32), base, gs), Want.k(TG.missing(g), Face.id(f), cp, Face.miss(f), ws))
+      Text.glyphs(t, cache, f, x, (pen + TG.adv(g) : U32), base, RAcc.put(g, x, Text.px(pen), base, RAcc.want.k(TG.missing(g), Face.id(f), cp, Face.miss(f), a)))
 
-def Run.box1(g: R.Run, b: RBox) -> RBox:
-  match g b:
-    case R.RGlyph{+gx, +gy, +w, +h, _, _} RBox{+x0, +y0, +x1, +y1}:
-      RBox{U32.min(x0, gx), U32.min(y0, gy), U32.max(x1, (gx + w : U32)), U32.max(y1, (gy + h : U32))}
-    case _ _:
-      b
-
-# the box the glyphs cover
-def Run.box(gs: List<&2, R.Run>, b: RBox) -> RBox:
-  match gs:
-    case Nil{}:
-      b
-    case g <> t:
-      Run.box(t, Run.box1(g, b))
-
-def Run.loc1(g: R.Run, +ox: U32, +oy: U32) -> R.Run:
-  match g:
-    case R.RGlyph{gx, gy, w, h, d, m}:
-      R.RGlyph{(gx - ox : U32), (gy - oy : U32), w, h, d, m}
-    case _:
-      g
-
-# the glyphs (last first) from the corner (ox, oy), first first
-def Run.loc(gs: List<&2, R.Run>, +ox: U32, +oy: U32, acc: List<&2, R.Run>) -> List<&2, R.Run>:
-  match gs:
-    case Nil{}:
-      acc
-    case g <> t:
-      Run.loc(t, ox, oy, Run.loc1(g, ox, oy) <> acc)
-
-def Run.lo(r: R.Run) -> U32:
-  match r:
-    case R.RGlyph{gx, _, _, _, _, _}:
-      gx
-    case R.RPair{x0, _, _, _}:
-      x0
-    case R.RNone{}:
-      4294967295
-
-def Run.hi(r: R.Run) -> U32:
-  match r:
-    case R.RGlyph{gx, _, w, _, _, _}:
-      (gx + w : U32)
-    case R.RPair{_, x1, _, _}:
-      x1
-    case R.RNone{}:
-      0
-
-def Run.pair(+a: R.Run, +b: R.Run) -> R.Run:
-  R.RPair{U32.min(Run.lo(a), Run.lo(b)), U32.max(Run.hi(a), Run.hi(b)), a, b}
-
+# a list of runs (last first) paired up, last first still
 def Run.level(xs: List<&2, R.Run>) -> List<&2, R.Run>:
   match xs:
     case a <> b <> t:
-      Run.pair(a, b) <> Run.level(t)
+      R.Run.pair(b, a) <> Run.level(t)
     case a <> Nil{}:
       [a]
     case Nil{}:
@@ -649,17 +614,17 @@ def Run.up(d: Nat, xs: List<&2, R.Run>) -> R.Run:
     case 1n+p _:
       Run.up(p, Run.level(xs))
 
-def Text.runop.k(empty: Bool, b: RBox, gs: List<&2, R.Run>, ws: List<&2, R.Op>, +c: D.Clip, +color: U32) -> List<&2, R.Op>:
-  match empty b:
-    case True{} _:
+def Text.runop.k(empty: Bool, gs: List<&2, R.Run>, +x0: U32, +y0: U32, +x1: U32, +y1: U32, ws: List<&2, R.Op>, +c: D.Clip, +x: U32, +base: U32, +color: U32) -> List<&2, R.Op>:
+  match empty:
+    case True{}:
       ws
-    case False{} RBox{+x0, +y0, +x1, +y1}:
-      D.Clip.cut(c, x0, y0, x1, y1, color, 255, R.SRun{x0, y0, Run.up(32n, Run.loc(gs, x0, y0, Nil{}))}) <> ws
+    case False{}:
+      D.Clip.cut(c, x0, y0, x1, y1, color, 255, R.SRun{(x - 32768 : U32), (base - 32768 : U32), Run.up(32n, gs)}) <> ws
 
-def Text.runop(a: RAcc, +c: D.Clip, +color: U32) -> List<&2, R.Op>:
+def Text.runop(a: RAcc, +c: D.Clip, +x: U32, +base: U32, +color: U32) -> List<&2, R.Op>:
   match a:
-    case RAcc{+gs, ws}:
-      Text.runop.k(List.is_empty(&2, R.Run, gs), Run.box(gs, RBox{4294967295, 4294967295, 0, 0}), gs, ws, c, color)
+    case RAcc{+gs, +x0, +y0, +x1, +y1, ws}:
+      Text.runop.k(List.is_empty(&2, R.Run, gs), gs, x0, y0, x1, y1, ws, c, x, base, color)
 
 def Want.of.k(want: Bool, +id: U32, +cp: U32, +miss: U32, acc: List<&2, Want>) -> List<&2, Want>:
   match want:
@@ -686,7 +651,7 @@ def Text.wants(ops: List<&2, R.Op>, acc: List<&2, Want>) -> List<&2, Want>:
 def Text.draw.k(ft: Bool, s: String, +cache: Map<&2, TG>, +f: Face, +c: D.Clip, +x: U32, +base: U32, +color: U32) -> List<&2, R.Op>:
   match ft:
     case True{}:
-      Text.runop(Text.glyphs(s, cache, f, x, 0, base, Nil{}, Nil{}), c, color)
+      Text.runop(Text.glyphs(s, cache, f, x, 0, base, RAcc{Nil{}, 4294967295, 4294967295, 0, 0, Nil{}}), c, x, base, color)
     case False{}:
       D.Draw.text(s, c, x, (base - 12 : U32), color)
 

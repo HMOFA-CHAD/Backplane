@@ -50,8 +50,8 @@ def Eq.run(a: R.Run, b: R.Run) -> Bool:
       True{}
     case R.RGlyph{a0, a1, a2, a3, a4, a5} R.RGlyph{b0, b1, b2, b3, b4, b5}:
       Bool.and(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(Nat.is_eq(a4, b4), Eq.mask(a5, b5))))))
-    case R.RPair{a0, a1, a2, a3} R.RPair{b0, b1, b2, b3}:
-      Bool.and(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(Eq.run(a2, b2), Eq.run(a3, b3))))
+    case R.RPair{a0, a1, a2, a3, a4, a5} R.RPair{b0, b1, b2, b3, b4, b5}:
+      Bool.and(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(Eq.run(a4, b4), Eq.run(a5, b5))))))
     case _ _:
       False{}
 

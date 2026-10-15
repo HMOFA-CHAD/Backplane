@@ -1683,8 +1683,8 @@ def eq_run_sound(a, b, h):
       {==}
     case R.RNone{} R.RGlyph{+b0, +b1, +b2, +b3, +b4, +b5}:
       Empty.absurd({R.RNone{} == R.RGlyph{b0, b1, b2, b3, b4, b5} : R.Run}, false_ne_true(h))
-    case R.RNone{} R.RPair{+b0, +b1, +b2, +b3}:
-      Empty.absurd({R.RNone{} == R.RPair{b0, b1, b2, b3} : R.Run}, false_ne_true(h))
+    case R.RNone{} R.RPair{+b0, +b1, +b2, +b3, +b4, +b5}:
+      Empty.absurd({R.RNone{} == R.RPair{b0, b1, b2, b3, b4, b5} : R.Run}, false_ne_true(h))
     case R.RGlyph{+a0, +a1, +a2, +a3, +a4, +a5} R.RNone{}:
       Empty.absurd({R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RNone{} : R.Run}, false_ne_true(h))
     case R.RGlyph{+a0, +a1, +a2, +a3, +a4, +a5} R.RGlyph{+b0, +b1, +b2, +b3, +b4, +b5}:
@@ -1711,27 +1711,35 @@ def eq_run_sound(a, b, h):
       %e4 : {R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RGlyph{a0, a1, a2, a3, _, b5} : R.Run}
       %e5 : {R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RGlyph{a0, a1, a2, a3, a4, _} : R.Run}
       {==}
-    case R.RGlyph{+a0, +a1, +a2, +a3, +a4, +a5} R.RPair{+b0, +b1, +b2, +b3}:
-      Empty.absurd({R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RPair{b0, b1, b2, b3} : R.Run}, false_ne_true(h))
-    case R.RPair{+a0, +a1, +a2, +a3} R.RNone{}:
-      Empty.absurd({R.RPair{a0, a1, a2, a3} == R.RNone{} : R.Run}, false_ne_true(h))
-    case R.RPair{+a0, +a1, +a2, +a3} R.RGlyph{+b0, +b1, +b2, +b3, +b4, +b5}:
-      Empty.absurd({R.RPair{a0, a1, a2, a3} == R.RGlyph{b0, b1, b2, b3, b4, b5} : R.Run}, false_ne_true(h))
-    case R.RPair{+a0, +a1, +a2, +a3} R.RPair{+b0, +b1, +b2, +b3}:
-      +hl0 = and_l(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(T.Eq.run(a2, b2), T.Eq.run(a3, b3))), h)
-      +hr0 = and_r(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(T.Eq.run(a2, b2), T.Eq.run(a3, b3))), h)
+    case R.RGlyph{+a0, +a1, +a2, +a3, +a4, +a5} R.RPair{+b0, +b1, +b2, +b3, +b4, +b5}:
+      Empty.absurd({R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RPair{b0, b1, b2, b3, b4, b5} : R.Run}, false_ne_true(h))
+    case R.RPair{+a0, +a1, +a2, +a3, +a4, +a5} R.RNone{}:
+      Empty.absurd({R.RPair{a0, a1, a2, a3, a4, a5} == R.RNone{} : R.Run}, false_ne_true(h))
+    case R.RPair{+a0, +a1, +a2, +a3, +a4, +a5} R.RGlyph{+b0, +b1, +b2, +b3, +b4, +b5}:
+      Empty.absurd({R.RPair{a0, a1, a2, a3, a4, a5} == R.RGlyph{b0, b1, b2, b3, b4, b5} : R.Run}, false_ne_true(h))
+    case R.RPair{+a0, +a1, +a2, +a3, +a4, +a5} R.RPair{+b0, +b1, +b2, +b3, +b4, +b5}:
+      +hl0 = and_l(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5))))), h)
+      +hr0 = and_r(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5))))), h)
       e0 = u32_eq_sound(a0, b0, hl0)
-      +hl1 = and_l(U32.is_eq(a1, b1), Bool.and(T.Eq.run(a2, b2), T.Eq.run(a3, b3)), hr0)
-      +hr1 = and_r(U32.is_eq(a1, b1), Bool.and(T.Eq.run(a2, b2), T.Eq.run(a3, b3)), hr0)
+      +hl1 = and_l(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5)))), hr0)
+      +hr1 = and_r(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5)))), hr0)
       e1 = u32_eq_sound(a1, b1, hl1)
-      +hl2 = and_l(T.Eq.run(a2, b2), T.Eq.run(a3, b3), hr1)
-      +hr2 = and_r(T.Eq.run(a2, b2), T.Eq.run(a3, b3), hr1)
-      e2 = eq_run_sound(a2, b2, hl2)
-      e3 = eq_run_sound(a3, b3, hr2)
-      %e0 : {R.RPair{a0, a1, a2, a3} == R.RPair{_, b1, b2, b3} : R.Run}
-      %e1 : {R.RPair{a0, a1, a2, a3} == R.RPair{a0, _, b2, b3} : R.Run}
-      %e2 : {R.RPair{a0, a1, a2, a3} == R.RPair{a0, a1, _, b3} : R.Run}
-      %e3 : {R.RPair{a0, a1, a2, a3} == R.RPair{a0, a1, a2, _} : R.Run}
+      +hl2 = and_l(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5))), hr1)
+      +hr2 = and_r(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5))), hr1)
+      e2 = u32_eq_sound(a2, b2, hl2)
+      +hl3 = and_l(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5)), hr2)
+      +hr3 = and_r(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5)), hr2)
+      e3 = u32_eq_sound(a3, b3, hl3)
+      +hl4 = and_l(T.Eq.run(a4, b4), T.Eq.run(a5, b5), hr3)
+      +hr4 = and_r(T.Eq.run(a4, b4), T.Eq.run(a5, b5), hr3)
+      e4 = eq_run_sound(a4, b4, hl4)
+      e5 = eq_run_sound(a5, b5, hr4)
+      %e0 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{_, b1, b2, b3, b4, b5} : R.Run}
+      %e1 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{a0, _, b2, b3, b4, b5} : R.Run}
+      %e2 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{a0, a1, _, b3, b4, b5} : R.Run}
+      %e3 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{a0, a1, a2, _, b4, b5} : R.Run}
+      %e4 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{a0, a1, a2, a3, _, b5} : R.Run}
+      %e5 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{a0, a1, a2, a3, a4, _} : R.Run}
       {==}
 
 law eq_run_refl:
@@ -1750,11 +1758,13 @@ def eq_run_refl(a):
       %Equal.sym(Bool, Nat.is_eq(a4, a4), True{}, nat_eq_refl(a4)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, T.Eq.mask(a5, a5)))))) == True{} : Bool}
       %Equal.sym(Bool, T.Eq.mask(a5, a5), True{}, eq_mask_refl(a5)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, _))))) == True{} : Bool}
       {==}
-    case R.RPair{+a0, +a1, +a2, +a3}:
-      %Equal.sym(Bool, U32.is_eq(a0, a0), True{}, u32_eq_refl(a0)) : {Bool.and(_, Bool.and(U32.is_eq(a1, a1), Bool.and(T.Eq.run(a2, a2), T.Eq.run(a3, a3)))) == True{} : Bool}
-      %Equal.sym(Bool, U32.is_eq(a1, a1), True{}, u32_eq_refl(a1)) : {Bool.and(True{}, Bool.and(_, Bool.and(T.Eq.run(a2, a2), T.Eq.run(a3, a3)))) == True{} : Bool}
-      %Equal.sym(Bool, T.Eq.run(a2, a2), True{}, eq_run_refl(a2)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(_, T.Eq.run(a3, a3)))) == True{} : Bool}
-      %Equal.sym(Bool, T.Eq.run(a3, a3), True{}, eq_run_refl(a3)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, _))) == True{} : Bool}
+    case R.RPair{+a0, +a1, +a2, +a3, +a4, +a5}:
+      %Equal.sym(Bool, U32.is_eq(a0, a0), True{}, u32_eq_refl(a0)) : {Bool.and(_, Bool.and(U32.is_eq(a1, a1), Bool.and(U32.is_eq(a2, a2), Bool.and(U32.is_eq(a3, a3), Bool.and(T.Eq.run(a4, a4), T.Eq.run(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a1, a1), True{}, u32_eq_refl(a1)) : {Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a2, a2), Bool.and(U32.is_eq(a3, a3), Bool.and(T.Eq.run(a4, a4), T.Eq.run(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a2, a2), True{}, u32_eq_refl(a2)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a3, a3), Bool.and(T.Eq.run(a4, a4), T.Eq.run(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a3, a3), True{}, u32_eq_refl(a3)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(T.Eq.run(a4, a4), T.Eq.run(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, T.Eq.run(a4, a4), True{}, eq_run_refl(a4)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, T.Eq.run(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, T.Eq.run(a5, a5), True{}, eq_run_refl(a5)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, _))))) == True{} : Bool}
       {==}
 
 law eq_shape_sound:

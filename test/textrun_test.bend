@@ -118,6 +118,6 @@ def main() -> IO(Unit):
     C.Check.str("a run draws as its glyphs in tiles", Nat.show(diff(U32.to_nat((W() * H() : U32)), ta, tb, d, W(), 0n)), "0")
     C.Check.str("tiles draw a run as the frame does", Nat.show(diff(U32.to_nat((W() * H() : U32)), a, tb, d, W(), 0n)), "0")
     C.Check.str("the frame draws something", Bool.show(Nat.is_gt(diff(U32.to_nat((W() * H() : U32)), a, R.Frame.render(W(), H(), under(), bg), d, W(), 0n), 500n)), "True")
-    C.Check.str("one op a line, wants after", Nat.show(Nat.sub(List.length(&2, R.Op, new), List.length(&2, X.Want, X.Text.wants(new, Nil{})))), "7")
+    C.Check.str("one op a line, wants after", Nat.show(Nat.sub(List.length(&2, R.Op, new), List.length(&2, X.Want, X.Text.wants(new, Nil{})))), "6")
     C.Check.str("glyph ops before", Bool.show(Nat.is_gt(List.length(&2, R.Op, old), 60n)), "True")
     C.Check.str("the same glyphs wanted", wants(new), wants(old))
