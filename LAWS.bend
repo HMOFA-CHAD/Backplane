@@ -8279,3 +8279,31 @@ law tiles_recat_exact:
   for +n: U32
   {T.Tiles.recat(k, e, cs, cs2, T.Tiles.make(k, e, T.Ops.cat(cs, rest), base, rx, ry, n), rx, ry, n) == T.Tiles.make(k, e, T.Ops.cat(cs2, rest), base, rx, ry, n) : T.Tiles}
 # ---- end win-lean-frame cat frames ----
+# ---- gfx-runs: tile plans that build only changed nodes' ops ----
+# comparing a child's ops as they reach it, straight from its parent's, is
+# exactly comparing the list Region.keep would build
+law keep_eq:
+  for ops: List<&2, R.Op>
+  for +px: U32
+  for +py: U32
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  for +ys: List<&2, R.Op>
+  for ok: Bool
+  {T.Keep.eq(ops, px, py, rx, ry, n, ys, ok) == T.Eq.ops.go(R.Region.keep(ops, px, py, rx, ry, n), ys, ok) : Bool}
+
+# the plan that builds only changed nodes' ops is Tiles.plan, so
+# plan_fill_again and frame_par_exact hold of it
+law plan_cut_same:
+  for k: Nat
+  for +e: Nat
+  for +ops: List<&2, R.Op>
+  for +base: Image
+  for +prev: T.Tiles
+  for +p: T.Past
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  {T.Tiles.plan2(k, e, ops, base, prev, p, rx, ry, n) == T.Tiles.plan(k, e, ops, base, prev, p, rx, ry, n) : T.Plan}
+# ---- end gfx-runs ----
