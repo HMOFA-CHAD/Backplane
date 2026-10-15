@@ -392,7 +392,7 @@ def MailStore.read.result(r: StoreResult<Scan>, path: String) -> StoreResult<Lis
 
 # n=0 does no file IO; page limit is 200. Complete rows are validated even
 # beyond the cursor; a single final unterminated suffix is ignored.
-def MailStore.read(+home: String, +conv: String, before: String, n: Nat) -> IO(StoreResult<List<&2, MB.Body>>):
+def MailStore.read(+home: String, +conv: String, before: String, +n: Nat) -> IO(StoreResult<List<&2, MB.Body>>):
   match n:
     case 0n: IO.pure(StoreResult<List<&2, MB.Body>>, Stored{Nil{}})
     case 1n+k:
