@@ -182,14 +182,16 @@ delete_verify() {
   return 1
 }
 
-# Unclear creates (a `boat new` whose answer couldn't be read). Each keeps its
-# slot, start and worst-case reservation. A sweep, once its runner is gone,
-# looks for the sandbox it may have made: exactly one unknown sandbox of its
-# size and lifetime made around the attempt is adopted (then swept like any
-# of ours). None by the end of its lifetime (+10 min): it can't exist past
-# its auto-stop (no snapshots: erased), so the job is closed and charged its
-# worst case. More than one still up after that: unresolved, and new creates
-# are refused until they are gone. Other sandboxes are never touched.
+# Unclear creates (a `boat new` whose answer couldn't be read, or that was
+# cancelled midway). Each keeps its slot, start and worst-case reservation.
+# Nothing is ever adopted: only an id Boat returned to us is ours. Size,
+# lifetime and creation time can match another client's sandbox, so matching
+# sandboxes are only named for a person to review, never deleted. A sweep,
+# once its runner is gone and its lifetime + 10 min has passed (a sandbox it
+# made would have auto-stopped and, with no snapshots, been erased): with no
+# matching sandbox still up, the job is closed at its worst-case cost; with
+# one or more still up, it is unresolved and new creates are refused until
+# they are gone. Other sandboxes are never touched.
 reconcile() {
   local amb lj known act
   amb=$(fold ambig); [ -n "$amb" ] || return 0
@@ -208,14 +210,13 @@ for s in json.load(sys.stdin)["sandboxes"]:
     except Exception: continue
     if at - 10 <= t <= at + 300: c.append(s["id"])
 past = time.time() > at + ttl + 600
-if len(c) == 1: print("ADOPT", c[0])
-elif not c: print("EXPIRED" if past else "WAIT")
-else: print("UNRESOLVED" if past else "WAIT", len(c))
+if not past: print("WAIT")
+elif not c: print("EXPIRED")
+else: print("UNRESOLVED", " ".join(c))
 ' "$known" "$size" "$ttl" "$at")
     case $act in
-      ADOPT*) ledger ev=created job="$job" id="${act#ADOPT }" adopted=1; say "adopted ${act#ADOPT } for unclear create $job" ;;
       EXPIRED) ledger ev=reconciled job="$job" cost="$reserved" why="no sandbox by the end of its lifetime; charged its worst case" ;;
-      UNRESOLVED*) [ "$unres" = 1 ] || { ledger ev=unresolved job="$job" why="${act#UNRESOLVED } look-alike sandboxes still up past its lifetime"; say "unclear create $job unresolved: check boat list"; } ;;
+      UNRESOLVED*) [ "$unres" = 1 ] || { ledger ev=unresolved job="$job" why="sandboxes like it still up past its lifetime (review, never deleted by Backplane): ${act#UNRESOLVED }"; say "unclear create $job unresolved: check boat list"; } ;;
     esac
   done
 }
@@ -411,10 +412,10 @@ admit_wait "$@"
 [ $WAITED = 0 ] || echo "admitted after ${WAITED}s"
 
 ID="" CANCELLED=0 STAGE="" IN_CREATE=0 BEFORE="" ATTEMPT_AT=0
-# after a create whose answer is unclear: the one sandbox it may have made,
-# only if exactly one unknown sandbox (not listed before, not in the ledger)
-# has this job's size and lifetime and was made since the attempt
-adopt() {
+# after a create whose answer is unclear: unknown sandboxes (not listed
+# before, not in the ledger) with this job's size and lifetime made since the
+# attempt. For a person to review only: a match is not proof it is ours.
+candidates() {
   local known; known=$(fold known)
   b list --json 2>/dev/null | python3 -c '
 import json, sys
@@ -426,7 +427,7 @@ for s in json.load(sys.stdin)["sandboxes"]:
     try: at = datetime.fromisoformat(s["createdAt"].replace("Z", "+00:00")).timestamp()
     except Exception: continue
     if s.get("type") == size and int(s.get("ttlSeconds") or -1) == ttl and at >= t0 - 10: c.append(s["id"])
-if len(c) == 1: print(c[0])
+print(" ".join(c))
 ' "$BEFORE" "$known" "$SIZE" "$TTL" "$ATTEMPT_AT"
 }
 FINISHING=0
@@ -436,7 +437,12 @@ finish() {
   FINISHING=1
   trap '' TERM INT HUP
   if [ -z "$ID" ] && [ "$IN_CREATE" = 1 ]; then
-    sleep 5; ID=$(adopt); [ -n "$ID" ] && ledger ev=created job="$JOB" id="$ID" adopted=1 pid=$$ pidid="$(pid_id $$)"
+    # stopped during a create: it may have made a sandbox we can't identify.
+    # The reservation stays held until a sweep reconciles it.
+    c=$(candidates 2>/dev/null)
+    ledger ev=ambiguous job="$JOB" why="stopped during the create${c:+; sandboxes like it (review only): $c}"
+    say "stopped during the create: its slot and worst-case budget stay held until a sweep reconciles it"
+    rm -rf "$STAGE"; echo "exit $rc · logs $OUT"; exit "$rc"
   fi
   if [ -n "$ID" ]; then
     u=$(BT=30 b usage "$ID" --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(int(d.get("seconds",0))*int(d.get("billingMultiplier",1)))' 2>/dev/null || echo "$RESERVE")
@@ -475,8 +481,9 @@ echo "source: $SRC @ $REV (dirty: $DIRTY), $(wc -l < "$OUT/manifest.sha256") fil
 # Boat's start windows whatever its answer). Rate-limited: the reservation is
 # released and the job backs off (retry-after, else 15·2^n s, at most 5
 # tries) and is admitted again. Rejected: refused, no retry. Unclear (a
-# timeout, no JSON): never retried, so never a second sandbox; the one it may
-# have made is adopted if it can be told apart, else reported.
+# timeout, no JSON): never retried, so never a second sandbox; never adopted
+# either (a matching sandbox may be another client's): it stays held and is
+# reconciled by a sweep.
 T0=$(date +%s); TRIES=0
 while :; do
   BEFORE=$(listed | tr '\n' ' ') || { ledger ev=released job="$JOB"; refuse "cannot list sandboxes before creating"; }
@@ -518,11 +525,10 @@ else: print("-", "UNCLEAR", 0)
       IN_CREATE=0; ID=""; ledger ev=released job="$JOB"
       refuse "Boat rejected the create: $(printf '%s' "$new" | nourl | head -c 200)" ;;
     *)
-      sleep 5; ID=$(adopt)
-      [ -n "$ID" ] && { echo "create answered unclearly; adopted its sandbox $ID"; break; }
+      sleep 5; c=$(candidates)
       IN_CREATE=0; ID=""
-      ledger ev=ambiguous job="$JOB" why="create answered unclearly and no sandbox could be matched"
-      say "the create answered unclearly and no matching sandbox appeared; not retrying (no duplicate). Its slot and worst-case budget stay reserved until a sweep reconciles it (at most its lifetime + 10 min)."
+      ledger ev=ambiguous job="$JOB" why="create answered unclearly${c:+; sandboxes like it (review only, not deleted): $c}"
+      say "the create answered unclearly; not retrying (no duplicate) and not adopting anything. Its slot and worst-case budget stay held until a sweep reconciles it (after its lifetime + 10 min).${c:+ Sandboxes like it, for review: $c}"
       FINISHING=1; rm -rf "$STAGE"; exit 76 ;;
   esac
 done

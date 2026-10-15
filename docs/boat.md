@@ -18,13 +18,14 @@ full slot or minute/hour window waits (`--wait`, default 1 h, one limits
 read per pause, at least 15 s apart); a full day refuses. A rate-limited
 create (429) backs off (retry-after, else 15 s, 30 s, ...; at most 5 tries)
 and is admitted again; a create whose answer is unclear is never retried,
-so it never makes a second sandbox. It keeps its slot, its start and its
-worst-case budget until a sweep reconciles it: the one matching unknown
-sandbox (size, lifetime, creation time) is adopted and deleted; none by the
-end of its lifetime + 10 min closes it at its worst-case cost; look-alikes
-still up after that make it unresolved, and new creates are refused until
-they are gone (running jobs carry on). Other clients' sandboxes are never
-adopted or deleted. Run it from the worktree whose source should
+so it never makes a second sandbox, and nothing is ever adopted: only an
+id Boat returned is treated as ours (size, lifetime and creation time can
+match another client's sandbox, so matches are only named for review). It
+keeps its slot, its start and its worst-case budget (so does a job stopped
+during its create) until a sweep reconciles it after its lifetime + 10 min:
+with no matching sandbox still up it is closed at its worst-case cost; with
+one still up it is unresolved, and new creates are refused until it is gone
+(running jobs carry on). Other clients' sandboxes are never deleted. Run it from the worktree whose source should
 be checked (integrate main into your own worktree; don't reset the shared
 checkout).
 
