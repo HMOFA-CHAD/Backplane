@@ -69,6 +69,8 @@ import ../core/hist.bend as HI
 import ../core/emb.bend as EM
 import ./review.bend as RVS
 import ../core/cmds.bend as CM
+import ../core/adopt.bend as AD
+import ./adoptio.bend as AIO
 import ../core/outbox.bend as OB
 import ../core/live.bend as LV
 import ../core/farlive.bend as FLV
@@ -165,6 +167,8 @@ type Msg is Data:
   TurnDone{tag: String}
   # the hub just started from its log (B.Hub.recover)
   Recover{}
+  # restart in place: the hub hands its agents off (adopt.bend), then execs
+  Reexec{path: String, args: List<&2, String>}
   # changes a job off the hub made (a bot's home folder, a linked machine)
   Commit{changes: List<&2, M.Change>}
   # the uberbot's sync (core/ubersync.bend): a step touched its log or
@@ -485,6 +489,14 @@ def Agents.drop(as: List<&2, Agent>, +th: String) -> List<&2, Agent>:
     case Agent{+t, i, p, k, r} <> rest:
       Agents.drop.k(String.eq(t, th), Agent{t, i, p, k, r}, Agents.drop(rest, th))
 
+# the threads with an agent
+def Agents.threads(as: List<&2, Agent>) -> List<&2, String>:
+  match as:
+    case Nil{}:
+      Nil{}
+    case Agent{t, _, _, _, _} <> rest:
+      t <> Agents.threads(rest)
+
 def Agents.run.k(m: Maybe<&2, Agent>) -> Maybe<&2, ARun>:
   match m:
     case Some{Agent{_, _, _, _, r <> _}}:
@@ -783,6 +795,7 @@ def Agent.end(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(
   do IO<Unit>:
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
+    AIO.Adopt.drop(thread, pid)
     +why : String = B.Exit.why(code)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AgentGone{thread, code, pid, why})
     return Unit{}
@@ -3018,8 +3031,8 @@ def Upgrade.restart.at(+path: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Upgrade.say(inbox, Upgrade.note([J.KV{"state", J.Str{"restarting"}}]))
     args : List<String> <- IO.args()
-    r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(EX.Exe.path(path), Names.copy(RVS.Rvc.args.drop(args)))
-    Upgrade.exec(r, inbox)
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Reexec{EX.Exe.path(path), Names.copy(RVS.Rvc.args.drop(args))})
+    return Unit{}
 
 def Upgrade.restart(+inbox: Chan(Msg)) -> IO(Unit):
   IO.bind(String, Unit, H.Sys.exe_path(), path => Upgrade.restart.at(path, inbox))
@@ -3310,6 +3323,7 @@ def Hub.zone.tick(h: Hub, +now: Nat) -> IO(Hub):
       do IO<Hub>:
         Hub.zone.tick.k(SCH.Zone.stale(st, now), st, inbox, now)
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
 # an alert as a desktop notification on the desk used last: none when a
 # desk watches the thread and the alert is one a watcher holds (a note is
 # never held)
@@ -7363,10 +7377,11 @@ def Claude.fail(+thread: String, +gen: String, +msg: String, +inbox: Chan(Msg)) 
     return Unit{}
 
 def Claude.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +thread: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
-  (rd0, res) = r
+  (rd1, res) = r
   match res:
     case Done{wr}:
       do IO<Unit>:
+        rd0 : Socket <- AIO.Adopt.keep(thread, pid, rd1)
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
         ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, ClaudePid{thread, pid, gen})
         rd : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd0), d => Agent.watch.start(d, pid, thread, gen, inbox))
@@ -7374,7 +7389,7 @@ def Claude.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t
     case Fail{_}:
       do IO<Unit>:
         Proc.kill(pid, 15)
-        IO.spawn(Unit, Agent.end(rd0, pid, thread, gen, inbox))
+        IO.spawn(Unit, Agent.end(rd1, pid, thread, gen, inbox))
         Claude.fail(thread, gen, "its output could not be shared", inbox)
 
 def Claude.started.ok(started: U32 & Socket, +thread: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
@@ -8843,8 +8858,8 @@ def Hub.tagged(h: Hub, +tag: String, line: String, +now: Nat) -> IO(Hub):
 # then turns the restart cut short carry on (B.Hub.carry)
 def Hub.recover.carry(h: Hub, +before: M.State, +now: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.carry(before, st, now))
+    case Hub{+st, f, ls, cl, +as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.carry.a(before, st, now, Agents.threads(as)))
 
 def Hub.recover.go(h: Hub, st: B.Step, before: M.State, +now: Nat) -> IO(Hub):
   IO.bind(Hub, Hub, Hub.step(h, st), h2 => Hub.recover.carry(h2, before, now))
@@ -8852,14 +8867,164 @@ def Hub.recover.go(h: Hub, st: B.Step, before: M.State, +now: Nat) -> IO(Hub):
 # (and the Scratch project is made the first time, M.Scratch.ensure)
 def Hub.recover.k(h: Hub, +now: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.recover.go(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step.before(M.Scratch.ensure(st, Cfg.home(cfg) ++ "/scratch", now), Nil{}, B.Hub.recover(st, now)), st, now)
+    case Hub{+st, f, ls, cl, +as, inbox, +cfg, note}:
+      Hub.recover.go(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step.before(M.Scratch.ensure(st, Cfg.home(cfg) ++ "/scratch", now), Nil{}, B.Hub.recover.a(st, now, Agents.threads(as))), st, now)
 
 # (and threads elsewhere start: Far.start)
 def Hub.recover.stale(h: Hub, +now: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, cfg, note}:
       Hub.recover.k(Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
+
+# Agents kept through a restart in place (core/adopt.bend)
+# --------------------------------------------------------
+# Before the exec the hub writes the handoff (each Claude agent's
+# generation, key and ledger; effects/adopt.c keeps the descriptors on
+# their sockets open across the exec). At start, before recovery, each
+# recorded process is adopted, stopped or left (AD.Adopt.decide); an
+# adopted one is read and written as a freshly started one is, and
+# recovery leaves its thread alone. BACKPLANE_ADOPT=0 adopts nothing (each
+# recorded process still running is stopped).
+
+def Adopt.home.hand(+home: String) -> String:
+  home ++ "/agents.handoff"
+
+def Adopt.home.record(+home: String) -> String:
+  home ++ "/agents.pids"
+
+def Adopt.hand.of(a: Agent) -> String:
+  match a:
+    case Agent{t, _, p, k, ARun{c, _, _, _, g, _, _, _} <> _}:
+      AD.Adopt.hand.line(t, U32.to_nat(p), g, k, c) ++ "\n"
+    case _:
+      ""
+
+def Adopt.hand.all(as: List<&2, Agent>) -> String:
+  match as:
+    case Nil{}:
+      ""
+    case +a <> t:
+      Adopt.hand.of(a) ++ Adopt.hand.all(t)
+
+def Hub.reexec.k(r: Result<&1, &1, U32 & String, Unit>, h: Hub, +home: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        rm : Result<&1, &1, U32 & String, Unit> <- H.FS.remove(Adopt.home.hand(home))
+        Upgrade.exec(r, inbox)
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+# hand the agents off, then exec (an exec that fails takes the handoff back)
+def Hub.reexec(h: Hub, +path: String, args: List<&2, String>) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, +as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +home : String = Cfg.home(cfg)
+        t : String <- Token.save(Adopt.home.hand(home), Adopt.hand.all(as))
+        Log.info("restarting in place; " ++ Nat.show(List.length(&2, String, Agents.threads(as))) ++ " agents handed off")
+        r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(path, args)
+        Hub.reexec.k(r, Hub{st, f, ls, cl, as, inbox, cfg, note}, home)
+
+def Adopt.idents(es: List<&2, AD.AEntry>) -> IO(List<&2, String>):
+  match es:
+    case Nil{}:
+      IO.pure(List<&2, String>, Nil{})
+    case e <> t:
+      do IO<List<&2, String>>:
+        +i : String <- AIO.Adopt.ident(U32.from_nat(AD.AEntry.pid(e)))
+        rest : List<&2, String> <- Adopt.idents(t)
+        return i <> rest
+
+# a handed-off descriptor not kept is closed (one not handed off is a
+# number from another process's table: never touched)
+def Adopt.close(+hd: Bool, +fd: Nat) -> IO(Unit):
+  match hd:
+    case True{}:
+      H.Fd.close(U32.from_nat(fd))
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+# a stopped process the hub still parents (an exec keeps its children) is
+# reaped once it ends; one a crash left to init answers at once
+def Adopt.reap(ok: Bool, +pid: U32) -> IO(Unit):
+  match ok:
+    case True{}:
+      IO.bind(U32, Unit, H.Proc.wait(pid), c => IO.pure(Unit, Unit{}))
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Adopt.stop.e(e: AD.AEntry) -> IO(Unit):
+  match e:
+    case AD.AEntry{+t, +p, +i, +fd, +hd, _, _, _}:
+      do IO<Unit>:
+        +ok : Bool <- AIO.Adopt.stop(U32.from_nat(p), i)
+        Log.info("agent of " ++ t ++ " (pid " ++ Nat.show(p) ++ ") not kept through the restart: " ++ Bool.pick(String, ok, "stopped", "already gone"))
+        Adopt.close(hd, fd)
+        IO.spawn(Unit, Adopt.reap(ok, U32.from_nat(p)))
+
+# an adopted process, read and written as Hub.spawned.dup does it
+def Hub.adopted.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, e: AD.AEntry, h: Hub, +now: Nat) -> IO(Hub):
+  (rd0, res) = r
+  match res e h:
+    case Done{wr} AD.AEntry{+t, +p, _, _, _, +g, +k, c} Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        +pid : U32 = U32.from_nat(p)
+        +input : Chan(String) <- Chan.new(String, 256)
+        IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
+        rd : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd0), d => Agent.watch.start(d, pid, t, g, inbox))
+        IO.spawn(Unit, Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, t, g, B.Tag.of(t, pid), inbox))
+        Log.info("kept the agent of " ++ t ++ " (pid " ++ Nat.show(p) ++ ") through the restart")
+        return Hub{st, f, ls, cl, Agent{t, input, pid, k, [ARun{c, Nil{}, Nil{}, now, g, False{}, 0n, Nil{}}]} <> Agents.drop(as, t), inbox, cfg, note}
+    case Fail{_} _ _:
+      do IO<Hub>:
+        Socket.close(rd0)
+        Adopt.stop.e(e)
+        return h
+
+def Hub.adopted(r: Result<&1, &1, U32 & String, Socket>, +e: AD.AEntry, h: Hub, +now: Nat) -> IO(Hub):
+  match r:
+    case Done{s0}:
+      do IO<Hub>:
+        s1 : Socket <- AIO.Adopt.keep(AD.AEntry.thread(e), U32.from_nat(AD.AEntry.pid(e)), s0)
+        d : Socket & Result<&1, &1, U32 & String, Socket> <- H.Sock.dup(s1)
+        Hub.adopted.dup(d, e, h, now)
+    case Fail{_}:
+      do IO<Hub>:
+        Adopt.stop.e(e)
+        return h
+
+def Hub.adopt.one(v: AD.AVerdict, h: Hub, +now: Nat) -> IO(Hub):
+  match v:
+    case AD.VAdopt{AD.AEntry{t, p, i, +fd, hd, g, k, c}}:
+      IO.bind(Result<&1, &1, U32 & String, Socket>, Hub, AIO.Adopt.take(U32.from_nat(fd)), r => Hub.adopted(r, AD.AEntry{t, p, i, fd, hd, g, k, c}, h, now))
+    case AD.VStop{e}:
+      IO.bind(Unit, Hub, Adopt.stop.e(e), u => IO.pure(Hub, h))
+    case AD.VLeave{AD.AEntry{_, _, _, +fd, +hd, _, _, _}}:
+      IO.bind(Unit, Hub, Adopt.close(hd, fd), u => IO.pure(Hub, h))
+
+def Hub.adopt.all(vs: List<&2, AD.AVerdict>, h: Hub, +now: Nat) -> IO(Hub):
+  match vs:
+    case Nil{}:
+      IO.pure(Hub, h)
+    case v <> t:
+      IO.bind(Hub, Hub, Hub.adopt.one(v, h, now), h2 => Hub.adopt.all(t, h2, now))
+
+def Hub.adopt.es(+es: List<&2, AD.AEntry>, h: Hub, +allow: Bool, +now: Nat) -> IO(Hub):
+  do IO<Hub>:
+    +nows : List<&2, String> <- Adopt.idents(es)
+    Hub.adopt.all(AD.Adopt.decide(es, nows, allow), h, now)
+
+def Hub.adopt(h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +home : String = Cfg.home(cfg)
+        +rec : String <- Files.text(Adopt.home.record(home))
+        +hand : String <- Files.text(Adopt.home.hand(home))
+        rm : Result<&1, &1, U32 & String, Unit> <- H.FS.remove(Adopt.home.hand(home))
+        AIO.Adopt.record(Adopt.home.record(home))
+        +off : String <- Env.get("BACKPLANE_ADOPT", "")
+        Hub.adopt.es(AD.Adopt.entries(rec, hand), Hub{st, f, ls, cl, as, inbox, cfg, note}, Bool.not(String.eq(off, "0")), now)
 
 def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):
   IO.bind(Hub, Hub, Far.start(h), h2 => Hub.recover.stale(h2, now))
@@ -11046,6 +11211,8 @@ def Msg.kind(m: Msg) -> String:
       "turn_done"
     case Recover{}:
       "recover"
+    case Reexec{_, _}:
+      "reexec"
     case Commit{_}:
       "commit"
     case UberDo{_}:
@@ -11509,6 +11676,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.turn_done(h, tag)
     case Recover{}:
       Hub.recover(h, now)
+    case Reexec{path, args}:
+      Hub.reexec(h, path, args)
     case AgentGone{thread, code, pid, why}:
       Hub.gone(h, thread, code, pid, why, now)
     case Tick{}:
@@ -11852,8 +12021,12 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
         IO.spawn(Unit, PV.Pv.loop(Fuel.forever(), vq, PV.Pv.empty(), vo, home ++ "/plot"))
         IO.spawn(Unit, Plot.fwd(Fuel.forever(), vo, inbox))
         +nt : Net = Net.with_pv(Net.with_tm(Net.with_pk(Net.with_br(nt0, bq), pq), tq), vq)
+        # the agents a restart in place handed off are kept before anything
+        # else can reach the hub (adopt.bend); recovery then leaves them be
+        +now : Nat <- Now.nat()
+        h0 : Hub <- Hub.adopt(Hub{st, f, ls, Nil{}, Nil{}, inbox, Cfg{home, web, host, port, pr, ds, v, nt}, ""}, now)
         l : Result<&1, &1, U32 & String, Listener> <- H.Net.listen(host, port)
-        Main.listened(l, Hub{st, f, ls, Nil{}, Nil{}, inbox, Cfg{home, web, host, port, pr, ds, v, nt}, ""}, web, pri, host ++ ":" ++ U32.show(port), need, Cfg{home, web, host, port, pr, ds, v, nt}, tok, front)
+        Main.listened(l, h0, web, pri, host ++ ":" ++ U32.show(port), need, Cfg{home, web, host, port, pr, ds, v, nt}, tok, front)
     case Fail{e} _:
       Main.nolog(e)
 
