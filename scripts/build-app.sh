@@ -17,6 +17,26 @@
 #   BACKPLANE_OBJ_CACHE  objects by hash of unit text + compiler + flags
 #                     (default ~/.cache/backplane-bend/obj; 0 = none), so a
 #                     rebuild compiles only the units an edit changed
+#   BACKPLANE_EMIT_CACHE  the emitted C kept by a hash of everything bend reads
+#                     (default ~/.cache/backplane-bend/emit; 0 = none): the
+#                     bend binary and its own files (~/.bend/bend2), this
+#                     script and cc-split.py, every tracked or untracked
+#                     (not ignored) .bend/.c/.h/.js file of the checkout, and
+#                     the program named. A build whose key is kept skips
+#                     `bend -o` (the ~12 GB, minutes-long step). Only whole
+#                     emits are kept (a finished emit, renamed into place);
+#                     the C holds no credential (the baked Google client is
+#                     a header made after, never part of it). Three are kept.
+#   BACKPLANE_VERSION_STAMP  the version this build reports (Version.current),
+#                     written into the emitted C (scripts/stamp-version.py);
+#                     unset, it reads 0.1.0-dev
+# Each build prints one "stages:" line and keeps it in build/cc/<out>/stages.txt:
+# wall seconds per stage (emit, split, cc, link), the object cache's hits and
+# misses, the emit's peak RSS (bend alone), the largest single compiler's peak
+# RSS (one clang), this build's own compile processes summed (sampled every
+# 0.5 s, so a short spike can be missed), and, when the build
+# runs in a cgroup of its own (systemd-run --scope), that cgroup's peak: every
+# process in it together since the cgroup started.
 # The Google OAuth client "Connect Google" signs in with is baked in from
 # BACKPLANE_GOOGLE_CLIENT_ID and _SECRET: the environment's (CI secrets), else
 # a git-ignored .env here or in the main checkout (src/server/effects/google.c).
@@ -75,18 +95,62 @@ if [ -n "$BP_OBJ_CACHE" ] && [ -d "$BP_OBJ_CACHE" ]; then
 fi
 work="build/cc/$(basename "$out")"
 mkdir -p "$work"
+# stage clocks (ms) and peak RSS (KB) via /usr/bin/time when it is there
+now_ms() { echo $(( $(date +%s%N) / 1000000 )); }
+rss_cmd() { f=$1; shift; if [ -x /usr/bin/time ]; then /usr/bin/time -f %M -o "$f" "$@"; else "$@"; fi; }
+t_start=$(now_ms)
+rm -f "$work/emit.rss"
 # bend's own emit runs on every core; keep it polite too. Its C is the
 # same on every platform (effects choose with #ifdef), so it may be made
 # on another machine: BACKPLANE_EMIT_ONLY=1 stops after writing it, and
 # BACKPLANE_PREBUILT=1 compiles the one already there
+# the emit's key (see BACKPLANE_EMIT_CACHE): "" when it cannot be made
+emit_key() {
+  scripts/inputs-key.sh "emit:$src" scripts/build-app.sh scripts/cc-split.py scripts/inputs-key.sh 2>/dev/null || true
+}
+EMIT_CACHE=${BACKPLANE_EMIT_CACHE-${XDG_CACHE_HOME:-$HOME/.cache}/backplane-bend/emit}
+[ "$EMIT_CACHE" = 0 ] && EMIT_CACHE=""
+ekey=""
+[ -n "$EMIT_CACHE" ] && [ "${BACKPLANE_PREBUILT:-}" != 1 ] && ekey=$(emit_key)
+emit_how=fresh
 if [ "${BACKPLANE_PREBUILT:-}" = 1 ] && [ -f "$work/all.c" ]; then
   echo "prebuilt $work/all.c"
+  emit_how=prebuilt
+elif [ -n "$ekey" ] && [ -f "$EMIT_CACHE/$ekey.c" ] && [ -f "$EMIT_CACHE/$ekey.ok" ] \
+    && [ "$(cat "$EMIT_CACHE/$ekey.ok")" = "$(wc -c <"$EMIT_CACHE/$ekey.c" | tr -d ' ')" ]; then
+  # a kept emit: whole (its .ok, written last, names its size)
+  cp "$EMIT_CACHE/$ekey.c" "$work/all.tmp.c" && mv "$work/all.tmp.c" "$work/all.c"
+  touch "$EMIT_CACHE/$ekey.c" "$EMIT_CACHE/$ekey.ok"
+  emit_how=reused
 else
-  nice -n 19 $pin bend "$src" -o "$work/all.c" >/dev/null
+  rm -f "$work/all.c"
+  # (bend picks what it writes by the name's ending: .c is the C; any other
+  # name would compile the whole program to a binary there)
+  rss_cmd "$work/emit.rss" nice -n 19 $pin bend "$src" -o "$work/all.tmp.c" >/dev/null
+  mv "$work/all.tmp.c" "$work/all.c"
+  # kept only if nothing it read changed while it ran
+  if [ -n "$ekey" ] && [ "$(emit_key)" != "$ekey" ]; then
+    echo "build-app: the sources changed during the emit; it is not kept" >&2
+    ekey=""
+  fi
+  if [ -n "$ekey" ]; then
+    mkdir -p "$EMIT_CACHE"
+    cp "$work/all.c" "$EMIT_CACHE/$ekey.c.$$" && mv "$EMIT_CACHE/$ekey.c.$$" "$EMIT_CACHE/$ekey.c" \
+      && wc -c <"$EMIT_CACHE/$ekey.c" | tr -d ' ' >"$EMIT_CACHE/$ekey.ok.$$" && mv "$EMIT_CACHE/$ekey.ok.$$" "$EMIT_CACHE/$ekey.ok"
+    # keep the three newest
+    ls -t "$EMIT_CACHE"/*.c 2>/dev/null | tail -n +4 | while read -r old; do rm -f "$old" "${old%.c}.ok"; done
+  fi
+fi
+t_emit=$(now_ms)
+# the version (BACKPLANE_VERSION_STAMP) goes into the emitted C, not into
+# the source: the kept emit stays the same for every version
+if [ -n "${BACKPLANE_VERSION_STAMP:-}" ]; then
+  python3 scripts/stamp-version.py "$work/all.c" "$BACKPLANE_VERSION_STAMP"
 fi
 [ "${BACKPLANE_EMIT_ONLY:-}" = 1 ] && { echo "$work/all.c"; exit 0; }
 n=$(nice -n 19 python3 scripts/cc-split.py "$work/all.c" "$work" "$units")
-rm -f "$work"/u*.o
+rm -f "$work"/u*.o "$work"/u*.o.rss "$work"/u*.o.how
+t_split=$(now_ms)
 # the baked Google client, read from .env without running it
 envval() {
   for f in .env "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/../.env"; do
@@ -107,10 +171,41 @@ if [ "${BACKPLANE_GOOGLE_BAKE:-1}" != 0 ] && [ -n "$gid" ] && [ -n "$gsec" ]; th
 fi
 # the biggest units first, so the last ones to start are the small ones
 export BP_CFLAGS="$cflags" BP_CC_ID BP_OBJ_CACHE
+# the compiles' memory together: the RSS of every process this build
+# started (its descendants: the compiles and their helpers) summed every
+# half second while they run, the highest kept (a spike between two
+# samples is missed)
+me=$$
+( peak=0; while :; do
+    s=$(ps -eo pid=,ppid=,rss= 2>/dev/null | awk -v root="$me" '{ p[$1] = $2; r[$1] = $3 }
+      END { for (k in p) { q = k; while (q in p && q != root && q > 1) q = p[q]; if (q == root) t += r[k] } print t + 0 }')
+    [ "$s" -gt "$peak" ] && { peak=$s; echo "$peak" >"$work/cc.peak"; }
+    sleep 0.5
+  done ) &
+sampler=$!
+# (stopped however the build ends; it is this script's own child)
+trap 'kill "$sampler" 2>/dev/null || true' EXIT
+rm -f "$work/cc.peak"
 ls -S "$work"/u*.c | nice -n 19 $pin xargs -P "$jobs" -I{} scripts/cc-unit.sh {}
+kill "$sampler" 2>/dev/null || true
+t_cc=$(now_ms)
 # the libraries bend -o links: X11 and ALSA when an effect includes them
 libs=""
 grep -q '#include <X11/' "$work/all.c" && libs="$libs -lX11"
 grep -q '#include <alsa/' "$work/all.c" && libs="$libs -lasound"
 nice -n 19 $pin "$CC" $cflags "$work"/u*.o -o "$out" -lpthread -lm $libs
+t_link=$(now_ms)
+hits=$(cat "$work"/u*.o.how 2>/dev/null | grep -c '^hit$' || true)
+misses=$(cat "$work"/u*.o.how 2>/dev/null | grep -c '^cc$' || true)
+cc_max=$(cat "$work"/u*.o.rss 2>/dev/null | grep -E '^[0-9]+$' | sort -n | tail -n1)
+emit_rss=$(grep -E '^[0-9]+$' "$work/emit.rss" 2>/dev/null | tail -n1)
+cc_sum=$(cat "$work/cc.peak" 2>/dev/null || true)
+cg=""
+cgp=$(cut -d: -f3 /proc/self/cgroup 2>/dev/null | head -n1)
+case $cgp in *.scope) [ -r "/sys/fs/cgroup$cgp/memory.peak" ] && cg=$(( $(cat "/sys/fs/cgroup$cgp/memory.peak") / 1024 )) ;; esac
+sec() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.1f", (b - a) / 1000 }'; }
+kb() { [ -n "$1" ] && awk -v k="$1" 'BEGIN { printf "%.2fG", k / 1048576 }' || printf -- -; }
+line="stages: emit ($emit_how) $(sec "$t_start" "$t_emit")s split $(sec "$t_emit" "$t_split")s cc $(sec "$t_split" "$t_cc")s link $(sec "$t_cc" "$t_link")s total $(sec "$t_start" "$t_link")s | objects hit $hits miss $misses | peak RSS: emit $(kb "$emit_rss"), largest single cc $(kb "$cc_max"), this build's compiles together (sampled) $(kb "$cc_sum"), cgroup all-together $(kb "$cg")"
+echo "$line" >"$work/stages.txt"
+echo "$line"
 echo "$out ($n units, $jobs jobs)"

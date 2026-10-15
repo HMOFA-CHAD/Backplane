@@ -117,16 +117,13 @@ stamp() {
 }
 
 # the app, the server, the web client and the voice helper into dist/,
-# stamped; src/core/version.bend is put back after. The browser helper is
+# stamped with the version (in the emitted C, BACKPLANE_VERSION_STAMP: the
+# source is never rewritten). The browser helper is
 # built only when tools/browser changed since the installed one
 # (build_browser); the step2glb helper is not rebuilt (scripts/build.sh
 # builds both for releases)
 build_dist() {
   ver=$(stamp)
-  keep=$(mktemp)
-  cp src/core/version.bend "$keep"
-  trap 'cp "$keep" src/core/version.bend; rm -f "$keep"' EXIT
-  printf 'import Base\n\n# The running build'"'"'s version (stamped by scripts/build.sh).\n\ndef Version.current() -> String:\n  "%s"\n' "$ver" > src/core/version.bend
   for f in src/web/app.bend src/server/main.bend src/app/main.bend; do check "$f"; done
   rm -rf dist && mkdir -p dist
   bend src/web/index.html -o dist/web >/dev/null
@@ -134,11 +131,10 @@ build_dist() {
   python3 scripts/js-native.py dist/web/chunk-*.js
   cp src/web/sw.js dist/web/sw.js
   for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
-  scripts/build-app.sh src/server/main.bend dist/backplane-serve
-  scripts/build-app.sh src/app/main.bend dist/backplane
+  BACKPLANE_VERSION_STAMP=$ver scripts/build-app.sh src/server/main.bend dist/backplane-serve
+  BACKPLANE_VERSION_STAMP=$ver scripts/build-app.sh src/app/main.bend dist/backplane
   build_voice dist/backplane-voice
   build_browser dist/backplane-browser.tmp && mv -f dist/backplane-browser.tmp dist/backplane-browser && mv -f dist/backplane-browser.tmp.stamp dist/backplane-browser.stamp || true
-  cp "$keep" src/core/version.bend
   say "built $ver"
 }
 

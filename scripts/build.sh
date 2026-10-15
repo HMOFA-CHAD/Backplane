@@ -34,9 +34,10 @@ if [ -n "${BACKPLANE_X11:-}" ]; then
   export CPATH="$BACKPLANE_X11/include${CPATH:+:$CPATH}"
   export LIBRARY_PATH="$BACKPLANE_X11/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
 fi
-# a release build stamps its version (BACKPLANE_VERSION=v1.2.3)
+# a release build stamps its version (BACKPLANE_VERSION=v1.2.3) into the
+# native binaries' emitted C (scripts/build-app.sh, BACKPLANE_VERSION_STAMP)
 if [ -n "${BACKPLANE_VERSION:-}" ]; then
-  printf 'import Base\n\n# The running build'"'"'s version (stamped by scripts/build.sh).\n\ndef Version.current() -> String:\n  "%s"\n' "${BACKPLANE_VERSION#v}" > src/core/version.bend
+  export BACKPLANE_VERSION_STAMP="${BACKPLANE_VERSION#v}"
 fi
 if [ "$pre" = 1 ]; then
   [ -f dist/web/index.html ] || { echo "BACKPLANE_PREBUILT: no dist/web (scripts/build.sh emit)"; exit 1; }
