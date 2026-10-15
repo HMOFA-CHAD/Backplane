@@ -2475,7 +2475,7 @@ def Sa.row.k(+ty: Ty, r: SB.SubRow, +x0: U32, +x1: U32, +y: U32) -> Out:
         [Sa.hit(agent, open, key, x0, x1, y, (28 + dh : U32))]}
 
 def Sa.row(+ty: Ty, +r: SB.SubRow, +x0: U32, +x1: U32, +y: U32) -> Out:
-  Out.cat(Sa.stop(String.is_empty(SB.Subs.cancel(r)), ty, SB.Subs.cancel(r), SB.Subs.key(r), Sa.stop.x(ty, SB.Subs.word(r), SB.Subs.cancel(r), x1), y), Sa.row.k(ty, r, x0, x1, y))
+  Out.cat(Sa.row.k(ty, r, x0, x1, y), Sa.stop(String.is_empty(SB.Subs.cancel(r)), ty, SB.Subs.cancel(r), SB.Subs.key(r), Sa.stop.x(ty, SB.Subs.word(r), SB.Subs.cancel(r), x1), y))
 
 def Sa.rows(+ty: Ty, rs: List<&2, SB.SubRow>, +x0: U32, +x1: U32, +y: U32) -> Out:
   match rs:
@@ -2546,13 +2546,13 @@ def Lay.subs.k(some: Bool, +ty: Ty, +all: List<&2, SB.SubRow>, +rs: List<&2, SB.
       +word = {SB.Subs.panel.word(all) ++ Pane.range(off, List.length(&2, SB.SubRow, rs), n) : String}
       +bh = Subs.box.h(rs, open)
       Out.all([
+        Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), bh, "pane", "subs:" ++ th ++ "|" ++ Nat.show(Nat.sub(n, 1n)))]},
         Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), bh, 8, T.Th.panel(), Bool.pick(U32, on, T.Th.accent(), T.Th.line()))),
         Out.ops(Ty.text(ty, 2n, "Subagents", D.Clip.all(), (x0 + 12 : U32), y, 32, Bool.pick(U32, on, T.Th.text(), T.Th.faint()))),
         Out.ops(Ty.text(ty, 2n, word, D.Clip.all(), (x1 - Ty.width(ty, 2n, word) - 36 : U32), y, 32, Bool.pick(U32, on, T.Th.accent(), T.Th.faint()))),
         Out.ops(Lay.icon(ty, Bool.pick(String, open, "chevron-down", "chevron-right"), D.Clip.all(), (x1 - 28 : U32), (y + 8 : U32), T.Th.faint())),
         Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), 30, "fold", SB.Subs.panel.ask(open, th))]},
-        Sa.rows(ty, rs, x0, x1, (y + 30 : U32)),
-        Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), bh, "pane", "subs:" ++ th ++ "|" ++ Nat.show(Nat.sub(n, 1n)))]}])
+        Sa.rows(ty, rs, x0, x1, (y + 30 : U32))])
     case False{}:
       Out.none()
 
@@ -2714,8 +2714,8 @@ def Ask.text.lines(+ty: Ty, ls: List<&2, String>, +x0: U32, +y: U32) -> Out:
 
 # the detail of an approval, from its first line shown
 def Ask.detail(+ty: Ty, +id: String, ls: List<&2, String>, +n: Nat, +show: Nat, +off: Nat, +x0: U32, +x1: U32, +y: U32, +h: U32) -> Out:
-  Out.all([Ask.text.lines(ty, List.take(&2, String, List.drop(&2, String, ls, off), show), x0, (y + 26 : U32)),
-    Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), h, "pane", "ask:" ++ id ++ "|" ++ Nat.show(Nat.sub(n, show)))]}])
+  Out.all([Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), h, "pane", "ask:" ++ id ++ "|" ++ Nat.show(Nat.sub(n, show)))]},
+    Ask.text.lines(ty, List.take(&2, String, List.drop(&2, String, ls, off), show), x0, (y + 26 : U32))])
 
 def Ask.approval(+ty: Ty, +id: String, +ls: List<&2, String>, +info: Map<&2, String>, +x0: U32, +x1: U32, +y: U32, +h: U32) -> Out:
   +n = List.length(&2, String, ls)
@@ -2902,9 +2902,9 @@ def Lay.todos.k(some: Bool, +ty: Ty, +ts: List<&2, TD.Todo>, +rs: List<&2, TD.TR
           Lay.icon(ty, Bool.pick(String, open, "chevron-down", "chevron-right"), D.Clip.all(), (x1 - 28 : U32), (top + 6 : U32), T.Th.faint()),
           Lay.tdlines(rs, ty, x0, x1, (top + 28 : U32)),
           Ty.text(ty, 2n, more, D.Clip.all(), (x0 + 12 : U32), ry, 22, T.Th.accent())])),
-        Out{Nil{}, List.concat(&2, S.Hit, [[Lay.hit(x0, top, (x1 - x0 : U32), 28, "fold", U.Todos.toggle(open, th))],
-          Bool.pick(List<&2, S.Hit>, String.is_empty(more), Nil{}, [Lay.hit(x0, ry, (x1 - x0 : U32), 22, "fold", U.Todos.more.ask(all, th))]),
-          [Lay.hit(x0, top, (x1 - x0 : U32), hh, "pane", "todos:" ++ th ++ "|" ++ Nat.show(Nat.sub(n, 1n)))]])}])
+        Out{Nil{}, List.concat(&2, S.Hit, [[Lay.hit(x0, top, (x1 - x0 : U32), hh, "pane", "todos:" ++ th ++ "|" ++ Nat.show(Nat.sub(n, 1n)))],
+          [Lay.hit(x0, top, (x1 - x0 : U32), 28, "fold", U.Todos.toggle(open, th))],
+          Bool.pick(List<&2, S.Hit>, String.is_empty(more), Nil{}, [Lay.hit(x0, ry, (x1 - x0 : U32), 22, "fold", U.Todos.more.ask(all, th))])])}])
     case False{}:
       Out.none()
 
@@ -4512,8 +4512,8 @@ def Rpw.body(has: Bool, +ty: Ty, +v: U.RpView, +th: String, +off: Nat, +x0: U32,
       +n = {List.length(&2, TLine, ls) : Nat}
       +last = {Nat.sub(n, U32.to_nat(U32.min(U32.from_nat(n), (Lay.room(h, 142) / 24 : U32)))) : Nat}
       +from = {Bool.pick(Nat, Nat.is_lt(off, last), off, last) : Nat}
-      Out.all([Rpw.draw(List.drop(&2, TLine, ls, from), True{}, ty, D.Clip{x0, 142, x1, h}, (x0 + 16 : U32), (x1 - 16 : U32), 142, h),
-        Out{Nil{}, [Lay.hit(x0, 142, (x1 - x0 : U32), Lay.room(h, 142), "pane", "rp:" ++ th ++ "|" ++ Nat.show(last))]}])
+      Out.all([Out{Nil{}, [Lay.hit(x0, 142, (x1 - x0 : U32), Lay.room(h, 142), "pane", "rp:" ++ th ++ "|" ++ Nat.show(last))]},
+        Rpw.draw(List.drop(&2, TLine, ls, from), True{}, ty, D.Clip{x0, 142, x1, h}, (x0 + 16 : U32), (x1 - 16 : U32), 142, h)])
     case False{}:
       Out.ops(Ty.text(ty, 2n, U.RpView.note(v), D.Clip.all(), (x0 + 16 : U32), 150, 30, T.Th.faint()))
 
@@ -4764,9 +4764,9 @@ def Rlw.report(+ty: Ty, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32
   +n = {List.length(&2, TLine, ls) : Nat}
   +last = {Nat.sub(n, U32.to_nat(U32.min(U32.from_nat(n), (Lay.room(h, y1) / 24 : U32)))) : Nat}
   +from = {Bool.pick(Nat, Nat.is_lt(off, last), off, last) : Nat}
-  Out.all([Rlw.lines(es, ty, (x0 + 16 : U32), y, T.Th.bad()),
-    Rpw.draw(List.drop(&2, TLine, ls, from), True{}, ty, D.Clip{x0, y1, x1, h}, (x0 + 16 : U32), (x1 - 16 : U32), y1, h),
-    Out{Nil{}, [Lay.hit(x0, y1, (x1 - x0 : U32), Lay.room(h, y1), "pane", "rp:" ++ th ++ "|" ++ Nat.show(last))]}])
+  Out.all([Out{Nil{}, [Lay.hit(x0, y1, (x1 - x0 : U32), Lay.room(h, y1), "pane", "rp:" ++ th ++ "|" ++ Nat.show(last))]},
+    Rlw.lines(es, ty, (x0 + 16 : U32), y, T.Th.bad()),
+    Rpw.draw(List.drop(&2, TLine, ls, from), True{}, ty, D.Clip{x0, y1, x1, h}, (x0 + 16 : U32), (x1 - 16 : U32), y1, h)])
 
 def Rlw.page(f: U.RlForm, +ty: Ty, +n: S.Nui, +v: U.RpView, +th: String, +off: Nat, +x0: U32, +x1: U32, +h: U32) -> Out:
   match f:
