@@ -2,6 +2,7 @@ import Base
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/usage.bend as UZ
+import ./src/core/refview.bend as RC # links (cards, trail)
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/mailbody.bend as MB # mail 2a
 import ./src/core/ref.bend as REF
@@ -8991,3 +8992,90 @@ law body_path_encoded_segment:
   for +home: String
   for +conv: String
   {MB.Body.path(home, conv) == home ++ "/mail/" ++ REF.Ref.pct(conv) ++ ".jsonl" : String}
+# ---- links (cards, trail) ----
+
+def RefView.state() -> M.State:
+  M.State.replay([M.ProjectCreated{"p", "Project", "/p", 1n}, M.ThreadCreated{"t", "p", "Title", M.Local{}, "", "", "claude", "", 2n}], M.State.empty())
+
+def RefView.cached() -> RC.Cards:
+  RC.Cards.result.cards(RC.Cards.get(RC.Cards.empty(), RefView.state(), "backplane://thread/t"))
+
+def RefView.fresh(+ch: M.Change) -> Maybe<&2, RC.Card>:
+  RC.Cards.result.value(RC.Cards.get(RC.Cards.drop(RefView.cached(), RC.Cards.touched(ch)), M.State.apply(RefView.state(), ch), "backplane://thread/t"))
+
+law cards_get_fresh:
+  {RefView.fresh(M.ThreadRenamed{"t", "New", 3n}) == RC.Card.of(M.State.apply(RefView.state(), M.ThreadRenamed{"t", "New", 3n}), REF.Ref.thread("t")) : Maybe<&2, RC.Card>}
+
+law cards_get_fresh_settle:
+  {RefView.fresh(M.ThreadSettled{"t", True{}, 3n}) == RC.Card.of(M.State.apply(RefView.state(), M.ThreadSettled{"t", True{}, 3n}), REF.Ref.thread("t")) : Maybe<&2, RC.Card>}
+
+law cards_get_fresh_start:
+  {RefView.fresh(M.TurnChanged{"t", M.Running{}, 3n}) == RC.Card.of(M.State.apply(RefView.state(), M.TurnChanged{"t", M.Running{}, 3n}), REF.Ref.thread("t")) : Maybe<&2, RC.Card>}
+
+law cards_get_fresh_end:
+  {RefView.fresh(M.TurnChanged{"t", M.Completed{}, 3n}) == RC.Card.of(M.State.apply(RefView.state(), M.TurnChanged{"t", M.Completed{}, 3n}), REF.Ref.thread("t")) : Maybe<&2, RC.Card>}
+
+law cards_get_fresh_delete:
+  {RefView.fresh(M.ThreadDeleted{"t", 3n}) == None{} : Maybe<&2, RC.Card>}
+
+law cards_get_fresh_project:
+  {RefView.fresh(M.ProjectCreated{"p", "Renamed", "/p", 3n}) == RC.Card.of(M.State.apply(RefView.state(), M.ProjectCreated{"p", "Renamed", "/p", 3n}), REF.Ref.thread("t")) : Maybe<&2, RC.Card>}
+
+law cards_peek_after_get:
+  {RC.Cards.peek(RefView.cached(), "backplane://thread/t") == RC.Card.of(RefView.state(), REF.Ref.thread("t")) : Maybe<&2, RC.Card>}
+
+law cards_drop_other_kept:
+  {RC.Cards.peek(RC.Cards.drop(RefView.cached(), ["other"]), "backplane://thread/t") == RC.Cards.peek(RefView.cached(), "backplane://thread/t") : Maybe<&2, RC.Card>}
+
+law trail_go_back:
+  for +bs: List<&2, String>
+  for +fs: List<&2, String>
+  {RC.Trail.back(RC.Trail.go(RC.Trail{bs, "a", fs}, "b")) == RC.Trail{List.take(&2, String, bs, 49n), "a", ["b"]} : RC.Trail}
+
+law trail_back_fwd:
+  for +bs: List<&2, String>
+  for +b: String
+  for +c: String
+  for +fs: List<&2, String>
+  {RC.Trail.fwd(RC.Trail.back(RC.Trail{b <> bs, c, fs})) == RC.Trail{b <> bs, c, fs} : RC.Trail}
+
+law trail_go_same:
+  for +bs: List<&2, String>
+  for +fs: List<&2, String>
+  {RC.Trail.go(RC.Trail{bs, "a", fs}, "a") == RC.Trail{bs, "a", fs} : RC.Trail}
+
+law trail_go_clears_fwd:
+  for +bs: List<&2, String>
+  for fs: List<&2, String>
+  {RC.Trail.go(RC.Trail{bs, "a", fs}, "b") == RC.Trail{List.take(&2, String, "a" <> bs, 50n), "b", Nil{}} : RC.Trail}
+
+def RefView.repeat(n: Nat) -> List<&2, String>:
+  match n:
+    case 0n: Nil{}
+    case 1n+k: "x" <> RefView.repeat(k)
+
+def RefView.back_count(t: RC.Trail) -> Nat:
+  match t:
+    case RC.Trail{bs, _, _}: List.length(&2, String, bs)
+
+law trail_cap:
+  {RefView.back_count(RC.Trail.go(RC.Trail{RefView.repeat(75n), "a", ["z"]}, "b")) == 50n : Nat}
+
+law card_file_kind_shared:
+  {RC.Card.of(RefView.state(), REF.Ref.file("p", ["x.kicad_pcb"])) == Some{RC.Card{"backplane://file/p/x.kicad_pcb", "file", "file", "x.kicad_pcb", "Project", "board", ""}} : Maybe<&2, RC.Card>}
+
+def RefView.entries(es: List<&2, M.Entry>, st: M.State) -> M.State:
+  match st:
+    case M.State{ps, ts, _, n, tk, sg, qu, ak, dv, nv, bw}: M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}
+
+law card_thread_no_timeline:
+  for es: List<&2, M.Entry>
+  {RC.Card.of(RefView.entries(es, RefView.state()), REF.Ref.thread("t")) == RC.Card.of(RefView.state(), REF.Ref.thread("t")) : Maybe<&2, RC.Card>}
+
+law card_github_pr_no_state:
+  for st: M.State
+  {RC.Card.of(st, REF.Ref.pr("i2cjak/Backplane", "128")) == Some{RC.Card{REF.Ref.uri(REF.Ref.pr("i2cjak/Backplane", "128")), "pr", "git-fork", "PR #128", "i2cjak/Backplane", "", ""}} : Maybe<&2, RC.Card>}
+
+law card_person_no_state:
+  for st: M.State
+  {RC.Card.of(st, REF.Ref.person()) == Some{RC.Card{"backplane://person", "person", "circle-check", "You", "", "", ""}} : Maybe<&2, RC.Card>}

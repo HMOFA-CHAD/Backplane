@@ -1,4 +1,6 @@
 import Base
+import ./ref.bend as R
+import ./refview.bend as RE
 import ./deploy.bend as DP
 import ./live.bend as LV
 import ./json.bend as J
@@ -1286,7 +1288,7 @@ def Ui.actions() -> List<&2, String>:
    "attach-up", "attach-end",
    "hist-go", "hist-prev", "hist-next", "hist-first", "hist-last", "hist-play", "hist-tick", "hist-diff", "hist-live", "hist-jump",
    "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page", "update-now", "work-cancel", "task-cancel",
-   "view-layer-pick", "view-layer-mode", "skill-close", "wake-cancel", "deploy-cancel", "lock-release", "lock-cancel"]
+   "view-layer-pick", "view-layer-mode", "skill-close", "wake-cancel", "deploy-cancel", "lock-release", "lock-cancel", "ref-go", "ref-back", "ref-fwd", "ref-copy", "ref-copy-web"]
 
 # Reading the client state
 # ------------------------
@@ -3304,6 +3306,15 @@ def Menu.pin(pinned: Bool, +id: String) -> MItem:
 def Menu.ren(+id: String) -> MItem:
   MItem{"Rename", "row-rename", id, ""}
 
+def Menu.ref(r: R.Ref) -> MItem:
+  MItem{"Copy link", "ref-copy", R.Ref.uri(r), ""}
+
+def Menu.room(id: String) -> List<&2, MItem>:
+  [Menu.ref(R.Ref.room(id))]
+
+def Menu.msg(thread: String, msg: String) -> List<&2, MItem>:
+  [Menu.ref(R.Ref.msg(thread, msg))]
+
 def Menu.thread.k(sh: M.Shelf, pinned: Bool, +id: String, armed: Bool) -> List<&2, MItem>:
   match sh:
     case M.Settled{}:
@@ -3318,7 +3329,7 @@ def Menu.thread.k(sh: M.Shelf, pinned: Bool, +id: String, armed: Bool) -> List<&
 
 # a thread's menu (armed: its Delete was picked once)
 def Menu.thread(+st: M.State, +now: Nat, +id: String, armed: Bool) -> List<&2, MItem>:
-  Menu.thread.k(M.Shelf.at(Ui.thread(st, id), Side.until(st, id), now), Active.pinned(Ui.thread(st, id)), id, armed)
+  List.append(&2, MItem, Menu.thread.k(M.Shelf.at(Ui.thread(st, id), Side.until(st, id), now), Active.pinned(Ui.thread(st, id)), id, armed), [Menu.ref(R.Ref.thread(id))])
 
 def Menu.look(rich: Bool, +id: String) -> List<&2, MItem>:
   match rich:
@@ -3331,7 +3342,7 @@ def Menu.look(rich: Bool, +id: String) -> List<&2, MItem>:
 # editor; armed: Remove was picked once)
 def Menu.project(+id: String, armed: Bool, rich: Bool) -> List<&2, MItem>:
   List.concat(&2, MItem, [[MItem{"New thread", "new-thread", id, ""}], Menu.look(rich, id),
-    [MItem{Bool.pick(String, armed, "Click again to remove", "Remove project"), "proj-remove", id, "danger"}]])
+    [MItem{Bool.pick(String, armed, "Click again to remove", "Remove project"), "proj-remove", id, "danger"}, Menu.ref(R.Ref.project(id))]])
 
 # a file link's menu ("file-menu path", kept as "f:<path>"; a click on the
 # link is its Open). The path goes as written; Flink.* resolves it
@@ -3351,8 +3362,8 @@ def Menu.id(+m: String) -> String:
 # a bot's menu ("bot-menu id", kept as "b:<id>"): the person makes a bot
 # of this machine the uberbot, or not (core/uber.bend)
 def Menu.bot(+st: M.State, +id: String) -> List<&2, MItem>:
-  Bool.pick(List<&2, MItem>, UB.Uber.is(st, id), [MItem{"Not uberbot", "uber-demote", "", ""}],
-    Bool.pick(List<&2, MItem>, UB.Uber.live(st, id), [MItem{"Make uberbot", "uber-promote", id, ""}], Nil{}))
+  List.append(&2, MItem, Bool.pick(List<&2, MItem>, UB.Uber.is(st, id), [MItem{"Not uberbot", "uber-demote", "", ""}],
+    Bool.pick(List<&2, MItem>, UB.Uber.live(st, id), [MItem{"Make uberbot", "uber-promote", id, ""}], Nil{})), [Menu.ref(R.Ref.bot(id))])
 
 def Menu.items.b(bot: Bool, +u: Ui, +id: String) -> List<&2, MItem>:
   match bot:
@@ -3361,10 +3372,26 @@ def Menu.items.b(bot: Bool, +u: Ui, +id: String) -> List<&2, MItem>:
     case False{}:
       Menu.thread(Side.st(u), Side.now(u), id, String.eq(Ui.scratch(u, "@del"), id))
 
+# A file URI carries a project-relative path. Files outside the selected
+# project's root keep the ordinary file menu.
+def Menu.file.here.k(+pid: String, +path: String, rel: String) -> List<&2, MItem>:
+  match rel:
+    case SNil{}: Menu.file(path)
+    case SCon{h, t}: List.append(&2, MItem, Menu.file(path), [Menu.ref(R.Ref.file(pid, R.Ref.split(LK.Link.file.path(SCon{h, t}), '/')))])
+
+def Menu.file.here.pid(+pid: String, +u: Ui, +path: String) -> List<&2, MItem>:
+  match pid:
+    case SNil{}: Menu.file(path)
+    case SCon{+h, +t}:
+      Menu.file.here.k(SCon{h, t}, path, Bool.pick(String, String.starts_with(path, "/"), FM.Fm.rel(Ui.project_root(Side.st(u), SCon{h, t}), path), path))
+
+def Menu.file.here(+u: Ui, +path: String) -> List<&2, MItem>:
+  Menu.file.here.pid(Ui.thread_project(Ui.thread(Side.st(u), Ui.sel(u))), u, path)
+
 def Menu.items.t(file: Bool, +u: Ui, +id: String) -> List<&2, MItem>:
   match file:
     case True{}:
-      Menu.file(id)
+      Menu.file.here(u, id)
     case False{}:
       Menu.items.b(String.eq(Menu.kind(Menu.open(u)), "b"), u, id)
 
@@ -8362,8 +8389,216 @@ def Bots.act(i: Nat, +u: Ui, +value: String) -> Act:
     case _:
       Voice.act(Nat.sub(i, 36n), u, value)
 
+# ---- links (cards, trail) ----
+# Scratch storage avoids changing Ui's native representation.
+def Trail.read.list(+s: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(s), Nil{}, R.Ref.split(s, '\n'))
+
+def Trail.read(u: Ui) -> RE.Trail:
+  match u:
+    case Ui{_, _, +dr, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      RE.Trail{Trail.read.list(Str.get(dr, "@trail.b")), Str.get(dr, "@trail.c"), Trail.read.list(Str.get(dr, "@trail.f"))}
+
+def Trail.store(+u: Ui, +t: RE.Trail) -> Ui:
+  match t:
+    case RE.Trail{+bs, +c, +fs}: Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@trail.b", String.join(bs, "\n")), "@trail.c", c), "@trail.f", String.join(fs, "\n"))
+
+def Here.choose(+bot: String, +room: String, +remote: String, +th: String, +project: String) -> String:
+  match bot room remote th project:
+    case SCon{+h, +t} _ _ _ _: R.Ref.uri(R.Ref.bot(SCon{h, t}))
+    case SNil{} SCon{+h, +t} _ _ _: R.Ref.uri(R.Ref.room(SCon{h, t}))
+    case SNil{} SNil{} SCon{+h, +t} _ _: R.Ref.uri(R.Ref.bot(SCon{h, t}))
+    case SNil{} SNil{} SNil{} SCon{+h, +t} _: R.Ref.uri(R.Ref.thread(SCon{h, t}))
+    case SNil{} SNil{} SNil{} SNil{} SCon{+h, +t}: R.Ref.uri(R.Ref.project(SCon{h, t}))
+    case _ _ _ _ _: ""
+
+def Here.ref(u: Ui) -> String:
+  match u:
+    case Ui{+st, +sel, +dr, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Here.choose(Str.get(dr, "@bot"), Str.get(dr, "@room"), Str.get(dr, "@remote"), sel,
+        Bool.pick(String, String.is_empty(sel), "", Ui.thread_project(Ui.thread(st, sel))))
+
+def RefNav.note(+u: Ui, +text: String) -> Act:
+  match u:
+    case Ui{+st, +sel, +dr, +live, +op, +on, +now, +ad, +pa, +v, +rid, +w, +er, _, +nf, +ob, +tr}:
+      Act{Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, text, nf, ob, tr}, Nil{}}
+
+def RefNav.jump(+a: Act, +frag: String) -> Act:
+  match a:
+    case Act{+u, +cs}: Act{u, List.append(&2, Cmd, cs, Bool.pick(List<&2, Cmd>, String.is_empty(frag), Nil{}, [Jump{frag}]))}
+
+def RefNav.routine(+a: Act) -> Act:
+  match a:
+    case Act{+u, +cs}: Act{Ui.scratch_set(u, "@btab", "routines"), cs}
+
+def RefNav.activity(+t: M.Thread) -> Nat:
+  match t:
+    case M.Thread{_, _, _, _, +at, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}: at
+
+def RefNav.newer.k(+yes: Bool, +t: M.Thread, +best: M.Thread) -> M.Thread:
+  match yes:
+    case True{}: t
+    case False{}: best
+
+# One walk on click; retain the current project thread, otherwise choose
+# the most recently active live thread. No timeline or sidebar scan.
+def RefNav.newer(+t: M.Thread, +best: M.Thread, +pid: String) -> M.Thread:
+  match t:
+    case M.Thread{_, +p, _, _, +at, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, +gone}:
+      RefNav.newer.k(Bool.and(Bool.and(String.eq(p, pid), Bool.not(gone)), Nat.is_ge(at, RefNav.activity(best))), t, best)
+
+def RefNav.latest(+ts: List<&2, M.Thread>, +pid: String, +best: M.Thread) -> String:
+  match ts:
+    case Nil{}: Bool.pick(String, RE.Card.thread.live(best), M.Thread.id(best), "")
+    case +t <> +rest: RefNav.latest(rest, pid, RefNav.newer(t, best, pid))
+
+def RefNav.home.choose(here: Bool, st: M.State, sel: String, pid: String) -> String:
+  match here:
+    case True{}: sel
+    case False{}: RefNav.latest(Ui.threads(st), pid, M.Thread.blank(""))
+
+def RefNav.home(u: Ui, +pid: String) -> String:
+  match u:
+    case Ui{+st, +sel, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      RefNav.home.choose(String.eq(Ui.thread_project(Ui.thread(st, sel)), pid), st, sel, pid)
+
+def RefNav.file.open(+a: Act, +path: String) -> Act:
+  match a:
+    case Act{+u, +cs}: Ui.also(Fm.open.k(Bool.pick(Nat, String.eq(FM.Fm.kind(path), "pdf"), 1n, 0n), u, FM.Fm.kind(path), path), cs)
+
+def RefNav.file.k(+view: Bool, +u: Ui, +pid: String, +path: String) -> Act:
+  match view:
+    case True{}: RefNav.file.open(Ui.select(u, RefNav.home(u, pid)), path)
+    case False{}: Flink.open(u, path, "open")
+
+def RefNav.file(+u: Ui, +pid: String, +xs: List<&2, String>) -> Act:
+  +path = FM.Fm.abs(RE.Card.project.root(Side.st(u), pid), String.join(xs, "/"))
+  RefNav.file.k(Bool.not(String.is_empty(FM.Fm.kind(path))), u, pid, path)
+
+def RefNav.task.thread(+u: Ui, +th: String) -> Act:
+  match th:
+    case SNil{}: RefNav.note(u, "No view for this task yet")
+    case SCon{+h, +t}: Ui.select(u, SCon{h, t})
+
+def RefNav.task.json(+u: Ui, +j: J.Json) -> Act:
+  RefNav.task.thread(u, J.Json.get_str(j, "thread", ""))
+
+def RefNav.task(+u: Ui, +id: String) -> Act:
+  RefNav.task.json(u, Maybe.default(&2, J.Json, J.Json.parse(M.Setting.get(Side.st(u), "board." ++ id, "")), J.Null{}))
+
+def RefNav.pr(+ok: Bool, +u: Ui, +repo: String, +n: String) -> Act:
+  match ok:
+    case True{}:
+      # The existing file.open system opener accepts URLs too. No new
+      # Cmd variant (which would break every client's exhaustive match).
+      Ui.rpc(u, "file.open", [J.KV{"path", J.Str{"https://github.com/" ++ repo ++ "/pull/" ++ n}}, J.KV{"how", J.Str{"open"}}])
+    case False{}: RefNav.note(u, "PR link needs a repo")
+
+def RefNav.machine.go(+rs: List<&2, MRow>, +id: String, +found: String) -> String:
+  match rs:
+    case Nil{}: found
+    case MRow{+name, +url, _} <> +t:
+      RefNav.machine.go(t, id, Bool.pick(String, Bool.or(String.eq(name, id), String.eq(url, id)), url, found))
+
+def RefNav.machine(+rs: List<&2, MRow>, +id: String) -> String:
+  RefNav.machine.go(rs, id, id)
+
+def RefNav.machine.named(+u: Ui, name: String) -> Act:
+  Ui.machine(u, RefNav.machine(Machines.rows(u), name))
+
+def RefNav.machine.visit(+u: Ui, id: String) -> Act:
+  RefNav.machine.named(u, FR.Fr.name(Side.st(u), id ++ "~x"))
+
+# Shared destination helper: history traversal calls this directly,
+# never recursively dispatching Ui.act.
+def RefNav.visit(+u: Ui, +r: R.Ref) -> Act:
+  match r:
+    case R.Ref{"thread", +id <> +tail, +frag}: RefNav.jump(Ui.select(u, id), frag)
+    case R.Ref{"bot", +id <> +tail, _}: Bots.select(u, id)
+    case R.Ref{"room", +id <> +tail, _}: Bots.room.select(u, id)
+    case R.Ref{"project", +id <> +tail, _}: Find.go(u, id)
+    case R.Ref{"machine", +id <> +tail, _}: RefNav.machine.visit(u, id)
+    case R.Ref{"routine", +id <> +tail, _}: RefNav.routine(Bots.select(u, BT.Routine.bot(BT.World.routine(M.State.bots(Side.st(u)), id))))
+    case R.Ref{"file", +id <> +path, _}: RefNav.file(u, id, path)
+    case R.Ref{"work", +id <> +tail, _}: Ui.select(u, RE.Card.work.thread(id))
+    case R.Ref{"task", +id <> +tail, _}: RefNav.task(u, id)
+    case R.Ref{"pr", +repo <> +n <> +tail, _}: RefNav.pr(String.contains(repo, "/"), u, repo, n)
+    case R.Ref{"mailroom", +id <> +tail, _}: Bots.select(u, id)
+    case _: Act{u, Nil{}}
+
+def RefNav.keep(+a: Act, +trail: RE.Trail) -> Act:
+  match a:
+    case Act{+u, +cs}: Act{Trail.store(u, trail), cs}
+
+def RefNav.seed.k(empty: Bool, +u: Ui, +t: RE.Trail) -> RE.Trail:
+  match empty t:
+    case True{} RE.Trail{bs, _, fs}: RE.Trail{bs, Here.ref(u), fs}
+    case False{} _: RE.Trail.go(t, Here.ref(u))
+
+def RefNav.seed.from(u: Ui, +t: RE.Trail) -> RE.Trail:
+  RefNav.seed.k(String.is_empty(RE.Trail.cur(t)), u, t)
+
+def RefNav.seed(+u: Ui) -> RE.Trail:
+  RefNav.seed.from(u, Trail.read(u))
+
+def RefNav.go.resolved(+m: Maybe<&2, RE.Card>, +u: Ui, +r: R.Ref) -> Act:
+  match m:
+    case None{}: Act{u, Nil{}}
+    case Some{_}: RefNav.keep(RefNav.visit(u, r), RE.Trail.go(RefNav.seed(u), R.Ref.uri(r)))
+
+def RefNav.go.parsed(+m: Maybe<&2, R.Ref>, +u: Ui) -> Act:
+  match m:
+    case None{}: Act{u, Nil{}}
+    case Some{+r}: RefNav.go.resolved(RE.Card.of(Side.st(u), r), u, r)
+
+def RefNav.go(+u: Ui, +uri: String) -> Act:
+  RefNav.go.parsed(R.Ref.parse(uri), u)
+
+def RefNav.move.resolved(m: Maybe<&2, RE.Card>, u: Ui, r: R.Ref, t: RE.Trail) -> Act:
+  match m:
+    case None{}: Act{u, Nil{}}
+    case Some{_}: RefNav.keep(RefNav.visit(u, r), t)
+
+def RefNav.move.parsed(+m: Maybe<&2, R.Ref>, +u: Ui, +t: RE.Trail) -> Act:
+  match m:
+    case None{}: Act{u, Nil{}}
+    case Some{+r}: RefNav.move.resolved(RE.Card.of(Side.st(u), r), u, r, t)
+
+def RefNav.move(+u: Ui, +t: RE.Trail) -> Act:
+  RefNav.move.parsed(R.Ref.parse(RE.Trail.cur(t)), u, t)
+
+def RefNav.copy.base(u: Ui, r: R.Ref, +base: String) -> Act:
+  Act{u, [Copy{R.Ref.web(Bool.pick(String, String.is_empty(base), "http://127.0.0.1:3787", base), r)}]}
+
+def RefNav.copy.web(m: Maybe<&2, R.Ref>, +u: Ui) -> Act:
+  match m:
+    case None{}: Act{u, Nil{}}
+    case Some{r}: RefNav.copy.base(u, r, Ui.info(u, "hub.base"))
+
+def RefNav.step(ok: Bool, u: Ui, t: RE.Trail) -> Act:
+  match ok:
+    case True{}: RefNav.move(u, t)
+    case False{}: Act{u, Nil{}}
+
+def RefNav.back.from(u: Ui, +t: RE.Trail) -> Act:
+  RefNav.step(RE.Trail.can_back(t), u, RE.Trail.back(t))
+
+def RefNav.back(+u: Ui) -> Act:
+  RefNav.back.from(u, Trail.read(u))
+
+def RefNav.fwd.from(u: Ui, +t: RE.Trail) -> Act:
+  RefNav.step(RE.Trail.can_fwd(t), u, RE.Trail.fwd(t))
+
+def RefNav.fwd(+u: Ui) -> Act:
+  RefNav.fwd.from(u, Trail.read(u))
+
 def Ui.act.k(i: Nat, u: Ui, +value: String) -> Act:
   match i:
+    case 178n: RefNav.go(u, value)
+    case 179n: RefNav.back(u)
+    case 180n: RefNav.fwd(u)
+    case 181n: Act{u, [Copy{value}]}
+    case 182n: RefNav.copy.web(R.Ref.parse(value), u)
     case 0n:
       Ui.select(u, value)
     case 1n:

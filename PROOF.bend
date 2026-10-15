@@ -10667,6 +10667,56 @@ def Laws.usage_boat_due_never_read(now):
   {==}
 
 def Laws.usage_boat_usd_exact():
+# ---- links (cards, trail) ----
+def Laws.cards_get_fresh():
+  {==}
+
+def Laws.cards_get_fresh_settle():
+  {==}
+
+def Laws.cards_get_fresh_start():
+  {==}
+
+def Laws.cards_get_fresh_end():
+  {==}
+
+def Laws.cards_get_fresh_delete():
+  {==}
+
+def Laws.cards_get_fresh_project():
+  {==}
+
+def Laws.cards_peek_after_get():
+  {==}
+
+def Laws.cards_drop_other_kept():
+  {==}
+
+def Laws.trail_cap():
+  {==}
+
+def Laws.card_file_kind_shared():
+  {==}
+
+def Laws.trail_go_back(bs, fs):
+  {==}
+
+def Laws.trail_back_fwd(bs, b, c, fs):
+  {==}
+
+def Laws.trail_go_same(bs, fs):
+  {==}
+
+def Laws.trail_go_clears_fwd(bs, fs):
+  {==}
+
+def Laws.card_thread_no_timeline(es):
+  {==}
+
+def Laws.card_github_pr_no_state(st):
+  {==}
+
+def Laws.card_person_no_state(st):
   {==}
 # ---- i18n cjk ----
 def Laws.cjk_segs_lossless():
