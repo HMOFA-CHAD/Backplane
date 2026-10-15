@@ -67,6 +67,9 @@ check_one() {
 
 fail=0
 start=$(date +%s)
+# the inputs' key, taken before anything is checked (scripts/verified.sh)
+vkey=""
+[ "$mode" = all ] && vkey=$(scripts/verified.sh key check 2>/dev/null || true)
 
 # The proof runs after the type-check, not beside it: run together they
 # overflowed the proof's stack (the type-check takes seconds anyway).
@@ -144,3 +147,6 @@ elif [ "$mode" = all ]; then
 fi
 
 if [ $fail != 0 ]; then exit 1; fi
+# a full pass (type-check and every proof) is recorded for these inputs
+# (scripts/verified.sh); a check or proof alone records nothing
+[ "$mode" = all ] && { scripts/verified.sh mark check "$vkey" || true; }
