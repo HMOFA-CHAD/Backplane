@@ -592,6 +592,35 @@ fun ComposerExtras(m: AppModel, t: ThreadView) {
     }
 }
 
+// Photo picks, clipboard images and keyboard content share one loader.
+internal suspend fun attachUris(ctx: android.content.Context, m: AppModel, uris: List<Uri>, photos: Boolean) {
+    uris.forEachIndexed { i, u ->
+        val got = withContext(Dispatchers.IO) {
+            runCatching {
+                val cr = ctx.contentResolver
+                val data = cr.openInputStream(u)?.use { it.readBytes() } ?: return@runCatching null
+                val mime = cr.getType(u) ?: ""
+                if (photos) {
+                    val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "jpg"
+                    // HEIC becomes JPEG, which every agent reads
+                    if (ext == "heic" || ext == "heif") {
+                        val b = BitmapFactory.decodeByteArray(data, 0, data.size)
+                        val out = ByteArrayOutputStream()
+                        if (b != null && b.compress(Bitmap.CompressFormat.JPEG, 85, out)) out.toByteArray() to "photo-${i + 1}.jpg"
+                        else data to "photo-${i + 1}.$ext"
+                    } else data to "photo-${i + 1}.$ext"
+                } else {
+                    val name = cr.query(u, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) c.getString(0) else null
+                    } ?: u.lastPathSegment ?: "file"
+                    data to name
+                }
+            }.getOrNull()
+        }
+        if (got != null) m.attach(got.first, got.second)
+    }
+}
+
 // the paperclip: photos or files, each sent up in pieces
 @Composable
 fun AttachButton(m: AppModel) {
@@ -599,33 +628,7 @@ fun AttachButton(m: AppModel) {
     val scope = rememberCoroutineScope()
     var open by remember { mutableStateOf(false) }
     fun send(uris: List<Uri>, photos: Boolean) {
-        scope.launch {
-            uris.forEachIndexed { i, u ->
-                val got = withContext(Dispatchers.IO) {
-                    runCatching {
-                        val cr = ctx.contentResolver
-                        val data = cr.openInputStream(u)?.use { it.readBytes() } ?: return@runCatching null
-                        val mime = cr.getType(u) ?: ""
-                        if (photos) {
-                            val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "jpg"
-                            // HEIC becomes JPEG, which every agent reads
-                            if (ext == "heic" || ext == "heif") {
-                                val b = BitmapFactory.decodeByteArray(data, 0, data.size)
-                                val out = ByteArrayOutputStream()
-                                if (b != null && b.compress(Bitmap.CompressFormat.JPEG, 85, out)) out.toByteArray() to "photo-${i + 1}.jpg"
-                                else data to "photo-${i + 1}.$ext"
-                            } else data to "photo-${i + 1}.$ext"
-                        } else {
-                            val name = cr.query(u, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-                                if (c.moveToFirst()) c.getString(0) else null
-                            } ?: u.lastPathSegment ?: "file"
-                            data to name
-                        }
-                    }.getOrNull()
-                }
-                if (got != null) m.attach(got.first, got.second)
-            }
-        }
+        scope.launch { attachUris(ctx, m, uris, photos) }
     }
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { send(it, true) }
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { send(it, false) }

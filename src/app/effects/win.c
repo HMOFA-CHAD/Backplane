@@ -12,7 +12,7 @@
 //   2 move (x, y, mods)   3 wheel (x, y, dir)   4 size (w, h)   5 expose
 //   6 quit   7 paste (text via Win.pasted)
 //   8 drag over (x, y)   9 drag left   10 drop (text/uri-list via Win.dropped)
-//   11 focus lost
+//   11 focus lost   12 focus gained   13 image paste (Win.pasted_image)
 // mods: 1 shift, 2 ctrl, 4 alt, 8 super.
 
 #if defined(__linux__)
@@ -28,6 +28,7 @@
   X(XCloseDisplay, int, (Display*)) \
   X(XCreateSimpleWindow, Window, (Display*, Window, int, int, unsigned, unsigned, unsigned, unsigned long, unsigned long)) \
   X(XInternAtom, Atom, (Display*, const char*, Bool)) \
+  X(XGetAtomName, char*, (Display*, Atom)) \
   X(XSetWMProtocols, Status, (Display*, Window, Atom*, int)) \
   X(XStoreName, int, (Display*, Window, const char*)) \
   X(XSelectInput, int, (Display*, Window, long)) \
@@ -98,7 +99,8 @@ typedef struct {
   char*     paste;
   u64       paste_len;
   // a paste too big for one property arrives in pieces (INCR)
-  int       paste_incr;
+  int       paste_incr, paste_busy, paste_ready;
+  char*     paste_mime;
   // drag and drop (XDND)
   Atom      dnd_aware, dnd_enter, dnd_position, dnd_status, dnd_leave, dnd_drop,
             dnd_finished, dnd_sel, dnd_copy, dnd_uri, dnd_types, dnd_prop;
@@ -280,9 +282,49 @@ static void win_answer(AppWin* a, XSelectionRequestEvent* rq) {
 }
 
 static void win_paste_add(AppWin* a, unsigned char* data, unsigned long n) {
-  a->paste = io_mem(realloc(a->paste, a->paste_len + n + 1));
-  memcpy(a->paste + a->paste_len, data, n);
+  // Images over the attachment cap are drained but not retained. Bend
+  // still receives their size, and uses the normal oversize refusal.
+  if (!a->paste_mime || a->paste_len + n <= 10485760) {
+    a->paste = io_mem(realloc(a->paste, a->paste_len + n + 1));
+    memcpy(a->paste + a->paste_len, data, n);
+  }
   a->paste_len += n;
+}
+
+static void win_paste_done(AppWin* a) {
+  a->paste_busy = 0;
+  a->paste_ready = 1;
+  win_push(a, a->paste_mime ? 13 : 7, 0, 0, 0, 0);
+}
+
+// TARGETS are Xlib Atoms (longs even on a 64-bit host). Prefer a lossless
+// screenshot over text or other representations of the same clipboard.
+static void win_paste_targets(AppWin* a) {
+  const char* preferred[] = { "image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp" };
+  Atom type, chosen = a->utf8;
+  int fmt, best = 6;
+  unsigned long n = 0, left = 0;
+  unsigned char* data = NULL;
+  if (x_XGetWindowProperty(a->dpy, a->win, a->prop, 0, 65536, True,
+      XA_ATOM, &type, &fmt, &n, &left, &data) == Success && data && fmt == 32 && type == XA_ATOM) {
+    for (unsigned long i = 0; i < n; i++) {
+      char* name = x_XGetAtomName(a->dpy, ((Atom*)data)[i]);
+      if (name && !strncmp(name, "image/", 6)) {
+        int rank = 5;
+        for (int j = 0; j < 5; j++) if (!strcmp(name, preferred[j])) rank = j;
+        if (rank < best) {
+          best = rank;
+          chosen = ((Atom*)data)[i];
+          free(a->paste_mime);
+          a->paste_mime = io_mem(strdup(name));
+        }
+      }
+      if (name) x_XFree(name);
+    }
+  }
+  if (data) x_XFree(data);
+  x_XConvertSelection(a->dpy, a->clip, chosen, a->prop, a->win, CurrentTime);
+  x_XFlush(a->dpy);
 }
 
 // the clipboard's answer: the text whole, or the start of an INCR
@@ -300,9 +342,12 @@ static void win_pasted(AppWin* a) {
     a->paste_incr = type == a->incr;
     if (!a->paste_incr) {
       win_paste_add(a, data, n);
-      win_push(a, 7, 0, 0, 0, 0);
+      if (fmt == 8 && left == 0) win_paste_done(a);
+      else a->paste_busy = 0;
     }
     x_XFree(data);
+  } else {
+    a->paste_busy = 0;
   }
 }
 
@@ -320,7 +365,7 @@ static void win_paste_piece(AppWin* a) {
     win_paste_add(a, data, n);
   } else {
     a->paste_incr = 0;
-    win_push(a, 7, 0, 0, 0, 0);
+    win_paste_done(a);
   }
   if (data) {
     x_XFree(data);
@@ -532,11 +577,17 @@ static void win_pump(AppWin* a) {
       case SelectionNotify:
         if (ev.xselection.selection == a->dnd_sel) {
           win_dropped(a, ev.xselection.property);
-        } else if (ev.xselection.property != None) {
+        } else if (ev.xselection.selection == a->clip && a->paste_busy && ev.xselection.target == a->targets) {
+          // Refusing TARGETS is legal: retain UTF8_STRING/STRING fallback.
+          win_paste_targets(a);
+        } else if (ev.xselection.selection == a->clip && a->paste_busy && ev.xselection.property == a->prop) {
           win_pasted(a);
-        } else if (ev.xselection.target == a->utf8) {
+        } else if (ev.xselection.selection == a->clip && a->paste_busy && ev.xselection.target == a->utf8) {
           // an owner without UTF8_STRING may still have plain STRING
           x_XConvertSelection(a->dpy, a->clip, XA_STRING, a->prop, a->win, CurrentTime);
+          x_XFlush(a->dpy);
+        } else if (ev.xselection.selection == a->clip) {
+          a->paste_busy = 0;
         }
         break;
       case PropertyNotify:
@@ -898,17 +949,23 @@ static void __attribute__((constructor)) win_copy_use(void) {
 // owner (another program) is asked.
 Term win_paste_run(Env e, Term* f, IoWork* w) {
   AppWin* a = (AppWin*)io_hand_v(f[0]);
+  if (a->paste_busy || a->paste_ready) return f[0];
+  free(a->paste_mime);
+  a->paste_mime = NULL;
   if (a->copy != NULL && x_XGetSelectionOwner(a->dpy, a->clip) == a->win) {
     free(a->paste);
     a->paste = io_mem(malloc(a->copy_len + 1));
     memcpy(a->paste, a->copy, a->copy_len);
     a->paste_len = a->copy_len;
+    a->paste_ready = 1;
     win_push(a, 7, 0, 0, 0, 0);
   } else {
-    x_XConvertSelection(a->dpy, a->clip, a->utf8, a->prop, a->win, CurrentTime);
+    a->paste_busy = 1;
+    x_XDeleteProperty(a->dpy, a->win, a->prop);
+    x_XConvertSelection(a->dpy, a->clip, a->targets, a->prop, a->win, CurrentTime);
     x_XFlush(a->dpy);
-    win_nudge(a);
   }
+  win_nudge(a);
   return f[0];
 }
 
@@ -923,6 +980,7 @@ static void __attribute__((constructor)) win_paste_use(void) {
 // the text of the last paste event
 Term win_pasted_run(Env e, Term* f, IoWork* w) {
   AppWin* a = (AppWin*)io_hand_v(f[0]);
+  a->paste_ready = 0;
   return io_tup(e, f[0], io_str(e, a->paste ? a->paste : "", a->paste ? a->paste_len : 0));
 }
 
@@ -930,6 +988,39 @@ static void __attribute__((constructor)) win_pasted_use(void) {
   io_eff(CID(Win.pasted), win_pasted_run);
 }
 
+#endif
+
+#ifdef CID(Win.pasted_image)
+
+// Bytes never enter a Bend String: only the ASCII base64 representation.
+Term win_pasted_image_run(Env e, Term* f, IoWork* w) {
+  AppWin* a = (AppWin*)io_hand_v(f[0]);
+  static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  u64 n = a->paste_len <= 10485760 ? a->paste_len : 0;
+  u64 len = ((n + 2) / 3) * 4;
+  char* out = io_mem(malloc(len + 1));
+  for (u64 i = 0, j = 0; i < n; i += 3) {
+    u32 b = (u32)(u8)a->paste[i] << 16;
+    if (i + 1 < n) b |= (u32)(u8)a->paste[i + 1] << 8;
+    if (i + 2 < n) b |= (u8)a->paste[i + 2];
+    out[j++] = alphabet[b >> 18];
+    out[j++] = alphabet[(b >> 12) & 63];
+    out[j++] = i + 1 < n ? alphabet[(b >> 6) & 63] : '=';
+    out[j++] = i + 2 < n ? alphabet[b & 63] : '=';
+  }
+  const char* mime = a->paste_mime ? a->paste_mime : "";
+  Term result = io_tup(e, f[0], io_tup(e, io_str(e, mime, strlen(mime)),
+    io_tup(e, (Term)(u32)(a->paste_len > UINT32_MAX ? UINT32_MAX : a->paste_len), io_str(e, out, len))));
+  a->paste_ready = 0;
+  free(out);
+  free(a->paste);
+  a->paste = NULL;
+  a->paste_len = 0;
+  return result;
+}
+static void __attribute__((constructor)) win_pasted_image_use(void) {
+  io_eff(CID(Win.pasted_image), win_pasted_image_run);
+}
 #endif
 
 #ifdef CID(Win.dropped)

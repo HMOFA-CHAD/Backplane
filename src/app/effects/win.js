@@ -44,3 +44,8 @@ io_eff(CID(Win.dropped), win_dropped);
 io_eff(CID(Win.size), win_size);
 io_eff(CID(Win.twin), win_twin);
 io_eff(CID(Win.title), win_title);
+
+function win_pasted_image(win) {
+  return io_tup(win, io_tup("", io_tup(0, "")));
+}
+io_eff(CID(Win.pasted_image), win_pasted_image);

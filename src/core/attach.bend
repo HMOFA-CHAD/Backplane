@@ -422,3 +422,65 @@ def Att.codex.go(ps: List<&2, String>) -> List<&2, String>:
 # `codex exec` flags for a message's images
 def Att.codex(+text: String) -> List<&2, String>:
   Att.codex.go(Att.images(text))
+
+# ui-panel-paste-lag: paste
+# ------------------------
+
+def Att.paste.ext(+mime: String) -> String:
+  Bool.pick(String, String.eq(mime, "image/png"), "png",
+    Bool.pick(String, String.eq(mime, "image/jpeg"), "jpg",
+      Bool.pick(String, String.eq(mime, "image/webp"), "webp",
+        Bool.pick(String, String.eq(mime, "image/gif"), "gif",
+          Bool.pick(String, String.eq(mime, "image/bmp"), "bmp", "bin")))))
+
+def Att.paste.name(mime: String) -> String:
+  "pasted." ++ Att.paste.ext(mime)
+
+# A raw chunk is divisible by three, so each base64 piece ends on a
+# quartet boundary and the hub can decode it independently.
+def Att.paste.width() -> Nat:
+  Nat.mul(Nat.div(Att.chunk(), 3n), 4n)
+
+# Fuel is the number of full pieces. The final remainder is always kept,
+# including an empty upload. Do not walk the remaining text per piece.
+def Att.paste.parts.go(fuel: Nat, +width: Nat, +s: String) -> List<&2, String>:
+  match fuel:
+    case 0n:
+      [s]
+    case 1n+k:
+      String.take(s, width) <> Att.paste.parts.go(k, width, String.drop(s, width))
+
+def Att.paste.parts.k(zero: Bool, +s: String, +width: Nat) -> List<&2, String>:
+  match zero:
+    case True{}:
+      [s]
+    case False{}:
+      Att.paste.parts.go(Nat.div(Nat.sub(String.length(s), 1n), width), width, s)
+
+def Att.paste.parts(+s: String, +width: Nat) -> List<&2, String>:
+  Att.paste.parts.k(Nat.is_eq(width, 0n), s, width)
+
+# A concatenation with no separators (also the reconstruction law).
+def Att.paste.join(ps: List<&2, String>) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case p <> t:
+      p ++ Att.paste.join(t)
+
+def Att.paste.piece(+key: String, +name: String, +size: Nat, +i: Nat, last: Bool, data: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"key", J.Str{key}}, J.KV{"name", J.Str{name}},
+    J.KV{"size", J.Num{Nat.show(size)}}, J.KV{"i", J.Num{Nat.show(i)}},
+    J.KV{"last", J.Flag{last}}, J.KV{"data", J.Str{data}}]))
+
+# Four random bytes as eight hex digits, like the web upload key.
+def Att.paste.hex(n: Nat, +word: U32, acc: String) -> String:
+  match n:
+    case 0n:
+      acc
+    case 1n+k:
+      +digit = U32.and(word, 15)
+      Att.paste.hex(k, U32.shrn(word, 4n), SCon{Chr{Bool.pick(U32, U32.is_lt(digit, 10), (digit + 48 : U32), (digit + 87 : U32))}, acc})
+
+def Att.paste.key(word: U32) -> String:
+  Att.paste.hex(8n, word, "")

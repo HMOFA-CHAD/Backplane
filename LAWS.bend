@@ -8074,3 +8074,62 @@ law subs_model_alias:
 
 law subs_panel_resolved_stays_shut:
   {SB.Subs.panel.chosen("0live:old\u{001f}attention:old", [SB.SubRow{"old", True{}, "Inspect", "subagent", "running", "", True{}, False{}, 0n, Nil{}}]) == False{} : Bool}
+
+# ui-panel-paste-lag: paste
+law paste_name_png:
+  {AT.Att.paste.name("image/png") == "pasted.png" : String}
+law paste_name_jpeg:
+  {AT.Att.paste.name("image/jpeg") == "pasted.jpg" : String}
+law paste_name_webp:
+  {AT.Att.paste.name("image/webp") == "pasted.webp" : String}
+law paste_name_gif:
+  {AT.Att.paste.name("image/gif") == "pasted.gif" : String}
+law paste_name_bmp:
+  {AT.Att.paste.name("image/bmp") == "pasted.bmp" : String}
+law paste_name_nonempty:
+  for mime: String
+  {String.is_empty(AT.Att.paste.name(mime)) == False{} : Bool}
+law paste_split_rejoins:
+  for s: String
+  for width: Nat
+  {String.take(s, width) ++ String.drop(s, width) == s : String}
+law paste_parts_rejoin:
+  for fuel: Nat
+  for +width: Nat
+  for +s: String
+  {AT.Att.paste.join(AT.Att.paste.parts.go(fuel, width, s)) == s : String}
+# A full prefix (the width passed to take) is neither shortened nor
+# extended by the remainder; every full upload piece uses this split.
+law paste_full_piece:
+  for prefix: String
+  for rest: String
+  {String.take(prefix ++ rest, String.length(prefix)) == prefix : String}
+law paste_chunk_quartets:
+  {Nat.mod(AT.Att.paste.width(), 4n) == 0n : Nat}
+law paste_chunk_triples:
+  {Nat.mod(AT.Att.chunk(), 3n) == 0n : Nat}
+law paste_tour_ignored:
+  for n: N.Nui
+  for mime: String
+  for size: Nat
+  for data: String
+  for key: String
+  {N.Nui.image.m(True{}, n, mime, size, data, key) == N.Step{n, Nil{}, False{}} : N.Step}
+
+law paste_parts_k_rejoin:
+  for zero: Bool
+  for +s: String
+  for +width: Nat
+  {AT.Att.paste.join(AT.Att.paste.parts.k(zero, s, width)) == s : String}
+law paste_upload_rejoins:
+  for +s: String
+  for +width: Nat
+  {AT.Att.paste.join(AT.Att.paste.parts(s, width)) == s : String}
+law paste_full_piece_size:
+  for +prefix: String
+  for rest: String
+  {String.length(String.take(prefix ++ rest, String.length(prefix))) == String.length(prefix) : Nat}
+
+law paste_key_length:
+  for word: U32
+  {String.length(AT.Att.paste.key(word)) == 8n : Nat}
