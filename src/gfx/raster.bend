@@ -21,6 +21,15 @@ type Mask is Data:
   MWord{w: U32}
   MPair{lo: Mask, hi: Mask}
 
+# a run of glyphs (one line of text in one face and colour) as a tree in
+# string order: a leaf is a glyph's coverage bitmap at (gx, gy), w x h; a
+# pair spans [x0, x1) across. Coordinates are from the run's origin (its
+# SRun's ox, oy), so moving the run moves no glyph.
+type Run is Data:
+  RNone{}
+  RGlyph{gx: U32, gy: U32, w: U32, h: U32, d: Nat, m: Mask}
+  RPair{x0: U32, x1: U32, a: Run, b: Run}
+
 # SPoly is an even-odd polygon cut to the region at hand: `inside` says
 # whether the region's top-left corner is inside, `edges` are the edges
 # that reach the region. With no edges left the region is all in or out.
@@ -32,6 +41,7 @@ type Shape is Data:
   SDisc{cx: F32, cy: F32, r: F32}
   STri{ax: F32, ay: F32, bx: F32, by: F32, cx: F32, cy: F32}
   SMask{gx: U32, gy: U32, w: U32, d: Nat, m: Mask}
+  SRun{ox: U32, oy: U32, r: Run}
 
 # an op's box [x0, x1) x [y0, y1) is its shape's extent cut to its clip
 type Op is Data:
@@ -186,6 +196,31 @@ def Cov.poly(inside: Bool, +d: F32) -> U32:
     case False{}:
       Cov.clamp(F32.sub(0.5, d))
 
+def Run.inside(+x0: U32, +y0: U32, +x1: U32, +y1: U32, +x: U32, +y: U32) -> Bool:
+  Bool.and(Bool.and(U32.is_ge(x, x0), U32.is_lt(x, x1)), Bool.and(U32.is_ge(y, y0), U32.is_lt(y, y1)))
+
+# the part of the run may reach local pixel (x, y): a glyph's box holds
+# it, a pair spans its column
+def Run.hit(r: Run, +x: U32, +y: U32) -> Bool:
+  match r:
+    case RNone{}:
+      False{}
+    case RGlyph{+gx, +gy, +w, +h, _, _}:
+      Run.inside(gx, gy, (gx + w : U32), (gy + h : U32), x, y)
+    case RPair{+x0, +x1, _, _}:
+      Bool.and(U32.is_ge(x, x0), U32.is_lt(x, x1))
+
+# the most any glyph of the run covers local pixel (x, y) (in: Run.hit;
+# a frame shades a run glyph by glyph, Run.px)
+def Run.cov(r: Run, in: Bool, +x: U32, +y: U32) -> U32:
+  match r in:
+    case RGlyph{+gx, +gy, +w, _, d, m} True{}:
+      Cov.mask(gx, gy, w, d, m, x, y)
+    case RPair{_, _, +a, +b} True{}:
+      U32.max(Run.cov(a, Run.hit(a, x, y), x, y), Run.cov(b, Run.hit(b, x, y), x, y))
+    case _ _:
+      0
+
 def Cov.at(s: Shape, +x: U32, +y: U32, +px: F32, +py: F32) -> U32:
   match s:
     case SRect{}:
@@ -200,6 +235,8 @@ def Cov.at(s: Shape, +x: U32, +y: U32, +px: F32, +py: F32) -> U32:
       Cov.tri(ax, ay, bx, by, cx, cy, px, py)
     case SMask{gx, gy, w, d, m}:
       Cov.mask(gx, gy, w, d, m, x, y)
+    case SRun{+ox, +oy, +r}:
+      Run.cov(r, Run.hit(r, (x - ox : U32), (y - oy : U32)), (x - ox : U32), (y - oy : U32))
     case SPoly{inside, +es}:
       Cov.poly(Cross.walk(es, inside, U32.to_f32(x), U32.to_f32(y), px, py), Cov.near(es, px, py, 1.0))
 
@@ -237,6 +274,33 @@ def Shade.inside(+x0: U32, +y0: U32, +x1: U32, +y1: U32, +x: U32, +y: U32) -> Bo
 def Shade.k(+cov: U32, +c: U32, +a: U32, +below: U32) -> U32:
   Rgb.mix(c, below, ((cov * a : U32) / 255 : U32))
 
+# local pixel (x, y) shaded by the run's glyphs, the first topmost, as one
+# op per glyph would be (in: Run.hit): a glyph whose box misses the pixel
+# leaves it as it is, as a glyph op would (a frame shades a pixel only
+# with the ops whose boxes hold it: Region.node)
+def Run.px(r: Run, in: Bool, +x: U32, +y: U32, +c: U32, +a: U32, below: U32) -> U32:
+  match r in:
+    case RGlyph{+gx, +gy, +w, _, d, m} True{}:
+      Shade.k(Cov.mask(gx, gy, w, d, m, x, y), c, a, below)
+    case RPair{_, _, +ra, +rb} True{}:
+      Run.px(ra, Run.hit(ra, x, y), x, y, c, a, Run.px(rb, Run.hit(rb, x, y), x, y, c, a, below))
+    case _ _:
+      below
+
+def Run.shade(in: Bool, +ox: U32, +oy: U32, +r: Run, +x: U32, +y: U32, +c: U32, +a: U32, +below: U32) -> U32:
+  match in:
+    case True{}:
+      Run.px(r, Run.hit(r, (x - ox : U32), (y - oy : U32)), (x - ox : U32), (y - oy : U32), c, a, below)
+    case False{}:
+      Shade.k(0, c, a, below)
+
+def Shade.op(s: Shape, +x0: U32, +y0: U32, +x1: U32, +y1: U32, +c: U32, +a: U32, +x: U32, +y: U32, +below: U32) -> U32:
+  match s:
+    case SRun{+ox, +oy, r}:
+      Run.shade(Shade.inside(x0, y0, x1, y1, x, y), ox, oy, r, x, y, c, a, below)
+    case _:
+      Shade.k(Bool.pick(U32, Shade.inside(x0, y0, x1, y1, x, y), Cov.of(s, x, y), 0), c, a, below)
+
 # the topmost op that covers the pixel decides; a translucent one mixes
 # with what lies below it
 def Shade.px(ops: List<&2, Op>, +x: U32, +y: U32, +bg: U32) -> U32:
@@ -244,7 +308,7 @@ def Shade.px(ops: List<&2, Op>, +x: U32, +y: U32, +bg: U32) -> U32:
     case Nil{}:
       bg
     case Op{+x0, +y0, +x1, +y1, +c, +a, s} <> t:
-      Shade.k(Bool.pick(U32, Shade.inside(x0, y0, x1, y1, x, y), Cov.of(s, x, y), 0), c, a, Shade.px(t, x, y, bg))
+      Shade.op(s, x0, y0, x1, y1, c, a, x, y, Shade.px(t, x, y, bg))
 
 # Regions
 # -------

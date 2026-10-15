@@ -44,6 +44,17 @@ def Eq.mask(a: R.Mask, b: R.Mask) -> Bool:
     case _ _:
       False{}
 
+def Eq.run(a: R.Run, b: R.Run) -> Bool:
+  match a b:
+    case R.RNone{} R.RNone{}:
+      True{}
+    case R.RGlyph{a0, a1, a2, a3, a4, a5} R.RGlyph{b0, b1, b2, b3, b4, b5}:
+      Bool.and(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(Nat.is_eq(a4, b4), Eq.mask(a5, b5))))))
+    case R.RPair{a0, a1, a2, a3} R.RPair{b0, b1, b2, b3}:
+      Bool.and(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(Eq.run(a2, b2), Eq.run(a3, b3))))
+    case _ _:
+      False{}
+
 def Eq.glyph(a: F.Glyph, b: F.Glyph) -> Bool:
   match a b:
     case F.Glyph{a0, a1, a2, a3} F.Glyph{b0, b1, b2, b3}:
@@ -65,6 +76,8 @@ def Eq.shape(a: R.Shape, b: R.Shape) -> Bool:
       Bool.and(Eq.f32(a0, b0), Bool.and(Eq.f32(a1, b1), Bool.and(Eq.f32(a2, b2), Bool.and(Eq.f32(a3, b3), Bool.and(Eq.f32(a4, b4), Eq.f32(a5, b5))))))
     case R.SMask{ax, ay, aw, ad, am} R.SMask{bx, by, bw, bd, bm}:
       Bool.and(U32.is_eq(ax, bx), Bool.and(U32.is_eq(ay, by), Bool.and(U32.is_eq(aw, bw), Bool.and(Nat.is_eq(ad, bd), Eq.mask(am, bm)))))
+    case R.SRun{ax, ay, ar} R.SRun{bx, by, br}:
+      Bool.and(U32.is_eq(ax, bx), Bool.and(U32.is_eq(ay, by), Eq.run(ar, br)))
     case _ _:
       False{}
 
@@ -159,6 +172,8 @@ def Loc.shape(s: R.Shape, +ox: U32, +oy: U32) -> R.Shape:
       R.STri{Loc.f(ax, U32.to_f32(ox)), Loc.f(ay, U32.to_f32(oy)), Loc.f(bx, U32.to_f32(ox)), Loc.f(by, U32.to_f32(oy)), Loc.f(cx, U32.to_f32(ox)), Loc.f(cy, U32.to_f32(oy))}
     case R.SMask{gx, gy, w, d, m}:
       R.SMask{(gx - ox : U32), (gy - oy : U32), w, d, m}
+    case R.SRun{rx, ry, r}:
+      R.SRun{(rx - ox : U32), (ry - oy : U32), r}
 
 # a box edge cut to [o, o + n], from o
 def Loc.lo(+v: U32, +o: U32, +n: U32) -> U32:

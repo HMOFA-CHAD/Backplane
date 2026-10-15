@@ -101,6 +101,8 @@ def Cats.shape(s: R.Shape, +ix: U32, +iy: U32, +dx: F32, +dy: F32) -> R.Shape:
       R.STri{F32.add(ax, dx), F32.add(ay, dy), F32.add(bx, dx), F32.add(by, dy), F32.add(cx, dx), F32.add(cy, dy)}
     case R.SMask{gx, gy, w, d, m}:
       R.SMask{(gx + ix : U32), (gy + iy : U32), w, d, m}
+    case R.SRun{ox, oy, r}:
+      R.SRun{(ox + ix : U32), (oy + iy : U32), r}
 
 # ops posed at (Cats.at(), Cats.at()) moved to (x, y) and cut to c
 def Cats.move(os: List<&2, R.Op>, +c: D.Clip, +ix: U32, +iy: U32, +dx: F32, +dy: F32) -> List<&2, R.Op>:
