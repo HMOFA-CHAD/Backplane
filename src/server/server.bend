@@ -1871,8 +1871,11 @@ def RmJob.there(r: P.Ran, +inbox: Chan(Msg), +thread: String, +wt: String, +root
     case _:
       GitJob.say(inbox, "thread.unrooted", [J.KV{"thread", J.Str{thread}}])
 
+# a folder with no .git in it is no worktree (gone, or only an empty folder
+# left behind inside another checkout): the thread is unrooted as when the
+# folder is gone, so it is not asked about again each tick
 def RmJob.run(+inbox: Chan(Msg), +thread: String, +wt: String, +root: String, +branch: String) -> IO(Unit):
-  IO.bind(P.Ran, Unit, P.Proc.run("test", ["-d", wt], "/"), r => RmJob.there(r, inbox, thread, wt, root, branch))
+  IO.bind(P.Ran, Unit, P.Proc.run("test", ["-e", wt ++ "/.git"], "/"), r => RmJob.there(r, inbox, thread, wt, root, branch))
 
 # Merges: which of a project's due branches gh reports merged (one call per
 # project per tick; nothing happens without gh, auth or a GitHub remote)
