@@ -4839,6 +4839,8 @@ def Busy.inert(c: M.Change) -> Bool:
       True{}
     case M.UsageSet{_, _, _, _}:
       True{}
+    case M.TurnUsage{_, _, _, _, _, _, _, _, _, _, _, _, _}:
+      True{}
     case M.TodosSet{_, _, _}:
       True{}
     case M.SessionSet{_, _, _}:
