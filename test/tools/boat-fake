@@ -9,7 +9,8 @@
 # injection: BOAT_FAKE_FAIL=new|push|exec|delete|list|limits|usage, a number
 # in $S/rate429 (that many creates answer 429, retryAfter from $S/retryafter),
 # $S/unclear (the next create makes the sandbox but answers garbage; with
-# "none" in it, makes nothing). Any other subcommand is refused; `new`
+# "none" in it, makes nothing; "two": ours and another client's look-alike),
+# $S/hang (the next create hangs 30 s first). Any other subcommand is refused; `new`
 # refuses without --no-env and --no-snapshots.
 set -u
 S=${BOAT_FAKE_DIR:?}; mkdir -p "$S/boxes"
@@ -30,6 +31,7 @@ case $sub in
       echo $(( n - 1 )) > "$S/rate429"; date +%s >> "$S/starts"
       echo "{\"code\":\"rate_limited\",\"error\":\"too many starts\",\"status\":429,\"retryAfter\":$(cat "$S/retryafter" 2>/dev/null || echo 1)}"; exit 1
     fi
+    [ -e "$S/hang" ] && { rm -f "$S/hang"; sleep 30; }
     type=default ttl=3600
     while [ $# -gt 0 ]; do case $1 in --type) type=$2; shift 2 ;; --ttl) ttl=$2; shift 2 ;; *) shift ;; esac; done
     id="bx_fake$(date +%s%N | tail -c 7)$RANDOM"
