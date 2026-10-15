@@ -26,7 +26,7 @@ def main() -> IO(Unit):
     +home : String <- T.home()
     t0 : U32 <- P.Perf.us()
     bench(1000n, home ++ "/bench", B.long(14n, "x"))
-    t1 : U32 <- P.Perf.us()
+    +t1 : U32 <- P.Perf.us()
     page : S.StoreResult<List<&2, MB.Body>> <- S.MailStore.read(home ++ "/bench", "long", "", 20n)
     t2 : U32 <- P.Perf.us()
     C.Check.str("1000 row newest page", T.status(List<&2, MB.Body>, page), "ok")

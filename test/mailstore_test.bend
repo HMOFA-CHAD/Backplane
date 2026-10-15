@@ -63,7 +63,7 @@ def inject(path: String, text: String) -> IO(Unit):
     r : File & Result<&1, &1, U32 & String, Unit> <- File.write(f, text)
     inject_close(r)
 
-def app(+home: String, id: String, conv: String, text: String, at: Nat) -> IO(Unit):
+def app(+home: String, +id: String, conv: String, text: String, at: Nat) -> IO(Unit):
   do IO<Unit>:
     r : S.StoreResult<Bool> <- S.MailStore.append(home, B.fixture(id, conv, text, at))
     C.Check.str("append " ++ id, status(Bool, r), "ok")
