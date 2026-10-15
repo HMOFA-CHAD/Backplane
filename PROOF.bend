@@ -10595,3 +10595,18 @@ def Laws.usage_tail_claude_waits():
 
 def Laws.usage_tail_reading(p, t):
   {==}
+
+def Laws.usage_note_held():
+  {==}
+
+def Laws.usage_note_no_window():
+  {==}
+
+def Laws.usage_pct_no_window(u):
+  {==}
+
+def Laws.usage_boat_due_never_read(now):
+  {==}
+
+def Laws.usage_boat_usd_exact():
+  {==}
