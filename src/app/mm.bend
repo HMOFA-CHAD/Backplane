@@ -108,6 +108,11 @@ def TouchK.at(+t: TouchK, +id: String) -> Nat:
     case TouchK{_, _, _, +m}:
       TouchK.at.k(Map.get(Nat, 0n, m, id))
 
+def TouchK.m(t: TouchK) -> Map<&2, Nat>:
+  match t:
+    case TouchK{_, _, _, m}:
+      m
+
 def TouchK.g(+t: TouchK) -> Nat:
   match t:
     case TouchK{_, g, _, _}:
@@ -365,3 +370,245 @@ def SideM.out(ms: List<&2, SideM>) -> L.Out:
       L.Out.none()
     case SideM{_, o} <> _:
       o
+
+# The sidebar's index
+# -------------------
+# core's Side.ix walks every thread, task and setting; the sidebar and the
+# Status plane's counts each made it every frame. The window keeps one
+# (IxK) and brings it up to date: the same while no hub message came, made
+# again whole after a change of all, of whose child a thread is (r), or a
+# setting applied here ("local.touch"), else only the threads touched
+# since are looked at again: their entries in place (Ix.one), or the whole
+# index again when one came, went or moved. test/native/memo_replay.bend
+# checks each against Side.ix on a real log.
+
+type IxK is Data:
+  IxK{n: Nat, lt: String, ix: U.SIx}
+
+def IxK.ix(k: IxK) -> U.SIx:
+  match k:
+    case IxK{_, _, x}:
+      x
+
+def Ix.full(+u: U.Ui, +n: Nat) -> IxK:
+  IxK{n, U.Ui.info(u, "local.touch"), U.Side.ix(U.Ui.state(u))}
+
+# (the recursion made once, outside the choice: a Bool.pick with it in both
+# branches does the rest twice for every element)
+def Ix.keep.s(keep: Bool, +k: String, rest: List<&2, String>) -> List<&2, String>:
+  match keep:
+    case True{}:
+      k <> rest
+    case False{}:
+      rest
+
+def Ix.keep.a(keep: Bool, a: M.Ask, rest: List<&2, M.Ask>) -> List<&2, M.Ask>:
+  match keep:
+    case True{}:
+      a <> rest
+    case False{}:
+      rest
+
+# the threads touched after message n0
+def Ix.since(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>, +n0: Nat) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case (+k, +v) <> +t:
+      Ix.keep.s(Nat.is_gt(v, n0), k, Ix.since(t, n0))
+
+def Ix.has(ts: List<&2, M.Thread>, +id: String) -> Bool:
+  match ts:
+    case Nil{}:
+      False{}
+    case M.Thread{+i, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
+      Bool.or(String.eq(i, id), Ix.has(t, id))
+
+def Ix.swap.k(same: Bool, t: M.Thread, +r: M.Thread, rest: List<&2, M.Thread>) -> List<&2, M.Thread>:
+  match same:
+    case True{}:
+      r <> rest
+    case False{}:
+      t <> rest
+
+# the list with the thread of r's id replaced by r
+def Ix.swap(ts: List<&2, M.Thread>, +r: M.Thread) -> List<&2, M.Thread>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case M.Thread{+i, p, ti, c, a, tu, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de} <> t:
+      Ix.swap.k(String.eq(i, M.Thread.id(r)), M.Thread{i, p, ti, c, a, tu, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, r, Ix.swap(t, r))
+
+def Ix.list.k(r: Map<&2, List<&2, M.Thread>> & List<&2, M.Thread>) -> List<&2, M.Thread>:
+  (_, xs) = r
+  xs
+
+def Ix.asks.k(r: Map<&2, List<&2, M.Ask>> & List<&2, M.Ask>) -> List<&2, M.Ask>:
+  (_, xs) = r
+  xs
+
+def Ix.mine(as: List<&2, M.Ask>, +id: String) -> List<&2, M.Ask>:
+  match as:
+    case Nil{}:
+      Nil{}
+    case M.Ask{i, +th, k, t, d, o, op, an} <> +rest:
+      Ix.keep.a(String.eq(th, id), M.Ask{i, th, k, t, d, o, op, an}, Ix.mine(rest, id))
+
+def Ix.asks.put(xs: List<&2, M.Ask>, +id: String, m: Map<&2, List<&2, M.Ask>>) -> Map<&2, List<&2, M.Ask>>:
+  match xs:
+    case Nil{}:
+      Map.del(&2, List<&2, M.Ask>, m, id)
+    case +a <> t:
+      Map.set(&2, List<&2, M.Ask>, m, id, a <> t)
+
+# a thread's open asks, as Side.ix files them
+def Ix.asks(+st: M.State, +id: String, m: Map<&2, List<&2, M.Ask>>) -> Map<&2, List<&2, M.Ask>>:
+  Ix.asks.put(Ix.asks.k(Map.get(List<&2, M.Ask>, Nil{}, U.SIx.asks.go(List.reverse(&2, M.Ask, Ix.mine(M.Asks.all(st), id)), Map.new(&2, List<&2, M.Ask>)), id)), id, m)
+
+def Ix.yes(r: Map<&2, String> & Bool) -> Bool:
+  (_, b) = r
+  b
+
+def Ix.yes.t(r: Map<&2, M.Thread> & Bool) -> Bool:
+  (_, b) = r
+  b
+
+def Ix.sg(s: M.State) -> Map<&2, String>:
+  match s:
+    case M.State{_, _, _, _, _, sg, _, _, _, _, _}:
+      sg
+
+# a thread's own rows, as Work.rows.map keeps them (an entry while it has
+# a "bg." or "watch." setting at all)
+def Ix.work(+st: M.State, +id: String, +m: Map<&2, Nat>) -> Map<&2, Nat>:
+  Bool.pick(Map<&2, Nat>, Bool.or(Ix.yes(Map.has(&2, String, Ix.sg(st), "bg." ++ id)), Ix.yes(Map.has(&2, String, Ix.sg(st), "watch." ++ id))),
+    Map.set(&2, Nat, m, id, M.Work.rows(st, id)), Map.del(&2, Nat, m, id))
+
+type IxAcc is Data:
+  IxAcc{ok: Bool, by: Map<&2, List<&2, M.Thread>>, asks: Map<&2, List<&2, M.Ask>>, work: Map<&2, Nat>}
+
+def IxAcc.no(a: IxAcc) -> IxAcc:
+  match a:
+    case IxAcc{_, b, x, w}:
+      IxAcc{False{}, b, x, w}
+
+type Ix2 is Data:
+  Ix2{ok: Bool, by: Map<&2, List<&2, M.Thread>>}
+
+# a thread's place: where it is filed (its project's list, unless it is a
+# delegated child) must be where it was; then it is put in again in place
+def Ix.place.k(kid: Bool, there: Bool, r: M.Thread, +p: String, +by: Map<&2, List<&2, M.Thread>>, ok: Bool) -> Ix2:
+  match kid there:
+    case True{} True{}:
+      Ix2{False{}, by}
+    case True{} False{}:
+      Ix2{ok, by}
+    case False{} True{}:
+      Ix2{ok, Map.set(&2, List<&2, M.Thread>, by, p, Ix.swap(Ix.list.k(Map.get(List<&2, M.Thread>, Nil{}, by, p)), r))}
+    case False{} False{}:
+      Ix2{False{}, by}
+
+def Ix.project(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, p, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      p
+
+def Ix.place(m: Maybe<&2, M.Thread>, +kids: Map<&2, Bool>, +id: String, +by: Map<&2, List<&2, M.Thread>>, ok: Bool) -> Ix2:
+  match m:
+    case Some{+r}:
+      Ix.place.k(U.Flag.get(kids, id), Ix.has(Ix.list.k(Map.get(List<&2, M.Thread>, Nil{}, by, Ix.project(r))), id), r, Ix.project(r), by, ok)
+    case None{}:
+      Ix2{False{}, by}
+
+def Ix.one.k(p: Ix2, +st: M.State, +id: String, x: Map<&2, List<&2, M.Ask>>, w: Map<&2, Nat>) -> IxAcc:
+  match p:
+    case Ix2{ok, b}:
+      IxAcc{ok, b, Ix.asks(st, id, x), Ix.work(st, id, w)}
+
+def Ix.thread.k(r: Map<&2, M.Thread> & M.Thread, has: Bool) -> Maybe<&2, M.Thread>:
+  (_, t) = r
+  Bool.pick(Maybe<&2, M.Thread>, has, Some{t}, None{})
+
+def Ix.thread(+st: M.State, +id: String) -> Maybe<&2, M.Thread>:
+  match st:
+    case M.State{_, +ts, _, _, _, _, _, _, _, _, _}:
+      Ix.thread.k(Map.get(M.Thread, M.Thread.blank(id), ts, id), Ix.yes.t(Map.has(&2, M.Thread, ts, id)))
+
+def Ix.one(a: IxAcc, +st: M.State, +kids: Map<&2, Bool>, +id: String) -> IxAcc:
+  match a:
+    case IxAcc{ok, b, x, w}:
+      Ix.one.k(Ix.place(Ix.thread(st, id), kids, id, b, ok), st, id, x, w)
+
+def Ix.all(ids: List<&2, String>, a: IxAcc, +st: M.State, +kids: Map<&2, Bool>) -> IxAcc:
+  match ids:
+    case Nil{}:
+      a
+    case +id <> t:
+      Ix.all(t, Ix.one(a, st, kids, id), st, kids)
+
+def Ix.inc.k(a: IxAcc, +u: U.Ui, +n: Nat, +lt: String) -> IxK:
+  match a:
+    case IxAcc{True{}, b, x, w}:
+      IxK{n, lt, U.SIx{b, x, M.Work.kids.map(U.Ui.state(u)), w}}
+    case IxAcc{False{}, _, _, _}:
+      Ix.full(u, n)
+
+def Ix.inc(ix: U.SIx, +ids: List<&2, String>, +u: U.Ui, +n: Nat, +lt: String) -> IxK:
+  match ix:
+    case U.SIx{b, x, _, w}:
+      Ix.inc.k(Ix.all(ids, IxAcc{True{}, b, x, w}, U.Ui.state(u), U.Kids.set(U.Ui.state(u))), u, n, lt)
+
+def Ix.up.k(i: Nat, k: IxK, +t: TouchK, +u: U.Ui) -> IxK:
+  match i k:
+    case 0n _:
+      k
+    case 1n _:
+      Ix.full(u, TouchK.n(t))
+    case _ IxK{n0, lt, ix}:
+      Ix.inc(ix, Ix.since(Map.to_list(&2, Nat, TouchK.m(t)), n0), u, TouchK.n(t), lt)
+
+def Ix.mode(+n0: Nat, +lt0: String, +t: TouchK, +u: U.Ui) -> Nat:
+  Bool.pick(Nat, Bool.not(String.eq(lt0, U.Ui.info(u, "local.touch"))), 1n,
+    Bool.pick(Nat, Bool.or(Nat.is_gt(TouchK.g(t), n0), Nat.is_gt(TouchK.r(t), n0)), 1n,
+      Bool.pick(Nat, Nat.is_eq(TouchK.n(t), n0), 0n, 2n)))
+
+def IxK.n(k: IxK) -> Nat:
+  match k:
+    case IxK{n, _, _}:
+      n
+
+def IxK.lt(k: IxK) -> String:
+  match k:
+    case IxK{_, l, _}:
+      l
+
+# the index for this frame, from the last frame's
+def Ix.up(ks: List<&2, IxK>, +t: TouchK, +u: U.Ui) -> IxK:
+  match ks:
+    case Nil{}:
+      Ix.full(u, TouchK.n(t))
+    case +k <> _:
+      Ix.up.k(Ix.mode(IxK.n(k), IxK.lt(k), t, u), k, t, u)
+
+def Ix.ids.n(ts: List<&2, M.Thread>, +acc: Nat) -> Nat:
+  match ts:
+    case Nil{}:
+      acc
+    case M.Thread{+i, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
+      Ix.ids.n(t, Nat.add(acc, String.length(i)))
+
+# The index is made in full each frame (its lists walked): one left to be
+# made later would keep the last frame's state and be built on, unmade,
+# frame after frame
+def Ix.lens(xs: List<&2, Sigma<&2, &2, String, _ => List<&2, M.Thread>>>, +acc: Nat) -> Nat:
+  match xs:
+    case Nil{}:
+      acc
+    case (_, v) <> t:
+      Ix.lens(t, Nat.add(acc, Ix.ids.n(v, 0n)))
+
+def IxK.force(k: IxK) -> Nat:
+  match k:
+    case IxK{n, lt, U.SIx{by, a, kd, w}}:
+      Nat.add(Nat.add(n, Ix.lens(Map.to_list(&2, List<&2, M.Thread>, by), 0n)),
+        Nat.add(List.length(&2, String, Map.keys(&2, List<&2, M.Ask>, a)), Nat.add(List.length(&2, String, Map.keys(&2, Nat, kd)), List.length(&2, String, Map.keys(&2, Nat, w)))))

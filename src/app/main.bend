@@ -132,14 +132,14 @@ def TieKeep.with_cache(ks: List<&2, TieKeep>, cs: List<&2, U.HubView>) -> List<&
 # more fields than an arity of 255, main.bend fails to build past it), and
 # the posts on show wrapped (a room's, a bot's elsewhere: BV.Bv.wraps)
 type Kept is Data:
-  Kept{frames: TI.Frames, memos: List<&2, L.TLMemo>, cats: Map<&2, CA.CatF>, parks: List<&2, N.Park>, wraps: Map<&2, BV.PW>, front: List<&2, BV.Fronted>, touch: List<&2, MM.TouchK>, mm: List<&2, MM.MainM>, sm: List<&2, MM.SideM>}
+  Kept{frames: TI.Frames, memos: List<&2, L.TLMemo>, cats: Map<&2, CA.CatF>, parks: List<&2, N.Park>, wraps: Map<&2, BV.PW>, front: List<&2, BV.Fronted>, touch: List<&2, MM.TouchK>, mm: List<&2, MM.MainM>, sm: List<&2, MM.SideM>, ixs: List<&2, MM.IxK>, brs: List<&2, BV.BRows>}
 
 # the boards being watched and the fonts
 type Aux is Data:
   Aux{watched: List<&2, String>, ty: List<&2, L.Ty>, tie: Tie, kept: List<&2, Kept>}
 
 def Kept.none() -> Kept:
-  Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none(), Nil{}, Nil{}, Nil{}, Nil{}}
+  Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none(), Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}}
 
 def Kept.of(ks: List<&2, Kept>) -> Kept:
   match ks:
@@ -1069,13 +1069,13 @@ def Aux.with_kept(a: Aux, k: Kept) -> Aux:
 
 def Kept.touch(k: Kept) -> MM.TouchK:
   match k:
-    case Kept{_, _, _, _, _, _, tk, _, _}:
+    case Kept{_, _, _, _, _, _, tk, _, _, _, _}:
       MM.TouchK.of(tk)
 
 def Kept.with_touch(k: Kept, t: MM.TouchK) -> Kept:
   match k:
-    case Kept{f, m, cs, pk, wr, fr, _, mmm, smm}:
-      Kept{f, m, cs, pk, wr, fr, [t], mmm, smm}
+    case Kept{f, m, cs, pk, wr, fr, _, mmm, smm, ixx, brr}:
+      Kept{f, m, cs, pk, wr, fr, [t], mmm, smm, ixx, brr}
 
 def Aux.touch(a: Aux) -> MM.TouchK:
   Kept.touch(Aux.kept(a))
@@ -1937,13 +1937,13 @@ def Shell.image(pa: Bool, +ops: List<&2, R.Op>, +vw: V.Vw, +ww: U32, +hh: U32, +
 
 def Kept.frames(k: Kept) -> TI.Frames:
   match k:
-    case Kept{f, _, _, _, _, _, _, _, _}:
+    case Kept{f, _, _, _, _, _, _, _, _, _, _}:
       f
 
 def Kept.with_frames(k: Kept, f: TI.Frames) -> Kept:
   match k:
-    case Kept{_, m, cs, pk, wr, fr, tk, mmm, smm}:
-      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm}
+    case Kept{_, m, cs, pk, wr, fr, tk, mmm, smm, ixx, brr}:
+      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm, ixx, brr}
 
 def Aux.frames(a: Aux) -> TI.Frames:
   Kept.frames(Aux.kept(a))
@@ -1953,13 +1953,13 @@ def Aux.with_frames(+a: Aux, f: TI.Frames) -> Aux:
 
 def Kept.memos(k: Kept) -> List<&2, L.TLMemo>:
   match k:
-    case Kept{_, m, _, _, _, _, _, _, _}:
+    case Kept{_, m, _, _, _, _, _, _, _, _, _}:
       m
 
 def Kept.with_memos(k: Kept, m: List<&2, L.TLMemo>) -> Kept:
   match k:
-    case Kept{f, _, cs, pk, wr, fr, tk, mmm, smm}:
-      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm}
+    case Kept{f, _, cs, pk, wr, fr, tk, mmm, smm, ixx, brr}:
+      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm, ixx, brr}
 
 def Aux.memos(a: Aux) -> List<&2, L.TLMemo>:
   Kept.memos(Aux.kept(a))
@@ -1969,13 +1969,13 @@ def Aux.with_memos(+a: Aux, m: List<&2, L.TLMemo>) -> Aux:
 
 def Kept.cats(k: Kept) -> Map<&2, CA.CatF>:
   match k:
-    case Kept{_, _, cs, _, _, _, _, _, _}:
+    case Kept{_, _, cs, _, _, _, _, _, _, _, _}:
       cs
 
 def Kept.with_cats(k: Kept, cs: Map<&2, CA.CatF>) -> Kept:
   match k:
-    case Kept{f, m, _, pk, wr, fr, tk, mmm, smm}:
-      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm}
+    case Kept{f, m, _, pk, wr, fr, tk, mmm, smm, ixx, brr}:
+      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm, ixx, brr}
 
 def Aux.cats(a: Aux) -> Map<&2, CA.CatF>:
   Kept.cats(Aux.kept(a))
@@ -1985,13 +1985,13 @@ def Aux.with_cats(+a: Aux, cs: Map<&2, CA.CatF>) -> Aux:
 
 def Kept.wraps(k: Kept) -> Map<&2, BV.PW>:
   match k:
-    case Kept{_, _, _, _, wr, _, _, _, _}:
+    case Kept{_, _, _, _, wr, _, _, _, _, _, _}:
       wr
 
 def Kept.with_wraps(k: Kept, wr: Map<&2, BV.PW>) -> Kept:
   match k:
-    case Kept{f, m, cs, pk, _, fr, tk, mmm, smm}:
-      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm}
+    case Kept{f, m, cs, pk, _, fr, tk, mmm, smm, ixx, brr}:
+      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm, ixx, brr}
 
 def Aux.wraps(a: Aux) -> Map<&2, BV.PW>:
   Kept.wraps(Aux.kept(a))
@@ -2000,13 +2000,13 @@ def Aux.wraps(a: Aux) -> Map<&2, BV.PW>:
 # none: cat frames are whole frames)
 def Kept.front(k: Kept) -> List<&2, BV.Fronted>:
   match k:
-    case Kept{_, _, _, _, _, fr, _, _, _}:
+    case Kept{_, _, _, _, _, fr, _, _, _, _, _}:
       fr
 
 def Kept.with_front(k: Kept, fr: List<&2, BV.Fronted>) -> Kept:
   match k:
-    case Kept{f, m, cs, pk, wr, _, tk, mmm, smm}:
-      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm}
+    case Kept{f, m, cs, pk, wr, _, tk, mmm, smm, ixx, brr}:
+      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm, ixx, brr}
 
 def Aux.front(a: Aux) -> List<&2, BV.Fronted>:
   Kept.front(Aux.kept(a))
@@ -2017,29 +2017,80 @@ def Aux.with_front(+a: Aux, fr: List<&2, BV.Fronted>) -> Aux:
 # what hub messages touched (MM.TouchK) and the main area's memo (MM.MainM)
 def Kept.mm(k: Kept) -> List<&2, MM.MainM>:
   match k:
-    case Kept{_, _, _, _, _, _, _, mmm, _}:
+    case Kept{_, _, _, _, _, _, _, mmm, _, _, _}:
       mmm
 
 def Kept.with_mm(k: Kept, mmm: List<&2, MM.MainM>) -> Kept:
   match k:
-    case Kept{f, m, cs, pk, wr, fr, tk, _, smm}:
-      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm}
+    case Kept{f, m, cs, pk, wr, fr, tk, _, smm, ixx, brr}:
+      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm, ixx, brr}
 
 def Kept.sm(k: Kept) -> List<&2, MM.SideM>:
   match k:
-    case Kept{_, _, _, _, _, _, _, _, smm}:
+    case Kept{_, _, _, _, _, _, _, _, smm, _, _}:
       smm
 
 def Kept.with_sm(k: Kept, smm: List<&2, MM.SideM>) -> Kept:
   match k:
-    case Kept{f, m, cs, pk, wr, fr, tk, mmm, _}:
-      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm}
+    case Kept{f, m, cs, pk, wr, fr, tk, mmm, _, ixx, brr}:
+      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm, ixx, brr}
 
 def Aux.sm(a: Aux) -> List<&2, MM.SideM>:
   Kept.sm(Aux.kept(a))
 
 def Aux.with_sm(+a: Aux, smm: List<&2, MM.SideM>) -> Aux:
   Aux.with_kept(a, Kept.with_sm(Aux.kept(a), smm))
+
+def Kept.ixs(k: Kept) -> List<&2, MM.IxK>:
+  match k:
+    case Kept{_, _, _, _, _, _, _, _, _, ixx, _}:
+      ixx
+
+def Kept.with_ixs(k: Kept, ixx: List<&2, MM.IxK>) -> Kept:
+  match k:
+    case Kept{f, m, cs, pk, wr, fr, tk, mmm, smm, _, brr}:
+      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm, ixx, brr}
+
+def Aux.ixs(a: Aux) -> List<&2, MM.IxK>:
+  Kept.ixs(Aux.kept(a))
+
+def Aux.with_ixs(+a: Aux, ixx: List<&2, MM.IxK>) -> Aux:
+  Aux.with_kept(a, Kept.with_ixs(Aux.kept(a), ixx))
+
+def Kept.brs(k: Kept) -> List<&2, BV.BRows>:
+  match k:
+    case Kept{_, _, _, _, _, _, _, _, _, _, brr}:
+      brr
+
+def Kept.with_brs(k: Kept, brr: List<&2, BV.BRows>) -> Kept:
+  match k:
+    case Kept{f, m, cs, pk, wr, fr, tk, mmm, smm, ixx, _}:
+      Kept{f, m, cs, pk, wr, fr, tk, mmm, smm, ixx, brr}
+
+def Aux.with_brs(+a: Aux, brr: List<&2, BV.BRows>) -> Aux:
+  Aux.with_kept(a, Kept.with_brs(Aux.kept(a), brr))
+
+# the cats' rows of this frame (made once by Shell.paint)
+def Aux.br.k(ks: List<&2, BV.BRows>, +n: N.Nui) -> BV.BRows:
+  match ks:
+    case k <> _:
+      k
+    case Nil{}:
+      BV.BRows.of(N.Nui.ui(n))
+
+def Aux.br(+a: Aux, +n: N.Nui) -> BV.BRows:
+  Aux.br.k(Kept.brs(Aux.kept(a)), n)
+
+# the frame's index of the state (MM.Ix: kept up to date by Shell.paint.go)
+def Aux.ix.k(ks: List<&2, MM.IxK>, +n: N.Nui) -> U.SIx:
+  match ks:
+    case k <> _:
+      MM.IxK.ix(k)
+    case Nil{}:
+      U.Side.ix(U.Ui.state(N.Nui.ui(n)))
+
+def Aux.ix(+a: Aux, +n: N.Nui) -> U.SIx:
+  Aux.ix.k(Aux.ixs(a), n)
 
 def Aux.mm(a: Aux) -> List<&2, MM.MainM>:
   Kept.mm(Aux.kept(a))
@@ -2200,15 +2251,15 @@ type FrameM is Data:
   FrameM{o: L.Out, mm: List<&2, MM.MainM>, hit: Nat, sm: List<&2, MM.SideM>}
 
 # the sidebar's body: the memo's while its key holds, else laid out
-def SideK.of(hit: Bool, +key: String, ms: List<&2, MM.SideM>, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui) -> MM.SideM:
+def SideK.of(hit: Bool, +key: String, ms: List<&2, MM.SideM>, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui, +ix: U.SIx, +br: BV.BRows) -> MM.SideM:
   match hit:
     case True{}:
       MM.SideM{key, MM.SideM.out(ms)}
     case False{}:
-      MM.SideM{key, BV.Bv.side.a(ty, cats, wraps, n)}
+      MM.SideM{key, BV.Bv.side.a.ixr(ty, cats, wraps, n, ix, br)}
 
-def SideK.go(+key: String, +ms: List<&2, MM.SideM>, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui) -> MM.SideM:
-  SideK.of(MM.SideM.same(key, ms), key, ms, ty, cats, wraps, n)
+def SideK.go(+key: String, +ms: List<&2, MM.SideM>, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui, +ix: U.SIx, +br: BV.BRows) -> MM.SideM:
+  SideK.of(MM.SideM.same(key, ms), key, ms, ty, cats, wraps, n, ix, br)
 
 # the main area: a bot's or a room's (not kept), or the thread's from its
 # memo (MM.Mm.main)
@@ -2232,8 +2283,8 @@ def FrameM.join(p: Part, sd: MM.SideM, mm: List<&2, MM.MainM>, +ty: L.Ty, +tlm: 
 
 # the main area and the sidebar's body at once (as Lay.frame.u lays them
 # out), each from its memo when its key holds
-def FrameM.lay(+mm: List<&2, MM.MainM>, sm: List<&2, MM.SideM>, +tc: MM.TouchK, +ty: L.Ty, +tlm: L.TLMemo, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui) -> FrameM:
-  p sd = Part.of(BV.Bv.main.w(ty, tlm, cats, wraps, n), mm, tc, ty, tlm, n) SideK.go(MM.Sm.key(n, tc), sm, ty, cats, wraps, n)
+def FrameM.lay(+mm: List<&2, MM.MainM>, sm: List<&2, MM.SideM>, +tc: MM.TouchK, +ty: L.Ty, +tlm: L.TLMemo, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui, +ix: U.SIx, +br: BV.BRows) -> FrameM:
+  p sd = Part.of(BV.Bv.main.w(ty, tlm, cats, wraps, n), mm, tc, ty, tlm, n) SideK.go(MM.Sm.key(n, tc), sm, ty, cats, wraps, n, ix, br)
   FrameM.join(p, sd, mm, ty, tlm, n)
 
 def FrameM.out(f: FrameM) -> L.Out:
@@ -2262,8 +2313,8 @@ def FrameM.sm(f: FrameM) -> List<&2, MM.SideM>:
 def Shell.paint.again(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t2: U32) -> IO(Shell):
   do IO<Shell>:
     +memos : List<&2, L.TLMemo> = Shell.memos.of(ty, n, Nil{})
-    +wraps : Map<&2, BV.PW> = BV.Bv.wraps(ty, n, BV.Bv.wraps.none())
-    +fm : FrameM = FrameM.lay(Nil{}, Nil{}, Aux.touch(wa), ty, L.TL.memos.now(memos), cats, wraps, n)
+    +wraps : Map<&2, BV.PW> = BV.Bv.wraps.ix(ty, n, BV.Bv.wraps.none(), Aux.ix(wa, n))
+    +fm : FrameM = FrameM.lay(Nil{}, Nil{}, Aux.touch(wa), ty, L.TL.memos.now(memos), cats, wraps, n, Aux.ix(wa, n), Aux.br(wa, n))
     +o : L.Out = FrameM.out(fm)
     +k : Nat = Lay.nops(o)
     +t3 : U32 <- PS.Perf.lap("ui.glyphs", t2)
@@ -2283,7 +2334,7 @@ def Shell.paint.want(ws: List<&2, X.Want>, o: L.Out, mmm: List<&2, MM.MainM>, sm
 # with the ops it made as ui.ops)
 def Shell.paint.c(+cats: Map<&2, CA.CatF>, +memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t1: U32) -> IO(Shell):
   do IO<Shell>:
-    +fm : FrameM = FrameM.lay(Aux.mm(wa), Aux.sm(wa), Aux.touch(wa), Aux.ty(wa), L.TL.memos.now(memos), cats, Aux.wraps(wa), n)
+    +fm : FrameM = FrameM.lay(Aux.mm(wa), Aux.sm(wa), Aux.touch(wa), Aux.ty(wa), L.TL.memos.now(memos), cats, Aux.wraps(wa), n, Aux.ix(wa, n), Aux.br(wa, n))
     +o : L.Out = FrameM.out(fm)
     +k : Nat = Lay.nops(o)
     +t2 : U32 <- PS.Perf.lap("ui.layout", t1)
@@ -2293,7 +2344,7 @@ def Shell.paint.c(+cats: Map<&2, CA.CatF>, +memos: List<&2, L.TLMemo>, +oh: List
     Shell.paint.want(X.Text.wants(Lay.ops(o), Nil{}), o, FrameM.mm(fm), FrameM.sm(fm), cats, memos, oh, n, w, q, i, wa, epoch, ms, t0, t2)
 
 def Shell.paint.m(+memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t1: U32) -> IO(Shell):
-  Shell.paint.c(BV.Bv.warm(N.Nui.ui(n), Aux.cats(wa), BV.Bv.clock.of(n)), memos, oh, n, w, q, i, Aux.with_wraps(wa, BV.Bv.wraps(Aux.ty(wa), n, Aux.wraps(wa))), epoch, ms, t0, t1)
+  Shell.paint.c(BV.Bv.warm.r(Aux.br(wa, n), Aux.cats(wa), BV.Bv.clock.of(n)), memos, oh, n, w, q, i, Aux.with_wraps(wa, BV.Bv.wraps.ix(Aux.ty(wa), n, Aux.wraps(wa), Aux.ix(wa, n))), epoch, ms, t0, t1)
 
 # the timeline's memo is brought up to this frame first; layout draws from
 # it. Each step is timed: ui.memo, ui.layout, then ui.raster and
@@ -2302,8 +2353,11 @@ def Shell.paint.go(+oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg
   do IO<Shell>:
     +t0 : U32 <- PS.Perf.us()
     +memos : List<&2, L.TLMemo> = Shell.memos.of(Aux.ty(wa), n, Aux.memos(wa))
+    +ixk : MM.IxK = MM.Ix.up(Aux.ixs(wa), Aux.touch(wa), N.Nui.ui(n))
+    +ixn : Nat = MM.IxK.force(ixk)
+    PS.Perf.add("ui.ix.n", U32.from_nat(Nat.mod(ixn, 1000000n)))
     +t1 : U32 <- PS.Perf.lap("ui.memo", t0)
-    Shell.paint.m(memos, oh, n, w, q, i, wa, epoch, ms, t0, t1)
+    Shell.paint.m(memos, oh, n, w, q, i, Aux.with_ixs(wa, [ixk]), epoch, ms, t0, t1)
 
 def Shell.paint.k(+n0: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
   match n0:
@@ -2319,8 +2373,12 @@ def Shell.stamp.k(+n: N.Nui, +ms: Nat) -> N.Nui:
 def Shell.stamp(+n: N.Nui, +ms: Nat) -> N.Nui:
   BV.Bv.stamp(Shell.stamp.k(n, ms), ms)
 
+# (the cats' rows made once, for the stamp, the cats and the sidebar)
+def Shell.paint.b(+br: BV.BRows, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
+  Shell.paint.k(BV.Bv.stamp.r(Shell.stamp.k(n, ms), ms, br), w, q, i, Aux.with_brs(wa, [br]), epoch, ms)
+
 def Shell.paint(+n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
-  Shell.paint.k(Shell.stamp(n, ms), w, q, i, wa, epoch, ms)
+  Shell.paint.b(BV.BRows.of(N.Nui.ui(n)), n, w, q, i, wa, epoch, ms)
 
 # The performance overlay (ctrl+shift+h): each frame drawn while it is up
 # reads the numbers first (timed as ui.hud) and gives N.Hud.feed the text
@@ -2530,13 +2588,13 @@ def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
 
 def Kept.park(k: Kept) -> N.Park:
   match k:
-    case Kept{_, _, _, pk, _, _, _, _, _}:
+    case Kept{_, _, _, pk, _, _, _, _, _, _, _}:
       Maybe.default(&2, N.Park, List.head(&2, N.Park, pk), N.Park.init())
 
 def Kept.with_park(k: Kept, pk: N.Park) -> Kept:
   match k:
-    case Kept{f, m, cs, _, wr, fr, tk, mmm, smm}:
-      Kept{f, m, cs, [pk], wr, fr, tk, mmm, smm}
+    case Kept{f, m, cs, _, wr, fr, tk, mmm, smm, ixx, brr}:
+      Kept{f, m, cs, [pk], wr, fr, tk, mmm, smm, ixx, brr}
 
 def Aux.park(a: Aux) -> N.Park:
   Kept.park(Aux.kept(a))
