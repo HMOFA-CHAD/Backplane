@@ -4,6 +4,7 @@ import ./dom.bend as D
 import ./icon.bend as WI
 import ../core/tools.bend as TO
 import ../core/client.bend as U
+import ../core/usage.bend as UZ
 import ../core/attach.bend as AT
 import ../core/vt.bend as VT
 import ../core/diff.bend as DF
@@ -865,6 +866,21 @@ def View.tz.auto(on: Bool) -> D.Node:
     case False{}:
       D.El{"button", "", [D.At{"class", ""}, D.At{"title", "Already following your phone"}, D.At{"disabled", "disabled"}], [D.Txt{"Automatic"}]}
 
+# Settings > Usage (src/core/usage.bend), the first row titled "Usage: ..."
+def View.usage.rows.go(rs: List<&2, UZ.URow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      View.setrow(UZ.URow.label(r), UZ.URow.note(r), Nil{}) <> View.usage.rows.go(t)
+
+def View.usage.rows(rs: List<&2, UZ.URow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      View.setrow("Usage: " ++ UZ.URow.label(r), UZ.URow.note(r), Nil{}) <> View.usage.rows.go(t)
+
 def View.tz.set(+u: U.Ui) -> List<&2, D.Node>:
   [View.setrow("Time zone", U.Tzs.line(u),
     [WB.WB.input("tzname", "tzname", U.Ui.scratch(u, "@f.tzname"), "Europe/Helsinki", "tz-set"), D.Dom.button("primary", "tz-set", "", "Use this time zone", "Set"),
@@ -955,7 +971,7 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
         D.Dom.when(Bool.not(String.is_empty(U.Pair.link(nf))), D.Dom.copy(U.Pair.link(nf)))))],
       View.pair.qr(U.Ui.flag(u, "pairqr"), nf),
       [View.setrow("Update channel", "Stable takes releases; nightly also takes the daily builds.", View.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
-      View.setrow("Backplane " ++ v, U.Update.line.w(st, nf, note), View.update.btn(U.Update.btn(st, nf, note)))], View.voice.set(u, st), View.keys.set(u), View.agy.rows(U.Agv.rows(u)), View.tz.set(u), [View.setrow("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [D.Dom.button("", "ob-open", "", "Show the tour again", "Show the tour")])]])}]}
+      View.setrow("Backplane " ++ v, U.Update.line.w(st, nf, note), View.update.btn(U.Update.btn(st, nf, note)))], View.voice.set(u, st), View.keys.set(u), View.agy.rows(U.Agv.rows(u)), View.tz.set(u), View.usage.rows(U.Usage.rows(st)), [View.setrow("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [D.Dom.button("", "ob-open", "", "Show the tour again", "Show the tour")])]])}]}
 
 def View.empty(n: Nat) -> D.Node:
   D.El{"main", "empty", [D.At{"class", "empty"}], [D.Txt{Bool.pick(String, Nat.is_eq(n, 0n), "Add a project with + to start.", "Pick a thread, or start one with + next to a project.")}]}

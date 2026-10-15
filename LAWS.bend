@@ -1,6 +1,7 @@
 import Base
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
+import ./src/core/usage.bend as UZ
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/ref.bend as REF
 import ./src/core/tz.bend as TZ
@@ -8673,3 +8674,25 @@ law i18n_fallback_fixture_plural:
   for +n: Nat
   {I18F.T.files.count(I18.Ja{}, n) == I18F.T.files.count(I18.En{}, n) : String}
 # ---- end i18n ----
+# ---- usage-screen ----
+# The model chip's context tail and Settings > Usage (src/core/usage.bend)
+
+# a provider that never reports its context says so instead of nothing
+law usage_tail_na:
+  {UZ.Use.tail("codex", 0n, "") == " · ctx n/a" : String}
+
+# Claude shows nothing until its first reading
+law usage_tail_claude_waits:
+  {UZ.Use.tail("claude", 0n, "") == "" : String}
+
+# a reading's text is shown as it is, whatever the provider
+law usage_tail_reading:
+  for +p: String, +t: String
+  {UZ.Use.tail(p, 5n, t) == t : String}
+
+# a reading is what a session holds, said as held, with its share
+law usage_note_held:
+  {UZ.Use.held.note(301756n, 1000000n) == "301k of 1M held (30%)" : String}
+
+law usage_note_no_window:
+  {UZ.Use.held.note(5000n, 0n) == "5k held, window unknown" : String}

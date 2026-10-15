@@ -2,6 +2,7 @@ import Base
 import ../core/model.bend as M
 import ../core/json.bend as J
 import ../core/client.bend as U
+import ../core/usage.bend as UZ
 import ../core/fm.bend as FM
 import ../core/todo.bend as TD
 import ../core/edit.bend as ED
@@ -2212,6 +2213,11 @@ def Comp.send_x(+ty: Ty, +x1: U32, +send: String) -> U32:
 def Comp.models(+ty: Ty, +models: String, +x0: U32, +x1: U32, +send: String) -> String:
   Ty.fit(ty, 2n, models, U32.dim(U32.dim(Comp.send_x(ty, x1, send), (x0 + 8 : U32)), 122))
 
+# the chip's label cut to fit before its context tail ("ctx 30% of 1M"),
+# which is never the part cut off
+def Comp.chip(+ty: Ty, +label: String, +tail: String, +x0: U32, +x1: U32, +send: String) -> String:
+  Ty.fit(ty, 2n, label, U32.dim(U32.dim(U32.dim(Comp.send_x(ty, x1, send), (x0 + 8 : U32)), 122), Ty.width(ty, 2n, tail))) ++ tail
+
 def Lay.composer(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String, +caret: Nat, +mark: Nat, +focused: Bool, +blink: Bool, +x0: U32, +x1: U32, +h: U32, +send: String, +act: String, +models: String, +rs: List<&2, U.SkillRow>) -> Out:
   +tw = {(x1 - x0 - 40 : U32) : U32}
   +n = List.length(&2, String, ls)
@@ -3248,6 +3254,23 @@ def Set.keys(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
 
 # Time zone: where the person is (a phone reports it, or they set it), with
 # a field for a zone name, Set, and Automatic
+# Usage (src/core/usage.bend): a card of rows, a label and a note each
+def Set.usage.rows(rs: List<&2, UZ.URow>, +ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
+  match rs:
+    case Nil{}:
+      Out.none()
+    case r <> t:
+      Out.all([Set.row(ty, UZ.URow.label(r), UZ.URow.note(r), x, y, w), Set.usage.rows(t, ty, x, w, (y + 52 : U32))])
+
+def Set.usage.h(+st: M.State) -> U32:
+  (72 + U32.from_nat(List.length(&2, UZ.URow, U.Usage.rows(st))) * 52 : U32)
+
+def Set.usage(+ty: Ty, +st: M.State, +x: U32, +w: U32, +y: U32) -> Out:
+  Out.all([
+    Set.head(ty, "Usage", x, y),
+    Set.card(x, (y + 32 : U32), w, (Set.usage.h(st) - 56 : U32)),
+    Set.usage.rows(U.Usage.rows(st), ty, x, w, (y + 34 : U32))])
+
 def Set.tz.h() -> U32:
   150
 
@@ -3516,7 +3539,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 46 : U32) : U32}
-  +total = {(1092 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 132 : U32) : U32}
+  +total = {(1092 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(st) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
   +b2 = {(b + 64 + Set.notify.h(st, ty, w) : U32) : U32}
@@ -3574,7 +3597,8 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Set.keys(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) : U32)),
     Set.agy(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + 16 : U32)),
     Set.tz(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 16 : U32)),
-    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 16 : U32))])),
+    Set.usage(ty, st, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 16 : U32)),
+    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(st) + 16 : U32))])),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 51, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255)],
       Ty.text(ty, 0n, "Settings", D.Clip.all(), (x0 + 24 : U32), 0, 52, T.Th.text())), Nil{}},
     Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Close") : U32), 12, "Close", T.Th.soft(), "flag", "settings"),
@@ -5826,7 +5850,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
           Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + pl : U32)),
           Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + Subs.height(ts, svis, sopen) : U32), fkey, blink),
-          Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)) ++ U.Usage.tail(st, sel), rs, atts, up, path),
+          Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), Comp.chip(ty, U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)), U.Usage.tail(st, sel), cx0, cx1, U.Follow.button(st, sel, Lay.running(turn), stop, draft)), rs, atts, up, path),
           Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
           Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
           Lay.asks(ty, asks, draft, pics, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),

@@ -10586,3 +10586,18 @@ def Laws.i18n_fallback_fixture_save():
 def Laws.i18n_fallback_fixture_plural(n):
   {==}
 # ---- end i18n ----
+# ---- usage-screen ----
+def Laws.usage_tail_na():
+  {==}
+
+def Laws.usage_tail_claude_waits():
+  {==}
+
+def Laws.usage_tail_reading(p, t):
+  {==}
+
+def Laws.usage_note_held():
+  {==}
+
+def Laws.usage_note_no_window():
+  {==}

@@ -3,6 +3,7 @@ import ./deploy.bend as DP
 import ./live.bend as LV
 import ./json.bend as J
 import ./model.bend as M
+import ./usage.bend as UZ
 import ./codec.bend as C
 import ./vt.bend as VT
 import ./emb.bend as EM
@@ -2499,7 +2500,12 @@ def Usage.text(+used: Nat, +window: Nat) -> String:
       " · ctx " ++ Nat.show(Nat.div(Nat.mul(used, 100n), window)) ++ "% of " ++ Usage.tokens(window)))
 
 def Usage.tail(+st: M.State, +th: String) -> String:
-  Usage.text(M.Usage.used(M.Setting.get(st, M.Usage.key(th), "")), M.Usage.window(M.Setting.get(st, M.Usage.key(th), "")))
+  UZ.Use.tail(M.Thread.provider(Ui.thread(st, th)), M.Usage.used(M.Setting.get(st, M.Usage.key(th), "")),
+    Usage.text(M.Usage.used(M.Setting.get(st, M.Usage.key(th), "")), M.Usage.window(M.Setting.get(st, M.Usage.key(th), ""))))
+
+# Settings > Usage (src/core/usage.bend): every client draws these rows
+def Usage.rows(+st: M.State) -> List<&2, UZ.URow>:
+  UZ.Use.rows(st, Ui.threads(st))
 
 # the model chip's label with the thread's effort
 def Effort.label(+label: String, +e: String) -> String:

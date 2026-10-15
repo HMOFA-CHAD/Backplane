@@ -2,6 +2,7 @@ import Base
 import ../core/json.bend as J
 import ../core/model.bend as M
 import ../core/client.bend as U
+import ../core/usage.bend as UZ
 import ../web/dom.bend as D
 import ../web/view.bend as V
 import ./notify.bend as N
@@ -1190,6 +1191,21 @@ def Mob.notify.rows(rs: List<&2, U.NotifyRow>) -> List<&2, J.Json>:
 def Mob.notify(st: M.State) -> List<&2, J.Json>:
   Mob.set.row.n(U.Notify.title(), U.Notify.lead(), Nil{}) <> Mob.notify.rows(U.Notify.rows(st))
 
+# Settings > Usage (src/core/usage.bend), the first row titled "Usage: ..."
+def Mob.usage.go(rs: List<&2, UZ.URow>) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      Mob.set.row(UZ.URow.label(r), UZ.URow.note(r), Nil{}) <> Mob.usage.go(t)
+
+def Mob.usage.rows(rs: List<&2, UZ.URow>) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      Mob.set.row("Usage: " ++ UZ.URow.label(r), UZ.URow.note(r), Nil{}) <> Mob.usage.go(t)
+
 def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String, more: List<&2, J.Json>) -> J.Json:
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +models = U.Str.get(nf, "models")
@@ -1207,7 +1223,7 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
     Mob.set.row(U.Tail.label(nf), U.Tail.note(nf), Nil{})]]), List.append(&2, J.Json, Mob.mates(u), [
     Mob.set.pair(U.Ui.flag(u, "pairqr"), nf),
     Mob.set.row("Update channel", "Stable takes releases; nightly also takes the daily builds.", Mob.set.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
-    Mob.set.row("Backplane " ++ v, U.Update.line.w(st, nf, note), Mob.update.btn(U.Update.btn(st, nf, note)))])), more))}])
+    Mob.set.row("Backplane " ++ v, U.Update.line.w(st, nf, note), Mob.update.btn(U.Update.btn(st, nf, note)))])), List.append(&2, J.Json, Mob.usage.rows(U.Usage.rows(st)), more)))}])
 
 # Antigravity (client.bend's Agv.rows), as every client draws them: a
 # button "open-url" the app opens in the browser itself
