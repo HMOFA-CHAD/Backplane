@@ -14,6 +14,21 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <sys/wait.h>
+
+#if defined(CID(Adopt.reap))
+// the children an exec handed this image (see Adopt.reap below)
+static unsigned bp_inherited[4096];
+static int bp_inherited_n;
+
+static void bp_inherited_drop(unsigned pid) {
+  for (int i = 0; i < bp_inherited_n; i++) {
+    if (bp_inherited[i] == pid) { bp_inherited[i] = bp_inherited[--bp_inherited_n]; return; }
+  }
+}
+
+#endif
 
 #if defined(CID(Adopt.record)) || defined(CID(Adopt.keep)) || defined(CID(Adopt.drop)) || defined(CID(Adopt.ident)) || defined(CID(Adopt.take)) || defined(CID(Adopt.stop))
 
@@ -119,6 +134,9 @@ Term adopt_keep_run(Env e, Term* f, IoWork* w) {
   unsigned pid = (unsigned)(uint32_t)f[1];
   int fd = (int)io_hand_v(f[2]);
   bp_adopt_remove(thread, 0, 1);
+#if defined(CID(Adopt.reap))
+  bp_inherited_drop(pid);
+#endif
   int got = fcntl(fd, F_DUPFD_CLOEXEC, 3);
   bp_adopt *a = calloc(1, sizeof *a);
   if (a && pid > 1) {
@@ -208,9 +226,60 @@ Term adopt_stop_run(Env e, Term* f, IoWork* w) {
   if (pid > 1 && len > 0 && !bp_adopt_ancestor(pid)) {
     bp_adopt_ident(pid, now, sizeof now);
     if (now[0] && !strcmp(now, want)) ok = kill((pid_t)pid, SIGTERM) == 0;
+#if defined(CID(Adopt.reap))
+    if (ok) bp_inherited_drop(pid);
+#endif
   }
   free(want);
   return term_pak(ok ? CID(True) : CID(False), 0);
 }
 static void __attribute__((constructor)) adopt_stop_use(void) { io_eff(CID(Adopt.stop), adopt_stop_run); }
+#endif
+
+// Children inherited through an exec
+// ----------------------------------
+// An exec keeps the process's children, but the new image knows none of
+// them: an agent, a guard, a git job or a shell the old image started that
+// ends afterwards stayed a zombie for good (the live hub held ~25). At load,
+// before this image starts anything, every child there is is one of those;
+// each one adopted (Adopt.keep) or stopped (Adopt.stop) is waited for
+// elsewhere and leaves the list, and Adopt.reap waits, without blocking,
+// for the rest (never waitpid(-1): the runtime waits for its own children
+// by pid).
+#if defined(CID(Adopt.reap))
+static void __attribute__((constructor)) bp_inherited_scan(void) {
+  unsigned me = (unsigned)getpid();
+  DIR *d = opendir("/proc");
+  if (!d) return;
+  struct dirent *ent;
+  while ((ent = readdir(d)) && bp_inherited_n < 4096) {
+    char *end;
+    unsigned long pid = strtoul(ent->d_name, &end, 10);
+    if (*end || pid <= 1 || pid == me) continue;
+    char path[64], buf[512];
+    snprintf(path, sizeof path, "/proc/%lu/stat", pid);
+    FILE *f = fopen(path, "re");
+    if (!f) continue;
+    size_t n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    char *q = strrchr(buf, ')');
+    unsigned pp = 0;
+    if (q && sscanf(q + 1, " %*c %u", &pp) == 1 && pp == me) bp_inherited[bp_inherited_n++] = (unsigned)pid;
+  }
+  closedir(d);
+}
+
+// waits, without blocking, for each inherited child; answers how many are
+// left
+Term adopt_reap_run(Env e, Term* f, IoWork* w) {
+  for (int i = 0; i < bp_inherited_n;) {
+    int st = 0;
+    pid_t r = waitpid((pid_t)bp_inherited[i], &st, WNOHANG);
+    if (r == (pid_t)bp_inherited[i] || (r < 0 && errno == ECHILD)) bp_inherited[i] = bp_inherited[--bp_inherited_n];
+    else i++;
+  }
+  return (Term)(uint32_t)bp_inherited_n;
+}
+static void __attribute__((constructor)) adopt_reap_use(void) { io_eff(CID(Adopt.reap), adopt_reap_run); }
 #endif

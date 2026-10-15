@@ -8672,6 +8672,10 @@ def Hub.tick(h: Hub, +now: Nat) -> IO(Hub):
         PS.Perf.set("hub.agents", U32.from_nat(List.length(&2, Agent, as)))
         PS.Perf.set("hub.changes", U32.from_nat(List.length(&2, String, ls)))
         PS.Perf.set("hub.busy", U32.from_nat(M.Work.threads(st)))
+        # children the last exec handed over that ended meanwhile are waited
+        # for (effects/adopt.c), so none stays a zombie
+        left : U32 <- AIO.Adopt.reap()
+        PS.Perf.set("hub.inherited", left)
         Self.post(inbox, Release{})
         Self.post(inbox, Silence{})
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.tick(st, now))

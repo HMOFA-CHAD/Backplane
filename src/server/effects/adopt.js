@@ -24,7 +24,12 @@ function adopt_stop(pid, ident) {
   return { $: "False" };
 }
 
+function adopt_reap() {
+  return 0;
+}
+
 io_eff(CID(Adopt.record), adopt_record);
+io_eff(CID(Adopt.reap), adopt_reap);
 io_eff(CID(Adopt.keep), adopt_keep);
 io_eff(CID(Adopt.drop), adopt_drop);
 io_eff(CID(Adopt.ident), adopt_ident);
