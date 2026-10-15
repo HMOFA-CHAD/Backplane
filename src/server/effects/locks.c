@@ -11,6 +11,11 @@
 #ifdef __linux__
 #include <sys/syscall.h>
 #endif
+#if defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 34))
+#include <spawn.h>
+#define BP_LOCK_SPAWN 1
+extern char **environ;
+#endif
 
 struct bp_lock_guard { char *name, *holder; int pipe; pid_t pid; struct bp_lock_guard *next; };
 static struct bp_lock_guard *bp_lock_guards;
@@ -43,6 +48,24 @@ Term guard_take_run(Env e, Term *f, IoWork *w) {
   close(raw[0]); close(raw[1]);
   if (p[0] < 0 || p[1] < 0) { if (p[0] >= 0) close(p[0]); if (p[1] >= 0) close(p[1]); close(fd); goto done; }
   long maxfd = sysconf(_SC_OPEN_MAX); if (maxfd < 0) maxfd = 65536;
+#ifdef BP_LOCK_SPAWN
+  // posix_spawn, not fork: a fork of the hub copied its page tables (GBs of
+  // heap) on every lock taken, tens of ms with the hub's loop waiting. The
+  // child gets the same: stdin the pipe, fd 3 the flock (kept across exec),
+  // stdout and stderr /dev/null, nothing else open.
+  if (fd == 3) { int moved = fcntl(fd, F_DUPFD_CLOEXEC, 4); if (moved < 0) { close(fd); close(p[0]); close(p[1]); goto done; } close(fd); fd = moved; }
+  pid_t pid = -1;
+  posix_spawn_file_actions_t fa;
+  if (posix_spawn_file_actions_init(&fa) == 0) {
+    char *argv[] = { "sh", "-c", script, "sh", home, holder, NULL };
+    if (posix_spawn_file_actions_adddup2(&fa, p[0], 0) == 0 && posix_spawn_file_actions_adddup2(&fa, fd, 3) == 0
+        && posix_spawn_file_actions_addopen(&fa, 1, "/dev/null", O_WRONLY, 0) == 0 && posix_spawn_file_actions_adddup2(&fa, 1, 2) == 0
+        && posix_spawn_file_actions_addclosefrom_np(&fa, 4) == 0) {
+      if (posix_spawn(&pid, "/bin/sh", &fa, NULL, argv, environ) != 0) pid = -1;
+    }
+    posix_spawn_file_actions_destroy(&fa);
+  }
+#else
   pid_t pid = fork();
   if (!pid) {
     // Only async-signal-safe operations after fork in the threaded runtime.
@@ -61,6 +84,7 @@ Term guard_take_run(Env e, Term *f, IoWork *w) {
     execl("/bin/sh", "sh", "-c", script, "sh", home, holder, (char *)NULL);
     _exit(127);
   }
+#endif
   close(p[0]); close(fd);
   if (pid < 0) { close(p[1]); goto done; }
   struct bp_lock_guard *g = calloc(1, sizeof(*g));

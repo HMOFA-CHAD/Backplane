@@ -6,6 +6,12 @@ import ../../src/core/json.bend as J
 import ../../src/core/store.bend as ST
 import ../../src/core/utf8.bend as U
 import ../../src/server/argv.bend as AV
+import ../../src/core/bothub.bend as BH
+import ../../src/core/mcp.bend as MC
+import ../../src/core/google.bend as GG
+import ../../src/core/rules.bend as RLS
+import ../../src/core/fmcp.bend as FM
+import ../../src/core/far.bend as FR
 
 # What one streamed agent line costs the hub's pure side, on a real log:
 # the line's step (B.Hub.agent_line, by verdict as the server's Claude path
@@ -164,8 +170,58 @@ def rep.seq(+r: Nat, +st: M.State) -> Nat:
     case 1n+q:
       Nat.add(M.State.seq(st), rep.seq(q, st))
 
+def call(+tool: String, +args: String) -> String:
+  "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"" ++ tool ++ "\",\"arguments\":" ++ args ++ "}}"
+
+def Out.size(o: MC.McpOut) -> Nat:
+  match o:
+    case MC.McpOut{r, st, _}:
+      Nat.add(String.length(r), Step.size(st))
+
+def Out.step(o: MC.McpOut) -> B.Step:
+  match o:
+    case MC.McpOut{_, st, _}:
+      st
+
+def rep.mcp(+r: Nat, +st: M.State, +now: Nat, +th: String, +body: String) -> Nat:
+  match r:
+    case 0n:
+      0n
+    case 1n+q:
+      Nat.add(Out.size(BH.Bots.mcp(st, now, th, J.Null{}, "v", J.Json.arr(Nil{}), GG.Google.tool_defs(), body)), rep.mcp(q, st, now, th, body))
+
+def plan(p: FM.Plan) -> Nat:
+  match p:
+    case FM.PHere{}:
+      1n
+    case _:
+      2n
+
+def rep.pre(+r: Nat, +st: M.State, +th: String, +body: String) -> Nat:
+  match r:
+    case 0n:
+      0n
+    case 1n+q:
+      Nat.add(Nat.add(String.length(RLS.Rules.gate(st, th, body)), plan(FM.Fm.plan.o(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), st, Nil{}, th))), rep.pre(q, st, th, body))
+
 def per(+what: String, +reps: Nat, +a: Nat, +b: Nat, +x: Nat) -> IO(Unit):
   IO.print(what ++ ": " ++ Nat.show(Nat.div(Nat.mul(Nat.sub(b, a), 1000n), reps)) ++ " us each  (" ++ Nat.show(x) ++ ")")
+
+def mcp(+reps: Nat, +st: M.State, +now: Nat, +th: String, +tool: String, +args: String) -> IO(Unit):
+  do IO<Unit>:
+    +body : String = call(tool, args)
+    +a0 : Nat <- IO.now()
+    +x0 : Nat = rep.pre(reps, st, th, body)
+    +a1 : Nat <- IO.now()
+    per("mcp " ++ tool ++ ": rules + plan", reps, a0, a1, x0)
+    +x1 : Nat = rep.mcp(reps, st, now, th, body)
+    +a2 : Nat <- IO.now()
+    per("mcp " ++ tool ++ ": Bots.mcp", reps, a1, a2, x1)
+    +s : B.Step = Out.step(BH.Bots.mcp(st, now, th, J.Null{}, "v", J.Json.arr(Nil{}), GG.Google.tool_defs(), body))
+    +x2 : Nat = rep.locks(reps, st, now, s)
+    +x3 : Nat = rep.wake(reps, st, s)
+    +a3 : Nat <- IO.now()
+    per("mcp " ++ tool ++ ": its step's locks + wakes", reps, a2, a3, Nat.add(x2, x3))
 
 def count(s: M.State) -> Nat:
   match s:
@@ -266,6 +322,14 @@ def run(rb: File & Result<&1, &1, U32 & String, List<&2, U32>>, +th: String, +re
     +y9 : Nat = rep.busy(reps, st)
     +c0 : Nat <- IO.now()
     per("step: Hub.busy.set (Work.threads)", reps, b9, c0, y9)
+    mcp(reps, st, now, th, "thread_list", "{}")
+    mcp(reps, st, now, th, "thread_read", "{\"thread\":\"" ++ th ++ "\",\"limit\":40}")
+    mcp(reps, st, now, th, "task_status", "{\"task\":\"k-none\"}")
+    mcp(reps, st, now, th, "lock_list", "{}")
+    mcp(reps, st, now, th, "work_list", "{}")
+    mcp(reps, st, now, th, "wake_list", "{}")
+    mcp(reps, st, now, th, "wake_on", "{\"kind\":\"thread\",\"target\":\"" ++ th ++ "\",\"events\":[\"end\"]}")
+    mcp(reps, st, now, th, "lock_acquire", "{\"name\":\"x\",\"_lockReady\":true}")
     IO.print("message step: " ++ Nat.show(Step.size(ms)))
 
 def go(r: File & Result<&1, &1, U32 & String, U32>, +file: String, +th: String, +reps: Nat, +t0: Nat) -> IO(Unit):
