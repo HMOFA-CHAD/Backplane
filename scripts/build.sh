@@ -46,6 +46,7 @@ else
   mkdir -p dist
   bend src/web/index.html -o dist/web
   python3 scripts/js-unmarshal.py ../core/client.Ui dist/web/chunk-*.js
+  python3 scripts/js-native.py dist/web/chunk-*.js
   cp src/web/sw.js dist/web/sw.js
   # precompressed copies: the server sends these to browsers that take gzip
   for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done

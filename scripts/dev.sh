@@ -54,6 +54,7 @@ build_web() {
   rm -rf "$dev/web.new"
   bend src/web/index.html -o "$dev/web.new" >/dev/null
   python3 scripts/js-unmarshal.py ../core/client.Ui "$dev"/web.new/chunk-*.js
+  python3 scripts/js-native.py "$dev"/web.new/chunk-*.js
   cp src/web/sw.js "$dev/web.new/sw.js"
   for f in "$dev"/web.new/*.js "$dev"/web.new/*.css "$dev"/web.new/*.html; do gzip -9 -k -n -f "$f"; done
   rm -rf "$dev/web" && mv "$dev/web.new" "$dev/web"
@@ -108,6 +109,7 @@ build_dist() {
   rm -rf dist && mkdir -p dist
   bend src/web/index.html -o dist/web >/dev/null
   python3 scripts/js-unmarshal.py ../core/client.Ui dist/web/chunk-*.js
+  python3 scripts/js-native.py dist/web/chunk-*.js
   cp src/web/sw.js dist/web/sw.js
   for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
   scripts/build-app.sh src/server/main.bend dist/backplane-serve

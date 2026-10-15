@@ -88,6 +88,41 @@ function setAttrs(el, oldAttrs, attrs) {
   }
 }
 
+// A piece of the page is left for this side to make (view.bend's View.memo:
+// a "bp-memo" element, its attributes and its one text all it is made from):
+// app.bend's make makes it, and what it made is kept while the element
+// stays the same, so patch finds the very node it drew last time and skips
+// it whole. Pieces not on the page for a while are let go.
+const MEMO = new Map(); // key -> { k: the element, v: what it stands for, gen }
+let memoGen = 0;
+function sameMemo(a, b) {
+  let x = a.attrs, y = b.attrs;
+  for (; is(x, "Con") && is(y, "Con"); x = x.tail, y = y.tail) {
+    const p = x.head, q = y.head;
+    if (p.$ !== q.$ || p.name !== q.name || p.value !== q.value || p.event !== q.event || p.action !== q.action) return false;
+  }
+  if (is(x, "Con") || is(y, "Con")) return false;
+  const s = is(a.kids, "Con") ? a.kids.head : null, t = is(b.kids, "Con") ? b.kids.head : null;
+  return !!s && !!t && s.text === t.text;
+}
+function expand(k) {
+  if (k.tag !== "bp-memo" || !is(k, "El")) return k;
+  const id = (is(k.attrs, "Con") ? k.attrs.head.value : "") + "\u0000" + k.key;
+  const m = MEMO.get(id);
+  if (m && sameMemo(m.k, k)) {
+    m.gen = memoGen;
+    return m.v;
+  }
+  const v = App.make(k);
+  MEMO.set(id, { k, v, gen: memoGen });
+  return v;
+}
+function memoSweep() {
+  memoGen += 1;
+  if (MEMO.size < 2000) return;
+  for (const [id, m] of MEMO) if (memoGen - m.gen > 200) MEMO.delete(id);
+}
+
 function same(a, b) {
   return a.$ === b.$ && (is(a, "Txt") || (a.tag === b.tag && a.key === b.key));
 }
@@ -96,7 +131,8 @@ function same(a, b) {
 function patch(el, v) {
   const old = el.__v;
   setAttrs(el, old.attrs, v.attrs);
-  const kids = [...each(v.kids)];
+  const kids = [];
+  for (const k of each(v.kids)) kids.push(expand(k));
   const prev = el.__kids;
   const byKey = new Map();
   const free = [];
@@ -151,6 +187,12 @@ function patch(el, v) {
   el.__kids = next;
   el.__v = v;
 }
+
+// Timing, for a bench only: a page whose window has __bpPerf (set before
+// it loads) gets each message's handling, each render's view and patch, in
+// ms, pushed onto its arrays. Nothing is timed otherwise.
+const PERF = globalThis.__bpPerf || null;
+const pnow = () => performance.now();
 
 // Loop
 // ----
@@ -212,7 +254,12 @@ function render() {
   const pinned = tl ? tl.scrollHeight - tl.scrollTop - tl.clientHeight < 40 : true;
   const anchor = tl && !pinned ? anchorOf(tl) : null;
   const fromEnd = tl ? tl.scrollHeight - tl.scrollTop : 0;
-  patch(root, { $: T.El, tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: App.view(ui), tail: { $: "Nil" } } });
+  const t0 = PERF ? pnow() : 0;
+  const page = App.view(ui);
+  const t1 = PERF ? pnow() : 0;
+  patch(root, { $: T.El, tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: page, tail: { $: "Nil" } } });
+  if (PERF) PERF.render.push([t1 - t0, pnow() - t1]);
+  memoSweep();
   const tl2 = document.getElementById("timeline");
   if (tl2 && (scroll || pinned)) tl2.scrollTop = tl2.scrollHeight;
   // read further up, the view stays on what is read: text streaming in
@@ -268,9 +315,34 @@ function laterPart() {
     if (queued) return;
     const c = document.querySelector(".thread-view .composer");
     if (!c || !c.__v) { render(); return; }
+    const t0 = PERF ? pnow() : 0;
     patch(c, App.composer(ui));
     const a = document.getElementById("asks");
     if (a && a.__v) patch(a, App.asks(ui));
+    if (PERF) PERF.part.push(pnow() - t0);
+  });
+}
+
+// A delta changes only the shown thread's streaming row (app.bend's part
+// says "live"): that row alone is redrawn in place (app.bend's live, keyed
+// as the page keys it), the page when it has no such row.
+let living = false;
+function laterLive() {
+  if (queued || living) return;
+  living = true;
+  requestAnimationFrame(() => {
+    living = false;
+    if (queued) return;
+    const tl = document.getElementById("timeline");
+    const t0 = PERF ? pnow() : 0;
+    const v = expand(App.live(ui));
+    const hit = tl && tl.__kids && is(v, "El") ? tl.__kids.find((p) => is(p.v, "El") && p.v.key === v.key && p.v.tag === v.tag) : null;
+    if (!hit) { render(); return; }
+    const pinned = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 40;
+    patch(hit.node, v);
+    hit.v = v;
+    if (pinned) tl.scrollTop = tl.scrollHeight;
+    if (PERF) PERF.live.push(pnow() - t0);
   });
 }
 
@@ -360,7 +432,9 @@ function notify(c) {
 // run an action; answers whether it did anything (a key it did nothing
 // with stays the browser's)
 function dispatch(action, value, timer) {
+  const t0 = PERF ? pnow() : 0;
   const r = App.act(ui, action, value);
+  if (PERF) PERF.act.push([pnow() - t0, action]);
   ui = r.ui;
   const did = r.cmds && is(r.cmds, "Con");
   run(r.cmds);
@@ -1028,6 +1102,7 @@ function connect() {
     later();
   };
   s.onmessage = (e) => {
+    const t0 = PERF ? pnow() : 0;
     heard = BigInt(Date.now());
     // the hub sends only binary CBOR frames
     if (typeof e.data === "string") return;
@@ -1045,11 +1120,11 @@ function connect() {
     // decoded here, straight into Bend's Json tree (wire.js): Bend's own
     // decoder walked a list cell per byte, most of a long log's load
     const j = Wire.cbor(bytes, KEYS, WORDS);
-    // another thread's streamed text draws nothing and is not kept: only
-    // the log and its changes are, and the page renders when the message
-    // shows or gives commands
+    // only the log and its changes are kept; what the message changes on
+    // the page (app.bend's part) is drawn: nothing, the streaming row, or
+    // the page
     const t = App.kind(j);
-    const vis = App.shows(ui, j);
+    const part = App.part(ui, j);
     keep(t, j, bytes);
     const r = App.recv(ui, j);
     ui = r.ui;
@@ -1059,7 +1134,9 @@ function connect() {
       break;
     }
     run(r.cmds);
-    if (vis || acts) later();
+    if (acts || part === "page") later();
+    else if (part === "live") laterLive();
+    if (PERF) PERF.msg.push([pnow() - t0, t, part ? 1 : 0]);
   };
   let lost = false;
   const gone = () => {

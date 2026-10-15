@@ -134,7 +134,7 @@ def main() -> IO(Unit):
     C.Check.str("clock ticks into the info map", U.Ui.info(U.Ui.tick(U.Ui.init(0n), 42n), "clock"), "42")
     C.Check.str("click opens", U.Ui.info(after(U.Ui.act(U.Ui.init(0n), "fold", "1a")), "fold:a"), "1")
     C.Check.str("click shuts", U.Ui.info(after(U.Ui.act(after(U.Ui.act(U.Ui.init(0n), "fold", "1a")), "fold", "0a")), "fold:a"), "0")
-    C.Check.str("web folded", Web.shows(V.View.entries([tool("a", "shell"), tool("b", "edit"), err("e")], M.State.empty(), "t", none(), False{})),
+    C.Check.str("web folded", Web.shows(V.View.expand(V.View.entries([tool("a", "shell"), tool("b", "edit"), err("e")], M.State.empty(), "t", none(), False{}))),
       "<button.fold=1a>^<span>2 tool calls · shell, edit</span></button><div.act error><span.kind>exit</span><span.summary>boom</span></div>")
-    C.Check.str("web live open", Web.shows(V.View.entries([msg("m"), tool("a", "shell")], M.State.empty(), "t", none(), True{})),
+    C.Check.str("web live open", Web.shows(V.View.expand(V.View.entries([msg("m"), tool("a", "shell")], M.State.empty(), "t", none(), True{}))),
       "<div.msg assistant><div.body><p>hi</p></div><span.stamp>00:00</span><button.copy=hi>Copy</button></div><button.fold=0a>^<span>1 tool call · shell</span></button><div.act tool><span.kind>shell</span><span.summary>x</span></div>")
