@@ -18,6 +18,8 @@
 #if defined(__linux__)
 
 #include <dlfcn.h>
+#include <pthread.h>
+#include <time.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
@@ -739,8 +741,36 @@ static void __attribute__((constructor)) win_words_use(void) {
 
 // fill the part of an n x n region at (x, y) that lies in the w x h frame,
 // marking each 64 px block in which a pixel changed (dirty is dw wide)
+// one pixel of a 1 x 1 region (a split one reads its first quadrant, as
+// win_fill does)
+static inline void win_px(u64* H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Term t, u32 x, u32 y) {
+  if (x >= w || y >= h) {
+    return;
+  }
+  while (term_tag(t) == TAG_CTR) {
+    u64 l = term_rfc(t) ? H[term_loc(t)] >> 24 : term_loc(t);
+    t = H[l];
+  }
+  u32 c = (u32)term_loc(t) & 0xFFFFFF;
+  u32* p = pix + (size_t)y * w + x;
+  if (*p != c) {
+    *p = c;
+    dirty[(size_t)(y >> 6) * dw + (x >> 6)] = 1;
+  }
+}
+
 static void win_fill(u64* H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Term t, u32 x, u32 y, u32 n) {
   if (x >= w || y >= h) {
+    return;
+  }
+  // a split 2 x 2 region: its four pixels at once (most of a frame's text
+  // is regions this small; no call per pixel)
+  if (term_tag(t) == TAG_CTR && n == 2) {
+    u64 l = term_rfc(t) ? H[term_loc(t)] >> 24 : term_loc(t);
+    win_px(H, pix, w, h, dirty, dw, H[l + 0], x, y);
+    win_px(H, pix, w, h, dirty, dw, H[l + 1], x + 1, y);
+    win_px(H, pix, w, h, dirty, dw, H[l + 2], x, y + 1);
+    win_px(H, pix, w, h, dirty, dw, H[l + 3], x + 1, y + 1);
     return;
   }
   if (term_tag(t) == TAG_CTR && n > 1) {
@@ -778,6 +808,25 @@ static void win_fill(u64* H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Term t, 
   }
 }
 
+// readings for the perf table (effects/perf.c's, when the program has it)
+extern void bp_perf_rec(const char* name, uint64_t v, int span) __attribute__((weak));
+
+static uint64_t win_us(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000000 + (uint64_t)ts.tv_nsec / 1000;
+}
+
+static void win_rec(const char* name, uint64_t v, int span) {
+  if (bp_perf_rec) {
+    bp_perf_rec(name, v, span);
+  }
+}
+
+// rectangles and pixels sent by the last win_put
+static u32 win_put_rects = 0;
+static u64 win_put_px = 0;
+
 // send the changed blocks: each block row's runs of dirty blocks as one
 // rectangle
 static void win_put(AppWin* a) {
@@ -799,6 +848,8 @@ static void win_put(AppWin* a) {
       u32 x1 = bx * 64 < a->w ? bx * 64 : a->w;
       u32 y1 = y0 + 64 < a->h ? y0 + 64 : a->h;
       x_XPutImage(a->dpy, a->win, gc, a->img, (int)x0, (int)y0, (int)x0, (int)y0, x1 - x0, y1 - y0);
+      win_put_rects += 1;
+      win_put_px += (u64)(x1 - x0) * (y1 - y0);
     }
   }
 }
@@ -832,6 +883,100 @@ static void win_fill_diff(u64* H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Ter
   win_fill_diff(H, pix, w, h, dirty, dw, H[l + 3], H[o + 3], x + m, y + m, m);
 }
 
+// Filling in parallel
+// -------------------
+// A frame whose changed regions are large (a thread opened, a page of it
+// scrolled in) spends most of its present walking the new tiles' trees
+// pixel by pixel. The regions 128 px wide that differ from the last frame
+// are collected and, when they cover enough, filled by a few threads at
+// once: each region owns its pixels and its 64 px blocks (dirty flags),
+// so nothing is shared but the heap they read.
+
+#define WIN_PAR_MAX 256
+#define WIN_PAR_SIDE 128
+
+typedef struct {
+  Term t, old;
+  u32 x, y, n;
+} WinPart;
+
+typedef struct {
+  u64* H;
+  u32* pix;
+  u32 w, h, dw;
+  u8* dirty;
+  WinPart* parts;
+  u32 np;
+  u32 lanes, lane;
+} WinLane;
+
+// the regions WIN_PAR_SIDE wide (or leaves above that size) where t and
+// old differ, onto parts; answers how many
+static u32 win_parts(u64* H, u32 w, u32 h, Term t, Term old, u32 x, u32 y, u32 n, WinPart* parts, u32 np) {
+  if (x >= w || y >= h || np >= WIN_PAR_MAX) {
+    return np;
+  }
+  if (term_tag(t) == TAG_CTR && term_tag(old) == TAG_CTR && n > 1 && win_src(H, t) == win_src(H, old)) {
+    return np;
+  }
+  if (n <= WIN_PAR_SIDE || term_tag(t) != TAG_CTR || term_tag(old) != TAG_CTR) {
+    parts[np] = (WinPart){ t, old, x, y, n };
+    return np + 1;
+  }
+  u64 l = win_src(H, t);
+  u64 o = win_src(H, old);
+  u32 m = n / 2;
+  np = win_parts(H, w, h, H[l + 0], H[o + 0], x, y, m, parts, np);
+  np = win_parts(H, w, h, H[l + 1], H[o + 1], x + m, y, m, parts, np);
+  np = win_parts(H, w, h, H[l + 2], H[o + 2], x, y + m, m, parts, np);
+  np = win_parts(H, w, h, H[l + 3], H[o + 3], x + m, y + m, m, parts, np);
+  return np;
+}
+
+static void* win_lane(void* arg) {
+  WinLane* ln = (WinLane*)arg;
+  for (u32 i = ln->lane; i < ln->np; i += ln->lanes) {
+    WinPart* p = &ln->parts[i];
+    win_fill_diff(ln->H, ln->pix, ln->w, ln->h, ln->dirty, ln->dw, p->t, p->old, p->x, p->y, p->n);
+  }
+  return NULL;
+}
+
+// win_fill_diff over the frame, the large changes split over threads
+static void win_fill_par(u64* H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Term t, Term old, u32 n) {
+  static WinPart parts[WIN_PAR_MAX];
+  u32 np = win_parts(H, w, h, t, old, 0, 0, n, parts, 0);
+  u32 lanes = np / 4;
+  if (np >= WIN_PAR_MAX || lanes < 2) {
+    if (np >= WIN_PAR_MAX) {
+      win_fill_diff(H, pix, w, h, dirty, dw, t, old, 0, 0, n);
+      return;
+    }
+    for (u32 i = 0; i < np; i += 1) {
+      win_fill_diff(H, pix, w, h, dirty, dw, parts[i].t, parts[i].old, parts[i].x, parts[i].y, parts[i].n);
+    }
+    return;
+  }
+  if (lanes > 8) {
+    lanes = 8;
+  }
+  WinLane ls[8];
+  pthread_t th[8];
+  int ok[8];
+  for (u32 k = 0; k < lanes; k += 1) {
+    ls[k] = (WinLane){ H, pix, w, h, dw, dirty, parts, np, lanes, k };
+    ok[k] = k == 0 ? 0 : pthread_create(&th[k], NULL, win_lane, &ls[k]) == 0;
+  }
+  win_lane(&ls[0]);
+  for (u32 k = 1; k < lanes; k += 1) {
+    if (ok[k]) {
+      pthread_join(th[k], NULL);
+    } else {
+      win_lane(&ls[k]);
+    }
+  }
+}
+
 // BACKPLANE_SNAP=<path>: every presented frame is also written there as
 // a PPM (tests and bug reports; off unless set)
 static void win_snap(AppWin* a) {
@@ -855,7 +1000,9 @@ static void win_snap(AppWin* a) {
 // fill the buffer with image (over old where it may skip, has_old) and
 // send what changed
 static void win_show_image(Env e, AppWin* a, Term image, Term old, int has_old) {
+  uint64_t ta = win_us();
   io_sync();
+  uint64_t tb = win_us();
   int whole = atomic_exchange(&a->full, 0);
   if (a->img == NULL || (u32)a->img->width != a->w || (u32)a->img->height != a->h) {
     if (a->img) {
@@ -877,21 +1024,36 @@ static void win_show_image(Env e, AppWin* a, Term image, Term old, int has_old) 
     n *= 2;
   }
   if (has_old && !a->stale) {
-    win_fill_diff(e.mem, (u32*)a->img->data, a->w, a->h, a->dirty, a->dw, image, old, 0, 0, n);
+    win_fill_par(e.mem, (u32*)a->img->data, a->w, a->h, a->dirty, a->dw, image, old, n);
   } else {
     win_fill(e.mem, (u32*)a->img->data, a->w, a->h, a->dirty, a->dw, image, 0, 0, n);
   }
   a->stale = !has_old;
+  uint64_t tc = win_us();
+  win_put_rects = 0;
+  win_put_px = 0;
   if (whole) {
     memset(a->dirty, 0, (size_t)a->dw * a->dh);
     x_XPutImage(a->dpy, a->win, DefaultGC(a->dpy, DefaultScreen(a->dpy)), a->img,
       0, 0, 0, 0, a->w, a->h);
+    win_put_rects = 1;
+    win_put_px = (u64)a->w * a->h;
   } else {
     win_put(a);
   }
+  uint64_t td = win_us();
   x_XFlush(a->dpy);
   win_nudge(a);
+  uint64_t te = win_us();
   win_snap(a);
+  // ui.win.*: the wait for pending effects, the buffer filled from the
+  // image, the rectangles put, the flush (us); rects and kpx per frame
+  win_rec("ui.win.sync", tb - ta, 1);
+  win_rec("ui.win.fill", tc - tb, 1);
+  win_rec("ui.win.put", td - tc, 1);
+  win_rec("ui.win.flush", te - td, 1);
+  win_rec("ui.win.rects", win_put_rects, 0);
+  win_rec("ui.win.kpx", win_put_px / 1000, 0);
 }
 
 // a frame that is not the window's own (the lightbox): the next show

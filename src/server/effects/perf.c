@@ -512,3 +512,19 @@ static void __attribute__((constructor)) perf_logs_use(void) {
 }
 
 #endif
+
+// bp_perf_rec: a reading from other effects' C (the window's present:
+// effects/win.c), span (us) or value; they declare it weak, so a program
+// without this file still links
+void bp_perf_rec(const char* name, uint64_t v, int span) {
+  PerfStat* s = perf_slot(name, strlen(name));
+  if (!span) {
+    s->kind = 2;
+  }
+  perf_put(s, v);
+  if (span) {
+    perf_trace_span(s->name, perf_now_us(), v);
+  } else {
+    perf_trace_count(s->name, perf_now_us(), v);
+  }
+}

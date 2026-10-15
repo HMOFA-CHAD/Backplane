@@ -686,6 +686,15 @@ def Pics.over.k(draw: Bool, +x: U32, +y: U32, +w: U32, +h: U32, +v: String, +pic
     case False{}:
       base
 
+# an image hit wide enough and not drawn yet (the list of values seen is
+# walked only for image hits: walking it for every hit was quadratic)
+def Pics.want(img: Bool, +wide: Bool, +done: List<&2, String>, +v: String) -> Bool:
+  match img:
+    case True{}:
+      Bool.and(wide, Bool.not(Pics.had(done, v)))
+    case False{}:
+      False{}
+
 # each image once, at its rectangle, under the UI
 def Pics.over(hs: List<&2, N.Hit>, +pics: Map<&2, BM.Bitmap>, +done: List<&2, String>, +ww: U32, +hh: U32, base: Image) -> Image:
   match hs:
@@ -693,7 +702,7 @@ def Pics.over(hs: List<&2, N.Hit>, +pics: Map<&2, BM.Bitmap>, +done: List<&2, St
       base
     case N.Hit{+x0, +y0, +x1, +y1, +a, +v} <> t:
       Pics.over(t, pics, v <> done, ww, hh,
-        Pics.over.k(Bool.and(Bool.and(String.eq(a, "img"), U32.is_gt((x1 - x0 : U32), 1)), Bool.not(Pics.had(done, v))), x0, y0, (x1 - x0 : U32), (y1 - y0 : U32), v, pics, ww, hh, base))
+        Pics.over.k(Pics.want(String.eq(a, "img"), U32.is_gt((x1 - x0 : U32), 1), done, v), x0, y0, (x1 - x0 : U32), (y1 - y0 : U32), v, pics, ww, hh, base))
 
 # Machines
 # --------
@@ -2179,6 +2188,35 @@ def Lbv.draw(+n: N.Nui, +pics: Map<&2, BM.Bitmap>, +ms: Nat) -> Image:
     Lbv.pic(Lbv.pick(Pics.get(pics, "full:" ++ N.Lbx.path(n)), Pics.get(pics, N.Lbx.path(n))),
       LBX.Lb.x(N.Lbx.get(n), N.Lbx.box(n), ms), LBX.Lb.y(N.Lbx.get(n), N.Lbx.box(n), ms), N.Nui.width(n), N.Nui.height(n)))
 
+# the frame's plan, each part timed on its own (ui.p.*: the cats put in
+# front and the glyphs wanted, the scroll hint, the theme over the ops,
+# the pictures under them, the tiles' plan); ui.plan stays the whole
+def Shell.plan.parts(pa: Bool, +ops: List<&2, R.Op>, +n: N.Nui, +hs: List<&2, N.Hit>, +wa: Aux, +ms: Nat, +dy: U32, +t: U32) -> IO(TI.Plan):
+  match pa:
+    case True{}:
+      IO.pure(TI.Plan, Shell.image.over(ops, N.Nui.vw(n), N.Nui.width(n), N.Nui.height(n), N.Nui.vx0(n), ms, N.Nui.look(n), N.Nui.lfocus.bits(n), hs, Tie.pics(Aux.tie(wa)), Aux.frames(wa), dy))
+    case False{}:
+      do IO<TI.Plan>:
+        +uo : List<&2, R.Op> = L.Theme.ops(V.Look.ui(N.Nui.look(n)), ops)
+        +ku : Nat = List.length(&2, R.Op, uo)
+        ta : U32 <- PS.Perf.lap("ui.p.theme", t)
+        +base : Image = Pics.over(hs, Tie.pics(Aux.tie(wa)), Nil{}, N.Nui.width(n), N.Nui.height(n), Pix{L.Theme.ground(N.Nui.look(n))})
+        +c0 : U32 = R.Four.top(base)
+        tb : U32 <- PS.Perf.lap("ui.p.pics", ta)
+        +pl : TI.Plan = TI.Frame.plan(N.Nui.width(n), N.Nui.height(n), uo, base, Aux.frames(wa), dy)
+        +kp : Nat = TI.Plan.count(pl)
+        tc : U32 <- PS.Perf.lap("ui.p.tiles", tb)
+        PS.Perf.add("ui.p.k", U32.from_nat(Nat.add(Nat.add(ku, kp), U32.to_nat(U32.and(c0, 0)))))
+        return pl
+
+def Shell.plan.timed(+ops: List<&2, R.Op>, +hs: List<&2, N.Hit>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t2: U32) -> IO(Shell):
+  do IO<Shell>:
+    tf : U32 <- PS.Perf.lap("ui.p.front", t2)
+    +dy : U32 = N.Hits.slide(hs, oh)
+    ts : U32 <- PS.Perf.lap("ui.p.slide", tf)
+    +pl : TI.Plan <- Shell.plan.parts(N.Nui.panel(n), ops, n, hs, wa, ms, dy, ts)
+    Shell.present(pl, L.Out{ops, hs}, n, w, q, i, wa, epoch, ms, t0, t2)
+
 # the frame: the lightbox while it is up, else the window's tiles. The
 # lightbox is drawn whole and leaves the kept tiles alone: they still hold
 # the window's last frame, which is what shows again when it closes
@@ -2192,8 +2230,7 @@ def Lbv.paint(on: Bool, +ops: List<&2, R.Op>, +hs: List<&2, N.Hit>, +oh: List<&2
         +s : N.Step = Shell.hits(n, hs, epoch)
         Shell.shown(r, Shell.hits.nui(s), q, i, wa, Shell.hits.anim(s, Shell.anim(n, ms)), ms)
     case False{}:
-      Shell.present(Shell.image(N.Nui.panel(n), ops, N.Nui.vw(n), N.Nui.width(n), N.Nui.height(n), N.Nui.vx0(n), ms, N.Nui.look(n), N.Nui.lfocus.bits(n), hs, Tie.pics(Aux.tie(wa)), Aux.frames(wa), N.Hits.slide(hs, oh)),
-        L.Out{ops, hs}, n, w, q, i, wa, epoch, ms, t0, t2)
+      Shell.plan.timed(ops, hs, oh, n, w, q, i, wa, epoch, ms, t0, t2)
 
 # what cat frames keep: the cats in front of the frame's ops (none under
 # the lightbox, whose frames leave the kept tiles alone)
