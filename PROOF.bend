@@ -10642,3 +10642,22 @@ def Laws.cjk_terminal_combining_cells():
   {==}
 
 # ---- end i18n cjk ----
+
+# ---- usage-tokens ----
+def Laws.tok_claude_seen_nothing():
+  {==}
+
+def Laws.tok_rise_rose():
+  {==}
+
+def Laws.tok_rise_restarted():
+  {==}
+
+def Laws.tok_codex_restart_whole(was, i, v):
+  {==}
+
+def Laws.tok_add_one_turn():
+  {==}
+
+def Laws.tok_add_no_cost():
+  {==}
