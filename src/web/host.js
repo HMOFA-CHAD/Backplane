@@ -627,6 +627,14 @@ document.addEventListener("paste", (e) => {
   }
   const el = e.target.closest?.("[data-paste]");
   const files = [...(cd.files || [])];
+  if (files.length === 0) {
+    for (const item of cd.items || []) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+  }
   if (!el || files.length === 0) return;
   e.preventDefault();
   (async () => {

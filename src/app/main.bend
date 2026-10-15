@@ -1,4 +1,5 @@
 import Base
+import ../core/attach.bend as AT
 import ../core/exe.bend as EX
 import ../server/server.bend as S
 import ../server/host.bend as H
@@ -1014,10 +1015,18 @@ def Shell.dropped(r: Window & String, +n: N.Nui, d: Bool, qd: Bool, +q: Chan(She
   (w, text) = r
   Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.drop.m(U.Tour.on(N.Nui.ui(n)), n, text))
 
+def Shell.pasted_image(r: Window & String & U32 & String, +n: N.Nui, d: Bool, qd: Bool, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux) -> IO(Shell):
+  (w, (mime, (size, data))) = r
+  do IO<Shell>:
+    key : U32 <- IO.try(U32, IO.random_u32())
+    Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.image.m(U.Tour.on(N.Nui.ui(n)), n, mime, U32.to_nat(size), data, AT.Att.paste.key(key)))
+
 def Shell.event(a: Shell, e: W.WinEv) -> IO(Shell):
   match a e:
     case Shell{n, w, d, qd, q, i, wa} W.WPaste{_}:
       IO.bind(Window & String, Shell, W.Win.pasted(w), r => Shell.pasted(r, n, d, qd, q, i, wa))
+    case Shell{n, w, d, qd, q, i, wa} W.WImage{}:
+      IO.bind(Window & String & U32 & String, Shell, W.Win.pasted_image(w), r => Shell.pasted_image(r, n, d, qd, q, i, wa))
     case Shell{n, w, d, qd, q, i, wa} W.WDrop{_}:
       IO.bind(Window & String, Shell, W.Win.dropped(w), r => Shell.dropped(r, n, d, qd, q, i, wa))
     case Shell{+n, w, d, qd, q, i, +wa} _:

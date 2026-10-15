@@ -9405,3 +9405,78 @@ def Laws.subs_model_alias():
 
 def Laws.subs_panel_resolved_stays_shut():
   {==}
+
+# ui-panel-paste-lag: paste helpers
+def paste_append_empty(s: String) -> {s ++ "" == s : String}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{h, t}:
+      %paste_append_empty(t) : {SCon{h, t ++ ""} == SCon{h, _} : String}
+      {==}
+
+def paste_take_zero(s: String) -> {String.take(s, 0n) == "" : String}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{_, _}:
+      {==}
+
+# ui-panel-paste-lag: paste
+def Laws.paste_name_png():
+  {==}
+def Laws.paste_name_jpeg():
+  {==}
+def Laws.paste_name_webp():
+  {==}
+def Laws.paste_name_gif():
+  {==}
+def Laws.paste_name_bmp():
+  {==}
+def Laws.paste_name_nonempty(mime):
+  {==}
+def Laws.paste_split_rejoins(s, width):
+  match s width:
+    case SNil{} _:
+      {==}
+    case SCon{h, t} 0n:
+      {==}
+    case SCon{h, t} 1n+k:
+      %Laws.paste_split_rejoins(t, k) : {SCon{h, String.take(t, k) ++ String.drop(t, k)} == SCon{h, _} : String}
+      {==}
+def Laws.paste_parts_rejoin(fuel, width, s):
+  match fuel:
+    case 0n:
+      # String.append(s, "") is not definitionally s.
+      paste_append_empty(s)
+    case 1n+k:
+      %Equal.sym(String, AT.Att.paste.join(AT.Att.paste.parts.go(k, width, String.drop(s, width))), String.drop(s, width), Laws.paste_parts_rejoin(k, width, String.drop(s, width))) : {String.take(s, width) ++ _ == s : String}
+      Laws.paste_split_rejoins(s, width)
+def Laws.paste_full_piece(prefix, rest):
+  match prefix:
+    case SNil{}:
+      paste_take_zero(rest)
+    case SCon{h, t}:
+      %Laws.paste_full_piece(t, rest) : {SCon{h, String.take(t ++ rest, String.length(t))} == SCon{h, _} : String}
+      {==}
+def Laws.paste_chunk_quartets():
+  {==}
+def Laws.paste_chunk_triples():
+  {==}
+def Laws.paste_tour_ignored(n, mime, size, data, key):
+  {==}
+
+def Laws.paste_parts_k_rejoin(zero, s, width):
+  match zero:
+    case True{}:
+      paste_append_empty(s)
+    case False{}:
+      Laws.paste_parts_rejoin(Nat.div(Nat.sub(String.length(s), 1n), width), width, s)
+def Laws.paste_upload_rejoins(s, width):
+  Laws.paste_parts_k_rejoin(Nat.is_eq(width, 0n), s, width)
+def Laws.paste_full_piece_size(prefix, rest):
+  %Laws.paste_full_piece(prefix, rest) : {String.length(String.take(prefix ++ rest, String.length(prefix))) == String.length(_) : Nat}
+  {==}
+
+def Laws.paste_key_length(word):
+  {==}

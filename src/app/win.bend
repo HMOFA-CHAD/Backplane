@@ -15,6 +15,7 @@ type WinEv is Data:
   WExpose{}
   WQuit{}
   WPaste{text: String}
+  WImage{}
   WDragOver{x: U32, y: U32}
   WDragLeave{}
   WDrop{text: String}
@@ -55,6 +56,11 @@ def Win.paste(win: Window) -> IO(Window):
   import "./effects/win.js"
 
 def Win.pasted(win: Window) -> IO(Window & String):
+  import "./effects/win.c"
+  import "./effects/win.js"
+
+# MIME, byte count, and ASCII base64 of the last WImage
+def Win.pasted_image(win: Window) -> IO(Window & String & U32 & String):
   import "./effects/win.c"
   import "./effects/win.js"
 
@@ -102,6 +108,8 @@ def Win.ev.k(k: Nat, +a: U32, +b: U32, +c: U32, +d: U32) -> WinEv:
       WBlur{}
     case 12n:
       WFocus{}
+    case 13n:
+      WImage{}
     case _:
       WQuit{}
 

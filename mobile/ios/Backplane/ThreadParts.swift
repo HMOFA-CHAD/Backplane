@@ -543,15 +543,34 @@ struct AttachButton: View {
     @State private var photos: [PhotosPickerItem] = []
     @State private var picking = false
     @State private var importing = false
+    @State private var hasImages = UIPasteboard.general.hasImages
 
     var body: some View {
         Menu {
             Button("Photos", systemImage: "photo.on.rectangle") { picking = true }
             Button("Files", systemImage: "folder") { importing = true }
+            if hasImages {
+                Button("Paste image", systemImage: "doc.on.clipboard") {
+                    // Read only after the person chooses Paste; use the same
+                    // upload and size check as the photo picker.
+                    for (i, image) in (UIPasteboard.general.images ?? []).enumerated() {
+                        if let data = image.pngData() {
+                            model.attach(data, name: "pasted-\(i + 1).png")
+                        }
+                    }
+                }
+            }
         } label: {
             Image(systemName: "paperclip").font(.system(size: 20)).padding(.bottom, 6)
         }
         .accessibilityLabel("Attach")
+        .onAppear { hasImages = UIPasteboard.general.hasImages }
+        .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in
+            hasImages = UIPasteboard.general.hasImages
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            hasImages = UIPasteboard.general.hasImages
+        }
         .photosPicker(isPresented: $picking, selection: $photos, maxSelectionCount: 10, matching: .images)
         .onChange(of: photos) { _, items in
             guard !items.isEmpty else { return }

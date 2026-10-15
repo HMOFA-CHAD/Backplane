@@ -1,6 +1,8 @@
 package dev.backplane.mobile
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -63,11 +65,23 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.content.MediaType
+import androidx.compose.foundation.content.ReceiveContentListener
+import androidx.compose.foundation.content.consume
+import androidx.compose.foundation.content.contentReceiver
+import androidx.compose.foundation.content.hasMediaType
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.SolidColor
+import kotlinx.coroutines.launch
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -85,7 +99,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -95,7 +108,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
@@ -127,7 +139,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -143,6 +154,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 
 // A cached destination has no input until its matching screen arrives.
@@ -988,12 +1000,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                     ComposerExtras(m, t)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         AttachButton(m)
-                        // the field keeps its own caret while typing; a draft changed from
-                        // outside (a completion, another thread) puts the caret at its end
-                        var field by remember { mutableStateOf(TextFieldValue(m.composer, TextRange(m.composer.length))) }
-                        if (field.text != m.composer) field = TextFieldValue(m.composer, TextRange(m.composer.length))
-                        OutlinedTextField(field, { v -> field = v; if (v.text != m.composer) m.draft(v.text) }, Modifier.weight(1f), maxLines = 6,
-                            placeholder = { Text("Ask the agent") })
+                        ImageComposer(m, Modifier.weight(1f))
                         // a long press sends with the other follow-up mode (queue or steer);
                         // while a turn runs with nothing typed the button stops it
                         val stop = t.sendAct == "interrupt" && m.composer.isBlank()
@@ -1383,4 +1390,50 @@ private fun PlotCard(m: AppModel, c: Card, modifier: Modifier) {
             Button(onClick = { m.act("view-mention", c.info) }) { Text("Mention in chat") }
         }
     }
+}
+
+// Compose 1.7's contentReceiver is supported by the state-based field.
+// Keep text in that field; only image URI items are consumed as uploads.
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ImageComposer(m: AppModel, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val field = rememberTextFieldState(m.composer)
+    LaunchedEffect(m.composer) {
+        if (field.text.toString() != m.composer) field.setTextAndPlaceCursorAtEnd(m.composer)
+    }
+    LaunchedEffect(field) {
+        snapshotFlow { field.text.toString() }.collect { text ->
+            if (text != m.composer) m.draft(text)
+        }
+    }
+    val receiver = remember(m, ctx, scope) {
+        ReceiveContentListener { content ->
+            if (!content.hasMediaType(MediaType.Image)) content
+            else content.consume { item ->
+                val uri = item.uri
+                val image = uri != null && runCatching {
+                    ctx.contentResolver.getType(uri)?.startsWith("image/") == true
+                }.getOrDefault(false)
+                if (image) scope.launch { attachUris(ctx, m, listOf(uri!!), true) }
+                image
+            }
+        }
+    }
+    BasicTextField(
+        state = field,
+        modifier = modifier.contentReceiver(receiver)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 6),
+        decorator = { inner ->
+            Box {
+                if (field.text.isEmpty()) Text("Ask the agent", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                inner()
+            }
+        },
+    )
 }

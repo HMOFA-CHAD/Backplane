@@ -3087,6 +3087,8 @@ def Nui.event(+n: Nui, e: W.WinEv) -> Step:
       Step{n, [NQuit{}], False{}}
     case W.WPaste{t}:
       Nui.paste(n, t)
+    case W.WImage{}:
+      Step{n, Nil{}, False{}}
     case W.WDragOver{_, _}:
       Nui.drag_over(n)
     case W.WDragLeave{}:
@@ -3381,3 +3383,37 @@ def Hud.show(+u: U.Ui, +cur: String, +ms: Nat) -> U.Ui:
 
 def Hud.feed(+n: Nui, +cur: String, +ms: Nat) -> Nui:
   Nui.with_ui(n, Hud.show(Hud.roll(Nat.is_ge(PF.Perf.minus(ms, PF.Perf.nat(U.Ui.scratch(Nui.ui(n), "@perf.next.at"))), PF.Hud.span()), Nui.ui(n), cur, ms), cur, ms))
+
+# Images use attach.put, so a local clipboard works on another hub too.
+def Nui.image.parts(ps: List<&2, String>, +n: Nui, +key: String, +name: String, +size: Nat, +i: Nat) -> Step:
+  match ps:
+    case Nil{}:
+      Step{n, Nil{}, False{}}
+    case p <> +t:
+      +step = Nui.act(n, "attach", AT.Att.paste.piece(key, name, size, i, List.is_empty(&2, String, t), p))
+      Step.merge(step, Nui.image.parts(t, Step.nui(step), key, name, size, Nat.add(i, 1n)))
+
+def Nui.image.upload(big: Bool, +n: Nui, +mime: String, +size: Nat, data: String, +key: String) -> Step:
+  match big:
+    case True{}:
+      Nui.act(n, "attach", AT.Att.paste.piece(key, AT.Att.paste.name(mime), size, 0n, True{}, ""))
+    case False{}:
+      Nui.image.parts(AT.Att.paste.parts(data, AT.Att.paste.width()), n,
+        key, AT.Att.paste.name(mime), size, 0n)
+
+# Only the composer and its attachment path can receive an image. A tour,
+# terminal, project path or another field cannot turn it into an upload.
+def Nui.image.k(on: Bool, +n: Nui, mime: String, +size: Nat, data: String, key: String) -> Step:
+  match on:
+    case True{}:
+      Nui.image.upload(Nat.is_gt(size, AT.Att.cap()), n, mime, size, data, key)
+    case False{}:
+      Step{n, Nil{}, False{}}
+
+def Nui.image.m(tour: Bool, +n: Nui, +mime: String, size: Nat, data: String, key: String) -> Step:
+  match tour:
+    case True{}:
+      Step{n, Nil{}, False{}}
+    case False{}:
+      Nui.image.k(Bool.and(String.starts_with(mime, "image/"),
+        Bool.or(String.eq(Nui.focus_of(n), "composer"), String.eq(Nui.focus_of(n), "attach-path"))), n, mime, size, data, key)
