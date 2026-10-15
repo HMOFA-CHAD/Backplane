@@ -132,16 +132,49 @@ echo 99 > "$F/rate429"; "$J" --no-setup-bend --wait 20 -- true >/dev/null 2>&1; 
 # an unclear create that did make a sandbox: adopted, used once, deleted, never a second create
 echo made > "$F/unclear"; c0=$(newcalls)
 "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 0 "unclear create: adopted and ran"; ok $(( $(newcalls) - c0 )) 1 "unclear: one create"; ok "$(boxes)" 0 "unclear: deleted"
-# an unclear create that made nothing: 76, not retried
-echo none > "$F/unclear"; c0=$(newcalls)
-"$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 76 "unclear, nothing made: 76"; ok $(( $(newcalls) - c0 )) 1 "unclear: not retried"
-# an unclear create while another client made a sandbox of the same shape: neither adopted nor deleted
-echo two > "$F/unclear"
-"$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 76 "unclear with a look-alike: not adopted"
-ok "$(boxes)" 2 "look-alike case: both left for a person"; rm -rf "$F/boxes"/*
+# unclear creates: never retried; slot, start and worst-case budget held until reconciled
+iso() { python3 -c "import time,sys; print(time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(int(sys.argv[1]))))" "$1"; }
+# backdate one job's attempt (as if its lifetime had passed)
+age() { python3 - "$BOAT_JOB_ROOT/ledger.jsonl" "$1" "$2" <<'EOF'
+import json, sys
+p, job, d = sys.argv[1], sys.argv[2], int(sys.argv[3]); out = []
+for l in open(p):
+    e = json.loads(l)
+    if e.get("job") == job and e.get("ev") == "attempt": e["at"] -= d
+    out.append(json.dumps(e))
+open(p, "w").write("\n".join(out) + "\n")
+EOF
+}
+lastjob() { python3 -c "import json; print([json.loads(l)['job'] for l in open('$BOAT_JOB_ROOT/ledger.jsonl') if '\"ambiguous\"' in l][-1])"; }
+jstate() { "$J" status --json | python3 -c "import json,sys; d=json.load(sys.stdin); j=[x for x in d['jobs'] if x['job']=='$1'][0]; print(j['state'], j.get('cost_cs', '-'), j.get('reserved_cs'))"; }
+fresh a; limits 1; echo none > "$F/unclear"; c0=$(newcalls)
+"$J" --no-setup-bend --timeout 60 -- true >/dev/null 2>&1; ok $? 76 "unclear, nothing made: 76"; ok $(( $(newcalls) - c0 )) 1 "unclear: not retried"
+A=$(lastjob); ok "$(jstate "$A")" "ambiguous - 900" "unclear: reservation held"
+"$J" --no-setup-bend --wait 0 -- true >/dev/null 2>&1; ok $? 75 "unclear: its slot is held (1 of 1)"
+limits 100; "$J" --no-setup-bend --budget-usd 0.015 --wait 0 -- true >/dev/null 2>&1; ok $? 75 "unclear: its worst case still counts against the budget"
+ok "$("$J" status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["ambiguous"], d["unresolved"], d["today"]["reserved_open_cs"])')" "1 0 900" "unclear: status counts it"
+# the sandbox it made shows up late: the sweep adopts it and deletes it
+at=$(python3 -c "import json; print([json.loads(l)['at'] for l in open('$BOAT_JOB_ROOT/ledger.jsonl') if json.loads(l).get('job')=='$A' and json.loads(l)['ev']=='attempt'][-1])")
+mkdir -p "$F/boxes/bx_late/home"; echo "default 900 $(iso "$at")" > "$F/boxes/bx_late/meta"
+"$J" sweep >/dev/null 2>&1; ok "$(boxes)" 0 "late sandbox adopted and deleted"; ok "$(jstate "$A" | cut -d' ' -f1)" swept "late: closed by the sweep"
+# nothing ever shows up: after its lifetime + 10 min it is closed and charged its worst case
+fresh e; echo none > "$F/unclear"; "$J" --no-setup-bend --timeout 60 -- true >/dev/null 2>&1; E=$(lastjob)
+"$J" sweep >/dev/null 2>&1; ok "$(jstate "$E" | cut -d' ' -f1)" ambiguous "within its lifetime: still held"
+age "$E" 2000; "$J" sweep >/dev/null 2>&1; ok "$(jstate "$E")" "reconciled 900 900" "past its lifetime: closed, worst case charged"
+"$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 0 "after reconcile: jobs run"
+# two look-alikes (ours and another client's, indistinguishable): never adopted or deleted;
+# past the lifetime with both still up: unresolved, new creates refused until they are gone
+fresh u; echo two > "$F/unclear"; "$J" --no-setup-bend --timeout 60 -- true >/dev/null 2>&1; ok $? 76 "look-alike: not adopted"; U=$(lastjob)
+"$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 0 "within its lifetime: other jobs still run"
+age "$U" 2000; for d in "$F"/boxes/*/; do read -r t l c < "$d/meta"; echo "$t $l $(iso $(( $(date +%s) - 2000 )))" > "$d/meta"; done
+"$J" sweep >/dev/null 2>&1; ok "$(jstate "$U" | cut -d' ' -f1)" unresolved "look-alikes past its lifetime: unresolved"
+ok "$(boxes)" 2 "look-alikes untouched"
+"$J" --no-setup-bend --wait 0 -- true >/dev/null 2>&1; ok $? 75 "unresolved: new creates refused"
+rm -rf "$F/boxes"/*; "$J" sweep >/dev/null 2>&1; ok "$(jstate "$U" | cut -d' ' -f1)" reconciled "gone: reconciled"
+"$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 0 "after it is gone: jobs run"
 
 st=$("$J" status --json)
-ok "$(printf '%s' "$st" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["running"], d["orphans"], all(j["state"] in ("ended","swept","refused","ambiguous") for j in d["jobs"]), any(j.get("cost_cs",0)>0 and j.get("runtime_s",-1)>=0 and j.get("sandbox") for j in d["jobs"]))')" "0 0 True True" "status --json"
+ok "$(printf '%s' "$st" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["running"], d["orphans"], all(j["state"] in ("ended","swept","refused","reconciled") for j in d["jobs"]), any(j.get("cost_cs",0)>0 and j.get("runtime_s",-1)>=0 and j.get("sandbox") for j in d["jobs"]))')" "0 0 True True" "status --json"
 
 ok "$(python3 -c "import json; d=json.load(open('$BOAT_JOB_ROOT/status.json')); print(d['running'], 'month' in d, d['month']['cost_cs'] >= d['today']['cost_cs'] > 0)")" "0 True True" "status.json kept current"
 ok "$(python3 -c "import json; d=json.load(open('$BOAT_JOB_ROOT/account.json')); print(d['active']['limit'], d['starts']['minute']['limit'], d['error'])")" "100 12 " "account.json from the last limits read"

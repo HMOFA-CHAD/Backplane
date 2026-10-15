@@ -78,7 +78,8 @@ EOF
 }
 
 # fold the ledger: prints "starting_jobs open_reserved_cs spent_today_cs orphans
-# our_create_attempts_last_minute _hour _day" and,
+# our_create_attempts_last_minute _hour _day unresolved" (starting jobs include
+# unclear creates not yet reconciled) and,
 # with an argument "ids", the created-and-not-ended ids with their owner pid identity
 fold() {
   python3 - "$LEDGER" "${1:-}" <<'EOF'
@@ -98,14 +99,23 @@ for l in lines:
     for k in ("id", "pid", "pidid", "day"):
         if k in e and k not in j: j[k] = e[k]
     ev = e.get("ev")
-    if ev == "reserve": j["done"] = False; j["reserved"] = e.get("reserved", 0)
-    if ev == "attempt": attempts.append(e.get("at", 0))
+    if ev == "reserve": j["done"] = False; j["reserved"] = e.get("reserved", 0); j["size"] = e.get("size"); j["ttl"] = e.get("ttl")
+    if ev == "attempt": attempts.append(e.get("at", 0)); j["attempt_at"] = e.get("at", 0)
     if ev in ("ended", "swept"): j["done"] = True; j["cost"] = e.get("cost", 0); j["orphan"] = False
     if ev == "orphan": j["orphan"] = True
-    if ev in ("refused", "released", "ambiguous"): j["done"] = True; j.setdefault("cost", 0)
+    if ev in ("refused", "released"): j["done"] = True; j.setdefault("cost", 0)
+    # an unclear create keeps its slot, start and worst-case reservation until reconciled
+    if ev == "ambiguous": j["ambig"] = True
+    if ev == "unresolved": j["unresolved"] = True
+    if ev == "reconciled": j["done"] = True; j["cost"] = e.get("cost", 0); j["ambig"] = False; j["unresolved"] = False
 if mode == "known":
     for j in jobs.values():
         if j.get("id"): print(j["id"])
+    sys.exit()
+if mode == "ambig":
+    for k, j in jobs.items():
+        if j.get("ambig") and not j.get("done") and not j.get("id"):
+            print(k, j.get("size", ""), j.get("ttl", 0), j.get("attempt_at", 0), j.get("reserved", 0), j.get("pid", ""), j.get("pidid", ""), 1 if j.get("unresolved") else 0)
     sys.exit()
 if mode == "ids":
     for k, j in jobs.items():
@@ -118,7 +128,8 @@ spent = sum(int(j.get("cost", 0)) for j in jobs.values() if j.get("done") and j.
 orph = sum(1 for j in jobs.values() if j.get("orphan"))
 now = time.time()
 am, ah, ad = (sum(1 for a in attempts if now - a < w) for w in (60, 3600, 86400))
-print(open_n, open_r, spent, orph, am, ah, ad)
+unres = sum(1 for j in jobs.values() if j.get("unresolved") and not j.get("done"))
+print(open_n, open_r, spent, orph, am, ah, ad, unres)
 EOF
 }
 
@@ -171,7 +182,46 @@ delete_verify() {
   return 1
 }
 
+# Unclear creates (a `boat new` whose answer couldn't be read). Each keeps its
+# slot, start and worst-case reservation. A sweep, once its runner is gone,
+# looks for the sandbox it may have made: exactly one unknown sandbox of its
+# size and lifetime made around the attempt is adopted (then swept like any
+# of ours). None by the end of its lifetime (+10 min): it can't exist past
+# its auto-stop (no snapshots: erased), so the job is closed and charged its
+# worst case. More than one still up after that: unresolved, and new creates
+# are refused until they are gone. Other sandboxes are never touched.
+reconcile() {
+  local amb lj known act
+  amb=$(fold ambig); [ -n "$amb" ] || return 0
+  lj=$(b list --json 2>/dev/null) || { say "sweep: cannot list sandboxes"; return 1; }
+  known=$(fold known | tr '\n' ' ')
+  printf '%s\n' "$amb" | while read -r job size ttl at reserved pid pidid unres; do
+    if [ -n "$pid" ] && [ "$pid" -gt 1 ] 2>/dev/null && [ "$(pid_id "$pid")" = "$pidid" ]; then continue; fi
+    act=$(printf '%s' "$lj" | python3 -c '
+import json, sys, time
+from datetime import datetime
+known, size, ttl, at = set(sys.argv[1].split()), sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+c = []
+for s in json.load(sys.stdin)["sandboxes"]:
+    if s["id"] in known or s.get("type") != size or int(s.get("ttlSeconds") or -1) != ttl: continue
+    try: t = datetime.fromisoformat(s["createdAt"].replace("Z", "+00:00")).timestamp()
+    except Exception: continue
+    if at - 10 <= t <= at + 300: c.append(s["id"])
+past = time.time() > at + ttl + 600
+if len(c) == 1: print("ADOPT", c[0])
+elif not c: print("EXPIRED" if past else "WAIT")
+else: print("UNRESOLVED" if past else "WAIT", len(c))
+' "$known" "$size" "$ttl" "$at")
+    case $act in
+      ADOPT*) ledger ev=created job="$job" id="${act#ADOPT }" adopted=1; say "adopted ${act#ADOPT } for unclear create $job" ;;
+      EXPIRED) ledger ev=reconciled job="$job" cost="$reserved" why="no sandbox by the end of its lifetime; charged its worst case" ;;
+      UNRESOLVED*) [ "$unres" = 1 ] || { ledger ev=unresolved job="$job" why="${act#UNRESOLVED } look-alike sandboxes still up past its lifetime"; say "unclear create $job unresolved: check boat list"; } ;;
+    esac
+  done
+}
+
 sweep() {
+  reconcile || return 1
   ids=$(fold ids) || return 1
   [ -n "$ids" ] || return 0
   l=$(listed) || { say "sweep: cannot list sandboxes"; return 1; }
@@ -208,8 +258,10 @@ for l in lines:
     elif ev == "orphan": j["state"] = "orphan"; j["sandbox"] = e.get("id", j.get("sandbox"))
     elif ev == "refused": j["state"] = "refused"; j["why"] = e.get("why", ""); j["ended_at"] = e["at"]
     elif ev == "released": j["state"] = "starting"; j["retries"] = j.get("retries", 0) + 1
-    elif ev == "ambiguous": j["state"] = "ambiguous"; j["ended_at"] = e["at"]; j["why"] = e.get("why", "")
-    elif ev == "attempt": j["attempts"] = j.get("attempts", 0) + 1
+    elif ev == "ambiguous": j["state"] = "ambiguous"; j["why"] = e.get("why", ""); j["reconcile_by"] = j.get("attempt_at", e["at"]) + int(j.get("ttl", 0)) + 600
+    elif ev == "unresolved": j["state"] = "unresolved"; j["why"] = e.get("why", "")
+    elif ev == "reconciled": j["state"] = "reconciled"; j["ended_at"] = e["at"]; j["cost_cs"] = e.get("cost", 0); j["why"] = e.get("why", "")
+    elif ev == "attempt": j["attempts"] = j.get("attempts", 0) + 1; j["attempt_at"] = e["at"]
 now = int(time.time())
 for j in jobs.values():
     if "started_at" in j: j["runtime_s"] = j.get("ended_at", now) - j["started_at"]
@@ -218,12 +270,13 @@ today = [j for j in out if j.get("day") == day]
 try: account = json.load(open(sys.argv[2]))
 except Exception: account = None
 print(json.dumps({"rate": {"credit_s_per_usd": 100000, "small": 0.5, "default": 1, "large": 2}, "account": account,
-  "ambiguous": sum(1 for j in out if j["state"] == "ambiguous"),
+  "ambiguous": sum(1 for j in out if j["state"] in ("ambiguous", "unresolved")),
+  "unresolved": sum(1 for j in out if j["state"] == "unresolved"),
   "running": sum(1 for j in out if j["state"] in ("starting", "running")),
   "orphans": sum(1 for j in out if j["state"] == "orphan"),
   "month": {"month": day[:7], "cost_cs": sum(j.get("cost_cs", 0) for j in out if str(j.get("day", "")).startswith(day[:7]))},
   "generated_at": int(time.time()),
-  "today": {"day": day, "cost_cs": sum(j.get("cost_cs", 0) for j in today), "reserved_open_cs": sum(j.get("reserved_cs", 0) for j in out if j["state"] in ("starting", "running"))},
+  "today": {"day": day, "cost_cs": sum(j.get("cost_cs", 0) for j in today), "reserved_open_cs": sum(j.get("reserved_cs", 0) for j in out if j["state"] in ("starting", "running", "ambiguous", "unresolved"))},
   "jobs": out}))
 EOF2
 }
@@ -294,8 +347,9 @@ echo "job $JOB: logs and artifacts in $OUT"
 # 2 wait (first word of the reason: seconds), 1 refused.
 admit() {
   sweep
-  read -r n r s o am ah ad <<<"$(fold)"
+  read -r n r s o am ah ad u <<<"$(fold)"
   [ "$o" = 0 ] || { echo "a sandbox delete was never verified; run scripts/boat-job.sh sweep"; return 1; }
+  [ "$u" = 0 ] || { echo "an unclear Boat create is unresolved (sandboxes like it are still up past its lifetime): check boat list, delete it if it is ours, then run scripts/boat-job.sh sweep"; return 1; }
   lim=$(limits_live) || { echo "cannot read Boat limits"; return 1; }
   why=$(printf '%s' "$lim" | python3 -c '
 import json, sys
@@ -468,7 +522,7 @@ else: print("-", "UNCLEAR", 0)
       [ -n "$ID" ] && { echo "create answered unclearly; adopted its sandbox $ID"; break; }
       IN_CREATE=0; ID=""
       ledger ev=ambiguous job="$JOB" why="create answered unclearly and no sandbox could be matched"
-      say "the create answered unclearly and no matching sandbox appeared; not retrying (no duplicate). Check boat list."
+      say "the create answered unclearly and no matching sandbox appeared; not retrying (no duplicate). Its slot and worst-case budget stay reserved until a sweep reconciles it (at most its lifetime + 10 min)."
       FINISHING=1; rm -rf "$STAGE"; exit 76 ;;
   esac
 done
