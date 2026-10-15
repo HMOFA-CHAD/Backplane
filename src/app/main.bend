@@ -62,7 +62,6 @@ type ShellMsg is Data:
   Parts3{key: String, t0: Nat, tris: List<&2, G.Tri3>}
   Status{key: String, text: String}
   Sheets{key: String, text: String}
-  Shot{key: String, bmp: BM.Bitmap}
   # a round of a remote hub's files for a viewer's source came in (RW.Rvw.sync)
   RvGot{key: String, tag: String, ver: String, reread: Bool}
   PicOk{tag: String, path: String, w: U32, h: U32, rgb: List<&2, U32>}
@@ -1572,77 +1571,23 @@ def Watch.loop(fuel: Nat, +key: String, +path: String, +sz: U32, +mt: U32, re: N
         st : U32 & U32 <- PV.Pv.stamp.of(path)
         Watch.step(st, sz, mt, Bool.pick(Nat, U32.is_eq(Src.kind(key), 2), 0n, re), key, path, q, s2 => m2 => r2 => Watch.loop(f, key, path, s2, m2, r2, q))
 
-def Watch.seq(h: BM.BmHead) -> U32:
-  match h:
-    case BM.BmHead{_, _, s}:
-      s
-
-# The agents' browser: its frame file starts with a 16-byte header whose
-# seq grows with each frame; poll the header, load the pixels on a change
-
-def Watch.head.k(r: File & Result<&1, &1, U32 & String, List<&2, U32>>) -> IO(U32):
-  (f, res) = r
-  do IO<U32>:
-    File.close(f)
-    return Watch.seq(BM.Bitmap.head(Result.default(&1, &1, U32 & String, List<&2, U32>, res, Nil{})))
-
-def Watch.head.o(r: Result<&1, &1, U32 & String, File>) -> IO(U32):
-  match r:
-    case Done{f}:
-      IO.bind(File & Result<&1, &1, U32 & String, List<&2, U32>>, U32, File.read_bytes(f, 16), Watch.head.k)
-    case Fail{_}:
-      IO.pure(U32, 0)
-
-def Watch.head(+path: String) -> IO(U32):
-  IO.bind(Result<&1, &1, U32 & String, File>, U32, File.open(path, "r"), Watch.head.o)
-
-def Watch.w(h: BM.BmHead) -> U32:
-  match h:
-    case BM.BmHead{w, _, _}:
-      w
-
-def Watch.h(h: BM.BmHead) -> U32:
-  match h:
-    case BM.BmHead{_, h2, _}:
-      h2
-
-def Watch.shot(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
-  do IO<Unit>:
-    +bs : List<&2, U32> <- S.Files.read(path)
-    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Shot{key, BM.Bitmap.load(bs, 0, 0, Watch.w(BM.Bitmap.head(bs)), Watch.h(BM.Bitmap.head(bs)))})
-    return Unit{}
-
-def Watch.shots.k(changed: Bool, +seq: U32, +key: String, +path: String, +q: Chan(ShellMsg), k: U32 -> IO(Unit)) -> IO(Unit):
-  match changed:
-    case True{}:
-      do IO<Unit>:
-        Watch.shot(path, key, q)
-        k(seq)
-    case False{}:
-      k(seq)
-
-def Watch.shots(fuel: Nat, +key: String, +path: String, +last: U32, +q: Chan(ShellMsg)) -> IO(Unit):
-  match fuel:
-    case 0n:
-      IO.pure(Unit, Unit{})
-    case 1n+f:
-      do IO<Unit>:
-        IO.sleep(120)
-        +seq : U32 <- Watch.head(path)
-        Watch.shots.k(Bool.and(U32.is_ne(seq, last), U32.is_ne(seq, 0)), seq, key, path, q, s2 => Watch.shots(f, key, path, s2, q))
-
 def Watch.none(+key: String) -> String:
   Bool.pick(String, U32.is_eq(Src.kind(key), 1), "No schematic in this project yet", "No board in this project yet")
 
-def Watch.go(none: Bool, once: Bool, +key: String, +path: String, +q: Chan(ShellMsg)) -> IO(Unit):
+def Watch.go.k(none: Bool, once: Bool, +key: String, +path: String, +q: Chan(ShellMsg)) -> IO(Unit):
   match none once:
     case True{} _:
       Watch.say(key, Watch.none(key), q)
     case False{} True{}:
-      Bool.pick(IO(Unit), U32.is_eq(Src.kind(key), 3), Watch.shot(path, key, q), Watch.read(path, key, q))
+      Watch.read(path, key, q)
     case False{} False{}:
-      Bool.pick(IO(Unit), U32.is_eq(Src.kind(key), 3), Watch.shots(S.Fuel.forever(), key, path, 0, q),
-        Bool.pick(IO(Unit), PV.Pv.stamp.fixed(path), Watch.read(path, key, q), Watch.loop(S.Fuel.forever(), key, path, 0, 0, 0n, q)))
+      Bool.pick(IO(Unit), PV.Pv.stamp.fixed(path), Watch.read(path, key, q), Watch.loop(S.Fuel.forever(), key, path, 0, 0, 0n, q))
+
+# (the Browser tab, source kind 3, watches no file: its frames come as
+# images, shot:<page>:<n>, which the layout asks for; the raw frame file it
+# once polled is no longer written)
+def Watch.go(none: Bool, once: Bool, +key: String, +path: String, +q: Chan(ShellMsg)) -> IO(Unit):
+  Bool.pick(IO(Unit), U32.is_eq(Src.kind(key), 3), IO.pure(Unit, Unit{}), Watch.go.k(none, once, key, path, q))
 
 # A source on another machine's hub (core/rview.bend): the files are
 # copies in the window's cache that RW.Rvw.sync keeps (spec: the hub, the
@@ -1788,11 +1733,6 @@ def Shell.mesh(a: Shell, +key: String, ts: FA.Scene3) -> IO(Shell):
       do IO<Shell>:
         ms : Nat <- IO.now()
         Shell.later(Shell{N.Nui.mesh(n, key, FA.Scene3.got(ts, ms)), w, True{}, qd, q, i, wa})
-
-def Shell.shot(a: Shell, +key: String, b: BM.Bitmap) -> IO(Shell):
-  match a:
-    case Shell{n, w, _, qd, q, i, wa}:
-      Shell.later(Shell{N.Nui.shot(n, key, b), w, True{}, qd, q, i, wa})
 
 # the schematic's sheet tree, for the viewer's sheet list and trail
 def Shell.sheets(a: Shell, +text: String) -> IO(Shell):
@@ -2401,8 +2341,6 @@ def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
       Shell.status(a, key, text)
     case Sheets{key, text}:
       Shell.sheets(a, text)
-    case Shot{key, b}:
-      Shell.shot(a, key, b)
     case RvGot{key, tag, ver, reread}:
       Shell.rvgot(a, key, tag, ver, reread)
     case PicOk{tag, path, w, h, rgb}:
@@ -2471,8 +2409,6 @@ def ShellMsg.kind(m: ShellMsg) -> String:
       "parts"
     case Sheets{_, _}:
       "sheets"
-    case Shot{_, _}:
-      "shot"
     case RvGot{_, _, _, _}:
       "rvgot"
     case PicOk{_, _, _, _, _}:
