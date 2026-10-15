@@ -152,9 +152,11 @@ def Mm.flags(xs: List<&2, Sigma<&2, &2, String, _ => Bool>>) -> String:
 # info the main area never reads, or reads only as part of the key
 # otherwise: the clock (now is in the key), the caret's timing (its phase,
 # caret.on, is kept), the cats', the frame's own bookkeeping, the hover
-# and the performance overlay (both drawn over the whole frame)
+# and the performance overlay (both drawn over the whole frame), a page's
+# frames (shown only in the viewer and a bot's view: neither is kept)
 def Mm.volatile(+k: String) -> Bool:
-  Nat.is_lt(C.Codec.pos(["clock", "act.at", "cat.due", "cat.clock", "caret.due", "caret.at", "caret.sig", "frame.hub", "frame.late", "hover", "perf.hud"], k), 11n)
+  Bool.or(Nat.is_lt(C.Codec.pos(["clock", "act.at", "cat.due", "cat.clock", "caret.due", "caret.at", "caret.sig", "frame.hub", "frame.late", "hover", "perf.hud"], k), 11n),
+    Bool.or(String.starts_with(k, "img:shot:"), String.starts_with(k, "shot.")))
 
 def Mm.info.k(skip: Bool, +k: String, +v: String, +rest: String) -> String:
   match skip:

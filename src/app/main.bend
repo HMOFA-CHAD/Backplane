@@ -543,8 +543,27 @@ def Shot.keep(ok: Bool, m: Maybe<&2, BM.Bitmap>, +ps: Map<&2, BM.Bitmap>, +path:
       Pics.keep(m, ps, path)
 
 # the frame on show for a bot is the newest one loaded
+# a page's older frames are forgotten as a newer one is in (each is an
+# "img:" entry: a page streaming for an hour left tens of thousands)
+def Shot.forget.k(old: Bool, u: U.Ui, +k: String) -> U.Ui:
+  match old:
+    case True{}:
+      U.Ui.info_drop(u, k)
+    case False{}:
+      u
+
+def Shot.forget(ks: List<&2, String>, u: U.Ui, +pre: String, +keep: String) -> U.Ui:
+  match ks:
+    case Nil{}:
+      u
+    case +k <> t:
+      Shot.forget(t, Shot.forget.k(Bool.and(String.starts_with(k, pre), Bool.not(String.eq(k, keep))), u, k), pre, keep)
+
+def Shot.note.ok(+u: U.Ui, +path: String) -> U.Ui:
+  Shot.forget(Map.keys(&2, String, U.Ui.infos(u)), U.Ui.info_set(u, "shot.ok." ++ Shot.bot(path), path), "img:shot:" ++ Shot.bot(path) ++ ":", "img:" ++ path)
+
 def Shot.note(+u: U.Ui, +path: String, +note: String) -> U.Ui:
-  Bool.pick(U.Ui, Bool.and(Shot.is(path), Bool.not(String.starts_with(note, "err:"))), U.Ui.info_set(u, "shot.ok." ++ Shot.bot(path), path), u)
+  Bool.pick(U.Ui, Bool.and(Shot.is(path), Bool.not(String.starts_with(note, "err:"))), Shot.note.ok(u, path), u)
 
 # a loaded bot frame (not an error)
 def Shot.ok(+path: String, +note: String) -> Bool:

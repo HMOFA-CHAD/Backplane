@@ -3423,6 +3423,11 @@ def Find.go.k2(active: Bool, +u: Ui, +v: String) -> Act:
 def Find.go(+u: Ui, +v: String) -> Act:
   Find.go.k2(Bool.and(String.is_empty(v), String.eq(Side.view(Side.st(u)), "active")), u, v)
 
+def Ui.info_drop(u: Ui, +k: String) -> Ui:
+  match u:
+    case Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, +nf, ob, tr}:
+      Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, Map.del(&2, String, nf, k), ob, tr}
+
 def Ui.info_set(u: Ui, +k: String, +v: String) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, +nf, ob, tr}:
