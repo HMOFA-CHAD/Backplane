@@ -102,7 +102,11 @@ type Wire is Data:
   WItems{head: String, plain: String, split: String, items: List<&2, String>, tail: String, ends: Bool}
 
 type Msg is Data:
-  LockProbe{name: String, holder: String}
+  # n: how many probes since the lock was asked for (the guard is tried
+  # each 100 ms; who holds it outside is asked every LockJob.every())
+  LockProbe{name: String, holder: String, n: Nat}
+  # who holds a lock's flock outside the hub, as Guard.who printed it
+  LockSaw{name: String, holder: String, out: String}
   LockHttp{op: String, body: String, reply: Chan(String)}
   Announce{text: String}
   Mcp{thread: String, body: String, reply: Chan(String)}
@@ -1306,12 +1310,15 @@ def Hub.lines.disk(cs: List<&2, M.Change>) -> List<&2, String>:
 type Folded is Data:
   Folded{st: M.State, ls: List<&2, String>, fresh: List<&2, String>}
 
-def Hub.fold(cs: List<&2, M.Change>, f: Folded) -> Folded:
-  match cs f:
-    case Nil{} _:
+# (ds: the changes' disk lines, Hub.lines.disk: each change is shown once
+# per commit and its line reused for clients, B.Commit.line)
+def Hub.fold(cs: List<&2, M.Change>, ds: List<&2, String>, f: Folded) -> Folded:
+  match cs ds f:
+    case +c <> t +d <> dt Folded{st, ls, fr}:
+      +w = B.Commit.line(c, d)
+      Hub.fold(t, dt, Folded{M.State.apply(st, c), w <> ls, w <> fr})
+    case _ _ _:
       f
-    case +c <> t Folded{st, ls, fr}:
-      Hub.fold(t, Folded{M.State.apply(st, c), J.Json.show(C.Change.wire(c)) <> ls, J.Json.show(C.Change.wire(c)) <> fr})
 
 def Bot.dir.changed.all(cs: List<&2, M.Change>, +inbox: Chan(Msg)) -> IO(Unit):
   match cs:
@@ -1871,8 +1878,11 @@ def RmJob.there(r: P.Ran, +inbox: Chan(Msg), +thread: String, +wt: String, +root
     case _:
       GitJob.say(inbox, "thread.unrooted", [J.KV{"thread", J.Str{thread}}])
 
+# a folder with no .git in it is no worktree (gone, or only an empty folder
+# left behind inside another checkout): the thread is unrooted as when the
+# folder is gone, so it is not asked about again each tick
 def RmJob.run(+inbox: Chan(Msg), +thread: String, +wt: String, +root: String, +branch: String) -> IO(Unit):
-  IO.bind(P.Ran, Unit, P.Proc.run("test", ["-d", wt], "/"), r => RmJob.there(r, inbox, thread, wt, root, branch))
+  IO.bind(P.Ran, Unit, P.Proc.run("test", ["-e", wt ++ "/.git"], "/"), r => RmJob.there(r, inbox, thread, wt, root, branch))
 
 # Merges: which of a project's due branches gh reports merged (one call per
 # project per tick; nothing happens without gh, auth or a GitHub remote)
@@ -5088,26 +5098,30 @@ def Hub.commit.failed(cut: Bool, +len: String, +err: String, st: M.State, f: Fil
     case False{}:
       IO.pure(Hub & Wrote, Hub.held(ST.Store.hold(len, err), st, f, ls, cl, as, inbox, cfg, note))
 
-def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +len: String, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
+def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +disk: List<&2, String>, +len: String, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
     as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
   (f, res) = r
   match res:
     case Done{_}:
       do IO<Hub & Wrote>:
         Bot.dir.changed.all(cs, inbox)
-        return Hub.commit.k(Hub.fold(cs, Folded{st, ls, Nil{}}), f, cl, as, inbox, Live.with(cfg, LV.Live.ends(cs, Live.of(cfg))), note)
+        return Hub.commit.k(Hub.fold(cs, disk, Folded{st, ls, Nil{}}), f, cl, as, inbox, Live.with(cfg, LV.Live.ends(cs, Live.of(cfg))), note)
     case Fail{e}:
       do IO<Hub & Wrote>:
         cut : Bool <- Hub.cut(len, cfg)
         Hub.commit.failed(cut, len, Hub.err.msg(e), st, f, ls, cl, as, inbox, cfg, note)
+
+def Hub.commit.write(+disk: List<&2, String>, f: File, +len: String, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, ST.Store.text(disk)),
+    w => Hub.commit.done(w, disk, len, cs, st, ls, cl, as, inbox, cfg, note))
 
 def Hub.commit.at(r: File & Result<&1, &1, U32 & String, U32>, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
     as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
   (f, res) = r
   match res:
     case Done{len}:
-      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, ST.Store.text(Hub.lines.disk(cs))),
-        w => Hub.commit.done(w, U32.show(len), cs, st, ls, cl, as, inbox, cfg, note))
+      Hub.commit.write(Hub.lines.disk(cs), f, U32.show(len), cs, st, ls, cl, as, inbox, cfg, note)
     case Fail{e}:
       IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, Hub.err.msg(e)}))
 
@@ -6414,11 +6428,36 @@ def Watch.start(run: Bool, +home: String, +thread: String, +id: String, +target:
 
 # an Await: a work_run's command launched (unless it ran already), then
 # watched
-def LockJob.later(+inbox: Chan(Msg), +name: String, +holder: String) -> IO(Unit):
+def LockJob.later(+inbox: Chan(Msg), +name: String, +holder: String, +n: Nat) -> IO(Unit):
   do IO<Unit>:
     IO.sleep(100)
-    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, LockProbe{name, holder})
+    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, LockProbe{name, holder, n})
     return Unit{}
+
+def LockJob.out(r: P.Ran) -> String:
+  match r:
+    case P.Ran{_, out}:
+      out
+
+# who holds the flock outside the hub, asked off the hub's loop (a shell and
+# a few tools: it ran on the loop every 100 ms while a lock waited, and
+# held every other message up meanwhile)
+def LockJob.who(+inbox: Chan(Msg), +name: String, +holder: String) -> IO(Unit):
+  do IO<Unit>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", LG.Guard.who(), "sh", name], "/")
+    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, LockSaw{name, holder, LockJob.out(r)})
+    return Unit{}
+
+# the probes between two asks of who holds a lock outside (2 s)
+def LockJob.every() -> Nat:
+  20n
+
+def LockJob.who.if(ask: Bool, +inbox: Chan(Msg), +name: String, +holder: String) -> IO(Unit):
+  match ask:
+    case True{}:
+      IO.spawn(Unit, LockJob.who(inbox, name, holder))
+    case False{}:
+      IO.pure(Unit, Unit{})
 
 def Watch.intent(locked: Bool, +home: String, +id: String) -> IO(Unit):
   match locked:
@@ -7682,7 +7721,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.LockGuard{+name, old, +holder}:
       do IO<Hub>:
         LG.Guard.drop(name, old)
-        IO.spawn(Unit, LockJob.later(inbox, name, holder))
+        IO.spawn(Unit, LockJob.later(inbox, name, holder, 0n))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.Await{+thread, +id, +kind, +target, +ident, +deadline, +cwd}:
       do IO<Hub>:
@@ -10939,8 +10978,10 @@ def Hub.mcp(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: 
 
 def Msg.kind(m: Msg) -> String:
   match m:
-    case LockProbe{_, _}:
+    case LockProbe{_, _, _}:
       "lock_probe"
+    case LockSaw{_, _, _}:
+      "lock_saw"
     case LockHttp{_, _, _}:
       "lock_http"
     case AgentWrite{_, _, _}:
@@ -11351,7 +11392,7 @@ def Hub.lock.probe.after.k(pending: Bool, h: Hub, +name: String, +holder: String
   match pending h:
     case True{} Hub{s, f, ls, cl, as, +inbox, cfg, note}:
       do IO<Hub>:
-        IO.spawn(Unit, LockJob.later(inbox, name, holder))
+        IO.spawn(Unit, LockJob.later(inbox, name, holder, 0n))
         return Hub{s, f, ls, cl, as, inbox, cfg, note}
     case False{} _:
       IO.pure(Hub, h)
@@ -11361,39 +11402,40 @@ def Hub.lock.probe.after(h: Hub, +name: String, +holder: String) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.lock.probe.after.k(Bool.and(String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder), Bool.not(LCK.Lock.ready(M.Locks.get(st, name)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, name, holder)
 
-# The guard could not be taken: record who holds the flock outside the hub.
-def Hub.lock.probe.who(r: P.Ran, h: Hub, +st: M.State, +name: String, +holder: String, +now: Nat) -> IO(Hub):
-  match r:
-    case P.Ran{_, +out}:
-      +j = Maybe.default(&2, J.Json, J.Json.parse(out), J.Null{})
-      Hub.step(h, B.Locks.outside(st, now, name, holder, J.Json.get_nat(j, "pid", 0n), J.Json.get_str(j, "cmd", "")))
+# who holds it outside, heard from LockJob.who: recorded against the lock
+# as it is now
+def Hub.lock.saw(h: Hub, +name: String, +holder: String, +out: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Locks.outside(st, now, name, holder,
+        J.Json.get_nat(Maybe.default(&2, J.Json, J.Json.parse(out), J.Null{}), "pid", 0n), J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(out), J.Null{}), "cmd", "")))
 
-def Hub.lock.probe.taken(taken: Bool, h: Hub, +st: M.State, +name: String, +holder: String, +now: Nat) -> IO(Hub):
+def Hub.lock.probe.taken(taken: Bool, h: Hub, +st: M.State, +name: String, +holder: String, +n: Nat, +now: Nat) -> IO(Hub):
   match taken h:
     case True{} _:
       IO.bind(Hub, Hub, Hub.step(h, B.Locks.ready(st, now, name, holder)), h2 => Hub.lock.probe.after(h2, name, holder))
     case False{} Hub{s, f, ls, cl, as, +inbox, cfg, note}:
       do IO<Hub>:
-        IO.spawn(Unit, LockJob.later(inbox, name, holder))
-        r : P.Ran <- P.Proc.run("sh", ["-c", LG.Guard.who(), "sh", name], "/")
-        Hub.lock.probe.who(r, Hub{s, f, ls, cl, as, inbox, cfg, note}, st, name, holder, now)
+        IO.spawn(Unit, LockJob.later(inbox, name, holder, 1n+n))
+        LockJob.who.if(Nat.is_eq(Nat.mod(n, LockJob.every()), 0n), inbox, name, holder)
+        return Hub{s, f, ls, cl, as, inbox, cfg, note}
 
-def Hub.lock.probe.take(h: Hub, +st: M.State, +name: String, +holder: String, +now: Nat) -> IO(Hub):
+def Hub.lock.probe.take(h: Hub, +st: M.State, +name: String, +holder: String, +n: Nat, +now: Nat) -> IO(Hub):
   match h:
     case Hub{s, f, ls, cl, as, inbox, +cfg, note}:
-      IO.bind(Bool, Hub, LG.Guard.take(name, holder, Cfg.home(cfg), LG.Guard.script()), taken => Hub.lock.probe.taken(taken, Hub{s, f, ls, cl, as, inbox, cfg, note}, st, name, holder, now))
+      IO.bind(Bool, Hub, LG.Guard.take(name, holder, Cfg.home(cfg), LG.Guard.script()), taken => Hub.lock.probe.taken(taken, Hub{s, f, ls, cl, as, inbox, cfg, note}, st, name, holder, n, now))
 
-def Hub.lock.probe.k(own: Bool, h: Hub, +st: M.State, +name: String, +holder: String, +now: Nat) -> IO(Hub):
+def Hub.lock.probe.k(own: Bool, h: Hub, +st: M.State, +name: String, +holder: String, +n: Nat, +now: Nat) -> IO(Hub):
   match own:
     case False{}:
       IO.pure(Hub, h)
     case True{}:
-      Hub.lock.probe.take(h, st, name, holder, now)
+      Hub.lock.probe.take(h, st, name, holder, n, now)
 
-def Hub.lock.probe(h: Hub, +name: String, +holder: String, +now: Nat) -> IO(Hub):
+def Hub.lock.probe(h: Hub, +name: String, +holder: String, +n: Nat, +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.lock.probe.k(Bool.and(Bool.not(String.is_empty(holder)), String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder)), Hub{st, f, ls, cl, as, inbox, cfg, note}, st, name, holder, now)
+      Hub.lock.probe.k(Bool.and(Bool.not(String.is_empty(holder)), String.eq(LCK.Lock.owner(M.Locks.get(st, name)), holder)), Hub{st, f, ls, cl, as, inbox, cfg, note}, st, name, holder, n, now)
 
 def Hub.lock.http.done(r: Hub & Bool, +name: String, +holder: String, requeued: Bool, +reply: Chan(String)) -> IO(Hub):
   (h, ok) = r
@@ -11425,8 +11467,10 @@ def Hub.lock.http(h: Hub, +op: String, +body: String, +reply: Chan(String), +now
 
 def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
   match m:
-    case LockProbe{name, holder}:
-      Hub.lock.probe(h, name, holder, now)
+    case LockProbe{name, holder, n}:
+      Hub.lock.probe(h, name, holder, n, now)
+    case LockSaw{name, holder, out}:
+      Hub.lock.saw(h, name, holder, out, now)
     case LockHttp{op, body, reply}:
       Hub.lock.http(h, op, body, reply, now)
     case AgentWrite{thread, line, gen}:

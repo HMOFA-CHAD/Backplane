@@ -7955,3 +7955,14 @@ law busy_turn_moves:
 law busy_rows_move:
   {Bool.and(H.Busy.moved([M.SettingSet{"bg.t2", "", 3n}]), Bool.and(H.Busy.moved([M.SettingSet{"watch.t2", "", 3n}]), H.Busy.moved([M.WorkSet{"t2", "bg", "", 3n}]))) == True{} : Bool}
 # ---- end hub-stream-fast: busy count ----
+# ---- hub-fanout: commit lines ----
+# a change told to clients is its disk line, except the device kinds, whose
+# wire form leaves the token out
+law commit_line_is_wire:
+  {Bool.and(Bool.and(Bool.and(H.Commit.line.ok(M.MessagePosted{"t1", "m1", M.Assistant{}, "say \"hi\"\nthen\ttab é", 5n}), H.Commit.line.ok(M.ActivityLogged{"t1", "u1", "tool", "Bash", "ls -la", 5n})),
+    Bool.and(H.Commit.line.ok(M.TurnChanged{"t1", M.Completed{}, 5n}), H.Commit.line.ok(M.SettingSet{"a.b", "v", 5n}))),
+    Bool.and(Bool.and(H.Commit.line.ok(M.DeviceRegistered{"tok", "ios", "push", "t1", "prod", "b", 5n}), H.Commit.line.ok(M.DeviceDropped{"tok", 5n})), H.Commit.line.ok(M.UsageSet{"t1", 10n, 100n, 5n}))) == True{} : Bool}
+
+law commit_line_device_hides_token:
+  {String.contains(H.Commit.line(M.DeviceDropped{"secret-tok", 5n}, "disk"), "secret-tok") == False{} : Bool}
+# ---- end hub-fanout: commit lines ----

@@ -9154,3 +9154,10 @@ def Laws.busy_turn_moves():
 def Laws.busy_rows_move():
   {==}
 # ---- end hub-stream-fast: busy count ----
+# ---- hub-fanout: commit lines ----
+def Laws.commit_line_is_wire():
+  {==}
+
+def Laws.commit_line_device_hides_token():
+  {==}
+# ---- end hub-fanout: commit lines ----
