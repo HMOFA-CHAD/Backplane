@@ -368,7 +368,7 @@ def Bj.jobs(+st: M.State, js: List<&2, J.Json>) -> List<&2, URow>:
   match js:
     case Nil{}:
       Nil{}
-    case j <> t:
+    case +j <> t:
       Bj.jobs.k(Bj.shown(J.Json.get_str(j, "state", "")), st, j, Bj.jobs(st, t))
 
 def Bj.mine.rows(known: Bool, +st: M.State, +s: J.Json) -> List<&2, URow>:

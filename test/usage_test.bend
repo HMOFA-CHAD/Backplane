@@ -39,7 +39,7 @@ def show(rs: List<&2, UZ.URow>) -> String:
   match rs:
     case Nil{}:
       ""
-    case r <> t:
+    case +r <> t:
       UZ.URow.label(r) ++ " | " ++ UZ.URow.note(r) ++ Bool.pick(String, String.is_empty(UZ.URow.act(r)), "", " [" ++ UZ.URow.act(r) ++ "]") ++ "\n" ++ show(t)
 
 def boat(+st: M.State, +cache: String, +stat: String, +now: Nat) -> String:
