@@ -2914,16 +2914,34 @@ def Scratch.expired.w(+now: Nat, +w: Nat, t: Thread, +busy: Nat) -> Bool:
 def Worktree.drop.w(+s: State, +t: Thread, +now: Nat, +window: Nat, +busy: Nat) -> Bool:
   Bool.and(Worktree.drop(s, t, now, window), Nat.is_eq(busy, 0n))
 
-def Work.threads.go(ts: List<&2, Thread>, +kids: Map<&2, Nat>, +s: State) -> Nat:
+def Work.turn.runs(t: TurnState) -> Bool:
+  match t:
+    case Running{}:
+      True{}
+    case _:
+      False{}
+
+# one thread: archived or deleted counts 0 and running 1 without reading
+# its rows; only a live idle thread's rows are read (the busy count runs
+# after steps that can move it, and walked every row of every thread)
+def Work.threads.one(gone: Bool, run: Bool, +kids: Map<&2, Nat>, +s: State, +id: String) -> Nat:
+  match gone run:
+    case True{} _:
+      0n
+    case False{} True{}:
+      1n
+    case False{} False{}:
+      Bool.pick(Nat, Nat.is_gt(Work.busy.at(kids, s, id), 0n), 1n, 0n)
+
+def Work.threads.go(ts: List<&2, Thread>, +kids: Map<&2, Nat>, +s: State, n: Nat) -> Nat:
   match ts:
     case Nil{}:
-      0n
+      n
     case Thread{+id, _, _, _, _, turn, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de} <> t:
-      Nat.add(Bool.pick(Nat, Bool.and(Bool.not(Bool.or(ar, de)), Bool.or(State.running.k(State.thread.get(s, id)), Nat.is_gt(Work.busy.at(kids, s, id), 0n))), 1n, 0n),
-        Work.threads.go(t, kids, s))
+      Work.threads.go(t, kids, s, Nat.add(n, Work.threads.one(Bool.or(ar, de), Work.turn.runs(turn), kids, s, id)))
 
 # how many threads run a turn or wait on work (an update waits for them)
 def Work.threads(+s: State) -> Nat:
   match s:
     case State{_, +ts, _, _, _, _, _, _, _, _, _}:
-      Work.threads.go(Map.values(&2, Thread, ts), Work.kids.map(s), s)
+      Work.threads.go(Map.values(&2, Thread, ts), Work.kids.map(s), s, 0n)

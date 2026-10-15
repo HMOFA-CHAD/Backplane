@@ -9138,3 +9138,19 @@ def Laws.local_view_junk_ignored():
 def Laws.hub_settings_moves_focus():
   {==}
 # ---- end ios-snappy tabs ----
+# ---- hub-stream-fast: busy count ----
+def Laws.busy_stream_inert():
+  {==}
+
+def Laws.busy_stream_keeps_count():
+  {==}
+
+def Laws.busy_demo_count():
+  {==}
+
+def Laws.busy_turn_moves():
+  {==}
+
+def Laws.busy_rows_move():
+  {==}
+# ---- end hub-stream-fast: busy count ----

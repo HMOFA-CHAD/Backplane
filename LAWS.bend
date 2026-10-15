@@ -7936,3 +7936,22 @@ law local_view_junk_ignored:
 law hub_settings_moves_focus:
   {Hb.Hubs.routed("hub-settings") == 11n : Nat}
 # ---- end ios-snappy tabs ----
+# ---- hub-stream-fast: busy count ----
+# what a streaming turn writes never moves /hello's busy count, so the hub
+# skips the walk after it
+law busy_stream_inert:
+  {H.Busy.moved(H.Busy.demo.stream()) == False{} : Bool}
+
+law busy_stream_keeps_count:
+  {M.Work.threads(M.State.replay(H.Busy.demo.stream(), H.Busy.demo())) == M.Work.threads(H.Busy.demo()) : Nat}
+
+law busy_demo_count:
+  {M.Work.threads(H.Busy.demo()) == 2n : Nat}
+
+# a turn's end, or a thread's rows, do move it, and are taken
+law busy_turn_moves:
+  {Bool.and(H.Busy.moved([M.TurnChanged{"t1", M.Completed{}, 3n}]), Nat.is_eq(M.Work.threads(M.State.replay([M.TurnChanged{"t1", M.Completed{}, 3n}], H.Busy.demo())), 1n)) == True{} : Bool}
+
+law busy_rows_move:
+  {Bool.and(H.Busy.moved([M.SettingSet{"bg.t2", "", 3n}]), Bool.and(H.Busy.moved([M.SettingSet{"watch.t2", "", 3n}]), H.Busy.moved([M.WorkSet{"t2", "bg", "", 3n}]))) == True{} : Bool}
+# ---- end hub-stream-fast: busy count ----
