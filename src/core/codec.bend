@@ -309,9 +309,25 @@ def Change.encode(c: M.Change) -> J.Json:
       Change.obj("RoutineDone", [J.KV{"id", J.Str{id}}, J.KV{"at", Codec.nat(at)}])
     case M.Reminded{id, bot, thread, text, at}:
       Change.obj("Reminded", [J.KV{"id", J.Str{id}}, J.KV{"bot", J.Str{bot}}, J.KV{"thread", J.Str{thread}}, J.KV{"text", J.Str{text}}, J.KV{"at", Codec.nat(at)}])
+    case M.MessageFrom{thread, msg, from, kind, ref, at}:
+      Change.obj("MessageFrom", [J.KV{"thread", J.Str{thread}}, J.KV{"msg", J.Str{msg}}, J.KV{"from", J.Str{from}}, J.KV{"kind", J.Str{kind}}, J.KV{"ref", J.Str{ref}}, J.KV{"at", Codec.nat(at)}])
+    case M.ConvSet{id, subject, kind, parts, project, tags, at}:
+      Change.obj("ConvSet", [J.KV{"id", J.Str{id}}, J.KV{"subject", J.Str{subject}}, J.KV{"kind", J.Str{kind}}, J.KV{"parts", J.Str{parts}}, J.KV{"project", J.Str{project}}, J.KV{"tags", J.Str{tags}}, J.KV{"at", Codec.nat(at)}])
+    case M.MailPosted{id, conv, from, to, kind, ref, want, head, size, at}:
+      Change.obj("MailPosted", [J.KV{"id", J.Str{id}}, J.KV{"conv", J.Str{conv}}, J.KV{"from", J.Str{from}}, J.KV{"to", J.Str{to}}, J.KV{"kind", J.Str{kind}}, J.KV{"ref", J.Str{ref}}, J.KV{"want", J.Str{want}}, J.KV{"head", J.Str{head}}, J.KV{"size", Codec.nat(size)}, J.KV{"at", Codec.nat(at)}])
+    case M.MailMarked{bot, conv, status, seen, until, at}:
+      Change.obj("MailMarked", [J.KV{"bot", J.Str{bot}}, J.KV{"conv", J.Str{conv}}, J.KV{"status", J.Str{status}}, J.KV{"seen", Codec.nat(seen)}, J.KV{"until", Codec.nat(until)}, J.KV{"at", Codec.nat(at)}])
+    case M.MailTagged{bot, conv, tags, at}:
+      Change.obj("MailTagged", [J.KV{"bot", J.Str{bot}}, J.KV{"conv", J.Str{conv}}, J.KV{"tags", J.Str{tags}}, J.KV{"at", Codec.nat(at)}])
+    case M.RunSet{thread, bot, conv, mail, at}:
+      Change.obj("RunSet", [J.KV{"thread", J.Str{thread}}, J.KV{"bot", J.Str{bot}}, J.KV{"conv", J.Str{conv}}, J.KV{"mail", J.Str{mail}}, J.KV{"at", Codec.nat(at)}])
+    case M.CharterSet{bot, text, by, at}:
+      Change.obj("CharterSet", [J.KV{"bot", J.Str{bot}}, J.KV{"text", J.Str{text}}, J.KV{"by", J.Str{by}}, J.KV{"at", Codec.nat(at)}])
+    case M.DecisionLogged{id, bot, conv, run, text, reason, at}:
+      Change.obj("DecisionLogged", [J.KV{"id", J.Str{id}}, J.KV{"bot", J.Str{bot}}, J.KV{"conv", J.Str{conv}}, J.KV{"run", J.Str{run}}, J.KV{"text", J.Str{text}}, J.KV{"reason", J.Str{reason}}, J.KV{"at", Codec.nat(at)}])
 
 def Change.tags() -> List<&2, String>:
-  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet", "WorkSet", "UberSet", "UberOp", "ThreadLaunched", "WakeSet", "WakeDropped", "LockChanged", "RoutinePlan", "RoutineSlot", "RoutineDone", "Reminded", "TaskSet", "TaskDeleted"]
+  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet", "WorkSet", "UberSet", "UberOp", "ThreadLaunched", "WakeSet", "WakeDropped", "LockChanged", "RoutinePlan", "RoutineSlot", "RoutineDone", "Reminded", "TaskSet", "TaskDeleted", "MessageFrom", "ConvSet", "MailPosted", "MailMarked", "MailTagged", "RunSet", "CharterSet", "DecisionLogged"]
 
 def Codec.wake.events(xs: List<&2, J.Json>) -> List<&2, String>:
   match xs:
@@ -460,6 +476,22 @@ def Change.decode.k(i: Nat, +o: J.Json) -> Maybe<&2, M.Change>:
       Some{M.TaskSet{J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "slug", ""), J.Json.get_str(o, "json", ""), J.Json.get_nat(o, "at", 0n)}}
     case 68n:
       Some{M.TaskDeleted{J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "slug", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 69n:
+      Some{M.MessageFrom{J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "msg", ""), J.Json.get_str(o, "from", ""), J.Json.get_str(o, "kind", ""), J.Json.get_str(o, "ref", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 70n:
+      Some{M.ConvSet{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "subject", ""), J.Json.get_str(o, "kind", ""), J.Json.get_str(o, "parts", ""), J.Json.get_str(o, "project", ""), J.Json.get_str(o, "tags", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 71n:
+      Some{M.MailPosted{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "conv", ""), J.Json.get_str(o, "from", ""), J.Json.get_str(o, "to", ""), J.Json.get_str(o, "kind", ""), J.Json.get_str(o, "ref", ""), J.Json.get_str(o, "want", ""), J.Json.get_str(o, "head", ""), J.Json.get_nat(o, "size", 0n), J.Json.get_nat(o, "at", 0n)}}
+    case 72n:
+      Some{M.MailMarked{J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "conv", ""), J.Json.get_str(o, "status", ""), J.Json.get_nat(o, "seen", 0n), J.Json.get_nat(o, "until", 0n), J.Json.get_nat(o, "at", 0n)}}
+    case 73n:
+      Some{M.MailTagged{J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "conv", ""), J.Json.get_str(o, "tags", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 74n:
+      Some{M.RunSet{J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "conv", ""), J.Json.get_str(o, "mail", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 75n:
+      Some{M.CharterSet{J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "text", ""), J.Json.get_str(o, "by", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 76n:
+      Some{M.DecisionLogged{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "conv", ""), J.Json.get_str(o, "run", ""), J.Json.get_str(o, "text", ""), J.Json.get_str(o, "reason", ""), J.Json.get_nat(o, "at", 0n)}}
     case _:
       None{}
 
@@ -615,6 +647,22 @@ def Change.wire(c: M.Change) -> J.Json:
       Change.encode(M.RoutineDone{id, at})
     case M.Reminded{id, bot, thread, text, at}:
       Change.encode(M.Reminded{id, bot, thread, text, at})
+    case M.MessageFrom{thread, msg, from, kind, ref, at}:
+      Change.encode(M.MessageFrom{thread, msg, from, kind, ref, at})
+    case M.ConvSet{id, subject, kind, parts, project, tags, at}:
+      Change.encode(M.ConvSet{id, subject, kind, parts, project, tags, at})
+    case M.MailPosted{id, conv, from, to, kind, ref, want, head, size, at}:
+      Change.encode(M.MailPosted{id, conv, from, to, kind, ref, want, head, size, at})
+    case M.MailMarked{bot, conv, status, seen, until, at}:
+      Change.encode(M.MailMarked{bot, conv, status, seen, until, at})
+    case M.MailTagged{bot, conv, tags, at}:
+      Change.encode(M.MailTagged{bot, conv, tags, at})
+    case M.RunSet{thread, bot, conv, mail, at}:
+      Change.encode(M.RunSet{thread, bot, conv, mail, at})
+    case M.CharterSet{bot, text, by, at}:
+      Change.encode(M.CharterSet{bot, text, by, at})
+    case M.DecisionLogged{id, bot, conv, run, text, reason, at}:
+      Change.encode(M.DecisionLogged{id, bot, conv, run, text, reason, at})
 
 def Change.private(+tag: String) -> Bool:
   Bool.or(String.eq(tag, "DeviceRegistered"), String.eq(tag, "DeviceDropped"))

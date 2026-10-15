@@ -1,4 +1,5 @@
 import Base
+import ./mail.bend as ML
 import ./json.bend as J
 import ./model.bend as M
 import ./review.bend as RVW
@@ -2081,10 +2082,34 @@ def Hub.inbox.v(revive: Bool, +running: Bool, +pending: Bool, +s: M.State, +now:
 def Hub.inbox.w(+running: Bool, gone: Bool, +pending: Bool, +s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String, +msg: String) -> Step:
   Hub.inbox.v(Hub.revive(running, gone, pending), running, pending, s, now, from, to, role, text, msg)
 
+def Origin.one(yes: Bool, thread: String, msg: String, o: ML.Origin, at: Nat) -> List<&2, M.Change>:
+  match yes o:
+    case False{} _: Nil{}
+    case True{} ML.Origin{from, kind, ref}: [M.MessageFrom{thread, msg, from, kind, ref, at}]
+
 # the same under a message id of the caller's (a delegated task's result:
 # Task.finish.go, so a delivery torn by a crash is found again, Task.repair)
-def Hub.inbox.id(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String, +msg: String) -> Step:
-  Hub.inbox.w(Hub.running(Hub.thread(s, to)), M.Worktree.gone(Hub.thread(s, to)), M.Worktree.pending(Hub.thread(s, to), now), s, now, from, to, role, text, msg)
+# Add provenance directly after the existing MessagePosted without moving
+# any delivery changes or effects (including the running-turn steer path).
+def Origin.changes(cs: List<&2, M.Change>, +thread: String, +msg: String, +o: ML.Origin, +at: Nat) -> List<&2, M.Change>:
+  match cs:
+    case Nil{}: Nil{}
+    case M.MessagePosted{+th, +id, role, text, when} <> rest:
+      M.MessagePosted{th, id, role, text, when} <> List.append(&2, M.Change,
+        Origin.one(Bool.and(String.eq(th, thread), String.eq(id, msg)), thread, msg, o, at), Origin.changes(rest, thread, msg, o, at))
+    case h <> rest: h <> Origin.changes(rest, thread, msg, o, at)
+
+def Origin.step(st: Step, thread: String, msg: String, o: ML.Origin, at: Nat) -> Step:
+  match st:
+    case Step{cs, os}: Step{Origin.changes(cs, thread, msg, o, at), os}
+
+def Origin.system(role: M.Role) -> Bool:
+  match role:
+    case M.System{}: True{}
+    case _: False{}
+
+def Hub.inbox.id(+s: M.State, +now: Nat, +from: String, +to: String, +role: M.Role, +text: String, +msg: String) -> Step:
+  Origin.step(Hub.inbox.w(Hub.running(Hub.thread(s, to)), M.Worktree.gone(Hub.thread(s, to)), M.Worktree.pending(Hub.thread(s, to), now), s, now, from, to, role, text, msg), to, msg, ML.Mail.classify(M.Link.from(msg), msg, Origin.system(role), text), now)
 
 def Hub.inbox(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String) -> Step:
   Hub.inbox.id(s, now, from, to, role, text, M.Link.id(from, Hub.id("m", now, Hub.seq(s))))
@@ -5284,7 +5309,7 @@ def Hub.recover(+s: M.State, +now: Nat) -> Step:
 def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match go:
     case True{}:
-      Step.after(Hub.post(s, now, th, Hub.id("c", now, Hub.seq(s)), M.User{}, M.Carry.text() ++ DP.Deploy.suffix(s, VER.Version.current())),
+      Step.after(Origin.step(Hub.post(s, now, th, Hub.id("c", now, Hub.seq(s)), M.User{}, M.Carry.text() ++ DP.Deploy.suffix(s, VER.Version.current())), th, Hub.id("c", now, Hub.seq(s)), ML.Origin{"backplane", "carry", ""}, now),
         [M.ActivityLogged{th, Hub.id("r", now, 1n+Hub.seq(s)), "info", "restart", "Continuing after the restart", now}])
     case False{}:
       Step.none()

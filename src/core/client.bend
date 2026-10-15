@@ -9981,12 +9981,28 @@ def Touch.raw(c: M.Change) -> List<&2, String>:
       ["*"]
     case M.TaskDeleted{_, _, _}:
       ["*"]
+    case M.MessageFrom{thread, _, _, _, _, _}:
+      [thread]
+    case M.ConvSet{_, _, _, _, _, _, _}:
+      ["@mail"]
+    case M.MailPosted{_, _, _, _, _, _, _, _, _, _}:
+      ["@mail"]
+    case M.MailMarked{_, _, _, _, _, _}:
+      ["@mail"]
+    case M.MailTagged{_, _, _, _}:
+      ["@mail"]
+    case M.RunSet{_, _, _, _, _}:
+      ["@mail"]
+    case M.CharterSet{_, _, _, _}:
+      ["@mail"]
+    case M.DecisionLogged{_, _, _, _, _, _, _}:
+      ["@mail"]
 
 # a thread id as touched: a subagent's log ("@sub:<thread>", model.bend's
 # Bg.log) is its thread's; any other name with "@" is no plain thread, so
 # it touches everything
 def Touch.id(+id: String) -> String:
-  Bool.pick(String, String.starts_with(id, "@sub:"), String.drop(id, 5n), Bool.pick(String, String.starts_with(id, "@"), "*", id))
+  Bool.pick(String, String.starts_with(id, "@sub:"), String.drop(id, 5n), Bool.pick(String, Bool.and(String.starts_with(id, "@"), Bool.not(String.starts_with(id, "@mail"))), "*", id))
 
 def Touch.ids(ids: List<&2, String>) -> List<&2, String>:
   match ids:

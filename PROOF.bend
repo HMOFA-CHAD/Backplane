@@ -1,4 +1,5 @@
 import Base
+import ./src/core/mail.bend as ML # mail 1
 import ./src/core/stamp.bend as STP
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
@@ -10283,3 +10284,75 @@ def Laws.draft_stale_empty_never(said):
 def Laws.draft_stale_last():
   {==}
 # ---- end sent-draft ----
+
+# ---- mail 1 ----
+def Laws.mail_route_person_empty(from, to):
+  {==}
+
+def Laws.mail_route_thread_pair():
+  {==}
+
+def Laws.mail_route_launch(child, to):
+  {==}
+
+def Laws.mail_route_room():
+  {==}
+
+def Laws.mail_route_system(to):
+  {==}
+
+def Laws.mail_want_completed_fyi(own, direct, mentioned):
+  {==}
+
+def Laws.mail_want_failed_act():
+  {==}
+
+def Laws.mail_want_given_wins(kind, flags):
+  {==}
+
+def Laws.mail_want_given_act(kind, flags):
+  {==}
+
+def Laws.mail_want_room_fyi():
+  {==}
+
+def Laws.mail_want_mention_act():
+  {==}
+
+def Laws.mail_want_own_request():
+  {==}
+
+def Laws.mail_want_wake_act():
+  {==}
+
+def Laws.mail_want_lost_act():
+  {==}
+
+def Laws.mail_want_deploy_own():
+  {==}
+
+def Laws.mail_want_lock_own():
+  {==}
+
+def Laws.mail_want_status_fyi():
+  {==}
+
+def Laws.mail_want_routine_act():
+  {==}
+
+def Laws.mail_want_hook_act():
+  {==}
+
+def Laws.mail_want_direct_act():
+  {==}
+
+def Laws.mail_want_person_act():
+  {==}
+
+def Laws.mail_post_idempotent(b, m):
+  {==}
+
+def Laws.mail_unread_after_post():
+  {==}
+
+# ---- end mail 1 ----
