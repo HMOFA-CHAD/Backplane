@@ -44,6 +44,8 @@
 //   deploy       the first command calls the hub's deploy_restart (the MCP
 //                URL, BP_DEPLOY_ARGS, JSON, as its arguments), then ends
 // Every line read is appended to $FAKE_LOG ("IN <line>"), and "START pid".
+// BP_EOF_FINISH=1: at the end of stdin the turn in flight is finished
+// before the process exits, as Claude Code does.
 //
 //   test/tools/claude_standin.ts is run through a `claude` wrapper:
 //   #!/bin/sh
@@ -72,6 +74,9 @@ const mcpUrl = (() => {
 })();
 if (mcpUrl) log(`MCP ${process.pid} ${mcpUrl}`);
 
+// (with BP_EOF_FINISH, like Claude Code, a stdout nobody reads any more
+// is no reason to stop)
+if (process.env.BP_EOF_FINISH === "1") process.stdout.on("error", () => {});
 const emit = (o: object) => process.stdout.write(JSON.stringify(o) + "\n");
 const lc = (u: string, state: string) => {
   if (mode !== "noLC" && mode !== "tail-nonl") emit({ type: "command_lifecycle", command_uuid: u, state, uuid: rnd(), session_id: session });
@@ -357,6 +362,13 @@ rl.on("line", (line) => {
 });
 rl.on("close", () => {
   log(`EOF ${process.pid}`);
+  // BP_EOF_FINISH=1: as Claude Code does, the turn in flight is finished
+  // first (its lines go to a stdout nobody may read any more)
+  if (process.env.BP_EOF_FINISH === "1") {
+    const done = () => (busy || queue.length ? setTimeout(done, 100) : (log(`FINISHED ${process.pid}`), setTimeout(() => process.exit(0), 50)));
+    done();
+    return;
+  }
   setTimeout(() => process.exit(0), 50);
 });
 process.on("SIGTERM", () => {

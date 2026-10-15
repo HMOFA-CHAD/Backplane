@@ -897,13 +897,18 @@ static void __attribute__((constructor)) sys_exe_dir_use(void) {
 // Replace this process with path (argv[0] = path, then args). Descriptors
 // are close-on-exec, so agents see their stdin close and exit. Answers only
 // on failure.
+// the agents kept through the exec (effects/adopt.c, when linked)
+extern void bp_adopt_exec(int keep) __attribute__((weak));
+
 Term sys_exec_run(Env e, Term* f, IoWork* w) {
   int ok = 1;
   char** argv = host_argv(e, f[0], f[1], &ok);
   int code = ok ? 0 : EILSEQ;
   if (ok) {
+    if (bp_adopt_exec) bp_adopt_exec(1);
     execv(argv[0], argv);
     code = errno;
+    if (bp_adopt_exec) bp_adopt_exec(0);
   }
   for (char** a = argv; *a != NULL; a += 1) {
     free(*a);
