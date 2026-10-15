@@ -686,6 +686,15 @@ def Pics.over.k(draw: Bool, +x: U32, +y: U32, +w: U32, +h: U32, +v: String, +pic
     case False{}:
       base
 
+# an image hit wide enough and not drawn yet (the list of values seen is
+# walked only for image hits: walking it for every hit was quadratic)
+def Pics.want(img: Bool, +wide: Bool, +done: List<&2, String>, +v: String) -> Bool:
+  match img:
+    case True{}:
+      Bool.and(wide, Bool.not(Pics.had(done, v)))
+    case False{}:
+      False{}
+
 # each image once, at its rectangle, under the UI
 def Pics.over(hs: List<&2, N.Hit>, +pics: Map<&2, BM.Bitmap>, +done: List<&2, String>, +ww: U32, +hh: U32, base: Image) -> Image:
   match hs:
@@ -693,7 +702,7 @@ def Pics.over(hs: List<&2, N.Hit>, +pics: Map<&2, BM.Bitmap>, +done: List<&2, St
       base
     case N.Hit{+x0, +y0, +x1, +y1, +a, +v} <> t:
       Pics.over(t, pics, v <> done, ww, hh,
-        Pics.over.k(Bool.and(Bool.and(String.eq(a, "img"), U32.is_gt((x1 - x0 : U32), 1)), Bool.not(Pics.had(done, v))), x0, y0, (x1 - x0 : U32), (y1 - y0 : U32), v, pics, ww, hh, base))
+        Pics.over.k(Pics.want(String.eq(a, "img"), U32.is_gt((x1 - x0 : U32), 1), done, v), x0, y0, (x1 - x0 : U32), (y1 - y0 : U32), v, pics, ww, hh, base))
 
 # Machines
 # --------
