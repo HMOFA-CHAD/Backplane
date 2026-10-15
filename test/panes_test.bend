@@ -4,6 +4,8 @@ import ../src/core/client.bend as U
 import ../src/core/todo.bend as TD
 import ../src/app/nui.bend as N
 import ../src/app/layout.bend as L
+import ../src/core/subs.bend as SB
+import ../src/core/model.bend as M
 
 # Long threads' panes: the todo card opens and shuts with its head and shows
 # every step on "Show all" (client.bend's Todos), and the window's scrolling
@@ -47,8 +49,56 @@ def notch(+n: N.Nui, +last: Nat, +dir: U32) -> N.Nui:
 def at(+n: N.Nui) -> String:
   Nat.show(L.Pane.off(U.Ui.infos(N.Nui.ui(n)), "subs:t1"))
 
+# a pane's hits as the frame keeps them: topmost first (layout.bend's
+# final reverse), so N.Hit.find answers what a click there does
+def hits(o: L.Out) -> List<&2, N.Hit>:
+  match o:
+    case L.Out{_, hs}:
+      List.reverse(&2, N.Hit, hs)
+
+def hit.action(m: Maybe<&2, N.Hit>) -> String:
+  match m:
+    case Some{N.Hit{_, _, _, _, act, _}}:
+      act
+    case None{}:
+      ""
+
+def clicked(+u: U.Ui, h: Maybe<&2, N.Hit>) -> U.Ui:
+  match h:
+    case Some{N.Hit{_, _, _, _, act, value}}:
+      ui.of(U.Ui.act(u, act, value))
+    case None{}:
+      u
+
+def sub.row() -> SB.SubRow:
+  SB.SubRow{"c", True{}, "Inspect power", "subagent", "running", "", True{}, False{}, 0n, Nil{}}
+
+# the subagents panel at x 100..900, its head at y 100..130
+def subs.out(+open: Bool) -> L.Out:
+  L.Lay.subs(L.Ty.none(), [sub.row()], SB.Subs.panel.rows(open, [sub.row()]), open, "t1", 0n, 100, 900, 100)
+
 def main() -> IO(Unit):
   do IO<Unit>:
+    # hit order: a pane's whole-box "pane" hit (the wheel) sits under
+    # every hit drawn on it, so a click on the head or a row is theirs
+    C.Check.str("subagents head beats its scrolling pane", hit.action(N.Hit.find(hits(subs.out(True{})), 200, 110)), "fold")
+    C.Check.str("a shut subagents head opens it", hit.action(N.Hit.find(hits(subs.out(False{})), 200, 110)), "fold")
+    +shut : U.Ui = clicked(U.Ui.init(0n), N.Hit.find(hits(subs.out(True{})), 200, 110))
+    C.Check.str("a head click shuts the panel", bool(SB.Subs.panel.open(U.Ui.infos(shut), "t1", [sub.row()])), "false")
+    +back : U.Ui = clicked(shut, N.Hit.find(hits(subs.out(False{})), 200, 110))
+    C.Check.str("a second head click opens it", bool(SB.Subs.panel.open(U.Ui.infos(back), "t1", [sub.row()])), "true")
+    C.Check.str("a subagent row stays clickable", hit.action(N.Hit.find(hits(subs.out(True{})), 200, 140)), "fold")
+    C.Check.str("the wheel still finds the pane under the head", Bool.show(String.starts_with(N.Hit.value_at(hits(subs.out(True{})), "pane", 200, 110), "subs:t1|")), "True")
+    +task : SB.SubRow = SB.SubRow{"kid", False{}, "Inspect board", "opus", "running", "", True{}, False{}, 0n, Nil{}}
+    C.Check.str("Stop beats its row", hit.action(N.Hit.find(hits(L.Sa.row(L.Ty.none(), task, 100, 900, 100)), (L.Sa.stop.x(L.Ty.none(), "running", "task-cancel", 900) + 2 : U32), 110)), "task-cancel")
+    C.Check.str("the row beside Stop selects", hit.action(N.Hit.find(hits(L.Sa.row(L.Ty.none(), task, 100, 900, 100)), 200, 110)), "select")
+    +review : U.RpView = U.RpView{"erc", Nil{}, "ERC", "[Board](/tmp/board.kicad_pcb)", "", False{}}
+    C.Check.str("a review link beats its scrolling pane", hit.action(N.Hit.find(hits(L.Rpw.body(True{}, L.Ty.none(), review, "t1", 0n, 100, 900, 500)), 125, 150)), "file-open")
+    +todo_out : L.Out = L.Lay.todos.k(True{}, L.Ty.none(), todos(4n), Nil{}, "", False{}, False{}, "t1", 0n, 4n, 100, 900, 500)
+    C.Check.str("the todo head beats its scrolling pane", hit.action(N.Hit.find(hits(todo_out), 200, 470)), "fold")
+    +ask : M.Ask = M.Ask{"a", "t1", "approval", "Bash", "Run ls", "", True{}, ""}
+    +ask_out : L.Out = L.Ask.card(L.Ty.none(), ask, "", Map.new(&2, String), 100, 900, 100)
+    C.Check.str("an approval's button beats its scrolling pane", hit.action(N.Hit.find(hits(ask_out), 880, (100 + L.Ask.h(L.Ty.none(), ask, Map.new(&2, String), 768) - 20 : U32))), "answer")
     +u : U.Ui = U.Ui.init(0n)
     +many : List<&2, TD.Todo> = todos(200n)
     C.Check.str("a short list has no last line", U.Todos.more(False{}, todos(4n)), "")
