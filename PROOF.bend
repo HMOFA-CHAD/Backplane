@@ -10667,6 +10667,8 @@ def Laws.usage_boat_due_never_read(now):
   {==}
 
 def Laws.usage_boat_usd_exact():
+  {==}
+
 # ---- links (cards, trail) ----
 def Laws.cards_get_fresh():
   {==}
