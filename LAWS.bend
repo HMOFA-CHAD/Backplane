@@ -1,6 +1,7 @@
 import Base
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
+import ./src/core/usage.bend as UZ
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/ref.bend as REF
 import ./src/core/tz.bend as TZ
@@ -8673,3 +8674,41 @@ law i18n_fallback_fixture_plural:
   for +n: Nat
   {I18F.T.files.count(I18.Ja{}, n) == I18F.T.files.count(I18.En{}, n) : String}
 # ---- end i18n ----
+# ---- usage-screen ----
+# The model chip's context tail and Settings > Usage (src/core/usage.bend)
+
+# a provider that never reports its context says so instead of nothing
+law usage_tail_na:
+  {UZ.Use.tail("codex", 0n, "") == " · ctx n/a" : String}
+
+# Claude shows nothing until its first reading
+law usage_tail_claude_waits:
+  {UZ.Use.tail("claude", 0n, "") == "" : String}
+
+# a reading's text is shown as it is, whatever the provider
+law usage_tail_reading:
+  for +p: String
+  for +t: String
+  {UZ.Use.tail(p, 5n, t) == t : String}
+
+# a reading is what a session holds, said as held, with its share (small
+# values: the large ones of a real session are in test/usage_test.bend)
+law usage_note_held:
+  {UZ.Use.held.note(50n, 200n) == "50 of 200 held (25%)" : String}
+
+law usage_note_no_window:
+  {UZ.Use.held.note(5n, 0n) == "5 held, window unknown" : String}
+
+# without a window there is no share, whatever is held
+law usage_pct_no_window:
+  for +u: Nat
+  {UZ.Use.pct(u, 0n) == 0n : Nat}
+
+# Boat's CLI is asked at once when it never was, whenever that is
+law usage_boat_due_never_read:
+  for +now: Nat
+  {UZ.Bj.due("", True{}, now) == True{} : Bool}
+
+# credit-seconds are shown as exact dollars, never rounded
+law usage_boat_usd_exact:
+  {UZ.Bj.usd(158n) == "$0.00158" : String}

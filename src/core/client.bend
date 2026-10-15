@@ -3,6 +3,7 @@ import ./deploy.bend as DP
 import ./live.bend as LV
 import ./json.bend as J
 import ./model.bend as M
+import ./usage.bend as UZ
 import ./codec.bend as C
 import ./vt.bend as VT
 import ./emb.bend as EM
@@ -2499,7 +2500,9 @@ def Usage.text(+used: Nat, +window: Nat) -> String:
       " · ctx " ++ Nat.show(Nat.div(Nat.mul(used, 100n), window)) ++ "% of " ++ Usage.tokens(window)))
 
 def Usage.tail(+st: M.State, +th: String) -> String:
-  Usage.text(M.Usage.used(M.Setting.get(st, M.Usage.key(th), "")), M.Usage.window(M.Setting.get(st, M.Usage.key(th), "")))
+  UZ.Use.tail(M.Thread.provider(Ui.thread(st, th)), M.Usage.used(M.Setting.get(st, M.Usage.key(th), "")),
+    Usage.text(M.Usage.used(M.Setting.get(st, M.Usage.key(th), "")), M.Usage.window(M.Setting.get(st, M.Usage.key(th), ""))))
+
 
 # the model chip's label with the thread's effort
 def Effort.label(+label: String, +e: String) -> String:
@@ -7681,12 +7684,25 @@ def Voice.act(i: Nat, +u: Ui, +value: String) -> Act:
     case _:
       Voice.act.tail(i, u, value)
 
-# opening Settings asks for the voice settings; opening or closing it
-# puts the pairing code away
+# Settings > Usage's Boat side: the hub reads Boat's CLI (src/core/usage.bend's
+# Bj: "read" when it is due, "refresh" from the Refresh button) and answers
+# with info "boat.usage"
+def Usage.ask.k(cs: List<&2, Cmd>, b: Act) -> Act:
+  match b:
+    case Act{u, more}:
+      Act{u, List.append(&2, Cmd, cs, more)}
+
+def Usage.ask(a: Act, +what: String) -> Act:
+  match a:
+    case Act{u, cs}:
+      Usage.ask.k(cs, Voice.rpc(u, "usage", [J.KV{"do", J.Str{what}}]))
+
+# opening Settings asks for the voice settings and Boat's usage; opening or
+# closing it puts the pairing code away
 def Voice.flag.k(ask: Bool, a: Act) -> Act:
   match ask a:
     case True{} Act{u, cs}:
-      Ui.also(Voice.rpc(Ui.flag_off(u, "pairqr"), "status", Nil{}), cs)
+      Usage.ask(Ui.also(Voice.rpc(Ui.flag_off(u, "pairqr"), "status", Nil{}), cs), "read")
     case False{} _:
       a
 
@@ -9670,12 +9686,25 @@ def Tzs.act.k(i: Nat, +u: Ui, +value: String) -> Act:
 def Tzs.act(+u: Ui, +action: String, +value: String) -> Act:
   Tzs.act.k(C.Codec.pos(["tz-set", "tz-auto", "tz-report"], action), u, value)
 
+# Settings > Usage (src/core/usage.bend): the model side from the log, Boat's
+# from the hub's info "boat.usage"; every client draws these rows
+def Usage.rows(+u: Ui) -> List<&2, UZ.URow>:
+  List.append(&2, UZ.URow, UZ.Use.rows(Ui.state.of(u), Ui.threads(Ui.state.of(u))), UZ.Bj.rows(Ui.state.of(u), Ui.info(u, "boat.usage"), Side.now(u)))
+
+# (Settings > Usage's "usage-refresh": Boat's CLI read again now)
+def Ui.act.us(us: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match us:
+    case True{}:
+      Usage.ask(Act{u, Nil{}}, "refresh")
+    case False{}:
+      Ui.act.s(String.eq(action, "skill-close"), u, action, value)
+
 def Ui.act.z(tz: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match tz:
     case True{}:
       Tzs.act(u, action, value)
     case False{}:
-      Ui.act.s(String.eq(action, "skill-close"), u, action, value)
+      Ui.act.us(String.eq(action, "usage-refresh"), u, action, value)
 
 # Only inspect the thread prefix, leaving the potentially long key snapshot alone.
 def Ui.subs.thread(s: String, acc: String) -> String:
