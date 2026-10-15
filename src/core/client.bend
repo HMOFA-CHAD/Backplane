@@ -2826,6 +2826,31 @@ def Ui.scratch_set(u: Ui, +k: String, v: String) -> Ui:
 # another client's new thread, a replayed log or an older request's
 # answer selects nothing (laws want_new_*, made_*, replay_cannot_select).
 
+# Browser pages on show (server's castio.bend)
+# ---------------------------------------------
+# A client showing the selected thread's Browser tab tells the hub so with
+# every fourth frame of that page it hears (browser.seen): the hub then
+# sends it every frame of the page and the page is cast faster. (The
+# window says it as each frame lands instead: main.bend's Shot.seen.)
+
+# the page the Browser tab shows ("" when the tab is not on show)
+def Ui.cast.page(+u: Ui) -> String:
+  Bool.pick(String, Bool.and(Ui.panel(u), String.eq(Ui.info(u, "view.kind:" ++ Ui.sel(u)), "browser")), Ui.page(u), "")
+
+def Ui.cast.n(+n: Nat, +u: Ui, +page: String) -> Act:
+  Bool.pick(Act, Nat.is_eq(n, 1n), Ui.rpc(u, "browser.seen", [J.KV{"page", J.Str{page}}]), Act{u, Nil{}})
+
+def Ui.cast.k(on: Bool, +u: Ui, +page: String) -> Act:
+  match on:
+    case True{}:
+      Ui.cast.n(Nat.mod(Nat.add(M.Switch.num(Ui.scratch(u, "@cast.n"), 0n), 1n), 4n), Ui.scratch_set(u, "@cast.n", Nat.show(Nat.mod(Nat.add(M.Switch.num(Ui.scratch(u, "@cast.n"), 0n), 1n), 4n))), page)
+    case False{}:
+      Act{u, Nil{}}
+
+# a frame of page heard ({"t":"shot"}): said seen when the tab shows it
+def Ui.cast.seen(+u: Ui, +page: String) -> Act:
+  Ui.cast.k(Bool.and(Bool.not(String.is_empty(page)), String.eq(page, Ui.cast.page(u))), u, page)
+
 def Made.at(+u: Ui) -> String:
   Ui.info(u, "local.machine") ++ "|" ++ Ui.info(u, "local.generation")
 
@@ -9318,7 +9343,6 @@ def Teach.actions() -> List<&2, String>:
 # the tk- and bb- actions act on the bot whose tab is open
 def Teach.act(+u: Ui, +action: String, +value: String) -> Act:
   Teach.act.k(C.Codec.pos(Teach.actions(), action), u, Bots.cur(u), value)
-
 
 # a user action with its value
 def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Act:

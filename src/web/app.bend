@@ -20,11 +20,12 @@ def restore(u: U.Ui, id: String, text: String) -> U.Ui:
   U.Ui.restore(u, id, text)
 
 # a bot's browser has a new frame ({"t":"shot","bot":...,"n":...}): the
-# Browser tab loads /bots/<bot>/screen.jpg?n=<n>
+# Browser tab loads /bots/<bot>/screen.jpg?n=<n>, and says it is on show
+# (client.bend's Ui.cast.seen) so every frame of the page comes
 def recv.k(shot: Bool, u: U.Ui, +o: J.Json) -> U.Act:
   match shot:
     case True{}:
-      U.Act{U.Ui.info_set(u, "shot." ++ J.Json.get_str(o, "bot", ""), J.Json.as_raw(J.Json.get(o, "n"), "")), Nil{}}
+      U.Ui.cast.seen(U.Ui.info_set(u, "shot." ++ J.Json.get_str(o, "bot", ""), J.Json.as_raw(J.Json.get(o, "n"), "")), J.Json.get_str(o, "bot", ""))
     case False{}:
       U.Ui.recv_act(u, o)
 

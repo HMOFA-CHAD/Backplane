@@ -66,6 +66,8 @@ type ShellMsg is Data:
   # a round of a remote hub's files for a viewer's source came in (RW.Rvw.sync)
   RvGot{key: String, tag: String, ver: String, reread: Bool}
   PicOk{tag: String, path: String, w: U32, h: U32, rgb: List<&2, U32>}
+  # an image decoded off the loop straight into its quadtree (Imgfx.tree)
+  PicTree{tag: String, path: String, w: U32, h: U32, tree: Image}
   PicErr{tag: String, path: String, why: String}
   Blink{}
   # the cats' next frame
@@ -383,10 +385,17 @@ def Pics.sent.err(e: U32 & String, +q: Chan(ShellMsg), +tag: String, +path: Stri
     ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, PicErr{tag, path, why})
     return Unit{}
 
-def Pics.sent(r: Result<&1, &1, U32 & String, U32 & U32 & List<&2, U32>>, +q: Chan(ShellMsg), +tag: String, +path: String) -> IO(Unit):
+def Pics.sent.tree(got: U32 & U32 & Image, +q: Chan(ShellMsg), +tag: String, +path: String) -> IO(Unit):
+  (w, rest) = got
+  (h, t) = rest
+  do IO<Unit>:
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, PicTree{tag, path, w, h, t})
+    return Unit{}
+
+def Pics.sent(r: Result<&1, &1, U32 & String, U32 & U32 & Image>, +q: Chan(ShellMsg), +tag: String, +path: String) -> IO(Unit):
   match r:
     case Done{got}:
-      Pics.sent.ok(got, q, tag, path)
+      Pics.sent.tree(got, q, tag, path)
     case Fail{e}:
       Pics.sent.err(e, q, tag, path)
 
@@ -423,8 +432,10 @@ def Pics.maxw.of(+key: String) -> U32:
 def Pics.maxh.of(+key: String) -> U32:
   Bool.pick(U32, Bool.or(Pics.full(key), Shot.is(key)), 1000, Pics.maxh())
 
+# (decoded off the loop straight into the quadtree a Bitmap holds: a
+# browser frame took ~800 ms as a list of its bytes walked in Bend)
 def Pics.decode(+file: String, +q: Chan(ShellMsg), +tag: String, +path: String) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & U32 & List<&2, U32>>, Unit, IF.Imgfx.decode(file, Pics.maxw.of(path), Pics.maxh.of(path)), r => Pics.sent(r, q, tag, path))
+  IO.bind(Result<&1, &1, U32 & String, U32 & U32 & Image>, Unit, IF.Imgfx.tree(file, Pics.maxw.of(path), Pics.maxh.of(path)), r => Pics.sent(r, q, tag, path))
 
 def Pics.fetched(r: P.Ran, +q: Chan(ShellMsg), +tag: String, +path: String) -> IO(Unit):
   match r:
@@ -542,11 +553,33 @@ def Shot.ok(+path: String, +note: String) -> Bool:
 def Pics.noted(u: U.Ui, +path: String, +note: String) -> U.Ui:
   Shot.note(U.Ui.info_set(u, "img:" ++ path, note), path, note)
 
+# a browser frame on show tells this hub so, about once a second while
+# frames keep coming (browser.seen): it then sends every frame of the page,
+# and the helper casts it at up to --cast-fps (castio.bend). Another
+# machine's hub is never told (its frames come by HTTP).
+def Shot.seen.k(due: Bool, +u: U.Ui, +i: Chan(S.Msg), +page: String, +ms: Nat) -> IO(U.Ui):
+  match due:
+    case True{}:
+      do IO<U.Ui>:
+        ok : Result<&1, &1, S.Msg, Unit> <- Chan.send(S.Msg, i, S.Rpc{0, "{\"id\":0,\"m\":\"browser.seen\",\"p\":{\"page\":" ++ J.Json.show(J.Str{page}) ++ "}}"})
+        return U.Ui.scratch_set(u, "@cast." ++ page, Nat.show(ms))
+    case False{}:
+      IO.pure(U.Ui, u)
+
+def Shot.seen(on: Bool, +u: U.Ui, +i: Chan(S.Msg), +page: String) -> IO(U.Ui):
+  match on:
+    case True{}:
+      IO.bind(Nat, U.Ui, IO.now(), +ms => Shot.seen.k(Nat.is_ge(ms, Nat.add(Maybe.default(&2, Nat, Nat.read(U.Ui.scratch(u, "@cast." ++ page)), 0n), 900n)), u, i, page, ms))
+    case False{}:
+      IO.pure(U.Ui, u)
+
 def Pics.store(a: Shell, +path: String, +note: String, m: Maybe<&2, BM.Bitmap>) -> IO(Shell):
   match a:
-    case Shell{+n, w, _, qd, q, i, Aux{ws, ty, Tie{home, url, tag, k, +ks}, fr}}:
-      Shell.later(Shell{N.Nui.with_ui(n, Pics.noted(N.Nui.ui(n), path, note)), w, True{}, qd, q, i,
-        Aux{ws, ty, Tie{home, url, tag, k, TieKeep.with_pics(ks, Shot.keep(Shot.ok(path, note), m, TieKeep.pics(ks), path))}, fr}})
+    case Shell{+n, w, _, qd, q, +i, Aux{ws, ty, Tie{home, +url, tag, k, +ks}, fr}}:
+      do IO<Shell>:
+        u2 : U.Ui <- Shot.seen(Bool.and(Shot.ok(path, note), String.is_empty(url)), Pics.noted(N.Nui.ui(n), path, note), i, Shot.bot(path))
+        Shell.later(Shell{N.Nui.with_ui(n, u2), w, True{}, qd, q, i,
+          Aux{ws, ty, Tie{home, url, tag, k, TieKeep.with_pics(ks, Shot.keep(Shot.ok(path, note), m, TieKeep.pics(ks), path))}, fr}})
 
 # an image loaded (or failed) for this connection: keep it and redraw
 def Pics.got(current: Bool, a: Shell, +path: String, +note: String, m: Maybe<&2, BM.Bitmap>) -> IO(Shell):
@@ -1042,6 +1075,8 @@ def Shell.tagged.k(m: ShellMsg, +ti: Tie, +lo: String, a: Shell) -> IO(Shell):
       Shell.retry(String.eq(tag, Tie.tag(ti)), a, Tie.url(ti))
     case PicOk{tag, +path, +w, +h, rgb}:
       Pics.got(String.eq(tag, Tie.tag(ti)), a, path, Pics.size(w, h), Some{BM.Bitmap.image(w, h, rgb, 0, 0, w, h)})
+    case PicTree{tag, +path, +w, +h, t}:
+      Pics.got(String.eq(tag, Tie.tag(ti)), a, path, Pics.size(w, h), Some{BM.Bitmap{w, h, R.Frame.depth(w, h), t, 0, 0, w, h}})
     case PicErr{tag, +path, why}:
       Pics.got(String.eq(tag, Tie.tag(ti)), a, path, "err:" ++ why, None{})
     case _:
@@ -2372,6 +2407,8 @@ def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
       Shell.rvgot(a, key, tag, ver, reread)
     case PicOk{tag, path, w, h, rgb}:
       Shell.tagged(a, PicOk{tag, path, w, h, rgb})
+    case PicTree{tag, path, w, h, t}:
+      Shell.tagged(a, PicTree{tag, path, w, h, t})
     case PicErr{tag, path, why}:
       Shell.tagged(a, PicErr{tag, path, why})
     case Opened{th}:
@@ -2439,6 +2476,8 @@ def ShellMsg.kind(m: ShellMsg) -> String:
     case RvGot{_, _, _, _}:
       "rvgot"
     case PicOk{_, _, _, _, _}:
+      "pic"
+    case PicTree{_, _, _, _, _}:
       "pic"
     case PicErr{_, _, _}:
       "pic_err"

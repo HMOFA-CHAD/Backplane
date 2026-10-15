@@ -7,7 +7,7 @@
 // Barrett (public domain, or MIT; its licence is at its end), inlined here
 // because an effect's C is pasted into the program's one C file.
 
-#ifdef CID(Imgfx.decode)
+#if defined(CID(Imgfx.decode)) || defined(CID(Imgfx.tree))
 
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
@@ -8010,25 +8010,15 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 // ---- stb_image.h ends ----
 
-static Term imgfx_bytes(Env e, const unsigned char* p, u64 n) {
-  Term xs = term_pak(CID_NIL, 0);
-  for (u64 i = n; i > 0; i -= 1) {
-    xs = io_node(e, CID_CON, (Term)p[i - 1], xs);
-  }
-  return xs;
-}
-
-Term imgfx_decode_run(Env e, Term* f, IoWork* w) {
-  u64 n = 0;
-  char* path = io_cstr(e, f[0], &n);
-  u32 maxw = (u32)f[1];
-  u32 maxh = (u32)f[2];
+// an image file's pixels as RGB bytes, box-filtered down to fit maxw x
+// maxh (never up); NULL with *why set when it cannot be read
+static unsigned char* imgfx_load(const char* path, u32 maxw, u32 maxh, u64* tw_out, u64* th_out, const char** why) {
   int sw = 0, sh = 0, ch = 0;
-  unsigned char* px = io_nul(path, n) ? NULL : stbi_load(path, &sw, &sh, &ch, 3);
-  free(path);
+  unsigned char* px = stbi_load(path, &sw, &sh, &ch, 3);
   if (px == NULL) {
-    const char* why = stbi_failure_reason();
-    return io_fail(e, EINVAL, why ? why : "cannot read the image");
+    const char* r = stbi_failure_reason();
+    *why = r ? r : "cannot read the image";
+    return NULL;
   }
   if (maxw == 0) maxw = 1;
   if (maxh == 0) maxh = 1;
@@ -8038,10 +8028,15 @@ Term imgfx_decode_run(Env e, Term* f, IoWork* w) {
   if (th > maxh) { tw = tw * maxh / th; th = maxh; }
   if (tw == 0) tw = 1;
   if (th == 0) th = 1;
+  if (tw == (u64)sw && th == (u64)sh) {
+    *tw_out = tw; *th_out = th;
+    return px;
+  }
   unsigned char* out = malloc(tw * th * 3);
   if (out == NULL) {
     stbi_image_free(px);
-    return io_fail(e, ENOMEM, "out of memory");
+    *why = "out of memory";
+    return NULL;
   }
   // each target pixel: the mean of the source pixels it covers
   for (u64 y = 0; y < th; y += 1) {
@@ -8062,6 +8057,30 @@ Term imgfx_decode_run(Env e, Term* f, IoWork* w) {
     }
   }
   stbi_image_free(px);
+  *tw_out = tw; *th_out = th;
+  return out;
+}
+
+#endif
+
+#ifdef CID(Imgfx.decode)
+
+static Term imgfx_bytes(Env e, const unsigned char* p, u64 n) {
+  Term xs = term_pak(CID_NIL, 0);
+  for (u64 i = n; i > 0; i -= 1) {
+    xs = io_node(e, CID_CON, (Term)p[i - 1], xs);
+  }
+  return xs;
+}
+
+Term imgfx_decode_run(Env e, Term* f, IoWork* w) {
+  u64 n = 0;
+  char* path = io_cstr(e, f[0], &n);
+  const char* why = NULL;
+  u64 tw = 0, th = 0;
+  unsigned char* out = io_nul(path, n) ? (why = "cannot read the image", NULL) : imgfx_load(path, (u32)f[1], (u32)f[2], &tw, &th, &why);
+  free(path);
+  if (out == NULL) return io_fail(e, EINVAL, why);
   Term bytes = imgfx_bytes(e, out, tw * th * 3);
   free(out);
   return io_done(e, io_tup(e, (Term)(u32)tw, io_tup(e, (Term)(u32)th, bytes)));
@@ -8070,5 +8089,99 @@ Term imgfx_decode_run(Env e, Term* f, IoWork* w) {
 static void __attribute__((constructor)) imgfx_decode_use(void) {
   io_eff(CID(Imgfx.decode), imgfx_decode_run);
 }
+
+#endif
+
+#ifdef CID(Imgfx.tree)
+
+// Imgfx.tree(path, maxw, maxh): the same pixels as gfx/bitmap.bend's
+// Bitmap.image would hold them: an Image quadtree 2^d wide (d as
+// R.Frame.depth: 1 + log2(max(w, h, 2) - 1)), padded with black, equal
+// quads merged into one leaf, a pixel 0xRRGGBB. The file is read and
+// decoded off the loop (a worker thread); only the tree is built on it, so
+// a browser frame costs the window a few ms, not a list of every byte and
+// a Bend walk over it.
+
+static u32 imgfx_depth(u64 w, u64 h) {
+  u64 m = w > h ? w : h;
+  if (m < 2) m = 2;
+  m -= 1;
+  u32 d = 0;
+  while (m >>= 1) d += 1;
+  return d + 1;
+}
+
+typedef struct { const unsigned char* px; u64 w, h; } ImgfxSrc;
+
+static Term imgfx_qua(Env e, Term a, Term b, Term c, Term d) {
+  u64 l = heap_alloc(e, cls_fit(4));
+  e.mem[l]     = io_seal(e, a, CID_QUA);
+  e.mem[l + 1] = io_seal(e, b, CID_QUA);
+  e.mem[l + 2] = io_seal(e, c, CID_QUA);
+  e.mem[l + 3] = io_seal(e, d, CID_QUA);
+  return term_ctr(CID_QUA, l);
+}
+
+// a quad's colour when it is one leaf, else 2^24
+static u32 imgfx_solid(Term t, u32* colour) {
+  if (term_tag(t) == TAG_PAK && term_aux(t) == CID_PIX) { *colour = (u32)term_loc(t); return 1; }
+  return 0;
+}
+
+static Term imgfx_build(Env e, const ImgfxSrc* s, u64 x, u64 y, u32 d) {
+  if (x >= s->w || y >= s->h) return term_pak(CID_PIX, 0);
+  if (d == 0) {
+    const unsigned char* p = s->px + (y * s->w + x) * 3;
+    return term_pak(CID_PIX, ((u32)p[0] << 16) | ((u32)p[1] << 8) | (u32)p[2]);
+  }
+  u64 half = (u64)1 << (d - 1);
+  Term a = imgfx_build(e, s, x, y, d - 1);
+  Term b = imgfx_build(e, s, x + half, y, d - 1);
+  Term c = imgfx_build(e, s, x, y + half, d - 1);
+  Term dd = imgfx_build(e, s, x + half, y + half, d - 1);
+  u32 ca, cb, cc, cd;
+  if (imgfx_solid(a, &ca) && imgfx_solid(b, &cb) && imgfx_solid(c, &cc) && imgfx_solid(dd, &cd) && ca == cb && ca == cc && ca == cd) return a;
+  return imgfx_qua(e, a, b, c, dd);
+}
+
+static void imgfx_tree_call(IoWork* w) {
+  const char* why = NULL;
+  u64 tw = 0, th = 0;
+  unsigned char* px = imgfx_load(w->text, w->word, (u32)w->size, &tw, &th, &why);
+  free(w->text);
+  w->text = NULL;
+  w->data = (char*)px;
+  w->made = (intptr_t)((tw << 32) | th);
+  w->hand = (intptr_t)why;
+  w->code = px == NULL ? EINVAL : 0;
+}
+
+static Term imgfx_tree_pack(Env e, IoWork* w) {
+  if (w->code) return io_fail(e, w->code, (const char*)w->hand);
+  u64 tw = ((u64)w->made) >> 32, th = ((u64)w->made) & 0xffffffffu;
+  ImgfxSrc s = { (const unsigned char*)w->data, tw, th };
+  Term t = imgfx_build(e, &s, 0, 0, imgfx_depth(tw, th));
+  free(w->data);
+  w->data = NULL;
+  return io_done(e, io_tup(e, (Term)(u32)tw, io_tup(e, (Term)(u32)th, t)));
+}
+
+Term imgfx_tree_run(Env e, Term* f, IoWork* w) {
+  u64 n = 0;
+  char* path = io_cstr(e, f[0], &n);
+  if (io_nul(path, n)) {
+    free(path);
+    return io_fail(e, EINVAL, "cannot read the image");
+  }
+  w->text = path;
+  w->word = (u32)f[1];
+  w->size = (u64)(u32)f[2];
+  return io_work(w, imgfx_tree_call, imgfx_tree_pack);
+}
+
+static void __attribute__((constructor)) imgfx_tree_use(void) {
+  io_eff(CID(Imgfx.tree), imgfx_tree_run);
+}
+
 
 #endif

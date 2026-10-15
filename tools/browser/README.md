@@ -25,6 +25,7 @@ Flags:
   `<home>/browser-profile`. One Chrome at a time can use a profile.
 - `--jpeg-dir DIR`: write every page's frames as JPEG (below).
 - `--jpeg-fps N`: at most N JPEG writes a second per page (default 4, 1..30).
+- `--cast-fps N`: at most N a second while a client shows the page (`cast`; default 30, 1..60).
 - `--chromium PATH`, `--headed` (debugging). `BACKPLANE_BROWSER_DEBUG=1`
   logs frame timings to stderr.
 
@@ -58,7 +59,7 @@ written to stdout; diagnostics go to stderr.
 <- {"id": 1, "ok": true, "result": {...}}
 <- {"id": 3, "ok": false, "error": "locator.click: Timeout 15000ms exceeded."}
 <- {"event": "frame", "w": 700, "h": 800, "seq": 3, "path": "/tmp/bp-preview.rgb"}
-<- {"event": "frame", "page": "bot-7", "n": 12, "path": "/x/shots/bot-7.jpg"}
+<- {"event": "frame", "page": "bot-7", "n": 12, "path": "/x/shots/bot-7.jpg", "all": true}
 ```
 
 - `page` names the owner the request acts for (a bot id). Absent or `""`
@@ -91,6 +92,7 @@ written to stdout; diagnostics go to stderr.
 | op | arguments | result |
 |---|---|---|
 | `status` | | Status |
+| `cast` | `ms?` (default 2500, 0..10000) | `{fps}`. A client shows this owner's page: for `ms` its frames go out at up to `--cast-fps` (a fresh one at once). Clients renew it while they show the page. Protocol version 3. |
 | `open` | `url?`, `width?`, `height?`, `timeoutMs?` | Status. Launches Chromium and the owner's page if needed, sets the owner's viewport, navigates (waits for `load`) when `url` is given. Default viewport 1280x800. |
 | `navigate` | `url`, `readiness?` (`"load"` default, `"domContentLoaded"`, `"none"`), `timeoutMs?` | Status |
 | `back`, `forward`, `reload` | `timeoutMs?` | Status |
@@ -165,7 +167,7 @@ only when asked for.
 |---|---|---|
 | `ready` | `version`, `frames` (the frame file path), `profile`, `jpegDir` | once, at start |
 | `frame` | `w`, `h`, `seq`, `path` (no `page`) | a new raw frame file of the shared page is in place |
-| `frame` | `page`, `n`, `path` | a new JPEG of that owner's page is in place (with `--jpeg-dir`) |
+| `frame` | `page`, `n`, `path`, `all` | a new JPEG of that owner's page is in place (with `--jpeg-dir`); `all` (version 3) marks at most `--jpeg-fps` a second, the ones every client gets, the rest go only to clients showing the page |
 | `navigated` | `page`, `url` | an owner's active tab committed a navigation |
 | `load` | `page`, `url` | an owner's active tab fired `load` |
 | `record` | `page`, `step` | a step the owner's recorder saw while `record` is on: `{do, target?, value?, key?, url, at, frame}` |
@@ -263,8 +265,13 @@ screencast began. The newest frame is written to
 `DIR/<owner>.jpg` via `DIR/<owner>.jpg.tmp` and a rename, at most
 `--jpeg-fps` times a second (a frame arriving early waits for its slot;
 older ones are dropped; a frame identical to the last is skipped), and
-announced with `{"event":"frame","page":<owner>,"n":<seq>,"path":...}`.
-`n` counts that owner's writes from 1 in this helper run.
+announced with `{"event":"frame","page":<owner>,"n":<seq>,"path":...,"all":...}`.
+`n` counts that owner's writes from 1 in this helper run. While a `cast`
+lease is on (a client shows the page and renews it every second or so),
+the cap is `--cast-fps` instead; frames past the `--jpeg-fps` rate carry
+`"all": false`, and the hub sends those only to the clients showing the
+page. After input (`click`, `mouse`, `type`, `press`, `scroll`) the next
+frame goes out at once, not in its slot.
 
 The file name is the owner mapped to `[A-Za-z0-9_-]` (every other
 character becomes `_`); `""` is `shared`. Distinct owners that map to the

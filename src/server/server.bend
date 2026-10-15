@@ -71,6 +71,7 @@ import ./review.bend as RVS
 import ../core/cmds.bend as CM
 import ../core/adopt.bend as AD
 import ./adoptio.bend as AIO
+import ./castio.bend as CST
 import ../core/outbox.bend as OB
 import ../core/live.bend as LV
 import ../core/farlive.bend as FLV
@@ -193,6 +194,8 @@ type Msg is Data:
   BotVerified{kind: String, arg: String, key: String, body: String, me: String, reply: Chan(List<&2, U32>)}
   # a browser page has a new frame: {"t":"shot",...} for every client
   Shot{text: String}
+  # a frame only the clients showing its page get (its "all" is false)
+  ShotTo{text: String, page: String}
   # the person's request about a bot's browser or what it is taught (the
   # hub keeps the driver and the draft: core/teach.bend); a helper event
   # about a page (a recorder step); the person's answer to a pause handed
@@ -8604,8 +8607,55 @@ def Hub.rpc.g(give: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(
     case False{}:
       Hub.rpc.far(Hub.rpc.farish(text), h, client, text, now)
 
+# Browser pages on show (castio.bend)
+# -----------------------------------
+# A client showing a page's Browser tab says browser.seen {page} about
+# every second: it gets every frame of that page from then on (for a few
+# seconds), and the helper's cast lease for the page is renewed (at most
+# once a second), so the page's frames go out at up to --cast-fps.
+
+def Wire.to.all(ids: List<&2, U32>, +cl: List<&2, Client>, +text: String) -> IO(List<&2, Client>):
+  match ids:
+    case Nil{}:
+      IO.pure(List<&2, Client>, cl)
+    case +i <> t:
+      IO.bind(List<&2, Client>, List<&2, Client>, Wire.to(cl, i, text), cl2 => Wire.to.all(t, cl2, text))
+
+def Hub.shot.to(h: Hub, +text: String, +page: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        ids : List<&2, U32> <- CST.Cast.to(page)
+        cl2 : List<&2, Client> <- Wire.to.all(ids, cl, text)
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+
+def Cast.lease(due: Bool, m: Maybe<&2, Chan(BR.BMsg)>, +page: String) -> IO(Unit):
+  match due m:
+    case True{} Some{q}:
+      IO.spawn(Unit, IO.bind(String, Unit, BR.Browser.ask_on(q, page, "cast", J.Json.obj([J.KV{"ms", J.Num{"2500"}}])), r => IO.pure(Unit, Unit{})))
+    case _ _:
+      IO.pure(Unit, Unit{})
+
+def Hub.cast(h: Hub, +client: U32, +page: String, +id: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        due : Bool <- CST.Cast.seen(client, page)
+        Cast.lease(due, Cfg.br(cfg), page)
+        Hub.out(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Reply.ok(client, id))
+
+def Hub.cast.o(h: Hub, +client: U32, +o: J.Json) -> IO(Hub):
+  Hub.cast(h, client, J.Json.get_str(J.Json.get_obj(o, "p"), "page", ""), J.Json.as_raw(J.Json.get(o, "id"), "0"))
+
+def Hub.rpc.c(seen: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
+  match seen:
+    case True{}:
+      Hub.cast.o(h, client, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))
+    case False{}:
+      Hub.rpc.g(String.contains(text, "bots.give"), h, client, text, now)
+
 def Hub.rpc(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
-  Hub.rpc.g(String.contains(text, "bots.give"), h, client, text, now)
+  Hub.rpc.c(String.contains(text, "\"browser.seen\""), h, client, text, now)
 
 def Hub.line.k(p: M.State & Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
   (st, h) = p
@@ -11233,6 +11283,8 @@ def Msg.kind(m: Msg) -> String:
       "bot_http"
     case BotVerified{_, _, _, _, _, _}:
       "bot_verified"
+    case ShotTo{_, _}:
+      "shot"
     case Shot{_}:
       "shot"
     case TeachReq{_, _, _, _}:
@@ -11790,6 +11842,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.gmail.ask(h, thread, tool, detail, plan, id, reply, now)
     case Shot{text}:
       Hub.broadcast(h, text)
+    case ShotTo{text, page}:
+      Hub.shot.to(h, text, page)
     case TeachReq{client, id, m, p}:
       Hub.teach(h, client, id, m, p, now)
     case BrowserEv{line}:
@@ -12025,17 +12079,28 @@ def Lock.word(+held: String, +i: Nat) -> String:
 # Browser frames
 # --------------
 
-def Shot.msg.k(frame: Bool, +line: String) -> Msg:
-  match frame:
+def Shot.msg.to(all: Bool, +line: String, +o: J.Json) -> Msg:
+  match all:
     case True{}:
       Shot{BR.Browser.shot(line)}
     case False{}:
+      ShotTo{BR.Browser.shot(line), J.Json.get_str(o, "page", "")}
+
+def Shot.msg.k(frame: Bool, +line: String, +o: J.Json) -> Msg:
+  match frame:
+    case True{}:
+      Shot.msg.to(J.Json.get_bool(o, "all", True{}), line, o)
+    case False{}:
       BrowserEv{line}
 
-# a frame goes to every client; a recorder step, navigation or load to the
-# hub's teach state
+# a frame goes to every client (or, past the helper's --jpeg-fps, only to
+# the clients showing its page: castio.bend); a recorder step, navigation
+# or load to the hub's teach state
+def Shot.msg.o(+line: String, +o: J.Json) -> Msg:
+  Shot.msg.k(String.eq(J.Json.get_str(o, "event", ""), "frame"), line, o)
+
 def Shot.msg(+line: String) -> Msg:
-  Shot.msg.k(String.eq(J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(line), J.Null{}), "event", ""), "frame"), line)
+  Shot.msg.o(line, Maybe.default(&2, J.Json, J.Json.parse(line), J.Null{}))
 
 def Shot.fwd.got(m: Maybe<&1, String>, +inbox: Chan(Msg), k: Unit -> IO(Unit)) -> IO(Unit):
   match m:
