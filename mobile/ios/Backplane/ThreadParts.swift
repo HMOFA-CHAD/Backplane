@@ -287,8 +287,9 @@ private func subColor(_ state: String) -> Color {
     switch state {
     case "running": PhaseColor.accent
     case "done", "reporting", "held": PhaseColor.ok
-    case "watching", "launching", "waiting on", "waiting": PhaseColor.accent
-    case "queued": PhaseColor.faint
+    case "watching", "launching", "waiting on", "waiting", "needs you": PhaseColor.accent
+    // "" is the "N done" toggle row (subs.bend's Subs.done.toggle): neutral
+    case "", "queued": PhaseColor.faint
     case "cancelled", "cancelling": PhaseColor.warn
     default: PhaseColor.bad
     }

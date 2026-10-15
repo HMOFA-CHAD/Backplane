@@ -442,8 +442,9 @@ fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
 private fun subColor(state: String) = when (state) {
     "running" -> PhaseColor.accent
     "done", "reporting", "held" -> PhaseColor.ok
-    "watching", "launching", "waiting on", "waiting" -> PhaseColor.accent
-    "queued" -> Color.Gray
+    "watching", "launching", "waiting on", "waiting", "needs you" -> PhaseColor.accent
+    // "" is the "N done" toggle row (subs.bend's Subs.done.toggle): neutral
+    "", "queued" -> Color.Gray
     "cancelled", "cancelling" -> PhaseColor.warn
     else -> PhaseColor.bad
 }

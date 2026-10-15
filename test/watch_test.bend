@@ -76,7 +76,7 @@ def main() -> IO(Unit):
     +s1 : M.State = apply(base(), out.step(r1))
     C.Check.str("it is the thread's work", Nat.show(M.Work.busy(s1, "t1")), "1")
     C.Check.str("thread_wait is not done", Bool.show(MC.Mcp.done.w(M.State.replay([M.TurnChanged{"t1", M.Completed{}, 11n}], s1), "t1")), "False")
-    C.Check.str("the panel shows it, with Stop", words(SB.Subs.rows(s1, Map.new(&2, String), "t1")), "launching:work-cancel;")
+    C.Check.str("the panel shows it, with Stop", words(SB.Subs.rows(s1, Map.new(&2, String), "t1", 11n)), "launching:work-cancel;")
     +s2 : M.State = apply(s1, H.Watch.launched(s1, 11n, "t1", id))
     C.Check.str("launched: watching", Bool.show(String.contains(rows(s2), "\twatching\t")), "True")
     # the turn ends; the work ends after
@@ -91,7 +91,7 @@ def main() -> IO(Unit):
     +t1 : M.State = apply(s3, H.Watch.end(s3, 80n, "t1", id, "timeout", ""))
     C.Check.str("timeout: told, never success", Bool.show(String.contains(last(M.State.mine(t1, "t1")), "timed out, still running, outcome unknown")), "True")
     C.Check.str("timeout: the row stays, unknown", M.Bg.status(rows(t1)), "unknown")
-    C.Check.str("timeout: no Stop on it", words(SB.Subs.rows(t1, Map.new(&2, String), "t1")), "unknown:;")
+    C.Check.str("timeout: no Stop on it", words(SB.Subs.rows(t1, Map.new(&2, String), "t1", 11n)), "unknown:;")
     # gone without an outcome
     +g1 : M.State = apply(s3, H.Watch.end(s3, 30n, "t1", id, "gone", ""))
     C.Check.str("gone: outcome unknown", Bool.show(String.contains(last(M.State.mine(g1, "t1")), "outcome unknown")), "True")

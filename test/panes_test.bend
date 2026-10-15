@@ -81,8 +81,8 @@ def main() -> IO(Unit):
   do IO<Unit>:
     # hit order: a pane's whole-box "pane" hit (the wheel) sits under
     # every hit drawn on it, so a click on the head or a row is theirs
-    C.Check.str("subagents head beats its scrolling pane", hit.action(N.Hit.find(hits(subs.out(True{})), 200, 110)), "fold")
-    C.Check.str("a shut subagents head opens it", hit.action(N.Hit.find(hits(subs.out(False{})), 200, 110)), "fold")
+    C.Check.str("subagents head beats its scrolling pane", hit.action(N.Hit.find(hits(subs.out(True{})), 200, 110)), "subs-shut")
+    C.Check.str("a shut subagents head opens it", hit.action(N.Hit.find(hits(subs.out(False{})), 200, 110)), "subs-open")
     +shut : U.Ui = clicked(U.Ui.init(0n), N.Hit.find(hits(subs.out(True{})), 200, 110))
     C.Check.str("a head click shuts the panel", bool(SB.Subs.panel.open(U.Ui.infos(shut), "t1", [sub.row()])), "false")
     +back : U.Ui = clicked(shut, N.Hit.find(hits(subs.out(False{})), 200, 110))

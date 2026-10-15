@@ -9379,3 +9379,29 @@ def Laws.hubs_lean_no_live():
 def Laws.hubs_lean_keeps_state():
   {==}
 # ---- end perf-lead: phone-lean ----
+# ui-panel-paste-lag: subagents
+
+def Laws.subs_finished_hidden(rs):
+  {==}
+
+def Laws.subs_ageout_hidden(now, at, old):
+  %Equal.sym(Bool, SB.Subs.old(now, at), True{}, old) : {Bool.not(_) == False{} : Bool}
+  {==}
+
+def Laws.subs_old_row_not_listed():
+  {==}
+
+def Laws.subs_panel_new_reopens():
+  {==}
+
+def Laws.subs_panel_shrinks_shut():
+  {==}
+
+def Laws.subs_panel_attention_reopens():
+  {==}
+
+def Laws.subs_model_alias():
+  {==}
+
+def Laws.subs_panel_resolved_stays_shut():
+  {==}
