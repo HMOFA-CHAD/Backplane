@@ -819,7 +819,7 @@ def Side.most(c: Col, +sd: U32, +bottom: U32) -> Out:
     case Col{o, +y}:
       Out.cat(o, Out{Nil{}, [Lay.hit(0, 0, 0, 0, "side-most", U32.show(U32.dim((y + sd + 8 : U32), bottom)))]})
 
-def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, +adding: Bool, +v: String,
+def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +ix: U.SIx, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, +adding: Bool, +v: String,
     +sd: U32, +caret: Nat, +mark: Nat, +focus: String, +path: String, +h: U32, +settings: Bool, +ms: List<&2, U.MRow>, +hint: String, +ids: List<&2, String>, +look: String, +rm: String, +q: String, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
   +top = {D.Clip{0, 0, 264, 52} : D.Clip}
   +many = Nat.is_gt(List.length(&2, U.MRow, ms), 1n)
@@ -835,7 +835,7 @@ def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +sel: String, +open: Map<&2
     Out{Lay.icon(ty, "plus", top, 234, 18, T.Th.dim()), [Lay.hit(228, 12, 28, 28, "vw-projo", "")]},
     utop,
     Lay.adding(ty, adding, uh, path, String.eq(focus, "project-path"), caret, mark),
-    Links.over(Lay.hints(hint, Side.most(Lay.col.then(Lay.side.list(active, ty, q, open, st, sel, now, look, rm,
+    Links.over(Lay.hints(hint, Side.most(Lay.col.then(Lay.side.list.k(active, ty, q, open, ix, st, sel, now, look, rm,
       D.Clip{0, y0, 264, (h - 48 : U32)}, U32.sub(y0, sd)), more(D.Clip{0, y0, 264, (h - 48 : U32)})), sd, (h - 48 : U32)), ty, D.Clip{0, y0, 264, (h - 48 : U32)}, ids), U.Links.recent(st, now), now, D.Clip{0, y0, 264, (h - 48 : U32)}),
     Lay.finding(ty, active, yf, q, focus, caret, mark),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), 0, (h - 48 : U32), 263, 48, T.Th.panel(), 255), D.Draw.rect(D.Clip.all(), 0, (h - 48 : U32), 263, 1, T.Th.line(), 255)],
@@ -4938,12 +4938,17 @@ def Rm.draw(+ty: Ty, +u: U.Ui, +w: U32, +h: U32) -> Out:
 
 # the sidebar's body (what Lay.sidebar.u draws but the dragged ghost and
 # the remove dialog), the part the window may keep (main.bend's memo)
-def Lay.sidebar.a(+ty: Ty, +n: S.Nui, +h: U32, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
+def Lay.sidebar.a.ix(+ty: Ty, +n: S.Nui, +h: U32, +ix: U.SIx, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
   match n:
     case S.Nui{U.Ui{+st, +sel, _, _, +open, on, +now, adding, _, +v, _, _, _, +note, _, _, _}, _, _, _, _, +sd, _, +caret, +focus, +path, _, _, _}:
-      Out.all([Lay.sidebar.k(ty, D.Clip{0, 52, 264, h}, st, sel, open, on, now, adding, v, sd, caret, S.Nui.mark(n), focus, path, h, U.Flag.get(open, "settings"), U.Machines.rows(S.Nui.ui(n)),
+      Out.all([Lay.sidebar.k(ty, D.Clip{0, 52, 264, h}, st, ix, sel, open, on, now, adding, v, sd, caret, S.Nui.mark(n), focus, path, h, U.Flag.get(open, "settings"), U.Machines.rows(S.Nui.ui(n)),
         U.Ui.scratch(S.Nui.ui(n), "@hint"), Lay.hint.ids(String.eq(U.Ui.scratch(S.Nui.ui(n), "@hint"), "alt"), String.eq(U.Ui.scratch(S.Nui.ui(n), "@hint"), "ctrl"), S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@look"), U.Ui.scratch(S.Nui.ui(n), "@rm"),
         U.Ui.scratch(S.Nui.ui(n), "@f.pq"), utop, uh, more), Lay.note(ty, note, h)])
+
+# (the index of the state made here: the window passes the one it keeps,
+# main.bend's MM.Ix)
+def Lay.sidebar.a(+ty: Ty, +n: S.Nui, +h: U32, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
+  Lay.sidebar.a.ix(ty, n, h, U.Side.ix(U.Ui.state(S.Nui.ui(n))), utop, uh, more)
 
 # the sidebar from its body: the ghost a drag shows and the remove dialog
 # on top, in the order Lay.sidebar.u has them

@@ -1,4 +1,5 @@
 import Base
+import ../../src/core/codec.bend as C
 import ../../src/core/client.bend as U
 import ../../src/core/model.bend as M
 import ../../src/app/nui.bend as N
@@ -183,6 +184,93 @@ def typing(cs: String, +ty: L.Ty, +n0: N.Nui, +tc: MM.TouchK, +ms: List<&2, MM.S
       +fresh = side.fresh(ty, n)
       typing(rest, ty, n, tc, [MM.SideM{key, fresh}], Side.add(t, MM.SideM.same(key, ms), Eqh.out(MM.SideM.out(ms), fresh)))
 
+
+# The sidebar's index brought up to date (MM.Ix.up) against Side.ix made
+# whole, at each step: every thread filed, every field of it, the asks, the
+# children counted and the rows
+def Fp.b(b: Bool) -> String:
+  Bool.pick(String, b, "1", "0")
+
+def Fp.ov(o: M.Override) -> String:
+  match o:
+    case M.NoOverride{}:
+      "n"
+    case M.ForcedSettled{}:
+      "s"
+    case M.ForcedActive{}:
+      "a"
+
+def Fp.thread(t: M.Thread) -> String:
+  match t:
+    case M.Thread{id, p, ti, c, a, tu, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}:
+      id ++ "|" ++ p ++ "|" ++ ti ++ "|" ++ Nat.show(c) ++ "|" ++ Nat.show(a) ++ "|" ++ C.Turn.name(tu) ++ "|" ++ Nat.show(pe) ++ "|" ++ Fp.b(ar) ++ "|" ++ Fp.ov(o)
+        ++ "|" ++ Nat.show(sa) ++ "|" ++ Nat.show(ua) ++ "|" ++ Fp.b(pi) ++ "|" ++ C.Env.name(en) ++ "|" ++ br ++ "|" ++ wt ++ "|" ++ pr ++ "|" ++ mo
+        ++ "|" ++ C.Runtime.name(rm) ++ "|" ++ C.Interaction.name(im) ++ "|" ++ se ++ "|" ++ Fp.b(de) ++ ";"
+
+def Fp.threads(ts: List<&2, M.Thread>) -> String:
+  match ts:
+    case Nil{}:
+      ""
+    case t <> rest:
+      Fp.thread(t) ++ Fp.threads(rest)
+
+def Fp.by(xs: List<&2, Sigma<&2, &2, String, _ => List<&2, M.Thread>>>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case (+k, v) <> t:
+      "[" ++ k ++ "]" ++ Fp.threads(v) ++ Fp.by(t)
+
+def Fp.askl(as: List<&2, M.Ask>) -> String:
+  match as:
+    case Nil{}:
+      ""
+    case M.Ask{i, th, k, tl, d, o, op, an} <> t:
+      i ++ "," ++ th ++ "," ++ k ++ "," ++ tl ++ "," ++ d ++ "," ++ o ++ "," ++ Fp.b(op) ++ "," ++ an ++ ";" ++ Fp.askl(t)
+
+def Fp.asks(xs: List<&2, Sigma<&2, &2, String, _ => List<&2, M.Ask>>>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case (+k, v) <> t:
+      "[" ++ k ++ "]" ++ Fp.askl(v) ++ Fp.asks(t)
+
+def Fp.nats(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case (+k, v) <> t:
+      k ++ "=" ++ Nat.show(v) ++ ";" ++ Fp.nats(t)
+
+def Fp.ix(x: U.SIx) -> String:
+  match x:
+    case U.SIx{by, a, k, w}:
+      Fp.by(Map.to_list(&2, List<&2, M.Thread>, by)) ++ "#" ++ Fp.asks(Map.to_list(&2, List<&2, M.Ask>, a)) ++ "#" ++ Fp.nats(Map.to_list(&2, Nat, k)) ++ "#" ++ Fp.nats(Map.to_list(&2, Nat, w))
+
+type IxT is Data:
+  IxT{steps: Nat, bad: Nat, why: String}
+
+def IxT.add(t: IxT, +ok: Bool, +what: String) -> IxT:
+  match t:
+    case IxT{s, b, +w}:
+      IxT{1n+s, Nat.add(b, Bool.pick(Nat, ok, 0n, 1n)), Bool.pick(String, ok, w, w ++ "\n  " ++ what)}
+
+def IxT.show(t: IxT) -> String:
+  match t:
+    case IxT{s, b, w}:
+      "index: steps " ++ Nat.show(s) ++ ", kept index unlike Side.ix " ++ Nat.show(b) ++ w
+
+def ixsteps(xs: List<&2, J.Json>, +u0: U.Ui, +tc: MM.TouchK, +k: MM.IxK, t: IxT) -> IxT:
+  match xs:
+    case Nil{}:
+      t
+    case +x <> rest:
+      +o = msg(x)
+      +u = U.Ui.recv(u0, o)
+      +tc2 = MM.TouchK.msg(o, tc)
+      +k2 = MM.Ix.up([k], tc2, u)
+      ixsteps(rest, u, tc2, k2, IxT.add(t, String.eq(Fp.ix(MM.IxK.ix(k2)), Fp.ix(U.Side.ix(U.Ui.state(u)))), String.take(J.Json.show(x), 160n)))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- AV.Argv.args()
@@ -197,5 +285,6 @@ def main() -> IO(Unit):
     +memo : L.TLMemo = L.Lay.memo(ty, n, L.TL.memo.none())
     +t : Tally = steps(List.drop(&2, J.Json, xs, cut), ty, with_hits(n, hits(MM.Mm.lay(ty, memo, n)), 0n), memo, Nil{}, MM.TouchK.none(), Tally{0n, 0n, 0n, 0n, ""})
     IO.print(Tally.show(t))
+    IO.print(IxT.show(ixsteps(List.drop(&2, J.Json, xs, cut), u, MM.TouchK.none(), MM.Ix.full(u, 0n), IxT{0n, 0n, ""})))
     +n2 : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
     IO.print(Side.show(typing("typing into the composer, and the pointer moving about", ty, n2, MM.TouchK.none(), [MM.SideM{MM.Sm.key(n2, MM.TouchK.none()), side.fresh(ty, n2)}], Side{0n, 0n, 0n})))

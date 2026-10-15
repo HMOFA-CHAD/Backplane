@@ -752,8 +752,12 @@ def Plane.demo.rich() -> U.Ui:
 def Plane.tally.same(+u: U.Ui, +now: Nat) -> Bool:
   String.eq(Plane.counts.t(Plane.tally(u, U.Side.ix(U.Ui.state(u)), U.Side.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now))), Plane.counts(Plane.of(u, now)))
 
+# (the index made once: each Side.ix walks every thread)
+def Plane.tally.words.ix(+u: U.Ui, +ix: U.SIx, +now: Nat) -> String:
+  Plane.counts.t(Plane.tally(u, ix, U.Side.rows.ix(U.Ui.state(u), ix, now)))
+
 def Plane.tally.words(+u: U.Ui, +now: Nat) -> String:
-  Plane.counts.t(Plane.tally(u, U.Side.ix(U.Ui.state(u)), U.Side.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now)))
+  Plane.tally.words.ix(u, U.Side.ix(U.Ui.state(u)), now)
 
 # The plane as text
 # -----------------
