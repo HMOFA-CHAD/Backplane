@@ -28,9 +28,9 @@ checkout).
 | `scripts/check.sh` (type-check + PROOF) | exit 0 | 149 s | 4.29 GB |
 | `scripts/check.sh proof` | exit 0 | 98 s | 4.32 GB |
 | `scripts/test.sh` (136 programs) | exit 0 | 294 s | 3.38 GB |
-| native `scripts/build-app.sh` | **not yet validated**: the cold emit needs about 8.5 GB at the 8 GiB heap hint, and 7.4 GB at 6 GiB (`BACKPLANE_LOW_MEM=1`), which is at the edge of this machine. Pending one trial. | | |
+| native `BACKPLANE_LOW_MEM=1 scripts/build-app.sh src/app/main.bend build/backplane` (4 GiB heap hint, one clang at a time; `CC=clang-19`, `libx11-dev`, `libasound2-dev` installed in the job, `BACKPLANE_GOOGLE_BAKE=0`) | exit 0 twice; the built binary starts `--headless` and answers `/hello` | 17–21 min | 6.7–7.1 GB (0.6–1.0 GB left free: tight) |
 
-Small (4 GB) is not validated for any of these.
+Small (4 GB) is not validated for any of these. The native build at the default 8 GiB hint does not fit 8 GB (its emit alone is about 8.8 GB); use `BACKPLANE_LOW_MEM=1` there, or `--size large` (16 GB) if it starts failing.
 
 The outcome arrives like any work: the command's exit code and the end of its output.
 Every job's files are in `~/.local/state/backplane/boat/jobs/<job>/`:
