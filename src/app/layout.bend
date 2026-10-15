@@ -3254,22 +3254,31 @@ def Set.keys(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
 
 # Time zone: where the person is (a phone reports it, or they set it), with
 # a field for a zone name, Set, and Automatic
-# Usage (src/core/usage.bend): a card of rows, a label and a note each
+# Usage (src/core/usage.bend): a card of rows, a label and a note each; a
+# row with an action has its button (Refresh) on the right
+def Set.usage.row.k(none: Bool, +ty: Ty, r: UZ.URow, +x: U32, +w: U32, +y: U32) -> Out:
+  match none:
+    case True{}:
+      Set.row(ty, UZ.URow.label(r), UZ.URow.note(r), x, y, w)
+    case False{}:
+      Out.all([Set.row.r(ty, UZ.URow.label(r), UZ.URow.note(r), x, y, w, (Lay.button.w(ty, "Refresh") + 22 : U32)),
+        Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Refresh") : U32), (y + 10 : U32), "Refresh", T.Th.soft(), UZ.URow.act(r), "")])
+
 def Set.usage.rows(rs: List<&2, UZ.URow>, +ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
   match rs:
     case Nil{}:
       Out.none()
     case r <> t:
-      Out.all([Set.row(ty, UZ.URow.label(r), UZ.URow.note(r), x, y, w), Set.usage.rows(t, ty, x, w, (y + 52 : U32))])
+      Out.all([Set.usage.row.k(String.is_empty(UZ.URow.act(r)), ty, r, x, w, y), Set.usage.rows(t, ty, x, w, (y + 52 : U32))])
 
-def Set.usage.h(+st: M.State) -> U32:
-  (72 + U32.from_nat(List.length(&2, UZ.URow, U.Usage.rows(st))) * 52 : U32)
+def Set.usage.h(+n: S.Nui) -> U32:
+  (72 + U32.from_nat(List.length(&2, UZ.URow, U.Usage.rows(S.Nui.ui(n)))) * 52 : U32)
 
-def Set.usage(+ty: Ty, +st: M.State, +x: U32, +w: U32, +y: U32) -> Out:
+def Set.usage(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
   Out.all([
     Set.head(ty, "Usage", x, y),
-    Set.card(x, (y + 32 : U32), w, (Set.usage.h(st) - 56 : U32)),
-    Set.usage.rows(U.Usage.rows(st), ty, x, w, (y + 34 : U32))])
+    Set.card(x, (y + 32 : U32), w, (Set.usage.h(n) - 56 : U32)),
+    Set.usage.rows(U.Usage.rows(S.Nui.ui(n)), ty, x, w, (y + 34 : U32))])
 
 def Set.tz.h() -> U32:
   150
@@ -3539,7 +3548,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 46 : U32) : U32}
-  +total = {(1092 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(st) + 132 : U32) : U32}
+  +total = {(1092 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
   +b2 = {(b + 64 + Set.notify.h(st, ty, w) : U32) : U32}
@@ -3597,8 +3606,8 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Set.keys(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) : U32)),
     Set.agy(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + 16 : U32)),
     Set.tz(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 16 : U32)),
-    Set.usage(ty, st, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 16 : U32)),
-    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(st) + 16 : U32))])),
+    Set.usage(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 16 : U32)),
+    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 16 : U32))])),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 51, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255)],
       Ty.text(ty, 0n, "Settings", D.Clip.all(), (x0 + 24 : U32), 0, 52, T.Th.text())), Nil{}},
     Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Close") : U32), 12, "Close", T.Th.soft(), "flag", "settings"),

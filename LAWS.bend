@@ -8687,7 +8687,8 @@ law usage_tail_claude_waits:
 
 # a reading's text is shown as it is, whatever the provider
 law usage_tail_reading:
-  for +p: String, +t: String
+  for +p: String
+  for +t: String
   {UZ.Use.tail(p, 5n, t) == t : String}
 
 # a reading is what a session holds, said as held, with its share

@@ -84,6 +84,7 @@ import ../core/tz.bend as TZN
 import ../core/rules.bend as RLS
 import ../core/task.bend as TKS
 import ../core/teach.bend as TE
+import ../core/usage.bend as UZ
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -5956,6 +5957,39 @@ def AgyJob.op(i: Nat, +p: J.Json, +client: U32, +id: String, +inbox: Chan(Msg), 
 def AgyJob.go(+p: J.Json, +inbox: Chan(Msg), +home: String, +client: U32, +id: String) -> IO(Unit):
   AgyJob.op(C.Codec.pos(["status", "install", "signin", "back", "cancel", "signout", "forget"], J.Json.get_str(p, "do", "")), p, client, id, inbox, home)
 
+# Settings > Usage, Boat side (core/usage.bend's Bj): Boat's CLI read
+# (read-only, `boat limits --json --no-update`, 20 s at most) only when it
+# is due, its answer kept in <home>/boat-usage.json with the last good one
+# on a failure; the Boat lead's job status read from its state folder; both
+# go to the client that asked as info "boat.usage". Never `boat dashboard`
+# (its link carries a sign-in token), login or anything that changes the
+# account.
+def BoatUse.read(due: Bool, +home: String, +old: String, +now: Nat) -> IO(String):
+  match due:
+    case True{}:
+      do IO<String>:
+        r : P.Ran <- P.Proc.run("sh", ["-c", PT.Port.tmo() ++ "tmo 20 boat limits --json --no-update 2>/dev/null"], "/")
+        +c : String = UZ.Bj.cache.next(old, Path.out(r), now)
+        w : String <- Token.save(home ++ "/boat-usage.json", c)
+        return c
+    case False{}:
+      IO.pure(String, old)
+
+def BoatUse.state(+xs: String, +user: String) -> String:
+  Bool.pick(String, String.is_empty(xs), user ++ "/.local/state", xs) ++ "/backplane/boat/status.json"
+
+def BoatUse.go(+p: J.Json, +inbox: Chan(Msg), +home: String, +client: U32, +id: String) -> IO(Unit):
+  do IO<Unit>:
+    BotJob.reply(inbox, client, id, True{}, Nil{})
+    +now : Nat <- Now.nat()
+    +old : String <- K.Io.text(home ++ "/boat-usage.json")
+    +cache : String <- BoatUse.read(UZ.Bj.due(old, String.eq(J.Json.get_str(p, "do", ""), "refresh"), now), home, old, now)
+    user : String <- Env.get("HOME", "")
+    xs : String <- Env.get("XDG_STATE_HOME", "")
+    +status : String <- K.Io.text(BoatUse.state(xs, user))
+    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"info"}}, J.KV{"info", J.Json.obj([J.KV{"boat.usage", J.Str{UZ.Bj.info(cache, status)}}])}]))})
+    return Unit{}
+
 def VoiceJob.op(i: Nat, +inbox: Chan(Msg), +home: String, +p: J.Json, +client: U32, +id: String) -> IO(Unit):
   match i:
     case 0n:
@@ -5982,11 +6016,14 @@ def VoiceJob.op(i: Nat, +inbox: Chan(Msg), +home: String, +p: J.Json, +client: U
     # Settings' Antigravity (AgyJob)
     case 10n:
       AgyJob.go(p, inbox, home, client, id)
+    # Settings > Usage's Boat side (BoatUse)
+    case 11n:
+      BoatUse.go(p, inbox, home, client, id)
     case _:
       BotJob.fail(inbox, client, id, "unknown voice request")
 
 def VoiceJob.go(+p: J.Json, +inbox: Chan(Msg), +home: String, +client: U32, +id: String) -> IO(Unit):
-  VoiceJob.op(C.Codec.pos(["status", "key", "unkey", "dict", "add", "start", "stop", "devices", "api-add", "api-del", "agy"], J.Json.get_str(p, "op", "")), inbox, home, p, client, id)
+  VoiceJob.op(C.Codec.pos(["status", "key", "unkey", "dict", "add", "start", "stop", "devices", "api-add", "api-del", "agy", "usage"], J.Json.get_str(p, "op", "")), inbox, home, p, client, id)
 
 def VoiceJob.run(+inbox: Chan(Msg), +home: String, +params: String, +client: U32, +id: String) -> IO(Unit):
   VoiceJob.go(Maybe.default(&2, J.Json, J.Json.parse(params), J.Null{}), inbox, home, client, id)
