@@ -5,8 +5,8 @@
 //      calls deploy_restart with a staged package: nothing is swapped or
 //      restarted while A's tool runs; when it ends the package is swapped
 //      into the prefix (LICENSE, web/ and web.old), the hub restarts, B is
-//      told once, and C's cut turn resumes with the deploy's words in its
-//      continue message.
+//      told once, and C's process, kept through the restart
+//      (core/adopt.bend), ends its turn itself (test/tools/adopt_e2e.ts).
 //   2. A build lock (BACKPLANE_DEPLOY_LOCKS) is held by flock for 7 s: B2's
 //      deploy_restart waits for it, then goes.
 //   3. D runs two tool calls in a row with no text between and sleeps 30 s
@@ -163,9 +163,13 @@ try {
   await until(20000, () => notes(B).length ? true : undefined);
   await sleep(2500);
   check(notes(B).length === 1, `B is told once (${notes(B).length}: ${String(notes(B)[0]?.text).slice(0, 80)})`);
+  // C's process came through the restart (adopt.bend): its turn was never
+  // cut, so nothing tells it to continue, and it ends in that process
   const cont = changes().filter((x) => x.$ === "MessagePosted" && x.thread === C && String(x.text).startsWith("Backplane restarted while you were working"));
-  check(cont.length === 1 && String(cont[0].text).includes("restarted for a deploy") && String(cont[0].text).includes("Your turn was resumed"), `C's cut turn resumes with the words in its continue message (${cont.length})`);
-  check(notes(C).length === 1 && notes(A).length === 0, "A, whose turn had ended, gets no note");
+  check(cont.length === 0, `C's turn, kept through the restart, is not told to continue (${cont.length})`);
+  const cEnds = await until(40000, () => changes().find((x) => x.$ === "TurnChanged" && x.thread === C && x.state === "completed"));
+  check(!!cEnds, "C's turn ends in the process that was running it");
+  check(notes(C).length === 0 && notes(A).length === 0, "A, whose turn had ended, and C, never cut, get no note");
   const cleared = changes().filter((x) => x.$ === "SettingSet" && x.key === "deploy.done");
   check(cleared.length >= 2 && String(cleared.at(-1).value) === "", "deploy.done is cleared at start");
 
