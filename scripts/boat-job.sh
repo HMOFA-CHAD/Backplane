@@ -4,11 +4,13 @@
 #   scripts/boat-job.sh [--size small|default] [--timeout SECS] [--artifact PATH]...
 #                       [--exclude GLOB]... [--budget-usd X] [--wait SECS] [--setup-bend|--no-setup-bend] -- CMD...
 #   scripts/boat-job.sh sweep      delete sandboxes this tool started whose job is gone
-#   scripts/boat-job.sh status     the ledger: open jobs, today's spend
+#   scripts/boat-job.sh status [--json] [--refresh]   the ledger and the cached account limits
 #
 # Agents run it through Backplane: work_run {command: "scripts/boat-job.sh -- scripts/check.sh"}.
-# It never takes the local "bend" lock. Up to Boat's active limit (2 on the
-# trial) run at once; more wait here for a slot (--wait, default 1 h). Opt-in: nothing runs unless this
+# It never takes the local "bend" lock. Admission follows Boat's live limits:
+# active sandboxes and the rolling start windows (minute, hour, day), counting
+# other clients' starts, our own attempts and jobs still starting; a full slot
+# or minute/hour window waits (--wait, default 1 h), a full day refuses. Opt-in: nothing runs unless this
 # project's root is listed in $ROOT/enabled (one absolute path per line).
 #
 # What it does, in order (any failure before create: nothing created):
@@ -72,16 +74,18 @@ for x in kv:
 with open(path, "a") as f:
     f.write(json.dumps(d) + "\n")
 EOF
+  status_file
 }
 
-# fold the ledger: prints "starting_jobs open_reserved_cs spent_today_cs orphans" and,
+# fold the ledger: prints "starting_jobs open_reserved_cs spent_today_cs orphans
+# our_create_attempts_last_minute _hour _day" and,
 # with an argument "ids", the created-and-not-ended ids with their owner pid identity
 fold() {
   python3 - "$LEDGER" "${1:-}" <<'EOF'
 import json, sys, time
 path, mode = sys.argv[1], sys.argv[2]
 day = time.strftime("%Y-%m-%d", time.gmtime())
-jobs = {}
+jobs = {}; attempts = []
 try:
     lines = open(path).read().splitlines()
 except FileNotFoundError:
@@ -91,11 +95,18 @@ for l in lines:
     except Exception: continue
     j = jobs.setdefault(e.get("job", ""), {})
     j.setdefault("events", []).append(e)
-    for k in ("id", "pid", "pidid", "reserved", "day"):
+    for k in ("id", "pid", "pidid", "day"):
         if k in e and k not in j: j[k] = e[k]
-    if e.get("ev") in ("ended", "swept"): j["done"] = True; j["cost"] = e.get("cost", 0); j["orphan"] = False
-    if e.get("ev") == "orphan": j["orphan"] = True
-    if e.get("ev") == "refused": j["done"] = True; j["cost"] = 0
+    ev = e.get("ev")
+    if ev == "reserve": j["done"] = False; j["reserved"] = e.get("reserved", 0)
+    if ev == "attempt": attempts.append(e.get("at", 0))
+    if ev in ("ended", "swept"): j["done"] = True; j["cost"] = e.get("cost", 0); j["orphan"] = False
+    if ev == "orphan": j["orphan"] = True
+    if ev in ("refused", "released", "ambiguous"): j["done"] = True; j.setdefault("cost", 0)
+if mode == "known":
+    for j in jobs.values():
+        if j.get("id"): print(j["id"])
+    sys.exit()
 if mode == "ids":
     for k, j in jobs.items():
         if j.get("id") and not j.get("done"):
@@ -105,13 +116,49 @@ open_n = sum(1 for j in jobs.values() if not j.get("done") and not j.get("id"))
 open_r = sum(int(j.get("reserved", 0)) for j in jobs.values() if not j.get("done"))
 spent = sum(int(j.get("cost", 0)) for j in jobs.values() if j.get("done") and j.get("day") == day)
 orph = sum(1 for j in jobs.values() if j.get("orphan"))
-print(open_n, open_r, spent, orph)
+now = time.time()
+am, ah, ad = (sum(1 for a in attempts if now - a < w) for w in (60, 3600, 86400))
+print(open_n, open_r, spent, orph, am, ah, ad)
 EOF
 }
 
 pid_id() { [ -r "/proc/$1/stat" ] && echo "$(cat /proc/sys/kernel/random/boot_id):$(sed 's/^.*) //' "/proc/$1/stat" | cut -d' ' -f20)"; }
 
 listed() { b list --json | python3 -c 'import json,sys; [print(s["id"]) for s in json.load(sys.stdin)["sandboxes"]]'; }
+
+# Boat's account limits as the Usage settings read them (account.json; no
+# network to read it). Written on every live read; an error keeps the last
+# good values and says so. Unknown values are null.
+account_cache() {
+  python3 - "$ROOT/account.json" "$1" <<'EOF'
+import json, os, sys, time
+path, raw = sys.argv[1], sys.argv[2]
+try: old = json.load(open(path))
+except Exception: old = {}
+now = int(time.time())
+def win(x):
+    if not isinstance(x, dict) or x.get("limit") is None: return None
+    return {"used": x.get("used"), "limit": x.get("limit"), "remaining": x.get("remaining")}
+try:
+    d = json.loads(raw)
+    st = d.get("starts") or {}
+    out = {"refreshed_at": now, "source": "boat limits", "error": "",
+      "plan": d.get("sandboxPlanKey") or d.get("planName"), "tier": d.get("accessTier"), "status": d.get("billingStatus"),
+      "renews_at": d.get("subscriptionCurrentPeriodEnd"), "trial_ends_at": d.get("subscriptionTrialEndsAt") if d.get("billingStatus") == "trialing" else None,
+      "can_start": d.get("canStart"), "blocked_reason": d.get("startBlockedReason"),
+      "active": {"used": d.get("activeSandboxes"), "limit": d.get("maxActiveSandboxes")},
+      "starts": {"unlimited": bool(st.get("unlimited")), "minute": win(st.get("minute")), "hour": win(st.get("hour")), "day": win(st.get("day"))},
+      "sizes": {m.get("type"): bool(m.get("available")) for m in d.get("machineTypes") or []} or None,
+      "credit": {"remaining_s": d.get("subscriptionRemainingSeconds"), "balance_s": d.get("creditBalanceSeconds"), "used_s": d.get("creditUsedSeconds"),
+                 "trial_cap_s": d.get("trialComputeCapSeconds"), "credit_s_per_usd": d.get("creditSecondsPerDollar")}}
+    if "activeSandboxes" not in d: raise ValueError("no activeSandboxes")
+except Exception as e:
+    out = dict(old) if old else {"refreshed_at": None, "source": "boat limits"}
+    out["error"] = "Boat limits unreadable"; out["error_at"] = now
+tmp = path + ".tmp"; json.dump(out, open(tmp, "w")); os.replace(tmp, path)
+EOF
+}
+limits_live() { local l; l=$(BT=30 b limits --json 2>/dev/null) || { account_cache ""; return 1; }; account_cache "$l"; printf '%s' "$l"; }
 
 # delete one sandbox of ours and check it is gone; 0 when verified
 delete_verify() {
@@ -141,13 +188,8 @@ sweep() {
   done
 }
 
-with_lock() { exec 9>>"$ROOT/ledger.lock"; flock -w 60 9 || { say "ledger busy"; return 1; }; "$@"; local r=$?; flock -u 9; return $r; }
-
-case ${1:-} in
-  sweep) with_lock sweep; exit $? ;;
-  status)
-    if [ "${2:-}" = --json ]; then
-      python3 - "$LEDGER" <<'EOF2'
+status_json() {
+  python3 - "$LEDGER" "$ROOT/account.json" <<'EOF2'
 import json, sys, time
 day = time.strftime("%Y-%m-%d", time.gmtime()); jobs = {}
 try: lines = open(sys.argv[1]).read().splitlines()
@@ -165,17 +207,36 @@ for l in lines:
     elif ev == "swept": j["ended_at"] = e["at"]; j["state"] = "swept"
     elif ev == "orphan": j["state"] = "orphan"; j["sandbox"] = e.get("id", j.get("sandbox"))
     elif ev == "refused": j["state"] = "refused"; j["why"] = e.get("why", ""); j["ended_at"] = e["at"]
+    elif ev == "released": j["state"] = "starting"; j["retries"] = j.get("retries", 0) + 1
+    elif ev == "ambiguous": j["state"] = "ambiguous"; j["ended_at"] = e["at"]; j["why"] = e.get("why", "")
+    elif ev == "attempt": j["attempts"] = j.get("attempts", 0) + 1
 now = int(time.time())
 for j in jobs.values():
     if "started_at" in j: j["runtime_s"] = j.get("ended_at", now) - j["started_at"]
 out = sorted(jobs.values(), key=lambda j: j.get("queued_at", j.get("ended_at", 0)))
 today = [j for j in out if j.get("day") == day]
-print(json.dumps({"rate": {"credit_s_per_usd": 100000, "small": 0.5, "default": 1},
+try: account = json.load(open(sys.argv[2]))
+except Exception: account = None
+print(json.dumps({"rate": {"credit_s_per_usd": 100000, "small": 0.5, "default": 1, "large": 2}, "account": account,
+  "ambiguous": sum(1 for j in out if j["state"] == "ambiguous"),
   "running": sum(1 for j in out if j["state"] in ("starting", "running")),
   "orphans": sum(1 for j in out if j["state"] == "orphan"),
+  "month": {"month": day[:7], "cost_cs": sum(j.get("cost_cs", 0) for j in out if str(j.get("day", "")).startswith(day[:7]))},
+  "generated_at": int(time.time()),
   "today": {"day": day, "cost_cs": sum(j.get("cost_cs", 0) for j in today), "reserved_open_cs": sum(j.get("reserved_cs", 0) for j in out if j["state"] in ("starting", "running"))},
   "jobs": out}))
 EOF2
+}
+# the folded view for the Usage settings, rewritten whole after every ledger line
+status_file() { status_json > "$ROOT/status.json.tmp" 2>/dev/null && mv -f "$ROOT/status.json.tmp" "$ROOT/status.json"; }
+with_lock() { exec 9>>"$ROOT/ledger.lock"; flock -w 60 9 || { say "ledger busy"; return 1; }; "$@"; local r=$?; flock -u 9; return $r; }
+
+case ${1:-} in
+  sweep) with_lock sweep; exit $? ;;
+  status)
+    [ "${2:-}" = --refresh ] && { limits_live >/dev/null; shift; set -- status --json; }
+    if [ "${2:-}" = --json ]; then
+      status_json
       exit 0
     fi
     read -r n r s o <<<"$(fold)"
@@ -200,7 +261,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ $# -gt 0 ] || { say "no command (use -- CMD...)"; exit 75; }
-case $SIZE in small) RATE2=1 ;; default) RATE2=2 ;; *) say "size $SIZE is not available (small or default)"; exit 75 ;; esac
+case $SIZE in small) RATE2=1 ;; default) RATE2=2 ;; large) RATE2=4 ;; *) say "size $SIZE is not supported (small, default or large; large only when the job is measured to need it)"; exit 75 ;; esac
 case $TIMEOUT$WAIT in ''|*[!0-9]*) say "bad --timeout or --wait"; exit 75 ;; esac
 TTL=$(( TIMEOUT + 600 )); [ $TTL -lt 900 ] && TTL=900; [ $TTL -gt 7200 ] && TTL=7200
 [ $(( TIMEOUT + 300 )) -le $TTL ] || { say "--timeout too long for the 2 h lifetime"; exit 75; }
@@ -228,56 +289,101 @@ OUT="$ROOT/jobs/$JOB"; mkdir -p "$OUT/artifacts"
 LOG="$OUT/job.log"
 echo "job $JOB: logs and artifacts in $OUT"
 
-# admit, under the ledger lock (limits read inside it, so two jobs see each other)
+# admit, under the ledger lock (limits read inside it, so jobs see each other).
+# Answers on stdout "<reason>"; status 0 admitted (reservation written),
+# 2 wait (first word of the reason: seconds), 1 refused.
 admit() {
   sweep
-  read -r n r s o <<<"$(fold)"
+  read -r n r s o am ah ad <<<"$(fold)"
   [ "$o" = 0 ] || { echo "a sandbox delete was never verified; run scripts/boat-job.sh sweep"; return 1; }
-  lim=$(BT=30 b limits --json 2>/dev/null) || { echo "cannot read Boat limits"; return 1; }
+  lim=$(limits_live) || { echo "cannot read Boat limits"; return 1; }
   why=$(printf '%s' "$lim" | python3 -c '
 import json, sys
-need, size, open_n = int(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+need, size, n, am, ah, ad = int(sys.argv[1]), sys.argv[2], *map(int, sys.argv[3:7])
 try: d = json.load(sys.stdin)
-except Exception: print("Boat limits unreadable"); sys.exit()
+except Exception: print("NO Boat limits unreadable"); sys.exit()
 try:
     act, mx, can = int(d["activeSandboxes"]), int(d["maxActiveSandboxes"]), d["canStart"]
     left = [int(d["subscriptionRemainingSeconds"]), int(d["creditBalanceSeconds"])]
     if d.get("trialComputeCapSeconds") is not None: left.append(int(d["trialComputeCapSeconds"]) - int(d["creditUsedSeconds"]))
     types = {m["type"]: m["available"] for m in d["machineTypes"]}
-except Exception as e: print("Boat limits missing a field"); sys.exit()
-if not can: print("Boat says no new sandboxes now"); sys.exit()
-if act + open_n >= mx: print(f"SLOT {act} running + {open_n} starting of {mx} allowed"); sys.exit()
-if not types.get(size): print(f"size {size} not available on this account"); sys.exit()
-if min(left) < need: print("not enough Boat compute left"); sys.exit()
-' "$RESERVE" "$SIZE" "$n")
-  case $why in SLOT*) echo "${why#SLOT }"; return 2 ;; esac
-  [ -z "$why" ] || { echo "$why"; return 1; }
+    st = d["starts"]
+except Exception: print("NO Boat limits missing a field"); sys.exit()
+if not types.get(size): print(f"NO size {size} not available on this account"); sys.exit()
+if min(left) < need: print("NO not enough Boat compute left"); sys.exit()
+if not can:
+    why = str(d.get("startBlockedReason") or "Boat says no new sandboxes now")
+    print(("WAIT 60 " if any(w in why.lower() for w in ("rate", "limit", "too many")) else "NO ") + why); sys.exit()
+if act + n >= mx: print(f"WAIT 15 {act} active + {n} starting of {mx}"); sys.exit()
+if not st.get("unlimited"):
+    for w, mine, pause in (("minute", am, 20), ("hour", ah, 120), ("day", ad, 0)):
+        x = st.get(w)
+        try: rem, lim = int(x["remaining"]), int(x["limit"])
+        except Exception: print(f"NO Boat start limit ({w}) unreadable"); sys.exit()
+        # the stricter of Boat (sees every client) and our own record (sees our
+        # starts at once), less the jobs of ours already admitted and starting
+        if min(rem, lim - mine) - n <= 0:
+            print((f"WAIT {pause} " if pause else "NO ") + f"start limit per {w}: {lim - rem} of {lim} used (Backplane {mine}), {n} starting"); sys.exit()
+print("OK")
+' "$RESERVE" "$SIZE" "$n" "$am" "$ah" "$ad")
+  case $why in
+    OK) ;;
+    WAIT*) echo "${why#WAIT }"; return 2 ;;
+    *) echo "${why#NO }"; return 1 ;;
+  esac
   [ $(( s + r + RESERVE )) -le "$BUDGET" ] || { echo "daily budget \$$BUDGET_USD would be exceeded (spent+reserved $(( s + r )) cs, this job $RESERVE cs)"; return 1; }
   ledger ev=reserve job="$JOB" size="$SIZE" ttl="$TTL" reserved="$RESERVE" src="$SRC" thread="$THREAD" work="$WORK" project="$PROJECT" machine="$MACHINE" cmd="$*" pid=$$ pidid="$(pid_id $$)"
+  echo ok
 }
-# all slots busy: wait in line (up to --wait seconds) instead of refusing;
-# every other refusal is immediate. Nothing is reserved while waiting.
+refuse() { FINISHING=1; rm -rf "${STAGE:-}"; say "refused: $1"; ledger ev=refused job="$JOB" why="$1" thread="$THREAD" work="$WORK" project="$PROJECT" machine="$MACHINE" size="$SIZE"; exit 75; }
+FINISHING=0 STAGE=""
+# wait in line (bounded by --wait) while a slot or a minute/hour start window
+# is full; one limits read per pause per job, never faster than 15 s
+WAITED=0
+admit_wait() {
+  local why arc p
+  while :; do
+    why=$(with_lock admit "$@"); arc=$?
+    [ $arc = 0 ] && return 0
+    [ $arc = 2 ] || refuse "$why"
+    p=${why%% *}; why=${why#* }; [ "$p" -ge 15 ] 2>/dev/null || p=15
+    [ $(( WAITED + p )) -le "$WAIT" ] || refuse "still waiting after ${WAITED}s: $why"
+    echo "waiting ${p}s: $why"
+    sleep "$p" & wait $!; WAITED=$(( WAITED + p ))
+  done
+}
 trap 'say "cancelled while waiting"; exit 143' TERM INT HUP
-waited=0
-while :; do
-  why=$(with_lock admit); arc=$?
-  [ $arc = 0 ] && break
-  if [ $arc = 2 ] && [ $waited -lt "$WAIT" ]; then
-    [ $waited = 0 ] && echo "waiting for a Boat slot ($why)"
-    sleep 15 & wait $!; waited=$(( waited + 15 )); continue
-  fi
-  [ $arc = 2 ] && why="no Boat slot within ${WAIT}s: $why"
-  say "refused: $why"; ledger ev=refused job="$JOB" why="$why" thread="$THREAD" work="$WORK" project="$PROJECT" machine="$MACHINE" size="$SIZE"; exit 75
-done
-[ $waited = 0 ] || echo "got a slot after ${waited}s"
+admit_wait "$@"
+[ $WAITED = 0 ] || echo "admitted after ${WAITED}s"
 
-ID="" CANCELLED=0 STAGE=""
+ID="" CANCELLED=0 STAGE="" IN_CREATE=0 BEFORE="" ATTEMPT_AT=0
+# after a create whose answer is unclear: the one sandbox it may have made,
+# only if exactly one unknown sandbox (not listed before, not in the ledger)
+# has this job's size and lifetime and was made since the attempt
+adopt() {
+  local known; known=$(fold known)
+  b list --json 2>/dev/null | python3 -c '
+import json, sys
+before, known, size, ttl, t0 = set(sys.argv[1].split()), set(sys.argv[2].split()), sys.argv[3], int(sys.argv[4]), int(sys.argv[5])
+from datetime import datetime
+c = []
+for s in json.load(sys.stdin)["sandboxes"]:
+    if s["id"] in before or s["id"] in known: continue
+    try: at = datetime.fromisoformat(s["createdAt"].replace("Z", "+00:00")).timestamp()
+    except Exception: continue
+    if s.get("type") == size and int(s.get("ttlSeconds") or -1) == ttl and at >= t0 - 10: c.append(s["id"])
+if len(c) == 1: print(c[0])
+' "$BEFORE" "$known" "$SIZE" "$TTL" "$ATTEMPT_AT"
+}
 FINISHING=0
 finish() {
   rc=$1
   [ "$FINISHING" = 1 ] && exit "$rc"
   FINISHING=1
   trap '' TERM INT HUP
+  if [ -z "$ID" ] && [ "$IN_CREATE" = 1 ]; then
+    sleep 5; ID=$(adopt); [ -n "$ID" ] && ledger ev=created job="$JOB" id="$ID" adopted=1 pid=$$ pidid="$(pid_id $$)"
+  fi
   if [ -n "$ID" ]; then
     u=$(BT=30 b usage "$ID" --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(int(d.get("seconds",0))*int(d.get("billingMultiplier",1)))' 2>/dev/null || echo "$RESERVE")
     if delete_verify "$ID"; then ledger ev=ended job="$JOB" id="$ID" cost="$u" rc="$rc"; echo "sandbox $ID deleted (verified); used ${u} credit-s (\$$(python3 -c "print(round($u/100000,5))"))"
@@ -311,11 +417,21 @@ for p in sys.stdin.buffer.read().split(b"\0"):
 REV=$(git -C "$SRC" rev-parse HEAD); DIRTY=$( [ -n "$(git -C "$SRC" status --porcelain)" ] && echo yes || echo no )
 echo "source: $SRC @ $REV (dirty: $DIRTY), $(wc -l < "$OUT/manifest.sha256") files, $(du -sh "$STAGE/$NAME" | cut -f1)"
 
-# the sandbox
-T0=$(date +%s)
-new=$(BT=120 b new --type "$SIZE" --no-env --no-snapshots --ttl "$TTL" --json 2>&1)
-ID=$(printf '%s\n' "$new" | python3 -c '
-import json, sys
+# the sandbox. Every create request is recorded first (it counts against
+# Boat's start windows whatever its answer). Rate-limited: the reservation is
+# released and the job backs off (retry-after, else 15·2^n s, at most 5
+# tries) and is admitted again. Rejected: refused, no retry. Unclear (a
+# timeout, no JSON): never retried, so never a second sandbox; the one it may
+# have made is adopted if it can be told apart, else reported.
+T0=$(date +%s); TRIES=0
+while :; do
+  BEFORE=$(listed | tr '\n' ' ') || { ledger ev=released job="$JOB"; refuse "cannot list sandboxes before creating"; }
+  ATTEMPT_AT=$(date +%s); ledger ev=attempt job="$JOB" size="$SIZE"
+  IN_CREATE=1
+  new=$(BT=120 b new --type "$SIZE" --no-env --no-snapshots --ttl "$TTL" --json 2>&1); nrc=$?
+  read -r ID CLS RA <<<"$(printf '%s\n' "$new" | python3 -c '
+import json, sys, re
+rc = int(sys.argv[1]); rate = None; err = None
 for l in sys.stdin:
     l = l.strip()
     if not l.startswith("{"): continue
@@ -323,12 +439,40 @@ for l in sys.stdin:
     except Exception: continue
     for c in (d, d.get("sandbox") or {}):
         v = c.get("id") or c.get("sandboxId")
-        if isinstance(v, str) and v.startswith("bx_"): print(v); sys.exit()
-')
-if [ -z "$ID" ]; then
-  # a create that answered oddly may still have made one: adopt it only if it is the single unknown one
-  say "boat new gave no id"; ledger ev=ended job="$JOB" cost=0 rc=76; with_lock sweep; exit 76
-fi
+        if isinstance(v, str) and v.startswith("bx_"): print(v, "OK", 0); sys.exit()
+    code, status = str(d.get("code", "")).lower(), d.get("status")
+    if status == 429 or "rate" in code or "too_many" in code or "limit" in code:
+        ra = d.get("retryAfter", d.get("retry_after", d.get("retryAfterSeconds")))
+        try: rate = int(float(ra))
+        except Exception: rate = 0
+    elif isinstance(status, int) and 400 <= status < 500 and status != 408: err = d.get("error") or code or str(status)
+if rate is not None: print("-", "RATE", rate)
+elif err is not None and rc != 124: print("-", "REJECT", 0)
+else: print("-", "UNCLEAR", 0)
+' "$nrc")"
+  [ "$CLS" = OK ] && break
+  case $CLS in
+    RATE)
+      ledger ev=released job="$JOB" why=rate-limited; IN_CREATE=0; ID=""
+      TRIES=$(( TRIES + 1 )); [ $TRIES -lt 5 ] || refuse "Boat kept answering rate-limited"
+      p=$(( 15 << (TRIES - 1) )); [ "${RA:-0}" -gt $p ] 2>/dev/null && p=$RA; [ $p -gt 300 ] && p=300
+      [ $(( WAITED + p )) -le "$WAIT" ] || refuse "rate-limited, and the wait would pass --wait"
+      echo "Boat rate-limited the create; retrying in ${p}s"
+      sleep "$p" & wait $!; WAITED=$(( WAITED + p ))
+      admit_wait "$@" ;;
+    REJECT)
+      IN_CREATE=0; ID=""; ledger ev=released job="$JOB"
+      refuse "Boat rejected the create: $(printf '%s' "$new" | nourl | head -c 200)" ;;
+    *)
+      sleep 5; ID=$(adopt)
+      [ -n "$ID" ] && { echo "create answered unclearly; adopted its sandbox $ID"; break; }
+      IN_CREATE=0; ID=""
+      ledger ev=ambiguous job="$JOB" why="create answered unclearly and no sandbox could be matched"
+      say "the create answered unclearly and no matching sandbox appeared; not retrying (no duplicate). Check boat list."
+      FINISHING=1; rm -rf "$STAGE"; exit 76 ;;
+  esac
+done
+IN_CREATE=0
 ledger ev=created job="$JOB" id="$ID" pid=$$ pidid="$(pid_id $$)"
 echo "sandbox $ID ($SIZE, ttl ${TTL}s, no account env, no snapshots) in $(( $(date +%s) - T0 ))s"
 

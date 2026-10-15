@@ -1,9 +1,16 @@
 #!/bin/bash
 # A stateful fake `boat` for scripts/boat-job.sh tests. State in $BOAT_FAKE_DIR:
-# one folder per sandbox (its /home/user is <dir>/<id>/home). Failure injection:
-# BOAT_FAKE_FAIL=new|push|exec|delete|list|limits|usage. Limits come from
-# $BOAT_FAKE_DIR/limits.json with ACTIVE replaced by the live count. Any other
-# subcommand is refused, and `new` refuses without --no-env and --no-snapshots.
+# one folder per sandbox (its /home/user is <dir>/<id>/home, its type, ttl and
+# creation time beside it). Limits come from $BOAT_FAKE_DIR/limits.json with
+# ACTIVE replaced by the live count and STARTS by rolling start windows:
+# limits from startlimits ("minute hour day"), used = creates in $S/starts
+# (one unix time per line; tests add other clients' starts there). With
+# $S/stale present the windows are frozen at its "used" numbers. Failure
+# injection: BOAT_FAKE_FAIL=new|push|exec|delete|list|limits|usage, a number
+# in $S/rate429 (that many creates answer 429, retryAfter from $S/retryafter),
+# $S/unclear (the next create makes the sandbox but answers garbage; with
+# "none" in it, makes nothing). Any other subcommand is refused; `new`
+# refuses without --no-env and --no-snapshots.
 set -u
 S=${BOAT_FAKE_DIR:?}; mkdir -p "$S/boxes"
 sub=${1:-}; shift || true
@@ -15,10 +22,24 @@ echo "$sub $*" >> "$S/calls"
 case $sub in
   --version) echo "boat 0.0.0-fake" ;;
   new)
-    fail new
+    fail new; echo "$(date +%s)" >> "$S/newcalls"
     case " $* " in *" --no-env "*) ;; *) echo "fake: unsafe flags" >&2; exit 9 ;; esac
     case " $* " in *" --no-snapshots "*) ;; *) echo "fake: unsafe flags" >&2; exit 9 ;; esac
-    id="bx_fake$(date +%s%N | tail -c 7)$RANDOM"; mkdir -p "$(home "$id")"
+    n=$(cat "$S/rate429" 2>/dev/null || echo 0)
+    if [ "$n" -gt 0 ] 2>/dev/null; then
+      echo $(( n - 1 )) > "$S/rate429"; date +%s >> "$S/starts"
+      echo "{\"code\":\"rate_limited\",\"error\":\"too many starts\",\"status\":429,\"retryAfter\":$(cat "$S/retryafter" 2>/dev/null || echo 1)}"; exit 1
+    fi
+    type=default ttl=3600
+    while [ $# -gt 0 ]; do case $1 in --type) type=$2; shift 2 ;; --ttl) ttl=$2; shift 2 ;; *) shift ;; esac; done
+    id="bx_fake$(date +%s%N | tail -c 7)$RANDOM"
+    if [ -e "$S/unclear" ]; then
+      mode=$(cat "$S/unclear"); rm -f "$S/unclear"; date +%s >> "$S/starts"
+      [ "$mode" = none ] || { mkdir -p "$(home "$id")"; echo "$type $ttl $(date -u +%FT%TZ)" > "$S/boxes/$id/meta"; }
+      [ "$mode" = two ] && { o="bx_other$RANDOM"; mkdir -p "$(home "$o")"; echo "$type $ttl $(date -u +%FT%TZ)" > "$S/boxes/$o/meta"; }
+      echo "error: connection reset"; exit 1
+    fi
+    mkdir -p "$(home "$id")"; echo "$type $ttl $(date -u +%FT%TZ)" > "$S/boxes/$id/meta"; date +%s >> "$S/starts"
     echo '{"event":"created","desktopUrl":"https://example.invalid/secret-token"}'
     echo "{\"id\":\"$id\",\"state\":\"ready\"}" ;;
   push)
@@ -37,11 +58,25 @@ case $sub in
   list)
     fail list
     printf '{"pageInfo":{"hasMore":false},"sandboxes":['; first=1
-    for d in "$S"/boxes/*/; do [ -d "$d" ] || continue; [ $first = 1 ] || printf ','; first=0; printf '{"id":"%s"}' "$(basename "$d")"; done
+    for d in "$S"/boxes/*/; do
+      [ -d "$d" ] || continue; [ $first = 1 ] || printf ','; first=0
+      read -r t l c < "$d/meta" 2>/dev/null || { t=default; l=0; c=2000-01-01T00:00:00Z; }
+      printf '{"id":"%s","type":"%s","ttlSeconds":%s,"createdAt":"%s","state":"idle"}' "$(basename "$d")" "$t" "$l" "$c"
+    done
     printf ']}\n' ;;
   limits)
     fail limits; n=$(find "$S/boxes" -mindepth 1 -maxdepth 1 -type d | wc -l)
-    sed "s/ACTIVE/$n/" "$S/limits.json" ;;
+    read -r lm lh ld < "$S/startlimits" 2>/dev/null || { lm=12; lh=60; ld=200; }
+    now=$(date +%s)
+    if [ -e "$S/stale" ]; then read -r um uh ud < "$S/stale"
+    else
+      um=0 uh=0 ud=0
+      while read -r t; do [ -n "$t" ] || continue; a=$(( now - t ))
+        [ $a -lt 60 ] && um=$((um+1)); [ $a -lt 3600 ] && uh=$((uh+1)); [ $a -lt 86400 ] && ud=$((ud+1)); done < <(cat "$S/starts" 2>/dev/null)
+    fi
+    w() { r=$(( $2 - $1 )); [ $r -lt 0 ] && r=0; printf '{"limit":%s,"used":%s,"remaining":%s}' "$2" "$1" "$r"; }
+    starts="{\"minute\":$(w $um $lm),\"hour\":$(w $uh $lh),\"day\":$(w $ud $ld),\"unlimited\":false}"
+    sed -e "s/ACTIVE/$n/" -e "s/STARTS/$starts/" "$S/limits.json" ;;
   usage)
     fail usage; echo '{"seconds":12,"billingMultiplier":1}' ;;
   *) echo "fake: refused $sub" >&2; exit 2 ;;
