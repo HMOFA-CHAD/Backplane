@@ -1469,15 +1469,15 @@ def State.usage(+s: State, +th: String, +used: Nat, +window: Nat) -> State:
 def Tok.pad2(+n: Nat) -> String:
   Bool.pick(String, Nat.is_lt(n, 10n), "0" ++ Nat.show(n), Nat.show(n))
 
+def Tok.civil.m(+y: Nat, +mp: Nat, +doy: Nat) -> String:
+  Nat.show(y) ++ "-" ++ Tok.pad2(Bool.pick(Nat, Nat.is_lt(mp, 10n), Nat.add(mp, 3n), Nat.sub(mp, 9n))) ++ "-" ++
+    Tok.pad2(Nat.add(Nat.sub(doy, Nat.div(Nat.add(Nat.mul(153n, mp), 2n), 5n)), 1n))
+
 # a day number (days since 1970-01-01) as a civil date (H. Hinnant's
 # days_from_civil, inverted), year-month-day
 def Tok.civil.k(+y: Nat, +doy: Nat) -> String:
   Tok.civil.m(Nat.add(y, Bool.pick(Nat, Nat.is_ge(Nat.div(Nat.add(Nat.mul(5n, doy), 2n), 153n), 10n), 1n, 0n)),
     Nat.div(Nat.add(Nat.mul(5n, doy), 2n), 153n), doy)
-
-def Tok.civil.m(+y: Nat, +mp: Nat, +doy: Nat) -> String:
-  Nat.show(y) ++ "-" ++ Tok.pad2(Bool.pick(Nat, Nat.is_lt(mp, 10n), Nat.add(mp, 3n), Nat.sub(mp, 9n))) ++ "-" ++
-    Tok.pad2(Nat.add(Nat.sub(doy, Nat.div(Nat.add(Nat.mul(153n, mp), 2n), 5n)), 1n))
 
 def Tok.civil.e(+era: Nat, +doe: Nat, +yoe: Nat) -> String:
   Tok.civil.k(Nat.add(yoe, Nat.mul(era, 400n)), Nat.sub(doe, Nat.sub(Nat.add(Nat.mul(365n, yoe), Nat.div(yoe, 4n)), Nat.div(yoe, 100n))))

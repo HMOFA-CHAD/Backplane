@@ -17,18 +17,18 @@ import ../src/core/usage.bend as UZ
 def js(+s: String) -> J.Json:
   Maybe.default(&2, J.Json, J.Json.parse(s), J.Null{})
 
-def log() -> List<&2, M.Change>:
-  [M.ProjectCreated{"p1", "demo", "/tmp/demo", 1n},
-   M.ThreadCreated{"t1", "p1", "Claude work", M.Local{}, "", "", "claude", "claude-opus-5-5", 1n},
-   M.ThreadCreated{"t2", "p1", "Codex work", M.Local{}, "", "", "codex", "gpt-6.1-sol", 1n},
-   M.SessionSet{"t2", "s1", 2n}]
-
 def claude(+key: String, +idx: String, +cost: String, +i: String, +w: String, +r: String, +o: String) -> J.Json:
   js("{\"type\":\"result\",\"uuid\":\"" ++ key ++ "\",\"result_index\":" ++ idx ++ ",\"total_cost_usd\":" ++ cost ++ ",\"usage\":{\"input_tokens\":" ++ i ++
     ",\"cache_creation_input_tokens\":" ++ w ++ ",\"cache_read_input_tokens\":" ++ r ++ ",\"output_tokens\":" ++ o ++ ",\"output_tokens_details\":{\"thinking_tokens\":0}}}")
 
 def codex(+i: String, +c: String, +o: String) -> J.Json:
   js("{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":" ++ i ++ ",\"cached_input_tokens\":" ++ c ++ ",\"cache_write_input_tokens\":0,\"output_tokens\":" ++ o ++ ",\"reasoning_output_tokens\":0}}")
+
+def log() -> List<&2, M.Change>:
+  [M.ProjectCreated{"p1", "demo", "/tmp/demo", 1n},
+   M.ThreadCreated{"t1", "p1", "Claude work", M.Local{}, "", "", "claude", "claude-opus-5-5", 1n},
+   M.ThreadCreated{"t2", "p1", "Codex work", M.Local{}, "", "", "codex", "gpt-6.1-sol", 1n},
+   M.SessionSet{"t2", "s1", 2n}]
 
 def then(+st: M.State, cs: List<&2, M.Change>) -> M.State:
   M.State.replay(cs, st)
