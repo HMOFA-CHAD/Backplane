@@ -866,17 +866,17 @@ def View.tz.auto(on: Bool) -> D.Node:
     case False{}:
       D.El{"button", "", [D.At{"class", ""}, D.At{"title", "Already following your phone"}, D.At{"disabled", "disabled"}], [D.Txt{"Automatic"}]}
 
-# Settings > Usage (src/core/usage.bend), the first row titled "Usage: ...";
-# a row with an action has its Refresh button
-def View.usage.row(+label: String, +r: UZ.URow) -> D.Node:
-  View.setrow(label, UZ.URow.note(r), View.usage.btn(String.is_empty(UZ.URow.act(r)), UZ.URow.act(r)))
-
 def View.usage.btn(none: Bool, +act: String) -> List<&2, D.Node>:
   match none:
     case True{}:
       Nil{}
     case False{}:
       [D.Dom.button("", act, "", "Read Boat's status again", "Refresh")]
+
+# Settings > Usage (src/core/usage.bend), the first row titled "Usage: ...";
+# a row with an action has its Refresh button
+def View.usage.row(+label: String, +r: UZ.URow) -> D.Node:
+  View.setrow(label, UZ.URow.note(r), View.usage.btn(String.is_empty(UZ.URow.act(r)), UZ.URow.act(r)))
 
 def View.usage.rows.go(rs: List<&2, UZ.URow>) -> List<&2, D.Node>:
   match rs:

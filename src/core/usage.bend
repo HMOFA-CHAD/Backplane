@@ -130,7 +130,6 @@ def URow.act(r: URow) -> String:
     case URow{_, _, a}:
       a
 
-
 # Boat
 # ----
 # Boat's side of Settings > Usage. The account comes from Boat's CLI
@@ -288,6 +287,9 @@ def Bj.size.k(have: Bool, want: Bool, +t: String) -> String:
 def Bj.size(+m: J.Json, want: Bool) -> String:
   Bj.size.k(J.Json.get_bool(m, "available", False{}), want, J.Json.get_str(m, "type", "?"))
 
+def Bj.join(+a: String, +b: String) -> String:
+  Bool.pick(String, String.is_empty(b), a, Bool.pick(String, String.is_empty(a), b, a ++ ", " ++ b))
+
 def Bj.sizes(ms: List<&2, J.Json>, +want: Bool, +acc: String) -> String:
   match ms:
     case Nil{}:
@@ -295,16 +297,13 @@ def Bj.sizes(ms: List<&2, J.Json>, +want: Bool, +acc: String) -> String:
     case m <> t:
       Bj.sizes(t, want, Bj.join(acc, Bj.size(m, want)))
 
-def Bj.join(+a: String, +b: String) -> String:
-  Bool.pick(String, String.is_empty(b), a, Bool.pick(String, String.is_empty(a), b, a ++ ", " ++ b))
-
-def Bj.sizes.row(+l: J.Json) -> String:
-  Bj.raw.k(Bj.sizes.all(l))
-
 def Bj.sizes.all(+l: J.Json) -> String:
   Bj.sizes(J.Json.elems(J.Json.get_obj(l, "machineTypes")), True{}, "") ++
     Bool.pick(String, String.is_empty(Bj.sizes(J.Json.elems(J.Json.get_obj(l, "machineTypes")), False{}, "")), "",
       " · not offered: " ++ Bj.sizes(J.Json.elems(J.Json.get_obj(l, "machineTypes")), False{}, ""))
+
+def Bj.sizes.row(+l: J.Json) -> String:
+  Bj.raw.k(Bj.sizes.all(l))
 
 # the account, as Boat's CLI last said it
 def Bj.account(+l: J.Json, +s: J.Json) -> List<&2, URow>:
