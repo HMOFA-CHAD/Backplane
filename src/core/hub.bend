@@ -22,6 +22,7 @@ import ./deploy.bend as DP
 import ./version.bend as VER
 import ./locks.bend as LK
 import ./adopt.bend as AD
+import ./cmds.bend as CM
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -5662,6 +5663,33 @@ def Quiet.due(run: Bool, +heard: Nat, +now: Nat, said: Bool, +busy: Nat) -> Bool
 
 def Quiet.act(+thread: String, +now: Nat, +seq: Nat) -> M.Change:
   M.ActivityLogged{thread, Hub.id("q", now, seq), "info", "quiet", "No output for 10 minutes", now}
+
+# A turn left running though its agent's ledger shows nothing at work
+# (CM.Cmds.idle: its last lifecycle line was lost, say in a restart's
+# handoff) ends after Stuck.after() seconds of silence with no work out, as
+# its ending would have ended it, with a note (laws stuck_*).
+def Stuck.after() -> Nat:
+  120n
+
+def Stuck.code.k(run: Bool, +c: CM.Cmds, +heard: Nat, +now: Nat, +busy: Nat, +wait: Nat) -> Nat:
+  match run:
+    case True{}:
+      Bool.pick(Nat, Bool.and(CM.Cmds.idle(c), Bool.and(Nat.is_eq(busy, 0n), Nat.is_ge(now, Nat.add(heard, wait)))), CM.Cmds.idle.end(c), 0n)
+    case False{}:
+      0n
+
+# 0: nothing to do; else the verdict that ends the turn (3 ok, 4 failed,
+# 5 stopped)
+def Stuck.code(run: Bool, +c: CM.Cmds, +heard: Nat, +now: Nat, +busy: Nat) -> Nat:
+  Stuck.code.k(run, c, heard, now, busy, Stuck.after())
+
+# the same after a silence of wait seconds (BACKPLANE_STUCK_S, for tests)
+def Stuck.code.w(run: Bool, +c: CM.Cmds, +heard: Nat, +now: Nat, +busy: Nat, +wait: Nat) -> Nat:
+  Stuck.code.k(run, c, heard, now, busy, wait)
+
+def Stuck.step(+s: M.State, +now: Nat, +thread: String, +code: Nat) -> Step:
+  Step.before([M.ActivityLogged{thread, Hub.id("x", now, Hub.seq(s)), "info", "stuck", "Its agent finished its last command but its turn never ended: ended now", now}], Nil{},
+    Hub.agent_line.v.k(code, s, now, thread, J.Null{}, ""))
 
 # whether an exit report (its generation) is the thread's current agent's
 def Exit.current(+gen: String, +current: String) -> Bool:

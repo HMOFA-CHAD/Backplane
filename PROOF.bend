@@ -9541,3 +9541,16 @@ def Laws.adopt_kept_never_carried():
 def Laws.adopt_not_kept_carried():
   {==}
 # ---- end agent-adopt ----
+# ---- hub-followups: stuck turns ----
+def Laws.stuck_ends_ok():
+  {==}
+
+def Laws.stuck_ends_failed_or_stopped():
+  {==}
+
+def Laws.stuck_waits():
+  {==}
+
+def Laws.stuck_step_ends_turn():
+  {==}
+# ---- end hub-followups: stuck turns ----

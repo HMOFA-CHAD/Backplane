@@ -41,6 +41,8 @@
 //   toolgap      the first command runs two tool calls in a row with no text
 //                between, each answered at once, and sleeps BP_GAP_MS (30000)
 //                between them, outside any tool call, then answers
+//   lostend      each command answers and has its result, but its lifecycle
+//                never completes (the line lost); the process stays, silent
 //   deploy       the first command calls the hub's deploy_restart (the MCP
 //                URL, BP_DEPLOY_ARGS, JSON, as its arguments), then ends
 // Every line read is appended to $FAKE_LOG ("IN <line>"), and "START pid".
@@ -155,6 +157,14 @@ async function run(c: Cmd, firstOne: boolean) {
   }
   lc(c.uuid, "started");
   init();
+  if (mode === "lostend") {
+    // the command's answer and result, but its lifecycle never completes
+    // (as when that line is lost): the process lives on, silent
+    say("LOST END");
+    result("LOST END");
+    log("LOSTEND");
+    return;
+  }
   if (firstOne && mode === "hold-child") {
     // a shell or build the agent started, in the agent's scope, holding nothing open
     const ch = spawn("sleep", ["60"], { stdio: "ignore", detached: true });

@@ -8226,3 +8226,23 @@ law adopt_kept_never_carried:
 law adopt_not_kept_carried:
   {H.Adopt.touches(H.Queue.changes(H.Adopt.recovered(H.Rec.demo(M.Running{}), 10n, [])), "t1") == True{} : Bool}
 # ---- end agent-adopt ----
+# ---- hub-followups: stuck turns ----
+# a running turn whose ledger has nothing at work ends after the silence
+# (here 3 s; Stuck.after() in the hub), as its ending would have: ok,
+# failed, or stopped; not before, not while a command works, a wake turn
+# runs or work is out (small numbers: a large literal overflows the proof)
+law stuck_ends_ok:
+  {H.Stuck.code.w(True{}, CM.Cmds{[CM.Cmd{"u", 3n, False{}, ""}], 1n, False{}}, 1n, 4n, 0n, 3n) == 3n : Nat}
+
+law stuck_ends_failed_or_stopped:
+  {Bool.and(Nat.is_eq(H.Stuck.code.w(True{}, CM.Cmds{[CM.Cmd{"u", 3n, True{}, "x"}], 1n, False{}}, 1n, 4n, 0n, 3n), 4n),
+    Nat.is_eq(H.Stuck.code.w(True{}, CM.Cmds{[CM.Cmd{"u", 4n, False{}, ""}, CM.Cmd{"v", 3n, True{}, "x"}], 1n, False{}}, 1n, 4n, 0n, 3n), 5n)) == True{} : Bool}
+
+law stuck_waits:
+  {Nat.add(Nat.add(H.Stuck.code.w(True{}, CM.Cmds{[CM.Cmd{"u", 3n, False{}, ""}], 1n, False{}}, 1n, 3n, 0n, 3n), H.Stuck.code.w(True{}, CM.Cmds{[CM.Cmd{"u", 2n, False{}, ""}], 1n, False{}}, 1n, 4n, 0n, 3n)),
+    Nat.add(Nat.add(H.Stuck.code.w(True{}, CM.Cmds{Nil{}, 1n, True{}}, 1n, 4n, 0n, 3n), H.Stuck.code.w(True{}, CM.Cmds{Nil{}, 1n, False{}}, 1n, 4n, 1n, 3n)),
+      Nat.add(H.Stuck.code.w(False{}, CM.Cmds{Nil{}, 1n, False{}}, 1n, 4n, 0n, 3n), H.Stuck.code.w(True{}, CM.Cmds{Nil{}, 2n, False{}}, 1n, 4n, 0n, 3n)))) == 0n : Nat}
+
+law stuck_step_ends_turn:
+  {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Stuck.step(H.Demo.state("claude", M.Running{}), 9n, "t1", 3n)), H.Demo.state("claude", M.Running{})), "t1")) == False{} : Bool}
+# ---- end hub-followups: stuck turns ----

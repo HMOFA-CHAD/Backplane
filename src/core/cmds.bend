@@ -642,3 +642,51 @@ def Cmds.read(+o: J.Json) -> Cmds:
 # a ledger with a command started and one resulted (for the laws)
 def Cmds.demo.kept() -> Cmds:
   Cmds{[Cmd{"u1", 2n, False{}, ""}, Cmd{"u2", 3n, True{}, "it \"failed\"\n"}], 1n, True{}}
+
+# Stuck turns
+# -----------
+# A running turn whose ledger has no command at work any more (each one
+# resulted or was stopped, and no wake turn runs) is over: only its last
+# lifecycle line is missing (lost in a restart's handoff, say). hub.bend's
+# Stuck.* ends it after a silence, the way its ending would have (laws
+# stuck_*).
+
+def Cmds.working(cs: List<&2, Cmd>) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case Cmd{_, +st, _, _} <> t:
+      Bool.or(Nat.is_lt(st, 3n), Cmds.working(t))
+
+def Cmds.tomb(cs: List<&2, Cmd>) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case Cmd{_, +st, _, _} <> t:
+      Bool.or(Nat.is_eq(st, 4n), Cmds.tomb(t))
+
+def Cmds.erred(cs: List<&2, Cmd>) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case Cmd{_, +st, +e, _} <> t:
+      Bool.or(Bool.and(Nat.is_eq(st, 3n), e), Cmds.erred(t))
+
+# lifecycle mode, no wake turn, no command at work
+def Cmds.idle(c: Cmds) -> Bool:
+  match c:
+    case Cmds{cs, m, w}:
+      Bool.and(Nat.is_eq(m, 1n), Bool.and(Bool.not(w), Bool.not(Cmds.working(cs))))
+
+# how such a turn ends, as its verdict would have said: 5 stopped (a
+# command was stopped), 4 failed (one resulted in an error), else 3 ok
+def Cmds.idle.end(c: Cmds) -> Nat:
+  match c:
+    case Cmds{+cs, _, _}:
+      Bool.pick(Nat, Cmds.tomb(cs), 5n, Bool.pick(Nat, Cmds.erred(cs), 4n, 3n))
+
+# the ledger once such a turn is ended
+def Cmds.cleared(c: Cmds) -> Cmds:
+  match c:
+    case Cmds{_, m, _}:
+      Cmds{Nil{}, m, False{}}

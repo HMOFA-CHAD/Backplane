@@ -290,9 +290,14 @@ def Join.chunk(+xs: List<&2, String>) -> List<&2, String>:
 
 # A join's chunks as the hub sends them: a number of lines, never their
 # bytes (reading a line's text on the hub copies it: the writer reads it
-# once, as it puts the frame together)
+# once, as it puts the frame together, splitting it into frames of at most
+# Join.most() lines and Join.bytes()). Each chunk is one trip through the
+# hub's inbox (a JoinMore); with the window in the same process and agents
+# streaming, a trip took 6-10 ms, so a 100k-line log in 64-line chunks
+# took 10-17 s to join: chunks are 1024 lines, the hub's own work for one
+# still only taking them off a list
 def Join.lines() -> Nat:
-  64n
+  1024n
 
 def Join.next(+xs: List<&2, String>) -> List<&2, String>:
   List.take(&2, String, xs, Join.lines())
