@@ -10361,3 +10361,151 @@ def Laws.mail_origin_keeps_outputs(st, thread, msg, origin, at):
       {==}
 
 # ---- end mail 1 ----
+# ---- links (ref) ----
+
+def Laws.ref_uri_parse_thread():
+  {==}
+
+def Laws.ref_uri_parse_bot():
+  {==}
+
+def Laws.ref_uri_parse_room():
+  {==}
+
+def Laws.ref_uri_parse_person():
+  {==}
+
+def Laws.ref_uri_parse_project():
+  {==}
+
+def Laws.ref_uri_parse_routine():
+  {==}
+
+def Laws.ref_uri_parse_task():
+  {==}
+
+def Laws.ref_uri_parse_pr():
+  {==}
+
+def Laws.ref_uri_parse_work():
+  {==}
+
+def Laws.ref_uri_parse_file():
+  {==}
+
+def Laws.ref_uri_parse_machine():
+  {==}
+
+def Laws.ref_uri_parse_conv():
+  {==}
+
+def Laws.ref_uri_parse_mail():
+  {==}
+
+def Laws.ref_uri_parse_mailroom():
+  {==}
+
+def Laws.ref_uri_parse_decision():
+  {==}
+
+def Laws.ref_uri_parse_charter():
+  {==}
+
+def Laws.ref_web_parse():
+  {==}
+
+def Laws.ref_web_parse_slash():
+  {==}
+
+def Laws.ref_addr_roundtrip_thread():
+  {==}
+
+def Laws.ref_addr_roundtrip_bot():
+  {==}
+
+def Laws.ref_addr_roundtrip_room():
+  {==}
+
+def Laws.ref_addr_roundtrip_person():
+  {==}
+
+def Laws.ref_addr_roundtrip_mail():
+  {==}
+
+def Laws.ref_addr_roundtrip_conv():
+  {==}
+
+def Laws.ref_thread_addr(id):
+  {==}
+
+def Laws.ref_pct_safe():
+  {==}
+
+def Laws.ref_pct_bytes():
+  {==}
+
+def Laws.ref_pct_three():
+  {==}
+
+def Laws.ref_pct_four():
+  {==}
+
+def Laws.ref_pct_encoding():
+  {==}
+
+def Laws.ref_pct_malformed():
+  {==}
+
+def Laws.ref_unknown_kind():
+  {==}
+
+def Laws.ref_no_script(s):
+  {==}
+
+def Laws.ref_legacy_open():
+  {==}
+
+def Laws.ref_bare_thread():
+  {==}
+
+def Laws.ref_bare_bot():
+  {==}
+
+def Laws.ref_bare_task():
+  {==}
+
+def Laws.ref_bare_project():
+  {==}
+
+def Laws.ref_bare_room():
+  {==}
+
+def Laws.ref_bare_routine():
+  {==}
+
+def Laws.ref_bare_remote():
+  {==}
+
+def Laws.ref_bare_not_short():
+  {==}
+
+def Laws.ref_bare_not_word():
+  {==}
+
+def Laws.ref_bare_not_incomplete():
+  {==}
+
+def Laws.ref_bare_not_unknown():
+  {==}
+
+def Laws.link_ref_uri():
+  {==}
+
+def Laws.link_ref_bare():
+  {==}
+
+def Laws.link_ref_md():
+  {==}
+
+def Laws.link_ref_plain_unchanged():
+  {==}

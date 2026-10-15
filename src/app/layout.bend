@@ -944,6 +944,17 @@ def Nd.href(xs: List<&2, N.Attr>) -> String:
     case _ <> t:
       Nd.href(t)
 
+def Nd.ref.attr(xs: List<&2, N.Attr>, +key: String) -> String:
+  match xs:
+    case Nil{}: ""
+    case N.At{+k, v} <> t: Bool.pick(String, String.eq(k, key), v, Nd.ref.attr(t, key))
+    case _ <> t: Nd.ref.attr(t, key)
+
+def Nd.ref.piece(ref: String, label: String, +at: List<&2, N.Attr>) -> LK.Piece:
+  match ref:
+    case SNil{}: LK.PLink{label, Nd.href(at)}
+    case SCon{h, t}: LK.PRef{label, SCon{h, t}, String.eq(Nd.ref.attr(at, "data-bare"), "1")}
+
 def Nd.links(ns: List<&2, N.Node>) -> List<&2, LK.Piece>:
   match ns:
     case Nil{}:
@@ -951,7 +962,7 @@ def Nd.links(ns: List<&2, N.Node>) -> List<&2, LK.Piece>:
     case N.Txt{_} <> t:
       Nd.links(t)
     case N.El{"a", _, +at, +ks} <> t:
-      LK.PLink{Nd.plain(ks), Nd.href(at)} <> Nd.links(t)
+      Nd.ref.piece(Nd.ref.attr(at, "data-ref"), Nd.plain(ks), at) <> Nd.links(t)
     case N.El{_, _, _, ks} <> t:
       List.append(&2, LK.Piece, Nd.links(ks), Nd.links(t))
 
@@ -978,11 +989,15 @@ def TL.link.w(+ty: Ty, p: LK.Piece) -> U32:
       Ty.width(ty, 3n, s)
     case LK.PLink{l, _}:
       Ty.width(ty, 3n, l)
+    case LK.PRef{l, _, _}:
+      Ty.width(ty, 3n, l)
 
 def TL.link.seg(+ty: Ty, p: LK.Piece, +c: D.Clip, +x: U32, +y: U32, +color: U32) -> Out:
   match p:
     case LK.PText{s}:
       Out.ops(Ty.text(ty, 3n, s, c, x, y, 23, color))
+    case LK.PRef{l, _, _}:
+      Out.ops(Ty.text(ty, 3n, l, c, x, y, 23, color))
     case LK.PLink{+l, +u}:
       Out{D.Draw.rect(c, x, (y + 19 : U32), Ty.width(ty, 3n, l), 1, T.Th.accent(), 255) <> Ty.text(ty, 3n, l, c, x, y, 23, T.Th.accent()),
         [Lay.hit(x, y, Ty.width(ty, 3n, l), 23, Bool.pick(String, LK.Link.is_web(u), "open-url", "file-open"), u)]}
