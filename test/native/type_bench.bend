@@ -222,6 +222,13 @@ def kept_frames(k: Kept) -> TI.Frames:
     case Kept{_, _, f}:
       f
 
+def frames_image(f: TI.Frames) -> Image:
+  match f:
+    case TI.FNone{}:
+      Pix{0}
+    case TI.FSome{_, _, t}:
+      TI.Tiles.image(t)
+
 # each part of one frame, 50 times over (ms for all 50)
 def parts(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +k: Kept) -> IO(Unit):
   +n = prepared(kept_n(k), 5n)
@@ -332,6 +339,32 @@ def blink(+n: Nat, +ty: L.Ty, +cats: Map<&2, CA.CatF>, k: Kept, +acc: Nat) -> IO
         +t1 : Nat <- IO.now()
         blink(j, ty, cats, Kept{with_hits(n1, hits(o), t1), memo, TI.FSome{N.Nui.width(n1), N.Nui.height(n1), tiles}}, Nat.add(acc, Nat.sub(t1, t0)))
 
+# caret blinks as the window makes them now: the last frame's tiles
+# blinked in place (TI.Frames.blink), no layout
+def blink.fast(+n: Nat, f: TI.Frames, +acc: Nat) -> IO(Nat):
+  match n:
+    case 0n:
+      IO.pure(Nat, acc)
+    case 1n+j:
+      do IO<Nat>:
+        +t0 : Nat <- IO.now()
+        +f2 : TI.Frames = TI.Frames.blink(f, Nat.is_eq(Nat.mod(j, 2n), 1n))
+        +img : Image = frames_image(f2)
+        +t1 : Nat <- IO.now()
+        blink.fast(j, f2, Nat.add(acc, Nat.sub(t1, t0)))
+
+# a blinked frame is the frame laid out and drawn from scratch with the
+# caret hidden; and the caret was there to hide
+def blink.exact(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +k: Kept) -> String:
+  +n = prepared(kept_n(k), N.Blink.ms())
+  +o = BV.Bv.frame(ty, L.Lay.memo(ty, n, kept_memo(k)), cats, n)
+  +off = TI.Tiles.image(TI.Frame.make(N.Nui.width(n), N.Nui.height(n), ops(o), Pix{T.Th.bg()}))
+  +fast = frames_image(TI.Frames.blink(kept_frames(k), False{}))
+  +back = frames_image(TI.Frames.blink(TI.Frames.blink(kept_frames(k), False{}), True{}))
+  "caret hidden " ++ Bool.pick(String, N.Blink.on(n), "no", "yes") ++ ", blinked = drawn from scratch: " ++ Bool.pick(String, TI.Eq.image(fast, off), "yes", "NO")
+    ++ ", differs from shown: " ++ Bool.pick(String, TI.Eq.image(fast, frames_image(kept_frames(k))), "no (no caret on screen)", "yes")
+    ++ ", blinked back = shown: " ++ Bool.pick(String, TI.Eq.image(back, frames_image(kept_frames(k))), "yes", "NO")
+
 # the same keys typed again and again in one process, from the same first
 # frame: a long-lived window gets slower at the same work as it allocates
 # (bendlang/bend#1007), and this shows it (ms per key, every pass)
@@ -364,4 +397,7 @@ def main() -> IO(Unit):
     IO.print("ms per key, each pass of " ++ Nat.show(String.length(text())) ++ " keys:" ++ ps)
     +bt : Nat <- blink(20n, ty, cats, k, 0n)
     IO.print("caret blink frame: " ++ Nat.show(Nat.div(bt, 20n)) ++ "." ++ Nat.show(Nat.mod(Nat.div(Nat.mul(bt, 10n), 20n), 10n)) ++ " ms")
+    +bf : Nat <- blink.fast(200n, kept_frames(k), 0n)
+    IO.print("caret blink, tiles blinked in place (the window's way): " ++ Nat.show(Nat.div(bf, 200n)) ++ "." ++ Nat.show(Nat.mod(Nat.div(Nat.mul(bf, 100n), 200n), 100n)) ++ " ms")
+    IO.print(blink.exact(ty, cats, k))
     IO.print("cat frame (4 cats move; pose, layout, tiles): " ++ Nat.show(Nat.div(ct, 30n)) ++ "." ++ Nat.show(Nat.mod(Nat.div(Nat.mul(ct, 10n), 30n), 10n)) ++ " ms")

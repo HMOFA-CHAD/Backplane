@@ -20,6 +20,13 @@ def Clip.cut(c: Clip, +x0: U32, +y0: U32, +x1: U32, +y1: U32, +color: U32, +alph
 def Draw.rect(+c: Clip, +x: U32, +y: U32, +w: U32, +h: U32, +color: U32, +alpha: U32) -> R.Op:
   Clip.cut(c, x, y, (x + w : U32), (y + h : U32), color, alpha, R.SRect{})
 
+# A text caret: a rectangle whose colour's top byte is its alpha when
+# shown (128 or more; theme colours are 0xRRGGBB), drawn at that alpha or
+# at 0. A caret blink then changes only these ops' alphas (tiles.bend's
+# Caret.set), and a frame can be blinked without laying it out again.
+def Draw.caret(+c: Clip, +x: U32, +y: U32, +w: U32, +h: U32, +color: U32, +on: U32, +shown: Bool) -> R.Op:
+  Clip.cut(c, x, y, (x + w : U32), (y + h : U32), U32.or(U32.and(color, 16777215), U32.shln(on, 24n)), Bool.pick(U32, shown, on, 0), R.SRect{})
+
 # a 1-pixel frame inside the rectangle
 def Draw.frame(+c: Clip, +x: U32, +y: U32, +w: U32, +h: U32, +color: U32) -> List<&2, R.Op>:
   [Draw.rect(c, x, y, w, 1, color, 255), Draw.rect(c, x, (y + h - 1 : U32), w, 1, color, 255),

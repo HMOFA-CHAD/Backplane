@@ -593,7 +593,7 @@ def Lay.field(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +w: U32, +text: String, +fo
       Bool.pick(List<&2, R.Op>, Bool.and(focused, U32.is_gt(b, a)), [D.Draw.rect(c, (x + 8 + a : U32), (y + 5 : U32), (b - a : U32), 18, T.Th.sel(), 255)], Nil{}),
       Bool.pick(List<&2, R.Op>, String.is_empty(text), Ty.text(ty, 2n, placeholder, c, (x + 8 : U32), y, 28, T.Th.faint()),
         Ty.text(ty, 2n, vis, c, (x + 8 : U32), y, 28, T.Th.text())),
-      Bool.pick(List<&2, R.Op>, Bool.and(focused, blink), [D.Draw.rect(c, (x + 8 + Ty.width(ty, 2n, String.take(vis, caret)) : U32), (y + 7 : U32), 1, 14, T.Th.accent(), 255)], Nil{})]),
+      Bool.pick(List<&2, R.Op>, focused, [D.Draw.caret(c, (x + 8 + Ty.width(ty, 2n, String.take(vis, caret)) : U32), (y + 7 : U32), 1, 14, T.Th.accent(), 255, blink)], Nil{})]),
     [Lay.hit(x, y, w, 28, "focus", id)]}
 
 def Lay.adding(+ty: Ty, adding: Bool, +dy: U32, +path: String, +focused: Bool, +caret: Nat, +mark: Nat) -> Out:
@@ -2126,7 +2126,7 @@ def Lay.composer(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String, 
     Bool.pick(Out, String.is_empty(draft),
       Out.ops(Ty.text(ty, 3n, Ty.fit(ty, 3n, "Ask anything: @bot, >thread, %project, #room, $skill, /btw", tw), D.Clip.all(), (x0 + 16 : U32), (y + 10 : U32), 23, T.Th.faint())),
       Lay.lines(ty, shown, D.Clip{(x0 + 1 : U32), (y + 1 : U32), (x1 - 1 : U32), (y + 60 + eh : U32)}, (x0 + 16 : U32), (y + 10 : U32))),
-    Bool.pick(Out, Bool.and(Bool.and(focused, blink), Bool.and(Nat.is_ge(crow, top), Nat.is_lt(row, v))), Out.ops([D.Draw.rect(D.Clip.all(), (x0 + 16 + cx : U32), (y + 14 + (U32.from_nat(row) * 23 : U32) : U32), 1, 16, T.Th.accent(), 255)]), Out.none()),
+    Bool.pick(Out, Bool.and(focused, Bool.and(Nat.is_ge(crow, top), Nat.is_lt(row, v))), Out.ops([D.Draw.caret(D.Clip.all(), (x0 + 16 + cx : U32), (y + 14 + (U32.from_nat(row) * 23 : U32) : U32), 1, 16, T.Th.accent(), 255, blink)]), Out.none()),
     Comp.bar(Nat.is_gt(n, v), n, v, top, (x1 - 12 : U32), (y + 12 : U32), (U32.from_nat(v) * 23 - 4 : U32)),
     Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), (64 + eh : U32), "focus", "composer"), Lay.hit(0, 0, 0, 0, "cs", Nat.show(top) ++ "," ++ Nat.show(Nat.sub(n, v)))]},
     Out{List.append(&2, R.Op, Ty.text(ty, 2n, models, D.Clip.all(), (x0 + 16 : U32), fy, 28, T.Th.dim()), Lay.icon(ty, "chevron-down", D.Clip.all(), (x0 + 22 + Ty.width(ty, 2n, models) : U32), (fy + 6 : U32), T.Th.dim())), [Lay.hit((x0 + 8 : U32), fy, (Ty.width(ty, 2n, models) + 38 : U32), 28, "flag", "models")]},
@@ -3501,10 +3501,19 @@ def Term.lines(+ty: Ty, ls: List<&2, VT.VLine>, +cw: U32, +c: D.Clip, +x: U32, +
     case VT.VLine{rs} <> t:
       List.append(&2, R.Op, Term.runs(ty, rs, cw, c, x, y), Term.lines(ty, t, cw, c, x, (y + 18 : U32)))
 
+# a focused terminal's cursor blinks (a caret: D.Draw.caret); an
+# unfocused one is a thin bar
+def Term.cursor.k(focused: Bool, +blink: Bool, +cw: U32, +c: D.Clip, +x: U32, +y: U32) -> List<&2, R.Op>:
+  match focused:
+    case True{}:
+      [D.Draw.caret(c, x, y, cw, 18, T.Th.accent(), 150, blink)]
+    case False{}:
+      [D.Draw.rect(c, x, y, 2, 18, T.Th.accent(), 255)]
+
 def Term.cursor(cur: VT.VCur, +focused: Bool, +blink: Bool, +cw: U32, +c: D.Clip, +x: U32, +y: U32) -> List<&2, R.Op>:
   match cur:
     case VT.VCur{+cx, +cy, True{}}:
-      [D.Draw.rect(c, (x + cx * cw : U32), (y + cy * 18 : U32), Bool.pick(U32, focused, cw, 2), 18, T.Th.accent(), Bool.pick(U32, focused, Bool.pick(U32, blink, 150, 0), 255))]
+      Term.cursor.k(focused, blink, cw, c, (x + cx * cw : U32), (y + cy * 18 : U32))
     case VT.VCur{_, _, False{}}:
       Nil{}
 

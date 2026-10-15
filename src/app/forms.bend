@@ -96,12 +96,12 @@ def Fm.caret.row(+ty: L.Ty, +s: String, +p: Nat, +px: U32) -> Nat:
 def Fm.caret.x(+ty: L.Ty, +s: String, +p: Nat, +px: U32) -> U32:
   L.Ty.width(ty, 2n, Maybe.default(&2, String, List.last(&2, String, L.Ty.wrap(ty, 2n, String.take(s, p), px)), ""))
 
-def Fm.area.caret(on: Bool, +ty: L.Ty, +s: String, +p: Nat, +px: U32, +top: Nat, +rows: Nat, +c: D.Clip, +x: U32, +y: U32) -> List<&2, R.Op>:
+def Fm.area.caret(on: Bool, +blink: Bool, +ty: L.Ty, +s: String, +p: Nat, +px: U32, +top: Nat, +rows: Nat, +c: D.Clip, +x: U32, +y: U32) -> List<&2, R.Op>:
   match on:
     case True{}:
       +r = Fm.caret.row(ty, s, p, px)
       Bool.pick(List<&2, R.Op>, Bool.and(Nat.is_ge(r, top), Nat.is_lt(Nat.sub(r, top), rows)),
-        [D.Draw.rect(c, (x + 8 + Fm.caret.x(ty, s, p, px) : U32), (y + 8 + (U32.from_nat(Nat.sub(r, top)) * 20 : U32) : U32), 1, 16, T.Th.accent(), 255)], Nil{})
+        [D.Draw.caret(c, (x + 8 + Fm.caret.x(ty, s, p, px) : U32), (y + 8 + (U32.from_nat(Nat.sub(r, top)) * 20 : U32) : U32), 1, 16, T.Th.accent(), 255, blink)], Nil{})
     case False{}:
       Nil{}
 
@@ -122,7 +122,7 @@ def Fm.area(+ty: L.Ty, +f: FS, +c: D.Clip, +x: U32, +y: U32, +w: U32, +rows: Nat
       L.Lay.box(c, x, y, w, h, 0, T.Th.bg(), Bool.pick(U32, on, T.Th.accent(), T.Th.line())),
       Bool.pick(List<&2, R.Op>, String.is_empty(s), L.Ty.text(ty, 2n, ph, c, (x + 8 : U32), (y + 6 : U32), 20, T.Th.faint()),
         Fm.rows(List.take(&2, String, List.drop(&2, String, ls, top), rows), ty, c, (x + 8 : U32), (y + 6 : U32), 20, T.Th.text())),
-      Fm.area.caret(Bool.and(on, FS.blink(f)), ty, s, FS.caret(f), px, top, rows, c, x, y)]),
+      Fm.area.caret(on, FS.blink(f), ty, s, FS.caret(f), px, top, rows, c, x, y)]),
     [L.Lay.hit(x, y, w, h, "focus", id)]}
 
 # a button cut to c (accent or plain text)

@@ -650,3 +650,108 @@ def Frame.plan(+w: U32, +h: U32, +ops: List<&2, R.Op>, +base: Image, prev: Frame
 def Frame.par(+w: U32, +h: U32, +ops: List<&2, R.Op>, +base: Image, prev: Frames, +dy: U32) -> Tiles:
   Plan.run(Frame.plan(w, h, ops, base, prev, dy), Frame.edge(w, h))
 
+
+# Caret blinks
+# ------------
+# A caret op (draw.bend's Draw.caret) carries its shown alpha in its
+# colour's top byte, and is drawn at that alpha or at 0. A blink changes
+# nothing else, so the last frame's tiles are blinked in place: a node or
+# tile none of whose ops is a caret in the other state is kept as it is,
+# and the tiles under the caret are drawn again. Caret.set commutes with
+# how ops reach a node and a tile (laws caret_keep, caret_loc), so each
+# node and tile ends up holding what a frame drawn from the blinked ops
+# would hold.
+
+def Caret.is(+c: U32) -> Bool:
+  U32.is_ge(U32.shrn(c, 24n), 128)
+
+def Caret.alpha.k(tag: Bool, on: Bool, +c: U32, +a: U32) -> U32:
+  match tag on:
+    case True{} True{}:
+      U32.shrn(c, 24n)
+    case True{} False{}:
+      0
+    case False{} _:
+      a
+
+# the alpha an op has with the carets shown (on) or hidden
+def Caret.alpha(+c: U32, +a: U32, +on: Bool) -> U32:
+  Caret.alpha.k(Caret.is(c), on, c, a)
+
+def Caret.op(o: R.Op, +on: Bool) -> R.Op:
+  match o:
+    case R.Op{x0, y0, x1, y1, +c, +a, s}:
+      R.Op{x0, y0, x1, y1, c, Caret.alpha(c, a, on), s}
+
+# the ops with every caret shown (on) or hidden
+def Caret.set(ops: List<&2, R.Op>, +on: Bool) -> List<&2, R.Op>:
+  match ops:
+    case Nil{}:
+      Nil{}
+    case o <> t:
+      Caret.op(o, on) <> Caret.set(t, on)
+
+# the op is already as on says
+def Caret.same(o: R.Op, +on: Bool) -> Bool:
+  match o:
+    case R.Op{_, _, _, _, +c, +a, _}:
+      U32.is_eq(Caret.alpha(c, a, on), a)
+
+# ok: the ops so far were as on says; the walk stops at the first that is
+# not (law caret_fresh: then Caret.set changes nothing)
+def Caret.fresh.go(ops: List<&2, R.Op>, +on: Bool, ok: Bool) -> Bool:
+  match ops ok:
+    case _ False{}:
+      False{}
+    case Nil{} True{}:
+      True{}
+    case o <> t True{}:
+      Caret.fresh.go(t, on, Caret.same(o, on))
+
+def Caret.fresh(ops: List<&2, R.Op>, +on: Bool) -> Bool:
+  Caret.fresh.go(ops, on, True{})
+
+def Tile.blink.k(fresh: Bool, +e: Nat, t: Tile, +on: Bool) -> Tile:
+  match fresh t:
+    case True{} _:
+      t
+    case False{} Tile{o, l, +b, _}:
+      +l2 = Caret.set(l, on)
+      Tile{Caret.set(o, on), l2, b, Tile.draw(e, l2, b)}
+
+def Tile.blink(t: Tile, +e: Nat, +on: Bool) -> Tile:
+  match t:
+    case Tile{+o, l, b, i}:
+      Tile.blink.k(Caret.fresh(o, on), e, Tile{o, l, b, i}, on)
+
+# a node's carets are all as on says already (a leaf: Tile.blink looks)
+def Tiles.fresh(t: Tiles, +on: Bool) -> Bool:
+  match t:
+    case TLeaf{_}:
+      False{}
+    case TNode{o, _, _, _, _, _}:
+      Caret.fresh(o, on)
+
+# the tiles with every caret shown (on) or hidden: a node already so is
+# kept whole, and only the tiles under a caret that changed are drawn
+# again (fresh: Tiles.fresh of t; law tiles_blink_exact)
+def Tiles.blink.go(t: Tiles, +e: Nat, +on: Bool, fresh: Bool) -> Tiles:
+  match t fresh:
+    case TLeaf{tl} _:
+      TLeaf{Tile.blink(tl, e, on)}
+    case TNode{o, b, ta, tb, tc, td} True{}:
+      TNode{o, b, ta, tb, tc, td}
+    case TNode{o, b, +ta, +tb, +tc, +td} False{}:
+      a2 b2 c2 d2 = Tiles.blink.go(ta, e, on, Tiles.fresh(ta, on)) Tiles.blink.go(tb, e, on, Tiles.fresh(tb, on)) Tiles.blink.go(tc, e, on, Tiles.fresh(tc, on)) Tiles.blink.go(td, e, on, Tiles.fresh(td, on))
+      TNode{Caret.set(o, on), b, a2, b2, c2, d2}
+
+def Tiles.blink(+t: Tiles, +e: Nat, +on: Bool) -> Tiles:
+  Tiles.blink.go(t, e, on, Tiles.fresh(t, on))
+
+# the last frame blinked (none: none)
+def Frames.blink(f: Frames, +on: Bool) -> Frames:
+  match f:
+    case FNone{}:
+      FNone{}
+    case FSome{+w, +h, t}:
+      FSome{w, h, Tiles.blink(t, Frame.edge(w, h), on)}

@@ -357,10 +357,11 @@ def Region.solid(ops: List<&2, Op>, +rx: U32, +ry: U32, +n: U32) -> Bool:
     case _:
       False{}
 
+# (a caret's colour carries a tag in its top byte: draw.bend's Draw.caret)
 def Region.top(ops: List<&2, Op>) -> U32:
   match ops:
     case Op{_, _, _, _, c, _, _} <> _:
-      c
+      U32.and(c, 16777215)
     case Nil{}:
       0
 

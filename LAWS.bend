@@ -7966,3 +7966,45 @@ law commit_line_is_wire:
 law commit_line_device_hides_token:
   {String.contains(H.Commit.line(M.DeviceDropped{"secret-tok", 5n}, "disk"), "secret-tok") == False{} : Bool}
 # ---- end hub-fanout: commit lines ----
+# win-lean-frame: caret blink (tiles.bend's Caret.*, Tiles.blink)
+# a caret shown or hidden reaches a node's quadrant the same way
+law caret_keep:
+  for ops: List<&2, R.Op>
+  for +on: Bool
+  for +px: U32
+  for +py: U32
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  {R.Region.keep(T.Caret.set(ops, on), px, py, rx, ry, n) == T.Caret.set(R.Region.keep(ops, px, py, rx, ry, n), on) : List<&2, R.Op>}
+
+# and a tile's own coordinates
+law caret_loc:
+  for ops: List<&2, R.Op>
+  for +on: Bool
+  for +ox: U32
+  for +oy: U32
+  for +n: U32
+  {T.Loc.ops(T.Caret.set(ops, on), ox, oy, n) == T.Caret.set(T.Loc.ops(ops, ox, oy, n), on) : List<&2, R.Op>}
+
+# ops whose carets are all as on says already are left as they are
+law caret_fresh:
+  for ops: List<&2, R.Op>
+  for +on: Bool
+  for ok: Bool
+  for +h: {T.Caret.fresh.go(ops, on, ok) == True{} : Bool}
+  {T.Caret.set(ops, on) == ops : List<&2, R.Op>}
+
+# a frame's tiles blinked in place are exactly the tiles drawn from scratch
+# from its ops with the carets so: a blink never leaves a stale tile
+law tiles_blink_exact:
+  for k: Nat
+  for +e: Nat
+  for +ops: List<&2, R.Op>
+  for +base: Image
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  for +on: Bool
+  {T.Tiles.blink(T.Tiles.make(k, e, ops, base, rx, ry, n), e, on) == T.Tiles.make(k, e, T.Caret.set(ops, on), base, rx, ry, n) : T.Tiles}
+# ---- end win-lean-frame caret blink ----

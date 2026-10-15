@@ -9161,3 +9161,198 @@ def Laws.commit_line_is_wire():
 def Laws.commit_line_device_hides_token():
   {==}
 # ---- end hub-fanout: commit lines ----
+# win-lean-frame: caret blink
+law caret_keep_k:
+  for b: Bool
+  for +x0: U32
+  for +y0: U32
+  for +x1: U32
+  for +y1: U32
+  for +c: U32
+  for +a: U32
+  for +s: R.Shape
+  for +on: Bool
+  for +rest: List<&2, R.Op>
+  {R.Region.keep.k(b, R.Op{x0, y0, x1, y1, c, T.Caret.alpha(c, a, on), s}, T.Caret.set(rest, on)) == T.Caret.set(R.Region.keep.k(b, R.Op{x0, y0, x1, y1, c, a, s}, rest), on) : List<&2, R.Op>}
+
+def caret_keep_k(b, x0, y0, x1, y1, c, a, s, on, rest):
+  match b:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+law caret_keep_op:
+  for hit: Bool
+  for +x0: U32
+  for +y0: U32
+  for +x1: U32
+  for +y1: U32
+  for +c: U32
+  for +a: U32
+  for +s: R.Shape
+  for +on: Bool
+  for +px: U32
+  for +py: U32
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  for +rest: List<&2, R.Op>
+  {R.Region.keep.op(hit, R.Op{x0, y0, x1, y1, c, T.Caret.alpha(c, a, on), s}, px, py, rx, ry, n, T.Caret.set(rest, on)) == T.Caret.set(R.Region.keep.op(hit, R.Op{x0, y0, x1, y1, c, a, s}, px, py, rx, ry, n, rest), on) : List<&2, R.Op>}
+
+def caret_keep_op(hit, x0, y0, x1, y1, c, a, s, on, px, py, rx, ry, n, rest):
+  match hit:
+    case True{}:
+      caret_keep_k(Bool.not(R.Region.empty(R.Region.move(s, px, py, rx, ry, n))), x0, y0, x1, y1, c, a, R.Region.move(s, px, py, rx, ry, n), on, rest)
+    case False{}:
+      {==}
+
+def Laws.caret_keep(ops, on, px, py, rx, ry, n):
+  match ops:
+    case Nil{}:
+      {==}
+    case R.Op{+x0, +y0, +x1, +y1, +c, +a, +s} <> +t:
+      ih = Laws.caret_keep(t, on, px, py, rx, ry, n)
+      %Equal.sym(List<&2, R.Op>, R.Region.keep(T.Caret.set(t, on), px, py, rx, ry, n), T.Caret.set(R.Region.keep(t, px, py, rx, ry, n), on), ih) : {R.Region.keep.op(R.Region.hits(x0, y0, x1, y1, rx, ry, n), R.Op{x0, y0, x1, y1, c, T.Caret.alpha(c, a, on), s}, px, py, rx, ry, n, _) == T.Caret.set(R.Region.keep.op(R.Region.hits(x0, y0, x1, y1, rx, ry, n), R.Op{x0, y0, x1, y1, c, a, s}, px, py, rx, ry, n, R.Region.keep(t, px, py, rx, ry, n)), on) : List<&2, R.Op>}
+      caret_keep_op(R.Region.hits(x0, y0, x1, y1, rx, ry, n), x0, y0, x1, y1, c, a, s, on, px, py, rx, ry, n, R.Region.keep(t, px, py, rx, ry, n))
+
+def Laws.caret_loc(ops, on, ox, oy, n):
+  match ops:
+    case Nil{}:
+      {==}
+    case R.Op{+x0, +y0, +x1, +y1, +c, +a, +s} <> +t:
+      ih = Laws.caret_loc(t, on, ox, oy, n)
+      %ih : {T.Loc.op(R.Op{x0, y0, x1, y1, c, T.Caret.alpha(c, a, on), s}, ox, oy, n) <> T.Loc.ops(T.Caret.set(t, on), ox, oy, n) == T.Caret.op(T.Loc.op(R.Op{x0, y0, x1, y1, c, a, s}, ox, oy, n), on) <> _ : List<&2, R.Op>}
+      {==}
+
+# the walk's flag is true when it answers true
+law caret_fresh_ok:
+  for ops: List<&2, R.Op>
+  for +on: Bool
+  for ok: Bool
+  for h: {T.Caret.fresh.go(ops, on, ok) == True{} : Bool}
+  {ok == True{} : Bool}
+
+def caret_fresh_ok(ops, on, ok, h):
+  match ops ok:
+    case _ True{}:
+      {==}
+    case Nil{} False{}:
+      Empty.absurd({False{} == True{} : Bool}, false_ne_true(h))
+    case _ <> _ False{}:
+      Empty.absurd({False{} == True{} : Bool}, false_ne_true(h))
+
+law caret_same_op:
+  for o: R.Op
+  for +on: Bool
+  for h: {T.Caret.same(o, on) == True{} : Bool}
+  {T.Caret.op(o, on) == o : R.Op}
+
+def caret_same_op(o, on, h):
+  match o:
+    case R.Op{+x0, +y0, +x1, +y1, +c, +a, +s}:
+      e = u32_eq_sound(T.Caret.alpha(c, a, on), a, h)
+      %e : {R.Op{x0, y0, x1, y1, c, T.Caret.alpha(c, a, on), s} == R.Op{x0, y0, x1, y1, c, _, s} : R.Op}
+      {==}
+
+def Laws.caret_fresh(ops, on, ok, h):
+  match ops ok:
+    case Nil{} _:
+      {==}
+    case +x <> +xt False{}:
+      Empty.absurd({T.Caret.set(x <> xt, on) == x <> xt : List<&2, R.Op>}, false_ne_true(h))
+    case +x <> +xt True{}:
+      e0 = caret_same_op(x, on, caret_fresh_ok(xt, on, T.Caret.same(x, on), h))
+      e1 = Laws.caret_fresh(xt, on, T.Caret.same(x, on), h)
+      %e0 : {T.Caret.op(x, on) <> T.Caret.set(xt, on) == _ <> xt : List<&2, R.Op>}
+      %e1 : {T.Caret.op(x, on) <> T.Caret.set(xt, on) == T.Caret.op(x, on) <> _ : List<&2, R.Op>}
+      {==}
+
+law blink_leaf_k:
+  for f: Bool
+  for +e: Nat
+  for +ops: List<&2, R.Op>
+  for +base: Image
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  for +on: Bool
+  for +h: {T.Caret.fresh(ops, on) == f : Bool}
+  {T.Tile.blink.k(f, e, T.Tile.make(e, ops, base, rx, ry, n), on) == T.Tile.make(e, T.Caret.set(ops, on), base, rx, ry, n) : T.Tile}
+
+def blink_leaf_k(f, e, ops, base, rx, ry, n, on, h):
+  match f:
+    case True{}:
+      ef = Laws.caret_fresh(ops, on, True{}, h)
+      %Equal.sym(List<&2, R.Op>, T.Caret.set(ops, on), ops, ef) : {T.Tile.make(e, ops, base, rx, ry, n) == T.Tile.make(e, _, base, rx, ry, n) : T.Tile}
+      {==}
+    case False{}:
+      el = Laws.caret_loc(ops, on, rx, ry, T.Tile.size(e))
+      %Equal.sym(List<&2, R.Op>, T.Loc.ops(T.Caret.set(ops, on), rx, ry, T.Tile.size(e)), T.Caret.set(T.Loc.ops(ops, rx, ry, T.Tile.size(e)), on), el) : {T.Tile{T.Caret.set(ops, on), T.Caret.set(T.Loc.ops(ops, rx, ry, T.Tile.size(e)), on), base, T.Tile.draw(e, T.Caret.set(T.Loc.ops(ops, rx, ry, T.Tile.size(e)), on), base)} == T.Tile{T.Caret.set(ops, on), _, base, T.Tile.draw(e, _, base)} : T.Tile}
+      {==}
+
+# one quadrant: the law one level down (ih), its ops cut from the
+# blinked ops (caret_keep)
+law blink_child:
+  for +j: Nat
+  for +e: Nat
+  for +ops: List<&2, R.Op>
+  for +bq: Image
+  for +px: U32
+  for +py: U32
+  for +cx: U32
+  for +cy: U32
+  for +h: U32
+  for +on: Bool
+  for ih: {T.Tiles.blink(T.Tiles.make(j, e, R.Region.keep(ops, px, py, cx, cy, h), bq, cx, cy, h), e, on) == T.Tiles.make(j, e, T.Caret.set(R.Region.keep(ops, px, py, cx, cy, h), on), bq, cx, cy, h) : T.Tiles}
+  {T.Tiles.blink(T.Tiles.make(j, e, R.Region.keep(ops, px, py, cx, cy, h), bq, cx, cy, h), e, on) == T.Tiles.make(j, e, R.Region.keep(T.Caret.set(ops, on), px, py, cx, cy, h), bq, cx, cy, h) : T.Tiles}
+
+def blink_child(j, e, ops, bq, px, py, cx, cy, h, on, ih):
+  ek = Laws.caret_keep(ops, on, px, py, cx, cy, h)
+  %Equal.sym(List<&2, R.Op>, R.Region.keep(T.Caret.set(ops, on), px, py, cx, cy, h), T.Caret.set(R.Region.keep(ops, px, py, cx, cy, h), on), ek) : {T.Tiles.blink(T.Tiles.make(j, e, R.Region.keep(ops, px, py, cx, cy, h), bq, cx, cy, h), e, on) == T.Tiles.make(j, e, _, bq, cx, cy, h) : T.Tiles}
+  ih
+
+law blink_node_k:
+  for f: Bool
+  for +j: Nat
+  for +e: Nat
+  for +ops: List<&2, R.Op>
+  for +base: Image
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  for +on: Bool
+  for +h: {T.Caret.fresh(ops, on) == f : Bool}
+  for ha: {T.Tiles.blink(T.Tiles.make(j, e, R.Region.keep(ops, rx, ry, rx, ry, U32.shr(n)), T.Img.q(base, 0n), rx, ry, U32.shr(n)), e, on) == T.Tiles.make(j, e, R.Region.keep(T.Caret.set(ops, on), rx, ry, rx, ry, U32.shr(n)), T.Img.q(base, 0n), rx, ry, U32.shr(n)) : T.Tiles}
+  for hb: {T.Tiles.blink(T.Tiles.make(j, e, R.Region.keep(ops, rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)), T.Img.q(base, 1n), (rx + U32.shr(n) : U32), ry, U32.shr(n)), e, on) == T.Tiles.make(j, e, R.Region.keep(T.Caret.set(ops, on), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)), T.Img.q(base, 1n), (rx + U32.shr(n) : U32), ry, U32.shr(n)) : T.Tiles}
+  for hc: {T.Tiles.blink(T.Tiles.make(j, e, R.Region.keep(ops, rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 2n), rx, (ry + U32.shr(n) : U32), U32.shr(n)), e, on) == T.Tiles.make(j, e, R.Region.keep(T.Caret.set(ops, on), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 2n), rx, (ry + U32.shr(n) : U32), U32.shr(n)) : T.Tiles}
+  for hd: {T.Tiles.blink(T.Tiles.make(j, e, R.Region.keep(ops, rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 3n), (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), e, on) == T.Tiles.make(j, e, R.Region.keep(T.Caret.set(ops, on), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 3n), (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)) : T.Tiles}
+  {T.Tiles.blink.go(T.Tiles.make(1n+j, e, ops, base, rx, ry, n), e, on, f) == T.Tiles.make(1n+j, e, T.Caret.set(ops, on), base, rx, ry, n) : T.Tiles}
+
+def blink_node_k(f, j, e, ops, base, rx, ry, n, on, h, ha, hb, hc, hd):
+  match f:
+    case True{}:
+      ef = Laws.caret_fresh(ops, on, True{}, h)
+      %Equal.sym(List<&2, R.Op>, T.Caret.set(ops, on), ops, ef) : {T.Tiles.make(1n+j, e, ops, base, rx, ry, n) == T.Tiles.make(1n+j, e, _, base, rx, ry, n) : T.Tiles}
+      {==}
+    case False{}:
+      tnode_cong(T.Caret.set(ops, on), base,
+        T.Tiles.blink(T.Tiles.make(j, e, R.Region.keep(ops, rx, ry, rx, ry, U32.shr(n)), T.Img.q(base, 0n), rx, ry, U32.shr(n)), e, on), T.Tiles.make(j, e, R.Region.keep(T.Caret.set(ops, on), rx, ry, rx, ry, U32.shr(n)), T.Img.q(base, 0n), rx, ry, U32.shr(n)),
+        T.Tiles.blink(T.Tiles.make(j, e, R.Region.keep(ops, rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)), T.Img.q(base, 1n), (rx + U32.shr(n) : U32), ry, U32.shr(n)), e, on), T.Tiles.make(j, e, R.Region.keep(T.Caret.set(ops, on), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)), T.Img.q(base, 1n), (rx + U32.shr(n) : U32), ry, U32.shr(n)),
+        T.Tiles.blink(T.Tiles.make(j, e, R.Region.keep(ops, rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 2n), rx, (ry + U32.shr(n) : U32), U32.shr(n)), e, on), T.Tiles.make(j, e, R.Region.keep(T.Caret.set(ops, on), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 2n), rx, (ry + U32.shr(n) : U32), U32.shr(n)),
+        T.Tiles.blink(T.Tiles.make(j, e, R.Region.keep(ops, rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 3n), (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), e, on), T.Tiles.make(j, e, R.Region.keep(T.Caret.set(ops, on), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 3n), (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)),
+        ha, hb, hc, hd)
+
+def Laws.tiles_blink_exact(k, e, ops, base, rx, ry, n, on):
+  match k:
+    case 0n:
+      Equal.cong(T.Tile, T.Tiles, t => T.TLeaf{t}, T.Tile.blink.k(T.Caret.fresh(ops, on), e, T.Tile.make(e, ops, base, rx, ry, n), on), T.Tile.make(e, T.Caret.set(ops, on), base, rx, ry, n),
+        blink_leaf_k(T.Caret.fresh(ops, on), e, ops, base, rx, ry, n, on, {==}))
+    case 1n+j0:
+      +j = j0
+      blink_node_k(T.Caret.fresh(ops, on), j, e, ops, base, rx, ry, n, on, {==},
+        blink_child(j, e, ops, T.Img.q(base, 0n), rx, ry, rx, ry, U32.shr(n), on, Laws.tiles_blink_exact(j, e, R.Region.keep(ops, rx, ry, rx, ry, U32.shr(n)), T.Img.q(base, 0n), rx, ry, U32.shr(n), on)),
+        blink_child(j, e, ops, T.Img.q(base, 1n), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n), on, Laws.tiles_blink_exact(j, e, R.Region.keep(ops, rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)), T.Img.q(base, 1n), (rx + U32.shr(n) : U32), ry, U32.shr(n), on)),
+        blink_child(j, e, ops, T.Img.q(base, 2n), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n), on, Laws.tiles_blink_exact(j, e, R.Region.keep(ops, rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 2n), rx, (ry + U32.shr(n) : U32), U32.shr(n), on)),
+        blink_child(j, e, ops, T.Img.q(base, 3n), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n), on, Laws.tiles_blink_exact(j, e, R.Region.keep(ops, rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 3n), (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n), on)))
+# ---- end win-lean-frame caret blink ----
