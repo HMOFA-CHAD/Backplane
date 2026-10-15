@@ -295,137 +295,179 @@ type Order is Data:
   ONode{height: Nat, count: Nat, at: Nat, id: String, left: Order, right: Order}
 
 type Box is Data:
-  Box{convs: Map<&2, Conv>, mails: Map<&2, List<&2, Mail>>, marks: Map<&2, Mark>, order: Map<&2, Order>, counts: Map<&2, Nat>, total: Nat, origins: Map<&2, Origin>, runs: Map<&2, Run>, live: Map<&2, String>, live_counts: Map<&2, Nat>, charters: Map<&2, String>, decisions: Map<&2, List<&2, Decision>>, ids: Map<&2, Bool>}
+  Box{convs: Map<&2, Conv>, mails: Map<&2, List<&2, Mail>>, marks: Map<&2, Mark>, order: Map<&2, Order>, counts: Map<&2, Nat>, total: Nat, origins: Map<&2, Origin>, runs: Map<&2, Run>, live: Map<&2, String>, live_counts: Map<&2, Nat>, charters: Map<&2, String>, decisions: Map<&2, List<&2, Decision>>, ids: Map<&2, Bool>, names: Map<&2, String>}
 
 def Box.convs(+x: Box) -> Map<&2, Conv>:
   match x:
-    case Box{+v, _, _, _, _, _, _, _, _, _, _, _, _}:
+    case Box{+v, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       v
 
 def Box.mails(+x: Box) -> Map<&2, List<&2, Mail>>:
   match x:
-    case Box{_, +v, _, _, _, _, _, _, _, _, _, _, _}:
+    case Box{_, +v, _, _, _, _, _, _, _, _, _, _, _, _}:
       v
 
 def Box.marks(+x: Box) -> Map<&2, Mark>:
   match x:
-    case Box{_, _, +v, _, _, _, _, _, _, _, _, _, _}:
+    case Box{_, _, +v, _, _, _, _, _, _, _, _, _, _, _}:
       v
 
 def Box.order(+x: Box) -> Map<&2, Order>:
   match x:
-    case Box{_, _, _, +v, _, _, _, _, _, _, _, _, _}:
+    case Box{_, _, _, +v, _, _, _, _, _, _, _, _, _, _}:
       v
 
 def Box.counts(+x: Box) -> Map<&2, Nat>:
   match x:
-    case Box{_, _, _, _, +v, _, _, _, _, _, _, _, _}:
+    case Box{_, _, _, _, +v, _, _, _, _, _, _, _, _, _}:
       v
 
 def Box.total(+x: Box) -> Nat:
   match x:
-    case Box{_, _, _, _, _, +v, _, _, _, _, _, _, _}:
+    case Box{_, _, _, _, _, +v, _, _, _, _, _, _, _, _}:
       v
 
 def Box.origins(+x: Box) -> Map<&2, Origin>:
   match x:
-    case Box{_, _, _, _, _, _, +v, _, _, _, _, _, _}:
+    case Box{_, _, _, _, _, _, +v, _, _, _, _, _, _, _}:
       v
 
 def Box.runs(+x: Box) -> Map<&2, Run>:
   match x:
-    case Box{_, _, _, _, _, _, _, +v, _, _, _, _, _}:
+    case Box{_, _, _, _, _, _, _, +v, _, _, _, _, _, _}:
       v
 
 def Box.active(+x: Box) -> Map<&2, String>:
   match x:
-    case Box{_, _, _, _, _, _, _, _, +v, _, _, _, _}:
+    case Box{_, _, _, _, _, _, _, _, +v, _, _, _, _, _}:
       v
 
 def Box.live_counts(+x: Box) -> Map<&2, Nat>:
   match x:
-    case Box{_, _, _, _, _, _, _, _, _, +v, _, _, _}:
+    case Box{_, _, _, _, _, _, _, _, _, +v, _, _, _, _}:
       v
 
 def Box.charters(+x: Box) -> Map<&2, String>:
   match x:
-    case Box{_, _, _, _, _, _, _, _, _, _, +v, _, _}:
+    case Box{_, _, _, _, _, _, _, _, _, _, +v, _, _, _}:
       v
 
 def Box.decision_log(+x: Box) -> Map<&2, List<&2, Decision>>:
   match x:
-    case Box{_, _, _, _, _, _, _, _, _, _, _, +v, _}:
+    case Box{_, _, _, _, _, _, _, _, _, _, _, +v, _, _}:
       v
 
 def Box.ids(+x: Box) -> Map<&2, Bool>:
   match x:
-    case Box{_, _, _, _, _, _, _, _, _, _, _, _, +v}:
+    case Box{_, _, _, _, _, _, _, _, _, _, _, _, +v, _}:
       v
 
 def Box.with_convs(+x: Box, +v: Map<&2, Conv>) -> Box:
   match x:
-    case Box{_, +x1, +x2, +x3, +x4, +x5, +x6, +x7, +x8, +x9, +x10, +x11, +x12}:
-      Box{v, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12}
+    case Box{_, +x1, +x2, +x3, +x4, +x5, +x6, +x7, +x8, +x9, +x10, +x11, +x12, +names}:
+      Box{v, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, names}
 
 def Box.with_mails(+x: Box, +v: Map<&2, List<&2, Mail>>) -> Box:
   match x:
-    case Box{+x0, _, +x2, +x3, +x4, +x5, +x6, +x7, +x8, +x9, +x10, +x11, +x12}:
-      Box{x0, v, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12}
+    case Box{+x0, _, +x2, +x3, +x4, +x5, +x6, +x7, +x8, +x9, +x10, +x11, +x12, +names}:
+      Box{x0, v, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, names}
 
 def Box.with_marks(+x: Box, +v: Map<&2, Mark>) -> Box:
   match x:
-    case Box{+x0, +x1, _, +x3, +x4, +x5, +x6, +x7, +x8, +x9, +x10, +x11, +x12}:
-      Box{x0, x1, v, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12}
+    case Box{+x0, +x1, _, +x3, +x4, +x5, +x6, +x7, +x8, +x9, +x10, +x11, +x12, +names}:
+      Box{x0, x1, v, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, names}
 
 def Box.with_order(+x: Box, +v: Map<&2, Order>) -> Box:
   match x:
-    case Box{+x0, +x1, +x2, _, +x4, +x5, +x6, +x7, +x8, +x9, +x10, +x11, +x12}:
-      Box{x0, x1, x2, v, x4, x5, x6, x7, x8, x9, x10, x11, x12}
+    case Box{+x0, +x1, +x2, _, +x4, +x5, +x6, +x7, +x8, +x9, +x10, +x11, +x12, +names}:
+      Box{x0, x1, x2, v, x4, x5, x6, x7, x8, x9, x10, x11, x12, names}
 
 def Box.with_counts(+x: Box, +v: Map<&2, Nat>) -> Box:
   match x:
-    case Box{+x0, +x1, +x2, +x3, _, +x5, +x6, +x7, +x8, +x9, +x10, +x11, +x12}:
-      Box{x0, x1, x2, x3, v, x5, x6, x7, x8, x9, x10, x11, x12}
+    case Box{+x0, +x1, +x2, +x3, _, +x5, +x6, +x7, +x8, +x9, +x10, +x11, +x12, +names}:
+      Box{x0, x1, x2, x3, v, x5, x6, x7, x8, x9, x10, x11, x12, names}
 
 def Box.with_total(+x: Box, +v: Nat) -> Box:
   match x:
-    case Box{+x0, +x1, +x2, +x3, +x4, _, +x6, +x7, +x8, +x9, +x10, +x11, +x12}:
-      Box{x0, x1, x2, x3, x4, v, x6, x7, x8, x9, x10, x11, x12}
+    case Box{+x0, +x1, +x2, +x3, +x4, _, +x6, +x7, +x8, +x9, +x10, +x11, +x12, +names}:
+      Box{x0, x1, x2, x3, x4, v, x6, x7, x8, x9, x10, x11, x12, names}
 
 def Box.with_origins(+x: Box, +v: Map<&2, Origin>) -> Box:
   match x:
-    case Box{+x0, +x1, +x2, +x3, +x4, +x5, _, +x7, +x8, +x9, +x10, +x11, +x12}:
-      Box{x0, x1, x2, x3, x4, x5, v, x7, x8, x9, x10, x11, x12}
+    case Box{+x0, +x1, +x2, +x3, +x4, +x5, _, +x7, +x8, +x9, +x10, +x11, +x12, +names}:
+      Box{x0, x1, x2, x3, x4, x5, v, x7, x8, x9, x10, x11, x12, names}
 
 def Box.with_runs(+x: Box, +v: Map<&2, Run>) -> Box:
   match x:
-    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, _, +x8, +x9, +x10, +x11, +x12}:
-      Box{x0, x1, x2, x3, x4, x5, x6, v, x8, x9, x10, x11, x12}
+    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, _, +x8, +x9, +x10, +x11, +x12, +names}:
+      Box{x0, x1, x2, x3, x4, x5, x6, v, x8, x9, x10, x11, x12, names}
 
 def Box.with_active(+x: Box, +v: Map<&2, String>) -> Box:
   match x:
-    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, +x7, _, +x9, +x10, +x11, +x12}:
-      Box{x0, x1, x2, x3, x4, x5, x6, x7, v, x9, x10, x11, x12}
+    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, +x7, _, +x9, +x10, +x11, +x12, +names}:
+      Box{x0, x1, x2, x3, x4, x5, x6, x7, v, x9, x10, x11, x12, names}
 
 def Box.with_live_counts(+x: Box, +v: Map<&2, Nat>) -> Box:
   match x:
-    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, +x7, +x8, _, +x10, +x11, +x12}:
-      Box{x0, x1, x2, x3, x4, x5, x6, x7, x8, v, x10, x11, x12}
+    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, +x7, +x8, _, +x10, +x11, +x12, +names}:
+      Box{x0, x1, x2, x3, x4, x5, x6, x7, x8, v, x10, x11, x12, names}
 
 def Box.with_charters(+x: Box, +v: Map<&2, String>) -> Box:
   match x:
-    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, +x7, +x8, +x9, _, +x11, +x12}:
-      Box{x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, v, x11, x12}
+    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, +x7, +x8, +x9, _, +x11, +x12, +names}:
+      Box{x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, v, x11, x12, names}
 
 def Box.with_decision_log(+x: Box, +v: Map<&2, List<&2, Decision>>) -> Box:
   match x:
-    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, +x7, +x8, +x9, +x10, _, +x12}:
-      Box{x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, v, x12}
+    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, +x7, +x8, +x9, +x10, _, +x12, +names}:
+      Box{x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, v, x12, names}
 
 def Box.with_ids(+x: Box, +v: Map<&2, Bool>) -> Box:
   match x:
-    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, +x7, +x8, +x9, +x10, +x11, _}:
-      Box{x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, v}
+    case Box{+x0, +x1, +x2, +x3, +x4, +x5, +x6, +x7, +x8, +x9, +x10, +x11, _, +names}:
+      Box{x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, v, names}
+
+# Two aliases per bot: current name -> id, and id -> current name.
+# Replay of BotSet/BotDeleted maintains them without enumerating World.bots.
+def Box.names(+x: Box) -> Map<&2, String>:
+  match x:
+    case Box{_, _, _, _, _, _, _, _, _, _, _, _, _, +names}: names
+
+def Box.with_names(+x: Box, +names: Map<&2, String>) -> Box:
+  match x:
+    case Box{+a, +b, +c, +d, +e, +f, +g, +h, +i, +j, +k, +l, +m, _}:
+      Box{a, b, c, d, e, f, g, h, i, j, k, l, m, names}
+
+def Box.bot_deleted(+b: Box, +id: String) -> Box:
+  Box.with_names(b, Map.del(&2, String, Map.del(&2, String, Box.names(b), "name:" ++ Get.str(Box.names(b), "id:" ++ id)), "id:" ++ id))
+
+def Box.bot_named_store(+b: Box, +id: String, +name: String) -> Box:
+  Box.with_names(b, Map.set(&2, String, Map.set(&2, String, Box.names(b), "id:" ++ id, String.to_lower(name)), "name:" ++ String.to_lower(name), id))
+
+def Box.bot_named(+b: Box, +id: String, +name: String) -> Box:
+  Box.bot_named_store(Box.bot_deleted(b, id), id, name)
+
+def Box.sender_id(+known: Bool, +from: String) -> String:
+  match known:
+    case True{}: "bot:" ++ from
+    case False{}: from
+
+def Box.sender_named(+found: Bool, +id: String, +b: Box, +from: String) -> String:
+  match found:
+    case True{}: "bot:" ++ id
+    case False{}: Box.sender_id(Bool.not(String.is_empty(Get.str(Box.names(b), "id:" ++ from))), from)
+
+def Box.sender_lookup(+b: Box, +from: String) -> String:
+  +id = Get.str(Box.names(b), "name:" ++ String.to_lower(from))
+  Box.sender_named(Bool.not(String.is_empty(id)), id, b, from)
+
+def Box.sender_person(person: Bool, +b: Box, +from: String) -> String:
+  match person:
+    case True{}: "person"
+    case False{}: Box.sender_lookup(b, from)
+
+def Box.sender(+b: Box, +from: String) -> String:
+  Box.sender_person(Bool.or(String.eq(from, "you"), String.eq(from, "person")), b, from)
 
 def Order.height(+t: Order) -> Nat:
   match t:
@@ -612,17 +654,34 @@ def Mail.envelope_from(+from: String, +label: String) -> String:
     Bool.pick(String, Bool.or(String.eq(name, "you"), String.starts_with(name, "person@")), "person",
       Bool.pick(String, String.contains(name, "@"), "peer:" ++ Maybe.default(&2, String, List.last(&2, String, String.split(name, Chr{64})), ""), "bot:" ++ name)))
 
+def Mail.direct_unlinked(+name: String) -> Origin:
+  Origin{Bool.pick(String, String.starts_with(name, "person@"), "person", Bool.pick(String, String.contains(name, "@"), "peer:" ++ name, "bot:" ++ name)),
+    Bool.pick(String, String.starts_with(name, "person@"), "person", Bool.pick(String, String.contains(name, "@"), "peer", "bot")), ""}
+
+def Mail.direct_linked(linked: Bool, +from: String, +label: String) -> Origin:
+  match linked:
+    case True{}: Mail.classify_base(from, False{})
+    case False{}: Mail.direct_unlinked(String.drop(label, 14n))
+
+def Mail.direct_origin(+from: String, +label: String) -> Origin:
+  Mail.direct_linked(Bool.not(String.is_empty(from)), from, label)
+
+# Bodies can quote envelopes. Only unlinked incoming bot envelopes may
+# identify the person; a known thread sender cannot be erased by its text.
+def Mail.wake_shape(+msg: String, +head: String) -> Bool:
+  Bool.and(String.contains(msg, ":lr-"), Bool.and(String.starts_with(head, "Wake "), Bool.and(String.contains(head, ":"), Bool.and(Bool.not(String.is_empty(Prefix.until(String.drop(head, 5n), Chr{58}))), Bool.not(String.contains(Prefix.until(String.drop(head, 5n), Chr{58}), " "))))))
+
 def Mail.classify(+from: String, +msg: String, +system: Bool, +text: String) -> Origin:
   +head = String.take(text, 160n)
   +label = Prefix.until(head, Chr{93})
   +room = Maybe.default(&2, String, List.last(&2, String, String.split(label, Chr{35})), "")
-  Mail.classify_choose(Bool.and(String.starts_with(head, "[message from person@"), Bool.not(String.contains(label, " in #"))), Origin{"person", "person", ""},
+  Mail.classify_choose(Bool.and(String.starts_with(head, "[message from "), Bool.not(String.contains(label, " in #"))), Mail.direct_origin(from, label),
   Mail.classify_choose(String.starts_with(head, "Backplane restarted while you were working"), Origin{"backplane", "carry", ""},
   Mail.classify_choose(Bool.and(String.starts_with(head, "[message from "), String.contains(label, " in #")), Origin{Mail.envelope_from(from, label), "room", room},
   Mail.classify_choose(String.starts_with(head, "[routine: "), Origin{"routine:" ++ String.drop(label, 10n), "routine", String.drop(label, 10n)},
   Mail.classify_choose(String.starts_with(head, "[webhook: "), Origin{"hook:" ++ String.drop(label, 10n), "hook", String.drop(label, 10n)},
   Mail.classify_choose(String.starts_with(msg, "t:backplane:l"), Origin{"backplane", "lost", ""},
-  Mail.classify_choose(String.starts_with(head, "Wake "), Origin{Addr.of(from), "wake", Prefix.until(String.drop(head, 5n), Chr{58})},
+  Mail.classify_choose(Mail.wake_shape(msg, head), Origin{Addr.of(from), "wake", Prefix.until(String.drop(head, 5n), Chr{58})},
   Mail.classify_choose(String.eq(from, "deploy"), Origin{"backplane", "deploy", ""},
   Mail.classify_choose(Bool.or(String.starts_with(from, "lock:"), String.starts_with(msg, "t:lock:")), Origin{"backplane", "lock", Bool.pick(String, String.starts_with(from, "lock:"), String.drop(from, 5n), Prefix.until(String.drop(msg, 7n), Chr{58}))},
   Mail.classify_choose(Bool.or(String.contains(msg, ":td-"), String.starts_with(head, "[Backplane] Delegated task")), Origin{Addr.of(from), "task", ""},
@@ -705,8 +764,16 @@ def Mail.head_go(+n: Nat, +s: String, +acc: String) -> String:
 def Mail.head(+text: String) -> String:
   Mail.head_go(160n, text, "")
 
+def Mail.size_go(text: String, +n: Nat) -> Nat:
+  match text:
+    case SNil{}: n
+    case SCon{_, tail}: Mail.size_go(tail, 1n+n)
+
+def Mail.text_size(text: String) -> Nat:
+  Mail.size_go(text, 0n)
+
 def Box.empty() -> Box:
-  Box{Map.new(&2, Conv), Map.new(&2, List<&2, Mail>), Map.new(&2, Mark), Map.new(&2, Order), Map.new(&2, Nat), 0n, Map.new(&2, Origin), Map.new(&2, Run), Map.new(&2, String), Map.new(&2, Nat), Map.new(&2, String), Map.new(&2, List<&2, Decision>), Map.new(&2, Bool)}
+  Box{Map.new(&2, Conv), Map.new(&2, List<&2, Mail>), Map.new(&2, Mark), Map.new(&2, Order), Map.new(&2, Nat), 0n, Map.new(&2, Origin), Map.new(&2, Run), Map.new(&2, String), Map.new(&2, Nat), Map.new(&2, String), Map.new(&2, List<&2, Decision>), Map.new(&2, Bool), Map.new(&2, String)}
 
 def Box.conv(+b: Box, +id: String) -> Conv:
   Get.conv.got(Map.get(Conv, Conv.empty(), Box.convs(b), id))

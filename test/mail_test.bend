@@ -7,6 +7,7 @@ import ../src/core/json.bend as J
 import ../src/core/hub.bend as H
 import ../src/core/bothub.bend as BH
 import ../src/core/client.bend as U
+import ../src/core/far.bend as FR
 
 # Codec, classification, folding, funnels, and the bounded page at scale.
 def line(c: M.Change) -> String:
@@ -77,6 +78,19 @@ def balanced(t: ML.Order) -> Bool:
           Bool.and(Nat.is_le(ML.Order.height(l), 1n+ML.Order.height(r)),
             Bool.and(Nat.is_le(ML.Order.height(r), 1n+ML.Order.height(l)), Bool.and(balanced(l), balanced(r))))))
 
+def long_text(n: Nat, +text: String) -> String:
+  match n:
+    case 0n: text
+    case 1n+k: long_text(k, text ++ text)
+
+def origin_at(+s: M.State, +thread: String, +msg: String) -> String:
+  origin(Maybe.default(&2, ML.Origin, ML.Box.origin_of(M.State.mail(s), thread, msg), ML.Origin{"", "missing", ""}))
+
+def mirrored(s: M.State, m: Maybe<&2, M.Change>) -> M.State:
+  match m:
+    case None{}: s
+    case Some{c}: M.State.apply(s, c)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +vMessageFrom : M.Change = M.MessageFrom{"thread", "msg", "from", "kind", "ref", 3n}
@@ -112,6 +126,11 @@ def main() -> IO(Unit):
     C.Check.str("classify 12", origin(ML.Mail.classify("lock:build", "t:lock:build:lr-r9", False{}, "yours")), "backplane|lock|build")
     C.Check.str("classify 13", origin(ML.Mail.classify("bot:a", "m10", False{}, "direct")), "bot:a|bot|")
     C.Check.str("classify 14", origin(ML.Mail.classify("", "m11", True{}, "notice")), "backplane|system|")
+    C.Check.str("remote direct preserves identity", origin(ML.Mail.classify("", "m-remote", False{}, "[message from Miso@mac]\nhi")), "peer:Miso@mac|peer|")
+    C.Check.str("linked sender wins over person envelope", origin(ML.Mail.classify("a", "t:a:m12", False{}, "[message from person@mac]\nquoted")), "thread:a|thread|")
+    C.Check.str("ordinary Wake text stays thread mail", origin(ML.Mail.classify("a", "t:a:m13", False{}, "Wake the runner")), "thread:a|thread|")
+    C.Check.str("wake report needs colon", origin(ML.Mail.classify("a", "t:a:lr-r13", False{}, "Wake w1")), "thread:a|launch|")
+    C.Check.str("wake report needs one id", origin(ML.Mail.classify("a", "t:a:lr-r14", False{}, "Wake the runner: please")), "thread:a|launch|")
     C.Check.str("route person", ML.Mail.route(ML.Origin{"thread:a", "person", "r"}, "bot:b"), "")
     C.Check.str("route thread", ML.Mail.route(ML.Origin{"thread:a", "thread", "r"}, "bot:b"), "pair:bot:b|thread:a")
     C.Check.str("route bot", ML.Mail.route(ML.Origin{"thread:a", "bot", "r"}, "bot:b"), "pair:bot:b|thread:a")
@@ -198,6 +217,29 @@ def main() -> IO(Unit):
     C.Check.str("legacy room members", String.join(ML.Conv.parts(ML.Box.conv(M.State.mail(rooms), "room:r")), ","), "bot:a,bot:b,person")
     C.Check.str("legacy room unread", Nat.show(ML.Box.unread_all(M.State.mail(rooms))), "2")
     C.Check.str("legacy room senders", ML.Mail.from(Maybe.default(&2, ML.Mail, List.head(&2, ML.Mail, ML.Box.headers(M.State.mail(rooms), "room:r")), ML.Mail{"", "", "", "", "", "", "", "", 0n, 0n})), "bot:a")
+    +dm : M.State = M.State.replay([
+      M.BotSet{"a", "Alpha", "ta", 0n, "", 1n}, M.BotSet{"b", "Beta", "tb", 0n, "", 1n},
+      M.RoomPosted{"dm1", "dm:Alpha:Beta", "Alpha", "hello", 0n, 2n}], M.State.empty())
+    C.Check.str("legacy DM recipient is indexed", ids(ML.Box.slice(M.State.mail(dm), "b", 0n, 2n)), "room:dm:Alpha:Beta,")
+    C.Check.str("legacy DM both participants", String.join(ML.Conv.parts(ML.Box.conv(M.State.mail(dm), "room:dm:Alpha:Beta")), ","), "bot:a,bot:b")
+    C.Check.str("legacy DM recipient unread", Nat.show(ML.Box.unread(M.State.mail(dm), "a")) ++ "/" ++ Nat.show(ML.Box.unread(M.State.mail(dm), "b")), "0/1")
+    +dm_reply : M.State = M.State.apply(dm, M.RoomPosted{"dm2", "dm:Alpha:Beta", "Beta", "reply", 0n, 3n})
+    C.Check.str("legacy DM reply preserves recipients", Nat.show(ML.Box.unread_all(M.State.mail(dm_reply))), "2")
+    +renamed : M.State = M.State.apply(dm, M.BotSet{"a", "Amber", "ta", 0n, "", 3n})
+    C.Check.str("sender index follows rename and case", ML.Box.sender(M.State.mail(renamed), "aMBer"), "bot:a")
+    C.Check.str("sender old name removed", ML.Box.sender(M.State.mail(renamed), "Alpha"), "Alpha")
+    C.Check.str("sender id alias", ML.Box.sender(M.State.mail(renamed), "a"), "bot:a")
+    C.Check.str("sender deletion removes aliases", ML.Box.sender(M.State.mail(M.State.apply(renamed, M.BotDeleted{"a", 4n})), "Amber"), "Amber")
+    C.Check.str("person sender bypasses lookup", ML.Box.sender(M.State.mail(renamed), "you"), "person")
+    +long_room : M.State = M.State.apply(dm, M.RoomPosted{"long", "dm:Alpha:Beta", "you", long_text(18n, "x"), 0n, 5n})
+    C.Check.str("long room replay keeps full safe size", Nat.show(ML.Mail.size(Maybe.default(&2, ML.Mail, List.head(&2, ML.Mail, ML.Box.headers(M.State.mail(long_room), "room:dm:Alpha:Beta")), ML.Mail{"", "", "", "", "", "", "", "", 0n, 0n}))), "262144")
+    +mirrored_origin : M.State = mirrored(M.State.empty(), FR.Fr.change("mac", M.MessageFrom{"ta", "t:tb:m1", "thread:tb", "thread", "", 2n}))
+    C.Check.str("cross-machine origin ids agree", origin_at(mirrored_origin, "mac~ta", "t:mac~tb:m1"), "thread:mac~tb|thread|")
+    C.Check.str("cross-machine origin bot address", FR.Fr.address("mac", "bot:b"), "bot:mac~b")
+    C.Check.str("cross-machine sender returns home", FR.Fr.address("mac", "thread:mac~tb"), "thread:tb")
+    C.Check.str("cross-machine person stays person", FR.Fr.address("mac", "person"), "person")
+    C.Check.str("cross-machine origin shared like post", Bool.show(FR.Fr.shared(dm, M.MessageFrom{"ta", "m", "thread:tb", "thread", "", 2n})), Bool.show(FR.Fr.shared(dm, M.MessagePosted{"ta", "m", M.User{}, "hi", 2n})))
+    C.Check.str("cross-machine origin same scope", FR.Fr.scope(dm, M.MessageFrom{"ta", "m", "thread:tb", "thread", "", 2n}), FR.Fr.scope(dm, M.MessagePosted{"ta", "m", M.User{}, "hi", 2n}))
     +runs : M.State = M.State.apply(base, M.RunSet{"run", "a", "c1", "m1", 10n})
     C.Check.str("run set live", Bool.show(run_live(ML.Box.run_of(M.State.mail(runs), "run"))), "True")
     +ended : M.State = M.State.apply(runs, M.TurnChanged{"run", M.Completed{}, 11n})
@@ -207,6 +249,8 @@ def main() -> IO(Unit):
     +orig : M.State = M.State.apply(base, M.MessageFrom{"t", "m", "thread:a", "thread", "", 1n})
     C.Check.str("origin stored", Bool.show(Maybe.is_some(&2, ML.Origin, ML.Box.origin_of(M.State.mail(orig), "t", "m"))), "True")
     +hub : M.State = M.State.replay([M.ThreadCreated{"t", "", "Target", M.Local{}, "", "", "codex", "", 1n}], M.State.empty())
+    C.Check.str("inbox kernel keeps delivery law", msg_ids(step_cs(H.Hub.inbox.id(hub, 2n, "a", "t", M.User{}, "hello", "t:a:m2"))), "posted,")
+    C.Check.str("explicit-id production funnel posts origin", msg_ids(step_cs(H.Hub.inbox.from(hub, 2n, "a", "t", M.User{}, "hello", "t:a:m2"))), "posted,thread,")
     C.Check.str("inbox posts then origin", msg_ids(step_cs(H.Hub.inbox(hub, 2n, "a", "t", M.User{}, "hello"))), "posted,thread,")
     C.Check.str("carry posts then origin", msg_ids(step_cs(H.Carry.k(True{}, hub, 2n, "t"))), "posted,carry,")
     C.Check.str("bot inbox posts then origin", msg_ids(step_cs(BH.Bots.inbox(hub, 2n, "a", "t", "m", "hello"))), "posted,thread,")

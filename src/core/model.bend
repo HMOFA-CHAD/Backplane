@@ -1796,11 +1796,6 @@ def MailRoom.parts(xs: List<&2, String>) -> List<&2, String>:
     case Nil{}: ["person"]
     case h <> t: ("bot:" ++ h) <> MailRoom.parts(t)
 
-def MailRoom.from_got(m: Maybe<&2, BT.Bot>, +from: String) -> String:
-  match m:
-    case Some{bot}: "bot:" ++ BT.Bot.id(bot)
-    case None{}: Bool.pick(String, String.eq(from, "you"), "person", from)
-
 def State.mail_room(+s: State, +id: String, +name: String, +members: String, +at: Nat) -> State:
   State.world((w => BT.World.room_set(w, id, name, members, at)),
     State.with_mail((b => ML.Box.conv_set(b, "room:" ++ id, name, "room", MailRoom.parts(BT.Room.members.of(members)), "", Nil{}, at)), s))
@@ -1810,10 +1805,24 @@ def State.bots(s: State) -> BT.World:
     case State{_, _, _, _, _, _, _, _, _, _, bw}:
       State.bots.k(bw)
 
+# Direct legacy rooms have no RoomSet; derive both participants once.
+def MailRoom.dm_parts(xs: List<&2, String>, +b: ML.Box) -> List<&2, String>:
+  match xs:
+    case a <> c <> Nil{}: [ML.Box.sender(b, a), ML.Box.sender(b, c)]
+    case _: Nil{}
+
+def MailRoom.dm_seed(seed: Bool, +b: ML.Box, +room: String, +at: Nat) -> ML.Box:
+  match seed:
+    case False{}: b
+    case True{}: ML.Box.conv_set(b, "room:" ++ room, room, "room", MailRoom.dm_parts(String.split(String.drop(room, 3n), ':'), b), "", Nil{}, at)
+
+def MailRoom.post(+b: ML.Box, +id: String, +room: String, +from: String, +text: String, +at: Nat) -> ML.Box:
+  ML.Box.mail(MailRoom.dm_seed(Bool.and(String.starts_with(room, "dm:"), String.is_empty(ML.Conv.id(ML.Box.conv(b, "room:" ++ room)))), b, room, at),
+    ML.Mail{id, "room:" ++ room, ML.Box.sender(b, from), "room:" ++ room, "room", room, "fyi", ML.Mail.head(text), ML.Mail.text_size(text), at})
+
 def State.mail_post(+s: State, +id: String, +room: String, +from: String, +text: String, +hop: Nat, +at: Nat) -> State:
-  +sender = Bool.pick(String, String.eq(from, "you"), "person", MailRoom.from_got(BT.World.find(State.bots(s), from), from))
   State.world((w => BT.World.posted(w, BT.Post{id, room, from, text, hop, at})),
-    State.with_mail((b => ML.Box.mail(b, ML.Mail{id, "room:" ++ room, sender, "room:" ++ room, "room", room, "fyi", ML.Mail.head(text), String.length(text), at})), s))
+    State.with_mail((b => MailRoom.post(b, id, room, from, text, at)), s))
 
 def State.apply.go(s: State, e: Change) -> State:
   match e:
@@ -1881,10 +1890,10 @@ def State.apply.go(s: State, e: Change) -> State:
       State.thread((t => Thread.unrooted(t)), s, id)
     case UsageSet{+th, used, window, _}:
       State.usage(s, th, used, window)
-    case BotSet{id, name, thread, look, persona, at}:
-      State.world((w => BT.World.bot_set(w, id, name, thread, look, persona, at)), s)
-    case BotDeleted{id, _}:
-      State.world((w => BT.World.bot_deleted(w, id)), s)
+    case BotSet{+id, +name, thread, look, persona, at}:
+      State.world((w => BT.World.bot_set(w, id, name, thread, look, persona, at)), State.with_mail((b => ML.Box.bot_named(b, id, name)), s))
+    case BotDeleted{+id, _}:
+      State.world((w => BT.World.bot_deleted(w, id)), State.with_mail((b => ML.Box.bot_deleted(b, id)), s))
     case RoomSet{id, name, members, at}:
       State.mail_room(s, id, name, members, at)
     case RoomDeleted{id, _}:

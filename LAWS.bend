@@ -8452,4 +8452,13 @@ law mail_post_idempotent:
 law mail_unread_after_post:
   {ML.Box.unread(ML.Box.mail(ML.Box.empty(), ML.Mail{"m", "c", "person", "bot:a", "thread", "", "act", "hi", 2n, 1n}), "a") == 1n : Nat}
 
+# Adding provenance never changes delivery effects.
+law mail_origin_keeps_outputs:
+  for +st: H.Step
+  for thread: String
+  for msg: String
+  for origin: ML.Origin
+  for at: Nat
+  {H.Step.outs_of(H.Origin.step(st, thread, msg, origin, at)) == H.Step.outs_of(st) : List<&2, H.Out>}
+
 # ---- end mail 1 ----

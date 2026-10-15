@@ -2108,11 +2108,17 @@ def Origin.system(role: M.Role) -> Bool:
     case M.System{}: True{}
     case _: False{}
 
-def Hub.inbox.id(+s: M.State, +now: Nat, +from: String, +to: String, +role: M.Role, +text: String, +msg: String) -> Step:
-  Origin.step(Hub.inbox.w(Hub.running(Hub.thread(s, to)), M.Worktree.gone(Hub.thread(s, to)), M.Worktree.pending(Hub.thread(s, to), now), s, now, from, to, role, text, msg), to, msg, ML.Mail.classify(M.Link.from(msg), msg, Origin.system(role), text), now)
+# The delivery kernel keeps the exact Step promised by
+# inbox_running_delivers. Production inbound funnels add metadata around it.
+def Hub.inbox.id(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String, +msg: String) -> Step:
+  Hub.inbox.w(Hub.running(Hub.thread(s, to)), M.Worktree.gone(Hub.thread(s, to)), M.Worktree.pending(Hub.thread(s, to), now), s, now, from, to, role, text, msg)
+
+# A linked inbound message, with durable provenance following its post.
+def Hub.inbox.from(+s: M.State, +now: Nat, +from: String, +to: String, +role: M.Role, +text: String, +msg: String) -> Step:
+  Origin.step(Hub.inbox.id(s, now, from, to, role, text, msg), to, msg, ML.Mail.classify(M.Link.from(msg), msg, Origin.system(role), text), now)
 
 def Hub.inbox(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String) -> Step:
-  Hub.inbox.id(s, now, from, to, role, text, M.Link.id(from, Hub.id("m", now, Hub.seq(s))))
+  Hub.inbox.from(s, now, from, to, role, text, M.Link.id(from, Hub.id("m", now, Hub.seq(s))))
 
 def Hub.answer.plan(impl: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String) -> Step:
   match impl:
@@ -2908,7 +2914,7 @@ def Task.finish.go(deliver: Bool, +s: M.State, +now: Nat, +id: String, +thread: 
   match deliver:
     case True{}:
       Step.after(Step.before(List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}]), os,
-        Hub.inbox.id(s, now, thread, parent, M.System{}, Task.note(id, provider, model, word, summary), Task.msg(thread, id))), [M.TaskDelivered{id, now}])
+        Hub.inbox.from(s, now, thread, parent, M.System{}, Task.note(id, provider, model, word, summary), Task.msg(thread, id))), [M.TaskDelivered{id, now}])
     case False{}:
       Step{List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}]), os}
 
@@ -3234,7 +3240,7 @@ def Lr.exists(+s: M.State, +th: String) -> Bool:
 def Lr.send.here(ok: Bool, +s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
   match ok:
     case True{}:
-      Hub.inbox.id(s, now, thread, to, M.User{}, text, Lr.msg(thread, Hub.id("r", now, Hub.seq(s))))
+      Hub.inbox.from(s, now, thread, to, M.User{}, text, Lr.msg(thread, Hub.id("r", now, Hub.seq(s))))
     case False{}:
       Step.none()
 
@@ -3316,7 +3322,7 @@ def Task.cancel.user(t: M.Task, +s: M.State, +now: Nat) -> Step:
     case M.Task{+id, +parent, +child, _, +st, _, _, +provider, +model}:
       Bool.pick(Step, M.TaskState.terminal(st), Step.none(),
         Step.after(Step.before([M.TaskStateSet{id, M.TaskCancelled{}, "cancelled by the user", now}, M.TurnChanged{child, M.Interrupted{}, now}], [AgentStop{child}],
-          Hub.inbox.id(s, now, child, parent, M.System{}, Task.note(id, provider, model, "cancelled by the user", ""), Task.msg(child, id))), [M.TaskDelivered{id, now}]))
+          Hub.inbox.from(s, now, child, parent, M.System{}, Task.note(id, provider, model, "cancelled by the user", ""), Task.msg(child, id))), [M.TaskDelivered{id, now}]))
 
 # Retiring a run
 # --------------
@@ -3619,7 +3625,7 @@ def Retire.archive(+s: M.State, +now: Nat, +th: String, base: Step) -> Step:
 
 # the note itself, delivered like any message (Hub.deliver)
 def Lost.note(+s: M.State, +now: Nat, +th: String, +text: String) -> Step:
-  Hub.inbox.id(s, now, "backplane", th, M.System{}, text, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))))
+  Hub.inbox.from(s, now, "backplane", th, M.System{}, text, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))))
 
 # Watched work
 # ------------
@@ -5044,7 +5050,7 @@ def Task.repair.has(has: Bool, wake: Bool, +s: M.State, +now: Nat, +id: String, 
     case True{} False{}:
       Step{[M.TaskDelivered{id, now}], Nil{}}
     case False{} _:
-      Step.after(Hub.inbox.id(s, now, child, parent, M.System{}, text, Task.msg(child, id)), [M.TaskDelivered{id, now}])
+      Step.after(Hub.inbox.from(s, now, child, parent, M.System{}, text, Task.msg(child, id)), [M.TaskDelivered{id, now}])
 
 def Task.repair.k(due: Bool, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +text: String) -> Step:
   match due:

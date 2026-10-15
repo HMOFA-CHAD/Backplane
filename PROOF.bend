@@ -10355,4 +10355,9 @@ def Laws.mail_post_idempotent(b, m):
 def Laws.mail_unread_after_post():
   {==}
 
+def Laws.mail_origin_keeps_outputs(st, thread, msg, origin, at):
+  match st:
+    case H.Step{cs, os}:
+      {==}
+
 # ---- end mail 1 ----

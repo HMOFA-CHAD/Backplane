@@ -97,7 +97,7 @@ def main() -> IO(Unit):
     C.Check.str("a project thread's worktree", outs(gp), "reply git:worktree@/r/board")
     +bots : List<&2, M.Change> = List.append(&2, M.Change, base(), [M.ThreadCreated{"tb", "", "helper", M.Local{}, "", "", "claude", "", 5n}, M.BotSet{"b1", "helper", "tb", 0n, "", 5n}])
     +gb : H.Step = give(bots, "/give @helper summarise")
-    C.Check.str("give to a bot wakes it", tags(gb), "BotWoke MessagePosted TurnChanged ActivityLogged")
+    C.Check.str("give to a bot wakes it", tags(gb), "BotWoke MessagePosted MessageFrom TurnChanged ActivityLogged")
     C.Check.str("naming nothing is refused", outs(give(base(), "/give nothing")), "err")
     C.Check.str("never to itself", outs(give(base(), "/give >idea")), "err")
     C.Check.str("button says Give", U.Follow.button(state(base()), "t1", False{}, False{}, "/give >board"), "Give")
