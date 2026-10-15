@@ -404,7 +404,7 @@ def MailStore.read(+home: String, +conv: String, before: String, +n: Nat) -> IO(
 # Recovery visits only encoded, direct child .jsonl files, one at a time.
 # No bodies survive into the returned list; the working Box deduplicates
 # headers before the lead's eventual event commit.
-def MailStore.recover.file(name: String) -> Bool:
+def MailStore.recover.file(+name: String) -> Bool:
   Bool.and(String.ends_with(name, ".jsonl"), Bool.not(String.contains(name, "/")))
 
 def MailStore.recover.next(r: StoreResult<Scan>, k: ML.Box -> List<&2, M.Change> -> IO(StoreResult<List<&2, M.Change>>)) -> IO(StoreResult<List<&2, M.Change>>):

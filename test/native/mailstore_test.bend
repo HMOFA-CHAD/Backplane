@@ -9,7 +9,7 @@ import ../../src/core/mailbody.bend as MB
 def bench_result(r: S.StoreResult<Bool>, n: Nat, home: String, text: String, k: Unit -> IO(Unit)) -> IO(Unit):
   match r:
     case S.Stored{_}: k(Unit{})
-    case _: IO.die(Unit, "benchmark append failed at " ++ Nat.show(n) ++ " in " ++ home ++ " body bytes " ++ Nat.show(String.length(text)))
+    case _: IO.die(Unit, 1, "benchmark append failed at " ++ Nat.show(n) ++ " in " ++ home ++ " body bytes " ++ Nat.show(String.length(text)))
 
 # Native emission plus a reproducible 1000 x 16 KiB append/read benchmark.
 def bench(+n: Nat, +home: String, +text: String) -> IO(Unit):

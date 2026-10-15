@@ -11,7 +11,7 @@ import ../src/core/model.bend as M
 def home_result(r: Result<&1, &1, U32 & String, String>) -> IO(String):
   match r:
     case Done{SCon{c, t}}: IO.pure(String, SCon{c, t} ++ "/mailstore-test")
-    case _: IO.die(String, "mailstore_test needs a fresh temp BACKPLANE_HOME")
+    case _: IO.die(String, 1, "mailstore_test needs a fresh temp BACKPLANE_HOME")
 
 def home() -> IO(String):
   do IO<String>:

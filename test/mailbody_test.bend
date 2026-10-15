@@ -37,7 +37,7 @@ def field(j: J.Json, key: String, v: J.Json) -> J.Json:
 def rejection(name: String, j: J.Json) -> IO(Unit):
   C.Check.str(name, Bool.show(Maybe.is_some(&2, MB.Body, MB.Body.decode(j))), "False")
 
-def badnum(fieldname: String, raw: String) -> IO(Unit):
+def badnum(+fieldname: String, +raw: String) -> IO(Unit):
   rejection(fieldname ++ raw, field(MB.Body.encode(fixture("m", "c", "", 0n)), "mail", field(MB.Body.mail.encode(MB.Body.mail(fixture("m", "c", "", 0n))), fieldname, J.Num{raw})))
 
 def recovered_ids(cs: List<&2, M.Change>) -> String:
