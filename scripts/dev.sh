@@ -26,7 +26,9 @@
 # ~/.backplane-dev, never ~/.backplane-bend), port 3788 (BACKPLANE_DEV_PORT),
 # no tailnet, no self-update. Its window opens next to your normal one.
 # The voice helper is built from this checkout (it takes a second); the
-# browser and step2glb helpers are borrowed from the installed copy.
+# browser helper too when tools/browser differs from the one installed (its
+# source's hash, kept beside it as backplane-browser.stamp); the step2glb
+# helper is borrowed from the installed copy.
 #
 # An installed build is stamped <next patch>-dev.<date>.<time>, e.g.
 # 0.10.1-dev.20260925.2130: newer than the release it came after, older than
@@ -67,15 +69,34 @@ build_voice() {
   mv -f "$out.new" "$out"
 }
 
+# the browser helper's source, as one hash (what backplane-browser.stamp holds)
+browser_stamp() {
+  cat tools/browser/package.json tools/browser/bun.lock tools/browser/build.ts tools/browser/src/*.ts | sha256sum | cut -c1-16
+}
+
+# the browser helper into $1 when tools/browser differs from the installed
+# one (or none is stamped); else nothing (the installed one stays). Answers
+# whether it built one.
+build_browser() {
+  want=$(browser_stamp)
+  have=$(cat "$prefix/backplane-browser.stamp" 2>/dev/null || true)
+  [ "$want" = "$have" ] && [ -e "$prefix/backplane-browser" ] && return 1
+  say "browser helper changed ($have -> $want): building it"
+  scripts/build-browser.sh >/dev/null
+  mv -f dist/backplane-browser "$1"
+  echo "$want" > "$1.stamp"
+  return 0
+}
+
 build_app() {
   check src/app/main.bend
   scripts/build-app.sh src/app/main.bend "$dev/backplane.new"
   mv -f "$dev/backplane.new" "$dev/backplane"
   rm -f "$dev/backplane-voice"
   build_voice "$dev/backplane-voice"
-  for h in backplane-browser backplane-step2glb; do
-    [ -e "$prefix/$h" ] && ln -sf "$prefix/$h" "$dev/$h"
-  done
+  rm -f "$dev/backplane-browser" "$dev/backplane-browser.stamp"
+  build_browser "$dev/backplane-browser" || { [ -e "$prefix/backplane-browser" ] && ln -sf "$prefix/backplane-browser" "$dev/backplane-browser"; }
+  [ -e "$prefix/backplane-step2glb" ] && ln -sf "$prefix/backplane-step2glb" "$dev/backplane-step2glb"
   return 0
 }
 
@@ -96,9 +117,10 @@ stamp() {
 }
 
 # the app, the server, the web client and the voice helper into dist/,
-# stamped; src/core/version.bend is put back after. The browser and step2glb
-# helpers are not rebuilt: the installed ones stay (scripts/build.sh builds
-# them for releases)
+# stamped; src/core/version.bend is put back after. The browser helper is
+# built only when tools/browser changed since the installed one
+# (build_browser); the step2glb helper is not rebuilt (scripts/build.sh
+# builds both for releases)
 build_dist() {
   ver=$(stamp)
   keep=$(mktemp)
@@ -115,6 +137,7 @@ build_dist() {
   scripts/build-app.sh src/server/main.bend dist/backplane-serve
   scripts/build-app.sh src/app/main.bend dist/backplane
   build_voice dist/backplane-voice
+  build_browser dist/backplane-browser.tmp && mv -f dist/backplane-browser.tmp dist/backplane-browser && mv -f dist/backplane-browser.tmp.stamp dist/backplane-browser.stamp || true
   cp "$keep" src/core/version.bend
   say "built $ver"
 }
@@ -129,7 +152,7 @@ mkdir -p "$prefix" "$HOME/.local/bin"
 rm -rf "$prefix/web.old"
 [ -d "$prefix/web" ] && mv "$prefix/web" "$prefix/web.old"
 mv "$src/web" "$prefix/web"
-for f in backplane backplane-serve backplane-browser backplane-step2glb backplane-voice LICENSE; do
+for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice LICENSE; do
   [ -e "$src/$f" ] && mv -f "$src/$f" "$prefix/$f"
 done
 ln -sf "$prefix/backplane" "$HOME/.local/bin/backplane"
@@ -140,7 +163,7 @@ EOF
 stage() {
   rm -rf build/dev-pkg && mkdir -p build/dev-pkg
   cp -R dist/web build/dev-pkg/web
-  for f in backplane backplane-serve backplane-browser backplane-step2glb backplane-voice; do
+  for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice; do
     [ -e "dist/$f" ] && cp "dist/$f" build/dev-pkg/
   done
   [ -e LICENSE ] && cp LICENSE build/dev-pkg/
