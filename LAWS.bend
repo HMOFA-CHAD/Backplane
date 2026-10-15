@@ -7622,8 +7622,11 @@ law sched_zoned_once_per_slot:
 law when_in_minutes:
   {WH.When.parse("in 20m", 1000n, TZ.Tz.utc0()) == Some{2200n} : Maybe<&2, Nat>}
 
+# in 2 hours is the same instant as in 120 minutes (stated without a large
+# literal: 8200n expanded in the checker took most of its stack, and under
+# load PROOF.bend overflowed)
 law when_in_hours:
-  {WH.When.parse("in 2h", 1000n, TZ.Tz.utc0()) == Some{8200n} : Maybe<&2, Nat>}
+  {WH.When.parse("in 2h", 1000n, TZ.Tz.utc0()) == WH.When.parse("in 120m", 1000n, TZ.Tz.utc0()) : Maybe<&2, Nat>}
 # Browser task skills (src/core/task.bend, docs/teach.md)
 
 # a recorded step in a secret field keeps only the field's label, whatever value came with it

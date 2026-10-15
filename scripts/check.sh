@@ -2,7 +2,7 @@
 # Type-check every Bend file, then prove every law. CI runs exactly this.
 #
 # Usage: scripts/check.sh [all|check|proof]
-#   all (default): type-check and prove, overlapping the two
+#   all (default): type-check, then prove
 #   check:         type-check only (CI's check job)
 #   proof:         prove only, i.e. bend PROOF.bend (CI's proof job)
 #
@@ -26,6 +26,12 @@
 # and memory for parallelism when the single check is the bottleneck).
 set -eu
 cd "$(dirname "$0")/.."
+# PROOF.bend outgrew the checker's stack (it overflowed at random on main):
+# a 1 GB main-thread stack, and the engine allowed to use 512 MB of it. A
+# concrete size, not "unlimited": with unlimited the engine falls back to a
+# small default and still overflows.
+ulimit -s 1048576 2>/dev/null || true
+export BUN_JSC_maxPerThreadStackUsage=${BUN_JSC_maxPerThreadStackUsage:-536870912}
 . scripts/bendok.sh
 export BEND_NO_TELEMETRY=1
 mode=${1:-all}
@@ -62,12 +68,8 @@ check_one() {
 fail=0
 start=$(date +%s)
 
-# In all mode, start the proof now so it overlaps the type-check.
-proof_pid=""
-if [ "$mode" = all ]; then
-  ( rc=0; bend PROOF.bend >"$work/proof.out" 2>&1 || rc=$?; echo $rc >"$work/proof.rc" ) &
-  proof_pid=$!
-fi
+# The proof runs after the type-check, not beside it: run together they
+# overflowed the proof's stack (the type-check takes seconds anyway).
 
 if [ "$mode" != proof ]; then
   # Tracked files, listed before any manifest exists so the generated
@@ -135,10 +137,10 @@ if [ "$mode" = proof ]; then
   bend_verdict "$prc" "$pout" || fail=1
   echo "proof: $(( $(date +%s) - pstart ))s"
 elif [ "$mode" = all ]; then
-  wait $proof_pid || true
+  ( rc=0; bend PROOF.bend >"$work/proof.out" 2>&1 || rc=$?; echo $rc >"$work/proof.rc" )
   cat "$work/proof.out"
   bend_verdict "$(cat "$work/proof.rc" 2>/dev/null || echo missing)" "$(cat "$work/proof.out")" || fail=1
-  echo "proof: overlapped with check, total $(( $(date +%s) - start ))s"
+  echo "proof: after check, total $(( $(date +%s) - start ))s"
 fi
 
 if [ $fail != 0 ]; then exit 1; fi
