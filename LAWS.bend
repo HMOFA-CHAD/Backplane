@@ -1,4 +1,6 @@
 import Base
+import ./src/core/i18n.bend as I18
+import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/ref.bend as REF
 import ./src/core/tz.bend as TZ
@@ -8613,3 +8615,61 @@ law link_ref_md:
 
 law link_ref_plain_unchanged:
   {LK.Link.pieces("a line with no refs") == [LK.PText{"a line with no refs"}] : List<&2, LK.Piece>}
+
+# ---- i18n ----
+
+law i18n_plural_ja_other:
+  for n: Nat
+  {I18.I18n.plural(I18.Ja{}, n) == I18.POther{} : I18.Plural}
+
+law i18n_plural_en_one:
+  {I18.I18n.plural(I18.En{}, 1n) == I18.POne{} : I18.Plural}
+
+law i18n_plural_en_zero:
+  {I18.I18n.plural(I18.En{}, 0n) == I18.POther{} : I18.Plural}
+
+law i18n_plural_en_many:
+  for k: Nat
+  {I18.I18n.plural(I18.En{}, 1n+1n+k) == I18.POther{} : I18.Plural}
+
+law i18n_resolve_override_en:
+  for os: String
+  {I18.I18n.resolve("en", os) == I18.En{} : I18.Loc}
+
+law i18n_resolve_override_ja:
+  for os: String
+  {I18.I18n.resolve("ja", os) == I18.Ja{} : I18.Loc}
+
+law i18n_resolve_auto:
+  for os: String
+  {I18.I18n.resolve("auto", os) == I18.I18n.of_tag(os) : I18.Loc}
+
+law i18n_of_tag_posix:
+  {I18.I18n.of_tag("ja_JP.UTF-8") == I18.Ja{} : I18.Loc}
+
+law i18n_of_tag_c:
+  {I18.I18n.of_tag("C") == I18.En{} : I18.Loc}
+
+law i18n_of_tag_empty:
+  {I18.I18n.of_tag("") == I18.En{} : I18.Loc}
+
+law i18n_of_tag_bcp:
+  {I18.I18n.of_tag("ja-JP") == I18.Ja{} : I18.Loc}
+
+law i18n_ago_en_same:
+  for +now: Nat
+  for +at: Nat
+  {I18.I18n.ago(I18.En{}, now, at) == M.Time.ago(now, at) : String}
+
+law i18n_took_en_same:
+  for +s: Nat
+  {I18.I18n.took(I18.En{}, s) == M.Time.took(s) : String}
+
+
+law i18n_fallback_fixture_save:
+  {I18F.T.common.save(I18.Ja{}) == I18F.T.common.save(I18.En{}) : String}
+
+law i18n_fallback_fixture_plural:
+  for +n: Nat
+  {I18F.T.files.count(I18.Ja{}, n) == I18F.T.files.count(I18.En{}, n) : String}
+# ---- end i18n ----
