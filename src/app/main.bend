@@ -251,6 +251,31 @@ def Timer.tick(+q: Chan(ShellMsg), wait: Nat) -> IO(Unit):
 # Drawing
 # -------
 
+# Frames for the hub alone
+# ------------------------
+# A frame that only hub messages asked for (another thread's work: its
+# rows, its counts, its activity) is drawn at most every Hubf.gap(); input
+# since the last frame, the open thread's own streamed text, and frames a
+# frame asks for (a fade) draw as soon as they can. With agents streaming
+# in other threads, frames came as fast as they could be drawn.
+def Hubf.gap() -> Nat:
+  200n
+
+def Hubf.on(+n: N.Nui) -> Bool:
+  String.eq(U.Ui.info(N.Nui.ui(n), "frame.hub"), "1")
+
+def Hubf.set(+n: N.Nui, on: Bool) -> N.Nui:
+  N.Nui.with_ui(n, U.Ui.info_set(N.Nui.ui(n), "frame.hub", Bool.pick(String, on, "1", "")))
+
+# ms until the next frame may be drawn
+def Hubf.left(+n: N.Nui, +ms: Nat) -> Nat:
+  Nat.sub(Nat.add(N.Nui.ms_of(n), Hubf.gap()), ms)
+
+# the frame due now waits: the hub alone asked for it, nothing was input
+# since the last one, and that one is too recent
+def Hubf.wait(+n: N.Nui, +ms: Nat) -> Bool:
+  Bool.and(Hubf.on(n), Bool.and(Nat.is_lt(Maybe.default(&2, Nat, Nat.read(U.Ui.info(N.Nui.ui(n), "act.at")), 0n), N.Nui.ms_of(n)), Nat.is_gt(Hubf.left(n, ms), 0n)))
+
 def Shell.later(a: Shell) -> IO(Shell):
   match a:
     case Shell{n, w, _, True{}, +q, i, wa}:
@@ -969,10 +994,33 @@ def Shell.due(a: Shell, +action: String, +value: String) -> IO(Shell):
     case Shell{+n, w, d, qd, q, i, wa}:
       Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.act(n, action, value))
 
-def Shell.recv(a: Shell, +text: String) -> IO(Shell):
+# after a hub message: whether the frame it left is the hub's alone (was:
+# a frame was due already; own: the open thread's streamed text)
+def Hubf.mark(was: Bool, own: Bool, a: Shell) -> Shell:
+  match a:
+    case Shell{+n, w, +d, qd, q, i, wa}:
+      Shell{Hubf.set(n, Bool.and(d, Bool.and(Bool.not(own), Bool.or(Bool.not(was), Hubf.on(n))))), w, d, qd, q, i, wa}
+
+def Hubf.own(+n: N.Nui, +o: J.Json) -> Bool:
+  Bool.and(String.eq(J.Json.get_str(o, "t", ""), "delta"), String.eq(J.Json.get_str(o, "thread", ""), U.Ui.sel(N.Nui.ui(n))))
+
+# a message naming the open thread (its id in quotes anywhere in it): a
+# change to what is on screen, never held back
+def Hubf.names(+n: N.Nui, +text: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(U.Ui.sel(N.Nui.ui(n)))), String.contains(text, "\"" ++ U.Ui.sel(N.Nui.ui(n)) ++ "\""))
+
+def Shell.recv.o(a: Shell, +o: J.Json, own: Bool) -> IO(Shell):
+  match a:
+    case Shell{+n, w, +d, qd, q, i, wa}:
+      IO.bind(Shell, Shell, Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.hear(n, o)), a2 => IO.pure(Shell, Hubf.mark(d, Bool.or(own, Hubf.own(n, o)), a2)))
+
+def Shell.recv.n(a: Shell, +text: String) -> IO(Shell):
   match a:
     case Shell{+n, w, d, qd, q, i, wa}:
-      Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.hear(n, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})))
+      Shell.recv.o(Shell{n, w, d, qd, q, i, wa}, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), Hubf.names(n, text))
+
+def Shell.recv(a: Shell, +text: String) -> IO(Shell):
+  Shell.recv.n(a, text)
 
 def Shell.from(current: Bool, a: Shell, +t: String) -> IO(Shell):
   match current:
@@ -2138,14 +2186,36 @@ def Hud.feed(on: Bool, +n: N.Nui, +ms: Nat) -> IO(N.Nui):
       IO.pure(N.Nui, n)
 
 # draw now if anything changed since the last frame
+def Shell.frame.draw(+n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +ms: Nat) -> IO(Shell):
+  do IO<Shell>:
+    t : U32 <- H.Clock.epoch()
+    n2 : N.Nui <- Hud.feed(U.Ui.flag(N.Nui.ui(n), "perf"), Hubf.set(n, False{}), ms)
+    Shell.paint(n2, w, q, i, wa, U32.to_nat(t), ms)
+
+# a frame that waits: one timer for it (unless one is already set), and
+# any input in the meantime draws at once (Shell.later finds none queued)
+def Shell.frame.wait(late: Bool, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +ms: Nat) -> IO(Shell):
+  match late:
+    case True{}:
+      IO.pure(Shell, Shell{n, w, True{}, False{}, q, i, wa})
+    case False{}:
+      do IO<Shell>:
+        IO.spawn(Unit, Timer.once(q, Hubf.left(n, ms)))
+        return Shell{N.Nui.with_ui(n, U.Ui.info_set(N.Nui.ui(n), "frame.late", Nat.show(Nat.add(ms, Hubf.left(n, ms))))), w, True{}, False{}, q, i, wa}
+
+def Shell.frame.k(wait: Bool, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +ms: Nat) -> IO(Shell):
+  match wait:
+    case True{}:
+      Shell.frame.wait(Nat.is_gt(Maybe.default(&2, Nat, Nat.read(U.Ui.info(N.Nui.ui(n), "frame.late")), 0n), ms), n, w, q, i, wa, ms)
+    case False{}:
+      Shell.frame.draw(n, w, q, i, wa, ms)
+
 def Shell.frame(a: Shell) -> IO(Shell):
   match a:
     case Shell{+n, w, True{}, _, q, i, wa}:
       do IO<Shell>:
-        t : U32 <- H.Clock.epoch()
         +ms : Nat <- IO.now()
-        n2 : N.Nui <- Hud.feed(U.Ui.flag(N.Nui.ui(n), "perf"), n, ms)
-        Shell.paint(n2, w, q, i, wa, U32.to_nat(t), ms)
+        Shell.frame.k(Hubf.wait(n, ms), n, w, q, i, wa, ms)
     case Shell{n, w, False{}, _, q, i, wa}:
       IO.pure(Shell, Shell{n, w, False{}, False{}, q, i, wa})
 

@@ -709,10 +709,13 @@ def Links.due(ls: List<&2, U.Link2>, +now: Nat) -> Nat:
 def Due.hit(+at: Nat) -> List<&2, S.Hit>:
   Bool.pick(List<&2, S.Hit>, Nat.is_eq(at, 0n), Nil{}, [Lay.hit(0, 0, 0, 0, "due", Nat.show(at))])
 
-def Links.over(o: Out, +ls: List<&2, U.Link2>, +now: Nat, +c: D.Clip) -> Out:
-  match o:
-    case Out{os, +hs}:
-      Out{List.append(&2, R.Op, os, Links.all(ls, Links.rows(hs, Map.new(&2, U32)), 0n, now, c)), List.append(&2, S.Hit, hs, Due.hit(Links.due(ls, now)))}
+# (the rows' places are found only when there are links to draw)
+def Links.over(o: Out, ls: List<&2, U.Link2>, +now: Nat, +c: D.Clip) -> Out:
+  match o ls:
+    case _ Nil{}:
+      o
+    case Out{os, +hs} +l <> +lt:
+      Out{List.append(&2, R.Op, os, Links.all(l <> lt, Links.rows(hs, Map.new(&2, U32)), 0n, now, c)), List.append(&2, S.Hit, hs, Due.hit(Links.due(l <> lt, now)))}
 
 # Machines
 # --------

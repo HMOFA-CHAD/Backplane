@@ -81,10 +81,29 @@ def Spot.of.parts(+xs: List<&2, String>) -> Spot:
 def Spot.of(+v: String) -> Spot:
   Spot.of.parts(String.split(v, '|'))
 
+# a - b, or 0 below it
+def Spot.less(+a: U32, +b: U32) -> U32:
+  Bool.pick(U32, U32.is_ge(a, b), (a - b : U32), 0)
+
+# a cat whose square (and as much again around it) is cut away by
+# its clip draws nothing: it is not posed at all (a bot row scrolled out
+# of the sidebar)
+def Spot.seen(sp: Spot) -> Bool:
+  match sp:
+    case Spot{_, _, +px, +x, +y, D.Clip{+cx0, +cy0, +cx1, +cy1}}:
+      Bool.and(Bool.and(U32.is_lt(U32.max(Spot.less(x, px), cx0), U32.min((x + px + px : U32), cx1)), U32.is_lt(U32.max(Spot.less(y, px), cy0), U32.min((y + px + px : U32), cy1))), U32.is_gt(px, 0))
+
+def Spot.keep(seen: Bool, sp: Spot, rest: List<&2, Spot>) -> List<&2, Spot>:
+  match seen:
+    case True{}:
+      sp <> rest
+    case False{}:
+      rest
+
 def Spot.take.k(cat: Bool, +v: String, rest: List<&2, Spot>) -> List<&2, Spot>:
   match cat:
     case True{}:
-      Spot.of(v) <> rest
+      Spot.keep(Spot.seen(Spot.of(v)), Spot.of(v), rest)
     case False{}:
       rest
 

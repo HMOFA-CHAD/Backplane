@@ -1,4 +1,5 @@
 import Base
+import ../../src/gfx/draw.bend as D
 import ../../src/core/client.bend as U
 import ../../src/core/model.bend as M
 import ../../src/app/nui.bend as N
@@ -378,6 +379,83 @@ def passes(+r: Nat, +i: Nat, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +k: Kept, +acc:
       IO.bind(Times, String, key(text(), ty, cats, k, Times{0n, 0n, 0n, 0n, 0n, ""}),
         t => passes(q, 1n+i, ty, cats, k, acc ++ " " ++ Times.total(t, String.length(text()))))
 
+def col_out(c: L.Col) -> L.Out:
+  match c:
+    case L.Col{o, _}:
+      o
+
+def six_ok(x: U.SIx) -> Bool:
+  match x:
+    case U.SIx{_, _, _, _}:
+      True{}
+
+def side_list(+ty: L.Ty, u: U.Ui) -> L.Out:
+  match u:
+    case U.Ui{+st, +sel, _, _, +open, _, +now, _, _, _, _, _, _, _, _, _, _}:
+      col_out(L.Lay.side.list(False{}, ty, "", open, st, sel, now, "", "", D.Clip{0, 88, 264, 852}, 88))
+
+def rep.ix(+r: Nat, +n: N.Nui) -> Nat:
+  match r:
+    case 0n:
+      0n
+    case 1n+q:
+      Nat.add(Bool.pick(Nat, six_ok(U.Side.ix(U.Ui.state(N.Nui.ui(n)))), 1n, 0n), rep.ix(q, n))
+
+def rep.list(+r: Nat, +ty: L.Ty, +n: N.Nui) -> Nat:
+  match r:
+    case 0n:
+      0n
+    case 1n+q:
+      Nat.add(nops(side_list(ty, N.Nui.ui(n))), rep.list(q, ty, n))
+
+def rep.bots(+r: Nat, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +n: N.Nui) -> Nat:
+  match r:
+    case 0n:
+      0n
+    case 1n+q:
+      Nat.add(nops(col_out(BV.Bv.side(ty, cats, n, D.Clip{0, 88, 264, 852}, 88))), rep.bots(q, ty, cats, n))
+
+def rep.bare(+r: Nat, +ty: L.Ty, +n: N.Nui) -> Nat:
+  match r:
+    case 0n:
+      0n
+    case 1n+q:
+      Nat.add(nops(L.Lay.sidebar(ty, n, 900)), rep.bare(q, ty, n))
+
+def ui_now(u: U.Ui) -> Nat:
+  match u:
+    case U.Ui{_, _, _, _, _, _, +now, _, _, _, _, _, _, _, _, _, _}:
+      now
+
+def rep.mach(+r: Nat, +n: N.Nui) -> Nat:
+  match r:
+    case 0n:
+      0n
+    case 1n+q:
+      Nat.add(List.length(&2, U.MRow, U.Machines.rows(N.Nui.ui(n))), rep.mach(q, n))
+
+def rep.tail(+r: Nat, +ty: L.Ty, +n: N.Nui) -> Nat:
+  match r:
+    case 0n:
+      0n
+    case 1n+q:
+      Nat.add(Nat.add(nops(L.Lay.ghost(ty, n)), nops(L.Rm.draw(ty, N.Nui.ui(n), 1400, 900))), rep.tail(q, ty, n))
+
+def rep.links(+r: Nat, +n: N.Nui) -> Nat:
+  match r:
+    case 0n:
+      0n
+    case 1n+q:
+      Nat.add(List.length(&2, U.Link2, U.Links.recent(U.Ui.state(N.Nui.ui(n)), ui_now(N.Nui.ui(n)))), rep.links(q, n))
+
+def rep.chain(+r: Nat, +ty: L.Ty, +n: N.Nui) -> Nat:
+  match r:
+    case 0n:
+      0n
+    case 1n+q:
+      Nat.add(nops(L.Links.over(L.Side.most(L.Col{side_list(ty, N.Nui.ui(n)), 900}, 0, 852), U.Links.recent(U.Ui.state(N.Nui.ui(n)), ui_now(N.Nui.ui(n))), ui_now(N.Nui.ui(n)), D.Clip{0, 88, 264, 852})), rep.chain(q, ty, n))
+
+# each part of one frame, 50 times over (ms for all 50)
 def prof.side(+r: Nat, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +n: N.Nui) -> Nat:
   rep.side(r, ty, cats, n)
 
@@ -398,4 +476,19 @@ def main() -> IO(Unit):
     +b : Nat <- IO.now()
     +x2 : Nat = prof.thread(10n, ty, kept_memo(k), n)
     +c : Nat <- IO.now()
+    +d : Nat <- IO.now()
+    +y1 : Nat = rep.ix(10n, n)
+    +e : Nat <- IO.now()
+    +y2 : Nat = rep.list(10n, ty, n)
+    +f : Nat <- IO.now()
+    +y3 : Nat = rep.bots(10n, ty, cats, n)
+    +g : Nat <- IO.now()
+    +y4 : Nat = rep.links(10n, n)
+    +h : Nat <- IO.now()
+    +y5 : Nat = rep.chain(10n, ty, n)
+    +i : Nat <- IO.now()
+    +y6 : Nat = rep.bare(10n, ty, n)
+    +j : Nat <- IO.now()
+    IO.print("x10 ms: Side.ix " ++ Nat.show(Nat.sub(e, d)) ++ "  side.list " ++ Nat.show(Nat.sub(f, e)) ++ "  Bv.side " ++ Nat.show(Nat.sub(g, f)) ++ "  Links.recent " ++ Nat.show(Nat.sub(h, g))
+      ++ "  list+links " ++ Nat.show(Nat.sub(i, h)) ++ "  sidebar (no bots) " ++ Nat.show(Nat.sub(j, i)) ++ "  (" ++ Nat.show(Nat.add(Nat.add(y1, y2), Nat.add(Nat.add(y3, y4), Nat.add(y5, y6)))) ++ ")")
     IO.print("x10 ms: sidebar " ++ Nat.show(Nat.sub(b, a)) ++ "  thread " ++ Nat.show(Nat.sub(c, b)) ++ "  (" ++ Nat.show(Nat.add(x1, x2)) ++ ")")
