@@ -1760,6 +1760,29 @@ def TL.live.k(+ty: Ty, empty: Bool, +ph: M.Phase, text: String, +px: U32) -> Lis
 # goes between it and the tail's blocks)
 type LiveMemo is Data:
   LiveMemo{px: U32, text: String, any: Bool, lines: List<&2, TLine>}
+  LiveLocal{tag: String, px: U32, text: String, any: Bool, lines: List<&2, TLine>}
+
+# Untagged snapshots and the original memo API use English. The localized
+# variant also supplies the containing timeline memo's layout identity.
+def TL.locale.tag(+tag: String) -> String:
+  Bool.pick(String, String.eq(tag, "ja"), "ja", "en")
+
+def TL.locale(u: U.Ui) -> String:
+  TL.locale.tag(U.Ui.scratch(u, "@lang.tag"))
+
+def TL.live.tag(lm: LiveMemo) -> String:
+  match lm:
+    case LiveMemo{_, _, _, _}:
+      "en"
+    case LiveLocal{tag, _, _, _, _}:
+      tag
+
+def TL.live.local(+tag: String, lm: LiveMemo) -> LiveMemo:
+  match lm:
+    case LiveMemo{px, text, a, ls}:
+      LiveLocal{tag, px, text, a, ls}
+    case LiveLocal{_, px, text, a, ls}:
+      LiveLocal{tag, px, text, a, ls}
 
 def TL.live.none() -> LiveMemo:
   LiveMemo{0, "", False{}, Nil{}}
@@ -1789,6 +1812,8 @@ def TL.live.get(+ty: Ty, lm: LiveMemo, +text: String, +px: U32) -> LiveMemo:
   match lm:
     case LiveMemo{+lpx, +ltext, +a, +ls}:
       TL.live.keep(Bool.and(U32.is_eq(lpx, px), Q.Eq.str(ltext, text)), ty, LiveMemo{lpx, ltext, a, ls}, text, px)
+    case LiveLocal{+tag, +lpx, +ltext, +a, +ls}:
+      TL.live.local(tag, TL.live.keep(Bool.and(U32.is_eq(lpx, px), Q.Eq.str(ltext, text)), ty, LiveLocal{tag, lpx, ltext, a, ls}, text, px))
 
 def TL.live.cat.k(a: Bool, ls: List<&2, TLine>, +rest: List<&2, TLine>, more: Bool) -> List<&2, TLine>:
   match a more:
@@ -1803,6 +1828,8 @@ def TL.live.cat.k(a: Bool, ls: List<&2, TLine>, +rest: List<&2, TLine>, more: Bo
 def TL.live.cat(+ty: Ty, lm: LiveMemo, +ns: List<&2, N.Node>, +px: U32) -> List<&2, TLine>:
   match lm:
     case LiveMemo{_, _, a, ls}:
+      TL.live.cat.k(a, ls, TL.blocks(ty, ns, px), TL.live.any(ns))
+    case LiveLocal{_, _, _, a, ls}:
       TL.live.cat.k(a, ls, TL.blocks(ty, ns, px), TL.live.any(ns))
 
 # the reply streaming in, else the phase; the settled prefix from the memo
@@ -5905,12 +5932,27 @@ def Lay.memo.es(none: Bool, +n: S.Nui) -> List<&2, M.Entry>:
     case False{}:
       TL.newest(M.State.mine(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n))), U.Ui.sel(S.Nui.ui(n)), TL.created(U.Ui.thread(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n)))), NW{U.Page.shown(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n))), Nil{}})
 
+# Both the entries and live prefix are discarded when the locale changes.
+# Checking here also covers memos of threads left before a language switch.
+def TL.memo.locale.k(same: Bool, m: TLMemo) -> TLMemo:
+  match same:
+    case True{}:
+      m
+    case False{}:
+      TL.memo.none()
+
+def TL.memo.locale(+tag: String, +m: TLMemo) -> TLMemo:
+  TL.memo.locale.k(String.eq(tag, TL.live.tag(TL.memo.lv(m))), m)
+
+# the memo brought up to this frame: the open thread's entries at its width
 # (only the newest page of a thread, core's Page: a long thread laid out
 # whole cost every frame 15 ms on a real log; "earlier" shows another page)
-# the memo brought up to this frame: the open thread's entries at its width
-def Lay.memo(+ty: Ty, +n: S.Nui, +prev: TLMemo) -> TLMemo:
+def Lay.memo.local(+tag: String, +ty: Ty, +n: S.Nui, +prev: TLMemo) -> TLMemo:
   TL.memo.with_live(TL.memo.of(ty, Lay.memo.es(String.is_empty(U.Ui.sel(S.Nui.ui(n))), n), Lay.tl.px(n), U.Ui.sel(S.Nui.ui(n)), prev),
-    TL.live.get(ty, TL.memo.lv(prev), U.Live.head(U.Ui.live.of(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n)))), Lay.tl.px(n)))
+    TL.live.local(tag, TL.live.get(ty, TL.memo.lv(prev), U.Live.head(U.Ui.live.of(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n)))), Lay.tl.px(n))))
+
+def Lay.memo(+ty: Ty, +n: S.Nui, prev: TLMemo) -> TLMemo:
+  Lay.memo.local(TL.locale(S.Nui.ui(n)), ty, n, TL.memo.locale(TL.locale(S.Nui.ui(n)), prev))
 
 # the memos brought up to this frame: the open thread's in front, from the
 # one kept for it
