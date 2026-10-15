@@ -273,19 +273,25 @@ def Mob.href.attrs(as: List<&2, D.Attr>) -> List<&2, J.KV>:
       Mob.href.attrs(t)
 
 # An anchor without href already falls through to plain text on both phones.
-def Mob.ref.attr(xs: List<&2, D.Attr>, +key: String) -> String:
+def Mob.ref.uri(xs: List<&2, D.Attr>) -> String:
   match xs:
     case Nil{}: ""
-    case D.At{+k, v} <> t: Bool.pick(String, String.eq(k, key), v, Mob.ref.attr(t, key))
-    case _ <> t: Mob.ref.attr(t, key)
+    case D.At{"data-ref", v} <> _: v
+    case _ <> t: Mob.ref.uri(t)
+
+def Mob.ref.bare(xs: List<&2, D.Attr>) -> Bool:
+  match xs:
+    case Nil{}: False{}
+    case D.At{"data-bare", v} <> _: String.eq(v, "1")
+    case _ <> t: Mob.ref.bare(t)
 
 def Mob.href.ref(ref: String, +attrs: List<&2, D.Attr>) -> List<&2, J.KV>:
   match ref:
     case SNil{}: Mob.href.attrs(attrs)
-    case SCon{h, t}: [J.KV{"ref", J.Json.str(SCon{h, t})}, J.KV{"bare", J.Json.bool(String.eq(Mob.ref.attr(attrs, "data-bare"), "1"))}]
+    case SCon{h, t}: [J.KV{"ref", J.Json.str(SCon{h, t})}, J.KV{"bare", J.Json.bool(Mob.ref.bare(attrs))}]
 
 def Mob.href(+attrs: List<&2, D.Attr>) -> List<&2, J.KV>:
-  Mob.href.ref(Mob.ref.attr(attrs, "data-ref"), attrs)
+  Mob.href.ref(Mob.ref.uri(attrs), attrs)
 
 def Mob.nodes.go(ns: List<&2, D.Node>, acc: List<&2, J.Json>) -> List<&2, J.Json>:
   match ns:

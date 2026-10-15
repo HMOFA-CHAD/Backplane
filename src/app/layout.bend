@@ -944,16 +944,31 @@ def Nd.href(xs: List<&2, N.Attr>) -> String:
     case _ <> t:
       Nd.href(t)
 
-def Nd.ref.attr(xs: List<&2, N.Attr>, +key: String) -> String:
+# the ref (data-ref) of a node's attributes, and whether it was a bare id
+def Nd.ref(xs: List<&2, N.Attr>) -> String:
   match xs:
-    case Nil{}: ""
-    case N.At{+k, v} <> t: Bool.pick(String, String.eq(k, key), v, Nd.ref.attr(t, key))
-    case _ <> t: Nd.ref.attr(t, key)
+    case Nil{}:
+      ""
+    case N.At{"data-ref", v} <> _:
+      v
+    case _ <> t:
+      Nd.ref(t)
 
-def Nd.ref.piece(ref: String, label: String, +at: List<&2, N.Attr>) -> LK.Piece:
+def Nd.bare(xs: List<&2, N.Attr>) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case N.At{"data-bare", v} <> _:
+      String.eq(v, "1")
+    case _ <> t:
+      Nd.bare(t)
+
+def Nd.link(ref: String, +at: List<&2, N.Attr>, +ks: List<&2, N.Node>) -> LK.Piece:
   match ref:
-    case SNil{}: LK.PLink{label, Nd.href(at)}
-    case SCon{h, t}: LK.PRef{label, SCon{h, t}, String.eq(Nd.ref.attr(at, "data-bare"), "1")}
+    case SNil{}:
+      LK.PLink{Nd.plain(ks), Nd.href(at)}
+    case SCon{h, t}:
+      LK.PRef{Nd.plain(ks), SCon{h, t}, Nd.bare(at)}
 
 def Nd.links(ns: List<&2, N.Node>) -> List<&2, LK.Piece>:
   match ns:
@@ -962,7 +977,7 @@ def Nd.links(ns: List<&2, N.Node>) -> List<&2, LK.Piece>:
     case N.Txt{_} <> t:
       Nd.links(t)
     case N.El{"a", _, +at, +ks} <> t:
-      Nd.ref.piece(Nd.ref.attr(at, "data-ref"), Nd.plain(ks), at) <> Nd.links(t)
+      Nd.link(Nd.ref(at), at, ks) <> Nd.links(t)
     case N.El{_, _, _, ks} <> t:
       List.append(&2, LK.Piece, Nd.links(ks), Nd.links(t))
 

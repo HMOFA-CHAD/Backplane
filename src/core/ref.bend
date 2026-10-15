@@ -277,7 +277,8 @@ def Ref.parse(+s: String) -> Maybe<&2, Ref>:
   Ref.parse.scheme(String.starts_with(s, "backplane://"), String.starts_with(s, "http://"), String.starts_with(s, "https://"), s)
 
 # Addresses use decoded segments joined by /. Conv ids contain : and |,
-# never /; file paths already use / as their segment separator.
+# never /; file paths already use / as their segment separator. A decoded
+# segment containing / is URI-roundtrippable but not address-roundtrippable.
 def Ref.addr(r: Ref) -> String:
   match r:
     case Ref{"person", _, _}: "person"
