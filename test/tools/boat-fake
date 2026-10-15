@@ -1,0 +1,48 @@
+#!/bin/bash
+# A stateful fake `boat` for scripts/boat-job.sh tests. State in $BOAT_FAKE_DIR:
+# one folder per sandbox (its /home/user is <dir>/<id>/home). Failure injection:
+# BOAT_FAKE_FAIL=new|push|exec|delete|list|limits|usage. Limits come from
+# $BOAT_FAKE_DIR/limits.json with ACTIVE replaced by the live count. Any other
+# subcommand is refused, and `new` refuses without --no-env and --no-snapshots.
+set -u
+S=${BOAT_FAKE_DIR:?}; mkdir -p "$S/boxes"
+sub=${1:-}; shift || true
+args=(); for a in "$@"; do [ "$a" = --no-update ] || [ "$a" = --json ] || args+=("$a"); done
+set -- "${args[@]+"${args[@]}"}"
+fail() { case ",${BOAT_FAKE_FAIL:-}," in *",$1,"*) echo "fake: $1 failed" >&2; exit 1 ;; esac; }
+home() { echo "$S/boxes/$1/home"; }
+echo "$sub $*" >> "$S/calls"
+case $sub in
+  --version) echo "boat 0.0.0-fake" ;;
+  new)
+    fail new
+    case " $* " in *" --no-env "*) ;; *) echo "fake: unsafe flags" >&2; exit 9 ;; esac
+    case " $* " in *" --no-snapshots "*) ;; *) echo "fake: unsafe flags" >&2; exit 9 ;; esac
+    id="bx_fake$(date +%s%N | tail -c 7)$RANDOM"; mkdir -p "$(home "$id")"
+    echo '{"event":"created","desktopUrl":"https://example.invalid/secret-token"}'
+    echo "{\"id\":\"$id\",\"state\":\"ready\"}" ;;
+  push)
+    fail push; id=$1; src=$2; cp -r "$src" "$(home "$id")/" ;;
+  exec)
+    fail exec; id=$1; shift
+    while [ $# -gt 0 ]; do case $1 in --timeout) shift 2 ;; --stream) shift ;; --) shift; break ;; *) break ;; esac; done
+    [ -d "$S/boxes/$id" ] || { echo "fake: no such sandbox" >&2; exit 1; }
+    h=$(home "$id"); cmd=$(printf '%s' "$3" | sed "s|/home/user|$h|g")
+    HOME=$h bash -c "$cmd" ;;
+  scp)
+    shift $(( $# - 2 )); from=$1; to=$2; id=${from%%:*}; p=${from#*:}
+    cp -r "$(home "$id")${p#/home/user}" "$to" ;;
+  delete)
+    fail delete; rm -rf "${S:?}/boxes/$1" ;;
+  list)
+    fail list
+    printf '{"pageInfo":{"hasMore":false},"sandboxes":['; first=1
+    for d in "$S"/boxes/*/; do [ -d "$d" ] || continue; [ $first = 1 ] || printf ','; first=0; printf '{"id":"%s"}' "$(basename "$d")"; done
+    printf ']}\n' ;;
+  limits)
+    fail limits; n=$(find "$S/boxes" -mindepth 1 -maxdepth 1 -type d | wc -l)
+    sed "s/ACTIVE/$n/" "$S/limits.json" ;;
+  usage)
+    fail usage; echo '{"seconds":12,"billingMultiplier":1}' ;;
+  *) echo "fake: refused $sub" >&2; exit 2 ;;
+esac
