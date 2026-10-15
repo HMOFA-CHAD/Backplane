@@ -34,7 +34,21 @@ LEDGER="$ROOT/ledger.jsonl"
 mkdir -p "$ROOT/jobs" || exit 76
 
 say() { printf 'boat-job: %s\n' "$*" >&2; }
-nourl() { grep -v -i -E 'https?://' || true; }
+# Boat's frames (JSON lines when not on a terminal) as plain text, URLs dropped
+plain() { python3 -u -c '
+import json, sys
+for l in sys.stdin:
+    t = l.strip()
+    if t.startswith("{"):
+        try: d = json.loads(t)
+        except Exception: d = None
+        if isinstance(d, dict):
+            if isinstance(d.get("data"), str): sys.stdout.write(d["data"])
+            elif isinstance(d.get("stdout"), str): sys.stdout.write(d["stdout"] + d.get("stderr", ""))
+            sys.stdout.flush(); continue
+    sys.stdout.write(l); sys.stdout.flush()
+'; }
+nourl() { plain | grep --line-buffered -v -i -E 'https?://' || true; }
 now() { date -u +%FT%TZ; }
 b() { timeout "${BT:-120}" "$BOAT" "$@" --no-update </dev/null; }
 
