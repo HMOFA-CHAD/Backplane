@@ -6,6 +6,7 @@
 //   bun test/tools/web_load.ts --bin BACKPLANE --from PERFLOAD_ROOT [--web DIR]
 //     [--port 3799] [--secs 15] [--phases bg,fg,type,open] [--profile PHASE]
 //     [--cpu N] [--light] [--out results.json] [--shots DIR] [--pw PATH-TO-playwright-core] [--keep]
+//     [--display :N]   (or LOAD_DISPLAY: the window too, on that running X server)
 //
 // --from is a folder perf_load.ts kept (`--hold --keep`, then touch its
 // stop): its sanitized copy of the log (threads titled zqlong, zqopen*,
@@ -66,7 +67,7 @@ const hub = Bun.spawn([bin, "--home", join(root, "home"), "--port", String(port)
   cwd: root, stdout: Bun.file(join(root, "app.log")), stderr: Bun.file(join(root, "app.err")),
   env: {
     PATH: `${join(root, "bin")}:/usr/bin:/bin`, HOME: join(root, "user"), USER: process.env.USER ?? "h", LANG: "C.UTF-8",
-    DISPLAY: "", WAYLAND_DISPLAY: "", DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent",
+    DISPLAY: opt("display", process.env.LOAD_DISPLAY ?? ""), WAYLAND_DISPLAY: "", DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent",
     BACKPLANE_NO_UPDATE: "1", BACKPLANE_PEERS: "", BACKPLANE_LOCK_DIR: join(root, "locks"), BACKPLANE_DEPLOY_LOCKS: join(root, "locks/a.lock"),
     BACKPLANE_APNS_URL: "http://127.0.0.1:9", BACKPLANE_HOOK_URL: "", BACKPLANE_GOOGLE_API: "http://127.0.0.1:9", BACKPLANE_GOOGLE_OAUTH: "http://127.0.0.1:9",
     FAKE_LOG: join(root, "agents.log"), FAKE_SECS: "900", FAKE_PER: "3", FAKE_CYCLE: "30",
