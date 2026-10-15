@@ -41,6 +41,19 @@ def Eq.mask(a: R.Mask, b: R.Mask) -> Bool:
       U32.is_eq(x, y)
     case R.MPair{al, ah} R.MPair{bl, bh}:
       Bool.and(Eq.mask(al, bl), Eq.mask(ah, bh))
+    case R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} R.M16{b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15}:
+      Bool.and(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))))))))
+    case _ _:
+      False{}
+
+def Eq.run(a: R.Run, b: R.Run) -> Bool:
+  match a b:
+    case R.RNone{} R.RNone{}:
+      True{}
+    case R.RGlyph{a0, a1, a2, a3, a4, a5} R.RGlyph{b0, b1, b2, b3, b4, b5}:
+      Bool.and(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(Nat.is_eq(a4, b4), Eq.mask(a5, b5))))))
+    case R.RPair{a0, a1, a2, a3, a4, a5} R.RPair{b0, b1, b2, b3, b4, b5}:
+      Bool.and(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(Eq.run(a4, b4), Eq.run(a5, b5))))))
     case _ _:
       False{}
 
@@ -65,6 +78,8 @@ def Eq.shape(a: R.Shape, b: R.Shape) -> Bool:
       Bool.and(Eq.f32(a0, b0), Bool.and(Eq.f32(a1, b1), Bool.and(Eq.f32(a2, b2), Bool.and(Eq.f32(a3, b3), Bool.and(Eq.f32(a4, b4), Eq.f32(a5, b5))))))
     case R.SMask{ax, ay, aw, ad, am} R.SMask{bx, by, bw, bd, bm}:
       Bool.and(U32.is_eq(ax, bx), Bool.and(U32.is_eq(ay, by), Bool.and(U32.is_eq(aw, bw), Bool.and(Nat.is_eq(ad, bd), Eq.mask(am, bm)))))
+    case R.SRun{ax, ay, ar} R.SRun{bx, by, br}:
+      Bool.and(U32.is_eq(ax, bx), Bool.and(U32.is_eq(ay, by), Eq.run(ar, br)))
     case _ _:
       False{}
 
@@ -159,6 +174,8 @@ def Loc.shape(s: R.Shape, +ox: U32, +oy: U32) -> R.Shape:
       R.STri{Loc.f(ax, U32.to_f32(ox)), Loc.f(ay, U32.to_f32(oy)), Loc.f(bx, U32.to_f32(ox)), Loc.f(by, U32.to_f32(oy)), Loc.f(cx, U32.to_f32(ox)), Loc.f(cy, U32.to_f32(oy))}
     case R.SMask{gx, gy, w, d, m}:
       R.SMask{(gx - ox : U32), (gy - oy : U32), w, d, m}
+    case R.SRun{rx, ry, r}:
+      R.SRun{(rx - ox : U32), (ry - oy : U32), r}
 
 # a box edge cut to [o, o + n], from o
 def Loc.lo(+v: U32, +o: U32, +n: U32) -> U32:
@@ -511,6 +528,160 @@ def Tiles.plan.go(+k: Nat, +e: Nat, +ops: List<&2, R.Op>, +base: Image, prev: Ti
 def Tiles.plan(+k: Nat, +e: Nat, +ops: List<&2, R.Op>, +base: Image, +prev: Tiles, +p: Past, +rx: U32, +ry: U32, +n: U32) -> Plan:
   Tiles.plan.go(k, e, ops, base, prev, p, rx, ry, n, Tiles.same(ops, base, prev))
 
+# Plans that build only the changed nodes' ops
+# --------------------------------------------
+# Tiles.plan built every child's ops (Region.keep, four lists a node) before
+# comparing them with the last frame's, so an unchanged child cost a list
+# made only to be dropped. Here a child's ops are compared as they reach it,
+# straight from its parent's (Keep.eq, law keep_eq: exactly Eq.ops of the
+# list Region.keep would build), and only a changed child's list is built.
+# The plan is Tiles.plan's (law plan_cut_same), so frame_par_exact holds.
+
+# a node's ops: these, or those of these that reach the region at (rx, ry)
+# whose parent's corner is (px, py) (Region.keep's, not built yet)
+type Cut is Data:
+  CAll{ops: List<&2, R.Op>}
+  CIn{ops: List<&2, R.Op>, px: U32, py: U32, rx: U32, ry: U32, n: U32}
+
+def Cut.get(c: Cut) -> List<&2, R.Op>:
+  match c:
+    case CAll{o}:
+      o
+    case CIn{o, +px, +py, +rx, +ry, +n}:
+      R.Region.keep(o, px, py, rx, ry, n)
+
+# Eq.op of an op given by its fields
+def Eq.op.f(+a0: U32, +a1: U32, +a2: U32, +a3: U32, +ac: U32, +aa: U32, as: R.Shape, b: R.Op) -> Bool:
+  match b:
+    case R.Op{b0, b1, b2, b3, bc, ba, bs}:
+      Bool.and(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3),
+        Bool.and(U32.is_eq(ac, bc), Bool.and(U32.is_eq(aa, ba), Eq.shape(as, bs)))))))
+
+def Keep.drop1(ys: List<&2, R.Op>) -> List<&2, R.Op>:
+  match ys:
+    case Nil{}:
+      Nil{}
+    case _ <> t:
+      t
+
+# kept: the op reaches the region and draws there (Region.keep.k's flag)
+def Keep.ys.k(kept: Bool, ys: List<&2, R.Op>) -> List<&2, R.Op>:
+  match kept:
+    case True{}:
+      Keep.drop1(ys)
+    case False{}:
+      ys
+
+def Keep.ys.h(hit: Bool, +s: R.Shape, +px: U32, +py: U32, +rx: U32, +ry: U32, +n: U32, ys: List<&2, R.Op>) -> List<&2, R.Op>:
+  match hit:
+    case True{}:
+      Keep.ys.k(Bool.not(R.Region.empty(R.Region.move(s, px, py, rx, ry, n))), ys)
+    case False{}:
+      ys
+
+# the last frame's ops left to compare after op o
+def Keep.ys(o: R.Op, +px: U32, +py: U32, +rx: U32, +ry: U32, +n: U32, ys: List<&2, R.Op>) -> List<&2, R.Op>:
+  match o:
+    case R.Op{+x0, +y0, +x1, +y1, _, _, +s}:
+      Keep.ys.h(R.Region.hits(x0, y0, x1, y1, rx, ry, n), s, px, py, rx, ry, n, ys)
+
+def Keep.ok.c(+x0: U32, +y0: U32, +x1: U32, +y1: U32, +c: U32, +a: U32, s2: R.Shape, ys: List<&2, R.Op>) -> Bool:
+  match ys:
+    case Nil{}:
+      False{}
+    case y <> _:
+      Eq.op.f(x0, y0, x1, y1, c, a, s2, y)
+
+def Keep.ok.k(kept: Bool, +x0: U32, +y0: U32, +x1: U32, +y1: U32, +c: U32, +a: U32, s2: R.Shape, ys: List<&2, R.Op>) -> Bool:
+  match kept:
+    case True{}:
+      Keep.ok.c(x0, y0, x1, y1, c, a, s2, ys)
+    case False{}:
+      True{}
+
+def Keep.ok.h(hit: Bool, +x0: U32, +y0: U32, +x1: U32, +y1: U32, +c: U32, +a: U32, +s: R.Shape, +px: U32, +py: U32, +rx: U32, +ry: U32, +n: U32, ys: List<&2, R.Op>) -> Bool:
+  match hit:
+    case True{}:
+      +s2 = R.Region.move(s, px, py, rx, ry, n)
+      Keep.ok.k(Bool.not(R.Region.empty(s2)), x0, y0, x1, y1, c, a, s2, ys)
+    case False{}:
+      True{}
+
+# op o, as it reaches the region, is the next of the last frame's (or does
+# not reach it)
+def Keep.ok(o: R.Op, +px: U32, +py: U32, +rx: U32, +ry: U32, +n: U32, ys: List<&2, R.Op>) -> Bool:
+  match o:
+    case R.Op{+x0, +y0, +x1, +y1, +c, +a, +s}:
+      Keep.ok.h(R.Region.hits(x0, y0, x1, y1, rx, ry, n), x0, y0, x1, y1, c, a, s, px, py, rx, ry, n, ys)
+
+# Eq.ops.go(Region.keep(ops, px, py, rx, ry, n), ys, ok) without building
+# the list (law keep_eq); it stops at the first op that differs
+def Keep.eq(ops: List<&2, R.Op>, +px: U32, +py: U32, +rx: U32, +ry: U32, +n: U32, +ys: List<&2, R.Op>, ok: Bool) -> Bool:
+  match ops ok:
+    case _ False{}:
+      False{}
+    case Nil{} True{}:
+      Eq.ops.go(Nil{}, ys, True{})
+    case +o <> t True{}:
+      Keep.eq(t, px, py, rx, ry, n, Keep.ys(o, px, py, rx, ry, n, ys), Keep.ok(o, px, py, rx, ry, n, ys))
+
+# Eq.ops(Cut.get(c), ys) (law cut_eq)
+def Cut.eq(c: Cut, +ys: List<&2, R.Op>) -> Bool:
+  match c:
+    case CAll{o}:
+      Eq.ops(o, ys)
+    case CIn{o, +px, +py, +rx, +ry, +n}:
+      Keep.eq(o, px, py, rx, ry, n, ys, True{})
+
+# Eq.tile(Cut.get(c), ys, a, b)
+def Cut.tile(c: Cut, +ys: List<&2, R.Op>, a: Image, b: Image) -> Bool:
+  Eq.tile.k(Cut.eq(c, ys), a, b)
+
+# Tiles.same(Cut.get(c), base, t)
+def Cut.same(c: Cut, +base: Image, t: Tiles) -> Bool:
+  match t:
+    case TLeaf{_}:
+      False{}
+    case TNode{o, b, _, _, _, _}:
+      Cut.tile(c, o, base, b)
+
+def Tile.plan2.k(same: Bool, +e: Nat, c: Cut, +base: Image, t: Tile, p: Past, +rx: U32, +ry: U32, +n: U32) -> Plan:
+  match same:
+    case True{}:
+      PKeep{t}
+    case False{}:
+      +ops = Cut.get(c)
+      Tile.plan.fresh(e, ops, Loc.ops(ops, rx, ry, Tile.size(e)), base, p, rx, ry)
+
+# Tile.plan of Cut.get(c)
+def Tile.plan2(+e: Nat, +c: Cut, +base: Image, t: Tile, p: Past, +rx: U32, +ry: U32, +n: U32) -> Plan:
+  match t:
+    case Tile{+o, l, +b, i}:
+      Tile.plan2.k(Cut.tile(c, o, base, b), e, c, base, Tile{o, l, b, i}, p, rx, ry, n)
+
+# Tiles.plan.go of Cut.get(c) (law plan2_go): a changed node builds its ops
+# and hands its children theirs uncut
+def Tiles.plan2.go(+k: Nat, +e: Nat, c: Cut, +base: Image, prev: Tiles, +p: Past, +rx: U32, +ry: U32, +n: U32, same: Bool) -> Plan:
+  match k prev same:
+    case 0n TLeaf{t} _:
+      Tile.plan2(e, c, base, t, p, rx, ry, n)
+    case 1n+j0 TNode{o, b, pa, pb, pc, pd} True{}:
+      PKeepN{TNode{o, b, pa, pb, pc, pd}}
+    case 1n+j0 TNode{_, _, +pa, +pb, +pc, +pd} False{}:
+      +j = j0
+      +h = U32.shr(n)
+      +ops = Cut.get(c)
+      Plan.node(ops, base, Tiles.plan2.go(j, e, CIn{ops, rx, ry, rx, ry, h}, Img.q(base, 0n), pa, p, rx, ry, h, Cut.same(CIn{ops, rx, ry, rx, ry, h}, Img.q(base, 0n), pa)),
+        Tiles.plan2.go(j, e, CIn{ops, rx, ry, (rx + h : U32), ry, h}, Img.q(base, 1n), pb, p, (rx + h : U32), ry, h, Cut.same(CIn{ops, rx, ry, (rx + h : U32), ry, h}, Img.q(base, 1n), pb)),
+        Tiles.plan2.go(j, e, CIn{ops, rx, ry, rx, (ry + h : U32), h}, Img.q(base, 2n), pc, p, rx, (ry + h : U32), h, Cut.same(CIn{ops, rx, ry, rx, (ry + h : U32), h}, Img.q(base, 2n), pc)),
+        Tiles.plan2.go(j, e, CIn{ops, rx, ry, (rx + h : U32), (ry + h : U32), h}, Img.q(base, 3n), pd, p, (rx + h : U32), (ry + h : U32), h, Cut.same(CIn{ops, rx, ry, (rx + h : U32), (ry + h : U32), h}, Img.q(base, 3n), pd)))
+    case _ _ _:
+      Tiles.plan.make(k, e, Cut.get(c), base, rx, ry, n)
+
+# Tiles.plan (law plan_cut_same)
+def Tiles.plan2(+k: Nat, +e: Nat, +ops: List<&2, R.Op>, +base: Image, +prev: Tiles, +p: Past, +rx: U32, +ry: U32, +n: U32) -> Plan:
+  Tiles.plan2.go(k, e, CAll{ops}, base, prev, p, rx, ry, n, Cut.same(CAll{ops}, base, prev))
+
 # the tiles to draw, in the plan's order (a, b, c, d under each node)
 type Job is Data:
   Job{l: List<&2, R.Op>, base: Image}
@@ -634,7 +805,7 @@ def Plan.run(+p: Plan, +e: Nat) -> Tiles:
 def Frame.plan.k(same: Bool, +w: U32, +h: U32, +ops: List<&2, R.Op>, +base: Image, +prev: Tiles, +dy: U32) -> Plan:
   match same:
     case True{}:
-      Tiles.plan(Frame.levels(w, h), Frame.edge(w, h), ops, base, prev, Past{Frame.levels(w, h), prev, U32.shln(1, R.Frame.depth(w, h)), dy}, 0, 0, U32.shln(1, R.Frame.depth(w, h)))
+      Tiles.plan2(Frame.levels(w, h), Frame.edge(w, h), ops, base, prev, Past{Frame.levels(w, h), prev, U32.shln(1, R.Frame.depth(w, h)), dy}, 0, 0, U32.shln(1, R.Frame.depth(w, h)))
     case False{}:
       Tiles.plan.make(Frame.levels(w, h), Frame.edge(w, h), ops, base, 0, 0, U32.shln(1, R.Frame.depth(w, h)))
 

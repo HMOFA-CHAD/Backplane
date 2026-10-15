@@ -16,10 +16,22 @@ type Edge is Data:
 
 # a coverage bitmap (anti-aliased glyphs): 8-bit coverage, four pixels
 # per word, first pixel in the low byte, held as a complete binary tree
-# of 2^d words so a pixel is found in d steps
+# of 2^d words so a pixel is found in d steps. A leaf of 16 words (M16)
+# stands for the last four levels: a glyph's mask is then a few nodes, so
+# frames compare glyphs in a few steps, not one per word
 type Mask is Data:
   MWord{w: U32}
   MPair{lo: Mask, hi: Mask}
+  M16{w0: U32, w1: U32, w2: U32, w3: U32, w4: U32, w5: U32, w6: U32, w7: U32, w8: U32, w9: U32, w10: U32, w11: U32, w12: U32, w13: U32, w14: U32, w15: U32}
+
+# a run of glyphs (one line of text in one face and colour) as a tree in
+# string order: a leaf is a glyph's coverage bitmap at (gx, gy), w x h; a
+# pair's glyphs lie in [x0, x1) x [y0, y1). Coordinates are from the run's
+# origin (its SRun's ox, oy, modulo 2^32), so moving the run moves no glyph.
+type Run is Data:
+  RNone{}
+  RGlyph{gx: U32, gy: U32, w: U32, h: U32, d: Nat, m: Mask}
+  RPair{x0: U32, y0: U32, x1: U32, y1: U32, a: Run, b: Run}
 
 # SPoly is an even-odd polygon cut to the region at hand: `inside` says
 # whether the region's top-left corner is inside, `edges` are the edges
@@ -32,6 +44,7 @@ type Shape is Data:
   SDisc{cx: F32, cy: F32, r: F32}
   STri{ax: F32, ay: F32, bx: F32, by: F32, cx: F32, cy: F32}
   SMask{gx: U32, gy: U32, w: U32, d: Nat, m: Mask}
+  SRun{ox: U32, oy: U32, r: Run}
 
 # an op's box [x0, x1) x [y0, y1) is its shape's extent cut to its clip
 type Op is Data:
@@ -89,11 +102,35 @@ def Mask.pick(hi: Bool, a: Mask, b: Mask) -> Mask:
     case True{}:
       b
 
+def Mask.sel(hi: Bool, +a: U32, +b: U32) -> U32:
+  match hi:
+    case False{}:
+      a
+    case True{}:
+      b
+
+def Mask.bit(+i: U32, +k: Nat) -> Bool:
+  U32.is_ne(U32.and(U32.shrn(i, k), 1), 0)
+
+# word i (its low four bits) of a 16-word leaf
+def Mask.leaf(m: Mask, +i: U32) -> U32:
+  match m:
+    case M16{+a0, +a1, +a2, +a3, +a4, +a5, +a6, +a7, +a8, +a9, +a10, +a11, +a12, +a13, +a14, +a15}:
+      Mask.sel(Mask.bit(i, 3n),
+        Mask.sel(Mask.bit(i, 2n), Mask.sel(Mask.bit(i, 1n), Mask.sel(Mask.bit(i, 0n), a0, a1), Mask.sel(Mask.bit(i, 0n), a2, a3)), Mask.sel(Mask.bit(i, 1n), Mask.sel(Mask.bit(i, 0n), a4, a5), Mask.sel(Mask.bit(i, 0n), a6, a7))),
+        Mask.sel(Mask.bit(i, 2n), Mask.sel(Mask.bit(i, 1n), Mask.sel(Mask.bit(i, 0n), a8, a9), Mask.sel(Mask.bit(i, 0n), a10, a11)), Mask.sel(Mask.bit(i, 1n), Mask.sel(Mask.bit(i, 0n), a12, a13), Mask.sel(Mask.bit(i, 0n), a14, a15))))
+    case MWord{w}:
+      w
+    case MPair{_, _}:
+      0
+
 # word i of a tree of 2^d words
 def Mask.at(d: Nat, m: Mask, +i: U32) -> U32:
   match d m:
     case _ MWord{w}:
       w
+    case _ M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15}:
+      Mask.leaf(M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15}, i)
     case 0n MPair{_, _}:
       0
     case 1n+k0 MPair{lo, hi}:
@@ -186,6 +223,31 @@ def Cov.poly(inside: Bool, +d: F32) -> U32:
     case False{}:
       Cov.clamp(F32.sub(0.5, d))
 
+def Run.inside(+x0: U32, +y0: U32, +x1: U32, +y1: U32, +x: U32, +y: U32) -> Bool:
+  Bool.and(Bool.and(U32.is_ge(x, x0), U32.is_lt(x, x1)), Bool.and(U32.is_ge(y, y0), U32.is_lt(y, y1)))
+
+# the part of the run may reach local pixel (x, y): a glyph's box holds
+# it, a pair spans its column
+def Run.hit(r: Run, +x: U32, +y: U32) -> Bool:
+  match r:
+    case RNone{}:
+      False{}
+    case RGlyph{+gx, +gy, +w, +h, _, _}:
+      Run.inside(gx, gy, (gx + w : U32), (gy + h : U32), x, y)
+    case RPair{+x0, +y0, +x1, +y1, _, _}:
+      Run.inside(x0, y0, x1, y1, x, y)
+
+# the most any glyph of the run covers local pixel (x, y) (in: Run.hit;
+# a frame shades a run glyph by glyph, Run.px)
+def Run.cov(r: Run, in: Bool, +x: U32, +y: U32) -> U32:
+  match r in:
+    case RGlyph{+gx, +gy, +w, _, d, m} True{}:
+      Cov.mask(gx, gy, w, d, m, x, y)
+    case RPair{_, _, _, _, +a, +b} True{}:
+      U32.max(Run.cov(a, Run.hit(a, x, y), x, y), Run.cov(b, Run.hit(b, x, y), x, y))
+    case _ _:
+      0
+
 def Cov.at(s: Shape, +x: U32, +y: U32, +px: F32, +py: F32) -> U32:
   match s:
     case SRect{}:
@@ -200,6 +262,8 @@ def Cov.at(s: Shape, +x: U32, +y: U32, +px: F32, +py: F32) -> U32:
       Cov.tri(ax, ay, bx, by, cx, cy, px, py)
     case SMask{gx, gy, w, d, m}:
       Cov.mask(gx, gy, w, d, m, x, y)
+    case SRun{+ox, +oy, +r}:
+      Run.cov(r, Run.hit(r, (x - ox : U32), (y - oy : U32)), (x - ox : U32), (y - oy : U32))
     case SPoly{inside, +es}:
       Cov.poly(Cross.walk(es, inside, U32.to_f32(x), U32.to_f32(y), px, py), Cov.near(es, px, py, 1.0))
 
@@ -237,6 +301,33 @@ def Shade.inside(+x0: U32, +y0: U32, +x1: U32, +y1: U32, +x: U32, +y: U32) -> Bo
 def Shade.k(+cov: U32, +c: U32, +a: U32, +below: U32) -> U32:
   Rgb.mix(c, below, ((cov * a : U32) / 255 : U32))
 
+# local pixel (x, y) shaded by the run's glyphs, the first topmost, as one
+# op per glyph would be (in: Run.hit): a glyph whose box misses the pixel
+# leaves it as it is, as a glyph op would (a frame shades a pixel only
+# with the ops whose boxes hold it: Region.node)
+def Run.px(r: Run, in: Bool, +x: U32, +y: U32, +c: U32, +a: U32, below: U32) -> U32:
+  match r in:
+    case RGlyph{+gx, +gy, +w, _, d, m} True{}:
+      Shade.k(Cov.mask(gx, gy, w, d, m, x, y), c, a, below)
+    case RPair{_, _, _, _, +ra, +rb} True{}:
+      Run.px(ra, Run.hit(ra, x, y), x, y, c, a, Run.px(rb, Run.hit(rb, x, y), x, y, c, a, below))
+    case _ _:
+      below
+
+def Run.shade(in: Bool, +ox: U32, +oy: U32, +r: Run, +x: U32, +y: U32, +c: U32, +a: U32, +below: U32) -> U32:
+  match in:
+    case True{}:
+      Run.px(r, Run.hit(r, (x - ox : U32), (y - oy : U32)), (x - ox : U32), (y - oy : U32), c, a, below)
+    case False{}:
+      Shade.k(0, c, a, below)
+
+def Shade.op(s: Shape, +x0: U32, +y0: U32, +x1: U32, +y1: U32, +c: U32, +a: U32, +x: U32, +y: U32, +below: U32) -> U32:
+  match s:
+    case SRun{+ox, +oy, r}:
+      Run.shade(Shade.inside(x0, y0, x1, y1, x, y), ox, oy, r, x, y, c, a, below)
+    case _:
+      Shade.k(Bool.pick(U32, Shade.inside(x0, y0, x1, y1, x, y), Cov.of(s, x, y), 0), c, a, below)
+
 # the topmost op that covers the pixel decides; a translucent one mixes
 # with what lies below it
 def Shade.px(ops: List<&2, Op>, +x: U32, +y: U32, +bg: U32) -> U32:
@@ -244,7 +335,7 @@ def Shade.px(ops: List<&2, Op>, +x: U32, +y: U32, +bg: U32) -> U32:
     case Nil{}:
       bg
     case Op{+x0, +y0, +x1, +y1, +c, +a, s} <> t:
-      Shade.k(Bool.pick(U32, Shade.inside(x0, y0, x1, y1, x, y), Cov.of(s, x, y), 0), c, a, Shade.px(t, x, y, bg))
+      Shade.op(s, x0, y0, x1, y1, c, a, x, y, Shade.px(t, x, y, bg))
 
 # Regions
 # -------
@@ -265,10 +356,114 @@ def Region.poly(+inside: Bool, +es: List<&2, Edge>, +px: U32, +py: U32, +rx: U32
   SPoly{Cross.walk(es, inside, U32.to_f32(px), U32.to_f32(py), U32.to_f32(rx), U32.to_f32(ry)),
     Cross.keep(es, U32.to_f32(rx), U32.to_f32(ry), U32.to_f32((rx + n : U32)), U32.to_f32((ry + n : U32)))}
 
+# Runs cut to a region
+# --------------------
+# A region keeps only the glyphs whose boxes meet it: a part of the tree
+# inside the region is kept whole (shared, nothing built), one outside is
+# dropped, and only the pairs across its edges are made again. A run cut
+# to nothing draws nothing there (Region.empty).
+
+def Run.x0(r: Run) -> U32:
+  match r:
+    case RGlyph{gx, _, _, _, _, _}:
+      gx
+    case RPair{x0, _, _, _, _, _}:
+      x0
+    case RNone{}:
+      4294967295
+
+def Run.y0(r: Run) -> U32:
+  match r:
+    case RGlyph{_, gy, _, _, _, _}:
+      gy
+    case RPair{_, y0, _, _, _, _}:
+      y0
+    case RNone{}:
+      4294967295
+
+def Run.x1(r: Run) -> U32:
+  match r:
+    case RGlyph{gx, _, w, _, _, _}:
+      (gx + w : U32)
+    case RPair{_, _, x1, _, _, _}:
+      x1
+    case RNone{}:
+      0
+
+def Run.y1(r: Run) -> U32:
+  match r:
+    case RGlyph{_, gy, _, h, _, _}:
+      (gy + h : U32)
+    case RPair{_, _, _, y1, _, _}:
+      y1
+    case RNone{}:
+      0
+
+# a then b, as one tree (a pair spans both)
+def Run.pair(+a: Run, +b: Run) -> Run:
+  RPair{U32.min(Run.x0(a), Run.x0(b)), U32.min(Run.y0(a), Run.y0(b)), U32.max(Run.x1(a), Run.x1(b)), U32.max(Run.y1(a), Run.y1(b)), a, b}
+
+def Run.none(r: Run) -> Bool:
+  match r:
+    case RNone{}:
+      True{}
+    case _:
+      False{}
+
+def Run.join.k(an: Bool, bn: Bool, +a: Run, +b: Run) -> Run:
+  match an bn:
+    case True{} _:
+      b
+    case False{} True{}:
+      a
+    case False{} False{}:
+      Run.pair(a, b)
+
+def Run.join(+a: Run, +b: Run) -> Run:
+  Run.join.k(Run.none(a), Run.none(b), a, b)
+
+# where a part of the run lies against the region [x0, x1) x [y0, y1)
+type Part is Data:
+  POut{}
+  PAll{}
+  PSome{}
+
+def Run.part.k(meets: Bool, within: Bool) -> Part:
+  match meets within:
+    case False{} _:
+      POut{}
+    case True{} True{}:
+      PAll{}
+    case True{} False{}:
+      PSome{}
+
+def Run.part(+r: Run, +x0: U32, +y0: U32, +x1: U32, +y1: U32) -> Part:
+  Run.part.k(Bool.and(Bool.and(U32.is_lt(Run.x0(r), x1), U32.is_gt(Run.x1(r), x0)), Bool.and(U32.is_lt(Run.y0(r), y1), U32.is_gt(Run.y1(r), y0))),
+    Bool.and(Bool.and(U32.is_ge(Run.x0(r), x0), U32.is_le(Run.x1(r), x1)), Bool.and(U32.is_ge(Run.y0(r), y0), U32.is_le(Run.y1(r), y1))))
+
+# the glyphs of the run whose boxes meet the region (pt: Run.part of r)
+def Run.cut(r: Run, pt: Part, +x0: U32, +y0: U32, +x1: U32, +y1: U32) -> Run:
+  match r pt:
+    case _ POut{}:
+      RNone{}
+    case _ PAll{}:
+      r
+    case RPair{_, _, _, _, +a, +b} PSome{}:
+      Run.join(Run.cut(a, Run.part(a, x0, y0, x1, y1), x0, y0, x1, y1), Run.cut(b, Run.part(b, x0, y0, x1, y1), x0, y0, x1, y1))
+    case _ PSome{}:
+      r
+
+# a run moved to the n x n region at (rx, ry): cut to it, in the run's
+# own coordinates
+def Run.at(+ox: U32, +oy: U32, +r: Run, +rx: U32, +ry: U32, +n: U32) -> Shape:
+  SRun{ox, oy, Run.cut(r, Run.part(r, (rx - ox : U32), (ry - oy : U32), (rx + n - ox : U32), (ry + n - oy : U32)), (rx - ox : U32), (ry - oy : U32), (rx + n - ox : U32), (ry + n - oy : U32))}
+
 # a polygon with no edges and outside draws nothing here
 def Region.empty(s: Shape) -> Bool:
   match s:
     case SPoly{False{}, Nil{}}:
+      True{}
+    case SRun{_, _, RNone{}}:
       True{}
     case _:
       False{}
@@ -277,6 +472,8 @@ def Region.move(s: Shape, +px: U32, +py: U32, +rx: U32, +ry: U32, +n: U32) -> Sh
   match s:
     case SPoly{+inside, +es}:
       Region.poly(inside, es, px, py, rx, ry, n)
+    case SRun{+ox, +oy, +r}:
+      Run.at(ox, oy, r, rx, ry, n)
     case _:
       s
 

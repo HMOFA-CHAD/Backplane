@@ -1608,6 +1608,8 @@ def eq_mask_sound(a, b, h):
       {==}
     case R.MWord{+a0} R.MPair{+b0, +b1}:
       Empty.absurd({R.MWord{a0} == R.MPair{b0, b1} : R.Mask}, false_ne_true(h))
+    case R.MWord{+a0} R.M16{+b0, +b1, +b2, +b3, +b4, +b5, +b6, +b7, +b8, +b9, +b10, +b11, +b12, +b13, +b14, +b15}:
+      Empty.absurd({R.MWord{a0} == R.M16{b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}, false_ne_true(h))
     case R.MPair{+a0, +a1} R.MWord{+b0}:
       Empty.absurd({R.MPair{a0, a1} == R.MWord{b0} : R.Mask}, false_ne_true(h))
     case R.MPair{+a0, +a1} R.MPair{+b0, +b1}:
@@ -1617,6 +1619,76 @@ def eq_mask_sound(a, b, h):
       e1 = eq_mask_sound(a1, b1, hr0)
       %e0 : {R.MPair{a0, a1} == R.MPair{_, b1} : R.Mask}
       %e1 : {R.MPair{a0, a1} == R.MPair{a0, _} : R.Mask}
+      {==}
+    case R.MPair{+a0, +a1} R.M16{+b0, +b1, +b2, +b3, +b4, +b5, +b6, +b7, +b8, +b9, +b10, +b11, +b12, +b13, +b14, +b15}:
+      Empty.absurd({R.MPair{a0, a1} == R.M16{b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}, false_ne_true(h))
+    case R.M16{+a0, +a1, +a2, +a3, +a4, +a5, +a6, +a7, +a8, +a9, +a10, +a11, +a12, +a13, +a14, +a15} R.MWord{+b0}:
+      Empty.absurd({R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.MWord{b0} : R.Mask}, false_ne_true(h))
+    case R.M16{+a0, +a1, +a2, +a3, +a4, +a5, +a6, +a7, +a8, +a9, +a10, +a11, +a12, +a13, +a14, +a15} R.MPair{+b0, +b1}:
+      Empty.absurd({R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.MPair{b0, b1} : R.Mask}, false_ne_true(h))
+    case R.M16{+a0, +a1, +a2, +a3, +a4, +a5, +a6, +a7, +a8, +a9, +a10, +a11, +a12, +a13, +a14, +a15} R.M16{+b0, +b1, +b2, +b3, +b4, +b5, +b6, +b7, +b8, +b9, +b10, +b11, +b12, +b13, +b14, +b15}:
+      +hl0 = and_l(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))))))), h)
+      +hr0 = and_r(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))))))), h)
+      e0 = u32_eq_sound(a0, b0, hl0)
+      +hl1 = and_l(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))))))), hr0)
+      +hr1 = and_r(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))))))), hr0)
+      e1 = u32_eq_sound(a1, b1, hl1)
+      +hl2 = and_l(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))))), hr1)
+      +hr2 = and_r(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))))), hr1)
+      e2 = u32_eq_sound(a2, b2, hl2)
+      +hl3 = and_l(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))))), hr2)
+      +hr3 = and_r(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))))), hr2)
+      e3 = u32_eq_sound(a3, b3, hl3)
+      +hl4 = and_l(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))), hr3)
+      +hr4 = and_r(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))), hr3)
+      e4 = u32_eq_sound(a4, b4, hl4)
+      +hl5 = and_l(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))), hr4)
+      +hr5 = and_r(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))), hr4)
+      e5 = u32_eq_sound(a5, b5, hl5)
+      +hl6 = and_l(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))), hr5)
+      +hr6 = and_r(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))), hr5)
+      e6 = u32_eq_sound(a6, b6, hl6)
+      +hl7 = and_l(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))), hr6)
+      +hr7 = and_r(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))), hr6)
+      e7 = u32_eq_sound(a7, b7, hl7)
+      +hl8 = and_l(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))), hr7)
+      +hr8 = and_r(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))), hr7)
+      e8 = u32_eq_sound(a8, b8, hl8)
+      +hl9 = and_l(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))), hr8)
+      +hr9 = and_r(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))), hr8)
+      e9 = u32_eq_sound(a9, b9, hl9)
+      +hl10 = and_l(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))), hr9)
+      +hr10 = and_r(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))), hr9)
+      e10 = u32_eq_sound(a10, b10, hl10)
+      +hl11 = and_l(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))), hr10)
+      +hr11 = and_r(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))), hr10)
+      e11 = u32_eq_sound(a11, b11, hl11)
+      +hl12 = and_l(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))), hr11)
+      +hr12 = and_r(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))), hr11)
+      e12 = u32_eq_sound(a12, b12, hl12)
+      +hl13 = and_l(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)), hr12)
+      +hr13 = and_r(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)), hr12)
+      e13 = u32_eq_sound(a13, b13, hl13)
+      +hl14 = and_l(U32.is_eq(a14, b14), U32.is_eq(a15, b15), hr13)
+      +hr14 = and_r(U32.is_eq(a14, b14), U32.is_eq(a15, b15), hr13)
+      e14 = u32_eq_sound(a14, b14, hl14)
+      e15 = u32_eq_sound(a15, b15, hr14)
+      %e0 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{_, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e1 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, _, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e2 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, _, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e3 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, _, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e4 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, _, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e5 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, _, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e6 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, _, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e7 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, _, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e8 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, _, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e9 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, _, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e10 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, _, b11, b12, b13, b14, b15} : R.Mask}
+      %e11 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, _, b12, b13, b14, b15} : R.Mask}
+      %e12 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, _, b13, b14, b15} : R.Mask}
+      %e13 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, _, b14, b15} : R.Mask}
+      %e14 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, _, b15} : R.Mask}
+      %e15 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, _} : R.Mask}
       {==}
 
 law eq_mask_refl:
@@ -1631,6 +1703,24 @@ def eq_mask_refl(a):
     case R.MPair{+a0, +a1}:
       %Equal.sym(Bool, T.Eq.mask(a0, a0), True{}, eq_mask_refl(a0)) : {Bool.and(_, T.Eq.mask(a1, a1)) == True{} : Bool}
       %Equal.sym(Bool, T.Eq.mask(a1, a1), True{}, eq_mask_refl(a1)) : {Bool.and(True{}, _) == True{} : Bool}
+      {==}
+    case R.M16{+a0, +a1, +a2, +a3, +a4, +a5, +a6, +a7, +a8, +a9, +a10, +a11, +a12, +a13, +a14, +a15}:
+      %Equal.sym(Bool, U32.is_eq(a0, a0), True{}, u32_eq_refl(a0)) : {Bool.and(_, Bool.and(U32.is_eq(a1, a1), Bool.and(U32.is_eq(a2, a2), Bool.and(U32.is_eq(a3, a3), Bool.and(U32.is_eq(a4, a4), Bool.and(U32.is_eq(a5, a5), Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a1, a1), True{}, u32_eq_refl(a1)) : {Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a2, a2), Bool.and(U32.is_eq(a3, a3), Bool.and(U32.is_eq(a4, a4), Bool.and(U32.is_eq(a5, a5), Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a2, a2), True{}, u32_eq_refl(a2)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a3, a3), Bool.and(U32.is_eq(a4, a4), Bool.and(U32.is_eq(a5, a5), Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a3, a3), True{}, u32_eq_refl(a3)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a4, a4), Bool.and(U32.is_eq(a5, a5), Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a4, a4), True{}, u32_eq_refl(a4)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a5, a5), Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a5, a5), True{}, u32_eq_refl(a5)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a6, a6), True{}, u32_eq_refl(a6)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a7, a7), True{}, u32_eq_refl(a7)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a8, a8), True{}, u32_eq_refl(a8)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a9, a9), True{}, u32_eq_refl(a9)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a10, a10), True{}, u32_eq_refl(a10)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a11, a11), True{}, u32_eq_refl(a11)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a12, a12), True{}, u32_eq_refl(a12)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a13, a13), True{}, u32_eq_refl(a13)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a14, a14), True{}, u32_eq_refl(a14)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a15, a15), True{}, u32_eq_refl(a15)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, _))))))))))))))) == True{} : Bool}
       {==}
 
 law eq_glyph_sound:
@@ -1669,6 +1759,102 @@ def eq_glyph_refl(a):
       %Equal.sym(Bool, U32.is_eq(a1, a1), True{}, u32_eq_refl(a1)) : {Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a2, a2), U32.is_eq(a3, a3)))) == True{} : Bool}
       %Equal.sym(Bool, U32.is_eq(a2, a2), True{}, u32_eq_refl(a2)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(_, U32.is_eq(a3, a3)))) == True{} : Bool}
       %Equal.sym(Bool, U32.is_eq(a3, a3), True{}, u32_eq_refl(a3)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, _))) == True{} : Bool}
+      {==}
+
+law eq_run_sound:
+  for a: R.Run
+  for b: R.Run
+  for +h: {T.Eq.run(a, b) == True{} : Bool}
+  {a == b : R.Run}
+
+def eq_run_sound(a, b, h):
+  match a b:
+    case R.RNone{} R.RNone{}:
+      {==}
+    case R.RNone{} R.RGlyph{+b0, +b1, +b2, +b3, +b4, +b5}:
+      Empty.absurd({R.RNone{} == R.RGlyph{b0, b1, b2, b3, b4, b5} : R.Run}, false_ne_true(h))
+    case R.RNone{} R.RPair{+b0, +b1, +b2, +b3, +b4, +b5}:
+      Empty.absurd({R.RNone{} == R.RPair{b0, b1, b2, b3, b4, b5} : R.Run}, false_ne_true(h))
+    case R.RGlyph{+a0, +a1, +a2, +a3, +a4, +a5} R.RNone{}:
+      Empty.absurd({R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RNone{} : R.Run}, false_ne_true(h))
+    case R.RGlyph{+a0, +a1, +a2, +a3, +a4, +a5} R.RGlyph{+b0, +b1, +b2, +b3, +b4, +b5}:
+      +hl0 = and_l(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(Nat.is_eq(a4, b4), T.Eq.mask(a5, b5))))), h)
+      +hr0 = and_r(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(Nat.is_eq(a4, b4), T.Eq.mask(a5, b5))))), h)
+      e0 = u32_eq_sound(a0, b0, hl0)
+      +hl1 = and_l(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(Nat.is_eq(a4, b4), T.Eq.mask(a5, b5)))), hr0)
+      +hr1 = and_r(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(Nat.is_eq(a4, b4), T.Eq.mask(a5, b5)))), hr0)
+      e1 = u32_eq_sound(a1, b1, hl1)
+      +hl2 = and_l(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(Nat.is_eq(a4, b4), T.Eq.mask(a5, b5))), hr1)
+      +hr2 = and_r(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(Nat.is_eq(a4, b4), T.Eq.mask(a5, b5))), hr1)
+      e2 = u32_eq_sound(a2, b2, hl2)
+      +hl3 = and_l(U32.is_eq(a3, b3), Bool.and(Nat.is_eq(a4, b4), T.Eq.mask(a5, b5)), hr2)
+      +hr3 = and_r(U32.is_eq(a3, b3), Bool.and(Nat.is_eq(a4, b4), T.Eq.mask(a5, b5)), hr2)
+      e3 = u32_eq_sound(a3, b3, hl3)
+      +hl4 = and_l(Nat.is_eq(a4, b4), T.Eq.mask(a5, b5), hr3)
+      +hr4 = and_r(Nat.is_eq(a4, b4), T.Eq.mask(a5, b5), hr3)
+      e4 = nat_eq_sound(a4, b4, hl4)
+      e5 = eq_mask_sound(a5, b5, hr4)
+      %e0 : {R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RGlyph{_, b1, b2, b3, b4, b5} : R.Run}
+      %e1 : {R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RGlyph{a0, _, b2, b3, b4, b5} : R.Run}
+      %e2 : {R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RGlyph{a0, a1, _, b3, b4, b5} : R.Run}
+      %e3 : {R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RGlyph{a0, a1, a2, _, b4, b5} : R.Run}
+      %e4 : {R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RGlyph{a0, a1, a2, a3, _, b5} : R.Run}
+      %e5 : {R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RGlyph{a0, a1, a2, a3, a4, _} : R.Run}
+      {==}
+    case R.RGlyph{+a0, +a1, +a2, +a3, +a4, +a5} R.RPair{+b0, +b1, +b2, +b3, +b4, +b5}:
+      Empty.absurd({R.RGlyph{a0, a1, a2, a3, a4, a5} == R.RPair{b0, b1, b2, b3, b4, b5} : R.Run}, false_ne_true(h))
+    case R.RPair{+a0, +a1, +a2, +a3, +a4, +a5} R.RNone{}:
+      Empty.absurd({R.RPair{a0, a1, a2, a3, a4, a5} == R.RNone{} : R.Run}, false_ne_true(h))
+    case R.RPair{+a0, +a1, +a2, +a3, +a4, +a5} R.RGlyph{+b0, +b1, +b2, +b3, +b4, +b5}:
+      Empty.absurd({R.RPair{a0, a1, a2, a3, a4, a5} == R.RGlyph{b0, b1, b2, b3, b4, b5} : R.Run}, false_ne_true(h))
+    case R.RPair{+a0, +a1, +a2, +a3, +a4, +a5} R.RPair{+b0, +b1, +b2, +b3, +b4, +b5}:
+      +hl0 = and_l(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5))))), h)
+      +hr0 = and_r(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5))))), h)
+      e0 = u32_eq_sound(a0, b0, hl0)
+      +hl1 = and_l(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5)))), hr0)
+      +hr1 = and_r(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5)))), hr0)
+      e1 = u32_eq_sound(a1, b1, hl1)
+      +hl2 = and_l(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5))), hr1)
+      +hr2 = and_r(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5))), hr1)
+      e2 = u32_eq_sound(a2, b2, hl2)
+      +hl3 = and_l(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5)), hr2)
+      +hr3 = and_r(U32.is_eq(a3, b3), Bool.and(T.Eq.run(a4, b4), T.Eq.run(a5, b5)), hr2)
+      e3 = u32_eq_sound(a3, b3, hl3)
+      +hl4 = and_l(T.Eq.run(a4, b4), T.Eq.run(a5, b5), hr3)
+      +hr4 = and_r(T.Eq.run(a4, b4), T.Eq.run(a5, b5), hr3)
+      e4 = eq_run_sound(a4, b4, hl4)
+      e5 = eq_run_sound(a5, b5, hr4)
+      %e0 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{_, b1, b2, b3, b4, b5} : R.Run}
+      %e1 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{a0, _, b2, b3, b4, b5} : R.Run}
+      %e2 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{a0, a1, _, b3, b4, b5} : R.Run}
+      %e3 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{a0, a1, a2, _, b4, b5} : R.Run}
+      %e4 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{a0, a1, a2, a3, _, b5} : R.Run}
+      %e5 : {R.RPair{a0, a1, a2, a3, a4, a5} == R.RPair{a0, a1, a2, a3, a4, _} : R.Run}
+      {==}
+
+law eq_run_refl:
+  for +a: R.Run
+  {T.Eq.run(a, a) == True{} : Bool}
+
+def eq_run_refl(a):
+  match a:
+    case R.RNone{}:
+      {==}
+    case R.RGlyph{+a0, +a1, +a2, +a3, +a4, +a5}:
+      %Equal.sym(Bool, U32.is_eq(a0, a0), True{}, u32_eq_refl(a0)) : {Bool.and(_, Bool.and(U32.is_eq(a1, a1), Bool.and(U32.is_eq(a2, a2), Bool.and(U32.is_eq(a3, a3), Bool.and(Nat.is_eq(a4, a4), T.Eq.mask(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a1, a1), True{}, u32_eq_refl(a1)) : {Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a2, a2), Bool.and(U32.is_eq(a3, a3), Bool.and(Nat.is_eq(a4, a4), T.Eq.mask(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a2, a2), True{}, u32_eq_refl(a2)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a3, a3), Bool.and(Nat.is_eq(a4, a4), T.Eq.mask(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a3, a3), True{}, u32_eq_refl(a3)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(Nat.is_eq(a4, a4), T.Eq.mask(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, Nat.is_eq(a4, a4), True{}, nat_eq_refl(a4)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, T.Eq.mask(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, T.Eq.mask(a5, a5), True{}, eq_mask_refl(a5)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, _))))) == True{} : Bool}
+      {==}
+    case R.RPair{+a0, +a1, +a2, +a3, +a4, +a5}:
+      %Equal.sym(Bool, U32.is_eq(a0, a0), True{}, u32_eq_refl(a0)) : {Bool.and(_, Bool.and(U32.is_eq(a1, a1), Bool.and(U32.is_eq(a2, a2), Bool.and(U32.is_eq(a3, a3), Bool.and(T.Eq.run(a4, a4), T.Eq.run(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a1, a1), True{}, u32_eq_refl(a1)) : {Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a2, a2), Bool.and(U32.is_eq(a3, a3), Bool.and(T.Eq.run(a4, a4), T.Eq.run(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a2, a2), True{}, u32_eq_refl(a2)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a3, a3), Bool.and(T.Eq.run(a4, a4), T.Eq.run(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a3, a3), True{}, u32_eq_refl(a3)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(T.Eq.run(a4, a4), T.Eq.run(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, T.Eq.run(a4, a4), True{}, eq_run_refl(a4)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, T.Eq.run(a5, a5)))))) == True{} : Bool}
+      %Equal.sym(Bool, T.Eq.run(a5, a5), True{}, eq_run_refl(a5)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, _))))) == True{} : Bool}
       {==}
 
 law eq_shape_sound:
@@ -1861,6 +2047,47 @@ def eq_shape_sound(a, b, h):
       %e3 : {R.SMask{a0, a1, a2, a3, a4} == R.SMask{a0, a1, a2, _, b4} : R.Shape}
       %e4 : {R.SMask{a0, a1, a2, a3, a4} == R.SMask{a0, a1, a2, a3, _} : R.Shape}
       {==}
+    case R.SRect{} R.SRun{+b0, +b1, +b2}:
+      Empty.absurd({R.SRect{} == R.SRun{b0, b1, b2} : R.Shape}, false_ne_true(h))
+    case R.SRun{+a0, +a1, +a2} R.SRect{}:
+      Empty.absurd({R.SRun{a0, a1, a2} == R.SRect{} : R.Shape}, false_ne_true(h))
+    case R.SPoly{+a0, +a1} R.SRun{+b0, +b1, +b2}:
+      Empty.absurd({R.SPoly{a0, a1} == R.SRun{b0, b1, b2} : R.Shape}, false_ne_true(h))
+    case R.SRun{+a0, +a1, +a2} R.SPoly{+b0, +b1}:
+      Empty.absurd({R.SRun{a0, a1, a2} == R.SPoly{b0, b1} : R.Shape}, false_ne_true(h))
+    case R.SGlyph{+a0, +a1, +a2} R.SRun{+b0, +b1, +b2}:
+      Empty.absurd({R.SGlyph{a0, a1, a2} == R.SRun{b0, b1, b2} : R.Shape}, false_ne_true(h))
+    case R.SRun{+a0, +a1, +a2} R.SGlyph{+b0, +b1, +b2}:
+      Empty.absurd({R.SRun{a0, a1, a2} == R.SGlyph{b0, b1, b2} : R.Shape}, false_ne_true(h))
+    case R.SSeg{+a0, +a1, +a2, +a3, +a4} R.SRun{+b0, +b1, +b2}:
+      Empty.absurd({R.SSeg{a0, a1, a2, a3, a4} == R.SRun{b0, b1, b2} : R.Shape}, false_ne_true(h))
+    case R.SRun{+a0, +a1, +a2} R.SSeg{+b0, +b1, +b2, +b3, +b4}:
+      Empty.absurd({R.SRun{a0, a1, a2} == R.SSeg{b0, b1, b2, b3, b4} : R.Shape}, false_ne_true(h))
+    case R.SDisc{+a0, +a1, +a2} R.SRun{+b0, +b1, +b2}:
+      Empty.absurd({R.SDisc{a0, a1, a2} == R.SRun{b0, b1, b2} : R.Shape}, false_ne_true(h))
+    case R.SRun{+a0, +a1, +a2} R.SDisc{+b0, +b1, +b2}:
+      Empty.absurd({R.SRun{a0, a1, a2} == R.SDisc{b0, b1, b2} : R.Shape}, false_ne_true(h))
+    case R.STri{+a0, +a1, +a2, +a3, +a4, +a5} R.SRun{+b0, +b1, +b2}:
+      Empty.absurd({R.STri{a0, a1, a2, a3, a4, a5} == R.SRun{b0, b1, b2} : R.Shape}, false_ne_true(h))
+    case R.SRun{+a0, +a1, +a2} R.STri{+b0, +b1, +b2, +b3, +b4, +b5}:
+      Empty.absurd({R.SRun{a0, a1, a2} == R.STri{b0, b1, b2, b3, b4, b5} : R.Shape}, false_ne_true(h))
+    case R.SMask{+a0, +a1, +a2, +a3, +a4} R.SRun{+b0, +b1, +b2}:
+      Empty.absurd({R.SMask{a0, a1, a2, a3, a4} == R.SRun{b0, b1, b2} : R.Shape}, false_ne_true(h))
+    case R.SRun{+a0, +a1, +a2} R.SMask{+b0, +b1, +b2, +b3, +b4}:
+      Empty.absurd({R.SRun{a0, a1, a2} == R.SMask{b0, b1, b2, b3, b4} : R.Shape}, false_ne_true(h))
+    case R.SRun{+a0, +a1, +a2} R.SRun{+b0, +b1, +b2}:
+      +hl0 = and_l(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), T.Eq.run(a2, b2)), h)
+      +hr0 = and_r(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), T.Eq.run(a2, b2)), h)
+      e0 = u32_eq_sound(a0, b0, hl0)
+      +hl1 = and_l(U32.is_eq(a1, b1), T.Eq.run(a2, b2), hr0)
+      +hr1 = and_r(U32.is_eq(a1, b1), T.Eq.run(a2, b2), hr0)
+      e1 = u32_eq_sound(a1, b1, hl1)
+      e2 = eq_run_sound(a2, b2, hr1)
+      %e0 : {R.SRun{a0, a1, a2} == R.SRun{_, b1, b2} : R.Shape}
+      %e1 : {R.SRun{a0, a1, a2} == R.SRun{a0, _, b2} : R.Shape}
+      %e2 : {R.SRun{a0, a1, a2} == R.SRun{a0, a1, _} : R.Shape}
+      {==}
+
 
 law eq_shape_refl:
   for +a: R.Shape
@@ -1906,6 +2133,12 @@ def eq_shape_refl(a):
       %Equal.sym(Bool, Nat.is_eq(a3, a3), True{}, nat_eq_refl(a3)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, T.Eq.mask(a4, a4))))) == True{} : Bool}
       %Equal.sym(Bool, T.Eq.mask(a4, a4), True{}, eq_mask_refl(a4)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, _)))) == True{} : Bool}
       {==}
+    case R.SRun{+a0, +a1, +a2}:
+      %Equal.sym(Bool, U32.is_eq(a0, a0), True{}, u32_eq_refl(a0)) : {Bool.and(_, Bool.and(U32.is_eq(a1, a1), T.Eq.run(a2, a2))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a1, a1), True{}, u32_eq_refl(a1)) : {Bool.and(True{}, Bool.and(_, T.Eq.run(a2, a2))) == True{} : Bool}
+      %Equal.sym(Bool, T.Eq.run(a2, a2), True{}, eq_run_refl(a2)) : {Bool.and(True{}, Bool.and(True{}, _)) == True{} : Bool}
+      {==}
+
 
 law eq_op_sound:
   for a: R.Op
@@ -2827,33 +3060,6 @@ def Laws.plan_fill_again(k, e, ops, base, prev, p, rx, ry, n, off, t):
       plan_make_fill(0n, e, ops, base, rx, ry, n, off, t)
     case 1n+j T.TLeaf{_}:
       plan_make_fill(1n+j, e, ops, base, rx, ry, n, off, t)
-
-law frame_par_k:
-  for s: Bool
-  for +w: U32
-  for +h: U32
-  for +ops: List<&2, R.Op>
-  for +base: Image
-  for +prev: T.Tiles
-  for +dy: U32
-  {T.Plan.run(T.Frame.plan.k(s, w, h, ops, base, prev, dy), T.Frame.edge(w, h)) == T.Frame.again.k(s, w, h, ops, base, prev, dy) : T.Tiles}
-
-def frame_par_k(s, w, h, ops, base, prev, dy):
-  match s:
-    case True{}:
-      Laws.plan_fill_again(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, prev, T.Past{T.Frame.levels(w, h), prev, U32.shln(1, R.Frame.depth(w, h)), dy}, 0, 0, U32.shln(1, R.Frame.depth(w, h)), 0n,
-        T.Jobs.deal(T.Plan.jobs(T.Tiles.plan(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, prev, T.Past{T.Frame.levels(w, h), prev, U32.shln(1, R.Frame.depth(w, h)), dy}, 0, 0, U32.shln(1, R.Frame.depth(w, h))), Nil{})))
-    case False{}:
-      plan_make_fill(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, 0, 0, U32.shln(1, R.Frame.depth(w, h)), 0n,
-        T.Jobs.deal(T.Plan.jobs(T.Tiles.plan.make(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, 0, 0, U32.shln(1, R.Frame.depth(w, h))), Nil{})))
-
-def Laws.frame_par_exact(w, h, ops, base, prev, dy):
-  match prev:
-    case T.FNone{}:
-      plan_make_fill(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, 0, 0, U32.shln(1, R.Frame.depth(w, h)), 0n,
-        T.Jobs.deal(T.Plan.jobs(T.Tiles.plan.make(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, 0, 0, U32.shln(1, R.Frame.depth(w, h))), Nil{})))
-    case T.FSome{pw, ph, pt}:
-      frame_par_k(Bool.and(U32.is_eq(pw, w), U32.is_eq(ph, h)), w, h, ops, base, pt, dy)
 
 law tl_one_k:
   for s: Bool
@@ -9704,3 +9910,332 @@ def Laws.tiles_recat_exact(k, e, cs, cs2, rest, base, rx, ry, n):
         recat_child(j, e, cs, cs2, rest, T.Img.q(base, 2n), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n), Laws.tiles_recat_exact(j, e, R.Region.keep(cs, rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), R.Region.keep(cs2, rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), R.Region.keep(rest, rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 2n), rx, (ry + U32.shr(n) : U32), U32.shr(n))),
         recat_child(j, e, cs, cs2, rest, T.Img.q(base, 3n), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n), Laws.tiles_recat_exact(j, e, R.Region.keep(cs, rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), R.Region.keep(cs2, rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), R.Region.keep(rest, rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 3n), (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n))))
 # ---- end win-lean-frame cat frames ----
+
+# ---- gfx-runs: tile plans that build only changed nodes' ops (laws keep_eq,
+# plan_cut_same), and frame_par_exact over them (kept last: a proof checked
+# before Laws.when_in_hours changed how deep that one's 8200n compare ran) ----
+law ops_go_false:
+  for xs: List<&2, R.Op>
+  for ys: List<&2, R.Op>
+  {T.Eq.ops.go(xs, ys, False{}) == False{} : Bool}
+
+def ops_go_false(xs, ys):
+  match xs ys:
+    case Nil{} Nil{}:
+      {==}
+    case Nil{} _ <> _:
+      {==}
+    case _ <> _ Nil{}:
+      {==}
+    case _ <> _ _ <> _:
+      {==}
+
+law eq_op_f:
+  for +x0: U32
+  for +y0: U32
+  for +x1: U32
+  for +y1: U32
+  for +c: U32
+  for +a: U32
+  for +s: R.Shape
+  for y: R.Op
+  {T.Eq.op.f(x0, y0, x1, y1, c, a, s, y) == T.Eq.op(R.Op{x0, y0, x1, y1, c, a, s}, y) : Bool}
+
+def eq_op_f(x0, y0, x1, y1, c, a, s, y):
+  match y:
+    case R.Op{+b0, +b1, +b2, +b3, +b4, +b5, +b6}:
+      {==}
+
+law keep_step_k:
+  for k: Bool
+  for +s2: R.Shape
+  for +x0: U32
+  for +y0: U32
+  for +x1: U32
+  for +y1: U32
+  for +c: U32
+  for +a: U32
+  for +rest: List<&2, R.Op>
+  for ys: List<&2, R.Op>
+  {T.Eq.ops.go(rest, T.Keep.ys.k(k, ys), T.Keep.ok.k(k, x0, y0, x1, y1, c, a, s2, ys)) == T.Eq.ops.go(R.Region.keep.k(k, R.Op{x0, y0, x1, y1, c, a, s2}, rest), ys, True{}) : Bool}
+
+def keep_step_k(k, s2, x0, y0, x1, y1, c, a, rest, ys):
+  match k ys:
+    case False{} _:
+      {==}
+    case True{} Nil{}:
+      ops_go_false(rest, Nil{})
+    case True{} +y <> +yt:
+      %eq_op_f(x0, y0, x1, y1, c, a, s2, y) : {T.Eq.ops.go(rest, yt, T.Eq.op.f(x0, y0, x1, y1, c, a, s2, y)) == T.Eq.ops.go(rest, yt, _) : Bool}
+      {==}
+
+law keep_step:
+  for hit: Bool
+  for +x0: U32
+  for +y0: U32
+  for +x1: U32
+  for +y1: U32
+  for +c: U32
+  for +a: U32
+  for +s: R.Shape
+  for +px: U32
+  for +py: U32
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  for +rest: List<&2, R.Op>
+  for +ys: List<&2, R.Op>
+  {T.Eq.ops.go(rest, T.Keep.ys.h(hit, s, px, py, rx, ry, n, ys), T.Keep.ok.h(hit, x0, y0, x1, y1, c, a, s, px, py, rx, ry, n, ys)) == T.Eq.ops.go(R.Region.keep.op(hit, R.Op{x0, y0, x1, y1, c, a, s}, px, py, rx, ry, n, rest), ys, True{}) : Bool}
+
+def keep_step(hit, x0, y0, x1, y1, c, a, s, px, py, rx, ry, n, rest, ys):
+  match hit:
+    case True{}:
+      keep_step_k(Bool.not(R.Region.empty(R.Region.move(s, px, py, rx, ry, n))), R.Region.move(s, px, py, rx, ry, n), x0, y0, x1, y1, c, a, rest, ys)
+    case False{}:
+      {==}
+
+def Laws.keep_eq(ops, px, py, rx, ry, n, ys, ok):
+  match ops ok:
+    case Nil{} False{}:
+      Equal.sym(Bool, T.Eq.ops.go(Nil{}, ys, False{}), False{}, ops_go_false(Nil{}, ys))
+    case +o <> +t False{}:
+      Equal.sym(Bool, T.Eq.ops.go(R.Region.keep(o <> t, px, py, rx, ry, n), ys, False{}), False{}, ops_go_false(R.Region.keep(o <> t, px, py, rx, ry, n), ys))
+    case Nil{} True{}:
+      {==}
+    case R.Op{+x0, +y0, +x1, +y1, +c, +a, +s} <> +t True{}:
+      Equal.trans(Bool, T.Keep.eq(t, px, py, rx, ry, n, T.Keep.ys.h(R.Region.hits(x0, y0, x1, y1, rx, ry, n), s, px, py, rx, ry, n, ys), T.Keep.ok.h(R.Region.hits(x0, y0, x1, y1, rx, ry, n), x0, y0, x1, y1, c, a, s, px, py, rx, ry, n, ys)),
+        T.Eq.ops.go(R.Region.keep(t, px, py, rx, ry, n), T.Keep.ys.h(R.Region.hits(x0, y0, x1, y1, rx, ry, n), s, px, py, rx, ry, n, ys), T.Keep.ok.h(R.Region.hits(x0, y0, x1, y1, rx, ry, n), x0, y0, x1, y1, c, a, s, px, py, rx, ry, n, ys)),
+        T.Eq.ops.go(R.Region.keep.op(R.Region.hits(x0, y0, x1, y1, rx, ry, n), R.Op{x0, y0, x1, y1, c, a, s}, px, py, rx, ry, n, R.Region.keep(t, px, py, rx, ry, n)), ys, True{}),
+        Laws.keep_eq(t, px, py, rx, ry, n, T.Keep.ys.h(R.Region.hits(x0, y0, x1, y1, rx, ry, n), s, px, py, rx, ry, n, ys), T.Keep.ok.h(R.Region.hits(x0, y0, x1, y1, rx, ry, n), x0, y0, x1, y1, c, a, s, px, py, rx, ry, n, ys)),
+        keep_step(R.Region.hits(x0, y0, x1, y1, rx, ry, n), x0, y0, x1, y1, c, a, s, px, py, rx, ry, n, R.Region.keep(t, px, py, rx, ry, n), ys))
+
+law cut_eq:
+  for c: T.Cut
+  for +ys: List<&2, R.Op>
+  {T.Cut.eq(c, ys) == T.Eq.ops(T.Cut.get(c), ys) : Bool}
+
+def cut_eq(c, ys):
+  match c:
+    case T.CAll{+o}:
+      {==}
+    case T.CIn{+o, +px, +py, +rx, +ry, +n}:
+      Laws.keep_eq(o, px, py, rx, ry, n, ys, True{})
+
+law cut_tile:
+  for +c: T.Cut
+  for +ys: List<&2, R.Op>
+  for +a: Image
+  for +b: Image
+  {T.Cut.tile(c, ys, a, b) == T.Eq.tile(T.Cut.get(c), ys, a, b) : Bool}
+
+def cut_tile(c, ys, a, b):
+  %cut_eq(c, ys) : {T.Eq.tile.k(T.Cut.eq(c, ys), a, b) == T.Eq.tile.k(_, a, b) : Bool}
+  {==}
+
+law cut_same:
+  for +c: T.Cut
+  for +base: Image
+  for t: T.Tiles
+  {T.Cut.same(c, base, t) == T.Tiles.same(T.Cut.get(c), base, t) : Bool}
+
+def cut_same(c, base, t):
+  match t:
+    case T.TLeaf{+x}:
+      {==}
+    case T.TNode{+o, +b, +pa, +pb, +pc, +pd}:
+      cut_tile(c, o, base, b)
+
+law tile_plan2_k:
+  for s: Bool
+  for +e: Nat
+  for +c: T.Cut
+  for +base: Image
+  for +t: T.Tile
+  for +p: T.Past
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  {T.Tile.plan2.k(s, e, c, base, t, p, rx, ry, n) == T.Tile.plan.k(s, e, T.Cut.get(c), base, t, p, rx, ry, n) : T.Plan}
+
+def tile_plan2_k(s, e, c, base, t, p, rx, ry, n):
+  match s:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+law tile_plan2:
+  for +e: Nat
+  for +c: T.Cut
+  for +base: Image
+  for t: T.Tile
+  for +p: T.Past
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  {T.Tile.plan2(e, c, base, t, p, rx, ry, n) == T.Tile.plan(e, T.Cut.get(c), base, t, p, rx, ry, n) : T.Plan}
+
+def tile_plan2(e, c, base, t, p, rx, ry, n):
+  match t:
+    case T.Tile{+o, +l, +b, +i}:
+      %cut_tile(c, o, base, b) : {T.Tile.plan2.k(T.Cut.tile(c, o, base, b), e, c, base, T.Tile{o, l, b, i}, p, rx, ry, n) == T.Tile.plan.k(_, e, T.Cut.get(c), base, T.Tile{o, l, b, i}, p, rx, ry, n) : T.Plan}
+      tile_plan2_k(T.Cut.tile(c, o, base, b), e, c, base, T.Tile{o, l, b, i}, p, rx, ry, n)
+
+law plan2_child:
+  for +j: Nat
+  for +e: Nat
+  for +ops: List<&2, R.Op>
+  for +px: U32
+  for +py: U32
+  for +cx: U32
+  for +cy: U32
+  for +h: U32
+  for +q: Image
+  for +pa: T.Tiles
+  for +p: T.Past
+  for ih: {T.Tiles.plan2.go(j, e, T.CIn{ops, px, py, cx, cy, h}, q, pa, p, cx, cy, h, T.Cut.same(T.CIn{ops, px, py, cx, cy, h}, q, pa)) == T.Tiles.plan.go(j, e, R.Region.keep(ops, px, py, cx, cy, h), q, pa, p, cx, cy, h, T.Cut.same(T.CIn{ops, px, py, cx, cy, h}, q, pa)) : T.Plan}
+  {T.Tiles.plan2.go(j, e, T.CIn{ops, px, py, cx, cy, h}, q, pa, p, cx, cy, h, T.Cut.same(T.CIn{ops, px, py, cx, cy, h}, q, pa)) == T.Tiles.plan.go(j, e, R.Region.keep(ops, px, py, cx, cy, h), q, pa, p, cx, cy, h, T.Tiles.same(R.Region.keep(ops, px, py, cx, cy, h), q, pa)) : T.Plan}
+
+def plan2_child(j, e, ops, px, py, cx, cy, h, q, pa, p, ih):
+  %cut_same(T.CIn{ops, px, py, cx, cy, h}, q, pa) : {T.Tiles.plan2.go(j, e, T.CIn{ops, px, py, cx, cy, h}, q, pa, p, cx, cy, h, T.Cut.same(T.CIn{ops, px, py, cx, cy, h}, q, pa)) == T.Tiles.plan.go(j, e, R.Region.keep(ops, px, py, cx, cy, h), q, pa, p, cx, cy, h, _) : T.Plan}
+  ih
+
+law plan_node_cong:
+  for -o: List<&2, R.Op>
+  for -bs: Image
+  for -a1: T.Plan
+  for -a2: T.Plan
+  for -b1: T.Plan
+  for -b2: T.Plan
+  for -c1: T.Plan
+  for -c2: T.Plan
+  for -d1: T.Plan
+  for -d2: T.Plan
+  for ea: {a1 == a2 : T.Plan}
+  for eb: {b1 == b2 : T.Plan}
+  for ec: {c1 == c2 : T.Plan}
+  for ed: {d1 == d2 : T.Plan}
+  {T.Plan.node(o, bs, a1, b1, c1, d1) == T.Plan.node(o, bs, a2, b2, c2, d2) : T.Plan}
+
+def plan_node_cong(o, bs, a1, a2, b1, b2, c1, c2, d1, d2, ea, eb, ec, ed):
+  %ea : {T.Plan.node(o, bs, a1, b1, c1, d1) == T.Plan.node(o, bs, _, b2, c2, d2) : T.Plan}
+  %eb : {T.Plan.node(o, bs, a1, b1, c1, d1) == T.Plan.node(o, bs, a1, _, c2, d2) : T.Plan}
+  %ec : {T.Plan.node(o, bs, a1, b1, c1, d1) == T.Plan.node(o, bs, a1, b1, _, d2) : T.Plan}
+  %ed : {T.Plan.node(o, bs, a1, b1, c1, d1) == T.Plan.node(o, bs, a1, b1, c1, _) : T.Plan}
+  {==}
+
+law plan2_node:
+  for +j: Nat
+  for +e: Nat
+  for +c: T.Cut
+  for +base: Image
+  for +o: List<&2, R.Op>
+  for +b: Image
+  for +pa: T.Tiles
+  for +pb: T.Tiles
+  for +pc: T.Tiles
+  for +pd: T.Tiles
+  for +p: T.Past
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  for ha: {T.Tiles.plan2.go(j, e, T.CIn{T.Cut.get(c), rx, ry, rx, ry, U32.shr(n)}, T.Img.q(base, 0n), pa, p, rx, ry, U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, rx, ry, U32.shr(n)}, T.Img.q(base, 0n), pa)) == T.Tiles.plan.go(j, e, R.Region.keep(T.Cut.get(c), rx, ry, rx, ry, U32.shr(n)), T.Img.q(base, 0n), pa, p, rx, ry, U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, rx, ry, U32.shr(n)}, T.Img.q(base, 0n), pa)) : T.Plan}
+  for hb: {T.Tiles.plan2.go(j, e, T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)}, T.Img.q(base, 1n), pb, p, (rx + U32.shr(n) : U32), ry, U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)}, T.Img.q(base, 1n), pb)) == T.Tiles.plan.go(j, e, R.Region.keep(T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)), T.Img.q(base, 1n), pb, p, (rx + U32.shr(n) : U32), ry, U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)}, T.Img.q(base, 1n), pb)) : T.Plan}
+  for hc: {T.Tiles.plan2.go(j, e, T.CIn{T.Cut.get(c), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 2n), pc, p, rx, (ry + U32.shr(n) : U32), U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 2n), pc)) == T.Tiles.plan.go(j, e, R.Region.keep(T.Cut.get(c), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 2n), pc, p, rx, (ry + U32.shr(n) : U32), U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 2n), pc)) : T.Plan}
+  for hd: {T.Tiles.plan2.go(j, e, T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 3n), pd, p, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 3n), pd)) == T.Tiles.plan.go(j, e, R.Region.keep(T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 3n), pd, p, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 3n), pd)) : T.Plan}
+  {T.Tiles.plan2.go(1n+j, e, c, base, T.TNode{o, b, pa, pb, pc, pd}, p, rx, ry, n, False{}) == T.Tiles.plan.go(1n+j, e, T.Cut.get(c), base, T.TNode{o, b, pa, pb, pc, pd}, p, rx, ry, n, False{}) : T.Plan}
+
+def plan2_node(j, e, c, base, o, b, pa, pb, pc, pd, p, rx, ry, n, ha, hb, hc, hd):
+  plan_node_cong(T.Cut.get(c), base, T.Tiles.plan2.go(j, e, T.CIn{T.Cut.get(c), rx, ry, rx, ry, U32.shr(n)}, T.Img.q(base, 0n), pa, p, rx, ry, U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, rx, ry, U32.shr(n)}, T.Img.q(base, 0n), pa)),
+    T.Tiles.plan.go(j, e, R.Region.keep(T.Cut.get(c), rx, ry, rx, ry, U32.shr(n)), T.Img.q(base, 0n), pa, p, rx, ry, U32.shr(n), T.Tiles.same(R.Region.keep(T.Cut.get(c), rx, ry, rx, ry, U32.shr(n)), T.Img.q(base, 0n), pa)),
+    T.Tiles.plan2.go(j, e, T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)}, T.Img.q(base, 1n), pb, p, (rx + U32.shr(n) : U32), ry, U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)}, T.Img.q(base, 1n), pb)),
+    T.Tiles.plan.go(j, e, R.Region.keep(T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)), T.Img.q(base, 1n), pb, p, (rx + U32.shr(n) : U32), ry, U32.shr(n), T.Tiles.same(R.Region.keep(T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)), T.Img.q(base, 1n), pb)),
+    T.Tiles.plan2.go(j, e, T.CIn{T.Cut.get(c), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 2n), pc, p, rx, (ry + U32.shr(n) : U32), U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 2n), pc)),
+    T.Tiles.plan.go(j, e, R.Region.keep(T.Cut.get(c), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 2n), pc, p, rx, (ry + U32.shr(n) : U32), U32.shr(n), T.Tiles.same(R.Region.keep(T.Cut.get(c), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 2n), pc)),
+    T.Tiles.plan2.go(j, e, T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 3n), pd, p, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 3n), pd)),
+    T.Tiles.plan.go(j, e, R.Region.keep(T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 3n), pd, p, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n), T.Tiles.same(R.Region.keep(T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 3n), pd)),
+    plan2_child(j, e, T.Cut.get(c), rx, ry, rx, ry, U32.shr(n), T.Img.q(base, 0n), pa, p, ha),
+    plan2_child(j, e, T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n), T.Img.q(base, 1n), pb, p, hb),
+    plan2_child(j, e, T.Cut.get(c), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n), T.Img.q(base, 2n), pc, p, hc),
+    plan2_child(j, e, T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n), T.Img.q(base, 3n), pd, p, hd))
+
+law plan2_go:
+  for k: Nat
+  for +e: Nat
+  for +c: T.Cut
+  for +base: Image
+  for prev: T.Tiles
+  for +p: T.Past
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  for s: Bool
+  {T.Tiles.plan2.go(k, e, c, base, prev, p, rx, ry, n, s) == T.Tiles.plan.go(k, e, T.Cut.get(c), base, prev, p, rx, ry, n, s) : T.Plan}
+
+def plan2_go(k, e, c, base, prev, p, rx, ry, n, s):
+  match k prev s:
+    case 0n T.TLeaf{+t} _:
+      tile_plan2(e, c, base, t, p, rx, ry, n)
+    case 0n T.TNode{+o, +b, +pa, +pb, +pc, +pd} _:
+      {==}
+    case 1n+j T.TLeaf{+t} _:
+      {==}
+    case 1n+j0 T.TNode{+o, +b, +pa, +pb, +pc, +pd} True{}:
+      {==}
+    case 1n+j0 T.TNode{+o, +b, +pa, +pb, +pc, +pd} False{}:
+      +j = j0
+      plan2_node(j, e, c, base, o, b, pa, pb, pc, pd, p, rx, ry, n,
+        plan2_go(j, e, T.CIn{T.Cut.get(c), rx, ry, rx, ry, U32.shr(n)}, T.Img.q(base, 0n), pa, p, rx, ry, U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, rx, ry, U32.shr(n)}, T.Img.q(base, 0n), pa)),
+        plan2_go(j, e, T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)}, T.Img.q(base, 1n), pb, p, (rx + U32.shr(n) : U32), ry, U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), ry, U32.shr(n)}, T.Img.q(base, 1n), pb)),
+        plan2_go(j, e, T.CIn{T.Cut.get(c), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 2n), pc, p, rx, (ry + U32.shr(n) : U32), U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 2n), pc)),
+        plan2_go(j, e, T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 3n), pd, p, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n), T.Cut.same(T.CIn{T.Cut.get(c), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)}, T.Img.q(base, 3n), pd)))
+
+def Laws.plan_cut_same(k, e, ops, base, prev, p, rx, ry, n):
+  %cut_same(T.CAll{ops}, base, prev) : {T.Tiles.plan2.go(k, e, T.CAll{ops}, base, prev, p, rx, ry, n, T.Cut.same(T.CAll{ops}, base, prev)) == T.Tiles.plan.go(k, e, ops, base, prev, p, rx, ry, n, _) : T.Plan}
+  plan2_go(k, e, T.CAll{ops}, base, prev, p, rx, ry, n, T.Cut.same(T.CAll{ops}, base, prev))
+
+law plan_run_cut:
+  for k: Nat
+  for +e: Nat
+  for +ops: List<&2, R.Op>
+  for +base: Image
+  for +prev: T.Tiles
+  for +p: T.Past
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  for +d: Nat
+  {T.Plan.run(T.Tiles.plan2(k, e, ops, base, prev, p, rx, ry, n), d) == T.Plan.run(T.Tiles.plan(k, e, ops, base, prev, p, rx, ry, n), d) : T.Tiles}
+
+def plan_run_cut(k, e, ops, base, prev, p, rx, ry, n, d):
+  Equal.cong(T.Plan, T.Tiles, q => T.Plan.run(q, d), T.Tiles.plan2(k, e, ops, base, prev, p, rx, ry, n), T.Tiles.plan(k, e, ops, base, prev, p, rx, ry, n), Laws.plan_cut_same(k, e, ops, base, prev, p, rx, ry, n))
+
+law frame_par_k:
+  for s: Bool
+  for +w: U32
+  for +h: U32
+  for +ops: List<&2, R.Op>
+  for +base: Image
+  for +prev: T.Tiles
+  for +dy: U32
+  {T.Plan.run(T.Frame.plan.k(s, w, h, ops, base, prev, dy), T.Frame.edge(w, h)) == T.Frame.again.k(s, w, h, ops, base, prev, dy) : T.Tiles}
+
+def frame_par_k(s, w, h, ops, base, prev, dy):
+  match s:
+    case True{}:
+      Equal.trans(T.Tiles, T.Plan.run(T.Tiles.plan2(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, prev, T.Past{T.Frame.levels(w, h), prev, U32.shln(1, R.Frame.depth(w, h)), dy}, 0, 0, U32.shln(1, R.Frame.depth(w, h))), T.Frame.edge(w, h)), T.Plan.run(T.Tiles.plan(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, prev, T.Past{T.Frame.levels(w, h), prev, U32.shln(1, R.Frame.depth(w, h)), dy}, 0, 0, U32.shln(1, R.Frame.depth(w, h))), T.Frame.edge(w, h)), T.Frame.again.k(True{}, w, h, ops, base, prev, dy),
+        plan_run_cut(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, prev, T.Past{T.Frame.levels(w, h), prev, U32.shln(1, R.Frame.depth(w, h)), dy}, 0, 0, U32.shln(1, R.Frame.depth(w, h)), T.Frame.edge(w, h)),
+        Laws.plan_fill_again(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, prev, T.Past{T.Frame.levels(w, h), prev, U32.shln(1, R.Frame.depth(w, h)), dy}, 0, 0, U32.shln(1, R.Frame.depth(w, h)), 0n,
+          T.Jobs.deal(T.Plan.jobs(T.Tiles.plan(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, prev, T.Past{T.Frame.levels(w, h), prev, U32.shln(1, R.Frame.depth(w, h)), dy}, 0, 0, U32.shln(1, R.Frame.depth(w, h))), Nil{}))))
+    case False{}:
+      plan_make_fill(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, 0, 0, U32.shln(1, R.Frame.depth(w, h)), 0n,
+        T.Jobs.deal(T.Plan.jobs(T.Tiles.plan.make(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, 0, 0, U32.shln(1, R.Frame.depth(w, h))), Nil{})))
+
+def Laws.frame_par_exact(w, h, ops, base, prev, dy):
+  match prev:
+    case T.FNone{}:
+      plan_make_fill(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, 0, 0, U32.shln(1, R.Frame.depth(w, h)), 0n,
+        T.Jobs.deal(T.Plan.jobs(T.Tiles.plan.make(T.Frame.levels(w, h), T.Frame.edge(w, h), ops, base, 0, 0, U32.shln(1, R.Frame.depth(w, h))), Nil{})))
+    case T.FSome{pw, ph, pt}:
+      frame_par_k(Bool.and(U32.is_eq(pw, w), U32.is_eq(ph, h)), w, h, ops, base, pt, dy)
+# ---- end gfx-runs ----
