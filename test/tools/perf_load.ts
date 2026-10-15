@@ -16,6 +16,7 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, openSync, readSync, closeSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { standinScript as claude } from "./perf_standin";
+import { completeOpens, FixtureBots, streamWindow } from "./perf_guard";
 import { join, resolve } from "node:path";
 
 const argv = process.argv.slice(2);
@@ -89,6 +90,8 @@ const dropSetting = /^(push|voice|deploy|google|hook|apns|token|secret)/i;
 type Th = { id: string; project: string; title: string; msgs: number; gone: boolean };
 const threads = new Map<string, Th>();
 const botThreads = new Set<string>();
+const fixtureBots = new FixtureBots();
+const botById = fixtureBots.threads;
 const turns = new Map<string, any>();
 const removedProjects = new Set<string>();
 const roomById = new Map<string, { id: string; name: string; members: string }>();
@@ -106,19 +109,20 @@ for (const line of raw.split("\n")) {
   if (ty === "TurnChanged") { const o = JSON.parse(line); turns.set(o.thread, o.state); }
   if (ty === "TaskDelegated") openTasks.add(/"task":"([^"]*)"/.exec(line)?.[1] ?? /"id":"([^"]*)"/.exec(line)?.[1] ?? "");
   if (ty === "TaskDelivered") openTasks.delete(/"task":"([^"]*)"/.exec(line)?.[1] ?? "");
+  if (["BotSet", "BotDeleted", "UberSet", "SettingSet"].includes(ty)) fixtureBots.apply(JSON.parse(line));
   if (ty === "SettingSet") {
     const k = /"key":"([^"]*)"/.exec(line)?.[1] ?? "";
     if (dropSetting.test(k)) { dropped++; continue; }
   }
   kept.push(line.split(liveHome).join(home).split(homedir() + "/").join(elsewhere + "/"));
-  if (ty === "ThreadCreated" || ty === "MessagePosted" || ty === "ThreadDeleted" || ty === "ThreadArchived" || ty === "BotSet" || ty === "ProjectRemoved" || ty === "RoomSet" || ty === "RoomDeleted" || ty === "ThreadRenamed") {
+  if (ty === "ThreadCreated" || ty === "MessagePosted" || ty === "ThreadDeleted" || ty === "ThreadArchived" || ty === "BotSet" || ty === "BotDeleted" || ty === "ProjectRemoved" || ty === "RoomSet" || ty === "RoomDeleted" || ty === "ThreadRenamed") {
     let o: any;
     try { o = JSON.parse(line); } catch { continue; }
     if (ty === "ThreadCreated") threads.set(o.id, { id: o.id, project: o.project, title: o.title, msgs: 0, gone: false });
     else if (ty === "MessagePosted") { const t = threads.get(o.thread); if (t) t.msgs++; }
     else if (ty === "ThreadDeleted" || ty === "ThreadArchived") { const t = threads.get(o.id ?? o.thread); if (t) t.gone = true; }
     else if (ty === "ThreadRenamed") { const t = threads.get(o.id); if (t) t.title = o.title; }
-    else if (ty === "BotSet") { botThreads.add(o.thread); botIds.add(o.id); }
+    else if (ty === "BotSet") { if (o.thread) botThreads.add(o.thread); botIds.add(o.id); }
     else if (ty === "ProjectRemoved") removedProjects.add(o.id);
     else if (ty === "RoomSet") roomById.set(o.id, { id: o.id, name: o.name, members: o.members ?? "" });
     else if (ty === "RoomDeleted") roomById.delete(o.id);
@@ -131,6 +135,7 @@ const real = [...threads.values()].filter((t) => !t.gone && !removedProjects.has
 const longT = real[0];
 if (!longT) throw new Error("--log has no available non-bot thread for the load scenario");
 const openTs = real.slice(1, 11);
+if (phasesWanted.includes("open") && openTs.length !== 10) throw new Error("--log needs eleven available non-bot threads for ten verified opens");
 // unique titles the palette (ctrl+k) finds them by
 kept.push(JSON.stringify({ $: "ThreadRenamed", id: longT.id, title: "zqlong thread", at: now }));
 openTs.forEach((t, i) => kept.push(JSON.stringify({ $: "ThreadRenamed", id: t.id, title: `zqopen${String.fromCharCode(97 + i)} thread`, at: now })));
@@ -309,6 +314,9 @@ await sleep(3000);
 // ---------------------------------------------------------------------
 const items: any[] = [];
 const deltas = new Map<string, number>();
+const deltaTimes = new Map<string, number[]>();
+let deskThreads = new Set<string>();
+const openEvidence: { title: string; thread: string; verified: boolean }[] = [];
 const traffic = (): Record<string, number> => Object.fromEntries(deltas);
 const replies = new Map<number, any>();
 let wsMsgs = 0, wsBytes = 0;
@@ -320,7 +328,12 @@ ws.onmessage = (e) => {
   let o: any;
   try { o = cborDec(u); } catch { return; }
   if (!o || typeof o !== "object") return;
-  if (o.t === "delta" && typeof o.thread === "string" && o.text) deltas.set(o.thread, (deltas.get(o.thread) ?? 0) + 1);
+  if (o.t === "delta" && typeof o.thread === "string" && o.text) {
+    deltas.set(o.thread, (deltas.get(o.thread) ?? 0) + 1);
+    const times = deltaTimes.get(o.thread) ?? [];
+    times.push(performance.now()); deltaTimes.set(o.thread, times);
+  }
+  if (o.t === "info" && typeof o.info?.desk === "string") deskThreads = new Set(o.info.desk.split("\n").filter(Boolean));
   if (o.t === "reply") replies.set(Number(o.id), o);
   for (const c of Array.isArray(o.items) ? o.items : []) {
     if (typeof c === "string") { try { items.push(JSON.parse(c)); } catch {} } else items.push(c);
@@ -365,13 +378,17 @@ say(`project ${pc.id}, ${ours.length} threads`);
 // --------------
 const poke = async (...a: string[]) => {
   const p = Bun.spawn([xpoke, ...a], { env: { DISPLAY: display }, stdout: "ignore", stderr: "ignore" });
-  await p.exited;
+  if (await p.exited !== 0) throw new Error(`xpoke failed: ${a.join(" ")}`);
 };
 const W = 1400, H = 900;
 const MAINX = 264 + (W - 264) / 2, MIDY = H / 2;
 // a thread by its (unique) title: ctrl+k, the title, Return. Answers the
 // trace window of the Return alone (the open).
 async function openByTitle(title: string): Promise<[number, number]> {
+  const expected = title === "zqlong" ? longT.id
+    : /^zqopen[a-j]$/.test(title) ? openTs[title.charCodeAt(title.length - 1) - 97]?.id
+    : ours.find((t: any) => t.title.startsWith(title))?.id;
+  if (!expected) throw new Error(`no expected thread for ${title}`);
   await poke("ctrl", "k");
   await sleep(250);
   await poke("type", title);
@@ -380,6 +397,11 @@ async function openByTitle(title: string): Promise<[number, number]> {
   await poke("key", "Return");
   await sleep(700);
   const b = await upMs();
+  // The native client reports its selection through the existing desk.look
+  // info path; no test-only writes or new application instrumentation.
+  const verified = Boolean(await until(2000, () => deskThreads.has(expected)));
+  openEvidence.push({ title, thread: expected, verified });
+  if (!verified) throw new Error(`thread open not observed: ${title} (${expected}); desk=${[...deskThreads]}`);
   return [a, b];
 }
 // the composer has the keyboard after a thread opens (Tour.focus); a click at the bottom makes sure
@@ -402,16 +424,19 @@ const upMs = async () => (await reading()).up;
 let rssMax = 0;
 const rssTimer = setInterval(() => { rssMax = Math.max(rssMax, rssKb()); }, 500);
 
-type Phase = { name: string; what: string; a: Reading; b: Reading; rssMax: number; trafficBefore: Record<string, number>; trafficAfter: Record<string, number>; marks?: [number, number][]; notes?: string[] };
+type Phase = { name: string; what: string; a: Reading; b: Reading; rssMax: number; trafficBefore: Record<string, number>; trafficAfter: Record<string, number>; streamStart: number; streamEnd: number; marks?: [number, number][]; notes?: string[] };
 const phases: Phase[] = [];
 async function phase(name: string, what: string, body: (p: Phase) => Promise<void>) {
   if (!phasesWanted.includes(name)) return;
   say(`phase ${name}: ${what}`);
   rssMax = 0;
-  const p: Phase = { name, what, a: await reading(), b: null as any, rssMax: 0, trafficBefore: traffic(), trafficAfter: {}, marks: [], notes: [] };
+  const p: Phase = { name, what, a: await reading(), b: null as any, rssMax: 0, trafficBefore: traffic(), trafficAfter: {}, streamStart: performance.now(), streamEnd: 0, marks: [], notes: [] };
   await body(p);
   p.b = await reading();
   p.trafficAfter = traffic();
+  p.streamEnd = performance.now();
+  const stray = strayAgents();
+  if (stray.length) throw new Error(`invalid workload: late real provider process: ${stray.join("; ")}`);
   if (shots) {
     const sh = Bun.spawn(["import", "-display", display, "-window", "root", join(shots, `${name}.png`)], { stdout: "ignore", stderr: "ignore" });
     if (await sh.exited !== 0) throw new Error(`screenshot failed for ${name}`);
@@ -434,13 +459,16 @@ async function startStreams() {
   say(`workload ready: all ${nAgents} agents delivered streaming deltas`);
 }
 // bots woken in rooms: the person posts in each room with bots every few seconds
-const botRooms = rooms.filter((r) => r.members.split("\n").some((m) => m && !m.includes("@")));
+const roomBots = (r: { members: string }) => r.members.split("\n").map((id) => botById.get(id)).filter((id): id is string => Boolean(id));
+const botRooms = rooms.filter((r) => roomBots(r).length > 0);
+const postedRooms = new Map<string, { at: number; bots: string[] }>();
 let posting: Timer | null = null;
 let posts = 0;
 const startPosts = () => {
   if (posting || !botRooms.length) return;
   posting = setInterval(() => {
     const r = botRooms[posts++ % botRooms.length];
+    if (!postedRooms.has(r.id)) postedRooms.set(r.id, { at: performance.now(), bots: roomBots(r) });
     send("bots.post", { room: r.id, text: `zqshort a quick note for the room, post ${posts}` });
   }, 4000);
 };
@@ -466,6 +494,7 @@ if (argv.includes("--hold")) {
 // window settles on the long thread
 await sleep(2000);
 await poke("size", String(W), String(H));
+await poke("focus");
 await sleep(500);
 await openByTitle("zqlong");
 await sleep(3000);
@@ -582,7 +611,7 @@ for (const name of order) {
   };
   const keys = k2f(es);
   // a thread open: the Return's window message to the frame showing the thread
-  const opens = (p.marks ?? []).map(([a, b]) => Math.max(...k2f(inWin(a, b)))).filter(Number.isFinite);
+  const opens = (p.marks ?? []).map(([a, b]) => Math.max(...k2f(inWin(a, b))));
   const byName = new Map<string, { n: number; sum: number; max: number }>();
   for (const e of es) {
     const r = byName.get(e.name) ?? { n: 0, sum: 0, max: 0 };
@@ -594,14 +623,17 @@ for (const name of order) {
   const fr = st["ui.frame"], inp = st["ui.input"], al = st["hub.agent_line"];
   const key = { n: keys.length, p50: pctOf(keys, 50), p99: pctOf(keys, 99), max: keys.length ? Math.max(...keys) : NaN };
   const streamingCounts = Object.fromEntries(ours.map((t: any) => [t.id, (p.trafficAfter[t.id] ?? 0) - (p.trafficBefore[t.id] ?? 0)]));
+  const streamWindows = Object.fromEntries(ours.map((t: any) => [t.id, streamWindow(deltaTimes.get(t.id) ?? [], p.streamStart, p.streamEnd)]));
   const checks: [string, boolean | null][] = [
-    ...(name !== "idle" ? [["all agents streaming", Object.values(streamingCounts).every((n) => n >= Math.max(1, Math.floor(wallS)))] as [string, boolean | null]] : []),
+    ...(name !== "idle" ? [["all agents streaming", Object.values(streamWindows).every((w) => w.sustained)] as [string, boolean | null]] : []),
+    ...(name === "open" ? [["all ten opens sampled", completeOpens(opens, 10)] as [string, boolean | null]] : []),
+    ...(["normal", "plane"].includes(name) ? [["Status tab observed", null] as [string, boolean | null]] : []),
     ["frame p99<=8ms", fr.n ? fr.p99 <= 8 : null],
     ...(["bg", "idle"].includes(name) ? [["no frame>16ms", fr.n ? fr.over16 === 0 : null] as [string, boolean | null]] : []),
     ...(["type", "normal"].includes(name) ? [["input p99<=16ms", inp.n ? inp.p99 <= 16 : null] as [string, boolean | null]] : []),
     ...(["type", "normal"].includes(name) ? [["key>frame p99<=16ms", key.n ? key.p99 <= 16 : null] as [string, boolean | null]] : []),
     ...(name === "open" && !opens.length ? [["open<=50ms", null] as [string, boolean | null]] : []),
-    ...(opens.length ? [["open<=50ms", Math.max(...opens) <= 50] as [string, boolean | null]] : []),
+    ...(opens.length ? [["open<=50ms", completeOpens(opens, p.marks?.length ?? 0) && Math.max(...opens) <= 50] as [string, boolean | null]] : []),
     ...(name !== "idle" ? [["agent_line p99<=2ms", al.n ? al.p99 <= 2 : null] as [string, boolean | null]] : []),
   ];
   const verdict = checks.map(([k, v]) => `${k}:${v === null ? "n/a" : v ? "PASS" : "FAIL"}`).join(" ");
@@ -615,7 +647,7 @@ for (const name of order) {
     `${String(al.n).padStart(6)} ${f1(al.p50).padStart(4)}/${f1(al.p99).padStart(5)}/${f1(al.max).padStart(5)} ${f1(st["hub.mcp"].p99).padStart(5)} ` +
     `${f1(hubBusy).padStart(5)} ${f1(cpu).padStart(5)} ${String(Math.round(p.rssMax / 1024)).padStart(5)}`,
   );
-  results.phases.push({ name, what: p.what, wall_s: wallS, cpu_pct: cpu, rss_max_mb: p.rssMax / 1024, hub_busy_pct: hubBusy, opens_ms: opens, key_to_frame: key, notes: p.notes, streaming_deltas: streamingCounts, stats: st, top, checks: Object.fromEntries(checks), perf_json_before: Object.fromEntries(p.a.rows), perf_json_after: Object.fromEntries(p.b.rows) });
+  results.phases.push({ name, what: p.what, wall_s: wallS, cpu_pct: cpu, rss_max_mb: p.rssMax / 1024, hub_busy_pct: hubBusy, opens_ms: opens, key_to_frame: key, notes: p.notes, streaming_deltas: streamingCounts, stream_windows: streamWindows, stats: st, top, checks: Object.fromEntries(checks), perf_json_before: Object.fromEntries(p.a.rows), perf_json_after: Object.fromEntries(p.b.rows) });
 }
 console.log(`\nperf_load: ${bin}\n  log ${logSrc} (${kept.length} lines; sha256 ${logSha256}), ${nAgents} agents, ${botRooms.length} bot rooms, ${secs} s phases, port ${port}, display ${display}`);
 console.log(`  ms; frame = ui.frame n p50/p99/max >8/>16; input = ui.input; key>frame = ui.msg.win + ui.input; open = the slowest thread open, Return to frame; line = hub.agent_line n p50/p99/max; hub% = hub.* span time / wall; cpu% = whole app process`);
@@ -628,11 +660,16 @@ for (const p of results.phases) {
   for (const t of p.top.slice(0, 8)) console.log(`  ${t.name.padEnd(28)} ${String(t.sum_ms).padStart(9)} ${String(t.n).padStart(6)} ${String(t.mean_ms).padStart(8)} ${String(t.max_ms).padStart(8)}`);
   if (p.notes?.length) console.log(`  notes: ${p.notes.join("; ")}`);
 }
-if (strays.length) console.log(`\nWARNING: real agents seen under the hub:\n${strays.join("\n")}`);
+if (strays.length) console.log(`\nINVALID WORKLOAD: real agents seen under the hub:\n${strays.join("\n")}`);
 results.ws = { msgs: wsMsgs, bytes: wsBytes };
 results.streaming_deltas = traffic();
 results.bot_streaming_deltas = Object.fromEntries([...deltas].filter(([th]) => botThreads.has(th)));
-results.bot_streaming = !botRooms.length || Object.values(results.bot_streaming_deltas).some((n: any) => n > 0);
+results.room_streaming = Object.fromEntries([...postedRooms].map(([room, evidence]) => [room,
+  Object.fromEntries(evidence.bots.map((th) => [th, (deltaTimes.get(th) ?? []).some((t) => t >= evidence.at)]))]));
+results.bot_streaming = !phasesWanted.includes("normal") || (botRooms.length > 0 && postedRooms.size === botRooms.length
+  && Object.values(results.room_streaming).every((bots: any) => Object.values(bots).every((v) => v === true)));
+results.open_selections = openEvidence;
+results.stray_agents = strays;
 results.agentsLog = readFileSync(fakeLog, "utf8").split("\n").filter((l) => l.startsWith("TURN")).length;
 results.appErrTail = appLogTail;
 if (outPath) { writeFileSync(outPath, JSON.stringify(results, null, 1)); console.log(`\nraw JSON: ${outPath}`); }
@@ -641,7 +678,7 @@ else console.log(`kept ${root}`);
 // By default this is a measurement tool, including while fixing a known
 // regression. Strict mode makes missing samples and failed targets fail CI.
 if (results.phases.some((p: any) => p.checks["all agents streaming"] === false)) process.exitCode = 1;
-if (!results.bot_streaming) process.exitCode = 1;
+if (!results.bot_streaming || strays.length) process.exitCode = 1;
 if (failOnTarget && results.phases.some((p: any) => Object.values(p.checks).some((v) => v !== true))) process.exitCode = 1;
 
 // the uberbot's Status plane: its sidebar row (declared last; hoisted)
@@ -652,5 +689,8 @@ async function statusPlaneImpl(_p: Phase): Promise<boolean> {
   // bots.bend's Bv.uber.row: the hit "uber" at (0, 52, 264, 44)
   await poke("click", "130", "74");
   await sleep(800);
-  return true;
+  const expected = botById.get(fixtureBots.uber);
+  if (!expected || !await until(2000, () => deskThreads.has(expected))) throw new Error(`uberbot selection not observed: bot=${fixtureBots.uber}, thread=${expected}; desk=${[...deskThreads]}`);
+  _p.notes!.push("Uberbot selection observed through desk.look; Status tab itself is unverified (strict coverage check remains n/a).");
+  return false;
 }

@@ -51,9 +51,21 @@ The copied log's provider preference is overridden with the deterministic
 stand-in protocol, including bot threads. Before timing begins, every load
 thread must deliver parsed streaming deltas. Each streaming phase reports
 per-thread delta counts and fails the workload if a thread falls below one
-delivered update a second; bot traffic is also recorded. A zero-stream run
-is invalid regardless of timing targets. `bun test/tools/perf_standin_test.ts`
+delivered update a second and now also records the longest receive gap
+(at most two seconds, including both phase edges). Every local bot in
+every posted room must respond during a normal-use run. Zero or dead
+streams, unexpected provider processes and failed input commands make a
+run invalid regardless of timing targets. `bun test/tools/perf_standin_test.ts`
 checks the stand-in's JSON, deltas, subagent and shell events without a hub.
+`bun test/tools/perf_guard_test.ts` rejects bursts followed by dead streams,
+phase-edge gaps and partial/missing thread-open samples.
+
+Thread opens must be observed through the native client's existing
+`desk.look` selection reports, with ten complete timing windows in the
+open phase. The same report can establish the uberbot selection, but not
+which tab it rendered. Status-tab coverage therefore remains explicitly
+unverified and cannot pass strict mode; screenshots remain necessary for
+that visual check.
 
 ## What it measures
 
