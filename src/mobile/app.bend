@@ -4,6 +4,7 @@ import ../core/client.bend as U
 import ../core/cbor.bend as CB
 import ../core/sha1.bend as SH
 import ./hubs.bend as H
+import ./screen.bend as S
 import ./bots.bend as MB
 
 # What bridge.js calls. The phone apps see only strings: server messages
@@ -118,6 +119,26 @@ def screen(+hs: H.Hubs) -> String:
 # most of a thread screen's cost on a phone's QuickJS)
 def screenj(+hs: H.Hubs) -> J.Json:
   H.Hubs.screen(hs)
+
+# The same screen in two halves (hubs.bend's Hubs.lean): the bridge keeps
+# the list half while lean(hs) is made of the very same parts, and makes
+# the thread (focus) for every screen
+def lean(hs: H.Hubs) -> H.Hubs:
+  H.Hubs.lean(hs)
+
+def screen_list(+hs: H.Hubs) -> J.Json:
+  H.Hubs.screen.fast(hs)
+
+def focus(+hs: H.Hubs) -> J.Json:
+  H.Hubs.opened(hs)
+
+# the open thread's streamed reply, and markdown text as the nodes the
+# thread's "live" shows
+def live_text(+hs: H.Hubs) -> String:
+  H.Hubs.live.text(hs)
+
+def live_nodes(+text: String) -> J.Json:
+  S.Mob.live.nodes(text)
 
 def online.is(u: U.Ui, b: Bool) -> Bool:
   match u b:

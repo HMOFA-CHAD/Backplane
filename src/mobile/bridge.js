@@ -143,6 +143,84 @@ function plain(j) {
   }
 }
 
+// The screen, in two halves (hubs.bend's Hubs.lean): the list half (every
+// hub's list, the plane, the island, the tabs) is made again only when
+// App.lean(hubs) is not made of the very same parts as when it was last
+// made; the open thread ("thread") whenever the hubs changed at all. Bend
+// values never change in place, so a part that is the same object holds the
+// same value, and a pure def of the same values answers the same: a token of
+// the open thread's reply makes only the thread again (80 ms with no JIT for
+// the whole screen, a few for the thread).
+// the values same() looks inside: the hubs, their list, each hub, its client
+const OPEN = new Set(["hubs.Hubs", "Con", "Nil", "hubs.Hub", "../core/client.Ui"]);
+function same(a, b) {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object" || a.$ !== b.$) return false;
+  const open = OPEN.has(a.$);
+  for (const k in a) {
+    if (k === "$" || a[k] === b[k]) continue;
+    if (!open || !same(a[k], b[k])) return false;
+  }
+  return true;
+}
+
+// The open thread's streamed reply, as markdown nodes. A reply grows a few
+// words a frame and rendering all of it again took most of a thread's
+// screen (100s of ms for a long one with no JIT). The markdown parser ends
+// every block at a blank line outside a fenced code block, so the text up
+// to such a line renders to exactly the nodes it renders to alone (core's
+// Live.at, laws live_prefix_exact*): those paragraphs are rendered once and
+// kept, and only what follows the last one is rendered again. Only whole
+// lines are looked at (a reply only grows; a text that does not start with
+// what was looked at starts over).
+const live = { seen: "", fence: false, head: 0, nodes: [] };
+const SPACE = /^[\t-\r ]*$/;
+const FENCE = /^[\t-\r ]*```/;
+function liveNodes(text) {
+  if (!text.startsWith(live.seen)) {
+    live.seen = "";
+    live.fence = false;
+    live.head = 0;
+    live.nodes = [];
+  }
+  let at = live.seen.length;
+  let fence = live.fence;
+  let head = live.head;
+  for (let nl = text.indexOf("\n", at); nl >= 0; nl = text.indexOf("\n", at)) {
+    const line = text.slice(at, nl);
+    if (!fence && SPACE.test(line)) head = nl + 1;
+    if (FENCE.test(line)) fence = !fence;
+    at = nl + 1;
+  }
+  if (head > live.head) {
+    live.nodes = live.nodes.concat(plain(App.live_nodes(text.slice(live.head, head))));
+    live.head = head;
+  }
+  live.seen = text.slice(0, at);
+  live.fence = fence;
+  return head < text.length ? live.nodes.concat(plain(App.live_nodes(text.slice(head)))) : live.nodes;
+}
+
+let half = null; // { lean, head }: the list half's JSON, but its closing brace
+let focusOf = null;
+let focusText = "null";
+function screenText() {
+  const lean = App.lean(hubs);
+  if (half === null || !same(lean, half.lean)) {
+    const o = plain(App.screen_list(lean));
+    delete o.thread;
+    const t = JSON.stringify(o);
+    half = { lean, head: t.slice(0, -1) };
+  }
+  if (focusOf === null || !same(hubs, focusOf)) {
+    const th = plain(App.focus(hubs));
+    if (th !== null && typeof th === "object") th.live = liveNodes(App.live_text(hubs));
+    focusText = JSON.stringify(th);
+    focusOf = hubs;
+  }
+  return half.head + (half.head === "{" ? "" : ",") + '"thread":' + focusText + "}";
+}
+
 // a frame that could change the screen came while more waited behind it
 // (so it built none): the next call builds one, whatever that frame is
 let owed = false;
@@ -169,7 +247,7 @@ function out(cmds, quiet, alerts) {
     }
   }
   for (const a of alerts ?? []) cs.push({ type: "notify", ...a });
-  return '{"screen":' + (quiet ? "null" : JSON.stringify(plain(App.screenj(hubs)))) + ',"cmds":' + JSON.stringify(cs) + "}";
+  return '{"screen":' + (quiet ? "null" : screenText()) + ',"cmds":' + JSON.stringify(cs) + "}";
 }
 
 // a step's answer: the hubs after it, its commands and alerts
@@ -278,5 +356,15 @@ globalThis.Backplane = {
   },
   tick(now) {
     return step(App.tick(hubs, secs(now)));
+  },
+  // for tests and benches: the screen as the bridge makes it (in halves,
+  // kept) and as one whole (Hubs.screen), as JSON text
+  halves() {
+    return JSON.stringify({ kept: JSON.parse(screenText()), whole: plain(App.screenj(hubs)) });
+  },
+  // the same for a streamed reply's text: rendered a settled paragraph at a
+  // time (liveNodes, as the screens do) and all at once
+  liveHalves(text) {
+    return JSON.stringify({ kept: liveNodes(String(text)), whole: plain(App.live_nodes(String(text))) });
   },
 };

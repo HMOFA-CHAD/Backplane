@@ -428,13 +428,31 @@ def Note.ralert.k(changed: Bool, +cur: String, +id: String, +title: String, +es:
     case True{}:
       Note.ralert.q(NO.Alert.parse(cur), id, title, es, desk, rest)
 
+# whether a thread was seen before the frame (only those can have changed)
+def Note.rin(ss: List<&2, RSeen>, +id: String) -> Bool:
+  match ss:
+    case Nil{}:
+      False{}
+    case RSeen{+i, _} <> t:
+      Bool.or(String.eq(i, id), Note.rin(t, id))
+
+# (a thread the frame did not touch is passed by without reading its
+# record or its entries: a phone's frame of changes touches one or two
+# threads, and reading every thread's took 7 ms of each with no JIT)
+def Note.ralerts.if(seen: Bool, +id: String, title: String, +ss: List<&2, RSeen>, +st: M.State, +desk: String, rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match seen:
+    case True{}:
+      Note.ralert.k(Note.rchg(ss, id, M.Setting.get(st, NO.Alert.key(id), ""), False{}, False{}), M.Setting.get(st, NO.Alert.key(id), ""), id, title, M.State.mine(st, id), desk, rest)
+    case False{}:
+      rest
+
 # the alerts a server message raised, from the records it changed
 def Note.ralerts(ts: List<&2, M.Thread>, +seen: List<&2, RSeen>, +st: M.State, +desk: String) -> List<&2, J.Json>:
   match ts:
     case Nil{}:
       Nil{}
     case M.Thread{+id, _, title, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
-      Note.ralert.k(Note.rchg(seen, id, M.Setting.get(st, NO.Alert.key(id), ""), False{}, False{}), M.Setting.get(st, NO.Alert.key(id), ""), id, title, M.State.mine(st, id), desk, Note.ralerts(t, seen, st, desk))
+      Note.ralerts.if(Note.rin(seen, id), id, title, seen, st, desk, Note.ralerts(t, seen, st, desk))
 
 # the policy's examples (for the laws)
 def Note.demo.rec(+kind: String) -> String:

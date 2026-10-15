@@ -212,8 +212,19 @@ def Link.text.k(k: Nat, acc: String, out: List<&2, Piece>, +c: Char) -> Sc:
     case _:
       Sc{SText{SCon{c, acc}}, out}
 
+# (asked only at an "h": Link.word reads the text so far, which in the JS
+# build is a string grown a char at a time, and reading its first char
+# copied all of it, at every char of a streamed reply: the most of a phone's
+# thread screen)
+def Link.text.h(h: Bool, +acc: String, +t: String) -> Bool:
+  match h:
+    case True{}:
+      Link.starts(acc, t)
+    case False{}:
+      False{}
+
 def Link.text.step(+acc: String, out: List<&2, Piece>, +c: Char, +t: String) -> Sc:
-  Link.text.k(Bool.pick(Nat, Bool.and(U32.is_eq(Link.code(c), 104), Link.starts(acc, t)), 1n, Bool.pick(Nat, U32.is_eq(Link.code(c), 91), 2n, 0n)), acc, out, c)
+  Link.text.k(Bool.pick(Nat, Link.text.h(U32.is_eq(Link.code(c), 104), acc, t), 1n, Bool.pick(Nat, U32.is_eq(Link.code(c), 91), 2n, 0n)), acc, out, c)
 
 # what ends a bare address: space, < > " `
 def Link.stops(+c: Char) -> Bool:

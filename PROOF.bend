@@ -9356,3 +9356,26 @@ def Laws.tiles_blink_exact(k, e, ops, base, rx, ry, n, on):
         blink_child(j, e, ops, T.Img.q(base, 2n), rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n), on, Laws.tiles_blink_exact(j, e, R.Region.keep(ops, rx, ry, rx, (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 2n), rx, (ry + U32.shr(n) : U32), U32.shr(n), on)),
         blink_child(j, e, ops, T.Img.q(base, 3n), rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n), on, Laws.tiles_blink_exact(j, e, R.Region.keep(ops, rx, ry, (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n)), T.Img.q(base, 3n), (rx + U32.shr(n) : U32), (ry + U32.shr(n) : U32), U32.shr(n), on)))
 # ---- end win-lean-frame caret blink ----
+
+# ---- perf-lead: phone-lean (src/mobile) ----
+def Laws.alerts_none_for_hb(u):
+  {==}
+
+def Laws.alerts_none_for_delta_end(u, th):
+  {==}
+
+def Laws.hubs_redraw_delta_end(hs, key, th):
+  {==}
+
+def Laws.policy_phone_untouched_quiet():
+  {==}
+
+def Laws.policy_phone_touched_raises():
+  {==}
+
+def Laws.hubs_lean_no_live():
+  {==}
+
+def Laws.hubs_lean_keeps_state():
+  {==}
+# ---- end perf-lead: phone-lean ----
