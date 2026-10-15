@@ -11,9 +11,10 @@ import ../core/utf8.bend as U
 # Pages are keyed by an owner (a bot's id for a bot's thread, else the
 # thread's id, so each thread's preview_* tools drive a page of their
 # own; "" is the shared page), all in one persistent Chrome profile at
-# <home>/browser-profile, so logins last. The shared page's raw frames go
-# to <home>/browser.rgb; every page's JPEG frames (which every client's
-# Browser tab shows) go to <home>/shots/<owner>.jpg, and each new one is announced on
+# <home>/browser-profile, so logins last. Every page's JPEG frames (which
+# every client's Browser tab shows) go to <home>/shots/<owner>.jpg (the
+# helper's raw RGB frames of the shared page are never turned on: nothing
+# reads them), and each new one is announced on
 # the loop's event channel as the helper's line
 # {"event":"frame","page":<owner>,"n":<n>,...}; Browser.shot turns that
 # into the hub's {"t":"shot","bot":<owner>,"n":<n>}.
@@ -35,10 +36,7 @@ type Br is Data:
 def Br.at(+exe: String, +home: String) -> Br:
   Br{None{}, Nil{}, 1n, exe, home}
 
-# the shared page's raw frame file, the Chrome profile, the JPEG frames
-def Br.frames(+home: String) -> String:
-  home ++ "/browser.rgb"
-
+# the Chrome profile, the JPEG frames
 def Br.profile(+home: String) -> String:
   home ++ "/browser-profile"
 
@@ -153,7 +151,6 @@ def Browser.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +
         +input : Chan(String) <- Chan.new(String, 256)
         IO.spawn(Unit, Browser.writer(Browser.forever(), wr, input))
         IO.spawn(Unit, Browser.reader(Browser.forever(), rd, U.Lines.new(), pid, q))
-        ok : Result<&1, &1, String, Unit> <- Chan.send(String, input, "{\"id\":\"frames\",\"op\":\"frames\",\"on\":true,\"maxFps\":8}")
         return Some{input}
     case Fail{_}:
       do IO<Maybe<&2, Chan(String)>>:
@@ -174,7 +171,7 @@ def Browser.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, +q: Chan(BMsg
 def Browser.start(+exe: String, +home: String, +q: Chan(BMsg)) -> IO(Maybe<&2, Chan(String)>):
   do IO<Maybe<&2, Chan(String)>>:
     mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(Br.shots(home))
-    r : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn(exe, ["--frames", Br.frames(home), "--profile", Br.profile(home), "--jpeg-dir", Br.shots(home)], "/", 0)
+    r : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn(exe, ["--profile", Br.profile(home), "--jpeg-dir", Br.shots(home)], "/", 0)
     Browser.spawned(r, q)
 
 # the running helper's input, starting it if needed
