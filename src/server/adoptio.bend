@@ -33,3 +33,9 @@ def Adopt.take(fd: U32) -> IO(Result<&1, &1, U32 & String, Socket>):
 def Adopt.stop(pid: U32, ident: String) -> IO(Bool):
   import "./effects/adopt.c"
   import "./effects/adopt.js"
+
+# waits, without blocking, for the children the last exec handed over that
+# no one else waits for (effects/adopt.c); how many are left
+def Adopt.reap() -> IO(U32):
+  import "./effects/adopt.c"
+  import "./effects/adopt.js"
