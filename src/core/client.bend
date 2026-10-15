@@ -7687,10 +7687,15 @@ def Voice.act(i: Nat, +u: Ui, +value: String) -> Act:
 # Settings > Usage's Boat side: the hub reads Boat's CLI (src/core/usage.bend's
 # Bj: "read" when it is due, "refresh" from the Refresh button) and answers
 # with info "boat.usage"
+def Usage.ask.k(cs: List<&2, Cmd>, b: Act) -> Act:
+  match b:
+    case Act{u, more}:
+      Act{u, List.append(&2, Cmd, cs, more)}
+
 def Usage.ask(a: Act, +what: String) -> Act:
   match a:
     case Act{u, cs}:
-      Ui.also(Voice.rpc(u, "usage", [J.KV{"do", J.Str{what}}]), cs)
+      Usage.ask.k(cs, Voice.rpc(u, "usage", [J.KV{"do", J.Str{what}}]))
 
 # opening Settings asks for the voice settings and Boat's usage; opening or
 # closing it puts the pairing code away
