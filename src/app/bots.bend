@@ -20,6 +20,7 @@ import ../core/plane.bend as PC
 import ../core/uber.bend as UB
 import ../core/task.bend as TK
 import ../core/eq.bend as Q
+import ../gfx/tiles.bend as TI
 
 # The bots in the window (docs/bots.md): their cats under the projects in
 # the sidebar, the rooms, and the main area for a bot (its tabs), a room or
@@ -41,6 +42,236 @@ def Bv.head(+ty: L.Ty, +c: D.Clip, +label: String, action: String, +on: Bool, +y
 def Bv.note.color(+mood: String) -> U32:
   Bool.pick(U32, String.eq(mood, "wait"), T.Th.warn(), Bool.pick(U32, String.eq(mood, "error"), T.Th.bad(), T.Th.faint()))
 
+# A cat on show is drawn by the window (main.bend's Catv), not here: the
+# layout leaves an anchor where it sits (an op that draws nothing, its
+# colour tagged with the cat's place) and a hit that names it ("cat", of
+# no area, so the pointer never finds it). A frame draws the cats at their
+# anchors; a cat frame poses them again without laying the frame out.
+type Spot is Data:
+  Spot{look: Nat, mood: String, px: U32, x: U32, y: U32, c: D.Clip}
+
+# the place an anchor's colour carries in its low 24 bits
+def Spot.key(+x: U32, +y: U32) -> U32:
+  U32.or(U32.shln(U32.and(x, 4095), 12n), U32.and(y, 4095))
+
+# a colour's top byte 64 marks a cat's anchor (128 and up: a caret,
+# draw.bend's Draw.caret)
+def Spot.is(+col: U32) -> Bool:
+  U32.is_eq(U32.shrn(col, 24n), 64)
+
+def Spot.anchor(+c: D.Clip, +x: U32, +y: U32, +px: U32) -> R.Op:
+  D.Clip.cut(c, x, y, (x + px : U32), (y + px : U32), U32.or(U32.shln(64, 24n), Spot.key(x, y)), 0, R.SRect{})
+
+def Spot.hit(+look: Nat, +mood: String, c: D.Clip, +x: U32, +y: U32, +px: U32) -> S.Hit:
+  match c:
+    case D.Clip{+cx0, +cy0, +cx1, +cy1}:
+      L.Lay.hit(0, 0, 0, 0, "cat", Nat.show(look) ++ "|" ++ mood ++ "|" ++ U32.show(px) ++ "|" ++ U32.show(x) ++ "|" ++ U32.show(y)
+        ++ "|" ++ U32.show(cx0) ++ "|" ++ U32.show(cy0) ++ "|" ++ U32.show(cx1) ++ "|" ++ U32.show(cy1))
+
+def Spot.part(+xs: List<&2, String>, +i: Nat) -> String:
+  Maybe.default(&2, String, List.get(&2, String, xs, i), "")
+
+def Spot.u32(+xs: List<&2, String>, +i: Nat) -> U32:
+  Maybe.default(&2, U32, U32.read(Spot.part(xs, i)), 0)
+
+def Spot.of.parts(+xs: List<&2, String>) -> Spot:
+  Spot{Maybe.default(&2, Nat, Nat.read(Spot.part(xs, 0n)), 0n), Spot.part(xs, 1n), Spot.u32(xs, 2n), Spot.u32(xs, 3n), Spot.u32(xs, 4n),
+    D.Clip{Spot.u32(xs, 5n), Spot.u32(xs, 6n), Spot.u32(xs, 7n), Spot.u32(xs, 8n)}}
+
+def Spot.of(+v: String) -> Spot:
+  Spot.of.parts(String.split(v, '|'))
+
+# a - b, or 0 below it
+def Spot.less(+a: U32, +b: U32) -> U32:
+  Bool.pick(U32, U32.is_ge(a, b), (a - b : U32), 0)
+
+# a cat whose square (and as much again around it) is cut away by
+# its clip draws nothing: it is not posed at all (a bot row scrolled out
+# of the sidebar)
+def Spot.seen(sp: Spot) -> Bool:
+  match sp:
+    case Spot{_, _, +px, +x, +y, D.Clip{+cx0, +cy0, +cx1, +cy1}}:
+      Bool.and(Bool.and(U32.is_lt(U32.max(Spot.less(x, px), cx0), U32.min((x + px + px : U32), cx1)), U32.is_lt(U32.max(Spot.less(y, px), cy0), U32.min((y + px + px : U32), cy1))), U32.is_gt(px, 0))
+
+def Spot.keep(seen: Bool, sp: Spot, rest: List<&2, Spot>) -> List<&2, Spot>:
+  match seen:
+    case True{}:
+      sp <> rest
+    case False{}:
+      rest
+
+def Spot.take.k(cat: Bool, +v: String, rest: List<&2, Spot>) -> List<&2, Spot>:
+  match cat:
+    case True{}:
+      Spot.keep(Spot.seen(Spot.of(v)), Spot.of(v), rest)
+    case False{}:
+      rest
+
+# the cats a frame's hits name, in order
+def Spot.all(hs: List<&2, S.Hit>) -> List<&2, Spot>:
+  match hs:
+    case Nil{}:
+      Nil{}
+    case S.Hit{_, _, _, _, +a, +v} <> t:
+      Spot.take.k(String.eq(a, "cat"), v, Spot.all(t))
+
+# a cat's ops posed from the cache (CA.Cats.draw, as the layout drew them)
+def Spot.ops(sp: Spot, +cache: Map<&2, CA.CatF>, +ms: Nat) -> List<&2, R.Op>:
+  match sp:
+    case Spot{+look, +mood, +px, +x, +y, c}:
+      CA.Cats.draw(cache, look, mood, ms, c, x, y, px)
+
+def Spot.pick(hit: Bool, sp: Spot, m: Maybe<&2, Spot>) -> Maybe<&2, Spot>:
+  match hit:
+    case True{}:
+      Some{sp}
+    case False{}:
+      m
+
+# the cat whose anchor has key k
+def Spot.has(sps: List<&2, Spot>, +k: U32) -> Maybe<&2, Spot>:
+  match sps:
+    case Nil{}:
+      None{}
+    case Spot{lk, md, +px, +x, +y, c} <> t:
+      Spot.pick(U32.is_eq(Spot.key(x, y), k), Spot{lk, md, px, x, y, c}, Spot.has(t, k))
+
+def Spot.at(m: Maybe<&2, Spot>, +cache: Map<&2, CA.CatF>, +ms: Nat) -> List<&2, R.Op>:
+  match m:
+    case Some{sp}:
+      Spot.ops(sp, cache, ms)
+    case None{}:
+      Nil{}
+
+def Spot.inline.k(cat: Bool, o: R.Op, +sps: List<&2, Spot>, +cache: Map<&2, CA.CatF>, +ms: Nat, rest: List<&2, R.Op>) -> List<&2, R.Op>:
+  match cat o:
+    case True{} R.Op{x0, y0, x1, y1, +col, a, s}:
+      R.Op{x0, y0, x1, y1, col, a, s} <> TI.Ops.cat(Spot.at(Spot.has(sps, U32.and(col, 16777215)), cache, ms), rest)
+    case False{} _:
+      o <> rest
+
+# the ops with each cat drawn at its anchor (where the layout put it)
+def Spot.inline(ops: List<&2, R.Op>, +sps: List<&2, Spot>, +cache: Map<&2, CA.CatF>, +ms: Nat) -> List<&2, R.Op>:
+  match ops:
+    case Nil{}:
+      Nil{}
+    case R.Op{x0, y0, x1, y1, +col, a, s} <> t:
+      Spot.inline.k(Spot.is(col), R.Op{x0, y0, x1, y1, col, a, s}, sps, cache, ms, Spot.inline(t, sps, cache, ms))
+
+# where a cat's ops reach (key: its anchor's)
+type Box is Data:
+  Box{key: U32, x0: U32, y0: U32, x1: U32, y1: U32}
+
+def Box.grow(os: List<&2, R.Op>, b: Box) -> Box:
+  match os b:
+    case Nil{} _:
+      b
+    case R.Op{+x0, +y0, +x1, +y1, _, _, _} <> t Box{k, +bx0, +by0, +bx1, +by1}:
+      Box.grow(t, Box{k, U32.min(x0, bx0), U32.min(y0, by0), U32.max(x1, bx1), U32.max(y1, by1)})
+
+def Box.of(sp: Spot, +cache: Map<&2, CA.CatF>, +ms: Nat) -> Box:
+  match sp:
+    case Spot{lk, md, +px, +x, +y, c}:
+      Box.grow(Spot.ops(Spot{lk, md, px, x, y, c}, cache, ms), Box{Spot.key(x, y), 65535, 65535, 0, 0})
+
+def Box.all(sps: List<&2, Spot>, +cache: Map<&2, CA.CatF>, +ms: Nat) -> List<&2, Box>:
+  match sps:
+    case Nil{}:
+      Nil{}
+    case sp <> t:
+      Box.of(sp, cache, ms) <> Box.all(t, cache, ms)
+
+def Box.meets(b: Box, +x0: U32, +y0: U32, +x1: U32, +y1: U32) -> Bool:
+  match b:
+    case Box{_, +bx0, +by0, +bx1, +by1}:
+      Bool.and(Bool.and(U32.is_lt(x0, bx1), U32.is_lt(bx0, x1)), Bool.and(U32.is_lt(y0, by1), U32.is_lt(by0, y1)))
+
+def Box.any(bs: List<&2, Box>, +x0: U32, +y0: U32, +x1: U32, +y1: U32) -> Bool:
+  match bs:
+    case Nil{}:
+      False{}
+    case b <> t:
+      Bool.or(Box.meets(b, x0, y0, x1, y1), Box.any(t, x0, y0, x1, y1))
+
+def Box.drop.k(same: Bool, b: Box, rest: List<&2, Box>) -> List<&2, Box>:
+  match same:
+    case True{}:
+      rest
+    case False{}:
+      b <> rest
+
+def Box.drop(bs: List<&2, Box>, +k: U32) -> List<&2, Box>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case Box{+bk, b0, b1, b2, b3} <> t:
+      Box.drop.k(U32.is_eq(bk, k), Box{bk, b0, b1, b2, b3}, Box.drop(t, k))
+
+# an op (not an anchor) over a cat still to come
+def Spot.over(cat: Bool, bs: List<&2, Box>, +x0: U32, +y0: U32, +x1: U32, +y1: U32) -> Bool:
+  match cat:
+    case True{}:
+      False{}
+    case False{}:
+      Box.any(bs, x0, y0, x1, y1)
+
+# past an anchor, its cat is no longer to come
+def Spot.left(cat: Bool, bs: List<&2, Box>, +col: U32) -> List<&2, Box>:
+  match cat:
+    case True{}:
+      Box.drop(bs, U32.and(col, 16777215))
+    case False{}:
+      bs
+
+# something is drawn over a cat: an op above its anchor (ops are topmost
+# first) reaches where the cat draws (bs: the cats whose anchors are yet
+# to come)
+def Spot.covered(ops: List<&2, R.Op>, bs: List<&2, Box>) -> Bool:
+  match ops bs:
+    case _ Nil{}:
+      False{}
+    case Nil{} _ <> _:
+      False{}
+    case R.Op{+x0, +y0, +x1, +y1, +col, _, _} <> t +b <> +bt:
+      Bool.or(Spot.over(Spot.is(col), b <> bt, x0, y0, x1, y1), Spot.covered(t, Spot.left(Spot.is(col), b <> bt, col)))
+
+def Spot.all.ops(sps: List<&2, Spot>, +cache: Map<&2, CA.CatF>, +ms: Nat) -> List<&2, R.Op>:
+  match sps:
+    case Nil{}:
+      Nil{}
+    case sp <> t:
+      TI.Ops.cat(Spot.ops(sp, cache, ms), Spot.all.ops(t, cache, ms))
+
+# a frame's cats: their ops, kept for cat frames (in front of the rest,
+# as Fronted.ops has them), or none when the cats are drawn in place
+type Fronted is Data:
+  Fronted{ops: List<&2, R.Op>, cats: List<&2, Spot>, cs: List<&2, R.Op>}
+
+def Fronted.k(front: Bool, +ops: List<&2, R.Op>, +sps: List<&2, Spot>, +cs: List<&2, R.Op>, +cache: Map<&2, CA.CatF>, +ms: Nat) -> Fronted:
+  match front:
+    case True{}:
+      Fronted{TI.Ops.cat(cs, ops), sps, cs}
+    case False{}:
+      Fronted{Spot.inline(ops, sps, cache, ms), Nil{}, Nil{}}
+
+# the cats drawn into a frame's ops: in front of the rest when nothing is
+# drawn over one (the same pixels; cat frames then change only them), else
+# each at its anchor
+def Fronted.of(+ops: List<&2, R.Op>, +hs: List<&2, S.Hit>, +cache: Map<&2, CA.CatF>, +ms: Nat) -> Fronted:
+  +sps = Spot.all(hs)
+  Fronted.k(Bool.and(Bool.not(List.is_empty(&2, Spot, sps)), Bool.not(Spot.covered(ops, Box.all(sps, cache, ms)))), ops, sps, Spot.all.ops(sps, cache, ms), cache, ms)
+
+# a frame laid out with its cats drawn in place (for frames made without
+# the window: snapshots, benches)
+def Bv.with_cats(o: L.Out, +cache: Map<&2, CA.CatF>, +ms: Nat) -> L.Out:
+  match o:
+    case L.Out{+ops, +hs}:
+      L.Out{Spot.inline(ops, Spot.all(hs), cache, ms), hs}
+
+# a cat, as the layout leaves it
+def Bv.cat(+look: Nat, +mood: String, +c: D.Clip, +x: U32, +y: U32, +px: U32) -> L.Out:
+  L.Out{[Spot.anchor(c, x, y, px)], [Spot.hit(look, mood, c, x, y, px)]}
+
 # a cat's row: the cat, its name (with its machine when elsewhere), and
 # its mood; choosing it does what BU.act says
 def Bv.row(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +ms: Nat, +r: BU.BRow, +c: D.Clip, +y: U32) -> L.Out:
@@ -49,10 +280,10 @@ def Bv.row(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +ms: Nat, +r: BU.BRow, +c: D.Clip
       +nw = L.Ty.width(ty, 2n, note)
       L.Out{List.concat(&2, R.Op, [
           Bool.pick(List<&2, R.Op>, sel, [D.Draw.rect(c, 6, (y + 1 : U32), 252, 34, T.Th.raise(), 255), D.Draw.rect(c, 6, (y + 1 : U32), 2, 34, T.Th.accent(), 255)], Nil{}),
-          CA.Cats.draw(cats, look, mood, ms, c, 14, (y + 4 : U32), 28),
+          Spot.anchor(c, 14, (y + 4 : U32), 28) <> Nil{},
           L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, BU.BU.row.title(r), L.U32.dim(192, nw)), c, 50, y, 36, Bool.pick(U32, sel, T.Th.text(), T.Th.soft())),
           L.Ty.text(ty, 2n, note, c, (252 - nw : U32), y, 36, Bv.note.color(mood))]),
-        [L.Lay.hit(0, y, 264, 36, BU.BU.act(r), id)]}
+        [L.Lay.hit(0, y, 264, 36, BU.BU.act(r), id), Spot.hit(look, mood, c, 14, (y + 4 : U32), 28)]}
 
 def Bv.rows(rs: List<&2, BU.BRow>, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +ms: Nat, +c: D.Clip, +y: U32) -> L.Col:
   match rs:
@@ -160,10 +391,10 @@ def Bv.uber.row(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +ms: Nat, r: BU.BRow, +cn: S
     case BU.BRow{_, _, _, +look, +mood, _, +sel, _, _, _}:
       L.Out{List.concat(&2, R.Op, [
           Bool.pick(List<&2, R.Op>, sel, [D.Draw.rect(c, 6, 54, 252, 42, T.Th.raise(), 255), D.Draw.rect(c, 6, 54, 2, 42, T.Th.accent(), 255)], Nil{}),
-          CA.Cats.draw(cats, look, mood, ms, c, 14, 60, 28),
+          Spot.anchor(c, 14, 60, 28) <> Nil{},
           L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, BU.BU.row.title(r), 192), c, 50, 54, 24, Bool.pick(U32, sel, T.Th.text(), T.Th.soft())),
           L.Ty.text(ty, 2n, L.Ty.fit(ty, 2n, Bool.pick(String, String.is_empty(cn), "Nothing needs you", cn), 192), c, 50, 74, 20, Bool.pick(U32, String.is_empty(cn), T.Th.faint(), T.Th.dim()))]),
-        [L.Lay.hit(0, 52, 264, 44, "uber", "")]}
+        [L.Lay.hit(0, 52, 264, 44, "uber", ""), Spot.hit(look, mood, c, 14, 60, 28)]}
 
 def Bv.uber.out(sd: Sd) -> L.Out:
   match sd:
@@ -877,7 +1108,7 @@ def Bv.header(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +u: U.Ui, +ms: Nat, hd: BU.Hea
       L.Out.all([
         L.Out{[D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), Bv.hy(), T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, (Bv.hy() - 1 : U32), (x1 - x0 : U32), 1, T.Th.line(), 255)],
           [L.Lay.hit(x0, 0, (x1 - x0 : U32), Bv.hy(), "", "")]},
-        L.Out.ops(CA.Cats.draw(cats, look, mood, ms, D.Clip.all(), (x0 + 20 : U32), 12, 64)),
+        Bv.cat(look, mood, D.Clip.all(), (x0 + 20 : U32), 12, 64),
         L.Out.ops(L.Ty.text(ty, 1n, title, D.Clip.all(), (x0 + 100 : U32), 10, 30, T.Th.text())),
         L.Out.ops(L.Ty.text(ty, 2n, note ++ sub, D.Clip.all(), (x0 + 112 + nw : U32), 10, 30, Bv.note.color(mood))),
         right,

@@ -8246,3 +8246,36 @@ law stuck_waits:
 law stuck_step_ends_turn:
   {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Stuck.step(H.Demo.state("claude", M.Running{}), 9n, "t1", 3n)), H.Demo.state("claude", M.Running{})), "t1")) == False{} : Bool}
 # ---- end hub-followups: stuck turns ----
+# win-lean-frame: cat frames (tiles.bend's Ops.*, Tiles.recat)
+# the ops reaching a quadrant from a then b are a's then b's
+law keep_cat:
+  for a: List<&2, R.Op>
+  for +b: List<&2, R.Op>
+  for +px: U32
+  for +py: U32
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  {R.Region.keep(T.Ops.cat(a, b), px, py, rx, ry, n) == T.Ops.cat(R.Region.keep(a, px, py, rx, ry, n), R.Region.keep(b, px, py, rx, ry, n)) : List<&2, R.Op>}
+
+# past the cats' ops, the rest
+law ops_after_cat:
+  for cs: List<&2, R.Op>
+  for +rest: List<&2, R.Op>
+  {T.Ops.after(cs, T.Ops.cat(cs, rest)) == rest : List<&2, R.Op>}
+
+# a frame whose ops are cats then the rest, its cats swapped in place, is
+# exactly the frame drawn from scratch with the new cats: a cat frame
+# never leaves a stale tile
+law tiles_recat_exact:
+  for k: Nat
+  for +e: Nat
+  for +cs: List<&2, R.Op>
+  for +cs2: List<&2, R.Op>
+  for +rest: List<&2, R.Op>
+  for +base: Image
+  for +rx: U32
+  for +ry: U32
+  for +n: U32
+  {T.Tiles.recat(k, e, cs, cs2, T.Tiles.make(k, e, T.Ops.cat(cs, rest), base, rx, ry, n), rx, ry, n) == T.Tiles.make(k, e, T.Ops.cat(cs2, rest), base, rx, ry, n) : T.Tiles}
+# ---- end win-lean-frame cat frames ----

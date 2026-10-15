@@ -129,14 +129,14 @@ def TieKeep.with_cache(ks: List<&2, TieKeep>, cs: List<&2, U.HubView>) -> List<&
 # more fields than an arity of 255, main.bend fails to build past it), and
 # the posts on show wrapped (a room's, a bot's elsewhere: BV.Bv.wraps)
 type Kept is Data:
-  Kept{frames: TI.Frames, memos: List<&2, L.TLMemo>, cats: Map<&2, CA.CatF>, parks: List<&2, N.Park>, wraps: Map<&2, BV.PW>}
+  Kept{frames: TI.Frames, memos: List<&2, L.TLMemo>, cats: Map<&2, CA.CatF>, parks: List<&2, N.Park>, wraps: Map<&2, BV.PW>, front: List<&2, BV.Fronted>}
 
 # the boards being watched and the fonts
 type Aux is Data:
   Aux{watched: List<&2, String>, ty: List<&2, L.Ty>, tie: Tie, kept: List<&2, Kept>}
 
 def Kept.none() -> Kept:
-  Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none()}
+  Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none(), Nil{}}
 
 def Kept.of(ks: List<&2, Kept>) -> Kept:
   match ks:
@@ -250,6 +250,31 @@ def Timer.tick(+q: Chan(ShellMsg), wait: Nat) -> IO(Unit):
 
 # Drawing
 # -------
+
+# Frames for the hub alone
+# ------------------------
+# A frame that only hub messages asked for (another thread's work: its
+# rows, its counts, its activity) is drawn at most every Hubf.gap(); input
+# since the last frame, the open thread's own streamed text, and frames a
+# frame asks for (a fade) draw as soon as they can. With agents streaming
+# in other threads, frames came as fast as they could be drawn.
+def Hubf.gap() -> Nat:
+  200n
+
+def Hubf.on(+n: N.Nui) -> Bool:
+  String.eq(U.Ui.info(N.Nui.ui(n), "frame.hub"), "1")
+
+def Hubf.set(+n: N.Nui, on: Bool) -> N.Nui:
+  N.Nui.with_ui(n, U.Ui.info_set(N.Nui.ui(n), "frame.hub", Bool.pick(String, on, "1", "")))
+
+# ms until the next frame may be drawn
+def Hubf.left(+n: N.Nui, +ms: Nat) -> Nat:
+  Nat.sub(Nat.add(N.Nui.ms_of(n), Hubf.gap()), ms)
+
+# the frame due now waits: the hub alone asked for it, nothing was input
+# since the last one, and that one is too recent
+def Hubf.wait(+n: N.Nui, +ms: Nat) -> Bool:
+  Bool.and(Hubf.on(n), Bool.and(Nat.is_lt(Maybe.default(&2, Nat, Nat.read(U.Ui.info(N.Nui.ui(n), "act.at")), 0n), N.Nui.ms_of(n)), Nat.is_gt(Hubf.left(n, ms), 0n)))
 
 def Shell.later(a: Shell) -> IO(Shell):
   match a:
@@ -969,10 +994,33 @@ def Shell.due(a: Shell, +action: String, +value: String) -> IO(Shell):
     case Shell{+n, w, d, qd, q, i, wa}:
       Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.act(n, action, value))
 
-def Shell.recv(a: Shell, +text: String) -> IO(Shell):
+# after a hub message: whether the frame it left is the hub's alone (was:
+# a frame was due already; own: the open thread's streamed text)
+def Hubf.mark(was: Bool, own: Bool, a: Shell) -> Shell:
+  match a:
+    case Shell{+n, w, +d, qd, q, i, wa}:
+      Shell{Hubf.set(n, Bool.and(d, Bool.and(Bool.not(own), Bool.or(Bool.not(was), Hubf.on(n))))), w, d, qd, q, i, wa}
+
+def Hubf.own(+n: N.Nui, +o: J.Json) -> Bool:
+  Bool.and(String.eq(J.Json.get_str(o, "t", ""), "delta"), String.eq(J.Json.get_str(o, "thread", ""), U.Ui.sel(N.Nui.ui(n))))
+
+# a message naming the open thread (its id in quotes anywhere in it): a
+# change to what is on screen, never held back
+def Hubf.names(+n: N.Nui, +text: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(U.Ui.sel(N.Nui.ui(n)))), String.contains(text, "\"" ++ U.Ui.sel(N.Nui.ui(n)) ++ "\""))
+
+def Shell.recv.o(a: Shell, +o: J.Json, own: Bool) -> IO(Shell):
+  match a:
+    case Shell{+n, w, +d, qd, q, i, wa}:
+      IO.bind(Shell, Shell, Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.hear(n, o)), a2 => IO.pure(Shell, Hubf.mark(d, Bool.or(own, Hubf.own(n, o)), a2)))
+
+def Shell.recv.n(a: Shell, +text: String) -> IO(Shell):
   match a:
     case Shell{+n, w, d, qd, q, i, wa}:
-      Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.hear(n, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})))
+      Shell.recv.o(Shell{n, w, d, qd, q, i, wa}, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), Hubf.names(n, text))
+
+def Shell.recv(a: Shell, +text: String) -> IO(Shell):
+  Shell.recv.n(a, text)
 
 def Shell.from(current: Bool, a: Shell, +t: String) -> IO(Shell):
   match current:
@@ -1838,13 +1886,13 @@ def Aux.with_kept(a: Aux, k: Kept) -> Aux:
 
 def Kept.frames(k: Kept) -> TI.Frames:
   match k:
-    case Kept{f, _, _, _, _}:
+    case Kept{f, _, _, _, _, _}:
       f
 
 def Kept.with_frames(k: Kept, f: TI.Frames) -> Kept:
   match k:
-    case Kept{_, m, cs, pk, wr}:
-      Kept{f, m, cs, pk, wr}
+    case Kept{_, m, cs, pk, wr, fr}:
+      Kept{f, m, cs, pk, wr, fr}
 
 def Aux.frames(a: Aux) -> TI.Frames:
   Kept.frames(Aux.kept(a))
@@ -1854,13 +1902,13 @@ def Aux.with_frames(+a: Aux, f: TI.Frames) -> Aux:
 
 def Kept.memos(k: Kept) -> List<&2, L.TLMemo>:
   match k:
-    case Kept{_, m, _, _, _}:
+    case Kept{_, m, _, _, _, _}:
       m
 
 def Kept.with_memos(k: Kept, m: List<&2, L.TLMemo>) -> Kept:
   match k:
-    case Kept{f, _, cs, pk, wr}:
-      Kept{f, m, cs, pk, wr}
+    case Kept{f, _, cs, pk, wr, fr}:
+      Kept{f, m, cs, pk, wr, fr}
 
 def Aux.memos(a: Aux) -> List<&2, L.TLMemo>:
   Kept.memos(Aux.kept(a))
@@ -1870,13 +1918,13 @@ def Aux.with_memos(+a: Aux, m: List<&2, L.TLMemo>) -> Aux:
 
 def Kept.cats(k: Kept) -> Map<&2, CA.CatF>:
   match k:
-    case Kept{_, _, cs, _, _}:
+    case Kept{_, _, cs, _, _, _}:
       cs
 
 def Kept.with_cats(k: Kept, cs: Map<&2, CA.CatF>) -> Kept:
   match k:
-    case Kept{f, m, _, pk, wr}:
-      Kept{f, m, cs, pk, wr}
+    case Kept{f, m, _, pk, wr, fr}:
+      Kept{f, m, cs, pk, wr, fr}
 
 def Aux.cats(a: Aux) -> Map<&2, CA.CatF>:
   Kept.cats(Aux.kept(a))
@@ -1886,16 +1934,34 @@ def Aux.with_cats(+a: Aux, cs: Map<&2, CA.CatF>) -> Aux:
 
 def Kept.wraps(k: Kept) -> Map<&2, BV.PW>:
   match k:
-    case Kept{_, _, _, _, wr}:
+    case Kept{_, _, _, _, wr, _}:
       wr
 
 def Kept.with_wraps(k: Kept, wr: Map<&2, BV.PW>) -> Kept:
   match k:
-    case Kept{f, m, cs, pk, _}:
-      Kept{f, m, cs, pk, wr}
+    case Kept{f, m, cs, pk, _, fr}:
+      Kept{f, m, cs, pk, wr, fr}
 
 def Aux.wraps(a: Aux) -> Map<&2, BV.PW>:
   Kept.wraps(Aux.kept(a))
+
+# the last frame's cats when they are in front of its ops (BV.Fronted;
+# none: cat frames are whole frames)
+def Kept.front(k: Kept) -> List<&2, BV.Fronted>:
+  match k:
+    case Kept{_, _, _, _, _, fr}:
+      fr
+
+def Kept.with_front(k: Kept, fr: List<&2, BV.Fronted>) -> Kept:
+  match k:
+    case Kept{f, m, cs, pk, wr, _}:
+      Kept{f, m, cs, pk, wr, fr}
+
+def Aux.front(a: Aux) -> List<&2, BV.Fronted>:
+  Kept.front(Aux.kept(a))
+
+def Aux.with_front(+a: Aux, fr: List<&2, BV.Fronted>) -> Aux:
+  Aux.with_kept(a, Kept.with_front(Aux.kept(a), fr))
 
 def Aux.with_wraps(+a: Aux, wr: Map<&2, BV.PW>) -> Aux:
   Aux.with_kept(a, Kept.with_wraps(Aux.kept(a), wr))
@@ -1994,10 +2060,26 @@ def Lbv.paint(on: Bool, +ops: List<&2, R.Op>, +hs: List<&2, N.Hit>, +oh: List<&2
       Shell.present(Shell.image(N.Nui.panel(n), ops, N.Nui.vw(n), N.Nui.width(n), N.Nui.height(n), N.Nui.vx0(n), ms, N.Nui.look(n), N.Nui.lfocus.bits(n), hs, Tie.pics(Aux.tie(wa)), Aux.frames(wa), N.Hits.slide(hs, oh)),
         L.Out{ops, hs}, n, w, q, i, wa, epoch, ms, t0, t2)
 
+# what cat frames keep: the cats in front of the frame's ops (none under
+# the lightbox, whose frames leave the kept tiles alone)
+def Front.keep(lb: Bool, +sps: List<&2, BV.Spot>, +cs: List<&2, R.Op>) -> List<&2, BV.Fronted>:
+  match lb sps:
+    case False{} +sp <> +st:
+      [BV.Fronted{Nil{}, sp <> st, cs}]
+    case _ _:
+      Nil{}
+
+def Shell.paint.fr(fr: BV.Fronted, +hs: List<&2, N.Hit>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t2: U32) -> IO(Shell):
+  match fr:
+    case BV.Fronted{+ops, +sps, +cs}:
+      Lbv.paint(N.Lbx.on(n), ops, hs, oh, n, w, q, i, Aux.with_front(wa, Front.keep(N.Lbx.on(n), sps, L.Theme.ops(V.Look.ui(N.Nui.look(n)), cs))), epoch, ms, t0, t2)
+
+# the cats are drawn into the frame (BV.Fronted.of: in front of the rest
+# when nothing covers them, so cat frames change only them)
 def Shell.paint.out(o: L.Out, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t2: U32) -> IO(Shell):
   match o:
     case L.Out{+ops, +hs}:
-      Lbv.paint(N.Lbx.on(n), ops, hs, oh, n, w, q, i, wa, epoch, ms, t0, t2)
+      Shell.paint.fr(BV.Fronted.of(ops, hs, Aux.cats(wa), N.Nui.ms_of(n)), hs, oh, n, w, q, i, wa, epoch, ms, t0, t2)
 
 # how many ops a layout made (counting them also finishes the layout)
 def Lay.nops(o: L.Out) -> Nat:
@@ -2104,14 +2186,36 @@ def Hud.feed(on: Bool, +n: N.Nui, +ms: Nat) -> IO(N.Nui):
       IO.pure(N.Nui, n)
 
 # draw now if anything changed since the last frame
+def Shell.frame.draw(+n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +ms: Nat) -> IO(Shell):
+  do IO<Shell>:
+    t : U32 <- H.Clock.epoch()
+    n2 : N.Nui <- Hud.feed(U.Ui.flag(N.Nui.ui(n), "perf"), Hubf.set(n, False{}), ms)
+    Shell.paint(n2, w, q, i, wa, U32.to_nat(t), ms)
+
+# a frame that waits: one timer for it (unless one is already set), and
+# any input in the meantime draws at once (Shell.later finds none queued)
+def Shell.frame.wait(late: Bool, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +ms: Nat) -> IO(Shell):
+  match late:
+    case True{}:
+      IO.pure(Shell, Shell{n, w, True{}, False{}, q, i, wa})
+    case False{}:
+      do IO<Shell>:
+        IO.spawn(Unit, Timer.once(q, Hubf.left(n, ms)))
+        return Shell{N.Nui.with_ui(n, U.Ui.info_set(N.Nui.ui(n), "frame.late", Nat.show(Nat.add(ms, Hubf.left(n, ms))))), w, True{}, False{}, q, i, wa}
+
+def Shell.frame.k(wait: Bool, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +ms: Nat) -> IO(Shell):
+  match wait:
+    case True{}:
+      Shell.frame.wait(Nat.is_gt(Maybe.default(&2, Nat, Nat.read(U.Ui.info(N.Nui.ui(n), "frame.late")), 0n), ms), n, w, q, i, wa, ms)
+    case False{}:
+      Shell.frame.draw(n, w, q, i, wa, ms)
+
 def Shell.frame(a: Shell) -> IO(Shell):
   match a:
     case Shell{+n, w, True{}, _, q, i, wa}:
       do IO<Shell>:
-        t : U32 <- H.Clock.epoch()
         +ms : Nat <- IO.now()
-        n2 : N.Nui <- Hud.feed(U.Ui.flag(N.Nui.ui(n), "perf"), n, ms)
-        Shell.paint(n2, w, q, i, wa, U32.to_nat(t), ms)
+        Shell.frame.k(Hubf.wait(n, ms), n, w, q, i, wa, ms)
     case Shell{n, w, False{}, _, q, i, wa}:
       IO.pure(Shell, Shell{n, w, False{}, False{}, q, i, wa})
 
@@ -2157,8 +2261,24 @@ def Frames.some(f: TI.Frames) -> Bool:
 
 # the caret can blink alone: a frame to blink, no lightbox, and the clock
 # the last frame was laid out with in the same minute
+def Due.one(due: Bool, +v: String, +epoch: Nat) -> Bool:
+  match due:
+    case True{}:
+      Nat.is_lt(epoch, Maybe.default(&2, Nat, Nat.read(v), 0n))
+    case False{}:
+      True{}
+
+# nothing on screen is due to change by the clock: the layout says when
+# its fades next move ("due" hits, epoch seconds)
+def Due.ok(hs: List<&2, N.Hit>, +epoch: Nat) -> Bool:
+  match hs:
+    case Nil{}:
+      True{}
+    case N.Hit{_, _, _, _, +a, +v} <> t:
+      Bool.and(Due.one(String.eq(a, "due"), v, epoch), Due.ok(t, epoch))
+
 def Shell.caret.ok(+n: N.Nui, +wa: Aux, +epoch: Nat) -> Bool:
-  Bool.and(Bool.and(Frames.some(Aux.frames(wa)), Bool.not(N.Lbx.on(n))),
+  Bool.and(Bool.and(Bool.and(Frames.some(Aux.frames(wa)), Bool.not(N.Lbx.on(n))), Due.ok(N.Nui.hits(n), epoch)),
     Nat.is_eq(Nat.div(epoch, 60n), Nat.div(U.Side.now(N.Nui.ui(n)), 60n)))
 
 def Shell.caret(a: Shell) -> IO(Shell):
@@ -2171,6 +2291,50 @@ def Shell.caret(a: Shell) -> IO(Shell):
         t : U32 <- H.Clock.epoch()
         +ms : Nat <- IO.now()
         Shell.caret.k(Shell.caret.ok(n, wa, U32.to_nat(t)), n, w, qd, q, i, wa, ms, t0)
+
+# A cat frame without a layout: when nothing else changed and the last
+# frame has its cats in front (Kept.front, in the frame's theme, as its
+# tiles hold them), the cats are posed at the new
+# clock and only they change in the kept tiles (TI.Frames.recat: tiles the
+# cats reach are drawn again). Otherwise a whole frame, as before.
+def Shell.tick.shown(r: Window & Image & Image, +n: N.Nui, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +ms: Nat) -> IO(Shell):
+  (w, ab) = r
+  (img, prev) = ab
+  do IO<Shell>:
+    Unit <- IO.pure(Unit, Image.drop!(prev))
+    Unit <- IO.pure(Unit, Image.drop!(img))
+    +n1 : N.Nui <- Shell.cats(n, q, ms)
+    return Shell{n1, w, False{}, False{}, q, i, wa}
+
+def Shell.tick.fast(+sps: List<&2, BV.Spot>, +cs: List<&2, R.Op>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +ms: Nat, +t0: U32) -> IO(Shell):
+  do IO<Shell>:
+    +n2 : N.Nui = BV.Bv.stamp(n, ms)
+    +cache : Map<&2, CA.CatF> = BV.Bv.warm(N.Nui.ui(n2), Aux.cats(wa), BV.Bv.clock.of(n2))
+    +cs2 : List<&2, R.Op> = L.Theme.ops(V.Look.ui(N.Nui.look(n2)), BV.Spot.all.ops(sps, cache, N.Nui.ms_of(n2)))
+    +f : TI.Frames = TI.Frames.recat(Aux.frames(wa), cs, cs2)
+    +img : Image = Frames.image(f)
+    t1 : U32 <- PS.Perf.lap("ui.cats", t0)
+    r : Window & Image & Image <- W.Win.show(w, img, Frames.image(Aux.frames(wa)))
+    t2 : U32 <- PS.Perf.lap("ui.present", t1)
+    Shell.tick.shown(r, n2, q, i, Aux.with_front(Aux.with_cats(Aux.with_frames(wa, f), cache), [BV.Fronted{Nil{}, sps, cs2}]), ms)
+
+def Shell.tick.k(fast: Bool, fr: List<&2, BV.Fronted>, +n: N.Nui, w: Window, qd: Bool, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +ms: Nat, +t0: U32) -> IO(Shell):
+  match fast fr:
+    case True{} BV.Fronted{_, +sps, +cs} <> _:
+      Shell.tick.fast(sps, cs, n, w, q, i, wa, ms, t0)
+    case _ _:
+      Shell.frame(Shell{n, w, True{}, qd, q, i, wa})
+
+def Shell.tick(a: Shell) -> IO(Shell):
+  match a:
+    case Shell{n, w, True{}, qd, q, i, wa}:
+      Shell.frame(Shell{n, w, True{}, qd, q, i, wa})
+    case Shell{+n, w, False{}, qd, +q, i, +wa}:
+      do IO<Shell>:
+        +t0 : U32 <- PS.Perf.us()
+        t : U32 <- H.Clock.epoch()
+        +ms : Nat <- IO.now()
+        Shell.tick.k(Shell.caret.ok(n, wa, U32.to_nat(t)), Aux.front(wa), n, w, qd, q, i, wa, ms, t0)
 
 def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
   match m:
@@ -2185,7 +2349,7 @@ def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
     case Blink{}:
       Shell.caret(a)
     case Tick{}:
-      Shell.frame(Shell.blinked(a))
+      Shell.tick(a)
     case Due{+action, +value}:
       Shell.due(a, action, value)
     case Gone{tag}:
@@ -2215,13 +2379,13 @@ def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
 
 def Kept.park(k: Kept) -> N.Park:
   match k:
-    case Kept{_, _, _, pk, _}:
+    case Kept{_, _, _, pk, _, _}:
       Maybe.default(&2, N.Park, List.head(&2, N.Park, pk), N.Park.init())
 
 def Kept.with_park(k: Kept, pk: N.Park) -> Kept:
   match k:
-    case Kept{f, m, cs, _, wr}:
-      Kept{f, m, cs, [pk], wr}
+    case Kept{f, m, cs, _, wr, fr}:
+      Kept{f, m, cs, [pk], wr, fr}
 
 def Aux.park(a: Aux) -> N.Park:
   Kept.park(Aux.kept(a))

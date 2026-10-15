@@ -103,7 +103,7 @@ def write(+path: String, +w: U32, +h: U32, +img: Image) -> IO(Unit):
     write.k(r)
 
 def frame(+ty: L.Ty, +n: N.Nui) -> L.Out:
-  BV.Bv.frame.w(ty, L.Lay.memo(ty, n, L.TL.memo.none()), BV.Bv.warm(N.Nui.ui(n), CA.Cats.none(), 1234n), BV.Bv.wraps(ty, n, BV.Bv.wraps.none()), n)
+  BV.Bv.with_cats(BV.Bv.frame.w(ty, L.Lay.memo(ty, n, L.TL.memo.none()), BV.Bv.warm(N.Nui.ui(n), CA.Cats.none(), 1234n), BV.Bv.wraps(ty, n, BV.Bv.wraps.none()), n), BV.Bv.warm(N.Nui.ui(n), CA.Cats.none(), 1234n), 1234n)
 
 def shot(+ty: L.Ty, +dir: String, +name: String, +u: U.Ui, +w: U32, +h: U32) -> IO(Unit):
   +n = sized(N.Nui.init(u, w, h), w, h)

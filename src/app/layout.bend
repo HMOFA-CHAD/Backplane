@@ -99,10 +99,11 @@ def Out.when(on: Bool, o: Out) -> Out:
 
 # The light theme: every op of the UI in the palette's light twin
 # (theme.bend's Th.light); the dark theme draws them as they are
+# (a colour's top byte, a caret's or a cat anchor's tag, is kept)
 def Theme.op(o: R.Op) -> R.Op:
   match o:
     case R.Op{x0, y0, x1, y1, +c, a, sh}:
-      R.Op{x0, y0, x1, y1, T.Th.light(c), a, sh}
+      R.Op{x0, y0, x1, y1, U32.or(U32.and(c, 4278190080), T.Th.light(U32.and(c, 16777215))), a, sh}
 
 # (onto a reversed accumulator: a frame holds many ops)
 def Theme.onto(os: List<&2, R.Op>, acc: List<&2, R.Op>) -> List<&2, R.Op>:
@@ -582,7 +583,16 @@ def Lay.side.list.k(active: Bool, +ty: Ty, +q: String, +op: Map<&2, Bool>, +ix: 
 def Lay.side.list(active: Bool, +ty: Ty, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   Lay.side.list.k(active, ty, q, op, U.Side.ix(st), st, sel, now, look, rm, c, y)
 
-def Lay.field(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +w: U32, +text: String, +focused: Bool, +blink: Bool, +caret: Nat, +mark: Nat, +placeholder: String, +id: String) -> Out:
+# a field's caret: one that blinks (D.Draw.caret: a blink changes only
+# it), or a steady one
+def Lay.field.caret(steady: Bool, +c: D.Clip, +x: U32, +y: U32, +blink: Bool) -> R.Op:
+  match steady:
+    case True{}:
+      D.Draw.rect(c, x, y, 1, 14, T.Th.accent(), 255)
+    case False{}:
+      D.Draw.caret(c, x, y, 1, 14, T.Th.accent(), 255, blink)
+
+def Lay.field.x(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +w: U32, +text: String, +focused: Bool, +blink: Bool, +steady: Bool, +caret: Nat, +mark: Nat, +placeholder: String, +id: String) -> Out:
   +vis = Ty.fit(ty, 2n, text, (w - 16 : U32))
   +a = {Ty.width(ty, 2n, String.take(vis, ED.Edit.lo(caret, mark))) : U32}
   +b = {Ty.width(ty, 2n, String.take(vis, ED.Edit.hi(caret, mark))) : U32}
@@ -591,13 +601,16 @@ def Lay.field(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +w: U32, +text: String, +fo
       Bool.pick(List<&2, R.Op>, Bool.and(focused, U32.is_gt(b, a)), [D.Draw.rect(c, (x + 8 + a : U32), (y + 5 : U32), (b - a : U32), 18, T.Th.sel(), 255)], Nil{}),
       Bool.pick(List<&2, R.Op>, String.is_empty(text), Ty.text(ty, 2n, placeholder, c, (x + 8 : U32), y, 28, T.Th.faint()),
         Ty.text(ty, 2n, vis, c, (x + 8 : U32), y, 28, T.Th.text())),
-      Bool.pick(List<&2, R.Op>, focused, [D.Draw.caret(c, (x + 8 + Ty.width(ty, 2n, String.take(vis, caret)) : U32), (y + 7 : U32), 1, 14, T.Th.accent(), 255, blink)], Nil{})]),
+      Bool.pick(List<&2, R.Op>, focused, [Lay.field.caret(steady, c, (x + 8 + Ty.width(ty, 2n, String.take(vis, caret)) : U32), (y + 7 : U32), blink)], Nil{})]),
     [Lay.hit(x, y, w, 28, "focus", id)]}
+
+def Lay.field(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +w: U32, +text: String, +focused: Bool, +blink: Bool, +caret: Nat, +mark: Nat, +placeholder: String, +id: String) -> Out:
+  Lay.field.x(ty, c, x, y, w, text, focused, blink, False{}, caret, mark, placeholder, id)
 
 def Lay.adding(+ty: Ty, adding: Bool, +dy: U32, +path: String, +focused: Bool, +caret: Nat, +mark: Nat) -> Out:
   match adding:
     case True{}:
-      Out.cat(Lay.field(ty, D.Clip.all(), 12, (58 + dy : U32), 186, path, focused, True{}, caret, mark, "/path/to/project", "project-path"),
+      Out.cat(Lay.field.x(ty, D.Clip.all(), 12, (58 + dy : U32), 186, path, focused, True{}, True{}, caret, mark, "/path/to/project", "project-path"),
         Lay.button(ty, D.Clip.all(), 204, (58 + dy : U32), "Add", T.Th.accent(), "add-project", path))
     case False{}:
       Out.none()
@@ -634,8 +647,14 @@ def Links.y.k(r: Map<&2, U32> & U32) -> U32:
 def Links.y(+m: Map<&2, U32>, +id: String) -> U32:
   Links.y.k(Map.get(U32, 0, m, id))
 
+# a link fades in steps, one a minute from two minutes old (the same fade
+# as before, 185 levels over 13 minutes, moved once a minute so a frame
+# with nothing else new can wait for it: Links.due)
+def Links.step(+age: Nat) -> Nat:
+  Nat.div(Nat.sub(age, 120n), 60n)
+
 def Links.alpha(+age: Nat) -> U32:
-  Bool.pick(U32, Nat.is_lt(age, 120n), 255, U32.from_nat(Nat.sub(255n, Nat.div(Nat.mul(Nat.sub(age, 120n), 185n), 780n))))
+  U32.from_nat(Nat.sub(255n, Nat.div(Nat.mul(Links.step(age), 11100n), 780n)))
 
 def Links.one.k(ok: Bool, +ya: U32, +yb: U32, +x: U32, +alpha: U32, +c: D.Clip) -> List<&2, R.Op>:
   match ok:
@@ -662,10 +681,41 @@ def Links.all(ls: List<&2, U.Link2>, +rows: Map<&2, U32>, +k: Nat, +now: Nat, +c
       List.append(&2, R.Op, Links.one(l, rows, k, now, c), Links.all(t, rows, 1n+k, now, c))
 
 # the sidebar's rows with their links drawn over them
+# the age at which a link's alpha (Links.alpha) next changes; 0: never
+# again (it has faded out)
+def Links.next(+age: Nat) -> Nat:
+  Bool.pick(Nat, U32.is_eq(Links.alpha(age), 0), 0n, Nat.add(120n, Nat.mul(Nat.add(Links.step(age), 1n), 60n)))
+
+def Links.due.one(l: U.Link2, +now: Nat) -> Nat:
+  match l:
+    case U.Link2{_, _, +at}:
+      +a = Links.next(Nat.sub(now, at))
+      Bool.pick(Nat, Nat.is_eq(a, 0n), 0n, Nat.add(at, a))
+
+# the earlier of two times, 0 being none
+def Due.min(+a: Nat, +b: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_eq(a, 0n), b, Bool.pick(Nat, Nat.is_eq(b, 0n), a, Bool.pick(Nat, Nat.is_lt(a, b), a, b)))
+
+# when the links' fades next change (epoch seconds; 0: none fades)
+def Links.due(ls: List<&2, U.Link2>, +now: Nat) -> Nat:
+  match ls:
+    case Nil{}:
+      0n
+    case l <> t:
+      Due.min(Links.due.one(l, now), Links.due(t, now))
+
+# a frame whose links still fade is due again then: the window draws it
+# whole at that time even if nothing else changed (main.bend's Due.ok)
+def Due.hit(+at: Nat) -> List<&2, S.Hit>:
+  Bool.pick(List<&2, S.Hit>, Nat.is_eq(at, 0n), Nil{}, [Lay.hit(0, 0, 0, 0, "due", Nat.show(at))])
+
+# (the rows' places are found only when there are links to draw)
 def Links.over(o: Out, ls: List<&2, U.Link2>, +now: Nat, +c: D.Clip) -> Out:
-  match o:
-    case Out{os, +hs}:
-      Out{List.append(&2, R.Op, os, Links.all(ls, Links.rows(hs, Map.new(&2, U32)), 0n, now, c)), hs}
+  match o ls:
+    case _ Nil{}:
+      o
+    case Out{os, +hs} +l <> +lt:
+      Out{List.append(&2, R.Op, os, Links.all(l <> lt, Links.rows(hs, Map.new(&2, U32)), 0n, now, c)), List.append(&2, S.Hit, hs, Due.hit(Links.due(l <> lt, now)))}
 
 # Machines
 # --------
@@ -760,7 +810,7 @@ def Lay.hint.ids(alt: Bool, ctrl: Bool, +u: U.Ui) -> List<&2, String>:
 # the active view threads by title or project (the query holds while it
 # has text: core's Find.q)
 def Lay.finding(+ty: Ty, +active: Bool, +y: U32, +q: String, +focus: String, +caret: Nat, +mark: Nat) -> Out:
-  Lay.field(ty, D.Clip.all(), 12, y, 240, q, String.eq(focus, S.Fld.id("pq", "proj-go", "")), True{}, caret, mark, Bool.pick(String, active, "Search threads", "Search projects"), S.Fld.id("pq", "proj-go", ""))
+  Lay.field.x(ty, D.Clip.all(), 12, y, 240, q, String.eq(focus, S.Fld.id("pq", "proj-go", "")), True{}, True{}, caret, mark, Bool.pick(String, active, "Search threads", "Search projects"), S.Fld.id("pq", "proj-go", ""))
 
 # the sidebar's rows, and how far they may scroll (nui.bend's Side.most):
 # until the end of the list, scrolled up by sd, meets the bottom
@@ -5638,7 +5688,7 @@ def Lay.atts(+ty: Ty, ps: List<&2, String>, +up: String, +x: U32, +y: U32) -> Ou
 def Lay.attach_field(+ty: Ty, on: Bool, +path: String, +caret: Nat, +mark: Nat, +x0: U32, +x1: U32, +y: U32) -> Out:
   match on:
     case True{}:
-      Out.cat(Lay.field(ty, D.Clip.all(), x0, y, (x1 - x0 - 12 - Lay.button.w(ty, "Attach") : U32), path, True{}, True{}, caret, mark, "/path/to/a/file, or paste one (Enter attaches, Esc closes)", "attach-path"),
+      Out.cat(Lay.field.x(ty, D.Clip.all(), x0, y, (x1 - x0 - 12 - Lay.button.w(ty, "Attach") : U32), path, True{}, True{}, True{}, caret, mark, "/path/to/a/file, or paste one (Enter attaches, Esc closes)", "attach-path"),
         Lay.button(ty, D.Clip.all(), (x1 - Lay.button.w(ty, "Attach") : U32), y, "Attach", T.Th.accent(), "attach-file", path))
     case False{}:
       Out.none()
