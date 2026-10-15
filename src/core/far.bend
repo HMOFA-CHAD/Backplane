@@ -75,6 +75,16 @@ def Fr.sent.k(+l: String, +from: String, +msg: String) -> String:
 def Fr.sent(+l: String, +msg: String) -> String:
   Fr.sent.k(l, M.Link.from(msg), msg)
 
+# Mail addresses retain their kind while the object id follows Fr.sender.
+def Fr.address_kind(k: Nat, +l: String, +from: String) -> String:
+  match k:
+    case 1n: "thread:" ++ Fr.sender(l, String.drop(from, 7n))
+    case 2n: "bot:" ++ Fr.sender(l, String.drop(from, 4n))
+    case _: from
+
+def Fr.address(+l: String, +from: String) -> String:
+  Fr.address_kind(Bool.pick(Nat, String.starts_with(from, "thread:"), 1n, Bool.pick(Nat, String.starts_with(from, "bot:"), 2n, 0n)), l, from)
+
 # Changes, as a client here reads them
 # ------------------------------------
 # The owning hub's change renamed into this hub's ids. Only what shows a
@@ -93,6 +103,8 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.ThreadRenamed{Fr.id(l, id), title, at}}
     case M.MessagePosted{+thread, +msg, role, text, at}:
       Some{M.MessagePosted{Fr.id(l, thread), Fr.sent(l, msg), role, text, at}}
+    case M.MessageFrom{+thread, +msg, +from, kind, ref, at}:
+      Some{M.MessageFrom{Fr.id(l, thread), Fr.sent(l, msg), Fr.address(l, from), kind, ref, at}}
     case M.TurnChanged{+thread, state, at}:
       Some{M.TurnChanged{Fr.id(l, thread), state, at}}
     case M.PendingChanged{+thread, count, at}:
@@ -244,6 +256,8 @@ def Fr.shared(+s: M.State, c: M.Change) -> Bool:
       Fr.thread.shared(s, id)
     case M.MessagePosted{+thread, _, _, _, _}:
       Fr.thread.shared(s, thread)
+    case M.MessageFrom{+thread, _, _, _, _, _}:
+      Fr.thread.shared(s, thread)
     case M.TurnChanged{+thread, _, _}:
       Fr.thread.shared(s, thread)
     case M.PendingChanged{+thread, _, _}:
@@ -355,6 +369,8 @@ def Fr.scope(+s: M.State, c: M.Change) -> String:
     case M.ThreadRenamed{+id, _, _}:
       Fr.scope.th(s, id)
     case M.MessagePosted{+thread, _, _, _, _}:
+      Fr.scope.th(s, thread)
+    case M.MessageFrom{+thread, _, _, _, _, _}:
       Fr.scope.th(s, thread)
     case M.TurnChanged{+thread, _, _}:
       Fr.scope.th(s, thread)
@@ -734,8 +750,8 @@ def Fr.world(w: BT.World, +prefix: String) -> BT.World:
       BT.World{Fr.map(BT.Bot, bs, prefix), rs, ps, hs, Fr.map(BT.Routine, ro, prefix), Fr.map(BT.Mem, ms, prefix), pe,
         Fr.map(String, sp, prefix), Fr.map(BT.Hops, ho, prefix), Fr.map(Nat, ta, prefix), Fr.map(BT.Page, pg, prefix), Fr.map(String, tk, prefix)}
 
-def Fr.ext.spec(bw: List<&2, M.Ext>, +prefix: String, es: List<&2, M.Entry>) -> List<&2, M.Ext>:
-  [M.Ext{Fr.world(M.Ext.world(M.Ext.of(bw)), prefix), Fr.index(List.reverse(&2, M.Entry, es), Map.new(&2, List<&2, M.Entry>))}]
+def Fr.ext.spec(+bw: List<&2, M.Ext>, +prefix: String, es: List<&2, M.Entry>) -> List<&2, M.Ext>:
+  [M.Ext{Fr.world(M.Ext.world(M.Ext.of(bw)), prefix), Fr.index(List.reverse(&2, M.Entry, es), Map.new(&2, List<&2, M.Entry>)), M.Ext.mail(M.Ext.of(bw))}]
 
 # The index without the link's entries, without walking the rest. An entry
 # is filed (M.Idx.post) under its thread, under its sender's key when
@@ -823,7 +839,7 @@ def Fr.by(+by: Map<&2, List<&2, M.Entry>>, +prefix: String) -> Map<&2, List<&2, 
 
 def Fr.ext(bw: List<&2, M.Ext>, +prefix: String) -> List<&2, M.Ext>:
   +x = M.Ext.of(bw)
-  [M.Ext{Fr.world(M.Ext.world(x), prefix), Fr.by(M.Ext.by(x), prefix)}]
+  [M.Ext{Fr.world(M.Ext.world(x), prefix), Fr.by(M.Ext.by(x), prefix), M.Ext.mail(x)}]
 
 # the settings a link's things leave behind: the work their threads had
 # (WorkSet's bg.<link>~... and watch.<link>~...); the rest stay

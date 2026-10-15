@@ -213,7 +213,7 @@ def main() -> IO(Unit):
     C.Check.str("found numbered", hits(RF.Refs.found(s, "t100-8", ">fix-perf-lag-9")), "thread:t100-9:>fix-perf-lag-9 ")
     C.Check.str("agent block", yes(String.contains(RF.Refs.agent(s, "t100-8", "ask @Tofu"), "<references>\n@Tofu is the bot \"Tofu\"")), "yes")
     C.Check.str("agent plain", RF.Refs.agent(s, "t100-8", "no refs here"), "no refs here")
-    C.Check.str("mention wakes and posts", ch.tags(said), "MessagePosted TurnChanged BotWoke MessagePosted TurnChanged RoomPosted BotWoke MessagePosted TurnChanged | ")
+    C.Check.str("mention wakes and posts", ch.tags(said), "MessagePosted TurnChanged BotWoke MessagePosted MessageFrom TurnChanged RoomPosted BotWoke MessagePosted MessageFrom TurnChanged | ")
     C.Check.str("mention sent again sets off nothing", st.tags(BH.Bots.hub(run(s, said), 1021n, 1, req("turn.start", "{\"thread\":\"t100-8\",\"text\":\"@Miso look\",\"msg\":\"m1\"}"))), "| ")
     C.Check.str("summary clean", RF.Sum.clean("  Tiles  redraw.\nMore"), "Tiles redraw.")
     C.Check.str("summary due", yes(RF.Sum.due(s, "t100-8", 1010n)), "yes")

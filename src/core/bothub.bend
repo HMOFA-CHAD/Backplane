@@ -1,4 +1,5 @@
 import Base
+import ./mail.bend as ML
 import ./json.bend as J
 import ./model.bend as M
 import ./codec.bend as C
@@ -234,8 +235,8 @@ def Bots.msg.id(+from: String, +msg: String) -> String:
 # a message into a bot's thread, delivered at once (B.Hub.deliver: a
 # running turn takes it); its id names the sender for the link visuals
 def Bots.inbox(+s: M.State, +now: Nat, +from: String, +to: String, +msg: String, +text: String) -> B.Step:
-  B.Hub.deliver(B.Hub.running(B.Hub.thread(s, to)), M.Worktree.pending(B.Hub.thread(s, to), now), s, now, to,
-    Bots.msg.id(from, msg), M.User{}, text)
+  B.Origin.step(B.Hub.deliver(B.Hub.running(B.Hub.thread(s, to)), M.Worktree.pending(B.Hub.thread(s, to), now), s, now, to,
+    Bots.msg.id(from, msg), M.User{}, text), to, Bots.msg.id(from, msg), ML.Mail.classify(M.Link.from(Bots.msg.id(from, msg)), Bots.msg.id(from, msg), False{}, text), now)
 
 # wake a bot with a message at a conversation depth
 def Bots.wake(+s: M.State, +now: Nat, +from: String, +bot: BT.Bot, +msg: String, +text: String, +hop: Nat) -> B.Step:
@@ -522,10 +523,16 @@ def Bots.delete.k(live: Bool, +s: M.State, +now: Nat, +client: U32, +id: String,
       Bots.err(client, id, "no such bot")
 
 # a person talks to a bot: the conversation starts over at hop 0
+# The person's chat shares wake's delivery behavior, but is not inbound
+# mail. Bypass provenance even when the person types an envelope prefix.
+def Bots.person(+s: M.State, +now: Nat, +bot: BT.Bot, +msg: String, +text: String) -> B.Step:
+  B.Step.before([M.BotWoke{BT.Bot.id(bot), 0n, now}], Nil{},
+    B.Hub.deliver(B.Hub.running(B.Hub.thread(s, BT.Bot.thread(bot))), M.Worktree.pending(B.Hub.thread(s, BT.Bot.thread(bot)), now), s, now, BT.Bot.thread(bot), msg, M.User{}, text))
+
 def Bots.say.id(+mid: String, live: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +bot: String, +text: String) -> B.Step:
   match live:
     case True{}:
-      B.Step.before(Nil{}, [B.Reply.ok(client, id)], Bots.wake(s, now, "", Bots.bot(s, bot), mid, text, 0n))
+      B.Step.before(Nil{}, [B.Reply.ok(client, id)], Bots.person(s, now, Bots.bot(s, bot), mid, text))
     case False{}:
       Bots.err(client, id, "no such bot")
 

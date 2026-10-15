@@ -1,4 +1,5 @@
 import Base
+import ./src/core/mail.bend as ML # mail 1
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
 import ./src/core/sched.bend as SCH
@@ -8363,3 +8364,101 @@ law draft_stale_empty_never:
 law draft_stale_last:
   {U.Draft.last([M.Msg{"m4", "t1", M.Assistant{}, "reply", 4n}, M.Msg{"m3", "t2", M.User{}, "elsewhere", 3n}, M.Msg{"m2", "t1", M.User{}, "b", 2n}, M.Msg{"m1", "t1", M.User{}, "a", 1n}], "t1") == Some{"b"} : Maybe<&2, String>}
 # ---- end sent-draft ----
+
+# ---- mail 1 ----
+# Pair symmetry and unread are concrete witnesses; guard idempotence is
+# general. Full fold idempotence, ordering and exact counts are exercised
+# with late mail and 20k headers in test/mail_test.bend.
+law mail_route_person_empty:
+  for +from: String
+  for +to: String
+  {ML.Mail.route(ML.Origin{from, "person", ""}, to) == "" : String}
+
+law mail_route_thread_pair:
+  {ML.Mail.route(ML.Origin{"thread:a", "thread", ""}, "bot:b") == ML.Mail.route(ML.Origin{"bot:b", "bot", ""}, "thread:a") : String}
+
+law mail_route_launch:
+  for +child: String
+  for +to: String
+  {ML.Mail.route(ML.Origin{child, "launch", ""}, to) == "launch:" ++ ML.Addr.thread(child) : String}
+
+law mail_route_room:
+  {ML.Mail.route(ML.Origin{"bot:a", "room", "r"}, "bot:b") == "room:r" : String}
+
+law mail_route_system:
+  for +to: String
+  {ML.Mail.route(ML.Origin{"backplane", "carry", ""}, to) == "system:" ++ ML.Addr.bot(to) : String}
+
+law mail_want_completed_fyi:
+  for +own: Bool
+  for +direct: Bool
+  for +mentioned: Bool
+  {ML.Mail.want("launch", "", ML.Flags{"completed", own, direct, mentioned}) == "fyi" : String}
+
+law mail_want_failed_act:
+  {ML.Mail.want("launch", "", ML.Flags{"failed", False{}, False{}, False{}}) == "act" : String}
+
+law mail_want_given_wins:
+  for +kind: String
+  for +flags: ML.Flags
+  {ML.Mail.want(kind, "fyi", flags) == "fyi" : String}
+
+law mail_want_given_act:
+  for +kind: String
+  for +flags: ML.Flags
+  {ML.Mail.want(kind, "act", flags) == "act" : String}
+
+law mail_want_room_fyi:
+  {ML.Mail.want("room", "", ML.Flags{"", False{}, False{}, False{}}) == "fyi" : String}
+
+law mail_want_mention_act:
+  {ML.Mail.want("room", "", ML.Flags{"", False{}, False{}, True{}}) == "act" : String}
+
+law mail_want_own_request:
+  {ML.Mail.want("task", "", ML.Flags{"", True{}, False{}, False{}}) == "act" : String}
+
+law mail_want_wake_act:
+  {ML.Mail.want("wake", "", ML.Flags{"", False{}, False{}, False{}}) == "act" : String}
+
+law mail_want_lost_act:
+  {ML.Mail.want("lost", "", ML.Flags{"", False{}, False{}, False{}}) == "act" : String}
+
+law mail_want_deploy_own:
+  {ML.Mail.want("deploy", "", ML.Flags{"", True{}, False{}, False{}}) == "act" : String}
+
+law mail_want_lock_own:
+  {ML.Mail.want("lock", "", ML.Flags{"", True{}, False{}, False{}}) == "act" : String}
+
+law mail_want_status_fyi:
+  {ML.Mail.want("deploy", "", ML.Flags{"", False{}, False{}, False{}}) == "fyi" : String}
+
+law mail_want_routine_act:
+  {ML.Mail.want("routine", "", ML.Flags{"", False{}, False{}, False{}}) == "act" : String}
+
+law mail_want_hook_act:
+  {ML.Mail.want("hook", "", ML.Flags{"", False{}, False{}, False{}}) == "act" : String}
+
+law mail_want_direct_act:
+  {ML.Mail.want("thread", "", ML.Flags{"", False{}, True{}, False{}}) == "act" : String}
+
+law mail_want_person_act:
+  {ML.Mail.want("person", "", ML.Flags{"", False{}, True{}, False{}}) == "act" : String}
+
+law mail_post_idempotent:
+  for +b: ML.Box
+  for +m: ML.Mail
+  {ML.Box.mail_guard(True{}, b, m) == b : ML.Box}
+
+law mail_unread_after_post:
+  {ML.Box.unread(ML.Box.mail(ML.Box.empty(), ML.Mail{"m", "c", "person", "bot:a", "thread", "", "act", "hi", 2n, 1n}), "a") == 1n : Nat}
+
+# Adding provenance never changes delivery effects.
+law mail_origin_keeps_outputs:
+  for +st: H.Step
+  for thread: String
+  for msg: String
+  for origin: ML.Origin
+  for at: Nat
+  {H.Step.outs_of(H.Origin.step(st, thread, msg, origin, at)) == H.Step.outs_of(st) : List<&2, H.Out>}
+
+# ---- end mail 1 ----

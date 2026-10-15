@@ -3,6 +3,7 @@ import ./bot.bend as BT
 import ./json.bend as J
 import ./ubop.bend as UO
 import ./locks.bend as LK
+import ./mail.bend as ML
 
 # The product's state, event-sourced. Every change is a Change appended to
 # the log; the read model is `replay(log)`. Events are persisted forever:
@@ -280,6 +281,14 @@ type Change is Data:
   # takes it away. Folded into the bot world like memory
   TaskSet{bot: String, slug: String, json: String, at: Nat}
   TaskDeleted{bot: String, slug: String, at: Nat}
+  MessageFrom{thread: String, msg: String, from: String, kind: String, ref: String, at: Nat}
+  ConvSet{id: String, subject: String, kind: String, parts: String, project: String, tags: String, at: Nat}
+  MailPosted{id: String, conv: String, from: String, to: String, kind: String, ref: String, want: String, head: String, size: Nat, at: Nat}
+  MailMarked{bot: String, conv: String, status: String, seen: Nat, until: Nat, at: Nat}
+  MailTagged{bot: String, conv: String, tags: String, at: Nat}
+  RunSet{thread: String, bot: String, conv: String, mail: String, at: Nat}
+  CharterSet{bot: String, text: String, by: String, at: Nat}
+  DecisionLogged{id: String, bot: String, conv: String, run: String, text: String, reason: String, at: Nat}
 
 # the later of two times. Base's Nat.max recurses once per unit and
 # overflows at epoch scale; Nat.is_ge compiles to a machine comparison.
@@ -895,30 +904,41 @@ type QItem is Data:
 # what the read model keeps behind its last field: the bots' world, and
 # the entries filed by thread (Idx)
 type Ext is Data:
-  Ext{world: BT.World, by: Map<&2, List<&2, Entry>>}
+  Ext{world: BT.World, by: Map<&2, List<&2, Entry>>, mail: List<&2, ML.Box>}
 
 def Ext.of(bw: List<&2, Ext>) -> Ext:
-  Maybe.default(&2, Ext, List.head(&2, Ext, bw), Ext{BT.World.empty(), Map.new(&2, List<&2, Entry>)})
+  Maybe.default(&2, Ext, List.head(&2, Ext, bw), Ext{BT.World.empty(), Map.new(&2, List<&2, Entry>), Nil{}})
 
 def Ext.world(x: Ext) -> BT.World:
   match x:
-    case Ext{w, _}:
+    case Ext{w, _, _}:
       w
 
 def Ext.by(x: Ext) -> Map<&2, List<&2, Entry>>:
   match x:
-    case Ext{_, by}:
+    case Ext{_, by, _}:
       by
 
 def Ext.with_world(f: BT.World -> BT.World, x: Ext) -> Ext:
   match x:
-    case Ext{w, by}:
-      Ext{f(w), by}
+    case Ext{w, by, mail}:
+      Ext{f(w), by, mail}
 
 def Ext.post(x: Ext, +e: Entry) -> Ext:
   match x:
-    case Ext{w, by}:
-      Ext{w, Idx.post(by, e)}
+    case Ext{w, by, mail}:
+      Ext{w, Idx.post(by, e), mail}
+
+def Ext.mail(x: Ext) -> List<&2, ML.Box>:
+  match x:
+    case Ext{_, _, mail}: mail
+
+def Ext.mail_box(x: Ext) -> ML.Box:
+  Maybe.default(&2, ML.Box, List.head(&2, ML.Box, Ext.mail(x)), ML.Box.empty())
+
+def Ext.with_mail(f: ML.Box -> ML.Box, x: Ext) -> Ext:
+  match x:
+    case Ext{w, by, mail}: Ext{w, by, [f(Maybe.default(&2, ML.Box, List.head(&2, ML.Box, mail), ML.Box.empty()))]}
 
 type State is Data:
   State{
@@ -940,7 +960,7 @@ type State is Data:
   }
 
 def State.empty() -> State:
-  State{Map.new(&2, Project), Map.new(&2, Thread), Nil{}, 0n, Map.new(&2, Task), Map.new(&2, String), Map.new(&2, List<&2, QItem>), Map.new(&2, Ask), Map.new(&2, Device), Map.new(&2, Nav), [Ext{BT.World.empty(), Map.new(&2, List<&2, Entry>)}]}
+  State{Map.new(&2, Project), Map.new(&2, Thread), Nil{}, 0n, Map.new(&2, Task), Map.new(&2, String), Map.new(&2, List<&2, QItem>), Map.new(&2, Ask), Map.new(&2, Device), Map.new(&2, Nav), [Ext{BT.World.empty(), Map.new(&2, List<&2, Entry>), Nil{}}]}
 
 # apply f to the thread at `id` (a blank, hidden thread when absent)
 def State.thread.fin(f: Thread -> Thread, ps: Map<&2, Project>, es: List<&2, Entry>, n: Nat, tk: Map<&2, Task>, sg: Map<&2, String>, qu: Map<&2, List<&2, QItem>>, ak: Map<&2, Ask>, dv: Map<&2, Device>, nv: Map<&2, Nav>, bw: List<&2, Ext>, id: String, r: Map<&2, Thread> & Thread) -> State:
@@ -1754,6 +1774,56 @@ def State.uberop(+s: State, +uid: String, +origin: String, +n: Nat, +stamp: Stri
   State.uberop.k(Bool.and(Nat.is_eq(n, Nat.add(Switch.num(Setting.get(s, UO.Ub.key.vv(uid, origin), "0"), 0n), 1n)), Bool.not(String.is_empty(origin))),
     s, uid, origin, n, stamp, op, at)
 
+# Mail is held behind Ext's list so the native state stays below arity 255.
+def State.mail(s: State) -> ML.Box:
+  match s:
+    case State{_, _, _, _, _, _, _, _, _, _, bw}: Ext.mail_box(Ext.of(bw))
+
+def State.with_mail(f: ML.Box -> ML.Box, s: State) -> State:
+  match s:
+    case State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}:
+      State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, [Ext.with_mail(f, Ext.of(bw))]}
+
+def State.mail_end(state: TurnState, +s: State, +thread: String) -> State:
+  match state:
+    case Completed{}: State.with_mail((b => ML.Box.run_end(b, thread)), s)
+    case Failed{}: State.with_mail((b => ML.Box.run_end(b, thread)), s)
+    case Interrupted{}: State.with_mail((b => ML.Box.run_end(b, thread)), s)
+    case _: s
+
+def MailRoom.parts(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}: ["person"]
+    case h <> t: ("bot:" ++ h) <> MailRoom.parts(t)
+
+def State.mail_room(+s: State, +id: String, +name: String, +members: String, +at: Nat) -> State:
+  State.world((w => BT.World.room_set(w, id, name, members, at)),
+    State.with_mail((b => ML.Box.conv_set(b, "room:" ++ id, name, "room", MailRoom.parts(BT.Room.members.of(members)), "", Nil{}, at)), s))
+
+def State.bots(s: State) -> BT.World:
+  match s:
+    case State{_, _, _, _, _, _, _, _, _, _, bw}:
+      State.bots.k(bw)
+
+# Direct legacy rooms have no RoomSet; derive both participants once.
+def MailRoom.dm_parts(xs: List<&2, String>, +b: ML.Box) -> List<&2, String>:
+  match xs:
+    case a <> c <> Nil{}: [ML.Box.sender(b, a), ML.Box.sender(b, c)]
+    case _: Nil{}
+
+def MailRoom.dm_seed(seed: Bool, +b: ML.Box, +room: String, +at: Nat) -> ML.Box:
+  match seed:
+    case False{}: b
+    case True{}: ML.Box.conv_set(b, "room:" ++ room, room, "room", MailRoom.dm_parts(String.split(String.drop(room, 3n), ':'), b), "", Nil{}, at)
+
+def MailRoom.post(+b: ML.Box, +id: String, +room: String, +from: String, +text: String, +at: Nat) -> ML.Box:
+  ML.Box.mail(MailRoom.dm_seed(Bool.and(String.starts_with(room, "dm:"), String.is_empty(ML.Conv.id(ML.Box.conv(b, "room:" ++ room)))), b, room, at),
+    ML.Mail{id, "room:" ++ room, ML.Box.sender(b, from), "room:" ++ room, "room", room, "fyi", ML.Mail.head(text), ML.Mail.text_size(text), at})
+
+def State.mail_post(+s: State, +id: String, +room: String, +from: String, +text: String, +hop: Nat, +at: Nat) -> State:
+  State.world((w => BT.World.posted(w, BT.Post{id, room, from, text, hop, at})),
+    State.with_mail((b => MailRoom.post(b, id, room, from, text, at)), s))
+
 def State.apply.go(s: State, e: Change) -> State:
   match e:
     case ProjectCreated{id, title, root, at}:
@@ -1766,8 +1836,8 @@ def State.apply.go(s: State, e: Change) -> State:
       State.thread((t => Thread.renamed(title, t)), s, id)
     case MessagePosted{+thread, msg, role, text, +at}:
       State.message(s, thread, msg, role, text, at)
-    case TurnChanged{+thread, state, +at}:
-      State.thread((t => Thread.turned(state, at, t)), s, thread)
+    case TurnChanged{+thread, +state, +at}:
+      State.mail_end(state, State.thread((t => Thread.turned(state, at, t)), s, thread), thread)
     case PendingChanged{+thread, count, _}:
       State.thread((t => Thread.pending_set(count, t)), s, thread)
     case ActivityLogged{thread, act, tone, kind, summary, at}:
@@ -1820,16 +1890,16 @@ def State.apply.go(s: State, e: Change) -> State:
       State.thread((t => Thread.unrooted(t)), s, id)
     case UsageSet{+th, used, window, _}:
       State.usage(s, th, used, window)
-    case BotSet{id, name, thread, look, persona, at}:
-      State.world((w => BT.World.bot_set(w, id, name, thread, look, persona, at)), s)
-    case BotDeleted{id, _}:
-      State.world((w => BT.World.bot_deleted(w, id)), s)
+    case BotSet{+id, +name, thread, look, persona, at}:
+      State.world((w => BT.World.bot_set(w, id, name, thread, look, persona, at)), State.with_mail((b => ML.Box.bot_named(b, id, name)), s))
+    case BotDeleted{+id, _}:
+      State.world((w => BT.World.bot_deleted(w, id)), State.with_mail((b => ML.Box.bot_deleted(b, id)), s))
     case RoomSet{id, name, members, at}:
-      State.world((w => BT.World.room_set(w, id, name, members, at)), s)
+      State.mail_room(s, id, name, members, at)
     case RoomDeleted{id, _}:
       State.world((w => BT.World.room_deleted(w, id)), s)
     case RoomPosted{id, room, from, text, hop, at}:
-      State.world((w => BT.World.posted(w, BT.Post{id, room, from, text, hop, at})), s)
+      State.mail_post(s, id, room, from, text, hop, at)
     case HookSet{id, bot, name, revoked, at}:
       State.world((w => BT.World.hook_set(w, id, bot, name, revoked, at)), s)
     case HookHit{id, at}:
@@ -1848,6 +1918,22 @@ def State.apply.go(s: State, e: Change) -> State:
       State.world((w => BT.World.task_set(w, bot, slug, json)), s)
     case TaskDeleted{bot, slug, _}:
       State.world((w => BT.World.task_del(w, bot, slug)), s)
+    case MessageFrom{thread, msg, from, kind, ref, _}:
+      State.with_mail((b => ML.Box.origin(b, thread, msg, ML.Origin{from, kind, ref})), s)
+    case ConvSet{id, subject, kind, parts, project, tags, at}:
+      State.with_mail((b => ML.Box.conv_set(b, id, subject, kind, BT.Room.members.of(parts), project, BT.Room.members.of(tags), at)), s)
+    case MailPosted{id, conv, from, to, kind, ref, want, head, size, at}:
+      State.with_mail((b => ML.Box.mail(b, ML.Mail{id, conv, from, to, kind, ref, want, head, size, at})), s)
+    case MailMarked{bot, conv, status, seen, until, at}:
+      State.with_mail((b => ML.Box.marked(b, bot, conv, status, seen, until)), s)
+    case MailTagged{bot, conv, tags, _}:
+      State.with_mail((b => ML.Box.tagged(b, bot, conv, BT.Room.members.of(tags))), s)
+    case RunSet{thread, bot, conv, mail, at}:
+      State.with_mail((b => ML.Box.run_set(b, thread, bot, conv, mail, at)), s)
+    case CharterSet{bot, text, _, _}:
+      State.with_mail((b => ML.Box.charter_set(b, bot, text)), s)
+    case DecisionLogged{id, bot, conv, run, text, reason, at}:
+      State.with_mail((b => ML.Box.decision(b, ML.Decision{id, bot, conv, run, text, reason, at})), s)
     case SpaceSet{bot, spec, _}:
       State.world((w => BT.World.space_set(w, bot, spec)), s)
     case PeerSet{id, name, url, revoked, at}:
@@ -1894,11 +1980,6 @@ def State.apply.go(s: State, e: Change) -> State:
       State.queue((qs => Queue.drop(qs, msg)), s, th)
     case ProjectOrdered{+id, +key, _}:
       State.nav((x => Nav.keyed(x, "active", key)), s, Nav.project(id))
-
-def State.bots(s: State) -> BT.World:
-  match s:
-    case State{_, _, _, _, _, _, _, _, _, _, bw}:
-      State.bots.k(bw)
 
 # one event folded into the read model; every event bumps the sequence
 def State.apply(s: State, e: Change) -> State:
