@@ -8957,3 +8957,38 @@ law ime_commit_event_id:
   {WINL.Win.junk(WINL.Win.ev(14, 7, 0, 0, 0)) == False{} : Bool}
 
 # ---- end i18n ime ----
+# ---- mail 2a ----
+import ./src/core/mailbody.bend as MB
+import ./src/core/ref.bend as MBR
+
+# JSON escaping's no-interior-newline property is exercised on long,
+# adversarial strings in mailbody_test; this law fixes framing exactly.
+law body_line_terminated:
+  for +b: MB.Body
+  {MB.Body.line(b) == J.Json.show(MB.Body.encode(b)) ++ "\n" : String}
+
+# A useful structural no-body property: changing text cannot change any
+# metadata/header Change, for arbitrary conversation, header and texts.
+law body_header_omits_text:
+  for +c: ML.Conv
+  for +m: ML.Mail
+  for a: String
+  for b: String
+  {MB.Body.changes(MB.Body{c, m, a}) == MB.Body.changes(MB.Body{c, m, b}) : List<&2, M.Change>}
+
+law recover_seen_empty:
+  for +b: MB.Body
+  for +box: ML.Box
+  for seen: {ML.Box.has(box, ML.Mail.id(MB.Body.mail(b))) == True{} : Bool}
+  {MB.Body.recover(b, box) == Nil{} : List<&2, M.Change>}
+
+law recover_missing_header:
+  for +c: ML.Conv
+  for +m: ML.Mail
+  for text: String
+  {MB.Body.recover.new(True{}, MB.Body{c, m, text}) == [MB.Body.metadata(c), MB.Body.header(m)] : List<&2, M.Change>}
+
+law body_path_encoded_segment:
+  for +home: String
+  for +conv: String
+  {MB.Body.path(home, conv) == home ++ "/mail/" ++ MBR.Ref.pct(conv) ++ ".jsonl" : String}

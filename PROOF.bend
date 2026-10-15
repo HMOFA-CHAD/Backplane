@@ -10717,6 +10717,24 @@ def Laws.tok_add_one_turn():
   {==}
 
 def Laws.tok_add_no_cost():
+# ---- mail 2a ----
+import ./src/core/mailbody.bend as MB
+import ./src/core/ref.bend as MBR
+
+def Laws.body_line_terminated(b):
+  {==}
+
+def Laws.body_header_omits_text(c, m, a, b):
+  {==}
+
+def Laws.recover_seen_empty(b, box, seen):
+  %seen : {MB.Body.recover.guard(_, b, box) == Nil{} : List<&2, M.Change>}
+  {==}
+
+def Laws.recover_missing_header(c, m, text):
+  {==}
+
+def Laws.body_path_encoded_segment(home, conv):
   {==}
 
 # ---- usage-boat-cap ----
