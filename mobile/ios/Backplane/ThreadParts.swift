@@ -30,12 +30,12 @@ struct StatusDot: View {
         switch status ?? "" {
         case "approval": Image(systemName: "hand.raised.fill").foregroundStyle(PhaseColor.warn).font(.caption)
         case "input": Image(systemName: "questionmark.bubble.fill").foregroundStyle(PhaseColor.input).font(.caption)
-        case "working": ProgressView().controlSize(.mini).tint(PhaseColor.accent)
+        // ("queued" from an older hub: nothing waits now, it is working)
+        case "working", "queued": ProgressView().controlSize(.mini).tint(PhaseColor.accent)
         // the turn is over, its subagents still at work ("waiting" from an older hub)
         case "monitoring", "waiting": Image(systemName: "arrow.triangle.branch").foregroundStyle(PhaseColor.waiting).font(.caption)
                 .symbolEffect(.pulse)
         case "failed": Image(systemName: "exclamationmark.circle.fill").foregroundStyle(PhaseColor.bad)
-        case "queued": Image(systemName: "clock").foregroundStyle(PhaseColor.queued).font(.caption)
         case "complete": dot(PhaseColor.ok)
         case "stopped", "idle", "ready": dot(PhaseColor.faint)
         default:
@@ -289,7 +289,7 @@ private func subColor(_ state: String) -> Color {
     case "done", "reporting", "held": PhaseColor.ok
     case "watching", "launching", "waiting on", "waiting", "needs you": PhaseColor.accent
     // "" is the "N done" toggle row (subs.bend's Subs.done.toggle): neutral
-    case "", "queued": PhaseColor.faint
+    case "", "starting", "queued": PhaseColor.faint
     case "cancelled", "cancelling": PhaseColor.warn
     default: PhaseColor.bad
     }

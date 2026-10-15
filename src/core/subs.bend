@@ -313,7 +313,7 @@ def Subs.latest(live: Bool, +st: M.State, +th: String) -> String:
     case False{}:
       ""
 
-# Ask/approval and queued/monitored work are derived from the same thread phase as the sidebar.
+# Ask/approval and monitored work are derived from the same thread phase as the sidebar.
 def Subs.needs(p: M.Phase) -> Bool:
   match p:
     case M.PhApproval{}:
@@ -326,8 +326,6 @@ def Subs.needs(p: M.Phase) -> Bool:
 def Subs.phase.live(p: M.Phase) -> Bool:
   match p:
     case M.PhWorking{}:
-      True{}
-    case M.PhQueued{}:
       True{}
     case M.PhMonitoring{_}:
       True{}
@@ -405,8 +403,6 @@ def Subs.launch.word(p: M.Phase, fallback: String) -> String:
   match p:
     case M.PhWorking{}:
       "running"
-    case M.PhQueued{}:
-      "queued"
     case M.PhMonitoring{_}:
       "watching"
     case M.PhApproval{}:
