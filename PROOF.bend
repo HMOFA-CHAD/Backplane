@@ -10768,6 +10768,7 @@ def Laws.tok_add_one_turn():
   {==}
 
 def Laws.tok_add_no_cost():
+def Laws.card_task_status_agrees():
   {==}
 
 # ---- mail 2a ----

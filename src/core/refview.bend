@@ -5,7 +5,6 @@ import ./ref.bend as R
 import ./far.bend as FR
 import ./fm.bend as FM
 import ./json.bend as J
-import ./tboard.bend as TB
 
 # Drawing resolves only object maps and indexed settings, never timelines.
 type Card is Data:
@@ -65,12 +64,21 @@ def Card.room(+st: M.State, +r: R.Ref, +b: BT.Room) -> Maybe<&2, Card>:
 def Card.routine(+st: M.State, +r: R.Ref, +b: BT.Routine) -> Maybe<&2, Card>:
   Card.accept(BT.Routine.live(b), Card.make(st, r, "repeat", BT.Routine.name(b), BT.Bot.name(BT.World.bot(M.State.bots(st), BT.Routine.bot(b))), Bool.pick(String, BT.Routine.on(b), "on", "off")))
 
-# Read only this indexed item's two drawn fields. Share the board's
-# status normalization; Tb.get would scan every item.
+# A task's status as the board writes it (tboard.bend's Tb.status.norm,
+# law card_task_status_agrees): not imported, since tboard imports the
+# hub and every client would carry it
+def Card.task.status.k(+l: String) -> String:
+  Bool.pick(String, R.Ref.has(["doing", "blocked", "todo", "done", "dropped"], l), l, "todo")
+
+def Card.task.status(+s: String) -> String:
+  Card.task.status.k(String.to_lower(String.take(String.trim(s), 20n)))
+
+# Read only this indexed item's two drawn fields; Tb.get would scan every
+# item.
 def Card.task.json(+st: M.State, +r: R.Ref, +o: Maybe<&2, J.Json>) -> Maybe<&2, Card>:
   match o:
     case None{}: None{}
-    case Some{+j}: Some{Card.make(st, r, "circle-check", J.Json.get_str(j, "title", ""), "", TB.Tb.status.norm(J.Json.get_str(j, "status", "todo")))}
+    case Some{+j}: Some{Card.make(st, r, "circle-check", J.Json.get_str(j, "title", ""), "", Card.task.status(J.Json.get_str(j, "status", "todo")))}
 
 def Card.work.find.go(+ls: List<&2, String>, +id: String, +found: String) -> String:
   match ls:

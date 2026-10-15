@@ -8592,13 +8592,23 @@ def RefNav.fwd.from(u: Ui, +t: RE.Trail) -> Act:
 def RefNav.fwd(+u: Ui) -> Act:
   RefNav.fwd.from(u, Trail.read(u))
 
-def Ui.act.k(i: Nat, u: Ui, +value: String) -> Act:
+# the link actions (178 on: ref-go, ref-back, ref-fwd, ref-copy,
+# ref-copy-web), reached by a native compare, never by peeling 178 cases
+def RefNav.act(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
-    case 178n: RefNav.go(u, value)
-    case 179n: RefNav.back(u)
-    case 180n: RefNav.fwd(u)
-    case 181n: Act{u, [Copy{value}]}
-    case 182n: RefNav.copy.web(R.Ref.parse(value), u)
+    case 0n: RefNav.go(u, value)
+    case 1n: RefNav.back(u)
+    case 2n: RefNav.fwd(u)
+    case 3n: Act{u, [Copy{value}]}
+    case _: RefNav.copy.web(R.Ref.parse(value), u)
+
+def Ui.act.far(far: Bool, i: Nat, u: Ui, +value: String) -> Act:
+  match far:
+    case True{}: RefNav.act(Nat.sub(i, 178n), u, value)
+    case False{}: Bots.act(Nat.sub(i, 77n), u, value)
+
+def Ui.act.k(+i: Nat, u: Ui, +value: String) -> Act:
+  match i:
     case 0n:
       Ui.select(u, value)
     case 1n:
@@ -8752,7 +8762,7 @@ def Ui.act.k(i: Nat, u: Ui, +value: String) -> Act:
     case 76n:
       Ui.on_thread(u, "thread.back")
     case _:
-      Bots.act(Nat.sub(i, 77n), u, value)
+      Ui.act.far(Nat.is_ge(i, 178n), i, u, value)
 
 def Emb.has.k(r: Map<&2, VT.Vt> & Bool) -> Bool:
   (_, b) = r

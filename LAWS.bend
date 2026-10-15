@@ -9079,3 +9079,8 @@ law card_github_pr_no_state:
 law card_person_no_state:
   for st: M.State
   {RC.Card.of(st, REF.Ref.person()) == Some{RC.Card{"backplane://person", "person", "circle-check", "You", "", "", ""}} : Maybe<&2, RC.Card>}
+
+# a task card's status reads as the board's own
+law card_task_status_agrees:
+  {String.join([RC.Card.task.status(" Doing"), RC.Card.task.status("blocked"), RC.Card.task.status("todo"), RC.Card.task.status("DONE "), RC.Card.task.status("dropped"), RC.Card.task.status("later"), RC.Card.task.status("")], ",")
+    == String.join([TBD.Tb.status.norm(" Doing"), TBD.Tb.status.norm("blocked"), TBD.Tb.status.norm("todo"), TBD.Tb.status.norm("DONE "), TBD.Tb.status.norm("dropped"), TBD.Tb.status.norm("later"), TBD.Tb.status.norm("")], ",") : String}
