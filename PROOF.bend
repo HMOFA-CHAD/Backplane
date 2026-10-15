@@ -6912,7 +6912,7 @@ def Laws.rec_release_carry_marker_on():
 def Laws.rec_release_carry_marker_off():
   {==}
 
-def Laws.rec_release_never_drains_queue():
+def Laws.rec_release_takes_held():
   {==}
 
 def Laws.update_wait_busy(now, c, id):

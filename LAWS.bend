@@ -5110,8 +5110,9 @@ law rec_release_carry_marker_on:
 law rec_release_carry_marker_off:
   {Nat.show(H.Lost.running(H.Lost.released(False{}))) ++ "/" ++ Nat.show(List.length(&2, String, H.Resume.ids(H.Lost.released(False{})))) == "0/0" : String}
 
-law rec_release_never_drains_queue:
-  {H.Lost.taken(H.Queue.changes(H.Rec.release(H.Lost.marked(), 9n))) == False{} : Bool}
+# a message an older log held goes with the note's turn: nothing stays held
+law rec_release_takes_held:
+  {H.Lost.taken(H.Queue.changes(H.Rec.release(H.Lost.marked(), 9n))) == True{} : Bool}
 
 law lost_text_not_carry_text:
   for +ls: List<&2, String>
