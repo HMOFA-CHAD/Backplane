@@ -10610,3 +10610,35 @@ def Laws.usage_boat_due_never_read(now):
 
 def Laws.usage_boat_usd_exact():
   {==}
+# ---- i18n cjk ----
+def Laws.cjk_segs_lossless():
+  {==}
+
+def Laws.cjk_segs_lossless_mixed():
+  {==}
+
+def Laws.cjk_segs_lossless_spaces():
+  {==}
+
+def Laws.cjk_segs_lossless_empty():
+  {==}
+
+def Laws.cjk_no_start_stop():
+  {==}
+
+def Laws.cjk_no_end_quote():
+  {==}
+
+def Laws.cjk_kana_break():
+  {==}
+
+def Laws.cjk_ascii_no_break():
+  {==}
+
+def Laws.cjk_terminal_cells():
+  {==}
+
+def Laws.cjk_terminal_combining_cells():
+  {==}
+
+# ---- end i18n cjk ----
