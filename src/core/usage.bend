@@ -45,7 +45,7 @@ def Use.of.k(t: M.Thread, +v: String) -> UseT:
     case M.Thread{+id, _, +ti, _, _, _, _, ar, _, _, _, _, _, _, _, pr, mo, _, _, _, de}:
       UseT{id, Bool.pick(String, String.is_empty(ti), id, ti), pr, mo, Bool.not(Bool.or(ar, de)), M.Usage.used(v), M.Usage.window(v)}
 
-def Use.of(+st: M.State, t: M.Thread) -> UseT:
+def Use.of(+st: M.State, +t: M.Thread) -> UseT:
   Use.of.k(t, M.Setting.get(st, M.Usage.key(M.Thread.id(t)), ""))
 
 def Use.all(+st: M.State, ts: List<&2, M.Thread>) -> List<&2, UseT>:
@@ -87,7 +87,7 @@ def Use.held.note(+used: Nat, +window: Nat) -> String:
 
 def Use.row(u: UseT) -> URow:
   match u:
-    case UseT{_, ti, _, mo, _, n, w}:
+    case UseT{_, ti, _, +mo, _, n, w}:
       URow{ti, Bool.pick(String, String.is_empty(mo), "default", mo) ++ " · " ++ Use.held.note(n, w), ""}
 
 def Use.rows.t(us: List<&2, UseT>) -> List<&2, URow>:
@@ -288,7 +288,7 @@ def Bj.size.k(have: Bool, want: Bool, +t: String) -> String:
 def Bj.size(+m: J.Json, want: Bool) -> String:
   Bj.size.k(J.Json.get_bool(m, "available", False{}), want, J.Json.get_str(m, "type", "?"))
 
-def Bj.sizes(ms: List<&2, J.Json>, want: Bool, +acc: String) -> String:
+def Bj.sizes(ms: List<&2, J.Json>, +want: Bool, +acc: String) -> String:
   match ms:
     case Nil{}:
       acc

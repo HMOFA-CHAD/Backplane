@@ -1200,21 +1200,21 @@ def Mob.usage.btn(none: Bool, +act: String) -> List<&2, J.Json>:
     case False{}:
       [Mob.set.btn("Refresh", act, "", False{})]
 
-def Mob.usage.row(+label: String, r: UZ.URow) -> J.Json:
+def Mob.usage.row(+label: String, +r: UZ.URow) -> J.Json:
   Mob.set.row(label, UZ.URow.note(r), Mob.usage.btn(String.is_empty(UZ.URow.act(r)), UZ.URow.act(r)))
 
 def Mob.usage.go(rs: List<&2, UZ.URow>) -> List<&2, J.Json>:
   match rs:
     case Nil{}:
       Nil{}
-    case r <> t:
+    case +r <> t:
       Mob.usage.row(UZ.URow.label(r), r) <> Mob.usage.go(t)
 
 def Mob.usage.rows(rs: List<&2, UZ.URow>) -> List<&2, J.Json>:
   match rs:
     case Nil{}:
       Nil{}
-    case r <> t:
+    case +r <> t:
       Mob.usage.row("Usage: " ++ UZ.URow.label(r), r) <> Mob.usage.go(t)
 
 def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String, more: List<&2, J.Json>) -> J.Json:

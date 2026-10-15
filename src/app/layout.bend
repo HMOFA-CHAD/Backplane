@@ -3256,7 +3256,7 @@ def Set.keys(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
 # a field for a zone name, Set, and Automatic
 # Usage (src/core/usage.bend): a card of rows, a label and a note each; a
 # row with an action has its button (Refresh) on the right
-def Set.usage.row.k(none: Bool, +ty: Ty, r: UZ.URow, +x: U32, +w: U32, +y: U32) -> Out:
+def Set.usage.row.k(none: Bool, +ty: Ty, +r: UZ.URow, +x: U32, +w: U32, +y: U32) -> Out:
   match none:
     case True{}:
       Set.row(ty, UZ.URow.label(r), UZ.URow.note(r), x, y, w)
@@ -3268,7 +3268,7 @@ def Set.usage.rows(rs: List<&2, UZ.URow>, +ty: Ty, +x: U32, +w: U32, +y: U32) ->
   match rs:
     case Nil{}:
       Out.none()
-    case r <> t:
+    case +r <> t:
       Out.all([Set.usage.row.k(String.is_empty(UZ.URow.act(r)), ty, r, x, w, y), Set.usage.rows(t, ty, x, w, (y + 52 : U32))])
 
 def Set.usage.h(+n: S.Nui) -> U32:

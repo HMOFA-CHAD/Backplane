@@ -868,7 +868,7 @@ def View.tz.auto(on: Bool) -> D.Node:
 
 # Settings > Usage (src/core/usage.bend), the first row titled "Usage: ...";
 # a row with an action has its Refresh button
-def View.usage.row(+label: String, r: UZ.URow) -> D.Node:
+def View.usage.row(+label: String, +r: UZ.URow) -> D.Node:
   View.setrow(label, UZ.URow.note(r), View.usage.btn(String.is_empty(UZ.URow.act(r)), UZ.URow.act(r)))
 
 def View.usage.btn(none: Bool, +act: String) -> List<&2, D.Node>:
@@ -882,14 +882,14 @@ def View.usage.rows.go(rs: List<&2, UZ.URow>) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       Nil{}
-    case r <> t:
+    case +r <> t:
       View.usage.row(UZ.URow.label(r), r) <> View.usage.rows.go(t)
 
 def View.usage.rows(rs: List<&2, UZ.URow>) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       Nil{}
-    case r <> t:
+    case +r <> t:
       View.usage.row("Usage: " ++ UZ.URow.label(r), r) <> View.usage.rows.go(t)
 
 def View.tz.set(+u: U.Ui) -> List<&2, D.Node>:
