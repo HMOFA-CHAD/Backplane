@@ -1570,7 +1570,13 @@ def View.asks.u(u: U.Ui) -> D.Node:
     case U.Ui{+st, +sel, +drafts, _, _, _, _, _, _, _, _, _, _, _, +nf, _, _}:
       View.asks.box(st, sel, U.Str.get(drafts, sel), nf)
 
-def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, String>, +up: String, +term: Bool, hd: List<&2, D.Node>, vo: List<&2, D.Node>, +mic: String) -> D.Node:
+# Away from the timeline's end with something new below (client.bend's
+# Hold.pill): "3 new ↓" stuck to the timeline's foot, a click back down
+def View.hold.pill(+label: String) -> List<&2, D.Node>:
+  Bool.pick(List<&2, D.Node>, String.is_empty(label), Nil{},
+    [D.El{"button", "hold-pill", [D.At{"class", "hold-pill"}, D.At{"data-value", ""}, D.On{"click", "hold-bottom"}], [D.Txt{label}]}])
+
+def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, String>, +up: String, +term: Bool, hd: List<&2, D.Node>, vo: List<&2, D.Node>, +mic: String, +pill: String) -> D.Node:
   match u t:
     case U.Ui{+st, +sel, +drafts, +live, +op, _, +now, _, panel, _, _, _, _, _, +nf, _, +tr} M.Thread{+id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
       +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
@@ -1580,15 +1586,15 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
           D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(nf, id, SB.Subs.rows(st, nf, id, now)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
           D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(tr, st, id, now)), D.Dom.cat(View.sending(pend),
-            View.live.of(st, live, id))))))},
+            D.Dom.cat(View.live.of(st, live, id), View.hold.pill(pill)))))))},
         View.asks.box(st, id, U.Str.get(drafts, sel), nf),
         View.todos(nf, id, U.Todos.shown(st, id, View.running(turn))),
         View.queued(M.Queue.context(M.Queue.items(st, id)), View.running(turn)),
         View.composer.t(st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)]),
         D.Dom.when(term, View.term(U.Term.get(tr, id))))}
 
-def View.thread.h(+u: U.Ui, t: M.Thread, hd: List<&2, D.Node>) -> D.Node:
-  View.thread.p(u, t, U.Ui.pending(u, U.Ui.sel(u)), U.Ui.atts(u, U.Ui.sel(u)), U.Ui.uploading(u, U.Ui.sel(u)), U.Ui.flag(u, "term"), hd, D.Dom.cat(View.btw(u), View.voice(u, U.Ui.sel(u))), View.mic.of(u, U.Ui.sel(u)))
+def View.thread.h(+u: U.Ui, +t: M.Thread, hd: List<&2, D.Node>) -> D.Node:
+  View.thread.p(u, t, U.Ui.pending(u, U.Ui.sel(u)), U.Ui.atts(u, U.Ui.sel(u)), U.Ui.uploading(u, U.Ui.sel(u)), U.Ui.flag(u, "term"), hd, D.Dom.cat(View.btw(u), View.voice(u, U.Ui.sel(u))), View.mic.of(u, U.Ui.sel(u)), U.Hold.pill(u, M.Thread.id(t)))
 
 def View.thread(+u: U.Ui, t: M.Thread) -> D.Node:
   View.thread.h(u, t, Nil{})

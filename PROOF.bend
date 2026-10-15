@@ -10991,3 +10991,21 @@ def Laws.mail_index_overflow_rejected():
 def Laws.mail_index_hash_empty(h):
   {==}
 # ---- end mail index ----
+# ---- scroll-stable: reading while a thread grows ----
+def Laws.hold_at_end_zero():
+  {==}
+
+def Laws.hold_label_nothing():
+  {==}
+
+def Laws.hold_fresh_seen(e, t, n):
+  %Equal.sym(Bool, String.eq(M.Idx.id(e), M.Idx.id(e)), True{}, Laws.string_eq_refl(M.Idx.id(e))) : {U.Hold.fresh(e <> t, Bool.or(_, Nat.is_ge(n, U.Hold.most())), M.Idx.id(e), n) == n : Nat}
+  {==}
+
+def Laws.hold_off_still(off, t0, t1, over, h):
+  %Equal.sym(Bool, Nat.is_le(Nat.sub(Nat.add(off, t1), t0), over), True{}, h) : {Bool.pick(Nat, _, Nat.sub(Nat.add(off, t1), t0), over) == Nat.sub(Nat.add(off, t1), t0) : Nat}
+  {==}
+
+def Laws.hold_end_follows(hold, off, top, over):
+  {==}
+# ---- end scroll-stable ----

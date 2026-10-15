@@ -2452,21 +2452,54 @@ def TL.mark.y(ls: List<&2, TLine>, +acc: U32) -> U32:
 def TL.jump.sc(+y: U32, +over: U32) -> U32:
   U32.dim(over, U32.min(U32.dim(y, 24), over))
 
+# Reading while the thread grows (client.bend's Hold)
+# ---------------------------------------------------
+# Scrolled up (sc > 0), the timeline holds what is read where it is: the
+# last frame's place rides on a hit no pointer reaches ("tl-at":
+# "sc|off|top|first entry"), nui.bend's Hold.take keeps it as "@tl.at"
+# (with the thread) and the next frame starts from its `off` while sc is
+# still the one it answered, the top's move made good (Hold.off): entries
+# and streamed text below, the asks, todo card and composer under the
+# timeline, and panels above it move nothing on screen. sc answered is
+# what is now below the view. At the end (sc 0) the timeline follows.
+
+# a field of the place ("" past the last)
+def TL.hold.at(+hold: String, +i: Nat) -> String:
+  Maybe.default(&2, String, List.get(&2, String, String.split(hold, '|'), i), "")
+
+def TL.hold.num(+s: String) -> Nat:
+  U32.to_nat(Maybe.default(&2, U32, U32.read(s), 0))
+
+def TL.hold.k(still: Bool, +hold: String, +off: U32, +top: U32, +over: U32) -> U32:
+  match still:
+    case True{}:
+      U32.from_nat(U.Hold.off(TL.hold.num(TL.hold.at(hold, 1n)), TL.hold.num(TL.hold.at(hold, 2n)), U32.to_nat(top), U32.to_nat(over)))
+    case False{}:
+      off
+
+# the pixels hidden above the view: from the last frame's place while it
+# was taken at this sc (and sc is not 0), else from sc
+def TL.hold.off(+hold: String, +sc: U32, +off: U32, +top: U32, +over: U32) -> U32:
+  TL.hold.k(Bool.and(U32.is_ne(sc, 0), String.eq(TL.hold.at(hold, 0n), U32.show(sc))), hold, off, top, over)
+
 # the timeline sits between top and the composer, pinned to the bottom;
 # sc scrolls up into history. `off` is how many pixels of it are hidden
-# above the view (never negative: all arithmetic stays unsigned-safe)
-def Lay.timeline(+ty: Ty, +ls: List<&2, TLine>, +x0: U32, +x1: U32, +top: U32, +h: U32, +sc: U32, +sel: TSel, chrome: Out) -> Out:
+# above the view (never negative: all arithmetic stays unsigned-safe).
+# hold: the last frame's place for this thread ("" none); first: the
+# page's first entry
+def Lay.timeline(+ty: Ty, +ls: List<&2, TLine>, +x0: U32, +x1: U32, +top: U32, +h: U32, +sc: U32, +sel: TSel, +hold: String, +first: String, chrome: Out) -> Out:
   +bot = {(h - 132 : U32) : U32}
   +view = {U32.dim(bot, (top + 16 : U32)) : U32}
   +total = TL.height(ls, 0)
   +over = {U32.dim(total, view) : U32}
-  +off = {U32.dim(over, U32.min(sc, over)) : U32}
+  +off = TL.hold.off(hold, sc, U32.dim(over, U32.min(sc, over)), top, over)
+  +sc2 = {Bool.pick(U32, U32.is_eq(sc, 0), 0, (over - off : U32)) : U32}
   +rest = TL.drop(ls, TL.drop.more(ls, 0, off), 0, off)
   +acc = TL.drop.acc(ls, TL.drop.more(ls, 0, off), 0, off)
   +ry = {((top + 16 + acc : U32) - off : U32) : U32}
   Out.all([TL.draw_all(ty, rest, TL.more(rest, ry, bot), D.Clip{x0, top, x1, bot}, x0, x1, ry, bot,
     Nat.sub(List.length(&2, TLine, ls), List.length(&2, TLine, rest)), sel), TL.sel.hit(ty, ls, sel, x0, x1), chrome,
-    Out{Nil{}, [Lay.hit(0, 0, 0, 0, "tl-most", U32.show(over)), Lay.hit(0, 0, 0, 0, "tl-jump", U32.show(TL.jump.sc(TL.mark.y(ls, 0), over))), Lay.hit(0, 0, 0, 0, "tl-clip", U32.show(x0) ++ "," ++ U32.show(top) ++ "," ++ U32.show(x1) ++ "," ++ U32.show(bot))]}])
+    Out{Nil{}, [Lay.hit(0, 0, 0, 0, "tl-at", U32.show(sc2) ++ "|" ++ U32.show(off) ++ "|" ++ U32.show(top) ++ "|" ++ first), Lay.hit(0, 0, 0, 0, "tl-most", U32.show(over)), Lay.hit(0, 0, 0, 0, "tl-jump", U32.show(TL.jump.sc(TL.mark.y(ls, 0), over))), Lay.hit(0, 0, 0, 0, "tl-clip", U32.show(x0) ++ "," ++ U32.show(top) ++ "," ++ U32.show(x1) ++ "," ++ U32.show(bot))]}])
 
 # Terminals over the thread
 # -------------------------
@@ -5886,9 +5919,30 @@ def Lay.composer.a(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String
     Lay.ibutton(ty, D.Clip.all(), (Comp.send_x(ty, x1, send) - 34 : U32), fy, "paperclip", T.Th.soft(), "focus", "attach-path"),
     Lay.attach_field(ty, String.eq(focus, "attach-path"), path, caret, mark, x0, x1, (y - 36 : U32))])
 
+# the page's first entry ("" for none)
+def TL.memo.first(m: TLMemo) -> String:
+  match m:
+    case TLMemo{_, _, its, _}:
+      TL.align.first(its)
+
+# Away from the end with something new below it (client.bend's
+# Hold.pill): "3 new ↓" over the timeline's foot, a click back down
+# ("vw-bottom", nui.bend's Hold.bottom). Square, in the panel's colours.
+def TL.pill(none: Bool, +ty: Ty, +label: String, +x0: U32, +x1: U32, +bot: U32) -> Out:
+  match none:
+    case True{}:
+      Out.none()
+    case False{}:
+      +w = {(Ty.width(ty, 2n, label) + 24 : U32) : U32}
+      +x = {(x0 + U32.shr(U32.dim((x1 - x0 : U32), w)) : U32) : U32}
+      +y = {(bot - 40 : U32) : U32}
+      Out{List.append(&2, R.Op, Lay.box(D.Clip.all(), x, y, w, 28, 0, T.Th.raise(), T.Th.accent()),
+          Ty.text(ty, 2n, label, D.Clip.all(), (x + 12 : U32), y, 28, T.Th.text())),
+        [Lay.hit(x, y, w, 28, "vw-bottom", "")]}
+
 def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: String, +st: M.State, +sel: String, +live: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool,
     +x0: U32, +x1: U32, +h: U32, +sc: U32, pa: Bool, term: Bool, +info: String, +picking: Bool, +pend: List<&2, String>, +rs: List<&2, U.SkillRow>, +now: Nat,
-    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String, pre: List<&2, IME.Run>) -> Out:
+    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String, pre: List<&2, IME.Run>, +hold: String, +pill: String) -> Out:
   match t:
     case M.Thread{id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
       +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
@@ -5922,7 +5976,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       tl ch = Lay.timeline(ty,
         List.concat(&2, TLine, [TL.memo.shown(ty, memo, st, sel, cw, pics), TL.sending(ty, pend, cw),
           TL.live.m(ty, String.is_empty(live), ph, live, TL.memo.lv(memo), cw)]),
-        cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
+        cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, hold, TL.memo.first(memo), Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
           Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
           Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + pl : U32)),
@@ -5933,7 +5987,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
           Lay.asks(ty, asks, draft, pics, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
           Btw.card.if(Bool.not(String.is_empty(bq)), ty, bq, ba, cx0, cx1, (h - 132 - qh - eh - bh + 4 : U32)),
           Lay.picker(picking, ty, U.Models.menu(info, pr), mo, info, pr, cx0, cx1, (h - 128 - eh : U32), (60 + hy : U32), U.Chip.all(info, pr, mo), U.Effort.of(st, sel), moff)])
-      Out.cat(tl, ch)
+      Out.cat(Out.cat(tl, TL.pill(String.is_empty(pill), ty, pill, cx0, cx1, (h - ah - qh - eh - bh - 132 : U32))), ch)
 
 # while files dragged in hover over the window, an accent ring around the
 # composer (placed as Lay.thread.k places it) shows where they drop
@@ -6025,13 +6079,63 @@ def TL.created(t: M.Thread) -> Nat:
     case M.Thread{_, _, _, c, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       c
 
+# A page held while read (client.bend's Hold): scrolled up, the page keeps
+# its first entry ("@tl.pin.<thread>", nui.bend's Hold.take) instead of
+# sliding as entries come in, so nothing leaves above what is read; it
+# grows by at most TL.held.room() entries that way. Back at the end the pin
+# goes and the page is the newest again.
+type NH is Data:
+  NH{left: Nat, room: Nat, seen: Bool, acc: List<&2, M.Entry>}
+
+def TL.held.room() -> Nat:
+  240n
+
+def TL.held.step(own: Bool, +e: M.Entry, +pin: String, st: NH) -> NH:
+  match own st:
+    case True{} NH{_, 0n, s, acc}:
+      NH{0n, 0n, s, acc}
+    case True{} NH{0n, 1n+r, s, acc}:
+      NH{0n, r, Bool.or(s, String.eq(TL.eid(e), pin)), e <> acc}
+    case True{} NH{1n+l, 1n+r, s, acc}:
+      NH{l, r, Bool.or(s, String.eq(TL.eid(e), pin)), e <> acc}
+    case False{} st2:
+      st2
+
+def TL.held.cut(old: Bool, st: NH) -> NH:
+  match old st:
+    case True{} NH{_, _, _, acc}:
+      NH{0n, 0n, True{}, acc}
+    case False{} _:
+      st
+
+# the newest `left` of a thread's entries and on back to the pinned one
+# (TL.newest's walk otherwise)
+def TL.held(es: List<&2, M.Entry>, +th: String, +since: Nat, +pin: String, st: NH) -> List<&2, M.Entry>:
+  match es st:
+    case +_ NH{0n, _, True{}, acc}:
+      acc
+    case +_ NH{_, 0n, _, acc}:
+      acc
+    case Nil{} NH{_, _, _, acc}:
+      acc
+    case +e <> t NH{l, r, s, acc}:
+      TL.held(t, th, since, pin, TL.held.cut(Nat.is_lt(Nat.add(TL.at_of(e), 3600n), since), TL.held.step(TL.mine.or(String.eq(TL.thread_of(e), th), e, th), e, pin, NH{l, r, s, acc})))
+
+def TL.held.or(free: Bool, +es: List<&2, M.Entry>, +th: String, +since: Nat, +pin: String, +left: Nat) -> List<&2, M.Entry>:
+  match free:
+    case True{}:
+      TL.newest(es, th, since, NW{left, Nil{}})
+    case False{}:
+      TL.held(es, th, since, pin, NH{left, Nat.add(left, TL.held.room()), False{}, Nil{}})
+
 # the open thread's entries (none with no thread open)
 def Lay.memo.es(none: Bool, +n: S.Nui) -> List<&2, M.Entry>:
   match none:
     case True{}:
       Nil{}
     case False{}:
-      TL.newest(M.State.mine(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n))), U.Ui.sel(S.Nui.ui(n)), TL.created(U.Ui.thread(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n)))), NW{U.Page.shown(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n))), Nil{}})
+      TL.held.or(String.is_empty(U.Ui.scratch(S.Nui.ui(n), "@tl.pin." ++ U.Ui.sel(S.Nui.ui(n)))), M.State.mine(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n))), U.Ui.sel(S.Nui.ui(n)), TL.created(U.Ui.thread(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n)))),
+        U.Ui.scratch(S.Nui.ui(n), "@tl.pin." ++ U.Ui.sel(S.Nui.ui(n))), U.Page.shown(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n))))
 
 # Both the entries and live prefix are discarded when the locale changes.
 # Checking here also covers memos of threads left before a language switch.
@@ -6219,7 +6323,7 @@ def Lay.thread.at.k(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: 
       Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, S.Imx.draft(n), x0, x1, h), Lay.thread.k(ty, memo, U.Ui.thread(st, sel), S.Imx.draft(n), S.Cs.held(n), st, sel, U.Str.get(live, sel), S.Imx.at(n), S.Imx.mk(n), focus, S.Blink.on(n), x0, x1, h, sc, pa, U.Flag.get(op, "term"),
         U.Str.get(nf, "models"), U.Flag.get(op, "models"), U.Ui.pending(S.Nui.ui(n), sel), U.Ui.skills(S.Nui.ui(n)), U.Side.now(S.Nui.ui(n)),
         U.Ui.atts(S.Nui.ui(n), sel), U.Ui.uploading(S.Nui.ui(n), sel), path, nf, U.Ui.deleting(S.Nui.ui(n)), TSel.of(U.Ui.scratch(S.Nui.ui(n), "@ts"), sel), U.Ui.scratch(S.Nui.ui(n), "@menu.off"), U.Side.phase(st, U.Ui.thread(st, sel)), hy, Lay.more(memo, n, sel), U.Btw.question(S.Nui.ui(n)), U.Btw.reply.of(S.Nui.ui(n)),
-        U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"), U.Ec.of(S.Nui.ui(n), sel), EM.Emb.focused(focus), S.Imx.runs(n))),
+        U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"), U.Ec.of(S.Nui.ui(n), sel), EM.Emb.focused(focus), S.Imx.runs(n), S.Hold.of(n), U.Hold.pill(S.Nui.ui(n), sel))),
         Vx.view(ty, n, st, sel, x0, x1, h)), Lay.earlier(Lay.more(memo, n, sel)))
 
 def Lay.thread.at(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32) -> Out:

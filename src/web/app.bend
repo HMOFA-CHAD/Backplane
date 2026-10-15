@@ -94,6 +94,11 @@ def Rv.focus(on: Bool, a: U.Act) -> U.Act:
 def act(u: U.Ui, +action: String, value: String) -> U.Act:
   U.Solid.sync(Rv.focus(Bool.or(String.eq(action, "view-layer-pick"), String.eq(action, "view-layer-mode")), U.Ui.act(u, action, value)))
 
+# a timeline gap px from its end is at the end and follows; further up it
+# holds what is read (client.bend's Hold; host.js's held)
+def hold_at_end(gap: Nat) -> Bool:
+  U.Hold.at_end(gap)
+
 def view(u: U.Ui) -> D.Node:
   V.View.page(u)
 
