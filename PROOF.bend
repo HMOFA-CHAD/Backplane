@@ -1,4 +1,6 @@
 import Base
+import ./src/core/i18n.bend as I18
+import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/stamp.bend as STP
 import ./src/core/tz.bend as TZ
@@ -10509,3 +10511,78 @@ def Laws.link_ref_md():
 
 def Laws.link_ref_plain_unchanged():
   {==}
+
+# ---- i18n ----
+
+law i18n_ago_same_k:
+  for m: Bool
+  for h: Bool
+  for d: Bool
+  for +s: Nat
+  {I18.I18n.ago.en(m, h, d, s) == M.Time.ago.k(m, h, d, s) : String}
+
+def i18n_ago_same_k(m, h, d, s):
+  match m h d:
+    case True{} _ _: {==}
+    case False{} True{} _: {==}
+    case False{} False{} True{}: {==}
+    case False{} False{} False{}: {==}
+
+law i18n_took_same_k:
+  for m: Bool
+  for h: Bool
+  for +s: Nat
+  {I18.I18n.took.en(m, h, s) == M.Time.took.k(m, h, s) : String}
+
+def i18n_took_same_k(m, h, s):
+  match m h:
+    case True{} _: {==}
+    case False{} True{}: {==}
+    case False{} False{}: {==}
+
+def Laws.i18n_plural_ja_other(n):
+  {==}
+
+def Laws.i18n_plural_en_one():
+  {==}
+
+def Laws.i18n_plural_en_zero():
+  {==}
+
+def Laws.i18n_plural_en_many(k):
+  {==}
+
+def Laws.i18n_resolve_override_en(os):
+  {==}
+
+def Laws.i18n_resolve_override_ja(os):
+  {==}
+
+def Laws.i18n_resolve_auto(os):
+  {==}
+
+def Laws.i18n_of_tag_posix():
+  {==}
+
+def Laws.i18n_of_tag_c():
+  {==}
+
+def Laws.i18n_of_tag_empty():
+  {==}
+
+def Laws.i18n_of_tag_bcp():
+  {==}
+
+def Laws.i18n_ago_en_same(now, at):
+  i18n_ago_same_k(Nat.is_lt(Nat.sub(now, at), 60n), Nat.is_lt(Nat.sub(now, at), 3600n), Nat.is_lt(Nat.sub(now, at), 86400n), Nat.sub(now, at))
+
+def Laws.i18n_took_en_same(s):
+  i18n_took_same_k(Nat.is_lt(s, 60n), Nat.is_lt(s, 3600n), s)
+
+
+def Laws.i18n_fallback_fixture_save():
+  {==}
+
+def Laws.i18n_fallback_fixture_plural(n):
+  {==}
+# ---- end i18n ----
