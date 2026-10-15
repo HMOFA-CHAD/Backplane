@@ -11420,10 +11420,68 @@ def Hub.quiet.k(q: Quieted, h: Hub) -> IO(Hub):
     case Quieted{as, cs} Hub{st, f, ls, cl, _, inbox, cfg, note}:
       Hub.step(Hub{st, f, ls, cl, List.reverse(&2, Agent, as), inbox, cfg, note}, B.Step{cs, Nil{}})
 
-def Hub.quiet(h: Hub, +now: Nat) -> IO(Hub):
+def Hub.quiet.n(h: Hub, +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.quiet.k(Quiet.all(as, st, now, Quieted{Nil{}, Nil{}}), Hub{st, f, ls, cl, Nil{}, inbox, cfg, note})
+
+# Stuck turns (hub.bend's Stuck.*): each minute, a Claude thread whose turn
+# runs though its ledger has nothing at work, silent Stuck.after() seconds
+# with no work out, has its turn ended and its ledger cleared
+type StuckOne is Data:
+  StuckOne{thread: String, code: Nat}
+
+def Stuck.of(rs: List<&2, ARun>, +run: Bool, +busy: Nat, +now: Nat, +wait: Nat) -> Nat:
+  match rs:
+    case ARun{c, _, _, n, _, _, _, _} <> _:
+      B.Stuck.code.w(run, c, n, now, busy, wait)
+    case Nil{}:
+      0n
+
+def Stuck.add(+code: Nat, +t: String, +xs: List<&2, StuckOne>) -> List<&2, StuckOne>:
+  Bool.pick(List<&2, StuckOne>, Nat.is_eq(code, 0n), xs, StuckOne{t, code} <> xs)
+
+def Stuck.list(as: List<&2, Agent>, +st: M.State, +now: Nat, +wait: Nat) -> List<&2, StuckOne>:
+  match as:
+    case Nil{}:
+      Nil{}
+    case Agent{+t, _, _, _, rs} <> rest:
+      Stuck.add(Stuck.of(rs, B.Hub.running(B.Hub.thread(st, t)), M.Work.busy(st, t), now, wait), t, Stuck.list(rest, st, now, wait))
+
+def ARun.cleared(r: ARun) -> ARun:
+  match r:
+    case ARun{c, hd, l, n, g, q, pa, pl}:
+      ARun{CM.Cmds.cleared(c), hd, l, n, g, q, pa, pl}
+
+def Stuck.clear(h: Hub, +t: String) -> Hub:
+  match h:
+    case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
+      Hub{st, f, ls, cl, Agents.with(as, t, ARun.cleared(Maybe.default(&2, ARun, Agents.run(as, t), ARun.new()))), inbox, cfg, note}
+
+def Hub.stuck.one(x: StuckOne, h: Hub, +now: Nat) -> IO(Hub):
+  match x h:
+    case StuckOne{+t, +code} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        Log.info("the turn of " ++ t ++ " ran on with its agent's ledger idle: ended")
+        Hub.step(Stuck.clear(Hub{st, f, ls, cl, as, inbox, cfg, note}, t), B.Stuck.step(st, now, t, code))
+
+def Hub.stuck.go(xs: List<&2, StuckOne>, h: Hub, +now: Nat) -> IO(Hub):
+  match xs:
+    case Nil{}:
+      IO.pure(Hub, h)
+    case x <> t:
+      IO.bind(Hub, Hub, Hub.stuck.one(x, h, now), h2 => Hub.stuck.go(t, h2, now))
+
+def Hub.stuck.w(+wait: String, h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, +as, inbox, cfg, note}:
+      Hub.stuck.go(Stuck.list(as, st, now, Bool.pick(Nat, String.is_empty(wait), B.Stuck.after(), AD.Adopt.num(wait))), Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
+
+def Hub.stuck(h: Hub, +now: Nat) -> IO(Hub):
+  IO.bind(String, Hub, Env.get("BACKPLANE_STUCK_S", ""), w => Hub.stuck.w(w, h, now))
+
+def Hub.quiet(h: Hub, +now: Nat) -> IO(Hub):
+  IO.bind(Hub, Hub, Hub.quiet.n(h, now), h2 => Hub.stuck(h2, now))
 
 def Hub.quiet.beat.k(due: Bool, h: Hub, +now: Nat) -> IO(Hub):
   match due h:
