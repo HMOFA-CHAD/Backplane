@@ -1314,16 +1314,23 @@ def State.thread.get(s: State, +id: String) -> Thread:
 # message for a worktree still being made (it starts the turn as soon as
 # the worktree is there: the thread shows as working), or, from logs older
 # than that rule, messages that go with the thread's next turn.
-def Queue.starting(s: State, +th: String) -> Bool:
+def Queue.starting(+s: State, +th: String) -> Bool:
   Bool.and(Queue.waiting(s, th), Worktree.unmade(State.thread.get(s, th)))
+
+def Queue.context.k(keep: Bool, q: QItem, rest: List<&2, QItem>) -> List<&2, QItem>:
+  match keep:
+    case True{}:
+      q <> rest
+    case False{}:
+      rest
 
 # the rows shown above a composer: handed-over context only
 def Queue.context(qs: List<&2, QItem>) -> List<&2, QItem>:
   match qs:
     case Nil{}:
       Nil{}
-    case QItem{+m, +t} <> rest:
-      Bool.pick(List<&2, QItem>, String.starts_with(m, "handoff:"), QItem{m, t} <> Queue.context(rest), Queue.context(rest))
+    case QItem{+m, t} <> rest:
+      Queue.context.k(String.starts_with(m, "handoff:"), QItem{m, t}, Queue.context(rest))
 
 def State.switch.k(+s: State, +th: String, +old: String, +oldse: String, +p: String, m: String) -> State:
   +s1 = State.setting(State.setting(s, Switch.session.key(th, old), oldse), Switch.seen.key(th, old), Nat.show(Switch.count(s, th)))

@@ -65,7 +65,7 @@ def main() -> IO(Unit):
     C.Check.str("done is stamped", NO.Alert.rstamp(rec(done)), "13." ++ Nat.show(H.Hub.seq(s(NO.Policy.demo.ask()))))
     C.Check.str("a plain thread's second turn with no new message", said(NO.Policy.end(s(cat([NO.Policy.demo.ask(), done, NO.Policy.demo.run("t1", "r2", "[Backplane] x", 30n), NO.Policy.demo.done("t1", 31n)])), 32n, "t1", "completed")), "-")
     C.Check.str("a new person message settles again", said(NO.Policy.end(s(cat([NO.Policy.demo.ask(), done, NO.Policy.demo.run("t1", "m2", "more", 30n), NO.Policy.demo.done("t1", 31n)])), 32n, "t1", "completed")), "done")
-    C.Check.str("a queued message is not settled", said(NO.Policy.end(s(cat([NO.Policy.demo.ask(), [M.TurnQueued{"t1", "m9", "next", 12n}]])), 13n, "t1", "completed")), "-")
+    C.Check.str("a message held by an older log does not keep the turn open", said(NO.Policy.end(s(cat([NO.Policy.demo.ask(), [M.TurnQueued{"t1", "m9", "next", 12n}]])), 13n, "t1", "completed")), "done")
     C.Check.str("an open ask is not settled", said(NO.Policy.end(s(cat([NO.Policy.demo.ask(), [M.AskOpened{"k1", "t1", "approval", "Bash", "ls", "", 12n}]])), 13n, "t1", "completed")), "-")
     C.Check.str("a stop ends the episode quietly", said(NO.Policy.end(s(cat([NO.Policy.demo.base(), NO.Policy.demo.run("t1", "m1", "x", 10n), [M.TurnChanged{"t1", M.Interrupted{}, 12n}]])), 13n, "t1", "stopped")), "_")
     C.Check.str("a failed turn with work out still alerts", said(NO.Policy.end(s(cat([NO.Policy.demo.base(), NO.Policy.demo.run("t1", "m1", "x", 10n), [M.WorkSet{"t1", "bg", "a\tx", 11n}], NO.Policy.demo.fail("t1", 12n)])), 13n, "t1", "failed")), "fail")

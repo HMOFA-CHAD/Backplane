@@ -132,7 +132,7 @@ def main() -> IO(Unit):
     C.Check.str("cut to 1.5 KB", Bool.show(Nat.is_lt(String.length(told(H.Lr.demo.k(True{}, False{}, False{}, [M.MessagePosted{"t1", "a2", M.Assistant{}, long(), 3n}]), H.Lr.demo.end())), 1700n)), "True")
     C.Check.str("the report starts the launcher's turn", tags(cs(H.Launch.tell(d, 9n, "t1", H.Step{H.Lr.demo.end(), Nil{}}))), "TurnChanged MessagePosted TurnChanged ")
     C.Check.str("its id names the thread", Bool.show(String.contains(J.Json.show(K.Change.encode(Maybe.default(&2, M.Change, List.head(&2, M.Change, List.drop(&2, M.Change, cs(H.Launch.tell(d, 9n, "t1", H.Step{H.Lr.demo.end(), Nil{}})), 1n)), M.TurnChanged{"x", M.Idle{}, 0n}))), "t:t1:lr-")), "True")
-    C.Check.str("a busy launcher queues it", tags(cs(H.Launch.tell(H.Lr.demo.k(True{}, False{}, True{}, Nil{}), 9n, "t1", H.Step{H.Lr.demo.end(), Nil{}}))), "TurnChanged MessagePosted TurnQueued ")
+    C.Check.str("a busy launcher hears it at once", tags(cs(H.Launch.tell(H.Lr.demo.k(True{}, False{}, True{}, Nil{}), 9n, "t1", H.Step{H.Lr.demo.end(), Nil{}}))), "TurnChanged MessagePosted TurnChanged ")
     C.Check.str("muted: nothing", told(H.Lr.demo(False{}), H.Lr.demo.end()), "")
     C.Check.str("work out: nothing yet", told(H.Lr.demo.k(True{}, False{}, False{}, [M.WorkSet{"t1", "bg", "a\tx", 2n}]), H.Lr.demo.end()), "")
     C.Check.str("work out, failed: told", Bool.show(String.is_empty(told(H.Lr.demo.k(True{}, False{}, False{}, [M.WorkSet{"t1", "bg", "a\tx", 2n}]), [M.TurnChanged{"t1", M.Failed{}, 9n}]))), "False")

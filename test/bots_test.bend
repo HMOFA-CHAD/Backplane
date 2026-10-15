@@ -207,14 +207,14 @@ def main() -> IO(Unit):
     C.Check.str("reply in the same room", yes(String.starts_with(st.tags(call.step(rq, 1005n, th.of(rq, "Tofu"), "bot_send", "{\"to\":\"Miso\",\"topic\":\"bom review\",\"text\":\"done\"}")), "RoomPosted ")), "yes")
     C.Check.str("new topic new room", yes(String.starts_with(st.tags(call.step(rq, 1005n, th.of(rq, "Miso"), "bot_send", "{\"to\":\"Tofu\",\"topic\":\"stencil\",\"text\":\"order\"}")), "RoomSet ")), "yes")
     C.Check.str("no topic: both names", yes(BT.Room.live(room.of(run(s, call.step(s, 1004n, th.of(s, "Tofu"), "bot_send", "{\"to\":\"Miso\",\"text\":\"hi\"}")), "miso + tofu"))), "yes")
-    C.Check.str("person's post reaches both", (st.tags(ask(rq, 1006n, "bots.post", "{\"room\":\"" ++ BT.Room.id(room.of(rq, "BOM review")) ++ "\",\"text\":\"thanks\"}"))), "RoomPosted BotWoke MessagePosted TurnChanged BotWoke MessagePosted TurnQueued | send:reply out out out out ")
+    C.Check.str("person's post reaches both", (st.tags(ask(rq, 1006n, "bots.post", "{\"room\":\"" ++ BT.Room.id(room.of(rq, "BOM review")) ++ "\",\"text\":\"thanks\"}"))), "RoomPosted BotWoke MessagePosted TurnChanged BotWoke MessagePosted ActivityLogged TurnChanged | send:reply out out out out out out ")
     # a request sent again (same msg) is answered and does nothing twice
     +sy : String = "{\"bot\":\"" ++ id.of(s, "Miso") ++ "\",\"text\":\"again\",\"msg\":\"cx1-1\"}"
     C.Check.str("say with msg first time", st.tags(ask(s, 1003n, "bots.say", sy)), "BotWoke MessagePosted TurnChanged | send:reply out out out out ")
     C.Check.str("say with msg again", st.tags(ask(made(s, 1003n, "bots.say", sy), 1004n, "bots.say", sy)), "| send:reply ")
-    C.Check.str("say with another msg", st.tags(ask(made(s, 1003n, "bots.say", sy), 1004n, "bots.say", "{\"bot\":\"" ++ id.of(s, "Miso") ++ "\",\"text\":\"again\",\"msg\":\"cx1-2\"}")), "BotWoke MessagePosted TurnQueued | send:reply ")
+    C.Check.str("say with another msg", st.tags(ask(made(s, 1003n, "bots.say", sy), 1004n, "bots.say", "{\"bot\":\"" ++ id.of(s, "Miso") ++ "\",\"text\":\"again\",\"msg\":\"cx1-2\"}")), "BotWoke MessagePosted TurnChanged | send:reply out out out out ")
     +rp : String = "{\"room\":\"" ++ BT.Room.id(room.of(rq, "BOM review")) ++ "\",\"text\":\"thanks\",\"msg\":\"cx1-3\"}"
-    C.Check.str("post with msg first time", st.tags(ask(rq, 1006n, "bots.post", rp)), "RoomPosted BotWoke MessagePosted TurnChanged BotWoke MessagePosted TurnQueued | send:reply out out out out ")
+    C.Check.str("post with msg first time", st.tags(ask(rq, 1006n, "bots.post", rp)), "RoomPosted BotWoke MessagePosted TurnChanged BotWoke MessagePosted ActivityLogged TurnChanged | send:reply out out out out out out ")
     C.Check.str("post with msg again", st.tags(ask(made(rq, 1006n, "bots.post", rp), 1007n, "bots.post", rp)), "| send:reply ")
     # a private message only when asked for
     C.Check.str("send direct", st.tags(call.step(s, 1004n, th.of(s, "Miso"), "bot_send", "{\"to\":\"Tofu\",\"text\":\"psst\",\"direct\":true}")), "RoomPosted BotWoke MessagePosted TurnChanged | out out out ")
@@ -268,11 +268,11 @@ def main() -> IO(Unit):
     C.Check.str("zoned: 09:30 Helsinki winter", st.tags(tick(zw, 1797233400n)), "RoutineFired RoutineSlot BotWoke MessagePosted TurnChanged | out out out out ")
     +zf : M.State = run(zd, tick(zd, 1791959400n))
     C.Check.str("zoned: not again", st.tags(tick(zf, 1791959460n)), "| ")
-    C.Check.str("zoned: next day", st.tags(tick(zf, 1792045800n)), "RoutineFired RoutineSlot BotWoke MessagePosted TurnQueued | ")
+    C.Check.str("zoned: next day", st.tags(tick(zf, 1792045800n)), "RoutineFired RoutineSlot BotWoke MessagePosted TurnChanged | out out out out ")
     +zn : M.State = M.State.replay([M.SettingSet{"person.tz", "America/New_York", 1791959500n}], zf)
     C.Check.str("zone change west does not refire at once", st.tags(tick(zn, 1791959520n)), "| ")
     C.Check.str("zone change west does not refire at 09:30 there", st.tags(tick(zn, 1791984600n)), "| ")
-    C.Check.str("zone change west fires the next day", st.tags(tick(zn, 1792071000n)), "RoutineFired RoutineSlot BotWoke MessagePosted TurnQueued | ")
+    C.Check.str("zone change west fires the next day", st.tags(tick(zn, 1792071000n)), "RoutineFired RoutineSlot BotWoke MessagePosted TurnChanged | out out out out ")
     +rm : M.State = run(z, call.step(z, 1791957600n, th.of(z, "Miso"), "remind_person", "{\"at\":\"in 20m\",\"text\":\"stand up\"}"))
     C.Check.str("remind_person logs a reminder routine", st.tags(call.step(z, 1791957600n, th.of(z, "Miso"), "remind_person", "{\"at\":\"in 20m\",\"text\":\"stand up\"}")), "RoutineSet RoutinePlan | ")
     C.Check.str("remind_person says when", yes(String.contains(call(z, 1791957600n, th.of(z, "Miso"), "remind_person", "{\"at\":\"in 20m\",\"text\":\"stand up\"}"), "I'll remind them Wed 14 Oct 09:20 EEST (in 20m): stand up")), "yes")
@@ -354,7 +354,7 @@ def main() -> IO(Unit):
     +q2 : M.State = run(q, BH.Bots.incoming(q, 1010n, "desk", json(post)))
     C.Check.str("shared kept", BT.Room.members.show(BT.Room.members(room.of(q2, "team"))), "Nori@desk\n" ++ id.of(q2, "Miso") ++ "\nGhost@far")
     # Miso is still on the first one: the second waits, and the room is unchanged
-    C.Check.str("shared again", st.tags(BH.Bots.incoming(q2, 1011n, "desk", json(post))), "RoomPosted BotWoke MessagePosted TurnQueued | ")
+    C.Check.str("shared again", st.tags(BH.Bots.incoming(q2, 1011n, "desk", json(post))), "RoomPosted BotWoke MessagePosted TurnChanged | out out out out ")
     C.Check.str("shared read", yes(String.contains(call(q2, 1012n, th.of(q2, "Miso"), "room_read", "{\"room\":\"team\"}"), "Nori@desk")), "yes")
     # a request from the other machine: answering it goes back to its room
     +fq : M.State = run(q, BH.Bots.incoming(q, 1010n, "desk", json("{\"from\":\"Nori\",\"to\":\"miso\",\"tos\":[\"miso\"],\"members\":[\"Nori@\",\"miso\"],\"room\":\"r7-0\",\"roomName\":\"fab\",\"text\":\"quote?\",\"hop\":1}")))

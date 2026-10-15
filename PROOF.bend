@@ -5938,12 +5938,11 @@ def Laws.bg_progress_unlisted():
 def Laws.bg_doing():
   {==}
 
-def Laws.status_waits_on_subagents(q):
-  match q:
-    case True{}:
-      {==}
-    case False{}:
-      {==}
+def Laws.status_waits_on_subagents():
+  {==}
+
+def Laws.status_starting_works():
+  {==}
 
 def Laws.status_work_before_waiting(q):
   {==}

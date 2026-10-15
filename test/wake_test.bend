@@ -96,7 +96,7 @@ def main() -> IO(Unit):
     C.Check.str("end fires even when the queue starts another turn in the same step", Nat.show(count(H.Launch.tell(H.Wake.demo(True{}, ["end"]), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}, M.TurnChanged{"t1", M.Running{}, 9n}], Nil{}}))), "1")
     C.Check.str("idle does not fire when another turn starts", Nat.show(count(H.Launch.tell(H.Wake.demo(True{}, ["idle"]), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}, M.TurnChanged{"t1", M.Running{}, 9n}], Nil{}}))), "0")
     C.Check.str("two subscriptions for one recipient deliver once each", Nat.show(count(H.Wake.demo.step(M.State.replay([M.WakeSet{"w2", "tb", "thread", "t1", ["done"], True{}, "second", 5n}], s)))), "2")
-    C.Check.str("a busy subscriber queues", Nat.show(H.Lr.queued(H.Queue.changes(H.Wake.demo.step(M.State.replay([M.TurnChanged{"tb", M.Running{}, 8n}], s))), "tb")), "1")
+    C.Check.str("a busy subscriber hears it at once", Nat.show(H.Lr.count(H.Queue.changes(H.Wake.demo.step(M.State.replay([M.TurnChanged{"tb", M.Running{}, 8n}], s))), "tb")), "1")
     C.Check.str("ask opens at once", Nat.show(count(H.Launch.tell(H.Wake.demo(True{}, ["ask"]), 9n, "t1", H.Step{[M.AskOpened{"q1", "t1", "question", "AskUserQuestion", "which board?", "", 9n}], Nil{}}))), "1")
     C.Check.str("ask event does not depend on its description", Nat.show(count(H.Launch.tell(H.Wake.demo(True{}, ["ask"]), 9n, "t1", H.Step{[M.AskOpened{"q-empty", "t1", "", "", "", "", 9n}], Nil{}}))), "1")
     C.Check.str("failed fires fail and end once", Nat.show(count(H.Launch.tell(H.Wake.demo(True{}, ["fail", "end"]), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Failed{}, 9n}], Nil{}}))), "1")

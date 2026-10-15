@@ -3690,10 +3690,14 @@ law bg_doing:
   {M.Bg.doing("a\tRunning tests") == "Running tests" : String}
 
 # a thread whose turn is over and whose subagents are still at work shows
-# as waiting on them (its own colour), queued messages or not
+# as waiting on them (its own colour)
 law status_waits_on_subagents:
-  for q: Bool
-  {M.Status.wait(True{}, M.Status.of(False{}, False{}, M.Completed{}, q)) == M.StWaiting{} : M.Status}
+  {M.Status.wait(True{}, M.Status.of(False{}, False{}, M.Completed{}, False{})) == M.StWaiting{} : M.Status}
+
+# a thread starting a turn (its message waits only for its worktree) is
+# working, never queued
+law status_starting_works:
+  {M.Status.of(False{}, False{}, M.Completed{}, True{}) == M.StWorking{} : M.Status}
 
 # a running turn, a question and an approval still come first
 law status_work_before_waiting:

@@ -79,7 +79,7 @@ def main() -> IO(Unit):
       "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"QUJD\"}},{\"type\":\"text\",\"text\":\"hi\"}]}}")
     C.Check.str("client atts", show.list(U.Ui.atts(ui.one(), "t1")), "[/h/a/t1/k-x.png]")
     C.Check.str("client send", act.cmds(U.Ui.send(ui.one(), False{})),
-      "{\"id\":0,\"m\":\"turn.start\",\"p\":{\"thread\":\"t1\",\"text\":\"hi\\n\\n[attachment: /h/a/t1/k-x.png]\",\"msg\":\"c0-0\",\"mode\":\"queue\"}};")
+      "{\"id\":0,\"m\":\"turn.start\",\"p\":{\"thread\":\"t1\",\"text\":\"hi\\n\\n[attachment: /h/a/t1/k-x.png]\",\"msg\":\"c0-0\",\"mode\":\"steer\"}};")
     C.Check.str("client sent clears", show.list(U.Ui.atts(act.ui(U.Ui.send(ui.one(), False{})), "t1")), "[]")
     C.Check.str("client detach", show.list(U.Ui.atts(act.ui(U.Ui.act(ui.one(), "detach", "/h/a/t1/k-x.png")), "t1")), "[]")
     C.Check.str("client too big", act.cmds(U.Ui.act(ui.one(), "attach", "{\"key\":\"k\",\"name\":\"big.bin\",\"size\":99999999,\"i\":0,\"last\":true,\"data\":\"\"}")), "")
