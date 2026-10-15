@@ -7,16 +7,22 @@ import ../src/core/mailbody.bend as MB
 import ../src/core/mail.bend as ML
 import ../src/core/model.bend as M
 
-# Tests use only a newly created BACKPLANE_HOME; never the person's home.
-def home_result(r: Result<&1, &1, U32 & String, String>) -> IO(String):
+# Tests use only a fresh directory of their own under /tmp; never BACKPLANE_HOME
+# (it may name the person's live home) and never the person's home.
+def home_made(r: Result<&1, &1, U32 & String, Unit>, +dir: String) -> IO(String):
   match r:
-    case Done{SCon{c, t}}: IO.pure(String, SCon{c, t} ++ "/mailstore-test")
-    case _: IO.die(String, 1, "mailstore_test needs a fresh temp BACKPLANE_HOME")
+    case Done{_}: IO.pure(String, dir)
+    case Fail{(_, e)}: IO.die(String, 1, "mailstore_test cannot make " ++ dir ++ ": " ++ e)
+
+def home.at(+dir: String) -> IO(String):
+  do IO<String>:
+    r : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir)
+    home_made(r, dir)
 
 def home() -> IO(String):
   do IO<String>:
-    r : Result<&1, &1, U32 & String, String> <- IO.get_env("BACKPLANE_HOME")
-    home_result(r)
+    t : U32 <- H.Clock.epoch()
+    home.at("/tmp/bp-mailstore-test-" ++ U32.show(t))
 
 def status(-A: Data, r: S.StoreResult<A>) -> String:
   match r:
