@@ -124,7 +124,13 @@ stamp() {
 # builds both for releases)
 build_dist() {
   ver=$(stamp)
-  for f in src/web/app.bend src/server/main.bend src/app/main.bend; do check "$f"; done
+  # scripts/check.sh's full pass on exactly these inputs covers these three
+  # (scripts/verified.sh); else they are checked here
+  if scripts/verified.sh has check; then
+    say "checked already: check.sh passed on these exact inputs"
+  else
+    for f in src/web/app.bend src/server/main.bend src/app/main.bend; do check "$f"; done
+  fi
   rm -rf dist && mkdir -p dist
   bend src/web/index.html -o dist/web >/dev/null
   python3 scripts/js-unmarshal.py ../core/client.Ui dist/web/chunk-*.js
