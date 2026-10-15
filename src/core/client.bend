@@ -1052,12 +1052,21 @@ def Ui.setting.k(ps: List<&2, String>) -> List<&2, J.KV>:
     case Nil{}:
       Nil{}
 
+# the read model changed here, not by the hub ("local.touch" counts it:
+# the window's memos, app/mm.bend, key on the client's info)
+def Local.touch.k(r: Map<&2, String> & String) -> Map<&2, String>:
+  (m, v) = r
+  Map.set(&2, String, m, "local.touch", Nat.show(1n+Maybe.default(&2, Nat, Nat.read(v), 0n)))
+
+def Local.touch(nf: Map<&2, String>) -> Map<&2, String>:
+  Local.touch.k(Map.get(String, "0", nf, "local.touch"))
+
 # a setting applied here at once, before the hub answers with the same
 # (the sequence is left alone, so nothing the hub sends is skipped)
 def Ui.setting.here(u: Ui, ps: List<&2, String>) -> Ui:
   match u ps:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr} k <> t:
-      Ui{M.State.setting(st, k, String.join(t, "=")), sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+      Ui{M.State.setting(st, k, String.join(t, "=")), sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, Local.touch(nf), ob, tr}
     case x Nil{}:
       x
 
@@ -2393,6 +2402,18 @@ def Links.recent.k(keep: Bool, +from: String, +to: String, +at: Nat, rest: List<
     case False{}:
       rest
 
+def Links.recent.f(+from: String, +to: String, +at: Nat, rest: List<&2, Link2>) -> List<&2, Link2>:
+  Links.recent.k(Bool.not(String.is_empty(from)), from, to, at, rest)
+
+# a message young enough to draw: its sender read from its id (only then:
+# reading every message's id each frame was most of the sidebar's links)
+def Links.recent.y(young: Bool, +id: String, +to: String, +at: Nat, rest: List<&2, Link2>) -> List<&2, Link2>:
+  match young:
+    case True{}:
+      Links.recent.f(M.Link.from(id), to, at, rest)
+    case False{}:
+      rest
+
 # (live: the entry before was under 75 minutes old; the log is in time
 # order, so the walk stops at the first older one instead of going
 # through the whole log each frame)
@@ -2403,7 +2424,7 @@ def Links.recent.go(es: List<&2, M.Entry>, +now: Nat, live: Bool) -> List<&2, Li
     case Nil{} _:
       Nil{}
     case M.Msg{+id, +to, _, _, +at} <> t True{}:
-      Links.recent.k(Bool.and(Nat.is_le(now, Nat.add(at, 900n)), Bool.not(String.is_empty(M.Link.from(id)))), M.Link.from(id), to, at, Links.recent.go(t, now, Nat.is_le(now, Nat.add(at, 4500n))))
+      Links.recent.y(Nat.is_le(now, Nat.add(at, 900n)), id, to, at, Links.recent.go(t, now, Nat.is_le(now, Nat.add(at, 4500n))))
     case M.Act{_, _, _, _, _, +at} <> t True{}:
       Links.recent.go(t, now, Nat.is_le(now, Nat.add(at, 4500n)))
 
@@ -8014,9 +8035,11 @@ def Ui.shows.t(beat: Bool, +u: Ui, +o: J.Json) -> Bool:
     case False{}:
       Ui.shows.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), Ui.sel(u), o)
 
-# (a heartbeat, {"t":"hb"}, draws nothing: law hb_shows_nothing)
+# (a heartbeat, {"t":"hb"}, draws nothing: law hb_shows_nothing; nor does
+# the end of a thread's streamed text, {"t":"delta_end"}, which this client
+# does not read: Ui.recv leaves it alone)
 def Ui.shows(+u: Ui, +o: J.Json) -> Bool:
-  Ui.shows.t(String.eq(J.Json.get_str(o, "t", ""), "hb"), u, o)
+  Ui.shows.t(Bool.or(String.eq(J.Json.get_str(o, "t", ""), "hb"), String.eq(J.Json.get_str(o, "t", ""), "delta_end")), u, o)
 
 # a message from the server, with what to send: a (re)connection (the
 # server's log arrives first on each) sends the outbox again, so nothing
@@ -9646,3 +9669,172 @@ def Page.since.k(t: M.Thread) -> Nat:
 
 def Page.since(s: M.State, +th: String) -> Nat:
   Page.since.k(Ui.thread(s, th))
+
+
+# The window's memos (main.bend's Mm): which threads a change touches,
+# for keys that say whether a thread's view can have changed. Every change
+# is named here (no catch-all: a new kind of change does not build until it
+# is placed); anything not clearly one thread's own touches everything
+# ("*"), so a doubtful one can only cost a memo, never show a stale view.
+# A message from another thread (a link) touches its sender too. A setting
+# may also change whose parent or child a thread is (launches are kept as
+# settings): "!".
+def Link.from.or(+msg: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(M.Link.from(msg)), Nil{}, [M.Link.from(msg)])
+
+def Touch.raw(c: M.Change) -> List<&2, String>:
+  match c:
+    case M.ProjectCreated{_, _, _, _}:
+      ["*"]
+    case M.ProjectRemoved{_, _}:
+      ["*"]
+    case M.ThreadCreated{+id, _, _, _, _, _, _, _, _}:
+      [id]
+    case M.ThreadRenamed{_, _, _}:
+      ["*"]
+    case M.MessagePosted{+thread, +msg, _, _, _}:
+      List.concat(&2, String, [[thread], Link.from.or(msg)])
+    case M.TurnChanged{+thread, _, _}:
+      [thread]
+    case M.PendingChanged{+thread, _, _}:
+      [thread]
+    case M.ActivityLogged{+thread, _, _, _, _, _}:
+      [thread]
+    case M.ThreadSettled{+id, _, _}:
+      [id]
+    case M.ThreadUnsettled{+id, _}:
+      [id]
+    case M.ThreadArchived{+id, _, _}:
+      [id]
+    case M.ThreadPinned{+id, _, _}:
+      [id]
+    case M.ThreadDeleted{+id, _}:
+      [id]
+    case M.WorktreeSet{+id, _, _, _}:
+      [id]
+    case M.SessionSet{+id, _, _}:
+      [id]
+    case M.ModesSet{+id, _, _, _, _}:
+      [id]
+    case M.TaskDelegated{_, +parent, +child, _, _, _, _}:
+      List.concat(&2, String, [[parent], [child]])
+    case M.TaskStateSet{_, _, _, _}:
+      ["*"]
+    case M.TaskDelivered{_, _}:
+      ["*"]
+    case M.SettingSet{_, _, _}:
+      ["*", "!"]
+    case M.TurnQueued{+thread, _, _, _}:
+      [thread]
+    case M.QueueTaken{+thread, _}:
+      [thread]
+    case M.AskOpened{_, +thread, _, _, _, _, _}:
+      [thread]
+    case M.AskClosed{_, _, _}:
+      ["*"]
+    case M.DeviceRegistered{_, _, _, _, _, _, _}:
+      ["*"]
+    case M.DeviceDropped{_, _}:
+      ["*"]
+    case M.ThreadSnoozed{+id, _, _}:
+      [id]
+    case M.ThreadOrdered{+id, _, _, _}:
+      [id]
+    case M.WorktreeSkipped{+id, _}:
+      [id]
+    case M.ThreadMerged{+id, _, _}:
+      [id]
+    case M.WorktreeRemoved{+id, _}:
+      [id]
+    case M.ProjectOrdered{_, _, _}:
+      ["*"]
+    case M.QueueEdited{+thread, _, _, _}:
+      [thread]
+    case M.QueueRemoved{+thread, _, _}:
+      [thread]
+    case M.QueueMoved{+thread, _, _, _}:
+      [thread]
+    case M.QueueTakenOne{+thread, _, _}:
+      [thread]
+    case M.ThreadForked{+id, +source, _}:
+      List.concat(&2, String, [[id], [source]])
+    case M.ProviderSet{+id, _, _, _}:
+      [id]
+    case M.TodosSet{+thread, _, _}:
+      [thread]
+    case M.UsageSet{+thread, _, _, _}:
+      [thread]
+    case M.BotSet{_, _, _, _, _, _}:
+      ["*"]
+    case M.BotDeleted{_, _}:
+      ["*"]
+    case M.RoomSet{_, _, _, _}:
+      ["*"]
+    case M.RoomDeleted{_, _}:
+      ["*"]
+    case M.RoomPosted{_, _, _, _, _, _}:
+      ["*"]
+    case M.HookSet{_, _, _, _, _}:
+      ["*"]
+    case M.HookHit{_, _}:
+      ["*"]
+    case M.RoutineSet{_, _, _, _, _, _, _}:
+      ["*"]
+    case M.RoutineDeleted{_, _}:
+      ["*"]
+    case M.RoutineFired{_, _}:
+      ["*"]
+    case M.MemorySaved{_, _, _, _, _, _}:
+      ["*"]
+    case M.MemoryForgot{_, _, _}:
+      ["*"]
+    case M.SpaceSet{_, _, _}:
+      ["*"]
+    case M.PeerSet{_, _, _, _, _}:
+      ["*"]
+    case M.BotWoke{_, _, _}:
+      ["*"]
+    case M.SpacePageSet{_, _, _}:
+      ["*"]
+    case M.WorkSet{+thread, _, _, _}:
+      [thread]
+    case M.UberSet{_, _, _}:
+      ["*"]
+    case M.UberOp{_, _, _, _, _, _}:
+      ["*"]
+    case M.ThreadLaunched{+id, +by, _, _}:
+      List.concat(&2, String, [[id], [by]])
+    case M.WakeSet{_, _, _, _, _, _, _, _}:
+      ["*"]
+    case M.WakeDropped{_, _}:
+      ["*"]
+    case M.LockChanged{_, _, _}:
+      ["*"]
+    case M.RoutinePlan{_, _, _, _, _}:
+      ["*"]
+    case M.RoutineSlot{_, _, _}:
+      ["*"]
+    case M.RoutineDone{_, _}:
+      ["*"]
+    case M.Reminded{_, _, _, _, _}:
+      ["*"]
+    case M.TaskSet{_, _, _, _}:
+      ["*"]
+    case M.TaskDeleted{_, _, _}:
+      ["*"]
+
+# a thread id as touched: a subagent's log ("@sub:<thread>", model.bend's
+# Bg.log) is its thread's; any other name with "@" is no plain thread, so
+# it touches everything
+def Touch.id(+id: String) -> String:
+  Bool.pick(String, String.starts_with(id, "@sub:"), String.drop(id, 5n), Bool.pick(String, String.starts_with(id, "@"), "*", id))
+
+def Touch.ids(ids: List<&2, String>) -> List<&2, String>:
+  match ids:
+    case Nil{}:
+      Nil{}
+    case +id <> t:
+      Touch.id(id) <> Touch.ids(t)
+
+def Touch.of(c: M.Change) -> List<&2, String>:
+  Touch.ids(Touch.raw(c))

@@ -4936,12 +4936,30 @@ def Rm.draw.k(none: Bool, +ty: Ty, +u: U.Ui, +w: U32, +h: U32) -> Out:
 def Rm.draw(+ty: Ty, +u: U.Ui, +w: U32, +h: U32) -> Out:
   Rm.draw.k(String.is_empty(U.Menu.open(u)), ty, u, w, h)
 
-def Lay.sidebar.u(+ty: Ty, +n: S.Nui, +h: U32, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
+# the sidebar's body (what Lay.sidebar.u draws but the dragged ghost and
+# the remove dialog), the part the window may keep (main.bend's memo)
+def Lay.sidebar.a(+ty: Ty, +n: S.Nui, +h: U32, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
   match n:
-    case S.Nui{U.Ui{+st, +sel, _, _, +open, on, +now, adding, _, +v, _, _, _, +note, _, _, _}, +w, _, _, _, +sd, _, +caret, +focus, +path, _, _, vw}:
+    case S.Nui{U.Ui{+st, +sel, _, _, +open, on, +now, adding, _, +v, _, _, _, +note, _, _, _}, _, _, _, _, +sd, _, +caret, +focus, +path, _, _, _}:
       Out.all([Lay.sidebar.k(ty, D.Clip{0, 52, 264, h}, st, sel, open, on, now, adding, v, sd, caret, S.Nui.mark(n), focus, path, h, U.Flag.get(open, "settings"), U.Machines.rows(S.Nui.ui(n)),
         U.Ui.scratch(S.Nui.ui(n), "@hint"), Lay.hint.ids(String.eq(U.Ui.scratch(S.Nui.ui(n), "@hint"), "alt"), String.eq(U.Ui.scratch(S.Nui.ui(n), "@hint"), "ctrl"), S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@look"), U.Ui.scratch(S.Nui.ui(n), "@rm"),
-        U.Ui.scratch(S.Nui.ui(n), "@f.pq"), utop, uh, more), Lay.note(ty, note, h), Lay.ghost(ty, n), Rm.draw(ty, S.Nui.ui(n), w, h)])
+        U.Ui.scratch(S.Nui.ui(n), "@f.pq"), utop, uh, more), Lay.note(ty, note, h)])
+
+# the sidebar from its body: the ghost a drag shows and the remove dialog
+# on top, in the order Lay.sidebar.u has them
+def Lay.sidebar.with(a: Out, +ty: Ty, +n: S.Nui, +h: U32) -> Out:
+  Out.all([a, Lay.ghost(ty, n), Rm.draw(ty, S.Nui.ui(n), S.Nui.width(n), h)])
+
+def Lay.sidebar.u(+ty: Ty, +n: S.Nui, +h: U32, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
+  Lay.sidebar.with(Lay.sidebar.a(ty, n, h, utop, uh, more), ty, n, h)
+
+# the sidebar: its body given (the window's memo of it), or laid out
+def Lay.side.m(m: Maybe<&2, Out>, +ty: Ty, +n: S.Nui, +h: U32, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
+  match m:
+    case Some{a}:
+      Lay.sidebar.with(a, ty, n, h)
+    case None{}:
+      Lay.sidebar.u(ty, n, h, utop, uh, more)
 
 def Lay.sidebar.x(+ty: Ty, +n: S.Nui, +h: U32, more: D.Clip -> U32 -> Col) -> Out:
   Lay.sidebar.u(ty, n, h, Out.none(), 0, more)
@@ -6168,11 +6186,11 @@ def Lay.tour.if(open: Bool, +ty: Ty, +n: S.Nui, +w: U32, +h: U32) -> Out:
 
 # the whole window, topmost first; `more` lays out what the sidebar shows
 # under the projects, `main` a main area in place of the usual one
-def Lay.frame.u(+ty: Ty, +memo: TLMemo, +n: S.Nui, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col, main: Maybe<&2, Out>) -> Out:
+def Lay.frame.us(+ty: Ty, +memo: TLMemo, +n: S.Nui, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col, main: Maybe<&2, Out>, side: Maybe<&2, Out>) -> Out:
   match n:
     case S.Nui{U.Ui{_, _, _, _, _, _, _, _, +pa, _, _, _, +err, note, _, _, _}, +w, +h, _, _, _, _, _, _, _, _, _, _}:
       # the main area and the sidebar are laid out at once
-      mn sb = Lay.main.m(main, ty, memo, Lay.shrink(n, Lay.term_h(n)), 264, Bool.pick(U32, pa, (264 + U32.shr((w - 264 : U32)) : U32), w)) Lay.sidebar.u(ty, n, h, utop, uh, more)
+      mn sb = Lay.main.m(main, ty, memo, Lay.shrink(n, Lay.term_h(n)), 264, Bool.pick(U32, pa, (264 + U32.shr((w - 264 : U32)) : U32), w)) Lay.side.m(side, ty, n, h, utop, uh, more)
       Lay.rev(Out.all([
         mn,
         Lay.viewer.if(pa, ty, n, (264 + U32.shr((w - 264 : U32)) : U32), w, h),
@@ -6184,6 +6202,9 @@ def Lay.frame.u(+ty: Ty, +memo: TLMemo, +n: S.Nui, utop: Out, +uh: U32, more: D.
         Lay.hover(U.Ui.info(S.Nui.ui(n), "hover"), S.Hover.alpha(n, S.Nui.ms_of(n))),
         Lay.perf.if(U.Ui.flag(S.Nui.ui(n), "perf"), ty, U.Ui.info(S.Nui.ui(n), "perf.hud"), w),
         Lay.tour.if(U.Tour.on(S.Nui.ui(n)), ty, n, w, h)]))
+
+def Lay.frame.u(+ty: Ty, +memo: TLMemo, +n: S.Nui, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col, main: Maybe<&2, Out>) -> Out:
+  Lay.frame.us(ty, memo, n, utop, uh, more, main, None{})
 
 # (nothing pinned above the sidebar's search field)
 def Lay.frame.x(+ty: Ty, +memo: TLMemo, +n: S.Nui, more: D.Clip -> U32 -> Col, main: Maybe<&2, Out>) -> Out:
