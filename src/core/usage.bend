@@ -357,10 +357,12 @@ def Bj.who(+st: M.State, +th: String) -> String:
   Bool.pick(String, String.is_empty(th), "started by hand", UseT.title(Use.of(st, Bj.thread(st, th))))
 
 # a job that needs a look, listed first and never left out: a sandbox whose
-# delete was never verified (orphan), or a create whose answer was unclear
-# (ambiguous: a sandbox may exist that no ledger owns)
+# delete was never verified (orphan), a create Boat answered unclearly
+# (ambiguous: its slot and worst case stay held until it is reconciled), or
+# one still unclear past that with look-alike sandboxes up (unresolved: new
+# creates are refused until a person clears it). Reconciled ones are closed.
 def Bj.warn(+s: String) -> Bool:
-  Bool.or(String.eq(s, "orphan"), String.eq(s, "ambiguous"))
+  Bool.or(String.eq(s, "orphan"), Bool.or(String.eq(s, "ambiguous"), String.eq(s, "unresolved")))
 
 # a job running now (at most Bj.most() rows of these)
 def Bj.shown(+s: String) -> Bool:
@@ -373,12 +375,17 @@ def Bj.runtime(+j: J.Json, +now: Nat) -> String:
     Nat.show(Nat.sub(now, Bj.nat(j, "started_at"))) ++ " s", Bj.raw(j, "runtime_s") ++ " s")
 
 def Bj.label(+state: String) -> String:
-  Bool.pick(String, String.eq(state, "orphan"), "Boat sandbox NOT deleted", Bool.pick(String, String.eq(state, "ambiguous"), "Boat create unresolved", "Boat job " ++ state))
+  Bool.pick(String, String.eq(state, "orphan"), "Boat sandbox NOT deleted",
+    Bool.pick(String, String.eq(state, "ambiguous"), "Boat create unclear",
+      Bool.pick(String, String.eq(state, "unresolved"), "Boat create UNRESOLVED, creates blocked", "Boat job " ++ state)))
+
+def Bj.unclear(+state: String) -> Bool:
+  Bool.or(String.eq(state, "ambiguous"), String.eq(state, "unresolved"))
 
 def Bj.job(+st: M.State, +j: J.Json, +now: Nat) -> URow:
   URow{Bj.label(J.Json.get_str(j, "state", "")) ++ " · " ++ J.Json.get_str(j, "size", "?"),
     Bj.who(st, J.Json.get_str(j, "thread", "")) ++ Bool.pick(String, String.is_empty(J.Json.get_str(j, "machine", "")), "", " on " ++ J.Json.get_str(j, "machine", "")) ++
-      Bool.pick(String, String.eq(J.Json.get_str(j, "state", ""), "ambiguous"), " · " ++ J.Json.get_str(j, "why", "no reason given") ++ " · check boat list",
+      Bool.pick(String, Bj.unclear(J.Json.get_str(j, "state", "")), " · " ++ J.Json.get_str(j, "why", "no reason given") ++ " · check boat list",
         " · " ++ Bj.runtime(j, now) ++ " · reserved " ++ Bj.usd.of(j, "reserved_cs") ++ " (worst case)"), ""}
 
 def Bj.jobs.k(keep: Bool, +st: M.State, +j: J.Json, +now: Nat, rest: List<&2, URow>) -> List<&2, URow>:
@@ -407,16 +414,19 @@ def Bj.cap(+rs: List<&2, URow>) -> List<&2, URow>:
   Bool.pick(List<&2, URow>, Nat.is_gt(List.length(&2, URow, rs), Bj.most()),
     List.append(&2, URow, List.take(&2, URow, rs, Bj.most()), [URow{"More Boat jobs", Nat.show(Nat.sub(List.length(&2, URow, rs), Bj.most())) ++ " more not listed", ""}]), rs)
 
-# creates Boat answered unclearly: a sandbox may exist that Backplane does
-# not own and will not sweep (they never block new jobs)
-def Bj.unresolved(+n: Nat) -> List<&2, URow>:
-  Bool.pick(List<&2, URow>, Nat.is_eq(n, 0n), Nil{},
-    [URow{"Boat warning", Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " Boat create", " Boat creates") ++ " unresolved: check boat list", ""}])
+# creates Boat answered unclearly (status "ambiguous", the unresolved ones
+# included): a sandbox may exist that Backplane does not own; and those
+# still unclear past their time (status "unresolved"), which block creates
+def Bj.unresolved(+n: Nat, +blocked: Nat) -> List<&2, URow>:
+  List.append(&2, URow,
+    Bool.pick(List<&2, URow>, Nat.is_eq(blocked, 0n), Nil{}, [URow{"Boat creates blocked", "Unclear create unresolved, check boat list", ""}]),
+    Bool.pick(List<&2, URow>, Nat.is_eq(n, 0n), Nil{},
+      [URow{"Boat warning", Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " Boat create", " Boat creates") ++ " unresolved: check boat list", ""}]))
 
 def Bj.mine.rows(known: Bool, +st: M.State, +s: J.Json, +now: Nat) -> List<&2, URow>:
   match known:
     case True{}:
-      List.concat(&2, URow, [[Bj.spend(s)], Bj.unresolved(Bj.nat(s, "ambiguous")),
+      List.concat(&2, URow, [[Bj.spend(s)], Bj.unresolved(Bj.nat(s, "ambiguous"), Bj.nat(s, "unresolved")),
         Bj.jobs(J.Json.elems(J.Json.get_obj(s, "jobs")), 0n, st, now), Bj.cap(Bj.jobs(J.Json.elems(J.Json.get_obj(s, "jobs")), 1n, st, now))])
     case False{}:
       [URow{"Boat for Backplane", "No job status yet.", ""}]

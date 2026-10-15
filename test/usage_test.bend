@@ -125,9 +125,19 @@ def main() -> IO(Unit):
       "Boat plan | Not read yet [usage-refresh]\n" ++
       "Boat for Backplane | Today $0.00000 · $0.00000 held for open jobs (worst case, not spent)\n" ++
       "Boat warning | 1 Boat create unresolved: check boat list\n" ++
-      "Boat create unresolved · default | Small · create answered unclearly · check boat list\n" ++
+      "Boat create unclear · default | Small · create answered unclearly · check boat list\n" ++
       "Boat sandbox NOT deleted · default | started by hand · ? s · reserved $0.00002 (worst case)\n" ++
       "Boat job running · small | started by hand · 4 s · reserved $0.00001 (worst case)\n")
     +w8 : String = boat(st, "", "{\"running\":8,\"orphans\":0,\"ambiguous\":1,\"today\":{\"cost_cs\":0,\"reserved_open_cs\":0},\"jobs\":[" ++
       String.join(many.go(8n), ",") ++ ",{\"state\":\"ambiguous\",\"size\":\"small\",\"why\":\"timeout\"}]}", 9n)
-    C.Check.str("boat unresolved shown past the cap", Nat.show(count(w8, "Boat create unresolved")), "1")
+    C.Check.str("boat unclear shown past the cap", Nat.show(count(w8, "Boat create unclear")), "1")
+    +wb : String = boat(st, "", "{\"running\":0,\"orphans\":0,\"ambiguous\":2,\"unresolved\":1,\"today\":{\"cost_cs\":0,\"reserved_open_cs\":0},\"jobs\":[" ++
+      "{\"state\":\"unresolved\",\"size\":\"small\",\"why\":\"look-alike up\"},{\"state\":\"ambiguous\",\"size\":\"small\",\"why\":\"slot held\"}," ++
+      "{\"state\":\"reconciled\",\"size\":\"small\",\"cost_cs\":3}]}", 9n)
+    C.Check.str("boat creates blocked, loudly", wb,
+      "Boat plan | Not read yet [usage-refresh]\n" ++
+      "Boat for Backplane | Today $0.00000 · $0.00000 held for open jobs (worst case, not spent)\n" ++
+      "Boat creates blocked | Unclear create unresolved, check boat list\n" ++
+      "Boat warning | 2 Boat creates unresolved: check boat list\n" ++
+      "Boat create UNRESOLVED, creates blocked · small | started by hand · look-alike up · check boat list\n" ++
+      "Boat create unclear · small | started by hand · slot held · check boat list\n")
