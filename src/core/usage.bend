@@ -414,14 +414,15 @@ def Bj.cap(+rs: List<&2, URow>) -> List<&2, URow>:
   Bool.pick(List<&2, URow>, Nat.is_gt(List.length(&2, URow, rs), Bj.most()),
     List.append(&2, URow, List.take(&2, URow, rs, Bj.most()), [URow{"More Boat jobs", Nat.show(Nat.sub(List.length(&2, URow, rs), Bj.most())) ++ " more not listed", ""}]), rs)
 
-# creates Boat answered unclearly (status "ambiguous", the unresolved ones
-# included): a sandbox may exist that Backplane does not own; and those
-# still unclear past their time (status "unresolved"), which block creates
+# creates still unclear past their time (status "unresolved"), which block
+# creates; and the other creates Boat answered unclearly (status
+# "ambiguous" counts both, so these are ambiguous less unresolved): a
+# sandbox may exist that Backplane does not own. Each job is said once.
 def Bj.unresolved(+n: Nat, +blocked: Nat) -> List<&2, URow>:
   List.append(&2, URow,
     Bool.pick(List<&2, URow>, Nat.is_eq(blocked, 0n), Nil{}, [URow{"Boat creates blocked", "Unclear create unresolved, check boat list", ""}]),
-    Bool.pick(List<&2, URow>, Nat.is_eq(n, 0n), Nil{},
-      [URow{"Boat warning", Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " Boat create", " Boat creates") ++ " unresolved: check boat list", ""}]))
+    Bool.pick(List<&2, URow>, Nat.is_eq(Nat.sub(n, blocked), 0n), Nil{},
+      [URow{"Boat warning", Nat.show(Nat.sub(n, blocked)) ++ Bool.pick(String, Nat.is_eq(Nat.sub(n, blocked), 1n), " Boat create", " Boat creates") ++ " unclear: check boat list", ""}]))
 
 def Bj.mine.rows(known: Bool, +st: M.State, +s: J.Json, +now: Nat) -> List<&2, URow>:
   match known:

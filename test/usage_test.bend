@@ -124,7 +124,7 @@ def main() -> IO(Unit):
     C.Check.str("boat warnings first, never capped", w,
       "Boat plan | Not read yet [usage-refresh]\n" ++
       "Boat for Backplane | Today $0.00000 · $0.00000 held for open jobs (worst case, not spent)\n" ++
-      "Boat warning | 1 Boat create unresolved: check boat list\n" ++
+      "Boat warning | 1 Boat create unclear: check boat list\n" ++
       "Boat create unclear · default | Small · create answered unclearly · check boat list\n" ++
       "Boat sandbox NOT deleted · default | started by hand · ? s · reserved $0.00002 (worst case)\n" ++
       "Boat job running · small | started by hand · 4 s · reserved $0.00001 (worst case)\n")
@@ -138,6 +138,8 @@ def main() -> IO(Unit):
       "Boat plan | Not read yet [usage-refresh]\n" ++
       "Boat for Backplane | Today $0.00000 · $0.00000 held for open jobs (worst case, not spent)\n" ++
       "Boat creates blocked | Unclear create unresolved, check boat list\n" ++
-      "Boat warning | 2 Boat creates unresolved: check boat list\n" ++
+      "Boat warning | 1 Boat create unclear: check boat list\n" ++
       "Boat create UNRESOLVED, creates blocked · small | started by hand · look-alike up · check boat list\n" ++
       "Boat create unclear · small | started by hand · slot held · check boat list\n")
+    C.Check.str("boat blocked only: no second line for the same job", boat(st, "", "{\"running\":0,\"ambiguous\":1,\"unresolved\":1,\"today\":{},\"jobs\":[]}", 9n),
+      "Boat plan | Not read yet [usage-refresh]\nBoat for Backplane | Today ? · ? held for open jobs (worst case, not spent)\nBoat creates blocked | Unclear create unresolved, check boat list\n")
