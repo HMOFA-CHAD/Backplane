@@ -896,7 +896,21 @@ def Mob.btw(+u: U.Ui) -> J.Json:
   Bool.pick(J.Json, String.is_empty(U.Btw.question(u)), J.Null{},
     J.Json.obj([J.KV{"q", J.Json.str(U.Btw.question(u))}, J.KV{"a", J.Json.str(U.Btw.text(U.Btw.reply.of(u)))}]))
 
-def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: List<&2, String>, +up: String, term: J.Json, skills: List<&2, J.Json>, +ph: M.Phase, btw: J.Json, embs: J.Json) -> J.Json:
+# a streamed reply as the thread shows it (markdown nodes)
+def Mob.live.nodes(+text: String) -> J.Json:
+  J.Json.arr(Mob.nodes(D.Md.render(text)))
+
+# (the phones' bridge leaves it out, render False, and puts in its own:
+# the reply's settled paragraphs it rendered before, and the rest now;
+# bridge.js's liveNodes, hubs.bend's Hubs.opened)
+def Mob.live.k(render: Bool, +text: String) -> J.Json:
+  match render:
+    case True{}:
+      Mob.live.nodes(text)
+    case False{}:
+      J.Json.arr(Nil{})
+
+def Mob.thread(render: Bool, u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: List<&2, String>, +up: String, term: J.Json, skills: List<&2, J.Json>, +ph: M.Phase, btw: J.Json, embs: J.Json) -> J.Json:
   match u t:
     case U.Ui{+st, +sel, +drafts, +live, _, _, +now, _, pa, _, _, _, _, _, +nf, _, _} M.Thread{+id, _, title, _, _, +turn, _, archived, o, +sa, +ua, pinned, _, branch, _, +pr, +mo, _, _, _, _}:
       +pg = Mob.page(drafts, id, st)
@@ -913,7 +927,7 @@ def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: 
         J.KV{"queued", J.Json.str(M.Queue.of(st, id))},
         J.KV{"queue", J.Json.arr(Mob.queue(M.Queue.items(st, id), True{}, V.View.running(turn)))},
         J.KV{"todos", Mob.todos(nf, id, U.Todos.shown(st, id, V.View.running(turn)))},
-        J.KV{"live", J.Json.arr(Mob.nodes(D.Md.render(U.Str.get(live, id))))},
+        J.KV{"live", Mob.live.k(render, U.Str.get(live, id))},
         J.KV{"working", J.Json.str(Bool.pick(String, String.is_empty(U.Str.get(live, id)), M.Phase.label(ph), ""))},
         J.KV{"phase", J.Json.str(M.Phase.name(ph))},
         J.KV{"draft", J.Json.str(U.Str.get(drafts, sel))},
@@ -929,13 +943,16 @@ def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: 
         J.KV{"embs", embs},
         J.KV{"viewer", vw}])
 
-def Mob.main(none: Bool, +u: U.Ui, +sel: String) -> J.Json:
+def Mob.main.r(none: Bool, +u: U.Ui, +sel: String, render: Bool) -> J.Json:
   match none:
     case True{}:
       J.Null{}
     case False{}:
-      Mob.thread(u, U.Ui.thread(Mob.st(u), sel), U.Ui.pending(u, sel), VW.View.json(u, Mob.review(String.eq(VW.View.kind(u), "review"), u)), U.Ui.atts(u, sel), U.Ui.uploading(u, sel),
+      Mob.thread(render, u, U.Ui.thread(Mob.st(u), sel), U.Ui.pending(u, sel), VW.View.json(u, Mob.review(String.eq(VW.View.kind(u), "review"), u)), U.Ui.atts(u, sel), U.Ui.uploading(u, sel),
         Mob.term(U.Ui.flag(u, "term"), u, sel), Mob.skills(U.Ui.skills(u)), U.Side.phase(Mob.st(u), U.Ui.thread(Mob.st(u), sel)), Mob.btw(u), J.Json.arr(Mob.embs(U.Emb.views(u, sel), u, sel)))
+
+def Mob.main(none: Bool, +u: U.Ui, +sel: String) -> J.Json:
+  Mob.main.r(none, u, sel, True{})
 
 def Mob.empty(n: Nat) -> String:
   Bool.pick(String, Nat.is_eq(n, 0n), "Add a project to start.", "Pick a thread, or start one in a project.")
@@ -1228,12 +1245,15 @@ def Mob.find(open: Bool, +u: U.Ui) -> J.Json:
     case False{}:
       J.Null{}
 
-def Mob.focus.thread(focus: Bool, +u: U.Ui, +sel: String) -> J.Json:
+def Mob.focus.thread.r(focus: Bool, +u: U.Ui, +sel: String, render: Bool) -> J.Json:
   match focus:
     case True{}:
-      Mob.main(String.is_empty(sel), u, sel)
+      Mob.main.r(String.is_empty(sel), u, sel, render)
     case False{}:
       J.Null{}
+
+def Mob.focus.thread(focus: Bool, +u: U.Ui, +sel: String) -> J.Json:
+  Mob.focus.thread.r(focus, u, sel, True{})
 
 def Mob.focus.bot(focus: Bool, +u: U.Ui) -> J.Json:
   match focus:

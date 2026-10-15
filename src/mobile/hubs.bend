@@ -459,8 +459,15 @@ def One.pol.d(delta: Bool, +u: U.Ui, +o: J.Json) -> Did:
 def One.pol.all(+u: U.Ui, +o: J.Json) -> Did:
   One.pol.b(U.Boot.on(u), N.Note.rseen(U.Ui.threads(S.Mob.st(u)), S.Mob.st(u)), One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))))
 
+# frames that fold nothing into a thread: streamed text, a heartbeat, a
+# streamed reply's end. They raise no alert and nothing is compared for
+# them (a heartbeat compared every thread: 24 ms on a phone, every few
+# seconds; laws alerts_none_for_hb, alerts_none_for_delta_end)
+def One.pol.still(+t: String) -> Bool:
+  Bool.or(String.eq(t, "delta"), Bool.or(String.eq(t, "hb"), String.eq(t, "delta_end")))
+
 def One.pol(+u: U.Ui, +o: J.Json) -> Did:
-  One.pol.d(String.eq(J.Json.get_str(o, "t", ""), "delta"), u, o)
+  One.pol.d(One.pol.still(J.Json.get_str(o, "t", "")), u, o)
 
 def One.run(op: Op, +u: U.Ui) -> Did:
   match op:
@@ -793,9 +800,13 @@ def Hubs.redraw.t(beat: Bool, +hs: Hubs, +key: String, +o: J.Json) -> Bool:
     case False{}:
       Hubs.redraw.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), hs, key, o)
 
-# (a heartbeat builds none: law hubs_redraw_hb)
+# (a heartbeat builds none: law hubs_redraw_hb; nor the end of a streamed
+# reply, which every client ignores: law hubs_redraw_delta_end)
+def Hubs.redraw.still(+t: String) -> Bool:
+  Bool.or(String.eq(t, "hb"), String.eq(t, "delta_end"))
+
 def Hubs.redraw(+hs: Hubs, +key: String, +o: J.Json) -> Bool:
-  Hubs.redraw.t(String.eq(J.Json.get_str(o, "t", ""), "hb"), hs, key, o)
+  Hubs.redraw.t(Hubs.redraw.still(J.Json.get_str(o, "t", "")), hs, key, o)
 
 def Hubs.list(hs: Hubs) -> List<&2, Hub>:
   match hs:
@@ -2024,6 +2035,93 @@ def Hubs.screen(hs: Hubs) -> J.Json:
   match hs:
     case Hubs{_, _, +cur, +list}:
       Hubs.screen.k(Hubs.relabel(Hubs.catalog.shown(Hubs.shown.w(list, cur, Hubs.pl.want(list, cur)), list)), cur, list, Hubs.pl.want(list, cur))
+
+# The screen in two halves, for the bridge (bridge.js keeps the first and
+# builds it again only when what it is made of changed)
+# -----------------------------------------------------------------------
+# A phone with ten agents at work gets a frame every few milliseconds:
+# streamed text, mostly for threads off the screen (no screen at all,
+# Hubs.redraw), then the open thread's text and every change. The whole
+# screen (every hub's list, the plane, the island, the tabs) took 80 ms
+# with no JIT, so the bridge's one thread was always busy and taps waited.
+#
+# Hubs.lean is what the list half is made of: every client as it is but
+# for its streamed text, which only the open thread shows (Mob.thread).
+# Bend values never change in place, so when each part of Hubs.lean(a) is
+# the very same value as in Hubs.lean(b) (bridge.js's same(), comparing
+# the hubs, their list and clients field by field), Hubs.screen.fast of
+# both is the same screen, and the bridge keeps the one it made.
+# Hubs.opened is the thread field from the real clients, cheap (the open
+# thread alone, its streamed reply rendered by the bridge a settled
+# paragraph at a time: bridge.js's liveNodes); the screen is Hubs.screen.fast(Hubs.lean(hs)) with its
+# "thread" made Hubs.opened(hs) (test/mhalves_test.bend; bench
+# test/tools/phone_lean_bench.ts --verify compares them frame by frame).
+
+def Hubs.lean.ui(u: U.Ui) -> U.Ui:
+  match u:
+    case U.Ui{st, sel, dr, _, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      U.Ui{st, sel, dr, Map.new(&2, String), op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+
+def Hubs.lean.go(hs: List<&2, Hub>) -> List<&2, Hub>:
+  match hs:
+    case Nil{}:
+      Nil{}
+    case Hub{k, u} <> t:
+      Hub{k, Hubs.lean.ui(u)} <> Hubs.lean.go(t)
+
+def Hubs.lean(hs: Hubs) -> Hubs:
+  match hs:
+    case Hubs{c, n, cur, list}:
+      Hubs{c, n, cur, Hubs.lean.go(list)}
+
+# (with one hub no row is another paired hub's mirror: Hubs.entity.dup
+# asks for a hub other than the row's own, so the catalog drops nothing
+# and its folds count nothing off; it walked every row and made the
+# state's index twice more)
+def Hubs.catalog.if(many: Bool, ss: List<&2, Shown>, +hs: List<&2, Hub>) -> List<&2, Shown>:
+  match many:
+    case True{}:
+      Hubs.catalog.shown(ss, hs)
+    case False{}:
+      ss
+
+def Hubs.screen.fast(hs: Hubs) -> J.Json:
+  match hs:
+    case Hubs{_, _, +cur, +list}:
+      Hubs.screen.k(Hubs.relabel(Hubs.catalog.if(Nat.is_gt(List.length(&2, Hub, list), 1n), Hubs.shown.w(list, cur, Hubs.pl.want(list, cur)), list)), cur, list, Hubs.pl.want(list, cur))
+
+def Hubs.opened.on(u: U.Ui) -> Bool:
+  match u:
+    case U.Ui{_, _, _, _, _, on, _, _, _, _, _, _, _, _, _, _, _}:
+      on
+
+# what Hubs.screen's "thread" reads of a hub's screen (Hubs.origin.focus):
+# whether it is online, and for the hub in focus its open thread, its ids
+# made the hub's (Q.all)
+def Hubs.opened.j(focus: Bool, +k: String, +u: U.Ui) -> J.Json:
+  match focus:
+    case True{}:
+      J.Json.obj([J.KV{"online", J.Json.bool(Hubs.opened.on(u))}, J.KV{"thread", Q.all(S.Mob.focus.thread.r(True{}, u, U.Ui.sel(u), False{}), k)}])
+    case False{}:
+      J.Json.obj([J.KV{"online", J.Json.bool(Hubs.opened.on(u))}])
+
+def Hubs.opened.shown(hs: List<&2, Hub>, +cur: String) -> List<&2, Shown>:
+  match hs:
+    case Nil{}:
+      Nil{}
+    case Hub{+k, +u} <> t:
+      Shown{k, Hubs.name(k, u), Hubs.opened.j(String.eq(k, cur), k, u)} <> Hubs.opened.shown(t, cur)
+
+# the screen's "thread", but its streamed reply ("live": [], which
+# bridge.js fills from Hubs.live.text with S.Mob.live.nodes)
+def Hubs.opened(hs: Hubs) -> J.Json:
+  match hs:
+    case Hubs{_, _, +cur, +list}:
+      Hubs.origin.focus(Hubs.relabel(Hubs.opened.shown(list, cur)), cur, "thread")
+
+# the streamed reply of the thread open on the hub in focus
+def Hubs.live.text(+hs: Hubs) -> String:
+  U.Ui.live.of(Hubs.ui(hs, Hubs.cur(hs)), U.Ui.sel(Hubs.ui(hs, Hubs.cur(hs))))
 
 # a running thread t1 that ran a tool, then sent a message to t2 (filed
 # under t1 too), and t2 that did something else since (for laws)

@@ -11,6 +11,7 @@ const harness = new Function(`
   const each = function* () {};
   const is = () => false, plain = x => x;
   const App = {screenj: () => ({version: ++renders})};
+  const screenText = () => JSON.stringify(plain(App.screenj(hubs)));
   ${out}
   return {${flush}
     withhold() { owed = true; },

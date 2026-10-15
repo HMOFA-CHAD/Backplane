@@ -8008,3 +8008,39 @@ law tiles_blink_exact:
   for +on: Bool
   {T.Tiles.blink(T.Tiles.make(k, e, ops, base, rx, ry, n), e, on) == T.Tiles.make(k, e, T.Caret.set(ops, on), base, rx, ry, n) : T.Tiles}
 # ---- end win-lean-frame caret blink ----
+
+# ---- perf-lead: phone-lean (src/mobile) ----
+# a heartbeat and a streamed reply's end fold nothing into a thread: they
+# raise no alert and nothing is compared for them
+law alerts_none_for_hb:
+  for +u: U.Ui
+  {Hb.Did.alerts(Hb.One.pol(u, J.Json.obj([J.KV{"t", J.Str{"hb"}}]))) == [] : List<&2, J.Json>}
+
+law alerts_none_for_delta_end:
+  for +u: U.Ui
+  for +th: String
+  {Hb.Did.alerts(Hb.One.pol(u, J.Json.obj([J.KV{"t", J.Str{"delta_end"}}, J.KV{"thread", J.Str{th}}]))) == [] : List<&2, J.Json>}
+
+# every client ignores a streamed reply's end, so the phone builds no screen for it
+law hubs_redraw_delta_end:
+  for +hs: Hb.Hubs
+  for +key: String
+  for +th: String
+  {Hb.Hubs.redraw(hs, key, J.Json.obj([J.KV{"t", J.Str{"delta_end"}}, J.KV{"thread", J.Str{th}}])) == False{} : Bool}
+
+# a thread the frame did not touch raises no alert, whatever its record
+# says (Note.ralerts reads only the threads seen before the frame)
+law policy_phone_untouched_quiet:
+  {Nt.Note.ralerts(U.Ui.threads(Nt.Note.demo.s(Nt.Note.demo.rec("done"))), [], Nt.Note.demo.s(Nt.Note.demo.rec("done")), "") == [] : List<&2, J.Json>}
+
+# and one it touched still does
+law policy_phone_touched_raises:
+  {List.length(&2, J.Json, Nt.Note.ralerts(U.Ui.threads(Nt.Note.demo.s(Nt.Note.demo.rec("done"))), [Nt.RSeen{"t1", ""}], Nt.Note.demo.s(Nt.Note.demo.rec("done")), "")) == 1n : Nat}
+
+# the list half is made from every client but its streamed text
+law hubs_lean_no_live:
+  {U.Ui.live.of(Hb.Hubs.lean.ui(U.Ui.delta(U.Ui.init(0n), "t1", "words")), "t1") == "" : String}
+
+law hubs_lean_keeps_state:
+  {U.Ui.seq(Hb.Hubs.lean.ui(U.Ui.delta(U.Ui.init(0n), "t1", "words"))) == U.Ui.seq(U.Ui.delta(U.Ui.init(0n), "t1", "words")) : Nat}
+# ---- end perf-lead: phone-lean ----
