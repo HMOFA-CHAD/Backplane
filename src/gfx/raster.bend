@@ -16,10 +16,13 @@ type Edge is Data:
 
 # a coverage bitmap (anti-aliased glyphs): 8-bit coverage, four pixels
 # per word, first pixel in the low byte, held as a complete binary tree
-# of 2^d words so a pixel is found in d steps
+# of 2^d words so a pixel is found in d steps. A leaf of 16 words (M16)
+# stands for the last four levels: a glyph's mask is then a few nodes, so
+# frames compare glyphs in a few steps, not one per word
 type Mask is Data:
   MWord{w: U32}
   MPair{lo: Mask, hi: Mask}
+  M16{w0: U32, w1: U32, w2: U32, w3: U32, w4: U32, w5: U32, w6: U32, w7: U32, w8: U32, w9: U32, w10: U32, w11: U32, w12: U32, w13: U32, w14: U32, w15: U32}
 
 # a run of glyphs (one line of text in one face and colour) as a tree in
 # string order: a leaf is a glyph's coverage bitmap at (gx, gy), w x h; a
@@ -99,11 +102,35 @@ def Mask.pick(hi: Bool, a: Mask, b: Mask) -> Mask:
     case True{}:
       b
 
+def Mask.sel(hi: Bool, +a: U32, +b: U32) -> U32:
+  match hi:
+    case False{}:
+      a
+    case True{}:
+      b
+
+def Mask.bit(+i: U32, +k: Nat) -> Bool:
+  U32.is_ne(U32.and(U32.shrn(i, k), 1), 0)
+
+# word i (its low four bits) of a 16-word leaf
+def Mask.leaf(m: Mask, +i: U32) -> U32:
+  match m:
+    case M16{+a0, +a1, +a2, +a3, +a4, +a5, +a6, +a7, +a8, +a9, +a10, +a11, +a12, +a13, +a14, +a15}:
+      Mask.sel(Mask.bit(i, 3n),
+        Mask.sel(Mask.bit(i, 2n), Mask.sel(Mask.bit(i, 1n), Mask.sel(Mask.bit(i, 0n), a0, a1), Mask.sel(Mask.bit(i, 0n), a2, a3)), Mask.sel(Mask.bit(i, 1n), Mask.sel(Mask.bit(i, 0n), a4, a5), Mask.sel(Mask.bit(i, 0n), a6, a7))),
+        Mask.sel(Mask.bit(i, 2n), Mask.sel(Mask.bit(i, 1n), Mask.sel(Mask.bit(i, 0n), a8, a9), Mask.sel(Mask.bit(i, 0n), a10, a11)), Mask.sel(Mask.bit(i, 1n), Mask.sel(Mask.bit(i, 0n), a12, a13), Mask.sel(Mask.bit(i, 0n), a14, a15))))
+    case MWord{w}:
+      w
+    case MPair{_, _}:
+      0
+
 # word i of a tree of 2^d words
 def Mask.at(d: Nat, m: Mask, +i: U32) -> U32:
   match d m:
     case _ MWord{w}:
       w
+    case _ M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15}:
+      Mask.leaf(M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15}, i)
     case 0n MPair{_, _}:
       0
     case 1n+k0 MPair{lo, hi}:

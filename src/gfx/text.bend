@@ -103,16 +103,47 @@ def Mask.word(xs: List<&2, U32>) -> R.Mask:
     case h <> _:
       R.MWord{h}
 
-# the first 2^d words of xs as a tree (zeros past the end)
-def Mask.of(d: Nat, +xs: List<&2, U32>) -> R.Mask:
+def Mask.w(xs: List<&2, U32>, +i: Nat) -> U32:
+  Maybe.default(&2, U32, List.head(&2, U32, List.drop(&2, U32, xs, i)), 0)
+
+# the first 16 words of xs as one leaf (zeros past the end)
+def Mask.leaf16(+xs: List<&2, U32>) -> R.Mask:
+  R.M16{Mask.w(xs, 0n), Mask.w(xs, 1n), Mask.w(xs, 2n), Mask.w(xs, 3n), Mask.w(xs, 4n), Mask.w(xs, 5n), Mask.w(xs, 6n), Mask.w(xs, 7n),
+    Mask.w(xs, 8n), Mask.w(xs, 9n), Mask.w(xs, 10n), Mask.w(xs, 11n), Mask.w(xs, 12n), Mask.w(xs, 13n), Mask.w(xs, 14n), Mask.w(xs, 15n)}
+
+# the first 2^d words of xs as a tree of words (zeros past the end)
+def Mask.small(d: Nat, +xs: List<&2, U32>) -> R.Mask:
   match d:
     case 0n:
       Mask.word(xs)
     case 1n+k0:
       +k = k0
       +half = U32.to_nat(U32.shln(1, k))
-      lo hi = Mask.of(k, List.take(&2, U32, xs, half)) Mask.of(k, List.drop(&2, U32, xs, half))
+      lo hi = Mask.small(k, List.take(&2, U32, xs, half)) Mask.small(k, List.drop(&2, U32, xs, half))
       R.MPair{lo, hi}
+
+# 2^(e+4) words of xs as a tree of 16-word leaves (raster.bend's M16)
+def Mask.big(e: Nat, +xs: List<&2, U32>) -> R.Mask:
+  match e:
+    case 0n:
+      Mask.leaf16(xs)
+    case 1n+k0:
+      +k = k0
+      +half = U32.to_nat(U32.shln(16, k))
+      lo hi = Mask.big(k, List.take(&2, U32, xs, half)) Mask.big(k, List.drop(&2, U32, xs, half))
+      R.MPair{lo, hi}
+
+def Mask.of.k(big: Bool, +d: Nat, +xs: List<&2, U32>) -> R.Mask:
+  match big:
+    case True{}:
+      Mask.big(Nat.sub(d, 4n), xs)
+    case False{}:
+      Mask.small(d, xs)
+
+# the first 2^d words of xs as a tree (zeros past the end); from 16 words
+# up, its last four levels are 16-word leaves, so a glyph is a few nodes
+def Mask.of(+d: Nat, +xs: List<&2, U32>) -> R.Mask:
+  Mask.of.k(Nat.is_ge(d, 4n), d, xs)
 
 def TG.blank(+miss: U32) -> TG:
   TG{miss, 32768, 32768, 0, 0, 0n, R.MWord{0}}

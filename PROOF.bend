@@ -1608,6 +1608,8 @@ def eq_mask_sound(a, b, h):
       {==}
     case R.MWord{+a0} R.MPair{+b0, +b1}:
       Empty.absurd({R.MWord{a0} == R.MPair{b0, b1} : R.Mask}, false_ne_true(h))
+    case R.MWord{+a0} R.M16{+b0, +b1, +b2, +b3, +b4, +b5, +b6, +b7, +b8, +b9, +b10, +b11, +b12, +b13, +b14, +b15}:
+      Empty.absurd({R.MWord{a0} == R.M16{b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}, false_ne_true(h))
     case R.MPair{+a0, +a1} R.MWord{+b0}:
       Empty.absurd({R.MPair{a0, a1} == R.MWord{b0} : R.Mask}, false_ne_true(h))
     case R.MPair{+a0, +a1} R.MPair{+b0, +b1}:
@@ -1617,6 +1619,76 @@ def eq_mask_sound(a, b, h):
       e1 = eq_mask_sound(a1, b1, hr0)
       %e0 : {R.MPair{a0, a1} == R.MPair{_, b1} : R.Mask}
       %e1 : {R.MPair{a0, a1} == R.MPair{a0, _} : R.Mask}
+      {==}
+    case R.MPair{+a0, +a1} R.M16{+b0, +b1, +b2, +b3, +b4, +b5, +b6, +b7, +b8, +b9, +b10, +b11, +b12, +b13, +b14, +b15}:
+      Empty.absurd({R.MPair{a0, a1} == R.M16{b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}, false_ne_true(h))
+    case R.M16{+a0, +a1, +a2, +a3, +a4, +a5, +a6, +a7, +a8, +a9, +a10, +a11, +a12, +a13, +a14, +a15} R.MWord{+b0}:
+      Empty.absurd({R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.MWord{b0} : R.Mask}, false_ne_true(h))
+    case R.M16{+a0, +a1, +a2, +a3, +a4, +a5, +a6, +a7, +a8, +a9, +a10, +a11, +a12, +a13, +a14, +a15} R.MPair{+b0, +b1}:
+      Empty.absurd({R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.MPair{b0, b1} : R.Mask}, false_ne_true(h))
+    case R.M16{+a0, +a1, +a2, +a3, +a4, +a5, +a6, +a7, +a8, +a9, +a10, +a11, +a12, +a13, +a14, +a15} R.M16{+b0, +b1, +b2, +b3, +b4, +b5, +b6, +b7, +b8, +b9, +b10, +b11, +b12, +b13, +b14, +b15}:
+      +hl0 = and_l(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))))))), h)
+      +hr0 = and_r(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))))))), h)
+      e0 = u32_eq_sound(a0, b0, hl0)
+      +hl1 = and_l(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))))))), hr0)
+      +hr1 = and_r(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))))))), hr0)
+      e1 = u32_eq_sound(a1, b1, hl1)
+      +hl2 = and_l(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))))), hr1)
+      +hr2 = and_r(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))))), hr1)
+      e2 = u32_eq_sound(a2, b2, hl2)
+      +hl3 = and_l(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))))), hr2)
+      +hr3 = and_r(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))))), hr2)
+      e3 = u32_eq_sound(a3, b3, hl3)
+      +hl4 = and_l(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))), hr3)
+      +hr4 = and_r(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))), hr3)
+      e4 = u32_eq_sound(a4, b4, hl4)
+      +hl5 = and_l(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))), hr4)
+      +hr5 = and_r(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))))), hr4)
+      e5 = u32_eq_sound(a5, b5, hl5)
+      +hl6 = and_l(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))), hr5)
+      +hr6 = and_r(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))), hr5)
+      e6 = u32_eq_sound(a6, b6, hl6)
+      +hl7 = and_l(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))), hr6)
+      +hr7 = and_r(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))))), hr6)
+      e7 = u32_eq_sound(a7, b7, hl7)
+      +hl8 = and_l(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))), hr7)
+      +hr8 = and_r(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))), hr7)
+      e8 = u32_eq_sound(a8, b8, hl8)
+      +hl9 = and_l(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))), hr8)
+      +hr9 = and_r(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))))), hr8)
+      e9 = u32_eq_sound(a9, b9, hl9)
+      +hl10 = and_l(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))), hr9)
+      +hr10 = and_r(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))), hr9)
+      e10 = u32_eq_sound(a10, b10, hl10)
+      +hl11 = and_l(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))), hr10)
+      +hr11 = and_r(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)))), hr10)
+      e11 = u32_eq_sound(a11, b11, hl11)
+      +hl12 = and_l(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))), hr11)
+      +hr12 = and_r(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))), hr11)
+      e12 = u32_eq_sound(a12, b12, hl12)
+      +hl13 = and_l(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)), hr12)
+      +hr13 = and_r(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15)), hr12)
+      e13 = u32_eq_sound(a13, b13, hl13)
+      +hl14 = and_l(U32.is_eq(a14, b14), U32.is_eq(a15, b15), hr13)
+      +hr14 = and_r(U32.is_eq(a14, b14), U32.is_eq(a15, b15), hr13)
+      e14 = u32_eq_sound(a14, b14, hl14)
+      e15 = u32_eq_sound(a15, b15, hr14)
+      %e0 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{_, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e1 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, _, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e2 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, _, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e3 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, _, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e4 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, _, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e5 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, _, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e6 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, _, b7, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e7 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, _, b8, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e8 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, _, b9, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e9 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, _, b10, b11, b12, b13, b14, b15} : R.Mask}
+      %e10 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, _, b11, b12, b13, b14, b15} : R.Mask}
+      %e11 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, _, b12, b13, b14, b15} : R.Mask}
+      %e12 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, _, b13, b14, b15} : R.Mask}
+      %e13 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, _, b14, b15} : R.Mask}
+      %e14 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, _, b15} : R.Mask}
+      %e15 : {R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} == R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, _} : R.Mask}
       {==}
 
 law eq_mask_refl:
@@ -1631,6 +1703,24 @@ def eq_mask_refl(a):
     case R.MPair{+a0, +a1}:
       %Equal.sym(Bool, T.Eq.mask(a0, a0), True{}, eq_mask_refl(a0)) : {Bool.and(_, T.Eq.mask(a1, a1)) == True{} : Bool}
       %Equal.sym(Bool, T.Eq.mask(a1, a1), True{}, eq_mask_refl(a1)) : {Bool.and(True{}, _) == True{} : Bool}
+      {==}
+    case R.M16{+a0, +a1, +a2, +a3, +a4, +a5, +a6, +a7, +a8, +a9, +a10, +a11, +a12, +a13, +a14, +a15}:
+      %Equal.sym(Bool, U32.is_eq(a0, a0), True{}, u32_eq_refl(a0)) : {Bool.and(_, Bool.and(U32.is_eq(a1, a1), Bool.and(U32.is_eq(a2, a2), Bool.and(U32.is_eq(a3, a3), Bool.and(U32.is_eq(a4, a4), Bool.and(U32.is_eq(a5, a5), Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a1, a1), True{}, u32_eq_refl(a1)) : {Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a2, a2), Bool.and(U32.is_eq(a3, a3), Bool.and(U32.is_eq(a4, a4), Bool.and(U32.is_eq(a5, a5), Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a2, a2), True{}, u32_eq_refl(a2)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a3, a3), Bool.and(U32.is_eq(a4, a4), Bool.and(U32.is_eq(a5, a5), Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a3, a3), True{}, u32_eq_refl(a3)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a4, a4), Bool.and(U32.is_eq(a5, a5), Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a4, a4), True{}, u32_eq_refl(a4)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a5, a5), Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a5, a5), True{}, u32_eq_refl(a5)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a6, a6), Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a6, a6), True{}, u32_eq_refl(a6)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a7, a7), Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a7, a7), True{}, u32_eq_refl(a7)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a8, a8), Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a8, a8), True{}, u32_eq_refl(a8)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a9, a9), Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a9, a9), True{}, u32_eq_refl(a9)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a10, a10), Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a10, a10), True{}, u32_eq_refl(a10)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a11, a11), Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a11, a11), True{}, u32_eq_refl(a11)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a12, a12), Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a12, a12), True{}, u32_eq_refl(a12)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a13, a13), Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a13, a13), True{}, u32_eq_refl(a13)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, Bool.and(U32.is_eq(a14, a14), U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a14, a14), True{}, u32_eq_refl(a14)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(_, U32.is_eq(a15, a15)))))))))))))))) == True{} : Bool}
+      %Equal.sym(Bool, U32.is_eq(a15, a15), True{}, u32_eq_refl(a15)) : {Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, Bool.and(True{}, _))))))))))))))) == True{} : Bool}
       {==}
 
 law eq_glyph_sound:

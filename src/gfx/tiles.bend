@@ -41,6 +41,8 @@ def Eq.mask(a: R.Mask, b: R.Mask) -> Bool:
       U32.is_eq(x, y)
     case R.MPair{al, ah} R.MPair{bl, bh}:
       Bool.and(Eq.mask(al, bl), Eq.mask(ah, bh))
+    case R.M16{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15} R.M16{b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15}:
+      Bool.and(U32.is_eq(a0, b0), Bool.and(U32.is_eq(a1, b1), Bool.and(U32.is_eq(a2, b2), Bool.and(U32.is_eq(a3, b3), Bool.and(U32.is_eq(a4, b4), Bool.and(U32.is_eq(a5, b5), Bool.and(U32.is_eq(a6, b6), Bool.and(U32.is_eq(a7, b7), Bool.and(U32.is_eq(a8, b8), Bool.and(U32.is_eq(a9, b9), Bool.and(U32.is_eq(a10, b10), Bool.and(U32.is_eq(a11, b11), Bool.and(U32.is_eq(a12, b12), Bool.and(U32.is_eq(a13, b13), Bool.and(U32.is_eq(a14, b14), U32.is_eq(a15, b15))))))))))))))))
     case _ _:
       False{}
 
