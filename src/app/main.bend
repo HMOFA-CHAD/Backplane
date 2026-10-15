@@ -67,6 +67,8 @@ type ShellMsg is Data:
   PicOk{tag: String, path: String, w: U32, h: U32, rgb: List<&2, U32>}
   PicErr{tag: String, path: String, why: String}
   Blink{}
+  # the cats' next frame
+  Tick{}
   # a desktop notification was clicked: its thread opens
   Opened{thread: String}
   # a client action come due (client.bend's Later: the history playing)
@@ -238,6 +240,13 @@ def Timer.blink(+q: Chan(ShellMsg), wait: Nat) -> IO(Unit):
     ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Blink{})
     return Unit{}
 
+# the cats' next frame
+def Timer.tick(+q: Chan(ShellMsg), wait: Nat) -> IO(Unit):
+  do IO<Unit>:
+    IO.sleep(U32.from_nat(wait))
+    ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Tick{})
+    return Unit{}
+
 # Drawing
 # -------
 
@@ -300,7 +309,7 @@ def Shell.cats.k(go: Bool, +n: N.Nui, +q: Chan(ShellMsg), +wait: Nat, +ms: Nat) 
   match go:
     case True{}:
       do IO<N.Nui>:
-        IO.spawn(Unit, Timer.blink(q, wait))
+        IO.spawn(Unit, Timer.tick(q, wait))
         return N.Nui.with_ui(n, U.Ui.info_set(N.Nui.ui(n), "cat.due", Nat.show(Nat.add(ms, wait))))
     case False{}:
       IO.pure(N.Nui, n)
@@ -2097,6 +2106,63 @@ def Shell.frame(a: Shell) -> IO(Shell):
     case Shell{n, w, False{}, _, q, i, wa}:
       IO.pure(Shell, Shell{n, w, False{}, False{}, q, i, wa})
 
+# a blinked frame is on screen: the caret's next toggle is asked for (the
+# hits, so the pictures and cats, are the last frame's: nothing to ask)
+def Shell.caret.shown(r: Window & Image & Image, +n: N.Nui, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +ms: Nat) -> IO(Shell):
+  (w, ab) = r
+  (img, prev) = ab
+  do IO<Shell>:
+    Unit <- IO.pure(Unit, Image.drop!(prev))
+    Unit <- IO.pure(Unit, Image.drop!(img))
+    +n1 : N.Nui <- Shell.blink(n, q, ms)
+    return Shell{n1, w, False{}, False{}, q, i, wa}
+
+# The caret blinks without a layout: when nothing else changed since the
+# last frame, that frame's tiles are blinked in place (TI.Frames.blink:
+# only the tiles under the caret are drawn again) and shown. Anything else
+# pending, no frame yet, the lightbox up, or the minute moved on (the
+# sidebar's "5m" labels) makes it a whole frame as before.
+def Shell.caret.fast(+n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +ms: Nat, +t0: U32) -> IO(Shell):
+  do IO<Shell>:
+    +n2 : N.Nui = N.Blink.stamp(n, ms)
+    +f : TI.Frames = TI.Frames.blink(Aux.frames(wa), N.Blink.on(n2))
+    +img : Image = Frames.image(f)
+    t1 : U32 <- PS.Perf.lap("ui.blink", t0)
+    r : Window & Image & Image <- W.Win.show(w, img, Frames.image(Aux.frames(wa)))
+    t2 : U32 <- PS.Perf.lap("ui.present", t1)
+    Shell.caret.shown(r, n2, q, i, Aux.with_frames(wa, f), ms)
+
+def Shell.caret.k(fast: Bool, +n: N.Nui, w: Window, qd: Bool, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +ms: Nat, +t0: U32) -> IO(Shell):
+  match fast:
+    case True{}:
+      Shell.caret.fast(n, w, q, i, wa, ms, t0)
+    case False{}:
+      Shell.frame(Shell{n, w, True{}, qd, q, i, wa})
+
+def Frames.some(f: TI.Frames) -> Bool:
+  match f:
+    case TI.FNone{}:
+      False{}
+    case TI.FSome{_, _, _}:
+      True{}
+
+# the caret can blink alone: a frame to blink, no lightbox, and the clock
+# the last frame was laid out with in the same minute
+def Shell.caret.ok(+n: N.Nui, +wa: Aux, +epoch: Nat) -> Bool:
+  Bool.and(Bool.and(Frames.some(Aux.frames(wa)), Bool.not(N.Lbx.on(n))),
+    Nat.is_eq(Nat.div(epoch, 60n), Nat.div(U.Side.now(N.Nui.ui(n)), 60n)))
+
+def Shell.caret(a: Shell) -> IO(Shell):
+  match a:
+    case Shell{n, w, True{}, qd, q, i, wa}:
+      Shell.frame(Shell{n, w, True{}, qd, q, i, wa})
+    case Shell{+n, w, False{}, qd, +q, i, +wa}:
+      do IO<Shell>:
+        +t0 : U32 <- PS.Perf.us()
+        t : U32 <- H.Clock.epoch()
+        +ms : Nat <- IO.now()
+        Shell.caret.k(Shell.caret.ok(n, wa, U32.to_nat(t)), n, w, qd, q, i, wa, ms, t0)
+
 def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
   match m:
     case FromWin{ws}:
@@ -2108,6 +2174,8 @@ def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
     case Frame{}:
       Shell.frame(a)
     case Blink{}:
+      Shell.caret(a)
+    case Tick{}:
       Shell.frame(Shell.blinked(a))
     case Due{+action, +value}:
       Shell.due(a, action, value)
@@ -2203,6 +2271,8 @@ def ShellMsg.kind(m: ShellMsg) -> String:
       "pic_err"
     case Blink{}:
       "blink"
+    case Tick{}:
+      "tick"
     case Opened{_}:
       "opened"
     case Due{_, _}:
