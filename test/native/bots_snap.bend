@@ -124,7 +124,7 @@ def write(+path: String, +img: Image) -> IO(Unit):
 def shot(+ty: L.Ty, +dir: String, +name: String, +steps: String, +focus: String) -> IO(Unit):
   +u = acts(String.split(steps, ';'), base())
   +n = with_focus(with_ms(N.Nui.init(u, 1400, 900), 1234n), focus)
-  +os = ops(BV.Bv.frame(ty, L.Lay.memo(ty, n, L.TL.memo.none()), BV.Bv.warm(u, CA.Cats.none(), 1234n), n))
+  +os = ops(BV.Bv.with_cats(BV.Bv.frame(ty, L.Lay.memo(ty, n, L.TL.memo.none()), BV.Bv.warm(u, CA.Cats.none(), 1234n), n), BV.Bv.warm(u, CA.Cats.none(), 1234n), 1234n))
   do IO<Unit>:
     write(dir ++ "/bots-" ++ name ++ ".ppm", R.Frame.render(1400, 900, os, T.Th.bg()))
     IO.print(dir ++ "/bots-" ++ name ++ ".ppm")

@@ -755,3 +755,72 @@ def Frames.blink(f: Frames, +on: Bool) -> Frames:
       FNone{}
     case FSome{+w, +h, t}:
       FSome{w, h, Tiles.blink(t, Frame.edge(w, h), on)}
+
+# Cat frames
+# ----------
+# The cats move at ~30 frames a second while nothing else changes. A frame
+# with cats keeps their ops in front of the rest (main.bend's Catv, only
+# when nothing is drawn over a cat, so the pixels are the same): its ops
+# are cs then the rest. A cat frame changes only cs, so each node and tile
+# is cs's part there then the rest it held: nodes whose cat ops are the
+# same are kept whole, and only tiles the cats reach are drawn again (law
+# tiles_recat_exact).
+
+# a then b
+def Ops.cat(a: List<&2, R.Op>, b: List<&2, R.Op>) -> List<&2, R.Op>:
+  match a:
+    case Nil{}:
+      b
+    case o <> t:
+      o <> Ops.cat(t, b)
+
+# the ops after as many as cs has (law ops_after_cat)
+def Ops.after(cs: List<&2, R.Op>, o: List<&2, R.Op>) -> List<&2, R.Op>:
+  match cs o:
+    case Nil{} _:
+      o
+    case c <> ct x <> ot:
+      Ops.after(ct, ot)
+    case c <> ct Nil{}:
+      Nil{}
+
+def Tile.recat(+e: Nat, +cs: List<&2, R.Op>, +cs2: List<&2, R.Op>, t: Tile, +rx: U32, +ry: U32) -> Tile:
+  match t:
+    case Tile{o, _, +b, _}:
+      +o2 = Ops.cat(cs2, Ops.after(cs, o))
+      Tile.of(e, o2, Loc.ops(o2, rx, ry, Tile.size(e)), b)
+
+# the tiles k levels over the n x n region at (rx, ry) whose ops are cs
+# then the rest, with cs2 in place of cs (same: Eq.ops(cs, cs2))
+def Tiles.recat.go(k: Nat, +e: Nat, +cs: List<&2, R.Op>, +cs2: List<&2, R.Op>, t: Tiles, +rx: U32, +ry: U32, +n: U32, same: Bool) -> Tiles:
+  match k t same:
+    case _ _ True{}:
+      t
+    case 0n TLeaf{tl} False{}:
+      TLeaf{Tile.recat(e, cs, cs2, tl, rx, ry)}
+    case 1n+j0 TNode{o, b, +pa, +pb, +pc, +pd} False{}:
+      +j = j0
+      +h = U32.shr(n)
+      +ca = R.Region.keep(cs, rx, ry, rx, ry, h)
+      +da = R.Region.keep(cs2, rx, ry, rx, ry, h)
+      +cb = R.Region.keep(cs, rx, ry, (rx + h : U32), ry, h)
+      +db = R.Region.keep(cs2, rx, ry, (rx + h : U32), ry, h)
+      +cc = R.Region.keep(cs, rx, ry, rx, (ry + h : U32), h)
+      +dc = R.Region.keep(cs2, rx, ry, rx, (ry + h : U32), h)
+      +cd = R.Region.keep(cs, rx, ry, (rx + h : U32), (ry + h : U32), h)
+      +dd = R.Region.keep(cs2, rx, ry, (rx + h : U32), (ry + h : U32), h)
+      a2 b2 c2 d2 = Tiles.recat.go(j, e, ca, da, pa, rx, ry, h, Eq.ops(ca, da)) Tiles.recat.go(j, e, cb, db, pb, (rx + h : U32), ry, h, Eq.ops(cb, db)) Tiles.recat.go(j, e, cc, dc, pc, rx, (ry + h : U32), h, Eq.ops(cc, dc)) Tiles.recat.go(j, e, cd, dd, pd, (rx + h : U32), (ry + h : U32), h, Eq.ops(cd, dd))
+      TNode{Ops.cat(cs2, Ops.after(cs, o)), b, a2, b2, c2, d2}
+    case _ _ _:
+      t
+
+def Tiles.recat(+k: Nat, +e: Nat, +cs: List<&2, R.Op>, +cs2: List<&2, R.Op>, t: Tiles, +rx: U32, +ry: U32, +n: U32) -> Tiles:
+  Tiles.recat.go(k, e, cs, cs2, t, rx, ry, n, Eq.ops(cs, cs2))
+
+# the last frame (ops cs then the rest) with cs2 in place of cs
+def Frames.recat(f: Frames, +cs: List<&2, R.Op>, +cs2: List<&2, R.Op>) -> Frames:
+  match f:
+    case FNone{}:
+      FNone{}
+    case FSome{+w, +h, t}:
+      FSome{w, h, Tiles.recat(Frame.levels(w, h), Frame.edge(w, h), cs, cs2, t, 0, 0, U32.shln(1, R.Frame.depth(w, h)))}
