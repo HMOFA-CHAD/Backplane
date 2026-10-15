@@ -210,7 +210,7 @@ def main() -> IO(Unit):
     C.Check.str("provider placeholder never becomes a bare Subagent", SB.Subs.title("subagent", "Subagent", [SB.SubStep{"Bash", "inspect"}], ""), "subagent: inspect")
     C.Check.str("known start beats provider placeholder", SB.Subs.asked("Subagent", "Inspect power"), "Inspect power")
     C.Check.str("no work and no retained finishes has no panel", keys(SB.Subs.rows(M.State.empty(), nf, "t1", 110n)), "")
-    C.Check.str("work sorts before input and failures", keys(SB.Subs.group([sample("bad", "error", False{}), sample("ask", "needs you", True{}), sample("run", "queued", True{})], nf, "t1")), "run;ask;bad;")
+    C.Check.str("work sorts before input and failures", keys(SB.Subs.group([sample("bad", "error", False{}), sample("ask", "needs you", True{}), sample("run", "starting", True{})], nf, "t1")), "run;ask;bad;")
     C.Check.str("prompt title uses first line", rows([M.SettingSet{"bg.t100-1", "a\tWorking\tc\tInspect power\tsubagent", 100n}, M.ActivityLogged{"@sub:t100-1", "c/start", "c", "start:subagent", "Inspect power\nmore", 100n}]), "c|Inspect power|running|Working|open|0|0;")
     C.Check.str("Claude alias and full id normalize", SB.Subs.model("claude", "claude-opus-5-5"), SB.Subs.model("claude", "opus"))
     C.Check.str("all Claude families and default", SB.Subs.model("claude", "claude-sonnet-4-5") ++ "/" ++ SB.Subs.model("claude", "haiku") ++ "/" ++ SB.Subs.model("claude", "claude-fable-5") ++ "/" ++ SB.Subs.model("claude", ""), "sonnet/haiku/fable/default")

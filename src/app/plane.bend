@@ -25,7 +25,7 @@ def Pl.dot(+s: String) -> U32:
   Bool.pick(U32, Bool.or(Bool.or(String.eq(s, "approval"), String.eq(s, "question")), Bool.or(String.eq(s, "wait"), String.eq(s, "unread"))), T.Th.warn(),
     Bool.pick(U32, Bool.or(String.eq(s, "failed"), String.eq(s, "error")), T.Th.bad(),
       Bool.pick(U32, Bool.or(Bool.or(String.eq(s, "working"), String.eq(s, "work")), String.eq(s, "talk")), T.Th.ok(),
-        Bool.pick(U32, Bool.or(String.eq(s, "queued"), String.eq(s, "think")), T.Th.dim(),
+        Bool.pick(U32, Bool.or(String.eq(s, "waiting"), String.eq(s, "think")), T.Th.dim(),
           Bool.pick(U32, String.eq(s, "finished"), T.Th.soft(), T.Th.faint())))))
 
 # a thread's row: dot, title, its project, then its machine and age at the right

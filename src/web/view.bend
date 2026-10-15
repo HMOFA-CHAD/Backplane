@@ -738,8 +738,8 @@ def View.todos(+info: Map<&2, String>, +th: String, +ts: List<&2, TD.Todo>) -> D
   D.El{"div", "", [D.At{"class", Bool.pick(String, U.Todos.all(info, th), "todos all", "todos")}], Bool.pick(List<&2, D.Node>, List.is_empty(&2, TD.Todo, ts), Nil{},
     View.todos.k(U.Todos.open(info, th), U.Todos.all(info, th), th, ts, info))}
 
-# what waits for a later turn (stored on the server), next first, each
-# with its buttons (U.Qu.buttons)
+# context handed over to go with the next message (M.Queue.context), each
+# with its buttons (U.Qu.row_buttons)
 def View.queued(qs: List<&2, M.QItem>, +run: Bool) -> D.Node:
   D.El{"div", "", [D.At{"class", "queue"}], View.qrows(qs, True{}, run)}
 
@@ -937,8 +937,6 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
     D.El{"header", "", [D.At{"class", "thread-head"}], [D.Dom.span("title", "Settings"), D.Dom.span("meta", ""), D.Dom.button("", "flag", "settings", "Close settings", "Close")]},
     D.El{"div", "", [D.At{"class", "settings"}], List.concat(&2, D.Node, [[
       View.setrow("Settle after", "Threads idle this long move to Settled. They stay saved.", View.days(M.Setting.get(st, "settle.days", "3"))),
-      View.setrow("Follow-ups while a turn runs", "Queue waits for the turn to end; steer sends into it. Ctrl+Enter does the other. Default: Claude steers, Codex, Grok and Muse queue.",
-        View.chips(["", "queue", "steer"], M.Setting.get(st, "followup", ""), "followup")),
       View.setrow("Continue after a restart", "Turns a restart cuts short go on by themselves.", View.chips(["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"))],
       View.notify(st),
       [View.setrow("Provider for new threads", Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), prov ++ " is not installed", U.Models.cli(U.Str.get(nf, "models"), prov)) ++ ". Each thread keeps its own; change it from the composer.", View.chips(["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider")),
@@ -1545,7 +1543,7 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
             View.live.of(st, live, id))))))},
         View.asks.box(st, id, U.Str.get(drafts, sel), nf),
         View.todos(nf, id, U.Todos.shown(st, id, View.running(turn))),
-        View.queued(M.Queue.items(st, id), View.running(turn)),
+        View.queued(M.Queue.context(M.Queue.items(st, id)), View.running(turn)),
         View.composer.t(st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)]),
         D.Dom.when(term, View.term(U.Term.get(tr, id))))}
 

@@ -34,7 +34,7 @@ def main() -> IO(Unit):
     # the agent exits
     C.Check.str("exit, continuing on: no waiting line, the told agent works", island(gone(bg(True{}), "t1")), "[{\"thread\":\"t1\",\"title\":\"t1\",\"doing\":\"Working\"}]")
     C.Check.str("exit, continuing off: island empty", island(gone(bg(False{}), "t1")), "[]")
-    C.Check.str("exit, turn running: island empty (the note waits in the queue)", island(gone(H.Lost.demo(True{}, True{}), "t1")), "[]")
+    C.Check.str("exit, turn running: the note starts a turn at once", island(gone(H.Lost.demo(True{}, True{}), "t1")), "[{\"thread\":\"t1\",\"title\":\"t1\",\"doing\":\"exit agent exited with code 0\"}]")
     C.Check.str("exit: no rows left", Nat.show(M.Bg.live(M.Bg.of(gone(H.Lost.demo(True{}, True{}), "t1"), "t1"))), "0")
     C.Check.str("exit: the agent is told once", Nat.show(H.Lost.told(M.State.mine(gone(bg(True{}), "t1"), "t1"))), "1")
     C.Check.str("exit twice tells once", Nat.show(H.Lost.told(M.State.mine(gone(gone(bg(True{}), "t1"), "t1"), "t1"))), "1")

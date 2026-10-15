@@ -196,11 +196,11 @@ fun StatusDot(state: String, status: String) {
         when (status) {
             "approval" -> Icon(Icons.Filled.PanTool, "Waits for approval", Modifier.size(16.dp), tint = PhaseColor.warn)
             "input" -> Icon(Icons.Filled.QuestionAnswer, "Waits for an answer", Modifier.size(16.dp), tint = PhaseColor.input)
-            "working" -> CircularProgressIndicator(Modifier.size(16.dp), color = PhaseColor.accent, strokeWidth = 2.dp)
+            // ("queued" from an older hub: nothing waits now, it is working)
+            "working", "queued" -> CircularProgressIndicator(Modifier.size(16.dp), color = PhaseColor.accent, strokeWidth = 2.dp)
             // the turn is over, its subagents still at work ("waiting" from an older hub)
             "monitoring", "waiting" -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = PhaseColor.waiting)
             "failed" -> Icon(Icons.Filled.Error, "Failed", Modifier.size(18.dp), tint = PhaseColor.bad)
-            "queued" -> Icon(Icons.Filled.Schedule, "Queued", Modifier.size(16.dp), tint = PhaseColor.queued)
             "complete" -> Dot(PhaseColor.ok)
             "stopped", "idle", "ready" -> Dot(PhaseColor.faint)
             else -> when (state) {
@@ -444,7 +444,7 @@ private fun subColor(state: String) = when (state) {
     "done", "reporting", "held" -> PhaseColor.ok
     "watching", "launching", "waiting on", "waiting", "needs you" -> PhaseColor.accent
     // "" is the "N done" toggle row (subs.bend's Subs.done.toggle): neutral
-    "", "queued" -> Color.Gray
+    "", "starting", "queued" -> Color.Gray
     "cancelled", "cancelling" -> PhaseColor.warn
     else -> PhaseColor.bad
 }

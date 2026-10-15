@@ -36,8 +36,6 @@ def Mood.of(s: M.Status, talked: Bool, idle: Bool) -> String:
       "wait"
     case M.StWorking{}:
       Bool.pick(String, talked, "talk", "work")
-    case M.StQueued{}:
-      "think"
     case M.StWaiting{}:
       Bool.pick(String, talked, "talk", "work")
     case M.StFailed{}:
@@ -65,7 +63,7 @@ def Mood.note(+m: String) -> String:
   Bool.pick(String, String.eq(m, "sleep"), "asleep",
     Bool.pick(String, String.eq(m, "idle"), "ready",
       Bool.pick(String, String.eq(m, "work"), "working",
-        Bool.pick(String, String.eq(m, "think"), "queued",
+        Bool.pick(String, String.eq(m, "think"), "thinking",
           Bool.pick(String, String.eq(m, "wait"), "needs you",
             Bool.pick(String, String.eq(m, "talk"), "talking",
               Bool.pick(String, String.eq(m, "error"), "failed", "away")))))))

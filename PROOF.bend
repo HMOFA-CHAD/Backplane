@@ -633,9 +633,44 @@ def Laws.resume_is_replay(a, b, s):
     case h <> t:
       Laws.resume_is_replay(t, b, M.State.apply(s, h))
 
-def Laws.queue_never_concurrent(s, now, th, msg, role, text, h1, h2):
-  %Equal.sym(Bool, H.Hub.running(H.Hub.thread(s, th)), True{}, h1) : {H.Step.outs_of(H.Hub.post.w(_, M.Worktree.gone(H.Hub.thread(s, th)), M.Worktree.pending(H.Hub.thread(s, th), now), s, now, th, msg, role, text)) == [] : List<&2, H.Out>}
-  %Equal.sym(Bool, String.eq(H.Hub.provider(H.Hub.thread(s, th)), "claude"), False{}, h2) : {H.Step.outs_of(H.Hub.post.go(Bool.or(Bool.and(True{}, Bool.not(_)), M.Worktree.pending(H.Hub.thread(s, th), now)), H.Hub.thread(s, th), H.Hub.cwd(s, H.Hub.thread(s, th)), M.Queue.of(s, th), now, th, msg, role, text)) == [] : List<&2, H.Out>}
+def Laws.post_running_delivers(s, now, th, msg, role, text, h1, h2):
+  %Equal.sym(Bool, H.Hub.running(H.Hub.thread(s, th)), True{}, h1) : {H.Hub.post.w(_, M.Worktree.gone(H.Hub.thread(s, th)), M.Worktree.pending(H.Hub.thread(s, th), now), s, now, th, msg, role, text) == H.Hub.deliver.r(True{}, s, now, th, msg, role, text) : H.Step}
+  %Equal.sym(Bool, M.Worktree.pending(H.Hub.thread(s, th), now), False{}, h2) : {H.Hub.deliver(True{}, _, s, now, th, msg, role, text) == H.Hub.deliver.r(True{}, s, now, th, msg, role, text) : H.Step}
+  {==}
+
+def Laws.deliver_held_go(b, th, now):
+  match b:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.deliver_held_steer(b1, b2, th, id, now):
+  match b1 b2:
+    case True{} True{}:
+      {==}
+    case True{} False{}:
+      {==}
+    case False{} True{}:
+      {==}
+    case False{} False{}:
+      {==}
+
+def Laws.deliver_held_steer_k(c, s, now, th, msg, role, text):
+  match c:
+    case True{}:
+      Laws.deliver_held_go(String.is_empty(M.Queue.of(s, th)), th, now)
+    case False{}:
+      Laws.deliver_held_steer(String.is_empty(M.Queue.of(s, th)), String.eq(H.Hub.provider(H.Hub.thread(s, th)), "claude"), th, H.Hub.id("s", now, H.Hub.seq(s)), now)
+
+def Laws.deliver_never_waits(run, s, now, th, msg, role, text):
+  match run:
+    case True{}:
+      Laws.deliver_held_steer_k(String.eq(H.Hub.provider(H.Hub.thread(s, th)), "claude"), s, now, th, msg, role, text)
+    case False{}:
+      Laws.deliver_held_go(String.is_empty(M.Queue.of(s, th)), th, now)
+
+def Laws.deliver_claude_running():
   {==}
 
 def Laws.resend_stored_once(s, now, client, id, th, text, msg, h1, h2):
@@ -653,8 +688,9 @@ def Laws.task_finish_not_ended_same(s, now, thread, cs, os, h):
   %Equal.sym(H.Ended, H.Task.ended(cs), H.NotEnded{}, h) : {H.Task.finish.e(_, s, now, thread, cs, os) == H.Step{cs, os} : H.Step}
   {==}
 
-def Laws.inbox_never_interrupts(s, now, from, to, role, text, h):
-  %Equal.sym(Bool, H.Hub.running(H.Hub.thread(s, to)), True{}, h) : {H.Step.outs_of(H.Hub.inbox.w(_, M.Worktree.gone(H.Hub.thread(s, to)), M.Worktree.pending(H.Hub.thread(s, to), now), s, now, from, to, role, text, M.Link.id(from, H.Hub.id("m", now, H.Hub.seq(s))))) == [] : List<&2, H.Out>}
+def Laws.inbox_running_delivers(s, now, from, to, role, text, msg, h1, h2):
+  %Equal.sym(Bool, H.Hub.running(H.Hub.thread(s, to)), True{}, h1) : {H.Hub.inbox.w(_, M.Worktree.gone(H.Hub.thread(s, to)), M.Worktree.pending(H.Hub.thread(s, to), now), s, now, from, to, role, text, msg) == H.Hub.deliver.r(True{}, s, now, to, msg, role, text) : H.Step}
+  %Equal.sym(Bool, M.Worktree.pending(H.Hub.thread(s, to), now), False{}, h2) : {H.Hub.deliver(True{}, _, s, now, to, msg, role, text) == H.Hub.deliver.r(True{}, s, now, to, msg, role, text) : H.Step}
   {==}
 
 law or_true_r:
@@ -694,7 +730,6 @@ def Laws.worktree_waits(s, now, th, msg, role, text, h):
   %Equal.sym(Bool, M.Worktree.pending(H.Hub.thread(s, th), now), True{}, h) : {H.Step.outs_of(H.Hub.post.w(H.Hub.running(H.Hub.thread(s, th)), M.Worktree.gone(H.Hub.thread(s, th)), _, s, now, th, msg, role, text)) == [] : List<&2, H.Out>}
   %Equal.sym(Bool, Bool.and(M.Worktree.gone(H.Hub.thread(s, th)), False{}), False{}, and_false_r(M.Worktree.gone(H.Hub.thread(s, th)))) : {H.Step.outs_of(H.Hub.post.v(Bool.and(Bool.not(H.Hub.running(H.Hub.thread(s, th))), _), H.Hub.running(H.Hub.thread(s, th)), True{}, s, now, th, msg, role, text)) == [] : List<&2, H.Out>}
   %Equal.sym(Bool, Bool.and(Bool.not(H.Hub.running(H.Hub.thread(s, th))), False{}), False{}, and_false_r(Bool.not(H.Hub.running(H.Hub.thread(s, th))))) : {H.Step.outs_of(H.Hub.post.v(_, H.Hub.running(H.Hub.thread(s, th)), True{}, s, now, th, msg, role, text)) == [] : List<&2, H.Out>}
-  %Equal.sym(Bool, Bool.or(Bool.and(H.Hub.running(H.Hub.thread(s, th)), Bool.not(String.eq(H.Hub.provider(H.Hub.thread(s, th)), "claude"))), True{}), True{}, or_true_r(Bool.and(H.Hub.running(H.Hub.thread(s, th)), Bool.not(String.eq(H.Hub.provider(H.Hub.thread(s, th)), "claude"))))) : {H.Step.outs_of(H.Hub.post.go(_, H.Hub.thread(s, th), H.Hub.cwd(s, H.Hub.thread(s, th)), M.Queue.of(s, th), now, th, msg, role, text)) == [] : List<&2, H.Out>}
   {==}
 
 def Laws.worktree_by_default():
@@ -1186,8 +1221,6 @@ def Laws.urg_approval_top(p):
       {==}
     case M.PhFailed{}:
       {==}
-    case M.PhQueued{}:
-      {==}
     case M.PhComplete{}:
       {==}
     case M.PhStopped{}:
@@ -1231,8 +1264,6 @@ def Laws.urg_pin_within(p):
     case M.PhMonitoring{n}:
       {==}
     case M.PhFailed{}:
-      {==}
-    case M.PhQueued{}:
       {==}
     case M.PhComplete{}:
       {==}
@@ -4361,7 +4392,7 @@ def Laws.follow_setting_queue(p):
 def Laws.follow_setting_steer(p):
   {==}
 
-def Laws.follow_alt_flips(s, p):
+def Laws.follow_alt_same(s, p, a):
   {==}
 
 def Laws.tailnet_link_token():
@@ -4477,7 +4508,7 @@ def Laws.follow_stop_running():
 def Laws.follow_stop_interrupts():
   {==}
 
-def Laws.queue_mode_waits():
+def Laws.queue_mode_delivers(s, now, th, msg, role, text):
   {==}
 
 def Laws.steer_claude_in_place(th):
@@ -5907,12 +5938,11 @@ def Laws.bg_progress_unlisted():
 def Laws.bg_doing():
   {==}
 
-def Laws.status_waits_on_subagents(q):
-  match q:
-    case True{}:
-      {==}
-    case False{}:
-      {==}
+def Laws.status_waits_on_subagents():
+  {==}
+
+def Laws.status_starting_works():
+  {==}
 
 def Laws.status_work_before_waiting(q):
   {==}
@@ -6852,7 +6882,7 @@ def Laws.lost_off_logs_and_keeps():
 def Laws.gone_idle_told():
   {==}
 
-def Laws.gone_running_queues():
+def Laws.gone_running_told():
   {==}
 
 def Laws.replaced_told_once():
@@ -6882,7 +6912,7 @@ def Laws.rec_release_carry_marker_on():
 def Laws.rec_release_carry_marker_off():
   {==}
 
-def Laws.rec_release_never_drains_queue():
+def Laws.rec_release_takes_held():
   {==}
 
 def Laws.update_wait_busy(now, c, id):
@@ -6973,7 +7003,7 @@ def Laws.watch_end_once():
 def Laws.watch_end_wakes_idle():
   {==}
 
-def Laws.watch_end_queues_running():
+def Laws.watch_end_delivers_running():
   {==}
 
 def Laws.watch_timeout_unknown_not_success():
@@ -8413,7 +8443,7 @@ def Laws.launch_own_stop_quiet():
 def Laws.launch_stop_told():
   {==}
 
-def Laws.launch_queued_in_order():
+def Laws.launch_delivered_in_order():
   {==}
 
 def Laws.launch_loop_bounded():

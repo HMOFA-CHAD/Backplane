@@ -611,6 +611,18 @@ def Worktree.gone.k(env: EnvMode, +wt: String, +branch: String) -> Bool:
     case Local{}:
       False{}
 
+def Worktree.unmade.k(env: EnvMode, +wt: String) -> Bool:
+  match env:
+    case Worktree{}:
+      String.is_empty(wt)
+    case Local{}:
+      False{}
+
+# a worktree thread with no worktree yet (being made, or made again)
+def Worktree.unmade(t: Thread) -> Bool:
+  Thread{_, _, _, _, _, _, _, _, _, _, _, _, en, _, +wt, _, _, _, _, _, _} = t
+  Worktree.unmade.k(en, wt)
+
 # a worktree thread whose worktree was removed (its branch is kept)
 def Worktree.gone(t: Thread) -> Bool:
   Thread{_, _, _, _, _, _, _, _, _, _, _, _, en, +br, +wt, _, _, _, _, _, _} = t
@@ -1296,6 +1308,29 @@ def State.thread.get(s: State, +id: String) -> Thread:
   match s:
     case State{_, ts, _, _, _, _, _, _, _, _, _}:
       State.thread.get.k(Map.get(Thread, Thread.blank(id), ts, id))
+
+# No message ever waits behind a running turn (hub.bend's Hub.deliver, law
+# deliver_never_waits). What a thread holds is handed-over context, a
+# message for a worktree still being made (it starts the turn as soon as
+# the worktree is there: the thread shows as working), or, from logs older
+# than that rule, messages that go with the thread's next turn.
+def Queue.starting(+s: State, +th: String) -> Bool:
+  Bool.and(Queue.waiting(s, th), Worktree.unmade(State.thread.get(s, th)))
+
+def Queue.context.k(keep: Bool, q: QItem, rest: List<&2, QItem>) -> List<&2, QItem>:
+  match keep:
+    case True{}:
+      q <> rest
+    case False{}:
+      rest
+
+# the rows shown above a composer: handed-over context only
+def Queue.context(qs: List<&2, QItem>) -> List<&2, QItem>:
+  match qs:
+    case Nil{}:
+      Nil{}
+    case QItem{+m, t} <> rest:
+      Queue.context.k(String.starts_with(m, "handoff:"), QItem{m, t}, Queue.context(rest))
 
 def State.switch.k(+s: State, +th: String, +old: String, +oldse: String, +p: String, m: String) -> State:
   +s1 = State.setting(State.setting(s, Switch.session.key(th, old), oldse), Switch.seen.key(th, old), Nat.show(Switch.count(s, th)))
@@ -2310,48 +2345,48 @@ def Archive.of(hidden: List<&2, Thread>) -> List<&2, Thread>:
 # Sidebar status
 # --------------
 # The dot on a thread's row says the most urgent thing about it: an
-# approval waiting > a question or plan waiting > a turn working > a failed
-# turn > queued messages > ready (laws status_*).
+# approval waiting > a question or plan waiting > a turn working (or
+# starting: a message waits for its worktree) > a failed turn > ready (laws
+# status_*). Nothing is ever queued.
 
 type Status is Data:
   StApproval{}
   StInput{}
   StWorking{}
   StFailed{}
-  StQueued{}
   StReady{}
   # the agent's turn is over and its subagents are still at work
   StWaiting{}
 
-def Status.of.q(queued: Bool) -> Status:
-  match queued:
+def Status.of.q(starting: Bool) -> Status:
+  match starting:
     case True{}:
-      StQueued{}
+      StWorking{}
     case False{}:
       StReady{}
 
-def Status.of.t(t: TurnState, queued: Bool) -> Status:
+def Status.of.t(t: TurnState, starting: Bool) -> Status:
   match t:
     case Running{}:
       StWorking{}
     case Failed{}:
       StFailed{}
     case _:
-      Status.of.q(queued)
+      Status.of.q(starting)
 
-def Status.of.i(input: Bool, t: TurnState, queued: Bool) -> Status:
+def Status.of.i(input: Bool, t: TurnState, starting: Bool) -> Status:
   match input:
     case True{}:
       StInput{}
     case False{}:
-      Status.of.t(t, queued)
+      Status.of.t(t, starting)
 
-def Status.of(approval: Bool, input: Bool, t: TurnState, queued: Bool) -> Status:
+def Status.of(approval: Bool, input: Bool, t: TurnState, starting: Bool) -> Status:
   match approval:
     case True{}:
       StApproval{}
     case False{}:
-      Status.of.i(input, t, queued)
+      Status.of.i(input, t, starting)
 
 # how urgent a status is (5: most)
 def Status.rank(s: Status) -> Nat:
@@ -2364,8 +2399,6 @@ def Status.rank(s: Status) -> Nat:
       3n
     case StFailed{}:
       2n
-    case StQueued{}:
-      1n
     case StReady{}:
       0n
     case StWaiting{}:
@@ -2381,8 +2414,6 @@ def Status.name(s: Status) -> String:
       "working"
     case StFailed{}:
       "failed"
-    case StQueued{}:
-      "queued"
     case StReady{}:
       "ready"
     case StWaiting{}:
@@ -2393,8 +2424,6 @@ def Status.name(s: Status) -> String:
 def Status.wait(any: Bool, s: Status) -> Status:
   match any s:
     case True{} StFailed{}:
-      StWaiting{}
-    case True{} StQueued{}:
       StWaiting{}
     case True{} StReady{}:
       StWaiting{}
@@ -2415,7 +2444,7 @@ def Status.wait.f(any: Bool, s: Status) -> Status:
 # The line at the end of a thread's timeline says what the thread is doing
 # now: an approval waiting > a question or plan waiting > a turn working >
 # child tasks still running after the turn (monitoring) > a failed turn >
-# messages queued > a finished turn > a stopped turn > nothing yet (laws
+# a finished turn > a stopped turn > nothing yet (laws
 # phase_*).
 
 type Phase is Data:
@@ -2424,17 +2453,16 @@ type Phase is Data:
   PhWorking{}
   PhMonitoring{n: Nat}
   PhFailed{}
-  PhQueued{}
   PhComplete{}
   PhStopped{}
   PhIdle{}
 
-def Phase.of.t(t: TurnState, queued: Bool) -> Phase:
-  match t queued:
+def Phase.of.t(t: TurnState, starting: Bool) -> Phase:
+  match t starting:
     case Failed{} _:
       PhFailed{}
     case _ True{}:
-      PhQueued{}
+      PhWorking{}
     case Completed{} False{}:
       PhComplete{}
     case Interrupted{} False{}:
@@ -2443,29 +2471,29 @@ def Phase.of.t(t: TurnState, queued: Bool) -> Phase:
       PhIdle{}
 
 # (a failed turn says so before the work it left: the person has to act)
-def Phase.of.w(+tasks: Nat, t: TurnState, queued: Bool) -> Phase:
+def Phase.of.w(+tasks: Nat, t: TurnState, starting: Bool) -> Phase:
   match t:
     case Running{}:
       PhWorking{}
     case Failed{}:
       PhFailed{}
     case _:
-      Bool.pick(Phase, Nat.is_gt(tasks, 0n), PhMonitoring{tasks}, Phase.of.t(t, queued))
+      Bool.pick(Phase, Nat.is_gt(tasks, 0n), PhMonitoring{tasks}, Phase.of.t(t, starting))
 
-def Phase.of.i(input: Bool, +tasks: Nat, t: TurnState, queued: Bool) -> Phase:
+def Phase.of.i(input: Bool, +tasks: Nat, t: TurnState, starting: Bool) -> Phase:
   match input:
     case True{}:
       PhInput{}
     case False{}:
-      Phase.of.w(tasks, t, queued)
+      Phase.of.w(tasks, t, starting)
 
 # tasks: the thread's child tasks not yet finished
-def Phase.of(approval: Bool, input: Bool, +tasks: Nat, t: TurnState, queued: Bool) -> Phase:
+def Phase.of(approval: Bool, input: Bool, +tasks: Nat, t: TurnState, starting: Bool) -> Phase:
   match approval:
     case True{}:
       PhApproval{}
     case False{}:
-      Phase.of.i(input, tasks, t, queued)
+      Phase.of.i(input, tasks, t, starting)
 
 # the word for a phase (the web's class, the color's key)
 def Phase.name(p: Phase) -> String:
@@ -2480,8 +2508,6 @@ def Phase.name(p: Phase) -> String:
       "monitoring"
     case PhFailed{}:
       "failed"
-    case PhQueued{}:
-      "queued"
     case PhComplete{}:
       "complete"
     case PhStopped{}:
@@ -2505,8 +2531,6 @@ def Phase.label(p: Phase) -> String:
       "Monitoring " ++ Phase.tasks(n)
     case PhFailed{}:
       "Failed"
-    case PhQueued{}:
-      "Queued"
     case PhComplete{}:
       "Complete"
     case PhStopped{}:
@@ -2815,9 +2839,9 @@ def Work.ready.k(run: Bool, queued: Bool, +busy: Nat) -> Bool:
     case _ _:
       False{}
 
-# whether a thread is done: not running, nothing queued, nothing out
+# whether a thread is done: not running, not starting, nothing out
 def Work.ready(+s: State, +th: String) -> Bool:
-  Work.ready.k(State.running.k(State.thread.get(s, th)), Queue.waiting(s, th), Work.busy(s, th))
+  Work.ready.k(State.running.k(State.thread.get(s, th)), Queue.starting(s, th), Work.busy(s, th))
 
 def Work.kids.inc(r: Map<&2, Nat> & Nat, +p: String) -> Map<&2, Nat>:
   (m, n) = r

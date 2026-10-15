@@ -269,8 +269,6 @@ def Lay.phase(p: M.Phase) -> U32:
       T.Th.waiting()
     case M.PhFailed{}:
       T.Th.bad()
-    case M.PhQueued{}:
-      T.Th.queued()
     case M.PhComplete{}:
       T.Th.ok()
     case _:
@@ -2402,7 +2400,7 @@ def Sa.color(+word: String) -> U32:
   Bool.pick(U32, String.eq(word, "running"), T.Th.accent(),
     Bool.pick(U32, Bool.or(String.eq(word, "held"), Bool.or(String.eq(word, "done"), String.eq(word, "reporting"))), T.Th.ok(),
     Bool.pick(U32, Bool.or(Bool.or(Bool.or(String.eq(word, "waiting"), String.eq(word, "waiting on")), String.eq(word, "needs you")), Bool.or(String.eq(word, "watching"), String.eq(word, "launching"))), T.Th.accent(),
-      Bool.pick(U32, Bool.or(String.is_empty(word), String.eq(word, "queued")), T.Th.faint(),
+      Bool.pick(U32, Bool.or(String.is_empty(word), String.eq(word, "starting")), T.Th.faint(),
         Bool.pick(U32, Bool.or(String.eq(word, "cancelled"), String.eq(word, "cancelling")), T.Th.warn(), T.Th.bad())))))
 
 def Sa.steps.n(+ss: List<&2, SB.SubStep>) -> U32:
@@ -3411,24 +3409,19 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 46 : U32) : U32}
-  +total = {(1156 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 132 : U32) : U32}
+  +total = {(1092 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
-  +b2 = {(b + 128 + Set.notify.h(st, ty, w) : U32) : U32}
-  +fu = M.Setting.get(st, "followup", "")
+  +b2 = {(b + 64 + Set.notify.h(st, ty, w) : U32) : U32}
   Out.all([
     Out{Nil{}, [Lay.hit(x0, 52, (x1 - x0 : U32), (h - 52 : U32), "set-bg", U32.show(U32.dim(total, h)))]},
     Out.hits_below(52, Out.all([
     Set.head(ty, "Threads", x, (b + 76 : U32)),
-    Set.card(x, (b + 108 : U32), w, 192),
+    Set.card(x, (b + 108 : U32), w, 128),
     Set.row.r(ty, "Settle after", "Threads idle this long move to Settled. They stay saved.", x, (b + 110 : U32), w, 190),
     Set.days(ty, M.Setting.get(st, "settle.days", "3"), (x + w - 172 : U32), (b + 126 : U32)),
-    Set.row.r(ty, "Follow-ups while a turn runs", "Queue waits for the turn to end; steer sends into it. Ctrl+Enter does the other.", x, (b + 174 : U32), w, 250),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Steer") - 6 - Lay.button.w(ty, "Queue") - 6 - Lay.button.w(ty, "Default") : U32), (b + 188 : U32), "Default", String.is_empty(fu), "setting", "followup="),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Steer") - 6 - Lay.button.w(ty, "Queue") : U32), (b + 188 : U32), "Queue", String.eq(fu, "queue"), "setting", "followup=queue"),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Steer") : U32), (b + 188 : U32), "Steer", String.eq(fu, "steer"), "setting", "followup=steer"),
-    Set.carry(ty, M.Carry.on(st), x, w, (b + 238 : U32)),
-    Set.notify(st, ty, x, w, (b + 320 : U32)),
+    Set.carry(ty, M.Carry.on(st), x, w, (b + 174 : U32)),
+    Set.notify(st, ty, x, w, (b + 256 : U32)),
     Set.head(ty, "Agents", x, (b2 + 192 : U32)),
     Set.card(x, (b2 + 224 : U32), w, (124 + dy : U32)),
     Set.row(ty, "Provider and model for new threads", Set.cli(U.Models.cli(U.Str.get(info, "models"), prov), prov) ++ ". Each thread keeps its own; change it from the composer.", x, (b2 + 226 : U32), w),
@@ -5680,7 +5673,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +top = {(52 + hy + pl + Subs.height(ts, svis, sopen) + Pins.height(pins) : U32) : U32}
       +asks = U.Asks.open(st, sel)
       +ah = Asks.h(ty, asks, pics, (cw - 32 : U32))
-      +qs = M.Queue.items(st, sel)
+      +qs = M.Queue.context(M.Queue.items(st, sel))
       +tds = U.Todos.shown(st, sel, Lay.running(turn))
       +tdo = U.Todos.open(pics, sel)
       +tda = U.Todos.all(pics, sel)

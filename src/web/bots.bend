@@ -720,7 +720,7 @@ def WB.pdot(+s: String) -> String:
     Bool.pick(String, String.eq(s, "question"), "dot input",
       Bool.pick(String, Bool.or(String.eq(s, "failed"), String.eq(s, "error")), "dot failed",
         Bool.pick(String, Bool.or(String.eq(s, "working"), Bool.or(String.eq(s, "work"), String.eq(s, "talk"))), "dot working",
-          Bool.pick(String, Bool.or(String.eq(s, "queued"), String.eq(s, "think")), "dot queued",
+          Bool.pick(String, Bool.or(String.eq(s, "waiting"), String.eq(s, "think")), "dot queued",
             Bool.pick(String, String.eq(s, "unread"), "dot waiting", "dot"))))))
 
 def WB.pago(+kind: String, +now: Nat, +at: Nat) -> String:

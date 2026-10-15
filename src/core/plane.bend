@@ -22,7 +22,8 @@ import ./ubersync.bend as US
 #
 # A row says what a click sends (act, val: the usual client action), the
 # machine it is on ("" for this one) and its state: approval, question,
-# failed, working, queued, finished, idle or away for a thread; the mood
+# failed, working, finished, idle or away for a thread (a lock or deploy
+# row: working or waiting); the mood
 # for a bot; unread for a room; working or idle for a routine. `at` is the
 # last activity (a routine's: when it is next due, 0 for never).
 
@@ -92,7 +93,7 @@ def Plane.lock.who(o: Maybe<&2, LK.LockParty>, +title: String, +p: LK.LockParty,
 def Plane.lock.row(+name: String, +p: LK.LockParty, +n: Nat, +ready: Bool, o: Maybe<&2, LK.LockParty>, +st: M.State, +now: Nat) -> PRow:
   +th = LK.Lock.thread(p)
   +title = Bool.pick(String, String.is_empty(th), LK.Lock.id(p), U.Active.title(U.Ui.thread(st, th)))
-  PRow{"lock", name, Bool.pick(String, String.is_empty(th), "", "select"), th, name ++ " · " ++ Plane.lock.who(o, title, p, now) ++ " · " ++ Nat.show(n) ++ " waiting", LK.Lock.note(p), "", Bool.pick(String, ready, "working", "queued"), 0n, False{}}
+  PRow{"lock", name, Bool.pick(String, String.is_empty(th), "", "select"), th, name ++ " · " ++ Plane.lock.who(o, title, p, now) ++ " · " ++ Nat.show(n) ++ " waiting", LK.Lock.note(p), "", Bool.pick(String, ready, "working", "waiting"), 0n, False{}}
 
 def Plane.lock.h(h: Maybe<&2, LK.LockParty>, +name: String, +l: LK.NamedLock, +st: M.State, +now: Nat, rest: List<&2, PRow>) -> List<&2, PRow>:
   match h:
@@ -154,8 +155,6 @@ def Plane.state(p: M.Phase) -> String:
       "working"
     case M.PhMonitoring{_}:
       "working"
-    case M.PhQueued{}:
-      "queued"
     case M.PhComplete{}:
       "finished"
     case M.PhStopped{}:
@@ -169,7 +168,7 @@ def Plane.rank(+s: String) -> Nat:
 
 # the section a state goes to: 0 need, 1 run, 2 the rest
 def Plane.sec(+s: String) -> Nat:
-  Bool.pick(Nat, Nat.is_gt(Plane.rank(s), 0n), 0n, Bool.pick(Nat, Bool.or(String.eq(s, "working"), String.eq(s, "queued")), 1n, 2n))
+  Bool.pick(Nat, Nat.is_gt(Plane.rank(s), 0n), 0n, Bool.pick(Nat, Bool.or(String.eq(s, "working"), String.eq(s, "waiting")), 1n, 2n))
 
 # a thread of a machine that does not answer is not asking for anything
 # A thread whose open asks are all questions or plans is asking, though the
@@ -407,7 +406,7 @@ def Plane.sort(rs: List<&2, PRow>) -> List<&2, PRow>:
 
 def Plane.deploy.k(+line: String, +st: M.State) -> List<&2, PRow>:
   Bool.pick(List<&2, PRow>, String.is_empty(line), Nil{},
-    [PRow{"deploy", "deploy", "deploy-cancel", "deploy", "Restart pending", DP.Deploy.blocking.line(DP.Deploy.count(line), DP.Deploy.locked(line)) ++ " · Cancel", "", "queued", DP.Deploy.since(line), False{}}])
+    [PRow{"deploy", "deploy", "deploy-cancel", "deploy", "Restart pending", DP.Deploy.blocking.line(DP.Deploy.count(line), DP.Deploy.locked(line)) ++ " · Cancel", "", "waiting", DP.Deploy.since(line), False{}}])
 
 # a restart waiting for a safe point (core/deploy.bend): one row at the top
 # of what runs; a click on it cancels the deploy

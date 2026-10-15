@@ -132,7 +132,7 @@ def main() -> IO(Unit):
     C.Check.str("status input", M.Status.name(M.Status.of(False{}, True{}, M.Running{}, True{})), "input")
     C.Check.str("status working", M.Status.name(M.Status.of(False{}, False{}, M.Running{}, True{})), "working")
     C.Check.str("status failed", M.Status.name(M.Status.of(False{}, False{}, M.Failed{}, True{})), "failed")
-    C.Check.str("status queued", M.Status.name(M.Status.of(False{}, False{}, M.Completed{}, True{})), "queued")
+    C.Check.str("status starting", M.Status.name(M.Status.of(False{}, False{}, M.Completed{}, True{})), "working")
     C.Check.str("status ready", M.Status.name(M.Status.of(False{}, False{}, M.Interrupted{}, False{})), "ready")
     C.Check.str("status of thread", M.Status.name(U.Side.status(M.State.replay(List.append(&2, M.Change, base(), [M.AskOpened{"k1", "a", "input", "", "?", "", 400n}]), M.State.empty()), H.Hub.thread(st, "a"))), "input")
     C.Check.str("phase monitoring", M.Phase.label(M.Phase.of(False{}, False{}, 2n, M.Completed{}, False{})), "Monitoring 2 tasks")

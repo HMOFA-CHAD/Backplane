@@ -121,7 +121,7 @@ def Fm.hand.key(+from: String, +key: String) -> String:
 def Fm.hand.thread(ok: Bool, +s: M.State, +now: Nat, +from: String, +to: String, +a: J.Json) -> MC.Res:
   match ok:
     case True{}:
-      MC.Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{to}}, J.KV{"state", J.Str{"queued"}}]),
+      MC.Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{to}}, J.KV{"state", J.Str{"handed"}}]),
         B.Step{[M.TurnQueued{to, Fm.hand.key(from, J.Json.get_str(a, "key", "")), J.Json.get_str(a, "hand", ""), now},
           M.ActivityLogged{to, "k" ++ J.Json.get_str(a, "key", "") ++ ".in", "info", "fork", "\"" ++ J.Json.get_str(a, "title", "") ++ "\" was handed over from another machine; it goes with the next message", now}], Nil{}}}
     case False{}:
@@ -132,7 +132,7 @@ def Fm.hand.project(ok: Bool, +s: M.State, +now: Nat, +from: String, +pid: Strin
     case True{}:
       +th = B.Hub.id("t", now, B.Hub.seq(s))
       +mode = M.Setting.get(s, "thread.env", "auto")
-      MC.Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{th}}, J.KV{"state", J.Str{"queued"}}]),
+      MC.Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{th}}, J.KV{"state", J.Str{"handed"}}]),
         B.Step{[M.ThreadCreated{th, pid, J.Json.get_str(a, "title", "Handed over"), B.Hub.new.env(M.Scratch.is(pid), mode), "", B.Hub.new.wt(M.Scratch.is(pid), B.Hub.project.root(B.Hub.project(s, pid)), th),
             J.Json.get_str(a, "provider", "claude"), J.Json.get_str(a, "model", ""), now},
           M.TurnQueued{th, Fm.hand.key(from, J.Json.get_str(a, "key", "")), J.Json.get_str(a, "hand", ""), now}],
