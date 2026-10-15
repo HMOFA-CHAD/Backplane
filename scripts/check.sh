@@ -26,11 +26,12 @@
 # and memory for parallelism when the single check is the bottleneck).
 set -eu
 cd "$(dirname "$0")/.."
-# PROOF.bend outgrew the checker's default JavaScript stack (it overflowed
-# on main, more often under load): give bend's engine 64 MB of stack
-export BUN_JSC_maxPerThreadStackUsage=${BUN_JSC_maxPerThreadStackUsage:-67108864}
-# (and the main thread a stack that can hold it)
-ulimit -s unlimited 2>/dev/null || ulimit -s 262144 2>/dev/null || true
+# PROOF.bend outgrew the checker's stack (it overflowed at random on main):
+# a 1 GB main-thread stack, and the engine allowed to use 512 MB of it. A
+# concrete size, not "unlimited": with unlimited the engine falls back to a
+# small default and still overflows.
+ulimit -s 1048576 2>/dev/null || true
+export BUN_JSC_maxPerThreadStackUsage=${BUN_JSC_maxPerThreadStackUsage:-536870912}
 . scripts/bendok.sh
 export BEND_NO_TELEMETRY=1
 mode=${1:-all}
