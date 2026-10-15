@@ -1086,11 +1086,44 @@ def Shell.touched.all(+kind: String, a: Shell) -> Shell:
 def Hubf.names(+n: N.Nui, +text: String) -> Bool:
   Bool.and(Bool.not(String.is_empty(U.Ui.sel(N.Nui.ui(n)))), String.contains(text, "\"" ++ U.Ui.sel(N.Nui.ui(n)) ++ "\""))
 
+# A page's new frame ({"t":"shot"}) changes nothing on screen until its
+# picture is in (the page shows the last one it has): the notice asks no
+# frame in the window (the dirt it left is undone, Shot.calm; the web and
+# the phones draw it as before), and while that page shows (its picture asked for in
+# the last frame's hits) the window loads the new one at once; its
+# arrival draws the frame
+def Shot.wanted(hs: List<&2, N.Hit>, +pre: String) -> Bool:
+  match hs:
+    case Nil{}:
+      False{}
+    case N.Hit{_, _, _, _, +a, +v} <> t:
+      Bool.or(Bool.and(String.eq(a, "img"), String.starts_with(v, pre)), Shot.wanted(t, pre))
+
+def Shot.pre.k(want: Bool, a: Shell, +key: String) -> IO(Shell):
+  match want a:
+    case True{} Shell{+n, w, d, qd, +q, i, wa}:
+      IO.bind(Aux, Shell, Pics.ask([N.Hit{0, 0, 0, 0, "img", key}], wa, q, Shot.home(n)), wa2 => IO.pure(Shell, Shell{n, w, d, qd, q, i, wa2}))
+    case False{} _:
+      IO.pure(Shell, a)
+
+def Shot.calm(shot: Bool, was: Bool, a: Shell) -> Shell:
+  match shot a:
+    case True{} Shell{n, w, _, qd, q, i, wa}:
+      Shell{n, w, was, qd, q, i, wa}
+    case False{} _:
+      a
+
+def Shot.pre(+o: J.Json, a: Shell) -> IO(Shell):
+  match a:
+    case Shell{+n, w, d, qd, q, i, wa}:
+      Shot.pre.k(Bool.and(String.eq(J.Json.get_str(o, "t", ""), "shot"), Shot.wanted(N.Nui.hits(n), "shot:" ++ J.Json.get_str(o, "bot", "") ++ ":")),
+        Shell{n, w, d, qd, q, i, wa}, "shot:" ++ J.Json.get_str(o, "bot", "") ++ ":" ++ Nat.show(J.Json.get_nat(o, "n", 0n)))
+
 def Shell.recv.o(a: Shell, +o: J.Json, own: Bool) -> IO(Shell):
   match a:
     case Shell{+n, w, +d, qd, q, i, wa}:
       IO.bind(Unit, Shell, PS.Perf.add("ui.hub.t." ++ J.Json.get_str(o, "t", ""), 1), _ =>
-        IO.bind(Shell, Shell, Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.hear(n, o)), a2 => IO.pure(Shell, Shell.touched(o, Hubf.mark(d, Bool.or(own, Hubf.own(n, o)), a2)))))
+        IO.bind(Shell, Shell, Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.hear(n, o)), a2 => Shot.pre(o, Shot.calm(String.eq(J.Json.get_str(o, "t", ""), "shot"), d, Shell.touched(o, Hubf.mark(d, Bool.or(own, Hubf.own(n, o)), a2))))))
 
 def Shell.recv.n(a: Shell, +text: String) -> IO(Shell):
   match a:
@@ -1809,18 +1842,6 @@ def Vx.kind(x: V.Vx) -> U32:
     case V.Vx{k, _, _, _, _, _, _, _, _, _, bm}:
       k
 
-# the browser's frame, scaled down to fit the panel and centred
-def Shell.shot.base(+ww: U32, +hh: U32, +x0: U32, +flip: U32, b: BM.Bitmap) -> Image:
-  match b:
-    case BM.Bitmap{+w, +h, d, t, _, _, _, _}:
-      +pw = {(ww - x0 : U32) : U32}
-      +ph = {(hh - 52 : U32) : U32}
-      +sc = {F32.min(1.0, F32.min(F32.div(U32.to_f32(pw), F32.max(U32.to_f32(w), 1.0)), F32.div(U32.to_f32(ph), F32.max(U32.to_f32(h), 1.0)))) : F32}
-      +fw = {D.Draw.floor(F32.mul(U32.to_f32(w), sc)) : U32}
-      +fh = {D.Draw.floor(F32.mul(U32.to_f32(h), sc)) : U32}
-      BM.Bitmap.over(ww, hh, BM.Bitmap.move(BM.Bitmap{w, h, d, t, 0, 0, 0, 0}, (x0 + U32.shr((pw - fw : U32)) : U32), (52 + U32.shr((ph - fh : U32)) : U32), fw, fh),
-        R.Frame.render(ww, hh, [D.Draw.rect(D.Clip.all(), x0, 52, pw, ph, V.Look.ground(flip), 255)], L.Theme.ground(flip)))
-
 # the viewer's settled scene, drawn once per scene/view (the frame's base,
 # plain background left of the panel, so frames compare it unchanged):
 # a 3D model rendered into the panel, or the board/schematic's items drawn
@@ -1844,8 +1865,8 @@ def Shell.base(+ww: U32, +hh: U32, +x0: U32, +ss: List<&2, V.Seen>, +v: V.View, 
   match x:
     case V.Vx{2, _, ts, c, _, _, _, _, _, _, bm}:
       R.Frame.over(ww, hh, [D.Draw.rect(D.Clip.all(), 264, 0, (x0 - 264 : U32), hh, L.Theme.ground(flip), 255)], Shell.base3(drag, ww, hh, x0, ts, V.Vx.cam(c), now, V.Look.ground(flip)))
-    case V.Vx{3, _, _, _, _, _, _, _, _, _, bm}:
-      Shell.shot.base(ww, hh, x0, flip, bm)
+    case V.Vx{3, _, _, _, _, _, _, _, _, _, _}:
+      R.Frame.render(ww, hh, [D.Draw.rect(D.Clip.all(), x0, 52, (ww - x0 : U32), (hh - 52 : U32), V.Look.ground(flip), 255)], L.Theme.ground(flip))
     case V.Vx{+k, _, _, _, _, _, _, _, _, _, bm}:
       FR.Fresh.frame(ww, hh, List.reverse(&2, R.Op, D.Draw.rect(D.Clip.all(), x0, 52, (ww - x0 : U32), hh, V.Look.ground(flip), 255)
         <> V.Ops.scene(ss, v, D.Clip{x0, 52, ww, hh}, now, now, True{}, U32.or(k, fk), flip)), L.Theme.ground(flip))
