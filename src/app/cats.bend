@@ -43,11 +43,15 @@ def Cats.found(r: Map<&2, CatF> & CatF) -> CatF:
 def Cats.find(+c: Map<&2, CatF>, +look: Nat, +mood: String, +px: U32) -> CatF:
   Cats.found(Map.get(CatF, Cats.blank(), c, Cats.key(look, mood, px)))
 
-# a flattened cat posed for time ms, as ops in a px square at (x, y)
-# topmost first, as the layout's ops are (Lay.rev turns the whole frame
-# around at the end); Cat.ops paints back to front
+# a flattened cat posed for time ms, as ops in a px square at (x, y),
+# topmost first, as a frame's ops are when the window draws them: the
+# cats go into the frame after the layout is done (bots.bend's Spot,
+# Fronted.of), so they are not turned around by Lay.rev with the rest.
+# Cat.ops gives them in that order. (When the layout drew the cats among
+# its own ops, before Lay.rev, they were reversed here to come out right;
+# reversed now, each cat painted its back over its face.)
 def Cats.pose(+ps: List<&2, C.FPart>, +ms: Nat, +c: D.Clip, +x: F32, +y: F32, +px: F32) -> List<&2, R.Op>:
-  List.reverse(&2, R.Op, G.Cat.ops(C.Cat.pose.at(ps, ms), c, x, y, px))
+  G.Cat.ops(C.Cat.pose.at(ps, ms), c, x, y, px)
 
 def Cats.parts.k(f: CatF, +look: Nat, +mood: String) -> List<&2, C.FPart>:
   match f:
