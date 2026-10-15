@@ -356,10 +356,15 @@ def Bj.thread(s: M.State, +id: String) -> M.Thread:
 def Bj.who(+st: M.State, +th: String) -> String:
   Bool.pick(String, String.is_empty(th), "started by hand", UseT.title(Use.of(st, Bj.thread(st, th))))
 
-# a job worth a row: starting, running, or a sandbox whose delete was never
-# verified
+# a job that needs a look, listed first and never left out: a sandbox whose
+# delete was never verified (orphan), or a create whose answer was unclear
+# (ambiguous: a sandbox may exist that no ledger owns)
+def Bj.warn(+s: String) -> Bool:
+  Bool.or(String.eq(s, "orphan"), String.eq(s, "ambiguous"))
+
+# a job running now (at most Bj.most() rows of these)
 def Bj.shown(+s: String) -> Bool:
-  Bool.or(Bool.or(String.eq(s, "running"), String.eq(s, "starting")), String.eq(s, "orphan"))
+  Bool.or(String.eq(s, "running"), String.eq(s, "starting"))
 
 # how long a job has run: a running one from its start to now (the status
 # file's runtime is as of when it was written), else as the status says
@@ -367,24 +372,32 @@ def Bj.runtime(+j: J.Json, +now: Nat) -> String:
   Bool.pick(String, Bool.and(String.eq(J.Json.get_str(j, "state", ""), "running"), Bj.has(j, "started_at")),
     Nat.show(Nat.sub(now, Bj.nat(j, "started_at"))) ++ " s", Bj.raw(j, "runtime_s") ++ " s")
 
-def Bj.job(+st: M.State, +j: J.Json, +now: Nat) -> URow:
-  URow{Bool.pick(String, String.eq(J.Json.get_str(j, "state", ""), "orphan"), "Boat sandbox NOT deleted", "Boat job " ++ J.Json.get_str(j, "state", "")) ++ " · " ++ J.Json.get_str(j, "size", "?"),
-    Bj.who(st, J.Json.get_str(j, "thread", "")) ++ Bool.pick(String, String.is_empty(J.Json.get_str(j, "machine", "")), "", " on " ++ J.Json.get_str(j, "machine", "")) ++
-      " · " ++ Bj.runtime(j, now) ++ " · reserved " ++ Bj.usd.of(j, "reserved_cs") ++ " (worst case)", ""}
+def Bj.label(+state: String) -> String:
+  Bool.pick(String, String.eq(state, "orphan"), "Boat sandbox NOT deleted", Bool.pick(String, String.eq(state, "ambiguous"), "Boat create unresolved", "Boat job " ++ state))
 
-def Bj.jobs.k(keep: Bool, +st: M.State, j: J.Json, +now: Nat, rest: List<&2, URow>) -> List<&2, URow>:
+def Bj.job(+st: M.State, +j: J.Json, +now: Nat) -> URow:
+  URow{Bj.label(J.Json.get_str(j, "state", "")) ++ " · " ++ J.Json.get_str(j, "size", "?"),
+    Bj.who(st, J.Json.get_str(j, "thread", "")) ++ Bool.pick(String, String.is_empty(J.Json.get_str(j, "machine", "")), "", " on " ++ J.Json.get_str(j, "machine", "")) ++
+      Bool.pick(String, String.eq(J.Json.get_str(j, "state", ""), "ambiguous"), " · " ++ J.Json.get_str(j, "why", "no reason given") ++ " · check boat list",
+        " · " ++ Bj.runtime(j, now) ++ " · reserved " ++ Bj.usd.of(j, "reserved_cs") ++ " (worst case)"), ""}
+
+def Bj.jobs.k(keep: Bool, +st: M.State, +j: J.Json, +now: Nat, rest: List<&2, URow>) -> List<&2, URow>:
   match keep:
     case True{}:
       Bj.job(st, j, now) <> rest
     case False{}:
       rest
 
-def Bj.jobs(js: List<&2, J.Json>, +st: M.State, +now: Nat) -> List<&2, URow>:
+# which jobs: 0 those that need a look, 1 those running
+def Bj.wants(+mode: Nat, +s: String) -> Bool:
+  Bool.pick(Bool, Nat.is_eq(mode, 0n), Bj.warn(s), Bj.shown(s))
+
+def Bj.jobs(js: List<&2, J.Json>, +mode: Nat, +st: M.State, +now: Nat) -> List<&2, URow>:
   match js:
     case Nil{}:
       Nil{}
     case +j <> t:
-      Bj.jobs.k(Bj.shown(J.Json.get_str(j, "state", "")), st, j, now, Bj.jobs(t, st, now))
+      Bj.jobs.k(Bj.wants(mode, J.Json.get_str(j, "state", "")), st, j, now, Bj.jobs(t, mode, st, now))
 
 # at most Bj.most() job rows; the rest as one row saying how many
 def Bj.most() -> Nat:
@@ -394,10 +407,17 @@ def Bj.cap(+rs: List<&2, URow>) -> List<&2, URow>:
   Bool.pick(List<&2, URow>, Nat.is_gt(List.length(&2, URow, rs), Bj.most()),
     List.append(&2, URow, List.take(&2, URow, rs, Bj.most()), [URow{"More Boat jobs", Nat.show(Nat.sub(List.length(&2, URow, rs), Bj.most())) ++ " more not listed", ""}]), rs)
 
+# creates Boat answered unclearly: a sandbox may exist that Backplane does
+# not own and will not sweep (they never block new jobs)
+def Bj.unresolved(+n: Nat) -> List<&2, URow>:
+  Bool.pick(List<&2, URow>, Nat.is_eq(n, 0n), Nil{},
+    [URow{"Boat warning", Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " Boat create", " Boat creates") ++ " unresolved: check boat list", ""}])
+
 def Bj.mine.rows(known: Bool, +st: M.State, +s: J.Json, +now: Nat) -> List<&2, URow>:
   match known:
     case True{}:
-      Bj.spend(s) <> Bj.cap(Bj.jobs(J.Json.elems(J.Json.get_obj(s, "jobs")), st, now))
+      List.concat(&2, URow, [[Bj.spend(s)], Bj.unresolved(Bj.nat(s, "ambiguous")),
+        Bj.jobs(J.Json.elems(J.Json.get_obj(s, "jobs")), 0n, st, now), Bj.cap(Bj.jobs(J.Json.elems(J.Json.get_obj(s, "jobs")), 1n, st, now))])
     case False{}:
       [URow{"Boat for Backplane", "No job status yet.", ""}]
 

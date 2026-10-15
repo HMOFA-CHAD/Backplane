@@ -116,3 +116,18 @@ def main() -> IO(Unit):
     C.Check.str("boat jobs capped", Bool.show(String.contains(m, "More Boat jobs | 2 more not listed")), "True")
     C.Check.str("boat jobs listed", Nat.show(count(m, "Boat job running")), "6")
     C.Check.str("boat runtime from start", Bool.show(String.contains(m, "started by hand · 4 s")), "True")
+    +w : String = boat(st, "", "{\"running\":1,\"orphans\":1,\"ambiguous\":1,\"today\":{\"cost_cs\":0,\"reserved_open_cs\":0},\"jobs\":[" ++
+      "{\"state\":\"ended\",\"size\":\"small\",\"cost_cs\":1}," ++
+      "{\"state\":\"running\",\"size\":\"small\",\"started_at\":5,\"reserved_cs\":1}," ++
+      "{\"state\":\"ambiguous\",\"size\":\"default\",\"thread\":\"t1\",\"why\":\"create answered unclearly\"}," ++
+      "{\"state\":\"orphan\",\"size\":\"default\",\"started_at\":1,\"reserved_cs\":2}]}", 9n)
+    C.Check.str("boat warnings first, never capped", w,
+      "Boat plan | Not read yet [usage-refresh]\n" ++
+      "Boat for Backplane | Today $0.00000 · $0.00000 held for open jobs (worst case, not spent)\n" ++
+      "Boat warning | 1 Boat create unresolved: check boat list\n" ++
+      "Boat create unresolved · default | Small · create answered unclearly · check boat list\n" ++
+      "Boat sandbox NOT deleted · default | started by hand · ? s · reserved $0.00002 (worst case)\n" ++
+      "Boat job running · small | started by hand · 4 s · reserved $0.00001 (worst case)\n")
+    +w8 : String = boat(st, "", "{\"running\":8,\"orphans\":0,\"ambiguous\":1,\"today\":{\"cost_cs\":0,\"reserved_open_cs\":0},\"jobs\":[" ++
+      String.join(many.go(8n), ",") ++ ",{\"state\":\"ambiguous\",\"size\":\"small\",\"why\":\"timeout\"}]}", 9n)
+    C.Check.str("boat unresolved shown past the cap", Nat.show(count(w8, "Boat create unresolved")), "1")
