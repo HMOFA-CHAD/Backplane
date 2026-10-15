@@ -9,7 +9,8 @@ export BOAT_FAKE_DIR=$T/fake BOAT_JOB_ROOT=$T/root BACKPLANE_BOAT=$here/test/too
 mkdir -p "$BOAT_FAKE_DIR" "$BOAT_JOB_ROOT"
 pass=0 failn=0
 ok() { if [ "$1" = "$2" ]; then pass=$((pass+1)); else failn=$((failn+1)); echo "FAIL $3: got '$1' want '$2'"; fi; }
-limits() { echo "{\"activeSandboxes\":ACTIVE,\"maxActiveSandboxes\":${1:-2},\"canStart\":true,\"subscriptionRemainingSeconds\":${2:-90000},\"creditBalanceSeconds\":2000000,\"trialComputeCapSeconds\":90000,\"creditUsedSeconds\":0,\"machineTypes\":[{\"type\":\"small\",\"available\":true},{\"type\":\"default\",\"available\":true},{\"type\":\"large\",\"available\":false}]}" > "$BOAT_FAKE_DIR/limits.json"; }
+limits() { echo "{\"activeSandboxes\":ACTIVE,\"maxActiveSandboxes\":${1:-2},\"canStart\":true,\"subscriptionRemainingSeconds\":${2:-90000},\"creditBalanceSeconds\":2000000,\"trialComputeCapSeconds\":90000,\"creditUsedSeconds\":0,\"starts\":STARTS,\"machineTypes\":[{\"type\":\"small\",\"available\":true},{\"type\":\"default\",\"available\":true},{\"type\":\"large\",\"available\":false}]}" > "$BOAT_FAKE_DIR/limits.json"; }
+newcalls() { wc -l < "$BOAT_FAKE_DIR/newcalls" 2>/dev/null || echo 0; }
 boxes() { find "$BOAT_FAKE_DIR/boxes" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l; }
 ended() { grep -c '"ev": "ended"' "$BOAT_JOB_ROOT/ledger.jsonl" 2>/dev/null || echo 0; }
 
@@ -90,8 +91,59 @@ ok "$(cat "$T/w1" "$T/w2" "$T/w3" | tr '\n' ' ')" "0 0 0 " "three jobs on two sl
 ok "$(sort -n "$T/peak" | tail -1)" 2 "at most two sandboxes at once"
 ok "$(boxes)" 0 "all deleted"
 grep -q "refused" "$BOAT_FAKE_DIR/calls"; ok $? 1 "no other subcommand used"
-st=$("$J" status --json)
-ok "$(printf '%s' "$st" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["running"], d["orphans"], all(j["state"] in ("ended","swept","refused") for j in d["jobs"]), any(j.get("cost_cs",0)>0 and j.get("runtime_s",-1)>=0 and j.get("sandbox") for j in d["jobs"]))')" "0 0 True True" "status --json"
+# ---- Boat's start windows (rolling), other clients, stale data, 429, unclear creates ----
+F=$BOAT_FAKE_DIR; limits 100
+# a fresh ledger per case, so our own start record is only that case's
+fresh() { export BOAT_JOB_ROOT=$T/root$1; mkdir -p "$BOAT_JOB_ROOT"; echo "$P" > "$BOAT_JOB_ROOT/enabled"; : > "$F/starts"; }
+fresh m
+# minute window full (other clients' starts): refused at once with --wait 0, nothing created
+echo "2 60 200" > "$F/startlimits"; now=$(date +%s); printf '%s\n' $((now-50)) $((now-50)) >> "$F/starts"
+c0=$(newcalls); "$J" --no-setup-bend --wait 0 -- true >/dev/null 2>&1; ok $? 75 "minute full: refused"; ok "$(newcalls)" "$c0" "minute full: no create"
+# ...and waits for it to roll over with --wait
+out=$("$J" --no-setup-bend --wait 120 -- true 2>&1); ok $? 0 "minute full: waited then ran"
+case $out in *"start limit per minute"*) ok 1 1 "minute wait reason" ;; *) ok 0 1 "minute wait reason" ;; esac
+fresh h
+# hour window full: refused with --wait 0; day window full: refused even with --wait
+: > "$F/starts"; echo "12 3 200" > "$F/startlimits"; printf '%s\n' $((now-1000)) $((now-1000)) $((now-1000)) >> "$F/starts"
+"$J" --no-setup-bend --wait 0 -- true >/dev/null 2>&1; ok $? 75 "hour full: refused"
+: > "$F/starts"; echo "12 60 2" > "$F/startlimits"; printf '%s\n' $((now-40000)) $((now-40000)) >> "$F/starts"
+c0=$(newcalls); "$J" --no-setup-bend --wait 300 -- true >/dev/null 2>&1; ok $? 75 "day full: refused without waiting"; ok "$(newcalls)" "$c0" "day full: no create"
+# the race for the last start of the minute: exactly one creates
+fresh r; echo "1 60 200" > "$F/startlimits"; c0=$(newcalls)
+for i in 1 2; do ( "$J" --no-setup-bend --wait 0 -- sleep 1 >/dev/null 2>&1; echo $? > "$T/last$i" ) & done; wait
+ok "$(sort "$T/last1" "$T/last2" | tr '\n' ' ')" "0 75 " "last start: one admitted"; ok $(( $(newcalls) - c0 )) 1 "last start: one create"
+# stale limits (Boat still says 0 used) but our own record says the minute is full: refused
+fresh s; echo "2 60 200" > "$F/startlimits"
+"$J" --no-setup-bend -- true >/dev/null 2>&1; "$J" --no-setup-bend -- true >/dev/null 2>&1
+echo "0 0 0" > "$F/stale"; c0=$(newcalls)
+"$J" --no-setup-bend --wait 0 -- true >/dev/null 2>&1; ok $? 75 "stale limits: own record refuses"; ok "$(newcalls)" "$c0" "stale: no create"
+rm -f "$F/stale"; : > "$F/starts"; echo "12 60 200" > "$F/startlimits"
+# start limits missing: refused
+sed 's/"starts":STARTS,//' "$F/limits.json" > "$F/l2" && mv "$F/l2" "$F/limits.json"; "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 75 "start limits missing: refused"; limits 100
+fresh q
+# 429 twice, then created: backs off, one sandbox, three requests recorded
+echo 2 > "$F/rate429"; echo 1 > "$F/retryafter"; c0=$(newcalls); b0=$(boxes)
+out=$("$J" --no-setup-bend --wait 600 -- true 2>&1); rc=$?
+ok $rc 0 "429: retried and ran"; ok $(( $(newcalls) - c0 )) 3 "429: three requests"; ok "$(boxes)" "$b0" "429: no sandbox left"
+ok "$(grep -o 'retrying in [0-9]*s' <<<"$out" | tr '\n' ' ')" "retrying in 15s retrying in 30s " "429: backoff 15 s then 30 s"
+ok "$(grep -c '"ev": "attempt"' "$BOAT_JOB_ROOT/ledger.jsonl")" 3 "429: every attempt recorded"
+# 429 forever: gives up within --wait, no sandbox
+echo 99 > "$F/rate429"; "$J" --no-setup-bend --wait 20 -- true >/dev/null 2>&1; ok $? 75 "429 forever: refused"; echo 0 > "$F/rate429"; ok "$(boxes)" 0 "429 forever: nothing made"
+# an unclear create that did make a sandbox: adopted, used once, deleted, never a second create
+echo made > "$F/unclear"; c0=$(newcalls)
+"$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 0 "unclear create: adopted and ran"; ok $(( $(newcalls) - c0 )) 1 "unclear: one create"; ok "$(boxes)" 0 "unclear: deleted"
+# an unclear create that made nothing: 76, not retried
+echo none > "$F/unclear"; c0=$(newcalls)
+"$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 76 "unclear, nothing made: 76"; ok $(( $(newcalls) - c0 )) 1 "unclear: not retried"
+# an unclear create while another client made a sandbox of the same shape: neither adopted nor deleted
+echo two > "$F/unclear"
+"$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 76 "unclear with a look-alike: not adopted"
+ok "$(boxes)" 2 "look-alike case: both left for a person"; rm -rf "$F/boxes"/*
 
+st=$("$J" status --json)
+ok "$(printf '%s' "$st" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["running"], d["orphans"], all(j["state"] in ("ended","swept","refused","ambiguous") for j in d["jobs"]), any(j.get("cost_cs",0)>0 and j.get("runtime_s",-1)>=0 and j.get("sandbox") for j in d["jobs"]))')" "0 0 True True" "status --json"
+
+ok "$(python3 -c "import json; d=json.load(open('$BOAT_JOB_ROOT/status.json')); print(d['running'], 'month' in d, d['month']['cost_cs'] >= d['today']['cost_cs'] > 0)")" "0 True True" "status.json kept current"
+ok "$(python3 -c "import json; d=json.load(open('$BOAT_JOB_ROOT/account.json')); print(d['active']['limit'], d['starts']['minute']['limit'], d['error'])")" "100 12 " "account.json from the last limits read"
 echo "boat_job_test: $pass passed, $failn failed"
 [ $failn = 0 ]
