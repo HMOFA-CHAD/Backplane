@@ -2,13 +2,21 @@
 
 `test/tools/perf_load.ts` runs the native app (hub and window in one
 process) on a copy of a real event log, with stand-in agents streaming, and
-measures it phase by phase against the targets:
+measures it phase by phase against the targets. Keep one immutable log
+snapshot for a baseline/change comparison; each report records its byte
+count and SHA-256 so different inputs are visible:
+
+```sh
+cp ~/.backplane-bend/events.jsonl /tmp/backplane-perf-snapshot.jsonl
+bun test/tools/perf_load.ts --bin build/backplane --log /tmp/backplane-perf-snapshot.jsonl --out /tmp/perf-result.json
+```
 
 | target | metric |
 |---|---|
 | frame p99 ≤ 8 ms | `ui.frame` |
 | no frame > 16 ms from background streaming | `ui.frame` in `idle` and `bg` |
 | typing ≤ 16 ms | `ui.input` in `type` and `normal` (also shown: key>frame) |
+| key handling through frame ≤ 16 ms | `ui.msg.win` + `ui.input` in `type` and `normal` |
 | thread open ≤ 50 ms | Return in the palette to the frame showing the thread |
 | agent line ≤ 2 ms | `hub.agent_line` p99 |
 
@@ -30,6 +38,22 @@ stats, top 25 spans, both perf.json readings), `--shots DIR` (a screenshot
 at the end of each phase), `--keep` (keep the temp folder), `--hold` (set up,
 start streaming and wait for `<tmp>/stop`, to look around by hand).
 One run takes about 4 minutes.
+
+`--fail-on-target` exits nonzero when a selected phase misses a target or
+has no samples for a required metric. The default records failures and
+exits successfully, which permits before/after runs while improving a
+known slow build. Neither typing metric includes time spent waiting
+before the window handles an event; these are processing measurements,
+not complete input-to-pixels latency. The Status plane is selected by
+its sidebar coordinates; include `--shots` when checking UI coverage.
+
+The copied log's provider preference is overridden with the deterministic
+stand-in protocol, including bot threads. Before timing begins, every load
+thread must deliver parsed streaming deltas. Each streaming phase reports
+per-thread delta counts and fails the workload if a thread falls below one
+delivered update a second; bot traffic is also recorded. A zero-stream run
+is invalid regardless of timing targets. `bun test/tools/perf_standin_test.ts`
+checks the stand-in's JSON, deltas, subagent and shell events without a hub.
 
 ## What it measures
 

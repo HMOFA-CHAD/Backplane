@@ -15,12 +15,19 @@
 // stopped.
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, openSync, readSync, closeSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
+import { standinScript as claude } from "./perf_standin";
 import { join, resolve } from "node:path";
 
 const argv = process.argv.slice(2);
+if (argv.includes("--help")) {
+  console.log("bun test/tools/perf_load.ts --bin BUILD --log SNAPSHOT [--agents 10] [--secs 20] [--phases normal,idle,bg,fg,type,open,plane] [--out results.json] [--shots DIR] [--fail-on-target] [--keep]");
+  process.exit(0);
+}
 const opt = (name: string, d: string) => {
   const i = argv.indexOf(`--${name}`);
-  return i >= 0 ? argv[i + 1] : d;
+  if (i < 0) return d;
+  if (!argv[i + 1] || argv[i + 1].startsWith("--")) throw new Error(`--${name} needs a value`);
+  return argv[i + 1];
 };
 const here = resolve(import.meta.dir, "../..");
 const bin = resolve(opt("bin", join(here, "build/backplane")));
@@ -32,6 +39,7 @@ const nAgents = Number(opt("agents", "10"));
 const secs = Number(opt("secs", "20"));
 const outPath = opt("out", "");
 const keep = argv.includes("--keep");
+const failOnTarget = argv.includes("--fail-on-target");
 const shots = opt("shots", ""); // a folder: a screenshot at the end of each phase (ImageMagick's import)
 const phasesWanted = opt("phases", "normal,idle,bg,fg,type,open,plane").split(",");
 const xpoke = resolve(opt("xpoke", join(here, "build/xpoke")));
@@ -40,6 +48,11 @@ const say = (s: string) => console.error(`[perf_load] ${s}`);
 
 // Safety first
 // ------------
+if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("--port must be 1024..65535");
+if (!Number.isInteger(nAgents) || nAgents < 1 || nAgents > 26) throw new Error("--agents must be 1..26");
+if (!Number.isFinite(secs) || secs <= 0) throw new Error("--secs must be positive");
+const knownPhases = ["normal", "idle", "bg", "fg", "type", "open", "plane"];
+if (phasesWanted.some((p) => !knownPhases.includes(p))) throw new Error("unknown --phases value");
 if (port === 3787) throw new Error("3787 is the live hub's port");
 if (!existsSync(bin)) throw new Error(`no binary at ${bin}`);
 if (realpathSync(bin).startsWith(join(homedir(), ".local/share/backplane"))) throw new Error("refusing to run the installed binary");
@@ -58,6 +71,7 @@ const fake = join(root, "bin");
 const locks = join(root, "locks");
 const proj = join(root, "proj");
 for (const d of [home, user, fake, locks, proj]) mkdirSync(d, { recursive: true });
+if (shots) mkdirSync(shots, { recursive: true });
 const trace = join(root, "trace.json");
 const fakeLog = join(root, "agents.log");
 
@@ -75,18 +89,21 @@ const dropSetting = /^(push|voice|deploy|google|hook|apns|token|secret)/i;
 type Th = { id: string; project: string; title: string; msgs: number; gone: boolean };
 const threads = new Map<string, Th>();
 const botThreads = new Set<string>();
+const turns = new Map<string, any>();
 const removedProjects = new Set<string>();
-const rooms: { id: string; name: string; members: string }[] = [];
+const roomById = new Map<string, { id: string; name: string; members: string }>();
 const kept: string[] = [];
 let dropped = 0;
 const openTasks = new Set<string>();
 const botIds = new Set<string>();
 const raw = readFileSync(logSrc, "utf8");
+const logSha256 = new Bun.CryptoHasher("sha256").update(raw).digest("hex");
 for (const line of raw.split("\n")) {
   if (!line) continue;
   const ty = /^\{"\$":"([A-Za-z]+)"/.exec(line)?.[1] ?? "";
   if (dropTypes.has(ty) || /devicetoken|webhook|apns/i.test(line)) { dropped++; continue; }
   if (ty === "WorkSet" && !line.includes('"kind":"bg"')) { dropped++; continue; }
+  if (ty === "TurnChanged") { const o = JSON.parse(line); turns.set(o.thread, o.state); }
   if (ty === "TaskDelegated") openTasks.add(/"task":"([^"]*)"/.exec(line)?.[1] ?? /"id":"([^"]*)"/.exec(line)?.[1] ?? "");
   if (ty === "TaskDelivered") openTasks.delete(/"task":"([^"]*)"/.exec(line)?.[1] ?? "");
   if (ty === "SettingSet") {
@@ -94,7 +111,7 @@ for (const line of raw.split("\n")) {
     if (dropSetting.test(k)) { dropped++; continue; }
   }
   kept.push(line.split(liveHome).join(home).split(homedir() + "/").join(elsewhere + "/"));
-  if (ty === "ThreadCreated" || ty === "MessagePosted" || ty === "ThreadDeleted" || ty === "ThreadArchived" || ty === "BotSet" || ty === "ProjectRemoved" || ty === "RoomSet" || ty === "ThreadRenamed") {
+  if (ty === "ThreadCreated" || ty === "MessagePosted" || ty === "ThreadDeleted" || ty === "ThreadArchived" || ty === "BotSet" || ty === "ProjectRemoved" || ty === "RoomSet" || ty === "RoomDeleted" || ty === "ThreadRenamed") {
     let o: any;
     try { o = JSON.parse(line); } catch { continue; }
     if (ty === "ThreadCreated") threads.set(o.id, { id: o.id, project: o.project, title: o.title, msgs: 0, gone: false });
@@ -103,13 +120,16 @@ for (const line of raw.split("\n")) {
     else if (ty === "ThreadRenamed") { const t = threads.get(o.id); if (t) t.title = o.title; }
     else if (ty === "BotSet") { botThreads.add(o.thread); botIds.add(o.id); }
     else if (ty === "ProjectRemoved") removedProjects.add(o.id);
-    else if (ty === "RoomSet") rooms.push({ id: o.id, name: o.name, members: o.members ?? "" });
+    else if (ty === "RoomSet") roomById.set(o.id, { id: o.id, name: o.name, members: o.members ?? "" });
+    else if (ty === "RoomDeleted") roomById.delete(o.id);
   }
 }
 const now = Math.floor(Date.now() / 1000);
+const rooms = [...roomById.values()];
 // real threads, longest first: the long one the window shows, and the ones phase "open" opens
 const real = [...threads.values()].filter((t) => !t.gone && !removedProjects.has(t.project) && !botThreads.has(t.id)).sort((a, b) => b.msgs - a.msgs);
 const longT = real[0];
+if (!longT) throw new Error("--log has no available non-bot thread for the load scenario");
 const openTs = real.slice(1, 11);
 // unique titles the palette (ctrl+k) finds them by
 kept.push(JSON.stringify({ $: "ThreadRenamed", id: longT.id, title: "zqlong thread", at: now }));
@@ -119,6 +139,14 @@ for (const k of openTasks) if (k) {
   kept.push(JSON.stringify({ $: "TaskDelivered", task: k, at: now }));
 }
 kept.push(JSON.stringify({ $: "SettingSet", key: "restart.continue", value: "off", at: now }));
+// The person's preferred provider may change between captures. The load
+// protocol always comes from the stand-in, including copied bot threads.
+kept.push(JSON.stringify({ $: "SettingSet", key: "agent.provider", value: "claude", at: now }));
+for (const t of threads.values()) {
+  if (t.gone) continue;
+  kept.push(JSON.stringify({ $: "ProviderSet", id: t.id, provider: "claude", model: "", at: now }));
+  if (turns.get(t.id) === "running") kept.push(JSON.stringify({ $: "TurnChanged", thread: t.id, state: "interrupted", at: now }));
+}
 writeFileSync(join(home, "events.jsonl"), kept.join("\n") + "\n");
 // a bot's turns run in its home folder (<home>/bots/<id>): there, empty
 for (const b of botIds) mkdirSync(join(home, "bots", b), { recursive: true });
@@ -133,60 +161,6 @@ say(`log: ${kept.length} lines kept, ${dropped} dropped; long thread ${longT.id}
 // with task_started, its own lines under parent_tool_use_id) and a
 // background shell, with a task_progress for each every tick. "zqshort"
 // streams 8 s (bots woken by room posts). It ends when its hub is gone.
-const claude = `#!/bin/sh
-secs=\${FAKE_SECS:-600}; per=\${FAKE_PER:-3}; cycle=\${FAKE_CYCLE:-30}
-sid="fake-$$"; n=0
-echo "START $$ $(pwd)" >> "$FAKE_LOG"
-while IFS= read -r line; do
-  case "$line" in
-    *'"type":"user"'*)
-      n=$((n + 1)); ticks=$((secs * 10)); sub=
-      case "$line" in *zqshort*) ticks=80 ;; esac
-      case "$line" in *zqsub*) sub=1 ;; esac
-      echo "TURN $$ sub=$sub ticks=$ticks" >> "$FAKE_LOG"
-      printf '%s\\n' '{"type":"system","subtype":"init","session_id":"'"$sid"'","cwd":"/tmp","tools":["Bash","Read","Agent"],"model":"fake","permissionMode":"default"}'
-      if [ -n "$sub" ]; then
-        printf '%s\\n' '{"type":"assistant","message":{"id":"ma'"$$-$n"'","role":"assistant","content":[{"type":"tool_use","id":"ag'"$$-$n"'","name":"Agent","input":{"description":"Survey the footprints","prompt":"Look through the footprints and report","subagent_type":"general-purpose"}}],"usage":{"input_tokens":10}},"session_id":"'"$sid"'"}'
-        printf '%s\\n' '{"type":"system","subtype":"task_started","task_id":"a'"$$-$n"'","tool_use_id":"ag'"$$-$n"'","description":"Survey the footprints","task_type":"local_agent","is_backgrounded":true,"session_id":"'"$sid"'"}'
-        printf '%s\\n' '{"type":"system","subtype":"task_started","task_id":"b'"$$-$n"'","tool_use_id":"tb'"$$-$n"'","description":"npm run watch","task_type":"local_bash","is_backgrounded":true,"session_id":"'"$sid"'"}'
-      fi
-      t=0; k=0
-      while [ $t -lt $ticks ]; do
-        kill -0 $PPID 2>/dev/null || exit 0
-        t=$((t + 1)); k=$((k + 1))
-        if [ $k -eq 1 ]; then
-          printf '%s\\n' '{"type":"stream_event","event":{"type":"message_start","message":{"id":"m'"$$-$n-$t"'","role":"assistant","content":[],"usage":{"input_tokens":10}}},"session_id":"'"$sid"'"}'
-          printf '%s\\n' '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},"session_id":"'"$sid"'"}'
-        fi
-        if [ -n "$sub" ]; then
-          printf '%s\\n' '{"type":"system","subtype":"task_progress","task_id":"a'"$$-$n"'","description":"Reading footprint '"$t"'","session_id":"'"$sid"'"}'
-          printf '%s\\n' '{"type":"system","subtype":"task_progress","task_id":"b'"$$-$n"'","description":"rebuilt '"$t"'","session_id":"'"$sid"'"}'
-          if [ $((t % 10)) -eq 5 ]; then
-            printf '%s\\n' '{"type":"assistant","parent_tool_use_id":"ag'"$$-$n"'","message":{"id":"ms'"$$-$n-$t"'","role":"assistant","content":[{"type":"text","text":"Checked footprint '"$t"', pads match the datasheet."},{"type":"tool_use","id":"st'"$$-$n-$t"'","name":"Read","input":{"file_path":"/tmp/f'"$t"'.kicad_mod"}}]},"session_id":"'"$sid"'"}'
-          fi
-        fi
-        now=$(date +%s%3N); i=0
-        while [ $i -lt $per ]; do
-          i=$((i + 1))
-          printf '%s\\n' '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"@'"$now"'@ some words of an answer about the board, "}},"session_id":"'"$sid"'"}'
-        done
-        if [ $k -ge $cycle ]; then
-          k=0
-          printf '%s\\n' '{"type":"stream_event","event":{"type":"content_block_stop","index":0},"session_id":"'"$sid"'"}'
-          printf '%s\\n' '{"type":"assistant","message":{"id":"m'"$$-$n-$t"'","role":"assistant","content":[{"type":"text","text":"Some words of an answer about the board, the whole paragraph the deltas built, as Claude sends it once the block ends. It names U3 and the 3V3 rail, and says what changed in the layout and why."}],"usage":{"input_tokens":1000,"cache_read_input_tokens":'"$((20000 + t))"',"output_tokens":'"$t"'}},"session_id":"'"$sid"'"}'
-          printf '%s\\n' '{"type":"assistant","message":{"id":"m'"$$-$n-$t"'b","role":"assistant","content":[{"type":"tool_use","id":"tu'"$$-$n-$t"'","name":"Bash","input":{"command":"ls -la src/core | head -'"$t"'","description":"List files"}}],"usage":{"input_tokens":1000,"cache_read_input_tokens":'"$((20000 + t))"',"output_tokens":'"$((t + 1))"'}},"session_id":"'"$sid"'"}'
-          printf '%s\\n' '{"type":"user","message":{"role":"user","content":[{"tool_use_id":"tu'"$$-$n-$t"'","type":"tool_result","content":"total 42\\\\ndrwxr-xr-x  2 h h 4096 model.bend\\\\n-rw-r--r--  1 h h 1234 hub.bend","is_error":false}]},"session_id":"'"$sid"'"}'
-        fi
-        sleep 0.1
-      done
-      if [ -n "$sub" ]; then
-        printf '%s\\n' '{"type":"system","subtype":"task_notification","task_id":"a'"$$-$n"'","tool_use_id":"ag'"$$-$n"'","status":"completed","session_id":"'"$sid"'"}'
-        printf '%s\\n' '{"type":"system","subtype":"task_notification","task_id":"b'"$$-$n"'","tool_use_id":"tb'"$$-$n"'","status":"completed","session_id":"'"$sid"'"}'
-      fi
-      printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"'"$sid"'","modelUsage":{"fake":{"contextWindow":200000}}}' ;;
-  esac
-done
-`;
 writeFileSync(join(fake, "claude"), claude);
 chmodSync(join(fake, "claude"), 0o755);
 for (const n of ["codex", "grok", "muse", "agy", "tailscale", "notify-send", "gh", "git", "kicad-cli", "freecad", "xdg-open", "gio"]) {
@@ -334,6 +308,8 @@ await sleep(3000);
 // The hub's socket (a client like the web's, joined at the log's head)
 // ---------------------------------------------------------------------
 const items: any[] = [];
+const deltas = new Map<string, number>();
+const traffic = (): Record<string, number> => Object.fromEntries(deltas);
 const replies = new Map<number, any>();
 let wsMsgs = 0, wsBytes = 0;
 const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?since=${since}`);
@@ -344,6 +320,7 @@ ws.onmessage = (e) => {
   let o: any;
   try { o = cborDec(u); } catch { return; }
   if (!o || typeof o !== "object") return;
+  if (o.t === "delta" && typeof o.thread === "string" && o.text) deltas.set(o.thread, (deltas.get(o.thread) ?? 0) + 1);
   if (o.t === "reply") replies.set(Number(o.id), o);
   for (const c of Array.isArray(o.items) ? o.items : []) {
     if (typeof c === "string") { try { items.push(JSON.parse(c)); } catch {} } else items.push(c);
@@ -375,7 +352,7 @@ const logged = () => {
 send("project.add", { path: proj });
 const pc = await until(20000, () => logged().find((c: any) => c.$ === "ProjectCreated" && c.root === proj) ?? logged().find((c: any) => c.$ === "ProjectCreated"));
 if (!pc) { await cleanup(); throw new Error("no project"); }
-for (let i = 0; i < nAgents; i++) send("thread.create", { project: pc.id, title: `zqrun${String.fromCharCode(97 + i)} stream`, env: "local" });
+for (let i = 0; i < nAgents; i++) send("thread.create", { project: pc.id, title: `zqrun${String.fromCharCode(97 + i)} stream`, env: "local", provider: "claude" });
 const ours = await until(30000, () => {
   const t = logged().filter((c: any) => c.$ === "ThreadCreated" && c.project === pc.id && /^zqrun/.test(c.title ?? ""));
   return t.length >= nAgents ? t : undefined;
@@ -425,18 +402,19 @@ const upMs = async () => (await reading()).up;
 let rssMax = 0;
 const rssTimer = setInterval(() => { rssMax = Math.max(rssMax, rssKb()); }, 500);
 
-type Phase = { name: string; what: string; a: Reading; b: Reading; rssMax: number; marks?: [number, number][]; notes?: string[] };
+type Phase = { name: string; what: string; a: Reading; b: Reading; rssMax: number; trafficBefore: Record<string, number>; trafficAfter: Record<string, number>; marks?: [number, number][]; notes?: string[] };
 const phases: Phase[] = [];
 async function phase(name: string, what: string, body: (p: Phase) => Promise<void>) {
   if (!phasesWanted.includes(name)) return;
   say(`phase ${name}: ${what}`);
   rssMax = 0;
-  const p: Phase = { name, what, a: await reading(), b: null as any, rssMax: 0, marks: [], notes: [] };
+  const p: Phase = { name, what, a: await reading(), b: null as any, rssMax: 0, trafficBefore: traffic(), trafficAfter: {}, marks: [], notes: [] };
   await body(p);
   p.b = await reading();
+  p.trafficAfter = traffic();
   if (shots) {
     const sh = Bun.spawn(["import", "-display", display, "-window", "root", join(shots, `${name}.png`)], { stdout: "ignore", stderr: "ignore" });
-    await sh.exited;
+    if (await sh.exited !== 0) throw new Error(`screenshot failed for ${name}`);
   }
   p.rssMax = Math.max(rssMax, p.b.rss);
   phases.push(p);
@@ -445,10 +423,15 @@ async function phase(name: string, what: string, body: (p: Phase) => Promise<voi
 // Streaming
 // ---------
 let streaming = false;
-function startStreams() {
+async function startStreams() {
   if (streaming) return;
   streaming = true;
   ours.forEach((t: any, i: number) => send("turn.start", { thread: t.id, text: `stream for the perf bench ${i % 5 < 3 ? "zqsub" : ""}` }));
+  const ready = await until(30000, () => ours.every((t: any) => (deltas.get(t.id) ?? 0) >= 2));
+  if (!ready) {
+    throw new Error(`invalid workload: not all ${nAgents} agents streamed parsed deltas; ${JSON.stringify(traffic())}; see ${root}/agents.log and app.err`);
+  }
+  say(`workload ready: all ${nAgents} agents delivered streaming deltas`);
 }
 // bots woken in rooms: the person posts in each room with bots every few seconds
 const botRooms = rooms.filter((r) => r.members.split("\n").some((m) => m && !m.includes("@")));
@@ -473,7 +456,7 @@ const ourTitle = (i: number) => `zqrun${String.fromCharCode(97 + i)} stream`;
 if (argv.includes("--hold")) {
   await sleep(2000);
   await poke("size", String(W), String(H));
-  startStreams();
+  await startStreams();
   startPosts();
   say(`holding: DISPLAY=${display}, root ${root}; touch ${root}/stop to end`);
   while (!existsSync(join(root, "stop"))) await sleep(500);
@@ -492,7 +475,7 @@ await phase("idle", "window on the long thread, nothing streaming (blink only)",
   await sleep(secs * 1000);
 });
 
-startStreams();
+await startStreams();
 startPosts();
 await sleep(4000);
 await phase("bg", `${nAgents} agents streaming (${Math.round(nAgents * 0.6)} with a subagent and a background shell), bots posting; the window on the long thread`, async () => {
@@ -571,7 +554,7 @@ const stat = (es: Ev[], name: string | RegExp): Sum => {
   return { n: d.length, p50: pctOf(d, 50), p99: pctOf(d, 99), max: d.length ? Math.max(...d) : NaN, sum: d.reduce((a, b) => a + b, 0), over8: d.filter((x) => x > 8).length, over16: d.filter((x) => x > 16).length };
 };
 const f1 = (x: number) => (Number.isFinite(x) ? (x >= 100 ? x.toFixed(0) : x.toFixed(1)) : "-");
-const results: any = { bin, log: logSrc, port, agents: nAgents, secs, rooms: botRooms.length, home: keep ? home : "", phases: [] as any[] };
+const results: any = { bin, log: logSrc, log_sha256: logSha256, log_bytes: Buffer.byteLength(raw), port, agents: nAgents, secs, rooms: botRooms.length, home: keep ? home : "", phases: [] as any[] };
 const order = ["normal", "idle", "bg", "fg", "type", "open", "plane"];
 const rows: string[] = [];
 const verdicts: string[] = [];
@@ -610,12 +593,16 @@ for (const name of order) {
   const hubBusy = (st["hub.*"].sum / 1000) / wallS * 100;
   const fr = st["ui.frame"], inp = st["ui.input"], al = st["hub.agent_line"];
   const key = { n: keys.length, p50: pctOf(keys, 50), p99: pctOf(keys, 99), max: keys.length ? Math.max(...keys) : NaN };
+  const streamingCounts = Object.fromEntries(ours.map((t: any) => [t.id, (p.trafficAfter[t.id] ?? 0) - (p.trafficBefore[t.id] ?? 0)]));
   const checks: [string, boolean | null][] = [
+    ...(name !== "idle" ? [["all agents streaming", Object.values(streamingCounts).every((n) => n >= Math.max(1, Math.floor(wallS)))] as [string, boolean | null]] : []),
     ["frame p99<=8ms", fr.n ? fr.p99 <= 8 : null],
     ...(["bg", "idle"].includes(name) ? [["no frame>16ms", fr.n ? fr.over16 === 0 : null] as [string, boolean | null]] : []),
     ...(["type", "normal"].includes(name) ? [["input p99<=16ms", inp.n ? inp.p99 <= 16 : null] as [string, boolean | null]] : []),
+    ...(["type", "normal"].includes(name) ? [["key>frame p99<=16ms", key.n ? key.p99 <= 16 : null] as [string, boolean | null]] : []),
+    ...(name === "open" && !opens.length ? [["open<=50ms", null] as [string, boolean | null]] : []),
     ...(opens.length ? [["open<=50ms", Math.max(...opens) <= 50] as [string, boolean | null]] : []),
-    ...(al.n ? [["agent_line p99<=2ms", al.p99 <= 2] as [string, boolean | null]] : []),
+    ...(name !== "idle" ? [["agent_line p99<=2ms", al.n ? al.p99 <= 2 : null] as [string, boolean | null]] : []),
   ];
   const verdict = checks.map(([k, v]) => `${k}:${v === null ? "n/a" : v ? "PASS" : "FAIL"}`).join(" ");
   verdicts.push(`${name.padEnd(7)} ${verdict}`);
@@ -628,9 +615,9 @@ for (const name of order) {
     `${String(al.n).padStart(6)} ${f1(al.p50).padStart(4)}/${f1(al.p99).padStart(5)}/${f1(al.max).padStart(5)} ${f1(st["hub.mcp"].p99).padStart(5)} ` +
     `${f1(hubBusy).padStart(5)} ${f1(cpu).padStart(5)} ${String(Math.round(p.rssMax / 1024)).padStart(5)}`,
   );
-  results.phases.push({ name, what: p.what, wall_s: wallS, cpu_pct: cpu, rss_max_mb: p.rssMax / 1024, hub_busy_pct: hubBusy, opens_ms: opens, key_to_frame: key, notes: p.notes, stats: st, top, checks: Object.fromEntries(checks), perf_json_before: Object.fromEntries(p.a.rows), perf_json_after: Object.fromEntries(p.b.rows) });
+  results.phases.push({ name, what: p.what, wall_s: wallS, cpu_pct: cpu, rss_max_mb: p.rssMax / 1024, hub_busy_pct: hubBusy, opens_ms: opens, key_to_frame: key, notes: p.notes, streaming_deltas: streamingCounts, stats: st, top, checks: Object.fromEntries(checks), perf_json_before: Object.fromEntries(p.a.rows), perf_json_after: Object.fromEntries(p.b.rows) });
 }
-console.log(`\nperf_load: ${bin}\n  log ${logSrc} (${kept.length} lines), ${nAgents} agents, ${botRooms.length} bot rooms, ${secs} s phases, port ${port}, display ${display}`);
+console.log(`\nperf_load: ${bin}\n  log ${logSrc} (${kept.length} lines; sha256 ${logSha256}), ${nAgents} agents, ${botRooms.length} bot rooms, ${secs} s phases, port ${port}, display ${display}`);
 console.log(`  ms; frame = ui.frame n p50/p99/max >8/>16; input = ui.input; key>frame = ui.msg.win + ui.input; open = the slowest thread open, Return to frame; line = hub.agent_line n p50/p99/max; hub% = hub.* span time / wall; cpu% = whole app process`);
 console.log(`phase    wall     n  frame p50/p99/max  >8/>16  layout p50/p99 raster p50/p99 blink p50/p99 input p50/p99 key>frame  open   line  p50/p99/max   mcp99  hub%  cpu%  rssMB`);
 for (const r of rows) console.log(r);
@@ -643,11 +630,19 @@ for (const p of results.phases) {
 }
 if (strays.length) console.log(`\nWARNING: real agents seen under the hub:\n${strays.join("\n")}`);
 results.ws = { msgs: wsMsgs, bytes: wsBytes };
+results.streaming_deltas = traffic();
+results.bot_streaming_deltas = Object.fromEntries([...deltas].filter(([th]) => botThreads.has(th)));
+results.bot_streaming = !botRooms.length || Object.values(results.bot_streaming_deltas).some((n: any) => n > 0);
 results.agentsLog = readFileSync(fakeLog, "utf8").split("\n").filter((l) => l.startsWith("TURN")).length;
 results.appErrTail = appLogTail;
 if (outPath) { writeFileSync(outPath, JSON.stringify(results, null, 1)); console.log(`\nraw JSON: ${outPath}`); }
 if (!keep) rmSync(root, { recursive: true, force: true });
 else console.log(`kept ${root}`);
+// By default this is a measurement tool, including while fixing a known
+// regression. Strict mode makes missing samples and failed targets fail CI.
+if (results.phases.some((p: any) => p.checks["all agents streaming"] === false)) process.exitCode = 1;
+if (!results.bot_streaming) process.exitCode = 1;
+if (failOnTarget && results.phases.some((p: any) => Object.values(p.checks).some((v) => v !== true))) process.exitCode = 1;
 
 // the uberbot's Status plane: its sidebar row (declared last; hoisted)
 async function statusPlane(p: Phase): Promise<boolean> {
