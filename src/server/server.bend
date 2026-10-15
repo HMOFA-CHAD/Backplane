@@ -1306,12 +1306,15 @@ def Hub.lines.disk(cs: List<&2, M.Change>) -> List<&2, String>:
 type Folded is Data:
   Folded{st: M.State, ls: List<&2, String>, fresh: List<&2, String>}
 
-def Hub.fold(cs: List<&2, M.Change>, f: Folded) -> Folded:
-  match cs f:
-    case Nil{} _:
+# (ds: the changes' disk lines, Hub.lines.disk: each change is shown once
+# per commit and its line reused for clients, B.Commit.line)
+def Hub.fold(cs: List<&2, M.Change>, ds: List<&2, String>, f: Folded) -> Folded:
+  match cs ds f:
+    case +c <> t +d <> dt Folded{st, ls, fr}:
+      +w = B.Commit.line(c, d)
+      Hub.fold(t, dt, Folded{M.State.apply(st, c), w <> ls, w <> fr})
+    case _ _ _:
       f
-    case +c <> t Folded{st, ls, fr}:
-      Hub.fold(t, Folded{M.State.apply(st, c), J.Json.show(C.Change.wire(c)) <> ls, J.Json.show(C.Change.wire(c)) <> fr})
 
 def Bot.dir.changed.all(cs: List<&2, M.Change>, +inbox: Chan(Msg)) -> IO(Unit):
   match cs:
@@ -5091,26 +5094,30 @@ def Hub.commit.failed(cut: Bool, +len: String, +err: String, st: M.State, f: Fil
     case False{}:
       IO.pure(Hub & Wrote, Hub.held(ST.Store.hold(len, err), st, f, ls, cl, as, inbox, cfg, note))
 
-def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +len: String, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
+def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +disk: List<&2, String>, +len: String, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
     as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
   (f, res) = r
   match res:
     case Done{_}:
       do IO<Hub & Wrote>:
         Bot.dir.changed.all(cs, inbox)
-        return Hub.commit.k(Hub.fold(cs, Folded{st, ls, Nil{}}), f, cl, as, inbox, Live.with(cfg, LV.Live.ends(cs, Live.of(cfg))), note)
+        return Hub.commit.k(Hub.fold(cs, disk, Folded{st, ls, Nil{}}), f, cl, as, inbox, Live.with(cfg, LV.Live.ends(cs, Live.of(cfg))), note)
     case Fail{e}:
       do IO<Hub & Wrote>:
         cut : Bool <- Hub.cut(len, cfg)
         Hub.commit.failed(cut, len, Hub.err.msg(e), st, f, ls, cl, as, inbox, cfg, note)
+
+def Hub.commit.write(+disk: List<&2, String>, f: File, +len: String, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, ST.Store.text(disk)),
+    w => Hub.commit.done(w, disk, len, cs, st, ls, cl, as, inbox, cfg, note))
 
 def Hub.commit.at(r: File & Result<&1, &1, U32 & String, U32>, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
     as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
   (f, res) = r
   match res:
     case Done{len}:
-      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, ST.Store.text(Hub.lines.disk(cs))),
-        w => Hub.commit.done(w, U32.show(len), cs, st, ls, cl, as, inbox, cfg, note))
+      Hub.commit.write(Hub.lines.disk(cs), f, U32.show(len), cs, st, ls, cl, as, inbox, cfg, note)
     case Fail{e}:
       IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, Hub.err.msg(e)}))
 

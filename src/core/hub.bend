@@ -4752,6 +4752,24 @@ def Pend.go(cs: List<&2, M.Change>, +before: M.State, +after: M.State) -> List<&
 def Pend.fix(+s: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
   List.append(&2, M.Change, cs, Pend.go(cs, s, M.State.replay(cs, s)))
 
+# A commit's lines
+# ----------------
+# A step's changes are written to disk as C.Change.encode and told to
+# clients as C.Change.wire, the same text for every kind but the device
+# ones (wire leaves their tokens out): the disk line is reused, so a change
+# is shown once per commit, not three times (law commit_line_is_wire).
+def Commit.line(+c: M.Change, +disk: String) -> String:
+  match c:
+    case M.DeviceRegistered{_, _, _, _, _, _, _}:
+      J.Json.show(C.Change.wire(c))
+    case M.DeviceDropped{_, _}:
+      J.Json.show(C.Change.wire(c))
+    case _:
+      disk
+
+def Commit.line.ok(+c: M.Change) -> Bool:
+  String.eq(Commit.line(c, J.Json.show(C.Change.encode(c))), J.Json.show(C.Change.wire(c)))
+
 # The busy count
 # --------------
 # /hello's busy count (M.Work.threads) walks every thread, its tasks and
