@@ -10002,7 +10002,7 @@ def Touch.raw(c: M.Change) -> List<&2, String>:
 # Bg.log) is its thread's; any other name with "@" is no plain thread, so
 # it touches everything
 def Touch.id(+id: String) -> String:
-  Bool.pick(String, String.starts_with(id, "@sub:"), String.drop(id, 5n), Bool.pick(String, Bool.and(String.starts_with(id, "@"), Bool.not(String.starts_with(id, "@mail"))), "*", id))
+  Bool.pick(String, String.starts_with(id, "@sub:"), String.drop(id, 5n), Bool.pick(String, Bool.and(String.starts_with(id, "@"), Bool.not(String.eq(id, "@mail"))), "*", id))
 
 def Touch.ids(ids: List<&2, String>) -> List<&2, String>:
   match ids:
