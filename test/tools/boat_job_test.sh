@@ -39,6 +39,12 @@ grep -q -- "--no-env" "$BOAT_FAKE_DIR/calls" && grep -q -- "--no-snapshots" "$BO
 # the command's exit code passes through, sandbox still deleted
 "$J" --no-setup-bend -- sh -c 'exit 3' >/dev/null 2>&1; ok $? 3 "exit passthrough"; ok "$(boxes)" 0 "failure: deleted"
 
+# the script changed under a running job (a rebase): the job is unaffected
+cp "$J" "$T/bj.sh"
+( "$T/bj.sh" --no-setup-bend -- sleep 3 >/dev/null 2>&1; echo $? > "$T/edit" ) &
+sleep 1; printf 'exit 99\n)( syntax\n' > "$T/bj.sh"; wait
+ok "$(cat "$T/edit")" 0 "edit during a run"; ok "$(boxes)" 0 "edit: deleted"
+
 # fail closed: unreadable limits, no compute, budget, unknown size
 BOAT_FAKE_FAIL=limits "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 75 "limits unreadable"
 echo '{"activeSandboxes":ACTIVE}' > "$BOAT_FAKE_DIR/limits.json"; "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 75 "limits missing fields"
@@ -71,12 +77,21 @@ BOAT_FAKE_FAIL=delete "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 75 "bl
 # two jobs at once with budget for one: exactly one admitted
 for i in 1 2; do ( "$J" --no-setup-bend --timeout 300 --budget-usd 0.015 -- sleep 2 >/dev/null 2>&1; echo $? > "$T/par$i" ) & done; wait
 ok "$(sort "$T/par1" "$T/par2" | tr '\n' ' ')" "0 75 " "budget race: one admitted"
-# two jobs at once with one slot: exactly one admitted
+# two jobs at once with one slot and no waiting: exactly one admitted
 limits 1
-for i in 1 2; do ( "$J" --no-setup-bend -- sleep 2 >/dev/null 2>&1; echo $? > "$T/slot$i" ) & done; wait
+for i in 1 2; do ( "$J" --no-setup-bend --wait 0 -- sleep 2 >/dev/null 2>&1; echo $? > "$T/slot$i" ) & done; wait
 ok "$(sort "$T/slot1" "$T/slot2" | tr '\n' ' ')" "0 75 " "slot race: one admitted"
+# three jobs on two slots, waiting: all succeed, never more than two sandboxes at once
+limits 2; : > "$T/peak"
+( for i in $(seq 200); do boxes >> "$T/peak"; sleep 0.1; done ) & mon=$!
+for i in 1 2 3; do ( "$J" --no-setup-bend --wait 120 -- sleep 3 >/dev/null 2>&1; echo $? > "$T/w$i" ) & done
+wait $(jobs -p | grep -v "^$mon$") 2>/dev/null; kill "$mon" 2>/dev/null; wait "$mon" 2>/dev/null
+ok "$(cat "$T/w1" "$T/w2" "$T/w3" | tr '\n' ' ')" "0 0 0 " "three jobs on two slots all ran"
+ok "$(sort -n "$T/peak" | tail -1)" 2 "at most two sandboxes at once"
 ok "$(boxes)" 0 "all deleted"
 grep -q "refused" "$BOAT_FAKE_DIR/calls"; ok $? 1 "no other subcommand used"
+st=$("$J" status --json)
+ok "$(printf '%s' "$st" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["running"], d["orphans"], all(j["state"] in ("ended","swept","refused") for j in d["jobs"]), any(j.get("cost_cs",0)>0 and j.get("runtime_s",-1)>=0 and j.get("sandbox") for j in d["jobs"]))')" "0 0 True True" "status --json"
 
 echo "boat_job_test: $pass passed, $failn failed"
 [ $failn = 0 ]

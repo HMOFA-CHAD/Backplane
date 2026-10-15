@@ -2,12 +2,13 @@
 # Run one command on a disposable Boat sandbox (boat.dev), from this worktree.
 #
 #   scripts/boat-job.sh [--size small|default] [--timeout SECS] [--artifact PATH]...
-#                       [--exclude GLOB]... [--budget-usd X] [--setup-bend|--no-setup-bend] -- CMD...
+#                       [--exclude GLOB]... [--budget-usd X] [--wait SECS] [--setup-bend|--no-setup-bend] -- CMD...
 #   scripts/boat-job.sh sweep      delete sandboxes this tool started whose job is gone
 #   scripts/boat-job.sh status     the ledger: open jobs, today's spend
 #
-# Agents run it through Backplane: work_run {lock: "boat", command: "scripts/boat-job.sh -- scripts/check.sh"}.
-# It never takes the local "bend" lock. Opt-in: nothing runs unless this
+# Agents run it through Backplane: work_run {command: "scripts/boat-job.sh -- scripts/check.sh"}.
+# It never takes the local "bend" lock. Up to Boat's active limit (2 on the
+# trial) run at once; more wait here for a slot (--wait, default 1 h). Opt-in: nothing runs unless this
 # project's root is listed in $ROOT/enabled (one absolute path per line).
 #
 # What it does, in order (any failure before create: nothing created):
@@ -25,6 +26,13 @@
 # unverified, 143 cancelled. URLs are never printed or logged.
 set -u
 umask 077
+# bash reads a script as it runs: run from a private copy, so a rebase or an
+# edit of this file during a long job can't change what is running
+if [ -z "${BOAT_JOB_COPY:-}" ]; then
+  c=$(mktemp "${TMPDIR:-/tmp}/boat-job.XXXXXX") && cat "$0" > "$c" || { echo "boat-job: cannot copy itself" >&2; exit 76; }
+  BOAT_JOB_COPY=$c exec bash "$c" "$@"
+fi
+rm -f "$BOAT_JOB_COPY"   # still readable through the open file
 
 BOAT=${BACKPLANE_BOAT:-}
 [ -n "$BOAT" ] || BOAT=$(command -v boat 2>/dev/null || true)
@@ -124,7 +132,8 @@ sweep() {
     [ -n "$id" ] || continue
     if [ -n "$pid" ] && [ "$pid" -gt 1 ] 2>/dev/null && [ "$(pid_id "$pid")" = "$pidid" ]; then continue; fi   # its job still runs
     if printf '%s\n' "$l" | grep -qx "$id"; then
-      if delete_verify "$id"; then ledger ev=swept job="$job" id="$id"; say "swept $id (job $job)"
+      u=$(BT=30 b usage "$id" --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(int(d.get("seconds",0))*int(d.get("billingMultiplier",1)))' 2>/dev/null || echo 0)
+      if delete_verify "$id"; then ledger ev=swept job="$job" id="$id" cost="$u"; say "swept $id (job $job)"
       else ledger ev=orphan job="$job" id="$id"; say "sweep could not delete $id"; fi
     else
       ledger ev=swept job="$job" id="$id"
@@ -137,12 +146,44 @@ with_lock() { exec 9>>"$ROOT/ledger.lock"; flock -w 60 9 || { say "ledger busy";
 case ${1:-} in
   sweep) with_lock sweep; exit $? ;;
   status)
+    if [ "${2:-}" = --json ]; then
+      python3 - "$LEDGER" <<'EOF2'
+import json, sys, time
+day = time.strftime("%Y-%m-%d", time.gmtime()); jobs = {}
+try: lines = open(sys.argv[1]).read().splitlines()
+except FileNotFoundError: lines = []
+for l in lines:
+    try: e = json.loads(l)
+    except Exception: continue
+    j = jobs.setdefault(e.get("job", ""), {"job": e.get("job", ""), "state": "starting"})
+    ev = e.get("ev")
+    for k in ("size", "ttl", "thread", "work", "project", "machine", "cmd", "src", "day"):
+        if k in e and k not in j: j[k] = e[k]
+    if ev == "reserve": j["reserved_cs"] = e.get("reserved", 0); j["queued_at"] = e["at"]
+    elif ev == "created": j["sandbox"] = e.get("id"); j["started_at"] = e["at"]; j["state"] = "running"
+    elif ev == "ended": j["ended_at"] = e["at"]; j["cost_cs"] = e.get("cost", 0); j["rc"] = e.get("rc"); j["state"] = "ended"
+    elif ev == "swept": j["ended_at"] = e["at"]; j["state"] = "swept"
+    elif ev == "orphan": j["state"] = "orphan"; j["sandbox"] = e.get("id", j.get("sandbox"))
+    elif ev == "refused": j["state"] = "refused"; j["why"] = e.get("why", ""); j["ended_at"] = e["at"]
+now = int(time.time())
+for j in jobs.values():
+    if "started_at" in j: j["runtime_s"] = j.get("ended_at", now) - j["started_at"]
+out = sorted(jobs.values(), key=lambda j: j.get("queued_at", j.get("ended_at", 0)))
+today = [j for j in out if j.get("day") == day]
+print(json.dumps({"rate": {"credit_s_per_usd": 100000, "small": 0.5, "default": 1},
+  "running": sum(1 for j in out if j["state"] in ("starting", "running")),
+  "orphans": sum(1 for j in out if j["state"] == "orphan"),
+  "today": {"day": day, "cost_cs": sum(j.get("cost_cs", 0) for j in today), "reserved_open_cs": sum(j.get("reserved_cs", 0) for j in out if j["state"] in ("starting", "running"))},
+  "jobs": out}))
+EOF2
+      exit 0
+    fi
     read -r n r s o <<<"$(fold)"
     echo "open jobs: $n, reserved: \$$(python3 -c "print(round($r/100000,4))"), spent today: \$$(python3 -c "print(round($s/100000,4))"), unverified deletes: $o"
     fold ids; exit 0 ;;
 esac
 
-SIZE=default TIMEOUT=1800 BUDGET_USD=${BOAT_JOB_BUDGET_USD:-0.50} SETUP_BEND=auto
+SIZE=default TIMEOUT=1800 WAIT=${BOAT_JOB_WAIT:-3600} BUDGET_USD=${BOAT_JOB_BUDGET_USD:-0.50} SETUP_BEND=auto
 ARTS=() EXCL=()
 while [ $# -gt 0 ]; do
   case $1 in
@@ -151,6 +192,7 @@ while [ $# -gt 0 ]; do
     --artifact) ARTS+=("$2"); shift 2 ;;
     --exclude) EXCL+=("$2"); shift 2 ;;
     --budget-usd) BUDGET_USD=$2; shift 2 ;;
+    --wait) WAIT=$2; shift 2 ;;
     --setup-bend) SETUP_BEND=yes; shift ;;
     --no-setup-bend) SETUP_BEND=no; shift ;;
     --) shift; break ;;
@@ -159,7 +201,7 @@ while [ $# -gt 0 ]; do
 done
 [ $# -gt 0 ] || { say "no command (use -- CMD...)"; exit 75; }
 case $SIZE in small) RATE2=1 ;; default) RATE2=2 ;; *) say "size $SIZE is not available (small or default)"; exit 75 ;; esac
-case $TIMEOUT in ''|*[!0-9]*) say "bad --timeout"; exit 75 ;; esac
+case $TIMEOUT$WAIT in ''|*[!0-9]*) say "bad --timeout or --wait"; exit 75 ;; esac
 TTL=$(( TIMEOUT + 600 )); [ $TTL -lt 900 ] && TTL=900; [ $TTL -gt 7200 ] && TTL=7200
 [ $(( TIMEOUT + 300 )) -le $TTL ] || { say "--timeout too long for the 2 h lifetime"; exit 75; }
 RESERVE=$(( TTL * RATE2 / 2 ))                        # credit-seconds, worst case
@@ -170,6 +212,18 @@ grep -qxF "$SRC" "$ROOT/enabled" 2>/dev/null || grep -qxF "$(git -C "$SRC" rev-p
   || { say "Boat jobs are off for $SRC (add the repo's root to $ROOT/enabled)"; exit 75; }
 
 JOB="j$(date -u +%Y%m%d%H%M%S)-$$"
+# who asked: the Backplane work this runs under (its run.sh is an ancestor:
+# <home>/work/w-<thread>-<n>/run.sh), read from /proc, nothing signalled
+WORK="" q=$PPID
+for _ in 1 2 3 4 5 6; do
+  [ -n "$q" ] && [ "$q" -gt 1 ] 2>/dev/null || break
+  c=$(tr '\0' ' ' < "/proc/$q/cmdline" 2>/dev/null)
+  case $c in *"/work/w-"*"/run.sh"*) WORK=$(printf '%s' "$c" | sed -n 's|.*/work/\(w-[^/]*\)/run.sh.*|\1|p'); break ;; esac
+  q=$(awk '{print $4}' "/proc/$q/stat" 2>/dev/null)
+done
+THREAD=${BACKPLANE_THREAD:-$(printf '%s' "$WORK" | sed -n 's/^w-\(t[0-9]*-[0-9]*\)-[0-9]*$/\1/p')}
+PROJECT=$(basename "$(git -C "$SRC" rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's|/\.git$||')")
+MACHINE=$(hostname 2>/dev/null || echo "")
 OUT="$ROOT/jobs/$JOB"; mkdir -p "$OUT/artifacts"
 LOG="$OUT/job.log"
 echo "job $JOB: logs and artifacts in $OUT"
@@ -192,19 +246,37 @@ try:
     types = {m["type"]: m["available"] for m in d["machineTypes"]}
 except Exception as e: print("Boat limits missing a field"); sys.exit()
 if not can: print("Boat says no new sandboxes now"); sys.exit()
-if act + open_n >= mx: print(f"{act} running + {open_n} starting of {mx} allowed"); sys.exit()
+if act + open_n >= mx: print(f"SLOT {act} running + {open_n} starting of {mx} allowed"); sys.exit()
 if not types.get(size): print(f"size {size} not available on this account"); sys.exit()
 if min(left) < need: print("not enough Boat compute left"); sys.exit()
 ' "$RESERVE" "$SIZE" "$n")
+  case $why in SLOT*) echo "${why#SLOT }"; return 2 ;; esac
   [ -z "$why" ] || { echo "$why"; return 1; }
   [ $(( s + r + RESERVE )) -le "$BUDGET" ] || { echo "daily budget \$$BUDGET_USD would be exceeded (spent+reserved $(( s + r )) cs, this job $RESERVE cs)"; return 1; }
-  ledger ev=reserve job="$JOB" size="$SIZE" ttl="$TTL" reserved="$RESERVE" src="$SRC" thread="${BACKPLANE_THREAD:-}" pid=$$ pidid="$(pid_id $$)"
+  ledger ev=reserve job="$JOB" size="$SIZE" ttl="$TTL" reserved="$RESERVE" src="$SRC" thread="$THREAD" work="$WORK" project="$PROJECT" machine="$MACHINE" cmd="$*" pid=$$ pidid="$(pid_id $$)"
 }
-why=$(with_lock admit) || { say "refused: $why"; ledger ev=refused job="$JOB" why="$why"; exit 75; }
+# all slots busy: wait in line (up to --wait seconds) instead of refusing;
+# every other refusal is immediate. Nothing is reserved while waiting.
+trap 'say "cancelled while waiting"; exit 143' TERM INT HUP
+waited=0
+while :; do
+  why=$(with_lock admit); arc=$?
+  [ $arc = 0 ] && break
+  if [ $arc = 2 ] && [ $waited -lt "$WAIT" ]; then
+    [ $waited = 0 ] && echo "waiting for a Boat slot ($why)"
+    sleep 15 & wait $!; waited=$(( waited + 15 )); continue
+  fi
+  [ $arc = 2 ] && why="no Boat slot within ${WAIT}s: $why"
+  say "refused: $why"; ledger ev=refused job="$JOB" why="$why" thread="$THREAD" work="$WORK" project="$PROJECT" machine="$MACHINE" size="$SIZE"; exit 75
+done
+[ $waited = 0 ] || echo "got a slot after ${waited}s"
 
 ID="" CANCELLED=0 STAGE=""
+FINISHING=0
 finish() {
   rc=$1
+  [ "$FINISHING" = 1 ] && exit "$rc"
+  FINISHING=1
   trap '' TERM INT HUP
   if [ -n "$ID" ]; then
     u=$(BT=30 b usage "$ID" --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(int(d.get("seconds",0))*int(d.get("billingMultiplier",1)))' 2>/dev/null || echo "$RESERVE")
@@ -218,6 +290,7 @@ finish() {
   exit "$rc"
 }
 trap 'CANCELLED=1; say "cancelled"; finish 143' TERM INT HUP
+trap 'r=$?; [ "$FINISHING" = 1 ] || { say "unexpected exit $r: cleaning up"; finish 70; }' EXIT
 
 # manifest: tracked + untracked-not-ignored files, secrets/logs/build output dropped
 STAGE=$(mktemp -d); NAME=$(basename "$SRC"); mkdir -p "$STAGE/$NAME"
