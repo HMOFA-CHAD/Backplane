@@ -1396,6 +1396,35 @@ def Bv.main(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui) -> M
 def Bv.frame.k(+sd: Sd, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> L.Out:
   L.Lay.frame.u(ty, memo, n, Bv.uber.out(sd), Bv.uber.top(sd), c => y => Bv.side.of(sd, c, y), Bv.main.w(ty, memo, cats, ws, n))
 
+# the whole window with its main area given (a bot's or a room's when it
+# has one, else the one given: main.bend's memo of it, MM.Mm.main)
+def Bv.main.or(m: Maybe<&2, L.Out>, given: L.Out) -> Maybe<&2, L.Out>:
+  match m:
+    case Some{o}:
+      Some{o}
+    case None{}:
+      Some{given}
+
+def Bv.frame.with.k(+sd: Sd, +ty: L.Ty, +memo: L.TLMemo, +n: S.Nui, main: Maybe<&2, L.Out>) -> L.Out:
+  L.Lay.frame.u(ty, memo, n, Bv.uber.out(sd), Bv.uber.top(sd), c => y => Bv.side.of(sd, c, y), main)
+
+def Bv.frame.with(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, main: Maybe<&2, L.Out>) -> L.Out:
+  Bv.frame.with.k(Bv.sd.w(ty, cats, n, ws), ty, memo, n, main)
+
+# the same with the sidebar's body given too (L.Lay.sidebar.a: main.bend's
+# memo of it), or laid out (none)
+# the frame with the main area and the sidebar's body given (main.bend's
+# memos): the sidebar's parts that go under the body are not made again
+def Bv.frame.given(+ty: L.Ty, +memo: L.TLMemo, +n: S.Nui, main: Maybe<&2, L.Out>, a: L.Out) -> L.Out:
+  L.Lay.frame.us(ty, memo, n, L.Out.none(), 0, c => y => L.Col{L.Out.none(), y}, main, Some{a})
+
+# the sidebar's body laid out (L.Lay.sidebar.a, with the bots)
+def Bv.side.a.k(+sd: Sd, +ty: L.Ty, +n: S.Nui) -> L.Out:
+  L.Lay.sidebar.a(ty, n, S.Nui.height(n), Bv.uber.out(sd), Bv.uber.top(sd), c => y => Bv.side.of(sd, c, y))
+
+def Bv.side.a(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> L.Out:
+  Bv.side.a.k(Bv.sd.w(ty, cats, n, ws), ty, n)
+
 # the whole window, topmost first, with the bots in it; ws: the posts
 # wrapped for the frame before (Bv.wraps)
 def Bv.frame.w(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> L.Out:
