@@ -3616,12 +3616,20 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
 # Terminal
 # --------
 
+# Terminal cells, including combining marks (0) and East Asian wide (2).
+def Term.cells(s: String, acc: U32) -> U32:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{Chr{cp}, t}:
+      Term.cells(t, (acc + VT.Vt.width(cp) : U32))
+
 def Term.runs(+ty: Ty, rs: List<&2, VT.VRun>, +cw: U32, +c: D.Clip, +x: U32, +y: U32) -> List<&2, R.Op>:
   match rs:
     case Nil{}:
       Nil{}
     case VT.VRun{+t, +fg, +bg, +bold, _} <> rest:
-      +w = {(U32.from_nat(String.length(t)) * cw : U32) : U32}
+      +w = {(Term.cells(t, 0) * cw : U32) : U32}
       List.concat(&2, R.Op, [
         Bool.pick(List<&2, R.Op>, U32.is_eq(bg, VT.Vt.bg()), Nil{}, [D.Draw.rect(c, x, y, w, 18, bg, 255)]),
         Ty.text(ty, Bool.pick(Nat, bold, 1n, 4n), t, c, x, y, 18, fg),

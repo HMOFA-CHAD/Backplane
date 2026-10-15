@@ -4,6 +4,9 @@ import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/usage.bend as UZ
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/ref.bend as REF
+# ---- i18n cjk ----
+import ./src/core/cjk.bend as CJK
+# ---- end i18n cjk ----
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
 import ./src/core/sched.bend as SCH
@@ -8712,3 +8715,35 @@ law usage_boat_due_never_read:
 # credit-seconds are shown as exact dollars, never rounded
 law usage_boat_usd_exact:
   {UZ.Bj.usd(158n) == "$0.00158" : String}
+# ---- i18n cjk ----
+law cjk_segs_lossless:
+  {CJK.Cjk.join(CJK.Cjk.segs("日本語。")) == "日本語。" : String}
+
+law cjk_segs_lossless_mixed:
+  {CJK.Cjk.join(CJK.Cjk.segs("PRを開いた。")) == "PRを開いた。" : String}
+
+law cjk_segs_lossless_spaces:
+  {CJK.Cjk.join(CJK.Cjk.segs("  あ  い  ")) == "  あ  い  " : String}
+
+law cjk_segs_lossless_empty:
+  {CJK.Cjk.join(CJK.Cjk.segs("")) == "" : String}
+
+law cjk_no_start_stop:
+  {CJK.Cjk.can_break(12354, 12290) == False{} : Bool}
+
+law cjk_no_end_quote:
+  {CJK.Cjk.can_break(12300, 12354) == False{} : Bool}
+
+law cjk_kana_break:
+  {CJK.Cjk.can_break(12354, 12356) == True{} : Bool}
+
+law cjk_ascii_no_break:
+  {CJK.Cjk.can_break(65, 66) == False{} : Bool}
+
+law cjk_terminal_cells:
+  {L.Term.cells("A日本B", 0) == 6 : U32}
+
+law cjk_terminal_combining_cells:
+  {L.Term.cells("é日", 0) == 3 : U32}
+
+# ---- end i18n cjk ----
