@@ -17,7 +17,7 @@ import { RECORDER_SCRIPT } from "./recorder.ts";
 
 type Json = Record<string, any>;
 
-const VERSION = "2";
+const VERSION = "3";
 const MAX_VISIBLE_TEXT = 20_000;
 const MAX_TEXT = 200_000;
 const MAX_ELEMENTS = 200;
@@ -40,7 +40,8 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
       "  newline-delimited JSON requests on stdin, replies and events on stdout.\n" +
       "  raw RGB frames of the shared page are written to FILE (atomically, via rename).\n" +
       "  --profile DIR keeps one Chrome profile (logins, cookies) across pages and runs.\n" +
-      "  --jpeg-dir DIR writes every page's frames to DIR/<owner>.jpg.\n",
+      "  --jpeg-dir DIR writes every page's frames to DIR/<owner>.jpg.\n" +
+      "  --jpeg-fps N (4) frames a second at most; --cast-fps N (30) while a client shows the page (op cast).\n",
   );
   process.exit(0);
 }
@@ -50,6 +51,9 @@ const FRAMES_PATH = FRAMES_ARG ?? join(tmpdir(), `backplane-browser-${process.pi
 const PROFILE = argValue("--profile");
 const JPEG_DIR = argValue("--jpeg-dir");
 const JPEG_FPS = Math.max(1, Math.min(30, Number(argValue("--jpeg-fps") ?? 4) || 4));
+// while some client shows a page (the cast op leases it), its frames go out
+// at up to CAST_FPS a second instead of JPEG_FPS
+const CAST_FPS = Math.max(1, Math.min(60, Number(argValue("--cast-fps") ?? 30) || 30));
 const CHROMIUM_ARG = argValue("--chromium");
 const HEADED = process.argv.includes("--headed");
 const DEBUG = Boolean(process.env.BACKPLANE_BROWSER_DEBUG);
@@ -84,6 +88,10 @@ type Shot = {
   cdp: CDPSession | null;
   seq: number;
   last: number;
+  // the cast lease: until then frames go out at CAST_FPS (performance.now ms)
+  fast: number;
+  // when the last frame every client gets went out
+  lastAll: number;
   lastHash: bigint;
   pending: Buffer | null;
   timer: ReturnType<typeof setTimeout> | null;
@@ -116,7 +124,7 @@ function ownerFor(name: string): Owner {
       active: null,
       viewport: { ...DEFAULT_VIEWPORT },
       console: [],
-      shot: { cdp: null, seq: 0, last: 0, lastHash: 0n, pending: null, timer: null },
+      shot: { cdp: null, seq: 0, last: 0, fast: 0, lastAll: 0, lastHash: 0n, pending: null, timer: null },
       opening: null,
       recording: false,
       lastNav: "",
@@ -488,11 +496,15 @@ async function shotNow(name: string): Promise<void> {
   scheduleShot(o);
 }
 
-// at most JPEG_FPS writes a second: the newest frame waits for its slot,
-// older ones are dropped
+// at most JPEG_FPS writes a second (CAST_FPS while a client shows the
+// page): the newest frame waits for its slot, older ones are dropped
+function shotFps(o: Owner): number {
+  return performance.now() < o.shot.fast ? CAST_FPS : JPEG_FPS;
+}
+
 function scheduleShot(o: Owner): void {
   if (o.shot.timer) return;
-  const wait = Math.max(0, o.shot.last + 1000 / JPEG_FPS - performance.now());
+  const wait = Math.max(0, o.shot.last + 1000 / shotFps(o) - performance.now());
   o.shot.timer = setTimeout(() => {
     o.shot.timer = null;
     writeShot(o);
@@ -517,7 +529,12 @@ function writeShot(o: Owner): void {
   o.shot.lastHash = hash;
   o.shot.last = performance.now();
   o.shot.seq += 1;
-  send({ event: "frame", page: o.name, n: o.shot.seq, path });
+  // every client gets a frame at most JPEG_FPS a second ("all"); the rest
+  // only the clients showing the page
+  const now = performance.now();
+  const all = now - o.shot.lastAll >= 1000 / JPEG_FPS - 5;
+  if (all) o.shot.lastAll = now;
+  send({ event: "frame", page: o.name, n: o.shot.seq, path, all });
 }
 
 // Targets
@@ -625,6 +642,12 @@ const TEXT_SCRIPT = `(() => {
 // Requests
 // --------
 
+// after input the next frame goes out at once, not in its slot
+function quick(name: string): void {
+  const o = owners.get(name);
+  if (o) o.shot.last = 0;
+}
+
 // every handler gets the request's arguments and the owner it acts for
 const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
   async open(a, name) {
@@ -671,6 +694,7 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
   },
   async click(a, name) {
     const p = await ensurePage(name);
+    quick(name);
     const button = a.button ?? "left";
     const clickCount = a.clickCount ?? 1;
     const t = targetOf(p, a);
@@ -681,6 +705,7 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
   },
   async mouse(a, name) {
     const p = await ensurePage(name);
+    quick(name);
     const button = a.button ?? "left";
     if (typeof a.x === "number" && typeof a.y === "number") await p.mouse.move(a.x, a.y);
     if (a.type === "down") await p.mouse.down({ button });
@@ -690,6 +715,7 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
   },
   async type(a, name) {
     const p = await ensurePage(name);
+    quick(name);
     const text = String(a.text ?? "");
     const t = targetOf(p, a);
     if (t) {
@@ -704,6 +730,7 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
   },
   async press(a, name) {
     const p = await ensurePage(name);
+    quick(name);
     if (!a.key) throw new Error("press needs key");
     const mods: string[] = Array.isArray(a.modifiers) ? a.modifiers : [];
     await p.keyboard.press([...mods, String(a.key)].join("+"));
@@ -711,6 +738,7 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
   },
   async scroll(a, name) {
     const p = await ensurePage(name);
+    quick(name);
     const vp = ownerFor(name).viewport;
     const dx = Number(a.dx ?? a.deltaX ?? 0), dy = Number(a.dy ?? a.deltaY ?? 0);
     const t = targetOf(p, a);
@@ -911,6 +939,15 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
     if (name !== "") throw new Error("raw frames are for the shared page only");
     const ev = await captureNow(true);
     return ev ?? { seq: frames.seq, path: FRAMES_PATH };
+  },
+  // a client shows this page: its frames go out at CAST_FPS for ms (2500)
+  async cast(a, name) {
+    const o = ownerFor(name);
+    const ms = Math.max(0, Math.min(10_000, Number(a.ms ?? 2500) || 0));
+    const was = performance.now() < o.shot.fast;
+    o.shot.fast = performance.now() + ms;
+    if (!was && ms > 0) void shotNow(name);
+    return { fps: shotFps(o) };
   },
   async status(_a, name) {
     return status(name);
