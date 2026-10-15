@@ -33,7 +33,7 @@ def limits() -> String:
 def status() -> String:
   "{\"running\":1,\"orphans\":0,\"today\":{\"day\":\"2026-10-15\",\"cost_cs\":524,\"reserved_open_cs\":1500},\"month\":{\"month\":\"2026-10\",\"cost_cs\":746}," ++
   "\"jobs\":[{\"job\":\"j1\",\"state\":\"ended\",\"size\":\"default\",\"thread\":\"t1\",\"cost_cs\":158}," ++
-  "{\"job\":\"j2\",\"state\":\"running\",\"size\":\"default\",\"thread\":\"t2\",\"machine\":\"desktop\",\"runtime_s\":42,\"reserved_cs\":1500}]}"
+  "{\"job\":\"j2\",\"state\":\"running\",\"size\":\"default\",\"thread\":\"t2\",\"machine\":\"desktop\",\"started_at\":1000,\"runtime_s\":42,\"reserved_cs\":1500}]}"
 
 def show(rs: List<&2, UZ.URow>) -> String:
   match rs:
@@ -45,6 +45,26 @@ def show(rs: List<&2, UZ.URow>) -> String:
 def boat(+st: M.State, +cache: String, +stat: String, +now: Nat) -> String:
   show(UZ.Bj.rows(st, UZ.Bj.info(cache, stat), now))
 
+def many(+n: Nat) -> String:
+  "{\"running\":" ++ Nat.show(n) ++ ",\"orphans\":0,\"today\":{\"cost_cs\":0,\"reserved_open_cs\":0},\"jobs\":[" ++ String.join(many.go(n), ",") ++ "]}"
+
+def many.go(n: Nat) -> List<&2, String>:
+  match n:
+    case 0n:
+      Nil{}
+    case 1n+k:
+      "{\"state\":\"running\",\"size\":\"small\",\"started_at\":5,\"reserved_cs\":1}" <> many.go(k)
+
+def count.go(ls: List<&2, String>, +p: String) -> Nat:
+  match ls:
+    case Nil{}:
+      0n
+    case l <> t:
+      Nat.add(Bool.pick(Nat, String.starts_with(l, p), 1n, 0n), count.go(t, p))
+
+def count(+s: String, +p: String) -> Nat:
+  count.go(String.split(s, '\n'), p)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +st : M.State = M.State.replay(log(), M.State.empty())
@@ -52,12 +72,12 @@ def main() -> IO(Unit):
       "Context now | 2 of 3 open threads have a reading. Only Claude reports one; others show ctx n/a.\n" ++
       "Big | claude-sonnet-5-5 · 150k of 200k held (75%)\n" ++
       "Small | claude-opus-5-5 · 50k of 1M held (5%)\n" ++
-      "Tokens and cost | Not recorded yet. A reading is what a session holds now, not what it has used, so readings are not added up.\n")
+      "Tokens and cost | Not recorded yet. Readings above are held now, never summed.\n")
     C.Check.str("chip claude", U.Usage.tail(st, "t1"), " · ctx 5% of 1M")
     C.Check.str("chip codex", U.Usage.tail(st, "t3"), " · ctx n/a")
     C.Check.str("empty", show(UZ.Use.rows(M.State.empty(), Nil{})),
       "Context now | 0 of 0 open threads have a reading. Only Claude reports one; others show ctx n/a.\n" ++
-      "Tokens and cost | Not recorded yet. A reading is what a session holds now, not what it has used, so readings are not added up.\n")
+      "Tokens and cost | Not recorded yet. Readings above are held now, never summed.\n")
     +c1 : String = UZ.Bj.cache.next("", limits(), 1000n)
     C.Check.str("boat fresh", boat(st, c1, status(), 1120n),
       "Boat plan | box_20 · $20/month · active · renews 2026-11-15 · read 2 min ago [usage-refresh]\n" ++
@@ -66,7 +86,7 @@ def main() -> IO(Unit):
       "Boat compute | 555.4 h of 555.5 h left this period · 19 min used in the last 24 h\n" ++
       "Boat sizes | small, default, large · not offered: xlarge\n" ++
       "Boat for Backplane | Today $0.00524 · this month $0.00746 · $0.01500 held for open jobs (worst case, not spent)\n" ++
-      "Boat job running · default | Big on desktop · 42 s · reserved $0.01500 (worst case)\n")
+      "Boat job running · default | Big on desktop · 120 s · reserved $0.01500 (worst case)\n")
     +c2 : String = UZ.Bj.cache.next(c1, "boat: command not found", 5000n)
     C.Check.str("boat failed keeps last", boat(st, c2, "", 5000n),
       "Boat plan | box_20 · $20/month · active · renews 2026-11-15 · Boat's CLI did not answer; last read 1 h ago [usage-refresh]\n" ++
@@ -92,3 +112,7 @@ def main() -> IO(Unit):
     C.Check.str("due: open after 5 min", Bool.show(UZ.Bj.due(c1, False{}, 1300n)), "True")
     C.Check.str("due: no cache", Bool.show(UZ.Bj.due("", False{}, 5n)), "True")
     C.Check.str("usd", UZ.Bj.usd(158n), "$0.00158")
+    +m : String = boat(st, "", many(8n), 9n)
+    C.Check.str("boat jobs capped", Bool.show(String.contains(m, "More Boat jobs | 2 more not listed")), "True")
+    C.Check.str("boat jobs listed", Nat.show(count(m, "Boat job running")), "6")
+    C.Check.str("boat runtime from start", Bool.show(String.contains(m, "started by hand · 4 s")), "True")

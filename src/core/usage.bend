@@ -105,7 +105,7 @@ def Use.top(+n: Nat, us: List<&2, UseT>) -> List<&2, URow>:
   Use.rows.t(List.take(&2, UseT, List.sort(~UseT, ~UseT.before, List.filter(~UseT, ~UseT.held, us)), n))
 
 def Use.totals() -> URow:
-  URow{"Tokens and cost", "Not recorded yet. A reading is what a session holds now, not what it has used, so readings are not added up.", ""}
+  URow{"Tokens and cost", "Not recorded yet. Readings above are held now, never summed.", ""}
 
 def Use.rows.k(+us: List<&2, UseT>) -> List<&2, URow>:
   Use.summary(Use.count(List.filter(~UseT, ~UseT.held, us), 0n), Use.count(List.filter(~UseT, ~UseT.open, us), 0n)) <> List.append(&2, URow, Use.top(8n, us), [Use.totals()])
@@ -353,35 +353,49 @@ def Bj.who(+st: M.State, +th: String) -> String:
 def Bj.shown(+s: String) -> Bool:
   Bool.or(Bool.or(String.eq(s, "running"), String.eq(s, "starting")), String.eq(s, "orphan"))
 
-def Bj.job(+st: M.State, +j: J.Json) -> URow:
+# how long a job has run: a running one from its start to now (the status
+# file's runtime is as of when it was written), else as the status says
+def Bj.runtime(+j: J.Json, +now: Nat) -> String:
+  Bool.pick(String, Bool.and(String.eq(J.Json.get_str(j, "state", ""), "running"), Bj.has(j, "started_at")),
+    Nat.show(Nat.sub(now, Bj.nat(j, "started_at"))) ++ " s", Bj.raw(j, "runtime_s") ++ " s")
+
+def Bj.job(+st: M.State, +j: J.Json, +now: Nat) -> URow:
   URow{Bool.pick(String, String.eq(J.Json.get_str(j, "state", ""), "orphan"), "Boat sandbox NOT deleted", "Boat job " ++ J.Json.get_str(j, "state", "")) ++ " · " ++ J.Json.get_str(j, "size", "?"),
     Bj.who(st, J.Json.get_str(j, "thread", "")) ++ Bool.pick(String, String.is_empty(J.Json.get_str(j, "machine", "")), "", " on " ++ J.Json.get_str(j, "machine", "")) ++
-      " · " ++ Bj.raw(j, "runtime_s") ++ " s · reserved " ++ Bj.usd.of(j, "reserved_cs") ++ " (worst case)", ""}
+      " · " ++ Bj.runtime(j, now) ++ " · reserved " ++ Bj.usd.of(j, "reserved_cs") ++ " (worst case)", ""}
 
-def Bj.jobs.k(keep: Bool, +st: M.State, j: J.Json, rest: List<&2, URow>) -> List<&2, URow>:
+def Bj.jobs.k(keep: Bool, +st: M.State, j: J.Json, +now: Nat, rest: List<&2, URow>) -> List<&2, URow>:
   match keep:
     case True{}:
-      Bj.job(st, j) <> rest
+      Bj.job(st, j, now) <> rest
     case False{}:
       rest
 
-def Bj.jobs(+st: M.State, js: List<&2, J.Json>) -> List<&2, URow>:
+def Bj.jobs(js: List<&2, J.Json>, +st: M.State, +now: Nat) -> List<&2, URow>:
   match js:
     case Nil{}:
       Nil{}
     case +j <> t:
-      Bj.jobs.k(Bj.shown(J.Json.get_str(j, "state", "")), st, j, Bj.jobs(st, t))
+      Bj.jobs.k(Bj.shown(J.Json.get_str(j, "state", "")), st, j, now, Bj.jobs(t, st, now))
 
-def Bj.mine.rows(known: Bool, +st: M.State, +s: J.Json) -> List<&2, URow>:
+# at most Bj.most() job rows; the rest as one row saying how many
+def Bj.most() -> Nat:
+  6n
+
+def Bj.cap(+rs: List<&2, URow>) -> List<&2, URow>:
+  Bool.pick(List<&2, URow>, Nat.is_gt(List.length(&2, URow, rs), Bj.most()),
+    List.append(&2, URow, List.take(&2, URow, rs, Bj.most()), [URow{"More Boat jobs", Nat.show(Nat.sub(List.length(&2, URow, rs), Bj.most())) ++ " more not listed", ""}]), rs)
+
+def Bj.mine.rows(known: Bool, +st: M.State, +s: J.Json, +now: Nat) -> List<&2, URow>:
   match known:
     case True{}:
-      Bj.spend(s) <> Bj.jobs(st, J.Json.elems(J.Json.get_obj(s, "jobs")))
+      Bj.spend(s) <> Bj.cap(Bj.jobs(J.Json.elems(J.Json.get_obj(s, "jobs")), st, now))
     case False{}:
       [URow{"Boat for Backplane", "No job status yet.", ""}]
 
 def Bj.rows.k(+st: M.State, +c: J.Json, +s: J.Json, +now: Nat) -> List<&2, URow>:
   List.concat(&2, URow, [[Bj.plan.row(c, now)], Bj.account.k(Bj.valid(J.Json.get_obj(c, "limits")), J.Json.get_obj(c, "limits"), s),
-    Bj.mine.rows(Bj.has(s, "running"), st, s)])
+    Bj.mine.rows(Bj.has(s, "running"), st, s, now)])
 
 # Settings > Usage, Boat side, from the info "boat.usage" ("" before the
 # hub has answered: one row with Refresh)
