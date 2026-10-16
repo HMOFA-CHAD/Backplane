@@ -5906,8 +5906,18 @@ def Fab.rows(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32) -> List<&2, R.Op>:
 def Fab.buy.w(+ty: Ty, +buy: String) -> U32:
   Bool.pick(U32, String.is_empty(buy), 0, (Lay.button.w(ty, buy) + 6 : U32))
 
+# Buy it is the card's one filled button: the accent behind dark text
+def Fab.buy.btn.k(none: Bool, +ty: Ty, +buy: String, +x: U32, +y: U32) -> Out:
+  match none:
+    case True{}:
+      Out.none()
+    case False{}:
+      Out{List.append(&2, R.Op, Lay.box(D.Clip.all(), x, y, Lay.button.w(ty, buy), 28, 6, T.Th.accent(), T.Th.accent()),
+          Ty.text(ty, 2n, buy, D.Clip.all(), (x + 10 : U32), y, 28, T.Th.bg())),
+        [Lay.hit(x, y, Lay.button.w(ty, buy), 28, "buy", "")]}
+
 def Fab.buy.btn(+ty: Ty, +buy: String, +x: U32, +y: U32) -> Out:
-  Out.when(Bool.not(String.is_empty(buy)), Lay.button(ty, D.Clip.all(), x, y, buy, T.Th.accent(), "buy", ""))
+  Fab.buy.btn.k(String.is_empty(buy), ty, buy, x, y)
 
 def Lay.fab.body(open: Bool, +ty: Ty, +intent: String, +x0: U32, +x1: U32, +y: U32) -> Out:
   match open:
