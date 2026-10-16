@@ -143,3 +143,7 @@ def main() -> IO(Unit):
       "Boat create unclear · small | started by hand · slot held · check boat list\n")
     C.Check.str("boat blocked only: no second line for the same job", boat(st, "", "{\"running\":0,\"ambiguous\":1,\"unresolved\":1,\"today\":{},\"jobs\":[]}", 9n),
       "Boat plan | Not read yet [usage-refresh]\nBoat for Backplane | Today ? · ? held for open jobs (worst case, not spent)\nBoat creates blocked | Unclear create unresolved, check boat list\n")
+    C.Check.str("boat daily cap and what is left", boat(st, "", "{\"running\":0,\"budget\":{\"usd\":10,\"cs\":1000000,\"source\":\"file\"},\"today\":{\"cost_cs\":45400,\"reserved_open_cs\":3300},\"jobs\":[]}", 9n),
+      "Boat plan | Not read yet [usage-refresh]\nBoat for Backplane | Today $0.45400 · daily cap $10.00000 (file) · $9.51300 left · $0.03300 held for open jobs (worst case, not spent)\n")
+    C.Check.str("boat cap spent: none left, never below 0", boat(st, "", "{\"running\":0,\"budget\":{\"cs\":50000,\"source\":\"default\"},\"today\":{\"cost_cs\":48742,\"reserved_open_cs\":3000},\"jobs\":[]}", 9n),
+      "Boat plan | Not read yet [usage-refresh]\nBoat for Backplane | Today $0.48742 · daily cap $0.50000 (default) · $0.00000 left · $0.03000 held for open jobs (worst case, not spent)\n")

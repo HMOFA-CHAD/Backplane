@@ -8777,3 +8777,8 @@ law tok_add_one_turn:
 # a turn with no cost reported adds nothing to the turns with a cost
 law tok_add_no_cost:
   {M.Tok.part(M.Tok.add("", 1n, 0n, 0n, 1n, 0n, 0n, False{}), 7n) == 0n : Nat}
+
+# ---- usage-boat-cap ----
+# without a shared cap in the status, the spend row says nothing about one
+law usage_boat_no_cap_nothing:
+  {UZ.Bj.cap.of(J.Json.obj([])) == "" : String}
