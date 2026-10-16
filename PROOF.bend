@@ -10980,6 +10980,24 @@ def Laws.order_review_stale():
 def Laws.order_review_verdict_closed():
   {==}
 
+def Laws.bd_name_folder():
+  {==}
+
+def Laws.bd_name_root():
+  {==}
+
+def Laws.bd_schematic_beside():
+  {==}
+
+def Laws.bd_board_itself():
+  {==}
+
+def Laws.bd_on_sheet():
+  {==}
+
+def Laws.bd_off_other():
+  {==}
+
 def Laws.order_buy_board_only():
   {==}
 

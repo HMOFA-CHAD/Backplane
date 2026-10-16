@@ -97,21 +97,24 @@ def Od.est.k(ask: Bool, +home: String, +server: String, +install: String, +body:
       IO.pure(J.Json, J.Null{})
 
 # the card's answer: {thread, intent, goal, parts, boards, label, error, estimates}
-def Od.card(+thread: String, +intent: String, ps: List<&2, J.Json>, +boards: String, +est: J.Json, +on: Bool) -> J.Json:
+def Od.strs(xs: List<&2, String>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      J.Str{x} <> Od.strs(t)
+
+# board_files: every KiCad board in the project (paths from its folder),
+# for the viewer's board picker
+def Od.card(+thread: String, +intent: String, ps: List<&2, J.Json>, +boards: String, +est: J.Json, +on: Bool, bs: List<&2, String>) -> J.Json:
   J.Json.obj([J.KV{"thread", J.Str{thread}}, J.KV{"intent", J.Str{intent}}, J.KV{"goal", J.Str{OR.Intent.goal(intent)}},
     J.KV{"parts", J.Json.arr(Od.part.rows(ps))}, J.KV{"boards", J.Num{boards}}, J.KV{"label", J.Str{J.Json.get_str(est, "label", "")}},
-    J.KV{"error", J.Str{J.Json.get_str(est, "error", "")}}, J.KV{"estimates", J.Flag{on}}])
+    J.KV{"error", J.Str{J.Json.get_str(est, "error", "")}}, J.KV{"estimates", J.Flag{on}}, J.KV{"board_files", J.Json.arr(Od.strs(bs))}])
 
-# KiCad boards in the project, for a card with no fab files yet
+# KiCad boards in the project (paths from its folder, in name order): the
+# picker's, and the count a card with no fab files yet goes by
 def Od.boards() -> String:
-  "find . -maxdepth 4 -name '*.kicad_pcb' -not -path '*/.*' -not -path './extra/*' -not -path './mfg/*' -not -path '*backup*' -not -path '*/node_modules/*' 2>/dev/null | head -n 20 | wc -l | tr -d ' '"
-
-def Od.count(r: P.Ran) -> String:
-  match r:
-    case P.Ran{0, +out}:
-      Bool.pick(String, String.is_empty(String.trim(out)), "0", String.trim(out))
-    case P.Ran{_, _}:
-      "0"
+  "find . -maxdepth 4 -name '*.kicad_pcb' -not -path '*/.*' -not -path './extra/*' -not -path './mfg/*' -not -path '*backup*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort | head -n 20 | sed 's|^\\./||'"
 
 # with no fab files but a board, the server is only asked whether it is there
 def Od.health.k(ask: Bool, +home: String, +server: String) -> IO(J.Json):
@@ -121,19 +124,18 @@ def Od.health.k(ask: Bool, +home: String, +server: String) -> IO(J.Json):
     case False{}:
       IO.pure(J.Json, J.Null{})
 
-def Od.look.ps(ps: List<&2, J.Json>, +home: String, +cwd: String, +thread: String, +intent: String, +on: Bool, +server: String) -> IO(J.Json):
+def Od.look.ps(ps: List<&2, J.Json>, +home: String, +cwd: String, +thread: String, +intent: String, +on: Bool, +server: String, +bs: List<&2, String>) -> IO(J.Json):
   match ps:
     case Nil{}:
       do IO<J.Json>:
-        r : P.Ran <- P.Proc.run("sh", ["-c", Od.boards()], cwd)
-        +n : String = Od.count(r)
+        +n : String = Nat.show(List.length(&2, String, bs))
         est : J.Json <- Od.health.k(Bool.and(on, Bool.not(String.eq(n, "0"))), home, server)
-        return Od.card(thread, intent, Nil{}, n, est, on)
+        return Od.card(thread, intent, Nil{}, n, est, on, bs)
     case +p <> +t:
       do IO<J.Json>:
         +install : String <- Od.install(home)
         est : J.Json <- Od.est.k(on, home, server, install, OR.Order.est.body(p <> t))
-        return Od.card(thread, intent, p <> t, "0", est, on)
+        return Od.card(thread, intent, p <> t, "0", est, on, bs)
 
 # where the first newline is (the length when there is none)
 def Od.nl(s: String) -> Nat:
@@ -149,8 +151,9 @@ def Od.look(+home: String, +cwd: String, +thread: String, +opts: String) -> IO(J
     intent : String <- GS.Gf.text(cwd ++ "/.backplane/intent.md")
     r : P.Ran <- P.Proc.run("sh", ["-c", Od.find()], cwd)
     fs : List<&2, OR.FabFile> <- Od.read(Od.lines(String.lines(Od.ran(r))), cwd)
+    b : P.Ran <- P.Proc.run("sh", ["-c", Od.boards()], cwd)
     Od.look.ps(OR.Order.parts(fs), home, cwd, thread, String.trim(intent), Bool.not(String.starts_with(opts, "off")),
-      String.trim(String.drop(opts, Nat.add(1n, Od.nl(opts)))))
+      String.trim(String.drop(opts, Nat.add(1n, Od.nl(opts)))), Od.lines(String.lines(Od.ran(b))))
 
 # fab.intent: the person's own words for .backplane/intent.md, then the card
 def Od.intent(+home: String, +cwd: String, +thread: String, +opts: String, text: String) -> IO(J.Json):

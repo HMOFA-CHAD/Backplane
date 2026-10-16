@@ -9155,6 +9155,27 @@ law order_review_stale:
 law order_review_verdict_closed:
   {ORD.Order.review.verdict("looks great") == "issues" : String}
 
+# the viewer's board picker (client.bend's Bd): a board is named by its
+# folder, its schematic is beside it, and it is lit while the viewer shows
+# a file in its folder
+law bd_name_folder:
+  {U.Bd.name("boards/led-board/led-board.kicad_pcb") == "led-board" : String}
+
+law bd_name_root:
+  {U.Bd.name("main.kicad_pcb") == "main" : String}
+
+law bd_schematic_beside:
+  {U.Bd.path("schematic", "boards/a/a.kicad_pcb") == "boards/a/a.kicad_sch" : String}
+
+law bd_board_itself:
+  {U.Bd.path("board", "boards/a/a.kicad_pcb") == "boards/a/a.kicad_pcb" : String}
+
+law bd_on_sheet:
+  {U.Bd.on("/p/boards/a/power.kicad_sch", "boards/a/a.kicad_pcb") == True{} : Bool}
+
+law bd_off_other:
+  {U.Bd.on("/p/boards/b/b.kicad_pcb", "boards/a/a.kicad_pcb") == False{} : Bool}
+
 # ---- i18n lang ----
 law lang_default_auto:
   {U.Lang.resolve("", "en_US.UTF-8", False{}) == "en" : String}

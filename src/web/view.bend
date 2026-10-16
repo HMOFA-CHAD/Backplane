@@ -1744,6 +1744,18 @@ def View.sheet.chips(rs: List<&2, HI.Row>, +i: Nat, +cur: String) -> List<&2, D.
       D.Dom.button(Bool.pick(String, String.eq(Bool.pick(String, Nat.is_eq(i, 0n), "", f), cur), "on", ""), "view-sheet", Bool.pick(String, Nat.is_eq(i, 0n), "", f), f,
         Bool.pick(String, Nat.is_eq(i, 0n), "Top sheet", String.repeat("› ", d) ++ n)) <> View.sheet.chips(t, 1n+i, cur)
 
+# the project's boards as chips (the one on show lit) when it has several
+# (U.Bd); what: the bar's words otherwise
+def View.board.chips(fs: List<&2, String>, +cur: String) -> List<&2, D.Node>:
+  match fs:
+    case Nil{}:
+      Nil{}
+    case +f <> t:
+      D.Dom.button(Bool.pick(String, U.Bd.on(cur, f), "on", ""), "board-pick", f, f, U.Bd.name(f)) <> View.board.chips(t, cur)
+
+def View.boards(+u: U.Ui, +what: String) -> List<&2, D.Node>:
+  Bool.pick(List<&2, D.Node>, U.Bd.many(u), View.board.chips(U.Bd.files(u), U.Ui.view_get(u, "view.path")), [D.Dom.span("what", what)])
+
 def View.sheets(+u: U.Ui) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, Nat.is_gt(List.length(&2, HI.Row, HI.Hier.read(U.Ui.info(u, "sheets:" ++ U.Ui.root(u)))), 1n),
     View.sheet.chips(HI.Hier.read(U.Ui.info(u, "sheets:" ++ U.Ui.root(u))), 0n, U.Ui.view_get(u, "view.path")), [D.Dom.span("what", "The project's schematic")])
@@ -2031,7 +2043,7 @@ def View.solid.what(on: Bool, +u: U.Ui) -> List<&2, D.Node>:
     case True{}:
       List.append(&2, D.Node, View.mech.chips(U.Mpage.parts(u), U.Mpage.shown(u)), View.solid.more(U.Mpage.listed(u), u))
     case False{}:
-      [D.Dom.span("what", "The board in 3D")]
+      View.boards(u, "The board in 3D")
 
 # a model turned in 3D: host.js (solid.js) draws the hub's model (a "plot"
 # with a mesh, as the phones get) on the canvas whose data-key it carries,
@@ -2173,7 +2185,7 @@ def View.aside.k(i: Nat, +u: U.Ui) -> List<&2, D.Node>:
     case 3n:
       View.solid(u)
     case 4n:
-      View.plot(u, List.append(&2, D.Node, View.sheets(u), [View.kicad()]))
+      View.plot(u, List.append(&2, D.Node, Bool.pick(List<&2, D.Node>, U.Bd.many(u), View.board.chips(U.Bd.files(u), U.Ui.view_get(u, "view.path")), Nil{}), List.append(&2, D.Node, View.sheets(u), [View.kicad()])))
     case 6n:
       View.files(u)
     case 7n:
@@ -2183,7 +2195,7 @@ def View.aside.k(i: Nat, +u: U.Ui) -> List<&2, D.Node>:
     case 9n:
       View.review(u)
     case _:
-      View.plot(u, [D.Dom.span("what", "The project's board"), View.kicad()])
+      View.plot(u, List.append(&2, D.Node, View.boards(u, "The project's board"), [View.kicad()]))
 
 def View.aside.n(+kind: String) -> Nat:
   Bool.pick(Nat, String.eq(kind, "diff"), 0n, Bool.pick(Nat, String.eq(kind, "browser"), 1n, Bool.pick(Nat, String.eq(kind, "mech"), 2n,

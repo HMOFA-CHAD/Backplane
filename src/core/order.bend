@@ -380,6 +380,17 @@ def Card.ready.k(+names: String, +boards: Nat) -> String:
   Bool.pick(String, String.is_empty(names), Bool.pick(String, Nat.is_eq(boards, 0n), "", "Ready to order · " ++ Card.boards.words(boards)),
     "Ready to order · " ++ names)
 
+def Card.strs(js: List<&2, J.Json>) -> List<&2, String>:
+  match js:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      J.Json.as_str(Some{x}, "") <> Card.strs(t)
+
+# the project's boards, one path a line (from the hub's card)
+def Card.boards.j(+j: J.Json) -> String:
+  String.join(Card.strs(J.Json.elems(J.Json.get_obj(j, "board_files"))), "\n")
+
 # the line beside Buy it above the message box, from the hub's card
 # (laws order_ready_*): what there is to order, by name
 def Card.ready.j(+j: J.Json) -> String:

@@ -5728,14 +5728,49 @@ def Fab.act.k(i: Nat, +u: Ui, +th: String) -> Act:
     case _:
       Act{u, Nil{}}
 
+# The project's boards (the card's board files, from its folder, kept as
+# "fab.boards:<t>"): with more than one, the viewer's Board, Schematic and
+# 3D tabs offer each by its folder's name (chips on the web and in the
+# window, the Sheet menu on phones); "board-pick" shows one (laws bd_*)
+def Bd.files(+u: Ui) -> List<&2, String>:
+  Att.nonblank(String.lines(Ui.info(u, "fab.boards:" ++ Ui.sel(u))))
+
+def Bd.many(+u: Ui) -> Bool:
+  Nat.is_gt(List.length(&2, String, Bd.files(u)), 1n)
+
+def Bd.name(+rel: String) -> String:
+  Bool.pick(String, String.is_empty(MC.Mech.parent(rel)), MC.Mech.stem(rel), MC.Mech.last(MC.Mech.parent(rel)))
+
+# what a kind shows of a board: its schematic beside it, else the board
+def Bd.path(+kind: String, +rel: String) -> String:
+  Bool.pick(String, String.eq(kind, "schematic"), MC.Mech.in(MC.Mech.parent(rel), MC.Mech.stem(rel) ++ ".kicad_sch"), rel)
+
+# the board on show: the viewer's file is in its folder (or is it)
+def Bd.on(+path: String, +rel: String) -> Bool:
+  Bool.pick(Bool, String.is_empty(MC.Mech.parent(rel)), String.ends_with(path, "/" ++ rel),
+    String.contains(path, "/" ++ MC.Mech.parent(rel) ++ "/"))
+
+def Bd.kind(+k: String) -> String:
+  Bool.pick(String, Bool.or(String.eq(k, "schematic"), String.eq(k, "3d")), k, "board")
+
+def Bd.pick(+u: Ui, +rel: String) -> Act:
+  Act{Ui.view_put(u, Bd.kind(Ui.view_get(u, "view.kind")), FM.Fm.abs(Ui.root(u), Bd.path(Bd.kind(Ui.view_get(u, "view.kind")), rel))), Nil{}}
+
 def Fab.actions() -> List<&2, String>:
-  ["fab-open", "fab-edit", "buy"]
+  ["fab-open", "fab-edit", "buy", "board-pick"]
 
 def Fab.is(+action: String) -> Bool:
-  Nat.is_lt(C.Codec.pos(Fab.actions(), action), 3n)
+  Nat.is_lt(C.Codec.pos(Fab.actions(), action), 4n)
+
+def Fab.act.v(+i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 3n:
+      Bd.pick(u, value)
+    case _:
+      Fab.act.k(i, u, Fab.th(u, value))
 
 def Fab.act(+u: Ui, +action: String, +value: String) -> Act:
-  Fab.act.k(C.Codec.pos(Fab.actions(), action), u, Fab.th(u, value))
+  Fab.act.v(C.Codec.pos(Fab.actions(), action), u, value)
 
 # what was last asked for: the thread and where its turn stands
 def Fab.at(+u: Ui) -> String:
@@ -5769,7 +5804,7 @@ def Fab.keep(u: Ui, +th: String, +c: OR.Card) -> Ui:
     "fab.buy:" ++ th, OR.Card.buy(c)), "fab.shown:" ++ th, Bool.pick(String, OR.Card.shown(c), "1", ""))
 
 def Fab.reply.r(u: Ui, +th: String, +r: J.Json) -> Ui:
-  Fab.keep(Ui.info_set(u, "fab.ready:" ++ th, OR.Card.ready.j(r)), th, OR.Card.of.j(r))
+  Fab.keep(Ui.info_set(Ui.info_set(u, "fab.ready:" ++ th, OR.Card.ready.j(r)), "fab.boards:" ++ th, OR.Card.boards.j(r)), th, OR.Card.of.j(r))
 
 def Fab.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
   match has:

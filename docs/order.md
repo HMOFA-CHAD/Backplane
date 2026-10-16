@@ -23,6 +23,7 @@ The agents' instructions are in `src/core/order.bend` (`Order.prompt.project`, `
   1. reads the intent and the fab files in the thread's folder;
   2. with the `order.estimates` setting on, asks the order server's `POST /v1/estimate` for the bare parts' price. Only kinds, options and features are sent; never files.
 - **The answer** is kept as info keys `fab.line:`, `fab.intent:`, `fab.buy:`, `fab.ready:`, `fab.shown:` and `fab.open:` (plus the thread).
+- **Boards:** the answer lists every KiCad board in the project (`board_files`, outside `extra/` and `mfg/`). With more than one, the viewer's Board, Schematic and 3D tabs offer each by its folder's name (client.bend's `Bd.*`, laws `bd_*`): chips on the web (`View.boards`) and in the window (`Side.boards`), the Sheet menu on phones (`View.board.list`, values `b:<path>`, so no new app). A pick shows that board, or the schematic beside it.
 - **Two places:**
   - **The card** at the top of the thread: the goal (click for the whole intent) and Edit.
   - **Ready to order**, right above the message box: the parts by name and Buy it (`Fab.ready`, laws `order_ready_*`, `fab_ready_*`). It shows once the agent's turn is over, never while it works or in a buy thread; on the web it glows once as it comes.

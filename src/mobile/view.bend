@@ -503,8 +503,17 @@ def View.sheet.pick.c(cmp: Bool, +u: U.Ui, +v: String) -> U.Act:
 
 # (while a version shows, the live files come back first: the sheets
 # listed are the live design's)
-def View.sheet.pick(+u: U.Ui, +v: String) -> U.Act:
+def View.sheet.pick.s(+u: U.Ui, +v: String) -> U.Act:
   View.sheet.pick.c(U.Hs.cmp(View.as_client(u)), u, v)
+
+# one of the project's boards ("b:<path from its folder>", client.bend's
+# Bd): the phone's viewer shows its board, schematic or 3D, as a file from
+# the Files tab would
+def View.board.pick(+u: U.Ui, +rel: String) -> U.Act:
+  View.fm.to(U.Act{U.Ui.scratch_set(u, "@view.sheet:" ++ U.Ui.sel(u), ""), Nil{}}, U.Bd.kind(View.kind(u)), FM.Fm.abs(U.Ui.root(u), U.Bd.path(U.Bd.kind(View.kind(u)), rel)))
+
+def View.sheet.pick(+u: U.Ui, +v: String) -> U.Act:
+  Bool.pick(U.Act, String.starts_with(v, "b:"), View.board.pick(u, String.drop(v, 2n)), View.sheet.pick.s(u, v))
 
 def View.sheet.row(r: HI.Row, +i: Nat, +cur: String) -> J.Json:
   match r:
@@ -517,6 +526,18 @@ def View.sheet.rows(rs: List<&2, HI.Row>, +i: Nat, +cur: String) -> List<&2, J.J
       Nil{}
     case r <> t:
       View.sheet.row(r, i, cur) <> View.sheet.rows(t, 1n+i, cur)
+
+# the project's boards for the same menu, when it has several
+def View.board.rows(fs: List<&2, String>, +cur: String) -> List<&2, J.Json>:
+  match fs:
+    case Nil{}:
+      Nil{}
+    case +f <> t:
+      J.Json.obj([J.KV{"label", J.Str{U.Bd.name(f)}}, J.KV{"value", J.Str{"b:" ++ f}}, J.KV{"on", J.Flag{U.Bd.on(cur, f)}}, J.KV{"loop", J.Flag{False{}}}]) <> View.board.rows(t, cur)
+
+def View.board.list(+u: U.Ui) -> List<&2, J.Json>:
+  Bool.pick(List<&2, J.Json>, Bool.and(U.Bd.many(u), Bool.or(String.eq(View.kind(u), "board"), Bool.or(String.eq(View.kind(u), "schematic"), String.eq(View.kind(u), "3d")))),
+    View.board.rows(U.Bd.files(u), View.file(u)), Nil{})
 
 # the schematic's sheets for the phone's Sheet menu (none with one sheet)
 def View.sheet.list(+u: U.Ui) -> List<&2, J.Json>:
@@ -854,7 +875,7 @@ def View.json(+u: U.Ui, +rb: J.Json) -> J.Json:
     J.KV{"layers", J.Str{Bool.pick(String, View.mech(u), "", View.layers.at(View.kind(u), U.Ui.root(u), View.src(u)))}},
     J.KV{"hist", Hist.json(U.Hs.bar.for(View.as_client(u), Nat.is_lt(View.hist.num(View.kind(u)), 2n)), View.as_client(u))},
     J.KV{"mech", Mech.json(View.mech(u), u)},
-    J.KV{"sheets", J.Json.arr(View.sheet.list(u))}, J.KV{"layerList", J.Json.arr(View.layer.list(u))},
+    J.KV{"sheets", J.Json.arr(List.append(&2, J.Json, View.board.list(u), View.sheet.list(u)))}, J.KV{"layerList", J.Json.arr(View.layer.list(u))},
     J.KV{"off", J.Num{U32.show(LY.Masks.off(View.masks(u)))}}, J.KV{"dim", J.Num{U32.show(LY.Masks.dim(View.masks(u)))}}, J.KV{"lift", J.Num{U32.show(LY.Lyr.top(View.focus(u)))}},
     J.KV{"layerMode", J.Num{U32.show(View.lmode(u))}}, J.KV{"layerModes", J.Flag{String.eq(View.kind(u), "board")}}, J.KV{"layerHead", J.Str{View.lhead(u)}},
     J.KV{"parts", J.Flag{Bool.not(View.bare(u))}}, J.KV{"note", J.Str{View.note(u)}},

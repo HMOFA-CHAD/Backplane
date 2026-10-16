@@ -3596,6 +3596,14 @@ def Set.lang(+ty: Ty, +u: U.Ui, +x: U32, +w: U32, +y: U32) -> Out:
     Lay.chip(ty, (x + w - 16 - fw - 6 - ow : U32), (y + 66 : U32), MSG.T.settings.lang.on(l), on, "setting", "agent.lang=" ++ U.Lang.agent.value(True{}, u)),
     Lay.chip(ty, (x + w - 16 - fw : U32), (y + 66 : U32), MSG.T.settings.lang.off(l), Bool.not(on), "setting", "agent.lang=off")])
 
+# Settings' Ordering group: Price estimates on or off (client.bend's Fab.set.*)
+def Set.order(+ty: Ty, +on: String, +x: U32, +w: U32, +y: U32) -> Out:
+  Out.all([Set.head(ty, "Ordering", x, y),
+    Set.card(x, (y + 32 : U32), w, 64),
+    Set.row.r(ty, U.Fab.set.label(), U.Fab.set.note(), x, (y + 34 : U32), w, 140),
+    Lay.chip(ty, (x + w - 120 : U32), (y + 48 : U32), "On", String.eq(on, "on"), "setting", "order.estimates=on"),
+    Lay.chip(ty, (x + w - 70 : U32), (y + 48 : U32), "Off", String.eq(on, "off"), "setting", "order.estimates=off")])
+
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +w = {U32.min((x1 - x0 - 64 : U32), 720) : U32}
   +x = {(x0 + U32.shr((x1 - x0 - w : U32)) : U32) : U32}
@@ -3609,7 +3617,6 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 172 : U32) : U32}
-  +oe = U.Fab.set.on(st)
   +total = {(1196 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
@@ -3646,11 +3653,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
       Lay.chip(ty, (x + w - 120 : U32), (b2 + 500 + dy + ey : U32), "On", String.eq(ipc, "on"), "setting", "kicad.ipc=on"),
       Lay.chip(ty, (x + w - 70 : U32), (b2 + 500 + dy + ey : U32), "Off", String.eq(ipc, "off"), "setting", "kicad.ipc=off")]), Out.none()),
     Set.row(ty, U.FreeCAD.label(info), U.FreeCAD.note(info), x, (b2 + 546 + dy + ey : U32), w),
-    Set.head(ty, "Ordering", x, (b2 + 620 + dy + ey : U32)),
-    Set.card(x, (b2 + 652 + dy + ey : U32), w, 64),
-    Set.row.r(ty, U.Fab.set.label(), U.Fab.set.note(), x, (b2 + 654 + dy + ey : U32), w, 140),
-    Lay.chip(ty, (x + w - 120 : U32), (b2 + 668 + dy + ey : U32), "On", String.eq(oe, "on"), "setting", "order.estimates=on"),
-    Lay.chip(ty, (x + w - 70 : U32), (b2 + 668 + dy + ey : U32), "Off", String.eq(oe, "off"), "setting", "order.estimates=off"),
+    Set.order(ty, U.Fab.set.on(st), x, w, (b2 + 620 + dy + ey : U32)),
     Set.head(ty, "Appearance", x, (b2 + 570 + dy + fy : U32)),
     Set.card(x, (b2 + 602 + dy + fy : U32), w, 220),
     Set.row.r(ty, "Theme", "The window and the web page (phones unset follow their own system).", x, (b2 + 604 + dy + fy : U32), w, 150),
@@ -4121,6 +4124,26 @@ def Side.trail(cs: List<&2, Nat>, +rs: List<&2, HI.Row>, +at: Nat, +ty: Ty, +x: 
       Lay.chip(ty, x, 60, HI.Hier.name(rs, j), Nat.is_eq(j, at), "vw-sheet", Nat.show(j))
       <> Side.trail(t, rs, at, ty, (x + Lay.button.w(ty, HI.Hier.name(rs, j)) + 6 : U32))
 
+# the project's boards as chips when it has several (client.bend's Bd),
+# before the sheet trail; their width with a gap after each
+def Side.boards(fs: List<&2, String>, +cur: String, +ty: Ty, +x: U32) -> List<&2, Out>:
+  match fs:
+    case Nil{}:
+      Nil{}
+    case +f <> t:
+      Lay.chip(ty, x, 60, U.Bd.name(f), U.Bd.on(cur, f), "board-pick", f)
+      <> Side.boards(t, cur, ty, (x + Lay.button.w(ty, U.Bd.name(f)) + 6 : U32))
+
+def Side.boards.w(fs: List<&2, String>, +ty: Ty) -> U32:
+  match fs:
+    case Nil{}:
+      0
+    case +f <> t:
+      (Lay.button.w(ty, U.Bd.name(f)) + 6 + Side.boards.w(t, ty) : U32)
+
+def Side.board.fs(+u: U.Ui) -> List<&2, String>:
+  Bool.pick(List<&2, String>, U.Bd.many(u), U.Bd.files(u), Nil{})
+
 # the viewer's own light or dark ground (the sun shows on the dark one,
 # the moon on the light), whatever the window's theme
 def Side.ground(+ty: Ty, +n: S.Nui, +x: U32) -> Out:
@@ -4146,7 +4169,8 @@ def Side.k(board: Bool, +ty: Ty, +n: S.Nui, +k: U32, +ss: List<&2, V.Seen>, +x0:
       +open = Bool.not(String.is_empty(U.Ui.scratch(S.Nui.ui(n), "@vw.layers")))
       +sheets = Bool.and(U32.is_eq(k, 1), Nat.is_gt(List.length(&2, HI.Row, rs), 1n))
       Out.all([
-        Out.all(Side.trail(Bool.pick(List<&2, Nat>, sheets, HI.Hier.chain(rs, at), Nil{}), rs, at, ty, (x0 + 16 : U32))),
+        Out.all(Side.boards(Side.board.fs(S.Nui.ui(n)), U.Ui.view_get(S.Nui.ui(n), "view.path"), ty, (x0 + 16 : U32))),
+        Out.all(Side.trail(Bool.pick(List<&2, Nat>, sheets, HI.Hier.chain(rs, at), Nil{}), rs, at, ty, (x0 + 16 + Side.boards.w(Side.board.fs(S.Nui.ui(n)), ty) : U32))),
         Lay.chip(ty, (x1 - 16 - Lay.button.w(ty, Side.head(k, S.Nui.lfocus(n))) : U32), 60, Side.head(k, S.Nui.lfocus(n)), open, "vw-layers", ""),
         Side.ground(ty, n, (x1 - 22 - Lay.button.w(ty, Side.head(k, S.Nui.lfocus(n))) - 28 : U32)),
         Side.list.if(open, ty, k, ss, S.Nui.look(n), S.Nui.lfocus(n), Bool.pick(List<&2, HI.Row>, sheets, rs, Nil{}), at, x1, h)])
