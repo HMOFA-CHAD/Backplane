@@ -50,5 +50,14 @@ BEND_FAKE=edit q scripts/test.sh; check "a file changed during the tests: not re
 check "mark with no key taken before records nothing" "$(scripts/verified.sh mark check '' 2>/dev/null || true; has check)" no
 check "mark with another state's key records nothing" "$(scripts/verified.sh mark check 0123 2>/dev/null || true; has check)" no
 rm src/core/bom.bend; q scripts/check.sh; check "a tracked file missing: no key, nothing recorded" "$(git checkout -q src/core/bom.bend; has check)" no
+# exit codes (check.sh once ended in a false `[ ] &&` and exited 1 on a pass)
+rc() { r=0; "$@" >/dev/null 2>&1 || r=$?; echo $r; }
+nz() { if [ "$1" != 0 ]; then echo nonzero; else echo 0; fi; }
+check "check.sh check: exit 0 on a pass" "$(rc scripts/check.sh check)" 0
+check "check.sh proof: exit 0 on a pass" "$(rc scripts/check.sh proof)" 0
+check "check.sh (all): exit 0 on a pass" "$(rc scripts/check.sh)" 0
+check "check.sh check: non-zero on a failure" "$(nz "$(rc env BEND_FAKE=fail scripts/check.sh check)")" nonzero
+check "check.sh proof: non-zero on a failure" "$(nz "$(rc env BEND_FAKE=fail scripts/check.sh proof)")" nonzero
+check "check.sh (all): non-zero on a failure" "$(nz "$(rc env BEND_FAKE=fail scripts/check.sh)")" nonzero
 check "no half-written record left" "$(ls "$BACKPLANE_VERIFIED" | grep -c '\.[0-9]*$' || true)" 0
 exit $fail

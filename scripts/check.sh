@@ -150,4 +150,7 @@ fi
 if [ $fail != 0 ]; then exit 1; fi
 # a full pass (type-check and every proof) is recorded for these inputs
 # (scripts/verified.sh); a check or proof alone records nothing
-[ "$mode" = all ] && { scripts/verified.sh mark check "$vkey" || true; }
+# (an `if`, not `[ ] &&`: as the last command a false test would be the
+# script's status, so `check.sh proof` and `check.sh check` exited 1 on a pass)
+if [ "$mode" = all ]; then scripts/verified.sh mark check "$vkey" || true; fi
+exit 0

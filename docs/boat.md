@@ -37,6 +37,14 @@ checkout).
 | `scripts/test.sh` (136 programs) | exit 0 | 294 s | 3.38 GB |
 | native `BACKPLANE_LOW_MEM=1 scripts/build-app.sh src/app/main.bend build/backplane` (4 GiB heap hint, one clang at a time; `CC=clang-19`, `libx11-dev`, `libasound2-dev` installed in the job, `BACKPLANE_GOOGLE_BAKE=0`) | exit 0 twice; the built binary starts `--headless` and answers `/hello` | 17–21 min | 6.7–7.1 GB (0.6–1.0 GB left free: tight) |
 
+Run proofs and checks through `scripts/check.sh` (or `check.sh proof`): it
+sets what `bend PROOF.bend` needs, a 1 GiB stack (`ulimit -s 1048576`) and
+`BUN_JSC_maxPerThreadStackUsage=536870912`, and judges the output with
+`scripts/bendok.sh` (the "SOME PROOFS FAIL / N defs rely on unsafe or
+foreign code" notice with exit 1 is a pass). A raw `bend PROOF.bend` without
+both overflows the stack; that is a configuration error, not a failed proof.
+The runner raises the stack limit; it does not set the JSC variable.
+
 Small (4 GB) is not validated for any of these. The native build at the default 8 GiB hint does not fit 8 GB (its emit alone is about 8.8 GB); use `BACKPLANE_LOW_MEM=1` there, or `--size large` (16 GB) if it starts failing.
 
 The outcome arrives like any work: the command's exit code and the end of its output.
