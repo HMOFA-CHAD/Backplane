@@ -4311,8 +4311,9 @@ def Update.held(+s: M.State, +now: Nat) -> Step:
 def Deploy.probe() -> List<&2, Out>:
   [DeployProbe{}]
 
-# deploy_main's state (core/ship.bend), and whether a build is on its way:
-# a deploy waits for it too, so the restart it asks for never cuts it
+# deploy_main's state (core/ship.bend), and whether a build is on its way.
+# A deploy does not wait for one: the build runs in a scope of its own,
+# holds no build lock, and the next hub re-adopts it (Ship.recover)
 def Ship.get(+s: M.State) -> SH.Ship:
   SH.Ship.read(M.Setting.get(s, "deploy.ship", ""))
 
@@ -4371,7 +4372,7 @@ def Deploy.check.w(waiting: Bool, +clear: Bool, +free: Bool, +open: String, +s: 
 # open (the hub's in-memory list) and they are free, else remembers whether
 # a lock holds it and what is open, for the plane and deploy_status
 def Deploy.check(+s: M.State, +now: Nat, free: Bool, +open: List<&2, String>) -> Step:
-  Deploy.check.w(DP.Deploy.waiting(s), Bool.and(Nat.is_eq(DP.Open.count(open), 0n), Bool.not(Ship.busy.s(s))), free, DP.Open.threads(open), s, now)
+  Deploy.check.w(DP.Deploy.waiting(s), Nat.is_eq(DP.Open.count(open), 0n), free, DP.Open.threads(open), s, now)
 
 def Deploy.slow.k(due: Bool, +line: String, +s: M.State, +now: Nat) -> Step:
   match due:
