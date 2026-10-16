@@ -10804,3 +10804,45 @@ def Laws.deploy_mcp_own_call_not_counted():
 def Laws.deploy_mcp_outlives_turn_end():
   {==}
 # ---- end deploy waits for MCP calls ----
+# ---- i18n ime ----
+
+def Laws.ime_preedit_not_in_draft():
+  {==}
+
+def Laws.ime_shown_at_caret():
+  {==}
+
+def Laws.ime_range_replace_chars():
+  {==}
+
+def Laws.ime_delete_range():
+  {==}
+
+def Laws.ime_wide_counts_once():
+  {==}
+
+def Laws.ime_clear_is_off():
+  {==}
+
+def Laws.ime_focus_change_drops():
+  {==}
+
+def Laws.ime_owner_keeps():
+  {==}
+
+def Laws.ime_other_owner_never_merges():
+  {==}
+
+def Laws.ime_unknown_event_not_quit():
+  {==}
+
+def Laws.ime_unknown_event_is_junk():
+  {==}
+
+def Laws.ime_quit_is_quit():
+  {==}
+
+def Laws.ime_commit_event_id():
+  {==}
+
+# ---- end i18n ime ----

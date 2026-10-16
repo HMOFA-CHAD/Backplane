@@ -7,6 +7,10 @@ import ./src/core/ref.bend as REF
 # ---- i18n cjk ----
 import ./src/core/cjk.bend as CJK
 # ---- end i18n cjk ----
+# ---- i18n ime ----
+import ./src/core/ime.bend as IMEL
+import ./src/app/win.bend as WINL
+# ---- end i18n ime ----
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
 import ./src/core/sched.bend as SCH
@@ -8911,3 +8915,45 @@ law deploy_mcp_own_call_not_counted:
 law deploy_mcp_outlives_turn_end:
   {DP.Open.count(DP.Open.gone(DP.Open.mcp(DP.Open.add(Nil{}, "t1", "x"), "t1", "c1", "{\"method\":\"tools/call\",\"params\":{\"name\":\"thread_wait\"}}"), "t1")) == 1n : Nat}
 # ---- end deploy waits for MCP calls ----
+# ---- i18n ime ----
+
+law ime_preedit_not_in_draft:
+  {IMEL.Ime.shown(IMEL.Ime.none(), "ab", 1n) == "ab" : String}
+
+law ime_shown_at_caret:
+  {IMEL.Ime.shown(IMEL.Ime.draw(IMEL.Ime.none(), "o", 0n, 0n, "にほんご", "2222"), "abcd", 2n) == "abにほんごcd" : String}
+
+law ime_range_replace_chars:
+  {IMEL.Ime.text(IMEL.Ime.draw(IMEL.Ime.draw(IMEL.Ime.none(), "o", 0n, 0n, "にほんご", "2222"), "o", 1n, 2n, "ホン", "11")) == "にホンご" : String}
+
+law ime_delete_range:
+  {IMEL.Ime.text(IMEL.Ime.draw(IMEL.Ime.draw(IMEL.Ime.none(), "o", 0n, 0n, "にほんご", "2222"), "o", 1n, 2n, "", "")) == "にご" : String}
+
+law ime_wide_counts_once:
+  {IMEL.Ime.len(IMEL.Ime.draw(IMEL.Ime.none(), "o", 0n, 0n, "a😀日", "012")) == 3n : Nat}
+
+law ime_clear_is_off:
+  {IMEL.Ime.on(IMEL.Ime.clear(IMEL.Ime.draw(IMEL.Ime.none(), "o", 0n, 0n, "か", "2"))) == False{} : Bool}
+
+law ime_focus_change_drops:
+  {IMEL.Ime.on(IMEL.Ime.sync(IMEL.Ime.draw(IMEL.Ime.none(), "t:composer", 0n, 0n, "か", "2"), "t:other")) == False{} : Bool}
+
+law ime_owner_keeps:
+  {IMEL.Ime.on(IMEL.Ime.sync(IMEL.Ime.draw(IMEL.Ime.none(), "t:composer", 0n, 0n, "か", "2"), "t:composer")) == True{} : Bool}
+
+law ime_other_owner_never_merges:
+  {IMEL.Ime.text(IMEL.Ime.draw(IMEL.Ime.draw(IMEL.Ime.none(), "a", 0n, 0n, "か", "2"), "b", 1n, 0n, "き", "2")) == "き" : String}
+
+law ime_unknown_event_not_quit:
+  {WINL.Win.quit(WINL.Win.ev(99, 0, 0, 0, 0)) == False{} : Bool}
+
+law ime_unknown_event_is_junk:
+  {WINL.Win.junk(WINL.Win.ev(99, 0, 0, 0, 0)) == True{} : Bool}
+
+law ime_quit_is_quit:
+  {WINL.Win.quit(WINL.Win.ev(6, 0, 0, 0, 0)) == True{} : Bool}
+
+law ime_commit_event_id:
+  {WINL.Win.junk(WINL.Win.ev(14, 7, 0, 0, 0)) == False{} : Bool}
+
+# ---- end i18n ime ----

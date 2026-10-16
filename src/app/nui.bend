@@ -14,6 +14,7 @@ import ../core/attach.bend as AT
 import ../core/links.bend as LK
 import ../core/lightbox.bend as LB
 import ../core/edit.bend as ED
+import ../core/ime.bend as IM
 import ../core/model.bend as M
 import ../core/bot.bend as BT
 import ../core/perf.bend as PF
@@ -3052,17 +3053,206 @@ def Bb.wheel(none: Bool, +n: Nui, +x: U32, +y: U32, +dir: U32) -> Step:
     case False{}:
       Nui.act(n, "bb-scroll", Bool.pick(String, U32.is_eq(dir, 0), "-120", "120"))
 
+# Input method
+# ------------
+# What the input method composes (core/ime.bend) is kept in the scratch as
+# "@ime" and is owned by the field that had the keys when it began (the
+# thread and the focus id). It is drawn at that field's caret (layout.bend)
+# and is never in the field's text, the draft sent to the hub, the undo
+# history or the clipboard. The method's commit is typed text: it goes in at
+# the field's selection as one undo step, whatever it looks like (a path or
+# a URI is text, never an attachment).
+
+def Imx.get(+n: Nui) -> IM.Ime:
+  IM.Ime.read(U.Ui.scratch(Nui.ui(n), "@ime"))
+
+def Imx.put(+n: Nui, +i: IM.Ime) -> Nui:
+  Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), "@ime", IM.Ime.show(i)))
+
+# whether a composition is showing
+def Imx.live(+n: Nui) -> Bool:
+  Bool.not(String.is_empty(U.Ui.scratch(Nui.ui(n), "@ime")))
+
+# who owns a composition begun now
+def Imx.owner(+n: Nui) -> String:
+  U.Ui.sel(Nui.ui(n)) ++ "|" ++ Nui.focus_of(n)
+
+# a field that takes text has the keys
+def Imx.field(+n: Nui) -> Bool:
+  Bool.or(Bool.or(String.eq(Nui.focus_of(n), "composer"), Nui.in_path(n)), Fld.on(Nui.focus_of(n)))
+
+# the composition ends (cancelled, committed, or its field lost the keys)
+def Imx.drop(+n: Nui) -> Nui:
+  Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), "@ime", ""))
+
+# the composition is not the focused field's any more
+def Imx.stale(+n: Nui) -> Bool:
+  Bool.and(Imx.live(n), Bool.not(String.eq(IM.Ime.owner(Imx.get(n)), Imx.owner(n))))
+
+# the preedit changed: characters [first, first + len) became text, or
+# only their feedback changed; the caret is inside the preedit
+def Imx.draw.k(field: Bool, +only: Bool, +n: Nui, +first: U32, +len: U32, +text: String, +fb: String, +caret: U32) -> Step:
+  match field:
+    case True{}:
+      Step{Imx.put(n, IM.Ime.at(Bool.pick(IM.Ime, only, IM.Ime.mark(IM.Ime.sync(Imx.get(n), Imx.owner(n)), U32.to_nat(first), U32.to_nat(len), fb),
+        IM.Ime.draw(Imx.get(n), Imx.owner(n), U32.to_nat(first), U32.to_nat(len), text, fb)), U32.to_nat(caret))), Nil{}, True{}}
+    case False{}:
+      Step{n, Nil{}, False{}}
+
+def Imx.draw(+n: Nui, +first: U32, +len: U32, text: String, fb: String, +caret: U32, only: Bool) -> Step:
+  Imx.draw.k(Imx.field(n), only, n, first, len, text, fb, caret)
+
+def Imx.caret(+n: Nui, +pos: U32) -> Step:
+  Step{Imx.put(n, IM.Ime.at(Imx.get(n), U32.to_nat(pos))), Nil{}, Imx.live(n)}
+
+# the composition ended with nothing committed
+def Imx.end(+n: Nui) -> Step:
+  Step{Imx.drop(n), Nil{}, Imx.live(n)}
+
+# committed text typed in at the focused field
+def Imx.type.k(comp: Bool, path: Bool, n: Nui, +m: Nat, +text: String) -> Step:
+  match comp path n:
+    case True{} _ Nui{+u, w, h, mx, my, sd, sc, +ca, fo, pa, hi, ms, vw}:
+      Nui.composer.k(Ed.insert(U.Ui.draft_text(u), ca, m, text), Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}, False{})
+    case False{} True{} Nui{u, w, h, mx, my, sd, sc, +ca, fo, +pa, hi, ms, vw}:
+      Nui.path.k(Ed.insert(pa, ca, m, text), Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw})
+    case _ _ +n2:
+      Fld.paste(Fld.on(Nui.focus_of(n2)), n2, m, text)
+
+def Imx.commit(+n: Nui, +text: String) -> Step:
+  Imx.type.k(String.eq(Nui.focus_of(n), "composer"), Nui.in_path(n), Imx.drop(n), Nui.mark(n), text)
+
+# The composer shows the composition in its draft at the caret (the near
+# end of a selection, which is hidden meanwhile); the other fields are
+# shown the same way by laying the frame out over Imx.display.
+def Imx.mine(+n: Nui) -> Bool:
+  Bool.and(Imx.live(n), Bool.and(String.eq(Nui.focus_of(n), "composer"), String.eq(IM.Ime.owner(Imx.get(n)), Imx.owner(n))))
+
+def Imx.lo(+n: Nui) -> Nat:
+  ED.Edit.lo(Nui.caret_of(n), Nui.mark(n))
+
+def Imx.draft.k(mine: Bool, +n: Nui) -> String:
+  match mine:
+    case True{}:
+      IM.Ime.shown(Imx.get(n), U.Ui.draft_text(Nui.ui(n)), Imx.lo(n))
+    case False{}:
+      U.Ui.draft_text(Nui.ui(n))
+
+def Imx.draft(+n: Nui) -> String:
+  Imx.draft.k(Imx.mine(n), n)
+
+def Imx.at.k(mine: Bool, +n: Nui) -> Nat:
+  match mine:
+    case True{}:
+      IM.Ime.caret(Imx.get(n), Imx.lo(n))
+    case False{}:
+      Nui.caret_of(n)
+
+def Imx.at(+n: Nui) -> Nat:
+  Imx.at.k(Imx.mine(n), n)
+
+def Imx.mk.k(mine: Bool, +n: Nui) -> Nat:
+  match mine:
+    case True{}:
+      IM.Ime.caret(Imx.get(n), Imx.lo(n))
+    case False{}:
+      Nui.mark(n)
+
+def Imx.mk(+n: Nui) -> Nat:
+  Imx.mk.k(Imx.mine(n), n)
+
+def Imx.runs.k(mine: Bool, +n: Nui) -> List<&2, IM.Run>:
+  match mine:
+    case True{}:
+      IM.Ime.runs(Imx.get(n), Imx.lo(n))
+    case False{}:
+      Nil{}
+
+def Imx.runs(+n: Nui) -> List<&2, IM.Run>:
+  Imx.runs.k(Imx.mine(n), n)
+
+# a single-line field (not the composer) has the composition
+def Imx.other(+n: Nui) -> Bool:
+  Bool.and(Imx.live(n), Bool.and(Bool.not(String.eq(Nui.focus_of(n), "composer")), String.eq(IM.Ime.owner(Imx.get(n)), Imx.owner(n))))
+
+def Imx.path_text(+n: Nui) -> String:
+  match n:
+    case Nui{_, _, _, _, _, _, _, _, _, pa, _, _, _}:
+      pa
+
+# the focused field's text as it is when laid out over Imx.display
+def Imx.field_shown(+n: Nui) -> String:
+  Bool.pick(String, Nui.in_path(n), Imx.path_text(n), Fld.text(n))
+
+# where the composition sits in it: the caret was moved into it
+def Imx.field_runs(+n: Nui) -> List<&2, IM.Run>:
+  IM.Ime.runs(Imx.get(n), Nat.sub(Nui.caret_of(n), IM.Ime.caret(Imx.get(n), 0n)))
+
+# the window as the frame is laid out: another field showing the
+# composition in its text, the caret inside it (nothing of this is kept)
+def Imx.display.t(path: Bool, +n: Nui) -> Nui:
+  match path:
+    case True{}:
+      +c = IM.Ime.caret(Imx.get(n), Imx.lo(n))
+      Mark.save(Nui.with_path(n, IM.Ime.shown(Imx.get(n), Imx.path_text(n), Imx.lo(n)), c), c)
+    case False{}:
+      +c = IM.Ime.caret(Imx.get(n), Imx.lo(n))
+      Mark.save(Nui.with_caret(Fld.set(n, IM.Ime.shown(Imx.get(n), Fld.text(n), Imx.lo(n))), c), c)
+
+def Imx.display.k(go: Bool, +n: Nui) -> Nui:
+  match go:
+    case True{}:
+      Imx.display.t(Nui.in_path(n), n)
+    case False{}:
+      n
+
+def Imx.display(+n: Nui) -> Nui:
+  Imx.display.k(Bool.and(Imx.other(n), Bool.or(Nui.in_path(n), Fld.on(Nui.focus_of(n)))), n)
+
+# keys that reach the app while a composition shows are not the app's:
+# Enter does not send, and the arrows, Tab and Escape do nothing (Escape
+# ends the composition)
+def Imx.eats(+code: U32) -> Bool:
+  Bool.or(Bool.or(Bool.or(U32.is_eq(code, Key.enter()), U32.is_eq(code, Key.kp_enter())), Bool.or(U32.is_eq(code, Key.up()), U32.is_eq(code, Key.down()))),
+    Bool.or(U32.is_eq(code, Key.tab()), U32.is_eq(code, Key.escape())))
+
+def Imx.key.k(eats: Bool, +n: Nui, +code: U32, +text: U32, +mods: U32) -> Step:
+  match eats:
+    case True{}:
+      Step{Bool.pick(Nui, U32.is_eq(code, Key.escape()), Imx.drop(n), n), Nil{}, True{}}
+    case False{}:
+      Hint.key(Hint.down(Hint.get(n), code, mods), n, code, text, mods)
+
+def Imx.key(live: Bool, +n: Nui, +code: U32, +text: U32, +mods: U32) -> Step:
+  match live:
+    case True{}:
+      Imx.key.k(Imx.eats(code), n, code, text, mods)
+    case False{}:
+      Hint.key(Hint.down(Hint.get(n), code, mods), n, code, text, mods)
+
 # one window event
 def Nui.event(+n: Nui, e: W.WinEv) -> Step:
   match e:
     case W.WKey{+code, text, +mods, True{}, _}:
-      Hint.key(Hint.down(Hint.get(n), code, mods), n, code, text, mods)
+      Imx.key(Imx.live(n), n, code, text, mods)
     case W.WKey{+code, _, _, False{}, _}:
       Hint.up(code, n)
     case W.WBlur{}:
-      Hint.blur(n)
+      Hint.blur(Imx.drop(n))
     case W.WFocus{}:
       Nui.focused(n)
+    case W.WCommit{_, t}:
+      Imx.commit(n, t)
+    case W.WPreedit{+first, +len, _, t, f, +caret, only}:
+      Imx.draw(n, first, len, t, f, caret, only)
+    case W.WPreCaret{+pos}:
+      Imx.caret(n, pos)
+    case W.WPreStart{}:
+      Step{Imx.drop(n), Nil{}, False{}}
+    case W.WPreEnd{}:
+      Imx.end(n)
+    case W.WJunk{}:
+      Step{n, Nil{}, False{}}
     case W.WButton{+x, +y, 1, True{}}:
       Nui.press(Nui.in_viewer(n, x), Menu.press(Hit.find(Nui.hits(n), x, y), n), x, y)
     case W.WButton{+x, +y, 1, False{}}:

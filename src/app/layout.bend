@@ -7,6 +7,7 @@ import ../core/fm.bend as FM
 import ../core/todo.bend as TD
 import ../core/edit.bend as ED
 import ../core/images.bend as IM
+import ../core/ime.bend as IME
 import ../core/links.bend as LK
 import ../gfx/raster.bend as R
 import ../gfx/draw.bend as D
@@ -603,7 +604,7 @@ def Lay.field.x(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +w: U32, +text: String, +
       Bool.pick(List<&2, R.Op>, String.is_empty(text), Ty.text(ty, 2n, placeholder, c, (x + 8 : U32), y, 28, T.Th.faint()),
         Ty.text(ty, 2n, vis, c, (x + 8 : U32), y, 28, T.Th.text())),
       Bool.pick(List<&2, R.Op>, focused, [Lay.field.caret(steady, c, (x + 8 + Ty.width(ty, 2n, String.take(vis, caret)) : U32), (y + 7 : U32), blink)], Nil{})]),
-    [Lay.hit(x, y, w, 28, "focus", id)]}
+    Bool.pick(List<&2, S.Hit>, focused, [Lay.hit(x, y, w, 28, "focus", id), Lay.hit((x + 8 + Ty.width(ty, 2n, String.take(vis, caret)) : U32), (y + 7 : U32), 1, 18, "ime-spot", "")], [Lay.hit(x, y, w, 28, "focus", id)])}
 
 def Lay.field(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +w: U32, +text: String, +focused: Bool, +blink: Bool, +caret: Nat, +mark: Nat, +placeholder: String, +id: String) -> Out:
   Lay.field.x(ty, c, x, y, w, text, focused, blink, False{}, caret, mark, placeholder, id)
@@ -2180,6 +2181,31 @@ def Comp.sel(on: Bool, +ty: Ty, +shown: List<&2, String>, +top: Nat, +draft: Str
     case False{}:
       Out.none()
 
+# the same over a span, dy below the line's top and hh tall, in a colour
+def Comp.span.go(ls: List<&2, String>, +ty: Ty, +j: Nat, +rlo: Nat, +xlo: U32, +rhi: Nat, +xhi: U32, +x: U32, +y: U32, +dy: U32, +hh: U32, +color: U32) -> List<&2, R.Op>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      +a = {Bool.pick(U32, Nat.is_eq(j, rlo), xlo, 0) : U32}
+      +b = {Bool.pick(U32, Nat.is_eq(j, rhi), xhi, (Ty.width(ty, 3n, l) + 6 : U32)) : U32}
+      List.append(&2, R.Op, Bool.pick(List<&2, R.Op>, Bool.and(Bool.and(Nat.is_ge(j, rlo), Nat.is_le(j, rhi)), U32.is_gt(b, a)),
+        [D.Draw.rect(D.Clip.all(), (x + a : U32), (y + dy : U32), (b - a : U32), hh, color, 255)], Nil{}),
+        Comp.span.go(t, ty, 1n+j, rlo, xlo, rhi, xhi, x, (y + 23 : U32), dy, hh, color))
+
+# what the input method is composing (core/ime.bend's runs, positions in
+# the shown draft): the clause being converted behind the text like a
+# selection, all of it underlined
+def Comp.pre(pre: List<&2, IME.Run>, +ty: Ty, +shown: List<&2, String>, +top: Nat, +draft: String, +ss: List<&2, Nat>, +x: U32, +y: U32) -> Out:
+  match pre:
+    case Nil{}:
+      Out.none()
+    case IME.Run{+lo, +hi, +hot} <> t:
+      Out.cat(Out.cat(
+        Out.when(hot, Out.ops(Comp.span.go(shown, ty, top, Comp.row(ss, lo), Comp.x(ty, draft, ss, lo), Comp.row(ss, hi), Comp.x(ty, draft, ss, hi), x, y, 0, 20, T.Th.sel()))),
+        Out.ops(Comp.span.go(shown, ty, top, Comp.row(ss, lo), Comp.x(ty, draft, ss, lo), Comp.row(ss, hi), Comp.x(ty, draft, ss, hi), x, y, 19, 1, T.Th.text()))),
+        Comp.pre(t, ty, shown, top, draft, ss, x, y))
+
 # how much taller than two lines the composer is for n wrapped lines
 def Comp.eh(+n: Nat) -> U32:
   (U32.from_nat(Nat.sub(S.Cs.rows(n), 2n)) * 23 : U32)
@@ -2218,7 +2244,7 @@ def Comp.models(+ty: Ty, +models: String, +x0: U32, +x1: U32, +send: String) -> 
 def Comp.chip(+ty: Ty, +label: String, +tail: String, +x0: U32, +x1: U32, +send: String) -> String:
   Ty.fit(ty, 2n, label, U32.dim(U32.dim(U32.dim(Comp.send_x(ty, x1, send), (x0 + 8 : U32)), 122), Ty.width(ty, 2n, tail))) ++ tail
 
-def Lay.composer(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String, +caret: Nat, +mark: Nat, +focused: Bool, +blink: Bool, +x0: U32, +x1: U32, +h: U32, +send: String, +act: String, +models: String, +rs: List<&2, U.SkillRow>) -> Out:
+def Lay.composer(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String, +caret: Nat, +mark: Nat, +focused: Bool, +blink: Bool, +x0: U32, +x1: U32, +h: U32, +send: String, +act: String, +models: String, +rs: List<&2, U.SkillRow>, pre: List<&2, IME.Run>) -> Out:
   +tw = {(x1 - x0 - 40 : U32) : U32}
   +n = List.length(&2, String, ls)
   +v = S.Cs.rows(n)
@@ -2234,10 +2260,12 @@ def Lay.composer(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String, 
   Out.all([
     Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), (100 + eh : U32), 10, T.Th.panel(), Bool.pick(U32, focused, T.Th.focus(), T.Th.line()))),
     Comp.sel(Bool.and(focused, Bool.not(Nat.is_eq(caret, mark))), ty, shown, top, draft, ss, ED.Edit.lo(caret, mark), ED.Edit.hi(caret, mark), (x0 + 16 : U32), (y + 12 : U32)),
+    Comp.pre(pre, ty, shown, top, draft, ss, (x0 + 16 : U32), (y + 12 : U32)),
     Bool.pick(Out, String.is_empty(draft),
       Out.ops(Ty.text(ty, 3n, Ty.fit(ty, 3n, "Ask anything: @bot, >thread, %project, #room, $skill, /btw", tw), D.Clip.all(), (x0 + 16 : U32), (y + 10 : U32), 23, T.Th.faint())),
       Lay.lines(ty, shown, D.Clip{(x0 + 1 : U32), (y + 1 : U32), (x1 - 1 : U32), (y + 60 + eh : U32)}, (x0 + 16 : U32), (y + 10 : U32))),
     Bool.pick(Out, Bool.and(focused, Bool.and(Nat.is_ge(crow, top), Nat.is_lt(row, v))), Out.ops([D.Draw.caret(D.Clip.all(), (x0 + 16 + cx : U32), (y + 14 + (U32.from_nat(row) * 23 : U32) : U32), 1, 16, T.Th.accent(), 255, blink)]), Out.none()),
+    Bool.pick(Out, Bool.and(focused, Bool.and(Nat.is_ge(crow, top), Nat.is_lt(row, v))), Out{Nil{}, [Lay.hit((x0 + 16 + cx : U32), (y + 14 + (U32.from_nat(row) * 23 : U32) : U32), 1, 18, "ime-spot", "")]}, Out.none()),
     Comp.bar(Nat.is_gt(n, v), n, v, top, (x1 - 12 : U32), (y + 12 : U32), (U32.from_nat(v) * 23 - 4 : U32)),
     Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), (64 + eh : U32), "focus", "composer"), Lay.hit(0, 0, 0, 0, "cs", Nat.show(top) ++ "," ++ Nat.show(Nat.sub(n, v)))]},
     Out{List.append(&2, R.Op, Ty.text(ty, 2n, models, D.Clip.all(), (x0 + 16 : U32), fy, 28, T.Th.dim()), Lay.icon(ty, "chevron-down", D.Clip.all(), (x0 + 22 + Ty.width(ty, 2n, models) : U32), (fy + 6 : U32), T.Th.dim())), [Lay.hit((x0 + 8 : U32), fy, (Ty.width(ty, 2n, models) + 38 : U32), 28, "flag", "models")]},
@@ -5816,19 +5844,19 @@ def Lay.attach_field(+ty: Ty, on: Bool, +path: String, +caret: Nat, +mark: Nat, 
 
 # the composer with its attachments
 def Lay.composer.a(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool, +x0: U32, +x1: U32, +h: U32, +send: String, +act: String, +models: String,
-    +rs: List<&2, U.SkillRow>, +atts: List<&2, String>, +up: String, +path: String) -> Out:
+    +rs: List<&2, U.SkillRow>, +atts: List<&2, String>, +up: String, +path: String, pre: List<&2, IME.Run>) -> Out:
   +y = {(h - 120 - Comp.eh(List.length(&2, String, ls)) : U32) : U32}
   +fy = Comp.foot(h)
   +ml = Comp.models(ty, models, x0, x1, send)
   Out.all([
-    Lay.composer(ty, draft, ls, held, caret, mark, String.eq(focus, "composer"), blink, x0, x1, h, send, act, ml, rs),
+    Lay.composer(ty, draft, ls, held, caret, mark, String.eq(focus, "composer"), blink, x0, x1, h, send, act, ml, rs, pre),
     Lay.atts(ty, atts, up, (x0 + 58 + Ty.width(ty, 2n, ml) : U32), fy),
     Lay.ibutton(ty, D.Clip.all(), (Comp.send_x(ty, x1, send) - 34 : U32), fy, "paperclip", T.Th.soft(), "focus", "attach-path"),
     Lay.attach_field(ty, String.eq(focus, "attach-path"), path, caret, mark, x0, x1, (y - 36 : U32))])
 
 def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: String, +st: M.State, +sel: String, +live: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool,
     +x0: U32, +x1: U32, +h: U32, +sc: U32, pa: Bool, term: Bool, +info: String, +picking: Bool, +pend: List<&2, String>, +rs: List<&2, U.SkillRow>, +now: Nat,
-    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String) -> Out:
+    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String, pre: List<&2, IME.Run>) -> Out:
   match t:
     case M.Thread{id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
       +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
@@ -5867,7 +5895,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
           Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + pl : U32)),
           Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + Subs.height(ts, svis, sopen) : U32), fkey, blink),
-          Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), Comp.chip(ty, U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)), U.Usage.tail(st, sel), cx0, cx1, U.Follow.button(st, sel, Lay.running(turn), stop, draft)), rs, atts, up, path),
+          Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), Comp.chip(ty, U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)), U.Usage.tail(st, sel), cx0, cx1, U.Follow.button(st, sel, Lay.running(turn), stop, draft)), rs, atts, up, path, pre),
           Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
           Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
           Lay.asks(ty, asks, draft, pics, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
@@ -6146,7 +6174,7 @@ def Vx.view.k(+ty: Ty, +n: S.Nui, +u: U.Ui, +sel: String, +cx0: U32, +cx1: U32, 
 def Vx.view(+ty: Ty, +n: S.Nui, +st: M.State, +sel: String, +x0: U32, +x1: U32, +h: U32) -> Out:
   +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
   +cx0 = {(x0 + U32.shr((x1 - x0 - cw : U32)) : U32) : U32}
-  +eh = Comp.eh(List.length(&2, String, Comp.wrap(ty, U.Ui.draft_text(S.Nui.ui(n)), cw)))
+  +eh = Comp.eh(List.length(&2, String, Comp.wrap(ty, S.Imx.draft(n), cw)))
   Vx.view.k(ty, n, S.Nui.ui(n), sel, cx0, (cx0 + cw : U32), (h - 120 - eh : U32), Comp.foot(h), Vx.send(U.Ui.thread(st, sel), st, sel, U.Ui.draft_text(S.Nui.ui(n)), U.Ui.atts(S.Nui.ui(n), sel)))
 
 # the page is full: a thread with more entries than one page shows
@@ -6156,10 +6184,10 @@ def Lay.more(+memo: TLMemo, +n: S.Nui, +sel: String) -> Bool:
 def Lay.thread.at.k(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32) -> Out:
   match n:
     case S.Nui{U.Ui{+st, +sel, _, +live, +op, _, _, _, pa, _, _, _, _, _, +nf, _, _}, _, +h, _, _, _, +sc, +caret, +focus, +path, _, _, _}:
-      Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, U.Ui.draft_text(S.Nui.ui(n)), x0, x1, h), Lay.thread.k(ty, memo, U.Ui.thread(st, sel), U.Ui.draft_text(S.Nui.ui(n)), S.Cs.held(n), st, sel, U.Str.get(live, sel), caret, S.Nui.mark(n), focus, S.Blink.on(n), x0, x1, h, sc, pa, U.Flag.get(op, "term"),
+      Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, S.Imx.draft(n), x0, x1, h), Lay.thread.k(ty, memo, U.Ui.thread(st, sel), S.Imx.draft(n), S.Cs.held(n), st, sel, U.Str.get(live, sel), S.Imx.at(n), S.Imx.mk(n), focus, S.Blink.on(n), x0, x1, h, sc, pa, U.Flag.get(op, "term"),
         U.Str.get(nf, "models"), U.Flag.get(op, "models"), U.Ui.pending(S.Nui.ui(n), sel), U.Ui.skills(S.Nui.ui(n)), U.Side.now(S.Nui.ui(n)),
         U.Ui.atts(S.Nui.ui(n), sel), U.Ui.uploading(S.Nui.ui(n), sel), path, nf, U.Ui.deleting(S.Nui.ui(n)), TSel.of(U.Ui.scratch(S.Nui.ui(n), "@ts"), sel), U.Ui.scratch(S.Nui.ui(n), "@menu.off"), U.Side.phase(st, U.Ui.thread(st, sel)), hy, Lay.more(memo, n, sel), U.Btw.question(S.Nui.ui(n)), U.Btw.reply.of(S.Nui.ui(n)),
-        U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"), U.Ec.of(S.Nui.ui(n), sel), EM.Emb.focused(focus))),
+        U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"), U.Ec.of(S.Nui.ui(n), sel), EM.Emb.focused(focus), S.Imx.runs(n))),
         Vx.view(ty, n, st, sel, x0, x1, h)), Lay.earlier(Lay.more(memo, n, sel)))
 
 def Lay.thread.at(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32) -> Out:
@@ -6302,6 +6330,59 @@ def Lay.tour.if(open: Bool, +ty: Ty, +n: S.Nui, +w: U32, +h: U32) -> Out:
     case False{}:
       Out.none()
 
+# What the input method composes in a single-line field (the composer has
+# its own, Comp.pre): the field's box is the "focus" hit of the focused id,
+# 28 tall; the clause being converted is shaded and all of it underlined,
+# placed as Lay.field.x places the text it shows.
+def Lay.ime.run(+ty: Ty, +vis: String, +x: U32, +y: U32, r: IME.Run) -> List<&2, R.Op>:
+  match r:
+    case IME.Run{+lo, +hi, +hot}:
+      +a = {Ty.width(ty, 2n, String.take(vis, lo)) : U32}
+      +b = {Ty.width(ty, 2n, String.take(vis, hi)) : U32}
+      List.append(&2, R.Op, Bool.pick(List<&2, R.Op>, Bool.and(hot, U32.is_gt(b, a)), [D.Draw.rect(D.Clip.all(), (x + 8 + a : U32), (y + 5 : U32), (b - a : U32), 18, T.Th.sel(), 255)], Nil{}),
+        Bool.pick(List<&2, R.Op>, U32.is_gt(b, a), [D.Draw.rect(D.Clip.all(), (x + 8 + a : U32), (y + 22 : U32), (b - a : U32), 1, T.Th.text(), 255)], Nil{}))
+
+def Lay.ime.runs(rs: List<&2, IME.Run>, +ty: Ty, +vis: String, +x: U32, +y: U32) -> List<&2, R.Op>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      List.append(&2, R.Op, Lay.ime.run(ty, vis, x, y, r), Lay.ime.runs(t, ty, vis, x, y))
+
+def Lay.ime.field(h: S.Hit, +ty: Ty, +shown: String, rs: List<&2, IME.Run>) -> Out:
+  match h:
+    case S.Hit{+x0, +y0, +x1, +y1, _, _}:
+      Out.when(U32.is_eq((y1 - y0 : U32), 28), Out.ops(Lay.ime.runs(rs, ty, Ty.fit(ty, 2n, shown, ((x1 - x0 : U32) - 16 : U32)), x0, y0)))
+
+def Lay.ime.find(hs: List<&2, S.Hit>, +id: String) -> Maybe<&2, S.Hit>:
+  match hs:
+    case Nil{}:
+      None{}
+    case S.Hit{+x0, +y0, +x1, +y1, +a, +v} <> t:
+      Bool.pick(Maybe<&2, S.Hit>, Bool.and(String.eq(a, "focus"), String.eq(v, id)), Some{S.Hit{x0, y0, x1, y1, a, v}}, Lay.ime.find(t, id))
+
+def Lay.ime.at(m: Maybe<&2, S.Hit>, +ty: Ty, +n: S.Nui) -> Out:
+  match m:
+    case Some{h}:
+      Lay.ime.field(h, ty, S.Imx.field_shown(n), S.Imx.field_runs(n))
+    case None{}:
+      Out.none()
+
+def Lay.ime.cat(o: Out, x: Out) -> Out:
+  Out.cat(o, x)
+
+def Lay.ime.go(on: Bool, +ty: Ty, +n: S.Nui, o: Out) -> Out:
+  match on:
+    case True{}:
+      match o:
+        case Out{+os, +hs}:
+          Lay.ime.cat(Out{os, hs}, Lay.ime.at(Lay.ime.find(hs, S.Nui.focus_of(n)), ty, n))
+    case False{}:
+      o
+
+def Lay.ime.over(+ty: Ty, +n: S.Nui, o: Out) -> Out:
+  Lay.ime.go(S.Imx.other(n), ty, n, o)
+
 # the whole window, topmost first; `more` lays out what the sidebar shows
 # under the projects, `main` a main area in place of the usual one
 def Lay.frame.us(+ty: Ty, +memo: TLMemo, +n: S.Nui, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col, main: Maybe<&2, Out>, side: Maybe<&2, Out>) -> Out:
@@ -6309,7 +6390,7 @@ def Lay.frame.us(+ty: Ty, +memo: TLMemo, +n: S.Nui, utop: Out, +uh: U32, more: D
     case S.Nui{U.Ui{_, _, _, _, _, _, _, _, +pa, _, _, _, +err, note, _, _, _}, +w, +h, _, _, _, _, _, _, _, _, _, _}:
       # the main area and the sidebar are laid out at once
       mn sb = Lay.main.m(main, ty, memo, Lay.shrink(n, Lay.term_h(n)), 264, Bool.pick(U32, pa, (264 + U32.shr((w - 264 : U32)) : U32), w)) Lay.side.m(side, ty, n, h, utop, uh, more)
-      Lay.rev(Out.all([
+      Lay.rev(Lay.ime.over(ty, n, Out.all([
         mn,
         Lay.viewer.if(pa, ty, n, (264 + U32.shr((w - 264 : U32)) : U32), w, h),
         Lay.term.of(ty, n, Bool.pick(U32, pa, (264 + U32.shr((w - 264 : U32)) : U32), w), h),
@@ -6319,7 +6400,7 @@ def Lay.frame.us(+ty: Ty, +memo: TLMemo, +n: S.Nui, utop: Out, +uh: U32, more: D
         Lay.proj.if(U.Ui.flag(S.Nui.ui(n), "proj"), ty, n, w, h),
         Lay.hover(U.Ui.info(S.Nui.ui(n), "hover"), S.Hover.alpha(n, S.Nui.ms_of(n))),
         Lay.perf.if(U.Ui.flag(S.Nui.ui(n), "perf"), ty, U.Ui.info(S.Nui.ui(n), "perf.hud"), w),
-        Lay.tour.if(U.Tour.on(S.Nui.ui(n)), ty, n, w, h)]))
+        Lay.tour.if(U.Tour.on(S.Nui.ui(n)), ty, n, w, h)])))
 
 def Lay.frame.u(+ty: Ty, +memo: TLMemo, +n: S.Nui, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col, main: Maybe<&2, Out>) -> Out:
   Lay.frame.us(ty, memo, n, utop, uh, more, main, None{})
