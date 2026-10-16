@@ -1393,7 +1393,7 @@ def Watch.safe(s: String) -> String:
 
 def Watch.cli.k(rt: K.Rt) -> String:
   match rt:
-    case K.Rt{cli, _, _, _}:
+    case K.Rt{cli, _, _, _, _}:
       cli
 
 def Watch.cli() -> IO(String):
@@ -1401,7 +1401,8 @@ def Watch.cli() -> IO(String):
     +home : String <- S.Env.get("HOME", "/tmp")
     explicit : String <- S.Env.get("BACKPLANE_KICAD_CLI", "")
     exe : String <- S.Sys.exe_dir.io()
-    rt : K.Rt <- K.Rt.resolve(explicit, exe, home ++ "/.backplane-bend")
+    data : String <- S.Env.get("BACKPLANE_HOME", home ++ "/.backplane-bend")
+    rt : K.Rt <- K.Rt.resolve(explicit, exe, data)
     return Watch.cli.k(rt)
 
 def Watch.step2glb() -> IO(String):

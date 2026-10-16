@@ -1,5 +1,6 @@
 import Base
 import ../core/msgs.bend as MSG
+import ../core/kihealth.bend as KH
 import ../core/model.bend as M
 import ./dom.bend as D
 import ./icon.bend as WI
@@ -770,6 +771,29 @@ def View.days(+d: String) -> List<&2, D.Node>:
    D.Dom.span("days", Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " day", " days")),
    D.Dom.button("", "setting", "settle.days=" ++ Nat.show(Bool.pick(Nat, Nat.is_lt(n, 90n), 1n+n, 90n)), "More days", "+")]
 
+def View.kn.acts(as: List<&2, KH.KAct>) -> List<&2, D.Node>:
+  match as:
+    case Nil{}: Nil{}
+    case KH.KAct{+l, "link", v} <> t:
+      D.El{"a", "", [D.At{"href", v}, D.At{"target", "_blank"}, D.At{"rel", "noopener"}], [D.Txt{l}]} <> View.kn.acts(t)
+    case KH.KAct{+l, a, v} <> t: D.Dom.button("", a, v, l, l) <> View.kn.acts(t)
+
+def View.kn.close(on: Bool, +key: String) -> List<&2, D.Node>:
+  match on:
+    case True{}: [D.Dom.button("kn-close", "setting", "kicad.notice.hidden=" ++ key, "Dismiss KiCad notice", "×")]
+    case False{}: Nil{}
+
+def View.kn(n: Maybe<&2, KH.KNote>, dismiss: Bool) -> List<&2, D.Node>:
+  match n:
+    case None{}: Nil{}
+    case Some{KH.KNote{key, title, body, acts}}:
+      [D.El{"div", "kicad-notice", [D.At{"class", "kicad-notice"}], List.concat(&2, D.Node, [
+        [D.El{"strong", "", Nil{}, [D.Txt{title}]}, D.El{"p", "", Nil{}, [D.Txt{body}]}, D.El{"div", "", [D.At{"class", "kn-actions"}], View.kn.acts(acts)}], View.kn.close(dismiss, key)])}]
+
+def View.kn.path(+u: U.Ui) -> D.Node:
+  D.El{"input", "kicad-path", [D.At{"id", "kicad-path"}, D.At{"value", M.Setting.get(U.Ui.state(u), "kicad.path", "")},
+    D.At{"placeholder", "Automatic · " ++ U.Ui.info(u, "kicad.cli")}, D.At{"data-enter", "setting"}, D.At{"data-pre", "kicad.path="}], Nil{}}
+
 def View.fork(+fork: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, String.is_empty(fork), [D.Dom.button("primary", "kicad-install", "", "Install Backplane KiCad", "Install Backplane KiCad")],
     [D.Dom.span("ok", "Backplane KiCad " ++ fork)])
@@ -989,7 +1013,7 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
       View.setrow("Writing: provider", "Titles threads, names branches and writes commit messages. A small model keeps this cheap.", View.chips(["claude", "codex", "grok", "muse"], U.TextGen.provider(st), "text.provider")),
       View.setrow("Writing: model", Bool.pick(String, String.is_empty(U.TextGen.model(st)), "default", U.TextGen.model(st)) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), U.TextGen.provider(st), U.TextGen.model(st)),
         View.chips(U.Models.menu(U.Str.get(nf, "models"), U.TextGen.provider(st)), U.TextGen.model(st), "text.model")),
-      View.setrow(U.KiCad.cli.label(nf), U.KiCad.cli.note(nf), View.fork(U.Str.get(nf, "kicad.fork"))),
+      View.setrow("KiCad", U.KN.summary(nf), View.kn.path(u) <> View.kn(U.KN.of(nf, st), False{})),
       View.setrow(U.FreeCAD.label(nf), U.FreeCAD.note(nf), Nil{}),
       View.setrow(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, D.Node>, U.KiCad.ipc.ready(nf), View.chips(["on", "off"], ipc, "kicad.ipc"), Nil{})),
       View.setrow("Theme", "The window and the web page (phones unset follow their own system).", View.chips(["dark", "light"], Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "light", "dark"), "ui.theme"))], View.lang(u), [
@@ -1002,8 +1026,8 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
       [View.setrow("Update channel", "Stable takes releases; nightly also takes the daily builds.", View.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
       View.setrow("Backplane " ++ v, U.Update.line.w(st, nf, note), View.update.btn(U.Update.btn(st, nf, note)))], View.voice.set(u, st), View.keys.set(u), View.agy.rows(U.Agv.rows(u)), View.tz.set(u), View.usage.rows(U.Usage.rows(u)), [View.setrow("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [D.Dom.button("", "ob-open", "", "Show the tour again", "Show the tour")])]])}]}
 
-def View.empty(n: Nat) -> D.Node:
-  D.El{"main", "empty", [D.At{"class", "empty"}], [D.Txt{Bool.pick(String, Nat.is_eq(n, 0n), "Add a project with + to start.", "Pick a thread, or start one with + next to a project.")}]}
+def View.empty(n: Nat, nf: Map<&2, String>, st: M.State) -> D.Node:
+  D.El{"main", "empty", [D.At{"class", "empty"}], D.Dom.cat([D.Txt{Bool.pick(String, Nat.is_eq(n, 0n), "Add a project with + to start.", "Pick a thread, or start one with + next to a project.")}], View.kn(U.KN.visible(nf, st), True{}))}
 
 def View.error(e: String) -> List<&2, D.Node>:
   match e:
@@ -1587,7 +1611,7 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
       +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
       D.El{"main", "thread", [D.At{"class", Bool.pick(String, term, "thread-view with-term", "thread-view") ++ Bool.pick(String, U.Flag.get(op, "drop"), " dropping", "")},
         D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
-        View.top(hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, id, now), panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), [
+        View.top(hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, id, now), panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), D.Dom.cat(View.kn(U.KN.thread(nf, st, sel), True{}), [
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
           D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(nf, id, SB.Subs.rows(st, nf, id, now)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
           D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(tr, st, id, now)), D.Dom.cat(View.sending(pend),
@@ -1595,7 +1619,7 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
         View.asks.box(st, id, U.Str.get(drafts, sel), nf),
         View.todos(nf, id, U.Todos.shown(st, id, View.running(turn))),
         View.queued(M.Queue.context(M.Queue.items(st, id)), View.running(turn)),
-        View.composer.t(st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)]),
+        View.composer.t(st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)])),
         D.Dom.when(term, View.term(U.Term.get(tr, id))))}
 
 def View.thread.h(+u: U.Ui, +t: M.Thread, hd: List<&2, D.Node>) -> D.Node:
@@ -1623,8 +1647,8 @@ def View.main.s(settings: Bool, none: Bool, u: U.Ui, +sel: String, +n: Nat) -> D
   match settings none u:
     case True{} _ U.Ui{+st, s2, d, l, o, on, now, ad, pa, +v, r, w, e, +note, +nf, ob, tr}:
       View.settings(U.Ui{st, s2, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}, st, nf, v, note)
-    case False{} True{} _:
-      View.empty(n)
+    case False{} True{} U.Ui{st, _, _, _, _, _, _, _, _, _, _, _, _, _, nf, _, _}:
+      View.empty(n, nf, st)
     case False{} False{} U.Ui{+st, s2, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}:
       View.thread(U.Ui{st, s2, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}, U.Ui.thread(st, sel))
 

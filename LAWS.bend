@@ -15,6 +15,7 @@ import ./src/core/cjk.bend as CJK
 import ./src/core/ime.bend as IMEL
 import ./src/app/win.bend as WINL
 # ---- end i18n ime ----
+import ./src/core/kihealth.bend as KH
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
 import ./src/core/sched.bend as SCH
@@ -9320,3 +9321,111 @@ law ship_follow_off_default:
 law ship_gone_not_ok:
   {SHP.Ran.ok("STATUS gone\nVERSION \n") == False{} : Bool}
 # ---- end deploy main ----
+# ---- kicad-ipc ----
+law kicad_status_missing:
+  for +r: Bool
+  for +f: Bool
+  for +v: String
+  for +a: Nat
+  {KH.KH.status(False{}, r, f, v, a) == "missing" : String}
+
+law kicad_status_broken:
+  for +f: Bool
+  for +v: String
+  for +a: Nat
+  {KH.KH.status(True{}, False{}, f, v, a) == "broken" : String}
+
+law kicad_status_stock:
+  for +v: String
+  for +a: Nat
+  {KH.KH.status(True{}, True{}, False{}, v, a) == "stock" : String}
+
+law kicad_notice_ok_none:
+  for +c: String
+  for +v: String
+  for +w: String
+  for +i: Bool
+  {KH.KH.notice("ok", c, v, w, i) == None{} : Maybe<&2, KH.KNote>}
+
+law kicad_notice_checking_none:
+  for +c: String
+  for +v: String
+  for +w: String
+  for +i: Bool
+  {KH.KH.notice("checking", c, v, w, i) == None{} : Maybe<&2, KH.KNote>}
+
+law kicad_notice_has_retry_missing:
+  for +c: String
+  for +v: String
+  for +w: String
+  for +i: Bool
+  {KH.KH.retry(KH.KH.notice("missing", c, v, w, i)) == True{} : Bool}
+
+law kicad_notice_install_iff_missing:
+  for +c: String
+  for +v: String
+  for +w: String
+  for +i: Bool
+  {KH.KH.has_install(KH.KH.notice("missing", c, v, w, i)) == i : Bool}
+
+law kicad_notice_has_retry_stock:
+  for +c: String
+  for +v: String
+  for +w: String
+  for +i: Bool
+  {KH.KH.retry(KH.KH.notice("stock", c, v, w, i)) == True{} : Bool}
+
+law kicad_notice_install_iff_stock:
+  for +c: String
+  for +v: String
+  for +w: String
+  for +i: Bool
+  {KH.KH.has_install(KH.KH.notice("stock", c, v, w, i)) == i : Bool}
+
+law kicad_notice_has_retry_old:
+  for +c: String
+  for +v: String
+  for +w: String
+  for +i: Bool
+  {KH.KH.retry(KH.KH.notice("old", c, v, w, i)) == True{} : Bool}
+
+law kicad_notice_install_iff_old:
+  for +c: String
+  for +v: String
+  for +w: String
+  for +i: Bool
+  {KH.KH.has_install(KH.KH.notice("old", c, v, w, i)) == i : Bool}
+
+law kicad_notice_has_retry_broken:
+  for +c: String
+  for +v: String
+  for +w: String
+  for +i: Bool
+  {KH.KH.retry(KH.KH.notice("broken", c, v, w, i)) == True{} : Bool}
+
+law kicad_notice_install_iff_broken:
+  for +c: String
+  for +v: String
+  for +w: String
+  for +i: Bool
+  {KH.KH.has_install(KH.KH.notice("broken", c, v, w, i)) == i : Bool}
+
+law prompt_kicad_ipc_only_ok_missing:
+  for +i: Bool
+  {String.contains(PM.Prompt.kicad.health("missing", "/c", "10.0.6", "rev", "failed", i), "api-server") == False{} : Bool}
+
+law prompt_kicad_ipc_only_ok_stock:
+  for +i: Bool
+  {String.contains(PM.Prompt.kicad.health("stock", "/c", "10.0.6", "rev", "failed", i), "api-server") == False{} : Bool}
+
+law prompt_kicad_ipc_only_ok_old:
+  for +i: Bool
+  {String.contains(PM.Prompt.kicad.health("old", "/c", "10.0.6", "rev", "failed", i), "api-server") == False{} : Bool}
+
+law prompt_kicad_ipc_only_ok_broken:
+  for +i: Bool
+  {String.contains(PM.Prompt.kicad.health("broken", "/c", "10.0.6", "rev", "failed", i), "api-server") == False{} : Bool}
+
+law prompt_kicad_ipc_only_ok_checking:
+  for +i: Bool
+  {String.contains(PM.Prompt.kicad.health("checking", "/c", "10.0.6", "rev", "failed", i), "api-server") == False{} : Bool}

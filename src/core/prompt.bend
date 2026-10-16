@@ -1,6 +1,7 @@
 import Base
 import ./codec.bend as C
 import ./model.bend as M
+import ./kihealth.bend as KH
 
 # A single optional line, shared by every provider and bot prompt.
 def Prompt.lang.k(k: Nat) -> String:
@@ -157,23 +158,40 @@ def Prompt.kicad.basics(+cli: String) -> String:
 def Prompt.kicad.fork(+cli: String, +version: String, +commit: String) -> String:
   " This is Backplane KiCad " ++ version ++ ", source commit " ++ commit ++ ". For programmatic PCB/schematic edits, start `\"" ++ cli ++ "\" api-server <project-or-file> --socket <unique-socket>` and stop your server when finished. This is NNG/protobuf IPC, not HTTP. Read the matching guide https://github.com/i2cjak/Backplane_KiCad/blob/" ++ commit ++ "/BACKPLANE_IPC.md and examples https://github.com/i2cjak/Backplane_KiCad/tree/" ++ commit ++ "/scripts; protocol definitions are under api/proto at that revision. A Python IPC client is not preinstalled: when needed, use BACKPLANE_PYTHON if set to create an isolated virtualenv, install protobuf==5.29.6, pynng==0.9.0 and grpcio-tools==1.71.0, then generate matching bindings with `python -m grpc_tools.protoc` following the examples. Headless IPC has no interactive canvas; ERC/DRC use the CLI above. Preserve any `<native-filename>.backplane.json` companion metadata when moving or saving project files."
 
-def Prompt.kicad.k(fork: Bool, ipc: Bool, +cli: String, +version: String, +commit: String) -> String:
-  match fork ipc:
-    case True{} True{}:
-      Prompt.kicad.fork(cli, version, commit)
-    case True{} False{}:
+def Prompt.kicad.k(+status: String, ipc: Bool, +cli: String, +version: String, +commit: String, +why: String) -> String:
+  match status ipc:
+    case "ok" True{}: Prompt.kicad.fork(cli, version, commit)
+    case "ok" False{}:
       " This is Backplane KiCad " ++ version ++ ". KiCad IPC is turned off in Backplane's settings: work through files and the CLI only, and do not start `api-server`."
-    case False{} _:
-      " No matching Backplane fork manifest was found; check available capabilities before using fork-specific API/IPC commands."
+    case "stock" _:
+      " This is KiCad " ++ version ++ ", not Backplane KiCad: use kicad-cli and the files; the KiCad IPC API server isn't available here."
+    case "old" _:
+      " This is Backplane KiCad " ++ version ++ ", older than Backplane needs (" ++ KH.KH.min_version() ++ "): use kicad-cli and the files; tell the user to update it from Settings."
+    case "broken" _:
+      " The KiCad CLI at " ++ cli ++ " doesn't run (" ++ KH.KH.why(why) ++ "). Don't use it; tell the user to fix it in Settings."
+    case "checking" _:
+      " KiCad is still being checked; use kicad-cli at the path above if it exists."
+    case _ _:
+      " KiCad isn't installed on this machine. Don't run kicad-cli; tell the user Backplane KiCad can be installed from Settings, and work on the files directly."
 
-# the KiCad runtime: the fork's IPC server is described only when this is
-# the fork and the kicad.ipc setting is on
+def Prompt.kicad.lead(+status: String, +cli: String) -> String:
+  match status:
+    case "missing": "The selected KiCad CLI path is `" ++ cli ++ "`."
+    case "broken": "The selected KiCad CLI path is `" ++ cli ++ "`."
+    case "checking": "The selected KiCad CLI path is `" ++ cli ++ "`."
+    case _: Prompt.kicad.basics(cli)
+
+def Prompt.kicad.health(+status: String, +cli: String, +version: String, +commit: String, +why: String, ipc: Bool) -> String:
+  "<kicad_runtime>" ++ Prompt.kicad.lead(status, cli) ++ Prompt.kicad.k(status, ipc, cli, version, commit, why) ++ "</kicad_runtime>"
+
+# Compatibility entry for earlier callers and the existing missing law.
+# The hub uses health, whose status comes from a completed runs check.
 def Prompt.kicad.at(none: Bool, +cli: String, fork: Bool, +version: String, +commit: String, ipc: Bool) -> String:
   match none:
     case True{}:
-      "KiCad is not installed on this machine (no kicad-cli was found). Work on the design files directly, and when a task needs ERC, DRC, exports or another KiCad tool, tell the user KiCad is missing and that they can install it from kicad.org/download or their package manager."
+      "KiCad is not installed on this machine. Work on the design files directly; install Backplane KiCad from Settings."
     case False{}:
-      Prompt.kicad.basics(cli) ++ Prompt.kicad.k(fork, ipc, cli, version, commit)
+      Prompt.kicad.basics(cli) ++ Prompt.kicad.k(Bool.pick(String, fork, "ok", "stock"), ipc, cli, version, commit, "")
 
 def Prompt.kicad(+cli: String, fork: Bool, +version: String, +commit: String, ipc: Bool) -> String:
   "<kicad_runtime>" ++ Prompt.kicad.at(String.is_empty(cli), cli, fork, version, commit, ipc) ++ "</kicad_runtime>"
