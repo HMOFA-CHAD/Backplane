@@ -3572,13 +3572,27 @@ def Set.lang.chips(vs: List<&2, String>, +ty: Ty, +u: U.Ui, +x: U32, +y: U32) ->
       Out.all([Lay.chip(ty, x, y, label, String.eq(U.Lang.choice(u), v), "lang", v),
         Set.lang.chips(t, ty, u, (x + Lay.button.w(ty, label) + 6 : U32), y)])
 
+# the chips' width with a 6 px gap after each (the caller drops the last)
+def Set.lang.w(vs: List<&2, String>, +ty: Ty, +u: U.Ui) -> U32:
+  match vs:
+    case Nil{}: 0
+    case +v <> t:
+      (Lay.button.w(ty, U.Lang.label(U.Lang.loc(u), v)) + 6 + Set.lang.w(t, ty, u) : U32)
+
+# right-aligned to the card's padding like Theme's; the agent row is an
+# On/Off pair like the notification rows
 def Set.lang(+ty: Ty, +u: U.Ui, +x: U32, +w: U32, +y: U32) -> Out:
+  +l = U.Lang.loc(u)
+  +cw = {U32.dim(Set.lang.w(U.Lang.offered(u), ty, u), 6) : U32}
+  +on = U.Lang.agent.on(u)
+  +ow = Lay.button.w(ty, MSG.T.settings.lang.on(l))
+  +fw = Lay.button.w(ty, MSG.T.settings.lang.off(l))
   Out.all([
-    Set.row.r(ty, MSG.T.settings.lang(U.Lang.loc(u)), "", x, y, w, 300),
-    Set.lang.chips(U.Lang.offered(u), ty, u, (x + w - 300 : U32), (y + 14 : U32)),
-    Set.row.r(ty, MSG.T.settings.agent.lang(U.Lang.loc(u)), "", x, (y + 52 : U32), w, 80),
-    Lay.chip(ty, (x + w - 70 : U32), (y + 66 : U32), Bool.pick(String, U.Lang.agent.on(u), MSG.T.settings.lang.on(U.Lang.loc(u)), MSG.T.settings.lang.off(U.Lang.loc(u))), U.Lang.agent.on(u),
-      "setting", "agent.lang=" ++ U.Lang.agent.value(Bool.not(U.Lang.agent.on(u)), u))])
+    Set.row.r(ty, MSG.T.settings.lang(l), MSG.T.settings.lang.note(l), x, y, w, (cw + 8 : U32)),
+    Set.lang.chips(U.Lang.offered(u), ty, u, (x + w - 16 - cw : U32), (y + 14 : U32)),
+    Set.row.r(ty, MSG.T.settings.agent.lang(l), MSG.T.settings.agent.lang.note(l), x, (y + 52 : U32), w, (ow + fw + 14 : U32)),
+    Lay.chip(ty, (x + w - 16 - fw - 6 - ow : U32), (y + 66 : U32), MSG.T.settings.lang.on(l), on, "setting", "agent.lang=" ++ U.Lang.agent.value(True{}, u)),
+    Lay.chip(ty, (x + w - 16 - fw : U32), (y + 66 : U32), MSG.T.settings.lang.off(l), Bool.not(on), "setting", "agent.lang=off")])
 
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +w = {U32.min((x1 - x0 - 64 : U32), 720) : U32}

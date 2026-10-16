@@ -263,7 +263,7 @@ def main() -> IO(Unit):
     C.Check.str("interpolation ja", T.T.thread.delete.ask(I.Ja{}, "alpha"), "「alpha」を削除？")
     C.Check.str("fallback en", F.T.common.save(I.En{}), "Save")
     C.Check.str("fallback ja", F.T.common.save(I.Ja{}), "Save")
-    C.Check.str("keys sorted", Test.strings(T.T.keys()), "common.cancel;common.delete;common.save;files.changed;settings.agent.lang;settings.lang;settings.lang.auto;settings.lang.en;settings.lang.ja;settings.lang.off;settings.lang.on;thread.count;thread.delete.ask;thread.new;turn.by;")
+    C.Check.str("keys sorted", Test.strings(T.T.keys()), "common.cancel;common.delete;common.save;files.changed;settings.agent.lang;settings.agent.lang.note;settings.lang;settings.lang.auto;settings.lang.en;settings.lang.ja;settings.lang.note;settings.lang.off;settings.lang.on;thread.count;thread.delete.ask;thread.new;turn.by;")
     C.Check.str("missing En", Test.strings(T.T.missing(I.En{})), "")
     C.Check.str("plain En common.cancel", Test.maybe(T.T.plain(I.En{}, "common.cancel")), "Some Cancel")
     C.Check.str("plain En common.delete", Test.maybe(T.T.plain(I.En{}, "common.delete")), "Some Delete")

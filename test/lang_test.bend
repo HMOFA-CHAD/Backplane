@@ -69,6 +69,11 @@ def lang.buttons(+u: U.Ui) -> String:
 def agent_state(v: String) -> M.State:
   M.State.apply(M.State.empty(), M.SettingSet{"agent.lang", v, 0n})
 
+def with_state(u: U.Ui, st: M.State) -> U.Ui:
+  match u:
+    case U.Ui{_, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+
 def assembled(v: String) -> String:
   HUB.Hub.prompt(REC.cfg(), agent_state(v), "t", "/tmp/lang-project", K.Files{"", "", "", ""}, "")
 
@@ -121,6 +126,9 @@ def main() -> IO(Unit):
     C.Check.str("OS action sends no RPC", sent(U.Ui.act(ja(), "lang-os", "en")), "")
     C.Check.str("window language chips", contains(hits(L.Set.lang(L.Ty.none(), ja(), 300, 720, 100)), "lang=ja;"), "yes")
     C.Check.str("window agent toggle", contains(hits(L.Set.lang(L.Ty.none(), ja(), 300, 720, 100)), "setting=agent.lang=ja;"), "yes")
+    C.Check.str("agent language follows", M.Setting.get(U.Ui.state(ui(U.Ui.act(U.Ui.scratch_set(U.Lang.apply(with_state(preview(), agent_state("en")), "en", "ja-JP"), "@lang.preview", "1"), "lang", "ja"))), "agent.lang", "?"), "ja")
+    C.Check.str("agent language off stays off", M.Setting.get(U.Ui.state(ui(U.Ui.act(U.Lang.apply(with_state(preview(), agent_state("off")), "en", "ja-JP"), "lang", "ja"))), "agent.lang", "?"), "off")
+    C.Check.str("window agent off chip", contains(hits(L.Set.lang(L.Ty.none(), ja(), 300, 720, 100)), "setting=agent.lang=off;"), "yes")
     C.Check.str("window gate", contains(hits(L.Set.lang(L.Ty.none(), U.Ui.init(0n), 300, 720, 100)), "lang=ja;"), "no")
     C.Check.str("web localized row", contains(dom.todo(100n, V.View.lang(ja()), ""), "言語"), "yes")
     C.Check.str("web offered chips", contains(dom.todo(100n, V.View.lang(ja()), ""), "日本語"), "yes")

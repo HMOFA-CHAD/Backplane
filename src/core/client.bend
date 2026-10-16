@@ -3047,10 +3047,21 @@ def Lang.agent.value(on: Bool, u: Ui) -> String:
     case True{}: I.I18n.tag(Lang.loc(u))
     case False{}: "off"
 
+def Lang.follow.add(a: Act, cs: List<&2, Cmd>) -> Act:
+  match a:
+    case Act{u, cs2}: Act{u, List.append(&2, Cmd, cs, cs2)}
+
+# "Agents reply in my language" follows this device's language: when the
+# person changes it while the setting is on, agent.lang moves to the new tag
+def Lang.follow(on: Bool, a: Act) -> Act:
+  match on a:
+    case True{} Act{+u, cs}: Lang.follow.add(Ui.setting(u, "agent.lang=" ++ Ui.scratch(u, "@lang.tag")), cs)
+    case False{} a: a
+
 def Lang.act(k: Nat, +u: Ui, +value: String) -> Act:
   match k:
     case 0n:
-      Act{Lang.apply(u, value, Ui.scratch(u, "@lang.os")), [Keep{"@lang", Lang.normalize(value)}]}
+      Lang.follow(Lang.agent.on(u), Act{Lang.apply(u, value, Ui.scratch(u, "@lang.os")), [Keep{"@lang", Lang.normalize(value)}]})
     case _:
       Act{Lang.apply(u, Lang.choice(u), value), Nil{}}
 
