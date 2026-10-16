@@ -5,11 +5,13 @@
 // directory (see README.md). Only protocol lines are written to stdout;
 // logs go to stderr.
 
-import { existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { chromium, type BrowserContext, type CDPSession, type Locator, type Page } from "playwright-core";
+import { chromium } from "./playwright.ts";
+import type { BrowserContext, CDPSession, Locator, Page } from "playwright-core";
+import { CefEngine, findCef, type CefOptions } from "./cef.ts";
 
 import { findChromium, installChrome, INSTALL_HINT } from "./chromium.ts";
 import { decodePng } from "./png.ts";
@@ -36,7 +38,7 @@ function argValue(name: string): string | null {
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
   process.stderr.write(
-    "usage: backplane-browser [--frames FILE] [--profile DIR] [--jpeg-dir DIR] [--jpeg-fps N] [--chromium PATH] [--headed]\n" +
+    "usage: backplane-browser [--frames FILE] [--profile DIR] [--jpeg-dir DIR] [--jpeg-fps N] [--chromium PATH] [--headed] [--engine chrome|cef] [--cef PATH] [--parent XID] [--display DISPLAY] [--cache DIR]\n" +
       "  newline-delimited JSON requests on stdin, replies and events on stdout.\n" +
       "  raw RGB frames of the shared page are written to FILE (atomically, via rename).\n" +
       "  --profile DIR keeps one Chrome profile (logins, cookies) across pages and runs.\n" +
@@ -153,6 +155,15 @@ function pushLog(o: Owner, entry: Json): void {
 // State
 // -----
 
+let engine = argValue("--engine") ?? "chrome";
+if (engine !== "chrome" && engine !== "cef") throw new Error("engine must be chrome or cef");
+let cefOptions: CefOptions = {
+  parent: Number(argValue("--parent") ?? 0), display: argValue("--display") ?? process.env.DISPLAY ?? "",
+  cef: argValue("--cef"), cache: argValue("--cache") ?? resolve(PROFILE ?? join(tmpdir(), `bp-browser-${process.pid}`, "profile"), "..", "cef-profile"),
+};
+let cef: CefEngine | null = null;
+let tabNumber = 0;
+const cefOwners = new Map<string, Owner>();
 let context: BrowserContext | null = null;
 let launching: Promise<BrowserContext> | null = null;
 let executable: string | null = null;
@@ -194,6 +205,7 @@ async function ensureContext(): Promise<BrowserContext> {
 }
 
 async function launch(): Promise<BrowserContext> {
+  if (engine === "cef") return launchCef();
   executable = CHROMIUM_ARG ?? findChromium();
   if (!executable) {
     try {
@@ -233,6 +245,108 @@ async function launch(): Promise<BrowserContext> {
   return ctx;
 }
 
+// CEF creates native children; CDP only adopts them.
+async function launchCef(): Promise<BrowserContext> {
+  if (!Number.isSafeInteger(cefOptions.parent) || cefOptions.parent <= 0 || !cefOptions.display)
+    throw new Error("cef needs parent (X window id) and display");
+  const host = new CefEngine(cefOptions);
+  cef = host;
+  host.on("host", (e) => {
+    if (e.event === "popup") {
+      const o = cefOwners.get(e.opener);
+      if (o) cefOwners.set(e.key, o);
+    }
+    if (e.event === "shield-click" || e.event === "focus") {
+      const o = cefOwners.get(e.key);
+      if (o) send({ event: e.event, page: o.name, ...(e.event === "shield-click" ? { x: e.x, y: e.y } : {}) });
+    }
+  });
+  host.on("exit", (code) => {
+    if (cef !== host) return;
+    cef = null;
+    context = null;
+    spare = [];
+    cefOwners.clear();
+    frames.cdp = null; frames.page = null;
+    for (const o of owners.values()) {
+      o.tabs = []; o.active = null; o.recording = false; clearShot(o);
+    }
+    send({ event: "closed" });
+    if (!host.stopping) send({ event: "engine", engine: "cef", ok: false, error: `CEF host exited (${code})` });
+  });
+  try {
+    const ctx = await host.start();
+    await ctx.exposeBinding("__bpRec", (source, ev) => onRecord(source, ev));
+    await ctx.addInitScript(RECORDER_SCRIPT);
+    executable = host.executable;
+    context = ctx;
+    send({ event: "engine", engine: "cef", ok: true });
+    return ctx;
+  } catch (e) {
+    await host.stop();
+    if (cef === host) cef = null;
+    send({ event: "engine", engine: "cef", ok: false, error: String(e instanceof Error ? e.message : e) });
+    throw e;
+  }
+}
+async function sizePage(o: Owner, p: Page): Promise<void> {
+  if (engine === "cef") {
+    await cef!.command("size", await cef!.key(p), `${o.viewport.width} ${o.viewport.height}`);
+    // X ConfigureNotify and the renderer's resize are asynchronous.
+    await p.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, o.viewport, { timeout: DEFAULT_TIMEOUT });
+  } else await p.setViewportSize(o.viewport);
+}
+async function closeTab(p: Page): Promise<void> {
+  if (engine === "cef") {
+    if (!p.isClosed()) {
+      const closed = p.waitForEvent("close");
+      await cef!.close(p); await closed;
+    }
+  } else await p.close();
+}
+async function stopEngine(): Promise<void> {
+  for (const o of owners.values()) { o.recording = false; await stopShots(o); clearShot(o); }
+  await stopScreencast();
+  if (cef) await cef.stop();
+  else await context?.close();
+  context = null; spare = [];
+  for (const o of owners.values()) { o.tabs = []; o.active = null; }
+}
+async function switchEngine(a: Json, name: string): Promise<Json> {
+  if (a.engine !== "chrome" && a.engine !== "cef") throw new Error("engine must be chrome or cef");
+  const next: CefOptions = { ...cefOptions };
+  if (a.engine === "cef") {
+    next.parent = a.parent ?? next.parent; next.display = a.display ?? next.display;
+    next.cef = a.cef ?? next.cef; next.cache = a.cache ?? next.cache;
+    if (!Number.isSafeInteger(next.parent) || next.parent <= 0 || typeof next.display !== "string" || !next.display)
+      throw new Error("cef needs parent (X window id) and display");
+    if (PROFILE && resolve(next.cache) === resolve(PROFILE)) throw new Error("CEF cache must differ from the Chrome profile");
+    // Resolve before shutting down the working engine.
+    if (!findCef(next.cef)) {
+      const { installCef } = await import("./cef.ts"); next.cef = await installCef();
+    }
+  }
+  if (a.engine === engine && context && (engine === "chrome" || JSON.stringify(next) === JSON.stringify(cefOptions))) return status(name);
+  const urls = [...owners.values()].filter((o) => o.active && !o.active.isClosed()).map((o) => ({ name: o.name, url: o.active!.url() }));
+  const oldContext = context, oldCef = cef;
+  // Keep the old engine alive until the replacement pages have been opened.
+  context = null; cef = null; spare = [];
+  for (const o of owners.values()) { o.recording = false; await stopShots(o); clearShot(o); o.tabs = []; o.active = null; }
+  await stopScreencast();
+  engine = a.engine; cefOptions = next;
+  try {
+    await ensureContext();
+    for (const u of urls) {
+      try { await (await ensurePage(u.name)).goto(u.url, { waitUntil: "load", timeout: DEFAULT_TIMEOUT }); }
+      catch (e) { log(`engine reopen ${u.name}: ${e}`); }
+    }
+  } finally {
+    if (oldCef) await oldCef.stop();
+    else await oldContext?.close();
+  }
+  return status(name);
+}
+
 // the page an owner drives, made on first use
 async function ensurePage(name: string): Promise<Page> {
   const o = ownerFor(name);
@@ -245,13 +359,19 @@ async function newTab(o: Owner): Promise<Page> {
   const ctx = await ensureContext();
   let p = spare.pop();
   while (p && p.isClosed()) p = spare.pop();
-  if (!p) p = await ctx.newPage();
+  if (engine === "cef") {
+    const key = `${safeOwner(o.name).slice(0, 48)}-${++tabNumber}`;
+    cefOwners.set(key, o);
+    p = await cef!.create(key);
+  } else if (!p) p = await ctx.newPage();
   await adopt(o, p);
   await activate(o, p);
   return p;
 }
 
 async function adopt(o: Owner, p: Page): Promise<void> {
+  if (ownerOf.has(p)) return;
+  if (engine === "cef") cefOwners.set(await cef!.key(p), o);
   ownerOf.set(p, o);
   o.tabs.push(p);
   p.setDefaultTimeout(DEFAULT_TIMEOUT);
@@ -277,7 +397,7 @@ async function adopt(o: Owner, p: Page): Promise<void> {
     if (next) void activate(o, next).catch((e) => log(`tab: ${e}`));
     else clearShot(o);
   });
-  await p.setViewportSize(o.viewport).catch(() => {});
+  await sizePage(o, p);
   // a tab adopted while recording (a popup) was told "no" on its first load
   if (o.recording) await recorderSet(o, true);
 }
@@ -352,8 +472,11 @@ function tabOf(name: string): Page | null {
 async function status(name: string): Promise<Json> {
   const o = ownerFor(name);
   const p = tabOf(name);
+  if (engine === "cef" && p) o.viewport = await p.evaluate(() => ({ width: innerWidth, height: innerHeight }));
   return {
     version: VERSION,
+    engine,
+    ...(cef ? { port: cef.port, hostPid: cef.proc?.pid, cache: cef.options.cache } : {}),
     page: name,
     open: p !== null,
     chromium: executable ?? CHROMIUM_ARG ?? findChromium(),
@@ -628,7 +751,7 @@ async function closeOwner(name: string): Promise<void> {
   await stopShots(o);
   clearShot(o);
   if (name === "") await stopScreencast();
-  for (const t of o.tabs) await t.close().catch(() => {});
+  for (const t of [...o.tabs]) await closeTab(t).catch(() => {});
   const path = shotPath(name);
   if (path) rmSync(path, { force: true });
 }
@@ -693,11 +816,35 @@ function quick(name: string): void {
 
 // every handler gets the request's arguments and the owner it acts for
 const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
+  async engine(a, name) { return switchEngine(a, name); },
+  async show(a, name) {
+    if (engine !== "cef") throw new Error("show needs the cef engine");
+    if (![a.x, a.y, a.w, a.h].every(Number.isInteger) || a.w < 1 || a.h < 1 || a.w > 4096 || a.h > 4096)
+      throw new Error("show needs integer x,y,w,h with w,h in 1..4096");
+    const p = await ensurePage(name);
+    await cef!.command("show", await cef!.key(p), `${a.x} ${a.y} ${a.w} ${a.h}`);
+    const o = ownerFor(name); o.viewport = { width: a.w, height: a.h };
+    await p.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, o.viewport);
+    return {};
+  },
+  async hide() {
+    if (engine !== "cef") throw new Error("hide needs the cef engine");
+    await ensureContext(); await cef!.command("hide"); return {};
+  },
+  async shield(a) {
+    if (engine !== "cef") throw new Error("shield needs the cef engine");
+    if (typeof a.on !== "boolean") throw new Error("shield needs on (bool)");
+    await ensureContext(); await cef!.command("shield", "", a.on ? "1" : "0"); return {};
+  },
+  async focus(_a, name) {
+    if (engine !== "cef") throw new Error("focus needs the cef engine");
+    const p = await ensurePage(name); await cef!.command("focus", await cef!.key(p)); return {};
+  },
   async open(a, name) {
     const o = ownerFor(name);
     if (a.width && a.height) o.viewport = { width: Math.round(a.width), height: Math.round(a.height) };
     const p = await ensurePage(name);
-    await p.setViewportSize(o.viewport);
+    await sizePage(o, p);
     if (a.url) await p.goto(normalizeUrl(a.url), { waitUntil: "load", timeout: timeoutOf(a) });
     await shotNow(name);
     return status(name);
@@ -728,7 +875,7 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
     const o = ownerFor(name);
     o.viewport = { width, height };
     const p = await ensurePage(name);
-    await p.setViewportSize(o.viewport);
+    await sizePage(o, p);
     if (name === "" && frames.on) {
       await startScreencast();
       await captureNow(true);
@@ -883,6 +1030,15 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
     const timeout = timeoutOf(a, 30_000);
     const t = targetOf(p, a);
     if (!t && !a.url) throw new Error("download needs a target to click or a url");
+    if (engine === "cef") {
+      const d = await cef!.download(p, async () => {
+        if (t) await t.click({ timeout });
+        else void p.goto(normalizeUrl(a.url), { timeout }).catch(() => {});
+      }, timeout);
+      const path = freeName(dir, d.suggestedFilename);
+      copyFileSync(d.file, path); rmSync(d.file, { force: true });
+      return { path, url: d.url, suggestedFilename: d.suggestedFilename, bytes: statSync(path).size };
+    }
     const waiting = p.waitForEvent("download", { timeout });
     if (t) await t.click({ timeout });
     // navigating to a file fails with "Download is starting"; the event is what counts
@@ -905,6 +1061,7 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
     return { path, bytes: statSync(path).size };
   },
   async pdf(a, name) {
+    if (engine === "cef") throw new Error("pdf needs the headless engine");
     const p = await ensurePage(name);
     const path = needPath(a, "pdf");
     mkdirSync(join(path, ".."), { recursive: true });
@@ -921,10 +1078,7 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
     const o = ownerFor(name);
     await ensurePage(name);
     if (a.new !== undefined && a.new !== false) {
-      const ctx = await ensureContext();
-      const p = await ctx.newPage();
-      await adopt(o, p);
-      await activate(o, p);
+      const p = await newTab(o);
       const url = typeof a.new === "string" ? a.new : a.url;
       if (url) await p.goto(normalizeUrl(url), { waitUntil: "load", timeout: timeoutOf(a) });
     } else if (a.select !== undefined) {
@@ -934,7 +1088,7 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
     } else if (a.close !== undefined) {
       const p = o.tabs[Number(a.close)];
       if (!p) throw new Error(`no tab ${a.close}`);
-      await p.close();
+      await closeTab(p);
       if (!o.tabs.length) await ensurePage(name);
     }
     return tabList(o);
@@ -1058,11 +1212,7 @@ async function shutdown(exit: boolean): Promise<void> {
   if (frames.timer) clearInterval(frames.timer);
   frames.on = false;
   for (const o of owners.values()) clearShot(o);
-  const ctx = context;
-  context = null;
-  try {
-    await ctx?.close();
-  } catch {}
+  try { await stopEngine(); } catch {}
   if (!FRAMES_ARG) rmSync(FRAMES_PATH, { force: true });
   rmSync(FRAMES_PATH + ".tmp", { force: true });
   if (exit) process.exit(0);

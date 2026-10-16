@@ -1,13 +1,20 @@
 #!/bin/sh
 # Build tools/cef (backplane-cef) against a prebuilt CEF distribution.
-#   scripts/build-cef.sh [OUT_DIR]     (default build/cef)
+#   scripts/build-cef.sh [OUT_DIR] [--package OUT.tar.zst]     (default build/cef)
 # The distribution is fetched once into $XDG_CACHE_HOME/backplane/cef/<ver>
 # and checked against its published sha1. BACKPLANE_JOBS (2) caps ninja.
 set -eu
 CEF_VER='154.0.34+g14c5a08+chromium-154.0.8037.98'
 CEF_SHA1=15c91ad767097217b2e82ba8b933fe30b134be69
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-OUT=${1:-$ROOT/build/cef}
+OUT=$ROOT/build/cef
+PACKAGE=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --package) PACKAGE=${2:?--package needs OUT.tar.zst}; shift 2 ;;
+    *) OUT=$1; shift ;;
+  esac
+done
 CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/backplane/cef
 CEF_ROOT=$CACHE/${CEF_VER%%+*}
 if [ ! -f "$CEF_ROOT/include/cef_version.h" ]; then
@@ -25,6 +32,23 @@ cmake -S "$ROOT/tools/cef" -B "$OUT" -G Ninja -DCMAKE_BUILD_TYPE=Release -DPROJE
   -DCEF_ROOT="$CEF_ROOT" -DCMAKE_CXX_COMPILER="${CXX:-clang++}" -DCMAKE_C_COMPILER="${CC:-clang}" >/dev/null
 nice -n 19 ninja -C "$OUT" -j "${BACKPLANE_JOBS:-2}" backplane-cef
 # the distribution ships libcef.so with debug info (1.4 GB); stripped ~0.25 GB
-strip --strip-unneeded "$OUT/Release/libcef.so"
+strip --strip-unneeded "$OUT/Release/libcef.so" "$OUT/Release/backplane-cef"
 echo "$OUT/Release/backplane-cef"
 
+
+if [ -n "$PACKAGE" ]; then
+  mkdir -p "$(dirname "$PACKAGE")"
+  STAGE=$(mktemp -d)
+  trap 'rm -rf "$STAGE"' EXIT HUP INT TERM
+  RUNTIME=$OUT/Release
+  for f in backplane-cef libcef.so icudtl.dat v8_context_snapshot.bin libvk_swiftshader.so vk_swiftshader_icd.json libvulkan.so.1; do
+    cp "$RUNTIME/$f" "$STAGE/$f"
+  done
+  cp "$RUNTIME/"*.pak "$STAGE/"
+  mkdir -p "$STAGE/locales"
+  cp "$RUNTIME/locales/en-US.pak" "$STAGE/locales/"
+  cp "$CEF_ROOT/LICENSE.txt" "$STAGE/"
+  tar -I 'zstd -T2 -3' -cf "$PACKAGE" -C "$STAGE" .
+  (cd "$(dirname "$PACKAGE")" && sha256sum "$(basename "$PACKAGE")") > "$PACKAGE.sha256"
+  wc -c "$PACKAGE"
+fi

@@ -1,27 +1,13 @@
-// backplane-cef: a CEF browser drawn as a native child of an X11 window.
-//
-//   backplane-cef [--parent XID] [--url URL] [--size WxH] [--at XxY]
-//                 [--cache DIR] [--port N]
-//
-// --parent embeds the browser in that window (Backplane's); without it the
-// host makes its own top-level test window. --port opens Chromium's remote
-// debugging endpoint (CDP) on 127.0.0.1, so automation (Playwright's
-// connectOverCDP) drives the very page the person sees. --cache is the root
-// cache (profile) directory; it must not be a Chrome profile in use.
-//
-// stdout: one JSON object per line ({"event": ...}); stdin: one command a
-// line (see README.md). Diagnostics go to stderr.
-
+// Native X11 CEF children controlled over stdin. See README.md for the protocol.
 #include <X11/Xlib.h>
-#include <X11/Xutil.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
-#include <unistd.h>
-
 #include <atomic>
 #include <iostream>
+#include <map>
+#include <set>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -29,254 +15,302 @@
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
 #include "include/cef_command_line.h"
+#include "include/cef_parser.h"
+#include "include/cef_devtools_message_observer.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "include/base/cef_callback.h"
 
 namespace {
-
-// wall-clock ms, so a bench can line our events up with its own clock
 double now_ms() {
-  struct timespec ts;
-  clock_gettime(CLOCK_REALTIME, &ts);
+  timespec ts; clock_gettime(CLOCK_REALTIME, &ts);
   return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
 }
-
-std::string json_str(const std::string& s) {
+std::string js(const std::string& s) {
   std::string o = "\"";
   for (unsigned char c : s) {
     if (c == '"' || c == '\\') { o += '\\'; o += c; }
-    else if (c < 0x20) { char b[8]; snprintf(b, sizeof b, "\\u%04x", c); o += b; }
+    else if (c < 32) { char b[8]; snprintf(b, sizeof b, "\\u%04x", c); o += b; }
     else o += c;
   }
   return o + "\"";
 }
-
 void emit(const std::string& body) {
-  // one line, flushed: the reader is a pipe
-  printf("{%s,\"t\":%.1f}\n", body.c_str(), now_ms());
-  fflush(stdout);
+  printf("{%s,\"t\":%.1f}\n", body.c_str(), now_ms()); fflush(stdout);
 }
-
 struct Opts {
   unsigned long parent = 0;
-  std::string url = "about:blank";
-  int w = 800, h = 600, x = 0, y = 0;
-  std::string cache;
-  int port = 0;
-};
+  std::string url, cache;
+  int w = 1280, h = 800, x = 0, y = 0, port = 0;
+} opts;
+Display* dpy = nullptr;
+Window parent = 0, shield = 0;
+bool shield_on = false;
+std::string shown;
+std::atomic<bool> quitting{false};
+struct Entry { CefRefPtr<CefBrowser> browser; int x = 0, y = 0, w = 1280, h = 800; };
+std::map<std::string, Entry> pages;
+std::set<std::string> reserved;
+unsigned long popup_n = 0;
+int pending_browsers = 0;
+std::map<std::pair<std::string, int>, std::string> pending_popups;
 
-Opts g_opts;
-Display* g_dpy = nullptr;     // our own connection, for the test window and moves
-Window g_parent = 0;
-CefRefPtr<CefBrowser> g_browser;
-std::atomic<bool> g_quitting{false};
+std::string fields(const std::string& key) { return ",\"key\":" + js(key); }
+void shield_place() {
+  auto it = pages.find(shown);
+  if (!shield_on || it == pages.end()) XUnmapWindow(dpy, shield);
+  else {
+    auto& e = it->second;
+    XMoveResizeWindow(dpy, shield, e.x, e.y, e.w, e.h);
+    XMapRaised(dpy, shield);
+  }
+  XFlush(dpy);
+}
+void hide_all() {
+  for (auto& [k, e] : pages) XUnmapWindow(dpy, e.browser->GetHost()->GetWindowHandle());
+  shown.clear(); shield_place();
+}
+void focus(CefRefPtr<CefBrowser> b, const std::string& key) {
+  if (shown != key) return; // XSetInputFocus requires a viewable window.
+  XSetInputFocus(dpy, b->GetHost()->GetWindowHandle(), RevertToParent, CurrentTime);
+  XFlush(dpy);
+}
 
-class Client : public CefClient,
-               public CefLifeSpanHandler,
-               public CefLoadHandler,
-               public CefDisplayHandler {
+class Client : public CefClient, public CefLifeSpanHandler, public CefLoadHandler,
+               public CefDisplayHandler, public CefFocusHandler, public CefRequestHandler,
+               public CefDevToolsMessageObserver {
  public:
+  std::string key, opener, popup_url, why = "page", command;
+  CefRefPtr<CefRegistration> observer;
+  Client(std::string k, std::string o = "", std::string u = "", std::string c = "")
+      : key(k), opener(o), popup_url(u), command(c) {}
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
-
-  // popups (window.open, target=_blank) open in the same child: the person
-  // and the agent keep one page, never a stray top-level window
-  bool OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int popup_id,
-                     const CefString& target_url, const CefString& target_frame_name,
-                     WindowOpenDisposition target_disposition, bool user_gesture,
-                     const CefPopupFeatures& popupFeatures, CefWindowInfo& windowInfo,
-                     CefRefPtr<CefClient>& client, CefBrowserSettings& settings,
-                     CefRefPtr<CefDictionaryValue>& extra_info, bool* no_javascript_access) override {
-    emit("\"event\":\"popup\",\"url\":" + json_str(target_url.ToString()));
-    if (!target_url.empty()) frame->GetBrowser()->GetMainFrame()->LoadURL(target_url);
-    return true;
+  CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
+  CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+  bool OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int popup_id,
+      const CefString& url, const CefString&, WindowOpenDisposition, bool,
+      const CefPopupFeatures&, CefWindowInfo& wi, CefRefPtr<CefClient>& client,
+      CefBrowserSettings&, CefRefPtr<CefDictionaryValue>&, bool*) override {
+    if (quitting) return true;
+    std::string k = key + "~" + std::to_string(++popup_n);
+    reserved.insert(k); ++pending_browsers;
+    pending_popups[{key, popup_id}] = k;
+    wi.SetAsChild(parent, CefRect(0, 0, opts.w, opts.h));
+    wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+    client = new Client(k, key, url.ToString());
+    return false;
   }
-
-  void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
+  void OnBeforePopupAborted(CefRefPtr<CefBrowser>, int id) override {
+    auto it = pending_popups.find({key, id});
+    if (it != pending_popups.end()) {
+      reserved.erase(it->second); pending_popups.erase(it); --pending_browsers;
+      if (quitting && pages.empty() && pending_browsers == 0) CefQuitMessageLoop();
+    }
+  }
+  void OnAfterCreated(CefRefPtr<CefBrowser> b) override {
     CEF_REQUIRE_UI_THREAD();
-    g_browser = browser;
-    char b[160];
-    snprintf(b, sizeof b, "\"event\":\"ready\",\"xid\":%lu,\"parent\":%lu,\"port\":%d",
-             (unsigned long)browser->GetHost()->GetWindowHandle(), (unsigned long)g_parent, g_opts.port);
-    emit(b);
+    --pending_browsers;
+    for (auto it = pending_popups.begin(); it != pending_popups.end();) {
+      if (it->second == key) it = pending_popups.erase(it); else ++it;
+    }
+    pages[key] = {b, 0, 0, opts.w, opts.h};
+    XUnmapWindow(dpy, b->GetHost()->GetWindowHandle()); XFlush(dpy);
+    observer = b->GetHost()->AddDevToolsMessageObserver(this);
+    b->GetHost()->ExecuteDevToolsMethod(1, "Target.getTargetInfo", nullptr);
+    if (quitting) b->GetHost()->CloseBrowser(true);
   }
-
-  void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
-    CEF_REQUIRE_UI_THREAD();
-    g_browser = nullptr;
-    emit("\"event\":\"closed\"");
-    CefQuitMessageLoop();
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser> b, int id, bool success,
+                             const void* data, size_t len) override {
+    if (id != 1) return;
+    auto v = CefParseJSON(std::string(static_cast<const char*>(data), len), JSON_PARSER_RFC);
+    if (!success || !v || v->GetType() != VTYPE_DICTIONARY) {
+      emit("\"event\":\"error\",\"cmd\":\"create\"" + fields(key) + ",\"error\":\"no CDP target id\"");
+      return;
+    }
+    auto ti = v->GetDictionary()->GetDictionary("targetInfo");
+    if (!ti) return;
+    std::string extra = ",\"xid\":" + std::to_string(b->GetHost()->GetWindowHandle()) +
+                        ",\"target\":" + js(ti->GetString("targetId").ToString());
+    if (opener.empty()) {
+      emit("\"event\":\"created\",\"cmd\":" + js(command) + fields(key) + extra);
+    } else {
+      emit("\"event\":\"popup\"" + fields(key) + ",\"opener\":" + js(opener) + ",\"url\":" + js(popup_url) + extra);
+    }
   }
-
-  void OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int code) override {
-    if (!frame->IsMain()) return;
-    emit("\"event\":\"load\",\"url\":" + json_str(frame->GetURL().ToString()) + ",\"code\":" + std::to_string(code));
+  void OnBeforeClose(CefRefPtr<CefBrowser>) override {
+    observer = nullptr;
+    pages.erase(key); reserved.erase(key);
+    if (shown == key) { shown.clear(); shield_place(); }
+    emit("\"event\":\"closed\"" + fields(key) + ",\"why\":" + js(why) +
+         (why == "command" ? ",\"cmd\":\"close\"" : ""));
+    if (quitting && pages.empty() && pending_browsers == 0) CefQuitMessageLoop();
   }
-
-  void OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, const CefString& url) override {
-    if (frame->IsMain()) emit("\"event\":\"navigated\",\"url\":" + json_str(url.ToString()));
+  void OnLoadEnd(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> f, int code) override {
+    if (f->IsMain()) emit("\"event\":\"load\"" + fields(key) + ",\"url\":" + js(f->GetURL().ToString()) + ",\"code\":" + std::to_string(code));
   }
-
-  void OnTitleChange(CefRefPtr<CefBrowser> browser, const CefString& title) override {
-    emit("\"event\":\"title\",\"title\":" + json_str(title.ToString()));
+  void OnAddressChange(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> f, const CefString& url) override {
+    if (f->IsMain()) emit("\"event\":\"navigated\"" + fields(key) + ",\"url\":" + js(url.ToString()));
   }
-
+  void OnTitleChange(CefRefPtr<CefBrowser>, const CefString& title) override {
+    emit("\"event\":\"title\"" + fields(key) + ",\"title\":" + js(title.ToString()));
+  }
+  bool OnSetFocus(CefRefPtr<CefBrowser> b, FocusSource) override {
+    focus(b, key); return false;
+  }
+  void OnGotFocus(CefRefPtr<CefBrowser> b) override {
+    focus(b, key); emit("\"event\":\"focus\"" + fields(key));
+  }
+  void OnRenderProcessTerminated(CefRefPtr<CefBrowser>, TerminationStatus status, int, const CefString&) override {
+    why = "other";
+    emit("\"event\":\"crashed\"" + fields(key) + ",\"status\":" + std::to_string(status));
+  }
  private:
   IMPLEMENT_REFCOUNTING(Client);
 };
 
+void create(const std::string& key, const std::string& url, const std::string& cmd) {
+  reserved.insert(key); ++pending_browsers;
+  CefWindowInfo wi;
+  wi.SetAsChild(parent, CefRect(0, 0, opts.w, opts.h));
+  wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+  CefBrowserSettings bs;
+  if (!CefBrowserHost::CreateBrowser(wi, new Client(key, "", "", cmd), url, bs, nullptr, nullptr)) {
+    reserved.erase(key); --pending_browsers;
+    emit("\"event\":\"error\",\"cmd\":" + js(cmd) + fields(key) + ",\"error\":\"create failed\"");
+  }
+}
+
+bool valid_key(const std::string& k) {
+  return !k.empty() && k.size() <= 64 && k.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") == std::string::npos;
+}
+void run_command(std::string line) {
+  CEF_REQUIRE_UI_THREAD();
+  std::istringstream s(line);
+  std::string cmd, key, tail; s >> cmd;
+  auto error = [&]() { emit("\"event\":\"error\",\"cmd\":" + js(cmd) + fields(key) + ",\"error\":\"unknown or malformed command\""); };
+  auto end = [&]() { s >> std::ws; return s.eof(); };
+  if (cmd == "quit" && end()) {
+    if (quitting.exchange(true)) return;
+    for (auto& [k, e] : pages) e.browser->GetHost()->CloseBrowser(true);
+    if (pages.empty() && pending_browsers == 0) CefQuitMessageLoop();
+    return;
+  }
+  if (quitting) { error(); return; }
+  if (cmd == "create") {
+    s >> key >> std::ws; std::getline(s, tail);
+    if (!valid_key(key) || tail.empty() || reserved.count(key)) { error(); return; }
+    create(key, tail, cmd); return;
+  }
+  if (cmd == "hide" && end()) hide_all();
+  else if (cmd == "shield") {
+    int on = -1;
+    if (!(s >> on) || (on != 0 && on != 1) || !end()) { error(); return; }
+    shield_on = on; shield_place();
+  } else {
+    s >> key;
+    auto it = pages.find(key);
+    if (it == pages.end()) { error(); return; }
+    auto& e = it->second;
+    Window win = e.browser->GetHost()->GetWindowHandle();
+    if (cmd == "show" || cmd == "size") {
+      int x = e.x, y = e.y, w, h;
+      if (cmd == "show" && !(s >> x >> y)) { error(); return; }
+      if (!(s >> w >> h) || w <= 0 || h <= 0 || w > 16384 || h > 16384 || !end()) { error(); return; }
+      if (cmd == "show") hide_all();
+      e.x = x; e.y = y; e.w = w; e.h = h;
+      XMoveResizeWindow(dpy, win, x, y, w, h);
+      e.browser->GetHost()->WasResized();
+      if (cmd == "show") { shown = key; XMapRaised(dpy, win); }
+      shield_place();
+    } else if (cmd == "focus" && end()) {
+      e.browser->GetHost()->SetFocus(true); focus(e.browser, key); shield_place();
+    } else if (cmd == "close" && end()) {
+      auto c = static_cast<Client*>(e.browser->GetHost()->GetClient().get());
+      c->why = "command"; e.browser->GetHost()->CloseBrowser(true); return;
+    } else { error(); return; }
+  }
+  XSync(dpy, False);
+  emit("\"event\":\"ok\",\"cmd\":" + js(cmd) + fields(key));
+}
+void stdin_loop() {
+  std::string line;
+  while (std::getline(std::cin, line)) CefPostTask(TID_UI, base::BindOnce(&run_command, line));
+  CefPostTask(TID_UI, base::BindOnce(&run_command, std::string("quit")));
+}
+void shield_event(int x, int y) {
+  if (!shown.empty() && shield_on) emit("\"event\":\"shield-click\"" + fields(shown) + ",\"x\":" + std::to_string(x) + ",\"y\":" + std::to_string(y));
+}
+void x_loop() {
+  while (!quitting) {
+    XEvent ev; XNextEvent(dpy, &ev);
+    if (ev.type == ButtonPress && ev.xbutton.window == shield)
+      CefPostTask(TID_UI, base::BindOnce(&shield_event, ev.xbutton.x, ev.xbutton.y));
+  }
+}
 class App : public CefApp, public CefBrowserProcessHandler {
  public:
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
-
-  void OnBeforeCommandLineProcessing(const CefString& type, CefRefPtr<CefCommandLine> cl) override {
-    // the hub's Chrome profile lock and keyring stay out of it
-    cl->AppendSwitchWithValue("password-store", "basic");
-    cl->AppendSwitch("use-mock-keychain");
+  void OnBeforeCommandLineProcessing(const CefString&, CefRefPtr<CefCommandLine> cl) override {
+    cl->AppendSwitchWithValue("password-store", "basic"); cl->AppendSwitch("use-mock-keychain");
+    cl->AppendSwitchWithValue("force-device-scale-factor", "1");
     if (getenv("BACKPLANE_CEF_NO_GPU")) cl->AppendSwitch("disable-gpu");
   }
-
   void OnContextInitialized() override {
-    CEF_REQUIRE_UI_THREAD();
-    CefWindowInfo wi;
-    wi.SetAsChild((CefWindowHandle)g_parent, CefRect(g_opts.x, g_opts.y, g_opts.w, g_opts.h));
-    // Alloy: a plain content area with no Chrome UI of its own, the shape a
-    // panel inside another app wants
-    wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
-    CefBrowserSettings bs;
-    CefBrowserHost::CreateBrowser(wi, new Client, g_opts.url, bs, nullptr, nullptr);
+    if (!opts.url.empty()) create("main", opts.url, "create");
   }
-
  private:
   IMPLEMENT_REFCOUNTING(App);
 };
-
-// Commands from stdin, run on the UI thread
-// -----------------------------------------
-
-void place(int x, int y, int w, int h) {
-  if (!g_browser) return;
-  Window child = (Window)g_browser->GetHost()->GetWindowHandle();
-  XMoveResizeWindow(g_dpy, child, x, y, w > 0 ? w : 1, h > 0 ? h : 1);
-  XFlush(g_dpy);
-  g_browser->GetHost()->WasResized();
-}
-
-void run_command(std::string line) {
-  CEF_REQUIRE_UI_THREAD();
-  char word[32] = {0};
-  sscanf(line.c_str(), "%31s", word);
-  std::string cmd = word;
-  std::string rest = line.size() > cmd.size() ? line.substr(cmd.size() + 1) : "";
-  if (cmd == "quit") {
-    g_quitting = true;
-    if (g_browser) g_browser->GetHost()->CloseBrowser(true);
-    else CefQuitMessageLoop();
-    return;
-  }
-  if (!g_browser) { emit("\"event\":\"error\",\"error\":\"no browser yet\""); return; }
-  if (cmd == "url") {
-    g_browser->GetMainFrame()->LoadURL(rest);
-  } else if (cmd == "place") {
-    int x, y, w, h;
-    if (sscanf(rest.c_str(), "%d %d %d %d", &x, &y, &w, &h) == 4) place(x, y, w, h);
-  } else if (cmd == "show" || cmd == "hide") {
-    Window child = (Window)g_browser->GetHost()->GetWindowHandle();
-    if (cmd == "show") XMapWindow(g_dpy, child); else XUnmapWindow(g_dpy, child);
-    XFlush(g_dpy);
-    g_browser->GetHost()->WasHidden(cmd == "hide");
-  } else if (cmd == "focus") {
-    g_browser->GetHost()->SetFocus(rest != "0");
-  } else if (cmd == "back") {
-    g_browser->GoBack();
-  } else if (cmd == "forward") {
-    g_browser->GoForward();
-  } else if (cmd == "reload") {
-    g_browser->Reload();
-  } else {
-    emit("\"event\":\"error\",\"error\":" + json_str("unknown command: " + cmd));
-    return;
-  }
-  emit("\"event\":\"ok\",\"cmd\":" + json_str(cmd));
-}
-
-void stdin_loop() {
-  std::string line;
-  while (std::getline(std::cin, line)) {
-    if (line.empty()) continue;
-    CefPostTask(TID_UI, base::BindOnce(&run_command, line));
-  }
-  // EOF: the owner went away, so do we
-  if (!g_quitting) CefPostTask(TID_UI, base::BindOnce(&run_command, std::string("quit")));
-}
-
 int x_error(Display*, XErrorEvent* e) {
-  fprintf(stderr, "backplane-cef: X error %d (request %d)\n", e->error_code, e->request_code);
-  return 0;
+  fprintf(stderr, "backplane-cef: X error %d (request %d)\n", e->error_code, e->request_code); return 0;
 }
-
 void parse(int argc, char** argv) {
   for (int i = 1; i + 1 < argc; i++) {
-    std::string a = argv[i];
-    const char* v = argv[i + 1];
-    if (a == "--parent") g_opts.parent = strtoul(v, nullptr, 0), i++;
-    else if (a == "--url") g_opts.url = v, i++;
-    else if (a == "--size") sscanf(v, "%dx%d", &g_opts.w, &g_opts.h), i++;
-    else if (a == "--at") sscanf(v, "%dx%d", &g_opts.x, &g_opts.y), i++;
-    else if (a == "--cache") g_opts.cache = v, i++;
-    else if (a == "--port") g_opts.port = atoi(v), i++;
+    std::string a = argv[i]; const char* v = argv[i+1];
+    if (a == "--parent") opts.parent = strtoul(v, nullptr, 0), i++;
+    else if (a == "--url") opts.url = v, i++;
+    else if (a == "--size") sscanf(v, "%dx%d", &opts.w, &opts.h), i++;
+    else if (a == "--at") sscanf(v, "%dx%d", &opts.x, &opts.y), i++;
+    else if (a == "--cache") opts.cache = v, i++;
+    else if (a == "--port") opts.port = atoi(v), i++;
   }
 }
+} // namespace
 
-}  // namespace
-
-// The zygote changes the stack canary in each child it forks
-// (--change-stack-guard-on-fork), so a frame live across the fork must not
-// check it: Chromium marks its own entry point the same way.
+// The zygote changes the stack canary after fork: no protected frame across it.
 __attribute__((no_stack_protector)) int main(int argc, char** argv) {
   double t0 = now_ms();
   CefMainArgs args(argc, argv);
   CefRefPtr<App> app = new App;
-  // the renderer, GPU and utility processes are this same binary
   int code = CefExecuteProcess(args, app, nullptr);
   if (code >= 0) return code;
-
   parse(argc, argv);
-  XInitThreads();
-  g_dpy = XOpenDisplay(nullptr);
-  if (!g_dpy) { fprintf(stderr, "backplane-cef: no X display\n"); return 1; }
+  XInitThreads(); dpy = XOpenDisplay(nullptr);
+  if (!dpy) { fprintf(stderr, "backplane-cef: no X display\n"); return 1; }
   XSetErrorHandler(x_error);
-  if (g_opts.parent) {
-    g_parent = (Window)g_opts.parent;
-  } else {
-    int s = DefaultScreen(g_dpy);
-    g_parent = XCreateSimpleWindow(g_dpy, RootWindow(g_dpy, s), 0, 0, g_opts.w + g_opts.x,
-                                   g_opts.h + g_opts.y, 0, 0, WhitePixel(g_dpy, s));
-    XStoreName(g_dpy, g_parent, "backplane-cef test");
-    XMapWindow(g_dpy, g_parent);
-    XSync(g_dpy, False);
+  parent = opts.parent;
+  if (!parent) {
+    parent = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy), 0, 0, opts.w, opts.h, 0, 0, 0xffffff);
+    XStoreName(dpy, parent, "backplane-cef test"); XMapWindow(dpy, parent);
   }
-
+  XSetWindowAttributes attr{};
+  attr.event_mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
+  shield = XCreateWindow(dpy, parent, 0, 0, 1, 1, 0, 0, InputOnly, CopyFromParent, CWEventMask, &attr);
+  XSync(dpy, False);
   CefSettings st;
-  st.no_sandbox = true;
-  st.remote_debugging_port = g_opts.port;
-  st.log_severity = LOGSEVERITY_WARNING;
-  if (!g_opts.cache.empty()) {
-    CefString(&st.root_cache_path) = g_opts.cache;
-    CefString(&st.cache_path) = g_opts.cache + "/Default";
+  st.no_sandbox = true; st.remote_debugging_port = opts.port; st.log_severity = LOGSEVERITY_WARNING;
+  if (!opts.cache.empty()) {
+    CefString(&st.root_cache_path) = opts.cache;
+    CefString(&st.cache_path) = opts.cache + "/Default";
   }
-  if (!CefInitialize(args, st, app, nullptr)) {
-    fprintf(stderr, "backplane-cef: CefInitialize failed (code %d)\n", CefGetExitCode());
-    return 1;
-  }
-  char b[64];
-  snprintf(b, sizeof b, "\"event\":\"init\",\"ms\":%.1f", now_ms() - t0);
-  emit(b);
-  std::thread(stdin_loop).detach();
+  if (!CefInitialize(args, st, app, nullptr)) return 1;
+  emit("\"event\":\"init\",\"ms\":" + std::to_string(now_ms() - t0));
+  std::thread(stdin_loop).detach(); std::thread(x_loop).detach();
   CefRunMessageLoop();
+  quitting = true;
   CefShutdown();
-  XCloseDisplay(g_dpy);
+  // x_loop is parked on this connection until process exit; do not close it underneath XNextEvent.
   return 0;
 }
