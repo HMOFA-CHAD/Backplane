@@ -51,7 +51,7 @@ const home = join(root, "home"), proj = join(root, "proj"), trace = join(root, "
 for (const d of [home, proj]) mkdirSync(d);
 writeFileSync(join(home, "events.jsonl"), "");
 const app = Bun.spawn([bin, "--home", home, "--port", String(PORT), "--no-tailscale"], {
-  env: { ...process.env, DISPLAY: display, WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_PEERS: "", BACKPLANE_GOOGLE_BAKE: "0", BACKPLANE_TRACE: trace, TMPDIR: root },
+  env: { ...process.env, DISPLAY: display, WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_KEYRING_LOCKED: "0", BACKPLANE_PEERS: "", BACKPLANE_GOOGLE_BAKE: "0", BACKPLANE_TRACE: trace, TMPDIR: root },
   stdout: "ignore", stderr: Bun.file(join(root, "app.err")),
 });
 try {

@@ -31,6 +31,7 @@ import ./src/core/hub.bend as H
 import ./src/core/deploy.bend as DP
 import ./src/core/cmds.bend as CM
 import ./src/core/errtail.bend as ERT
+import ./src/core/keyring.bend as KRG
 import ./src/core/adopt.bend as AD
 import ./src/core/utf8.bend as UT
 import ./src/core/refs.bend as RF
@@ -8798,3 +8799,19 @@ law errtail_say_exit:
 law errtail_say_signal:
   {ERT.Exit.say("x", "", 143, "  ") == "x (signal 15)" : String}
 # ---- end agent failures: stderr ----
+# ---- agent failures: the login keyring ----
+# a provider that reads credentials from the login keyring is never started
+# while it is locked; unknown (no bus) or unlocked starts it; one that does
+# not need it always starts; a failure while it is locked says so
+law keyring_locked_never_starts:
+  {KRG.Keyring.start("codex", 2n) == False{} : Bool}
+
+law keyring_unknown_or_open_starts:
+  {Bool.and(Bool.and(KRG.Keyring.start("codex", 0n), KRG.Keyring.start("codex", 1n)), KRG.Keyring.start("claude", 2n)) == True{} : Bool}
+
+law keyring_answers:
+  {Bool.and(Bool.and(Nat.is_eq(KRG.Keyring.of("b true\n"), 2n), Nat.is_eq(KRG.Keyring.of("b false"), 1n)), Nat.is_eq(KRG.Keyring.of(""), 0n)) == True{} : Bool}
+
+law keyring_hint_only_locked:
+  {Bool.and(String.contains(KRG.Keyring.say("x", 2n), "keyring is locked"), String.eq(KRG.Keyring.say("x", 1n), "x")) == True{} : Bool}
+# ---- end agent failures: the login keyring ----

@@ -70,6 +70,7 @@ import ../core/emb.bend as EM
 import ./review.bend as RVS
 import ../core/cmds.bend as CM
 import ../core/errtail.bend as ER
+import ../core/keyring.bend as KR
 import ../core/adopt.bend as AD
 import ./adoptio.bend as AIO
 import ./castio.bend as CST
@@ -786,6 +787,59 @@ def Wire.changes(+cs: List<&2, Client>, +text: String, +log: List<&2, String>, +
 # Agent processes
 # ---------------
 
+# Is the desktop's login keyring locked (core/keyring.bend)? Asked of the
+# Secret Service, read only, 2 s at most; BACKPLANE_KEYRING_LOCKED=1/0
+# answers for tests. No bus or no service: unknown (0), never an error.
+def Keyring.asked(r: P.Ran) -> Nat:
+  match r:
+    case P.Ran{0, +out}:
+      KR.Keyring.of(out)
+    case _:
+      0n
+
+def Keyring.probe.k(+set: Nat) -> IO(Nat):
+  Bool.pick(IO(Nat), Nat.is_lt(set, 3n), IO.pure(Nat, set),
+    IO.bind(P.Ran, Nat, P.Proc.run("sh", PT.Port.timeout(["2", "busctl", "--user", "get-property", "org.freedesktop.secrets", "/org/freedesktop/secrets/collection/login", "org.freedesktop.Secret.Collection", "Locked"]), "/"),
+      r => IO.pure(Nat, Keyring.asked(r))))
+
+def Keyring.env.of(r: Result<&1, &1, U32 & String, String>) -> Nat:
+  match r:
+    case Done{+v}:
+      KR.Keyring.env(v)
+    case Fail{_}:
+      3n
+
+def Keyring.probe() -> IO(Nat):
+  IO.bind(Result<&1, &1, U32 & String, String>, Nat, IO.get_env("BACKPLANE_KEYRING_LOCKED"), r => Keyring.probe.k(Keyring.env.of(r)))
+
+# (only when it may matter: an agent that ended with an error)
+def Keyring.probe.if(go: Bool) -> IO(Nat):
+  match go:
+    case True{}:
+      Keyring.probe()
+    case False{}:
+      IO.pure(Nat, 0n)
+
+# a provider that needs the keyring is only started while it is not
+# locked (law keyring_locked_never_starts); start runs it, refuse fails the
+# turn with the words; one that does not need it never asks
+def Keyring.gate.k(go: Bool, start: IO(Unit), refuse: IO(Unit)) -> IO(Unit):
+  match go:
+    case True{}:
+      start
+    case False{}:
+      refuse
+
+def Keyring.gate.n(needs: Bool, +provider: String, start: IO(Unit), refuse: IO(Unit)) -> IO(Unit):
+  match needs:
+    case True{}:
+      IO.bind(Nat, Unit, Keyring.probe(), k => Keyring.gate.k(KR.Keyring.start(provider, k), start, refuse))
+    case False{}:
+      start
+
+def Keyring.gate(+provider: String, start: IO(Unit), refuse: IO(Unit)) -> IO(Unit):
+  Keyring.gate.n(KR.Keyring.needs(provider), provider, start, refuse)
+
 # lines from the agent's stdout go to the hub; EOF reports the exit
 def Agent.lines(ls: List<&2, String>, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ls:
@@ -802,7 +856,8 @@ def Agent.end(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(
     +code : U32 <- H.Proc.wait(pid)
     AIO.Adopt.drop(thread, pid)
     +tail : String <- H.Proc.errtail(pid)
-    +why : String = ER.Exit.say("agent exited", B.Exit.why(code), code, tail)
+    +k : Nat <- Keyring.probe.if(U32.is_ne(code, 0))
+    +why : String = KR.Keyring.say(ER.Exit.say("agent exited", B.Exit.why(code), code, tail), k)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AgentGone{thread, code, pid, why})
     return Unit{}
 
@@ -2552,7 +2607,8 @@ def Turn.close(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String) 
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
     +tail : String <- H.Proc.errtail(pid)
-    return ER.Exit.say(dflt, B.Exit.why(code), code, tail)
+    +k : Nat <- Keyring.probe()
+    return KR.Keyring.say(ER.Exit.say(dflt, B.Exit.why(code), code, tail), k)
 
 def Turn.failed(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -2612,8 +2668,14 @@ def Codex.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: String
     case Fail{e}:
       Codex.failed(e, thread, gen, inbox)
 
+def Codex.refuse(+thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, "{\"type\":\"turn.failed\",\"message\":" ++ J.Json.show(J.Str{KR.Keyring.refusal("codex")}) ++ "}"})
+    return Unit{}
+
 def Codex.run(+args: List<&2, String>, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("codex", args, cwd, 3), r => Codex.started(r, thread, gen, inbox))
+  Keyring.gate("codex", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("codex", args, cwd, 3), r => Codex.started(r, thread, gen, inbox)),
+    Codex.refuse(thread, gen, inbox))
 
 def Grok.stop(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -2718,8 +2780,14 @@ def Grok.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +t: MS.Proto, +t
     case Fail{e}:
       Grok.failed(e, t, thread, gen, inbox)
 
+def Grok.refuse(+t: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, AC.Acp.failed(KR.Keyring.refusal(MS.Proto.name(t)))})
+    return Unit{}
+
 def Grok.run(+args: List<&2, String>, +t: MS.Proto, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn(MS.Proto.cmd(t), args, cwd, 3), r => Grok.started(r, t, thread, gen, inbox))
+  Keyring.gate(MS.Proto.name(t), IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn(MS.Proto.cmd(t), args, cwd, 3), r => Grok.started(r, t, thread, gen, inbox)),
+    Grok.refuse(t, thread, gen, inbox))
 
 # Updates
 # -------
@@ -7456,8 +7524,8 @@ def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: S
     +fs : K.Files <- K.Files.read(cwd)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AutoView{thread, fs})
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-    res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 3)
-    Claude.started(res, thread, gen, input, inbox)
+    Keyring.gate("claude", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 3),
+      res => Claude.started(res, thread, gen, input, inbox)), Claude.fail(thread, gen, KR.Keyring.refusal("claude"), inbox))
 
 def Agents.pid.k(same: Bool, a: Agent, +pid: U32) -> Agent:
   match same a:

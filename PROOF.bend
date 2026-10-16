@@ -10678,3 +10678,16 @@ def Laws.errtail_say_exit():
 def Laws.errtail_say_signal():
   {==}
 # ---- end agent failures: stderr ----
+# ---- agent failures: the login keyring ----
+def Laws.keyring_locked_never_starts():
+  {==}
+
+def Laws.keyring_unknown_or_open_starts():
+  {==}
+
+def Laws.keyring_answers():
+  {==}
+
+def Laws.keyring_hint_only_locked():
+  {==}
+# ---- end agent failures: the login keyring ----
