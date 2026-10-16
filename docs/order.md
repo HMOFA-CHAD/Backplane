@@ -41,13 +41,19 @@ The agents' instructions are in `src/core/order.bend` (`Order.prompt.project`, `
 ## Buy threads
 
 - **Starting one:** `order.buy {thread}` (hub.bend's `Buy.go`) makes a thread in the same folder, marked `buy.<thread>`, with the person's "Buy it" as its first message.
-- **What its agent gets:** the buy instructions and the tools `order_quote` and `order_status`. Only buy threads have them (`Bots.buy.tools`).
+- **What its agent gets:** the buy instructions and the tools `order_quote`, `order_status` and `order_ask`. Only buy threads have them (`Bots.buy.tools`).
+- **The review gate:** a buy thread never reviews the design itself. It first asks `order_review {action: "check"}`; unless the review is current, the person gets two buttons (an `order_ask`): **Review for manufacturing** or **Order without a review**.
+  - The review runs in a thread of its own (`thread_launch`, reports on), so the buy thread wakes and goes on when it ends.
+  - Issues from a review stop the export until they are fixed (a design thread the agent offers) or the person says to order anyway.
+- **Manufacturing reviews** (`Order.prompt.review`, in every agent's project instructions): what makes a fab refuse a design or charge more, not the circuit. The findings go to `.backplane/review.md`; the verdict (ok or issues) and a line go to `order_review {action: "record"}`.
+  - `order_review` is every thread's tool (`Bots.order.tools`). The hub (orderio.bend's `Od.review`) hashes the design: the names and contents of every board, schematic, STEP, DXF and fab file outside `mfg/`, `extra/` and `.backplane/` (`Od.print`).
+  - `record` keeps the hash with the verdict in `.backplane/review.json`; `check` answers none, stale (the design changed since) or current (`Order.review.state`, laws `order_review_*`).
 - **`order_quote {dir}`** (server.bend's `Od.quote`):
   1. reads the manifest;
   2. refuses unsafe paths and folders holding links;
   3. opens an approval card listing every file ("Send these files for a quote?", Send / Not now);
-  4. on Send, uploads them (curl, from the folder, by relative paths), polls the quote, and posts it as a message with the Pay link.
-- **The token** lives only in `<home>/orders/<quote>.json` and the Pay link; the agent never sees either.
+  4. on Send, uploads them (curl, from the folder, by relative paths), polls the quote, and posts it as a message with its **Buy now · $X** link, which opens Stripe Checkout straight away (there is no quote page; the server only redirects).
+- **The token** lives only in `<home>/orders/<quote>.json` and the Buy now link; the agent never sees either.
 - **The watcher** (`Od.watch`, resumed at start) asks for the order's state every minute while unpaid and every ten minutes after. It says Paid, Ordered, Shipped (with tracking), Delivered, Refunded or Expired in the thread, once each.
 
 ## The server
