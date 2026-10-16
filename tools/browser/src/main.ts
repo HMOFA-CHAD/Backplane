@@ -104,6 +104,8 @@ type Shot = {
   casting: boolean;
   // when the last idle still was taken (performance.now ms)
   still: number;
+  // fires when the cast lease runs out
+  lease: ReturnType<typeof setTimeout> | null;
 };
 
 // an owner's tabs (its page and the popups it opened), the one it drives,
@@ -133,7 +135,7 @@ function ownerFor(name: string): Owner {
       active: null,
       viewport: { ...DEFAULT_VIEWPORT },
       console: [],
-      shot: { cdp: null, seq: 0, last: 0, fast: 0, lastAll: 0, lastHash: 0n, pending: null, timer: null, casting: false, still: 0 },
+      shot: { cdp: null, seq: 0, last: 0, fast: 0, lastAll: 0, lastHash: 0n, pending: null, timer: null, casting: false, still: 0, lease: null },
       opening: null,
       recording: false,
       lastNav: "",
@@ -988,6 +990,9 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
     const ms = Math.max(0, Math.min(10_000, Number(a.ms ?? 2500) || 0));
     const was = performance.now() < o.shot.fast;
     o.shot.fast = performance.now() + ms;
+    // the screencast stops the moment the lease runs out, not at the next tick
+    if (o.shot.lease) clearTimeout(o.shot.lease);
+    o.shot.lease = setTimeout(() => { o.shot.lease = null; void castCheck(o); }, ms + 5);
     await castCheck(o);
     if (!was && ms > 0) void shotNow(name);
     return { fps: shotFps(o) };
