@@ -118,6 +118,8 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .thread-head .title.rename:hover { text-decoration: underline dotted var(--faint); }
 .thread-head .title-box .field { width: min(420px, 50vw); }
 .timeline { flex: 1; overflow-y: auto; overflow-anchor: none; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
+/* away from the end with something new below (client.bend's Hold.pill) */
+.hold-pill { position: sticky; bottom: 8px; align-self: center; z-index: 4; flex: none; background: var(--raise); color: var(--text); border: 1px solid var(--accent); border-radius: 0; padding: 4px 12px; font-size: 13px; cursor: pointer; }
 .msg { position: relative; max-width: 860px; width: 100%; }
 .msg .copy { position: absolute; top: 4px; right: 4px; opacity: 0; font-size: 11px; padding: 1px 6px; }
 .msg:hover > .copy { opacity: 1; }

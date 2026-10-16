@@ -8417,6 +8417,138 @@ def Page.earlier.k(+u: Ui, +thread: String) -> Ui:
 def Page.earlier(+u: Ui, +value: String) -> Ui:
   Page.earlier.k(u, Bool.pick(String, String.is_empty(value), Ui.sel.of(u), value))
 
+# Reading while a thread grows (all four clients)
+# ------------------------------------------------
+# A reader scrolled up the timeline keeps what they read where it is: new
+# entries, streamed text and panels changing move nothing on screen; only
+# a view at its end (within Hold.slack() px) follows. Each client keeps
+# its own place (the window: nui.bend's Hold, layout.bend's TL.hold; the
+# web: host.js's held; the phones: their lists) and says here when its
+# view leaves the end ("hold-away") and comes back ("hold-end"), the value
+# the thread ("" the selected one). Away, the thread's newest entry then
+# is kept as "@away.<thread>", and what came after it is the "N new"
+# pill that jumps back down (Hold.label).
+
+def Hold.slack() -> Nat:
+  4n
+
+# a view this far from its end is at the end, and follows
+def Hold.at_end(+gap: Nat) -> Bool:
+  Nat.is_le(gap, Hold.slack())
+
+def Hold.key(+u: Ui, +value: String) -> String:
+  "@away." ++ Bool.pick(String, String.is_empty(value), Ui.sel.of(u), value)
+
+# the newest entry's id ("-" for none: anything later is new)
+def Hold.newest(es: List<&2, M.Entry>) -> String:
+  match es:
+    case Nil{}:
+      "-"
+    case e <> _:
+      M.Idx.id(e)
+
+def Hold.mark.k(has: Bool, +u: Ui, +k: String, +th: String) -> Ui:
+  match has:
+    case True{}:
+      u
+    case False{}:
+      Ui.scratch_set(u, k, Hold.newest(M.State.mine(Ui.state.of(u), th)))
+
+def Hold.thread(+u: Ui, +value: String) -> String:
+  Bool.pick(String, String.is_empty(value), Ui.sel.of(u), value)
+
+# away: the newest entry is kept (being away again keeps the first mark)
+def Hold.away(+u: Ui, +value: String) -> Ui:
+  Hold.mark.k(Bool.not(String.is_empty(Ui.scratch(u, Hold.key(u, value)))), u, Hold.key(u, value), Hold.thread(u, value))
+
+def Hold.end(+u: Ui, +value: String) -> Ui:
+  Ui.scratch_set(u, Hold.key(u, value), "")
+
+def Hold.is_away(+u: Ui, +th: String) -> Bool:
+  Bool.not(String.is_empty(Ui.scratch(u, "@away." ++ th)))
+
+# where the window's timeline starts reading once its top moved from t0
+# to t1 (a panel above it grew or shrank), from off pixels hidden above:
+# what was read stays where it was on screen (law hold_off_still), at most
+# over (the timeline's end)
+def Hold.off(+off: Nat, +t0: Nat, +t1: Nat, +over: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_le(Nat.sub(Nat.add(off, t1), t0), over), Nat.sub(Nat.add(off, t1), t0), over)
+
+def Hold.most() -> Nat:
+  99n
+
+def Hold.msg(e: M.Entry) -> Nat:
+  match e:
+    case M.Msg{_, _, _, _, _}:
+      1n
+    case M.Act{_, _, _, _, _, _}:
+      0n
+
+def Hold.stop(es: List<&2, M.Entry>, +seen: String, +n: Nat) -> Bool:
+  match es:
+    case Nil{}:
+      True{}
+    case e <> _:
+      Bool.or(String.eq(M.Idx.id(e), seen), Nat.is_ge(n, Hold.most()))
+
+# the messages after the entry seen (newest first: the walk stops at it,
+# and at Hold.most())
+def Hold.fresh(es: List<&2, M.Entry>, stop: Bool, +seen: String, +n: Nat) -> Nat:
+  match es stop:
+    case +_ True{}:
+      n
+    case Nil{} False{}:
+      n
+    case +e <> t False{}:
+      Hold.fresh(t, Hold.stop(t, seen, Nat.add(n, Hold.msg(e))), seen, Nat.add(n, Hold.msg(e)))
+
+def Hold.count.k(+es: List<&2, M.Entry>, +seen: String) -> Nat:
+  Hold.fresh(es, Hold.stop(es, seen, 0n), seen, 0n)
+
+# something is new: an entry after the one seen, or a reply streaming in
+def Hold.any.k(+es: List<&2, M.Entry>, +seen: String, +live: String) -> Bool:
+  Bool.or(Bool.not(String.eq(Hold.newest(es), seen)), Bool.not(String.is_empty(live)))
+
+# "3 new ↓" (messages), "New ↓" (other entries, or a reply streaming in),
+# "" for nothing new
+def Hold.label(+n: Nat, any: Bool) -> String:
+  Bool.pick(String, Nat.is_gt(n, 0n), Bool.pick(String, Nat.is_ge(n, Hold.most()), "99+ new ↓", Nat.show(n) ++ " new ↓"), Bool.pick(String, any, "New ↓", ""))
+
+def Hold.pill.k(away: Bool, +u: Ui, +th: String) -> String:
+  match away:
+    case True{}:
+      Hold.label(Hold.count.k(M.State.mine(Ui.state.of(u), th), Ui.scratch(u, "@away." ++ th)),
+        Hold.any.k(M.State.mine(Ui.state.of(u), th), Ui.scratch(u, "@away." ++ th), Ui.live.of(u, th)))
+    case False{}:
+      ""
+
+# the pill a thread's view shows while away ("" at the end)
+def Hold.pill(+u: Ui, +th: String) -> String:
+  Hold.pill.k(Hold.is_away(u, th), u, th)
+
+# Extra entries received since the reader left the end. The page grows
+# by these entries so its old first entry cannot be evicted underneath it.
+def Hold.arrived(es: List<&2, M.Entry>, stop: Bool, +seen: String, +n: Nat) -> Nat:
+  match es stop:
+    case _ True{}:
+      n
+    case Nil{} False{}:
+      n
+    case e <> +t False{}:
+      Hold.arrived(t, String.eq(Hold.newest(t), seen), seen, 1n+n)
+
+def Hold.page(+es: List<&2, M.Entry>, +seen: String, +base: Nat) -> Nat:
+  match seen:
+    case SNil{}:
+      base
+    case SCon{_, _}:
+      Nat.add(base, Hold.arrived(es, String.eq(Hold.newest(es), seen), seen, 0n))
+
+def Hold.act(+u: Ui, +action: String, +value: String) -> Act:
+  Bool.pick(Act, String.eq(action, "hold-away"), Act{Hold.away(u, value), Nil{}},
+    Bool.pick(Act, String.eq(action, "hold-end"), Act{Hold.end(u, value), Nil{}},
+      Bool.pick(Act, String.eq(action, "hold-bottom"), Act{Hold.end(u, value), [ScrollEnd{}]}, Act{u, Nil{}})))
+
 def Bots.tab.with(a: Act) -> Act:
   match a:
     case Act{u, cs}:
@@ -10104,11 +10236,20 @@ def Ui.act.subs(shut: Bool, open: Bool, +u: Ui, +action: String, +value: String)
     case False{} False{}:
       Ui.act.z(String.starts_with(action, "tz-"), u, action, value)
 
+# Hold actions share the ordinary route; language actions keep their own
+# dispatch and the review sync still wraps the ordinary route.
+def Ui.act.hold(hold: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match hold:
+    case True{}:
+      Hold.act(u, action, value)
+    case False{}:
+      Ui.act.subs(String.eq(action, "subs-shut"), String.eq(action, "subs-open"), u, action, value)
+
 def Lang.dispatch(k: Nat, +u: Ui, +action: String, +value: String) -> Act:
   match k:
     case 0n: Lang.act(0n, u, value)
     case 1n: Lang.act(1n, u, value)
-    case _: Rc.sync.of(Ui.act.subs(String.eq(action, "subs-shut"), String.eq(action, "subs-open"), u, action, value))
+    case _: Rc.sync.of(Ui.act.hold(String.starts_with(action, "hold-"), u, action, value))
 
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
   Ui.cast.now(u, Lang.dispatch(C.Codec.pos(["lang", "lang-os"], action), u, action, value))

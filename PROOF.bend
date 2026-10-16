@@ -3289,10 +3289,10 @@ def tl_entries_roles(ty, es, rs, st, sel, px, pics, sp):
     case +e <> +t:
       match rs:
         case Nil{}:
-          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.entry(ty, e, st, sel, px, pics, sp), x),
+          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.entry.bound(e, L.TL.entry(ty, e, st, sel, px, pics, sp)), x),
             L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), Nil{}, st, sel, px, pics, sp), L.TL.entries.r(ty, t, Nil{}, st, sel, px, pics, sp), tl_entries_roles(ty, t, Nil{}, st, sel, px, pics, sp))
         case +r <> +rt:
-          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), L.TL.role(r, ty, L.TL.entry(ty, e, st, sel, px, pics, sp), px)), x),
+          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.entry.bound(e, L.TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), L.TL.role(r, ty, L.TL.entry(ty, e, st, sel, px, pics, sp), px))), x),
             L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), rt, st, sel, px, pics, sp), L.TL.entries.r(ty, t, rt, st, sel, px, pics, sp), tl_entries_roles(ty, t, rt, st, sel, px, pics, sp))
 
 def tl_entries_memo(ty, es, st, sel, px, pics):
@@ -10991,3 +10991,30 @@ def Laws.mail_index_overflow_rejected():
 def Laws.mail_index_hash_empty(h):
   {==}
 # ---- end mail index ----
+# ---- scroll-stable: reading while a thread grows ----
+def Laws.hold_at_end_zero():
+  {==}
+
+def Laws.hold_label_nothing():
+  {==}
+
+def Laws.hold_fresh_seen(e, t, n):
+  %Equal.sym(Bool, String.eq(M.Idx.id(e), M.Idx.id(e)), True{}, Laws.string_eq_refl(M.Idx.id(e))) : {U.Hold.fresh(e <> t, Bool.or(_, Nat.is_ge(n, U.Hold.most())), M.Idx.id(e), n) == n : Nat}
+  {==}
+
+def Laws.hold_off_still(off, t0, t1, over, h):
+  %Equal.sym(Bool, Nat.is_le(Nat.sub(Nat.add(off, t1), t0), over), True{}, h) : {Bool.pick(Nat, _, Nat.sub(Nat.add(off, t1), t0), over) == Nat.sub(Nat.add(off, t1), t0) : Nat}
+  {==}
+
+def Laws.hold_end_follows(hold, off, top, over):
+  {==}
+# ---- end scroll-stable ----
+
+def Laws.hold_boundary_zero():
+  {==}
+
+def Laws.hold_entry_moves(off, y0, y1, t0, t1, over, h):
+  Laws.hold_off_still(Nat.add(Nat.sub(off, y0), y1), t0, t1, over, h)
+
+def Laws.hold_page_free(es, base):
+  {==}

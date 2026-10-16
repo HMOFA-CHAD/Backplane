@@ -9171,3 +9171,58 @@ law mail_index_hash_empty:
   for h: U32
   {MIX.MI.hash("", h) == h : U32}
 # ---- end mail index ----
+# ---- scroll-stable: reading while a thread grows ----
+# a view at its very end follows it
+law hold_at_end_zero:
+  {U.Hold.at_end(0n) == True{} : Bool}
+
+# nothing new: no pill
+law hold_label_nothing:
+  {U.Hold.label(0n, False{}) == "" : String}
+
+# the entry seen is the newest: nothing is counted as new
+law hold_fresh_seen:
+  for +e: M.Entry
+  for +t: List<&2, M.Entry>
+  for +n: Nat
+  {U.Hold.fresh(e <> t, U.Hold.stop(e <> t, M.Idx.id(e), n), M.Idx.id(e), n) == n : Nat}
+
+# a panel above the window's timeline moving its top from t0 to t1 moves
+# what is read by as much (off + t1 - t0), so nothing read moves on screen
+law hold_off_still:
+  for +off: Nat
+  for +t0: Nat
+  for +t1: Nat
+  for +over: Nat
+  for h: {Nat.is_le(Nat.sub(Nat.add(off, t1), t0), over) == True{} : Bool}
+  {U.Hold.off(off, t0, t1, over) == Nat.sub(Nat.add(off, t1), t0) : Nat}
+
+# the window's timeline at its end (sc 0) never holds: it follows
+law hold_end_follows:
+  for +hold: String
+  for +off: U32
+  for +top: U32
+  for +over: U32
+  {L.TL.hold.off(hold, 0, off, top, over) == off : U32}
+# ---- end scroll-stable ----
+
+# Entry boundaries carry identity without moving any pixels.
+law hold_boundary_zero:
+  {L.TL.h(29) == 0 : U32}
+
+# Correct for growth above the anchor as well as movement of the panel.
+law hold_entry_moves:
+  for +off: Nat
+  for +y0: Nat
+  for +y1: Nat
+  for +t0: Nat
+  for +t1: Nat
+  for +over: Nat
+  for h: {Nat.is_le(Nat.sub(Nat.add(Nat.add(Nat.sub(off, y0), y1), t1), t0), over) == True{} : Bool}
+  {L.TL.hold.move(off, y0, y1, t0, t1, over) == Nat.sub(Nat.add(Nat.add(Nat.sub(off, y0), y1), t1), t0) : Nat}
+
+# At the end there is no held page: the ordinary page limit applies.
+law hold_page_free:
+  for +es: List<&2, M.Entry>
+  for +base: Nat
+  {U.Hold.page(es, "", base) == base : Nat}
