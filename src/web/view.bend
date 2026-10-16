@@ -506,7 +506,7 @@ def View.title.k(on: Bool, +id: String, +title: String, +text: String) -> List<&
 
 # a thread's Boat chip after its branch ("Boat · large · running"); a tap
 # opens Settings, where Usage says more (core/usage.bend's Chip)
-def View.chip(+chip: String) -> List<&2, D.Node>:
+def View.boat.chip(+chip: String) -> List<&2, D.Node>:
   D.Dom.when(Bool.not(String.is_empty(chip)), D.Dom.button("boat-chip", "usage-open", "", "Boat usage in Settings", chip))
 
 def View.header(t: M.Thread, +st: M.State, +chip: String, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, del: Bool, +ren: String, +rtext: String) -> D.Node:
@@ -516,7 +516,7 @@ def View.header(t: M.Thread, +st: M.State, +chip: String, +panel: Bool, snoozed:
         D.Dom.button("back", "select", "", "Threads", "‹"),
         D.El{"span", "", [D.At{"class", "badge"}], [WI.WIcon.svg(BG.Badge.icon(st, p), 16)]},
         D.El{"div", "", [D.At{"class", "title-box"}], View.title.k(String.eq(ren, id), id, U.Label.title(st, id, title), rtext)},
-        D.Dom.span("meta", Bool.pick(String, String.is_empty(branch), "", branch))], View.chip(chip), [
+        D.Dom.span("meta", Bool.pick(String, String.is_empty(branch), "", branch))], View.boat.chip(chip), [
         D.El{"div", "", [D.At{"class", "tools"}], List.append(&2, D.Node,
           View.tools(TO.Tools.head(TO.Head{View.running(turn), TO.Tools.settled(override, Nat.is_gt(sa, ua)), pinned, snoozed, archived, del,
             Bool.not(String.is_empty(M.Fork.source(st, id))), term, panel}, "flag", "snooze", "term-toggle", "@term-size")),

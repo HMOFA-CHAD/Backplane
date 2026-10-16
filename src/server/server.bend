@@ -4855,7 +4855,7 @@ def Chips.post(same: Bool, +inbox: Chan(Msg), +text: String) -> IO(Unit):
         ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, BoatThreads{text})
         return Unit{}
 
-def Chips.loop(fuel: Nat, +inbox: Chan(Msg), +path: String, +last: String) -> IO(Unit):
+def Chips.loop(+fuel: Nat, +inbox: Chan(Msg), +path: String, +last: String) -> IO(Unit):
   match fuel:
     case 0n:
       IO.pure(Unit, Unit{})
