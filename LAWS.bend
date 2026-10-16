@@ -9141,6 +9141,20 @@ law fab_ready_needs_buy:
   for line: String
   {U.Fab.ready.k("", line, False{}) == "" : String}
 
+# a manufacturing review is current only for the design it was recorded
+# with (its fingerprint); a verdict is ok or issues, nothing else
+law order_review_none:
+  {ORD.Order.review.state("f1", J.Json.obj([])) == "none" : String}
+
+law order_review_current:
+  {ORD.Order.review.state("f1", ORD.Order.review.rec("f1", "ok", "fine", 5n)) == "current" : String}
+
+law order_review_stale:
+  {ORD.Order.review.state("f2", ORD.Order.review.rec("f1", "ok", "fine", 5n)) == "stale" : String}
+
+law order_review_verdict_closed:
+  {ORD.Order.review.verdict("looks great") == "issues" : String}
+
 # ---- i18n lang ----
 law lang_default_auto:
   {U.Lang.resolve("", "en_US.UTF-8", False{}) == "en" : String}

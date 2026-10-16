@@ -160,6 +160,33 @@ def Od.intent(+home: String, +cwd: String, +thread: String, +opts: String, text:
     m : Result<&1, &1, U32 & String, Unit> <- H.FS.chmod(cwd ++ "/.backplane/intent.md", 420)
     Od.look(home, cwd, thread, opts)
 
+# Manufacturing reviews (order_review)
+# ------------------------------------
+# The design's fingerprint: the names and contents of every board,
+# schematic, model and fab file outside mfg/, extra/ and .backplane/,
+# hashed in name order (sha256sum, or shasum on a Mac)
+def Od.print.sh() -> String:
+  "find . \\( -path ./mfg -o -path ./extra -o -path ./.git -o -path ./.backplane -o -name node_modules -o -name '*backup*' \\) -prune -o -type f \\( -name '*.kicad_pcb' -o -name '*.kicad_sch' -o -name '*.step' -o -name '*.stp' -o -name '*.dxf' -o -name '*.fab.json' \\) -print 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do printf '%s\\n' \"$f\"; cat \"$f\"; done | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-32"
+
+def Od.print(+cwd: String) -> IO(String):
+  IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Od.print.sh()], cwd), r => IO.pure(String, String.trim(Od.ran(r))))
+
+def Od.review.k(record: Bool, +cwd: String, +fp: String, +args: J.Json, +now: Nat) -> IO(J.Json):
+  match record:
+    case True{}:
+      do IO<J.Json>:
+        mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(cwd ++ "/.backplane")
+        GS.Gf.write(cwd ++ "/.backplane/review.json", J.Json.show(OR.Order.review.rec(fp, J.Json.get_str(args, "verdict", ""), J.Json.get_str(args, "summary", ""), now)) ++ "\n")
+        m : Result<&1, &1, U32 & String, Unit> <- H.FS.chmod(cwd ++ "/.backplane/review.json", 420)
+        return J.Json.obj([J.KV{"recorded", J.Flag{True{}}}, J.KV{"verdict", J.Str{OR.Order.review.verdict(J.Json.get_str(args, "verdict", ""))}}])
+    case False{}:
+      IO.bind(String, J.Json, GS.Gf.text(cwd ++ "/.backplane/review.json"),
+        t => IO.pure(J.Json, OR.Order.review.said(fp, Maybe.default(&2, J.Json, J.Json.parse(t), J.Null{}))))
+
+# order_review {action: check | record, verdict, summary} in a thread's folder
+def Od.review(+cwd: String, +args: J.Json, +now: Nat) -> IO(J.Json):
+  IO.bind(String, J.Json, Od.print(cwd), fp => Od.review.k(String.eq(J.Json.get_str(args, "action", "check"), "record"), cwd, fp, args, now))
+
 # Quotes
 # ------
 # order_quote: the manifest's files (paths inside the order's folder, plain

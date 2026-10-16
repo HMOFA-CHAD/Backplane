@@ -10968,6 +10968,18 @@ def Laws.fab_ready_running_hidden(line):
 def Laws.fab_ready_needs_buy(line):
   {==}
 
+def Laws.order_review_none():
+  {==}
+
+def Laws.order_review_current():
+  {==}
+
+def Laws.order_review_stale():
+  {==}
+
+def Laws.order_review_verdict_closed():
+  {==}
+
 def Laws.order_buy_board_only():
   {==}
 

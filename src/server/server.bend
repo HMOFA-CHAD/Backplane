@@ -11364,7 +11364,7 @@ def Od.quoted.k(ok: Bool, +q: J.Json, +inbox: Chan(Msg), +home: String, +server:
     case True{}:
       do IO<Unit>:
         Od.post(inbox, thread, "q:" ++ qid, OR.Order.quote.md(J.Json.get_str(J.Json.get_obj(q, "quote"), "markdown", ""), ODI.Od.pay(server, qid, token),
-          J.Json.get_str(J.Json.get_obj(q, "quote"), "pay_label", "Pay"), OR.Order.payable(q)))
+          J.Json.get_str(J.Json.get_obj(q, "quote"), "pay_label", "Buy now"), OR.Order.payable(q)))
         ODI.Od.keep(home, qid, token, thread, server, "quoted")
         Gg.say(reply, rid, True{}, OR.Order.said(q))
         Od.watch(9000n, inbox, home, server, qid, token, thread, "quoted")
@@ -11474,12 +11474,20 @@ def Od.question(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now:
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "input", "order_ask",
           J.Json.get_str(Gg.args(o), "question", ""), String.join(Od.choices(J.Json.elems(J.Json.get_obj(Gg.args(o), "options"))), "\n"), now}], Nil{}})
 
+# order_review: checked or recorded in the thread's folder, the answer as JSON
+def Od.review.go(+cwd: String, +args: J.Json, +rid: J.Json, +reply: Chan(String), +now: Nat) -> IO(Unit):
+  IO.bind(J.Json, Unit, ODI.Od.review(cwd, args, now), r => Gg.say(reply, rid, True{}, J.Json.show(r)))
+
 def Hub.order.t(i: Nat, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match i h:
     case 0n h2:
       Od.quote(h2, thread, o, reply, now)
     case 2n h2:
       Od.question(h2, thread, o, reply, now)
+    case 3n Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Od.review.go(B.Hub.cwd(st, B.Hub.thread(st, thread)), Gg.args(o), J.Json.get_obj(o, "id"), reply, now))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case _ Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
         IO.spawn(Unit, Od.status.ask(Cfg.home(cfg), thread, J.Json.get_obj(o, "id"), reply))
@@ -11497,7 +11505,7 @@ def Hub.order.k(buy: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(Str
 def Hub.mcp.od(od: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match od h:
     case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.order.k(BH.Bots.buy.is(st, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
+      Hub.order.k(Bool.or(BH.Bots.buy.is(st, thread), String.eq(Gg.tool(o), "order_review")), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
     case False{} _:
       Hub.mcp.gg(Gg.is(o), h, thread, o, body, reply, now)
 
