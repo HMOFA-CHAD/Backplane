@@ -11441,11 +11441,42 @@ def Od.status.ask(+home: String, +thread: String, +rid: J.Json, +reply: Chan(Str
     +install : String <- ODI.Od.install(home)
     Od.status.said(String.is_empty(J.Json.get_str(j, "token", "")), j, home, install, rid, reply)
 
-def Hub.order.t(quote: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
-  match quote h:
-    case True{} h2:
+# order_ask: a question card with the choices as buttons (the person may
+# type instead); the answer goes back to the agent as it is
+def Od.choices(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case J.Str{+x} <> t:
+      x <> Od.choices(t)
+    case _ <> t:
+      Od.choices(t)
+
+def Od.answered(m: Maybe<&1, String>, +rid: J.Json, +reply: Chan(String)) -> IO(Unit):
+  match m:
+    case Some{+answer}:
+      Gg.say(reply, rid, True{}, Bool.pick(String, String.is_empty(String.trim(answer)), "The person dismissed the question without answering.", "The person answered: " ++ answer))
+    case None{}:
+      IO.pure(Unit, Unit{})
+
+def Od.question(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
+        +r2 : Chan(String) <- Chan.new(String, 1)
+        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
+        IO.spawn(Unit, IO.bind(Maybe<&1, String>, Unit, Chan.recv(String, r2), m => Od.answered(m, J.Json.get_obj(o, "id"), reply)))
+        Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "input", "order_ask",
+          J.Json.get_str(Gg.args(o), "question", ""), String.join(Od.choices(J.Json.elems(J.Json.get_obj(Gg.args(o), "options"))), "\n"), now}], Nil{}})
+
+def Hub.order.t(i: Nat, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match i h:
+    case 0n h2:
       Od.quote(h2, thread, o, reply, now)
-    case False{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+    case 2n h2:
+      Od.question(h2, thread, o, reply, now)
+    case _ Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
         IO.spawn(Unit, Od.status.ask(Cfg.home(cfg), thread, J.Json.get_obj(o, "id"), reply))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
@@ -11457,7 +11488,7 @@ def Hub.order.k(buy: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(Str
         Gg.say(reply, J.Json.get_obj(o, "id"), False{}, "only a buy thread has this tool")
         return h
     case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.order.t(String.eq(Gg.tool(o), "order_quote"), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
+      Hub.order.t(C.Codec.pos(OR.Order.names(), Gg.tool(o)), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
 
 def Hub.mcp.od(od: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match od h:

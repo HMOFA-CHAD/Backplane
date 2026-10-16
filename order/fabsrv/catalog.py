@@ -21,8 +21,16 @@ PRINT_MATERIALS = {
     "fdm": ["abs", "asa", "pla", "tpu", "pa12_cf", "pc_abs", "peek"],
     "slm": ["stainless_316l", "titanium"],
 }
-PRINT_COLORS = {"sla": ["white"], "mjf": ["black", "gray"], "sls": ["black"], "fdm": ["black", "white"],
-                "slm": ["metal"]}
+# the colours each material comes in (the first is the default)
+PRINT_COLORS = {
+    ("sla", "standard_resin"): ["white"], ("sla", "black_resin"): ["black"], ("sla", "tough_resin"): ["green"],
+    ("sla", "high_temp_resin"): ["yellow"], ("sla", "clear_resin"): ["translucent", "transparent"],
+    ("mjf", "pa12"): ["black", "gray"], ("mjf", "pa11"): ["black", "gray"], ("mjf", "pa12_glass"): ["black", "white"],
+    ("sls", "pa12"): ["black"], ("sls", "pa12_glass"): ["white"],
+    ("fdm", "abs"): ["black", "white"], ("fdm", "asa"): ["black", "white"], ("fdm", "pla"): ["black", "white", "red", "blue"],
+    ("fdm", "tpu"): ["black", "white", "gray", "translucent", "green"], ("fdm", "pa12_cf"): ["black"], ("fdm", "pc_abs"): ["black"],
+    ("fdm", "peek"): ["brown"], ("slm", "stainless_316l"): ["metal"], ("slm", "titanium"): ["metal"],
+}
 
 CNC_MATERIALS = ["aluminum_6061", "aluminum_7075", "stainless_304", "steel_45", "steel_q235", "brass", "copper",
                  "abs_black", "abs_white", "pom_black", "pom_white", "pmma", "nylon", "polycarbonate", "fr4"]
@@ -70,7 +78,7 @@ KINDS = {
         ],
         "features": [_num("volume_cm3", 0.001, 200000, unit="cm3"), _num("size_x_mm", 1, 2000, unit="mm"),
                      _num("size_y_mm", 1, 2000, unit="mm"), _num("size_z_mm", 1, 2000, unit="mm"),
-                     _num("area_cm2", 0, 1000000, unit="cm2")],
+                     _num("area_cm2", 0, 1000000, 0, "cm2")],
     },
     "cnc": {
         "label": "CNC part",
@@ -148,11 +156,14 @@ def clean(kind, options, features, need_features=True):
     opts, feats = out
     if kind == "3dp":
         proc = opts.get("process", "mjf")
-        mats, cols = PRINT_MATERIALS[proc], PRINT_COLORS[proc]
+        mats = PRINT_MATERIALS[proc]
         opts.setdefault("material", mats[0])
-        opts.setdefault("color", cols[0])
         if opts["material"] not in mats:
             problems.append(f"material {opts['material']!r} is not made with {proc} (one of {mats})")
-        if opts["color"] not in cols:
-            problems.append(f"color {opts['color']!r} is not offered for {proc} (one of {cols})")
+            return opts, feats, problems
+        cols = PRINT_COLORS[(proc, opts["material"])]
+        # a colour the material does not come in becomes the material's own
+        # (the quote's summary says which)
+        if opts.get("color") not in cols:
+            opts["color"] = cols[0]
     return opts, feats, problems
