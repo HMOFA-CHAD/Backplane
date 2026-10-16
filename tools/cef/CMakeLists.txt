@@ -19,7 +19,7 @@ SET_EXECUTABLE_TARGET_PROPERTIES(${TARGET})
 # see main() in host.cc: frames live across a zygote fork keep no canary
 target_compile_options(${TARGET} PRIVATE -fno-stack-protector)
 add_dependencies(${TARGET} libcef_dll_wrapper)
-target_link_libraries(${TARGET} ${CEF_LIB_RELEASE} libcef_dll_wrapper ${CEF_STANDARD_LIBS} X11)
+target_link_libraries(${TARGET} ${CEF_LIB_RELEASE} libcef_dll_wrapper ${CEF_STANDARD_LIBS} X11 dl)
 # libcef.so sits beside the binary
 set_target_properties(${TARGET} PROPERTIES INSTALL_RPATH "$ORIGIN" BUILD_WITH_INSTALL_RPATH TRUE)
 

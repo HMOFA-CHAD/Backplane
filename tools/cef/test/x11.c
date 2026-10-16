@@ -39,13 +39,25 @@ int main(void) {
       printf("]}"); if (kids) XFree(kids);
     } else if (!strcmp(cmd, "tops")) {
       Window rr, pp, *kids = NULL; unsigned n; XQueryTree(d, root, &rr, &pp, &kids, &n);
-      int chromium = 0;
+      int chromium = 0, listed = 0;
+      printf("{\"windows\":[");
       for (unsigned i = 0; i < n; ++i) {
         char* name = NULL; XFetchName(d, kids[i], &name);
-        if (name && (strstr(name, "Chromium") || strstr(name, "Chrome"))) chromium++;
+        if (name && (strstr(name, "Chromium") || strstr(name, "Chrome"))) {
+          XWindowAttributes a; XGetWindowAttributes(d, kids[i], &a);
+          // CEF's unmapped X selection owner is infrastructure, not a page UI.
+          if (strcmp(name, "Chromium clipboard") || a.map_state != IsUnmapped) chromium++;
+          if (listed++) printf(",");
+          printf("{\"title\":\"");
+          for (const unsigned char* p = (unsigned char*)name; *p; p++) {
+            if (*p == '"' || *p == '\\') putchar('\\');
+            if (*p >= 32) putchar(*p);
+          }
+          printf("\",\"xid\":%lu}", kids[i]);
+        }
         if (name) XFree(name);
       }
-      if (kids) XFree(kids); printf("{\"chromium\":%d}", chromium);
+      if (kids) XFree(kids); printf("],\"chromium\":%d}", chromium);
     } else if (!strcmp(cmd, "click") && sscanf(line, "%*s %d %d %d", &x, &y, &button) == 3) {
       // A WM focuses only the embedding top level; the page must take focus itself.
       XSetInputFocus(d, parent, RevertToParent, CurrentTime);

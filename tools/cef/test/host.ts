@@ -47,8 +47,11 @@ try {
   const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
   const browserWs = new WebSocket(version.webSocketDebuggerUrl);
   await new Promise<void>((r, j) => { browserWs.onopen = () => r(); browserWs.onerror = j; });
+  let closeReply: any = null;
+  browserWs.onmessage = (e) => { const v = JSON.parse(String(e.data)); if (v.id === 1) closeReply = v; };
   browserWs.send(JSON.stringify({ id: 1, method: "Browser.close" }));
-  await until(() => h.events.find((e) => e.event === "closed" && e.key === "c"), "CDP Browser.close");
+  await until(() => closeReply || h.events.find((e) => e.event === "closed" && e.key === "c"), "CDP Browser.close response");
+  console.log("Browser.close response", JSON.stringify(closeReply));
   browserWs.close();
   await command("create d about:blank", "created", "d");
   check("CDP Browser.close leaves host running", h.proc.exitCode === null);

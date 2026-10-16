@@ -1,5 +1,7 @@
 // Native X11 CEF children controlled over stdin. See README.md for the protocol.
 #include <X11/Xlib.h>
+#include <X11/extensions/XI2.h>
+#include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -45,6 +47,7 @@ struct Opts {
 } opts;
 Display* dpy = nullptr;
 Window parent = 0, shield = 0;
+int xi_opcode = 0;
 bool shield_on = false;
 std::string shown;
 std::atomic<bool> quitting{false};
@@ -72,6 +75,8 @@ void hide_all() {
 }
 void focus(CefRefPtr<CefBrowser> b, const std::string& key) {
   if (shown != key) return; // XSetInputFocus requires a viewable window.
+  XWindowAttributes a;
+  if (!XGetWindowAttributes(dpy, b->GetHost()->GetWindowHandle(), &a) || a.map_state != IsViewable) return;
   XSetInputFocus(dpy, b->GetHost()->GetWindowHandle(), RevertToParent, CurrentTime);
   XFlush(dpy);
 }
@@ -246,11 +251,41 @@ void stdin_loop() {
 void shield_event(int x, int y) {
   if (!shown.empty() && shield_on) emit("\"event\":\"shield-click\"" + fields(shown) + ",\"x\":" + std::to_string(x) + ",\"y\":" + std::to_string(y));
 }
+// Observe raw button presses without selecting/stealing the browser's core
+// events. CDP focus emulation can suppress CEF's normal focus callbacks even
+// after a WM returns X focus to the embedding top level.
+void native_click(Window child) {
+  auto it = pages.find(shown);
+  if (it == pages.end() || child != it->second.browser->GetHost()->GetWindowHandle()) return;
+  it->second.browser->GetHost()->SetFocus(true);
+  focus(it->second.browser, shown);
+  shield_place();
+  emit("\"event\":\"focus\"" + fields(shown));
+}
+bool watch_clicks() {
+  struct EventMask { int deviceid, mask_len; unsigned char* mask; };
+  using Query = int (*)(Display*, int*, int*);
+  using Select = int (*)(Display*, Window, EventMask*, int);
+  void* xi = dlopen("libXi.so.6", RTLD_NOW);
+  int event, error, major = 2, minor = 0;
+  if (!xi || !XQueryExtension(dpy, "XInputExtension", &xi_opcode, &event, &error)) return false;
+  auto query = reinterpret_cast<Query>(dlsym(xi, "XIQueryVersion"));
+  auto select = reinterpret_cast<Select>(dlsym(xi, "XISelectEvents"));
+  if (!query || !select || query(dpy, &major, &minor) != Success) return false;
+  unsigned char bits[2] = {0, 1 << (XI_RawButtonPress - 8)};
+  EventMask mask{XIAllMasterDevices, 2, bits};
+  return select(dpy, DefaultRootWindow(dpy), &mask, 1) == Success;
+}
 void x_loop() {
   while (!quitting) {
     XEvent ev; XNextEvent(dpy, &ev);
     if (ev.type == ButtonPress && ev.xbutton.window == shield)
       CefPostTask(TID_UI, base::BindOnce(&shield_event, ev.xbutton.x, ev.xbutton.y));
+    if (ev.type == GenericEvent && ev.xcookie.extension == xi_opcode && ev.xcookie.evtype == XI_RawButtonPress) {
+      Window root, child; int rx, ry, x, y; unsigned mask;
+      if (XQueryPointer(dpy, parent, &root, &child, &rx, &ry, &x, &y, &mask))
+        CefPostTask(TID_UI, base::BindOnce(&native_click, child));
+    }
   }
 }
 class App : public CefApp, public CefBrowserProcessHandler {
@@ -302,6 +337,7 @@ __attribute__((no_stack_protector)) int main(int argc, char** argv) {
   XSetWindowAttributes attr{};
   attr.event_mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
   shield = XCreateWindow(dpy, parent, 0, 0, 1, 1, 0, 0, InputOnly, CopyFromParent, CWEventMask, &attr);
+  if (!watch_clicks()) { fprintf(stderr, "backplane-cef: XInput2 unavailable\n"); return 1; }
   XSync(dpy, False);
   CefSettings st;
   CefString(&st.locale) = "en-US";

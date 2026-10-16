@@ -7,11 +7,11 @@ if (!process.env.BACKPLANE_CEF || !existsSync(process.env.BACKPLANE_CEF)) {
 }
 const d = await privateDisplay();
 const gate = join(d.root, "end-host-stdin");
-const flags = ["--profile", join(d.root, "profile")];
+const flags = ["--profile", join(d.root, "profile"), "--engine", "cef", "--parent", String(d.parent), "--display", d.env.DISPLAY, "--cef", new URL("../../cef/test/relay.ts", import.meta.url).pathname];
 const h = jsonProcess(process.env.BACKPLANE_BROWSER ? [process.env.BACKPLANE_BROWSER, ...flags] : ["bun", new URL("../src/main.ts", import.meta.url).pathname, ...flags], { ...d.env, BACKPLANE_CEF_STOP_FILE: gate });
 try {
-  const e = await h.call("engine", { engine: "cef", parent: d.parent, display: d.env.DISPLAY, cef: new URL("../../cef/test/relay.ts", import.meta.url).pathname });
-  await h.call("open", { page: "life", url: "data:text/html,<h1>Before exit</h1>" });
+  const e = await h.call("open", { page: "life", url: "data:text/html,<h1>Before exit</h1>" });
+  check("--engine cef and --cef launch directly", e.engine === "cef" && e.hostPid > 0);
   await h.call("record", { page: "life", on: true });
   writeFileSync(gate, "EOF");
   await until(() => h.events.find((v) => v.event === "engine" && v.ok === false), "unexpected host exit");

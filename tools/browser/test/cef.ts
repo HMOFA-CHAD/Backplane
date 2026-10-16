@@ -26,7 +26,7 @@ try {
   }
   const targets = await (await fetch(`http://127.0.0.1:${e.port}/json/list`)).json();
   check("exactly two page targets", targets.filter((p: any) => p.type === "page").length === 2, targets);
-  check("no top-level Chrome window", (await d.x("tops")).chromium === 0);
+  const tops = await d.x("tops"); check("no top-level Chrome window", tops.chromium === 0, tops);
   await call("show", { page: "a", x: 10, y: 10, w: 600, h: 400 });
   let kids = (await d.x("children")).children;
   let visible = kids.filter((k: any) => k.mapped);
@@ -35,6 +35,9 @@ try {
   await call("show", { page: "b", x: 20, y: 20, w: 700, h: 450 });
   kids = (await d.x("children")).children; visible = kids.filter((k: any) => k.mapped);
   check("show b swaps children", visible.length === 1 && visible[0].xid !== aXid && visible[0].w === 700 && !kids.find((k: any) => k.xid === aXid).mapped, kids);
+  await call("hide");
+  check("helper hide unmaps every browser", (await d.x("children")).children.every((k: any) => !k.mapped));
+  await call("show", { page: "b", x: 20, y: 20, w: 700, h: 450 });
   await call("resize", { page: "a", width: 500, height: 350 });
   const hidden = await d.x(`info ${aXid}`);
   check("hidden resize preserves unmapped state", !hidden.mapped && hidden.w === 500 && hidden.h === 350, hidden);
@@ -53,9 +56,15 @@ try {
     await until(() => events.filter((v) => v.event === "frame" && v.page === owner).length > before + 2, `JPEG cast ${owner}`);
     check(`${owner} ${owner === "a" ? "hidden" : "shown"} cast produces JPEG`, readFileSync(join(d.root, "shots", `${owner}.jpg`)).subarray(0, 2).equals(Buffer.from([255, 216])));
   }
+  await call("record", { page: "a", on: true });
   await call("click", { page: "a", selector: "#pop" });
   const tabs = await until(async () => { const t = await call("tabs", { page: "a" }); return t.tabs.length === 2 && t.active === 1 && t.tabs[1].title === "Popup" ? t : null; }, "popup adoption");
   check("popup is active owner tab", tabs.tabs.length === 2);
+  await call("type", { page: "a", selector: "input", text: "Popup recording" });
+  await call("press", { page: "a", key: "Tab" });
+  await until(() => events.find((v) => v.event === "record" && v.page === "a" && v.step.value === "Popup recording"), "popup recording");
+  check("popup inherits owner recording", true);
+  await call("record", { page: "a", on: false });
   const afterPop = await (await fetch(`http://127.0.0.1:${e.port}/json/list`)).json();
   check("popup adds exactly one child", afterPop.filter((p: any) => p.type === "page").length === 3 && (await d.x("children")).children.length === 4 && (await d.x("tops")).chromium === 0);
   await call("tabs", { page: "a", close: 1 });
@@ -65,6 +74,9 @@ try {
   await call("show", { page: "a", x: 10, y: 10, w: 600, h: 400 });
   await call("evaluate", { page: "a", expression: "clicks=0; wheels=0" });
   await call("shield", { on: true });
+  await call("click", { page: "a", selector: "#btn" });
+  check("agent CDP input works through shield", await call("evaluate", { page: "a", expression: "clicks === 1" }));
+  await call("evaluate", { page: "a", expression: "clicks=0" });
   const n = events.length;
   await d.x("click 40 110 1"); await d.x("click 40 110 5");
   await until(() => events.slice(n).find((v) => v.event === "shield-click" && v.page === "a"), "shield-click event");
@@ -77,20 +89,22 @@ try {
   await until(() => call("evaluate", { page: "a", expression: "clicks > 0 && wheels > 0" }), "unshielded input");
   check("unshielded pointer and wheel reach page", true);
 
+  const focusStart = events.length;
   const box = await call("evaluate", { page: "a", expression: "(()=>{q.value='';const r=q.getBoundingClientRect();return {x:r.x+8,y:r.y+8}})()" });
   await d.x(`click ${Math.round(10 + box.x)} ${Math.round(10 + box.y)} 1`);
   await until(async () => (await d.x("focus")).focus !== d.parent, "click transfers X focus from embedding parent");
   await d.x("key a");
   await until(() => call("evaluate", { page: "a", expression: "q.value === 'a'" }), "click takes child keyboard focus");
   check("real desktop click transfers X keyboard focus", true);
+  check("native focus event names the owner", events.slice(focusStart).some((v) => v.event === "focus" && v.page === "a"));
   await call("evaluate", { page: "a", expression: "q.value='';q.focus()" });
   await call("focus", { page: "a" }); await d.x("key b");
   await until(() => call("evaluate", { page: "a", expression: "q.value === 'b'" }), "focus op keyboard");
   check("focus op accepts XTest keyboard input", true);
   const pdf = await rawError("pdf", { page: "a", path: join(d.root, "out.pdf") });
   check("CEF pdf has clear error", pdf.includes("pdf needs the headless engine"), pdf);
-  const dl = await call("download", { page: "a", url: `${serverUrl}/file`, dir: join(d.root, "dl") }).catch((e) => ({ error: String(e) }));
-  check("CEF download works or clearly reports unsupported", dl.error ? dl.error.includes("download unavailable in CEF") : readFileSync(dl.path, "utf8") === "cef download\n", dl);
+  const dl = await call("download", { page: "a", url: `${serverUrl}/file`, dir: join(d.root, "dl") });
+  check("CEF download saves suggested file", dl.suggestedFilename === "cef.txt" && dl.bytes === 13 && readFileSync(dl.path, "utf8") === "cef download\n", dl);
   console.log("download result", JSON.stringify(dl));
   await call("open", { url: "data:text/html,<h1>Shared RGB</h1>", width: 320, height: 240 });
   await call("frames", { on: true, maxFps: 10 });

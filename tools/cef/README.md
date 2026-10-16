@@ -14,8 +14,9 @@ build/cef/Release/backplane-cef --parent 12345 --port 9333 --cache /tmp/my-cef-p
 The build uses the prebuilt CEF distribution cached at
 `$XDG_CACHE_HOME/backplane/cef/154.0.34` (default `~/.cache`), downloads only
 when missing, builds with CMake/Ninja (`BACKPLANE_JOBS`, default 2), and strips
-the executable and libcef.so. Chromium is never built from source. On a shared
-machine run heavy builds through `bp-admit.sh --mem 4 --cores 2 --`.
+the executable and libcef.so. Chromium is never built from source. Inside an already admitted systemd scope, build directly with
+`BACKPLANE_JOBS=2 nice -n 10 scripts/build-cef.sh`; do not nest bp-admit
+inside that scope. Otherwise use the coordinator’s admission control.
 
 `--package OUT.tar.zst` packs a runtime rooted directly at `backplane-cef`,
 with stripped libcef.so, all root paks, icudtl.dat, v8_context_snapshot.bin,
@@ -83,7 +84,10 @@ remain available for screenshots, recording and screencasts. Neither
 CEF obtains target ids with `Target.getTargetInfo` through a registered
 CefDevToolsMessageObserver. The host forces device scale factor 1 so its
 native child pixels and shield coordinates equal page CSS pixels. Clicking
-into a shown page transfers keyboard focus to its X child. Returning focus
+into a shown page transfers keyboard focus to its X child. The host observes
+XInput2 raw button presses through dlopen’d libXi.so.6 (without consuming
+the browser’s events), since CDP focus emulation can suppress CEF’s usual
+focus callbacks. XInput2 2.0 is required. Returning focus
 to the embedding app is that app's responsibility.
 
 ## Helper and tests
@@ -102,7 +106,8 @@ bun tools/cef/test/chrome.ts
 Tests choose a free private Xvfb display 96..99, create an independent X11
 parent, and use dlopen'd libXtst.so.6 for input. They terminate the helper,
 host and parent through stdin/EOF, signal only their own Xvfb, and use temp
-profiles. They never use display :0 or live Backplane data. CEF tests skip
+profiles. The top-level check excludes only CEF’s unmapped `Chromium clipboard`
+selection-owner window; every actual browser UI must be a child. They never use display :0 or live Backplane data. CEF tests skip
 with a message if BACKPLANE_CEF is absent.
 
 The zygote changes its stack canary after fork, so `main()` has no stack

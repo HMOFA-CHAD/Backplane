@@ -264,6 +264,7 @@ async function launchCef(): Promise<BrowserContext> {
       if (o) send({ event: e.event, page: o.name, ...(e.event === "shield-click" ? { x: e.x, y: e.y } : {}) });
     }
   });
+  host.on("attach-error", (e) => log(`CEF popup attach: ${e}`));
   host.on("exit", (code) => {
     if (cef !== host) return;
     cef = null;

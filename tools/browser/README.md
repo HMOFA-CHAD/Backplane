@@ -370,6 +370,17 @@ bun tools/cef/test/chrome.ts # existing pages.ts and record.ts unchanged
 BACKPLANE_CEF="$PWD/build/cef/Release/backplane-cef" bun tools/browser/test/cef.ts
 BACKPLANE_CEF="$PWD/build/cef/Release/backplane-cef" bun tools/browser/test/cef-lifetime.ts
 bun tools/browser/test/cef-runtime.ts
-bp-admit.sh --mem 4 --cores 2 -- bun tools/browser/build.ts /tmp/x/backplane-browser
+nice -n 10 bun tools/browser/build.ts /tmp/x/backplane-browser # within the admitted scope
 BACKPLANE_BROWSER=/tmp/x/backplane-browser BACKPLANE_CEF="$PWD/build/cef/Release/backplane-cef" bun tools/browser/test/cef.ts
 ```
+
+CEF 154 initially announces newly created Alloy children as CDP type `other`.
+Playwright ignores and detaches that initial session. The helper waits for
+that detach and the final `page` type, then attaches the reported target on
+the same root WebSocket. Host popups use the same path. Adapter-owned CDP
+requests use separate ids and consume only their own replies; Playwright
+receives the normal target events. This creates no new targets or windows.
+
+CEF's unmapped `Chromium clipboard` X selection-owner window is excluded
+from the tests' top-level browser-window check; it is required clipboard
+infrastructure. Every actual page and popup is an embedded child.
