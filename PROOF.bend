@@ -10961,3 +10961,19 @@ def Laws.mv_filter_key_separates():
   {==}
 
 # ---- end mail view ----
+
+# ---- usage-baseline ----
+def Laws.tok_cost_unknown_without_start():
+  {==}
+
+def Laws.tok_cost_known_at_start(b):
+  {==}
+
+def Laws.tok_codex_start_zero():
+  {==}
+
+def Laws.tok_epoch_once():
+  {==}
+
+def Laws.tok_pre_epoch():
+  {==}
