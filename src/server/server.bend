@@ -4868,7 +4868,7 @@ def Chips.loop(+fuel: Nat, +inbox: Chan(Msg), +path: String, +last: String) -> I
 
 def Refresh.start(+inbox: Chan(Msg), +cfg: Cfg) -> IO(Unit):
   do IO<Unit>:
-    user : String <- Env.get("HOME", "")
+    +user : String <- Env.get("HOME", "")
     xs : String <- Env.get("XDG_STATE_HOME", "")
     IO.spawn(Unit, Chips.loop(Fuel.forever(), inbox, UZ.Chip.path(xs, user), ""))
     IO.spawn(Unit, Refresh.loop(Fuel.forever(), inbox, user, Cfg.home(cfg), Models.cache(Cfg.home(cfg)), Net.models(Cfg.net(cfg)), "?", 0n))
