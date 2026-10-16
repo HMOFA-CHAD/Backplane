@@ -9205,3 +9205,24 @@ law hold_end_follows:
   for +over: U32
   {L.TL.hold.off(hold, 0, off, top, over) == off : U32}
 # ---- end scroll-stable ----
+
+# Entry boundaries carry identity without moving any pixels.
+law hold_boundary_zero:
+  {L.TL.h(29) == 0 : U32}
+
+# Correct for growth above the anchor as well as movement of the panel.
+law hold_entry_moves:
+  for +off: Nat
+  for +y0: Nat
+  for +y1: Nat
+  for +t0: Nat
+  for +t1: Nat
+  for +over: Nat
+  for h: {Nat.is_le(Nat.sub(Nat.add(Nat.add(Nat.sub(off, y0), y1), t1), t0), over) == True{} : Bool}
+  {L.TL.hold.move(off, y0, y1, t0, t1, over) == Nat.sub(Nat.add(Nat.add(Nat.sub(off, y0), y1), t1), t0) : Nat}
+
+# At the end there is no held page: the ordinary page limit applies.
+law hold_page_free:
+  for +es: List<&2, M.Entry>
+  for +base: Nat
+  {U.Hold.page(es, "", base) == base : Nat}

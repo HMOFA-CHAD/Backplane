@@ -259,13 +259,13 @@ let focus = null;
 let jump = null;
 let earlierAsked = false;
 
-// the entry at the top of the timeline's view, and how far into the view
-// it sits
+// the entry at the top of the timeline's view, and where it is in the
+// window (so a header or panel above the timeline growing moves it not)
 function anchorOf(tl) {
   const top = tl.getBoundingClientRect().top;
   for (const el of tl.querySelectorAll("[data-id]")) {
     const r = el.getBoundingClientRect();
-    if (r.bottom > top + 1) return { id: el.getAttribute("data-id"), off: r.top - top };
+    if (r.bottom > top + 1) return { id: el.getAttribute("data-id"), off: r.top };
   }
   return null;
 }
@@ -282,11 +282,16 @@ let away = "";
 // where the last of our own corrections left the timeline: its scroll
 // event is ours, not the person's, and keeps the offset held (no drift)
 let fixedAt = -1;
+let heldSize = null;
+function holdSize(tl) {
+  return { tl, height: tl.scrollHeight, view: tl.clientHeight, width: tl.clientWidth };
+}
 function holdEnd(tl) {
   return App.hold_at_end(BigInt(Math.max(0, Math.round(tl.scrollHeight - tl.scrollTop - tl.clientHeight))));
 }
 function holdFix(tl) {
   if (!tl || tl.id !== "timeline") return;
+  heldSize = holdSize(tl);
   if (!held) {
     const end = tl.scrollHeight - tl.clientHeight;
     if (tl.scrollTop < end) { tl.scrollTop = end; fixedAt = tl.scrollTop; }
@@ -294,7 +299,7 @@ function holdFix(tl) {
   }
   const el = tl.querySelector(`[data-id="${CSS.escape(held.id)}"]`);
   if (!el) return;
-  const d = el.getBoundingClientRect().top - tl.getBoundingClientRect().top - held.off;
+  const d = el.getBoundingClientRect().top - held.off;
   if (d) { tl.scrollTop += d; fixedAt = tl.scrollTop; }
 }
 // tell the client once each way; the thread is the one the view was away in
@@ -308,6 +313,15 @@ function holdSay(now) {
 function holdRead(tl) {
   if (!tl || tl.id !== "timeline") return;
   if (tl.scrollTop === fixedAt) return;
+  // Shrinking content can clamp scrollTop and queue a scroll event before
+  // ResizeObserver runs. It belongs to the changed layout, so repair the
+  // original anchor before deciding whether the reader reached the end.
+  const size = holdSize(tl);
+  if (held && heldSize?.tl === tl && (size.height !== heldSize.height || size.view !== heldSize.view || size.width !== heldSize.width)) {
+    holdFix(tl);
+    return;
+  }
+  heldSize = size;
   fixedAt = -1;
   held = holdEnd(tl) ? null : anchorOf(tl);
   holdSay(held ? App.sel(ui) : "");

@@ -169,7 +169,7 @@ def Nui.effects(cs: List<&2, U.Cmd>, n: Nui) -> Nui:
     case U.Focus{+id} <> t Nui{u, w, h, mx, my, sd, sc, ca, _, pa, hi, ms, vw}:
       Nui.effects(t, Nui{u, w, h, mx, my, sd, sc, ca, Fld.alias(id), pa, hi, ms, vw})
     case U.ScrollEnd{} <> t Nui{u, w, h, mx, my, sd, _, ca, fo, pa, hi, ms, vw}:
-      Nui.effects(t, Nui{u, w, h, mx, my, sd, 0, ca, fo, pa, hi, ms, vw})
+      Nui.effects(t, Nui{U.Hold.end(u, ""), w, h, mx, my, sd, 0, ca, fo, pa, hi, ms, vw})
     case U.Jump{_} <> t Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}:
       Nui.effects(t, Nui{U.Ui.scratch_set(u, "@jump.go", "1"), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw})
     case _ <> t _:
@@ -632,13 +632,14 @@ def Tl.up(near: Bool, +n: Nui) -> Step:
       Step{n, Nil{}, True{}}
 
 # a notch down the thread: back at the bottom, the pages the wheel added
-# go (a frame lays out only the newest page again)
+# go (a frame lays out only the newest page again), and so does the pill
+# (client.bend's Hold), in this very frame
 def Tl.down(above: Bool, n: Nui) -> Step:
   match above n:
     case True{} _:
       Step{n, Nil{}, True{}}
     case False{} Nui{+u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}:
-      Step{Nui{U.Ui.scratch_set(u, "@more." ++ U.Ui.sel(u), ""), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}, Nil{}, True{}}
+      Step{Nui{U.Hold.end(U.Ui.scratch_set(u, "@more." ++ U.Ui.sel(u), ""), ""), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}, Nil{}, True{}}
 
 def Nui.wheel.k(side: Bool, up: Bool, down: Bool, n: Nui, +sd: U32, +sc: U32, +most: U32, +tmost: U32, +more: Bool) -> Step:
   match side up down n:
@@ -705,7 +706,7 @@ def Nui.ui(n: Nui) -> U.Ui:
 
 # Reading while the thread grows (client.bend's Hold, layout.bend's
 # TL.hold): after each frame the timeline's place ("tl-at": sc answered,
-# off, top, the page's first entry) is kept as "@tl.at" with the thread,
+# off, top, the page's first entry, visible entry and its content top) is kept as "@tl.at" with the thread,
 # the window's sc becomes what is now below the view, and away from the
 # end the page is pinned at its first entry ("@tl.pin.<thread>") and the
 # client is told (U.Hold.away / U.Hold.end: the "N new" pill)
@@ -715,7 +716,7 @@ def Hold.part(+v: String, +i: Nat) -> String:
 
 # the kept place, for the thread on show ("" when it was another's)
 def Hold.of(+n: Nui) -> String:
-  Bool.pick(String, String.eq(Hold.part(U.Ui.scratch(Nui.ui(n), "@tl.at"), 4n), U.Ui.sel(Nui.ui(n))), U.Ui.scratch(Nui.ui(n), "@tl.at"), "")
+  Bool.pick(String, String.eq(Hold.part(U.Ui.scratch(Nui.ui(n), "@tl.at"), 6n), U.Ui.sel(Nui.ui(n))), U.Ui.scratch(Nui.ui(n), "@tl.at"), "")
 
 def Hold.pin(+u: U.Ui, +away: Bool, +first: String) -> U.Ui:
   U.Ui.scratch_set(u, "@tl.pin." ++ U.Ui.sel(u), Bool.pick(String, away, Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@tl.pin." ++ U.Ui.sel(u))), first, U.Ui.scratch(u, "@tl.pin." ++ U.Ui.sel(u))), ""))

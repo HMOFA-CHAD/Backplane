@@ -857,7 +857,7 @@ def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +ix: U.SIx, +sel: String, +
 # line with links, 14 a run of tool calls folded into one row (copy holds
 # what a click asks, FO.Fold.ask; w is 1 when the run is open), 28 the time
 # under a user message (a reply's is its footer's text). w is a user
-# bubble's width
+# bubble's width. Kind 29 is a zero-height entry boundary for anchoring.
 type TLine is Data:
   TLine{text: String, color: U32, kind: U32, copy: String, w: U32}
 
@@ -919,6 +919,8 @@ def TL.h.k(k: Nat) -> U32:
       24
     case 28n:
       20
+    case 29n:
+      0
     case _:
       10
 
@@ -1533,6 +1535,8 @@ def TL.draw.k(+ty: Ty, k: Nat, +text: String, +color: U32, +copy: String, +bw: U
       Out.ops([D.Draw.rect(c, (x1 - bw : U32), y, bw, 10, T.Th.raise(), 255)])
     case 7n:
       Out.cat(Out.ops(Ty.text(ty, 2n, text, c, x0, y, 22, T.Th.faint())), TL.copy(ty, c, x1, y, 22, copy))
+    case 29n:
+      Out.none()
     case 28n:
       Out.ops(Ty.text(ty, 2n, text, c, (x1 - Ty.width(ty, 2n, text) - 4 : U32), y, 20, T.Th.faint()))
     case 4n:
@@ -1637,7 +1641,7 @@ def TSel.of(+raw: String, +thread: String) -> TSel:
 # which lines hold text a selection can take, the face they are drawn in
 # and where that text starts (as TL.draw.k draws them)
 def TL.textual(+k: Nat) -> Bool:
-  Bool.not(Bool.or(Bool.or(Bool.or(Nat.is_eq(k, 4n), Nat.is_eq(k, 6n)), Bool.or(Nat.is_eq(k, 7n), Nat.is_eq(k, 9n))), Bool.or(Nat.is_eq(k, 12n), Bool.or(Nat.is_eq(k, 20n), Bool.or(Nat.is_eq(k, 21n), Nat.is_eq(k, 23n))))))
+  Bool.not(Bool.or(Bool.or(Bool.or(Nat.is_eq(k, 4n), Nat.is_eq(k, 6n)), Bool.or(Nat.is_eq(k, 7n), Nat.is_eq(k, 9n))), Bool.or(Nat.is_eq(k, 12n), Bool.or(Nat.is_eq(k, 20n), Bool.or(Nat.is_eq(k, 21n), Bool.or(Nat.is_eq(k, 23n), Nat.is_eq(k, 29n)))))))
 
 def TL.face(+k: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_eq(k, 1n), 4n, Bool.pick(Nat, Bool.or(Bool.or(Nat.is_eq(k, 8n), Nat.is_eq(k, 3n)), Bool.or(Bool.or(Nat.is_eq(k, 10n), Nat.is_eq(k, 11n)), Nat.is_eq(k, 15n))), 2n,
@@ -1728,6 +1732,8 @@ def TL.sel.hit(+ty: Ty, +ls: List<&2, TLine>, +sel: TSel, +x0: U32, +x1: U32) ->
 # buttons and links) where a drag selects text
 def TL.draw_all(+ty: Ty, ls: List<&2, TLine>, more: Bool, +c: D.Clip, +x0: U32, +x1: U32, +y: U32, +y1: U32, +i: Nat, +sel: TSel) -> Out:
   match ls more:
+    case TLine{_, _, 29, _, _} <> +rest True{}:
+      TL.draw_all(ty, rest, TL.more(rest, y, y1), c, x0, x1, y, y1, 1n+i, sel)
     case TLine{+t, +co, +k, +cp, +bw} <> +rest True{}:
       Out.all([Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), TL.h(k), "tl-line", Nat.show(i))]}, TL.draw(ty, TLine{t, co, k, cp, bw}, c, x0, x1, y),
         TL.sel.draw(ty, sel, i, TLine{t, co, k, cp, bw}, c, x0, x1, y),
@@ -2456,7 +2462,7 @@ def TL.jump.sc(+y: U32, +over: U32) -> U32:
 # ---------------------------------------------------
 # Scrolled up (sc > 0), the timeline holds what is read where it is: the
 # last frame's place rides on a hit no pointer reaches ("tl-at":
-# "sc|off|top|first entry"), nui.bend's Hold.take keeps it as "@tl.at"
+# "sc|off|top|page first|visible entry|entry top"), nui.bend's Hold.take keeps it as "@tl.at"
 # (with the thread) and the next frame starts from its `off` while sc is
 # still the one it answered, the top's move made good (Hold.off): entries
 # and streamed text below, the asks, todo card and composer under the
@@ -2482,6 +2488,54 @@ def TL.hold.k(still: Bool, +hold: String, +off: U32, +top: U32, +over: U32) -> U
 def TL.hold.off(+hold: String, +sc: U32, +off: U32, +top: U32, +over: U32) -> U32:
   TL.hold.k(Bool.and(U32.is_ne(sc, 0), String.eq(TL.hold.at(hold, 0n), U32.show(sc))), hold, off, top, over)
 
+# First entry with pixels below off. Keep its content-coordinate top as
+# well as its id; offsets can be deep inside a tall message.
+def TL.hold.head(ls: List<&2, TLine>, stop: Bool, +off: U32, +acc: U32, +id: String, +y: U32) -> String:
+  match ls stop:
+    case _ True{}:
+      id ++ "|" ++ U32.show(y)
+    case Nil{} False{}:
+      id ++ "|" ++ U32.show(y)
+    case TLine{_, _, 29, cp, _} <> t False{}:
+      TL.hold.head(t, False{}, off, acc, cp, acc)
+    case TLine{_, _, +k, _, _} <> t False{}:
+      TL.hold.head(t, U32.is_gt((acc + TL.h(k) : U32), off), off, (acc + TL.h(k) : U32), id, y)
+
+def TL.hold.matches(ls: List<&2, TLine>, +id: String) -> Bool:
+  match ls:
+    case TLine{_, _, 29, cp, _} <> _:
+      String.eq(cp, id)
+    case _:
+      False{}
+
+# Find the old boundary, stopping at once when it is found.
+def TL.hold.find(ls: List<&2, TLine>, hit: Bool, +id: String, +acc: U32) -> Maybe<&2, U32>:
+  match ls hit:
+    case _ True{}:
+      Some{acc}
+    case Nil{} False{}:
+      None{}
+    case TLine{_, _, +k, _, _} <> +t False{}:
+      TL.hold.find(t, TL.hold.matches(t, id), id, (acc + TL.h(k) : U32))
+
+# Move the entry's offset with both its content top and the panel top.
+def TL.hold.move(+off: Nat, +y0: Nat, +y1: Nat, +t0: Nat, +t1: Nat, +over: Nat) -> Nat:
+  U.Hold.off(Nat.add(Nat.sub(off, y0), y1), t0, t1, over)
+
+def TL.hold.place(at: Maybe<&2, U32>, +hold: String, +top: U32, +over: U32, fallback: U32) -> U32:
+  match at:
+    case Some{y}:
+      U32.from_nat(TL.hold.move(TL.hold.num(TL.hold.at(hold, 1n)), TL.hold.num(TL.hold.at(hold, 5n)), U32.to_nat(y), TL.hold.num(TL.hold.at(hold, 2n)), U32.to_nat(top), U32.to_nat(over)))
+    case None{}:
+      fallback
+
+def TL.hold.entry(still: Bool, +ls: List<&2, TLine>, +hold: String, +top: U32, +over: U32, off: U32) -> U32:
+  match still:
+    case True{}:
+      TL.hold.place(TL.hold.find(ls, TL.hold.matches(ls, TL.hold.at(hold, 4n)), TL.hold.at(hold, 4n), 0), hold, top, over, off)
+    case False{}:
+      off
+
 # the timeline sits between top and the composer, pinned to the bottom;
 # sc scrolls up into history. `off` is how many pixels of it are hidden
 # above the view (never negative: all arithmetic stays unsigned-safe).
@@ -2492,14 +2546,14 @@ def Lay.timeline(+ty: Ty, +ls: List<&2, TLine>, +x0: U32, +x1: U32, +top: U32, +
   +view = {U32.dim(bot, (top + 16 : U32)) : U32}
   +total = TL.height(ls, 0)
   +over = {U32.dim(total, view) : U32}
-  +off = TL.hold.off(hold, sc, U32.dim(over, U32.min(sc, over)), top, over)
+  +off = TL.hold.entry(Bool.and(U32.is_ne(sc, 0), String.eq(TL.hold.at(hold, 0n), U32.show(sc))), ls, hold, top, over, TL.hold.off(hold, sc, U32.dim(over, U32.min(sc, over)), top, over))
   +sc2 = {Bool.pick(U32, U32.is_eq(sc, 0), 0, (over - off : U32)) : U32}
   +rest = TL.drop(ls, TL.drop.more(ls, 0, off), 0, off)
   +acc = TL.drop.acc(ls, TL.drop.more(ls, 0, off), 0, off)
   +ry = {((top + 16 + acc : U32) - off : U32) : U32}
   Out.all([TL.draw_all(ty, rest, TL.more(rest, ry, bot), D.Clip{x0, top, x1, bot}, x0, x1, ry, bot,
     Nat.sub(List.length(&2, TLine, ls), List.length(&2, TLine, rest)), sel), TL.sel.hit(ty, ls, sel, x0, x1), chrome,
-    Out{Nil{}, [Lay.hit(0, 0, 0, 0, "tl-at", U32.show(sc2) ++ "|" ++ U32.show(off) ++ "|" ++ U32.show(top) ++ "|" ++ first), Lay.hit(0, 0, 0, 0, "tl-most", U32.show(over)), Lay.hit(0, 0, 0, 0, "tl-jump", U32.show(TL.jump.sc(TL.mark.y(ls, 0), over))), Lay.hit(0, 0, 0, 0, "tl-clip", U32.show(x0) ++ "," ++ U32.show(top) ++ "," ++ U32.show(x1) ++ "," ++ U32.show(bot))]}])
+    Out{Nil{}, [Lay.hit(0, 0, 0, 0, "tl-at", U32.show(sc2) ++ "|" ++ U32.show(off) ++ "|" ++ U32.show(top) ++ "|" ++ first ++ "|" ++ TL.hold.head(ls, False{}, off, 0, "", 0)), Lay.hit(0, 0, 0, 0, "tl-most", U32.show(over)), Lay.hit(0, 0, 0, 0, "tl-jump", U32.show(TL.jump.sc(TL.mark.y(ls, 0), over))), Lay.hit(0, 0, 0, 0, "tl-clip", U32.show(x0) ++ "," ++ U32.show(top) ++ "," ++ U32.show(x1) ++ "," ++ U32.show(bot))]}])
 
 # Terminals over the thread
 # -------------------------
@@ -5823,15 +5877,20 @@ def TL.mark(hit: Bool, ls: List<&2, TLine>) -> List<&2, TLine>:
     case False{}:
       ls
 
+# An entry boundary has no pixels or text. It lets the held view find the
+# same entry after an earlier image loads, a tool group opens, or text wraps.
+def TL.entry.bound(+e: M.Entry, ls: List<&2, TLine>) -> List<&2, TLine>:
+  TLine{"", 0, 29, M.Idx.id(e), 0} <> ls
+
 # the entries, each as its role says (one with no role as it is)
 def TL.entries.r(+ty: Ty, es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>, +sp: STP.Stamps) -> List<&2, TLine>:
   match es rs:
     case Nil{} _:
       Nil{}
     case +e <> t r <> rt:
-      List.append(&2, TLine, TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), TL.role(r, ty, TL.entry(ty, e, st, sel, px, pics, sp), px)), TL.entries.r(ty, t, rt, st, sel, px, pics, sp))
+      List.append(&2, TLine, TL.entry.bound(e, TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), TL.role(r, ty, TL.entry(ty, e, st, sel, px, pics, sp), px))), TL.entries.r(ty, t, rt, st, sel, px, pics, sp))
     case +e <> t Nil{}:
-      List.append(&2, TLine, TL.entry(ty, e, st, sel, px, pics, sp), TL.entries.r(ty, t, Nil{}, st, sel, px, pics, sp))
+      List.append(&2, TLine, TL.entry.bound(e, TL.entry(ty, e, st, sel, px, pics, sp)), TL.entries.r(ty, t, Nil{}, st, sel, px, pics, sp))
 
 # the times under the messages (the clock is the client's last tick)
 def TL.stamps(+es: List<&2, M.Entry>, +st: M.State, +sel: String, +pics: Map<&2, String>) -> STP.Stamps:
@@ -5847,9 +5906,9 @@ def TL.entries.mr(+ty: Ty, its: List<&2, TLE>, rs: List<&2, FO.Role>, +st: M.Sta
     case Nil{} _:
       Nil{}
     case TLE{+e, p} <> t r <> rt:
-      List.append(&2, TLine, TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), TL.role(r, ty, TL.entry.p(TL.mine_of(e, sel), ty, e, st, px, pics, p, sp), px)), TL.entries.mr(ty, t, rt, st, sel, px, pics, sp))
+      List.append(&2, TLine, TL.entry.bound(e, TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), TL.role(r, ty, TL.entry.p(TL.mine_of(e, sel), ty, e, st, px, pics, p, sp), px))), TL.entries.mr(ty, t, rt, st, sel, px, pics, sp))
     case TLE{+e, p} <> t Nil{}:
-      List.append(&2, TLine, TL.entry.p(TL.mine_of(e, sel), ty, e, st, px, pics, p, sp), TL.entries.mr(ty, t, Nil{}, st, sel, px, pics, sp))
+      List.append(&2, TLine, TL.entry.bound(e, TL.entry.p(TL.mine_of(e, sel), ty, e, st, px, pics, p, sp)), TL.entries.mr(ty, t, Nil{}, st, sel, px, pics, sp))
 
 # the timeline from the memo's items
 def TL.entries.m(+ty: Ty, +its: List<&2, TLE>, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>) -> List<&2, TLine>:
@@ -6135,7 +6194,7 @@ def Lay.memo.es(none: Bool, +n: S.Nui) -> List<&2, M.Entry>:
       Nil{}
     case False{}:
       TL.held.or(String.is_empty(U.Ui.scratch(S.Nui.ui(n), "@tl.pin." ++ U.Ui.sel(S.Nui.ui(n)))), M.State.mine(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n))), U.Ui.sel(S.Nui.ui(n)), TL.created(U.Ui.thread(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n)))),
-        U.Ui.scratch(S.Nui.ui(n), "@tl.pin." ++ U.Ui.sel(S.Nui.ui(n))), U.Page.shown(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n))))
+        U.Ui.scratch(S.Nui.ui(n), "@tl.pin." ++ U.Ui.sel(S.Nui.ui(n))), U.Hold.page(M.State.mine(U.Ui.state(S.Nui.ui(n)), U.Ui.sel(S.Nui.ui(n))), U.Ui.scratch(S.Nui.ui(n), "@away." ++ U.Ui.sel(S.Nui.ui(n))), U.Page.shown(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n)))))
 
 # Both the entries and live prefix are discarded when the locale changes.
 # Checking here also covers memos of threads left before a language switch.

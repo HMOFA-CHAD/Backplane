@@ -8526,6 +8526,24 @@ def Hold.pill.k(away: Bool, +u: Ui, +th: String) -> String:
 def Hold.pill(+u: Ui, +th: String) -> String:
   Hold.pill.k(Hold.is_away(u, th), u, th)
 
+# Extra entries received since the reader left the end. The page grows
+# by these entries so its old first entry cannot be evicted underneath it.
+def Hold.arrived(es: List<&2, M.Entry>, stop: Bool, +seen: String, +n: Nat) -> Nat:
+  match es stop:
+    case _ True{}:
+      n
+    case Nil{} False{}:
+      n
+    case e <> +t False{}:
+      Hold.arrived(t, String.eq(Hold.newest(t), seen), seen, 1n+n)
+
+def Hold.page(+es: List<&2, M.Entry>, +seen: String, +base: Nat) -> Nat:
+  match seen:
+    case SNil{}:
+      base
+    case SCon{_, _}:
+      Nat.add(base, Hold.arrived(es, String.eq(Hold.newest(es), seen), seen, 0n))
+
 def Hold.act(+u: Ui, +action: String, +value: String) -> Act:
   Bool.pick(Act, String.eq(action, "hold-away"), Act{Hold.away(u, value), Nil{}},
     Bool.pick(Act, String.eq(action, "hold-end"), Act{Hold.end(u, value), Nil{}},

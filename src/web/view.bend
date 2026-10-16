@@ -1370,7 +1370,7 @@ def View.paged.w(w: U.Win, +st: M.State, +sel: String, +info: Map<&2, String>, +
       List.append(&2, D.Node, View.earlier(h, sel), View.entries.e(es, st, sel, info, running, ec))
 
 def View.paged(+drafts: Map<&2, String>, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool, +ec: U.Ec) -> List<&2, D.Node>:
-  View.paged.w(U.Page.newest.from(es, sel, U.Page.since(st, sel), U.Page.count(Maybe.default(&2, Nat, Nat.read(U.Str.get(drafts, "@more." ++ sel)), 0n))), st, sel, info, running, ec)
+  View.paged.w(U.Page.newest.from(es, sel, U.Page.since(st, sel), U.Hold.page(es, U.Str.get(drafts, "@away." ++ sel), U.Page.count(Maybe.default(&2, Nat, Nat.read(U.Str.get(drafts, "@more." ++ sel)), 0n)))), st, sel, info, running, ec)
 
 # the thread's shell: its screen, and over it a transparent field that
 # takes keys (and a phone's keyboard)
