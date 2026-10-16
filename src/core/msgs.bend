@@ -29,14 +29,14 @@ def T.files.changed(l: I.Loc, +arg0: Nat) -> String:
     case I.En{}:
       I.I18n.exact(arg0, Nat.add(Nat.mul(0n, 10n), 0n), "No files changed", I.I18n.pick(I.I18n.plural(I.En{}, arg0), I.I18n.num(I.En{}, arg0) ++ " files changed", I.I18n.num(I.En{}, arg0) ++ " file changed", I.I18n.num(I.En{}, arg0) ++ " files changed", I.I18n.num(I.En{}, arg0) ++ " files changed", I.I18n.num(I.En{}, arg0) ++ " files changed", I.I18n.num(I.En{}, arg0) ++ " files changed"))
     case I.Ja{}:
-      I.I18n.exact(arg0, Nat.add(Nat.mul(0n, 10n), 0n), "変更なし", I.I18n.pick(I.I18n.plural(I.Ja{}, arg0), "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更", "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更", "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更", "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更", "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更", "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更"))
+      I.I18n.exact(arg0, Nat.add(Nat.mul(0n, 10n), 0n), "変更なし", I.I18n.pick(I.I18n.plural(I.Ja{}, arg0), "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件", "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件", "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件", "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件", "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件", "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件"))
 
 def T.settings.agent.lang(l: I.Loc) -> String:
   match l:
     case I.En{}:
       "Agents reply in my language"
     case I.Ja{}:
-      "エージェントも同じ言語で返答"
+      "エージェントも選択した言語で応答"
 
 def T.settings.agent.lang.note(l: I.Loc) -> String:
   match l:
@@ -106,7 +106,7 @@ def T.thread.delete.ask(l: I.Loc, arg0: String) -> String:
     case I.En{}:
       "Delete " ++ arg0 ++ "?"
     case I.Ja{}:
-      "「" ++ arg0 ++ "」を削除？"
+      "「" ++ arg0 ++ "」を削除しますか？"
 
 def T.thread.new(l: I.Loc) -> String:
   match l:
@@ -120,7 +120,7 @@ def T.turn.by(l: I.Loc, +arg0: String) -> String:
     case I.En{}:
       I.I18n.sel(arg0, "you", "You", I.I18n.sel(arg0, "agent", "Agent", "Someone"))
     case I.Ja{}:
-      I.I18n.sel(arg0, "you", "あなた", I.I18n.sel(arg0, "agent", "エージェント", "誰か"))
+      I.I18n.sel(arg0, "you", "自分", I.I18n.sel(arg0, "agent", "エージェント", "不明"))
 
 def T.keys() -> List<&2, String>:
   ["common.cancel", "common.delete", "common.save", "files.changed", "settings.agent.lang", "settings.agent.lang.note", "settings.lang", "settings.lang.auto", "settings.lang.en", "settings.lang.ja", "settings.lang.note", "settings.lang.off", "settings.lang.on", "thread.count", "thread.delete.ask", "thread.new", "turn.by"]
