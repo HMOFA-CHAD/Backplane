@@ -80,11 +80,18 @@ It has not been admitted. Example exact output:
 bp-admit: waiting (behind-older=1, avail 22 GB, pending 23 GB, cores reserved 10, load 20, 5 jobs)
 ```
 
-Five live admitted 10 GB scopes on the 59 GB machine leave insufficient
-reservation headroom for the additional 4 GB build plus bp-admit's 8 GB
-reserve. No admission rules or shared reservations have been altered.
-The coordinator has been asked to free one of its owned reservations.
+The decisive blocker is the current scope's CPU quota: `/usr/bin/nproc`
+returns **3**, whereas `/usr/bin/nproc --all` returns the host's **32**.
+`bp-admit.sh` captures `NPROC=$(nproc)` and requires four idle CPUs, then
+checks `cores_reserved + 2 <= NPROC - 4`. With NPROC=3, that check can never
+pass, even with no other jobs. The shared reservations also delayed the
+queue initially, but releasing them alone cannot resolve this scope's CPU
+check. No admission rules or shared reservations have been altered.
 
+The user has been asked whether to run the same admission command with
+`OMP_NUM_THREADS=32` for its machine-level CPU check, retain the 4 GB memory
+reservation and two-core build limit, and cancel only this run's pending
+admission process. That answer is pending.
 After admission, remaining commands (one browser test at a time):
 
 ```sh
@@ -95,7 +102,7 @@ BACKPLANE_CEF="$PWD/build/cef/Release/backplane-cef" bun tools/browser/test/cef-
 BACKPLANE_BROWSER=/tmp/x/backplane-browser BACKPLANE_CEF="$PWD/build/cef/Release/backplane-cef" bun tools/browser/test/cef.ts
 BACKPLANE_BROWSER=/tmp/x/backplane-browser BACKPLANE_CEF="$PWD/build/cef/Release/backplane-cef" bun tools/browser/test/cef-lifetime.ts
 /home/h/Documents/i2cjak/bp-coord/bin/bp-admit.sh --mem 4 --cores 2 -- scripts/build-cef.sh --package build/backplane-cef-linux-x64.tar.zst
-sha256sum -c build/backplane-cef-linux-x64.tar.zst.sha256
+(cd build && sha256sum -c backplane-cef-linux-x64.tar.zst.sha256)
 wc -c build/backplane-cef-linux-x64.tar.zst
 ```
 
