@@ -254,11 +254,11 @@ async function launchCef(): Promise<BrowserContext> {
   host.on("host", (e) => {
     if (e.event === "closed") cefOwners.delete(e.key);
     if (e.event === "popup") {
-      const o = cefOwners.get(e.opener);
+      const o = cefOwners.get(e.opener) ?? cefOwners.get(String(e.opener).split("~")[0]);
       if (o) cefOwners.set(e.key, o);
     }
     if (e.event === "shield-click" || e.event === "focus") {
-      const o = cefOwners.get(e.key);
+      const o = cefOwners.get(e.key) ?? cefOwners.get(String(e.key).split("~")[0]);
       if (o) send({ event: e.event, page: o.name, ...(e.event === "shield-click" ? { x: e.x, y: e.y } : {}) });
     }
   });
