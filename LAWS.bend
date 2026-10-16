@@ -3,6 +3,7 @@ import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/usage.bend as UZ
 import ./src/core/refview.bend as RC # links (cards, trail)
+import ./src/core/order.bend as ORD # ordering (project card, buy threads)
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/mailbody.bend as MB # mail 2a
 import ./src/core/ref.bend as REF
@@ -9084,3 +9085,29 @@ law card_person_no_state:
 law card_task_status_agrees:
   {String.join([RC.Card.task.status(" Doing"), RC.Card.task.status("blocked"), RC.Card.task.status("todo"), RC.Card.task.status("DONE "), RC.Card.task.status("dropped"), RC.Card.task.status("later"), RC.Card.task.status("")], ",")
     == String.join([TBD.Tb.status.norm(" Doing"), TBD.Tb.status.norm("blocked"), TBD.Tb.status.norm("todo"), TBD.Tb.status.norm("DONE "), TBD.Tb.status.norm("dropped"), TBD.Tb.status.norm("later"), TBD.Tb.status.norm("")], ",") : String}
+
+# Ordering (core/order.bend): Buy it shows only when there is something
+# to order and the order server answered (or estimates are off); its
+# words carry the price; an intent sent back from Edit is the text edited
+law order_buy_needs_parts:
+  {ORD.Card.buy(ORD.Card{"g", "i", "from $5.00", 0n, "", True{}}) == "" : String}
+
+law order_buy_priced:
+  {ORD.Card.buy(ORD.Card{"g", "", "from $5.00", 2n, "", True{}}) == "Buy it · from $5.00" : String}
+
+law order_buy_unreachable_hidden:
+  {ORD.Card.buy(ORD.Card{"g", "", "", 2n, "the order server is not reachable", True{}}) == "" : String}
+
+law order_buy_estimates_off:
+  {ORD.Card.buy(ORD.Card{"", "", "", 1n, "", False{}}) == "Buy it" : String}
+
+law intent_edit_round_trip:
+  {ORD.Intent.body(ORD.Intent.edit("# Goal\nA lamp")) == "# Goal\nA lamp" : String}
+
+law intent_edit_is_intent:
+  {ORD.Intent.is(ORD.Intent.edit("")) == True{} : Bool}
+
+# only a buy thread's agent has the order tools
+law order_tools_buy_only:
+  {BHS.Bots.buy.tools(False{}) == [] : List<&2, J.Json>}
+

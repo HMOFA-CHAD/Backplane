@@ -42,6 +42,7 @@ import ./tz.bend as TZ
 import ./when.bend as WH
 import ./sched.bend as SC
 import ./task.bend as TK
+import ./order.bend as OR
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -1140,7 +1141,7 @@ def Follow.button.k(stop: Bool, +label: String) -> String:
       label
 
 def Follow.button(+st: M.State, +sel: String, run: Bool, stop: Bool, +draft: String) -> String:
-  Follow.button.k(stop, Bool.pick(String, Btw.is(draft), "Ask", Bool.pick(String, Give.is(draft), "Give", Follow.label(st, sel, run))))
+  Follow.button.k(stop, Bool.pick(String, Btw.is(draft), "Ask", Bool.pick(String, Give.is(draft), "Give", Bool.pick(String, OR.Intent.is(draft), "Save", Follow.label(st, sel, run)))))
 
 def Follow.act(stop: Bool) -> String:
   match stop:
@@ -5524,6 +5525,133 @@ def Bots.say.k(a: Act, +bot: String, text: String) -> Act:
 def Bots.say(u: Ui, +bot: String, text: String) -> Act:
   Bots.say.k(Draft.sent(u), bot, text)
 
+# The project card (core/order.bend)
+# ----------------------------------
+# Above a project thread every client shows the intent's goal (opened: the
+# whole intent), Edit (the composer gets "/intent" and the text; sending
+# it writes .backplane/intent.md) and "Buy it · from $X" (order.buy: a buy
+# thread, gone to at once). The hub answers fab.look with the card, kept
+# as info fab:<thread>; it is asked when a thread is chosen and whenever
+# its turn ends (Fab.sync after every action and message; "@fab.at" is
+# what was asked last).
+
+# Settings' row on every client: the estimates sent or not (order.estimates)
+def Fab.set.label() -> String:
+  "Price estimates"
+
+def Fab.set.note() -> String:
+  "Buy it shows a price from each part's size and options, sent to the order service (never files)."
+
+def Fab.set.on(+st: M.State) -> String:
+  Bool.pick(String, String.eq(M.Setting.get(st, "order.estimates", "on"), "off"), "off", "on")
+
+def Fab.th(+u: Ui, +value: String) -> String:
+  Bool.pick(String, String.is_empty(value), Ui.sel(u), value)
+
+# the card's fields, kept apart when it arrives (Fab.reply) so no client
+# parses it per frame: "fab.line:<t>" the goal (or a nudge), "fab.intent:<t>",
+# "fab.buy:<t>" the button's words, "fab.shown:<t>" "1" when there is a card,
+# and "fab.open:<t>" "1" while the person has it open
+def Fab.line(+u: Ui) -> String:
+  Ui.info(u, "fab.line:" ++ Ui.sel(u))
+
+def Fab.intent(+u: Ui, +th: String) -> String:
+  Ui.info(u, "fab.intent:" ++ th)
+
+def Fab.open(+u: Ui) -> Bool:
+  String.eq(Ui.info(u, "fab.open:" ++ Ui.sel(u)), "1")
+
+def Fab.buying(+st: M.State, +th: String) -> Bool:
+  Bool.not(String.is_empty(M.Setting.get(st, OR.Order.buy.key(th), "")))
+
+# the Buy button's words ("" for none; a buy thread has none of its own)
+def Fab.buy.of(+st: M.State, +nf: Map<&2, String>, +th: String) -> String:
+  Bool.pick(String, Fab.buying(st, th), "", Str.get(nf, "fab.buy:" ++ th))
+
+def Fab.buy(+u: Ui) -> String:
+  Bool.pick(String, Fab.buying(Ui.state.of(u), Ui.sel(u)), "", Ui.info(u, "fab.buy:" ++ Ui.sel(u)))
+
+def Fab.shown(+u: Ui) -> Bool:
+  String.eq(Ui.info(u, "fab.shown:" ++ Ui.sel(u)), "1")
+
+def Fab.act.k(i: Nat, +u: Ui, +th: String) -> Act:
+  match i:
+    # the card opened or shut
+    case 0n:
+      Act{Ui.info_set(u, "fab.open:" ++ th, Bool.pick(String, String.eq(Ui.info(u, "fab.open:" ++ th), "1"), "", "1")), Nil{}}
+    # the intent into the composer, to change and send
+    case 1n:
+      Ui.draft(u, OR.Intent.edit(Fab.intent(u, th)))
+    # Buy it: the hub makes the buy thread and this client goes to it
+    case 2n:
+      Ui.rpc(Made.want(u), "order.buy", [J.KV{"thread", J.Str{th}}])
+    case _:
+      Act{u, Nil{}}
+
+def Fab.actions() -> List<&2, String>:
+  ["fab-open", "fab-edit", "buy"]
+
+def Fab.is(+action: String) -> Bool:
+  Nat.is_lt(C.Codec.pos(Fab.actions(), action), 3n)
+
+def Fab.act(+u: Ui, +action: String, +value: String) -> Act:
+  Fab.act.k(C.Codec.pos(Fab.actions(), action), u, Fab.th(u, value))
+
+def Fab.turn(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, +project, _, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Bool.pick(String, String.is_empty(project), "", C.Turn.name(turn))
+
+# what was last asked for: the thread and where its turn stands
+def Fab.at(+u: Ui) -> String:
+  Fab.set.on(Ui.state.of(u)) ++ "#" ++ Ui.sel(u) ++ "#" ++ Fab.turn(Ui.thread(Ui.state.of(u), Ui.sel(u)))
+
+def Fab.want(+u: Ui) -> Bool:
+  Bool.and(Bool.and(Bool.not(String.is_empty(Ui.sel(u))), Bool.not(String.eq(Fab.at(u), Ui.scratch(u, "@fab.at")))),
+    Bool.not(Bool.or(String.ends_with(Fab.at(u), "#running"), String.ends_with(Fab.at(u), "#"))))
+
+def Fab.sync.k(want: Bool, +u: Ui, cmds: List<&2, Cmd>) -> Act:
+  match want:
+    case True{}:
+      Ui.also(Ui.rpc(Ui.scratch_set(u, "@fab.at", Fab.at(u)), "fab.look", [J.KV{"thread", J.Str{Ui.sel(u)}}]), cmds)
+    case False{}:
+      Act{u, cmds}
+
+def Fab.sync(a: Act) -> Act:
+  match a:
+    case Act{+u, cmds}:
+      Fab.sync.k(Fab.want(u), u, cmds)
+
+# the hub's card for a thread
+def Fab.has(+o: J.Json) -> Bool:
+  Bool.not(String.eq(J.Json.show(Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(o, "result"), "goal"), J.Null{})), "null"))
+
+def Fab.keep(u: Ui, +th: String, +c: OR.Card) -> Ui:
+  Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(u, "fab.line:" ++ th, OR.Card.line(c)), "fab.intent:" ++ th, OR.Card.intent(c)),
+    "fab.buy:" ++ th, OR.Card.buy(c)), "fab.shown:" ++ th, Bool.pick(String, OR.Card.shown(c), "1", ""))
+
+def Fab.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
+  match has:
+    case True{}:
+      Fab.keep(u, J.Json.get_str(J.Json.get_obj(o, "result"), "thread", ""), OR.Card.of.j(J.Json.get_obj(o, "result")))
+    case False{}:
+      u
+
+# "/intent <text>" sent: the project's intent is that text (the hub writes
+# it and answers with the card)
+def Intent.send.go(u: Ui, +text: String) -> Act:
+  match u:
+    case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Ui.rpc(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, "fab.intent", [J.KV{"thread", J.Str{sel}}, J.KV{"text", J.Str{text}}])
+
+def Intent.send.d(a: Act, +text: String) -> Act:
+  match a:
+    case Act{u, cs}:
+      Ui.first(cs, Intent.send.go(u, text))
+
+def Intent.send(+u: Ui) -> Act:
+  Intent.send.d(Draft.clear(u), OR.Intent.body(Ui.draft_text(u)))
+
 def Ui.send.b(empty: Bool, b: Maybe<&2, BT.Bot>, u: Ui, text: String, +mode: String) -> Act:
   match empty b:
     case True{} _:
@@ -5573,8 +5701,15 @@ def Ui.send.give(give: Bool, +u: Ui, alt: Bool) -> Act:
     case False{}:
       Ui.send.btw(Btw.is(Ui.draft_text(u)), u, alt)
 
+def Ui.send.intent(intent: Bool, +u: Ui, alt: Bool) -> Act:
+  match intent:
+    case True{}:
+      Intent.send(u)
+    case False{}:
+      Ui.send.give(Give.is(Ui.draft_text(u)), u, alt)
+
 def Ui.send(+u: Ui, alt: Bool) -> Act:
-  Ui.send.give(Give.is(Ui.draft_text(u)), u, alt)
+  Ui.send.intent(OR.Intent.is(Ui.draft_text(u)), u, alt)
 
 def Bots.sel.set(u: Ui, +th: String) -> Ui:
   match u:
@@ -7852,7 +7987,7 @@ def Made.made(+t: String, +th: String) -> J.Json:
 
 # an answer: its request leaves the outbox; a diff opens the diff view
 def Ui.reply(u: Ui, +o: J.Json) -> Ui:
-  Made.reply(o, Bots.reply(o, Proj.reply(o, Btw.reply(Ui.reply.skills(u, o), o))))
+  Made.reply(o, Bots.reply(o, Proj.reply(o, Btw.reply(Fab.reply(Fab.has(o), Ui.reply.skills(u, o), o), o))))
 
 # A link's threads and bots (far.bend): its batch folded into the read
 # model under this hub's ids, and whether it answered ("far.away.<link>")
@@ -8877,7 +9012,7 @@ def Ui.recv_act.n(notify: Bool, u: Ui, +o: J.Json) -> Act:
     case True{}:
       Act{u, [Notify{J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "title", ""), J.Json.get_str(o, "body", ""), J.Json.get_str(o, "key", "")}]}
     case False{}:
-      Emb.sync.if(C.Codec.pos(["log", "changes", "view"], J.Json.get_str(o, "t", "")), Mpage.sync(Ui.recv_act.go(u, o)))
+      Emb.sync.if(C.Codec.pos(["log", "changes", "view"], J.Json.get_str(o, "t", "")), Fab.sync(Mpage.sync(Ui.recv_act.go(u, o))))
 
 def Ui.recv_act(u: Ui, +o: J.Json) -> Act:
   Ui.recv_act.n(String.eq(J.Json.get_str(o, "t", ""), "notify"), u, o)
@@ -9800,7 +9935,7 @@ def Ui.act.e(emb: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case True{}:
       Emb.act(u, action, value)
     case False{}:
-      Emb.sync.sel(Ui.sel(u), Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 17n), C.Codec.pos(Menu.actions(), action), u, action, value)))
+      Emb.sync.sel(Ui.sel(u), Fab.sync(Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 17n), C.Codec.pos(Menu.actions(), action), u, action, value))))
 
 # the picker's machine row (routed before the action table)
 def Ui.act.p(pick: Bool, +u: Ui, +action: String, +value: String) -> Act:
@@ -9945,12 +10080,20 @@ def Ui.act.us(us: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Ui.act.s(String.eq(action, "skill-close"), u, action, value)
 
+# (the project card's fab-open, fab-edit and buy: Fab.act)
+def Ui.act.fab(fab: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match fab:
+    case True{}:
+      Fab.act(u, action, value)
+    case False{}:
+      Ui.act.us(String.eq(action, "usage-refresh"), u, action, value)
+
 def Ui.act.z(tz: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match tz:
     case True{}:
       Tzs.act(u, action, value)
     case False{}:
-      Ui.act.us(String.eq(action, "usage-refresh"), u, action, value)
+      Ui.act.fab(Fab.is(action), u, action, value)
 
 # Only inspect the thread prefix, leaving the potentially long key snapshot alone.
 def Ui.subs.thread(s: String, acc: String) -> String:

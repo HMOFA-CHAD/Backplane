@@ -43,6 +43,7 @@ import ../core/onboard.bend as OB
 import ../core/sched.bend as SCH
 import ../core/tz.bend as TZ
 import ../core/stamp.bend as STP
+import ../core/order.bend as OR
 
 # Nui -> draw ops and hit regions. Ops are gathered bottom-up (paint
 # order) and reversed once into the topmost-first order the rasterizer
@@ -3575,7 +3576,8 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +tms = U.Models.menu(U.Str.get(info, "models"), tp)
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
-  +fy = {(ey + 46 : U32) : U32}
+  +fy = {(ey + 98 : U32) : U32}
+  +oe = U.Fab.set.on(st)
   +total = {(1092 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
@@ -3604,7 +3606,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line(U.Models.label_of(U.Str.get(info, "models"), tp, tm), tm), (w - 32 : U32)),
       D.Clip.all(), (x + 16 : U32), (b2 + 520 + dy + er : U32), 24, T.Th.dim())),
     Set.head(ty, "KiCad and FreeCAD", x, (b2 + 368 + dy + ey : U32)),
-    Set.card(x, (b2 + 400 + dy + ey : U32), w, 196),
+    Set.card(x, (b2 + 400 + dy + ey : U32), w, 248),
     Set.row(ty, U.KiCad.cli.label(info), U.KiCad.cli.note(info), x, (b2 + 402 + dy + ey : U32), w),
     Set.fork(ty, U.Str.get(info, "kicad.fork"), (x + 16 : U32), (b2 + 450 + dy + ey : U32)),
     Set.row.r(ty, U.KiCad.ipc.label(info), U.KiCad.ipc.note(info), x, (b2 + 486 + dy + ey : U32), w, Bool.pick(U32, U.KiCad.ipc.ready(info), 140, 0)),
@@ -3612,6 +3614,9 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
       Lay.chip(ty, (x + w - 120 : U32), (b2 + 500 + dy + ey : U32), "On", String.eq(ipc, "on"), "setting", "kicad.ipc=on"),
       Lay.chip(ty, (x + w - 70 : U32), (b2 + 500 + dy + ey : U32), "Off", String.eq(ipc, "off"), "setting", "kicad.ipc=off")]), Out.none()),
     Set.row(ty, U.FreeCAD.label(info), U.FreeCAD.note(info), x, (b2 + 546 + dy + ey : U32), w),
+    Set.row.r(ty, U.Fab.set.label(), U.Fab.set.note(), x, (b2 + 594 + dy + ey : U32), w, 140),
+    Lay.chip(ty, (x + w - 120 : U32), (b2 + 608 + dy + ey : U32), "On", String.eq(oe, "on"), "setting", "order.estimates=on"),
+    Lay.chip(ty, (x + w - 70 : U32), (b2 + 608 + dy + ey : U32), "Off", String.eq(oe, "off"), "setting", "order.estimates=off"),
     Set.head(ty, "Appearance", x, (b2 + 570 + dy + fy : U32)),
     Set.card(x, (b2 + 602 + dy + fy : U32), w, 116),
     Set.row.r(ty, "Theme", "The window and the web page (phones unset follow their own system).", x, (b2 + 604 + dy + fy : U32), w, 150),
@@ -5854,6 +5859,77 @@ def Lay.composer.a(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String
     Lay.ibutton(ty, D.Clip.all(), (Comp.send_x(ty, x1, send) - 34 : U32), fy, "paperclip", T.Th.soft(), "focus", "attach-path"),
     Lay.attach_field(ty, String.eq(focus, "attach-path"), path, caret, mark, x0, x1, (y - 36 : U32))])
 
+# The project card (client.bend's Fab.*): the goal, Edit and Buy it on one
+# row above the timeline; a click on the goal opens the whole intent under
+# it (at most Fab.max() lines, wrapped, headings faint)
+def Fab.max() -> Nat:
+  16n
+
+def Fab.wrap.k(blank: Bool, +ty: Ty, +l: String, +px: U32, rest: List<&2, String>) -> List<&2, String>:
+  match blank:
+    case True{}:
+      rest
+    case False{}:
+      List.append(&2, String, Ty.wrap(ty, 2n, l, px), rest)
+
+def Fab.wrap(ls: List<&2, String>, +ty: Ty, +px: U32) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Fab.wrap.k(String.is_empty(String.trim(l)), ty, l, px, Fab.wrap(t, ty, px))
+
+def Fab.lines(+ty: Ty, +intent: String, +px: U32) -> List<&2, String>:
+  List.take(&2, String, Fab.wrap(String.lines(intent), ty, px), Fab.max())
+
+# the card's height, the gap under it included (0: no card)
+def Fab.h(shown: Bool, open: Bool, +ty: Ty, +intent: String, +px: U32) -> U32:
+  match shown open:
+    case False{} _:
+      0
+    case True{} False{}:
+      44
+    case True{} True{}:
+      (44 + U32.from_nat(List.length(&2, String, Fab.lines(ty, intent, px))) * 20 + 10 : U32)
+
+def Fab.rows(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32) -> List<&2, R.Op>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      List.append(&2, R.Op, Ty.text(ty, 2n, l, D.Clip.all(), x, y, 20, Bool.pick(U32, String.starts_with(l, "#"), T.Th.faint(), T.Th.text())),
+        Fab.rows(t, ty, x, (y + 20 : U32)))
+
+def Fab.buy.w(+ty: Ty, +buy: String) -> U32:
+  Bool.pick(U32, String.is_empty(buy), 0, (Lay.button.w(ty, buy) + 6 : U32))
+
+def Fab.buy.btn(+ty: Ty, +buy: String, +x: U32, +y: U32) -> Out:
+  Out.when(Bool.not(String.is_empty(buy)), Lay.button(ty, D.Clip.all(), x, y, buy, T.Th.accent(), "buy", ""))
+
+def Lay.fab.body(open: Bool, +ty: Ty, +intent: String, +x0: U32, +x1: U32, +y: U32) -> Out:
+  match open:
+    case True{}:
+      Out.ops(List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), (x0 + 1 : U32), (y + 35 : U32), (x1 - x0 - 2 : U32), 1, T.Th.line(), 255)],
+        Fab.rows(Fab.lines(ty, intent, (x1 - x0 - 24 : U32)), ty, (x0 + 12 : U32), (y + 40 : U32))))
+    case False{}:
+      Out.none()
+
+def Lay.fab(shown: Bool, +open: Bool, +ty: Ty, +line: String, +intent: String, +buy: String, +x0: U32, +x1: U32, +y: U32) -> Out:
+  match shown:
+    case True{}:
+      +h = Fab.h(True{}, open, ty, intent, (x1 - x0 - 24 : U32))
+      +bw = Fab.buy.w(ty, buy)
+      +ew = Lay.button.w(ty, "Edit")
+      +gx = {(x1 - 4 - bw - ew - 10 : U32) : U32}
+      Out.all([Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), (h - 8 : U32), 0, T.Th.raise(), T.Th.line())),
+        Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, line, (gx - x0 - 12 : U32)), D.Clip.all(), (x0 + 12 : U32), (y + 4 : U32), 28, T.Th.text())),
+        Out{Nil{}, [Lay.hit(x0, y, (gx - x0 : U32), 36, "fab-open", "")]},
+        Lay.button(ty, D.Clip.all(), (x1 - 4 - bw - ew : U32), (y + 4 : U32), "Edit", T.Th.text(), "fab-edit", ""),
+        Fab.buy.btn(ty, buy, (x1 - bw + 2 : U32), (y + 4 : U32)),
+        Lay.fab.body(open, ty, intent, x0, x1, y)])
+    case False{}:
+      Out.none()
+
 def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: String, +st: M.State, +sel: String, +live: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool,
     +x0: U32, +x1: U32, +h: U32, +sc: U32, pa: Bool, term: Bool, +info: String, +picking: Bool, +pend: List<&2, String>, +rs: List<&2, U.SkillRow>, +now: Nat,
     +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String, pre: List<&2, IME.Run>) -> Out:
@@ -5869,7 +5945,12 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       # the row under the header: the parent's link
       +pl = {Bool.pick(U32, String.is_empty(U.Tasks.up(st, sel)), 0, 32) : U32}
       +pins = U.Ec.pins(ec, st, sel)
-      +top = {(52 + hy + pl + Subs.height(ts, svis, sopen) + Pins.height(pins) : U32) : U32}
+      # the project card (Lay.fab), under the parent's link
+      +fs = String.eq(U.Str.get(pics, "fab.shown:" ++ sel), "1")
+      +fo = String.eq(U.Str.get(pics, "fab.open:" ++ sel), "1")
+      +fin = U.Str.get(pics, "fab.intent:" ++ sel)
+      +fh = Fab.h(fs, fo, ty, fin, (cw - 24 : U32))
+      +top = {(52 + hy + pl + fh + Subs.height(ts, svis, sopen) + Pins.height(pins) : U32) : U32}
       +asks = U.Asks.open(st, sel)
       +ah = Asks.h(ty, asks, pics, (cw - 32 : U32))
       +qs = M.Queue.context(M.Queue.items(st, sel))
@@ -5893,8 +5974,9 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
         cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
           Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
-          Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + pl : U32)),
-          Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + Subs.height(ts, svis, sopen) : U32), fkey, blink),
+          Lay.fab(fs, fo, ty, U.Str.get(pics, "fab.line:" ++ sel), fin, U.Fab.buy.of(st, pics, sel), cx0, cx1, (60 + hy + pl : U32)),
+          Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + pl + fh : U32)),
+          Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + fh + Subs.height(ts, svis, sopen) : U32), fkey, blink),
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), Comp.chip(ty, U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)), U.Usage.tail(st, sel), cx0, cx1, U.Follow.button(st, sel, Lay.running(turn), stop, draft)), rs, atts, up, path, pre),
           Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
           Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),

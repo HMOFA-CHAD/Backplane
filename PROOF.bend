@@ -10927,3 +10927,27 @@ def Laws.ime_commit_event_id():
   {==}
 
 # ---- end i18n ime ----
+
+# ---- ordering ----
+
+def Laws.order_buy_needs_parts():
+  {==}
+
+def Laws.order_buy_priced():
+  {==}
+
+def Laws.order_buy_unreachable_hidden():
+  {==}
+
+def Laws.order_buy_estimates_off():
+  {==}
+
+def Laws.intent_edit_round_trip():
+  {==}
+
+def Laws.intent_edit_is_intent():
+  {==}
+
+def Laws.order_tools_buy_only():
+  {==}
+
