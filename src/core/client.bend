@@ -3095,9 +3095,44 @@ def Ui.cast.k(on: Bool, +u: Ui, +page: String) -> Act:
     case False{}:
       Act{u, Nil{}}
 
+# the page on show: the selected thread's Browser tab's, else a bot's
+# Browser tab's (the bot's own page)
+def Ui.shown.page.k(bot: Bool, +u: Ui) -> String:
+  match bot:
+    case True{}:
+      Ui.scratch(u, "@bot")
+    case False{}:
+      Ui.cast.page(u)
+
+def Ui.shown.page(+u: Ui) -> String:
+  Ui.shown.page.k(Bool.and(String.eq(Ui.scratch(u, "@btab"), "browser"), Bool.not(String.is_empty(Ui.scratch(u, "@bot")))), u)
+
 # a frame of page heard ({"t":"shot"}): said seen when the tab shows it
 def Ui.cast.seen(+u: Ui, +page: String) -> Act:
-  Ui.cast.k(Bool.and(Bool.not(String.is_empty(page)), String.eq(page, Ui.cast.page(u))), u, page)
+  Ui.cast.k(Bool.and(Bool.not(String.is_empty(page)), String.eq(page, Ui.shown.page(u))), u, page)
+
+# An unwatched page is not cast at all (the helper stops its screencast and
+# keeps a still every few seconds), so a client cannot wait for a frame to
+# say it shows one: an action that brings a page on show says so at once
+def Ui.cast.add(a: Act, cs: List<&2, Cmd>) -> Act:
+  match a:
+    case Act{u, c2}:
+      Act{u, List.append(&2, Cmd, cs, c2)}
+
+def Ui.cast.now.k(go: Bool, a: Act, +page: String) -> Act:
+  match go a:
+    case True{} Act{+u, cs}:
+      Ui.cast.add(Ui.rpc(Ui.scratch_set(u, "@cast.n", "1"), "browser.seen", [J.KV{"page", J.Str{page}}]), cs)
+    case False{} _:
+      a
+
+def Ui.cast.now.p(+before: String, a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Ui.cast.now.k(Bool.and(Bool.not(String.is_empty(Ui.shown.page(u))), Bool.not(String.eq(Ui.shown.page(u), before))), Act{u, cs}, Ui.shown.page(u))
+
+def Ui.cast.now(+u: Ui, a: Act) -> Act:
+  Ui.cast.now.p(Ui.shown.page(u), a)
 
 def Made.at(+u: Ui) -> String:
   Ui.info(u, "local.machine") ++ "|" ++ Ui.info(u, "local.generation")
@@ -8963,8 +8998,17 @@ def Ui.recv_act.n(notify: Bool, u: Ui, +o: J.Json) -> Act:
     case False{}:
       Emb.sync.if(C.Codec.pos(["log", "changes", "view"], J.Json.get_str(o, "t", "")), Mpage.sync(Ui.recv_act.go(u, o)))
 
+# a frame of a page ({"t":"shot","bot":page,"n":n}) where the client keeps
+# it (the phones): its number as info "shot.<page>", seen when on show
+def Ui.recv_act.s(shot: Bool, u: Ui, +o: J.Json) -> Act:
+  match shot:
+    case True{}:
+      Ui.cast.seen(Ui.info_set(u, "shot." ++ J.Json.get_str(o, "bot", ""), J.Json.as_raw(J.Json.get(o, "n"), "0")), J.Json.get_str(o, "bot", ""))
+    case False{}:
+      Ui.recv_act.n(String.eq(J.Json.get_str(o, "t", ""), "notify"), u, o)
+
 def Ui.recv_act(u: Ui, +o: J.Json) -> Act:
-  Ui.recv_act.n(String.eq(J.Json.get_str(o, "t", ""), "notify"), u, o)
+  Ui.recv_act.s(String.eq(J.Json.get_str(o, "t", ""), "shot"), u, o)
 
 # after an action that chose another thread
 def Emb.sync.sel.k(moved: Bool, a: Act) -> Act:
@@ -10067,7 +10111,7 @@ def Lang.dispatch(k: Nat, +u: Ui, +action: String, +value: String) -> Act:
     case _: Rc.sync.of(Ui.act.subs(String.eq(action, "subs-shut"), String.eq(action, "subs-open"), u, action, value))
 
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Lang.dispatch(C.Codec.pos(["lang", "lang-os"], action), u, action, value)
+  Ui.cast.now(u, Lang.dispatch(C.Codec.pos(["lang", "lang-os"], action), u, action, value))
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

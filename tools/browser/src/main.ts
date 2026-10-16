@@ -41,7 +41,8 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
       "  raw RGB frames of the shared page are written to FILE (atomically, via rename).\n" +
       "  --profile DIR keeps one Chrome profile (logins, cookies) across pages and runs.\n" +
       "  --jpeg-dir DIR writes every page's frames to DIR/<owner>.jpg.\n" +
-      "  --jpeg-fps N (4) frames a second at most; --cast-fps N (30) while a client shows the page (op cast).\n",
+      "  --jpeg-fps N (4) frames a second at most; --cast-fps N (30) while a client shows the page (op cast);\n" +
+      "  a page no client shows is not cast: a still every --idle-still-ms N (5000).\n",
   );
   process.exit(0);
 }
@@ -54,6 +55,10 @@ const JPEG_FPS = Math.max(1, Math.min(30, Number(argValue("--jpeg-fps") ?? 4) ||
 // while some client shows a page (the cast op leases it), its frames go out
 // at up to CAST_FPS a second instead of JPEG_FPS
 const CAST_FPS = Math.max(1, Math.min(60, Number(argValue("--cast-fps") ?? 30) || 30));
+// a page no client shows is not cast at all (no screencast: Chrome encodes
+// nothing for it); a still is taken every IDLE_STILL_MS instead, and once
+// after each request for the page, for whoever opens it next
+const IDLE_STILL_MS = Math.max(1000, Number(argValue("--idle-still-ms") ?? 5000) || 5000);
 const CHROMIUM_ARG = argValue("--chromium");
 const HEADED = process.argv.includes("--headed");
 const DEBUG = Boolean(process.env.BACKPLANE_BROWSER_DEBUG);
@@ -95,6 +100,10 @@ type Shot = {
   lastHash: bigint;
   pending: Buffer | null;
   timer: ReturnType<typeof setTimeout> | null;
+  // the screencast runs (only while some client shows the page)
+  casting: boolean;
+  // when the last idle still was taken (performance.now ms)
+  still: number;
 };
 
 // an owner's tabs (its page and the popups it opened), the one it drives,
@@ -124,7 +133,7 @@ function ownerFor(name: string): Owner {
       active: null,
       viewport: { ...DEFAULT_VIEWPORT },
       console: [],
-      shot: { cdp: null, seq: 0, last: 0, fast: 0, lastAll: 0, lastHash: 0n, pending: null, timer: null },
+      shot: { cdp: null, seq: 0, last: 0, fast: 0, lastAll: 0, lastHash: 0n, pending: null, timer: null, casting: false, still: 0 },
       opening: null,
       recording: false,
       lastNav: "",
@@ -464,13 +473,44 @@ async function startShots(o: Owner): Promise<void> {
     o.shot.pending = Buffer.from(e.data, "base64");
     scheduleShot(o);
   });
-  await s.send("Page.startScreencast", { format: "jpeg", quality: 70, maxWidth: 1280, maxHeight: 2048, everyNthFrame: 1 });
+  o.shot.casting = false;
+  await castCheck(o);
 }
+
+// whether a client shows the page (its cast lease holds)
+function watched(o: Owner): boolean {
+  return performance.now() < o.shot.fast;
+}
+
+// the screencast runs exactly while the page is watched
+async function castCheck(o: Owner): Promise<void> {
+  const s = o.shot.cdp;
+  if (!s) return;
+  const want = watched(o);
+  if (want === o.shot.casting) return;
+  o.shot.casting = want;
+  if (want) await s.send("Page.startScreencast", { format: "jpeg", quality: 70, maxWidth: 1280, maxHeight: 2048, everyNthFrame: 1 }).catch(() => {});
+  else await s.send("Page.stopScreencast").catch(() => {});
+}
+
+// once a second: leases that ran out stop their screencast; an unwatched
+// page gets a still every IDLE_STILL_MS (written only when it changed)
+setInterval(() => {
+  const now = performance.now();
+  for (const o of owners.values()) {
+    void castCheck(o);
+    if (!watched(o) && o.shot.cdp && now - o.shot.still >= IDLE_STILL_MS) {
+      o.shot.still = now;
+      void shotNow(o.name);
+    }
+  }
+}, 1000).unref();
 
 async function stopShots(o: Owner): Promise<void> {
   const s = o.shot.cdp;
   o.shot.cdp = null;
   o.shot.pending = null;
+  o.shot.casting = false;
   if (s) {
     await s.send("Page.stopScreencast").catch(() => {});
     await s.detach().catch(() => {});
@@ -480,6 +520,7 @@ async function stopShots(o: Owner): Promise<void> {
 function clearShot(o: Owner): void {
   o.shot.cdp = null;
   o.shot.pending = null;
+  o.shot.casting = false;
   if (o.shot.timer) clearTimeout(o.shot.timer);
   o.shot.timer = null;
 }
@@ -940,12 +981,14 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
     const ev = await captureNow(true);
     return ev ?? { seq: frames.seq, path: FRAMES_PATH };
   },
-  // a client shows this page: its frames go out at CAST_FPS for ms (2500)
+  // a client shows this page: it is cast, its frames going out at CAST_FPS,
+  // for ms (2500); without it the page is not cast (IDLE_STILL_MS)
   async cast(a, name) {
     const o = ownerFor(name);
     const ms = Math.max(0, Math.min(10_000, Number(a.ms ?? 2500) || 0));
     const was = performance.now() < o.shot.fast;
     o.shot.fast = performance.now() + ms;
+    await castCheck(o);
     if (!was && ms > 0) void shotNow(name);
     return { fps: shotFps(o) };
   },
@@ -965,6 +1008,9 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
 
 // Loop
 // ----
+
+// requests that change nothing on the page (no still for them)
+const STILL_QUIET = new Set(["cast", "status", "frames", "frame", "close", "close_page", "snapshot", "console", "tabs"]);
 
 async function handle(line: string): Promise<void> {
   if (!line.trim()) return;
@@ -994,6 +1040,9 @@ async function handle(line: string): Promise<void> {
   } catch (e: any) {
     send({ id, ok: false, error: String(e?.message ?? e).split("\n")[0] });
   }
+  // what a request did to an unwatched page shows in a still soon after
+  const o = owners.get(name);
+  if (o && !watched(o) && !STILL_QUIET.has(op)) o.shot.still = Math.min(o.shot.still, performance.now() - IDLE_STILL_MS + 300);
   if (op === "close") process.exit(0);
 }
 
