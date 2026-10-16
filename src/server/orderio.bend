@@ -212,13 +212,14 @@ def Od.forms(ps: List<&2, String>, +dir: String) -> String:
     case Nil{}:
       ""
     case +p <> t:
-      "form = " ++ GS.Gc.q("file=@\"" ++ dir ++ "/" ++ p ++ "\";filename=\"" ++ p ++ "\"") ++ "\n" ++ Od.forms(t, dir)
+      "form = " ++ GS.Gc.q("file=@\"" ++ p ++ "\";filename=\"" ++ p ++ "\"") ++ "\n" ++ Od.forms(t, dir)
 
 def Od.upload.cfg(+url: String, +install: String, +dir: String, ps: List<&2, String>, +out: String) -> String:
-  "url = " ++ GS.Gc.q(url) ++ "\n" ++ GS.Gc.headers(Od.heads(install)) ++ "form = " ++ GS.Gc.q("manifest=<" ++ dir ++ "/manifest.json") ++ "\n"
+  "url = " ++ GS.Gc.q(url) ++ "\n" ++ GS.Gc.headers(Od.heads(install)) ++ "form = " ++ GS.Gc.q("manifest=<manifest.json") ++ "\n"
     ++ Od.forms(ps, dir) ++ "output = " ++ GS.Gc.q(out) ++ "\n" ++ "write-out = \"%{http_code}\"\n"
 
-# the server's answer to an upload: {id, token} or {error}
+# the server's answer to an upload: {id, token} or {error} (curl runs in the
+# order's folder and names every file from there, by the checked relative paths)
 def Od.upload(+home: String, +server: String, +install: String, +dir: String, ps: List<&2, String>) -> IO(J.Json):
   do IO<J.Json>:
     +name : String <- GS.Gf.nonce(3n)
