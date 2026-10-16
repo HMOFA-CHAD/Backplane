@@ -25,6 +25,7 @@ import ./version.bend as VER
 import ./locks.bend as LK
 import ./adopt.bend as AD
 import ./cmds.bend as CM
+import ./order.bend as OR
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -1070,7 +1071,8 @@ def Hub.methods() -> List<&2, String>:
    "thread.settle", "thread.unsettle", "thread.archive", "thread.unarchive",
    "thread.pin", "thread.unpin", "thread.rename", "thread.delete", "kicad.watch", "thread.modes", "app.update", "setting.set", "kicad.install",
    "ask.answer", "device.register", "device.drop", "kicad.info", "queue.resume",
-   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status", "lock.release", "lock.cancel"]
+   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status", "lock.release", "lock.cancel",
+   "fab.look", "fab.intent", "order.buy"]
 
 # Agent output (Claude stream-json)
 # ---------------------------------
@@ -4636,6 +4638,42 @@ def Locks.after.go(names: List<&2, String>, +before: M.State, +now: Nat, +st: St
 def Locks.after(+s: M.State, +now: Nat, +st: Step) -> Step:
   Locks.after.go(M.Locks.names(M.State.replay(Queue.changes(st), s)), s, now, st)
 
+# Ordering (core/order.bend)
+# --------------------------
+# The project card (fab.look: the intent's goal and the "from" price) and
+# an intent the person wrote (fab.intent) are the server's jobs "fab" and
+# "intent", in the thread's folder; the setting order.estimates ("off"
+# keeps every part's features on this machine) and order.server ride along.
+def Buy.server(+s: M.State) -> String:
+  M.Setting.get(s, "order.server", OR.Order.server())
+
+def Buy.look(+s: M.State, +client: U32, +id: String, +th: String, +job: String, +text: String) -> Step:
+  Step.outs([Git{client, id, job, th, Hub.cwd(s, Hub.thread(s, th)), M.Setting.get(s, "order.estimates", "on") ++ "\n" ++ Buy.server(s), text}])
+
+def Buy.title(p: M.Project) -> String:
+  match p:
+    case M.Project{_, +title, _, _, _}:
+      OR.Order.buy.title(title)
+
+# Buy it: a thread of its own in the same folder (the source's worktree,
+# like a delegated task), marked buy.<thread> (its source), started by the
+# person's "Buy it"; the client that asked goes to it
+def Buy.go(t: M.Thread, +s: M.State, +now: Nat, +client: U32, +id: String, +src: String) -> Step:
+  match t:
+    case M.Thread{_, +project, _, _, _, _, _, _, _, _, _, _, +env, +branch, +wt, +provider, +model, rm, im, _, _}:
+      +th = Hub.id("t", now, Hub.seq(s))
+      +cs = {[M.ThreadCreated{th, project, Buy.title(Hub.project(s, project)), env, branch, wt, provider, model, now}, M.ModesSet{th, rm, im, model, now},
+        M.SettingSet{OR.Order.buy.key(th), src, now}] : List<&2, M.Change>}
+      +s1 = {M.State.replay(cs, s) : M.State}
+      Step.before(cs, [Reply.made(client, id, th)], Hub.post(s1, now, th, Hub.id("m", now, Hub.seq(s1)), M.User{}, OR.Order.buy.text()))
+
+def Buy.start(known: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +src: String) -> Step:
+  match known:
+    case True{}:
+      Buy.go(Hub.thread(s, src), s, now, client, id, src)
+    case False{}:
+      Step.outs([Reply.err(client, id, "no such thread")])
+
 def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
@@ -4720,6 +4758,12 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
       Step.before(Nil{}, [Reply.ok(client, id)], Deploy.cancel(s, now))
     case 36n:
       Step.outs([Reply.data(client, id, DP.Deploy.status(s))])
+    case 39n:
+      Buy.look(s, client, id, J.Json.get_str(p, "thread", ""), "fab", "")
+    case 40n:
+      Buy.look(s, client, id, J.Json.get_str(p, "thread", ""), "intent", J.Json.get_str(p, "text", ""))
+    case 41n:
+      Buy.start(Hub.owns(s, J.Json.get_str(p, "thread", "")), s, now, client, id, J.Json.get_str(p, "thread", ""))
     case _:
       Hub.more(C.Codec.pos(Hub.methods.git(), m), s, now, client, id, p, m)
 
