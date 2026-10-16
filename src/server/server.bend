@@ -8333,7 +8333,9 @@ def Hub.step.b(st: M.State, h: Hub, +cs: List<&2, M.Change>, os: List<&2, B.Out>
 def Hub.step.a(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   Hub.step.b(st, h, B.Alerts.changes(st, cs), os)
 
-# the step's wakes (hub.bend's Wake.after) first, so their messages get
+# the step's wakes (hub.bend's Wake.after) and riding mail (Ride.after: a
+# turn that ended with mail waiting starts the next) first, so their
+# messages get
 # alert records like any other change
 def Hub.step.wakes(step: B.Step, +st: M.State, h: Hub) -> IO(Hub & Bool):
   match step:
@@ -8342,7 +8344,7 @@ def Hub.step.wakes(step: B.Step, +st: M.State, h: Hub) -> IO(Hub & Bool):
 
 def Hub.step.k(p: M.State & Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   (+st, h) = p
-  IO.bind(Nat, Hub & Bool, Now.nat(), now => Hub.step.wakes(B.Locks.after(st, now, B.Wake.after(st, B.Step{cs, os})), st, h))
+  IO.bind(Nat, Hub & Bool, Now.nat(), +now => Hub.step.wakes(B.Locks.after(st, now, B.Ride.after(st, now, B.Wake.after(st, B.Step{cs, os}))), st, h))
 
 # a step's changes are stored (with the pending counts they move), then
 # its effects run; answers whether it was stored
@@ -8864,8 +8866,8 @@ def Hub.mcp.k(o: MC.McpOut, h: Hub, +reply: Chan(String), +body: String) -> IO(H
 def Hub.mcp.hub.normal(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.mcp.k(BH.Bots.mcp(st, now, thread, Maybe.default(&2, J.Json, J.Json.parse(Cfg.models(cfg)), J.Null{}), Cfg.version(cfg),
-          Maybe.default(&2, J.Json, J.Json.parse(BN.Bn.dir(Cfg.bn(cfg))), J.Json.arr(Nil{})), GG.Google.tool_defs(), body),
+      Hub.mcp.k(BH.Ride.mcp(BH.Bots.mcp(st, now, thread, Maybe.default(&2, J.Json, J.Json.parse(Cfg.models(cfg)), J.Null{}), Cfg.version(cfg),
+          Maybe.default(&2, J.Json, J.Json.parse(BN.Bn.dir(Cfg.bn(cfg))), J.Json.arr(Nil{})), GG.Google.tool_defs(), body), st, now, thread),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, body)
 
 def LockTool.preflight(free: Bool, +name: String, +holder: String, +home: String) -> IO(Bool):

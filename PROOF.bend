@@ -22,6 +22,7 @@ import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
 import ./src/core/acp.bend as AC
 import ./src/core/mcp.bend as MC
+import ./src/core/ride.bend as RD
 import ./src/core/handoff.bend as HD
 import ./src/core/agent.bend as AG
 import ./src/core/fuzzy.bend as FZ
@@ -659,19 +660,75 @@ def Laws.deliver_held_steer(b1, b2, th, id, now):
     case False{} False{}:
       {==}
 
+def Laws.deliver_held_restart(b1, b2, b3, th, id, now, v, r):
+  match b1 b2 b3:
+    case True{} True{} True{}:
+      {==}
+    case True{} True{} False{}:
+      {==}
+    case True{} False{} True{}:
+      {==}
+    case True{} False{} False{}:
+      {==}
+    case False{} True{} True{}:
+      {==}
+    case False{} True{} False{}:
+      {==}
+    case False{} False{} True{}:
+      {==}
+    case False{} False{} False{}:
+      {==}
+
+# a running non-Claude turn: the message rides (nothing held), or, with an
+# older log's queue, the turn restarts (Laws.deliver_held_restart)
+law ride_held_k:
+  for q: Bool
+  for +s: M.State
+  for +now: Nat
+  for +th: String
+  for +msg: String
+  for role: M.Role
+  for +text: String
+  {H.Deliver.held(H.Queue.changes(H.Hub.deliver.ride(q, s, now, th, msg, role, text))) == False{} : Bool}
+
+def ride_held_k(q, s, now, th, msg, role, text):
+  match q:
+    case True{}:
+      {==}
+    case False{}:
+      Laws.deliver_held_restart(String.is_empty(M.Queue.of(s, th)), String.eq(H.Hub.provider(H.Hub.thread(s, th)), "claude"), String.is_empty(H.Ride.of(s, th)), th, H.Hub.id("s", now, H.Hub.seq(s)), now, H.Ride.of(s, th), "with the steer")
+
+# an idle thread: the turn starts, with whatever rode (nothing held)
+law ride_post_held:
+  for e: Bool
+  for +s: M.State
+  for +now: Nat
+  for +th: String
+  for +msg: String
+  for role: M.Role
+  for +text: String
+  {H.Deliver.held(H.Queue.changes(H.Ride.post(e, s, now, th, msg, role, text))) == False{} : Bool}
+
+def ride_post_held(e, s, now, th, msg, role, text):
+  match e:
+    case True{}:
+      Laws.deliver_held_go(String.is_empty(M.Queue.of(s, th)), th, now)
+    case False{}:
+      Laws.deliver_held_go(String.is_empty(M.Queue.join(M.Queue.of(s, th), RD.Ride.input(H.Ride.of(s, th)))), th, now)
+
 def Laws.deliver_held_steer_k(c, s, now, th, msg, role, text):
   match c:
     case True{}:
       Laws.deliver_held_go(String.is_empty(M.Queue.of(s, th)), th, now)
     case False{}:
-      Laws.deliver_held_steer(String.is_empty(M.Queue.of(s, th)), String.eq(H.Hub.provider(H.Hub.thread(s, th)), "claude"), th, H.Hub.id("s", now, H.Hub.seq(s)), now)
+      ride_held_k(String.is_empty(M.Queue.of(s, th)), s, now, th, msg, role, text)
 
 def Laws.deliver_never_waits(run, s, now, th, msg, role, text):
   match run:
     case True{}:
       Laws.deliver_held_steer_k(String.eq(H.Hub.provider(H.Hub.thread(s, th)), "claude"), s, now, th, msg, role, text)
     case False{}:
-      Laws.deliver_held_go(String.is_empty(M.Queue.of(s, th)), th, now)
+      ride_post_held(String.is_empty(H.Ride.of(s, th)), s, now, th, msg, role, text)
 
 def Laws.deliver_claude_running():
   {==}
@@ -10691,3 +10748,36 @@ def Laws.keyring_answers():
 def Laws.keyring_hint_only_locked():
   {==}
 # ---- end agent failures: the login keyring ----
+# ---- riding mail ----
+def Laws.ride_running_no_restart():
+  {==}
+
+def Laws.ride_posted_at_once():
+  {==}
+
+def Laws.ride_kept():
+  {==}
+
+def Laws.ride_carries_block():
+  {==}
+
+def Laws.ride_taken_empties():
+  {==}
+
+def Laws.ride_nothing_waiting_same(o, s, now, th, h):
+  %Equal.sym(String, H.Ride.of(s, th), "", h) : {BHS.Ride.mcp.k(Bool.and(Bool.not(String.is_empty(_)), H.Hub.running(H.Hub.thread(s, th))), o, s, now, th) == o : MC.McpOut}
+  {==}
+
+def Laws.ride_turn_end_starts():
+  {==}
+
+def Laws.ride_interrupted_starts():
+  {==}
+
+def Laws.ride_turn_end_empties():
+  {==}
+
+def Laws.ride_after_running_same(s, now, th, os):
+  {==}
+
+# ---- end riding mail ----

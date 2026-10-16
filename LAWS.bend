@@ -32,6 +32,7 @@ import ./src/core/deploy.bend as DP
 import ./src/core/cmds.bend as CM
 import ./src/core/errtail.bend as ERT
 import ./src/core/keyring.bend as KRG
+import ./src/core/ride.bend as RD
 import ./src/core/adopt.bend as AD
 import ./src/core/utf8.bend as UT
 import ./src/core/refs.bend as RF
@@ -8815,3 +8816,64 @@ law keyring_answers:
 law keyring_hint_only_locked:
   {Bool.and(String.contains(KRG.Keyring.say("x", 2n), "keyring is locked"), String.eq(KRG.Keyring.say("x", 1n), "x")) == True{} : Bool}
 # ---- end agent failures: the login keyring ----
+# ---- riding mail ----
+# a message for a running Codex turn is posted at once (nothing waits in
+# the UI) and rides the turn's next tool result: the turn is not stopped
+law ride_running_no_restart:
+  {H.Step.outs_of(H.Hub.post(H.Demo.state("codex", M.Running{}), 5n, "t1", "m1", M.User{}, "hi")) == [] : List<&2, H.Out>}
+
+law ride_posted_at_once:
+  {List.head(&2, M.Change, H.Queue.changes(H.Hub.post(H.Demo.state("codex", M.Running{}), 5n, "t1", "m1", M.User{}, "hi"))) == Some{M.MessagePosted{"t1", "m1", M.User{}, "hi", 5n}} : Maybe<&2, M.Change>}
+
+# what waits is a setting in the log, so a restart finds it again
+law ride_kept:
+  {RD.Ride.input(H.Ride.of(H.Ride.demo(), "t1")) == "hi" : String}
+
+# a tool result carries what waits, and the same step empties it, so it is
+# delivered at most once: a result for a thread with nothing waiting is
+# left as it was
+law ride_carries_block:
+  {String.contains(MC.McpOut.reply(BHS.Ride.mcp(MC.McpOut{"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}", H.Step.none(), ""}, H.Ride.demo(), 6n, "t1")), "Incoming messages") == True{} : Bool}
+
+law ride_taken_empties:
+  {H.Ride.of(M.State.replay(H.Ride.taken(H.Ride.demo(), 6n, "t1"), H.Ride.demo()), "t1") == "" : String}
+
+law ride_nothing_waiting_same:
+  for o: MC.McpOut
+  for +s: M.State
+  for +now: Nat
+  for +th: String
+  for h: {H.Ride.of(s, th) == "" : String}
+  {BHS.Ride.mcp(o, s, now, th) == o : MC.McpOut}
+
+# never lost: a turn that ends (done, failed, stopped, or cut short by a
+# restart) with mail waiting starts the next at once with it, emptying it
+law ride_turn_end_starts:
+  {List.last(&2, M.Change, H.Queue.changes(H.Ride.after(H.Ride.demo(), 6n, H.Step{[M.TurnChanged{"t1", M.Completed{}, 6n}], Nil{}}))) == Some{M.TurnChanged{"t1", M.Running{}, 6n}} : Maybe<&2, M.Change>}
+
+law ride_interrupted_starts:
+  {List.last(&2, M.Change, H.Queue.changes(H.Ride.after(H.Ride.demo(), 6n, H.Step{[M.TurnChanged{"t1", M.Interrupted{}, 6n}], Nil{}}))) == Some{M.TurnChanged{"t1", M.Running{}, 6n}} : Maybe<&2, M.Change>}
+
+law ride_turn_end_empties:
+  {H.Ride.of(M.State.replay(H.Queue.changes(H.Ride.after(H.Ride.demo(), 6n, H.Step{[M.TurnChanged{"t1", M.Failed{}, 6n}], Nil{}})), H.Ride.demo()), "t1") == "" : String}
+
+# a step that ends no turn starts nothing
+law ride_after_running_same:
+  for +s: M.State
+  for +now: Nat
+  for +th: String
+  for os: List<&2, H.Out>
+  {H.Ride.after(s, now, H.Step{[M.TurnChanged{th, M.Running{}, now}], os}) == H.Step{[M.TurnChanged{th, M.Running{}, now}], os} : H.Step}
+
+# delivery holds nothing back on the restart (steer) path either
+law deliver_held_restart:
+  for b1: Bool
+  for b2: Bool
+  for b3: Bool
+  for +th: String
+  for +id: String
+  for +now: Nat
+  for +v: String
+  for +r: String
+  {H.Deliver.held(List.append(&2, M.Change, List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, b1, [], [M.QueueTaken{th, now}]), Bool.pick(List<&2, M.Change>, b3, [], H.Ride.done(v, now, th, r))), List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, b2, [], [M.ActivityLogged{th, id, "info", "steer", "Steered: the turn starts again with this message", now}]), [M.TurnChanged{th, M.Running{}, now}]))) == False{} : Bool}
+# ---- end riding mail ----

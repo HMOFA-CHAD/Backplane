@@ -6,6 +6,7 @@ import ./codec.bend as C
 import ./hub.bend as B
 import ./notice.bend as NO
 import ./mcp.bend as MC
+import ./ride.bend as RD
 import ./bot.bend as BT
 import ./cron.bend as CR
 import ./ring.bend as RG
@@ -2580,6 +2581,28 @@ def Bots.route(+s: M.State, +thread: String, +o: J.Json) -> Route:
     Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), Bots.tool.is(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""))))
 
 # a tool call's step, with the ops for what it did to the uberbot
+# Riding mail (hub.bend's Ride): a tools/call result for a thread whose
+# turn runs and has mail waiting carries it, and the ride is emptied in the
+# same step (written before the reply goes: Hub.mcp.after), so each
+# message is delivered once (laws ride_*). A parked reply, an error, or a
+# thread with nothing waiting is left as it was.
+def Ride.mcp.c(go: Bool, o: MC.McpOut, +s: M.State, +now: Nat, +thread: String) -> MC.McpOut:
+  match go o:
+    case True{} MC.McpOut{+text, st, park}:
+      MC.McpOut{RD.Ride.carry(B.Ride.of(s, thread), text), B.Step.after(st, B.Ride.taken(s, now, thread)), park}
+    case False{} _:
+      o
+
+def Ride.mcp.k(go: Bool, o: MC.McpOut, +s: M.State, +now: Nat, +thread: String) -> MC.McpOut:
+  match go o:
+    case True{} MC.McpOut{+text, st, +park}:
+      Ride.mcp.c(Bool.and(String.is_empty(park), RD.Ride.takes(text)), MC.McpOut{text, st, park}, s, now, thread)
+    case False{} _:
+      o
+
+def Ride.mcp(o: MC.McpOut, +s: M.State, +now: Nat, +thread: String) -> MC.McpOut:
+  Ride.mcp.k(Bool.and(Bool.not(String.is_empty(B.Ride.of(s, thread))), B.Hub.running(B.Hub.thread(s, thread))), o, s, now, thread)
+
 def Bots.mcp.ub(o: MC.McpOut, +s: M.State, +now: Nat) -> MC.McpOut:
   match o:
     case MC.McpOut{reply, st, park}:
