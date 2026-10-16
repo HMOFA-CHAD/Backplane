@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -40,20 +40,25 @@ export function jsonProcess(cmd: string[], env = process.env) {
   return { proc, events, lines, write, call };
 }
 export async function privateDisplay() {
-  const root = mkdtempSync(join(tmpdir(), "bp-cef-test-"));
   const display = [96, 97, 98, 99].find((n) => !existsSync(`/tmp/.X11-unix/X${n}`) && !existsSync(`/tmp/.X${n}-lock`));
   if (!display) throw new Error("no free private Xvfb display (96..99)");
+  const root = mkdtempSync(join(tmpdir(), "bp-cef-test-"));
   const env = { ...process.env, DISPLAY: `:${display}` };
   const xvfb = Bun.spawn(["/tmp/xvfb-root/usr/bin/Xvfb", env.DISPLAY, "-screen", "0", "1600x1000x24", "-nolisten", "tcp"], { stdout: "ignore", stderr: "inherit" });
   let parent: ReturnType<typeof jsonProcess> | null = null;
   async function cleanup() {
     if (parent) { parent.proc.stdin.end(); await parent.proc.exited; }
     // The only signalled process is this private Xvfb PID, created above.
-    xvfb.kill("SIGTERM"); await xvfb.exited;
+    if (xvfb.exitCode === null) xvfb.kill("SIGTERM");
+    await xvfb.exited;
     rmSync(root, { recursive: true, force: true });
   }
   try {
-    await until(() => existsSync(`/tmp/.X11-unix/X${display}`), "Xvfb socket");
+    await until(() => {
+      if (xvfb.exitCode !== null) throw new Error(`our Xvfb exited (${xvfb.exitCode})`);
+      try { return Number(readFileSync(`/tmp/.X${display}-lock`, "utf8").trim()) === xvfb.pid && existsSync(`/tmp/.X11-unix/X${display}`); }
+      catch { return false; }
+    }, "our Xvfb socket and PID lock");
     const exe = join(root, "x11");
     const cc = Bun.spawn(["cc", new URL("./x11.c", import.meta.url).pathname, "-o", exe, "-lX11", "-ldl"], { stdout: "inherit", stderr: "inherit" });
     if (await cc.exited) throw new Error("could not compile X11 test parent");
