@@ -935,7 +935,7 @@ extension KeyedDecodingContainer {
 // costs that field, never the whole screen (a blank app).
 extension Screen {
     private enum K: String, CodingKey {
-        case online, version, error, note, sel, empty, hub, hubs, found, projects, view, making, active, older, settled,
+        case online, version, error, note, sel, empty, hub, hubs, found, projects, lang, view, making, active, older, settled,
              rowMenu, bots, rooms, uber, plane, newBot, newRoom, bot, deleting, removing, renaming, tour, search,
              folders, settings, find, island, islands, thread, theme, tabs
     }
@@ -952,6 +952,7 @@ extension Screen {
         hubs = c.lossyList(.hubs)
         found = c.lossyList(.found)
         projects = c.lossyList(.projects)
+        lang = c.lossy(.lang)
         view = c.lossy(.view)
         making = c.lossy(.making)
         active = c.lossy(.active).map { (l: [Lossy<Row>]) in l.compactMap(\.value) }
