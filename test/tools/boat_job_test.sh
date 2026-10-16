@@ -197,6 +197,24 @@ ok "$(boxes)" 2 "look-alikes untouched"
 rm -rf "$F/boxes"/*; "$J" sweep >/dev/null 2>&1; ok "$(jstate "$U" | cut -d' ' -f1)" reconciled "gone: reconciled"
 "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 0 "after it is gone: jobs run"
 
+# ---- the shared daily cap: $ROOT/budget-usd; the flag and env only lower it ----
+fresh b; limits 100
+bud() { "$J" status --json | python3 -c 'import json,sys; b=json.load(sys.stdin)["budget"]; print(b["usd"], b["source"])'; }
+ok "$(bud)" "0.5 default" "no cap file: \$0.50 default"
+echo 0.001 > "$BOAT_JOB_ROOT/budget-usd"
+"$J" --no-setup-bend --budget-usd 10 -- true >/dev/null 2>&1; ok $? 75 "a high --budget-usd can't raise the shared cap"
+BOAT_JOB_BUDGET_USD=10 "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 75 "a high env cap can't raise the shared cap"
+ok "$(tail -1 "$BOAT_JOB_ROOT/ledger.jsonl" | python3 -c 'import json,sys; e=json.loads(sys.stdin.read()); print(e["ev"], e["budget"], e["budget_src"])')" "refused 100 file" "refusal records the cap and its source"
+echo 10 > "$BOAT_JOB_ROOT/budget-usd"; ok "$(bud)" "10.0 file" "status shows the file's cap"
+"$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 0 "cap 10 from the file: runs"
+ok "$(grep '"ev": "reserve"' "$BOAT_JOB_ROOT/ledger.jsonl" | tail -1 | python3 -c 'import json,sys; e=json.loads(sys.stdin.read()); print(e["budget"], e["budget_src"])')" "1000000 file" "reserve records the cap it used"
+"$J" --no-setup-bend --budget-usd 0.001 -- true >/dev/null 2>&1; ok $? 75 "a low --budget-usd still lowers it"
+BOAT_JOB_BUDGET_USD=0.001 "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 75 "a low env cap still lowers it"
+echo "ten dollars" > "$BOAT_JOB_ROOT/budget-usd"; ok "$(bud)" "0.5 default (budget-usd unreadable)" "unreadable cap file: default, never above"
+"$J" --no-setup-bend --budget-usd 10 -- true >/dev/null 2>&1; ok $? 0 "unreadable file + high flag: default cap still applies (job fits \$0.50)"
+ok "$(grep '"ev": "reserve"' "$BOAT_JOB_ROOT/ledger.jsonl" | tail -1 | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["budget"])')" 50000 "unreadable file: \$0.50 used"
+rm -f "$BOAT_JOB_ROOT/budget-usd"
+
 st=$("$J" status --json)
 ok "$(printf '%s' "$st" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["running"], d["orphans"], all(j["state"] in ("ended","swept","refused","reconciled") for j in d["jobs"]), any(j.get("cost_cs",0)>0 and j.get("runtime_s",-1)>=0 and j.get("sandbox") for j in d["jobs"]))')" "0 0 True True" "status --json"
 

@@ -270,7 +270,13 @@ out = sorted(jobs.values(), key=lambda j: j.get("queued_at", j.get("ended_at", 0
 today = [j for j in out if j.get("day") == day]
 try: account = json.load(open(sys.argv[2]))
 except Exception: account = None
-print(json.dumps({"rate": {"credit_s_per_usd": 100000, "small": 0.5, "default": 1, "large": 2}, "account": account,
+import os
+bpath = os.path.join(os.path.dirname(sys.argv[2]), "budget-usd")
+try:
+    bv = float(open(bpath).read().strip()); budget = {"usd": bv, "cs": int(round(bv * 100000)), "source": "file", "file": bpath}
+except FileNotFoundError: budget = {"usd": 0.5, "cs": 50000, "source": "default", "file": bpath}
+except Exception: budget = {"usd": 0.5, "cs": 50000, "source": "default (budget-usd unreadable)", "file": bpath}
+print(json.dumps({"rate": {"credit_s_per_usd": 100000, "small": 0.5, "default": 1, "large": 2}, "account": account, "budget": budget,
   "ambiguous": sum(1 for j in out if j["state"] in ("ambiguous", "unresolved")),
   "unresolved": sum(1 for j in out if j["state"] == "unresolved"),
   "running": sum(1 for j in out if j["state"] in ("starting", "running")),
@@ -283,6 +289,32 @@ EOF2
 }
 # the folded view for the Usage settings, rewritten whole after every ledger line
 status_file() { status_json > "$ROOT/status.json.tmp" 2>/dev/null && mv -f "$ROOT/status.json.tmp" "$ROOT/status.json"; }
+# the shared cap in credit-seconds and where it came from: the file (or the
+# $0.50 default when there is none; an unreadable file falls back to the
+# default, never above it), lowered by a per-job ask or the env, never raised
+budget_cap() {
+  python3 - "$ROOT/budget-usd" "$1" "$2" <<'EOF'
+import sys
+path, ask, env = sys.argv[1:4]
+def usd(v):
+    try:
+        x = float(str(v).strip())
+        return x if x >= 0 and x == x and x != float("inf") else None
+    except Exception: return None
+cap, src = 0.50, "default"
+try:
+    t = open(path).read()
+    v = usd(t)
+    if v is not None: cap, src = v, "file"
+    else: src = "default (budget-usd unreadable)"
+except FileNotFoundError: pass
+for name, v in (("env", env), ("flag", ask)):
+    x = usd(v) if v != "" else None
+    if x is not None and x < cap: cap, src = x, name
+print(int(round(cap * 100000)), src.replace(" ", "_"))
+EOF
+}
+
 with_lock() { exec 9>>"$ROOT/ledger.lock"; flock -w 60 9 || { say "ledger busy"; return 1; }; "$@"; local r=$?; flock -u 9; return $r; }
 
 case ${1:-} in
@@ -298,7 +330,7 @@ case ${1:-} in
     fold ids; exit 0 ;;
 esac
 
-SIZE=default TIMEOUT=1800 WAIT=${BOAT_JOB_WAIT:-3600} BUDGET_USD=${BOAT_JOB_BUDGET_USD:-0.50} SETUP_BEND=auto
+SIZE=default TIMEOUT=1800 WAIT=${BOAT_JOB_WAIT:-3600} BUDGET_ASK="" SETUP_BEND=auto
 ARTS=() EXCL=()
 while [ $# -gt 0 ]; do
   case $1 in
@@ -306,7 +338,7 @@ while [ $# -gt 0 ]; do
     --timeout) TIMEOUT=$2; shift 2 ;;
     --artifact) ARTS+=("$2"); shift 2 ;;
     --exclude) EXCL+=("$2"); shift 2 ;;
-    --budget-usd) BUDGET_USD=$2; shift 2 ;;
+    --budget-usd) BUDGET_ASK=$2; shift 2 ;;
     --wait) WAIT=$2; shift 2 ;;
     --setup-bend) SETUP_BEND=yes; shift ;;
     --no-setup-bend) SETUP_BEND=no; shift ;;
@@ -320,7 +352,11 @@ case $TIMEOUT$WAIT in ''|*[!0-9]*) say "bad --timeout or --wait"; exit 75 ;; esa
 TTL=$(( TIMEOUT + 600 )); [ $TTL -lt 900 ] && TTL=900; [ $TTL -gt 7200 ] && TTL=7200
 [ $(( TIMEOUT + 300 )) -le $TTL ] || { say "--timeout too long for the 2 h lifetime"; exit 75; }
 RESERVE=$(( TTL * RATE2 / 2 ))                        # credit-seconds, worst case
-BUDGET=$(python3 -c "print(int(float('$BUDGET_USD')*100000))") || exit 75
+# The daily cap is shared: $ROOT/budget-usd (set by the user), else $0.50.
+# --budget-usd and BOAT_JOB_BUDGET_USD can only lower it for this job.
+read -r BUDGET BUDGET_SRC <<<"$(budget_cap "$BUDGET_ASK" "${BOAT_JOB_BUDGET_USD:-}")" || exit 75
+[ -n "$BUDGET" ] || { say "cannot work out the budget"; exit 75; }
+BUDGET_USD=$(python3 -c "print(round($BUDGET/100000, 4))")
 
 SRC=$(git rev-parse --show-toplevel 2>/dev/null) || { say "run it inside a git worktree"; exit 75; }
 grep -qxF "$SRC" "$ROOT/enabled" 2>/dev/null || grep -qxF "$(git -C "$SRC" rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's|/\.git$||')" "$ROOT/enabled" 2>/dev/null \
@@ -386,11 +422,11 @@ print("OK")
     WAIT*) echo "${why#WAIT }"; return 2 ;;
     *) echo "${why#NO }"; return 1 ;;
   esac
-  [ $(( s + r + RESERVE )) -le "$BUDGET" ] || { echo "daily budget \$$BUDGET_USD would be exceeded (spent+reserved $(( s + r )) cs, this job $RESERVE cs)"; return 1; }
-  ledger ev=reserve job="$JOB" size="$SIZE" ttl="$TTL" reserved="$RESERVE" src="$SRC" thread="$THREAD" work="$WORK" project="$PROJECT" machine="$MACHINE" cmd="$*" pid=$$ pidid="$(pid_id $$)"
+  [ $(( s + r + RESERVE )) -le "$BUDGET" ] || { echo "daily budget \$$BUDGET_USD ($BUDGET_SRC) would be exceeded (spent+reserved $(( s + r )) cs, this job $RESERVE cs)"; return 1; }
+  ledger ev=reserve job="$JOB" size="$SIZE" ttl="$TTL" reserved="$RESERVE" budget="$BUDGET" budget_src="$BUDGET_SRC" src="$SRC" thread="$THREAD" work="$WORK" project="$PROJECT" machine="$MACHINE" cmd="$*" pid=$$ pidid="$(pid_id $$)"
   echo ok
 }
-refuse() { FINISHING=1; rm -rf "${STAGE:-}"; say "refused: $1"; ledger ev=refused job="$JOB" why="$1" thread="$THREAD" work="$WORK" project="$PROJECT" machine="$MACHINE" size="$SIZE"; exit 75; }
+refuse() { FINISHING=1; rm -rf "${STAGE:-}"; say "refused: $1"; ledger ev=refused job="$JOB" why="$1" budget="$BUDGET" budget_src="$BUDGET_SRC" thread="$THREAD" work="$WORK" project="$PROJECT" machine="$MACHINE" size="$SIZE"; exit 75; }
 FINISHING=0 STAGE=""
 # wait in line (bounded by --wait) while a slot or a minute/hour start window
 # is full; one limits read per pause per job, never faster than 15 s
