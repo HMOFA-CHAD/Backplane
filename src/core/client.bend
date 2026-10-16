@@ -2900,6 +2900,11 @@ def Ask.head.tool(+tool: String, +d: String) -> String:
         Bool.pick(String, String.eq(tool, "calendar_delete"), "Delete this event?",
           Bool.pick(String, String.eq(tool, "order_quote"), "Send these files for a quote?", "Allow " ++ tool ++ "?")))))
 
+# the kind an ask's buttons follow: an approval to send an order's files
+# reads Send / Not now (accept / decline) instead of Allow / Deny
+def Ask.bkind(+k: String, +tool: String) -> String:
+  Bool.pick(String, Bool.and(String.eq(k, "approval"), String.eq(tool, "order_quote")), "send", k)
+
 def Ask.head(+k: String, +tool: String, +d: String) -> String:
   Bool.pick(String, String.eq(k, "plan"), "Proposed plan", Bool.pick(String, String.eq(k, "input"), "The agent asks", Ask.head.tool(tool, d)))
 

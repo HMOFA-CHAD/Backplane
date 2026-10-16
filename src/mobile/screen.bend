@@ -684,6 +684,8 @@ def Mob.ask.btns(i: Nat, +id: String, +o: String, +draft: String) -> List<&2, J.
       [Mob.btn("Implement", id ++ "|implement", True{}), Mob.btn("Dismiss", id ++ "|dismiss", False{})]
     case 1n:
       List.append(&2, J.Json, Mob.ask.opts(String.split(o, '\n'), id), [Mob.ask.draft(String.is_empty(String.trim(draft)), id, draft)])
+    case 2n:
+      [Mob.btn("Send", id ++ "|accept", True{}), Mob.btn("Not now", id ++ "|decline", False{})]
     case _:
       [Mob.btn("Allow", id ++ "|accept", True{}), Mob.btn("Allow for session", id ++ "|session", False{}), Mob.btn("Deny", id ++ "|decline", False{})]
 
@@ -701,7 +703,7 @@ def Mob.ask.std(a: M.Ask, +draft: String) -> J.Json:
         J.KV{"head", J.Json.str(U.Ask.head(k, tool, d))},
         J.KV{"detail", J.Json.str(Bool.pick(String, String.eq(k, "plan"), "", d))},
         J.KV{"blocks", J.Json.arr(Mob.ask.body(String.eq(k, "plan"), d))},
-        J.KV{"buttons", J.Json.arr(Mob.ask.btns(C.Codec.pos(["plan", "input"], k), id, o, draft))}])
+        J.KV{"buttons", J.Json.arr(Mob.ask.btns(C.Codec.pos(["plan", "input", "send"], U.Ask.bkind(k, tool)), id, o, draft))}])
 
 def Mob.ask.k(web: Bool, a: M.Ask, +draft: String, nf: Map<&2, String>) -> J.Json:
   match web:

@@ -33,12 +33,30 @@ def summary(kind, opts, feats):
         return (f"{opts['layers']}-layer board, {feats.get('width_mm', 0):g}×{feats.get('height_mm', 0):g} mm, "
                 f"{opts['thickness_mm']:g} mm thick, {opts['color']}, {finish}")
     if kind == "3dp":
-        return f"3D print, {opts['process'].upper()} {opts['material'].replace('_', ' ')}, {opts['color']}"
+        return f"3D print, {opts['process'].upper()} {pretty(opts['material'])}, {opts['color']}"
     if kind == "cnc":
-        fin = "" if opts["finish"] == "none" else ", " + opts["finish"].replace("_", " ")
-        return f"CNC, {opts['material'].replace('_', ' ')}{fin}"
-    fin = "" if opts["finish"] == "none" else ", " + opts["finish"].replace("_", " ")
-    return f"Sheet metal, {opts['material'].replace('_', ' ')} {opts['thickness_mm']:g} mm{fin}"
+        fin = "" if opts["finish"] == "none" else ", " + pretty(opts["finish"])
+        return f"CNC, {pretty(opts['material'])}{fin}"
+    fin = "" if opts["finish"] == "none" else ", " + pretty(opts["finish"])
+    return f"Sheet metal, {pretty(opts['material'])} {opts['thickness_mm']:g} mm{fin}"
+
+
+NAMES = {"pa12": "PA12 nylon", "pa11": "PA11 nylon", "pa12_glass": "glass-filled PA12", "standard_resin": "standard resin",
+         "black_resin": "black resin", "tough_resin": "tough resin", "high_temp_resin": "high-temperature resin",
+         "clear_resin": "clear resin", "abs": "ABS", "asa": "ASA", "pla": "PLA", "tpu": "TPU", "pa12_cf": "carbon-filled PA12",
+         "pc_abs": "PC-ABS", "peek": "PEEK", "stainless_316l": "316L stainless", "titanium": "titanium",
+         "aluminum_6061": "6061 aluminium", "aluminum_7075": "7075 aluminium", "stainless_304": "304 stainless",
+         "stainless_201": "201 stainless", "steel_45": "45 steel", "steel_q235": "Q235 steel", "brass": "brass", "copper": "copper",
+         "abs_black": "black ABS", "abs_white": "white ABS", "pom_black": "black POM", "pom_white": "white POM", "pmma": "acrylic",
+         "nylon": "nylon", "polycarbonate": "polycarbonate", "fr4": "FR4", "aluminum_5052": "5052 aluminium",
+         "steel_cold_rolled": "cold-rolled steel", "steel_galvanized": "galvanized steel", "powder_coat": "powder coat",
+         "anodize": "anodized", "bead_blast": "bead blasted", "bead_blast_anodize": "bead blasted and anodized",
+         "hard_anodize": "hard anodized", "conductive_anodize": "conductive anodized", "brushed": "brushed",
+         "brushed_anodize": "brushed and anodized", "laser_mark": "laser marked"}
+
+
+def pretty(v):
+    return NAMES.get(v, str(v).replace("_", " "))
 
 
 def _board(v, p, f, problems, warnings):
@@ -163,12 +181,12 @@ def money(x):
 
 def markdown(q):
     """The quote as the buy thread shows it (the hub adds the Pay link)."""
-    out = [f"**Quote · {money(q['total'])}**", ""]
+    out = [f"**Your quote: {money(q['total'])}**", ""]
     ship = q["shipping"]
     how = f" by {ship['method']}" if ship.get("method") else ""
     out.append(f"Ships to {q['country_name']}{how}" + (f", {ship['days']}" if ship.get("days") else "")
                + (f". Made in about {q['lead_days']} days." if q["lead_days"] else "."))
-    out += ["", "| | |", "|---|---:|"]
+    out += ["", "| Item | Cost |", "|---|---:|"]
     for ln in q["lines"]:
         out.append(f"| {ln['label']} | {money(ln['amount'])} |")
     out.append(f"| **Total** | **{money(q['total'])}** |")
@@ -176,7 +194,7 @@ def markdown(q):
     for p in q["parts"]:
         parts.append(f"{p['name']} ×{p['qty']}" + (f" ({p['assembled']} assembled)" if p.get("assembled") else ""))
     if parts:
-        out += ["", " · ".join(parts)]
+        out += ["", "Parts: " + " · ".join(parts)]
     if q["problems"]:
         out += ["", "**To fix before ordering**"] + [f"- {x}" for x in q["problems"]]
         return "\n".join(out)

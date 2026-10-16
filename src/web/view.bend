@@ -645,11 +645,12 @@ def View.ask.opts(ls: List<&2, String>, +id: String) -> List<&2, D.Node>:
       D.Dom.button("", "answer", id ++ "|" ++ l, l, l) <> View.ask.opts(t, id)
 
 def View.ask.btns(+k: String, +id: String, +o: String, +draft: String) -> List<&2, D.Node>:
+  Bool.pick(List<&2, D.Node>, String.eq(k, "send"), [D.Dom.button("primary", "answer", id ++ "|accept", "Send these files and get the quote", "Send"), D.Dom.button("", "answer", id ++ "|decline", "Nothing is sent", "Not now")],
   Bool.pick(List<&2, D.Node>, String.eq(k, "plan"), [D.Dom.button("primary", "answer", id ++ "|implement", "Implement the plan", "Implement"), D.Dom.button("", "answer", id ++ "|dismiss", "Dismiss", "Dismiss")],
     Bool.pick(List<&2, D.Node>, String.eq(k, "input"),
       List.append(&2, D.Node, View.ask.opts(String.split(o, '\n'), id),
         Bool.pick(List<&2, D.Node>, String.is_empty(String.trim(draft)), [D.Dom.button("", "answer", id ++ "|", "Dismiss", "Dismiss")], [D.Dom.button("primary", "answer", id ++ "|" ++ String.trim(draft), "Answer with your draft", "Answer with draft")])),
-      [D.Dom.button("primary", "answer", id ++ "|accept", "Allow once", "Allow"), D.Dom.button("", "answer", id ++ "|session", "Allow this tool for the session", "Allow for session"), D.Dom.button("", "answer", id ++ "|decline", "Deny", "Deny")]))
+      [D.Dom.button("primary", "answer", id ++ "|accept", "Allow once", "Allow"), D.Dom.button("", "answer", id ++ "|session", "Allow this tool for the session", "Allow for session"), D.Dom.button("", "answer", id ++ "|decline", "Deny", "Deny")])))
 
 def View.ask.std(a: M.Ask, +draft: String) -> D.Node:
   match a:
@@ -657,7 +658,7 @@ def View.ask.std(a: M.Ask, +draft: String) -> D.Node:
       D.El{"div", id, [D.At{"class", "ask " ++ k}], [
         D.Dom.span("ask-head", U.Ask.head(k, tool, d)),
         Bool.pick(D.Node, String.eq(k, "plan"), D.El{"div", "", [D.At{"class", "body"}], D.Md.render(d)}, D.El{"div", "", [D.At{"class", "ask-detail"}], [D.Txt{d}]}),
-        D.El{"div", "", [D.At{"class", "ask-btns"}], View.ask.btns(k, id, o, draft)}]}
+        D.El{"div", "", [D.At{"class", "ask-btns"}], View.ask.btns(U.Ask.bkind(k, tool), id, o, draft)}]}
 
 # a browser task paused for help: its question, the screenshot, and the
 # person's choices (client.bend's Teach.ask)
