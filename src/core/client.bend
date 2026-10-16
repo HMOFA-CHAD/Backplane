@@ -5546,7 +5546,7 @@ def Fab.set.label() -> String:
   "Price estimates"
 
 def Fab.set.note() -> String:
-  "Buy it shows a price from each part's size and options, sent to the order service (never files)."
+  "Buy it shows a price from each part's size and options. No files are sent."
 
 def Fab.set.on(+st: M.State) -> String:
   Bool.pick(String, String.eq(M.Setting.get(st, "order.estimates", "on"), "off"), "off", "on")

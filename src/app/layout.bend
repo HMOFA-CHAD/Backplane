@@ -3577,7 +3577,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +tms = U.Models.menu(U.Str.get(info, "models"), tp)
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
-  +fy = {(ey + 98 : U32) : U32}
+  +fy = {(ey + 172 : U32) : U32}
   +oe = U.Fab.set.on(st)
   +total = {(1092 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
@@ -3607,7 +3607,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line(U.Models.label_of(U.Str.get(info, "models"), tp, tm), tm), (w - 32 : U32)),
       D.Clip.all(), (x + 16 : U32), (b2 + 520 + dy + er : U32), 24, T.Th.dim())),
     Set.head(ty, "KiCad and FreeCAD", x, (b2 + 368 + dy + ey : U32)),
-    Set.card(x, (b2 + 400 + dy + ey : U32), w, 248),
+    Set.card(x, (b2 + 400 + dy + ey : U32), w, 196),
     Set.row(ty, U.KiCad.cli.label(info), U.KiCad.cli.note(info), x, (b2 + 402 + dy + ey : U32), w),
     Set.fork(ty, U.Str.get(info, "kicad.fork"), (x + 16 : U32), (b2 + 450 + dy + ey : U32)),
     Set.row.r(ty, U.KiCad.ipc.label(info), U.KiCad.ipc.note(info), x, (b2 + 486 + dy + ey : U32), w, Bool.pick(U32, U.KiCad.ipc.ready(info), 140, 0)),
@@ -3615,9 +3615,11 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
       Lay.chip(ty, (x + w - 120 : U32), (b2 + 500 + dy + ey : U32), "On", String.eq(ipc, "on"), "setting", "kicad.ipc=on"),
       Lay.chip(ty, (x + w - 70 : U32), (b2 + 500 + dy + ey : U32), "Off", String.eq(ipc, "off"), "setting", "kicad.ipc=off")]), Out.none()),
     Set.row(ty, U.FreeCAD.label(info), U.FreeCAD.note(info), x, (b2 + 546 + dy + ey : U32), w),
-    Set.row.r(ty, U.Fab.set.label(), U.Fab.set.note(), x, (b2 + 594 + dy + ey : U32), w, 140),
-    Lay.chip(ty, (x + w - 120 : U32), (b2 + 608 + dy + ey : U32), "On", String.eq(oe, "on"), "setting", "order.estimates=on"),
-    Lay.chip(ty, (x + w - 70 : U32), (b2 + 608 + dy + ey : U32), "Off", String.eq(oe, "off"), "setting", "order.estimates=off"),
+    Set.head(ty, "Ordering", x, (b2 + 620 + dy + ey : U32)),
+    Set.card(x, (b2 + 652 + dy + ey : U32), w, 64),
+    Set.row.r(ty, U.Fab.set.label(), U.Fab.set.note(), x, (b2 + 654 + dy + ey : U32), w, 140),
+    Lay.chip(ty, (x + w - 120 : U32), (b2 + 668 + dy + ey : U32), "On", String.eq(oe, "on"), "setting", "order.estimates=on"),
+    Lay.chip(ty, (x + w - 70 : U32), (b2 + 668 + dy + ey : U32), "Off", String.eq(oe, "off"), "setting", "order.estimates=off"),
     Set.head(ty, "Appearance", x, (b2 + 570 + dy + fy : U32)),
     Set.card(x, (b2 + 602 + dy + fy : U32), w, 116),
     Set.row.r(ty, "Theme", "The window and the web page (phones unset follow their own system).", x, (b2 + 604 + dy + fy : U32), w, 150),

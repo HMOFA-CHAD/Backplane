@@ -241,6 +241,8 @@ def Order.status.text.k(i: Nat, +tracking: String) -> String:
       "**Delivered.**"
     case 4n:
       "**Refunded.** The money is on its way back to you."
+    case 5n:
+      "This quote has expired. Ask here for a new one when you're ready."
     case _:
       ""
 
@@ -252,7 +254,7 @@ def Order.status.pos(+s: String, ls: List<&2, String>, +n: Nat) -> Nat:
       Bool.pick(Nat, String.eq(s, h), n, Order.status.pos(s, t, 1n+n))
 
 def Order.status.text(+status: String, +tracking: String) -> String:
-  Order.status.text.k(Order.status.pos(status, ["paid", "placed", "shipped", "delivered", "refunded"], 0n), tracking)
+  Order.status.text.k(Order.status.pos(status, ["paid", "placed", "shipped", "delivered", "refunded", "expired"], 0n), tracking)
 
 # the order's status, or the quote's when there is no order yet
 def Order.state(+q: J.Json) -> String:
