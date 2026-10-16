@@ -10718,6 +10718,8 @@ def Laws.tok_add_one_turn():
   {==}
 
 def Laws.tok_add_no_cost():
+  {==}
+
 # ---- mail 2a ----
 
 # Reversing onto a suffix is exactly reverse followed by append. The
