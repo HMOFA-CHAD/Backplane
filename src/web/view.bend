@@ -1,4 +1,5 @@
 import Base
+import ../core/msgs.bend as MSG
 import ../core/model.bend as M
 import ./dom.bend as D
 import ./icon.bend as WI
@@ -957,6 +958,18 @@ def View.notify.rows(rs: List<&2, U.NotifyRow>) -> List<&2, D.Node>:
 def View.notify(st: M.State) -> List<&2, D.Node>:
   View.setrow(U.Notify.title(), U.Notify.lead(), Nil{}) <> View.notify.rows(U.Notify.rows(st))
 
+def View.lang.chips(vs: List<&2, String>, +u: U.Ui) -> List<&2, D.Node>:
+  match vs:
+    case Nil{}: Nil{}
+    case +v <> t:
+      D.Dom.button(Bool.pick(String, String.eq(v, U.Lang.choice(u)), "on", ""), "lang", v, "", U.Lang.label(U.Lang.loc(u), v)) <> View.lang.chips(t, u)
+
+def View.lang(+u: U.Ui) -> List<&2, D.Node>:
+  [View.setrow(MSG.T.settings.lang(U.Lang.loc(u)), "", View.lang.chips(U.Lang.offered(u), u)),
+    View.setrow(MSG.T.settings.agent.lang(U.Lang.loc(u)), "", [D.Dom.button(Bool.pick(String, U.Lang.agent.on(u), "on", ""),
+      "setting", "agent.lang=" ++ U.Lang.agent.value(Bool.not(U.Lang.agent.on(u)), u), "",
+      Bool.pick(String, U.Lang.agent.on(u), MSG.T.settings.lang.on(U.Lang.loc(u)), MSG.T.settings.lang.off(U.Lang.loc(u))))])]
+
 def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +ipc = M.Setting.get(st, "kicad.ipc", "on")
@@ -974,7 +987,7 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
       View.setrow(U.KiCad.cli.label(nf), U.KiCad.cli.note(nf), View.fork(U.Str.get(nf, "kicad.fork"))),
       View.setrow(U.FreeCAD.label(nf), U.FreeCAD.note(nf), Nil{}),
       View.setrow(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, D.Node>, U.KiCad.ipc.ready(nf), View.chips(["on", "off"], ipc, "kicad.ipc"), Nil{})),
-      View.setrow("Theme", "The window and the web page (phones unset follow their own system).", View.chips(["dark", "light"], Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "light", "dark"), "ui.theme")),
+      View.setrow("Theme", "The window and the web page (phones unset follow their own system).", View.chips(["dark", "light"], Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "light", "dark"), "ui.theme"))], View.lang(u), [
       View.setrow("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", View.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
       View.setrow(U.Tail.label(nf), U.Tail.note(nf), Nil{})],
       View.mates(u),

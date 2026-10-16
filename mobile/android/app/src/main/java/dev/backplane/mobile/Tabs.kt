@@ -263,6 +263,15 @@ private fun AppSettingsPage(m: AppModel, s: Screen, onPair: () -> Unit, state: L
         LazyColumn(Modifier.fillMaxSize(), state = state, contentPadding = pad) {
             item { Header("Appearance") }
             item { Choice(listOf("system" to "System", "light" to "Light", "dark" to "Dark"), AppSettings.appearance) { AppSettings.putAppearance(it) } }
+            s.lang?.rows?.firstOrNull()?.let { row ->
+                item { Text(row.label, Modifier.padding(horizontal = 16.dp)) }
+                item { Choice(row.buttons.map { it.value to it.label }, AppSettings.lang) { m.language(it) } }
+            }
+            s.lang?.rows?.drop(1)?.firstOrNull()?.let { row ->
+                row.buttons.firstOrNull()?.let { button ->
+                    item { ListItem(headlineContent = { Text(row.label) }, trailingContent = { Switch(button.on, { m.act(button.action, button.value) }) }) }
+                }
+            }
             item { Header("Behaviour") }
             item { Choice(listOf("projects" to "Projects", "active" to "Active"), list) { m.threadList(it) } }
             item {

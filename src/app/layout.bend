@@ -1,4 +1,5 @@
 import Base
+import ../core/msgs.bend as MSG
 import ../core/model.bend as M
 import ../core/json.bend as J
 import ../core/client.bend as U
@@ -3563,6 +3564,36 @@ def Set.notify(+st: M.State, +ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
     Set.agy.lines(Ty.wrap(ty, 2n, U.Notify.lead(), (w - 32 : U32)), ty, (x + 16 : U32), (y + 38 : U32)),
     Set.notify.rows(U.Notify.rows(st), ty, x, w, (y + 50 + Set.agy.nh(ty, U.Notify.lead(), w) : U32))])
 
+def Set.lang.chips(vs: List<&2, String>, +ty: Ty, +u: U.Ui, +x: U32, +y: U32) -> Out:
+  match vs:
+    case Nil{}: Out.none()
+    case +v <> t:
+      +label = U.Lang.label(U.Lang.loc(u), v)
+      Out.all([Lay.chip(ty, x, y, label, String.eq(U.Lang.choice(u), v), "lang", v),
+        Set.lang.chips(t, ty, u, (x + Lay.button.w(ty, label) + 6 : U32), y)])
+
+# the chips' width with a 6 px gap after each (the caller drops the last)
+def Set.lang.w(vs: List<&2, String>, +ty: Ty, +u: U.Ui) -> U32:
+  match vs:
+    case Nil{}: 0
+    case +v <> t:
+      (Lay.button.w(ty, U.Lang.label(U.Lang.loc(u), v)) + 6 + Set.lang.w(t, ty, u) : U32)
+
+# right-aligned to the card's padding like Theme's; the agent row is an
+# On/Off pair like the notification rows
+def Set.lang(+ty: Ty, +u: U.Ui, +x: U32, +w: U32, +y: U32) -> Out:
+  +l = U.Lang.loc(u)
+  +cw = {U32.dim(Set.lang.w(U.Lang.offered(u), ty, u), 6) : U32}
+  +on = U.Lang.agent.on(u)
+  +ow = Lay.button.w(ty, MSG.T.settings.lang.on(l))
+  +fw = Lay.button.w(ty, MSG.T.settings.lang.off(l))
+  Out.all([
+    Set.row.r(ty, MSG.T.settings.lang(l), MSG.T.settings.lang.note(l), x, y, w, (cw + 8 : U32)),
+    Set.lang.chips(U.Lang.offered(u), ty, u, (x + w - 16 - cw : U32), (y + 14 : U32)),
+    Set.row.r(ty, MSG.T.settings.agent.lang(l), MSG.T.settings.agent.lang.note(l), x, (y + 52 : U32), w, (ow + fw + 14 : U32)),
+    Lay.chip(ty, (x + w - 16 - fw - 6 - ow : U32), (y + 66 : U32), MSG.T.settings.lang.on(l), on, "setting", "agent.lang=" ++ U.Lang.agent.value(True{}, u)),
+    Lay.chip(ty, (x + w - 16 - fw : U32), (y + 66 : U32), MSG.T.settings.lang.off(l), Bool.not(on), "setting", "agent.lang=off")])
+
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +w = {U32.min((x1 - x0 - 64 : U32), 720) : U32}
   +x = {(x0 + U32.shr((x1 - x0 - w : U32)) : U32) : U32}
@@ -3576,7 +3607,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 46 : U32) : U32}
-  +total = {(1092 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
+  +total = {(1196 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
   +b2 = {(b + 64 + Set.notify.h(st, ty, w) : U32) : U32}
@@ -3613,29 +3644,30 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
       Lay.chip(ty, (x + w - 70 : U32), (b2 + 500 + dy + ey : U32), "Off", String.eq(ipc, "off"), "setting", "kicad.ipc=off")]), Out.none()),
     Set.row(ty, U.FreeCAD.label(info), U.FreeCAD.note(info), x, (b2 + 546 + dy + ey : U32), w),
     Set.head(ty, "Appearance", x, (b2 + 570 + dy + fy : U32)),
-    Set.card(x, (b2 + 602 + dy + fy : U32), w, 116),
+    Set.card(x, (b2 + 602 + dy + fy : U32), w, 220),
     Set.row.r(ty, "Theme", "The window and the web page (phones unset follow their own system).", x, (b2 + 604 + dy + fy : U32), w, 150),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Light") - 6 - Lay.button.w(ty, "Dark") : U32), (b2 + 618 + dy + fy : U32), "Dark", Bool.not(String.eq(M.Setting.get(st, "ui.theme", ""), "light")), "setting", "ui.theme=dark"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Light") : U32), (b2 + 618 + dy + fy : U32), "Light", String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "setting", "ui.theme=light"),
-    Set.row.r(ty, "Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", x, (b2 + 656 + dy + fy : U32), w, 190),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Active") - 6 - Lay.button.w(ty, "Projects") : U32), (b2 + 670 + dy + fy : U32), "Projects", Bool.not(String.eq(U.Side.view(st), "active")), "setting", "sidebar.view=projects"),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Active") : U32), (b2 + 670 + dy + fy : U32), "Active", String.eq(U.Side.view(st), "active"), "setting", "sidebar.view=active"),
-    Set.head(ty, "Network and updates", x, (b2 + 742 + dy + fy : U32)),
-    Set.card(x, (b2 + 774 + dy + fy : U32), w, 216),
-    Set.row(ty, U.Tail.label(info), U.Tail.note(info), x, (b2 + 776 + dy + fy : U32), w),
-    Set.pair(ty, info, Pq.on(n), x, w, (b2 + 828 + dy + fy : U32)),
-    Set.row.r(ty, "Backplane " ++ v, U.Update.line.w(st, info, note), x, (b2 + 880 + dy + fy : U32), w, 150),
-    Set.update.btn(U.Update.btn(st, info, note), ty, x, w, (b2 + 890 + dy + fy : U32)),
-    Set.row.r(ty, "Update channel", "Stable takes releases; nightly also takes the daily builds.", x, (b2 + 932 + dy + fy : U32), w, 190),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") - 6 - Lay.button.w(ty, "Stable") : U32), (b2 + 946 + dy + fy : U32), "Stable", Bool.not(String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly")), "setting", "update.channel=stable"),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") : U32), (b2 + 946 + dy + fy : U32), "Nightly", String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly"), "setting", "update.channel=nightly"),
-    Set.voice(ty, st, n, x, w, (b2 + 1010 + dy + fy : U32)),
-    Set.mates(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) : U32)),
-    Set.keys(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) : U32)),
-    Set.agy(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + 16 : U32)),
-    Set.tz(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 16 : U32)),
-    Set.usage(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 16 : U32)),
-    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 16 : U32))])),
+    Set.lang(ty, S.Nui.ui(n), x, w, (b2 + 656 + dy + fy : U32)),
+    Set.row.r(ty, "Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", x, (b2 + 760 + dy + fy : U32), w, 190),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Active") - 6 - Lay.button.w(ty, "Projects") : U32), (b2 + 774 + dy + fy : U32), "Projects", Bool.not(String.eq(U.Side.view(st), "active")), "setting", "sidebar.view=projects"),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Active") : U32), (b2 + 774 + dy + fy : U32), "Active", String.eq(U.Side.view(st), "active"), "setting", "sidebar.view=active"),
+    Set.head(ty, "Network and updates", x, (b2 + 846 + dy + fy : U32)),
+    Set.card(x, (b2 + 878 + dy + fy : U32), w, 216),
+    Set.row(ty, U.Tail.label(info), U.Tail.note(info), x, (b2 + 880 + dy + fy : U32), w),
+    Set.pair(ty, info, Pq.on(n), x, w, (b2 + 932 + dy + fy : U32)),
+    Set.row.r(ty, "Backplane " ++ v, U.Update.line.w(st, info, note), x, (b2 + 984 + dy + fy : U32), w, 150),
+    Set.update.btn(U.Update.btn(st, info, note), ty, x, w, (b2 + 994 + dy + fy : U32)),
+    Set.row.r(ty, "Update channel", "Stable takes releases; nightly also takes the daily builds.", x, (b2 + 1036 + dy + fy : U32), w, 190),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") - 6 - Lay.button.w(ty, "Stable") : U32), (b2 + 1050 + dy + fy : U32), "Stable", Bool.not(String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly")), "setting", "update.channel=stable"),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") : U32), (b2 + 1050 + dy + fy : U32), "Nightly", String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly"), "setting", "update.channel=nightly"),
+    Set.voice(ty, st, n, x, w, (b2 + 1114 + dy + fy : U32)),
+    Set.mates(ty, n, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) : U32)),
+    Set.keys(ty, n, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) : U32)),
+    Set.agy(ty, n, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + 16 : U32)),
+    Set.tz(ty, n, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 16 : U32)),
+    Set.usage(ty, n, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 16 : U32)),
+    Set.tour(ty, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 16 : U32))])),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 51, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255)],
       Ty.text(ty, 0n, "Settings", D.Clip.all(), (x0 + 24 : U32), 0, 52, T.Th.text())), Nil{}},
     Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Close") : U32), 12, "Close", T.Th.soft(), "flag", "settings"),

@@ -219,6 +219,12 @@ const KEYS = listOf(App.cbor_keys());
 const WORDS = listOf(App.cbor_words());
 
 let ui = App.page(App.init(now(), cid), location.origin);
+const forcedLang = new URLSearchParams(location.search).get("lang");
+if (forcedLang === "ja" || forcedLang === "en") ui = App.lang_preview(ui);
+ui = App.act(ui, "lang", forcedLang === "ja" || forcedLang === "en" ? forcedLang : (localStorage.getItem("backplane-lang") || "auto")).ui;
+ui = App.act(ui, "lang-os", navigator.languages?.[0] || navigator.language || "").ui;
+document.documentElement.lang = App.lang(ui);
+window.addEventListener("languagechange", () => dispatch("lang-os", navigator.languages?.[0] || navigator.language || ""));
 // opened from another hub to show one of this machine's bots ("#bot=<name>")
 if (location.hash) {
   try { ui = App.wanted(ui, decodeURIComponent(location.hash)); } catch {}
@@ -400,7 +406,8 @@ function run(cmds) {
     } else if (is(c, "Keep")) {
       // written at once: a crash or a closed tab loses nothing typed
       try {
-        if (c.text) localStorage.setItem(DRAFT + c.thread, c.text);
+        if (c.thread === "@lang") localStorage.setItem("backplane-lang", c.text);
+        else if (c.text) localStorage.setItem(DRAFT + c.thread, c.text);
         else localStorage.removeItem(DRAFT + c.thread);
       } catch {}
     }
@@ -452,6 +459,7 @@ function dispatch(action, value, timer) {
   const r = App.act(ui, action, value);
   if (PERF) PERF.act.push([pnow() - t0, action]);
   ui = r.ui;
+  if (action === "lang" || action === "lang-os") document.documentElement.lang = App.lang(ui);
   if (action === "subs-shut" || action === "subs-open") {
     try {
       const sep = value.indexOf("\t");

@@ -11,3 +11,9 @@ settings.lang = 言語
 settings.lang.auto = 自動
 settings.lang.en = English
 settings.lang.ja = 日本語
+
+settings.agent.lang = エージェントも同じ言語で返答
+settings.lang.on = オン
+settings.lang.off = オフ
+settings.lang.note = この端末の設定です。自動はシステムの言語に合わせます。
+settings.agent.lang.note = エージェントとボットに、上の言語で応答するよう求めます。

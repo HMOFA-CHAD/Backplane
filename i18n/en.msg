@@ -11,3 +11,9 @@ settings.lang = Language
 settings.lang.auto = Automatic
 settings.lang.en = English
 settings.lang.ja = 日本語
+
+settings.agent.lang = Agents reply in my language
+settings.lang.on = On
+settings.lang.off = Off
+settings.lang.note = This device. Automatic follows the system language.
+settings.agent.lang.note = Asks agents and bots to reply in the language above.

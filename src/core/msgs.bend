@@ -31,6 +31,20 @@ def T.files.changed(l: I.Loc, +arg0: Nat) -> String:
     case I.Ja{}:
       I.I18n.exact(arg0, Nat.add(Nat.mul(0n, 10n), 0n), "変更なし", I.I18n.pick(I.I18n.plural(I.Ja{}, arg0), "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更", "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更", "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更", "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更", "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更", "ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件を変更"))
 
+def T.settings.agent.lang(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Agents reply in my language"
+    case I.Ja{}:
+      "エージェントも同じ言語で返答"
+
+def T.settings.agent.lang.note(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Asks agents and bots to reply in the language above."
+    case I.Ja{}:
+      "エージェントとボットに、上の言語で応答するよう求めます。"
+
 def T.settings.lang(l: I.Loc) -> String:
   match l:
     case I.En{}:
@@ -58,6 +72,27 @@ def T.settings.lang.ja(l: I.Loc) -> String:
       "日本語"
     case I.Ja{}:
       "日本語"
+
+def T.settings.lang.note(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "This device. Automatic follows the system language."
+    case I.Ja{}:
+      "この端末の設定です。自動はシステムの言語に合わせます。"
+
+def T.settings.lang.off(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Off"
+    case I.Ja{}:
+      "オフ"
+
+def T.settings.lang.on(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "On"
+    case I.Ja{}:
+      "オン"
 
 def T.thread.count(l: I.Loc, +arg0: Nat) -> String:
   match l:
@@ -88,7 +123,7 @@ def T.turn.by(l: I.Loc, +arg0: String) -> String:
       I.I18n.sel(arg0, "you", "あなた", I.I18n.sel(arg0, "agent", "エージェント", "誰か"))
 
 def T.keys() -> List<&2, String>:
-  ["common.cancel", "common.delete", "common.save", "files.changed", "settings.lang", "settings.lang.auto", "settings.lang.en", "settings.lang.ja", "thread.count", "thread.delete.ask", "thread.new", "turn.by"]
+  ["common.cancel", "common.delete", "common.save", "files.changed", "settings.agent.lang", "settings.agent.lang.note", "settings.lang", "settings.lang.auto", "settings.lang.en", "settings.lang.ja", "settings.lang.note", "settings.lang.off", "settings.lang.on", "thread.count", "thread.delete.ask", "thread.new", "turn.by"]
 
 def T.missing(l: I.Loc) -> List<&2, String>:
   match l:
@@ -110,6 +145,19 @@ def T.plain.nlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
 def T.plain.nlll(l: I.Loc, key: String) -> Maybe<&2, String>:
   T.plain.nlll.cmp(String.cmp(key, "common.cancel"), l)
 
+def T.plain.nllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.common.save(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllr.cmp(String.cmp(key, "common.save"), l)
+
 def T.plain.nll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
@@ -118,16 +166,29 @@ def T.plain.nll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case EQ{}:
       Some{T.common.delete(l)}
     case GT{}:
-      None{}
+      T.plain.nllr(l, key)
 
 def T.plain.nll(l: I.Loc, key: String) -> Maybe<&2, String>:
   T.plain.nll.cmp(String.cmp(key, "common.delete"), l)
+
+def T.plain.nlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.settings.agent.lang.note(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrl.cmp(String.cmp(key, "settings.agent.lang.note"), l)
 
 def T.plain.nlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
-      None{}
+      T.plain.nlrl(l, key)
     case EQ{}:
       Some{T.settings.lang(l)}
     case GT{}:
@@ -142,14 +203,14 @@ def T.plain.nl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case LT{}:
       T.plain.nll(l, key)
     case EQ{}:
-      Some{T.common.save(l)}
+      Some{T.settings.agent.lang(l)}
     case GT{}:
       T.plain.nlr(l, key)
 
 def T.plain.nl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nl.cmp(String.cmp(key, "common.save"), l)
+  T.plain.nl.cmp(String.cmp(key, "settings.agent.lang"), l)
 
-def T.plain.nrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+def T.plain.nrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
@@ -159,14 +220,53 @@ def T.plain.nrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case GT{}:
       None{}
 
+def T.plain.nrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrll.cmp(String.cmp(key, "settings.lang.en"), l)
+
+def T.plain.nrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.settings.lang.note(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlr.cmp(String.cmp(key, "settings.lang.note"), l)
+
+def T.plain.nrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrll(l, key)
+    case EQ{}:
+      Some{T.settings.lang.ja(l)}
+    case GT{}:
+      T.plain.nrlr(l, key)
+
 def T.plain.nrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrl.cmp(String.cmp(key, "settings.lang.en"), l)
+  T.plain.nrl.cmp(String.cmp(key, "settings.lang.ja"), l)
+
+def T.plain.nrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.settings.lang.on(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrl.cmp(String.cmp(key, "settings.lang.on"), l)
 
 def T.plain.nrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
-      None{}
+      T.plain.nrrl(l, key)
     case EQ{}:
       Some{T.thread.new(l)}
     case GT{}:
@@ -181,12 +281,12 @@ def T.plain.nr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case LT{}:
       T.plain.nrl(l, key)
     case EQ{}:
-      Some{T.settings.lang.ja(l)}
+      Some{T.settings.lang.off(l)}
     case GT{}:
       T.plain.nrr(l, key)
 
 def T.plain.nr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nr.cmp(String.cmp(key, "settings.lang.ja"), l)
+  T.plain.nr.cmp(String.cmp(key, "settings.lang.off"), l)
 
 def T.plain.n.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
