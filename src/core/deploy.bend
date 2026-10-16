@@ -88,7 +88,8 @@ def Deploy.in(+line: String, +id: String) -> Bool:
 # ToolShut, ToolsGone at a turn's end) and keeps the open ones in memory,
 # never in the log: a list of "thread<TAB>call" entries (Open.*). A thread
 # between two calls has none open, so a deploy goes then, however long its
-# turn. The requester's own deploy_* call is never opened (Tools.opens).
+# turn. The requester's own deploy_* call is never opened (Tools.opens,
+# Open.mcp).
 
 def Open.key(+th: String, +call: String) -> String:
   th ++ "\t" ++ call
@@ -129,13 +130,45 @@ def Open.shut(xs: List<&2, String>, +th: String, +call: String) -> List<&2, Stri
     case +x <> t:
       Open.keep(String.eq(x, Open.key(th, call)), x, Open.shut(t, th, call))
 
-# every call of a thread ends (its turn ended, its agent went)
+# every call of a thread ends (its turn ended, its agent went); a request
+# still on the MCP route stays open until its answer is written
 def Open.gone(xs: List<&2, String>, +th: String) -> List<&2, String>:
   match xs:
     case Nil{}:
       Nil{}
     case +x <> t:
-      Open.keep(String.starts_with(x, th ++ "\t"), x, Open.gone(t, th))
+      Open.keep(Bool.and(String.starts_with(x, th ++ "\t"), Bool.not(String.starts_with(x, th ++ "\tmcp:"))), x, Open.gone(t, th))
+
+# Backplane's own MCP calls, every provider's: the hub sees each request on
+# its MCP route from the moment it arrives until its answer is written
+# (server.bend's Mcp.ask.raw), so it opens there and shuts there, under
+# "mcp:<n>". The caller's own deploy_* call is never counted: a thread
+# asking for a deploy, or how it goes, would wait for itself (laws
+# deploy_mcp_*).
+def Open.mcp.tool(+o: J.Json) -> Bool:
+  Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), Bool.not(String.starts_with(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "deploy_")))
+
+# whether an MCP request counts as a tool call in flight
+def Open.mcp.counts(+body: String) -> Bool:
+  Open.mcp.tool(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}))
+
+def Open.mcp.key(+call: String) -> String:
+  "mcp:" ++ call
+
+def Open.mcp.k(go: Bool, +xs: List<&2, String>, +th: String, +call: String) -> List<&2, String>:
+  match go:
+    case True{}:
+      Open.add(xs, th, Open.mcp.key(call))
+    case False{}:
+      xs
+
+# a request on the MCP route opens (when it counts)
+def Open.mcp(+xs: List<&2, String>, +th: String, +call: String, +body: String) -> List<&2, String>:
+  Open.mcp.k(Open.mcp.counts(body), xs, th, call)
+
+# its answer was written
+def Open.mcp.shut(xs: List<&2, String>, +th: String, +call: String) -> List<&2, String>:
+  Open.shut(xs, th, Open.mcp.key(call))
 
 def Open.count(xs: List<&2, String>) -> Nat:
   List.length(&2, String, xs)

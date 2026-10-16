@@ -69,6 +69,8 @@ import ../core/hist.bend as HI
 import ../core/emb.bend as EM
 import ./review.bend as RVS
 import ../core/cmds.bend as CM
+import ../core/errtail.bend as ER
+import ../core/keyring.bend as KR
 import ../core/adopt.bend as AD
 import ./adoptio.bend as AIO
 import ./castio.bend as CST
@@ -114,6 +116,10 @@ type Msg is Data:
   LockHttp{op: String, body: String, reply: Chan(String)}
   Announce{text: String}
   Mcp{thread: String, body: String, reply: Chan(String)}
+  # a request on the MCP route arrived, its answer was written (the open
+  # calls a deploy waits for: core/deploy.bend's Open.mcp)
+  McpOpen{thread: String, call: String, body: String}
+  McpShut{thread: String, call: String}
   # gen: the connection's generation (a socket's id; the window's client 0
   # joins again under a new one); sock: a raw descriptor on its socket (0
   # for none), shut at once when it falls too far behind (core/outbox.bend)
@@ -785,6 +791,59 @@ def Wire.changes(+cs: List<&2, Client>, +text: String, +log: List<&2, String>, +
 # Agent processes
 # ---------------
 
+# Is the desktop's login keyring locked (core/keyring.bend)? Asked of the
+# Secret Service, read only, 2 s at most; BACKPLANE_KEYRING_LOCKED=1/0
+# answers for tests. No bus or no service: unknown (0), never an error.
+def Keyring.asked(r: P.Ran) -> Nat:
+  match r:
+    case P.Ran{0, +out}:
+      KR.Keyring.of(out)
+    case _:
+      0n
+
+def Keyring.probe.k(+set: Nat) -> IO(Nat):
+  Bool.pick(IO(Nat), Nat.is_lt(set, 3n), IO.pure(Nat, set),
+    IO.bind(P.Ran, Nat, P.Proc.run("sh", PT.Port.timeout(["2", "busctl", "--user", "get-property", "org.freedesktop.secrets", "/org/freedesktop/secrets/collection/login", "org.freedesktop.Secret.Collection", "Locked"]), "/"),
+      r => IO.pure(Nat, Keyring.asked(r))))
+
+def Keyring.env.of(r: Result<&1, &1, U32 & String, String>) -> Nat:
+  match r:
+    case Done{+v}:
+      KR.Keyring.env(v)
+    case Fail{_}:
+      3n
+
+def Keyring.probe() -> IO(Nat):
+  IO.bind(Result<&1, &1, U32 & String, String>, Nat, IO.get_env("BACKPLANE_KEYRING_LOCKED"), r => Keyring.probe.k(Keyring.env.of(r)))
+
+# (only when it may matter: an agent that ended with an error)
+def Keyring.probe.if(go: Bool) -> IO(Nat):
+  match go:
+    case True{}:
+      Keyring.probe()
+    case False{}:
+      IO.pure(Nat, 0n)
+
+# a provider that needs the keyring is only started while it is not
+# locked (law keyring_locked_never_starts); start runs it, refuse fails the
+# turn with the words; one that does not need it never asks
+def Keyring.gate.k(go: Bool, start: IO(Unit), refuse: IO(Unit)) -> IO(Unit):
+  match go:
+    case True{}:
+      start
+    case False{}:
+      refuse
+
+def Keyring.gate.n(needs: Bool, +provider: String, start: IO(Unit), refuse: IO(Unit)) -> IO(Unit):
+  match needs:
+    case True{}:
+      IO.bind(Nat, Unit, Keyring.probe(), k => Keyring.gate.k(KR.Keyring.start(provider, k), start, refuse))
+    case False{}:
+      start
+
+def Keyring.gate(+provider: String, start: IO(Unit), refuse: IO(Unit)) -> IO(Unit):
+  Keyring.gate.n(KR.Keyring.needs(provider), provider, start, refuse)
+
 # lines from the agent's stdout go to the hub; EOF reports the exit
 def Agent.lines(ls: List<&2, String>, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ls:
@@ -800,7 +859,9 @@ def Agent.end(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
     AIO.Adopt.drop(thread, pid)
-    +why : String = B.Exit.why(code)
+    +tail : String <- H.Proc.errtail(pid)
+    +k : Nat <- Keyring.probe.if(U32.is_ne(code, 0))
+    +why : String = KR.Keyring.say(ER.Exit.say("agent exited", B.Exit.why(code), code, tail), k)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AgentGone{thread, code, pid, why})
     return Unit{}
 
@@ -1205,12 +1266,19 @@ def Mcp.answer(m: Maybe<&1, String>, s: Socket) -> IO(Unit):
     case None{}:
       Conn.finish(s, W.Http.text("503 Service Unavailable", "the hub is gone"))
 
+# the call counts as in flight (for a safe deploy) from its arrival until
+# its answer is written
 def Mcp.ask.raw(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
+    +t0 : U32 <- PS.Perf.us()
+    +call : String = U32.show(t0) ++ "." ++ Nat.show(String.length(body))
+    ok0 : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, McpOpen{thread, call, body})
     +reply : Chan(String) <- Chan.new(String, 1)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Mcp{thread, body, reply})
     m : Maybe<&1, String> <- Chan.recv(String, reply)
     Mcp.answer(m, s)
+    ok2 : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, McpShut{thread, call})
+    return Unit{}
 
 def Mcp.ask(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   Mcp.ask.raw(s, body, thread, inbox)
@@ -2536,19 +2604,24 @@ def Turn.end(s: Socket, +pid: U32, +tag: String, +gen: String, +inbox: Chan(Msg)
   do IO<Unit>:
     Socket.close(s)
     code : U32 <- H.Proc.wait(pid)
+    AIO.Adopt.drop(B.Tag.thread(tag), pid)
+    tail : String <- H.Proc.errtail(pid)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TurnDone{tag})
     return Unit{}
 
 # a per-turn process that ended before its turn did: reaped, and a signal
 # asks its scope why (an out-of-memory kill says so, with the limit; the
 # scope is reset), here in the reader and never on the hub. The words for
-# the failed turn: the scope's, else dflt.
+# the failed turn: the scope's, else dflt, with the exit code or signal and
+# the end of what it wrote to stderr, secrets dropped (core/errtail.bend)
 def Turn.close(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String) -> IO(String):
   do IO<String>:
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
-    +why : String = B.Exit.why(code)
-    return Bool.pick(String, String.is_empty(why), dflt, why)
+    AIO.Adopt.drop(B.Tag.thread(tag), pid)
+    +tail : String <- H.Proc.errtail(pid)
+    +k : Nat <- Keyring.probe()
+    return KR.Keyring.say(ER.Exit.say(dflt, B.Exit.why(code), code, tail), k)
 
 def Turn.failed(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -2598,6 +2671,7 @@ def Codex.read(started: U32 & Socket, +thread: String, +gen: String, +inbox: Cha
     s2 : Socket <- H.Sock.shutdown(s)
     +input : Chan(String) <- Chan.new(String, 1)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
+    AIO.Adopt.note(thread, pid)
     s3 : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(s2), d => Agent.watch.start(d, pid, thread, gen, inbox))
     Codex.reader(Fuel.forever(), s3, U.Lines.new(), False{}, pid, B.Tag.of(thread, pid), gen, inbox)
 
@@ -2608,8 +2682,14 @@ def Codex.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: String
     case Fail{e}:
       Codex.failed(e, thread, gen, inbox)
 
+def Codex.refuse(+thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, "{\"type\":\"turn.failed\",\"message\":" ++ J.Json.show(J.Str{KR.Keyring.refusal("codex")}) ++ "}"})
+    return Unit{}
+
 def Codex.run(+args: List<&2, String>, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("codex", args, cwd, 0), r => Codex.started(r, thread, gen, inbox))
+  Keyring.gate("codex", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("codex", args, cwd, 3), r => Codex.started(r, thread, gen, inbox)),
+    Codex.refuse(thread, gen, inbox))
 
 def Grok.stop(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -2691,6 +2771,7 @@ def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: 
         +input : Chan(String) <- Chan.new(String, 64)
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
         ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
+        AIO.Adopt.note(thread, pid)
         ok2 : Result<&1, &1, String, Unit> <- Chan.send(String, input, MS.Proto.init(t))
         rd2 : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd), d => Agent.watch.start(d, pid, thread, gen, inbox))
         Grok.reader(Fuel.forever(), rd2, U.Lines.new(), AC.Acp.new(), t, pid, B.Tag.of(thread, pid), gen, input, inbox)
@@ -2714,8 +2795,14 @@ def Grok.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +t: MS.Proto, +t
     case Fail{e}:
       Grok.failed(e, t, thread, gen, inbox)
 
+def Grok.refuse(+t: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, AC.Acp.failed(KR.Keyring.refusal(MS.Proto.name(t)))})
+    return Unit{}
+
 def Grok.run(+args: List<&2, String>, +t: MS.Proto, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn(MS.Proto.cmd(t), args, cwd, 0), r => Grok.started(r, t, thread, gen, inbox))
+  Keyring.gate(MS.Proto.name(t), IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn(MS.Proto.cmd(t), args, cwd, 3), r => Grok.started(r, t, thread, gen, inbox)),
+    Grok.refuse(t, thread, gen, inbox))
 
 # Updates
 # -------
@@ -3284,10 +3371,20 @@ def ZoneJob.each(xs: List<&2, String>, +now: Nat, acc: List<&2, M.Change>) -> IO
 def ZoneJob.machine.log(+z: String, +old: String, +now: Nat) -> List<&2, M.Change>:
   Bool.pick(List<&2, M.Change>, Bool.or(String.is_empty(z), String.eq(z, old)), Nil{}, [M.SettingSet{"tz.machine", z, now}])
 
+# a newly found machine zone comes with its rule, so a routine in the
+# person's zone (which falls back to the machine's) is due from the next
+# tick on, not one tick after the rule is looked up
+def ZoneJob.machine.rule(same: Bool, +z: String, +old: String, +now: Nat) -> IO(List<&2, M.Change>):
+  match same:
+    case True{}:
+      IO.pure(List<&2, M.Change>, Nil{})
+    case False{}:
+      IO.bind(String, List<&2, M.Change>, ZoneJob.rule(z), rule => IO.pure(List<&2, M.Change>, List.append(&2, M.Change, ZoneJob.machine.log(z, old, now), ZoneJob.log(z, rule, "", now))))
+
 def ZoneJob.machine.log.go(detect: Bool, +old: String, +now: Nat) -> IO(List<&2, M.Change>):
   match detect:
     case True{}:
-      IO.bind(String, List<&2, M.Change>, ZoneJob.machine(), z => IO.pure(List<&2, M.Change>, ZoneJob.machine.log(z, old, now)))
+      IO.bind(String, List<&2, M.Change>, ZoneJob.machine(), +z => ZoneJob.machine.rule(Bool.or(String.is_empty(z), String.eq(z, old)), z, old, now))
     case False{}:
       IO.pure(List<&2, M.Change>, Nil{})
 
@@ -7452,8 +7549,8 @@ def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: S
     +fs : K.Files <- K.Files.read(cwd)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AutoView{thread, fs})
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-    res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 0)
-    Claude.started(res, thread, gen, input, inbox)
+    Keyring.gate("claude", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 3),
+      res => Claude.started(res, thread, gen, input, inbox)), Claude.fail(thread, gen, KR.Keyring.refusal("claude"), inbox))
 
 def Agents.pid.k(same: Bool, a: Agent, +pid: U32) -> Agent:
   match same a:
@@ -8261,7 +8358,9 @@ def Hub.step.b(st: M.State, h: Hub, +cs: List<&2, M.Change>, os: List<&2, B.Out>
 def Hub.step.a(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   Hub.step.b(st, h, B.Alerts.changes(st, cs), os)
 
-# the step's wakes (hub.bend's Wake.after) first, so their messages get
+# the step's wakes (hub.bend's Wake.after) and riding mail (Ride.after: a
+# turn that ended with mail waiting starts the next) first, so their
+# messages get
 # alert records like any other change
 def Hub.step.wakes(step: B.Step, +st: M.State, h: Hub) -> IO(Hub & Bool):
   match step:
@@ -8270,7 +8369,7 @@ def Hub.step.wakes(step: B.Step, +st: M.State, h: Hub) -> IO(Hub & Bool):
 
 def Hub.step.k(p: M.State & Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   (+st, h) = p
-  IO.bind(Nat, Hub & Bool, Now.nat(), now => Hub.step.wakes(B.Locks.after(st, now, B.Wake.after(st, B.Step{cs, os})), st, h))
+  IO.bind(Nat, Hub & Bool, Now.nat(), +now => Hub.step.wakes(B.Locks.after(st, now, B.Ride.after(st, now, B.Wake.after(st, B.Step{cs, os}))), st, h))
 
 # a step's changes are stored (with the pending counts they move), then
 # its effects run; answers whether it was stored
@@ -8792,8 +8891,8 @@ def Hub.mcp.k(o: MC.McpOut, h: Hub, +reply: Chan(String), +body: String) -> IO(H
 def Hub.mcp.hub.normal(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.mcp.k(BH.Bots.mcp(st, now, thread, Maybe.default(&2, J.Json, J.Json.parse(Cfg.models(cfg)), J.Null{}), Cfg.version(cfg),
-          Maybe.default(&2, J.Json, J.Json.parse(BN.Bn.dir(Cfg.bn(cfg))), J.Json.arr(Nil{})), GG.Google.tool_defs(), body),
+      Hub.mcp.k(BH.Ride.mcp(BH.Bots.mcp(st, now, thread, Maybe.default(&2, J.Json, J.Json.parse(Cfg.models(cfg)), J.Null{}), Cfg.version(cfg),
+          Maybe.default(&2, J.Json, J.Json.parse(BN.Bn.dir(Cfg.bn(cfg))), J.Json.arr(Nil{})), GG.Google.tool_defs(), body), st, now, thread),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, body)
 
 def LockTool.preflight(free: Bool, +name: String, +holder: String, +home: String) -> IO(Bool):
@@ -11252,6 +11351,10 @@ def Msg.kind(m: Msg) -> String:
       "deploy_failed"
     case Mcp{_, _, _}:
       "mcp"
+    case McpOpen{_, _, _}:
+      "mcp_open"
+    case McpShut{_, _}:
+      "mcp_shut"
     case Announce{_}:
       "announce"
     case Join{_, _, _, _, _, _}:
@@ -11434,6 +11537,16 @@ def Hub.mcp.gate(refused: Bool, h: Hub, +thread: String, +body: String, +reply: 
 # an MCP call names its thread and the process's generation
 # ("<thread>.<gen>", B.Gen.*): one from a process the thread no longer
 # runs may read, never change anything (law mcp_stale_gen_refused)
+def Hub.mcp.open(h: Hub, +thread: String, +call: String, +body: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      IO.pure(Hub, Hub{st, f, ls, cl, as, inbox, Tools.with(cfg, DP.Open.mcp(Tools.of(cfg), thread, call, body)), note})
+
+def Hub.mcp.shut(h: Hub, +thread: String, +call: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      IO.pure(Hub, Hub{st, f, ls, cl, as, inbox, Tools.with(cfg, DP.Open.mcp.shut(Tools.of(cfg), thread, call)), note})
+
 def Hub.mcp.g(h: Hub, +tag: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
@@ -11803,6 +11916,10 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.deploy_failed(h, err, now)
     case Mcp{thread, body, reply}:
       Hub.mcp.g(h, B.Tag.thread(thread), body, reply, now)
+    case McpOpen{thread, call, body}:
+      Hub.mcp.open(h, B.Gen.thread(B.Tag.thread(thread)), call, body)
+    case McpShut{thread, call}:
+      Hub.mcp.shut(h, B.Gen.thread(B.Tag.thread(thread)), call)
     case Announce{text}:
       Hub.note(h, text)
     case Join{client, out, since, origin, gen, sock}:

@@ -30,6 +30,9 @@ import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
 import ./src/core/deploy.bend as DP
 import ./src/core/cmds.bend as CM
+import ./src/core/errtail.bend as ERT
+import ./src/core/keyring.bend as KRG
+import ./src/core/ride.bend as RD
 import ./src/core/adopt.bend as AD
 import ./src/core/utf8.bend as UT
 import ./src/core/refs.bend as RF
@@ -8782,3 +8785,129 @@ law tok_add_no_cost:
 # without a shared cap in the status, the spend row says nothing about one
 law usage_boat_no_cap_nothing:
   {UZ.Bj.cap.of(J.Json.obj([])) == "" : String}
+# ---- agent failures: stderr ----
+# an agent that ends before its turn did is reported with its exit code or
+# signal and the end of its stderr, with anything secret-shaped dropped
+law errtail_scrub_token:
+  {ERT.Err.scrub("GET http://h/mcp/t1?token=ab12cd done") == "GET http://h/mcp/t1?token=… done" : String}
+
+law errtail_scrub_words:
+  {ERT.Err.scrub("auth sk-AB12cd and task-list ghp_x9 Bearer q.w") == "auth sk-… and task-list ghp_… Bearer …" : String}
+
+law errtail_say_exit:
+  {ERT.Exit.say("codex exited before the turn ended", "", 1, "Error: boom\n") == "codex exited before the turn ended (exit 1): Error: boom" : String}
+
+law errtail_say_signal:
+  {ERT.Exit.say("x", "", 143, "  ") == "x (signal 15)" : String}
+# ---- end agent failures: stderr ----
+# ---- agent failures: the login keyring ----
+# a provider that reads credentials from the login keyring is never started
+# while it is locked; unknown (no bus) or unlocked starts it; one that does
+# not need it always starts; a failure while it is locked says so
+law keyring_locked_never_starts:
+  {KRG.Keyring.start("codex", 2n) == False{} : Bool}
+
+law keyring_unknown_or_open_starts:
+  {Bool.and(Bool.and(KRG.Keyring.start("codex", 0n), KRG.Keyring.start("codex", 1n)), KRG.Keyring.start("claude", 2n)) == True{} : Bool}
+
+law keyring_answers:
+  {Bool.and(Bool.and(Nat.is_eq(KRG.Keyring.of("b true\n"), 2n), Nat.is_eq(KRG.Keyring.of("b false"), 1n)), Nat.is_eq(KRG.Keyring.of(""), 0n)) == True{} : Bool}
+
+law keyring_hint_only_locked:
+  {Bool.and(String.contains(KRG.Keyring.say("x", 2n), "keyring is locked"), String.eq(KRG.Keyring.say("x", 1n), "x")) == True{} : Bool}
+# ---- end agent failures: the login keyring ----
+# ---- riding mail ----
+# a message for a running Codex turn is posted at once (nothing waits in
+# the UI) and rides the turn's next tool result: the turn is not stopped
+law ride_running_no_restart:
+  {H.Step.outs_of(H.Hub.post(H.Demo.state("codex", M.Running{}), 5n, "t1", "m1", M.User{}, "hi")) == [] : List<&2, H.Out>}
+
+law ride_posted_at_once:
+  {List.head(&2, M.Change, H.Queue.changes(H.Hub.post(H.Demo.state("codex", M.Running{}), 5n, "t1", "m1", M.User{}, "hi"))) == Some{M.MessagePosted{"t1", "m1", M.User{}, "hi", 5n}} : Maybe<&2, M.Change>}
+
+# what waits is a setting in the log, so a restart finds it again
+law ride_kept:
+  {RD.Ride.input(H.Ride.of(H.Ride.demo(), "t1")) == "hi" : String}
+
+# a tool result carries what waits, and the same step empties it, so it is
+# delivered at most once: a result for a thread with nothing waiting is
+# left as it was
+law ride_carries_block:
+  {String.contains(MC.McpOut.reply(BHS.Ride.mcp(MC.McpOut{"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}", H.Step.none(), ""}, H.Ride.demo(), 6n, "t1")), "Incoming messages") == True{} : Bool}
+
+law ride_taken_empties:
+  {H.Ride.of(M.State.replay(H.Ride.taken(H.Ride.demo(), 6n, "t1"), H.Ride.demo()), "t1") == "" : String}
+
+law ride_nothing_waiting_same:
+  for o: MC.McpOut
+  for +s: M.State
+  for +now: Nat
+  for +th: String
+  for h: {H.Ride.of(s, th) == "" : String}
+  {BHS.Ride.mcp(o, s, now, th) == o : MC.McpOut}
+
+# never lost: a turn that ends (done, failed, stopped, or cut short by a
+# restart) with mail waiting starts the next at once with it, emptying it
+law ride_turn_end_starts:
+  {List.last(&2, M.Change, H.Queue.changes(H.Ride.after(H.Ride.demo(), 6n, H.Step{[M.TurnChanged{"t1", M.Completed{}, 6n}], Nil{}}))) == Some{M.TurnChanged{"t1", M.Running{}, 6n}} : Maybe<&2, M.Change>}
+
+law ride_interrupted_starts:
+  {List.last(&2, M.Change, H.Queue.changes(H.Ride.after(H.Ride.demo(), 6n, H.Step{[M.TurnChanged{"t1", M.Interrupted{}, 6n}], Nil{}}))) == Some{M.TurnChanged{"t1", M.Running{}, 6n}} : Maybe<&2, M.Change>}
+
+law ride_turn_end_empties:
+  {H.Ride.of(M.State.replay(H.Queue.changes(H.Ride.after(H.Ride.demo(), 6n, H.Step{[M.TurnChanged{"t1", M.Failed{}, 6n}], Nil{}})), H.Ride.demo()), "t1") == "" : String}
+
+# a step that ends no turn starts nothing
+law ride_after_running_same:
+  for +s: M.State
+  for +now: Nat
+  for +th: String
+  for os: List<&2, H.Out>
+  {H.Ride.after(s, now, H.Step{[M.TurnChanged{th, M.Running{}, now}], os}) == H.Step{[M.TurnChanged{th, M.Running{}, now}], os} : H.Step}
+
+# delivery holds nothing back on the restart (steer) path either
+law deliver_held_restart:
+  for b1: Bool
+  for b2: Bool
+  for b3: Bool
+  for +th: String
+  for +id: String
+  for +now: Nat
+  for +v: String
+  for +r: String
+  {H.Deliver.held(List.append(&2, M.Change, List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, b1, [], [M.QueueTaken{th, now}]), Bool.pick(List<&2, M.Change>, b3, [], H.Ride.done(v, now, th, r))), List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, b2, [], [M.ActivityLogged{th, id, "info", "steer", "Steered: the turn starts again with this message", now}]), [M.TurnChanged{th, M.Running{}, now}]))) == False{} : Bool}
+# ---- end riding mail ----
+# ---- resume after a restart ----
+# a per-turn process (Codex, Grok, Muse, Antigravity: recorded with no
+# descriptor, "-1" read as 0, never handed off) that still runs after a
+# restart is stopped, never adopted, whatever adoption allows, so its
+# thread never has two processes on one session
+law resume_turn_process_stopped:
+  {AD.Adopt.stopped(AD.Adopt.decide([AD.AEntry{"t", 42n, "b:1", 0n, False{}, "", "", CM.Cmds.new()}], ["b:1"], True{})) == [42n] : List<&2, Nat>}
+
+law resume_turn_process_not_kept:
+  {AD.Adopt.kept(AD.Adopt.decide([AD.AEntry{"t", 42n, "b:1", 0n, False{}, "", "", CM.Cmds.new()}], ["b:1"], True{})) == [] : List<&2, String>}
+
+# the cut turn is told that a tool call in flight lost its result, and the
+# words are still the continue message (a turn that brings the hub down
+# never loops: Carry.is)
+law resume_carry_tells_cut:
+  {Bool.and(H.Carry.is(M.Carry.text() ++ " " ++ H.Carry.cut()), String.contains(H.Carry.cut(), "its result was lost")) == True{} : Bool}
+# ---- end resume after a restart ----
+# ---- deploy waits for MCP calls ----
+# a request on the MCP route (any provider's) is a tool call in flight: a
+# deploy never restarts while one is open, goes once its answer is written,
+# and the caller's own deploy_* call never holds it (no self-deadlock)
+law deploy_mcp_call_waits:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, DP.Open.mcp(Nil{}, "t1", "c1", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"thread_wait\",\"arguments\":{}}}"))) == 0n : Nat}
+
+law deploy_mcp_answered_goes:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, DP.Open.mcp.shut(DP.Open.mcp(Nil{}, "t1", "c1", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"thread_wait\",\"arguments\":{}}}"), "t1", "c1"))) == 1n : Nat}
+
+law deploy_mcp_own_call_not_counted:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, DP.Open.mcp(Nil{}, "t0", "c1", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"deploy_restart\",\"arguments\":{}}}"))) == 1n : Nat}
+
+# a turn's end does not shut a request still waiting for its answer
+law deploy_mcp_outlives_turn_end:
+  {DP.Open.count(DP.Open.gone(DP.Open.mcp(DP.Open.add(Nil{}, "t1", "x"), "t1", "c1", "{\"method\":\"tools/call\",\"params\":{\"name\":\"thread_wait\"}}"), "t1")) == 1n : Nat}
+# ---- end deploy waits for MCP calls ----

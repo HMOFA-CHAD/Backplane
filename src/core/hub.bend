@@ -1,5 +1,6 @@
 import Base
 import ./mail.bend as ML
+import ./ride.bend as RD
 import ./json.bend as J
 import ./model.bend as M
 import ./review.bend as RVW
@@ -2147,33 +2148,104 @@ def Steer.go(+t: M.Thread, +cwd: String, +now: Nat, +seq: Nat, +thread: String, 
   Step{List.append(&2, M.Change, Steer.note(Hub.provider(t), thread, now, seq), [M.TurnChanged{thread, M.Running{}, now}]),
     List.append(&2, Out, Steer.stop(Hub.provider(t), thread), Hub.run(t, cwd, text, Hub.uuid(now, thread ++ "/s/" ++ Nat.show(seq))))}
 
+# Riding mail
+# -----------
+# (ride.bend) A running Codex, Grok, Muse or Antigravity turn takes a
+# message on its next Backplane tool result (Ride.taken, bothub.bend's
+# Ride.mcp); a turn that ends with mail waiting starts the next at once
+# with it (Ride.after); a turn that starts for any other reason takes it
+# too (Ride.post). Laws ride_*.
+
+def Ride.of(+s: M.State, +th: String) -> String:
+  M.Setting.get(s, RD.Ride.key(th), "")
+
+def Ride.last(+v: String) -> String:
+  Maybe.default(&2, String, List.last(&2, String, RD.Ride.ids(RD.Ride.read(v))), "")
+
+def Ride.count(+v: String) -> String:
+  Nat.show(List.length(&2, RD.RItem, RD.Ride.read(v)))
+
+# a message waits for the running turn: posted now, added to the ride
+def Ride.wait(+s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
+  Step{[M.MessagePosted{thread, msg, role, text, now}, M.SettingSet{RD.Ride.key(thread), RD.Ride.add(Ride.of(s, thread), msg, text), now}], Nil{}}
+
+# the ride emptied, and the log told how much went where
+def Ride.done(+v: String, +now: Nat, +thread: String, +into: String) -> List<&2, M.Change>:
+  [M.SettingSet{RD.Ride.key(thread), "", now}, M.ActivityLogged{thread, "ride:" ++ Ride.last(v), "info", "ride", "Delivered " ++ into ++ ": " ++ Ride.count(v) ++ " waiting message(s)", now}]
+
+# what a tool result that carries the ride writes
+def Ride.taken(+s: M.State, +now: Nat, +thread: String) -> List<&2, M.Change>:
+  Ride.done(Ride.of(s, thread), now, thread, "into the running turn")
+
+# a turn started with the ride (after the legacy queue, if any)
+def Ride.run(+t: M.Thread, +cwd: String, +queued: String, +v: String, +now: Nat, +thread: String) -> Step:
+  Step{List.concat(&2, M.Change, [Ride.done(v, now, thread, "with a new turn"), Bool.pick(List<&2, M.Change>, String.is_empty(queued), Nil{}, [M.QueueTaken{thread, now}]), [M.TurnChanged{thread, M.Running{}, now}]]),
+    Git{0, "", "checkpoint0", thread, cwd, "", ""} <> Git{0, "", "step", thread, cwd, Ride.last(v), ""} <> Hub.run(t, cwd, M.Queue.join(queued, RD.Ride.input(v)), Hub.uuid(now, thread ++ "/r/" ++ Ride.last(v)))}
+
+def Ride.start.k(empty: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  match empty:
+    case True{}:
+      Step.none()
+    case False{}:
+      Ride.run(Hub.thread(s, th), Hub.cwd(s, Hub.thread(s, th)), M.Queue.of(s, th), Ride.of(s, th), now, th)
+
+# a thread that is not running and has mail waiting starts a turn with it
+def Ride.start(+s: M.State, +now: Nat, +th: String) -> Step:
+  Ride.start.k(Bool.or(Hub.running(Hub.thread(s, th)), String.is_empty(Ride.of(s, th))), s, now, th)
+
 # Delivery
 # --------
 # A message for a thread, from the person, a bot, another thread or
 # Backplane itself, is delivered at once; it never waits behind a running
 # turn (law deliver_never_waits). An idle thread starts a turn with it. A
 # running turn takes it: Claude on its input, mid-turn; a Codex, Grok,
-# Muse or Antigravity turn cannot, so its process stops and the turn starts
+# Muse or Antigravity turn on its next Backplane tool result (Riding mail,
+# above), or, when the person steers, its process stops and the turn starts
 # again on the same session with it (Steer.go, law steer_codex_restarts).
 # Only a thread whose worktree is still being made holds it, and starts
 # with it as soon as the worktree is there (Wt.start). Whatever the thread
 # held (handed-over context, or messages from logs older than this rule)
 # goes with it.
 
+# a running Codex, Grok, Muse or Antigravity turn stopped and started
+# again with the message (and whatever waited: the legacy queue, the ride)
+def Hub.deliver.restart(+s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
+  Step.before(M.MessagePosted{thread, msg, role, text, now} <> List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, String.is_empty(M.Queue.of(s, thread)), Nil{}, [M.QueueTaken{thread, now}]),
+      Bool.pick(List<&2, M.Change>, String.is_empty(Ride.of(s, thread)), Nil{}, Ride.done(Ride.of(s, thread), now, thread, "with the steer"))), Nil{},
+    Steer.go(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), now, Hub.seq(s), thread, M.Queue.join(M.Queue.join(M.Queue.of(s, thread), RD.Ride.input(Ride.of(s, thread))), text)))
+
+# a message for a running non-Claude turn rides its next tool result (an
+# older log's queue still restarts it with everything at once)
+def Hub.deliver.ride(clear: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
+  match clear:
+    case True{}:
+      Ride.wait(s, now, thread, msg, role, text)
+    case False{}:
+      Hub.deliver.restart(s, now, thread, msg, role, text)
+
 def Hub.deliver.steer(claude: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   match claude:
     case True{}:
       Hub.post.go(False{}, Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread, msg, role, text)
     case False{}:
-      Step.before(M.MessagePosted{thread, msg, role, text, now} <> Bool.pick(List<&2, M.Change>, String.is_empty(M.Queue.of(s, thread)), Nil{}, [M.QueueTaken{thread, now}]), Nil{},
-        Steer.go(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), now, Hub.seq(s), thread, M.Queue.join(M.Queue.of(s, thread), text)))
+      Hub.deliver.ride(String.is_empty(M.Queue.of(s, thread)), s, now, thread, msg, role, text)
+
+# an idle thread starts a turn with the message, and with any mail still
+# waiting (a turn stopped by the person, or one a restart cut short)
+def Ride.post(empty: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
+  match empty:
+    case True{}:
+      Hub.post.go(False{}, Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread, msg, role, text)
+    case False{}:
+      Step.before(Ride.done(Ride.of(s, thread), now, thread, "with a new turn"), Nil{},
+        Hub.post.go(False{}, Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.join(M.Queue.of(s, thread), RD.Ride.input(Ride.of(s, thread))), now, thread, msg, role, text))
 
 def Hub.deliver.r(run: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   match run:
     case True{}:
       Hub.deliver.steer(String.eq(Hub.provider(Hub.thread(s, thread)), "claude"), s, now, thread, msg, role, text)
     case False{}:
-      Hub.post.go(False{}, Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread, msg, role, text)
+      Ride.post(String.is_empty(Ride.of(s, thread)), s, now, thread, msg, role, text)
 
 # running: the thread's turn runs; pending: its worktree is being made
 def Hub.deliver(run: Bool, pending: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
@@ -2326,12 +2398,35 @@ def Hub.turn(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String,
 
 # Follow-up modes
 # ---------------
-# Older clients and tools name a mode ("queue", "steer", "auto"). Every
-# mode delivers the message at once (Hub.deliver): there is no queue.
+# Clients and tools name a mode ("queue", "steer", "auto"). Every mode
+# delivers the message at once (Hub.deliver): there is no queue. "steer"
+# (what the person's send is) restarts a running non-Claude turn with it.
 
-# a message with a follow-up mode, which no longer changes anything
+def Hub.post.steer.k(go: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
+  match go:
+    case True{}:
+      Hub.deliver.restart(s, now, thread, msg, role, text)
+    case False{}:
+      Hub.post(s, now, thread, msg, role, text)
+
+# the person's explicit steer: a running Codex, Grok, Muse or Antigravity
+# turn stops and starts again with it (law steer_codex_restarts); anything
+# else is delivered like any message
+def Hub.post.steer(+s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
+  Hub.post.steer.k(Bool.and(Hub.running(Hub.thread(s, thread)), Bool.and(Bool.not(String.eq(Hub.provider(Hub.thread(s, thread)), "claude")),
+    Bool.and(Bool.not(M.Worktree.pending(Hub.thread(s, thread), now)), Bool.not(M.Worktree.gone(Hub.thread(s, thread)))))), s, now, thread, msg, role, text)
+
+def Hub.post.mode.k(steer: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
+  match steer:
+    case True{}:
+      Hub.post.steer(s, now, thread, msg, role, text)
+    case False{}:
+      Hub.post(s, now, thread, msg, role, text)
+
+# a message with a follow-up mode: "steer" restarts a running non-Claude
+# turn with it; every other mode delivers it like any message
 def Hub.post.mode(+mode: String, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
-  Hub.post(s, now, thread, msg, role, text)
+  Hub.post.mode.k(String.eq(mode, "steer"), s, now, thread, msg, role, text)
 
 def Hub.turnx.go(+mode: String, +s: M.State, +t: M.Thread, +now: Nat, +client: U32, +id: String, +thread: String, +msg: String, +text: String) -> Step:
   match t:
@@ -3540,6 +3635,27 @@ def Step.cat(a: Step, b: Step) -> Step:
   match a b:
     case Step{cs, os} Step{c2, o2}:
       Step{List.append(&2, M.Change, cs, c2), List.append(&2, Out, os, o2)}
+
+def Ride.after.one(+s: M.State, +now: Nat, +th: String, st: Step) -> Step:
+  match st:
+    case Step{+cs, os}:
+      Step.cat(Step{cs, os}, Ride.start(M.State.replay(cs, s), now, th))
+
+def Ride.after.go(cs: List<&2, M.Change>, +s: M.State, +now: Nat, st: Step) -> Step:
+  match cs:
+    case Nil{}:
+      st
+    case M.TurnChanged{_, M.Running{}, _} <> t:
+      Ride.after.go(t, s, now, st)
+    case M.TurnChanged{+th, _, _} <> t:
+      Ride.after.go(t, s, now, Ride.after.one(s, now, th, st))
+    case _ <> t:
+      Ride.after.go(t, s, now, st)
+
+# a step that ends a turn with mail waiting starts the next turn with it
+# (law ride_turn_end_starts); s: the state before the step
+def Ride.after(+s: M.State, +now: Nat, +st: Step) -> Step:
+  Ride.after.go(Queue.changes(st), s, now, st)
 
 # (a launcher that stopped the thread itself is not told it was stopped)
 def Lr.tell.to(+to: String, +ask: String, +e: Nat, +s1: M.State, +now: Nat, +thread: String, +from: String, +cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
@@ -5475,10 +5591,16 @@ def Hub.recover(+s: M.State, +now: Nat) -> Step:
 # never loops (laws carry_*). Runs after Hub.recover, over the state from
 # before it.
 
+# what a cut turn is told besides: an agent process that was not kept
+# through the restart lost the result of a tool call in flight, and what
+# the call started (a command) may still run or have partly run
+def Carry.cut() -> String:
+  "If a tool call was running when it stopped, its result was lost, and what it started may still be running or have partly run: check its effect before running it again."
+
 def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match go:
     case True{}:
-      Step.after(Origin.step(Hub.post(s, now, th, Hub.id("c", now, Hub.seq(s)), M.User{}, M.Carry.text() ++ DP.Deploy.suffix(s, VER.Version.current())), th, Hub.id("c", now, Hub.seq(s)), ML.Origin{"backplane", "carry", ""}, now),
+      Step.after(Origin.step(Hub.post(s, now, th, Hub.id("c", now, Hub.seq(s)), M.User{}, M.Carry.text() ++ " " ++ Carry.cut() ++ DP.Deploy.suffix(s, VER.Version.current())), th, Hub.id("c", now, Hub.seq(s)), ML.Origin{"backplane", "carry", ""}, now),
         [M.ActivityLogged{th, Hub.id("r", now, 1n+Hub.seq(s)), "info", "restart", "Continuing after the restart", now}])
     case False{}:
       Step.none()
@@ -5948,6 +6070,11 @@ def Carry.demo(cs: List<&2, M.Change>) -> M.State:
 # a thread "t1" on `provider` whose turn is in state st (for laws)
 def Demo.state(+provider: String, +st: M.TurnState) -> M.State:
   M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", provider, "", 1n}, M.TurnChanged{"t1", st, 2n}], M.State.empty())
+
+# a Codex thread "t1" whose turn runs with one message waiting, "hi" (m1)
+# (for the ride laws)
+def Ride.demo() -> M.State:
+  M.State.replay([M.SettingSet{RD.Ride.key("t1"), RD.Ride.add("", "m1", "hi"), 3n}], Demo.state("codex", M.Running{}))
 
 # a Claude thread "t1" with session S1 and two messages, then switched
 # to Codex, whose session became S2 (for laws)
