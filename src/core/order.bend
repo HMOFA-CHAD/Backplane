@@ -327,6 +327,33 @@ def Card.buy(c: Card) -> String:
     case Card{_, _, +label, +n, +b, +err, on}:
       Card.buy.k(Nat.is_eq(n, 0n), label, on, Nat.is_gt(b, 0n), err)
 
+# the parts a ready line names, " · " between them ("LED board · Lamp shade")
+def Card.names.one(blank: Bool, +name: String, rest: List<&2, String>) -> List<&2, String>:
+  match blank:
+    case True{}:
+      rest
+    case False{}:
+      String.trim(name) <> rest
+
+def Card.names.go(ps: List<&2, J.Json>) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      Card.names.one(String.is_empty(String.trim(J.Json.get_str(p, "name", ""))), J.Json.get_str(p, "name", ""), Card.names.go(t))
+
+def Card.boards.words(+n: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(n, 1n), "the board", Nat.show(n) ++ " boards")
+
+def Card.ready.k(+names: String, +boards: Nat) -> String:
+  Bool.pick(String, String.is_empty(names), Bool.pick(String, Nat.is_eq(boards, 0n), "", "Ready to order · " ++ Card.boards.words(boards)),
+    "Ready to order · " ++ names)
+
+# the line beside Buy it above the message box, from the hub's card
+# (laws order_ready_*): what there is to order, by name
+def Card.ready.j(+j: J.Json) -> String:
+  Card.ready.k(String.join(Card.names.go(J.Json.elems(J.Json.get_obj(j, "parts"))), " · "), J.Json.get_nat(j, "boards", 0n))
+
 # the line the card shows shut: the goal, else a nudge
 def Card.line(c: Card) -> String:
   match c:

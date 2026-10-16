@@ -9121,6 +9121,26 @@ law intent_edit_is_intent:
 law order_tools_buy_only:
   {BHS.Bots.buy.tools(False{}) == [] : List<&2, J.Json>}
 
+# the line beside Buy it above the message box names what there is to order,
+# says "the board" for a board with no fab files yet, and is not there
+# while the agent works
+law order_ready_names:
+  {ORD.Card.ready.k("LED board · Lamp shade", 0n) == "Ready to order · LED board · Lamp shade" : String}
+
+law order_ready_board:
+  {ORD.Card.ready.k("", 1n) == "Ready to order · the board" : String}
+
+law order_ready_nothing:
+  {ORD.Card.ready.k("", 0n) == "" : String}
+
+law fab_ready_running_hidden:
+  for line: String
+  {U.Fab.ready.k("Buy it", line, True{}) == "" : String}
+
+law fab_ready_needs_buy:
+  for line: String
+  {U.Fab.ready.k("", line, False{}) == "" : String}
+
 # ---- i18n lang ----
 law lang_default_auto:
   {U.Lang.resolve("", "en_US.UTF-8", False{}) == "en" : String}

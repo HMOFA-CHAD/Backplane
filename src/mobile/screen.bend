@@ -941,16 +941,24 @@ def Mob.live.k(render: Bool, +text: String) -> J.Json:
 def Mob.fab.buy(+buy: String, +id: String) -> List<&2, J.Json>:
   Bool.pick(List<&2, J.Json>, String.is_empty(buy), Nil{}, [J.Json.obj([J.KV{"label", J.Json.str(buy)}, J.KV{"action", J.Json.str("buy")}, J.KV{"value", J.Json.str(id)}])])
 
-def Mob.fab.k(shown: Bool, +st: M.State, +nf: Map<&2, String>, +id: String) -> List<&2, J.Json>:
+# the project card (Goal, Edit) and, once the turn is over and there is
+# something to buy, Ready to order with Buy it (U.Fab.ready), as queue rows
+# above the message box
+def Mob.fab.ready(+line: String, +buy: String, +id: String) -> List<&2, J.Json>:
+  Bool.pick(List<&2, J.Json>, String.is_empty(line), Nil{},
+    [J.Json.obj([J.KV{"msg", J.Json.str("ready:" ++ id)}, J.KV{"text", J.Json.str(line)}, J.KV{"tag", J.Json.str("Ready")}, J.KV{"buttons", J.Json.arr(Mob.fab.buy(buy, id))}])])
+
+def Mob.fab.k(shown: Bool, +st: M.State, +nf: Map<&2, String>, +id: String, run: Bool) -> List<&2, J.Json>:
   match shown:
     case True{}:
-      [J.Json.obj([J.KV{"msg", J.Json.str("fab:" ++ id)}, J.KV{"text", J.Json.str(U.Str.get(nf, "fab.line:" ++ id))}, J.KV{"tag", J.Json.str("Goal")},
-        J.KV{"buttons", J.Json.arr(J.Json.obj([J.KV{"label", J.Json.str("Edit")}, J.KV{"action", J.Json.str("fab-edit")}, J.KV{"value", J.Json.str(id)}]) <> Mob.fab.buy(U.Fab.buy.of(st, nf, id), id))}])]
+      J.Json.obj([J.KV{"msg", J.Json.str("fab:" ++ id)}, J.KV{"text", J.Json.str(U.Str.get(nf, "fab.line:" ++ id))}, J.KV{"tag", J.Json.str("Goal")},
+        J.KV{"buttons", J.Json.arr([J.Json.obj([J.KV{"label", J.Json.str("Edit")}, J.KV{"action", J.Json.str("fab-edit")}, J.KV{"value", J.Json.str(id)}])])}])
+        <> Mob.fab.ready(U.Fab.ready.k(U.Fab.buy.of(st, nf, id), U.Str.get(nf, "fab.ready:" ++ id), run), U.Fab.buy.of(st, nf, id), id)
     case False{}:
       Nil{}
 
-def Mob.fab(+st: M.State, +nf: Map<&2, String>, +id: String) -> List<&2, J.Json>:
-  Mob.fab.k(String.eq(U.Str.get(nf, "fab.shown:" ++ id), "1"), st, nf, id)
+def Mob.fab(+st: M.State, +nf: Map<&2, String>, +id: String, run: Bool) -> List<&2, J.Json>:
+  Mob.fab.k(String.eq(U.Str.get(nf, "fab.shown:" ++ id), "1"), st, nf, id, run)
 
 def Mob.thread(render: Bool, u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: List<&2, String>, +up: String, term: J.Json, skills: List<&2, J.Json>, +ph: M.Phase, btw: J.Json, embs: J.Json) -> J.Json:
   match u t:
@@ -967,7 +975,7 @@ def Mob.thread(render: Bool, u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J
         J.KV{"sending", J.Json.arr(Mob.strs(pend))},
         J.KV{"asks", J.Json.arr(Mob.asks(U.Asks.open(st, id), U.Str.get(drafts, sel), nf))},
         J.KV{"queued", J.Json.str("")},
-        J.KV{"queue", J.Json.arr(List.append(&2, J.Json, Mob.fab(st, nf, id), Mob.queue(M.Queue.context(M.Queue.items(st, id)), True{}, V.View.running(turn))))},
+        J.KV{"queue", J.Json.arr(List.append(&2, J.Json, Mob.fab(st, nf, id, V.View.running(turn)), Mob.queue(M.Queue.context(M.Queue.items(st, id)), True{}, V.View.running(turn))))},
         J.KV{"todos", Mob.todos(nf, id, U.Todos.shown(st, id, V.View.running(turn)))},
         J.KV{"live", Mob.live.k(render, U.Str.get(live, id))},
         J.KV{"working", J.Json.str(Bool.pick(String, String.is_empty(U.Str.get(live, id)), M.Phase.label(ph), ""))},

@@ -5699,6 +5699,21 @@ def Fab.buy(+u: Ui) -> String:
 def Fab.shown(+u: Ui) -> Bool:
   String.eq(Ui.info(u, "fab.shown:" ++ Ui.sel(u)), "1")
 
+# the line above the message box once there is something to buy (with
+# Buy it beside it): "Ready to order · LED board · Lamp shade", "" for none
+# (no Buy it, or a buy thread); "fab.ready:<t>" is kept by Fab.reply
+def Fab.turn(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, +project, _, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Bool.pick(String, String.is_empty(project), "", C.Turn.name(turn))
+
+# (and none while the agent works: it is ready once the turn is over)
+def Fab.ready.k(+buy: String, +line: String, run: Bool) -> String:
+  Bool.pick(String, Bool.or(run, String.is_empty(buy)), "", Bool.pick(String, String.is_empty(line), "Ready to order", line))
+
+def Fab.ready(+u: Ui) -> String:
+  Fab.ready.k(Fab.buy(u), Ui.info(u, "fab.ready:" ++ Ui.sel(u)), String.eq(Fab.turn(Ui.thread(Ui.state.of(u), Ui.sel(u))), "running"))
+
 def Fab.act.k(i: Nat, +u: Ui, +th: String) -> Act:
   match i:
     # the card opened or shut
@@ -5722,18 +5737,16 @@ def Fab.is(+action: String) -> Bool:
 def Fab.act(+u: Ui, +action: String, +value: String) -> Act:
   Fab.act.k(C.Codec.pos(Fab.actions(), action), u, Fab.th(u, value))
 
-def Fab.turn(t: M.Thread) -> String:
-  match t:
-    case M.Thread{_, +project, _, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      Bool.pick(String, String.is_empty(project), "", C.Turn.name(turn))
-
 # what was last asked for: the thread and where its turn stands
 def Fab.at(+u: Ui) -> String:
   Fab.set.on(Ui.state.of(u)) ++ "#" ++ Ui.sel(u) ++ "#" ++ Fab.turn(Ui.thread(Ui.state.of(u), Ui.sel(u)))
 
+# asked again when the turn moves on; while it runs only if this thread has
+# no card yet (a thread opened mid-turn), since its files are changing
 def Fab.want(+u: Ui) -> Bool:
   Bool.and(Bool.and(Bool.not(String.is_empty(Ui.sel(u))), Bool.not(String.eq(Fab.at(u), Ui.scratch(u, "@fab.at")))),
-    Bool.not(Bool.or(String.ends_with(Fab.at(u), "#running"), String.ends_with(Fab.at(u), "#"))))
+    Bool.and(Bool.not(String.ends_with(Fab.at(u), "#")),
+      Bool.or(Bool.not(String.ends_with(Fab.at(u), "#running")), String.is_empty(Ui.info(u, "fab.line:" ++ Ui.sel(u))))))
 
 def Fab.sync.k(want: Bool, +u: Ui, cmds: List<&2, Cmd>) -> Act:
   match want:
@@ -5755,10 +5768,13 @@ def Fab.keep(u: Ui, +th: String, +c: OR.Card) -> Ui:
   Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(u, "fab.line:" ++ th, OR.Card.line(c)), "fab.intent:" ++ th, OR.Card.intent(c)),
     "fab.buy:" ++ th, OR.Card.buy(c)), "fab.shown:" ++ th, Bool.pick(String, OR.Card.shown(c), "1", ""))
 
+def Fab.reply.r(u: Ui, +th: String, +r: J.Json) -> Ui:
+  Fab.keep(Ui.info_set(u, "fab.ready:" ++ th, OR.Card.ready.j(r)), th, OR.Card.of.j(r))
+
 def Fab.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
   match has:
     case True{}:
-      Fab.keep(u, J.Json.get_str(J.Json.get_obj(o, "result"), "thread", ""), OR.Card.of.j(J.Json.get_obj(o, "result")))
+      Fab.reply.r(u, J.Json.get_str(J.Json.get_obj(o, "result"), "thread", ""), J.Json.get_obj(o, "result"))
     case False{}:
       u
 

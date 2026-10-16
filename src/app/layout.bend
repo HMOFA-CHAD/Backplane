@@ -5975,6 +5975,24 @@ def Lay.fab(shown: Bool, +open: Bool, +ty: Ty, +line: String, +intent: String, +
     case False{}:
       Out.none()
 
+# Ready to order (client.bend's Fab.ready): the parts to order and Buy it in
+# a bar right above the composer, once the agent's turn is over
+def Ready.h(+line: String) -> U32:
+  Bool.pick(U32, String.is_empty(line), 0, 44)
+
+def Lay.ready.k(none: Bool, +ty: Ty, +line: String, +buy: String, +x0: U32, +x1: U32, +y: U32) -> Out:
+  match none:
+    case True{}:
+      Out.none()
+    case False{}:
+      +bw = Fab.buy.w(ty, buy)
+      Out.all([Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), 36, 0, T.Th.raise(), T.Th.accent())),
+        Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, line, (x1 - x0 - bw - 24 : U32)), D.Clip.all(), (x0 + 12 : U32), (y + 4 : U32), 28, T.Th.text())),
+        Fab.buy.btn(ty, buy, (x1 - bw + 2 : U32), (y + 4 : U32))])
+
+def Lay.ready(+ty: Ty, +line: String, +buy: String, +x0: U32, +x1: U32, +y: U32) -> Out:
+  Lay.ready.k(String.is_empty(line), ty, line, buy, x0, x1, y)
+
 def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: String, +st: M.State, +sel: String, +live: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool,
     +x0: U32, +x1: U32, +h: U32, +sc: U32, pa: Bool, term: Bool, +info: String, +picking: Bool, +pend: List<&2, String>, +rs: List<&2, U.SkillRow>, +now: Nat,
     +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String, pre: List<&2, IME.Run>) -> Out:
@@ -6006,7 +6024,9 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +tdoff = Pane.clamp(Pane.off(pics, "todos:" ++ sel), List.length(&2, TD.TRow, tdall))
       +tdr = List.take(&2, TD.TRow, List.drop(&2, TD.TRow, tdall, tdoff), Lay.tdcap(h))
       +tdm = {Bool.pick(String, tdo, U.Todos.more(tda, tds), "") : String}
-      +qh = {(Lay.qh(qs) + Lay.tdh(tds, tdr, tdm) : U32) : U32}
+      +rd = U.Fab.ready.k(U.Fab.buy.of(st, pics, sel), U.Str.get(pics, "fab.ready:" ++ sel), Lay.running(turn))
+      +rh = Ready.h(rd)
+      +qh = {(Lay.qh(qs) + Lay.tdh(tds, tdr, tdm) + rh : U32) : U32}
       # the composer grows by eh, and all above it moves up
       +ls = Comp.wrap(ty, draft, cw)
       +eh = Comp.eh(List.length(&2, String, ls))
@@ -6019,12 +6039,13 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
         cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
           Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
-          Lay.fab(fs, fo, ty, U.Str.get(pics, "fab.line:" ++ sel), fin, U.Fab.buy.of(st, pics, sel), cx0, cx1, (60 + hy + pl : U32)),
+          Lay.fab(fs, fo, ty, U.Str.get(pics, "fab.line:" ++ sel), fin, "", cx0, cx1, (60 + hy + pl : U32)),
           Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + pl + fh : U32)),
           Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + fh + Subs.height(ts, svis, sopen) : U32), fkey, blink),
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), Comp.chip(ty, U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)), U.Usage.tail(st, sel), cx0, cx1, U.Follow.button(st, sel, Lay.running(turn), stop, draft)), rs, atts, up, path, pre),
-          Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
-          Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
+          Lay.ready(ty, rd, U.Fab.buy.of(st, pics, sel), cx0, cx1, (h - eh - 124 - rh + 2 : U32)),
+          Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh - rh : U32)),
+          Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) - rh : U32)),
           Lay.asks(ty, asks, draft, pics, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
           Btw.card.if(Bool.not(String.is_empty(bq)), ty, bq, ba, cx0, cx1, (h - 132 - qh - eh - bh + 4 : U32)),
           Lay.picker(picking, ty, U.Models.menu(info, pr), mo, info, pr, cx0, cx1, (h - 128 - eh : U32), (60 + hy : U32), U.Chip.all(info, pr, mo), U.Effort.of(st, sel), moff)])

@@ -1589,8 +1589,8 @@ def View.fab.k(shown: Bool, +u: U.Ui) -> List<&2, D.Node>:
   match shown:
     case True{}:
       [D.El{"div", "fab", [D.At{"class", Bool.pick(String, U.Fab.open(u), "fab-card open", "fab-card")}], D.Dom.cat(
-        [D.Dom.div("fab-row", D.Dom.cat([D.Dom.button("fab-goal", "fab-open", "", "The project's intent: what it is for and what it is made of", U.Fab.line(u)),
-          D.Dom.button("fab-edit", "fab-edit", "", "Change the project's intent (it goes in the message box; Save sends it)", "Edit")], View.fab.buy(U.Fab.buy(u))))],
+        [D.Dom.div("fab-row", [D.Dom.button("fab-goal", "fab-open", "", "The project's intent: what it is for and what it is made of", U.Fab.line(u)),
+          D.Dom.button("fab-edit", "fab-edit", "", "Change the project's intent (it goes in the message box; Save sends it)", "Edit")])],
         View.fab.body(U.Fab.open(u), U.Fab.intent(u, U.Ui.sel(u))))}]
     case False{}:
       Nil{}
@@ -1598,25 +1598,34 @@ def View.fab.k(shown: Bool, +u: U.Ui) -> List<&2, D.Node>:
 def View.fab(+u: U.Ui) -> List<&2, D.Node>:
   View.fab.k(U.Fab.shown(u), u)
 
-def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, String>, +up: String, +term: Bool, hd: List<&2, D.Node>, vo: List<&2, D.Node>, +mic: String, fab: List<&2, D.Node>) -> D.Node:
+# Ready to order: what there is to buy and Buy it, above the message box
+# (U.Fab.ready), once the agent's turn is over; it glows as it comes
+def View.ready.k(+line: String, +buy: String) -> List<&2, D.Node>:
+  Bool.pick(List<&2, D.Node>, String.is_empty(line), Nil{},
+    [D.El{"div", "ready", [D.At{"class", "fab-ready"}], D.Dom.cat([D.Dom.span("fab-ready-text", line)], View.fab.buy(buy))}])
+
+def View.ready(+u: U.Ui) -> List<&2, D.Node>:
+  View.ready.k(U.Fab.ready(u), U.Fab.buy(u))
+
+def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, String>, +up: String, +term: Bool, hd: List<&2, D.Node>, vo: List<&2, D.Node>, +mic: String, fab: List<&2, D.Node>, rd: List<&2, D.Node>) -> D.Node:
   match u t:
     case U.Ui{+st, +sel, +drafts, +live, +op, _, +now, _, panel, _, _, _, _, _, +nf, _, +tr} M.Thread{+id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
       +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
       D.El{"main", "thread", [D.At{"class", Bool.pick(String, term, "thread-view with-term", "thread-view") ++ Bool.pick(String, U.Flag.get(op, "drop"), " dropping", "")},
         D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
-        View.top(hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), [
+        View.top(hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), D.Dom.cat([
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
           D.Dom.cat(fab, D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(nf, id, SB.Subs.rows(st, nf, id, now)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
           D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(tr, st, id, now)), D.Dom.cat(View.sending(pend),
             View.live.of(st, live, id)))))))},
         View.asks.box(st, id, U.Str.get(drafts, sel), nf),
         View.todos(nf, id, U.Todos.shown(st, id, View.running(turn))),
-        View.queued(M.Queue.context(M.Queue.items(st, id)), View.running(turn)),
-        View.composer.t(st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)]),
+        View.queued(M.Queue.context(M.Queue.items(st, id)), View.running(turn))], D.Dom.cat(rd, [
+        View.composer.t(st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)]))),
         D.Dom.when(term, View.term(U.Term.get(tr, id))))}
 
 def View.thread.h(+u: U.Ui, t: M.Thread, hd: List<&2, D.Node>) -> D.Node:
-  View.thread.p(u, t, U.Ui.pending(u, U.Ui.sel(u)), U.Ui.atts(u, U.Ui.sel(u)), U.Ui.uploading(u, U.Ui.sel(u)), U.Ui.flag(u, "term"), hd, D.Dom.cat(View.btw(u), View.voice(u, U.Ui.sel(u))), View.mic.of(u, U.Ui.sel(u)), View.fab(u))
+  View.thread.p(u, t, U.Ui.pending(u, U.Ui.sel(u)), U.Ui.atts(u, U.Ui.sel(u)), U.Ui.uploading(u, U.Ui.sel(u)), U.Ui.flag(u, "term"), hd, D.Dom.cat(View.btw(u), View.voice(u, U.Ui.sel(u))), View.mic.of(u, U.Ui.sel(u)), View.fab(u), View.ready(u))
 
 def View.thread(+u: U.Ui, t: M.Thread) -> D.Node:
   View.thread.h(u, t, Nil{})

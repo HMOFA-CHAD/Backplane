@@ -10953,6 +10953,21 @@ def Laws.intent_edit_is_intent():
 def Laws.order_tools_buy_only():
   {==}
 
+def Laws.order_ready_names():
+  {==}
+
+def Laws.order_ready_board():
+  {==}
+
+def Laws.order_ready_nothing():
+  {==}
+
+def Laws.fab_ready_running_hidden(line):
+  {==}
+
+def Laws.fab_ready_needs_buy(line):
+  {==}
+
 def Laws.order_buy_board_only():
   {==}
 
