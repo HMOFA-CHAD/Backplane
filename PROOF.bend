@@ -10661,3 +10661,7 @@ def Laws.tok_add_one_turn():
 
 def Laws.tok_add_no_cost():
   {==}
+
+# ---- usage-boat-cap ----
+def Laws.usage_boat_no_cap_nothing():
+  {==}

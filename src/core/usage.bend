@@ -334,8 +334,17 @@ def Bj.plan.row(+c: J.Json, +now: Nat) -> URow:
 
 # what Backplane's own jobs cost: today's and this month's actual spend,
 # and what open jobs hold in reserve
+# the shared daily cap and what is left of it today (spent and held both
+# count against it), when the status names one; nothing without it
+def Bj.cap.left(+b: J.Json, +t: J.Json) -> String:
+  " · daily cap " ++ Bj.usd.of(b, "cs") ++ " (" ++ J.Json.get_str(b, "source", "?") ++ ") · " ++
+    Bj.usd(Nat.sub(Bj.nat(b, "cs"), Nat.add(Bj.nat(t, "cost_cs"), Bj.nat(t, "reserved_open_cs")))) ++ " left"
+
+def Bj.cap.of(+s: J.Json) -> String:
+  Bool.pick(String, Bj.has(J.Json.get_obj(s, "budget"), "cs"), Bj.cap.left(J.Json.get_obj(s, "budget"), J.Json.get_obj(s, "today")), "")
+
 def Bj.spend(+s: J.Json) -> URow:
-  URow{"Boat for Backplane", "Today " ++ Bj.usd.of(J.Json.get_obj(s, "today"), "cost_cs") ++
+  URow{"Boat for Backplane", "Today " ++ Bj.usd.of(J.Json.get_obj(s, "today"), "cost_cs") ++ Bj.cap.of(s) ++
     Bool.pick(String, Bj.has(J.Json.get_obj(s, "month"), "cost_cs"), " · this month " ++ Bj.usd.of(J.Json.get_obj(s, "month"), "cost_cs"), "") ++
     " · " ++ Bj.usd.of(J.Json.get_obj(s, "today"), "reserved_open_cs") ++ " held for open jobs (worst case, not spent)", ""}
 
