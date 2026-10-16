@@ -74,9 +74,60 @@ def app(+home: String, +id: String, conv: String, text: String, at: Nat) -> IO(U
     r : S.StoreResult<Bool> <- S.MailStore.append(home, B.fixture(id, conv, text, at))
     C.Check.str("append " ++ id, append_status(r), "ok")
 
+# Fault injection uses the same safe primitive, with failures fatal to the test.
+def patch_done(r: Result<&1, &1, U32 & String, Unit>) -> IO(Unit):
+  match r:
+    case Done{_}: IO.pure(Unit, Unit{})
+    case Fail{(_, e)}: IO.die(Unit, 1, "index injection failed: " ++ e)
+
+def patch(p: String, at: U32, text: String, cut: U32) -> IO(Unit):
+  do IO<Unit>:
+    r : Result<&1, &1, U32 & String, Unit> <- S.MailFile.patch(p, at, text, cut)
+    patch_done(r)
+
+def index_tests(+h: String) -> IO(Unit):
+  do IO<Unit>:
+    app(h, "i1", "indexed", "one", 1n)
+    app(h, "i2", "indexed", "two", 2n)
+    app(h, "i3", "indexed", "three", 3n)
+    +idx : String = S.MI.path(h, "indexed")
+    removed : Result<&1, &1, U32 & String, Unit> <- H.FS.remove(idx)
+    patch_done(removed)
+    rebuilt : S.StoreResult<List<&2, MB.Body>> <- S.MailStore.read(h, "indexed", "", 2n)
+    C.Check.str("index rebuild from nothing", page(rebuilt), "i3,i2,")
+    patch(idx, 65664, "", 1)
+    stale : S.StoreResult<List<&2, MB.Body>> <- S.MailStore.read(h, "indexed", "", 3n)
+    C.Check.str("index one short rebuild", page(stale), "i3,i2,i1,")
+    patch(idx, 65600, "!", 0)
+    corrupt : S.StoreResult<List<&2, MB.Body>> <- S.MailStore.read(h, "indexed", "", 3n)
+    C.Check.str("interior index corruption rebuild", page(corrupt), "i3,i2,i1,")
+    inject(idx, "TORN")
+    torn : S.StoreResult<List<&2, MB.Body>> <- S.MailStore.read(h, "indexed", "i3", 1n)
+    C.Check.str("torn index tail cursor repair", page(torn), "i2,")
+    app(h, "i1", "indexed", "one", 1n)
+    app(h, "i4", "indexed", "four", 4n)
+    retried : S.StoreResult<List<&2, MB.Body>> <- S.MailStore.read(h, "indexed", "", 3n)
+    C.Check.str("retry retains first arrival across page", page(retried), "i4,i3,i2,")
+    boundary : S.StoreResult<List<&2, MB.Body>> <- S.MailStore.read(h, "indexed", "i2", 1n)
+    C.Check.str("cursor across retry boundary", page(boundary), "i1,")
+    # Body appended but its index record absent: next append must repair it.
+    inject(MB.Body.path(h, "indexed"), MB.Body.line(B.fixture("i5", "indexed", "five", 5n)))
+    app(h, "i6", "indexed", "six", 6n)
+    appended : S.StoreResult<List<&2, MB.Body>> <- S.MailStore.read(h, "indexed", "", 3n)
+    C.Check.str("append repairs body ahead of index", page(appended), "i6,i5,i4,")
+    patch(idx, S.MI.bucket(S.MI.key("i6")), "AAAAAAAA", 0)
+    head : S.StoreResult<List<&2, MB.Body>> <- S.MailStore.read(h, "indexed", "", 1n)
+    C.Check.str("crashed bucket update rebuild", page(head), "i6,")
+    patch(idx, S.MI.bucket(S.MI.key("i1")), "AAAAAAAAAAAAAAAA", 0)
+    app(h, "i1", "indexed", "one", 1n)
+    oldhead : S.StoreResult<List<&2, MB.Body>> <- S.MailStore.read(h, "indexed", "", 3n)
+    C.Check.str("append repairs corrupt older bucket without duplicate arrival", page(oldhead), "i6,i5,i4,")
+    C.Check.str("fixed row roundtrip", Bool.show(Maybe.is_some(&2, S.MIndexRow, S.MI.row.parse(S.MI.row.text(S.MIndexRow{0, 40, S.MI.key("i1"), 0, 65536, 0, 65536})))), "True")
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +h : String <- home()
+    index_tests(h ++ "/index-tests")
     r0 : S.StoreResult<List<&2, M.Change>> <- S.MailStore.recover(h, ML.Box.empty())
     C.Check.str("absent directory recovery", status(List<&2, M.Change>, r0), "ok")
     r1 : S.StoreResult<List<&2, MB.Body>> <- S.MailStore.read(h, "absent", "", 10n)

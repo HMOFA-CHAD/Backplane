@@ -198,3 +198,19 @@ def Body.recover(+b: Body, +box: ML.Box) -> List<&2, M.Change>:
 
 def Body.path(home: String, conv: String) -> String:
   home ++ "/mail/" ++ R.Ref.pct(conv) ++ ".jsonl"
+
+# Index range reads already frame one physical row. Lex once while checking
+# its terminator, so validation neither copies nor re-walks a shared long text.
+# A newline is allowed only as the very last character of the physical row.
+def Body.row.tokens(s: String, last: U32, st: J.Lex & List<&2, J.Tok>) -> Maybe<&2, List<&2, J.Tok>>:
+  match s last:
+    case SNil{} 10: Some{J.Lex.go.fin(st)}
+    case SNil{} _: None{}
+    case SCon{c, t} 10: None{}
+    case SCon{Chr{+c}, t} _: Body.row.tokens(t, c, J.Lex.step.pair(Chr{c}, st))
+
+def Body.parse_line(s: String) -> Maybe<&2, Body>:
+  do Maybe<&2, Body>:
+    tokens : List<&2, J.Tok> <- Body.row.tokens(s, 0, (J.LIdle{}, Nil{}))
+    json : J.Json <- J.Parse.fin(J.Parse.go(tokens, J.PGo{Nil{}, None{}}))
+    Body.decode(json)
