@@ -58,7 +58,8 @@ KINDS = {
             _bool("castellated"),
             _bool("gold_fingers"),
         ],
-        "features": [_num("width_mm", 5, 1200, unit="mm"), _num("height_mm", 5, 1200, unit="mm")],
+        "features": [_num("width_mm", 5, 1200, unit="mm"), _num("height_mm", 5, 1200, unit="mm"),
+                     _num("min_drill_mm", 0.1, 6.5, 0.3, "mm")],
     },
     "3dp": {
         "label": "3D print",

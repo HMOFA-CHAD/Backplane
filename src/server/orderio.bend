@@ -134,6 +134,7 @@ def Od.intent(+home: String, +cwd: String, +thread: String, +opts: String, text:
   do IO<J.Json>:
     mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(cwd ++ "/.backplane")
     GS.Gf.write(cwd ++ "/.backplane/intent.md", String.trim(text) ++ "\n")
+    m : Result<&1, &1, U32 & String, Unit> <- H.FS.chmod(cwd ++ "/.backplane/intent.md", 420)
     Od.look(home, cwd, thread, opts)
 
 # Quotes

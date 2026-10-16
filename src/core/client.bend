@@ -2897,7 +2897,8 @@ def Ask.head.tool(+tool: String, +d: String) -> String:
   Bool.pick(String, String.eq(tool, "gmail_send"), Bool.pick(String, String.starts_with(d, "Draft:"), "Send this draft?", "Send this email?"),
     Bool.pick(String, String.eq(tool, "calendar_create"), "Create this event?",
       Bool.pick(String, String.eq(tool, "calendar_update"), "Change this event?",
-        Bool.pick(String, String.eq(tool, "calendar_delete"), "Delete this event?", "Allow " ++ tool ++ "?"))))
+        Bool.pick(String, String.eq(tool, "calendar_delete"), "Delete this event?",
+          Bool.pick(String, String.eq(tool, "order_quote"), "Send these files for a quote?", "Allow " ++ tool ++ "?")))))
 
 def Ask.head(+k: String, +tool: String, +d: String) -> String:
   Bool.pick(String, String.eq(k, "plan"), "Proposed plan", Bool.pick(String, String.eq(k, "input"), "The agent asks", Ask.head.tool(tool, d)))

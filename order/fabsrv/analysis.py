@@ -209,7 +209,8 @@ def board(files_root, gerbers):
             use, plated = drills(text, f.name)
             for dia, n in use.items():
                 out["holes"] += n
-                if out["min_drill_mm"] is None or dia < out["min_drill_mm"]:
+                # the smallest plated hole sets the via tier (pricing.py)
+                if plated and (out["min_drill_mm"] is None or dia < out["min_drill_mm"]):
                     out["min_drill_mm"] = dia
                 if plated and 0.5 < dia < 2.5:
                     out["tht_holes"] += n

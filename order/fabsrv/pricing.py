@@ -51,10 +51,10 @@ def _board(v, p, f, problems, warnings):
             opts["layers"] = layers
         else:
             problems.append(f"{p['name']}: {layers} copper layers can't be made")
-    feats = {"width_mm": f.get("width_mm"), "height_mm": f.get("height_mm")}
+    feats = {"width_mm": f.get("width_mm"), "height_mm": f.get("height_mm"), "min_drill_mm": f.get("min_drill_mm") or 0.3}
     if not feats["width_mm"]:
         return None
-    if feats["width_mm"] < 5 or feats["height_mm"] < 5 or max(feats.values()) > 600:
+    if feats["width_mm"] < 5 or feats["height_mm"] < 5 or max(feats["width_mm"], feats["height_mm"]) > 600:
         problems.append(f"{p['name']}: a {feats['width_mm']}×{feats['height_mm']} mm board is outside what can be made")
         return None
     if f.get("min_drill_mm") is not None and f["min_drill_mm"] < 0.15:
