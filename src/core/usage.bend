@@ -634,13 +634,13 @@ def Chip.changes(+st: M.State, +status: String, +now: Nat) -> List<&2, M.Change>
 def Chip.part(ps: List<&2, String>, +i: Nat) -> String:
   Maybe.default(&2, String, List.head(&2, String, List.drop(&2, String, ps, i)), "")
 
-def Chip.text.k(+state: String, +size: String, +jobs: Nat, +until: Nat, +now: Nat) -> String:
-  Bool.pick(String, String.eq(state, "stale"), "Boat · ? (stale)", Chip.text.w(state, size, jobs, until, now))
-
 def Chip.text.w(+state: String, +size: String, +jobs: Nat, +until: Nat, +now: Nat) -> String:
   Bool.pick(String, String.eq(state, "warm"),
     Bool.pick(String, Nat.is_gt(until, now), "Boat · warm " ++ Nat.show(Nat.div(Nat.add(Nat.sub(until, now), 59n), 60n)) ++ "m", ""),
     "Boat · " ++ size ++ " · " ++ Bool.pick(String, Nat.is_gt(jobs, 1n), Nat.show(jobs) ++ " ", "") ++ state)
+
+def Chip.text.k(+state: String, +size: String, +jobs: Nat, +until: Nat, +now: Nat) -> String:
+  Bool.pick(String, String.eq(state, "stale"), "Boat · ? (stale)", Chip.text.w(state, size, jobs, until, now))
 
 # the chip's text ("" for none, or a warm sandbox already gone: never "0m")
 def Chip.text(+v: String, +now: Nat) -> String:
