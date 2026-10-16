@@ -5,6 +5,7 @@ import ./src/core/usage.bend as UZ
 import ./src/core/refview.bend as RC # links (cards, trail)
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/mailbody.bend as MB # mail 2a
+import ./src/core/mailview.bend as MVW # mail view
 import ./src/core/ref.bend as REF
 # ---- i18n cjk ----
 import ./src/core/cjk.bend as CJK
@@ -9106,3 +9107,26 @@ law prompt_lang_off:
 law prompt_lang_unknown:
   {PM.Prompt.lang("x") == "" : String}
 # ---- end i18n lang ----
+
+# ---- mail view ----
+# the rows built for the visible window never run past the list
+law mv_visible_bounds:
+  for +total: Nat
+  for +scroll: Nat
+  for +view: Nat
+  {Nat.is_ge(total, Nat.add(MVW.Mv.count(total, scroll, view), MVW.Mv.first(total, scroll, view))) == True{} : Bool}
+
+# merging full-text hits into local ones never repeats a conversation
+# (a closed case: local and server both repeat an id, and share one)
+law mv_merge_no_dup:
+  {MVW.Mv.unique(MVW.Mv.merge_hits([MVW.Mv.stub("a", 9n), MVW.Mv.stub("b", 7n), MVW.Mv.stub("a", 9n)], [MVW.Mv.stub("b", 8n), MVW.Mv.stub("d", 6n), MVW.Mv.stub("a", 9n)])) == True{} : Bool}
+
+# a newer page for the same slots leaves the ids of rows it did not change
+law mv_rows_stable:
+  {MVW.Mv.ids(MVW.Mv.rows(MVW.Mv.put_page(MVW.Mv.put_page(MVW.Mv.cache(), MVW.Mv.filter(), 0n, 3n, [MVW.Mv.stub("a", 9n), MVW.Mv.stub("b", 7n), MVW.Mv.stub("c", 5n)]), MVW.Mv.filter(), 0n, 3n, [MVW.Mv.stub("a", 9n), MVW.Mv.stub("b", 11n), MVW.Mv.stub("c", 5n)]), MVW.Mv.key(MVW.Mv.filter()), 0n, 3n)) == "a,b,c," : String}
+
+# two chips that differ never share a cache key, even with a "|" in a name
+law mv_filter_key_separates:
+  {String.eq(MVW.Mv.key(MVW.Filter{"a|b", "", "c", ""}), MVW.Mv.key(MVW.Filter{"a", "|b", "c", ""})) == False{} : Bool}
+
+# ---- end mail view ----

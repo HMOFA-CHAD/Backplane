@@ -3,6 +3,7 @@ import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/mailbody.bend as MB # mail 2a
+import ./src/core/mailview.bend as MVW # mail view
 import ./src/core/stamp.bend as STP
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
@@ -10945,3 +10946,18 @@ def Laws.prompt_lang_off():
 def Laws.prompt_lang_unknown():
   {==}
 # ---- end i18n lang ----
+
+# ---- mail view ----
+def Laws.mv_visible_bounds(total, scroll, view):
+  Laws.menu_scroll_in_list(MVW.Mv.first_raw(scroll), total, MVW.Mv.count(total, scroll, view), le_ge(MVW.Mv.count(total, scroll, view), total, min_le_k(Nat.is_le(MVW.Mv.want(scroll, view), total), MVW.Mv.want(scroll, view), total, {==})))
+
+def Laws.mv_merge_no_dup():
+  {==}
+
+def Laws.mv_rows_stable():
+  {==}
+
+def Laws.mv_filter_key_separates():
+  {==}
+
+# ---- end mail view ----
