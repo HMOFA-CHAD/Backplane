@@ -107,13 +107,21 @@ def Use.top(+n: Nat, us: List<&2, UseT>) -> List<&2, URow>:
 def Use.totals() -> URow:
   URow{"Tokens and cost", "Not recorded yet. Readings above are held now, never summed.", ""}
 
-def Use.rows.k(+us: List<&2, UseT>) -> List<&2, URow>:
-  Use.summary(Use.count(List.filter(~UseT, ~UseT.held, us), 0n), Use.count(List.filter(~UseT, ~UseT.open, us), 0n)) <> List.append(&2, URow, Use.top(8n, us), [Use.totals()])
+def Use.totals.if(none: Bool) -> List<&2, URow>:
+  match none:
+    case True{}:
+      [Use.totals()]
+    case False{}:
+      Nil{}
+
+def Use.rows.k(+st: M.State, +us: List<&2, UseT>) -> List<&2, URow>:
+  Use.summary(Use.count(List.filter(~UseT, ~UseT.held, us), 0n), Use.count(List.filter(~UseT, ~UseT.open, us), 0n)) <>
+    List.append(&2, URow, Use.top(8n, us), Use.totals.if(String.is_empty(M.Setting.get(st, "tok.since", ""))))
 
 # Settings > Usage, model side: a summary, the fullest threads, and what is
 # not known
 def Use.rows(+st: M.State, ts: List<&2, M.Thread>) -> List<&2, URow>:
-  Use.rows.k(Use.all(st, ts))
+  Use.rows.k(st, Use.all(st, ts))
 
 def URow.label(r: URow) -> String:
   match r:
@@ -348,10 +356,17 @@ def Bj.thread(s: M.State, +id: String) -> M.Thread:
 def Bj.who(+st: M.State, +th: String) -> String:
   Bool.pick(String, String.is_empty(th), "started by hand", UseT.title(Use.of(st, Bj.thread(st, th))))
 
-# a job worth a row: starting, running, or a sandbox whose delete was never
-# verified
+# a job that needs a look, listed first and never left out: a sandbox whose
+# delete was never verified (orphan), a create Boat answered unclearly
+# (ambiguous: its slot and worst case stay held until it is reconciled), or
+# one still unclear past that with look-alike sandboxes up (unresolved: new
+# creates are refused until a person clears it). Reconciled ones are closed.
+def Bj.warn(+s: String) -> Bool:
+  Bool.or(String.eq(s, "orphan"), Bool.or(String.eq(s, "ambiguous"), String.eq(s, "unresolved")))
+
+# a job running now (at most Bj.most() rows of these)
 def Bj.shown(+s: String) -> Bool:
-  Bool.or(Bool.or(String.eq(s, "running"), String.eq(s, "starting")), String.eq(s, "orphan"))
+  Bool.or(String.eq(s, "running"), String.eq(s, "starting"))
 
 # how long a job has run: a running one from its start to now (the status
 # file's runtime is as of when it was written), else as the status says
@@ -359,24 +374,37 @@ def Bj.runtime(+j: J.Json, +now: Nat) -> String:
   Bool.pick(String, Bool.and(String.eq(J.Json.get_str(j, "state", ""), "running"), Bj.has(j, "started_at")),
     Nat.show(Nat.sub(now, Bj.nat(j, "started_at"))) ++ " s", Bj.raw(j, "runtime_s") ++ " s")
 
-def Bj.job(+st: M.State, +j: J.Json, +now: Nat) -> URow:
-  URow{Bool.pick(String, String.eq(J.Json.get_str(j, "state", ""), "orphan"), "Boat sandbox NOT deleted", "Boat job " ++ J.Json.get_str(j, "state", "")) ++ " · " ++ J.Json.get_str(j, "size", "?"),
-    Bj.who(st, J.Json.get_str(j, "thread", "")) ++ Bool.pick(String, String.is_empty(J.Json.get_str(j, "machine", "")), "", " on " ++ J.Json.get_str(j, "machine", "")) ++
-      " · " ++ Bj.runtime(j, now) ++ " · reserved " ++ Bj.usd.of(j, "reserved_cs") ++ " (worst case)", ""}
+def Bj.label(+state: String) -> String:
+  Bool.pick(String, String.eq(state, "orphan"), "Boat sandbox NOT deleted",
+    Bool.pick(String, String.eq(state, "ambiguous"), "Boat create unclear",
+      Bool.pick(String, String.eq(state, "unresolved"), "Boat create UNRESOLVED, creates blocked", "Boat job " ++ state)))
 
-def Bj.jobs.k(keep: Bool, +st: M.State, j: J.Json, +now: Nat, rest: List<&2, URow>) -> List<&2, URow>:
+def Bj.unclear(+state: String) -> Bool:
+  Bool.or(String.eq(state, "ambiguous"), String.eq(state, "unresolved"))
+
+def Bj.job(+st: M.State, +j: J.Json, +now: Nat) -> URow:
+  URow{Bj.label(J.Json.get_str(j, "state", "")) ++ " · " ++ J.Json.get_str(j, "size", "?"),
+    Bj.who(st, J.Json.get_str(j, "thread", "")) ++ Bool.pick(String, String.is_empty(J.Json.get_str(j, "machine", "")), "", " on " ++ J.Json.get_str(j, "machine", "")) ++
+      Bool.pick(String, Bj.unclear(J.Json.get_str(j, "state", "")), " · " ++ J.Json.get_str(j, "why", "no reason given") ++ " · check boat list",
+        " · " ++ Bj.runtime(j, now) ++ " · reserved " ++ Bj.usd.of(j, "reserved_cs") ++ " (worst case)"), ""}
+
+def Bj.jobs.k(keep: Bool, +st: M.State, +j: J.Json, +now: Nat, rest: List<&2, URow>) -> List<&2, URow>:
   match keep:
     case True{}:
       Bj.job(st, j, now) <> rest
     case False{}:
       rest
 
-def Bj.jobs(js: List<&2, J.Json>, +st: M.State, +now: Nat) -> List<&2, URow>:
+# which jobs: 0 those that need a look, 1 those running
+def Bj.wants(+mode: Nat, +s: String) -> Bool:
+  Bool.pick(Bool, Nat.is_eq(mode, 0n), Bj.warn(s), Bj.shown(s))
+
+def Bj.jobs(js: List<&2, J.Json>, +mode: Nat, +st: M.State, +now: Nat) -> List<&2, URow>:
   match js:
     case Nil{}:
       Nil{}
     case +j <> t:
-      Bj.jobs.k(Bj.shown(J.Json.get_str(j, "state", "")), st, j, now, Bj.jobs(t, st, now))
+      Bj.jobs.k(Bj.wants(mode, J.Json.get_str(j, "state", "")), st, j, now, Bj.jobs(t, mode, st, now))
 
 # at most Bj.most() job rows; the rest as one row saying how many
 def Bj.most() -> Nat:
@@ -386,10 +414,21 @@ def Bj.cap(+rs: List<&2, URow>) -> List<&2, URow>:
   Bool.pick(List<&2, URow>, Nat.is_gt(List.length(&2, URow, rs), Bj.most()),
     List.append(&2, URow, List.take(&2, URow, rs, Bj.most()), [URow{"More Boat jobs", Nat.show(Nat.sub(List.length(&2, URow, rs), Bj.most())) ++ " more not listed", ""}]), rs)
 
+# creates still unclear past their time (status "unresolved"), which block
+# creates; and the other creates Boat answered unclearly (status
+# "ambiguous" counts both, so these are ambiguous less unresolved): a
+# sandbox may exist that Backplane does not own. Each job is said once.
+def Bj.unresolved(+n: Nat, +blocked: Nat) -> List<&2, URow>:
+  List.append(&2, URow,
+    Bool.pick(List<&2, URow>, Nat.is_eq(blocked, 0n), Nil{}, [URow{"Boat creates blocked", "Unclear create unresolved, check boat list", ""}]),
+    Bool.pick(List<&2, URow>, Nat.is_eq(Nat.sub(n, blocked), 0n), Nil{},
+      [URow{"Boat warning", Nat.show(Nat.sub(n, blocked)) ++ Bool.pick(String, Nat.is_eq(Nat.sub(n, blocked), 1n), " Boat create", " Boat creates") ++ " unclear: check boat list", ""}]))
+
 def Bj.mine.rows(known: Bool, +st: M.State, +s: J.Json, +now: Nat) -> List<&2, URow>:
   match known:
     case True{}:
-      Bj.spend(s) <> Bj.cap(Bj.jobs(J.Json.elems(J.Json.get_obj(s, "jobs")), st, now))
+      List.concat(&2, URow, [[Bj.spend(s)], Bj.unresolved(Bj.nat(s, "ambiguous"), Bj.nat(s, "unresolved")),
+        Bj.jobs(J.Json.elems(J.Json.get_obj(s, "jobs")), 0n, st, now), Bj.cap(Bj.jobs(J.Json.elems(J.Json.get_obj(s, "jobs")), 1n, st, now))])
     case False{}:
       [URow{"Boat for Backplane", "No job status yet.", ""}]
 
@@ -401,3 +440,120 @@ def Bj.rows.k(+st: M.State, +c: J.Json, +s: J.Json, +now: Nat) -> List<&2, URow>
 # hub has answered: one row with Refresh)
 def Bj.rows(+st: M.State, +text: String, +now: Nat) -> List<&2, URow>:
   Bj.rows.k(st, J.Json.get_obj(Bj.parse(text), "cache"), J.Json.get_obj(Bj.parse(text), "status"), now)
+
+# Tokens and plan limits
+# ----------------------
+# What turns used, as their providers reported it (model.bend's Tokens):
+# today and this month (UTC), by model and by project this month, the
+# threads that used most, and since when anything was counted. Claude's
+# cost is what Claude reports (API prices), not a bill; Codex reports no
+# cost, so its turns say so. Claude's plan windows (limit.claude.*) are the
+# share Claude says is used, and when each resets.
+
+def Tk.part(+v: String, +i: Nat) -> Nat:
+  M.Tok.part(v, i)
+
+def Tk.pad4(+s: String) -> String:
+  Bool.pick(String, Nat.is_ge(String.length(s), 4n), s, String.repeat("0", Nat.sub(4n, String.length(s))) ++ s)
+
+# nano-dollars as dollars: to the cent from $1, else to a hundredth of a cent
+def Tk.usd(+c: Nat) -> String:
+  Bool.pick(String, Nat.is_ge(c, 1000000000n),
+    "$" ++ Nat.show(Nat.div(c, 1000000000n)) ++ "." ++ M.Tok.pad2(Nat.div(Nat.mod(c, 1000000000n), 10000000n)),
+    "$0." ++ Tk.pad4(Nat.show(Nat.div(c, 100000n))))
+
+def Tk.cost(+v: String) -> String:
+  Bool.pick(String, Nat.is_eq(Tk.part(v, 7n), 0n), "cost not reported",
+    Tk.usd(Tk.part(v, 6n)) ++ Bool.pick(String, Nat.is_eq(Tk.part(v, 7n), Tk.part(v, 0n)), "", " for " ++ Nat.show(Tk.part(v, 7n)) ++ " of them"))
+
+# a total: "12 turns · 40k in, 1M cache read, 20k cache write · 9k out (2k reasoning) · $0.4210"
+def Tk.note(+v: String) -> String:
+  Nat.show(Tk.part(v, 0n)) ++ Bool.pick(String, Nat.is_eq(Tk.part(v, 0n), 1n), " turn", " turns") ++ " · " ++
+    Use.tokens(Tk.part(v, 1n)) ++ " in, " ++ Use.tokens(Tk.part(v, 2n)) ++ " cache read, " ++ Use.tokens(Tk.part(v, 3n)) ++ " cache write · " ++
+    Use.tokens(Tk.part(v, 4n)) ++ " out (" ++ Use.tokens(Tk.part(v, 5n)) ++ " reasoning) · " ++ Tk.cost(v)
+
+def Tk.row(+label: String, +v: String) -> List<&2, URow>:
+  Bool.pick(List<&2, URow>, String.is_empty(v), Nil{}, [URow{label, Tk.note(v), ""}])
+
+def Tk.models(ms: List<&2, String>, +st: M.State, +mon: String) -> List<&2, URow>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case +m <> t:
+      List.append(&2, URow, Tk.row(String.join(String.split(m, '|'), " · ") ++ " this month", M.Setting.get(st, "tok.mm." ++ mon ++ "|" ++ m, "")), Tk.models(t, st, mon))
+
+def Tk.projects(ps: List<&2, M.Project>, +st: M.State, +mon: String) -> List<&2, URow>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case M.Project{+id, +ti, _, _, _} <> t:
+      List.append(&2, URow, Tk.row(ti ++ " this month", M.Setting.get(st, "tok.p." ++ id ++ "|" ++ mon, "")), Tk.projects(t, st, mon))
+
+# a thread's total, with its title, for the threads that used most
+type TkT is Data:
+  TkT{title: String, v: String}
+
+def TkT.n(t: TkT) -> Nat:
+  match t:
+    case TkT{_, +v}:
+      Nat.add(Nat.add(Tk.part(v, 1n), Tk.part(v, 2n)), Nat.add(Tk.part(v, 3n), Tk.part(v, 4n)))
+
+def TkT.before(a: TkT, b: TkT) -> Bool:
+  Nat.is_ge(TkT.n(a), TkT.n(b))
+
+def TkT.some(t: TkT) -> Bool:
+  match t:
+    case TkT{_, v}:
+      Bool.not(String.is_empty(v))
+
+def TkT.row(t: TkT) -> URow:
+  match t:
+    case TkT{ti, +v}:
+      URow{ti ++ " so far", Tk.note(v), ""}
+
+def Tk.threads.all(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, TkT>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> r:
+      TkT{UseT.title(Use.of(st, t)), M.Setting.get(st, "tok.t." ++ M.Thread.id(t), "")} <> Tk.threads.all(r, st)
+
+def Tk.threads.rows(ts: List<&2, TkT>) -> List<&2, URow>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case t <> r:
+      TkT.row(t) <> Tk.threads.rows(r)
+
+def Tk.threads(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, URow>:
+  Tk.threads.rows(List.take(&2, TkT, List.sort(~TkT, ~TkT.before, List.filter(~TkT, ~TkT.some, Tk.threads.all(ts, st))), 5n))
+
+def Tk.since(+st: M.State) -> List<&2, URow>:
+  Bool.pick(List<&2, URow>, String.is_empty(M.Setting.get(st, "tok.since", "")), Nil{},
+    [URow{"Counted since", M.Tok.day(M.Switch.num(M.Setting.get(st, "tok.since", ""), 0n)) ++ " (UTC); earlier turns were not recorded. Costs are Claude's own figures at API prices, not a bill; Codex reports none.", ""}])
+
+# a time from now: "resets in 2 h 10 min", "resets in 3 d"
+def Tk.until(+now: Nat, +at: Nat) -> String:
+  Bool.pick(String, Nat.is_ge(now, at), "reset since, not read again",
+    Bool.pick(String, Nat.is_lt(Nat.sub(at, now), 3600n), "resets in " ++ Nat.show(Nat.div(Nat.sub(at, now), 60n)) ++ " min",
+      Bool.pick(String, Nat.is_lt(Nat.sub(at, now), 86400n), "resets in " ++ Nat.show(Nat.div(Nat.sub(at, now), 3600n)) ++ " h " ++ Nat.show(Nat.div(Nat.mod(Nat.sub(at, now), 3600n), 60n)) ++ " min",
+        "resets in " ++ Nat.show(Nat.div(Nat.sub(at, now), 86400n)) ++ " d")))
+
+def Tk.window(+name: String, +v: String, +now: Nat) -> String:
+  Bool.pick(String, String.is_empty(v), name ++ " ?",
+    name ++ " " ++ Nat.show(Nat.div(Tk.part(v, 0n), 10n)) ++ "% used, " ++ Tk.until(now, Tk.part(v, 1n)))
+
+def Tk.nth(ps: List<&2, String>, +i: Nat) -> String:
+  Maybe.default(&2, String, List.head(&2, String, List.drop(&2, String, ps, i)), "")
+
+def Tk.limits(+st: M.State, +now: Nat) -> List<&2, URow>:
+  Bool.pick(List<&2, URow>, Bool.and(String.is_empty(M.Setting.get(st, "limit.claude.five_hour", "")), String.is_empty(M.Setting.get(st, "limit.claude.seven_day", ""))), Nil{},
+    [URow{"Claude plan", Tk.window("5 h:", M.Setting.get(st, "limit.claude.five_hour", ""), now) ++ " · " ++ Tk.window("7 d:", M.Setting.get(st, "limit.claude.seven_day", ""), now) ++
+      " · " ++ Bj.raw.k(Tk.nth(String.split(M.Setting.get(st, "limit.claude.five_hour", ""), '/'), 2n)) ++ " (as Claude last said)", ""}])
+
+# Settings > Usage, tokens side
+def Tk.rows(+st: M.State, ts: List<&2, M.Thread>, ps: List<&2, M.Project>, +now: Nat) -> List<&2, URow>:
+  List.concat(&2, URow, [Tk.limits(st, now), Tk.row("Today (UTC)", M.Setting.get(st, "tok.d." ++ M.Tok.day(now), "")),
+    Tk.row("This month", M.Setting.get(st, "tok.m." ++ M.Tok.month(now), "")),
+    Tk.models(String.split(M.Setting.get(st, "tok.ml." ++ M.Tok.month(now), ""), '\n'), st, M.Tok.month(now)),
+    Tk.projects(ps, st, M.Tok.month(now)), Tk.threads(ts, st), Tk.since(st)])

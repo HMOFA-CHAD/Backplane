@@ -1372,6 +1372,165 @@ def Usage.compact(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M
   Bool.pick(List<&2, M.Change>, String.eq(J.Json.get_str(o, "subtype", ""), "compact_boundary"),
     Usage.used.k(s, th, now, J.Json.get_nat(J.Json.get_obj(o, "compact_metadata"), "post_tokens", 0n)), Nil{})
 
+# Turn usage (model.bend's Tokens): each turn's tokens and cost as the
+# provider reported them, logged once (TurnUsage). Claude's result line
+# gives the turn's own usage; its cost is the process's running total, so a
+# turn's cost is that total less the last one (result_index 0 starts a
+# process: from 0). Codex's turn.completed gives the session's running
+# totals, kept across resume, so a turn is the rise since the session's
+# last (a new session, or any total going down, starts again). A line seen
+# again (same key) is not counted twice.
+
+def Turn.raw(+o: J.Json, +k: String) -> String:
+  J.Json.as_raw(J.Json.get(o, k), "")
+
+def Turn.has(+o: J.Json, +k: String) -> Bool:
+  Bool.not(String.is_empty(Turn.raw(o, k)))
+
+def Turn.nth(ps: List<&2, String>, +i: Nat) -> String:
+  Maybe.default(&2, String, List.head(&2, String, List.drop(&2, String, ps, i)), "")
+
+def Turn.shift(n: Nat, +v: Nat) -> Nat:
+  match n:
+    case 0n:
+      v
+    case 1n+k:
+      Turn.shift(k, Nat.div(v, 10n))
+
+def Turn.mant(+m: String) -> Nat:
+  Nat.add(Nat.mul(M.Switch.num(Turn.nth(String.split(m, '.'), 0n), 0n), 1000000000n),
+    M.Switch.num(String.take(Turn.nth(String.split(m, '.'), 1n) ++ "000000000", 9n), 0n))
+
+# a JSON number of dollars ("0.00070325", "7.5e-7") in nano-dollars
+def Turn.nusd(+raw: String) -> Nat:
+  Bool.pick(Nat, String.starts_with(Turn.nth(String.split(raw, 'e'), 1n), "-"),
+    Turn.shift(M.Switch.num(String.drop(Turn.nth(String.split(raw, 'e'), 1n), 1n), 0n), Turn.mant(Turn.nth(String.split(raw, 'e'), 0n))),
+    Turn.mant(Turn.nth(String.split(raw, 'e'), 0n)))
+
+def Turn.model(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, mo, _, _, _, _}:
+      mo
+
+def Turn.session(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, se, _}:
+      se
+
+def Turn.first(fs: J.Json) -> String:
+  match fs:
+    case J.Field{k, _, _}:
+      k
+    case _:
+      ""
+
+def Turn.or(+a: String, +b: String) -> String:
+  Bool.pick(String, String.is_empty(a), b, a)
+
+def Turn.last(+s: M.State, +th: String) -> String:
+  M.Setting.get(s, "tok.key." ++ th, "")
+
+def Turn.basis(+s: M.State, +th: String) -> String:
+  M.Setting.get(s, "tok.basis." ++ th, "")
+
+# Claude: the process's cost so far before this turn
+def Turn.claude.base(+s: M.State, +th: String, +o: J.Json) -> Nat:
+  Bool.pick(Nat, Bool.and(Turn.has(o, "result_index"), Nat.is_eq(J.Json.get_nat(o, "result_index", 1n), 0n)), 0n,
+    M.Switch.num(String.drop(Turn.basis(s, th), 2n), 0n))
+
+def Turn.rise(+now: Nat, +before: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_ge(now, before), Nat.sub(now, before), now)
+
+def Turn.claude.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
+  match fresh:
+    case False{}:
+      Nil{}
+    case True{}:
+      +u = J.Json.get_obj(o, "usage")
+      +total = Turn.nusd(Turn.raw(o, "total_cost_usd"))
+      +hasc = Turn.has(o, "total_cost_usd")
+      +think = Turn.has(J.Json.get_obj(u, "output_tokens_details"), "thinking_tokens")
+      [M.TurnUsage{th, "claude", Turn.or(Turn.model(Hub.thread(s, th)), Turn.first(Usage.fields(J.Json.get_obj(o, "modelUsage")))), J.Json.get_str(o, "uuid", ""),
+        J.Json.get_nat(u, "input_tokens", 0n), J.Json.get_nat(u, "cache_read_input_tokens", 0n), J.Json.get_nat(u, "cache_creation_input_tokens", 0n),
+        J.Json.get_nat(u, "output_tokens", 0n), J.Json.get_nat(J.Json.get_obj(u, "output_tokens_details"), "thinking_tokens", 0n),
+        Bool.pick(Nat, hasc, Turn.rise(total, Turn.claude.base(s, th, o)), 0n),
+        "irwo" ++ Bool.pick(String, think, "t", "") ++ Bool.pick(String, hasc, "c", ""),
+        Bool.pick(String, hasc, "c:" ++ Nat.show(total), Turn.basis(s, th)), now}]
+
+# a result line's turn, once
+def Turn.claude(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
+  Turn.claude.k(Bool.and(Turn.has(J.Json.get_obj(o, "usage"), "output_tokens"),
+    Bool.and(Bool.not(String.is_empty(J.Json.get_str(o, "uuid", ""))), Bool.not(String.eq(J.Json.get_str(o, "uuid", ""), Turn.last(s, th))))), s, th, now, o)
+
+# Codex: the session's totals before this turn (all 0 for a new session)
+def Turn.codex.was(+s: M.State, +th: String, +se: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.starts_with(Turn.basis(s, th), "x:" ++ se ++ ":"),
+    String.split(String.drop(Turn.basis(s, th), Nat.add(String.length(se), 3n)), '/'), Nil{})
+
+def Turn.num(ps: List<&2, String>, +i: Nat) -> Nat:
+  M.Switch.num(Turn.nth(ps, i), 0n)
+
+# whether every total rose or held (else the session started again)
+def Turn.codex.up(+was: List<&2, String>, +ci: Nat, +cc: Nat, +cw: Nat, +co: Nat, +ct: Nat) -> Bool:
+  Bool.and(Bool.and(Nat.is_ge(ci, Turn.num(was, 0n)), Nat.is_ge(cc, Turn.num(was, 1n))),
+    Bool.and(Bool.and(Nat.is_ge(cw, Turn.num(was, 2n)), Nat.is_ge(co, Turn.num(was, 3n))), Nat.is_ge(ct, Turn.num(was, 4n))))
+
+def Turn.codex.d(up: Bool, +was: List<&2, String>, +i: Nat, +v: Nat) -> Nat:
+  match up:
+    case True{}:
+      Nat.sub(v, Turn.num(was, i))
+    case False{}:
+      v
+
+def Turn.codex.m(+s: M.State, +th: String, +now: Nat, +se: String, +u: J.Json, +was: List<&2, String>, +ci: Nat, +cc: Nat, +cw: Nat, +co: Nat, +ct: Nat, +up: Bool) -> List<&2, M.Change>:
+  [M.TurnUsage{th, "codex", Turn.or(Turn.model(Hub.thread(s, th)), "default"), "x:" ++ se ++ ":" ++ Nat.show(ci) ++ "/" ++ Nat.show(co),
+    Nat.sub(Turn.codex.d(up, was, 0n, ci), Turn.codex.d(up, was, 1n, cc)), Turn.codex.d(up, was, 1n, cc), Turn.codex.d(up, was, 2n, cw),
+    Turn.codex.d(up, was, 3n, co), Turn.codex.d(up, was, 4n, ct), 0n, "irwo" ++ Bool.pick(String, Turn.has(u, "reasoning_output_tokens"), "t", ""),
+    "x:" ++ se ++ ":" ++ String.join([Nat.show(ci), Nat.show(cc), Nat.show(cw), Nat.show(co), Nat.show(ct)], "/"), now}]
+
+def Turn.codex.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +se: String, +u: J.Json) -> List<&2, M.Change>:
+  match fresh:
+    case False{}:
+      Nil{}
+    case True{}:
+      +was = Turn.codex.was(s, th, se)
+      +ci = J.Json.get_nat(u, "input_tokens", 0n)
+      +cc = J.Json.get_nat(u, "cached_input_tokens", 0n)
+      +cw = J.Json.get_nat(u, "cache_write_input_tokens", 0n)
+      +co = J.Json.get_nat(u, "output_tokens", 0n)
+      +ct = J.Json.get_nat(u, "reasoning_output_tokens", 0n)
+      Turn.codex.m(s, th, now, se, u, was, ci, cc, cw, co, ct, Turn.codex.up(was, ci, cc, cw, co, ct))
+
+# a turn.completed line's turn, once
+def Turn.codex(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
+  Turn.codex.k(Bool.and(Turn.has(J.Json.get_obj(o, "usage"), "output_tokens"),
+    Bool.not(String.eq("x:" ++ Turn.session(Hub.thread(s, th)) ++ ":" ++ Nat.show(J.Json.get_nat(J.Json.get_obj(o, "usage"), "input_tokens", 0n)) ++ "/" ++
+      Nat.show(J.Json.get_nat(J.Json.get_obj(o, "usage"), "output_tokens", 0n)), Turn.last(s, th)))),
+    s, th, now, Turn.session(Hub.thread(s, th)), J.Json.get_obj(o, "usage"))
+
+# a result line: the context window, and the turn's usage
+def Usage.result(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
+  List.append(&2, M.Change, Usage.window(s, th, now, o), Turn.claude(s, th, now, o))
+
+# Claude's plan limits (rate_limit_event): each window's share used, when it
+# resets and the status, as the setting limit.claude.<window> =
+# "<per mille>/<resets at>/<status>" (the share kept to whole percent), logged
+# only when it changes
+def Lim.permille(+raw: String) -> Nat:
+  Nat.mul(Nat.div(Nat.div(Turn.nusd(raw), 1000000n), 10n), 10n)
+
+def Lim.value(+w: J.Json, +status: String) -> String:
+  Nat.show(Lim.permille(Turn.raw(w, "utilization"))) ++ "/" ++ Turn.raw(w, "resetsAt") ++ "/" ++ status
+
+def Lim.one(+s: M.State, +now: Nat, +name: String, +w: J.Json, +status: String) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, Bool.or(Bool.not(Turn.has(w, "utilization")), String.eq(Lim.value(w, status), M.Setting.get(s, "limit.claude." ++ name, ""))), Nil{},
+    [M.SettingSet{"limit.claude." ++ name, Lim.value(w, status), now}])
+
+def Lim.claude(+s: M.State, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
+  List.append(&2, M.Change,
+    Lim.one(s, now, "five_hour", J.Json.get_obj(J.Json.get_obj(J.Json.get_obj(o, "rate_limit_info"), "unifiedWindows"), "five_hour"), J.Json.get_str(J.Json.get_obj(o, "rate_limit_info"), "status", "")),
+    Lim.one(s, now, "seven_day", J.Json.get_obj(J.Json.get_obj(J.Json.get_obj(o, "rate_limit_info"), "unifiedWindows"), "seven_day"), J.Json.get_str(J.Json.get_obj(o, "rate_limit_info"), "status", "")))
+
 # an assistant message and what its todo tools do to the thread's list
 def Claude.assistant.t(+s: M.State, +thread: String, +now: Nat, +m: J.Json, +uuid: String) -> Step:
   Step.after(Step.after(Claude.assistant(thread, now, Hub.seq(s), m, uuid), Claude.todos(s, thread, now, J.Json.elems(J.Json.get_obj(m, "content")))), Usage.claude(s, thread, now, m))
@@ -1841,7 +2000,9 @@ def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -
     case 2n:
       Tools.step(Claude.assistant.t(s, thread, now, J.Json.get_obj(o, "message"), J.Json.get_str(o, "uuid", "")), thread)
     case 3n:
-      Step.after(Claude.result.if(Hub.running(Hub.thread(s, thread)), thread, now, o), Usage.window(s, thread, now, o))
+      Step.after(Claude.result.if(Hub.running(Hub.thread(s, thread)), thread, now, o), Usage.result(s, thread, now, o))
+    case 5n:
+      Step{Lim.claude(s, now, o), Nil{}}
     case 4n:
       Step.also(Step.also(Claude.named(s, thread, now, o), Steps.claude(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), thread, Hub.cwd(s, Hub.thread(s, thread)))),
         Tools.shuts(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), thread))
@@ -1859,7 +2020,7 @@ def Claude.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now:
   match m:
     case Some{+o}:
       +call = J.Json.get_str(o, "parent_tool_use_id", "")
-      Claude.line.who(String.is_empty(call), C.Codec.pos(["system", "stream_event", "assistant", "result", "user"], J.Json.get_str(o, "type", "")), s, thread, now, call, o)
+      Claude.line.who(String.is_empty(call), C.Codec.pos(["system", "stream_event", "assistant", "result", "user", "rate_limit_event"], J.Json.get_str(o, "type", "")), s, thread, now, call, o)
     case None{}:
       Step.none()
 
@@ -2588,7 +2749,7 @@ def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) ->
     case 1n:
       Codex.item.k(C.Codec.pos(["agent_message", "command_execution", "file_change", "todo_list"], J.Json.get_str(J.Json.get_obj(o, "item"), "type", "")), thread, now, Hub.seq(s), J.Json.get_obj(o, "item"))
     case 2n:
-      Step{[M.TurnChanged{thread, M.Completed{}, now}], Nil{}}
+      Step{M.TurnChanged{thread, M.Completed{}, now} <> Turn.codex(s, thread, now, o), Nil{}}
     case 4n:
       Step.outs([Delta.push(thread, J.Json.get_str(o, "text", ""))])
     case 5n:
@@ -4484,7 +4645,7 @@ def Claude.line.r(i: Nat, run: Bool, +s: M.State, +thread: String, +now: Nat, +o
     case 1n:
       Claude.stream.if(run, thread, J.Json.get_obj(o, "event"))
     case 3n:
-      Step{Usage.window(s, thread, now, o), Nil{}}
+      Step{Usage.result(s, thread, now, o), Nil{}}
     case _:
       Claude.line.k(i, s, thread, now, o)
 
@@ -4496,7 +4657,7 @@ def Claude.line.who.r(main: Bool, i: Nat, run: Bool, +s: M.State, +thread: Strin
       Sub.line(i, thread, now, call, o)
 
 def Claude.line.o(run: Bool, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
-  Claude.line.who.r(String.is_empty(J.Json.get_str(o, "parent_tool_use_id", "")), C.Codec.pos(["system", "stream_event", "assistant", "result", "user"], J.Json.get_str(o, "type", "")),
+  Claude.line.who.r(String.is_empty(J.Json.get_str(o, "parent_tool_use_id", "")), C.Codec.pos(["system", "stream_event", "assistant", "result", "user", "rate_limit_event"], J.Json.get_str(o, "type", "")),
     run, s, thread, now, J.Json.get_str(o, "parent_tool_use_id", ""), o)
 
 def Wake.row(ls: List<&2, String>, +id: String) -> String:
@@ -4530,9 +4691,9 @@ def Claude.line.v.k(v: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json,
     case 2n:
       Claude.line.o(True{}, s, thread, now, o)
     case 3n:
-      Step.after(Step.after(Claude.result.k(False{}, thread, now, text), Usage.window(s, thread, now, o)), Bg.settle(s, thread, now))
+      Step.after(Step.after(Claude.result.k(False{}, thread, now, text), Usage.result(s, thread, now, o)), Bg.settle(s, thread, now))
     case 4n:
-      Step.after(Step.after(Claude.result.k(True{}, thread, now, text), Usage.window(s, thread, now, o)), Bg.settle(s, thread, now))
+      Step.after(Step.after(Claude.result.k(True{}, thread, now, text), Usage.result(s, thread, now, o)), Bg.settle(s, thread, now))
     case 5n:
       Step{List.append(&2, M.Change, [M.TurnChanged{thread, M.Interrupted{}, now}], Bg.settle(s, thread, now)), Nil{}}
     case 6n:
@@ -4838,6 +4999,8 @@ def Busy.inert(c: M.Change) -> Bool:
     case M.ActivityLogged{_, _, _, _, _, _}:
       True{}
     case M.UsageSet{_, _, _, _}:
+      True{}
+    case M.TurnUsage{_, _, _, _, _, _, _, _, _, _, _, _, _}:
       True{}
     case M.TodosSet{_, _, _}:
       True{}

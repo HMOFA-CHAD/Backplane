@@ -9689,7 +9689,8 @@ def Tzs.act(+u: Ui, +action: String, +value: String) -> Act:
 # Settings > Usage (src/core/usage.bend): the model side from the log, Boat's
 # from the hub's info "boat.usage"; every client draws these rows
 def Usage.rows(+u: Ui) -> List<&2, UZ.URow>:
-  List.append(&2, UZ.URow, UZ.Use.rows(Ui.state.of(u), Ui.threads(Ui.state.of(u))), UZ.Bj.rows(Ui.state.of(u), Ui.info(u, "boat.usage"), Side.now(u)))
+  List.concat(&2, UZ.URow, [UZ.Use.rows(Ui.state.of(u), Ui.threads(Ui.state.of(u))),
+    UZ.Tk.rows(Ui.state.of(u), Ui.threads(Ui.state.of(u)), Ui.projects(Ui.state.of(u)), Side.now(u)), UZ.Bj.rows(Ui.state.of(u), Ui.info(u, "boat.usage"), Side.now(u))])
 
 # (Settings > Usage's "usage-refresh": Boat's CLI read again now)
 def Ui.act.us(us: Bool, +u: Ui, +action: String, +value: String) -> Act:
@@ -10026,6 +10027,8 @@ def Touch.raw(c: M.Change) -> List<&2, String>:
       ["@mail"]
     case M.DecisionLogged{_, _, _, _, _, _, _}:
       ["@mail"]
+    case M.TurnUsage{+thread, _, _, _, _, _, _, _, _, _, _, _, _}:
+      [thread]
 
 # a thread id as touched: a subagent's log ("@sub:<thread>", model.bend's
 # Bg.log) is its thread's; any other name with "@" is no plain thread, so

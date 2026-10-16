@@ -8747,3 +8747,33 @@ law cjk_terminal_combining_cells:
   {L.Term.cells("é日", 0) == 3 : U32}
 
 # ---- end i18n cjk ----
+
+# ---- usage-tokens ----
+# Turn usage (model.bend's Tokens, hub.bend's Turn and Lim)
+
+# a result line seen again is not counted twice
+law tok_claude_seen_nothing:
+  {H.Turn.claude(M.State.replay([M.TurnUsage{"t1", "claude", "m", "r1", 0n, 0n, 0n, 1n, 0n, 0n, "irwo", "", 1n}], M.State.empty()), "t1", 2n,
+    J.Json.obj([J.KV{"uuid", J.Str{"r1"}}, J.KV{"usage", J.Json.obj([J.KV{"output_tokens", J.Num{"1"}}])}])) == [] : List<&2, M.Change>}
+
+# a running total that rose gives the rise; one that went down started again
+law tok_rise_rose:
+  {H.Turn.rise(5n, 3n) == 2n : Nat}
+
+law tok_rise_restarted:
+  {H.Turn.rise(3n, 5n) == 3n : Nat}
+
+# a Codex session that started again counts its totals as they are
+law tok_codex_restart_whole:
+  for +was: List<&2, String>
+  for +i: Nat
+  for +v: Nat
+  {H.Turn.codex.d(False{}, was, i, v) == v : Nat}
+
+# every turn adds one turn to a total, whatever it used
+law tok_add_one_turn:
+  {M.Tok.part(M.Tok.add("2/0/0/0/0/0/0/0", 1n, 0n, 0n, 1n, 0n, 0n, False{}), 0n) == 3n : Nat}
+
+# a turn with no cost reported adds nothing to the turns with a cost
+law tok_add_no_cost:
+  {M.Tok.part(M.Tok.add("", 1n, 0n, 0n, 1n, 0n, 0n, False{}), 7n) == 0n : Nat}
