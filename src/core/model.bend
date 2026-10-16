@@ -1530,7 +1530,7 @@ def Tok.pre.k(+e: String) -> String:
   Bool.pick(String, String.is_empty(e), "tok.", "tok." ++ e ++ ".")
 
 def Tok.pre(+s: State) -> String:
-  Tok.pre.k(Setting.get(s, "tok.epoch", ""))
+  Tok.pre.k(Setting.get(s, "tok.epoch", "") ++ Setting.get(s, "tok.recount", ""))
 
 def Tok.project(t: Thread) -> String:
   match t:

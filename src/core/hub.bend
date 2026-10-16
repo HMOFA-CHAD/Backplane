@@ -1434,10 +1434,30 @@ def Turn.last(+s: M.State, +th: String) -> String:
 def Turn.basis(+s: M.State, +th: String) -> String:
   M.Setting.get(s, "tok.basis." ++ th, "")
 
-# Claude: the process's cost so far before this turn
-def Turn.claude.base(+s: M.State, +th: String, +o: J.Json) -> Nat:
-  Bool.pick(Nat, Bool.and(Turn.has(o, "result_index"), Nat.is_eq(J.Json.get_nat(o, "result_index", 1n), 0n)), 0n,
-    M.Switch.num(String.drop(Turn.basis(s, th), 2n), 0n))
+# Claude: the session's running cost before this turn, as the baseline
+# "c:<nano-dollars>" ("" when unknown). A session the hub saw start has 0
+# (Turn.claude.start); a session resumed in a new process keeps its total
+# going (result_index 0 there does not mean 0, measured 2026-10-16), so
+# only a session start resets it
+def Turn.claude.basis(+s: M.State, +th: String) -> String:
+  Bool.pick(String, String.starts_with(Turn.basis(s, th), "c:"), Turn.basis(s, th), "")
+
+def Turn.claude.base(+s: M.State, +th: String) -> Nat:
+  M.Switch.num(String.drop(Turn.claude.basis(s, th), 2n), 0n)
+
+# a Claude session the hub sees start (a new session id): its cost starts at 0
+def Turn.claude.start(same: Bool, +th: String, +sid: String, +now: Nat) -> List<&2, M.Change>:
+  match same:
+    case True{}:
+      Nil{}
+    case False{}:
+      Bool.pick(List<&2, M.Change>, String.is_empty(sid), Nil{}, [M.SettingSet{"tok.basis." ++ th, "c:0", now}])
+
+# a count started again once more (the setting tok.recount, part of the
+# totals' prefix): a count's totals from before 2026-10-16's fix for
+# resumed Claude sessions charged one turn with the session's past cost
+def Turn.recount(+s: M.State, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, String.is_empty(M.Setting.get(s, "tok.recount", "")), [M.SettingSet{"tok.recount", "b", now}], Nil{})
 
 def Turn.rise(+now: Nat, +before: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_ge(now, before), Nat.sub(now, before), now)
@@ -1448,10 +1468,13 @@ def Turn.rise(+now: Nat, +before: Nat) -> Nat:
 def Turn.epoch(+s: M.State, +now: Nat) -> List<&2, M.Change>:
   Bool.pick(List<&2, M.Change>, String.is_empty(M.Setting.get(s, "tok.epoch", "")), [M.SettingSet{"tok.epoch", "1", now}], Nil{})
 
+def Turn.restart(+s: M.State, +now: Nat) -> List<&2, M.Change>:
+  List.append(&2, M.Change, Turn.epoch(s, now), Turn.recount(s, now))
+
 # whether a Claude turn's cost can be told: Claude gave a running total, and
-# either this turn starts its process (result_index 0) or the process's
-# total before it is known; a process already running when its thread was
-# first seen has no known start, so its first turn's cost is unknown
+# either it starts from 0 (first) or the total before it is known. Claude
+# turns pass first = False: a session's start is told by its id
+# (Turn.claude.start sets the baseline to 0), not by result_index
 def Turn.cost.known(has: Bool, first: Bool, +basis: String) -> Bool:
   Bool.and(has, Bool.or(first, Bool.not(String.is_empty(basis))))
 
@@ -1462,12 +1485,12 @@ def Turn.claude.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) 
     case True{}:
       +u = J.Json.get_obj(o, "usage")
       +total = Turn.nusd(Turn.raw(o, "total_cost_usd"))
-      +hasc = Turn.cost.known(Turn.has(o, "total_cost_usd"), Bool.and(Turn.has(o, "result_index"), Nat.is_eq(J.Json.get_nat(o, "result_index", 1n), 0n)), Turn.basis(s, th))
+      +hasc = Bool.and(Turn.cost.known(Turn.has(o, "total_cost_usd"), False{}, Turn.claude.basis(s, th)), Nat.is_ge(total, Turn.claude.base(s, th)))
       +think = Turn.has(J.Json.get_obj(u, "output_tokens_details"), "thinking_tokens")
-      List.append(&2, M.Change, Turn.epoch(s, now), [M.TurnUsage{th, "claude", Turn.or(Turn.model(Hub.thread(s, th)), Turn.first(Usage.fields(J.Json.get_obj(o, "modelUsage")))), J.Json.get_str(o, "uuid", ""),
+      List.append(&2, M.Change, Turn.restart(s, now), [M.TurnUsage{th, "claude", Turn.or(Turn.model(Hub.thread(s, th)), Turn.first(Usage.fields(J.Json.get_obj(o, "modelUsage")))), J.Json.get_str(o, "uuid", ""),
         J.Json.get_nat(u, "input_tokens", 0n), J.Json.get_nat(u, "cache_read_input_tokens", 0n), J.Json.get_nat(u, "cache_creation_input_tokens", 0n),
         J.Json.get_nat(u, "output_tokens", 0n), J.Json.get_nat(J.Json.get_obj(u, "output_tokens_details"), "thinking_tokens", 0n),
-        Bool.pick(Nat, hasc, Turn.rise(total, Turn.claude.base(s, th, o)), 0n),
+        Bool.pick(Nat, hasc, Nat.sub(total, Turn.claude.base(s, th)), 0n),
         "irwo" ++ Bool.pick(String, think, "t", "") ++ Bool.pick(String, hasc, "c", ""),
         Bool.pick(String, Turn.has(o, "total_cost_usd"), "c:" ++ Nat.show(total), Turn.basis(s, th)), now}])
 
@@ -1532,7 +1555,7 @@ def Turn.codex.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +se: String, 
       +cw = J.Json.get_nat(u, "cache_write_input_tokens", 0n)
       +co = J.Json.get_nat(u, "output_tokens", 0n)
       +ct = J.Json.get_nat(u, "reasoning_output_tokens", 0n)
-      List.append(&2, M.Change, Turn.epoch(s, now),
+      List.append(&2, M.Change, Turn.restart(s, now),
         Turn.codex.seen(String.starts_with(Turn.basis(s, th), "x:" ++ se ++ ":"), s, th, now, se, u, was, ci, cc, cw, co, ct))
 
 # a turn.completed line's turn, once
@@ -1597,10 +1620,11 @@ def Claude.init.k(same: Bool, thread: String, sid: String, +now: Nat) -> Step:
     case False{}:
       Step{[M.SessionSet{thread, sid, now}], Nil{}}
 
-# the session id arrives in the init line; record it once
+# the session id arrives in the init line; record it once (and a new
+# session's cost starts at 0, Turn.claude.start)
 def Claude.init(+s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   +sid = J.Json.get_str(o, "session_id", "")
-  Claude.init.k(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now)
+  Step.after(Claude.init.k(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now), Turn.claude.start(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now))
 
 # Claude's subagents (model.bend's Bg): a local agent started, what it
 # does now, and its end; the list is written only when it changes, as a
