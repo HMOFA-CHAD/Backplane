@@ -476,6 +476,8 @@ struct QueueRow: Decodable {
 
 struct ThreadView: Decodable {
     let id, title, branch, state: String
+    // the thread's Boat chip ("Boat · large · running"; "" for none), a tap opens Settings
+    let boat: String?
     let tools: [Tool]
     let entries: [Entry]
     // sent, not yet stored by the hub; and a message waiting for this turn

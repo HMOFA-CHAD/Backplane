@@ -1963,21 +1963,32 @@ def Lay.fit_or_none(+ty: Ty, +k: Nat, +s: String, +px: U32) -> String:
 # branch in what the buttons leave
 # (the title keeps at least its first 160 px: buttons that would cover it
 # are left out, as buttons that do not fit are)
-def Lay.header.k(+ty: Ty, +id: String, +title: String, +branch: String, +icon: String, +tint: U32, +bs: List<&2, TO.Tool>, +x0: U32, +x1: U32, +hy: U32) -> Out:
+# a thread's Boat chip after its title ("Boat · large · running"); a click
+# opens Settings, where Usage says more (core/usage.bend's Chip)
+def Hdr.chip(none: Bool, +ty: Ty, +chip: String, +x: U32, +hy: U32) -> Out:
+  match none:
+    case True{}:
+      Out.none()
+    case False{}:
+      Out{Ty.text(ty, 2n, chip, D.Clip.all(), x, hy, 52, T.Th.accent()), [Lay.hit((x - 4 : U32), (hy + 12 : U32), (Ty.width(ty, 2n, chip) + 8 : U32), 28, "usage-open", "")]}
+
+def Lay.header.k(+ty: Ty, +id: String, +title: String, +branch: String, +chip: String, +icon: String, +tint: U32, +bs: List<&2, TO.Tool>, +x0: U32, +x1: U32, +hy: U32) -> Out:
   +keep = {U32.min(Ty.width(ty, 0n, title), 160) : U32}
   # labels while they fit beside the title's first 160 px, else icons only
   +full = U32.is_ge(U32.dim((x1 - x0 : U32), 80), (Lay.tools.w(ty, bs, True{}) + keep : U32))
   +room = {U32.max(U32.dim(U32.dim((x1 - x0 : U32), Lay.tools.w(ty, bs, full)), 80), keep) : U32}
   +t = Ty.fit(ty, 0n, title, room)
   +tw = Ty.width(ty, 0n, t)
+  +cw = {Bool.pick(U32, String.is_empty(chip), 0, (Ty.width(ty, 2n, chip) + 12 : U32)) : U32}
   Out.all([
     Out.ops([D.Draw.rect(D.Clip.all(), x0, (hy + 51 : U32), (x1 - x0 : U32), 1, T.Th.line(), 255)]),
     Out.ops(Lay.icon(ty, icon, D.Clip.all(), (x0 + 24 : U32), (hy + 18 : U32), tint)),
     Out.ops(Ty.text(ty, 0n, t, D.Clip.all(), (x0 + 48 : U32), hy, 52, T.Th.text())),
     # a click on the title renames the thread (client.bend's Ren)
     Out{Nil{}, [Lay.hit((x0 + 44 : U32), (hy + 8 : U32), (tw + 8 : U32), 36, "row-rename", id)]},
-    Out.ops(Ty.text(ty, 2n, Lay.fit_or_none(ty, 2n, branch, U32.dim(room, (tw + 12 : U32))), D.Clip.all(), (x0 + 60 + tw : U32), hy, 52, T.Th.faint())),
-    Lay.tools(ty, bs, (hy + 12 : U32), (x1 - 16 : U32), (x0 + 60 + tw : U32), full, False{})])
+    Hdr.chip(String.is_empty(chip), ty, chip, (x0 + 60 + tw : U32), hy),
+    Out.ops(Ty.text(ty, 2n, Lay.fit_or_none(ty, 2n, branch, U32.dim(room, (tw + 12 + cw : U32))), D.Clip.all(), (x0 + 60 + tw + cw : U32), hy, 52, T.Th.faint())),
+    Lay.tools(ty, bs, (hy + 12 : U32), (x1 - 16 : U32), (x0 + 60 + tw + cw : U32), full, False{})])
 
 # The title being renamed: a field over it (Enter or Save keeps it,
 # Cancel leaves it), the client's @f.title
@@ -1999,10 +2010,10 @@ def Ren.field.if(on: Bool, +ty: Ty, +text: String, +focus: String, +blink: Bool,
     case False{}:
       Out.none()
 
-def Lay.header(+ty: Ty, t: M.Thread, +st: M.State, +x0: U32, +x1: U32, panel: Bool, term: Bool, +snoozed: Bool, del: Bool, +hy: U32) -> Out:
+def Lay.header(+ty: Ty, t: M.Thread, +st: M.State, +chip: String, +x0: U32, +x1: U32, panel: Bool, term: Bool, +snoozed: Bool, del: Bool, +hy: U32) -> Out:
   match t:
     case M.Thread{+id, +p, +title, _, _, turn, _, +archived, override, +sa, +ua, pinned, _, +branch, _, _, _, _, _, _, _}:
-      Lay.header.k(ty, id, U.Label.title(st, id, title), branch, BG.Badge.icon(st, p), BG.Badge.rgb_of(st, p), Lay.header.bs(turn, override, sa, ua, pinned, panel, archived, snoozed, del, Bool.not(String.is_empty(M.Fork.source(st, id))), term), x0, x1, hy)
+      Lay.header.k(ty, id, U.Label.title(st, id, title), branch, chip, BG.Badge.icon(st, p), BG.Badge.rgb_of(st, p), Lay.header.bs(turn, override, sa, ua, pinned, panel, archived, snoozed, del, Bool.not(String.is_empty(M.Fork.source(st, id))), term), x0, x1, hy)
 
 def Lay.lines(+ty: Ty, ls: List<&2, String>, +c: D.Clip, +x: U32, +y: U32) -> Out:
   match ls:
@@ -6035,7 +6046,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       tl ch = Lay.timeline(ty,
         List.concat(&2, TLine, [TL.memo.shown(ty, memo, st, sel, cw, pics), TL.sending(ty, pend, cw),
           TL.live.m(ty, String.is_empty(live), ph, live, TL.memo.lv(memo), cw)]),
-        cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, hold, TL.memo.first(memo), Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
+        cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, hold, TL.memo.first(memo), Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, sel, now), x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
           Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
           Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + pl : U32)),

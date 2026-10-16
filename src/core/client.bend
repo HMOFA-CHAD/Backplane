@@ -10197,12 +10197,23 @@ def Usage.rows(+u: Ui) -> List<&2, UZ.URow>:
   List.concat(&2, UZ.URow, [UZ.Use.rows(Ui.state.of(u), Ui.threads(Ui.state.of(u))),
     UZ.Tk.rows(Ui.state.of(u), Ui.threads(Ui.state.of(u)), Ui.projects(Ui.state.of(u)), Side.now(u)), UZ.Bj.rows(Ui.state.of(u), Ui.info(u, "boat.usage"), Side.now(u))])
 
-# (Settings > Usage's "usage-refresh": Boat's CLI read again now)
-def Ui.act.us(us: Bool, +u: Ui, +action: String, +value: String) -> Act:
-  match us:
+# a thread's Boat chip opens Settings (Usage is in it), as its button does
+def Usage.open(open: Bool, +u: Ui) -> Act:
+  match open:
     case True{}:
-      Usage.ask(Act{u, Nil{}}, "refresh")
+      Act{u, Nil{}}
     case False{}:
+      Voice.flag("settings", Act{Ui.flag_on(u, "settings"), Nil{}})
+
+# (Settings > Usage's "usage-refresh": Boat's CLI read again now;
+# "usage-open": a thread's Boat chip)
+def Ui.act.us(i: Nat, +u: Ui, +action: String, +value: String) -> Act:
+  match i:
+    case 0n:
+      Usage.ask(Act{u, Nil{}}, "refresh")
+    case 1n:
+      Usage.open(Ui.flag(u, "settings"), u)
+    case _:
       Ui.act.s(String.eq(action, "skill-close"), u, action, value)
 
 def Ui.act.z(tz: Bool, +u: Ui, +action: String, +value: String) -> Act:
@@ -10210,7 +10221,7 @@ def Ui.act.z(tz: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case True{}:
       Tzs.act(u, action, value)
     case False{}:
-      Ui.act.us(String.eq(action, "usage-refresh"), u, action, value)
+      Ui.act.us(C.Codec.pos(["usage-refresh", "usage-open"], action), u, action, value)
 
 # Only inspect the thread prefix, leaving the potentially long key snapshot alone.
 def Ui.subs.thread(s: String, acc: String) -> String:

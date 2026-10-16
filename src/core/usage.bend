@@ -582,6 +582,10 @@ def Tk.rows(+st: M.State, ts: List<&2, M.Thread>, ps: List<&2, M.Project>, +now:
 # (Chip.changes, against the state, so a restart leaves nothing stale);
 # clients only format it.
 
+# where the Boat runner keeps its status
+def Chip.path(+xs: String, +user: String) -> String:
+  Bool.pick(String, String.is_empty(xs), user ++ "/.local/state", xs) ++ "/backplane/boat/status.json"
+
 def Chip.key(+th: String) -> String:
   "boat.thread." ++ th
 
