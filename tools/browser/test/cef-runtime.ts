@@ -29,7 +29,7 @@ try {
   try {
     check("SHA mismatch rejects before unpack", await installCef(`http://127.0.0.1:${server.port}/runtime.tar.zst`, "0".repeat(64)).then(() => false, (e) => e.message === "CEF download: SHA-256 mismatch"));
     const installed = await installCef(`http://127.0.0.1:${server.port}/valid`, hash);
-    check("verified archive installs atomically into version cache", installed === cached && await Bun.file(installed).text() === "runtime fixture");
+    check("verified archive installs into version cache", installed === cached && await Bun.file(installed).text() === "runtime fixture");
   } finally { server.stop(true); }
   console.log("all CEF runtime checks passed");
 } finally {
