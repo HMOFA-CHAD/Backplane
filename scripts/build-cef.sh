@@ -11,7 +11,7 @@ OUT=$ROOT/build/cef
 PACKAGE=
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --package) PACKAGE=${2:?--package needs OUT.tar.zst}; shift 2 ;;
+    --package) PACKAGE=${2:?--package needs OUT.tar.zst}; case $PACKAGE in /*) ;; *) PACKAGE=$PWD/$PACKAGE ;; esac; shift 2 ;;
     *) OUT=$1; shift ;;
   esac
 done
@@ -37,18 +37,20 @@ echo "$OUT/Release/backplane-cef"
 
 
 if [ -n "$PACKAGE" ]; then
-  mkdir -p "$(dirname "$PACKAGE")"
-  STAGE=$(mktemp -d)
-  trap 'rm -rf "$STAGE"' EXIT HUP INT TERM
-  RUNTIME=$OUT/Release
-  for f in backplane-cef libcef.so icudtl.dat v8_context_snapshot.bin libvk_swiftshader.so vk_swiftshader_icd.json libvulkan.so.1; do
-    cp "$RUNTIME/$f" "$STAGE/$f"
+  R=$OUT/Release
+  STAGE=$(mktemp -d "${TMPDIR:-/tmp}/bp-cef-pkg-XXXXXX")
+  trap 'rm -rf "$STAGE"' EXIT
+  # (chrome-sandbox is left out: the host runs with no_sandbox)
+  for f in backplane-cef libcef.so icudtl.dat v8_context_snapshot.bin snapshot_blob.bin \
+           libvk_swiftshader.so vk_swiftshader_icd.json libvulkan.so.1 libEGL.so libGLESv2.so; do
+    [ -e "$R/$f" ] && cp -p "$R/$f" "$STAGE/"
   done
-  cp "$RUNTIME/"*.pak "$STAGE/"
-  mkdir -p "$STAGE/locales"
-  cp "$RUNTIME/locales/en-US.pak" "$STAGE/locales/"
-  cp "$CEF_ROOT/LICENSE.txt" "$STAGE/"
-  tar -I 'zstd -T2 -3' -cf "$PACKAGE" -C "$STAGE" .
-  (cd "$(dirname "$PACKAGE")" && sha256sum "$(basename "$PACKAGE")") > "$PACKAGE.sha256"
-  wc -c "$PACKAGE"
+  cp -p "$R"/*.pak "$STAGE/"
+  # only en-US: the host shows no UI of its own
+  mkdir -p "$STAGE/locales" && cp -p "$R/locales/en-US.pak" "$STAGE/locales/"
+  strip --strip-unneeded "$STAGE/libcef.so" "$STAGE/backplane-cef" 2>/dev/null || true
+  mkdir -p "$(dirname "$PACKAGE")"
+  (cd "$STAGE" && tar --sort=name --owner=0 --group=0 --numeric-owner -cf - .) | zstd -q -19 -T2 -f -o "$PACKAGE"
+  (cd "$(dirname "$PACKAGE")" && sha256sum "$(basename "$PACKAGE")" > "$PACKAGE.sha256")
+  echo "$PACKAGE $(du -h "$PACKAGE" | cut -f1)"
 fi

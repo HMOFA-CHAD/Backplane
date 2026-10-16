@@ -293,7 +293,6 @@ class App : public CefApp, public CefBrowserProcessHandler {
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
   void OnBeforeCommandLineProcessing(const CefString&, CefRefPtr<CefCommandLine> cl) override {
     cl->AppendSwitchWithValue("password-store", "basic"); cl->AppendSwitch("use-mock-keychain");
-    cl->AppendSwitchWithValue("force-device-scale-factor", "1");
     if (getenv("BACKPLANE_CEF_NO_GPU")) cl->AppendSwitch("disable-gpu");
   }
   void OnContextInitialized() override {
@@ -340,7 +339,19 @@ __attribute__((no_stack_protector)) int main(int argc, char** argv) {
   if (!watch_clicks()) { fprintf(stderr, "backplane-cef: XInput2 unavailable\n"); return 1; }
   XSync(dpy, False);
   CefSettings st;
+  // UI strings: en-US (the only locale packaged); pages get the person's
+  // languages from $LANG (ja_JP.UTF-8 -> ja-JP,ja,en-US,en)
   CefString(&st.locale) = "en-US";
+  if (const char* lang = getenv("LANG")) {
+    std::string l = lang;
+    l = l.substr(0, l.find_first_of(".@"));
+    if (l.size() >= 2 && l != "C" && l != "POSIX") {
+      for (auto& c : l) if (c == '_') c = '-';
+      std::string base = l.substr(0, l.find('-'));
+      std::string list = l + (base != l ? "," + base : "") + (base != "en" ? ",en-US,en" : "");
+      CefString(&st.accept_language_list) = list;
+    }
+  }
   st.no_sandbox = true; st.remote_debugging_port = opts.port; st.log_severity = LOGSEVERITY_WARNING;
   if (!opts.cache.empty()) {
     CefString(&st.root_cache_path) = opts.cache;

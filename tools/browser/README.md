@@ -374,12 +374,21 @@ nice -n 10 bun tools/browser/build.ts /tmp/x/backplane-browser # within the admi
 BACKPLANE_BROWSER=/tmp/x/backplane-browser BACKPLANE_CEF="$PWD/build/cef/Release/backplane-cef" bun tools/browser/test/cef.ts
 ```
 
-CEF 154 initially announces newly created Alloy children as CDP type `other`.
-Playwright ignores and detaches that initial session. The helper waits for
-that detach and the final `page` type, then attaches the reported target on
-the same root WebSocket. Host popups use the same path. Adapter-owned CDP
-requests use separate ids and consume only their own replies; Playwright
-receives the normal target events. This creates no new targets or windows.
+CEF 154 first announces a browser the host creates as a CDP target of type
+`other`, which Playwright skips; the helper sets `PW_CHROMIUM_ATTACH_TO_OTHER=1`
+(a Playwright switch, read at each attach) while CEF runs, so host pages and
+popups arrive as ordinary Playwright pages. This creates no targets or windows.
+
+Playwright's own `ws` client never finishes the WebSocket upgrade under Bun
+1.3, so the CEF connection uses Bun's `WebSocket` (`src/bunws.ts`).
+`utilsBundle.ws` is a read-only getter: `build.ts` rewrites the one line of
+`coreBundle.js` that reads it (the build fails if that line moves), and when
+running from source `src/init.ts` answers `ws` from a proxy in the require
+cache. Import Playwright through `src/playwright.ts`.
+
+Pixels: the host's `show`/`size` and `shield-click` speak X (device) pixels;
+agents, `status` and the viewport speak CSS pixels. The helper converts with
+the page's `devicePixelRatio` (1 on most screens).
 
 CEF's unmapped `Chromium clipboard` X selection-owner window is excluded
 from the tests' top-level browser-window check; it is required clipboard

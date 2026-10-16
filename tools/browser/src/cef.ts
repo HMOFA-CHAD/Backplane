@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
 import { chromium } from "./playwright.ts";
-import { BunWs } from "./bunws.ts";
+import { useBunWs } from "./bunws.ts";
 import type { Browser, BrowserContext, Page, CDPSession } from "playwright-core";
 
 export const CEF_VERSION = "154.0.34";
@@ -56,8 +56,6 @@ export class CefEngine extends EventEmitter {
   context!: BrowserContext;
   port = 0;
   executable = "";
-  socket: BunWs | null = null;
-  attaching = new Map<string, Promise<void>>();
   targets = new Map<string, Event>();
   keys = new WeakMap<Page, string>();
   // Correlated by cmd+key; commands for a given key are issued sequentially.
@@ -90,7 +88,6 @@ export class CefEngine extends EventEmitter {
           if (w) { clearTimeout(w.timer); e.event === "error" ? w.reject(new Error(e.error)) : w.resolve(e); }
         }
         this.emit("host", e);
-        if (e.event === "popup") void this.attach(e.target).catch((err) => this.emit("attach-error", err));
       }
     })();
     void proc.exited.then((code) => {
@@ -113,11 +110,13 @@ export class CefEngine extends EventEmitter {
         await Bun.sleep(30);
       }
       if (!endpoint) throw new Error("CEF host did not open CDP");
-      (globalThis as any).__bpCefWs = true;
-      try { this.browser = await chromium.connectOverCDP(endpoint, { timeout: 15000 }); }
-      finally { (globalThis as any).__bpCefWs = false; }
-      this.socket = BunWs.connections.get(endpoint) ?? null;
-      if (!this.socket) throw new Error("CEF CDP adapter connection missing");
+      // Bun's own WebSocket (bunws.ts); and a browser the host creates is a
+      // CDP target of type "other" before it is a "page", which Playwright
+      // skips unless told to attach those too (read at each attach, so it
+      // stays set while CEF runs; the Chrome engine talks over a pipe)
+      useBunWs();
+      process.env.PW_CHROMIUM_ATTACH_TO_OTHER = "1";
+      this.browser = await chromium.connectOverCDP(endpoint, { timeout: 15000 });
       this.context = this.browser.contexts()[0];
       this.downloads = mkdtempSync(join(tmpdir(), "bp-cef-downloads-"));
       try {
@@ -158,33 +157,8 @@ export class CefEngine extends EventEmitter {
     this.keys.set(p, key);
     return key;
   }
-  async attach(targetId: string): Promise<void> {
-    const pending = this.attaching.get(targetId);
-    if (pending) return pending;
-    const job = (async () => {
-      const socket = this.socket;
-      if (!socket) throw new Error("CEF CDP is not connected");
-      const deadline = Date.now() + 15000;
-      while (Date.now() < deadline) {
-        if (socket.pages.has(targetId)) return;
-        // Let Playwright finish detaching the initial "other" session first:
-        // its detached handler identifies pages by target id, not session id.
-        if (socket.others.has(targetId)) { await Bun.sleep(10); continue; }
-        const { targetInfo } = await socket.request("Target.getTargetInfo", { targetId });
-        if (targetInfo.type === "page") {
-          if (!socket.pages.has(targetId)) await socket.request("Target.attachToTarget", { targetId, flatten: true });
-          return;
-        }
-        await Bun.sleep(10);
-      }
-      throw new Error(`CEF target ${targetId} did not become a page`);
-    })();
-    this.attaching.set(targetId, job);
-    try { await job; } finally { this.attaching.delete(targetId); }
-  }
   async create(key: string): Promise<Page> {
     const e = await this.command("create", key, "about:blank");
-    await this.attach(e.target);
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       for (const p of this.context.pages()) {
@@ -227,6 +201,7 @@ export class CefEngine extends EventEmitter {
       (this.proc.stdin as any).write("quit\n"); (this.proc.stdin as any).end();
       await this.proc.exited;
     }
+    delete process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
     // The host owns Chromium. Its exit disconnects CDP; never Browser.close().
     if (this.downloads) rmSync(this.downloads, { recursive: true, force: true });
   }

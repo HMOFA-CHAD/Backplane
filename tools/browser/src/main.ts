@@ -261,10 +261,10 @@ async function launchCef(): Promise<BrowserContext> {
     }
     if (e.event === "shield-click" || e.event === "focus") {
       const o = cefOwners.get(e.key) ?? cefOwners.get(String(e.key).split("~")[0]);
+      // shield-click x, y: device pixels of the shown page, as the host reports them
       if (o) send({ event: e.event, page: o.name, ...(e.event === "shield-click" ? { x: e.x, y: e.y } : {}) });
     }
   });
-  host.on("attach-error", (e) => log(`CEF popup attach: ${e}`));
   host.on("exit", (code) => {
     if (cef !== host) return;
     cef = null;
@@ -293,11 +293,21 @@ async function launchCef(): Promise<BrowserContext> {
     throw e;
   }
 }
+// CEF pages: the host places and sizes X windows in device pixels; agents,
+// status and the viewport speak CSS pixels (the same on a scale-1 screen)
+async function dpr(p: Page): Promise<number> {
+  return (await p.evaluate(() => devicePixelRatio).catch(() => 1)) || 1;
+}
+// the page's CSS size once the X resize has reached the renderer (both are
+// asynchronous); a pixel of rounding either way counts
+async function sized(p: Page, width: number, height: number): Promise<void> {
+  await p.waitForFunction(({ width, height }) => Math.abs(innerWidth - width) <= 1 && Math.abs(innerHeight - height) <= 1, { width, height }, { timeout: DEFAULT_TIMEOUT });
+}
 async function sizePage(o: Owner, p: Page): Promise<void> {
   if (engine === "cef") {
-    await cef!.command("size", await cef!.key(p), `${o.viewport.width} ${o.viewport.height}`);
-    // X ConfigureNotify and the renderer's resize are asynchronous.
-    await p.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, o.viewport, { timeout: DEFAULT_TIMEOUT });
+    const r = await dpr(p);
+    await cef!.command("size", await cef!.key(p), `${Math.round(o.viewport.width * r)} ${Math.round(o.viewport.height * r)}`);
+    await sized(p, o.viewport.width, o.viewport.height);
   } else await p.setViewportSize(o.viewport);
 }
 async function closeTab(p: Page): Promise<void> {
@@ -834,9 +844,11 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
     if (![a.x, a.y, a.w, a.h].every(Number.isInteger) || a.w < 1 || a.h < 1)
       throw new Error("show needs integer x,y,w,h with positive w,h");
     const p = await ensurePage(name);
+    // x, y, w, h are the parent window's (device) pixels
     await cef!.command("show", await cef!.key(p), `${a.x} ${a.y} ${a.w} ${a.h}`);
-    const o = ownerFor(name); o.viewport = { width: a.w, height: a.h };
-    await p.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, o.viewport);
+    const r = await dpr(p);
+    const o = ownerFor(name); o.viewport = { width: Math.round(a.w / r), height: Math.round(a.h / r) };
+    await sized(p, o.viewport.width, o.viewport.height);
     return {};
   },
   async hide() {

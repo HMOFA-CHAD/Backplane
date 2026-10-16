@@ -77,13 +77,14 @@ remain available for screenshots, recording and screencasts. Neither
 | `load` | `key`, `url`, `code` | main-frame load ended |
 | `title` | `key`, `title` | document title changed |
 | `focus` | `key` | CEF OnGotFocus; shown child receives X keyboard focus |
-| `shield-click` | `key`, `x`, `y` | shield ButtonPress, page CSS coordinates |
+| `shield-click` | `key`, `x`, `y` | shield ButtonPress, device pixels in the shown page |
 | `ok` | `cmd`, `key` | command completed |
 | `error` | `cmd`, `key`, `error` | unknown, invalid or failed command |
 
 CEF obtains target ids with `Target.getTargetInfo` through a registered
-CefDevToolsMessageObserver. The host forces device scale factor 1 so its
-native child pixels and shield coordinates equal page CSS pixels. Clicking
+CefDevToolsMessageObserver. Geometry is in X (device) pixels; the page's
+own scale (Xft.dpi, GDK_SCALE) applies inside it. Pages get the person's
+languages from `$LANG` (`Accept-Language`); the UI locale is en-US. Clicking
 into a shown page transfers keyboard focus to its X child. The host observes
 XInput2 raw button presses through dlopen’d libXi.so.6 (without consuming
 the browser’s events), since CDP focus emulation can suppress CEF’s usual
