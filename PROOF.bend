@@ -11017,4 +11017,13 @@ def Laws.hold_entry_moves(off, y0, y1, t0, t1, over, h):
   Laws.hold_off_still(Nat.add(Nat.sub(off, y0), y1), t0, t1, over, h)
 
 def Laws.hold_page_free(es, base):
+
+# ---- usage-claude-resume ----
+def Laws.tok_claude_start_zero():
+  {==}
+
+def Laws.tok_claude_same_session_keeps(s):
+  {==}
+
+def Laws.tok_recount_once():
   {==}

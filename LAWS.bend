@@ -9226,3 +9226,17 @@ law hold_page_free:
   for +es: List<&2, M.Entry>
   for +base: Nat
   {U.Hold.page(es, "", base) == base : Nat}
+
+# ---- usage-claude-resume ----
+# a Claude session the hub sees start is charged from 0; a resumed one keeps
+# its baseline (result_index 0 does not mean 0)
+law tok_claude_start_zero:
+  {H.Turn.claude.start(False{}, "t", "s", 1n) == [M.SettingSet{"tok.basis.t", "c:0", 1n}] : List<&2, M.Change>}
+
+law tok_claude_same_session_keeps:
+  for +s: String
+  {H.Turn.claude.start(True{}, "t", s, 1n) == [] : List<&2, M.Change>}
+
+# the recount happens once
+law tok_recount_once:
+  {H.Turn.recount(M.State.replay([M.SettingSet{"tok.recount", "b", 1n}], M.State.empty()), 2n) == [] : List<&2, M.Change>}
