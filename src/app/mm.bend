@@ -218,7 +218,7 @@ def Mm.key.go(+n: N.Nui, +t: TouchK, +rels: List<&2, String>) -> String:
         ++ "|x" ++ U32.show(Mm.x1(pa, ww)) ++ "|cs" ++ N.Cs.region(hi) ++ "|ch" ++ Mm.hit(L.Comp.hit(hi))
         ++ "|u" ++ Mm.b(on) ++ Mm.b(ad) ++ Mm.b(pa) ++ Mm.b(w) ++ "," ++ v ++ "," ++ Nat.show(rid) ++ "," ++ er ++ "," ++ note
         ++ "|f" ++ Mm.flags(Map.to_list(&2, Bool, op)) ++ "|d" ++ Mm.strs(Map.to_list(&2, String, dr)) ++ "|o" ++ Mm.strs(Map.to_list(&2, String, ob))
-        ++ "|l" ++ U.Str.get(live, sel) ++ "|i" ++ Mm.info(Map.to_list(&2, String, nf))
+        ++ "|l" ++ U.Str.get(live, sel) ++ "|i" ++ Mm.info(Map.to_list(&2, String, nf)) ++ "|m" ++ U.Ui.scratch(N.Nui.ui(n), "@ime")
 
 def Mm.key.k(ok: Bool, +n: N.Nui, +t: TouchK, +rels: List<&2, String>) -> String:
   match ok:

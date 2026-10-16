@@ -1038,8 +1038,22 @@ def Shell.step.go(a: Shell, s: N.Step) -> IO(Shell):
     case Shell{_, w, d, qd, q, i, wa} N.Step{n, cs, dirty}:
       IO.bind(Shell, Shell, Shell.cmds(cs, Shell{n, w, Bool.or(d, dirty), qd, q, i, wa}), Shell.dirty)
 
+# a composition whose field lost the keys (another field, another thread) is
+# dropped, in the app and in the input method: nothing is inserted anywhere
+def Shell.ime.sync.k(stale: Bool, a: Shell) -> IO(Shell):
+  match stale a:
+    case True{} Shell{+n, w, d, qd, q, i, wa}:
+      IO.bind(Window, Shell, W.Win.ime_reset(w), w2 => IO.pure(Shell, Shell{N.Imx.drop(n), w2, True{}, qd, q, i, wa}))
+    case False{} _:
+      IO.pure(Shell, a)
+
+def Shell.ime.sync(a: Shell) -> IO(Shell):
+  match a:
+    case Shell{+n, w, d, qd, q, i, wa}:
+      Shell.ime.sync.k(N.Imx.stale(n), Shell{n, w, d, qd, q, i, wa})
+
 def Shell.step(a: Shell, s: N.Step) -> IO(Shell):
-  Shell.step.go(Shell.remember(a), s)
+  IO.bind(Shell, Shell, Shell.step.go(Shell.remember(a), s), Shell.ime.sync)
 
 # the log's head read as usual, then the hub's read model in place of
 # the (empty) replay, and the outbox sent again (N.Nui.adopt.step)
@@ -1210,8 +1224,27 @@ def Shell.pasted_image(r: Window & String & U32 & String, +n: N.Nui, d: Bool, qd
     key : U32 <- IO.try(U32, IO.random_u32())
     Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.image.m(U.Tour.on(N.Nui.ui(n)), n, mime, U32.to_nat(size), data, AT.Att.paste.key(key)))
 
+def Shell.ime.fill(e: W.WinEv, +t: String, +f: String) -> W.WinEv:
+  match e:
+    case W.WCommit{id, _}:
+      W.WCommit{id, t}
+    case W.WPreedit{first, len, id, _, _, caret, only}:
+      W.WPreedit{first, len, id, t, f, caret, only}
+    case _:
+      e
+
+# an ime event's text arrives by its id (it is the event's own, never a
+# shared buffer), then the event goes on as any other
+def Shell.ime.step(r: Window & String & String, e: W.WinEv, +n: N.Nui, d: Bool, qd: Bool, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux) -> IO(Shell):
+  (w, (t, f)) = r
+  Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.event(n, Shell.ime.fill(e, t, f)))
+
 def Shell.event(a: Shell, e: W.WinEv) -> IO(Shell):
   match a e:
+    case Shell{n, w, d, qd, q, i, wa} W.WCommit{+id, _}:
+      IO.bind(Window & String & String, Shell, W.Win.payload(w, id), r => Shell.ime.step(r, e, n, d, qd, q, i, wa))
+    case Shell{n, w, d, qd, q, i, wa} W.WPreedit{_, _, +id, _, _, _, _}:
+      IO.bind(Window & String & String, Shell, W.Win.payload(w, id), r => Shell.ime.step(r, e, n, d, qd, q, i, wa))
     case Shell{n, w, d, qd, q, i, wa} W.WPaste{_}:
       IO.bind(Window & String, Shell, W.Win.pasted(w), r => Shell.pasted(r, n, d, qd, q, i, wa))
     case Shell{n, w, d, qd, q, i, wa} W.WImage{}:
@@ -2132,6 +2165,30 @@ def Frames.image(f: TI.Frames) -> Image:
       TI.Tiles.image(t)
 
 # carry out the frame's plan (TI.Frame.par one step at a time: the plan,
+# where the focused field's caret is, for the input method's candidate
+# window (the "ime-spot" hit layout leaves there; the window sends it only
+# when it moved)
+def Shell.spot.at(hs: List<&2, N.Hit>) -> Maybe<&2, N.Hit>:
+  match hs:
+    case Nil{}:
+      None{}
+    case N.Hit{+x, +y, +w, +h, +a, +v} <> t:
+      Bool.pick(Maybe<&2, N.Hit>, String.eq(a, "ime-spot"), Some{N.Hit{x, y, w, h, a, v}}, Shell.spot.at(t))
+
+def Shell.spot.go(r: Window & Image & Image, +x: U32, +y: U32) -> IO(Window & Image & Image):
+  (w, (i1, i2)) = r
+  IO.bind(Window, Window & Image & Image, W.Win.ime_spot(w, x, y), w2 => IO.pure(Window & Image & Image, (w2, (i1, i2))))
+
+def Shell.spot.k(m: Maybe<&2, N.Hit>, r: Window & Image & Image) -> IO(Window & Image & Image):
+  match m:
+    case Some{N.Hit{+x, _, _, +h, _, _}}:
+      Shell.spot.go(r, x, h)
+    case None{}:
+      IO.pure(Window & Image & Image, r)
+
+def Shell.spot(r: Window & Image & Image, +hs: List<&2, N.Hit>) -> IO(Window & Image & Image):
+  Shell.spot.k(Shell.spot.at(hs), r)
+
 # the tiles to draw drawn in parallel, the tiles filled in), present them
 # and keep them for the next frame; the window fills only what differs
 # from the last one
@@ -2151,7 +2208,8 @@ def Shell.present(+pl: TI.Plan, o: L.Out, +n: N.Nui, w: Window, +q: Chan(ShellMs
         t4 : U32 <- PS.Perf.lap("ui.present", tc)
         Shell.timed(t0)
         +s : N.Step = Shell.hits(n, hs, epoch)
-        Shell.shown.two(r, Shell.hits.nui(s), q, i, Aux.with_frames(wa, TI.FSome{N.Nui.width(n), N.Nui.height(n), tiles}), Shell.hits.anim(s, Shell.anim(n, ms)), ms)
+        r2 : Window & Image & Image <- Shell.spot(r, hs)
+        Shell.shown.two(r2, Shell.hits.nui(s), q, i, Aux.with_frames(wa, TI.FSome{N.Nui.width(n), N.Nui.height(n), tiles}), Shell.hits.anim(s, Shell.anim(n, ms)), ms)
 
 # The lightbox (nui.bend's Lbx, core/lightbox.bend's Lb): the picture
 # alone on a dark window, zoomed and panned, its full decode once there
@@ -2351,7 +2409,7 @@ def Shell.paint.again(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +oh: List<&2, N.Hit>, 
   do IO<Shell>:
     +memos : List<&2, L.TLMemo> = Shell.memos.of(ty, n, Nil{})
     +wraps : Map<&2, BV.PW> = BV.Bv.wraps.ix(ty, n, BV.Bv.wraps.none(), Aux.ix(wa, n))
-    +fm : FrameM = FrameM.lay(Nil{}, Nil{}, Aux.touch(wa), ty, L.TL.memos.now(memos), cats, wraps, n, Aux.ix(wa, n), Aux.br(wa, n))
+    +fm : FrameM = FrameM.lay(Nil{}, Nil{}, Aux.touch(wa), ty, L.TL.memos.now(memos), cats, wraps, N.Imx.display(n), Aux.ix(wa, n), Aux.br(wa, n))
     +o : L.Out = FrameM.out(fm)
     +k : Nat = Lay.nops(o)
     +t3 : U32 <- PS.Perf.lap("ui.glyphs", t2)
@@ -2371,7 +2429,7 @@ def Shell.paint.want(ws: List<&2, X.Want>, o: L.Out, mmm: List<&2, MM.MainM>, sm
 # with the ops it made as ui.ops)
 def Shell.paint.c(+cats: Map<&2, CA.CatF>, +memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t1: U32) -> IO(Shell):
   do IO<Shell>:
-    +fm : FrameM = FrameM.lay(Aux.mm(wa), Aux.sm(wa), Aux.touch(wa), Aux.ty(wa), L.TL.memos.now(memos), cats, Aux.wraps(wa), n, Aux.ix(wa, n), Aux.br(wa, n))
+    +fm : FrameM = FrameM.lay(Aux.mm(wa), Aux.sm(wa), Aux.touch(wa), Aux.ty(wa), L.TL.memos.now(memos), cats, Aux.wraps(wa), N.Imx.display(n), Aux.ix(wa, n), Aux.br(wa, n))
     +o : L.Out = FrameM.out(fm)
     +k : Nat = Lay.nops(o)
     +t2 : U32 <- PS.Perf.lap("ui.layout", t1)
