@@ -221,7 +221,7 @@ void run_command(std::string line) {
     if (cmd == "show" || cmd == "size") {
       int x = e.x, y = e.y, w, h;
       if (cmd == "show" && !(s >> x >> y)) { error(); return; }
-      if (!(s >> w >> h) || w <= 0 || h <= 0 || w > 16384 || h > 16384 || !end()) { error(); return; }
+      if (!(s >> w >> h) || w <= 0 || h <= 0 || !end()) { error(); return; }
       if (cmd == "show") hide_all();
       e.x = x; e.y = y; e.w = w; e.h = h;
       XMoveResizeWindow(dpy, win, x, y, w, h);

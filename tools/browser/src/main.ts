@@ -830,8 +830,8 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
   async engine(a, name) { return switchEngine(a, name); },
   async show(a, name) {
     if (engine !== "cef") throw new Error("show needs the cef engine");
-    if (![a.x, a.y, a.w, a.h].every(Number.isInteger) || a.w < 1 || a.h < 1 || a.w > 4096 || a.h > 4096)
-      throw new Error("show needs integer x,y,w,h with w,h in 1..4096");
+    if (![a.x, a.y, a.w, a.h].every(Number.isInteger) || a.w < 1 || a.h < 1)
+      throw new Error("show needs integer x,y,w,h with positive w,h");
     const p = await ensurePage(name);
     await cef!.command("show", await cef!.key(p), `${a.x} ${a.y} ${a.w} ${a.h}`);
     const o = ownerFor(name); o.viewport = { width: a.w, height: a.h };
