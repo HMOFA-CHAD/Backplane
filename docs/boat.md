@@ -2,7 +2,8 @@
 
 Heavy commands (checks, proofs, tests, builds) can run on a disposable
 [Boat](https://boat.dev) sandbox instead of this machine, so they don't
-take the local "bend" lock or its memory.
+use its memory or cores. When Boat refuses a job (exit 75), nothing runs
+locally by itself: run it locally the usual way instead.
 
 ```
 work_run {note: "check on Boat",
@@ -11,7 +12,8 @@ work_run {note: "check on Boat",
 
 Size by default: **large (16 GB) for anything that runs PROOF** (`check.sh`,
 `check.sh proof`, `PROOF.bend`, the `dev.sh` gates): since #149 the proof
-peaks above the 8 GB machine (killed at 7.45 GB on main 851a915b0).
+peaks above the 8 GB machine (killed at 7.45 GB on main 851a915b0;
+`check.sh proof` on main 8cf5b48a2 peaks at 8.52 GB locally).
 Everything else, `check.sh check` included, runs on default. `--size` wins.
 
 Each thread keeps its sandbox **warm** after a job, for an idle window
