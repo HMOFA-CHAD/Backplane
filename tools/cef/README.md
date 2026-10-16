@@ -30,7 +30,7 @@ Flags:
 - `--size WxH`: initial child size (default 1280x800).
 - `--url URL`: optionally create the startup browser with key `main`.
   Without this flag no browser is created. Use `show main X Y W H` to display it.
-- `--at XxY`: retained for compatibility; protocol `show` sets placement.
+- `--at XxY`: initial position of the optional startup child; protocol `show` sets placement.
 - `--cache DIR`: CEF root profile, **never the Chrome profile**.
 - `--port N`: loopback DevTools endpoint (`/json/version`, `/json/list`).
 - The X display is `$DISPLAY`; Chromium switches are passed through.

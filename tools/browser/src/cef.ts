@@ -78,6 +78,9 @@ export class CefEngine extends EventEmitter {
         let e: Event;
         try { e = JSON.parse(line); } catch { continue; }
         if (e.target) this.targets.set(e.target, e);
+        if (e.event === "closed") for (const [target, info] of this.targets) {
+          if (info.key === e.key) this.targets.delete(target);
+        }
         if (e.cmd) {
           const q = this.pending.get(`${e.cmd}:${e.key ?? ""}`);
           const w = q?.shift();
@@ -91,6 +94,7 @@ export class CefEngine extends EventEmitter {
         clearTimeout(w.timer); w.reject(new Error(`CEF host exited (${code})`));
       }
       this.pending.clear();
+      if (this.downloads) rmSync(this.downloads, { recursive: true, force: true });
       this.emit("exit", code);
     });
     try {
@@ -114,6 +118,7 @@ export class CefEngine extends EventEmitter {
         this.downloadSession = await this.browser.newBrowserCDPSession();
         await this.downloadSession.send("Browser.setDownloadBehavior", { behavior: "allowAndName", downloadPath: this.downloads, eventsEnabled: true });
       } catch (e) { this.downloadError = `download unavailable in CEF: ${e}`; }
+      if (proc.exitCode !== null || !this.browser.isConnected()) throw new Error("CEF host exited during startup");
       return this.context;
     } catch (e) { await this.stop(); throw e; }
   }

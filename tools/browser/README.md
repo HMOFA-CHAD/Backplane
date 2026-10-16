@@ -318,7 +318,9 @@ children, adopted as the opener's active tab. CEF never calls
 | `focus` | owner `page` | `{}`; focus its active native child; cef only |
 
 Switching engines stops recording, reopens each owner's active URL in the
-new engine (best effort), then closes the previous engine. Other tabs and
+new engine (best effort), then closes the previous engine. Reconfiguring a
+live CEF host with the same cache closes it first, because CEF locks that
+profile against concurrent hosts. Other tabs and
 in-page state are not transferred. Chrome closes its persistent context;
 CEF receives `quit` and the helper waits for its exit. `close` without page
 and stdin EOF likewise quit and wait for the host before the helper exits.

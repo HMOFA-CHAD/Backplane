@@ -44,6 +44,14 @@ try {
   const pageClose = await until(() => h.events.find((e) => e.event === "closed" && e.key === "b"), "page close");
   check("window.close has page reason", pageClose.why === "page"); ws.close();
   await command("create c about:blank", "created", "c");
+  const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+  const browserWs = new WebSocket(version.webSocketDebuggerUrl);
+  await new Promise<void>((r, j) => { browserWs.onopen = () => r(); browserWs.onerror = j; });
+  browserWs.send(JSON.stringify({ id: 1, method: "Browser.close" }));
+  await until(() => h.events.find((e) => e.event === "closed" && e.key === "c"), "CDP Browser.close");
+  browserWs.close();
+  await command("create d about:blank", "created", "d");
+  check("CDP Browser.close leaves host running", h.proc.exitCode === null);
   h.proc.stdin.end();
   check("EOF closes remaining browsers and exits zero", await h.proc.exited === 0);
   console.log("all host protocol checks passed");

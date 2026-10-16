@@ -82,8 +82,9 @@ class Client : public CefClient, public CefLifeSpanHandler, public CefLoadHandle
  public:
   std::string key, opener, popup_url, why = "page", command;
   CefRefPtr<CefRegistration> observer;
-  Client(std::string k, std::string o = "", std::string u = "", std::string c = "")
-      : key(k), opener(o), popup_url(u), command(c) {}
+  int initial_x, initial_y;
+  Client(std::string k, std::string o = "", std::string u = "", std::string c = "", int x = 0, int y = 0)
+      : key(k), opener(o), popup_url(u), command(c), initial_x(x), initial_y(y) {}
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
@@ -115,7 +116,7 @@ class Client : public CefClient, public CefLifeSpanHandler, public CefLoadHandle
     for (auto it = pending_popups.begin(); it != pending_popups.end();) {
       if (it->second == key) it = pending_popups.erase(it); else ++it;
     }
-    pages[key] = {b, 0, 0, opts.w, opts.h};
+    pages[key] = {b, initial_x, initial_y, opts.w, opts.h};
     XUnmapWindow(dpy, b->GetHost()->GetWindowHandle()); XFlush(dpy);
     observer = b->GetHost()->AddDevToolsMessageObserver(this);
     b->GetHost()->ExecuteDevToolsMethod(1, "Target.getTargetInfo", nullptr);
@@ -170,13 +171,13 @@ class Client : public CefClient, public CefLifeSpanHandler, public CefLoadHandle
   IMPLEMENT_REFCOUNTING(Client);
 };
 
-void create(const std::string& key, const std::string& url, const std::string& cmd) {
+void create(const std::string& key, const std::string& url, const std::string& cmd, int x = 0, int y = 0) {
   reserved.insert(key); ++pending_browsers;
   CefWindowInfo wi;
-  wi.SetAsChild(parent, CefRect(0, 0, opts.w, opts.h));
+  wi.SetAsChild(parent, CefRect(x, y, opts.w, opts.h));
   wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
   CefBrowserSettings bs;
-  if (!CefBrowserHost::CreateBrowser(wi, new Client(key, "", "", cmd), url, bs, nullptr, nullptr)) {
+  if (!CefBrowserHost::CreateBrowser(wi, new Client(key, "", "", cmd, x, y), url, bs, nullptr, nullptr)) {
     reserved.erase(key); --pending_browsers;
     emit("\"event\":\"error\",\"cmd\":" + js(cmd) + fields(key) + ",\"error\":\"create failed\"");
   }
@@ -193,7 +194,10 @@ void run_command(std::string line) {
   auto end = [&]() { s >> std::ws; return s.eof(); };
   if (cmd == "quit" && end()) {
     if (quitting.exchange(true)) return;
-    for (auto& [k, e] : pages) e.browser->GetHost()->CloseBrowser(true);
+    for (auto& [k, e] : pages) {
+      static_cast<Client*>(e.browser->GetHost()->GetClient().get())->why = "other";
+      e.browser->GetHost()->CloseBrowser(true);
+    }
     if (pages.empty() && pending_browsers == 0) CefQuitMessageLoop();
     return;
   }
@@ -258,7 +262,7 @@ class App : public CefApp, public CefBrowserProcessHandler {
     if (getenv("BACKPLANE_CEF_NO_GPU")) cl->AppendSwitch("disable-gpu");
   }
   void OnContextInitialized() override {
-    if (!opts.url.empty()) create("main", opts.url, "create");
+    if (!opts.url.empty()) create("main", opts.url, "create", opts.x, opts.y);
   }
  private:
   IMPLEMENT_REFCOUNTING(App);
@@ -300,6 +304,7 @@ __attribute__((no_stack_protector)) int main(int argc, char** argv) {
   shield = XCreateWindow(dpy, parent, 0, 0, 1, 1, 0, 0, InputOnly, CopyFromParent, CWEventMask, &attr);
   XSync(dpy, False);
   CefSettings st;
+  CefString(&st.locale) = "en-US";
   st.no_sandbox = true; st.remote_debugging_port = opts.port; st.log_severity = LOGSEVERITY_WARNING;
   if (!opts.cache.empty()) {
     CefString(&st.root_cache_path) = opts.cache;

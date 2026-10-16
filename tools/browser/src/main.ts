@@ -252,6 +252,7 @@ async function launchCef(): Promise<BrowserContext> {
   const host = new CefEngine(cefOptions);
   cef = host;
   host.on("host", (e) => {
+    if (e.event === "closed") cefOwners.delete(e.key);
     if (e.event === "popup") {
       const o = cefOwners.get(e.opener);
       if (o) cefOwners.set(e.key, o);
@@ -307,9 +308,11 @@ async function closeTab(p: Page): Promise<void> {
 async function stopEngine(): Promise<void> {
   for (const o of owners.values()) { o.recording = false; await stopShots(o); clearShot(o); }
   await stopScreencast();
+  const ctx = context;
+  context = null;
   if (cef) await cef.stop();
-  else await context?.close();
-  context = null; spare = [];
+  else await ctx?.close();
+  spare = [];
   for (const o of owners.values()) { o.tabs = []; o.active = null; }
 }
 async function switchEngine(a: Json, name: string): Promise<Json> {
@@ -329,12 +332,17 @@ async function switchEngine(a: Json, name: string): Promise<Json> {
   if (a.engine === engine && context && (engine === "chrome" || JSON.stringify(next) === JSON.stringify(cefOptions))) return status(name);
   const urls = [...owners.values()].filter((o) => o.active && !o.active.isClosed()).map((o) => ({ name: o.name, url: o.active!.url() }));
   const oldContext = context, oldCef = cef;
+  // CEF's singleton profile lock prevents overlapping hosts using one cache.
+  // Engine changes between Chrome and CEF can overlap as specified; reconfiguring
+  // a live CEF host with the same cache must release that lock first.
+  const sameCefCache = oldCef && a.engine === "cef" && resolve(oldCef.options.cache) === resolve(next.cache);
   // Keep the old engine alive until the replacement pages have been opened.
   context = null; cef = null; spare = [];
   for (const o of owners.values()) { o.recording = false; await stopShots(o); clearShot(o); o.tabs = []; o.active = null; }
   await stopScreencast();
   engine = a.engine; cefOptions = next;
   try {
+    if (sameCefCache) await oldCef!.stop();
     await ensureContext();
     for (const u of urls) {
       try { await (await ensurePage(u.name)).goto(u.url, { waitUntil: "load", timeout: DEFAULT_TIMEOUT }); }
@@ -397,7 +405,8 @@ async function adopt(o: Owner, p: Page): Promise<void> {
     if (next) void activate(o, next).catch((e) => log(`tab: ${e}`));
     else clearShot(o);
   });
-  await sizePage(o, p);
+  if (engine === "cef") await sizePage(o, p);
+  else await p.setViewportSize(o.viewport).catch(() => {});
   // a tab adopted while recording (a popup) was told "no" on its first load
   if (o.recording) await recorderSet(o, true);
 }
@@ -1078,7 +1087,8 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
     const o = ownerFor(name);
     await ensurePage(name);
     if (a.new !== undefined && a.new !== false) {
-      const p = await newTab(o);
+      const p = engine === "cef" ? await newTab(o) : await (await ensureContext()).newPage();
+      if (engine !== "cef") { await adopt(o, p); await activate(o, p); }
       const url = typeof a.new === "string" ? a.new : a.url;
       if (url) await p.goto(normalizeUrl(url), { waitUntil: "load", timeout: timeoutOf(a) });
     } else if (a.select !== undefined) {
