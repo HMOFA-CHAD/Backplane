@@ -8,6 +8,7 @@ bends) and a difference is reported as a warning.
 The person sees four lines and a total: manufacturing, shipping, duties and
 taxes, and our fee (FEE of everything, FEE_CNC of CNC parts).
 """
+import re
 import datetime
 
 from . import catalog, config, duties, sourcing, vendor_api
@@ -18,6 +19,15 @@ DENSITY = {"aluminum": 2.7, "stainless": 7.95, "steel": 7.85, "brass": 8.5, "cop
            "pom": 1.41, "pmma": 1.18, "nylon": 1.14, "polycarbonate": 1.2, "fr4": 1.85, "resin": 1.15, "metal": 7.95}
 BOARD_DENSITY = 1.85
 
+
+
+# the person never sees who makes it: notes from the fab's own price models
+# name it, so its names become "the fab" before anything is shown
+_FAB = re.compile(r"\b(?:JLCPCB|JLC3DP|JLCCNC|JLCMC|JLC|LCSC|EasyEDA)(?:'s)?\b", re.I)
+
+
+def neutral(text):
+    return _FAB.sub(lambda m: "the fab's" if m.group(0).lower().endswith("'s") else "the fab", str(text))
 
 def density(material):
     m = (material or "").lower()
@@ -159,7 +169,7 @@ def price(manifest, measured):
     lines = [
         {"label": "Manufacturing", "amount": round(goods, 2),
          "detail": "Boards, assembly and components" if any(p.get("assembled") for p in parts_out) else "Boards and parts"},
-        {"label": "Shipping", "amount": round(ship["price"], 2), "detail": ", ".join(x for x in (ship.get("method"), ship.get("days")) if x)},
+        {"label": "Shipping", "amount": round(ship["price"], 2), "detail": neutral(", ".join(x for x in (ship.get("method"), ship.get("days")) if x))},
         {"label": "Duties & taxes", "amount": round(tax, 2), "detail": duties.note(country, ddp)},
         {"label": "Service & price-assurance fee", "amount": round(fee, 2),
          "detail": f"{config.FEE:.0%}" + (f", {config.FEE_CNC:.0%} on CNC parts" if cnc else "")},
@@ -167,8 +177,8 @@ def price(manifest, measured):
     total = round(sum(ln["amount"] for ln in lines), 2)
     q = {"title": manifest.get("title") or "", "country": country, "country_name": duties.name(country),
          "currency": config.CURRENCY, "parts": parts_out, "lines": lines, "total": total,
-         "part_lines": part_lines, "lead_days": lead, "problems": problems, "warnings": warnings,
-         "shipping": {"method": ship.get("method", ""), "days": ship.get("days", ""), "ddp": ddp},
+         "part_lines": part_lines, "lead_days": lead, "problems": [neutral(x) for x in problems], "warnings": [neutral(x) for x in warnings],
+         "shipping": {"method": neutral(ship.get("method", "")), "days": ship.get("days", ""), "ddp": ddp},
          "priced_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
     q["markdown"] = markdown(q)
     q["pay_label"] = f"Buy now · {money(total)}"
