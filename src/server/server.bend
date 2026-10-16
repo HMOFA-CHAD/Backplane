@@ -11399,7 +11399,7 @@ def Od.ask(ok: Bool, h: Hub, +thread: String, +dir: String, +abs: String, +m: J.
   match ok h:
     case False{} _:
       do IO<Hub>:
-        Gg.say(reply, rid, False{}, "no manifest.json with files to send in " ++ dir ++ " (paths must stay inside the folder, plain characters only)")
+        Gg.say(reply, rid, False{}, "no manifest.json with files to send in " ++ dir ++ " (paths must stay inside the folder, plain characters only, and the folder must hold plain files, no links)")
         return h
     case True{} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
       do IO<Hub>:
@@ -11409,6 +11409,8 @@ def Od.ask(ok: Bool, h: Hub, +thread: String, +dir: String, +abs: String, +m: J.
         IO.spawn(Unit, Od.wait(r2, inbox, Cfg.home(cfg), Od.server(st), abs, ps, thread, rid, reply))
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", "order_quote", OR.Order.ask.detail(dir, m, ps), "", now}], Nil{}})
 
+# (a folder holding links is refused: a link named like a design file could
+# carry any file of the person's out, under a name they would approve)
 def Od.quote(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
@@ -11416,9 +11418,11 @@ def Od.quote(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Na
         +dir : String = String.trim(J.Json.get_str(Gg.args(o), "dir", ""))
         +abs : String = B.Hub.cwd(st, B.Hub.thread(st, thread)) ++ "/" ++ dir
         text : String <- GS.Gf.text(abs ++ "/manifest.json")
+        links : P.Ran <- P.Proc.run("sh", ["-c", "find . -type l 2>/dev/null | head -n 1"], abs)
         +m : J.Json = Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})
         +ps : List<&2, String> = ODI.Od.files(m)
-        Od.ask(Bool.and(Bool.and(ODI.Od.safe(dir), ODI.Od.all.safe(ps)), Bool.not(List.is_empty(&2, String, ps))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, dir, abs, m, ps, J.Json.get_obj(o, "id"), reply, now)
+        Od.ask(Bool.and(Bool.and(Bool.and(ODI.Od.safe(dir), ODI.Od.all.safe(ps)), Bool.not(List.is_empty(&2, String, ps))), String.is_empty(String.trim(ODI.Od.ran(links)))),
+          Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, dir, abs, m, ps, J.Json.get_obj(o, "id"), reply, now)
 
 def Od.status.said(none: Bool, +j: J.Json, +home: String, +install: String, +rid: J.Json, +reply: Chan(String)) -> IO(Unit):
   match none:
