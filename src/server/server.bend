@@ -11,6 +11,7 @@ import ../core/model.bend as M
 import ../core/codec.bend as C
 import ../core/hub.bend as B
 import ../core/deploy.bend as DP
+import ../core/ship.bend as SHP
 import ../core/prompt.bend as Q
 import ../core/mcp.bend as MC
 import ./update.bend as UP
@@ -164,6 +165,13 @@ type Msg is Data:
   # and a failed swap of its staged package (core/deploy.bend, hub.bend's Deploy.*)
   DeployLocks{free: Bool}
   DeployFailed{err: String}
+  # deploy_main (Ship*): origin/main read for a call (out: the look's
+  # lines), for a follow-up or deploy.follow; a build's job started (out:
+  # "PID <pid> <ident>"), ended or gone (out: its STATUS, VERSION, STAGE, log tail)
+  ShipAsked{thread: String, body: String, reply: Chan(String), out: String}
+  ShipNewest{why: String, out: String}
+  ShipPid{commit: String, out: String}
+  ShipDone{commit: String, out: String}
   ModelsFound{models: String, text: String}
   MachinesFound{machines: String}
   # the tailnet listener is up: the pairing link clients show in Settings
@@ -3194,6 +3202,98 @@ def Deploy.go.p(+stage: String, +exe: String, +inbox: Chan(Msg)) -> IO(Unit):
 
 def Deploy.go(+stage: String, +inbox: Chan(Msg)) -> IO(Unit):
   IO.bind(String, Unit, H.Sys.exe_dir(), exe => Deploy.go.p(stage, exe, inbox))
+
+# Deploying origin/main (hub.bend's Ship.*, core/ship.bend, docs/deploy.md)
+# -------------------------------------------------------------------------
+# Off the hub: git reads origin/main (Ship.look.sh: its commit, and which
+# candidate commits contain it); a build runs as a job of its own under
+# <home>/deploy/<commit>/ (run.sh, its log out, pkg the staged package, code
+# its exit status), started with setsid inside deploy.wrap (a command
+# prefix, default empty: then `systemd-run --user --scope` when the user's
+# systemd answers), so neither a hub OOM nor the restart it asks for cuts
+# it. The hub only watches it (Ship.check.sh every 5 s), also after its own
+# restart; a job is lost only when it is gone without an exit status.
+
+def Ship.look.sh() -> String:
+  "export GIT_TERMINAL_PROMPT=0\ncd \"$1\" 2>/dev/null || { echo \"ERR no checkout at $1\"; exit 0; }\ne=$(git fetch -q origin main 2>&1) || { echo \"ERR git fetch origin main: $(printf '%s' \"$e\" | tail -n 1)\"; exit 0; }\nt=$(git rev-parse --verify -q origin/main) || { echo \"ERR no origin/main in $1\"; exit 0; }\necho \"HEAD $t\"\nfor c in $(printf '%s' \"$2\" | tr ',' ' '); do git merge-base --is-ancestor \"$t\" \"$c\" 2>/dev/null && echo \"IN $c\"; done\nexit 0\n"
+
+def Ship.run.sh() -> String:
+  "pid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nalive() { p=$(cat \"$1/$2\" 2>/dev/null); [ -n \"$p\" ] && [ \"$p\" -gt 1 ] 2>/dev/null && [ -n \"$(pid_id \"$p\")\" ] && [ \"$(pid_id \"$p\")\" = \"$(cat \"$1/$2id\" 2>/dev/null)\" ]; }\nd=$1; repo=$2; c=$3\necho $$ > \"$d/pid\"; pid_id $$ > \"$d/pidid\"\nlog=$d/out; : > \"$log\"\nrm -rf \"$d/wt\" \"$d/pkg\"\nrc=0\ngit -C \"$repo\" worktree add -q --detach \"$d/wt\" \"$c\" >>\"$log\" 2>&1 || rc=$?\nif [ \"$rc\" = 0 ]; then (cd \"$d/wt\" && exec scripts/dev.sh stage \"$d/pkg\") >>\"$log\" 2>&1 </dev/null || rc=$?; fi\ngit -C \"$repo\" worktree remove --force \"$d/wt\" >>\"$log\" 2>&1; rm -rf \"$d/wt\"; git -C \"$repo\" worktree prune >/dev/null 2>&1\nif [ \"$rc\" = 0 ] && [ ! -d \"$d/pkg\" ]; then echo \"no package was staged in $d/pkg\" >>\"$log\"; rc=1; fi\nif [ \"$rc\" = 0 ]; then for x in \"$d\"/../*/pkg; do [ -d \"$x\" ] && [ ! \"$x\" -ef \"$d/pkg\" ] && rm -rf \"$x\"; done; fi\necho \"$rc\" > \"$d/code.tmp\" && mv \"$d/code.tmp\" \"$d/code\"\n"
+
+def Ship.launch.sh() -> String:
+  "pid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nalive() { p=$(cat \"$1/$2\" 2>/dev/null); [ -n \"$p\" ] && [ \"$p\" -gt 1 ] 2>/dev/null && [ -n \"$(pid_id \"$p\")\" ] && [ \"$(pid_id \"$p\")\" = \"$(cat \"$1/$2id\" 2>/dev/null)\" ]; }\nb=$1; repo=$2; c=$3; wrap=$4; run=$5\nd=$b/$(printf '%s' \"$c\" | cut -c1-12)\nmkdir -p \"$d\" || { echo \"ERR cannot make $d\"; exit 0; }\nif [ -e \"$d/started\" ]; then echo \"RUNNING\"; exit 0; fi\nfor x in \"$b\"/*; do [ \"$x\" = \"$d\" ] && continue; [ -d \"$x/wt\" ] || continue; if [ -e \"$x/code\" ] || { ! alive \"$x\" pid && ! alive \"$x\" gpid; }; then git -C \"$repo\" worktree remove --force \"$x/wt\" >/dev/null 2>&1; rm -rf \"$x/wt\"; fi; done\ngit -C \"$repo\" worktree prune >/dev/null 2>&1\nif [ -z \"$wrap\" ] && command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then wrap=\"systemd-run --user --scope -q --\"; fi\nprintf '%s\\n' \"$run\" > \"$d/run.sh\"\nprintf '%s sh \"%s/run.sh\" \"%s\" \"%s\" \"%s\"\\n' \"$wrap\" \"$d\" \"$d\" \"$repo\" \"$c\" > \"$d/go.sh\"\n: > \"$d/started\"\nif command -v setsid >/dev/null 2>&1; then setsid nohup sh \"$d/go.sh\" > \"$d/launch.out\" 2>&1 < /dev/null &\nelse nohup sh \"$d/go.sh\" > \"$d/launch.out\" 2>&1 < /dev/null &\nfi\ng=$!\necho \"$g\" > \"$d/gpid\"; pid_id \"$g\" > \"$d/gpidid\"\necho \"PID $g $(cat \"$d/gpidid\")\"\n"
+
+def Ship.check.sh() -> String:
+  "pid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nalive() { p=$(cat \"$1/$2\" 2>/dev/null); [ -n \"$p\" ] && [ \"$p\" -gt 1 ] 2>/dev/null && [ -n \"$(pid_id \"$p\")\" ] && [ \"$(pid_id \"$p\")\" = \"$(cat \"$1/$2id\" 2>/dev/null)\" ]; }\nd=$1\nst() { echo \"VERSION $(sed -n 's/.*built \\([^ ]*\\).*/\\1/p' \"$d/out\" 2>/dev/null | tail -n 1)\"; echo \"STAGE $d/pkg\"; tail -n 15 \"$d/out\" 2>/dev/null | sed 's/\\x1b\\[[0-9;]*m//g'; }\n[ -e \"$d/code\" ] && { echo \"STATUS done $(cat \"$d/code\")\"; st; exit 0; }\nif alive \"$d\" pid || alive \"$d\" gpid; then echo \"STATUS running\"; exit 0; fi\n[ -e \"$d/code\" ] && { echo \"STATUS done $(cat \"$d/code\")\"; st; exit 0; }\necho \"STATUS gone\"; st\n"
+
+def Ship.base(+home: String) -> String:
+  home ++ "/deploy"
+
+def Ship.dir(+home: String, +commit: String) -> String:
+  Ship.base(home) ++ "/" ++ String.take(commit, 12n)
+
+def ShipJob.say(+inbox: Chan(Msg), m: Msg) -> IO(Unit):
+  do IO<Unit>:
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, m)
+    return Unit{}
+
+def ShipJob.out(r: P.Ran) -> String:
+  match r:
+    case P.Ran{_, out}:
+      out
+
+# origin/main read for a deploy_main call, which the hub then answers
+def ShipJob.ask(+repo: String, +cands: String, +thread: String, +body: String, +reply: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", Ship.look.sh(), "sh", repo, cands], "/")
+    ShipJob.say(inbox, ShipAsked{thread, body, reply, ShipJob.out(r)})
+
+# origin/main read again (why: next, follow)
+def ShipJob.next(+repo: String, +cands: String, +why: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", Ship.look.sh(), "sh", repo, cands], "/")
+    ShipJob.say(inbox, ShipNewest{why, ShipJob.out(r)})
+
+def ShipJob.got.k(run: Bool, +out: String, +commit: String, +inbox: Chan(Msg), k: Unit -> IO(Unit)) -> IO(Unit):
+  match run:
+    case True{}:
+      k(Unit{})
+    case False{}:
+      ShipJob.say(inbox, ShipDone{commit, out})
+
+def ShipJob.got(r: P.Ran, +commit: String, +inbox: Chan(Msg), k: Unit -> IO(Unit)) -> IO(Unit):
+  match r:
+    case P.Ran{_, +out}:
+      ShipJob.got.k(String.eq(SHP.Ran.status(out), "running"), out, commit, inbox, k)
+
+# the build's job looked at every 5 s until it ends or is gone
+def ShipJob.loop(fuel: Nat, +d: String, +commit: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+f:
+      do IO<Unit>:
+        r : P.Ran <- P.Proc.run("sh", ["-c", Ship.check.sh(), "sh", d], "/")
+        ShipJob.got(r, commit, inbox, u => IO.bind(Unit, Unit, IO.sleep(5000), v => ShipJob.loop(f, d, commit, inbox)))
+
+def ShipJob.pid.k(+out: String, +commit: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match out:
+    case SNil{}:
+      IO.pure(Unit, Unit{})
+    case SCon{_, _}:
+      ShipJob.say(inbox, ShipPid{commit, out})
+
+# launched now: the hub records its pid (ShipPid); launched before (a
+# restart) or not at all, nothing is recorded and the look tells
+def ShipJob.launched(+out: String, +commit: String, +inbox: Chan(Msg)) -> IO(Unit):
+  ShipJob.pid.k(SHP.Look.pick(String.lines(out), "PID "), commit, inbox)
+
+def ShipJob.run(+repo: String, +wrap: String, +home: String, +commit: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", Ship.launch.sh(), "sh", Ship.base(home), repo, commit, wrap, Ship.run.sh()], "/")
+    ShipJob.launched(ShipJob.out(r), commit, inbox)
+    ShipJob.loop(Fuel.forever(), Ship.dir(home, commit), commit, inbox)
+
 
 def Upgrade.done.k(ok: Bool, force: Bool, +err: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ok:
@@ -8002,6 +8102,14 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         IO.spawn(Unit, Deploy.go(stage, inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.ShipRun{+commit}:
+      do IO<Hub>:
+        IO.spawn(Unit, ShipJob.run(B.Ship.repo(st), B.Ship.wrap(st), Cfg.home(cfg), commit, inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{+st, f, ls, cl, as, +inbox, cfg, note} B.ShipNext{+why}:
+      do IO<Hub>:
+        IO.spawn(Unit, ShipJob.next(B.Ship.repo(st), B.Ship.cands(st), why, inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.Restart{}:
       do IO<Hub>:
         IO.spawn(Unit, Upgrade.restart(inbox))
@@ -9048,9 +9156,28 @@ def Hub.mcp.file.k(file: Bool, h: Hub, +thread: String, +o: J.Json, +body: Strin
     case False{}:
       Hub.mcp.hub.pr(h, thread, body, reply, now)
 
-def Hub.mcp.hub(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+def Hub.mcp.hub.w(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   +o = Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})
   Hub.mcp.file.k(Bool.and(String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "wake_on"), String.eq(J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "kind", ""), "file")), h, thread, o, body, reply, now)
+
+# deploy_main with deploy.repo set: origin/main is read off the hub first
+# (ShipJob.ask), then the call is answered (Hub.ship.asked)
+def Hub.mcp.ship(go: Bool, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match go h:
+    case True{} Hub{+st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, ShipJob.ask(B.Ship.repo(st), B.Ship.cands(st), thread, body, reply, inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case False{} _:
+      Hub.mcp.hub.w(h, thread, body, reply, now)
+
+def Hub.mcp.ship.is(+body: String) -> Bool:
+  String.eq(J.Json.get_str(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "params"), "name", ""), "deploy_main")
+
+def Hub.mcp.hub(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.mcp.ship(Bool.and(Hub.mcp.ship.is(body), Bool.not(String.is_empty(B.Ship.repo(st)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, body, reply, now)
 
 # the approved folder, resolved: added (or found) and the tool answered
 def Hub.newproj.made(h: Hub, +root: String, +name: String, +id: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
@@ -11386,6 +11513,14 @@ def Msg.kind(m: Msg) -> String:
       "deploy_locks"
     case DeployFailed{_}:
       "deploy_failed"
+    case ShipAsked{_, _, _, _}:
+      "ship_asked"
+    case ShipNewest{_, _}:
+      "ship_newest"
+    case ShipPid{_, _}:
+      "ship_pid"
+    case ShipDone{_, _}:
+      "ship_done"
     case Mcp{_, _, _}:
       "mcp"
     case McpOpen{_, _, _}:
@@ -11854,6 +11989,35 @@ def Hub.deploy_failed.k(p: M.State & Hub, +err: String, +now: Nat) -> IO(Hub):
 def Hub.deploy_failed(h: Hub, err: String, +now: Nat) -> IO(Hub):
   Hub.deploy_failed.k(Hub.state(h), err, now)
 
+# deploy_main (hub.bend's Ship.*): the call answered with origin/main read
+def Hub.ship.asked(h: Hub, +thread: String, +body: String, +reply: Chan(String), +out: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id"), J.Null{}),
+          MC.Mcp.ship(st, now, thread, J.Json.get_obj(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "params"), "arguments"), out)),
+        Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, body)
+
+def Hub.ship.newest.k(p: M.State & Hub, +why: String, +out: String, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.step(h, B.Ship.newest(st, now, why, out))
+
+def Hub.ship.newest(h: Hub, +why: String, +out: String, +now: Nat) -> IO(Hub):
+  Hub.ship.newest.k(Hub.state(h), why, out, now)
+
+def Hub.ship.pid.k(p: M.State & Hub, +commit: String, +out: String, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.step(h, B.Ship.pid(st, now, commit, out))
+
+def Hub.ship.pid(h: Hub, +commit: String, +out: String, +now: Nat) -> IO(Hub):
+  Hub.ship.pid.k(Hub.state(h), commit, out, now)
+
+def Hub.ship.done.k(p: M.State & Hub, +commit: String, +out: String, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.step(h, B.Ship.done(st, now, commit, out))
+
+def Hub.ship.done(h: Hub, +commit: String, +out: String, +now: Nat) -> IO(Hub):
+  Hub.ship.done.k(Hub.state(h), commit, out, now)
+
 def Hub.launch.sent(p: M.State & Hub, +key: String, +now: Nat) -> IO(Hub):
   (st, h) = p
   Hub.step(h, B.Lr.far.sent(st, now, key))
@@ -11953,6 +12117,14 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.deploy_locks(h, free, now)
     case DeployFailed{err}:
       Hub.deploy_failed(h, err, now)
+    case ShipAsked{thread, body, reply, out}:
+      Hub.ship.asked(h, thread, body, reply, out, now)
+    case ShipNewest{why, out}:
+      Hub.ship.newest(h, why, out, now)
+    case ShipPid{commit, out}:
+      Hub.ship.pid(h, commit, out, now)
+    case ShipDone{commit, out}:
+      Hub.ship.done(h, commit, out, now)
     case Mcp{thread, body, reply}:
       Hub.mcp.g(h, B.Tag.thread(thread), body, reply, now)
     case McpOpen{thread, call, body}:

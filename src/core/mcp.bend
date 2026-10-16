@@ -6,6 +6,7 @@ import ./review.bend as RVW
 import ./codec.bend as C
 import ./hub.bend as B
 import ./deploy.bend as DP
+import ./ship.bend as SH
 import ./acp.bend as AC
 import ./msp.bend as MS
 import ./handoff.bend as HD
@@ -124,7 +125,9 @@ def Mcp.tools() -> J.Json:
       [Tool.prop("threadId", "string", "The thread.")], ["threadId"]),
     Tool.def("deploy_restart", "Restart the Backplane hub into a new build safely. Answers at once: the restart waits until no thread is inside a tool call (a build, an edit) and the build lock (/tmp/bp-bend.lock) is free, then goes; every turn it cuts resumes by itself. With stage, a directory holding the built package (backplane, backplane-serve, web/ ...) is swapped into the install first. You are woken after the restart with the new version: end your turn, do not wait.",
       [Tool.prop("stage", "string", "Absolute path of a staged package to install first (default: the files are already in place)."), Tool.prop("note", "string", "Why, shown to the person.")], Nil{}),
-    Tool.def("deploy_status", "Whether a deploy_restart waits, who asked, and what it still waits for (tool calls in flight, the build lock).", Nil{}, Nil{}),
+    Tool.def("deploy_status", "Whether a deploy_restart waits, who asked, and what it still waits for (tool calls in flight, the build lock); under main, deploy_main's state (the commit building, staged, live).", Nil{}, Nil{}),
+    Tool.def("deploy_main", "Deploy origin/main to this machine's hub: the hub fetches it in its source checkout (setting deploy.repo), builds it in a job of its own and restarts into it safely (as deploy_restart). Answers at once: queued, skipped (origin/main is already in the commit being built, staged or live: the answer names it) or not configured. One build runs at a time; requests during it make one more build of the newest origin/main. When the build ends you are told (commit, version, result): end your turn, do not wait or poll.",
+      [Tool.prop("note", "string", "Why, shown with the request.")], Nil{}),
     Tool.def("deploy_cancel", "Cancel a waiting deploy_restart.", Nil{}, Nil{}),
     Tool.def("viewer_show",
       "Show a file in the user's Backplane viewer panel: a .kicad_pcb on the Board tab (kind 3d: the board in 3D), a .kicad_sch on the Schematic tab, and any .step/.stp or .glb on the Mech tab, the 3D design tab (the model turned in 3D, the project's parts in mech/ beside it, their renders a tap away), wherever the file is. Use it after changing a design so the user sees the result; the viewer also follows the file live.",
@@ -629,7 +632,7 @@ def Mcp.send.k(ok: Bool, +s: M.State, +now: Nat, +thread: String, +target: Strin
 
 def Mcp.names() -> List<&2, String>:
   ["orchestrator_capabilities", "delegate_task", "task_status", "task_cancel", "thread_list", "thread_read", "thread_send", "viewer_show",
-   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment", "wake_on", "wake_list", "wake_cancel", "deploy_restart", "deploy_status", "deploy_cancel", "lock_acquire", "lock_release", "lock_list", "lock_cancel"]
+   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment", "wake_on", "wake_list", "wake_cancel", "deploy_restart", "deploy_status", "deploy_cancel", "lock_acquire", "lock_release", "lock_list", "lock_cancel", "deploy_main"]
 
 def Mcp.lock.acquire(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
   match ok:
@@ -756,6 +759,37 @@ def Mcp.deploy.restart(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.
     case False{}:
       Res.fail("stage must be an absolute path")
 
+# deploy_main (core/ship.bend, hub.bend's Ship.*). The server reads
+# origin/main first (server.bend's Ship.look) and answers through Mcp.ship;
+# reaching the decider unread means no deploy.repo is set.
+def Mcp.ship.none(empty: Bool) -> Res:
+  match empty:
+    case True{}:
+      Res.ok(J.Json.obj([J.KV{"state", J.Str{"not configured"}}, J.KV{"next", J.Str{"deploy_main is off on this hub: the setting deploy.repo (the source checkout to build) is not set. Tell the person; do not deploy by hand."}}]))
+    case False{}:
+      Res.fail("deploy_main: origin/main was not read; try again")
+
+def Mcp.ship.answer(+cover: String, start: Bool, +sh: SH.Ship, +head: String) -> J.Json:
+  Bool.pick(J.Json, Bool.not(String.is_empty(cover)),
+    J.Json.obj([J.KV{"state", J.Str{"skipped"}}, J.KV{"head", J.Str{head}}, J.KV{"commit", J.Str{SH.Ship.by(sh, cover)}}, J.KV{"covered", J.Str{cover}},
+      J.KV{"next", J.Str{Bool.pick(String, String.eq(cover, "building"), "origin/main is in the build under way; you will be told when it ends. End your turn.", "origin/main is already " ++ cover ++ " here; nothing to do.")}}]),
+    Bool.pick(J.Json, start,
+      J.Json.obj([J.KV{"state", J.Str{"queued"}}, J.KV{"commit", J.Str{head}}, J.KV{"next", J.Str{"Building it. You will be told when the build ends (commit, version, result). End your turn."}}]),
+      J.Json.obj([J.KV{"state", J.Str{"queued"}}, J.KV{"head", J.Str{head}}, J.KV{"after", J.Str{SH.Ship.commit(sh)}},
+        J.KV{"next", J.Str{"A build is under way; one more of the newest origin/main follows it. You will be told when that ends. End your turn."}}])))
+
+def Mcp.ship.k(ok: Bool, +s: M.State, +now: Nat, +by: String, +note: String, +out: String) -> Res:
+  match ok:
+    case True{}:
+      Res{True{}, Mcp.ship.answer(SH.Ship.cover(B.Ship.eff(s), SH.Look.head(out), SH.Look.within(out)), SH.Ship.start(B.Ship.eff(s), SH.Look.head(out), SH.Look.within(out)), B.Ship.eff(s), SH.Look.head(out)),
+        B.Ship.ask(s, now, by, note, SH.Look.head(out), SH.Look.within(out))}
+    case False{}:
+      Res.fail("deploy_main could not read origin/main in " ++ B.Ship.repo(s) ++ ": " ++ SH.Look.err(out))
+
+# deploy_main with origin/main read (out: the look's lines)
+def Mcp.ship(+s: M.State, +now: Nat, +thread: String, +a: J.Json, +out: String) -> Res:
+  Mcp.ship.k(String.is_empty(SH.Look.err(out)), s, now, B.Ship.by(thread), J.Json.get_str(a, "note", ""), out)
+
 def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +a: J.Json) -> Res:
   match i:
     case 0n:
@@ -825,6 +859,8 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
       Res.ok(DP.Deploy.status(s))
     case 28n:
       Res{True{}, J.Json.obj([J.KV{"state", J.Str{"cancelled"}}]), B.Deploy.cancel(s, now)}
+    case 33n:
+      Mcp.ship.none(String.is_empty(B.Ship.repo(s)))
     case _:
       Res.fail("unknown tool")
 

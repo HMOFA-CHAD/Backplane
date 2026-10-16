@@ -37,6 +37,7 @@ import ./src/app/bots.bend as BV
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
 import ./src/core/deploy.bend as DP
+import ./src/core/ship.bend as SHP # deploy main
 import ./src/core/cmds.bend as CM
 import ./src/core/errtail.bend as ERT
 import ./src/core/keyring.bend as KRG
@@ -9259,3 +9260,63 @@ law chip_warm_not_stale:
   for +gen: Nat
   for +now: Nat
   {UZ.Chip.stale("warm", gen, now) == False{} : Bool}
+
+# ---- deploy main ----
+# deploy_main (core/ship.bend): a request something covers (the commit
+# being built, staged or live already holds origin/main) never starts a build
+law ship_covered_never_builds:
+  for c: Char
+  for cs: String
+  for busy: Bool
+  {SHP.Ship.start.k(SCon{c, cs}, busy) == False{} : Bool}
+
+# at most one build at a time: while one is on its way none starts
+law ship_busy_never_builds:
+  for +cover: String
+  {SHP.Ship.start.k(cover, True{}) == False{} : Bool}
+
+law ship_building_is_busy:
+  {SHP.Ship.busy(SHP.Ship.demo.building()) == True{} : Bool}
+
+# requests during a build yield at most one further build: whatever came,
+# the end leaves no second follow-up wanted
+law ship_coalesce_at_most_one:
+  for sh: SHP.Ship
+  for +state: String
+  for +commit: String
+  {SHP.Ship.more(SHP.Ship.end(sh, state, commit)) == False{} : Bool}
+
+# three requests (t2 twice, t3) during the build of c1: one follow-up, for
+# t2 and t3
+law ship_coalesce_three:
+  {SHP.Ship.phase(SHP.Ship.end(SHP.Ship.demo.queued(), "staged", "c1")) == "asked" : String}
+
+law ship_coalesce_askers:
+  {SHP.Ship.askers(SHP.Ship.end(SHP.Ship.demo.queued(), "staged", "c1")) == ["t2", "t3"] : List<&2, String>}
+
+# every asker since the last report is told once: one who asks twice is
+# listed once, and after the report no one is left to tell again
+law ship_told_each_once:
+  {SHP.Ship.told(SHP.Ship.asked(SHP.Ship.asked(SHP.Ship.demo.building(), "t1", "building"), "t4", "building")) == ["t1", "t4"] : List<&2, String>}
+
+law ship_told_cleared:
+  {SHP.Ship.told(SHP.Ship.end(SHP.Ship.demo.building(), "failed", "c1")) == [] : List<&2, String>}
+
+law ship_told_next_cleared:
+  for sh: SHP.Ship
+  for +state: String
+  for +commit: String
+  {SHP.Ship.next(SHP.Ship.end(sh, state, commit)) == [] : List<&2, String>}
+
+# a request a covered build holds is told at its end, not queued again
+law ship_covered_joins_build:
+  {SHP.Ship.more(SHP.Ship.asked(SHP.Ship.demo.building(), "t2", "building")) == False{} : Bool}
+
+# deploy.follow is off unless set "on"
+law ship_follow_off_default:
+  {SHP.Ship.follow.on("") == False{} : Bool}
+
+# a build gone without an exit status is never success
+law ship_gone_not_ok:
+  {SHP.Ran.ok("STATUS gone\nVERSION \n") == False{} : Bool}
+# ---- end deploy main ----
