@@ -53,7 +53,7 @@ if (prompt.includes("ride-long")) {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "thread_wait", arguments: { threadId: target, timeoutMs: 600000 } } }) });
     how = "answered " + (await r.text()).slice(0, 200);
   } catch (e) { how = "error " + e; }
-  log({ ev: "cut", pid: process.pid, how });
+  log({ ev: "cut", pid: process.pid, how, at: Date.now() });
   await sleep(600000);
 } else if (prompt.includes("ride-quiet")) {
   await sleep(Number(process.env.RIDE_QUIET_MS ?? 20000));

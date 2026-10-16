@@ -116,6 +116,10 @@ type Msg is Data:
   LockHttp{op: String, body: String, reply: Chan(String)}
   Announce{text: String}
   Mcp{thread: String, body: String, reply: Chan(String)}
+  # a request on the MCP route arrived, its answer was written (the open
+  # calls a deploy waits for: core/deploy.bend's Open.mcp)
+  McpOpen{thread: String, call: String, body: String}
+  McpShut{thread: String, call: String}
   # gen: the connection's generation (a socket's id; the window's client 0
   # joins again under a new one); sock: a raw descriptor on its socket (0
   # for none), shut at once when it falls too far behind (core/outbox.bend)
@@ -1262,12 +1266,19 @@ def Mcp.answer(m: Maybe<&1, String>, s: Socket) -> IO(Unit):
     case None{}:
       Conn.finish(s, W.Http.text("503 Service Unavailable", "the hub is gone"))
 
+# the call counts as in flight (for a safe deploy) from its arrival until
+# its answer is written
 def Mcp.ask.raw(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
+    +t0 : U32 <- PS.Perf.us()
+    +call : String = U32.show(t0) ++ "." ++ Nat.show(String.length(body))
+    ok0 : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, McpOpen{thread, call, body})
     +reply : Chan(String) <- Chan.new(String, 1)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Mcp{thread, body, reply})
     m : Maybe<&1, String> <- Chan.recv(String, reply)
     Mcp.answer(m, s)
+    ok2 : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, McpShut{thread, call})
+    return Unit{}
 
 def Mcp.ask(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   Mcp.ask.raw(s, body, thread, inbox)
@@ -11340,6 +11351,10 @@ def Msg.kind(m: Msg) -> String:
       "deploy_failed"
     case Mcp{_, _, _}:
       "mcp"
+    case McpOpen{_, _, _}:
+      "mcp_open"
+    case McpShut{_, _}:
+      "mcp_shut"
     case Announce{_}:
       "announce"
     case Join{_, _, _, _, _, _}:
@@ -11522,6 +11537,16 @@ def Hub.mcp.gate(refused: Bool, h: Hub, +thread: String, +body: String, +reply: 
 # an MCP call names its thread and the process's generation
 # ("<thread>.<gen>", B.Gen.*): one from a process the thread no longer
 # runs may read, never change anything (law mcp_stale_gen_refused)
+def Hub.mcp.open(h: Hub, +thread: String, +call: String, +body: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      IO.pure(Hub, Hub{st, f, ls, cl, as, inbox, Tools.with(cfg, DP.Open.mcp(Tools.of(cfg), thread, call, body)), note})
+
+def Hub.mcp.shut(h: Hub, +thread: String, +call: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      IO.pure(Hub, Hub{st, f, ls, cl, as, inbox, Tools.with(cfg, DP.Open.mcp.shut(Tools.of(cfg), thread, call)), note})
+
 def Hub.mcp.g(h: Hub, +tag: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
@@ -11891,6 +11916,10 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.deploy_failed(h, err, now)
     case Mcp{thread, body, reply}:
       Hub.mcp.g(h, B.Tag.thread(thread), body, reply, now)
+    case McpOpen{thread, call, body}:
+      Hub.mcp.open(h, B.Gen.thread(B.Tag.thread(thread)), call, body)
+    case McpShut{thread, call}:
+      Hub.mcp.shut(h, B.Gen.thread(B.Tag.thread(thread)), call)
     case Announce{text}:
       Hub.note(h, text)
     case Join{client, out, since, origin, gen, sock}:

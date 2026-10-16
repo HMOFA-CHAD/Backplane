@@ -10791,3 +10791,16 @@ def Laws.resume_turn_process_not_kept():
 def Laws.resume_carry_tells_cut():
   {==}
 # ---- end resume after a restart ----
+# ---- deploy waits for MCP calls ----
+def Laws.deploy_mcp_call_waits():
+  {==}
+
+def Laws.deploy_mcp_answered_goes():
+  {==}
+
+def Laws.deploy_mcp_own_call_not_counted():
+  {==}
+
+def Laws.deploy_mcp_outlives_turn_end():
+  {==}
+# ---- end deploy waits for MCP calls ----

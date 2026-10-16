@@ -8894,3 +8894,20 @@ law resume_turn_process_not_kept:
 law resume_carry_tells_cut:
   {Bool.and(H.Carry.is(M.Carry.text() ++ " " ++ H.Carry.cut()), String.contains(H.Carry.cut(), "its result was lost")) == True{} : Bool}
 # ---- end resume after a restart ----
+# ---- deploy waits for MCP calls ----
+# a request on the MCP route (any provider's) is a tool call in flight: a
+# deploy never restarts while one is open, goes once its answer is written,
+# and the caller's own deploy_* call never holds it (no self-deadlock)
+law deploy_mcp_call_waits:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, DP.Open.mcp(Nil{}, "t1", "c1", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"thread_wait\",\"arguments\":{}}}"))) == 0n : Nat}
+
+law deploy_mcp_answered_goes:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, DP.Open.mcp.shut(DP.Open.mcp(Nil{}, "t1", "c1", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"thread_wait\",\"arguments\":{}}}"), "t1", "c1"))) == 1n : Nat}
+
+law deploy_mcp_own_call_not_counted:
+  {H.Deploy.demo.go(H.Deploy.check(H.Deploy.demo(False{}, H.Deploy.demo.line("t0")), 9n, True{}, DP.Open.mcp(Nil{}, "t0", "c1", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"deploy_restart\",\"arguments\":{}}}"))) == 1n : Nat}
+
+# a turn's end does not shut a request still waiting for its answer
+law deploy_mcp_outlives_turn_end:
+  {DP.Open.count(DP.Open.gone(DP.Open.mcp(DP.Open.add(Nil{}, "t1", "x"), "t1", "c1", "{\"method\":\"tools/call\",\"params\":{\"name\":\"thread_wait\"}}"), "t1")) == 1n : Nat}
+# ---- end deploy waits for MCP calls ----

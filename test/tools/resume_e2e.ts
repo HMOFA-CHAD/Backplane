@@ -1,13 +1,14 @@
 // A turn of a provider that is not adopted across a restart (Codex here;
-// Grok, Muse and Antigravity take the same path) cut by a restart in place
-// while a tool call is open, end to end. A headless hub installed in a
+// Grok, Muse and Antigravity take the same path) cut by a restart in place,
+// or by a crash, end to end. A headless hub installed in a
 // temp prefix, with the stand-in `codex` (test/tools/codex_mcp_standin.ts)
 // and the stand-in `claude` (test/tools/claude_standin.ts):
 //   - thread Z (Claude) streams a long turn;
-//   - thread C (Codex) opens an MCP tool call, thread_wait on Z, and hangs
-//     in it;
+//   - thread C (Codex) opens an MCP tool call, thread_wait on Z, and once
+//     it returns keeps its turn running;
 //   - thread D (Claude) calls deploy_restart with a staged package: the
-//     hub swaps it in and restarts in place (exec).
+//     hub waits for C's call (deploy_mcp_e2e.ts), then swaps it in and
+//     restarts in place (exec), cutting C's turn.
 // Afterwards C's old process was stopped, exactly one new one resumed C's
 // session, told that Backplane restarted and that a tool call in flight
 // lost its result, and C's turn ends. Then the same for a crash: the hub
@@ -58,7 +59,7 @@ const PORT = freePort();
 if (PORT === 3787) throw new Error("refusing the live port");
 const spawnHub = (n: number) => Bun.spawn([join(prefix, "backplane"), "--home", home, "--port", String(PORT), "--no-tailscale", "--foreground"], {
   env: { ...process.env, DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_KEYRING_LOCKED: "0", BACKPLANE_PEERS: "", BACKPLANE_GOOGLE_BAKE: "0",
-    FAKE_LOG: clog, RIDE_LOG: xlog, BP_EOF_FINISH: "1", BP_STREAM_N: "600", BP_STREAM_MS: "100", BP_DEPLOY_ARGS: JSON.stringify({ stage, note: "resume e2e" }),
+    FAKE_LOG: clog, RIDE_LOG: xlog, BP_EOF_FINISH: "1", BP_STREAM_N: "60", BP_STREAM_MS: "100", BP_DEPLOY_ARGS: JSON.stringify({ stage, note: "resume e2e" }),
     BACKPLANE_WAKE_TICK_MS: "2000", BACKPLANE_DEPLOY_LOCKS: join(root, "none.lock"), BACKPLANE_LOCK_DIR: join(root, "locks"),
     PATH: `${fake}:${process.env.PATH}`, TMPDIR: root },
   stdout: "ignore", stderr: Bun.file(join(root, `hub${n}.err`)),
@@ -104,7 +105,7 @@ try {
   await sleep(1500);
   c.send("turn.start", { thread: D, text: "mode:deploy go", msg: "d-1" });
   const swapped = await until(60000, () => read(join(prefix, "LICENSE")) === "new" ? true : undefined);
-  check(!!swapped, "the deploy swaps the package in and restarts in place (the tool call open does not hold it)");
+  check(!!swapped, "the deploy swaps the package in and restarts in place, mid-turn, once its tool call returned");
   await sleep(1500);
   check(await up(), "the hub is up again");
   check(proc.exitCode === null, "the same process (an exec)");
@@ -124,8 +125,11 @@ try {
   check(starts === 2, `exactly one new process (${starts} in all)`);
 
   // a crash: the record, not a handoff, finds the process still running
+  const Z2 = await made("sleeper2", "claude");
+  c.send("turn.start", { thread: Z2, text: "mode:stream go w", msg: "z2-1" });
+  await until(15000, () => turns(Z2).includes("running") ? true : undefined);
   const C2 = await made("crash", "codex");
-  c.send("turn.start", { thread: C2, text: `ride-cut:${Z} again`, msg: "c2-1" });
+  c.send("turn.start", { thread: C2, text: `ride-cut:${Z2} again`, msg: "c2-1" });
   const old: any = await until(15000, () => events().find((e) => e.ev === "start" && String(e.prompt).includes("ride-cut") && String(e.prompt).includes("again")));
   check(!!old, "C2's codex turn runs");
   await sleep(1500);
