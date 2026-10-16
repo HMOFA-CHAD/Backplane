@@ -3356,10 +3356,20 @@ def ZoneJob.each(xs: List<&2, String>, +now: Nat, acc: List<&2, M.Change>) -> IO
 def ZoneJob.machine.log(+z: String, +old: String, +now: Nat) -> List<&2, M.Change>:
   Bool.pick(List<&2, M.Change>, Bool.or(String.is_empty(z), String.eq(z, old)), Nil{}, [M.SettingSet{"tz.machine", z, now}])
 
+# a newly found machine zone comes with its rule, so a routine in the
+# person's zone (which falls back to the machine's) is due from the next
+# tick on, not one tick after the rule is looked up
+def ZoneJob.machine.rule(same: Bool, +z: String, +old: String, +now: Nat) -> IO(List<&2, M.Change>):
+  match same:
+    case True{}:
+      IO.pure(List<&2, M.Change>, Nil{})
+    case False{}:
+      IO.bind(String, List<&2, M.Change>, ZoneJob.rule(z), rule => IO.pure(List<&2, M.Change>, List.append(&2, M.Change, ZoneJob.machine.log(z, old, now), ZoneJob.log(z, rule, "", now))))
+
 def ZoneJob.machine.log.go(detect: Bool, +old: String, +now: Nat) -> IO(List<&2, M.Change>):
   match detect:
     case True{}:
-      IO.bind(String, List<&2, M.Change>, ZoneJob.machine(), z => IO.pure(List<&2, M.Change>, ZoneJob.machine.log(z, old, now)))
+      IO.bind(String, List<&2, M.Change>, ZoneJob.machine(), +z => ZoneJob.machine.rule(Bool.or(String.is_empty(z), String.eq(z, old)), z, old, now))
     case False{}:
       IO.pure(List<&2, M.Change>, Nil{})
 
