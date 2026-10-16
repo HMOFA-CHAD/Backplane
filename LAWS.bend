@@ -30,6 +30,7 @@ import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
 import ./src/core/deploy.bend as DP
 import ./src/core/cmds.bend as CM
+import ./src/core/errtail.bend as ERT
 import ./src/core/adopt.bend as AD
 import ./src/core/utf8.bend as UT
 import ./src/core/refs.bend as RF
@@ -8782,3 +8783,18 @@ law tok_add_no_cost:
 # without a shared cap in the status, the spend row says nothing about one
 law usage_boat_no_cap_nothing:
   {UZ.Bj.cap.of(J.Json.obj([])) == "" : String}
+# ---- agent failures: stderr ----
+# an agent that ends before its turn did is reported with its exit code or
+# signal and the end of its stderr, with anything secret-shaped dropped
+law errtail_scrub_token:
+  {ERT.Err.scrub("GET http://h/mcp/t1?token=ab12cd done") == "GET http://h/mcp/t1?token=… done" : String}
+
+law errtail_scrub_words:
+  {ERT.Err.scrub("auth sk-AB12cd and task-list ghp_x9 Bearer q.w") == "auth sk-… and task-list ghp_… Bearer …" : String}
+
+law errtail_say_exit:
+  {ERT.Exit.say("codex exited before the turn ended", "", 1, "Error: boom\n") == "codex exited before the turn ended (exit 1): Error: boom" : String}
+
+law errtail_say_signal:
+  {ERT.Exit.say("x", "", 143, "  ") == "x (signal 15)" : String}
+# ---- end agent failures: stderr ----

@@ -10665,3 +10665,16 @@ def Laws.tok_add_no_cost():
 # ---- usage-boat-cap ----
 def Laws.usage_boat_no_cap_nothing():
   {==}
+# ---- agent failures: stderr ----
+def Laws.errtail_scrub_token():
+  {==}
+
+def Laws.errtail_scrub_words():
+  {==}
+
+def Laws.errtail_say_exit():
+  {==}
+
+def Laws.errtail_say_signal():
+  {==}
+# ---- end agent failures: stderr ----

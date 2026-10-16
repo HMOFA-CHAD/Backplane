@@ -173,6 +173,7 @@ async function run(c: Cmd, firstOne: boolean) {
   }
   if (firstOne && mode === "exit-now") {
     log(`EXIT ${process.pid}`);
+    process.stderr.write("exit-now: the stand-in quits here (api key=hunter2)\n");
     process.exit(3);
   }
   if (firstOne && mode === "bg-exit") {

@@ -69,6 +69,7 @@ import ../core/hist.bend as HI
 import ../core/emb.bend as EM
 import ./review.bend as RVS
 import ../core/cmds.bend as CM
+import ../core/errtail.bend as ER
 import ../core/adopt.bend as AD
 import ./adoptio.bend as AIO
 import ./castio.bend as CST
@@ -800,7 +801,8 @@ def Agent.end(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
     AIO.Adopt.drop(thread, pid)
-    +why : String = B.Exit.why(code)
+    +tail : String <- H.Proc.errtail(pid)
+    +why : String = ER.Exit.say("agent exited", B.Exit.why(code), code, tail)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AgentGone{thread, code, pid, why})
     return Unit{}
 
@@ -2536,19 +2538,21 @@ def Turn.end(s: Socket, +pid: U32, +tag: String, +gen: String, +inbox: Chan(Msg)
   do IO<Unit>:
     Socket.close(s)
     code : U32 <- H.Proc.wait(pid)
+    tail : String <- H.Proc.errtail(pid)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TurnDone{tag})
     return Unit{}
 
 # a per-turn process that ended before its turn did: reaped, and a signal
 # asks its scope why (an out-of-memory kill says so, with the limit; the
 # scope is reset), here in the reader and never on the hub. The words for
-# the failed turn: the scope's, else dflt.
+# the failed turn: the scope's, else dflt, with the exit code or signal and
+# the end of what it wrote to stderr, secrets dropped (core/errtail.bend)
 def Turn.close(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String) -> IO(String):
   do IO<String>:
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
-    +why : String = B.Exit.why(code)
-    return Bool.pick(String, String.is_empty(why), dflt, why)
+    +tail : String <- H.Proc.errtail(pid)
+    return ER.Exit.say(dflt, B.Exit.why(code), code, tail)
 
 def Turn.failed(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -2609,7 +2613,7 @@ def Codex.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: String
       Codex.failed(e, thread, gen, inbox)
 
 def Codex.run(+args: List<&2, String>, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("codex", args, cwd, 0), r => Codex.started(r, thread, gen, inbox))
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("codex", args, cwd, 3), r => Codex.started(r, thread, gen, inbox))
 
 def Grok.stop(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -2715,7 +2719,7 @@ def Grok.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +t: MS.Proto, +t
       Grok.failed(e, t, thread, gen, inbox)
 
 def Grok.run(+args: List<&2, String>, +t: MS.Proto, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn(MS.Proto.cmd(t), args, cwd, 0), r => Grok.started(r, t, thread, gen, inbox))
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn(MS.Proto.cmd(t), args, cwd, 3), r => Grok.started(r, t, thread, gen, inbox))
 
 # Updates
 # -------
@@ -7452,7 +7456,7 @@ def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: S
     +fs : K.Files <- K.Files.read(cwd)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AutoView{thread, fs})
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-    res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 0)
+    res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 3)
     Claude.started(res, thread, gen, input, inbox)
 
 def Agents.pid.k(same: Bool, a: Agent, +pid: U32) -> Agent:
