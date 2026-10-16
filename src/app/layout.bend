@@ -5980,6 +5980,9 @@ def Lay.fab(shown: Bool, +open: Bool, +ty: Ty, +line: String, +intent: String, +
 def Ready.h(+line: String) -> U32:
   Bool.pick(U32, String.is_empty(line), 0, 44)
 
+def Ready.line(+st: M.State, +pics: Map<&2, String>, +sel: String, run: Bool) -> String:
+  U.Fab.ready.k(U.Fab.buy.of(st, pics, sel), U.Str.get(pics, "fab.ready:" ++ sel), run)
+
 def Lay.ready.k(none: Bool, +ty: Ty, +line: String, +buy: String, +x0: U32, +x1: U32, +y: U32) -> Out:
   match none:
     case True{}:
@@ -6024,12 +6027,11 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +tdoff = Pane.clamp(Pane.off(pics, "todos:" ++ sel), List.length(&2, TD.TRow, tdall))
       +tdr = List.take(&2, TD.TRow, List.drop(&2, TD.TRow, tdall, tdoff), Lay.tdcap(h))
       +tdm = {Bool.pick(String, tdo, U.Todos.more(tda, tds), "") : String}
-      +rd = U.Fab.ready.k(U.Fab.buy.of(st, pics, sel), U.Str.get(pics, "fab.ready:" ++ sel), Lay.running(turn))
-      +rh = Ready.h(rd)
-      +qh = {(Lay.qh(qs) + Lay.tdh(tds, tdr, tdm) + rh : U32) : U32}
+      +qh = {(Lay.qh(qs) + Lay.tdh(tds, tdr, tdm) : U32) : U32}
       # the composer grows by eh, and all above it moves up
       +ls = Comp.wrap(ty, draft, cw)
-      +eh = Comp.eh(List.length(&2, String, ls))
+      # (and by the Ready to order bar's height when it shows: it sits right above)
+      +eh = {(Comp.eh(List.length(&2, String, ls)) + Ready.h(Ready.line(st, pics, sel, Lay.running(turn))) : U32) : U32}
       +stop = U.Follow.stop(Lay.running(turn), draft, atts)
       +bh = Btw.h(ty, bq, ba, cw)
       # the timeline and what sits around it are laid out at once
@@ -6043,9 +6045,9 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
           Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + pl + fh : U32)),
           Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + fh + Subs.height(ts, svis, sopen) : U32), fkey, blink),
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), Comp.chip(ty, U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)), U.Usage.tail(st, sel), cx0, cx1, U.Follow.button(st, sel, Lay.running(turn), stop, draft)), rs, atts, up, path, pre),
-          Lay.ready(ty, rd, U.Fab.buy.of(st, pics, sel), cx0, cx1, (h - eh - 124 - rh + 2 : U32)),
-          Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh - rh : U32)),
-          Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) - rh : U32)),
+          Lay.ready(ty, Ready.line(st, pics, sel, Lay.running(turn)), U.Fab.buy.of(st, pics, sel), cx0, cx1, (h - eh - 124 + 2 : U32)),
+          Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
+          Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
           Lay.asks(ty, asks, draft, pics, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
           Btw.card.if(Bool.not(String.is_empty(bq)), ty, bq, ba, cx0, cx1, (h - 132 - qh - eh - bh + 4 : U32)),
           Lay.picker(picking, ty, U.Models.menu(info, pr), mo, info, pr, cx0, cx1, (h - 128 - eh : U32), (60 + hy : U32), U.Chip.all(info, pr, mo), U.Effort.of(st, sel), moff)])
