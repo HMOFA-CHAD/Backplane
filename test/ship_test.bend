@@ -67,7 +67,7 @@ def main() -> IO(Unit):
     C.Check.str("idle: one build starts", Nat.show(H.Ship.demo.builds(res.step(r1))), "1")
     +s1 : M.State = again(idle, res.step(r1))
     C.Check.str("building c1", phase(s1) ++ " " ++ SH.Ship.commit(H.Ship.get(s1)), "building c1")
-    C.Check.str("a build holds the restart", Bool.show(H.Ship.busy.s(s1)), "true")
+    C.Check.str("a build holds the restart", Bool.show(H.Ship.busy.s(s1)), "True")
     # 2. the same commit again: skipped, covered by the build, no second build
     +r2 : MC.Res = MC.Mcp.ship(s1, 11n, "t2", J.Json.obj(Nil{}), look("c1", ""))
     C.Check.str("same commit: skipped", res.state(r2), "skipped")
@@ -82,7 +82,7 @@ def main() -> IO(Unit):
     +s3 : M.State = again(s2, res.step(r3))
     +r4 : MC.Res = MC.Mcp.ship(s3, 14n, "deploy", J.Json.obj(Nil{}), look("c3", ""))
     +s4 : M.State = again(s3, res.step(r4))
-    C.Check.str("follow-up wanted once", Bool.show(SH.Ship.more(H.Ship.get(s4))) ++ " " ++ String.join(SH.Ship.next(H.Ship.get(s4)), ","), "true t2,-")
+    C.Check.str("follow-up wanted once", Bool.show(SH.Ship.more(H.Ship.get(s4))) ++ " " ++ String.join(SH.Ship.next(H.Ship.get(s4)), ","), "True t2,-")
     # 4. the build ends: t1 and t2 (who asked for c1) told once, the follow-up asked for
     +d1 : H.Step = H.Ship.done(s4, 20n, "c1", "STATUS done 0\nVERSION 0.9.1-dev.1\nSTAGE /h/deploy/c1/pkg\ndev: built 0.9.1-dev.1\n")
     C.Check.str("t1 told", said(cs(d1), "t1"), "[Backplane] deploy_main: origin/main c1 is built and staged (version 0.9.1-dev.1). The hub restarts into it at a safe point (no tool call running, build locks free); every turn it cuts resumes.")
@@ -100,7 +100,7 @@ def main() -> IO(Unit):
     +d2 : H.Step = H.Ship.done(f1, 30n, "c3", "STATUS done 2\nVERSION \nSTAGE /h/deploy/c3/pkg\nerror: check failed\n")
     C.Check.str("t2 told the failure", said(cs(d2), "t2"), "[Backplane] deploy_main: the build of origin/main c3 failed:\nerror: check failed")
     C.Check.str("t1 not told again", Nat.show(H.Ship.demo.posts(d2, "t1")), "0")
-    C.Check.str("the person alerted", Bool.show(String.starts_with(M.Setting.get(again(f1, d2), "alert.deploy", ""), "note\t")), "true")
+    C.Check.str("the person alerted", Bool.show(String.starts_with(M.Setting.get(again(f1, d2), "alert.deploy", ""), "note\t")), "True")
     C.Check.str("no follow-up after", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(d2))), "0")
     +g1 : M.State = again(f1, d2)
     C.Check.str("failed c3, c1 still staged", phase(g1) ++ " " ++ SH.Ship.staged(H.Ship.get(g1)), "failed c1")
@@ -112,7 +112,7 @@ def main() -> IO(Unit):
     C.Check.str("at start a build is watched again", Nat.show(H.Ship.demo.builds(H.Ship.recover(f1, 40n))), "1")
     C.Check.str("and nothing is written", Nat.show(List.length(&2, M.Change, cs(H.Ship.recover(f1, 40n)))), "0")
     +lost : H.Step = H.Ship.done(f1, 41n, "c3", "STATUS gone\nVERSION \nSTAGE /h/deploy/c3/pkg\n")
-    C.Check.str("gone without an exit status: lost", Bool.show(String.starts_with(said(cs(lost), "t2"), "[Backplane] deploy_main: the build of origin/main c3 failed:\nlost:")), "true")
+    C.Check.str("gone without an exit status: lost", Bool.show(String.starts_with(said(cs(lost), "t2"), "[Backplane] deploy_main: the build of origin/main c3 failed:\nlost:")), "True")
     C.Check.str("lost is failed", phase(again(f1, lost)), "failed")
     C.Check.str("a follow-up asked for is asked again at start", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.recover(e1, 40n)))), "1")
     # the restart into a staged build: live
