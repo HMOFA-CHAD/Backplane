@@ -1,6 +1,8 @@
 import Base
 import ./ref.bend as R
 import ./refview.bend as RE
+import ./i18n.bend as I
+import ./msgs.bend as MSG
 import ./deploy.bend as DP
 import ./live.bend as LV
 import ./json.bend as J
@@ -385,6 +387,10 @@ def Machines.current(rs: List<&2, MRow>) -> String:
     case MRow{+n, _, +on} <> t:
       Bool.pick(String, on, n, Machines.current(t))
 
+# Exactly these device inputs and the resolved tag survive a hub switch.
+def Lang.key(+k: String) -> Bool:
+  Bool.or(String.eq(k, "@lang"), Bool.or(String.eq(k, "@lang.os"), Bool.or(String.eq(k, "@lang.tag"), String.eq(k, "@lang.preview"))))
+
 def Machine.draft(scratch: Bool, +k: String, dr: Map<&2, String>, out: Map<&2, String>) -> Map<&2, String>:
   match scratch:
     case True{}:
@@ -399,7 +405,7 @@ def Machine.drafts(ks: List<&2, String>, +dr: Map<&2, String>, out: Map<&2, Stri
     case Nil{}:
       out
     case +k <> t:
-      Machine.drafts(t, dr, Machine.draft(String.starts_with(k, "@"), k, dr, out))
+      Machine.drafts(t, dr, Machine.draft(Bool.and(String.starts_with(k, "@"), Bool.not(Lang.key(k))), k, dr, out))
 
 # The window assigns the actual connection tag when it opens the link.
 # The transition itself also advances the generation, before any message
@@ -2980,6 +2986,73 @@ def Ui.scratch_set(u: Ui, +k: String, v: String) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
       Ui{st, sel, Map.set(&2, String, dr, k, v), live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
+
+# Device language. Only apply writes the resolved tag; hosts call on input changes.
+def Lang.ready() -> Bool:
+  False{}
+
+def Lang.normalize.k(en: Bool, ja: Bool) -> String:
+  match en ja:
+    case True{} _: "en"
+    case False{} True{}: "ja"
+    case False{} False{}: "auto"
+
+def Lang.normalize(+s: String) -> String:
+  Lang.normalize.k(String.eq(s, "en"), String.eq(s, "ja"))
+
+def Lang.resolve.k(l: I.Loc, allow: Bool) -> String:
+  match l allow:
+    case I.Ja{} True{}: "ja"
+    case _ _: "en"
+
+def Lang.resolve(setting: String, os: String, preview: Bool) -> String:
+  Lang.resolve.k(I.I18n.resolve(setting, os), Bool.or(Lang.ready(), preview))
+
+def Lang.choice(+u: Ui) -> String:
+  Lang.normalize(Ui.scratch(u, "@lang"))
+
+def Lang.preview(+u: Ui) -> Bool:
+  String.eq(Ui.scratch(u, "@lang.preview"), "1")
+
+def Lang.apply(+u: Ui, +setting: String, +os: String) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@lang", Lang.normalize(setting)), "@lang.os", os),
+    "@lang.tag", Lang.resolve(Lang.normalize(setting), os, Lang.preview(u)))
+
+def Lang.loc(u: Ui) -> I.Loc:
+  I.I18n.of_tag(Ui.scratch(u, "@lang.tag"))
+
+def Lang.offered.k(allow: Bool) -> List<&2, String>:
+  match allow:
+    case True{}: ["auto", "en", "ja"]
+    case False{}: ["auto", "en"]
+
+def Lang.offered(+u: Ui) -> List<&2, String>:
+  Lang.offered.k(Bool.or(Lang.ready(), Lang.preview(u)))
+
+def Lang.label.k(k: Nat, l: I.Loc) -> String:
+  match k:
+    case 0n: MSG.T.settings.lang.en(l)
+    case 1n: MSG.T.settings.lang.ja(l)
+    case _: MSG.T.settings.lang.auto(l)
+
+def Lang.label(l: I.Loc, v: String) -> String:
+  Lang.label.k(C.Codec.pos(["en", "ja"], v), l)
+
+def Lang.agent.on(u: Ui) -> Bool:
+  +s = M.Setting.get(Ui.state(u), "agent.lang", "off")
+  Bool.or(String.eq(s, "en"), String.eq(s, "ja"))
+
+def Lang.agent.value(on: Bool, u: Ui) -> String:
+  match on:
+    case True{}: I.I18n.tag(Lang.loc(u))
+    case False{}: "off"
+
+def Lang.act(k: Nat, +u: Ui, +value: String) -> Act:
+  match k:
+    case 0n:
+      Act{Lang.apply(u, value, Ui.scratch(u, "@lang.os")), [Keep{"@lang", Lang.normalize(value)}]}
+    case _:
+      Act{Lang.apply(u, Lang.choice(u), value), Nil{}}
 
 # Creating a thread
 # -----------------
@@ -9976,8 +10049,14 @@ def Ui.act.subs(shut: Bool, open: Bool, +u: Ui, +action: String, +value: String)
     case False{} False{}:
       Ui.act.z(String.starts_with(action, "tz-"), u, action, value)
 
+def Lang.dispatch(k: Nat, +u: Ui, +action: String, +value: String) -> Act:
+  match k:
+    case 0n: Lang.act(0n, u, value)
+    case 1n: Lang.act(1n, u, value)
+    case _: Rc.sync.of(Ui.act.subs(String.eq(action, "subs-shut"), String.eq(action, "subs-open"), u, action, value))
+
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Rc.sync.of(Ui.act.subs(String.eq(action, "subs-shut"), String.eq(action, "subs-open"), u, action, value))
+  Lang.dispatch(C.Codec.pos(["lang", "lang-os"], action), u, action, value)
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:
@@ -10103,7 +10182,6 @@ def Page.since.k(t: M.Thread) -> Nat:
 
 def Page.since(s: M.State, +th: String) -> Nat:
   Page.since.k(Ui.thread(s, th))
-
 
 # The window's memos (main.bend's Mm): which threads a change touches,
 # for keys that say whether a thread's view can have changed. Every change

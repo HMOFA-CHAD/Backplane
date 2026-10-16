@@ -1,5 +1,24 @@
 import Base
+import ./codec.bend as C
 import ./model.bend as M
+
+# A single optional line, shared by every provider and bot prompt.
+def Prompt.lang.k(k: Nat) -> String:
+  match k:
+    case 0n: "Reply in Japanese (日本語) unless the person writes in another language or asks otherwise. Keep code, commands, paths and identifiers as they are."
+    case 1n: "Reply in English unless the person writes in another language or asks otherwise. Keep code, commands, paths and identifiers as they are."
+    case _: ""
+
+def Prompt.lang(+setting: String) -> String:
+  Prompt.lang.k(C.Codec.pos(["ja", "en"], setting))
+
+def Prompt.lang.add.k(line: String, prompt: String) -> String:
+  match line:
+    case SNil{}: prompt
+    case SCon{c, t}: prompt ++ "\n" ++ SCon{c, t}
+
+def Prompt.lang.add(prompt: String, setting: String) -> String:
+  Prompt.lang.add.k(Prompt.lang(setting), prompt)
 
 # What every agent session is told, as T3Code/Backplane tell it: a runtime
 # block, KiCad guidance, and the KiStack skills with their SKILL.md paths.

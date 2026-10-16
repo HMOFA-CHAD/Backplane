@@ -11,3 +11,7 @@ settings.lang = 言語
 settings.lang.auto = 自動
 settings.lang.en = English
 settings.lang.ja = 日本語
+
+settings.agent.lang = エージェントも同じ言語で返答
+settings.lang.on = オン
+settings.lang.off = オフ

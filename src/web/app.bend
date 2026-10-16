@@ -12,6 +12,12 @@ import ../core/onboard.bend as OB
 
 # What host.js calls. Everything the page decides happens behind these.
 
+def lang(u: U.Ui) -> String:
+  U.Ui.scratch(u, "@lang.tag")
+
+def lang_preview(u: U.Ui) -> U.Ui:
+  U.Ui.scratch_set(u, "@lang.preview", "1")
+
 def init(now: Nat, cid: String) -> U.Ui:
   U.Ui.set_cid(U.Ui.init(now), cid)
 

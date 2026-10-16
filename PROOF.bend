@@ -10927,3 +10927,21 @@ def Laws.ime_commit_event_id():
   {==}
 
 # ---- end i18n ime ----
+# ---- i18n lang ----
+def Laws.lang_default_auto():
+  {==}
+def Laws.lang_default_unknown():
+  {==}
+def Laws.lang_gate(os):
+  {==}
+def Laws.lang_gate_preview(os):
+  {==}
+def Laws.lang_auto_preview():
+  {==}
+def Laws.lang_override_en(os, p):
+  {==}
+def Laws.prompt_lang_off():
+  {==}
+def Laws.prompt_lang_unknown():
+  {==}
+# ---- end i18n lang ----

@@ -420,6 +420,7 @@ data class Screen(
     // a project remove to confirm ("proj-remove" id, or "proj-keep")
     val removing: Deleting? = null, val search: Search? = null,
     // the hub's theme ("light", "dark"; "" follows the phone's)
+    val lang: Settings? = null,
     val theme: String = "",
     // "projects" (sections) or "active" (one flat list of rows, active)
     val view: String = "projects", val active: List<Row> = emptyList(),

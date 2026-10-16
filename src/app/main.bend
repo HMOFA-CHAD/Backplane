@@ -1,4 +1,5 @@
 import Base
+import ../core/i18n.bend as I18
 import ../core/attach.bend as AT
 import ../core/exe.bend as EX
 import ../server/server.bend as S
@@ -934,19 +935,40 @@ def Drafts.put(empty: Bool, +text: String, +path: String) -> IO(Unit):
 def Drafts.write(+dir: String, +id: String, +text: String) -> IO(Unit):
   Bool.pick(IO(Unit), String.is_empty(dir), IO.pure(Unit, Unit{}), Drafts.put(String.is_empty(text), text, dir ++ "/" ++ id))
 
+def Lang.restore.k(lang: Bool, +u: U.Ui, name: String, t: String) -> U.Ui:
+  match lang:
+    case True{}: U.Lang.apply(u, t, U.Ui.scratch(u, "@lang.os"))
+    case False{}: U.Ui.restore(u, name, t)
+
+def Lang.restore(+u: U.Ui, +name: String, t: String) -> U.Ui:
+  Lang.restore.k(String.eq(name, "@lang"), u, name, t)
+
+def Lang.start.k(forced: Bool, +u: U.Ui, force: String, os: String) -> U.Ui:
+  match forced:
+    case True{}: U.Lang.apply(U.Ui.scratch_set(u, "@lang.preview", "1"), force, os)
+    case False{}: U.Lang.apply(u, U.Lang.choice(u), os)
+
+def Lang.start(+u: U.Ui) -> IO(U.Ui):
+  do IO<U.Ui>:
+    +all : String <- S.Env.get("LC_ALL", "")
+    messages : String <- S.Env.get("LC_MESSAGES", "")
+    lang : String <- S.Env.get("LANG", "")
+    +force : String <- S.Env.get("BACKPLANE_LANG", "")
+    return Lang.start.k(Bool.or(String.eq(force, "ja"), String.eq(force, "en")), u, force, I18.I18n.os(all, messages, lang))
+
 def Drafts.one(skip: Bool, u: U.Ui, +dir: String, +name: String) -> IO(U.Ui):
   match skip:
     case True{}:
       IO.pure(U.Ui, u)
     case False{}:
-      IO.bind(String, U.Ui, S.Files.text(dir ++ "/" ++ name), t => IO.pure(U.Ui, U.Ui.restore(u, name, t)))
+      IO.bind(String, U.Ui, S.Files.text(dir ++ "/" ++ name), t => IO.pure(U.Ui, Lang.restore(u, name, t)))
 
 def Drafts.each(ns: List<String>, u: U.Ui, +dir: String) -> IO(U.Ui):
   match ns:
     case Nil{}:
       IO.pure(U.Ui, u)
     case +n <> t:
-      IO.bind(U.Ui, U.Ui, Drafts.one(Bool.not(U.Draft.safe(n)), u, dir, n), u2 => Drafts.each(t, u2, dir))
+      IO.bind(U.Ui, U.Ui, Drafts.one(Bool.not(Bool.or(U.Draft.safe(n), String.eq(n, "@lang"))), u, dir, n), u2 => Drafts.each(t, u2, dir))
 
 def Drafts.listed(r: Result<&1, &1, U32 & String, List<String>>, u: U.Ui, +dir: String) -> IO(U.Ui):
   match r:
@@ -2825,7 +2847,8 @@ def Shell.twin(r: Window & Window, +inbox: Chan(S.Msg), +drafts: String, +fq: Ch
     IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, "#0", inbox, gen, 0n))
     got : Maybe<&1, L.Ty> <- Chan.recv(L.Ty, fq)
     ty : L.Ty <- Shell.fonts(got)
-    ui : U.Ui <- Drafts.load(U.Ui.info_set(U.Ui.init(U32.to_nat(t)), "local.hub", lo), drafts)
+    saved : U.Ui <- Drafts.load(U.Ui.info_set(U.Ui.init(U32.to_nat(t)), "local.hub", lo), drafts)
+    ui : U.Ui <- Lang.start(saved)
     a : Shell <- Shell.later(Shell{N.Nui.init(ui, 1400, 900), pw, True{}, False{}, q, inbox, Aux{Nil{}, [ty], Tie{inbox, "", "#0", 1n, TieKeep.empty()}, [Kept.none()]}})
     Shell.loop(S.Fuel.forever(), a)
 

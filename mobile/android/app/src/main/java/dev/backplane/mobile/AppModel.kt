@@ -19,6 +19,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun back() = core.back()
     val tab get() = core.tab
     fun selectTab(t: Tab) = core.selectTab(t)
+    fun language(v: String) = core.language(v)
+    fun forceLanguage(v: String) = core.forceLanguage(v)
     fun threadList(v: String) = core.threadList(v)
     val hubSettings get() = core.hubSettings
     fun cacheSize() = core.cacheSize()

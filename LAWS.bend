@@ -9084,3 +9084,25 @@ law card_person_no_state:
 law card_task_status_agrees:
   {String.join([RC.Card.task.status(" Doing"), RC.Card.task.status("blocked"), RC.Card.task.status("todo"), RC.Card.task.status("DONE "), RC.Card.task.status("dropped"), RC.Card.task.status("later"), RC.Card.task.status("")], ",")
     == String.join([TBD.Tb.status.norm(" Doing"), TBD.Tb.status.norm("blocked"), TBD.Tb.status.norm("todo"), TBD.Tb.status.norm("DONE "), TBD.Tb.status.norm("dropped"), TBD.Tb.status.norm("later"), TBD.Tb.status.norm("")], ",") : String}
+# ---- i18n lang ----
+law lang_default_auto:
+  {U.Lang.resolve("", "en_US.UTF-8", False{}) == "en" : String}
+law lang_default_unknown:
+  {U.Lang.resolve("garbage", "en_US.UTF-8", False{}) == "en" : String}
+law lang_gate:
+  for os: String
+  {U.Lang.resolve("ja", os, False{}) == "en" : String}
+law lang_gate_preview:
+  for os: String
+  {U.Lang.resolve("ja", os, True{}) == "ja" : String}
+law lang_auto_preview:
+  {U.Lang.resolve("auto", "ja_JP.UTF-8", True{}) == "ja" : String}
+law lang_override_en:
+  for os: String
+  for p: Bool
+  {U.Lang.resolve("en", os, p) == "en" : String}
+law prompt_lang_off:
+  {PM.Prompt.lang("off") == "" : String}
+law prompt_lang_unknown:
+  {PM.Prompt.lang("x") == "" : String}
+# ---- end i18n lang ----

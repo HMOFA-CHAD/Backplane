@@ -793,6 +793,7 @@ struct Screen: Decodable {
     let found: [Found]
     let projects: [Project]
     // "projects" (sections) or "active" (one flat list of rows, active)
+    let lang: Settings?
     let view: String?
     // a thread this phone asked for is still to come (its page opens at once)
     let making: Bool?
