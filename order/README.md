@@ -73,7 +73,7 @@ First time on the host:
 1. Install packages: `apt install nginx python3-venv libgl1 lego` (lego from backports).
 2. Make the `fab` user.
 3. Make `/srv/fab/{app,vendor,data}` and `/var/www/acme`.
-4. Make the venv with `fastapi uvicorn python-multipart httpx cadquery-ocp`.
+4. Make the venv: `python3 -m venv /srv/fab/venv && /srv/fab/venv/bin/pip install -r requirements.txt`.
 5. Fill `/etc/fab/env` (root:fab 0640):
 
    ```
@@ -91,3 +91,7 @@ First time on the host:
 8. Write `/etc/fab/cert.env` with `FAB_HOST=HOST`.
 
 Locally: `FAB_DATA=... FAB_VENDOR=... uvicorn fabsrv.app:app --port 8090` from `order/`.
+
+Tests: `pip install -r requirements.txt && python -m pytest tests`. They run against a stand-in fab pack
+(`tests/fakevendor`): estimates, a quote measured from a small board's files, the upload checks
+(paths, hashes, file types, zip links and bombs), tokens, and the address limits.

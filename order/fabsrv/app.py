@@ -14,6 +14,7 @@ Every client sends X-Backplane-Install, a random id made once per install;
 limits apply to it and to the address (limits.py).
 """
 import asyncio
+import contextlib
 import hmac
 import io
 import json
@@ -27,7 +28,16 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from . import catalog, config, estimate, limits, package, pages, pay, quoting, store, vendor_api
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+@contextlib.asynccontextmanager
+async def lifespan(_app):
+    store.db()
+    quoting.start()
+    task = asyncio.get_running_loop().create_task(housekeeping())
+    yield
+    task.cancel()
+
+
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 INSTALL = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 QID = re.compile(r"^q_[A-Za-z0-9_-]{20,24}$")
 
@@ -282,13 +292,6 @@ async def admin_order(oid: str, request: Request):
     store.set_order(oid, status=status, tracking=str(form.get("tracking") or "")[:200],
                     note=str(form.get("note") or "")[:2000])
     return RedirectResponse("/admin", status_code=303)
-
-
-@app.on_event("startup")
-async def startup():
-    store.db()
-    quoting.start()
-    asyncio.get_running_loop().create_task(housekeeping())
 
 
 async def housekeeping():
