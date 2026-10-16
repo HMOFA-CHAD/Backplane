@@ -589,21 +589,30 @@ def Chip.path(+xs: String, +user: String) -> String:
 def Chip.key(+th: String) -> String:
   "boat.thread." ++ th
 
+# whether a starting or running sandbox's news is stale: a running job
+# rewrites status.json every 60 s, so older than 3 minutes means its runner
+# stopped telling (a warm one goes quiet by right, and ends by idle_until)
+def Chip.stale(+state: String, +gen: Nat, +now: Nat) -> Bool:
+  Bool.and(Bool.not(String.eq(state, "warm")), Nat.is_gt(Nat.sub(now, gen), 180n))
+
+def Chip.state(+state: String, +gen: Nat, +now: Nat) -> String:
+  Bool.pick(String, Chip.stale(state, gen, now), "stale", state)
+
 # a thread's entry in status.json's "threads" as the setting's value
-def Chip.value(+e: J.Json) -> String:
+def Chip.value(+e: J.Json, +gen: Nat, +now: Nat) -> String:
   Bool.pick(String, String.is_empty(J.Json.get_str(e, "state", "")), "",
-    J.Json.get_str(e, "state", "") ++ "/" ++ J.Json.get_str(e, "size", "?") ++ "/" ++ Nat.show(J.Json.get_nat(e, "jobs", 1n)) ++ "/" ++ Nat.show(J.Json.get_nat(e, "idle_until", 0n)))
+    Chip.state(J.Json.get_str(e, "state", ""), gen, now) ++ "/" ++ J.Json.get_str(e, "size", "?") ++ "/" ++ Nat.show(J.Json.get_nat(e, "jobs", 1n)) ++ "/" ++ Nat.show(J.Json.get_nat(e, "idle_until", 0n)))
 
 def Chip.one(+th: String, +now: Nat, +cur: String, +nw: String) -> List<&2, M.Change>:
   Bool.pick(List<&2, M.Change>, String.eq(cur, nw), Nil{}, [M.SettingSet{Chip.key(th), nw, now}])
 
-def Chip.go(ts: List<&2, M.Thread>, +st: M.State, +threads: J.Json, +now: Nat) -> List<&2, M.Change>:
+def Chip.go(ts: List<&2, M.Thread>, +st: M.State, +threads: J.Json, +gen: Nat, +now: Nat) -> List<&2, M.Change>:
   match ts:
     case Nil{}:
       Nil{}
     case +t <> r:
-      List.append(&2, M.Change, Chip.one(M.Thread.id(t), now, M.Setting.get(st, Chip.key(M.Thread.id(t)), ""), Chip.value(J.Json.get_obj(threads, M.Thread.id(t)))),
-        Chip.go(r, st, threads, now))
+      List.append(&2, M.Change, Chip.one(M.Thread.id(t), now, M.Setting.get(st, Chip.key(M.Thread.id(t)), ""), Chip.value(J.Json.get_obj(threads, M.Thread.id(t)), gen, now)),
+        Chip.go(r, st, threads, gen, now))
 
 def Chip.threads(s: M.State) -> List<&2, M.Thread>:
   match s:
@@ -613,7 +622,7 @@ def Chip.threads(s: M.State) -> List<&2, M.Thread>:
 def Chip.changes.k(ok: Bool, +st: M.State, +o: J.Json, +now: Nat) -> List<&2, M.Change>:
   match ok:
     case True{}:
-      Chip.go(Chip.threads(st), st, J.Json.get_obj(o, "threads"), now)
+      Chip.go(Chip.threads(st), st, J.Json.get_obj(o, "threads"), Bj.nat(o, "generated_at"), now)
     case False{}:
       Nil{}
 
@@ -626,11 +635,14 @@ def Chip.part(ps: List<&2, String>, +i: Nat) -> String:
   Maybe.default(&2, String, List.head(&2, String, List.drop(&2, String, ps, i)), "")
 
 def Chip.text.k(+state: String, +size: String, +jobs: Nat, +until: Nat, +now: Nat) -> String:
+  Bool.pick(String, String.eq(state, "stale"), "Boat · ? (stale)", Chip.text.w(state, size, jobs, until, now))
+
+def Chip.text.w(+state: String, +size: String, +jobs: Nat, +until: Nat, +now: Nat) -> String:
   Bool.pick(String, String.eq(state, "warm"),
     Bool.pick(String, Nat.is_gt(until, now), "Boat · warm " ++ Nat.show(Nat.div(Nat.add(Nat.sub(until, now), 59n), 60n)) ++ "m", ""),
     "Boat · " ++ size ++ " · " ++ Bool.pick(String, Nat.is_gt(jobs, 1n), Nat.show(jobs) ++ " ", "") ++ state)
 
-# the chip's text ("" for none, or a warm sandbox already gone)
+# the chip's text ("" for none, or a warm sandbox already gone: never "0m")
 def Chip.text(+v: String, +now: Nat) -> String:
   Bool.pick(String, String.is_empty(v), "",
     Chip.text.k(Chip.part(String.split(v, '/'), 0n), Chip.part(String.split(v, '/'), 1n), M.Switch.num(Chip.part(String.split(v, '/'), 2n), 0n),

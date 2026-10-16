@@ -4844,7 +4844,8 @@ def Refresh.loop(fuel: Nat, +inbox: Chan(Msg), +user: String, +home: String, +ca
         Refresh.loop(f, inbox, user, home, cache, now, here, Bool.pick(Nat, due, Nat.sub(Nat.div(U32.to_nat(Models.every()), 60000n), 1n), Nat.sub(left, 1n)))
 
 # Boat's status.json (a local file the Boat runner rewrites; no network)
-# every 30 s; the hub hears of it only when it changed (BoatThreads)
+# every 30 s; the hub hears of it when it changed, and every 2 minutes
+# anyway, so a runner that stopped writing turns its chips stale (BoatThreads)
 def Chips.post(same: Bool, +inbox: Chan(Msg), +text: String) -> IO(Unit):
   match same:
     case True{}:
@@ -4861,7 +4862,7 @@ def Chips.loop(fuel: Nat, +inbox: Chan(Msg), +path: String, +last: String) -> IO
     case 1n+f:
       do IO<Unit>:
         +text : String <- K.Io.text(path)
-        Chips.post(String.eq(text, last), inbox, text)
+        Chips.post(Bool.and(String.eq(text, last), Bool.not(Nat.is_eq(Nat.mod(f, 4n), 0n))), inbox, text)
         IO.sleep(30000)
         Chips.loop(f, inbox, path, text)
 
