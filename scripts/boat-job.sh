@@ -737,14 +737,23 @@ nourl < "$OUT/setup.log"; echo "setup in $(( $(date +%s) - T2 ))s"
 
 # the command, streamed; check.sh asks for a 1 GiB stack, so the hard limit is raised first
 CMD=$(printf '%q ' "$@")
-REMOTE="cd /home/user/$NAME && export PATH=\$HOME/.bend/bin:\$PATH BEND_NO_TELEMETRY=1 CI=1 && { [ \"\$(ulimit -Hs)\" = unlimited ] || sudo -n prlimit --pid \$\$ --stack=unlimited:unlimited 2>/dev/null || true; } && ulimit -s 1048576 2>/dev/null; echo \"[boat-job] \$(nproc) cpu, \$(free -g | awk '/Mem:/{print \$2}') GiB, stack \$(ulimit -s)\"; if [ -x /usr/bin/time ]; then /usr/bin/time -f '[boat-job] peak RSS %M KiB, wall %e s, exit %x' $CMD; else $CMD; fi"
+REMOTE="cd /home/user/$NAME && export PATH=\$HOME/.bend/bin:\$PATH BEND_NO_TELEMETRY=1 CI=1 && { [ \"\$(ulimit -Hs)\" = unlimited ] || sudo -n prlimit --pid \$\$ --stack=unlimited:unlimited 2>/dev/null || true; } && ulimit -s 1048576 2>/dev/null; echo \"[boat-job] \$(nproc) cpu, \$(free -g | awk '/Mem:/{print \$2}') GiB, stack \$(ulimit -s)\"; if [ -x /usr/bin/time ]; then /usr/bin/time -f '[boat-job] peak RSS %M KiB, wall %e s, exit %x' $CMD; else $CMD; fi; rc=\$?; echo \"[boat-job] job $JOB exit \$rc\"; exit \$rc"
 T3=$(date +%s)
 # status.json stays fresh while a long job runs (the Usage screen and the
 # thread chips read it); this loop is our own child, stopped by its pid
 ( while sleep 60; do status_file; done ) & HB=$!
 echo "running: $CMD"
 BT=$(( TIMEOUT + 120 )) b exec "$ID" --timeout 0 --stream -- bash -c "$REMOTE" 2>&1 | nourl | tee "$LOG"
-RC=${PIPESTATUS[0]}
+XRC=${PIPESTATUS[0]}
+# The command's exit status is the one it printed itself (the sentinel line
+# with this job's id): on a reused sandbox `boat exec --stream` has returned
+# the previous command's status. No sentinel: a failure, unless exec says so.
+SRC_RC=$(sed -n "s/^\[boat-job\] job $JOB exit \([0-9][0-9]*\)\$/\1/p" "$LOG" | tail -1)
+if [ -n "$SRC_RC" ]; then
+  RC=$SRC_RC
+  [ "$XRC" = "$RC" ] || echo "[boat-job] boat exec reported exit $XRC; the command itself exited $RC (using $RC)" | tee -a "$LOG"
+elif [ "$XRC" != 0 ]; then RC=$XRC
+else RC=70; echo "[boat-job] the command's exit status never arrived (boat exec said 0): treated as a failure" | tee -a "$LOG"; fi
 [ "$HB" -gt 1 ] && kill "$HB" 2>/dev/null; HB=0
 [ "$RC" = 124 ] && echo "[boat-job] timed out after ${TIMEOUT}s" | tee -a "$LOG"
 echo "[boat-job] command exit $RC in $(( $(date +%s) - T3 ))s" | tee -a "$LOG"
