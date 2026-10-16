@@ -79,6 +79,7 @@ try {
 
   const box = await call("evaluate", { page: "a", expression: "(()=>{q.value='';const r=q.getBoundingClientRect();return {x:r.x+8,y:r.y+8}})()" });
   await d.x(`click ${Math.round(10 + box.x)} ${Math.round(10 + box.y)} 1`);
+  await until(async () => (await d.x("focus")).focus !== d.parent, "click transfers X focus from embedding parent");
   await d.x("key a");
   await until(() => call("evaluate", { page: "a", expression: "q.value === 'a'" }), "click takes child keyboard focus");
   check("real desktop click transfers X keyboard focus", true);

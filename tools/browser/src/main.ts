@@ -249,6 +249,8 @@ async function launch(): Promise<BrowserContext> {
 async function launchCef(): Promise<BrowserContext> {
   if (!Number.isSafeInteger(cefOptions.parent) || cefOptions.parent <= 0 || !cefOptions.display)
     throw new Error("cef needs parent (X window id) and display");
+  if (PROFILE && resolve(cefOptions.cache) === resolve(PROFILE))
+    throw new Error("CEF cache must differ from the Chrome profile");
   const host = new CefEngine(cefOptions);
   cef = host;
   host.on("host", (e) => {
