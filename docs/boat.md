@@ -6,8 +6,30 @@ take the local "bend" lock or its memory.
 
 ```
 work_run {note: "check on Boat",
-          command: "cd <your worktree> && scripts/boat-job.sh --size default --timeout 900 -- scripts/check.sh"}
+          command: "cd <your worktree> && scripts/boat-job.sh --timeout 900 -- scripts/check.sh"}
 ```
+
+Size by default: **large (16 GB) for anything that runs PROOF** (`check.sh`,
+`check.sh proof`, `PROOF.bend`, the `dev.sh` gates): since #149 the proof
+peaks above the 8 GB machine (killed at 7.45 GB on main 851a915b0).
+Everything else, `check.sh check` included, runs on default. `--size` wins.
+
+Each thread keeps its sandbox **warm** after a job, for an idle window
+(`--idle SECS`, `BOAT_JOB_IDLE`, default 1200, at most 3600; 0 deletes at
+once). The thread's next job reuses it (no new Boat start): its lifetime is
+set for that job, the previous job's tree is wiped (`build/` too, unless
+`--keep-build`), the worktree pushed again, Bend installed only once. A warm
+sandbox is used only by its own thread, only when free, and only for a job
+of its size or smaller (a default job may use a warm large one, never the
+other way). Its lifetime while warm is the idle window + 5 min, so Boat
+stops it even if nothing else runs; a sweep deletes ours past the window.
+Idle time counts against the daily cap. Runs without a thread (by hand),
+cancelled jobs and failed setups delete at once. `--no-reuse` always
+starts a new one.
+
+Start guard: past 80% of Boat's hourly or daily start limit
+(`BOAT_JOB_START_GUARD`), no new sandbox is started; a job from a thread
+with a free warm sandbox still runs. The refusal says so.
 
 Each job gets its own sandbox, deleted when it ends; no lock is needed.
 Admission follows Boat's live limits, read before every create: active
@@ -32,8 +54,8 @@ checkout).
 ## What is verified (default, 8 GB, 4 vCPU)
 | command | result | wall | peak RSS |
 |---|---|---|---|
-| `scripts/check.sh` (type-check + PROOF) | exit 0 | 149 s | 4.29 GB |
-| `scripts/check.sh proof` | exit 0 | 98 s | 4.32 GB |
+| `scripts/check.sh` (type-check + PROOF) | exit 0 until #149; since then PROOF is OOM-killed at 7.45 GB: use large (the default for it now) | 149 s | 4.29 GB (before #149) |
+| `scripts/check.sh proof` | as above | 98 s | 4.32 GB (before #149) |
 | `scripts/test.sh` (136 programs) | exit 0 | 294 s | 3.38 GB |
 | native `BACKPLANE_LOW_MEM=1 scripts/build-app.sh src/app/main.bend build/backplane` (4 GiB heap hint, one clang at a time; `CC=clang-19`, `libx11-dev`, `libasound2-dev` installed in the job, `BACKPLANE_GOOGLE_BAKE=0`) | exit 0 twice; the built binary starts `--headless` and answers `/hello` | 17–21 min | 6.7–7.1 GB (0.6–1.0 GB left free: tight) |
 
@@ -54,7 +76,8 @@ Every job's files are in `~/.local/state/backplane/boat/jobs/<job>/`:
 flag, manifest hash, Bend version and sha256, sandbox, size, command, exit).
 
 ## Options
-- `--size small|default|large`: 2 vCPU / 4 GB at half rate, 4 vCPU / 8 GB, or 8 vCPU / 16 GB at twice the rate. Default is default; ask for large only when the job is measured to need it.
+- `--size small|default|large`: 2 vCPU / 4 GB at half rate, 4 vCPU / 8 GB, or 8 vCPU / 16 GB at twice the rate. Default: large for PROOF, default for the rest; ask for large otherwise only when the job is measured to need it.
+- `--idle SECS`, `--keep-build`, `--no-reuse`: the warm sandbox (above).
 - `--timeout SECS` (default 1800): the command's limit; the sandbox lives at most that + 10 min, and never more than 2 h.
 - `--artifact PATH` (repeat): copied back from the sandbox before it is deleted.
 - `--exclude GLOB` (repeat): more files to keep out of the upload.

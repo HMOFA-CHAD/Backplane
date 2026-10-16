@@ -86,7 +86,7 @@ fold() {
 import json, sys, time
 path, mode = sys.argv[1], sys.argv[2]
 day = time.strftime("%Y-%m-%d", time.gmtime())
-jobs = {}; attempts = []
+jobs = {}; attempts = []; sbx = {}
 try:
     lines = open(path).read().splitlines()
 except FileNotFoundError:
@@ -99,7 +99,14 @@ for l in lines:
     for k in ("id", "pid", "pidid", "day"):
         if k in e and k not in j: j[k] = e[k]
     ev = e.get("ev")
-    if ev == "reserve": j["done"] = False; j["reserved"] = e.get("reserved", 0); j["size"] = e.get("size"); j["ttl"] = e.get("ttl")
+    if ev == "reserve": j["done"] = False; j["reserved"] = e.get("reserved", 0); j["size"] = e.get("size"); j["ttl"] = e.get("ttl"); j["thread"] = e.get("thread", "")
+    # sandboxes: busy with a job, or warm (kept for the thread) until a time
+    sid = e.get("id")
+    if ev in ("created", "claim") and sid: sbx[sid] = {"state": "busy", "job": e.get("job", ""), "thread": j.get("thread", ""), "size": j.get("size")}
+    if ev == "claim": j["id"] = sid
+    if ev == "ended" and sid and not e.get("kept"): sbx.pop(sid, None)
+    if ev == "warm" and sid: sbx[sid] = {"state": "warm", "job": e.get("job", ""), "thread": e.get("thread", ""), "size": e.get("size"), "until": e.get("until", 0), "warm_at": e.get("at", 0), "reserved": e.get("reserved", 0)}
+    if ev in ("deleted", "swept", "orphan") and sid: sbx.pop(sid, None)
     if ev == "attempt": attempts.append(e.get("at", 0)); j["attempt_at"] = e.get("at", 0)
     if ev in ("ended", "swept"): j["done"] = True; j["cost"] = e.get("cost", 0); j["orphan"] = False
     if ev == "orphan": j["orphan"] = True
@@ -112,6 +119,11 @@ if mode == "known":
     for j in jobs.values():
         if j.get("id"): print(j["id"])
     sys.exit()
+if mode == "warm":
+    for sid, x in sbx.items():
+        if x["state"] == "warm":
+            print(sid, x.get("size") or "default", x.get("thread") or "-", x.get("until", 0), x.get("job", ""), x.get("warm_at", 0), x.get("reserved", 0))
+    sys.exit()
 if mode == "ambig":
     for k, j in jobs.items():
         if j.get("ambig") and not j.get("done") and not j.get("id"):
@@ -123,7 +135,7 @@ if mode == "ids":
             print(k, j["id"], j.get("pid", ""), j.get("pidid", ""))
     sys.exit()
 open_n = sum(1 for j in jobs.values() if not j.get("done") and not j.get("id"))
-open_r = sum(int(j.get("reserved", 0)) for j in jobs.values() if not j.get("done"))
+open_r = sum(int(j.get("reserved", 0)) for j in jobs.values() if not j.get("done")) + sum(int(x.get("reserved", 0)) for x in sbx.values() if x["state"] == "warm")
 spent = sum(int(j.get("cost", 0)) for j in jobs.values() if j.get("done") and j.get("day") == day)
 orph = sum(1 for j in jobs.values() if j.get("orphan"))
 now = time.time()
@@ -170,6 +182,10 @@ tmp = path + ".tmp"; json.dump(out, open(tmp, "w")); os.replace(tmp, path)
 EOF
 }
 limits_live() { local l; l=$(BT=30 b limits --json 2>/dev/null) || { account_cache ""; return 1; }; account_cache "$l"; printf '%s' "$l"; }
+
+# credit-seconds a sandbox used since a time (a job's share of a reused one)
+usage_since() { BT=30 b usage "$1" --since "$2" --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(int(d.get("seconds",0))*int(d.get("billingMultiplier",1)))' 2>/dev/null; }
+rate2() { case $1 in small) echo 1 ;; large) echo 4 ;; *) echo 2 ;; esac; }
 
 # delete one sandbox of ours and check it is gone; 0 when verified
 delete_verify() {
@@ -222,10 +238,25 @@ else: print("UNRESOLVED", " ".join(c))
 }
 
 sweep() {
+  local ids w l now
   reconcile || return 1
   ids=$(fold ids) || return 1
-  [ -n "$ids" ] || return 0
+  w=$(fold warm) || return 1
+  [ -n "$ids$w" ] || return 0
   l=$(listed) || { say "sweep: cannot list sandboxes"; return 1; }
+  # warm sandboxes past their idle window: deleted (ours only, by id)
+  now=$(date +%s)
+  [ -z "$w" ] || printf '%s\n' "$w" | while read -r id size thread until job wat reserved; do
+    [ "$until" -le "$now" ] || continue
+    if printf '%s\n' "$l" | grep -qx "$id"; then
+      u=$(usage_since "$id" "$wat"); [ -n "$u" ] || u=$reserved
+      if delete_verify "$id"; then ledger ev=deleted job="$job" id="$id" cost="$u" why=idle; say "deleted idle warm sandbox $id"
+      else ledger ev=orphan job="$job" id="$id"; say "sweep could not delete warm sandbox $id"; fi
+    else
+      ledger ev=deleted job="$job" id="$id" cost="$reserved" why="gone (auto-stopped)"
+    fi
+  done
+  [ -n "$ids" ] || return 0
   printf '%s\n' "$ids" | while read -r job id pid pidid; do
     [ -n "$id" ] || continue
     if [ -n "$pid" ] && [ "$pid" -gt 1 ] 2>/dev/null && [ "$(pid_id "$pid")" = "$pidid" ]; then continue; fi   # its job still runs
@@ -242,7 +273,7 @@ sweep() {
 status_json() {
   python3 - "$LEDGER" "$ROOT/account.json" <<'EOF2'
 import json, sys, time
-day = time.strftime("%Y-%m-%d", time.gmtime()); jobs = {}
+day = time.strftime("%Y-%m-%d", time.gmtime()); jobs = {}; sbx = {}; saved = []; idle_costs = []
 try: lines = open(sys.argv[1]).read().splitlines()
 except FileNotFoundError: lines = []
 for l in lines:
@@ -263,9 +294,33 @@ for l in lines:
     elif ev == "unresolved": j["state"] = "unresolved"; j["why"] = e.get("why", "")
     elif ev == "reconciled": j["state"] = "reconciled"; j["ended_at"] = e["at"]; j["cost_cs"] = e.get("cost", 0); j["why"] = e.get("why", "")
     elif ev == "attempt": j["attempts"] = j.get("attempts", 0) + 1; j["attempt_at"] = e["at"]
+    elif ev == "claim": j["sandbox"] = e.get("id"); j["started_at"] = e["at"]; j["state"] = "running"; j["reused"] = True; saved.append(e.get("day", ""))
+    sid = e.get("id")
+    if ev in ("created", "claim") and sid: sbx[sid] = {"id": sid, "state": "running", "job": j["job"], "thread": j.get("thread", ""), "size": j.get("size"), "since": e["at"]}
+    if ev == "ended" and sid and not e.get("kept"): sbx.pop(sid, None)
+    if ev == "warm" and sid: sbx[sid] = {"id": sid, "state": "warm", "job": j["job"], "thread": e.get("thread", ""), "size": e.get("size"), "since": e["at"], "idle_until": e.get("until"), "reserved_cs": e.get("reserved", 0)}
+    if ev in ("deleted", "swept", "orphan") and sid: sbx.pop(sid, None)
+    if ev == "deleted": idle_costs.append(e)
 now = int(time.time())
 for j in jobs.values():
     if "started_at" in j: j["runtime_s"] = j.get("ended_at", now) - j["started_at"]
+# per thread (the thread header chip): running beats warm beats starting; the largest size
+rank = {"small": 0, "default": 1, "large": 2}; srank = {"starting": 0, "warm": 1, "running": 2}
+threads = {}
+def put(t, state, size, since, until=None):
+    if not t: return
+    x = threads.setdefault(t, {"state": state, "size": size, "jobs": 0, "idle_until": None, "since": since})
+    if srank[state] > srank[x["state"]]: x.update(state=state, since=since)
+    if rank.get(size or "default", 1) > rank.get(x["size"] or "default", 1): x["size"] = size
+    if state == "warm": x["idle_until"] = max(x["idle_until"] or 0, until or 0)
+    if state != "warm": x["jobs"] += 1
+for x in sbx.values():
+    if x["state"] == "warm" and (x.get("idle_until") or 0) <= now: continue
+    put(x["thread"], x["state"], x["size"], x["since"], x.get("idle_until"))
+for j in jobs.values():
+    if j["state"] == "starting": put(j.get("thread", ""), "starting", j.get("size"), j.get("queued_at", now))
+for x in threads.values():
+    if x["state"] != "warm": x["idle_until"] = None
 out = sorted(jobs.values(), key=lambda j: j.get("queued_at", j.get("ended_at", 0)))
 today = [j for j in out if j.get("day") == day]
 try: account = json.load(open(sys.argv[2]))
@@ -281,9 +336,14 @@ print(json.dumps({"rate": {"credit_s_per_usd": 100000, "small": 0.5, "default": 
   "unresolved": sum(1 for j in out if j["state"] == "unresolved"),
   "running": sum(1 for j in out if j["state"] in ("starting", "running")),
   "orphans": sum(1 for j in out if j["state"] == "orphan"),
-  "month": {"month": day[:7], "cost_cs": sum(j.get("cost_cs", 0) for j in out if str(j.get("day", "")).startswith(day[:7]))},
+  "month": {"month": day[:7], "cost_cs": sum(j.get("cost_cs", 0) for j in out if str(j.get("day", "")).startswith(day[:7])) + sum(e.get("cost", 0) for e in idle_costs if str(e.get("day", "")).startswith(day[:7]))},
   "generated_at": int(time.time()),
-  "today": {"day": day, "cost_cs": sum(j.get("cost_cs", 0) for j in today), "reserved_open_cs": sum(j.get("reserved_cs", 0) for j in out if j["state"] in ("starting", "running", "ambiguous", "unresolved"))},
+  "today": {"day": day, "cost_cs": sum(j.get("cost_cs", 0) for j in today) + sum(e.get("cost", 0) for e in idle_costs if e.get("day") == day),
+            "reserved_open_cs": sum(j.get("reserved_cs", 0) for j in out if j["state"] in ("starting", "running", "ambiguous", "unresolved")) + sum(x.get("reserved_cs", 0) for x in sbx.values() if x["state"] == "warm"),
+            "starts_saved": sum(1 for d in saved if d == day)},
+  "starts_saved": len(saved),
+  "sandboxes": sorted(sbx.values(), key=lambda x: x["since"]),
+  "threads": threads,
   "jobs": out}))
 EOF2
 }
@@ -330,7 +390,8 @@ case ${1:-} in
     fold ids; exit 0 ;;
 esac
 
-SIZE=default TIMEOUT=1800 WAIT=${BOAT_JOB_WAIT:-3600} BUDGET_ASK="" SETUP_BEND=auto
+SIZE="" TIMEOUT=1800 WAIT=${BOAT_JOB_WAIT:-3600} BUDGET_ASK="" SETUP_BEND=auto
+IDLE=${BOAT_JOB_IDLE:-1200} KEEP_BUILD=0 NOREUSE=0 GUARD=${BOAT_JOB_START_GUARD:-0.8}
 ARTS=() EXCL=()
 while [ $# -gt 0 ]; do
   case $1 in
@@ -340,6 +401,9 @@ while [ $# -gt 0 ]; do
     --exclude) EXCL+=("$2"); shift 2 ;;
     --budget-usd) BUDGET_ASK=$2; shift 2 ;;
     --wait) WAIT=$2; shift 2 ;;
+    --idle) IDLE=$2; shift 2 ;;
+    --keep-build) KEEP_BUILD=1; shift ;;
+    --no-reuse) NOREUSE=1; shift ;;
     --setup-bend) SETUP_BEND=yes; shift ;;
     --no-setup-bend) SETUP_BEND=no; shift ;;
     --) shift; break ;;
@@ -347,8 +411,23 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ $# -gt 0 ] || { say "no command (use -- CMD...)"; exit 75; }
+# Size by default: large for anything that runs PROOF (check.sh in all or
+# proof mode, PROOF.bend, the dev.sh gates): since #149 it peaks above the
+# 8 GB machine (killed at 7.45 GB). Everything else: default. --size wins.
+if [ -z "$SIZE" ]; then
+  if printf '%s ' "$@" | python3 -c '
+import re, sys
+c = sys.stdin.read()
+proof = "PROOF.bend" in c or re.search(r"(^|[/\s])dev\.sh\b", c)
+for m in re.finditer(r"check\.sh(\s+(\S+))?", c):
+    if (m.group(2) or "") != "check": proof = True
+sys.exit(0 if proof else 1)'; then
+    SIZE=large; echo "this runs PROOF: large (16 GB) by default (the proof outgrew 8 GB with #149); --size to choose"
+  else SIZE=default; fi
+fi
 case $SIZE in small) RATE2=1 ;; default) RATE2=2 ;; large) RATE2=4 ;; *) say "size $SIZE is not supported (small, default or large; large only when the job is measured to need it)"; exit 75 ;; esac
-case $TIMEOUT$WAIT in ''|*[!0-9]*) say "bad --timeout or --wait"; exit 75 ;; esac
+case $TIMEOUT$WAIT$IDLE in ''|*[!0-9]*) say "bad --timeout, --wait or --idle"; exit 75 ;; esac
+[ "$IDLE" -le 3600 ] || { say "--idle is at most 3600 s"; exit 75; }
 TTL=$(( TIMEOUT + 600 )); [ $TTL -lt 900 ] && TTL=900; [ $TTL -gt 7200 ] && TTL=7200
 [ $(( TIMEOUT + 300 )) -le $TTL ] || { say "--timeout too long for the 2 h lifetime"; exit 75; }
 RESERVE=$(( TTL * RATE2 / 2 ))                        # credit-seconds, worst case
@@ -363,6 +442,7 @@ grep -qxF "$SRC" "$ROOT/enabled" 2>/dev/null || grep -qxF "$(git -C "$SRC" rev-p
   || { say "Boat jobs are off for $SRC (add the repo's root to $ROOT/enabled)"; exit 75; }
 
 JOB="j$(date -u +%Y%m%d%H%M%S)-$$"
+NAME_GUESS=$(basename "$SRC")
 # who asked: the Backplane work this runs under (its run.sh is an ancestor:
 # <home>/work/w-<thread>-<n>/run.sh), read from /proc, nothing signalled
 WORK="" q=$PPID
@@ -387,10 +467,37 @@ admit() {
   read -r n r s o am ah ad u <<<"$(fold)"
   [ "$o" = 0 ] || { echo "a sandbox delete was never verified; run scripts/boat-job.sh sweep"; return 1; }
   [ "$u" = 0 ] || { echo "an unclear Boat create is unresolved (sandboxes like it are still up past its lifetime): check boat list, delete it if it is ours, then run scripts/boat-job.sh sweep"; return 1; }
+  # a warm sandbox of this thread, free and big enough: reused, no new start
+  if [ "$NOREUSE" = 0 ] && [ -n "$THREAD" ]; then
+    local pick wl pid_ psize pres wres
+    pick=$(fold warm | python3 -c '
+import sys, time
+thread, size = sys.argv[1], sys.argv[2]; rank = {"small": 0, "default": 1, "large": 2}; now = time.time(); c = []
+for l in sys.stdin:
+    f = l.split()
+    if len(f) < 7 or f[2] != thread or int(f[3]) < now + 60 or rank.get(f[1], 1) < rank.get(size, 1): continue
+    c.append((rank.get(f[1], 1), -int(f[3]), f[0], f[1], f[6]))
+if c: c.sort(); print(c[0][2], c[0][3], c[0][4])
+' "$THREAD" "$SIZE")
+    if [ -n "$pick" ]; then
+      read -r pid_ psize wres <<<"$pick"
+      wl=$(listed) || { echo "cannot list sandboxes"; return 1; }
+      if printf '%s\n' "$wl" | grep -qx "$pid_"; then
+        pres=$(( TTL * $(rate2 "$psize") / 2 ))
+        if [ $(( s + r - wres + pres )) -le "$BUDGET" ]; then
+          ledger ev=reserve job="$JOB" size="$psize" ttl="$TTL" reserved="$pres" budget="$BUDGET" budget_src="$BUDGET_SRC" src="$SRC" thread="$THREAD" work="$WORK" project="$PROJECT" machine="$MACHINE" cmd="$*" pid=$$ pidid="$(pid_id $$)"
+          ledger ev=claim job="$JOB" id="$pid_" size="$psize" thread="$THREAD"
+          echo "claim $pid_ $psize"; return 0
+        fi
+      else
+        ledger ev=deleted id="$pid_" cost="$wres" why="gone (auto-stopped)"
+      fi
+    fi
+  fi
   lim=$(limits_live) || { echo "cannot read Boat limits"; return 1; }
   why=$(printf '%s' "$lim" | python3 -c '
 import json, sys
-need, size, n, am, ah, ad = int(sys.argv[1]), sys.argv[2], *map(int, sys.argv[3:7])
+need, size, n, am, ah, ad = int(sys.argv[1]), sys.argv[2], *map(int, sys.argv[3:7]); guard = float(sys.argv[7])
 try: d = json.load(sys.stdin)
 except Exception: print("NO Boat limits unreadable"); sys.exit()
 try:
@@ -415,8 +522,15 @@ if not st.get("unlimited"):
         # starts at once), less the jobs of ours already admitted and starting
         if min(rem, lim - mine) - n <= 0:
             print((f"WAIT {pause} " if pause else "NO ") + f"start limit per {w}: {lim - rem} of {lim} used (Backplane {mine}), {n} starting"); sys.exit()
+    # start guard: past this share of the hourly or daily starts, no new
+    # sandboxes; jobs from a thread with a warm one reuse it instead
+    for w, mine in (("hour", ah), ("day", ad)):
+        rem, lim = int(st[w]["remaining"]), int(st[w]["limit"])
+        used = max(lim - rem, mine) + n
+        if used + 1 > guard * lim:
+            print(f"NO start guard: {used} of {lim} Boat starts used this {w} (over {round(guard * 100)}%), and this thread has no free warm sandbox to reuse. Run the job from a thread whose sandbox is warm, wait for the {w} window, or run it locally"); sys.exit()
 print("OK")
-' "$RESERVE" "$SIZE" "$n" "$am" "$ah" "$ad")
+' "$RESERVE" "$SIZE" "$n" "$am" "$ah" "$ad" "$GUARD")
   case $why in
     OK) ;;
     WAIT*) echo "${why#WAIT }"; return 2 ;;
@@ -435,7 +549,7 @@ admit_wait() {
   local why arc p
   while :; do
     why=$(with_lock admit "$@"); arc=$?
-    [ $arc = 0 ] && return 0
+    [ $arc = 0 ] && { ADMIT_OUT=$why; return 0; }
     [ $arc = 2 ] || refuse "$why"
     p=${why%% *}; why=${why#* }; [ "$p" -ge 15 ] 2>/dev/null || p=15
     [ $(( WAITED + p )) -le "$WAIT" ] || refuse "still waiting after ${WAITED}s: $why"
@@ -444,8 +558,10 @@ admit_wait() {
   done
 }
 trap 'say "cancelled while waiting"; exit 143' TERM INT HUP
+ADMIT_OUT="" CLAIMED=0 HB=0 JSTART=0
 admit_wait "$@"
 [ $WAITED = 0 ] || echo "admitted after ${WAITED}s"
+case $ADMIT_OUT in claim\ *) read -r _ CLAIM_ID CLAIM_SIZE <<<"$ADMIT_OUT"; CLAIMED=1; SIZE=$CLAIM_SIZE; RATE2=$(rate2 "$SIZE"); RESERVE=$(( TTL * RATE2 / 2 )) ;; esac
 
 ID="" CANCELLED=0 STAGE="" IN_CREATE=0 BEFORE="" ATTEMPT_AT=0
 # after a create whose answer is unclear: unknown sandboxes (not listed
@@ -480,9 +596,16 @@ finish() {
     say "stopped during the create: its slot and worst-case budget stay held until a sweep reconciles it"
     rm -rf "$STAGE"; echo "exit $rc · logs $OUT"; exit "$rc"
   fi
+  [ "$HB" -gt 1 ] 2>/dev/null && kill "$HB" 2>/dev/null
   if [ -n "$ID" ]; then
-    u=$(BT=30 b usage "$ID" --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(int(d.get("seconds",0))*int(d.get("billingMultiplier",1)))' 2>/dev/null || echo "$RESERVE")
-    if delete_verify "$ID"; then ledger ev=ended job="$JOB" id="$ID" cost="$u" rc="$rc"; echo "sandbox $ID deleted (verified); used ${u} credit-s (\$$(python3 -c "print(round($u/100000,5))"))"
+    u=$(usage_since "$ID" "$JSTART"); [ -n "$u" ] || u=$RESERVE
+    keep=0; [ "$IDLE" -gt 0 ] && [ -n "$THREAD" ] && [ "$CANCELLED" = 0 ] && case $rc in 70|76|77|143) ;; *) keep=1 ;; esac
+    if [ $keep = 1 ] && BT=60 b extend "$ID" --ttl $(( IDLE + 300 )) --json >/dev/null 2>&1; then
+      until=$(( $(date +%s) + IDLE ))
+      ledger ev=ended job="$JOB" id="$ID" cost="$u" rc="$rc" kept=1
+      ledger ev=warm job="$JOB" id="$ID" until="$until" thread="$THREAD" size="$SIZE" reserved=$(( (IDLE + 300) * RATE2 / 2 ))
+      echo "sandbox $ID kept warm for this thread until $(date -d "@$until" +%H:%M 2>/dev/null || echo "+${IDLE}s") (Boat stops it 5 min later at the latest); this job used ${u} credit-s"
+    elif delete_verify "$ID"; then ledger ev=ended job="$JOB" id="$ID" cost="$u" rc="$rc"; echo "sandbox $ID deleted (verified); used ${u} credit-s (\$$(python3 -c "print(round($u/100000,5))"))"
     else ledger ev=orphan job="$JOB" id="$ID"; say "COULD NOT VERIFY delete of $ID: later jobs are refused until scripts/boat-job.sh sweep removes it"; rc=77; fi
   else
     ledger ev=ended job="$JOB" cost=0 rc="$rc"
@@ -492,6 +615,21 @@ finish() {
   exit "$rc"
 }
 trap 'CANCELLED=1; say "cancelled"; finish 143' TERM INT HUP
+# a reused sandbox: its lifetime set for this job, the last job's tree wiped
+# (build/ kept with --keep-build). Unusable: deleted and a new one admitted.
+if [ "$CLAIMED" = 1 ]; then
+  ID=$CLAIM_ID; JSTART=$(date +%s)
+  echo "reusing this thread's warm sandbox $ID ($SIZE): no new Boat start"
+  clean="set -e; k=/home/user/.bj-keep; rm -rf \$k; mkdir -p \$k; touch /home/user/.bj-projects; while read -r p; do [ -n \"\$p\" ] || continue; d=/home/user/\$p; if [ $KEEP_BUILD = 1 ] && [ \"\$p\" = '$NAME_GUESS' ] && [ -d \$d/build ]; then mv \$d/build \$k/build; fi; rm -rf \"\$d\"; done < /home/user/.bj-projects; : > /home/user/.bj-projects; echo cleaned"
+  if ! { BT=60 b extend "$ID" --ttl "$TTL" --json >/dev/null 2>&1 && BT=120 b exec "$ID" --timeout 120 -- bash -c "$clean" >/dev/null 2>&1; }; then
+    say "warm sandbox $ID could not be reused; deleting it and admitting a new one"
+    if delete_verify "$ID"; then ledger ev=deleted job="$JOB" id="$ID" why="reuse failed"; else ledger ev=orphan job="$JOB" id="$ID"; ID=""; FINISHING=1; exit 77; fi
+    ledger ev=released job="$JOB" why="warm sandbox unusable"; ID=""; CLAIMED=0; NOREUSE=1; JSTART=0
+    trap 'say "cancelled while waiting"; exit 143' TERM INT HUP
+    admit_wait "$@"
+    trap 'CANCELLED=1; say "cancelled"; finish 143' TERM INT HUP
+  fi
+fi
 trap 'r=$?; [ "$FINISHING" = 1 ] || { say "unexpected exit $r: cleaning up"; finish 70; }' EXIT
 
 # manifest: tracked + untracked-not-ignored files, secrets/logs/build output dropped
@@ -521,7 +659,7 @@ echo "source: $SRC @ $REV (dirty: $DIRTY), $(wc -l < "$OUT/manifest.sha256") fil
 # either (a matching sandbox may be another client's): it stays held and is
 # reconciled by a sweep.
 T0=$(date +%s); TRIES=0
-while :; do
+while [ "$CLAIMED" = 0 ]; do
   BEFORE=$(listed | tr '\n' ' ') || { ledger ev=released job="$JOB"; refuse "cannot list sandboxes before creating"; }
   ATTEMPT_AT=$(date +%s); ledger ev=attempt job="$JOB" size="$SIZE"
   IN_CREATE=1
@@ -556,7 +694,7 @@ else: print("-", "UNCLEAR", 0)
       [ $(( WAITED + p )) -le "$WAIT" ] || refuse "rate-limited, and the wait would pass --wait"
       echo "Boat rate-limited the create; retrying in ${p}s"
       sleep "$p" & wait $!; WAITED=$(( WAITED + p ))
-      admit_wait "$@" ;;
+      NOREUSE=1; admit_wait "$@" ;;
     REJECT)
       IN_CREATE=0; ID=""; ledger ev=released job="$JOB"
       refuse "Boat rejected the create: $(printf '%s' "$new" | nourl | head -c 200)" ;;
@@ -569,8 +707,11 @@ else: print("-", "UNCLEAR", 0)
   esac
 done
 IN_CREATE=0
-ledger ev=created job="$JOB" id="$ID" pid=$$ pidid="$(pid_id $$)"
-echo "sandbox $ID ($SIZE, ttl ${TTL}s, no account env, no snapshots) in $(( $(date +%s) - T0 ))s"
+if [ "$CLAIMED" = 0 ]; then
+  JSTART=$(date +%s)
+  ledger ev=created job="$JOB" id="$ID" pid=$$ pidid="$(pid_id $$)"
+  echo "sandbox $ID ($SIZE, ttl ${TTL}s, no account env, no snapshots) in $(( $(date +%s) - T0 ))s"
+fi
 
 T1=$(date +%s)
 BT=600 b push "$ID" "$STAGE/$NAME" --json >/dev/null 2>"$OUT/push.err" || { say "push failed: $(nourl < "$OUT/push.err" | head -c 300)"; finish 76; }
@@ -587,10 +728,10 @@ print(v.group(1) if v else "", s.group(1) if s else "")
 EOF
 )"
   [ -n "$BV" ] && [ -n "$BSUM" ] || { say "cannot read the pinned Bend from setup-bend"; finish 76; }
-  BEND_LINE="set -e; n=bend-$BV-linux-x64.tar.gz; t=\$(mktemp -d); curl --proto =https --tlsv1.2 -fsSL -o \$t/\$n https://github.com/bendlang/bend/releases/download/v$BV/\$n; echo '$BSUM  '\$t/\$n | sha256sum -c - >/dev/null; tar -xzf \$t/\$n -C \$t; mkdir -p \$HOME/.bend/bin; mv \$t/bend/bend2 \$t/bend/guide \$HOME/.bend/; mv \$t/bend/bin/bend \$HOME/.bend/bin/bend; echo bend $BV sha256-verified;"
+  BEND_LINE="set -e; if [ \"\$(cat \$HOME/.bend/.pinned 2>/dev/null)\" = '$BV $BSUM' ] && [ -x \$HOME/.bend/bin/bend ]; then echo bend $BV already installed; else n=bend-$BV-linux-x64.tar.gz; t=\$(mktemp -d); curl --proto =https --tlsv1.2 -fsSL -o \$t/\$n https://github.com/bendlang/bend/releases/download/v$BV/\$n; echo '$BSUM  '\$t/\$n | sha256sum -c - >/dev/null; tar -xzf \$t/\$n -C \$t; rm -rf \$HOME/.bend; mkdir -p \$HOME/.bend/bin; mv \$t/bend/bend2 \$t/bend/guide \$HOME/.bend/; mv \$t/bend/bin/bend \$HOME/.bend/bin/bend; echo '$BV $BSUM' > \$HOME/.bend/.pinned; echo bend $BV sha256-verified; fi;"
 elif [ "$SETUP_BEND" = yes ]; then say "--setup-bend: no .github/actions/setup-bend/action.yml here"; finish 76; fi
 T2=$(date +%s)
-BT=600 b exec "$ID" --timeout 600 -- bash -c "${BEND_LINE} cd /home/user/$NAME && git init -q && git add -A && git -c user.name=boat-job -c user.email=boat-job@localhost commit -qm '$REV' && echo tree committed" > "$OUT/setup.log" 2>&1 \
+BT=600 b exec "$ID" --timeout 600 -- bash -c "${BEND_LINE} echo $NAME >> /home/user/.bj-projects; [ -d /home/user/.bj-keep/build ] && mv /home/user/.bj-keep/build /home/user/$NAME/build && echo build/ kept; cd /home/user/$NAME && git init -q && git add -A && git -c user.name=boat-job -c user.email=boat-job@localhost commit -qm '$REV' && echo tree committed" > "$OUT/setup.log" 2>&1 \
   || { say "setup failed: $(nourl < "$OUT/setup.log" | tail -5)"; finish 76; }
 nourl < "$OUT/setup.log"; echo "setup in $(( $(date +%s) - T2 ))s"
 
@@ -598,9 +739,13 @@ nourl < "$OUT/setup.log"; echo "setup in $(( $(date +%s) - T2 ))s"
 CMD=$(printf '%q ' "$@")
 REMOTE="cd /home/user/$NAME && export PATH=\$HOME/.bend/bin:\$PATH BEND_NO_TELEMETRY=1 CI=1 && { [ \"\$(ulimit -Hs)\" = unlimited ] || sudo -n prlimit --pid \$\$ --stack=unlimited:unlimited 2>/dev/null || true; } && ulimit -s 1048576 2>/dev/null; echo \"[boat-job] \$(nproc) cpu, \$(free -g | awk '/Mem:/{print \$2}') GiB, stack \$(ulimit -s)\"; if [ -x /usr/bin/time ]; then /usr/bin/time -f '[boat-job] peak RSS %M KiB, wall %e s, exit %x' $CMD; else $CMD; fi"
 T3=$(date +%s)
+# status.json stays fresh while a long job runs (the Usage screen and the
+# thread chips read it); this loop is our own child, stopped by its pid
+( while sleep 60; do status_file; done ) & HB=$!
 echo "running: $CMD"
 BT=$(( TIMEOUT + 120 )) b exec "$ID" --timeout 0 --stream -- bash -c "$REMOTE" 2>&1 | nourl | tee "$LOG"
 RC=${PIPESTATUS[0]}
+[ "$HB" -gt 1 ] && kill "$HB" 2>/dev/null; HB=0
 [ "$RC" = 124 ] && echo "[boat-job] timed out after ${TIMEOUT}s" | tee -a "$LOG"
 echo "[boat-job] command exit $RC in $(( $(date +%s) - T3 ))s" | tee -a "$LOG"
 

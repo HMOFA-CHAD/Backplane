@@ -79,6 +79,11 @@ case $sub in
     w() { r=$(( $2 - $1 )); [ $r -lt 0 ] && r=0; printf '{"limit":%s,"used":%s,"remaining":%s}' "$2" "$1" "$r"; }
     starts="{\"minute\":$(w $um $lm),\"hour\":$(w $uh $lh),\"day\":$(w $ud $ld),\"unlimited\":false}"
     sed -e "s/ACTIVE/$n/" -e "s/STARTS/$starts/" "$S/limits.json" ;;
+  extend)
+    fail extend; id=$1; shift; t=""
+    while [ $# -gt 0 ]; do case $1 in --ttl) t=$2; shift 2 ;; *) shift ;; esac; done
+    [ -d "$S/boxes/$id" ] && [ -n "$t" ] || { echo "fake: extend what" >&2; exit 1; }
+    read -r ty l c < "$S/boxes/$id/meta"; echo "$ty $t $c" > "$S/boxes/$id/meta"; echo "$id $t" >> "$S/extends" ;;
   usage)
     fail usage; echo '{"seconds":12,"billingMultiplier":1}' ;;
   *) echo "fake: refused $sub" >&2; exit 2 ;;
