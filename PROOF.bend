@@ -11028,3 +11028,16 @@ def Laws.tok_claude_same_session_keeps(s):
 
 def Laws.tok_recount_once():
   {==}
+
+# ---- usage-boat-chip ----
+def Laws.chip_none(now):
+  {==}
+
+def Laws.chip_running():
+  {==}
+
+def Laws.chip_warm_gone():
+  {==}
+
+def Laws.chip_warm_not_stale(gen, now):
+  {==}

@@ -318,6 +318,8 @@ data class ThreadView(
     val embs: List<Emb> = emptyList(),
     // the phase the working line's dot shows (as a row's status)
     val phase: String = "",
+    // the thread's Boat chip ("Boat · large · running"; "" for none), a tap opens Settings
+    val boat: String = "",
 )
 
 data class Btw(val q: String, val a: String)
@@ -535,6 +537,7 @@ private fun thread(o: JSONObject) = threadOf(o).copy(
             it.optBoolean("live"), it.optBoolean("pinned"), it.optString("restart"), it.optJSONObject("term")?.let(::term))
     },
     phase = o.optString("phase"),
+    boat = o.optString("boat"),
 )
 
 private fun threadOf(o: JSONObject) = ThreadView(

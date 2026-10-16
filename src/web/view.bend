@@ -504,18 +504,23 @@ def View.title.k(on: Bool, +id: String, +title: String, +text: String) -> List<&
     case False{}:
       [D.El{"span", "", [D.At{"class", "title rename"}, D.At{"title", "Click to rename"}, D.At{"data-value", id}, D.On{"click", "row-rename"}], [D.Txt{title}]}]
 
-def View.header(t: M.Thread, +st: M.State, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, del: Bool, +ren: String, +rtext: String) -> D.Node:
+# a thread's Boat chip after its branch ("Boat · large · running"); a tap
+# opens Settings, where Usage says more (core/usage.bend's Chip)
+def View.boat.chip(+chip: String) -> List<&2, D.Node>:
+  D.Dom.when(Bool.not(String.is_empty(chip)), D.Dom.button("boat-chip", "usage-open", "", "Boat usage in Settings", chip))
+
+def View.header(t: M.Thread, +st: M.State, +chip: String, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, del: Bool, +ren: String, +rtext: String) -> D.Node:
   match t:
     case M.Thread{+id, +p, title, _, _, turn, _, archived, override, +sa, +ua, pinned, _, +branch, _, _, model, _, _, _, _}:
-      D.El{"header", "", [D.At{"class", "thread-head"}, D.At{"style", "--tint:" ++ BG.Badge.css_of(st, p)}], [
+      D.El{"header", "", [D.At{"class", "thread-head"}, D.At{"style", "--tint:" ++ BG.Badge.css_of(st, p)}], List.concat(&2, D.Node, [[
         D.Dom.button("back", "select", "", "Threads", "‹"),
         D.El{"span", "", [D.At{"class", "badge"}], [WI.WIcon.svg(BG.Badge.icon(st, p), 16)]},
         D.El{"div", "", [D.At{"class", "title-box"}], View.title.k(String.eq(ren, id), id, U.Label.title(st, id, title), rtext)},
-        D.Dom.span("meta", Bool.pick(String, String.is_empty(branch), "", branch)),
+        D.Dom.span("meta", Bool.pick(String, String.is_empty(branch), "", branch))], View.boat.chip(chip), [
         D.El{"div", "", [D.At{"class", "tools"}], List.append(&2, D.Node,
           View.tools(TO.Tools.head(TO.Head{View.running(turn), TO.Tools.settled(override, Nat.is_gt(sa, ua)), pinned, snoozed, archived, del,
             Bool.not(String.is_empty(M.Fork.source(st, id))), term, panel}, "flag", "snooze", "term-toggle", "@term-size")),
-          View.snoozes(picking))}]}
+          View.snoozes(picking))}]])}
 
 # the model menu's rows: each model's name, then what its CLI calls it,
 # in two columns (the names' as wide as the longest, --namew)
@@ -1536,10 +1541,10 @@ def View.composer(+draft: String, +send: String, +act: String, +label: String, +
         View.send(act, send)]}]}]))))}
 
 # the thread's header, or the one given (a bot's)
-def View.top(hd: List<&2, D.Node>, t: M.Thread, +st: M.State, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, del: Bool, +ren: String, +rtext: String) -> List<&2, D.Node>:
+def View.top(hd: List<&2, D.Node>, t: M.Thread, +st: M.State, +chip: String, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, del: Bool, +ren: String, +rtext: String) -> List<&2, D.Node>:
   match hd:
     case Nil{}:
-      [View.header(t, st, panel, snoozed, picking, term, diff, del, ren, rtext)]
+      [View.header(t, st, chip, panel, snoozed, picking, term, diff, del, ren, rtext)]
     case h <> r:
       h <> r
 
@@ -1582,7 +1587,7 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
       +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
       D.El{"main", "thread", [D.At{"class", Bool.pick(String, term, "thread-view with-term", "thread-view") ++ Bool.pick(String, U.Flag.get(op, "drop"), " dropping", "")},
         D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
-        View.top(hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), [
+        View.top(hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, id, now), panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), [
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
           D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(nf, id, SB.Subs.rows(st, nf, id, now)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
           D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(tr, st, id, now)), D.Dom.cat(View.sending(pend),

@@ -9240,3 +9240,22 @@ law tok_claude_same_session_keeps:
 # the recount happens once
 law tok_recount_once:
   {H.Turn.recount(M.State.replay([M.SettingSet{"tok.recount", "b", 1n}], M.State.empty()), 2n) == [] : List<&2, M.Change>}
+# ---- usage-boat-chip ----
+# a thread with no Boat sandbox shows no chip
+law chip_none:
+  for +now: Nat
+  {UZ.Chip.text("", now) == "" : String}
+
+# a running sandbox says its size
+law chip_running:
+  {UZ.Chip.text("running/large/1/0", 5n) == "Boat · large · running" : String}
+
+# a warm sandbox past its idle time is gone: no chip, never "0m"
+law chip_warm_gone:
+  {UZ.Chip.text("warm/default/0/10", 20n) == "" : String}
+
+# a warm sandbox is never stale (it goes quiet by right)
+law chip_warm_not_stale:
+  for +gen: Nat
+  for +now: Nat
+  {UZ.Chip.stale("warm", gen, now) == False{} : Bool}

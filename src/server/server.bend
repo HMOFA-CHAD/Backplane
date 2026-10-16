@@ -269,6 +269,9 @@ type Msg is Data:
   # a message from the hub's own inbox (agents' lines, jobs, its own
   # posts), passed on by Bulk.fwd behind a token (Bulk.*)
   Bulk{m: Msg}
+  # Boat's status.json, read again because it changed: the threads' Boat
+  # chips (core/usage.bend's Chip)
+  BoatThreads{status: String}
 
 # remote access: also listen on the tailnet, serve HTTPS through
 # `tailscale serve`, and the token remote clients must present
@@ -4840,9 +4843,34 @@ def Refresh.loop(fuel: Nat, +inbox: Chan(Msg), +user: String, +home: String, +ca
         IO.sleep(60000)
         Refresh.loop(f, inbox, user, home, cache, now, here, Bool.pick(Nat, due, Nat.sub(Nat.div(U32.to_nat(Models.every()), 60000n), 1n), Nat.sub(left, 1n)))
 
+# Boat's status.json (a local file the Boat runner rewrites; no network)
+# every 30 s; the hub hears of it when it changed, and every 2 minutes
+# anyway, so a runner that stopped writing turns its chips stale (BoatThreads)
+def Chips.post(same: Bool, +inbox: Chan(Msg), +text: String) -> IO(Unit):
+  match same:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      do IO<Unit>:
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, BoatThreads{text})
+        return Unit{}
+
+def Chips.loop(+fuel: Nat, +inbox: Chan(Msg), +path: String, +last: String) -> IO(Unit):
+  match fuel:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+f:
+      do IO<Unit>:
+        +text : String <- K.Io.text(path)
+        Chips.post(Bool.and(String.eq(text, last), Bool.not(Nat.is_eq(Nat.mod(f, 4n), 0n))), inbox, text)
+        IO.sleep(30000)
+        Chips.loop(f, inbox, path, text)
+
 def Refresh.start(+inbox: Chan(Msg), +cfg: Cfg) -> IO(Unit):
   do IO<Unit>:
-    user : String <- Env.get("HOME", "")
+    +user : String <- Env.get("HOME", "")
+    xs : String <- Env.get("XDG_STATE_HOME", "")
+    IO.spawn(Unit, Chips.loop(Fuel.forever(), inbox, UZ.Chip.path(xs, user), ""))
     IO.spawn(Unit, Refresh.loop(Fuel.forever(), inbox, user, Cfg.home(cfg), Models.cache(Cfg.home(cfg)), Net.models(Cfg.net(cfg)), "?", 0n))
 
 def Main.prepare(+user: String, +exe: String) -> IO(Boot):
@@ -8797,6 +8825,11 @@ def Hub.rpc.c(seen: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(
 def Hub.rpc(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   Hub.rpc.c(String.contains(text, "\"browser.seen\""), h, client, text, now)
 
+# the threads' Boat chips that Boat's status changes (logged only then)
+def Hub.chips(p: M.State & Hub, +status: String, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.step(h, B.Step{UZ.Chip.changes(st, status, now), Nil{}})
+
 def Hub.line.k(p: M.State & Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
   (st, h) = p
   Hub.step(h, B.Hub.agent_line(st, now, thread, line))
@@ -11413,6 +11446,8 @@ def Msg.kind(m: Msg) -> String:
       "reexec"
     case Commit{_}:
       "commit"
+    case BoatThreads{_}:
+      "boat_threads"
     case UberDo{_}:
       "uber_do"
     case UberAnswer{_, _, _}:
@@ -11978,6 +12013,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.link(h, lk)
     case Commit{cs}:
       Hub.step(h, B.Step{cs, Nil{}})
+    case BoatThreads{status}:
+      Hub.chips(Hub.state(h), status, now)
     case UberDo{what}:
       Hub.uber.do(h, what, now)
     case UberAnswer{link, code, body}:
