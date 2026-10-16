@@ -10781,3 +10781,13 @@ def Laws.ride_after_running_same(s, now, th, os):
   {==}
 
 # ---- end riding mail ----
+# ---- resume after a restart ----
+def Laws.resume_turn_process_stopped():
+  {==}
+
+def Laws.resume_turn_process_not_kept():
+  {==}
+
+def Laws.resume_carry_tells_cut():
+  {==}
+# ---- end resume after a restart ----

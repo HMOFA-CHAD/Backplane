@@ -2593,6 +2593,7 @@ def Turn.end(s: Socket, +pid: U32, +tag: String, +gen: String, +inbox: Chan(Msg)
   do IO<Unit>:
     Socket.close(s)
     code : U32 <- H.Proc.wait(pid)
+    AIO.Adopt.drop(B.Tag.thread(tag), pid)
     tail : String <- H.Proc.errtail(pid)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TurnDone{tag})
     return Unit{}
@@ -2606,6 +2607,7 @@ def Turn.close(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String) 
   do IO<String>:
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
+    AIO.Adopt.drop(B.Tag.thread(tag), pid)
     +tail : String <- H.Proc.errtail(pid)
     +k : Nat <- Keyring.probe()
     return KR.Keyring.say(ER.Exit.say(dflt, B.Exit.why(code), code, tail), k)
@@ -2658,6 +2660,7 @@ def Codex.read(started: U32 & Socket, +thread: String, +gen: String, +inbox: Cha
     s2 : Socket <- H.Sock.shutdown(s)
     +input : Chan(String) <- Chan.new(String, 1)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
+    AIO.Adopt.note(thread, pid)
     s3 : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(s2), d => Agent.watch.start(d, pid, thread, gen, inbox))
     Codex.reader(Fuel.forever(), s3, U.Lines.new(), False{}, pid, B.Tag.of(thread, pid), gen, inbox)
 
@@ -2757,6 +2760,7 @@ def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: 
         +input : Chan(String) <- Chan.new(String, 64)
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
         ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
+        AIO.Adopt.note(thread, pid)
         ok2 : Result<&1, &1, String, Unit> <- Chan.send(String, input, MS.Proto.init(t))
         rd2 : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd), d => Agent.watch.start(d, pid, thread, gen, inbox))
         Grok.reader(Fuel.forever(), rd2, U.Lines.new(), AC.Acp.new(), t, pid, B.Tag.of(thread, pid), gen, input, inbox)

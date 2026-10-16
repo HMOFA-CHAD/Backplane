@@ -5591,10 +5591,16 @@ def Hub.recover(+s: M.State, +now: Nat) -> Step:
 # never loops (laws carry_*). Runs after Hub.recover, over the state from
 # before it.
 
+# what a cut turn is told besides: an agent process that was not kept
+# through the restart lost the result of a tool call in flight, and what
+# the call started (a command) may still run or have partly run
+def Carry.cut() -> String:
+  "If a tool call was running when it stopped, its result was lost, and what it started may still be running or have partly run: check its effect before running it again."
+
 def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match go:
     case True{}:
-      Step.after(Origin.step(Hub.post(s, now, th, Hub.id("c", now, Hub.seq(s)), M.User{}, M.Carry.text() ++ DP.Deploy.suffix(s, VER.Version.current())), th, Hub.id("c", now, Hub.seq(s)), ML.Origin{"backplane", "carry", ""}, now),
+      Step.after(Origin.step(Hub.post(s, now, th, Hub.id("c", now, Hub.seq(s)), M.User{}, M.Carry.text() ++ " " ++ Carry.cut() ++ DP.Deploy.suffix(s, VER.Version.current())), th, Hub.id("c", now, Hub.seq(s)), ML.Origin{"backplane", "carry", ""}, now),
         [M.ActivityLogged{th, Hub.id("r", now, 1n+Hub.seq(s)), "info", "restart", "Continuing after the restart", now}])
     case False{}:
       Step.none()

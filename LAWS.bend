@@ -8877,3 +8877,20 @@ law deliver_held_restart:
   for +r: String
   {H.Deliver.held(List.append(&2, M.Change, List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, b1, [], [M.QueueTaken{th, now}]), Bool.pick(List<&2, M.Change>, b3, [], H.Ride.done(v, now, th, r))), List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, b2, [], [M.ActivityLogged{th, id, "info", "steer", "Steered: the turn starts again with this message", now}]), [M.TurnChanged{th, M.Running{}, now}]))) == False{} : Bool}
 # ---- end riding mail ----
+# ---- resume after a restart ----
+# a per-turn process (Codex, Grok, Muse, Antigravity: recorded with no
+# descriptor, "-1" read as 0, never handed off) that still runs after a
+# restart is stopped, never adopted, whatever adoption allows, so its
+# thread never has two processes on one session
+law resume_turn_process_stopped:
+  {AD.Adopt.stopped(AD.Adopt.decide([AD.AEntry{"t", 42n, "b:1", 0n, False{}, "", "", CM.Cmds.new()}], ["b:1"], True{})) == [42n] : List<&2, Nat>}
+
+law resume_turn_process_not_kept:
+  {AD.Adopt.kept(AD.Adopt.decide([AD.AEntry{"t", 42n, "b:1", 0n, False{}, "", "", CM.Cmds.new()}], ["b:1"], True{})) == [] : List<&2, String>}
+
+# the cut turn is told that a tool call in flight lost its result, and the
+# words are still the continue message (a turn that brings the hub down
+# never loops: Carry.is)
+law resume_carry_tells_cut:
+  {Bool.and(H.Carry.is(M.Carry.text() ++ " " ++ H.Carry.cut()), String.contains(H.Carry.cut(), "its result was lost")) == True{} : Bool}
+# ---- end resume after a restart ----

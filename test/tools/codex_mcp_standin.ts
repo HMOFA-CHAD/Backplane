@@ -8,7 +8,10 @@
 // A prompt with "ride-long" calls thread_list RIDE_CALLS times (12) every
 // RIDE_GAP_MS (700), waits RIDE_TAIL_MS (2500), then ends its turn; any
 // prompt with "ride-quiet" calls nothing for RIDE_QUIET_MS (20000), then
-// ends its turn; any other prompt ends its turn at once.
+// ends its turn; "ride-cut:<thread>" opens an MCP tool call, thread_wait on
+// that thread, logs how it ended ({"ev":"cut",...}) and then hangs (a
+// restart cuts it); any other prompt ends its turn at once. SIGTERM is
+// logged ({"ev":"term"}).
 import { appendFileSync } from "node:fs";
 
 const argv = process.argv.slice(2);
@@ -21,7 +24,8 @@ for (let i = 0; i < argv.length; i++) {
   if (m) url = m[1];
 }
 if (argv[0] === "--version") { console.log("codex-cli 0.0.0"); process.exit(0); }
-log({ ev: "start", prompt, pid: process.pid });
+log({ ev: "start", prompt, pid: process.pid, args: argv.slice(0, -1) });
+process.on("SIGTERM", () => { log({ ev: "term", pid: process.pid }); process.exit(143); });
 say({ type: "thread.started", thread_id: "cx-ride" });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 if (prompt.includes("ride-long")) {
@@ -40,6 +44,17 @@ if (prompt.includes("ride-long")) {
   }
   log({ ev: "last" });
   await sleep(Number(process.env.RIDE_TAIL_MS ?? 2500));
+} else if (/ride-cut:(\S+)/.test(prompt)) {
+  const target = /ride-cut:(\S+)/.exec(prompt)![1];
+  say({ type: "item.started", item: { id: "m1", type: "mcp_tool_call", server: "backplane", tool: "thread_wait", status: "in_progress" } });
+  let how = "";
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "thread_wait", arguments: { threadId: target, timeoutMs: 600000 } } }) });
+    how = "answered " + (await r.text()).slice(0, 200);
+  } catch (e) { how = "error " + e; }
+  log({ ev: "cut", pid: process.pid, how });
+  await sleep(600000);
 } else if (prompt.includes("ride-quiet")) {
   await sleep(Number(process.env.RIDE_QUIET_MS ?? 20000));
 }
