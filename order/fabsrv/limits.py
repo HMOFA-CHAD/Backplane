@@ -15,8 +15,9 @@ _hits = collections.defaultdict(collections.deque)
 
 # (window seconds, max hits) per scope; every scope is checked per IP and per install
 RULES = {
-    # the "from $X" number: cheap, asked whenever a part changes
-    "estimate": [(3600, 240), (86400, 2000)],
+    # the "from $X" number: cheap and cached, asked each time a thread is opened or its turn
+    # ends, so a busy person asks often; a limit they reach would hide their Buy button
+    "estimate": [(3600, 1500), (86400, 12000)],
     # a full quote: files are unpacked, measured and every part is priced
     "quote": [(3600, 20), (86400, 60)],
     # polling a quote or an order
