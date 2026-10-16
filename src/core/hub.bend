@@ -4537,7 +4537,7 @@ def Ship.tell.k(person: Bool, +s: M.State, +now: Nat, +who: String, +text: Strin
       Watch.tell(s, now, who, text)
 
 # each asker told once, the state moving between them
-def Ship.tells(ws: List<&2, String>, +s: M.State, +now: Nat, +text: String, st: Step) -> Step:
+def Ship.tells(ws: List<&2, String>, +s: M.State, +now: Nat, +text: String, +st: Step) -> Step:
   match ws:
     case Nil{}:
       st

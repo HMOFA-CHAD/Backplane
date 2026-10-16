@@ -32,42 +32,42 @@ def Ship.person() -> String:
 def Ship.idle() -> Ship:
   Ship{"idle", "", "", "", "", Nil{}, Nil{}, False{}}
 
-def Ship.phase(sh: Ship) -> String:
+def Ship.phase(+sh: Ship) -> String:
   match sh:
     case Ship{p, _, _, _, _, _, _, _}:
       p
 
-def Ship.commit(sh: Ship) -> String:
+def Ship.commit(+sh: Ship) -> String:
   match sh:
     case Ship{_, c, _, _, _, _, _, _}:
       c
 
-def Ship.staged(sh: Ship) -> String:
+def Ship.staged(+sh: Ship) -> String:
   match sh:
     case Ship{_, _, s, _, _, _, _, _}:
       s
 
-def Ship.live(sh: Ship) -> String:
+def Ship.live(+sh: Ship) -> String:
   match sh:
     case Ship{_, _, _, l, _, _, _, _}:
       l
 
-def Ship.job(sh: Ship) -> String:
+def Ship.job(+sh: Ship) -> String:
   match sh:
     case Ship{_, _, _, _, j, _, _, _}:
       j
 
-def Ship.askers(sh: Ship) -> List<&2, String>:
+def Ship.askers(+sh: Ship) -> List<&2, String>:
   match sh:
     case Ship{_, _, _, _, _, a, _, _}:
       a
 
-def Ship.next(sh: Ship) -> List<&2, String>:
+def Ship.next(+sh: Ship) -> List<&2, String>:
   match sh:
     case Ship{_, _, _, _, _, _, n, _}:
       n
 
-def Ship.more(sh: Ship) -> Bool:
+def Ship.more(+sh: Ship) -> Bool:
   match sh:
     case Ship{_, _, _, _, _, _, _, m}:
       m
@@ -82,7 +82,7 @@ def Ship.ids(+s: String) -> List<&2, String>:
     case SCon{_, _}:
       String.split(s, ',')
 
-def Ship.show(sh: Ship) -> String:
+def Ship.show(+sh: Ship) -> String:
   match sh:
     case Ship{p, c, s, l, j, a, n, m}:
       J.Json.show(J.Json.obj([J.KV{"phase", J.Str{p}}, J.KV{"commit", J.Str{c}}, J.KV{"staged", J.Str{s}}, J.KV{"live", J.Str{l}},
@@ -128,7 +128,7 @@ def Ship.add(+xs: List<&2, String>, +x: String) -> List<&2, String>:
 def Ship.busy.p(+phase: String) -> Bool:
   Bool.or(String.eq(phase, "asked"), String.eq(phase, "building"))
 
-def Ship.busy(sh: Ship) -> Bool:
+def Ship.busy(+sh: Ship) -> Bool:
   Ship.busy.p(Ship.phase(sh))
 
 # commit c holds head: c is head, or head is an ancestor of c (within: the
@@ -148,13 +148,13 @@ def Ship.cover.k(b: Bool, s: Bool, l: Bool) -> String:
       ""
 
 # what covers a request for head: "building", "staged", "live" or ""
-def Ship.cover(sh: Ship, +head: String, +within: List<&2, String>) -> String:
+def Ship.cover(+sh: Ship, +head: String, +within: List<&2, String>) -> String:
   match sh:
     case Ship{+p, +c, +s, +l, _, _, _, _}:
       Ship.cover.k(Bool.and(String.eq(p, "building"), Ship.holds(c, head, within)), Ship.holds(s, head, within), Ship.holds(l, head, within))
 
 # the covering commit for a cover word
-def Ship.by(sh: Ship, +cover: String) -> String:
+def Ship.by(+sh: Ship, +cover: String) -> String:
   match sh:
     case Ship{_, +c, +s, +l, _, _, _, _}:
       Bool.pick(String, String.eq(cover, "building"), c, Bool.pick(String, String.eq(cover, "staged"), s, Bool.pick(String, String.eq(cover, "live"), l, "")))
@@ -167,11 +167,11 @@ def Ship.start.k(+cover: String, busy: Bool) -> Bool:
     case False{}:
       String.is_empty(cover)
 
-def Ship.start(sh: Ship, +head: String, +within: List<&2, String>) -> Bool:
+def Ship.start(+sh: Ship, +head: String, +within: List<&2, String>) -> Bool:
   Ship.start.k(Ship.cover(sh, head, within), Ship.busy(sh))
 
 # the staged commit forgotten (no deploy waits for it any more: cancelled)
-def Ship.unstage(sh: Ship) -> Ship:
+def Ship.unstage(+sh: Ship) -> Ship:
   match sh:
     case Ship{p, c, _, l, j, a, n, m}:
       Ship{p, c, "", l, j, a, n, m}
@@ -184,7 +184,7 @@ def Ship.cand(+c: String, rest: List<&2, String>) -> List<&2, String>:
       c <> rest
 
 # the commits a look asks git about: the one building, staged and live
-def Ship.cands(sh: Ship) -> List<&2, String>:
+def Ship.cands(+sh: Ship) -> List<&2, String>:
   match sh:
     case Ship{+p, c, s, l, _, _, _, _}:
       Ship.cand(Bool.pick(String, String.eq(p, "building"), c, ""), Ship.cand(s, Ship.cand(l, Nil{})))
@@ -192,7 +192,7 @@ def Ship.cands(sh: Ship) -> List<&2, String>:
 # Folding
 # -------
 
-def Ship.asked.n(busy: Bool, sh: Ship, +by: String) -> Ship:
+def Ship.asked.n(busy: Bool, +sh: Ship, +by: String) -> Ship:
   match busy sh:
     case True{} Ship{p, c, s, l, j, a, +n, _}:
       Ship{p, c, s, l, j, a, Ship.add(n, by), True{}}
@@ -202,21 +202,26 @@ def Ship.asked.n(busy: Bool, sh: Ship, +by: String) -> Ship:
 def Ship.pos(+cover: String) -> Nat:
   Bool.pick(Nat, String.eq(cover, "building"), 0n, Bool.pick(Nat, String.eq(cover, "staged"), 1n, Bool.pick(Nat, String.eq(cover, "live"), 2n, 3n)))
 
-def Ship.asked.k(i: Nat, sh: Ship, +by: String) -> Ship:
-  match i sh:
-    case 0n Ship{p, c, s, l, j, +a, n, m}:
+def Ship.join(+sh: Ship, +by: String) -> Ship:
+  match sh:
+    case Ship{p, c, s, l, j, +a, n, m}:
       Ship{p, c, s, l, j, Ship.add(a, by), n, m}
-    case 1n +x:
-      x
-    case 2n +x:
-      x
-    case _ +x:
-      Ship.asked.n(Ship.busy(x), x, by)
+
+def Ship.asked.k(i: Nat, +sh: Ship, +by: String) -> Ship:
+  match i:
+    case 0n:
+      Ship.join(sh, by)
+    case 1n:
+      sh
+    case 2n:
+      sh
+    case _:
+      Ship.asked.n(Ship.busy(sh), sh, by)
 
 # a request (cover: what covered it, "" for none): covered by the build it
 # joins those told at its end; uncovered during a build it waits for the
 # one follow-up; else it is told at the end of the build it starts
-def Ship.asked(sh: Ship, +by: String, +cover: String) -> Ship:
+def Ship.asked(+sh: Ship, +by: String, +cover: String) -> Ship:
   Ship.asked.k(Ship.pos(cover), sh, by)
 
 # a build ended (staged, failed, skipped): those told are gone; with a
@@ -228,37 +233,47 @@ def Ship.end.k(m: Bool, +state: String, +commit: String, +s: String, +l: String,
     case False{}:
       Ship{Bool.pick(String, String.eq(state, "skipped"), "idle", state), commit, s, l, "", Nil{}, Nil{}, False{}}
 
-def Ship.end(sh: Ship, +state: String, +commit: String) -> Ship:
+def Ship.end(+sh: Ship, +state: String, +commit: String) -> Ship:
   match sh:
     case Ship{_, _, +s, +l, _, _, +n, m}:
       Ship.end.k(m, state, commit, Bool.pick(String, String.eq(state, "staged"), commit, s), l, n)
 
-def Ship.live.k(busy: Bool, sh: Ship, +commit: String) -> Ship:
+def Ship.live.k(busy: Bool, +sh: Ship, +commit: String) -> Ship:
   match busy sh:
     case True{} Ship{p, c, +s, _, j, a, n, m}:
       Ship{p, c, Bool.pick(String, String.eq(s, commit), "", s), commit, j, a, n, m}
     case False{} Ship{_, _, +s, _, _, a, n, m}:
       Ship{"live", commit, Bool.pick(String, String.eq(s, commit), "", s), commit, "", a, n, m}
 
-def Ship.built.k(i: Nat, sh: Ship, +commit: String, +state: String, +detail: String) -> Ship:
-  match i sh:
-    case 0n Ship{_, _, s, l, _, a, n, m}:
-      Ship{"building", commit, s, l, "", a, n, m}
-    case 1n Ship{p, c, s, l, _, a, n, m}:
+def Ship.pid.set(+sh: Ship, +detail: String) -> Ship:
+  match sh:
+    case Ship{p, c, s, l, _, a, n, m}:
       Ship{p, c, s, l, detail, a, n, m}
-    case 2n +x:
-      Ship.live.k(Ship.busy(x), x, commit)
-    case _ +x:
-      Ship.end(x, state, commit)
+
+def Ship.building(+sh: Ship, +commit: String) -> Ship:
+  match sh:
+    case Ship{_, _, s, l, _, a, n, m}:
+      Ship{"building", commit, s, l, "", a, n, m}
+
+def Ship.built.k(i: Nat, +sh: Ship, +commit: String, +state: String, +detail: String) -> Ship:
+  match i:
+    case 0n:
+      Ship.building(sh, commit)
+    case 1n:
+      Ship.pid.set(sh, detail)
+    case 2n:
+      Ship.live.k(Ship.busy(sh), sh, commit)
+    case _:
+      Ship.end(sh, state, commit)
 
 # a build's step (state "building"; "pid" records the running job, detail
 # "<pid> <ident>"; "staged", "failed" or "skipped" end it; "live" after the
 # restart into it)
-def Ship.built(sh: Ship, +commit: String, +state: String, +detail: String) -> Ship:
+def Ship.built(+sh: Ship, +commit: String, +state: String, +detail: String) -> Ship:
   Ship.built.k(Bool.pick(Nat, String.eq(state, "building"), 0n, Bool.pick(Nat, String.eq(state, "pid"), 1n, Bool.pick(Nat, String.eq(state, "live"), 2n, 3n))), sh, commit, state, detail)
 
 # who is told when the build under way ends
-def Ship.told(sh: Ship) -> List<&2, String>:
+def Ship.told(+sh: Ship) -> List<&2, String>:
   Ship.askers(sh)
 
 # The follow setting
@@ -287,12 +302,19 @@ def Look.pick(ls: List<&2, String>, +tag: String) -> String:
     case +l <> t:
       Bool.pick(String, String.starts_with(l, tag), String.trim(String.drop(l, String.length(tag))), Look.pick(t, tag))
 
+def Look.keep(hit: Bool, +x: String, rest: List<&2, String>) -> List<&2, String>:
+  match hit:
+    case True{}:
+      x <> rest
+    case False{}:
+      rest
+
 def Look.ins(ls: List<&2, String>) -> List<&2, String>:
   match ls:
     case Nil{}:
       Nil{}
     case +l <> t:
-      Bool.pick(List<&2, String>, String.starts_with(l, "IN "), String.trim(String.drop(l, 3n)) <> Look.ins(t), Look.ins(t))
+      Look.keep(String.starts_with(l, "IN "), String.trim(String.drop(l, 3n)), Look.ins(t))
 
 def Look.head(+out: String) -> String:
   Look.pick(String.lines(out), "HEAD ")
@@ -317,7 +339,7 @@ def Ran.tail.go(ls: List<&2, String>) -> List<&2, String>:
     case Nil{}:
       Nil{}
     case +l <> t:
-      Bool.pick(List<&2, String>, Bool.or(String.starts_with(l, "VERSION "), Bool.or(String.starts_with(l, "STAGE "), String.starts_with(l, "STATUS "))), Ran.tail.go(t), l <> Ran.tail.go(t))
+      Look.keep(Bool.not(Bool.or(String.starts_with(l, "VERSION "), Bool.or(String.starts_with(l, "STAGE "), String.starts_with(l, "STATUS ")))), l, Ran.tail.go(t))
 
 def Ran.tail(+out: String) -> String:
   String.trim(String.join(Ran.tail.go(String.lines(out)), "\n"))
@@ -363,7 +385,7 @@ def Ship.lost() -> String:
   "lost: the build is gone and left no exit status (the hub or the machine restarted under it)"
 
 # deploy_status's part
-def Ship.status(sh: Ship, +follow: Bool, +repo: String) -> J.Json:
+def Ship.status(+sh: Ship, +follow: Bool, +repo: String) -> J.Json:
   match sh:
     case Ship{p, c, s, l, j, a, n, m}:
       J.Json.obj([J.KV{"configured", J.Flag{Bool.not(String.is_empty(repo))}}, J.KV{"repo", J.Str{repo}}, J.KV{"follow", J.Flag{follow}},

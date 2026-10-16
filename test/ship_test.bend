@@ -116,8 +116,8 @@ def main() -> IO(Unit):
     C.Check.str("lost is failed", phase(again(f1, lost)), "failed")
     C.Check.str("a follow-up asked for is asked again at start", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.recover(e1, 40n)))), "1")
     # the restart into a staged build: live
-    +done : M.State = again(g1, H.Deploy.go(DP.Deploy.wait(g1), g1, 50n))
-    +lv : M.State = again(done, H.Ship.recover(done, 51n))
+    +dn : M.State = again(g1, H.Deploy.go(DP.Deploy.wait(g1), g1, 50n))
+    +lv : M.State = again(dn, H.Ship.recover(dn, 51n))
     C.Check.str("after its restart c1 is live", phase(lv) ++ " " ++ SH.Ship.live(H.Ship.get(lv)) ++ " [" ++ SH.Ship.staged(H.Ship.get(lv)) ++ "]", "live c1 []")
     C.Check.str("live covers it", res.state(MC.Mcp.ship(lv, 52n, "t1", J.Json.obj(Nil{}), look("c1", ""))), "skipped")
     # follow: off by default, a look every 5 minutes when on

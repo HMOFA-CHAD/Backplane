@@ -11,7 +11,7 @@ import ../core/model.bend as M
 import ../core/codec.bend as C
 import ../core/hub.bend as B
 import ../core/deploy.bend as DP
-import ../core/ship.bend as SH
+import ../core/ship.bend as SHP
 import ../core/prompt.bend as Q
 import ../core/mcp.bend as MC
 import ./update.bend as UP
@@ -3264,7 +3264,7 @@ def ShipJob.got.k(run: Bool, +out: String, +commit: String, +inbox: Chan(Msg), k
 def ShipJob.got(r: P.Ran, +commit: String, +inbox: Chan(Msg), k: Unit -> IO(Unit)) -> IO(Unit):
   match r:
     case P.Ran{_, +out}:
-      ShipJob.got.k(String.eq(SH.Ran.status(out), "running"), out, commit, inbox, k)
+      ShipJob.got.k(String.eq(SHP.Ran.status(out), "running"), out, commit, inbox, k)
 
 # the build's job looked at every 5 s until it ends or is gone
 def ShipJob.loop(fuel: Nat, +d: String, +commit: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -3286,7 +3286,7 @@ def ShipJob.pid.k(+out: String, +commit: String, +inbox: Chan(Msg)) -> IO(Unit):
 # launched now: the hub records its pid (ShipPid); launched before (a
 # restart) or not at all, nothing is recorded and the look tells
 def ShipJob.launched(+out: String, +commit: String, +inbox: Chan(Msg)) -> IO(Unit):
-  ShipJob.pid.k(SH.Look.pick(String.lines(out), "PID "), commit, inbox)
+  ShipJob.pid.k(SHP.Look.pick(String.lines(out), "PID "), commit, inbox)
 
 def ShipJob.run(+repo: String, +wrap: String, +home: String, +commit: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
