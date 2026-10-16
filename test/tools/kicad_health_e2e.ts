@@ -74,7 +74,7 @@ async function start(name: string, path: string, homeOverride?: string) {
   await new Promise<void>((r, reject) => { ws.onopen = () => r(); ws.onerror = reject; });
   let id = 0;
   const send = (m: string, p = {}) => { const n = ++id; ws.send(W.encode(JSON.stringify({ id: n, m, p }))); return n; };
-  const health = (status: string, after = 0) => until(() => seen.slice(after).find(o => o.t === "info" && o.info?.["kicad.status"] === status)?.info);
+  const health = (status: string, after = 0) => until(() => seen.slice(after).find(o => (o.t === "info" || o.t === "log") && o.info?.["kicad.status"] === status)?.info);
   return { proc, ws, seen, send, health, home, port };
 }
 async function stop(p: ReturnType<typeof Bun.spawn>) { if (p.exitCode === null) p.kill("SIGTERM"); await p.exited; }
@@ -123,7 +123,8 @@ try {
     if (name === "v1") {
       const restarted = await start("cached-v1", rt.dir, h.home);
       await restarted.health("ok");
-      const first = restarted.seen.find(o => o.t === "info")?.info;
+      // the connect message (t: "log") carries the info the hub booted with
+      const first = restarted.seen.find(o => o.t === "log" || o.t === "info")?.info;
       check("unchanged cache is served at boot", first?.["kicad.status"] === "ok", first);
       restarted.ws.close(); await stop(restarted.proc);
     }
