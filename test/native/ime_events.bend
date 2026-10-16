@@ -38,6 +38,29 @@ def firsts(xs: List<&2, U32>) -> String:
     case x <> t:
       U32.show(x) ++ " " ++ firsts(t)
 
+def fst(r: Window & String) -> Window:
+  (w, _) = r
+  w
+
+def snd(r: Window & String) -> String:
+  (_, t) = r
+  t
+
+def snd2(r: Window & U32) -> U32:
+  (_, t) = r
+  t
+
+def fst2(r: Window & List<&2, W.WinEv>) -> Window:
+  (w, _) = r
+  w
+
+def snd3(r: Window & List<&2, W.WinEv>) -> List<&2, W.WinEv>:
+  (_, e) = r
+  e
+
+def nth(xs: List<&2, U32>, +k: Nat) -> U32:
+  Maybe.default(&2, U32, List.get(&2, U32, xs, k), 0)
+
 def pair(r: Window & String & String) -> IO(Window & String):
   (w, (t, f)) = r
   IO.pure(Window & String, (w, t ++ "|" ++ f ++ ";"))
@@ -46,13 +69,13 @@ def cat(r: Window & String, p: Window & String) -> IO(Window & String):
   (w, acc) = p
   IO.pure(Window & String, (w, acc))
 
-def one(x: U32, r: Window & String) -> IO(Window & String):
-  (w, acc) = r
-  IO.bind(Window & String, Window & String, IO.bind(Window & String & String, Window & String, W.Win.payload(w, x), pair), q => add(acc, q))
-
 def add(acc: String, q: Window & String) -> IO(Window & String):
   (w, t) = q
   IO.pure(Window & String, (w, acc ++ t))
+
+def one(x: U32, r: Window & String) -> IO(Window & String):
+  (w, acc) = r
+  IO.bind(Window & String, Window & String, IO.bind(Window & String & String, Window & String, W.Win.payload(w, x), pair), q => add(acc, q))
 
 # fetch the payloads newest first, so each is shown not to depend on order
 def fetch(w: Window, xs: List<&2, U32>) -> IO(Window & String):
@@ -73,45 +96,42 @@ def text_of(r: Window & String & String) -> IO(Window & String):
   (w, (t, _)) = r
   IO.pure(Window & String, (w, t))
 
-def go2(w: Window, es: List<&2, W.WinEv>, +big: String) -> IO(Unit):
+def go3(r: Window & String, t1: String, +big: String) -> IO(Unit):
+  (w, t2) = r
   do IO<Unit>:
-    a : Window & String <- IO.bind(Window & String & String, Window & String, W.Win.payload(w, nth(ids(es), 0n)), text_of)
-    b : Window & String <- IO.bind(Window & String & String, Window & String, W.Win.payload(fst(a), nth(ids(es), 1n)), text_of)
-    ok("a long commit arrives whole", Bool.show(String.eq(snd(a), big)), "True")
-    ok("and the next one is its own", snd(b), "after")
-    m : Window & U32 <- W.Win.ime(fst(b))
+    ok("a long commit arrives whole", Bool.show(String.eq(t1, big)), "True")
+    ok("and the next one is its own", t2, "after")
+    m : Window & U32 <- W.Win.ime(w)
     IO.print("mode " ++ U32.show(snd2(m)))
 
-def fst(r: Window & String) -> Window:
-  (w, _) = r
-  w
+def go2b(r: Window & String, +es: List<&2, W.WinEv>, +big: String) -> IO(Unit):
+  (w, t1) = r
+  IO.bind(Window & String, Unit, IO.bind(Window & String & String, Window & String, W.Win.payload(w, nth(ids(es), 1n)), text_of), q => go3(q, t1, big))
 
-def snd(r: Window & String) -> String:
-  (_, t) = r
-  t
+def go2(w: Window, +es: List<&2, W.WinEv>, +big: String) -> IO(Unit):
+  IO.bind(Window & String, Unit, IO.bind(Window & String & String, Window & String, W.Win.payload(w, nth(ids(es), 0n)), text_of), q => go2b(q, es, big))
 
-def snd2(r: Window & U32) -> U32:
-  (_, t) = r
-  t
+def go2c(r: Window & List<&2, W.WinEv>, +big: String) -> IO(Unit):
+  (w, es) = r
+  go2(w, es, big)
 
-def go1(w: Window, es: List<&2, W.WinEv>) -> IO(Unit):
+def go1b(r: Window & String, +es: List<&2, W.WinEv>) -> IO(Unit):
+  (w, t) = r
   do IO<Unit>:
-    f : Window & String <- fetch(w, ids(es))
-    ok("queued payloads keep their own text, in order", snd(f), "日本語😀|0000;にほん|222;あ|0;")
+    ok("queued payloads keep their own text, in order", t, "日本語😀|0000;にほん|222;あ|0;")
     ok("no stray quit", Nat.show(quits(es)), "0")
-    +big : String = String.repeat("日本語ABC😀", 60000)
-    w8 : Window <- W.Win.ime_inject(fst(f), 0, big)
+    +big : String = String.repeat("日本語ABC😀", 60000n)
+    w8 : Window <- W.Win.ime_inject(w, 0, big)
     w9 : Window <- W.Win.ime_inject(w8, 0, "after")
     d2 : Window & List<&2, W.WinEv> <- drain(w9)
-    go2(fst2(d2), snd3(d2), big)
+    go2c(d2, big)
 
-def fst2(r: Window & List<&2, W.WinEv>) -> Window:
-  (w, _) = r
-  w
+def go1(w: Window, +es: List<&2, W.WinEv>) -> IO(Unit):
+  IO.bind(Window & String, Unit, fetch(w, ids(es)), r => go1b(r, es))
 
-def snd3(r: Window & List<&2, W.WinEv>) -> List<&2, W.WinEv>:
-  (_, e) = r
-  e
+def go1c(r: Window & List<&2, W.WinEv>) -> IO(Unit):
+  (w, es) = r
+  go1(w, es)
 
 def go(w: Window) -> IO(Unit):
   do IO<Unit>:
@@ -121,12 +141,7 @@ def go(w: Window) -> IO(Unit):
     w4 : Window <- W.Win.ime_inject(w3, 2, "")
     w5 : Window <- W.Win.ime_inject(w4, 0, "")
     d : Window & List<&2, W.WinEv> <- drain(w5)
-    go1(fst2(d), snd3(d))
-
-def main() -> IO(Unit):
-  do IO<Unit>:
-    r : Result<&1, &1, U32 & String, Window> <- W.Win.open("ime", 400, 300)
-    go0(r)
+    go1c(d)
 
 def go0(r: Result<&1, &1, U32 & String, Window>) -> IO(Unit):
   match r:
@@ -134,3 +149,8 @@ def go0(r: Result<&1, &1, U32 & String, Window>) -> IO(Unit):
       go(w)
     case Fail{e}:
       IO.print("FAIL open")
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    r : Result<&1, &1, U32 & String, Window> <- W.Win.open("ime", 400, 300)
+    go0(r)
