@@ -1,4 +1,5 @@
 import Base
+import ./src/server/mailstore.bend as MIX # mail index
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/usage.bend as UZ
@@ -9155,3 +9156,18 @@ law tok_epoch_once:
 # totals of a count live under its epoch
 law tok_pre_epoch:
   {M.Tok.pre.k("1") == "tok.1." : String}
+# ---- mail index ----
+# Position participates in validation, independently of the ID fingerprint.
+law mail_index_wrong_position:
+  {MIX.MI.row.ok(MIX.MIndexRow{0, 16, 0, 0, 65536, 0, 65536}, 65600) == False{} : Bool}
+
+law mail_index_forward_chain_rejected:
+  {MIX.MI.row.ok(MIX.MIndexRow{0, 16, 0, 65664, 65536, 0, 65600}, 65600) == False{} : Bool}
+
+law mail_index_overflow_rejected:
+  {MIX.MI.row.ok(MIX.MIndexRow{4294967290, 16, 0, 0, 65536, 0, 65536}, 65536) == False{} : Bool}
+
+law mail_index_hash_empty:
+  for h: U32
+  {MIX.MI.hash("", h) == h : U32}
+# ---- end mail index ----

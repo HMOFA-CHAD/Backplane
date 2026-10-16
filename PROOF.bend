@@ -1,4 +1,5 @@
 import Base
+import ./src/server/mailstore.bend as MIX # mail index
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/mail.bend as ML # mail 1
@@ -10977,3 +10978,16 @@ def Laws.tok_epoch_once():
 
 def Laws.tok_pre_epoch():
   {==}
+# ---- mail index ----
+def Laws.mail_index_wrong_position():
+  {==}
+
+def Laws.mail_index_forward_chain_rejected():
+  {==}
+
+def Laws.mail_index_overflow_rejected():
+  {==}
+
+def Laws.mail_index_hash_empty(h):
+  {==}
+# ---- end mail index ----
