@@ -21,6 +21,7 @@ import ./src/core/board.bend as B
 import ./src/core/semver.bend as SV
 import ./src/app/nui.bend as N
 import ./src/core/hub.bend as H
+import ./src/core/ship.bend as SHP # deploy main
 import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
 import ./src/core/acp.bend as AC
@@ -11041,3 +11042,57 @@ def Laws.chip_warm_gone():
 
 def Laws.chip_warm_not_stale(gen, now):
   {==}
+
+# ---- deploy main ----
+def Laws.ship_covered_never_builds(c, cs, busy):
+  match busy:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.ship_busy_never_builds(cover):
+  {==}
+
+def Laws.ship_building_is_busy():
+  {==}
+
+def Laws.ship_coalesce_at_most_one(sh, state, commit):
+  match sh:
+    case SHP.Ship{p, c, s, l, j, a, n, m}:
+      match m:
+        case True{}:
+          {==}
+        case False{}:
+          {==}
+
+def Laws.ship_coalesce_three():
+  {==}
+
+def Laws.ship_coalesce_askers():
+  {==}
+
+def Laws.ship_told_each_once():
+  {==}
+
+def Laws.ship_told_cleared():
+  {==}
+
+def Laws.ship_told_next_cleared(sh, state, commit):
+  match sh:
+    case SHP.Ship{p, c, s, l, j, a, n, m}:
+      match m:
+        case True{}:
+          {==}
+        case False{}:
+          {==}
+
+def Laws.ship_covered_joins_build():
+  {==}
+
+def Laws.ship_follow_off_default():
+  {==}
+
+def Laws.ship_gone_not_ok():
+  {==}
+# ---- end deploy main ----

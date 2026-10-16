@@ -10559,6 +10559,10 @@ def Touch.raw(c: M.Change) -> List<&2, String>:
       ["@mail"]
     case M.TurnUsage{+thread, _, _, _, _, _, _, _, _, _, _, _, _}:
       [thread]
+    case M.DeployAsked{_, _, _, _, _}:
+      ["*", "!"]
+    case M.DeployBuilt{_, _, _, _, _}:
+      ["*", "!"]
 
 # a thread id as touched: a subagent's log ("@sub:<thread>", model.bend's
 # Bg.log) is its thread's; any other name with "@" is no plain thread, so

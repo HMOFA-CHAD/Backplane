@@ -4,6 +4,7 @@ import ./json.bend as J
 import ./ubop.bend as UO
 import ./locks.bend as LK
 import ./mail.bend as ML
+import ./ship.bend as SH
 
 # The product's state, event-sourced. Every change is a Change appended to
 # the log; the read model is `replay(log)`. Events are persisted forever:
@@ -291,6 +292,13 @@ type Change is Data:
   DecisionLogged{id: String, bot: String, conv: String, run: String, text: String, reason: String, at: Nat}
   # a turn's usage as its provider reported it (Tokens, below)
   TurnUsage{thread: String, provider: String, model: String, key: String, input: Nat, cread: Nat, cwrite: Nat, output: Nat, reasoning: Nat, cost: Nat, known: String, basis: String, at: Nat}
+  # deploy_main (core/ship.bend): `by` (a thread, or "-" for the person)
+  # asked for origin/main at `commit`; `cover` what already held it
+  # ("building", "staged", "live") or "" (a build was wanted). DeployBuilt:
+  # a build's step, `state` building, pid (detail "<pid> <ident>"), staged,
+  # failed, skipped or live. Both fold into the setting deploy.ship
+  DeployAsked{by: String, note: String, commit: String, cover: String, at: Nat}
+  DeployBuilt{commit: String, state: String, version: String, detail: String, at: Nat}
 
 # the later of two times. Base's Nat.max recurses once per unit and
 # overflows at epoch scale; Nat.is_ge compiles to a machine comparison.
@@ -1609,6 +1617,13 @@ def Locks.names(s: State) -> List<&2, String>:
 def Locks.get(s: State, +name: String) -> LK.NamedLock:
   LK.Lock.read(Maybe.default(&2, J.Json, J.Json.parse(Setting.get(s, "lock." ++ name, "")), J.Null{}))
 
+# deploy_main's state, one JSON line (core/ship.bend)
+def Ship.fold.asked(+s: State, +by: String, +cover: String) -> State:
+  State.setting(s, "deploy.ship", SH.Ship.show(SH.Ship.asked(SH.Ship.read(Setting.get(s, "deploy.ship", "")), by, cover)))
+
+def Ship.fold.built(+s: State, +commit: String, +state: String, +detail: String) -> State:
+  State.setting(s, "deploy.ship", SH.Ship.show(SH.Ship.built(SH.Ship.read(Setting.get(s, "deploy.ship", "")), commit, state, detail)))
+
 def Locks.fold(+s: State, +name: String, l: LK.NamedLock) -> State:
   State.setting(State.setting(s, "lock." ++ name, J.Json.show(LK.Lock.json(l))), "locks.names", Launch.add(Setting.get(s, "locks.names", ""), name))
 
@@ -1991,6 +2006,10 @@ def State.apply.go(s: State, e: Change) -> State:
       State.usage(s, th, used, window)
     case TurnUsage{+th, pv, mo, key, i, r, w, o, t, c, known, basis, at}:
       State.tokens(s, th, pv, mo, i, r, w, o, t, c, known, key, basis, at)
+    case DeployAsked{+by, _, _, +cover, _}:
+      Ship.fold.asked(s, by, cover)
+    case DeployBuilt{+commit, +state, _, +detail, _}:
+      Ship.fold.built(s, commit, state, detail)
     case BotSet{+id, +name, thread, look, persona, at}:
       State.world((w => BT.World.bot_set(w, id, name, thread, look, persona, at)), State.with_mail((b => ML.Box.bot_named(b, id, name)), s))
     case BotDeleted{+id, _}:
