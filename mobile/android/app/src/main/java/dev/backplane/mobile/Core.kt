@@ -120,6 +120,22 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     }
 
     // the thread list's view, for Bend to draw (the device's own choice)
+    private suspend fun languageLocal() {
+        apply(engine.local("lang-preview", if (AppSettings.langPreview) "1" else ""))
+        apply(engine.local("lang", AppSettings.lang))
+        apply(engine.local("lang-os", android.os.LocaleList.getDefault()[0].toLanguageTag()))
+    }
+
+    fun language(v: String) {
+        AppSettings.putLang(v)
+        scope.launch { languageLocal() }
+    }
+
+    fun forceLanguage(v: String) {
+        AppSettings.forceLang(v)
+        scope.launch { languageLocal() }
+    }
+
     fun threadList(v: String) {
         AppSettings.putThreadList(v)
         scope.launch { apply(engine.local("view", v)) }
@@ -197,11 +213,15 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         androidx.core.content.ContextCompat.registerReceiver(app, object : android.content.BroadcastReceiver() {
             override fun onReceive(c: Context, i: android.content.Intent) { act("tz-report", java.time.ZoneId.systemDefault().id) }
         }, android.content.IntentFilter(android.content.Intent.ACTION_TIMEZONE_CHANGED), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        androidx.core.content.ContextCompat.registerReceiver(app, object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context, i: android.content.Intent) { scope.launch { languageLocal() } }
+        }, android.content.IntentFilter(android.content.Intent.ACTION_LOCALE_CHANGED), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         val t0 = android.os.SystemClock.elapsedRealtime()
         fun since() = android.os.SystemClock.elapsedRealtime() - t0
         scope.launch {
             apply(engine.screen())
             apply(engine.local("view", AppSettings.threadList))
+            languageLocal()
             android.util.Log.i("Backplane", "engine ready ${since()} ms")
         }
         scope.launch {
@@ -218,6 +238,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
                 android.util.Log.i("Backplane", "state ${kept.path.length()} bytes")
                 apply(engine.loadFrom(kept.path))
                 apply(engine.local("view", AppSettings.threadList))
+                languageLocal()
                 android.util.Log.i("Backplane", "state loaded ${since()} ms")
                 for (l in links) Pairing.key(l)?.let { apply(engine.offline(it)) }
             }
@@ -289,6 +310,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         scope.launch {
             apply(engine.hubs(keyed.keys.toList()))
             apply(engine.local("view", AppSettings.threadList))
+            languageLocal()
             for ((k, l) in keyed) if (k !in hubs) open(k, l)
         }
     }
@@ -462,7 +484,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
                 started0 = true
                 AppSettings.migrate(next.theme, next.view)
                 tab = Tab.entries.firstOrNull { it.name == AppSettings.defaultTab && it != Tab.Settings } ?: if (next.uber == null) Tab.Threads else Tab.Home
-                scope.launch { apply(engine.local("view", AppSettings.threadList)) }
+                scope.launch { apply(engine.local("view", AppSettings.threadList)); languageLocal() }
             }
             next.settings?.let { st -> if (next.hub.isNotEmpty() && hubSettings[next.hub] != st) { hubSettings[next.hub] = st; keepHubSettings() } }
             if (nav.isNotEmpty() && nav != wasNav) { tab = destination(next, nav); if (openedIn?.first == nav) openedIn = null }

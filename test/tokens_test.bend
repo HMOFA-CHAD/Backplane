@@ -63,20 +63,36 @@ def main() -> IO(Unit):
     +s2 : M.State = cl(s1, claude("r2", "1", "0.0008152200000000001", "2", "367", "3687", "3"))
     C.Check.str("claude: a line again counts nothing", count(H.Turn.claude(s2, "t1", 9n, claude("r2", "1", "0.0008152200000000001", "2", "367", "3687", "3"))), "0")
     +s3 : M.State = cl(s2, claude("r3", "0", "1e-4", "5", "10", "0", "1"))
-    C.Check.str("claude totals", M.Setting.get(s3, "tok.t.t1", ""), "3/9/4222/3858/7/0/915220/3")
+    C.Check.str("claude totals", M.Setting.get(s3, "tok.1.t.t1", ""), "3/9/4222/3858/7/0/915220/3/3")
+    C.Check.str("counting starts once", M.Setting.get(s3, "tok.epoch", ""), "1")
     C.Check.str("claude cost of turn 2 is the rise", M.Setting.get(s2, "tok.basis.t1", ""), "c:815220")
     C.Check.str("claude without a cost: unknown, not 0", J.Json.show(CD.Change.encode(Maybe.default(&2, M.Change, List.head(&2, M.Change,
       H.Turn.claude(s3, "t1", 5n, js("{\"uuid\":\"r9\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}"))), M.SettingSet{"", "", 0n}))),
       "{\"$\":\"TurnUsage\",\"thread\":\"t1\",\"provider\":\"claude\",\"model\":\"claude-opus-5-5\",\"key\":\"r9\",\"input\":1,\"cread\":0,\"cwrite\":0,\"output\":1,\"reasoning\":0,\"cost\":0,\"known\":\"irwo\",\"basis\":\"c:100000\",\"at\":5}")
-    +x1 : M.State = cx(s3, codex("14935", "9984", "5"))
+    +x1 : M.State = cx(then(s3, H.Turn.codex.start(False{}, "t2", "s1", 2n)), codex("14935", "9984", "5"))
     +x2 : M.State = cx(x1, codex("34717", "17152", "10"))
     C.Check.str("codex: a line again counts nothing", count(H.Turn.codex(x2, "t2", 9n, codex("34717", "17152", "10"))), "0")
-    +x3 : M.State = cx(then(x2, [M.SessionSet{"t2", "s2", 3n}]), codex("100", "0", "1"))
-    C.Check.str("codex totals (session rises, then a new session)", M.Setting.get(x3, "tok.t.t2", ""), "3/17665/17152/0/11/0/0/0")
-    C.Check.str("day", M.Setting.get(x3, "tok.d.2026-10-15", ""), "6/17674/21374/3858/18/0/915220/3")
-    C.Check.str("month by model", M.Setting.get(x3, "tok.ml.2026-10", ""), "claude|claude-opus-5-5\ncodex|gpt-6.1-sol")
-    C.Check.str("project", M.Setting.get(x3, "tok.p.p1|2026-10", ""), "6/17674/21374/3858/18/0/915220/3")
-    C.Check.str("since", M.Setting.get(x3, "tok.since", ""), "1792100000")
+    +x3 : M.State = cx(then(x2, List.append(&2, M.Change, [M.SessionSet{"t2", "s2", 3n}], H.Turn.codex.start(False{}, "t2", "s2", 3n))), codex("100", "0", "1"))
+    C.Check.str("codex totals (session rises, then a new session)", M.Setting.get(x3, "tok.1.t.t2", ""), "3/17665/17152/0/11/0/0/0/3")
+    C.Check.str("day", M.Setting.get(x3, "tok.1.d.2026-10-15", ""), "6/17674/21374/3858/18/0/915220/3/6")
+    C.Check.str("month by model", M.Setting.get(x3, "tok.1.ml.2026-10", ""), "claude|claude-opus-5-5\ncodex|gpt-6.1-sol")
+    C.Check.str("project", M.Setting.get(x3, "tok.1.p.p1|2026-10", ""), "6/17674/21374/3858/18/0/915220/3/6")
+    C.Check.str("since", M.Setting.get(x3, "tok.1.since", ""), "1792100000")
+    +q1 : M.State = cl(s0, claude("q1", "2", "0.5", "2", "3481", "535", "3"))
+    C.Check.str("claude already running when first seen: tokens counted, cost unknown", M.Setting.get(q1, "tok.1.t.t1", ""), "1/2/535/3481/3/0/0/0/1")
+    C.Check.str("claude already running: its total is the baseline", M.Setting.get(q1, "tok.basis.t1", ""), "c:500000000")
+    +q2 : M.State = cl(q1, claude("q2", "3", "0.6", "1", "0", "10", "1"))
+    C.Check.str("claude after that: the rise", M.Setting.get(q2, "tok.1.t.t1", ""), "2/3/545/3481/4/0/100000000/1/2")
+    +u1 : M.State = cx(s0, codex("34717", "17152", "10"))
+    C.Check.str("codex session already running when first seen: tokens unknown", M.Setting.get(u1, "tok.1.t.t2", ""), "1/0/0/0/0/0/0/0/0")
+    +u2 : M.State = cx(u1, codex("35000", "17152", "12"))
+    C.Check.str("codex after that: the rise", M.Setting.get(u2, "tok.1.t.t2", ""), "2/283/0/0/2/0/0/0/1")
+    C.Check.str("unknown turns said so", show(UZ.Tk.rows(u2, U.Ui.threads(u2), Nil{}, 1792101000n)),
+      "Today (UTC) | 2 turns · 283 in, 0 cache read, 0 cache write · 2 out (0 reasoning), tokens unknown for 1 · cost not reported\n" ++
+      "This month | 2 turns · 283 in, 0 cache read, 0 cache write · 2 out (0 reasoning), tokens unknown for 1 · cost not reported\n" ++
+      "codex · gpt-6.1-sol this month | 2 turns · 283 in, 0 cache read, 0 cache write · 2 out (0 reasoning), tokens unknown for 1 · cost not reported\n" ++
+      "Codex work so far | 2 turns · 283 in, 0 cache read, 0 cache write · 2 out (0 reasoning), tokens unknown for 1 · cost not reported\n" ++
+      "Counted since | 2026-10-15 (UTC); earlier turns were not recorded. Costs are Claude's own figures at API prices, not a bill; Codex reports none.\n")
     C.Check.str("round trip", round(M.TurnUsage{"t", "claude", "m", "k", 1n, 2n, 3n, 4n, 5n, 6n, "irwotc", "c:6", 7n}),
       "{\"$\":\"TurnUsage\",\"thread\":\"t\",\"provider\":\"claude\",\"model\":\"m\",\"key\":\"k\",\"input\":1,\"cread\":2,\"cwrite\":3,\"output\":4,\"reasoning\":5,\"cost\":6,\"known\":\"irwotc\",\"basis\":\"c:6\",\"at\":7}")
     C.Check.str("utc day", M.Tok.day(0n) ++ " " ++ M.Tok.day(951782400n), "1970-01-01 2000-02-29")

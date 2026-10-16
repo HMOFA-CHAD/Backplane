@@ -1514,23 +1514,39 @@ def Tok.has(xs: List<&2, String>, +l: String) -> Bool:
 def Tok.once(+ls: String, +l: String) -> String:
   Bool.pick(String, Tok.has(String.split(ls, '\n'), l), ls, Bool.pick(String, String.is_empty(ls), l, ls ++ "\n" ++ l))
 
-def Tok.sum(+s: State, +k: String, +i: Nat, +r: Nat, +w: Nat, +o: Nat, +t: Nat, +c: Nat, ck: Bool) -> State:
-  State.setting(s, k, Tok.add(Setting.get(s, k, ""), i, r, w, o, t, c, ck))
+# a total with its ninth part: the turns whose tokens the provider gave (a
+# turn whose share could not be told, its session's start unseen, counts
+# as a turn with its tokens unknown)
+def Tok.add2(+old: String, +i: Nat, +r: Nat, +w: Nat, +o: Nat, +t: Nat, +c: Nat, ck: Bool, kk: Bool) -> String:
+  Tok.add(old, i, r, w, o, t, c, ck) ++ "/" ++ Nat.show(Nat.add(Tok.part(old, 8n), Bool.pick(Nat, kk, 1n, 0n)))
+
+def Tok.sum(+s: State, +k: String, +i: Nat, +r: Nat, +w: Nat, +o: Nat, +t: Nat, +c: Nat, +ck: Bool, +kk: Bool) -> State:
+  State.setting(s, k, Tok.add2(Setting.get(s, k, ""), i, r, w, o, t, c, ck, kk))
+
+# Totals are kept under the count's epoch (the setting tok.epoch, set once
+# by the hub when it starts counting again): "tok." then "<epoch>." when one
+# is set. Totals of an earlier count stay in the log and are never shown.
+def Tok.pre.k(+e: String) -> String:
+  Bool.pick(String, String.is_empty(e), "tok.", "tok." ++ e ++ ".")
+
+def Tok.pre(+s: State) -> String:
+  Tok.pre.k(Setting.get(s, "tok.epoch", ""))
 
 def Tok.project(t: Thread) -> String:
   match t:
     case Thread{_, p, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       p
 
-def State.tokens.k(+s: State, +th: String, +pj: String, +pm: String, +i: Nat, +r: Nat, +w: Nat, +o: Nat, +t: Nat, +c: Nat, +ck: Bool, +key: String, +basis: String, +at: Nat) -> State:
-  +s1 = Tok.sum(Tok.sum(Tok.sum(s, "tok.t." ++ th, i, r, w, o, t, c, ck), "tok.d." ++ Tok.day(at), i, r, w, o, t, c, ck), "tok.m." ++ Tok.month(at), i, r, w, o, t, c, ck)
-  +s2 = Tok.sum(Tok.sum(s1, "tok.mm." ++ Tok.month(at) ++ "|" ++ pm, i, r, w, o, t, c, ck), "tok.p." ++ pj ++ "|" ++ Tok.month(at), i, r, w, o, t, c, ck)
-  +s3 = State.setting(s2, "tok.ml." ++ Tok.month(at), Tok.once(Setting.get(s2, "tok.ml." ++ Tok.month(at), ""), pm))
-  +s4 = State.setting(s3, "tok.since", Bool.pick(String, String.is_empty(Setting.get(s3, "tok.since", "")), Nat.show(at), Setting.get(s3, "tok.since", "")))
+def State.tokens.k(+s: State, +x: String, +th: String, +pj: String, +pm: String, +i: Nat, +r: Nat, +w: Nat, +o: Nat, +t: Nat, +c: Nat, +ck: Bool, +kk: Bool, +key: String, +basis: String, +at: Nat) -> State:
+  +s1 = Tok.sum(Tok.sum(Tok.sum(s, x ++ "t." ++ th, i, r, w, o, t, c, ck, kk), x ++ "d." ++ Tok.day(at), i, r, w, o, t, c, ck, kk), x ++ "m." ++ Tok.month(at), i, r, w, o, t, c, ck, kk)
+  +s2 = Tok.sum(Tok.sum(s1, x ++ "mm." ++ Tok.month(at) ++ "|" ++ pm, i, r, w, o, t, c, ck, kk), x ++ "p." ++ pj ++ "|" ++ Tok.month(at), i, r, w, o, t, c, ck, kk)
+  +s3 = State.setting(s2, x ++ "ml." ++ Tok.month(at), Tok.once(Setting.get(s2, x ++ "ml." ++ Tok.month(at), ""), pm))
+  +s4 = State.setting(s3, x ++ "since", Bool.pick(String, String.is_empty(Setting.get(s3, x ++ "since", "")), Nat.show(at), Setting.get(s3, x ++ "since", "")))
   State.setting(State.setting(s4, "tok.key." ++ th, key), "tok.basis." ++ th, basis)
 
 def State.tokens(+s: State, +th: String, +pv: String, +mo: String, +i: Nat, +r: Nat, +w: Nat, +o: Nat, +t: Nat, +c: Nat, +known: String, +key: String, +basis: String, +at: Nat) -> State:
-  State.tokens.k(s, th, Tok.project(State.thread.get(s, th)), pv ++ "|" ++ Bool.pick(String, String.is_empty(mo), "default", mo), i, r, w, o, t, c, String.contains(known, "c"), key, basis, at)
+  State.tokens.k(s, Tok.pre(s), th, Tok.project(State.thread.get(s, th)), pv ++ "|" ++ Bool.pick(String, String.is_empty(mo), "default", mo), i, r, w, o, t, c,
+    String.contains(known, "c"), String.contains(known, "o"), key, basis, at)
 
 # Launched threads
 # ----------------

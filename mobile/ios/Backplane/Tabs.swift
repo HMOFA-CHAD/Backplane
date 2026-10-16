@@ -266,6 +266,15 @@ struct AppSettingsTab: View {
                     Text("Dark").tag("dark")
                 }
                 .pickerStyle(.segmented)
+                if let row = screen.lang?.rows.first {
+                    Picker(row.label, selection: Binding(get: { settings.lang }, set: { model.language($0) })) {
+                        ForEach(row.buttons, id: \.value) { Text($0.label).tag($0.value) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                if let row = screen.lang?.rows.dropFirst().first, let button = row.buttons.first {
+                    Toggle(row.label, isOn: Binding(get: { button.on }, set: { _ in model.act(button.action, button.value) }))
+                }
             }
             Section {
                 Picker("Thread list", selection: listBinding) {

@@ -1,4 +1,5 @@
 import Base
+import ./src/server/mailstore.bend as MIX # mail index
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/usage.bend as UZ
@@ -6,6 +7,7 @@ import ./src/core/refview.bend as RC # links (cards, trail)
 import ./src/core/order.bend as ORD # ordering (project card, buy threads)
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/mailbody.bend as MB # mail 2a
+import ./src/core/mailview.bend as MVW # mail view
 import ./src/core/ref.bend as REF
 # ---- i18n cjk ----
 import ./src/core/cjk.bend as CJK
@@ -9119,3 +9121,88 @@ law intent_edit_is_intent:
 law order_tools_buy_only:
   {BHS.Bots.buy.tools(False{}) == [] : List<&2, J.Json>}
 
+# ---- i18n lang ----
+law lang_default_auto:
+  {U.Lang.resolve("", "en_US.UTF-8", False{}) == "en" : String}
+law lang_default_unknown:
+  {U.Lang.resolve("garbage", "en_US.UTF-8", False{}) == "en" : String}
+law lang_gate:
+  for os: String
+  {U.Lang.resolve("ja", os, False{}) == "en" : String}
+law lang_gate_preview:
+  for os: String
+  {U.Lang.resolve("ja", os, True{}) == "ja" : String}
+law lang_auto_preview:
+  {U.Lang.resolve("auto", "ja_JP.UTF-8", True{}) == "ja" : String}
+law lang_override_en:
+  for os: String
+  for p: Bool
+  {U.Lang.resolve("en", os, p) == "en" : String}
+law prompt_lang_off:
+  {PM.Prompt.lang("off") == "" : String}
+law prompt_lang_unknown:
+  {PM.Prompt.lang("x") == "" : String}
+# ---- end i18n lang ----
+
+# ---- mail view ----
+# the rows built for the visible window never run past the list
+law mv_visible_bounds:
+  for +total: Nat
+  for +scroll: Nat
+  for +view: Nat
+  {Nat.is_ge(total, Nat.add(MVW.Mv.count(total, scroll, view), MVW.Mv.first(total, scroll, view))) == True{} : Bool}
+
+# merging full-text hits into local ones never repeats a conversation
+# (a closed case: local and server both repeat an id, and share one)
+law mv_merge_no_dup:
+  {MVW.Mv.unique(MVW.Mv.merge_hits([MVW.Mv.stub("a", 9n), MVW.Mv.stub("b", 7n), MVW.Mv.stub("a", 9n)], [MVW.Mv.stub("b", 8n), MVW.Mv.stub("d", 6n), MVW.Mv.stub("a", 9n)])) == True{} : Bool}
+
+# a newer page for the same slots leaves the ids of rows it did not change
+law mv_rows_stable:
+  {MVW.Mv.ids(MVW.Mv.rows(MVW.Mv.put_page(MVW.Mv.put_page(MVW.Mv.cache(), MVW.Mv.filter(), 0n, 3n, [MVW.Mv.stub("a", 9n), MVW.Mv.stub("b", 7n), MVW.Mv.stub("c", 5n)]), MVW.Mv.filter(), 0n, 3n, [MVW.Mv.stub("a", 9n), MVW.Mv.stub("b", 11n), MVW.Mv.stub("c", 5n)]), MVW.Mv.key(MVW.Mv.filter()), 0n, 3n)) == "a,b,c," : String}
+
+# two chips that differ never share a cache key, even with a "|" in a name
+law mv_filter_key_separates:
+  {String.eq(MVW.Mv.key(MVW.Filter{"a|b", "", "c", ""}), MVW.Mv.key(MVW.Filter{"a", "|b", "c", ""})) == False{} : Bool}
+
+# ---- end mail view ----
+
+# ---- usage-baseline ----
+# a turn is never charged with what its process or session did before the
+# hub saw it start
+
+# a Claude process already running when its thread was first seen: cost unknown
+law tok_cost_unknown_without_start:
+  {H.Turn.cost.known(True{}, False{}, "") == False{} : Bool}
+
+# a turn that starts its process is charged from 0, whatever came before
+law tok_cost_known_at_start:
+  for +b: String
+  {H.Turn.cost.known(True{}, True{}, b) == True{} : Bool}
+
+# a Codex session the hub sees start counts from 0
+law tok_codex_start_zero:
+  {H.Turn.codex.start(False{}, "t", "s", 1n) == [M.SettingSet{"tok.basis.t", "x:s:0/0/0/0/0", 1n}] : List<&2, M.Change>}
+
+# counting starts again only once
+law tok_epoch_once:
+  {H.Turn.epoch(M.State.replay([M.SettingSet{"tok.epoch", "1", 1n}], M.State.empty()), 2n) == [] : List<&2, M.Change>}
+
+# totals of a count live under its epoch
+law tok_pre_epoch:
+  {M.Tok.pre.k("1") == "tok.1." : String}
+# ---- mail index ----
+# Position participates in validation, independently of the ID fingerprint.
+law mail_index_wrong_position:
+  {MIX.MI.row.ok(MIX.MIndexRow{0, 16, 0, 0, 65536, 0, 65536}, 65600) == False{} : Bool}
+
+law mail_index_forward_chain_rejected:
+  {MIX.MI.row.ok(MIX.MIndexRow{0, 16, 0, 65664, 65536, 0, 65600}, 65600) == False{} : Bool}
+
+law mail_index_overflow_rejected:
+  {MIX.MI.row.ok(MIX.MIndexRow{4294967290, 16, 0, 0, 65536, 0, 65536}, 65536) == False{} : Bool}
+
+law mail_index_hash_empty:
+  for h: U32
+  {MIX.MI.hash("", h) == h : U32}
+# ---- end mail index ----

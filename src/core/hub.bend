@@ -1444,6 +1444,19 @@ def Turn.claude.base(+s: M.State, +th: String, +o: J.Json) -> Nat:
 def Turn.rise(+now: Nat, +before: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_ge(now, before), Nat.sub(now, before), now)
 
+# counting starts (again) at the first turn of a build that keeps baselines
+# (the setting tok.epoch; model.bend's Tok.pre): turns counted before it
+# could take a process's or session's whole past as one turn's
+def Turn.epoch(+s: M.State, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, String.is_empty(M.Setting.get(s, "tok.epoch", "")), [M.SettingSet{"tok.epoch", "1", now}], Nil{})
+
+# whether a Claude turn's cost can be told: Claude gave a running total, and
+# either this turn starts its process (result_index 0) or the process's
+# total before it is known; a process already running when its thread was
+# first seen has no known start, so its first turn's cost is unknown
+def Turn.cost.known(has: Bool, first: Bool, +basis: String) -> Bool:
+  Bool.and(has, Bool.or(first, Bool.not(String.is_empty(basis))))
+
 def Turn.claude.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
   match fresh:
     case False{}:
@@ -1451,14 +1464,14 @@ def Turn.claude.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) 
     case True{}:
       +u = J.Json.get_obj(o, "usage")
       +total = Turn.nusd(Turn.raw(o, "total_cost_usd"))
-      +hasc = Turn.has(o, "total_cost_usd")
+      +hasc = Turn.cost.known(Turn.has(o, "total_cost_usd"), Bool.and(Turn.has(o, "result_index"), Nat.is_eq(J.Json.get_nat(o, "result_index", 1n), 0n)), Turn.basis(s, th))
       +think = Turn.has(J.Json.get_obj(u, "output_tokens_details"), "thinking_tokens")
-      [M.TurnUsage{th, "claude", Turn.or(Turn.model(Hub.thread(s, th)), Turn.first(Usage.fields(J.Json.get_obj(o, "modelUsage")))), J.Json.get_str(o, "uuid", ""),
+      List.append(&2, M.Change, Turn.epoch(s, now), [M.TurnUsage{th, "claude", Turn.or(Turn.model(Hub.thread(s, th)), Turn.first(Usage.fields(J.Json.get_obj(o, "modelUsage")))), J.Json.get_str(o, "uuid", ""),
         J.Json.get_nat(u, "input_tokens", 0n), J.Json.get_nat(u, "cache_read_input_tokens", 0n), J.Json.get_nat(u, "cache_creation_input_tokens", 0n),
         J.Json.get_nat(u, "output_tokens", 0n), J.Json.get_nat(J.Json.get_obj(u, "output_tokens_details"), "thinking_tokens", 0n),
         Bool.pick(Nat, hasc, Turn.rise(total, Turn.claude.base(s, th, o)), 0n),
         "irwo" ++ Bool.pick(String, think, "t", "") ++ Bool.pick(String, hasc, "c", ""),
-        Bool.pick(String, hasc, "c:" ++ Nat.show(total), Turn.basis(s, th)), now}]
+        Bool.pick(String, Turn.has(o, "total_cost_usd"), "c:" ++ Nat.show(total), Turn.basis(s, th)), now}])
 
 # a result line's turn, once
 def Turn.claude(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
@@ -1491,6 +1504,25 @@ def Turn.codex.m(+s: M.State, +th: String, +now: Nat, +se: String, +u: J.Json, +
     Turn.codex.d(up, was, 3n, co), Turn.codex.d(up, was, 4n, ct), 0n, "irwo" ++ Bool.pick(String, Turn.has(u, "reasoning_output_tokens"), "t", ""),
     "x:" ++ se ++ ":" ++ String.join([Nat.show(ci), Nat.show(cc), Nat.show(cw), Nat.show(co), Nat.show(ct)], "/"), now}]
 
+# a session whose start the hub saw (Turn.codex.start set its totals to 0)
+# counts the rise; one already running when it was first seen counts the
+# turn with its tokens unknown, and its totals become the baseline
+def Turn.codex.seen(seen: Bool, +s: M.State, +th: String, +now: Nat, +se: String, +u: J.Json, +was: List<&2, String>, +ci: Nat, +cc: Nat, +cw: Nat, +co: Nat, +ct: Nat) -> List<&2, M.Change>:
+  match seen:
+    case True{}:
+      Turn.codex.m(s, th, now, se, u, was, ci, cc, cw, co, ct, Turn.codex.up(was, ci, cc, cw, co, ct))
+    case False{}:
+      [M.TurnUsage{th, "codex", Turn.or(Turn.model(Hub.thread(s, th)), "default"), "x:" ++ se ++ ":" ++ Nat.show(ci) ++ "/" ++ Nat.show(co),
+        0n, 0n, 0n, 0n, 0n, 0n, "", "x:" ++ se ++ ":" ++ String.join([Nat.show(ci), Nat.show(cc), Nat.show(cw), Nat.show(co), Nat.show(ct)], "/"), now}]
+
+# a Codex session the hub sees start: its totals start at 0
+def Turn.codex.start(same: Bool, +th: String, +se: String, +now: Nat) -> List<&2, M.Change>:
+  match same:
+    case True{}:
+      Nil{}
+    case False{}:
+      [M.SettingSet{"tok.basis." ++ th, "x:" ++ se ++ ":0/0/0/0/0", now}]
+
 def Turn.codex.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +se: String, +u: J.Json) -> List<&2, M.Change>:
   match fresh:
     case False{}:
@@ -1502,7 +1534,8 @@ def Turn.codex.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +se: String, 
       +cw = J.Json.get_nat(u, "cache_write_input_tokens", 0n)
       +co = J.Json.get_nat(u, "output_tokens", 0n)
       +ct = J.Json.get_nat(u, "reasoning_output_tokens", 0n)
-      Turn.codex.m(s, th, now, se, u, was, ci, cc, cw, co, ct, Turn.codex.up(was, ci, cc, cw, co, ct))
+      List.append(&2, M.Change, Turn.epoch(s, now),
+        Turn.codex.seen(String.starts_with(Turn.basis(s, th), "x:" ++ se ++ ":"), s, th, now, se, u, was, ci, cc, cw, co, ct))
 
 # a turn.completed line's turn, once
 def Turn.codex(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
@@ -2842,7 +2875,8 @@ def Codex.kind(+t: String) -> Nat:
 def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   match i:
     case 0n:
-      Claude.init.k(Claude.init.same(Hub.thread(s, thread), J.Json.get_str(o, "thread_id", "")), thread, J.Json.get_str(o, "thread_id", ""), now)
+      Step.after(Claude.init.k(Claude.init.same(Hub.thread(s, thread), J.Json.get_str(o, "thread_id", "")), thread, J.Json.get_str(o, "thread_id", ""), now),
+        Turn.codex.start(Claude.init.same(Hub.thread(s, thread), J.Json.get_str(o, "thread_id", "")), thread, J.Json.get_str(o, "thread_id", ""), now))
     case 1n:
       Codex.item.k(C.Codec.pos(["agent_message", "command_execution", "file_change", "todo_list"], J.Json.get_str(J.Json.get_obj(o, "item"), "type", "")), thread, now, Hub.seq(s), J.Json.get_obj(o, "item"))
     case 2n:

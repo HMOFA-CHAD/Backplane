@@ -419,6 +419,8 @@ data class Screen(
     val settings: Settings? = null, val find: Find? = null,
     // a project remove to confirm ("proj-remove" id, or "proj-keep")
     val removing: Deleting? = null, val search: Search? = null,
+    // shared language labels and choices for this device
+    val lang: Settings? = null,
     // the hub's theme ("light", "dark"; "" follows the phone's)
     val theme: String = "",
     // "projects" (sections) or "active" (one flat list of rows, active)
@@ -723,7 +725,8 @@ fun parseScreen(o: JSONObject) = Screen(
         Deleting(it.optString("id"), it.optString("title"), it.optString("body"), it.optString("yes"), it.optString("no"))
     },
     o.optJSONObject("search")?.let { Search(it.optBoolean("open"), it.optString("query"), it.optString("hint")) },
-    o.optString("theme"),
+    lang = o.optJSONObject("lang")?.let(::parseSettings),
+    theme = o.optString("theme"),
     view = o.optString("view").ifEmpty { "projects" },
     making = o.optBoolean("making"),
     tabs = o.optJSONObject("tabs")?.let(::parseTabs) ?: Tabs(),

@@ -1,8 +1,10 @@
 import Base
+import ./src/server/mailstore.bend as MIX # mail index
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/mailbody.bend as MB # mail 2a
+import ./src/core/mailview.bend as MVW # mail view
 import ./src/core/stamp.bend as STP
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
@@ -10957,3 +10959,65 @@ def Laws.order_buy_board_only():
 def Laws.order_buy_board_unreachable():
   {==}
 
+# ---- i18n lang ----
+def Laws.lang_default_auto():
+  {==}
+def Laws.lang_default_unknown():
+  {==}
+def Laws.lang_gate(os):
+  {==}
+def Laws.lang_gate_preview(os):
+  {==}
+def Laws.lang_auto_preview():
+  {==}
+def Laws.lang_override_en(os, p):
+  {==}
+def Laws.prompt_lang_off():
+  {==}
+def Laws.prompt_lang_unknown():
+  {==}
+# ---- end i18n lang ----
+
+# ---- mail view ----
+def Laws.mv_visible_bounds(total, scroll, view):
+  Laws.menu_scroll_in_list(MVW.Mv.first_raw(scroll), total, MVW.Mv.count(total, scroll, view), le_ge(MVW.Mv.count(total, scroll, view), total, min_le_k(Nat.is_le(MVW.Mv.want(scroll, view), total), MVW.Mv.want(scroll, view), total, {==})))
+
+def Laws.mv_merge_no_dup():
+  {==}
+
+def Laws.mv_rows_stable():
+  {==}
+
+def Laws.mv_filter_key_separates():
+  {==}
+
+# ---- end mail view ----
+
+# ---- usage-baseline ----
+def Laws.tok_cost_unknown_without_start():
+  {==}
+
+def Laws.tok_cost_known_at_start(b):
+  {==}
+
+def Laws.tok_codex_start_zero():
+  {==}
+
+def Laws.tok_epoch_once():
+  {==}
+
+def Laws.tok_pre_epoch():
+  {==}
+# ---- mail index ----
+def Laws.mail_index_wrong_position():
+  {==}
+
+def Laws.mail_index_forward_chain_rejected():
+  {==}
+
+def Laws.mail_index_overflow_rejected():
+  {==}
+
+def Laws.mail_index_hash_empty(h):
+  {==}
+# ---- end mail index ----

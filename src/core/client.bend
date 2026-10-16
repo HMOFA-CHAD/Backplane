@@ -1,6 +1,8 @@
 import Base
 import ./ref.bend as R
 import ./refview.bend as RE
+import ./i18n.bend as I
+import ./msgs.bend as MSG
 import ./deploy.bend as DP
 import ./live.bend as LV
 import ./json.bend as J
@@ -386,6 +388,10 @@ def Machines.current(rs: List<&2, MRow>) -> String:
     case MRow{+n, _, +on} <> t:
       Bool.pick(String, on, n, Machines.current(t))
 
+# Exactly these device inputs and the resolved tag survive a hub switch.
+def Lang.key(+k: String) -> Bool:
+  Bool.or(String.eq(k, "@lang"), Bool.or(String.eq(k, "@lang.os"), Bool.or(String.eq(k, "@lang.tag"), String.eq(k, "@lang.preview"))))
+
 def Machine.draft(scratch: Bool, +k: String, dr: Map<&2, String>, out: Map<&2, String>) -> Map<&2, String>:
   match scratch:
     case True{}:
@@ -400,7 +406,7 @@ def Machine.drafts(ks: List<&2, String>, +dr: Map<&2, String>, out: Map<&2, Stri
     case Nil{}:
       out
     case +k <> t:
-      Machine.drafts(t, dr, Machine.draft(String.starts_with(k, "@"), k, dr, out))
+      Machine.drafts(t, dr, Machine.draft(Bool.and(String.starts_with(k, "@"), Bool.not(Lang.key(k))), k, dr, out))
 
 # The window assigns the actual connection tag when it opens the link.
 # The transition itself also advances the generation, before any message
@@ -2988,6 +2994,84 @@ def Ui.scratch_set(u: Ui, +k: String, v: String) -> Ui:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
       Ui{st, sel, Map.set(&2, String, dr, k, v), live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
 
+# Device language. Only apply writes the resolved tag; hosts call on input changes.
+def Lang.ready() -> Bool:
+  False{}
+
+def Lang.normalize.k(en: Bool, ja: Bool) -> String:
+  match en ja:
+    case True{} _: "en"
+    case False{} True{}: "ja"
+    case False{} False{}: "auto"
+
+def Lang.normalize(+s: String) -> String:
+  Lang.normalize.k(String.eq(s, "en"), String.eq(s, "ja"))
+
+def Lang.resolve.k(l: I.Loc, allow: Bool) -> String:
+  match l allow:
+    case I.Ja{} True{}: "ja"
+    case _ _: "en"
+
+def Lang.resolve(setting: String, os: String, preview: Bool) -> String:
+  Lang.resolve.k(I.I18n.resolve(setting, os), Bool.or(Lang.ready(), preview))
+
+def Lang.choice(+u: Ui) -> String:
+  Lang.normalize(Ui.scratch(u, "@lang"))
+
+def Lang.preview(+u: Ui) -> Bool:
+  String.eq(Ui.scratch(u, "@lang.preview"), "1")
+
+def Lang.apply(+u: Ui, +setting: String, +os: String) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@lang", Lang.normalize(setting)), "@lang.os", os),
+    "@lang.tag", Lang.resolve(Lang.normalize(setting), os, Lang.preview(u)))
+
+def Lang.loc(u: Ui) -> I.Loc:
+  I.I18n.of_tag(Ui.scratch(u, "@lang.tag"))
+
+def Lang.offered.k(allow: Bool) -> List<&2, String>:
+  match allow:
+    case True{}: ["auto", "en", "ja"]
+    case False{}: ["auto", "en"]
+
+def Lang.offered(+u: Ui) -> List<&2, String>:
+  Lang.offered.k(Bool.or(Lang.ready(), Lang.preview(u)))
+
+def Lang.label.k(k: Nat, l: I.Loc) -> String:
+  match k:
+    case 0n: MSG.T.settings.lang.en(l)
+    case 1n: MSG.T.settings.lang.ja(l)
+    case _: MSG.T.settings.lang.auto(l)
+
+def Lang.label(l: I.Loc, v: String) -> String:
+  Lang.label.k(C.Codec.pos(["en", "ja"], v), l)
+
+def Lang.agent.on(u: Ui) -> Bool:
+  +s = M.Setting.get(Ui.state(u), "agent.lang", "off")
+  Bool.or(String.eq(s, "en"), String.eq(s, "ja"))
+
+def Lang.agent.value(on: Bool, u: Ui) -> String:
+  match on:
+    case True{}: I.I18n.tag(Lang.loc(u))
+    case False{}: "off"
+
+def Lang.follow.add(a: Act, cs: List<&2, Cmd>) -> Act:
+  match a:
+    case Act{u, cs2}: Act{u, List.append(&2, Cmd, cs, cs2)}
+
+# "Agents reply in my language" follows this device's language: when the
+# person changes it while the setting is on, agent.lang moves to the new tag
+def Lang.follow(on: Bool, a: Act) -> Act:
+  match on a:
+    case True{} Act{+u, cs}: Lang.follow.add(Ui.setting(u, "agent.lang=" ++ Ui.scratch(u, "@lang.tag")), cs)
+    case False{} a: a
+
+def Lang.act(k: Nat, +u: Ui, +value: String) -> Act:
+  match k:
+    case 0n:
+      Lang.follow(Lang.agent.on(u), Act{Lang.apply(u, value, Ui.scratch(u, "@lang.os")), [Keep{"@lang", Lang.normalize(value)}]})
+    case _:
+      Act{Lang.apply(u, Lang.choice(u), value), Nil{}}
+
 # Creating a thread
 # -----------------
 # New Thread, Fork and adding a project ask the hub for a thread; the hub
@@ -3018,9 +3102,44 @@ def Ui.cast.k(on: Bool, +u: Ui, +page: String) -> Act:
     case False{}:
       Act{u, Nil{}}
 
+# the page on show: the selected thread's Browser tab's, else a bot's
+# Browser tab's (the bot's own page)
+def Ui.shown.page.k(bot: Bool, +u: Ui) -> String:
+  match bot:
+    case True{}:
+      Ui.scratch(u, "@bot")
+    case False{}:
+      Ui.cast.page(u)
+
+def Ui.shown.page(+u: Ui) -> String:
+  Ui.shown.page.k(Bool.and(String.eq(Ui.scratch(u, "@btab"), "browser"), Bool.not(String.is_empty(Ui.scratch(u, "@bot")))), u)
+
 # a frame of page heard ({"t":"shot"}): said seen when the tab shows it
 def Ui.cast.seen(+u: Ui, +page: String) -> Act:
-  Ui.cast.k(Bool.and(Bool.not(String.is_empty(page)), String.eq(page, Ui.cast.page(u))), u, page)
+  Ui.cast.k(Bool.and(Bool.not(String.is_empty(page)), String.eq(page, Ui.shown.page(u))), u, page)
+
+# An unwatched page is not cast at all (the helper stops its screencast and
+# keeps a still every few seconds), so a client cannot wait for a frame to
+# say it shows one: an action that brings a page on show says so at once
+def Ui.cast.add(a: Act, cs: List<&2, Cmd>) -> Act:
+  match a:
+    case Act{u, c2}:
+      Act{u, List.append(&2, Cmd, cs, c2)}
+
+def Ui.cast.now.k(go: Bool, a: Act, +page: String) -> Act:
+  match go a:
+    case True{} Act{+u, cs}:
+      Ui.cast.add(Ui.rpc(Ui.scratch_set(u, "@cast.n", "1"), "browser.seen", [J.KV{"page", J.Str{page}}]), cs)
+    case False{} _:
+      a
+
+def Ui.cast.now.p(+before: String, a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Ui.cast.now.k(Bool.and(Bool.not(String.is_empty(Ui.shown.page(u))), Bool.not(String.eq(Ui.shown.page(u), before))), Act{u, cs}, Ui.shown.page(u))
+
+def Ui.cast.now(+u: Ui, a: Act) -> Act:
+  Ui.cast.now.p(Ui.shown.page(u), a)
 
 def Made.at(+u: Ui) -> String:
   Ui.info(u, "local.machine") ++ "|" ++ Ui.info(u, "local.generation")
@@ -9020,8 +9139,17 @@ def Ui.recv_act.n(notify: Bool, u: Ui, +o: J.Json) -> Act:
     case False{}:
       Emb.sync.if(C.Codec.pos(["log", "changes", "view"], J.Json.get_str(o, "t", "")), Fab.sync(Mpage.sync(Ui.recv_act.go(u, o))))
 
+# a frame of a page ({"t":"shot","bot":page,"n":n}) where the client keeps
+# it (the phones): its number as info "shot.<page>", seen when on show
+def Ui.recv_act.s(shot: Bool, u: Ui, +o: J.Json) -> Act:
+  match shot:
+    case True{}:
+      Ui.cast.seen(Ui.info_set(u, "shot." ++ J.Json.get_str(o, "bot", ""), J.Json.as_raw(J.Json.get(o, "n"), "0")), J.Json.get_str(o, "bot", ""))
+    case False{}:
+      Ui.recv_act.n(String.eq(J.Json.get_str(o, "t", ""), "notify"), u, o)
+
 def Ui.recv_act(u: Ui, +o: J.Json) -> Act:
-  Ui.recv_act.n(String.eq(J.Json.get_str(o, "t", ""), "notify"), u, o)
+  Ui.recv_act.s(String.eq(J.Json.get_str(o, "t", ""), "shot"), u, o)
 
 # after an action that chose another thread
 def Emb.sync.sel.k(moved: Bool, a: Act) -> Act:
@@ -10125,8 +10253,14 @@ def Ui.act.subs(shut: Bool, open: Bool, +u: Ui, +action: String, +value: String)
     case False{} False{}:
       Ui.act.z(String.starts_with(action, "tz-"), u, action, value)
 
+def Lang.dispatch(k: Nat, +u: Ui, +action: String, +value: String) -> Act:
+  match k:
+    case 0n: Lang.act(0n, u, value)
+    case 1n: Lang.act(1n, u, value)
+    case _: Rc.sync.of(Ui.act.subs(String.eq(action, "subs-shut"), String.eq(action, "subs-open"), u, action, value))
+
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Rc.sync.of(Ui.act.subs(String.eq(action, "subs-shut"), String.eq(action, "subs-open"), u, action, value))
+  Ui.cast.now(u, Lang.dispatch(C.Codec.pos(["lang", "lang-os"], action), u, action, value))
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:
@@ -10252,7 +10386,6 @@ def Page.since.k(t: M.Thread) -> Nat:
 
 def Page.since(s: M.State, +th: String) -> Nat:
   Page.since.k(Ui.thread(s, th))
-
 
 # The window's memos (main.bend's Mm): which threads a change touches,
 # for keys that say whether a thread's view can have changed. Every change

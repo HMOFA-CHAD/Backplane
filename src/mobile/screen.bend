@@ -1,4 +1,5 @@
 import Base
+import ../core/msgs.bend as MSG
 import ../core/json.bend as J
 import ../core/model.bend as M
 import ../core/client.bend as U
@@ -1236,6 +1237,21 @@ def Mob.usage.rows(rs: List<&2, UZ.URow>) -> List<&2, J.Json>:
     case +r <> t:
       Mob.usage.row("Usage: " ++ UZ.URow.label(r), r) <> Mob.usage.go(t)
 
+def Mob.lang.chips(vs: List<&2, String>, +u: U.Ui) -> List<&2, J.Json>:
+  match vs:
+    case Nil{}: Nil{}
+    case +v <> t:
+      Mob.set.btn(U.Lang.label(U.Lang.loc(u), v), "lang", v, String.eq(v, U.Lang.choice(u))) <> Mob.lang.chips(t, u)
+
+def Mob.lang.rows(+u: U.Ui) -> List<&2, J.Json>:
+  [Mob.set.row.l(MSG.T.settings.lang(U.Lang.loc(u)), "", Mob.lang.chips(U.Lang.offered(u), u)),
+    Mob.set.row.l(MSG.T.settings.agent.lang(U.Lang.loc(u)), "", [Mob.set.btn(
+      Bool.pick(String, U.Lang.agent.on(u), MSG.T.settings.lang.on(U.Lang.loc(u)), MSG.T.settings.lang.off(U.Lang.loc(u))),
+      "setting", "agent.lang=" ++ U.Lang.agent.value(Bool.not(U.Lang.agent.on(u)), u), U.Lang.agent.on(u))])]
+
+def Mob.lang(u: U.Ui) -> J.Json:
+  J.Json.obj([J.KV{"rows", J.Json.arr(Mob.lang.rows(u))}])
+
 def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String, more: List<&2, J.Json>) -> J.Json:
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +models = U.Str.get(nf, "models")
@@ -1249,7 +1265,7 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
     Mob.set.row(U.FreeCAD.label(nf), U.FreeCAD.note(nf), Nil{}),
     Mob.set.row(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, J.Json>, U.KiCad.ipc.ready(nf), Mob.set.chips(["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{})),
     Mob.set.row(U.Fab.set.label(), U.Fab.set.note(), Mob.set.chips(["on", "off"], U.Fab.set.on(st), "order.estimates")),
-    Mob.set.row.l("Theme", "Unset, the phone follows its own system.", Mob.set.chips(["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme")),
+    Mob.set.row.l("Theme", "Unset, the phone follows its own system.", Mob.set.chips(["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme"))], Mob.lang.rows(u), [
     Mob.set.row.l("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", Mob.set.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
     Mob.set.row(U.Tail.label(nf), U.Tail.note(nf), Nil{})]]), List.append(&2, J.Json, Mob.mates(u), [
     Mob.set.pair(U.Ui.flag(u, "pairqr"), nf),
@@ -1425,7 +1441,7 @@ def Mob.screen.go(+focus: Bool, +u: U.Ui, +ix: U.SIx, +g: U.SGroups, +side: MSid
       +thread = Mob.focus.thread(focus, u, sel)
       +bot = Mob.focus.bot(focus, u)
       J.Json.obj([J.KV{"online", J.Json.bool(on)}, J.KV{"version", J.Json.str(v)}, J.KV{"seq", J.Json.nat(U.Ui.seq(u))}, J.KV{"error", J.Json.str(e)},
-        J.KV{"note", J.Json.str(note)}, J.KV{"sel", J.Json.str(sel)}, J.KV{"making", J.Json.bool(U.Made.waiting(u))}, J.KV{"theme", J.Json.str(M.Setting.get(st, "ui.theme", ""))},
+        J.KV{"lang", Mob.lang(u)}, J.KV{"note", J.Json.str(note)}, J.KV{"sel", J.Json.str(sel)}, J.KV{"making", J.Json.bool(U.Made.waiting(u))}, J.KV{"theme", J.Json.str(M.Setting.get(st, "ui.theme", ""))},
         J.KV{"empty", J.Json.str(Mob.empty(List.length(&2, M.Project, U.Ui.projects(st))))},
         J.KV{"projects", J.Json.arr(Mob.grouped(g, o, ix, st, now, U.Find.q(o, dr)))},
         J.KV{"older", Mob.older(g, o, U.Find.q(o, dr))},

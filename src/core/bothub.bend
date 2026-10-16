@@ -1,4 +1,5 @@
 import Base
+import ./prompt.bend as LP
 import ./mail.bend as ML
 import ./json.bend as J
 import ./model.bend as M
@@ -2691,7 +2692,7 @@ def Bots.prompt.k(m: Maybe<&2, BT.Bot>, +s: M.State, +home: String) -> String:
 
 # the bot part of a thread's system prompt ("" for a thread that is not a bot)
 def Bots.prompt(+s: M.State, +thread: String, +home: String) -> String:
-  Bots.prompt.k(BT.World.of_thread(M.State.bots(s), thread), s, home)
+  LP.Prompt.lang.add(Bots.prompt.k(BT.World.of_thread(M.State.bots(s), thread), s, home), M.Setting.get(s, "agent.lang", "off"))
 
 def Bots.turn.b(+block: String, +text: String) -> String:
   Bool.pick(String, String.is_empty(block), text, block ++ "\n\n" ++ text)

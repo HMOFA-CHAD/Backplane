@@ -53,9 +53,13 @@ def check_long(name: String, got: String, want: String) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
+    C.Check.str("indexed row parser roundtrip", Bool.show(Maybe.is_some(&2, MB.Body, MB.Body.parse_line(MB.Body.line(fixture("row", "conv", "雪😀\n\"{}", 0n))))), "True")
+    C.Check.str("indexed row needs terminator", Bool.show(Maybe.is_some(&2, MB.Body, MB.Body.parse_line(J.Json.show(MB.Body.encode(fixture("row", "conv", "", 0n)))))), "False")
+    C.Check.str("indexed row rejects interior newline", Bool.show(Maybe.is_some(&2, MB.Body, MB.Body.parse_line("{\n}\n"))), "False")
     +text : String = long(15n, "雪😀\n\"{\"text\":true}\\")
     +b : MB.Body = fixture("m", "c", text, 0n)
     check_long("unicode quotes newline JSON and long exact roundtrip", encoded(MB.Body.parse(MB.Body.line(b))), MB.Body.line(b))
+    check_long("indexed long row exact roundtrip", encoded(MB.Body.parse_line(MB.Body.line(b))), MB.Body.line(b))
     C.Check.str("one literal newline terminator", Nat.show(newlines(MB.Body.line(b), 0n)), "1")
     +arrays : MB.Body = MB.Body{ML.Conv{"c", "", "", ["a|b", "c\nd", "雪"], "", ["x,y", "z\nq"], 0n, 0n, 0n}, ML.Mail{"m", "c", "", "", "", "", "fyi", "", 0n, 0n}, ""}
     C.Check.str("array delimiters preserved", encoded(MB.Body.decode(MB.Body.encode(arrays))), MB.Body.line(arrays))

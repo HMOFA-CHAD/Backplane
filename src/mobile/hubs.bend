@@ -565,19 +565,25 @@ def Hubs.find(hs: List<&2, Hub>, +key: String) -> Maybe<&2, Hub>:
     case +h <> t:
       Bool.pick(Maybe<&2, Hub>, String.eq(Hub.key(h), key), Some{h}, Hubs.find(t, key))
 
-def Hubs.made(+m: Maybe<&2, Hub>, +k: String, +cid: String, +now: Nat) -> Hub:
+def Hubs.lang.inherit(old: List<&2, Hub>, u: U.Ui) -> U.Ui:
+  match old:
+    case Nil{}: u
+    case Hub{_, +from} <> _:
+      U.Lang.apply(U.Ui.scratch_set(u, "@lang.preview", U.Ui.scratch(from, "@lang.preview")), U.Lang.choice(from), U.Ui.scratch(from, "@lang.os"))
+
+def Hubs.made(+m: Maybe<&2, Hub>, +k: String, +cid: String, +now: Nat, +old: List<&2, Hub>) -> Hub:
   match m:
     case Some{h}:
       h
     case None{}:
-      Hub{k, U.Ui.info_set(U.Ui.set_cid(U.Ui.init(now), cid), "local.fixed", "1")}
+      Hub{k, Hubs.lang.inherit(old, U.Ui.info_set(U.Ui.set_cid(U.Ui.init(now), cid), "local.fixed", "1"))}
 
 def Hubs.set.go(ks: List<&2, String>, +old: List<&2, Hub>, +cid: String, +now: Nat) -> List<&2, Hub>:
   match ks:
     case Nil{}:
       Nil{}
     case +k <> t:
-      Hubs.made(Hubs.find(old, k), k, cid, now) <> Hubs.set.go(t, old, cid, now)
+      Hubs.made(Hubs.find(old, k), k, cid, now, old) <> Hubs.set.go(t, old, cid, now)
 
 def Hubs.first(hs: List<&2, Hub>) -> String:
   match hs:
@@ -601,7 +607,7 @@ def Hubs.set(hs: Hubs, ks: List<&2, String>) -> Hubs:
 def Hubs.ui(hs: Hubs, +key: String) -> U.Ui:
   match hs:
     case Hubs{+cid, +now, _, +list}:
-      Hub.ui(Hubs.made(Hubs.find(list, key), key, cid, now))
+      Hub.ui(Hubs.made(Hubs.find(list, key), key, cid, now, list))
 
 def Hubs.recv(hs: Hubs, +key: String, o: J.Json) -> HAct:
   Hubs.step(hs, False{}, key, Got{o})
@@ -661,12 +667,19 @@ def Hubs.now(hs: Hubs, now: Nat) -> Hubs:
 # tabs): left in every hub's scratch as @local.<key>, where the screen reads it
 # (screen.bend's Mob.view). The apps send it after load/start, after pairing
 # and on every change, so a hub added later has it at once.
+def Hubs.local.ui(k: Nat, +u: U.Ui, key: String, +value: String) -> U.Ui:
+  match k:
+    case 0n: U.Lang.apply(u, value, U.Ui.scratch(u, "@lang.os"))
+    case 1n: U.Lang.apply(u, U.Lang.choice(u), value)
+    case 2n: U.Lang.apply(U.Ui.scratch_set(u, "@lang.preview", value), U.Lang.choice(u), U.Ui.scratch(u, "@lang.os"))
+    case _: U.Ui.scratch_set(u, "@local." ++ key, value)
+
 def Hubs.local.go(hs: List<&2, Hub>, +key: String, +value: String) -> List<&2, Hub>:
   match hs:
     case Nil{}:
       Nil{}
     case Hub{+k, u} <> t:
-      Hub{k, U.Ui.scratch_set(u, "@local." ++ key, value)} <> Hubs.local.go(t, key, value)
+      Hub{k, Hubs.local.ui(C.Codec.pos(["lang", "lang-os", "lang-preview"], key), u, key, value)} <> Hubs.local.go(t, key, value)
 
 def Hubs.local(hs: Hubs, +key: String, +value: String) -> Hubs:
   match hs:
@@ -1997,6 +2010,7 @@ def Hubs.screen.p(+pl: MPL.MUber, +ss: List<&2, Shown>, +cur: String, +list: Lis
     J.KV{"error", J.Json.str(Hubs.said(ss, "error"))}, J.KV{"note", J.Json.str(Hubs.said(ss, "note"))},
     J.KV{"sel", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "sel", ""))},
     J.KV{"making", J.Json.bool(J.Json.get_bool(Hubs.of(ss, cur), "making", False{}))},
+    J.KV{"lang", J.Json.get_obj(Hubs.of(ss, cur), "lang")},
     J.KV{"theme", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "theme", ""))},
     J.KV{"empty", J.Json.str(Hubs.empty(List.length(&2, J.Json, Hubs.projects(ss, False{})), List.length(&2, Shown, ss), J.Json.get_bool(Hubs.first_obj(ss, "search"), "open", False{})))},
     J.KV{"projects", J.Json.arr(Hubs.origin.projects(Hubs.projects(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)), ss, cur))},
