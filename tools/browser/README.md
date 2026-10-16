@@ -133,7 +133,7 @@ A locator or selector acts on its first match.
 Status:
 
 ```json
-{"version": "2", "page": "", "open": true, "chromium": "/path/to/chrome", "profile": "/x/browser-profile",
+{"version": "3", "engine": "chrome", "page": "", "open": true, "chromium": "/path/to/chrome", "profile": "/x/browser-profile",
  "url": "https://example.com/", "title": "Example Domain", "loading": false, "width": 700, "height": 800,
  "tabs": 1, "frames": {"on": true, "maxFps": 15, "seq": 3, "path": "/tmp/bp-preview.rgb"},
  "shot": {"path": "/x/shots/shared.jpg", "n": 5, "maxFps": 4}}
@@ -368,6 +368,8 @@ Acceptance (one private Xvfb/test at a time, never :0):
 ```sh
 bun tools/cef/test/chrome.ts # existing pages.ts and record.ts unchanged
 BACKPLANE_CEF="$PWD/build/cef/Release/backplane-cef" bun tools/browser/test/cef.ts
+BACKPLANE_CEF="$PWD/build/cef/Release/backplane-cef" bun tools/browser/test/cef-lifetime.ts
+bun tools/browser/test/cef-runtime.ts
 bp-admit.sh --mem 4 --cores 2 -- bun tools/browser/build.ts /tmp/x/backplane-browser
 BACKPLANE_BROWSER=/tmp/x/backplane-browser BACKPLANE_CEF="$PWD/build/cef/Release/backplane-cef" bun tools/browser/test/cef.ts
 ```

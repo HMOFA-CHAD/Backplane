@@ -59,6 +59,9 @@ try {
   const afterPop = await (await fetch(`http://127.0.0.1:${e.port}/json/list`)).json();
   check("popup adds exactly one child", afterPop.filter((p: any) => p.type === "page").length === 3 && (await d.x("children")).children.length === 4 && (await d.x("tops")).chromium === 0);
   await call("tabs", { page: "a", close: 1 });
+  const explicit = await call("tabs", { page: "a", new: "data:text/html,<h1>Explicit tab</h1>" });
+  check("tabs new uses embedded child", explicit.tabs.length === 2 && explicit.active === 1 && (await d.x("tops")).chromium === 0);
+  await call("tabs", { page: "a", close: 1 });
   await call("show", { page: "a", x: 10, y: 10, w: 600, h: 400 });
   await call("evaluate", { page: "a", expression: "clicks=0; wheels=0" });
   await call("shield", { on: true });
@@ -88,6 +91,11 @@ try {
   const dl = await call("download", { page: "a", url: `${serverUrl}/file`, dir: join(d.root, "dl") }).catch((e) => ({ error: String(e) }));
   check("CEF download works or clearly reports unsupported", dl.error ? dl.error.includes("download unavailable in CEF") : readFileSync(dl.path, "utf8") === "cef download\n", dl);
   console.log("download result", JSON.stringify(dl));
+  await call("open", { url: "data:text/html,<h1>Shared RGB</h1>", width: 320, height: 240 });
+  await call("frames", { on: true, maxFps: 10 });
+  const raw = readFileSync(join(d.root, "frame.rgb"));
+  check("CEF shared raw RGB frames", raw.subarray(0, 4).toString() === "BPF1" && raw.readUInt32LE(4) === 320 && raw.readUInt32LE(8) === 240 && raw.length === 16 + 320 * 240 * 3);
+  await call("frames", { on: false }); await call("close", { page: "" });
   await call("close", { page: "a" });
   check("closing a keeps b and host alive", (await call("pages")).pages.length === 1 && (await call("status", { page: "b" })).hostPid === hostPid);
   await call("close", { page: "b" });

@@ -18,9 +18,18 @@ try {
   process.env.BACKPLANE_CEF = envHost;
   check("environment overrides cache", findCef() === envHost);
   check("explicit path overrides environment", findCef(argHost) === argHost);
-  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch() { return new Response("tampered archive"); } });
+  const archiveRoot = join(root, "archive"); mkdirSync(archiveRoot);
+  writeFileSync(join(archiveRoot, "backplane-cef"), "runtime fixture", { mode: 0o755 });
+  const archive = join(root, "runtime.tar.zst");
+  const tar = Bun.spawn(["tar", "-I", "zstd -T1", "-cf", archive, "-C", archiveRoot, "."], { stdout: "ignore", stderr: "inherit" });
+  if (await tar.exited) throw new Error("fixture packaging failed");
+  const bytes = await Bun.file(archive).arrayBuffer();
+  const hash = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(req) { return new URL(req.url).pathname === "/valid" ? new Response(bytes) : new Response("tampered archive"); } });
   try {
     check("SHA mismatch rejects before unpack", await installCef(`http://127.0.0.1:${server.port}/runtime.tar.zst`, "0".repeat(64)).then(() => false, (e) => e.message === "CEF download: SHA-256 mismatch"));
+    const installed = await installCef(`http://127.0.0.1:${server.port}/valid`, hash);
+    check("verified archive installs atomically into version cache", installed === cached && await Bun.file(installed).text() === "runtime fixture");
   } finally { server.stop(true); }
   console.log("all CEF runtime checks passed");
 } finally {
