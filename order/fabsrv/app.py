@@ -198,31 +198,24 @@ async def get_quote(qid: str, request: Request):
     return public_quote(quote_for(qid, bearer(request)))
 
 
-@app.get("/q/{qid}", response_class=HTMLResponse)
-async def quote_page(qid: str, request: Request, t: str = ""):
-    limited("read", request)
-    row = quote_for(qid, t)
-    return pages.quote(public_quote(row), t)
-
-
-@app.post("/q/{qid}/pay")
-async def quote_pay(qid: str, request: Request):
+@app.get("/q/{qid}")
+async def quote_buy(qid: str, request: Request, t: str = ""):
+    """A quote's Buy now link from Backplane: straight to Stripe Checkout. The quote
+    itself is only ever shown in Backplane; there is no page of it here."""
     limited("pay", request)
-    form = await request.form(max_files=0, max_fields=4, max_part_size=1024)
-    row = quote_for(qid, str(form.get("t") or ""))
-    if form.get("agree") != "yes":
-        raise HTTPException(400, "please tick the box to accept that the price may change")
+    row = quote_for(qid, t)
     q = public_quote(row)
+    o = q.get("order")
+    if o and o["status"] not in ("cancelled", "checkout"):
+        return HTMLResponse(pages.done(o["status"]))
     if q["status"] != "ready":
-        raise HTTPException(409, "this quote can no longer be paid; ask for a new one in Backplane")
-    if q.get("order") and q["order"]["status"] not in ("cancelled",):
-        raise HTTPException(409, "this quote is already paid")
+        return HTMLResponse(pages.error("Not payable", "This quote can no longer be paid. Ask for a new one in Backplane."), status_code=409)
     if q["quote"].get("problems"):
-        raise HTTPException(409, "this quote has problems to fix first")
+        return HTMLResponse(pages.error("Not payable", "This quote has problems to fix first. See the thread in Backplane."), status_code=409)
     try:
         url = await asyncio.to_thread(pay.checkout, row, q["quote"])
     except pay.Unavailable as e:
-        raise HTTPException(503, str(e))
+        return HTMLResponse(pages.error("Payments are unavailable", str(e)), status_code=503)
     return RedirectResponse(url, status_code=303)
 
 

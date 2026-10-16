@@ -171,7 +171,7 @@ def price(manifest, measured):
          "shipping": {"method": ship.get("method", ""), "days": ship.get("days", ""), "ddp": ddp},
          "priced_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
     q["markdown"] = markdown(q)
-    q["pay_label"] = f"Pay {money(total)}"
+    q["pay_label"] = f"Buy now · {money(total)}"
     return q
 
 

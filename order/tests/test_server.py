@@ -96,14 +96,13 @@ def test_quote_from_files_with_assembly():
         assert [ln["label"] for ln in quote["lines"]] == ["Manufacturing", "Shipping", "Duties & taxes", "Service & price-assurance fee"]
         assert abs(sum(ln["amount"] for ln in quote["lines"]) - quote["total"]) < 0.01
         assert "part_lines" not in quote  # what each part costs stays with us
-        assert "Pay" in quote["pay_label"] and "Your quote" in quote["markdown"]
+        assert quote["pay_label"].startswith("Buy now · $") and "Your quote" in quote["markdown"]
         # the token is the only way in
         assert c.get(f"/v1/quotes/{up['id']}").status_code == 404
         assert c.get(f"/v1/quotes/{up['id']}", headers={"Authorization": "Bearer wrong"}).status_code == 404
-        assert c.get(f"/q/{up['id']}?t={up['token']}").status_code == 200
         assert c.get(f"/q/{up['id']}?t=nope").status_code == 404
-        # payments are not set up in tests: a clear refusal, nothing else
-        assert c.post(f"/q/{up['id']}/pay", data={"t": up["token"], "agree": "yes"}).status_code == 503
+        # Buy now goes straight to Stripe; payments are not set up in tests: a clear refusal, nothing else
+        assert c.get(f"/q/{up['id']}?t={up['token']}", follow_redirects=False).status_code == 503
 
 
 def test_uploads_are_checked():
