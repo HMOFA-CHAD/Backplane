@@ -2,6 +2,7 @@ import Base
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/mail.bend as ML # mail 1
+import ./src/core/mailbody.bend as MB # mail 2a
 import ./src/core/stamp.bend as STP
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
@@ -10717,6 +10718,31 @@ def Laws.tok_add_one_turn():
   {==}
 
 def Laws.tok_add_no_cost():
+  {==}
+
+# ---- mail 2a ----
+
+# Reversing onto a suffix is exactly reverse followed by append. The
+# implementation may therefore emit its final newline without Base's ++.
+def MailProof.reverse_suffix(+s: String, +acc: String, +rest: String) -> {String.reverse.go(s, acc ++ rest) == String.reverse.go(s, acc) ++ rest : String}:
+  match s:
+    case SNil{}: {==}
+    case SCon{h, t}: MailProof.reverse_suffix(t, SCon{h, acc}, rest)
+
+def Laws.body_line_terminated(b):
+  MailProof.reverse_suffix(J.Json.emit.rev(MB.Body.encode(b), True{}, SNil{}), "", "\n")
+
+def Laws.body_header_omits_text(c, m, a, b):
+  {==}
+
+def Laws.recover_seen_empty(b, box, seen):
+  %Equal.sym(Bool, ML.Box.has(box, ML.Mail.id(MB.Body.mail(b))), True{}, seen) : {MB.Body.recover.guard(_, b, box) == Nil{} : List<&2, M.Change>}
+  {==}
+
+def Laws.recover_missing_header(c, m, text):
+  {==}
+
+def Laws.body_path_encoded_segment(home, conv):
   {==}
 
 # ---- usage-boat-cap ----
