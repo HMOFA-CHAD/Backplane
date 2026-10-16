@@ -58,7 +58,7 @@ flag, manifest hash, Bend version and sha256, sandbox, size, command, exit).
 - `--timeout SECS` (default 1800): the command's limit; the sandbox lives at most that + 10 min, and never more than 2 h.
 - `--artifact PATH` (repeat): copied back from the sandbox before it is deleted.
 - `--exclude GLOB` (repeat): more files to keep out of the upload.
-- `--budget-usd X` (default 0.50, or `BOAT_JOB_BUDGET_USD`): the daily cap.
+- `--budget-usd X` (or `BOAT_JOB_BUDGET_USD`): a lower daily cap for this job; it can only lower the shared cap, never raise it.
 - `--wait SECS` (default 3600, or `BOAT_JOB_WAIT`): how long to wait for a free slot before refusing.
 - `--no-setup-bend`: skip installing Bend (the pinned version and sha256 come from `.github/actions/setup-bend/action.yml`).
 - `scripts/boat-job.sh sweep`: delete sandboxes this tool started whose job is gone. `status` (or `status --json`, `status --refresh` to read Boat's limits first; the same view is kept in `status.json` after every ledger change, and the last limits read in `account.json`, for the Usage settings): jobs, their state, owner thread, size, runtime, reserved and actual credits, today's spend.
@@ -67,7 +67,7 @@ flag, manifest hash, Bend version and sha256, sandbox, size, command, exit).
 - Off unless the repository's root is listed in `~/.local/state/backplane/boat/enabled`.
 - The runner runs from a private copy of itself, so editing or rebasing the worktree during a job doesn't change it; any unexpected exit still deletes the sandbox.
 - Fail closed. A job is refused (exit 75) and nothing is created when Boat's limits can't be read, the account can't start, no slot frees up within `--wait` (jobs still starting count as taken), compute is short, the size isn't offered, the daily budget would be exceeded, or an earlier delete was never verified.
-- Budget: each job reserves its worst case (lifetime × rate) under a ledger lock, so jobs started together can't overspend. The real cost (`boat usage`) is recorded when it ends. Boat has no spend cap of its own, so this is the only one.
+- Budget: the daily cap (UTC day) is shared by every job: `~/.local/state/backplane/boat/budget-usd` (set by the person; $0.50 when there is none, or when it can't be read). Each job reserves its worst case (lifetime × rate) under a ledger lock, so jobs started together can't overspend. The real cost (`boat usage`) is recorded when it ends. Boat has no spend cap of its own, so this is the only one.
 - Source: `git ls-files -co --exclude-standard` (tracked and untracked-not-ignored files), without `.env*`, keys and certificates, `auth.json`, `*.log`, `*.jsonl` outside `test/`, `build/`, `dist/`, `node_modules/`, `shots-snap/`, `.claude/` and `.backplane*/`. Nothing from the home directory.
 - Sandboxes: `boat new --no-env` (none of the account's stored secrets), `--no-snapshots` (erased when stopped), a bounded `--ttl`.
 - Cleanup: the sandbox is deleted, then checked gone in `boat list`, on success, failure and cancel (`work_cancel`). A job killed outright is cleaned up by the next job's sweep. Only sandboxes in the ledger are ever deleted. A delete that can't be verified exits 77 and blocks new jobs until a sweep removes it.
