@@ -129,7 +129,7 @@ def set_order(oid, **kv):
 
 
 def orders(limit=200):
-    return q("select o.*, q.country, q.result from orders o join quotes q on q.id = o.quote_id "
+    return q("select o.*, q.country, q.result, q.manifest from orders o join quotes q on q.id = o.quote_id "
              "where o.status != 'checkout' order by o.created desc limit ?", limit)
 
 

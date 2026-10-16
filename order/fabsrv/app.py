@@ -15,13 +15,15 @@ limits apply to it and to the address (limits.py).
 """
 import asyncio
 import hmac
+import io
 import json
 import re
 import shutil
 import time
+import zipfile
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from . import catalog, config, estimate, limits, package, pages, pay, quoting, store, vendor_api
 
@@ -246,6 +248,26 @@ async def admin(request: Request, k: str = ""):
         resp.set_cookie("fab_admin", k, httponly=True, secure=config.PUBLIC_URL.startswith("https"), samesite="strict",
                         max_age=7 * 86400)
     return resp
+
+
+@app.get("/admin/files/{qid}")
+async def admin_files(qid: str, request: Request):
+    """A paid quote's files as one zip, to hand to the fab (unpacked gerber copies left out)."""
+    limited("pay", request)
+    if not admin_ok(request) or not QID.match(qid):
+        raise HTTPException(404, "not found")
+    root = config.DATA / "quotes" / qid / "files"
+    if not root.is_dir():
+        raise HTTPException(404, "the files are gone")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(root.rglob("*")):
+            rel = f.relative_to(root)
+            if f.is_file() and not any(part.endswith(".d") for part in rel.parts[:-1]):
+                z.write(f, str(rel))
+        z.write(config.DATA / "quotes" / qid / "manifest.json", "manifest.json")
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": f"attachment; filename={qid}.zip"})
 
 
 @app.post("/admin/order/{oid}")

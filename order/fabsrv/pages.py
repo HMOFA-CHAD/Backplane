@@ -111,23 +111,43 @@ def error(code, msg):
     return page("Error", f"<h1>{e(code)}</h1><p class=sub>{e(msg)}</p>")
 
 
+def _opts(p):
+    o = p.get("options") or {}
+    return ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in o.items() if v not in (None, False, ""))
+
+
 def admin(rows):
-    out = ["<h1>Orders</h1><p class=sub>Paid orders, newest first. Files are on the server under data/quotes/&lt;quote&gt;/files.</p>",
-           "<table class=admin>"]
+    """The paid orders, each with what to order where: its parts, options and costs, the
+    customer's address, and the files to download."""
+    out = ["<style>main{max-width:1100px}</style><h1>Orders</h1><p class=sub>Paid orders, newest first. "
+           "Place each with the fab using its files and options, then set its status: the customer's buy thread follows it.</p>"]
+    if not rows:
+        out.append("<div class=card>No paid orders yet.</div>")
     for o in rows:
         q = json.loads(o["result"] or "{}")
+        man = json.loads(o["manifest"] or "{}") if "manifest" in o.keys() else {}
         ship = json.loads(o["shipping"] or "{}")
         addr = ship.get("address") or {}
         a = ", ".join(str(addr.get(k)) for k in ("line1", "line2", "city", "state", "postal_code", "country") if addr.get(k))
-        parts = "; ".join(f"{p['name']} ×{p['qty']}" + (f" ({p['assembled']} asm)" if p.get("assembled") else "")
-                          for p in q.get("parts", []))
+        when = datetime.datetime.fromtimestamp(o["created"], datetime.timezone.utc).strftime("%-d %b %Y %H:%M UTC")
+        parts = {p["name"]: p for p in man.get("parts", [])}
+        rows_html = []
+        for p in q.get("parts", []):
+            mp = parts.get(p["name"], {})
+            rows_html.append(f"<tr><td><b>{e(p['name'])}</b> × {e(p['qty'])}" + (f" ({e(p['assembled'])} assembled)" if p.get("assembled") else "")
+                             + f"<br><span class='muted small'>{e(p.get('summary'))}<br>{e(_opts(mp))}</span></td></tr>")
+        costs = "".join(f"<tr><td class=small>{e(ln['label'])}</td><td class='n small'>{money(ln['amount'])}</td></tr>" for ln in q.get("part_lines", []))
+        costs += "".join(f"<tr><td class=small>{e(ln['label'])}</td><td class='n small'>{money(ln['amount'])}</td></tr>" for ln in q.get("lines", [])[1:3])
         opts = "".join(f"<option{' selected' if s == o['status'] else ''}>{s}</option>"
                        for s in ("paid", "placed", "shipped", "delivered", "refunded", "cancelled"))
         out.append(
-            f"<tr><td><b>{e(o['id'])}</b><br>{e(o['quote_id'])}<br>{money(o['amount'] / 100)}</td>"
-            f"<td>{e(parts)}</td><td>{e(ship.get('name'))}<br>{e(a)}<br>{e(o['email'])} {e(ship.get('phone'))}</td>"
-            f"<td><form method=post action='/admin/order/{e(o['id'])}'><select name=status>{opts}</select>"
-            f"<br><input name=tracking placeholder=tracking value='{e(o['tracking'])}'>"
-            f"<br><input name=note placeholder=note value='{e(o['note'])}'><br><button>Save</button></form></td></tr>")
-    out.append("</table>")
+            f"<div class=card><table><tr><td><b>{e(q.get('title') or o['quote_id'])}</b> · {money(o['amount'] / 100)} paid · {e(when)}"
+            f"<br><span class='muted small'>{e(o['id'])} · {e(o['quote_id'])}</span></td>"
+            f"<td class=n><a href='/admin/files/{e(o['quote_id'])}'>Files (.zip)</a></td></tr></table>"
+            f"<table style='margin-top:10px'><tr><td style='width:55%'><table>{''.join(rows_html)}</table></td>"
+            f"<td><table>{costs}</table><p class=small><b>Ship to</b> {e(ship.get('name'))}, {e(a)}<br>{e(o['email'])} · {e(ship.get('phone'))}"
+            f"<br>{e((q.get('shipping') or {}).get('method'))}</p></td></tr></table>"
+            f"<form method=post action='/admin/order/{e(o['id'])}' style='display:flex;gap:8px;margin-top:8px'>"
+            f"<select name=status>{opts}</select><input name=tracking placeholder='tracking number' value='{e(o['tracking'])}'>"
+            f"<input name=note placeholder=note value='{e(o['note'])}' style='flex:1'><button style='width:auto;padding:6px 16px'>Save</button></form></div>")
     return page("Orders", "".join(out))
