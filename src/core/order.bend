@@ -43,7 +43,7 @@ def Order.prompt.project() -> String:
 # a buy thread's own block
 def Order.prompt.buy() -> String:
   "<backplane_buy>This thread orders the project's parts; the person pressed Buy it. Be brief: short messages, a small table at most, no walls of text. Steps:\n"
-  ++ "1. Read `.backplane/intent.md` and every `*.fab.json` (find . -name '*.fab.json' -not -path './extra/*' -not -path './mfg/*'). In one short message, list what would be ordered (part, what it is, quantity), then ask in one go only what is missing, with the AskUserQuestion tool so the person can tap the answers (load it with ToolSearch first if it is not loaded; one question per item, two to four choices each, the likely answer first): the country it ships to (two-letter code), quantities, and for each board whether it comes assembled or bare. Boards come in at least 5 and assembly starts at 2 boards (any number up to the quantity). Bare boards can come with a BOM they order parts with themselves (by manufacturer part number at any distributor).\n"
+  ++ "1. Read `.backplane/intent.md` and every `*.fab.json` (find . -name '*.fab.json' -not -path './extra/*' -not -path './mfg/*'). If a board or part to order has none yet, write it first, measured as the project's instructions say, and say so in a line. In one short message, list what would be ordered (part, what it is, quantity), then ask in one go only what is missing, with the AskUserQuestion tool so the person can tap the answers (load it with ToolSearch first if it is not loaded; one question per item, two to four choices each, the likely answer first): the country it ships to (two-letter code), quantities, and for each board whether it comes assembled or bare. Boards come in at least 5 and assembly starts at 2 boards (any number up to the quantity). Bare boards can come with a BOM they order parts with themselves (by manufacturer part number at any distributor).\n"
   ++ "2. Offer a manufacturing review before exporting (one of the questions above: \"Full manufacturing review\" or \"Skip\"). It checks what makes a fab ask questions or refuse, not the circuit: DRC against the fab's limits (tracks and gaps: 0.10 mm or more on 1 or 2 layers, 0.09 mm on 4 or more, 0.127 mm is comfortable; vias: a 0.3 mm hole in a 0.45 mm pad costs nothing extra, smaller down to a 0.15 mm hole in a 0.25 mm pad is fine but costs more, and the quote prices it from the drill files, so say so rather than calling it an error; plated holes for parts: rings of 0.13 mm; copper 0.3 mm from the board edge; silkscreen lines 0.15 mm), every BOM line has a manufacturer part number that is in stock (pcbparts tools; prefer basic/preferred parts, name extended ones), parts on one side for the cheaper assembly, footprint rotations sane in the positions file, an outline that is closed; for printed parts walls 1 mm or more (0.8 for SLA), for sheet metal flanges at least 4x the thickness and holes at least the thickness from a bend, for CNC inside corners with radii of 1 mm or more and no undercuts. Report what you find in a few lines. Never redesign here: if something must change, say what and offer to start a design thread for it with thread_launch (its prompt the exact change); this thread only orders.\n"
   ++ "3. Export into `mfg/<YYYYMMDD-HHMM>/`: for each board `<name>/gerbers/` (kicad-cli pcb export gerbers, and kicad-cli pcb export drill with Excellon, mm, PTH and NPTH in separate files, into the same folder), and when it is assembled `<name>/bom.csv` (columns Designator, Quantity, Value, Footprint, MPN, Manufacturer, and LCSC when known; one line per part number) and `<name>/positions.csv` (kicad-cli pcb export pos --format csv --units mm --side both; columns Designator, Mid X, Mid Y, Rotation, Layer); for each mechanical part `<name>/<name>.step`, and for sheet metal also its flat pattern `<name>/<name>.dxf`. Then write `manifest.json` there: {\"spec\": 1, \"title\": \"<the project, in words>\", \"ship_to\": \"US\", \"parts\": [{\"name\" (its fab.json name, e.g. Main board), \"kind\", \"qty\", \"options\", \"features\" (sheet metal: its bends), \"files\": {\"gerbers\": \"<name>/gerbers\", \"bom\", \"positions\"} or {\"step\", \"dxf\"}, \"assemble\": <boards to assemble, 0 for bare>}], \"files\": {\"<path from the folder>\": \"<sha256>\"}}, listing every file (sha256sum).\n"
   ++ "4. Call the backplane tool `order_quote` with the folder (`mfg/<...>`). Backplane shows the person every file it would send and asks them first, then posts the quote with its Pay link in this thread; do not repeat its table. Say in a line or two what it covers, and if it lists problems, what fixes each.\n"
@@ -270,51 +270,61 @@ def Order.every(+st: String) -> U32:
 
 # The card every client draws (from the hub's fab.look answer, kept by the
 # client as info fab:<thread>)
+# boards: KiCad boards in the project when no part has a fab file yet (the
+# buy thread writes the fab files first)
 type Card is Data:
-  Card{goal: String, intent: String, label: String, parts: Nat, error: String, estimates: Bool}
+  Card{goal: String, intent: String, label: String, parts: Nat, boards: Nat, error: String, estimates: Bool}
 
 def Card.of.j(+j: J.Json) -> Card:
   Card{J.Json.get_str(j, "goal", ""), J.Json.get_str(j, "intent", ""), J.Json.get_str(j, "label", ""),
-    List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(j, "parts"))), J.Json.get_str(j, "error", ""), J.Json.get_bool(j, "estimates", True{})}
+    List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(j, "parts"))), J.Json.get_nat(j, "boards", 0n), J.Json.get_str(j, "error", ""), J.Json.get_bool(j, "estimates", True{})}
 
 def Card.of(+text: String) -> Card:
   Card.of.j(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))
 
 def Card.goal(c: Card) -> String:
   match c:
-    case Card{g, _, _, _, _, _}:
+    case Card{g, _, _, _, _, _, _}:
       g
 
 def Card.intent(c: Card) -> String:
   match c:
-    case Card{_, i, _, _, _, _}:
+    case Card{_, i, _, _, _, _, _}:
       i
 
-# whether there is a card at all: an intent, or something to order
+# whether there is a card at all: an intent, something to order, or a board
 def Card.shown(c: Card) -> Bool:
   match c:
-    case Card{_, +i, _, +n, _, _}:
-      Bool.or(Bool.not(String.is_empty(String.trim(i))), Nat.is_gt(n, 0n))
+    case Card{_, +i, _, +n, +b, _, _}:
+      Bool.or(Bool.not(String.is_empty(String.trim(i))), Nat.is_gt(Nat.add(n, b), 0n))
 
 # the Buy button's words: "Buy it · from $43.20" with an estimate, "Buy it"
-# when the person turned estimates off, none when there is nothing to
-# order or the order server cannot be reached (law order_buy_needs_parts)
-def Card.buy.k(none: Bool, +label: String, on: Bool) -> String:
+# when the person turned estimates off or there are boards but no fab files
+# yet, none when there is nothing to order or the order server cannot be
+# reached (laws order_buy_*)
+def Card.buy.none(boards: Bool, +err: String) -> String:
+  match boards:
+    case True{}:
+      Bool.pick(String, String.is_empty(err), "Buy it", "")
+    case False{}:
+      ""
+
+def Card.buy.k(none: Bool, +label: String, on: Bool, boards: Bool, +err: String) -> String:
   match none:
     case True{}:
-      ""
+      Card.buy.none(boards, err)
     case False{}:
       Bool.pick(String, String.is_empty(label), Bool.pick(String, on, "", "Buy it"), "Buy it · " ++ label)
 
 def Card.buy(c: Card) -> String:
   match c:
-    case Card{_, _, +label, +n, _, on}:
-      Card.buy.k(Nat.is_eq(n, 0n), label, on)
+    case Card{_, _, +label, +n, +b, +err, on}:
+      Card.buy.k(Nat.is_eq(n, 0n), label, on, Nat.is_gt(b, 0n), err)
 
 # the line the card shows shut: the goal, else a nudge
 def Card.line(c: Card) -> String:
   match c:
-    case Card{+g, _, _, _, _, _}:
+    case Card{+g, _, _, _, _, _, _}:
       Bool.pick(String, String.is_empty(g), "No goal yet. Edit to say what this project is for.", g)
 
 # what Edit puts in the composer: /intent and the text to change

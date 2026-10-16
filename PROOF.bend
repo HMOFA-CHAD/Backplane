@@ -10951,3 +10951,9 @@ def Laws.intent_edit_is_intent():
 def Laws.order_tools_buy_only():
   {==}
 
+def Laws.order_buy_board_only():
+  {==}
+
+def Laws.order_buy_board_unreachable():
+  {==}
+

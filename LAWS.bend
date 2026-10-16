@@ -9090,16 +9090,24 @@ law card_task_status_agrees:
 # to order and the order server answered (or estimates are off); its
 # words carry the price; an intent sent back from Edit is the text edited
 law order_buy_needs_parts:
-  {ORD.Card.buy(ORD.Card{"g", "i", "from $5.00", 0n, "", True{}}) == "" : String}
+  {ORD.Card.buy(ORD.Card{"g", "i", "from $5.00", 0n, 0n, "", True{}}) == "" : String}
 
 law order_buy_priced:
-  {ORD.Card.buy(ORD.Card{"g", "", "from $5.00", 2n, "", True{}}) == "Buy it · from $5.00" : String}
+  {ORD.Card.buy(ORD.Card{"g", "", "from $5.00", 2n, 0n, "", True{}}) == "Buy it · from $5.00" : String}
 
 law order_buy_unreachable_hidden:
-  {ORD.Card.buy(ORD.Card{"g", "", "", 2n, "the order server is not reachable", True{}}) == "" : String}
+  {ORD.Card.buy(ORD.Card{"g", "", "", 2n, 0n, "the order server is not reachable", True{}}) == "" : String}
 
 law order_buy_estimates_off:
-  {ORD.Card.buy(ORD.Card{"", "", "", 1n, "", False{}}) == "Buy it" : String}
+  {ORD.Card.buy(ORD.Card{"", "", "", 1n, 0n, "", False{}}) == "Buy it" : String}
+
+# a project with a board but no fab files yet can still be bought (the buy
+# thread writes them), unless the order server is out of reach
+law order_buy_board_only:
+  {ORD.Card.buy(ORD.Card{"", "", "", 0n, 1n, "", True{}}) == "Buy it" : String}
+
+law order_buy_board_unreachable:
+  {ORD.Card.buy(ORD.Card{"", "", "", 0n, 1n, "the order server is not reachable", True{}}) == "" : String}
 
 law intent_edit_round_trip:
   {ORD.Intent.body(ORD.Intent.edit("# Goal\nA lamp")) == "# Goal\nA lamp" : String}
