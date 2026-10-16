@@ -8916,7 +8916,8 @@ def KN.act(i: Nat, +u: Ui) -> Act:
   match i:
     case 0n: Ui.rpc(u, "kicad.retry", Nil{})
     case 1n: KN.path(u)
-    case _: KN.save(u)
+    case 2n: KN.save(u)
+    case _: Act{u, Nil{}}
 
 def Ui.act.ref(kn: Bool, +i: Nat, u: Ui, +value: String) -> Act:
   match kn:

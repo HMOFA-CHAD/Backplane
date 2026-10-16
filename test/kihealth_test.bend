@@ -103,7 +103,7 @@ def main() -> IO(Unit):
     C.Check.str("v1 manifest", manifest(K.KH.manifest("{\"sourceRepository\":\"https://github.com/i2cjak/Backplane_KiCad\",\"version\":\"10.0.6\",\"sourceCommit\":\"abc\"}")), "yes/10.0.6/abc/0///10.0.6")
     C.Check.str("v2 manifest", manifest(K.KH.manifest("{\"sourceRepository\":\"Backplane_KiCad\",\"version\":\"10.99.0-bp.2\",\"sourceCommit\":\"abc\",\"kicadVersion\":\"10.99.0\",\"apiVersion\":1,\"upstreamCommit\":\"up\",\"capabilities\":[\"api-server\",\"headless-pcb\"]}")), "yes/10.99.0-bp.2/abc/1/api-server,headless-pcb/up/10.99.0")
     C.Check.str("bad manifest", manifest(K.KH.manifest("bad")), "no///0///")
-    C.Check.str("new action appended", yes(String.eq(Maybe.default(&2, String, List.head(&2, String, List.drop(&2, String, U.Ui.actions(), 178n)), ""), "kicad-retry")), "yes")
+    C.Check.str("new action appended", yes(String.eq(Maybe.default(&2, String, List.head(&2, String, List.drop(&2, String, U.Ui.actions(), 183n)), ""), "kicad-retry")), "yes")
     +shown : U.Ui = U.Ui.recv(client("10.0.6"), J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"ok", J.Flag{False{}}},
       J.KV{"result", J.Json.obj([J.KV{"kicad", J.Str{"stock"}}, J.KV{"thread", J.Str{"t1"}}])}]))
     C.Check.str("open reply shows thread notice", key(U.KN.thread(info(shown), U.Ui.state(shown), "t1")), "stock:/c:10.0.6")
