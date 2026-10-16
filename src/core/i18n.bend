@@ -127,9 +127,9 @@ def I18n.ago.en(m: Bool, h: Bool, d: Bool, +s: Nat) -> String:
 def I18n.ago.ja(m: Bool, h: Bool, d: Bool, +s: Nat) -> String:
   match m h d:
     case True{} _ _: "今"
-    case False{} True{} _: Nat.show(Nat.div(s, 60n)) ++ "分"
-    case False{} False{} True{}: Nat.show(Nat.div(s, 3600n)) ++ "時間"
-    case False{} False{} False{}: Nat.show(Nat.div(s, 86400n)) ++ "日"
+    case False{} True{} _: Nat.show(Nat.div(s, 60n)) ++ "分前"
+    case False{} False{} True{}: Nat.show(Nat.div(s, 3600n)) ++ "時間前"
+    case False{} False{} False{}: Nat.show(Nat.div(s, 86400n)) ++ "日前"
 
 def I18n.ago(l: Loc, +now: Nat, +at: Nat) -> String:
   match l:
@@ -145,7 +145,7 @@ def I18n.ago.long.k(l: Loc, recent: Bool, now: Nat, at: Nat) -> String:
     case En{} True{}: "just now"
     case En{} False{}: I18n.ago(En{}, now, at) ++ " ago"
     case Ja{} True{}: "たった今"
-    case Ja{} False{}: I18n.ago(Ja{}, now, at) ++ "前"
+    case Ja{} False{}: I18n.ago(Ja{}, now, at)
 
 def I18n.ago.long(l: Loc, +now: Nat, +at: Nat) -> String:
   I18n.ago.long.k(l, Nat.is_lt(Nat.sub(now, at), 60n), now, at)
@@ -199,7 +199,7 @@ def I18n.until(l: Loc, +d: Nat) -> String:
 def I18n.due(l: Loc) -> String:
   match l:
     case En{}: "due now"
-    case Ja{}: "期限です"
+    case Ja{}: "実行時刻です"
 
 def I18n.pad.k(small: Bool, n: Nat) -> String:
   match small:
