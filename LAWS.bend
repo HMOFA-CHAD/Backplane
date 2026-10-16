@@ -9130,3 +9130,28 @@ law mv_filter_key_separates:
   {String.eq(MVW.Mv.key(MVW.Filter{"a|b", "", "c", ""}), MVW.Mv.key(MVW.Filter{"a", "|b", "c", ""})) == False{} : Bool}
 
 # ---- end mail view ----
+
+# ---- usage-baseline ----
+# a turn is never charged with what its process or session did before the
+# hub saw it start
+
+# a Claude process already running when its thread was first seen: cost unknown
+law tok_cost_unknown_without_start:
+  {H.Turn.cost.known(True{}, False{}, "") == False{} : Bool}
+
+# a turn that starts its process is charged from 0, whatever came before
+law tok_cost_known_at_start:
+  for +b: String
+  {H.Turn.cost.known(True{}, True{}, b) == True{} : Bool}
+
+# a Codex session the hub sees start counts from 0
+law tok_codex_start_zero:
+  {H.Turn.codex.start(False{}, "t", "s", 1n) == [M.SettingSet{"tok.basis.t", "x:s:0/0/0/0/0", 1n}] : List<&2, M.Change>}
+
+# counting starts again only once
+law tok_epoch_once:
+  {H.Turn.epoch(M.State.replay([M.SettingSet{"tok.epoch", "1", 1n}], M.State.empty()), 2n) == [] : List<&2, M.Change>}
+
+# totals of a count live under its epoch
+law tok_pre_epoch:
+  {M.Tok.pre.k("1") == "tok.1." : String}

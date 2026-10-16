@@ -116,7 +116,7 @@ def Use.totals.if(none: Bool) -> List<&2, URow>:
 
 def Use.rows.k(+st: M.State, +us: List<&2, UseT>) -> List<&2, URow>:
   Use.summary(Use.count(List.filter(~UseT, ~UseT.held, us), 0n), Use.count(List.filter(~UseT, ~UseT.open, us), 0n)) <>
-    List.append(&2, URow, Use.top(8n, us), Use.totals.if(String.is_empty(M.Setting.get(st, "tok.since", ""))))
+    List.append(&2, URow, Use.top(8n, us), Use.totals.if(String.is_empty(M.Setting.get(st, M.Tok.pre(st) ++ "since", ""))))
 
 # Settings > Usage, model side: a summary, the fullest threads, and what is
 # not known
@@ -471,6 +471,12 @@ def Tk.usd(+c: Nat) -> String:
     "$" ++ Nat.show(Nat.div(c, 1000000000n)) ++ "." ++ M.Tok.pad2(Nat.div(Nat.mod(c, 1000000000n), 10000000n)),
     "$0." ++ Tk.pad4(Nat.show(Nat.div(c, 100000n))))
 
+# turns whose tokens are not in the total (a session already running when
+# counting began: its share of the session could not be told)
+def Tk.unknown(+v: String) -> String:
+  Bool.pick(String, Nat.is_ge(Tk.part(v, 8n), Tk.part(v, 0n)), "",
+    ", tokens unknown for " ++ Nat.show(Nat.sub(Tk.part(v, 0n), Tk.part(v, 8n))))
+
 def Tk.cost(+v: String) -> String:
   Bool.pick(String, Nat.is_eq(Tk.part(v, 7n), 0n), "cost not reported",
     Tk.usd(Tk.part(v, 6n)) ++ Bool.pick(String, Nat.is_eq(Tk.part(v, 7n), Tk.part(v, 0n)), "", " for " ++ Nat.show(Tk.part(v, 7n)) ++ " of them"))
@@ -479,7 +485,7 @@ def Tk.cost(+v: String) -> String:
 def Tk.note(+v: String) -> String:
   Nat.show(Tk.part(v, 0n)) ++ Bool.pick(String, Nat.is_eq(Tk.part(v, 0n), 1n), " turn", " turns") ++ " · " ++
     Use.tokens(Tk.part(v, 1n)) ++ " in, " ++ Use.tokens(Tk.part(v, 2n)) ++ " cache read, " ++ Use.tokens(Tk.part(v, 3n)) ++ " cache write · " ++
-    Use.tokens(Tk.part(v, 4n)) ++ " out (" ++ Use.tokens(Tk.part(v, 5n)) ++ " reasoning) · " ++ Tk.cost(v)
+    Use.tokens(Tk.part(v, 4n)) ++ " out (" ++ Use.tokens(Tk.part(v, 5n)) ++ " reasoning)" ++ Tk.unknown(v) ++ " · " ++ Tk.cost(v)
 
 def Tk.row(+label: String, +v: String) -> List<&2, URow>:
   Bool.pick(List<&2, URow>, String.is_empty(v), Nil{}, [URow{label, Tk.note(v), ""}])
@@ -489,14 +495,14 @@ def Tk.models(ms: List<&2, String>, +st: M.State, +mon: String) -> List<&2, URow
     case Nil{}:
       Nil{}
     case +m <> t:
-      List.append(&2, URow, Tk.row(String.join(String.split(m, '|'), " · ") ++ " this month", M.Setting.get(st, "tok.mm." ++ mon ++ "|" ++ m, "")), Tk.models(t, st, mon))
+      List.append(&2, URow, Tk.row(String.join(String.split(m, '|'), " · ") ++ " this month", M.Setting.get(st, M.Tok.pre(st) ++ "mm." ++ mon ++ "|" ++ m, "")), Tk.models(t, st, mon))
 
 def Tk.projects(ps: List<&2, M.Project>, +st: M.State, +mon: String) -> List<&2, URow>:
   match ps:
     case Nil{}:
       Nil{}
     case M.Project{+id, +ti, _, _, _} <> t:
-      List.append(&2, URow, Tk.row(ti ++ " this month", M.Setting.get(st, "tok.p." ++ id ++ "|" ++ mon, "")), Tk.projects(t, st, mon))
+      List.append(&2, URow, Tk.row(ti ++ " this month", M.Setting.get(st, M.Tok.pre(st) ++ "p." ++ id ++ "|" ++ mon, "")), Tk.projects(t, st, mon))
 
 # a thread's total, with its title, for the threads that used most
 type TkT is Data:
@@ -525,7 +531,7 @@ def Tk.threads.all(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, TkT>:
     case Nil{}:
       Nil{}
     case +t <> r:
-      TkT{UseT.title(Use.of(st, t)), M.Setting.get(st, "tok.t." ++ M.Thread.id(t), "")} <> Tk.threads.all(r, st)
+      TkT{UseT.title(Use.of(st, t)), M.Setting.get(st, M.Tok.pre(st) ++ "t." ++ M.Thread.id(t), "")} <> Tk.threads.all(r, st)
 
 def Tk.threads.rows(ts: List<&2, TkT>) -> List<&2, URow>:
   match ts:
@@ -538,8 +544,8 @@ def Tk.threads(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, URow>:
   Tk.threads.rows(List.take(&2, TkT, List.sort(~TkT, ~TkT.before, List.filter(~TkT, ~TkT.some, Tk.threads.all(ts, st))), 5n))
 
 def Tk.since(+st: M.State) -> List<&2, URow>:
-  Bool.pick(List<&2, URow>, String.is_empty(M.Setting.get(st, "tok.since", "")), Nil{},
-    [URow{"Counted since", M.Tok.day(M.Switch.num(M.Setting.get(st, "tok.since", ""), 0n)) ++ " (UTC); earlier turns were not recorded. Costs are Claude's own figures at API prices, not a bill; Codex reports none.", ""}])
+  Bool.pick(List<&2, URow>, String.is_empty(M.Setting.get(st, M.Tok.pre(st) ++ "since", "")), Nil{},
+    [URow{"Counted since", M.Tok.day(M.Switch.num(M.Setting.get(st, M.Tok.pre(st) ++ "since", ""), 0n)) ++ " (UTC); earlier turns were not recorded. Costs are Claude's own figures at API prices, not a bill; Codex reports none.", ""}])
 
 # a time from now: "resets in 2 h 10 min", "resets in 3 d"
 def Tk.until(+now: Nat, +at: Nat) -> String:
@@ -562,7 +568,7 @@ def Tk.limits(+st: M.State, +now: Nat) -> List<&2, URow>:
 
 # Settings > Usage, tokens side
 def Tk.rows(+st: M.State, ts: List<&2, M.Thread>, ps: List<&2, M.Project>, +now: Nat) -> List<&2, URow>:
-  List.concat(&2, URow, [Tk.limits(st, now), Tk.row("Today (UTC)", M.Setting.get(st, "tok.d." ++ M.Tok.day(now), "")),
-    Tk.row("This month", M.Setting.get(st, "tok.m." ++ M.Tok.month(now), "")),
-    Tk.models(String.split(M.Setting.get(st, "tok.ml." ++ M.Tok.month(now), ""), '\n'), st, M.Tok.month(now)),
+  List.concat(&2, URow, [Tk.limits(st, now), Tk.row("Today (UTC)", M.Setting.get(st, M.Tok.pre(st) ++ "d." ++ M.Tok.day(now), "")),
+    Tk.row("This month", M.Setting.get(st, M.Tok.pre(st) ++ "m." ++ M.Tok.month(now), "")),
+    Tk.models(String.split(M.Setting.get(st, M.Tok.pre(st) ++ "ml." ++ M.Tok.month(now), ""), '\n'), st, M.Tok.month(now)),
     Tk.projects(ps, st, M.Tok.month(now)), Tk.threads(ts, st), Tk.since(st)])
