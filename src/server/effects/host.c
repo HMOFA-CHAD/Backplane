@@ -446,10 +446,30 @@ static int host_err_path(char* out, size_t n, unsigned pid) {
   return k > 0 && (size_t)k < n;
 }
 
+// files of processes that ended unread (their hub was killed) go, once per
+// hub: those whose pid no longer runs
+static void host_err_sweep(const char* d) {
+  DIR* dir = opendir(d);
+  if (dir == NULL) return;
+  struct dirent* ent;
+  while ((ent = readdir(dir)) != NULL) {
+    char* end = NULL;
+    unsigned long pid = strtoul(ent->d_name, &end, 10);
+    if (end == NULL || strcmp(end, ".err") != 0 || pid <= 1) continue;
+    if (kill((pid_t)pid, 0) != 0 && errno == ESRCH) {
+      char at[4200];
+      snprintf(at, sizeof at, "%s/%s", d, ent->d_name);
+      unlink(at);
+    }
+  }
+  closedir(dir);
+}
+
 static int host_err_open(char* tmp, size_t n) {
   static unsigned seq = 0;
   char d[4096];
   if (!host_err_dir(d, sizeof d)) return -1;
+  if (seq == 0) host_err_sweep(d);
   int k = snprintf(tmp, n, "%s/spawn.%u.%u", d, (unsigned)getpid(), ++seq);
   if (k <= 0 || (size_t)k >= n) return -1;
   return open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
