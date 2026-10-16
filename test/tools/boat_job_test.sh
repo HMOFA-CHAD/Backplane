@@ -8,8 +8,8 @@ T=$(mktemp -d); trap 'rm -rf "$T"' 0
 export BOAT_FAKE_DIR=$T/fake BOAT_JOB_ROOT=$T/root BACKPLANE_BOAT=$here/test/tools/boat-fake
 mkdir -p "$BOAT_FAKE_DIR" "$BOAT_JOB_ROOT"
 pass=0 failn=0
-ok() { if [ "$1" = "$2" ]; then pass=$((pass+1)); else failn=$((failn+1)); echo "FAIL $3: got '$1' want '$2'"; fi; }
-limits() { echo "{\"activeSandboxes\":ACTIVE,\"maxActiveSandboxes\":${1:-2},\"canStart\":true,\"subscriptionRemainingSeconds\":${2:-90000},\"creditBalanceSeconds\":2000000,\"trialComputeCapSeconds\":90000,\"creditUsedSeconds\":0,\"starts\":STARTS,\"machineTypes\":[{\"type\":\"small\",\"available\":true},{\"type\":\"default\",\"available\":true},{\"type\":\"large\",\"available\":false}]}" > "$BOAT_FAKE_DIR/limits.json"; }
+ok() { if [ "$1" = "$2" ]; then pass=$((pass+1)); [ -z "${BOAT_TEST_VERBOSE:-}" ] || echo "ok   $3"; else failn=$((failn+1)); echo "FAIL $3: got '$1' want '$2'"; fi; }
+limits() { echo "{\"activeSandboxes\":ACTIVE,\"maxActiveSandboxes\":${1:-2},\"canStart\":true,\"subscriptionRemainingSeconds\":${2:-90000},\"creditBalanceSeconds\":2000000,\"trialComputeCapSeconds\":90000,\"creditUsedSeconds\":0,\"starts\":STARTS,\"machineTypes\":[{\"type\":\"small\",\"available\":true},{\"type\":\"default\",\"available\":true},{\"type\":\"large\",\"available\":${3:-false}}]}" > "$BOAT_FAKE_DIR/limits.json"; }
 newcalls() { wc -l < "$BOAT_FAKE_DIR/newcalls" 2>/dev/null || echo 0; }
 boxes() { find "$BOAT_FAKE_DIR/boxes" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l; }
 ended() { grep -c '"ev": "ended"' "$BOAT_JOB_ROOT/ledger.jsonl" 2>/dev/null || echo 0; }
@@ -214,6 +214,78 @@ echo "ten dollars" > "$BOAT_JOB_ROOT/budget-usd"; ok "$(bud)" "0.5 default (budg
 "$J" --no-setup-bend --budget-usd 10 -- true >/dev/null 2>&1; ok $? 0 "unreadable file + high flag: default cap still applies (job fits \$0.50)"
 ok "$(grep '"ev": "reserve"' "$BOAT_JOB_ROOT/ledger.jsonl" | tail -1 | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["budget"])')" 50000 "unreadable file: \$0.50 used"
 rm -f "$BOAT_JOB_ROOT/budget-usd"
+
+# ---- size by default: large for anything that runs PROOF ----
+fresh z; limits 100 90000 true
+sz() { "$J" --no-setup-bend "$@" >/dev/null 2>&1; tail -1 "$F/calls" >/dev/null; grep '^new ' "$F/calls" | tail -1 | grep -o -- '--type [a-z]*' | cut -d' ' -f2; }
+mkdir -p "$P/scripts"; printf '#!/bin/sh\nexit 0\n' > "$P/scripts/check.sh"; chmod +x "$P/scripts/check.sh"
+ok "$(sz -- scripts/check.sh)" large "check.sh: large by default"
+ok "$(sz -- scripts/check.sh proof)" large "check.sh proof: large by default"
+ok "$(sz -- scripts/check.sh check)" default "check.sh check (no PROOF): default"
+ok "$(sz -- sh -c 'scripts/check.sh && true')" large "check.sh inside sh -c: large"
+ok "$(sz -- true)" default "other commands: default"
+ok "$(sz --size default -- scripts/check.sh)" default "--size wins"
+rm -rf "$P/scripts"
+
+# ---- warm sandboxes: one per thread, reused, kept for an idle window, then deleted ----
+fresh w; limits 100 90000 true; echo "12 60 200" > "$F/startlimits"
+tj() { t=$1; shift; BACKPLANE_THREAD=$t "$J" --no-setup-bend "$@"; }
+thr() { "$J" status --json | python3 -c "import json,sys; d=json.load(sys.stdin); x=d['threads'].get('$1'); print('none' if not x else x['state']+' '+str(x['size'])+(' left' if x.get('idle_until') else ''))"; }
+c0=$(newcalls)
+tj tA -- sh -c 'echo x > leftover.txt; mkdir -p build; echo b > build/x' >/dev/null 2>&1; ok $? 0 "warm: first job"
+ok "$(boxes)" 1 "warm: kept after the job"; ok $(( $(newcalls) - c0 )) 1 "warm: one create"
+ok "$(tail -1 "$F/extends" | cut -d' ' -f2)" 1500 "warm: lifetime set to idle + 5 min"
+ok "$(thr tA)" "warm default left" "status: thread chip warm"
+out=$(tj tA -- sh -c 'test ! -e leftover.txt && test ! -e build/x && echo clean' 2>&1); rc=$?
+ok $rc 0 "warm: second job from the thread"; ok $(( $(newcalls) - c0 )) 1 "warm: reused, no new create"
+case $out in *"no new Boat start"*clean*) ok 1 1 "warm: workdir and build/ wiped" ;; *) ok 0 1 "warm: workdir and build/ wiped" ;; esac
+ok "$("$J" status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["starts_saved"], d["today"]["starts_saved"])')" "1 1" "status: a start saved"
+tj tA -- sh -c 'mkdir -p build; echo y > build/y' >/dev/null 2>&1
+tj tA --keep-build -- test -e build/y >/dev/null 2>&1; ok $? 0 "warm: --keep-build keeps build/"
+ok $(( $(newcalls) - c0 )) 1 "warm: still one create after four jobs"
+# another thread never takes it
+tj tB -- true >/dev/null 2>&1; ok $(( $(newcalls) - c0 )) 2 "warm: another thread makes its own"; ok "$(boxes)" 2 "warm: two threads, two warm"
+# a busy warm sandbox is not shared: a second job of the same thread at once makes a new one
+( tj tA -- sleep 3 >/dev/null 2>&1 ) & sleep 1.5
+ok "$(thr tA)" "running default" "status: thread chip running"
+tj tA -- true >/dev/null 2>&1; wait; ok $(( $(newcalls) - c0 )) 3 "warm: busy one not shared"
+# sizes: a default job may use a warm large one; a large job never a default one
+tj tL --size large -- true >/dev/null 2>&1; c1=$(newcalls)
+tj tL -- true >/dev/null 2>&1; ok $(( $(newcalls) - c1 )) 0 "warm: default job reuses a warm large"
+tj tB --size large -- true >/dev/null 2>&1; ok $(( $(newcalls) - c1 )) 1 "warm: large job doesn't take a default one"
+# idle window over: the sweep deletes ours; another client's sandbox untouched
+mkdir -p "$F/boxes/bx_foreign/home"; echo "default 1500 $(date -u +%FT%TZ)" > "$F/boxes/bx_foreign/meta"
+python3 - "$BOAT_JOB_ROOT/ledger.jsonl" <<'EOF'
+import json, sys
+p = sys.argv[1]; out = []
+for l in open(p):
+    e = json.loads(l)
+    if e.get("ev") == "warm": e["until"] = 1
+    out.append(json.dumps(e))
+open(p, "w").write("\n".join(out) + "\n")
+EOF
+nw=$(( $(boxes) - 1 )); d0=$(grep -c '"ev": "deleted"' "$BOAT_JOB_ROOT/ledger.jsonl")
+"$J" sweep >/dev/null 2>&1; ok "$(ls "$F/boxes")" bx_foreign "warm: idle ones deleted, foreign kept"
+ok "$(thr tA)" none "status: no chip after the idle window"
+ok $(( $(grep -c '"ev": "deleted"' "$BOAT_JOB_ROOT/ledger.jsonl") - d0 )) "$nw" "warm: each deletion recorded"
+rm -rf "$F/boxes/bx_foreign"
+# --idle 0, no thread, a cancel, a failed command: deleted at once
+tj tC --idle 0 -- true >/dev/null 2>&1; ok "$(boxes)" 0 "--idle 0: deleted"
+"$J" --no-setup-bend -- true >/dev/null 2>&1; ok "$(boxes)" 0 "no thread: deleted"
+BACKPLANE_THREAD=tK setsid "$J" --no-setup-bend -- sleep 30 > "$T/wk.out" 2>&1 & pg=$!
+for i in $(seq 50); do grep -q running: "$T/wk.out" && break; sleep 0.2; done
+[ "$pg" -gt 1 ] && kill -TERM -- "-$pg"; wait $pg; ok "$(boxes)" 0 "cancel: deleted, not kept"
+# reuse that fails (extend refused): the warm one is deleted and a new one made
+tj tE -- true >/dev/null 2>&1; c2=$(newcalls)
+BOAT_FAKE_FAIL=extend tj tE -- true >/dev/null 2>&1; ok $? 0 "reuse failed: ran on a new sandbox"; ok $(( $(newcalls) - c2 )) 1 "reuse failed: one new create"
+ok "$(boxes)" 0 "reuse failed: old deleted, new not kept (extend refused)"
+# the start guard: past 80% of the hourly starts, no new sandbox; a warm one is still reused
+fresh g; limits 100; echo "12 10 200" > "$F/startlimits"
+tj tG -- true >/dev/null 2>&1; now=$(date +%s); for i in 1 2 3 4 5 6 7; do echo $((now-1000)) >> "$F/starts"; done
+out=$(tj tH --wait 0 -- true 2>&1); rc=$?
+ok $rc 75 "start guard: new create refused"; case $out in *"start guard"*) ok 1 1 "start guard: says why" ;; *) ok 0 1 "start guard: says why" ;; esac
+tj tG -- true >/dev/null 2>&1; ok $? 0 "start guard: the warm sandbox is still reused"
+BACKPLANE_THREAD=tG "$J" --no-setup-bend --idle 0 -- true >/dev/null 2>&1; rm -rf "$F/boxes"/*; : > "$F/starts"
 
 st=$("$J" status --json)
 ok "$(printf '%s' "$st" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["running"], d["orphans"], all(j["state"] in ("ended","swept","refused","reconciled") for j in d["jobs"]), any(j.get("cost_cs",0)>0 and j.get("runtime_s",-1)>=0 and j.get("sandbox") for j in d["jobs"]))')" "0 0 True True" "status --json"
