@@ -185,10 +185,11 @@ def Od.ids(xs: List<&2, String>) -> List<&2, String>:
     case +x <> t:
       Od.ids.k(Od.id.ok(x), x, Od.ids(t))
 
-# the newest order record of the project's buy threads (ids from hub.bend's
-# Buy.of, comma-separated): its status, "" for none
+# the newest paid order of the project's buy threads (ids from hub.bend's
+# Buy.of, comma-separated): its status, "" for none. A newer quote not paid
+# for yet does not hide it
 def Od.order.sh(+ids: String) -> String:
-  "for f in $(ls -t q_*.json 2>/dev/null); do if grep -qE '\"thread\":\"(" ++ String.join(Od.ids(String.split(ids, ',')), "|") ++ ")\"' \"$f\"; then cat \"$f\"; break; fi; done"
+  "for f in $(ls -t q_*.json 2>/dev/null); do if grep -qE '\"thread\":\"(" ++ String.join(Od.ids(String.split(ids, ',')), "|") ++ ")\"' \"$f\"; then if grep -qE '\"status\":\"(paid|placed|shipped|delivered)\"' \"$f\"; then cat \"$f\"; break; fi; fi; done"
 
 # Manufacturing reviews (order_review)
 # ------------------------------------
