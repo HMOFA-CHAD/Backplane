@@ -511,6 +511,28 @@ def tls(os: List<&2, J.Json>, +ty: L.Ty, +n0: N.Nui, +wm0: List<&2, L.TLMemo>, +
       +f1 = L.Lay.memo(ty, n1, f0)
       tls(rest, ty, n1, w1, k1, f1, tc1, tl.check(ty, n1, w1, f1, same, String.take(J.Json.show(o), 120n), t))
 
+# The open thread's parent and children as the main area's memo keeps them
+# (MM.Mm.rels: found again only when its rk changes) against found afresh,
+# at every event
+def rels.k(same: Bool, +rs: List<&2, String>, +n: N.Nui) -> List<&2, String>:
+  match same:
+    case True{}:
+      rs
+    case False{}:
+      MM.Mm.rels.of(n)
+
+def rels.go(xs: List<&2, J.Json>, +n0: N.Nui, +tc0: MM.TouchK, +rk0: String, +rs0: List<&2, String>, t: IxT) -> IxT:
+  match xs:
+    case Nil{}:
+      t
+    case +x <> rest:
+      +o = msg(x)
+      +n = ss.recv(n0, o, J.Json.get_nat(x, "at", U.Side.now(N.Nui.ui(n0))))
+      +tc = MM.TouchK.msg(o, tc0)
+      +rk = MM.Mm.rk(n, tc)
+      +rs = rels.k(String.eq(rk, rk0), rs0, n)
+      rels.go(rest, n, tc, rk, rs, IxT.add(t, String.eq(String.join(rs, ","), String.join(MM.Mm.rels.of(n), ",")), String.take(J.Json.show(x), 120n)))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- AV.Argv.args()
@@ -533,6 +555,8 @@ def main() -> IO(Unit):
     +nt : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
     +mt : L.TLMemo = L.Lay.memo(ty, nt, L.TL.memo.none())
     IO.print(TlT.show(tls(tl.msgs(List.drop(&2, J.Json, xs, cut), arg(as, 1n), 0n), ty, nt, [mt], "", mt, MM.TouchK.none(), TlT{0n, 0n, 0n, ""})))
+    +nr : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
+    IO.print("rels kept, " ++ IxT.show(rels.go(List.drop(&2, J.Json, xs, cut), nr, MM.TouchK.none(), "", Nil{}, IxT{0n, 0n, ""})))
     IO.print(IxT.show(ixsteps(List.drop(&2, J.Json, xs, cut), u, MM.TouchK.none(), MM.Ix.full(u, 0n), IxT{0n, 0n, ""})))
     +n2 : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
     +n3 : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
