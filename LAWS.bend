@@ -9234,6 +9234,15 @@ law buy_server_default:
 law buy_server_set:
   {H.Buy.server.k(" https://fab.example ") == "https://fab.example" : String}
 
+# an order's progress alerts the person in plain words: shipped with its
+# tracking, and nothing for an expired quote
+law order_note_shipped:
+  {ORD.Order.status.note("shipped", "1Z999") == "Shipped. Tracking: 1Z999" : String}
+
+law order_note_expired:
+  for t: String
+  {ORD.Order.status.note("expired", t) == "" : String}
+
 # ordering is off until the person turns it on (order.enabled): no Buy it
 # anywhere, no order tools for any agent, even in a buy thread
 law fab_buy_off_hidden:

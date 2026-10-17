@@ -303,6 +303,26 @@ def Order.status.pos(+s: String, ls: List<&2, String>, +n: Nat) -> Nat:
     case +h <> t:
       Bool.pick(Nat, String.eq(s, h), n, Order.status.pos(s, t, 1n+n))
 
+# the alert an order's progress raises on the person's devices (a "note":
+# notice.bend's Alert), plain text, "" for none
+def Order.status.note.k(i: Nat, +tracking: String) -> String:
+  match i:
+    case 0n:
+      "Paid: your order is being placed."
+    case 1n:
+      "Ordered: your order is in production."
+    case 2n:
+      "Shipped" ++ Bool.pick(String, String.is_empty(tracking), ".", ". Tracking: " ++ tracking)
+    case 3n:
+      "Delivered."
+    case 4n:
+      "Refunded: the money is on its way back to you."
+    case _:
+      ""
+
+def Order.status.note(+status: String, +tracking: String) -> String:
+  Order.status.note.k(Order.status.pos(status, ["paid", "placed", "shipped", "delivered", "refunded"], 0n), tracking)
+
 def Order.status.text(+status: String, +tracking: String) -> String:
   Order.status.text.k(Order.status.pos(status, ["paid", "placed", "shipped", "delivered", "refunded", "expired"], 0n), tracking)
 

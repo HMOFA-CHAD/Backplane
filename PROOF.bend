@@ -11042,6 +11042,12 @@ def Laws.buy_server_default():
 def Laws.buy_server_set():
   {==}
 
+def Laws.order_note_shipped():
+  {==}
+
+def Laws.order_note_expired(t):
+  {==}
+
 def Laws.fab_buy_off_hidden(label):
   {==}
 

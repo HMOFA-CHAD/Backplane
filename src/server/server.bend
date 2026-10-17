@@ -192,6 +192,9 @@ type Msg is Data:
   Reexec{path: String, args: List<&2, String>}
   # changes a job off the hub made (a bot's home folder, a linked machine)
   Commit{changes: List<&2, M.Change>}
+  # an order's progress: posted in its buy thread, and a note alert to the
+  # person's devices when there is one (Hub.order.note)
+  OrderNote{thread: String, id: String, text: String, note: String}
   # the uberbot's sync (core/ubersync.bend): a step touched its log or
   # promoted a bot ("kick": sync now; "init": log a new uberbot's first
   # ops, then sync); another machine's answer to our uber.sync request
@@ -11564,9 +11567,16 @@ def Od.post(+inbox: Chan(Msg), +thread: String, +id: String, text: String) -> IO
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Commit{[M.MessagePosted{thread, id, M.Assistant{}, text, now}]})
     return Unit{}
 
+# an order's progress in its thread, with its note alert (Hub.order.note)
+def Od.progress(+inbox: Chan(Msg), +thread: String, +id: String, +text: String, +note: String) -> IO(Unit):
+  do IO<Unit>:
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, OrderNote{thread, id, text, note})
+    return Unit{}
+
 def Od.status.k(+st: String, +last: String, +q: J.Json, +inbox: Chan(Msg), +thread: String, +qid: String) -> IO(Unit):
   Bool.pick(IO(Unit), Bool.or(String.eq(st, last), String.is_empty(OR.Order.status.text(st, J.Json.get_str(J.Json.get_obj(q, "order"), "tracking", "")))),
-    IO.pure(Unit, Unit{}), Od.post(inbox, thread, "o:" ++ qid ++ ":" ++ st, OR.Order.status.text(st, J.Json.get_str(J.Json.get_obj(q, "order"), "tracking", ""))))
+    IO.pure(Unit, Unit{}), Od.progress(inbox, thread, "o:" ++ qid ++ ":" ++ st, OR.Order.status.text(st, J.Json.get_str(J.Json.get_obj(q, "order"), "tracking", "")),
+      OR.Order.status.note(st, J.Json.get_str(J.Json.get_obj(q, "order"), "tracking", ""))))
 
 def Od.watch.next(+st: String, +last: String, again: String -> IO(Unit)) -> IO(Unit):
   Bool.pick(IO(Unit), OR.Order.done(st), IO.pure(Unit, Unit{}), again(Bool.pick(String, String.is_empty(st), last, st)))
@@ -11750,6 +11760,23 @@ def Hub.order.k(buy: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(Str
     case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.order.t(C.Codec.pos(OR.Order.names(), Gg.tool(o)), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
 
+# an order's progress posted in the thread, and with a note the person's
+# devices are told (a "note" alert, notice.bend's Alert.set: push, desks,
+# phones) unless they turned off alerts for settled work (notify.settled),
+# keyed by the progress so each says it once
+def Hub.order.ping(on: Bool, +st: M.State, +now: Nat, +thread: String, +id: String, +ping: String) -> List<&2, M.Change>:
+  match on:
+    case True{}:
+      [NO.Alert.set(st, now, thread, "note", id, NO.Alert.memory(st, thread), NO.Alert.text(ping, 300n))]
+    case False{}:
+      []
+
+def Hub.order.note(h: Hub, +thread: String, +id: String, +text: String, +ping: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{M.MessagePosted{thread, id, M.Assistant{}, text, now} <>
+        Hub.order.ping(Bool.and(Bool.not(String.is_empty(ping)), NO.Policy.on(st, "settled")), st, now, thread, id, ping), Nil{}})
+
 # (with ordering off nothing is sent or recorded, even by an agent that
 # remembers the tools from before it was turned off)
 def Hub.order.on(on: Bool, buy: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
@@ -11910,6 +11937,8 @@ def Msg.kind(m: Msg) -> String:
       "reexec"
     case Commit{_}:
       "commit"
+    case OrderNote{_, _, _, _}:
+      "order_note"
     case BoatThreads{_}:
       "boat_threads"
     case UberDo{_}:
@@ -12516,6 +12545,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.link(h, lk)
     case Commit{cs}:
       Hub.step(h, B.Step{cs, Nil{}})
+    case OrderNote{thread, id, text, +ping}:
+      Hub.order.note(h, thread, id, text, ping, now)
     case BoatThreads{status}:
       Hub.chips(Hub.state(h), status, now)
     case UberDo{what}:

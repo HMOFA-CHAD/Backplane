@@ -57,7 +57,7 @@ The agents' instructions are in `src/core/order.bend` (`Order.prompt.project`, `
   3. opens an approval card listing every file ("Send these files for a quote?", Send / Not now);
   4. on Send, uploads them (curl, from the folder, by relative paths), polls the quote, and posts it as a message with its **Buy now · $X** link, which opens Stripe Checkout straight away (there is no quote page; the server only redirects).
 - **The token** lives only in `<home>/orders/<quote>.json` and the Buy now link; the agent never sees either.
-- **The watcher** (`Od.watch`, resumed at start) asks for the order's state every minute while unpaid and every ten minutes after. It says Paid, Ordered, Shipped (with tracking), Delivered, Refunded or Expired in the thread, once each.
+- **The watcher** (`Od.watch`, resumed at start) asks for the order's state every minute while unpaid and every ten minutes after. It says Paid, Ordered, Shipped (with tracking), Delivered, Refunded or Expired in the thread, once each. Each but Expired also alerts the person's devices, a note alert like any other (push, desktop, phones; `Hub.order.note`, laws `order_note_*`), unless they turned off alerts for settled work (`notify.settled`).
 
 ## The server
 
