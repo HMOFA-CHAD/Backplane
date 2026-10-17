@@ -2212,6 +2212,20 @@ def Shell.spot.k(m: Maybe<&2, N.Hit>, r: Window & Image & Image) -> IO(Window & 
 def Shell.spot(r: Window & Image & Image, +hs: List<&2, N.Hit>) -> IO(Window & Image & Image):
   Shell.spot.k(Shell.spot.at(hs), r)
 
+# The caret is laid out shown, always, and hidden in the frame's tiles
+# when it should be (TI.Tiles.blink, as a blink alone does: law
+# tiles_blink_exact), so the caret's phase never makes the memos' keys
+# differ: the phase goes to "caret.real" for Caret.show
+def Caret.lay(+n: N.Nui) -> N.Nui:
+  N.Nui.with_ui(n, U.Ui.info_set(U.Ui.info_set(N.Nui.ui(n), "caret.real", U.Ui.info(N.Nui.ui(n), "caret.on")), "caret.on", "1"))
+
+def Caret.show(on: Bool, +t: TI.Tiles, +e: Nat) -> TI.Tiles:
+  match on:
+    case True{}:
+      t
+    case False{}:
+      TI.Tiles.blink(t, e, False{})
+
 # the tiles to draw drawn in parallel, the tiles filled in), present them
 # and keep them for the next frame; the window fills only what differs
 # from the last one
@@ -2224,7 +2238,7 @@ def Shell.present(+pl: TI.Plan, o: L.Out, +n: N.Nui, w: Window, +q: Chan(ShellMs
         PS.Perf.add("ui.drawn", U32.from_nat(k))
         +d : TI.Drawn = TI.Plan.drawn(pl, TI.Frame.edge(N.Nui.width(n), N.Nui.height(n)))
         tb : U32 <- PS.Perf.lap("ui.draw", ta)
-        +tiles : TI.Tiles = TI.Plan.fill(pl, TI.Frame.edge(N.Nui.width(n), N.Nui.height(n)), 0n, d)
+        +tiles : TI.Tiles = Caret.show(String.eq(U.Ui.info(N.Nui.ui(n), "caret.real"), "1"), TI.Plan.fill(pl, TI.Frame.edge(N.Nui.width(n), N.Nui.height(n)), 0n, d), TI.Frame.edge(N.Nui.width(n), N.Nui.height(n)))
         tc : U32 <- PS.Perf.lap("ui.fill", tb)
         t3 : U32 <- PS.Perf.lap("ui.raster", t2)
         r : Window & Image & Image <- W.Win.show(w, TI.Tiles.image(tiles), Frames.image(Aux.frames(wa)))
@@ -2392,12 +2406,12 @@ def Part.of(bm: Maybe<&2, L.Out>, +mm: List<&2, MM.MainM>, +tc: MM.TouchK, +ty: 
     case None{}:
       PMain{MM.Mm.main(mm, ty, tlm, n, tc)}
 
-def FrameM.join(p: Part, sd: MM.SideM, mm: List<&2, MM.MainM>, +ty: L.Ty, +tlm: L.TLMemo, +n: N.Nui) -> FrameM:
+def FrameM.join(p: Part, sd: MM.SideM, +mm: List<&2, MM.MainM>, +ty: L.Ty, +tlm: L.TLMemo, +n: N.Nui) -> FrameM:
   match p sd:
     case PBot{o} MM.SideM{+sk, +so}:
       FrameM{BV.Bv.frame.given(ty, tlm, n, Some{o}, so), Nil{}, 0n, [MM.SideM{sk, so}]}
-    case PMain{MM.MainM{+k, rk, rs, +o}} MM.SideM{+sk, +so}:
-      FrameM{BV.Bv.frame.given(ty, tlm, n, Some{o}, so), MM.MainM.keep(MM.MainM{k, rk, rs, o}), Bool.pick(Nat, MM.MainM.same(k, mm), 1n, 0n), [MM.SideM{sk, so}]}
+    case PMain{MM.MainM{+k, rk, rs, +o, +d}} MM.SideM{+sk, +so}:
+      FrameM{BV.Bv.frame.given(ty, tlm, n, Some{o}, so), MM.MainM.keep(MM.MainM{k, rk, rs, o, d}), Bool.pick(Nat, Bool.and(MM.MainM.same(k, mm), Nat.is_eq(d, MM.MainM.due(mm))), 1n, 0n), [MM.SideM{sk, so}]}
 
 # the main area and the sidebar's body at once (as Lay.frame.u lays them
 # out), each from its memo when its key holds
@@ -2480,8 +2494,8 @@ def Shell.paint.go(+oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg
 def Shell.paint.k(+n0: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
   match n0:
     case N.Nui{u, +ww, +hh, mx, my, sd, sc, ca, fo, pa, oh, _, vw0}:
-      Shell.paint.go(oh, N.Nui{u, ww, hh, mx, my, sd, sc, ca, fo, pa, Nil{}, ms,
-        Shell.vw.if(N.Nui.panel(n0), vw0, ww, hh, N.Nui.vx0(n0), ms, N.Nui.look(n0), N.Nui.lfocus.bits(n0))}, w, q, i, wa, epoch, ms)
+      Shell.paint.go(oh, Caret.lay(N.Nui{u, ww, hh, mx, my, sd, sc, ca, fo, pa, Nil{}, ms,
+        Shell.vw.if(N.Nui.panel(n0), vw0, ww, hh, N.Nui.vx0(n0), ms, N.Nui.look(n0), N.Nui.lfocus.bits(n0))}), w, q, i, wa, epoch, ms)
 
 # what a frame notes before it is laid out: the hover's and the caret's
 # starts, the lightbox's ease, the cats' clock

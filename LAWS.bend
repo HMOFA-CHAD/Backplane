@@ -1,5 +1,6 @@
 import Base
 import ./src/server/mailstore.bend as MIX # mail index
+import ./src/app/mm.bend as MM # window memos
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/usage.bend as UZ
@@ -9429,3 +9430,13 @@ law prompt_kicad_ipc_only_ok_broken:
 law prompt_kicad_ipc_only_ok_checking:
   for +i: Bool
   {String.contains(PM.Prompt.kicad.health("checking", "/c", "10.0.6", "rev", "failed", i), "api-server") == False{} : Bool}
+
+# --- window memos (area b): mm_* ---
+# the main area's memo is never used at or after its due time: by then the
+# clock alone may have changed what it shows (mm.bend's Mm.due)
+law mm_late_misses:
+  for +key: String
+  for +ms: List<&2, MM.MainM>
+  for +now: Nat
+  for h: {Nat.is_ge(now, MM.MainM.due(ms)) == True{} : Bool}
+  {MM.Mm.use(key, ms, now) == False{} : Bool}
