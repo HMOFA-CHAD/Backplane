@@ -1214,14 +1214,16 @@ def Claude.stream(+thread: String, +ev: J.Json) -> Step:
   Claude.stream.k(String.eq(J.Json.get_str(ev, "type", ""), "content_block_delta"),
     String.eq(J.Json.get_str(d, "type", ""), "text_delta"), thread, J.Json.get_str(d, "text", ""))
 
-# a short line describing a tool call, from its input
+# a short line describing a tool call, from its input (a question, as a buy
+# thread's order_ask asks, when there is nothing else; law
+# tool_summary_question)
 def Claude.tool_summary(+name: String, +input: J.Json) -> String:
   +cmd = J.Json.get_str(input, "command", "")
   +path = J.Json.get_str(input, "file_path", J.Json.get_str(input, "path", ""))
   +pat = J.Json.get_str(input, "pattern", "")
   Bool.pick(String, Bool.not(String.is_empty(cmd)), cmd,
     Bool.pick(String, Bool.not(String.is_empty(path)), path,
-      Bool.pick(String, Bool.not(String.is_empty(pat)), pat, J.Json.get_str(input, "description", name))))
+      Bool.pick(String, Bool.not(String.is_empty(pat)), pat, J.Json.get_str(input, "description", J.Json.get_str(input, "question", name)))))
 
 # The CLI writes one block per line, each numbered from 0, so two text
 # blocks of one message (text, thinking, text) share "msg:0". A line that

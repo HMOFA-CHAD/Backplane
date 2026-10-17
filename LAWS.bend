@@ -9271,6 +9271,11 @@ law order_ask_alert_plain:
   for q: String
   {NO.Alert.ask.say("order_ask", q) == q : String}
 
+# a tool call with only a question (order_ask) is summed up by it, not by
+# its name again (the phone's running line: "<tool> <summary>")
+law tool_summary_question:
+  {H.Claude.tool_summary("mcp__backplane__order_ask", J.Json.obj([J.KV{"question", J.Str{"Ship where?"}}])) == "Ship where?" : String}
+
 # with ordering off, an agent asked to order points to the setting
 law order_off_says_where:
   {String.contains(ORD.Order.prompt.project.k(False{}), "Settings → Ordering") == True{} : Bool}

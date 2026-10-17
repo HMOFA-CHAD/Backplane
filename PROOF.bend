@@ -11068,6 +11068,9 @@ def Laws.order_off_by_default():
 def Laws.order_ask_alert_plain(q):
   {==}
 
+def Laws.tool_summary_question():
+  {==}
+
 def Laws.order_off_says_where():
   {==}
 
