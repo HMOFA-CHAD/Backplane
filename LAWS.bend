@@ -17,6 +17,7 @@ import ./src/core/ime.bend as IMEL
 import ./src/app/win.bend as WINL
 # ---- end i18n ime ----
 import ./src/core/kihealth.bend as KH
+import ./src/core/kserve.bend as KSL
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
 import ./src/core/sched.bend as SCH
@@ -9507,3 +9508,158 @@ law tl_entries_locale:
   for +pics: Map<&2, String>
   {L.TL.entries.m.loc(ty, L.TL.memo.make(ty, es, px, sel), st, sel, px, pics) == L.TL.entries.loc(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
 # ---- end i18n core ui ----
+# ---- kicad-ipc 2 ----
+# every server is started with --parent-pid, so it ends with the hub
+law kserve_argv_parent_pid_with_idle:
+  {KSL.KS.has(KSL.KS.argv("c", "/p/a.kicad_pro", "/d", 0, ["idle-exit"]), "--parent-pid") == True{} : Bool}
+
+law kserve_argv_parent_pid_without_idle:
+  {KSL.KS.has(KSL.KS.argv("c", "/p/a.kicad_pro", "/d", 0, Nil{}), "--parent-pid") == True{} : Bool}
+
+# the socket is inside the project's own directory
+law kserve_argv_socket_in_dir:
+  {String.starts_with(KSL.KS.nth(KSL.KS.argv("c", "/p/a.kicad_pro", "/d/x", 0, Nil{}), 4n), "/d/x/") == True{} : Bool}
+
+law kserve_argv_idle_with_cap:
+  {KSL.KS.has(KSL.KS.argv("c", "/p/a.kicad_pro", "/d", 0, ["idle-exit"]), "--idle-exit") == True{} : Bool}
+
+# a runtime without idle-exit is not given the flag
+law kserve_argv_no_idle_without_cap:
+  {KSL.KS.has(KSL.KS.argv("c", "/p/a.kicad_pro", "/d", 0, Nil{}), "--idle-exit") == False{} : Bool}
+
+# the socket comes from the ready line (it may be api-<pid>.sock)
+law kserve_ready_line:
+  {KSL.KS.ready("KiCad API server listening at /d/api-7.sock") == Some{"/d/api-7.sock"} : Maybe<&2, String>}
+
+law kserve_ready_other_line:
+  {KSL.KS.ready("loading the project") == None{} : Maybe<&2, String>}
+
+law kserve_version_ok_exact:
+  {KSL.KS.version_ok("10.99.0-bp.1", "10.99.0-bp.1") == True{} : Bool}
+
+# a git-describe part before the suffix is fine
+law kserve_version_ok_describe:
+  {KSL.KS.version_ok("10.99.0-unknown-bp.1", "10.99.0-bp.1") == True{} : Bool}
+
+law kserve_version_other_build:
+  {KSL.KS.version_ok("10.99.0-bp.2", "10.99.0-bp.1") == False{} : Bool}
+
+law kserve_version_longer_build:
+  {KSL.KS.version_ok("10.99.0-bp.11", "10.99.0-bp.1") == False{} : Bool}
+
+law kserve_version_not_fork:
+  {KSL.KS.version_ok("10.99.0", "10.99.0-bp.1") == False{} : Bool}
+
+# the restart schedule: 1, 5, 30 seconds, then give up
+law kserve_retry_first:
+  {KSL.KS.retry([100n], 110n) == Some{1n} : Maybe<&2, Nat>}
+
+law kserve_retry_second:
+  {KSL.KS.retry([101n, 100n], 110n) == Some{5n} : Maybe<&2, Nat>}
+
+law kserve_retry_third:
+  {KSL.KS.retry([102n, 101n, 100n], 110n) == Some{30n} : Maybe<&2, Nat>}
+
+# never more than three restarts in 300 s
+law kserve_retry_gives_up:
+  {KSL.KS.retry([103n, 102n, 101n, 100n], 110n) == None{} : Maybe<&2, Nat>}
+
+law kserve_retry_old_failures_forgotten:
+  {KSL.KS.retry([990n, 102n, 101n, 100n], 1000n) == Some{1n} : Maybe<&2, Nat>}
+
+# a clean exit (idle-exit, Shutdown) is never a failure
+law kserve_clean_exit_not_a_failure:
+  {KSL.KS.fails.add(0, [5n], 10n) == [5n] : List<&2, Nat>}
+
+law kserve_crash_is_a_failure:
+  {KSL.KS.fails.add(1, [5n], 10n) == [10n, 5n] : List<&2, Nat>}
+
+# and it is stopped, not restarted
+law kserve_clean_exit_stops:
+  {KSL.KS.state(KSL.KS.exited(KSL.KS.up(KSL.KS.new("A", 1n), "/s/A", "v", 5n), 0, 20n, "")) == "stopped" : String}
+
+law kserve_three_crashes_restart:
+  {KSL.KS.state(KSL.KS.exited(KSL.KS.exited(KSL.KS.exited(KSL.KS.new("A", 1n), 1, 100n, "x"), 1, 110n, "x"), 1, 120n, "x")) == "starting" : String}
+
+law kserve_fourth_crash_fails:
+  {KSL.KS.state(KSL.KS.exited(KSL.KS.exited(KSL.KS.exited(KSL.KS.exited(KSL.KS.new("A", 1n), 1, 100n, "x"), 1, 110n, "x"), 1, 120n, "x"), 1, 130n, "x")) == "failed" : String}
+
+# a third project retires the least recently used ready server
+law kserve_evict_least_recent:
+  {KSL.KS.evict([KSL.KS.up(KSL.KS.new("A", 1n), "/s/A", "v", 5n), KSL.KS.up(KSL.KS.new("B", 1n), "/s/B", "v", 3n)]) == "B" : String}
+
+law kserve_no_evict_with_room:
+  {KSL.KS.evict([KSL.KS.up(KSL.KS.new("A", 1n), "/s/A", "v", 5n)]) == "" : String}
+
+# never more than two servers starting or ready
+law kserve_third_project_evicts:
+  {KSL.KS.plan([KSL.KS.up(KSL.KS.new("A", 1n), "/s/A", "v", 5n), KSL.KS.up(KSL.KS.new("B", 1n), "/s/B", "v", 3n)], "C", ["shutdown"]) == "evict:B" : String}
+
+law kserve_third_project_busy_without_shutdown:
+  {KSL.KS.plan([KSL.KS.up(KSL.KS.new("A", 1n), "/s/A", "v", 5n), KSL.KS.up(KSL.KS.new("B", 1n), "/s/B", "v", 3n)], "C", Nil{}) == "busy" : String}
+
+law kserve_running_server_is_used:
+  {KSL.KS.plan([KSL.KS.up(KSL.KS.new("A", 1n), "/s/A", "v", 5n), KSL.KS.up(KSL.KS.new("B", 1n), "/s/B", "v", 3n)], "A", Nil{}) == "ready" : String}
+
+# headless KiCad has no editor state: these are answered without a round trip
+law kserve_refused_selection:
+  {KSL.KS.headless_refused("kiapi.common.commands.GetSelection") == True{} : Bool}
+
+law kserve_refused_view:
+  {KSL.KS.headless_refused("kiapi.board.commands.SetVisibleLayers") == True{} : Bool}
+
+law kserve_refused_run_action:
+  {KSL.KS.headless_refused("kiapi.common.commands.RunAction") == True{} : Bool}
+
+law kserve_get_items_allowed:
+  {KSL.KS.headless_refused("kiapi.board.commands.GetItems") == False{} : Bool}
+
+law kserve_eighteen_refused:
+  {List.length(&2, String, KSL.KS.refused()) == 18n : Nat}
+
+law kserve_gate_off:
+  {KSL.KS.gate("ok", "10.99.0-bp.1", "", "off") == "IPC is turned off in Settings" : String}
+
+law kserve_gate_ok:
+  {KSL.KS.gate("ok", "10.99.0-bp.1", "", "on") == "" : String}
+
+# an unavailable IPC always names the way round
+law kserve_unavailable_names_fallback:
+  {String.contains(KSL.KS.unavailable("x", "c"), "Fallback: edit the file directly") == True{} : Bool}
+
+# Backplane KiCad 10.99 with API 1 is the least that serves IPC
+law kicad_min_version:
+  {KH.KH.min_version() == "10.99.0" : String}
+
+law kicad_old_runtime_is_old:
+  {KH.KH.status(True{}, True{}, True{}, "10.0.6", 1n) == "old" : String}
+
+law kicad_new_runtime_is_ok:
+  {KH.KH.status(True{}, True{}, True{}, "10.99.0-bp.1", 1n) == "ok" : String}
+
+# with IPC on, agents edit through the kicad_ipc tool
+law prompt_kicad_ok_names_kicad_ipc:
+  {String.contains(PM.Prompt.kicad.health("ok", "/c", "10.99.0-bp.1", "rev", "", True{}), "`kicad_ipc`") == True{} : Bool}
+
+law prompt_kicad_ok_no_pcbnew_import:
+  {String.contains(PM.Prompt.kicad.health("ok", "/c", "10.99.0-bp.1", "rev", "", True{}), "import pcbnew") == False{} : Bool}
+
+law prompt_kicad_ok_starts_no_server:
+  {String.contains(PM.Prompt.kicad.health("ok", "/c", "10.99.0-bp.1", "rev", "", True{}), "api-server") == False{} : Bool}
+
+law prompt_kicad_off_names_fallback:
+  {String.contains(PM.Prompt.kicad.health("ok", "/c", "10.99.0-bp.1", "rev", "", False{}), "answer with the fallback") == True{} : Bool}
+
+law kserve_desc_needs_cap:
+  for +root: String
+  {KSL.KS.desc(root, Nil{}) == "" : String}
+
+law kserve_desc_with_cap:
+  for +root: String
+  {KSL.KS.desc.k(True{}, root) == root ++ "/share/backplane/api.desc" : String}
+
+law kserve_idle_needs_api2:
+  for xs: List<&2, String>
+  {KSL.KS.caps.safe(xs, 1n) == KSL.KS.drop(xs, "idle-exit") : List<&2, String>}
+
+# ---- end kicad-ipc 2 ----

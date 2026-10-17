@@ -3,7 +3,7 @@
 #   dist/backplane        the app: native window + hub + web server
 #   dist/backplane-serve  hub + web server only (no X11 needed)
 #   dist/web/             the web client (for other devices)
-#   dist/backplane-browser, dist/backplane-step2glb, dist/backplane-voice
+#   dist/backplane-browser, dist/backplane-step2glb, dist/backplane-voice, dist/backplane-kipc
 #                         host helpers (with bun)
 # X11 headers: /usr/include (libx11-dev), or BACKPLANE_X11=<prefix> holding
 # include/ and lib/libX11.so (see AGENTS.md).
@@ -78,7 +78,8 @@ if command -v bun >/dev/null 2>&1 || [ -x "$HOME/.bun/bin/bun" ]; then
   PATH="$HOME/.bun/bin:$PATH" scripts/build-browser.sh
   PATH="$HOME/.bun/bin:$PATH" scripts/build-step2glb.sh
   PATH="$HOME/.bun/bin:$PATH" scripts/build-voice.sh
+  PATH="$HOME/.bun/bin:$PATH" scripts/build-kipc.sh
 else
-  echo "bun not found: skipping backplane-browser, backplane-step2glb and backplane-voice"
+  echo "bun not found: skipping backplane-browser, backplane-step2glb, backplane-voice and backplane-kipc"
 fi
 ls -la dist

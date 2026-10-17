@@ -28,10 +28,15 @@ def KiCad.run(+cli: String, args: List<&2, String>) -> IO(P.Ran):
   Bool.pick(IO(P.Ran), String.is_empty(cli), IO.pure(P.Ran, P.Ran{127, KiCad.missing()}), P.Proc.run(cli, args, "/"))
 
 def KiCad.version() -> String:
-  "10.0.6"
+  "10.99.0-bp.2"
 
+# the release that carries it and the archive in it (its compression is
+# whatever tar reads: .gz here; change the name when the release differs)
 def KiCad.release() -> String:
-  "backplane-kicad-v10.0.6-2"
+  "backplane-kicad-v10.99.0-bp.2"
+
+def KiCad.asset() -> String:
+  "backplane-kicad-linux-x86_64-" ++ KiCad.version() ++ ".tar.gz"
 
 # the KiStack commit to fall back on: the latest one found (KiStack.refresh)
 # is used once it is here
@@ -506,11 +511,11 @@ def KiCad.install.k(r: P.Ran) -> String:
 def KiCad.install(+data: String) -> IO(String):
   do IO<String>:
     +dir : String = data ++ "/kicad/" ++ KiCad.version()
-    +name : String = "backplane-kicad-linux-x86_64-" ++ KiCad.version() ++ ".tar.gz"
+    +name : String = KiCad.asset()
     +base : String = "https://github.com/i2cjak/Backplane_KiCad/releases/download/" ++ KiCad.release() ++ "/"
     mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir)
     r : P.Ran <- P.Proc.run("sh", ["-c",
-      "set -e; cd \"$1\"; curl -fsSL -o pkg.tgz \"$2$3\"; curl -fsSL -o SUMS \"$2SHA256SUMS\"; want=$(awk -v n=\"$3\" '$2 == n || $2 == \"./\" n { print $1 }' SUMS); got=$(sha256sum pkg.tgz | cut -d' ' -f1); [ \"$want\" = \"$got\" ] || { echo checksum mismatch; exit 1; }; tar -xzf pkg.tgz --strip-components=1; rm pkg.tgz SUMS",
+      "set -e; cd \"$1\"; curl -fsSL -o pkg.tgz \"$2$3\"; curl -fsSL -o SUMS \"$2SHA256SUMS\"; want=$(awk -v n=\"$3\" '$2 == n || $2 == \"./\" n { print $1 }' SUMS); got=$(sha256sum pkg.tgz | cut -d' ' -f1); [ \"$want\" = \"$got\" ] || { echo checksum mismatch; exit 1; }; tar -xf pkg.tgz --strip-components=1; rm pkg.tgz SUMS",
       "sh", dir, base, name], "/")
     return KiCad.install.k(r)
 
