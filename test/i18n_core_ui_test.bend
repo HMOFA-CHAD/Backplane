@@ -147,7 +147,7 @@ def main() -> IO(Unit):
     C.Check.str("review note ja", U.RpView.note.loc(I.Ja{}, U.RpView{"bom", Nil{}, "", "", "", True{}}), "設計を読み込み中…")
     C.Check.str("antigravity en", U.Agv.gcp.note(I.En{}, "p", "") ++ "|" ++ U.Agv.gcp.note(I.En{}, "", "") ++ "|" ++ U.Agv.google.note(I.En{}, False{}, "default"), "Project p, location not set.|Not set.|default: not signed in.")
     C.Check.str("antigravity ja", U.Agv.google.note(I.Ja{}, True{}, "work"), "work：サインイン済みです。サインイン情報はエージェントが保持し、Backplaneからは見えません。")
-    C.Check.str("btw none", U.Btw.text(I.En{}, U.Btw.answer("")) ++ "|" ++ U.Btw.text(I.Ja{}, U.Btw.answer("")), "No answer came back (Settings, Writing: the model it asks).|回答がありませんでした（質問先のモデルは設定の「Writing」で選べます）。")
+    C.Check.str("btw none", U.Btw.text(I.En{}, U.Btw.answer("")) ++ "|" ++ U.Btw.text(I.Ja{}, U.Btw.answer("")), "No answer came back (Settings, Writing: the model it asks).|回答がありませんでした（質問先のモデルは設定の「文章生成」で選べます）。")
     C.Check.str("cron en same", S.Sched.cron(I.En{}, "*/15 * * * *") ++ "|" ++ S.Sched.cron(I.En{}, "30 9 * * *") ++ "|" ++ S.Sched.cron(I.En{}, "0 8 * * 1-5"), "every 15 minutes|daily at 09:30|weekdays at 08:00")
     C.Check.str("cron en as before", S.Sched.cron(I.En{}, "0 */2 * * *") ++ "|" ++ S.Sched.cron(I.En{}, "5 * * * *"), CR.Cron.describe("0 */2 * * *") ++ "|" ++ CR.Cron.describe("5 * * * *"))
     C.Check.str("cron ja", S.Sched.cron(I.Ja{}, "*/15 * * * *") ++ "|" ++ S.Sched.cron(I.Ja{}, "30 9 * * *"), "15分ごと|毎日09:30")
