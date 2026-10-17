@@ -9440,3 +9440,53 @@ law mm_late_misses:
   for +now: Nat
   for h: {Nat.is_ge(now, MM.MainM.due(ms)) == True{} : Bool}
   {MM.Mm.use(key, ms, now) == False{} : Bool}
+# ---- mail 2b ----
+law mail_off_unchanged:
+  for +st: H.Step
+  for +s: M.State
+  for +now: Nat
+  for +o: ML.Origin
+  for +to: String
+  for +text: String
+  for +msg: String
+  for +off: {M.Setting.get(s, "mail.on", "off") == "off" : String}
+  {H.Mail.tee(st, s, now, o, to, text, msg) == st : H.Step}
+
+law mail_file_never_waits:
+  for +s: M.State
+  for +now: Nat
+  for +o: ML.Origin
+  for +to: String
+  for +text: String
+  for +msg: String
+  {H.Mail.file.waits(H.Mail.file(s, now, o, to, text, msg)) == False{} : Bool}
+
+law mail_tee_keeps_delivery:
+  for +st: H.Step
+  for +s: M.State
+  for +now: Nat
+  for +o: ML.Origin
+  for +to: String
+  for +text: String
+  for +msg: String
+  {H.Queue.changes(H.Mail.tee(st, s, now, o, to, text, msg)) == H.Queue.changes(st) : List<&2, M.Change>}
+
+law mail_file_one_conv:
+  for +s: M.State
+  for +now: Nat
+  for +o: ML.Origin
+  for +to: String
+  for +text: String
+  for +msg: String
+  {H.Mail.file.route(H.Mail.file(s, now, o, to, text, msg)) == ML.Mail.route(o, to) : String}
+
+law mail_room_once:
+  for +s: M.State
+  for +now: Nat
+  for +from: String
+  for +room: String
+  for +text: String
+  for +msg: String
+  for +parts: List<&2, String>
+  for +subject: String
+  {H.Mail.file.count(H.Mail.room.file(s, now, from, room, text, msg, parts, subject)) == 1n : Nat}
