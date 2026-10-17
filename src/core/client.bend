@@ -5871,9 +5871,6 @@ def Fab.set.note.k(on: Bool) -> String:
     case False{}:
       "Comes with Ordering."
 
-def Fab.set.note() -> String:
-  Fab.set.note.k(True{})
-
 def Fab.set.on(+st: M.State) -> String:
   Bool.pick(String, String.eq(M.Setting.get(st, "order.estimates", "on"), "off"), "off", "on")
 

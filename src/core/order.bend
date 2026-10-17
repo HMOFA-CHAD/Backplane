@@ -55,9 +55,6 @@ def Order.prompt.project.k(on: Bool) -> String:
     case False{}:
       "<backplane_project_files>" ++ Order.prompt.intent() ++ "\n" ++ Order.prompt.layout() ++ "</backplane_project_files>\n" ++ Order.prompt.off()
 
-def Order.prompt.project() -> String:
-  Order.prompt.project.k(True{})
-
 # a buy thread's own block
 def Order.prompt.buy() -> String:
   "<backplane_buy>This thread orders the project's parts; the person pressed Buy it. Be brief: short messages, a small table at most, no walls of text. Steps:\n"
@@ -361,11 +358,6 @@ def Card.of.j(+j: J.Json) -> Card:
 
 def Card.of(+text: String) -> Card:
   Card.of.j(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))
-
-def Card.goal(c: Card) -> String:
-  match c:
-    case Card{g, _, _, _, _, _, _}:
-      g
 
 def Card.intent(c: Card) -> String:
   match c:
