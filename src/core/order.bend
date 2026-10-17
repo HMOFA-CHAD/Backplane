@@ -40,6 +40,10 @@ def Order.prompt.intent() -> String:
 def Order.prompt.review() -> String:
   "<backplane_manufacturing_review>When asked to review the project for manufacturing, check what makes a fab ask questions or refuse, not the circuit: DRC against the fab's limits (tracks and gaps: 0.10 mm or more on 1 or 2 layers, 0.09 mm on 4 or more, 0.127 mm is comfortable; vias: a 0.3 mm hole in a 0.45 mm pad costs nothing extra, smaller down to a 0.15 mm hole in a 0.25 mm pad is fine but costs more, so say so rather than calling it an error; plated holes for parts: rings of 0.13 mm; copper 0.3 mm from the board edge; silkscreen lines 0.15 mm), every BOM line has a manufacturer part number that is in stock (pcbparts tools; prefer basic/preferred parts, name extended ones), parts on one side for the cheaper assembly, footprint rotations sane, an outline that is closed, every part to order has a current fab file; for printed parts walls 1 mm or more (0.8 for SLA), for sheet metal flanges at least 4x the thickness and holes at least the thickness from a bend, for CNC inside corners with radii of 1 mm or more and no undercuts. Write the findings to `.backplane/review.md` (per part: what is fine, what must change and why), then call the backplane tool `order_review` with action \"record\", verdict \"ok\" when nothing must change or \"issues\", and a one-line summary. Change nothing while reviewing: say what must change; the person decides.</backplane_manufacturing_review>"
 
+# with ordering off, only where to turn it on (law order_off_says_where)
+def Order.prompt.off() -> String:
+  "Ordering from Backplane is off. If the person asks to order, buy or price the project, say they can turn it on in Settings → Ordering (a Buy it button then appears once the design is ready), or take the design files to any manufacturer themselves."
+
 # every project thread's block
 # the project's files for every agent: the intent and the layout always,
 # the fab files and the manufacturing review only with ordering on
@@ -49,7 +53,7 @@ def Order.prompt.project.k(on: Bool) -> String:
       "<backplane_project_files>" ++ Order.prompt.intent() ++ "\n" ++ Order.prompt.layout() ++ "\n" ++ Order.prompt.fab()
       ++ " Prefer basic and preferred parts from the fab's own stock when choosing components (the pcbparts tools: jlc_search, jlc_stock_check); every BOM line needs its manufacturer part number (an `MPN` field on the symbol).</backplane_project_files>\n" ++ Order.prompt.review()
     case False{}:
-      "<backplane_project_files>" ++ Order.prompt.intent() ++ "\n" ++ Order.prompt.layout() ++ "</backplane_project_files>"
+      "<backplane_project_files>" ++ Order.prompt.intent() ++ "\n" ++ Order.prompt.layout() ++ "</backplane_project_files>\n" ++ Order.prompt.off()
 
 def Order.prompt.project() -> String:
   Order.prompt.project.k(True{})

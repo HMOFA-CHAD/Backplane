@@ -9265,6 +9265,10 @@ law order_off_no_tools:
 law order_off_by_default:
   {ORD.Order.enabled("") == False{} : Bool}
 
+# with ordering off, an agent asked to order points to the setting
+law order_off_says_where:
+  {String.contains(ORD.Order.prompt.project.k(False{}), "Settings → Ordering") == True{} : Bool}
+
 # ---- i18n lang ----
 law lang_default_auto:
   {U.Lang.resolve("", "en_US.UTF-8", False{}) == "en" : String}

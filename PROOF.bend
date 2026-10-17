@@ -11063,6 +11063,9 @@ def Laws.order_off_no_tools(buy):
 def Laws.order_off_by_default():
   {==}
 
+def Laws.order_off_says_where():
+  {==}
+
 def Laws.order_buy_board_only():
   {==}
 
