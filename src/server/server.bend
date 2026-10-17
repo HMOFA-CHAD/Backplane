@@ -1,4 +1,6 @@
 import Base
+import ../core/charter.bend as CH
+import ../core/mailrun.bend as RUN
 import ../core/kihealth.bend as KH
 import ../core/kserve.bend as KSC
 import ./kserve.bend as KSV
@@ -117,6 +119,8 @@ type Wire is Data:
   WItems{head: String, plain: String, split: String, items: List<&2, String>, tail: String, ends: Bool}
 
 type Msg is Data:
+  MailRouted{body: MB.Body}
+  RunReady{thread: String, head: String, bodies: List<&2, MB.Body>}
   # n: how many probes since the lock was asked for (the guard is tried
   # each 100 ms; who holds it outside is asked every LockJob.every())
   LockProbe{name: String, holder: String, n: Nat}
@@ -3006,7 +3010,7 @@ def Hub.prompt.base(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, fs: 
   String.join([Cfg.prompt(cfg),
     Hub.prompt.kicad(Cfg.rt(cfg), Bool.not(String.eq(M.Setting.get(st, "kicad.ipc", "on"), "off"))),
     Hub.prompt.files(cwd, fs),
-    Q.Prompt.orchestration(M.Task.may_delegate(B.Task.depth(st, thread)), Cfg.mtext(cfg)), Q.Prompt.background()], "\n\n") ++ Bool.pick(String, String.is_empty(keys), "", "\n\n" ++ keys) ++ Hub.prompt.machines(cfg) ++ BH.Bots.prompt.k(BO.World.of_thread(M.State.bots(st), thread), st, Cfg.home(cfg))
+    Q.Prompt.orchestration(M.Task.may_delegate(B.Task.depth(st, thread)), Cfg.mtext(cfg)), Q.Prompt.background()], "\n\n") ++ Bool.pick(String, String.is_empty(keys), "", "\n\n" ++ keys) ++ Hub.prompt.machines(cfg) ++ BH.Bots.prompt.k(RUN.Run.bot(st, thread), st, Cfg.home(cfg))
 
 def Hub.prompt(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, fs: K.Files, +keys: String) -> String:
   Q.Prompt.lang.add(Hub.prompt.base(cfg, st, thread, cwd, fs, keys), M.Setting.get(st, "agent.lang", "off"))
@@ -3352,7 +3356,6 @@ def ShipJob.run(+repo: String, +wrap: String, +home: String, +commit: String, +i
     r : P.Ran <- P.Proc.run("sh", ["-c", Ship.launch.sh(), "sh", Ship.base(home), repo, commit, wrap, Ship.run.sh()], "/")
     ShipJob.launched(ShipJob.out(r), commit, inbox)
     ShipJob.loop(Fuel.forever(), Ship.dir(home, commit), commit, inbox)
-
 
 def Upgrade.done.k(ok: Bool, force: Bool, +err: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ok:
@@ -5795,7 +5798,7 @@ def Hub.preview(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String)) -> IO
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
         IO.spawn(Unit, Preview.go(TE.Teach.bot_may(Cfg.tch(cfg), Bot.page(st, thread)), cfg, Bot.page(st, thread), o, reply))
-        cl2 : List<&2, Client> <- Hub.auto.k(Bool.not(Bool.and(Bool.not(Bot.is_bot(BO.World.of_thread(M.State.bots(st), thread))), Preview.shows(o))), cl, Preview.view(thread))
+        cl2 : List<&2, Client> <- Hub.auto.k(Bool.not(Bool.and(Bool.not(Bot.is_bot(RUN.Run.bot(st, thread))), Preview.shows(o))), cl, Preview.view(thread))
         return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
 # requests: "bots.*" to the bots' decider, the rest to the hub's
@@ -8272,30 +8275,41 @@ def MailJob.append.failed(h: Hub, reason: String) -> IO(Hub):
     MailJob.failed(reason)
     return h
 
-def MailJob.append.committed(r: Hub & Wrote, +cs: List<&2, M.Change>, +from: Nat) -> IO(Hub):
+# ---- mail 2c: body IO, then the same Hub.post as thread_launch ----
+def MailJob.routed(h: Hub, +body: MB.Body) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        Self.post(inbox, MailRouted{body})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def MailJob.route(h: Hub, cs: List<&2, M.Change>, fresh: List<&2, String>, from: Nat, body: MB.Body) -> IO(Hub):
+  IO.bind(Hub, Hub, Far.push(h, cs, fresh, from), h2 => MailJob.routed(h2, body))
+
+def MailJob.append.committed(r: Hub & Wrote, +cs: List<&2, M.Change>, +from: Nat, +body: MB.Body) -> IO(Hub):
   (h, w) = r
   match w:
     case Wrote{+fresh, True{}, _}:
-      IO.bind(Hub, Hub, Hub.announce((h, fresh)), h2 => Far.push(h2, cs, fresh, from))
+      IO.bind(Hub, Hub, Hub.announce((h, fresh)), h2 => MailJob.route(h2, cs, fresh, from, body))
     case Wrote{_, False{}, err}:
       do IO<Hub>:
         PS.Log.error("mail", "header commit failed: " ++ err)
         PS.Perf.add("hub.write_fail", 1)
         return h
 
-def MailJob.append.result(r: MST.StoreResult<Bool>, +changes: List<&2, M.Change>, +from: Nat, h: Hub) -> IO(Hub):
+def MailJob.append.result(r: MST.StoreResult<Bool>, +changes: List<&2, M.Change>, +from: Nat, +body: MB.Body, h: Hub) -> IO(Hub):
   match r:
-    case MST.Stored{_}: IO.bind(Hub & Wrote, Hub, Hub.commit.w(changes, h), got => MailJob.append.committed(got, changes, from))
+    case MST.Stored{_}: IO.bind(Hub & Wrote, Hub, Hub.commit.w(changes, h), got => MailJob.append.committed(got, changes, from, body))
     case MST.Missing{path}: MailJob.append.failed(h, "append missing: " ++ path)
     case MST.StoreError{path, reason}: MailJob.append.failed(h, path ++ ": " ++ reason)
 
-def MailJob.append.fresh(seen: Bool, body: MB.Body, home: String, changes: List<&2, M.Change>, from: Nat, h: Hub) -> IO(Hub):
+def MailJob.append.fresh(seen: Bool, +body: MB.Body, home: String, changes: List<&2, M.Change>, from: Nat, h: Hub) -> IO(Hub):
   match seen:
     case True{}: IO.pure(Hub, h)
     case False{}:
       do IO<Hub>:
         r : MST.StoreResult<Bool> <- MST.MailStore.append(home, body)
-        MailJob.append.result(r, changes, from, h)
+        MailJob.append.result(r, changes, from, body, h)
 
 def MailJob.append.parsed(body: Maybe<&2, MB.Body>, +home: String, changes: List<&2, M.Change>, h: Hub) -> IO(Hub):
   match body h:
@@ -8351,8 +8365,25 @@ def MailJob.read.text(out: B.Out) -> String:
     case B.Send{_, +text}: text
     case _: ""
 
+def RunJob.start(r: MST.StoreResult<List<&2, MB.Body>>, +inbox: Chan(Msg), +s: M.State, +now: Nat, +th: String, +head: String) -> IO(Unit):
+  match r:
+    case MST.Stored{bs}: Self.post(inbox, RunReady{th, head, bs})
+    case MST.Missing{_}: Self.post(inbox, RunReady{th, head, Nil{}})
+    case MST.StoreError{+path, +err}: Self.post(inbox, Commit{[M.ActivityLogged{th, B.Hub.id("run-read", now, M.State.seq(s)), "error", "mail", path ++ ": " ++ err, now}, M.TurnChanged{th, M.Failed{}, now}, M.ThreadSettled{th, False{}, now}]})
+
 def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
   match h o:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note} B.RunStart{+thread, conv, head}:
+      do IO<Hub>:
+        r : MST.StoreResult<List<&2, MB.Body>> <- MST.MailStore.read(Cfg.home(cfg), conv, "", 20n)
+        +now : Nat <- Now.nat()
+        RunJob.start(r, inbox, st, now, thread, head)
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, cfg, note} B.CharterWrite{path, text}:
+      do IO<Hub>:
+        fout : Result<&1, &1, U32 & String, File> <- File.open(path, "w")
+        Token.write(fout, text)
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.MailAppend{line, _, changes}:
       MailJob.append.parsed(MB.Body.parse(line), Cfg.home(cfg), changes, Hub{st, f, ls, cl, as, inbox, cfg, note})
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note} B.MailRead{+client, +id, conv, before, n}:
@@ -8380,7 +8411,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note} B.AgentSend{+thread, +line}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        +l1 : String = Bot.line(Bool.or(BO.World.is_bot_thread(M.State.bots(st), thread), RF.Refs.maybe(line)), cfg, st, now, thread, line)
+        +l1 : String = Bot.line(Bool.or(Bool.or(RUN.Run.is(st, thread), BO.World.is_bot_thread(M.State.bots(st), thread)), RF.Refs.maybe(line)), cfg, st, now, thread, line)
         +l2 : String <- EmbNote.claude(EmbNote.user(l1), cfg, st, thread, l1)
         Line.skills(String.contains(l2, "$"), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, l2, B.Hub.cwd(st, B.Hub.thread(st, thread)))
     case Hub{st, f, ls, cl, +as, inbox, +cfg, note} B.AgentStop{+thread}:
@@ -11506,7 +11537,7 @@ def Hub.google.ok(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +no
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.google.p(Bool.or(String.eq(Gg.tool(o), "calendar_update"), String.eq(Gg.tool(o), "calendar_delete")),
-        Bool.and(GG.Google.asks(Gg.tool(o)), Bool.not(MC.Perm.session_ok(M.Asks.all(st), thread, Gg.tool(o)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
+        Bool.and(GG.Google.asks(Gg.tool(o)), Bool.not(Bool.or(MC.Perm.session_ok(M.Asks.all(st), thread, Gg.tool(o)), MC.Perm.run.google(st, thread, Gg.tool(o))))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
 
 # the hub's settings gmail.sig.<address> as a JSON object (not secrets)
 def Gg.sigs.go(ks: List<&2, String>, +st: M.State, +acc: List<&2, J.KV>) -> List<&2, J.KV>:
@@ -11577,7 +11608,7 @@ def Hub.gmail.k(ask: Bool, h: Hub, +thread: String, +tool: String, +detail: Stri
 def Hub.gmail.ask(h: Hub, +thread: String, +tool: String, +detail: String, +plan: String, +idtxt: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.gmail.k(Bool.and(GG.Google.asks(tool), Bool.not(MC.Perm.session_ok(M.Asks.all(st), thread, tool))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, tool, detail, plan,
+      Hub.gmail.k(Bool.and(GG.Google.asks(tool), Bool.not(Bool.or(MC.Perm.session_ok(M.Asks.all(st), thread, tool), MC.Perm.run.google(st, thread, tool)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, tool, detail, plan,
         Maybe.default(&2, J.Json, J.Json.parse(idtxt), J.Null{}), reply, now)
 
 def Hub.gmail.start(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String)) -> IO(Hub):
@@ -12068,6 +12099,8 @@ def Msg.kind(m: Msg) -> String:
       "recover"
     case Reexec{_, _}:
       "reexec"
+    case MailRouted{_}: "mail-route"
+    case RunReady{_, _, _}: "run-ready"
     case Commit{_}:
       "commit"
     case BoatThreads{_}:
@@ -12169,12 +12202,37 @@ def Hub.mcp.stale(+body: String) -> String:
   MC.McpOut.reply(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id"), J.Null{}),
     MC.Res.fail("stale process: this agent process is no longer the thread's, so it may read but not change anything")))
 
+def Hub.mcp.charter.allowed(ok: Bool, +s: M.State, +r: ML.Run, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat, +o: J.Json) -> IO(Hub):
+  match ok:
+    case False{}: Hub.mcp.k(MC.Mcp.reply(J.Json.get_obj(o, "id"), MC.Res{False{}, J.Str{"Outside the charter; escalated"}, B.Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), "bot", "Outside the charter: " ++ J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""))}), h, reply, body)
+    case True{}:
+      IO.bind(Hub, Hub, Hub.step(h, MC.Mcp.run.decide(s, now, r, J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "charter: " ++ CH.Charter.line(ML.Box.charter(M.State.mail(s), ML.Run.bot(r)), J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments")))), h2 => Hub.mcp(h2, thread, body, reply, now))
+
+# Check direct MCP tools too: Gmail, deploy and work_run must not bypass
+# the run's policy simply because they execute in the hub rather than a
+# provider's shell. permission_prompt itself goes through Perm.run.
+def Hub.mcp.charter.risky(risky: Bool, +s: M.State, +r: ML.Run, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat, +o: J.Json) -> IO(Hub):
+  match risky:
+    case False{}: Hub.mcp(h, thread, body, reply, now)
+    case True{}: Hub.mcp.charter.allowed(CH.Charter.allows(ML.Box.charter(M.State.mail(s), ML.Run.bot(r)), J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments")), s, r, h, thread, body, reply, now, o)
+
+def Hub.mcp.charter.got(r: Maybe<&2, ML.Run>, +s: M.State, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match r:
+    case None{}: Hub.mcp(h, thread, body, reply, now)
+    case Some{+r}:
+      +o = Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})
+      Hub.mcp.charter.risky(Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), CH.Charter.risky(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"))), s, r, h, thread, body, reply, now, o)
+
+def Hub.mcp.charter(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}: Hub.mcp.charter.got(RUN.Run.of(st, thread), st, Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, body, reply, now)
+
 # a standing rule that refuses the call (rules.bend's Rules.gate) answers
 # it here, at once, before any tool runs
 def Hub.mcp.rules.k(none: Bool, +msg: String, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match none:
     case True{}:
-      Hub.mcp(h, thread, body, reply, now)
+      Hub.mcp.charter(h, thread, body, reply, now)
     case False{}:
       do IO<Hub>:
         ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, msg)
@@ -12588,6 +12646,14 @@ def Hub.lock.http(h: Hub, +op: String, +body: String, +reply: Chan(String), +now
   +a = Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})
   Hub.lock.http.valid(Bool.and(LCK.Lock.name.valid(J.Json.get_str(a, "name", "")), Bool.and(String.starts_with(J.Json.get_str(a, "holder", ""), "pid:"), M.Launch.has(["acquire", "renew", "release", "cancel", "status"], op))), h, op, a, reply, now)
 
+def Hub.mail.routed(h: Hub, body: MB.Body, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}: Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Mail.route(st, now, body))
+
+def Hub.run.ready(h: Hub, +th: String, head: String, bs: List<&2, MB.Body>, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}: Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Run.start.on(B.Run.ready(st, th), st, now, th, head, bs))
+
 def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
   match m:
     case LockProbe{name, holder, n}:
@@ -12675,6 +12741,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.dir.returned(h, mc)
     case LinkFound{lk}:
       Hub.link(h, lk)
+    case MailRouted{body}: Hub.mail.routed(h, body, now)
+    case RunReady{thread, head, bs}: Hub.run.ready(h, thread, head, bs, now)
     case Commit{cs}:
       Hub.step(h, B.Step{cs, Nil{}})
     case BoatThreads{status}:

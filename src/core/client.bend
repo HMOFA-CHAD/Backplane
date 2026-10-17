@@ -1,5 +1,6 @@
 import Base
 import ./title.bend as TTL
+import ./mailrun.bend as RUN
 import ./ref.bend as R
 import ./refview.bend as RE
 import ./i18n.bend as I
@@ -162,10 +163,21 @@ def Flag.get.k(r: Map<&2, Bool> & Bool) -> Bool:
 def Flag.get(m: Map<&2, Bool>, +k: String) -> Bool:
   Flag.get.k(Map.get(Bool, False{}, m, k))
 
-def Ui.threads(s: M.State) -> List<&2, M.Thread>:
+# ---- mail 2c: list filtering (Mailv belongs to spec 5w) ----
+def Runs.add(hidden: Bool, +t: M.Thread, +rest: List<&2, M.Thread>) -> List<&2, M.Thread>:
+  match hidden:
+    case True{}: rest
+    case False{}: t <> rest
+
+def Runs.keep(+ts: List<&2, M.Thread>, +s: M.State) -> List<&2, M.Thread>:
+  match ts:
+    case Nil{}: Nil{}
+    case +t <> +rest: Runs.add(RUN.Run.is(s, M.Thread.id(t)), t, Runs.keep(rest, s))
+
+def Ui.threads(+s: M.State) -> List<&2, M.Thread>:
   match s:
     case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
-      Map.values(&2, M.Thread, ts)
+      Runs.keep(Map.values(&2, M.Thread, ts), s)
 
 def Ui.projects(s: M.State) -> List<&2, M.Project>:
   match s:
