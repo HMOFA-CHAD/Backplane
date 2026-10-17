@@ -50,6 +50,7 @@ import ./when.bend as WH
 import ./sched.bend as SC
 import ./task.bend as TK
 import ./order.bend as OR
+import ./tools.bend as TO
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -5955,8 +5956,54 @@ def Fab.ready.btn.of(+st: M.State, +nf: Map<&2, String>, +th: String) -> String:
 def Fab.ready.btn(+u: Ui) -> String:
   Fab.ready.btn.k(String.eq(Ui.info(u, "fab.again:" ++ Ui.sel(u)), "1"), Fab.buy(u))
 
-def Fab.ready(+u: Ui) -> String:
+# The bar can be put away (its ×) and comes back from a small Buy it in the
+# thread's header: the setting fab.min.<project> "1", one per project and
+# kept like any setting, so every device follows (laws fab_min_*)
+def Fab.min.key(+project: String) -> String:
+  "fab.min." ++ project
+
+def Fab.project(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, +project, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      project
+
+def Fab.min.of(+st: M.State, +th: String) -> Bool:
+  String.eq(M.Setting.get(st, Fab.min.key(Fab.project(Ui.thread(st, th))), ""), "1")
+
+# the bar's line once put away: none
+def Fab.ready.shown.k(min: Bool, +line: String) -> String:
+  Bool.pick(String, min, "", line)
+
+# the header's Buy it: while the bar is put away and has something to show
+def Fab.mini.k(min: Bool, +line: String) -> Bool:
+  Bool.and(min, Bool.not(String.is_empty(line)))
+
+def Fab.mini.label(again: Bool) -> String:
+  Bool.pick(String, again, "Ordered", "Buy it")
+
+def Fab.mini.tools.k(show: Bool, again: Bool, +th: String) -> List<&2, TO.Tool>:
+  match show:
+    case True{}:
+      [TO.Tool{"box", Fab.mini.label(again), "Show the Ready to order bar again", "fab-show", th, False{}, False{}, False{}}]
+    case False{}:
+      Nil{}
+
+def Fab.ready.all(+u: Ui) -> String:
   Fab.ready.k(Fab.buy(u), Ui.info(u, "fab.ready:" ++ Ui.sel(u)), String.eq(Fab.turn(Ui.thread(Ui.state.of(u), Ui.sel(u))), "running"))
+
+def Fab.ready(+u: Ui) -> String:
+  Fab.ready.shown.k(Fab.min.of(Ui.state.of(u), Ui.sel(u)), Fab.ready.all(u))
+
+# the header's tools for the open thread ([] or its Buy it)
+def Fab.mini.tools(+u: Ui) -> List<&2, TO.Tool>:
+  Fab.mini.tools.k(Fab.mini.k(Fab.min.of(Ui.state.of(u), Ui.sel(u)), Fab.ready.all(u)), String.eq(Ui.info(u, "fab.again:" ++ Ui.sel(u)), "1"), Ui.sel(u))
+
+# the same from the state and the info a window or phone frame has
+def Fab.mini.tools.of(+st: M.State, +nf: Map<&2, String>, +th: String, run: Bool) -> List<&2, TO.Tool>:
+  Fab.mini.tools.k(Fab.mini.k(Fab.min.of(st, th), Fab.ready.k(Fab.buy.of(st, nf, th), Str.get(nf, "fab.ready:" ++ th), run)), String.eq(Str.get(nf, "fab.again:" ++ th), "1"), th)
+
+def Fab.min.set(+u: Ui, +th: String, +v: String) -> Act:
+  Ui.setting(u, Fab.min.key(Fab.project(Ui.thread(Ui.state.of(u), th))) ++ "=" ++ v)
 
 def Fab.act.k(i: Nat, +u: Ui, +th: String) -> Act:
   match i:
@@ -5969,14 +6016,19 @@ def Fab.act.k(i: Nat, +u: Ui, +th: String) -> Act:
     # Buy it: the hub makes the buy thread and this client goes to it
     case 2n:
       Ui.rpc(Made.want(u), "order.buy", [J.KV{"thread", J.Str{th}}])
+    # the bar's ×: put away for the project; the header's Buy it: back
+    case 4n:
+      Fab.min.set(u, th, "1")
+    case 5n:
+      Fab.min.set(u, th, "0")
     case _:
       Act{u, Nil{}}
 
 def Fab.actions() -> List<&2, String>:
-  ["fab-open", "fab-edit", "buy", "board-pick"]
+  ["fab-open", "fab-edit", "buy", "board-pick", "fab-hide", "fab-show"]
 
 def Fab.is(+action: String) -> Bool:
-  Nat.is_lt(C.Codec.pos(Fab.actions(), action), 4n)
+  Nat.is_lt(C.Codec.pos(Fab.actions(), action), 6n)
 
 def Fab.act.v(+i: Nat, +u: Ui, +value: String) -> Act:
   match i:

@@ -9232,6 +9232,32 @@ law fab_buy_again:
 law fab_buy_again_off:
   {U.Fab.ready.btn.k(True{}, "") == "" : String}
 
+# the Ready bar's ×: put away per project (setting fab.min.<project>), and
+# then a Buy it in the header (or Ordered, once paid) brings it back
+law fab_min_key:
+  {U.Fab.min.key("p1") == "fab.min.p1" : String}
+
+law fab_min_hides_bar:
+  for line: String
+  {U.Fab.ready.shown.k(True{}, line) == "" : String}
+
+law fab_min_keeps_bar:
+  for line: String
+  {U.Fab.ready.shown.k(False{}, line) == line : String}
+
+law fab_min_header:
+  {U.Fab.mini.k(True{}, "Ready to order · Lamp") == True{} : Bool}
+
+law fab_min_header_shown_bar:
+  for line: String
+  {U.Fab.mini.k(False{}, line) == False{} : Bool}
+
+law fab_min_header_nothing:
+  {U.Fab.mini.k(True{}, "") == False{} : Bool}
+
+law fab_min_header_ordered:
+  {U.Fab.mini.label(True{}) == "Ordered" : String}
+
 # the order server: the setting when given, the default when it is empty
 law buy_server_default:
   {H.Buy.server.k("") == ORD.Order.server() : String}

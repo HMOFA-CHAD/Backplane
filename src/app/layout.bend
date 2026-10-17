@@ -2039,10 +2039,12 @@ def Ren.field.if(on: Bool, +ty: Ty, +text: String, +focus: String, +blink: Bool,
     case False{}:
       Out.none()
 
-def Lay.header(+ty: Ty, t: M.Thread, +st: M.State, +chip: String, +x0: U32, +x1: U32, panel: Bool, term: Bool, +snoozed: Bool, del: Bool, +hy: U32) -> Out:
+def Lay.header(+ty: Ty, t: M.Thread, +st: M.State, +chip: String, mini: List<&2, TO.Tool>, +x0: U32, +x1: U32, panel: Bool, term: Bool, +snoozed: Bool, del: Bool, +hy: U32) -> Out:
   match t:
     case M.Thread{+id, +p, +title, _, _, turn, _, +archived, override, +sa, +ua, pinned, _, +branch, _, _, _, _, _, _, _}:
-      Lay.header.k(ty, id, U.Label.title(st, id, TTL.Title.shown(Ty.loc(ty), title)), branch, chip, BG.Badge.icon(st, p), BG.Badge.rgb_of(st, p), Lay.header.bs.loc(Ty.loc(ty), turn, override, sa, ua, pinned, panel, archived, snoozed, del, Bool.not(String.is_empty(M.Fork.source(st, id))), term), x0, x1, hy)
+      Lay.header.k(ty, id, U.Label.title(st, id, TTL.Title.shown(Ty.loc(ty), title)), branch, chip, BG.Badge.icon(st, p), BG.Badge.rgb_of(st, p),
+        # (the tools run right to left: the put-away Buy it, last, is leftmost)
+        List.append(&2, TO.Tool, Lay.header.bs.loc(Ty.loc(ty), turn, override, sa, ua, pinned, panel, archived, snoozed, del, Bool.not(String.is_empty(M.Fork.source(st, id))), term), mini), x0, x1, hy)
 
 def Lay.lines(+ty: Ty, ls: List<&2, String>, +c: D.Clip, +x: U32, +y: U32) -> Out:
   match ls:
@@ -6416,7 +6418,7 @@ def Ready.h(+line: String) -> U32:
   Bool.pick(U32, String.is_empty(line), 0, 44)
 
 def Ready.line(+st: M.State, +pics: Map<&2, String>, +sel: String, run: Bool) -> String:
-  U.Fab.ready.k(U.Fab.buy.of(st, pics, sel), U.Str.get(pics, "fab.ready:" ++ sel), run)
+  U.Fab.ready.shown.k(U.Fab.min.of(st, sel), U.Fab.ready.k(U.Fab.buy.of(st, pics, sel), U.Str.get(pics, "fab.ready:" ++ sel), run))
 
 def Lay.ready.k(none: Bool, +ty: Ty, +line: String, +buy: String, +x0: U32, +x1: U32, +y: U32) -> Out:
   match none:
@@ -6424,9 +6426,12 @@ def Lay.ready.k(none: Bool, +ty: Ty, +line: String, +buy: String, +x0: U32, +x1:
       Out.none()
     case False{}:
       +bw = Fab.buy.w(ty, buy)
+      # its ×: put away (client.bend's Fab.min), Buy it stays in the header
+      +xw = Lay.button.w(ty, "×")
       Out.all([Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), 36, 0, T.Th.raise(), T.Th.accent())),
-        Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, line, (x1 - x0 - bw - 24 : U32)), D.Clip.all(), (x0 + 12 : U32), (y + 4 : U32), 28, T.Th.text())),
-        Fab.buy.btn(ty, buy, (x1 - bw + 2 : U32), (y + 4 : U32))])
+        Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, line, (x1 - x0 - bw - xw - 28 : U32)), D.Clip.all(), (x0 + 12 : U32), (y + 4 : U32), 28, T.Th.text())),
+        Fab.buy.btn(ty, buy, (x1 - bw - xw - 2 : U32), (y + 4 : U32)),
+        Lay.button(ty, D.Clip.all(), (x1 - xw - 4 : U32), (y + 4 : U32), "×", T.Th.dim(), "fab-hide", "")])
 
 def Lay.ready(+ty: Ty, +line: String, +buy: String, +x0: U32, +x1: U32, +y: U32) -> Out:
   Lay.ready.k(String.is_empty(line), ty, line, buy, x0, x1, y)
@@ -6496,7 +6501,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       tl ch = Lay.timeline(ty,
         List.concat(&2, TLine, [TL.memo.shown.loc(ty, memo, st, sel, cw, pics), TL.sending(ty, pend, cw),
           TL.live.m(ty, String.is_empty(live), ph, live, TL.memo.lv(memo), cw)]),
-        cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, hold, TL.memo.first(memo), Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, sel, now), x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
+        cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, hold, TL.memo.first(memo), Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, sel, now), U.Fab.mini.tools.of(st, pics, sel, Lay.running(turn)), x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
           Kn.draw(kx, False{}, ty, cx0, (52 + hy : U32), cw),
           Kn.draw(kn, True{}, ty, cx0, (52 + hy + kxh : U32), cw),
           Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),

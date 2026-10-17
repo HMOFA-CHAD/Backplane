@@ -11041,6 +11041,27 @@ def Laws.fab_buy_again():
 def Laws.fab_buy_again_off():
   {==}
 
+def Laws.fab_min_key():
+  {==}
+
+def Laws.fab_min_hides_bar(line):
+  {==}
+
+def Laws.fab_min_keeps_bar(line):
+  {==}
+
+def Laws.fab_min_header():
+  {==}
+
+def Laws.fab_min_header_shown_bar(line):
+  {==}
+
+def Laws.fab_min_header_nothing():
+  {==}
+
+def Laws.fab_min_header_ordered():
+  {==}
+
 def Laws.buy_server_default():
   {==}
 

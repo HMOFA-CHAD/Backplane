@@ -61,6 +61,7 @@ import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.VerticalSplit
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -1027,5 +1028,6 @@ fun toolIcon(name: String) = when (name) {
     "search" -> Icons.Filled.FindInPage
     "stop" -> Icons.Filled.Stop
     "x" -> Icons.Filled.Close
+    "box" -> Icons.Filled.ShoppingCart
     else -> null
 }

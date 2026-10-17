@@ -1052,6 +1052,7 @@ struct ThreadScreen: View {
         case "search": "doc.text.magnifyingglass"
         case "stop": "stop.fill"
         case "x": "xmark"
+        case "box": "cart"
         default: "circle"
         }
     }

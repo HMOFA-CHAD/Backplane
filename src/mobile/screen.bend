@@ -940,10 +940,18 @@ def Mob.snooze(snoozed: Bool) -> J.Json:
     case False{}:
       Mob.item("clock", "Snooze", "snooze", "", False{}, False{}, [Mob.opt("1 hour", "1h"), Mob.opt("Tomorrow", "tomorrow"), Mob.opt("1 week", "1w")])
 
-def Mob.menu(+id: String, snoozed: Bool) -> List<&2, J.Json>:
-  [Mob.item("diff", "Diff", "diff", "", False{}, False{}, Nil{}), Mob.item("terminal", "Terminal", "term-toggle", "", False{}, False{}, Nil{}),
+# the put-away Ready row's Buy it (client.bend's Fab.mini.tools), first
+def Mob.menu.tools(ts: List<&2, TO.Tool>) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case TO.Tool{+icon, +label, _, +action, +value, _, _, _} <> r:
+      Mob.item(icon, label, action, value, False{}, False{}, Nil{}) <> Mob.menu.tools(r)
+
+def Mob.menu(+id: String, snoozed: Bool, mini: List<&2, TO.Tool>) -> List<&2, J.Json>:
+  List.append(&2, J.Json, Mob.menu.tools(mini), [Mob.item("diff", "Diff", "diff", "", False{}, False{}, Nil{}), Mob.item("terminal", "Terminal", "term-toggle", "", False{}, False{}, Nil{}),
    Mob.item("search", "Find file", "find-open", "files", False{}, False{}, Nil{}), Mob.snooze(snoozed),
-   Mob.item("trash", "Delete", "row-delete", id, False{}, True{}, Nil{})]
+   Mob.item("trash", "Delete", "row-delete", id, False{}, True{}, Nil{})])
 
 # a phone opens a thread on its newest 20 entries (a screen shows about
 # ten, and each reply's markdown is laid out in the phone's JS engine,
@@ -983,7 +991,9 @@ def Mob.live.k(render: Bool, +text: String) -> J.Json:
 # composer: the goal, Edit and Buy it (a row of the queue's kind, which
 # both apps draw with its buttons)
 def Mob.fab.buy(+buy: String, +id: String) -> List<&2, J.Json>:
-  Bool.pick(List<&2, J.Json>, String.is_empty(buy), Nil{}, [J.Json.obj([J.KV{"label", J.Json.str(buy)}, J.KV{"action", J.Json.str("buy")}, J.KV{"value", J.Json.str(id)}])])
+  Bool.pick(List<&2, J.Json>, String.is_empty(buy), Nil{}, [J.Json.obj([J.KV{"label", J.Json.str(buy)}, J.KV{"action", J.Json.str("buy")}, J.KV{"value", J.Json.str(id)}]),
+    # its ×: put away (client.bend's Fab.min), Buy it stays in the menu
+    J.Json.obj([J.KV{"label", J.Json.str("×")}, J.KV{"action", J.Json.str("fab-hide")}, J.KV{"value", J.Json.str(id)}])])
 
 # the project card (Goal, Edit) and, once the turn is over and there is
 # something to buy, Ready to order with Buy it (U.Fab.ready), as queue rows
@@ -1006,7 +1016,7 @@ def Mob.fab.k(shown: Bool, +st: M.State, +nf: Map<&2, String>, +id: String, run:
     case True{}:
       J.Json.obj([J.KV{"msg", J.Json.str("fab:" ++ id)}, J.KV{"text", J.Json.str(U.Str.get(nf, "fab.line:" ++ id))}, J.KV{"tag", J.Json.str("Goal")},
         J.KV{"buttons", J.Json.arr([J.Json.obj([J.KV{"label", J.Json.str("Edit")}, J.KV{"action", J.Json.str("fab-edit")}, J.KV{"value", J.Json.str(id)}])])}])
-        <> Mob.fab.ready(U.Fab.ready.k(U.Fab.buy.of(st, nf, id), U.Str.get(nf, "fab.ready:" ++ id), run), U.Fab.ready.btn.of(st, nf, id), id)
+        <> Mob.fab.ready(U.Fab.ready.shown.k(U.Fab.min.of(st, id), U.Fab.ready.k(U.Fab.buy.of(st, nf, id), U.Str.get(nf, "fab.ready:" ++ id), run)), U.Fab.ready.btn.of(st, nf, id), id)
     case False{}:
       Nil{}
 
@@ -1021,7 +1031,7 @@ def Mob.thread(+lc: I.Loc, render: Bool, u: U.Ui, t: M.Thread, pend: List<&2, St
         J.KV{"boat", J.Json.str(UZ.Chip.of(st, id, now))},
         J.KV{"state", J.Json.str(Mob.state(turn))},
         J.KV{"tools", J.Json.arr(Mob.head(V.View.running(turn), pinned, TO.Tools.settled(o, Nat.is_gt(sa, ua)), archived, Bool.not(String.is_empty(M.Fork.source(st, id)))))},
-        J.KV{"menu", J.Json.arr(Mob.menu(id, M.Snooze.on(now, U.Side.until(st, id))))},
+        J.KV{"menu", J.Json.arr(Mob.menu(id, M.Snooze.on(now, U.Side.until(st, id)), U.Fab.mini.tools.of(st, nf, id, V.View.running(turn))))},
         J.KV{"parent", Mob.parent(String.is_empty(U.Tasks.up(st, id)), st, id, U.Tasks.up(st, id))},
         J.KV{"subs", Mob.subs.loc(lc, nf, id, SB.Subs.rows(st, nf, id, now))},
         J.KV{"entries", J.Json.arr(Mob.paged.es(lc, pg, st, id, nf, drafts, V.View.running(turn)))},
