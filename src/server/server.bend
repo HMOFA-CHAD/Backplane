@@ -108,6 +108,9 @@ import ../core/usage.bend as UZ
 # what a connection's writer sends
 type Wire is Data:
   WText{text: String}
+  # Socket-only text with its original offered credit. Native/link readers
+  # keep WText; compression and batching never redefine this charge.
+  WCharged{text: String, charge: Nat}
   WPong{payload: List<&2, U32>}
   # a message already encoded (a board's plot: never parsed again)
   WBin{cbor: List<&2, U32>}
@@ -602,12 +605,19 @@ def Wire.kept(over: Bool, c: Client) -> IO(Maybe<&2, Client>):
     case False{}:
       IO.pure(Maybe<&2, Client>, Some{c})
 
+def Wire.charged(native: Bool, w: Wire, n: Nat) -> Wire:
+  match native w:
+    case False{} WText{t}: WCharged{t, n}
+    case False{} WCharged{t, _}: WCharged{t, n}
+    case _ _: w
+
 def Wire.offer.k(c: Client, w: Wire, +n: Nat) -> IO(Maybe<&2, Client>):
   match c:
     case Client{i, +o, l, +r, k}:
       do IO<Maybe<&2, Client>>:
-        ok : Result<&1, &1, Wire, Unit> <- Chan.send(Wire, o, w)
-        +r2 : OB.Cr = OB.Cr.offer(r, Bool.pick(Nat, OB.Cr.native(r), 0n, n))
+        +charge : Nat = Bool.pick(Nat, OB.Cr.native(r), 0n, n)
+        ok : Result<&1, &1, Wire, Unit> <- Chan.send(Wire, o, Wire.charged(OB.Cr.native(r), w, charge))
+        +r2 : OB.Cr = OB.Cr.offer(r, charge)
         Wire.kept(OB.Cr.over(r2), Client{i, o, l, r2, k})
 
 # one frame of n bytes for a client: kept, or None when it was dropped
@@ -623,12 +633,15 @@ def Wire.offer.bs(c: Client, +bs: List<&2, U32>) -> IO(Maybe<&2, Client>):
   Wire.offer(c, WBin{bs}, List.length(&2, U32, bs))
 
 # (a message for one client is encoded by its writer, off the hub)
+def Wire.text.charge(+text: String) -> Nat:
+  String.length(text)
+
 def Wire.text.k(native: Bool, c: Client, +text: String) -> IO(Maybe<&2, Client>):
   match native:
     case True{}:
       Wire.offer(c, WText{text}, 0n)
     case False{}:
-      Wire.offer(c, WText{text}, String.length(text))
+      Wire.offer(c, WText{text}, Wire.text.charge(text))
 
 # a message (JSON text) for one client
 def Wire.text(+c: Client, +text: String) -> IO(Maybe<&2, Client>):
@@ -1024,9 +1037,15 @@ def Conn.sent.k(r: Socket & Result<&1, &1, U32 & String, Unit>, +out: Chan(Wire)
 def Conn.out(s: Socket, bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
   IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_until(s, bs, Conn.deadline()), r => Conn.sent.k(r, out, k))
 
+def Conn.written(s: Socket, size: Nat, credit: Nat, k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
+  do IO<Unit>:
+    PS.Perf.add("net.write.bytes", U32.from_nat(size))
+    k(s, credit)
+
 # a frame out, then k with its size in bytes
 def Conn.put(s: Socket, +bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
-  Conn.out(s, bs, out, s2 => k(s2, List.length(&2, U32, bs)))
+  +n = List.length(&2, U32, bs)
+  Conn.out(s, bs, out, s2 => Conn.written(s2, n, n, k))
 
 # a join chunk's frames (OB.Items.texts: each within the byte bound), put
 # out one by one; to the writer's count they are one frame of no bytes, as
@@ -1055,6 +1074,14 @@ def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat
   match m:
     case Some{WText{t}}:
       Conn.put(s, Conn.frame.out(t), out, k)
+    case Some{WCharged{t, charge}}:
+      # Credit is in the units offered by Wire.text.k. CBOR compression
+      # changes the wire size; refunding that size leaves phantom backlog
+      # after enough RPCs, so catch-up and streamed deltas stop forever.
+      # A failed/cancelled write never calls k: Conn.sent.k closes/drains
+      # the connection and Leave retires its credit, as before.
+      +bs = Conn.frame.out(t)
+      Conn.out(s, bs, out, s2 => Conn.written(s2, List.length(&2, U32, bs), charge, k))
     case Some{WPong{p}}:
       Conn.put(s, W.Ws.encode(10, p), out, k)
     case Some{WBin{bs}}:
