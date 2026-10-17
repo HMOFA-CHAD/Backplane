@@ -11048,6 +11048,12 @@ def Laws.order_note_shipped():
 def Laws.order_note_expired(t):
   {==}
 
+def Laws.order_state_cancelled(q):
+  {==}
+
+def Laws.order_state_paid():
+  {==}
+
 def Laws.fab_buy_off_hidden(label):
   {==}
 

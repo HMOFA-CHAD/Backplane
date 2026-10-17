@@ -326,10 +326,14 @@ def Order.status.note(+status: String, +tracking: String) -> String:
 def Order.status.text(+status: String, +tracking: String) -> String:
   Order.status.text.k(Order.status.pos(status, ["paid", "placed", "shipped", "delivered", "refunded", "expired"], 0n), tracking)
 
-# the order's status, or the quote's when there is no order yet
+# the order's state once there is one; a checkout that expired unpaid
+# ("cancelled") is no order, so the quote's own state counts (ready, it
+# can still be paid, or expired)
+def Order.state.k(+order: String, +quote: String) -> String:
+  Bool.pick(String, Bool.or(String.is_empty(order), String.eq(order, "cancelled")), quote, order)
+
 def Order.state(+q: J.Json) -> String:
-  Bool.pick(String, String.is_empty(J.Json.get_str(J.Json.get_obj(q, "order"), "status", "")), J.Json.get_str(q, "status", ""),
-    J.Json.get_str(J.Json.get_obj(q, "order"), "status", ""))
+  Order.state.k(J.Json.get_str(J.Json.get_obj(q, "order"), "status", ""), J.Json.get_str(q, "status", ""))
 
 # nothing more will happen to it: delivered, refunded, or a quote that
 # expired or failed unpaid

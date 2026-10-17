@@ -9243,6 +9243,15 @@ law order_note_expired:
   for t: String
   {ORD.Order.status.note("expired", t) == "" : String}
 
+# a Stripe checkout that expired unpaid leaves the quote as it was: still
+# payable, then expired (not an order the watcher follows for ever)
+law order_state_cancelled:
+  for q: String
+  {ORD.Order.state.k("cancelled", q) == q : String}
+
+law order_state_paid:
+  {ORD.Order.state.k("paid", "ready") == "paid" : String}
+
 # ordering is off until the person turns it on (order.enabled): no Buy it
 # anywhere, no order tools for any agent, even in a buy thread
 law fab_buy_off_hidden:
