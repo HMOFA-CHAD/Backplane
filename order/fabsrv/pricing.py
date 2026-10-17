@@ -224,6 +224,10 @@ def markdown(q):
         return "\n".join(out)
     if q["warnings"]:
         out += ["", "Notes:"] + [f"- {w}" for w in q["warnings"][:6]]
+    if config.PILOT:
+        out += ["", "**Pilot:** ordering through Backplane is still being tested. Buy now opens a test checkout and your card "
+                    "will not be charged. To get the parts made now, order them from any fabricator with the files exported to `mfg/`."]
+        return "\n".join(out)
     out += ["", f"Valid for {config.QUOTE_DAYS} days. Prices are estimates and not guaranteed: if the real cost turns out "
                 "higher we'll ask before charging more, and you can have a full refund instead; if it's lower, we refund the difference."]
     return "\n".join(out)

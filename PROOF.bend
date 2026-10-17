@@ -11113,6 +11113,21 @@ def Laws.order_gate_none(v):
 def Laws.order_gate_issues():
   {==}
 
+def Laws.order_pilot_paid():
+  {==}
+
+def Laws.order_pilot_off(st):
+  {==}
+
+def Laws.order_pilot_done():
+  {==}
+
+def Laws.order_pilot_said():
+  {==}
+
+def Laws.order_pilot_quiet():
+  {==}
+
 def Laws.order_gate_lists_issues():
   {==}
 

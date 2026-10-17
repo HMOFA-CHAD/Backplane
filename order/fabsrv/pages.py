@@ -6,6 +6,8 @@ import datetime
 import html
 import json
 
+from . import config
+
 
 CSS = """
 :root{--bg:#f7f7f5;--card:#fff;--text:#1c1c1a;--muted:#6b6b66;--line:#e4e4df;--accent:#2f6f4f;--warn:#9a5b00;--bad:#a33}
@@ -47,6 +49,10 @@ def done(status):
     if status == "checkout":
         return page("Payment", "<h1>Almost there</h1><p class=sub>Stripe hasn't confirmed the payment yet. "
                                "Reload in a moment; Backplane will show it too.</p>")
+    if config.PILOT:
+        return page("Payment", "<h1>Thank you</h1><p class=sub>This was a test: ordering through Backplane is a pilot, so your card "
+                               "was not charged and nothing is ordered. To get your parts made, order them from any fabricator with "
+                               "the files Backplane exported to the mfg folder of your project. You can close this tab.</p>")
     return page("Payment", f"<h1>Thank you</h1><p class=sub>{e(order_status(status))} "
                            "You can close this tab: Backplane shows the progress in your buy thread, and the receipt is in your email.</p>")
 

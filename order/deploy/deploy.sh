@@ -20,6 +20,9 @@ ssh $ssh_opts "$host" 'set -e
   chown root:fab /etc/fab/env; chmod 640 /etc/fab/env
   ln -sf /etc/nginx/sites-available/fab /etc/nginx/sites-enabled/fab; rm -f /etc/nginx/sites-enabled/default
   nginx -t -q && systemctl reload nginx
+  # ssh: keys only (as set up), and nothing tunnelled through it
+  printf "%s\n" "PasswordAuthentication no" "KbdInteractiveAuthentication no" "PermitRootLogin prohibit-password" "X11Forwarding no" "AllowTcpForwarding no" "AllowAgentForwarding no" "MaxAuthTries 3" "LoginGraceTime 20" > /etc/ssh/sshd_config.d/fab.conf
+  sshd -t && systemctl reload ssh
   systemctl daemon-reload && systemctl enable -q fab && systemctl restart fab
   test -f /etc/fab/cert.env && systemctl enable -q --now fab-cert.timer
   sleep 2; curl -s 127.0.0.1:8090/v1/health; echo'

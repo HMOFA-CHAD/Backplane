@@ -56,7 +56,7 @@ def checkout(row, quote):
             "shipping_address_collection[allowed_countries][0]": row["country"],
             "phone_number_collection[enabled]": "true",
             "billing_address_collection": "auto",
-            "custom_text[submit][message]": TERMS,
+            "custom_text[submit][message]": config.PILOT_NOTE if config.PILOT else TERMS,
             "success_url": f"{config.PUBLIC_URL}/q/{qid}/done?s={{CHECKOUT_SESSION_ID}}",
             "cancel_url": f"{config.PUBLIC_URL}/q/{qid}/cancelled",
             "expires_at": str(int(min(time.time() + 23 * 3600, max(row["expires"], time.time() + 3600)))),

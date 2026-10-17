@@ -35,6 +35,13 @@ VENDOR = env("FAB_VENDOR", "")
 PUBLIC_URL = env("FAB_PUBLIC_URL", "http://127.0.0.1:8090").rstrip("/")
 
 STRIPE_KEY = env("STRIPE_KEY")
+# The pilot: checkout runs on a Stripe test key, so no card is charged and
+# nothing is ordered; every page says so and points to ordering the exported
+# files yourself (FAB_PILOT=1 forces it, 0 turns it off)
+PILOT = env("FAB_PILOT", "1" if STRIPE_KEY.startswith("sk_test_") else "0") == "1"
+PILOT_NOTE = ("Pilot: ordering through Backplane is still being tested. This checkout is a test and your card will not be "
+              "charged. To try it, use the card 4242 4242 4242 4242 with any future date and CVC. To get your parts made now, "
+              "order them from any fabricator with the files Backplane exported to the mfg folder of your project.")
 MOUSER_KEY = env("MOUSER_API_KEY")
 TI_KEY = env("TI_API_KEY")
 TI_SECRET = env("TI_API_SECRET")

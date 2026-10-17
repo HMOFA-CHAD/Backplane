@@ -9327,6 +9327,23 @@ law order_gate_none:
 law order_gate_issues:
   {ORD.Order.gate.k("current", "issues") == 2n : Nat}
 
+# the pilot: a paid test checkout is "pilot", said as such, and not watched
+law order_pilot_paid:
+  {ORD.Order.state.pilot(True{}, "paid") == "pilot" : String}
+
+law order_pilot_off:
+  for st: String
+  {ORD.Order.state.pilot(False{}, st) == st : String}
+
+law order_pilot_done:
+  {ORD.Order.done("pilot") == True{} : Bool}
+
+law order_pilot_said:
+  {String.contains(ORD.Order.status.text("pilot", ""), "your card was not charged") == True{} : Bool}
+
+law order_pilot_quiet:
+  {ORD.Order.status.note("pilot", "") == "" : String}
+
 # the issues as bullets with the review's link: the recorded ones, else the
 # summary cut at its semicolons
 law order_gate_lists_issues:

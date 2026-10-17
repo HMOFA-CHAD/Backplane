@@ -177,7 +177,7 @@ def bearer(request: Request):
 
 
 def public_quote(row):
-    out = {"id": row["id"], "status": row["status"], "expires": int(row["expires"]), "country": row["country"]}
+    out = {"id": row["id"], "status": row["status"], "expires": int(row["expires"]), "country": row["country"], "pilot": config.PILOT}
     if row["status"] == "ready":
         out["quote"] = json.loads(row["result"])
         # what each part costs stays with us (the order list shows it)

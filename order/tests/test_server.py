@@ -162,3 +162,17 @@ def test_measuring_a_board(tmp_path):
     assert not problems
     assert (b["layers"], b["width_mm"], b["height_mm"], b["paste_top"], b["min_drill_mm"], b["holes"]) == (2, 20.0, 15.0, 3, 0.3, 2)
     assert analysis.refs_of("C1,C3 C6-C8") == ["C1", "C3", "C6", "C7", "C8"]
+
+
+def test_pilot_says_no_card_is_charged(monkeypatch):
+    from fabsrv import config, pages, pricing
+    monkeypatch.setattr(config, "PILOT", True)
+    done = pages.done("paid")
+    assert "not charged" in done and "fabricator" in done
+    q = {"total": 10.0, "shipping": {"method": "", "days": ""}, "country_name": "Greece", "lead_days": 0,
+         "lines": [{"label": "Manufacturing", "amount": 10.0}], "parts": [], "problems": [], "warnings": []}
+    md = pricing.markdown(q)
+    assert "**Pilot:**" in md and "will not be charged" in md and "mfg/" in md
+    assert "4242 4242 4242 4242" in config.PILOT_NOTE and len(config.PILOT_NOTE) <= 1200
+    monkeypatch.setattr(config, "PILOT", False)
+    assert "not charged" not in pages.done("paid") and "**Pilot:**" not in pricing.markdown(q)

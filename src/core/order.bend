@@ -408,6 +408,8 @@ def Order.status.text.k(i: Nat, +tracking: String) -> String:
       "**Refunded.** The money is on its way back to you."
     case 5n:
       "This quote has expired. Ask here for a new one when you're ready."
+    case 6n:
+      "**Test payment received.** Ordering through Backplane is a pilot: your card was not charged and nothing is ordered. To get the parts made now, order them from any fabricator with the files exported to `mfg/` here."
     case _:
       ""
 
@@ -439,7 +441,7 @@ def Order.status.note(+status: String, +tracking: String) -> String:
   Order.status.note.k(Order.status.pos(status, ["paid", "placed", "shipped", "delivered", "refunded"], 0n), tracking)
 
 def Order.status.text(+status: String, +tracking: String) -> String:
-  Order.status.text.k(Order.status.pos(status, ["paid", "placed", "shipped", "delivered", "refunded", "expired"], 0n), tracking)
+  Order.status.text.k(Order.status.pos(status, ["paid", "placed", "shipped", "delivered", "refunded", "expired", "pilot"], 0n), tracking)
 
 # the order's state once there is one; a checkout that expired unpaid
 # ("cancelled") is no order, so the quote's own state counts (ready, it
@@ -447,13 +449,19 @@ def Order.status.text(+status: String, +tracking: String) -> String:
 def Order.state.k(+order: String, +quote: String) -> String:
   Bool.pick(String, Bool.or(String.is_empty(order), String.eq(order, "cancelled")), quote, order)
 
+# a pilot's order server (checkout on a Stripe test key: order/fabsrv's
+# config.PILOT) takes test payments: paid there is "pilot" here, nothing
+# was charged or ordered (laws order_pilot_*)
+def Order.state.pilot(pilot: Bool, +st: String) -> String:
+  Bool.pick(String, Bool.and(pilot, String.eq(st, "paid")), "pilot", st)
+
 def Order.state(+q: J.Json) -> String:
-  Order.state.k(J.Json.get_str(J.Json.get_obj(q, "order"), "status", ""), J.Json.get_str(q, "status", ""))
+  Order.state.pilot(J.Json.get_bool(q, "pilot", False{}), Order.state.k(J.Json.get_str(J.Json.get_obj(q, "order"), "status", ""), J.Json.get_str(q, "status", "")))
 
 # nothing more will happen to it: delivered, refunded, or a quote that
 # expired or failed unpaid
 def Order.done(+st: String) -> Bool:
-  Bool.or(Bool.or(String.eq(st, "delivered"), String.eq(st, "refunded")), Bool.or(Bool.or(String.eq(st, "expired"), String.eq(st, "failed")), String.eq(st, "gone")))
+  Bool.or(Bool.or(Bool.or(String.eq(st, "delivered"), String.eq(st, "refunded")), String.eq(st, "pilot")), Bool.or(Bool.or(String.eq(st, "expired"), String.eq(st, "failed")), String.eq(st, "gone")))
 
 # while unpaid it is checked each minute, after that every ten
 def Order.every(+st: String) -> U32:
