@@ -3901,7 +3901,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +kn = U.KN.of(info, st)
   +kh = {(40 + Kn.h(kn, ty, (w - 32 : U32)) : U32) : U32}
   # (the Browser row, then the Ordering group, then Appearance)
-  +fy = {(ey + 326 + kh : U32) : U32}
+  +fy = {(ey + 278 + kh : U32) : U32}
   +total = {(1196 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
@@ -3938,7 +3938,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Bool.pick(Out, U.KiCad.ipc.ready(info), Set.ipc(ty, ipc, x, w, (b2 + 500 + dy + ey + kh : U32)), Out.none()),
     Set.row(ty, U.FreeCAD.label.loc(Ty.loc(ty), info), U.FreeCAD.note(Ty.loc(ty), info), x, (b2 + 546 + dy + ey + kh : U32), w),
     Set.browser(ty, M.Setting.get(st, "browser.engine", "chrome"), U.Str.get(info, "browser.engine.err"), x, w, (b2 + 598 + dy + ey + kh : U32)),
-    Set.order(ty, st, x, w, (b2 + 722 + dy + ey + kh : U32)),
+    Set.order(ty, st, x, w, (b2 + 674 + dy + ey + kh : U32)),
     Set.head(ty, MSG.T.settings.appearance(Ty.loc(ty)), x, (b2 + 570 + dy + fy : U32)),
     Set.card(x, (b2 + 602 + dy + fy : U32), w, 220),
     Set.row.r(ty, MSG.T.settings.theme(Ty.loc(ty)), MSG.T.settings.theme.note(Ty.loc(ty)), x, (b2 + 604 + dy + fy : U32), w, Set.pairw(ty, label0, label1, 150)),
