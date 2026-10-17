@@ -29,6 +29,7 @@ import ./version.bend as VER
 import ./locks.bend as LK
 import ./adopt.bend as AD
 import ./cmds.bend as CM
+import ./order.bend as OR
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -1085,7 +1086,8 @@ def Hub.methods() -> List<&2, String>:
    "thread.settle", "thread.unsettle", "thread.archive", "thread.unarchive",
    "thread.pin", "thread.unpin", "thread.rename", "thread.delete", "kicad.watch", "thread.modes", "app.update", "setting.set", "kicad.install",
    "ask.answer", "device.register", "device.drop", "kicad.info", "queue.resume",
-   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status", "lock.release", "lock.cancel", "kicad.retry", "mail.list", "mail.read", "mail.find", "mail.mark", "mail.tag", "mail.send"]
+   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status", "lock.release", "lock.cancel", "kicad.retry", "mail.list", "mail.read", "mail.find", "mail.mark", "mail.tag", "mail.send",
+   "fab.look", "fab.intent", "order.buy"]
 
 # Agent output (Claude stream-json)
 # ---------------------------------
@@ -1215,14 +1217,16 @@ def Claude.stream(+thread: String, +ev: J.Json) -> Step:
   Claude.stream.k(String.eq(J.Json.get_str(ev, "type", ""), "content_block_delta"),
     String.eq(J.Json.get_str(d, "type", ""), "text_delta"), thread, J.Json.get_str(d, "text", ""))
 
-# a short line describing a tool call, from its input
+# a short line describing a tool call, from its input (a question, as a buy
+# thread's order_ask asks, when there is nothing else; law
+# tool_summary_question)
 def Claude.tool_summary(+name: String, +input: J.Json) -> String:
   +cmd = J.Json.get_str(input, "command", "")
   +path = J.Json.get_str(input, "file_path", J.Json.get_str(input, "path", ""))
   +pat = J.Json.get_str(input, "pattern", "")
   Bool.pick(String, Bool.not(String.is_empty(cmd)), cmd,
     Bool.pick(String, Bool.not(String.is_empty(path)), path,
-      Bool.pick(String, Bool.not(String.is_empty(pat)), pat, J.Json.get_str(input, "description", name))))
+      Bool.pick(String, Bool.not(String.is_empty(pat)), pat, J.Json.get_str(input, "description", J.Json.get_str(input, "question", name)))))
 
 # The CLI writes one block per line, each numbered from 0, so two text
 # blocks of one message (text, thinking, text) share "msg:0". A line that
@@ -2619,13 +2623,32 @@ def Hub.answer.plan(impl: Bool, +s: M.State, +now: Nat, +client: U32, +id: Strin
     case False{}:
       Step{[M.AskClosed{ask, answer, now}], [Reply.ok(client, id), AskAnswered{ask, answer}]}
 
+# an order's question (order_ask, core/order.bend) parks nothing: the
+# person's answer is posted in its thread as their message, which starts
+# (or queues) the agent's turn however long they took; a dismissal only
+# closes it (laws order_ask_*)
+def Hub.answer.order(said: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String) -> Step:
+  match said:
+    case True{}:
+      Step.before([M.AskClosed{ask, answer, now}], [Reply.ok(client, id)], Hub.post(s, now, th, Hub.id("m", now, Hub.seq(s)), M.User{}, String.trim(answer)))
+    case False{}:
+      Step{[M.AskClosed{ask, answer, now}], [Reply.ok(client, id)]}
+
+def Hub.answer.open(order: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String, +k: String) -> Step:
+  match order:
+    case True{}:
+      Hub.answer.order(Bool.not(String.is_empty(String.trim(answer))), s, now, client, id, ask, answer, th)
+    case False{}:
+      Hub.answer.plan(Bool.and(String.eq(k, "plan"), String.eq(answer, "implement")), s, now, client, id, ask, answer, th)
+
 # the user's answer: the ask closes (once; law ask_closes_once), a parked
-# agent request gets its reply, and implementing a plan leaves plan mode
-# and asks the agent to carry it out
+# agent request gets its reply, implementing a plan leaves plan mode and
+# asks the agent to carry it out, and an order's question is answered in
+# its thread (Hub.answer.order)
 def Hub.answer.k(a: M.Ask, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String) -> Step:
   match a:
-    case M.Ask{_, +th, +k, _, _, _, True{}, _}:
-      Hub.answer.plan(Bool.and(String.eq(k, "plan"), String.eq(answer, "implement")), s, now, client, id, ask, answer, th)
+    case M.Ask{_, +th, +k, +tool, _, _, True{}, _}:
+      Hub.answer.open(String.eq(tool, "order_ask"), s, now, client, id, ask, answer, th, k)
     case M.Ask{_, _, _, _, _, _, False{}, _}:
       Step.outs([Reply.ok(client, id)])
 
@@ -3727,10 +3750,12 @@ def Task.by.id(+s: M.State, +id: String) -> M.Task:
 # archive_*, interrupt_closes_approval, interrupt_keeps_plan,
 # interrupt_ends_child_task, gone_closes_approval).
 
+# (an order's question parks nothing either: it stays, and an answer
+# later starts the agent again, Hub.answer.order)
 def Retire.hit(a: M.Ask, +th: String) -> Bool:
   match a:
-    case M.Ask{_, t, kind, _, _, _, op, _}:
-      Bool.and(op, Bool.and(String.eq(t, th), Bool.not(String.eq(kind, "plan"))))
+    case M.Ask{_, t, +kind, +tool, _, _, op, _}:
+      Bool.and(op, Bool.and(String.eq(t, th), Bool.not(Bool.or(String.eq(kind, "plan"), String.eq(tool, "order_ask")))))
 
 def Retire.id(a: M.Ask) -> String:
   match a:
@@ -5241,6 +5266,107 @@ def Locks.after.go(names: List<&2, String>, +before: M.State, +now: Nat, +st: St
 def Locks.after(+s: M.State, +now: Nat, +st: Step) -> Step:
   Locks.after.go(M.Locks.names(M.State.replay(Queue.changes(st), s)), s, now, st)
 
+# Ordering (core/order.bend)
+# --------------------------
+# The project card (fab.look: the intent's goal and the "from" price) and
+# an intent the person wrote (fab.intent) are the server's jobs "fab" and
+# "intent", in the thread's folder; the setting order.estimates ("off"
+# keeps every part's features on this machine) and order.server ride along.
+# (an emptied setting is the default again)
+def Buy.server.k(+v: String) -> String:
+  Bool.pick(String, String.is_empty(String.trim(v)), OR.Order.server(), String.trim(v))
+
+def Buy.server(+s: M.State) -> String:
+  Buy.server.k(M.Setting.get(s, "order.server", ""))
+
+# (estimates are asked only with ordering on: off, the hub never contacts
+# the order server)
+def Buy.est(+s: M.State) -> String:
+  Bool.pick(String, OR.Order.enabled(M.Setting.get(s, "order.enabled", "off")), M.Setting.get(s, "order.estimates", "on"), "off")
+
+# the project's buy threads (their ids, comma-separated), so the card can
+# say what of it was ordered
+def Buy.ids.k(keep: Bool, +id: String, +rest: String) -> String:
+  match keep:
+    case True{}:
+      id ++ "," ++ rest
+    case False{}:
+      rest
+
+def Buy.ids(ts: List<&2, M.Thread>, +s: M.State, +project: String) -> String:
+  match ts:
+    case Nil{}:
+      ""
+    case M.Thread{+id, +p, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> r:
+      Buy.ids.k(Bool.and(String.eq(p, project), Bool.not(String.is_empty(M.Setting.get(s, OR.Order.buy.key(id), "")))), id, Buy.ids(r, s, project))
+
+def Buy.proj(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, +p, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      p
+
+def Buy.all(s: M.State) -> List<&2, M.Thread>:
+  match s:
+    case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
+      Map.values(&2, M.Thread, ts)
+
+def Buy.of(+s: M.State, +th: String) -> String:
+  Buy.ids(Buy.all(s), s, Buy.proj(Hub.thread(s, th)))
+
+def Buy.look(+s: M.State, +client: U32, +id: String, +th: String, +job: String, +text: String) -> Step:
+  Step.outs([Git{client, id, job, th, Hub.cwd(s, Hub.thread(s, th)), Buy.est(s) ++ "\n" ++ Buy.server(s) ++ "\n" ++ Buy.of(s, th), text}])
+
+def Buy.title(p: M.Project) -> String:
+  match p:
+    case M.Project{_, +title, _, _, _}:
+      OR.Order.buy.title(title)
+
+def Buy.threads(s: M.State) -> List<&2, M.Thread>:
+  match s:
+    case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
+      Map.values(&2, M.Thread, ts)
+
+# how many of the project's threads are already buy threads by their title
+def Buy.n(ts: List<&2, M.Thread>, +pre: String) -> Nat:
+  match ts:
+    case Nil{}:
+      0n
+    case M.Thread{_, _, +title, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> r:
+      Nat.add(Bool.pick(Nat, String.starts_with(title, pre), 1n, 0n), Buy.n(r, pre))
+
+# a second buy thread of a project is "Buy: lamp · 2" (laws buy_title_*)
+def Buy.title.k(+t: String, +n: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(n, 0n), t, t ++ " · " ++ Nat.show(1n+n))
+
+def Buy.title.of(+s: M.State, +project: String) -> String:
+  Buy.title.k(Buy.title(Hub.project(s, project)), Buy.n(M.Thread.filter_project(Buy.threads(s), project), Buy.title(Hub.project(s, project))))
+
+# Buy it: a thread of its own in the same folder (the source's worktree,
+# like a delegated task), marked buy.<thread> (its source), started by the
+# person's "Buy it"; the client that asked goes to it
+def Buy.go(t: M.Thread, +s: M.State, +now: Nat, +client: U32, +id: String, +src: String) -> Step:
+  match t:
+    case M.Thread{_, +project, _, _, _, _, _, _, _, _, _, _, +env, +branch, +wt, +provider, +model, rm, im, _, _}:
+      +th = Hub.id("t", now, Hub.seq(s))
+      +cs = {[M.ThreadCreated{th, project, Buy.title.of(s, project), env, branch, wt, provider, model, now}, M.ModesSet{th, rm, im, model, now},
+        M.SettingSet{OR.Order.buy.key(th), src, now}] : List<&2, M.Change>}
+      +s1 = {M.State.replay(cs, s) : M.State}
+      Step.before(cs, [Reply.made(client, id, th)], Hub.post(s1, now, th, Hub.id("m", now, Hub.seq(s1)), M.User{}, OR.Order.buy.text()))
+
+def Buy.start.k(on: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +src: String) -> Step:
+  match on:
+    case True{}:
+      Buy.go(Hub.thread(s, src), s, now, client, id, src)
+    case False{}:
+      Step.outs([Reply.err(client, id, "Ordering is off: turn it on in Settings to buy")])
+
+def Buy.start(known: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +src: String) -> Step:
+  match known:
+    case True{}:
+      Buy.start.k(OR.Order.enabled(M.Setting.get(s, "order.enabled", "off")), s, now, client, id, src)
+    case False{}:
+      Step.outs([Reply.err(client, id, "no such thread")])
+
 def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
@@ -5333,6 +5459,12 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
     case 43n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 3n, s, now, client, id, p)
     case 44n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 4n, s, now, client, id, p)
     case 45n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 5n, s, now, client, id, p)
+    case 46n:
+      Buy.look(s, client, id, J.Json.get_str(p, "thread", ""), "fab", "")
+    case 47n:
+      Buy.look(s, client, id, J.Json.get_str(p, "thread", ""), "intent", J.Json.get_str(p, "text", ""))
+    case 48n:
+      Buy.start(Hub.owns(s, J.Json.get_str(p, "thread", "")), s, now, client, id, J.Json.get_str(p, "thread", ""))
     case _:
       Hub.more(C.Codec.pos(Hub.methods.git(), m), s, now, client, id, p, m)
 

@@ -50,6 +50,8 @@ import ./tz.bend as TZ
 import ./when.bend as WH
 import ./sched.bend as SC
 import ./task.bend as TK
+import ./order.bend as OR
+import ./tools.bend as TO
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -345,7 +347,7 @@ def Local.keep(+old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
 # machine's log keeps none of them (Local.keep runs on a switch too)
 # (laws reset_keeps_viewer, reset_new_origin_drops_viewer)
 def Reset.prefixes() -> List<&2, String>:
-  ["subs:", "view.", "panel:", "panel.hand:", "diff:", "fold:", "hist.at:", "hist.back:", "hist.diff:", "cmp.a:", "cmp.b:", "cmp.al", "cmp.bl", "fm.want:"]
+  ["subs:", "view.", "panel:", "panel.hand:", "diff:", "fold:", "hist.at:", "hist.back:", "hist.diff:", "cmp.a:", "cmp.b:", "cmp.al", "cmp.bl", "fm.want:", "fab."]
 
 def Reset.hit(ps: List<&2, String>, +k: String, found: Bool) -> Bool:
   match ps found:
@@ -467,7 +469,7 @@ def Ui.reset(u: Ui, +o: J.Json) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, _, now, ad, pa, _, rid, w, er, note, +nf, ob, tr}:
       Ui.fold.items(J.Json.elems(J.Json.get_obj(o, "items")),
-        Ui{Ui.base(Nat.is_gt(J.Json.get_nat(o, "since", 0n), 0n), st), sel, Map.set(&2, String, dr, "@sync", "1"), live, op, True{}, now, ad, pa, J.Json.get_str(o, "version", ""), rid, w, er, note,
+        Ui{Ui.base(Nat.is_gt(J.Json.get_nat(o, "since", 0n), 0n), st), sel, Map.set(&2, String, Map.set(&2, String, dr, "@sync", "1"), "@fab.at", ""), live, op, True{}, now, ad, pa, J.Json.get_str(o, "version", ""), rid, w, er, note,
           Machines.home(Ui.reset.keep(String.eq(J.Json.get_str(o, "origin", ""), Str.get(nf, "origin")), nf,
             Local.keep(nf, Map.set(&2, String, Map.set(&2, String, Info.of(J.Json.get_obj(o, "info")), "cid", Str.get(nf, "cid")), "origin", J.Json.get_str(o, "origin", ""))))), ob, tr})
 
@@ -1239,7 +1241,7 @@ def Follow.button.k(+l: I.Loc, stop: Bool, +label: String) -> String:
       label
 
 def Follow.button(+l: I.Loc, +st: M.State, +sel: String, run: Bool, stop: Bool, +draft: String) -> String:
-  Follow.button.k(l, stop, Bool.pick(String, Btw.is(draft), MSG.T.composer.ask(l), Bool.pick(String, Give.is(draft), MSG.T.composer.give(l), Follow.label(l, st, sel, run))))
+  Follow.button.k(l, stop, Bool.pick(String, Btw.is(draft), MSG.T.composer.ask(l), Bool.pick(String, Give.is(draft), MSG.T.composer.give(l), Bool.pick(String, OR.Intent.is(draft), MSG.T.common.save(l), Follow.label(l, st, sel, run)))))
 
 def Follow.act(stop: Bool) -> String:
   match stop:
@@ -3018,7 +3020,13 @@ def Ask.head.tool(+l: I.Loc, +tool: String, +d: String) -> String:
   Bool.pick(String, String.eq(tool, "gmail_send"), Bool.pick(String, String.starts_with(d, "Draft:"), MSG.T.ask.send.draft(l), MSG.T.ask.send.email(l)),
     Bool.pick(String, String.eq(tool, "calendar_create"), MSG.T.ask.event.create(l),
       Bool.pick(String, String.eq(tool, "calendar_update"), MSG.T.ask.event.change(l),
-        Bool.pick(String, String.eq(tool, "calendar_delete"), MSG.T.ask.event.delete(l), MSG.T.ask.allow(l, tool)))))
+        Bool.pick(String, String.eq(tool, "calendar_delete"), MSG.T.ask.event.delete(l),
+          Bool.pick(String, String.eq(tool, "order_quote"), "Send these files for a quote?", MSG.T.ask.allow(l, tool))))))
+
+# the kind an ask's buttons follow: an approval to send an order's files
+# reads Send / Not now (accept / decline) instead of Allow / Deny
+def Ask.bkind(+k: String, +tool: String) -> String:
+  Bool.pick(String, Bool.and(String.eq(k, "approval"), String.eq(tool, "order_quote")), "send", k)
 
 def Ask.head.loc(+l: I.Loc, +k: String, +tool: String, +d: String) -> String:
   Bool.pick(String, String.eq(k, "plan"), MSG.T.ask.plan(l), Bool.pick(String, String.eq(k, "input"), MSG.T.ask.input(l), Ask.head.tool(l, tool, d)))
@@ -5158,6 +5166,67 @@ def Ui.view_pick.p(u: Ui, +kind: String, +path: String) -> Ui:
 def Ui.view_pick.back(+u: Ui, +kind: String) -> Ui:
   Ui.view_pick.p(u, kind, Rv.back(u, kind))
 
+# The project's boards (the card's board files, from its folder, kept as
+# "fab.boards:<t>"): with more than one, the viewer's Board, Schematic and
+# 3D tabs offer each by its folder's name (chips on the web and in the
+# window, the Sheet menu on phones); "board-pick" shows one (laws bd_*)
+def Bd.files(+u: Ui) -> List<&2, String>:
+  Att.nonblank(String.lines(Ui.info(u, "fab.boards:" ++ Ui.sel(u))))
+
+def Bd.many(+u: Ui) -> Bool:
+  Nat.is_gt(List.length(&2, String, Bd.files(u)), 1n)
+
+def Bd.name(+rel: String) -> String:
+  Bool.pick(String, String.is_empty(MC.Mech.parent(rel)), MC.Mech.stem(rel), MC.Mech.last(MC.Mech.parent(rel)))
+
+# what a kind shows of a board: its schematic beside it, else the board
+def Bd.path(+kind: String, +rel: String) -> String:
+  Bool.pick(String, String.eq(kind, "schematic"), MC.Mech.in(MC.Mech.parent(rel), MC.Mech.stem(rel) ++ ".kicad_sch"), rel)
+
+# the board on show: the viewer's file is in its folder (or is it)
+def Bd.on(+path: String, +rel: String) -> Bool:
+  Bool.pick(Bool, String.is_empty(MC.Mech.parent(rel)), String.ends_with(path, "/" ++ rel),
+    String.contains(path, "/" ++ MC.Mech.parent(rel) ++ "/"))
+
+# the board on show: the one whose folder holds the viewer's file ("" for
+# none), and what another tab shows of it (Bd.keep: switching between
+# Board, Schematic and 3D stays on the board picked; "" when the project
+# has one board or the viewer is on none of them, for the project's own)
+def Bd.cur(fs: List<&2, String>, +path: String) -> String:
+  match fs:
+    case Nil{}:
+      ""
+    case +f <> t:
+      Bool.pick(String, Bd.on(path, f), f, Bd.cur(t, path))
+
+def Bd.keep.k(+cur: String, +kind: String, +root: String) -> String:
+  Bool.pick(String, Bool.and(Bool.not(String.is_empty(cur)), Bool.or(String.eq(kind, "board"), Bool.or(String.eq(kind, "schematic"), String.eq(kind, "3d")))),
+    FM.Fm.abs(root, Bd.path(kind, cur)), "")
+
+def Bd.keep(+u: Ui, +kind: String, +path: String) -> String:
+  Bd.keep.k(Bool.pick(String, Bd.many(u), Bd.cur(Bd.files(u), path), ""), kind, Ui.root(u))
+
+def Bd.or(+a: String, +b: String) -> String:
+  Bool.pick(String, String.is_empty(a), b, a)
+
+# the file the viewer shows: the one picked, else the project's own board
+# (the card's board_default, "fab.board:<t>"), so its chip is lit too
+def Bd.shown.k(+path: String, +root: String, +own: String) -> String:
+  Bd.or(path, Bool.pick(String, Bool.or(String.is_empty(own), String.is_empty(root)), "", FM.Fm.abs(root, own)))
+
+def Bd.shown(+u: Ui, +path: String) -> String:
+  Bd.shown.k(path, Ui.root(u), Ui.info(u, "fab.board:" ++ Ui.sel(u)))
+
+# the window's tab picked: a comparison kept (Rv.back), else the board picked
+def Ui.view_pick.bd(+u: Ui, +kind: String) -> Ui:
+  Ui.view_pick.p(u, kind, Bd.or(Rv.back(u, kind), Bd.keep(u, kind, Bd.shown(u, Ui.view_get(u, "view.path")))))
+
+def Bd.kind(+k: String) -> String:
+  Bool.pick(String, Bool.or(String.eq(k, "schematic"), String.eq(k, "3d")), k, "board")
+
+def Bd.pick(+u: Ui, +rel: String) -> Act:
+  Act{Ui.view_put(u, Bd.kind(Ui.view_get(u, "view.kind")), FM.Fm.abs(Ui.root(u), Bd.path(Bd.kind(Ui.view_get(u, "view.kind")), rel))), Nil{}}
+
 # "mech" opens Mech (the part in 3D), "mech-part" shows another part,
 # "mech-3d" a part in 3D, "mech-refresh" asks for the parts again,
 # "mech-renders" shows a part's pictures, "mech-render" asks the hub to
@@ -5181,7 +5250,7 @@ def Mpage.act(i: Nat, +u: Ui, +value: String) -> Act:
       Ui.rpc(Ui.scratch_set(Ui.scratch_set(u, "@mech.busy:" ++ Ui.sel(u), value), "@mech.err:" ++ Ui.sel(u), ""), "mech.render",
         [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"path", J.Str{value}}])
     case 6n:
-      Act{Ui.view_put(u, value, Rv.back(u, value)), Nil{}}
+      Act{Ui.view_put(u, value, Bd.or(Rv.back(u, value), Bd.keep(u, value, Bd.shown(u, Ui.view_get(u, "view.path"))))), Nil{}}
     case 7n:
       Act{Ui.view_put(u, "schematic", Rv.sheet(Ui.view_get(u, "view.path"), value)), Nil{}}
     case 8n:
@@ -5800,6 +5869,251 @@ def Bots.say.k(a: Act, +bot: String, text: String) -> Act:
 def Bots.say(u: Ui, +bot: String, text: String) -> Act:
   Bots.say.k(Draft.sent(u), bot, text)
 
+# The project card (core/order.bend)
+# ----------------------------------
+# Above a project thread every client shows the intent's goal (opened: the
+# whole intent), Edit (the composer gets "/intent" and the text; sending
+# it writes .backplane/intent.md) and "Buy it · from $X" (order.buy: a buy
+# thread, gone to at once). The hub answers fab.look with the card, kept
+# as info fab:<thread>; it is asked when a thread is chosen and whenever
+# its turn ends (Fab.sync after every action and message; "@fab.at" is
+# what was asked last).
+
+# Settings' rows on every client: Ordering (order.enabled, off until the
+# person turns it on: no Buy it, nothing sent to the order server) and,
+# with it on, the estimates sent or not (order.estimates)
+def Fab.enabled(+st: M.State) -> Bool:
+  OR.Order.enabled(M.Setting.get(st, "order.enabled", "off"))
+
+def Fab.set.enabled(+st: M.State) -> String:
+  Bool.pick(String, Fab.enabled(st), "on", "off")
+
+def Fab.set.order.label() -> String:
+  "Ordering"
+
+def Fab.set.order.note() -> String:
+  "Order boards and parts from Backplane. Off: no prices or uploads."
+
+def Fab.set.label() -> String:
+  "Price estimates"
+
+def Fab.set.note.k(on: Bool) -> String:
+  match on:
+    case True{}:
+      "Buy it shows a price from each part's size and options. No files are sent."
+    case False{}:
+      "Comes with Ordering."
+
+def Fab.set.on(+st: M.State) -> String:
+  Bool.pick(String, String.eq(M.Setting.get(st, "order.estimates", "on"), "off"), "off", "on")
+
+def Fab.th(+u: Ui, +value: String) -> String:
+  Bool.pick(String, String.is_empty(value), Ui.sel(u), value)
+
+# the card's fields, kept apart when it arrives (Fab.reply) so no client
+# parses it per frame: "fab.line:<t>" the goal (or a nudge), "fab.intent:<t>",
+# "fab.buy:<t>" the button's words, "fab.shown:<t>" "1" when there is a card,
+# and "fab.open:<t>" "1" while the person has it open
+def Fab.line(+u: Ui) -> String:
+  Ui.info(u, "fab.line:" ++ Ui.sel(u))
+
+def Fab.intent(+u: Ui, +th: String) -> String:
+  Ui.info(u, "fab.intent:" ++ th)
+
+def Fab.open(+u: Ui) -> Bool:
+  String.eq(Ui.info(u, "fab.open:" ++ Ui.sel(u)), "1")
+
+def Fab.buying(+st: M.State, +th: String) -> Bool:
+  Bool.not(String.is_empty(M.Setting.get(st, OR.Order.buy.key(th), "")))
+
+# the Buy button's words ("" for none: ordering off, or a buy thread,
+# which has none of its own; laws fab_buy_*)
+def Fab.buy.k(off: Bool, +label: String) -> String:
+  Bool.pick(String, off, "", label)
+
+def Fab.buy.of(+st: M.State, +nf: Map<&2, String>, +th: String) -> String:
+  Fab.buy.k(Bool.or(Fab.buying(st, th), Bool.not(Fab.enabled(st))), Str.get(nf, "fab.buy:" ++ th))
+
+def Fab.buy(+u: Ui) -> String:
+  Fab.buy.k(Bool.or(Fab.buying(Ui.state.of(u), Ui.sel(u)), Bool.not(Fab.enabled(Ui.state.of(u)))), Ui.info(u, "fab.buy:" ++ Ui.sel(u)))
+
+def Fab.shown(+u: Ui) -> Bool:
+  String.eq(Ui.info(u, "fab.shown:" ++ Ui.sel(u)), "1")
+
+# the line above the message box once there is something to buy (with
+# Buy it beside it): "Ready to order · LED board · Lamp shade", "" for none
+# (no Buy it, or a buy thread); "fab.ready:<t>" is kept by Fab.reply
+def Fab.turn(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, +project, _, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Bool.pick(String, String.is_empty(project), "", C.Turn.name(turn))
+
+# (and none while the agent works: it is ready once the turn is over)
+def Fab.ready.k(+buy: String, +line: String, run: Bool) -> String:
+  Bool.pick(String, Bool.or(run, String.is_empty(buy)), "", Bool.pick(String, String.is_empty(line), "Ready to order", line))
+
+# the bar's button: Buy it with its price, or Buy again once ordered
+def Fab.ready.btn.k(again: Bool, +buy: String) -> String:
+  Bool.pick(String, Bool.or(Bool.not(again), String.is_empty(buy)), buy, "Buy again")
+
+def Fab.ready.btn.of(+st: M.State, +nf: Map<&2, String>, +th: String) -> String:
+  Fab.ready.btn.k(String.eq(Str.get(nf, "fab.again:" ++ th), "1"), Fab.buy.of(st, nf, th))
+
+def Fab.ready.btn(+u: Ui) -> String:
+  Fab.ready.btn.k(String.eq(Ui.info(u, "fab.again:" ++ Ui.sel(u)), "1"), Fab.buy(u))
+
+# The bar can be put away (its ×) and comes back from a small Buy it in the
+# thread's header: the setting fab.min.<project> "1", one per project and
+# kept like any setting, so every device follows (laws fab_min_*)
+def Fab.min.key(+project: String) -> String:
+  "fab.min." ++ project
+
+def Fab.project(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, +project, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      project
+
+def Fab.min.of(+st: M.State, +th: String) -> Bool:
+  String.eq(M.Setting.get(st, Fab.min.key(Fab.project(Ui.thread(st, th))), ""), "1")
+
+# the bar's line once put away: none
+def Fab.ready.shown.k(min: Bool, +line: String) -> String:
+  Bool.pick(String, min, "", line)
+
+# the header's Buy it: while the bar is put away and has something to show
+def Fab.mini.k(min: Bool, +line: String) -> Bool:
+  Bool.and(min, Bool.not(String.is_empty(line)))
+
+def Fab.mini.label(again: Bool) -> String:
+  Bool.pick(String, again, "Ordered", "Buy it")
+
+def Fab.mini.tools.k(show: Bool, again: Bool, +th: String) -> List<&2, TO.Tool>:
+  match show:
+    case True{}:
+      [TO.Tool{"box", Fab.mini.label(again), "Show the Ready to order bar again", "fab-show", th, False{}, False{}, False{}}]
+    case False{}:
+      Nil{}
+
+def Fab.ready.all(+u: Ui) -> String:
+  Fab.ready.k(Fab.buy(u), Ui.info(u, "fab.ready:" ++ Ui.sel(u)), String.eq(Fab.turn(Ui.thread(Ui.state.of(u), Ui.sel(u))), "running"))
+
+def Fab.ready(+u: Ui) -> String:
+  Fab.ready.shown.k(Fab.min.of(Ui.state.of(u), Ui.sel(u)), Fab.ready.all(u))
+
+# the header's tools for the open thread ([] or its Buy it)
+def Fab.mini.tools(+u: Ui) -> List<&2, TO.Tool>:
+  Fab.mini.tools.k(Fab.mini.k(Fab.min.of(Ui.state.of(u), Ui.sel(u)), Fab.ready.all(u)), String.eq(Ui.info(u, "fab.again:" ++ Ui.sel(u)), "1"), Ui.sel(u))
+
+# the same from the state and the info a window or phone frame has
+def Fab.mini.tools.of(+st: M.State, +nf: Map<&2, String>, +th: String, run: Bool) -> List<&2, TO.Tool>:
+  Fab.mini.tools.k(Fab.mini.k(Fab.min.of(st, th), Fab.ready.k(Fab.buy.of(st, nf, th), Str.get(nf, "fab.ready:" ++ th), run)), String.eq(Str.get(nf, "fab.again:" ++ th), "1"), th)
+
+# (nothing for a thread with no project: no fab.min. without one)
+def Fab.min.set.k(none: Bool, +u: Ui, +project: String, +v: String) -> Act:
+  match none:
+    case True{}:
+      Act{u, Nil{}}
+    case False{}:
+      Ui.setting(u, Fab.min.key(project) ++ "=" ++ v)
+
+def Fab.min.set(+u: Ui, +th: String, +v: String) -> Act:
+  Fab.min.set.k(String.is_empty(Fab.project(Ui.thread(Ui.state.of(u), th))), u, Fab.project(Ui.thread(Ui.state.of(u), th)), v)
+
+def Fab.act.k(i: Nat, +u: Ui, +th: String) -> Act:
+  match i:
+    # the card opened or shut
+    case 0n:
+      Act{Ui.info_set(u, "fab.open:" ++ th, Bool.pick(String, String.eq(Ui.info(u, "fab.open:" ++ th), "1"), "", "1")), Nil{}}
+    # the intent into the composer, to change and send
+    case 1n:
+      Ui.draft(u, OR.Intent.edit(Fab.intent(u, th)))
+    # Buy it: the hub makes the buy thread and this client goes to it
+    case 2n:
+      Ui.rpc(Made.want(u), "order.buy", [J.KV{"thread", J.Str{th}}])
+    # the bar's ×: put away for the project; the header's Buy it: back
+    case 4n:
+      Fab.min.set(u, th, "1")
+    case 5n:
+      Fab.min.set(u, th, "0")
+    case _:
+      Act{u, Nil{}}
+
+def Fab.actions() -> List<&2, String>:
+  ["fab-open", "fab-edit", "buy", "board-pick", "fab-hide", "fab-show"]
+
+def Fab.is(+action: String) -> Bool:
+  Nat.is_lt(C.Codec.pos(Fab.actions(), action), 6n)
+
+def Fab.act.v(+i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 3n:
+      Bd.pick(u, value)
+    case _:
+      Fab.act.k(i, u, Fab.th(u, value))
+
+def Fab.act(+u: Ui, +action: String, +value: String) -> Act:
+  Fab.act.v(C.Codec.pos(Fab.actions(), action), u, value)
+
+# what was last asked for: the thread and where its turn stands
+def Fab.at(+u: Ui) -> String:
+  Fab.set.enabled(Ui.state.of(u)) ++ Fab.set.on(Ui.state.of(u)) ++ "#" ++ Ui.sel(u) ++ "#" ++ Fab.turn(Ui.thread(Ui.state.of(u), Ui.sel(u)))
+
+# asked again when the turn moves on; while it runs only if this thread has
+# no card yet (a thread opened mid-turn), since its files are changing;
+# never for a thread elsewhere (its hub has the files)
+def Fab.want(+u: Ui) -> Bool:
+  Bool.and(Bool.and(Bool.and(Bool.not(String.is_empty(Ui.sel(u))), Bool.not(FR.Fr.is(Ui.sel(u)))), Bool.not(String.eq(Fab.at(u), Ui.scratch(u, "@fab.at")))),
+    Bool.and(Bool.not(String.ends_with(Fab.at(u), "#")),
+      Bool.or(Bool.not(String.ends_with(Fab.at(u), "#running")), String.is_empty(Ui.info(u, "fab.line:" ++ Ui.sel(u))))))
+
+# (after the action's own commands: a setting it changed, Ordering's say,
+# must reach the hub before the look it asks for)
+def Fab.sync.k(want: Bool, +u: Ui, cmds: List<&2, Cmd>) -> Act:
+  match want:
+    case True{}:
+      Ui.first(cmds, Ui.rpc(Ui.scratch_set(u, "@fab.at", Fab.at(u)), "fab.look", [J.KV{"thread", J.Str{Ui.sel(u)}}]))
+    case False{}:
+      Act{u, cmds}
+
+def Fab.sync(a: Act) -> Act:
+  match a:
+    case Act{+u, cmds}:
+      Fab.sync.k(Fab.want(u), u, cmds)
+
+# the hub's card for a thread
+def Fab.has(+o: J.Json) -> Bool:
+  Bool.not(String.eq(J.Json.show(Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(o, "result"), "goal"), J.Null{})), "null"))
+
+def Fab.keep(u: Ui, +th: String, +c: OR.Card) -> Ui:
+  Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(u, "fab.line:" ++ th, OR.Card.line(c)), "fab.intent:" ++ th, OR.Card.intent(c)),
+    "fab.buy:" ++ th, OR.Card.buy(c)), "fab.shown:" ++ th, Bool.pick(String, OR.Card.shown(c), "1", ""))
+
+def Fab.reply.r(u: Ui, +th: String, +r: J.Json) -> Ui:
+  Fab.keep(Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(u, "fab.ready:" ++ th, OR.Card.ready.or(OR.Card.ready.j(r), J.Json.get_str(r, "order", ""))), "fab.boards:" ++ th, OR.Card.boards.j(r)),
+    "fab.board:" ++ th, J.Json.get_str(r, "board_default", "")), "fab.again:" ++ th, Bool.pick(String, OR.Order.ordered(J.Json.get_str(r, "order", "")), "1", "")), th, OR.Card.of.j(r))
+
+def Fab.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
+  match has:
+    case True{}:
+      Fab.reply.r(u, J.Json.get_str(J.Json.get_obj(o, "result"), "thread", ""), J.Json.get_obj(o, "result"))
+    case False{}:
+      u
+
+# "/intent <text>" sent: the project's intent is that text (the hub writes
+# it and answers with the card)
+def Intent.send.go(u: Ui, +text: String) -> Act:
+  match u:
+    case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Ui.rpc(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, "fab.intent", [J.KV{"thread", J.Str{sel}}, J.KV{"text", J.Str{text}}])
+
+def Intent.send.d(a: Act, +text: String) -> Act:
+  match a:
+    case Act{u, cs}:
+      Ui.first(cs, Intent.send.go(u, text))
+
+def Intent.send(+u: Ui) -> Act:
+  Intent.send.d(Draft.clear(u), OR.Intent.body(Ui.draft_text(u)))
+
 def Ui.send.b(empty: Bool, b: Maybe<&2, BT.Bot>, u: Ui, text: String, +mode: String) -> Act:
   match empty b:
     case True{} _:
@@ -5849,8 +6163,15 @@ def Ui.send.give(give: Bool, +u: Ui, alt: Bool) -> Act:
     case False{}:
       Ui.send.btw(Btw.is(Ui.draft_text(u)), u, alt)
 
+def Ui.send.intent(intent: Bool, +u: Ui, alt: Bool) -> Act:
+  match intent:
+    case True{}:
+      Intent.send(u)
+    case False{}:
+      Ui.send.give(Give.is(Ui.draft_text(u)), u, alt)
+
 def Ui.send(+u: Ui, alt: Bool) -> Act:
-  Ui.send.give(Give.is(Ui.draft_text(u)), u, alt)
+  Ui.send.intent(OR.Intent.is(Ui.draft_text(u)), u, alt)
 
 def Bots.sel.set(u: Ui, +th: String) -> Ui:
   match u:
@@ -8252,7 +8573,7 @@ def KX.reply(+u: Ui, +o: J.Json) -> Ui:
   KX.reply.k(Bool.not(String.is_empty(J.Json.get_str(J.Json.get_obj(o, "result"), "export10", ""))), u, J.Json.get_obj(o, "result"))
 
 def Ui.reply(u: Ui, +o: J.Json) -> Ui:
-  KX.reply(KN.reply(Made.reply(o, Bots.reply(o, Proj.reply(o, Btw.reply(Ui.reply.skills(u, o), o)))), o), o)
+  KX.reply(KN.reply(Made.reply(o, Bots.reply(o, Proj.reply(o, Btw.reply(Fab.reply(Fab.has(o), Ui.reply.skills(u, o), o), o)))), o), o)
 
 # A link's threads and bots (far.bend): its batch folded into the read
 # model under this hub's ids, and whether it answered ("far.away.<link>")
@@ -9428,7 +9749,7 @@ def Ui.recv_act.n(notify: Bool, u: Ui, +o: J.Json) -> Act:
     case True{}:
       Act{u, [Notify{J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "title", ""), J.Json.get_str(o, "body", ""), J.Json.get_str(o, "key", "")}]}
     case False{}:
-      Emb.sync.if(C.Codec.pos(["log", "changes", "view"], J.Json.get_str(o, "t", "")), Mpage.sync(Ui.recv_act.go(u, o)))
+      Emb.sync.if(C.Codec.pos(["log", "changes", "view"], J.Json.get_str(o, "t", "")), Fab.sync(Mpage.sync(Ui.recv_act.go(u, o))))
 
 # a frame of a page ({"t":"shot","bot":page,"n":n}) where the client keeps
 # it (the phones): its number as info "shot.<page>", seen when on show
@@ -10387,7 +10708,7 @@ def Ui.act.e(emb: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case True{}:
       Emb.act(u, action, value)
     case False{}:
-      Emb.sync.sel(Ui.sel(u), Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 17n), C.Codec.pos(Menu.actions(), action), u, action, value)))
+      Emb.sync.sel(Ui.sel(u), Fab.sync(Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 17n), C.Codec.pos(Menu.actions(), action), u, action, value))))
 
 # the picker's machine row (routed before the action table)
 def Ui.act.p(pick: Bool, +u: Ui, +action: String, +value: String) -> Act:
@@ -10568,12 +10889,20 @@ def Ui.act.us(i: Nat, +u: Ui, +action: String, +value: String) -> Act:
     case _:
       Ui.act.s(String.eq(action, "skill-close"), u, action, value)
 
+# (the project card's fab-open, fab-edit and buy: Fab.act)
+def Ui.act.fab(fab: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match fab:
+    case True{}:
+      Fab.act(u, action, value)
+    case False{}:
+      Ui.act.us(C.Codec.pos(["usage-refresh", "usage-open"], action), u, action, value)
+
 def Ui.act.z(tz: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match tz:
     case True{}:
       Tzs.act(u, action, value)
     case False{}:
-      Ui.act.us(C.Codec.pos(["usage-refresh", "usage-open"], action), u, action, value)
+      Ui.act.fab(Fab.is(action), u, action, value)
 
 # Only inspect the thread prefix, leaving the potentially long key snapshot alone.
 def Ui.subs.thread(s: String, acc: String) -> String:

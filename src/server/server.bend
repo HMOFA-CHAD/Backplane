@@ -90,6 +90,8 @@ import ../core/outbox.bend as OB
 import ../core/live.bend as LV
 import ../core/farlive.bend as FLV
 import ../core/qr.bend as QR
+import ../core/order.bend as OR
+import ./orderio.bend as ODI
 import ../core/uber.bend as UB
 import ../core/ubersync.bend as UBS
 import ../core/ubop.bend as UBO
@@ -207,6 +209,16 @@ type Msg is Data:
   Reexec{path: String, args: List<&2, String>}
   # changes a job off the hub made (a bot's home folder, a linked machine)
   Commit{changes: List<&2, M.Change>}
+  # an order's progress: posted in its buy thread, and a note alert to the
+  # person's devices when there is one (Hub.order.note)
+  OrderNote{thread: String, id: String, text: String, note: String}
+  # what an order tool learned once the person acted (the files sent and
+  # the quote posted, or not sent): told to the buy thread's agent, which
+  # starts its turn (order_quote and order_ask never wait on the person)
+  OrderWake{thread: String, text: String}
+  # the review gate's verdict (core/order.bend's Order.gate): what the hub
+  # posts and asks in the buy thread
+  OrderGate{thread: String, kind: Nat, md: String}
   # the uberbot's sync (core/ubersync.bend): a step touched its log or
   # promoted a bot ("kick": sync now; "init": log a new uberbot's first
   # ops, then sync); another machine's answer to our uber.sync request
@@ -2585,6 +2597,11 @@ def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U
       DirJob.run(inbox, client, id, thread, cwd, a)
     case 15n:
       PdfJob.run(inbox, client, id, home, a, b)
+    # the project card (core/order.bend): a = "on|off\n<server>", b = the intent the person wrote
+    case 16n:
+      IO.bind(J.Json, Unit, ODI.Od.look(home, cwd, thread, a), r => GitJob.reply(inbox, client, id, True{}, r))
+    case 17n:
+      IO.bind(J.Json, Unit, ODI.Od.intent(home, cwd, thread, a, b), r => GitJob.reply(inbox, client, id, True{}, r))
     case _:
       GitJob.run.git(tx, job, inbox, client, id, thread, cwd, a, b, home)
 
@@ -2599,7 +2616,7 @@ def GitJob.run.r(rv: Bool, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client:
     case True{}:
       IO.bind(RVS.Res, Unit, RVS.RvJob.run(job, thread, cwd, a, b, home), r => RvJob.reply(r, inbox, client, id))
     case False{}:
-      GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs", "open", "dir", "pdf"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
+      GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs", "open", "dir", "pdf", "fab", "intent"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # a job the hub asked for: a git job, or one of the sidebar's
 def GitJob.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
@@ -3061,21 +3078,33 @@ def Hub.prompt.machines.k(+m: String) -> String:
 def Hub.prompt.machines(+cfg: Cfg) -> String:
   Hub.prompt.machines.k(FM.Fm.prompt(FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg)))))
 
+# a buy thread's own instructions (Buy it made it: setting buy.<thread>)
+def Hub.prompt.buy(+st: M.State, +thread: String) -> String:
+  Bool.pick(String, BH.Bots.buy.is(st, thread), "\n\n" ++ OR.Order.prompt.buy(), "")
+
 # everything but the language line (agent.lang)
 def Hub.prompt.base(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, fs: K.Files, +keys: String) -> String:
   String.join([Cfg.prompt(cfg),
     Hub.prompt.kicad(Cfg.rt(cfg), Bool.not(String.eq(M.Setting.get(st, "kicad.ipc", "on"), "off"))),
     Hub.prompt.files(cwd, fs),
-    Q.Prompt.orchestration(M.Task.may_delegate(B.Task.depth(st, thread)), Cfg.mtext(cfg)), Q.Prompt.background()], "\n\n") ++ Bool.pick(String, String.is_empty(keys), "", "\n\n" ++ keys) ++ Hub.prompt.machines(cfg) ++ BH.Bots.prompt.k(RUN.Run.bot(st, thread), st, Cfg.home(cfg))
+    Q.Prompt.orchestration(M.Task.may_delegate(B.Task.depth(st, thread)), Cfg.mtext(cfg)), Q.Prompt.background(), OR.Order.prompt.project.k(OR.Order.enabled(M.Setting.get(st, "order.enabled", "off")))], "\n\n") ++ Bool.pick(String, String.is_empty(keys), "", "\n\n" ++ keys) ++ Hub.prompt.machines(cfg) ++ BH.Bots.prompt.k(RUN.Run.bot(st, thread), st, Cfg.home(cfg)) ++ Hub.prompt.buy(st, thread)
 
 def Hub.prompt(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, fs: K.Files, +keys: String) -> String:
   Q.Prompt.lang.add(Hub.prompt.base(cfg, st, thread, cwd, fs, keys), M.Setting.get(st, "agent.lang", "off"))
+
+# pcbparts (a free parts-search MCP over the fab's and distributors' stock,
+# by manufacturer part number), given to every agent beside Backplane's own
+def Parts.mcp.url() -> String:
+  "https://pcbparts.dev/mcp"
+
+def Parts.mcp.claude() -> String:
+  "\"pcbparts\":{\"type\":\"http\",\"url\":\"" ++ Parts.mcp.url() ++ "\"}"
 
 def Hub.agent_args(+cfg: Cfg, +thread: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, prompt: String, +effort: String, +gen: String) -> List<&2, String>:
   match cfg:
     case Cfg{+home, _, _, _, _, +dirs, _, _}:
       List.append(&2, String, Q.Claude.args(model, session, r, i, prompt, List.append(&2, String, dirs, [home ++ "/attachments"])), List.append(&2, String, AG.Effort.args("claude", effort), List.append(&2, String, Q.Claude.plugins(dirs),
-        ["--mcp-config", "{\"mcpServers\":{\"backplane\":{\"type\":\"http\",\"url\":\"" ++ Hub.mcp_url.g(cfg, thread, gen) ++ "\"}}}"])))
+        ["--mcp-config", "{\"mcpServers\":{\"backplane\":{\"type\":\"http\",\"url\":\"" ++ Hub.mcp_url.g(cfg, thread, gen) ++ "\"}," ++ Parts.mcp.claude() ++ "}}"])))
 
 # what a Claude process was started with; a turn asking for something else
 # (another model, mode or effort) restarts it
@@ -3125,7 +3154,7 @@ def Agent.is(m: Maybe<&2, Agent>) -> Bool:
 # Backplane instructions (the same runtime block Claude gets)
 def Codex.args(+cfg: Cfg, +thread: String, +model: String, +session: String, r: M.RuntimeMode, +text: String, prompt: String, +effort: String, +gen: String) -> List<&2, String>:
   List.concat(&2, String, [Codex.head.k(String.is_empty(session), session), Codex.sandbox(r), Codex.opt("-m", model), AG.Effort.args("codex", effort), AT.Att.codex(text),
-    ["-c", "mcp_servers.backplane.url=\"" ++ Hub.mcp_url.g(cfg, thread, gen) ++ "\"",
+    ["-c", "mcp_servers.backplane.url=\"" ++ Hub.mcp_url.g(cfg, thread, gen) ++ "\"", "-c", "mcp_servers.pcbparts.url=\"" ++ Parts.mcp.url() ++ "\"",
      "-c", "developer_instructions=" ++ J.Json.show(J.Str{prompt}), text]])
 
 # what a tailscale command printed ("" when it failed)
@@ -12339,12 +12368,303 @@ def Hub.mcp.kexport(exporting: Bool, h: Hub, +thread: String, +o: J.Json, body: 
     case False{} _:
       Hub.mcp.gg(Gg.is(o), h, thread, o, body, reply, now)
 
+# Ordering: a buy thread's tools (core/order.bend, server/orderio.bend)
+# ---------------------------------------------------------------------
+# order_quote reads the order's manifest, asks the person (an approval
+# card listing every file) and only then uploads, waits for the quote and
+# posts it with its Buy now link; the record in <home>/orders keeps the token,
+# and a watcher follows the order (Od.watch), resumed at start.
+
+def Od.server(+st: M.State) -> String:
+  B.Buy.server(st)
+
+def Od.post(+inbox: Chan(Msg), +thread: String, +id: String, text: String) -> IO(Unit):
+  do IO<Unit>:
+    +now : Nat <- Now.nat()
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Commit{[M.MessagePosted{thread, id, M.Assistant{}, text, now}]})
+    return Unit{}
+
+def Od.wake(+inbox: Chan(Msg), +thread: String, +text: String) -> IO(Unit):
+  do IO<Unit>:
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, OrderWake{thread, text})
+    return Unit{}
+
+# an order's progress in its thread, with its note alert (Hub.order.note)
+def Od.progress(+inbox: Chan(Msg), +thread: String, +id: String, +text: String, +note: String) -> IO(Unit):
+  do IO<Unit>:
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, OrderNote{thread, id, text, note})
+    return Unit{}
+
+def Od.status.k(+st: String, +last: String, +q: J.Json, +inbox: Chan(Msg), +thread: String, +qid: String) -> IO(Unit):
+  Bool.pick(IO(Unit), Bool.or(String.eq(st, last), String.is_empty(OR.Order.status.text(st, J.Json.get_str(J.Json.get_obj(q, "order"), "tracking", "")))),
+    IO.pure(Unit, Unit{}), Od.progress(inbox, thread, "o:" ++ qid ++ ":" ++ st, OR.Order.status.text(st, J.Json.get_str(J.Json.get_obj(q, "order"), "tracking", "")),
+      OR.Order.status.note(st, J.Json.get_str(J.Json.get_obj(q, "order"), "tracking", ""))))
+
+def Od.watch.next(+st: String, +last: String, again: String -> IO(Unit)) -> IO(Unit):
+  Bool.pick(IO(Unit), OR.Order.done(st), IO.pure(Unit, Unit{}), again(Bool.pick(String, String.is_empty(st), last, st)))
+
+# one look at a quote's order every minute while it is unpaid, every ten
+# after; a change is said in the buy thread and kept in the record
+def Od.watch(n: Nat, +inbox: Chan(Msg), +home: String, +server: String, +qid: String, +token: String, +thread: String, +last: String) -> IO(Unit):
+  match n:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+m:
+      do IO<Unit>:
+        IO.sleep(OR.Order.every(last))
+        +install : String <- ODI.Od.install(home)
+        +q : J.Json <- ODI.Od.get(home, server, install, qid, token)
+        +st : String = OR.Order.state(q)
+        Od.status.k(st, last, q, inbox, thread, qid)
+        ODI.Od.keep(home, qid, token, thread, server, Bool.pick(String, String.is_empty(st), last, st))
+        Od.watch.next(st, last, l => Od.watch(m, inbox, home, server, qid, token, thread, l))
+
+def Od.resume.one(+inbox: Chan(Msg), +home: String, +j: J.Json) -> IO(Unit):
+  Bool.pick(IO(Unit), Bool.or(OR.Order.done(J.Json.get_str(j, "status", "")), String.is_empty(J.Json.get_str(j, "token", ""))), IO.pure(Unit, Unit{}),
+    Od.watch(9000n, inbox, home, J.Json.get_str(j, "server", ""), J.Json.get_str(j, "id", ""), J.Json.get_str(j, "token", ""), J.Json.get_str(j, "thread", ""), J.Json.get_str(j, "status", "")))
+
+def Od.resume.all(ps: List<&2, String>, +inbox: Chan(Msg), +home: String) -> IO(Unit):
+  match ps:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case +p <> t:
+      do IO<Unit>:
+        text : String <- GS.Gf.text(ODI.Od.orders(home) ++ "/" ++ p)
+        IO.spawn(Unit, Od.resume.one(inbox, home, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})))
+        Od.resume.all(t, inbox, home)
+
+# at start: follow every order not yet delivered
+def Od.resume(+inbox: Chan(Msg), +home: String) -> IO(Unit):
+  do IO<Unit>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", "ls -1 2>/dev/null | grep '^q_.*\\.json$' | head -n 200"], ODI.Od.orders(home))
+    Od.resume.all(String.lines(ODI.Od.ran(r)), inbox, home)
+
+def Od.quoted.k(ok: Bool, +q: J.Json, +inbox: Chan(Msg), +home: String, +server: String, +qid: String, +token: String, +thread: String) -> IO(Unit):
+  match ok:
+    case True{}:
+      do IO<Unit>:
+        Od.post(inbox, thread, "q:" ++ qid, OR.Order.quote.md(J.Json.get_str(J.Json.get_obj(q, "quote"), "markdown", ""), ODI.Od.pay(server, qid, token),
+          J.Json.get_str(J.Json.get_obj(q, "quote"), "pay_label", "Buy now"), OR.Order.payable(q)))
+        ODI.Od.keep(home, qid, token, thread, server, "quoted")
+        Od.wake(inbox, thread, "The quote is posted in this thread. " ++ OR.Order.said(q))
+        Od.watch(9000n, inbox, home, server, qid, token, thread, "quoted")
+    case False{}:
+      Od.wake(inbox, thread, "The quote could not be worked out: " ++ J.Json.get_str(q, "error", "no answer from the order server") ++ ".")
+
+def Od.quoted(+q: J.Json, +inbox: Chan(Msg), +home: String, +server: String, +qid: String, +token: String, +thread: String) -> IO(Unit):
+  Od.quoted.k(Bool.not(String.is_empty(J.Json.get_str(q, "status", ""))), q, inbox, home, server, qid, token, thread)
+
+def Od.sent(+up: J.Json, +inbox: Chan(Msg), +home: String, +server: String, +install: String, +thread: String) -> IO(Unit):
+  Bool.pick(IO(Unit), String.is_empty(J.Json.get_str(up, "token", "")),
+    Od.wake(inbox, thread, "The files were not taken: " ++ J.Json.get_str(up, "error", "no answer") ++ "."),
+    IO.bind(J.Json, Unit, ODI.Od.poll(60n, home, server, install, J.Json.get_str(up, "id", ""), J.Json.get_str(up, "token", "")),
+      q => Od.quoted(q, inbox, home, server, J.Json.get_str(up, "id", ""), J.Json.get_str(up, "token", ""), thread)))
+
+# the person said yes: upload, wait, post, and tell the agent
+def Od.go(+inbox: Chan(Msg), +home: String, +server: String, +dir: String, ps: List<&2, String>, +thread: String) -> IO(Unit):
+  do IO<Unit>:
+    +install : String <- ODI.Od.install(home)
+    +up : J.Json <- ODI.Od.upload(home, server, install, dir, ps)
+    ODI.Od.keep(home, J.Json.get_str(up, "id", "none"), J.Json.get_str(up, "token", ""), thread, server, "quoting")
+    Od.sent(up, inbox, home, server, install, thread)
+
+# Send (or allowed for the session): upload; Not now: the agent is told;
+# the empty answer (the run was retired: Stop, archive, delete) tells no one
+def Od.wait.a(i: Nat, +inbox: Chan(Msg), +home: String, +server: String, +dir: String, ps: List<&2, String>, +thread: String) -> IO(Unit):
+  match i:
+    case 0n:
+      Od.go(inbox, home, server, dir, ps, thread)
+    case 1n:
+      Od.go(inbox, home, server, dir, ps, thread)
+    case 2n:
+      Od.wake(inbox, thread, OR.Order.quote.declined())
+    case _:
+      IO.pure(Unit, Unit{})
+
+def Od.wait.k(m: Maybe<&1, String>, +inbox: Chan(Msg), +home: String, +server: String, +dir: String, ps: List<&2, String>, +thread: String) -> IO(Unit):
+  match m:
+    case Some{+answer}:
+      Od.wait.a(C.Codec.pos(["accept", "session", "decline"], answer), inbox, home, server, dir, ps, thread)
+    case None{}:
+      IO.pure(Unit, Unit{})
+
+def Od.wait(+r2: Chan(String), +inbox: Chan(Msg), +home: String, +server: String, +dir: String, ps: List<&2, String>, +thread: String) -> IO(Unit):
+  IO.bind(Maybe<&1, String>, Unit, Chan.recv(String, r2), m => Od.wait.k(m, inbox, home, server, dir, ps, thread))
+
+def Od.ask(ok: Bool, h: Hub, +thread: String, +dir: String, +abs: String, +m: J.Json, +ps: List<&2, String>, +rid: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match ok h:
+    case False{} _:
+      do IO<Hub>:
+        Gg.say(reply, rid, False{}, "no manifest.json with files to send in " ++ dir ++ " (paths must stay inside the folder, plain characters only, and the folder must hold plain files, no links)")
+        return h
+    case True{} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
+        +r2 : Chan(String) <- Chan.new(String, 1)
+        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
+        IO.spawn(Unit, Od.wait(r2, inbox, Cfg.home(cfg), Od.server(st), abs, ps, thread))
+        # (the agent hears at once and ends its turn; the person's Send may
+        # come any time, Od.wait)
+        Gg.say(reply, rid, True{}, OR.Order.quote.asked())
+        Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", "order_quote", OR.Order.ask.detail(dir, m, ps), "", now}], Nil{}})
+
+# (a folder holding links is refused: a link named like a design file could
+# carry any file of the person's out, under a name they would approve)
+def Od.quote(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        +dir : String = String.trim(J.Json.get_str(Gg.args(o), "dir", ""))
+        +abs : String = B.Hub.cwd(st, B.Hub.thread(st, thread)) ++ "/" ++ dir
+        text : String <- GS.Gf.text(abs ++ "/manifest.json")
+        links : P.Ran <- P.Proc.run("sh", ["-c", "find . -type l 2>/dev/null | head -n 1"], abs)
+        +m : J.Json = Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})
+        +ps : List<&2, String> = ODI.Od.files(m)
+        Od.ask(Bool.and(Bool.and(Bool.and(ODI.Od.safe(dir), ODI.Od.all.safe(ps)), Bool.not(List.is_empty(&2, String, ps))), String.is_empty(String.trim(ODI.Od.ran(links)))),
+          Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, dir, abs, m, ps, J.Json.get_obj(o, "id"), reply, now)
+
+def Od.status.said(none: Bool, +j: J.Json, +home: String, +install: String, +rid: J.Json, +reply: Chan(String)) -> IO(Unit):
+  match none:
+    case True{}:
+      Gg.say(reply, rid, True{}, "no quote yet in this thread")
+    case False{}:
+      IO.bind(J.Json, Unit, ODI.Od.get(home, J.Json.get_str(j, "server", ""), install, J.Json.get_str(j, "id", ""), J.Json.get_str(j, "token", "")),
+        q => Gg.say(reply, rid, True{}, OR.Order.said(q)))
+
+# order_status: the newest record of this thread's, asked again
+def Od.status.ask(+home: String, +thread: String, +rid: J.Json, +reply: Chan(String)) -> IO(Unit):
+  do IO<Unit>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", "grep -l '\"thread\":\"" ++ thread ++ "\"' q_*.json 2>/dev/null | xargs ls -t 2>/dev/null | head -n 1"], ODI.Od.orders(home))
+    text : String <- GS.Gf.text(ODI.Od.orders(home) ++ "/" ++ String.trim(ODI.Od.ran(r)))
+    +j : J.Json = Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})
+    +install : String <- ODI.Od.install(home)
+    Od.status.said(String.is_empty(J.Json.get_str(j, "token", "")), j, home, install, rid, reply)
+
+# order_ask: a question card with the choices as buttons (the person may
+# type instead); the answer goes back to the agent as it is
+def Od.choices(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case J.Str{+x} <> t:
+      x <> Od.choices(t)
+    case _ <> t:
+      Od.choices(t)
+
+# (it parks nothing: the answer is posted in the thread as the person's
+# message, hub.bend's Hub.answer.order, however long they take)
+def Od.question(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
+        Gg.say(reply, J.Json.get_obj(o, "id"), True{}, OR.Order.ask.asked())
+        Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "input", "order_ask",
+          J.Json.get_str(Gg.args(o), "question", ""), String.join(Od.choices(J.Json.elems(J.Json.get_obj(Gg.args(o), "options"))), "\n"), now}], Nil{}})
+
+def Od.gate.said(+said: J.Json, +inbox: Chan(Msg), +thread: String, +rid: J.Json, +reply: Chan(String)) -> IO(Unit):
+  do IO<Unit>:
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, OrderGate{thread, OR.Order.gate(said), OR.Order.gate.md(J.Json.get_str(said, "summary", ""), J.Json.elems(J.Json.get_obj(said, "issues")))})
+    Gg.say(reply, rid, True{}, OR.Order.gate.said(OR.Order.gate(said)))
+
+def Od.gate.go(+cwd: String, +inbox: Chan(Msg), +thread: String, +rid: J.Json, +reply: Chan(String), +now: Nat) -> IO(Unit):
+  IO.bind(J.Json, Unit, ODI.Od.review(cwd, J.Json.obj([J.KV{"action", J.Str{"check"}}]), now), said => Od.gate.said(said, inbox, thread, rid, reply))
+
+# order_review: checked or recorded in the thread's folder, the answer as JSON
+def Od.review.go(+cwd: String, +args: J.Json, +rid: J.Json, +reply: Chan(String), +now: Nat) -> IO(Unit):
+  IO.bind(J.Json, Unit, ODI.Od.review(cwd, args, now), r => Gg.say(reply, rid, True{}, J.Json.show(r)))
+
+def Od.review.or.gate(gate: Bool, +cwd: String, +inbox: Chan(Msg), +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Unit):
+  match gate:
+    case True{}:
+      Od.gate.go(cwd, inbox, thread, J.Json.get_obj(o, "id"), reply, now)
+    case False{}:
+      Od.review.go(cwd, Gg.args(o), J.Json.get_obj(o, "id"), reply, now)
+
+def Hub.order.t(i: Nat, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match i h:
+    case 0n h2:
+      Od.quote(h2, thread, o, reply, now)
+    case 2n h2:
+      Od.question(h2, thread, o, reply, now)
+    case 3n Hub{+st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Od.review.or.gate(String.eq(J.Json.get_str(Gg.args(o), "action", ""), "gate"), B.Hub.cwd(st, B.Hub.thread(st, thread)), inbox, thread, o, reply, now))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case _ Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Od.status.ask(Cfg.home(cfg), thread, J.Json.get_obj(o, "id"), reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def Hub.order.k(buy: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match buy h:
+    case False{} _:
+      do IO<Hub>:
+        Gg.say(reply, J.Json.get_obj(o, "id"), False{}, "only a buy thread has this tool")
+        return h
+    case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.order.t(C.Codec.pos(OR.Order.names(), Gg.tool(o)), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
+
+# an order's progress posted in the thread, and with a note the person's
+# devices are told (a "note" alert, notice.bend's Alert.set: push, desks,
+# phones) unless they turned off alerts for settled work (notify.settled),
+# keyed by the progress so each says it once
+def Hub.order.ping(on: Bool, +st: M.State, +now: Nat, +thread: String, +id: String, +ping: String) -> List<&2, M.Change>:
+  match on:
+    case True{}:
+      [NO.Alert.set(st, now, thread, "note", id, NO.Alert.memory(st, thread), NO.Alert.text(ping, 300n))]
+    case False{}:
+      []
+
+def Hub.order.note(h: Hub, +thread: String, +id: String, +text: String, +ping: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{M.MessagePosted{thread, id, M.Assistant{}, text, now} <>
+        Hub.order.ping(Bool.and(Bool.not(String.is_empty(ping)), NO.Policy.on(st, "settled")), st, now, thread, id, ping), Nil{}})
+
+def Hub.order.wake(h: Hub, +thread: String, +text: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.post(st, now, thread, B.Hub.id("m", now, B.Hub.seq(st)), M.System{}, "[Backplane] " ++ text))
+
+# the review gate in the buy thread: nothing when passed; else the
+# question (an order_ask: the person's answer comes as their message), after
+# the issues when there are some
+def Hub.order.gate(kind: Nat, h: Hub, +thread: String, +md: String, +now: Nat) -> IO(Hub):
+  match kind h:
+    case 0n _:
+      IO.pure(Hub, h)
+    case 1n Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{B.Hub.id("q", now, B.Hub.seq(st)), thread, "input", "order_ask",
+        OR.Order.gate.review.q(), "Review for manufacturing\nOrder without a review", now}], Nil{}})
+    case _ Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.MessagePosted{thread, "gate:" ++ B.Hub.id("q", now, B.Hub.seq(st)), M.Assistant{}, md, now},
+        M.AskOpened{B.Hub.id("q", now, B.Hub.seq(st)), thread, "input", "order_ask", OR.Order.gate.fix.q(), "Fix them first\nOrder anyway", now}], Nil{}})
+
+# (with ordering off nothing is sent or recorded, even by an agent that
+# remembers the tools from before it was turned off)
+def Hub.order.on(on: Bool, buy: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match on:
+    case True{}:
+      Hub.order.k(buy, h, thread, o, reply, now)
+    case False{}:
+      do IO<Hub>:
+        Gg.say(reply, J.Json.get_obj(o, "id"), False{}, "Ordering is off; the person can turn it on in Settings")
+        return h
+
+def Hub.mcp.od(od: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match od h:
+    case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.order.on(OR.Order.enabled(M.Setting.get(st, "order.enabled", "off")), Bool.or(BH.Bots.buy.is(st, thread), String.eq(Gg.tool(o), "order_review")), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
+    case False{} _:
+      Hub.mcp.kexport(Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "kicad_export10")), h, thread, o, body, reply, now)
+
 def Hub.mcp.route(pv: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match pv:
     case True{}:
       Hub.preview(h, thread, o, reply)
     case False{}:
-      Hub.mcp.kexport(Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "kicad_export10")), h, thread, o, body, reply, now)
+      Hub.mcp.od(OR.Order.is(o), h, thread, o, body, reply, now)
 
 def Hub.mcp.ki(ki: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match ki:
@@ -12491,6 +12811,12 @@ def Msg.kind(m: Msg) -> String:
     case RunReady{_, _, _}: "run-ready"
     case Commit{_}:
       "commit"
+    case OrderNote{_, _, _, _}:
+      "order_note"
+    case OrderWake{_, _}:
+      "order_wake"
+    case OrderGate{_, _, _}:
+      "order_gate"
     case BoatThreads{_}:
       "boat_threads"
     case UberDo{_}:
@@ -13137,6 +13463,12 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case RunReady{thread, head, bs}: Hub.run.ready(h, thread, head, bs, now)
     case Commit{cs}:
       Hub.step(h, B.Step{cs, Nil{}})
+    case OrderNote{thread, id, text, +ping}:
+      Hub.order.note(h, thread, id, text, ping, now)
+    case OrderWake{+thread, +text}:
+      Hub.order.wake(h, thread, text, now)
+    case OrderGate{+thread, kind, +md}:
+      Hub.order.gate(kind, h, thread, md, now)
     case BoatThreads{status}:
       Hub.chips(Hub.state(h), status, now)
     case UberDo{what}:
@@ -13333,6 +13665,7 @@ def Main.headless(h: Hub, +inbox: Chan(Msg), +cfg: Cfg, +tok: Chan(Unit), front:
     IO.spawn(Unit, Beat.loop(Fuel.forever(), inbox))
     IO.spawn(Unit, Heart.loop(Fuel.forever(), inbox))
     Refresh.start(inbox, cfg)
+    IO.spawn(Unit, Od.resume(inbox, Cfg.home(cfg)))
     Self.post(inbox, KProbe{True{}})
     IO.spawn(Unit, Hub.loop(Fuel.forever(), h, inbox, tok))
     Upgrade.start(cfg, inbox)
@@ -13346,6 +13679,7 @@ def Main.serve(l: Listener, h: Hub, +web: String, +inbox: Chan(Msg), +cfg: Cfg, 
     IO.spawn(Unit, Beat.loop(Fuel.forever(), inbox))
     IO.spawn(Unit, Heart.loop(Fuel.forever(), inbox))
     Refresh.start(inbox, cfg)
+    IO.spawn(Unit, Od.resume(inbox, Cfg.home(cfg)))
     Self.post(inbox, KProbe{True{}})
     Machines.start(inbox, Cfg.port(cfg))
     IO.spawn(Unit, Hub.loop(Fuel.forever(), h, inbox, tok))

@@ -31,6 +31,7 @@ import ./rules.bend as RLS
 import ./ledger.bend as LG
 import ./task.bend as TK
 import ./teach.bend as TE
+import ./order.bend as OR
 
 # Remote bot directories. A result replaces just its peer; a failure
 # keeps that peer's rows and their last-seen timestamps, marked away.
@@ -2614,8 +2615,31 @@ def Bots.list.using(+tools: J.Json, +id: J.Json, +extra: List<&2, J.Json>) -> St
 def Bots.list.plain(+id: J.Json) -> String:
   MC.Mcp.result(id, J.Json.obj([J.KV{"tools", J.Json.arr(List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(MC.Mcp.tools(), "tools")), LG.Ledger.tools()))}]))
 
-def Bots.list.plain.using(+tools: J.Json, +id: J.Json) -> String:
-  MC.Mcp.result(id, J.Json.obj([J.KV{"tools", J.Json.arr(List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(tools, "tools")), LG.Ledger.tools()))}]))
+def Bots.buy.tools(buy: Bool) -> List<&2, J.Json>:
+  match buy:
+    case True{}:
+      OR.Order.tools()
+    case False{}:
+      Nil{}
+
+# what every thread's agent lists beside Backplane's tools with ordering on
+# (order.enabled): order_review, and in a buy thread the other order tools
+def Bots.order.tools(on: Bool, buy: Bool) -> List<&2, J.Json>:
+  match on:
+    case True{}:
+      List.append(&2, J.Json, Bots.buy.tools(buy), [OR.Order.review.tool()])
+    case False{}:
+      Nil{}
+
+# whether a thread is a buy thread (Buy it made it: setting buy.<thread>)
+def Bots.buy.is(+s: M.State, +thread: String) -> Bool:
+  Bool.not(String.is_empty(M.Setting.get(s, OR.Order.buy.key(thread), "")))
+
+# tools/list for a thread that is no bot's: Backplane's tools (mail's only
+# with mail.on), the ledgers', and in extra a buy thread's order tools
+# (core/order.bend)
+def Bots.list.plain.using(+tools: J.Json, +id: J.Json, +extra: List<&2, J.Json>) -> String:
+  MC.Mcp.result(id, J.Json.obj([J.KV{"tools", J.Json.arr(List.concat(&2, J.Json, [J.Json.elems(J.Json.get_obj(tools, "tools")), LG.Ledger.tools(), extra]))}]))
 
 type Route is Data:
   RList{}
@@ -2685,7 +2709,8 @@ def Bots.mcp.k(r: Route, +s: M.State, +now: Nat, +thread: String, +models: J.Jso
     case RLedger{}:
       LG.Ledger.call(s, now, thread, J.Json.get_obj(o, "id"), J.Json.get_obj(o, "params"))
     case RPlain{}:
-      MC.McpOut{Bots.list.plain.using(MC.Mcp.tools.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on")), J.Json.get_obj(o, "id")), B.Step.none(), ""}
+      MC.McpOut{Bots.list.plain.using(MC.Mcp.tools.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on")), J.Json.get_obj(o, "id"),
+        Bots.order.tools(OR.Order.enabled(M.Setting.get(s, "order.enabled", "off")), Bots.buy.is(s, thread))), B.Step.none(), ""}
     case RPass{}:
       MC.Mcp.handle(s, now, thread, models, version, o)
 

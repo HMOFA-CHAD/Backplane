@@ -9,6 +9,7 @@ import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/usage.bend as UZ
 import ./src/core/refview.bend as RC # links (cards, trail)
+import ./src/core/order.bend as ORD # ordering (project card, buy threads)
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/mailbody.bend as MB # mail 2a
 import ./src/core/mailview.bend as MVW # mail view
@@ -2272,6 +2273,14 @@ law reset_keeps_hand:
 
 law reset_new_origin_drops_viewer:
   {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "view.kind:t1", "board"), U.Reset.demo("P")), "view.kind:t1") == "" : String}
+
+# the project card survives a reconnect to the same hub, and is asked for
+# again after any reconnect (the scratch's last ask is forgotten)
+law reset_keeps_card:
+  {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "fab.line:t1", "A lamp"), U.Reset.demo("O")), "fab.line:t1") == "A lamp" : String}
+
+law reset_asks_card_again:
+  {U.Ui.scratch(U.Ui.reset(U.Ui.scratch_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "@fab.at", "on#t1#idle"), U.Reset.demo("O")), "@fab.at") == "" : String}
 
 law reset_drops_results:
   {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "fm.list:t1", "x"), U.Reset.demo("O")), "fm.list:t1") == "" : String}
@@ -9095,6 +9104,270 @@ law card_person_no_state:
 law card_task_status_agrees:
   {String.join([RC.Card.task.status(" Doing"), RC.Card.task.status("blocked"), RC.Card.task.status("todo"), RC.Card.task.status("DONE "), RC.Card.task.status("dropped"), RC.Card.task.status("later"), RC.Card.task.status("")], ",")
     == String.join([TBD.Tb.status.norm(" Doing"), TBD.Tb.status.norm("blocked"), TBD.Tb.status.norm("todo"), TBD.Tb.status.norm("DONE "), TBD.Tb.status.norm("dropped"), TBD.Tb.status.norm("later"), TBD.Tb.status.norm("")], ",") : String}
+
+# Ordering (core/order.bend): Buy it shows only when there is something
+# to order and the order server answered (or estimates are off); its
+# words carry the price; an intent sent back from Edit is the text edited
+law order_buy_needs_parts:
+  {ORD.Card.buy(ORD.Card{"g", "i", "from $5.00", 0n, 0n, "", True{}}) == "" : String}
+
+law order_buy_priced:
+  {ORD.Card.buy(ORD.Card{"g", "", "from $5.00", 2n, 0n, "", True{}}) == "Buy it · from $5.00" : String}
+
+law order_buy_unreachable_hidden:
+  {ORD.Card.buy(ORD.Card{"g", "", "", 2n, 0n, "the order server is not reachable", True{}}) == "" : String}
+
+law order_buy_estimates_off:
+  {ORD.Card.buy(ORD.Card{"", "", "", 1n, 0n, "", False{}}) == "Buy it" : String}
+
+# a project with a board but no fab files yet can still be bought (the buy
+# thread writes them), unless the order server is out of reach
+law order_buy_board_only:
+  {ORD.Card.buy(ORD.Card{"", "", "", 0n, 1n, "", True{}}) == "Buy it" : String}
+
+law order_buy_board_unreachable:
+  {ORD.Card.buy(ORD.Card{"", "", "", 0n, 1n, "the order server is not reachable", True{}}) == "" : String}
+
+law intent_edit_round_trip:
+  {ORD.Intent.body(ORD.Intent.edit("# Goal\nA lamp")) == "# Goal\nA lamp" : String}
+
+law intent_edit_is_intent:
+  {ORD.Intent.is(ORD.Intent.edit("")) == True{} : Bool}
+
+# only a buy thread's agent has the order tools
+law order_tools_buy_only:
+  {BHS.Bots.buy.tools(False{}) == [] : List<&2, J.Json>}
+
+# the line beside Buy it above the message box names what there is to order,
+# says "the board" for a board with no fab files yet, and is not there
+# while the agent works
+law order_ready_names:
+  {ORD.Card.ready.k("LED board · Lamp shade", 0n) == "Ready to order · LED board · Lamp shade" : String}
+
+law order_ready_board:
+  {ORD.Card.ready.k("", 1n) == "Ready to order · the board" : String}
+
+law order_ready_nothing:
+  {ORD.Card.ready.k("", 0n) == "" : String}
+
+law fab_ready_running_hidden:
+  for line: String
+  {U.Fab.ready.k("Buy it", line, True{}) == "" : String}
+
+law fab_ready_needs_buy:
+  for line: String
+  {U.Fab.ready.k("", line, False{}) == "" : String}
+
+# a manufacturing review is current only for the design it was recorded
+# with (its fingerprint); a verdict is ok or issues, nothing else
+law order_review_none:
+  {ORD.Order.review.state("f1", J.Json.obj([])) == "none" : String}
+
+law order_review_current:
+  {ORD.Order.review.state("f1", ORD.Order.review.rec("f1", "ok", "fine", 5n)) == "current" : String}
+
+law order_review_stale:
+  {ORD.Order.review.state("f2", ORD.Order.review.rec("f1", "ok", "fine", 5n)) == "stale" : String}
+
+law order_review_verdict_closed:
+  {ORD.Order.review.verdict("looks great") == "issues" : String}
+
+# the viewer's board picker (client.bend's Bd): a board is named by its
+# folder, its schematic is beside it, and it is lit while the viewer shows
+# a file in its folder
+law bd_name_folder:
+  {U.Bd.name("boards/led-board/led-board.kicad_pcb") == "led-board" : String}
+
+law bd_name_root:
+  {U.Bd.name("main.kicad_pcb") == "main" : String}
+
+law bd_schematic_beside:
+  {U.Bd.path("schematic", "boards/a/a.kicad_pcb") == "boards/a/a.kicad_sch" : String}
+
+law bd_board_itself:
+  {U.Bd.path("board", "boards/a/a.kicad_pcb") == "boards/a/a.kicad_pcb" : String}
+
+law bd_on_sheet:
+  {U.Bd.on("/p/boards/a/power.kicad_sch", "boards/a/a.kicad_pcb") == True{} : Bool}
+
+law bd_off_other:
+  {U.Bd.on("/p/boards/b/b.kicad_pcb", "boards/a/a.kicad_pcb") == False{} : Bool}
+
+# another tab stays on the board picked (its schematic beside it); with
+# none picked, the project's own
+law bd_keep_schematic:
+  {U.Bd.keep.k("boards/a/a.kicad_pcb", "schematic", "/p") == "/p/boards/a/a.kicad_sch" : String}
+
+law bd_keep_none:
+  for kind: String
+  {U.Bd.keep.k("", kind, "/p") == "" : String}
+
+# with none picked, the project's own board's chip is the one lit
+law bd_shown_default:
+  {U.Bd.shown.k("", "/p", "boards/a/a.kicad_pcb") == "/p/boards/a/a.kicad_pcb" : String}
+
+law bd_shown_picked:
+  for root: String
+  for own: String
+  {U.Bd.shown.k("/x.kicad_pcb", root, own) == "/x.kicad_pcb" : String}
+
+# a project's second buy thread is numbered, the first is not
+law buy_title_first:
+  for t: String
+  {H.Buy.title.k(t, 0n) == t : String}
+
+law buy_title_second:
+  {H.Buy.title.k("Buy: lamp", 1n) == "Buy: lamp · 2" : String}
+
+# once something of the project is paid for, the Ready bar says so and its
+# button reads Buy again (a quote alone changes nothing)
+law order_ordered_paid:
+  {ORD.Card.ready.or("Ready to order · Lamp", "paid") == "Ordered · paid, being placed" : String}
+
+law order_ordered_quote_only:
+  for line: String
+  {ORD.Card.ready.or(line, "ready") == line : String}
+
+law fab_buy_again:
+  {U.Fab.ready.btn.k(True{}, "Buy it · from $5.00") == "Buy again" : String}
+
+law fab_buy_again_off:
+  {U.Fab.ready.btn.k(True{}, "") == "" : String}
+
+# the Ready bar's ×: put away per project (setting fab.min.<project>), and
+# then a Buy it in the header (or Ordered, once paid) brings it back
+law fab_min_key:
+  {U.Fab.min.key("p1") == "fab.min.p1" : String}
+
+law fab_min_hides_bar:
+  for line: String
+  {U.Fab.ready.shown.k(True{}, line) == "" : String}
+
+law fab_min_keeps_bar:
+  for line: String
+  {U.Fab.ready.shown.k(False{}, line) == line : String}
+
+law fab_min_header:
+  {U.Fab.mini.k(True{}, "Ready to order · Lamp") == True{} : Bool}
+
+law fab_min_header_shown_bar:
+  for line: String
+  {U.Fab.mini.k(False{}, line) == False{} : Bool}
+
+law fab_min_header_nothing:
+  {U.Fab.mini.k(True{}, "") == False{} : Bool}
+
+law fab_min_header_ordered:
+  {U.Fab.mini.label(True{}) == "Ordered" : String}
+
+# the order server: the setting when given, the default when it is empty
+law buy_server_default:
+  {H.Buy.server.k("") == ORD.Order.server() : String}
+
+law buy_server_set:
+  {H.Buy.server.k(" https://fab.example ") == "https://fab.example" : String}
+
+# an order's progress alerts the person in plain words: shipped with its
+# tracking, and nothing for an expired quote
+law order_note_shipped:
+  {ORD.Order.status.note("shipped", "1Z999") == "Shipped. Tracking: 1Z999" : String}
+
+law order_note_expired:
+  for t: String
+  {ORD.Order.status.note("expired", t) == "" : String}
+
+# a Stripe checkout that expired unpaid leaves the quote as it was: still
+# payable, then expired (not an order the watcher follows for ever)
+law order_state_cancelled:
+  for q: String
+  {ORD.Order.state.k("cancelled", q) == q : String}
+
+law order_state_paid:
+  {ORD.Order.state.k("paid", "ready") == "paid" : String}
+
+# ordering is off until the person turns it on (order.enabled): no Buy it
+# anywhere, no order tools for any agent, even in a buy thread
+law fab_buy_off_hidden:
+  for label: String
+  {U.Fab.buy.k(True{}, label) == "" : String}
+
+law order_off_no_tools:
+  for buy: Bool
+  {BHS.Bots.order.tools(False{}, buy) == [] : List<&2, J.Json>}
+
+law order_off_by_default:
+  {ORD.Order.enabled("") == False{} : Bool}
+
+# a review's issues: their lines trimmed, blank ones and non-strings left out
+law order_review_issues_kept:
+  {ORD.Order.review.lines([J.Str{" Shade: walls 0.6 mm "}, J.Str{"  "}, J.Num{"1"}, J.Str{"Base: hole too small"}], 8n) == [J.Str{"Shade: walls 0.6 mm"}, J.Str{"Base: hole too small"}] : List<&2, J.Json>}
+
+law order_review_issues_at_most:
+  {List.length(&2, J.Json, ORD.Order.review.lines([J.Str{"a"}, J.Str{"b"}, J.Str{"c"}], 2n)) == 2n : Nat}
+
+# an order's question parks nothing, so a Stop or a crash leaves it open
+# (its answer starts the agent again); an order's approval still closes
+law order_ask_survives_retire:
+  {H.Retire.hit(M.Ask{"a3", "t1", "input", "order_ask", "Fix these?", "", True{}, ""}, "t1") == False{} : Bool}
+
+law order_approval_retired:
+  {H.Retire.hit(M.Ask{"a4", "t1", "approval", "order_quote", "Send?", "", True{}, ""}, "t1") == True{} : Bool}
+
+# the review gate: a current, passed review goes on; none or stale asks for
+# a review; current with issues shows them and asks whether to fix them
+law order_gate_passed:
+  {ORD.Order.gate.k("current", "ok") == 0n : Nat}
+
+law order_gate_stale:
+  for v: String
+  {ORD.Order.gate.k("stale", v) == 1n : Nat}
+
+law order_gate_none:
+  for v: String
+  {ORD.Order.gate.k("none", v) == 1n : Nat}
+
+law order_gate_issues:
+  {ORD.Order.gate.k("current", "issues") == 2n : Nat}
+
+# the pilot: a paid test checkout is "pilot", said as such, and not watched
+law order_pilot_paid:
+  {ORD.Order.state.pilot(True{}, "paid") == "pilot" : String}
+
+law order_pilot_off:
+  for st: String
+  {ORD.Order.state.pilot(False{}, st) == st : String}
+
+law order_pilot_done:
+  {ORD.Order.done("pilot") == True{} : Bool}
+
+law order_pilot_said:
+  {String.contains(ORD.Order.status.text("pilot", ""), "your card was not charged") == True{} : Bool}
+
+law order_pilot_quiet:
+  {ORD.Order.status.note("pilot", "") == "" : String}
+
+# the issues as bullets with the review's link: the recorded ones, else the
+# summary cut at its semicolons
+law order_gate_lists_issues:
+  {ORD.Order.gate.md("x", [J.Str{"Shade: walls 0.6 mm"}, J.Str{"Knob: bore too tight."}]) == "**The manufacturing review found what to fix before ordering:**\n\n- Shade: walls 0.6 mm\n- Knob: bore too tight\n\nDetails: `.backplane/review.md`" : String}
+
+law order_gate_cuts_summary:
+  {ORD.Order.gate.md("8 BOM lines lack part numbers; knob bore too tight.", []) == "**The manufacturing review found what to fix before ordering:**\n\n- 8 BOM lines lack part numbers\n- knob bore too tight\n\nDetails: `.backplane/review.md`" : String}
+
+# an order's question alerts in its own words, without the tool's name
+law order_ask_alert_plain:
+  for q: String
+  {NO.Alert.ask.say("order_ask", q) == q : String}
+
+# a tool call with only a question (order_ask) is summed up by it, not by
+# its name again (the phone's running line: "<tool> <summary>")
+law tool_summary_question:
+  {H.Claude.tool_summary("mcp__backplane__order_ask", J.Json.obj([J.KV{"question", J.Str{"Ship where?"}}])) == "Ship where?" : String}
+
+# with ordering off, an agent asked to order points to the setting
+law order_off_says_where:
+  {String.contains(ORD.Order.prompt.project.k(False{}), "Settings → Ordering") == True{} : Bool}
+
 # ---- i18n lang ----
 law lang_default_auto:
   {U.Lang.resolve("", "en_US.UTF-8", False{}) == "en" : String}

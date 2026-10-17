@@ -4486,6 +4486,12 @@ def Laws.ui_seq_log_counts_unknown():
 def Laws.reset_keeps_viewer():
   {==}
 
+def Laws.reset_keeps_card():
+  {==}
+
+def Laws.reset_asks_card_again():
+  {==}
+
 def Laws.reset_keeps_hand():
   {==}
 
@@ -10937,6 +10943,213 @@ def Laws.ime_commit_event_id():
   {==}
 
 # ---- end i18n ime ----
+
+# ---- ordering ----
+
+def Laws.order_buy_needs_parts():
+  {==}
+
+def Laws.order_buy_priced():
+  {==}
+
+def Laws.order_buy_unreachable_hidden():
+  {==}
+
+def Laws.order_buy_estimates_off():
+  {==}
+
+def Laws.intent_edit_round_trip():
+  {==}
+
+def Laws.intent_edit_is_intent():
+  {==}
+
+def Laws.order_tools_buy_only():
+  {==}
+
+def Laws.order_ready_names():
+  {==}
+
+def Laws.order_ready_board():
+  {==}
+
+def Laws.order_ready_nothing():
+  {==}
+
+def Laws.fab_ready_running_hidden(line):
+  {==}
+
+def Laws.fab_ready_needs_buy(line):
+  {==}
+
+def Laws.order_review_none():
+  {==}
+
+def Laws.order_review_current():
+  {==}
+
+def Laws.order_review_stale():
+  {==}
+
+def Laws.order_review_verdict_closed():
+  {==}
+
+def Laws.bd_name_folder():
+  {==}
+
+def Laws.bd_name_root():
+  {==}
+
+def Laws.bd_schematic_beside():
+  {==}
+
+def Laws.bd_board_itself():
+  {==}
+
+def Laws.bd_on_sheet():
+  {==}
+
+def Laws.bd_off_other():
+  {==}
+
+def Laws.bd_keep_schematic():
+  {==}
+
+def Laws.bd_keep_none(kind):
+  {==}
+
+def Laws.bd_shown_default():
+  {==}
+
+def Laws.bd_shown_picked(root, own):
+  {==}
+
+def Laws.buy_title_first(t):
+  {==}
+
+def Laws.buy_title_second():
+  {==}
+
+def Laws.order_ordered_paid():
+  {==}
+
+def Laws.order_ordered_quote_only(line):
+  {==}
+
+def Laws.fab_buy_again():
+  {==}
+
+def Laws.fab_buy_again_off():
+  {==}
+
+def Laws.fab_min_key():
+  {==}
+
+def Laws.fab_min_hides_bar(line):
+  {==}
+
+def Laws.fab_min_keeps_bar(line):
+  {==}
+
+def Laws.fab_min_header():
+  {==}
+
+def Laws.fab_min_header_shown_bar(line):
+  {==}
+
+def Laws.fab_min_header_nothing():
+  {==}
+
+def Laws.fab_min_header_ordered():
+  {==}
+
+def Laws.buy_server_default():
+  {==}
+
+def Laws.buy_server_set():
+  {==}
+
+def Laws.order_note_shipped():
+  {==}
+
+def Laws.order_note_expired(t):
+  {==}
+
+def Laws.order_state_cancelled(q):
+  {==}
+
+def Laws.order_state_paid():
+  {==}
+
+def Laws.fab_buy_off_hidden(label):
+  {==}
+
+def Laws.order_off_no_tools(buy):
+  {==}
+
+def Laws.order_off_by_default():
+  {==}
+
+def Laws.order_review_issues_kept():
+  {==}
+
+def Laws.order_review_issues_at_most():
+  {==}
+
+def Laws.order_ask_survives_retire():
+  {==}
+
+def Laws.order_approval_retired():
+  {==}
+
+def Laws.order_gate_passed():
+  {==}
+
+def Laws.order_gate_stale(v):
+  {==}
+
+def Laws.order_gate_none(v):
+  {==}
+
+def Laws.order_gate_issues():
+  {==}
+
+def Laws.order_pilot_paid():
+  {==}
+
+def Laws.order_pilot_off(st):
+  {==}
+
+def Laws.order_pilot_done():
+  {==}
+
+def Laws.order_pilot_said():
+  {==}
+
+def Laws.order_pilot_quiet():
+  {==}
+
+def Laws.order_gate_lists_issues():
+  {==}
+
+def Laws.order_gate_cuts_summary():
+  {==}
+
+def Laws.order_ask_alert_plain(q):
+  {==}
+
+def Laws.tool_summary_question():
+  {==}
+
+def Laws.order_off_says_where():
+  {==}
+
+def Laws.order_buy_board_only():
+  {==}
+
+def Laws.order_buy_board_unreachable():
+  {==}
+
 # ---- i18n lang ----
 def Laws.lang_default_auto():
   {==}
