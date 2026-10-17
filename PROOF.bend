@@ -11101,6 +11101,24 @@ def Laws.order_ask_survives_retire():
 def Laws.order_approval_retired():
   {==}
 
+def Laws.order_gate_passed():
+  {==}
+
+def Laws.order_gate_stale(v):
+  {==}
+
+def Laws.order_gate_none(v):
+  {==}
+
+def Laws.order_gate_issues():
+  {==}
+
+def Laws.order_gate_lists_issues():
+  {==}
+
+def Laws.order_gate_cuts_summary():
+  {==}
+
 def Laws.order_ask_alert_plain(q):
   {==}
 

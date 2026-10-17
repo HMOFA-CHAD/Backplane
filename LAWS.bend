@@ -9311,6 +9311,30 @@ law order_ask_survives_retire:
 law order_approval_retired:
   {H.Retire.hit(M.Ask{"a4", "t1", "approval", "order_quote", "Send?", "", True{}, ""}, "t1") == True{} : Bool}
 
+# the review gate: a current, passed review goes on; none or stale asks for
+# a review; current with issues shows them and asks whether to fix them
+law order_gate_passed:
+  {ORD.Order.gate.k("current", "ok") == 0n : Nat}
+
+law order_gate_stale:
+  for v: String
+  {ORD.Order.gate.k("stale", v) == 1n : Nat}
+
+law order_gate_none:
+  for v: String
+  {ORD.Order.gate.k("none", v) == 1n : Nat}
+
+law order_gate_issues:
+  {ORD.Order.gate.k("current", "issues") == 2n : Nat}
+
+# the issues as bullets with the review's link: the recorded ones, else the
+# summary cut at its semicolons
+law order_gate_lists_issues:
+  {ORD.Order.gate.md("x", [J.Str{"Shade: walls 0.6 mm"}, J.Str{"Knob: bore too tight."}]) == "**The manufacturing review found what to fix before ordering:**\n\n- Shade: walls 0.6 mm\n- Knob: bore too tight\n\nDetails: `.backplane/review.md`" : String}
+
+law order_gate_cuts_summary:
+  {ORD.Order.gate.md("8 BOM lines lack part numbers; knob bore too tight.", []) == "**The manufacturing review found what to fix before ordering:**\n\n- 8 BOM lines lack part numbers\n- knob bore too tight\n\nDetails: `.backplane/review.md`" : String}
+
 # an order's question alerts in its own words, without the tool's name
 law order_ask_alert_plain:
   for q: String

@@ -212,6 +212,9 @@ type Msg is Data:
   # the quote posted, or not sent): told to the buy thread's agent, which
   # starts its turn (order_quote and order_ask never wait on the person)
   OrderWake{thread: String, text: String}
+  # the review gate's verdict (core/order.bend's Order.gate): what the hub
+  # posts and asks in the buy thread
+  OrderGate{thread: String, kind: Nat, md: String}
   # the uberbot's sync (core/ubersync.bend): a step touched its log or
   # promoted a bot ("kick": sync now; "init": log a new uberbot's first
   # ops, then sync); another machine's answer to our uber.sync request
@@ -12171,9 +12174,24 @@ def Od.question(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now:
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "input", "order_ask",
           J.Json.get_str(Gg.args(o), "question", ""), String.join(Od.choices(J.Json.elems(J.Json.get_obj(Gg.args(o), "options"))), "\n"), now}], Nil{}})
 
+def Od.gate.said(+said: J.Json, +inbox: Chan(Msg), +thread: String, +rid: J.Json, +reply: Chan(String)) -> IO(Unit):
+  do IO<Unit>:
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, OrderGate{thread, OR.Order.gate(said), OR.Order.gate.md(J.Json.get_str(said, "summary", ""), J.Json.elems(J.Json.get_obj(said, "issues")))})
+    Gg.say(reply, rid, True{}, OR.Order.gate.said(OR.Order.gate(said)))
+
+def Od.gate.go(+cwd: String, +inbox: Chan(Msg), +thread: String, +rid: J.Json, +reply: Chan(String), +now: Nat) -> IO(Unit):
+  IO.bind(J.Json, Unit, ODI.Od.review(cwd, J.Json.obj([J.KV{"action", J.Str{"check"}}]), now), said => Od.gate.said(said, inbox, thread, rid, reply))
+
 # order_review: checked or recorded in the thread's folder, the answer as JSON
 def Od.review.go(+cwd: String, +args: J.Json, +rid: J.Json, +reply: Chan(String), +now: Nat) -> IO(Unit):
   IO.bind(J.Json, Unit, ODI.Od.review(cwd, args, now), r => Gg.say(reply, rid, True{}, J.Json.show(r)))
+
+def Od.review.or.gate(gate: Bool, +cwd: String, +inbox: Chan(Msg), +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Unit):
+  match gate:
+    case True{}:
+      Od.gate.go(cwd, inbox, thread, J.Json.get_obj(o, "id"), reply, now)
+    case False{}:
+      Od.review.go(cwd, Gg.args(o), J.Json.get_obj(o, "id"), reply, now)
 
 def Hub.order.t(i: Nat, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match i h:
@@ -12181,9 +12199,9 @@ def Hub.order.t(i: Nat, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String
       Od.quote(h2, thread, o, reply, now)
     case 2n h2:
       Od.question(h2, thread, o, reply, now)
-    case 3n Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+    case 3n Hub{+st, f, ls, cl, as, +inbox, cfg, note}:
       do IO<Hub>:
-        IO.spawn(Unit, Od.review.go(B.Hub.cwd(st, B.Hub.thread(st, thread)), Gg.args(o), J.Json.get_obj(o, "id"), reply, now))
+        IO.spawn(Unit, Od.review.or.gate(String.eq(J.Json.get_str(Gg.args(o), "action", ""), "gate"), B.Hub.cwd(st, B.Hub.thread(st, thread)), inbox, thread, o, reply, now))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case _ Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
@@ -12220,6 +12238,20 @@ def Hub.order.wake(h: Hub, +thread: String, +text: String, +now: Nat) -> IO(Hub)
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.post(st, now, thread, B.Hub.id("m", now, B.Hub.seq(st)), M.System{}, "[Backplane] " ++ text))
+
+# the review gate in the buy thread: nothing when passed; else the
+# question (an order_ask: the person's answer comes as their message), after
+# the issues when there are some
+def Hub.order.gate(kind: Nat, h: Hub, +thread: String, +md: String, +now: Nat) -> IO(Hub):
+  match kind h:
+    case 0n _:
+      IO.pure(Hub, h)
+    case 1n Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{B.Hub.id("q", now, B.Hub.seq(st)), thread, "input", "order_ask",
+        OR.Order.gate.review.q(), "Review for manufacturing\nOrder without a review", now}], Nil{}})
+    case _ Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.MessagePosted{thread, "gate:" ++ B.Hub.id("q", now, B.Hub.seq(st)), M.Assistant{}, md, now},
+        M.AskOpened{B.Hub.id("q", now, B.Hub.seq(st)), thread, "input", "order_ask", OR.Order.gate.fix.q(), "Fix them first\nOrder anyway", now}], Nil{}})
 
 # (with ordering off nothing is sent or recorded, even by an agent that
 # remembers the tools from before it was turned off)
@@ -12395,6 +12427,8 @@ def Msg.kind(m: Msg) -> String:
       "order_note"
     case OrderWake{_, _}:
       "order_wake"
+    case OrderGate{_, _, _}:
+      "order_gate"
     case BoatThreads{_}:
       "boat_threads"
     case UberDo{_}:
@@ -13041,6 +13075,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.order.note(h, thread, id, text, ping, now)
     case OrderWake{+thread, +text}:
       Hub.order.wake(h, thread, text, now)
+    case OrderGate{+thread, kind, +md}:
+      Hub.order.gate(kind, h, thread, md, now)
     case BoatThreads{status}:
       Hub.chips(Hub.state(h), status, now)
     case UberDo{what}:

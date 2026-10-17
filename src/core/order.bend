@@ -59,11 +59,86 @@ def Order.prompt.project.k(on: Bool) -> String:
 def Order.prompt.buy() -> String:
   "<backplane_buy>This thread orders the project's parts; the person pressed Buy it. Be brief: short messages, a small table at most, no walls of text. Steps:\n"
   ++ "1. Read `.backplane/intent.md` and every `*.fab.json` (find . -name '*.fab.json' -not -path './extra/*' -not -path './mfg/*'). If a board or part to order has none yet, write it first, measured as the project's instructions say, and say so in a line. In one short message, list what would be ordered (part, what it is, quantity).\n"
-  ++ "2. Call the backplane tool `order_review` (action \"check\"). Unless its state is \"current\", the design has not been checked for manufacturing since it last changed: ask with order_ask, the question \"This design hasn't been checked for manufacturing since it changed. A review finds what a fab would refuse or charge more for.\" and the choices \"Review for manufacturing\" and \"Order without a review\", and end your turn (order_ask never waits: the person's answer comes as their next message, however long they take; so after every order_ask). For the review, call delegate_task with the prompt \"Review this project for manufacturing.\" (the task works in this thread's folder, on the very files to be ordered, and its result comes back here), say in one line that it runs as a task of this thread and the order goes on when it's done, and end your turn. When its result comes, check again: with verdict ok go on; with issues (now or from a current review), first post a brief summary: a bullet per thing to fix (the part and what must change, a few words each; from the check's issues, else `.backplane/review.md`), then the line \"Details: `.backplane/review.md`\". Only then ask (order_ask) \"Fix these before ordering, or order as it is?\" with \"Fix them first\" and \"Order anyway\". To fix them, delegate_task again with the exact changes (in this folder, so the order gets them), then the review once more. Export nothing until the review is ok or the person says to order anyway. Never review or change the design yourself here; this thread only orders.\n"
-  ++ "3. Ask only what is missing, one question at a time with the backplane tool `order_ask` so the person can tap the answers (two to four short choices, the likely one first): the country it ships to (two-letter code), quantities, and for each board whether it comes assembled or bare. When an earlier order's `mfg/*/manifest.json` exists, offer its answers first (its ship_to, quantities and assembly) and skip what still holds. Boards come in at least 5 and assembly starts at 2 boards (any number up to the quantity). Bare boards can come with a BOM they order parts with themselves (by manufacturer part number at any distributor).\n"
+  ++ "2. Call the backplane tool `order_review` with action \"gate\". When the review is current and passed it says so: go on. Otherwise Backplane itself tells the person where the review stands (the issues as a list, with the link to `.backplane/review.md`) and asks them; end your turn, and their answer comes as their next message: \"Review for manufacturing\": call delegate_task with the prompt \"Review this project for manufacturing.\" (the task works in this thread's folder, on the very files to be ordered, and its result comes back here), say in one line that it runs as a task of this thread and the order goes on when it's done, and end your turn; when its result comes, call the gate again. \"Fix them first\": delegate_task again with the exact changes `.backplane/review.md` asks for (in this folder, so the order gets them), and once that is done the review once more, then the gate. \"Order without a review\" or \"Order anyway\": go on. Export nothing until the gate passes or the person says to order anyway. Never review or change the design yourself here; this thread only orders.\n"
+  ++ "3. Ask only what is missing, one question at a time with the backplane tool `order_ask` (it never waits: end your turn after each, and the answer comes as the person's next message) so the person can tap the answers (two to four short choices, the likely one first): the country it ships to (two-letter code), quantities, and for each board whether it comes assembled or bare. When an earlier order's `mfg/*/manifest.json` exists, offer its answers first (its ship_to, quantities and assembly) and skip what still holds. Boards come in at least 5 and assembly starts at 2 boards (any number up to the quantity). Bare boards can come with a BOM they order parts with themselves (by manufacturer part number at any distributor).\n"
   ++ "4. Export from the saved files (a fix made through `kicad_ipc` counts once saved with SaveDocument) into `mfg/<YYYYMMDD-HHMM>/`: for each board `<name>/gerbers/` (kicad-cli pcb export gerbers, and kicad-cli pcb export drill with Excellon, mm, PTH and NPTH in separate files, into the same folder), and when it is assembled `<name>/bom.csv` (columns Designator, Quantity, Value, Footprint, MPN, Manufacturer, and LCSC when known; one line per part number) and `<name>/positions.csv` (kicad-cli pcb export pos --format csv --units mm --side both; columns Designator, Mid X, Mid Y, Rotation, Layer); for each mechanical part `<name>/<name>.step`, and for sheet metal also its flat pattern `<name>/<name>.dxf`. Then write `manifest.json` there: {\"spec\": 1, \"title\": \"<the project, in words>\", \"ship_to\": \"US\", \"parts\": [{\"name\" (its fab.json name, e.g. Main board), \"kind\", \"qty\", \"options\", \"features\" (sheet metal: its bends), \"files\": {\"gerbers\": \"<name>/gerbers\", \"bom\", \"positions\"} or {\"step\", \"dxf\"}, \"assemble\": <boards to assemble, 0 for bare>}], \"files\": {\"<path from the folder>\": \"<sha256>\"}}, listing every file (sha256sum).\n"
   ++ "5. Call the backplane tool `order_quote` with the folder (`mfg/<...>`) and end your turn: Backplane shows the person every file it would send and asks them first. Once they send, it posts the quote with its Buy now link (it opens Stripe) in this thread and you get a message with its total; do not repeat its table. Say in a line or two what it covers, and if it lists problems, what fixes each.\n"
   ++ "Only order_quote ever sends anything: never upload files or contact a manufacturer yourself. The person never deals with the fab: there is no fab website, account or preview for them, so never ask them to check anything there; check what can be checked here (the exported files, the positions file, the renders) and say what you checked. Prices are estimates until paid; the person can always take the mfg folder to any manufacturer themselves. Never name the manufacturer.</backplane_buy>"
+
+# The review gate (order_review's action "gate", in a buy thread): the
+# hub, not the agent, tells the person where the design's review stands and
+# asks them (laws order_gate_*). 0: current and passed, go on; 1: none or
+# stale, Review for manufacturing or Order without a review; 2: current
+# with issues, those as bullets with the review's link, then Fix them
+# first or Order anyway. Each answer comes as the person's message.
+def Order.gate.k(+state: String, +verdict: String) -> Nat:
+  Bool.pick(Nat, Bool.not(String.eq(state, "current")), 1n, Bool.pick(Nat, String.eq(verdict, "ok"), 0n, 2n))
+
+def Order.gate(+said: J.Json) -> Nat:
+  Order.gate.k(J.Json.get_str(said, "state", ""), J.Json.get_str(said, "verdict", ""))
+
+def Order.gate.tidy(+x: String) -> String:
+  Bool.pick(String, String.ends_with(String.trim(x), "."), String.trim(String.take(String.trim(x), Nat.sub(String.length(String.trim(x)), 1n))), String.trim(x))
+
+def Order.gate.keep(blank: Bool, +x: String, rest: List<&2, String>) -> List<&2, String>:
+  match blank:
+    case True{}:
+      rest
+    case False{}:
+      x <> rest
+
+def Order.gate.clean(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      Order.gate.keep(String.is_empty(Order.gate.tidy(x)), Order.gate.tidy(x), Order.gate.clean(t))
+
+def Order.gate.strs(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case J.Str{+x} <> t:
+      x <> Order.gate.strs(t)
+    case _ <> t:
+      Order.gate.strs(t)
+
+# the bullets: the recorded issues, else the summary cut at its semicolons
+def Order.gate.points.k(none: Bool, +summary: String, xs: List<&2, String>) -> List<&2, String>:
+  match none:
+    case True{}:
+      Order.gate.clean(String.split(summary, ';'))
+    case False{}:
+      xs
+
+def Order.gate.points(+summary: String, +issues: List<&2, J.Json>) -> List<&2, String>:
+  Order.gate.points.k(List.is_empty(&2, J.Json, issues), summary, Order.gate.clean(Order.gate.strs(issues)))
+
+def Order.gate.list(xs: List<&2, String>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case +x <> t:
+      "- " ++ x ++ "\n" ++ Order.gate.list(t)
+
+def Order.gate.md(+summary: String, issues: List<&2, J.Json>) -> String:
+  "**The manufacturing review found what to fix before ordering:**\n\n" ++ Order.gate.list(Order.gate.points(summary, issues)) ++ "\nDetails: `.backplane/review.md`"
+
+def Order.gate.review.q() -> String:
+  "This design hasn't been checked for manufacturing since it changed. A review finds what a fab would refuse or charge more for."
+
+def Order.gate.fix.q() -> String:
+  "Fix these before ordering, or order as it is?"
+
+# what the agent hears (Backplane did the asking)
+def Order.gate.said(i: Nat) -> String:
+  match i:
+    case 0n:
+      "The manufacturing review is current and passed: go on with the order."
+    case 1n:
+      "The design has no current manufacturing review: Backplane asked the person \"Review for manufacturing\" or \"Order without a review\". End your turn now; their answer comes as their next message."
+    case _:
+      "The current review found issues: Backplane posted them in this thread and asked the person \"Fix them first\" or \"Order anyway\". Don't repeat them. End your turn now; their answer comes as their next message."
 
 # what the order tools answer at once (neither waits on the person: their
 # answer comes as their next message, the quote as a message once posted)
@@ -106,8 +181,8 @@ def Order.tools() -> List<&2, J.Json>:
 
 # every thread's agent has this one (a buy thread checks, a review records)
 def Order.review.tool() -> J.Json:
-  Order.tool.def("order_review", "The project's manufacturing review. check: whether the design (its boards, schematics, models and fab files) was reviewed since it last changed; answers state (none, stale or current), verdict, summary and issues. record: after a manufacturing review, keep its verdict (ok or issues), a one-line summary and the issues, one short line each, with the design as it is now.",
-    [Order.tool.prop("action", "string", "check or record"), Order.tool.prop("verdict", "string", "record: ok or issues"), Order.tool.prop("summary", "string", "record: one line"),
+  Order.tool.def("order_review", "The project's manufacturing review. gate (a buy thread, before exporting): Backplane checks the review and, unless it is current and passed, shows the person why and asks them; answers what it did. check: whether the design (its boards, schematics, models and fab files) was reviewed since it last changed; answers state (none, stale or current), verdict, summary and issues. record: after a manufacturing review, keep its verdict (ok or issues), a one-line summary and the issues, one short line each, with the design as it is now.",
+    [Order.tool.prop("action", "string", "gate, check or record"), Order.tool.prop("verdict", "string", "record: ok or issues"), Order.tool.prop("summary", "string", "record: one line"),
      J.KV{"issues", J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"string"}}])}, J.KV{"description", J.Str{"record: what must change, one short line each (\"Shade: walls 0.6 mm, need 0.8\"), at most 8; none when ok."}}])}],
     [J.Str{"action"}])
 
