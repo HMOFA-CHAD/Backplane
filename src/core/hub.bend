@@ -1,4 +1,5 @@
 import Base
+import ./mailrun.bend as MR
 import ./mail.bend as ML
 import ./mailbody.bend as MB
 import ./ref.bend as REF
@@ -36,6 +37,8 @@ import ./order.bend as OR
 
 # what the server must do after a step
 type Out is Data:
+  RunStart{thread: String, conv: String, head: String}
+  CharterWrite{path: String, text: String}
   MailAppend{line: String, conv: String, changes: List<&2, M.Change>}
   MailRead{client: U32, id: String, conv: String, before: String, n: Nat}
   LockGuard{name: String, old: String, holder: String}
@@ -735,7 +738,7 @@ def Hub.methods.fs() -> List<&2, String>:
 
 # sidebar and navigation
 def Hub.methods.nav() -> List<&2, String>:
-  ["thread.snooze", "thread.reorder", "files.list", "kicad.open", "project.reorder", "mech.list", "mech.render", "file.open", "files.dir", "pdf.page"]
+  ["thread.snooze", "thread.reorder", "files.list", "kicad.open", "project.reorder", "mech.list", "mech.render", "file.open", "files.dir", "pdf.page", "kicad.export10"]
 
 # snooze a thread: {thread, for: "1h" | "1w" | "tomorrow" | "off"} or
 # {thread, until}. Tomorrow 9:00 is local time, which the server knows:
@@ -2163,6 +2166,8 @@ def Hub.nav(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Jso
     # a PDF's page as a picture, for the window, {path, page}
     case 9n:
       Step.outs([Git{client, id, "pdf", "", "/", J.Json.get_str(p, "path", ""), J.Json.as_raw(J.Json.get(p, "page"), "1")}])
+    case 10n:
+      Step.outs([Git{client, id, "kexport", J.Json.get_str(p, "thread", ""), Hub.cwd(s, Hub.thread(s, J.Json.get_str(p, "thread", ""))), J.Json.show(p), ""}])
     case _:
       Hub.agentm(C.Codec.pos(Hub.methods.agent(), m), s, now, client, id, p, m)
 
@@ -3284,10 +3289,13 @@ def Answer.demo(busy: Bool) -> M.State:
     M.MessagePosted{"t1", "m1", M.User{}, "[message from person@desk]\nhey", 2n}, M.MessagePosted{"t1", "m2", M.Assistant{}, "hi", 3n},
     M.TurnChanged{"t1", M.Completed{}, 3n}], Bool.pick(List<&2, M.Change>, busy, [M.WorkSet{"t1", "bg", "a\tx", 3n}], Nil{})), M.State.empty())
 
+def Run.settle(+s: M.State, +now: Nat, +th: String) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, MR.Run.is(s, th), [M.ThreadSettled{th, False{}, now}], Nil{})
+
 # post: the state after the step; the policy's record (core/notice.bend)
 # is written with it
 def Ended.out.p(+post: M.State, +s: M.State, +now: Nat, +state: String, +thread: String, +cwd: String, +cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
-  Step{List.append(&2, M.Change, List.append(&2, M.Change, cs, Sum.at(RF.Sum.due(s, thread, now), thread, now)), NO.Policy.end(post, now, thread, state)),
+  Step{List.append(&2, M.Change, List.append(&2, M.Change, List.append(&2, M.Change, cs, Run.settle(s, now, thread)), Sum.at(RF.Sum.due(s, thread, now), thread, now)), NO.Policy.end(post, now, thread, state)),
     List.append(&2, Out, os, TurnEnded{thread, state} <> Git{0, "", "step", thread, cwd, "", ""} <> Git{0, "", "checkpoint", thread, cwd, "", ""}
       <> List.append(&2, Out, Sum.out(RF.Sum.due(s, thread, now), s, thread, "thread"), Answer.out(String.eq(state, "completed"), post, thread)))}
 
@@ -3768,7 +3776,7 @@ def Step.cat(a: Step, b: Step) -> Step:
     case Step{cs, os} Step{c2, o2}:
       Step{List.append(&2, M.Change, cs, c2), List.append(&2, Out, os, o2)}
 
-def Mail.send.to(+person: Bool, +s: M.State, +now: Nat, +from: String, +thread: String, +p: J.Json, +msg: String) -> Step:
+def Mail.send.worker(+person: Bool, +s: M.State, +now: Nat, +from: String, +thread: String, +p: J.Json, +msg: String) -> Step:
   match person:
     case True{}:
       Step.cat(Hub.post(s, now, thread, msg, M.User{}, J.Json.get_str(p, "text", "")), Mail.compose(s, now, "person", Mail.addr(s, thread), J.Json.get_str(p, "text", ""), msg,
@@ -3776,6 +3784,14 @@ def Mail.send.to(+person: Bool, +s: M.State, +now: Nat, +from: String, +thread: 
     case False{}:
       Step.cat(Origin.step(Hub.inbox.id(s, now, from, thread, M.User{}, J.Json.get_str(p, "text", ""), msg), thread, msg, ML.Origin{Mail.addr(s, from), "thread", ""}, now),
         Mail.compose(s, now, Mail.addr(s, from), Mail.addr(s, thread), J.Json.get_str(p, "text", ""), msg, J.Json.get_str(p, "conv", ""), J.Json.get_str(p, "subject", ""), J.Json.get_str(p, "want", "")))
+
+def Mail.send.bot(bot: Bool, +person: Bool, +s: M.State, +now: Nat, +from: String, +thread: String, +p: J.Json, +msg: String) -> Step:
+  match bot:
+    case False{}: Mail.send.worker(person, s, now, from, thread, p, msg)
+    case True{}: Mail.compose(s, now, Mail.sender(s, Bool.pick(String, person, "", from)), Mail.addr(s, thread), J.Json.get_str(p, "text", ""), msg, J.Json.get_str(p, "conv", ""), J.Json.get_str(p, "subject", ""), J.Json.get_str(p, "want", ""))
+
+def Mail.send.to(+person: Bool, +s: M.State, +now: Nat, +from: String, +thread: String, +p: J.Json, +msg: String) -> Step:
+  Mail.send.bot(Bool.and(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), BT.World.is_bot_thread(M.State.bots(s), thread)), person, s, now, from, thread, p, msg)
 
 def Mail.send.valid(+ok: Bool, +s: M.State, +now: Nat, +from: String, +thread: String, +p: J.Json, +msg: String) -> Step:
   match ok:
@@ -3819,8 +3835,31 @@ def Mail.room.on(+on: Bool, +st: Step, +s: M.State, +now: Nat, +from: String, +r
 def Mail.room(+st: Step, +s: M.State, +now: Nat, +from: String, +room: String, +text: String, +msg: String, +parts: List<&2, String>, +subject: String) -> Step:
   Mail.room.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), st, s, now, from, room, text, msg, parts, subject)
 
+# Discard the old FOH-delivery step while retaining independent room and
+# wake bookkeeping. Calls that wrap the funnel retain their own changes.
+def Mail.foh.cs(+cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  match cs:
+    case Nil{}: Nil{}
+    case M.RoomPosted{+id, +r, +f, +tx, +hop, +at} <> +t: M.RoomPosted{id, r, f, tx, hop, at} <> Mail.foh.cs(t)
+    case M.BotWoke{+b, +hop, +at} <> +t: M.BotWoke{b, hop, at} <> Mail.foh.cs(t)
+    case _ <> +t: Mail.foh.cs(t)
+
+def Mail.foh(st: Step) -> Step:
+  match st:
+    case Step{cs, _}: Step{Mail.foh.cs(cs), Nil{}}
+
+def Mail.funnel.bot(bot: Bool, +st: Step, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
+  match bot:
+    case True{}: Mail.tee(Mail.foh(st), s, now, o, to, text, msg)
+    case False{}: Mail.tee(st, s, now, o, to, text, msg)
+
+# Keep Mail.tee's existing delivery-preservation law. All production
+# inbound sources pass this switch, before the tee writes their body.
+def Mail.funnel(+st: Step, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
+  Mail.funnel.bot(Bool.and(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), Bool.and(String.starts_with(to, "bot:"), Bool.not(String.eq(ML.Origin.kind(o), "person")))), st, s, now, o, to, text, msg)
+
 def Mail.inbound(+st: Step, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
-  Mail.tee(Origin.step(st, to, msg, o, now), s, now, o, Mail.addr(s, to), text, msg)
+  Mail.funnel(Origin.step(st, to, msg, o, now), s, now, o, Mail.addr(s, to), text, msg)
 
 # A linked inbound message, with durable provenance following its post.
 def Hub.inbox.from(+s: M.State, +now: Nat, +from: String, +to: String, +role: M.Role, +text: String, +msg: String) -> Step:
@@ -5884,7 +5923,7 @@ def Carry.live(t: M.Thread) -> Bool:
 # whether a turn the restart cut short carries on: the setting is on, the
 # thread was running, is live, and made progress since the last carry
 def Carry.will(+before: M.State, +th: String) -> Bool:
-  Bool.and(M.Carry.on(before), Bool.and(Bool.and(Hub.running(Hub.thread(before, th)), Carry.live(Hub.thread(before, th))), Carry.fresh(M.State.mine(before, th))))
+  Bool.and(Bool.not(MR.Run.is(before, th)), Bool.and(M.Carry.on(before), Bool.and(Bool.and(Hub.running(Hub.thread(before, th)), Carry.live(Hub.thread(before, th))), Carry.fresh(M.State.mine(before, th)))))
 
 # Recovery
 # --------
@@ -6259,13 +6298,33 @@ def Rec.but(ids: List<&2, String>, +kept: List<&2, String>) -> List<&2, String>:
 def Hub.recover.k(+s: M.State, +now: Nat, +kept: List<&2, String>) -> Step:
   Rec.step(Rec.lost(Rec.but(Rec.ids(Rec.threads(s)), kept), Rec.repair(Rec.turns(Rec.but(Rec.ids(Rec.threads(s)), kept), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), s, now), s, now), now))
 
+def Run.recover.one(go: Bool, +s: M.State, +now: Nat, +r: ML.Run) -> Step:
+  match go:
+    case False{}: Step.none()
+    case True{}:
+      Step.before([M.TurnChanged{ML.Run.thread(r), M.Interrupted{}, now}, M.ThreadSettled{ML.Run.thread(r), False{}, now}], Nil{},
+        Mail.file(s, now, ML.Origin{"backplane", "system", "system:" ++ ML.Run.bot(r)}, "bot:" ++ ML.Run.bot(r), "run " ++ ML.Run.thread(r) ++ " was cut off by a restart", Hub.id("run-restart-" ++ ML.Run.thread(r), now, Hub.seq(s))))
+
+def Run.recover.all(+rs: List<&2, ML.Run>, +s: M.State, +now: Nat, +kept: List<&2, String>, +st: Step) -> Step:
+  match rs:
+    case Nil{}: st
+    case +r <> +t: Run.recover.all(t, s, now, kept, Step.cat(st, Run.recover.one(Bool.and(ML.Run.live(r), Bool.not(AD.Adopt.in(kept, ML.Run.thread(r)))), M.State.replay(Queue.changes(st), s), now, r)))
+
+def Run.recover.on(on: Bool, +s: M.State, +now: Nat, +kept: List<&2, String>, +st: Step) -> Step:
+  match on:
+    case False{}: st
+    case True{}: Run.recover.all(Map.values(&2, ML.Run, ML.Box.runs(M.State.mail(s))), s, now, kept, st)
+
+def Run.recover(+s: M.State, +now: Nat, +kept: List<&2, String>, +st: Step) -> Step:
+  Run.recover.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), s, now, kept, st)
+
 # (and every watched work still open is watched again: Watch.rearm)
 # kept: the threads whose agent process the restart kept (adopted): their
 # turns are not ended, their work not lost, nothing carries them on
 def Hub.recover.a(+s: M.State, +now: Nat, +kept: List<&2, String>) -> Step:
   +locks = Locks.recover(s, now)
   +s1 = M.State.replay(Queue.changes(locks), s)
-  Step.cat(locks, Step.cat(Step{Nil{}, Watch.rearm(s1)}, Hub.recover.k(s1, now, kept)))
+  Run.recover(s1, now, kept, Step.cat(locks, Step.cat(Step{Nil{}, Watch.rearm(s1)}, Hub.recover.k(s1, now, kept))))
 
 def Hub.recover(+s: M.State, +now: Nat) -> Step:
   Hub.recover.a(s, now, Nil{})
@@ -7046,3 +7105,169 @@ def Mail.options.outs(os: List<&2, Out>, +s: M.State, +p: J.Json) -> List<&2, Ou
 def Mail.options(st: Step, s: M.State, p: J.Json) -> Step:
   match st:
     case Step{cs, os}: Step{cs, Mail.options.outs(os, s, p)}
+
+# ---- mail 2c ----
+# These operations never call the inbound funnel: escalation is the only
+# mail path allowed to post into a bot's front of house.
+def Run.row(+s: M.State, +now: Nat, +bot: String, +conv: String, +text: String) -> M.Change:
+  M.ActivityLogged{BT.Bot.thread(BT.World.bot(M.State.bots(s), bot)), Hub.id("esc", now, Hub.seq(s)), "info", "escalation", text ++ " · " ++ REF.Ref.uri(REF.Ref.conv(conv)), now}
+
+def Run.recent(+s: M.State, +now: Nat, +key: String) -> Bool:
+  +j = Maybe.default(&2, J.Json, J.Json.parse(M.Setting.get(s, "told." ++ key, "")), J.Null{})
+  Bool.and(Nat.is_gt(J.Json.get_nat(j, "at", 0n), 0n), Nat.is_lt(Nat.sub(now, J.Json.get_nat(j, "at", 0n)), 3600n))
+
+def Run.told(+now: Nat, +key: String, +bot: String, +text: String) -> List<&2, M.Change>:
+  TLD.Told.mark.set(key, now, key, text, "alert", bot)
+
+def Run.person(on: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String, +text: String) -> Step:
+  match on:
+    case False{}: Step.none()
+    case True{}:
+      +th = BT.Bot.thread(BT.World.bot(M.State.bots(s), bot))
+      Step{List.append(&2, M.Change, NO.Policy.ask(s, now, th, "Mailroom escalation", text ++ " · " ++ REF.Ref.uri(REF.Ref.conv(conv))), Run.told(now, "mail-person-" ++ bot ++ "-" ++ conv, bot, text)), [Alerted{th}]}
+
+def Run.escalate.to(person: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String, +text: String) -> Step:
+  match person:
+    case True{}: Run.person(Bool.and(NO.Policy.on(s, "needs"), Bool.not(Run.recent(s, now, "mail-person-" ++ bot ++ "-" ++ conv))), s, now, bot, conv, text)
+    case False{}:
+      +th = BT.Bot.thread(BT.World.bot(M.State.bots(s), bot))
+      +msg = Hub.id("esc", now, Hub.seq(s))
+      Origin.step(Hub.deliver(Hub.running(Hub.thread(s, th)), M.Worktree.pending(Hub.thread(s, th), now), s, now, th, msg, M.System{}, "[mailroom escalation from " ++ conv ++ "] " ++ text), th, msg, ML.Origin{"mailroom:" ++ conv, "escalation", conv}, now)
+
+def Run.escalate(+s: M.State, +now: Nat, +bot: String, +conv: String, +to: String, +text: String) -> Step:
+  Step.before([Run.row(s, now, bot, conv, text)], Nil{}, Run.escalate.to(String.eq(to, "person"), s, now, bot, conv, text))
+
+def Run.alarm.on(on: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String) -> List<&2, M.Change>:
+  match on:
+    case False{}: Nil{}
+    case True{}:
+      +text = Nat.show(ML.Box.live_n(M.State.mail(s), bot)) ++ " mailroom runs live"
+      Run.row(s, now, bot, conv, text) <> Run.told(now, "mail-runs-" ++ bot, bot, text)
+
+def Run.alarm(+s: M.State, +now: Nat, +bot: String, +conv: String) -> List<&2, M.Change>:
+  Run.alarm.on(Bool.and(Nat.is_gt(ML.Box.live_n(M.State.mail(s), bot), 6n), Bool.not(Run.recent(s, now, "mail-runs-" ++ bot))), s, now, bot, conv)
+
+def Run.model(+s: M.State, +bot: String) -> String:
+  M.Setting.get(s, "run.model." ++ bot, Bool.pick(String, String.eq(M.Setting.get(s, "uber.bot", ""), bot), "opus", "sonnet"))
+
+def Run.spawn.new(+s: M.State, +now: Nat, +bot: String, +conv: String, +body: MB.Body, +th: String) -> Step:
+  +b = BT.World.bot(M.State.bots(s), bot)
+  +cs = {[M.ThreadCreated{th, ML.Conv.project(MB.Body.conv(body)), BT.Bot.name(b) ++ ": " ++ ML.Conv.subject(MB.Body.conv(body)), M.Local{}, "", Hub.cwd(s, Hub.thread(s, BT.Bot.thread(b))), Hub.provider(Hub.thread(s, BT.Bot.thread(b))), Run.model(s, bot), now},
+    M.WorktreeSet{th, "", Hub.cwd(s, Hub.thread(s, BT.Bot.thread(b))), now}, M.ModesSet{th, M.Supervised{}, M.DefaultMode{}, Run.model(s, bot), now}, M.RunSet{th, bot, conv, ML.Mail.id(MB.Body.mail(body)), now}, M.SettingSet{"run.pending." ++ th, "on", now}] : List<&2, M.Change>}
+  +s1 = M.State.replay(cs, s)
+  Step{List.append(&2, M.Change, cs, Run.alarm(s1, now, bot, conv)), [RunStart{th, conv, MR.Run.brief(s1, bot, conv)}]}
+
+def Run.deliver.ready(+s: M.State, +now: Nat, +th: String, +body: MB.Body) -> Step:
+  +m = MB.Body.mail(body)
+  Origin.step(Hub.deliver(Hub.running(Hub.thread(s, th)), M.Worktree.pending(Hub.thread(s, th), now), s, now, th, ML.Mail.id(m), M.User{},
+    "[mail " ++ ML.Mail.conv(m) ++ " · " ++ ML.Mail.kind(m) ++ " from " ++ Mail.name(s, ML.Mail.from(m)) ++ "]\n" ++ MB.Body.text(body)), th, ML.Mail.id(m), ML.Origin{ML.Mail.from(m), ML.Mail.kind(m), ML.Mail.conv(m)}, now)
+
+# Server has loaded the last 20 bodies, newest first. Keep the most
+# recent text first so a character cap discards the oldest mail first.
+def Run.bodies(+bs: List<&2, MB.Body>) -> String:
+  match bs:
+    case Nil{}: ""
+    case +b <> +t: "\n[mail " ++ ML.Mail.id(MB.Body.mail(b)) ++ " from " ++ ML.Mail.from(MB.Body.mail(b)) ++ "]\n" ++ String.take(MB.Body.text(b), 4000n) ++ Run.bodies(t)
+
+def Run.deliver.pending(pending: Bool, +s: M.State, +now: Nat, +th: String, +body: MB.Body) -> Step:
+  match pending:
+    case False{}: Run.deliver.ready(s, now, th, body)
+    case True{}: Step{[M.MessagePosted{th, ML.Mail.id(MB.Body.mail(body)), M.User{}, MB.Body.text(body), now}, M.MessageFrom{th, ML.Mail.id(MB.Body.mail(body)), ML.Mail.from(MB.Body.mail(body)), ML.Mail.kind(MB.Body.mail(body)), ML.Mail.conv(MB.Body.mail(body)), now}], Nil{}}
+
+def Run.deliver(+s: M.State, +now: Nat, +th: String, +body: MB.Body) -> Step:
+  Run.deliver.pending(String.eq(M.Setting.get(s, "run.pending." ++ th, ""), "on"), s, now, th, body)
+
+def Run.spawn.live(empty: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String, +body: MB.Body, +live: String) -> Step:
+  match empty:
+    case True{}: Run.spawn.new(s, now, bot, conv, body, Hub.id("run", now, Hub.seq(s)))
+    case False{}: Run.deliver(s, now, live, body)
+
+def Run.spawn(+s: M.State, +now: Nat, +bot: String, +conv: String, +body: MB.Body) -> Step:
+  +live = ML.Box.live(M.State.mail(s), bot, conv)
+  Run.spawn.live(String.is_empty(live), s, now, bot, conv, body, live)
+
+def Mail.route_bot.want(act: Bool, +s: M.State, +now: Nat, +body: MB.Body, +bot: String) -> Step:
+  match act:
+    case False{}: Step.none()
+    case True{}: Run.spawn(s, now, bot, ML.Mail.conv(MB.Body.mail(body)), body)
+
+def Mail.route_bot.plan(p: MR.MailRunPlan, +s: M.State, +now: Nat, +body: MB.Body, +bot: String) -> Step:
+  match p:
+    case MR.FileOnly{}: Step.none()
+    case MR.NewRun{}: Run.spawn(s, now, bot, ML.Mail.conv(MB.Body.mail(body)), body)
+    case MR.IntoRun{live}: Run.deliver(s, now, live, body)
+
+def Mail.route_bot(+s: M.State, +now: Nat, +body: MB.Body, +bot: String) -> Step:
+  Mail.route_bot.plan(MR.Run.plan(ML.Mail.wanted(MB.Body.mail(body)), ML.Box.live(M.State.mail(s), bot, ML.Mail.conv(MB.Body.mail(body)))), s, now, body, bot)
+
+def Mail.route.part(r: Maybe<&2, REF.Ref>, +s: M.State, +now: Nat, +body: MB.Body) -> Step:
+  match r:
+    case Some{REF.Ref{"bot", +bot <> _, _}}:
+      Mail.route_bot.want(Bool.and(Bool.not(String.eq(ML.Mail.from(MB.Body.mail(body)), "bot:" ++ bot)), Bool.or(String.eq(ML.Mail.wanted(MB.Body.mail(body)), "act"), String.contains(MB.Body.text(body), "@" ++ BT.Bot.name(BT.World.bot(M.State.bots(s), bot))))), s, now, body, bot)
+    case _: Step.none()
+
+# The journal commits first. This pure router is called once, only after
+# a fresh header was durably written; replays and retries do not run it.
+def Mail.route.parts(+parts: List<&2, String>, +s: M.State, +now: Nat, +body: MB.Body, +st: Step) -> Step:
+  match parts:
+    case Nil{}: st
+    case +p <> +t: Mail.route.parts(t, s, now, body, Step.cat(st, Mail.route.part(REF.Ref.of_addr(p), M.State.replay(Queue.changes(st), s), now, body)))
+
+def Mail.route.got(r: Maybe<&2, REF.Ref>, +s: M.State, +now: Nat, +body: MB.Body) -> Step:
+  match r:
+    case Some{REF.Ref{"bot", bot <> _, _}}: Mail.route_bot(s, now, body, bot)
+    case Some{REF.Ref{"room", _, _}}: Mail.route.parts(ML.Conv.parts(MB.Body.conv(body)), s, now, body, Step.none())
+    case _: Step.none()
+
+def Mail.route.enabled(+s: M.State, +now: Nat, +body: MB.Body) -> Step:
+  Mail.route.got(REF.Ref.of_addr(ML.Mail.to(MB.Body.mail(body))), s, now, body)
+
+def Run.pending.text(+es: List<&2, M.Entry>) -> String:
+  match es:
+    case Nil{}: ""
+    case M.Msg{_, _, _, +text, _} <> +t: String.take(text, 2000n) ++ "\n" ++ Run.pending.text(t)
+    case _ <> +t: Run.pending.text(t)
+
+# A first turn never resumes a provider session, even if a torn or old
+# state happened to attach one between RunSet and its body read.
+def Run.fresh.out(o: Out) -> Out:
+  match o:
+    case AgentStart{t, cwd, p, m, _, r, i}: AgentStart{t, cwd, p, m, "", r, i}
+    case CodexTurn{t, cwd, m, _, r, text}: CodexTurn{t, cwd, m, "", r, text}
+    case GrokTurn{t, cwd, m, _, r, text}: GrokTurn{t, cwd, m, "", r, text}
+    case MuseTurn{t, cwd, m, _, r, text}: MuseTurn{t, cwd, m, "", r, text}
+    case AgyTurn{t, cwd, m, _, r, text}: AgyTurn{t, cwd, m, "", r, text}
+    case other: other
+
+def Run.fresh.outs(+os: List<&2, Out>) -> List<&2, Out>:
+  match os:
+    case Nil{}: Nil{}
+    case +o <> +t: Run.fresh.out(o) <> Run.fresh.outs(t)
+
+def Run.fresh(st: Step) -> Step:
+  match st:
+    case Step{cs, os}: Step{cs, Run.fresh.outs(os)}
+
+def Run.start(+s: M.State, +now: Nat, +th: String, +head: String, +bs: List<&2, MB.Body>) -> Step:
+  Run.fresh(Step.before([M.SettingSet{"run.pending." ++ th, "", now}], Nil{}, Hub.post(s, now, th, Hub.id("brief", now, Hub.seq(s)), M.User{}, head ++ String.take(Run.pending.text(M.State.mine(s, th)), 2000n) ++ "\n<mail_history newest-first>\n" ++ String.take(Run.bodies(bs), 8000n) ++ "\n</mail_history>")))
+
+def Mail.route.on(on: Bool, +s: M.State, +now: Nat, +body: MB.Body) -> Step:
+  match on:
+    case False{}: Step.none()
+    case True{}: Mail.route.enabled(s, now, body)
+
+def Mail.route(+s: M.State, +now: Nat, +body: MB.Body) -> Step:
+  Mail.route.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), s, now, body)
+
+def Run.ready.got(r: Maybe<&2, ML.Run>, pending: Bool) -> Bool:
+  match r:
+    case None{}: False{}
+    case Some{+r}: Bool.and(ML.Run.live(r), pending)
+
+def Run.ready(+s: M.State, +th: String) -> Bool:
+  Run.ready.got(MR.Run.of(s, th), String.eq(M.Setting.get(s, "run.pending." ++ th, ""), "on"))
+
+def Run.start.on(ready: Bool, +s: M.State, +now: Nat, +th: String, +head: String, +bs: List<&2, MB.Body>) -> Step:
+  match ready:
+    case False{}: Step.none()
+    case True{}: Run.start(s, now, th, head, bs)

@@ -1,4 +1,6 @@
 import Base
+import ./mailrun.bend as RUN
+import ./charter.bend as CH
 import ./locks.bend as LK
 import ./json.bend as J
 import ./model.bend as M
@@ -219,10 +221,33 @@ def Mcp.threads(ts: List<&2, M.Thread>, +project: String) -> List<&2, J.Json>:
 def Mcp.scope(+s: M.State, +thread: String) -> String:
   Bool.pick(String, Mcp.bot(s, thread), "*", Mcp.project_of(B.Hub.thread(s, thread)))
 
+def Mcp.mail.bot(b: Maybe<&2, BT.Bot>, +thread: String) -> String:
+  match b:
+    case Some{+bot}: BT.Bot.id(bot)
+    case None{}: "thread:" ++ thread
+
+def Mcp.mail.scope(+s: M.State, +thread: String) -> String:
+  Mcp.mail.bot(RUN.Run.bot(s, thread), thread)
+
+def Mcp.run.visible(r: Maybe<&2, ML.Run>, +s: M.State, +caller: String) -> Bool:
+  match r:
+    case None{}: True{}
+    case Some{+r}: Bool.and(RUN.Run.is(s, caller), Bool.and(ML.Run.live(r), String.eq(ML.Run.bot(r), Mcp.mail.scope(s, caller))))
+
+def Mcp.run.keep(ok: Bool, +t: M.Thread, +rest: List<&2, M.Thread>) -> List<&2, M.Thread>:
+  match ok:
+    case True{}: t <> rest
+    case False{}: rest
+
+def Mcp.run.threads(+ts: List<&2, M.Thread>, +s: M.State, +caller: String) -> List<&2, M.Thread>:
+  match ts:
+    case Nil{}: Nil{}
+    case +t <> +rest: Mcp.run.keep(Mcp.run.visible(RUN.Run.of(s, M.Thread.id(t)), s, caller), t, Mcp.run.threads(rest, s, caller))
+
 def Mcp.list(+s: M.State, +thread: String) -> Res:
   match s:
     case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
-      Res.ok(J.Json.obj([J.KV{"threads", J.Json.arr(Mcp.threads(Map.values(&2, M.Thread, ts), Mcp.scope(s, thread)))}]))
+      Res.ok(J.Json.obj([J.KV{"threads", J.Json.arr(Mcp.threads(Mcp.run.threads(Map.values(&2, M.Thread, ts), s, thread), Mcp.scope(s, thread)))}]))
 
 def Mcp.entry(e: M.Entry) -> J.Json:
   match e:
@@ -553,7 +578,7 @@ def Mcp.send.m(auto: Bool, +s: M.State, +now: Nat, +thread: String, +target: Str
     case True{}:
       B.Hub.inbox(s, now, thread, target, M.User{}, text)
     case False{}:
-      B.Mail.tee(B.Hub.post.mode(mode, s, now, target, M.Link.id(thread, B.Hub.id("m", now, B.Hub.seq(s))), M.User{}, text), s, now, ML.Origin{B.Mail.addr(s, thread), "thread", ""}, B.Mail.addr(s, target), text, M.Link.id(thread, B.Hub.id("m", now, B.Hub.seq(s))))
+      B.Mail.funnel(B.Hub.post.mode(mode, s, now, target, M.Link.id(thread, B.Hub.id("m", now, B.Hub.seq(s))), M.User{}, text), s, now, ML.Origin{B.Mail.addr(s, thread), "thread", ""}, B.Mail.addr(s, target), text, M.Link.id(thread, B.Hub.id("m", now, B.Hub.seq(s))))
 
 def Mcp.send.k(ok: Bool, +s: M.State, +now: Nat, +thread: String, +target: String, +text: String, +mode: String) -> Res:
   match ok:
@@ -565,7 +590,7 @@ def Mcp.send.k(ok: Bool, +s: M.State, +now: Nat, +thread: String, +target: Strin
 
 def Mcp.names() -> List<&2, String>:
   ["orchestrator_capabilities", "delegate_task", "task_status", "task_cancel", "thread_list", "thread_read", "thread_send", "viewer_show",
-   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment", "wake_on", "wake_list", "wake_cancel", "deploy_restart", "deploy_status", "deploy_cancel", "lock_acquire", "lock_release", "lock_list", "lock_cancel", "deploy_main", "mail", "mail_list", "mail_read", "mail_search", "mail_tag", "mail_snooze", "mail_done"]
+   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment", "wake_on", "wake_list", "wake_cancel", "deploy_restart", "deploy_status", "deploy_cancel", "lock_acquire", "lock_release", "lock_list", "lock_cancel", "deploy_main", "mail", "mail_list", "mail_read", "mail_search", "mail_tag", "mail_snooze", "mail_done", "decide", "escalate", "charter_set"]
 
 def Mcp.lock.acquire(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
   match ok:
@@ -695,7 +720,7 @@ def Mcp.deploy.restart(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.
 # ---- mail 2b ----
 def Mcp.mail.tools() -> List<&2, J.Json>:
   [Tool.def("mail", "Send mail to an address, delivered at once and filed in its conversation.",
-    [Tool.prop("to", "string", "thread:<id>, bot:<id> or room:<id>."), Tool.prop("text", "string", "The message."), Tool.prop("conv", "string", "Continue this conversation."), Tool.prop("subject", "string", "Subject for a new conversation."), Tool.prop("want", "string", "fyi or act.")], ["to", "text"]),
+    [Tool.prop("to", "string", "thread:<id>, bot:<id> or room:<id>."), Tool.prop("text", "string", "The message."), Tool.prop("conv", "string", "Continue this conversation."), Tool.prop("subject", "string", "Subject for a new conversation."), Tool.prop("want", "string", "fyi or act.")], ["text"]),
    Tool.def("mail_list", "List your mail conversations, newest first, optionally by status or project.", [Tool.prop("bot", "string", "Bot id; * for all mail (bots only)."), Tool.prop("status", "string", "unread, open, snoozed or done."), Tool.prop("project", "string", "Project id."), Tool.prop("n", "number", "Page size."), Tool.prop("skip", "number", "Rows to skip.")], Nil{}),
    Tool.def("mail_read", "Read a conversation's message bodies and mark it seen.", [Tool.prop("conv", "string", "Conversation id."), Tool.prop("before", "string", "Mail id cursor."), Tool.prop("n", "number", "Page size (default 50).")], ["conv"]),
    Tool.def("mail_search", "Search mail subjects, participants, tags and newest headers.", [Tool.prop("q", "string", "Query."), Tool.prop("bot", "string", "Bot id or *."), Tool.prop("n", "number", "Maximum results.")], ["q"]),
@@ -746,6 +771,7 @@ def Mcp.tools() -> J.Json:
     Tool.def("viewer_show",
       "Show a file in the user's Backplane viewer panel: a .kicad_pcb on the Board tab (kind 3d: the board in 3D), a .kicad_sch on the Schematic tab, and any .step/.stp or .glb on the Mech tab, the 3D design tab (the model turned in 3D, the project's parts in mech/ beside it, their renders a tap away), wherever the file is. Use it after changing a design so the user sees the result; the viewer also follows the file live.",
       [Tool.prop("path", "string", "Absolute path of the file."), Tool.prop("kind", "string", "board, schematic, 3d (a board in 3D) or mech (a STEP or GLB); default from the extension.")], ["path"]),
+    Tool.def("kicad_export10", "Export an outside-project KiCad 10 copy. First returns a compatibility report; force accepts the reported changes. Never opens a GUI.", [Tool.prop("path", "string", "Absolute .kicad_pro path."), Tool.prop("force", "boolean", "Accept changes, including dropping blocked approximations (default false).")], ["path"]),
     Tool.def("terminal_open",
       "Open a terminal in this chat that runs a command (through the user's shell, in this thread's folder) and that the user sees and types into right in the conversation. Use it to hand the user a small tool: a TUI, a picker, an interactive script, a live monitor, a REPL. It answers the terminal's id at once; when the command ends the terminal stays open at the user's shell. Read its screen with terminal_read; what it shows when the user next writes to you comes with their message. It stops (and greys out, a click restarts it) when the user sends another message, unless they pin it.",
       [Tool.prop("command", "string", "The command line, e.g. python3 tools/pick.py or htop."), Tool.prop("title", "string", "A short title shown above it."),
@@ -784,14 +810,6 @@ def Mcp.tools() -> J.Json:
     , List.append(&2, J.Json, Mcp.preview_tools(), List.append(&2, J.Json, Mcp.kicad_tools(), [Tool.def("permission_prompt", "Internal to Backplane: asks the user before a tool runs. Do not call it yourself.",
       [Tool.prop("tool_name", "string", "The tool."), Tool.prop("input", "object", "Its input."), Tool.prop("tool_use_id", "string", "The call.")], ["tool_name", "input"])]))))}])
 
-def Mcp.mail.bot(b: Maybe<&2, BT.Bot>, +thread: String) -> String:
-  match b:
-    case Some{+bot}: BT.Bot.id(bot)
-    case None{}: "thread:" ++ thread
-
-def Mcp.mail.scope(+s: M.State, +thread: String) -> String:
-  Mcp.mail.bot(BT.World.of_thread(M.State.bots(s), thread), thread)
-
 def Mcp.mail.uber(+s: M.State, +thread: String) -> Bool:
   UBM.Uber.is(s, Mcp.mail.scope(s, thread))
 
@@ -805,7 +823,7 @@ def Mcp.mail.params(+s: M.State, +thread: String, +a: J.Json) -> J.Json:
 def Mcp.mail.allowed(+s: M.State, +thread: String, +conv: String) -> Bool:
   +scope = Mcp.mail.scope(s, thread)
   Bool.or(Mcp.mail.uber(s, thread),
-    ML.Parts.has(ML.Conv.parts(ML.Box.conv(M.State.mail(s), conv)), Bool.pick(String, Mcp.bot(s, thread), "bot:" ++ scope, scope), False{}))
+    ML.Parts.has(ML.Conv.parts(ML.Box.conv(M.State.mail(s), conv)), Bool.pick(String, String.starts_with(scope, "thread:"), scope, "bot:" ++ scope), False{}))
 
 def Mcp.mail.until(+s: M.State, +now: Nat, +a: J.Json) -> Nat:
   Bool.pick(Nat, Nat.is_gt(J.Json.get_nat(a, "until", 0n), 0n), J.Json.get_nat(a, "until", 0n),
@@ -816,11 +834,22 @@ def Mcp.mail.change(+s: M.State, +now: Nat, +thread: String, +a: J.Json, +snooze
     J.KV{"status", J.Str{Bool.pick(String, snooze, "snoozed", "done")}}, J.KV{"until", J.Json.nat(Mcp.mail.until(s, now, a))}])
   Res{True{}, J.Json.obj([J.KV{"ok", J.Flag{True{}}}]), B.Step{B.Mail.mark(s, now, p), Nil{}}}
 
+def Mcp.run.reply.part(+ps: List<&2, String>, +bot: String, +th: String) -> String:
+  match ps:
+    case Nil{}: ""
+    case +h <> +t: Bool.pick(String, Bool.or(String.eq(h, "bot:" ++ bot), String.eq(h, "thread:" ++ th)), Mcp.run.reply.part(t, bot, th), h)
+
+def Mcp.run.mail.got(r: Maybe<&2, ML.Run>, +s: M.State, +a: J.Json) -> J.Json:
+  match r:
+    case None{}: a
+    case Some{+r}: J.Json.obj([J.KV{"to", J.Str{J.Json.get_str(a, "to", Mcp.run.reply.part(ML.Conv.parts(ML.Box.conv(M.State.mail(s), ML.Run.conv(r))), ML.Run.bot(r), ML.Run.thread(r))) }},
+      J.KV{"text", J.Str{J.Json.get_str(a, "text", "")}}, J.KV{"conv", J.Str{J.Json.get_str(a, "conv", ML.Run.conv(r))}}, J.KV{"subject", J.Str{J.Json.get_str(a, "subject", "")}}, J.KV{"want", J.Str{J.Json.get_str(a, "want", "")}}])
+
 def Mcp.mail.call.on(+ok: Bool, +i: Nat, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
   match ok i:
     case False{} _: Res.fail("mail is off or the conversation is not yours")
     case True{} 34n:
-      Res{True{}, J.Json.obj([J.KV{"ok", J.Flag{True{}}}]), B.Mail.send(s, now, thread, a)}
+      Res{True{}, J.Json.obj([J.KV{"ok", J.Flag{True{}}}]), B.Mail.send(s, now, thread, Mcp.run.mail.got(ML.Box.run_of(M.State.mail(s), thread), s, a))}
     case True{} 35n: Res.ok(B.Mail.list(s, Mcp.mail.params(s, thread, a)))
     case True{} 36n: Res{True{}, J.Null{}, B.Mail.read(s, now, 0, "0", Mcp.mail.params(s, thread, a))}
     case True{} 37n: Res.ok(B.Mail.find(s, Mcp.mail.params(s, thread, a)))
@@ -861,6 +890,34 @@ def Mcp.ship.k(ok: Bool, +s: M.State, +now: Nat, +by: String, +note: String, +ou
 # deploy_main with origin/main read (out: the look's lines)
 def Mcp.ship(+s: M.State, +now: Nat, +thread: String, +a: J.Json, +out: String) -> Res:
   Mcp.ship.k(String.is_empty(SH.Look.err(out)), s, now, B.Ship.by(thread), J.Json.get_str(a, "note", ""), out)
+
+def Mcp.run.decide(+s: M.State, +now: Nat, +r: ML.Run, +text: String, +reason: String) -> B.Step:
+  B.Step{[M.DecisionLogged{B.Hub.id("decision", now, B.Hub.seq(s)), ML.Run.bot(r), ML.Run.conv(r), ML.Run.thread(r), text, reason, now}], Nil{}}
+
+def Mcp.run.escalate(ok: Bool, +s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
+  match ok:
+    case False{}: Res.fail("to must be bot or person")
+    case True{}: Res{True{}, J.Json.obj([J.KV{"ok", J.Flag{True{}}}]), B.Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), J.Json.get_str(a, "to", "bot"), J.Json.get_str(a, "text", ""))}
+
+def Mcp.run.call.got(r: Maybe<&2, ML.Run>, +i: Nat, +s: M.State, +now: Nat, +a: J.Json) -> Res:
+  match r i:
+    case Some{+r} 41n: Res{True{}, J.Json.obj([J.KV{"ok", J.Flag{True{}}}]), Mcp.run.decide(s, now, r, J.Json.get_str(a, "text", ""), J.Json.get_str(a, "reason", ""))}
+    case Some{+r} 42n: Mcp.run.escalate(ML.Parts.has(["bot", "person"], J.Json.get_str(a, "to", ""), False{}), s, now, r, a)
+    case _ _: Res.fail("This tool is only available in a mailroom run")
+
+def Mcp.charter.got(b: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +a: J.Json) -> Res:
+  match b:
+    case None{}: Res.fail("charter_set is for the front of house bot only")
+    case Some{+b}:
+      Res{True{}, J.Json.obj([J.KV{"ok", J.Flag{True{}}}]), B.Step{[M.CharterSet{BT.Bot.id(b), J.Json.get_str(a, "text", ""), "bot", now},
+        M.ActivityLogged{BT.Bot.thread(b), B.Hub.id("charter", now, B.Hub.seq(s)), "info", "charter", J.Json.get_str(a, "reason", ""), now}],
+        [B.CharterWrite{B.Hub.cwd(s, B.Hub.thread(s, BT.Bot.thread(b))) ++ "/CHARTER.md", J.Json.get_str(a, "text", "")}]}}
+
+def Mcp.run.call(on: Bool, +i: Nat, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
+  match on i:
+    case False{} _: Res.fail("mail is off")
+    case True{} 43n: Mcp.charter.got(BT.World.of_thread(M.State.bots(s), thread), s, now, a)
+    case True{} _: Mcp.run.call.got(ML.Box.run_of(M.State.mail(s), thread), i, s, now, a)
 
 def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +a: J.Json) -> Res:
   match i:
@@ -940,6 +997,9 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
     case 38n: Mcp.mail.call(i, s, now, thread, a)
     case 39n: Mcp.mail.call(i, s, now, thread, a)
     case 40n: Mcp.mail.call(i, s, now, thread, a)
+    case 41n: Mcp.run.call(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), i, s, now, thread, a)
+    case 42n: Mcp.run.call(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), i, s, now, thread, a)
+    case 43n: Mcp.run.call(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), i, s, now, thread, a)
     case _:
       Res.fail("unknown tool")
 
@@ -1008,8 +1068,26 @@ def Perm.k(i: Nat, +ask: String, +s: M.State, +now: Nat, +thread: String, +id: J
     case _:
       Perm.approve(Perm.session_ok(M.Asks.all(s), thread, tool), ask, s, now, thread, id, tool, input)
 
-def Mcp.permit(+s: M.State, +now: Nat, +thread: String, +id: J.Json, +a: J.Json) -> McpOut:
+def Mcp.permit.old(+s: M.State, +now: Nat, +thread: String, +id: J.Json, +a: J.Json) -> McpOut:
   Perm.k(C.Codec.pos(["AskUserQuestion", "ExitPlanMode"], J.Json.get_str(a, "tool_name", "")), B.Hub.id("q", now, B.Hub.seq(s)), s, now, thread, id, J.Json.get_str(a, "tool_name", ""), J.Json.get_obj(a, "input"))
+
+def Perm.run.verdict(ok: Bool, +s: M.State, +now: Nat, +r: ML.Run, +id: J.Json, +tool: String, +input: J.Json) -> McpOut:
+  match ok:
+    case False{}: McpOut{Mcp.result(id, Perm.text(Perm.deny("Outside the charter; escalated"))), B.Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), "bot", "Outside the charter: " ++ tool ++ " " ++ String.take(J.Json.show(input), 1000n)), ""}
+    case True{}: McpOut{Mcp.result(id, Perm.text(Perm.allow(input))), Mcp.run.decide(s, now, r, tool ++ " " ++ String.take(J.Json.show(input), 1000n), "charter: " ++ CH.Charter.line(ML.Box.charter(M.State.mail(s), ML.Run.bot(r)), tool, input)), ""}
+
+def Perm.run.risky(risky: Bool, +s: M.State, +now: Nat, +r: ML.Run, +id: J.Json, +tool: String, +input: J.Json) -> McpOut:
+  match risky:
+    case False{}: McpOut{Mcp.result(id, Perm.text(Perm.allow(input))), B.Step.none(), ""}
+    case True{}: Perm.run.verdict(CH.Charter.allows(ML.Box.charter(M.State.mail(s), ML.Run.bot(r)), tool, input), s, now, r, id, tool, input)
+
+def Perm.run.got(r: Maybe<&2, ML.Run>, +s: M.State, +now: Nat, +thread: String, +id: J.Json, +a: J.Json) -> McpOut:
+  match r:
+    case None{}: Mcp.permit.old(s, now, thread, id, a)
+    case Some{+r}: Perm.run.risky(CH.Charter.risky(J.Json.get_str(a, "tool_name", ""), J.Json.get_obj(a, "input")), s, now, r, id, J.Json.get_str(a, "tool_name", ""), J.Json.get_obj(a, "input"))
+
+def Mcp.permit(+s: M.State, +now: Nat, +thread: String, +id: J.Json, +a: J.Json) -> McpOut:
+  Perm.run.got(RUN.Run.of(s, thread), s, now, thread, id, a)
 
 def Perm.answers.k(input: J.Json, extra: J.Json) -> J.Json:
   match input extra:
@@ -1150,11 +1228,17 @@ def Res.good(r: Res) -> Bool:
     case Res{ok, _, _}:
       ok
 
+# ---- mail 2c ----
+def Mcp.run.tools() -> List<&2, J.Json>:
+  [Tool.def("decide", "Record a decision and its reason in this run's conversation.", [Tool.prop("text", "string", "The decision."), Tool.prop("reason", "string", "Why.")], ["text", "reason"]),
+   Tool.def("escalate", "Ask the front of house bot or person about something outside the charter.", [Tool.prop("to", "string", "bot or person."), Tool.prop("text", "string", "What needs deciding.")], ["to", "text"]),
+   Tool.def("charter_set", "Front of house only: replace your mailroom charter.", [Tool.prop("text", "string", "The full charter."), Tool.prop("reason", "string", "Why it changed.")], ["text", "reason"])]
+
 # Keep the old advertised tool payload exactly while mail is off.
 def Mcp.tools.on(on: Bool) -> J.Json:
   match on:
     case False{}: Mcp.tools()
-    case True{}: J.Json.obj([J.KV{"tools", J.Json.arr(List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(Mcp.tools(), "tools")), Mcp.mail.tools()))}])
+    case True{}: J.Json.obj([J.KV{"tools", J.Json.arr(List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(Mcp.tools(), "tools")), List.append(&2, J.Json, Mcp.mail.tools(), Mcp.run.tools())) )}])
 
 def Mcp.method.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +version: String, +id: J.Json, +p: J.Json) -> McpOut:
   match i:
@@ -1195,3 +1279,13 @@ def Mcp.text.k(m: Maybe<&2, J.Json>, +s: M.State, +now: Nat, +thread: String, +m
 
 def Mcp.text(+s: M.State, +now: Nat, +thread: String, +models: J.Json, +version: String, body: String) -> McpOut:
   Mcp.text.k(J.Json.parse(body), s, now, thread, models, version)
+
+# Direct hub tools have passed the charter guard. Reuse that grant when
+# Google's prepared operation returns, rather than opening a second ask.
+def Perm.run.google.got(r: Maybe<&2, ML.Run>, +s: M.State, +tool: String) -> Bool:
+  match r:
+    case None{}: False{}
+    case Some{+r}: CH.Charter.gate(ML.Box.charter(M.State.mail(s), ML.Run.bot(r)), tool, J.Null{})
+
+def Perm.run.google(+s: M.State, +thread: String, +tool: String) -> Bool:
+  Perm.run.google.got(RUN.Run.of(s, thread), s, tool)

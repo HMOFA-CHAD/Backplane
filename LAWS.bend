@@ -1,6 +1,9 @@
 import Base
+import ./src/core/charter.bend as CH # mail 2c
+import ./src/core/mailrun.bend as MRUN # mail 2c
 import ./src/server/mailstore.bend as MIX # mail index
 import ./src/app/mm.bend as MM # window memos
+import ./src/core/kexport.bend as KEX
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/usage.bend as UZ
@@ -9854,3 +9857,76 @@ law kserve_idle_needs_api2:
   {KSL.KS.caps.safe(xs, 1n) == KSL.KS.drop(xs, "idle-exit") : List<&2, String>}
 
 # ---- end kicad-ipc 2 ----
+# ---- kicad-ipc 3 ----
+
+law kexport_no_unmarked_clear:
+  for +base: String
+  {KEX.KX.may_clear(base, False{}) == False{} : Bool}
+
+law kexport_no_unconsented_force:
+  for +report: KEX.KReport
+  {KEX.KX.flags(report, False{}) == Nil{} : List<&2, String>}
+
+law kexport_block_force:
+  {KEX.KX.flags(KEX.KReport{Nil{}, Nil{}, ["blocked"], Nil{}}, True{}) == ["--force", "--drop-approximations"] : List<&2, String>}
+
+law kexport_lossy_force:
+  {KEX.KX.flags(KEX.KReport{["changed"], ["removed"], Nil{}, Nil{}}, True{}) == ["--force"] : List<&2, String>}
+
+law kexport_no_outside_clear:
+  {KEX.KX.may_clear("/tmp/design", True{}) == False{} : Bool}
+
+# A path not under this home's exports is never cleared, marker or not.
+law kexport_no_foreign_base:
+  for +base: String
+  for +marker: Bool
+  {KEX.KX.clear.allowed(False{}, base, marker) == False{} : Bool}
+
+# ---- mail 2c ----
+law foh_clean:
+  for +cs: List<&2, M.Change>
+  {MRUN.Run.posts(H.Mail.foh.cs(cs)) == 0n : Nat}
+
+law fyi_never_spawns:
+  for +live: String
+  {MRUN.Run.plan("fyi", live) == MRUN.FileOnly{} : MRUN.MailRunPlan}
+
+law act_one_run:
+  for +live: String
+  {MRUN.Run.actions(MRUN.Run.plan("act", live)) == 1n : Nat}
+
+law run_fresh:
+  for th: String
+  for cwd: String
+  for provider: String
+  for model: String
+  for session: String
+  for runtime: M.RuntimeMode
+  for interaction: M.InteractionMode
+  {H.Run.fresh.out(H.AgentStart{th, cwd, provider, model, session, runtime, interaction}) == H.AgentStart{th, cwd, provider, model, "", runtime, interaction} : H.Out}
+
+law run_one_live_per_conv:
+  {ML.Box.live_n(ML.Box.run_set(ML.Box.run_set(ML.Box.empty(), "r1", "b", "c", "m1", 1n), "r2", "b", "c", "m2", 2n), "b") == 1n : Nat}
+
+law escalate_only_path:
+  for +cs: List<&2, M.Change>
+  for os: List<&2, H.Out>
+  {MRUN.Run.posts(H.Queue.changes(H.Mail.foh(H.Step{cs, os}))) == 0n : Nat}
+
+law charter_gate_denies:
+  for +text: String
+  for +tool: String
+  for +input: J.Json
+  for risky: {CH.Charter.risky(tool, input) == True{} : Bool}
+  for unlisted: {CH.Charter.allows(text, tool, input) == False{} : Bool}
+  {CH.Charter.gate(text, tool, input) == False{} : Bool}
+
+law charter_gate_allows_listed:
+  for +text: String
+  for +tool: String
+  for +input: J.Json
+  for listed: {CH.Charter.allows(text, tool, input) == True{} : Bool}
+  {CH.Charter.gate(text, tool, input) == True{} : Bool}
+
+law charter_risky_fixed:
+  {Bool.and(CH.Charter.risky("gmail_send", J.Null{}), Bool.and(CH.Charter.risky("deploy_restart", J.Null{}), CH.Charter.risky("Bash", J.Json.obj([J.KV{"command", J.Str{"cd /tmp && git push origin main"}}])))) == True{} : Bool}

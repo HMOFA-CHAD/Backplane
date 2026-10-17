@@ -1,6 +1,7 @@
 import Base
 import ../core/title.bend as TTL
 import ../core/msgs.bend as MSG
+import ../core/kexport.bend as KEX
 import ../core/kihealth.bend as KH
 import ../core/i18n.bend as I
 import ../core/json.bend as J
@@ -252,8 +253,29 @@ def Mob.rmenu.k(+lc: I.Loc, none: Bool, +u: U.Ui) -> J.Json:
     case False{}:
       J.Json.obj([J.KV{"title", J.Json.str(U.Menu.title.loc(lc, u))}, J.KV{"kind", J.Json.str(U.Menu.kind(U.Menu.open(u)))}, J.KV{"items", J.Json.arr(Mob.mitems(U.Menu.items.loc(lc, u, False{})))}])
 
+def Mob.kx.items(ls: List<&2, String>, +th: String) -> List<&2, J.Json>:
+  match ls:
+    case Nil{}: Nil{}
+    case l <> t: J.Json.obj([J.KV{"label", J.Str{l}}, J.KV{"action", J.Str{"kicad-export10-read"}}, J.KV{"value", J.Str{th}}, J.KV{"tone", J.Str{""}}]) <> Mob.kx.items(t, th)
+
+def Mob.kx.actions(as: List<&2, KH.KAct>) -> List<&2, J.Json>:
+  match as:
+    case Nil{}: Nil{}
+    case KH.KAct{l, a, v} <> t: J.Json.obj([J.KV{"label", J.Str{l}}, J.KV{"action", J.Str{a}}, J.KV{"value", J.Str{v}}, J.KV{"tone", J.Str{""}}]) <> Mob.kx.actions(t)
+
+def Mob.kx.menu(n: Maybe<&2, KH.KNote>) -> J.Json:
+  match n:
+    case None{}: J.Null{}
+    case Some{KH.KNote{_, title, body, acts}}:
+      J.Json.obj([J.KV{"title", J.Str{title}}, J.KV{"kind", J.Str{"kx"}}, J.KV{"items", J.Json.arr(List.append(&2, J.Json, Mob.kx.items(String.lines(body), ""), Mob.kx.actions(acts)))}])
+
+def Mob.rmenu.export(pending: Bool, +lc: I.Loc, +u: U.Ui) -> J.Json:
+  match pending:
+    case True{}: Mob.kx.menu(U.KX.note(U.Ui.infos(u), U.Ui.sel(u)))
+    case False{}: Mob.rmenu.k(lc, Bool.or(String.is_empty(U.Menu.open(u)), Bool.not(String.is_empty(U.Ui.scratch(u, "@del") ++ U.Ui.scratch(u, "@rm")))), u)
+
 def Mob.rmenu(+lc: I.Loc, +u: U.Ui) -> J.Json:
-  Mob.rmenu.k(lc, Bool.or(String.is_empty(U.Menu.open(u)), Bool.not(String.is_empty(U.Ui.scratch(u, "@del") ++ U.Ui.scratch(u, "@rm")))), u)
+  Mob.rmenu.export(U.KX.pending(U.Ui.infos(u), U.Ui.sel(u)), lc, u)
 
 # markdown blocks from the same Md.render the web page uses; built onto a
 # reversed accumulator so a long reply's many blocks cost no stack (only
@@ -1276,6 +1298,7 @@ def Mob.usage.rows(rs: List<&2, UZ.URow>) -> List<&2, J.Json>:
       Nil{}
     case +r <> t:
       Mob.usage.row("Usage: " ++ UZ.URow.label(r), r) <> Mob.usage.go(t)
+
 def Mob.kn.acts(as: List<&2, KH.KAct>) -> List<&2, J.Json>:
   match as:
     case Nil{}: Nil{}
@@ -1300,6 +1323,13 @@ def Mob.lang.rows(+lc: I.Loc, +u: U.Ui) -> List<&2, J.Json>:
 
 def Mob.lang.loc(+lc: I.Loc, u: U.Ui) -> J.Json:
   J.Json.obj([J.KV{"rows", J.Json.arr(Mob.lang.rows(lc, u))}])
+def Mob.kx.rows(ls: List<&2, String>) -> List<&2, J.Json>:
+  match ls:
+    case Nil{}: Nil{}
+    case l <> t: Mob.set.row(l, "", Nil{}) <> Mob.kx.rows(t)
+
+def Mob.kx.settings(+u: U.Ui) -> List<&2, J.Json>:
+  Mob.kx.rows(KEX.KX.lines(KEX.KX.report(J.Json.get_obj(U.KX.result(U.Ui.infos(u), U.Ui.sel(u)), "report"))))
 
 def Mob.lang(+u: U.Ui) -> J.Json:
   Mob.lang.loc(U.Lang.loc(u), u)
@@ -1363,7 +1393,7 @@ def Mob.settings.k(+lc: I.Loc, +u: U.Ui, more: List<&2, J.Json>) -> J.Json:
 def Mob.settings(+lc: I.Loc, open: Bool, +u: U.Ui) -> J.Json:
   match open:
     case True{}:
-      Mob.settings.k(lc, u, List.concat(&2, J.Json, [Mob.keys(lc, u), Mob.agy(lc, u), Mob.tz(lc, u), [Mob.set.row.l("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [Mob.set.btn("Show the tour", "ob-open", "", False{})])]]))
+      Mob.settings.k(lc, u, List.concat(&2, J.Json, [Mob.kx.settings(u), Mob.keys(lc, u), Mob.agy(lc, u), Mob.tz(lc, u), [Mob.set.row.l("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [Mob.set.btn("Show the tour", "ob-open", "", False{})])]]))
     case False{}:
       J.Null{}
 

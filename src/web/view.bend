@@ -1,6 +1,8 @@
 import Base
 import ../core/title.bend as TTL
 import ../core/msgs.bend as MSG
+import ../core/kexport.bend as KEX
+import ../core/json.bend as J
 import ../core/kihealth.bend as KH
 import ../core/model.bend as M
 import ../core/i18n.bend as I
@@ -793,6 +795,21 @@ def View.kn(n: Maybe<&2, KH.KNote>, dismiss: Bool) -> List<&2, D.Node>:
     case Some{KH.KNote{key, title, body, acts}}:
       [D.El{"div", "kicad-notice", [D.At{"class", "kicad-notice"}], List.concat(&2, D.Node, [
         [D.El{"strong", "", Nil{}, [D.Txt{title}]}, D.El{"p", "", Nil{}, [D.Txt{body}]}, D.El{"div", "", [D.At{"class", "kn-actions"}], View.kn.acts(acts)}], View.kn.close(dismiss, key)])}]
+
+def View.kx.lines(ls: List<&2, String>) -> List<&2, D.Node>:
+  match ls:
+    case Nil{}: Nil{}
+    case l <> t: D.El{"li", "", Nil{}, [D.Txt{l}]} <> View.kx.lines(t)
+
+def View.kx.note(n: Maybe<&2, KH.KNote>, +nf: Map<&2, String>, +th: String) -> List<&2, D.Node>:
+  match n:
+    case None{}: Nil{}
+    case Some{KH.KNote{_, title, _, acts}}:
+      +r = U.KX.result(nf, th)
+      [D.El{"section", "kicad-export", [D.At{"class", "kicad-notice kicad-export"}], [
+        D.El{"strong", "", Nil{}, [D.Txt{title}]}, D.El{"p", "", Nil{}, [D.Txt{J.Json.get_str(r, "text", "")}]},
+        D.El{"ul", "", Nil{}, View.kx.lines(List.take(&2, String, List.drop(&2, String, KEX.KX.lines(KEX.KX.report(J.Json.get_obj(r, "report"))), U.KX.offset(nf, th)), 8n))},
+        D.El{"div", "", [D.At{"class", "kn-actions"}], View.kn.acts(acts)}]}]
 
 def View.kn.path(+u: U.Ui) -> D.Node:
   D.El{"input", "kicad-path", [D.At{"id", "kicad-path"}, D.At{"value", M.Setting.get(U.Ui.state(u), "kicad.path", "")},
@@ -1660,7 +1677,7 @@ def View.thread.p(+lc: I.Loc, u: U.Ui, t: M.Thread, pend: List<&2, String>, +att
       +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
       D.El{"main", "thread", [D.At{"class", Bool.pick(String, term, "thread-view with-term", "thread-view") ++ Bool.pick(String, U.Flag.get(op, "drop"), " dropping", "")},
         D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
-        View.top(lc, hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, id, now), panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), D.Dom.cat(View.kn(U.KN.thread(nf, st, sel), True{}), D.Dom.cat([
+        View.top(lc, hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, id, now), panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), D.Dom.cat(D.Dom.cat(View.kx.note(U.KX.note(nf, sel), nf, sel), View.kn(U.KN.thread(nf, st, sel), True{})), D.Dom.cat([
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
           D.Dom.cat(fab, D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(lc, nf, id, SB.Subs.rows(st, nf, id, now)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
           D.Dom.cat(View.paged(lc, drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(tr, st, id, now)), D.Dom.cat(View.sending(pend),
@@ -1772,7 +1789,7 @@ def View.mech(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
 # Open in KiCad: the project opens in KiCad on the hub's machine, as the
 # window's button does
 def View.kicad() -> D.Node:
-  D.Dom.button("", "kicad-open", "", "Open this project in KiCad on the hub's machine", "Open in KiCad")
+  D.El{"span", "", Nil{}, [D.Dom.button("", "kicad-open", "", "Open this project in KiCad on the hub's machine", "Open in KiCad"), D.Dom.button("", "kicad-export10", "", "Export a separate KiCad 10 copy for stock KiCad", "KiCad 10 copy")]}
 
 # A fit button: host.js fits the board, schematic or model on show
 def View.fit() -> D.Node:

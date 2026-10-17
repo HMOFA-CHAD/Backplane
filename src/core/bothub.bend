@@ -1,5 +1,6 @@
 import Base
 import ./i18n.bend as I18N
+import ./mailrun.bend as RUN
 import ./prompt.bend as LP
 import ./mail.bend as ML
 import ./ref.bend as RMAIL
@@ -244,12 +245,17 @@ def Bots.inbox.raw(+s: M.State, +now: Nat, +from: String, +to: String, +msg: Str
     Bots.msg.id(from, msg), M.User{}, text), to, Bots.msg.id(from, msg), ML.Mail.classify(M.Link.from(Bots.msg.id(from, msg)), Bots.msg.id(from, msg), False{}, text), now)
 
 def Bots.inbox(+s: M.State, +now: Nat, +from: String, +to: String, +msg: String, +text: String) -> B.Step:
-  B.Mail.tee(Bots.inbox.raw(s, now, from, to, msg, text), s, now,
+  B.Mail.funnel(Bots.inbox.raw(s, now, from, to, msg, text), s, now,
     ML.Mail.classify(M.Link.from(Bots.msg.id(from, msg)), Bots.msg.id(from, msg), False{}, text), B.Mail.addr(s, to), text, Bots.msg.id(from, msg))
+
+def Bots.wake.room.on(on: Bool, +s: M.State, +now: Nat, +from: String, +bot: BT.Bot, +msg: String, +text: String, +hop: Nat) -> B.Step:
+  match on:
+    case True{}: B.Step.none()
+    case False{}: B.Step.before([M.BotWoke{BT.Bot.id(bot), hop, now}], Nil{}, Bots.inbox.raw(s, now, from, BT.Bot.thread(bot), msg, text))
 
 # Room member wakes preserve delivery/provenance, but the room owns filing.
 def Bots.wake.room(+s: M.State, +now: Nat, +from: String, +bot: BT.Bot, +msg: String, +text: String, +hop: Nat) -> B.Step:
-  B.Step.before([M.BotWoke{BT.Bot.id(bot), hop, now}], Nil{}, Bots.inbox.raw(s, now, from, BT.Bot.thread(bot), msg, text))
+  Bots.wake.room.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), s, now, from, bot, msg, text, hop)
 
 # wake a bot with a message at a conversation depth
 def Bots.wake(+s: M.State, +now: Nat, +from: String, +bot: BT.Bot, +msg: String, +text: String, +hop: Nat) -> B.Step:
@@ -259,7 +265,7 @@ def Bots.wake.origin.on(+on: Bool, +s: M.State, +now: Nat, +from: String, +bot: 
   match on:
     case False{}: Bots.wake(s, now, from, bot, msg, text, hop)
     case True{}:
-      B.Step.before([M.BotWoke{BT.Bot.id(bot), hop, now}], Nil{}, B.Mail.tee(Bots.inbox.raw(s, now, from, BT.Bot.thread(bot), msg, text), s, now, o, B.Mail.addr(s, BT.Bot.thread(bot)), text, Bots.msg.id(from, msg)))
+      B.Step.before([M.BotWoke{BT.Bot.id(bot), hop, now}], Nil{}, B.Mail.funnel(Bots.inbox.raw(s, now, from, BT.Bot.thread(bot), msg, text), s, now, o, B.Mail.addr(s, BT.Bot.thread(bot)), text, Bots.msg.id(from, msg)))
 
 def Bots.wake.origin(+s: M.State, +now: Nat, +from: String, +bot: BT.Bot, +msg: String, +text: String, +hop: Nat, +o: ML.Origin) -> B.Step:
   Bots.wake.origin.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), s, now, from, bot, msg, text, hop, o)
@@ -993,7 +999,7 @@ def Reply.back.said(sd: Said, +s: M.State, +now: Nat, +thread: String, +done: Bo
 # an answer captured at the turn's end (hub.bend's BotReply): it goes back
 # to the person's machine and is logged in their room with the bot
 def Reply.send(+s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> B.Step:
-  Reply.back.k(Bots.peer(s, to), BT.World.of_thread(M.State.bots(s), thread), s, now, to, text)
+  Reply.back.k(Bots.peer(s, to), RUN.Run.bot(s, thread), s, now, to, text)
 
 # a turn ended ("completed" or "failed"): a bot's completed answer to a
 # person on a linked machine goes back to them (bots.answered, which a
@@ -1391,7 +1397,7 @@ def Bots.in.room(+rname: String) -> String:
 # a message from a bot elsewhere is logged in the direct room; the bot
 # here hears it only within the bound (a held one is for the person)
 def Bots.incoming.go(+s: M.State, +now: Nat, +bot: BT.Bot, +from: String, +rname: String, +text: String, +hop: Nat) -> B.Step:
-  B.Mail.tee(B.Step.before([M.RoomPosted{B.Hub.id("p", now, B.Hub.seq(s)), BT.Room.dm(from, BT.Bot.name(bot)), from, text, hop, now}], Nil{},
+  B.Mail.funnel(B.Step.before([M.RoomPosted{B.Hub.id("p", now, B.Hub.seq(s)), BT.Room.dm(from, BT.Bot.name(bot)), from, text, hop, now}], Nil{},
     Bots.hop.gate(BT.Hop.live(hop), Bots.wake.room(s, now, "", bot, B.Hub.id("m", now, B.Hub.seq(s)), Bots.note(from, Bots.in.room(rname), rname, text), hop))),
     s, now, ML.Origin{"peer:" ++ from, "peer", BT.Room.dm(from, BT.Bot.name(bot))}, B.Mail.addr(s, BT.Bot.thread(bot)), text, B.Hub.id("p", now, B.Hub.seq(s)))
 
@@ -1441,7 +1447,7 @@ def Bots.incoming.person(+s: M.State, +now: Nat, +from: String, +text: String) -
 # Keep the no-output delivery kernel required by reply_person_wakes_none;
 # the production caller owns its additional mail IO.
 def Bots.incoming.person.mail(+s: M.State, +now: Nat, +from: String, +text: String) -> B.Step:
-  B.Mail.tee(Bots.incoming.person(s, now, from, text), s, now,
+  B.Mail.funnel(Bots.incoming.person(s, now, from, text), s, now,
     ML.Origin{"peer:" ++ from, "peer", BT.Room.dm("you", from)}, "person", text, B.Hub.id("p", now, B.Hub.seq(s)))
 
 def Bots.incoming.to(person: Bool, +s: M.State, +now: Nat, +peer: String, +o: J.Json) -> B.Step:
@@ -2594,7 +2600,7 @@ def Bots.call.bot(m: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +dir: J.Json, +n
 
 # one tools/call of a bot tool from the agent of `thread`
 def Bots.call(+s: M.State, +now: Nat, +dir: J.Json, +thread: String, +id: J.Json, +p: J.Json) -> MC.McpOut:
-  MC.Mcp.reply(id, Bots.call.bot(BT.World.of_thread(M.State.bots(s), thread), s, now, dir, J.Json.get_str(p, "name", ""), J.Json.get_obj(p, "arguments")))
+  MC.Mcp.reply(id, Bots.call.bot(RUN.Run.bot(s, thread), s, now, dir, J.Json.get_str(p, "name", ""), J.Json.get_obj(p, "arguments")))
 
 # tools/list for a bot's agent: Backplane's tools and the bots' own
 def Bots.list(+id: J.Json, +extra: List<&2, J.Json>) -> String:
@@ -2656,8 +2662,13 @@ def Bots.route.k(ledger: Bool, bot: Bool, list: Bool, call: Bool) -> Route:
     case _ _ _ _:
       RPass{}
 
+def Bots.run.bot(b: Maybe<&2, BT.Bot>) -> Bool:
+  match b:
+    case Some{_}: True{}
+    case None{}: False{}
+
 def Bots.route(+s: M.State, +thread: String, +o: J.Json) -> Route:
-  Bots.route.k(LG.Ledger.is(o), BT.World.is_bot_thread(M.State.bots(s), thread), String.eq(J.Json.get_str(o, "method", ""), "tools/list"),
+  Bots.route.k(LG.Ledger.is(o), Bots.run.bot(RUN.Run.bot(s, thread)), String.eq(J.Json.get_str(o, "method", ""), "tools/list"),
     Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), Bots.tool.is(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""))))
 
 # a tool call's step, with the ops for what it did to the uberbot
@@ -2764,7 +2775,7 @@ def Bots.prompt.k(m: Maybe<&2, BT.Bot>, +s: M.State, +home: String) -> String:
 
 # the bot part of a thread's system prompt ("" for a thread that is not a bot)
 def Bots.prompt(+s: M.State, +thread: String, +home: String) -> String:
-  LP.Prompt.lang.add(Bots.prompt.k(BT.World.of_thread(M.State.bots(s), thread), s, home), M.Setting.get(s, "agent.lang", "off"))
+  LP.Prompt.lang.add(Bots.prompt.k(RUN.Run.bot(s, thread), s, home), M.Setting.get(s, "agent.lang", "off"))
 
 def Bots.turn.b(+block: String, +text: String) -> String:
   Bool.pick(String, String.is_empty(block), text, block ++ "\n\n" ++ text)
@@ -2783,7 +2794,7 @@ def Bots.turn.k(m: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +text: String) -> 
       text
 
 def Bots.turn(+s: M.State, +now: Nat, +thread: String, text: String) -> String:
-  RLS.Rules.agent(s, thread, Bots.turn.k(BT.World.of_thread(M.State.bots(s), thread), s, now, RVW.Review.agent(s, thread, RF.Refs.agent(s, thread, text))))
+  RLS.Rules.agent(s, thread, Bots.turn.k(RUN.Run.bot(s, thread), s, now, RVW.Review.agent(s, thread, RF.Refs.agent(s, thread, text))))
 
 # notify_person: the laws' examples
 # ---------------------------------

@@ -4106,12 +4106,13 @@ def Lay.room(+a: U32, +b: U32) -> U32:
 
 # the header width the Open in KiCad button takes
 def Lay.kicad.w(+ty: Ty, +on: Bool) -> U32:
-  Bool.pick(U32, on, (Lay.button.w(ty, "Open in KiCad") + 12 : U32), 0)
+  Bool.pick(U32, on, (Lay.button.w(ty, "Open in KiCad") + Lay.button.w(ty, "KiCad 10 copy") + 20 : U32), 0)
 
 def Lay.kicad(on: Bool, +ty: Ty, +x1: U32) -> Out:
   match on:
     case True{}:
-      Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Open in KiCad") : U32), 12, "Open in KiCad", T.Th.text(), "kicad-open", "")
+      Out.all([Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Open in KiCad") : U32), 12, "Open in KiCad", T.Th.text(), "kicad-open", ""),
+        Lay.button(ty, D.Clip.all(), (x1 - 28 - Lay.button.w(ty, "Open in KiCad") - Lay.button.w(ty, "KiCad 10 copy") : U32), 12, "KiCad 10 copy", T.Th.text(), "kicad-export10", "")])
     case False{}:
       Out.none()
 
@@ -6253,7 +6254,9 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +cx0 = {(x0 + U32.shr((x1 - x0 - cw : U32)) : U32) : U32}
       +cx1 = {(cx0 + cw : U32) : U32}
       +kn = U.KN.thread(pics, st, sel)
-      +kh = Kn.h(kn, ty, cw)
+      +kx = U.KX.note(pics, sel)
+      +kxh = Kn.h(kx, ty, cw)
+      +kh = (Kn.h(kn, ty, cw) + kxh : U32)
       +ts = SB.Subs.rows(st, pics, sel, now)
       +sopen = SB.Subs.panel.open(pics, sel, ts)
       +soff = Pane.clamp(Pane.off(pics, "subs:" ++ sel), List.length(&2, SB.SubRow, SB.Subs.panel.rows(sopen, ts)))
@@ -6287,7 +6290,8 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
         List.concat(&2, TLine, [TL.memo.shown.loc(ty, memo, st, sel, cw, pics), TL.sending(ty, pend, cw),
           TL.live.m(ty, String.is_empty(live), ph, live, TL.memo.lv(memo), cw)]),
         cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, hold, TL.memo.first(memo), Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, sel, now), x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
-          Kn.draw(kn, True{}, ty, cx0, (52 + hy : U32), cw),
+          Kn.draw(kx, False{}, ty, cx0, (52 + hy : U32), cw),
+          Kn.draw(kn, True{}, ty, cx0, (52 + hy + kxh : U32), cw),
           Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy + kh : U32)),
           Lay.fab.of(ty, pics, sel, cx0, cx1, (60 + hy + kh + pl : U32)),

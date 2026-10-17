@@ -1,11 +1,13 @@
 import Base
 import ./title.bend as TTL
+import ./mailrun.bend as RUN
 import ./ref.bend as R
 import ./refview.bend as RE
 import ./i18n.bend as I
 import ./msgs.bend as MSG
 import ./kihealth.bend as KH
 import ./kserve.bend as KSV
+import ./kexport.bend as KEX
 import ./deploy.bend as DP
 import ./live.bend as LV
 import ./json.bend as J
@@ -162,10 +164,21 @@ def Flag.get.k(r: Map<&2, Bool> & Bool) -> Bool:
 def Flag.get(m: Map<&2, Bool>, +k: String) -> Bool:
   Flag.get.k(Map.get(Bool, False{}, m, k))
 
-def Ui.threads(s: M.State) -> List<&2, M.Thread>:
+# ---- mail 2c: list filtering (Mailv belongs to spec 5w) ----
+def Runs.add(hidden: Bool, +t: M.Thread, +rest: List<&2, M.Thread>) -> List<&2, M.Thread>:
+  match hidden:
+    case True{}: rest
+    case False{}: t <> rest
+
+def Runs.keep(+ts: List<&2, M.Thread>, +s: M.State) -> List<&2, M.Thread>:
+  match ts:
+    case Nil{}: Nil{}
+    case +t <> +rest: Runs.add(RUN.Run.is(s, M.Thread.id(t)), t, Runs.keep(rest, s))
+
+def Ui.threads(+s: M.State) -> List<&2, M.Thread>:
   match s:
     case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
-      Map.values(&2, M.Thread, ts)
+      Runs.keep(Map.values(&2, M.Thread, ts), s)
 
 def Ui.projects(s: M.State) -> List<&2, M.Project>:
   match s:
@@ -2609,7 +2622,6 @@ def Usage.tail(+st: M.State, +th: String) -> String:
   UZ.Use.tail(M.Thread.provider(Ui.thread(st, th)), M.Usage.used(M.Setting.get(st, M.Usage.key(th), "")),
     Usage.text(M.Usage.used(M.Setting.get(st, M.Usage.key(th), "")), M.Usage.window(M.Setting.get(st, M.Usage.key(th), ""))))
 
-
 # the model chip's label with the thread's effort
 def Effort.label(+label: String, +e: String) -> String:
   Bool.pick(String, String.is_empty(e), label, label ++ " · " ++ e)
@@ -2823,7 +2835,7 @@ def Palette.actions(+l: I.Loc, +pid: String) -> List<&2, PItem>:
    PItem{MSG.T.palette.settle(l), "settle", ""}, PItem{MSG.T.palette.pin(l), "pin", ""}, PItem{MSG.T.palette.archive(l), "archive", ""}, PItem{MSG.T.palette.unarchive(l), "unarchive", ""}, PItem{MSG.T.palette.delete(l), "delete", ""},
    PItem{MSG.T.palette.snooze.hour(l), "snooze", "1h"}, PItem{MSG.T.palette.snooze.tomorrow(l), "snooze", "tomorrow"}, PItem{MSG.T.palette.snooze.week(l), "snooze", "1w"}, PItem{MSG.T.palette.unsnooze(l), "snooze", "off"},
    PItem{MSG.T.palette.search(l), "key:search", ""}, PItem{MSG.T.palette.findfile(l), "key:files", ""},
-   PItem{MSG.T.palette.viewer(l), "panel", ""}, PItem{MSG.T.palette.kicad(l), "kicad-open", ""}, PItem{MSG.T.palette.settings(l), "flag", "settings"}, PItem{MSG.T.palette.update(l), "update", ""}]
+   PItem{MSG.T.palette.viewer(l), "panel", ""}, PItem{MSG.T.palette.kicad(l), "kicad-open", ""}, PItem{MSG.T.palette.kicad10(l), "kicad-export10", ""}, PItem{MSG.T.palette.settings(l), "flag", "settings"}, PItem{MSG.T.palette.update(l), "update", ""}]
 
 def Palette.words(ws: List<&2, String>, +l: String) -> Bool:
   match ws:
@@ -8456,8 +8468,46 @@ def KN.reply.k(has: Bool, +u: Ui, +o: J.Json) -> Ui:
 def KN.reply(+u: Ui, +o: J.Json) -> Ui:
   KN.reply.k(Bool.not(String.is_empty(J.Json.get_str(J.Json.get_obj(o, "result"), "kicad", ""))), u, o)
 
+def KX.result(+nf: Map<&2, String>, +th: String) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(Str.get(nf, "kx:" ++ th)), J.Null{})
+
+def KX.pending(+nf: Map<&2, String>, +th: String) -> Bool:
+  Bool.not(String.is_empty(J.Json.get_str(KX.result(nf, th), "export10", "")))
+
+def KX.offset(+nf: Map<&2, String>, +th: String) -> Nat:
+  KH.KH.num(Str.get(nf, "kx.page:" ++ th), 0n)
+
+def KX.next(next: Bool, +th: String) -> List<&2, KH.KAct>:
+  match next:
+    case True{}: [KH.KAct{"Next page", "kicad-export10-next", th}]
+    case False{}: Nil{}
+
+def KX.buttons(confirm: Bool, +nf: Map<&2, String>, +th: String, +n: Nat) -> List<&2, KH.KAct>:
+  match confirm:
+    case True{}: List.append(&2, KH.KAct, [KH.KAct{"Export anyway", "kicad-export10-anyway", th}, KH.KAct{"Cancel", "kicad-export10-cancel", th}], KX.next(Nat.is_gt(n, 8n), th))
+    case False{}: List.append(&2, KH.KAct, [KH.KAct{"Close", "kicad-export10-cancel", th}], KX.next(Nat.is_gt(n, 8n), th))
+
+def KX.note.k(present: Bool, +nf: Map<&2, String>, +th: String, +r: J.Json) -> Maybe<&2, KH.KNote>:
+  match present:
+    case False{}: None{}
+    case True{}:
+      +ls = KEX.KX.lines(KEX.KX.report(J.Json.get_obj(r, "report")))
+      +page = List.take(&2, String, List.drop(&2, String, ls, KX.offset(nf, th)), 8n)
+      Some{KH.KNote{"export10", "KiCad 10 exported copy", J.Json.get_str(r, "text", "") ++ "\n" ++ String.join(page, "\n"), KX.buttons(String.eq(J.Json.get_str(r, "export10", ""), "confirm"), nf, th, List.length(&2, String, ls))}}
+
+def KX.note(+nf: Map<&2, String>, +th: String) -> Maybe<&2, KH.KNote>:
+  KX.note.k(KX.pending(nf, th), nf, th, KX.result(nf, th))
+
+def KX.reply.k(has: Bool, +u: Ui, +r: J.Json) -> Ui:
+  match has:
+    case False{}: u
+    case True{}: Ui.info_set(Ui.info_set(u, "kx:" ++ J.Json.get_str(r, "thread", Ui.sel(u)), J.Json.show(r)), "kx.page:" ++ J.Json.get_str(r, "thread", Ui.sel(u)), "0")
+
+def KX.reply(+u: Ui, +o: J.Json) -> Ui:
+  KX.reply.k(Bool.not(String.is_empty(J.Json.get_str(J.Json.get_obj(o, "result"), "export10", ""))), u, J.Json.get_obj(o, "result"))
+
 def Ui.reply(u: Ui, +o: J.Json) -> Ui:
-  KN.reply(Made.reply(o, Bots.reply(o, Proj.reply(o, Btw.reply(Fab.reply(Fab.has(o), Ui.reply.skills(u, o), o), o)))), o)
+  KX.reply(KN.reply(Made.reply(o, Bots.reply(o, Proj.reply(o, Btw.reply(Fab.reply(Fab.has(o), Ui.reply.skills(u, o), o), o)))), o), o)
 
 # A link's threads and bots (far.bend): its batch folded into the read
 # model under this hub's ids, and whether it answered ("far.away.<link>")
@@ -9363,7 +9413,7 @@ def Ui.act.far(far: Bool, +i: Nat, u: Ui, +value: String) -> Act:
     case True{}: Ui.act.ref(Nat.is_ge(i, 183n), i, u, value)
     case False{}: Bots.act(Nat.sub(i, 77n), u, value)
 
-def Ui.act.k(+i: Nat, u: Ui, +value: String) -> Act:
+def Ui.act.k(+i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 0n:
       Ui.select(u, value)
@@ -9494,7 +9544,7 @@ def Ui.act.k(+i: Nat, u: Ui, +value: String) -> Act:
     case 64n:
       Ui.row_toggle(u, value)
     case 65n:
-      Ui.on_thread(u, "kicad.open")
+      Ui.on_row(u, Bool.pick(String, String.is_empty(value), Ui.sel(u), value), "kicad.open")
     case 66n:
       Ui.reorder_project(u, value)
     case 67n:
@@ -10629,13 +10679,35 @@ def Ui.act.u(pick: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Ui.act.c(False{}, u, action, value)
 
+# Export actions bypass the positional table, preserving its stable indices.
+def KX.act.k(action: String, +u: Ui, +th: String) -> Act:
+  match action:
+    case "menu-close": Act{Ui.info_set(u, "kx:" ++ th, ""), Nil{}}
+    case "kicad-export10-read": Act{u, Nil{}}
+    case "kicad-export10-cancel": Act{Ui.info_set(u, "kx:" ++ th, ""), Nil{}}
+    case "kicad-export10-next":
+      +ls = KEX.KX.lines(KEX.KX.report(J.Json.get_obj(KX.result(Ui.infos(u), th), "report")))
+      +off = Nat.add(KX.offset(Ui.infos(u), th), 8n)
+      Act{Ui.info_set(u, "kx.page:" ++ th, Nat.show(Bool.pick(Nat, Nat.is_ge(off, List.length(&2, String, ls)), 0n, off))), Nil{}}
+    case "kicad-export10-anyway":
+      Ui.rpc(Ui.info_set(u, "kx:" ++ th, ""), "kicad.export10", [J.KV{"thread", J.Str{th}}, J.KV{"anyway", J.Flag{True{}}}, J.KV{"report", J.Str{J.Json.show(J.Json.get_obj(KX.result(Ui.infos(u), th), "report"))}}])
+    case _: Ui.rpc(Ui.info_set(u, "kx:" ++ th, ""), "kicad.export10", [J.KV{"thread", J.Str{th}}])
+
+def KX.act(+u: Ui, action: String, +value: String) -> Act:
+  KX.act.k(action, Ui.scratch_set(u, "@menu", ""), Bool.pick(String, String.is_empty(value), Ui.sel(u), value))
+
+def Ui.act.kx(kx: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match kx:
+    case True{}: KX.act(u, action, value)
+    case False{}: Ui.act.u(Nat.is_lt(C.Codec.pos(["uber-promote", "uber-new"], action), 2n), u, action, value)
+
 # (design review's "rv-" actions route before the rest: Rv.act)
 def Ui.act.r(rv: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match rv:
     case True{}:
       Rv.act(u, action, value)
     case False{}:
-      Ui.act.u(Nat.is_lt(C.Codec.pos(["uber-promote", "uber-new"], action), 2n), u, action, value)
+      Ui.act.kx(Bool.or(String.starts_with(action, "kicad-export10"), Bool.and(String.eq(action, "menu-close"), KX.pending(Ui.infos(u), Ui.sel(u)))), u, action, value)
 
 # (Antigravity's "agy-" actions route before the rest too: Agv.act)
 def Ui.act.g(agy: Bool, +u: Ui, +action: String, +value: String) -> Act:
