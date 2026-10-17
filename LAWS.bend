@@ -2266,6 +2266,14 @@ law reset_keeps_hand:
 law reset_new_origin_drops_viewer:
   {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "view.kind:t1", "board"), U.Reset.demo("P")), "view.kind:t1") == "" : String}
 
+# the project card survives a reconnect to the same hub, and is asked for
+# again after any reconnect (the scratch's last ask is forgotten)
+law reset_keeps_card:
+  {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "fab.line:t1", "A lamp"), U.Reset.demo("O")), "fab.line:t1") == "A lamp" : String}
+
+law reset_asks_card_again:
+  {U.Ui.scratch(U.Ui.reset(U.Ui.scratch_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "@fab.at", "on#t1#idle"), U.Reset.demo("O")), "@fab.at") == "" : String}
+
 law reset_drops_results:
   {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "fm.list:t1", "x"), U.Reset.demo("O")), "fm.list:t1") == "" : String}
 

@@ -316,7 +316,7 @@ def Local.keep(+old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
 # machine's log keeps none of them (Local.keep runs on a switch too)
 # (laws reset_keeps_viewer, reset_new_origin_drops_viewer)
 def Reset.prefixes() -> List<&2, String>:
-  ["subs:", "view.", "panel:", "panel.hand:", "diff:", "fold:", "hist.at:", "hist.back:", "hist.diff:", "cmp.a:", "cmp.b:", "cmp.al", "cmp.bl", "fm.want:"]
+  ["subs:", "view.", "panel:", "panel.hand:", "diff:", "fold:", "hist.at:", "hist.back:", "hist.diff:", "cmp.a:", "cmp.b:", "cmp.al", "cmp.bl", "fm.want:", "fab."]
 
 def Reset.hit(ps: List<&2, String>, +k: String, found: Bool) -> Bool:
   match ps found:
@@ -438,7 +438,7 @@ def Ui.reset(u: Ui, +o: J.Json) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, _, now, ad, pa, _, rid, w, er, note, +nf, ob, tr}:
       Ui.fold.items(J.Json.elems(J.Json.get_obj(o, "items")),
-        Ui{Ui.base(Nat.is_gt(J.Json.get_nat(o, "since", 0n), 0n), st), sel, Map.set(&2, String, dr, "@sync", "1"), live, op, True{}, now, ad, pa, J.Json.get_str(o, "version", ""), rid, w, er, note,
+        Ui{Ui.base(Nat.is_gt(J.Json.get_nat(o, "since", 0n), 0n), st), sel, Map.set(&2, String, Map.set(&2, String, dr, "@sync", "1"), "@fab.at", ""), live, op, True{}, now, ad, pa, J.Json.get_str(o, "version", ""), rid, w, er, note,
           Machines.home(Ui.reset.keep(String.eq(J.Json.get_str(o, "origin", ""), Str.get(nf, "origin")), nf,
             Local.keep(nf, Map.set(&2, String, Map.set(&2, String, Info.of(J.Json.get_obj(o, "info")), "cid", Str.get(nf, "cid")), "origin", J.Json.get_str(o, "origin", ""))))), ob, tr})
 

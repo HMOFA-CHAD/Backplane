@@ -4479,6 +4479,12 @@ def Laws.ui_seq_log_counts_unknown():
 def Laws.reset_keeps_viewer():
   {==}
 
+def Laws.reset_keeps_card():
+  {==}
+
+def Laws.reset_asks_card_again():
+  {==}
+
 def Laws.reset_keeps_hand():
   {==}
 
