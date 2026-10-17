@@ -5014,6 +5014,59 @@ def Ui.view_pick.p(u: Ui, +kind: String, +path: String) -> Ui:
 def Ui.view_pick.back(+u: Ui, +kind: String) -> Ui:
   Ui.view_pick.p(u, kind, Rv.back(u, kind))
 
+# The project's boards (the card's board files, from its folder, kept as
+# "fab.boards:<t>"): with more than one, the viewer's Board, Schematic and
+# 3D tabs offer each by its folder's name (chips on the web and in the
+# window, the Sheet menu on phones); "board-pick" shows one (laws bd_*)
+def Bd.files(+u: Ui) -> List<&2, String>:
+  Att.nonblank(String.lines(Ui.info(u, "fab.boards:" ++ Ui.sel(u))))
+
+def Bd.many(+u: Ui) -> Bool:
+  Nat.is_gt(List.length(&2, String, Bd.files(u)), 1n)
+
+def Bd.name(+rel: String) -> String:
+  Bool.pick(String, String.is_empty(MC.Mech.parent(rel)), MC.Mech.stem(rel), MC.Mech.last(MC.Mech.parent(rel)))
+
+# what a kind shows of a board: its schematic beside it, else the board
+def Bd.path(+kind: String, +rel: String) -> String:
+  Bool.pick(String, String.eq(kind, "schematic"), MC.Mech.in(MC.Mech.parent(rel), MC.Mech.stem(rel) ++ ".kicad_sch"), rel)
+
+# the board on show: the viewer's file is in its folder (or is it)
+def Bd.on(+path: String, +rel: String) -> Bool:
+  Bool.pick(Bool, String.is_empty(MC.Mech.parent(rel)), String.ends_with(path, "/" ++ rel),
+    String.contains(path, "/" ++ MC.Mech.parent(rel) ++ "/"))
+
+# the board on show: the one whose folder holds the viewer's file ("" for
+# none), and what another tab shows of it (Bd.keep: switching between
+# Board, Schematic and 3D stays on the board picked; "" when the project
+# has one board or the viewer is on none of them, for the project's own)
+def Bd.cur(fs: List<&2, String>, +path: String) -> String:
+  match fs:
+    case Nil{}:
+      ""
+    case +f <> t:
+      Bool.pick(String, Bd.on(path, f), f, Bd.cur(t, path))
+
+def Bd.keep.k(+cur: String, +kind: String, +root: String) -> String:
+  Bool.pick(String, Bool.and(Bool.not(String.is_empty(cur)), Bool.or(String.eq(kind, "board"), Bool.or(String.eq(kind, "schematic"), String.eq(kind, "3d")))),
+    FM.Fm.abs(root, Bd.path(kind, cur)), "")
+
+def Bd.keep(+u: Ui, +kind: String, +path: String) -> String:
+  Bd.keep.k(Bool.pick(String, Bd.many(u), Bd.cur(Bd.files(u), path), ""), kind, Ui.root(u))
+
+def Bd.or(+a: String, +b: String) -> String:
+  Bool.pick(String, String.is_empty(a), b, a)
+
+# the window's tab picked: a comparison kept (Rv.back), else the board picked
+def Ui.view_pick.bd(+u: Ui, +kind: String) -> Ui:
+  Ui.view_pick.p(u, kind, Bd.or(Rv.back(u, kind), Bd.keep(u, kind, Ui.view_get(u, "view.path"))))
+
+def Bd.kind(+k: String) -> String:
+  Bool.pick(String, Bool.or(String.eq(k, "schematic"), String.eq(k, "3d")), k, "board")
+
+def Bd.pick(+u: Ui, +rel: String) -> Act:
+  Act{Ui.view_put(u, Bd.kind(Ui.view_get(u, "view.kind")), FM.Fm.abs(Ui.root(u), Bd.path(Bd.kind(Ui.view_get(u, "view.kind")), rel))), Nil{}}
+
 # "mech" opens Mech (the part in 3D), "mech-part" shows another part,
 # "mech-3d" a part in 3D, "mech-refresh" asks for the parts again,
 # "mech-renders" shows a part's pictures, "mech-render" asks the hub to
@@ -5037,7 +5090,7 @@ def Mpage.act(i: Nat, +u: Ui, +value: String) -> Act:
       Ui.rpc(Ui.scratch_set(Ui.scratch_set(u, "@mech.busy:" ++ Ui.sel(u), value), "@mech.err:" ++ Ui.sel(u), ""), "mech.render",
         [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"path", J.Str{value}}])
     case 6n:
-      Act{Ui.view_put(u, value, Rv.back(u, value)), Nil{}}
+      Act{Ui.view_put(u, value, Bd.or(Rv.back(u, value), Bd.keep(u, value, Ui.view_get(u, "view.path")))), Nil{}}
     case 7n:
       Act{Ui.view_put(u, "schematic", Rv.sheet(Ui.view_get(u, "view.path"), value)), Nil{}}
     case 8n:
@@ -5752,34 +5805,6 @@ def Fab.act.k(i: Nat, +u: Ui, +th: String) -> Act:
       Ui.rpc(Made.want(u), "order.buy", [J.KV{"thread", J.Str{th}}])
     case _:
       Act{u, Nil{}}
-
-# The project's boards (the card's board files, from its folder, kept as
-# "fab.boards:<t>"): with more than one, the viewer's Board, Schematic and
-# 3D tabs offer each by its folder's name (chips on the web and in the
-# window, the Sheet menu on phones); "board-pick" shows one (laws bd_*)
-def Bd.files(+u: Ui) -> List<&2, String>:
-  Att.nonblank(String.lines(Ui.info(u, "fab.boards:" ++ Ui.sel(u))))
-
-def Bd.many(+u: Ui) -> Bool:
-  Nat.is_gt(List.length(&2, String, Bd.files(u)), 1n)
-
-def Bd.name(+rel: String) -> String:
-  Bool.pick(String, String.is_empty(MC.Mech.parent(rel)), MC.Mech.stem(rel), MC.Mech.last(MC.Mech.parent(rel)))
-
-# what a kind shows of a board: its schematic beside it, else the board
-def Bd.path(+kind: String, +rel: String) -> String:
-  Bool.pick(String, String.eq(kind, "schematic"), MC.Mech.in(MC.Mech.parent(rel), MC.Mech.stem(rel) ++ ".kicad_sch"), rel)
-
-# the board on show: the viewer's file is in its folder (or is it)
-def Bd.on(+path: String, +rel: String) -> Bool:
-  Bool.pick(Bool, String.is_empty(MC.Mech.parent(rel)), String.ends_with(path, "/" ++ rel),
-    String.contains(path, "/" ++ MC.Mech.parent(rel) ++ "/"))
-
-def Bd.kind(+k: String) -> String:
-  Bool.pick(String, Bool.or(String.eq(k, "schematic"), String.eq(k, "3d")), k, "board")
-
-def Bd.pick(+u: Ui, +rel: String) -> Act:
-  Act{Ui.view_put(u, Bd.kind(Ui.view_get(u, "view.kind")), FM.Fm.abs(Ui.root(u), Bd.path(Bd.kind(Ui.view_get(u, "view.kind")), rel))), Nil{}}
 
 def Fab.actions() -> List<&2, String>:
   ["fab-open", "fab-edit", "buy", "board-pick"]

@@ -9177,6 +9177,15 @@ law bd_on_sheet:
 law bd_off_other:
   {U.Bd.on("/p/boards/b/b.kicad_pcb", "boards/a/a.kicad_pcb") == False{} : Bool}
 
+# another tab stays on the board picked (its schematic beside it); with
+# none picked, the project's own
+law bd_keep_schematic:
+  {U.Bd.keep.k("boards/a/a.kicad_pcb", "schematic", "/p") == "/p/boards/a/a.kicad_sch" : String}
+
+law bd_keep_none:
+  for kind: String
+  {U.Bd.keep.k("", kind, "/p") == "" : String}
+
 # ordering is off until the person turns it on (order.enabled): no Buy it
 # anywhere, no order tools for any agent, even in a buy thread
 law fab_buy_off_hidden:

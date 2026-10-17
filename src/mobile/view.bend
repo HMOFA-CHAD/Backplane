@@ -190,8 +190,10 @@ def View.far(+o: J.Json, a: U.Act) -> U.Act:
 
 # open a viewer ("board", "schematic", "3d") or close it (""); what was
 # picked is let go
-def View.open.k(+u: U.Ui, v: String) -> U.Act:
-  View.sync(U.Act{U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(u, "@view.file:" ++ U.Ui.sel(u), ""), View.slot(u), v), "@pick", ""), "@card", ""), "@pick.rid", ""), Nil{}})
+# (in a project with several boards, another tab stays on the board picked:
+# client.bend's Bd.keep)
+def View.open.k(+u: U.Ui, +v: String) -> U.Act:
+  View.sync(U.Act{U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(u, "@view.file:" ++ U.Ui.sel(u), U.Bd.keep(u, v, View.file(u))), View.slot(u), v), "@pick", ""), "@card", ""), "@pick.rid", ""), Nil{}})
 
 # The Files tab (client.bend's Fm): its actions are the client's; the
 # phone's view follows them: the folder ("files"), or a file opened in the

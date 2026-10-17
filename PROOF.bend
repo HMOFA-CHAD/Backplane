@@ -10999,6 +10999,12 @@ def Laws.bd_on_sheet():
 def Laws.bd_off_other():
   {==}
 
+def Laws.bd_keep_schematic():
+  {==}
+
+def Laws.bd_keep_none(kind):
+  {==}
+
 def Laws.fab_buy_off_hidden(label):
   {==}
 
