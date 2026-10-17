@@ -104,9 +104,10 @@ What happens:
    removed at the next launch.
 4. The hub looks at the job every 5 s. Exit 0 with a package: staged, and the
    hub asks for the safe restart itself (`deploy.wait`, note
-   `deploy_main <commit>`, by the person). A deploy also waits while a
-   deploy_main build is under way, so the follow-up is never cut. Anything
-   else: failed, with the log's last lines.
+   `deploy_main <commit>`, by the person). A deploy does not wait for a
+   deploy_main build: the build runs in its own scope with `BP_BUILD_LOCKED=1`
+   (it holds no build lock), so a restart never cuts it, and the next hub
+   re-adopts it (step 6). Anything else: failed, with the log's last lines.
 5. Everyone who asked since the last report is told once, with the commit,
    the version and the result: a thread the way watched work reaches it (it
    wakes, or the note waits behind its turn); the person with an alert

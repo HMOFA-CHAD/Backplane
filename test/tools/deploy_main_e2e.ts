@@ -130,7 +130,7 @@ try {
   check(/built and staged \(version 0\.0\.1-e2e\./.test(String(told("t1", c1)[0]?.text)), `with the version (${String(told("t1", c1)[0]?.text).slice(0, 110)})`);
   const second = await until(30000, () => ran().length >= 2 ? true : undefined);
   check(!!second && ran()[1] === c2, `one follow-up build, of the newest (${ran().map((x) => x.slice(0, 7)).join(",")})`);
-  check(!log().some((x) => x.$ === "SettingSet" && x.key === "deploy.done" && String(x.value).includes(c1.slice(0, 9))), "the restart waited for the follow-up build");
+  // the restart into c1 does not wait for the follow-up: the build goes on through it
   const alerted = await until(30000, () => log().some((x) => x.$ === "SettingSet" && x.key === "alert.deploy" && String(x.value).includes(c2.slice(0, 9))) ? true : undefined);
   check(!!alerted, "the person is alerted of the follow-up");
   // 4. it restarts into c2 (BACKPLANE_DEPLOY_LOCKS free, no tool call)
