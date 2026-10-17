@@ -393,3 +393,9 @@ the page's `devicePixelRatio` (1 on most screens).
 CEF's unmapped `Chromium clipboard` X selection-owner window is excluded
 from the tests' top-level browser-window check; it is required clipboard
 infrastructure. Every actual page and popup is an embedded child.
+
+The last `show` rectangle follows its owner's active tab, including a newly
+adopted popup and the previous tab when that popup closes. `hide` clears that
+placement, so a later tab activation cannot map a browser over a window overlay.
+The active tab inherits the current shield and receives focus only when the
+person drives. Engine changes clear native placement.

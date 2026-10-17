@@ -19,7 +19,13 @@ let hostPid = 0;
 try {
   const e = await call("engine", { engine: "cef", parent: d.parent, display: d.env.DISPLAY });
   check("engine cef starts", e.engine === "cef" && e.hostPid > 0, e); hostPid = e.hostPid;
-  await call("open", { page: "a", url: page("Owner A") });
+  await Promise.all([
+    call("open", { page: "a", url: page("Owner A") }),
+    call("show", { page: "a", x: 10, y: 10, w: 600, h: 400 }),
+  ]);
+  const openingChild = (await d.x("children")).children.find((k: any) => k.mapped && !k.inputOnly);
+  check("concurrent open preserves the shown pane viewport", openingChild?.w === 600 && openingChild.h === 400, openingChild);
+  await call("hide");
   const b = await call("open", { page: "b", url: page("Owner B") });
   for (const [owner, title] of [["a", "Owner A"], ["b", "Owner B"]]) {
     const s = await call("snapshot", { page: owner }); check(`${owner} owns its snapshot`, s.title === title && s.outline.includes(title), s);

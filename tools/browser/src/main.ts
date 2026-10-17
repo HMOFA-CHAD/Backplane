@@ -162,6 +162,9 @@ let cefOptions: CefOptions = {
   cef: argValue("--cef"), cache: argValue("--cache") ?? resolve(PROFILE ?? join(tmpdir(), `bp-browser-${process.pid}`, "profile"), "..", "cef-profile"),
 };
 let cef: CefEngine | null = null;
+// The native rectangle belongs to an owner, and follows that owner's active tab.
+let cefPlacement: { owner: string; x: number; y: number; w: number; h: number } | null = null;
+let cefShield = false;
 let tabNumber = 0;
 const cefOwners = new Map<string, Owner>();
 let context: BrowserContext | null = null;
@@ -345,6 +348,7 @@ async function switchEngine(a: Json, name: string): Promise<Json> {
   if (a.engine === engine && context && (engine === "chrome" || JSON.stringify(next) === JSON.stringify(cefOptions))) return status(name);
   const urls = [...owners.values()].filter((o) => o.active && !o.active.isClosed()).map((o) => ({ name: o.name, url: o.active!.url() }));
   const oldContext = context, oldCef = cef;
+  cefPlacement = null; cefShield = false;
   // CEF's singleton profile lock prevents overlapping hosts using one cache.
   // Engine changes between Chrome and CEF can overlap as specified; reconfiguring
   // a live CEF host with the same cache must release that lock first.
@@ -484,6 +488,15 @@ async function activate(o: Owner, p: Page): Promise<void> {
   o.active = p;
   await startShots(o);
   if (o.name === "" && frames.on) await startScreencast();
+  const at = cefPlacement, host = cef;
+  if (engine === "cef" && host && at?.owner === o.name) {
+    const key = await host.key(p);
+    // A hide or another owner's show while adoption awaited its CDP target wins.
+    const current = () => cef === host && cefPlacement === at && o.active === p;
+    if (current()) await host.command("show", key, `${at.x} ${at.y} ${at.w} ${at.h}`);
+    if (current()) await host.command("shield", "", cefShield ? "1" : "0");
+    if (current() && !cefShield) await host.command("focus", key);
+  }
 }
 
 function tabOf(name: string): Page | null {
@@ -845,19 +858,25 @@ const handlers: Record<string, (a: Json, name: string) => Promise<any>> = {
       throw new Error("show needs integer x,y,w,h with positive w,h");
     const p = await ensurePage(name);
     // x, y, w, h are the parent window's (device) pixels
-    await cef!.command("show", await cef!.key(p), `${a.x} ${a.y} ${a.w} ${a.h}`);
     const r = await dpr(p);
     const o = ownerFor(name); o.viewport = { width: Math.round(a.w / r), height: Math.round(a.h / r) };
+    // Publish the viewport before mapping. A concurrent open can finish
+    // creating this same page, and must size it to the pane rather than
+    // restore the owner's initial 1280x800 viewport after show completes.
+    cefPlacement = { owner: name, x: a.x, y: a.y, w: a.w, h: a.h };
+    await cef!.command("show", await cef!.key(p), `${a.x} ${a.y} ${a.w} ${a.h}`);
     await sized(p, o.viewport.width, o.viewport.height);
     return {};
   },
   async hide() {
     if (engine !== "cef") throw new Error("hide needs the cef engine");
+    cefPlacement = null;
     await ensureContext(); await cef!.command("hide"); return {};
   },
   async shield(a) {
     if (engine !== "cef") throw new Error("shield needs the cef engine");
     if (typeof a.on !== "boolean") throw new Error("shield needs on (bool)");
+    cefShield = a.on;
     await ensureContext(); await cef!.command("shield", "", a.on ? "1" : "0"); return {};
   },
   async focus(_a, name) {
@@ -1234,6 +1253,7 @@ let closing = false;
 async function shutdown(exit: boolean): Promise<void> {
   if (closing) return;
   closing = true;
+  cefPlacement = null;
   if (frames.timer) clearInterval(frames.timer);
   frames.on = false;
   for (const o of owners.values()) clearShot(o);

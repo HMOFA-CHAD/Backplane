@@ -11525,3 +11525,231 @@ def Laws.window_picker_default():
 def Laws.window_provider_missing():
   {==}
 # ---- end i18n window ----
+
+# --- browser-cef ---
+def Laws.cef_engine_needs_setting(known, ok):
+  {==}
+
+def Laws.cef_engine_needs_embed(ok):
+  {==}
+
+def Laws.cef_engine_needs_runtime(known):
+  match known:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.cef_engine_on():
+  {==}
+
+def Laws.cef_embed_window_here():
+  {==}
+
+def Laws.cef_embed_loopback_link():
+  {==}
+
+def Laws.cef_embed_remote_refused():
+  {==}
+
+def Laws.cef_loopback_v4():
+  {==}
+
+def Laws.cef_loopback_v6():
+  {==}
+
+def Laws.cef_tailnet_not_loopback():
+  {==}
+
+def Laws.cef_leave_clears_embed():
+  {==}
+
+def Laws.cef_leave_other_keeps_embed():
+  {==}
+
+def Laws.cef_embed_bad_xid_unknown():
+  {==}
+
+def Laws.cef_embed_once_per_join():
+  {==}
+
+def Laws.cef_embed_new_join():
+  {==}
+
+def Laws.cef_embed_not_remote():
+  {==}
+
+def Laws.cef_embed_needs_xid():
+  {==}
+
+def Laws.cef_shield_agent_drives():
+  {==}
+
+def Laws.cef_shield_takeover_off():
+  {==}
+
+def Laws.cef_shield_teach_off():
+  {==}
+
+def Laws.cef_shield_focus_opposite(d):
+  {==}
+
+def Laws.cef_shield_take_from_agent():
+  {==}
+
+def Laws.cef_shield_take_not_from_person():
+  {==}
+
+def Laws.cef_shield_due_same():
+  {==}
+
+def Laws.cef_shield_due_first():
+  {==}
+
+def Laws.cef_shield_due_person():
+  {==}
+
+def Laws.cef_covered_none():
+  {==}
+
+def Laws.cef_covered_palette():
+  {==}
+
+def Laws.cef_covered_picker():
+  {==}
+
+def Laws.cef_covered_menu():
+  {==}
+
+def Laws.cef_covered_look():
+  {==}
+
+def Laws.cef_covered_models():
+  {==}
+
+def Laws.cef_covered_tour():
+  {==}
+
+def Laws.cef_covered_perf():
+  {==}
+
+def Laws.cef_covered_lightbox():
+  {==}
+
+def Laws.cef_shows_needs_live(covered):
+  {==}
+
+def Laws.cef_shows_not_covered():
+  {==}
+
+def Laws.cef_place_same_nothing():
+  {==}
+
+def Laws.cef_place_hidden_nothing():
+  {==}
+
+def Laws.cef_place_new_shows():
+  {==}
+
+def Laws.cef_place_moved_shows():
+  {==}
+
+def Laws.cef_place_gone_hides():
+  {==}
+
+def Laws.cef_post_chrome_idle():
+  {==}
+
+def Laws.cef_post_chrome_forgets():
+  {==}
+
+def Laws.cef_post_native_places():
+  {==}
+
+def Laws.cef_pane_extent():
+  {==}
+
+def Laws.cef_extent_never_wraps():
+  {==}
+
+def Laws.cef_native_local_only():
+  {==}
+
+def Laws.cef_native_local_cef():
+  {==}
+
+def Laws.cef_native_chrome():
+  {==}
+
+def Laws.cef_native_skips_cast():
+  {==}
+
+def Laws.cef_web_keeps_cast():
+  {==}
+
+def Laws.cef_remote_keeps_cast():
+  {==}
+
+def Laws.cef_page_here_native():
+  {==}
+
+def Laws.cef_page_elsewhere_jpeg():
+  {==}
+
+def Laws.cef_fallback_keeps_handback():
+  {==}
+
+def Laws.cef_chrome_idle_strip_off():
+  {==}
+
+def Laws.cef_note_quiet():
+  {==}
+
+def Laws.cef_old_engine_reply_ignored():
+  {==}
+
+def Laws.cef_current_engine_reply_used():
+  {==}
+
+def Laws.cef_want_key_chrome(x, d):
+  {==}
+
+def Laws.cef_after_rpc():
+  {==}
+
+def Laws.cef_after_helper():
+  {==}
+
+def Laws.cef_not_after_agent_line():
+  {==}
+
+def Laws.cef_revive_first():
+  {==}
+
+def Laws.cef_revive_bounded():
+  {==}
+
+def Laws.cef_revive_not_chrome(placed):
+  {==}
+
+def Laws.cef_unknown_refused():
+  {==}
+
+def Laws.cef_thread_owner():
+  {==}
+
+def Laws.cef_empty_owner_refused(t, b):
+  {==}
+
+def Laws.cef_handback_names_page():
+  {==}
+
+def Laws.cef_handback_default_bot():
+  {==}
+
+def Laws.cef_takeover_names_page():
+  {==}
+
+def Laws.cef_other_actions_keep_bot():
+  {==}
+# --- end browser-cef ---

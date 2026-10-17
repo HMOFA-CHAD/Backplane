@@ -13,11 +13,12 @@ static void info(Display* d, Window w) {
   XWindowAttributes a; Window root, par, *kids = NULL; unsigned n;
   XGetWindowAttributes(d, w, &a); XQueryTree(d, w, &root, &par, &kids, &n);
   if (kids) XFree(kids);
-  printf("{\"xid\":%lu,\"parent\":%lu,\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d,\"mapped\":%s}", w, par, a.x, a.y, a.width, a.height, a.map_state == IsViewable ? "true" : "false");
+  printf("{\"xid\":%lu,\"parent\":%lu,\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d,\"inputOnly\":%s,\"mapped\":%s}", w, par, a.x, a.y, a.width, a.height, a.class == InputOnly ? "true" : "false", a.map_state == IsViewable ? "true" : "false");
 }
 int main(void) {
   const char* display = getenv("DISPLAY");
-  if (!display || (strcmp(display, ":96") && strcmp(display, ":97") && strcmp(display, ":98") && strcmp(display, ":99"))) return 2;
+  // private displays only: :86..:89 or :96..:99, never the person's
+  if (!display || strlen(display) != 3 || display[0] != ':' || (display[1] != '8' && display[1] != '9') || display[2] < '6' || display[2] > '9') return 2;
   Display* d = XOpenDisplay(NULL); if (!d) return 1;
   Window root = DefaultRootWindow(d);
   Window parent = XCreateSimpleWindow(d, root, 0, 0, 1400, 900, 0, 0, 0xffffff);
@@ -33,7 +34,7 @@ int main(void) {
     if (sscanf(line, "%63s", cmd) != 1) continue;
     if (!strcmp(cmd, "info") && sscanf(line, "%*s %lu", &win) == 1) info(d, win);
     else if (!strcmp(cmd, "children")) {
-      Window rr, pp, *kids = NULL; unsigned n; XQueryTree(d, parent, &rr, &pp, &kids, &n);
+      Window rr, pp, *kids = NULL; unsigned n; win = parent; sscanf(line, "%*s %lu", &win); XQueryTree(d, win, &rr, &pp, &kids, &n);
       printf("{\"children\":[");
       for (unsigned i = 0; i < n; ++i) { if (i) printf(","); info(d, kids[i]); }
       printf("]}"); if (kids) XFree(kids);
@@ -66,6 +67,11 @@ int main(void) {
     } else if (!strcmp(cmd, "key") && sscanf(line, "%*s %63s", word) == 1) {
       unsigned kc = XKeysymToKeycode(d, XStringToKeysym(word));
       key(d, kc, True, 0); key(d, kc, False, 0); XSync(d, False); printf("{}");
+    } else if (!strcmp(cmd, "close") && sscanf(line, "%*s %lu", &win) == 1) {
+      XEvent e = {0}; e.xclient.type = ClientMessage; e.xclient.window = win;
+      e.xclient.message_type = XInternAtom(d, "WM_PROTOCOLS", False); e.xclient.format = 32;
+      e.xclient.data.l[0] = XInternAtom(d, "WM_DELETE_WINDOW", False);
+      XSendEvent(d, win, False, NoEventMask, &e); XSync(d, False); printf("{}");
     } else if (!strcmp(cmd, "focus")) {
       Window w; int revert; XGetInputFocus(d, &w, &revert); printf("{\"focus\":%lu}", w);
     } else printf("{\"error\":true}");

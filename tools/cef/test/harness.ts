@@ -40,8 +40,10 @@ export function jsonProcess(cmd: string[], env = process.env) {
   return { proc, events, lines, write, call };
 }
 export async function privateDisplay() {
-  const display = [96, 97, 98, 99].find((n) => !existsSync(`/tmp/.X11-unix/X${n}`) && !existsSync(`/tmp/.X${n}-lock`));
-  if (!display) throw new Error("no free private Xvfb display (96..99)");
+  // CEF_DISPLAYS: the private displays to choose from (never 0)
+  const choices = (process.env.CEF_DISPLAYS ?? "96 97 98 99").split(/\s+/).filter(Boolean).map(Number).filter((n) => n > 0);
+  const display = choices.find((n) => !existsSync(`/tmp/.X11-unix/X${n}`) && !existsSync(`/tmp/.X${n}-lock`));
+  if (!display) throw new Error(`no free private Xvfb display (${choices.join(" ")})`);
   const root = mkdtempSync(join(tmpdir(), "bp-cef-test-"));
   const env = { ...process.env, DISPLAY: `:${display}` };
   const xvfb = Bun.spawn(["/tmp/xvfb-root/usr/bin/Xvfb", env.DISPLAY, "-screen", "0", "1600x1000x24", "-nolisten", "tcp"], { stdout: "ignore", stderr: "inherit" });
