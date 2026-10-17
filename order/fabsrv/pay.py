@@ -1,6 +1,6 @@
 """Stripe Checkout.
 
-A quote page's Pay opens a Checkout Session for the quote's lines; Stripe
+A quote's Buy now opens a Checkout Session for the quote's lines; Stripe
 collects the card, email, phone and the shipping address (only in the
 quote's country, since shipping and duties were priced for it). Payment is
 confirmed by asking Stripe for the session, never by trusting the return URL

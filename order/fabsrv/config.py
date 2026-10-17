@@ -31,7 +31,7 @@ def env(name, default=""):
 
 DATA = pathlib.Path(env("FAB_DATA", "/srv/fab/data"))
 VENDOR = env("FAB_VENDOR", "")
-# where people reach the server (quote pages, Stripe's return URLs)
+# where people reach the server (Buy now links, Stripe's return URLs)
 PUBLIC_URL = env("FAB_PUBLIC_URL", "http://127.0.0.1:8090").rstrip("/")
 
 STRIPE_KEY = env("STRIPE_KEY")

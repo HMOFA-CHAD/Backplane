@@ -5,10 +5,12 @@
     POST /v1/estimate                   part features -> "from $X" (no files)
     POST /v1/quotes                     manifest + files -> {id, token}
     GET  /v1/quotes/{id}                (Bearer token) status, the quote, the order's status
-    GET  /q/{id}?t=token                the quote page, with Pay
-    POST /q/{id}/pay                    opens a Stripe Checkout and redirects to it
+    GET  /q/{id}?t=token                Backplane's Buy now: straight to Stripe Checkout (no quote page)
     GET  /q/{id}/done?s=session         back from Stripe: payment confirmed with Stripe itself
+    GET  /q/{id}/cancelled              back from Stripe without paying
     GET  /admin                         paid orders (FAB_ADMIN_TOKEN as a cookie or ?k=)
+    GET  /admin/files/{id}              a paid quote's files as one zip
+    POST /admin/order/{id}              an order's status, tracking and note
 
 Every client sends X-Backplane-Install, a random id made once per install;
 limits apply to it and to the address (limits.py).
