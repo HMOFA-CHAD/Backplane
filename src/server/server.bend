@@ -3313,7 +3313,6 @@ def ShipJob.run(+repo: String, +wrap: String, +home: String, +commit: String, +i
     ShipJob.launched(ShipJob.out(r), commit, inbox)
     ShipJob.loop(Fuel.forever(), Ship.dir(home, commit), commit, inbox)
 
-
 def Upgrade.done.k(ok: Bool, force: Bool, +err: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ok:
     case True{}:
@@ -11662,10 +11661,21 @@ def Hub.order.k(buy: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(Str
     case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.order.t(C.Codec.pos(OR.Order.names(), Gg.tool(o)), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
 
+# (with ordering off nothing is sent or recorded, even by an agent that
+# remembers the tools from before it was turned off)
+def Hub.order.on(on: Bool, buy: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match on:
+    case True{}:
+      Hub.order.k(buy, h, thread, o, reply, now)
+    case False{}:
+      do IO<Hub>:
+        Gg.say(reply, J.Json.get_obj(o, "id"), False{}, "Ordering is off; the person can turn it on in Settings")
+        return h
+
 def Hub.mcp.od(od: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match od h:
     case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.order.k(Bool.or(BH.Bots.buy.is(st, thread), String.eq(Gg.tool(o), "order_review")), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
+      Hub.order.on(OR.Order.enabled(M.Setting.get(st, "order.enabled", "off")), Bool.or(BH.Bots.buy.is(st, thread), String.eq(Gg.tool(o), "order_review")), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, reply, now)
     case False{} _:
       Hub.mcp.gg(Gg.is(o), h, thread, o, body, reply, now)
 
