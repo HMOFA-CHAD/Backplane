@@ -128,8 +128,9 @@ def main() -> IO(Unit):
     C.Check.str("follow on: none during a build", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.tick(again(s1, H.Step{[M.SettingSet{"deploy.follow", "on", 3n}], Nil{}}), 600n)))), "0")
     C.Check.str("follow: a new commit builds", Nat.show(H.Ship.demo.builds(H.Ship.newest(on, 601n, "follow", look("c9", "")))), "1")
     C.Check.str("follow: a covered one does nothing", Nat.show(List.length(&2, M.Change, cs(H.Ship.newest(lv, 601n, "follow", look("c1", ""))))), "0")
-    # the deploy check waits for a build
-    C.Check.str("the deploy waits for the build", Nat.show(H.Deploy.demo.go(H.Deploy.check(again(s1, H.Deploy.ask(s1, 5n, "", "x", "")), 6n, True{}, Nil{}))), "0")
+    # the deploy check does not wait for a build (it runs in a scope of its
+    # own, holds no build lock, and is re-adopted after the restart)
+    C.Check.str("the deploy does not wait for the build", Nat.show(H.Deploy.demo.go(H.Deploy.check(again(s1, H.Deploy.ask(s1, 5n, "", "x", "")), 6n, True{}, Nil{}))), "1")
     # events round trip
     C.Check.str("DeployAsked round trip", round(M.DeployAsked{"t1", "n", "c1", "building", 7n}), "{\"$\":\"DeployAsked\",\"by\":\"t1\",\"note\":\"n\",\"commit\":\"c1\",\"cover\":\"building\",\"at\":7}")
     C.Check.str("DeployBuilt round trip", round(M.DeployBuilt{"c1", "pid", "", "12 b:3", 8n}), "{\"$\":\"DeployBuilt\",\"commit\":\"c1\",\"state\":\"pid\",\"version\":\"\",\"detail\":\"12 b:3\",\"at\":8}")
