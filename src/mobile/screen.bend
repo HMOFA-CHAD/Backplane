@@ -944,9 +944,13 @@ def Mob.fab.buy(+buy: String, +id: String) -> List<&2, J.Json>:
 # the project card (Goal, Edit) and, once the turn is over and there is
 # something to buy, Ready to order with Buy it (U.Fab.ready), as queue rows
 # above the message box
+# (the row's tag says Ready: the text is what there is to order)
+def Mob.fab.ready.text(+line: String) -> String:
+  Bool.pick(String, String.starts_with(line, "Ready to order · "), String.drop(line, 17n), line)
+
 def Mob.fab.ready(+line: String, +buy: String, +id: String) -> List<&2, J.Json>:
   Bool.pick(List<&2, J.Json>, String.is_empty(line), Nil{},
-    [J.Json.obj([J.KV{"msg", J.Json.str("ready:" ++ id)}, J.KV{"text", J.Json.str(line)}, J.KV{"tag", J.Json.str("Ready")}, J.KV{"buttons", J.Json.arr(Mob.fab.buy(buy, id))}])])
+    [J.Json.obj([J.KV{"msg", J.Json.str("ready:" ++ id)}, J.KV{"text", J.Json.str(Mob.fab.ready.text(line))}, J.KV{"tag", J.Json.str("Ready")}, J.KV{"buttons", J.Json.arr(Mob.fab.buy(buy, id))}])])
 
 def Mob.fab.k(shown: Bool, +st: M.State, +nf: Map<&2, String>, +id: String, run: Bool) -> List<&2, J.Json>:
   match shown:

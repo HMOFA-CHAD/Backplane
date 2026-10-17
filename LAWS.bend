@@ -9186,6 +9186,14 @@ law bd_keep_none:
   for kind: String
   {U.Bd.keep.k("", kind, "/p") == "" : String}
 
+# a project's second buy thread is numbered, the first is not
+law buy_title_first:
+  for t: String
+  {H.Buy.title.k(t, 0n) == t : String}
+
+law buy_title_second:
+  {H.Buy.title.k("Buy: lamp", 1n) == "Buy: lamp · 2" : String}
+
 # ordering is off until the person turns it on (order.enabled): no Buy it
 # anywhere, no order tools for any agent, even in a buy thread
 law fab_buy_off_hidden:

@@ -4976,6 +4976,26 @@ def Buy.title(p: M.Project) -> String:
     case M.Project{_, +title, _, _, _}:
       OR.Order.buy.title(title)
 
+def Buy.threads(s: M.State) -> List<&2, M.Thread>:
+  match s:
+    case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
+      Map.values(&2, M.Thread, ts)
+
+# how many of the project's threads are already buy threads by their title
+def Buy.n(ts: List<&2, M.Thread>, +pre: String) -> Nat:
+  match ts:
+    case Nil{}:
+      0n
+    case M.Thread{_, _, +title, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> r:
+      Nat.add(Bool.pick(Nat, String.starts_with(title, pre), 1n, 0n), Buy.n(r, pre))
+
+# a second buy thread of a project is "Buy: lamp · 2" (laws buy_title_*)
+def Buy.title.k(+t: String, +n: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(n, 0n), t, t ++ " · " ++ Nat.show(1n+n))
+
+def Buy.title.of(+s: M.State, +project: String) -> String:
+  Buy.title.k(Buy.title(Hub.project(s, project)), Buy.n(M.Thread.filter_project(Buy.threads(s), project), Buy.title(Hub.project(s, project))))
+
 # Buy it: a thread of its own in the same folder (the source's worktree,
 # like a delegated task), marked buy.<thread> (its source), started by the
 # person's "Buy it"; the client that asked goes to it
@@ -4983,7 +5003,7 @@ def Buy.go(t: M.Thread, +s: M.State, +now: Nat, +client: U32, +id: String, +src:
   match t:
     case M.Thread{_, +project, _, _, _, _, _, _, _, _, _, _, +env, +branch, +wt, +provider, +model, rm, im, _, _}:
       +th = Hub.id("t", now, Hub.seq(s))
-      +cs = {[M.ThreadCreated{th, project, Buy.title(Hub.project(s, project)), env, branch, wt, provider, model, now}, M.ModesSet{th, rm, im, model, now},
+      +cs = {[M.ThreadCreated{th, project, Buy.title.of(s, project), env, branch, wt, provider, model, now}, M.ModesSet{th, rm, im, model, now},
         M.SettingSet{OR.Order.buy.key(th), src, now}] : List<&2, M.Change>}
       +s1 = {M.State.replay(cs, s) : M.State}
       Step.before(cs, [Reply.made(client, id, th)], Hub.post(s1, now, th, Hub.id("m", now, Hub.seq(s1)), M.User{}, OR.Order.buy.text()))
