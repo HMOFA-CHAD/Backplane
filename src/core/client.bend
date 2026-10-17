@@ -5808,10 +5808,12 @@ def Fab.want(+u: Ui) -> Bool:
     Bool.and(Bool.not(String.ends_with(Fab.at(u), "#")),
       Bool.or(Bool.not(String.ends_with(Fab.at(u), "#running")), String.is_empty(Ui.info(u, "fab.line:" ++ Ui.sel(u))))))
 
+# (after the action's own commands: a setting it changed, Ordering's say,
+# must reach the hub before the look it asks for)
 def Fab.sync.k(want: Bool, +u: Ui, cmds: List<&2, Cmd>) -> Act:
   match want:
     case True{}:
-      Ui.also(Ui.rpc(Ui.scratch_set(u, "@fab.at", Fab.at(u)), "fab.look", [J.KV{"thread", J.Str{Ui.sel(u)}}]), cmds)
+      Ui.first(cmds, Ui.rpc(Ui.scratch_set(u, "@fab.at", Fab.at(u)), "fab.look", [J.KV{"thread", J.Str{Ui.sel(u)}}]))
     case False{}:
       Act{u, cmds}
 
