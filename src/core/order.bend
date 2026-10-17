@@ -406,6 +406,17 @@ def Card.strs(js: List<&2, J.Json>) -> List<&2, String>:
 def Card.boards.j(+j: J.Json) -> String:
   String.join(Card.strs(J.Json.elems(J.Json.get_obj(j, "board_files"))), "\n")
 
+# once something of the project is paid for, the bar says so in place of
+# what there is to order, and Buy it reads Buy again (laws order_ordered_*)
+def Order.ordered(+st: String) -> Bool:
+  Bool.or(Bool.or(String.eq(st, "paid"), String.eq(st, "placed")), Bool.or(String.eq(st, "shipped"), String.eq(st, "delivered")))
+
+def Order.ordered.word(+st: String) -> String:
+  Bool.pick(String, String.eq(st, "paid"), "paid, being placed", Bool.pick(String, String.eq(st, "placed"), "in production", st))
+
+def Card.ready.or(+ready: String, +st: String) -> String:
+  Bool.pick(String, Order.ordered(st), "Ordered · " ++ Order.ordered.word(st), ready)
+
 # the line beside Buy it above the message box, from the hub's card
 # (laws order_ready_*): what there is to order, by name
 def Card.ready.j(+j: J.Json) -> String:

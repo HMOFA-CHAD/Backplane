@@ -957,7 +957,7 @@ def Mob.fab.k(shown: Bool, +st: M.State, +nf: Map<&2, String>, +id: String, run:
     case True{}:
       J.Json.obj([J.KV{"msg", J.Json.str("fab:" ++ id)}, J.KV{"text", J.Json.str(U.Str.get(nf, "fab.line:" ++ id))}, J.KV{"tag", J.Json.str("Goal")},
         J.KV{"buttons", J.Json.arr([J.Json.obj([J.KV{"label", J.Json.str("Edit")}, J.KV{"action", J.Json.str("fab-edit")}, J.KV{"value", J.Json.str(id)}])])}])
-        <> Mob.fab.ready(U.Fab.ready.k(U.Fab.buy.of(st, nf, id), U.Str.get(nf, "fab.ready:" ++ id), run), U.Fab.buy.of(st, nf, id), id)
+        <> Mob.fab.ready(U.Fab.ready.k(U.Fab.buy.of(st, nf, id), U.Str.get(nf, "fab.ready:" ++ id), run), U.Fab.ready.btn.of(st, nf, id), id)
     case False{}:
       Nil{}
 

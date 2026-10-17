@@ -9203,6 +9203,21 @@ law buy_title_first:
 law buy_title_second:
   {H.Buy.title.k("Buy: lamp", 1n) == "Buy: lamp · 2" : String}
 
+# once something of the project is paid for, the Ready bar says so and its
+# button reads Buy again (a quote alone changes nothing)
+law order_ordered_paid:
+  {ORD.Card.ready.or("Ready to order · Lamp", "paid") == "Ordered · paid, being placed" : String}
+
+law order_ordered_quote_only:
+  for line: String
+  {ORD.Card.ready.or(line, "ready") == line : String}
+
+law fab_buy_again:
+  {U.Fab.ready.btn.k(True{}, "Buy it · from $5.00") == "Buy again" : String}
+
+law fab_buy_again_off:
+  {U.Fab.ready.btn.k(True{}, "") == "" : String}
+
 # ordering is off until the person turns it on (order.enabled): no Buy it
 # anywhere, no order tools for any agent, even in a buy thread
 law fab_buy_off_hidden:

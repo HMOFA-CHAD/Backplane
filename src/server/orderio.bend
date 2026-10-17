@@ -107,10 +107,10 @@ def Od.strs(xs: List<&2, String>) -> List<&2, J.Json>:
 
 # board_files: every KiCad board in the project (paths from its folder),
 # for the viewer's board picker
-def Od.card(+thread: String, +intent: String, ps: List<&2, J.Json>, +boards: String, +est: J.Json, +on: Bool, bs: List<&2, String>, +bd: String) -> J.Json:
+def Od.card(+thread: String, +intent: String, ps: List<&2, J.Json>, +boards: String, +est: J.Json, +on: Bool, bs: List<&2, String>, +bd: String, +ord: String) -> J.Json:
   J.Json.obj([J.KV{"thread", J.Str{thread}}, J.KV{"intent", J.Str{intent}}, J.KV{"goal", J.Str{OR.Intent.goal(intent)}},
     J.KV{"parts", J.Json.arr(Od.part.rows(ps))}, J.KV{"boards", J.Num{boards}}, J.KV{"label", J.Str{J.Json.get_str(est, "label", "")}},
-    J.KV{"error", J.Str{J.Json.get_str(est, "error", "")}}, J.KV{"estimates", J.Flag{on}}, J.KV{"board_files", J.Json.arr(Od.strs(bs))}, J.KV{"board_default", J.Str{bd}}])
+    J.KV{"error", J.Str{J.Json.get_str(est, "error", "")}}, J.KV{"estimates", J.Flag{on}}, J.KV{"board_files", J.Json.arr(Od.strs(bs))}, J.KV{"board_default", J.Str{bd}}, J.KV{"order", J.Str{ord}}])
 
 # the board the viewer opens by default (kicad.bend's Files.read), from the folder
 def Od.pcb(+cwd: String, f: K.Files) -> String:
@@ -131,18 +131,18 @@ def Od.health.k(ask: Bool, +home: String, +server: String) -> IO(J.Json):
     case False{}:
       IO.pure(J.Json, J.Null{})
 
-def Od.look.ps(ps: List<&2, J.Json>, +home: String, +cwd: String, +thread: String, +intent: String, +on: Bool, +server: String, +bs: List<&2, String>, +bd: String) -> IO(J.Json):
+def Od.look.ps(ps: List<&2, J.Json>, +home: String, +cwd: String, +thread: String, +intent: String, +on: Bool, +server: String, +bs: List<&2, String>, +bd: String, +ord: String) -> IO(J.Json):
   match ps:
     case Nil{}:
       do IO<J.Json>:
         +n : String = Nat.show(List.length(&2, String, bs))
         est : J.Json <- Od.health.k(Bool.and(on, Bool.not(String.eq(n, "0"))), home, server)
-        return Od.card(thread, intent, Nil{}, n, est, on, bs, bd)
+        return Od.card(thread, intent, Nil{}, n, est, on, bs, bd, ord)
     case +p <> +t:
       do IO<J.Json>:
         +install : String <- Od.install(home)
         est : J.Json <- Od.est.k(on, home, server, install, OR.Order.est.body(p <> t))
-        return Od.card(thread, intent, p <> t, "0", est, on, bs, bd)
+        return Od.card(thread, intent, p <> t, "0", est, on, bs, bd, ord)
 
 # where the first newline is (the length when there is none)
 def Od.nl(s: String) -> Nat:
@@ -152,24 +152,43 @@ def Od.nl(s: String) -> Nat:
     case SCon{Chr{+c}, t}:
       Bool.pick(Nat, U32.is_eq(c, 10), 0n, 1n+Od.nl(t))
 
-# opts: "on|off\n<server>" (hub.bend's Buy.look)
-def Od.look(+home: String, +cwd: String, +thread: String, +opts: String) -> IO(J.Json):
-  do IO<J.Json>:
-    intent : String <- GS.Gf.text(cwd ++ "/.backplane/intent.md")
-    r : P.Ran <- P.Proc.run("sh", ["-c", Od.find()], cwd)
-    fs : List<&2, OR.FabFile> <- Od.read(Od.lines(String.lines(Od.ran(r))), cwd)
-    b : P.Ran <- P.Proc.run("sh", ["-c", Od.boards()], cwd)
-    kf : K.Files <- K.Files.read(cwd)
-    Od.look.ps(OR.Order.parts(fs), home, cwd, thread, String.trim(intent), Bool.not(String.starts_with(opts, "off")),
-      String.trim(String.drop(opts, Nat.add(1n, Od.nl(opts)))), Od.lines(String.lines(Od.ran(b))), Od.pcb(cwd, kf))
+# the n-th line of a few ("" past the end)
+def Od.nth(ls: List<&2, String>, +n: Nat) -> String:
+  match ls:
+    case Nil{}:
+      ""
+    case +l <> t:
+      Bool.pick(String, Nat.is_eq(n, 0n), String.trim(l), Od.nth(t, Nat.sub(n, 1n)))
 
-# fab.intent: the person's own words for .backplane/intent.md, then the card
-def Od.intent(+home: String, +cwd: String, +thread: String, +opts: String, text: String) -> IO(J.Json):
-  do IO<J.Json>:
-    mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(cwd ++ "/.backplane")
-    GS.Gf.write(cwd ++ "/.backplane/intent.md", String.trim(text) ++ "\n")
-    m : Result<&1, &1, U32 & String, Unit> <- H.FS.chmod(cwd ++ "/.backplane/intent.md", 420)
-    Od.look(home, cwd, thread, opts)
+# (only thread ids' characters: letters, digits and dashes)
+def Od.id.ok.go(+x: String) -> Bool:
+  match x:
+    case SNil{}:
+      True{}
+    case SCon{Chr{+c}, t}:
+      Bool.and(Bool.or(Bool.or(Bool.and(U32.is_ge(c, 97), U32.is_le(c, 122)), Bool.and(U32.is_ge(c, 48), U32.is_le(c, 57))), Bool.or(U32.is_eq(c, 45), Bool.and(U32.is_ge(c, 65), U32.is_le(c, 90)))), Od.id.ok.go(t))
+
+def Od.id.ok(+x: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(x)), Od.id.ok.go(x))
+
+def Od.ids.k(ok: Bool, +x: String, rest: List<&2, String>) -> List<&2, String>:
+  match ok:
+    case True{}:
+      x <> rest
+    case False{}:
+      rest
+
+def Od.ids(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      Od.ids.k(Od.id.ok(x), x, Od.ids(t))
+
+# the newest order record of the project's buy threads (ids from hub.bend's
+# Buy.of, comma-separated): its status, "" for none
+def Od.order.sh(+ids: String) -> String:
+  "for f in $(ls -t q_*.json 2>/dev/null); do if grep -qE '\"thread\":\"(" ++ String.join(Od.ids(String.split(ids, ',')), "|") ++ ")\"' \"$f\"; then cat \"$f\"; break; fi; done"
 
 # Manufacturing reviews (order_review)
 # ------------------------------------
@@ -296,6 +315,37 @@ def Od.record(+qid: String, +token: String, +thread: String, +server: String, +s
 
 def Od.orders(+home: String) -> String:
   home ++ "/orders"
+
+def Od.order.k(none: Bool, +home: String, +ids: String) -> IO(String):
+  match none:
+    case True{}:
+      IO.pure(String, "")
+    case False{}:
+      IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Od.order.sh(ids)], Od.orders(home)),
+        r => IO.pure(String, J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(Od.ran(r)), J.Null{}), "status", "")))
+
+def Od.order(+home: String, +ids: String) -> IO(String):
+  Od.order.k(List.is_empty(&2, String, Od.ids(String.split(ids, ','))), home, ids)
+
+# opts: "on|off\n<server>\n<the project's buy threads>" (hub.bend's Buy.look)
+def Od.look(+home: String, +cwd: String, +thread: String, +opts: String) -> IO(J.Json):
+  do IO<J.Json>:
+    intent : String <- GS.Gf.text(cwd ++ "/.backplane/intent.md")
+    r : P.Ran <- P.Proc.run("sh", ["-c", Od.find()], cwd)
+    fs : List<&2, OR.FabFile> <- Od.read(Od.lines(String.lines(Od.ran(r))), cwd)
+    b : P.Ran <- P.Proc.run("sh", ["-c", Od.boards()], cwd)
+    kf : K.Files <- K.Files.read(cwd)
+    st : String <- Od.order(home, Od.nth(String.lines(opts), 2n))
+    Od.look.ps(OR.Order.parts(fs), home, cwd, thread, String.trim(intent), Bool.not(String.starts_with(opts, "off")),
+      Od.nth(String.lines(opts), 1n), Od.lines(String.lines(Od.ran(b))), Od.pcb(cwd, kf), st)
+
+# fab.intent: the person's own words for .backplane/intent.md, then the card
+def Od.intent(+home: String, +cwd: String, +thread: String, +opts: String, text: String) -> IO(J.Json):
+  do IO<J.Json>:
+    mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(cwd ++ "/.backplane")
+    GS.Gf.write(cwd ++ "/.backplane/intent.md", String.trim(text) ++ "\n")
+    m : Result<&1, &1, U32 & String, Unit> <- H.FS.chmod(cwd ++ "/.backplane/intent.md", 420)
+    Od.look(home, cwd, thread, opts)
 
 def Od.keep(+home: String, +qid: String, +token: String, +thread: String, +server: String, +status: String) -> IO(Unit):
   do IO<Unit>:

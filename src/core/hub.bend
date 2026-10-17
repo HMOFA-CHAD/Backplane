@@ -4968,8 +4968,37 @@ def Buy.server(+s: M.State) -> String:
 def Buy.est(+s: M.State) -> String:
   Bool.pick(String, OR.Order.enabled(M.Setting.get(s, "order.enabled", "off")), M.Setting.get(s, "order.estimates", "on"), "off")
 
+# the project's buy threads (their ids, comma-separated), so the card can
+# say what of it was ordered
+def Buy.ids.k(keep: Bool, +id: String, +rest: String) -> String:
+  match keep:
+    case True{}:
+      id ++ "," ++ rest
+    case False{}:
+      rest
+
+def Buy.ids(ts: List<&2, M.Thread>, +s: M.State, +project: String) -> String:
+  match ts:
+    case Nil{}:
+      ""
+    case M.Thread{+id, +p, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> r:
+      Buy.ids.k(Bool.and(String.eq(p, project), Bool.not(String.is_empty(M.Setting.get(s, OR.Order.buy.key(id), "")))), id, Buy.ids(r, s, project))
+
+def Buy.proj(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, +p, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      p
+
+def Buy.all(s: M.State) -> List<&2, M.Thread>:
+  match s:
+    case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
+      Map.values(&2, M.Thread, ts)
+
+def Buy.of(+s: M.State, +th: String) -> String:
+  Buy.ids(Buy.all(s), s, Buy.proj(Hub.thread(s, th)))
+
 def Buy.look(+s: M.State, +client: U32, +id: String, +th: String, +job: String, +text: String) -> Step:
-  Step.outs([Git{client, id, job, th, Hub.cwd(s, Hub.thread(s, th)), Buy.est(s) ++ "\n" ++ Buy.server(s), text}])
+  Step.outs([Git{client, id, job, th, Hub.cwd(s, Hub.thread(s, th)), Buy.est(s) ++ "\n" ++ Buy.server(s) ++ "\n" ++ Buy.of(s, th), text}])
 
 def Buy.title(p: M.Project) -> String:
   match p:

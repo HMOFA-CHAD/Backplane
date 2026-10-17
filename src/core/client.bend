@@ -5797,6 +5797,16 @@ def Fab.turn(t: M.Thread) -> String:
 def Fab.ready.k(+buy: String, +line: String, run: Bool) -> String:
   Bool.pick(String, Bool.or(run, String.is_empty(buy)), "", Bool.pick(String, String.is_empty(line), "Ready to order", line))
 
+# the bar's button: Buy it with its price, or Buy again once ordered
+def Fab.ready.btn.k(again: Bool, +buy: String) -> String:
+  Bool.pick(String, Bool.or(Bool.not(again), String.is_empty(buy)), buy, "Buy again")
+
+def Fab.ready.btn.of(+st: M.State, +nf: Map<&2, String>, +th: String) -> String:
+  Fab.ready.btn.k(String.eq(Str.get(nf, "fab.again:" ++ th), "1"), Fab.buy.of(st, nf, th))
+
+def Fab.ready.btn(+u: Ui) -> String:
+  Fab.ready.btn.k(String.eq(Ui.info(u, "fab.again:" ++ Ui.sel(u)), "1"), Fab.buy(u))
+
 def Fab.ready(+u: Ui) -> String:
   Fab.ready.k(Fab.buy(u), Ui.info(u, "fab.ready:" ++ Ui.sel(u)), String.eq(Fab.turn(Ui.thread(Ui.state.of(u), Ui.sel(u))), "running"))
 
@@ -5864,8 +5874,8 @@ def Fab.keep(u: Ui, +th: String, +c: OR.Card) -> Ui:
     "fab.buy:" ++ th, OR.Card.buy(c)), "fab.shown:" ++ th, Bool.pick(String, OR.Card.shown(c), "1", ""))
 
 def Fab.reply.r(u: Ui, +th: String, +r: J.Json) -> Ui:
-  Fab.keep(Ui.info_set(Ui.info_set(Ui.info_set(u, "fab.ready:" ++ th, OR.Card.ready.j(r)), "fab.boards:" ++ th, OR.Card.boards.j(r)),
-    "fab.board:" ++ th, J.Json.get_str(r, "board_default", "")), th, OR.Card.of.j(r))
+  Fab.keep(Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(u, "fab.ready:" ++ th, OR.Card.ready.or(OR.Card.ready.j(r), J.Json.get_str(r, "order", ""))), "fab.boards:" ++ th, OR.Card.boards.j(r)),
+    "fab.board:" ++ th, J.Json.get_str(r, "board_default", "")), "fab.again:" ++ th, Bool.pick(String, OR.Order.ordered(J.Json.get_str(r, "order", "")), "1", "")), th, OR.Card.of.j(r))
 
 def Fab.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
   match has:

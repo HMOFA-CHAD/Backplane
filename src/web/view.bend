@@ -1611,7 +1611,7 @@ def View.ready.k(+line: String, +buy: String) -> List<&2, D.Node>:
     [D.El{"div", "ready", [D.At{"class", "fab-ready"}], D.Dom.cat([D.Dom.span("fab-ready-text", line)], View.fab.buy(buy))}])
 
 def View.ready(+u: U.Ui) -> List<&2, D.Node>:
-  View.ready.k(U.Fab.ready(u), U.Fab.buy(u))
+  View.ready.k(U.Fab.ready(u), U.Fab.ready.btn(u))
 
 # Away from the timeline's end with something new below (client.bend's
 # Hold.pill): "3 new ↓" stuck to the timeline's foot, a click back down

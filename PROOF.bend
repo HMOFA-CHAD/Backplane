@@ -11017,6 +11017,18 @@ def Laws.buy_title_first(t):
 def Laws.buy_title_second():
   {==}
 
+def Laws.order_ordered_paid():
+  {==}
+
+def Laws.order_ordered_quote_only(line):
+  {==}
+
+def Laws.fab_buy_again():
+  {==}
+
+def Laws.fab_buy_again_off():
+  {==}
+
 def Laws.fab_buy_off_hidden(label):
   {==}
 

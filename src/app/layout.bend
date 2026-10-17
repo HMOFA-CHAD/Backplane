@@ -6204,7 +6204,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
           Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + pl + fh : U32)),
           Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + fh + Subs.height(ts, svis, sopen) : U32), fkey, blink),
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), Comp.chip(ty, U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)), U.Usage.tail(st, sel), cx0, cx1, U.Follow.button(st, sel, Lay.running(turn), stop, draft)), rs, atts, up, path, pre),
-          Lay.ready(ty, Ready.line(st, pics, sel, Lay.running(turn)), U.Fab.buy.of(st, pics, sel), cx0, cx1, (h - eh - 124 + 2 : U32)),
+          Lay.ready(ty, Ready.line(st, pics, sel, Lay.running(turn)), U.Fab.ready.btn.of(st, pics, sel), cx0, cx1, (h - eh - 124 + 2 : U32)),
           Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
           Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
           Lay.asks(ty, asks, draft, pics, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
