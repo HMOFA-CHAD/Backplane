@@ -781,3 +781,11 @@ button.dim { opacity: 0.5; pointer-events: none; }
 
 /* Spec 1: refs remain plain labels until navigation is implemented. */
 a.ref { color: inherit; text-decoration: none; cursor: text; overflow-wrap: anywhere; }
+.kicad-notice { position: relative; border: 1px solid var(--warn); border-radius: 0; padding: 16px; margin: 12px 0; text-align: left; width: 100%; max-width: 720px; box-sizing: border-box; overflow-wrap: anywhere; }
+.kicad-notice strong { display: block; padding-right: 30px; }
+.kicad-notice p { color: var(--dim); margin: 8px 0 12px; }
+.kn-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.kn-actions button, .kn-actions a { border-radius: 0; }
+.kn-close { position: absolute; top: 4px; right: 4px; }
+.empty { flex-direction: column; gap: 16px; }
+#kicad-path { min-width: 0; width: 100%; }

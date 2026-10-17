@@ -3,6 +3,7 @@ import ./ref.bend as R
 import ./refview.bend as RE
 import ./i18n.bend as I
 import ./msgs.bend as MSG
+import ./kihealth.bend as KH
 import ./deploy.bend as DP
 import ./live.bend as LV
 import ./json.bend as J
@@ -547,10 +548,13 @@ def Ui.delta(u: Ui, +thread: String, text: String) -> Ui:
       Ui{st, sel, dr, Map.set(&2, String, live, thread, Str.get(live, thread) ++ text), op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
 
 # a failed request shows its error, or the text of a failed git step
-def Ui.reply.err(+o: J.Json) -> String:
+def Ui.reply.err.std(+o: J.Json) -> String:
   Bool.pick(String, J.Json.get_bool(o, "ok", True{}), "", J.Json.get_str(o, "error", J.Json.get_str(J.Json.get_obj(o, "result"), "error", String.take(J.Json.get_str(J.Json.get_obj(o, "result"), "text", "failed"), 200n))))
 
 # an answer: its request leaves the outbox
+def Ui.reply.err(+o: J.Json) -> String:
+  Bool.pick(String, String.is_empty(J.Json.get_str(J.Json.get_obj(o, "result"), "kicad", "")), Ui.reply.err.std(o), "")
+
 def Ui.reply.k(u: Ui, +o: J.Json) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, _, note, nf, ob, tr}:
@@ -710,6 +714,42 @@ def KiCad.cli.label(+nf: Map<&2, String>) -> String:
 def KiCad.cli.note(+nf: Map<&2, String>) -> String:
   Bool.pick(String, KiCad.found(nf), Str.get(nf, "kicad.cli"), "Install KiCad from kicad.org/download, or Backplane KiCad")
 
+# One health notice model shared by every surface and client.
+def KN.of(+info: Map<&2, String>, +st: M.State) -> Maybe<&2, KH.KNote>:
+  KH.KH.notice(Str.get(info, "kicad.status"), Str.get(info, "kicad.cli"), Str.get(info, "kicad.version"), Str.get(info, "kicad.why"), String.eq(Str.get(info, "kicad.can_install"), "1"))
+
+def KN.visible.k(n: Maybe<&2, KH.KNote>, +st: M.State) -> Maybe<&2, KH.KNote>:
+  match n:
+    case Some{KH.KNote{+key, title, body, acts}}:
+      Bool.pick(Maybe<&2, KH.KNote>, KH.KH.dismissed(st, key), None{}, Some{KH.KNote{key, title, body, acts}})
+    case None{}: None{}
+
+def KN.visible(+info: Map<&2, String>, +st: M.State) -> Maybe<&2, KH.KNote>:
+  KN.visible.k(KN.of(info, st), st)
+
+def KN.thread.k(shown: Bool, +info: Map<&2, String>, +st: M.State) -> Maybe<&2, KH.KNote>:
+  match shown:
+    case True{}: KN.visible(info, st)
+    case False{}: None{}
+
+def KN.thread(+info: Map<&2, String>, +st: M.State, +sel: String) -> Maybe<&2, KH.KNote>:
+  KN.thread.k(String.eq(Str.get(info, "kn:" ++ sel), "1"), info, st)
+
+def KN.action(+a: String) -> String:
+  Bool.pick(String, String.eq(a, "link"), "open-url", a)
+
+def KN.summary.k(+status: String, +v: String, +api: String, +source: String) -> String:
+  match status:
+    case "ok": "Backplane KiCad " ++ v ++ ", API " ++ api ++ ", from " ++ source
+    case "stock": "KiCad " ++ v ++ ", from " ++ source ++ " · stock KiCad"
+    case "old": "Backplane KiCad " ++ v ++ ", API " ++ api ++ ", from " ++ source ++ " · update needed"
+    case "broken": "KiCad from " ++ source ++ " · doesn't run"
+    case "missing": "KiCad isn't installed · from " ++ source
+    case _: "Checking KiCad"
+
+def KN.summary(+nf: Map<&2, String>) -> String:
+  KN.summary.k(Str.get(nf, "kicad.status"), Str.get(nf, "kicad.version"), Str.get(nf, "kicad.api"), Str.get(nf, "kicad.source"))
+
 # FreeCAD, which agents model parts with (info "freecad": its command on
 # the hub's machine, "" when there is none); Backplane never bundles it
 def FreeCAD.found(+nf: Map<&2, String>) -> Bool:
@@ -725,7 +765,7 @@ def FreeCAD.note(+nf: Map<&2, String>) -> String:
 # setting has nothing to turn on, so Settings says where to get it instead
 # of offering it (info "kicad.fork": the fork's version, "" for none)
 def KiCad.ipc.ready(+nf: Map<&2, String>) -> Bool:
-  Bool.not(String.is_empty(Str.get(nf, "kicad.fork")))
+  String.eq(Str.get(nf, "kicad.status"), "ok")
 
 def KiCad.ipc.label(+nf: Map<&2, String>) -> String:
   Bool.pick(String, KiCad.ipc.ready(nf), "KiCad IPC", "KiCad IPC: needs Backplane KiCad")
@@ -1294,7 +1334,7 @@ def Ui.actions() -> List<&2, String>:
    "attach-up", "attach-end",
    "hist-go", "hist-prev", "hist-next", "hist-first", "hist-last", "hist-play", "hist-tick", "hist-diff", "hist-live", "hist-jump",
    "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page", "update-now", "work-cancel", "task-cancel",
-   "view-layer-pick", "view-layer-mode", "skill-close", "wake-cancel", "deploy-cancel", "lock-release", "lock-cancel", "ref-go", "ref-back", "ref-fwd", "ref-copy", "ref-copy-web"]
+   "view-layer-pick", "view-layer-mode", "skill-close", "wake-cancel", "deploy-cancel", "lock-release", "lock-cancel", "ref-go", "ref-back", "ref-fwd", "ref-copy", "ref-copy-web", "kicad-retry", "kicad-path", "kicad-path-save"]
 
 # Reading the client state
 # ------------------------
@@ -7830,6 +7870,9 @@ def Voice.act(i: Nat, +u: Ui, +value: String) -> Act:
     case _:
       Voice.act.tail(i, u, value)
 
+def KN.prefill(+u: Ui) -> Ui:
+  Ui.scratch_set(u, "@f.kpath", M.Setting.get(Ui.state.of(u), "kicad.path", ""))
+
 # Settings > Usage's Boat side: the hub reads Boat's CLI (src/core/usage.bend's
 # Bj: "read" when it is due, "refresh" from the Refresh button) and answers
 # with info "boat.usage"
@@ -7848,7 +7891,7 @@ def Usage.ask(a: Act, +what: String) -> Act:
 def Voice.flag.k(ask: Bool, a: Act) -> Act:
   match ask a:
     case True{} Act{u, cs}:
-      Usage.ask(Ui.also(Voice.rpc(Ui.flag_off(u, "pairqr"), "status", Nil{}), cs), "read")
+      Usage.ask(Ui.also(Voice.rpc(KN.prefill(Ui.flag_off(u, "pairqr")), "status", Nil{}), cs), "read")
     case False{} _:
       a
 
@@ -7970,8 +8013,17 @@ def Made.made(+t: String, +th: String) -> J.Json:
   Seq.demo(t, [C.Change.encode(M.ThreadCreated{th, "p1", "New thread", M.Local{}, "", "", "claude", "", 1n})])
 
 # an answer: its request leaves the outbox; a diff opens the diff view
+def KN.reply.k(has: Bool, +u: Ui, +o: J.Json) -> Ui:
+  match has:
+    case True{}:
+      Ui.info_set(u, "kn:" ++ J.Json.get_str(J.Json.get_obj(o, "result"), "thread", Ui.sel(u)), "1")
+    case False{}: u
+
+def KN.reply(+u: Ui, +o: J.Json) -> Ui:
+  KN.reply.k(Bool.not(String.is_empty(J.Json.get_str(J.Json.get_obj(o, "result"), "kicad", ""))), u, o)
+
 def Ui.reply(u: Ui, +o: J.Json) -> Ui:
-  Made.reply(o, Bots.reply(o, Proj.reply(o, Btw.reply(Ui.reply.skills(u, o), o))))
+  KN.reply(Made.reply(o, Bots.reply(o, Proj.reply(o, Btw.reply(Ui.reply.skills(u, o), o)))), o)
 
 # A link's threads and bots (far.bend): its batch folded into the read
 # model under this hub's ids, and whether it answered ("far.away.<link>")
@@ -8853,9 +8905,28 @@ def RefNav.act(i: Nat, +u: Ui, +value: String) -> Act:
     case 3n: Act{u, [Copy{value}]}
     case _: RefNav.copy.web(R.Ref.parse(value), u)
 
-def Ui.act.far(far: Bool, i: Nat, u: Ui, +value: String) -> Act:
+def KN.path(+u: Ui) -> Act:
+  Act{Ui.scratch_set(Ui.scratch_set(Ui.flag_on(u, "settings"), "@f.kpath", M.Setting.get(Ui.state.of(u), "kicad.path", "")), "@set.sc", "850"), [Focus{"kicad-path"}]}
+
+def KN.save(+u: Ui) -> Act:
+  Ui.setting(u, "kicad.path=" ++ Ui.scratch(u, "@f.kpath"))
+
+# the KiCad notice's actions (183 on: kicad-retry, kicad-path, kicad-path-save)
+def KN.act(i: Nat, +u: Ui) -> Act:
+  match i:
+    case 0n: Ui.rpc(u, "kicad.retry", Nil{})
+    case 1n: KN.path(u)
+    case 2n: KN.save(u)
+    case _: Act{u, Nil{}}
+
+def Ui.act.ref(kn: Bool, +i: Nat, u: Ui, +value: String) -> Act:
+  match kn:
+    case True{}: KN.act(Nat.sub(i, 183n), u)
+    case False{}: RefNav.act(Nat.sub(i, 178n), u, value)
+
+def Ui.act.far(far: Bool, +i: Nat, u: Ui, +value: String) -> Act:
   match far:
-    case True{}: RefNav.act(Nat.sub(i, 178n), u, value)
+    case True{}: Ui.act.ref(Nat.is_ge(i, 183n), i, u, value)
     case False{}: Bots.act(Nat.sub(i, 77n), u, value)
 
 def Ui.act.k(+i: Nat, u: Ui, +value: String) -> Act:
