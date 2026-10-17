@@ -503,12 +503,19 @@ def Ix.keep.a(keep: Bool, a: M.Ask, rest: List<&2, M.Ask>) -> List<&2, M.Ask>:
       rest
 
 # the threads touched after message n0
+# (the counts kept beside the threads' touches, "~<thread>" a thread's
+# streamed pieces and "#..." stamps, name no thread: one taken for a
+# thread found no record and rebuilt the index whole, every frame once a
+# thread had streamed more pieces than there were changes)
+def Ix.mark(+k: String) -> Bool:
+  Bool.or(String.starts_with(k, "~"), String.starts_with(k, "#"))
+
 def Ix.since(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>, +n0: Nat) -> List<&2, String>:
   match xs:
     case Nil{}:
       Nil{}
     case (+k, +v) <> +t:
-      Ix.keep.s(Nat.is_gt(v, n0), k, Ix.since(t, n0))
+      Ix.keep.s(Bool.and(Nat.is_gt(v, n0), Bool.not(Ix.mark(k))), k, Ix.since(t, n0))
 
 def Ix.has(ts: List<&2, M.Thread>, +id: String) -> Bool:
   match ts:

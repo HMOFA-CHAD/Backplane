@@ -410,6 +410,45 @@ def streams(xs: List<&2, J.Json>, +i: Nat, +ty: L.Ty, +n0: N.Nui, memo0: L.TLMem
       +t3 = ss.check.k(2n, ty, p2, n3, m3, p3, "other text after " ++ what, t2)
       streams(rest, 1n+i, ty, with_hits(n3, hits(MM.MainM.out(p3)), 0n), m3, p3, tc3, t3)
 
+# The index again with the open thread streaming three pieces after each
+# event: its count of pieces soon passes the count of changes, and no step
+# may take it for a touched thread (MM.Ix.since), which would rebuild the
+# index whole; the kept index stays Side.ix
+def ix.marked(ks: List<&2, String>) -> Nat:
+  match ks:
+    case Nil{}:
+      0n
+    case +k <> t:
+      Nat.add(Bool.pick(Nat, MM.Ix.mark(k), 1n, 0n), ix.marked(t))
+
+# the counts the old rule took for a thread: a mark above the changes
+def ix.over(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>, +n0: Nat) -> Nat:
+  match xs:
+    case Nil{}:
+      0n
+    case (+k, +v) <> t:
+      Nat.add(Bool.pick(Nat, Bool.and(MM.Ix.mark(k), Nat.is_gt(v, n0)), 1n, 0n), ix.over(t, n0))
+
+def ix.d(+u: U.Ui, +tc: MM.TouchK, +th: String, +i: Nat) -> U.Ui:
+  U.Ui.recv(u, delta(th, i))
+
+def ix.dt(+tc: MM.TouchK, +th: String, +i: Nat) -> MM.TouchK:
+  MM.TouchK.msg(delta(th, i), tc)
+
+def ixs.stream(xs: List<&2, J.Json>, +i: Nat, +th: String, +u0: U.Ui, +tc: MM.TouchK, +k: MM.IxK, +bad: Nat, +old: Nat, t: IxT) -> String:
+  match xs:
+    case Nil{}:
+      IxT.show(t) ++ ", steps that took a count of pieces for a thread " ++ Nat.show(bad) ++ " (the rule before took one in " ++ Nat.show(old) ++ ")"
+    case +x <> rest:
+      +o = msg(x)
+      +u1 = U.Ui.recv(u0, o)
+      +u = ix.d(ix.d(ix.d(u1, tc, th, i), tc, th, 1n+i), tc, th, Nat.add(i, 2n))
+      +tc2 = ix.dt(ix.dt(ix.dt(MM.TouchK.msg(o, tc), th, i), th, 1n+i), th, Nat.add(i, 2n))
+      +marks = ix.marked(MM.Ix.since(Map.to_list(&2, Nat, MM.TouchK.m(tc2)), MM.IxK.n(k)))
+      +k2 = MM.Ix.up([k], tc2, u)
+      +over = Bool.pick(Nat, Nat.is_gt(ix.over(Map.to_list(&2, Nat, MM.TouchK.m(tc2)), MM.IxK.n(k)), 0n), 1n, 0n)
+      ixs.stream(rest, Nat.add(i, 3n), th, u, tc2, k2, Nat.add(bad, marks), Nat.add(old, over), IxT.add(t, String.eq(Fp.ix(MM.IxK.ix(k2)), Fp.ix(U.Side.ix(U.Ui.state(u)))), String.take(J.Json.show(x), 160n)))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- AV.Argv.args()
@@ -428,6 +467,7 @@ def main() -> IO(Unit):
     +ns : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
     +ms0 : L.TLMemo = L.Lay.memo(ty, ns, L.TL.memo.none())
     IO.print(ST.show(streams(List.drop(&2, J.Json, xs, cut), 0n, ty, with_hits(ns, hits(MM.Mm.lay(ty, ms0, ns)), 0n), ms0, Nil{}, MM.TouchK.none(), ST{0n, 0n, 0n, 0n, 0n, ""})))
+    IO.print("streaming, " ++ ixs.stream(List.drop(&2, J.Json, xs, cut), 0n, arg(as, 1n), u, MM.TouchK.none(), MM.Ix.full(u, 0n), 0n, 0n, IxT{0n, 0n, ""}))
     IO.print(IxT.show(ixsteps(List.drop(&2, J.Json, xs, cut), u, MM.TouchK.none(), MM.Ix.full(u, 0n), IxT{0n, 0n, ""})))
     +n2 : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
     IO.print(Side.show(typing("typing into the composer, and the pointer moving about", ty, n2, MM.TouchK.none(), [MM.SideM{MM.Sm.key(n2, MM.TouchK.none()), side.fresh(ty, n2)}], Side{0n, 0n, 0n})))
