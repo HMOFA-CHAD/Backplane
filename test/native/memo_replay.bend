@@ -448,6 +448,20 @@ def ixs.stream(xs: List<&2, J.Json>, +i: Nat, +th: String, +u0: U.Ui, +tc: MM.To
       +k2 = MM.Ix.up([k], tc2, u)
       +over = Bool.pick(Nat, Nat.is_gt(ix.over(Map.to_list(&2, Nat, MM.TouchK.m(tc2)), MM.IxK.n(k)), 0n), 1n, 0n)
       ixs.stream(rest, Nat.add(i, 3n), th, u, tc2, k2, Nat.add(bad, marks), Nat.add(old, over), IxT.add(t, String.eq(Fp.ix(MM.IxK.ix(k2)), Fp.ix(U.Side.ix(U.Ui.state(u)))), String.take(J.Json.show(x), 160n)))
+# The sidebar's memo over the same events: each event as its own hub
+# message, the clock at its time; a kept sidebar used when its key holds is
+# compared with a fresh one
+def sides(xs: List<&2, J.Json>, +ty: L.Ty, +n0: N.Nui, +tc: MM.TouchK, +ms: List<&2, MM.SideM>, t: Side) -> Side:
+  match xs:
+    case Nil{}:
+      t
+    case +x <> rest:
+      +o = msg(x)
+      +n = prepared(with_ui(n0, U.Ui.tick(U.Ui.recv(N.Nui.ui(n0), o), J.Json.get_nat(x, "at", U.Side.now(N.Nui.ui(n0))))), 0n)
+      +tc2 = MM.TouchK.msg(o, tc)
+      +key = MM.Sm.key(n, tc2)
+      +fresh = side.fresh(ty, n)
+      sides(rest, ty, n, tc2, [MM.SideM{key, fresh}], Side.add(t, MM.SideM.same(key, ms), Eqh.out(MM.SideM.out(ms), fresh)))
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -470,4 +484,6 @@ def main() -> IO(Unit):
     IO.print("streaming, " ++ ixs.stream(List.drop(&2, J.Json, xs, cut), 0n, arg(as, 1n), u, MM.TouchK.none(), MM.Ix.full(u, 0n), 0n, 0n, IxT{0n, 0n, ""}))
     IO.print(IxT.show(ixsteps(List.drop(&2, J.Json, xs, cut), u, MM.TouchK.none(), MM.Ix.full(u, 0n), IxT{0n, 0n, ""})))
     +n2 : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
+    +n3 : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
+    IO.print("events, " ++ Side.show(sides(List.drop(&2, J.Json, xs, cut), ty, n3, MM.TouchK.none(), Nil{}, Side{0n, 0n, 0n})))
     IO.print(Side.show(typing("typing into the composer, and the pointer moving about", ty, n2, MM.TouchK.none(), [MM.SideM{MM.Sm.key(n2, MM.TouchK.none()), side.fresh(ty, n2)}], Side{0n, 0n, 0n})))

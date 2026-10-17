@@ -66,11 +66,32 @@ def TouchK.ids(ids: List<&2, String>, t: TouchK) -> TouchK:
     case +id <> rest:
       TouchK.ids(rest, TouchK.one.k(C.Codec.pos(["*", "!"], id), id, t))
 
+# The sidebar's stamp ("#side": the last message whose changes it may
+# show). A tool step logged in a thread (ActivityLogged) adds only an
+# entry to that thread's log (model.bend's State.post), and the sidebar
+# reads no thread's entries, only its record, settings and the index; a
+# subagent's log ("@sub:<thread>") is read for its row's badge, so its
+# steps count. Every other change counts (memo_replay checks each kept
+# sidebar against a fresh one at every event).
+def Sm.blind(c: M.Change) -> Bool:
+  match c:
+    case M.ActivityLogged{+thread, _, _, _, _, _}:
+      Bool.not(String.starts_with(thread, "@"))
+    case _:
+      False{}
+
+def TouchK.side.k(blind: Bool, t: TouchK) -> TouchK:
+  match blind t:
+    case True{} _:
+      t
+    case False{} TouchK{+n, g, r, m}:
+      TouchK{n, g, r, Map.set(&2, Nat, m, "#side", n)}
+
 # a change folded (one the client cannot read touches all)
 def TouchK.change(m: Maybe<&2, M.Change>, t: TouchK) -> TouchK:
   match m:
-    case Some{c}:
-      TouchK.ids(U.Touch.of(c), t)
+    case Some{+c}:
+      TouchK.side.k(Sm.blind(c), TouchK.ids(U.Touch.of(c), t))
     case None{}:
       TouchK.ids(["*", "!"], t)
 
@@ -422,8 +443,9 @@ def MainM.keep(m: MainM) -> List<&2, MainM>:
 # The sidebar's memo
 # ------------------
 # Its body (L.Lay.sidebar.a: the threads, the links, the bots and rooms)
-# reads the whole state, so any hub message may change it: it is kept only
-# while none came (TouchK's count) and the window's fields it reads are
+# reads the whole state but no thread's own log: it is kept while no hub
+# message changed what it may show (TouchK's "#side", Sm.blind; anything
+# touching all counts) and the window's fields it reads are
 # the same: a key typed, the thread scrolled, the pointer moved. The clock
 # counts to the second (a snooze ends to the second). The drafts are not
 # in it: the sidebar draws none (memo_replay types into the composer and
@@ -442,7 +464,7 @@ def Sm.caret(+fo: String, +ca: Nat) -> String:
 def Sm.key(+n: N.Nui, +t: TouchK) -> String:
   match n:
     case N.Nui{U.Ui{_, +sel, _, _, +op, on, now, ad, pa, v, rid, w, er, note, +nf, +ob, _}, +ww, +hh, _, _, sd, _, ca, +fo, path, _, _, _}:
-      "n" ++ Nat.show(TouchK.n(t)) ++ "|" ++ sel ++ "|lang" ++ L.TL.locale(N.Nui.ui(n)) ++ "|t" ++ Nat.show(now) ++ "|w" ++ U32.show(ww) ++ "," ++ U32.show(hh) ++ "," ++ U32.show(sd) ++ "," ++ Sm.caret(fo, ca) ++ "," ++ fo ++ "," ++ path
+      "s" ++ Nat.show(TouchK.at(t, "#side")) ++ "," ++ Nat.show(TouchK.g(t)) ++ "|" ++ sel ++ "|lang" ++ L.TL.locale(N.Nui.ui(n)) ++ "|t" ++ Nat.show(now) ++ "|w" ++ U32.show(ww) ++ "," ++ U32.show(hh) ++ "," ++ U32.show(sd) ++ "," ++ Sm.caret(fo, ca) ++ "," ++ fo ++ "," ++ path
         ++ "|u" ++ Mm.b(on) ++ Mm.b(ad) ++ Mm.b(pa) ++ Mm.b(w) ++ "," ++ v ++ "," ++ Nat.show(rid) ++ "," ++ er ++ "," ++ note
         ++ "|f" ++ Mm.flags(Map.to_list(&2, Bool, op)) ++ "|o" ++ Mm.strs(Map.to_list(&2, String, ob))
         ++ "|i" ++ Mm.info(Map.to_list(&2, String, nf))
