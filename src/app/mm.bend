@@ -27,11 +27,18 @@ import ../core/subs.bend as SB
 # have changed which threads are whose parent or child otherwise than by
 # touching both (a setting, a state handed over: client.bend's Touch.of
 # names it "!"); m: each thread's last
+# lg: the threads touched, newest first, with the message that touched
+# them (only the index reads it: MM.Ix.up takes those since its own count,
+# and Shell.paint.go clears it once the index has; a new reader needs its
+# own cursor and must keep it from being cleared before it has read)
+type TkE is Data:
+  TkE{id: String, at: Nat}
+
 type TouchK is Data:
-  TouchK{n: Nat, g: Nat, r: Nat, m: Map<&2, Nat>}
+  TouchK{n: Nat, g: Nat, r: Nat, m: Map<&2, Nat>, lg: List<&2, TkE>}
 
 def TouchK.none() -> TouchK:
-  TouchK{0n, 0n, 0n, Map.new(&2, Nat)}
+  TouchK{0n, 0n, 0n, Map.new(&2, Nat), Nil{}}
 
 def TouchK.of(ks: List<&2, TouchK>) -> TouchK:
   match ks:
@@ -42,22 +49,22 @@ def TouchK.of(ks: List<&2, TouchK>) -> TouchK:
 
 def TouchK.tick(t: TouchK) -> TouchK:
   match t:
-    case TouchK{n, g, r, m}:
-      TouchK{1n+n, g, r, m}
+    case TouchK{n, g, r, m, l}:
+      TouchK{1n+n, g, r, m, l}
 
 def TouchK.all(t: TouchK) -> TouchK:
   match t:
-    case TouchK{+n, _, _, m}:
-      TouchK{1n+n, 1n+n, 1n+n, m}
+    case TouchK{+n, _, _, m, l}:
+      TouchK{1n+n, 1n+n, 1n+n, m, l}
 
 def TouchK.one.k(i: Nat, +id: String, t: TouchK) -> TouchK:
   match i t:
-    case 0n TouchK{+n, _, r, m}:
-      TouchK{n, n, r, m}
-    case 1n TouchK{+n, g, _, m}:
-      TouchK{n, g, n, m}
-    case _ TouchK{+n, g, r, m}:
-      TouchK{n, g, r, Map.set(&2, Nat, m, id, n)}
+    case 0n TouchK{+n, _, r, m, l}:
+      TouchK{n, n, r, m, l}
+    case 1n TouchK{+n, g, _, m, l}:
+      TouchK{n, g, n, m, l}
+    case _ TouchK{+n, g, r, m, l}:
+      TouchK{n, g, r, Map.set(&2, Nat, m, id, n), TkE{id, n} <> l}
 
 def TouchK.ids(ids: List<&2, String>, t: TouchK) -> TouchK:
   match ids:
@@ -84,8 +91,8 @@ def TouchK.side.k(blind: Bool, t: TouchK) -> TouchK:
   match blind t:
     case True{} _:
       t
-    case False{} TouchK{+n, g, r, m}:
-      TouchK{n, g, r, Map.set(&2, Nat, m, "#side", n)}
+    case False{} TouchK{+n, g, r, m, l}:
+      TouchK{n, g, r, Map.set(&2, Nat, m, "#side", n), l}
 
 # a change folded (one the client cannot read touches all)
 def TouchK.change(m: Maybe<&2, M.Change>, t: TouchK) -> TouchK:
@@ -103,14 +110,14 @@ def TouchK.items(xs: List<&2, J.Json>, t: TouchK) -> TouchK:
       TouchK.items(rest, TouchK.change(C.Change.decode(x), t))
 
 # a thread's streamed text grew: its count of pieces ("~<thread>")
-def TouchK.live.k(r: Map<&2, Nat> & Nat, +th: String, +n: Nat, +g: Nat, +rr: Nat) -> TouchK:
+def TouchK.live.k(r: Map<&2, Nat> & Nat, +th: String, +n: Nat, +g: Nat, +rr: Nat, l: List<&2, TkE>) -> TouchK:
   (m, v) = r
-  TouchK{n, g, rr, Map.set(&2, Nat, m, "~" ++ th, 1n+v)}
+  TouchK{n, g, rr, Map.set(&2, Nat, m, "~" ++ th, 1n+v), l}
 
 def TouchK.live(+th: String, t: TouchK) -> TouchK:
   match t:
-    case TouchK{+n, +g, +r, m}:
-      TouchK.live.k(Map.get(Nat, 0n, m, "~" ++ th), th, n, g, r)
+    case TouchK{+n, +g, +r, m, l}:
+      TouchK.live.k(Map.get(Nat, 0n, m, "~" ++ th), th, n, g, r, l)
 
 def TouchK.msg.k(i: Nat, +o: J.Json, t: TouchK) -> TouchK:
   match i:
@@ -138,22 +145,33 @@ def TouchK.at.k(r: Map<&2, Nat> & Nat) -> Nat:
 
 def TouchK.at(+t: TouchK, +id: String) -> Nat:
   match t:
-    case TouchK{_, _, _, +m}:
+    case TouchK{_, _, _, +m, _}:
       TouchK.at.k(Map.get(Nat, 0n, m, id))
 
 def TouchK.m(t: TouchK) -> Map<&2, Nat>:
   match t:
-    case TouchK{_, _, _, m}:
+    case TouchK{_, _, _, m, _}:
       m
+
+def TouchK.lg(t: TouchK) -> List<&2, TkE>:
+  match t:
+    case TouchK{_, _, _, _, l}:
+      l
+
+# the log emptied, once the index has taken it (Shell.paint.go)
+def TouchK.clear(t: TouchK) -> TouchK:
+  match t:
+    case TouchK{n, g, r, m, _}:
+      TouchK{n, g, r, m, Nil{}}
 
 def TouchK.g(+t: TouchK) -> Nat:
   match t:
-    case TouchK{_, g, _, _}:
+    case TouchK{_, g, _, _, _}:
       g
 
 def TouchK.r(+t: TouchK) -> Nat:
   match t:
-    case TouchK{_, _, r, _}:
+    case TouchK{_, _, r, _, _}:
       r
 
 # The key
@@ -496,7 +514,7 @@ def Mm.memos.live(+ty: L.Ty, +n: N.Nui, ms: List<&2, L.TLMemo>) -> List<&2, L.TL
 
 def TouchK.n(+t: TouchK) -> Nat:
   match t:
-    case TouchK{n, _, _, _}:
+    case TouchK{n, _, _, _, _}:
       n
 
 # the caret, unless it is the composer's (in the main area, never drawn
@@ -574,6 +592,22 @@ def Ix.keep.a(keep: Bool, a: M.Ask, rest: List<&2, M.Ask>) -> List<&2, M.Ask>:
 # thread had streamed more pieces than there were changes)
 def Ix.mark(+k: String) -> Bool:
   Bool.or(String.starts_with(k, "~"), String.starts_with(k, "#"))
+
+# the threads touched since n0, from the log (newest first: the walk stops
+# at the first entry the index has already taken)
+def Ix.since.lg.k(new: Bool, +id: String, rest: List<&2, String>) -> List<&2, String>:
+  match new:
+    case True{}:
+      id <> rest
+    case False{}:
+      Nil{}
+
+def Ix.since.lg(es: List<&2, TkE>, +n0: Nat) -> List<&2, String>:
+  match es:
+    case Nil{}:
+      Nil{}
+    case TkE{+id, +at} <> t:
+      Ix.since.lg.k(Nat.is_gt(at, n0), id, Ix.since.lg(t, n0))
 
 def Ix.since(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>, +n0: Nat) -> List<&2, String>:
   match xs:
@@ -730,7 +764,7 @@ def Ix.up.k(i: Nat, k: IxK, +t: TouchK, +u: U.Ui) -> IxK:
     case 1n _:
       Ix.full(u, TouchK.n(t))
     case _ IxK{n0, lt, ix}:
-      Ix.inc(ix, Ix.since(Map.to_list(&2, Nat, TouchK.m(t)), n0), u, TouchK.n(t), lt)
+      Ix.inc(ix, Ix.since.lg(TouchK.lg(t), n0), u, TouchK.n(t), lt)
 
 def Ix.mode(+n0: Nat, +lt0: String, +t: TouchK, +u: U.Ui) -> Nat:
   Bool.pick(Nat, Bool.not(String.eq(lt0, U.Ui.info(u, "local.touch"))), 1n,
