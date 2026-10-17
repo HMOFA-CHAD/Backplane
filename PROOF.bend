@@ -11029,6 +11029,12 @@ def Laws.fab_buy_again():
 def Laws.fab_buy_again_off():
   {==}
 
+def Laws.buy_server_default():
+  {==}
+
+def Laws.buy_server_set():
+  {==}
+
 def Laws.fab_buy_off_hidden(label):
   {==}
 

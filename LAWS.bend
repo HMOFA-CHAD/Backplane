@@ -9218,6 +9218,13 @@ law fab_buy_again:
 law fab_buy_again_off:
   {U.Fab.ready.btn.k(True{}, "") == "" : String}
 
+# the order server: the setting when given, the default when it is empty
+law buy_server_default:
+  {H.Buy.server.k("") == ORD.Order.server() : String}
+
+law buy_server_set:
+  {H.Buy.server.k(" https://fab.example ") == "https://fab.example" : String}
+
 # ordering is off until the person turns it on (order.enabled): no Buy it
 # anywhere, no order tools for any agent, even in a buy thread
 law fab_buy_off_hidden:

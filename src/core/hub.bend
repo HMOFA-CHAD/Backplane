@@ -4960,8 +4960,12 @@ def Locks.after(+s: M.State, +now: Nat, +st: Step) -> Step:
 # an intent the person wrote (fab.intent) are the server's jobs "fab" and
 # "intent", in the thread's folder; the setting order.estimates ("off"
 # keeps every part's features on this machine) and order.server ride along.
+# (an emptied setting is the default again)
+def Buy.server.k(+v: String) -> String:
+  Bool.pick(String, String.is_empty(String.trim(v)), OR.Order.server(), String.trim(v))
+
 def Buy.server(+s: M.State) -> String:
-  M.Setting.get(s, "order.server", OR.Order.server())
+  Buy.server.k(M.Setting.get(s, "order.server", ""))
 
 # (estimates are asked only with ordering on: off, the hub never contacts
 # the order server)

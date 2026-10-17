@@ -11464,11 +11464,11 @@ def Hub.mcp.gg(g: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +repl
 # ---------------------------------------------------------------------
 # order_quote reads the order's manifest, asks the person (an approval
 # card listing every file) and only then uploads, waits for the quote and
-# posts it with its Pay link; the record in <home>/orders keeps the token,
+# posts it with its Buy now link; the record in <home>/orders keeps the token,
 # and a watcher follows the order (Od.watch), resumed at start.
 
 def Od.server(+st: M.State) -> String:
-  M.Setting.get(st, "order.server", OR.Order.server())
+  B.Buy.server(st)
 
 def Od.post(+inbox: Chan(Msg), +thread: String, +id: String, text: String) -> IO(Unit):
   do IO<Unit>:
