@@ -57,6 +57,12 @@ def changes(+cs: List<&2, M.Change>) -> String:
     case Nil{}: ""
     case +h <> +t: J.Json.show(CD.Change.encode(h)) ++ "\n" ++ changes(t)
 
+def posts(+cs: List<&2, M.Change>) -> Nat:
+  match cs:
+    case Nil{}: 0n
+    case M.MessagePosted{_, _, _, _, _} <> +t: 1n+posts(t)
+    case _ <> +t: posts(t)
+
 def source(+name: String, +from: String, +msg: String, +text: String, +want: String, +kind: String) -> IO(Unit):
   do IO<Unit>:
     +on : H.Step = H.Hub.inbox.from(enabled(), 10n, from, "b", M.User{}, text, msg)
@@ -66,13 +72,8 @@ def source(+name: String, +from: String, +msg: String, +text: String, +want: Str
     C.Check.str(name ++ " filed once", Nat.show(appends(outs(on))), "1")
     C.Check.str(name ++ " route/kind/want", signature(first(outs(on))), ML.Mail.route(o, "bot:bb") ++ "/" ++ ML.Origin.kind(o) ++ "/" ++ want)
     C.Check.str(name ++ " off no mail", Nat.show(appends(outs(off))), "0")
-    C.Check.str(name ++ " delivery changes kept", changes(H.Queue.changes(on)), changes(H.Queue.changes(off)))
-
-def posts(+cs: List<&2, M.Change>) -> Nat:
-  match cs:
-    case Nil{}: 0n
-    case M.MessagePosted{_, _, _, _, _} <> +t: 1n+posts(t)
-    case _ <> +t: posts(t)
+    C.Check.str(name ++ " bot FOH clean", Nat.show(posts(H.Queue.changes(on))), "0")
+    C.Check.str(name ++ " legacy delivery retained off", changes(H.Queue.changes(off)), changes(H.Queue.changes(H.Origin.step(H.Hub.inbox.id(disabled(), 10n, from, "b", M.User{}, text, msg), "b", msg, o, 10n))))
 
 def scope_bot(+s: M.State, +thread: String, +want: String) -> String:
   J.Json.get_str(MC.Mcp.mail.params(s, thread, J.Json.obj([J.KV{"bot", J.Str{want}}])), "bot", "")
@@ -101,7 +102,7 @@ def main() -> IO(Unit):
     +room : BT.Room = BT.Room{"r", "Room", ["bb", "bc", "bd"], 1n, False{}}
     +post : H.Step = BH.Bots.post.id("room-msg", on, 10n, "a", "Worker", "", room, "Room message", 0n)
     C.Check.str("room files once for 3 members", Nat.show(appends(outs(post))), "1")
-    C.Check.str("room has three member deliveries", Nat.show(posts(H.Queue.changes(post))), "3")
+    C.Check.str("room FYI has no member delivery", Nat.show(posts(H.Queue.changes(post))), "0")
     C.Check.str("room route and fyi", signature(first(outs(post))), "room:r/room/fyi")
     +remote : H.Step = BH.Bots.incoming.go(on, 10n, BT.World.bot(M.State.bots(on), "bb"), "Remote@machine", "", "remote", 0n)
     C.Check.str("remote incoming filed once", Nat.show(appends(outs(remote))), "1")
@@ -135,7 +136,8 @@ def main() -> IO(Unit):
     C.Check.str("snooze tick idempotent", Nat.show(List.length(&2, M.Change, H.Mail.due(due, 20n))), "0")
     +offroom : H.Step = BH.Bots.post.id("room-msg", disabled(), 10n, "a", "Worker", "", room, "Room message", 0n)
     C.Check.str("room off no filing", Nat.show(appends(outs(offroom))), "0")
-    C.Check.str("room delivery unchanged", changes(H.Queue.changes(post)), changes(H.Queue.changes(offroom)))
+    C.Check.str("room on no FOH posts", Nat.show(posts(H.Queue.changes(post))), "0")
+    C.Check.str("room off still delivers", Bool.show(Nat.is_gt(posts(H.Queue.changes(offroom)), 0n)), "True")
     C.Check.str("MCP definitions include seven mail tools", Nat.show(List.length(&2, J.Json, MC.Mcp.mail.tools())), "7")
     C.Check.str("mail RPC methods appended", Nat.show(CD.Codec.pos(H.Hub.methods(), "mail.list")), "40")
     C.Check.str("MCP tool names appended", Nat.show(CD.Codec.pos(MC.Mcp.names(), "mail_list")), "35")

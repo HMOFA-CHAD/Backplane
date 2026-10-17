@@ -1,4 +1,5 @@
 import Base
+import ./charter.bend as CH
 
 # Durable mail metadata. No IO and no dependency on the product model.
 
@@ -994,7 +995,8 @@ def Box.run_set(+b: Box, +thread: String, +bot: String, +conv: String, +mail: St
   Box.run_store(Box.run_end(Box.run_end(b, thread), Box.live(b, bot, conv)), Run{thread, bot, conv, mail, at, True{}})
 
 def Box.charter(+b: Box, +bot: String) -> String:
-  Get.str(Box.charters(b), bot)
+  +text = Get.str(Box.charters(b), bot)
+  Bool.pick(String, String.is_empty(text), CH.Charter.default(), text)
 
 def Box.charter_set(+b: Box, +bot: String, +text: String) -> Box:
   Box.with_charters(b, Map.set(&2, String, Box.charters(b), bot, text))

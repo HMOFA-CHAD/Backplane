@@ -1,4 +1,6 @@
 import Base
+import ./src/core/charter.bend as CH # mail 2c
+import ./src/core/mailrun.bend as MRUN # mail 2c
 import ./src/server/mailstore.bend as MIX # mail index
 import ./src/app/mm.bend as MM # window memos
 import ./src/core/kexport.bend as KEX
@@ -11402,3 +11404,112 @@ def Laws.kexport_lossy_force(): {==}
 def Laws.kexport_no_outside_clear(): {==}
 
 def Laws.kexport_no_foreign_base(base, marker): {==}
+
+# ---- mail 2c ----
+def Laws.foh_clean(cs):
+  match cs:
+    case Nil{}: {==}
+    case M.ProjectCreated{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.ProjectRemoved{_, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadCreated{_, _, _, _, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadRenamed{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.MessagePosted{_, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.TurnChanged{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.PendingChanged{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.ActivityLogged{_, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadSettled{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadUnsettled{_, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadArchived{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadPinned{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadDeleted{_, _} <> +t: Laws.foh_clean(t)
+    case M.WorktreeSet{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.SessionSet{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.ModesSet{_, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.TaskDelegated{_, _, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.TaskStateSet{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.TaskDelivered{_, _} <> +t: Laws.foh_clean(t)
+    case M.SettingSet{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.TurnQueued{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.QueueTaken{_, _} <> +t: Laws.foh_clean(t)
+    case M.AskOpened{_, _, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.AskClosed{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.DeviceRegistered{_, _, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.DeviceDropped{_, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadSnoozed{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadOrdered{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.WorktreeSkipped{_, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadMerged{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.WorktreeRemoved{_, _} <> +t: Laws.foh_clean(t)
+    case M.ProjectOrdered{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.QueueEdited{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.QueueRemoved{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.QueueMoved{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.QueueTakenOne{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadForked{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.ProviderSet{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.TodosSet{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.UsageSet{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.BotSet{_, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.BotDeleted{_, _} <> +t: Laws.foh_clean(t)
+    case M.RoomSet{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.RoomDeleted{_, _} <> +t: Laws.foh_clean(t)
+    case M.RoomPosted{_, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.HookSet{_, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.HookHit{_, _} <> +t: Laws.foh_clean(t)
+    case M.RoutineSet{_, _, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.RoutineDeleted{_, _} <> +t: Laws.foh_clean(t)
+    case M.RoutineFired{_, _} <> +t: Laws.foh_clean(t)
+    case M.MemorySaved{_, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.MemoryForgot{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.SpaceSet{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.PeerSet{_, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.BotWoke{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.SpacePageSet{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.WorkSet{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.UberSet{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.UberOp{_, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadLaunched{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.WakeSet{_, _, _, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.WakeDropped{_, _} <> +t: Laws.foh_clean(t)
+    case M.LockChanged{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.RoutinePlan{_, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.RoutineSlot{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.RoutineDone{_, _} <> +t: Laws.foh_clean(t)
+    case M.Reminded{_, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.TaskSet{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.TaskDeleted{_, _, _} <> +t: Laws.foh_clean(t)
+    case M.MessageFrom{_, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.ConvSet{_, _, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.MailPosted{_, _, _, _, _, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.MailMarked{_, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.MailTagged{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.RunSet{_, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.CharterSet{_, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.DecisionLogged{_, _, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.TurnUsage{_, _, _, _, _, _, _, _, _, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.DeployAsked{_, _, _, _, _} <> +t: Laws.foh_clean(t)
+    case M.DeployBuilt{_, _, _, _, _} <> +t: Laws.foh_clean(t)
+
+def Laws.fyi_never_spawns(live): {==}
+
+def Laws.act_one_run(live):
+  match live:
+    case SNil{}: {==}
+    case SCon{_, _}: {==}
+
+def Laws.run_fresh(th, cwd, provider, model, session, runtime, interaction): {==}
+
+def Laws.run_one_live_per_conv(): {==}
+
+def Laws.escalate_only_path(cs, os): Laws.foh_clean(cs)
+
+def Laws.charter_gate_denies(text, tool, input, risky, unlisted):
+  %Equal.sym(Bool, CH.Charter.risky(tool, input), True{}, risky) : {Bool.or(Bool.not(_), CH.Charter.allows(text, tool, input)) == False{} : Bool}
+  %Equal.sym(Bool, CH.Charter.allows(text, tool, input), False{}, unlisted) : {Bool.or(Bool.not(True{}), _) == False{} : Bool}
+  {==}
+
+def Laws.charter_gate_allows_listed(text, tool, input, listed):
+  %Equal.sym(Bool, CH.Charter.allows(text, tool, input), True{}, listed) : {Bool.or(Bool.not(CH.Charter.risky(tool, input)), _) == True{} : Bool}
+  or_true_r(Bool.not(CH.Charter.risky(tool, input)))
+
+def Laws.charter_risky_fixed(): {==}
