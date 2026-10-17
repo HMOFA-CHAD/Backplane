@@ -2517,7 +2517,7 @@ def Shell.memos.of(ty: L.Ty, +n: N.Nui, ms: List<&2, L.TLMemo>) -> List<&2, L.TL
 # shows was touched (MM.Mm.main); a bot's or a room's main area is laid
 # out as before and not kept
 type FrameM is Data:
-  FrameM{o: L.Out, mm: List<&2, MM.MainM>, hit: Nat, sm: List<&2, MM.SideM>}
+  FrameM{o: L.Out, mm: List<&2, MM.MainM>, hit: Nat, sm: List<&2, MM.SideM>, bot_hit: Nat}
 
 # the sidebar's body: the memo's while its key holds, else laid out
 # the memos brought up to this frame, or with only the streamed reply's
@@ -2553,48 +2553,53 @@ def SideK.go(+key: String, +ms: List<&2, MM.SideM>, +ty: L.Ty, +cats: Map<&2, CA
 # the main area: a bot's or a room's (not kept), or the thread's from its
 # memo (MM.Mm.main)
 type Part is Data:
-  PBot{o: L.Out}
+  PBot{o: L.Out, body_hit: Nat}
   PMain{m: MM.MainM}
 
-def Part.of(bm: Maybe<&2, L.Out>, +mm: List<&2, MM.MainM>, +tc: MM.TouchK, +ty: L.Ty, +tlm: L.TLMemo, +n: N.Nui) -> Part:
+def Part.of(bm: Maybe<&2, L.Out>, body_hit: Nat, +mm: List<&2, MM.MainM>, +tc: MM.TouchK, +ty: L.Ty, +tlm: L.TLMemo, +n: N.Nui) -> Part:
   match bm:
     case Some{o}:
-      PBot{o}
+      PBot{o, body_hit}
     case None{}:
       PMain{MM.Mm.main(mm, ty, tlm, n, tc)}
 
 def FrameM.join(p: Part, +sd: MM.SideM, +mm: List<&2, MM.MainM>, +ty: L.Ty, +tlm: L.TLMemo, +n: N.Nui) -> FrameM:
   match p:
-    case PBot{o}:
-      FrameM{BV.Bv.frame.given(ty, tlm, n, Some{o}, MM.SideM.out([sd])), Nil{}, 0n, [sd]}
+    case PBot{o, h}:
+      FrameM{BV.Bv.frame.given(ty, tlm, n, Some{o}, MM.SideM.out([sd])), Nil{}, 0n, [sd], h}
     case PMain{MM.MainM{+k, rk, rs, +o, +d}}:
-      FrameM{BV.Bv.frame.given(ty, tlm, n, Some{o}, MM.SideM.out([sd])), MM.MainM.keep(MM.MainM{k, rk, rs, o, d}), Bool.pick(Nat, Bool.and(MM.MainM.same(k, mm), Nat.is_eq(d, MM.MainM.due(mm))), 1n, 0n), [sd]}
+      FrameM{BV.Bv.frame.given(ty, tlm, n, Some{o}, MM.SideM.out([sd])), MM.MainM.keep(MM.MainM{k, rk, rs, o, d}), Bool.pick(Nat, Bool.and(MM.MainM.same(k, mm), Nat.is_eq(d, MM.MainM.due(mm))), 1n, 0n), [sd], 0n}
 
 # the main area and the sidebar's body at once (as Lay.frame.u lays them
 # out), each from its memo when its key holds
 def FrameM.lay(+mm: List<&2, MM.MainM>, sm: List<&2, MM.SideM>, +tc: MM.TouchK, +ty: L.Ty, +tlm: L.TLMemo, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui, +ix: U.SIx, +br: BV.BRows) -> FrameM:
-  p sd = Part.of(BV.Bv.main.w(ty, tlm, cats, wraps, n), mm, tc, ty, tlm, n) SideK.go(MM.Sm.key(n, tc), sm, ty, cats, wraps, n, ix, br)
+  p sd = Part.of(BV.Bv.main.w(ty, tlm, cats, wraps, n), BV.Bv.mail.hit(wraps, n), mm, tc, ty, tlm, n) SideK.go(MM.Sm.key(n, tc), sm, ty, cats, wraps, n, ix, br)
   FrameM.join(p, sd, mm, ty, tlm, n)
 
 def FrameM.out(f: FrameM) -> L.Out:
   match f:
-    case FrameM{o, _, _, _}:
+    case FrameM{o, _, _, _, _}:
       o
 
 def FrameM.mm(f: FrameM) -> List<&2, MM.MainM>:
   match f:
-    case FrameM{_, m, _, _}:
+    case FrameM{_, m, _, _, _}:
       m
 
 def FrameM.hit(f: FrameM) -> Nat:
   match f:
-    case FrameM{_, _, h, _}:
+    case FrameM{_, _, h, _, _}:
       h
 
 def FrameM.sm(f: FrameM) -> List<&2, MM.SideM>:
   match f:
-    case FrameM{_, _, _, x}:
+    case FrameM{_, _, _, x, _}:
       x
+
+# Body reuse is measured separately: bot headers and cats still change.
+def FrameM.bot_hit(f: FrameM) -> Nat:
+  match f:
+    case FrameM{_, _, _, _, h}: h
 
 # the frame again with the glyphs it wanted in the cache: the timeline's
 # memos and the posts' lines are made again (they were measured without
@@ -2630,6 +2635,7 @@ def Shell.paint.c(+cats: Map<&2, CA.CatF>, +memos: List<&2, L.TLMemo>, +oh: List
     tx : U32 <- PS.Perf.span(Bool.pick(String, Nat.is_eq(FrameM.hit(fm), 1n), "ui.layout.mm.hit", "ui.layout.mm.miss"), t1)
     PS.Perf.add("ui.ops", U32.from_nat(k))
     PS.Perf.add("ui.mm.hit", U32.from_nat(FrameM.hit(fm)))
+    PS.Perf.add("ui.mail.body.hit", U32.from_nat(FrameM.bot_hit(fm)))
     Shell.paint.want(X.Text.wants(Lay.ops(o), Nil{}), o, FrameM.mm(fm), FrameM.sm(fm), cats, memos, oh, n, w, q, i, wa, epoch, ms, t0, t2)
 
 def Shell.paint.m(+memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t1: U32) -> IO(Shell):

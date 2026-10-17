@@ -13,6 +13,7 @@ import ./src/web/view.bend as WPH
 import ./src/core/schematic.bend as SC # kicad fork viewers
 import ./src/core/charter.bend as CH # mail 2c
 import ./src/core/mailrun.bend as MRUN # mail 2c
+import ./src/app/mailroom.bend as MRUI # mail ui
 import ./src/server/mailstore.bend as MIX # mail index
 import ./src/app/mm.bend as MM # window memos
 import ./src/core/kexport.bend as KEX
@@ -10602,3 +10603,40 @@ law visible_cats_empty_preserves_cache:
 law visible_sleep_cat_posed_once:
   for +clock: Nat
   {BV.Bv.warm.at("sleep", clock) == 0n : Nat}
+# ---- mail ui ----
+law mailroom_tab_after_chat:
+  {BU.BU.tabs.mail("b1") == ["chat", "mail", "space", "browser", "tasks", "memory", "routines", "hooks", "settings"] : List<&2, String>}
+
+law mailroom_uber_default:
+  for +u: U.Ui
+  for +id: String
+  {BU.BU.tab.dflt(u, id) == Bool.pick(String, UBR.Uber.is(U.Ui.state(u), id), "mail", "chat") : String}
+
+law mailroom_run_collapsed_default:
+  for +now: Nat
+  {U.Mailv.run_open(U.Ui.init(now)) == False{} : Bool}
+
+law mailroom_chip_filters:
+  for +f: MVW.Filter
+  for +bot: String
+  {MVW.Filter.bot(MVW.Mv.with_bot(f, bot)) == bot : String}
+
+law mailroom_chip_keeps_selection:
+  for +u: U.Ui
+  for +bot: String
+  {U.Ui.sel(U.Mailv.chip(u, bot)) == U.Ui.sel(u) : String}
+
+law mailroom_covers_plane:
+  for +p: PLN.Plane
+  {MRUI.Mr.all(p) == List.concat(&2, PLN.PRow, [PLN.Plane.need(p), PLN.Plane.run(p), PLN.Plane.locks(p), PLN.Plane.routines(p), PLN.Plane.rooms(p), PLN.Plane.idle(p), PLN.Plane.bots(p)]) : List<&2, PLN.PRow>}
+
+# The body cache carries no independent sidebar or timeline state.
+law mail_body_kept_output:
+  for k: String
+  for +o: L.Out
+  for at: Nat
+  for due: Nat
+  {MM.BotM.out(MM.BotM.kept(MM.BotM{k, o, at, due, False{}})) == o : L.Out}
+
+law mail_age_relative_deadline:
+  {MM.BotM.age_due(160n, 101n) == 161n : Nat}

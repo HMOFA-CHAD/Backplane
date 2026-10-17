@@ -7,6 +7,7 @@ import ./src/server/server.bend as MPCREDIT # mail perf
 import ./src/core/schematic.bend as SC # kicad fork viewers
 import ./src/core/charter.bend as CH # mail 2c
 import ./src/core/mailrun.bend as MRUN # mail 2c
+import ./src/app/mailroom.bend as MRUI # mail ui
 import ./src/server/mailstore.bend as MIX # mail index
 import ./src/app/mm.bend as MM # window memos
 import ./src/core/kexport.bend as KEX
@@ -12313,3 +12314,27 @@ def Laws.visible_cats_empty_preserves_cache(c, clock):
 
 def Laws.visible_sleep_cat_posed_once(clock):
   {==}
+# ---- mail ui ----
+def Laws.mailroom_tab_after_chat():
+  {==}
+
+def Laws.mailroom_uber_default(u, id):
+  {==}
+
+def Laws.mailroom_run_collapsed_default(now):
+  {==}
+
+def Laws.mailroom_chip_filters(f, bot):
+  match f:
+    case MVW.Filter{_, _, _, _}: {==}
+
+def Laws.mailroom_chip_keeps_selection(u, bot):
+  match u:
+    case U.Ui{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}: {==}
+
+def Laws.mailroom_covers_plane(p):
+  {==}
+
+def Laws.mail_body_kept_output(k, o, at, due): {==}
+
+def Laws.mail_age_relative_deadline(): {==}
