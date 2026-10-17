@@ -694,7 +694,7 @@ def Bv.routine.card(+ty: L.Ty, +w0: SC.SRow, +r: BT.Routine, +own: Bool, +c: D.C
   Bv.routine.card.k(ty, w0, r, own, Bv.routine.gap(w0, BT.Routine.on(r)), c, x, w, y)
 
 def Bv.routine.k(own: Bool, +ty: L.Ty, +u: U.Ui, +r: BT.Routine, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
-  Bv.routine.card(ty, SC.Sched.row(U.Lang.loc(u), U.Ui.state(u), r, now, 0n, True{}), r, own, c, x, w, y)
+  Bv.routine.card(ty, SC.Sched.row(L.Ty.loc(ty), U.Ui.state(u), r, now, 0n, True{}), r, own, c, x, w, y)
 
 def Bv.routines(rs: List<&2, BT.Routine>, +ty: L.Ty, +u: U.Ui, +own: Bool, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   match rs:
@@ -742,7 +742,7 @@ def Bv.hook(+ty: L.Ty, h: BT.Hook, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: 
       L.Col{L.Out.all([
           L.Out.ops(L.Lay.box(c, x, y, w, 66, 0, T.Th.panel(), T.Th.line())),
           L.Out.ops(L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, name, (w - rw - 40 : U32)), c, (x + 12 : U32), (y + 6 : U32), 28, Bool.pick(U32, revoked, T.Th.dim(), T.Th.text()))),
-          Bv.faint(ty, c, MSG.T.hooks.status(L.Ty.loc(ty), id, Bool.pick(String, revoked, "revoked", Bool.pick(String, Nat.is_eq(k, 0n), "never", "called")), Nat.show(k), U.Time.ago(now, last)),
+          Bv.faint(ty, c, MSG.T.hooks.status(L.Ty.loc(ty), id, Bool.pick(String, revoked, "revoked", Bool.pick(String, Nat.is_eq(k, 0n), "never", "called")), Nat.show(k), I.I18n.ago(L.Ty.loc(ty), now, last)),
             (x + 12 : U32), (w - rw - 40 : U32), (y + 36 : U32)),
           Bool.pick(L.Out, revoked, L.Out.none(), F.Fm.button(ty, c, (x + w - rw - 12 : U32), (y + 19 : U32), label1, T.Th.soft(), "hook-token", id)),
           Bool.pick(L.Out, revoked, L.Out.none(), F.Fm.button(ty, c, (x + w - rw + tw - 4 : U32), (y + 19 : U32), label0, T.Th.soft(), "hook-revoke", id))]),
@@ -1342,7 +1342,7 @@ def Bv.posts.l(ps: List<&2, BT.Post>, +ws: Map<&2, PW>, +ty: L.Ty, +u: U.Ui, +no
     case Nil{}:
       Nil{}
     case BT.Post{+id, _, +from, +text, _, +at} <> t:
-      PostL{id, BU.BU.member(u, from), U.Time.ago(now, at), Bv.wrap(ws, ty, id, text, w)} <> Bv.posts.l(t, ws, ty, u, now, w)
+      PostL{id, BU.BU.member(u, from), I.I18n.ago(L.Ty.loc(ty), now, at), Bv.wrap(ws, ty, id, text, w)} <> Bv.posts.l(t, ws, ty, u, now, w)
 
 def Bv.posts.h(ps: List<&2, PostL>, +acc: U32) -> U32:
   match ps:

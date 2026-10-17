@@ -1,5 +1,6 @@
 import Base
 import ../core/msgs.bend as MSG
+import ../core/i18n.bend as I
 import ../core/client.bend as U
 import ../core/plane.bend as P
 import ../gfx/raster.bend as R
@@ -31,7 +32,7 @@ def Pl.dot(+s: String) -> U32:
 
 # a thread's row: dot, title, its project, then its machine and age at the right
 def Pl.row.thread(+ty: L.Ty, +c: D.Clip, +title: String, +sub: String, +machine: String, +state: String, +at: Nat, +now: Nat, +x: U32, +w: U32, +y: U32) -> List<&2, R.Op>:
-  +age = {U.Time.ago(now, at) : String}
+  +age = {I.I18n.ago(L.Ty.loc(ty), now, at) : String}
   +aw = L.Ty.width(ty, 2n, age)
   +mw = Bool.pick(U32, String.is_empty(machine), 0, (L.Ty.width(ty, 2n, machine) + 14 : U32))
   +avail = L.U32.dim(w, (aw + mw + 40 : U32))

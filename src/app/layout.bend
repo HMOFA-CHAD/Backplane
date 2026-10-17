@@ -1,8 +1,9 @@
 import Base
-import ../core/codec.bend as CC
 import ../core/title.bend as TTL
 import ../core/i18n.bend as I
 import ../core/msgs.bend as MSG
+import ../core/winnote.bend as NT
+import ../core/codec.bend as CC
 import ../core/kihealth.bend as KH
 import ../core/model.bend as M
 import ../core/json.bend as J
@@ -629,7 +630,7 @@ def Lay.field(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +w: U32, +text: String, +fo
 def Lay.adding(+ty: Ty, adding: Bool, +dy: U32, +path: String, +focused: Bool, +caret: Nat, +mark: Nat) -> Out:
   match adding:
     case True{}:
-      Out.cat(Lay.field.x(ty, D.Clip.all(), 12, (58 + dy : U32), 186, path, focused, True{}, True{}, caret, mark, "/path/to/project", "project-path"),
+      Out.cat(Lay.field.x(ty, D.Clip.all(), 12, (58 + dy : U32), 186, path, focused, True{}, True{}, caret, mark, MSG.T.sidebar.path.placeholder(Ty.loc(ty)), "project-path"),
         Lay.button(ty, D.Clip.all(), 204, (58 + dy : U32), MSG.T.common.add(Ty.loc(ty)), T.Th.accent(), "add-project", path))
     case False{}:
       Out.none()
@@ -1475,12 +1476,17 @@ def TL.img.rows(k: Nat, +i: Nat, +size: String, +path: String) -> List<&2, TLine
 def TL.img.h(+size: String) -> Nat:
   Maybe.default(&2, Nat, Nat.read(Maybe.default(&2, String, List.get(&2, String, String.split(size, 'x'), 1n), "")), 0n)
 
+# a notice the window made (core/notice.bend) in the frame's language;
+# a hub's or a tool's own words as they came
+def Lay.notice(+l: I.Loc, +s: String) -> String:
+  NT.Notice.shown(l, s)
+
 def TL.img.k(state: Nat, +ty: Ty, +st: String, +path: String, +px: U32) -> List<&2, TLine>:
   match state:
     case 0n:
       [TLine{MSG.T.image.loading.path(Ty.loc(ty), Ty.fit(ty, 2n, path, (px - 80 : U32))), T.Th.faint(), 12, path, 4096}]
     case 1n:
-      [TLine{Ty.fit(ty, 2n, MSG.T.image.failed.path(Ty.loc(ty), path, V.Vx.notice(Ty.loc(ty), String.drop(st, 4n))), px), T.Th.dim(), 3, "", 0}]
+      [TLine{Ty.fit(ty, 2n, MSG.T.image.failed.path(Ty.loc(ty), path, Lay.notice(Ty.loc(ty), String.drop(st, 4n))), px), T.Th.dim(), 3, "", 0}]
     case _:
       TL.img.rows(Nat.div(Nat.add(TL.img.h(st), 27n), 20n), 0n, st, path)
 
@@ -1967,41 +1973,9 @@ def Lay.tools.w(+ty: Ty, ts: List<&2, TO.Tool>, +full: Bool) -> U32:
     case TO.Tool{_, +l, _, _, _, _, _, +gap} <> t:
       (Lay.tool.w(ty, l, full) + Lay.tool.gap(gap) + Lay.tools.w(ty, t, full) : U32)
 
-# Shared tool records keep their English API; the window localizes their labels once.
-def Hdr.label.k(+l: I.Loc, label: String, index: Nat) -> String:
-  match index:
-    case 0n: MSG.T.composer.stop(l)
-    case 1n: MSG.T.tools.pinned(l)
-    case 2n: MSG.T.menu.pin(l)
-    case 3n: MSG.T.notify.settled(l)
-    case 4n: MSG.T.menu.settle(l)
-    case 5n: MSG.T.sidebar.snoozed(l)
-    case 6n: MSG.T.tools.snooze(l)
-    case 7n: MSG.T.sidebar.archived(l)
-    case 8n: MSG.T.menu.archive(l)
-    case 9n: MSG.T.palette.delete(l)
-    case 10n: MSG.T.common.cancel(l)
-    case 11n: MSG.T.common.delete(l)
-    case 12n: MSG.T.tools.forkthread(l)
-    case 13n: MSG.T.menu.bringback(l)
-    case 14n: MSG.T.palette.terminal(l)
-    case 15n: MSG.T.thread.viewer(l)
-    case _: label
-
-def Hdr.label(+l: I.Loc, +label: String) -> String:
-  match l:
-    case I.En{}: label
-    case I.Ja{}: Hdr.label.k(I.Ja{}, label, CC.Codec.pos(["Stop", "Pinned", "Pin", "Settled", "Settle", "Snoozed", "Snooze", "Archived", "Archive", "Delete thread", "Cancel", "Delete", "Fork thread", "Bring back", "Terminal", "Viewer"], label))
-
-def Hdr.tools(ts: List<&2, TO.Tool>, +l: I.Loc) -> List<&2, TO.Tool>:
-  match ts:
-    case Nil{}: Nil{}
-    case TO.Tool{i, label, tip, a, v, on, danger, gap} <> t:
-      TO.Tool{i, Hdr.label(l, label), tip, a, v, on, danger, gap} <> Hdr.tools(t, l)
-
 def Lay.header.bs.loc(+l: I.Loc, turn: M.TurnState, override: M.Override, +sa: Nat, +ua: Nat, pinned: Bool, panel: Bool, archived: Bool, snoozed: Bool, del: Bool, forked: Bool, term: Bool) -> List<&2, TO.Tool>:
-  Hdr.tools(List.reverse(&2, TO.Tool, TO.Tools.head(TO.Head{Lay.running(turn), TO.Tools.settled(override, Nat.is_gt(sa, ua)), pinned, snoozed, archived, del, forked, term, panel},
-    "vw-find", "snooze", "vw-key", "term")), l)
+  List.reverse(&2, TO.Tool, TO.Tools.head.loc(l, TO.Head{Lay.running(turn), TO.Tools.settled(override, Nat.is_gt(sa, ua)), pinned, snoozed, archived, del, forked, term, panel},
+    "vw-find", "snooze", "vw-key", "term"))
 
 def Lay.header.bs(turn: M.TurnState, override: M.Override, +sa: Nat, +ua: Nat, pinned: Bool, panel: Bool, archived: Bool, snoozed: Bool, del: Bool, forked: Bool, term: Bool) -> List<&2, TO.Tool>:
   Lay.header.bs.loc(I.En{}, turn, override, sa, ua, pinned, panel, archived, snoozed, del, forked, term)
@@ -3275,6 +3249,11 @@ def Kn.path(+ty: Ty, +n: S.Nui, +x: U32, +y: U32, +w: U32) -> Out:
 # Settings
 # --------
 
+# the width a pair of chips takes on a row's right, never under the
+# English floor (so English rows stay as they were)
+def Set.pairw(+ty: Ty, +a: String, +b: String, +floor: U32) -> U32:
+  U32.max(floor, (Lay.button.w(ty, a) + Lay.button.w(ty, b) + 22 : U32))
+
 def Set.head(+ty: Ty, +label: String, +x: U32, +y: U32) -> Out:
   Out.ops(Ty.text(ty, 1n, label, D.Clip.all(), x, y, 28, T.Th.text()))
 
@@ -3441,7 +3420,7 @@ def Set.carry(+ty: Ty, +on: Bool, +x: U32, +w: U32, +y: U32) -> Out:
   +label0 = MSG.T.settings.lang.off(Ty.loc(ty))
   +label1 = MSG.T.settings.lang.on(Ty.loc(ty))
   Out.all([
-    Set.row.r(ty, MSG.T.settings.restart(Ty.loc(ty)), MSG.T.settings.restart.note(Ty.loc(ty)), x, y, w, 150),
+    Set.row.r(ty, MSG.T.settings.restart(Ty.loc(ty)), MSG.T.settings.restart.note(Ty.loc(ty)), x, y, w, Set.pairw(ty, label0, label1, 150)),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label0) - 6 - Lay.button.w(ty, label1) : U32), (y + 14 : U32), label1, on, "setting", "restart.continue=on"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label0) : U32), (y + 14 : U32), label0, Bool.not(on), "setting", "restart.continue=off")])
 
@@ -3569,6 +3548,18 @@ def Set.tz(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
     Lay.button(ty, D.Clip.all(), (x + w - 16 - sw : U32), (y + 74 : U32), label1, T.Th.accent(), "tz-set", ""),
     Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, U.Tzs.err(u), (w - 32 : U32)), D.Clip.all(), (x + 16 : U32), (y + 110 : U32), 20, T.Th.faint()))])
 
+# the version row's button's words (U.Update.btn), measured for the row
+def Set.update.label(i: Nat, +l: I.Loc) -> String:
+  match i:
+    case 1n:
+      MSG.T.settings.update.install(l)
+    case 2n:
+      MSG.T.settings.update.check(l)
+    case 3n:
+      MSG.T.settings.update.now(l)
+    case _:
+      ""
+
 # the version row's button (U.Update.btn)
 def Set.update.btn(i: Nat, +ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
   match i:
@@ -3640,7 +3631,7 @@ def Set.pair(+ty: Ty, +info: Map<&2, String>, +on: Bool, +x: U32, +w: U32, +y: U
   +pair = U.Pair.link(info)
   +cw = {Lay.button.w(ty, label0) : U32}
   Out.all([
-    Set.row.r(ty, MSG.T.settings.pair(Ty.loc(ty)), U.Pair.note(Ty.loc(ty), pair), x, y, w, 180),
+    Set.row.r(ty, MSG.T.settings.pair(Ty.loc(ty)), U.Pair.note(Ty.loc(ty), pair), x, y, w, Set.pairw(ty, label0, label1, 180)),
     Bool.pick(Out, String.is_empty(pair), Out.none(), Lay.button(ty, D.Clip.all(), (x + w - 16 - cw : U32), (y + 10 : U32), label0, T.Th.soft(), "copy", pair)),
     Bool.pick(Out, U.Pair.qr.ready(info), Lay.chip(ty, (x + w - 16 - cw - 6 - Lay.button.w(ty, label1) : U32), (y + 10 : U32), label1, on, "flag", "pairqr"), Out.none())])
 
@@ -3911,25 +3902,25 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Set.row(ty, "KiCad", U.KN.summary(info), x, (b2 + 402 + dy + ey : U32), w),
     Kn.path(ty, n, (x + 16 : U32), (b2 + 450 + dy + ey : U32), (w - 32 : U32)),
     Kn.draw(kn, False{}, ty, (x + 16 : U32), (b2 + 490 + dy + ey : U32), (w - 32 : U32)),
-    Set.row.r(ty, U.KiCad.ipc.label(Ty.loc(ty), info), U.KiCad.ipc.note(Ty.loc(ty), info), x, (b2 + 486 + dy + ey + kh : U32), w, Bool.pick(U32, U.KiCad.ipc.ready(info), 140, 0)),
+    Set.row.r(ty, U.KiCad.ipc.label(Ty.loc(ty), info), U.KiCad.ipc.note(Ty.loc(ty), info), x, (b2 + 486 + dy + ey + kh : U32), w, Bool.pick(U32, U.KiCad.ipc.ready(info), Set.pairw(ty, MSG.T.settings.lang.on(Ty.loc(ty)), MSG.T.settings.lang.off(Ty.loc(ty)), 140), 0)),
     Bool.pick(Out, U.KiCad.ipc.ready(info), Set.ipc(ty, ipc, x, w, (b2 + 500 + dy + ey + kh : U32)), Out.none()),
     Set.row(ty, U.FreeCAD.label.loc(Ty.loc(ty), info), U.FreeCAD.note(Ty.loc(ty), info), x, (b2 + 546 + dy + ey + kh : U32), w),
     Set.head(ty, MSG.T.settings.appearance(Ty.loc(ty)), x, (b2 + 570 + dy + fy : U32)),
     Set.card(x, (b2 + 602 + dy + fy : U32), w, 220),
-    Set.row.r(ty, MSG.T.settings.theme(Ty.loc(ty)), MSG.T.settings.theme.note(Ty.loc(ty)), x, (b2 + 604 + dy + fy : U32), w, 150),
+    Set.row.r(ty, MSG.T.settings.theme(Ty.loc(ty)), MSG.T.settings.theme.note(Ty.loc(ty)), x, (b2 + 604 + dy + fy : U32), w, Set.pairw(ty, label0, label1, 150)),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label0) - 6 - Lay.button.w(ty, label1) : U32), (b2 + 618 + dy + fy : U32), label1, Bool.not(String.eq(M.Setting.get(st, "ui.theme", ""), "light")), "setting", "ui.theme=dark"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label0) : U32), (b2 + 618 + dy + fy : U32), label0, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "setting", "ui.theme=light"),
     Set.lang(ty, S.Nui.ui(n), x, w, (b2 + 656 + dy + fy : U32)),
-    Set.row.r(ty, MSG.T.settings.sidebar(Ty.loc(ty)), MSG.T.settings.sidebar.note(Ty.loc(ty)), x, (b2 + 760 + dy + fy : U32), w, 190),
+    Set.row.r(ty, MSG.T.settings.sidebar(Ty.loc(ty)), MSG.T.settings.sidebar.note(Ty.loc(ty)), x, (b2 + 760 + dy + fy : U32), w, Set.pairw(ty, label2, label3, 190)),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label2) - 6 - Lay.button.w(ty, label3) : U32), (b2 + 774 + dy + fy : U32), label3, Bool.not(String.eq(U.Side.view(st), "active")), "setting", "sidebar.view=projects"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label2) : U32), (b2 + 774 + dy + fy : U32), label2, String.eq(U.Side.view(st), "active"), "setting", "sidebar.view=active"),
     Set.head(ty, MSG.T.settings.network(Ty.loc(ty)), x, (b2 + 846 + dy + fy : U32)),
     Set.card(x, (b2 + 878 + dy + fy : U32), w, 216),
     Set.row(ty, U.Tail.label(Ty.loc(ty), info), U.Tail.note(Ty.loc(ty), info), x, (b2 + 880 + dy + fy : U32), w),
     Set.pair(ty, info, Pq.on(n), x, w, (b2 + 932 + dy + fy : U32)),
-    Set.row.r(ty, "Backplane " ++ v, U.Update.line.w(Ty.loc(ty), st, info, note), x, (b2 + 984 + dy + fy : U32), w, 150),
+    Set.row.r(ty, "Backplane " ++ v, U.Update.line.w(Ty.loc(ty), st, info, note), x, (b2 + 984 + dy + fy : U32), w, U32.max(150, (Lay.button.w(ty, Set.update.label(U.Update.btn(st, info, note), Ty.loc(ty))) + 22 : U32))),
     Set.update.btn(U.Update.btn(st, info, note), ty, x, w, (b2 + 994 + dy + fy : U32)),
-    Set.row.r(ty, MSG.T.settings.channel(Ty.loc(ty)), MSG.T.settings.channel.note(Ty.loc(ty)), x, (b2 + 1036 + dy + fy : U32), w, 190),
+    Set.row.r(ty, MSG.T.settings.channel(Ty.loc(ty)), MSG.T.settings.channel.note(Ty.loc(ty)), x, (b2 + 1036 + dy + fy : U32), w, Set.pairw(ty, label4, label5, 190)),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label4) - 6 - Lay.button.w(ty, label5) : U32), (b2 + 1050 + dy + fy : U32), label5, Bool.not(String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly")), "setting", "update.channel=stable"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label4) : U32), (b2 + 1050 + dy + fy : U32), label4, String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly"), "setting", "update.channel=nightly"),
     Set.voice(ty, st, n, x, w, (b2 + 1114 + dy + fy : U32)),
@@ -4056,9 +4047,61 @@ def Info.rows(ps: List<&2, String>) -> List<&2, KV2>:
     case p <> t:
       Info.row(String.split(p, '=')) <> Info.rows(t)
 
+# a field the readers name (core/board.bend, core/sch.bend's Info.kv) in
+# the device language, by its name; one not listed shows as it is
+def Info.keys() -> List<&2, String>:
+  ["net", "layer", "width", "ref", "value", "footprint", "size", "drill", "type", "shape", "name", "symbol", "lib", "text", "sheet", "file", "netclass"]
+
+def Info.key.k(+l: I.Loc, i: Nat, +k: String) -> String:
+  match i:
+    case 0n: MSG.T.viewer.field.net(l)
+    case 1n: MSG.T.viewer.field.layer(l)
+    case 2n: MSG.T.viewer.field.width(l)
+    case 3n: MSG.T.viewer.field.ref(l)
+    case 4n: MSG.T.viewer.field.value(l)
+    case 5n: MSG.T.viewer.field.footprint(l)
+    case 6n: MSG.T.viewer.field.size(l)
+    case 7n: MSG.T.viewer.field.drill(l)
+    case 8n: MSG.T.viewer.field.ktype(l)
+    case 9n: MSG.T.viewer.field.shape(l)
+    case 10n: MSG.T.viewer.field.name(l)
+    case 11n: MSG.T.viewer.field.symbol(l)
+    case 12n: MSG.T.viewer.field.lib(l)
+    case 13n: MSG.T.viewer.field.text(l)
+    case 14n: MSG.T.viewer.field.sheet(l)
+    case 15n: MSG.T.viewer.field.file(l)
+    case 16n: MSG.T.viewer.field.netclass(l)
+    case _: k
+
+def Info.key(+l: I.Loc, +k: String) -> String:
+  Info.key.k(l, CC.Codec.pos(Info.keys(), k), k)
+
+# what was picked ("via", "pad 3", "global label"), the same way
+def Info.kinds() -> List<&2, String>:
+  ["via", "track", "footprint", "zone", "symbol", "label", "global label", "hier label", "sheet pin", "sheet", "netclass flag"]
+
+def Info.kind.k(+l: I.Loc, i: Nat, +t: String) -> String:
+  match i:
+    case 0n: MSG.T.viewer.item.via(l)
+    case 1n: MSG.T.viewer.item.track(l)
+    case 2n: MSG.T.viewer.item.footprint(l)
+    case 3n: MSG.T.viewer.item.zone(l)
+    case 4n: MSG.T.viewer.item.symbol(l)
+    case 5n: MSG.T.viewer.item.label(l)
+    case 6n: MSG.T.viewer.item.globallabel(l)
+    case 7n: MSG.T.viewer.item.hierlabel(l)
+    case 8n: MSG.T.viewer.item.sheetpin(l)
+    case 9n: MSG.T.viewer.item.sheet(l)
+    case 10n: MSG.T.viewer.item.netclassflag(l)
+    case _: t
+
+def Info.title(+l: I.Loc, +t: String) -> String:
+  Bool.pick(String, String.starts_with(t, "pad "), MSG.T.viewer.item.pad(l, String.drop(t, 4n)),
+    Bool.pick(String, String.starts_with(t, "pin "), MSG.T.viewer.item.pin(l, String.drop(t, 4n)), Info.kind.k(l, CC.Codec.pos(Info.kinds(), t), t)))
+
 def Info.draw.k(+ty: Ty, r: KV2, +x: U32, +y: U32, +w: U32) -> Out:
   KV2{k, v} = r
-  Out.ops(List.append(&2, R.Op, Ty.text(ty, 2n, k, D.Clip.all(), (x + 14 : U32), y, 22, T.Th.faint()),
+  Out.ops(List.append(&2, R.Op, Ty.text(ty, 2n, Ty.fit(ty, 2n, Info.key(Ty.loc(ty), k), 78), D.Clip.all(), (x + 14 : U32), y, 22, T.Th.faint()),
     Ty.text(ty, 2n, Ty.fit(ty, 2n, v, (w - 110 : U32)), D.Clip.all(), (x + 96 : U32), y, 22, T.Th.text())))
 
 def Info.draw(+ty: Ty, rs: List<&2, KV2>, +x: U32, +y: U32, +w: U32) -> Out:
@@ -4090,7 +4133,7 @@ def Lay.inspect(+ty: Ty, +info: String, +draft: String, +x0: U32, +x1: U32, +h: 
   +mention = "[" ++ info ++ "] "
   Out.when(Bool.not(String.is_empty(info)), Out.all([
     Out.ops(Lay.box(D.Clip.all(), (x0 + 16 : U32), y, w, ch, 10, T.Th.panel(), T.Th.line())),
-    Out.ops(Ty.text(ty, 1n, title, D.Clip.all(), (x0 + 30 : U32), (y + 8 : U32), 28, T.Th.text())),
+    Out.ops(Ty.text(ty, 1n, Info.title(Ty.loc(ty), title), D.Clip.all(), (x0 + 30 : U32), (y + 8 : U32), 28, T.Th.text())),
     Out{Lay.icon(ty, "x", D.Clip.all(), (x0 + w - 10 : U32), (y + 12 : U32), T.Th.dim()), [Lay.hit((x0 + w - 16 : U32), (y + 6 : U32), 28, 28, "vw-unpick", "")]},
     Info.draw(ty, rows, (x0 + 16 : U32), (y + 38 : U32), w),
     Lay.button(ty, D.Clip.all(), (x0 + 30 : U32), (y + ch - 40 : U32), label0, T.Th.accent(), "draft", draft ++ Bool.pick(String, String.is_empty(draft), "", " ") ++ mention),
@@ -4234,7 +4277,7 @@ def Lay.viewer.k(+ty: Ty, +x0: U32, +x1: U32, +h: U32, +empty: Bool, x: V.Vx, +i
       +label5 = MSG.T.viewer.diff(Ty.loc(ty))
       +label6 = MSG.T.viewer.files(Ty.loc(ty))
       +label7 = MSG.T.viewer.review(Ty.loc(ty))
-      +message = V.Vx.notice(Ty.loc(ty), busy)
+      +message = Lay.notice(Ty.loc(ty), busy)
       +help = Lay.help.loc(Ty.loc(ty), k)
       +bw = Lay.button.w(ty, label0)
       +sw = Lay.button.w(ty, label1)
@@ -4805,14 +4848,15 @@ def Hb.compare(+ty: Ty, +n: S.Nui, b: U.HBar, +ss: List<&2, V.Seen>, +x0: U32, +
     case U.HBar{_, _, _, _, _, _, _, _, _, _, +a, +bb, +menu}:
       +label0 = MSG.T.common.close(Ty.loc(ty))
       +cw = Lay.button.w(ty, label0)
-      +room = {Lay.room((x1 - x0 : U32), (cw + Lay.button.w(ty, "BOM") + 72 : U32)) : U32}
+      +bom = MSG.T.review.bom(Ty.loc(ty))
+      +room = {Lay.room((x1 - x0 : U32), (cw + Lay.button.w(ty, bom) + 72 : U32)) : U32}
       +la = Ty.fit(ty, 2n, Hb.side.label.loc(Ty.loc(ty), MSG.T.viewer.history.old(Ty.loc(ty)), a), U32.shr(room))
       +lb = Ty.fit(ty, 2n, Hb.side.label.loc(Ty.loc(ty), MSG.T.viewer.history.new(Ty.loc(ty)), bb), U32.shr(room))
       Out.all([Hb.ground(x0, x1, y, 72),
         Lay.chip(ty, (x0 + 16 : U32), (y + 8 : U32), la, String.eq(menu, "a"), "cmp-side", "a"),
         Lay.chip(ty, (x0 + 24 + Lay.button.w(ty, la) : U32), (y + 8 : U32), lb, String.eq(menu, "b"), "cmp-side", "b"),
         Lay.button(ty, D.Clip.all(), (x1 - 16 - cw : U32), (y + 8 : U32), label0, T.Th.text(), "cmp-close", ""),
-        Lay.button(ty, D.Clip.all(), (x1 - 24 - cw - Lay.button.w(ty, "BOM") : U32), (y + 8 : U32), "BOM", T.Th.text(), "rv-bom", ""),
+        Lay.button(ty, D.Clip.all(), (x1 - 24 - cw - Lay.button.w(ty, bom) : U32), (y + 8 : U32), bom, T.Th.text(), "rv-bom", ""),
         Hb.legend.if(String.eq(U.Rv.showing(S.Nui.ui(n)), "diff"), ty, x0, (y + 40 : U32)),
         Rvw.flip(ty, U.Rv.showing(S.Nui.ui(n)), x1, (y + 40 : U32))])
 
@@ -4924,7 +4968,7 @@ def Fv.list.k(ready: Bool, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Ou
         Fv.rows(List.take(&2, U.FmRow, List.drop(&2, U.FmRow, all, top), fit), ty, x0, x1, 104),
         [Lay.fits(Nat.is_gt(top, 0n), Lay.button(ty, D.Clip.all(), (x0 + 16 : U32), (h - 40 : U32), MSG.T.common.earlier(Ty.loc(ty)), T.Th.soft(), "fm-page", Nat.show(Nat.sub(top, fit)))),
          Lay.fits(Nat.is_gt(n, Nat.add(top, fit)), Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, label0) : U32), (h - 40 : U32), label0, T.Th.soft(), "fm-page", Nat.show(Nat.add(top, fit)))),
-         Lay.fits(Nat.is_gt(n, fit), Out.ops(Ty.text(ty, 2n, Nat.show(1n+top) ++ "–" ++ Nat.show(Bool.pick(Nat, Nat.is_lt(Nat.add(top, fit), n), Nat.add(top, fit), n)) ++ " of " ++ Nat.show(n),
+         Lay.fits(Nat.is_gt(n, fit), Out.ops(Ty.text(ty, 2n, MSG.T.viewer.files.range(Ty.loc(ty), Nat.show(1n+top), Nat.show(Bool.pick(Nat, Nat.is_lt(Nat.add(top, fit), n), Nat.add(top, fit), n)), Nat.show(n)),
            D.Clip.all(), (x0 + U32.shr((x1 - x0 : U32)) - 40 : U32), (h - 40 : U32), 28, T.Th.faint())))]]))
     case False{}:
       Out.ops(Ty.text(ty, 2n, MSG.T.viewer.files.loading(Ty.loc(ty)), D.Clip.all(), (x0 + 16 : U32), 104, 30, T.Th.faint()))
@@ -5351,10 +5395,15 @@ def Lay.note.k(+ty: Ty, empty: Bool, offer: Bool, +note: String, +x: U32, +y: U3
     case False{} False{}:
       Out.ops(Ty.text(ty, 2n, note, D.Clip.all(), x, y, 20, T.Th.warn()))
 
+# the footer's words: "update <version>" offers one; the hub's own
+# progress words show as it sent them
+def Lay.note.shown(+l: I.Loc, +note: String) -> String:
+  Bool.pick(String, String.starts_with(note, "update "), MSG.T.sidebar.update(l, String.drop(note, 7n)), Lay.notice(l, note))
+
 # an update to offer (clickable) or one being applied (status only), in
 # the sidebar's footer beside Settings
 def Lay.note(+ty: Ty, +note: String, +h: U32) -> Out:
-  +shown = V.Vx.notice(Ty.loc(ty), note)
+  +shown = Lay.note.shown(Ty.loc(ty), note)
   Lay.note.k(ty, String.is_empty(note), String.starts_with(note, "update "), Ty.fit(ty, 2n, shown, 150), U32.dim(248, (Ty.width(ty, 2n, Ty.fit(ty, 2n, shown, 150)) + 16 : U32)), (h - 34 : U32))
 
 def Lay.ghost.k(on: Bool, +ty: Ty, +title: String, +y: U32) -> Out:

@@ -11514,7 +11514,11 @@ def Laws.charter_gate_allows_listed(text, tool, input, listed):
 
 def Laws.charter_risky_fixed(): {==}
 # ---- i18n window ----
-def Laws.window_notice_english(s):
+def Laws.window_notice_english():
+  {==}
+def Laws.window_notice_words_kept():
+  {==}
+def Laws.window_tools_english(h, sa, sv, ta, tv):
   {==}
 def Laws.window_picker_default():
   {==}

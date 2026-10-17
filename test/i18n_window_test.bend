@@ -9,6 +9,8 @@ import ../src/app/nui.bend as N
 import ../src/app/bots.bend as BV
 import ../src/app/forms.bend as F
 import ../src/app/viewer.bend as V
+import ../src/core/winnote.bend as NT
+import ../src/core/tools.bend as TO
 import ../src/gfx/text.bend as X
 import ../src/gfx/raster.bend as R
 import ../src/gfx/draw.bend as D
@@ -66,6 +68,19 @@ def right.go(hs: List<&2, N.Hit>, +a: String, +v: String) -> U32:
     case N.Hit{_, _, x1, _, +action, +value} <> t:
       Bool.pick(U32, Bool.and(String.eq(a, action), String.eq(v, value)), x1, right.go(t, a, v))
 
+def busy(v: V.Vw) -> String:
+  match v:
+    case V.Vw{_, _, _, _, _, _, _, _, _, _, V.Vx{_, _, _, _, _, b, _, _, _, _, _}}:
+      b
+
+def heads() -> TO.Head:
+  TO.Head{True{}, True{}, True{}, True{}, True{}, True{}, True{}, True{}, True{}}
+
+def captions.tools(ts: List<&2, TO.Tool>) -> String:
+  match ts:
+    case Nil{}: ""
+    case TO.Tool{_, l, _, _, _, _, _, _} <> t: l ++ "|" ++ captions.tools(t)
+
 def settings() -> L.Out:
   L.Lay.settings(ty(I.Ja{}), state(), N.Nui.init(ui.of(ja()), 1400, 10000), Map.new(&2, String), "test", "", 264, 1400, 10000, 0)
 
@@ -92,11 +107,36 @@ def main() -> IO(Unit):
     C.Check.str("bots ja", BV.Bv.onoff.loc(I.Ja{}, True{}), MSG.T.settings.lang.on(I.Ja{}))
     C.Check.str("forms en", text(F.Fm.field(ty(I.En{}), F.Fm.fs(N.Nui.init(U.Ui.init(0n), 800, 600)), D.Clip.all(), 0, 0, 400, "name", "save", "", MSG.T.bots.room.name(I.En{}))), "Room name")
     C.Check.str("forms ja", text(F.Fm.field(ty(I.Ja{}), F.Fm.fs(N.Nui.init(ja(), 800, 600)), D.Clip.all(), 0, 0, 400, "name", "save", "", MSG.T.bots.room.name(I.Ja{}))), MSG.T.bots.room.name(I.Ja{}))
-    C.Check.str("viewer en", V.Vx.notice(I.En{}, "No board in this project yet"), "No board in this project yet")
-    C.Check.str("viewer ja", V.Vx.notice(I.Ja{}, "No board in this project yet"), MSG.T.viewer.empty.board(I.Ja{}))
-    C.Check.str("viewer content retained", V.Vx.notice(I.Ja{}, "a tool's own diagnostic"), "a tool's own diagnostic")
-    C.Check.str("viewer error en", V.Vx.notice(I.En{}, "3D export failed: diagnostic"), "3D export failed: diagnostic")
-    C.Check.str("viewer error ja", V.Vx.notice(I.Ja{}, "3D export failed: diagnostic"), MSG.T.viewer.export.failed(I.Ja{}, "diagnostic"))
+    C.Check.str("viewer en", L.Lay.notice(I.En{}, NT.Notice.make("noboard", "")), "No board in this project yet")
+    C.Check.str("viewer ja", L.Lay.notice(I.Ja{}, NT.Notice.make("noboard", "")), MSG.T.viewer.empty.board(I.Ja{}))
+    C.Check.str("viewer content retained", L.Lay.notice(I.Ja{}, "a tool's own diagnostic"), "a tool's own diagnostic")
+    C.Check.str("viewer error en", L.Lay.notice(I.En{}, NT.Notice.make("export", "diagnostic")), "3D export failed: diagnostic")
+    C.Check.str("viewer error ja", L.Lay.notice(I.Ja{}, NT.Notice.make("export", "diagnostic")), MSG.T.viewer.export.failed(I.Ja{}, "diagnostic"))
+    C.Check.str("asked en", L.Lay.notice(I.En{}, busy(N.Vw.asked(N.Nui.vw(N.Nui.init(ja(), 800, 600)), "k"))), "Loading…")
+    C.Check.str("asked ja", L.Lay.notice(I.Ja{}, busy(N.Vw.asked(N.Nui.vw(N.Nui.init(ja(), 800, 600)), "k"))), "読み込み中…")
+    C.Check.str("link reason en", L.Lay.notice(I.En{}, NT.Notice.make("nohost", "box.ts.net")), "unreachable: cannot resolve or reach box.ts.net")
+    C.Check.str("link reason ja", L.Lay.notice(I.Ja{}, NT.Notice.make("nohost", "box.ts.net")), MSG.T.remote.unreachable(I.Ja{}, "box.ts.net"))
+    C.Check.str("remote refusal en", L.Lay.notice(I.En{}, NT.Notice.make("refused", "500 oops")), "that machine did not take it: 500 oops")
+    C.Check.str("remote away en", L.Lay.notice(I.En{}, NT.Notice.make("away", "")), "that machine is away")
+    C.Check.str("footer update en", L.Lay.note.shown(I.En{}, "update 1.2.3"), "update 1.2.3")
+    C.Check.str("footer update ja", L.Lay.note.shown(I.Ja{}, "update 1.2.3"), MSG.T.sidebar.update(I.Ja{}, "1.2.3"))
+    C.Check.str("footer hub words kept", L.Lay.note.shown(I.Ja{}, "installing"), "installing")
+    C.Check.str("header en", captions.tools(TO.Tools.head(heads(), "", "", "", "")), "Stop|Pinned|Settled|Snoozed|Archived|Delete thread|Cancel|Fork thread|Bring back|Terminal|Viewer|")
+    C.Check.str("header en wrapper", captions.tools(TO.Tools.head.loc(I.En{}, heads(), "", "", "", "")), captions.tools(TO.Tools.head(heads(), "", "", "", "")))
+    C.Check.str("header ja", captions.tools(TO.Tools.head.loc(I.Ja{}, heads(), "", "", "", "")), MSG.T.composer.stop(I.Ja{}) ++ "|" ++ MSG.T.tools.pinned(I.Ja{}) ++ "|" ++ MSG.T.notify.settled(I.Ja{}) ++ "|" ++ MSG.T.sidebar.snoozed(I.Ja{}) ++ "|" ++ MSG.T.sidebar.archived(I.Ja{}) ++ "|" ++ MSG.T.palette.delete(I.Ja{}) ++ "|" ++ MSG.T.common.cancel(I.Ja{}) ++ "|" ++ MSG.T.tools.forkthread(I.Ja{}) ++ "|" ++ MSG.T.menu.bringback(I.Ja{}) ++ "|" ++ MSG.T.palette.terminal(I.Ja{}) ++ "|" ++ MSG.T.thread.viewer(I.Ja{}) ++ "|")
+    C.Check.str("inspector field en", L.Info.key(I.En{}, "footprint"), "footprint")
+    C.Check.str("inspector field ja", L.Info.key(I.Ja{}, "footprint"), "フットプリント")
+    C.Check.str("inspector unknown field kept", L.Info.key(I.Ja{}, "uuid"), "uuid")
+    C.Check.str("inspector pad en", L.Info.title(I.En{}, "pad 3"), "pad 3")
+    C.Check.str("inspector pad ja", L.Info.title(I.Ja{}, "pad 3"), "パッド3")
+    C.Check.str("inspector kind ja", L.Info.title(I.Ja{}, "global label"), "グローバルラベル")
+    C.Check.str("settings pair width en", U32.show(L.Set.pairw(ty(I.En{}), MSG.T.settings.theme.light(I.En{}), MSG.T.settings.theme.dark(I.En{}), 150)), "150")
+    C.Check.str("files range en", MSG.T.viewer.files.range(I.En{}, "1", "20", "1234"), "1–20 of 1234")
+    C.Check.str("bots routine en", MSG.T.routine.run(I.En{}), "Run now")
+    C.Check.str("bots routine ja", MSG.T.routine.run(I.Ja{}), "今すぐ実行")
+    C.Check.str("bots hook en", MSG.T.hooks.status(I.En{}, "h1", "called", "3", I.I18n.ago(I.En{}, 400n, 100n)), "POST /hook/h1 · 3 calls, last 5m ago")
+    C.Check.str("bots hook ja", MSG.T.hooks.status(I.Ja{}, "h1", "called", "3", I.I18n.ago(I.Ja{}, 400n, 100n)), "POST /hook/h1・3回、最終：5分前")
+    C.Check.str("bots memory en", MSG.T.bots.memory.count(I.En{}, "1234"), "1234 items. The ones about you and your preferences go into every turn.")
     C.Check.str("picker en default", L.Picker.name(""), "default")
     C.Check.str("picker ja default", L.Picker.name.loc(I.Ja{}, ""), MSG.T.common.default(I.Ja{}))
     C.Check.str("picker model retained", L.Picker.name.loc(I.Ja{}, "claude-opus-5"), "claude-opus-5")

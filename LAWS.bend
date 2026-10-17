@@ -9741,8 +9741,16 @@ law charter_risky_fixed:
   {Bool.and(CH.Charter.risky("gmail_send", J.Null{}), Bool.and(CH.Charter.risky("deploy_restart", J.Null{}), CH.Charter.risky("Bash", J.Json.obj([J.KV{"command", J.Str{"cd /tmp && git push origin main"}}])))) == True{} : Bool}
 # ---- i18n window ----
 law window_notice_english:
-  for +s: String
-  {V.Vx.notice(I18.En{}, s) == s : String}
+  {L.Lay.notice(I18.En{}, "\u{1}noboard\u{1f}") == "No board in this project yet" : String}
+law window_notice_words_kept:
+  {L.Lay.notice(I18.Ja{}, "disk full") == "disk full" : String}
+law window_tools_english:
+  for +h: TOOL.Head
+  for +sa: String
+  for +sv: String
+  for +ta: String
+  for +tv: String
+  {TOOL.Tools.head(h, sa, sv, ta, tv) == TOOL.Tools.head.loc(I18.En{}, h, sa, sv, ta, tv) : List<&2, TOOL.Tool>}
 law window_picker_default:
   {L.Picker.name.loc(I18.Ja{}, "") == "既定" : String}
 law window_provider_missing:
