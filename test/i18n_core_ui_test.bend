@@ -76,7 +76,7 @@ def main() -> IO(Unit):
     C.Check.str("palette en first", first(U.Palette.cmds(U.Ui.init(0n))), "New thread")
     C.Check.str("palette ja first", first(U.Palette.cmds(ja())), "新しいスレッド")
     C.Check.str("palette en actions", labels(U.Palette.actions(I.En{}, "p")),
-      "New thread|Diff: what this thread changed|Terminal|Attach a file|Commit & push|Open pull request|Revert thread|Settle thread|Pin thread|Archive thread|Unarchive thread|Delete thread|Snooze 1 hour|Snooze until tomorrow 9:00|Snooze 1 week|Unsnooze|Search threads|Find file|Viewer: board, schematic, 3D, Mech, files, diff, browser|Open in KiCad|Settings|Update Backplane|")
+      "New thread|Diff: what this thread changed|Terminal|Attach a file|Commit & push|Open pull request|Revert thread|Settle thread|Pin thread|Archive thread|Unarchive thread|Delete thread|Snooze 1 hour|Snooze until tomorrow 9:00|Snooze 1 week|Unsnooze|Search threads|Find file|Viewer: board, schematic, 3D, Mech, files, diff, browser|Open in KiCad|Open in KiCad 10 (exported copy)|Settings|Update Backplane|")
     C.Check.str("palette ja filter", first(U.Palette.filter(U.Palette.actions(I.Ja{}, "p"), "ターミナル")), "ターミナル")
     C.Check.str("row menu en", mlabels(U.Menu.thread(I.En{}, state(), 10n, "t1-1", False{})),
       "Pin|Rename|Settle|Snooze 1 hour|Snooze until tomorrow|Snooze 1 week|Archive|Delete|Copy link|")

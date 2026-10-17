@@ -40,6 +40,7 @@ palette.search = Search threads
 palette.findfile = Find file
 palette.viewer = Viewer: board, schematic, 3D, Mech, files, diff, browser
 palette.kicad = Open in KiCad
+palette.kicad10 = Open in KiCad 10 (exported copy)
 palette.settings = Settings
 palette.update = Update Backplane
 
