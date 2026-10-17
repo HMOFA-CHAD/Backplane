@@ -1738,8 +1738,20 @@ def View.main.b(+lc: I.Loc, settings: Bool, bv: BI.View, +u: U.Ui, +sel: String,
 
 # the thread's own browser page (a bot's is the bot's), as a bot's
 # Browser tab shows it
+def View.browser.back(on: Bool, +u: U.Ui) -> List<&2, D.Node>:
+  match on:
+    case True{}: [D.Dom.button("", "tk-handback", U.Ui.page(u), "Let the agent drive again", "Hand back")]
+    case False{}: Nil{}
+
+def View.browser.strip(on: Bool, +u: U.Ui) -> List<&2, D.Node>:
+  match on:
+    case True{}:
+      D.Dom.span("", U.CefUI.strip(u, U.Ui.page(u))) <> View.browser.back(Bool.not(String.is_empty(U.Teach.drive(u, U.Ui.page(u)))), u)
+    case False{}: Nil{}
+
 def View.browser(+u: U.Ui) -> List<&2, D.Node>:
-  [WB.WB.browser.k(String.is_empty(U.Ui.info(u, "shot." ++ U.Ui.page(u))), U.Ui.info(u, "shot." ++ U.Ui.page(u)), U.Ui.page(u), "This thread")]
+  List.append(&2, D.Node, View.browser.strip(U.CefUI.strip_on(u, U.Ui.page(u)), u),
+    [WB.WB.browser.k(String.is_empty(U.Ui.info(u, "shot." ++ U.Ui.page(u))), U.Ui.info(u, "shot." ++ U.Ui.page(u)), U.Ui.page(u), "This thread")])
 
 # The Mechanical page (client.bend's Mpage): a chip per part, Open in 3D
 # and Refresh, the part's renders (a click opens one in the lightbox), and

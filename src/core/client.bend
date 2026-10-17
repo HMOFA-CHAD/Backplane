@@ -1,6 +1,7 @@
 import Base
 import ./title.bend as TTL
 import ./mailrun.bend as RUN
+import ./cef.bend as CF
 import ./ref.bend as R
 import ./refview.bend as RE
 import ./i18n.bend as I
@@ -3225,9 +3226,14 @@ def Ui.shown.page.k(bot: Bool, +u: Ui) -> String:
 def Ui.shown.page(+u: Ui) -> String:
   Ui.shown.page.k(Bool.and(String.eq(Ui.scratch(u, "@btab"), "browser"), Bool.not(String.is_empty(Ui.scratch(u, "@bot")))), u)
 
+# the native window shows its own hub's pages itself (core/cef.bend), so
+# it takes no frames of them
+def Ui.cast.allowed(+u: Ui) -> Bool:
+  CF.Cef.cast(Bool.and(String.eq(Ui.scratch(u, "@cef.window"), "1"), CF.Cef.page_local(Ui.shown.page(u))), Ui.info(u, "browser.engine.live"), Ui.info(u, "local.remote.url"))
+
 # a frame of page heard ({"t":"shot"}): said seen when the tab shows it
 def Ui.cast.seen(+u: Ui, +page: String) -> Act:
-  Ui.cast.k(Bool.and(Bool.not(String.is_empty(page)), String.eq(page, Ui.shown.page(u))), u, page)
+  Ui.cast.k(Bool.and(Ui.cast.allowed(u), Bool.and(Bool.not(String.is_empty(page)), String.eq(page, Ui.shown.page(u)))), u, page)
 
 # An unwatched page is not cast at all (the helper stops its screencast and
 # keeps a still every few seconds), so a client cannot wait for a frame to
@@ -3247,7 +3253,7 @@ def Ui.cast.now.k(go: Bool, a: Act, +page: String) -> Act:
 def Ui.cast.now.p(+before: String, a: Act) -> Act:
   match a:
     case Act{+u, cs}:
-      Ui.cast.now.k(Bool.and(Bool.not(String.is_empty(Ui.shown.page(u))), Bool.not(String.eq(Ui.shown.page(u), before))), Act{u, cs}, Ui.shown.page(u))
+      Ui.cast.now.k(Bool.and(Ui.cast.allowed(u), Bool.and(Bool.not(String.is_empty(Ui.shown.page(u))), Bool.not(String.eq(Ui.shown.page(u), before)))), Act{u, cs}, Ui.shown.page(u))
 
 def Ui.cast.now(+u: Ui, a: Act) -> Act:
   Ui.cast.now.p(Ui.shown.page(u), a)
@@ -10679,9 +10685,15 @@ def Teach.actions() -> List<&2, String>:
   ["tk-teach", "tk-note", "tk-stop", "tk-discard", "tk-save", "tk-mark", "tk-takeover", "tk-handback", "tk-run", "tk-del", "tk-open",
    "bb-click", "bb-type", "bb-key", "bb-scroll", "bb-nav", "bb-back", "bb-reload"]
 
+# the page a tk- or bb- action acts on: the bot whose tab is open, but take
+# over and hand back (6, 7) carrying a page id in their value act on that
+# page, a thread's own (its Browser pane's strip)
+def Teach.target(+i: Nat, +cur: String, +value: String) -> String:
+  Bool.pick(String, Bool.and(Bool.or(Nat.is_eq(i, 6n), Nat.is_eq(i, 7n)), Bool.not(String.is_empty(value))), value, cur)
+
 # the tk- and bb- actions act on the bot whose tab is open
 def Teach.act(+u: Ui, +action: String, +value: String) -> Act:
-  Teach.act.k(C.Codec.pos(Teach.actions(), action), u, Bots.cur(u), value)
+  Teach.act.k(C.Codec.pos(Teach.actions(), action), u, Teach.target(C.Codec.pos(Teach.actions(), action), Bots.cur(u), value), value)
 
 # a user action with its value
 def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Act:
@@ -11248,3 +11260,20 @@ def Touch.ids(ids: List<&2, String>) -> List<&2, String>:
 
 def Touch.of(c: M.Change) -> List<&2, String>:
   Touch.ids(Touch.raw(c))
+
+# Native content can only be embedded in this machine's own window
+# (core/cef.bend): the page given (a thread's, or a bot's in its tab) shows
+# natively when this window's hub is its own and runs cef.
+def CefUI.native(+u: Ui, +page: String) -> Bool:
+  Bool.and(CF.Cef.native(Ui.info(u, "browser.engine.live"), Ui.info(u, "local.remote.url")), CF.Cef.page_local(page))
+
+# an overlay drawn over the main area is open (a toast is not one)
+def CefUI.covered(+u: Ui) -> Bool:
+  CF.Cef.covered(Ui.flag(u, "palette"), Ui.flag(u, "proj"), Bool.not(String.is_empty(Menu.open(u))), Bool.not(String.is_empty(Ui.scratch(u, "@look"))),
+    Ui.flag(u, "models"), Tour.on(u), Ui.flag(u, "perf"), Bool.not(String.is_empty(Ui.scratch(u, "@lb"))))
+
+def CefUI.strip(+u: Ui, +id: String) -> String:
+  CF.Cef.drive_text(Teach.drive(u, id), Bool.and(String.eq(Ui.scratch(u, "@cef.window"), "1"), CefUI.native(u, id)))
+
+def CefUI.strip_on(+u: Ui, +id: String) -> Bool:
+  CF.Cef.strip_on(Ui.info(u, "browser.engine.live"), Teach.drive(u, id))

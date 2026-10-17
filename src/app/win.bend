@@ -188,3 +188,8 @@ def Win.quit(e: WinEv) -> Bool:
       True{}
     case _:
       False{}
+
+# X11 parent id for the helper's native content children.
+def Win.xid(win: Window) -> IO(Window & U32):
+  import "./effects/win.c"
+  import "./effects/win.js"

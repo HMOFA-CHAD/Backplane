@@ -1,6 +1,7 @@
 import Base
 import ../core/title.bend as TTL
 import ../core/i18n.bend as I
+import ../core/cef.bend as CF
 import ../core/msgs.bend as MSG
 import ../core/winnote.bend as NT
 import ../core/codec.bend as CC
@@ -3871,6 +3872,13 @@ def Set.order(+ty: Ty, +st: M.State, +x: U32, +w: U32, +y: U32) -> Out:
     Set.row.r(ty, U.Fab.set.label(), U.Fab.set.note.k(U.Fab.enabled(st)), x, (y + 86 : U32), w, 140),
     Set.order.est(U.Fab.enabled(st), ty, U.Fab.set.on(st), x, w, (y + 100 : U32))])
 
+# the browser engine row (core/cef.bend): Chrome apart from the window, or
+# Embedded in it; a note only when Embedded cannot run
+def Set.browser(+ty: Ty, +eng: String, +err: String, +x: U32, +w: U32, +y: U32) -> Out:
+  Out.all([Set.row.r(ty, "Browser", CF.Cef.note(err), x, Bool.pick(U32, String.is_empty(err), (y + 12 : U32), y), w, 190),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Embedded") - 6 - Lay.button.w(ty, "Chrome") : U32), (y + 14 : U32), "Chrome", Bool.not(String.eq(eng, "cef")), "setting", "browser.engine=chrome"),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Embedded") : U32), (y + 14 : U32), "Embedded", String.eq(eng, "cef"), "setting", "browser.engine=cef")])
+
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +label0 = MSG.T.settings.theme.light(Ty.loc(ty))
   +label1 = MSG.T.settings.theme.dark(Ty.loc(ty))
@@ -3892,7 +3900,8 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +ey = {(202 + er : U32) : U32}
   +kn = U.KN.of(info, st)
   +kh = {(40 + Kn.h(kn, ty, (w - 32 : U32)) : U32) : U32}
-  +fy = {(ey + 224 + kh : U32) : U32}
+  # (the Browser row, then the Ordering group, then Appearance)
+  +fy = {(ey + 326 + kh : U32) : U32}
   +total = {(1196 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
@@ -3921,14 +3930,15 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line.loc(Ty.loc(ty), U.Models.label_of(U.Str.get(info, "models"), tp, tm), tm), (w - 32 : U32)),
       D.Clip.all(), (x + 16 : U32), (b2 + 520 + dy + er : U32), 24, T.Th.dim())),
     Set.head(ty, MSG.T.settings.cad(Ty.loc(ty)), x, (b2 + 368 + dy + ey : U32)),
-    Set.card(x, (b2 + 400 + dy + ey : U32), w, (196 + kh : U32)),
+    Set.card(x, (b2 + 400 + dy + ey : U32), w, (252 + kh : U32)),
     Set.row(ty, "KiCad", U.KN.summary(info), x, (b2 + 402 + dy + ey : U32), w),
     Kn.path(ty, n, (x + 16 : U32), (b2 + 450 + dy + ey : U32), (w - 32 : U32)),
     Kn.draw(kn, False{}, ty, (x + 16 : U32), (b2 + 490 + dy + ey : U32), (w - 32 : U32)),
     Set.row.r(ty, U.KiCad.ipc.label(Ty.loc(ty), info), U.KiCad.ipc.note(Ty.loc(ty), info), x, (b2 + 486 + dy + ey + kh : U32), w, Bool.pick(U32, U.KiCad.ipc.ready(info), Set.pairw(ty, MSG.T.settings.lang.on(Ty.loc(ty)), MSG.T.settings.lang.off(Ty.loc(ty)), 140), 0)),
     Bool.pick(Out, U.KiCad.ipc.ready(info), Set.ipc(ty, ipc, x, w, (b2 + 500 + dy + ey + kh : U32)), Out.none()),
     Set.row(ty, U.FreeCAD.label.loc(Ty.loc(ty), info), U.FreeCAD.note(Ty.loc(ty), info), x, (b2 + 546 + dy + ey + kh : U32), w),
-    Set.order(ty, st, x, w, (b2 + 620 + dy + ey + kh : U32)),
+    Set.browser(ty, M.Setting.get(st, "browser.engine", "chrome"), U.Str.get(info, "browser.engine.err"), x, w, (b2 + 598 + dy + ey + kh : U32)),
+    Set.order(ty, st, x, w, (b2 + 722 + dy + ey + kh : U32)),
     Set.head(ty, MSG.T.settings.appearance(Ty.loc(ty)), x, (b2 + 570 + dy + fy : U32)),
     Set.card(x, (b2 + 602 + dy + fy : U32), w, 220),
     Set.row.r(ty, MSG.T.settings.theme(Ty.loc(ty)), MSG.T.settings.theme.note(Ty.loc(ty)), x, (b2 + 604 + dy + fy : U32), w, Set.pairw(ty, label0, label1, 150)),
@@ -4585,7 +4595,7 @@ def Page.state(+shown: String, +size: String, +next: String) -> Nat:
   Bool.pick(Nat, Bool.and(Bool.not(String.is_empty(shown)), Bool.not(String.is_empty(size))), 2n, Bool.pick(Nat, String.starts_with(next, "err:"), 1n, 0n))
 
 # page id's newest frame from top down, or `none` while it has none
-def Lay.page.in(+ty: Ty, +u: U.Ui, +id: String, +none: String, +x0: U32, +x1: U32, +top: U32, +h: U32, +input: Bool) -> Out:
+def Lay.page.jpeg(+ty: Ty, +u: U.Ui, +id: String, +none: String, +x0: U32, +x1: U32, +top: U32, +h: U32, +input: Bool) -> Out:
   +n = U.Ui.info(u, "shot." ++ id)
   +key = "shot:" ++ id ++ ":" ++ Bool.pick(String, String.is_empty(n), "0", n)
   +shown = U.Ui.info(u, "shot.ok." ++ id)
@@ -4593,14 +4603,56 @@ def Lay.page.in(+ty: Ty, +u: U.Ui, +id: String, +none: String, +x0: U32, +x1: U3
   Out.cat(Out{Nil{}, [Lay.hit(x0, top, 1, 1, "img", key)]},
     Page.k(Page.state(shown, size, U.Ui.info(u, "img:" ++ key)), ty, shown, size, none, x0, x1, (top + 12 : U32), h, input))
 
+# The embedded page (core/cef.bend)
+# ---------------------------------
+# With the engine "cef" the page is a native child window of this one: the
+# window draws a plain background and leaves one "cef" hit, the pane's
+# rectangle, for main.bend to place it by (browser.place). No hit while an
+# overlay drawn over the main area is open (a toast does not hide it), nor
+# before the page exists (the text says so, as it does without cef), so an
+# empty Browser tab never makes a page.
+def Page.cef.k(has: Bool, shows: Bool, +ty: Ty, +id: String, +none: String, +x0: U32, +x1: U32, +top: U32, +h: U32) -> Out:
+  match has:
+    case True{}:
+      Out{[D.Draw.rect(D.Clip.all(), x0, top, (x1 - x0 : U32), U32.dim(h, top), T.Th.bg(), 255)],
+        Bool.pick(List<&2, S.Hit>, shows, [Lay.hit(x0, top, (x1 - x0 : U32), U32.dim(h, top), "cef", id)], Nil{})}
+    case False{}:
+      Out.ops(Ty.text(ty, 2n, none, D.Clip.all(), (x0 + 24 : U32), (top + 12 : U32), 28, T.Th.faint()))
+
+def Page.cef(+ty: Ty, +u: U.Ui, +id: String, +none: String, +x0: U32, +x1: U32, +top: U32, +h: U32) -> Out:
+  Page.cef.k(Bool.or(Bool.not(String.is_empty(U.Ui.info(u, "shot." ++ id))), Bool.not(String.is_empty(U.Ui.info(u, CF.Cef.page.key(id))))),
+    CF.Cef.shows(True{}, U.CefUI.covered(u)), ty, id, none, x0, x1, top, h)
+
+def Lay.page.engine(native: Bool, +ty: Ty, +u: U.Ui, +id: String, +none: String, +x0: U32, +x1: U32, +top: U32, +h: U32, +input: Bool) -> Out:
+  match native:
+    case True{}: Page.cef(ty, u, id, none, x0, x1, top, h)
+    case False{}: Lay.page.jpeg(ty, u, id, none, x0, x1, top, h, input)
+
+def Lay.page.in(+ty: Ty, +u: U.Ui, +id: String, +none: String, +x0: U32, +x1: U32, +top: U32, +h: U32, +input: Bool) -> Out:
+  Lay.page.engine(U.CefUI.native(u, id), ty, u, id, none, x0, x1, top, h, input)
+
 def Lay.page(+ty: Ty, +u: U.Ui, +id: String, +none: String, +x0: U32, +x1: U32, +top: U32, +h: U32) -> Out:
   Lay.page.in(ty, u, id, none, x0, x1, top, h, False{})
+
+def Page.back(on: Bool, +ty: Ty, +u: U.Ui, +x1: U32) -> Out:
+  match on:
+    case True{}: Lay.button(ty, D.Clip.all(), U32.dim(x1, (Lay.button.w(ty, "Hand back") + 16 : U32)), 58, "Hand back", T.Th.soft(), "tk-handback", U.Ui.page(u))
+    case False{}: Out.none()
+
+def Page.strip(on: Bool, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32) -> Out:
+  match on:
+    case True{}:
+      Out.cat(Out.ops(List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), x0, 52, (x1 - x0 : U32), 44, T.Th.bg(), 255)],
+          Ty.text(ty, 2n, U.CefUI.strip(u, U.Ui.page(u)), D.Clip.all(), (x0 + 16 : U32), 58, 32, T.Th.dim()))),
+        Page.back(Bool.not(String.is_empty(U.Teach.drive(u, U.Ui.page(u)))), ty, u, x1))
+    case False{}: Out.none()
 
 # the Browser tab: the selected thread's own page
 def Lay.page.if(on: Bool, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
   match on:
     case True{}:
-      Lay.page(ty, u, U.Ui.page(u), MSG.T.viewer.page.empty(Ty.loc(ty)), x0, x1, 52, h)
+      Out.cat(Page.strip(U.CefUI.strip_on(u, U.Ui.page(u)), ty, u, x0, x1),
+        Lay.page(ty, u, U.Ui.page(u), MSG.T.viewer.page.empty(Ty.loc(ty)), x0, x1, Bool.pick(U32, U.CefUI.strip_on(u, U.Ui.page(u)), 96, 52), h))
     case False{}:
       Out.none()
 
