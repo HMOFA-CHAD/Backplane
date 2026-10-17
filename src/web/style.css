@@ -442,6 +442,8 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 
 .msg a.link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; border: 0; padding: 0; font-size: inherit; white-space: normal; max-width: none; }
 .msg a.link.file code { color: inherit; }
+/* a quote's Buy now (the order server's /q/ link, server.bend's Od.quoted): a button, not a link */
+.msg a.link[href*="/q/q_"] { display: inline-block; margin-top: 4px; padding: 6px 16px; background: var(--accent); color: var(--on-accent, #fff); text-decoration: none; font-weight: 600; white-space: nowrap; }
 .ico { flex: none; display: block; }
 button.icon { display: inline-flex; align-items: center; justify-content: center; }
 .shelf, .settings-link, .model-chip { display: flex; align-items: center; gap: 6px; }
