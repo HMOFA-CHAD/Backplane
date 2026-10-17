@@ -1,4 +1,6 @@
 import Base
+import ../core/msgs.bend as MSG
+import ../core/winnote.bend as NT
 import ../core/i18n.bend as I18
 import ../core/attach.bend as AT
 import ../core/exe.bend as EX
@@ -448,7 +450,7 @@ def Pics.fetched(r: P.Ran, +q: Chan(ShellMsg), +tag: String, +path: String) -> I
         return Unit{}
     case P.Ran{_, _}:
       do IO<Unit>:
-        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, PicErr{tag, path, "that machine did not send it"})
+        ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, PicErr{tag, path, NT.Notice.make("nosend", "")})
         return Unit{}
 
 # the file an image key names on this machine
@@ -898,6 +900,12 @@ def Shell.notified(r: P.Ran, +q: Chan(ShellMsg), thread: String) -> IO(Unit):
     case P.Ran{_, +out}:
       Shell.notified.k(String.eq(String.trim(out), "open"), q, thread)
 
+def Shell.notify.script() -> String:
+  "command -v notify-send >/dev/null 2>&1 || exit 0; notify-send -a Backplane -i backplane -A \"open=$3\" -w -- \"$1\" \"$2\" 2>/dev/null || notify-send -a Backplane -i backplane -- \"$1\" \"$2\" 2>/dev/null"
+
+def Shell.notify.loc(+l: I18.Loc, +q: Chan(ShellMsg), thread: String, +title: String, +body: String) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Shell.notify.script(), "sh", title, body, MSG.T.menu.file.open(l)], "/"), r => Shell.notified(r, q, thread))
+
 def Shell.notify(+q: Chan(ShellMsg), thread: String, +title: String, +body: String) -> IO(Unit):
   IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Shell.notify.sh(), "sh", title, body], "/"), r => Shell.notified(r, q, thread))
 
@@ -1017,9 +1025,9 @@ def Shell.cmd(a: Shell, c: N.NCmd) -> IO(Shell):
       do IO<Shell>:
         Drafts.write(U.Ui.info(N.Nui.ui(n), "local.drafts"), id, t)
         return Shell{n, w, d, qd, q, i, wa}
-    case Shell{n, w, d, qd, +q, i, wa} N.NNotify{th, ti, b}:
+    case Shell{n, w, d, qd, +q, i, +wa} N.NNotify{th, ti, b}:
       do IO<Shell>:
-        IO.spawn(Unit, Shell.notify(q, th, ti, b))
+        IO.spawn(Unit, Shell.notify.loc(L.Ty.loc(Aux.ty(wa)), q, th, ti, b))
         return Shell{n, w, d, qd, q, i, wa}
     case Shell{n, w, d, qd, +q, i, wa} N.NLater{ms, action, value}:
       do IO<Shell>:
@@ -1189,10 +1197,22 @@ def Shell.recv.o(a: Shell, +o: J.Json, own: Bool) -> IO(Shell):
       IO.bind(Unit, Shell, PS.Perf.add("ui.hub.t." ++ J.Json.get_str(o, "t", ""), 1), _ =>
         IO.bind(Shell, Shell, Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.hear(n, o)), a2 => Shot.pre(o, Shot.calm(String.eq(J.Json.get_str(o, "t", ""), "shot"), d, Shell.touched(o, Hubf.mark(d, Bool.or(own, Hubf.own(n, o)), a2))))))
 
+# a link's own notice (link.bend's Link.down: why it went down) in the
+# frame's language; every other message passes as it came
+def Down.shown.k(code: Bool, +l: I18.Loc, +o: J.Json) -> J.Json:
+  match code:
+    case True{}:
+      J.Json.obj([J.KV{"t", J.Str{"update"}}, J.KV{"state", J.Str{NT.Notice.shown(l, J.Json.get_str(o, "state", ""))}}, J.KV{"error", J.Str{NT.Notice.shown(l, J.Json.get_str(o, "error", ""))}}])
+    case False{}:
+      o
+
+def Down.shown(+l: I18.Loc, +o: J.Json) -> J.Json:
+  Down.shown.k(Bool.and(String.eq(J.Json.get_str(o, "t", ""), "update"), NT.Notice.is(J.Json.get_str(o, "state", ""))), l, o)
+
 def Shell.recv.n(a: Shell, +text: String) -> IO(Shell):
   match a:
-    case Shell{+n, w, d, qd, q, i, wa}:
-      Shell.recv.o(Shell{n, w, d, qd, q, i, wa}, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), Hubf.names(n, text))
+    case Shell{+n, w, d, qd, q, i, +wa}:
+      Shell.recv.o(Shell{n, w, d, qd, q, i, wa}, Down.shown(L.Ty.loc(Aux.ty(wa)), Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})), Hubf.names(n, text))
 
 def Shell.recv(a: Shell, +text: String) -> IO(Shell):
   Shell.recv.n(a, text)
@@ -1438,12 +1458,12 @@ def Watch.glb.done(r: P.Ran, +glb: String, +key: String, +q: Chan(ShellMsg)) -> 
         ok : Result<&1, &1, ShellMsg, Unit> <- Chan.send(ShellMsg, q, Mesh3{key, FA.Scene3.of_model(MS.Model.of(Watch.glb.up(MC.Mech.is_step(Src.at(key, 2n)), G.Mesh.tris(G.Glb.parse(bs)))))})
         return Unit{}
     case P.Ran{_, out}:
-      Watch.say(key, "3D export failed: " ++ String.take(String.trim(out), 160n), q)
+      Watch.say(key, NT.Notice.make("export", String.take(String.trim(out), 160n)), q)
 
 # a STEP's GLB from the models cache (converted once per version, shared
 # with `backplane --render` and the phones' view)
 def Watch.stepfile.got(+glb: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
-  Bool.pick(IO(Unit), String.is_empty(glb), Watch.say(key, "Could not mesh this STEP file (installing FreeCAD lets Backplane mesh large ones)", q), Watch.glb.done(P.Ran{0, ""}, glb, key, q))
+  Bool.pick(IO(Unit), String.is_empty(glb), Watch.say(key, NT.Notice.make("nomesh", ""), q), Watch.glb.done(P.Ran{0, ""}, glb, key, q))
 
 def Watch.stepfile(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
   do IO<Unit>:
@@ -1654,7 +1674,7 @@ def Watch.sent.v(m: Maybe<&2, List<&2, B.Item>>, fixed: Bool, +key: String, +q: 
     case None{} True{}:
       do IO<Unit>:
         Watch.sent(Some{Nil{}}, key, q)
-        Watch.say(key, PV.Pv.unread(), q)
+        Watch.say(key, NT.Notice.make("unread", ""), q)
     case _ _:
       Watch.sent(m, key, q)
 
@@ -1735,7 +1755,7 @@ def Watch.loop(fuel: Nat, +key: String, +path: String, +sz: U32, +mt: U32, re: N
         Watch.step(st, sz, mt, Bool.pick(Nat, U32.is_eq(Src.kind(key), 2), 0n, re), key, path, q, s2 => m2 => r2 => Watch.loop(f, key, path, s2, m2, r2, q))
 
 def Watch.none(+key: String) -> String:
-  Bool.pick(String, U32.is_eq(Src.kind(key), 1), "No schematic in this project yet", "No board in this project yet")
+  Bool.pick(String, U32.is_eq(Src.kind(key), 1), NT.Notice.make("noschematic", ""), NT.Notice.make("noboard", ""))
 
 def Watch.go.k(none: Bool, once: Bool, +key: String, +path: String, +q: Chan(ShellMsg)) -> IO(Unit):
   match none once:

@@ -1,5 +1,6 @@
 import Base
 import ../core/client.bend as U
+import ../core/winnote.bend as NT
 import ./win.bend as W
 import ../core/json.bend as J
 import ./viewer.bend as V
@@ -1623,7 +1624,7 @@ def Nui.source(+n: Nui) -> String:
 def Vw.asked(v: V.Vw, +key: String) -> V.Vw:
   match v:
     case V.Vw{s, vi, f, r, d, lx, ly, b, fr, cu, V.Vx{+k, p, t, c, _, _, px, py, pa, se, bm}}:
-      V.Vw{s, vi, f, r, d, lx, ly, b, fr, cu, V.Vx{k, p, t, c, key, Bool.pick(String, U32.is_eq(k, 2), "Exporting 3D model…", Bool.pick(String, U32.is_eq(k, 3), "The agents' browser shows here when they open a page.", "Loading…")), px, py, pa, se, bm}}
+      V.Vw{s, vi, f, r, d, lx, ly, b, fr, cu, V.Vx{k, p, t, c, key, Bool.pick(String, U32.is_eq(k, 2), NT.Notice.make("exporting", ""), Bool.pick(String, U32.is_eq(k, 3), NT.Notice.make("browser", ""), NT.Notice.make("loading", ""))), px, py, pa, se, bm}}
 
 # the viewer asked for a source (the shell starts reading it)
 def Nui.asked(+n: Nui, +key: String) -> Nui:
