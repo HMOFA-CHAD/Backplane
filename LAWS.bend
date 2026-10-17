@@ -10021,3 +10021,12 @@ law cef_takeover_names_page:
 law cef_other_actions_keep_bot:
   {U.Teach.target(11n, "b1", "t9") == "b1" : String}
 # --- end browser-cef ---
+
+# --- browser-cef local window guard ---
+law cef_web_origin_refused:
+  for proxy: String
+  {CEF.Cef.link(proxy, "http://localhost") == False{} : Bool}
+
+law cef_native_link_allowed:
+  {CEF.Cef.link("", "") == True{} : Bool}
+# --- end browser-cef local window guard ---

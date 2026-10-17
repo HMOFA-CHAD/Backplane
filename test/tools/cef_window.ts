@@ -154,10 +154,29 @@ try {
   const farEmbed = await until(() => farReplies.get(1), "remote embed reply");
   check("an embed from a remote client is refused", farEmbed.ok === false, farEmbed);
   far.close();
+  // A browser on this machine still has an Origin header; it cannot embed.
+  const localWeb = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Origin: `http://127.0.0.1:${port}` } } as any);
+  localWeb.binaryType = "arraybuffer";
+  let localReply: any;
+  localWeb.onmessage = e => { const o = JSON.parse(typeof e.data === "string" ? e.data : W.decode(new Uint8Array(e.data))); if (o.t === "reply" && Number(o.id) === 1) localReply = o; };
+  await new Promise<void>((r, j) => { localWeb.onopen = () => r(); localWeb.onerror = j; });
+  try {
+    localWeb.send(W.encode(JSON.stringify({ id: 1, m: "browser.embed", p: { xid: win, display: d.env.DISPLAY } })));
+    check("a loopback web browser cannot embed", (await until(() => localReply, "loopback web embed refusal")).ok === false);
+  } finally { localWeb.close(); }
   check("a place from a client that did not embed is refused", (await rpc("browser.place", { page: a.id, x: 0, y: 0, w: 100, h: 100 })).ok === false);
   check("the window's page stays placed", (await mapped())?.xid === ca.xid);
   await Bun.sleep(400);
   check("native page does not load JPEG shots", await picCount() === nativePics);
+  // This separate WebSocket represents a watching web/phone client.
+  // Its lease must still produce JPEG frames while the native window embeds.
+  const jpg = join(home, "shots", a.id + ".jpg");
+  const beforeRemote = messages.length;
+  await rpc("browser.seen", { page: a.id });
+  await mcp(a.id, "preview_evaluate", { expression: "document.querySelector('#go').style.color = 'red'" });
+  check("a remote watcher still gets frames in CEF mode", await until(() => existsSync(jpg) && messages.slice(beforeRemote).some(o => o.t === "shot" && o.bot === a.id), "remote CEF frame", 15000));
+  check("remote frame is a JPEG", readFileSync(jpg).subarray(0, 2).equals(Buffer.from([255, 216])));
+  check("remote casting does not make the native window decode JPEGs", await picCount() === nativePics);
   const status = JSON.parse(text(await mcp(a.id, "preview_status")));
   await d.x(`click ${ca.x + 410} ${ca.y + 145} 1`);
   await until(() => info[`drive.${a.id}`] === "takeover", "shield click takes over");

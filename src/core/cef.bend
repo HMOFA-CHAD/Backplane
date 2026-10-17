@@ -58,6 +58,11 @@ def Cef.argv(on: Bool, +xid: U32, +display: String) -> List<&2, String>:
 def Cef.loopback(+ip: String) -> Bool:
   Bool.or(String.eq(ip, "127.0.0.1"), Bool.or(String.eq(ip, "::1"), String.eq(ip, "::ffff:127.0.0.1")))
 
+# A native link has no browser Origin or tailscale proxy identity.
+# Check this before considering the socket's loopback address.
+def Cef.link(+proxy: String, +origin: String) -> Bool:
+  Bool.and(String.is_empty(proxy), String.is_empty(origin))
+
 # browser.embed and browser.place come only from the window in this
 # process (client 0) or a window linked to it over loopback; a web, tailnet
 # or remote client is refused

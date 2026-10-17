@@ -123,3 +123,6 @@ def main() -> IO(Unit):
     C.Check.str("pages bounded", Nat.show(List.length(&2, String, CF.Cef.pages.add(reps(64n), "y"))), "64")
     C.Check.str("nothing pushed from few", CF.Cef.pages.out(["a", "b"]), "")
     C.Check.str("oldest pushed from full", CF.Cef.pages.out(List.append(&2, String, reps(63n), ["old"])), "old")
+    C.Check.str("native link may embed", yes(CF.Cef.link("", "")), "yes")
+    C.Check.str("loopback browser cannot embed", yes(CF.Cef.link("", "http://localhost")), "no")
+    C.Check.str("proxied client cannot embed", yes(CF.Cef.link("owner", "")), "no")

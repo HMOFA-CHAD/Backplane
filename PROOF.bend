@@ -11753,3 +11753,13 @@ def Laws.cef_takeover_names_page():
 def Laws.cef_other_actions_keep_bot():
   {==}
 # --- end browser-cef ---
+
+# --- browser-cef local window guard ---
+def Laws.cef_web_origin_refused(proxy):
+  match proxy:
+    case SNil{}: {==}
+    case SCon{_, _}: {==}
+
+def Laws.cef_native_link_allowed():
+  {==}
+# --- end browser-cef local window guard ---
