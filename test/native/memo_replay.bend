@@ -533,6 +533,40 @@ def rels.go(xs: List<&2, J.Json>, +n0: N.Nui, +tc0: MM.TouchK, +rk0: String, +rs
       +rs = rels.k(String.eq(rk, rk0), rs0, n)
       rels.go(rest, n, tc, rk, rs, IxT.add(t, String.eq(String.join(rs, ","), String.join(MM.Mm.rels.of(n), ",")), String.take(J.Json.show(x), 120n)))
 
+# ui.memo timed over the events as the window does it before each frame
+# (the timeline's memos brought up, the sidebar's index brought up and
+# forced), each event followed by three pieces of the open thread's text
+def mt.win(same: Bool, +ty: L.Ty, +n: N.Nui, ms: List<&2, L.TLMemo>) -> List<&2, L.TLMemo>:
+  match same:
+    case True{}:
+      MM.Mm.memos.live(ty, n, ms)
+    case False{}:
+      L.Lay.memos(ty, n, ms)
+
+def mt.step(+ty: L.Ty, +o: J.Json, +n0: N.Nui, +ms0: List<&2, L.TLMemo>, +mk0: String, +k0: MM.IxK, +tc0: MM.TouchK, +acc: Nat, +cs: Nat, rest: List<&2, J.Json>, go: List<&2, J.Json> -> N.Nui -> List<&2, L.TLMemo> -> String -> MM.IxK -> MM.TouchK -> Nat -> Nat -> IO(Nat)) -> IO(Nat):
+  do IO<Nat>:
+    +n : N.Nui = ss.recv(n0, o, Nat.add(U.Side.now(N.Nui.ui(n0)), 1n))
+    +tc : MM.TouchK = MM.TouchK.msg(o, tc0)
+    +a : Nat <- IO.now()
+    +mk : String = MM.Mm.tlkey(n, tc)
+    +ms : List<&2, L.TLMemo> = mt.win(MM.Mm.tlkey.same(mk, [mk0]), ty, n, ms0)
+    +z : Nat = L.TL.memo.size(L.TL.memos.now(ms))
+    +k : MM.IxK = MM.Ix.up([k0], tc, N.Nui.ui(n))
+    +f : Nat = MM.IxK.force(k)
+    +b : Nat <- IO.now()
+    go(rest, n, ms, mk, k, MM.TouchK.clear(tc), Nat.add(acc, Nat.sub(b, a)), Nat.mod(Nat.add(cs, Nat.add(z, f)), 1000000n))
+
+def mt.go(fuel: Nat, os: List<&2, J.Json>, +ty: L.Ty, +n0: N.Nui, +ms0: List<&2, L.TLMemo>, +mk0: String, +k0: MM.IxK, +tc0: MM.TouchK, +acc: Nat, +cs: Nat) -> IO(Nat):
+  match fuel os:
+    case 0n _:
+      IO.pure(Nat, acc)
+    case 1n+_ Nil{}:
+      do IO<Nat>:
+        IO.print("ui.memo parts over the events: " ++ Nat.show(acc) ++ " ms in all (check " ++ Nat.show(cs) ++ ")")
+        return acc
+    case 1n+f +o <> rest:
+      mt.step(ty, o, n0, ms0, mk0, k0, tc0, acc, cs, rest, r => n => ms => mk => k => tc => a => c => mt.go(f, r, ty, n, ms, mk, k, tc, a, c))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- AV.Argv.args()
@@ -557,6 +591,9 @@ def main() -> IO(Unit):
     IO.print(TlT.show(tls(tl.msgs(List.drop(&2, J.Json, xs, cut), arg(as, 1n), 0n), ty, nt, [mt], "", mt, MM.TouchK.none(), TlT{0n, 0n, 0n, ""})))
     +nr : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
     IO.print("rels kept, " ++ IxT.show(rels.go(List.drop(&2, J.Json, xs, cut), nr, MM.TouchK.none(), "", Nil{}, IxT{0n, 0n, ""})))
+    +nm : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
+    +mm0 : L.TLMemo = L.Lay.memo(ty, nm, L.TL.memo.none())
+    tm : Nat <- mt.go(Nat.mul(2n, k), tl.msgs(List.drop(&2, J.Json, xs, cut), arg(as, 1n), 0n), ty, nm, [mm0], "", MM.Ix.full(u, 0n), MM.TouchK.none(), 0n, 0n)
     IO.print(IxT.show(ixsteps(List.drop(&2, J.Json, xs, cut), u, MM.TouchK.none(), MM.Ix.full(u, 0n), IxT{0n, 0n, ""})))
     +n2 : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
     +n3 : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
