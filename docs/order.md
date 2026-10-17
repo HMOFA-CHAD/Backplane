@@ -1,5 +1,7 @@
 # Ordering: intent, Buy it, buy threads
 
+**Off until turned on.** Settings → Ordering (`order.enabled`, default off). Off, there is no Buy it or Ready bar on any client, the hub never contacts the order server (no estimates), `order.buy` is refused, and agents get no fab-file or review instructions and no order tools (laws `fab_buy_off_hidden`, `order_off_*`). The intent and the project layout stay on. With Ordering on, Settings → Price estimates turns the "from $X" off on its own.
+
 A project says what it is for and what can be made of it. Backplane shows a price for it
 and orders it through a buy thread.
 

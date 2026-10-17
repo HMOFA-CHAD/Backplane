@@ -1272,7 +1272,8 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
     Mob.set.row(U.KiCad.cli.label(nf), U.KiCad.cli.note(nf), Bool.pick(List<&2, J.Json>, String.is_empty(U.Str.get(nf, "kicad.fork")), [Mob.set.btn("Install Backplane KiCad", "kicad-install", "", False{})], Nil{})),
     Mob.set.row(U.FreeCAD.label(nf), U.FreeCAD.note(nf), Nil{}),
     Mob.set.row(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, J.Json>, U.KiCad.ipc.ready(nf), Mob.set.chips(["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{})),
-    Mob.set.row(U.Fab.set.label(), U.Fab.set.note(), Mob.set.chips(["on", "off"], U.Fab.set.on(st), "order.estimates")),
+    Mob.set.row(U.Fab.set.order.label(), U.Fab.set.order.note(), Mob.set.chips(["on", "off"], U.Fab.set.enabled(st), "order.enabled")),
+    Mob.set.row(U.Fab.set.label(), U.Fab.set.note.k(U.Fab.enabled(st)), Bool.pick(List<&2, J.Json>, U.Fab.enabled(st), Mob.set.chips(["on", "off"], U.Fab.set.on(st), "order.estimates"), Nil{})),
     Mob.set.row.l("Theme", "Unset, the phone follows its own system.", Mob.set.chips(["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme"))], Mob.lang.rows(u), [
     Mob.set.row.l("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", Mob.set.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
     Mob.set.row(U.Tail.label(nf), U.Tail.note(nf), Nil{})]]), List.append(&2, J.Json, Mob.mates(u), [

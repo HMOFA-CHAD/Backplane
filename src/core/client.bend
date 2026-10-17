@@ -5660,12 +5660,33 @@ def Bots.say(u: Ui, +bot: String, text: String) -> Act:
 # its turn ends (Fab.sync after every action and message; "@fab.at" is
 # what was asked last).
 
-# Settings' row on every client: the estimates sent or not (order.estimates)
+# Settings' rows on every client: Ordering (order.enabled, off until the
+# person turns it on: no Buy it, nothing sent to the order server) and,
+# with it on, the estimates sent or not (order.estimates)
+def Fab.enabled(+st: M.State) -> Bool:
+  OR.Order.enabled(M.Setting.get(st, "order.enabled", "off"))
+
+def Fab.set.enabled(+st: M.State) -> String:
+  Bool.pick(String, Fab.enabled(st), "on", "off")
+
+def Fab.set.order.label() -> String:
+  "Ordering"
+
+def Fab.set.order.note() -> String:
+  "Buy a project's boards and parts from Backplane: Buy it, prices and quotes. Off, nothing is sent to the order server."
+
 def Fab.set.label() -> String:
   "Price estimates"
 
+def Fab.set.note.k(on: Bool) -> String:
+  match on:
+    case True{}:
+      "Buy it shows a price from each part's size and options. No files are sent."
+    case False{}:
+      "Comes with Ordering."
+
 def Fab.set.note() -> String:
-  "Buy it shows a price from each part's size and options. No files are sent."
+  Fab.set.note.k(True{})
 
 def Fab.set.on(+st: M.State) -> String:
   Bool.pick(String, String.eq(M.Setting.get(st, "order.estimates", "on"), "off"), "off", "on")
@@ -5689,12 +5710,16 @@ def Fab.open(+u: Ui) -> Bool:
 def Fab.buying(+st: M.State, +th: String) -> Bool:
   Bool.not(String.is_empty(M.Setting.get(st, OR.Order.buy.key(th), "")))
 
-# the Buy button's words ("" for none; a buy thread has none of its own)
+# the Buy button's words ("" for none: ordering off, or a buy thread,
+# which has none of its own; laws fab_buy_*)
+def Fab.buy.k(off: Bool, +label: String) -> String:
+  Bool.pick(String, off, "", label)
+
 def Fab.buy.of(+st: M.State, +nf: Map<&2, String>, +th: String) -> String:
-  Bool.pick(String, Fab.buying(st, th), "", Str.get(nf, "fab.buy:" ++ th))
+  Fab.buy.k(Bool.or(Fab.buying(st, th), Bool.not(Fab.enabled(st))), Str.get(nf, "fab.buy:" ++ th))
 
 def Fab.buy(+u: Ui) -> String:
-  Bool.pick(String, Fab.buying(Ui.state.of(u), Ui.sel(u)), "", Ui.info(u, "fab.buy:" ++ Ui.sel(u)))
+  Fab.buy.k(Bool.or(Fab.buying(Ui.state.of(u), Ui.sel(u)), Bool.not(Fab.enabled(Ui.state.of(u)))), Ui.info(u, "fab.buy:" ++ Ui.sel(u)))
 
 def Fab.shown(+u: Ui) -> Bool:
   String.eq(Ui.info(u, "fab.shown:" ++ Ui.sel(u)), "1")
@@ -5774,7 +5799,7 @@ def Fab.act(+u: Ui, +action: String, +value: String) -> Act:
 
 # what was last asked for: the thread and where its turn stands
 def Fab.at(+u: Ui) -> String:
-  Fab.set.on(Ui.state.of(u)) ++ "#" ++ Ui.sel(u) ++ "#" ++ Fab.turn(Ui.thread(Ui.state.of(u), Ui.sel(u)))
+  Fab.set.enabled(Ui.state.of(u)) ++ Fab.set.on(Ui.state.of(u)) ++ "#" ++ Ui.sel(u) ++ "#" ++ Fab.turn(Ui.thread(Ui.state.of(u), Ui.sel(u)))
 
 # asked again when the turn moves on; while it runs only if this thread has
 # no card yet (a thread opened mid-turn), since its files are changing

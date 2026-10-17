@@ -10998,6 +10998,15 @@ def Laws.bd_on_sheet():
 def Laws.bd_off_other():
   {==}
 
+def Laws.fab_buy_off_hidden(label):
+  {==}
+
+def Laws.order_off_no_tools(buy):
+  {==}
+
+def Laws.order_off_by_default():
+  {==}
+
 def Laws.order_buy_board_only():
   {==}
 

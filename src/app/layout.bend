@@ -3596,13 +3596,24 @@ def Set.lang(+ty: Ty, +u: U.Ui, +x: U32, +w: U32, +y: U32) -> Out:
     Lay.chip(ty, (x + w - 16 - fw - 6 - ow : U32), (y + 66 : U32), MSG.T.settings.lang.on(l), on, "setting", "agent.lang=" ++ U.Lang.agent.value(True{}, u)),
     Lay.chip(ty, (x + w - 16 - fw : U32), (y + 66 : U32), MSG.T.settings.lang.off(l), Bool.not(on), "setting", "agent.lang=off")])
 
-# Settings' Ordering group: Price estimates on or off (client.bend's Fab.set.*)
-def Set.order(+ty: Ty, +on: String, +x: U32, +w: U32, +y: U32) -> Out:
+# Settings' Ordering group (client.bend's Fab.set.*): Ordering on or off
+# (order.enabled), then Price estimates, whose chips show with it on
+def Set.order.est(on: Bool, +ty: Ty, +est: String, +x: U32, +w: U32, +y: U32) -> Out:
+  match on:
+    case True{}:
+      Out.all([Lay.chip(ty, (x + w - 120 : U32), y, "On", String.eq(est, "on"), "setting", "order.estimates=on"),
+        Lay.chip(ty, (x + w - 70 : U32), y, "Off", String.eq(est, "off"), "setting", "order.estimates=off")])
+    case False{}:
+      Out.none()
+
+def Set.order(+ty: Ty, +st: M.State, +x: U32, +w: U32, +y: U32) -> Out:
   Out.all([Set.head(ty, "Ordering", x, y),
-    Set.card(x, (y + 32 : U32), w, 64),
-    Set.row.r(ty, U.Fab.set.label(), U.Fab.set.note(), x, (y + 34 : U32), w, 140),
-    Lay.chip(ty, (x + w - 120 : U32), (y + 48 : U32), "On", String.eq(on, "on"), "setting", "order.estimates=on"),
-    Lay.chip(ty, (x + w - 70 : U32), (y + 48 : U32), "Off", String.eq(on, "off"), "setting", "order.estimates=off")])
+    Set.card(x, (y + 32 : U32), w, 116),
+    Set.row.r(ty, U.Fab.set.order.label(), U.Fab.set.order.note(), x, (y + 34 : U32), w, 140),
+    Lay.chip(ty, (x + w - 120 : U32), (y + 48 : U32), "On", U.Fab.enabled(st), "setting", "order.enabled=on"),
+    Lay.chip(ty, (x + w - 70 : U32), (y + 48 : U32), "Off", Bool.not(U.Fab.enabled(st)), "setting", "order.enabled=off"),
+    Set.row.r(ty, U.Fab.set.label(), U.Fab.set.note.k(U.Fab.enabled(st)), x, (y + 86 : U32), w, 140),
+    Set.order.est(U.Fab.enabled(st), ty, U.Fab.set.on(st), x, w, (y + 100 : U32))])
 
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +w = {U32.min((x1 - x0 - 64 : U32), 720) : U32}
@@ -3616,7 +3627,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +tms = U.Models.menu(U.Str.get(info, "models"), tp)
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
-  +fy = {(ey + 172 : U32) : U32}
+  +fy = {(ey + 224 : U32) : U32}
   +total = {(1196 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
@@ -3653,7 +3664,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
       Lay.chip(ty, (x + w - 120 : U32), (b2 + 500 + dy + ey : U32), "On", String.eq(ipc, "on"), "setting", "kicad.ipc=on"),
       Lay.chip(ty, (x + w - 70 : U32), (b2 + 500 + dy + ey : U32), "Off", String.eq(ipc, "off"), "setting", "kicad.ipc=off")]), Out.none()),
     Set.row(ty, U.FreeCAD.label(info), U.FreeCAD.note(info), x, (b2 + 546 + dy + ey : U32), w),
-    Set.order(ty, U.Fab.set.on(st), x, w, (b2 + 620 + dy + ey : U32)),
+    Set.order(ty, st, x, w, (b2 + 620 + dy + ey : U32)),
     Set.head(ty, "Appearance", x, (b2 + 570 + dy + fy : U32)),
     Set.card(x, (b2 + 602 + dy + fy : U32), w, 220),
     Set.row.r(ty, "Theme", "The window and the web page (phones unset follow their own system).", x, (b2 + 604 + dy + fy : U32), w, 150),

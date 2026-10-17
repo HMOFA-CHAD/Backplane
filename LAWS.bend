@@ -9176,6 +9176,19 @@ law bd_on_sheet:
 law bd_off_other:
   {U.Bd.on("/p/boards/b/b.kicad_pcb", "boards/a/a.kicad_pcb") == False{} : Bool}
 
+# ordering is off until the person turns it on (order.enabled): no Buy it
+# anywhere, no order tools for any agent, even in a buy thread
+law fab_buy_off_hidden:
+  for label: String
+  {U.Fab.buy.k(True{}, label) == "" : String}
+
+law order_off_no_tools:
+  for buy: Bool
+  {BHS.Bots.order.tools(False{}, buy) == [] : List<&2, J.Json>}
+
+law order_off_by_default:
+  {ORD.Order.enabled("") == False{} : Bool}
+
 # ---- i18n lang ----
 law lang_default_auto:
   {U.Lang.resolve("", "en_US.UTF-8", False{}) == "en" : String}

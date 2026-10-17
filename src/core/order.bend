@@ -41,9 +41,18 @@ def Order.prompt.review() -> String:
   "<backplane_manufacturing_review>When asked to review the project for manufacturing, check what makes a fab ask questions or refuse, not the circuit: DRC against the fab's limits (tracks and gaps: 0.10 mm or more on 1 or 2 layers, 0.09 mm on 4 or more, 0.127 mm is comfortable; vias: a 0.3 mm hole in a 0.45 mm pad costs nothing extra, smaller down to a 0.15 mm hole in a 0.25 mm pad is fine but costs more, so say so rather than calling it an error; plated holes for parts: rings of 0.13 mm; copper 0.3 mm from the board edge; silkscreen lines 0.15 mm), every BOM line has a manufacturer part number that is in stock (pcbparts tools; prefer basic/preferred parts, name extended ones), parts on one side for the cheaper assembly, footprint rotations sane, an outline that is closed, every part to order has a current fab file; for printed parts walls 1 mm or more (0.8 for SLA), for sheet metal flanges at least 4x the thickness and holes at least the thickness from a bend, for CNC inside corners with radii of 1 mm or more and no undercuts. Write the findings to `.backplane/review.md` (per part: what is fine, what must change and why), then call the backplane tool `order_review` with action \"record\", verdict \"ok\" when nothing must change or \"issues\", and a one-line summary. Change nothing while reviewing: say what must change; the person decides.</backplane_manufacturing_review>"
 
 # every project thread's block
+# the project's files for every agent: the intent and the layout always,
+# the fab files and the manufacturing review only with ordering on
+def Order.prompt.project.k(on: Bool) -> String:
+  match on:
+    case True{}:
+      "<backplane_project_files>" ++ Order.prompt.intent() ++ "\n" ++ Order.prompt.layout() ++ "\n" ++ Order.prompt.fab()
+      ++ " Prefer basic and preferred parts from the fab's own stock when choosing components (the pcbparts tools: jlc_search, jlc_stock_check); every BOM line needs its manufacturer part number (an `MPN` field on the symbol).</backplane_project_files>\n" ++ Order.prompt.review()
+    case False{}:
+      "<backplane_project_files>" ++ Order.prompt.intent() ++ "\n" ++ Order.prompt.layout() ++ "</backplane_project_files>"
+
 def Order.prompt.project() -> String:
-  "<backplane_project_files>" ++ Order.prompt.intent() ++ "\n" ++ Order.prompt.layout() ++ "\n" ++ Order.prompt.fab()
-  ++ " Prefer basic and preferred parts from the fab's own stock when choosing components (the pcbparts tools: jlc_search, jlc_stock_check); every BOM line needs its manufacturer part number (an `MPN` field on the symbol).</backplane_project_files>\n" ++ Order.prompt.review()
+  Order.prompt.project.k(True{})
 
 # a buy thread's own block
 def Order.prompt.buy() -> String:
@@ -54,6 +63,12 @@ def Order.prompt.buy() -> String:
   ++ "4. Export into `mfg/<YYYYMMDD-HHMM>/`: for each board `<name>/gerbers/` (kicad-cli pcb export gerbers, and kicad-cli pcb export drill with Excellon, mm, PTH and NPTH in separate files, into the same folder), and when it is assembled `<name>/bom.csv` (columns Designator, Quantity, Value, Footprint, MPN, Manufacturer, and LCSC when known; one line per part number) and `<name>/positions.csv` (kicad-cli pcb export pos --format csv --units mm --side both; columns Designator, Mid X, Mid Y, Rotation, Layer); for each mechanical part `<name>/<name>.step`, and for sheet metal also its flat pattern `<name>/<name>.dxf`. Then write `manifest.json` there: {\"spec\": 1, \"title\": \"<the project, in words>\", \"ship_to\": \"US\", \"parts\": [{\"name\" (its fab.json name, e.g. Main board), \"kind\", \"qty\", \"options\", \"features\" (sheet metal: its bends), \"files\": {\"gerbers\": \"<name>/gerbers\", \"bom\", \"positions\"} or {\"step\", \"dxf\"}, \"assemble\": <boards to assemble, 0 for bare>}], \"files\": {\"<path from the folder>\": \"<sha256>\"}}, listing every file (sha256sum).\n"
   ++ "5. Call the backplane tool `order_quote` with the folder (`mfg/<...>`). Backplane shows the person every file it would send and asks them first, then posts the quote with its Buy now link (it opens Stripe) in this thread; do not repeat its table. Say in a line or two what it covers, and if it lists problems, what fixes each.\n"
   ++ "Only order_quote ever sends anything: never upload files or contact a manufacturer yourself. Prices are estimates until paid; the person can always take the mfg folder to any manufacturer themselves. Never name the manufacturer.</backplane_buy>"
+
+# Ordering is off until the person turns it on in Settings (the setting
+# order.enabled): no Buy it, no prices asked, nothing sent to the order
+# server, no fab files or reviews asked of agents (laws order_off_*)
+def Order.enabled(+v: String) -> Bool:
+  String.eq(v, "on")
 
 # Tools
 # -----

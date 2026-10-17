@@ -4681,8 +4681,13 @@ def Locks.after(+s: M.State, +now: Nat, +st: Step) -> Step:
 def Buy.server(+s: M.State) -> String:
   M.Setting.get(s, "order.server", OR.Order.server())
 
+# (estimates are asked only with ordering on: off, the hub never contacts
+# the order server)
+def Buy.est(+s: M.State) -> String:
+  Bool.pick(String, OR.Order.enabled(M.Setting.get(s, "order.enabled", "off")), M.Setting.get(s, "order.estimates", "on"), "off")
+
 def Buy.look(+s: M.State, +client: U32, +id: String, +th: String, +job: String, +text: String) -> Step:
-  Step.outs([Git{client, id, job, th, Hub.cwd(s, Hub.thread(s, th)), M.Setting.get(s, "order.estimates", "on") ++ "\n" ++ Buy.server(s), text}])
+  Step.outs([Git{client, id, job, th, Hub.cwd(s, Hub.thread(s, th)), Buy.est(s) ++ "\n" ++ Buy.server(s), text}])
 
 def Buy.title(p: M.Project) -> String:
   match p:
@@ -4701,10 +4706,17 @@ def Buy.go(t: M.Thread, +s: M.State, +now: Nat, +client: U32, +id: String, +src:
       +s1 = {M.State.replay(cs, s) : M.State}
       Step.before(cs, [Reply.made(client, id, th)], Hub.post(s1, now, th, Hub.id("m", now, Hub.seq(s1)), M.User{}, OR.Order.buy.text()))
 
+def Buy.start.k(on: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +src: String) -> Step:
+  match on:
+    case True{}:
+      Buy.go(Hub.thread(s, src), s, now, client, id, src)
+    case False{}:
+      Step.outs([Reply.err(client, id, "Ordering is off: turn it on in Settings to buy")])
+
 def Buy.start(known: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +src: String) -> Step:
   match known:
     case True{}:
-      Buy.go(Hub.thread(s, src), s, now, client, id, src)
+      Buy.start.k(OR.Order.enabled(M.Setting.get(s, "order.enabled", "off")), s, now, client, id, src)
     case False{}:
       Step.outs([Reply.err(client, id, "no such thread")])
 

@@ -2564,10 +2564,14 @@ def Bots.buy.tools(buy: Bool) -> List<&2, J.Json>:
     case False{}:
       Nil{}
 
-# what every thread's agent lists beside Backplane's tools: order_review,
-# and in a buy thread the other order tools
-def Bots.order.tools(buy: Bool) -> List<&2, J.Json>:
-  List.append(&2, J.Json, Bots.buy.tools(buy), [OR.Order.review.tool()])
+# what every thread's agent lists beside Backplane's tools with ordering on
+# (order.enabled): order_review, and in a buy thread the other order tools
+def Bots.order.tools(on: Bool, buy: Bool) -> List<&2, J.Json>:
+  match on:
+    case True{}:
+      List.append(&2, J.Json, Bots.buy.tools(buy), [OR.Order.review.tool()])
+    case False{}:
+      Nil{}
 
 # whether a thread is a buy thread (Buy it made it: setting buy.<thread>)
 def Bots.buy.is(+s: M.State, +thread: String) -> Bool:
@@ -2636,7 +2640,7 @@ def Bots.mcp.k(r: Route, +s: M.State, +now: Nat, +thread: String, +models: J.Jso
     case RLedger{}:
       LG.Ledger.call(s, now, thread, J.Json.get_obj(o, "id"), J.Json.get_obj(o, "params"))
     case RPlain{}:
-      MC.McpOut{Bots.list.plain(J.Json.get_obj(o, "id"), Bots.order.tools(Bots.buy.is(s, thread))), B.Step.none(), ""}
+      MC.McpOut{Bots.list.plain(J.Json.get_obj(o, "id"), Bots.order.tools(OR.Order.enabled(M.Setting.get(s, "order.enabled", "off")), Bots.buy.is(s, thread))), B.Step.none(), ""}
     case RPass{}:
       MC.Mcp.handle(s, now, thread, models, version, o)
 
