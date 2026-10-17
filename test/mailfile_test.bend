@@ -137,6 +137,6 @@ def main() -> IO(Unit):
     C.Check.str("room off no filing", Nat.show(appends(outs(offroom))), "0")
     C.Check.str("room delivery unchanged", changes(H.Queue.changes(post)), changes(H.Queue.changes(offroom)))
     C.Check.str("MCP definitions include seven mail tools", Nat.show(List.length(&2, J.Json, MC.Mcp.mail.tools())), "7")
-    C.Check.str("mail RPC methods appended", Nat.show(CD.Codec.pos(H.Hub.methods(), "mail.list")), "39")
-    C.Check.str("MCP tool names appended", Nat.show(CD.Codec.pos(MC.Mcp.names(), "mail_list")), "34")
+    C.Check.str("mail RPC methods appended", Nat.show(CD.Codec.pos(H.Hub.methods(), "mail.list")), "40")
+    C.Check.str("MCP tool names appended", Nat.show(CD.Codec.pos(MC.Mcp.names(), "mail_list")), "35")
     C.Check.str("nonbot scope hides other mail", Nat.show(J.Json.get_nat(H.Mail.list(filed, J.Json.obj([J.KV{"bot", J.Str{"thread:d"}}])), "total", 99n)), "0")
