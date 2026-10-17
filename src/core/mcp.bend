@@ -94,6 +94,15 @@ def Mcp.preview_tools() -> List<&2, J.Json>:
    Tool.def("preview_resize", "Resize the browser viewport.", [Tool.prop("width", "number", "Width."), Tool.prop("height", "number", "Height.")], ["width", "height"]),
    Tool.def("preview_status", "The browser's state: open, URL, title, viewport.", Nil{}, Nil{})]
 
+# KiCad's IPC API through the headless KiCad Backplane runs for the project
+# (the server starts on the first call); src/server/server.bend's KIpc.*
+def Mcp.kicad_tools() -> List<&2, J.Json>:
+  [Tool.def("kicad_ipc", "Send one command to the project's headless KiCad over its IPC API (Backplane starts one KiCad per project). path is the project's .kicad_pro, .kicad_pcb or .kicad_sch (absolute); type is the fully-qualified protobuf command, e.g. kiapi.board.commands.GetItems, kiapi.common.commands.BeginCommit, kiapi.backplane.SketchRoute; message is the command's fields as JSON. The answer is the response as JSON. Headless KiCad has no selection or view state: always pass explicit item IDs (the KIIDs GetItems returns), wrap edits in BeginCommit/EndCommit, then SaveDocument (the viewers follow the saved files). Unsaved work is undone with EndCommit CMA_DROP. Selection, view and RunAction commands are refused at once. When IPC is unavailable the error says why and names the fallback (edit the file directly or use kicad-cli, then re-read the file).",
+     [Tool.prop("path", "string", "Absolute path of the project's .kicad_pro, .kicad_pcb or .kicad_sch."), Tool.prop("type", "string", "The protobuf command, fully qualified (kiapi.board.commands.GetItems)."),
+      J.KV{"message", J.Json.obj([J.KV{"type", J.Str{"object"}}, J.KV{"description", J.Str{"The command's fields as JSON (default {})."}}])}], ["path", "type"]),
+   Tool.def("kicad_ipc_status", "The project's headless KiCad: its server's state (starting, ready, failed or stopped), its version, and the capabilities and commands it has (kiapi.backplane.GetCapabilities). Starts the server if it is not running. Headless KiCad has no selection or view state: always pass explicit item IDs (KIIDs from GetItems) in kicad_ipc, wrap edits in BeginCommit/EndCommit, then SaveDocument.",
+     [Tool.prop("path", "string", "Absolute path of the project's .kicad_pro, .kicad_pcb or .kicad_sch.")], ["path"])]
+
 def Mcp.thread_json(t: M.Thread) -> J.Json:
   match t:
     case M.Thread{id, project, title, _, act, turn, _, _, _, _, _, _, _, _, _, provider, model, _, _, _, _}:
@@ -772,8 +781,8 @@ def Mcp.tools() -> J.Json:
        Tool.prop("parent", "string", "The comment answered (an add that is a reply)."), Tool.prop("file", "string", "The board or schematic, from this thread's folder."),
        Tool.prop("x", "number", "X in mm."), Tool.prop("y", "number", "Y in mm."), Tool.prop("layer", "string", "A board's layer (F.Cu, B.Silkscreen...)."),
        Tool.prop("text", "string", "What the comment says.")], ["op"])]
-    , List.append(&2, J.Json, Mcp.preview_tools(), [Tool.def("permission_prompt", "Internal to Backplane: asks the user before a tool runs. Do not call it yourself.",
-      [Tool.prop("tool_name", "string", "The tool."), Tool.prop("input", "object", "Its input."), Tool.prop("tool_use_id", "string", "The call.")], ["tool_name", "input"])])))}])
+    , List.append(&2, J.Json, Mcp.preview_tools(), List.append(&2, J.Json, Mcp.kicad_tools(), [Tool.def("permission_prompt", "Internal to Backplane: asks the user before a tool runs. Do not call it yourself.",
+      [Tool.prop("tool_name", "string", "The tool."), Tool.prop("input", "object", "Its input."), Tool.prop("tool_use_id", "string", "The call.")], ["tool_name", "input"])]))))}])
 
 def Mcp.mail.bot(b: Maybe<&2, BT.Bot>, +thread: String) -> String:
   match b:

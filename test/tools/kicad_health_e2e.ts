@@ -28,8 +28,10 @@ function freePort() {
   return p;
 }
 const root = mkdtempSync(join(tmpdir(), "bp-health-e2e-"));
-const v1 = { sourceRepository: "https://github.com/i2cjak/Backplane_KiCad", version: "10.0.6", sourceCommit: "abc" };
-const v2 = { ...v1, manifestVersion: 2, kicadVersion: "10.0.6", upstreamCommit: "up", apiVersion: 1, capabilities: ["api-server", "headless-pcb"] };
+// Backplane KiCad 10.99 with API 1 is the least that serves IPC (KH.min_version, KH.min_api)
+const legacy = { sourceRepository: "https://github.com/i2cjak/Backplane_KiCad", version: "10.99.0-bp.1", sourceCommit: "abc" };
+const v1 = { ...legacy, apiVersion: 1 };
+const v2 = { ...v1, manifestVersion: 2, kicadVersion: "10.99.0", upstreamCommit: "up", capabilities: ["api-server", "headless-pcb"] };
 function runtime(name: string, manifest?: any, script = "printf '10.0.6\\n'", bundle = false, describe?: any) {
   const dir = join(root, name);
   const cli = join(dir, bundle ? "Contents/MacOS/kicad-cli" : "bin/kicad-cli");
@@ -80,8 +82,9 @@ async function start(name: string, path: string, homeOverride?: string) {
 async function stop(p: ReturnType<typeof Bun.spawn>) { if (p.exitCode === null) p.kill("SIGTERM"); await p.exited; }
 try {
   for (const [name, manifest, script, expected] of [
-    ["v1", v1, "printf '10.0.6\\n'", "ok"],
-    ["v2", v2, "printf '10.0.6\\n'", "ok"],
+    ["legacy", legacy, "printf '10.99.0-bp.1\\n'", "old"],
+    ["v1", v1, "printf '10.99.0-bp.1\\n'", "ok"],
+    ["v2", v2, "printf '10.99.0-bp.1\\n'", "ok"],
     ["stock", undefined, "printf '10.0.6\\n'", "stock"],
     ["broken", undefined, "printf 'cannot execute\\nmore output\\n' >&2; exit 1", "broken"],
     ["old", { ...v1, version: "10.0.5" }, "printf '10.0.5\\n'", "old"],
@@ -91,8 +94,8 @@ try {
     const info = await h.health(expected);
     check(`${name} health ${expected}`, info["kicad.status"] === expected, info);
     check(`${name} environment root source`, info["kicad.source"] === "env" && info["kicad.cli"] === rt.cli, info);
+    if (name === "legacy") check("a manifest without apiVersion is API 0, which is too old", info["kicad.api"] === "0", info);
     if (name === "v1") {
-      check("v1 API defaults to 0", info["kicad.api"] === "0", info);
       await sleep(2000);
       const calls = readFileSync(join(h.home, "version-calls"), "utf8").length;
       await sleep(2200);
@@ -107,7 +110,7 @@ try {
       check("stock uses version output", info["kicad.version"] === "10.0.6", info);
       const at = h.seen.length; runtime(name, v1); h.send("kicad.retry");
       const updated = await h.health("ok", at);
-      check("in-place stock to fork retry broadcasts", updated["kicad.fork"] === "10.0.6", updated);
+      check("in-place stock to fork retry broadcasts", updated["kicad.fork"] === "10.99.0-bp.1", updated);
       const at2 = h.seen.length;
       h.send("setting.set", { key: "kicad.path", value: join(root, "not-there", "kicad-cli") });
       const missing = await h.health("missing", at2);
@@ -142,16 +145,16 @@ try {
   await later.health("missing");
   const after = later.seen.length;
   runtime("later-runtime", v1);
-  check("periodic stat notices runtime becoming present", (await later.health("ok", after))["kicad.fork"] === "10.0.6");
+  check("periodic stat notices runtime becoming present", (await later.health("ok", after))["kicad.fork"] === "10.99.0-bp.1");
   later.ws.close(); await stop(later.proc);
-  const bundle = runtime("KiCad.app", v2, "printf '10.0.6\\n'", true);
+  const bundle = runtime("KiCad.app", v2, "printf '10.99.0-bp.1\\n'", true);
   const app = await start("bundle", bundle.dir);
   check("macOS bundle Resources manifest", (await app.health("ok"))["kicad.api"] === "1");
   app.ws.close(); await stop(app.proc);
-  const desc = runtime("described", undefined, "printf '10.0.6\\n'", false, v2);
+  const desc = runtime("described", undefined, "printf '10.99.0-bp.1\\n'", false, v2);
   const dh = await start("described", desc.dir);
   const dinfo = await dh.health("ok");
-  check("no manifest: api-server --describe identifies the fork", dinfo["kicad.api"] === "1" && dinfo["kicad.fork"] === "10.0.6", dinfo);
+  check("no manifest: api-server --describe identifies the fork", dinfo["kicad.api"] === "1" && dinfo["kicad.fork"] === "10.99.0-bp.1", dinfo);
   dh.ws.close(); await stop(dh.proc);
 } catch (e) { check("e2e completed", false, String(e)); }
 finally {

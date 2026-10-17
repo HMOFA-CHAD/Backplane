@@ -11406,3 +11406,136 @@ def Laws.tl_entries_locale(ty, es, st, sel, px, pics):
     : {L.TL.entries.mr(ty, L.TL.memo.make(ty, es, px, sel), L.TL.roles.loc(L.Ty.loc(ty), _, st, sel, pics), st, sel, px, pics, L.TL.stamps(_, st, sel, pics)) == L.TL.entries.loc(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
   tl_entries_roles(ty, es, L.TL.roles.loc(L.Ty.loc(ty), es, st, sel, pics), st, sel, px, pics, L.TL.stamps(es, st, sel, pics))
 # ---- end i18n core ui ----
+# ---- kicad-ipc 2 ----
+def Laws.kserve_argv_parent_pid_with_idle():
+  {==}
+
+def Laws.kserve_argv_parent_pid_without_idle():
+  {==}
+
+def Laws.kserve_argv_socket_in_dir():
+  {==}
+
+def Laws.kserve_argv_idle_with_cap():
+  {==}
+
+def Laws.kserve_argv_no_idle_without_cap():
+  {==}
+
+def Laws.kserve_ready_line():
+  {==}
+
+def Laws.kserve_ready_other_line():
+  {==}
+
+def Laws.kserve_version_ok_exact():
+  {==}
+
+def Laws.kserve_version_ok_describe():
+  {==}
+
+def Laws.kserve_version_other_build():
+  {==}
+
+def Laws.kserve_version_longer_build():
+  {==}
+
+def Laws.kserve_version_not_fork():
+  {==}
+
+def Laws.kserve_retry_first():
+  {==}
+
+def Laws.kserve_retry_second():
+  {==}
+
+def Laws.kserve_retry_third():
+  {==}
+
+def Laws.kserve_retry_gives_up():
+  {==}
+
+def Laws.kserve_retry_old_failures_forgotten():
+  {==}
+
+def Laws.kserve_clean_exit_not_a_failure():
+  {==}
+
+def Laws.kserve_crash_is_a_failure():
+  {==}
+
+def Laws.kserve_clean_exit_stops():
+  {==}
+
+def Laws.kserve_three_crashes_restart():
+  {==}
+
+def Laws.kserve_fourth_crash_fails():
+  {==}
+
+def Laws.kserve_evict_least_recent():
+  {==}
+
+def Laws.kserve_no_evict_with_room():
+  {==}
+
+def Laws.kserve_third_project_evicts():
+  {==}
+
+def Laws.kserve_third_project_busy_without_shutdown():
+  {==}
+
+def Laws.kserve_running_server_is_used():
+  {==}
+
+def Laws.kserve_refused_selection():
+  {==}
+
+def Laws.kserve_refused_view():
+  {==}
+
+def Laws.kserve_refused_run_action():
+  {==}
+
+def Laws.kserve_get_items_allowed():
+  {==}
+
+def Laws.kserve_eighteen_refused():
+  {==}
+
+def Laws.kserve_gate_off():
+  {==}
+
+def Laws.kserve_gate_ok():
+  {==}
+
+def Laws.kserve_unavailable_names_fallback():
+  {==}
+
+def Laws.kicad_min_version():
+  {==}
+
+def Laws.kicad_old_runtime_is_old():
+  {==}
+
+def Laws.kicad_new_runtime_is_ok():
+  {==}
+
+def Laws.prompt_kicad_ok_names_kicad_ipc():
+  {==}
+
+def Laws.prompt_kicad_ok_no_pcbnew_import():
+  {==}
+
+def Laws.prompt_kicad_ok_starts_no_server():
+  {==}
+
+def Laws.prompt_kicad_off_names_fallback():
+  {==}
+
+def Laws.kserve_desc_needs_cap(root): {==}
+def Laws.kserve_desc_with_cap(root): {==}
+
+def Laws.kserve_idle_needs_api2(xs): {==}
+
+# ---- end kicad-ipc 2 ----

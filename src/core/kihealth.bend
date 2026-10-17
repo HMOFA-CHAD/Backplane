@@ -14,10 +14,10 @@ type KManifest is Data:
   KManifest{fork: Bool, version: String, commit: String, api: Nat, caps: List<&2, String>, upstream: String, kversion: String}
 
 def KH.min_version() -> String:
-  "10.0.6"
+  "10.99.0"
 
 def KH.min_api() -> Nat:
-  0n
+  1n
 
 # Parse only the numeric core, allowing the fork's -bp.N suffix. No
 # Nat.read: symbolic laws over the early precedence cases stay cheap.
@@ -91,6 +91,13 @@ def KH.notice(+status: String, +cli: String, +version: String, +why: String, can
     case "broken":
       KH.note(status, cli, version, "KiCad at " ++ cli ++ " doesn't run", KH.why(why), can_install)
     case _: None{}
+
+# A project's headless server stopped for good (core/kserve.bend): which
+# one and why; Retry forgets its failures and the next request starts it.
+# name: the project's name, project: what keys the notice
+def KH.ipc.notice(+project: String, +name: String, +why: String) -> Maybe<&2, KNote>:
+  Bool.pick(Maybe<&2, KNote>, String.is_empty(project), None{},
+    Some{KNote{"ipc-failed:" ++ project, "Headless KiCad stopped for " ++ name, why, [KAct{"Retry", "kicad-retry", ""}, KAct{"Settings", "kicad-path", ""}]}})
 
 def KH.dismissed(+st: M.State, +key: String) -> Bool:
   String.eq(M.Setting.get(st, "kicad.notice.hidden", ""), key)

@@ -5,6 +5,7 @@ import ./refview.bend as RE
 import ./i18n.bend as I
 import ./msgs.bend as MSG
 import ./kihealth.bend as KH
+import ./kserve.bend as KSV
 import ./deploy.bend as DP
 import ./live.bend as LV
 import ./json.bend as J
@@ -733,8 +734,15 @@ def KiCad.cli.note(+l: I.Loc, +nf: Map<&2, String>) -> String:
   Bool.pick(String, KiCad.found(nf), Str.get(nf, "kicad.cli"), MSG.T.settings.kicad.cli.install(l))
 
 # One health notice model shared by every surface and client.
+# a headless server that stopped for good is a notice too, once the runtime
+# itself has none
+def KN.ipc(n: Maybe<&2, KH.KNote>, +servers: String) -> Maybe<&2, KH.KNote>:
+  match n:
+    case Some{x}: Some{x}
+    case None{}: KH.KH.ipc.notice(KSV.KS.failed.project(servers), KSV.KS.name(KSV.KS.failed.project(servers)), KSV.KS.failed.why(servers))
+
 def KN.of(+info: Map<&2, String>, +st: M.State) -> Maybe<&2, KH.KNote>:
-  KH.KH.notice(Str.get(info, "kicad.status"), Str.get(info, "kicad.cli"), Str.get(info, "kicad.version"), Str.get(info, "kicad.why"), String.eq(Str.get(info, "kicad.can_install"), "1"))
+  KN.ipc(KH.KH.notice(Str.get(info, "kicad.status"), Str.get(info, "kicad.cli"), Str.get(info, "kicad.version"), Str.get(info, "kicad.why"), String.eq(Str.get(info, "kicad.can_install"), "1")), Str.get(info, "kicad.ipc.servers"))
 
 def KN.visible.k(n: Maybe<&2, KH.KNote>, +st: M.State) -> Maybe<&2, KH.KNote>:
   match n:
@@ -791,8 +799,14 @@ def KiCad.ipc.ready(+nf: Map<&2, String>) -> Bool:
 def KiCad.ipc.label(+l: I.Loc, +nf: Map<&2, String>) -> String:
   Bool.pick(String, KiCad.ipc.ready(nf), "KiCad IPC", MSG.T.settings.kicad.ipc.missing(l))
 
+# with Backplane KiCad: what the hub's headless server for the project is
+# doing ("KiCad server: ready for <name>", or why it is not), else what
+# the setting does
+def KiCad.ipc.on(+l: I.Loc, +servers: String) -> String:
+  Bool.pick(String, String.is_empty(servers), MSG.T.settings.kicad.ipc.on(l), KSV.KS.note(servers))
+
 def KiCad.ipc.note(+l: I.Loc, +nf: Map<&2, String>) -> String:
-  Bool.pick(String, KiCad.ipc.ready(nf), MSG.T.settings.kicad.ipc.on(l),
+  Bool.pick(String, KiCad.ipc.ready(nf), KiCad.ipc.on(l, Str.get(nf, "kicad.ipc.servers")),
     MSG.T.settings.kicad.ipc.install(l))
 
 # the stored note ("update <version>" offers one; the hub's own progress
