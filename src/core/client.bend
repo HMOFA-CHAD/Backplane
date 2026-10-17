@@ -5845,9 +5845,10 @@ def Fab.at(+u: Ui) -> String:
   Fab.set.enabled(Ui.state.of(u)) ++ Fab.set.on(Ui.state.of(u)) ++ "#" ++ Ui.sel(u) ++ "#" ++ Fab.turn(Ui.thread(Ui.state.of(u), Ui.sel(u)))
 
 # asked again when the turn moves on; while it runs only if this thread has
-# no card yet (a thread opened mid-turn), since its files are changing
+# no card yet (a thread opened mid-turn), since its files are changing;
+# never for a thread elsewhere (its hub has the files)
 def Fab.want(+u: Ui) -> Bool:
-  Bool.and(Bool.and(Bool.not(String.is_empty(Ui.sel(u))), Bool.not(String.eq(Fab.at(u), Ui.scratch(u, "@fab.at")))),
+  Bool.and(Bool.and(Bool.and(Bool.not(String.is_empty(Ui.sel(u))), Bool.not(FR.Fr.is(Ui.sel(u)))), Bool.not(String.eq(Fab.at(u), Ui.scratch(u, "@fab.at")))),
     Bool.and(Bool.not(String.ends_with(Fab.at(u), "#")),
       Bool.or(Bool.not(String.ends_with(Fab.at(u), "#running")), String.is_empty(Ui.info(u, "fab.line:" ++ Ui.sel(u))))))
 
