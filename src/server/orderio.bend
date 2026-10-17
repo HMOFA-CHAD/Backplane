@@ -222,7 +222,7 @@ def Od.review(+cwd: String, +args: J.Json, +now: Nat) -> IO(J.Json):
 # order_quote: the manifest's files (paths inside the order's folder, plain
 # characters only), sent as one multipart request; then the quote is
 # polled until it is worked out. The token stays with the hub: in
-# <home>/orders/<quote>.json (0600) and in the Pay link it posts.
+# <home>/orders/<quote>.json (0600) and in the Buy now link it posts.
 
 def Od.safe.c(+c: U32) -> Bool:
   Bool.and(U32.is_ge(c, 32), Bool.not(Bool.or(Bool.or(U32.is_eq(c, 34), U32.is_eq(c, 92)), Bool.or(U32.is_eq(c, 59), U32.is_eq(c, 127)))))
@@ -352,6 +352,6 @@ def Od.keep(+home: String, +qid: String, +token: String, +thread: String, +serve
     mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(Od.orders(home))
     GS.Gf.write(Od.orders(home) ++ "/" ++ qid ++ ".json", Od.record(qid, token, thread, server, status))
 
-# the Pay link: the quote's page on the server, with its token
+# the Buy now link: the server sends it straight to Stripe Checkout (with the token)
 def Od.pay(+server: String, +qid: String, +token: String) -> String:
   server ++ "/q/" ++ qid ++ "?t=" ++ token

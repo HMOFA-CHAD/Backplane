@@ -17,8 +17,10 @@ A small Python service behind nginx on a Debian host.
   
   Then it prices what it measured (`pricing.py`). The client never sends a price.
 - `GET /v1/quotes/{id}` with `Authorization: Bearer <token>`: the quote, and the order's progress.
-- `/q/{id}?t=<token>`: the quote page. Pay opens a Stripe Checkout that collects card,
-  email, phone and the shipping address in the quote's country.
+- `/q/{id}?t=<token>`: the quote's Buy now link from Backplane. It redirects straight to a Stripe
+  Checkout (an open one is reused) that collects card, email, phone and the shipping address in the
+  quote's country, and shows the price-may-change terms beside Pay. There is no quote page: the quote is
+  only shown in Backplane. Stripe comes back to `/q/{id}/done` or `/q/{id}/cancelled`, one line each.
 - `/admin`: paid orders, to place by hand. Takes `?k=$FAB_ADMIN_TOKEN` once, which then
   becomes a cookie.
 
