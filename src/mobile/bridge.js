@@ -303,6 +303,10 @@ globalThis.Backplane = {
     const i = String(key).indexOf(":");
     return App.cat(BigInt(Number(String(key).slice(0, i)) || 0), String(key).slice(i + 1));
   },
+  // a catalog text for a key in the device's language (the key itself if unknown)
+  t(key) {
+    return App.t(hubs, String(key));
+  },
   // a binary frame from hub k, as base64
   // quiet: more frames wait behind this one, so no screen is built for it
   // (only the last of a burst is drawn: terminal echoes, streamed text)

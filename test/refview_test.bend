@@ -1,4 +1,5 @@
 import Base
+import ../src/core/i18n.bend as I
 import ./check.bend as C
 import ../src/core/refview.bend as V
 import ../src/core/ref.bend as R
@@ -128,12 +129,12 @@ def main() -> IO(Unit):
     C.Check.str("invalid ref stays", U.Ui.sel(U.Act.ui(U.Ui.act(u, "ref-go", "javascript:x"))), "t1-1")
     C.Check.str("copy", cmds(U.Ui.act(u, "ref-copy", "backplane://person")), "backplane://person")
     C.Check.str("copy web", cmds(U.Ui.act(u, "ref-copy-web", "backplane://person")), "http://127.0.0.1:3787/#/person")
-    C.Check.str("thread menu", menu.last(U.Menu.thread(st, 10n, "t1-1", False{})), "ref-copy backplane://thread/t1-1")
-    C.Check.str("project menu", menu.last(U.Menu.project("p1-1", False{}, True{})), "ref-copy backplane://project/p1-1")
-    C.Check.str("bot menu", menu.last(U.Menu.bot(st, "b1-1")), "ref-copy backplane://bot/b1-1")
+    C.Check.str("thread menu", menu.last(U.Menu.thread(I.En{}, st, 10n, "t1-1", False{})), "ref-copy backplane://thread/t1-1")
+    C.Check.str("project menu", menu.last(U.Menu.project(I.En{}, "p1-1", False{}, True{})), "ref-copy backplane://project/p1-1")
+    C.Check.str("bot menu", menu.last(U.Menu.bot(I.En{}, st, "b1-1")), "ref-copy backplane://bot/b1-1")
     C.Check.str("file menu", menu.last(U.Menu.file.here(u, "main.kicad_pcb")), "ref-copy backplane://file/p1-1/main.kicad_pcb")
-    C.Check.str("room menu", menu.last(U.Menu.room("r1-1")), "ref-copy backplane://room/r1-1")
-    C.Check.str("message menu", menu.last(U.Menu.msg("t1-1", "m")), "ref-copy backplane://thread/t1-1#m")
+    C.Check.str("room menu", menu.last(U.Menu.room(I.En{}, "r1-1")), "ref-copy backplane://room/r1-1")
+    C.Check.str("message menu", menu.last(U.Menu.msg(I.En{}, "t1-1", "m")), "ref-copy backplane://thread/t1-1#m")
     C.Check.str("empty title", line(V.Card.of(M.State.apply(st, M.ThreadRenamed{"t1-1", "", 11n}), R.Ref.thread("t1-1"))), "New thread · Project · idle")
     C.Check.str("working", line(V.Card.of(M.State.apply(st, M.TurnChanged{"t1-1", M.Running{}, 11n}), R.Ref.thread("t1-1"))), "First · Project · working")
     C.Check.str("waiting", line(V.Card.of(M.State.apply(st, M.PendingChanged{"t1-1", 1n, 11n}), R.Ref.thread("t1-1"))), "First · Project · waiting")

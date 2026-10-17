@@ -373,6 +373,25 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     val cats = mutableStateMapOf<String, List<CatPart>>()
     private val asked = mutableSetOf<String>()
 
+    // catalog texts for native parts, by key (spec 4.1); read again when the
+    // language changes, which shows in the screen's language row
+    val texts = mutableStateMapOf<String, String>()
+    private val wanted = mutableSetOf<String>()
+    private var langLabel: String? = null
+
+    // the text for a key; its English (fallback) until the bridge answers
+    fun t(key: String, fallback: String): String = texts[key] ?: fallback
+
+    fun want(key: String) {
+        wanted.add(key)
+        scope.launch { texts[key] = engine.t(key) }
+    }
+
+    private fun refreshTexts() {
+        val keys = wanted.toList()
+        scope.launch { for (k in keys) texts[k] = engine.t(k) }
+    }
+
     fun cat(key: String) {
         if (key.isEmpty() || !asked.add(key)) return
         scope.launch {
@@ -479,6 +498,8 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
             val was = screen?.sel
             val wasNav = screen?.let { nav(it) } ?: ""
             screen = next
+            val label = next.lang?.rows?.firstOrNull()?.label
+            if (label != langLabel) { langLabel = label; refreshTexts() }
             val nav = nav(next)
             if (!started0) {
                 started0 = true

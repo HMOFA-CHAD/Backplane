@@ -145,6 +145,8 @@ struct SubStep: Decodable, Hashable {
 
 struct SubRow: Decodable, Identifiable {
     let id, title, who, state, doing, act, value: String
+    // the state as shown, when it differs from the token (Japanese)
+    let stateLabel: String?
     let agent, live, open: Bool
     let n: Int
     let steps: [SubStep]

@@ -6,6 +6,7 @@ import ../core/sha1.bend as SH
 import ./hubs.bend as H
 import ./screen.bend as S
 import ./bots.bend as MB
+import ../core/msgs.bend as MSG
 
 # What bridge.js calls. The phone apps see only strings: server messages
 # in (binary CBOR frames, carried as base64, decoded by bridge.js) from
@@ -77,6 +78,16 @@ def shows(+hs: H.Hubs, +key: String, +o: J.Json) -> Bool:
 # ("look:mood"); the apps ask once per key and keep it
 def cat(+look: Nat, +mood: String) -> String:
   J.Json.show(MB.MBots.rig(look, mood))
+
+# a catalog text for a native screen part (Swift, Kotlin): the key itself
+# when the catalog has none, so a missing key shows
+def t.k(m: Maybe<&2, String>, key: String) -> String:
+  match m:
+    case Some{s}: s
+    case None{}: key
+
+def t(hs: H.Hubs, +key: String) -> String:
+  t.k(MSG.T.plain(H.Hubs.loc(hs), key), key)
 
 # A value of each Json constructor, for wire.js: bend 2.0.36 tags a module's
 # constructors with their file ("../core/json.Str"), so the JavaScript that
