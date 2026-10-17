@@ -20,6 +20,15 @@ def Test.strings(xs: List<&2, String>) -> String:
     case h <> t:
       h ++ ";" ++ Test.strings(t)
 
+def Test.sorted(xs: List<&2, String>) -> Bool:
+  match xs:
+    case Nil{}: True{}
+    case +a <> Nil{}: True{}
+    case +a <> +b <> +t: Bool.and(String.is_le(a, b), Test.sorted(b <> t))
+
+def Test.has(+all: String, k: String) -> String:
+  Bool.show(String.contains(all, ";" ++ k ++ ";"))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("tag En ", I.I18n.tag(I.En{}), "en")
@@ -263,7 +272,8 @@ def main() -> IO(Unit):
     C.Check.str("interpolation ja", T.T.thread.delete.ask(I.Ja{}, "alpha"), "「alpha」を削除しますか？")
     C.Check.str("fallback en", F.T.common.save(I.En{}), "Save")
     C.Check.str("fallback ja", F.T.common.save(I.Ja{}), "Save")
-    C.Check.str("keys sorted", Test.strings(T.T.keys()), "common.cancel;common.delete;common.save;files.changed;settings.agent.lang;settings.agent.lang.note;settings.lang;settings.lang.auto;settings.lang.en;settings.lang.ja;settings.lang.note;settings.lang.off;settings.lang.on;thread.count;thread.delete.ask;thread.new;turn.by;")
+    C.Check.str("keys sorted", Bool.show(Test.sorted(T.T.keys())), "True")
+    C.Check.str("keys kept", Test.has(";" ++ Test.strings(T.T.keys()), "common.cancel") ++ Test.has(";" ++ Test.strings(T.T.keys()), "common.delete") ++ Test.has(";" ++ Test.strings(T.T.keys()), "common.save") ++ Test.has(";" ++ Test.strings(T.T.keys()), "files.changed") ++ Test.has(";" ++ Test.strings(T.T.keys()), "settings.agent.lang") ++ Test.has(";" ++ Test.strings(T.T.keys()), "settings.agent.lang.note") ++ Test.has(";" ++ Test.strings(T.T.keys()), "settings.lang") ++ Test.has(";" ++ Test.strings(T.T.keys()), "settings.lang.auto") ++ Test.has(";" ++ Test.strings(T.T.keys()), "settings.lang.en") ++ Test.has(";" ++ Test.strings(T.T.keys()), "settings.lang.ja") ++ Test.has(";" ++ Test.strings(T.T.keys()), "settings.lang.note") ++ Test.has(";" ++ Test.strings(T.T.keys()), "settings.lang.off") ++ Test.has(";" ++ Test.strings(T.T.keys()), "settings.lang.on") ++ Test.has(";" ++ Test.strings(T.T.keys()), "thread.count") ++ Test.has(";" ++ Test.strings(T.T.keys()), "thread.delete.ask") ++ Test.has(";" ++ Test.strings(T.T.keys()), "thread.new") ++ Test.has(";" ++ Test.strings(T.T.keys()), "turn.by"), "TrueTrueTrueTrueTrueTrueTrueTrueTrueTrueTrueTrueTrueTrueTrueTrueTrue")
     C.Check.str("missing En", Test.strings(T.T.missing(I.En{})), "")
     C.Check.str("plain En common.cancel", Test.maybe(T.T.plain(I.En{}, "common.cancel")), "Some Cancel")
     C.Check.str("plain En common.delete", Test.maybe(T.T.plain(I.En{}, "common.delete")), "Some Delete")

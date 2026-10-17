@@ -1,4 +1,6 @@
 import Base
+import ../core/i18n.bend as I
+import ../core/msgs.bend as MSG
 import ../core/json.bend as J
 import ../core/far.bend as FR
 import ../core/client.bend as U
@@ -708,12 +710,12 @@ def Mech.say(+state: Nat) -> String:
   Bool.pick(String, Nat.is_eq(state, 0n), "Loading the parts…", Bool.pick(String, Nat.is_eq(state, 1n), MC.Mech.none(), ""))
 
 # (busy: a render job runs; render: its button's label; err: why the last failed)
-def Mech.json(on: Bool, +u: U.Ui) -> J.Json:
+def Mech.json(+lc: I.Loc, on: Bool, +u: U.Ui) -> J.Json:
   match on:
     case True{}:
-      J.Json.obj(List.append(&2, J.KV, [J.KV{"say", J.Str{Mech.say(U.Mpage.state(u))}}, J.KV{"note", J.Str{U.Mpage.note(u)}},
+      J.Json.obj(List.append(&2, J.KV, [J.KV{"say", J.Str{Mech.say(U.Mpage.state(u))}}, J.KV{"note", J.Str{U.Mpage.note.loc(lc, u)}},
         J.KV{"parts", J.Json.arr(Mech.chips(U.Mpage.parts(u), U.Mpage.cur.path(u)))}, J.KV{"rel", J.Str{U.Mpage.cur.path(u)}},
-        J.KV{"busy", J.Flag{Bool.not(String.is_empty(U.Mpage.busy(u)))}}, J.KV{"render", J.Str{U.Mpage.render.label(u)}}, J.KV{"err", J.Str{U.Mpage.err(u)}}],
+        J.KV{"busy", J.Flag{Bool.not(String.is_empty(U.Mpage.busy(u)))}}, J.KV{"render", J.Str{U.Mpage.render.label.loc(lc, u)}}, J.KV{"err", J.Str{U.Mpage.err(u)}}],
         Mech.part(U.Mpage.cur(u), U.Mpage.root(u))))
     case False{}:
       J.Null{}
@@ -736,20 +738,20 @@ def Hist.rows(rs: List<&2, U.HRow>) -> List<&2, J.Json>:
     case U.HRow{+l, +sub, +v} <> t:
       J.Json.obj([J.KV{"label", J.Str{l}}, J.KV{"sub", J.Str{sub}}, J.KV{"value", J.Str{v}}]) <> Hist.rows(t)
 
-def Hist.menu(+side: String, +u: U.Ui) -> J.Json:
-  Bool.pick(J.Json, String.is_empty(side), J.Null{}, J.Json.arr(Hist.rows(U.Hs.menu(u, side))))
+def Hist.menu(+lc: I.Loc, +side: String, +u: U.Ui) -> J.Json:
+  Bool.pick(J.Json, String.is_empty(side), J.Null{}, J.Json.arr(Hist.rows(U.Hs.menu.loc(lc, u, side))))
 
-def Hist.json.k(b: U.HBar, +u: U.Ui) -> J.Json:
+def Hist.json.k(+lc: I.Loc, b: U.HBar, +u: U.Ui) -> J.Json:
   match b:
     case U.HBar{_, +n, +at, +title, +entry, +label, +said, +pl, +df, +cmp, +a, +bb, +menu}:
       J.Json.obj([J.KV{"n", J.Num{Nat.show(n)}}, J.KV{"at", J.Num{Nat.show(at)}}, J.KV{"title", J.Str{title}}, J.KV{"entry", J.Str{entry}},
-        J.KV{"said", J.Str{Bool.pick(String, Nat.is_eq(at, 0n), U.Hs.live.said(n), Bool.pick(String, String.is_empty(said), label, said))}},
+        J.KV{"said", J.Str{Bool.pick(String, Nat.is_eq(at, 0n), U.Hs.live.said.loc(lc, n), Bool.pick(String, String.is_empty(said), label, said))}},
         J.KV{"playing", J.Json.bool(pl)}, J.KV{"diff", J.Json.bool(df)}, J.KV{"cmp", J.Json.bool(cmp)}, J.KV{"a", J.Str{a}}, J.KV{"b", J.Str{bb}}, J.KV{"side", J.Str{menu}}, J.KV{"as", J.Str{U.Rv.showing(u)}},
-        J.KV{"ticks", J.Json.arr(Hist.ticks(U.Hs.track(u), 0n, at))}, J.KV{"menu", Hist.menu(menu, u)},
+        J.KV{"ticks", J.Json.arr(Hist.ticks(U.Hs.track(u), 0n, at))}, J.KV{"menu", Hist.menu(lc, menu, u)},
         J.KV{"keys", J.Json.arr([J.Num{U32.show(LO.Look.mark.color(False{}, 26))}, J.Num{U32.show(LO.Look.mark.color(False{}, 27))}, J.Num{U32.show(LO.Look.mark.color(False{}, 28))}])}])
 
-def Hist.json(+b: U.HBar, +u: U.Ui) -> J.Json:
-  Bool.pick(J.Json, U.HBar.on(b), Hist.json.k(b, u), J.Null{})
+def Hist.json(+lc: I.Loc, +b: U.HBar, +u: U.Ui) -> J.Json:
+  Bool.pick(J.Json, U.HBar.on(b), Hist.json.k(lc, b, u), J.Null{})
 
 # what the phone's viewer needs: the source open ("" closed), its key and
 # the key of the plot it draws layers from, the choices, and how to draw:
@@ -774,10 +776,10 @@ def Files.rows(rs: List<&2, U.FmRow>) -> List<&2, J.Json>:
     case U.FmRow{+l, +a, +v, +d, +k} <> t:
       J.Json.obj([J.KV{"label", J.Str{l}}, J.KV{"action", J.Str{a}}, J.KV{"value", J.Str{v}}, J.KV{"detail", J.Str{d}}, J.KV{"kind", J.Str{k}}, J.KV{"icon", J.Str{U.Fm.icon(k)}}]) <> Files.rows(t)
 
-def Files.json(on: Bool, +u: U.Ui) -> J.Json:
+def Files.json(+lc: I.Loc, on: Bool, +u: U.Ui) -> J.Json:
   match on:
     case True{}:
-      J.Json.obj([J.KV{"trail", J.Json.arr(Files.trail(U.Fm.trail(u)))}, J.KV{"rows", J.Json.arr(Files.rows(U.Fm.rows(u)))}, J.KV{"ready", J.Json.bool(U.Fm.ready(u))}])
+      J.Json.obj([J.KV{"trail", J.Json.arr(Files.trail(U.Fm.trail.loc(lc, u)))}, J.KV{"rows", J.Json.arr(Files.rows(U.Fm.rows(u)))}, J.KV{"ready", J.Json.bool(U.Fm.ready(u))}])
     case False{}:
       J.Null{}
 
@@ -830,14 +832,14 @@ def Rv.release(on: Bool, +u: U.Ui) -> J.Json:
     case False{}:
       J.Null{}
 
-def Rv.json.k(+v: U.RpView, +rb: J.Json, +checks: J.Json, +release: J.Json) -> J.Json:
+def Rv.json.k(+lc: I.Loc, +v: U.RpView, +rb: J.Json, +checks: J.Json, +release: J.Json) -> J.Json:
   J.Json.obj([J.KV{"tabs", J.Json.arr(Rv.tabs(U.RpView.tabs(v)))}, J.KV{"title", J.Str{U.RpView.title(v)}}, J.KV{"busy", J.Flag{U.RpView.busy(v)}},
-    J.KV{"note", J.Str{U.RpView.note(v)}}, J.KV{"blocks", rb}, J.KV{"checks", checks}, J.KV{"release", release}])
+    J.KV{"note", J.Str{U.RpView.note.loc(lc, v)}}, J.KV{"blocks", rb}, J.KV{"checks", checks}, J.KV{"release", release}])
 
-def Rv.json(on: Bool, +u: U.Ui, +rb: J.Json) -> J.Json:
+def Rv.json(+lc: I.Loc, on: Bool, +u: U.Ui, +rb: J.Json) -> J.Json:
   match on:
     case True{}:
-      Rv.json.k(U.Rp.view(u), rb, Rv.checks(String.eq(U.Rp.page(u), "checks"), u), Rv.release(String.eq(U.Rp.page(u), "release"), u))
+      Rv.json.k(lc, U.Rp.view.loc(lc, u), rb, Rv.checks(String.eq(U.Rp.page(u), "checks"), u), Rv.release(String.eq(U.Rp.page(u), "release"), u))
     case False{}:
       J.Null{}
 
@@ -869,14 +871,14 @@ def Rc.open.json(m: Maybe<&2, U.RcOpen>) -> J.Json:
 def Rc.json(+u: U.Ui) -> J.Json:
   J.Json.obj([J.KV{"pins", J.Json.arr(Rc.pins(U.Rc.pins(u)))}, J.KV{"open", Rc.open.json(U.Rc.open(u))}, J.KV{"at", J.Str{U.Rc.at(u)}}])
 
-def View.json(+u: U.Ui, +rb: J.Json) -> J.Json:
+def View.json(+lc: I.Loc, +u: U.Ui, +rb: J.Json) -> J.Json:
   J.Json.obj([J.KV{"open", J.Str{Bool.pick(String, Bool.or(Bool.or(Bool.or(Bool.not(String.is_empty(View.want(u))), View.mech(u)), View.fm(u)), String.eq(View.kind(u), "review")), View.kind(u), "")}}, J.KV{"key", J.Str{View.want(u)}},
     J.KV{"comments", Rc.json(u)},
-    J.KV{"review", Rv.json(String.eq(View.kind(u), "review"), u, rb)},
-    J.KV{"files", Files.json(String.eq(View.kind(u), "files"), u)}, J.KV{"file", File.json(Bool.or(String.eq(View.kind(u), "image"), String.eq(View.kind(u), "pdf")), u)},
+    J.KV{"review", Rv.json(lc, String.eq(View.kind(u), "review"), u, rb)},
+    J.KV{"files", Files.json(lc, String.eq(View.kind(u), "files"), u)}, J.KV{"file", File.json(Bool.or(String.eq(View.kind(u), "image"), String.eq(View.kind(u), "pdf")), u)},
     J.KV{"layers", J.Str{Bool.pick(String, View.mech(u), "", View.layers.at(View.kind(u), U.Ui.root(u), View.src(u)))}},
-    J.KV{"hist", Hist.json(U.Hs.bar.for(View.as_client(u), Nat.is_lt(View.hist.num(View.kind(u)), 2n)), View.as_client(u))},
-    J.KV{"mech", Mech.json(View.mech(u), u)},
+    J.KV{"hist", Hist.json(lc, U.Hs.bar.for.loc(lc, View.as_client(u), Nat.is_lt(View.hist.num(View.kind(u)), 2n)), View.as_client(u))},
+    J.KV{"mech", Mech.json(lc, View.mech(u), u)},
     J.KV{"sheets", J.Json.arr(List.append(&2, J.Json, View.board.list(u), View.sheet.list(u)))}, J.KV{"layerList", J.Json.arr(View.layer.list(u))},
     J.KV{"off", J.Num{U32.show(LY.Masks.off(View.masks(u)))}}, J.KV{"dim", J.Num{U32.show(LY.Masks.dim(View.masks(u)))}}, J.KV{"lift", J.Num{U32.show(LY.Lyr.top(View.focus(u)))}},
     J.KV{"layerMode", J.Num{U32.show(View.lmode(u))}}, J.KV{"layerModes", J.Flag{String.eq(View.kind(u), "board")}}, J.KV{"layerHead", J.Str{View.lhead(u)}},

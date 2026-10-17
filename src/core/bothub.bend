@@ -1,4 +1,5 @@
 import Base
+import ./i18n.bend as I18N
 import ./prompt.bend as LP
 import ./mail.bend as ML
 import ./ref.bend as RMAIL
@@ -1762,7 +1763,7 @@ def Bots.routine.json.row(w: SC.SRow, +r: BT.Routine, +rule: TZ.TzRule, +nx: Nat
 
 # the routine as the tools tell it: what it does, when, in whose time
 def Bots.routine.json(+s: M.State, +r: BT.Routine, +now: Nat) -> J.Json:
-  Bots.routine.json.row(SC.Sched.row(s, r, now, 0n, True{}), r, SC.Sched.person(s, 0n, True{}), SC.Sched.next(s, r, now, 0n, True{}))
+  Bots.routine.json.row(SC.Sched.row(I18N.En{}, s, r, now, 0n, True{}), r, SC.Sched.person(s, 0n, True{}), SC.Sched.next(s, r, now, 0n, True{}))
 
 def Bots.routines.json(+s: M.State, rs: List<&2, BT.Routine>, +now: Nat) -> List<&2, J.Json>:
   match rs:

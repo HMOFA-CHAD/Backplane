@@ -40,6 +40,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun draft(text: String) = core.draft(text)
     val cats get() = core.cats
     fun cat(key: String) = core.cat(key)
+    fun t(key: String, fallback: String) = core.t(key, fallback)
+    fun want(key: String) = core.want(key)
     fun field(name: String, text: String) = core.field(name, text)
     fun web(path: String) = core.web(path)
     fun attach(data: ByteArray, name: String) = core.attach(data, name)

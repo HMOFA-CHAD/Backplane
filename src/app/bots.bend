@@ -276,7 +276,8 @@ def Bv.cat(+look: Nat, +mood: String, +c: D.Clip, +x: U32, +y: U32, +px: U32) ->
 # its mood; choosing it does what BU.act says
 def Bv.row(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +ms: Nat, +r: BU.BRow, +c: D.Clip, +y: U32) -> L.Out:
   match r:
-    case BU.BRow{+id, _, _, +look, +mood, +note, +sel, _, _, _}:
+    case BU.BRow{+id, _, _, +look, +mood, _, +sel, _, _, _}:
+      +note = {BU.Mood.note.loc(L.Ty.loc(ty), mood) : String}
       +nw = L.Ty.width(ty, 2n, note)
       L.Out{List.concat(&2, R.Op, [
           Bool.pick(List<&2, R.Op>, sel, [D.Draw.rect(c, 6, (y + 1 : U32), 252, 34, T.Th.raise(), 255), D.Draw.rect(c, 6, (y + 1 : U32), 2, 34, T.Th.accent(), 255)], Nil{}),
@@ -308,7 +309,7 @@ def Bv.bform(open: Bool, +ty: L.Ty, +f: F.FS, +c: D.Clip, +y: U32) -> L.Col:
   match open:
     case True{}:
       L.Col{L.Out.all([
-          F.Fm.field(ty, f, c, 12, y, 240, "name", "bot-create", "", U.Bots.name.hint(F.FS.ui(f))),
+          F.Fm.field(ty, f, c, 12, y, 240, "name", "bot-create", "", U.Bots.name.hint.loc(L.Ty.loc(ty), F.FS.ui(f))),
           F.Fm.area(ty, f, c, 12, (y + 34 : U32), 240, 3n, "persona", "bot-create", "", "Who it is, what it does"),
           Bv.provs(["claude", "codex", "grok", "muse", "antigravity"], ty, Bv.prov(F.FS.ui(f)), c, 12, (y + 112 : U32)),
           F.Fm.button(ty, c, 12, (y + 146 : U32), "Create", T.Th.accent(), "bot-create", "")]),
@@ -678,7 +679,7 @@ def Bv.routine.card(+ty: L.Ty, +w0: SC.SRow, +r: BT.Routine, +own: Bool, +c: D.C
   Bv.routine.card.k(ty, w0, r, own, Bv.routine.gap(w0, BT.Routine.on(r)), c, x, w, y)
 
 def Bv.routine.k(own: Bool, +ty: L.Ty, +u: U.Ui, +r: BT.Routine, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
-  Bv.routine.card(ty, SC.Sched.row(U.Ui.state(u), r, now, 0n, True{}), r, own, c, x, w, y)
+  Bv.routine.card(ty, SC.Sched.row(U.Lang.loc(u), U.Ui.state(u), r, now, 0n, True{}), r, own, c, x, w, y)
 
 def Bv.routines(rs: List<&2, BT.Routine>, +ty: L.Ty, +u: U.Ui, +own: Bool, +now: Nat, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
   match rs:
@@ -692,7 +693,7 @@ def Bv.oform(+ty: L.Ty, +f: F.FS, +editing: Bool, +c: D.Clip, +x: U32, +w: U32, 
       L.Out.ops(L.Ty.text(ty, 0n, Bool.pick(String, editing, "Change routine", "New routine"), c, x, y, 28, T.Th.soft())),
       F.Fm.field(ty, f, c, x, (y + 32 : U32), U32.min(w, 280), "oname", "routine-save", "", "Name"),
       F.Fm.field(ty, f, c, (x + U32.min(w, 280) + 8 : U32), (y + 32 : U32), L.U32.dim(w, (U32.min(w, 280) + 8 : U32)), "ocron", "routine-save", "", "When: daily 09:30, in 2h, tomorrow 9am"),
-      Bv.faint(ty, c, U.Routine.hint(F.FS.ui(f)), x, w, (y + 62 : U32)),
+      Bv.faint(ty, c, U.Routine.hint.loc(L.Ty.loc(ty), F.FS.ui(f)), x, w, (y + 62 : U32)),
       F.Fm.area(ty, f, c, x, (y + 86 : U32), w, 4n, "oprompt", "routine-save", "", "What it should do each time"),
       F.Fm.button(ty, c, x, (y + 186 : U32), Bool.pick(String, editing, "Save", "Add routine"), T.Th.accent(), "routine-save", "")]),
     (y + 230 : U32)}
@@ -962,7 +963,7 @@ def Bv.live(+ty: L.Ty, +f: F.FS, +b: BT.Bot, +x0: U32, +x1: U32, +top: U32, +h: 
   +u = F.FS.ui(f)
   +id = BT.Bot.id(b)
   +input = {U.Teach.input(u, id) : Bool}
-  L.Lay.col.out(L.Lay.col.then(Bv.strip.k(U.Teach.strip(u, id), ty, f, input, D.Clip.all(), (x0 + 24 : U32), (x1 - x0 - 48 : U32), top), +y2 =>
+  L.Lay.col.out(L.Lay.col.then(Bv.strip.k(U.Teach.strip.loc(L.Ty.loc(ty), u, id), ty, f, input, D.Clip.all(), (x0 + 24 : U32), (x1 - x0 - 48 : U32), top), +y2 =>
     L.Col{L.Lay.page.in(ty, u, id, "No page yet. Ask " ++ BT.Bot.name(b) ++ " to open one.", x0, x1, y2, h, input), y2}))
 
 # one recorded step in the save sheet: what it did, its typed value as a
@@ -993,7 +994,7 @@ def Bv.sheet(+ty: L.Ty, +f: F.FS, +b: BT.Bot, +c: D.Clip, +x: U32, +w: U32, +y: 
       Bv.faint(ty, c, "Name it. Mark a value you typed to ask for it each time the task runs.", x, w, (y + 30 : U32)),
       F.Fm.field(ty, f, c, x, (y + 58 : U32), w, "tkname", "tk-save", "", "Name"),
       F.Fm.field(ty, f, c, x, (y + 98 : U32), w, "tkdesc", "tk-save", "", "What it does (optional)")]),
-    L.Lay.col.then(Bv.srows(U.Teach.rows(F.FS.ui(f), BT.Bot.id(b)), ty, f, c, x, w, (y + 148 : U32)), +y2 =>
+    L.Lay.col.then(Bv.srows(U.Teach.rows.loc(L.Ty.loc(ty), F.FS.ui(f), BT.Bot.id(b)), ty, f, c, x, w, (y + 148 : U32)), +y2 =>
       L.Col{L.Out.all([F.Fm.button(ty, c, x, (y2 + 8 : U32), "Save", T.Th.accent(), "tk-save", ""),
           F.Fm.button(ty, c, (x + F.Fm.button.w(ty, "Save") + 8 : U32), (y2 + 8 : U32), "Discard", T.Th.soft(), "tk-discard", "")]), (y2 + 56 : U32)}))
 
@@ -1105,8 +1106,8 @@ def Bv.tabs(ts: List<&2, String>, +ty: L.Ty, +cur: String, +x: U32, +y: U32) -> 
     case Nil{}:
       L.Out.none()
     case +t <> rest:
-      L.Out.cat(F.Fm.chip(ty, D.Clip.all(), x, y, BU.BU.tab.label(t), String.eq(t, cur), "bot-tab", t),
-        Bv.tabs(rest, ty, cur, (x + L.Lay.button.w(ty, BU.BU.tab.label(t)) + 6 : U32), y))
+      L.Out.cat(F.Fm.chip(ty, D.Clip.all(), x, y, BU.BU.tab.label(L.Ty.loc(ty), t), String.eq(t, cur), "bot-tab", t),
+        Bv.tabs(rest, ty, cur, (x + L.Lay.button.w(ty, BU.BU.tab.label(L.Ty.loc(ty), t)) + 6 : U32), y))
 
 def Bv.busy(s: M.Status) -> Bool:
   match s:

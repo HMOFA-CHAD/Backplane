@@ -74,7 +74,7 @@ def Pl.row.kind(lock: Bool, +side: Bool, +title: String, +sub: String, +machine:
 def Pl.row(side: Bool, r: P.PRow, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +y: U32, +now: Nat) -> L.Out:
   match r:
     case P.PRow{+kind, _, +act, +val, +title, +sub, +machine, +state, +at, _}:
-      L.Out{List.append(&2, R.Op, Pl.row.kind(String.eq(kind, "lock"), side, title, sub, machine, state, at, ty, c, x, w, y, now), [D.Draw.rect(c, x, (y + 29 : U32), w, 1, T.Th.line(), 255)]),
+      L.Out{List.append(&2, R.Op, Pl.row.kind(String.eq(kind, "lock"), side, P.Plane.title.shown(L.Ty.loc(ty), kind, title), sub, machine, state, at, ty, c, x, w, y, now), [D.Draw.rect(c, x, (y + 29 : U32), w, 1, T.Th.line(), 255)]),
         [L.Lay.hit(x, y, w, 30, act, val)]}
 
 def Pl.row.if(on: Bool, side: Bool, r: P.PRow, +ty: L.Ty, +c: D.Clip, +x: U32, +w: U32, +y: U32, +now: Nat) -> L.Out:
@@ -149,12 +149,12 @@ def Pl.strip.h(+p: P.Plane, +h: P.PHome) -> U32:
 def Pl.home.btn(offer: Bool, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32) -> L.Out:
   match offer:
     case True{}:
-      L.Lay.button(ty, c, x, y, P.Plane.home.label(), T.Th.text(), "uber-home", "")
+      L.Lay.button(ty, c, x, y, P.Plane.home.label(L.Ty.loc(ty)), T.Th.text(), "uber-home", "")
     case False{}:
       L.Out.none()
 
 def Pl.home(+h: P.PHome, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32) -> L.Out:
-  +line = {P.Plane.home.line(h) : String}
+  +line = {P.Plane.home.line(L.Ty.loc(ty), h) : String}
   L.Out.cat(L.Out.ops(L.Ty.text(ty, 2n, line, c, x, y, 28, T.Th.soft())),
     Pl.home.btn(P.Plane.home.button(h), ty, c, (x + L.Ty.width(ty, 2n, line) + 20 : U32), y))
 

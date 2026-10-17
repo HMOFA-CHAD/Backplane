@@ -3,6 +3,447 @@
 import Base
 import ./i18n.bend as I
 
+def T.agy.account(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Account"
+    case I.Ja{}:
+      "アカウント"
+
+def T.agy.account.add(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Add account"
+    case I.Ja{}:
+      "アカウントを追加"
+
+def T.agy.account.other(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Another account's name"
+    case I.Ja{}:
+      "別のアカウント名"
+
+def T.agy.account.signedin(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ ": signed in. The agent keeps its own sign-in; Backplane never sees it."
+    case I.Ja{}:
+      arg0 ++ "：サインイン済みです。サインイン情報はエージェントが保持し、Backplaneからは見えません。"
+
+def T.agy.account.signedout(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ ": not signed in."
+    case I.Ja{}:
+      arg0 ++ "：サインインしていません。"
+
+def T.agy.download(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Not installed. Backplane downloads Google's agent (agy_acp_server " ++ arg0 ++ ", from the ACP registry, a few hundred MB) and checks its pinned SHA-256."
+    case I.Ja{}:
+      "未インストールです。BackplaneがGoogleのエージェント（agy_acp_server " ++ arg0 ++ "、ACPレジストリから数百MB）をダウンロードし、固定されたSHA-256を確認します。"
+
+def T.agy.gcp(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Google Cloud project"
+    case I.Ja{}:
+      "Google Cloudプロジェクト"
+
+def T.agy.gcp.location(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Location, e.g. us-central1"
+    case I.Ja{}:
+      "ロケーション（例：us-central1）"
+
+def T.agy.gcp.none(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "not set"
+    case I.Ja{}:
+      "未設定"
+
+def T.agy.gcp.project(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Project ID"
+    case I.Ja{}:
+      "プロジェクトID"
+
+def T.agy.gcp.set(l: I.Loc, arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "Project " ++ arg0 ++ ", location " ++ arg1 ++ "."
+    case I.Ja{}:
+      "プロジェクト" ++ arg0 ++ "、ロケーション" ++ arg1 ++ "。"
+
+def T.agy.gcp.unset(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Not set."
+    case I.Ja{}:
+      "未設定です。"
+
+def T.agy.google.signin(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Sign in with Google"
+    case I.Ja{}:
+      "Googleでサインイン"
+
+def T.agy.install(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Install"
+    case I.Ja{}:
+      "インストール"
+
+def T.agy.installed(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Google's own agent, Antigravity " ++ arg0 ++ ", installed. Backplane runs it; it signs in by itself."
+    case I.Ja{}:
+      "Google純正のエージェント、Antigravity " ++ arg0 ++ "をインストール済みです。Backplaneが実行し、サインインはエージェント自身が行います。"
+
+def T.agy.key.check(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Check"
+    case I.Ja{}:
+      "確認"
+
+def T.agy.key.paste(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Paste the key"
+    case I.Ja{}:
+      "キーを貼り付け"
+
+def T.agy.key.save(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Save key"
+    case I.Ja{}:
+      "キーを保存"
+
+def T.agy.key.saved(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Saved in API keys. Check it to list the models it offers."
+    case I.Ja{}:
+      "APIキーに保存済みです。確認すると、使えるモデルが一覧表示されます。"
+
+def T.agy.key.unsaved(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Not saved yet. It goes to this machine's API keys file; no client shows it again."
+    case I.Ja{}:
+      "まだ保存されていません。このマシンのAPIキーファイルに保存され、どのクライアントにも再表示されません。"
+
+def T.agy.method(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Sign in with"
+    case I.Ja{}:
+      "サインイン方法"
+
+def T.agy.old(l: I.Loc, arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "Antigravity " ++ arg0 ++ " is installed; Backplane now pins " ++ arg1 ++ "."
+    case I.Ja{}:
+      "Antigravity " ++ arg0 ++ "がインストールされています。Backplaneは現在" ++ arg1 ++ "に固定しています。"
+
+def T.agy.reinstall(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Reinstall"
+    case I.Ja{}:
+      "再インストール"
+
+def T.agy.signin(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Sign-in"
+    case I.Ja{}:
+      "サインイン"
+
+def T.agy.signin.back(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Paste the address Google sent you to"
+    case I.Ja{}:
+      "Googleから移動した先のアドレスを貼り付け"
+
+def T.agy.signin.failed(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Sign-in failed"
+    case I.Ja{}:
+      "サインインに失敗しました"
+
+def T.agy.signin.next(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Continue"
+    case I.Ja{}:
+      "続行"
+
+def T.agy.signin.open(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Open Google's sign-in"
+    case I.Ja{}:
+      "Googleのサインインを開く"
+
+def T.agy.signout(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Sign out"
+    case I.Ja{}:
+      "サインアウト"
+
+def T.agy.unsupported(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Google has no Antigravity build for this machine."
+    case I.Ja{}:
+      "このマシン向けのAntigravityはGoogleから提供されていません。"
+
+def T.agy.update(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Update to " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "に更新"
+
+def T.apikeys.form(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Agents find a key by its name, e.g. OPENAI_API_KEY. It is never shown again."
+    case I.Ja{}:
+      "エージェントはキーを名前（例：OPENAI_API_KEY）で見つけます。キーは二度と表示されません。"
+
+def T.apikeys.kept(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Agents use these without ever reading them: " ++ arg0 ++ " kept."
+    case I.Ja{}:
+      "エージェントはキーを読まずに使います：" ++ arg0 ++ "件保管中。"
+
+def T.apikeys.none(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Keys for the services agents use, kept in this machine's secrets. Agents use them without ever reading them. None yet."
+    case I.Ja{}:
+      "エージェントが使うサービスのキーを、このマシンのシークレットに保管します。エージェントはキーを読まずに使えます。まだありません。"
+
+def T.ask.allow(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Allow " ++ arg0 ++ "?"
+    case I.Ja{}:
+      arg0 ++ "を許可しますか？"
+
+def T.ask.event.change(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Change this event?"
+    case I.Ja{}:
+      "この予定を変更しますか？"
+
+def T.ask.event.create(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Create this event?"
+    case I.Ja{}:
+      "この予定を作成しますか？"
+
+def T.ask.event.delete(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Delete this event?"
+    case I.Ja{}:
+      "この予定を削除しますか？"
+
+def T.ask.input(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "The agent asks"
+    case I.Ja{}:
+      "エージェントからの質問"
+
+def T.ask.plan(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Proposed plan"
+    case I.Ja{}:
+      "提案されたプラン"
+
+def T.ask.send.draft(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Send this draft?"
+    case I.Ja{}:
+      "この下書きを送信しますか？"
+
+def T.ask.send.email(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Send this email?"
+    case I.Ja{}:
+      "このメールを送信しますか？"
+
+def T.bots.mood.away(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "away"
+    case I.Ja{}:
+      "不在"
+
+def T.bots.mood.error(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "failed"
+    case I.Ja{}:
+      "失敗"
+
+def T.bots.mood.idle(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "ready"
+    case I.Ja{}:
+      "待機中"
+
+def T.bots.mood.sleep(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "asleep"
+    case I.Ja{}:
+      "休止中"
+
+def T.bots.mood.talk(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "talking"
+    case I.Ja{}:
+      "会話中"
+
+def T.bots.mood.think(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "thinking"
+    case I.Ja{}:
+      "考え中"
+
+def T.bots.mood.wait(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "needs you"
+    case I.Ja{}:
+      "対応待ち"
+
+def T.bots.mood.work(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "working"
+    case I.Ja{}:
+      "作業中"
+
+def T.bots.name(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Name"
+    case I.Ja{}:
+      "名前"
+
+def T.bots.name.uber(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Name your uberbot"
+    case I.Ja{}:
+      "メインボットの名前"
+
+def T.bots.tab.browser(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Browser"
+    case I.Ja{}:
+      "ブラウザ"
+
+def T.bots.tab.chat(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Chat"
+    case I.Ja{}:
+      "チャット"
+
+def T.bots.tab.hooks(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Webhooks"
+    case I.Ja{}:
+      "Webhook"
+
+def T.bots.tab.memory(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Memory"
+    case I.Ja{}:
+      "メモリ"
+
+def T.bots.tab.routines(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Routines"
+    case I.Ja{}:
+      "ルーティン"
+
+def T.bots.tab.settings(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Settings"
+    case I.Ja{}:
+      "設定"
+
+def T.bots.tab.space(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Space"
+    case I.Ja{}:
+      "スペース"
+
+def T.bots.tab.status(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Status"
+    case I.Ja{}:
+      "ステータス"
+
+def T.bots.tab.tasks(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Tasks"
+    case I.Ja{}:
+      "タスク"
+
+def T.btw.none(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "No answer came back (Settings, Writing: the model it asks)."
+    case I.Ja{}:
+      "回答がありませんでした（質問先のモデルは設定の「Writing」で選べます）。"
+
+def T.btw.thinking(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Thinking…"
+    case I.Ja{}:
+      "考え中…"
+
 def T.common.cancel(l: I.Loc) -> String:
   match l:
     case I.En{}:
@@ -17,6 +458,13 @@ def T.common.delete(l: I.Loc) -> String:
     case I.Ja{}:
       "削除"
 
+def T.common.remove(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Remove"
+    case I.Ja{}:
+      "削除"
+
 def T.common.save(l: I.Loc) -> String:
   match l:
     case I.En{}:
@@ -24,12 +472,1118 @@ def T.common.save(l: I.Loc) -> String:
     case I.Ja{}:
       "保存"
 
+def T.composer.ask(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Ask"
+    case I.Ja{}:
+      "質問"
+
+def T.composer.give(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Give"
+    case I.Ja{}:
+      "引き渡す"
+
+def T.composer.send(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Send"
+    case I.Ja{}:
+      "送信"
+
+def T.composer.steer(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Steer"
+    case I.Ja{}:
+      "誘導"
+
+def T.composer.stop(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Stop"
+    case I.Ja{}:
+      "停止"
+
 def T.files.changed(l: I.Loc, +arg0: Nat) -> String:
   match l:
     case I.En{}:
       I.I18n.exact(arg0, Nat.add(Nat.mul(0n, 10n), 0n), "No files changed", I.I18n.pick(I.I18n.plural(I.En{}, arg0), I.I18n.num(I.En{}, arg0) ++ " files changed", I.I18n.num(I.En{}, arg0) ++ " file changed", I.I18n.num(I.En{}, arg0) ++ " files changed", I.I18n.num(I.En{}, arg0) ++ " files changed", I.I18n.num(I.En{}, arg0) ++ " files changed", I.I18n.num(I.En{}, arg0) ++ " files changed"))
     case I.Ja{}:
       I.I18n.exact(arg0, Nat.add(Nat.mul(0n, 10n), 0n), "変更なし", I.I18n.pick(I.I18n.plural(I.Ja{}, arg0), "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件", "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件", "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件", "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件", "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件", "変更ファイル" ++ I.I18n.num(I.Ja{}, arg0) ++ "件"))
+
+def T.fm.root(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Project"
+    case I.Ja{}:
+      "プロジェクト"
+
+def T.fold.calls(l: I.Loc, +arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " " ++ I.I18n.sel(arg1, "one", "tool call", "tool calls")
+    case I.Ja{}:
+      I.I18n.sel(arg1, "one", "ツール呼び出し" ++ arg0 ++ "件", "ツール呼び出し" ++ arg0 ++ "件")
+
+def T.fold.more(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      ", …"
+    case I.Ja{}:
+      "、…"
+
+def T.fold.steps(l: I.Loc, +arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " " ++ I.I18n.sel(arg1, "one", "design change", "design changes")
+    case I.Ja{}:
+      I.I18n.sel(arg1, "one", "設計変更" ++ arg0 ++ "件", "設計変更" ++ arg0 ++ "件")
+
+def T.fold.worked(l: I.Loc, arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "Worked for " ++ arg0 ++ " · " ++ arg1
+    case I.Ja{}:
+      arg0 ++ "作業 · " ++ arg1
+
+def T.fold.working(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Working · started " ++ arg0
+    case I.Ja{}:
+      "作業中 · " ++ arg0 ++ "から"
+
+def T.history.branchpoint(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Branch point · " ++ arg0
+    case I.Ja{}:
+      "分岐点 · " ++ arg0
+
+def T.history.comparing(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Comparing"
+    case I.Ja{}:
+      "比較中"
+
+def T.history.live(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Live"
+    case I.Ja{}:
+      "現在"
+
+def T.history.live.note(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "The live file. Compare it with any commit, branch or tag."
+    case I.Ja{}:
+      "現在のファイルです。コミット、ブランチ、タグと比較できます。"
+
+def T.history.live.steps(l: I.Loc, +arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "Live · " ++ arg0 ++ " " ++ I.I18n.sel(arg1, "one", "step", "steps")
+    case I.Ja{}:
+      I.I18n.sel(arg1, "one", "現在 · 変更" ++ arg0 ++ "件", "現在 · 変更" ++ arg0 ++ "件")
+
+def T.history.live.ticks(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "The live file. Each tick is a change the agent made; play to watch them."
+    case I.Ja{}:
+      "現在のファイルです。目盛りはエージェントの変更です。再生すると順に表示されます。"
+
+def T.history.notinrepo(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "This file is not in the repository, so it cannot be compared."
+    case I.Ja{}:
+      "このファイルはリポジトリにないため、比較できません。"
+
+def T.history.position(l: I.Loc, arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "Step " ++ arg0 ++ " of " ++ arg1
+    case I.Ja{}:
+      "変更" ++ arg0 ++ "/" ++ arg1
+
+def T.history.position.first(l: I.Loc, arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "Step " ++ arg0 ++ " of " ++ arg1 ++ " · before the agent's edits"
+    case I.Ja{}:
+      "変更" ++ arg0 ++ "/" ++ arg1 ++ " · エージェントの編集前"
+
+def T.history.ref.base(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "where this branch left it"
+    case I.Ja{}:
+      "このブランチの分岐点"
+
+def T.history.ref.branch(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "branch"
+    case I.Ja{}:
+      "ブランチ"
+
+def T.history.ref.commit(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "commit"
+    case I.Ja{}:
+      "コミット"
+
+def T.history.ref.head(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "the commit checked out"
+    case I.Ja{}:
+      "チェックアウト中のコミット"
+
+def T.history.ref.start(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "this thread, before it began"
+    case I.Ja{}:
+      "このスレッドの開始前"
+
+def T.history.ref.tag(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "tag"
+    case I.Ja{}:
+      "タグ"
+
+def T.history.ref.turn(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "this thread, at the end of a turn"
+    case I.Ja{}:
+      "このスレッドのターン終了時"
+
+def T.history.step(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Step " ++ arg0
+    case I.Ja{}:
+      "変更" ++ arg0
+
+def T.history.turn(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Turn " ++ arg0
+    case I.Ja{}:
+      "ターン" ++ arg0
+
+def T.history.workingcopy(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Working copy"
+    case I.Ja{}:
+      "作業コピー"
+
+def T.history.workingcopy.note(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "the files as they are now"
+    case I.Ja{}:
+      "現在のファイル"
+
+def T.machines.away(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Away: its projects stay listed and readable until it answers."
+    case I.Ja{}:
+      "不在：応答があるまで、プロジェクトは一覧に残り、読むことができます。"
+
+def T.machines.behind(l: I.Loc, +arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "Catching up: " ++ arg0 ++ " " ++ I.I18n.sel(arg1, "one", "project", "projects") ++ " still loading. The rest are ready."
+    case I.Ja{}:
+      I.I18n.sel(arg1, "one", "同期中：プロジェクト" ++ arg0 ++ "件を読み込み中です。残りは準備できています。", "同期中：プロジェクト" ++ arg0 ++ "件を読み込み中です。残りは準備できています。")
+
+def T.machines.lead(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Projects and threads on these machines sync into this sidebar in the background, so you never have to switch. Turn one off to keep it apart."
+    case I.Ja{}:
+      "これらのマシンのプロジェクトとスレッドは裏でこのサイドバーに同期されるので、切り替える必要はありません。分けておきたいマシンはオフにしてください。"
+
+def T.machines.lead.none(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Other machines of yours on Tailscale that run Backplane show here. Their projects and threads sync into this sidebar by themselves."
+    case I.Ja{}:
+      "Tailscale上でBackplaneを動かしている他のマシンがここに表示されます。プロジェクトとスレッドは自動でこのサイドバーに同期されます。"
+
+def T.machines.linking(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Linking. Its projects will appear here within a minute or two."
+    case I.Ja{}:
+      "接続中です。1～2分ほどでプロジェクトがここに表示されます。"
+
+def T.machines.off(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Off. Nothing syncs with it."
+    case I.Ja{}:
+      "オフ。同期しません。"
+
+def T.machines.self(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "This machine"
+    case I.Ja{}:
+      "このマシン"
+
+def T.machines.sync(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "In sync. Its projects and threads show here as they change."
+    case I.Ja{}:
+      "同期済みです。プロジェクトとスレッドは変更のたびにここに表示されます。"
+
+def T.machines.title(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Your machines"
+    case I.Ja{}:
+      "自分のマシン"
+
+def T.mech.again(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Render again"
+    case I.Ja{}:
+      "再レンダリング"
+
+def T.mech.create(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Create renders"
+    case I.Ja{}:
+      "レンダリングを作成"
+
+def T.mech.nofreecad(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "FreeCAD is not installed on this hub's machine, and agents need it to model parts: get it from freecad.org/downloads."
+    case I.Ja{}:
+      "このハブのマシンにFreeCADがありません。エージェントが部品をモデリングするのに必要です。freecad.org/downloadsから入手してください。"
+
+def T.mech.rendering(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Rendering…"
+    case I.Ja{}:
+      "レンダリング中…"
+
+def T.menu.archive(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Archive"
+    case I.Ja{}:
+      "アーカイブ"
+
+def T.menu.bringback(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Bring back"
+    case I.Ja{}:
+      "元に戻す"
+
+def T.menu.copylink(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Copy link"
+    case I.Ja{}:
+      "リンクをコピー"
+
+def T.menu.delete.confirm(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Click again to delete"
+    case I.Ja{}:
+      "もう一度クリックで削除"
+
+def T.menu.file.copy(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Copy path"
+    case I.Ja{}:
+      "パスをコピー"
+
+def T.menu.file.open(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Open"
+    case I.Ja{}:
+      "開く"
+
+def T.menu.file.reveal(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Show in folder"
+    case I.Ja{}:
+      "フォルダで表示"
+
+def T.menu.look(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Colour and icon"
+    case I.Ja{}:
+      "色とアイコン"
+
+def T.menu.pin(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Pin"
+    case I.Ja{}:
+      "ピン留め"
+
+def T.menu.project.remove(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Remove project"
+    case I.Ja{}:
+      "プロジェクトを削除"
+
+def T.menu.remove.confirm(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Click again to remove"
+    case I.Ja{}:
+      "もう一度クリックで削除"
+
+def T.menu.rename(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Rename"
+    case I.Ja{}:
+      "名前を変更"
+
+def T.menu.settle(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Settle"
+    case I.Ja{}:
+      "完了"
+
+def T.menu.snooze.hour(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Snooze 1 hour"
+    case I.Ja{}:
+      "1時間スヌーズ"
+
+def T.menu.snooze.tomorrow(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Snooze until tomorrow"
+    case I.Ja{}:
+      "明日までスヌーズ"
+
+def T.menu.snooze.week(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Snooze 1 week"
+    case I.Ja{}:
+      "1週間スヌーズ"
+
+def T.menu.uber.demote(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Not uberbot"
+    case I.Ja{}:
+      "メインボットを解除"
+
+def T.menu.uber.promote(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Make uberbot"
+    case I.Ja{}:
+      "メインボットにする"
+
+def T.menu.unarchive(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Unarchive"
+    case I.Ja{}:
+      "アーカイブを解除"
+
+def T.menu.unpin(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Unpin"
+    case I.Ja{}:
+      "ピン留めを解除"
+
+def T.menu.wake(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Wake"
+    case I.Ja{}:
+      "再開"
+
+def T.nav.pr.norepo(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "PR link needs a repo"
+    case I.Ja{}:
+      "PRリンクにはリポジトリが必要です"
+
+def T.nav.task.none(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "No view for this task yet"
+    case I.Ja{}:
+      "このタスクにはまだビューがありません"
+
+def T.notify.all(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Everything"
+    case I.Ja{}:
+      "すべて"
+
+def T.notify.all.note(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Also every turn end and room exchange, as before."
+    case I.Ja{}:
+      "これまでどおり、すべてのターンの終了とルームのやり取りも通知します。"
+
+def T.notify.lead(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Phone and desktop alerts. The rest stays in the app as unread."
+    case I.Ja{}:
+      "スマートフォンとデスクトップの通知です。それ以外はアプリ内で未読のままになります。"
+
+def T.notify.needs(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Needs me"
+    case I.Ja{}:
+      "要対応"
+
+def T.notify.needs.note(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Approvals, questions and anything an agent is blocked on until you act."
+    case I.Ja{}:
+      "承認、質問、操作があるまでエージェントが止まっている事柄です。"
+
+def T.notify.reminders(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Reminders"
+    case I.Ja{}:
+      "リマインダー"
+
+def T.notify.reminders.note(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Reminders and digests you scheduled."
+    case I.Ja{}:
+      "予約したリマインダーとダイジェストです。"
+
+def T.notify.settled(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Settled"
+    case I.Ja{}:
+      "完了"
+
+def T.notify.settled.note(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Work you gave a thread is finished, failed, or its branch merged. Once per piece of work."
+    case I.Ja{}:
+      "スレッドに任せた作業が完了・失敗した、またはブランチがマージされたときです。作業ごとに1回。"
+
+def T.notify.title(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Notify me for"
+    case I.Ja{}:
+      "通知する内容"
+
+def T.palette.archive(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Archive thread"
+    case I.Ja{}:
+      "スレッドをアーカイブ"
+
+def T.palette.attach(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Attach a file"
+    case I.Ja{}:
+      "ファイルを添付"
+
+def T.palette.commit(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Commit & push"
+    case I.Ja{}:
+      "コミットしてプッシュ"
+
+def T.palette.delete(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Delete thread"
+    case I.Ja{}:
+      "スレッドを削除"
+
+def T.palette.diff(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Diff: what this thread changed"
+    case I.Ja{}:
+      "差分：このスレッドの変更"
+
+def T.palette.findfile(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Find file"
+    case I.Ja{}:
+      "ファイルを探す"
+
+def T.palette.kicad(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Open in KiCad"
+    case I.Ja{}:
+      "KiCadで開く"
+
+def T.palette.newthread(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "New thread"
+    case I.Ja{}:
+      "新しいスレッド"
+
+def T.palette.pin(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Pin thread"
+    case I.Ja{}:
+      "スレッドをピン留め"
+
+def T.palette.pr(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Open pull request"
+    case I.Ja{}:
+      "プルリクエストを開く"
+
+def T.palette.revert(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Revert thread"
+    case I.Ja{}:
+      "スレッドを元に戻す"
+
+def T.palette.search(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Search threads"
+    case I.Ja{}:
+      "スレッドを検索"
+
+def T.palette.settings(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Settings"
+    case I.Ja{}:
+      "設定"
+
+def T.palette.settle(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Settle thread"
+    case I.Ja{}:
+      "スレッドを完了"
+
+def T.palette.snooze.hour(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Snooze 1 hour"
+    case I.Ja{}:
+      "1時間スヌーズ"
+
+def T.palette.snooze.tomorrow(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Snooze until tomorrow 9:00"
+    case I.Ja{}:
+      "明日9:00までスヌーズ"
+
+def T.palette.snooze.week(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Snooze 1 week"
+    case I.Ja{}:
+      "1週間スヌーズ"
+
+def T.palette.terminal(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Terminal"
+    case I.Ja{}:
+      "ターミナル"
+
+def T.palette.unarchive(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Unarchive thread"
+    case I.Ja{}:
+      "スレッドのアーカイブを解除"
+
+def T.palette.unsnooze(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Unsnooze"
+    case I.Ja{}:
+      "スヌーズを解除"
+
+def T.palette.update(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Update Backplane"
+    case I.Ja{}:
+      "Backplaneを更新"
+
+def T.palette.viewer(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Viewer: board, schematic, 3D, Mech, files, diff, browser"
+    case I.Ja{}:
+      "ビューア：基板、回路図、3D、Mech、ファイル、差分、ブラウザ"
+
+def T.picker.hint.find(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "A project, or ~/path to add a folder"
+    case I.Ja{}:
+      "プロジェクト、またはフォルダを追加する~/パス"
+
+def T.picker.hint.path(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "~/path, or a name to filter or create"
+    case I.Ja{}:
+      "~/パス、または絞り込みや作成に使う名前"
+
+def T.plane.count.need(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " need you"
+    case I.Ja{}:
+      arg0 ++ "件が要対応"
+
+def T.plane.count.run(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " running"
+    case I.Ja{}:
+      arg0 ++ "件が実行中"
+
+def T.plane.deploy.sub(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " · Cancel"
+    case I.Ja{}:
+      arg0 ++ " · キャンセル"
+
+def T.plane.deploy.title(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Restart pending"
+    case I.Ja{}:
+      "再起動待ち"
+
+def T.plane.home.line(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Home: " ++ arg0
+    case I.Ja{}:
+      "ホーム：" ++ arg0
+
+def T.plane.home.make(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Make this the home"
+    case I.Ja{}:
+      "ここをホームにする"
+
+def T.plane.lock.by(l: I.Loc, arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "held by " ++ arg0 ++ " " ++ arg1
+    case I.Ja{}:
+      arg0 ++ "が保持（" ++ arg1 ++ "）"
+
+def T.plane.lock.outside(l: I.Loc, arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "held outside the hub by pid " ++ arg0 ++ " (" ++ arg1 ++ ")"
+    case I.Ja{}:
+      "ハブ外のpid " ++ arg0 ++ "（" ++ arg1 ++ "）が保持"
+
+def T.plane.lock.row(l: I.Loc, arg0: String, arg1: String, arg2: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " · " ++ arg1 ++ " · " ++ arg2 ++ " waiting"
+    case I.Ja{}:
+      arg0 ++ " · " ++ arg1 ++ " · 待機" ++ arg2 ++ "件"
+
+def T.plane.machine.other(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "another machine"
+    case I.Ja{}:
+      "別のマシン"
+
+def T.proj.add(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Add " ++ arg0 ++ " as a project"
+    case I.Ja{}:
+      arg0 ++ "をプロジェクトとして追加"
+
+def T.proj.addcand(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Add " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "を追加"
+
+def T.proj.browse(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Add a project from a folder"
+    case I.Ja{}:
+      "フォルダからプロジェクトを追加"
+
+def T.proj.create(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Create project '" ++ arg0 ++ "' here"
+    case I.Ja{}:
+      "ここにプロジェクト「" ++ arg0 ++ "」を作成"
+
+def T.proj.createat(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Create project " ++ arg0
+    case I.Ja{}:
+      "プロジェクト" ++ arg0 ++ "を作成"
+
+def T.proj.exists(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " is already a project"
+    case I.Ja{}:
+      arg0 ++ "はすでにプロジェクトです"
+
+def T.proj.goto(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Go to " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "へ移動"
+
+def T.proj.mkdir(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Create folder '" ++ arg0 ++ "' here"
+    case I.Ja{}:
+      "ここにフォルダ「" ++ arg0 ++ "」を作成"
+
+def T.proj.on(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "On " ++ arg0 ++ " (change)"
+    case I.Ja{}:
+      arg0 ++ "（変更）"
+
+def T.queue.context(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Context"
+    case I.Ja{}:
+      "コンテキスト"
+
+def T.queue.edit(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Edit"
+    case I.Ja{}:
+      "編集"
+
+def T.queue.handoff(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " (goes with the next message)"
+    case I.Ja{}:
+      arg0 ++ "（次のメッセージと一緒に送られます）"
+
+def T.queue.held(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Held"
+    case I.Ja{}:
+      "保留中"
+
+def T.queue.queued(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Queued"
+    case I.Ja{}:
+      "待機中"
+
+def T.queue.remove(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Remove"
+    case I.Ja{}:
+      "削除"
+
+def T.queue.resume(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Resume"
+    case I.Ja{}:
+      "再開"
+
+def T.queue.up(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Up"
+    case I.Ja{}:
+      "上へ"
+
+def T.review.bom(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "BOM"
+    case I.Ja{}:
+      "BOM"
+
+def T.review.bom.change(l: I.Loc, arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "BOM change · " ++ arg0 ++ " → " ++ arg1
+    case I.Ja{}:
+      "BOMの変更 · " ++ arg0 ++ " → " ++ arg1
+
+def T.review.bom.working(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "BOM · Working copy"
+    case I.Ja{}:
+      "BOM · 作業コピー"
+
+def T.review.checks(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Checks"
+    case I.Ja{}:
+      "チェック"
+
+def T.review.checks.of(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Checks · " ++ arg0
+    case I.Ja{}:
+      "チェック · " ++ arg0
+
+def T.review.comments(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Comments"
+    case I.Ja{}:
+      "コメント"
+
+def T.review.comments.none(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "No comments yet. Right-click a place on the board or schematic (long-press on a phone) to comment there."
+    case I.Ja{}:
+      "コメントはまだありません。基板や回路図の場所を右クリック（スマートフォンでは長押し）すると、そこにコメントできます。"
+
+def T.review.comments.open(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Comments · " ++ arg0 ++ " open"
+    case I.Ja{}:
+      "コメント · 未解決" ++ arg0 ++ "件"
+
+def T.review.empty(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Nothing yet."
+    case I.Ja{}:
+      "まだ何もありません。"
+
+def T.review.reading(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Reading the design…"
+    case I.Ja{}:
+      "設計を読み込み中…"
+
+def T.review.release(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Release"
+    case I.Ja{}:
+      "リリース"
+
+def T.review.release.note(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Tag this design and make its fabrication outputs: Gerbers, drill, CPL, BOM, PDFs and STEP, in .backplane/releases."
+    case I.Ja{}:
+      "この設計にタグを付け、製造データ（ガーバー、ドリル、CPL、BOM、PDF、STEP）を.backplane/releasesに作成します。"
+
+def T.review.tag(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Tag " ++ arg0
+    case I.Ja{}:
+      "タグ" ++ arg0
+
+def T.sched.daily(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "daily at " ++ arg0
+    case I.Ja{}:
+      "毎日" ++ arg0
+
+def T.sched.done(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Done · " ++ arg0
+    case I.Ja{}:
+      "完了 · " ++ arg0
+
+def T.sched.every.hour(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "every hour"
+    case I.Ja{}:
+      "毎時"
+
+def T.sched.every.hours(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "every " ++ arg0 ++ " hours"
+    case I.Ja{}:
+      arg0 ++ "時間ごと"
+
+def T.sched.every.minute(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "every minute"
+    case I.Ja{}:
+      "毎分"
+
+def T.sched.every.minutes(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "every " ++ arg0 ++ " minutes"
+    case I.Ja{}:
+      arg0 ++ "分ごと"
+
+def T.sched.help.time(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "I can read: 2026-10-14T09:00+03:00, 2026-10-14 09:00, in 20m, in 1h30m, in 3d, today 17:30, tomorrow 9am, monday 09:00, or just 9am."
+    case I.Ja{}:
+      "読み取れる形式：2026-10-14T09:00+03:00、2026-10-14 09:00、in 20m、in 1h30m、in 3d、today 17:30、tomorrow 9am、monday 09:00、9am。"
+
+def T.sched.hint.next(l: I.Loc, arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " · next " ++ arg1
+    case I.Ja{}:
+      arg0 ++ " · 次回" ++ arg1
+
+def T.sched.hint.once(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "once · " ++ arg0
+    case I.Ja{}:
+      "1回 · " ++ arg0
+
+def T.sched.hourly(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "hourly"
+    case I.Ja{}:
+      "毎時"
+
+def T.sched.hourly.at(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "hourly at :" ++ arg0
+    case I.Ja{}:
+      "毎時" ++ arg0 ++ "分"
+
+def T.sched.kind.once(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Once"
+    case I.Ja{}:
+      "1回"
+
+def T.sched.kind.reminder(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Reminder"
+    case I.Ja{}:
+      "リマインダー"
+
+def T.sched.kind.repeat(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Repeats"
+    case I.Ja{}:
+      "繰り返し"
+
+def T.sched.weekdays(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "weekdays at " ++ arg0
+    case I.Ja{}:
+      "平日" ++ arg0
+
+def T.sched.zone.machine(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "this machine's time"
+    case I.Ja{}:
+      "このマシンの時刻"
+
+def T.sched.zone.you(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "your time"
+    case I.Ja{}:
+      "自分の時刻"
 
 def T.settings.agent.lang(l: I.Loc) -> String:
   match l:
@@ -44,6 +1598,55 @@ def T.settings.agent.lang.note(l: I.Loc) -> String:
       "Asks agents and bots to reply in the language above."
     case I.Ja{}:
       "エージェントとボットに、上の言語で応答するよう求めます。"
+
+def T.settings.freecad.install(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Agents model mechanical parts with it: get it from freecad.org/downloads"
+    case I.Ja{}:
+      "エージェントが機構部品のモデリングに使います。freecad.org/downloadsから入手してください"
+
+def T.settings.freecad.missing(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "FreeCAD: not found"
+    case I.Ja{}:
+      "FreeCAD：見つかりません"
+
+def T.settings.kicad.cli.install(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Install KiCad from kicad.org/download, or Backplane KiCad"
+    case I.Ja{}:
+      "kicad.org/downloadからKiCadを、またはBackplane KiCadをインストールしてください"
+
+def T.settings.kicad.cli.missing(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "KiCad CLI: not found"
+    case I.Ja{}:
+      "KiCad CLI：見つかりません"
+
+def T.settings.kicad.ipc.install(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Install it with the button above (Linux x86-64) or from github.com/i2cjak/Backplane_KiCad"
+    case I.Ja{}:
+      "上のボタン（Linux x86-64）か、github.com/i2cjak/Backplane_KiCadからインストールしてください"
+
+def T.settings.kicad.ipc.missing(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "KiCad IPC: needs Backplane KiCad"
+    case I.Ja{}:
+      "KiCad IPC：Backplane KiCadが必要です"
+
+def T.settings.kicad.ipc.on(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Agents may drive KiCad through the fork's api-server (NNG/protobuf)."
+    case I.Ja{}:
+      "エージェントがフォークのapi-server（NNG/protobuf）経由でKiCadを操作できます。"
 
 def T.settings.lang(l: I.Loc) -> String:
   match l:
@@ -94,6 +1697,356 @@ def T.settings.lang.on(l: I.Loc) -> String:
     case I.Ja{}:
       "オン"
 
+def T.settings.pair.none(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Shown once Backplane listens on your tailnet."
+    case I.Ja{}:
+      "Backplaneがtailnetで待ち受けを始めると表示されます。"
+
+def T.settings.pair.qr(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Scan with the Backplane app, or the phone's camera."
+    case I.Ja{}:
+      "Backplaneアプリか、スマートフォンのカメラで読み取ってください。"
+
+def T.settings.tailscale.label(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Tailscale: " ++ arg0
+    case I.Ja{}:
+      "Tailscale：" ++ arg0
+
+def T.settings.tailscale.looking(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Looking for Tailscale."
+    case I.Ja{}:
+      "Tailscaleを探しています。"
+
+def T.settings.tailscale.notconnected(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "not connected"
+    case I.Ja{}:
+      "未接続"
+
+def T.settings.tailscale.off.note(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Listening on " ++ arg0 ++ " only: started with --no-tailscale."
+    case I.Ja{}:
+      arg0 ++ "のみで待ち受け中です（--no-tailscaleで起動）。"
+
+def T.settings.tailscale.reachable.note(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Also on your tailnet: your own devices get in, others need the pairing token."
+    case I.Ja{}:
+      "tailnetでも利用できます。自分の端末はそのまま接続でき、それ以外はペアリングトークンが必要です。"
+
+def T.settings.tailscale.unavailable.note(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Listening on " ++ arg0 ++ " only. Sign in to Tailscale, then restart Backplane."
+    case I.Ja{}:
+      arg0 ++ "のみで待ち受け中です。Tailscaleにサインインしてから、Backplaneを再起動してください。"
+
+def T.settings.update.available(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "update " ++ arg0
+    case I.Ja{}:
+      "更新可能：" ++ arg0
+
+def T.settings.update.current(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Up to date, checked hourly."
+    case I.Ja{}:
+      "最新です。1時間ごとに確認します。"
+
+def T.settings.update.packaged(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Updated by its package."
+    case I.Ja{}:
+      "パッケージで更新されます。"
+
+def T.settings.update.waits(l: I.Loc, +arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "Update waits for " ++ arg0 ++ " " ++ I.I18n.sel(arg1, "one", "thread", "threads") ++ " to finish their work."
+    case I.Ja{}:
+      I.I18n.sel(arg1, "one", "スレッド" ++ arg0 ++ "件の作業が終わるまで、更新を待っています。", "スレッド" ++ arg0 ++ "件の作業が終わるまで、更新を待っています。")
+
+def T.sheet.delete(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Delete thread?"
+    case I.Ja{}:
+      "スレッドを削除しますか？"
+
+def T.sheet.remove(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Remove " ++ arg0 ++ "?"
+    case I.Ja{}:
+      "「" ++ arg0 ++ "」を一覧から削除しますか？"
+
+def T.sheet.remove.note(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Its threads are kept. Adding its folder again brings it back."
+    case I.Ja{}:
+      "スレッドは残ります。フォルダをもう一度追加すると元に戻ります。"
+
+def T.sheet.rename(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Rename thread"
+    case I.Ja{}:
+      "スレッド名を変更"
+
+def T.stamp.finished(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Finished " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "に完了"
+
+def T.stamp.finished.took(l: I.Loc, arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      "Finished " ++ arg0 ++ " · " ++ arg1
+    case I.Ja{}:
+      arg0 ++ "に完了 · " ++ arg1
+
+def T.state.cancelled(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "cancelled"
+    case I.Ja{}:
+      "キャンセル済み"
+
+def T.state.done(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "done"
+    case I.Ja{}:
+      "完了"
+
+def T.state.failed(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "failed"
+    case I.Ja{}:
+      "失敗"
+
+def T.state.held(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "held"
+    case I.Ja{}:
+      "保持中"
+
+def T.state.idle(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "idle"
+    case I.Ja{}:
+      "待機中"
+
+def T.state.needsyou(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "needs you"
+    case I.Ja{}:
+      "対応待ち"
+
+def T.state.reporting(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "reporting"
+    case I.Ja{}:
+      "報告中"
+
+def T.state.running(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "running"
+    case I.Ja{}:
+      "実行中"
+
+def T.state.starting(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "starting"
+    case I.Ja{}:
+      "起動中"
+
+def T.state.stopped(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "stopped"
+    case I.Ja{}:
+      "停止"
+
+def T.state.waiting(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "waiting"
+    case I.Ja{}:
+      "待機中"
+
+def T.state.waitingon(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "waiting on"
+    case I.Ja{}:
+      "待機中"
+
+def T.teach.choice.confirm(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Confirm"
+    case I.Ja{}:
+      "確認"
+
+def T.teach.choice.continue(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Continue"
+    case I.Ja{}:
+      "続ける"
+
+def T.teach.choice.skip(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Skip this step"
+    case I.Ja{}:
+      "このステップをスキップ"
+
+def T.teach.choice.stop(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Stop task"
+    case I.Ja{}:
+      "タスクを停止"
+
+def T.teach.discard(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Discard"
+    case I.Ja{}:
+      "破棄"
+
+def T.teach.handback(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Hand back"
+    case I.Ja{}:
+      "引き渡す"
+
+def T.teach.save(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Save this task"
+    case I.Ja{}:
+      "このタスクを保存"
+
+def T.teach.step.check(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Check " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "を確認"
+
+def T.teach.step.click(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Click " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "をクリック"
+
+def T.teach.step.navigate(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Go to " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "に移動"
+
+def T.teach.step.press(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Press " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "を押す"
+
+def T.teach.step.scroll(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Scroll " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "をスクロール"
+
+def T.teach.step.select(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Choose in " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "で選択"
+
+def T.teach.step.typein(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Type in " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "に入力"
+
+def T.teach.step.wait(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Wait for " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "を待つ"
+
+def T.teach.stopsave(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Stop & save"
+    case I.Ja{}:
+      "停止して保存"
+
+def T.teach.takeover(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Take over"
+    case I.Ja{}:
+      "引き継ぐ"
+
+def T.teach.teach(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Teach a task"
+    case I.Ja{}:
+      "タスクを教える"
+
+def T.teach.watching(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " is watching and learning"
+    case I.Ja{}:
+      arg0 ++ "が見て学習しています"
+
+def T.teach.youhave(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "You have the browser"
+    case I.Ja{}:
+      "ブラウザを操作中です"
+
 def T.thread.count(l: I.Loc, +arg0: Nat) -> String:
   match l:
     case I.En{}:
@@ -115,6 +2068,307 @@ def T.thread.new(l: I.Loc) -> String:
     case I.Ja{}:
       "新しいスレッド"
 
+def T.todos.all(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Show all " ++ arg0
+    case I.Ja{}:
+      "すべて表示（" ++ arg0 ++ "）"
+
+def T.todos.fewer(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Show fewer"
+    case I.Ja{}:
+      "表示を減らす"
+
+def T.tour.back(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Back"
+    case I.Ja{}:
+      "戻る"
+
+def T.tour.body.agents(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Backplane runs the Claude Code, Codex, Grok or Muse Code command-line program: install one and sign in to it on the machine that runs this hub. Settings shows whether each is found, not whether you are signed in. Google's Antigravity agent installs and signs in from Settings. Choose the provider and model in a thread's composer, or in Settings for new threads."
+    case I.Ja{}:
+      "Backplaneは、Claude Code、Codex、Grok、Muse Codeのコマンドラインプログラムを実行します。このハブを動かすマシンにいずれかをインストールし、サインインしてください。設定には各プログラムが見つかったかどうかが表示されますが、サインイン状態は表示されません。GoogleのAntigravityエージェントは設定からインストールとサインインができます。プロバイダーとモデルは、スレッドの入力欄で、新しいスレッド用には設定で選びます。"
+
+def T.tour.body.bots.desktop(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "A bot is an agent that stays between chats, with a name, a cat and a memory. Add one under Bots in the sidebar, then mention it in any message: @scout look at the BOM."
+    case I.Ja{}:
+      "ボットは、チャットをまたいで残るエージェントで、名前、猫、記憶を持ちます。サイドバーの「ボット」から追加し、メッセージで呼び出します：@scout BOMを見て"
+
+def T.tour.body.bots.phone(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "A bot is an agent that stays between chats, with a name, a cat and a memory. Add one under Bots in the list, then mention it in any message: @scout look at the BOM."
+    case I.Ja{}:
+      "ボットは、チャットをまたいで残るエージェントで、名前、猫、記憶を持ちます。一覧の「ボット」から追加し、メッセージで呼び出します：@scout BOMを見て"
+
+def T.tour.body.buttons.desktop(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Settle takes a thread out of the active list. Snooze hides it until later. Fork starts a new thread from this one. Viewer opens the board, schematic, 3D and files beside it. Pin, archive and delete are there too."
+    case I.Ja{}:
+      "「完了」はスレッドを進行中の一覧から外し、「スヌーズ」は後まで隠し、「フォーク」はこのスレッドから新しいスレッドを始めます。「ビューア」は基板、回路図、3D、ファイルを横に開きます。ピン留め、アーカイブ、削除もここにあります。"
+
+def T.tour.body.buttons.phone(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "In a thread's toolbar menu, Settle takes it out of the active list. Snooze hides it until later. Fork starts a new thread from it. The viewer shows the board, schematic, 3D and files. Pin, archive and delete are there too."
+    case I.Ja{}:
+      "スレッドのツールバーメニューで、「完了」は進行中の一覧から外し、「スヌーズ」は後まで隠し、「フォーク」はそこから新しいスレッドを始めます。ビューアには基板、回路図、3D、ファイルが表示されます。ピン留め、アーカイブ、削除もここにあります。"
+
+def T.tour.body.keys.desktop(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "API keys for other services are kept in a file on the hub's machine that agents running there could read. They are told not to print them; nothing enforces it. Dictation needs an OpenAI key, set under Voice in Settings."
+    case I.Ja{}:
+      "他のサービスのAPIキーは、ハブのマシン上のファイルに保管され、そこで動くエージェントなら読める可能性があります。出力しないよう指示してありますが、強制はされません。音声入力にはOpenAIキーが必要で、設定の「音声」で入力します。"
+
+def T.tour.body.keys.phone(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "API keys for other services are kept in a file on the hub's machine that agents running there could read. They are told not to print them; nothing enforces it. Dictation's OpenAI key is set in Settings on a computer or the web page."
+    case I.Ja{}:
+      "他のサービスのAPIキーは、ハブのマシン上のファイルに保管され、そこで動くエージェントなら読める可能性があります。出力しないよう指示してありますが、強制はされません。音声入力のOpenAIキーは、コンピューターまたはウェブページの設定で入力します。"
+
+def T.tour.body.machines.desktop(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Each home folder runs one hub. With Tailscale signed in when Backplane starts, the hub listens on your tailnet and every two minutes asks your other online machines whether Backplane runs there. Tailscale vouches that they are yours, so the hubs link by themselves and sync each other's projects and threads into this sidebar in the background: no switching. A project still loading is faded and says syncing; the rest work meanwhile. In a message, >desktop: names a thread on the machine called desktop. Settings, Your machines shows each one and turns sync off for any of them. Settings also says Tailscale: on, not connected (sign in, then restart Backplane) or off (started with --no-tailscale)."
+    case I.Ja{}:
+      "ホームフォルダごとに1つのハブが動きます。Backplaneの起動時にTailscaleにサインインしていれば、ハブはtailnetで待ち受け、2分おきにオンラインの他のマシンでBackplaneが動いているか確認します。Tailscaleが自分のマシンであることを保証するので、ハブは自動でリンクし、プロジェクトとスレッドを裏でこのサイドバーに同期します。切り替えは不要です。読み込み中のプロジェクトは薄く表示され、「同期中」と出ますが、残りはその間も使えます。メッセージで>desktop:と書くと、desktopというマシンのスレッドを指します。設定の「自分のマシン」には各マシンが表示され、マシンごとに同期をオフにできます。設定にはTailscaleの状態も表示されます：オン、未接続（サインインしてからBackplaneを再起動）、オフ（--no-tailscaleで起動）。"
+
+def T.tour.body.machines.phone(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Each home folder runs one hub. Hubs on your computers find each other over Tailscale and sync each other's projects and threads in the background, so any one of them shows them all. A project still loading is faded and says syncing. In a message, >desktop: names a thread on the machine called desktop. The Hubs button lists the hubs this phone is paired with; this phone needs Tailscale on the same tailnet."
+    case I.Ja{}:
+      "ホームフォルダごとに1つのハブが動きます。コンピューター上のハブはTailscale経由で互いを見つけ、プロジェクトとスレッドを裏で同期するので、どのハブからもすべて見えます。読み込み中のプロジェクトは薄く表示され、「同期中」と出ます。メッセージで>desktop:と書くと、desktopというマシンのスレッドを指します。「ハブ」ボタンには、このスマートフォンがペアリングしたハブが並びます。このスマートフォンも同じtailnetのTailscaleが必要です。"
+
+def T.tour.body.phones.desktop(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "To pair a phone, install Tailscale on it and join the same tailnet. Then open Settings, Pairing link, QR code and scan it with the Backplane app or the phone's camera. Settings shows the link when Backplane has one. A browser on a tailnet device can open this hub's web address too."
+    case I.Ja{}:
+      "スマートフォンをペアリングするには、Tailscaleをインストールして同じtailnetに参加します。次に設定の「ペアリングリンク」から「QRコード」を開き、Backplaneアプリかスマートフォンのカメラで読み取ります。リンクがあるときは設定に表示されます。tailnet上の端末のブラウザでも、このハブのウェブアドレスを開けます。"
+
+def T.tour.body.phones.phone(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "On the hub's computer open Settings, Pairing link, QR code. Here, Hubs, Scan QR code pairs it. This phone needs Tailscale on the same tailnet. A browser can open a hub's web address too."
+    case I.Ja{}:
+      "ハブのコンピューターで、設定の「ペアリングリンク」から「QRコード」を開きます。こちらでは「ハブ」の「QRコードをスキャン」でペアリングします。このスマートフォンも同じtailnetのTailscaleが必要です。ブラウザでもハブのウェブアドレスを開けます。"
+
+def T.tour.body.projects.desktop(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "A project is a folder, usually a KiCad project. Add one with + at the top of the sidebar. Scratch holds chats with no project. It is temporary: a thread left alone for " ++ arg0 ++ " days is deleted with its folder, unless pinned."
+    case I.Ja{}:
+      "プロジェクトはフォルダで、たいていはKiCadプロジェクトです。サイドバー上部の＋で追加します。スクラッチはプロジェクトなしのチャットを置く場所で、一時的なものです。" ++ arg0 ++ "日間放置したスレッドは、ピン留めされていない限りフォルダごと削除されます。"
+
+def T.tour.body.projects.phone(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "A project is a folder, usually a KiCad project. Add one with the folder-plus button on the project list. Scratch holds chats with no project. It is temporary: a thread left alone for " ++ arg0 ++ " days is deleted with its folder, unless pinned."
+    case I.Ja{}:
+      "プロジェクトはフォルダで、たいていはKiCadプロジェクトです。プロジェクト一覧のフォルダ追加ボタンで追加します。スクラッチはプロジェクトなしのチャットを置く場所で、一時的なものです。" ++ arg0 ++ "日間放置したスレッドは、ピン留めされていない限りフォルダごと削除されます。"
+
+def T.tour.body.threads(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "A thread is a conversation with an agent working on a project. Git projects use separate worktrees by default; without git, or in local mode, threads share the project folder. Runs of tool calls fold into one row, and delegated work shows under Subagents."
+    case I.Ja{}:
+      "スレッドは、プロジェクトで作業するエージェントとの会話です。Gitプロジェクトでは既定で別々のワークツリーを使い、Gitがない場合やローカルモードでは、スレッドはプロジェクトのフォルダを共有します。ツールの呼び出しは1行にまとめられ、委任した作業はサブエージェントの下に表示されます。"
+
+def T.tour.body.uber.have.desktop(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " is your uberbot. Click it at the top of the sidebar for the Status of everything."
+    case I.Ja{}:
+      arg0 ++ "が自分のメインボットです。サイドバーの先頭でクリックすると、すべてのステータスを確認できます。"
+
+def T.tour.body.uber.have.phone(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " is your uberbot. Click it at the top of the list for the Status of everything."
+    case I.Ja{}:
+      arg0 ++ "が自分のメインボットです。一覧の先頭でタップすると、すべてのステータスを確認できます。"
+
+def T.tour.body.uber.join(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Another of your machines has an uberbot, " ++ arg0 ++ "."
+    case I.Ja{}:
+      "別のマシンにメインボット「" ++ arg0 ++ "」があります。"
+
+def T.tour.body.uber.none(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Your uberbot is the cat you talk to first: it sees every project, thread, bot and machine, and its Status tab shows what runs and what waits on you. Create it now; you can rename it later."
+    case I.Ja{}:
+      "メインボットは最初に話しかける猫です。すべてのプロジェクト、スレッド、ボット、マシンを把握し、「ステータス」タブで実行中のものや対応待ちのものを確認できます。今作成しましょう。名前はあとから変更できます。"
+
+def T.tour.body.uber.pick(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Your uberbot is the cat you talk to first: it sees every project, thread, bot and machine, and its Status tab shows what runs and what waits on you. Make one of your bots the uberbot: " ++ arg0 ++ " is the one you use most. You can change it later."
+    case I.Ja{}:
+      "メインボットは最初に話しかける猫です。すべてのプロジェクト、スレッド、ボット、マシンを把握し、「ステータス」タブで実行中のものや対応待ちのものを確認できます。いずれかのボットをメインボットにしてください。" ++ arg0 ++ "が一番よく使われています。あとから変更できます。"
+
+def T.tour.body.welcome.phone(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "A short tour of what is where. Skip it any time; More, Settings shows it again."
+    case I.Ja{}:
+      "どこに何があるかの簡単なツアーです。いつでもスキップできます。「その他」の「設定」からもう一度表示できます。"
+
+def T.tour.body.welcome.web(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "A short tour of what is where. Enter goes on (on a focused button it presses that button), Esc skips it, and Settings shows it again."
+    case I.Ja{}:
+      "どこに何があるかの簡単なツアーです。Enterで次へ進み（ボタンにフォーカスがあるときはそのボタンを押します）、Escでスキップできます。設定からもう一度表示できます。"
+
+def T.tour.body.welcome.window(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "A short tour of what is where. Enter goes on, Esc skips it, and Settings shows it again."
+    case I.Ja{}:
+      "どこに何があるかの簡単なツアーです。Enterで次へ進み、Escでスキップできます。設定からもう一度表示できます。"
+
+def T.tour.counter(l: I.Loc, arg0: String, arg1: String) -> String:
+  match l:
+    case I.En{}:
+      arg0 ++ " of " ++ arg1
+    case I.Ja{}:
+      arg0 ++ "／" ++ arg1
+
+def T.tour.done(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Done"
+    case I.Ja{}:
+      "完了"
+
+def T.tour.next(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Next"
+    case I.Ja{}:
+      "次へ"
+
+def T.tour.skip(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Skip"
+    case I.Ja{}:
+      "スキップ"
+
+def T.tour.title.agents(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Your agents"
+    case I.Ja{}:
+      "エージェント"
+
+def T.tour.title.bots(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Bots"
+    case I.Ja{}:
+      "ボット"
+
+def T.tour.title.buttons(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "The thread's buttons"
+    case I.Ja{}:
+      "スレッドのボタン"
+
+def T.tour.title.keys(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Keys and voice"
+    case I.Ja{}:
+      "キーと音声"
+
+def T.tour.title.machines(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Other machines"
+    case I.Ja{}:
+      "他のマシン"
+
+def T.tour.title.phones(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Phones and browsers"
+    case I.Ja{}:
+      "スマートフォンとブラウザ"
+
+def T.tour.title.projects(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Projects"
+    case I.Ja{}:
+      "プロジェクト"
+
+def T.tour.title.threads(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Threads"
+    case I.Ja{}:
+      "スレッド"
+
+def T.tour.title.uber(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Your uberbot"
+    case I.Ja{}:
+      "メインボット"
+
+def T.tour.title.welcome(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Welcome to Backplane"
+    case I.Ja{}:
+      "Backplaneへようこそ"
+
+def T.tour.uber.create(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Create my uberbot"
+    case I.Ja{}:
+      "自分のメインボットを作成"
+
+def T.tour.uber.first(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Make " ++ arg0 ++ " my uberbot"
+    case I.Ja{}:
+      arg0 ++ "を自分のメインボットにする"
+
+def T.tour.uber.make(l: I.Loc, arg0: String) -> String:
+  match l:
+    case I.En{}:
+      "Make " ++ arg0
+    case I.Ja{}:
+      arg0 ++ "にする"
+
+def T.tour.uber.new(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Create a new one"
+    case I.Ja{}:
+      "新しく作成"
+
 def T.turn.by(l: I.Loc, +arg0: String) -> String:
   match l:
     case I.En{}:
@@ -122,8 +2376,43 @@ def T.turn.by(l: I.Loc, +arg0: String) -> String:
     case I.Ja{}:
       I.I18n.sel(arg0, "you", "自分", I.I18n.sel(arg0, "agent", "エージェント", "不明"))
 
+def T.tz.invalid(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "That is not a time zone name (like Europe/Helsinki)"
+    case I.Ja{}:
+      "タイムゾーン名ではありません（例：Europe/Helsinki）"
+
+def T.tz.source.machine(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "this machine"
+    case I.Ja{}:
+      "このマシン"
+
+def T.tz.source.none(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "nothing reported yet"
+    case I.Ja{}:
+      "まだ報告がありません"
+
+def T.tz.source.phone(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "from your phone"
+    case I.Ja{}:
+      "スマートフォンから"
+
+def T.tz.source.set(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "set"
+    case I.Ja{}:
+      "設定済み"
+
 def T.keys() -> List<&2, String>:
-  ["common.cancel", "common.delete", "common.save", "files.changed", "settings.agent.lang", "settings.agent.lang.note", "settings.lang", "settings.lang.auto", "settings.lang.en", "settings.lang.ja", "settings.lang.note", "settings.lang.off", "settings.lang.on", "thread.count", "thread.delete.ask", "thread.new", "turn.by"]
+  ["agy.account", "agy.account.add", "agy.account.other", "agy.account.signedin", "agy.account.signedout", "agy.download", "agy.gcp", "agy.gcp.location", "agy.gcp.none", "agy.gcp.project", "agy.gcp.set", "agy.gcp.unset", "agy.google.signin", "agy.install", "agy.installed", "agy.key.check", "agy.key.paste", "agy.key.save", "agy.key.saved", "agy.key.unsaved", "agy.method", "agy.old", "agy.reinstall", "agy.signin", "agy.signin.back", "agy.signin.failed", "agy.signin.next", "agy.signin.open", "agy.signout", "agy.unsupported", "agy.update", "apikeys.form", "apikeys.kept", "apikeys.none", "ask.allow", "ask.event.change", "ask.event.create", "ask.event.delete", "ask.input", "ask.plan", "ask.send.draft", "ask.send.email", "bots.mood.away", "bots.mood.error", "bots.mood.idle", "bots.mood.sleep", "bots.mood.talk", "bots.mood.think", "bots.mood.wait", "bots.mood.work", "bots.name", "bots.name.uber", "bots.tab.browser", "bots.tab.chat", "bots.tab.hooks", "bots.tab.memory", "bots.tab.routines", "bots.tab.settings", "bots.tab.space", "bots.tab.status", "bots.tab.tasks", "btw.none", "btw.thinking", "common.cancel", "common.delete", "common.remove", "common.save", "composer.ask", "composer.give", "composer.send", "composer.steer", "composer.stop", "files.changed", "fm.root", "fold.calls", "fold.more", "fold.steps", "fold.worked", "fold.working", "history.branchpoint", "history.comparing", "history.live", "history.live.note", "history.live.steps", "history.live.ticks", "history.notinrepo", "history.position", "history.position.first", "history.ref.base", "history.ref.branch", "history.ref.commit", "history.ref.head", "history.ref.start", "history.ref.tag", "history.ref.turn", "history.step", "history.turn", "history.workingcopy", "history.workingcopy.note", "machines.away", "machines.behind", "machines.lead", "machines.lead.none", "machines.linking", "machines.off", "machines.self", "machines.sync", "machines.title", "mech.again", "mech.create", "mech.nofreecad", "mech.rendering", "menu.archive", "menu.bringback", "menu.copylink", "menu.delete.confirm", "menu.file.copy", "menu.file.open", "menu.file.reveal", "menu.look", "menu.pin", "menu.project.remove", "menu.remove.confirm", "menu.rename", "menu.settle", "menu.snooze.hour", "menu.snooze.tomorrow", "menu.snooze.week", "menu.uber.demote", "menu.uber.promote", "menu.unarchive", "menu.unpin", "menu.wake", "nav.pr.norepo", "nav.task.none", "notify.all", "notify.all.note", "notify.lead", "notify.needs", "notify.needs.note", "notify.reminders", "notify.reminders.note", "notify.settled", "notify.settled.note", "notify.title", "palette.archive", "palette.attach", "palette.commit", "palette.delete", "palette.diff", "palette.findfile", "palette.kicad", "palette.newthread", "palette.pin", "palette.pr", "palette.revert", "palette.search", "palette.settings", "palette.settle", "palette.snooze.hour", "palette.snooze.tomorrow", "palette.snooze.week", "palette.terminal", "palette.unarchive", "palette.unsnooze", "palette.update", "palette.viewer", "picker.hint.find", "picker.hint.path", "plane.count.need", "plane.count.run", "plane.deploy.sub", "plane.deploy.title", "plane.home.line", "plane.home.make", "plane.lock.by", "plane.lock.outside", "plane.lock.row", "plane.machine.other", "proj.add", "proj.addcand", "proj.browse", "proj.create", "proj.createat", "proj.exists", "proj.goto", "proj.mkdir", "proj.on", "queue.context", "queue.edit", "queue.handoff", "queue.held", "queue.queued", "queue.remove", "queue.resume", "queue.up", "review.bom", "review.bom.change", "review.bom.working", "review.checks", "review.checks.of", "review.comments", "review.comments.none", "review.comments.open", "review.empty", "review.reading", "review.release", "review.release.note", "review.tag", "sched.daily", "sched.done", "sched.every.hour", "sched.every.hours", "sched.every.minute", "sched.every.minutes", "sched.help.time", "sched.hint.next", "sched.hint.once", "sched.hourly", "sched.hourly.at", "sched.kind.once", "sched.kind.reminder", "sched.kind.repeat", "sched.weekdays", "sched.zone.machine", "sched.zone.you", "settings.agent.lang", "settings.agent.lang.note", "settings.freecad.install", "settings.freecad.missing", "settings.kicad.cli.install", "settings.kicad.cli.missing", "settings.kicad.ipc.install", "settings.kicad.ipc.missing", "settings.kicad.ipc.on", "settings.lang", "settings.lang.auto", "settings.lang.en", "settings.lang.ja", "settings.lang.note", "settings.lang.off", "settings.lang.on", "settings.pair.none", "settings.pair.qr", "settings.tailscale.label", "settings.tailscale.looking", "settings.tailscale.notconnected", "settings.tailscale.off.note", "settings.tailscale.reachable.note", "settings.tailscale.unavailable.note", "settings.update.available", "settings.update.current", "settings.update.packaged", "settings.update.waits", "sheet.delete", "sheet.remove", "sheet.remove.note", "sheet.rename", "stamp.finished", "stamp.finished.took", "state.cancelled", "state.done", "state.failed", "state.held", "state.idle", "state.needsyou", "state.reporting", "state.running", "state.starting", "state.stopped", "state.waiting", "state.waitingon", "teach.choice.confirm", "teach.choice.continue", "teach.choice.skip", "teach.choice.stop", "teach.discard", "teach.handback", "teach.save", "teach.step.check", "teach.step.click", "teach.step.navigate", "teach.step.press", "teach.step.scroll", "teach.step.select", "teach.step.typein", "teach.step.wait", "teach.stopsave", "teach.takeover", "teach.teach", "teach.watching", "teach.youhave", "thread.count", "thread.delete.ask", "thread.new", "todos.all", "todos.fewer", "tour.back", "tour.body.agents", "tour.body.bots.desktop", "tour.body.bots.phone", "tour.body.buttons.desktop", "tour.body.buttons.phone", "tour.body.keys.desktop", "tour.body.keys.phone", "tour.body.machines.desktop", "tour.body.machines.phone", "tour.body.phones.desktop", "tour.body.phones.phone", "tour.body.projects.desktop", "tour.body.projects.phone", "tour.body.threads", "tour.body.uber.have.desktop", "tour.body.uber.have.phone", "tour.body.uber.join", "tour.body.uber.none", "tour.body.uber.pick", "tour.body.welcome.phone", "tour.body.welcome.web", "tour.body.welcome.window", "tour.counter", "tour.done", "tour.next", "tour.skip", "tour.title.agents", "tour.title.bots", "tour.title.buttons", "tour.title.keys", "tour.title.machines", "tour.title.phones", "tour.title.projects", "tour.title.threads", "tour.title.uber", "tour.title.welcome", "tour.uber.create", "tour.uber.first", "tour.uber.make", "tour.uber.new", "turn.by", "tz.invalid", "tz.source.machine", "tz.source.none", "tz.source.phone", "tz.source.set"]
 
 def T.missing(l: I.Loc) -> List<&2, String>:
   match l:
@@ -132,20 +2421,696 @@ def T.missing(l: I.Loc) -> List<&2, String>:
     case I.Ja{}:
       []
 
-def T.plain.nlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+def T.plain.nllllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.common.cancel(l)}
+      Some{T.agy.account(l)}
     case GT{}:
       None{}
 
-def T.plain.nlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlll.cmp(String.cmp(key, "common.cancel"), l)
+def T.plain.nllllllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllllllll.cmp(String.cmp(key, "agy.account"), l)
 
-def T.plain.nllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+def T.plain.nlllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllllllll(l, key)
+    case EQ{}:
+      Some{T.agy.account.add(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllllll.cmp(String.cmp(key, "agy.account.add"), l)
+
+def T.plain.nllllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.agy.gcp(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllllllr.cmp(String.cmp(key, "agy.gcp"), l)
+
+def T.plain.nllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlllllll(l, key)
+    case EQ{}:
+      Some{T.agy.account.other(l)}
+    case GT{}:
+      T.plain.nllllllr(l, key)
+
+def T.plain.nllllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllllll.cmp(String.cmp(key, "agy.account.other"), l)
+
+def T.plain.nlllllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.agy.gcp.none(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllllrl.cmp(String.cmp(key, "agy.gcp.none"), l)
+
+def T.plain.nlllllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.agy.gcp.unset(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllllrr.cmp(String.cmp(key, "agy.gcp.unset"), l)
+
+def T.plain.nlllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlllllrl(l, key)
+    case EQ{}:
+      Some{T.agy.gcp.project(l)}
+    case GT{}:
+      T.plain.nlllllrr(l, key)
+
+def T.plain.nlllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllllr.cmp(String.cmp(key, "agy.gcp.project"), l)
+
+def T.plain.nlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllllll(l, key)
+    case EQ{}:
+      Some{T.agy.gcp.location(l)}
+    case GT{}:
+      T.plain.nlllllr(l, key)
+
+def T.plain.nlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllll.cmp(String.cmp(key, "agy.gcp.location"), l)
+
+def T.plain.nllllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.agy.install(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllllrll.cmp(String.cmp(key, "agy.install"), l)
+
+def T.plain.nllllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.agy.key.paste(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllllrlr.cmp(String.cmp(key, "agy.key.paste"), l)
+
+def T.plain.nllllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllllrll(l, key)
+    case EQ{}:
+      Some{T.agy.key.check(l)}
+    case GT{}:
+      T.plain.nllllrlr(l, key)
+
+def T.plain.nllllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllllrl.cmp(String.cmp(key, "agy.key.check"), l)
+
+def T.plain.nllllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.agy.key.saved(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllllrrl.cmp(String.cmp(key, "agy.key.saved"), l)
+
+def T.plain.nllllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.agy.method(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllllrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllllrrr.cmp(String.cmp(key, "agy.method"), l)
+
+def T.plain.nllllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllllrrl(l, key)
+    case EQ{}:
+      Some{T.agy.key.unsaved(l)}
+    case GT{}:
+      T.plain.nllllrrr(l, key)
+
+def T.plain.nllllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllllrr.cmp(String.cmp(key, "agy.key.unsaved"), l)
+
+def T.plain.nllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllllrl(l, key)
+    case EQ{}:
+      Some{T.agy.key.save(l)}
+    case GT{}:
+      T.plain.nllllrr(l, key)
+
+def T.plain.nllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllllr.cmp(String.cmp(key, "agy.key.save"), l)
+
+def T.plain.nllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlllll(l, key)
+    case EQ{}:
+      Some{T.agy.google.signin(l)}
+    case GT{}:
+      T.plain.nllllr(l, key)
+
+def T.plain.nllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllll.cmp(String.cmp(key, "agy.google.signin"), l)
+
+def T.plain.nlllrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.agy.signin(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrllll.cmp(String.cmp(key, "agy.signin"), l)
+
+def T.plain.nlllrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlllrllll(l, key)
+    case EQ{}:
+      Some{T.agy.signin.back(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrlll.cmp(String.cmp(key, "agy.signin.back"), l)
+
+def T.plain.nlllrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.agy.signin.next(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrllr.cmp(String.cmp(key, "agy.signin.next"), l)
+
+def T.plain.nlllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlllrlll(l, key)
+    case EQ{}:
+      Some{T.agy.signin.failed(l)}
+    case GT{}:
+      T.plain.nlllrllr(l, key)
+
+def T.plain.nlllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrll.cmp(String.cmp(key, "agy.signin.failed"), l)
+
+def T.plain.nlllrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.agy.signout(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrlrl.cmp(String.cmp(key, "agy.signout"), l)
+
+def T.plain.nlllrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.apikeys.form(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrlrr.cmp(String.cmp(key, "apikeys.form"), l)
+
+def T.plain.nlllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlllrlrl(l, key)
+    case EQ{}:
+      Some{T.agy.unsupported(l)}
+    case GT{}:
+      T.plain.nlllrlrr(l, key)
+
+def T.plain.nlllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrlr.cmp(String.cmp(key, "agy.unsupported"), l)
+
+def T.plain.nlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlllrll(l, key)
+    case EQ{}:
+      Some{T.agy.signin.open(l)}
+    case GT{}:
+      T.plain.nlllrlr(l, key)
+
+def T.plain.nlllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrl.cmp(String.cmp(key, "agy.signin.open"), l)
+
+def T.plain.nlllrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.ask.event.change(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrrll.cmp(String.cmp(key, "ask.event.change"), l)
+
+def T.plain.nlllrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.ask.event.delete(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrrlr.cmp(String.cmp(key, "ask.event.delete"), l)
+
+def T.plain.nlllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlllrrll(l, key)
+    case EQ{}:
+      Some{T.ask.event.create(l)}
+    case GT{}:
+      T.plain.nlllrrlr(l, key)
+
+def T.plain.nlllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrrl.cmp(String.cmp(key, "ask.event.create"), l)
+
+def T.plain.nlllrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.ask.plan(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrrrl.cmp(String.cmp(key, "ask.plan"), l)
+
+def T.plain.nlllrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.ask.send.email(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlllrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrrrr.cmp(String.cmp(key, "ask.send.email"), l)
+
+def T.plain.nlllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlllrrrl(l, key)
+    case EQ{}:
+      Some{T.ask.send.draft(l)}
+    case GT{}:
+      T.plain.nlllrrrr(l, key)
+
+def T.plain.nlllrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrrr.cmp(String.cmp(key, "ask.send.draft"), l)
+
+def T.plain.nlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlllrrl(l, key)
+    case EQ{}:
+      Some{T.ask.input(l)}
+    case GT{}:
+      T.plain.nlllrrr(l, key)
+
+def T.plain.nlllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllrr.cmp(String.cmp(key, "ask.input"), l)
+
+def T.plain.nlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlllrl(l, key)
+    case EQ{}:
+      Some{T.apikeys.none(l)}
+    case GT{}:
+      T.plain.nlllrr(l, key)
+
+def T.plain.nlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlllr.cmp(String.cmp(key, "apikeys.none"), l)
+
+def T.plain.nlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllll(l, key)
+    case EQ{}:
+      Some{T.agy.reinstall(l)}
+    case GT{}:
+      T.plain.nlllr(l, key)
+
+def T.plain.nlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlll.cmp(String.cmp(key, "agy.reinstall"), l)
+
+def T.plain.nllrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.bots.mood.error(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrlllll.cmp(String.cmp(key, "bots.mood.error"), l)
+
+def T.plain.nllrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrlllll(l, key)
+    case EQ{}:
+      Some{T.bots.mood.idle(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrllll.cmp(String.cmp(key, "bots.mood.idle"), l)
+
+def T.plain.nllrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.bots.mood.talk(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrlllr.cmp(String.cmp(key, "bots.mood.talk"), l)
+
+def T.plain.nllrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrllll(l, key)
+    case EQ{}:
+      Some{T.bots.mood.sleep(l)}
+    case GT{}:
+      T.plain.nllrlllr(l, key)
+
+def T.plain.nllrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrlll.cmp(String.cmp(key, "bots.mood.sleep"), l)
+
+def T.plain.nllrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.bots.mood.wait(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrllrl.cmp(String.cmp(key, "bots.mood.wait"), l)
+
+def T.plain.nllrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.bots.name(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrllrr.cmp(String.cmp(key, "bots.name"), l)
+
+def T.plain.nllrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrllrl(l, key)
+    case EQ{}:
+      Some{T.bots.mood.work(l)}
+    case GT{}:
+      T.plain.nllrllrr(l, key)
+
+def T.plain.nllrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrllr.cmp(String.cmp(key, "bots.mood.work"), l)
+
+def T.plain.nllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrlll(l, key)
+    case EQ{}:
+      Some{T.bots.mood.think(l)}
+    case GT{}:
+      T.plain.nllrllr(l, key)
+
+def T.plain.nllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrll.cmp(String.cmp(key, "bots.mood.think"), l)
+
+def T.plain.nllrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.bots.tab.browser(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrlrll.cmp(String.cmp(key, "bots.tab.browser"), l)
+
+def T.plain.nllrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.bots.tab.hooks(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrlrlr.cmp(String.cmp(key, "bots.tab.hooks"), l)
+
+def T.plain.nllrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrlrll(l, key)
+    case EQ{}:
+      Some{T.bots.tab.chat(l)}
+    case GT{}:
+      T.plain.nllrlrlr(l, key)
+
+def T.plain.nllrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrlrl.cmp(String.cmp(key, "bots.tab.chat"), l)
+
+def T.plain.nllrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.bots.tab.routines(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrlrrl.cmp(String.cmp(key, "bots.tab.routines"), l)
+
+def T.plain.nllrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.bots.tab.space(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrlrrr.cmp(String.cmp(key, "bots.tab.space"), l)
+
+def T.plain.nllrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrlrrl(l, key)
+    case EQ{}:
+      Some{T.bots.tab.settings(l)}
+    case GT{}:
+      T.plain.nllrlrrr(l, key)
+
+def T.plain.nllrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrlrr.cmp(String.cmp(key, "bots.tab.settings"), l)
+
+def T.plain.nllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrlrl(l, key)
+    case EQ{}:
+      Some{T.bots.tab.memory(l)}
+    case GT{}:
+      T.plain.nllrlrr(l, key)
+
+def T.plain.nllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrlr.cmp(String.cmp(key, "bots.tab.memory"), l)
+
+def T.plain.nllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrll(l, key)
+    case EQ{}:
+      Some{T.bots.name.uber(l)}
+    case GT{}:
+      T.plain.nllrlr(l, key)
+
+def T.plain.nllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrl.cmp(String.cmp(key, "bots.name.uber"), l)
+
+def T.plain.nllrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.bots.tab.tasks(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrlll.cmp(String.cmp(key, "bots.tab.tasks"), l)
+
+def T.plain.nllrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.btw.thinking(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrllr.cmp(String.cmp(key, "btw.thinking"), l)
+
+def T.plain.nllrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrrlll(l, key)
+    case EQ{}:
+      Some{T.btw.none(l)}
+    case GT{}:
+      T.plain.nllrrllr(l, key)
+
+def T.plain.nllrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrll.cmp(String.cmp(key, "btw.none"), l)
+
+def T.plain.nllrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.common.delete(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrlrl.cmp(String.cmp(key, "common.delete"), l)
+
+def T.plain.nllrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
@@ -155,8 +3120,151 @@ def T.plain.nllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case GT{}:
       None{}
 
+def T.plain.nllrrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrlrr.cmp(String.cmp(key, "common.save"), l)
+
+def T.plain.nllrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrrlrl(l, key)
+    case EQ{}:
+      Some{T.common.remove(l)}
+    case GT{}:
+      T.plain.nllrrlrr(l, key)
+
+def T.plain.nllrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrlr.cmp(String.cmp(key, "common.remove"), l)
+
+def T.plain.nllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrrll(l, key)
+    case EQ{}:
+      Some{T.common.cancel(l)}
+    case GT{}:
+      T.plain.nllrrlr(l, key)
+
+def T.plain.nllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrl.cmp(String.cmp(key, "common.cancel"), l)
+
+def T.plain.nllrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.composer.give(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrrll.cmp(String.cmp(key, "composer.give"), l)
+
+def T.plain.nllrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.composer.steer(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrrlr.cmp(String.cmp(key, "composer.steer"), l)
+
+def T.plain.nllrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrrrll(l, key)
+    case EQ{}:
+      Some{T.composer.send(l)}
+    case GT{}:
+      T.plain.nllrrrlr(l, key)
+
+def T.plain.nllrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrrl.cmp(String.cmp(key, "composer.send"), l)
+
+def T.plain.nllrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.fm.root(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrrrl.cmp(String.cmp(key, "fm.root"), l)
+
+def T.plain.nllrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.history.comparing(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nllrrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrrrr.cmp(String.cmp(key, "history.comparing"), l)
+
+def T.plain.nllrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrrrrl(l, key)
+    case EQ{}:
+      Some{T.fold.more(l)}
+    case GT{}:
+      T.plain.nllrrrrr(l, key)
+
+def T.plain.nllrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrrr.cmp(String.cmp(key, "fold.more"), l)
+
+def T.plain.nllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrrrl(l, key)
+    case EQ{}:
+      Some{T.composer.stop(l)}
+    case GT{}:
+      T.plain.nllrrrr(l, key)
+
+def T.plain.nllrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrrr.cmp(String.cmp(key, "composer.stop"), l)
+
+def T.plain.nllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrrl(l, key)
+    case EQ{}:
+      Some{T.composer.ask(l)}
+    case GT{}:
+      T.plain.nllrrr(l, key)
+
+def T.plain.nllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nllrr.cmp(String.cmp(key, "composer.ask"), l)
+
+def T.plain.nllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nllrl(l, key)
+    case EQ{}:
+      Some{T.bots.tab.status(l)}
+    case GT{}:
+      T.plain.nllrr(l, key)
+
 def T.plain.nllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nllr.cmp(String.cmp(key, "common.save"), l)
+  T.plain.nllr.cmp(String.cmp(key, "bots.tab.status"), l)
 
 def T.plain.nll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -164,14 +3272,1418 @@ def T.plain.nll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case LT{}:
       T.plain.nlll(l, key)
     case EQ{}:
-      Some{T.common.delete(l)}
+      Some{T.bots.mood.away(l)}
     case GT{}:
       T.plain.nllr(l, key)
 
 def T.plain.nll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nll.cmp(String.cmp(key, "common.delete"), l)
+  T.plain.nll.cmp(String.cmp(key, "bots.mood.away"), l)
+
+def T.plain.nlrllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.history.live.note(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrllllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrllllll.cmp(String.cmp(key, "history.live.note"), l)
+
+def T.plain.nlrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrllllll(l, key)
+    case EQ{}:
+      Some{T.history.live.ticks(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlllll.cmp(String.cmp(key, "history.live.ticks"), l)
+
+def T.plain.nlrllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.history.ref.base(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrllllr.cmp(String.cmp(key, "history.ref.base"), l)
+
+def T.plain.nlrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrlllll(l, key)
+    case EQ{}:
+      Some{T.history.notinrepo(l)}
+    case GT{}:
+      T.plain.nlrllllr(l, key)
+
+def T.plain.nlrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrllll.cmp(String.cmp(key, "history.notinrepo"), l)
+
+def T.plain.nlrlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.history.ref.commit(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrlllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlllrl.cmp(String.cmp(key, "history.ref.commit"), l)
+
+def T.plain.nlrlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.history.ref.start(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrlllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlllrr.cmp(String.cmp(key, "history.ref.start"), l)
+
+def T.plain.nlrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrlllrl(l, key)
+    case EQ{}:
+      Some{T.history.ref.head(l)}
+    case GT{}:
+      T.plain.nlrlllrr(l, key)
+
+def T.plain.nlrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlllr.cmp(String.cmp(key, "history.ref.head"), l)
+
+def T.plain.nlrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrllll(l, key)
+    case EQ{}:
+      Some{T.history.ref.branch(l)}
+    case GT{}:
+      T.plain.nlrlllr(l, key)
+
+def T.plain.nlrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlll.cmp(String.cmp(key, "history.ref.branch"), l)
+
+def T.plain.nlrllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.history.ref.turn(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrllrll.cmp(String.cmp(key, "history.ref.turn"), l)
+
+def T.plain.nlrllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.history.workingcopy.note(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrllrlr.cmp(String.cmp(key, "history.workingcopy.note"), l)
+
+def T.plain.nlrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrllrll(l, key)
+    case EQ{}:
+      Some{T.history.workingcopy(l)}
+    case GT{}:
+      T.plain.nlrllrlr(l, key)
+
+def T.plain.nlrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrllrl.cmp(String.cmp(key, "history.workingcopy"), l)
+
+def T.plain.nlrllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.machines.lead(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrllrrl.cmp(String.cmp(key, "machines.lead"), l)
+
+def T.plain.nlrllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.machines.linking(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrllrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrllrrr.cmp(String.cmp(key, "machines.linking"), l)
+
+def T.plain.nlrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrllrrl(l, key)
+    case EQ{}:
+      Some{T.machines.lead.none(l)}
+    case GT{}:
+      T.plain.nlrllrrr(l, key)
+
+def T.plain.nlrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrllrr.cmp(String.cmp(key, "machines.lead.none"), l)
+
+def T.plain.nlrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrllrl(l, key)
+    case EQ{}:
+      Some{T.machines.away(l)}
+    case GT{}:
+      T.plain.nlrllrr(l, key)
+
+def T.plain.nlrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrllr.cmp(String.cmp(key, "machines.away"), l)
+
+def T.plain.nlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrlll(l, key)
+    case EQ{}:
+      Some{T.history.ref.tag(l)}
+    case GT{}:
+      T.plain.nlrllr(l, key)
+
+def T.plain.nlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrll.cmp(String.cmp(key, "history.ref.tag"), l)
+
+def T.plain.nlrlrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.machines.self(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrlrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrlll.cmp(String.cmp(key, "machines.self"), l)
+
+def T.plain.nlrlrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.machines.title(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrlrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrllr.cmp(String.cmp(key, "machines.title"), l)
+
+def T.plain.nlrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrlrlll(l, key)
+    case EQ{}:
+      Some{T.machines.sync(l)}
+    case GT{}:
+      T.plain.nlrlrllr(l, key)
+
+def T.plain.nlrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrll.cmp(String.cmp(key, "machines.sync"), l)
+
+def T.plain.nlrlrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.mech.create(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrlrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrlrl.cmp(String.cmp(key, "mech.create"), l)
+
+def T.plain.nlrlrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.mech.rendering(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrlrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrlrr.cmp(String.cmp(key, "mech.rendering"), l)
+
+def T.plain.nlrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrlrlrl(l, key)
+    case EQ{}:
+      Some{T.mech.nofreecad(l)}
+    case GT{}:
+      T.plain.nlrlrlrr(l, key)
+
+def T.plain.nlrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrlr.cmp(String.cmp(key, "mech.nofreecad"), l)
+
+def T.plain.nlrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrlrll(l, key)
+    case EQ{}:
+      Some{T.mech.again(l)}
+    case GT{}:
+      T.plain.nlrlrlr(l, key)
+
+def T.plain.nlrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrl.cmp(String.cmp(key, "mech.again"), l)
+
+def T.plain.nlrlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.menu.bringback(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrlrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrrll.cmp(String.cmp(key, "menu.bringback"), l)
+
+def T.plain.nlrlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.menu.delete.confirm(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrlrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrrlr.cmp(String.cmp(key, "menu.delete.confirm"), l)
+
+def T.plain.nlrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrlrrll(l, key)
+    case EQ{}:
+      Some{T.menu.copylink(l)}
+    case GT{}:
+      T.plain.nlrlrrlr(l, key)
+
+def T.plain.nlrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrrl.cmp(String.cmp(key, "menu.copylink"), l)
+
+def T.plain.nlrlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.menu.file.open(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrlrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrrrl.cmp(String.cmp(key, "menu.file.open"), l)
+
+def T.plain.nlrlrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.menu.look(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrlrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrrrr.cmp(String.cmp(key, "menu.look"), l)
+
+def T.plain.nlrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrlrrrl(l, key)
+    case EQ{}:
+      Some{T.menu.file.reveal(l)}
+    case GT{}:
+      T.plain.nlrlrrrr(l, key)
+
+def T.plain.nlrlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrrr.cmp(String.cmp(key, "menu.file.reveal"), l)
+
+def T.plain.nlrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrlrrl(l, key)
+    case EQ{}:
+      Some{T.menu.file.copy(l)}
+    case GT{}:
+      T.plain.nlrlrrr(l, key)
+
+def T.plain.nlrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlrr.cmp(String.cmp(key, "menu.file.copy"), l)
+
+def T.plain.nlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrlrl(l, key)
+    case EQ{}:
+      Some{T.menu.archive(l)}
+    case GT{}:
+      T.plain.nlrlrr(l, key)
+
+def T.plain.nlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrlr.cmp(String.cmp(key, "menu.archive"), l)
 
 def T.plain.nlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrll(l, key)
+    case EQ{}:
+      Some{T.machines.off(l)}
+    case GT{}:
+      T.plain.nlrlr(l, key)
+
+def T.plain.nlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrl.cmp(String.cmp(key, "machines.off"), l)
+
+def T.plain.nlrrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.menu.project.remove(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrlllll.cmp(String.cmp(key, "menu.project.remove"), l)
+
+def T.plain.nlrrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrlllll(l, key)
+    case EQ{}:
+      Some{T.menu.remove.confirm(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrllll.cmp(String.cmp(key, "menu.remove.confirm"), l)
+
+def T.plain.nlrrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.menu.settle(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrlllr.cmp(String.cmp(key, "menu.settle"), l)
+
+def T.plain.nlrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrllll(l, key)
+    case EQ{}:
+      Some{T.menu.rename(l)}
+    case GT{}:
+      T.plain.nlrrlllr(l, key)
+
+def T.plain.nlrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrlll.cmp(String.cmp(key, "menu.rename"), l)
+
+def T.plain.nlrrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.menu.snooze.tomorrow(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrllrl.cmp(String.cmp(key, "menu.snooze.tomorrow"), l)
+
+def T.plain.nlrrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.menu.uber.demote(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrllrr.cmp(String.cmp(key, "menu.uber.demote"), l)
+
+def T.plain.nlrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrllrl(l, key)
+    case EQ{}:
+      Some{T.menu.snooze.week(l)}
+    case GT{}:
+      T.plain.nlrrllrr(l, key)
+
+def T.plain.nlrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrllr.cmp(String.cmp(key, "menu.snooze.week"), l)
+
+def T.plain.nlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrlll(l, key)
+    case EQ{}:
+      Some{T.menu.snooze.hour(l)}
+    case GT{}:
+      T.plain.nlrrllr(l, key)
+
+def T.plain.nlrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrll.cmp(String.cmp(key, "menu.snooze.hour"), l)
+
+def T.plain.nlrrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.menu.unarchive(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrlrll.cmp(String.cmp(key, "menu.unarchive"), l)
+
+def T.plain.nlrrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.menu.wake(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrlrlr.cmp(String.cmp(key, "menu.wake"), l)
+
+def T.plain.nlrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrlrll(l, key)
+    case EQ{}:
+      Some{T.menu.unpin(l)}
+    case GT{}:
+      T.plain.nlrrlrlr(l, key)
+
+def T.plain.nlrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrlrl.cmp(String.cmp(key, "menu.unpin"), l)
+
+def T.plain.nlrrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.nav.task.none(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrlrrl.cmp(String.cmp(key, "nav.task.none"), l)
+
+def T.plain.nlrrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.notify.all.note(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrlrrr.cmp(String.cmp(key, "notify.all.note"), l)
+
+def T.plain.nlrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrlrrl(l, key)
+    case EQ{}:
+      Some{T.notify.all(l)}
+    case GT{}:
+      T.plain.nlrrlrrr(l, key)
+
+def T.plain.nlrrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrlrr.cmp(String.cmp(key, "notify.all"), l)
+
+def T.plain.nlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrlrl(l, key)
+    case EQ{}:
+      Some{T.nav.pr.norepo(l)}
+    case GT{}:
+      T.plain.nlrrlrr(l, key)
+
+def T.plain.nlrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrlr.cmp(String.cmp(key, "nav.pr.norepo"), l)
+
+def T.plain.nlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrll(l, key)
+    case EQ{}:
+      Some{T.menu.uber.promote(l)}
+    case GT{}:
+      T.plain.nlrrlr(l, key)
+
+def T.plain.nlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrl.cmp(String.cmp(key, "menu.uber.promote"), l)
+
+def T.plain.nlrrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.notify.needs(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrlll.cmp(String.cmp(key, "notify.needs"), l)
+
+def T.plain.nlrrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.notify.reminders(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrllr.cmp(String.cmp(key, "notify.reminders"), l)
+
+def T.plain.nlrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrrlll(l, key)
+    case EQ{}:
+      Some{T.notify.needs.note(l)}
+    case GT{}:
+      T.plain.nlrrrllr(l, key)
+
+def T.plain.nlrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrll.cmp(String.cmp(key, "notify.needs.note"), l)
+
+def T.plain.nlrrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.notify.settled(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrlrl.cmp(String.cmp(key, "notify.settled"), l)
+
+def T.plain.nlrrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.notify.title(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrlrr.cmp(String.cmp(key, "notify.title"), l)
+
+def T.plain.nlrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrrlrl(l, key)
+    case EQ{}:
+      Some{T.notify.settled.note(l)}
+    case GT{}:
+      T.plain.nlrrrlrr(l, key)
+
+def T.plain.nlrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrlr.cmp(String.cmp(key, "notify.settled.note"), l)
+
+def T.plain.nlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrrll(l, key)
+    case EQ{}:
+      Some{T.notify.reminders.note(l)}
+    case GT{}:
+      T.plain.nlrrrlr(l, key)
+
+def T.plain.nlrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrl.cmp(String.cmp(key, "notify.reminders.note"), l)
+
+def T.plain.nlrrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.palette.attach(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrrll.cmp(String.cmp(key, "palette.attach"), l)
+
+def T.plain.nlrrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.palette.delete(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrrlr.cmp(String.cmp(key, "palette.delete"), l)
+
+def T.plain.nlrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrrrll(l, key)
+    case EQ{}:
+      Some{T.palette.commit(l)}
+    case GT{}:
+      T.plain.nlrrrrlr(l, key)
+
+def T.plain.nlrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrrl.cmp(String.cmp(key, "palette.commit"), l)
+
+def T.plain.nlrrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.palette.findfile(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrrrl.cmp(String.cmp(key, "palette.findfile"), l)
+
+def T.plain.nlrrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.palette.newthread(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nlrrrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrrrr.cmp(String.cmp(key, "palette.newthread"), l)
+
+def T.plain.nlrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrrrrl(l, key)
+    case EQ{}:
+      Some{T.palette.kicad(l)}
+    case GT{}:
+      T.plain.nlrrrrrr(l, key)
+
+def T.plain.nlrrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrrr.cmp(String.cmp(key, "palette.kicad"), l)
+
+def T.plain.nlrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrrrl(l, key)
+    case EQ{}:
+      Some{T.palette.diff(l)}
+    case GT{}:
+      T.plain.nlrrrrr(l, key)
+
+def T.plain.nlrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrrr.cmp(String.cmp(key, "palette.diff"), l)
+
+def T.plain.nlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrrl(l, key)
+    case EQ{}:
+      Some{T.palette.archive(l)}
+    case GT{}:
+      T.plain.nlrrrr(l, key)
+
+def T.plain.nlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrrr.cmp(String.cmp(key, "palette.archive"), l)
+
+def T.plain.nlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrrl(l, key)
+    case EQ{}:
+      Some{T.notify.lead(l)}
+    case GT{}:
+      T.plain.nlrrr(l, key)
+
+def T.plain.nlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlrr.cmp(String.cmp(key, "notify.lead"), l)
+
+def T.plain.nlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nlrl(l, key)
+    case EQ{}:
+      Some{T.menu.pin(l)}
+    case GT{}:
+      T.plain.nlrr(l, key)
+
+def T.plain.nlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nlr.cmp(String.cmp(key, "menu.pin"), l)
+
+def T.plain.nl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nll(l, key)
+    case EQ{}:
+      Some{T.history.live(l)}
+    case GT{}:
+      T.plain.nlr(l, key)
+
+def T.plain.nl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nl.cmp(String.cmp(key, "history.live"), l)
+
+def T.plain.nrlllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.palette.pr(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlllllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlllllll.cmp(String.cmp(key, "palette.pr"), l)
+
+def T.plain.nrllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlllllll(l, key)
+    case EQ{}:
+      Some{T.palette.revert(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllllll.cmp(String.cmp(key, "palette.revert"), l)
+
+def T.plain.nrlllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.palette.settings(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlllllr.cmp(String.cmp(key, "palette.settings"), l)
+
+def T.plain.nrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrllllll(l, key)
+    case EQ{}:
+      Some{T.palette.search(l)}
+    case GT{}:
+      T.plain.nrlllllr(l, key)
+
+def T.plain.nrlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlllll.cmp(String.cmp(key, "palette.search"), l)
+
+def T.plain.nrllllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.palette.snooze.hour(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllllrl.cmp(String.cmp(key, "palette.snooze.hour"), l)
+
+def T.plain.nrllllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.palette.snooze.week(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllllrr.cmp(String.cmp(key, "palette.snooze.week"), l)
+
+def T.plain.nrllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrllllrl(l, key)
+    case EQ{}:
+      Some{T.palette.snooze.tomorrow(l)}
+    case GT{}:
+      T.plain.nrllllrr(l, key)
+
+def T.plain.nrllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllllr.cmp(String.cmp(key, "palette.snooze.tomorrow"), l)
+
+def T.plain.nrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlllll(l, key)
+    case EQ{}:
+      Some{T.palette.settle(l)}
+    case GT{}:
+      T.plain.nrllllr(l, key)
+
+def T.plain.nrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllll.cmp(String.cmp(key, "palette.settle"), l)
+
+def T.plain.nrlllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.palette.unarchive(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlllrll.cmp(String.cmp(key, "palette.unarchive"), l)
+
+def T.plain.nrlllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.palette.update(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlllrlr.cmp(String.cmp(key, "palette.update"), l)
+
+def T.plain.nrlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlllrll(l, key)
+    case EQ{}:
+      Some{T.palette.unsnooze(l)}
+    case GT{}:
+      T.plain.nrlllrlr(l, key)
+
+def T.plain.nrlllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlllrl.cmp(String.cmp(key, "palette.unsnooze"), l)
+
+def T.plain.nrlllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.picker.hint.find(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlllrrl.cmp(String.cmp(key, "picker.hint.find"), l)
+
+def T.plain.nrlllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.plane.deploy.title(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlllrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlllrrr.cmp(String.cmp(key, "plane.deploy.title"), l)
+
+def T.plain.nrlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlllrrl(l, key)
+    case EQ{}:
+      Some{T.picker.hint.path(l)}
+    case GT{}:
+      T.plain.nrlllrrr(l, key)
+
+def T.plain.nrlllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlllrr.cmp(String.cmp(key, "picker.hint.path"), l)
+
+def T.plain.nrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlllrl(l, key)
+    case EQ{}:
+      Some{T.palette.viewer(l)}
+    case GT{}:
+      T.plain.nrlllrr(l, key)
+
+def T.plain.nrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlllr.cmp(String.cmp(key, "palette.viewer"), l)
+
+def T.plain.nrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrllll(l, key)
+    case EQ{}:
+      Some{T.palette.terminal(l)}
+    case GT{}:
+      T.plain.nrlllr(l, key)
+
+def T.plain.nrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlll.cmp(String.cmp(key, "palette.terminal"), l)
+
+def T.plain.nrllrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.plane.machine.other(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrllll.cmp(String.cmp(key, "plane.machine.other"), l)
+
+def T.plain.nrllrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrllrllll(l, key)
+    case EQ{}:
+      Some{T.proj.browse(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrlll.cmp(String.cmp(key, "proj.browse"), l)
+
+def T.plain.nrllrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.queue.edit(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrllr.cmp(String.cmp(key, "queue.edit"), l)
+
+def T.plain.nrllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrllrlll(l, key)
+    case EQ{}:
+      Some{T.queue.context(l)}
+    case GT{}:
+      T.plain.nrllrllr(l, key)
+
+def T.plain.nrllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrll.cmp(String.cmp(key, "queue.context"), l)
+
+def T.plain.nrllrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.queue.queued(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrlrl.cmp(String.cmp(key, "queue.queued"), l)
+
+def T.plain.nrllrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.queue.resume(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrlrr.cmp(String.cmp(key, "queue.resume"), l)
+
+def T.plain.nrllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrllrlrl(l, key)
+    case EQ{}:
+      Some{T.queue.remove(l)}
+    case GT{}:
+      T.plain.nrllrlrr(l, key)
+
+def T.plain.nrllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrlr.cmp(String.cmp(key, "queue.remove"), l)
+
+def T.plain.nrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrllrll(l, key)
+    case EQ{}:
+      Some{T.queue.held(l)}
+    case GT{}:
+      T.plain.nrllrlr(l, key)
+
+def T.plain.nrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrl.cmp(String.cmp(key, "queue.held"), l)
+
+def T.plain.nrllrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.review.bom(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrrll.cmp(String.cmp(key, "review.bom"), l)
+
+def T.plain.nrllrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.review.checks(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrrlr.cmp(String.cmp(key, "review.checks"), l)
+
+def T.plain.nrllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrllrrll(l, key)
+    case EQ{}:
+      Some{T.review.bom.working(l)}
+    case GT{}:
+      T.plain.nrllrrlr(l, key)
+
+def T.plain.nrllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrrl.cmp(String.cmp(key, "review.bom.working"), l)
+
+def T.plain.nrllrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.review.comments.none(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrrrl.cmp(String.cmp(key, "review.comments.none"), l)
+
+def T.plain.nrllrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.review.reading(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrrrr.cmp(String.cmp(key, "review.reading"), l)
+
+def T.plain.nrllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrllrrrl(l, key)
+    case EQ{}:
+      Some{T.review.empty(l)}
+    case GT{}:
+      T.plain.nrllrrrr(l, key)
+
+def T.plain.nrllrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrrr.cmp(String.cmp(key, "review.empty"), l)
+
+def T.plain.nrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrllrrl(l, key)
+    case EQ{}:
+      Some{T.review.comments(l)}
+    case GT{}:
+      T.plain.nrllrrr(l, key)
+
+def T.plain.nrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrr.cmp(String.cmp(key, "review.comments"), l)
+
+def T.plain.nrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrllrl(l, key)
+    case EQ{}:
+      Some{T.queue.up(l)}
+    case GT{}:
+      T.plain.nrllrr(l, key)
+
+def T.plain.nrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllr.cmp(String.cmp(key, "queue.up"), l)
+
+def T.plain.nrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlll(l, key)
+    case EQ{}:
+      Some{T.plane.home.make(l)}
+    case GT{}:
+      T.plain.nrllr(l, key)
+
+def T.plain.nrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrll.cmp(String.cmp(key, "plane.home.make"), l)
+
+def T.plain.nrlrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.review.release.note(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrlllll.cmp(String.cmp(key, "review.release.note"), l)
+
+def T.plain.nrlrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrlllll(l, key)
+    case EQ{}:
+      Some{T.sched.every.hour(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrllll.cmp(String.cmp(key, "sched.every.hour"), l)
+
+def T.plain.nrlrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.sched.help.time(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrlllr.cmp(String.cmp(key, "sched.help.time"), l)
+
+def T.plain.nrlrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrllll(l, key)
+    case EQ{}:
+      Some{T.sched.every.minute(l)}
+    case GT{}:
+      T.plain.nrlrlllr(l, key)
+
+def T.plain.nrlrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrlll.cmp(String.cmp(key, "sched.every.minute"), l)
+
+def T.plain.nrlrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.sched.kind.once(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrllrl.cmp(String.cmp(key, "sched.kind.once"), l)
+
+def T.plain.nrlrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.sched.kind.repeat(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrllrr.cmp(String.cmp(key, "sched.kind.repeat"), l)
+
+def T.plain.nrlrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrllrl(l, key)
+    case EQ{}:
+      Some{T.sched.kind.reminder(l)}
+    case GT{}:
+      T.plain.nrlrllrr(l, key)
+
+def T.plain.nrlrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrllr.cmp(String.cmp(key, "sched.kind.reminder"), l)
+
+def T.plain.nrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrlll(l, key)
+    case EQ{}:
+      Some{T.sched.hourly(l)}
+    case GT{}:
+      T.plain.nrlrllr(l, key)
+
+def T.plain.nrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrll.cmp(String.cmp(key, "sched.hourly"), l)
+
+def T.plain.nrlrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.sched.zone.you(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrlrll.cmp(String.cmp(key, "sched.zone.you"), l)
+
+def T.plain.nrlrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
@@ -181,36 +4693,127 @@ def T.plain.nlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case GT{}:
       None{}
 
-def T.plain.nlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrl.cmp(String.cmp(key, "settings.agent.lang.note"), l)
+def T.plain.nrlrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrlrlr.cmp(String.cmp(key, "settings.agent.lang.note"), l)
 
-def T.plain.nlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+def T.plain.nrlrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
-      T.plain.nlrl(l, key)
+      T.plain.nrlrlrll(l, key)
+    case EQ{}:
+      Some{T.settings.agent.lang(l)}
+    case GT{}:
+      T.plain.nrlrlrlr(l, key)
+
+def T.plain.nrlrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrlrl.cmp(String.cmp(key, "settings.agent.lang"), l)
+
+def T.plain.nrlrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.settings.freecad.missing(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrlrrl.cmp(String.cmp(key, "settings.freecad.missing"), l)
+
+def T.plain.nrlrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.settings.kicad.cli.missing(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrlrrr.cmp(String.cmp(key, "settings.kicad.cli.missing"), l)
+
+def T.plain.nrlrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrlrrl(l, key)
+    case EQ{}:
+      Some{T.settings.kicad.cli.install(l)}
+    case GT{}:
+      T.plain.nrlrlrrr(l, key)
+
+def T.plain.nrlrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrlrr.cmp(String.cmp(key, "settings.kicad.cli.install"), l)
+
+def T.plain.nrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrlrl(l, key)
+    case EQ{}:
+      Some{T.settings.freecad.install(l)}
+    case GT{}:
+      T.plain.nrlrlrr(l, key)
+
+def T.plain.nrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrlr.cmp(String.cmp(key, "settings.freecad.install"), l)
+
+def T.plain.nrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrll(l, key)
+    case EQ{}:
+      Some{T.sched.zone.machine(l)}
+    case GT{}:
+      T.plain.nrlrlr(l, key)
+
+def T.plain.nrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrl.cmp(String.cmp(key, "sched.zone.machine"), l)
+
+def T.plain.nrlrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.settings.kicad.ipc.missing(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrlll.cmp(String.cmp(key, "settings.kicad.ipc.missing"), l)
+
+def T.plain.nrlrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
     case EQ{}:
       Some{T.settings.lang(l)}
     case GT{}:
       None{}
 
-def T.plain.nlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlr.cmp(String.cmp(key, "settings.lang"), l)
+def T.plain.nrlrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrllr.cmp(String.cmp(key, "settings.lang"), l)
 
-def T.plain.nl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+def T.plain.nrlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
-      T.plain.nll(l, key)
+      T.plain.nrlrrlll(l, key)
     case EQ{}:
-      Some{T.settings.agent.lang(l)}
+      Some{T.settings.kicad.ipc.on(l)}
     case GT{}:
-      T.plain.nlr(l, key)
+      T.plain.nrlrrllr(l, key)
 
-def T.plain.nl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nl.cmp(String.cmp(key, "settings.agent.lang"), l)
+def T.plain.nrlrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrll.cmp(String.cmp(key, "settings.kicad.ipc.on"), l)
 
-def T.plain.nrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+def T.plain.nrlrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
@@ -220,10 +4823,10 @@ def T.plain.nrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case GT{}:
       None{}
 
-def T.plain.nrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrll.cmp(String.cmp(key, "settings.lang.en"), l)
+def T.plain.nrlrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrlrl.cmp(String.cmp(key, "settings.lang.en"), l)
 
-def T.plain.nrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+def T.plain.nrlrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
@@ -233,23 +4836,36 @@ def T.plain.nrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case GT{}:
       None{}
 
-def T.plain.nrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlr.cmp(String.cmp(key, "settings.lang.note"), l)
+def T.plain.nrlrrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrlrr.cmp(String.cmp(key, "settings.lang.note"), l)
 
-def T.plain.nrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+def T.plain.nrlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
-      T.plain.nrll(l, key)
+      T.plain.nrlrrlrl(l, key)
     case EQ{}:
       Some{T.settings.lang.ja(l)}
     case GT{}:
-      T.plain.nrlr(l, key)
+      T.plain.nrlrrlrr(l, key)
 
-def T.plain.nrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrl.cmp(String.cmp(key, "settings.lang.ja"), l)
+def T.plain.nrlrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrlr.cmp(String.cmp(key, "settings.lang.ja"), l)
 
-def T.plain.nrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+def T.plain.nrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrrll(l, key)
+    case EQ{}:
+      Some{T.settings.lang.auto(l)}
+    case GT{}:
+      T.plain.nrlrrlr(l, key)
+
+def T.plain.nrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrl.cmp(String.cmp(key, "settings.lang.auto"), l)
+
+def T.plain.nrlrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
   match c:
     case LT{}:
@@ -259,8 +4875,957 @@ def T.plain.nrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case GT{}:
       None{}
 
+def T.plain.nrlrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrrll.cmp(String.cmp(key, "settings.lang.on"), l)
+
+def T.plain.nrlrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.settings.pair.qr(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrrlr.cmp(String.cmp(key, "settings.pair.qr"), l)
+
+def T.plain.nrlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrrrll(l, key)
+    case EQ{}:
+      Some{T.settings.pair.none(l)}
+    case GT{}:
+      T.plain.nrlrrrlr(l, key)
+
+def T.plain.nrlrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrrl.cmp(String.cmp(key, "settings.pair.none"), l)
+
+def T.plain.nrlrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.settings.tailscale.notconnected(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrrrl.cmp(String.cmp(key, "settings.tailscale.notconnected"), l)
+
+def T.plain.nrlrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.settings.update.current(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrlrrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrrrr.cmp(String.cmp(key, "settings.update.current"), l)
+
+def T.plain.nrlrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrrrrl(l, key)
+    case EQ{}:
+      Some{T.settings.tailscale.reachable.note(l)}
+    case GT{}:
+      T.plain.nrlrrrrr(l, key)
+
+def T.plain.nrlrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrrr.cmp(String.cmp(key, "settings.tailscale.reachable.note"), l)
+
+def T.plain.nrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrrrl(l, key)
+    case EQ{}:
+      Some{T.settings.tailscale.looking(l)}
+    case GT{}:
+      T.plain.nrlrrrr(l, key)
+
+def T.plain.nrlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrrr.cmp(String.cmp(key, "settings.tailscale.looking"), l)
+
+def T.plain.nrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrrl(l, key)
+    case EQ{}:
+      Some{T.settings.lang.off(l)}
+    case GT{}:
+      T.plain.nrlrrr(l, key)
+
+def T.plain.nrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlrr.cmp(String.cmp(key, "settings.lang.off"), l)
+
+def T.plain.nrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrlrl(l, key)
+    case EQ{}:
+      Some{T.settings.kicad.ipc.install(l)}
+    case GT{}:
+      T.plain.nrlrr(l, key)
+
+def T.plain.nrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrlr.cmp(String.cmp(key, "settings.kicad.ipc.install"), l)
+
+def T.plain.nrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrll(l, key)
+    case EQ{}:
+      Some{T.review.release(l)}
+    case GT{}:
+      T.plain.nrlr(l, key)
+
+def T.plain.nrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrl.cmp(String.cmp(key, "review.release"), l)
+
+def T.plain.nrrllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.sheet.delete(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrllllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrllllll.cmp(String.cmp(key, "sheet.delete"), l)
+
+def T.plain.nrrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrllllll(l, key)
+    case EQ{}:
+      Some{T.sheet.remove.note(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlllll.cmp(String.cmp(key, "sheet.remove.note"), l)
+
+def T.plain.nrrllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.state.cancelled(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrllllr.cmp(String.cmp(key, "state.cancelled"), l)
+
+def T.plain.nrrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrlllll(l, key)
+    case EQ{}:
+      Some{T.sheet.rename(l)}
+    case GT{}:
+      T.plain.nrrllllr(l, key)
+
+def T.plain.nrrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrllll.cmp(String.cmp(key, "sheet.rename"), l)
+
+def T.plain.nrrlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.state.failed(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrlllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlllrl.cmp(String.cmp(key, "state.failed"), l)
+
+def T.plain.nrrlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.state.idle(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrlllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlllrr.cmp(String.cmp(key, "state.idle"), l)
+
+def T.plain.nrrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrlllrl(l, key)
+    case EQ{}:
+      Some{T.state.held(l)}
+    case GT{}:
+      T.plain.nrrlllrr(l, key)
+
+def T.plain.nrrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlllr.cmp(String.cmp(key, "state.held"), l)
+
+def T.plain.nrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrllll(l, key)
+    case EQ{}:
+      Some{T.state.done(l)}
+    case GT{}:
+      T.plain.nrrlllr(l, key)
+
+def T.plain.nrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlll.cmp(String.cmp(key, "state.done"), l)
+
+def T.plain.nrrllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.state.reporting(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrllrll.cmp(String.cmp(key, "state.reporting"), l)
+
+def T.plain.nrrllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.state.starting(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrllrlr.cmp(String.cmp(key, "state.starting"), l)
+
+def T.plain.nrrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrllrll(l, key)
+    case EQ{}:
+      Some{T.state.running(l)}
+    case GT{}:
+      T.plain.nrrllrlr(l, key)
+
+def T.plain.nrrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrllrl.cmp(String.cmp(key, "state.running"), l)
+
+def T.plain.nrrllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.state.waiting(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrllrrl.cmp(String.cmp(key, "state.waiting"), l)
+
+def T.plain.nrrllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.teach.choice.confirm(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrllrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrllrrr.cmp(String.cmp(key, "teach.choice.confirm"), l)
+
+def T.plain.nrrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrllrrl(l, key)
+    case EQ{}:
+      Some{T.state.waitingon(l)}
+    case GT{}:
+      T.plain.nrrllrrr(l, key)
+
+def T.plain.nrrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrllrr.cmp(String.cmp(key, "state.waitingon"), l)
+
+def T.plain.nrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrllrl(l, key)
+    case EQ{}:
+      Some{T.state.stopped(l)}
+    case GT{}:
+      T.plain.nrrllrr(l, key)
+
+def T.plain.nrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrllr.cmp(String.cmp(key, "state.stopped"), l)
+
+def T.plain.nrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrlll(l, key)
+    case EQ{}:
+      Some{T.state.needsyou(l)}
+    case GT{}:
+      T.plain.nrrllr(l, key)
+
+def T.plain.nrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrll.cmp(String.cmp(key, "state.needsyou"), l)
+
+def T.plain.nrrlrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.teach.choice.skip(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrlrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrlll.cmp(String.cmp(key, "teach.choice.skip"), l)
+
+def T.plain.nrrlrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.teach.discard(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrlrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrllr.cmp(String.cmp(key, "teach.discard"), l)
+
+def T.plain.nrrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrlrlll(l, key)
+    case EQ{}:
+      Some{T.teach.choice.stop(l)}
+    case GT{}:
+      T.plain.nrrlrllr(l, key)
+
+def T.plain.nrrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrll.cmp(String.cmp(key, "teach.choice.stop"), l)
+
+def T.plain.nrrlrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.teach.save(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrlrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrlrl.cmp(String.cmp(key, "teach.save"), l)
+
+def T.plain.nrrlrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.teach.takeover(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrlrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrlrr.cmp(String.cmp(key, "teach.takeover"), l)
+
+def T.plain.nrrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrlrlrl(l, key)
+    case EQ{}:
+      Some{T.teach.stopsave(l)}
+    case GT{}:
+      T.plain.nrrlrlrr(l, key)
+
+def T.plain.nrrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrlr.cmp(String.cmp(key, "teach.stopsave"), l)
+
+def T.plain.nrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrlrll(l, key)
+    case EQ{}:
+      Some{T.teach.handback(l)}
+    case GT{}:
+      T.plain.nrrlrlr(l, key)
+
+def T.plain.nrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrl.cmp(String.cmp(key, "teach.handback"), l)
+
+def T.plain.nrrlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.teach.youhave(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrlrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrrll.cmp(String.cmp(key, "teach.youhave"), l)
+
+def T.plain.nrrlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.todos.fewer(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrlrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrrlr.cmp(String.cmp(key, "todos.fewer"), l)
+
+def T.plain.nrrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrlrrll(l, key)
+    case EQ{}:
+      Some{T.thread.new(l)}
+    case GT{}:
+      T.plain.nrrlrrlr(l, key)
+
+def T.plain.nrrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrrl.cmp(String.cmp(key, "thread.new"), l)
+
+def T.plain.nrrlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.body.agents(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrlrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrrrl.cmp(String.cmp(key, "tour.body.agents"), l)
+
+def T.plain.nrrlrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.body.bots.phone(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrlrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrrrr.cmp(String.cmp(key, "tour.body.bots.phone"), l)
+
+def T.plain.nrrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrlrrrl(l, key)
+    case EQ{}:
+      Some{T.tour.body.bots.desktop(l)}
+    case GT{}:
+      T.plain.nrrlrrrr(l, key)
+
+def T.plain.nrrlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrrr.cmp(String.cmp(key, "tour.body.bots.desktop"), l)
+
+def T.plain.nrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrlrrl(l, key)
+    case EQ{}:
+      Some{T.tour.back(l)}
+    case GT{}:
+      T.plain.nrrlrrr(l, key)
+
+def T.plain.nrrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlrr.cmp(String.cmp(key, "tour.back"), l)
+
+def T.plain.nrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrlrl(l, key)
+    case EQ{}:
+      Some{T.teach.teach(l)}
+    case GT{}:
+      T.plain.nrrlrr(l, key)
+
+def T.plain.nrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrlr.cmp(String.cmp(key, "teach.teach"), l)
+
+def T.plain.nrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrll(l, key)
+    case EQ{}:
+      Some{T.teach.choice.continue(l)}
+    case GT{}:
+      T.plain.nrrlr(l, key)
+
 def T.plain.nrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrrl.cmp(String.cmp(key, "settings.lang.on"), l)
+  T.plain.nrrl.cmp(String.cmp(key, "teach.choice.continue"), l)
+
+def T.plain.nrrrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.body.buttons.phone(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrlllll.cmp(String.cmp(key, "tour.body.buttons.phone"), l)
+
+def T.plain.nrrrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrlllll(l, key)
+    case EQ{}:
+      Some{T.tour.body.keys.desktop(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrllll.cmp(String.cmp(key, "tour.body.keys.desktop"), l)
+
+def T.plain.nrrrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.body.machines.desktop(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrlllr.cmp(String.cmp(key, "tour.body.machines.desktop"), l)
+
+def T.plain.nrrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrllll(l, key)
+    case EQ{}:
+      Some{T.tour.body.keys.phone(l)}
+    case GT{}:
+      T.plain.nrrrlllr(l, key)
+
+def T.plain.nrrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrlll.cmp(String.cmp(key, "tour.body.keys.phone"), l)
+
+def T.plain.nrrrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.body.phones.desktop(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrllrl.cmp(String.cmp(key, "tour.body.phones.desktop"), l)
+
+def T.plain.nrrrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.body.threads(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrllrr.cmp(String.cmp(key, "tour.body.threads"), l)
+
+def T.plain.nrrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrllrl(l, key)
+    case EQ{}:
+      Some{T.tour.body.phones.phone(l)}
+    case GT{}:
+      T.plain.nrrrllrr(l, key)
+
+def T.plain.nrrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrllr.cmp(String.cmp(key, "tour.body.phones.phone"), l)
+
+def T.plain.nrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrlll(l, key)
+    case EQ{}:
+      Some{T.tour.body.machines.phone(l)}
+    case GT{}:
+      T.plain.nrrrllr(l, key)
+
+def T.plain.nrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrll.cmp(String.cmp(key, "tour.body.machines.phone"), l)
+
+def T.plain.nrrrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.body.welcome.phone(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrlrll.cmp(String.cmp(key, "tour.body.welcome.phone"), l)
+
+def T.plain.nrrrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.body.welcome.window(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrlrlr.cmp(String.cmp(key, "tour.body.welcome.window"), l)
+
+def T.plain.nrrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrlrll(l, key)
+    case EQ{}:
+      Some{T.tour.body.welcome.web(l)}
+    case GT{}:
+      T.plain.nrrrlrlr(l, key)
+
+def T.plain.nrrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrlrl.cmp(String.cmp(key, "tour.body.welcome.web"), l)
+
+def T.plain.nrrrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.next(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrlrrl.cmp(String.cmp(key, "tour.next"), l)
+
+def T.plain.nrrrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.title.agents(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrlrrr.cmp(String.cmp(key, "tour.title.agents"), l)
+
+def T.plain.nrrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrlrrl(l, key)
+    case EQ{}:
+      Some{T.tour.skip(l)}
+    case GT{}:
+      T.plain.nrrrlrrr(l, key)
+
+def T.plain.nrrrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrlrr.cmp(String.cmp(key, "tour.skip"), l)
+
+def T.plain.nrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrlrl(l, key)
+    case EQ{}:
+      Some{T.tour.done(l)}
+    case GT{}:
+      T.plain.nrrrlrr(l, key)
+
+def T.plain.nrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrlr.cmp(String.cmp(key, "tour.done"), l)
+
+def T.plain.nrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrll(l, key)
+    case EQ{}:
+      Some{T.tour.body.uber.none(l)}
+    case GT{}:
+      T.plain.nrrrlr(l, key)
+
+def T.plain.nrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrl.cmp(String.cmp(key, "tour.body.uber.none"), l)
+
+def T.plain.nrrrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.title.buttons(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrlll.cmp(String.cmp(key, "tour.title.buttons"), l)
+
+def T.plain.nrrrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.title.machines(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrllr.cmp(String.cmp(key, "tour.title.machines"), l)
+
+def T.plain.nrrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrrlll(l, key)
+    case EQ{}:
+      Some{T.tour.title.keys(l)}
+    case GT{}:
+      T.plain.nrrrrllr(l, key)
+
+def T.plain.nrrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrll.cmp(String.cmp(key, "tour.title.keys"), l)
+
+def T.plain.nrrrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.title.projects(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrlrl.cmp(String.cmp(key, "tour.title.projects"), l)
+
+def T.plain.nrrrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.title.uber(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrlrr.cmp(String.cmp(key, "tour.title.uber"), l)
+
+def T.plain.nrrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrrlrl(l, key)
+    case EQ{}:
+      Some{T.tour.title.threads(l)}
+    case GT{}:
+      T.plain.nrrrrlrr(l, key)
+
+def T.plain.nrrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrlr.cmp(String.cmp(key, "tour.title.threads"), l)
+
+def T.plain.nrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrrll(l, key)
+    case EQ{}:
+      Some{T.tour.title.phones(l)}
+    case GT{}:
+      T.plain.nrrrrlr(l, key)
+
+def T.plain.nrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrl.cmp(String.cmp(key, "tour.title.phones"), l)
+
+def T.plain.nrrrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tour.uber.create(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrrll.cmp(String.cmp(key, "tour.uber.create"), l)
+
+def T.plain.nrrrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tz.invalid(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrrlr.cmp(String.cmp(key, "tz.invalid"), l)
+
+def T.plain.nrrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrrrll(l, key)
+    case EQ{}:
+      Some{T.tour.uber.new(l)}
+    case GT{}:
+      T.plain.nrrrrrlr(l, key)
+
+def T.plain.nrrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrrl.cmp(String.cmp(key, "tour.uber.new"), l)
+
+def T.plain.nrrrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tz.source.none(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrrrl.cmp(String.cmp(key, "tz.source.none"), l)
+
+def T.plain.nrrrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.tz.source.set(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrrrrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrrrr.cmp(String.cmp(key, "tz.source.set"), l)
+
+def T.plain.nrrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrrrrl(l, key)
+    case EQ{}:
+      Some{T.tz.source.phone(l)}
+    case GT{}:
+      T.plain.nrrrrrrr(l, key)
+
+def T.plain.nrrrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrrr.cmp(String.cmp(key, "tz.source.phone"), l)
+
+def T.plain.nrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrrrl(l, key)
+    case EQ{}:
+      Some{T.tz.source.machine(l)}
+    case GT{}:
+      T.plain.nrrrrrr(l, key)
+
+def T.plain.nrrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrrr.cmp(String.cmp(key, "tz.source.machine"), l)
+
+def T.plain.nrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrrl(l, key)
+    case EQ{}:
+      Some{T.tour.title.welcome(l)}
+    case GT{}:
+      T.plain.nrrrrr(l, key)
+
+def T.plain.nrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrrr.cmp(String.cmp(key, "tour.title.welcome"), l)
+
+def T.plain.nrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      T.plain.nrrrl(l, key)
+    case EQ{}:
+      Some{T.tour.title.bots(l)}
+    case GT{}:
+      T.plain.nrrrr(l, key)
+
+def T.plain.nrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrrr.cmp(String.cmp(key, "tour.title.bots"), l)
 
 def T.plain.nrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -268,12 +5833,12 @@ def T.plain.nrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case LT{}:
       T.plain.nrrl(l, key)
     case EQ{}:
-      Some{T.thread.new(l)}
+      Some{T.tour.body.buttons.desktop(l)}
     case GT{}:
-      None{}
+      T.plain.nrrr(l, key)
 
 def T.plain.nrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrr.cmp(String.cmp(key, "thread.new"), l)
+  T.plain.nrr.cmp(String.cmp(key, "tour.body.buttons.desktop"), l)
 
 def T.plain.nr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -281,12 +5846,12 @@ def T.plain.nr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case LT{}:
       T.plain.nrl(l, key)
     case EQ{}:
-      Some{T.settings.lang.off(l)}
+      Some{T.settings.update.packaged(l)}
     case GT{}:
       T.plain.nrr(l, key)
 
 def T.plain.nr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nr.cmp(String.cmp(key, "settings.lang.off"), l)
+  T.plain.nr.cmp(String.cmp(key, "settings.update.packaged"), l)
 
 def T.plain.n.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -294,12 +5859,12 @@ def T.plain.n.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case LT{}:
       T.plain.nl(l, key)
     case EQ{}:
-      Some{T.settings.lang.auto(l)}
+      Some{T.palette.pin(l)}
     case GT{}:
       T.plain.nr(l, key)
 
 def T.plain.n(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.n.cmp(String.cmp(key, "settings.lang.auto"), l)
+  T.plain.n.cmp(String.cmp(key, "palette.pin"), l)
 
 def T.plain(l: I.Loc, key: String) -> Maybe<&2, String>:
   T.plain.n(l, key)
