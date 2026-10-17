@@ -23,7 +23,7 @@ The agents' instructions are in `src/core/order.bend` (`Order.prompt.project`, `
 - **Request:** clients ask `fab.look {thread}` when a thread is chosen and whenever its turn ends (`Fab.sync` in client.bend). A thread opened while its agent works is asked once too, so its card shows at once.
 - **The hub's job `fab`** (server/orderio.bend's `Od.look`):
   1. reads the intent and the fab files in the thread's folder;
-  2. with the `order.estimates` setting on, asks the order server's `POST /v1/estimate` for the bare parts' price. Only kinds, options and features are sent; never files.
+  2. with Ordering and Price estimates on (`order.enabled`, `order.estimates`; hub.bend's `Buy.est`), asks the order server's `POST /v1/estimate` for the bare parts' price. Only kinds, options and features are sent; never files.
 - **The answer** is kept as info keys `fab.line:`, `fab.intent:`, `fab.buy:`, `fab.ready:`, `fab.shown:` and `fab.open:` (plus the thread).
 - **Boards:** the answer lists every KiCad board in the project (`board_files`, outside `extra/` and `mfg/`). With more than one, the viewer's Board, Schematic and 3D tabs offer each by its folder's name (client.bend's `Bd.*`, laws `bd_*`): chips on the web (`View.boards`) and in the window (`Side.boards`), the Sheet menu on phones (`View.board.list`, values `b:<path>`, so no new app). A pick shows that board, or the schematic beside it.
 - **Two places:**
@@ -49,7 +49,7 @@ The agents' instructions are in `src/core/order.bend` (`Order.prompt.project`, `
   - The review runs in a thread of its own (`thread_launch`, reports on), so the buy thread wakes and goes on when it ends.
   - Issues from a review stop the export until they are fixed (a design thread the agent offers) or the person says to order anyway.
 - **Manufacturing reviews** (`Order.prompt.review`, in every agent's project instructions): what makes a fab refuse a design or charge more, not the circuit. The findings go to `.backplane/review.md`; the verdict (ok or issues) and a line go to `order_review {action: "record"}`.
-  - `order_review` is every thread's tool (`Bots.order.tools`). The hub (orderio.bend's `Od.review`) hashes the design: the names and contents of every board, schematic, STEP, DXF and fab file outside `mfg/`, `extra/` and `.backplane/` (`Od.print`).
+  - With Ordering on, `order_review` is every thread's tool (`Bots.order.tools`). The hub (orderio.bend's `Od.review`) hashes the design: the names and contents of every board, schematic, STEP, DXF and fab file outside `mfg/`, `extra/` and `.backplane/` (`Od.print`).
   - `record` keeps the hash with the verdict in `.backplane/review.json`; `check` answers none, stale (the design changed since) or current (`Order.review.state`, laws `order_review_*`).
 - **`order_quote {dir}`** (server.bend's `Od.quote`):
   1. reads the manifest;
