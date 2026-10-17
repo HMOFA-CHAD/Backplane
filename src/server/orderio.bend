@@ -121,7 +121,7 @@ def Od.pcb(+cwd: String, f: K.Files) -> String:
 # KiCad boards in the project (paths from its folder, in name order): the
 # picker's, and the count a card with no fab files yet goes by
 def Od.boards() -> String:
-  "find . -maxdepth 4 -name '*.kicad_pcb' -not -path '*/.*' -not -path './extra/*' -not -path './mfg/*' -not -path '*backup*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort | head -n 20 | sed 's|^\\./||'"
+  "find . -maxdepth 4 -name '*.kicad_pcb' -not -name '_autosave-*' -not -path '*/.*' -not -path './extra/*' -not -path './mfg/*' -not -path '*backup*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort | head -n 20 | sed 's|^\\./||'"
 
 # with no fab files but a board, the server is only asked whether it is there
 def Od.health.k(ask: Bool, +home: String, +server: String) -> IO(J.Json):
@@ -197,7 +197,7 @@ def Od.order.sh(+ids: String) -> String:
 # schematic, model and fab file outside mfg/, extra/ and .backplane/,
 # hashed in name order (sha256sum, or shasum on a Mac)
 def Od.print.sh() -> String:
-  "find . \\( -path ./mfg -o -path ./extra -o -path ./.git -o -path ./.backplane -o -name node_modules -o -name '*backup*' \\) -prune -o -type f \\( -name '*.kicad_pcb' -o -name '*.kicad_sch' -o -name '*.step' -o -name '*.stp' -o -name '*.dxf' -o -name '*.fab.json' \\) -print 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do printf '%s\\n' \"$f\"; cat \"$f\"; done | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-32"
+  "find . \\( -path ./mfg -o -path ./extra -o -path ./.git -o -path ./.backplane -o -name node_modules -o -name '*backup*' \\) -prune -o -type f -not -name '_autosave-*' \\( -name '*.kicad_pcb' -o -name '*.kicad_sch' -o -name '*.step' -o -name '*.stp' -o -name '*.dxf' -o -name '*.fab.json' \\) -print 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do printf '%s\\n' \"$f\"; cat \"$f\"; done | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-32"
 
 def Od.print(+cwd: String) -> IO(String):
   IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Od.print.sh()], cwd), r => IO.pure(String, String.trim(Od.ran(r))))
