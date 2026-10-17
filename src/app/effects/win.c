@@ -35,6 +35,8 @@
 #include <X11/keysym.h>
 
 #define WIN_FNS(X) \
+  X(XGetInputFocus, int, (Display*, Window*, int*)) \
+  X(XSetInputFocus, int, (Display*, Window, int, Time)) \
   X(XOpenDisplay, Display*, (const char*)) \
   X(XCloseDisplay, int, (Display*)) \
   X(XCreateSimpleWindow, Window, (Display*, Window, int, int, unsigned, unsigned, unsigned, unsigned long, unsigned long)) \
@@ -917,6 +919,11 @@ static void win_pump(AppWin* a) {
       }
       case ButtonPress:
       case ButtonRelease: {
+        if (ev.type == ButtonPress) {
+          Window focus; int revert;
+          x_XGetInputFocus(a->dpy, &focus, &revert);
+          if (focus != a->win) x_XSetInputFocus(a->dpy, a->win, RevertToParent, CurrentTime);
+        }
         u32 b = ev.xbutton.button;
         u32 x = ev.xbutton.x < 0 ? 0 : (u32)ev.xbutton.x;
         u32 y = ev.xbutton.y < 0 ? 0 : (u32)ev.xbutton.y;
@@ -1802,4 +1809,18 @@ static void __attribute__((constructor)) win_open_use(void) {
 }
 #endif
 
+#endif
+
+#ifdef CID(Win.xid)
+Term win_xid_run(Env e, Term* f, IoWork* w) {
+#if defined(__linux__)
+  AppWin* a = (AppWin*)io_hand_v(f[0]);
+  return io_tup(e, f[0], (Term)(u32)a->win);
+#else
+  return io_tup(e, f[0], (Term)0);
+#endif
+}
+static void __attribute__((constructor)) win_xid_use(void) {
+  io_eff(CID(Win.xid), win_xid_run);
+}
 #endif
