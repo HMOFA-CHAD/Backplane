@@ -11513,3 +11513,15 @@ def Laws.charter_gate_allows_listed(text, tool, input, listed):
   or_true_r(Bool.not(CH.Charter.risky(tool, input)))
 
 def Laws.charter_risky_fixed(): {==}
+# ---- i18n window ----
+def Laws.window_notice_english():
+  {==}
+def Laws.window_notice_words_kept():
+  {==}
+def Laws.window_tools_english(h, sa, sv, ta, tv):
+  {==}
+def Laws.window_picker_default():
+  {==}
+def Laws.window_provider_missing():
+  {==}
+# ---- end i18n window ----
