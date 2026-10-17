@@ -14,7 +14,7 @@ and orders it through a buy thread.
   - fields: `kind` (`pcb`, `3dp`, `cnc` or `sheetmetal`), `name`, `source`, `qty`, `options`, measured `features`;
   - `"order": false` leaves a part out;
   - files under `extra/` and `mfg/` are never read.
-- `mfg/<YYYYMMDD-HHMM>/`: what a buy thread exported, with its `manifest.json`.
+- `mfg/<YYYYMMDD-HHMM>/`: what a buy thread exported, with its `manifest.json`. It is exported from the saved files, as the review's fingerprint is taken: an edit made through `kicad_ipc` (docs/kicad-ipc.md) counts once saved with SaveDocument.
 
 The agents' instructions are in `src/core/order.bend` (`Order.prompt.project`, `Order.prompt.buy`).
 
