@@ -20,6 +20,8 @@ import ../core/mcp.bend as MC
 import ./update.bend as UP
 import ../core/version.bend as VR
 import ./kicad.bend as K
+import ./kexport.bend as KEX
+import ../core/kexport.bend as KXP
 import ./browser.bend as BR
 import ../core/acp.bend as AC
 import ../core/msp.bend as MS
@@ -2372,6 +2374,35 @@ def KiCadJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +cwd: String, +ho
 def KiCadJob.route(kicad: Bool, +inbox: Chan(Msg), client: U32, id: String, thread: String, cwd: String, +rt: K.Rt, other: IO(Unit)) -> IO(Unit):
   match kicad:
     case True{}: IO.spawn(Unit, KiCadJob.selected(String.eq(K.Rt.status(rt), "ok"), inbox, client, id, thread, cwd, rt))
+    case False{}: other
+
+# Export jobs use the hub's cached health and run outside the event loop.
+def KExportJob.activity(done: Bool, +inbox: Chan(Msg), +thread: String, request: String, +result: J.Json) -> IO(Unit):
+  match done:
+    case False{}: IO.pure(Unit, Unit{})
+    case True{}:
+      do IO<Unit>:
+        +now : Nat <- Now.nat()
+        sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Commit{[M.ActivityLogged{thread, "export10:" ++ request ++ ":" ++ Nat.show(now), "info", "kicad.export10", J.Json.get_str(result, "text", ""), now}]})
+        return Unit{}
+
+def KExportJob.pro(fs: K.Files) -> String:
+  match fs:
+    case K.Files{pro, _, _, _}: pro
+
+def KExportJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, cwd: String, +home: String, rt: K.Rt, +a: String) -> IO(Unit):
+  do IO<Unit>:
+    fs : K.Files <- K.Files.read(cwd)
+    +pro : String = KExportJob.pro(fs)
+    +args : J.Json = Maybe.default(&2, J.Json, J.Json.parse(a), J.Null{})
+    +r : J.Json <- KEX.KExport.export(rt, home, pro, J.Json.get_bool(args, "anyway", False{}), J.Json.get_str(args, "report", ""), False{})
+    +opened : J.Json <- KEX.KExport.open(String.eq(J.Json.get_str(r, "export10", ""), "done"), r, pro)
+    KExportJob.activity(String.eq(J.Json.get_str(r, "export10", ""), "done"), inbox, thread, U32.show(client) ++ ":" ++ id, r)
+    GitJob.reply(inbox, client, id, Bool.not(String.eq(J.Json.get_str(r, "export10", ""), "error")), KH.KH.put.obj(opened, "thread", J.Str{thread}))
+
+def KExportJob.route(exporting: Bool, +inbox: Chan(Msg), client: U32, id: String, thread: String, cwd: String, home: String, rt: K.Rt, a: String, other: IO(Unit)) -> IO(Unit):
+  match exporting:
+    case True{}: IO.spawn(Unit, KExportJob.run(inbox, client, id, thread, cwd, home, rt, a))
     case False{}: other
 
 # Design steps (core/hist.bend): after a tool call, the thread's KiCad
@@ -8487,7 +8518,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     case Hub{+st, f, ls, cl, +as, +inbox, +cfg, note} B.Git{+client, +id, +job, +thread, +cwd, +a, +b}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        KiCadJob.route(String.eq(job, "kicad"), inbox, client, id, thread, cwd, Cfg.rt(cfg), Media.run(AG.Text.of(st), job, inbox, client, id, thread, cwd, Bot.attach(String.eq(job, "attach.claude"), cfg, st, now, thread, a), b, Cfg.home(cfg), Net.managed(Cfg.net(cfg)), Agents.gen(as, thread)))
+        KExportJob.route(String.eq(job, "kexport"), inbox, client, id, thread, cwd, Cfg.home(cfg), Cfg.rt(cfg), a, KiCadJob.route(String.eq(job, "kicad"), inbox, client, id, thread, cwd, Cfg.rt(cfg), Media.run(AG.Text.of(st), job, inbox, client, id, thread, cwd, Bot.attach(String.eq(job, "attach.claude"), cfg, st, now, thread, a), b, Cfg.home(cfg), Net.managed(Cfg.net(cfg)), Agents.gen(as, thread))))
         return Claude.prep(Bool.and(String.eq(job, "attach.claude"), Bool.not(String.is_empty(b))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, b)
     case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.AskAnswered{+ask, +answer}:
       do IO<Hub>:
@@ -11873,12 +11904,28 @@ def Hub.mcp.gg(g: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +repl
     case False{} _:
       Hub.mcp.np(BH.Bots.newproj.is(o), h, thread, o, body, reply, now)
 
+def KExportMcp.run(+rt: K.Rt, +home: String, +o: J.Json, +reply: Chan(String)) -> IO(Unit):
+  do IO<Unit>:
+    +args : J.Json = J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments")
+    +r : J.Json <- KEX.KExport.export(rt, home, J.Json.get_str(args, "path", ""), J.Json.get_bool(args, "force", False{}), "", True{})
+    sent : Result<&1, &1, String, Unit> <- Chan.send(String, reply, MC.Mcp.result(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), MC.Mcp.content(Bool.or(String.eq(J.Json.get_str(r, "export10", ""), "done"), String.eq(J.Json.get_str(r, "export10", ""), "confirm")), r)))
+    return Unit{}
+
+def Hub.mcp.kexport(exporting: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match exporting h:
+    case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, KExportMcp.run(Cfg.rt(cfg), Cfg.home(cfg), o, reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case False{} _:
+      Hub.mcp.gg(Gg.is(o), h, thread, o, body, reply, now)
+
 def Hub.mcp.route(pv: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match pv:
     case True{}:
       Hub.preview(h, thread, o, reply)
     case False{}:
-      Hub.mcp.gg(Gg.is(o), h, thread, o, body, reply, now)
+      Hub.mcp.kexport(Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "kicad_export10")), h, thread, o, body, reply, now)
 
 def Hub.mcp.ki(ki: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match ki:

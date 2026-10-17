@@ -1,6 +1,7 @@
 import Base
 import ./src/server/mailstore.bend as MIX # mail index
 import ./src/app/mm.bend as MM # window memos
+import ./src/core/kexport.bend as KEX
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/mail.bend as ML # mail 1
@@ -11392,3 +11393,12 @@ def Laws.kserve_desc_with_cap(root): {==}
 def Laws.kserve_idle_needs_api2(xs): {==}
 
 # ---- end kicad-ipc 2 ----
+# ---- kicad-ipc 3 ----
+
+def Laws.kexport_no_unmarked_clear(base): {==}
+def Laws.kexport_no_unconsented_force(report): {==}
+def Laws.kexport_block_force(): {==}
+def Laws.kexport_lossy_force(): {==}
+def Laws.kexport_no_outside_clear(): {==}
+
+def Laws.kexport_no_foreign_base(base, marker): {==}

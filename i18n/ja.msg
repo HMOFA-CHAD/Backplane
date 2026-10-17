@@ -40,6 +40,7 @@ palette.search = スレッドを検索
 palette.findfile = ファイルを探す
 palette.viewer = ビューア：基板、回路図、3D、Mech、ファイル、差分、ブラウザ
 palette.kicad = KiCadで開く
+palette.kicad10 = KiCad 10で開く（書き出したコピー）
 palette.settings = 設定
 palette.update = Backplaneを更新
 

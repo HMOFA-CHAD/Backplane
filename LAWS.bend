@@ -1,6 +1,7 @@
 import Base
 import ./src/server/mailstore.bend as MIX # mail index
 import ./src/app/mm.bend as MM # window memos
+import ./src/core/kexport.bend as KEX
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/usage.bend as UZ
@@ -9663,3 +9664,27 @@ law kserve_idle_needs_api2:
   {KSL.KS.caps.safe(xs, 1n) == KSL.KS.drop(xs, "idle-exit") : List<&2, String>}
 
 # ---- end kicad-ipc 2 ----
+# ---- kicad-ipc 3 ----
+
+law kexport_no_unmarked_clear:
+  for +base: String
+  {KEX.KX.may_clear(base, False{}) == False{} : Bool}
+
+law kexport_no_unconsented_force:
+  for +report: KEX.KReport
+  {KEX.KX.flags(report, False{}) == Nil{} : List<&2, String>}
+
+law kexport_block_force:
+  {KEX.KX.flags(KEX.KReport{Nil{}, Nil{}, ["blocked"], Nil{}}, True{}) == ["--force", "--drop-approximations"] : List<&2, String>}
+
+law kexport_lossy_force:
+  {KEX.KX.flags(KEX.KReport{["changed"], ["removed"], Nil{}, Nil{}}, True{}) == ["--force"] : List<&2, String>}
+
+law kexport_no_outside_clear:
+  {KEX.KX.may_clear("/tmp/design", True{}) == False{} : Bool}
+
+# A path not under this home's exports is never cleared, marker or not.
+law kexport_no_foreign_base:
+  for +base: String
+  for +marker: Bool
+  {KEX.KX.clear.allowed(False{}, base, marker) == False{} : Bool}
