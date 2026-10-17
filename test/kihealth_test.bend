@@ -6,6 +6,7 @@ import ../src/core/model.bend as M
 import ../src/core/json.bend as J
 import ../src/core/client.bend as U
 import ../src/core/hub.bend as H
+import ../src/core/codec.bend as CD
 
 # The static model, including legacy/v2 identity and the client glue.
 def yes(b: Bool) -> String:
@@ -112,4 +113,4 @@ def main() -> IO(Unit):
     C.Check.str("normal setting dismisses thread notice", key(U.KN.thread(info(hidden), U.Ui.state(hidden), "t1")), "none")
     C.Check.str("settings always shows truth", key(U.KN.of(info(hidden), U.Ui.state(hidden))), "stock:/c:10.0.6")
     C.Check.str("new version shows notice again", key(U.KN.visible(info(client("10.0.7")), U.Ui.state(hidden))), "stock:/c:10.0.7")
-    C.Check.str("retry method appended", yes(String.eq(Maybe.default(&2, String, List.last(&2, String, H.Hub.methods()), ""), "kicad.retry")), "yes")
+    C.Check.str("retry method appended", Nat.show(CD.Codec.pos(H.Hub.methods(), "kicad.retry")), "39")

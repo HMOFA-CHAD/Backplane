@@ -57,6 +57,15 @@ BOAT_FAKE_EXEC_MUTE=1 "$J" --no-setup-bend -- sh -c 'exit 4' >/dev/null 2>&1; ok
 ok "$(python3 -c "import json;print(json.load(open('$BOAT_JOB_ROOT/jobs/$mj/provenance.json'))['exit'])" 2>&1)" 70 "provenance has the real status"
 ok "$(boxes)" 0 "exit cases: deleted"
 
+# its own systemd scope (a hub restart doesn't take it down); without systemd-run it runs as is
+if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope -q true >/dev/null 2>&1; then
+  out=$("$J" --no-setup-bend -- cat /proc/self/cgroup 2>&1)
+  case $out in *"run-"*".scope"*) ok 1 1 "own scope" ;; *) ok 0 1 "own scope" ;; esac
+  me=$(tail -1 /proc/self/cgroup); if printf '%s\n' "$out" | grep -qxF "$me"; then ok 0 1 "not the caller's cgroup"; else ok 1 1 "not the caller's cgroup"; fi
+fi
+mkdir -p "$T/nosd"; for c in bash python3 git tar sed grep awk cut sort xargs find sha256sum mktemp date flock timeout tee tr head tail cat ls mkdir rm mv cp du wc hostname sleep env basename dirname printf readlink touch nproc free stat kill id uname true; do p=$(type -P $c) && ln -sf "$p" "$T/nosd/$c"; done
+PATH="$T/nosd" "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 0 "no systemd-run: runs as is"
+
 # fail closed: unreadable limits, no compute, budget, unknown size
 BOAT_FAKE_FAIL=limits "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 75 "limits unreadable"
 echo '{"activeSandboxes":ACTIVE}' > "$BOAT_FAKE_DIR/limits.json"; "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 75 "limits missing fields"

@@ -1934,9 +1934,14 @@ def MailRoom.post(+b: ML.Box, +id: String, +room: String, +from: String, +text: 
   ML.Box.mail(MailRoom.dm_seed(Bool.and(String.starts_with(room, "dm:"), String.is_empty(ML.Conv.id(ML.Box.conv(b, "room:" ++ room)))), b, room, at),
     ML.Mail{id, "room:" ++ room, ML.Box.sender(b, from), "room:" ++ room, "room", room, "fyi", ML.Mail.head(text), ML.Mail.text_size(text), at})
 
+def State.mail_post.box(+on: Bool, +s: State, +id: String, +room: String, +from: String, +text: String, +at: Nat) -> State:
+  match on:
+    case True{}: s
+    case False{}: State.with_mail((b => MailRoom.post(b, id, room, from, text, at)), s)
+
 def State.mail_post(+s: State, +id: String, +room: String, +from: String, +text: String, +hop: Nat, +at: Nat) -> State:
   State.world((w => BT.World.posted(w, BT.Post{id, room, from, text, hop, at})),
-    State.with_mail((b => MailRoom.post(b, id, room, from, text, at)), s))
+    State.mail_post.box(String.eq(Setting.get(s, "mail.on", "off"), "on"), s, id, room, from, text, at))
 
 def State.apply.go(s: State, e: Change) -> State:
   match e:

@@ -1,10 +1,12 @@
 import Base
 import ./src/server/mailstore.bend as MIX # mail index
+import ./src/app/mm.bend as MM # window memos
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/mail.bend as ML # mail 1
 import ./src/core/mailbody.bend as MB # mail 2a
 import ./src/core/mailview.bend as MVW # mail view
+import ./src/core/ref.bend as MREF # mail 2b
 import ./src/core/stamp.bend as STP
 import ./src/core/kihealth.bend as KH
 import ./src/core/tz.bend as TZ
@@ -11310,3 +11312,79 @@ def Laws.prompt_kicad_ipc_only_ok_checking(i):
   match i:
     case True{}: {==}
     case False{}: {==}
+
+def Laws.mm_late_misses(key, ms, now, h):
+  %Equal.sym(Bool, Nat.is_ge(now, MM.MainM.due(ms)), True{}, h) : {MM.Mm.use.k(_, MM.MainM.same(key, ms)) == False{} : Bool}
+  {==}
+# ---- mail 2b ----
+law MailProof.append_nil:
+  for +cs: List<&2, M.Change>
+  {List.append(&2, M.Change, cs, Nil{}) == cs : List<&2, M.Change>}
+
+def MailProof.append_nil(cs):
+  match cs:
+    case Nil{}: {==}
+    case h <> t:
+      %MailProof.append_nil(t) : {h <> List.append(&2, M.Change, t, Nil{}) == h <> _ : List<&2, M.Change>}
+      {==}
+
+law MailProof.keeps:
+  for on: Bool
+  for +st: H.Step
+  for s: M.State
+  for now: Nat
+  for o: ML.Origin
+  for to: String
+  for text: String
+  for msg: String
+  {H.Queue.changes(H.Mail.tee.on(on, st, s, now, o, to, text, msg)) == H.Queue.changes(st) : List<&2, M.Change>}
+
+def MailProof.keeps(on, st, s, now, o, to, text, msg):
+  match on st:
+    case False{} _: {==}
+    case True{} H.Step{cs, os}: MailProof.append_nil(cs)
+
+law MailProof.pending_one:
+  for missing: Bool
+  for c: ML.Conv
+  for m: ML.Mail
+  for text: String
+  {H.Mail.pending.count(H.Mail.pending(missing, MB.Body{c, m, text})) == 1n : Nat}
+
+def MailProof.pending_one(missing, c, m, text):
+  match missing c m:
+    case True{} ML.Conv{_, _, _, _, _, _, _, _, _} ML.Mail{_, _, _, _, _, _, _, _, _, _}: {==}
+    case False{} _ ML.Mail{_, _, _, _, _, _, _, _, _, _}: {==}
+
+def Laws.mail_off_unchanged(st, s, now, o, to, text, msg, off):
+  %Equal.sym(String, M.Setting.get(s, "mail.on", "off"), "off", off) : {H.Mail.tee.on(Bool.and(String.eq(_, "on"), Bool.not(String.eq(ML.Origin.kind(o), "person"))), st, s, now, o, to, text, msg) == st : H.Step}
+  {==}
+
+def Laws.mail_file_never_waits(s, now, o, to, text, msg):
+  {==}
+
+def Laws.mail_tee_keeps_delivery(st, s, now, o, to, text, msg):
+  MailProof.keeps(Bool.and(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), Bool.not(String.eq(ML.Origin.kind(o), "person"))), st, s, now, o, to, text, msg)
+
+law MailProof.pending_route:
+  for missing: Bool
+  for c: ML.Conv
+  for +m: ML.Mail
+  for text: String
+  {H.Mail.pending.conv(H.Mail.pending(missing, MB.Body{c, m, text})) == ML.Mail.conv(m) : String}
+
+def MailProof.pending_route(missing, c, m, text):
+  match missing c m:
+    case True{} ML.Conv{_, _, _, _, _, _, _, _, _} ML.Mail{_, _, _, _, _, _, _, _, _, _}: {==}
+    case False{} _ ML.Mail{_, _, _, _, _, _, _, _, _, _}: {==}
+
+def Laws.mail_file_one_conv(s, now, o, to, text, msg):
+  +body = H.Mail.body(s, now, o, to, text, msg, ML.Mail.route(o, to), H.Mail.subject(String.eq(ML.Origin.kind(o), "launch"), s, o, to), "")
+  +missing = String.is_empty(ML.Conv.id(ML.Box.conv(M.State.mail(s), ML.Mail.conv(MB.Body.mail(body)))))
+  Equal.trans(String, H.Mail.pending.conv(H.Mail.pending(missing, body)), ML.Mail.conv(MB.Body.mail(body)), ML.Mail.route(o, to),
+    MailProof.pending_route(missing, MB.Body.conv(body), MB.Body.mail(body), MB.Body.text(body)), {==})
+
+def Laws.mail_room_once(s, now, from, room, text, msg, parts, subject):
+  MailProof.pending_one(String.is_empty(ML.Conv.id(ML.Box.conv(M.State.mail(s), ML.Mail.route(ML.Origin{from, "room", room}, MREF.Ref.addr(MREF.Ref.room(room)))))),
+    ML.Conv{ML.Mail.route(ML.Origin{from, "room", room}, MREF.Ref.addr(MREF.Ref.room(room))), subject, ML.Conv.mail_kind(ML.Mail.route(ML.Origin{from, "room", room}, MREF.Ref.addr(MREF.Ref.room(room))), "room"), parts, "", Nil{}, now, now, 0n},
+    ML.Mail{msg, ML.Mail.route(ML.Origin{from, "room", room}, MREF.Ref.addr(MREF.Ref.room(room))), from, MREF.Ref.addr(MREF.Ref.room(room)), "room", room, "fyi", ML.Mail.head(text), H.Mail.bytes(text, 0n), now}, text)

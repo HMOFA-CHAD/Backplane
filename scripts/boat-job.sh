@@ -28,6 +28,15 @@
 # unverified, 143 cancelled. URLs are never printed or logged.
 set -u
 umask 077
+# Run in a systemd scope of our own when there is one: a job started from the
+# hub's work_run lives in the hub's cgroup and a hub restart would kill it
+# mid-job, leaving its sandbox for the sweep. In its own scope the runner
+# finishes and cleans up; work_run may still report it lost (the hub's own
+# wrapper dies), and the outcome is in the job's folder. exec keeps the pid
+# and process group, so work_cancel still reaches it. No systemd-run: as is.
+if [ -z "${BOAT_JOB_SCOPED:-}" ] && command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope -q true >/dev/null 2>&1; then
+  BOAT_JOB_SCOPED=1 exec systemd-run --user --scope -q -- bash "$0" "$@"
+fi
 # bash reads a script as it runs: run from a private copy, so a rebase or an
 # edit of this file during a long job can't change what is running
 if [ -z "${BOAT_JOB_COPY:-}" ]; then

@@ -23,6 +23,9 @@ import ../core/acp.bend as AC
 import ../core/msp.bend as MS
 import ../core/agy.bend as AGY
 import ./agyio.bend as AGX
+import ./mailstore.bend as MST
+import ../core/mailbody.bend as MB
+import ../core/mail.bend as ML
 import ../core/cbor.bend as CB
 import ./push.bend as PU
 import ./park.bend as PK
@@ -8033,8 +8036,109 @@ def WakeJob.files(xs: List<&2, String>, +inbox: Chan(Msg)) -> IO(Unit):
         Self.post(inbox, WakeSeen{"file", h, stamp})
         WakeJob.files(t, inbox)
 
+# ---- mail 2b ----
+# Appends and their normal event commits are serialized by Hub.outs.
+# A header already present skips body IO, preventing conflicting retry
+# records when the conversation metadata changed after the first append.
+def MailJob.failed(+reason: String) -> IO(Unit):
+  do IO<Unit>:
+    PS.Perf.add("mail.append_fail", 1)
+    PS.Log.error("mail", reason)
+    return Unit{}
+
+def MailJob.append.failed(h: Hub, reason: String) -> IO(Hub):
+  do IO<Hub>:
+    MailJob.failed(reason)
+    return h
+
+def MailJob.append.committed(r: Hub & Wrote, +cs: List<&2, M.Change>, +from: Nat) -> IO(Hub):
+  (h, w) = r
+  match w:
+    case Wrote{+fresh, True{}, _}:
+      IO.bind(Hub, Hub, Hub.announce((h, fresh)), h2 => Far.push(h2, cs, fresh, from))
+    case Wrote{_, False{}, err}:
+      do IO<Hub>:
+        PS.Log.error("mail", "header commit failed: " ++ err)
+        PS.Perf.add("hub.write_fail", 1)
+        return h
+
+def MailJob.append.result(r: MST.StoreResult<Bool>, +changes: List<&2, M.Change>, +from: Nat, h: Hub) -> IO(Hub):
+  match r:
+    case MST.Stored{_}: IO.bind(Hub & Wrote, Hub, Hub.commit.w(changes, h), got => MailJob.append.committed(got, changes, from))
+    case MST.Missing{path}: MailJob.append.failed(h, "append missing: " ++ path)
+    case MST.StoreError{path, reason}: MailJob.append.failed(h, path ++ ": " ++ reason)
+
+def MailJob.append.fresh(seen: Bool, body: MB.Body, home: String, changes: List<&2, M.Change>, from: Nat, h: Hub) -> IO(Hub):
+  match seen:
+    case True{}: IO.pure(Hub, h)
+    case False{}:
+      do IO<Hub>:
+        r : MST.StoreResult<Bool> <- MST.MailStore.append(home, body)
+        MailJob.append.result(r, changes, from, h)
+
+def MailJob.append.parsed(body: Maybe<&2, MB.Body>, +home: String, changes: List<&2, M.Change>, h: Hub) -> IO(Hub):
+  match body h:
+    case None{} kept: MailJob.append.failed(kept, "invalid MailAppend body")
+    case Some{+body} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      MailJob.append.fresh(ML.Box.has(M.State.mail(st), ML.Mail.id(MB.Body.mail(body))), body, home, changes, M.State.seq(st), Hub{st, f, ls, cl, as, inbox, cfg, note})
+
+def MailJob.recover.result(+r: MST.StoreResult<List<&2, M.Change>>, +inbox: Chan(Msg)) -> IO(Unit):
+  match r:
+    case MST.Stored{+changes}: Self.post(inbox, Commit{changes})
+    case MST.Missing{_}: IO.pure(Unit, Unit{})
+    case MST.StoreError{+path, +reason}: PS.Log.error("mail.recover", path ++ ": " ++ reason)
+
+def MailJob.recover(+home: String, +box: ML.Box, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    r : MST.StoreResult<List<&2, M.Change>> <- MST.MailStore.recover(home, box)
+    MailJob.recover.result(r, inbox)
+
+def MailJob.page.more(+r: MST.StoreResult<List<&2, MB.Body>>, +s: M.State, +conv: String, +bot: String, +bs: List<&2, MB.Body>) -> MST.StoreResult<J.Json>:
+  match r:
+    case MST.Stored{+extra}: MST.Stored{B.Mail.read.json(s, conv, bot, bs, Bool.not(List.is_empty(&2, MB.Body, extra)))}
+    case MST.Missing{_}: MST.Stored{B.Mail.read.json(s, conv, bot, bs, False{})}
+    case MST.StoreError{+p, +e}: MST.StoreError{p, e}
+
+def MailJob.page.full(+full: Bool, +home: String, +s: M.State, +conv: String, +bot: String, +bs: List<&2, MB.Body>) -> IO(MST.StoreResult<J.Json>):
+  match full:
+    case False{}: IO.pure(MST.StoreResult<J.Json>, MST.Stored{B.Mail.read.json(s, conv, bot, bs, False{})})
+    case True{}:
+      do IO<MST.StoreResult<J.Json>>:
+        +last : MB.Body = Maybe.default(&2, MB.Body, List.last(&2, MB.Body, bs), MB.Body{ML.Conv.empty(), ML.Box.newest(ML.Box.empty(), ""), ""})
+        r : MST.StoreResult<List<&2, MB.Body>> <- MST.MailStore.read(home, conv, ML.Mail.id(MB.Body.mail(last)), 1n)
+        return MailJob.page.more(r, s, conv, bot, bs)
+
+def MailJob.page.result(+r: MST.StoreResult<List<&2, MB.Body>>, +home: String, +s: M.State, +conv: String, +bot: String, +n: Nat) -> IO(MST.StoreResult<J.Json>):
+  match r:
+    case MST.Stored{+bs}: MailJob.page.full(Bool.and(Nat.is_gt(n, 0n), Nat.is_eq(List.length(&2, MB.Body, bs), n)), home, s, conv, bot, bs)
+    case MST.Missing{_}: IO.pure(MST.StoreResult<J.Json>, MST.Stored{B.Mail.read.json(s, conv, bot, Nil{}, False{})})
+    case MST.StoreError{+p, +e}: IO.pure(MST.StoreResult<J.Json>, MST.StoreError{p, e})
+
+def MailJob.page(+home: String, +s: M.State, +conv: String, +bot: String, +before: String, +n: Nat) -> IO(MST.StoreResult<J.Json>):
+  do IO<MST.StoreResult<J.Json>>:
+    r : MST.StoreResult<List<&2, MB.Body>> <- MST.MailStore.read(home, conv, before, n)
+    MailJob.page.result(r, home, s, conv, bot, n)
+
+def MailJob.read.reply(+r: MST.StoreResult<J.Json>, +client: U32, +id: String) -> B.Out:
+  match r:
+    case MST.Stored{+j}: B.Reply.data(client, id, j)
+    case MST.Missing{+p}: B.Reply.err(client, id, "missing " ++ p)
+    case MST.StoreError{+p, +e}: B.Reply.err(client, id, p ++ ": " ++ e)
+
+def MailJob.read.text(out: B.Out) -> String:
+  match out:
+    case B.Send{_, +text}: text
+    case _: ""
+
 def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
   match h o:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.MailAppend{line, _, changes}:
+      MailJob.append.parsed(MB.Body.parse(line), Cfg.home(cfg), changes, Hub{st, f, ls, cl, as, inbox, cfg, note})
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note} B.MailRead{+client, +id, conv, before, n}:
+      do IO<Hub>:
+        r : MST.StoreResult<J.Json> <- MailJob.page(Cfg.home(cfg), st, conv, "*", before, n)
+        cl2 : List<&2, Client> <- Wire.to(cl, client, MailJob.read.text(MailJob.read.reply(r, client, id)))
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.Send{+client, +text}:
       do IO<Hub>:
         cl2 : List<&2, Client> <- Wire.to(cl, client, text)
@@ -9138,8 +9242,23 @@ def Hub.mcp.after(r: Hub & Bool, +park: String, +body: String, +text: String, +r
         Hub.mcp.send(False{}, "", body, Hub.mcp.fail(body), reply, cfg)
         return Hub{hs, f, ls, cl, as, inbox, cfg, note}
 
+def MailJob.mcp.json(+r: MST.StoreResult<J.Json>, +id: J.Json) -> String:
+  match r:
+    case MST.Stored{+j}: MC.Mcp.result(id, MC.Mcp.content(True{}, j))
+    case MST.Missing{+p}: MC.Mcp.result(id, MC.Mcp.content(False{}, MC.Mcp.fail("missing " ++ p)))
+    case MST.StoreError{+p, +e}: MC.Mcp.result(id, MC.Mcp.content(False{}, MC.Mcp.fail(p ++ ": " ++ e)))
+
+def Hub.mail.mcp.read(h: Hub, +cs: List<&2, M.Change>, +conv: String, +before: String, +n: Nat, +reply: Chan(String), +body: String) -> IO(Hub):
+  match h:
+    case Hub{+st, f, +ls, +cl, +as, +inbox, +cfg, +note}:
+      do IO<Hub>:
+        r : MST.StoreResult<J.Json> <- MailJob.page(Cfg.home(cfg), st, conv, "*", before, n)
+        IO.bind(Hub & Bool, Hub, Hub.step.ok(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{cs, Nil{}}), got => Hub.mcp.after(got, "", body, MailJob.mcp.json(r, J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id")), reply))
+
 def Hub.mcp.k(o: MC.McpOut, h: Hub, +reply: Chan(String), +body: String) -> IO(Hub):
   match o:
+    case MC.McpOut{_, B.Step{cs, B.MailRead{_, _, conv, before, n} <> Nil{}}, _}:
+      Hub.mail.mcp.read(h, cs, conv, before, n, reply, body)
     case MC.McpOut{+text, st, +park}:
       IO.bind(Hub & Bool, Hub, Hub.step.ok(h, st), r => Hub.mcp.after(r, park, body, text, reply))
 
@@ -9490,8 +9609,21 @@ def Hub.adopt(h: Hub, +now: Nat) -> IO(Hub):
         +off : String <- Env.get("BACKPLANE_ADOPT", "")
         Hub.adopt.es(AD.Adopt.entries(rec, hand), Hub{st, f, ls, cl, as, inbox, cfg, note}, Bool.not(String.eq(off, "0")), now)
 
+def Hub.mail.recover.on(+on: Bool, h: Hub) -> IO(Hub):
+  match on h:
+    case False{} kept: IO.pure(Hub, kept)
+    case True{} Hub{+st, f, +ls, +cl, +as, +inbox, +cfg, +note}:
+      do IO<Hub>:
+        IO.spawn(Unit, MailJob.recover(Cfg.home(cfg), M.State.mail(st), inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def Hub.mail.recover.start(h: Hub) -> IO(Hub):
+  match h:
+    case Hub{+st, f, +ls, +cl, +as, +inbox, +cfg, +note}:
+      Hub.mail.recover.on(String.eq(M.Setting.get(st, "mail.on", "off"), "on"), Hub{st, f, ls, cl, as, inbox, cfg, note})
+
 def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):
-  IO.bind(Hub, Hub, Far.start(h), h2 => Hub.recover.stale(h2, now))
+  IO.bind(Hub, Hub, Hub.mail.recover.start(h), h0 => IO.bind(Hub, Hub, Far.start(h0), h2 => Hub.recover.stale(h2, now)))
 
 # The minute
 # ----------

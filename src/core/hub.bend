@@ -1,5 +1,7 @@
 import Base
 import ./mail.bend as ML
+import ./mailbody.bend as MB
+import ./ref.bend as REF
 import ./ride.bend as RD
 import ./json.bend as J
 import ./model.bend as M
@@ -34,6 +36,8 @@ import ./order.bend as OR
 
 # what the server must do after a step
 type Out is Data:
+  MailAppend{line: String, conv: String, changes: List<&2, M.Change>}
+  MailRead{client: U32, id: String, conv: String, before: String, n: Nat}
   LockGuard{name: String, old: String, holder: String}
   # to one client
   Send{client: U32, text: String}
@@ -1079,8 +1083,8 @@ def Hub.methods() -> List<&2, String>:
    "thread.settle", "thread.unsettle", "thread.archive", "thread.unarchive",
    "thread.pin", "thread.unpin", "thread.rename", "thread.delete", "kicad.watch", "thread.modes", "app.update", "setting.set", "kicad.install",
    "ask.answer", "device.register", "device.drop", "kicad.info", "queue.resume",
-   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status", "lock.release", "lock.cancel",
-   "fab.look", "fab.intent", "order.buy", "kicad.retry"]
+   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status", "lock.release", "lock.cancel", "kicad.retry", "mail.list", "mail.read", "mail.find", "mail.mark", "mail.tag", "mail.send",
+   "fab.look", "fab.intent", "order.buy"]
 
 # Agent output (Claude stream-json)
 # ---------------------------------
@@ -2408,17 +2412,201 @@ def Origin.system(role: M.Role) -> Bool:
     case M.System{}: True{}
     case _: False{}
 
+# ---- mail 2b ----
+# Body IO is deliberately an Out: no mail event is committed before it.
+def Mail.addr.got(b: Maybe<&2, BT.Bot>, +thread: String) -> String:
+  match b:
+    case Some{+bot}: REF.Ref.addr(REF.Ref.bot(BT.Bot.id(bot)))
+    case None{}: REF.Ref.addr(REF.Ref.thread(thread))
+
+def Mail.addr(+s: M.State, +thread: String) -> String:
+  Mail.addr.got(BT.World.of_thread(M.State.bots(s), thread), thread)
+
+def Mail.name.got(r: Maybe<&2, REF.Ref>, +s: M.State, +addr: String) -> String:
+  match r:
+    case Some{REF.Ref{"bot", id <> _, _}}: BT.Bot.name(BT.World.bot(M.State.bots(s), id))
+    case Some{REF.Ref{"thread", id <> _, _}}: Hub.thread_title(Hub.thread(s, id))
+    case Some{REF.Ref{"person", _, _}}: "Person"
+    case _: addr
+
+def Mail.name(+s: M.State, +addr: String) -> String:
+  Mail.name.got(REF.Ref.of_addr(addr), s, addr)
+
+def Mail.subject(+launch: Bool, +s: M.State, +o: ML.Origin, +to: String) -> String:
+  match launch:
+    case True{}: "Launch: " ++ Mail.name(s, ML.Origin.from(o))
+    case False{}: Mail.name(s, ML.Origin.from(o)) ++ " ↔ " ++ Mail.name(s, to)
+
+def Mail.project.got(r: Maybe<&2, REF.Ref>, +s: M.State) -> String:
+  match r:
+    case Some{REF.Ref{"thread", id <> _, _}}: Hub.thread_project(Hub.thread(s, id))
+    case Some{REF.Ref{"bot", id <> _, _}}: Hub.thread_project(Hub.thread(s, BT.Bot.thread(BT.World.bot(M.State.bots(s), id))))
+    case _: ""
+
+def Mail.flags(+o: ML.Origin, +text: String) -> ML.Flags:
+  ML.Flags{Bool.pick(String, String.contains(String.take(text, 240n), "completed"), "completed", ""),
+    ML.Parts.has(["task", "wake", "deploy", "lock"], ML.Origin.kind(o), False{}),
+    ML.Parts.has(["thread", "bot", "person", "peer"], ML.Origin.kind(o), False{}), False{}}
+
+# UTF-8 bytes, not Unicode scalar count.
+def Mail.bytes(+text: String, +acc: Nat) -> Nat:
+  match text:
+    case SNil{}: acc
+    case SCon{Chr{+u}, +t}: Mail.bytes(t, Nat.add(acc, Bool.pick(Nat, U32.is_lt(u, 128), 1n, Bool.pick(Nat, U32.is_lt(u, 2048), 2n, Bool.pick(Nat, U32.is_lt(u, 65536), 3n, 4n)))))
+
+def Mail.metadata.new(+missing: Bool, +c: ML.Conv) -> List<&2, M.Change>:
+  match missing:
+    case True{}: [MB.Body.metadata(c)]
+    case False{}: Nil{}
+
+def Mail.pending(+missing: Bool, +body: MB.Body) -> List<&2, M.Change>:
+  List.append(&2, M.Change, Mail.metadata.new(missing, MB.Body.conv(body)), [MB.Body.header(MB.Body.mail(body))])
+
+def Mail.file.body(+s: M.State, +body: MB.Body) -> Step:
+  Step{Nil{}, [MailAppend{MB.Body.line(body), ML.Mail.conv(MB.Body.mail(body)), Mail.pending(String.is_empty(ML.Conv.id(ML.Box.conv(M.State.mail(s), ML.Mail.conv(MB.Body.mail(body))))), body)}]}
+
+def Mail.sender.empty(+person: Bool, +s: M.State, +from: String) -> String:
+  match person:
+    case True{}: REF.Ref.addr(REF.Ref.person())
+    case False{}: Mail.addr(s, from)
+
+def Mail.sender(+s: M.State, +from: String) -> String:
+  Mail.sender.empty(String.is_empty(from), s, from)
+
+def Mail.strings(+xs: List<&2, String>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}: Nil{}
+    case +h <> +t: J.Str{h} <> Mail.strings(t)
+
+def Mail.row(+box: ML.Box, +bot: String, +c: ML.Conv) -> J.Json:
+  +mark = ML.Box.mark_of(box, bot, ML.Conv.id(c))
+  +last = ML.Box.newest(box, ML.Conv.id(c))
+  J.Json.obj([J.KV{"id", J.Str{ML.Conv.id(c)}}, J.KV{"subject", J.Str{ML.Conv.subject(c)}}, J.KV{"kind", J.Str{ML.Conv.kind(c)}},
+    J.KV{"parts", J.Json.arr(Mail.strings(ML.Conv.parts(c)))}, J.KV{"project", J.Str{ML.Conv.project(c)}}, J.KV{"tags", J.Json.arr(Mail.strings(List.append(&2, String, ML.Conv.tags(c), ML.Mark.tags(mark))))},
+    J.KV{"last", J.Json.nat(ML.Conv.last(c))}, J.KV{"n", J.Json.nat(ML.Conv.n(c))}, J.KV{"status", J.Str{ML.Mark.status(mark)}},
+    J.KV{"unread", J.Flag{String.eq(ML.Mark.status(mark), "unread")}}, J.KV{"head", J.Str{ML.Mail.header(last)}}, J.KV{"from", J.Str{ML.Mail.from(last)}}])
+
+def Mail.rows(+cs: List<&2, ML.Conv>, +box: ML.Box, +bot: String) -> List<&2, J.Json>:
+  match cs:
+    case Nil{}: Nil{}
+    case +c <> +t: Mail.row(box, bot, c) <> Mail.rows(t, box, bot)
+
+def Mail.limit(+n: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_gt(n, 200n), 200n, n)
+
+def Mail.list(+s: M.State, +p: J.Json) -> J.Json:
+  +box = M.State.mail(s)
+  +bot = J.Json.get_str(p, "bot", "*")
+  +status = J.Json.get_str(p, "status", "")
+  +project = J.Json.get_str(p, "project", "")
+  J.Json.obj([J.KV{"convs", J.Json.arr(Mail.rows(ML.Box.list(box, bot, status, project, J.Json.get_nat(p, "skip", 0n), Mail.limit(J.Json.get_nat(p, "n", 50n))), box, bot))},
+    J.KV{"total", J.Json.nat(List.length(&2, ML.Conv, ML.Box.list(box, bot, status, project, 0n, ML.Order.count(ML.Box.order_of(box, bot)))))}])
+
+def Mail.find(+s: M.State, +p: J.Json) -> J.Json:
+  +box = M.State.mail(s)
+  +bot = J.Json.get_str(p, "bot", "*")
+  +cs = ML.Box.find(box, bot, J.Json.get_str(p, "q", ""), Mail.limit(J.Json.get_nat(p, "n", 50n)))
+  J.Json.obj([J.KV{"convs", J.Json.arr(Mail.rows(cs, box, bot))}, J.KV{"total", J.Json.nat(List.length(&2, ML.Conv, cs))}])
+
+def Mail.mark.valid(+status: String) -> Bool:
+  ML.Parts.has(["unread", "open", "snoozed", "done"], status, False{})
+
+def Mail.mark(+s: M.State, +now: Nat, +p: J.Json) -> List<&2, M.Change>:
+  +bot = J.Json.get_str(p, "bot", "")
+  +conv = J.Json.get_str(p, "conv", "")
+  [M.MailMarked{bot, conv, J.Json.get_str(p, "status", "open"), ML.Conv.last(ML.Box.conv(M.State.mail(s), conv)), J.Json.get_nat(p, "until", 0n), now}]
+
+def Mail.array.strings(+xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}: Nil{}
+    case J.Str{+h} <> +t: h <> Mail.array.strings(t)
+    case _ <> +t: Mail.array.strings(t)
+
+def Mail.tag(+now: Nat, +p: J.Json) -> List<&2, M.Change>:
+  [M.MailTagged{J.Json.get_str(p, "bot", ""), J.Json.get_str(p, "conv", ""), String.join(Mail.array.strings(J.Json.elems(J.Json.get_obj(p, "tags"))), "\n"), now}]
+
+def Mail.due.changes(+ms: List<&2, ML.Mark>, +now: Nat) -> List<&2, M.Change>:
+  match ms:
+    case Nil{}: Nil{}
+    case +m <> +t: M.MailMarked{ML.Mark.bot(m), ML.Mark.conv(m), "unread", ML.Mark.seen(m), 0n, now} <> Mail.due.changes(t, now)
+
+def Mail.due.on(+on: Bool, +s: M.State, +now: Nat) -> List<&2, M.Change>:
+  match on:
+    case False{}: Nil{}
+    case True{}: Mail.due.changes(ML.Box.due(M.State.mail(s), now), now)
+
+def Mail.due(+s: M.State, +now: Nat) -> List<&2, M.Change>:
+  Mail.due.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), s, now)
+
+def Mail.seen(+given: Bool, +s: M.State, +now: Nat, +p: J.Json) -> List<&2, M.Change>:
+  match given:
+    case False{}: Nil{}
+    case True{}: Mail.mark(s, now, J.Json.obj([J.KV{"bot", J.Str{J.Json.get_str(p, "bot", "")}}, J.KV{"conv", J.Str{J.Json.get_str(p, "conv", "")}}, J.KV{"status", J.Str{"open"}}]))
+
+def Mail.read(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
+  Step{Mail.seen(Bool.not(String.is_empty(J.Json.get_str(p, "bot", ""))), s, now, p),
+    [MailRead{client, id, J.Json.get_str(p, "conv", ""), J.Json.get_str(p, "before", ""), Mail.limit(J.Json.get_nat(p, "n", 50n))}]}
+
+def Mail.body.row(+body: MB.Body) -> J.Json:
+  +m = MB.Body.mail(body)
+  J.Json.obj([J.KV{"id", J.Str{ML.Mail.id(m)}}, J.KV{"from", J.Str{ML.Mail.from(m)}}, J.KV{"to", J.Str{ML.Mail.to(m)}},
+    J.KV{"kind", J.Str{ML.Mail.kind(m)}}, J.KV{"want", J.Str{ML.Mail.wanted(m)}}, J.KV{"at", J.Json.nat(ML.Mail.at(m))}, J.KV{"text", J.Str{MB.Body.text(body)}}])
+
+def Mail.body.rows(+bs: List<&2, MB.Body>) -> List<&2, J.Json>:
+  match bs:
+    case Nil{}: Nil{}
+    case +h <> +t: Mail.body.row(h) <> Mail.body.rows(t)
+
+def Mail.read.json(+s: M.State, +conv: String, +bot: String, +bs: List<&2, MB.Body>, +more: Bool) -> J.Json:
+  J.Json.obj([J.KV{"conv", Mail.row(M.State.mail(s), bot, ML.Box.conv(M.State.mail(s), conv))}, J.KV{"mails", J.Json.arr(Mail.body.rows(bs))}, J.KV{"more", J.Flag{more}}])
+
+# Used by both RPCs and the MCP primitive. Person messages are ordinary
+# User messages; agent messages retain provenance. Only filing is gated.
+def Mail.target.got(r: Maybe<&2, REF.Ref>, +s: M.State) -> String:
+  match r:
+    case Some{REF.Ref{"thread", th <> _, _}}: th
+    case Some{REF.Ref{"bot", id <> _, _}}: BT.Bot.thread(BT.World.bot(M.State.bots(s), id))
+    case _: ""
+
+def Mail.target(+s: M.State, +to: String) -> String:
+  Mail.target.got(REF.Ref.of_addr(to), s)
+
+def Mail.or(+s: String, +fallback: String) -> String:
+  Bool.pick(String, String.is_empty(s), fallback, s)
+
+def Mail.project(+s: M.State, +o: ML.Origin, +to: String) -> String:
+  Mail.or(Mail.project.got(REF.Ref.of_addr(ML.Origin.from(o)), s), Mail.project.got(REF.Ref.of_addr(to), s))
+
+def Mail.conv.new(+missing: Bool, +old: ML.Conv, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, +conv: String, +subject: String) -> ML.Conv:
+  match missing:
+    case False{}: old
+    case True{}: ML.Conv{conv, subject, ML.Conv.mail_kind(conv, ML.Origin.kind(o)), [ML.Origin.from(o), to], Mail.project(s, o, to), Nil{}, now, now, 0n}
+
+def Mail.conv(+s: M.State, +now: Nat, +o: ML.Origin, +to: String, +conv: String, +subject: String) -> ML.Conv:
+  +old = ML.Box.conv(M.State.mail(s), conv)
+  Mail.conv.new(String.is_empty(ML.Conv.id(old)), old, s, now, o, to, conv, subject)
+
+def Mail.body(+s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String, +conv: String, +subject: String, +given: String) -> MB.Body:
+  MB.Body{Mail.conv(s, now, o, to, conv, subject), ML.Mail{msg, conv, ML.Origin.from(o), to, ML.Origin.kind(o), ML.Origin.ref(o),
+    ML.Mail.want(ML.Origin.kind(o), given, Mail.flags(o, text)), ML.Mail.head(text), Mail.bytes(text, 0n), now}, text}
+
+def Mail.file(+s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
+  Mail.file.body(s, Mail.body(s, now, o, to, text, msg, ML.Mail.route(o, to), Mail.subject(String.eq(ML.Origin.kind(o), "launch"), s, o, to), ""))
+
+def Mail.compose(+s: M.State, +now: Nat, +from: String, +to: String, +text: String, +msg: String, +conv: String, +subject: String, +want: String) -> Step:
+  +o = {ML.Origin{from, "thread", ""} : ML.Origin}
+  +cid = Mail.or(conv, ML.Mail.route(o, to))
+  Mail.file.body(s, Mail.body(s, now, o, to, text, msg, cid, Mail.or(subject, Mail.subject(False{}, s, o, to)), want))
+
+def Mail.request.mark(+valid: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
+  match valid:
+    case True{}: Step.reply(client, id, Mail.mark(s, now, p))
+    case False{}: Step.outs([Reply.err(client, id, "invalid mail status")])
+
 # The delivery kernel keeps the exact Step promised by
 # inbox_running_delivers. Production inbound funnels add metadata around it.
 def Hub.inbox.id(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String, +msg: String) -> Step:
   Hub.inbox.w(Hub.running(Hub.thread(s, to)), M.Worktree.gone(Hub.thread(s, to)), M.Worktree.pending(Hub.thread(s, to), now), s, now, from, to, role, text, msg)
-
-# A linked inbound message, with durable provenance following its post.
-def Hub.inbox.from(+s: M.State, +now: Nat, +from: String, +to: String, +role: M.Role, +text: String, +msg: String) -> Step:
-  Origin.step(Hub.inbox.id(s, now, from, to, role, text, msg), to, msg, ML.Mail.classify(M.Link.from(msg), msg, Origin.system(role), text), now)
-
-def Hub.inbox(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String) -> Step:
-  Hub.inbox.from(s, now, from, to, role, text, M.Link.id(from, Hub.id("m", now, Hub.seq(s))))
 
 def Hub.answer.plan(impl: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String) -> Step:
   match impl:
@@ -3231,45 +3419,6 @@ def Task.note(+id: String, +provider: String, +model: String, +word: String, +su
 def Task.msg(+thread: String, +id: String) -> String:
   M.Link.id(thread, "td-" ++ id)
 
-# (the result reaches the parent before TaskDelivered: a step torn by a
-# crash after the message leaves the task undelivered, and Task.repair
-# finishes it without a second message; law task_finish_delivered_last)
-def Task.finish.go(deliver: Bool, +s: M.State, +now: Nat, +id: String, +thread: String, +parent: String, +provider: String, +model: String, +word: String, st: M.TaskState, +summary: String, cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
-  match deliver:
-    case True{}:
-      Step.after(Step.before(List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}]), os,
-        Hub.inbox.from(s, now, thread, parent, M.System{}, Task.note(id, provider, model, word, summary), Task.msg(thread, id))), [M.TaskDelivered{id, now}])
-    case False{}:
-      Step{List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}]), os}
-
-def Task.finish.k(e: Ended, m: Maybe<&2, M.Task>, +s: M.State, +now: Nat, +thread: String, cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
-  match e m:
-    case NotEnded{} _:
-      Step{cs, os}
-    case _ None{}:
-      Step{cs, os}
-    case +ended Some{M.Task{+id, +parent, _, _, +cur, _, +dl, +provider, +model}}:
-      Task.finish.go(M.Task.pending(M.Task{id, parent, thread, 0n, M.TaskState.next(cur, Task.state_of(ended)), "", dl, provider, model}),
-        s, now, id, thread, parent, provider, model, Task.word(ended), Task.state_of(ended), Task.last(s, thread), cs, os)
-
-# when a child thread's turn ends, its task ends and the result goes to the
-# parent once (the pending check makes delivery exactly-once)
-# (the task is looked up only once the step is known to end a turn: every
-# agent line comes through here)
-def Task.finish.e(e: Ended, +s: M.State, +now: Nat, +thread: String, cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
-  match e:
-    case NotEnded{}:
-      Step{cs, os}
-    case EndedOk{}:
-      Task.finish.k(EndedOk{}, Task.of_child(s, thread), s, now, thread, cs, os)
-    case EndedBad{}:
-      Task.finish.k(EndedBad{}, Task.of_child(s, thread), s, now, thread, cs, os)
-
-def Task.finish(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
-  match st:
-    case Step{+cs, os}:
-      Task.finish.e(Task.ended(cs), s, now, thread, cs, os)
-
 def Task.ended.one(c: M.Change, +thread: String, acc: Ended) -> Ended:
   match c:
     case M.TurnChanged{+th, M.Completed{}, _}:
@@ -3302,15 +3451,6 @@ def Task.ok.if(ready: Bool) -> Ended:
     case False{}:
       NotEnded{}
 
-def Task.finish.w.e(e: Ended, +s: M.State, +now: Nat, +thread: String, +cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
-  match e:
-    case NotEnded{}:
-      Step{cs, os}
-    case EndedOk{}:
-      Task.finish.e(Task.ok.if(M.Work.ready(M.State.replay(cs, s), thread)), s, now, thread, cs, os)
-    case EndedBad{}:
-      Task.finish.e(EndedBad{}, s, now, thread, cs, os)
-
 # whether a step sets task id's state
 def Task.marked(cs: List<&2, M.Change>, +id: String) -> Bool:
   match cs:
@@ -3327,16 +3467,6 @@ def Task.demo(busy: Bool) -> M.State:
   M.State.replay(List.append(&2, M.Change, [M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t0", "p1", "x", M.Local{}, "", "", "claude", "", 1n},
     M.ThreadCreated{"t1", "p1", "y", M.Local{}, "", "", "claude", "", 1n}, M.TaskDelegated{"k1", "t0", "t1", 1n, "claude", "", 1n},
     M.TaskStateSet{"k1", M.TaskRunning{}, "", 1n}, M.TurnChanged{"t1", M.Running{}, 1n}], Bool.pick(List<&2, M.Change>, busy, [M.WorkSet{"t1", "bg", "a\tx", 2n}], Nil{})), M.State.empty())
-
-# a child's task ends when its thread is done: a completed turn that left
-# work out (its own children, background or watched work) or a queued
-# message keeps the task open, and the turn that finishes that work
-# delivers; a failure or a stop ends it at once (laws task_waits_for_child_work,
-# task_failed_ends_even_busy)
-def Task.finish.w(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
-  match st:
-    case Step{+cs, os}:
-      Task.finish.w.e(Task.ended.last(cs, thread), s, now, thread, cs, os)
 
 # Launched threads reporting back
 # -------------------------------
@@ -3561,24 +3691,6 @@ def Lr.far.tick(+s: M.State) -> Step:
 def Lr.exists(+s: M.State, +th: String) -> Bool:
   String.eq(M.Thread.id(Hub.thread(s, th)), th)
 
-def Lr.send.here(ok: Bool, +s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
-  match ok:
-    case True{}:
-      Hub.inbox.from(s, now, thread, to, M.User{}, text, Lr.msg(thread, Hub.id("r", now, Hub.seq(s))))
-    case False{}:
-      Step.none()
-
-def Lr.send.k(far: Bool, +s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
-  match far:
-    case True{}:
-      Step{[Lr.far.add(s, Lr.far.line(Hub.id("r", now, Hub.seq(s)), to, thread, text), now)], [LaunchFar{}]}
-    case False{}:
-      Lr.send.here(Lr.exists(s, to), s, now, thread, to, text)
-
-# a note from thread to its launcher's thread `to`
-def Lr.send(+s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
-  Lr.send.k(FR.Fr.is(to), s, now, thread, to, text)
-
 # a turn's end: the counter of launcher-started turns moves on, and at
 # the bound the reports stop
 # the counter, written only when it moves
@@ -3589,47 +3701,6 @@ def Lr.n.set(same: Bool, +thread: String, +n: Nat, +now: Nat) -> List<&2, M.Chan
     case False{}:
       [M.SettingSet{Lr.n.key(thread), Nat.show(n), now}]
 
-def Lr.end.n(stop: Bool, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String, +n: Nat, +text: String) -> Step:
-  match stop:
-    case True{}:
-      Step.before([M.SettingSet{Lr.n.key(thread), "0", now}, M.ThreadLaunched{thread, by, False{}, now}], Nil{}, Lr.send(s, now, thread, to, text ++ Lr.loop.note(thread)))
-    case False{}:
-      Step.before(Lr.n.set(Nat.is_eq(n, M.Switch.num(M.Setting.get(s, Lr.n.key(thread), "0"), 0n)), thread, n, now), Nil{}, Lr.send(s, now, thread, to, text))
-
-def Lr.end.c(own: Bool, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String, +e: Nat) -> Step:
-  +n = {Bool.pick(Nat, own, Nat.add(M.Switch.num(M.Setting.get(s, Lr.n.key(thread), "0"), 0n), 1n), 0n) : Nat}
-  +reply = {Lr.reply(Answer.of(M.State.mine(s, thread), thread)) : String}
-  Lr.end.n(Nat.is_ge(n, Lr.loops()), s, now, thread, by, to, n, Lr.note(thread, Lr.title(Hub.thread(s, thread)), Lr.word(e, reply), reply))
-
-def Lr.end.k(quiet: Bool, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String, +e: Nat) -> Step:
-  match quiet:
-    case True{}:
-      Step.none()
-    case False{}:
-      Lr.end.c(Bool.and(String.eq(M.Link.from(Lr.trig(M.State.mine(s, thread), thread)), by), Bool.not(String.is_empty(by))), s, now, thread, by, to, e)
-
-# what the step tells the launcher (s: the state after the step)
-def Lr.what.e(none: Bool, +e: Nat, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String) -> Step:
-  match none:
-    case True{}:
-      Step.none()
-    case False{}:
-      Lr.end.k(Bool.or(Bool.and(Nat.is_eq(e, 1n), Nat.is_gt(M.Work.busy(s, thread), 0n)), Bool.and(Bool.not(FR.Fr.is(to)), Lr.said(M.State.mine(s, thread), thread, to))), s, now, thread, by, to, e)
-
-def Lr.what(asked: Bool, +ask: String, +e: Nat, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String) -> Step:
-  match asked:
-    case True{}:
-      Lr.send(s, now, thread, to, Lr.ask.note(thread, Lr.title(Hub.thread(s, thread)), ask))
-    case False{}:
-      Lr.what.e(Nat.is_eq(e, 0n), e, s, now, thread, by, to)
-
-def Lr.tell.q(quiet: Bool, +to: String, +ask: String, +e: Nat, +s1: M.State, +now: Nat, +thread: String) -> Step:
-  match quiet:
-    case True{}:
-      Step.none()
-    case False{}:
-      Lr.what(Bool.not(String.is_empty(ask)), ask, e, s1, now, thread, M.Launch.by(s1, thread), to)
-
 def Task.by.id.k(r: Map<&2, M.Task> & M.Task) -> M.Task:
   (_, t) = r
   t
@@ -3638,15 +3709,6 @@ def Task.by.id(+s: M.State, +id: String) -> M.Task:
   match s:
     case M.State{_, _, _, _, tk, _, _, _, _, _, _}:
       Task.by.id.k(Map.get(M.Task, M.Task.blank(id), tk, id))
-
-# the person cancels a delegated task from its row: its child stops, and
-# the parent is told (once: TaskDelivered last); a finished task is left
-def Task.cancel.user(t: M.Task, +s: M.State, +now: Nat) -> Step:
-  match t:
-    case M.Task{+id, +parent, +child, _, +st, _, _, +provider, +model}:
-      Bool.pick(Step, M.TaskState.terminal(st), Step.none(),
-        Step.after(Step.before([M.TaskStateSet{id, M.TaskCancelled{}, "cancelled by the user", now}, M.TurnChanged{child, M.Interrupted{}, now}], [AgentStop{child}],
-          Hub.inbox.from(s, now, child, parent, M.System{}, Task.note(id, provider, model, "cancelled by the user", ""), Task.msg(child, id))), [M.TaskDelivered{id, now}]))
 
 # Retiring a run
 # --------------
@@ -3703,6 +3765,193 @@ def Step.cat(a: Step, b: Step) -> Step:
   match a b:
     case Step{cs, os} Step{c2, o2}:
       Step{List.append(&2, M.Change, cs, c2), List.append(&2, Out, os, o2)}
+
+def Mail.send.to(+person: Bool, +s: M.State, +now: Nat, +from: String, +thread: String, +p: J.Json, +msg: String) -> Step:
+  match person:
+    case True{}:
+      Step.cat(Hub.post(s, now, thread, msg, M.User{}, J.Json.get_str(p, "text", "")), Mail.compose(s, now, "person", Mail.addr(s, thread), J.Json.get_str(p, "text", ""), msg,
+        J.Json.get_str(p, "conv", ""), J.Json.get_str(p, "subject", ""), J.Json.get_str(p, "want", "")))
+    case False{}:
+      Step.cat(Origin.step(Hub.inbox.id(s, now, from, thread, M.User{}, J.Json.get_str(p, "text", ""), msg), thread, msg, ML.Origin{Mail.addr(s, from), "thread", ""}, now),
+        Mail.compose(s, now, Mail.addr(s, from), Mail.addr(s, thread), J.Json.get_str(p, "text", ""), msg, J.Json.get_str(p, "conv", ""), J.Json.get_str(p, "subject", ""), J.Json.get_str(p, "want", "")))
+
+def Mail.send.valid(+ok: Bool, +s: M.State, +now: Nat, +from: String, +thread: String, +p: J.Json, +msg: String) -> Step:
+  match ok:
+    case True{}: Mail.send.to(String.eq(from, "person"), s, now, from, thread, p, msg)
+    case False{}: Step.none()
+
+def Mail.send(+s: M.State, +now: Nat, +from: String, +p: J.Json) -> Step:
+  +thread = Mail.target(s, J.Json.get_str(p, "to", ""))
+  Mail.send.valid(Hub.owns(s, thread), s, now, from, thread, p, Hub.id("mail", now, Hub.seq(s)))
+
+def Mail.request.on(+on: Bool, +i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
+  match on i:
+    case False{} _: Step.outs([Reply.err(client, id, "mail is off")])
+    case True{} 0n: Step.outs([Reply.data(client, id, Mail.list(s, p))])
+    case True{} 1n: Mail.read(s, now, client, id, p)
+    case True{} 2n: Step.outs([Reply.data(client, id, Mail.find(s, p))])
+    case True{} 3n: Mail.request.mark(Mail.mark.valid(J.Json.get_str(p, "status", "")), s, now, client, id, p)
+    case True{} 4n: Step.reply(client, id, Mail.tag(now, p))
+    case True{} _: Step.before(Nil{}, [Reply.ok(client, id)], Mail.send(s, now, "person", p))
+
+def Mail.tee.on(+on: Bool, +st: Step, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
+  match on:
+    case False{}: st
+    case True{}: Step.cat(st, Mail.file(s, now, o, to, text, msg))
+
+def Mail.tee(+st: Step, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
+  Mail.tee.on(Bool.and(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), Bool.not(String.eq(ML.Origin.kind(o), "person"))), st, s, now, o, to, text, msg)
+
+# The one room-level tee is independent of the member wake count.
+def Mail.room.file(+s: M.State, +now: Nat, +from: String, +room: String, +text: String, +msg: String, +parts: List<&2, String>, +subject: String) -> Step:
+  +o = {ML.Origin{from, "room", room} : ML.Origin}
+  +conv = ML.Mail.route(o, REF.Ref.addr(REF.Ref.room(room)))
+  Mail.file.body(s, MB.Body{ML.Conv{conv, subject, ML.Conv.mail_kind(conv, "room"), parts, "", Nil{}, now, now, 0n},
+    ML.Mail{msg, conv, from, REF.Ref.addr(REF.Ref.room(room)), "room", room, "fyi", ML.Mail.head(text), Mail.bytes(text, 0n), now}, text})
+
+def Mail.room.on(+on: Bool, +st: Step, +s: M.State, +now: Nat, +from: String, +room: String, +text: String, +msg: String, +parts: List<&2, String>, +subject: String) -> Step:
+  match on:
+    case False{}: st
+    case True{}: Step.cat(st, Mail.room.file(s, now, from, room, text, msg, parts, subject))
+
+def Mail.room(+st: Step, +s: M.State, +now: Nat, +from: String, +room: String, +text: String, +msg: String, +parts: List<&2, String>, +subject: String) -> Step:
+  Mail.room.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), st, s, now, from, room, text, msg, parts, subject)
+
+def Mail.inbound(+st: Step, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
+  Mail.tee(Origin.step(st, to, msg, o, now), s, now, o, Mail.addr(s, to), text, msg)
+
+# A linked inbound message, with durable provenance following its post.
+def Hub.inbox.from(+s: M.State, +now: Nat, +from: String, +to: String, +role: M.Role, +text: String, +msg: String) -> Step:
+  Mail.inbound(Hub.inbox.id(s, now, from, to, role, text, msg), s, now, ML.Mail.classify(M.Link.from(msg), msg, Origin.system(role), text), to, text, msg)
+
+def Hub.inbox(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String) -> Step:
+  Hub.inbox.from(s, now, from, to, role, text, M.Link.id(from, Hub.id("m", now, Hub.seq(s))))
+
+# (the result reaches the parent before TaskDelivered: a step torn by a
+# crash after the message leaves the task undelivered, and Task.repair
+# finishes it without a second message; law task_finish_delivered_last)
+def Task.finish.go(deliver: Bool, +s: M.State, +now: Nat, +id: String, +thread: String, +parent: String, +provider: String, +model: String, +word: String, st: M.TaskState, +summary: String, cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
+  match deliver:
+    case True{}:
+      Step.after(Step.before(List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}]), os,
+        Hub.inbox.from(s, now, thread, parent, M.System{}, Task.note(id, provider, model, word, summary), Task.msg(thread, id))), [M.TaskDelivered{id, now}])
+    case False{}:
+      Step{List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}]), os}
+
+def Task.finish.k(e: Ended, m: Maybe<&2, M.Task>, +s: M.State, +now: Nat, +thread: String, cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
+  match e m:
+    case NotEnded{} _:
+      Step{cs, os}
+    case _ None{}:
+      Step{cs, os}
+    case +ended Some{M.Task{+id, +parent, _, _, +cur, _, +dl, +provider, +model}}:
+      Task.finish.go(M.Task.pending(M.Task{id, parent, thread, 0n, M.TaskState.next(cur, Task.state_of(ended)), "", dl, provider, model}),
+        s, now, id, thread, parent, provider, model, Task.word(ended), Task.state_of(ended), Task.last(s, thread), cs, os)
+
+# when a child thread's turn ends, its task ends and the result goes to the
+# parent once (the pending check makes delivery exactly-once)
+# (the task is looked up only once the step is known to end a turn: every
+# agent line comes through here)
+def Task.finish.e(e: Ended, +s: M.State, +now: Nat, +thread: String, cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
+  match e:
+    case NotEnded{}:
+      Step{cs, os}
+    case EndedOk{}:
+      Task.finish.k(EndedOk{}, Task.of_child(s, thread), s, now, thread, cs, os)
+    case EndedBad{}:
+      Task.finish.k(EndedBad{}, Task.of_child(s, thread), s, now, thread, cs, os)
+
+def Task.finish(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
+  match st:
+    case Step{+cs, os}:
+      Task.finish.e(Task.ended(cs), s, now, thread, cs, os)
+
+def Task.finish.w.e(e: Ended, +s: M.State, +now: Nat, +thread: String, +cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
+  match e:
+    case NotEnded{}:
+      Step{cs, os}
+    case EndedOk{}:
+      Task.finish.e(Task.ok.if(M.Work.ready(M.State.replay(cs, s), thread)), s, now, thread, cs, os)
+    case EndedBad{}:
+      Task.finish.e(EndedBad{}, s, now, thread, cs, os)
+
+# a child's task ends when its thread is done: a completed turn that left
+# work out (its own children, background or watched work) or a queued
+# message keeps the task open, and the turn that finishes that work
+# delivers; a failure or a stop ends it at once (laws task_waits_for_child_work,
+# task_failed_ends_even_busy)
+def Task.finish.w(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
+  match st:
+    case Step{+cs, os}:
+      Task.finish.w.e(Task.ended.last(cs, thread), s, now, thread, cs, os)
+
+def Lr.send.here(ok: Bool, +s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
+  match ok:
+    case True{}:
+      Hub.inbox.from(s, now, thread, to, M.User{}, text, Lr.msg(thread, Hub.id("r", now, Hub.seq(s))))
+    case False{}:
+      Step.none()
+
+def Lr.send.k(far: Bool, +s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
+  match far:
+    case True{}:
+      Step{[Lr.far.add(s, Lr.far.line(Hub.id("r", now, Hub.seq(s)), to, thread, text), now)], [LaunchFar{}]}
+    case False{}:
+      Lr.send.here(Lr.exists(s, to), s, now, thread, to, text)
+
+# a note from thread to its launcher's thread `to`
+def Lr.send(+s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
+  Lr.send.k(FR.Fr.is(to), s, now, thread, to, text)
+
+def Lr.end.n(stop: Bool, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String, +n: Nat, +text: String) -> Step:
+  match stop:
+    case True{}:
+      Step.before([M.SettingSet{Lr.n.key(thread), "0", now}, M.ThreadLaunched{thread, by, False{}, now}], Nil{}, Lr.send(s, now, thread, to, text ++ Lr.loop.note(thread)))
+    case False{}:
+      Step.before(Lr.n.set(Nat.is_eq(n, M.Switch.num(M.Setting.get(s, Lr.n.key(thread), "0"), 0n)), thread, n, now), Nil{}, Lr.send(s, now, thread, to, text))
+
+def Lr.end.c(own: Bool, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String, +e: Nat) -> Step:
+  +n = {Bool.pick(Nat, own, Nat.add(M.Switch.num(M.Setting.get(s, Lr.n.key(thread), "0"), 0n), 1n), 0n) : Nat}
+  +reply = {Lr.reply(Answer.of(M.State.mine(s, thread), thread)) : String}
+  Lr.end.n(Nat.is_ge(n, Lr.loops()), s, now, thread, by, to, n, Lr.note(thread, Lr.title(Hub.thread(s, thread)), Lr.word(e, reply), reply))
+
+def Lr.end.k(quiet: Bool, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String, +e: Nat) -> Step:
+  match quiet:
+    case True{}:
+      Step.none()
+    case False{}:
+      Lr.end.c(Bool.and(String.eq(M.Link.from(Lr.trig(M.State.mine(s, thread), thread)), by), Bool.not(String.is_empty(by))), s, now, thread, by, to, e)
+
+# what the step tells the launcher (s: the state after the step)
+def Lr.what.e(none: Bool, +e: Nat, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String) -> Step:
+  match none:
+    case True{}:
+      Step.none()
+    case False{}:
+      Lr.end.k(Bool.or(Bool.and(Nat.is_eq(e, 1n), Nat.is_gt(M.Work.busy(s, thread), 0n)), Bool.and(Bool.not(FR.Fr.is(to)), Lr.said(M.State.mine(s, thread), thread, to))), s, now, thread, by, to, e)
+
+def Lr.what(asked: Bool, +ask: String, +e: Nat, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String) -> Step:
+  match asked:
+    case True{}:
+      Lr.send(s, now, thread, to, Lr.ask.note(thread, Lr.title(Hub.thread(s, thread)), ask))
+    case False{}:
+      Lr.what.e(Nat.is_eq(e, 0n), e, s, now, thread, by, to)
+
+def Lr.tell.q(quiet: Bool, +to: String, +ask: String, +e: Nat, +s1: M.State, +now: Nat, +thread: String) -> Step:
+  match quiet:
+    case True{}:
+      Step.none()
+    case False{}:
+      Lr.what(Bool.not(String.is_empty(ask)), ask, e, s1, now, thread, M.Launch.by(s1, thread), to)
+
+# the person cancels a delegated task from its row: its child stops, and
+# the parent is told (once: TaskDelivered last); a finished task is left
+def Task.cancel.user(t: M.Task, +s: M.State, +now: Nat) -> Step:
+  match t:
+    case M.Task{+id, +parent, +child, _, +st, _, _, +provider, +model}:
+      Bool.pick(Step, M.TaskState.terminal(st), Step.none(),
+        Step.after(Step.before([M.TaskStateSet{id, M.TaskCancelled{}, "cancelled by the user", now}, M.TurnChanged{child, M.Interrupted{}, now}], [AgentStop{child}],
+          Hub.inbox.from(s, now, child, parent, M.System{}, Task.note(id, provider, model, "cancelled by the user", ""), Task.msg(child, id))), [M.TaskDelivered{id, now}]))
 
 def Ride.after.one(+s: M.State, +now: Nat, +th: String, st: Step) -> Step:
   match st:
@@ -5128,7 +5377,7 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
       Step.before(Nil{}, [Reply.ok(client, id)], Watch.cancel(s, now, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "id", "")))
     case 37n:
       Step.before(Nil{}, [Reply.ok(client, id)], Locks.release(s, now, J.Json.get_str(p, "name", ""), J.Json.get_str(p, "thread", "")))
-    case 42n:
+    case 39n:
       Step.outs([Reply.ok(client, id), KiCadRetry{}])
     case 38n:
       Step.before(Nil{}, [Reply.ok(client, id)], Locks.cancel(s, now, J.Json.get_str(p, "name", ""), J.Json.get_str(p, "thread", "")))
@@ -5142,11 +5391,17 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
       Step.before(Nil{}, [Reply.ok(client, id)], Deploy.cancel(s, now))
     case 36n:
       Step.outs([Reply.data(client, id, DP.Deploy.status(s))])
-    case 39n:
+    case 40n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 0n, s, now, client, id, p)
+    case 41n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 1n, s, now, client, id, p)
+    case 42n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 2n, s, now, client, id, p)
+    case 43n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 3n, s, now, client, id, p)
+    case 44n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 4n, s, now, client, id, p)
+    case 45n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 5n, s, now, client, id, p)
+    case 46n:
       Buy.look(s, client, id, J.Json.get_str(p, "thread", ""), "fab", "")
-    case 40n:
+    case 47n:
       Buy.look(s, client, id, J.Json.get_str(p, "thread", ""), "intent", J.Json.get_str(p, "text", ""))
-    case 41n:
+    case 48n:
       Buy.start(Hub.owns(s, J.Json.get_str(p, "thread", "")), s, now, client, id, J.Json.get_str(p, "thread", ""))
     case _:
       Hub.more(C.Codec.pos(Hub.methods.git(), m), s, now, client, id, p, m)
@@ -6032,7 +6287,7 @@ def Carry.cut() -> String:
 def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match go:
     case True{}:
-      Step.after(Origin.step(Hub.post(s, now, th, Hub.id("c", now, Hub.seq(s)), M.User{}, M.Carry.text() ++ " " ++ Carry.cut() ++ DP.Deploy.suffix(s, VER.Version.current())), th, Hub.id("c", now, Hub.seq(s)), ML.Origin{"backplane", "carry", ""}, now),
+      Step.after(Mail.inbound(Hub.post(s, now, th, Hub.id("c", now, Hub.seq(s)), M.User{}, M.Carry.text() ++ " " ++ Carry.cut() ++ DP.Deploy.suffix(s, VER.Version.current())), s, now, ML.Origin{"backplane", "carry", ""}, th, M.Carry.text() ++ " " ++ Carry.cut() ++ DP.Deploy.suffix(s, VER.Version.current()), Hub.id("c", now, Hub.seq(s))),
         [M.ActivityLogged{th, Hub.id("r", now, 1n+Hub.seq(s)), "info", "restart", "Continuing after the restart", now}])
     case False{}:
       Step.none()
@@ -6738,3 +6993,54 @@ def Locks.demo.work() -> M.State:
 def Locks.demo.work.end() -> String:
   +s = Locks.demo.work()
   LK.Lock.owner(M.Locks.get(M.State.replay(Queue.changes(Locks.after(s, 4n, Watch.end(s, 4n, "ta", Watch.id(Locks.demo(), "ta"), "exit 0", ""))), s), "bend"))
+
+# ---- mail 2b invariant projections ----
+def Mail.pending.count(+cs: List<&2, M.Change>) -> Nat:
+  match cs:
+    case Nil{}: 0n
+    case M.MailPosted{_, _, _, _, _, _, _, _, _, _} <> +t: 1n+Mail.pending.count(t)
+    case _ <> +t: Mail.pending.count(t)
+
+def Mail.file.count(+st: Step) -> Nat:
+  match st:
+    case Step{_, MailAppend{_, _, +cs} <> Nil{}}: Mail.pending.count(cs)
+    case _: 0n
+
+def Mail.pending.conv(cs: List<&2, M.Change>) -> String:
+  match cs:
+    case Nil{}: ""
+    case M.MailPosted{_, conv, _, _, _, _, _, _, _, _} <> _: conv
+    case _ <> t: Mail.pending.conv(t)
+
+def Mail.file.route(+st: Step) -> String:
+  match st:
+    case Step{_, MailAppend{_, _, cs} <> Nil{}}: Mail.pending.conv(cs)
+    case _: ""
+
+def Mail.file.waits(+st: Step) -> Bool:
+  match st:
+    case Step{Nil{}, MailAppend{_, _, _} <> Nil{}}: False{}
+    case _: True{}
+
+# Optional conversation/subject/want on the primitive apply to the room's
+# single body/header, without changing its existing member deliveries.
+def Mail.options.body(r: Maybe<&2, MB.Body>, +s: M.State, +p: J.Json) -> Step:
+  match r:
+    case None{}: Step.none()
+    case Some{MB.Body{+c, ML.Mail{+id, _, +from, +to, +kind, +ref, +want, +head, +size, +at}, +text}}:
+      +conv = Mail.or(J.Json.get_str(p, "conv", ""), ML.Conv.id(c))
+      +old = ML.Box.conv(M.State.mail(s), conv)
+      Mail.file.body(s, MB.Body{ML.Conv{conv, Mail.or(ML.Conv.subject(old), Mail.or(J.Json.get_str(p, "subject", ""), ML.Conv.subject(c))), ML.Conv.mail_kind(conv, kind),
+        ML.Conv.parts(c), ML.Conv.project(c), ML.Conv.tags(c), ML.Conv.made(c), ML.Conv.last(c), ML.Conv.n(c)},
+        ML.Mail{id, conv, from, to, kind, ref, ML.Mail.want(kind, Mail.or(J.Json.get_str(p, "want", ""), want), Mail.flags(ML.Origin{from, kind, ref}, text)), head, size, at}, text})
+
+def Mail.options.outs(os: List<&2, Out>, +s: M.State, +p: J.Json) -> List<&2, Out>:
+  match os:
+    case Nil{}: Nil{}
+    case MailAppend{line, _, _} <> rest:
+      List.append(&2, Out, Step.outs_of(Mail.options.body(MB.Body.parse(line), s, p)), Mail.options.outs(rest, s, p))
+    case o <> rest: o <> Mail.options.outs(rest, s, p)
+
+def Mail.options(st: Step, s: M.State, p: J.Json) -> Step:
+  match st:
+    case Step{cs, os}: Step{cs, Mail.options.outs(os, s, p)}
