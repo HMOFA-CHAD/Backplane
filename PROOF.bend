@@ -11065,6 +11065,9 @@ def Laws.order_off_no_tools(buy):
 def Laws.order_off_by_default():
   {==}
 
+def Laws.order_ask_alert_plain(q):
+  {==}
+
 def Laws.order_off_says_where():
   {==}
 
