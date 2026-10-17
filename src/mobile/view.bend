@@ -193,7 +193,7 @@ def View.far(+o: J.Json, a: U.Act) -> U.Act:
 # (in a project with several boards, another tab stays on the board picked:
 # client.bend's Bd.keep)
 def View.open.k(+u: U.Ui, +v: String) -> U.Act:
-  View.sync(U.Act{U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(u, "@view.file:" ++ U.Ui.sel(u), U.Bd.keep(u, v, View.file(u))), View.slot(u), v), "@pick", ""), "@card", ""), "@pick.rid", ""), Nil{}})
+  View.sync(U.Act{U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(u, "@view.file:" ++ U.Ui.sel(u), U.Bd.keep(u, v, U.Bd.shown(u, View.file(u)))), View.slot(u), v), "@pick", ""), "@card", ""), "@pick.rid", ""), Nil{}})
 
 # The Files tab (client.bend's Fm): its actions are the client's; the
 # phone's view follows them: the folder ("files"), or a file opened in the
@@ -539,7 +539,7 @@ def View.board.rows(fs: List<&2, String>, +cur: String) -> List<&2, J.Json>:
 
 def View.board.list(+u: U.Ui) -> List<&2, J.Json>:
   Bool.pick(List<&2, J.Json>, Bool.and(U.Bd.many(u), Bool.or(String.eq(View.kind(u), "board"), Bool.or(String.eq(View.kind(u), "schematic"), String.eq(View.kind(u), "3d")))),
-    View.board.rows(U.Bd.files(u), View.file(u)), Nil{})
+    View.board.rows(U.Bd.files(u), U.Bd.shown(u, View.file(u))), Nil{})
 
 # the schematic's sheets for the phone's Sheet menu (none with one sheet)
 def View.sheet.list(+u: U.Ui) -> List<&2, J.Json>:

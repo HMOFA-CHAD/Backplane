@@ -152,7 +152,7 @@ Headless UI checks: start Xvfb on `:77`, run `DISPLAY=:77 BACKPLANE_SNAP=/tmp/sn
 - `Tools`: `scripts/bend-order.py FILE` fixes def order (and reports mutual-recursion cycles); `scripts/bend-reuse.sh FILE` marks binders reported as consumed twice.
 - Rewrites: `%e : P` with `e : {a == b}` turns a goal `P[_ := b]` into `P[_ := a]`. Use `Equal.sym` to flip direction and `Equal.trans` to chain.
 - A destructuring let of a call (`K{a, b} = f(x)`) is a match on a computed value and is rejected. Build trees bottom-up (pair a list level by level, `Tab.up` in glb.bend) instead of returning `(tree, rest)` pairs.
-- `is` is a keyword too: a parameter named `is` fails to parse.
+- `is` is a keyword too: a parameter named `is` fails to parse. So is `def` (`+def: String` fails with a bare "Error:").
 - Bits to float: `match u: case U32{w}: F32{w}` reinterprets a U32 as F32 at no cost (`Glb.f32`); `F32.bits` goes the other way.
 - `IO.args()` answers `List<&1, String>`; copy it into a `List<&2, String>` by recursion before reading it twice. Under Bend 2.0.36 it starts with the program's name: programs read `src/server/argv.bend`'s `Argv.args()` (the mains go through `Rvc.main`).
 - Random access into big byte lists: turn them into a balanced `Data` tree once and walk ranges (`Words.range`), never `drop` per lookup.

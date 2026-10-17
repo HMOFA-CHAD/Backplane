@@ -4,6 +4,7 @@ import ../core/order.bend as OR
 import ./google.bend as GS
 import ./proc.bend as P
 import ./host.bend as H
+import ./kicad.bend as K
 
 # Ordering, the IO (core/order.bend; docs/order.md)
 # ==================================================
@@ -106,10 +107,16 @@ def Od.strs(xs: List<&2, String>) -> List<&2, J.Json>:
 
 # board_files: every KiCad board in the project (paths from its folder),
 # for the viewer's board picker
-def Od.card(+thread: String, +intent: String, ps: List<&2, J.Json>, +boards: String, +est: J.Json, +on: Bool, bs: List<&2, String>) -> J.Json:
+def Od.card(+thread: String, +intent: String, ps: List<&2, J.Json>, +boards: String, +est: J.Json, +on: Bool, bs: List<&2, String>, +bd: String) -> J.Json:
   J.Json.obj([J.KV{"thread", J.Str{thread}}, J.KV{"intent", J.Str{intent}}, J.KV{"goal", J.Str{OR.Intent.goal(intent)}},
     J.KV{"parts", J.Json.arr(Od.part.rows(ps))}, J.KV{"boards", J.Num{boards}}, J.KV{"label", J.Str{J.Json.get_str(est, "label", "")}},
-    J.KV{"error", J.Str{J.Json.get_str(est, "error", "")}}, J.KV{"estimates", J.Flag{on}}, J.KV{"board_files", J.Json.arr(Od.strs(bs))}])
+    J.KV{"error", J.Str{J.Json.get_str(est, "error", "")}}, J.KV{"estimates", J.Flag{on}}, J.KV{"board_files", J.Json.arr(Od.strs(bs))}, J.KV{"board_default", J.Str{bd}}])
+
+# the board the viewer opens by default (kicad.bend's Files.read), from the folder
+def Od.pcb(+cwd: String, f: K.Files) -> String:
+  match f:
+    case K.Files{_, +pcb, _, _}:
+      Bool.pick(String, String.starts_with(pcb, cwd ++ "/"), String.drop(pcb, 1n+String.length(cwd)), "")
 
 # KiCad boards in the project (paths from its folder, in name order): the
 # picker's, and the count a card with no fab files yet goes by
@@ -124,18 +131,18 @@ def Od.health.k(ask: Bool, +home: String, +server: String) -> IO(J.Json):
     case False{}:
       IO.pure(J.Json, J.Null{})
 
-def Od.look.ps(ps: List<&2, J.Json>, +home: String, +cwd: String, +thread: String, +intent: String, +on: Bool, +server: String, +bs: List<&2, String>) -> IO(J.Json):
+def Od.look.ps(ps: List<&2, J.Json>, +home: String, +cwd: String, +thread: String, +intent: String, +on: Bool, +server: String, +bs: List<&2, String>, +bd: String) -> IO(J.Json):
   match ps:
     case Nil{}:
       do IO<J.Json>:
         +n : String = Nat.show(List.length(&2, String, bs))
         est : J.Json <- Od.health.k(Bool.and(on, Bool.not(String.eq(n, "0"))), home, server)
-        return Od.card(thread, intent, Nil{}, n, est, on, bs)
+        return Od.card(thread, intent, Nil{}, n, est, on, bs, bd)
     case +p <> +t:
       do IO<J.Json>:
         +install : String <- Od.install(home)
         est : J.Json <- Od.est.k(on, home, server, install, OR.Order.est.body(p <> t))
-        return Od.card(thread, intent, p <> t, "0", est, on, bs)
+        return Od.card(thread, intent, p <> t, "0", est, on, bs, bd)
 
 # where the first newline is (the length when there is none)
 def Od.nl(s: String) -> Nat:
@@ -152,8 +159,9 @@ def Od.look(+home: String, +cwd: String, +thread: String, +opts: String) -> IO(J
     r : P.Ran <- P.Proc.run("sh", ["-c", Od.find()], cwd)
     fs : List<&2, OR.FabFile> <- Od.read(Od.lines(String.lines(Od.ran(r))), cwd)
     b : P.Ran <- P.Proc.run("sh", ["-c", Od.boards()], cwd)
+    kf : K.Files <- K.Files.read(cwd)
     Od.look.ps(OR.Order.parts(fs), home, cwd, thread, String.trim(intent), Bool.not(String.starts_with(opts, "off")),
-      String.trim(String.drop(opts, Nat.add(1n, Od.nl(opts)))), Od.lines(String.lines(Od.ran(b))))
+      String.trim(String.drop(opts, Nat.add(1n, Od.nl(opts)))), Od.lines(String.lines(Od.ran(b))), Od.pcb(cwd, kf))
 
 # fab.intent: the person's own words for .backplane/intent.md, then the card
 def Od.intent(+home: String, +cwd: String, +thread: String, +opts: String, text: String) -> IO(J.Json):

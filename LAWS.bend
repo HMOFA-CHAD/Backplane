@@ -9186,6 +9186,15 @@ law bd_keep_none:
   for kind: String
   {U.Bd.keep.k("", kind, "/p") == "" : String}
 
+# with none picked, the project's own board's chip is the one lit
+law bd_shown_default:
+  {U.Bd.shown.k("", "/p", "boards/a/a.kicad_pcb") == "/p/boards/a/a.kicad_pcb" : String}
+
+law bd_shown_picked:
+  for root: String
+  for own: String
+  {U.Bd.shown.k("/x.kicad_pcb", root, own) == "/x.kicad_pcb" : String}
+
 # a project's second buy thread is numbered, the first is not
 law buy_title_first:
   for t: String

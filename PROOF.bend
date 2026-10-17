@@ -11005,6 +11005,12 @@ def Laws.bd_keep_schematic():
 def Laws.bd_keep_none(kind):
   {==}
 
+def Laws.bd_shown_default():
+  {==}
+
+def Laws.bd_shown_picked(root, own):
+  {==}
+
 def Laws.buy_title_first(t):
   {==}
 

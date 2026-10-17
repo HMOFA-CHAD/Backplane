@@ -1766,7 +1766,7 @@ def View.board.chips(fs: List<&2, String>, +cur: String) -> List<&2, D.Node>:
       D.Dom.button(Bool.pick(String, U.Bd.on(cur, f), "on", ""), "board-pick", f, f, U.Bd.name(f)) <> View.board.chips(t, cur)
 
 def View.boards(+u: U.Ui, +what: String) -> List<&2, D.Node>:
-  Bool.pick(List<&2, D.Node>, U.Bd.many(u), View.board.chips(U.Bd.files(u), U.Ui.view_get(u, "view.path")), [D.Dom.span("what", what)])
+  Bool.pick(List<&2, D.Node>, U.Bd.many(u), View.board.chips(U.Bd.files(u), U.Bd.shown(u, U.Ui.view_get(u, "view.path"))), [D.Dom.span("what", what)])
 
 def View.sheets(+u: U.Ui) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, Nat.is_gt(List.length(&2, HI.Row, HI.Hier.read(U.Ui.info(u, "sheets:" ++ U.Ui.root(u)))), 1n),
@@ -2197,7 +2197,7 @@ def View.aside.k(i: Nat, +u: U.Ui) -> List<&2, D.Node>:
     case 3n:
       View.solid(u)
     case 4n:
-      View.plot(u, List.append(&2, D.Node, Bool.pick(List<&2, D.Node>, U.Bd.many(u), View.board.chips(U.Bd.files(u), U.Ui.view_get(u, "view.path")), Nil{}), List.append(&2, D.Node, View.sheets(u), [View.kicad()])))
+      View.plot(u, List.append(&2, D.Node, Bool.pick(List<&2, D.Node>, U.Bd.many(u), View.board.chips(U.Bd.files(u), U.Bd.shown(u, U.Ui.view_get(u, "view.path"))), Nil{}), List.append(&2, D.Node, View.sheets(u), [View.kicad()])))
     case 6n:
       View.files(u)
     case 7n:

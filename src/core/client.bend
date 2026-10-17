@@ -5057,9 +5057,17 @@ def Bd.keep(+u: Ui, +kind: String, +path: String) -> String:
 def Bd.or(+a: String, +b: String) -> String:
   Bool.pick(String, String.is_empty(a), b, a)
 
+# the file the viewer shows: the one picked, else the project's own board
+# (the card's board_default, "fab.board:<t>"), so its chip is lit too
+def Bd.shown.k(+path: String, +root: String, +own: String) -> String:
+  Bd.or(path, Bool.pick(String, Bool.or(String.is_empty(own), String.is_empty(root)), "", FM.Fm.abs(root, own)))
+
+def Bd.shown(+u: Ui, +path: String) -> String:
+  Bd.shown.k(path, Ui.root(u), Ui.info(u, "fab.board:" ++ Ui.sel(u)))
+
 # the window's tab picked: a comparison kept (Rv.back), else the board picked
 def Ui.view_pick.bd(+u: Ui, +kind: String) -> Ui:
-  Ui.view_pick.p(u, kind, Bd.or(Rv.back(u, kind), Bd.keep(u, kind, Ui.view_get(u, "view.path"))))
+  Ui.view_pick.p(u, kind, Bd.or(Rv.back(u, kind), Bd.keep(u, kind, Bd.shown(u, Ui.view_get(u, "view.path")))))
 
 def Bd.kind(+k: String) -> String:
   Bool.pick(String, Bool.or(String.eq(k, "schematic"), String.eq(k, "3d")), k, "board")
@@ -5090,7 +5098,7 @@ def Mpage.act(i: Nat, +u: Ui, +value: String) -> Act:
       Ui.rpc(Ui.scratch_set(Ui.scratch_set(u, "@mech.busy:" ++ Ui.sel(u), value), "@mech.err:" ++ Ui.sel(u), ""), "mech.render",
         [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"path", J.Str{value}}])
     case 6n:
-      Act{Ui.view_put(u, value, Bd.or(Rv.back(u, value), Bd.keep(u, value, Ui.view_get(u, "view.path")))), Nil{}}
+      Act{Ui.view_put(u, value, Bd.or(Rv.back(u, value), Bd.keep(u, value, Bd.shown(u, Ui.view_get(u, "view.path"))))), Nil{}}
     case 7n:
       Act{Ui.view_put(u, "schematic", Rv.sheet(Ui.view_get(u, "view.path"), value)), Nil{}}
     case 8n:
@@ -5856,7 +5864,8 @@ def Fab.keep(u: Ui, +th: String, +c: OR.Card) -> Ui:
     "fab.buy:" ++ th, OR.Card.buy(c)), "fab.shown:" ++ th, Bool.pick(String, OR.Card.shown(c), "1", ""))
 
 def Fab.reply.r(u: Ui, +th: String, +r: J.Json) -> Ui:
-  Fab.keep(Ui.info_set(Ui.info_set(u, "fab.ready:" ++ th, OR.Card.ready.j(r)), "fab.boards:" ++ th, OR.Card.boards.j(r)), th, OR.Card.of.j(r))
+  Fab.keep(Ui.info_set(Ui.info_set(Ui.info_set(u, "fab.ready:" ++ th, OR.Card.ready.j(r)), "fab.boards:" ++ th, OR.Card.boards.j(r)),
+    "fab.board:" ++ th, J.Json.get_str(r, "board_default", "")), th, OR.Card.of.j(r))
 
 def Fab.reply(has: Bool, u: Ui, +o: J.Json) -> Ui:
   match has:

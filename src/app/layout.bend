@@ -4278,7 +4278,7 @@ def Side.k(board: Bool, +ty: Ty, +n: S.Nui, +k: U32, +ss: List<&2, V.Seen>, +x0:
       +open = Bool.not(String.is_empty(U.Ui.scratch(S.Nui.ui(n), "@vw.layers")))
       +sheets = Bool.and(U32.is_eq(k, 1), Nat.is_gt(List.length(&2, HI.Row, rs), 1n))
       Out.all([
-        Out.all(Side.boards(Side.board.fs(S.Nui.ui(n)), U.Ui.view_get(S.Nui.ui(n), "view.path"), ty, (x0 + 16 : U32))),
+        Out.all(Side.boards(Side.board.fs(S.Nui.ui(n)), U.Bd.shown(S.Nui.ui(n), U.Ui.view_get(S.Nui.ui(n), "view.path")), ty, (x0 + 16 : U32))),
         Out.all(Side.trail(Bool.pick(List<&2, Nat>, sheets, HI.Hier.chain(rs, at), Nil{}), rs, at, ty, (x0 + 16 + Side.boards.w(Side.board.fs(S.Nui.ui(n)), ty) : U32))),
         Lay.chip(ty, (x1 - 16 - Lay.button.w(ty, Side.head(k, S.Nui.lfocus(n))) : U32), 60, Side.head(k, S.Nui.lfocus(n)), open, "vw-layers", ""),
         Side.ground(ty, n, (x1 - 22 - Lay.button.w(ty, Side.head(k, S.Nui.lfocus(n))) - 28 : U32)),
