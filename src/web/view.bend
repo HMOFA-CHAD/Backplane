@@ -1577,7 +1577,7 @@ def View.asks.u(u: U.Ui) -> D.Node:
 # The project card (client.bend's Fab.*, core/order.bend): the intent's
 # goal (a click opens the whole intent), Edit, and Buy it with its price
 def View.fab.buy(+label: String) -> List<&2, D.Node>:
-  Bool.pick(List<&2, D.Node>, String.is_empty(label), Nil{}, [D.Dom.button("fab-buy", "buy", "", "Order this project's parts: a thread that asks what's missing, exports the files and quotes them", label)])
+  Bool.pick(List<&2, D.Node>, String.is_empty(label), Nil{}, [D.Dom.button("fab-buy", "buy", "", "Order this project's parts in a thread that asks what's missing, exports the files and quotes them. The price is the bare parts at the smallest order; the quote adds assembly, components, shipping and duties.", label)])
 
 def View.fab.body(open: Bool, +intent: String) -> List<&2, D.Node>:
   match open:
