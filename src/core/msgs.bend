@@ -1644,9 +1644,9 @@ def T.settings.kicad.ipc.missing(l: I.Loc) -> String:
 def T.settings.kicad.ipc.on(l: I.Loc) -> String:
   match l:
     case I.En{}:
-      "Agents may drive KiCad through the fork's api-server (NNG/protobuf)."
+      "Agents edit KiCad through Backplane's headless servers, over IPC."
     case I.Ja{}:
-      "エージェントがフォークのapi-server（NNG/protobuf）経由でKiCadを操作できます。"
+      "エージェントはBackplaneのヘッドレスサーバーを通じ、IPCでKiCadを編集します。"
 
 def T.settings.lang(l: I.Loc) -> String:
   match l:

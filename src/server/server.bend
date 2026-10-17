@@ -1,5 +1,7 @@
 import Base
 import ../core/kihealth.bend as KH
+import ../core/kserve.bend as KSC
+import ./kserve.bend as KSV
 import ../core/exe.bend as EX
 import ./lockio.bend as LG
 import ../core/locks.bend as LCK
@@ -178,6 +180,8 @@ type Msg is Data:
   ShipDone{commit: String, out: String}
   KProbe{force: Bool}
   KFound{setting: String, rt: K.Rt}
+  # the headless KiCad servers' lines changed (core/kserve.bend's KS.lines)
+  KiServers{text: String}
   ModelsFound{models: String, text: String}
   MachinesFound{machines: String}
   # the tailnet listener is up: the pairing link clients show in Settings
@@ -290,7 +294,7 @@ type Msg is Data:
 # remote access: also listen on the tailnet, serve HTTPS through
 # `tailscale serve`, and the token remote clients must present
 type Net is Data:
-  Net{tailnet: Bool, https: Bool, token: String, models: String, mtext: String, rt: K.Rt, br: Maybe<&2, Chan(BR.BMsg)>, pk: Maybe<&2, Chan(PK.PMsg)>, tm: Maybe<&2, Chan(TM.TMsg)>, machines: String, pv: Maybe<&2, Chan(PV.PMsg)>, bn: BN.Bn, managed: Bool, link: String, freecad: String}
+  Net{tailnet: Bool, https: Bool, token: String, models: String, mtext: String, rt: K.Rt, br: Maybe<&2, Chan(BR.BMsg)>, pk: Maybe<&2, Chan(PK.PMsg)>, tm: Maybe<&2, Chan(TM.TMsg)>, machines: String, pv: Maybe<&2, Chan(PV.PMsg)>, bn: BN.Bn, managed: Bool, link: String, freecad: String, ks: Maybe<&2, Chan(KSV.KMsg)>}
 
 type Cfg is Data:
   Cfg{home: String, web: String, host: String, port: U32, prompt: String, dirs: List<&2, String>, version: String, net: Net}
@@ -1354,7 +1358,8 @@ def Info.kicad(rt: K.Rt) -> List<&2, J.KV>:
        J.KV{"kicad.version", J.Str{v}}, J.KV{"kicad.api", J.Str{Nat.show(J.Json.get_nat(h, "api", 0n))}},
        J.KV{"kicad.caps", J.Str{String.join(KH.KH.strings(J.Json.elems(J.Json.get_obj(h, "caps"))), ",")}},
        J.KV{"kicad.why", J.Str{J.Json.get_str(h, "why", "")}}, J.KV{"kicad.min", J.Str{KH.KH.min_version()}},
-       J.KV{"kicad.can_install", J.Str{Bool.pick(String, J.Json.get_bool(h, "can_install", False{}), "1", "")}}]
+       J.KV{"kicad.can_install", J.Str{Bool.pick(String, J.Json.get_bool(h, "can_install", False{}), "1", "")}},
+       J.KV{"kicad.ipc.servers", J.Str{J.Json.get_str(h, "ipc", "")}}]
 
 # the pairing link as a QR code's rows (core/qr.bend), for Settings
 def Info.qr(+lk: String) -> String:
@@ -1368,12 +1373,12 @@ def Info.tailscale(tn: Bool, +st: String) -> String:
 # the bots' browsers: who drives, what is being taught (core/teach.bend)
 def Info.tch(n: Net) -> List<&2, J.KV>:
   match n:
-    case Net{_, _, _, _, _, _, _, _, _, _, _, bnx, _, _, _}:
+    case Net{_, _, _, _, _, _, _, _, _, _, _, bnx, _, _, _, _}:
       TE.Teach.info(BN.Bn.tch(bnx))
 
 def Info.net(n: Net) -> List<&2, J.KV>:
   match n:
-    case Net{+tn, hs, _, ms, _, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, +lk, fc}:
+    case Net{+tn, hs, _, ms, _, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, +lk, fc, ksx}:
       List.append(&2, J.KV, [J.KV{"models", J.Str{ms}}, J.KV{"machines", J.Str{mc}}, J.KV{"bots.remote", J.Str{BN.Bn.dir(bnx)}}, J.KV{"tailnet", J.Str{Bool.pick(String, tn, Bool.pick(String, hs, "https", "on"), "off")}},
         J.KV{"update", J.Str{Bool.pick(String, mgd, "package", "releases")}}, J.KV{"pair", J.Str{TN.Tailnet.report.link(lk)}}, J.KV{"pair.qr", J.Str{Info.qr(TN.Tailnet.report.link(lk))}}, J.KV{"tailscale", J.Str{Info.tailscale(tn, TN.Tailnet.report.state(lk))}}, J.KV{"freecad", J.Str{fc}}], Info.kicad(rt))
 
@@ -2909,13 +2914,13 @@ def Cfg.port(c: Cfg) -> U32:
 
 def Net.token(n: Net) -> String:
   match n:
-    case Net{_, _, t, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}:
+    case Net{_, _, t, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}:
       t
 
 # updates come from a package (SV.Chan.managed): the updater stays off
 def Net.managed(n: Net) -> Bool:
   match n:
-    case Net{_, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}:
+    case Net{_, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}:
       mgd
 
 # Effects
@@ -2933,12 +2938,12 @@ def Hub.mcp_url(+cfg: Cfg, +thread: String) -> String:
 
 def Cfg.mtext(c: Cfg) -> String:
   match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, mt, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, mt, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
       mt
 
 def Cfg.rt(c: Cfg) -> K.Rt:
   match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
       rt
 
 def Hub.prompt.kicad(rt: K.Rt, ipc: Bool) -> String:
@@ -2956,7 +2961,7 @@ def Hub.prompt.files(+cwd: String, fs: K.Files) -> String:
 # (keys: the API keys' block, server/apikeys.bend's Ak.prompt, "" for none)
 def Cfg.bn(c: Cfg) -> BN.Bn:
   match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
       bnx
 
 def Hub.prompt.machines.k(+m: String) -> String:
@@ -3132,13 +3137,13 @@ def Token.load(+home: String) -> IO(String):
 
 def Cfg.with_token(c: Cfg, +t: String) -> Cfg:
   match c:
-    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, _, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
-      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}
+    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, _, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
+      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}
 
 def Cfg.with_managed(c: Cfg, m: Bool) -> Cfg:
   match c:
-    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, _, lk, fc}}:
-      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, m, lk, fc}}
+    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, _, lk, fc, ksx}}:
+      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, m, lk, fc, ksx}}
 
 # Startup
 # -------
@@ -3192,7 +3197,7 @@ def Deploy.probe(+inbox: Chan(Msg)) -> IO(Unit):
   IO.bind(String, Unit, Env.get("BACKPLANE_DEPLOY_LOCKS", "/tmp/bp-bend.lock:/tmp/bp-wt-build.lock"), l => Deploy.probe.l(l, inbox))
 
 def Deploy.swap.sh() -> String:
-  "set -eu; src=$1; prefix=$2; [ -d \"$src\" ] || { echo \"no staged package at $src\"; exit 1; }; mkdir -p \"$prefix\"; if [ -d \"$src/web\" ]; then rm -rf \"$prefix/web.old\"; [ -d \"$prefix/web\" ] && mv \"$prefix/web\" \"$prefix/web.old\"; mv \"$src/web\" \"$prefix/web\"; fi; for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice LICENSE; do if [ -e \"$src/$f\" ]; then mv -f \"$src/$f\" \"$prefix/$f\"; fi; done; rmdir \"$src\" 2>/dev/null || true; exit 0"
+  "set -eu; src=$1; prefix=$2; [ -d \"$src\" ] || { echo \"no staged package at $src\"; exit 1; }; mkdir -p \"$prefix\"; if [ -d \"$src/web\" ]; then rm -rf \"$prefix/web.old\"; [ -d \"$prefix/web\" ] && mv \"$prefix/web\" \"$prefix/web.old\"; mv \"$src/web\" \"$prefix/web\"; fi; for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc LICENSE; do if [ -e \"$src/$f\" ]; then mv -f \"$src/$f\" \"$prefix/$f\"; fi; done; rmdir \"$src\" 2>/dev/null || true; exit 0"
 
 def Deploy.swapped(ok: Bool, +out: String, +path: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ok:
@@ -3361,12 +3366,12 @@ def Agent.pid_is(m: Maybe<&2, Agent>, +pid: U32) -> Bool:
 
 def Cfg.models(c: Cfg) -> String:
   match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, ms, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, ms, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
       ms
 
 def Cfg.pk(c: Cfg) -> Maybe<&2, Chan(PK.PMsg)>:
   match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, pk, tmx, mc, pvx, bnx, mgd, lk, fc}}:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, pk, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
       pk
 
 def Park.put(m: Maybe<&2, Chan(PK.PMsg)>, +msg: PK.PMsg) -> IO(Unit):
@@ -3574,27 +3579,37 @@ def Hub.mcp.send(later: Bool, +park: String, +body: String, +text: String, +repl
 
 def Net.with_br(n: Net, q: Chan(BR.BMsg)) -> Net:
   match n:
-    case Net{a, b, c, d, e, f, _, g, i, mc, pvx, bnx, mgd, lk, fc}:
-      Net{a, b, c, d, e, f, Some{q}, g, i, mc, pvx, bnx, mgd, lk, fc}
+    case Net{a, b, c, d, e, f, _, g, i, mc, pvx, bnx, mgd, lk, fc, ksx}:
+      Net{a, b, c, d, e, f, Some{q}, g, i, mc, pvx, bnx, mgd, lk, fc, ksx}
+
+def Net.with_ks(n: Net, q: Chan(KSV.KMsg)) -> Net:
+  match n:
+    case Net{a, b, c, d, e, f, g, h, i, mc, pvx, bnx, mgd, lk, fc, _}:
+      Net{a, b, c, d, e, f, g, h, i, mc, pvx, bnx, mgd, lk, fc, Some{q}}
+
+def Cfg.ks(c: Cfg) -> Maybe<&2, Chan(KSV.KMsg)>:
+  match c:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, x}}:
+      x
 
 def Net.with_tm(n: Net, q: Chan(TM.TMsg)) -> Net:
   match n:
-    case Net{a, b, c, d, e, f, g, h, _, mc, pvx, bnx, mgd, lk, fc}:
-      Net{a, b, c, d, e, f, g, h, Some{q}, mc, pvx, bnx, mgd, lk, fc}
+    case Net{a, b, c, d, e, f, g, h, _, mc, pvx, bnx, mgd, lk, fc, ksx}:
+      Net{a, b, c, d, e, f, g, h, Some{q}, mc, pvx, bnx, mgd, lk, fc, ksx}
 
 def Net.with_pv(n: Net, q: Chan(PV.PMsg)) -> Net:
   match n:
-    case Net{a, b, c, d, e, f, g, h, i, mc, _, bnx, mgd, lk, fc}:
-      Net{a, b, c, d, e, f, g, h, i, mc, Some{q}, bnx, mgd, lk, fc}
+    case Net{a, b, c, d, e, f, g, h, i, mc, _, bnx, mgd, lk, fc, ksx}:
+      Net{a, b, c, d, e, f, g, h, i, mc, Some{q}, bnx, mgd, lk, fc, ksx}
 
 def Cfg.pv(c: Cfg) -> Maybe<&2, Chan(PV.PMsg)>:
   match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, _, _, pv, bnx, mgd, lk, fc}}:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, _, _, pv, bnx, mgd, lk, fc, ksx}}:
       pv
 
 def Cfg.tm(c: Cfg) -> Maybe<&2, Chan(TM.TMsg)>:
   match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, tm, mc, pvx, bnx, mgd, lk, fc}}:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, tm, mc, pvx, bnx, mgd, lk, fc, ksx}}:
       tm
 
 # a shell's output, to the hub (which sends it to every client)
@@ -3993,8 +4008,8 @@ def Term.json(+thread: String, bs: List<&2, U32>) -> String:
 
 def Net.with_pk(n: Net, q: Chan(PK.PMsg)) -> Net:
   match n:
-    case Net{a, b, c, d, e, f, g, _, i, mc, pvx, bnx, mgd, lk, fc}:
-      Net{a, b, c, d, e, f, g, Some{q}, i, mc, pvx, bnx, mgd, lk, fc}
+    case Net{a, b, c, d, e, f, g, _, i, mc, pvx, bnx, mgd, lk, fc, ksx}:
+      Net{a, b, c, d, e, f, g, Some{q}, i, mc, pvx, bnx, mgd, lk, fc, ksx}
 
 def Browser.exe() -> IO(String):
   do IO<String>:
@@ -4004,7 +4019,7 @@ def Browser.exe() -> IO(String):
 
 def Cfg.br(c: Cfg) -> Maybe<&2, Chan(BR.BMsg)>:
   match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, br, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, br, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
       br
 
 def Preview.shot(+o: J.Json) -> List<&2, J.Json>:
@@ -4099,13 +4114,13 @@ def Hub.term_to(h: Hub, +client: U32, +key: String, +cols: U32, +rows: U32, data
 
 def Cfg.with_rt(c: Cfg, rt: K.Rt) -> Cfg:
   match c:
-    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
-      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}
+    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
+      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}
 
 def Cfg.with_models(c: Cfg, +ms: String, +mt: String) -> Cfg:
   match c:
-    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, _, _, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
-      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}
+    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, _, _, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
+      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}
 
 def Hub.models.k(h: Hub) -> IO(Hub):
   match h:
@@ -4169,21 +4184,217 @@ def Hub.kfound.same(same: Bool, h: Hub, +setting: String, +rt: K.Rt) -> IO(Hub):
     case False{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.kfound.k(String.eq(setting, M.Setting.get(st, "kicad.path", "")), J.Json.get_bool(K.Rt.health(Cfg.rt(cfg)), "again", False{}), Hub{st, f, ls, cl, as, inbox, cfg, note}, rt)
 
-def Hub.kfound(h: Hub, +setting: String, +rt: K.Rt) -> IO(Hub):
+# kicad_ipc and kicad_ipc_status
+# ------------------------------
+# A command for a project's headless KiCad (src/server/kserve.bend). It is
+# answered off the hub's thread: the project is found from the path, the
+# runtime's health and the kicad.ipc setting say whether IPC may be used
+# (core/kserve.bend's KS.gate), commands a headless KiCad cannot answer are
+# refused at once, and anything else goes to the project's server. When IPC
+# is unavailable the error says why and names the fallback, and the thread
+# gets an activity line "KiCad: fell back to files: <why>".
+
+def KIpc.is(+o: J.Json) -> Bool:
+  Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), String.starts_with(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "kicad_ipc"))
+
+def KIpc.args(+o: J.Json) -> J.Json:
+  J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments")
+
+def KIpc.is_status(+o: J.Json) -> Bool:
+  String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "kicad_ipc_status")
+
+def KIpc.id(+o: J.Json) -> String:
+  J.Json.as_raw(J.Json.get(o, "id"), "null")
+
+# the command: kicad_ipc_status asks for the runtime's capabilities
+def KIpc.type(+o: J.Json) -> String:
+  Bool.pick(String, KIpc.is_status(o), "kiapi.backplane.GetCapabilities", J.Json.get_str(KIpc.args(o), "type", ""))
+
+def KIpc.path(+o: J.Json) -> String:
+  J.Json.get_str(KIpc.args(o), "path", "")
+
+# the command's fields (a missing message is {})
+def KIpc.msg(m: J.Json) -> J.Json:
+  match m:
+    case J.Obj{fs}:
+      J.Obj{fs}
+    case _:
+      J.Json.obj(Nil{})
+
+def KIpc.reply(+id: String, ok: Bool, body: J.Json) -> String:
+  "{\"jsonrpc\":\"2.0\",\"id\":" ++ id ++ ",\"result\":" ++ J.Json.show(MC.Mcp.content(ok, body)) ++ "}"
+
+def KIpc.send(+reply: Chan(String), +id: String, ok: Bool, body: J.Json) -> IO(Unit):
+  BR.Browser.say(reply, KIpc.reply(id, ok, body))
+
+def KIpc.fail(+reply: Chan(String), +id: String, +text: String) -> IO(Unit):
+  KIpc.send(reply, id, False{}, MC.Mcp.fail(text))
+
+def KIpc.log(+inbox: Chan(Msg), +thread: String, +id: String, +why: String) -> IO(Unit):
+  do IO<Unit>:
+    +now : Nat <- Now.nat()
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Commit{[M.ActivityLogged{thread, "kicad-ipc:" ++ Nat.show(now) ++ ":" ++ id, "info", "kicad", KSC.KS.activity(why), now}]})
+    return Unit{}
+
+# IPC is unavailable: the error names the fallback, the thread is told
+def KIpc.fallback(+inbox: Chan(Msg), +thread: String, +reply: Chan(String), +id: String, +why: String, +cli: String) -> IO(Unit):
+  do IO<Unit>:
+    KIpc.log(inbox, thread, id, why)
+    KIpc.fail(reply, id, KSC.KS.unavailable(why, cli))
+
+def KIpc.pro.of(fs: K.Files) -> String:
+  match fs:
+    case K.Files{pro, _, _, _}:
+      pro
+
+def KIpc.pro.dir(+dir: String) -> IO(String):
+  IO.bind(K.Files, String, K.Files.read(dir), fs => IO.pure(String, KIpc.pro.of(fs)))
+
+def KIpc.pro.k(pro: Bool, absolute: Bool, +path: String) -> IO(String):
+  match pro absolute:
+    case True{} _:
+      IO.pure(String, path)
+    case False{} True{}:
+      KIpc.pro.dir(K.Files.dir(path))
+    case False{} False{}:
+      IO.pure(String, "")
+
+# the project of a path: the .kicad_pro itself, or the one beside a board or schematic ("" for none)
+def KIpc.pro(+path: String) -> IO(String):
+  KIpc.pro.k(String.ends_with(path, ".kicad_pro"), String.starts_with(path, "/"), path)
+
+def KIpc.env(rt: K.Rt) -> KSV.KEnv:
+  match rt:
+    case K.Rt{+cli, _, v, _, +h}:
+      KSV.KEnv{cli, K.Rt.root(cli), KSC.KS.caps.safe(KH.KH.strings(J.Json.elems(J.Json.get_obj(h, "caps"))), J.Json.get_nat(h, "api", 0n)), v}
+
+# why IPC cannot be used right now ("" when it can)
+def KIpc.gate(rt: K.Rt, +setting: String) -> String:
+  match rt:
+    case K.Rt{_, _, +v, _, +h}:
+      KSC.KS.gate(J.Json.get_str(h, "status", "checking"), v, J.Json.get_str(h, "why", ""), setting)
+
+# what is wrong with the request itself ("" when nothing)
+def KIpc.check(+ty: String, +path: String, +pro: String) -> String:
+  Bool.pick(String, String.is_empty(ty), "type is required: the protobuf command, e.g. kiapi.board.commands.GetItems",
+    Bool.pick(String, Bool.not(String.starts_with(path, "/")), "path must be the absolute path of the project's .kicad_pro, .kicad_pcb or .kicad_sch",
+      Bool.pick(String, String.is_empty(pro), "no KiCad project (.kicad_pro) found for " ++ path,
+        Bool.pick(String, KSC.KS.headless_refused(ty), KSC.KS.refusal(), ""))))
+
+def KIpc.body(+o: J.Json) -> J.Json:
+  J.Json.obj([J.KV{"type", J.Str{J.Json.get_str(o, "type", "")}}, J.KV{"message", J.Json.get_obj(o, "message")}])
+
+# KiCad's own error, with its status
+def KIpc.err(+o: J.Json) -> String:
+  Bool.pick(String, String.is_empty(J.Json.get_str(o, "status", "")), J.Json.get_str(o, "error", "KiCad did not answer"),
+    "KiCad answered " ++ J.Json.get_str(o, "status", "") ++ ": " ++ J.Json.get_str(o, "error", ""))
+
+def KIpc.fin.plain(ok: Bool, +o: J.Json, +reply: Chan(String), +id: String) -> IO(Unit):
+  match ok:
+    case True{}:
+      KIpc.send(reply, id, True{}, KIpc.body(o))
+    case False{}:
+      KIpc.fail(reply, id, KIpc.err(o))
+
+def KIpc.fin.ok(status: Bool, ok: Bool, +o: J.Json, +reply: Chan(String), +id: String, +lines: String) -> IO(Unit):
+  match status:
+    case True{}:
+      KIpc.send(reply, id, True{}, J.Json.obj([J.KV{"server", J.Str{KSC.KS.note(lines)}}, J.KV{"servers", J.Str{lines}}, J.KV{"capabilities", J.Json.get_obj(o, "message")},
+        J.KV{"detail", J.Str{Bool.pick(String, ok, "", KIpc.err(o))}}]))
+    case False{}:
+      KIpc.fin.plain(ok, o, reply, id)
+
+def KIpc.fin.k(fallback: Bool, ok: Bool, +o: J.Json, +inbox: Chan(Msg), +thread: String, +reply: Chan(String), +id: String, status: Bool, +lines: String) -> IO(Unit):
+  match fallback:
+    case True{}:
+      do IO<Unit>:
+        KIpc.log(inbox, thread, id, J.Json.get_str(o, "why", ""))
+        KIpc.fail(reply, id, J.Json.get_str(o, "error", ""))
+    case False{}:
+      KIpc.fin.ok(status, ok, o, reply, id, lines)
+
+# the project's server is asked, and the answer goes back
+def KIpc.run(+q: Chan(KSV.KMsg), +pro: String, env: KSV.KEnv, +ty: String, msg: J.Json, status: Bool, +inbox: Chan(Msg), +thread: String, +reply: Chan(String), +id: String) -> IO(Unit):
+  do IO<Unit>:
+    +line : String <- KSV.KServe.ask_on(q, pro, env, ty, msg)
+    +lines : String <- KSV.KServe.info_on(q)
+    +o : J.Json = KSV.KServe.parse(line)
+    KIpc.fin.k(J.Json.get_bool(o, "fallback", False{}), J.Json.get_bool(o, "ok", False{}), o, inbox, thread, reply, id, status, lines)
+
+def KIpc.go.run(m: Maybe<&2, Chan(KSV.KMsg)>, +rt: K.Rt, +inbox: Chan(Msg), +thread: String, +o: J.Json, +reply: Chan(String), +pro: String) -> IO(Unit):
+  match m:
+    case Some{q}:
+      KIpc.run(q, pro, KIpc.env(rt), KIpc.type(o), KIpc.msg(J.Json.get_obj(KIpc.args(o), "message")), KIpc.is_status(o), inbox, thread, reply, KIpc.id(o))
+    case None{}:
+      KIpc.fallback(inbox, thread, reply, KIpc.id(o), "this Backplane has no KiCad IPC helper", K.Rt.cli(rt))
+
+def KIpc.go.gate(free: Bool, +gate: String, m: Maybe<&2, Chan(KSV.KMsg)>, +rt: K.Rt, +inbox: Chan(Msg), +thread: String, +o: J.Json, +reply: Chan(String), +pro: String) -> IO(Unit):
+  match free:
+    case False{}:
+      KIpc.fallback(inbox, thread, reply, KIpc.id(o), gate, K.Rt.cli(rt))
+    case True{}:
+      KIpc.go.run(m, rt, inbox, thread, o, reply, pro)
+
+def KIpc.go.k(fine: Bool, +plain: String, +gate: String, m: Maybe<&2, Chan(KSV.KMsg)>, +rt: K.Rt, +inbox: Chan(Msg), +thread: String, +o: J.Json, +reply: Chan(String), +pro: String) -> IO(Unit):
+  match fine:
+    case False{}:
+      KIpc.fail(reply, KIpc.id(o), plain)
+    case True{}:
+      KIpc.go.gate(String.is_empty(gate), gate, m, rt, inbox, thread, o, reply, pro)
+
+def KIpc.go(m: Maybe<&2, Chan(KSV.KMsg)>, +rt: K.Rt, +setting: String, +inbox: Chan(Msg), +thread: String, +o: J.Json, +reply: Chan(String), +pro: String) -> IO(Unit):
+  +plain = KIpc.check(KIpc.type(o), KIpc.path(o), pro)
+  KIpc.go.k(String.is_empty(plain), plain, KIpc.gate(rt, setting), m, rt, inbox, thread, o, reply, pro)
+
+def KIpc.job(m: Maybe<&2, Chan(KSV.KMsg)>, +rt: K.Rt, +setting: String, +inbox: Chan(Msg), +thread: String, +o: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(String, Unit, KIpc.pro(KIpc.path(o)), pro => KIpc.go(m, rt, setting, inbox, thread, o, reply, pro))
+
+# Retry
+def KIpc.clear(m: Maybe<&2, Chan(KSV.KMsg)>) -> IO(Unit):
+  match m:
+    case Some{q}:
+      KSV.KServe.clear_on(q)
+    case None{}:
+      IO.pure(Unit, Unit{})
+
+def Hub.kicad_ipc(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String)) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, KIpc.job(Cfg.ks(cfg), Cfg.rt(cfg), M.Setting.get(st, "kicad.ipc", "on"), inbox, thread, o, reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+# (a check's answer keeps the headless servers' lines the hub holds)
+def Hub.kfound(h: Hub, +setting: String, +rt0: K.Rt) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      +rt = K.Rt.set(rt0, "ipc", J.Str{J.Json.get_str(K.Rt.health(Cfg.rt(cfg)), "ipc", "")})
       Hub.kfound.same(Bool.and(String.eq(setting, M.Setting.get(st, "kicad.path", "")), Bool.and(Bool.not(J.Json.get_bool(K.Rt.health(Cfg.rt(cfg)), "again", False{})),
         String.eq(J.Json.show(J.Json.obj(Info.kicad(rt))), J.Json.show(J.Json.obj(Info.kicad(Cfg.rt(cfg))))))), Hub{st, f, ls, cl, as, inbox, cfg, note}, setting, rt)
 
+# the headless KiCad servers' lines changed: every client hears them with the info
+def Hub.kiservers(h: Hub, +text: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.models.k(Hub{st, f, ls, cl, as, inbox, Cfg.with_rt(cfg, K.Rt.set(Cfg.rt(cfg), "ipc", J.Str{text})), note})
+
+# Retry: the failed servers are forgotten, and KiCad is checked again
+def Hub.kretry(h: Hub) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        KIpc.clear(Cfg.ks(cfg))
+        Hub.kcheck(Hub{st, f, ls, cl, as, inbox, cfg, note}, True{})
+
 def Cfg.with_machines(c: Cfg, +mc: String) -> Cfg:
   match c:
-    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, _, pvx, bnx, mgd, lk, fc}}:
-      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}
+    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, _, pvx, bnx, mgd, lk, fc, ksx}}:
+      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}
 
 def Cfg.with_link(c: Cfg, +lk: String) -> Cfg:
   match c:
-    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, _, fc}}:
-      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}
+    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, _, fc, ksx}}:
+      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}
 
 # the tailnet listener is up: every client hears the pairing link. Each
 # one either is the owner's own device or came in with the token already,
@@ -4276,12 +4487,12 @@ def Main.args(xs: List<String>, c: Cfg) -> Cfg:
       Main.args(t, Cfg{h, x, ho, po, pr, ds, v, nt})
     case "--home" <> x <> t Cfg{_, w, ho, po, pr, ds, v, nt}:
       Main.args(t, Cfg{x, w, ho, po, pr, ds, v, nt})
-    case "--no-tailscale" <> t Cfg{h, w, ho, po, pr, ds, v, Net{_, _, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
-      Main.args(t, Cfg{h, w, ho, po, pr, ds, v, Net{False{}, False{}, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}})
-    case "--tailscale" <> t Cfg{h, w, ho, po, pr, ds, v, Net{_, https, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
-      Main.args(t, Cfg{h, w, ho, po, pr, ds, v, Net{True{}, https, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}})
-    case "--tailscale-https" <> t Cfg{h, w, ho, po, pr, ds, v, Net{_, _, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
-      Main.args(t, Cfg{h, w, ho, po, pr, ds, v, Net{True{}, True{}, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}})
+    case "--no-tailscale" <> t Cfg{h, w, ho, po, pr, ds, v, Net{_, _, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
+      Main.args(t, Cfg{h, w, ho, po, pr, ds, v, Net{False{}, False{}, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}})
+    case "--tailscale" <> t Cfg{h, w, ho, po, pr, ds, v, Net{_, https, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
+      Main.args(t, Cfg{h, w, ho, po, pr, ds, v, Net{True{}, https, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}})
+    case "--tailscale-https" <> t Cfg{h, w, ho, po, pr, ds, v, Net{_, _, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
+      Main.args(t, Cfg{h, w, ho, po, pr, ds, v, Net{True{}, True{}, tok, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}})
     case _ <> t _:
       Main.args(t, c)
     case Nil{} _:
@@ -4301,7 +4512,7 @@ def Models.cache(+home: String) -> String:
 
 def Net.models(n: Net) -> String:
   match n:
-    case Net{_, _, _, ms, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}:
+    case Net{_, _, _, ms, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}:
       ms
 
 # Machines
@@ -5075,7 +5286,7 @@ def Main.prepare(+user: String, +exe: String) -> IO(Boot):
 def Main.config(+user: String, +exe: String, args: List<String>, b: Boot) -> Cfg:
   Boot{kdir, skills, rt, ms, mt, +fc} = b
   Main.args(args, Cfg{user ++ "/.backplane-bend", exe ++ "/web", "127.0.0.1", 3787,
-    Q.Prompt.runtime("Backplane") ++ "\n\n" ++ Q.Prompt.mech(fc, exe ++ "/backplane"), [kdir], Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc}})
+    Q.Prompt.runtime("Backplane") ++ "\n\n" ++ Q.Prompt.mech(fc, exe ++ "/backplane"), [kdir], Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc, None{}}})
 
 def Sys.exe_dir.io() -> IO(String):
   H.Sys.exe_dir()
@@ -5373,7 +5584,7 @@ def Hub.turn_done(h: Hub, +tag: String) -> IO(Hub):
 
 def Cfg.machines(c: Cfg) -> String:
   match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, _, mc, _, _, _, _, _}}:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, _, mc, _, _, _, _, _, _}}:
       mc
 
 def Live.of(+cfg: Cfg) -> List<&2, LV.Buf>:
@@ -5381,8 +5592,8 @@ def Live.of(+cfg: Cfg) -> List<&2, LV.Buf>:
 
 def Cfg.with_bn(c: Cfg, b: BN.Bn) -> Cfg:
   match c:
-    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, _, mgd, lk, fc}}:
-      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, b, mgd, lk, fc}}
+    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, _, mgd, lk, fc, ksx}}:
+      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, b, mgd, lk, fc, ksx}}
 
 def Cfg.tch(c: Cfg) -> TE.TeachSt:
   BN.Bn.tch(Cfg.bn(c))
@@ -5507,7 +5718,7 @@ def Cfg.host(c: Cfg) -> String:
 
 def Cfg.tailnet(c: Cfg) -> Bool:
   match c:
-    case Cfg{_, _, _, _, _, _, _, Net{tn, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
+    case Cfg{_, _, _, _, _, _, _, Net{tn, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}}:
       tn
 
 def Hub.broadcast(h: Hub, +text: String) -> IO(Hub):
@@ -8167,7 +8378,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.KiCadRetry{}:
-      Hub.kcheck(Hub{st, f, ls, cl, as, inbox, cfg, note}, True{})
+      Hub.kretry(Hub{st, f, ls, cl, as, inbox, cfg, note})
     case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.KiCadInstall{}:
       do IO<Hub>:
         IO.spawn(Unit, Install.go(Cfg.home(cfg), inbox))
@@ -10016,7 +10227,7 @@ def Hub.bot_tick(h: Hub, +tz: String, +now: Nat) -> IO(Hub):
 # returning peer, and never bounce every successful directory request.
 def Bot.dir.machines(n: Net) -> String:
   match n:
-    case Net{_, _, _, _, _, _, _, _, _, mc, _, _, _, _, _}:
+    case Net{_, _, _, _, _, _, _, _, _, mc, _, _, _, _, _, _}:
       mc
 
 def Hub.dir.returned(h: Hub, +mc: String) -> IO(Hub):
@@ -11140,13 +11351,13 @@ def Tailnet.listen.k(none: Bool, +host: String, +ip: String, +port: U32, +web: S
 # serve HTTPS through `tailscale serve` when asked
 def Tailnet.start(n: Net, +host: String, +port: U32, +web: String, +inbox: Chan(Msg)) -> IO(Unit):
   match n:
-    case Net{True{}, https, +token, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}:
+    case Net{True{}, https, +token, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}:
       do IO<Unit>:
         r : P.Ran <- P.Proc.run("tailscale", ["ip", "-4"], "")
         +ip : String = Tailnet.first(r)
         Tailnet.listen.k(String.is_empty(ip), host, ip, port, web, inbox, token)
         Tailnet.https(https, port, token, inbox)
-    case Net{False{}, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}:
+    case Net{False{}, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}:
       IO.pure(Unit, Unit{})
 
 # Google's tools for bots
@@ -11669,12 +11880,19 @@ def Hub.mcp.route(pv: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +
     case False{}:
       Hub.mcp.gg(Gg.is(o), h, thread, o, body, reply, now)
 
+def Hub.mcp.ki(ki: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match ki:
+    case True{}:
+      Hub.kicad_ipc(h, thread, o, reply)
+    case False{}:
+      Hub.mcp.route(Preview.is(o), h, thread, o, body, reply, now)
+
 def Hub.mcp.tr(tr: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match tr:
     case True{}:
       Hub.term_read(h, thread, o, reply)
     case False{}:
-      Hub.mcp.route(Preview.is(o), h, thread, o, body, reply, now)
+      Hub.mcp.ki(KIpc.is(o), h, thread, o, body, reply, now)
 
 # thread_read on a thread on another of the owner's machines: read from
 # this hub's mirror of it (xref.bend)
@@ -11788,6 +12006,7 @@ def Msg.kind(m: Msg) -> String:
       "term_to"
     case KProbe{_}: "kicad_probe"
     case KFound{_, _}: "kicad_health"
+    case KiServers{_}: "kicad_servers"
     case ModelsFound{_, _}:
       "models"
     case MachinesFound{_}:
@@ -12402,6 +12621,7 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.term_to(h, c, key, co, ro, data)
     case KProbe{force}: Hub.kcheck(h, force)
     case KFound{setting, rt}: Hub.kfound(h, setting, rt)
+    case KiServers{text}: Hub.kiservers(h, text)
     case ModelsFound{ms, mt}:
       Hub.models(h, ms, mt)
     case MachinesFound{mc}:
@@ -12713,6 +12933,23 @@ def Shot.fwd(fuel: Nat, +ev: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
     case 1n+f:
       IO.bind(Maybe<&1, String>, Unit, Chan.recv(String, ev), m => Shot.fwd.got(m, inbox, u => Shot.fwd(f, ev, inbox)))
 
+def KiSrv.fwd.got(m: Maybe<&1, String>, +inbox: Chan(Msg), k: Unit -> IO(Unit)) -> IO(Unit):
+  match m:
+    case Some{+text}:
+      do IO<Unit>:
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, KiServers{text})
+        k(Unit{})
+    case None{}:
+      IO.pure(Unit, Unit{})
+
+# the headless KiCad servers' lines, to the hub
+def KiSrv.fwd(fuel: Nat, +ev: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+f:
+      IO.bind(Maybe<&1, String>, Unit, Chan.recv(String, ev), m => KiSrv.fwd.got(m, inbox, u => KiSrv.fwd(f, ev, inbox)))
+
 def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2, String>, cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
   match r cfg:
     case Done{f} Cfg{+home, +web, +host, +port, +pr, +ds, +v, nt0}:
@@ -12730,6 +12967,12 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
         +bev : Chan(String) <- Chan.new(String, 256)
         IO.spawn(Unit, Shot.fwd(Fuel.forever(), bev, inbox))
         IO.spawn(Unit, BR.Browser.loop(Fuel.forever(), bq, bev, BR.Br.at(bexe, home)))
+        # the headless KiCad servers (src/server/kserve.bend): their lines go to the hub as KiServers
+        +kq : Chan(KSV.KMsg) <- Chan.new(KSV.KMsg, 256)
+        +kev : Chan(String) <- Chan.new(String, 64)
+        kexe : String <- KSV.KServe.exe()
+        IO.spawn(Unit, KiSrv.fwd(Fuel.forever(), kev, inbox))
+        IO.spawn(Unit, KSV.KServe.run(kq, kev, kexe, home))
         +pq : Chan(PK.PMsg) <- Chan.new(PK.PMsg, 256)
         IO.spawn(Unit, PK.Park.loop(Fuel.forever(), pq, Nil{}))
         +tq : Chan(TM.TMsg) <- Chan.new(TM.TMsg, 1024)
@@ -12741,7 +12984,7 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
         +vo : Chan(PV.POut) <- Chan.new(PV.POut, 1024)
         IO.spawn(Unit, PV.Pv.loop(Fuel.forever(), vq, PV.Pv.empty(), vo, home ++ "/plot"))
         IO.spawn(Unit, Plot.fwd(Fuel.forever(), vo, inbox))
-        +nt : Net = Net.with_pv(Net.with_tm(Net.with_pk(Net.with_br(nt0, bq), pq), tq), vq)
+        +nt : Net = Net.with_ks(Net.with_pv(Net.with_tm(Net.with_pk(Net.with_br(nt0, bq), pq), tq), vq), kq)
         # the agents a restart in place handed off are kept before anything
         # else can reach the hub (adopt.bend); recovery then leaves them be
         +now : Nat <- Now.nat()
@@ -12797,7 +13040,8 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         +mc : String <- Files.text(Models.cache(home))
         +bc : String <- BN.Bf.text(BN.Bn.cache(home))
         exe : String <- H.Sys.exe_dir()
-        rt : K.Rt <- K.Rt.boot(home, M.Setting.get(st, "kicad.path", ""), exe)
+        rt0 : K.Rt <- K.Rt.boot(home, M.Setting.get(st, "kicad.path", ""), exe)
+        +rt : K.Rt = K.Rt.set(rt0, "ipc", J.Str{""})
         +off : String <- Env.get("BACKPLANE_NO_UPDATE", "")
         +ai : String <- Env.get("APPIMAGE", "")
         Main.opened(f, st, ls, Cfg.with_managed(Cfg.with_models(Cfg.with_bn(Cfg.with_token(Cfg.with_rt(Cfg{home, w, h, p, pr, ds, v, nt}, rt), tok), BN.Bn.with_dir(BN.Bn.empty(), BN.Bn.cache.load(bc, BO.World.peers(M.State.bots(st))))), BT.Cache.json(mc), BT.Cache.text(mc)), SV.Chan.managed(off, ai)), need, front)

@@ -72,6 +72,13 @@ build_voice() {
   mv -f "$out.new" "$out"
 }
 
+# the KiCad IPC helper (tools/kipc): its dependencies installed, then built
+build_kipc() {
+  out=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+  (cd tools/kipc && { bun install --frozen-lockfile >/dev/null 2>&1 || bun install >/dev/null; } && bun build.ts "$out.new" >/dev/null)
+  mv -f "$out.new" "$out"
+}
+
 # the browser helper's source, as one hash (what backplane-browser.stamp holds)
 browser_stamp() {
   cat tools/browser/package.json tools/browser/bun.lock tools/browser/build.ts tools/browser/src/*.ts | sha256sum | cut -c1-16
@@ -97,6 +104,8 @@ build_app() {
   mv -f "$dev/backplane.new" "$dev/backplane"
   rm -f "$dev/backplane-voice"
   build_voice "$dev/backplane-voice"
+  rm -f "$dev/backplane-kipc"
+  build_kipc "$dev/backplane-kipc" || { [ -e "$prefix/backplane-kipc" ] && ln -sf "$prefix/backplane-kipc" "$dev/backplane-kipc"; }
   rm -f "$dev/backplane-browser" "$dev/backplane-browser.stamp"
   build_browser "$dev/backplane-browser" || { [ -e "$prefix/backplane-browser" ] && ln -sf "$prefix/backplane-browser" "$dev/backplane-browser"; }
   [ -e "$prefix/backplane-step2glb" ] && ln -sf "$prefix/backplane-step2glb" "$dev/backplane-step2glb"
@@ -143,6 +152,7 @@ build_dist() {
   BACKPLANE_VERSION_STAMP=$ver scripts/build-app.sh src/server/main.bend dist/backplane-serve
   BACKPLANE_VERSION_STAMP=$ver scripts/build-app.sh src/app/main.bend dist/backplane
   build_voice dist/backplane-voice
+  build_kipc dist/backplane-kipc || true
   build_browser dist/backplane-browser.tmp && mv -f dist/backplane-browser.tmp dist/backplane-browser && mv -f dist/backplane-browser.tmp.stamp dist/backplane-browser.stamp || true
   say "built $ver"
 }
@@ -157,7 +167,7 @@ mkdir -p "$prefix" "$HOME/.local/bin"
 rm -rf "$prefix/web.old"
 [ -d "$prefix/web" ] && mv "$prefix/web" "$prefix/web.old"
 mv "$src/web" "$prefix/web"
-for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice LICENSE; do
+for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc LICENSE; do
   [ -e "$src/$f" ] && mv -f "$src/$f" "$prefix/$f"
 done
 ln -sf "$prefix/backplane" "$HOME/.local/bin/backplane"
@@ -168,7 +178,7 @@ EOF
 stage() {
   rm -rf build/dev-pkg && mkdir -p build/dev-pkg
   cp -R dist/web build/dev-pkg/web
-  for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice; do
+  for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc; do
     [ -e "dist/$f" ] && cp "dist/$f" build/dev-pkg/
   done
   [ -e LICENSE ] && cp LICENSE build/dev-pkg/

@@ -156,23 +156,26 @@ def Prompt.kicad.basics(+cli: String) -> String:
   "Use the selected KiCad CLI at `" ++ cli ++ "` for KiCad work. Check `\"" ++ cli ++ "\" --version` and subcommand `--help`. Export with `\"" ++ cli ++ "\" sch export` or `\"" ++ cli ++ "\" pcb export`; run checks with `\"" ++ cli ++ "\" sch erc` and `\"" ++ cli ++ "\" pcb drc`. Use the full path when invoking it, quoting paths for your shell."
 
 def Prompt.kicad.fork(+cli: String, +version: String, +commit: String) -> String:
-  " This is Backplane KiCad " ++ version ++ ", source commit " ++ commit ++ ". For programmatic PCB/schematic edits, start `\"" ++ cli ++ "\" api-server <project-or-file> --socket <unique-socket>` and stop your server when finished. This is NNG/protobuf IPC, not HTTP. Read the matching guide https://github.com/i2cjak/Backplane_KiCad/blob/" ++ commit ++ "/BACKPLANE_IPC.md and examples https://github.com/i2cjak/Backplane_KiCad/tree/" ++ commit ++ "/scripts; protocol definitions are under api/proto at that revision. A Python IPC client is not preinstalled: when needed, use BACKPLANE_PYTHON if set to create an isolated virtualenv, install protobuf==5.29.6, pynng==0.9.0 and grpcio-tools==1.71.0, then generate matching bindings with `python -m grpc_tools.protoc` following the examples. Headless IPC has no interactive canvas; ERC/DRC use the CLI above. Preserve any `<native-filename>.backplane.json` companion metadata when moving or saving project files."
+  " This is Backplane KiCad " ++ version ++ ", source commit " ++ commit ++ ". Edit boards and schematics through the backplane MCP tool `kicad_ipc` {path, type, message}: Backplane runs one headless KiCad per project and sends your command to it over KiCad's IPC API (type is the protobuf command, e.g. `kiapi.board.commands.GetItems`; message is its fields as JSON; `kicad_ipc_status` shows the server, its version and the commands it has). Headless KiCad has no selection or view state: always pass explicit item IDs (KIIDs from GetItems), wrap edits in BeginCommit/EndCommit, then SaveDocument; unsaved work is undone with EndCommit CMA_DROP. Backplane's viewers follow the saved files. Read the matching guide https://github.com/i2cjak/Backplane_KiCad/blob/" ++ commit ++ "/BACKPLANE_IPC.md (protocol definitions are under api/proto at that revision). ERC/DRC and exports stay on the CLI above. The SWIG `pcbnew` Python module no longer exists in this KiCad, so don't use it: edit through `kicad_ipc`. When `kicad_ipc` answers that IPC is unavailable, it says why and gives the fallback (edit the file directly or use the CLI, then re-read the file). Preserve any `<native-filename>.backplane.json` companion metadata when moving or saving project files."
+
+def Prompt.kicad.fallback() -> String:
+  " The `kicad_ipc` tool will answer with the fallback."
 
 def Prompt.kicad.k(+status: String, ipc: Bool, +cli: String, +version: String, +commit: String, +why: String) -> String:
   match status ipc:
     case "ok" True{}: Prompt.kicad.fork(cli, version, commit)
     case "ok" False{}:
-      " This is Backplane KiCad " ++ version ++ ". KiCad IPC is turned off in Backplane's settings: work through files and the CLI only, and do not start `api-server`."
+      " This is Backplane KiCad " ++ version ++ ". KiCad IPC is turned off in Backplane's settings: work through files and the CLI only." ++ Prompt.kicad.fallback()
     case "stock" _:
-      " This is KiCad " ++ version ++ ", not Backplane KiCad: use kicad-cli and the files; the KiCad IPC API server isn't available here."
+      " This is KiCad " ++ version ++ ", not Backplane KiCad: use kicad-cli and the files; the KiCad IPC API server isn't available here." ++ Prompt.kicad.fallback()
     case "old" _:
-      " This is Backplane KiCad " ++ version ++ ", older than Backplane needs (" ++ KH.KH.min_version() ++ "): use kicad-cli and the files; tell the user to update it from Settings."
+      " This is Backplane KiCad " ++ version ++ ", older than Backplane needs (" ++ KH.KH.min_version() ++ "): use kicad-cli and the files; tell the user to update it from Settings." ++ Prompt.kicad.fallback()
     case "broken" _:
-      " The KiCad CLI at " ++ cli ++ " doesn't run (" ++ KH.KH.why(why) ++ "). Don't use it; tell the user to fix it in Settings."
+      " The KiCad CLI at " ++ cli ++ " doesn't run (" ++ KH.KH.why(why) ++ "). Don't use it; tell the user to fix it in Settings." ++ Prompt.kicad.fallback()
     case "checking" _:
-      " KiCad is still being checked; use kicad-cli at the path above if it exists."
+      " KiCad is still being checked; use kicad-cli at the path above if it exists." ++ Prompt.kicad.fallback()
     case _ _:
-      " KiCad isn't installed on this machine. Don't run kicad-cli; tell the user Backplane KiCad can be installed from Settings, and work on the files directly."
+      " KiCad isn't installed on this machine. Don't run kicad-cli; tell the user Backplane KiCad can be installed from Settings, and work on the files directly." ++ Prompt.kicad.fallback()
 
 def Prompt.kicad.lead(+status: String, +cli: String) -> String:
   match status:
