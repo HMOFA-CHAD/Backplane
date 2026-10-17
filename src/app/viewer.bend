@@ -1,4 +1,7 @@
 import Base
+import ../core/codec.bend as C
+import ../core/i18n.bend as I
+import ../core/msgs.bend as MSG
 import ../core/board.bend as B
 import ../gfx/raster.bend as R
 import ../gfx/draw.bend as D
@@ -664,3 +667,59 @@ def Vw.late(ss: List<&2, Seen>, +cut: Nat, +now: Nat) -> Bool:
       False{}
     case Seen{_, +b} <> t:
       Bool.or(Bool.and(Bool.not(Vw.settled(b, cut)), Vw.settled(b, now)), Vw.late(t, cut, now))
+
+
+def Vx.notice.q2(hit: Bool, +l: I.Loc, +s: String) -> String:
+  match hit:
+    case True{}: MSG.T.remote.unreachable(l, String.drop(s, 37n))
+    case False{}: s
+
+def Vx.notice.p2(+l: I.Loc, +s: String) -> String:
+  Vx.notice.q2(String.starts_with(s, "unreachable: cannot resolve or reach "), l, s)
+
+def Vx.notice.q1(hit: Bool, +l: I.Loc, +s: String) -> String:
+  match hit:
+    case True{}: MSG.T.remote.request.error(l, String.drop(s, 30n))
+    case False{}: Vx.notice.p2(l, s)
+
+def Vx.notice.p1(+l: I.Loc, +s: String) -> String:
+  Vx.notice.q1(String.starts_with(s, "that machine did not take it: "), l, s)
+
+def Vx.notice.q0(hit: Bool, +l: I.Loc, +s: String) -> String:
+  match hit:
+    case True{}: MSG.T.viewer.export.failed(l, String.drop(s, 18n))
+    case False{}: Vx.notice.p1(l, s)
+
+def Vx.notice.p0(+l: I.Loc, +s: String) -> String:
+  Vx.notice.q0(String.starts_with(s, "3D export failed: "), l, s)
+
+def Vx.notice.export(+l: I.Loc, s: String) -> String:
+  Vx.notice.p0(l, s)
+
+# Native worker notices keep their wire text; translate only when drawing.
+def Vx.notice.known(+l: I.Loc, s: String, index: Nat) -> String:
+  match index:
+    case 0n: MSG.T.viewer.loading(l)
+    case 1n: MSG.T.remote.handshake.failed(l)
+    case 2n: MSG.T.remote.denied(l)
+    case 3n: MSG.T.remote.timeout(l)
+    case 4n: MSG.T.remote.address.failed(l)
+    case 5n: MSG.T.remote.away(l)
+    case 6n: MSG.T.remote.request.failed(l)
+    case 7n: MSG.T.remote.reply.failed(l)
+    case 8n: MSG.T.remote.cache.failed(l)
+    case 9n: MSG.T.image.remote.failed(l)
+    case 10n: MSG.T.viewer.mesh.failed(l)
+    case 11n: MSG.T.viewer.browser.empty(l)
+    case 12n: MSG.T.viewer.exporting(l)
+    case 13n: MSG.T.viewer.empty.schematic(l)
+    case 14n: MSG.T.viewer.empty.board(l)
+    case _: Vx.notice.export(l, s)
+
+def Vx.notice.raw(+l: I.Loc, +s: String) -> String:
+  Vx.notice.known(l, s, C.Codec.pos(["Loading…", "unreachable: no handshake from that machine within 5 seconds", "that machine did not let this one in (is it the same owner on the tailnet?)", "no word from that machine for 40 seconds: reconnecting", "not an http address", "that machine is away", "that machine did not take it", "invalid reply from that machine", "that folder cannot be kept here", "that machine did not send it", "Could not mesh this STEP file (installing FreeCAD lets Backplane mesh large ones)", "The agents' browser shows here when they open a page.", "Exporting 3D model…", "No schematic in this project yet", "No board in this project yet"], s))
+
+def Vx.notice(+l: I.Loc, s: String) -> String:
+  match l:
+    case I.En{}: s
+    case I.Ja{}: Vx.notice.raw(I.Ja{}, s)

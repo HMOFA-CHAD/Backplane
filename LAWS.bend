@@ -9739,3 +9739,12 @@ law charter_gate_allows_listed:
 
 law charter_risky_fixed:
   {Bool.and(CH.Charter.risky("gmail_send", J.Null{}), Bool.and(CH.Charter.risky("deploy_restart", J.Null{}), CH.Charter.risky("Bash", J.Json.obj([J.KV{"command", J.Str{"cd /tmp && git push origin main"}}])))) == True{} : Bool}
+# ---- i18n window ----
+law window_notice_english:
+  for +s: String
+  {V.Vx.notice(I18.En{}, s) == s : String}
+law window_picker_default:
+  {L.Picker.name.loc(I18.Ja{}, "") == "既定" : String}
+law window_provider_missing:
+  {L.Set.cli.loc(I18.En{}, "", "codex") == "codex is not installed" : String}
+# ---- end i18n window ----

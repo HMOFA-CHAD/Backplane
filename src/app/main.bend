@@ -1,4 +1,5 @@
 import Base
+import ../core/msgs.bend as MSG
 import ../core/i18n.bend as I18
 import ../core/attach.bend as AT
 import ../core/exe.bend as EX
@@ -898,6 +899,12 @@ def Shell.notified(r: P.Ran, +q: Chan(ShellMsg), thread: String) -> IO(Unit):
     case P.Ran{_, +out}:
       Shell.notified.k(String.eq(String.trim(out), "open"), q, thread)
 
+def Shell.notify.script() -> String:
+  "command -v notify-send >/dev/null 2>&1 || exit 0; notify-send -a Backplane -i backplane -A \"open=$3\" -w -- \"$1\" \"$2\" 2>/dev/null || notify-send -a Backplane -i backplane -- \"$1\" \"$2\" 2>/dev/null"
+
+def Shell.notify.loc(+l: I18.Loc, +q: Chan(ShellMsg), thread: String, +title: String, +body: String) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Shell.notify.script(), "sh", title, body, MSG.T.menu.file.open(l)], "/"), r => Shell.notified(r, q, thread))
+
 def Shell.notify(+q: Chan(ShellMsg), thread: String, +title: String, +body: String) -> IO(Unit):
   IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Shell.notify.sh(), "sh", title, body], "/"), r => Shell.notified(r, q, thread))
 
@@ -1017,9 +1024,9 @@ def Shell.cmd(a: Shell, c: N.NCmd) -> IO(Shell):
       do IO<Shell>:
         Drafts.write(U.Ui.info(N.Nui.ui(n), "local.drafts"), id, t)
         return Shell{n, w, d, qd, q, i, wa}
-    case Shell{n, w, d, qd, +q, i, wa} N.NNotify{th, ti, b}:
+    case Shell{n, w, d, qd, +q, i, +wa} N.NNotify{th, ti, b}:
       do IO<Shell>:
-        IO.spawn(Unit, Shell.notify(q, th, ti, b))
+        IO.spawn(Unit, Shell.notify.loc(L.Ty.loc(Aux.ty(wa)), q, th, ti, b))
         return Shell{n, w, d, qd, q, i, wa}
     case Shell{n, w, d, qd, +q, i, wa} N.NLater{ms, action, value}:
       do IO<Shell>:
