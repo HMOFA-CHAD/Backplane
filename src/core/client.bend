@@ -6002,8 +6002,16 @@ def Fab.mini.tools(+u: Ui) -> List<&2, TO.Tool>:
 def Fab.mini.tools.of(+st: M.State, +nf: Map<&2, String>, +th: String, run: Bool) -> List<&2, TO.Tool>:
   Fab.mini.tools.k(Fab.mini.k(Fab.min.of(st, th), Fab.ready.k(Fab.buy.of(st, nf, th), Str.get(nf, "fab.ready:" ++ th), run)), String.eq(Str.get(nf, "fab.again:" ++ th), "1"), th)
 
+# (nothing for a thread with no project: no fab.min. without one)
+def Fab.min.set.k(none: Bool, +u: Ui, +project: String, +v: String) -> Act:
+  match none:
+    case True{}:
+      Act{u, Nil{}}
+    case False{}:
+      Ui.setting(u, Fab.min.key(project) ++ "=" ++ v)
+
 def Fab.min.set(+u: Ui, +th: String, +v: String) -> Act:
-  Ui.setting(u, Fab.min.key(Fab.project(Ui.thread(Ui.state.of(u), th))) ++ "=" ++ v)
+  Fab.min.set.k(String.is_empty(Fab.project(Ui.thread(Ui.state.of(u), th))), u, Fab.project(Ui.thread(Ui.state.of(u), th)), v)
 
 def Fab.act.k(i: Nat, +u: Ui, +th: String) -> Act:
   match i:
