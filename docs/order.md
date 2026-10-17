@@ -46,8 +46,8 @@ The agents' instructions are in `src/core/order.bend` (`Order.prompt.project`, `
 - **Starting one:** `order.buy {thread}` (hub.bend's `Buy.go`) makes a thread in the same folder, marked `buy.<thread>`, with the person's "Buy it" as its first message.
 - **What its agent gets:** the buy instructions and the tools `order_quote`, `order_status` and `order_ask`. Only buy threads have them (`Bots.buy.tools`).
 - **The review gate:** a buy thread never reviews the design itself. It first asks `order_review {action: "check"}`; unless the review is current, the person gets two buttons (an `order_ask`): **Review for manufacturing** or **Order without a review**.
-  - The review runs in a thread of its own (`thread_launch`, reports on), so the buy thread wakes and goes on when it ends.
-  - Issues from a review stop the export until they are fixed (a design thread the agent offers) or the person says to order anyway.
+  - The review runs as a task of the buy thread (`delegate_task`): in the same folder, on the very files to be ordered, its result coming back as a message that wakes the buy thread.
+  - Issues from a review stop the export until they are fixed (another task, in the same folder, then the review again) or the person says to order anyway.
 - **Manufacturing reviews** (`Order.prompt.review`, in every agent's project instructions): what makes a fab refuse a design or charge more, not the circuit. The findings go to `.backplane/review.md`; the verdict (ok or issues) and a line go to `order_review {action: "record"}`.
   - With Ordering on, `order_review` is every thread's tool (`Bots.order.tools`). The hub (orderio.bend's `Od.review`) hashes the design: the names and contents of every board, schematic, STEP, DXF and fab file outside `mfg/`, `extra/` and `.backplane/` (`Od.print`).
   - `record` keeps the hash with the verdict in `.backplane/review.json`; `check` answers none, stale (the design changed since) or current (`Order.review.state`, laws `order_review_*`).
