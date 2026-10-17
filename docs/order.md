@@ -44,7 +44,7 @@ The agents' instructions are in `src/core/order.bend` (`Order.prompt.project`, `
 ## Buy threads
 
 - **Starting one:** `order.buy {thread}` (hub.bend's `Buy.go`) makes a thread in the same folder, marked `buy.<thread>`, with the person's "Buy it" as its first message. A project's next one is "Buy: <project> · 2" (`Buy.title.of`).
-- **What its agent gets:** the buy instructions and the tools `order_quote`, `order_status` and `order_ask`. Only buy threads have them (`Bots.buy.tools`).
+- **What its agent gets:** the buy instructions and the tools `order_quote`, `order_status` and `order_ask`. Only buy threads have them (`Bots.buy.tools`). Their questions and the upload's approval alert the person in their own words, without the tool's name (notice.bend's `Alert.ask.say`, law `order_ask_alert_plain`).
 - **The review gate:** a buy thread never reviews the design itself. It first asks `order_review {action: "check"}`; unless the review is current, the person gets two buttons (an `order_ask`): **Review for manufacturing** or **Order without a review**.
   - The review runs as a task of the buy thread (`delegate_task`): in the same folder, on the very files to be ordered, its result coming back as a message that wakes the buy thread.
   - Issues from a review stop the export until they are fixed (another task, in the same folder, then the review again) or the person says to order anyway.
