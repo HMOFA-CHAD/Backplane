@@ -11089,6 +11089,18 @@ def Laws.order_off_no_tools(buy):
 def Laws.order_off_by_default():
   {==}
 
+def Laws.order_review_issues_kept():
+  {==}
+
+def Laws.order_review_issues_at_most():
+  {==}
+
+def Laws.order_ask_survives_retire():
+  {==}
+
+def Laws.order_approval_retired():
+  {==}
+
 def Laws.order_ask_alert_plain(q):
   {==}
 

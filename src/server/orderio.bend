@@ -207,14 +207,14 @@ def Od.review.k(record: Bool, +cwd: String, +fp: String, +args: J.Json, +now: Na
     case True{}:
       do IO<J.Json>:
         mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(cwd ++ "/.backplane")
-        GS.Gf.write(cwd ++ "/.backplane/review.json", J.Json.show(OR.Order.review.rec(fp, J.Json.get_str(args, "verdict", ""), J.Json.get_str(args, "summary", ""), now)) ++ "\n")
+        GS.Gf.write(cwd ++ "/.backplane/review.json", J.Json.show(OR.Order.review.rec.with(fp, J.Json.get_str(args, "verdict", ""), J.Json.get_str(args, "summary", ""), J.Json.elems(J.Json.get_obj(args, "issues")), now)) ++ "\n")
         m : Result<&1, &1, U32 & String, Unit> <- H.FS.chmod(cwd ++ "/.backplane/review.json", 420)
         return J.Json.obj([J.KV{"recorded", J.Flag{True{}}}, J.KV{"verdict", J.Str{OR.Order.review.verdict(J.Json.get_str(args, "verdict", ""))}}])
     case False{}:
       IO.bind(String, J.Json, GS.Gf.text(cwd ++ "/.backplane/review.json"),
         t => IO.pure(J.Json, OR.Order.review.said(fp, Maybe.default(&2, J.Json, J.Json.parse(t), J.Null{}))))
 
-# order_review {action: check | record, verdict, summary} in a thread's folder
+# order_review {action: check | record, verdict, summary, issues} in a thread's folder
 def Od.review(+cwd: String, +args: J.Json, +now: Nat) -> IO(J.Json):
   IO.bind(String, J.Json, Od.print(cwd), fp => Od.review.k(String.eq(J.Json.get_str(args, "action", "check"), "record"), cwd, fp, args, now))
 

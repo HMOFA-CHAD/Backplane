@@ -2623,13 +2623,32 @@ def Hub.answer.plan(impl: Bool, +s: M.State, +now: Nat, +client: U32, +id: Strin
     case False{}:
       Step{[M.AskClosed{ask, answer, now}], [Reply.ok(client, id), AskAnswered{ask, answer}]}
 
+# an order's question (order_ask, core/order.bend) parks nothing: the
+# person's answer is posted in its thread as their message, which starts
+# (or queues) the agent's turn however long they took; a dismissal only
+# closes it (laws order_ask_*)
+def Hub.answer.order(said: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String) -> Step:
+  match said:
+    case True{}:
+      Step.before([M.AskClosed{ask, answer, now}], [Reply.ok(client, id)], Hub.post(s, now, th, Hub.id("m", now, Hub.seq(s)), M.User{}, String.trim(answer)))
+    case False{}:
+      Step{[M.AskClosed{ask, answer, now}], [Reply.ok(client, id)]}
+
+def Hub.answer.open(order: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String, +k: String) -> Step:
+  match order:
+    case True{}:
+      Hub.answer.order(Bool.not(String.is_empty(String.trim(answer))), s, now, client, id, ask, answer, th)
+    case False{}:
+      Hub.answer.plan(Bool.and(String.eq(k, "plan"), String.eq(answer, "implement")), s, now, client, id, ask, answer, th)
+
 # the user's answer: the ask closes (once; law ask_closes_once), a parked
-# agent request gets its reply, and implementing a plan leaves plan mode
-# and asks the agent to carry it out
+# agent request gets its reply, implementing a plan leaves plan mode and
+# asks the agent to carry it out, and an order's question is answered in
+# its thread (Hub.answer.order)
 def Hub.answer.k(a: M.Ask, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String) -> Step:
   match a:
-    case M.Ask{_, +th, +k, _, _, _, True{}, _}:
-      Hub.answer.plan(Bool.and(String.eq(k, "plan"), String.eq(answer, "implement")), s, now, client, id, ask, answer, th)
+    case M.Ask{_, +th, +k, +tool, _, _, True{}, _}:
+      Hub.answer.open(String.eq(tool, "order_ask"), s, now, client, id, ask, answer, th, k)
     case M.Ask{_, _, _, _, _, _, False{}, _}:
       Step.outs([Reply.ok(client, id)])
 
@@ -3731,10 +3750,12 @@ def Task.by.id(+s: M.State, +id: String) -> M.Task:
 # archive_*, interrupt_closes_approval, interrupt_keeps_plan,
 # interrupt_ends_child_task, gone_closes_approval).
 
+# (an order's question parks nothing either: it stays, and an answer
+# later starts the agent again, Hub.answer.order)
 def Retire.hit(a: M.Ask, +th: String) -> Bool:
   match a:
-    case M.Ask{_, t, kind, _, _, _, op, _}:
-      Bool.and(op, Bool.and(String.eq(t, th), Bool.not(String.eq(kind, "plan"))))
+    case M.Ask{_, t, +kind, +tool, _, _, op, _}:
+      Bool.and(op, Bool.and(String.eq(t, th), Bool.not(Bool.or(String.eq(kind, "plan"), String.eq(tool, "order_ask")))))
 
 def Retire.id(a: M.Ask) -> String:
   match a:

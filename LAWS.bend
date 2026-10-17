@@ -9296,6 +9296,21 @@ law order_off_no_tools:
 law order_off_by_default:
   {ORD.Order.enabled("") == False{} : Bool}
 
+# a review's issues: their lines trimmed, blank ones and non-strings left out
+law order_review_issues_kept:
+  {ORD.Order.review.lines([J.Str{" Shade: walls 0.6 mm "}, J.Str{"  "}, J.Num{"1"}, J.Str{"Base: hole too small"}], 8n) == [J.Str{"Shade: walls 0.6 mm"}, J.Str{"Base: hole too small"}] : List<&2, J.Json>}
+
+law order_review_issues_at_most:
+  {List.length(&2, J.Json, ORD.Order.review.lines([J.Str{"a"}, J.Str{"b"}, J.Str{"c"}], 2n)) == 2n : Nat}
+
+# an order's question parks nothing, so a Stop or a crash leaves it open
+# (its answer starts the agent again); an order's approval still closes
+law order_ask_survives_retire:
+  {H.Retire.hit(M.Ask{"a3", "t1", "input", "order_ask", "Fix these?", "", True{}, ""}, "t1") == False{} : Bool}
+
+law order_approval_retired:
+  {H.Retire.hit(M.Ask{"a4", "t1", "approval", "order_quote", "Send?", "", True{}, ""}, "t1") == True{} : Bool}
+
 # an order's question alerts in its own words, without the tool's name
 law order_ask_alert_plain:
   for q: String

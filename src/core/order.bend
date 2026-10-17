@@ -38,7 +38,7 @@ def Order.prompt.intent() -> String:
 # how any agent reviews a project for manufacturing (a buy thread starts one
 # in its own thread); the hub records it with the design's fingerprint
 def Order.prompt.review() -> String:
-  "<backplane_manufacturing_review>When asked to review the project for manufacturing, check what makes a fab ask questions or refuse, not the circuit: DRC against the fab's limits (tracks and gaps: 0.10 mm or more on 1 or 2 layers, 0.09 mm on 4 or more, 0.127 mm is comfortable; vias: a 0.3 mm hole in a 0.45 mm pad costs nothing extra, smaller down to a 0.15 mm hole in a 0.25 mm pad is fine but costs more, so say so rather than calling it an error; plated holes for parts: rings of 0.13 mm; copper 0.3 mm from the board edge; silkscreen lines 0.15 mm), every BOM line has a manufacturer part number that is in stock (pcbparts tools; prefer basic/preferred parts, name extended ones), parts on one side for the cheaper assembly, footprint rotations sane, an outline that is closed, every part to order has a current fab file; for printed parts walls 1 mm or more (0.8 for SLA), for sheet metal flanges at least 4x the thickness and holes at least the thickness from a bend, for CNC inside corners with radii of 1 mm or more and no undercuts. Write the findings to `.backplane/review.md` (per part: what is fine, what must change and why), then call the backplane tool `order_review` with action \"record\", verdict \"ok\" when nothing must change or \"issues\", and a one-line summary. Change nothing while reviewing: say what must change; the person decides.</backplane_manufacturing_review>"
+  "<backplane_manufacturing_review>When asked to review the project for manufacturing, check what makes a fab ask questions or refuse, not the circuit: DRC against the fab's limits (tracks and gaps: 0.10 mm or more on 1 or 2 layers, 0.09 mm on 4 or more, 0.127 mm is comfortable; vias: a 0.3 mm hole in a 0.45 mm pad costs nothing extra, smaller down to a 0.15 mm hole in a 0.25 mm pad is fine but costs more, so say so rather than calling it an error; plated holes for parts: rings of 0.13 mm; copper 0.3 mm from the board edge; silkscreen lines 0.15 mm), every BOM line has a manufacturer part number that is in stock (pcbparts tools; prefer basic/preferred parts, name extended ones), parts on one side for the cheaper assembly, footprint rotations sane, an outline that is closed, every part to order has a current fab file; for printed parts walls 1 mm or more (0.8 for SLA), for sheet metal flanges at least 4x the thickness and holes at least the thickness from a bend, for CNC inside corners with radii of 1 mm or more and no undercuts. Run every check in the foreground (no background commands, monitors or waits) and keep each one short. Write the findings to `.backplane/review.md` (per part: what is fine, what must change and why), then call the backplane tool `order_review` with action \"record\", verdict \"ok\" when nothing must change or \"issues\", a one-line summary and issues: what must change, one short line each (\"Shade: walls 0.6 mm, need 0.8 for SLA\"). Your last message is what the thread that asked hears: make it that list and the link `.backplane/review.md`, then end. Change nothing while reviewing: say what must change; the person decides.</backplane_manufacturing_review>"
 
 # with ordering off, only where to turn it on (law order_off_says_where)
 def Order.prompt.off() -> String:
@@ -59,11 +59,22 @@ def Order.prompt.project.k(on: Bool) -> String:
 def Order.prompt.buy() -> String:
   "<backplane_buy>This thread orders the project's parts; the person pressed Buy it. Be brief: short messages, a small table at most, no walls of text. Steps:\n"
   ++ "1. Read `.backplane/intent.md` and every `*.fab.json` (find . -name '*.fab.json' -not -path './extra/*' -not -path './mfg/*'). If a board or part to order has none yet, write it first, measured as the project's instructions say, and say so in a line. In one short message, list what would be ordered (part, what it is, quantity).\n"
-  ++ "2. Call the backplane tool `order_review` (action \"check\"). Unless its state is \"current\", the design has not been checked for manufacturing since it last changed: ask with order_ask, the question \"This design hasn't been checked for manufacturing since it changed. A review finds what a fab would refuse or charge more for.\" and the choices \"Review for manufacturing\" and \"Order without a review\". For the review, call delegate_task with the prompt \"Review this project for manufacturing.\" (the task works in this thread's folder, on the very files to be ordered, and its result comes back here), say in one line that it runs as a task of this thread and the order goes on when it's done, and end your turn. When its result comes, check again: with verdict ok go on; with issues (now or from a current review), list them in a few lines and ask (order_ask) whether to fix them first or order anyway. To fix them, delegate_task again with the exact changes (in this folder, so the order gets them), then the review once more. Export nothing until the review is ok or the person says to order anyway. Never review or change the design yourself here; this thread only orders.\n"
+  ++ "2. Call the backplane tool `order_review` (action \"check\"). Unless its state is \"current\", the design has not been checked for manufacturing since it last changed: ask with order_ask, the question \"This design hasn't been checked for manufacturing since it changed. A review finds what a fab would refuse or charge more for.\" and the choices \"Review for manufacturing\" and \"Order without a review\", and end your turn (order_ask never waits: the person's answer comes as their next message, however long they take; so after every order_ask). For the review, call delegate_task with the prompt \"Review this project for manufacturing.\" (the task works in this thread's folder, on the very files to be ordered, and its result comes back here), say in one line that it runs as a task of this thread and the order goes on when it's done, and end your turn. When its result comes, check again: with verdict ok go on; with issues (now or from a current review), first post a brief summary: a bullet per thing to fix (the part and what must change, a few words each; from the check's issues, else `.backplane/review.md`), then the line \"Details: `.backplane/review.md`\". Only then ask (order_ask) \"Fix these before ordering, or order as it is?\" with \"Fix them first\" and \"Order anyway\". To fix them, delegate_task again with the exact changes (in this folder, so the order gets them), then the review once more. Export nothing until the review is ok or the person says to order anyway. Never review or change the design yourself here; this thread only orders.\n"
   ++ "3. Ask only what is missing, one question at a time with the backplane tool `order_ask` so the person can tap the answers (two to four short choices, the likely one first): the country it ships to (two-letter code), quantities, and for each board whether it comes assembled or bare. When an earlier order's `mfg/*/manifest.json` exists, offer its answers first (its ship_to, quantities and assembly) and skip what still holds. Boards come in at least 5 and assembly starts at 2 boards (any number up to the quantity). Bare boards can come with a BOM they order parts with themselves (by manufacturer part number at any distributor).\n"
   ++ "4. Export from the saved files (a fix made through `kicad_ipc` counts once saved with SaveDocument) into `mfg/<YYYYMMDD-HHMM>/`: for each board `<name>/gerbers/` (kicad-cli pcb export gerbers, and kicad-cli pcb export drill with Excellon, mm, PTH and NPTH in separate files, into the same folder), and when it is assembled `<name>/bom.csv` (columns Designator, Quantity, Value, Footprint, MPN, Manufacturer, and LCSC when known; one line per part number) and `<name>/positions.csv` (kicad-cli pcb export pos --format csv --units mm --side both; columns Designator, Mid X, Mid Y, Rotation, Layer); for each mechanical part `<name>/<name>.step`, and for sheet metal also its flat pattern `<name>/<name>.dxf`. Then write `manifest.json` there: {\"spec\": 1, \"title\": \"<the project, in words>\", \"ship_to\": \"US\", \"parts\": [{\"name\" (its fab.json name, e.g. Main board), \"kind\", \"qty\", \"options\", \"features\" (sheet metal: its bends), \"files\": {\"gerbers\": \"<name>/gerbers\", \"bom\", \"positions\"} or {\"step\", \"dxf\"}, \"assemble\": <boards to assemble, 0 for bare>}], \"files\": {\"<path from the folder>\": \"<sha256>\"}}, listing every file (sha256sum).\n"
-  ++ "5. Call the backplane tool `order_quote` with the folder (`mfg/<...>`). Backplane shows the person every file it would send and asks them first, then posts the quote with its Buy now link (it opens Stripe) in this thread; do not repeat its table. Say in a line or two what it covers, and if it lists problems, what fixes each.\n"
+  ++ "5. Call the backplane tool `order_quote` with the folder (`mfg/<...>`) and end your turn: Backplane shows the person every file it would send and asks them first. Once they send, it posts the quote with its Buy now link (it opens Stripe) in this thread and you get a message with its total; do not repeat its table. Say in a line or two what it covers, and if it lists problems, what fixes each.\n"
   ++ "Only order_quote ever sends anything: never upload files or contact a manufacturer yourself. The person never deals with the fab: there is no fab website, account or preview for them, so never ask them to check anything there; check what can be checked here (the exported files, the positions file, the renders) and say what you checked. Prices are estimates until paid; the person can always take the mfg folder to any manufacturer themselves. Never name the manufacturer.</backplane_buy>"
+
+# what the order tools answer at once (neither waits on the person: their
+# answer comes as their next message, the quote as a message once posted)
+def Order.ask.asked() -> String:
+  "Asked on the person's screen. End your turn now: their answer comes as their next message, however long they take."
+
+def Order.quote.asked() -> String:
+  "The person is asked whether to send these files. End your turn now: once they send, the quote is posted in this thread and you get a message with its total."
+
+def Order.quote.declined() -> String:
+  "The person chose not to send the files (Not now). Ask whether anything should change first."
 
 # Ordering is off until the person turns it on in Settings (the setting
 # order.enabled): no Buy it, no prices asked, nothing sent to the order
@@ -85,18 +96,19 @@ def Order.tool.def(name: String, desc: String, props: List<&2, J.KV>, req: List<
     J.KV{"inputSchema", J.Json.obj([J.KV{"type", J.Str{"object"}}, J.KV{"properties", J.Json.obj(props)}, J.KV{"required", J.Json.arr(req)}])}])
 
 def Order.tools() -> List<&2, J.Json>:
-  [Order.tool.def("order_quote", "Get a quote for an exported order: the folder (from this thread's folder, e.g. mfg/20261017-0930) holding manifest.json and the files it lists. Backplane shows the person every file it would send and asks them first; then it uploads them, waits for the quote (a minute or two) and posts it in this thread with a Buy now link. Answers the quote's total and any problems, or that the person declined.",
+  [Order.tool.def("order_quote", "Get a quote for an exported order: the folder (from this thread's folder, e.g. mfg/20261017-0930) holding manifest.json and the files it lists. Backplane shows the person every file it would send and asks them first, and answers at once: end your turn. Once they send, it uploads the files, waits for the quote (a minute or two), posts it in this thread with a Buy now link and sends you a message with its total and any problems (or that they chose not to send).",
      [Order.tool.prop("dir", "string", "The order's folder, from this thread's folder.")], [J.Str{"dir"}]),
    Order.tool.def("order_status", "Where this thread's last quote or order stands: waiting, quoted (with its total), paid, placed, shipped (with tracking) or delivered.", Nil{}, Nil{}),
-   Order.tool.def("order_ask", "Ask the person one question with choices they can tap (on every device); they may also type their own answer. Answers what they chose.",
+   Order.tool.def("order_ask", "Ask the person one question with choices they can tap (on every device); they may also type their own answer. Answers at once: end your turn, and their answer comes as their next message, however long they take.",
      [Order.tool.prop("question", "string", "The question, short and plain."),
       J.KV{"options", J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"string"}}])}, J.KV{"description", J.Str{"Two to four short choices, the likely one first."}}])}],
      [J.Str{"question"}, J.Str{"options"}])]
 
 # every thread's agent has this one (a buy thread checks, a review records)
 def Order.review.tool() -> J.Json:
-  Order.tool.def("order_review", "The project's manufacturing review. check: whether the design (its boards, schematics, models and fab files) was reviewed since it last changed; answers state (none, stale or current), verdict and summary. record: after a manufacturing review, keep its verdict (ok or issues) and a one-line summary with the design as it is now.",
-    [Order.tool.prop("action", "string", "check or record"), Order.tool.prop("verdict", "string", "record: ok or issues"), Order.tool.prop("summary", "string", "record: one line")],
+  Order.tool.def("order_review", "The project's manufacturing review. check: whether the design (its boards, schematics, models and fab files) was reviewed since it last changed; answers state (none, stale or current), verdict, summary and issues. record: after a manufacturing review, keep its verdict (ok or issues), a one-line summary and the issues, one short line each, with the design as it is now.",
+    [Order.tool.prop("action", "string", "check or record"), Order.tool.prop("verdict", "string", "record: ok or issues"), Order.tool.prop("summary", "string", "record: one line"),
+     J.KV{"issues", J.Json.obj([J.KV{"type", J.Str{"array"}}, J.KV{"items", J.Json.obj([J.KV{"type", J.Str{"string"}}])}, J.KV{"description", J.Str{"record: what must change, one short line each (\"Shade: walls 0.6 mm, need 0.8\"), at most 8; none when ok."}}])}],
     [J.Str{"action"}])
 
 # A review is current while the design is as it was when the review was
@@ -106,10 +118,31 @@ def Order.review.state(+fp: String, +rec: J.Json) -> String:
   Bool.pick(String, String.is_empty(J.Json.get_str(rec, "fingerprint", "")), "none",
     Bool.pick(String, String.eq(J.Json.get_str(rec, "fingerprint", ""), fp), "current", "stale"))
 
+# an issues list: its strings, trimmed, blank ones left out, at most n
+def Order.review.line(blank: Bool, +x: String, rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match blank:
+    case True{}:
+      rest
+    case False{}:
+      J.Str{x} <> rest
+
+def Order.review.strs(xs: List<&2, J.Json>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case J.Str{+x} <> t:
+      Order.review.line(String.is_empty(String.trim(x)), String.trim(x), Order.review.strs(t))
+    case _ <> t:
+      Order.review.strs(t)
+
+def Order.review.lines(xs: List<&2, J.Json>, n: Nat) -> List<&2, J.Json>:
+  List.take(&2, J.Json, Order.review.strs(xs), n)
+
 # what check answers
 def Order.review.said(+fp: String, +rec: J.Json) -> J.Json:
   J.Json.obj([J.KV{"state", J.Str{Order.review.state(fp, rec)}}, J.KV{"verdict", J.Str{J.Json.get_str(rec, "verdict", "")}},
-    J.KV{"summary", J.Str{J.Json.get_str(rec, "summary", "")}}, J.KV{"at", J.Json.nat(J.Json.get_nat(rec, "at", 0n))}])
+    J.KV{"summary", J.Str{J.Json.get_str(rec, "summary", "")}}, J.KV{"issues", J.Json.arr(Order.review.lines(J.Json.elems(J.Json.get_obj(rec, "issues")), 8n))},
+    J.KV{"at", J.Json.nat(J.Json.get_nat(rec, "at", 0n))}])
 
 # what record keeps: a verdict is ok or issues, nothing else
 def Order.review.verdict(+v: String) -> String:
@@ -117,6 +150,12 @@ def Order.review.verdict(+v: String) -> String:
 
 def Order.review.rec(+fp: String, +verdict: String, +summary: String, +at: Nat) -> J.Json:
   J.Json.obj([J.KV{"fingerprint", J.Str{fp}}, J.KV{"verdict", J.Str{Order.review.verdict(verdict)}}, J.KV{"summary", J.Str{String.trim(summary)}}, J.KV{"at", J.Json.nat(at)}])
+
+# with what must change: the issues' lines, at most 8, blank ones left out
+# (law order_review_issues_kept)
+def Order.review.rec.with(+fp: String, +verdict: String, +summary: String, issues: List<&2, J.Json>, +at: Nat) -> J.Json:
+  J.Json.obj([J.KV{"fingerprint", J.Str{fp}}, J.KV{"verdict", J.Str{Order.review.verdict(verdict)}}, J.KV{"summary", J.Str{String.trim(summary)}},
+    J.KV{"issues", J.Json.arr(Order.review.lines(issues, 8n))}, J.KV{"at", J.Json.nat(at)}])
 
 def Order.is.name(+n: String, ns: List<&2, String>) -> Bool:
   match ns:
