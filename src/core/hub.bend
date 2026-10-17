@@ -21,6 +21,7 @@ import ./notice.bend as NO
 import ./wake.bend as WK
 import ./told.bend as TLD
 import ./deploy.bend as DP
+import ./ship.bend as SH
 import ./version.bend as VER
 import ./locks.bend as LK
 import ./adopt.bend as AD
@@ -117,6 +118,12 @@ type Out is Data:
   # the deploy goes: swap the staged package in (when stage is set), then
   # restart into it
   DeployGo{stage: String}
+  # deploy_main (core/ship.bend): build commit in a job of its own, out of
+  # the hub's process group and scope (launched unless it already runs, so
+  # after a restart this watches the one that does); read origin/main again
+  # for the follow-up build ("next") or deploy.follow ("follow")
+  ShipRun{commit: String}
+  ShipNext{why: String}
   # a request about a bot's browser and what it is taught (core/teach.bend):
   # the server keeps the driver and the draft, so it answers (m is
   # bots.browser or bots.teach, p the request's params as JSON text)
@@ -1436,10 +1443,30 @@ def Turn.last(+s: M.State, +th: String) -> String:
 def Turn.basis(+s: M.State, +th: String) -> String:
   M.Setting.get(s, "tok.basis." ++ th, "")
 
-# Claude: the process's cost so far before this turn
-def Turn.claude.base(+s: M.State, +th: String, +o: J.Json) -> Nat:
-  Bool.pick(Nat, Bool.and(Turn.has(o, "result_index"), Nat.is_eq(J.Json.get_nat(o, "result_index", 1n), 0n)), 0n,
-    M.Switch.num(String.drop(Turn.basis(s, th), 2n), 0n))
+# Claude: the session's running cost before this turn, as the baseline
+# "c:<nano-dollars>" ("" when unknown). A session the hub saw start has 0
+# (Turn.claude.start); a session resumed in a new process keeps its total
+# going (result_index 0 there does not mean 0, measured 2026-10-16), so
+# only a session start resets it
+def Turn.claude.basis(+s: M.State, +th: String) -> String:
+  Bool.pick(String, String.starts_with(Turn.basis(s, th), "c:"), Turn.basis(s, th), "")
+
+def Turn.claude.base(+s: M.State, +th: String) -> Nat:
+  M.Switch.num(String.drop(Turn.claude.basis(s, th), 2n), 0n)
+
+# a Claude session the hub sees start (a new session id): its cost starts at 0
+def Turn.claude.start(same: Bool, +th: String, +sid: String, +now: Nat) -> List<&2, M.Change>:
+  match same:
+    case True{}:
+      Nil{}
+    case False{}:
+      Bool.pick(List<&2, M.Change>, String.is_empty(sid), Nil{}, [M.SettingSet{"tok.basis." ++ th, "c:0", now}])
+
+# a count started again once more (the setting tok.recount, part of the
+# totals' prefix): a count's totals from before 2026-10-16's fix for
+# resumed Claude sessions charged one turn with the session's past cost
+def Turn.recount(+s: M.State, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, String.is_empty(M.Setting.get(s, "tok.recount", "")), [M.SettingSet{"tok.recount", "b", now}], Nil{})
 
 def Turn.rise(+now: Nat, +before: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_ge(now, before), Nat.sub(now, before), now)
@@ -1450,10 +1477,13 @@ def Turn.rise(+now: Nat, +before: Nat) -> Nat:
 def Turn.epoch(+s: M.State, +now: Nat) -> List<&2, M.Change>:
   Bool.pick(List<&2, M.Change>, String.is_empty(M.Setting.get(s, "tok.epoch", "")), [M.SettingSet{"tok.epoch", "1", now}], Nil{})
 
+def Turn.restart(+s: M.State, +now: Nat) -> List<&2, M.Change>:
+  List.append(&2, M.Change, Turn.epoch(s, now), Turn.recount(s, now))
+
 # whether a Claude turn's cost can be told: Claude gave a running total, and
-# either this turn starts its process (result_index 0) or the process's
-# total before it is known; a process already running when its thread was
-# first seen has no known start, so its first turn's cost is unknown
+# either it starts from 0 (first) or the total before it is known. Claude
+# turns pass first = False: a session's start is told by its id
+# (Turn.claude.start sets the baseline to 0), not by result_index
 def Turn.cost.known(has: Bool, first: Bool, +basis: String) -> Bool:
   Bool.and(has, Bool.or(first, Bool.not(String.is_empty(basis))))
 
@@ -1464,12 +1494,12 @@ def Turn.claude.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) 
     case True{}:
       +u = J.Json.get_obj(o, "usage")
       +total = Turn.nusd(Turn.raw(o, "total_cost_usd"))
-      +hasc = Turn.cost.known(Turn.has(o, "total_cost_usd"), Bool.and(Turn.has(o, "result_index"), Nat.is_eq(J.Json.get_nat(o, "result_index", 1n), 0n)), Turn.basis(s, th))
+      +hasc = Bool.and(Turn.cost.known(Turn.has(o, "total_cost_usd"), False{}, Turn.claude.basis(s, th)), Nat.is_ge(total, Turn.claude.base(s, th)))
       +think = Turn.has(J.Json.get_obj(u, "output_tokens_details"), "thinking_tokens")
-      List.append(&2, M.Change, Turn.epoch(s, now), [M.TurnUsage{th, "claude", Turn.or(Turn.model(Hub.thread(s, th)), Turn.first(Usage.fields(J.Json.get_obj(o, "modelUsage")))), J.Json.get_str(o, "uuid", ""),
+      List.append(&2, M.Change, Turn.restart(s, now), [M.TurnUsage{th, "claude", Turn.or(Turn.model(Hub.thread(s, th)), Turn.first(Usage.fields(J.Json.get_obj(o, "modelUsage")))), J.Json.get_str(o, "uuid", ""),
         J.Json.get_nat(u, "input_tokens", 0n), J.Json.get_nat(u, "cache_read_input_tokens", 0n), J.Json.get_nat(u, "cache_creation_input_tokens", 0n),
         J.Json.get_nat(u, "output_tokens", 0n), J.Json.get_nat(J.Json.get_obj(u, "output_tokens_details"), "thinking_tokens", 0n),
-        Bool.pick(Nat, hasc, Turn.rise(total, Turn.claude.base(s, th, o)), 0n),
+        Bool.pick(Nat, hasc, Nat.sub(total, Turn.claude.base(s, th)), 0n),
         "irwo" ++ Bool.pick(String, think, "t", "") ++ Bool.pick(String, hasc, "c", ""),
         Bool.pick(String, Turn.has(o, "total_cost_usd"), "c:" ++ Nat.show(total), Turn.basis(s, th)), now}])
 
@@ -1534,7 +1564,7 @@ def Turn.codex.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +se: String, 
       +cw = J.Json.get_nat(u, "cache_write_input_tokens", 0n)
       +co = J.Json.get_nat(u, "output_tokens", 0n)
       +ct = J.Json.get_nat(u, "reasoning_output_tokens", 0n)
-      List.append(&2, M.Change, Turn.epoch(s, now),
+      List.append(&2, M.Change, Turn.restart(s, now),
         Turn.codex.seen(String.starts_with(Turn.basis(s, th), "x:" ++ se ++ ":"), s, th, now, se, u, was, ci, cc, cw, co, ct))
 
 # a turn.completed line's turn, once
@@ -1599,10 +1629,11 @@ def Claude.init.k(same: Bool, thread: String, sid: String, +now: Nat) -> Step:
     case False{}:
       Step{[M.SessionSet{thread, sid, now}], Nil{}}
 
-# the session id arrives in the init line; record it once
+# the session id arrives in the init line; record it once (and a new
+# session's cost starts at 0, Turn.claude.start)
 def Claude.init(+s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   +sid = J.Json.get_str(o, "session_id", "")
-  Claude.init.k(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now)
+  Step.after(Claude.init.k(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now), Turn.claude.start(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now))
 
 # Claude's subagents (model.bend's Bg): a local agent started, what it
 # does now, and its end; the list is written only when it changes, as a
@@ -4282,6 +4313,15 @@ def Update.held(+s: M.State, +now: Nat) -> Step:
 def Deploy.probe() -> List<&2, Out>:
   [DeployProbe{}]
 
+# deploy_main's state (core/ship.bend), and whether a build is on its way.
+# A deploy does not wait for one: the build runs in a scope of its own,
+# holds no build lock, and the next hub re-adopts it (Ship.recover)
+def Ship.get(+s: M.State) -> SH.Ship:
+  SH.Ship.read(M.Setting.get(s, "deploy.ship", ""))
+
+def Ship.busy.s(+s: M.State) -> Bool:
+  SH.Ship.busy(Ship.get(s))
+
 # a note to the requester thread (none for the person: by is empty)
 def Deploy.tell(+s: M.State, +now: Nat, +by: String, +text: String) -> Step:
   Bool.pick(Step, String.is_empty(by), Step.none(), Lr.send(s, now, "deploy", by, text))
@@ -4448,6 +4488,248 @@ def Deploy.demo.again(+s: M.State, st: Step) -> M.State:
 def Deploy.demo.bot() -> M.State:
   M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"tb", "", "Bub", M.Local{}, "", "", "claude", "", 1n}, M.BotSet{"b1", "Bub", "tb", 0n, "", 1n},
     M.SettingSet{"deploy.done", Deploy.demo.line("tb"), 5n}], M.State.empty())
+
+# Deploying origin/main
+# ---------------------
+# deploy_main (core/ship.bend, docs/deploy.md): the hub fetches origin/main
+# of deploy.repo, builds it in a job of its own (ShipRun) and stages it
+# through the safe restart above (Deploy.ask). One build at a time; a
+# request the build, the staged or the live commit covers starts none; the
+# requests a build does not cover make one follow-up (ShipNext). Everyone
+# who asked is told once when the build ends: a thread like watched work
+# (Watch.tell), the person ("-") with an alert.
+
+def Ship.repo(+s: M.State) -> String:
+  M.Setting.get(s, "deploy.repo", "")
+
+def Ship.wrap(+s: M.State) -> String:
+  M.Setting.get(s, "deploy.wrap", "")
+
+def Ship.follow(+s: M.State) -> Bool:
+  SH.Ship.follow.on(M.Setting.get(s, "deploy.follow", ""))
+
+# who asked: the MCP route's "deploy" is no thread (a script, the person)
+def Ship.by(+thread: String) -> String:
+  Bool.pick(String, Bool.or(String.eq(thread, "deploy"), String.is_empty(thread)), SH.Ship.person(), thread)
+
+def Ship.eff.k(waiting: Bool, sh: SH.Ship) -> SH.Ship:
+  match waiting:
+    case True{}:
+      sh
+    case False{}:
+      SH.Ship.unstage(sh)
+
+# the state as it covers requests: a staged commit only while its deploy
+# still waits
+def Ship.eff(+s: M.State) -> SH.Ship:
+  Ship.eff.k(DP.Deploy.waiting(s), Ship.get(s))
+
+# the commits the server asks git about, comma-joined
+def Ship.cands(+s: M.State) -> String:
+  String.join(SH.Ship.cands(Ship.eff(s)), ",")
+
+# the person's alert (no thread: its record is alert.deploy)
+def Ship.alert(+s: M.State, +now: Nat, +text: String) -> Step:
+  Step{[NO.Alert.set(s, now, "deploy", "note", "deploy-" ++ Hub.id("n", now, Hub.seq(s)), NO.Alert.memory(s, "deploy"), NO.Alert.text(text, 500n))], Nil{}}
+
+def Ship.tell.k(person: Bool, +s: M.State, +now: Nat, +who: String, +text: String) -> Step:
+  match person:
+    case True{}:
+      Ship.alert(s, now, text)
+    case False{}:
+      Watch.tell(s, now, who, text)
+
+# each asker told once, the state moving between them
+def Ship.tells(ws: List<&2, String>, +s: M.State, +now: Nat, +text: String, +st: Step) -> Step:
+  match ws:
+    case Nil{}:
+      st
+    case +w <> t:
+      Ship.tells(t, s, now, text, Step.cat(st, Ship.tell.k(String.eq(w, SH.Ship.person()), M.State.replay(Queue.changes(st), s), now, w, text)))
+
+def Ship.more.outs(more: Bool) -> List<&2, Out>:
+  match more:
+    case True{}:
+      [ShipNext{"next"}]
+    case False{}:
+      Nil{}
+
+# a build ends (staged, failed, skipped): written, its askers told, and the
+# follow-up asked for when one is wanted
+def Ship.end(+s: M.State, +now: Nat, +commit: String, +state: String, +version: String, +detail: String) -> Step:
+  Ship.tells(SH.Ship.told(Ship.get(s)), s, now, SH.Ship.text(state, commit, version, detail),
+    Step{[M.DeployBuilt{commit, state, version, detail, now}], Ship.more.outs(SH.Ship.more(Ship.get(s)))})
+
+def Ship.ask.k(start: Bool, +now: Nat, +by: String, +note: String, +head: String, +cover: String) -> Step:
+  match start:
+    case True{}:
+      Step{[M.DeployAsked{by, note, head, cover, now}, M.DeployBuilt{head, "building", "", "", now}], [ShipRun{head}]}
+    case False{}:
+      Step{[M.DeployAsked{by, note, head, cover, now}], Nil{}}
+
+# a request for head (within: the candidate commits git says contain it)
+def Ship.ask(+s: M.State, +now: Nat, +by: String, +note: String, +head: String, +within: List<&2, String>) -> Step:
+  Ship.ask.k(SH.Ship.start(Ship.eff(s), head, within), now, by, note, head, SH.Ship.cover(Ship.eff(s), head, within))
+
+def Ship.next.c(+cover: String, +s: M.State, +now: Nat, +head: String) -> Step:
+  match cover:
+    case SNil{}:
+      Step{[M.DeployBuilt{head, "building", "", "", now}], [ShipRun{head}]}
+    case SCon{_, _}:
+      Ship.end(s, now, SH.Ship.by(Ship.eff(s), cover), "skipped", "", cover)
+
+def Ship.next.e(+err: String, +s: M.State, +now: Nat, +out: String) -> Step:
+  match err:
+    case SNil{}:
+      Ship.next.c(SH.Ship.cover(Ship.eff(s), SH.Look.head(out), SH.Look.within(out)), s, now, SH.Look.head(out))
+    case SCon{_, _}:
+      Ship.end(s, now, SH.Ship.commit(Ship.get(s)), "failed", "", "origin/main could not be read: " ++ err)
+
+def Ship.next.k(asked: Bool, +s: M.State, +now: Nat, +out: String) -> Step:
+  match asked:
+    case True{}:
+      Ship.next.e(SH.Look.err(out), s, now, out)
+    case False{}:
+      Step.none()
+
+def Ship.follow.k(go: Bool, +s: M.State, +now: Nat, +out: String) -> Step:
+  match go:
+    case True{}:
+      Ship.ask(s, now, SH.Ship.person(), "deploy.follow", SH.Look.head(out), SH.Look.within(out))
+    case False{}:
+      Step.none()
+
+def Ship.newest.k(follow: Bool, +s: M.State, +now: Nat, +out: String) -> Step:
+  match follow:
+    case True{}:
+      Ship.follow.k(Bool.and(String.is_empty(SH.Look.err(out)), SH.Ship.start(Ship.eff(s), SH.Look.head(out), SH.Look.within(out))), s, now, out)
+    case False{}:
+      Ship.next.k(String.eq(SH.Ship.phase(Ship.get(s)), "asked"), s, now, out)
+
+# origin/main read again (why: "next" for the follow-up, "follow" for
+# deploy.follow's look, which only builds what nothing covers and asks no
+# one)
+def Ship.newest(+s: M.State, +now: Nat, +why: String, +out: String) -> Step:
+  Ship.newest.k(String.eq(why, "follow"), s, now, out)
+
+def Ship.mine(+s: M.State, +commit: String) -> Bool:
+  Bool.and(String.eq(SH.Ship.phase(Ship.get(s)), "building"), String.eq(SH.Ship.commit(Ship.get(s)), commit))
+
+def Ship.pid.k(mine: Bool, +now: Nat, +commit: String, +detail: String) -> Step:
+  match mine:
+    case True{}:
+      Step{[M.DeployBuilt{commit, "pid", "", detail, now}], Nil{}}
+    case False{}:
+      Step.none()
+
+# the build's job started: its pid and what proves it is the same process
+def Ship.pid(+s: M.State, +now: Nat, +commit: String, +detail: String) -> Step:
+  Ship.pid.k(Ship.mine(s, commit), now, commit, detail)
+
+def Ship.done.ok(ok: Bool, +s: M.State, +now: Nat, +commit: String, +out: String) -> Step:
+  match ok:
+    case True{}:
+      Step.cat(Ship.end(s, now, commit, "staged", SH.Ran.version(out), ""), Deploy.ask(s, now, "", SH.Ship.note(commit), SH.Ran.stage(out)))
+    case False{}:
+      Ship.end(s, now, commit, "failed", SH.Ran.version(out),
+        Bool.pick(String, SH.Ran.gone(out), SH.Ship.lost() ++ "\n", "") ++ SH.Ran.tail(out))
+
+def Ship.done.k(mine: Bool, +s: M.State, +now: Nat, +commit: String, +out: String) -> Step:
+  match mine:
+    case True{}:
+      Ship.done.ok(SH.Ran.ok(out), s, now, commit, out)
+    case False{}:
+      Step.none()
+
+# the build's job ended (out: its STATUS, VERSION, STAGE and log tail): a
+# staged package goes to the safe restart; a job gone without an exit
+# status is lost, never success
+def Ship.done(+s: M.State, +now: Nat, +commit: String, +out: String) -> Step:
+  Ship.done.k(Ship.mine(s, commit), s, now, commit, out)
+
+def Ship.live.k(go: Bool, +now: Nat, +staged: String) -> Step:
+  match go:
+    case True{}:
+      Step{[M.DeployBuilt{staged, "live", VER.Version.current(), "", now}], Nil{}}
+    case False{}:
+      Step.none()
+
+def Ship.recover.k(i: Nat, +s: M.State, +now: Nat) -> Step:
+  match i:
+    case 0n:
+      Step.outs([ShipRun{SH.Ship.commit(Ship.get(s))}])
+    case 1n:
+      Step.outs([ShipNext{"next"}])
+    case _:
+      Ship.live.k(Bool.and(Bool.not(String.is_empty(SH.Ship.staged(Ship.get(s)))), String.eq(DP.Deploy.note(DP.Deploy.done(s)), SH.Ship.note(SH.Ship.staged(Ship.get(s))))),
+        now, SH.Ship.staged(Ship.get(s)))
+
+# at start: a build that was under way is watched again (its job outlives
+# the hub: it reports its exit, or is lost only when it is gone without
+# one); a follow-up still wanted is asked for; a staged build this restart
+# was for is live
+def Ship.recover(+s: M.State, +now: Nat) -> Step:
+  Ship.recover.k(Bool.pick(Nat, String.eq(SH.Ship.phase(Ship.get(s)), "building"), 0n, Bool.pick(Nat, String.eq(SH.Ship.phase(Ship.get(s)), "asked"), 1n, 2n)), s, now)
+
+def Ship.tick.k(go: Bool) -> Step:
+  match go:
+    case True{}:
+      Step.outs([ShipNext{"follow"}])
+    case False{}:
+      Step.none()
+
+# the minute's tick: with deploy.follow on (off by default) and nothing
+# under way, origin/main is read once every 5 minutes
+def Ship.tick(+s: M.State, +now: Nat) -> Step:
+  Ship.tick.k(Bool.and(Ship.follow(s), Bool.and(Bool.not(String.is_empty(Ship.repo(s))), Bool.and(Bool.not(Ship.busy.s(s)), SH.Ship.due(now)))))
+
+def Ship.status(+s: M.State) -> J.Json:
+  SH.Ship.status(Ship.get(s), Ship.follow(s), Ship.repo(s))
+
+# demos for the laws and tests: a project with threads t1, t2
+def Ship.demo(+line: String) -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "a", M.Local{}, "", "", "claude", "", 1n},
+    M.ThreadCreated{"t2", "p1", "b", M.Local{}, "", "", "claude", "", 1n}, M.SettingSet{"deploy.repo", "/src", 1n}, M.SettingSet{"deploy.ship", line, 2n}], M.State.empty())
+
+def Ship.demo.runs(os: List<&2, Out>) -> Nat:
+  match os:
+    case Nil{}:
+      0n
+    case ShipRun{_} <> t:
+      1n+Ship.demo.runs(t)
+    case _ <> t:
+      Ship.demo.runs(t)
+
+def Ship.demo.nexts(os: List<&2, Out>) -> Nat:
+  match os:
+    case Nil{}:
+      0n
+    case ShipNext{_} <> t:
+      1n+Ship.demo.nexts(t)
+    case _ <> t:
+      Ship.demo.nexts(t)
+
+def Ship.demo.outs(st: Step) -> List<&2, Out>:
+  match st:
+    case Step{_, os}:
+      os
+
+# builds a step starts
+def Ship.demo.builds(st: Step) -> Nat:
+  Ship.demo.runs(Ship.demo.outs(st))
+
+def Ship.demo.posts.go(cs: List<&2, M.Change>, +th: String) -> Nat:
+  match cs:
+    case Nil{}:
+      0n
+    case M.MessagePosted{+t, _, _, _, _} <> r:
+      Nat.add(Bool.pick(Nat, String.eq(t, th), 1n, 0n), Ship.demo.posts.go(r, th))
+    case _ <> r:
+      Ship.demo.posts.go(r, th)
+
+# messages a step posts into thread th
+def Ship.demo.posts(st: Step, +th: String) -> Nat:
+  Ship.demo.posts.go(Queue.changes(st), th)
 
 # Open tool calls, for the laws: the outs of a Claude line on a running thread
 def Tools.demo.os(st: Step) -> List<&2, Out>:
@@ -5128,7 +5410,7 @@ def Hub.tick.k(+s: M.State, +now: Nat, +kids: Map<&2, Nat>) -> Step:
         Step.join(Wt.stale(Map.values(&2, M.Thread, ts), s, now), Scratch.sweep(Map.values(&2, M.Thread, ts), kids, s, now, M.Scratch.window(s))))
 
 def Hub.tick(+s: M.State, +now: Nat) -> Step:
-  Step.join(Step.join(Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now)), Step.cat(Lr.far.tick(s), Wake.poll(s))), Deploy.tick(s, now))
+  Step.join(Step.join(Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now)), Step.cat(Lr.far.tick(s), Wake.poll(s))), Step.cat(Deploy.tick(s, now), Ship.tick(s, now)))
 
 # Asks keep their thread busy
 # ---------------------------
@@ -5207,6 +5489,10 @@ def Busy.inert(c: M.Change) -> Bool:
     case M.UsageSet{_, _, _, _}:
       True{}
     case M.TurnUsage{_, _, _, _, _, _, _, _, _, _, _, _, _}:
+      True{}
+    case M.DeployAsked{_, _, _, _, _}:
+      True{}
+    case M.DeployBuilt{_, _, _, _, _}:
       True{}
     case M.TodosSet{_, _, _}:
       True{}
@@ -5760,7 +6046,7 @@ def Carry.go(on: Bool, +before: M.State, +after: M.State, +now: Nat, +kept: List
 # before: the state Hub.recover started from; after: once its step applied
 # (turns carried on and lost work told, Rec.burst() threads at most)
 def Hub.carry.a(+before: M.State, +after: M.State, +now: Nat, +kept: List<&2, String>) -> Step:
-  Step.cat(Carry.go(M.Carry.on(after), before, after, now, kept), Deploy.after(after, now))
+  Step.cat(Carry.go(M.Carry.on(after), before, after, now, kept), Step.cat(Deploy.after(after, now), Ship.recover(after, now)))
 
 def Hub.carry(+before: M.State, +after: M.State, +now: Nat) -> Step:
   Hub.carry.a(before, after, now, Nil{})

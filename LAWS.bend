@@ -38,6 +38,7 @@ import ./src/app/bots.bend as BV
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
 import ./src/core/deploy.bend as DP
+import ./src/core/ship.bend as SHP # deploy main
 import ./src/core/cmds.bend as CM
 import ./src/core/errtail.bend as ERT
 import ./src/core/keyring.bend as KRG
@@ -9274,3 +9275,151 @@ law mail_index_hash_empty:
   for h: U32
   {MIX.MI.hash("", h) == h : U32}
 # ---- end mail index ----
+# ---- scroll-stable: reading while a thread grows ----
+# a view at its very end follows it
+law hold_at_end_zero:
+  {U.Hold.at_end(0n) == True{} : Bool}
+
+# nothing new: no pill
+law hold_label_nothing:
+  {U.Hold.label(0n, False{}) == "" : String}
+
+# the entry seen is the newest: nothing is counted as new
+law hold_fresh_seen:
+  for +e: M.Entry
+  for +t: List<&2, M.Entry>
+  for +n: Nat
+  {U.Hold.fresh(e <> t, U.Hold.stop(e <> t, M.Idx.id(e), n), M.Idx.id(e), n) == n : Nat}
+
+# a panel above the window's timeline moving its top from t0 to t1 moves
+# what is read by as much (off + t1 - t0), so nothing read moves on screen
+law hold_off_still:
+  for +off: Nat
+  for +t0: Nat
+  for +t1: Nat
+  for +over: Nat
+  for h: {Nat.is_le(Nat.sub(Nat.add(off, t1), t0), over) == True{} : Bool}
+  {U.Hold.off(off, t0, t1, over) == Nat.sub(Nat.add(off, t1), t0) : Nat}
+
+# the window's timeline at its end (sc 0) never holds: it follows
+law hold_end_follows:
+  for +hold: String
+  for +off: U32
+  for +top: U32
+  for +over: U32
+  {L.TL.hold.off(hold, 0, off, top, over) == off : U32}
+# ---- end scroll-stable ----
+
+# Entry boundaries carry identity without moving any pixels.
+law hold_boundary_zero:
+  {L.TL.h(29) == 0 : U32}
+
+# Correct for growth above the anchor as well as movement of the panel.
+law hold_entry_moves:
+  for +off: Nat
+  for +y0: Nat
+  for +y1: Nat
+  for +t0: Nat
+  for +t1: Nat
+  for +over: Nat
+  for h: {Nat.is_le(Nat.sub(Nat.add(Nat.add(Nat.sub(off, y0), y1), t1), t0), over) == True{} : Bool}
+  {L.TL.hold.move(off, y0, y1, t0, t1, over) == Nat.sub(Nat.add(Nat.add(Nat.sub(off, y0), y1), t1), t0) : Nat}
+
+# At the end there is no held page: the ordinary page limit applies.
+law hold_page_free:
+  for +es: List<&2, M.Entry>
+  for +base: Nat
+  {U.Hold.page(es, "", base) == base : Nat}
+
+# ---- usage-claude-resume ----
+# a Claude session the hub sees start is charged from 0; a resumed one keeps
+# its baseline (result_index 0 does not mean 0)
+law tok_claude_start_zero:
+  {H.Turn.claude.start(False{}, "t", "s", 1n) == [M.SettingSet{"tok.basis.t", "c:0", 1n}] : List<&2, M.Change>}
+
+law tok_claude_same_session_keeps:
+  for +s: String
+  {H.Turn.claude.start(True{}, "t", s, 1n) == [] : List<&2, M.Change>}
+
+# the recount happens once
+law tok_recount_once:
+  {H.Turn.recount(M.State.replay([M.SettingSet{"tok.recount", "b", 1n}], M.State.empty()), 2n) == [] : List<&2, M.Change>}
+# ---- usage-boat-chip ----
+# a thread with no Boat sandbox shows no chip
+law chip_none:
+  for +now: Nat
+  {UZ.Chip.text("", now) == "" : String}
+
+# a running sandbox says its size
+law chip_running:
+  {UZ.Chip.text("running/large/1/0", 5n) == "Boat · large · running" : String}
+
+# a warm sandbox past its idle time is gone: no chip, never "0m"
+law chip_warm_gone:
+  {UZ.Chip.text("warm/default/0/10", 20n) == "" : String}
+
+# a warm sandbox is never stale (it goes quiet by right)
+law chip_warm_not_stale:
+  for +gen: Nat
+  for +now: Nat
+  {UZ.Chip.stale("warm", gen, now) == False{} : Bool}
+
+# ---- deploy main ----
+# deploy_main (core/ship.bend): a request something covers (the commit
+# being built, staged or live already holds origin/main) never starts a build
+law ship_covered_never_builds:
+  for c: Char
+  for cs: String
+  for busy: Bool
+  {SHP.Ship.start.k(SCon{c, cs}, busy) == False{} : Bool}
+
+# at most one build at a time: while one is on its way none starts
+law ship_busy_never_builds:
+  for +cover: String
+  {SHP.Ship.start.k(cover, True{}) == False{} : Bool}
+
+law ship_building_is_busy:
+  {SHP.Ship.busy(SHP.Ship.demo.building()) == True{} : Bool}
+
+# requests during a build yield at most one further build: whatever came,
+# the end leaves no second follow-up wanted
+law ship_coalesce_at_most_one:
+  for sh: SHP.Ship
+  for +state: String
+  for +commit: String
+  {SHP.Ship.more(SHP.Ship.end(sh, state, commit)) == False{} : Bool}
+
+# three requests (t2 twice, t3) during the build of c1: one follow-up, for
+# t2 and t3
+law ship_coalesce_three:
+  {SHP.Ship.phase(SHP.Ship.end(SHP.Ship.demo.queued(), "staged", "c1")) == "asked" : String}
+
+law ship_coalesce_askers:
+  {SHP.Ship.askers(SHP.Ship.end(SHP.Ship.demo.queued(), "staged", "c1")) == ["t2", "t3"] : List<&2, String>}
+
+# every asker since the last report is told once: one who asks twice is
+# listed once, and after the report no one is left to tell again
+law ship_told_each_once:
+  {SHP.Ship.told(SHP.Ship.asked(SHP.Ship.asked(SHP.Ship.demo.building(), "t1", "building"), "t4", "building")) == ["t1", "t4"] : List<&2, String>}
+
+law ship_told_cleared:
+  {SHP.Ship.told(SHP.Ship.end(SHP.Ship.demo.building(), "failed", "c1")) == [] : List<&2, String>}
+
+law ship_told_next_cleared:
+  for sh: SHP.Ship
+  for +state: String
+  for +commit: String
+  {SHP.Ship.next(SHP.Ship.end(sh, state, commit)) == [] : List<&2, String>}
+
+# a request a covered build holds is told at its end, not queued again
+law ship_covered_joins_build:
+  {SHP.Ship.more(SHP.Ship.asked(SHP.Ship.demo.building(), "t2", "building")) == False{} : Bool}
+
+# deploy.follow is off unless set "on"
+law ship_follow_off_default:
+  {SHP.Ship.follow.on("") == False{} : Bool}
+
+# a build gone without an exit status is never success
+law ship_gone_not_ok:
+  {SHP.Ran.ok("STATUS gone\nVERSION \n") == False{} : Bool}
+# ---- end deploy main ----

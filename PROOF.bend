@@ -21,6 +21,7 @@ import ./src/core/board.bend as B
 import ./src/core/semver.bend as SV
 import ./src/app/nui.bend as N
 import ./src/core/hub.bend as H
+import ./src/core/ship.bend as SHP # deploy main
 import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
 import ./src/core/acp.bend as AC
@@ -3289,10 +3290,10 @@ def tl_entries_roles(ty, es, rs, st, sel, px, pics, sp):
     case +e <> +t:
       match rs:
         case Nil{}:
-          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.entry(ty, e, st, sel, px, pics, sp), x),
+          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.entry.bound(e, L.TL.entry(ty, e, st, sel, px, pics, sp)), x),
             L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), Nil{}, st, sel, px, pics, sp), L.TL.entries.r(ty, t, Nil{}, st, sel, px, pics, sp), tl_entries_roles(ty, t, Nil{}, st, sel, px, pics, sp))
         case +r <> +rt:
-          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), L.TL.role(r, ty, L.TL.entry(ty, e, st, sel, px, pics, sp), px)), x),
+          Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, x => List.append(&2, L.TLine, L.TL.entry.bound(e, L.TL.mark(String.eq(M.Idx.id(e), U.Str.get(pics, "hist.jump")), L.TL.role(r, ty, L.TL.entry(ty, e, st, sel, px, pics, sp), px))), x),
             L.TL.entries.mr(ty, L.TL.memo.make(ty, t, px, sel), rt, st, sel, px, pics, sp), L.TL.entries.r(ty, t, rt, st, sel, px, pics, sp), tl_entries_roles(ty, t, rt, st, sel, px, pics, sp))
 
 def tl_entries_memo(ty, es, st, sel, px, pics):
@@ -11075,3 +11076,107 @@ def Laws.mail_index_overflow_rejected():
 def Laws.mail_index_hash_empty(h):
   {==}
 # ---- end mail index ----
+# ---- scroll-stable: reading while a thread grows ----
+def Laws.hold_at_end_zero():
+  {==}
+
+def Laws.hold_label_nothing():
+  {==}
+
+def Laws.hold_fresh_seen(e, t, n):
+  %Equal.sym(Bool, String.eq(M.Idx.id(e), M.Idx.id(e)), True{}, Laws.string_eq_refl(M.Idx.id(e))) : {U.Hold.fresh(e <> t, Bool.or(_, Nat.is_ge(n, U.Hold.most())), M.Idx.id(e), n) == n : Nat}
+  {==}
+
+def Laws.hold_off_still(off, t0, t1, over, h):
+  %Equal.sym(Bool, Nat.is_le(Nat.sub(Nat.add(off, t1), t0), over), True{}, h) : {Bool.pick(Nat, _, Nat.sub(Nat.add(off, t1), t0), over) == Nat.sub(Nat.add(off, t1), t0) : Nat}
+  {==}
+
+def Laws.hold_end_follows(hold, off, top, over):
+  {==}
+# ---- end scroll-stable ----
+
+def Laws.hold_boundary_zero():
+  {==}
+
+def Laws.hold_entry_moves(off, y0, y1, t0, t1, over, h):
+  Laws.hold_off_still(Nat.add(Nat.sub(off, y0), y1), t0, t1, over, h)
+
+def Laws.hold_page_free(es, base):
+  {==}
+
+# ---- usage-claude-resume ----
+def Laws.tok_claude_start_zero():
+  {==}
+
+def Laws.tok_claude_same_session_keeps(s):
+  {==}
+
+def Laws.tok_recount_once():
+  {==}
+
+# ---- usage-boat-chip ----
+def Laws.chip_none(now):
+  {==}
+
+def Laws.chip_running():
+  {==}
+
+def Laws.chip_warm_gone():
+  {==}
+
+def Laws.chip_warm_not_stale(gen, now):
+  {==}
+
+# ---- deploy main ----
+def Laws.ship_covered_never_builds(c, cs, busy):
+  match busy:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.ship_busy_never_builds(cover):
+  {==}
+
+def Laws.ship_building_is_busy():
+  {==}
+
+def Laws.ship_coalesce_at_most_one(sh, state, commit):
+  match sh:
+    case SHP.Ship{p, c, s, l, j, a, n, m}:
+      match m:
+        case True{}:
+          {==}
+        case False{}:
+          {==}
+
+def Laws.ship_coalesce_three():
+  {==}
+
+def Laws.ship_coalesce_askers():
+  {==}
+
+def Laws.ship_told_each_once():
+  {==}
+
+def Laws.ship_told_cleared():
+  {==}
+
+def Laws.ship_told_next_cleared(sh, state, commit):
+  match sh:
+    case SHP.Ship{p, c, s, l, j, a, n, m}:
+      match m:
+        case True{}:
+          {==}
+        case False{}:
+          {==}
+
+def Laws.ship_covered_joins_build():
+  {==}
+
+def Laws.ship_follow_off_default():
+  {==}
+
+def Laws.ship_gone_not_ok():
+  {==}
+# ---- end deploy main ----

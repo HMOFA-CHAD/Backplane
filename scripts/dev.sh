@@ -21,6 +21,9 @@
 #   scripts/dev.sh install --force [h@host]
 #                                  the old way: install and restart now (also
 #                                  what happens when no hub answers)
+#   scripts/dev.sh stage DIR       build the package (as install does) into DIR
+#                                  and stop: no install, no hub asked. The
+#                                  hub's deploy_main runs this (docs/deploy.md)
 #
 # The dev run keeps to itself: its own home (BACKPLANE_DEV_HOME, default
 # ~/.backplane-dev, never ~/.backplane-bend), port 3788 (BACKPLANE_DEV_PORT),
@@ -249,6 +252,13 @@ case ${1:-run} in
     shift
     if [ "${1:-}" = --force ]; then force=1; shift; fi
     if [ -n "${1:-}" ]; then install_remote "$1"; else install_local; fi ;;
+  stage)
+    [ -n "${2:-}" ] || { say "usage: scripts/dev.sh stage DIR"; exit 1; }
+    build_dist
+    stage
+    rm -rf "$2" && mkdir -p "$2"
+    cp -R build/dev-pkg/. "$2"
+    say "staged $ver in $2" ;;
   *)
     sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
     exit 1 ;;

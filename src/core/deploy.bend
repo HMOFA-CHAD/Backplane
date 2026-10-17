@@ -1,6 +1,7 @@
 import Base
 import ./json.bend as J
 import ./model.bend as M
+import ./ship.bend as SH
 
 # Safe deploy and restart (docs/deploy.md; the steps are hub.bend's Deploy.*).
 # Restarting is fine: the hub resumes every cut turn. What must not be cut
@@ -257,11 +258,15 @@ def Deploy.suffix(+s: M.State, +to: String) -> String:
 def Deploy.with(+line: String, noted: Bool, locked: Bool, +open: String) -> String:
   Deploy.line.o(Deploy.by(line), Deploy.note(line), Deploy.stage(line), Deploy.from(line), Deploy.since(line), noted, locked, Deploy.cut(line), open)
 
-def Deploy.status.k(+line: String) -> J.Json:
+def Deploy.status.k(+line: String, main: J.Json) -> J.Json:
   J.Json.obj([J.KV{"waiting", J.Flag{Bool.not(String.is_empty(line))}}, J.KV{"by", J.Str{Deploy.by(line)}}, J.KV{"note", J.Str{Deploy.note(line)}},
     J.KV{"since", J.Str{Nat.show(Deploy.since(line))}}, J.KV{"inflight", J.Num{Nat.show(Deploy.count(line))}},
-    J.KV{"threads", J.Str{Deploy.open(line)}}, J.KV{"buildLock", J.Flag{Deploy.locked(line)}}, J.KV{"text", J.Str{Deploy.row.k(line)}}])
+    J.KV{"threads", J.Str{Deploy.open(line)}}, J.KV{"buildLock", J.Flag{Deploy.locked(line)}}, J.KV{"text", J.Str{Deploy.row.k(line)}}, J.KV{"main", main}])
+
+# deploy_main's part (core/ship.bend)
+def Deploy.main(+s: M.State) -> J.Json:
+  SH.Ship.status(SH.Ship.read(M.Setting.get(s, "deploy.ship", "")), SH.Ship.follow.on(M.Setting.get(s, "deploy.follow", "")), M.Setting.get(s, "deploy.repo", ""))
 
 # what deploy.status and the deploy_status tool answer
 def Deploy.status(+s: M.State) -> J.Json:
-  Deploy.status.k(Deploy.wait(s))
+  Deploy.status.k(Deploy.wait(s), Deploy.main(s))

@@ -48,10 +48,15 @@ case $sub in
     fail push; id=$1; src=$2; cp -r "$src" "$(home "$id")/" ;;
   exec)
     fail exec; id=$1; shift
-    while [ $# -gt 0 ]; do case $1 in --timeout) shift 2 ;; --stream) shift ;; --) shift; break ;; *) break ;; esac; done
+    st=0; while [ $# -gt 0 ]; do case $1 in --timeout) shift 2 ;; --stream) st=1; shift ;; --) shift; break ;; *) break ;; esac; done
     [ -d "$S/boxes/$id" ] || { echo "fake: no such sandbox" >&2; exit 1; }
     h=$(home "$id"); cmd=$(printf '%s' "$3" | sed "s|/home/user|$h|g")
-    HOME=$h bash -c "$cmd" ;;
+    # BOAT_FAKE_EXEC_RC: exec's own status, whatever the command did (Boat
+    # has returned an earlier command's); BOAT_FAKE_EXEC_MUTE: no output
+    # (only for the streamed run of the job's command, not setup)
+    if [ $st = 1 ] && [ -n "${BOAT_FAKE_EXEC_MUTE:-}" ]; then HOME=$h bash -c "$cmd" >/dev/null 2>&1; r=$?; else HOME=$h bash -c "$cmd"; r=$?; fi
+    [ $st = 1 ] && [ -n "${BOAT_FAKE_EXEC_RC:-}" ] && r=$BOAT_FAKE_EXEC_RC
+    exit "$r" ;;
   scp)
     shift $(( $# - 2 )); from=$1; to=$2; id=${from%%:*}; p=${from#*:}
     cp -r "$(home "$id")${p#/home/user}" "$to" ;;

@@ -46,6 +46,17 @@ cp "$J" "$T/bj.sh"
 sleep 1; printf 'exit 99\n)( syntax\n' > "$T/bj.sh"; wait
 ok "$(cat "$T/edit")" 0 "edit during a run"; ok "$(boxes)" 0 "edit: deleted"
 
+# the exit status comes from the command, not from boat exec (which has
+# returned a previous command's status on a reused sandbox)
+BOAT_FAKE_EXEC_RC=1 "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 0 "exec says 1, command passed: 0"
+BOAT_FAKE_EXEC_RC=0 "$J" --no-setup-bend -- sh -c 'exit 3' >/dev/null 2>&1; ok $? 3 "exec says 0, command failed: 3"
+out=$(BOAT_FAKE_EXEC_RC=1 "$J" --no-setup-bend -- true 2>&1); case $out in *"boat exec reported exit 1; the command itself exited 0"*) ok 1 1 "mismatch logged" ;; *) ok 0 1 "mismatch logged" ;; esac
+out=$(BOAT_FAKE_EXEC_MUTE=1 BOAT_FAKE_EXEC_RC=0 "$J" --no-setup-bend -- true 2>&1); ok $? 70 "no exit line and exec says 0: failure"
+mj=$(printf '%s\n' "$out" | sed -n 's/^job \(j[0-9-]*\):.*/\1/p' | head -1)
+BOAT_FAKE_EXEC_MUTE=1 "$J" --no-setup-bend -- sh -c 'exit 4' >/dev/null 2>&1; ok $? 4 "no exit line, exec says 4: 4"
+ok "$(python3 -c "import json;print(json.load(open('$BOAT_JOB_ROOT/jobs/$mj/provenance.json'))['exit'])" 2>&1)" 70 "provenance has the real status"
+ok "$(boxes)" 0 "exit cases: deleted"
+
 # fail closed: unreadable limits, no compute, budget, unknown size
 BOAT_FAKE_FAIL=limits "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 75 "limits unreadable"
 echo '{"activeSandboxes":ACTIVE}' > "$BOAT_FAKE_DIR/limits.json"; "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 75 "limits missing fields"
@@ -76,7 +87,7 @@ BOAT_FAKE_FAIL=delete "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 75 "bl
 "$J" --no-setup-bend -- true >/dev/null 2>&1; ok $? 0 "unblocked after sweep"
 
 # two jobs at once with budget for one: exactly one admitted
-for i in 1 2; do ( "$J" --no-setup-bend --timeout 300 --budget-usd 0.015 -- sleep 2 >/dev/null 2>&1; echo $? > "$T/par$i" ) & done; wait
+for i in 1 2; do ( "$J" --no-setup-bend --timeout 300 --budget-usd 0.015 -- sleep 6 >/dev/null 2>&1; echo $? > "$T/par$i" ) & done; wait
 ok "$(sort "$T/par1" "$T/par2" | tr '\n' ' ')" "0 75 " "budget race: one admitted"
 # two jobs at once with one slot and no waiting: exactly one admitted
 limits 1

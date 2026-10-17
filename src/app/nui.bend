@@ -169,7 +169,7 @@ def Nui.effects(cs: List<&2, U.Cmd>, n: Nui) -> Nui:
     case U.Focus{+id} <> t Nui{u, w, h, mx, my, sd, sc, ca, _, pa, hi, ms, vw}:
       Nui.effects(t, Nui{u, w, h, mx, my, sd, sc, ca, Fld.alias(id), pa, hi, ms, vw})
     case U.ScrollEnd{} <> t Nui{u, w, h, mx, my, sd, _, ca, fo, pa, hi, ms, vw}:
-      Nui.effects(t, Nui{u, w, h, mx, my, sd, 0, ca, fo, pa, hi, ms, vw})
+      Nui.effects(t, Nui{U.Hold.end(u, ""), w, h, mx, my, sd, 0, ca, fo, pa, hi, ms, vw})
     case U.Jump{_} <> t Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}:
       Nui.effects(t, Nui{U.Ui.scratch_set(u, "@jump.go", "1"), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw})
     case _ <> t _:
@@ -632,13 +632,14 @@ def Tl.up(near: Bool, +n: Nui) -> Step:
       Step{n, Nil{}, True{}}
 
 # a notch down the thread: back at the bottom, the pages the wheel added
-# go (a frame lays out only the newest page again)
+# go (a frame lays out only the newest page again), and so does the pill
+# (client.bend's Hold), in this very frame
 def Tl.down(above: Bool, n: Nui) -> Step:
   match above n:
     case True{} _:
       Step{n, Nil{}, True{}}
     case False{} Nui{+u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}:
-      Step{Nui{U.Ui.scratch_set(u, "@more." ++ U.Ui.sel(u), ""), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}, Nil{}, True{}}
+      Step{Nui{U.Hold.end(U.Ui.scratch_set(u, "@more." ++ U.Ui.sel(u), ""), ""), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}, Nil{}, True{}}
 
 def Nui.wheel.k(side: Bool, up: Bool, down: Bool, n: Nui, +sd: U32, +sc: U32, +most: U32, +tmost: U32, +more: Bool) -> Step:
   match side up down n:
@@ -702,6 +703,49 @@ def Nui.ui(n: Nui) -> U.Ui:
   match n:
     case Nui{u, _, _, _, _, _, _, _, _, _, _, _, vw}:
       u
+
+# Reading while the thread grows (client.bend's Hold, layout.bend's
+# TL.hold): after each frame the timeline's place ("tl-at": sc answered,
+# off, top, the page's first entry, visible entry and its content top) is kept as "@tl.at" with the thread,
+# the window's sc becomes what is now below the view, and away from the
+# end the page is pinned at its first entry ("@tl.pin.<thread>") and the
+# client is told (U.Hold.away / U.Hold.end: the "N new" pill)
+
+def Hold.part(+v: String, +i: Nat) -> String:
+  Maybe.default(&2, String, List.get(&2, String, String.split(v, '|'), i), "")
+
+# the kept place, for the thread on show ("" when it was another's)
+def Hold.of(+n: Nui) -> String:
+  Bool.pick(String, String.eq(Hold.part(U.Ui.scratch(Nui.ui(n), "@tl.at"), 6n), U.Ui.sel(Nui.ui(n))), U.Ui.scratch(Nui.ui(n), "@tl.at"), "")
+
+def Hold.pin(+u: U.Ui, +away: Bool, +first: String) -> U.Ui:
+  U.Ui.scratch_set(u, "@tl.pin." ++ U.Ui.sel(u), Bool.pick(String, away, Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@tl.pin." ++ U.Ui.sel(u))), first, U.Ui.scratch(u, "@tl.pin." ++ U.Ui.sel(u))), ""))
+
+def Hold.side(away: Bool, +u: U.Ui) -> U.Ui:
+  match away:
+    case True{}:
+      U.Hold.away(u, "")
+    case False{}:
+      U.Hold.end(u, "")
+
+def Hold.ui(+u: U.Ui, +v: String, +sc: U32) -> U.Ui:
+  Hold.pin(U.Ui.scratch_set(Hold.side(U32.is_ne(sc, 0), u), "@tl.at", v ++ "|" ++ U.Ui.sel(u)), U32.is_ne(sc, 0), Hold.part(v, 3n))
+
+def Hold.take.k(has: Bool, +v: String, n: Nui) -> Nui:
+  match has n:
+    case True{} Nui{u, w, h, mx, my, sd, _, ca, fo, pa, hi, ms, vw}:
+      Nui{Hold.ui(u, v, Maybe.default(&2, U32, U32.read(Hold.part(v, 0n)), 0)), w, h, mx, my, sd, Maybe.default(&2, U32, U32.read(Hold.part(v, 0n)), 0), ca, fo, pa, hi, ms, vw}
+    case False{} _:
+      n
+
+def Hold.take(+n: Nui) -> Nui:
+  Hold.take.k(Bool.not(String.is_empty(Hit.value(Nui.hits(n), "tl-at"))), Hit.value(Nui.hits(n), "tl-at"), n)
+
+# the pill's click: back to the end (the pages the wheel added go too)
+def Hold.bottom(n: Nui) -> Step:
+  match n:
+    case Nui{u, w, h, mx, my, sd, _, ca, fo, pa, hi, ms, vw}:
+      Tl.down(False{}, Nui{u, w, h, mx, my, sd, 0, ca, fo, pa, hi, ms, vw})
 
 def Nui.recv.act(+n: Nui, +o: J.Json) -> U.Act:
   Nui.recv.act.k(U.Ui.recv_act(Nui.ui(n), o), o)
@@ -2576,6 +2620,9 @@ def Nui.vw_act.more(i: Nat, +n: Nui, +value: String) -> Step:
     # the list's All, Dim, Only
     case 9n:
       Nui.lfocus.set(n, LY.Lyr.set(Nui.look.kind(n), Nui.lfocus(n), LY.Lyr.num(value, 0)))
+    # the "N new" pill over the timeline's foot (layout.bend's TL.pill)
+    case 10n:
+      Hold.bottom(n)
     case _:
       Step{n, Nil{}, False{}}
 
@@ -2602,7 +2649,7 @@ def Nui.vw_act.k(i: Nat, +n: Nui, +value: String) -> Step:
 
 # the window's own actions (they never reach the client state)
 def Nui.vw_act(+n: Nui, +action: String, +value: String) -> Step:
-  Nui.vw_act.k(Nui.pos(["vw-kind", "vw-unpick", "vw-pal", "vw-palx", "vw-proj", "vw-projx", "vw-projo", "vw-find", "vw-layers", "vw-layer", "vw-layers-reset", "vw-sheet", "vw-open", "vw-up", "vw-light", "vw-key", "vw-layer-pick", "vw-layer-mode"], action, 0n), n, value)
+  Nui.vw_act.k(Nui.pos(["vw-kind", "vw-unpick", "vw-pal", "vw-palx", "vw-proj", "vw-projx", "vw-projo", "vw-find", "vw-layers", "vw-layer", "vw-layers-reset", "vw-sheet", "vw-open", "vw-up", "vw-light", "vw-key", "vw-layer-pick", "vw-layer-mode", "vw-bottom"], action, 0n), n, value)
 
 # a link in a message: only a web address is ever opened (law link_no_script)
 def Nui.click.url(url: Bool, +n: Nui, +action: String, +value: String) -> Step:

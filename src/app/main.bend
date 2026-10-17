@@ -295,7 +295,7 @@ def Shell.later(a: Shell) -> IO(Shell):
 def Shell.hits(n: N.Nui, hs: List<&2, N.Hit>, +now: Nat) -> N.Step:
   match n:
     case N.Nui{u, w, h, mx, my, sd, sc, ca, fo, pa, _, ms, vw}:
-      N.Jump.settle(N.Hover.again(N.Nui{U.Ui.tick(u, now), w, h, mx, my, sd, sc, ca, fo, pa, hs, ms, vw}))
+      N.Jump.settle(N.Hover.again(N.Hold.take(N.Nui{U.Ui.tick(u, now), w, h, mx, my, sd, sc, ca, fo, pa, hs, ms, vw})))
 
 def Shell.hits.nui(s: N.Step) -> N.Nui:
   match s:
