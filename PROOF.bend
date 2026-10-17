@@ -1,4 +1,5 @@
 import Base
+import ./src/server/server.bend as MPCREDIT # mail perf
 import ./src/core/charter.bend as CH # mail 2c
 import ./src/core/mailrun.bend as MRUN # mail 2c
 import ./src/server/mailstore.bend as MIX # mail index
@@ -11763,3 +11764,16 @@ def Laws.cef_web_origin_refused(proxy):
 def Laws.cef_native_link_allowed():
   {==}
 # --- end browser-cef local window guard ---
+# ---- mail perf ----
+
+def Laws.mail_credit_carried(text, charge): {==}
+
+def Laws.mail_credit_native_kept(w, charge):
+  match w:
+    case MPCREDIT.WText{_}: {==}
+    case MPCREDIT.WCharged{_, _}: {==}
+    case MPCREDIT.WPong{_}: {==}
+    case MPCREDIT.WBin{_}: {==}
+    case MPCREDIT.WClose{}: {==}
+    case MPCREDIT.WState{_, _}: {==}
+    case MPCREDIT.WItems{_, _, _, _, _, _}: {==}

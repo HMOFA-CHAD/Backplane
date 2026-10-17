@@ -1,4 +1,5 @@
 import Base
+import ./src/server/server.bend as MPCREDIT # mail perf
 import ./src/core/charter.bend as CH # mail 2c
 import ./src/core/mailrun.bend as MRUN # mail 2c
 import ./src/server/mailstore.bend as MIX # mail index
@@ -10030,3 +10031,15 @@ law cef_web_origin_refused:
 law cef_native_link_allowed:
   {CEF.Cef.link("", "") == True{} : Bool}
 # --- end browser-cef local window guard ---
+# ---- mail perf ----
+
+# Credit travels with the message, independently of its encoding and size.
+law mail_credit_carried:
+  for text: String
+  for charge: Nat
+  {MPCREDIT.Wire.charged(False{}, MPCREDIT.WText{text}, charge) == MPCREDIT.WCharged{text, charge} : MPCREDIT.Wire}
+
+law mail_credit_native_kept:
+  for w: MPCREDIT.Wire
+  for charge: Nat
+  {MPCREDIT.Wire.charged(True{}, w, charge) == w : MPCREDIT.Wire}
