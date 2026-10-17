@@ -801,3 +801,11 @@ a.ref { color: inherit; text-decoration: none; cursor: text; overflow-wrap: anyw
 .fab-ready .fab-buy { font-size: 13px; padding: 5px 14px; }
 .fab-ready { animation: fab-ping 1.6s ease-out 1; }
 @keyframes fab-ping { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
+.kicad-notice { position: relative; border: 1px solid var(--warn); border-radius: 0; padding: 16px; margin: 12px 0; text-align: left; width: 100%; max-width: 720px; box-sizing: border-box; overflow-wrap: anywhere; }
+.kicad-notice strong { display: block; padding-right: 30px; }
+.kicad-notice p { color: var(--dim); margin: 8px 0 12px; }
+.kn-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.kn-actions button, .kn-actions a { border-radius: 0; }
+.kn-close { position: absolute; top: 4px; right: 4px; }
+.empty { flex-direction: column; gap: 16px; }
+#kicad-path { min-width: 0; width: 100%; }

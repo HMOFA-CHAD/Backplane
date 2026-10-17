@@ -1,5 +1,6 @@
 import Base
 import ../core/msgs.bend as MSG
+import ../core/kihealth.bend as KH
 import ../core/json.bend as J
 import ../core/model.bend as M
 import ../core/client.bend as U
@@ -1254,6 +1255,15 @@ def Mob.usage.rows(rs: List<&2, UZ.URow>) -> List<&2, J.Json>:
       Nil{}
     case +r <> t:
       Mob.usage.row("Usage: " ++ UZ.URow.label(r), r) <> Mob.usage.go(t)
+def Mob.kn.acts(as: List<&2, KH.KAct>) -> List<&2, J.Json>:
+  match as:
+    case Nil{}: Nil{}
+    case KH.KAct{l, a, v} <> t: Mob.set.btn(l, U.KN.action(a), v, False{}) <> Mob.kn.acts(t)
+
+def Mob.kn(n: Maybe<&2, KH.KNote>) -> List<&2, J.Json>:
+  match n:
+    case None{}: Nil{}
+    case Some{KH.KNote{_, title, body, acts}}: [Mob.set.row(title, body, Mob.kn.acts(acts))]
 
 def Mob.lang.chips(vs: List<&2, String>, +u: U.Ui) -> List<&2, J.Json>:
   match vs:
@@ -1279,7 +1289,7 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
     Mob.set.row("Continue after a restart", "Turns a restart cuts short go on by themselves.", Mob.set.chips(["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"))], Mob.notify(st), [
     Mob.set.row("Provider for new threads", Bool.pick(String, String.is_empty(U.Models.cli(models, prov)), prov ++ " is not installed", U.Models.cli(models, prov)), Mob.set.chips(["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider")),
     Mob.set.row("Model for new threads", Bool.pick(String, String.is_empty(model), "default", model) ++ ": " ++ U.Models.label_of(models, prov, model), Mob.set.chips("" <> U.Models.list(models, prov), model, "agent.model")),
-    Mob.set.row(U.KiCad.cli.label(nf), U.KiCad.cli.note(nf), Bool.pick(List<&2, J.Json>, String.is_empty(U.Str.get(nf, "kicad.fork")), [Mob.set.btn("Install Backplane KiCad", "kicad-install", "", False{})], Nil{})),
+    Mob.set.row.f("KiCad", U.KN.summary(nf) ++ " · " ++ U.Str.get(nf, "kicad.cli"), [Mob.set.field("kpath", "Runtime root or kicad-cli path", False{}, U.Ui.scratch(u, "@f.kpath"))], [Mob.set.btn("Save path", "kicad-path-save", "", False{})])], Mob.kn(U.KN.of(nf, st)), [
     Mob.set.row(U.FreeCAD.label(nf), U.FreeCAD.note(nf), Nil{}),
     Mob.set.row(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, J.Json>, U.KiCad.ipc.ready(nf), Mob.set.chips(["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{})),
     Mob.set.row(U.Fab.set.order.label(), U.Fab.set.order.note(), Mob.set.chips(["on", "off"], U.Fab.set.enabled(st), "order.enabled")),

@@ -1,5 +1,6 @@
 import Base
 import ../core/msgs.bend as MSG
+import ../core/kihealth.bend as KH
 import ../core/model.bend as M
 import ../core/json.bend as J
 import ../core/client.bend as U
@@ -2837,7 +2838,6 @@ def Lay.thumb(+ty: Ty, +key: String, +size: String, +x: U32, +y: U32, +cw: U32, 
 def Lay.tshot(+listen: String, +url: String) -> String:
   "tshot:" ++ Maybe.default(&2, String, List.last(&2, String, String.split(listen, ':')), "") ++ ":" ++ url
 
-
 def Ask.plan_lines(+ty: Ty, +text: String, +px: U32) -> List<&2, String>:
   List.take(&2, String, Ty.wrap(ty, 4n, text, px), 8n)
 
@@ -3163,6 +3163,50 @@ def Lay.queued(+ty: Ty, +qs: List<&2, M.QItem>, +run: Bool, +x0: U32, +x1: U32, 
 def Lay.empty(+ty: Ty, +x0: U32, +x1: U32, +h: U32, +n: Nat) -> Out:
   +msg = Bool.pick(String, Nat.is_eq(n, 0n), "Add a project with + to start.", "Pick a thread, or start one with + next to a project.")
   Out.ops(Ty.text(ty, 3n, msg, D.Clip.all(), (x0 + U32.shr((x1 - x0 - Ty.width(ty, 3n, msg) : U32)) : U32), (U32.shr(h) - 12 : U32), 23, T.Th.faint()))
+
+# Health notice: square outline, wrapped text, shared actions.
+def Kn.h(n: Maybe<&2, KH.KNote>, +ty: Ty, +w: U32) -> U32:
+  match n:
+    case None{}: 0
+    case Some{KH.KNote{_, title, body, _}}:
+      (70 + U32.from_nat(List.length(&2, String, Ty.wrap(ty, 1n, title, U32.dim(w, 64)))) * 24 + U32.from_nat(List.length(&2, String, Ty.wrap(ty, 2n, body, U32.dim(w, 32)))) * 20 : U32)
+
+def Kn.lines(ls: List<&2, String>, +ty: Ty, +face: Nat, +x: U32, +y: U32, +lh: U32, +color: U32) -> List<&2, R.Op>:
+  match ls:
+    case Nil{}: Nil{}
+    case l <> t: List.append(&2, R.Op, Ty.text(ty, face, l, D.Clip.all(), x, y, lh, color), Kn.lines(t, ty, face, x, (y + lh : U32), lh, color))
+
+def Kn.button(+ty: Ty, +x: U32, +y: U32, +label: String, action: String, value: String) -> Out:
+  +w = Lay.button.w(ty, label)
+  Out{List.append(&2, R.Op, Lay.box(D.Clip.all(), x, y, w, 28, 0, T.Th.raise(), T.Th.line()),
+    Ty.text(ty, 2n, label, D.Clip.all(), (x + 10 : U32), y, 28, T.Th.text())), [Lay.hit(x, y, w, 28, action, value)]}
+
+def Kn.acts(as: List<&2, KH.KAct>, +ty: Ty, +x: U32, +y: U32) -> Out:
+  match as:
+    case Nil{}: Out.none()
+    case KH.KAct{+l, a, v} <> t:
+      Out.cat(Kn.button(ty, x, y, l, U.KN.action(a), v), Kn.acts(t, ty, (x + Lay.button.w(ty, l) + 8 : U32), y))
+
+def Kn.close(on: Bool, +key: String, +ty: Ty, +x: U32, +y: U32) -> Out:
+  match on:
+    case True{}: Kn.button(ty, x, y, "×", "setting", "kicad.notice.hidden=" ++ key)
+    case False{}: Out.none()
+
+def Kn.draw(n: Maybe<&2, KH.KNote>, dismiss: Bool, +ty: Ty, +x: U32, +y: U32, +w: U32) -> Out:
+  match n:
+    case None{}: Out.none()
+    case Some{KH.KNote{+key, +title, +body, +acts}}:
+      +h = Kn.h(Some{KH.KNote{key, title, body, acts}}, ty, w)
+      +ts = Ty.wrap(ty, 1n, title, U32.dim(w, 64))
+      +bs = Ty.wrap(ty, 2n, body, U32.dim(w, 32))
+      +by = {(y + 12 + U32.from_nat(List.length(&2, String, ts)) * 24 : U32) : U32}
+      Out.all([Out.ops(List.concat(&2, R.Op, [Lay.box(D.Clip.all(), x, y, w, h, 0, T.Th.panel(), T.Th.warn()),
+        Kn.lines(ts, ty, 1n, (x + 16 : U32), (y + 10 : U32), 24, T.Th.text()), Kn.lines(bs, ty, 2n, (x + 16 : U32), by, 20, T.Th.dim())])),
+        Kn.acts(acts, ty, (x + 16 : U32), (y + h - 42 : U32)), Kn.close(dismiss, key, ty, (x + w - 42 : U32), (y + 6 : U32))])
+
+def Kn.path(+ty: Ty, +n: S.Nui, +x: U32, +y: U32, +w: U32) -> Out:
+  Lay.field(ty, D.Clip.all(), x, y, w, U.Ui.scratch(S.Nui.ui(n), "@f.kpath"), String.eq(S.Nui.focus_of(n), S.Fld.id("kpath", "setting", "kicad.path=")), S.Blink.on(n), S.Nui.caret_of(n), S.Nui.mark(n),
+    M.Setting.get(U.Ui.state(S.Nui.ui(n)), "kicad.path", "Automatic · " ++ U.Ui.info(S.Nui.ui(n), "kicad.cli")), S.Fld.id("kpath", "setting", "kicad.path="))
 
 # Settings
 # --------
@@ -3725,7 +3769,9 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +tms = U.Models.menu(U.Str.get(info, "models"), tp)
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
-  +fy = {(ey + 224 : U32) : U32}
+  +kn = U.KN.of(info, st)
+  +kh = {(40 + Kn.h(kn, ty, (w - 32 : U32)) : U32) : U32}
+  +fy = {(ey + 224 + kh : U32) : U32}
   +total = {(1196 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
@@ -3754,15 +3800,16 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line(U.Models.label_of(U.Str.get(info, "models"), tp, tm), tm), (w - 32 : U32)),
       D.Clip.all(), (x + 16 : U32), (b2 + 520 + dy + er : U32), 24, T.Th.dim())),
     Set.head(ty, "KiCad and FreeCAD", x, (b2 + 368 + dy + ey : U32)),
-    Set.card(x, (b2 + 400 + dy + ey : U32), w, 196),
-    Set.row(ty, U.KiCad.cli.label(info), U.KiCad.cli.note(info), x, (b2 + 402 + dy + ey : U32), w),
-    Set.fork(ty, U.Str.get(info, "kicad.fork"), (x + 16 : U32), (b2 + 450 + dy + ey : U32)),
-    Set.row.r(ty, U.KiCad.ipc.label(info), U.KiCad.ipc.note(info), x, (b2 + 486 + dy + ey : U32), w, Bool.pick(U32, U.KiCad.ipc.ready(info), 140, 0)),
+    Set.card(x, (b2 + 400 + dy + ey : U32), w, (196 + kh : U32)),
+    Set.row(ty, "KiCad", U.KN.summary(info), x, (b2 + 402 + dy + ey : U32), w),
+    Kn.path(ty, n, (x + 16 : U32), (b2 + 450 + dy + ey : U32), (w - 32 : U32)),
+    Kn.draw(kn, False{}, ty, (x + 16 : U32), (b2 + 490 + dy + ey : U32), (w - 32 : U32)),
+    Set.row.r(ty, U.KiCad.ipc.label(info), U.KiCad.ipc.note(info), x, (b2 + 486 + dy + ey + kh : U32), w, Bool.pick(U32, U.KiCad.ipc.ready(info), 140, 0)),
     Bool.pick(Out, U.KiCad.ipc.ready(info), Out.all([
-      Lay.chip(ty, (x + w - 120 : U32), (b2 + 500 + dy + ey : U32), "On", String.eq(ipc, "on"), "setting", "kicad.ipc=on"),
-      Lay.chip(ty, (x + w - 70 : U32), (b2 + 500 + dy + ey : U32), "Off", String.eq(ipc, "off"), "setting", "kicad.ipc=off")]), Out.none()),
-    Set.row(ty, U.FreeCAD.label(info), U.FreeCAD.note(info), x, (b2 + 546 + dy + ey : U32), w),
-    Set.order(ty, st, x, w, (b2 + 620 + dy + ey : U32)),
+      Lay.chip(ty, (x + w - 120 : U32), (b2 + 500 + dy + ey + kh : U32), "On", String.eq(ipc, "on"), "setting", "kicad.ipc=on"),
+      Lay.chip(ty, (x + w - 70 : U32), (b2 + 500 + dy + ey + kh : U32), "Off", String.eq(ipc, "off"), "setting", "kicad.ipc=off")]), Out.none()),
+    Set.row(ty, U.FreeCAD.label(info), U.FreeCAD.note(info), x, (b2 + 546 + dy + ey + kh : U32), w),
+    Set.order(ty, st, x, w, (b2 + 620 + dy + ey + kh : U32)),
     Set.head(ty, "Appearance", x, (b2 + 570 + dy + fy : U32)),
     Set.card(x, (b2 + 602 + dy + fy : U32), w, 220),
     Set.row.r(ty, "Theme", "The window and the web page (phones unset follow their own system).", x, (b2 + 604 + dy + fy : U32), w, 150),
@@ -6113,6 +6160,15 @@ def Lay.fab(shown: Bool, +open: Bool, +ty: Ty, +line: String, +intent: String, +
     case False{}:
       Out.none()
 
+# the card's height and drawing from the client's info (fab.shown:,
+# fab.open:, fab.intent:, fab.line: for the thread)
+def Fab.h.of(+ty: Ty, +pics: Map<&2, String>, +sel: String, +cw: U32) -> U32:
+  Fab.h(String.eq(U.Str.get(pics, "fab.shown:" ++ sel), "1"), String.eq(U.Str.get(pics, "fab.open:" ++ sel), "1"), ty, U.Str.get(pics, "fab.intent:" ++ sel), (cw - 24 : U32))
+
+def Lay.fab.of(+ty: Ty, +pics: Map<&2, String>, +sel: String, +x0: U32, +x1: U32, +y: U32) -> Out:
+  Lay.fab(String.eq(U.Str.get(pics, "fab.shown:" ++ sel), "1"), String.eq(U.Str.get(pics, "fab.open:" ++ sel), "1"), ty,
+    U.Str.get(pics, "fab.line:" ++ sel), U.Str.get(pics, "fab.intent:" ++ sel), "", x0, x1, y)
+
 # Ready to order (client.bend's Fab.ready): the parts to order and Buy it in
 # a bar right above the composer, once the agent's turn is over
 def Ready.h(+line: String) -> U32:
@@ -6163,6 +6219,8 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
       +cx0 = {(x0 + U32.shr((x1 - x0 - cw : U32)) : U32) : U32}
       +cx1 = {(cx0 + cw : U32) : U32}
+      +kn = U.KN.thread(pics, st, sel)
+      +kh = Kn.h(kn, ty, cw)
       +ts = SB.Subs.rows(st, pics, sel, now)
       +sopen = SB.Subs.panel.open(pics, sel, ts)
       +soff = Pane.clamp(Pane.off(pics, "subs:" ++ sel), List.length(&2, SB.SubRow, SB.Subs.panel.rows(sopen, ts)))
@@ -6170,12 +6228,10 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       # the row under the header: the parent's link
       +pl = {Bool.pick(U32, String.is_empty(U.Tasks.up(st, sel)), 0, 32) : U32}
       +pins = U.Ec.pins(ec, st, sel)
-      # the project card (Lay.fab), under the parent's link
-      +fs = String.eq(U.Str.get(pics, "fab.shown:" ++ sel), "1")
-      +fo = String.eq(U.Str.get(pics, "fab.open:" ++ sel), "1")
-      +fin = U.Str.get(pics, "fab.intent:" ++ sel)
-      +fh = Fab.h(fs, fo, ty, fin, (cw - 24 : U32))
-      +top = {(52 + hy + pl + fh + Subs.height(ts, svis, sopen) + Pins.height(pins) : U32) : U32}
+      # the project card (Lay.fab) under the parent's link: its height and
+      # drawing come from helpers (no binders here: Lay.thread.k is at Bend's
+      # arity limit for the closure the timeline's split makes)
+      +top = {(52 + hy + kh + pl + Fab.h.of(ty, pics, sel, cw) + Subs.height(ts, svis, sopen) + Pins.height(pins) : U32) : U32}
       +asks = U.Asks.open(st, sel)
       +ah = Asks.h(ty, asks, pics, (cw - 32 : U32))
       +qs = M.Queue.context(M.Queue.items(st, sel))
@@ -6198,11 +6254,12 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
         List.concat(&2, TLine, [TL.memo.shown(ty, memo, st, sel, cw, pics), TL.sending(ty, pend, cw),
           TL.live.m(ty, String.is_empty(live), ph, live, TL.memo.lv(memo), cw)]),
         cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, hold, TL.memo.first(memo), Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, sel, now), x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
+          Kn.draw(kn, True{}, ty, cx0, (52 + hy : U32), cw),
           Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),
-          Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
-          Lay.fab(fs, fo, ty, U.Str.get(pics, "fab.line:" ++ sel), fin, "", cx0, cx1, (60 + hy + pl : U32)),
-          Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + pl + fh : U32)),
-          Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + fh + Subs.height(ts, svis, sopen) : U32), fkey, blink),
+          Lay.parent(ty, st, sel, cx0, (58 + hy + kh : U32)),
+          Lay.fab.of(ty, pics, sel, cx0, cx1, (60 + hy + kh + pl : U32)),
+          Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + kh + pl + Fab.h.of(ty, pics, sel, cw) : U32)),
+          Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + kh + pl + Fab.h.of(ty, pics, sel, cw) + Subs.height(ts, svis, sopen) : U32), fkey, blink),
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), Comp.chip(ty, U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)), U.Usage.tail(st, sel), cx0, cx1, U.Follow.button(st, sel, Lay.running(turn), stop, draft)), rs, atts, up, path, pre),
           Lay.ready(ty, Ready.line(st, pics, sel, Lay.running(turn)), U.Fab.ready.btn.of(st, pics, sel), cx0, cx1, (h - eh - 124 + 2 : U32)),
           Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
@@ -6562,7 +6619,7 @@ def Lay.main.k(settings: Bool, empty: Bool, +ty: Ty, +memo: TLMemo, +n: S.Nui, +
     case True{} _:
       Lay.settings(ty, st, n, nf, v, note, x0, x1, h, Maybe.default(&2, U32, U32.read(U.Ui.scratch(S.Nui.ui(n), "@set.sc")), 0))
     case False{} True{}:
-      Lay.empty(ty, x0, x1, h, List.length(&2, M.Project, U.Ui.projects(st)))
+      Out.cat(Lay.empty(ty, x0, x1, h, List.length(&2, M.Project, U.Ui.projects(st))), Kn.draw(U.KN.visible(nf, st), True{}, ty, (x0 + 32 : U32), (U32.shr(h) + 30 : U32), (x1 - x0 - 64 : U32)))
     case False{} False{}:
       Lay.thread(ty, memo, n, x0, x1)
 

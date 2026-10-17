@@ -54,6 +54,7 @@ type Out is Data:
   # the install is ready: end the hub's process into it now
   Restart{}
   KiCadInstall{}
+  KiCadRetry{}
   # run one Codex turn (a process per turn; `session` resumes)
   CodexTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   GrokTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
@@ -1078,7 +1079,7 @@ def Hub.methods() -> List<&2, String>:
    "thread.settle", "thread.unsettle", "thread.archive", "thread.unarchive",
    "thread.pin", "thread.unpin", "thread.rename", "thread.delete", "kicad.watch", "thread.modes", "app.update", "setting.set", "kicad.install",
    "ask.answer", "device.register", "device.drop", "kicad.info", "queue.resume",
-   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status", "lock.release", "lock.cancel",
+   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status", "lock.release", "lock.cancel", "kicad.retry",
    "fab.look", "fab.intent", "order.buy"]
 
 # Agent output (Claude stream-json)
@@ -5092,7 +5093,7 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
     case 15n:
       Update.ask(Nat.is_gt(M.Work.threads(s), 0n), now, client, id)
     case 16n:
-      Step.reply(client, id, [M.SettingSet{J.Json.get_str(p, "key", ""), J.Json.get_str(p, "value", ""), now}])
+      Step{[M.SettingSet{J.Json.get_str(p, "key", ""), J.Json.get_str(p, "value", ""), now}], Bool.pick(List<&2, Out>, String.eq(J.Json.get_str(p, "key", ""), "kicad.path"), [Reply.ok(client, id), KiCadRetry{}], [Reply.ok(client, id)])}
     case 17n:
       Step.outs([Reply.ok(client, id), KiCadInstall{}])
     case 18n:
@@ -5127,6 +5128,8 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
       Step.before(Nil{}, [Reply.ok(client, id)], Watch.cancel(s, now, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "id", "")))
     case 37n:
       Step.before(Nil{}, [Reply.ok(client, id)], Locks.release(s, now, J.Json.get_str(p, "name", ""), J.Json.get_str(p, "thread", "")))
+    case 39n:
+      Step.outs([Reply.ok(client, id), KiCadRetry{}])
     case 38n:
       Step.before(Nil{}, [Reply.ok(client, id)], Locks.cancel(s, now, J.Json.get_str(p, "name", ""), J.Json.get_str(p, "thread", "")))
     case 33n:
@@ -5139,11 +5142,11 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
       Step.before(Nil{}, [Reply.ok(client, id)], Deploy.cancel(s, now))
     case 36n:
       Step.outs([Reply.data(client, id, DP.Deploy.status(s))])
-    case 39n:
-      Buy.look(s, client, id, J.Json.get_str(p, "thread", ""), "fab", "")
     case 40n:
-      Buy.look(s, client, id, J.Json.get_str(p, "thread", ""), "intent", J.Json.get_str(p, "text", ""))
+      Buy.look(s, client, id, J.Json.get_str(p, "thread", ""), "fab", "")
     case 41n:
+      Buy.look(s, client, id, J.Json.get_str(p, "thread", ""), "intent", J.Json.get_str(p, "text", ""))
+    case 42n:
       Buy.start(Hub.owns(s, J.Json.get_str(p, "thread", "")), s, now, client, id, J.Json.get_str(p, "thread", ""))
     case _:
       Hub.more(C.Codec.pos(Hub.methods.git(), m), s, now, client, id, p, m)

@@ -6,6 +6,7 @@ import ./src/core/mail.bend as ML # mail 1
 import ./src/core/mailbody.bend as MB # mail 2a
 import ./src/core/mailview.bend as MVW # mail view
 import ./src/core/stamp.bend as STP
+import ./src/core/kihealth.bend as KH
 import ./src/core/tz.bend as TZ
 import ./src/core/when.bend as WH
 import ./src/core/sched.bend as SCH
@@ -11222,3 +11223,75 @@ def Laws.ship_follow_off_default():
 def Laws.ship_gone_not_ok():
   {==}
 # ---- end deploy main ----
+# ---- kicad-ipc ----
+def Laws.kicad_status_missing(r, f, v, a):
+  {==}
+
+def Laws.kicad_status_broken(f, v, a):
+  {==}
+
+def Laws.kicad_status_stock(v, a):
+  {==}
+
+def Laws.kicad_notice_ok_none(c, v, w, i):
+  {==}
+
+def Laws.kicad_notice_checking_none(c, v, w, i):
+  {==}
+
+def Laws.kicad_notice_has_retry_missing(c, v, w, i):
+  {==}
+
+def Laws.kicad_notice_install_iff_missing(c, v, w, i):
+  match i:
+    case True{}: {==}
+    case False{}: {==}
+
+def Laws.kicad_notice_has_retry_stock(c, v, w, i):
+  {==}
+
+def Laws.kicad_notice_install_iff_stock(c, v, w, i):
+  match i:
+    case True{}: {==}
+    case False{}: {==}
+
+def Laws.kicad_notice_has_retry_old(c, v, w, i):
+  {==}
+
+def Laws.kicad_notice_install_iff_old(c, v, w, i):
+  match i:
+    case True{}: {==}
+    case False{}: {==}
+
+def Laws.kicad_notice_has_retry_broken(c, v, w, i):
+  {==}
+
+def Laws.kicad_notice_install_iff_broken(c, v, w, i):
+  match i:
+    case True{}: {==}
+    case False{}: {==}
+
+def Laws.prompt_kicad_ipc_only_ok_missing(i):
+  match i:
+    case True{}: {==}
+    case False{}: {==}
+
+def Laws.prompt_kicad_ipc_only_ok_stock(i):
+  match i:
+    case True{}: {==}
+    case False{}: {==}
+
+def Laws.prompt_kicad_ipc_only_ok_old(i):
+  match i:
+    case True{}: {==}
+    case False{}: {==}
+
+def Laws.prompt_kicad_ipc_only_ok_broken(i):
+  match i:
+    case True{}: {==}
+    case False{}: {==}
+
+def Laws.prompt_kicad_ipc_only_ok_checking(i):
+  match i:
+    case True{}: {==}
+    case False{}: {==}

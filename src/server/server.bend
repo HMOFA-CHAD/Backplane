@@ -1,4 +1,5 @@
 import Base
+import ../core/kihealth.bend as KH
 import ../core/exe.bend as EX
 import ./lockio.bend as LG
 import ../core/locks.bend as LCK
@@ -174,6 +175,8 @@ type Msg is Data:
   ShipNewest{why: String, out: String}
   ShipPid{commit: String, out: String}
   ShipDone{commit: String, out: String}
+  KProbe{force: Bool}
+  KFound{setting: String, rt: K.Rt}
   ModelsFound{models: String, text: String}
   MachinesFound{machines: String}
   # the tailnet listener is up: the pairing link clients show in Settings
@@ -1344,8 +1347,13 @@ def Hub.changes_msg(ls: List<&2, String>) -> String:
 
 def Info.kicad(rt: K.Rt) -> List<&2, J.KV>:
   match rt:
-    case K.Rt{cli, fork, v, c}:
-      [J.KV{"kicad.cli", J.Str{cli}}, J.KV{"kicad.fork", J.Str{Bool.pick(String, fork, v, "")}}, J.KV{"kicad.commit", J.Str{c}}]
+    case K.Rt{cli, +fork, +v, c, +h}:
+      [J.KV{"kicad.cli", J.Str{cli}}, J.KV{"kicad.fork", J.Str{Bool.pick(String, fork, v, "")}}, J.KV{"kicad.commit", J.Str{c}},
+       J.KV{"kicad.status", J.Str{J.Json.get_str(h, "status", "checking")}}, J.KV{"kicad.source", J.Str{J.Json.get_str(h, "source", "")}},
+       J.KV{"kicad.version", J.Str{v}}, J.KV{"kicad.api", J.Str{Nat.show(J.Json.get_nat(h, "api", 0n))}},
+       J.KV{"kicad.caps", J.Str{String.join(KH.KH.strings(J.Json.elems(J.Json.get_obj(h, "caps"))), ",")}},
+       J.KV{"kicad.why", J.Str{J.Json.get_str(h, "why", "")}}, J.KV{"kicad.min", J.Str{KH.KH.min_version()}},
+       J.KV{"kicad.can_install", J.Str{Bool.pick(String, J.Json.get_bool(h, "can_install", False{}), "1", "")}}]
 
 # the pairing link as a QR code's rows (core/qr.bend), for Settings
 def Info.qr(+lk: String) -> String:
@@ -2338,15 +2346,27 @@ def Ticker.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
         IO.sleep(WK.Wake.tick.ms(delay))
         Ticker.loop(f, inbox)
 
-# open the thread's KiCad project in the bundled KiCad
+def KiCadJob.selected(ok: Bool, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +rt: K.Rt) -> IO(Unit):
+  match ok:
+    case False{}:
+      GitJob.reply(inbox, client, id, False{}, J.Json.obj([J.KV{"kicad", J.Str{K.Rt.status(rt)}}, J.KV{"thread", J.Str{thread}}]))
+    case True{}:
+      do IO<Unit>:
+        fs : K.Files <- K.Files.read(cwd)
+        +err : String <- K.KiCad.open(rt, fs)
+        GitJob.reply(inbox, client, id, String.is_empty(err), J.Json.obj([J.KV{"text", J.Str{err}}, J.KV{"thread", J.Str{thread}}]))
+
+# Compatibility for non-hub jobs; normal Open uses the hub's cached Rt.
 def KiCadJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +cwd: String, +home: String) -> IO(Unit):
   do IO<Unit>:
-    explicit : String <- Env.get("BACKPLANE_KICAD_CLI", "")
-    exe : String <- H.Sys.exe_dir()
-    rt : K.Rt <- K.Rt.resolve(explicit, exe, home)
-    fs : K.Files <- K.Files.read(cwd)
-    +err : String <- K.KiCad.open(rt, fs)
-    GitJob.reply(inbox, client, id, String.is_empty(err), J.Json.obj([J.KV{"text", J.Str{err}}]))
+    text : String <- K.Io.text(home ++ "/kicad-health.json")
+    +rt : K.Rt = K.Rt.cached(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))
+    KiCadJob.selected(String.eq(K.Rt.status(rt), "ok"), inbox, client, id, "", cwd, rt)
+
+def KiCadJob.route(kicad: Bool, +inbox: Chan(Msg), client: U32, id: String, thread: String, cwd: String, +rt: K.Rt, other: IO(Unit)) -> IO(Unit):
+  match kicad:
+    case True{}: IO.spawn(Unit, KiCadJob.selected(String.eq(K.Rt.status(rt), "ok"), inbox, client, id, thread, cwd, rt))
+    case False{}: other
 
 # Design steps (core/hist.bend): after a tool call, the thread's KiCad
 # files snapshot (Git.step.capture); a change is logged in the thread as
@@ -2927,8 +2947,8 @@ def Cfg.rt(c: Cfg) -> K.Rt:
 
 def Hub.prompt.kicad(rt: K.Rt, ipc: Bool) -> String:
   match rt:
-    case K.Rt{+cli, fork, +v, +c}:
-      Q.Prompt.kicad(cli, fork, v, c, ipc)
+    case K.Rt{+cli, _, +v, +c, +h}:
+      Q.Prompt.kicad.health(J.Json.get_str(h, "status", "checking"), cli, v, c, J.Json.get_str(h, "why", ""), ipc)
 
 def Hub.prompt.files(+cwd: String, fs: K.Files) -> String:
   match fs:
@@ -4092,6 +4112,11 @@ def Hub.term_to(h: Hub, +client: U32, +key: String, +cols: U32, +rows: U32, data
         cl2 : List<&2, Client> <- Hub.term_to.k(U32.is_eq(client, TM.Et.all()), cl, client, Term.json.reset(key, cols, rows, data))
         return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
+def Cfg.with_rt(c: Cfg, rt: K.Rt) -> Cfg:
+  match c:
+    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
+      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}
+
 def Cfg.with_models(c: Cfg, +ms: String, +mt: String) -> Cfg:
   match c:
     case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, _, _, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
@@ -4103,6 +4128,67 @@ def Hub.models.k(h: Hub) -> IO(Hub):
       do IO<Hub>:
         cl2 : List<&2, Client> <- Wire.all(cl, "{\"t\":\"info\",\"info\":" ++ J.Json.show(Hub.info(cfg)) ++ "}")
         return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+
+# One check at a time. A retry while busy is remembered; an answer for
+# an old path is discarded and immediately checked with the new setting.
+def KJob.run(+inbox: Chan(Msg), +home: String, +setting: String, force: Bool, +last: K.Rt) -> IO(Unit):
+  do IO<Unit>:
+    exe : String <- H.Sys.exe_dir()
+    rt : K.Rt <- K.Rt.refresh(home, setting, exe, force, last)
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, KFound{setting, rt})
+    return Unit{}
+
+def Hub.kcheck.k(busy: Bool, h: Hub, force: Bool) -> IO(Hub):
+  match busy h:
+    case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      IO.pure(Hub, Hub{st, f, ls, cl, as, inbox, Cfg.with_rt(cfg, K.Rt.set(Cfg.rt(cfg), "again", J.Flag{Bool.or(force, J.Json.get_bool(K.Rt.health(Cfg.rt(cfg)), "again", False{}))})), note})
+    case False{} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, KJob.run(inbox, Cfg.home(cfg), M.Setting.get(st, "kicad.path", ""), force, Cfg.rt(cfg)))
+        return Hub{st, f, ls, cl, as, inbox, Cfg.with_rt(cfg, K.Rt.set(Cfg.rt(cfg), "busy", J.Flag{True{}})), note}
+
+def Hub.kcheck.before(changed: Bool, busy: Bool, h: Hub, force: Bool) -> IO(Hub):
+  match changed:
+    case True{}: IO.bind(Hub, Hub, Hub.models.k(h), h2 => Hub.kcheck.k(busy, h2, force))
+    case False{}: Hub.kcheck.k(busy, h, force)
+
+def Hub.kcheck(h: Hub, force: Bool) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      +changed = Bool.and(Bool.not(String.eq(M.Setting.get(st, "kicad.path", ""), J.Json.get_str(K.Rt.health(Cfg.rt(cfg)), "setting", ""))), Bool.not(String.eq(K.Rt.status(Cfg.rt(cfg)), "checking")))
+      Hub.kcheck.before(changed, J.Json.get_bool(K.Rt.health(Cfg.rt(cfg)), "busy", False{}),
+        Hub{st, f, ls, cl, as, inbox, Cfg.with_rt(cfg, K.Rt.set(Cfg.rt(cfg), "status", J.Str{Bool.pick(String, changed, "checking", K.Rt.status(Cfg.rt(cfg)))})), note}, force)
+
+def KJob.again(again: Bool, +inbox: Chan(Msg)) -> IO(Unit):
+  match again:
+    case True{}: Self.post(inbox, KProbe{True{}})
+    case False{}: IO.pure(Unit, Unit{})
+
+def Hub.kfound.k(current: Bool, +again: Bool, h: Hub, +rt: K.Rt) -> IO(Hub):
+  match current h:
+    case False{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.kcheck(Hub{st, f, ls, cl, as, inbox, Cfg.with_rt(cfg, K.Rt.set(Cfg.rt(cfg), "busy", J.Flag{False{}})), note}, True{})
+    case True{} Hub{st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        K.Rt.save(Cfg.home(cfg), K.Rt.set(K.Rt.set(rt, "busy", J.Flag{False{}}), "again", J.Flag{False{}}))
+        KJob.again(again, inbox)
+        Hub.models.k(Hub{st, f, ls, cl, as, inbox, Cfg.with_rt(cfg, K.Rt.set(K.Rt.set(rt, "busy", J.Flag{False{}}), "again", J.Flag{False{}})), note})
+
+# A probe does not broadcast if only the file fingerprint changed.
+def Hub.kfound.same(same: Bool, h: Hub, +setting: String, +rt: K.Rt) -> IO(Hub):
+  match same h:
+    case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        K.Rt.save(Cfg.home(cfg), K.Rt.set(K.Rt.set(rt, "busy", J.Flag{False{}}), "again", J.Flag{False{}}))
+        return Hub{st, f, ls, cl, as, inbox, Cfg.with_rt(cfg, K.Rt.set(K.Rt.set(rt, "busy", J.Flag{False{}}), "again", J.Flag{False{}})), note}
+    case False{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.kfound.k(String.eq(setting, M.Setting.get(st, "kicad.path", "")), J.Json.get_bool(K.Rt.health(Cfg.rt(cfg)), "again", False{}), Hub{st, f, ls, cl, as, inbox, cfg, note}, rt)
+
+def Hub.kfound(h: Hub, +setting: String, +rt: K.Rt) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.kfound.same(Bool.and(String.eq(setting, M.Setting.get(st, "kicad.path", "")), Bool.and(Bool.not(J.Json.get_bool(K.Rt.health(Cfg.rt(cfg)), "again", False{})),
+        String.eq(J.Json.show(J.Json.obj(Info.kicad(rt))), J.Json.show(J.Json.obj(Info.kicad(Cfg.rt(cfg))))))), Hub{st, f, ls, cl, as, inbox, cfg, note}, setting, rt)
 
 def Cfg.with_machines(c: Cfg, +mc: String) -> Cfg:
   match c:
@@ -4997,8 +5083,7 @@ def Main.prepare(+user: String, +exe: String) -> IO(Boot):
     rev : String <- K.KiStack.current(user)
     ks : String & List<&2, Q.Skill> <- Skills.kistack.dir(K.KiStack.base(user) ++ "/" ++ rev)
     IO.spawn(Unit, K.KiStack.refresh(user))
-    explicit : String <- Env.get("BACKPLANE_KICAD_CLI", "")
-    rt : K.Rt <- K.Rt.resolve(explicit, exe, user ++ "/.backplane-bend")
+    +rt : K.Rt = K.Rt.empty()
     +fc : String <- FC.FreeCAD.find()
     return Models.boot(ks, rt, Found{"", ""}, fc)
 
@@ -7995,6 +8080,8 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +g : String = Hub.gen(st, now)
         IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
+    case Hub{st, f, ls, cl, as, inbox, cfg, note} B.KiCadRetry{}:
+      Hub.kcheck(Hub{st, f, ls, cl, as, inbox, cfg, note}, True{})
     case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.KiCadInstall{}:
       do IO<Hub>:
         IO.spawn(Unit, Install.go(Cfg.home(cfg), inbox))
@@ -8046,6 +8133,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.TurnEnded{+thread, _}:
       do IO<Hub>:
         IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, inbox))
+        Self.post(inbox, KProbe{False{}})
         Self.post(inbox, Release{})
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     # an alert record was written: the phones' push, the desk used last and
@@ -8102,7 +8190,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     case Hub{+st, f, ls, cl, +as, +inbox, +cfg, note} B.Git{+client, +id, +job, +thread, +cwd, +a, +b}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        Media.run(AG.Text.of(st), job, inbox, client, id, thread, cwd, Bot.attach(String.eq(job, "attach.claude"), cfg, st, now, thread, a), b, Cfg.home(cfg), Net.managed(Cfg.net(cfg)), Agents.gen(as, thread))
+        KiCadJob.route(String.eq(job, "kicad"), inbox, client, id, thread, cwd, Cfg.rt(cfg), Media.run(AG.Text.of(st), job, inbox, client, id, thread, cwd, Bot.attach(String.eq(job, "attach.claude"), cfg, st, now, thread, a), b, Cfg.home(cfg), Net.managed(Cfg.net(cfg)), Agents.gen(as, thread)))
         return Claude.prep(Bool.and(String.eq(job, "attach.claude"), Bool.not(String.is_empty(b))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, b)
     case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.AskAnswered{+ask, +answer}:
       do IO<Hub>:
@@ -9025,6 +9113,7 @@ def Hub.tick(h: Hub, +now: Nat) -> IO(Hub):
         # for (effects/adopt.c), so none stays a zombie
         left : U32 <- AIO.Adopt.reap()
         PS.Perf.set("hub.inherited", left)
+        Self.post(inbox, KProbe{False{}})
         Self.post(inbox, Release{})
         Self.post(inbox, Silence{})
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.tick(st, now))
@@ -11803,6 +11892,8 @@ def Msg.kind(m: Msg) -> String:
       "term_out"
     case TermTo{_, _, _, _, _}:
       "term_to"
+    case KProbe{_}: "kicad_probe"
+    case KFound{_, _}: "kicad_health"
     case ModelsFound{_, _}:
       "models"
     case MachinesFound{_}:
@@ -12415,6 +12506,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.term_out(h, thread, data)
     case TermTo{c, key, co, ro, data}:
       Hub.term_to(h, c, key, co, ro, data)
+    case KProbe{force}: Hub.kcheck(h, force)
+    case KFound{setting, rt}: Hub.kfound(h, setting, rt)
     case ModelsFound{ms, mt}:
       Hub.models(h, ms, mt)
     case MachinesFound{mc}:
@@ -12615,6 +12708,7 @@ def Main.headless(h: Hub, +inbox: Chan(Msg), +cfg: Cfg, +tok: Chan(Unit), front:
     IO.spawn(Unit, Heart.loop(Fuel.forever(), inbox))
     Refresh.start(inbox, cfg)
     IO.spawn(Unit, Od.resume(inbox, Cfg.home(cfg)))
+    Self.post(inbox, KProbe{True{}})
     IO.spawn(Unit, Hub.loop(Fuel.forever(), h, inbox, tok))
     Upgrade.start(cfg, inbox)
     front(inbox)
@@ -12628,6 +12722,7 @@ def Main.serve(l: Listener, h: Hub, +web: String, +inbox: Chan(Msg), +cfg: Cfg, 
     IO.spawn(Unit, Heart.loop(Fuel.forever(), inbox))
     Refresh.start(inbox, cfg)
     IO.spawn(Unit, Od.resume(inbox, Cfg.home(cfg)))
+    Self.post(inbox, KProbe{True{}})
     Machines.start(inbox, Cfg.port(cfg))
     IO.spawn(Unit, Hub.loop(Fuel.forever(), h, inbox, tok))
     Upgrade.start(cfg, inbox)
@@ -12794,6 +12889,7 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
   match cfg:
     case Cfg{+home, w, h, p, pr, ds, v, nt}:
       do IO<Unit>:
+        H.Env.put("BACKPLANE_HOME", home)
         mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(home)
         t0 : U32 <- PS.Perf.us()
         +bs : List<&2, U32> <- Files.read(Store.path(home))
@@ -12808,6 +12904,8 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         tok : String <- Token.load(home)
         +mc : String <- Files.text(Models.cache(home))
         +bc : String <- BN.Bf.text(BN.Bn.cache(home))
+        exe : String <- H.Sys.exe_dir()
+        rt : K.Rt <- K.Rt.boot(home, M.Setting.get(st, "kicad.path", ""), exe)
         +off : String <- Env.get("BACKPLANE_NO_UPDATE", "")
         +ai : String <- Env.get("APPIMAGE", "")
-        Main.opened(f, st, ls, Cfg.with_managed(Cfg.with_models(Cfg.with_bn(Cfg.with_token(Cfg{home, w, h, p, pr, ds, v, nt}, tok), BN.Bn.with_dir(BN.Bn.empty(), BN.Bn.cache.load(bc, BO.World.peers(M.State.bots(st))))), BT.Cache.json(mc), BT.Cache.text(mc)), SV.Chan.managed(off, ai)), need, front)
+        Main.opened(f, st, ls, Cfg.with_managed(Cfg.with_models(Cfg.with_bn(Cfg.with_token(Cfg.with_rt(Cfg{home, w, h, p, pr, ds, v, nt}, rt), tok), BN.Bn.with_dir(BN.Bn.empty(), BN.Bn.cache.load(bc, BO.World.peers(M.State.bots(st))))), BT.Cache.json(mc), BT.Cache.text(mc)), SV.Chan.managed(off, ai)), need, front)
