@@ -9490,3 +9490,20 @@ law mail_room_once:
   for +parts: List<&2, String>
   for +subject: String
   {H.Mail.file.count(H.Mail.room.file(s, now, from, room, text, msg, parts, subject)) == 1n : Nat}
+# ---- i18n core ui ----
+law title_shown_ja_new:
+  {U.Title.shown(I18.Ja{}, "New thread") == "新しいスレッド" : String}
+law title_shown_en_new:
+  {U.Title.shown(I18.En{}, "New thread") == "New thread" : String}
+law title_shown_other:
+  {U.Title.shown(I18.Ja{}, "x") == "x" : String}
+# the localized memo has exactly the lines of a fresh localized layout
+law tl_entries_locale:
+  for +ty: L.Ty
+  for +es: List<&2, M.Entry>
+  for +st: M.State
+  for +sel: String
+  for +px: U32
+  for +pics: Map<&2, String>
+  {L.TL.entries.m.loc(ty, L.TL.memo.make(ty, es, px, sel), st, sel, px, pics) == L.TL.entries.loc(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
+# ---- end i18n core ui ----

@@ -11247,3 +11247,15 @@ def Laws.mail_room_once(s, now, from, room, text, msg, parts, subject):
   MailProof.pending_one(String.is_empty(ML.Conv.id(ML.Box.conv(M.State.mail(s), ML.Mail.route(ML.Origin{from, "room", room}, MREF.Ref.addr(MREF.Ref.room(room)))))),
     ML.Conv{ML.Mail.route(ML.Origin{from, "room", room}, MREF.Ref.addr(MREF.Ref.room(room))), subject, ML.Conv.mail_kind(ML.Mail.route(ML.Origin{from, "room", room}, MREF.Ref.addr(MREF.Ref.room(room))), "room"), parts, "", Nil{}, now, now, 0n},
     ML.Mail{msg, ML.Mail.route(ML.Origin{from, "room", room}, MREF.Ref.addr(MREF.Ref.room(room))), from, MREF.Ref.addr(MREF.Ref.room(room)), "room", room, "fyi", ML.Mail.head(text), H.Mail.bytes(text, 0n), now}, text)
+# ---- i18n core ui ----
+def Laws.title_shown_ja_new():
+  {==}
+def Laws.title_shown_en_new():
+  {==}
+def Laws.title_shown_other():
+  {==}
+def Laws.tl_entries_locale(ty, es, st, sel, px, pics):
+  %Equal.sym(List<&2, M.Entry>, L.TL.memo.es(L.TL.memo.make(ty, es, px, sel)), es, tl_memo_es(ty, es, px, sel))
+    : {L.TL.entries.mr(ty, L.TL.memo.make(ty, es, px, sel), L.TL.roles.loc(L.Ty.loc(ty), _, st, sel, pics), st, sel, px, pics, L.TL.stamps(_, st, sel, pics)) == L.TL.entries.loc(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
+  tl_entries_roles(ty, es, L.TL.roles.loc(L.Ty.loc(ty), es, st, sel, pics), st, sel, px, pics, L.TL.stamps(es, st, sel, pics))
+# ---- end i18n core ui ----

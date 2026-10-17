@@ -1,4 +1,5 @@
 import Base
+import ../src/core/i18n.bend as I
 import ./check.bend as C
 import ../src/core/client.bend as U
 import ../src/core/todo.bend as TD
@@ -101,9 +102,9 @@ def main() -> IO(Unit):
     C.Check.str("an approval's button beats its scrolling pane", hit.action(N.Hit.find(hits(ask_out), 880, (100 + L.Ask.h(L.Ty.none(), ask, Map.new(&2, String), 768) - 20 : U32))), "answer")
     +u : U.Ui = U.Ui.init(0n)
     +many : List<&2, TD.Todo> = todos(200n)
-    C.Check.str("a short list has no last line", U.Todos.more(False{}, todos(4n)), "")
-    C.Check.str("a long one offers every step", U.Todos.more(False{}, many), "Show all 200")
-    C.Check.str("shown all, it offers fewer", U.Todos.more(True{}, many), "Show fewer")
+    C.Check.str("a short list has no last line", U.Todos.more(I.En{}, False{}, todos(4n)), "")
+    C.Check.str("a long one offers every step", U.Todos.more(I.En{}, False{}, many), "Show all 200")
+    C.Check.str("shown all, it offers fewer", U.Todos.more(I.En{}, True{}, many), "Show fewer")
     C.Check.str("the card starts open", bool(U.Todos.open(U.Ui.infos(u), "t1")), "true")
     C.Check.str("and shows the fitted few", rows(u, many), "8")
     C.Check.str("its head shuts it", bool(U.Todos.open(U.Ui.infos(fold(u, U.Todos.toggle(True{}, "t1"))), "t1")), "false")

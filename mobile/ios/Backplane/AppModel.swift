@@ -484,6 +484,25 @@ final class AppModel {
     private(set) var cats: [String: [CatPart]] = [:]
     @ObservationIgnored private var asked: Set<String> = []
 
+    // catalog texts for native parts, by key (spec 4.1); read again when the
+    // language changes, which shows in the screen's language row
+    private(set) var texts: [String: String] = [:]
+    @ObservationIgnored private var wanted: Set<String> = []
+    @ObservationIgnored private var langLabel: String?
+
+    // the text for a key; its English (fallback) until the bridge answers
+    func t(_ key: String, _ fallback: String) -> String { texts[key] ?? fallback }
+
+    func want(_ key: String) async {
+        wanted.insert(key)
+        texts[key] = await engine.t(key)
+    }
+
+    private func refreshTexts() {
+        let keys = wanted
+        Task { for k in keys { texts[k] = await engine.t(k) } }
+    }
+
     func cat(_ key: String) async {
         guard !key.isEmpty, !asked.contains(key) else { return }
         asked.insert(key)
@@ -672,6 +691,8 @@ final class AppModel {
         if let s = o.screen {
             if typing == 0 { composer = s.thread?.draft ?? "" }
             screen = s
+            let label = s.lang?.rows.first?.label
+            if label != langLabel { langLabel = label; refreshTexts() }
             if s.uber == nil { lastUber = nil; lastPlane = nil } else if s.plane != nil { lastUber = s.uber; lastPlane = s.plane }
             if let t = s.thread, !s.sel.isEmpty { remember(s.sel, t) }
             if s.hub != shownHub {

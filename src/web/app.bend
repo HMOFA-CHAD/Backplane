@@ -137,8 +137,8 @@ def origin(u: U.Ui) -> String:
 def composer(u: U.Ui) -> D.Node:
   V.View.composer.u(u)
 
-def asks(u: U.Ui) -> D.Node:
-  V.View.asks.u(u)
+def asks(+u: U.Ui) -> D.Node:
+  V.View.asks.u(U.Lang.loc(u), u)
 
 # A value of each Json constructor, for wire.js: bend 2.0.36 tags a module's
 # constructors with their file ("../core/json.Str"), so the JavaScript that
