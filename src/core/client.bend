@@ -5859,7 +5859,7 @@ def Fab.set.order.label() -> String:
   "Ordering"
 
 def Fab.set.order.note() -> String:
-  "Buy a project's boards and parts from Backplane: Buy it, prices and quotes. Off, no prices are asked and no files are sent."
+  "Order boards and parts from Backplane. Off: no prices or uploads."
 
 def Fab.set.label() -> String:
   "Price estimates"
