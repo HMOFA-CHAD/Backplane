@@ -1,5 +1,6 @@
 import Base
 import ./src/server/mailstore.bend as MIX # mail index
+import ./src/app/mm.bend as MM # window memos
 import ./src/core/i18n.bend as I18
 import ./test/fixtures/i18n_fallback.bend as I18F
 import ./src/core/mail.bend as ML # mail 1
@@ -11169,3 +11170,7 @@ def Laws.prompt_kicad_ipc_only_ok_checking(i):
   match i:
     case True{}: {==}
     case False{}: {==}
+
+def Laws.mm_late_misses(key, ms, now, h):
+  %Equal.sym(Bool, Nat.is_ge(now, MM.MainM.due(ms)), True{}, h) : {MM.Mm.use.k(_, MM.MainM.same(key, ms)) == False{} : Bool}
+  {==}
