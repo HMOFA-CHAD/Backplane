@@ -26,6 +26,21 @@ BOARD_DENSITY = 1.85
 _FAB = re.compile(r"\b(?:JLCPCB|JLC3DP|JLCCNC|JLCMC|JLC|LCSC|EasyEDA)(?:'s)?\b", re.I)
 
 
+def made_of(parts):
+    """What the Manufacturing line covers, by what is ordered: "Boards, assembly and components
+    and 3D prints", "3D prints", ..."""
+    kinds = [p.get("kind") for p in parts]
+    words = []
+    if "pcb" in kinds:
+        words.append("boards, assembly and components" if any(p.get("assembled") for p in parts) else "boards")
+    for k, w in (("3dp", "3D prints"), ("cnc", "CNC parts"), ("sheetmetal", "sheet metal")):
+        if k in kinds:
+            words.append(w)
+    if not words:
+        return "Parts"
+    text = words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+    return text[0].upper() + text[1:]
+
 def neutral(text):
     return _FAB.sub(lambda m: "the fab's" if m.group(0).lower().endswith("'s") else "the fab", str(text))
 
@@ -167,8 +182,7 @@ def price(manifest, measured):
     tax = duties.estimate(country, goods, ship.get("price", 0.0), len(parts_out), ddp)
     fee = config.FEE * (mfg + ship["price"] + tax) + config.FEE_CNC * cnc
     lines = [
-        {"label": "Manufacturing", "amount": round(goods, 2),
-         "detail": "Boards, assembly and components" if any(p.get("assembled") for p in parts_out) else "Boards and parts"},
+        {"label": "Manufacturing", "amount": round(goods, 2), "detail": made_of(parts_out)},
         {"label": "Shipping", "amount": round(ship["price"], 2), "detail": neutral(", ".join(x for x in (ship.get("method"), ship.get("days")) if x))},
         {"label": "Duties & taxes", "amount": round(tax, 2), "detail": duties.note(country, ddp)},
         {"label": "Service & price-assurance fee", "amount": round(fee, 2),
