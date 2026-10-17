@@ -463,6 +463,54 @@ def sides(xs: List<&2, J.Json>, +ty: L.Ty, +n0: N.Nui, +tc: MM.TouchK, +ms: List
       +fresh = side.fresh(ty, n)
       sides(rest, ty, n, tc2, [MM.SideM{key, fresh}], Side.add(t, MM.SideM.same(key, ms), Eqh.out(MM.SideM.out(ms), fresh)))
 
+# The timeline's memos as the window brings them up (only the streamed
+# reply's part while MM.Mm.tlkey holds) against memos brought up in full,
+# over every event and a piece of the open thread's text after each: the
+# main areas laid out from each must be the same
+type TlT is Data:
+  TlT{steps: Nat, kept: Nat, bad: Nat, why: String}
+
+def TlT.add(t: TlT, +kept: Bool, +ok: Bool, +what: String) -> TlT:
+  match t:
+    case TlT{s, k, b, +w}:
+      TlT{1n+s, Nat.add(k, Bool.pick(Nat, kept, 1n, 0n)), Nat.add(b, Bool.pick(Nat, ok, 0n, 1n)), Bool.pick(String, ok, w, w ++ "\n  " ++ what)}
+
+def TlT.show(t: TlT) -> String:
+  match t:
+    case TlT{s, k, b, w}:
+      "timeline memos: steps " ++ Nat.show(s) ++ ", brought up only for the streamed text " ++ Nat.show(k) ++ ", main area unlike one from full memos " ++ Nat.show(b) ++ w
+
+def tl.win(same: Bool, +ty: L.Ty, +n: N.Nui, ms: List<&2, L.TLMemo>) -> List<&2, L.TLMemo>:
+  match same:
+    case True{}:
+      MM.Mm.memos.live(ty, n, ms)
+    case False{}:
+      L.Lay.memos(ty, n, ms)
+
+# the events, each followed by a piece of the open thread's text
+def tl.msgs(xs: List<&2, J.Json>, +sel: String, +i: Nat) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> rest:
+      msg(x) <> delta(sel, i) <> tl.msgs(rest, sel, 1n+i)
+
+def tl.check(+ty: L.Ty, +n: N.Nui, +w: List<&2, L.TLMemo>, +f: L.TLMemo, +kept: Bool, +what: String, t: TlT) -> TlT:
+  TlT.add(t, kept, Eqh.out(MM.Mm.lay(ty, L.TL.memos.now(w), n), MM.Mm.lay(ty, f, n)), what)
+
+def tls(os: List<&2, J.Json>, +ty: L.Ty, +n0: N.Nui, +wm0: List<&2, L.TLMemo>, +mk0: String, f0: L.TLMemo, +tc0: MM.TouchK, t: TlT) -> TlT:
+  match os:
+    case Nil{}:
+      t
+    case +o <> rest:
+      +n1 = ss.recv(n0, o, Nat.add(U.Side.now(N.Nui.ui(n0)), 1n))
+      +tc1 = MM.TouchK.msg(o, tc0)
+      +k1 = MM.Mm.tlkey(n1, tc1)
+      +same = MM.Mm.tlkey.same(k1, [mk0])
+      +w1 = tl.win(same, ty, n1, wm0)
+      +f1 = L.Lay.memo(ty, n1, f0)
+      tls(rest, ty, n1, w1, k1, f1, tc1, tl.check(ty, n1, w1, f1, same, String.take(J.Json.show(o), 120n), t))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- AV.Argv.args()
@@ -482,6 +530,9 @@ def main() -> IO(Unit):
     +ms0 : L.TLMemo = L.Lay.memo(ty, ns, L.TL.memo.none())
     IO.print(ST.show(streams(List.drop(&2, J.Json, xs, cut), 0n, ty, with_hits(ns, hits(MM.Mm.lay(ty, ms0, ns)), 0n), ms0, Nil{}, MM.TouchK.none(), ST{0n, 0n, 0n, 0n, 0n, ""})))
     IO.print("streaming, " ++ ixs.stream(List.drop(&2, J.Json, xs, cut), 0n, arg(as, 1n), u, MM.TouchK.none(), MM.Ix.full(u, 0n), 0n, 0n, IxT{0n, 0n, ""}))
+    +nt : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
+    +mt : L.TLMemo = L.Lay.memo(ty, nt, L.TL.memo.none())
+    IO.print(TlT.show(tls(tl.msgs(List.drop(&2, J.Json, xs, cut), arg(as, 1n), 0n), ty, nt, [mt], "", mt, MM.TouchK.none(), TlT{0n, 0n, 0n, ""})))
     IO.print(IxT.show(ixsteps(List.drop(&2, J.Json, xs, cut), u, MM.TouchK.none(), MM.Ix.full(u, 0n), IxT{0n, 0n, ""})))
     +n2 : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)
     +n3 : N.Nui = prepared(N.Nui.init(u, 1400, 900), 0n)

@@ -440,6 +440,49 @@ def MainM.keep(m: MainM) -> List<&2, MainM>:
     case MainM{+k, rk, rs, o, d}:
       Bool.pick(List<&2, MainM>, String.is_empty(k), Nil{}, [MainM{k, rk, rs, o, d}])
 
+# The timeline's memo
+# -------------------
+# The timeline's memos (L.Lay.memos) are brought up to a frame only when
+# the open thread's entries may have changed: the key is the open thread,
+# its last touch (its entries and record), the last touch of all, the
+# timeline's width, the page shown ("@more.<thread>"), where it is held
+# ("@tl.pin.<thread>", "@away.<thread>") and the language: all that
+# L.Lay.memo.es and the entries' parts (L.TL.memo.item: the entry, the
+# width, the thread, the faces) read; "" while the timeline is hidden. Otherwise only
+# the streamed reply's settled part is brought up (L.TL.live.get), as
+# L.Lay.memo does.
+
+def Mm.tlkey.k(on: Bool, +n: N.Nui, +t: TouchK) -> String:
+  match on:
+    case False{}:
+      ""
+    case True{}:
+      U.Ui.sel(N.Nui.ui(n)) ++ "|" ++ Nat.show(TouchK.at(t, U.Ui.sel(N.Nui.ui(n)))) ++ "|" ++ Nat.show(TouchK.g(t)) ++ "|" ++ U32.show(L.Lay.tl.px(n))
+        ++ "|" ++ U.Ui.scratch(N.Nui.ui(n), "@more." ++ U.Ui.sel(N.Nui.ui(n))) ++ "|" ++ U.Ui.scratch(N.Nui.ui(n), "@tl.pin." ++ U.Ui.sel(N.Nui.ui(n)))
+        ++ "|" ++ U.Ui.scratch(N.Nui.ui(n), "@away." ++ U.Ui.sel(N.Nui.ui(n))) ++ "|" ++ L.TL.locale(N.Nui.ui(n))
+
+def Mm.tlkey(+n: N.Nui, +t: TouchK) -> String:
+  Mm.tlkey.k(U.Ui.timeline(N.Nui.ui(n)), n, t)
+
+def Mm.tlkey.same(+key: String, ks: List<&2, String>) -> Bool:
+  match ks:
+    case Nil{}:
+      False{}
+    case +k <> _:
+      Bool.and(Bool.not(String.is_empty(key)), String.eq(k, key))
+
+def Mm.memos.live.k(+ty: L.Ty, +n: N.Nui, +m: L.TLMemo) -> L.TLMemo:
+  L.TL.memo.with_live(m, L.TL.live.local(L.TL.locale(N.Nui.ui(n)), L.TL.live.get(ty, L.TL.memo.lv(m), U.Live.head(U.Ui.live.of(N.Nui.ui(n), U.Ui.sel(N.Nui.ui(n)))), L.Lay.tl.px(n))))
+
+# the memos with the one in front (the open thread's, made for this key)
+# given the streamed reply's settled part
+def Mm.memos.live(+ty: L.Ty, +n: N.Nui, ms: List<&2, L.TLMemo>) -> List<&2, L.TLMemo>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case m <> t:
+      Mm.memos.live.k(ty, n, m) <> t
+
 # The sidebar's memo
 # ------------------
 # Its body (L.Lay.sidebar.a: the threads, the links, the bots and rooms)
