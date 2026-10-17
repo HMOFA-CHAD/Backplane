@@ -1,5 +1,6 @@
 import Base
 import ./src/server/server.bend as MPCREDIT # mail perf
+import ./src/core/schematic.bend as SC # kicad fork viewers
 import ./src/core/charter.bend as CH # mail 2c
 import ./src/core/mailrun.bend as MRUN # mail 2c
 import ./src/server/mailstore.bend as MIX # mail index
@@ -12135,3 +12136,9 @@ def Laws.kserve4_nested_symbol_library_id_refused(): {==}
 def Laws.kserve4_nested_symbol_cap_lifts(): {==}
 
 # ---- end kicad-ipc 4 ----
+# ---- kicad fork viewers ----
+def Laws.fork_cache_legacy(id):
+  {==}
+def Laws.fork_cache_alias(id):
+  {==}
+# ---- end kicad fork viewers ----
