@@ -2639,7 +2639,7 @@ def Shell.paint.go(+oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg
     +ixn : Nat = MM.IxK.force(ixk)
     PS.Perf.add("ui.ix.n", U32.from_nat(Nat.mod(ixn, 1000000n)))
     +t1 : U32 <- PS.Perf.lap("ui.memo", t0)
-    Shell.paint.m(memos, oh, n, w, q, i, Aux.with_touch(Aux.with_mks(Aux.with_ixs(wl, [ixk]), [mk]), MM.TouchK.clear(Aux.touch(wl))), epoch, ms, t0, t1)
+    Shell.paint.m(memos, oh, n, w, q, i, Aux.with_touch(Aux.with_mks(Aux.with_ixs(wl, [ixk]), [mk]), MM.TouchK.consumed(Aux.touch(wl), [MM.IxK.n(ixk)])), epoch, ms, t0, t1)
 
 def Shell.paint.k(+n0: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
   match n0:

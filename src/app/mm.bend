@@ -29,8 +29,8 @@ import ../core/subs.bend as SB
 # names it "!"); m: each thread's last
 # lg: the threads touched, newest first, with the message that touched
 # them (only the index reads it: MM.Ix.up takes those since its own count,
-# and Shell.paint.go clears it once the index has; a new reader needs its
-# own cursor and must keep it from being cleared before it has read)
+# and Shell.paint.go consumes it once the index has; every reader supplies
+# its own cursor to TouchK.consumed, which keeps it until all have read)
 type TkE is Data:
   TkE{id: String, at: Nat}
 
@@ -158,11 +158,33 @@ def TouchK.lg(t: TouchK) -> List<&2, TkE>:
     case TouchK{_, _, _, _, l}:
       l
 
-# the log emptied, once the index has taken it (Shell.paint.go)
+# the log emptied only after every reader has caught up (TouchK.consumed)
 def TouchK.clear(t: TouchK) -> TouchK:
   match t:
     case TouchK{n, g, r, m, _}:
       TouchK{n, g, r, m, Nil{}}
+
+# Every log reader must supply its cursor. A lagging reader keeps the log
+# whole; an empty reader list keeps it too. The window currently has one,
+# IxK, and consumes only after that index has been forced.
+def TouchK.caught(ns: List<&2, Nat>, +at: Nat, ok: Bool) -> Bool:
+  match ns:
+    case Nil{}:
+      ok
+    case n <> rest:
+      TouchK.caught(rest, at, Bool.and(ok, Nat.is_ge(n, at)))
+
+def TouchK.consumed.k(caught: Bool, t: TouchK) -> TouchK:
+  match caught:
+    case True{}:
+      TouchK.clear(t)
+    case False{}:
+      t
+
+def TouchK.consumed(+t: TouchK, +readers: List<&2, Nat>) -> TouchK:
+  match t:
+    case TouchK{at, _, _, _, _}:
+      TouchK.consumed.k(TouchK.caught(readers, at, Bool.not(List.is_empty(&2, Nat, readers))), t)
 
 def TouchK.g(+t: TouchK) -> Nat:
   match t:
@@ -595,19 +617,24 @@ def Ix.mark(+k: String) -> Bool:
 
 # the threads touched since n0, from the log (newest first: the walk stops
 # at the first entry the index has already taken)
-def Ix.since.lg.k(new: Bool, +id: String, rest: List<&2, String>) -> List<&2, String>:
-  match new:
-    case True{}:
-      id <> rest
-    case False{}:
-      Nil{}
-
-def Ix.since.lg(es: List<&2, TkE>, +n0: Nat) -> List<&2, String>:
+def Ix.since.lg.new(es: List<&2, TkE>, +n0: Nat) -> Bool:
   match es:
     case Nil{}:
-      Nil{}
-    case TkE{+id, +at} <> t:
-      Ix.since.lg.k(Nat.is_gt(at, n0), id, Ix.since.lg(t, n0))
+      False{}
+    case TkE{_, at} <> _:
+      Nat.is_gt(at, n0)
+
+def Ix.since.lg.go(es: List<&2, TkE>, +n0: Nat, new: Bool, acc: List<&2, String>) -> List<&2, String>:
+  match es new:
+    case Nil{} _:
+      List.reverse(&2, String, acc)
+    case +h <> +t False{}:
+      List.reverse(&2, String, acc)
+    case TkE{id, _} <> +t True{}:
+      Ix.since.lg.go(t, n0, Ix.since.lg.new(t, n0), id <> acc)
+
+def Ix.since.lg(+es: List<&2, TkE>, +n0: Nat) -> List<&2, String>:
+  Ix.since.lg.go(es, n0, Ix.since.lg.new(es, n0), Nil{})
 
 def Ix.since(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>, +n0: Nat) -> List<&2, String>:
   match xs:
