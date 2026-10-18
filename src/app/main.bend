@@ -50,6 +50,7 @@ import ../core/rview.bend as RV
 import ../server/git.bend as GT
 import ../server/review.bend as RVC
 import ../core/cef.bend as CF
+import ../core/cli.bend as CLI
 
 # `backplane`: the hub, the web server (for other devices), and the native
 # window as client 0. Window events and hub messages meet in one queue; a
@@ -3047,7 +3048,7 @@ def Start.detach.k(free: Bool, +held: String, +dir: String, +xs: List<&2, String
         r : P.Ran <- P.Proc.run("sh", List.append(&2, String, ["-c", Start.detach.sh(), "sh", log, EX.Exe.path(exe)], xs), "/")
         Start.detached(r, log)
     case False{}:
-      IO.print("Backplane already runs for " ++ dir ++ " (pid " ++ S.Lock.word(held, 0n) ++ ", port " ++ S.Lock.word(held, 1n) ++ "); nothing was started")
+      S.Lock.refuse(False{}, held, dir)
 
 # (a hub already running for the home is said before anything detaches)
 def Start.detach(+xs: List<&2, String>) -> IO(Unit):
@@ -3071,20 +3072,30 @@ def Start.window(headless: Bool) -> IO(Result<&1, &1, U32 & String, Window>):
     case False{}:
       W.Win.open("Backplane", 1400, 900)
 
-# the home's hub already runs (S.Lock): the window joins it on its port,
-# `--headless` says where it is and ends; else this process runs the hub
+# a window joins the home's hub on its port; with no window (no display)
+# there is nothing to join with: it is a second hub, and ends with status 1
+def Start.join(r: Result<&1, &1, U32 & String, Window>, +held: String, +cfg: S.Cfg, +drafts: String, +fq: Chan(L.Ty)) -> IO(Unit):
+  match r:
+    case Done{w}:
+      do IO<Unit>:
+        +lo : String = "http://" ++ S.Cfg.host(cfg) ++ ":" ++ S.Lock.word(held, 1n)
+        IO.print("Backplane already runs for " ++ S.Cfg.home(cfg) ++ " (pid " ++ S.Lock.word(held, 0n) ++ "): the window joins it at " ++ lo)
+        i : Chan(S.Msg) <- LK.Link.start(lo)
+        Shell.opened(Done{w}, i, drafts, fq, lo)
+    case Fail{_}:
+      S.Lock.refuse(False{}, held, S.Cfg.home(cfg))
+
+# the home's hub already runs (S.Lock, its flock): the window joins it on
+# its port, `--headless` says where it is and ends with status 1; else this
+# process holds the lock now and runs the hub
 def Start.hub(free: Bool, headless: Bool, +held: String, +cfg: S.Cfg, r: Result<&1, &1, U32 & String, Window>, +drafts: String, +fq: Chan(L.Ty)) -> IO(Unit):
   match free headless:
     case True{} _:
       S.Main.boot(cfg, False{}, i => Shell.opened(r, i, drafts, fq, ""))
     case False{} True{}:
-      IO.print("Backplane already runs for " ++ S.Cfg.home(cfg) ++ " (pid " ++ S.Lock.word(held, 0n) ++ "), serving http://" ++ S.Cfg.host(cfg) ++ ":" ++ S.Lock.word(held, 1n) ++ "/")
+      S.Lock.refuse(False{}, held, S.Cfg.home(cfg))
     case False{} False{}:
-      do IO<Unit>:
-        +lo : String = "http://" ++ S.Cfg.host(cfg) ++ ":" ++ S.Lock.word(held, 1n)
-        IO.print("Backplane already runs for " ++ S.Cfg.home(cfg) ++ " (pid " ++ S.Lock.word(held, 0n) ++ "): the window joins it at " ++ lo)
-        i : Chan(S.Msg) <- LK.Link.start(lo)
-        Shell.opened(r, i, drafts, fq, lo)
+      Start.join(r, held, cfg, drafts, fq)
 
 # the window opens first and the fonts load beside the hub's start, so
 # the first frame waits only for the log
@@ -3098,7 +3109,7 @@ def Start.run(+xs: List<&2, String>) -> IO(Unit):
     b : S.Boot <- S.Main.prepare(user, exe)
     +cfg : S.Cfg = S.Main.config(user, exe, Start.args(xs), b)
     +drafts : String = S.Cfg.home(cfg) ++ "/drafts"
-    +held : String <- S.Lock.find(S.Cfg.home(cfg))
+    +held : String <- S.Lock.take(S.Cfg.home(cfg), S.Cfg.port(cfg))
     Start.hub(String.is_empty(held), Start.headless(xs), held, cfg, r, drafts, fq)
 
 def Start.pick(detach: Bool, +xs: List<&2, String>) -> IO(Unit):
@@ -3125,9 +3136,16 @@ def start.go(+xs: List<&2, String>) -> IO(Unit):
 def start(args: List<String>) -> IO(Unit):
   start.go(S.Names.copy(args))
 
-# (`--plot KIND FILE` is the hub's own board reader, src/server/plot.bend;
-# `--review bom OLD NEW` design review's, src/server/review.bend)
-def main() -> IO(Unit):
+def main.go(u: Unit) -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
     RVC.Rvc.main(args, a2 => PV.Pv.main(a2, a => start(a)))
+
+# (`--plot KIND FILE` is the hub's own board reader, src/server/plot.bend;
+# `--review bom OLD NEW` design review's, src/server/review.bend)
+# The command line is read strictly before anything else (core/cli.bend):
+# --help, --version or a bad flag never open a window or reach a hub.
+def main() -> IO(Unit):
+  do IO<Unit>:
+    a0 : List<String> <- IO.args()
+    S.Main.cli(CLI.Cli.of(CLI.Cli.args(a0)), u => main.go(u))

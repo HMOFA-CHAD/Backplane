@@ -998,6 +998,8 @@ static void __attribute__((constructor)) sys_exe_dir_use(void) {
 // on failure.
 // the agents kept through the exec (effects/adopt.c, when linked)
 extern void bp_adopt_exec(int keep) __attribute__((weak));
+// the hub's lock on its home, kept through the exec (effects/hublock.c)
+extern void bp_hublock_exec(int keep) __attribute__((weak));
 
 Term sys_exec_run(Env e, Term* f, IoWork* w) {
   int ok = 1;
@@ -1005,8 +1007,10 @@ Term sys_exec_run(Env e, Term* f, IoWork* w) {
   int code = ok ? 0 : EILSEQ;
   if (ok) {
     if (bp_adopt_exec) bp_adopt_exec(1);
+    if (bp_hublock_exec) bp_hublock_exec(1);
     execv(argv[0], argv);
     code = errno;
+    if (bp_hublock_exec) bp_hublock_exec(0);
     if (bp_adopt_exec) bp_adopt_exec(0);
   }
   for (char** a = argv; *a != NULL; a += 1) {

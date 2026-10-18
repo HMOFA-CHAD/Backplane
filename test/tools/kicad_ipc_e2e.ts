@@ -105,7 +105,7 @@ async function start(name: string, rt: string, extra: Record<string, string> = {
   // `timeout` ends the hub by itself after the test's own limit
   const proc = Bun.spawn(["timeout", "420", resolve(binary), "--home", home, "--port", String(port), "--no-tailscale"], {
     env: {
-      ...process.env, HOME: home, XDG_CACHE_HOME: join(home, ".cache"), XDG_RUNTIME_DIR: xdg, PATH: `${fake}:${dirname(bun)}:/usr/bin:/bin`,
+      ...process.env, HOME: home, XDG_CACHE_HOME: join(home, ".cache"), XDG_RUNTIME_DIR: xdg, BACKPLANE_AGENTS: fake, PATH: `${fake}:${dirname(bun)}:/usr/bin:/bin`,
       DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_HOME: home, BACKPLANE_KICAD: rt, BACKPLANE_KICAD_CLI: "", BACKPLANE_PEERS: "", BACKPLANE_NO_UPDATE: "1",
       BACKPLANE_LOCK_DIR: join(home, "locks"), KIPC_DESC: join(rt, "share/backplane/api.desc"), KIPC_LOG: log, ...extra,
     },
