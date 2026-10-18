@@ -51,6 +51,7 @@ import ../server/git.bend as GT
 import ../server/review.bend as RVC
 import ../core/cef.bend as CF
 import ../core/cli.bend as CLI
+import ../server/main.bend as SV
 
 # `backplane`: the hub, the web server (for other devices), and the native
 # window as client 0. Window events and hub messages meet in one queue; a
@@ -3176,7 +3177,21 @@ def main.go(u: Unit) -> IO(Unit):
 # `--review bom OLD NEW` design review's, src/server/review.bend)
 # The command line is read strictly before anything else (core/cli.bend):
 # --help, --version or a bad flag never open a window or reach a hub.
-def main() -> IO(Unit):
+def main.app() -> IO(Unit):
   do IO<Unit>:
     a0 : List<String> <- IO.args()
     S.Main.cli(CLI.Cli.of(CLI.Cli.args(a0)), u => main.go(u))
+
+# The server name keeps the server's own entry, including strict CLI,
+# lock ownership and restart handling. It never reaches window/font IO.
+def main.entry(server: Bool) -> IO(Unit):
+  match server:
+    case True{}:
+      SV.main()
+    case False{}:
+      main.app()
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    args : List<String> <- IO.args()
+    main.entry(EX.Exe.server(args))

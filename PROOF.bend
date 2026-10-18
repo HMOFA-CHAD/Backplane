@@ -12169,3 +12169,16 @@ def Laws.native_language_preview(): {==}
 def Laws.native_language_system(): {==}
 def Laws.native_language_fallback(): {==}
 # ---- end native phone i18n ----
+# ---- build-speed: one executable, exact entry selection ----
+def Laws.exe_server_name():
+  {==}
+
+def Laws.exe_server_path():
+  {==}
+
+def Laws.exe_app_name():
+  {==}
+
+def Laws.exe_server_exact():
+  {==}
+# ---- end build-speed ----

@@ -10535,3 +10535,16 @@ law native_language_system:
 law native_language_fallback:
   {NATIVEI18N.native_locale("auto", "de-DE", "1") == "en" : String}
 # ---- end native phone i18n ----
+# ---- build-speed: one executable, exact entry selection ----
+law exe_server_name:
+  {EX.Exe.server(["backplane-serve"]) == True{} : Bool}
+
+law exe_server_path:
+  {EX.Exe.server(["/opt/backplane/backplane-serve", "--port", "3799"]) == True{} : Bool}
+
+law exe_app_name:
+  {EX.Exe.server(["backplane", "backplane-serve"]) == False{} : Bool}
+
+law exe_server_exact:
+  {EX.Exe.server(["/opt/other-backplane-serve"]) == False{} : Bool}
+# ---- end build-speed ----
