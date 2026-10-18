@@ -45,7 +45,9 @@ interoperation, drag and drop, and real GPU rendering on the desktop. Measure
 several background agent pages as well as the visible page and remote
 watchers. The five-page [visibility study](../tools/cef/VISIBILITY.md) fixes
 hidden scheduling and validates watcher animation, but CEF PSS remains higher.
-Use both the updated browser helper and rebuilt optional CEF host; updating
-the helper alone does not replace an older cached runtime. Script-created
+The normal hub deployment updates the optional host and helper together on
+machines with CEF installed, using a verified immutable bundle; it leaves
+Chrome-only installations alone. Explicit `BACKPLANE_CEF` overrides still need
+a matching updated host. Script-created
 `window.open` also needs a regression check; popup-link adoption is covered.
 macOS, Windows, and native Wayland embedding are later work.

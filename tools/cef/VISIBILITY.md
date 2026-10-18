@@ -71,7 +71,17 @@ popup adoption also remains outside the covered popup-link case. macOS,
 Windows and native Wayland embedding remain later work.
 
 The change requires both the updated browser helper and a host built from
-this revision. The optional cached CEF runtime is separate from the hub's
-normal helper deployment; an older cached host does not receive the native
-visibility change automatically. Keep adjacent runtime libraries with the
-host. The CEF distribution and engine version are unchanged.
+this revision. Deployment support landed first in PR #189 and was verified
+running in the #194 build before this update. The existing hub deployment
+now stages a matched helper/host bundle for machines with CEF installed,
+checks its manifest, and promotes one immutable bundle through a shared
+pointer. The older cached runtime remains available for rollback. Machines
+without CEF do not install it. Explicit `BACKPLANE_CEF` paths still override
+discovery and must refer to an updated host. The CEF distribution and engine
+version are unchanged.
+
+Integration was also checked against a copy of the actual running phase-1
+native app: preview/teach/takeover and engine-switch checks pass using the
+same measured helper and host. The fixture opts into isolated agent stand-ins.
+These checks and the deployment lifecycle gates required no new native build;
+production helper/host hashes still match the measured candidate.
