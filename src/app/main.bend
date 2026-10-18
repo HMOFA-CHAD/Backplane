@@ -2482,7 +2482,8 @@ def Shell.paint.fr(fr: BV.Fronted, +hs: List<&2, N.Hit>, +oh: List<&2, N.Hit>, +
 def Shell.paint.out(o: L.Out, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t2: U32) -> IO(Shell):
   match o:
     case L.Out{+ops, +hs}:
-      Shell.paint.fr(BV.Fronted.of(ops, hs, Aux.cats(wa), N.Nui.ms_of(n)), hs, oh, n, w, q, i, wa, epoch, ms, t0, t2)
+      +wc : Aux = Aux.with_cats(wa, BV.Spot.warm(BV.Spot.all(hs), Aux.cats(wa), BV.Bv.clock.of(n)))
+      Shell.paint.fr(BV.Fronted.of(ops, hs, Aux.cats(wc), N.Nui.ms_of(n)), hs, oh, n, w, q, i, wc, epoch, ms, t0, t2)
 
 # how many ops a layout made (counting them also finishes the layout)
 def Lay.nops(o: L.Out) -> Nat:
@@ -2808,7 +2809,7 @@ def Shell.tick.shown(r: Window & Image & Image, +n: N.Nui, +q: Chan(ShellMsg), +
 def Shell.tick.fast(+sps: List<&2, BV.Spot>, +cs: List<&2, R.Op>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +ms: Nat, +t0: U32) -> IO(Shell):
   do IO<Shell>:
     +n2 : N.Nui = BV.Bv.stamp(n, ms)
-    +cache : Map<&2, CA.CatF> = BV.Bv.warm(N.Nui.ui(n2), Aux.cats(wa), BV.Bv.clock.of(n2))
+    +cache : Map<&2, CA.CatF> = BV.Spot.warm(sps, BV.Bv.warm(N.Nui.ui(n2), Aux.cats(wa), BV.Bv.clock.of(n2)), BV.Bv.clock.of(n2))
     +cs2 : List<&2, R.Op> = L.Theme.ops(V.Look.ui(N.Nui.look(n2)), BV.Spot.all.ops(sps, cache, N.Nui.ms_of(n2)))
     +f : TI.Frames = TI.Frames.recat(Aux.frames(wa), cs, cs2)
     +img : Image = Frames.image(f)

@@ -12307,3 +12307,9 @@ def Laws.sidebar_row_key_sound(a, b, h):
 def Laws.sidebar_row_paint_exact(ty, a, b, h):
   %Laws.sidebar_row_key_sound(a, b, h) : {SR.Key.paint(ty, a) == SR.Key.paint(ty, _) : L.Out}
   {==}
+
+def Laws.visible_cats_empty_preserves_cache(c, clock):
+  {==}
+
+def Laws.visible_sleep_cat_posed_once(clock):
+  {==}

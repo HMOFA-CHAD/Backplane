@@ -446,6 +446,14 @@ def Bv.warm.sel(sel: Bool, c: Map<&2, CA.CatF>, +look: Nat, +mood: String, +cloc
 def Bv.warm.at(+mood: String, +clock: Nat) -> Nat:
   Bool.pick(Nat, CA.Cats.moving(mood), clock, 0n)
 
+# Layouts may request a mood/size beyond the sidebar and selected header.
+# Warm exactly those visible requests and retain them for subsequent frames.
+def Spot.warm(sps: List<&2, Spot>, c: Map<&2, CA.CatF>, +clock: Nat) -> Map<&2, CA.CatF>:
+  match sps:
+    case Nil{}: c
+    case Spot{look, +mood, px, x, y, _} <> t:
+      Spot.warm(t, CA.Cats.visible(c, look, mood, px, Bv.warm.at(mood, clock), x, y), clock)
+
 # the cats on show, posed into the cache at the clock before a frame
 def Bv.warm.go(rs: List<&2, BU.BRow>, c: Map<&2, CA.CatF>, +clock: Nat) -> Map<&2, CA.CatF>:
   match rs:

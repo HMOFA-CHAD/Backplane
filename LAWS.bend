@@ -53,6 +53,7 @@ import ./src/core/semver.bend as SV
 import ./src/core/clipath.bend as CPA
 import ./src/app/nui.bend as N
 import ./src/app/bots.bend as BV
+import ./src/app/cats.bend as VCAT
 import ./src/core/sexpr.bend as KSEX # kicad fork footprint placement
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
@@ -10592,3 +10593,12 @@ law sidebar_row_paint_exact:
   for +b: SRT.SideRowK
   for h: {SR.Key.same(a, b) == True{} : Bool}
   {SR.Key.paint(ty, a) == SR.Key.paint(ty, b) : L.Out}
+# Visible cat requests are additional to sidebar/header warm-up.
+law visible_cats_empty_preserves_cache:
+  for +c: Map<&2, VCAT.CatF>
+  for +clock: Nat
+  {BV.Spot.warm(Nil{}, c, clock) == c : Map<&2, VCAT.CatF>}
+
+law visible_sleep_cat_posed_once:
+  for +clock: Nat
+  {BV.Bv.warm.at("sleep", clock) == 0n : Nat}
