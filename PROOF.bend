@@ -12147,3 +12147,7 @@ def Laws.fork_cache_alias(id):
 def Laws.fork_footprint_legacy_at(x):
   {==}
 # ---- end kicad fork footprint placement ----
+
+def Laws.mail_plain_count(b, bot): {==}
+
+def Laws.mail_global_primary(): {==}

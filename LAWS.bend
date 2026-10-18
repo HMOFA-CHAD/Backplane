@@ -10499,3 +10499,14 @@ law fork_footprint_legacy_at:
   for x: KSEX.Sx
   {B.Fp.at.k(True{}, x) == KSEX.Sx.get(x, "at") : KSEX.Sx}
 # ---- end kicad fork footprint placement ----
+
+# Primary orders already carry an exact subtree size; totals need no page.
+law mail_plain_count:
+  for +b: ML.Box
+  for +bot: String
+  {ML.Box.count(b, bot, "", "") == ML.Order.count(ML.Box.order_of(b, bot)) : Nat}
+
+# All-mail includes a thread-only conversation and a person-only one.
+law mail_global_primary:
+  {ML.Box.slice(ML.Box.conv_set(ML.Box.conv_set(ML.Box.empty(), "a", "A", "pair", ["thread:x"], "", Nil{}, 1n), "b", "B", "pair", ["person"], "", Nil{}, 2n), "*", 0n, 2n)
+    == [ML.Conv{"b", "B", "pair", ["person"], "", Nil{}, 2n, 2n, 0n}, ML.Conv{"a", "A", "pair", ["thread:x"], "", Nil{}, 1n, 1n, 0n}] : List<&2, ML.Conv>}

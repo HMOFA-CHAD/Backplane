@@ -2507,7 +2507,7 @@ def Mail.list(+s: M.State, +p: J.Json) -> J.Json:
   +status = J.Json.get_str(p, "status", "")
   +project = J.Json.get_str(p, "project", "")
   J.Json.obj([J.KV{"convs", J.Json.arr(Mail.rows(ML.Box.list(box, bot, status, project, J.Json.get_nat(p, "skip", 0n), Mail.limit(J.Json.get_nat(p, "n", 50n))), box, bot))},
-    J.KV{"total", J.Json.nat(List.length(&2, ML.Conv, ML.Box.list(box, bot, status, project, 0n, ML.Order.count(ML.Box.order_of(box, bot)))))}])
+    J.KV{"total", J.Json.nat(ML.Box.count(box, bot, status, project))}])
 
 def Mail.find(+s: M.State, +p: J.Json) -> J.Json:
   +box = M.State.mail(s)
