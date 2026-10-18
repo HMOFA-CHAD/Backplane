@@ -109,3 +109,7 @@ Native Home and Status sections resolve labels from the current screen locale.
 Idle remaining counts and uber-card accessibility use full messages with raw
 values; platform-specific English counter labels remain distinct. The proposed
 Japanese uberbot term remains メインボット pending the final linguistic review.
+
+Android notification channel display names refresh on a resolved screen locale
+change. Channel IDs and importance remain stable, preserving notification
+preferences. Startup uses English until the Bend screen resolves device locale.

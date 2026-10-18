@@ -1203,3 +1203,10 @@ native.plane.waiting = Nothing waiting
 native.plane.more = {count} more
 native.plane.card = {name}, {counts}
 native.plane.unread = Unread
+
+# Native hub-settings loading and notification channels
+native.settings.placeholder.name = Setting name
+native.settings.placeholder.hint = A line of what the setting does for this hub.
+native.settings.placeholder.option = Option
+native.notify.channel.personal = Personal alerts
+native.notify.channel.live = Agents working
