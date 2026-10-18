@@ -27,11 +27,18 @@ import ../core/subs.bend as SB
 # have changed which threads are whose parent or child otherwise than by
 # touching both (a setting, a state handed over: client.bend's Touch.of
 # names it "!"); m: each thread's last
+# lg: the threads touched, newest first, with the message that touched
+# them (only the index reads it: MM.Ix.up takes those since its own count,
+# and Shell.paint.go consumes it once the index has; every reader supplies
+# its own cursor to TouchK.consumed, which keeps it until all have read)
+type TkE is Data:
+  TkE{id: String, at: Nat}
+
 type TouchK is Data:
-  TouchK{n: Nat, g: Nat, r: Nat, m: Map<&2, Nat>}
+  TouchK{n: Nat, g: Nat, r: Nat, m: Map<&2, Nat>, lg: List<&2, TkE>}
 
 def TouchK.none() -> TouchK:
-  TouchK{0n, 0n, 0n, Map.new(&2, Nat)}
+  TouchK{0n, 0n, 0n, Map.new(&2, Nat), Nil{}}
 
 def TouchK.of(ks: List<&2, TouchK>) -> TouchK:
   match ks:
@@ -42,22 +49,22 @@ def TouchK.of(ks: List<&2, TouchK>) -> TouchK:
 
 def TouchK.tick(t: TouchK) -> TouchK:
   match t:
-    case TouchK{n, g, r, m}:
-      TouchK{1n+n, g, r, m}
+    case TouchK{n, g, r, m, l}:
+      TouchK{1n+n, g, r, m, l}
 
 def TouchK.all(t: TouchK) -> TouchK:
   match t:
-    case TouchK{+n, _, _, m}:
-      TouchK{1n+n, 1n+n, 1n+n, m}
+    case TouchK{+n, _, _, m, l}:
+      TouchK{1n+n, 1n+n, 1n+n, m, l}
 
 def TouchK.one.k(i: Nat, +id: String, t: TouchK) -> TouchK:
   match i t:
-    case 0n TouchK{+n, _, r, m}:
-      TouchK{n, n, r, m}
-    case 1n TouchK{+n, g, _, m}:
-      TouchK{n, g, n, m}
-    case _ TouchK{+n, g, r, m}:
-      TouchK{n, g, r, Map.set(&2, Nat, m, id, n)}
+    case 0n TouchK{+n, _, r, m, l}:
+      TouchK{n, n, r, m, l}
+    case 1n TouchK{+n, g, _, m, l}:
+      TouchK{n, g, n, m, l}
+    case _ TouchK{+n, g, r, m, l}:
+      TouchK{n, g, r, Map.set(&2, Nat, m, id, n), TkE{id, n} <> l}
 
 def TouchK.ids(ids: List<&2, String>, t: TouchK) -> TouchK:
   match ids:
@@ -66,11 +73,32 @@ def TouchK.ids(ids: List<&2, String>, t: TouchK) -> TouchK:
     case +id <> rest:
       TouchK.ids(rest, TouchK.one.k(C.Codec.pos(["*", "!"], id), id, t))
 
+# The sidebar's stamp ("#side": the last message whose changes it may
+# show). A tool step logged in a thread (ActivityLogged) adds only an
+# entry to that thread's log (model.bend's State.post), and the sidebar
+# reads no thread's entries, only its record, settings and the index; a
+# subagent's log ("@sub:<thread>") is read for its row's badge, so its
+# steps count. Every other change counts (memo_replay checks each kept
+# sidebar against a fresh one at every event).
+def Sm.blind(c: M.Change) -> Bool:
+  match c:
+    case M.ActivityLogged{+thread, _, _, _, _, _}:
+      Bool.not(String.starts_with(thread, "@"))
+    case _:
+      False{}
+
+def TouchK.side.k(blind: Bool, t: TouchK) -> TouchK:
+  match blind t:
+    case True{} _:
+      t
+    case False{} TouchK{+n, g, r, m, l}:
+      TouchK{n, g, r, Map.set(&2, Nat, m, "#side", n), l}
+
 # a change folded (one the client cannot read touches all)
 def TouchK.change(m: Maybe<&2, M.Change>, t: TouchK) -> TouchK:
   match m:
-    case Some{c}:
-      TouchK.ids(U.Touch.of(c), t)
+    case Some{+c}:
+      TouchK.side.k(Sm.blind(c), TouchK.ids(U.Touch.of(c), t))
     case None{}:
       TouchK.ids(["*", "!"], t)
 
@@ -82,14 +110,14 @@ def TouchK.items(xs: List<&2, J.Json>, t: TouchK) -> TouchK:
       TouchK.items(rest, TouchK.change(C.Change.decode(x), t))
 
 # a thread's streamed text grew: its count of pieces ("~<thread>")
-def TouchK.live.k(r: Map<&2, Nat> & Nat, +th: String, +n: Nat, +g: Nat, +rr: Nat) -> TouchK:
+def TouchK.live.k(r: Map<&2, Nat> & Nat, +th: String, +n: Nat, +g: Nat, +rr: Nat, l: List<&2, TkE>) -> TouchK:
   (m, v) = r
-  TouchK{n, g, rr, Map.set(&2, Nat, m, "~" ++ th, 1n+v)}
+  TouchK{n, g, rr, Map.set(&2, Nat, m, "~" ++ th, 1n+v), l}
 
 def TouchK.live(+th: String, t: TouchK) -> TouchK:
   match t:
-    case TouchK{+n, +g, +r, m}:
-      TouchK.live.k(Map.get(Nat, 0n, m, "~" ++ th), th, n, g, r)
+    case TouchK{+n, +g, +r, m, l}:
+      TouchK.live.k(Map.get(Nat, 0n, m, "~" ++ th), th, n, g, r, l)
 
 def TouchK.msg.k(i: Nat, +o: J.Json, t: TouchK) -> TouchK:
   match i:
@@ -117,22 +145,55 @@ def TouchK.at.k(r: Map<&2, Nat> & Nat) -> Nat:
 
 def TouchK.at(+t: TouchK, +id: String) -> Nat:
   match t:
-    case TouchK{_, _, _, +m}:
+    case TouchK{_, _, _, +m, _}:
       TouchK.at.k(Map.get(Nat, 0n, m, id))
 
 def TouchK.m(t: TouchK) -> Map<&2, Nat>:
   match t:
-    case TouchK{_, _, _, m}:
+    case TouchK{_, _, _, m, _}:
       m
+
+def TouchK.lg(t: TouchK) -> List<&2, TkE>:
+  match t:
+    case TouchK{_, _, _, _, l}:
+      l
+
+# the log emptied only after every reader has caught up (TouchK.consumed)
+def TouchK.clear(t: TouchK) -> TouchK:
+  match t:
+    case TouchK{n, g, r, m, _}:
+      TouchK{n, g, r, m, Nil{}}
+
+# Every log reader must supply its cursor. A lagging reader keeps the log
+# whole; an empty reader list keeps it too. The window currently has one,
+# IxK, and consumes only after that index has been forced.
+def TouchK.caught(ns: List<&2, Nat>, +at: Nat, ok: Bool) -> Bool:
+  match ns:
+    case Nil{}:
+      ok
+    case n <> rest:
+      TouchK.caught(rest, at, Bool.and(ok, Nat.is_ge(n, at)))
+
+def TouchK.consumed.k(caught: Bool, t: TouchK) -> TouchK:
+  match caught:
+    case True{}:
+      TouchK.clear(t)
+    case False{}:
+      t
+
+def TouchK.consumed(+t: TouchK, +readers: List<&2, Nat>) -> TouchK:
+  match t:
+    case TouchK{at, _, _, _, _}:
+      TouchK.consumed.k(TouchK.caught(readers, at, Bool.not(List.is_empty(&2, Nat, readers))), t)
 
 def TouchK.g(+t: TouchK) -> Nat:
   match t:
-    case TouchK{_, g, _, _}:
+    case TouchK{_, g, _, _, _}:
       g
 
 def TouchK.r(+t: TouchK) -> Nat:
   match t:
-    case TouchK{_, _, r, _}:
+    case TouchK{_, _, r, _, _}:
       r
 
 # The key
@@ -419,11 +480,55 @@ def MainM.keep(m: MainM) -> List<&2, MainM>:
     case MainM{+k, rk, rs, o, d}:
       Bool.pick(List<&2, MainM>, String.is_empty(k), Nil{}, [MainM{k, rk, rs, o, d}])
 
+# The timeline's memo
+# -------------------
+# The timeline's memos (L.Lay.memos) are brought up to a frame only when
+# the open thread's entries may have changed: the key is the open thread,
+# its last touch (its entries and record), the last touch of all, the
+# timeline's width, the page shown ("@more.<thread>"), where it is held
+# ("@tl.pin.<thread>", "@away.<thread>") and the language: all that
+# L.Lay.memo.es and the entries' parts (L.TL.memo.item: the entry, the
+# width, the thread, the faces) read; "" while the timeline is hidden. Otherwise only
+# the streamed reply's settled part is brought up (L.TL.live.get), as
+# L.Lay.memo does.
+
+def Mm.tlkey.k(on: Bool, +n: N.Nui, +t: TouchK) -> String:
+  match on:
+    case False{}:
+      ""
+    case True{}:
+      U.Ui.sel(N.Nui.ui(n)) ++ "|" ++ Nat.show(TouchK.at(t, U.Ui.sel(N.Nui.ui(n)))) ++ "|" ++ Nat.show(TouchK.g(t)) ++ "|" ++ U32.show(L.Lay.tl.px(n))
+        ++ "|" ++ U.Ui.scratch(N.Nui.ui(n), "@more." ++ U.Ui.sel(N.Nui.ui(n))) ++ "|" ++ U.Ui.scratch(N.Nui.ui(n), "@tl.pin." ++ U.Ui.sel(N.Nui.ui(n)))
+        ++ "|" ++ U.Ui.scratch(N.Nui.ui(n), "@away." ++ U.Ui.sel(N.Nui.ui(n))) ++ "|" ++ L.TL.locale(N.Nui.ui(n))
+
+def Mm.tlkey(+n: N.Nui, +t: TouchK) -> String:
+  Mm.tlkey.k(U.Ui.timeline(N.Nui.ui(n)), n, t)
+
+def Mm.tlkey.same(+key: String, ks: List<&2, String>) -> Bool:
+  match ks:
+    case Nil{}:
+      False{}
+    case +k <> _:
+      Bool.and(Bool.not(String.is_empty(key)), String.eq(k, key))
+
+def Mm.memos.live.k(+ty: L.Ty, +n: N.Nui, +m: L.TLMemo) -> L.TLMemo:
+  L.TL.memo.with_live(m, L.TL.live.local(L.TL.locale(N.Nui.ui(n)), L.TL.live.get(ty, L.TL.memo.lv(m), U.Live.head(U.Ui.live.of(N.Nui.ui(n), U.Ui.sel(N.Nui.ui(n)))), L.Lay.tl.px(n))))
+
+# the memos with the one in front (the open thread's, made for this key)
+# given the streamed reply's settled part
+def Mm.memos.live(+ty: L.Ty, +n: N.Nui, ms: List<&2, L.TLMemo>) -> List<&2, L.TLMemo>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case m <> t:
+      Mm.memos.live.k(ty, n, m) <> t
+
 # The sidebar's memo
 # ------------------
 # Its body (L.Lay.sidebar.a: the threads, the links, the bots and rooms)
-# reads the whole state, so any hub message may change it: it is kept only
-# while none came (TouchK's count) and the window's fields it reads are
+# reads the whole state but no thread's own log: it is kept while no hub
+# message changed what it may show (TouchK's "#side", Sm.blind; anything
+# touching all counts) and the window's fields it reads are
 # the same: a key typed, the thread scrolled, the pointer moved. The clock
 # counts to the second (a snooze ends to the second). The drafts are not
 # in it: the sidebar draws none (memo_replay types into the composer and
@@ -431,7 +536,7 @@ def MainM.keep(m: MainM) -> List<&2, MainM>:
 
 def TouchK.n(+t: TouchK) -> Nat:
   match t:
-    case TouchK{n, _, _, _}:
+    case TouchK{n, _, _, _, _}:
       n
 
 # the caret, unless it is the composer's (in the main area, never drawn
@@ -442,7 +547,7 @@ def Sm.caret(+fo: String, +ca: Nat) -> String:
 def Sm.key(+n: N.Nui, +t: TouchK) -> String:
   match n:
     case N.Nui{U.Ui{_, +sel, _, _, +op, on, now, ad, pa, v, rid, w, er, note, +nf, +ob, _}, +ww, +hh, _, _, sd, _, ca, +fo, path, _, _, _}:
-      "n" ++ Nat.show(TouchK.n(t)) ++ "|" ++ sel ++ "|lang" ++ L.TL.locale(N.Nui.ui(n)) ++ "|t" ++ Nat.show(now) ++ "|w" ++ U32.show(ww) ++ "," ++ U32.show(hh) ++ "," ++ U32.show(sd) ++ "," ++ Sm.caret(fo, ca) ++ "," ++ fo ++ "," ++ path
+      "s" ++ Nat.show(TouchK.at(t, "#side")) ++ "," ++ Nat.show(TouchK.g(t)) ++ "|" ++ sel ++ "|lang" ++ L.TL.locale(N.Nui.ui(n)) ++ "|t" ++ Nat.show(now) ++ "|w" ++ U32.show(ww) ++ "," ++ U32.show(hh) ++ "," ++ U32.show(sd) ++ "," ++ Sm.caret(fo, ca) ++ "," ++ fo ++ "," ++ path
         ++ "|u" ++ Mm.b(on) ++ Mm.b(ad) ++ Mm.b(pa) ++ Mm.b(w) ++ "," ++ v ++ "," ++ Nat.show(rid) ++ "," ++ er ++ "," ++ note
         ++ "|f" ++ Mm.flags(Map.to_list(&2, Bool, op)) ++ "|o" ++ Mm.strs(Map.to_list(&2, String, ob))
         ++ "|i" ++ Mm.info(Map.to_list(&2, String, nf))
@@ -509,6 +614,27 @@ def Ix.keep.a(keep: Bool, a: M.Ask, rest: List<&2, M.Ask>) -> List<&2, M.Ask>:
 # thread had streamed more pieces than there were changes)
 def Ix.mark(+k: String) -> Bool:
   Bool.or(String.starts_with(k, "~"), String.starts_with(k, "#"))
+
+# the threads touched since n0, from the log (newest first: the walk stops
+# at the first entry the index has already taken)
+def Ix.since.lg.new(es: List<&2, TkE>, +n0: Nat) -> Bool:
+  match es:
+    case Nil{}:
+      False{}
+    case TkE{_, at} <> _:
+      Nat.is_gt(at, n0)
+
+def Ix.since.lg.go(es: List<&2, TkE>, +n0: Nat, new: Bool, acc: List<&2, String>) -> List<&2, String>:
+  match es new:
+    case Nil{} _:
+      List.reverse(&2, String, acc)
+    case +h <> +t False{}:
+      List.reverse(&2, String, acc)
+    case TkE{id, _} <> +t True{}:
+      Ix.since.lg.go(t, n0, Ix.since.lg.new(t, n0), id <> acc)
+
+def Ix.since.lg(+es: List<&2, TkE>, +n0: Nat) -> List<&2, String>:
+  Ix.since.lg.go(es, n0, Ix.since.lg.new(es, n0), Nil{})
 
 def Ix.since(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>, +n0: Nat) -> List<&2, String>:
   match xs:
@@ -665,7 +791,7 @@ def Ix.up.k(i: Nat, k: IxK, +t: TouchK, +u: U.Ui) -> IxK:
     case 1n _:
       Ix.full(u, TouchK.n(t))
     case _ IxK{n0, lt, ix}:
-      Ix.inc(ix, Ix.since(Map.to_list(&2, Nat, TouchK.m(t)), n0), u, TouchK.n(t), lt)
+      Ix.inc(ix, Ix.since.lg(TouchK.lg(t), n0), u, TouchK.n(t), lt)
 
 def Ix.mode(+n0: Nat, +lt0: String, +t: TouchK, +u: U.Ui) -> Nat:
   Bool.pick(Nat, Bool.not(String.eq(lt0, U.Ui.info(u, "local.touch"))), 1n,

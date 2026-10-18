@@ -11082,6 +11082,15 @@ def Page.since(s: M.State, +th: String) -> Nat:
 def Link.from.or(+msg: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, String.is_empty(M.Link.from(msg)), Nil{}, [M.Link.from(msg)])
 
+# A setting touches all; it may change whose parent or child a thread is
+# ("!", the window's MM.Mm.rels) only when it is a launch's: Mm.rels.of
+# reads the tasks (U.Tasks.up, U.Tasks.of: TaskDelegated, which touches
+# both ends), the launcher of a thread ("launch.<id>", M.Launch.by) and a
+# launcher's list ("launched.<by>", M.Launch.of), the settings
+# ThreadLaunched writes (it touches both ends too) and a SettingSet may
+def Touch.setting(+key: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, Bool.or(String.starts_with(key, "launch."), String.starts_with(key, "launched.")), ["*", "!"], ["*"])
+
 def Touch.raw(c: M.Change) -> List<&2, String>:
   match c:
     case M.ProjectCreated{_, _, _, _}:
@@ -11122,8 +11131,8 @@ def Touch.raw(c: M.Change) -> List<&2, String>:
       ["*"]
     case M.TaskDelivered{_, _}:
       ["*"]
-    case M.SettingSet{_, _, _}:
-      ["*", "!"]
+    case M.SettingSet{+key, _, _}:
+      Touch.setting(key)
     case M.TurnQueued{+thread, _, _, _}:
       [thread]
     case M.QueueTaken{+thread, _}:
