@@ -1,4 +1,6 @@
 import Base
+import ./src/core/auth.bend as AUTH
+import ./src/core/http.bend as HTTPAUTH
 import ./src/app/side_rows.bend as SR
 import ./src/app/side_row_types.bend as SRT
 import ./src/gfx/draw.bend as D
@@ -12342,3 +12344,11 @@ def Laws.mail_age_relative_deadline(): {==}
 def Laws.mail_plane_indexed_build(u): {==}
 
 def Laws.mail_plane_indexed_hidden(u, ix): {==}
+def Laws.auth_foreign_origin_denied(trusted, path, token):
+  {==}
+
+def Laws.auth_empty_remote_token_denied():
+  {==}
+
+def Laws.auth_cookie_prefix_denied():
+  {==}

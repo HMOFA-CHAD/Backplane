@@ -1,4 +1,6 @@
 import Base
+import ./src/core/auth.bend as AUTH
+import ./src/core/http.bend as HTTPAUTH
 import ./src/app/side_rows.bend as SR
 import ./src/app/side_row_types.bend as SRT
 import ./src/server/botnet.bend as MPLOG # mail perf runtime count
@@ -10650,3 +10652,15 @@ law mail_plane_indexed_hidden:
   for +u: U.Ui
   for ix: U.SIx
   {BV.Bv.plane.build.ix(False{}, u, ix) == BV.Bv.plane.none() : PLN.Plane}
+# Browser provenance is mandatory even when a connection is otherwise trusted.
+law auth_foreign_origin_denied:
+  for +trusted: Bool
+  for +path: String
+  for +token: String
+  {AUTH.Auth.allowed(trusted, [HTTPAUTH.Header{"origin", "https://foreign.example"}, HTTPAUTH.Header{"host", "localhost:3787"}], path, token) == False{} : Bool}
+
+law auth_empty_remote_token_denied:
+  {AUTH.Auth.allowed(False{}, Nil{}, "/ws?token=", "") == False{} : Bool}
+
+law auth_cookie_prefix_denied:
+  {AUTH.Auth.allowed(False{}, [HTTPAUTH.Header{"cookie", "bp_token=secret-extra"}], "/ws", "secret") == False{} : Bool}
