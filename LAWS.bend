@@ -1,5 +1,8 @@
 import Base
 import ./src/server/botnet.bend as MPLOG # mail perf runtime count
+# ---- native phone i18n imports ----
+import ./src/mobile/app.bend as NATIVEI18N
+# ---- end native phone i18n imports ----
 import ./src/server/server.bend as MPCREDIT # mail perf
 # ---- i18n web phone imports ----
 import ./src/web/view.bend as WPH
@@ -10521,3 +10524,14 @@ law mail_log_count_committed:
   for +c: MPCREDIT.Cfg
   for +fresh: List<&2, String>
   {MPCREDIT.LogCount.n(MPCREDIT.LogCount.committed(c, fresh)) == Nat.add(MPCREDIT.LogCount.n(c), List.length(&2, String, fresh)) : Nat}
+
+# ---- native phone i18n ----
+law native_language_english:
+  {NATIVEI18N.native_locale("en", "ja-JP", "1") == "en" : String}
+law native_language_preview:
+  {NATIVEI18N.native_locale("ja", "en-US", "1") == "ja" : String}
+law native_language_system:
+  {NATIVEI18N.native_locale("auto", "ja_JP.UTF-8", "1") == "ja" : String}
+law native_language_fallback:
+  {NATIVEI18N.native_locale("auto", "de-DE", "1") == "en" : String}
+# ---- end native phone i18n ----

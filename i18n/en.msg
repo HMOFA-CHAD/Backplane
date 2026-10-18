@@ -1018,3 +1018,27 @@ browser.handback.tip = Let the agent drive again
 ask.send.tip = Send these files and get the quote
 ask.send.none = Nothing is sent
 ask.notnow = Not now
+
+# Native phone tabs and device Settings.
+native.tab.home = Home
+native.settings.system = System
+native.settings.opens = Opens on
+native.settings.haptics = Haptics
+native.settings.behaviour = Behaviour
+native.settings.behaviour.ios = Projects groups threads by project; Active lists what is going on, what needs you first. Automatic opens on Home with an uberbot, else Threads.
+native.settings.behaviour.android = Projects groups threads by project; Active lists what is going on, what needs you first.
+native.settings.notifications = Notifications
+native.settings.notasked = Not asked
+native.settings.system.open = Open system settings
+native.settings.system.settings = System settings
+native.settings.notify.hub = Notify me for is a setting on {name}.
+native.settings.hubs = Hubs
+native.settings.hub = Hub settings
+native.settings.hub.named = Hub settings · {name}
+native.settings.paired = {count} paired
+native.settings.kept = Kept state
+native.settings.cache.clear = Clear cached state
+native.settings.cache = Cache
+native.settings.cache.next = The next launch fetches each hub's history again.
+native.settings.about = About
+native.settings.cache.ask = Clear the cached state?
