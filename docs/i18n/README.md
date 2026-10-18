@@ -113,3 +113,14 @@ Japanese uberbot term remains メインボット pending the final linguistic re
 Android notification channel display names refresh on a resolved screen locale
 change. Channel IDs and importance remain stable, preserving notification
 preferences. Startup uses English until the Bend screen resolves device locale.
+
+The camera permission purpose is `native.permission.camera`. The catalog
+compiler generates `mobile/ios/Info.plist` from `Info.plist.in`, retaining the
+English fallback, and writes en/ja `InfoPlist.strings`. Edit the catalog/template,
+then regenerate. OS resource messages must be nonempty literal text, without
+ICU interpolation or selection.
+
+[iOS chooses localized property-list strings using its language preferences](https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/AboutInformationPropertyListFiles.html).
+The Bend in-app language override does not change that OS preference. Japanese
+permission resources can therefore follow iOS language independently of the
+in-app preview gate; live prompt/device verification remains pending.

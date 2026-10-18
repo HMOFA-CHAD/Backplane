@@ -1210,3 +1210,6 @@ native.settings.placeholder.hint = A line of what the setting does for this hub.
 native.settings.placeholder.option = Option
 native.notify.channel.personal = Personal alerts
 native.notify.channel.live = Agents working
+
+# iOS system camera permission purpose
+native.permission.camera = Backplane reads the pairing code your computer shows, to connect to it.

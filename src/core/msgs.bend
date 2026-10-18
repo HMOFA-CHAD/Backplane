@@ -2887,6 +2887,13 @@ def T.native.pair.unpair(l: I.Loc) -> String:
     case I.Ja{}:
       "ペアリング解除"
 
+def T.native.permission.camera(l: I.Loc) -> String:
+  match l:
+    case I.En{}:
+      "Backplane reads the pairing code your computer shows, to connect to it."
+    case I.Ja{}:
+      "コンピューターに表示されたペアリングコードを読み取り、接続します。"
+
 def T.native.plane.card(l: I.Loc, arg0: String, arg1: String) -> String:
   match l:
     case I.En{}:
@@ -7956,40 +7963,40 @@ def T.keys.part5() -> List<&2, String>:
   ["model.level.medium", "model.level.minimal", "model.level.none", "model.level.xhigh", "native.attach.paste", "native.attach.photos", "native.bot.create.hint", "native.bot.create.menu", "native.bot.createon", "native.bot.delete.ask", "native.bot.empty", "native.bot.memory.empty", "native.bot.message", "native.bot.messages.empty", "native.bot.provider", "native.browser.empty", "native.browser.screenshot", "native.browser.typing", "native.common.ok", "native.common.title", "native.composer.btw", "native.composer.remove", "native.composer.suggestions.close", "native.diff.revert.ask", "native.entry.fold", "native.entry.viewer", "native.entry.viewer.short", "native.file.image.unsupported", "native.file.page", "native.file.pdf.error", "native.find.empty", "native.find.file.hint", "native.find.file.label", "native.find.threads.hint", "native.find.threads.label", "native.google.client.hide", "native.google.client.id", "native.google.redirect", "native.history.first", "native.history.last", "native.history.livefile", "native.history.next", "native.history.play", "native.history.previous", "native.history.thread", "native.history.thread.short", "native.home.hint", "native.home.make", "native.home.none", "native.hook.copyurl", "native.hook.once", "native.hook.secret", "native.hub.accessibility", "native.hub.catchup", "native.hub.changes", "native.hub.connection", "native.hub.heard", "native.hub.state", "native.image.missing", "native.image.plain", "native.image.render", "native.key.down", "native.key.enter", "native.key.esc"]
 
 def T.keys.part6() -> List<&2, String>:
-  ["native.key.keyboard", "native.key.left", "native.key.right", "native.key.tab", "native.key.up", "native.machine.address", "native.machine.invite.copy", "native.machine.invite.paste", "native.mech.failed", "native.notify.channel.live", "native.notify.channel.personal", "native.pair.action", "native.pair.add", "native.pair.another", "native.pair.computer", "native.pair.computer.android", "native.pair.connect", "native.pair.instructions", "native.pair.paired", "native.pair.scan", "native.pair.scanner.denied", "native.pair.scanner.instructions", "native.pair.scanner.invalid", "native.pair.scanner.title", "native.pair.scanner.unavailable", "native.pair.tailnet", "native.pair.title", "native.pair.unpair", "native.plane.card", "native.plane.more", "native.plane.unread", "native.plane.waiting", "native.review.comment", "native.review.pin", "native.review.place", "native.review.resolved", "native.review.write", "native.room.empty", "native.room.member", "native.room.members", "native.room.post", "native.routine.examples", "native.routine.hint", "native.routine.last", "native.routine.prompt", "native.routine.timefield", "native.routine.title", "native.routine.what", "native.routines.empty", "native.routines.note", "native.settings.about", "native.settings.behaviour", "native.settings.behaviour.android", "native.settings.behaviour.ios", "native.settings.cache", "native.settings.cache.ask", "native.settings.cache.clear", "native.settings.cache.next", "native.settings.haptics", "native.settings.hub", "native.settings.hub.named", "native.settings.hubs", "native.settings.kept", "native.settings.notasked"]
+  ["native.key.keyboard", "native.key.left", "native.key.right", "native.key.tab", "native.key.up", "native.machine.address", "native.machine.invite.copy", "native.machine.invite.paste", "native.mech.failed", "native.notify.channel.live", "native.notify.channel.personal", "native.pair.action", "native.pair.add", "native.pair.another", "native.pair.computer", "native.pair.computer.android", "native.pair.connect", "native.pair.instructions", "native.pair.paired", "native.pair.scan", "native.pair.scanner.denied", "native.pair.scanner.instructions", "native.pair.scanner.invalid", "native.pair.scanner.title", "native.pair.scanner.unavailable", "native.pair.tailnet", "native.pair.title", "native.pair.unpair", "native.permission.camera", "native.plane.card", "native.plane.more", "native.plane.unread", "native.plane.waiting", "native.review.comment", "native.review.pin", "native.review.place", "native.review.resolved", "native.review.write", "native.room.empty", "native.room.member", "native.room.members", "native.room.post", "native.routine.examples", "native.routine.hint", "native.routine.last", "native.routine.prompt", "native.routine.timefield", "native.routine.title", "native.routine.what", "native.routines.empty", "native.routines.note", "native.settings.about", "native.settings.behaviour", "native.settings.behaviour.android", "native.settings.behaviour.ios", "native.settings.cache", "native.settings.cache.ask", "native.settings.cache.clear", "native.settings.cache.next", "native.settings.haptics", "native.settings.hub", "native.settings.hub.named", "native.settings.hubs", "native.settings.kept"]
 
 def T.keys.part7() -> List<&2, String>:
-  ["native.settings.notifications", "native.settings.notify.hub", "native.settings.opens", "native.settings.paired", "native.settings.placeholder.hint", "native.settings.placeholder.name", "native.settings.placeholder.option", "native.settings.system", "native.settings.system.open", "native.settings.system.settings", "native.status.answer", "native.status.approval", "native.tab.home", "native.task.delete.ask", "native.task.note", "native.task.parameter", "native.task.private", "native.task.state", "native.term.inactive", "native.term.restart", "native.text.copyall.action", "native.text.copyall.title", "native.text.select.action", "native.text.select.title", "native.thread.archived", "native.thread.board", "native.thread.composer", "native.thread.content", "native.thread.content.note", "native.thread.effort", "native.thread.effort.item", "native.thread.hub", "native.thread.menu", "native.thread.model", "native.thread.model.effort", "native.thread.online", "native.thread.provider.item", "native.thread.search.clear", "native.thread.sending", "native.thread.subagents", "native.thread.waiting", "native.viewer.ground.dark", "native.viewer.ground.light", "native.viewer.metal", "native.viewer.others", "native.viewer.parts", "native.viewer.restore", "native.viewer.sheet", "native.viewer.source", "native.viewer.standout", "nav.pr.norepo", "nav.task.none", "notify.all", "notify.all.note", "notify.compact.running", "notify.failed", "notify.finished", "notify.idle", "notify.lead", "notify.needs", "notify.needs.note", "notify.reminders", "notify.reminders.note", "notify.settled"]
+  ["native.settings.notasked", "native.settings.notifications", "native.settings.notify.hub", "native.settings.opens", "native.settings.paired", "native.settings.placeholder.hint", "native.settings.placeholder.name", "native.settings.placeholder.option", "native.settings.system", "native.settings.system.open", "native.settings.system.settings", "native.status.answer", "native.status.approval", "native.tab.home", "native.task.delete.ask", "native.task.note", "native.task.parameter", "native.task.private", "native.task.state", "native.term.inactive", "native.term.restart", "native.text.copyall.action", "native.text.copyall.title", "native.text.select.action", "native.text.select.title", "native.thread.archived", "native.thread.board", "native.thread.composer", "native.thread.content", "native.thread.content.note", "native.thread.effort", "native.thread.effort.item", "native.thread.hub", "native.thread.menu", "native.thread.model", "native.thread.model.effort", "native.thread.online", "native.thread.provider.item", "native.thread.search.clear", "native.thread.sending", "native.thread.subagents", "native.thread.waiting", "native.viewer.ground.dark", "native.viewer.ground.light", "native.viewer.metal", "native.viewer.others", "native.viewer.parts", "native.viewer.restore", "native.viewer.sheet", "native.viewer.source", "native.viewer.standout", "nav.pr.norepo", "nav.task.none", "notify.all", "notify.all.note", "notify.compact.running", "notify.failed", "notify.finished", "notify.idle", "notify.lead", "notify.needs", "notify.needs.note", "notify.reminders", "notify.reminders.note"]
 
 def T.keys.part8() -> List<&2, String>:
-  ["notify.settled.note", "notify.title", "notify.waiting", "notify.working", "option.active", "option.dark", "option.light", "option.nightly", "option.off", "option.on", "option.projects", "option.stable", "palette.archive", "palette.attach", "palette.command.placeholder", "palette.commit", "palette.delete", "palette.diff", "palette.file.placeholder", "palette.findfile", "palette.kicad", "palette.kicad10", "palette.newthread", "palette.pin", "palette.pr", "palette.revert", "palette.search", "palette.search.full", "palette.settings", "palette.settle", "palette.snooze.hour", "palette.snooze.tomorrow", "palette.snooze.week", "palette.terminal", "palette.unarchive", "palette.unsnooze", "palette.update", "palette.viewer", "pane.range", "phase.approval", "phase.complete", "phase.input", "phase.monitoring", "phase.stopped", "phase.working", "phone.unsettle", "phone.working", "picker.back", "picker.folder.placeholder", "picker.hint.find", "picker.hint.path", "picker.keys.folder", "picker.keys.project", "picker.project.placeholder", "plane.bots.working", "plane.count.need", "plane.count.run", "plane.deploy.sub", "plane.deploy.title", "plane.heading.bots", "plane.heading.locks", "plane.heading.need", "plane.heading.rooms", "plane.heading.routines"]
+  ["notify.settled", "notify.settled.note", "notify.title", "notify.waiting", "notify.working", "option.active", "option.dark", "option.light", "option.nightly", "option.off", "option.on", "option.projects", "option.stable", "palette.archive", "palette.attach", "palette.command.placeholder", "palette.commit", "palette.delete", "palette.diff", "palette.file.placeholder", "palette.findfile", "palette.kicad", "palette.kicad10", "palette.newthread", "palette.pin", "palette.pr", "palette.revert", "palette.search", "palette.search.full", "palette.settings", "palette.settle", "palette.snooze.hour", "palette.snooze.tomorrow", "palette.snooze.week", "palette.terminal", "palette.unarchive", "palette.unsnooze", "palette.update", "palette.viewer", "pane.range", "phase.approval", "phase.complete", "phase.input", "phase.monitoring", "phase.stopped", "phase.working", "phone.unsettle", "phone.working", "picker.back", "picker.folder.placeholder", "picker.hint.find", "picker.hint.path", "picker.keys.folder", "picker.keys.project", "picker.project.placeholder", "plane.bots.working", "plane.count.need", "plane.count.run", "plane.deploy.sub", "plane.deploy.title", "plane.heading.bots", "plane.heading.locks", "plane.heading.need", "plane.heading.rooms"]
 
 def T.keys.part9() -> List<&2, String>:
-  ["plane.heading.running", "plane.home.line", "plane.home.make", "plane.idle", "plane.lock.by", "plane.lock.outside", "plane.lock.row", "plane.locks", "plane.machine.other", "plane.more", "plane.need", "plane.needs", "plane.rooms.unread", "plane.running", "proj.add", "proj.addcand", "proj.browse", "proj.create", "proj.createat", "proj.exists", "proj.goto", "proj.mkdir", "proj.on", "queue.context", "queue.edit", "queue.handoff", "queue.held", "queue.more", "queue.queued", "queue.remove", "queue.resume", "queue.up", "remote.address.failed", "remote.away", "remote.cache.failed", "remote.denied", "remote.empty", "remote.handshake.failed", "remote.reply.failed", "remote.request.error", "remote.request.failed", "remote.timeout", "remote.unreachable", "review.bom", "review.bom.change", "review.bom.working", "review.cancel.tip", "review.checks", "review.checks.of", "review.comment.meta", "review.comment.open", "review.comments", "review.comments.none", "review.comments.open", "review.empty", "review.fails", "review.force", "review.here", "review.note", "review.page.title", "review.passes", "review.pin.tip", "review.publish", "review.reading"]
+  ["plane.heading.routines", "plane.heading.running", "plane.home.line", "plane.home.make", "plane.idle", "plane.lock.by", "plane.lock.outside", "plane.lock.row", "plane.locks", "plane.machine.other", "plane.more", "plane.need", "plane.needs", "plane.rooms.unread", "plane.running", "proj.add", "proj.addcand", "proj.browse", "proj.create", "proj.createat", "proj.exists", "proj.goto", "proj.mkdir", "proj.on", "queue.context", "queue.edit", "queue.handoff", "queue.held", "queue.more", "queue.queued", "queue.remove", "queue.resume", "queue.up", "remote.address.failed", "remote.away", "remote.cache.failed", "remote.denied", "remote.empty", "remote.handshake.failed", "remote.reply.failed", "remote.request.error", "remote.request.failed", "remote.timeout", "remote.unreachable", "review.bom", "review.bom.change", "review.bom.working", "review.cancel.tip", "review.checks", "review.checks.of", "review.comment.meta", "review.comment.open", "review.comments", "review.comments.none", "review.comments.open", "review.empty", "review.fails", "review.force", "review.here", "review.note", "review.page.title", "review.passes", "review.pin.tip", "review.publish"]
 
 def T.keys.part10() -> List<&2, String>:
-  ["review.refresh.tip", "review.release", "review.release.make", "review.release.making", "review.release.note", "review.reopen", "review.reopen.tip", "review.reply", "review.reply.tip", "review.resolve", "review.resolve.tip", "review.step.show", "review.tag", "review.tick", "review.untick", "room.delete", "room.empty", "room.write", "rooms.create.tip", "rooms.delete.button.tip", "rooms.delete.tip", "rooms.empty", "rooms.new", "routine.add", "routine.change", "routine.clear.tip", "routine.empty", "routine.new", "routine.next", "routine.note", "routine.on.tip", "routine.prompt", "routine.run", "routine.save", "routine.save.tip", "routine.time.placeholder", "sched.daily", "sched.done", "sched.every.hour", "sched.every.hours", "sched.every.minute", "sched.every.minutes", "sched.help.time", "sched.hint.next", "sched.hint.once", "sched.hourly", "sched.hourly.at", "sched.kind.once", "sched.kind.reminder", "sched.kind.repeat", "sched.weekdays", "sched.zone.machine", "sched.zone.you", "settings.agent.lang", "settings.agent.lang.note", "settings.agents", "settings.agents.default", "settings.agents.note", "settings.appearance", "settings.boat.refresh", "settings.cad", "settings.channel", "settings.channel.nightly", "settings.channel.note"]
+  ["review.reading", "review.refresh.tip", "review.release", "review.release.make", "review.release.making", "review.release.note", "review.reopen", "review.reopen.tip", "review.reply", "review.reply.tip", "review.resolve", "review.resolve.tip", "review.step.show", "review.tag", "review.tick", "review.untick", "room.delete", "room.empty", "room.write", "rooms.create.tip", "rooms.delete.button.tip", "rooms.delete.tip", "rooms.empty", "rooms.new", "routine.add", "routine.change", "routine.clear.tip", "routine.empty", "routine.new", "routine.next", "routine.note", "routine.on.tip", "routine.prompt", "routine.run", "routine.save", "routine.save.tip", "routine.time.placeholder", "sched.daily", "sched.done", "sched.every.hour", "sched.every.hours", "sched.every.minute", "sched.every.minutes", "sched.help.time", "sched.hint.next", "sched.hint.once", "sched.hourly", "sched.hourly.at", "sched.kind.once", "sched.kind.reminder", "sched.kind.repeat", "sched.weekdays", "sched.zone.machine", "sched.zone.you", "settings.agent.lang", "settings.agent.lang.note", "settings.agents", "settings.agents.default", "settings.agents.note", "settings.appearance", "settings.boat.refresh", "settings.cad", "settings.channel", "settings.channel.nightly"]
 
 def T.keys.part11() -> List<&2, String>:
-  ["settings.channel.stable", "settings.close", "settings.days.fewer", "settings.days.label", "settings.days.more", "settings.freecad.install", "settings.freecad.missing", "settings.key.forget", "settings.key.keep", "settings.keys", "settings.keys.add", "settings.keys.add.tip", "settings.keys.empty", "settings.keys.forget", "settings.keys.names", "settings.keys.new", "settings.keys.view", "settings.kicad.automatic", "settings.kicad.available", "settings.kicad.cli.install", "settings.kicad.cli.missing", "settings.kicad.dismiss", "settings.kicad.install", "settings.kicad.ipc.install", "settings.kicad.ipc.missing", "settings.kicad.ipc.on", "settings.kicad.path", "settings.kicad.path.save", "settings.lang", "settings.lang.auto", "settings.lang.en", "settings.lang.ja", "settings.lang.note", "settings.lang.off", "settings.lang.on", "settings.model", "settings.model.default", "settings.network", "settings.pair", "settings.pair.code", "settings.pair.none", "settings.pair.qr", "settings.pair.qr.tip", "settings.provider", "settings.provider.missing", "settings.restart", "settings.restart.note", "settings.settle", "settings.settle.days", "settings.settle.note", "settings.sidebar", "settings.sidebar.active", "settings.sidebar.note", "settings.sync", "settings.tailscale.label", "settings.tailscale.looking", "settings.tailscale.notconnected", "settings.tailscale.off.note", "settings.tailscale.reachable.note", "settings.tailscale.unavailable.note", "settings.theme", "settings.theme.dark", "settings.theme.light", "settings.theme.note"]
+  ["settings.channel.note", "settings.channel.stable", "settings.close", "settings.days.fewer", "settings.days.label", "settings.days.more", "settings.freecad.install", "settings.freecad.missing", "settings.key.forget", "settings.key.keep", "settings.keys", "settings.keys.add", "settings.keys.add.tip", "settings.keys.empty", "settings.keys.forget", "settings.keys.names", "settings.keys.new", "settings.keys.view", "settings.kicad.automatic", "settings.kicad.available", "settings.kicad.cli.install", "settings.kicad.cli.missing", "settings.kicad.dismiss", "settings.kicad.install", "settings.kicad.ipc.install", "settings.kicad.ipc.missing", "settings.kicad.ipc.on", "settings.kicad.path", "settings.kicad.path.save", "settings.lang", "settings.lang.auto", "settings.lang.en", "settings.lang.ja", "settings.lang.note", "settings.lang.off", "settings.lang.on", "settings.model", "settings.model.default", "settings.network", "settings.pair", "settings.pair.code", "settings.pair.none", "settings.pair.qr", "settings.pair.qr.tip", "settings.provider", "settings.provider.missing", "settings.restart", "settings.restart.note", "settings.settle", "settings.settle.days", "settings.settle.note", "settings.sidebar", "settings.sidebar.active", "settings.sidebar.note", "settings.sync", "settings.tailscale.label", "settings.tailscale.looking", "settings.tailscale.notconnected", "settings.tailscale.off.note", "settings.tailscale.reachable.note", "settings.tailscale.unavailable.note", "settings.theme", "settings.theme.dark", "settings.theme.light"]
 
 def T.keys.part12() -> List<&2, String>:
-  ["settings.theme.phone.note", "settings.tour", "settings.tour.again", "settings.tour.note", "settings.tour.show", "settings.tour.welcome", "settings.tz.choose", "settings.tz.follow", "settings.tz.following", "settings.update.available", "settings.update.check", "settings.update.check.tip", "settings.update.current", "settings.update.install", "settings.update.install.tip", "settings.update.now", "settings.update.now.tip", "settings.update.packaged", "settings.update.waits", "settings.usage", "settings.usage.label", "settings.voice", "settings.voice.default.mic", "settings.voice.default.tip", "settings.voice.dictionary", "settings.voice.dictionary.note", "settings.voice.key", "settings.voice.key.note", "settings.voice.key.saved", "settings.voice.microphone", "settings.voice.microphone.note", "settings.voice.pebble", "settings.voice.term", "settings.voice.term.add", "settings.voice.term.remove", "settings.writing", "settings.writing.model", "settings.writing.note", "settings.writing.provider", "settings.zone", "settings.zone.placeholder", "sheet.delete", "sheet.remove", "sheet.remove.note", "sheet.rename", "sidebar.add.project", "sidebar.archived", "sidebar.machine", "sidebar.move.down", "sidebar.move.up", "sidebar.nothing", "sidebar.older", "sidebar.path.placeholder", "sidebar.quiet.note", "sidebar.remove.note", "sidebar.search.projects", "sidebar.settled.count", "sidebar.settled.note", "sidebar.shelf.count", "sidebar.snoozed", "sidebar.update", "stamp.finished", "stamp.finished.took", "state.cancelled"]
+  ["settings.theme.note", "settings.theme.phone.note", "settings.tour", "settings.tour.again", "settings.tour.note", "settings.tour.show", "settings.tour.welcome", "settings.tz.choose", "settings.tz.follow", "settings.tz.following", "settings.update.available", "settings.update.check", "settings.update.check.tip", "settings.update.current", "settings.update.install", "settings.update.install.tip", "settings.update.now", "settings.update.now.tip", "settings.update.packaged", "settings.update.waits", "settings.usage", "settings.usage.label", "settings.voice", "settings.voice.default.mic", "settings.voice.default.tip", "settings.voice.dictionary", "settings.voice.dictionary.note", "settings.voice.key", "settings.voice.key.note", "settings.voice.key.saved", "settings.voice.microphone", "settings.voice.microphone.note", "settings.voice.pebble", "settings.voice.term", "settings.voice.term.add", "settings.voice.term.remove", "settings.writing", "settings.writing.model", "settings.writing.note", "settings.writing.provider", "settings.zone", "settings.zone.placeholder", "sheet.delete", "sheet.remove", "sheet.remove.note", "sheet.rename", "sidebar.add.project", "sidebar.archived", "sidebar.machine", "sidebar.move.down", "sidebar.move.up", "sidebar.nothing", "sidebar.older", "sidebar.path.placeholder", "sidebar.quiet.note", "sidebar.remove.note", "sidebar.search.projects", "sidebar.settled.count", "sidebar.settled.note", "sidebar.shelf.count", "sidebar.snoozed", "sidebar.update", "stamp.finished", "stamp.finished.took"]
 
 def T.keys.part13() -> List<&2, String>:
-  ["state.done", "state.failed", "state.held", "state.idle", "state.needsyou", "state.reporting", "state.running", "state.starting", "state.stopped", "state.waiting", "state.waitingon", "subagents.badge", "subagents.busy", "subagents.cancel.tip", "subagents.cancel.word", "subagents.heading", "subagents.hide", "subagents.lock.cancel", "subagents.panel", "subagents.show", "tasks.delete.tip", "tasks.discard.tip", "tasks.run.tip", "tasks.save.tip", "tasks.value.ask", "teach.choice.confirm", "teach.choice.continue", "teach.choice.skip", "teach.choice.stop", "teach.description", "teach.discard", "teach.empty", "teach.handback", "teach.name.note", "teach.note.add", "teach.note.placeholder", "teach.paused", "teach.run.note", "teach.runs", "teach.save", "teach.step.check", "teach.step.click", "teach.step.navigate", "teach.step.press", "teach.step.scroll", "teach.step.select", "teach.step.typein", "teach.step.wait", "teach.steps", "teach.stopsave", "teach.takeover", "teach.teach", "teach.watching", "teach.youhave", "terminal.close", "terminal.inactive", "terminal.input", "terminal.pin", "terminal.pinned", "terminal.restart", "terminal.unpin", "thread.boat.settings", "thread.count", "thread.delete.ask"]
+  ["state.cancelled", "state.done", "state.failed", "state.held", "state.idle", "state.needsyou", "state.reporting", "state.running", "state.starting", "state.stopped", "state.waiting", "state.waitingon", "subagents.badge", "subagents.busy", "subagents.cancel.tip", "subagents.cancel.word", "subagents.heading", "subagents.hide", "subagents.lock.cancel", "subagents.panel", "subagents.show", "tasks.delete.tip", "tasks.discard.tip", "tasks.run.tip", "tasks.save.tip", "tasks.value.ask", "teach.choice.confirm", "teach.choice.continue", "teach.choice.skip", "teach.choice.stop", "teach.description", "teach.discard", "teach.empty", "teach.handback", "teach.name.note", "teach.note.add", "teach.note.placeholder", "teach.paused", "teach.run.note", "teach.runs", "teach.save", "teach.step.check", "teach.step.click", "teach.step.navigate", "teach.step.press", "teach.step.scroll", "teach.step.select", "teach.step.typein", "teach.step.wait", "teach.steps", "teach.stopsave", "teach.takeover", "teach.teach", "teach.watching", "teach.youhave", "terminal.close", "terminal.inactive", "terminal.input", "terminal.pin", "terminal.pinned", "terminal.restart", "terminal.unpin", "thread.boat.settings", "thread.count"]
 
 def T.keys.part14() -> List<&2, String>:
-  ["thread.from", "thread.new", "thread.reminder", "thread.sending", "thread.snooze.hour.tip", "thread.snooze.tomorrow.tip", "thread.snooze.week.tip", "thread.subagents", "thread.title.cancel", "thread.title.keep", "thread.title.placeholder", "thread.title.rename", "thread.viewer", "todos.all", "todos.fewer", "todos.hide", "todos.show", "tools.forkthread", "tools.pinned", "tools.snooze", "tools.tip.archive", "tools.tip.askdelete", "tools.tip.back", "tools.tip.delete", "tools.tip.forkthread", "tools.tip.keep", "tools.tip.panel", "tools.tip.pin", "tools.tip.settle", "tools.tip.snooze", "tools.tip.stop", "tools.tip.terminal", "tools.tip.unarchive", "tools.tip.unpin", "tools.tip.unsettle", "tools.tip.wake", "tour.back", "tour.back.tip", "tour.body.agents", "tour.body.bots.desktop", "tour.body.bots.phone", "tour.body.buttons.desktop", "tour.body.buttons.phone", "tour.body.keys.desktop", "tour.body.keys.phone", "tour.body.machines.desktop", "tour.body.machines.phone", "tour.body.phones.desktop", "tour.body.phones.phone", "tour.body.projects.desktop", "tour.body.projects.phone", "tour.body.threads", "tour.body.uber.have.desktop", "tour.body.uber.have.phone", "tour.body.uber.join", "tour.body.uber.none", "tour.body.uber.pick", "tour.body.welcome.phone", "tour.body.welcome.web", "tour.body.welcome.window", "tour.counter", "tour.done", "tour.end.tip", "tour.next"]
+  ["thread.delete.ask", "thread.from", "thread.new", "thread.reminder", "thread.sending", "thread.snooze.hour.tip", "thread.snooze.tomorrow.tip", "thread.snooze.week.tip", "thread.subagents", "thread.title.cancel", "thread.title.keep", "thread.title.placeholder", "thread.title.rename", "thread.viewer", "todos.all", "todos.fewer", "todos.hide", "todos.show", "tools.forkthread", "tools.pinned", "tools.snooze", "tools.tip.archive", "tools.tip.askdelete", "tools.tip.back", "tools.tip.delete", "tools.tip.forkthread", "tools.tip.keep", "tools.tip.panel", "tools.tip.pin", "tools.tip.settle", "tools.tip.snooze", "tools.tip.stop", "tools.tip.terminal", "tools.tip.unarchive", "tools.tip.unpin", "tools.tip.unsettle", "tools.tip.wake", "tour.back", "tour.back.tip", "tour.body.agents", "tour.body.bots.desktop", "tour.body.bots.phone", "tour.body.buttons.desktop", "tour.body.buttons.phone", "tour.body.keys.desktop", "tour.body.keys.phone", "tour.body.machines.desktop", "tour.body.machines.phone", "tour.body.phones.desktop", "tour.body.phones.phone", "tour.body.projects.desktop", "tour.body.projects.phone", "tour.body.threads", "tour.body.uber.have.desktop", "tour.body.uber.have.phone", "tour.body.uber.join", "tour.body.uber.none", "tour.body.uber.pick", "tour.body.welcome.phone", "tour.body.welcome.web", "tour.body.welcome.window", "tour.counter", "tour.done", "tour.end.tip"]
 
 def T.keys.part15() -> List<&2, String>:
-  ["tour.next.tip", "tour.skip", "tour.title.agents", "tour.title.bots", "tour.title.buttons", "tour.title.keys", "tour.title.machines", "tour.title.phones", "tour.title.projects", "tour.title.threads", "tour.title.uber", "tour.title.welcome", "tour.uber.create", "tour.uber.first", "tour.uber.make", "tour.uber.new", "turn.by", "tz.invalid", "tz.source.machine", "tz.source.none", "tz.source.phone", "tz.source.set", "viewer.board", "viewer.board.tip", "viewer.board3d.tip", "viewer.browser.empty", "viewer.browser.tip", "viewer.close", "viewer.diff", "viewer.diff.empty", "viewer.diff.pr", "viewer.diff.tip", "viewer.empty.board", "viewer.empty.schematic", "viewer.export.failed", "viewer.exporting", "viewer.field.drill", "viewer.field.file", "viewer.field.footprint", "viewer.field.ktype", "viewer.field.layer", "viewer.field.lib", "viewer.field.name", "viewer.field.net", "viewer.field.netclass", "viewer.field.ref", "viewer.field.shape", "viewer.field.sheet", "viewer.field.size", "viewer.field.symbol", "viewer.field.text", "viewer.field.value", "viewer.field.width", "viewer.files", "viewer.files.back", "viewer.files.empty", "viewer.files.loading", "viewer.files.range", "viewer.files.tip", "viewer.fit", "viewer.fit.tip", "viewer.help.board", "viewer.help.browser", "viewer.help.scroll"]
+  ["tour.next", "tour.next.tip", "tour.skip", "tour.title.agents", "tour.title.bots", "tour.title.buttons", "tour.title.keys", "tour.title.machines", "tour.title.phones", "tour.title.projects", "tour.title.threads", "tour.title.uber", "tour.title.welcome", "tour.uber.create", "tour.uber.first", "tour.uber.make", "tour.uber.new", "turn.by", "tz.invalid", "tz.source.machine", "tz.source.none", "tz.source.phone", "tz.source.set", "viewer.board", "viewer.board.tip", "viewer.board3d.tip", "viewer.browser.empty", "viewer.browser.tip", "viewer.close", "viewer.diff", "viewer.diff.empty", "viewer.diff.pr", "viewer.diff.tip", "viewer.empty.board", "viewer.empty.schematic", "viewer.export.failed", "viewer.exporting", "viewer.field.drill", "viewer.field.file", "viewer.field.footprint", "viewer.field.ktype", "viewer.field.layer", "viewer.field.lib", "viewer.field.name", "viewer.field.net", "viewer.field.netclass", "viewer.field.ref", "viewer.field.shape", "viewer.field.sheet", "viewer.field.size", "viewer.field.symbol", "viewer.field.text", "viewer.field.value", "viewer.field.width", "viewer.files", "viewer.files.back", "viewer.files.empty", "viewer.files.loading", "viewer.files.range", "viewer.files.tip", "viewer.fit", "viewer.fit.tip", "viewer.help.board", "viewer.help.browser"]
 
 def T.keys.part16() -> List<&2, String>:
-  ["viewer.help.solid", "viewer.history.added", "viewer.history.changed", "viewer.history.changes", "viewer.history.compare", "viewer.history.compare.new", "viewer.history.compare.old", "viewer.history.new", "viewer.history.old", "viewer.history.pick", "viewer.history.ref", "viewer.history.removed", "viewer.item.footprint", "viewer.item.globallabel", "viewer.item.hierlabel", "viewer.item.label", "viewer.item.netclassflag", "viewer.item.pad", "viewer.item.pin", "viewer.item.sheet", "viewer.item.sheetpin", "viewer.item.symbol", "viewer.item.track", "viewer.item.via", "viewer.item.zone", "viewer.kicad.tip", "viewer.kicad10", "viewer.kicad10.tip", "viewer.layer.focus", "viewer.layer.toggle", "viewer.layers", "viewer.layers.active", "viewer.layers.all", "viewer.layers.all.tip", "viewer.layers.dim", "viewer.layers.dim.tip", "viewer.layers.only", "viewer.layers.only.tip", "viewer.layers.reset", "viewer.layers.restore", "viewer.layers.tip", "viewer.loading", "viewer.mech", "viewer.mech.loading", "viewer.mech.renders", "viewer.mech.tip", "viewer.mention", "viewer.mesh.failed", "viewer.orbit.tip", "viewer.page.empty", "viewer.page.loading", "viewer.pan.tip", "viewer.parts3d.tip", "viewer.pdf.drawing", "viewer.pdf.page", "viewer.picture.failed", "viewer.render.failed", "viewer.resize", "viewer.review", "viewer.review.tip", "viewer.schematic", "viewer.schematic.tip", "viewer.sheet.open", "viewer.sheet.title"]
+  ["viewer.help.scroll", "viewer.help.solid", "viewer.history.added", "viewer.history.changed", "viewer.history.changes", "viewer.history.compare", "viewer.history.compare.new", "viewer.history.compare.old", "viewer.history.new", "viewer.history.old", "viewer.history.pick", "viewer.history.ref", "viewer.history.removed", "viewer.item.footprint", "viewer.item.globallabel", "viewer.item.hierlabel", "viewer.item.label", "viewer.item.netclassflag", "viewer.item.pad", "viewer.item.pin", "viewer.item.sheet", "viewer.item.sheetpin", "viewer.item.symbol", "viewer.item.track", "viewer.item.via", "viewer.item.zone", "viewer.kicad.tip", "viewer.kicad10", "viewer.kicad10.tip", "viewer.layer.focus", "viewer.layer.toggle", "viewer.layers", "viewer.layers.active", "viewer.layers.all", "viewer.layers.all.tip", "viewer.layers.dim", "viewer.layers.dim.tip", "viewer.layers.only", "viewer.layers.only.tip", "viewer.layers.reset", "viewer.layers.restore", "viewer.layers.tip", "viewer.loading", "viewer.mech", "viewer.mech.loading", "viewer.mech.renders", "viewer.mech.tip", "viewer.mention", "viewer.mesh.failed", "viewer.orbit.tip", "viewer.page.empty", "viewer.page.loading", "viewer.pan.tip", "viewer.parts3d.tip", "viewer.pdf.drawing", "viewer.pdf.page", "viewer.picture.failed", "viewer.render.failed", "viewer.resize", "viewer.review", "viewer.review.tip", "viewer.schematic", "viewer.schematic.tip", "viewer.sheet.open"]
 
 def T.keys.part17() -> List<&2, String>:
-  ["viewer.sheet.top", "viewer.solid", "viewer.solid.stats", "viewer.solid.waiting", "viewer.terminal.title", "viewer.unread", "voice.choose", "voice.default", "voice.device.default", "voice.device.note", "voice.dictate", "voice.dictionary.add", "voice.dictionary.tip", "voice.error", "voice.finishing", "voice.fix", "voice.fix.tip", "voice.guess.tip", "voice.heard", "voice.leave", "voice.listening", "voice.microphone", "voice.noaudio", "voice.replace", "voice.silent", "voice.spelling", "voice.starting", "voice.stop", "web.bots.persona.placeholder", "web.google.callback", "web.google.client.id", "web.google.client.save", "web.hooks.revoke", "web.hooks.secret", "web.plane.idle", "web.routine.prompt", "web.settings.voice.dictionary.note", "web.settings.writing.model", "web.settings.writing.note", "web.terminal.inactive", "web.terminal.pinned", "web.viewer.layers.active", "web.voice.heard", "web.voice.listening"]
+  ["viewer.sheet.title", "viewer.sheet.top", "viewer.solid", "viewer.solid.stats", "viewer.solid.waiting", "viewer.terminal.title", "viewer.unread", "voice.choose", "voice.default", "voice.device.default", "voice.device.note", "voice.dictate", "voice.dictionary.add", "voice.dictionary.tip", "voice.error", "voice.finishing", "voice.fix", "voice.fix.tip", "voice.guess.tip", "voice.heard", "voice.leave", "voice.listening", "voice.microphone", "voice.noaudio", "voice.replace", "voice.silent", "voice.spelling", "voice.starting", "voice.stop", "web.bots.persona.placeholder", "web.google.callback", "web.google.client.id", "web.google.client.save", "web.hooks.revoke", "web.hooks.secret", "web.plane.idle", "web.routine.prompt", "web.settings.voice.dictionary.note", "web.settings.writing.model", "web.settings.writing.note", "web.terminal.inactive", "web.terminal.pinned", "web.viewer.layers.active", "web.voice.heard", "web.voice.listening"]
 
 def T.keys() -> List<&2, String>:
   T.catalog.join([T.keys.part0(), T.keys.part1(), T.keys.part2(), T.keys.part3(), T.keys.part4(), T.keys.part5(), T.keys.part6(), T.keys.part7(), T.keys.part8(), T.keys.part9(), T.keys.part10(), T.keys.part11(), T.keys.part12(), T.keys.part13(), T.keys.part14(), T.keys.part15(), T.keys.part16(), T.keys.part17()], [])
@@ -12498,12 +12505,12 @@ def T.plain.nlrrlllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.plane.waiting(l)}
+      Some{T.native.plane.unread(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlllllr.cmp(String.cmp(key, "native.plane.waiting"), l)
+  T.plain.nlrrlllllr.cmp(String.cmp(key, "native.plane.unread"), l)
 
 def T.plain.nlrrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12511,12 +12518,12 @@ def T.plain.nlrrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrllllll(l, key)
     case EQ{}:
-      Some{T.native.plane.unread(l)}
+      Some{T.native.permission.camera(l)}
     case GT{}:
       T.plain.nlrrlllllr(l, key)
 
 def T.plain.nlrrlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlllll.cmp(String.cmp(key, "native.plane.unread"), l)
+  T.plain.nlrrlllll.cmp(String.cmp(key, "native.permission.camera"), l)
 
 def T.plain.nlrrllllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12524,12 +12531,12 @@ def T.plain.nlrrllllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.review.resolved(l)}
+      Some{T.native.review.comment(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrllllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllllrl.cmp(String.cmp(key, "native.review.resolved"), l)
+  T.plain.nlrrllllrl.cmp(String.cmp(key, "native.review.comment"), l)
 
 def T.plain.nlrrllllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12537,12 +12544,12 @@ def T.plain.nlrrllllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.room.empty(l)}
+      Some{T.native.review.write(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrllllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllllrr.cmp(String.cmp(key, "native.room.empty"), l)
+  T.plain.nlrrllllrr.cmp(String.cmp(key, "native.review.write"), l)
 
 def T.plain.nlrrllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12550,12 +12557,12 @@ def T.plain.nlrrllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrllllrl(l, key)
     case EQ{}:
-      Some{T.native.review.write(l)}
+      Some{T.native.review.resolved(l)}
     case GT{}:
       T.plain.nlrrllllrr(l, key)
 
 def T.plain.nlrrllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllllr.cmp(String.cmp(key, "native.review.write"), l)
+  T.plain.nlrrllllr.cmp(String.cmp(key, "native.review.resolved"), l)
 
 def T.plain.nlrrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12563,12 +12570,12 @@ def T.plain.nlrrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrlllll(l, key)
     case EQ{}:
-      Some{T.native.review.comment(l)}
+      Some{T.native.plane.waiting(l)}
     case GT{}:
       T.plain.nlrrllllr(l, key)
 
 def T.plain.nlrrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllll.cmp(String.cmp(key, "native.review.comment"), l)
+  T.plain.nlrrllll.cmp(String.cmp(key, "native.plane.waiting"), l)
 
 def T.plain.nlrrlllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12576,12 +12583,12 @@ def T.plain.nlrrlllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.room.members(l)}
+      Some{T.native.room.member(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlllrll.cmp(String.cmp(key, "native.room.members"), l)
+  T.plain.nlrrlllrll.cmp(String.cmp(key, "native.room.member"), l)
 
 def T.plain.nlrrlllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12589,12 +12596,12 @@ def T.plain.nlrrlllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.routine.examples(l)}
+      Some{T.native.room.post(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlllrlr.cmp(String.cmp(key, "native.routine.examples"), l)
+  T.plain.nlrrlllrlr.cmp(String.cmp(key, "native.room.post"), l)
 
 def T.plain.nlrrlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12602,12 +12609,12 @@ def T.plain.nlrrlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrlllrll(l, key)
     case EQ{}:
-      Some{T.native.room.post(l)}
+      Some{T.native.room.members(l)}
     case GT{}:
       T.plain.nlrrlllrlr(l, key)
 
 def T.plain.nlrrlllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlllrl.cmp(String.cmp(key, "native.room.post"), l)
+  T.plain.nlrrlllrl.cmp(String.cmp(key, "native.room.members"), l)
 
 def T.plain.nlrrlllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12615,12 +12622,12 @@ def T.plain.nlrrlllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.routine.prompt(l)}
+      Some{T.native.routine.hint(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlllrrl.cmp(String.cmp(key, "native.routine.prompt"), l)
+  T.plain.nlrrlllrrl.cmp(String.cmp(key, "native.routine.hint"), l)
 
 def T.plain.nlrrlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12628,12 +12635,12 @@ def T.plain.nlrrlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrlllrrl(l, key)
     case EQ{}:
-      Some{T.native.routine.timefield(l)}
+      Some{T.native.routine.prompt(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlllrr.cmp(String.cmp(key, "native.routine.timefield"), l)
+  T.plain.nlrrlllrr.cmp(String.cmp(key, "native.routine.prompt"), l)
 
 def T.plain.nlrrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12641,12 +12648,12 @@ def T.plain.nlrrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrlllrl(l, key)
     case EQ{}:
-      Some{T.native.routine.hint(l)}
+      Some{T.native.routine.examples(l)}
     case GT{}:
       T.plain.nlrrlllrr(l, key)
 
 def T.plain.nlrrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlllr.cmp(String.cmp(key, "native.routine.hint"), l)
+  T.plain.nlrrlllr.cmp(String.cmp(key, "native.routine.examples"), l)
 
 def T.plain.nlrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12654,12 +12661,12 @@ def T.plain.nlrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nlrrllll(l, key)
     case EQ{}:
-      Some{T.native.room.member(l)}
+      Some{T.native.room.empty(l)}
     case GT{}:
       T.plain.nlrrlllr(l, key)
 
 def T.plain.nlrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlll.cmp(String.cmp(key, "native.room.member"), l)
+  T.plain.nlrrlll.cmp(String.cmp(key, "native.room.empty"), l)
 
 def T.plain.nlrrllrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12667,12 +12674,12 @@ def T.plain.nlrrllrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.routine.what(l)}
+      Some{T.native.routine.title(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrllrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrlll.cmp(String.cmp(key, "native.routine.what"), l)
+  T.plain.nlrrllrlll.cmp(String.cmp(key, "native.routine.title"), l)
 
 def T.plain.nlrrllrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12680,12 +12687,12 @@ def T.plain.nlrrllrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.routines.note(l)}
+      Some{T.native.routines.empty(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrllrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrllr.cmp(String.cmp(key, "native.routines.note"), l)
+  T.plain.nlrrllrllr.cmp(String.cmp(key, "native.routines.empty"), l)
 
 def T.plain.nlrrllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12693,12 +12700,12 @@ def T.plain.nlrrllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrllrlll(l, key)
     case EQ{}:
-      Some{T.native.routines.empty(l)}
+      Some{T.native.routine.what(l)}
     case GT{}:
       T.plain.nlrrllrllr(l, key)
 
 def T.plain.nlrrllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrll.cmp(String.cmp(key, "native.routines.empty"), l)
+  T.plain.nlrrllrll.cmp(String.cmp(key, "native.routine.what"), l)
 
 def T.plain.nlrrllrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12706,12 +12713,12 @@ def T.plain.nlrrllrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.settings.behaviour(l)}
+      Some{T.native.settings.about(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrllrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrlrl.cmp(String.cmp(key, "native.settings.behaviour"), l)
+  T.plain.nlrrllrlrl.cmp(String.cmp(key, "native.settings.about"), l)
 
 def T.plain.nlrrllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12719,12 +12726,12 @@ def T.plain.nlrrllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrllrlrl(l, key)
     case EQ{}:
-      Some{T.native.settings.behaviour.android(l)}
+      Some{T.native.settings.behaviour(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrlr.cmp(String.cmp(key, "native.settings.behaviour.android"), l)
+  T.plain.nlrrllrlr.cmp(String.cmp(key, "native.settings.behaviour"), l)
 
 def T.plain.nlrrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12732,12 +12739,12 @@ def T.plain.nlrrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrllrll(l, key)
     case EQ{}:
-      Some{T.native.settings.about(l)}
+      Some{T.native.routines.note(l)}
     case GT{}:
       T.plain.nlrrllrlr(l, key)
 
 def T.plain.nlrrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrl.cmp(String.cmp(key, "native.settings.about"), l)
+  T.plain.nlrrllrl.cmp(String.cmp(key, "native.routines.note"), l)
 
 def T.plain.nlrrllrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12745,12 +12752,12 @@ def T.plain.nlrrllrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.settings.cache(l)}
+      Some{T.native.settings.behaviour.ios(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrllrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrrll.cmp(String.cmp(key, "native.settings.cache"), l)
+  T.plain.nlrrllrrll.cmp(String.cmp(key, "native.settings.behaviour.ios"), l)
 
 def T.plain.nlrrllrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12758,12 +12765,12 @@ def T.plain.nlrrllrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.settings.cache.clear(l)}
+      Some{T.native.settings.cache.ask(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrllrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrrlr.cmp(String.cmp(key, "native.settings.cache.clear"), l)
+  T.plain.nlrrllrrlr.cmp(String.cmp(key, "native.settings.cache.ask"), l)
 
 def T.plain.nlrrllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12771,12 +12778,12 @@ def T.plain.nlrrllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrllrrll(l, key)
     case EQ{}:
-      Some{T.native.settings.cache.ask(l)}
+      Some{T.native.settings.cache(l)}
     case GT{}:
       T.plain.nlrrllrrlr(l, key)
 
 def T.plain.nlrrllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrrl.cmp(String.cmp(key, "native.settings.cache.ask"), l)
+  T.plain.nlrrllrrl.cmp(String.cmp(key, "native.settings.cache"), l)
 
 def T.plain.nlrrllrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12784,12 +12791,12 @@ def T.plain.nlrrllrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.settings.haptics(l)}
+      Some{T.native.settings.cache.next(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrllrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrrrl.cmp(String.cmp(key, "native.settings.haptics"), l)
+  T.plain.nlrrllrrrl.cmp(String.cmp(key, "native.settings.cache.next"), l)
 
 def T.plain.nlrrllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12797,12 +12804,12 @@ def T.plain.nlrrllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrllrrrl(l, key)
     case EQ{}:
-      Some{T.native.settings.hub(l)}
+      Some{T.native.settings.haptics(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrllrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrrr.cmp(String.cmp(key, "native.settings.hub"), l)
+  T.plain.nlrrllrrr.cmp(String.cmp(key, "native.settings.haptics"), l)
 
 def T.plain.nlrrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12810,12 +12817,12 @@ def T.plain.nlrrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrllrrl(l, key)
     case EQ{}:
-      Some{T.native.settings.cache.next(l)}
+      Some{T.native.settings.cache.clear(l)}
     case GT{}:
       T.plain.nlrrllrrr(l, key)
 
 def T.plain.nlrrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllrr.cmp(String.cmp(key, "native.settings.cache.next"), l)
+  T.plain.nlrrllrr.cmp(String.cmp(key, "native.settings.cache.clear"), l)
 
 def T.plain.nlrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12823,12 +12830,12 @@ def T.plain.nlrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nlrrllrl(l, key)
     case EQ{}:
-      Some{T.native.settings.behaviour.ios(l)}
+      Some{T.native.settings.behaviour.android(l)}
     case GT{}:
       T.plain.nlrrllrr(l, key)
 
 def T.plain.nlrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrllr.cmp(String.cmp(key, "native.settings.behaviour.ios"), l)
+  T.plain.nlrrllr.cmp(String.cmp(key, "native.settings.behaviour.android"), l)
 
 def T.plain.nlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12836,12 +12843,12 @@ def T.plain.nlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String
     case LT{}:
       T.plain.nlrrlll(l, key)
     case EQ{}:
-      Some{T.native.routine.title(l)}
+      Some{T.native.routine.timefield(l)}
     case GT{}:
       T.plain.nlrrllr(l, key)
 
 def T.plain.nlrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrll.cmp(String.cmp(key, "native.routine.title"), l)
+  T.plain.nlrrll.cmp(String.cmp(key, "native.routine.timefield"), l)
 
 def T.plain.nlrrlrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12849,12 +12856,12 @@ def T.plain.nlrrlrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.settings.kept(l)}
+      Some{T.native.settings.hubs(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrllll.cmp(String.cmp(key, "native.settings.kept"), l)
+  T.plain.nlrrlrllll.cmp(String.cmp(key, "native.settings.hubs"), l)
 
 def T.plain.nlrrlrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12862,12 +12869,12 @@ def T.plain.nlrrlrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.settings.notifications(l)}
+      Some{T.native.settings.notasked(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrlllr.cmp(String.cmp(key, "native.settings.notifications"), l)
+  T.plain.nlrrlrlllr.cmp(String.cmp(key, "native.settings.notasked"), l)
 
 def T.plain.nlrrlrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12875,12 +12882,12 @@ def T.plain.nlrrlrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrlrllll(l, key)
     case EQ{}:
-      Some{T.native.settings.notasked(l)}
+      Some{T.native.settings.kept(l)}
     case GT{}:
       T.plain.nlrrlrlllr(l, key)
 
 def T.plain.nlrrlrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrlll.cmp(String.cmp(key, "native.settings.notasked"), l)
+  T.plain.nlrrlrlll.cmp(String.cmp(key, "native.settings.kept"), l)
 
 def T.plain.nlrrlrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12888,12 +12895,12 @@ def T.plain.nlrrlrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.settings.placeholder.hint(l)}
+      Some{T.native.settings.opens(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrllrl.cmp(String.cmp(key, "native.settings.placeholder.hint"), l)
+  T.plain.nlrrlrllrl.cmp(String.cmp(key, "native.settings.opens"), l)
 
 def T.plain.nlrrlrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12901,12 +12908,12 @@ def T.plain.nlrrlrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.settings.placeholder.option(l)}
+      Some{T.native.settings.placeholder.name(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrllrr.cmp(String.cmp(key, "native.settings.placeholder.option"), l)
+  T.plain.nlrrlrllrr.cmp(String.cmp(key, "native.settings.placeholder.name"), l)
 
 def T.plain.nlrrlrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12914,12 +12921,12 @@ def T.plain.nlrrlrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrlrllrl(l, key)
     case EQ{}:
-      Some{T.native.settings.placeholder.name(l)}
+      Some{T.native.settings.placeholder.hint(l)}
     case GT{}:
       T.plain.nlrrlrllrr(l, key)
 
 def T.plain.nlrrlrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrllr.cmp(String.cmp(key, "native.settings.placeholder.name"), l)
+  T.plain.nlrrlrllr.cmp(String.cmp(key, "native.settings.placeholder.hint"), l)
 
 def T.plain.nlrrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12927,12 +12934,12 @@ def T.plain.nlrrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrlrlll(l, key)
     case EQ{}:
-      Some{T.native.settings.opens(l)}
+      Some{T.native.settings.notifications(l)}
     case GT{}:
       T.plain.nlrrlrllr(l, key)
 
 def T.plain.nlrrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrll.cmp(String.cmp(key, "native.settings.opens"), l)
+  T.plain.nlrrlrll.cmp(String.cmp(key, "native.settings.notifications"), l)
 
 def T.plain.nlrrlrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12940,12 +12947,12 @@ def T.plain.nlrrlrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.settings.system.open(l)}
+      Some{T.native.settings.system(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrlrll.cmp(String.cmp(key, "native.settings.system.open"), l)
+  T.plain.nlrrlrlrll.cmp(String.cmp(key, "native.settings.system"), l)
 
 def T.plain.nlrrlrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12953,12 +12960,12 @@ def T.plain.nlrrlrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.status.answer(l)}
+      Some{T.native.settings.system.settings(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrlrlr.cmp(String.cmp(key, "native.status.answer"), l)
+  T.plain.nlrrlrlrlr.cmp(String.cmp(key, "native.settings.system.settings"), l)
 
 def T.plain.nlrrlrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12966,12 +12973,12 @@ def T.plain.nlrrlrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrlrlrll(l, key)
     case EQ{}:
-      Some{T.native.settings.system.settings(l)}
+      Some{T.native.settings.system.open(l)}
     case GT{}:
       T.plain.nlrrlrlrlr(l, key)
 
 def T.plain.nlrrlrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrlrl.cmp(String.cmp(key, "native.settings.system.settings"), l)
+  T.plain.nlrrlrlrl.cmp(String.cmp(key, "native.settings.system.open"), l)
 
 def T.plain.nlrrlrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12979,12 +12986,12 @@ def T.plain.nlrrlrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.tab.home(l)}
+      Some{T.native.status.approval(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrlrrl.cmp(String.cmp(key, "native.tab.home"), l)
+  T.plain.nlrrlrlrrl.cmp(String.cmp(key, "native.status.approval"), l)
 
 def T.plain.nlrrlrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -12992,12 +12999,12 @@ def T.plain.nlrrlrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrlrlrrl(l, key)
     case EQ{}:
-      Some{T.native.task.delete.ask(l)}
+      Some{T.native.tab.home(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrlrr.cmp(String.cmp(key, "native.task.delete.ask"), l)
+  T.plain.nlrrlrlrr.cmp(String.cmp(key, "native.tab.home"), l)
 
 def T.plain.nlrrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13005,12 +13012,12 @@ def T.plain.nlrrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrlrlrl(l, key)
     case EQ{}:
-      Some{T.native.status.approval(l)}
+      Some{T.native.status.answer(l)}
     case GT{}:
       T.plain.nlrrlrlrr(l, key)
 
 def T.plain.nlrrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrlr.cmp(String.cmp(key, "native.status.approval"), l)
+  T.plain.nlrrlrlr.cmp(String.cmp(key, "native.status.answer"), l)
 
 def T.plain.nlrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13018,12 +13025,12 @@ def T.plain.nlrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nlrrlrll(l, key)
     case EQ{}:
-      Some{T.native.settings.system(l)}
+      Some{T.native.settings.placeholder.option(l)}
     case GT{}:
       T.plain.nlrrlrlr(l, key)
 
 def T.plain.nlrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrl.cmp(String.cmp(key, "native.settings.system"), l)
+  T.plain.nlrrlrl.cmp(String.cmp(key, "native.settings.placeholder.option"), l)
 
 def T.plain.nlrrlrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13031,12 +13038,12 @@ def T.plain.nlrrlrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.task.private(l)}
+      Some{T.native.task.note(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrlll.cmp(String.cmp(key, "native.task.private"), l)
+  T.plain.nlrrlrrlll.cmp(String.cmp(key, "native.task.note"), l)
 
 def T.plain.nlrrlrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13044,12 +13051,12 @@ def T.plain.nlrrlrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.text.copyall.action(l)}
+      Some{T.native.term.restart(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrllr.cmp(String.cmp(key, "native.text.copyall.action"), l)
+  T.plain.nlrrlrrllr.cmp(String.cmp(key, "native.term.restart"), l)
 
 def T.plain.nlrrlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13057,12 +13064,12 @@ def T.plain.nlrrlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrlrrlll(l, key)
     case EQ{}:
-      Some{T.native.term.restart(l)}
+      Some{T.native.task.private(l)}
     case GT{}:
       T.plain.nlrrlrrllr(l, key)
 
 def T.plain.nlrrlrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrll.cmp(String.cmp(key, "native.term.restart"), l)
+  T.plain.nlrrlrrll.cmp(String.cmp(key, "native.task.private"), l)
 
 def T.plain.nlrrlrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13070,12 +13077,12 @@ def T.plain.nlrrlrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.text.select.action(l)}
+      Some{T.native.text.copyall.title(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrlrl.cmp(String.cmp(key, "native.text.select.action"), l)
+  T.plain.nlrrlrrlrl.cmp(String.cmp(key, "native.text.copyall.title"), l)
 
 def T.plain.nlrrlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13083,12 +13090,12 @@ def T.plain.nlrrlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrlrrlrl(l, key)
     case EQ{}:
-      Some{T.native.text.select.title(l)}
+      Some{T.native.text.select.action(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrlr.cmp(String.cmp(key, "native.text.select.title"), l)
+  T.plain.nlrrlrrlr.cmp(String.cmp(key, "native.text.select.action"), l)
 
 def T.plain.nlrrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13096,12 +13103,12 @@ def T.plain.nlrrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrlrrll(l, key)
     case EQ{}:
-      Some{T.native.text.copyall.title(l)}
+      Some{T.native.text.copyall.action(l)}
     case GT{}:
       T.plain.nlrrlrrlr(l, key)
 
 def T.plain.nlrrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrl.cmp(String.cmp(key, "native.text.copyall.title"), l)
+  T.plain.nlrrlrrl.cmp(String.cmp(key, "native.text.copyall.action"), l)
 
 def T.plain.nlrrlrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13109,12 +13116,12 @@ def T.plain.nlrrlrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.thread.composer(l)}
+      Some{T.native.thread.board(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrrll.cmp(String.cmp(key, "native.thread.composer"), l)
+  T.plain.nlrrlrrrll.cmp(String.cmp(key, "native.thread.board"), l)
 
 def T.plain.nlrrlrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13122,12 +13129,12 @@ def T.plain.nlrrlrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.thread.content.note(l)}
+      Some{T.native.thread.content(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrrlr.cmp(String.cmp(key, "native.thread.content.note"), l)
+  T.plain.nlrrlrrrlr.cmp(String.cmp(key, "native.thread.content"), l)
 
 def T.plain.nlrrlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13135,12 +13142,12 @@ def T.plain.nlrrlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrlrrrll(l, key)
     case EQ{}:
-      Some{T.native.thread.content(l)}
+      Some{T.native.thread.composer(l)}
     case GT{}:
       T.plain.nlrrlrrrlr(l, key)
 
 def T.plain.nlrrlrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrrl.cmp(String.cmp(key, "native.thread.content"), l)
+  T.plain.nlrrlrrrl.cmp(String.cmp(key, "native.thread.composer"), l)
 
 def T.plain.nlrrlrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13148,12 +13155,12 @@ def T.plain.nlrrlrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.thread.hub(l)}
+      Some{T.native.thread.effort(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrrrl.cmp(String.cmp(key, "native.thread.hub"), l)
+  T.plain.nlrrlrrrrl.cmp(String.cmp(key, "native.thread.effort"), l)
 
 def T.plain.nlrrlrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13161,12 +13168,12 @@ def T.plain.nlrrlrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrlrrrrl(l, key)
     case EQ{}:
-      Some{T.native.thread.menu(l)}
+      Some{T.native.thread.hub(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrlrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrrr.cmp(String.cmp(key, "native.thread.menu"), l)
+  T.plain.nlrrlrrrr.cmp(String.cmp(key, "native.thread.hub"), l)
 
 def T.plain.nlrrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13174,12 +13181,12 @@ def T.plain.nlrrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrlrrrl(l, key)
     case EQ{}:
-      Some{T.native.thread.effort(l)}
+      Some{T.native.thread.content.note(l)}
     case GT{}:
       T.plain.nlrrlrrrr(l, key)
 
 def T.plain.nlrrlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrrr.cmp(String.cmp(key, "native.thread.effort"), l)
+  T.plain.nlrrlrrr.cmp(String.cmp(key, "native.thread.content.note"), l)
 
 def T.plain.nlrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13187,12 +13194,12 @@ def T.plain.nlrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nlrrlrrl(l, key)
     case EQ{}:
-      Some{T.native.thread.board(l)}
+      Some{T.native.text.select.title(l)}
     case GT{}:
       T.plain.nlrrlrrr(l, key)
 
 def T.plain.nlrrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlrr.cmp(String.cmp(key, "native.thread.board"), l)
+  T.plain.nlrrlrr.cmp(String.cmp(key, "native.text.select.title"), l)
 
 def T.plain.nlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13200,12 +13207,12 @@ def T.plain.nlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String
     case LT{}:
       T.plain.nlrrlrl(l, key)
     case EQ{}:
-      Some{T.native.task.note(l)}
+      Some{T.native.task.delete.ask(l)}
     case GT{}:
       T.plain.nlrrlrr(l, key)
 
 def T.plain.nlrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrlr.cmp(String.cmp(key, "native.task.note"), l)
+  T.plain.nlrrlr.cmp(String.cmp(key, "native.task.delete.ask"), l)
 
 def T.plain.nlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13213,12 +13220,12 @@ def T.plain.nlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>
     case LT{}:
       T.plain.nlrrll(l, key)
     case EQ{}:
-      Some{T.native.settings.hubs(l)}
+      Some{T.native.settings.hub(l)}
     case GT{}:
       T.plain.nlrrlr(l, key)
 
 def T.plain.nlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrl.cmp(String.cmp(key, "native.settings.hubs"), l)
+  T.plain.nlrrl.cmp(String.cmp(key, "native.settings.hub"), l)
 
 def T.plain.nlrrrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13226,12 +13233,12 @@ def T.plain.nlrrrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.thread.search.clear(l)}
+      Some{T.native.thread.model(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlllll.cmp(String.cmp(key, "native.thread.search.clear"), l)
+  T.plain.nlrrrlllll.cmp(String.cmp(key, "native.thread.model"), l)
 
 def T.plain.nlrrrllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13239,12 +13246,12 @@ def T.plain.nlrrrllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.viewer.ground.dark(l)}
+      Some{T.native.thread.sending(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrllllr.cmp(String.cmp(key, "native.viewer.ground.dark"), l)
+  T.plain.nlrrrllllr.cmp(String.cmp(key, "native.thread.sending"), l)
 
 def T.plain.nlrrrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13252,12 +13259,12 @@ def T.plain.nlrrrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrlllll(l, key)
     case EQ{}:
-      Some{T.native.thread.sending(l)}
+      Some{T.native.thread.search.clear(l)}
     case GT{}:
       T.plain.nlrrrllllr(l, key)
 
 def T.plain.nlrrrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrllll.cmp(String.cmp(key, "native.thread.sending"), l)
+  T.plain.nlrrrllll.cmp(String.cmp(key, "native.thread.search.clear"), l)
 
 def T.plain.nlrrrlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13265,12 +13272,12 @@ def T.plain.nlrrrlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.viewer.metal(l)}
+      Some{T.native.viewer.ground.light(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrlllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlllrl.cmp(String.cmp(key, "native.viewer.metal"), l)
+  T.plain.nlrrrlllrl.cmp(String.cmp(key, "native.viewer.ground.light"), l)
 
 def T.plain.nlrrrlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13278,12 +13285,12 @@ def T.plain.nlrrrlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.viewer.parts(l)}
+      Some{T.native.viewer.others(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrlllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlllrr.cmp(String.cmp(key, "native.viewer.parts"), l)
+  T.plain.nlrrrlllrr.cmp(String.cmp(key, "native.viewer.others"), l)
 
 def T.plain.nlrrrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13291,12 +13298,12 @@ def T.plain.nlrrrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrlllrl(l, key)
     case EQ{}:
-      Some{T.native.viewer.others(l)}
+      Some{T.native.viewer.metal(l)}
     case GT{}:
       T.plain.nlrrrlllrr(l, key)
 
 def T.plain.nlrrrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlllr.cmp(String.cmp(key, "native.viewer.others"), l)
+  T.plain.nlrrrlllr.cmp(String.cmp(key, "native.viewer.metal"), l)
 
 def T.plain.nlrrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13304,12 +13311,12 @@ def T.plain.nlrrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrrllll(l, key)
     case EQ{}:
-      Some{T.native.viewer.ground.light(l)}
+      Some{T.native.viewer.ground.dark(l)}
     case GT{}:
       T.plain.nlrrrlllr(l, key)
 
 def T.plain.nlrrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlll.cmp(String.cmp(key, "native.viewer.ground.light"), l)
+  T.plain.nlrrrlll.cmp(String.cmp(key, "native.viewer.ground.dark"), l)
 
 def T.plain.nlrrrllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13317,12 +13324,12 @@ def T.plain.nlrrrllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.viewer.sheet(l)}
+      Some{T.native.viewer.restore(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrllrll.cmp(String.cmp(key, "native.viewer.sheet"), l)
+  T.plain.nlrrrllrll.cmp(String.cmp(key, "native.viewer.restore"), l)
 
 def T.plain.nlrrrllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13330,12 +13337,12 @@ def T.plain.nlrrrllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.native.viewer.standout(l)}
+      Some{T.native.viewer.source(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrllrlr.cmp(String.cmp(key, "native.viewer.standout"), l)
+  T.plain.nlrrrllrlr.cmp(String.cmp(key, "native.viewer.source"), l)
 
 def T.plain.nlrrrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13343,12 +13350,12 @@ def T.plain.nlrrrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrllrll(l, key)
     case EQ{}:
-      Some{T.native.viewer.source(l)}
+      Some{T.native.viewer.sheet(l)}
     case GT{}:
       T.plain.nlrrrllrlr(l, key)
 
 def T.plain.nlrrrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrllrl.cmp(String.cmp(key, "native.viewer.source"), l)
+  T.plain.nlrrrllrl.cmp(String.cmp(key, "native.viewer.sheet"), l)
 
 def T.plain.nlrrrllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13356,12 +13363,12 @@ def T.plain.nlrrrllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.nav.task.none(l)}
+      Some{T.nav.pr.norepo(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrllrrl.cmp(String.cmp(key, "nav.task.none"), l)
+  T.plain.nlrrrllrrl.cmp(String.cmp(key, "nav.pr.norepo"), l)
 
 def T.plain.nlrrrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13369,12 +13376,12 @@ def T.plain.nlrrrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrllrrl(l, key)
     case EQ{}:
-      Some{T.notify.all(l)}
+      Some{T.nav.task.none(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrllrr.cmp(String.cmp(key, "notify.all"), l)
+  T.plain.nlrrrllrr.cmp(String.cmp(key, "nav.task.none"), l)
 
 def T.plain.nlrrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13382,12 +13389,12 @@ def T.plain.nlrrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrrllrl(l, key)
     case EQ{}:
-      Some{T.nav.pr.norepo(l)}
+      Some{T.native.viewer.standout(l)}
     case GT{}:
       T.plain.nlrrrllrr(l, key)
 
 def T.plain.nlrrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrllr.cmp(String.cmp(key, "nav.pr.norepo"), l)
+  T.plain.nlrrrllr.cmp(String.cmp(key, "native.viewer.standout"), l)
 
 def T.plain.nlrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13395,12 +13402,12 @@ def T.plain.nlrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nlrrrlll(l, key)
     case EQ{}:
-      Some{T.native.viewer.restore(l)}
+      Some{T.native.viewer.parts(l)}
     case GT{}:
       T.plain.nlrrrllr(l, key)
 
 def T.plain.nlrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrll.cmp(String.cmp(key, "native.viewer.restore"), l)
+  T.plain.nlrrrll.cmp(String.cmp(key, "native.viewer.parts"), l)
 
 def T.plain.nlrrrlrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13408,12 +13415,12 @@ def T.plain.nlrrrlrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.notify.failed(l)}
+      Some{T.notify.all.note(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrlrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrlll.cmp(String.cmp(key, "notify.failed"), l)
+  T.plain.nlrrrlrlll.cmp(String.cmp(key, "notify.all.note"), l)
 
 def T.plain.nlrrrlrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13421,12 +13428,12 @@ def T.plain.nlrrrlrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.notify.idle(l)}
+      Some{T.notify.finished(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrlrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrllr.cmp(String.cmp(key, "notify.idle"), l)
+  T.plain.nlrrrlrllr.cmp(String.cmp(key, "notify.finished"), l)
 
 def T.plain.nlrrrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13434,12 +13441,12 @@ def T.plain.nlrrrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrlrlll(l, key)
     case EQ{}:
-      Some{T.notify.finished(l)}
+      Some{T.notify.failed(l)}
     case GT{}:
       T.plain.nlrrrlrllr(l, key)
 
 def T.plain.nlrrrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrll.cmp(String.cmp(key, "notify.finished"), l)
+  T.plain.nlrrrlrll.cmp(String.cmp(key, "notify.failed"), l)
 
 def T.plain.nlrrrlrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13447,12 +13454,12 @@ def T.plain.nlrrrlrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.notify.needs(l)}
+      Some{T.notify.lead(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrlrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrlrl.cmp(String.cmp(key, "notify.needs"), l)
+  T.plain.nlrrrlrlrl.cmp(String.cmp(key, "notify.lead"), l)
 
 def T.plain.nlrrrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13460,12 +13467,12 @@ def T.plain.nlrrrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrlrlrl(l, key)
     case EQ{}:
-      Some{T.notify.needs.note(l)}
+      Some{T.notify.needs(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrlr.cmp(String.cmp(key, "notify.needs.note"), l)
+  T.plain.nlrrrlrlr.cmp(String.cmp(key, "notify.needs"), l)
 
 def T.plain.nlrrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13473,12 +13480,12 @@ def T.plain.nlrrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrrlrll(l, key)
     case EQ{}:
-      Some{T.notify.lead(l)}
+      Some{T.notify.idle(l)}
     case GT{}:
       T.plain.nlrrrlrlr(l, key)
 
 def T.plain.nlrrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrl.cmp(String.cmp(key, "notify.lead"), l)
+  T.plain.nlrrrlrl.cmp(String.cmp(key, "notify.idle"), l)
 
 def T.plain.nlrrrlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13486,12 +13493,12 @@ def T.plain.nlrrrlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.notify.reminders.note(l)}
+      Some{T.notify.reminders(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrlrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrrll.cmp(String.cmp(key, "notify.reminders.note"), l)
+  T.plain.nlrrrlrrll.cmp(String.cmp(key, "notify.reminders"), l)
 
 def T.plain.nlrrrlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13499,12 +13506,12 @@ def T.plain.nlrrrlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.notify.settled.note(l)}
+      Some{T.notify.settled(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrlrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrrlr.cmp(String.cmp(key, "notify.settled.note"), l)
+  T.plain.nlrrrlrrlr.cmp(String.cmp(key, "notify.settled"), l)
 
 def T.plain.nlrrrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13512,12 +13519,12 @@ def T.plain.nlrrrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrlrrll(l, key)
     case EQ{}:
-      Some{T.notify.settled(l)}
+      Some{T.notify.reminders.note(l)}
     case GT{}:
       T.plain.nlrrrlrrlr(l, key)
 
 def T.plain.nlrrrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrrl.cmp(String.cmp(key, "notify.settled"), l)
+  T.plain.nlrrrlrrl.cmp(String.cmp(key, "notify.reminders.note"), l)
 
 def T.plain.nlrrrlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13525,12 +13532,12 @@ def T.plain.nlrrrlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.option.active(l)}
+      Some{T.notify.title(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrlrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrrrl.cmp(String.cmp(key, "option.active"), l)
+  T.plain.nlrrrlrrrl.cmp(String.cmp(key, "notify.title"), l)
 
 def T.plain.nlrrrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13538,12 +13545,12 @@ def T.plain.nlrrrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrlrrrl(l, key)
     case EQ{}:
-      Some{T.option.dark(l)}
+      Some{T.option.active(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrrr.cmp(String.cmp(key, "option.dark"), l)
+  T.plain.nlrrrlrrr.cmp(String.cmp(key, "option.active"), l)
 
 def T.plain.nlrrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13551,12 +13558,12 @@ def T.plain.nlrrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrrlrrl(l, key)
     case EQ{}:
-      Some{T.notify.title(l)}
+      Some{T.notify.settled.note(l)}
     case GT{}:
       T.plain.nlrrrlrrr(l, key)
 
 def T.plain.nlrrrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlrr.cmp(String.cmp(key, "notify.title"), l)
+  T.plain.nlrrrlrr.cmp(String.cmp(key, "notify.settled.note"), l)
 
 def T.plain.nlrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13564,12 +13571,12 @@ def T.plain.nlrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nlrrrlrl(l, key)
     case EQ{}:
-      Some{T.notify.reminders(l)}
+      Some{T.notify.needs.note(l)}
     case GT{}:
       T.plain.nlrrrlrr(l, key)
 
 def T.plain.nlrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrlr.cmp(String.cmp(key, "notify.reminders"), l)
+  T.plain.nlrrrlr.cmp(String.cmp(key, "notify.needs.note"), l)
 
 def T.plain.nlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13577,12 +13584,12 @@ def T.plain.nlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String
     case LT{}:
       T.plain.nlrrrll(l, key)
     case EQ{}:
-      Some{T.notify.all.note(l)}
+      Some{T.notify.all(l)}
     case GT{}:
       T.plain.nlrrrlr(l, key)
 
 def T.plain.nlrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrl.cmp(String.cmp(key, "notify.all.note"), l)
+  T.plain.nlrrrl.cmp(String.cmp(key, "notify.all"), l)
 
 def T.plain.nlrrrrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13590,12 +13597,12 @@ def T.plain.nlrrrrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.option.nightly(l)}
+      Some{T.option.light(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrllll.cmp(String.cmp(key, "option.nightly"), l)
+  T.plain.nlrrrrllll.cmp(String.cmp(key, "option.light"), l)
 
 def T.plain.nlrrrrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13603,12 +13610,12 @@ def T.plain.nlrrrrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.option.on(l)}
+      Some{T.option.off(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrlllr.cmp(String.cmp(key, "option.on"), l)
+  T.plain.nlrrrrlllr.cmp(String.cmp(key, "option.off"), l)
 
 def T.plain.nlrrrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13616,12 +13623,12 @@ def T.plain.nlrrrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrrllll(l, key)
     case EQ{}:
-      Some{T.option.off(l)}
+      Some{T.option.nightly(l)}
     case GT{}:
       T.plain.nlrrrrlllr(l, key)
 
 def T.plain.nlrrrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrlll.cmp(String.cmp(key, "option.off"), l)
+  T.plain.nlrrrrlll.cmp(String.cmp(key, "option.nightly"), l)
 
 def T.plain.nlrrrrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13629,12 +13636,12 @@ def T.plain.nlrrrrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.option.stable(l)}
+      Some{T.option.projects(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrllrl.cmp(String.cmp(key, "option.stable"), l)
+  T.plain.nlrrrrllrl.cmp(String.cmp(key, "option.projects"), l)
 
 def T.plain.nlrrrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13642,12 +13649,12 @@ def T.plain.nlrrrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrrllrl(l, key)
     case EQ{}:
-      Some{T.palette.archive(l)}
+      Some{T.option.stable(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrllr.cmp(String.cmp(key, "palette.archive"), l)
+  T.plain.nlrrrrllr.cmp(String.cmp(key, "option.stable"), l)
 
 def T.plain.nlrrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13655,12 +13662,12 @@ def T.plain.nlrrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrrrlll(l, key)
     case EQ{}:
-      Some{T.option.projects(l)}
+      Some{T.option.on(l)}
     case GT{}:
       T.plain.nlrrrrllr(l, key)
 
 def T.plain.nlrrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrll.cmp(String.cmp(key, "option.projects"), l)
+  T.plain.nlrrrrll.cmp(String.cmp(key, "option.on"), l)
 
 def T.plain.nlrrrrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13668,12 +13675,12 @@ def T.plain.nlrrrrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.palette.command.placeholder(l)}
+      Some{T.palette.attach(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrlrll.cmp(String.cmp(key, "palette.command.placeholder"), l)
+  T.plain.nlrrrrlrll.cmp(String.cmp(key, "palette.attach"), l)
 
 def T.plain.nlrrrrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13681,12 +13688,12 @@ def T.plain.nlrrrrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.palette.delete(l)}
+      Some{T.palette.commit(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrlrlr.cmp(String.cmp(key, "palette.delete"), l)
+  T.plain.nlrrrrlrlr.cmp(String.cmp(key, "palette.commit"), l)
 
 def T.plain.nlrrrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13694,12 +13701,12 @@ def T.plain.nlrrrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrrlrll(l, key)
     case EQ{}:
-      Some{T.palette.commit(l)}
+      Some{T.palette.command.placeholder(l)}
     case GT{}:
       T.plain.nlrrrrlrlr(l, key)
 
 def T.plain.nlrrrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrlrl.cmp(String.cmp(key, "palette.commit"), l)
+  T.plain.nlrrrrlrl.cmp(String.cmp(key, "palette.command.placeholder"), l)
 
 def T.plain.nlrrrrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13707,12 +13714,12 @@ def T.plain.nlrrrrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.palette.file.placeholder(l)}
+      Some{T.palette.diff(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrlrrl.cmp(String.cmp(key, "palette.file.placeholder"), l)
+  T.plain.nlrrrrlrrl.cmp(String.cmp(key, "palette.diff"), l)
 
 def T.plain.nlrrrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13720,12 +13727,12 @@ def T.plain.nlrrrrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrrlrrl(l, key)
     case EQ{}:
-      Some{T.palette.findfile(l)}
+      Some{T.palette.file.placeholder(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrlrr.cmp(String.cmp(key, "palette.findfile"), l)
+  T.plain.nlrrrrlrr.cmp(String.cmp(key, "palette.file.placeholder"), l)
 
 def T.plain.nlrrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13733,12 +13740,12 @@ def T.plain.nlrrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrrrlrl(l, key)
     case EQ{}:
-      Some{T.palette.diff(l)}
+      Some{T.palette.delete(l)}
     case GT{}:
       T.plain.nlrrrrlrr(l, key)
 
 def T.plain.nlrrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrlr.cmp(String.cmp(key, "palette.diff"), l)
+  T.plain.nlrrrrlr.cmp(String.cmp(key, "palette.delete"), l)
 
 def T.plain.nlrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13746,12 +13753,12 @@ def T.plain.nlrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nlrrrrll(l, key)
     case EQ{}:
-      Some{T.palette.attach(l)}
+      Some{T.palette.archive(l)}
     case GT{}:
       T.plain.nlrrrrlr(l, key)
 
 def T.plain.nlrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrl.cmp(String.cmp(key, "palette.attach"), l)
+  T.plain.nlrrrrl.cmp(String.cmp(key, "palette.archive"), l)
 
 def T.plain.nlrrrrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13759,12 +13766,12 @@ def T.plain.nlrrrrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.palette.kicad10(l)}
+      Some{T.palette.kicad(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrlll.cmp(String.cmp(key, "palette.kicad10"), l)
+  T.plain.nlrrrrrlll.cmp(String.cmp(key, "palette.kicad"), l)
 
 def T.plain.nlrrrrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13772,12 +13779,12 @@ def T.plain.nlrrrrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.palette.pin(l)}
+      Some{T.palette.newthread(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrllr.cmp(String.cmp(key, "palette.pin"), l)
+  T.plain.nlrrrrrllr.cmp(String.cmp(key, "palette.newthread"), l)
 
 def T.plain.nlrrrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13785,12 +13792,12 @@ def T.plain.nlrrrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrrrlll(l, key)
     case EQ{}:
-      Some{T.palette.newthread(l)}
+      Some{T.palette.kicad10(l)}
     case GT{}:
       T.plain.nlrrrrrllr(l, key)
 
 def T.plain.nlrrrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrll.cmp(String.cmp(key, "palette.newthread"), l)
+  T.plain.nlrrrrrll.cmp(String.cmp(key, "palette.kicad10"), l)
 
 def T.plain.nlrrrrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13798,12 +13805,12 @@ def T.plain.nlrrrrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.palette.revert(l)}
+      Some{T.palette.pr(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrlrl.cmp(String.cmp(key, "palette.revert"), l)
+  T.plain.nlrrrrrlrl.cmp(String.cmp(key, "palette.pr"), l)
 
 def T.plain.nlrrrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13811,12 +13818,12 @@ def T.plain.nlrrrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrrrlrl(l, key)
     case EQ{}:
-      Some{T.palette.search(l)}
+      Some{T.palette.revert(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrlr.cmp(String.cmp(key, "palette.search"), l)
+  T.plain.nlrrrrrlr.cmp(String.cmp(key, "palette.revert"), l)
 
 def T.plain.nlrrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13824,12 +13831,12 @@ def T.plain.nlrrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrrrrll(l, key)
     case EQ{}:
-      Some{T.palette.pr(l)}
+      Some{T.palette.pin(l)}
     case GT{}:
       T.plain.nlrrrrrlr(l, key)
 
 def T.plain.nlrrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrl.cmp(String.cmp(key, "palette.pr"), l)
+  T.plain.nlrrrrrl.cmp(String.cmp(key, "palette.pin"), l)
 
 def T.plain.nlrrrrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13837,12 +13844,12 @@ def T.plain.nlrrrrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.palette.settings(l)}
+      Some{T.palette.search.full(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrrll.cmp(String.cmp(key, "palette.settings"), l)
+  T.plain.nlrrrrrrll.cmp(String.cmp(key, "palette.search.full"), l)
 
 def T.plain.nlrrrrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13850,12 +13857,12 @@ def T.plain.nlrrrrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.palette.snooze.hour(l)}
+      Some{T.palette.settle(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrrlr.cmp(String.cmp(key, "palette.snooze.hour"), l)
+  T.plain.nlrrrrrrlr.cmp(String.cmp(key, "palette.settle"), l)
 
 def T.plain.nlrrrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13863,12 +13870,12 @@ def T.plain.nlrrrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrrrrll(l, key)
     case EQ{}:
-      Some{T.palette.settle(l)}
+      Some{T.palette.settings(l)}
     case GT{}:
       T.plain.nlrrrrrrlr(l, key)
 
 def T.plain.nlrrrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrrl.cmp(String.cmp(key, "palette.settle"), l)
+  T.plain.nlrrrrrrl.cmp(String.cmp(key, "palette.settings"), l)
 
 def T.plain.nlrrrrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13876,12 +13883,12 @@ def T.plain.nlrrrrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.palette.snooze.week(l)}
+      Some{T.palette.snooze.tomorrow(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrrrl.cmp(String.cmp(key, "palette.snooze.week"), l)
+  T.plain.nlrrrrrrrl.cmp(String.cmp(key, "palette.snooze.tomorrow"), l)
 
 def T.plain.nlrrrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13889,12 +13896,12 @@ def T.plain.nlrrrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nlrrrrrrrl(l, key)
     case EQ{}:
-      Some{T.palette.terminal(l)}
+      Some{T.palette.snooze.week(l)}
     case GT{}:
       None{}
 
 def T.plain.nlrrrrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrrr.cmp(String.cmp(key, "palette.terminal"), l)
+  T.plain.nlrrrrrrr.cmp(String.cmp(key, "palette.snooze.week"), l)
 
 def T.plain.nlrrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13902,12 +13909,12 @@ def T.plain.nlrrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nlrrrrrrl(l, key)
     case EQ{}:
-      Some{T.palette.snooze.tomorrow(l)}
+      Some{T.palette.snooze.hour(l)}
     case GT{}:
       T.plain.nlrrrrrrr(l, key)
 
 def T.plain.nlrrrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrrr.cmp(String.cmp(key, "palette.snooze.tomorrow"), l)
+  T.plain.nlrrrrrr.cmp(String.cmp(key, "palette.snooze.hour"), l)
 
 def T.plain.nlrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13915,12 +13922,12 @@ def T.plain.nlrrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nlrrrrrl(l, key)
     case EQ{}:
-      Some{T.palette.search.full(l)}
+      Some{T.palette.search(l)}
     case GT{}:
       T.plain.nlrrrrrr(l, key)
 
 def T.plain.nlrrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrrr.cmp(String.cmp(key, "palette.search.full"), l)
+  T.plain.nlrrrrr.cmp(String.cmp(key, "palette.search"), l)
 
 def T.plain.nlrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13928,12 +13935,12 @@ def T.plain.nlrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String
     case LT{}:
       T.plain.nlrrrrl(l, key)
     case EQ{}:
-      Some{T.palette.kicad(l)}
+      Some{T.palette.findfile(l)}
     case GT{}:
       T.plain.nlrrrrr(l, key)
 
 def T.plain.nlrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrrr.cmp(String.cmp(key, "palette.kicad"), l)
+  T.plain.nlrrrr.cmp(String.cmp(key, "palette.findfile"), l)
 
 def T.plain.nlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13941,12 +13948,12 @@ def T.plain.nlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>
     case LT{}:
       T.plain.nlrrrl(l, key)
     case EQ{}:
-      Some{T.option.light(l)}
+      Some{T.option.dark(l)}
     case GT{}:
       T.plain.nlrrrr(l, key)
 
 def T.plain.nlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrrr.cmp(String.cmp(key, "option.light"), l)
+  T.plain.nlrrr.cmp(String.cmp(key, "option.dark"), l)
 
 def T.plain.nlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13954,12 +13961,12 @@ def T.plain.nlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case LT{}:
       T.plain.nlrrl(l, key)
     case EQ{}:
-      Some{T.native.thread.model(l)}
+      Some{T.native.thread.menu(l)}
     case GT{}:
       T.plain.nlrrr(l, key)
 
 def T.plain.nlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nlrr.cmp(String.cmp(key, "native.thread.model"), l)
+  T.plain.nlrr.cmp(String.cmp(key, "native.thread.menu"), l)
 
 def T.plain.nlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -13993,12 +14000,12 @@ def T.plain.nrllllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.palette.unsnooze(l)}
+      Some{T.palette.unarchive(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllllllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllllll.cmp(String.cmp(key, "palette.unsnooze"), l)
+  T.plain.nrllllllll.cmp(String.cmp(key, "palette.unarchive"), l)
 
 def T.plain.nrlllllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14006,12 +14013,12 @@ def T.plain.nrlllllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.palette.viewer(l)}
+      Some{T.palette.update(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllllllr.cmp(String.cmp(key, "palette.viewer"), l)
+  T.plain.nrlllllllr.cmp(String.cmp(key, "palette.update"), l)
 
 def T.plain.nrlllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14019,12 +14026,12 @@ def T.plain.nrlllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllllllll(l, key)
     case EQ{}:
-      Some{T.palette.update(l)}
+      Some{T.palette.unsnooze(l)}
     case GT{}:
       T.plain.nrlllllllr(l, key)
 
 def T.plain.nrlllllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllllll.cmp(String.cmp(key, "palette.update"), l)
+  T.plain.nrlllllll.cmp(String.cmp(key, "palette.unsnooze"), l)
 
 def T.plain.nrllllllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14032,12 +14039,12 @@ def T.plain.nrllllllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.phase.complete(l)}
+      Some{T.phase.approval(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllllllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllllrl.cmp(String.cmp(key, "phase.complete"), l)
+  T.plain.nrllllllrl.cmp(String.cmp(key, "phase.approval"), l)
 
 def T.plain.nrllllllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14045,12 +14052,12 @@ def T.plain.nrllllllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.phase.stopped(l)}
+      Some{T.phase.input(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllllllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllllrr.cmp(String.cmp(key, "phase.stopped"), l)
+  T.plain.nrllllllrr.cmp(String.cmp(key, "phase.input"), l)
 
 def T.plain.nrllllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14058,12 +14065,12 @@ def T.plain.nrllllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllllllrl(l, key)
     case EQ{}:
-      Some{T.phase.input(l)}
+      Some{T.phase.complete(l)}
     case GT{}:
       T.plain.nrllllllrr(l, key)
 
 def T.plain.nrllllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllllr.cmp(String.cmp(key, "phase.input"), l)
+  T.plain.nrllllllr.cmp(String.cmp(key, "phase.complete"), l)
 
 def T.plain.nrllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14071,12 +14078,12 @@ def T.plain.nrllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrlllllll(l, key)
     case EQ{}:
-      Some{T.phase.approval(l)}
+      Some{T.palette.viewer(l)}
     case GT{}:
       T.plain.nrllllllr(l, key)
 
 def T.plain.nrllllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllll.cmp(String.cmp(key, "phase.approval"), l)
+  T.plain.nrllllll.cmp(String.cmp(key, "palette.viewer"), l)
 
 def T.plain.nrlllllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14084,12 +14091,12 @@ def T.plain.nrlllllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.phone.unsettle(l)}
+      Some{T.phase.working(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllllrll.cmp(String.cmp(key, "phone.unsettle"), l)
+  T.plain.nrlllllrll.cmp(String.cmp(key, "phase.working"), l)
 
 def T.plain.nrlllllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14097,12 +14104,12 @@ def T.plain.nrlllllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.picker.back(l)}
+      Some{T.phone.working(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllllrlr.cmp(String.cmp(key, "picker.back"), l)
+  T.plain.nrlllllrlr.cmp(String.cmp(key, "phone.working"), l)
 
 def T.plain.nrlllllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14110,12 +14117,12 @@ def T.plain.nrlllllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrlllllrll(l, key)
     case EQ{}:
-      Some{T.phone.working(l)}
+      Some{T.phone.unsettle(l)}
     case GT{}:
       T.plain.nrlllllrlr(l, key)
 
 def T.plain.nrlllllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllllrl.cmp(String.cmp(key, "phone.working"), l)
+  T.plain.nrlllllrl.cmp(String.cmp(key, "phone.unsettle"), l)
 
 def T.plain.nrlllllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14123,12 +14130,12 @@ def T.plain.nrlllllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.picker.hint.find(l)}
+      Some{T.picker.folder.placeholder(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllllrrl.cmp(String.cmp(key, "picker.hint.find"), l)
+  T.plain.nrlllllrrl.cmp(String.cmp(key, "picker.folder.placeholder"), l)
 
 def T.plain.nrlllllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14136,12 +14143,12 @@ def T.plain.nrlllllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrlllllrrl(l, key)
     case EQ{}:
-      Some{T.picker.hint.path(l)}
+      Some{T.picker.hint.find(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllllrr.cmp(String.cmp(key, "picker.hint.path"), l)
+  T.plain.nrlllllrr.cmp(String.cmp(key, "picker.hint.find"), l)
 
 def T.plain.nrlllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14149,12 +14156,12 @@ def T.plain.nrlllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrlllllrl(l, key)
     case EQ{}:
-      Some{T.picker.folder.placeholder(l)}
+      Some{T.picker.back(l)}
     case GT{}:
       T.plain.nrlllllrr(l, key)
 
 def T.plain.nrlllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllllr.cmp(String.cmp(key, "picker.folder.placeholder"), l)
+  T.plain.nrlllllr.cmp(String.cmp(key, "picker.back"), l)
 
 def T.plain.nrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14162,12 +14169,12 @@ def T.plain.nrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nrllllll(l, key)
     case EQ{}:
-      Some{T.phase.working(l)}
+      Some{T.phase.stopped(l)}
     case GT{}:
       T.plain.nrlllllr(l, key)
 
 def T.plain.nrlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllll.cmp(String.cmp(key, "phase.working"), l)
+  T.plain.nrlllll.cmp(String.cmp(key, "phase.stopped"), l)
 
 def T.plain.nrllllrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14175,12 +14182,12 @@ def T.plain.nrllllrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.picker.keys.project(l)}
+      Some{T.picker.keys.folder(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllllrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrlll.cmp(String.cmp(key, "picker.keys.project"), l)
+  T.plain.nrllllrlll.cmp(String.cmp(key, "picker.keys.folder"), l)
 
 def T.plain.nrllllrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14188,12 +14195,12 @@ def T.plain.nrllllrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.plane.bots.working(l)}
+      Some{T.picker.project.placeholder(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllllrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrllr.cmp(String.cmp(key, "plane.bots.working"), l)
+  T.plain.nrllllrllr.cmp(String.cmp(key, "picker.project.placeholder"), l)
 
 def T.plain.nrllllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14201,12 +14208,12 @@ def T.plain.nrllllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllllrlll(l, key)
     case EQ{}:
-      Some{T.picker.project.placeholder(l)}
+      Some{T.picker.keys.project(l)}
     case GT{}:
       T.plain.nrllllrllr(l, key)
 
 def T.plain.nrllllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrll.cmp(String.cmp(key, "picker.project.placeholder"), l)
+  T.plain.nrllllrll.cmp(String.cmp(key, "picker.keys.project"), l)
 
 def T.plain.nrllllrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14214,12 +14221,12 @@ def T.plain.nrllllrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.plane.heading.bots(l)}
+      Some{T.plane.deploy.title(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllllrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrlrl.cmp(String.cmp(key, "plane.heading.bots"), l)
+  T.plain.nrllllrlrl.cmp(String.cmp(key, "plane.deploy.title"), l)
 
 def T.plain.nrllllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14227,12 +14234,12 @@ def T.plain.nrllllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllllrlrl(l, key)
     case EQ{}:
-      Some{T.plane.heading.locks(l)}
+      Some{T.plane.heading.bots(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrlr.cmp(String.cmp(key, "plane.heading.locks"), l)
+  T.plain.nrllllrlr.cmp(String.cmp(key, "plane.heading.bots"), l)
 
 def T.plain.nrllllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14240,12 +14247,12 @@ def T.plain.nrllllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrllllrll(l, key)
     case EQ{}:
-      Some{T.plane.deploy.title(l)}
+      Some{T.plane.bots.working(l)}
     case GT{}:
       T.plain.nrllllrlr(l, key)
 
 def T.plain.nrllllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrl.cmp(String.cmp(key, "plane.deploy.title"), l)
+  T.plain.nrllllrl.cmp(String.cmp(key, "plane.bots.working"), l)
 
 def T.plain.nrllllrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14253,12 +14260,12 @@ def T.plain.nrllllrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.plane.heading.rooms(l)}
+      Some{T.plane.heading.need(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllllrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrrll.cmp(String.cmp(key, "plane.heading.rooms"), l)
+  T.plain.nrllllrrll.cmp(String.cmp(key, "plane.heading.need"), l)
 
 def T.plain.nrllllrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14266,12 +14273,12 @@ def T.plain.nrllllrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.plane.heading.running(l)}
+      Some{T.plane.heading.routines(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllllrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrrlr.cmp(String.cmp(key, "plane.heading.running"), l)
+  T.plain.nrllllrrlr.cmp(String.cmp(key, "plane.heading.routines"), l)
 
 def T.plain.nrllllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14279,12 +14286,12 @@ def T.plain.nrllllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllllrrll(l, key)
     case EQ{}:
-      Some{T.plane.heading.routines(l)}
+      Some{T.plane.heading.rooms(l)}
     case GT{}:
       T.plain.nrllllrrlr(l, key)
 
 def T.plain.nrllllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrrl.cmp(String.cmp(key, "plane.heading.routines"), l)
+  T.plain.nrllllrrl.cmp(String.cmp(key, "plane.heading.rooms"), l)
 
 def T.plain.nrllllrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14292,12 +14299,12 @@ def T.plain.nrllllrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.plane.locks(l)}
+      Some{T.plane.home.make(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllllrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrrrl.cmp(String.cmp(key, "plane.locks"), l)
+  T.plain.nrllllrrrl.cmp(String.cmp(key, "plane.home.make"), l)
 
 def T.plain.nrllllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14305,12 +14312,12 @@ def T.plain.nrllllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllllrrrl(l, key)
     case EQ{}:
-      Some{T.plane.machine.other(l)}
+      Some{T.plane.locks(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllllrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrrr.cmp(String.cmp(key, "plane.machine.other"), l)
+  T.plain.nrllllrrr.cmp(String.cmp(key, "plane.locks"), l)
 
 def T.plain.nrllllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14318,12 +14325,12 @@ def T.plain.nrllllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrllllrrl(l, key)
     case EQ{}:
-      Some{T.plane.home.make(l)}
+      Some{T.plane.heading.running(l)}
     case GT{}:
       T.plain.nrllllrrr(l, key)
 
 def T.plain.nrllllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllrr.cmp(String.cmp(key, "plane.home.make"), l)
+  T.plain.nrllllrr.cmp(String.cmp(key, "plane.heading.running"), l)
 
 def T.plain.nrllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14331,12 +14338,12 @@ def T.plain.nrllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nrllllrl(l, key)
     case EQ{}:
-      Some{T.plane.heading.need(l)}
+      Some{T.plane.heading.locks(l)}
     case GT{}:
       T.plain.nrllllrr(l, key)
 
 def T.plain.nrllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllllr.cmp(String.cmp(key, "plane.heading.need"), l)
+  T.plain.nrllllr.cmp(String.cmp(key, "plane.heading.locks"), l)
 
 def T.plain.nrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14344,12 +14351,12 @@ def T.plain.nrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String
     case LT{}:
       T.plain.nrlllll(l, key)
     case EQ{}:
-      Some{T.picker.keys.folder(l)}
+      Some{T.picker.hint.path(l)}
     case GT{}:
       T.plain.nrllllr(l, key)
 
 def T.plain.nrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllll.cmp(String.cmp(key, "picker.keys.folder"), l)
+  T.plain.nrllll.cmp(String.cmp(key, "picker.hint.path"), l)
 
 def T.plain.nrlllrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14357,12 +14364,12 @@ def T.plain.nrlllrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.plane.needs(l)}
+      Some{T.plane.need(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrllll.cmp(String.cmp(key, "plane.needs"), l)
+  T.plain.nrlllrllll.cmp(String.cmp(key, "plane.need"), l)
 
 def T.plain.nrlllrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14370,12 +14377,12 @@ def T.plain.nrlllrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.plane.running(l)}
+      Some{T.plane.rooms.unread(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrlllr.cmp(String.cmp(key, "plane.running"), l)
+  T.plain.nrlllrlllr.cmp(String.cmp(key, "plane.rooms.unread"), l)
 
 def T.plain.nrlllrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14383,12 +14390,12 @@ def T.plain.nrlllrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrlllrllll(l, key)
     case EQ{}:
-      Some{T.plane.rooms.unread(l)}
+      Some{T.plane.needs(l)}
     case GT{}:
       T.plain.nrlllrlllr(l, key)
 
 def T.plain.nrlllrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrlll.cmp(String.cmp(key, "plane.rooms.unread"), l)
+  T.plain.nrlllrlll.cmp(String.cmp(key, "plane.needs"), l)
 
 def T.plain.nrlllrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14396,12 +14403,12 @@ def T.plain.nrlllrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.queue.context(l)}
+      Some{T.proj.browse(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrllrl.cmp(String.cmp(key, "queue.context"), l)
+  T.plain.nrlllrllrl.cmp(String.cmp(key, "proj.browse"), l)
 
 def T.plain.nrlllrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14409,12 +14416,12 @@ def T.plain.nrlllrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.queue.held(l)}
+      Some{T.queue.edit(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrllrr.cmp(String.cmp(key, "queue.held"), l)
+  T.plain.nrlllrllrr.cmp(String.cmp(key, "queue.edit"), l)
 
 def T.plain.nrlllrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14422,12 +14429,12 @@ def T.plain.nrlllrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrlllrllrl(l, key)
     case EQ{}:
-      Some{T.queue.edit(l)}
+      Some{T.queue.context(l)}
     case GT{}:
       T.plain.nrlllrllrr(l, key)
 
 def T.plain.nrlllrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrllr.cmp(String.cmp(key, "queue.edit"), l)
+  T.plain.nrlllrllr.cmp(String.cmp(key, "queue.context"), l)
 
 def T.plain.nrlllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14435,12 +14442,12 @@ def T.plain.nrlllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrlllrlll(l, key)
     case EQ{}:
-      Some{T.proj.browse(l)}
+      Some{T.plane.running(l)}
     case GT{}:
       T.plain.nrlllrllr(l, key)
 
 def T.plain.nrlllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrll.cmp(String.cmp(key, "proj.browse"), l)
+  T.plain.nrlllrll.cmp(String.cmp(key, "plane.running"), l)
 
 def T.plain.nrlllrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14448,12 +14455,12 @@ def T.plain.nrlllrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.queue.remove(l)}
+      Some{T.queue.queued(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrlrll.cmp(String.cmp(key, "queue.remove"), l)
+  T.plain.nrlllrlrll.cmp(String.cmp(key, "queue.queued"), l)
 
 def T.plain.nrlllrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14461,12 +14468,12 @@ def T.plain.nrlllrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.queue.up(l)}
+      Some{T.queue.resume(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrlrlr.cmp(String.cmp(key, "queue.up"), l)
+  T.plain.nrlllrlrlr.cmp(String.cmp(key, "queue.resume"), l)
 
 def T.plain.nrlllrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14474,12 +14481,12 @@ def T.plain.nrlllrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrlllrlrll(l, key)
     case EQ{}:
-      Some{T.queue.resume(l)}
+      Some{T.queue.remove(l)}
     case GT{}:
       T.plain.nrlllrlrlr(l, key)
 
 def T.plain.nrlllrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrlrl.cmp(String.cmp(key, "queue.resume"), l)
+  T.plain.nrlllrlrl.cmp(String.cmp(key, "queue.remove"), l)
 
 def T.plain.nrlllrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14487,12 +14494,12 @@ def T.plain.nrlllrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.remote.away(l)}
+      Some{T.remote.address.failed(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrlrrl.cmp(String.cmp(key, "remote.away"), l)
+  T.plain.nrlllrlrrl.cmp(String.cmp(key, "remote.address.failed"), l)
 
 def T.plain.nrlllrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14500,12 +14507,12 @@ def T.plain.nrlllrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrlllrlrrl(l, key)
     case EQ{}:
-      Some{T.remote.cache.failed(l)}
+      Some{T.remote.away(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrlrr.cmp(String.cmp(key, "remote.cache.failed"), l)
+  T.plain.nrlllrlrr.cmp(String.cmp(key, "remote.away"), l)
 
 def T.plain.nrlllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14513,12 +14520,12 @@ def T.plain.nrlllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrlllrlrl(l, key)
     case EQ{}:
-      Some{T.remote.address.failed(l)}
+      Some{T.queue.up(l)}
     case GT{}:
       T.plain.nrlllrlrr(l, key)
 
 def T.plain.nrlllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrlr.cmp(String.cmp(key, "remote.address.failed"), l)
+  T.plain.nrlllrlr.cmp(String.cmp(key, "queue.up"), l)
 
 def T.plain.nrlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14526,12 +14533,12 @@ def T.plain.nrlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nrlllrll(l, key)
     case EQ{}:
-      Some{T.queue.queued(l)}
+      Some{T.queue.held(l)}
     case GT{}:
       T.plain.nrlllrlr(l, key)
 
 def T.plain.nrlllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrl.cmp(String.cmp(key, "queue.queued"), l)
+  T.plain.nrlllrl.cmp(String.cmp(key, "queue.held"), l)
 
 def T.plain.nrlllrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14539,12 +14546,12 @@ def T.plain.nrlllrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.remote.empty(l)}
+      Some{T.remote.denied(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrlll.cmp(String.cmp(key, "remote.empty"), l)
+  T.plain.nrlllrrlll.cmp(String.cmp(key, "remote.denied"), l)
 
 def T.plain.nrlllrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14552,12 +14559,12 @@ def T.plain.nrlllrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.remote.reply.failed(l)}
+      Some{T.remote.handshake.failed(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrllr.cmp(String.cmp(key, "remote.reply.failed"), l)
+  T.plain.nrlllrrllr.cmp(String.cmp(key, "remote.handshake.failed"), l)
 
 def T.plain.nrlllrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14565,12 +14572,12 @@ def T.plain.nrlllrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrlllrrlll(l, key)
     case EQ{}:
-      Some{T.remote.handshake.failed(l)}
+      Some{T.remote.empty(l)}
     case GT{}:
       T.plain.nrlllrrllr(l, key)
 
 def T.plain.nrlllrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrll.cmp(String.cmp(key, "remote.handshake.failed"), l)
+  T.plain.nrlllrrll.cmp(String.cmp(key, "remote.empty"), l)
 
 def T.plain.nrlllrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14578,12 +14585,12 @@ def T.plain.nrlllrrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.remote.timeout(l)}
+      Some{T.remote.request.failed(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrlrl.cmp(String.cmp(key, "remote.timeout"), l)
+  T.plain.nrlllrrlrl.cmp(String.cmp(key, "remote.request.failed"), l)
 
 def T.plain.nrlllrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14591,12 +14598,12 @@ def T.plain.nrlllrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrlllrrlrl(l, key)
     case EQ{}:
-      Some{T.review.bom(l)}
+      Some{T.remote.timeout(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrlr.cmp(String.cmp(key, "review.bom"), l)
+  T.plain.nrlllrrlr.cmp(String.cmp(key, "remote.timeout"), l)
 
 def T.plain.nrlllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14604,12 +14611,12 @@ def T.plain.nrlllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrlllrrll(l, key)
     case EQ{}:
-      Some{T.remote.request.failed(l)}
+      Some{T.remote.reply.failed(l)}
     case GT{}:
       T.plain.nrlllrrlr(l, key)
 
 def T.plain.nrlllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrl.cmp(String.cmp(key, "remote.request.failed"), l)
+  T.plain.nrlllrrl.cmp(String.cmp(key, "remote.reply.failed"), l)
 
 def T.plain.nrlllrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14617,12 +14624,12 @@ def T.plain.nrlllrrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.cancel.tip(l)}
+      Some{T.review.bom.working(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrrll.cmp(String.cmp(key, "review.cancel.tip"), l)
+  T.plain.nrlllrrrll.cmp(String.cmp(key, "review.bom.working"), l)
 
 def T.plain.nrlllrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14630,12 +14637,12 @@ def T.plain.nrlllrrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.comment.open(l)}
+      Some{T.review.checks(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrrlr.cmp(String.cmp(key, "review.comment.open"), l)
+  T.plain.nrlllrrrlr.cmp(String.cmp(key, "review.checks"), l)
 
 def T.plain.nrlllrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14643,12 +14650,12 @@ def T.plain.nrlllrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrlllrrrll(l, key)
     case EQ{}:
-      Some{T.review.checks(l)}
+      Some{T.review.cancel.tip(l)}
     case GT{}:
       T.plain.nrlllrrrlr(l, key)
 
 def T.plain.nrlllrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrrl.cmp(String.cmp(key, "review.checks"), l)
+  T.plain.nrlllrrrl.cmp(String.cmp(key, "review.cancel.tip"), l)
 
 def T.plain.nrlllrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14656,12 +14663,12 @@ def T.plain.nrlllrrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.comments.none(l)}
+      Some{T.review.comments(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrrrl.cmp(String.cmp(key, "review.comments.none"), l)
+  T.plain.nrlllrrrrl.cmp(String.cmp(key, "review.comments"), l)
 
 def T.plain.nrlllrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14669,12 +14676,12 @@ def T.plain.nrlllrrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrlllrrrrl(l, key)
     case EQ{}:
-      Some{T.review.empty(l)}
+      Some{T.review.comments.none(l)}
     case GT{}:
       None{}
 
 def T.plain.nrlllrrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrrr.cmp(String.cmp(key, "review.empty"), l)
+  T.plain.nrlllrrrr.cmp(String.cmp(key, "review.comments.none"), l)
 
 def T.plain.nrlllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14682,12 +14689,12 @@ def T.plain.nrlllrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrlllrrrl(l, key)
     case EQ{}:
-      Some{T.review.comments(l)}
+      Some{T.review.comment.open(l)}
     case GT{}:
       T.plain.nrlllrrrr(l, key)
 
 def T.plain.nrlllrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrrr.cmp(String.cmp(key, "review.comments"), l)
+  T.plain.nrlllrrr.cmp(String.cmp(key, "review.comment.open"), l)
 
 def T.plain.nrlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14695,12 +14702,12 @@ def T.plain.nrlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nrlllrrl(l, key)
     case EQ{}:
-      Some{T.review.bom.working(l)}
+      Some{T.review.bom(l)}
     case GT{}:
       T.plain.nrlllrrr(l, key)
 
 def T.plain.nrlllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllrr.cmp(String.cmp(key, "review.bom.working"), l)
+  T.plain.nrlllrr.cmp(String.cmp(key, "review.bom"), l)
 
 def T.plain.nrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14708,12 +14715,12 @@ def T.plain.nrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String
     case LT{}:
       T.plain.nrlllrl(l, key)
     case EQ{}:
-      Some{T.remote.denied(l)}
+      Some{T.remote.cache.failed(l)}
     case GT{}:
       T.plain.nrlllrr(l, key)
 
 def T.plain.nrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlllr.cmp(String.cmp(key, "remote.denied"), l)
+  T.plain.nrlllr.cmp(String.cmp(key, "remote.cache.failed"), l)
 
 def T.plain.nrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14721,12 +14728,12 @@ def T.plain.nrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>
     case LT{}:
       T.plain.nrllll(l, key)
     case EQ{}:
-      Some{T.plane.need(l)}
+      Some{T.plane.machine.other(l)}
     case GT{}:
       T.plain.nrlllr(l, key)
 
 def T.plain.nrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrlll.cmp(String.cmp(key, "plane.need"), l)
+  T.plain.nrlll.cmp(String.cmp(key, "plane.machine.other"), l)
 
 def T.plain.nrllrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14734,12 +14741,12 @@ def T.plain.nrllrlllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.here(l)}
+      Some{T.review.force(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrlllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlllll.cmp(String.cmp(key, "review.here"), l)
+  T.plain.nrllrlllll.cmp(String.cmp(key, "review.force"), l)
 
 def T.plain.nrllrllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14747,12 +14754,12 @@ def T.plain.nrllrllllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.passes(l)}
+      Some{T.review.note(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrllllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrllllr.cmp(String.cmp(key, "review.passes"), l)
+  T.plain.nrllrllllr.cmp(String.cmp(key, "review.note"), l)
 
 def T.plain.nrllrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14760,12 +14767,12 @@ def T.plain.nrllrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllrlllll(l, key)
     case EQ{}:
-      Some{T.review.note(l)}
+      Some{T.review.here(l)}
     case GT{}:
       T.plain.nrllrllllr(l, key)
 
 def T.plain.nrllrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrllll.cmp(String.cmp(key, "review.note"), l)
+  T.plain.nrllrllll.cmp(String.cmp(key, "review.here"), l)
 
 def T.plain.nrllrlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14773,12 +14780,12 @@ def T.plain.nrllrlllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.publish(l)}
+      Some{T.review.pin.tip(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrlllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlllrl.cmp(String.cmp(key, "review.publish"), l)
+  T.plain.nrllrlllrl.cmp(String.cmp(key, "review.pin.tip"), l)
 
 def T.plain.nrllrlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14786,12 +14793,12 @@ def T.plain.nrllrlllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.refresh.tip(l)}
+      Some{T.review.reading(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrlllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlllrr.cmp(String.cmp(key, "review.refresh.tip"), l)
+  T.plain.nrllrlllrr.cmp(String.cmp(key, "review.reading"), l)
 
 def T.plain.nrllrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14799,12 +14806,12 @@ def T.plain.nrllrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllrlllrl(l, key)
     case EQ{}:
-      Some{T.review.reading(l)}
+      Some{T.review.publish(l)}
     case GT{}:
       T.plain.nrllrlllrr(l, key)
 
 def T.plain.nrllrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlllr.cmp(String.cmp(key, "review.reading"), l)
+  T.plain.nrllrlllr.cmp(String.cmp(key, "review.publish"), l)
 
 def T.plain.nrllrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14812,12 +14819,12 @@ def T.plain.nrllrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrllrllll(l, key)
     case EQ{}:
-      Some{T.review.pin.tip(l)}
+      Some{T.review.passes(l)}
     case GT{}:
       T.plain.nrllrlllr(l, key)
 
 def T.plain.nrllrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlll.cmp(String.cmp(key, "review.pin.tip"), l)
+  T.plain.nrllrlll.cmp(String.cmp(key, "review.passes"), l)
 
 def T.plain.nrllrllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14825,12 +14832,12 @@ def T.plain.nrllrllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.release.note(l)}
+      Some{T.review.release(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrllrll.cmp(String.cmp(key, "review.release.note"), l)
+  T.plain.nrllrllrll.cmp(String.cmp(key, "review.release"), l)
 
 def T.plain.nrllrllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14838,12 +14845,12 @@ def T.plain.nrllrllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.reopen.tip(l)}
+      Some{T.review.reopen(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrllrlr.cmp(String.cmp(key, "review.reopen.tip"), l)
+  T.plain.nrllrllrlr.cmp(String.cmp(key, "review.reopen"), l)
 
 def T.plain.nrllrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14851,12 +14858,12 @@ def T.plain.nrllrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllrllrll(l, key)
     case EQ{}:
-      Some{T.review.reopen(l)}
+      Some{T.review.release.note(l)}
     case GT{}:
       T.plain.nrllrllrlr(l, key)
 
 def T.plain.nrllrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrllrl.cmp(String.cmp(key, "review.reopen"), l)
+  T.plain.nrllrllrl.cmp(String.cmp(key, "review.release.note"), l)
 
 def T.plain.nrllrllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14864,12 +14871,12 @@ def T.plain.nrllrllrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.reply.tip(l)}
+      Some{T.review.reply(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrllrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrllrrl.cmp(String.cmp(key, "review.reply.tip"), l)
+  T.plain.nrllrllrrl.cmp(String.cmp(key, "review.reply"), l)
 
 def T.plain.nrllrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14877,12 +14884,12 @@ def T.plain.nrllrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllrllrrl(l, key)
     case EQ{}:
-      Some{T.review.resolve(l)}
+      Some{T.review.reply.tip(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrllrr.cmp(String.cmp(key, "review.resolve"), l)
+  T.plain.nrllrllrr.cmp(String.cmp(key, "review.reply.tip"), l)
 
 def T.plain.nrllrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14890,12 +14897,12 @@ def T.plain.nrllrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrllrllrl(l, key)
     case EQ{}:
-      Some{T.review.reply(l)}
+      Some{T.review.reopen.tip(l)}
     case GT{}:
       T.plain.nrllrllrr(l, key)
 
 def T.plain.nrllrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrllr.cmp(String.cmp(key, "review.reply"), l)
+  T.plain.nrllrllr.cmp(String.cmp(key, "review.reopen.tip"), l)
 
 def T.plain.nrllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14903,12 +14910,12 @@ def T.plain.nrllrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nrllrlll(l, key)
     case EQ{}:
-      Some{T.review.release(l)}
+      Some{T.review.refresh.tip(l)}
     case GT{}:
       T.plain.nrllrllr(l, key)
 
 def T.plain.nrllrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrll.cmp(String.cmp(key, "review.release"), l)
+  T.plain.nrllrll.cmp(String.cmp(key, "review.refresh.tip"), l)
 
 def T.plain.nrllrlrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14916,12 +14923,12 @@ def T.plain.nrllrlrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.step.show(l)}
+      Some{T.review.resolve.tip(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrlrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrlll.cmp(String.cmp(key, "review.step.show"), l)
+  T.plain.nrllrlrlll.cmp(String.cmp(key, "review.resolve.tip"), l)
 
 def T.plain.nrllrlrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14929,12 +14936,12 @@ def T.plain.nrllrlrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.review.untick(l)}
+      Some{T.review.tick(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrlrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrllr.cmp(String.cmp(key, "review.untick"), l)
+  T.plain.nrllrlrllr.cmp(String.cmp(key, "review.tick"), l)
 
 def T.plain.nrllrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14942,12 +14949,12 @@ def T.plain.nrllrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllrlrlll(l, key)
     case EQ{}:
-      Some{T.review.tick(l)}
+      Some{T.review.step.show(l)}
     case GT{}:
       T.plain.nrllrlrllr(l, key)
 
 def T.plain.nrllrlrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrll.cmp(String.cmp(key, "review.tick"), l)
+  T.plain.nrllrlrll.cmp(String.cmp(key, "review.step.show"), l)
 
 def T.plain.nrllrlrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14955,12 +14962,12 @@ def T.plain.nrllrlrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.room.empty(l)}
+      Some{T.room.delete(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrlrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrlrl.cmp(String.cmp(key, "room.empty"), l)
+  T.plain.nrllrlrlrl.cmp(String.cmp(key, "room.delete"), l)
 
 def T.plain.nrllrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14968,12 +14975,12 @@ def T.plain.nrllrlrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllrlrlrl(l, key)
     case EQ{}:
-      Some{T.room.write(l)}
+      Some{T.room.empty(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrlrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrlr.cmp(String.cmp(key, "room.write"), l)
+  T.plain.nrllrlrlr.cmp(String.cmp(key, "room.empty"), l)
 
 def T.plain.nrllrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14981,12 +14988,12 @@ def T.plain.nrllrlrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrllrlrll(l, key)
     case EQ{}:
-      Some{T.room.delete(l)}
+      Some{T.review.untick(l)}
     case GT{}:
       T.plain.nrllrlrlr(l, key)
 
 def T.plain.nrllrlrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrl.cmp(String.cmp(key, "room.delete"), l)
+  T.plain.nrllrlrl.cmp(String.cmp(key, "review.untick"), l)
 
 def T.plain.nrllrlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -14994,12 +15001,12 @@ def T.plain.nrllrlrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.rooms.delete.button.tip(l)}
+      Some{T.rooms.create.tip(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrlrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrrll.cmp(String.cmp(key, "rooms.delete.button.tip"), l)
+  T.plain.nrllrlrrll.cmp(String.cmp(key, "rooms.create.tip"), l)
 
 def T.plain.nrllrlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15007,12 +15014,12 @@ def T.plain.nrllrlrrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.rooms.empty(l)}
+      Some{T.rooms.delete.tip(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrlrrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrrlr.cmp(String.cmp(key, "rooms.empty"), l)
+  T.plain.nrllrlrrlr.cmp(String.cmp(key, "rooms.delete.tip"), l)
 
 def T.plain.nrllrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15020,12 +15027,12 @@ def T.plain.nrllrlrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllrlrrll(l, key)
     case EQ{}:
-      Some{T.rooms.delete.tip(l)}
+      Some{T.rooms.delete.button.tip(l)}
     case GT{}:
       T.plain.nrllrlrrlr(l, key)
 
 def T.plain.nrllrlrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrrl.cmp(String.cmp(key, "rooms.delete.tip"), l)
+  T.plain.nrllrlrrl.cmp(String.cmp(key, "rooms.delete.button.tip"), l)
 
 def T.plain.nrllrlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15033,12 +15040,12 @@ def T.plain.nrllrlrrrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.routine.add(l)}
+      Some{T.rooms.new(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrlrrrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrrrl.cmp(String.cmp(key, "routine.add"), l)
+  T.plain.nrllrlrrrl.cmp(String.cmp(key, "rooms.new"), l)
 
 def T.plain.nrllrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15046,12 +15053,12 @@ def T.plain.nrllrlrrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllrlrrrl(l, key)
     case EQ{}:
-      Some{T.routine.change(l)}
+      Some{T.routine.add(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrlrrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrrr.cmp(String.cmp(key, "routine.change"), l)
+  T.plain.nrllrlrrr.cmp(String.cmp(key, "routine.add"), l)
 
 def T.plain.nrllrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15059,12 +15066,12 @@ def T.plain.nrllrlrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrllrlrrl(l, key)
     case EQ{}:
-      Some{T.rooms.new(l)}
+      Some{T.rooms.empty(l)}
     case GT{}:
       T.plain.nrllrlrrr(l, key)
 
 def T.plain.nrllrlrr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlrr.cmp(String.cmp(key, "rooms.new"), l)
+  T.plain.nrllrlrr.cmp(String.cmp(key, "rooms.empty"), l)
 
 def T.plain.nrllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15072,12 +15079,12 @@ def T.plain.nrllrlr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Strin
     case LT{}:
       T.plain.nrllrlrl(l, key)
     case EQ{}:
-      Some{T.rooms.create.tip(l)}
+      Some{T.room.write(l)}
     case GT{}:
       T.plain.nrllrlrr(l, key)
 
 def T.plain.nrllrlr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrlr.cmp(String.cmp(key, "rooms.create.tip"), l)
+  T.plain.nrllrlr.cmp(String.cmp(key, "room.write"), l)
 
 def T.plain.nrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15085,12 +15092,12 @@ def T.plain.nrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String
     case LT{}:
       T.plain.nrllrll(l, key)
     case EQ{}:
-      Some{T.review.resolve.tip(l)}
+      Some{T.review.resolve(l)}
     case GT{}:
       T.plain.nrllrlr(l, key)
 
 def T.plain.nrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrl.cmp(String.cmp(key, "review.resolve.tip"), l)
+  T.plain.nrllrl.cmp(String.cmp(key, "review.resolve"), l)
 
 def T.plain.nrllrrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15098,12 +15105,12 @@ def T.plain.nrllrrllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.routine.new(l)}
+      Some{T.routine.clear.tip(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrrllll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrrllll.cmp(String.cmp(key, "routine.new"), l)
+  T.plain.nrllrrllll.cmp(String.cmp(key, "routine.clear.tip"), l)
 
 def T.plain.nrllrrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15111,12 +15118,12 @@ def T.plain.nrllrrlllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.routine.prompt(l)}
+      Some{T.routine.on.tip(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrrlllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrrlllr.cmp(String.cmp(key, "routine.prompt"), l)
+  T.plain.nrllrrlllr.cmp(String.cmp(key, "routine.on.tip"), l)
 
 def T.plain.nrllrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15124,12 +15131,12 @@ def T.plain.nrllrrlll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllrrllll(l, key)
     case EQ{}:
-      Some{T.routine.on.tip(l)}
+      Some{T.routine.new(l)}
     case GT{}:
       T.plain.nrllrrlllr(l, key)
 
 def T.plain.nrllrrlll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrrlll.cmp(String.cmp(key, "routine.on.tip"), l)
+  T.plain.nrllrrlll.cmp(String.cmp(key, "routine.new"), l)
 
 def T.plain.nrllrrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15137,12 +15144,25 @@ def T.plain.nrllrrllrl.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, St
     case LT{}:
       None{}
     case EQ{}:
-      Some{T.routine.save(l)}
+      Some{T.routine.run(l)}
     case GT{}:
       None{}
 
 def T.plain.nrllrrllrl(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrrllrl.cmp(String.cmp(key, "routine.save"), l)
+  T.plain.nrllrrllrl.cmp(String.cmp(key, "routine.run"), l)
+
+def T.plain.nrllrrllrr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
+  ((key, _), c) = r
+  match c:
+    case LT{}:
+      None{}
+    case EQ{}:
+      Some{T.routine.save.tip(l)}
+    case GT{}:
+      None{}
+
+def T.plain.nrllrrllrr(l: I.Loc, key: String) -> Maybe<&2, String>:
+  T.plain.nrllrrllrr.cmp(String.cmp(key, "routine.save.tip"), l)
 
 def T.plain.nrllrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15150,12 +15170,12 @@ def T.plain.nrllrrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Str
     case LT{}:
       T.plain.nrllrrllrl(l, key)
     case EQ{}:
-      Some{T.routine.save.tip(l)}
+      Some{T.routine.save(l)}
     case GT{}:
-      None{}
+      T.plain.nrllrrllrr(l, key)
 
 def T.plain.nrllrrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrrllr.cmp(String.cmp(key, "routine.save.tip"), l)
+  T.plain.nrllrrllr.cmp(String.cmp(key, "routine.save"), l)
 
 def T.plain.nrllrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15163,12 +15183,12 @@ def T.plain.nrllrrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, Stri
     case LT{}:
       T.plain.nrllrrlll(l, key)
     case EQ{}:
-      Some{T.routine.run(l)}
+      Some{T.routine.prompt(l)}
     case GT{}:
       T.plain.nrllrrllr(l, key)
 
 def T.plain.nrllrrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllrrll.cmp(String.cmp(key, "routine.run"), l)
+  T.plain.nrllrrll.cmp(String.cmp(key, "routine.prompt"), l)
 
 def T.plain.nrllrrlrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15449,12 +15469,12 @@ def T.plain.nrllr.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>
     case LT{}:
       T.plain.nrllrl(l, key)
     case EQ{}:
-      Some{T.routine.clear.tip(l)}
+      Some{T.routine.change(l)}
     case GT{}:
       T.plain.nrllrr(l, key)
 
 def T.plain.nrllr(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrllr.cmp(String.cmp(key, "routine.clear.tip"), l)
+  T.plain.nrllr.cmp(String.cmp(key, "routine.change"), l)
 
 def T.plain.nrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -15462,12 +15482,12 @@ def T.plain.nrll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case LT{}:
       T.plain.nrlll(l, key)
     case EQ{}:
-      Some{T.review.force(l)}
+      Some{T.review.empty(l)}
     case GT{}:
       T.plain.nrllr(l, key)
 
 def T.plain.nrll(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.nrll.cmp(String.cmp(key, "review.force"), l)
+  T.plain.nrll.cmp(String.cmp(key, "review.empty"), l)
 
 def T.plain.nrlrllllll.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
   ((key, _), c) = r
@@ -19960,12 +19980,12 @@ def T.plain.n.cmp(r: (String & String) & Cmp, l: I.Loc) -> Maybe<&2, String>:
     case LT{}:
       T.plain.nl(l, key)
     case EQ{}:
-      Some{T.palette.unarchive(l)}
+      Some{T.palette.terminal(l)}
     case GT{}:
       T.plain.nr(l, key)
 
 def T.plain.n(l: I.Loc, key: String) -> Maybe<&2, String>:
-  T.plain.n.cmp(String.cmp(key, "palette.unarchive"), l)
+  T.plain.n.cmp(String.cmp(key, "palette.terminal"), l)
 
 def T.plain(l: I.Loc, key: String) -> Maybe<&2, String>:
   T.plain.n(l, key)
