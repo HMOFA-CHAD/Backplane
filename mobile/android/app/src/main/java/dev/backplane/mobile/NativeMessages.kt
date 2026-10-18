@@ -4,9 +4,45 @@ package dev.backplane.mobile
 object NativeMessages {
   private fun number(n: ULong): String = n.toString().reversed().chunked(3).joinToString(",").reversed()
 
+  // agy.account.add
+  fun agy_account_add(tag: String): String =
+    if (tag == "ja") ("アカウントを追加") else ("Add account")
+
+  // agy.signout
+  fun agy_signout(tag: String): String =
+    if (tag == "ja") ("サインアウト") else ("Sign out")
+
+  // bots.delete
+  fun bots_delete(tag: String): String =
+    if (tag == "ja") ("ボットを削除") else ("Delete bot")
+
+  // bots.invite.join
+  fun bots_invite_join(tag: String): String =
+    if (tag == "ja") ("参加") else ("Join")
+
+  // bots.machines
+  fun bots_machines(tag: String): String =
+    if (tag == "ja") ("マシン") else ("Machines")
+
+  // bots.memory.forget
+  fun bots_memory_forget(tag: String): String =
+    if (tag == "ja") ("忘れる") else ("Forget")
+
   // bots.name
   fun bots_name(tag: String): String =
     if (tag == "ja") ("名前") else ("Name")
+
+  // bots.new
+  fun bots_new(tag: String): String =
+    if (tag == "ja") ("新しいボット") else ("New bot")
+
+  // bots.persona
+  fun bots_persona(tag: String): String =
+    if (tag == "ja") ("性格・役割") else ("Persona")
+
+  // bots.rooms
+  fun bots_rooms(tag: String): String =
+    if (tag == "ja") ("ルーム") else ("Rooms")
 
   // bots.tab.routines
   fun bots_tab_routines(tag: String): String =
@@ -15,6 +51,10 @@ object NativeMessages {
   // browser.address
   fun browser_address(tag: String): String =
     if (tag == "ja") ("アドレス") else ("Address")
+
+  // common.add
+  fun common_add(tag: String): String =
+    if (tag == "ja") ("追加") else ("Add")
 
   // common.cancel
   fun common_cancel(tag: String): String =
@@ -28,13 +68,29 @@ object NativeMessages {
   fun common_close(tag: String): String =
     if (tag == "ja") ("閉じる") else ("Close")
 
+  // common.copy
+  fun common_copy(tag: String): String =
+    if (tag == "ja") ("コピー") else ("Copy")
+
+  // common.create
+  fun common_create(tag: String): String =
+    if (tag == "ja") ("作成") else ("Create")
+
   // common.delete
   fun common_delete(tag: String): String =
     if (tag == "ja") ("削除") else ("Delete")
 
+  // common.finish
+  fun common_finish(tag: String): String =
+    if (tag == "ja") ("完了") else ("Finish")
+
   // common.go
   fun common_go(tag: String): String =
     if (tag == "ja") ("移動") else ("Go")
+
+  // common.more
+  fun common_more(tag: String): String =
+    if (tag == "ja") ("さらに表示") else ("More")
 
   // common.refresh
   fun common_refresh(tag: String): String =
@@ -47,6 +103,10 @@ object NativeMessages {
   // common.run
   fun common_run(tag: String): String =
     if (tag == "ja") ("実行") else ("Run")
+
+  // common.save
+  fun common_save(tag: String): String =
+    if (tag == "ja") ("保存") else ("Save")
 
   // common.show
   fun common_show(tag: String): String =
@@ -63,6 +123,34 @@ object NativeMessages {
   // files.changed
   fun files_changed(tag: String, arg0: ULong): String =
     if (tag == "ja") ((if (arg0 == 0uL) "変更なし" else "変更ファイル" + number(arg0) + "件")) else ((if (arg0 == 0uL) "No files changed" else (if (arg0 == 1uL) number(arg0) + " file changed" else number(arg0) + " files changed")))
+
+  // google.client.own
+  fun google_client_own(tag: String): String =
+    if (tag == "ja") ("独自クライアント") else ("Own client")
+
+  // google.client.save
+  fun google_client_save(tag: String): String =
+    if (tag == "ja") ("クライアントを保存") else ("Save client")
+
+  // google.client.secret
+  fun google_client_secret(tag: String): String =
+    if (tag == "ja") ("クライアントシークレット") else ("Client secret")
+
+  // google.connect
+  fun google_connect(tag: String): String =
+    if (tag == "ja") ("Googleに接続") else ("Connect Google")
+
+  // google.open
+  fun google_open(tag: String): String =
+    if (tag == "ja") ("Googleのサインインを開く") else ("Open Google sign-in")
+
+  // google.signature
+  fun google_signature(tag: String): String =
+    if (tag == "ja") ("署名") else ("Signature")
+
+  // google.signature.placeholder
+  fun google_signature_placeholder(tag: String, arg0: String): String =
+    if (tag == "ja") ("— " + arg0 + "に代わりBackplaneから送信") else ("— Sent by Backplane on behalf of " + arg0)
 
   // history.live
   fun history_live(tag: String): String =
@@ -84,9 +172,57 @@ object NativeMessages {
   fun history_step_label(tag: String, arg0: String): String =
     if (tag == "ja") ("変更" + arg0) else ("Step " + arg0)
 
+  // hooks.revoke
+  fun hooks_revoke(tag: String): String =
+    if (tag == "ja") ("取り消す") else ("Revoke")
+
+  // machines.invite
+  fun machines_invite(tag: String): String =
+    if (tag == "ja") ("招待") else ("Invite")
+
+  // machines.unlink
+  fun machines_unlink(tag: String): String =
+    if (tag == "ja") ("リンク解除") else ("Unlink")
+
   // mech.create
   fun mech_create(tag: String): String =
     if (tag == "ja") ("レンダリングを作成") else ("Create renders")
+
+  // native.bot.create.hint
+  fun native_bot_create_hint(tag: String): String =
+    if (tag == "ja") ("＋ボタンで作成できます。") else ("Make one with the plus button.")
+
+  // native.bot.create.menu
+  fun native_bot_create_menu(tag: String): String =
+    if (tag == "ja") ("ボット・ルームを作成") else ("New bot or room")
+
+  // native.bot.createon
+  fun native_bot_createon(tag: String, arg0: String, arg1: String, arg2: String): String =
+    if (tag == "ja") ((if (arg0 == "room") "ルームを作成" else "ボットを作成") + (if (arg1 == "hub") "（" + arg2 + "）" else "")) else ((if (arg0 == "room") "New room" else "New bot") + (if (arg1 == "hub") " on " + arg2 else ""))
+
+  // native.bot.delete.ask
+  fun native_bot_delete_ask(tag: String, arg0: String): String =
+    if (tag == "ja") (arg0 + "を削除しますか？") else ("Delete " + arg0 + "?")
+
+  // native.bot.empty
+  fun native_bot_empty(tag: String): String =
+    if (tag == "ja") ("ボットなし") else ("No bots yet")
+
+  // native.bot.memory.empty
+  fun native_bot_memory_empty(tag: String): String =
+    if (tag == "ja") ("記憶なし") else ("Nothing remembered")
+
+  // native.bot.message
+  fun native_bot_message(tag: String): String =
+    if (tag == "ja") ("メッセージ") else ("Message")
+
+  // native.bot.messages.empty
+  fun native_bot_messages_empty(tag: String): String =
+    if (tag == "ja") ("メッセージなし") else ("No messages")
+
+  // native.bot.provider
+  fun native_bot_provider(tag: String): String =
+    if (tag == "ja") ("プロバイダー") else ("Provider")
 
   // native.browser.empty
   fun native_browser_empty(tag: String): String =
@@ -120,6 +256,18 @@ object NativeMessages {
   fun native_file_pdf_error(tag: String, arg0: String, arg1: String): String =
     if (tag == "ja") ((if (arg0 == "send") "ハブからPDFを取得できません（12 MBを超えている可能性があります）" else (if (arg0 == "http") "ハブの応答：" + arg1 else "このPDFは表示できません"))) else ((if (arg0 == "send") "The hub could not send this PDF (it may be over 12 MB)" else (if (arg0 == "http") "The hub answered " + arg1 else "This PDF cannot be shown here")))
 
+  // native.google.client.hide
+  fun native_google_client_hide(tag: String): String =
+    if (tag == "ja") ("独自クライアントを隠す") else ("Hide own client")
+
+  // native.google.client.id
+  fun native_google_client_id(tag: String): String =
+    if (tag == "ja") ("クライアントID（デスクトップアプリ）") else ("Client ID (Desktop app)")
+
+  // native.google.redirect
+  fun native_google_redirect(tag: String): String =
+    if (tag == "ja") ("リダイレクト先のURL") else ("Redirected URL")
+
   // native.history.first
   fun native_history_first(tag: String): String =
     if (tag == "ja") ("最初のステップ") else ("First step")
@@ -151,6 +299,18 @@ object NativeMessages {
   // native.history.thread.short
   fun native_history_thread_short(tag: String): String =
     if (tag == "ja") ("スレッドで表示") else ("Show in the thread")
+
+  // native.hook.copyurl
+  fun native_hook_copyurl(tag: String): String =
+    if (tag == "ja") ("URLをコピー") else ("Copy URL")
+
+  // native.hook.once
+  fun native_hook_once(tag: String): String =
+    if (tag == "ja") ("一度だけ表示します。") else ("Shown once.")
+
+  // native.hook.secret
+  fun native_hook_secret(tag: String): String =
+    if (tag == "ja") ("シークレット") else ("Secret")
 
   // native.hub.accessibility
   fun native_hub_accessibility(tag: String, arg0: String, arg1: String): String =
@@ -187,6 +347,18 @@ object NativeMessages {
   // native.key.tab
   fun native_key_tab(tag: String): String =
     if (tag == "ja") ("Tab") else ("Tab")
+
+  // native.machine.address
+  fun native_machine_address(tag: String): String =
+    if (tag == "ja") ("このハブのアドレス") else ("This hub's address")
+
+  // native.machine.invite.copy
+  fun native_machine_invite_copy(tag: String): String =
+    if (tag == "ja") ("招待をコピー") else ("Copy invite")
+
+  // native.machine.invite.paste
+  fun native_machine_invite_paste(tag: String): String =
+    if (tag == "ja") ("招待を貼り付け") else ("Paste an invite")
 
   // native.mech.failed
   fun native_mech_failed(tag: String, arg0: String): String =
@@ -279,6 +451,58 @@ object NativeMessages {
   // native.review.write
   fun native_review_write(tag: String): String =
     if (tag == "ja") ("コメントを書く") else ("Write a note")
+
+  // native.room.empty
+  fun native_room_empty(tag: String): String =
+    if (tag == "ja") ("ルームなし") else ("No rooms yet")
+
+  // native.room.member
+  fun native_room_member(tag: String): String =
+    if (tag == "ja") ("参加中") else ("In the room")
+
+  // native.room.members
+  fun native_room_members(tag: String): String =
+    if (tag == "ja") ("メンバー") else ("Members")
+
+  // native.room.post
+  fun native_room_post(tag: String): String =
+    if (tag == "ja") ("ルームに投稿") else ("Post to the room")
+
+  // native.routine.examples
+  fun native_routine_examples(tag: String): String =
+    if (tag == "ja") ("daily 09:30 · tomorrow 9am · in 2h") else ("daily 09:30 · tomorrow 9am · in 2h")
+
+  // native.routine.hint
+  fun native_routine_hint(tag: String): String =
+    if (tag == "ja") ("スケジュール（daily 09:30、every 15m、cron）または時刻（tomorrow 9am、in 2h）") else ("A schedule (daily 09:30, every 15m, cron) or a time (tomorrow 9am, in 2h)")
+
+  // native.routine.last
+  fun native_routine_last(tag: String, arg0: String): String =
+    if (tag == "ja") ("前回：" + arg0 + "前") else ("last " + arg0 + " ago")
+
+  // native.routine.prompt
+  fun native_routine_prompt(tag: String): String =
+    if (tag == "ja") ("プロンプト") else ("Prompt")
+
+  // native.routine.timefield
+  fun native_routine_timefield(tag: String): String =
+    if (tag == "ja") ("日時") else ("When")
+
+  // native.routine.title
+  fun native_routine_title(tag: String): String =
+    if (tag == "ja") ("ルーチン") else ("Routine")
+
+  // native.routine.what
+  fun native_routine_what(tag: String): String =
+    if (tag == "ja") ("実行する内容") else ("What to do")
+
+  // native.routines.empty
+  fun native_routines_empty(tag: String): String =
+    if (tag == "ja") ("ルーチンなし") else ("No routines")
+
+  // native.routines.note
+  fun native_routines_note(tag: String): String =
+    if (tag == "ja") ("ボットの「ルーチン」タブで作成できます。") else ("A bot's Routines tab makes them.")
 
   // native.settings.about
   fun native_settings_about(tag: String): String =
@@ -428,6 +652,10 @@ object NativeMessages {
   fun palette_settings(tag: String): String =
     if (tag == "ja") ("設定") else ("Settings")
 
+  // queue.edit
+  fun queue_edit(tag: String): String =
+    if (tag == "ja") ("編集") else ("Edit")
+
   // review.bom
   fun review_bom(tag: String): String =
     if (tag == "ja") ("BOM") else ("BOM")
@@ -463,6 +691,30 @@ object NativeMessages {
   // review.resolve
   fun review_resolve(tag: String): String =
     if (tag == "ja") ("解決済みにする") else ("Resolve")
+
+  // room.delete
+  fun room_delete(tag: String): String =
+    if (tag == "ja") ("ルームを削除") else ("Delete room")
+
+  // rooms.new
+  fun rooms_new(tag: String): String =
+    if (tag == "ja") ("新しいルーム") else ("New room")
+
+  // routine.new
+  fun routine_new(tag: String): String =
+    if (tag == "ja") ("新しいルーティン") else ("New routine")
+
+  // routine.next
+  fun routine_next(tag: String, arg0: String, arg1: String, arg2: String, arg3: String, arg4: String): String =
+    if (tag == "ja") ("次回" + arg0 + (if (arg1 == "none") "" else "・" + arg2) + (if (arg3 == "none") "" else "・" + arg4)) else ("Next " + arg0 + (if (arg1 == "none") "" else " · " + arg2) + (if (arg3 == "none") "" else " · " + arg4))
+
+  // routine.run
+  fun routine_run(tag: String): String =
+    if (tag == "ja") ("今すぐ実行") else ("Run now")
+
+  // sched.kind.repeat
+  fun sched_kind_repeat(tag: String): String =
+    if (tag == "ja") ("繰り返し") else ("Repeats")
 
   // settings.appearance
   fun settings_appearance(tag: String): String =
@@ -643,4 +895,8 @@ object NativeMessages {
   // viewer.solid
   fun viewer_solid(tag: String): String =
     if (tag == "ja") ("3D") else ("3D")
+
+  // web.hooks.secret
+  fun web_hooks_secret(tag: String): String =
+    if (tag == "ja") ("シークレット（1回のみ表示）") else ("Secret, shown once")
 }

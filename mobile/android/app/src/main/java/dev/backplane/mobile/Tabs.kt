@@ -114,7 +114,7 @@ fun Tabs(m: AppModel, s: Screen, onPair: () -> Unit) {
         val content: @Composable (androidx.compose.foundation.layout.PaddingValues) -> Unit = { pad ->
             Box(Modifier.fillMaxSize().padding(pad)) {
                 when (tab) {
-                    Tab.Home -> Scaffold(topBar = { TopAppBar(title = { Text("Home") }) }) { p ->
+                    Tab.Home -> Scaffold(topBar = { TopAppBar(title = { Text(NativeMessages.native_tab_home(s.locale)) }) }) { p ->
                         Box(Modifier.padding(p)) { HomeTab(m, s, states.getValue(Tab.Home)) }
                     }
                     Tab.Threads -> Projects(m, s, onPair, states.getValue(Tab.Threads))
@@ -148,20 +148,21 @@ fun Tabs(m: AppModel, s: Screen, onPair: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BotsPage(m: AppModel, s: Screen, state: LazyListState) {
+    val lang = s.locale
     var part by rememberSaveable { mutableStateOf("bots") }
     var menu by remember { mutableStateOf(false) }
     Scaffold(topBar = {
-        TopAppBar(title = { Text("Bots") }, actions = {
+        TopAppBar(title = { Text(NativeMessages.tour_title_bots(lang)) }, actions = {
             Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Add, "New bot or room") }
+                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Add, NativeMessages.native_bot_create_menu(lang)) }
                 DropdownMenu(menu, { menu = false }) {
                     // with several hubs, a bot or room is made on the one chosen
                     val many = s.hubs.size > 1
                     for (h in if (many) s.hubs else s.hubs.take(1)) {
                         val v = if (many) h.key + "|" else ""
-                        val on = if (many) " on " + h.name else ""
-                        DropdownMenuItem(text = { Text("New bot$on") }, onClick = { menu = false; m.act("bot-new", v) })
-                        DropdownMenuItem(text = { Text("New room$on") }, onClick = { menu = false; m.act("room-new", v) })
+                        val place = if (many) "hub" else "none"
+                        DropdownMenuItem(text = { Text(NativeMessages.native_bot_createon(lang, "bot", place, h.name)) }, onClick = { menu = false; m.act("bot-new", v) })
+                        DropdownMenuItem(text = { Text(NativeMessages.native_bot_createon(lang, "room", place, h.name)) }, onClick = { menu = false; m.act("room-new", v) })
                     }
                 }
             }
@@ -170,12 +171,12 @@ private fun BotsPage(m: AppModel, s: Screen, state: LazyListState) {
         LazyColumn(Modifier.fillMaxSize(), state = state, contentPadding = pad) {
             item(key = "seg") {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(16.dp, 8.dp)) {
-                    SegmentedButton(part == "bots", { part = "bots" }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("Bots") }
-                    SegmentedButton(part == "rooms", { part = "rooms" }, SegmentedButtonDefaults.itemShape(1, 2)) { Text("Rooms") }
+                    SegmentedButton(part == "bots", { part = "bots" }, SegmentedButtonDefaults.itemShape(0, 2)) { Text(NativeMessages.tour_title_bots(lang)) }
+                    SegmentedButton(part == "rooms", { part = "rooms" }, SegmentedButtonDefaults.itemShape(1, 2)) { Text(NativeMessages.bots_rooms(lang)) }
                 }
             }
             if (part == "bots") {
-                if (s.bots.isEmpty()) item(key = "none") { Empty("No bots yet") }
+                if (s.bots.isEmpty()) item(key = "none") { Empty(NativeMessages.native_bot_empty(lang)) }
                 items(s.bots, key = { "b:" + it.id }) { b ->
                     ListItem(
                         headlineContent = { Text(b.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -191,7 +192,7 @@ private fun BotsPage(m: AppModel, s: Screen, state: LazyListState) {
                     )
                 }
             } else {
-                if (s.rooms.isEmpty()) item(key = "none") { Empty("No rooms yet") }
+                if (s.rooms.isEmpty()) item(key = "none") { Empty(NativeMessages.native_room_empty(lang)) }
                 items(s.rooms, key = { "r:" + it.id }) { r ->
                     ListItem(
                         headlineContent = { Text(r.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -218,9 +219,10 @@ private fun Empty(text: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RoutinesPage(m: AppModel, s: Screen, state: LazyListState) {
-    Scaffold(topBar = { TopAppBar(title = { Text("Routines") }) }) { pad ->
+    val lang = s.locale
+    Scaffold(topBar = { TopAppBar(title = { Text(NativeMessages.bots_tab_routines(lang)) }) }) { pad ->
         LazyColumn(Modifier.fillMaxSize(), state = state, contentPadding = pad) {
-            if (s.tabs.routineRows.isEmpty()) item(key = "none") { Empty("No routines") }
+            if (s.tabs.routineRows.isEmpty()) item(key = "none") { Empty(NativeMessages.native_routines_empty(lang)) }
             items(s.tabs.routineRows, key = { "r:" + it.id }) { r ->
                 val off = r.state == "off"
                 ListItem(
@@ -228,7 +230,7 @@ private fun RoutinesPage(m: AppModel, s: Screen, state: LazyListState) {
                     supportingContent = {
                         Column {
                             Text(listOf(r.bot, r.machine).filter { it.isNotEmpty() }.joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(listOf(if (r.state == "done") r.doneText else r.sub, r.zone, if (r.ago.isEmpty()) "" else "last ${r.ago} ago").filter { it.isNotEmpty() }.joinToString(" · "), maxLines = 2)
+                            Text(listOf(if (r.state == "done") r.doneText else r.sub, r.zone, if (r.ago.isEmpty()) "" else NativeMessages.native_routine_last(lang, r.ago)).filter { it.isNotEmpty() }.joinToString(" · "), maxLines = 2)
                         }
                     },
                     leadingContent = { Icon(when (r.state) { "reminder" -> Icons.Filled.Notifications; "done" -> Icons.Filled.CheckCircle; else -> Icons.Filled.Schedule }, null) },

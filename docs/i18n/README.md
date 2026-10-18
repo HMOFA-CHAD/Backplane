@@ -76,3 +76,10 @@ include the language in their accessibility-label cache; the no-Metal label
 also updates on a language switch. Camera/render geometry stays independent
 of language. Sheet/layer/file names and agent text pass through unchanged.
 Native build/catalog checks cover these changes; device visuals remain pending.
+
+Native bot/room forms, routine controls, connection forms and their lists
+use generated messages too. Routine next/last text and per-hub create menus
+are complete messages; names, memory, prompts, posts, URLs and account data
+remain content. Schedule examples keep the supported English parser syntax
+in Japanese; this extraction does not introduce a Japanese schedule parser.
+The Google brand name stays unchanged. Native device visuals remain pending.
