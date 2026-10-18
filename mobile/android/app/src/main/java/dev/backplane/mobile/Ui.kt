@@ -204,7 +204,7 @@ fun App(m: AppModel) {
     LaunchedEffect(s?.making) { if (s?.making != true) leftNew = false }
     // a file link tapped in a message asks for its menu
     CompositionLocalProvider(LocalFileTap provides { p: String -> m.act("file-menu", p) }) { when {
-        m.links.isEmpty() -> Pair("", cancel = null) { m.pair(it) }
+        m.links.isEmpty() -> Pair(s?.locale ?: "en", "", cancel = null) { m.pair(it) }
         s == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         pairing -> {
             BackHandler { pairing = false }
@@ -361,24 +361,24 @@ private fun SearchField(m: AppModel, f: Search, first: String?) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Pair(link: String, cancel: (() -> Unit)?, done: (String) -> Unit) {
+private fun Pair(tag: String, link: String, cancel: (() -> Unit)?, done: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf(link) }
     Scaffold(topBar = {
-        TopAppBar(title = { Text("Pair with a hub") }, navigationIcon = {
-            if (cancel != null) IconButton(onClick = cancel) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+        TopAppBar(title = { Text(NativeMessages.native_pair_title(tag)) }, navigationIcon = {
+            if (cancel != null) IconButton(onClick = cancel) { Icon(Icons.AutoMirrored.Filled.ArrowBack, NativeMessages.tour_back(tag)) }
         })
     }) { pad ->
         Column(Modifier.padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val ctx = LocalContext.current
-            Button(onClick = { scanPairing(ctx, done) }) {
+            Button(onClick = { scanPairing(ctx, tag, done) }) {
                 Icon(Icons.Filled.QrCodeScanner, null)
-                Text("Scan QR code", Modifier.padding(start = 8.dp))
+                Text(NativeMessages.native_pair_scan(tag), Modifier.padding(start = 8.dp))
             }
-            Text("On your computer: Backplane, Settings, Pairing link, QR code. Or paste the link:",
+            Text(NativeMessages.native_pair_computer_android(tag),
                 style = MaterialTheme.typography.bodyMedium)
             OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), singleLine = true,
-                label = { Text("Pairing link") }, placeholder = { Text("http://host:3787/#token=…") })
-            Button(onClick = { done(text) }, enabled = text.isNotBlank()) { Text("Connect") }
+                label = { Text(NativeMessages.settings_pair(tag)) }, placeholder = { Text("http://host:3787/#token=…") })
+            Button(onClick = { done(text) }, enabled = text.isNotBlank()) { Text(NativeMessages.native_pair_connect(tag)) }
         }
     }
 }
@@ -388,10 +388,11 @@ private fun Pair(link: String, cancel: (() -> Unit)?, done: (String) -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Hubs(m: AppModel, s: Screen, back: () -> Unit) {
+    val tag = s.locale
     var text by rememberSaveable { mutableStateOf("") }
     Scaffold(topBar = {
-        TopAppBar(title = { Text("Hubs") }, navigationIcon = {
-            IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+        TopAppBar(title = { Text(NativeMessages.native_settings_hubs(tag)) }, navigationIcon = {
+            IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, NativeMessages.tour_back(tag)) }
         })
     }) { pad ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
@@ -400,34 +401,34 @@ private fun Hubs(m: AppModel, s: Screen, back: () -> Unit) {
                     headlineContent = { Text(h.name) },
                     supportingContent = { Text(h.key) },
                     leadingContent = { Status(if (h.online) "idle" else "stop") },
-                    trailingContent = { IconButton(onClick = { m.unpair(h.key) }) { Icon(Icons.Filled.Close, "Unpair") } },
+                    trailingContent = { IconButton(onClick = { m.unpair(h.key) }) { Icon(Icons.Filled.Close, NativeMessages.native_pair_unpair(tag)) } },
                 )
             }
             if (s.found.isNotEmpty()) {
                 item(key = "found") {
-                    Text("On your tailnet", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    Text(NativeMessages.native_pair_tailnet(tag), Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.outline)
                 }
                 items(s.found, key = { "f:" + it.url }) { f ->
                     ListItem(
                         headlineContent = { Text(f.name) },
                         supportingContent = { Text(f.url) },
-                        trailingContent = { IconButton(onClick = { m.pair(f.url) }) { Icon(Icons.Filled.Add, "Pair") } },
+                        trailingContent = { IconButton(onClick = { m.pair(f.url) }) { Icon(Icons.Filled.Add, NativeMessages.native_pair_action(tag)) } },
                     )
                 }
             }
             item(key = "add") {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Scan the code, or paste the tailnet link Backplane shows in Settings (Pairing link).",
+                    Text(NativeMessages.native_pair_instructions(tag),
                         style = MaterialTheme.typography.bodyMedium)
                     OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), singleLine = true,
-                        label = { Text("Pairing link") }, placeholder = { Text("http://host:3787/#token=…") })
+                        label = { Text(NativeMessages.settings_pair(tag)) }, placeholder = { Text("http://host:3787/#token=…") })
                     val ctx = LocalContext.current
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { m.pair(text); text = "" }, enabled = text.isNotBlank()) { Text("Add hub") }
-                        OutlinedButton(onClick = { scanPairing(ctx) { m.pair(it) } }) {
+                        Button(onClick = { m.pair(text); text = "" }, enabled = text.isNotBlank()) { Text(NativeMessages.native_pair_add(tag)) }
+                        OutlinedButton(onClick = { scanPairing(ctx, tag) { m.pair(it) } }) {
                             Icon(Icons.Filled.QrCodeScanner, null)
-                            Text("Scan QR code", Modifier.padding(start = 8.dp))
+                            Text(NativeMessages.native_pair_scan(tag), Modifier.padding(start = 8.dp))
                         }
                     }
                 }
