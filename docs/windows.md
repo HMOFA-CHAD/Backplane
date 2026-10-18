@@ -83,6 +83,18 @@ build/windows-child.exe
 It checks normal exit 15 versus SIGTERM, exit-code truncation, repeated
 observations before reaping, 48 concurrent completions and 100 fast exits.
 
+The hub keeps its POSIX flock across restart. Cygwin's inherited descriptor
+supports ordinary seek/write but its positional-I/O handle fails with `EBADF`
+after exec, so the Windows metadata writer uses seek/write on that same locked
+descriptor. The POSIX writer keeps `pwrite`. Test the real lock helpers,
+including exact metadata, close-on-exec and competing-process exclusion:
+
+```sh
+clang -std=c11 -O2 -Wno-extra-tokens test/tools/windows-hublock.c \
+  -o build/windows-hublock.exe
+build/windows-hublock.exe
+```
+
 The initial Windows tests are `test/native/windows_runtime.bend` and
 `test/native/windows_window.bend`. Compile their emitted C with the same script.
 The first must print `WINDOWS_RUNTIME_OK 日本😀`, not merely exit zero. The second
