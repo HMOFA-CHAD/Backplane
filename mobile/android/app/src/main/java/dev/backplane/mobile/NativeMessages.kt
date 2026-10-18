@@ -48,6 +48,10 @@ object NativeMessages {
   fun common_run(tag: String): String =
     if (tag == "ja") ("実行") else ("Run")
 
+  // common.show
+  fun common_show(tag: String): String =
+    if (tag == "ja") ("表示") else ("Show")
+
   // composer.send
   fun composer_send(tag: String): String =
     if (tag == "ja") ("送信") else ("Send")
@@ -59,6 +63,30 @@ object NativeMessages {
   // files.changed
   fun files_changed(tag: String, arg0: ULong): String =
     if (tag == "ja") ((if (arg0 == 0uL) "変更なし" else "変更ファイル" + number(arg0) + "件")) else ((if (arg0 == 0uL) "No files changed" else (if (arg0 == 1uL) number(arg0) + " file changed" else number(arg0) + " files changed")))
+
+  // history.live
+  fun history_live(tag: String): String =
+    if (tag == "ja") ("現在") else ("Live")
+
+  // history.new.label
+  fun history_new_label(tag: String, arg0: String): String =
+    if (tag == "ja") ("新版：" + arg0) else ("New: " + arg0)
+
+  // history.old.label
+  fun history_old_label(tag: String, arg0: String): String =
+    if (tag == "ja") ("旧版：" + arg0) else ("Old: " + arg0)
+
+  // history.pause
+  fun history_pause(tag: String): String =
+    if (tag == "ja") ("一時停止") else ("Pause")
+
+  // history.step.label
+  fun history_step_label(tag: String, arg0: String): String =
+    if (tag == "ja") ("変更" + arg0) else ("Step " + arg0)
+
+  // mech.create
+  fun mech_create(tag: String): String =
+    if (tag == "ja") ("レンダリングを作成") else ("Create renders")
 
   // native.browser.empty
   fun native_browser_empty(tag: String): String =
@@ -91,6 +119,38 @@ object NativeMessages {
   // native.file.pdf.error
   fun native_file_pdf_error(tag: String, arg0: String, arg1: String): String =
     if (tag == "ja") ((if (arg0 == "send") "ハブからPDFを取得できません（12 MBを超えている可能性があります）" else (if (arg0 == "http") "ハブの応答：" + arg1 else "このPDFは表示できません"))) else ((if (arg0 == "send") "The hub could not send this PDF (it may be over 12 MB)" else (if (arg0 == "http") "The hub answered " + arg1 else "This PDF cannot be shown here")))
+
+  // native.history.first
+  fun native_history_first(tag: String): String =
+    if (tag == "ja") ("最初のステップ") else ("First step")
+
+  // native.history.last
+  fun native_history_last(tag: String): String =
+    if (tag == "ja") ("最後のステップ") else ("Last step")
+
+  // native.history.livefile
+  fun native_history_livefile(tag: String): String =
+    if (tag == "ja") ("現在のファイル") else ("Live file")
+
+  // native.history.next
+  fun native_history_next(tag: String): String =
+    if (tag == "ja") ("次のステップ") else ("Next step")
+
+  // native.history.play
+  fun native_history_play(tag: String): String =
+    if (tag == "ja") ("再生") else ("Play")
+
+  // native.history.previous
+  fun native_history_previous(tag: String): String =
+    if (tag == "ja") ("前のステップ") else ("Previous step")
+
+  // native.history.thread
+  fun native_history_thread(tag: String, arg0: String): String =
+    if (tag == "ja") ("スレッドで表示：" + arg0) else ("Show in the thread: " + arg0)
+
+  // native.history.thread.short
+  fun native_history_thread_short(tag: String): String =
+    if (tag == "ja") ("スレッドで表示") else ("Show in the thread")
 
   // native.hub.accessibility
   fun native_hub_accessibility(tag: String, arg0: String, arg1: String): String =
@@ -127,6 +187,10 @@ object NativeMessages {
   // native.key.tab
   fun native_key_tab(tag: String): String =
     if (tag == "ja") ("Tab") else ("Tab")
+
+  // native.mech.failed
+  fun native_mech_failed(tag: String, arg0: String): String =
+    if (tag == "ja") ("レンダリング失敗：" + arg0) else ("Rendering failed: " + arg0)
 
   // native.pair.action
   fun native_pair_action(tag: String): String =
@@ -199,6 +263,10 @@ object NativeMessages {
   // native.review.comment
   fun native_review_comment(tag: String): String =
     if (tag == "ja") ("コメント") else ("Comment")
+
+  // native.review.pin
+  fun native_review_pin(tag: String, arg0: String, arg1: String): String =
+    if (tag == "ja") ("コメント" + (if (arg0 == "replies") "（返信" + arg1 + "件）" else "")) else ("Comment" + (if (arg0 == "replies") ", " + arg1 + " replies" else ""))
 
   // native.review.place
   fun native_review_place(tag: String, arg0: String, arg1: String): String =
@@ -320,13 +388,49 @@ object NativeMessages {
   fun native_task_state(tag: String, arg0: String): String =
     if (tag == "ja") ((if (arg0 == "ok") "完了" else (if (arg0 == "failed") "失敗" else (if (arg0 == "stopped") "停止" else arg0)))) else ((if (arg0 == "ok") "ok" else (if (arg0 == "failed") "failed" else (if (arg0 == "stopped") "stopped" else arg0))))
 
+  // native.viewer.ground.dark
+  fun native_viewer_ground_dark(tag: String): String =
+    if (tag == "ja") ("背景を暗く") else ("Dark ground")
+
+  // native.viewer.ground.light
+  fun native_viewer_ground_light(tag: String): String =
+    if (tag == "ja") ("背景を明るく") else ("Light ground")
+
+  // native.viewer.metal
+  fun native_viewer_metal(tag: String): String =
+    if (tag == "ja") ("このデバイスはMetalに対応していません。") else ("This device has no Metal.")
+
+  // native.viewer.others
+  fun native_viewer_others(tag: String): String =
+    if (tag == "ja") ("ほかのレイヤー") else ("Others")
+
+  // native.viewer.parts
+  fun native_viewer_parts(tag: String): String =
+    if (tag == "ja") ("部品") else ("Parts")
+
+  // native.viewer.restore
+  fun native_viewer_restore(tag: String): String =
+    if (tag == "ja") ("すべて元に戻す") else ("All back")
+
+  // native.viewer.sheet
+  fun native_viewer_sheet(tag: String): String =
+    if (tag == "ja") ("シート") else ("Sheet")
+
   // native.viewer.source
   fun native_viewer_source(tag: String): String =
     if (tag == "ja") ("表示元") else ("Source")
 
+  // native.viewer.standout
+  fun native_viewer_standout(tag: String): String =
+    if (tag == "ja") ("強調") else ("Stand out")
+
   // palette.settings
   fun palette_settings(tag: String): String =
     if (tag == "ja") ("設定") else ("Settings")
+
+  // review.bom
+  fun review_bom(tag: String): String =
+    if (tag == "ja") ("BOM") else ("BOM")
 
   // review.fails
   fun review_fails(tag: String, arg0: String): String =
@@ -464,7 +568,79 @@ object NativeMessages {
   fun turn_by(tag: String, arg0: String): String =
     if (tag == "ja") ((if (arg0 == "you") "自分" else (if (arg0 == "agent") "エージェント" else "不明"))) else ((if (arg0 == "you") "You" else (if (arg0 == "agent") "Agent" else "Someone")))
 
+  // viewer.diff
+  fun viewer_diff(tag: String): String =
+    if (tag == "ja") ("差分") else ("Diff")
+
   // viewer.files.empty
   fun viewer_files_empty(tag: String): String =
     if (tag == "ja") ("空のフォルダ") else ("This folder is empty")
+
+  // viewer.history.added
+  fun viewer_history_added(tag: String): String =
+    if (tag == "ja") ("追加") else ("Added")
+
+  // viewer.history.changed
+  fun viewer_history_changed(tag: String): String =
+    if (tag == "ja") ("変更") else ("Changed")
+
+  // viewer.history.changes
+  fun viewer_history_changes(tag: String): String =
+    if (tag == "ja") ("変更") else ("Changes")
+
+  // viewer.history.compare
+  fun viewer_history_compare(tag: String): String =
+    if (tag == "ja") ("比較") else ("Compare")
+
+  // viewer.history.compare.new
+  fun viewer_history_compare_new(tag: String): String =
+    if (tag == "ja") ("比較先（新）") else ("Compare with (new)")
+
+  // viewer.history.compare.old
+  fun viewer_history_compare_old(tag: String): String =
+    if (tag == "ja") ("比較元（旧）") else ("Compare from (old)")
+
+  // viewer.history.new
+  fun viewer_history_new(tag: String): String =
+    if (tag == "ja") ("新") else ("New")
+
+  // viewer.history.old
+  fun viewer_history_old(tag: String): String =
+    if (tag == "ja") ("旧") else ("Old")
+
+  // viewer.history.ref
+  fun viewer_history_ref(tag: String): String =
+    if (tag == "ja") ("コミット・ブランチ・タグ") else ("Commit, branch or tag")
+
+  // viewer.history.removed
+  fun viewer_history_removed(tag: String): String =
+    if (tag == "ja") ("削除") else ("Removed")
+
+  // viewer.layers
+  fun viewer_layers(tag: String): String =
+    if (tag == "ja") ("レイヤー") else ("Layers")
+
+  // viewer.layers.all
+  fun viewer_layers_all(tag: String): String =
+    if (tag == "ja") ("すべて") else ("All")
+
+  // viewer.layers.dim
+  fun viewer_layers_dim(tag: String): String =
+    if (tag == "ja") ("薄く") else ("Dim")
+
+  // viewer.layers.only
+  fun viewer_layers_only(tag: String): String =
+    if (tag == "ja") ("選択のみ") else ("Only")
+
+  // viewer.mech.renders
+  fun viewer_mech_renders(tag: String): String =
+    if (tag == "ja") ("レンダー") else ("Renders")
+
+  // viewer.mention
+  fun viewer_mention(tag: String): String =
+    if (tag == "ja") ("チャットで参照") else ("Mention in chat")
+
+  // viewer.solid
+  fun viewer_solid(tag: String): String =
+    if (tag == "ja") ("3D") else ("3D")
 }
