@@ -794,7 +794,6 @@ def Mob.ask.std.loc(+lc: I.Loc, a: M.Ask, +draft: String) -> J.Json:
         J.KV{"blocks", J.Json.arr(Mob.ask.body.loc(lc, String.eq(k, "plan"), d))},
         J.KV{"buttons", J.Json.arr(Mob.ask.btns.loc(lc, C.Codec.pos(["plan", "input", "send"], U.Ask.bkind(k, tool)), id, o, draft))}])
 
-
 def Mob.ask.std(a: M.Ask, draft: String) -> J.Json:
   Mob.ask.std.loc(I.En{}, a, draft)
 
@@ -1028,7 +1027,6 @@ def Mob.menu.loc(+lc: I.Loc, +id: String, snoozed: Bool, mini: List<&2, TO.Tool>
    Mob.item("search", MSG.T.palette.findfile(lc), "find-open", "files", False{}, False{}, Nil{}), Mob.snooze.loc(lc, snoozed),
    Mob.item("trash", MSG.T.common.delete(lc), "row-delete", id, False{}, True{}, Nil{})])
 
-
 # a phone opens a thread on its newest 20 entries (a screen shows about
 # ten, and each reply's markdown is laid out in the phone's JS engine,
 # the most of what opening a thread costs there); "earlier" adds pages
@@ -1109,7 +1107,6 @@ def Mob.fab.k(shown: Bool, +st: M.State, +nf: Map<&2, String>, +id: String, run:
 
 def Mob.fab(+st: M.State, +nf: Map<&2, String>, +id: String, run: Bool) -> List<&2, J.Json>:
   Mob.fab.k(String.eq(U.Str.get(nf, "fab.shown:" ++ id), "1"), st, nf, id, run)
-
 
 def Mob.thread(+lc: I.Loc, render: Bool, u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: List<&2, String>, +up: String, term: J.Json, skills: List<&2, J.Json>, +ph: M.Phase, btw: J.Json, embs: J.Json) -> J.Json:
   match u t:
@@ -1463,6 +1460,7 @@ def Mob.lang.rows(+lc: I.Loc, +u: U.Ui) -> List<&2, J.Json>:
 
 def Mob.lang.loc(+lc: I.Loc, u: U.Ui) -> J.Json:
   J.Json.obj([J.KV{"rows", J.Json.arr(Mob.lang.rows(lc, u))}])
+
 def Mob.kx.rows(ls: List<&2, String>) -> List<&2, J.Json>:
   match ls:
     case Nil{}: Nil{}
@@ -1473,31 +1471,6 @@ def Mob.kx.settings(+u: U.Ui) -> List<&2, J.Json>:
 
 def Mob.lang(+u: U.Ui) -> J.Json:
   Mob.lang.loc(U.Lang.loc(u), u)
-
-def Mob.settings.of.loc(+lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String, more: List<&2, J.Json>) -> J.Json:
-  +prov = M.Setting.get(st, "agent.provider", "claude")
-  +models = U.Str.get(nf, "models")
-  +model = M.Setting.get(st, "agent.model", "")
-  J.Json.obj([J.KV{"rows", J.Json.arr(List.append(&2, J.Json, List.append(&2, J.Json, List.concat(&2, J.Json, [[
-    Mob.set.row(Mob.set.days.label.loc(lc, M.Setting.get(st, "settle.days", "3")), MSG.T.settings.settle.note(lc), Mob.set.days(M.Setting.get(st, "settle.days", "3"))),
-    Mob.set.row(MSG.T.settings.restart(lc), MSG.T.settings.restart.note(lc), Mob.set.chips.loc(lc, ["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"))], Mob.notify(lc, st), [
-    Mob.set.row(MSG.T.settings.provider(lc), Bool.pick(String, String.is_empty(U.Models.cli(models, prov)), MSG.T.settings.provider.missing(lc, prov), U.Models.cli(models, prov)), Mob.set.chips.loc(lc, ["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider")),
-    Mob.set.row(MSG.T.settings.model(lc), Bool.pick(String, String.is_empty(model), MSG.T.common.default(lc), model) ++ ": " ++ U.Models.label_of(models, prov, model), Mob.set.chips.loc(lc, "" <> U.Models.list(models, prov), model, "agent.model")),
-    Mob.set.row.f("KiCad", U.KN.summary(nf) ++ " · " ++ U.Str.get(nf, "kicad.cli"), [Mob.set.field("kpath", MSG.T.settings.kicad.path(lc), False{}, U.Ui.scratch(u, "@f.kpath"))], [Mob.set.btn(MSG.T.settings.kicad.path.save(lc), "kicad-path-save", "", False{})])], Mob.kn(U.KN.of(nf, st)), [
-    Mob.set.row(U.FreeCAD.label.loc(lc, nf), U.FreeCAD.note(lc, nf), Nil{}),
-    Mob.set.row(U.KiCad.ipc.label(lc, nf), U.KiCad.ipc.note(lc, nf), Bool.pick(List<&2, J.Json>, U.KiCad.ipc.ready(nf), Mob.set.chips.loc(lc, ["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{})),
-    Mob.set.row(U.Fab.set.order.label(), U.Fab.set.order.note(), Mob.set.chips.loc(lc, ["on", "off"], U.Fab.set.enabled(st), "order.enabled")),
-    Mob.set.row(U.Fab.set.label(), U.Fab.set.note.k(U.Fab.enabled(st)), Bool.pick(List<&2, J.Json>, U.Fab.enabled(st), Mob.set.chips.loc(lc, ["on", "off"], U.Fab.set.on(st), "order.estimates"), Nil{})),
-    Mob.set.row.l(MSG.T.settings.theme(lc), MSG.T.settings.theme.phone.note(lc), Mob.set.chips.loc(lc, ["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme"))], Mob.lang.rows(lc, u), [
-    Mob.set.row.l(MSG.T.settings.sidebar(lc), MSG.T.settings.sidebar.note(lc), Mob.set.chips.loc(lc, ["projects", "active"], U.Side.view(st), "sidebar.view")),
-
-    Mob.set.row(U.Tail.label(lc, nf), U.Tail.note(lc, nf), Nil{})]]), List.append(&2, J.Json, Mob.mates(lc, u), [
-    Mob.set.pair(lc, U.Ui.flag(u, "pairqr"), nf),
-    Mob.set.row(MSG.T.settings.channel(lc), MSG.T.settings.channel.note(lc), Mob.set.chips.loc(lc, ["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
-    Mob.set.row("Backplane " ++ v, U.Update.line.w(lc, st, nf, note), Mob.update.btn.loc(lc, U.Update.btn(st, nf, note)))])), List.append(&2, J.Json, Mob.usage.rows.loc(lc, U.Usage.rows(u)), more)))}])
-
-def Mob.settings.of(+u: U.Ui, st: M.State, nf: Map<&2, String>, v: String, note: String, more: List<&2, J.Json>) -> J.Json:
-  Mob.settings.of.loc(U.Lang.loc(u), u, st, nf, v, note, more)
 
 # Antigravity (client.bend's Agv.rows), as every client draws them: a
 # button "open-url" the app opens in the browser itself
@@ -1521,6 +1494,31 @@ def Mob.agy.rows(rs: List<&2, U.AgRow>) -> List<&2, J.Json>:
       Nil{}
     case U.AgRow{+l, +n, fs, bs} <> t:
       Mob.set.row.f(l, n, Mob.agy.fields(fs), Mob.agy.btns(bs)) <> Mob.agy.rows(t)
+
+def Mob.settings.of.loc(+lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String, more: List<&2, J.Json>) -> J.Json:
+  +prov = M.Setting.get(st, "agent.provider", "claude")
+  +models = U.Str.get(nf, "models")
+  +model = M.Setting.get(st, "agent.model", "")
+  J.Json.obj([J.KV{"rows", J.Json.arr(List.append(&2, J.Json, List.append(&2, J.Json, List.concat(&2, J.Json, [[
+    Mob.set.row(Mob.set.days.label.loc(lc, M.Setting.get(st, "settle.days", "3")), MSG.T.settings.settle.note(lc), Mob.set.days(M.Setting.get(st, "settle.days", "3"))),
+    Mob.set.row(MSG.T.settings.restart(lc), MSG.T.settings.restart.note(lc), Mob.set.chips.loc(lc, ["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"))], Mob.notify(lc, st), Mob.agy.rows(U.Fallbackv.rows(u)), [
+    Mob.set.row(MSG.T.settings.provider(lc), Bool.pick(String, String.is_empty(U.Models.cli(models, prov)), MSG.T.settings.provider.missing(lc, prov), U.Models.cli(models, prov)), Mob.set.chips.loc(lc, ["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider")),
+    Mob.set.row(MSG.T.settings.model(lc), Bool.pick(String, String.is_empty(model), MSG.T.common.default(lc), model) ++ ": " ++ U.Models.label_of(models, prov, model), Mob.set.chips.loc(lc, "" <> U.Models.list(models, prov), model, "agent.model")),
+    Mob.set.row.f("KiCad", U.KN.summary(nf) ++ " · " ++ U.Str.get(nf, "kicad.cli"), [Mob.set.field("kpath", MSG.T.settings.kicad.path(lc), False{}, U.Ui.scratch(u, "@f.kpath"))], [Mob.set.btn(MSG.T.settings.kicad.path.save(lc), "kicad-path-save", "", False{})])], Mob.kn(U.KN.of(nf, st)), [
+    Mob.set.row(U.FreeCAD.label.loc(lc, nf), U.FreeCAD.note(lc, nf), Nil{}),
+    Mob.set.row(U.KiCad.ipc.label(lc, nf), U.KiCad.ipc.note(lc, nf), Bool.pick(List<&2, J.Json>, U.KiCad.ipc.ready(nf), Mob.set.chips.loc(lc, ["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{})),
+    Mob.set.row(U.Fab.set.order.label(), U.Fab.set.order.note(), Mob.set.chips.loc(lc, ["on", "off"], U.Fab.set.enabled(st), "order.enabled")),
+    Mob.set.row(U.Fab.set.label(), U.Fab.set.note.k(U.Fab.enabled(st)), Bool.pick(List<&2, J.Json>, U.Fab.enabled(st), Mob.set.chips.loc(lc, ["on", "off"], U.Fab.set.on(st), "order.estimates"), Nil{})),
+    Mob.set.row.l(MSG.T.settings.theme(lc), MSG.T.settings.theme.phone.note(lc), Mob.set.chips.loc(lc, ["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme"))], Mob.lang.rows(lc, u), [
+    Mob.set.row.l(MSG.T.settings.sidebar(lc), MSG.T.settings.sidebar.note(lc), Mob.set.chips.loc(lc, ["projects", "active"], U.Side.view(st), "sidebar.view")),
+
+    Mob.set.row(U.Tail.label(lc, nf), U.Tail.note(lc, nf), Nil{})]]), List.append(&2, J.Json, Mob.mates(lc, u), [
+    Mob.set.pair(lc, U.Ui.flag(u, "pairqr"), nf),
+    Mob.set.row(MSG.T.settings.channel(lc), MSG.T.settings.channel.note(lc), Mob.set.chips.loc(lc, ["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
+    Mob.set.row("Backplane " ++ v, U.Update.line.w(lc, st, nf, note), Mob.update.btn.loc(lc, U.Update.btn(st, nf, note)))])), List.append(&2, J.Json, Mob.usage.rows.loc(lc, U.Usage.rows(u)), more)))}])
+
+def Mob.settings.of(+u: U.Ui, st: M.State, nf: Map<&2, String>, v: String, note: String, more: List<&2, J.Json>) -> J.Json:
+  Mob.settings.of.loc(U.Lang.loc(u), u, st, nf, v, note, more)
 
 def Mob.agy(+lc: I.Loc, +u: U.Ui) -> List<&2, J.Json>:
   Mob.agy.rows(U.Agv.rows.loc(lc, u))

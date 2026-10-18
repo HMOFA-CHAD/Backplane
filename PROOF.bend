@@ -12182,3 +12182,23 @@ def Laws.exe_app_name():
 def Laws.exe_server_exact():
   {==}
 # ---- end build-speed ----
+
+# ---- global provider fallback ----
+def Laws.fallback_empty_exhausted(s, caps, now):
+  {==}
+
+def Laws.fallback_never_wraps():
+  {==}
+
+def Laws.fallback_auth_is_not_quota():
+  {==}
+
+def Laws.fallback_unknown_reset_held():
+  {==}
+
+def Laws.fallback_reset_boundary():
+  {==}
+
+def Laws.fallback_no_recovery_while_locked(s, now):
+  {==}
+# ---- end global provider fallback ----
