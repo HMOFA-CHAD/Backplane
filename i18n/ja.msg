@@ -1233,3 +1233,6 @@ native.settings.placeholder.hint = このハブでの設定の説明。
 native.settings.placeholder.option = 選択肢
 native.notify.channel.personal = 個人向け通知
 native.notify.channel.live = 稼働中のエージェント
+
+# iOS system camera permission purpose
+native.permission.camera = コンピューターに表示されたペアリングコードを読み取り、接続します。
