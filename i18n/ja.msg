@@ -1089,3 +1089,24 @@ native.hub.changes = {count}件の変更
 native.hub.heard = 最終受信：{when}
 native.hub.connection = {name}：{state}
 native.hub.accessibility = {name}：{state}
+
+# Native file, review, task and space controls.
+native.viewer.source = 表示元
+native.file.image.unsupported = この画像は表示できません
+native.file.pdf.error = {kind, select, send {ハブからPDFを取得できません（12 MBを超えている可能性があります）} http {ハブの応答：{code}} other {このPDFは表示できません}}
+native.file.page = {number}ページ
+native.review.comment = コメント
+native.review.resolved = 解決済み
+native.review.write = コメントを書く
+native.review.place = 位置：{x}, {y} mm
+native.browser.typing = ページに入力
+native.browser.empty = ページなし
+native.browser.screenshot = スクリーンショット
+native.task.private = 非公開
+native.task.note = 大事な点を伝える
+native.task.delete.ask = このタスクを削除しますか？
+native.task.state = {state, select, ok {完了} failed {失敗} stopped {停止} other {{state}}}
+native.task.parameter = {label}（{example}）
+native.key.enter = Enter
+native.key.tab = Tab
+native.key.esc = Esc

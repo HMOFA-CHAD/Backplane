@@ -4,9 +4,17 @@ package dev.backplane.mobile
 object NativeMessages {
   private fun number(n: ULong): String = n.toString().reversed().chunked(3).joinToString(",").reversed()
 
+  // bots.name
+  fun bots_name(tag: String): String =
+    if (tag == "ja") ("名前") else ("Name")
+
   // bots.tab.routines
   fun bots_tab_routines(tag: String): String =
     if (tag == "ja") ("ルーティン") else ("Routines")
+
+  // browser.address
+  fun browser_address(tag: String): String =
+    if (tag == "ja") ("アドレス") else ("Address")
 
   // common.cancel
   fun common_cancel(tag: String): String =
@@ -16,9 +24,53 @@ object NativeMessages {
   fun common_clear(tag: String): String =
     if (tag == "ja") ("クリア") else ("Clear")
 
+  // common.close
+  fun common_close(tag: String): String =
+    if (tag == "ja") ("閉じる") else ("Close")
+
+  // common.delete
+  fun common_delete(tag: String): String =
+    if (tag == "ja") ("削除") else ("Delete")
+
+  // common.go
+  fun common_go(tag: String): String =
+    if (tag == "ja") ("移動") else ("Go")
+
+  // common.refresh
+  fun common_refresh(tag: String): String =
+    if (tag == "ja") ("更新") else ("Refresh")
+
+  // common.reload
+  fun common_reload(tag: String): String =
+    if (tag == "ja") ("再読み込み") else ("Reload")
+
+  // common.run
+  fun common_run(tag: String): String =
+    if (tag == "ja") ("実行") else ("Run")
+
+  // composer.send
+  fun composer_send(tag: String): String =
+    if (tag == "ja") ("送信") else ("Send")
+
+  // files.back.tip
+  fun files_back_tip(tag: String): String =
+    if (tag == "ja") ("フォルダに戻る") else ("Back to the folder")
+
   // files.changed
   fun files_changed(tag: String, arg0: ULong): String =
     if (tag == "ja") ((if (arg0 == 0uL) "変更なし" else "変更ファイル" + number(arg0) + "件")) else ((if (arg0 == 0uL) "No files changed" else (if (arg0 == 1uL) number(arg0) + " file changed" else number(arg0) + " files changed")))
+
+  // native.browser.empty
+  fun native_browser_empty(tag: String): String =
+    if (tag == "ja") ("ページなし") else ("No page yet")
+
+  // native.browser.screenshot
+  fun native_browser_screenshot(tag: String): String =
+    if (tag == "ja") ("スクリーンショット") else ("Screenshot")
+
+  // native.browser.typing
+  fun native_browser_typing(tag: String): String =
+    if (tag == "ja") ("ページに入力") else ("Type into the page")
 
   // native.common.ok
   fun native_common_ok(tag: String): String =
@@ -27,6 +79,18 @@ object NativeMessages {
   // native.common.title
   fun native_common_title(tag: String): String =
     if (tag == "ja") ("タイトル") else ("Title")
+
+  // native.file.image.unsupported
+  fun native_file_image_unsupported(tag: String): String =
+    if (tag == "ja") ("この画像は表示できません") else ("This image cannot be shown here")
+
+  // native.file.page
+  fun native_file_page(tag: String, arg0: String): String =
+    if (tag == "ja") (arg0 + "ページ") else ("Page " + arg0)
+
+  // native.file.pdf.error
+  fun native_file_pdf_error(tag: String, arg0: String, arg1: String): String =
+    if (tag == "ja") ((if (arg0 == "send") "ハブからPDFを取得できません（12 MBを超えている可能性があります）" else (if (arg0 == "http") "ハブの応答：" + arg1 else "このPDFは表示できません"))) else ((if (arg0 == "send") "The hub could not send this PDF (it may be over 12 MB)" else (if (arg0 == "http") "The hub answered " + arg1 else "This PDF cannot be shown here")))
 
   // native.hub.accessibility
   fun native_hub_accessibility(tag: String, arg0: String, arg1: String): String =
@@ -51,6 +115,18 @@ object NativeMessages {
   // native.hub.state
   fun native_hub_state(tag: String, arg0: String): String =
     if (tag == "ja") ((if (arg0 == "online") "接続済み" else (if (arg0 == "syncing") "同期中" else (if (arg0 == "offline") "オフライン・再接続中" else "接続中")))) else ((if (arg0 == "online") "Connected" else (if (arg0 == "syncing") "Catching up" else (if (arg0 == "offline") "Offline, retrying" else "Connecting"))))
+
+  // native.key.enter
+  fun native_key_enter(tag: String): String =
+    if (tag == "ja") ("Enter") else ("Enter")
+
+  // native.key.esc
+  fun native_key_esc(tag: String): String =
+    if (tag == "ja") ("Esc") else ("Esc")
+
+  // native.key.tab
+  fun native_key_tab(tag: String): String =
+    if (tag == "ja") ("Tab") else ("Tab")
 
   // native.pair.action
   fun native_pair_action(tag: String): String =
@@ -119,6 +195,22 @@ object NativeMessages {
   // native.pair.unpair
   fun native_pair_unpair(tag: String): String =
     if (tag == "ja") ("ペアリング解除") else ("Unpair")
+
+  // native.review.comment
+  fun native_review_comment(tag: String): String =
+    if (tag == "ja") ("コメント") else ("Comment")
+
+  // native.review.place
+  fun native_review_place(tag: String, arg0: String, arg1: String): String =
+    if (tag == "ja") ("位置：" + arg0 + ", " + arg1 + " mm") else ("at " + arg0 + ", " + arg1 + " mm")
+
+  // native.review.resolved
+  fun native_review_resolved(tag: String): String =
+    if (tag == "ja") ("解決済み") else ("Resolved")
+
+  // native.review.write
+  fun native_review_write(tag: String): String =
+    if (tag == "ja") ("コメントを書く") else ("Write a note")
 
   // native.settings.about
   fun native_settings_about(tag: String): String =
@@ -208,9 +300,65 @@ object NativeMessages {
   fun native_tab_home(tag: String): String =
     if (tag == "ja") ("ホーム") else ("Home")
 
+  // native.task.delete.ask
+  fun native_task_delete_ask(tag: String): String =
+    if (tag == "ja") ("このタスクを削除しますか？") else ("Delete this task?")
+
+  // native.task.note
+  fun native_task_note(tag: String): String =
+    if (tag == "ja") ("大事な点を伝える") else ("Tell it what matters")
+
+  // native.task.parameter
+  fun native_task_parameter(tag: String, arg0: String, arg1: String): String =
+    if (tag == "ja") (arg0 + "（" + arg1 + "）") else (arg0 + " (" + arg1 + ")")
+
+  // native.task.private
+  fun native_task_private(tag: String): String =
+    if (tag == "ja") ("非公開") else ("private")
+
+  // native.task.state
+  fun native_task_state(tag: String, arg0: String): String =
+    if (tag == "ja") ((if (arg0 == "ok") "完了" else (if (arg0 == "failed") "失敗" else (if (arg0 == "stopped") "停止" else arg0)))) else ((if (arg0 == "ok") "ok" else (if (arg0 == "failed") "failed" else (if (arg0 == "stopped") "stopped" else arg0))))
+
+  // native.viewer.source
+  fun native_viewer_source(tag: String): String =
+    if (tag == "ja") ("表示元") else ("Source")
+
   // palette.settings
   fun palette_settings(tag: String): String =
     if (tag == "ja") ("設定") else ("Settings")
+
+  // review.fails
+  fun review_fails(tag: String, arg0: String): String =
+    if (tag == "ja") ("不合格：" + arg0) else ("Fails: " + arg0)
+
+  // review.force
+  fun review_force(tag: String): String =
+    if (tag == "ja") ("チェック失敗時もリリース") else ("Release even if checks fail")
+
+  // review.passes
+  fun review_passes(tag: String): String =
+    if (tag == "ja") ("合格") else ("Passes")
+
+  // review.publish
+  fun review_publish(tag: String): String =
+    if (tag == "ja") ("GitHubで公開") else ("Publish on GitHub")
+
+  // review.release.make
+  fun review_release_make(tag: String, arg0: String): String =
+    if (tag == "ja") ("リリース" + arg0 + "を作成") else ("Make release " + arg0)
+
+  // review.reopen
+  fun review_reopen(tag: String): String =
+    if (tag == "ja") ("再開") else ("Reopen")
+
+  // review.reply
+  fun review_reply(tag: String): String =
+    if (tag == "ja") ("返信") else ("Reply")
+
+  // review.resolve
+  fun review_resolve(tag: String): String =
+    if (tag == "ja") ("解決済みにする") else ("Resolve")
 
   // settings.appearance
   fun settings_appearance(tag: String): String =
@@ -260,6 +408,38 @@ object NativeMessages {
   fun settings_tour_show(tag: String): String =
     if (tag == "ja") ("ツアーを表示") else ("Show the tour")
 
+  // teach.description
+  fun teach_description(tag: String): String =
+    if (tag == "ja") ("処理内容（任意）") else ("What it does (optional)")
+
+  // teach.empty
+  fun teach_empty(tag: String): String =
+    if (tag == "ja") ("タスクはまだありません。ブラウザタブかチャットで教えてください。") else ("None yet. Teach one in the Browser tab, or tell it in chat.")
+
+  // teach.name.note
+  fun teach_name_note(tag: String): String =
+    if (tag == "ja") ("名前を付けてください。毎回入力する値を指定できます。") else ("Name it. Mark a value you typed to ask for it each time the task runs.")
+
+  // teach.note.add
+  fun teach_note_add(tag: String): String =
+    if (tag == "ja") ("メモを追加") else ("Add note")
+
+  // teach.run.note
+  fun teach_run_note(tag: String): String =
+    if (tag == "ja") ("開いて実行できます。ルーティンからも実行できます。") else ("Open one to run it. A routine can run it too.")
+
+  // teach.runs
+  fun teach_runs(tag: String): String =
+    if (tag == "ja") ("最近の実行") else ("Recent runs")
+
+  // teach.save
+  fun teach_save(tag: String): String =
+    if (tag == "ja") ("このタスクを保存") else ("Save this task")
+
+  // teach.steps
+  fun teach_steps(tag: String, arg0: String, arg1: String, arg2: String): String =
+    if (tag == "ja") (arg0 + "・" + arg1 + "ステップ") else (arg0 + " · " + arg1 + " " + (if (arg2 == "one") "step" else "steps"))
+
   // tour.back
   fun tour_back(tag: String): String =
     if (tag == "ja") ("戻る") else ("Back")
@@ -283,4 +463,8 @@ object NativeMessages {
   // turn.by
   fun turn_by(tag: String, arg0: String): String =
     if (tag == "ja") ((if (arg0 == "you") "自分" else (if (arg0 == "agent") "エージェント" else "不明"))) else ((if (arg0 == "you") "You" else (if (arg0 == "agent") "Agent" else "Someone")))
+
+  // viewer.files.empty
+  fun viewer_files_empty(tag: String): String =
+    if (tag == "ja") ("空のフォルダ") else ("This folder is empty")
 }
