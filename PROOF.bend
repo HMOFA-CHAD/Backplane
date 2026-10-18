@@ -11990,3 +11990,10 @@ def Laws.mail_credit_native_kept(w, charge):
     case MPCREDIT.WClose{}: {==}
     case MPCREDIT.WState{_, _}: {==}
     case MPCREDIT.WItems{_, _, _, _, _, _}: {==}
+# ---- i18n web phone ----
+def Laws.webphone_option_english(): {==}
+def Laws.webphone_model_name_kept(): {==}
+def Laws.webphone_count_ungrouped(): {==}
+def Laws.webphone_count_japanese(): {==}
+def Laws.webphone_idle_japanese(): {==}
+# ---- end i18n web phone ----
