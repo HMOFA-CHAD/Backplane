@@ -3889,6 +3889,18 @@ def Set.fallback(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
   +rs = U.Fallbackv.rows(S.Nui.ui(n))
   Out.cat(Set.card(x, y, w, (Set.agy.sum(rs, ty, x, w) + 10 : U32)), Set.agy.rows(rs, ty, n, x, w, (y + 8 : U32)))
 
+# Keep the first Settings group in its own native layout call. The full
+# screen's single row expression otherwise exceeds Bend's call arity.
+def Set.threads(+ty: Ty, +st: M.State, +n: S.Nui, +x: U32, +w: U32, +b: U32) -> Out:
+  Out.all([
+    Set.head(ty, MSG.T.tour.title.threads(Ty.loc(ty)), x, (b + 76 : U32)),
+    Set.card(x, (b + 108 : U32), w, 128),
+    Set.row.r(ty, MSG.T.settings.settle(Ty.loc(ty)), MSG.T.settings.settle.note(Ty.loc(ty)), x, (b + 110 : U32), w, 190),
+    Set.days(ty, M.Setting.get(st, "settle.days", "3"), (x + w - 172 : U32), (b + 126 : U32)),
+    Set.carry(ty, M.Carry.on(st), x, w, (b + 174 : U32)),
+    Set.notify(st, ty, x, w, (b + 256 : U32)),
+    Set.fallback(ty, n, x, w, (b + 256 + Set.notify.h(st, ty, w) : U32))])
+
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +label0 = MSG.T.settings.theme.light(Ty.loc(ty))
   +label1 = MSG.T.settings.theme.dark(Ty.loc(ty))
@@ -3919,13 +3931,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   Out.all([
     Out{Nil{}, [Lay.hit(x0, 52, (x1 - x0 : U32), (h - 52 : U32), "set-bg", U32.show(U32.dim(total, h)))]},
     Out.hits_below(52, Out.all([
-    Set.head(ty, MSG.T.tour.title.threads(Ty.loc(ty)), x, (b + 76 : U32)),
-    Set.card(x, (b + 108 : U32), w, 128),
-    Set.row.r(ty, MSG.T.settings.settle(Ty.loc(ty)), MSG.T.settings.settle.note(Ty.loc(ty)), x, (b + 110 : U32), w, 190),
-    Set.days(ty, M.Setting.get(st, "settle.days", "3"), (x + w - 172 : U32), (b + 126 : U32)),
-    Set.carry(ty, M.Carry.on(st), x, w, (b + 174 : U32)),
-    Set.notify(st, ty, x, w, (b + 256 : U32)),
-    Set.fallback(ty, n, x, w, (b + 256 + Set.notify.h(st, ty, w) : U32)),
+    Set.threads(ty, st, n, x, w, b),
     Set.head(ty, MSG.T.settings.agents(Ty.loc(ty)), x, (b2 + 192 : U32)),
     Set.card(x, (b2 + 224 : U32), w, (124 + dy : U32)),
     Set.row(ty, MSG.T.settings.agents.default(Ty.loc(ty)), MSG.T.settings.agents.note(Ty.loc(ty), Set.cli.loc(Ty.loc(ty), U.Models.cli(U.Str.get(info, "models"), prov), prov)), x, (b2 + 226 : U32), w),

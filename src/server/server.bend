@@ -9124,14 +9124,34 @@ def Hub.step.wakes(step: B.Step, +st: M.State, h: Hub) -> IO(Hub & Bool):
     case B.Step{cs, os}:
       Hub.step.a(st, h, cs, os)
 
-def Hub.step.fallback(h: Hub, +st: M.State, now: Nat, step: B.Step) -> IO(Hub & Bool):
+# Keep the affine hub and copied state boxed while computing the pure step.
+# Their expanded records plus caps/now/step exceed Bend's 247-word call
+# limit when held in one continuation. Unbox only at the existing handoff.
+def Hub.step.fallback.done(held: List<Hub>, states: List<&2, M.State>, step: B.Step) -> IO(Hub & Bool):
+  match held states:
+    case h <> hs st <> ss: Hub.step.wakes(step, st, h)
+    case _ _: IO.die(Hub & Bool, 1, "missing fallback step context")
+
+def Hub.step.fallback.fold(states: List<&2, M.State>, caps: J.Json, now: Nat, step: B.Step, held: List<Hub>) -> IO(Hub & Bool):
+  match states:
+    case +st <> rest: Hub.step.fallback.done(held, [st], B.Fallback.validate(st, caps, now, step))
+    case Nil{}: IO.die(Hub & Bool, 1, "missing fallback state")
+
+def Hub.step.fallback.models(h: Hub) -> String & List<Hub>:
   match h:
     case Hub{s, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.step.wakes(B.Fallback.validate(st, Maybe.default(&2, J.Json, J.Json.parse(Cfg.models(cfg)), J.Null{}), now, step), st, Hub{s, f, ls, cl, as, inbox, cfg, note})
+      (Cfg.models(cfg), [Hub{s, f, ls, cl, as, inbox, cfg, note}])
+
+def Hub.step.fallback.captured(pair: String & List<Hub>, states: List<&2, M.State>, now: Nat, step: B.Step) -> IO(Hub & Bool):
+  (models, held) = pair
+  Hub.step.fallback.fold(states, Maybe.default(&2, J.Json, J.Json.parse(models), J.Null{}), now, step, held)
+
+def Hub.step.fallback(h: Hub, states: List<&2, M.State>, now: Nat, step: B.Step) -> IO(Hub & Bool):
+  Hub.step.fallback.captured(Hub.step.fallback.models(h), states, now, step)
 
 def Hub.step.k(p: M.State & Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   (+st, h) = p
-  IO.bind(Nat, Hub & Bool, Now.nat(), +now => Hub.step.fallback(h, st, now, B.Locks.after(st, now, B.Ride.after(st, now, B.Wake.after(st, B.Step{cs, os})))))
+  IO.bind(Nat, Hub & Bool, Now.nat(), +now => Hub.step.fallback(h, [st], now, B.Locks.after(st, now, B.Ride.after(st, now, B.Wake.after(st, B.Step{cs, os})))))
 
 # a step's changes are stored (with the pending counts they move), then
 # its effects run; answers whether it was stored
