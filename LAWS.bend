@@ -3,6 +3,7 @@ import ./src/server/server.bend as MPCREDIT # mail perf
 # ---- i18n web phone imports ----
 import ./src/web/view.bend as WPH
 # ---- end i18n web phone imports ----
+import ./src/core/schematic.bend as SC # kicad fork viewers
 import ./src/core/charter.bend as CH # mail 2c
 import ./src/core/mailrun.bend as MRUN # mail 2c
 import ./src/server/mailstore.bend as MIX # mail index
@@ -45,6 +46,7 @@ import ./src/core/semver.bend as SV
 import ./src/core/clipath.bend as CPA
 import ./src/app/nui.bend as N
 import ./src/app/bots.bend as BV
+import ./src/core/sexpr.bend as KSEX # kicad fork footprint placement
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
 import ./src/core/deploy.bend as DP
@@ -10484,3 +10486,16 @@ law kserve4_nested_symbol_cap_lifts:
   {KSL.KS.guard("kiapi.common.commands.CreateItems", J.Json.obj([J.KV{"items", J.Json.arr([J.Json.obj([J.KV{"@type", J.Str{"type.googleapis.com/kiapi.schematic.types.SchematicSymbolInstance"}}, J.KV{"definition", J.Json.obj([J.KV{"id", J.Json.obj(Nil{})}])}])])}]), ["symbol-from-libid"]) == "" : String}
 
 # ---- end kicad-ipc 4 ----
+# ---- kicad fork viewers ----
+law fork_cache_legacy:
+  for id: String
+  {SC.Sch.cache.name("", id) == id : String}
+law fork_cache_alias:
+  for id: String
+  {SC.Sch.cache.name("local", id) == "local" : String}
+# ---- end kicad fork viewers ----
+# ---- kicad fork footprint placement ----
+law fork_footprint_legacy_at:
+  for x: KSEX.Sx
+  {B.Fp.at.k(True{}, x) == KSEX.Sx.get(x, "at") : KSEX.Sx}
+# ---- end kicad fork footprint placement ----
