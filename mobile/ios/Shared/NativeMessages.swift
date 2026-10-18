@@ -119,6 +119,11 @@ enum NativeMessages {
     tag == "ja" ? ("移動") : ("Go")
   }
 
+  // common.hide
+  static func common_hide(_ tag: String) -> String {
+    tag == "ja" ? ("隠す") : ("Hide")
+  }
+
   // common.more
   static func common_more(_ tag: String) -> String {
     tag == "ja" ? ("さらに表示") : ("More")
@@ -149,6 +154,11 @@ enum NativeMessages {
     tag == "ja" ? ("表示") : ("Show")
   }
 
+  // composer.attach
+  static func composer_attach(_ tag: String) -> String {
+    tag == "ja" ? ("添付") : ("Attach")
+  }
+
   // composer.model.tip
   static func composer_model_tip(_ tag: String) -> String {
     tag == "ja" ? ("モデルと推論の強さを選択") : ("Choose the model and effort")
@@ -157,6 +167,11 @@ enum NativeMessages {
   // composer.send
   static func composer_send(_ tag: String) -> String {
     tag == "ja" ? ("送信") : ("Send")
+  }
+
+  // composer.stop
+  static func composer_stop(_ tag: String) -> String {
+    tag == "ja" ? ("停止") : ("Stop")
   }
 
   // files.back.tip
@@ -249,6 +264,21 @@ enum NativeMessages {
     tag == "ja" ? ("レンダリングを作成") : ("Create renders")
   }
 
+  // menu.unpin
+  static func menu_unpin(_ tag: String) -> String {
+    tag == "ja" ? ("ピン留めを解除") : ("Unpin")
+  }
+
+  // native.attach.paste
+  static func native_attach_paste(_ tag: String) -> String {
+    tag == "ja" ? ("画像を貼り付け") : ("Paste image")
+  }
+
+  // native.attach.photos
+  static func native_attach_photos(_ tag: String) -> String {
+    tag == "ja" ? ("写真") : ("Photos")
+  }
+
   // native.bot.create.hint
   static func native_bot_create_hint(_ tag: String) -> String {
     tag == "ja" ? ("＋ボタンで作成できます。") : ("Make one with the plus button.")
@@ -319,6 +349,41 @@ enum NativeMessages {
     tag == "ja" ? ("タイトル") : ("Title")
   }
 
+  // native.composer.btw
+  static func native_composer_btw(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("btw・" + arg0) : ("btw · " + arg0)
+  }
+
+  // native.composer.remove
+  static func native_composer_remove(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? (arg0 + "を外す") : ("Remove " + arg0)
+  }
+
+  // native.composer.suggestions.close
+  static func native_composer_suggestions_close(_ tag: String) -> String {
+    tag == "ja" ? ("候補を閉じる") : ("Close suggestions")
+  }
+
+  // native.diff.revert.ask
+  static func native_diff_revert_ask(_ tag: String) -> String {
+    tag == "ja" ? ("ファイルをこのスレッドの開始時点に戻しますか？") : ("Put the files back as they were when this thread began?")
+  }
+
+  // native.entry.fold
+  static func native_entry_fold(_ tag: String, _ arg0: String, _ arg1: String) -> String {
+    tag == "ja" ? ((arg0 == "open" ? arg1 + "を隠す" : arg1 + "を表示")) : ((arg0 == "open" ? "Hide " + arg1 : "Show " + arg1))
+  }
+
+  // native.entry.viewer
+  static func native_entry_viewer(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("ビューアーで表示：" + arg0) : ("Show in the viewer: " + arg0)
+  }
+
+  // native.entry.viewer.short
+  static func native_entry_viewer_short(_ tag: String) -> String {
+    tag == "ja" ? ("ビューアーで表示") : ("Show in the viewer")
+  }
+
   // native.file.image.unsupported
   static func native_file_image_unsupported(_ tag: String) -> String {
     tag == "ja" ? ("この画像は表示できません") : ("This image cannot be shown here")
@@ -332,6 +397,31 @@ enum NativeMessages {
   // native.file.pdf.error
   static func native_file_pdf_error(_ tag: String, _ arg0: String, _ arg1: String) -> String {
     tag == "ja" ? ((arg0 == "send" ? "ハブからPDFを取得できません（12 MBを超えている可能性があります）" : (arg0 == "http" ? "ハブの応答：" + arg1 : "このPDFは表示できません"))) : ((arg0 == "send" ? "The hub could not send this PDF (it may be over 12 MB)" : (arg0 == "http" ? "The hub answered " + arg1 : "This PDF cannot be shown here")))
+  }
+
+  // native.find.empty
+  static func native_find_empty(_ tag: String) -> String {
+    tag == "ja" ? ("該当なし") : ("Nothing found")
+  }
+
+  // native.find.file.hint
+  static func native_find_file_hint(_ tag: String) -> String {
+    tag == "ja" ? ("ファイル名を入力") : ("Type to find a file")
+  }
+
+  // native.find.file.label
+  static func native_find_file_label(_ tag: String) -> String {
+    tag == "ja" ? ("ファイル名") : ("File name")
+  }
+
+  // native.find.threads.hint
+  static func native_find_threads_hint(_ tag: String) -> String {
+    tag == "ja" ? ("検索語を入力") : ("Type to search threads")
+  }
+
+  // native.find.threads.label
+  static func native_find_threads_label(_ tag: String) -> String {
+    tag == "ja" ? ("タイトル・メッセージ") : ("Titles and messages")
   }
 
   // native.google.client.hide
@@ -434,6 +524,26 @@ enum NativeMessages {
     tag == "ja" ? ((arg0 == "online" ? "接続済み" : (arg0 == "syncing" ? "同期中" : (arg0 == "offline" ? "オフライン・再接続中" : "接続中")))) : ((arg0 == "online" ? "Connected" : (arg0 == "syncing" ? "Catching up" : (arg0 == "offline" ? "Offline, retrying" : "Connecting"))))
   }
 
+  // native.image.missing
+  static func native_image_missing(_ tag: String) -> String {
+    tag == "ja" ? ("画像なし") : ("No image")
+  }
+
+  // native.image.plain
+  static func native_image_plain(_ tag: String) -> String {
+    tag == "ja" ? ("画像") : ("Image")
+  }
+
+  // native.image.render
+  static func native_image_render(_ tag: String) -> String {
+    tag == "ja" ? ("レンダリング画像") : ("Render")
+  }
+
+  // native.key.down
+  static func native_key_down(_ tag: String) -> String {
+    tag == "ja" ? ("下") : ("Down")
+  }
+
   // native.key.enter
   static func native_key_enter(_ tag: String) -> String {
     tag == "ja" ? ("Enter") : ("Enter")
@@ -444,9 +554,29 @@ enum NativeMessages {
     tag == "ja" ? ("Esc") : ("Esc")
   }
 
+  // native.key.keyboard
+  static func native_key_keyboard(_ tag: String) -> String {
+    tag == "ja" ? ("キーボード") : ("Keyboard")
+  }
+
+  // native.key.left
+  static func native_key_left(_ tag: String) -> String {
+    tag == "ja" ? ("左") : ("Left")
+  }
+
+  // native.key.right
+  static func native_key_right(_ tag: String) -> String {
+    tag == "ja" ? ("右") : ("Right")
+  }
+
   // native.key.tab
   static func native_key_tab(_ tag: String) -> String {
     tag == "ja" ? ("Tab") : ("Tab")
+  }
+
+  // native.key.up
+  static func native_key_up(_ tag: String) -> String {
+    tag == "ja" ? ("上") : ("Up")
   }
 
   // native.machine.address
@@ -749,6 +879,16 @@ enum NativeMessages {
     tag == "ja" ? ("システム設定") : ("System settings")
   }
 
+  // native.status.answer
+  static func native_status_answer(_ tag: String) -> String {
+    tag == "ja" ? ("回答待ち") : ("Waits for an answer")
+  }
+
+  // native.status.approval
+  static func native_status_approval(_ tag: String) -> String {
+    tag == "ja" ? ("承認待ち") : ("Waits for approval")
+  }
+
   // native.tab.home
   static func native_tab_home(_ tag: String) -> String {
     tag == "ja" ? ("ホーム") : ("Home")
@@ -777,6 +917,36 @@ enum NativeMessages {
   // native.task.state
   static func native_task_state(_ tag: String, _ arg0: String) -> String {
     tag == "ja" ? ((arg0 == "ok" ? "完了" : (arg0 == "failed" ? "失敗" : (arg0 == "stopped" ? "停止" : arg0)))) : ((arg0 == "ok" ? "ok" : (arg0 == "failed" ? "failed" : (arg0 == "stopped" ? "stopped" : arg0))))
+  }
+
+  // native.term.inactive
+  static func native_term_inactive(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? (arg0 + "・停止中、タップで再起動") : (arg0 + " · inactive, tap to restart")
+  }
+
+  // native.term.restart
+  static func native_term_restart(_ tag: String) -> String {
+    tag == "ja" ? ("再起動") : ("Restart")
+  }
+
+  // native.text.copyall.action
+  static func native_text_copyall_action(_ tag: String) -> String {
+    tag == "ja" ? ("すべてコピー") : ("Copy all")
+  }
+
+  // native.text.copyall.title
+  static func native_text_copyall_title(_ tag: String) -> String {
+    tag == "ja" ? ("すべてコピー") : ("Copy All")
+  }
+
+  // native.text.select.action
+  static func native_text_select_action(_ tag: String) -> String {
+    tag == "ja" ? ("テキストを選択") : ("Select text")
+  }
+
+  // native.text.select.title
+  static func native_text_select_title(_ tag: String) -> String {
+    tag == "ja" ? ("テキストを選択") : ("Select Text")
   }
 
   // native.thread.archived
@@ -909,6 +1079,26 @@ enum NativeMessages {
     tag == "ja" ? ("強調") : ("Stand out")
   }
 
+  // notify.failed
+  static func notify_failed(_ tag: String) -> String {
+    tag == "ja" ? ("失敗") : ("Failed")
+  }
+
+  // palette.commit
+  static func palette_commit(_ tag: String) -> String {
+    tag == "ja" ? ("コミットしてプッシュ") : ("Commit & push")
+  }
+
+  // palette.findfile
+  static func palette_findfile(_ tag: String) -> String {
+    tag == "ja" ? ("ファイルを探す") : ("Find file")
+  }
+
+  // palette.revert
+  static func palette_revert(_ tag: String) -> String {
+    tag == "ja" ? ("スレッドを元に戻す") : ("Revert thread")
+  }
+
   // palette.search
   static func palette_search(_ tag: String) -> String {
     tag == "ja" ? ("スレッドを検索") : ("Search threads")
@@ -917,6 +1107,11 @@ enum NativeMessages {
   // palette.settings
   static func palette_settings(_ tag: String) -> String {
     tag == "ja" ? ("設定") : ("Settings")
+  }
+
+  // palette.terminal
+  static func palette_terminal(_ tag: String) -> String {
+    tag == "ja" ? ("ターミナル") : ("Terminal")
   }
 
   // queue.edit
@@ -992,6 +1187,11 @@ enum NativeMessages {
   // routine.run
   static func routine_run(_ tag: String) -> String {
     tag == "ja" ? ("今すぐ実行") : ("Run now")
+  }
+
+  // sched.kind.reminder
+  static func sched_kind_reminder(_ tag: String) -> String {
+    tag == "ja" ? ("リマインダー") : ("Reminder")
   }
 
   // sched.kind.repeat
@@ -1119,9 +1319,19 @@ enum NativeMessages {
     tag == "ja" ? (arg0 + "・" + arg1 + "ステップ") : (arg0 + " · " + arg1 + " " + (arg2 == "one" ? "step" : "steps"))
   }
 
+  // terminal.pin
+  static func terminal_pin(_ tag: String) -> String {
+    tag == "ja" ? ("先頭にピン留め") : ("Pin to the top")
+  }
+
   // thread.new
   static func thread_new(_ tag: String) -> String {
     tag == "ja" ? ("新しいスレッド") : ("New thread")
+  }
+
+  // thread.subagents
+  static func thread_subagents(_ tag: String) -> String {
+    tag == "ja" ? ("サブエージェント") : ("Subagents")
   }
 
   // tools.pinned
@@ -1162,6 +1372,16 @@ enum NativeMessages {
   // viewer.diff
   static func viewer_diff(_ tag: String) -> String {
     tag == "ja" ? ("差分") : ("Diff")
+  }
+
+  // viewer.diff.pr
+  static func viewer_diff_pr(_ tag: String) -> String {
+    tag == "ja" ? ("PRを作成") : ("Open PR")
+  }
+
+  // viewer.files
+  static func viewer_files(_ tag: String) -> String {
+    tag == "ja" ? ("ファイル") : ("Files")
   }
 
   // viewer.files.empty
@@ -1257,5 +1477,10 @@ enum NativeMessages {
   // web.hooks.secret
   static func web_hooks_secret(_ tag: String) -> String {
     tag == "ja" ? ("シークレット（1回のみ表示）") : ("Secret, shown once")
+  }
+
+  // web.terminal.pinned
+  static func web_terminal_pinned(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? (arg0 + "・先頭にピン留め") : (arg0 + " · pinned at the top")
   }
 }

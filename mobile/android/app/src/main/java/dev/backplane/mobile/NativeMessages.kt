@@ -92,6 +92,10 @@ object NativeMessages {
   fun common_go(tag: String): String =
     if (tag == "ja") ("移動") else ("Go")
 
+  // common.hide
+  fun common_hide(tag: String): String =
+    if (tag == "ja") ("隠す") else ("Hide")
+
   // common.more
   fun common_more(tag: String): String =
     if (tag == "ja") ("さらに表示") else ("More")
@@ -116,6 +120,10 @@ object NativeMessages {
   fun common_show(tag: String): String =
     if (tag == "ja") ("表示") else ("Show")
 
+  // composer.attach
+  fun composer_attach(tag: String): String =
+    if (tag == "ja") ("添付") else ("Attach")
+
   // composer.model.tip
   fun composer_model_tip(tag: String): String =
     if (tag == "ja") ("モデルと推論の強さを選択") else ("Choose the model and effort")
@@ -123,6 +131,10 @@ object NativeMessages {
   // composer.send
   fun composer_send(tag: String): String =
     if (tag == "ja") ("送信") else ("Send")
+
+  // composer.stop
+  fun composer_stop(tag: String): String =
+    if (tag == "ja") ("停止") else ("Stop")
 
   // files.back.tip
   fun files_back_tip(tag: String): String =
@@ -196,6 +208,18 @@ object NativeMessages {
   fun mech_create(tag: String): String =
     if (tag == "ja") ("レンダリングを作成") else ("Create renders")
 
+  // menu.unpin
+  fun menu_unpin(tag: String): String =
+    if (tag == "ja") ("ピン留めを解除") else ("Unpin")
+
+  // native.attach.paste
+  fun native_attach_paste(tag: String): String =
+    if (tag == "ja") ("画像を貼り付け") else ("Paste image")
+
+  // native.attach.photos
+  fun native_attach_photos(tag: String): String =
+    if (tag == "ja") ("写真") else ("Photos")
+
   // native.bot.create.hint
   fun native_bot_create_hint(tag: String): String =
     if (tag == "ja") ("＋ボタンで作成できます。") else ("Make one with the plus button.")
@@ -252,6 +276,34 @@ object NativeMessages {
   fun native_common_title(tag: String): String =
     if (tag == "ja") ("タイトル") else ("Title")
 
+  // native.composer.btw
+  fun native_composer_btw(tag: String, arg0: String): String =
+    if (tag == "ja") ("btw・" + arg0) else ("btw · " + arg0)
+
+  // native.composer.remove
+  fun native_composer_remove(tag: String, arg0: String): String =
+    if (tag == "ja") (arg0 + "を外す") else ("Remove " + arg0)
+
+  // native.composer.suggestions.close
+  fun native_composer_suggestions_close(tag: String): String =
+    if (tag == "ja") ("候補を閉じる") else ("Close suggestions")
+
+  // native.diff.revert.ask
+  fun native_diff_revert_ask(tag: String): String =
+    if (tag == "ja") ("ファイルをこのスレッドの開始時点に戻しますか？") else ("Put the files back as they were when this thread began?")
+
+  // native.entry.fold
+  fun native_entry_fold(tag: String, arg0: String, arg1: String): String =
+    if (tag == "ja") ((if (arg0 == "open") arg1 + "を隠す" else arg1 + "を表示")) else ((if (arg0 == "open") "Hide " + arg1 else "Show " + arg1))
+
+  // native.entry.viewer
+  fun native_entry_viewer(tag: String, arg0: String): String =
+    if (tag == "ja") ("ビューアーで表示：" + arg0) else ("Show in the viewer: " + arg0)
+
+  // native.entry.viewer.short
+  fun native_entry_viewer_short(tag: String): String =
+    if (tag == "ja") ("ビューアーで表示") else ("Show in the viewer")
+
   // native.file.image.unsupported
   fun native_file_image_unsupported(tag: String): String =
     if (tag == "ja") ("この画像は表示できません") else ("This image cannot be shown here")
@@ -263,6 +315,26 @@ object NativeMessages {
   // native.file.pdf.error
   fun native_file_pdf_error(tag: String, arg0: String, arg1: String): String =
     if (tag == "ja") ((if (arg0 == "send") "ハブからPDFを取得できません（12 MBを超えている可能性があります）" else (if (arg0 == "http") "ハブの応答：" + arg1 else "このPDFは表示できません"))) else ((if (arg0 == "send") "The hub could not send this PDF (it may be over 12 MB)" else (if (arg0 == "http") "The hub answered " + arg1 else "This PDF cannot be shown here")))
+
+  // native.find.empty
+  fun native_find_empty(tag: String): String =
+    if (tag == "ja") ("該当なし") else ("Nothing found")
+
+  // native.find.file.hint
+  fun native_find_file_hint(tag: String): String =
+    if (tag == "ja") ("ファイル名を入力") else ("Type to find a file")
+
+  // native.find.file.label
+  fun native_find_file_label(tag: String): String =
+    if (tag == "ja") ("ファイル名") else ("File name")
+
+  // native.find.threads.hint
+  fun native_find_threads_hint(tag: String): String =
+    if (tag == "ja") ("検索語を入力") else ("Type to search threads")
+
+  // native.find.threads.label
+  fun native_find_threads_label(tag: String): String =
+    if (tag == "ja") ("タイトル・メッセージ") else ("Titles and messages")
 
   // native.google.client.hide
   fun native_google_client_hide(tag: String): String =
@@ -344,6 +416,22 @@ object NativeMessages {
   fun native_hub_state(tag: String, arg0: String): String =
     if (tag == "ja") ((if (arg0 == "online") "接続済み" else (if (arg0 == "syncing") "同期中" else (if (arg0 == "offline") "オフライン・再接続中" else "接続中")))) else ((if (arg0 == "online") "Connected" else (if (arg0 == "syncing") "Catching up" else (if (arg0 == "offline") "Offline, retrying" else "Connecting"))))
 
+  // native.image.missing
+  fun native_image_missing(tag: String): String =
+    if (tag == "ja") ("画像なし") else ("No image")
+
+  // native.image.plain
+  fun native_image_plain(tag: String): String =
+    if (tag == "ja") ("画像") else ("Image")
+
+  // native.image.render
+  fun native_image_render(tag: String): String =
+    if (tag == "ja") ("レンダリング画像") else ("Render")
+
+  // native.key.down
+  fun native_key_down(tag: String): String =
+    if (tag == "ja") ("下") else ("Down")
+
   // native.key.enter
   fun native_key_enter(tag: String): String =
     if (tag == "ja") ("Enter") else ("Enter")
@@ -352,9 +440,25 @@ object NativeMessages {
   fun native_key_esc(tag: String): String =
     if (tag == "ja") ("Esc") else ("Esc")
 
+  // native.key.keyboard
+  fun native_key_keyboard(tag: String): String =
+    if (tag == "ja") ("キーボード") else ("Keyboard")
+
+  // native.key.left
+  fun native_key_left(tag: String): String =
+    if (tag == "ja") ("左") else ("Left")
+
+  // native.key.right
+  fun native_key_right(tag: String): String =
+    if (tag == "ja") ("右") else ("Right")
+
   // native.key.tab
   fun native_key_tab(tag: String): String =
     if (tag == "ja") ("Tab") else ("Tab")
+
+  // native.key.up
+  fun native_key_up(tag: String): String =
+    if (tag == "ja") ("上") else ("Up")
 
   // native.machine.address
   fun native_machine_address(tag: String): String =
@@ -596,6 +700,14 @@ object NativeMessages {
   fun native_settings_system_settings(tag: String): String =
     if (tag == "ja") ("システム設定") else ("System settings")
 
+  // native.status.answer
+  fun native_status_answer(tag: String): String =
+    if (tag == "ja") ("回答待ち") else ("Waits for an answer")
+
+  // native.status.approval
+  fun native_status_approval(tag: String): String =
+    if (tag == "ja") ("承認待ち") else ("Waits for approval")
+
   // native.tab.home
   fun native_tab_home(tag: String): String =
     if (tag == "ja") ("ホーム") else ("Home")
@@ -619,6 +731,30 @@ object NativeMessages {
   // native.task.state
   fun native_task_state(tag: String, arg0: String): String =
     if (tag == "ja") ((if (arg0 == "ok") "完了" else (if (arg0 == "failed") "失敗" else (if (arg0 == "stopped") "停止" else arg0)))) else ((if (arg0 == "ok") "ok" else (if (arg0 == "failed") "failed" else (if (arg0 == "stopped") "stopped" else arg0))))
+
+  // native.term.inactive
+  fun native_term_inactive(tag: String, arg0: String): String =
+    if (tag == "ja") (arg0 + "・停止中、タップで再起動") else (arg0 + " · inactive, tap to restart")
+
+  // native.term.restart
+  fun native_term_restart(tag: String): String =
+    if (tag == "ja") ("再起動") else ("Restart")
+
+  // native.text.copyall.action
+  fun native_text_copyall_action(tag: String): String =
+    if (tag == "ja") ("すべてコピー") else ("Copy all")
+
+  // native.text.copyall.title
+  fun native_text_copyall_title(tag: String): String =
+    if (tag == "ja") ("すべてコピー") else ("Copy All")
+
+  // native.text.select.action
+  fun native_text_select_action(tag: String): String =
+    if (tag == "ja") ("テキストを選択") else ("Select text")
+
+  // native.text.select.title
+  fun native_text_select_title(tag: String): String =
+    if (tag == "ja") ("テキストを選択") else ("Select Text")
 
   // native.thread.archived
   fun native_thread_archived(tag: String, arg0: String): String =
@@ -724,6 +860,22 @@ object NativeMessages {
   fun native_viewer_standout(tag: String): String =
     if (tag == "ja") ("強調") else ("Stand out")
 
+  // notify.failed
+  fun notify_failed(tag: String): String =
+    if (tag == "ja") ("失敗") else ("Failed")
+
+  // palette.commit
+  fun palette_commit(tag: String): String =
+    if (tag == "ja") ("コミットしてプッシュ") else ("Commit & push")
+
+  // palette.findfile
+  fun palette_findfile(tag: String): String =
+    if (tag == "ja") ("ファイルを探す") else ("Find file")
+
+  // palette.revert
+  fun palette_revert(tag: String): String =
+    if (tag == "ja") ("スレッドを元に戻す") else ("Revert thread")
+
   // palette.search
   fun palette_search(tag: String): String =
     if (tag == "ja") ("スレッドを検索") else ("Search threads")
@@ -731,6 +883,10 @@ object NativeMessages {
   // palette.settings
   fun palette_settings(tag: String): String =
     if (tag == "ja") ("設定") else ("Settings")
+
+  // palette.terminal
+  fun palette_terminal(tag: String): String =
+    if (tag == "ja") ("ターミナル") else ("Terminal")
 
   // queue.edit
   fun queue_edit(tag: String): String =
@@ -791,6 +947,10 @@ object NativeMessages {
   // routine.run
   fun routine_run(tag: String): String =
     if (tag == "ja") ("今すぐ実行") else ("Run now")
+
+  // sched.kind.reminder
+  fun sched_kind_reminder(tag: String): String =
+    if (tag == "ja") ("リマインダー") else ("Reminder")
 
   // sched.kind.repeat
   fun sched_kind_repeat(tag: String): String =
@@ -892,9 +1052,17 @@ object NativeMessages {
   fun teach_steps(tag: String, arg0: String, arg1: String, arg2: String): String =
     if (tag == "ja") (arg0 + "・" + arg1 + "ステップ") else (arg0 + " · " + arg1 + " " + (if (arg2 == "one") "step" else "steps"))
 
+  // terminal.pin
+  fun terminal_pin(tag: String): String =
+    if (tag == "ja") ("先頭にピン留め") else ("Pin to the top")
+
   // thread.new
   fun thread_new(tag: String): String =
     if (tag == "ja") ("新しいスレッド") else ("New thread")
+
+  // thread.subagents
+  fun thread_subagents(tag: String): String =
+    if (tag == "ja") ("サブエージェント") else ("Subagents")
 
   // tools.pinned
   fun tools_pinned(tag: String): String =
@@ -927,6 +1095,14 @@ object NativeMessages {
   // viewer.diff
   fun viewer_diff(tag: String): String =
     if (tag == "ja") ("差分") else ("Diff")
+
+  // viewer.diff.pr
+  fun viewer_diff_pr(tag: String): String =
+    if (tag == "ja") ("PRを作成") else ("Open PR")
+
+  // viewer.files
+  fun viewer_files(tag: String): String =
+    if (tag == "ja") ("ファイル") else ("Files")
 
   // viewer.files.empty
   fun viewer_files_empty(tag: String): String =
@@ -1003,4 +1179,8 @@ object NativeMessages {
   // web.hooks.secret
   fun web_hooks_secret(tag: String): String =
     if (tag == "ja") ("シークレット（1回のみ表示）") else ("Secret, shown once")
+
+  // web.terminal.pinned
+  fun web_terminal_pinned(tag: String, arg0: String): String =
+    if (tag == "ja") (arg0 + "・先頭にピン留め") else (arg0 + " · pinned at the top")
 }

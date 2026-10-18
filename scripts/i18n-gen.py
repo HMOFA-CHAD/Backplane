@@ -291,6 +291,36 @@ def require_complete(catalogs):
         raise CatalogError('missing translations: ' + ', '.join(missing))
 
 
+def metadata_lists(lists):
+    # A flat list literal eventually overflows the HTML backend's JS stack.
+    # Bound each literal and flatten chunks with tail calls, preserving order.
+    names = ['T.catalog.rev', 'T.catalog.join']
+    lines = [
+        'def T.catalog.rev(xs: List<&2, String>, onto: List<&2, String>) -> List<&2, String>:',
+        '  match xs:',
+        '    case []: onto',
+        '    case h <> t: T.catalog.rev(t, h <> onto)',
+        '',
+        'def T.catalog.join(parts: List<&2, List<&2, String>>, rev: List<&2, String>) -> List<&2, String>:',
+        '  match parts:',
+        '    case []: T.catalog.rev(rev, [])',
+        '    case h <> t: T.catalog.join(t, T.catalog.rev(h, rev))',
+        '',
+    ]
+    for name, values in lists.items():
+        parts = []
+        for start in range(0, len(values), 64):
+            part = f'{name}.part{start // 64}'
+            parts.append(part + '()')
+            names.append(part)
+            lines.extend([f'def {part}() -> List<&2, String>:',
+                          '  [' + ', '.join(map(literal, values[start:start + 64])) + ']', ''])
+        names.append(name)
+        lines.extend([f'def {name}() -> List<&2, String>:',
+                      '  T.catalog.join([' + ', '.join(parts) + '], [])' if parts else '  []', ''])
+    return names, lines
+
+
 def generate(catalogs, i18n_import='./i18n.bend'):
     signatures = validate(catalogs)
     keys = sorted(catalogs['en'])
@@ -313,11 +343,14 @@ def generate(catalogs, i18n_import='./i18n.bend'):
         for variant, expr in arms:
             lines.extend([f'    case I.{variant}{{}}:', '      ' + expr])
         lines.append('')
-    names.extend(['T.keys', 'T.missing', 'T.plain'])
-    lines.extend(['def T.keys() -> List<&2, String>:', '  [' + ', '.join(map(literal, keys)) + ']', '', 'def T.missing(l: I.Loc) -> List<&2, String>:', '  match l:'])
+    metadata = {'T.keys': keys}
     for tag, variant in LOCALES:
-        missing = [k for k in keys if k not in catalogs[tag]]
-        lines.extend([f'    case I.{variant}{{}}:', '      [' + ', '.join(map(literal, missing)) + ']'])
+        metadata[f'T.catalog.missing.{tag}'] = [k for k in keys if k not in catalogs[tag]]
+    extra_names, extra_lines = metadata_lists(metadata)
+    names.extend(extra_names + ['T.missing', 'T.plain'])
+    lines.extend(extra_lines + ['def T.missing(l: I.Loc) -> List<&2, String>:', '  match l:'])
+    for tag, variant in LOCALES:
+        lines.extend([f'    case I.{variant}{{}}:', f'      T.catalog.missing.{tag}()'])
     lines.append('')
     plain = [k for k in keys if not signatures[k]]
 
