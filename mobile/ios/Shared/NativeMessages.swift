@@ -9,9 +9,54 @@ enum NativeMessages {
     return String(result.reversed())
   }
 
+  // agy.account.add
+  static func agy_account_add(_ tag: String) -> String {
+    tag == "ja" ? ("アカウントを追加") : ("Add account")
+  }
+
+  // agy.signout
+  static func agy_signout(_ tag: String) -> String {
+    tag == "ja" ? ("サインアウト") : ("Sign out")
+  }
+
+  // bots.delete
+  static func bots_delete(_ tag: String) -> String {
+    tag == "ja" ? ("ボットを削除") : ("Delete bot")
+  }
+
+  // bots.invite.join
+  static func bots_invite_join(_ tag: String) -> String {
+    tag == "ja" ? ("参加") : ("Join")
+  }
+
+  // bots.machines
+  static func bots_machines(_ tag: String) -> String {
+    tag == "ja" ? ("マシン") : ("Machines")
+  }
+
+  // bots.memory.forget
+  static func bots_memory_forget(_ tag: String) -> String {
+    tag == "ja" ? ("忘れる") : ("Forget")
+  }
+
   // bots.name
   static func bots_name(_ tag: String) -> String {
     tag == "ja" ? ("名前") : ("Name")
+  }
+
+  // bots.new
+  static func bots_new(_ tag: String) -> String {
+    tag == "ja" ? ("新しいボット") : ("New bot")
+  }
+
+  // bots.persona
+  static func bots_persona(_ tag: String) -> String {
+    tag == "ja" ? ("性格・役割") : ("Persona")
+  }
+
+  // bots.rooms
+  static func bots_rooms(_ tag: String) -> String {
+    tag == "ja" ? ("ルーム") : ("Rooms")
   }
 
   // bots.tab.routines
@@ -22,6 +67,11 @@ enum NativeMessages {
   // browser.address
   static func browser_address(_ tag: String) -> String {
     tag == "ja" ? ("アドレス") : ("Address")
+  }
+
+  // common.add
+  static func common_add(_ tag: String) -> String {
+    tag == "ja" ? ("追加") : ("Add")
   }
 
   // common.cancel
@@ -39,14 +89,34 @@ enum NativeMessages {
     tag == "ja" ? ("閉じる") : ("Close")
   }
 
+  // common.copy
+  static func common_copy(_ tag: String) -> String {
+    tag == "ja" ? ("コピー") : ("Copy")
+  }
+
+  // common.create
+  static func common_create(_ tag: String) -> String {
+    tag == "ja" ? ("作成") : ("Create")
+  }
+
   // common.delete
   static func common_delete(_ tag: String) -> String {
     tag == "ja" ? ("削除") : ("Delete")
   }
 
+  // common.finish
+  static func common_finish(_ tag: String) -> String {
+    tag == "ja" ? ("完了") : ("Finish")
+  }
+
   // common.go
   static func common_go(_ tag: String) -> String {
     tag == "ja" ? ("移動") : ("Go")
+  }
+
+  // common.more
+  static func common_more(_ tag: String) -> String {
+    tag == "ja" ? ("さらに表示") : ("More")
   }
 
   // common.refresh
@@ -62,6 +132,11 @@ enum NativeMessages {
   // common.run
   static func common_run(_ tag: String) -> String {
     tag == "ja" ? ("実行") : ("Run")
+  }
+
+  // common.save
+  static func common_save(_ tag: String) -> String {
+    tag == "ja" ? ("保存") : ("Save")
   }
 
   // common.show
@@ -82,6 +157,41 @@ enum NativeMessages {
   // files.changed
   static func files_changed(_ tag: String, _ arg0: UInt64) -> String {
     tag == "ja" ? ((arg0 == 0 ? "変更なし" : "変更ファイル" + number(arg0) + "件")) : ((arg0 == 0 ? "No files changed" : (arg0 == 1 ? number(arg0) + " file changed" : number(arg0) + " files changed")))
+  }
+
+  // google.client.own
+  static func google_client_own(_ tag: String) -> String {
+    tag == "ja" ? ("独自クライアント") : ("Own client")
+  }
+
+  // google.client.save
+  static func google_client_save(_ tag: String) -> String {
+    tag == "ja" ? ("クライアントを保存") : ("Save client")
+  }
+
+  // google.client.secret
+  static func google_client_secret(_ tag: String) -> String {
+    tag == "ja" ? ("クライアントシークレット") : ("Client secret")
+  }
+
+  // google.connect
+  static func google_connect(_ tag: String) -> String {
+    tag == "ja" ? ("Googleに接続") : ("Connect Google")
+  }
+
+  // google.open
+  static func google_open(_ tag: String) -> String {
+    tag == "ja" ? ("Googleのサインインを開く") : ("Open Google sign-in")
+  }
+
+  // google.signature
+  static func google_signature(_ tag: String) -> String {
+    tag == "ja" ? ("署名") : ("Signature")
+  }
+
+  // google.signature.placeholder
+  static func google_signature_placeholder(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("— " + arg0 + "に代わりBackplaneから送信") : ("— Sent by Backplane on behalf of " + arg0)
   }
 
   // history.live
@@ -109,9 +219,69 @@ enum NativeMessages {
     tag == "ja" ? ("変更" + arg0) : ("Step " + arg0)
   }
 
+  // hooks.revoke
+  static func hooks_revoke(_ tag: String) -> String {
+    tag == "ja" ? ("取り消す") : ("Revoke")
+  }
+
+  // machines.invite
+  static func machines_invite(_ tag: String) -> String {
+    tag == "ja" ? ("招待") : ("Invite")
+  }
+
+  // machines.unlink
+  static func machines_unlink(_ tag: String) -> String {
+    tag == "ja" ? ("リンク解除") : ("Unlink")
+  }
+
   // mech.create
   static func mech_create(_ tag: String) -> String {
     tag == "ja" ? ("レンダリングを作成") : ("Create renders")
+  }
+
+  // native.bot.create.hint
+  static func native_bot_create_hint(_ tag: String) -> String {
+    tag == "ja" ? ("＋ボタンで作成できます。") : ("Make one with the plus button.")
+  }
+
+  // native.bot.create.menu
+  static func native_bot_create_menu(_ tag: String) -> String {
+    tag == "ja" ? ("ボット・ルームを作成") : ("New bot or room")
+  }
+
+  // native.bot.createon
+  static func native_bot_createon(_ tag: String, _ arg0: String, _ arg1: String, _ arg2: String) -> String {
+    tag == "ja" ? ((arg0 == "room" ? "ルームを作成" : "ボットを作成") + (arg1 == "hub" ? "（" + arg2 + "）" : "")) : ((arg0 == "room" ? "New room" : "New bot") + (arg1 == "hub" ? " on " + arg2 : ""))
+  }
+
+  // native.bot.delete.ask
+  static func native_bot_delete_ask(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? (arg0 + "を削除しますか？") : ("Delete " + arg0 + "?")
+  }
+
+  // native.bot.empty
+  static func native_bot_empty(_ tag: String) -> String {
+    tag == "ja" ? ("ボットなし") : ("No bots yet")
+  }
+
+  // native.bot.memory.empty
+  static func native_bot_memory_empty(_ tag: String) -> String {
+    tag == "ja" ? ("記憶なし") : ("Nothing remembered")
+  }
+
+  // native.bot.message
+  static func native_bot_message(_ tag: String) -> String {
+    tag == "ja" ? ("メッセージ") : ("Message")
+  }
+
+  // native.bot.messages.empty
+  static func native_bot_messages_empty(_ tag: String) -> String {
+    tag == "ja" ? ("メッセージなし") : ("No messages")
+  }
+
+  // native.bot.provider
+  static func native_bot_provider(_ tag: String) -> String {
+    tag == "ja" ? ("プロバイダー") : ("Provider")
   }
 
   // native.browser.empty
@@ -154,6 +324,21 @@ enum NativeMessages {
     tag == "ja" ? ((arg0 == "send" ? "ハブからPDFを取得できません（12 MBを超えている可能性があります）" : (arg0 == "http" ? "ハブの応答：" + arg1 : "このPDFは表示できません"))) : ((arg0 == "send" ? "The hub could not send this PDF (it may be over 12 MB)" : (arg0 == "http" ? "The hub answered " + arg1 : "This PDF cannot be shown here")))
   }
 
+  // native.google.client.hide
+  static func native_google_client_hide(_ tag: String) -> String {
+    tag == "ja" ? ("独自クライアントを隠す") : ("Hide own client")
+  }
+
+  // native.google.client.id
+  static func native_google_client_id(_ tag: String) -> String {
+    tag == "ja" ? ("クライアントID（デスクトップアプリ）") : ("Client ID (Desktop app)")
+  }
+
+  // native.google.redirect
+  static func native_google_redirect(_ tag: String) -> String {
+    tag == "ja" ? ("リダイレクト先のURL") : ("Redirected URL")
+  }
+
   // native.history.first
   static func native_history_first(_ tag: String) -> String {
     tag == "ja" ? ("最初のステップ") : ("First step")
@@ -192,6 +377,21 @@ enum NativeMessages {
   // native.history.thread.short
   static func native_history_thread_short(_ tag: String) -> String {
     tag == "ja" ? ("スレッドで表示") : ("Show in the thread")
+  }
+
+  // native.hook.copyurl
+  static func native_hook_copyurl(_ tag: String) -> String {
+    tag == "ja" ? ("URLをコピー") : ("Copy URL")
+  }
+
+  // native.hook.once
+  static func native_hook_once(_ tag: String) -> String {
+    tag == "ja" ? ("一度だけ表示します。") : ("Shown once.")
+  }
+
+  // native.hook.secret
+  static func native_hook_secret(_ tag: String) -> String {
+    tag == "ja" ? ("シークレット") : ("Secret")
   }
 
   // native.hub.accessibility
@@ -237,6 +437,21 @@ enum NativeMessages {
   // native.key.tab
   static func native_key_tab(_ tag: String) -> String {
     tag == "ja" ? ("Tab") : ("Tab")
+  }
+
+  // native.machine.address
+  static func native_machine_address(_ tag: String) -> String {
+    tag == "ja" ? ("このハブのアドレス") : ("This hub's address")
+  }
+
+  // native.machine.invite.copy
+  static func native_machine_invite_copy(_ tag: String) -> String {
+    tag == "ja" ? ("招待をコピー") : ("Copy invite")
+  }
+
+  // native.machine.invite.paste
+  static func native_machine_invite_paste(_ tag: String) -> String {
+    tag == "ja" ? ("招待を貼り付け") : ("Paste an invite")
   }
 
   // native.mech.failed
@@ -352,6 +567,71 @@ enum NativeMessages {
   // native.review.write
   static func native_review_write(_ tag: String) -> String {
     tag == "ja" ? ("コメントを書く") : ("Write a note")
+  }
+
+  // native.room.empty
+  static func native_room_empty(_ tag: String) -> String {
+    tag == "ja" ? ("ルームなし") : ("No rooms yet")
+  }
+
+  // native.room.member
+  static func native_room_member(_ tag: String) -> String {
+    tag == "ja" ? ("参加中") : ("In the room")
+  }
+
+  // native.room.members
+  static func native_room_members(_ tag: String) -> String {
+    tag == "ja" ? ("メンバー") : ("Members")
+  }
+
+  // native.room.post
+  static func native_room_post(_ tag: String) -> String {
+    tag == "ja" ? ("ルームに投稿") : ("Post to the room")
+  }
+
+  // native.routine.examples
+  static func native_routine_examples(_ tag: String) -> String {
+    tag == "ja" ? ("daily 09:30 · tomorrow 9am · in 2h") : ("daily 09:30 · tomorrow 9am · in 2h")
+  }
+
+  // native.routine.hint
+  static func native_routine_hint(_ tag: String) -> String {
+    tag == "ja" ? ("スケジュール（daily 09:30、every 15m、cron）または時刻（tomorrow 9am、in 2h）") : ("A schedule (daily 09:30, every 15m, cron) or a time (tomorrow 9am, in 2h)")
+  }
+
+  // native.routine.last
+  static func native_routine_last(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("前回：" + arg0 + "前") : ("last " + arg0 + " ago")
+  }
+
+  // native.routine.prompt
+  static func native_routine_prompt(_ tag: String) -> String {
+    tag == "ja" ? ("プロンプト") : ("Prompt")
+  }
+
+  // native.routine.timefield
+  static func native_routine_timefield(_ tag: String) -> String {
+    tag == "ja" ? ("日時") : ("When")
+  }
+
+  // native.routine.title
+  static func native_routine_title(_ tag: String) -> String {
+    tag == "ja" ? ("ルーチン") : ("Routine")
+  }
+
+  // native.routine.what
+  static func native_routine_what(_ tag: String) -> String {
+    tag == "ja" ? ("実行する内容") : ("What to do")
+  }
+
+  // native.routines.empty
+  static func native_routines_empty(_ tag: String) -> String {
+    tag == "ja" ? ("ルーチンなし") : ("No routines")
+  }
+
+  // native.routines.note
+  static func native_routines_note(_ tag: String) -> String {
+    tag == "ja" ? ("ボットの「ルーチン」タブで作成できます。") : ("A bot's Routines tab makes them.")
   }
 
   // native.settings.about
@@ -539,6 +819,11 @@ enum NativeMessages {
     tag == "ja" ? ("設定") : ("Settings")
   }
 
+  // queue.edit
+  static func queue_edit(_ tag: String) -> String {
+    tag == "ja" ? ("編集") : ("Edit")
+  }
+
   // review.bom
   static func review_bom(_ tag: String) -> String {
     tag == "ja" ? ("BOM") : ("BOM")
@@ -582,6 +867,36 @@ enum NativeMessages {
   // review.resolve
   static func review_resolve(_ tag: String) -> String {
     tag == "ja" ? ("解決済みにする") : ("Resolve")
+  }
+
+  // room.delete
+  static func room_delete(_ tag: String) -> String {
+    tag == "ja" ? ("ルームを削除") : ("Delete room")
+  }
+
+  // rooms.new
+  static func rooms_new(_ tag: String) -> String {
+    tag == "ja" ? ("新しいルーム") : ("New room")
+  }
+
+  // routine.new
+  static func routine_new(_ tag: String) -> String {
+    tag == "ja" ? ("新しいルーティン") : ("New routine")
+  }
+
+  // routine.next
+  static func routine_next(_ tag: String, _ arg0: String, _ arg1: String, _ arg2: String, _ arg3: String, _ arg4: String) -> String {
+    tag == "ja" ? ("次回" + arg0 + (arg1 == "none" ? "" : "・" + arg2) + (arg3 == "none" ? "" : "・" + arg4)) : ("Next " + arg0 + (arg1 == "none" ? "" : " · " + arg2) + (arg3 == "none" ? "" : " · " + arg4))
+  }
+
+  // routine.run
+  static func routine_run(_ tag: String) -> String {
+    tag == "ja" ? ("今すぐ実行") : ("Run now")
+  }
+
+  // sched.kind.repeat
+  static func sched_kind_repeat(_ tag: String) -> String {
+    tag == "ja" ? ("繰り返し") : ("Repeats")
   }
 
   // settings.appearance
@@ -807,5 +1122,10 @@ enum NativeMessages {
   // viewer.solid
   static func viewer_solid(_ tag: String) -> String {
     tag == "ja" ? ("3D") : ("3D")
+  }
+
+  // web.hooks.secret
+  static func web_hooks_secret(_ tag: String) -> String {
+    tag == "ja" ? ("シークレット（1回のみ表示）") : ("Secret, shown once")
   }
 }

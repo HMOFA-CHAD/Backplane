@@ -78,6 +78,7 @@ struct AppTabs: View {
 // ----
 
 struct BotsTab: View {
+    @Environment(\.backplaneLanguage) private var lang
     let model: AppModel
     let screen: Screen
     @State private var part = "bots"
@@ -85,9 +86,9 @@ struct BotsTab: View {
     var body: some View {
         List {
             Section {
-                Picker("Show", selection: $part) {
-                    Text("Bots").tag("bots")
-                    Text("Rooms").tag("rooms")
+                Picker(NativeMessages.common_show(lang), selection: $part) {
+                    Text(NativeMessages.tour_title_bots(lang)).tag("bots")
+                    Text(NativeMessages.bots_rooms(lang)).tag("rooms")
                 }
                 .pickerStyle(.segmented)
                 .listRowBackground(Color.clear)
@@ -137,12 +138,12 @@ struct BotsTab: View {
         }
         .overlay {
             if part == "bots" && screen.bots.isEmpty {
-                ContentUnavailableView("No bots yet", systemImage: "pawprint", description: Text("Make one with the plus button."))
+                ContentUnavailableView(NativeMessages.native_bot_empty(lang), systemImage: "pawprint", description: Text(NativeMessages.native_bot_create_hint(lang)))
             } else if part == "rooms" && screen.rooms.isEmpty {
-                ContentUnavailableView("No rooms yet", systemImage: "bubble.left.and.bubble.right", description: Text("Make one with the plus button."))
+                ContentUnavailableView(NativeMessages.native_room_empty(lang), systemImage: "bubble.left.and.bubble.right", description: Text(NativeMessages.native_bot_create_hint(lang)))
             }
         }
-        .navigationTitle("Bots")
+        .navigationTitle(NativeMessages.tour_title_bots(lang))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -150,18 +151,18 @@ struct BotsTab: View {
                     if screen.hubs.count > 1 {
                         ForEach(screen.hubs, id: \.key) { h in
                             Menu(h.name) {
-                                Button("New bot", systemImage: "cat") { model.act("bot-new", h.key + "|") }
-                                Button("New room", systemImage: "bubble.left.and.bubble.right") { model.act("room-new", h.key + "|") }
+                                Button(NativeMessages.bots_new(lang), systemImage: "cat") { model.act("bot-new", h.key + "|") }
+                                Button(NativeMessages.rooms_new(lang), systemImage: "bubble.left.and.bubble.right") { model.act("room-new", h.key + "|") }
                             }
                         }
                     } else {
-                        Button("New bot", systemImage: "cat") { model.act("bot-new") }
-                        Button("New room", systemImage: "bubble.left.and.bubble.right") { model.act("room-new") }
+                        Button(NativeMessages.bots_new(lang), systemImage: "cat") { model.act("bot-new") }
+                        Button(NativeMessages.rooms_new(lang), systemImage: "bubble.left.and.bubble.right") { model.act("room-new") }
                     }
                 } label: {
                     Image(systemName: "plus")
                 }
-                .accessibilityLabel("New bot or room")
+                .accessibilityLabel(NativeMessages.native_bot_create_menu(lang))
             }
         }
     }
@@ -171,6 +172,7 @@ struct BotsTab: View {
 // --------
 
 struct RoutinesPage: View {
+    @Environment(\.backplaneLanguage) private var lang
     let model: AppModel
     let screen: Screen
 
@@ -184,7 +186,7 @@ struct RoutinesPage: View {
     }
 
     private func when(_ r: RoutineRow) -> String {
-        [r.state == "done" ? (r.doneText ?? "") : r.sub, r.zone ?? "", r.ago.isEmpty ? "" : "last " + r.ago + " ago"].filter { !$0.isEmpty }.joined(separator: " · ")
+        [r.state == "done" ? (r.doneText ?? "") : r.sub, r.zone ?? "", r.ago.isEmpty ? "" : NativeMessages.native_routine_last(lang, r.ago)].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     var body: some View {
@@ -211,10 +213,10 @@ struct RoutinesPage: View {
         }
         .overlay {
             if rows.isEmpty {
-                ContentUnavailableView("No routines", systemImage: "clock.arrow.circlepath", description: Text("A bot's Routines tab makes them."))
+                ContentUnavailableView(NativeMessages.native_routines_empty(lang), systemImage: "clock.arrow.circlepath", description: Text(NativeMessages.native_routines_note(lang)))
             }
         }
-        .navigationTitle("Routines")
+        .navigationTitle(NativeMessages.bots_tab_routines(lang))
     }
 }
 
