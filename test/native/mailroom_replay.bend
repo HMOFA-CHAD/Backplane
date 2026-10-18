@@ -19,7 +19,7 @@ import ../../src/app/cats.bend as CA
 # body. It never reads BotM.key/same/due or the retained output to decide
 # what should be drawn. Complete ops AND hits are compared.
 type Case is Data:
-  Case{name: String, ui: U.Ui, w: U32, h: U32}
+  Case{name: String, step: Nat, w: U32, h: U32}
 
 type Counts is Data:
   Counts{frames: Nat, hit: Nat, stale_body: Nat, stale_frame: Nat}
@@ -27,30 +27,24 @@ type Counts is Data:
 def fresh(+ty: L.Ty, +n: N.Nui, +ws: Map<&2, B.PW>) -> L.Out:
   B.Bv.mail.draw(ws, ty, L.Lay.shrink(n, L.Lay.term_h(n)))
 
-def one(+label: String, +ty: L.Ty, +n: N.Nui, +ws: Map<&2, B.PW>, +cold: Map<&2, B.PW>, count: Counts) -> IO(Counts):
-  match count:
-    case Counts{f, hit, sb, sf}:
+# Keep reporting continuations small: the IO layer needs only verdicts
+# and counters, while drawing and comparison stay pure.
+type Checked is Data:
+  Checked{label: String, body: Bool, frame: Bool, hit: Nat}
+
+def checked(+label: String, +ty: L.Ty, +n: N.Nui, +ws: Map<&2, B.PW>, +cold: Map<&2, B.PW>) -> Checked:
+  Checked{label,
+    EQ.Eqh.out(B.Bv.mail.out(ws, ty, n), fresh(ty, n, cold)),
+    EQ.Eqh.out(B.Bv.frame.w(ty, L.TL.memos.now(Nil{}), CA.Cats.none(), ws, n), B.Bv.frame.w(ty, L.TL.memos.now(Nil{}), CA.Cats.none(), cold, n)),
+    B.Bv.mail.hit(ws, n)}
+
+def one(check: Checked, count: Counts) -> IO(Counts):
+  match check count:
+    case Checked{+label, +body_ok, +frame_ok, hits} Counts{f, hit, sb, sf}:
       do IO<Counts>:
-        +body_ok : Bool = EQ.Eqh.out(B.Bv.mail.out(ws, ty, n), fresh(ty, n, cold))
-        +frame_ok : Bool = EQ.Eqh.out(B.Bv.frame.w(ty, L.TL.memos.now(Nil{}), CA.Cats.none(), ws, n), B.Bv.frame.w(ty, L.TL.memos.now(Nil{}), CA.Cats.none(), cold, n))
         C.Check.str(label ++ " body", Bool.show(body_ok), "True")
         C.Check.str(label ++ " full frame", Bool.show(frame_ok), "True")
-        return Counts{1n+f, Nat.add(hit, B.Bv.mail.hit(ws, n)), Nat.add(sb, Bool.pick(Nat, body_ok, 0n, 1n)), Nat.add(sf, Bool.pick(Nat, frame_ok, 0n, 1n))}
-
-def replay(cs: List<&2, Case>, +ty0: L.Ty, ws: Map<&2, B.PW>, count: Counts) -> IO(Counts):
-  match cs:
-    case Nil{}: IO.pure(Counts, count)
-    case Case{name, +u, w, h} <> t:
-      do IO<Counts>:
-        +ty : L.Ty = L.Ty.with_loc(ty0, U.Lang.loc(u))
-        +n : N.Nui = N.Nui.init(u, w, h)
-        +kept : Map<&2, B.PW> = B.Bv.wraps.ix(ty, n, ws, U.Side.ix(U.Ui.state(u)))
-        +cold : Map<&2, B.PW> = B.Bv.wraps.ix(ty, n, B.Bv.wraps.none(), U.Side.ix(U.Ui.state(u)))
-        next : Counts <- one(name, ty, n, kept, cold, count)
-        replay(t, ty0, kept, next)
-
-def c(name: String, u: U.Ui) -> Case:
-  Case{name, u, 1400, 900}
+        return Counts{1n+f, Nat.add(hit, hits), Nat.add(sb, Bool.pick(Nat, body_ok, 0n, 1n)), Nat.add(sf, Bool.pick(Nat, frame_ok, 0n, 1n))}
 
 def base() -> U.Ui:
   SN.seed(U.Ui.scratch_set(MC.ui(), "@btab", "mail"))
@@ -58,25 +52,92 @@ def base() -> U.Ui:
 def read(+u: U.Ui) -> U.Ui:
   U.Ui.scratch_set(U.Mailv.put(U.Ui.scratch_set(u, "@mr.conv", "c"), U.Mailv.read.put(U.Mailv.data(u), MV.Mv.put_read(U.Mailv.cache(u), MC.read_result(), False{}), "c", Map.new(&2, String), Nil{})), "@mr.to", "bot:b1")
 
+def origin_state() -> U.Ui:
+  U.Ui.fold([M.MessageFrom{"t1", "m1", "thread:x", "thread", "", 200001n}], read(base()))
+
+def incoming_state() -> U.Ui:
+  U.Ui.fold([M.MailPosted{"m2", "c", "bot:b1", "person", "thread", "", "act", "new", 3n, 200001n}], origin_state())
+
+# Keep only small scenario descriptors in the case list. Construct one Ui
+# per frame so native C emission never flattens 28 deep states at once.
+def state_at(step: Nat) -> U.Ui:
+  match step:
+    case 0n: base()
+    case 1n: base()
+    case 2n: U.Ui.tick(base(), 200001n)
+    case 3n: U.Ui.tick(base(), 200039n)
+    case 4n: U.Ui.tick(base(), 200040n)
+    case 5n: U.Ui.tick(base(), 200040n)
+    case 6n: U.Ui.tick(base(), 199999n)
+    case 7n: U.Ui.info_set(base(), "origin", "second")
+    case 8n: U.Ui.info_set(base(), "local.generation", "next")
+    case 9n: U.Mailv.chip(base(), "b2")
+    case 10n: U.Ui.scratch_set(base(), "@mr.project", "Sensor")
+    case 11n: U.Ui.scratch_set(base(), "@mr.run", "1")
+    case 12n: U.Ui.scratch_set(base(), "@mr.status", "today")
+    case 13n: U.Ui.info_set(base(), "pane:mr", "2")
+    case 14n: U.Ui.scratch_set(base(), "@f.mrsearch", "Deploy")
+    case 15n: read(base())
+    case 16n: read(base())
+    case 17n: U.Ui.scratch_set(read(base()), "@f.mrreply", "hello")
+    case 18n: U.Ui.info_set(read(base()), "pane:mrbody", "1")
+    case 19n: origin_state()
+    case 20n: incoming_state()
+    case 21n: U.Ui.flag_on(read(base()), "term")
+    case 22n: read(base())
+    case 23n: read(base())
+    case 24n: U.Ui.scratch_set(read(base()), "@lang.tag", "ja")
+    case 25n: U.Act.ui(U.Ui.act(read(base()), "setting", "ui.theme=light"))
+    case 26n: U.Ui.scratch_set(base(), "other-thread", "background draft")
+    case _: base()
+
+def replay(cs: List<&2, Case>, +ty0: L.Ty, ws: Map<&2, B.PW>, count: Counts) -> IO(Counts):
+  match cs:
+    case Nil{}: IO.pure(Counts, count)
+    case Case{name, step, w, h} <> t:
+      do IO<Counts>:
+        +u : U.Ui = state_at(step)
+        +ty : L.Ty = L.Ty.with_loc(ty0, U.Lang.loc(u))
+        +n : N.Nui = N.Nui.init(u, w, h)
+        +kept : Map<&2, B.PW> = B.Bv.wraps.ix(ty, n, ws, U.Side.ix(U.Ui.state(u)))
+        +cold : Map<&2, B.PW> = B.Bv.wraps.ix(ty, n, B.Bv.wraps.none(), U.Side.ix(U.Ui.state(u)))
+        next : Counts <- one(checked(name, ty, n, kept, cold), count)
+        replay(t, ty0, kept, next)
+
+def c(name: String, step: Nat) -> Case:
+  Case{name, step, 1400, 900}
+
 def cases() -> List<&2, Case>:
-  +u = base()
-  +opened = read(u)
-  +origin = U.Ui.fold([M.MessageFrom{"t1", "m1", "thread:x", "thread", "", 200001n}], opened)
-  +newmail = U.Ui.fold([M.MailPosted{"m2", "c", "bot:b1", "person", "thread", "", "act", "new", 3n, 200001n}], origin)
-  [c("initial", u), c("unchanged", u), c("one second", U.Ui.tick(u, 200001n)),
-   c("before relative age boundary", U.Ui.tick(u, 200039n)), c("relative age boundary", U.Ui.tick(u, 200040n)),
-   c("wall minute", U.Ui.tick(u, 200040n)), c("clock backwards", U.Ui.tick(u, 199999n)),
-   c("origin", U.Ui.info_set(u, "origin", "second")), c("same revisions next generation", U.Ui.info_set(u, "local.generation", "next")),
-   c("filter bot", U.Mailv.chip(u, "b2")), c("filter project", U.Ui.scratch_set(u, "@mr.project", "Sensor")),
-   c("run expanded", U.Ui.scratch_set(u, "@mr.run", "1")), c("today", U.Ui.scratch_set(u, "@mr.status", "today")),
-   c("scroll list", U.Ui.info_set(u, "pane:mr", "2")), c("search typed", U.Ui.scratch_set(u, "@f.mrsearch", "Deploy")),
-   c("open", opened), c("open unchanged", opened), c("reply typed", U.Ui.scratch_set(opened, "@f.mrreply", "hello")),
-   c("body scroll", U.Ui.info_set(opened, "pane:mrbody", "1")), c("origin metadata", origin), c("incoming header", newmail),
-   c("terminal height", U.Ui.flag_on(opened, "term")),
-   Case{"narrow", opened, 760, 900}, Case{"resized", opened, 1200, 720},
-   c("Japanese", U.Ui.scratch_set(opened, "@lang.tag", "ja")),
-   c("light", U.Act.ui(U.Ui.act(opened, "setting", "ui.theme=light"))),
-   c("unrelated draft", U.Ui.scratch_set(u, "other-thread", "background draft")), c("final unchanged", u)]
+  [
+    c("initial", 0n),
+    c("unchanged", 1n),
+    c("one second", 2n),
+    c("before relative age boundary", 3n),
+    c("relative age boundary", 4n),
+    c("wall minute", 5n),
+    c("clock backwards", 6n),
+    c("origin", 7n),
+    c("same revisions next generation", 8n),
+    c("filter bot", 9n),
+    c("filter project", 10n),
+    c("run expanded", 11n),
+    c("today", 12n),
+    c("scroll list", 13n),
+    c("search typed", 14n),
+    c("open", 15n),
+    c("open unchanged", 16n),
+    c("reply typed", 17n),
+    c("body scroll", 18n),
+    c("origin metadata", 19n),
+    c("incoming header", 20n),
+    c("terminal height", 21n),
+    Case{"narrow", 22n, 760, 900},
+    Case{"resized", 23n, 1200, 720},
+    c("Japanese", 24n),
+    c("light", 25n),
+    c("unrelated draft", 26n),
+    c("final unchanged", 27n)
+  ]
 
 def report(c: Counts) -> IO(Unit):
   match c:

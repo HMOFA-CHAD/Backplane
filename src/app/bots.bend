@@ -1426,12 +1426,6 @@ def Bv.main.or(m: Maybe<&2, L.Out>, given: L.Out) -> Maybe<&2, L.Out>:
 def Bv.frame.given(+ty: L.Ty, +memo: L.TLMemo, +n: S.Nui, main: Maybe<&2, L.Out>, a: L.Out) -> L.Out:
   L.Lay.frame.us(ty, memo, n, L.Out.none(), 0, c => y => L.Col{L.Out.none(), y}, main, Some{a})
 
-def Bv.side.rows.k(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +sd: Sd, +ty: L.Ty, +n: S.Nui, +ix: U.SIx, pc: PC) -> L.SideCol:
-  L.Lay.sidebar.a.ix.m(~PC, ~paint, ty, n, S.Nui.height(n), ix, Bv.uber.out(sd), Bv.uber.top(sd), c => y => Bv.side.of(sd, c, y), pc)
-
-def Bv.side.rows.ixr(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, +ix: U.SIx, +br: BRows, pc: PC) -> L.SideCol:
-  Bv.side.rows.k(~PC, ~paint, Bv.sd.r(ty, cats, n, ws, br), ty, n, ix, pc)
-
 # The posts on show wrapped for this frame, reusing the selected group's
 # unchanged texts. Rebuilding this one group removes posts no longer in
 # the conversation's bounded window; other groups stay until evicted.
@@ -1699,6 +1693,12 @@ def Bv.uber.out(sd: Sd) -> L.Out:
       Bv.uber.row(F.FS.ui(f), ty, cats, ms, r, cn, D.Clip{0, 52, 264, 100})
     case _:
       L.Out.none()
+
+def Bv.side.rows.k(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +sd: Sd, +ty: L.Ty, +n: S.Nui, +ix: U.SIx, pc: PC) -> L.SideCol:
+  L.Lay.sidebar.a.ix.m(~PC, ~paint, ty, n, S.Nui.height(n), ix, Bv.uber.out(sd), Bv.uber.top(sd), c => y => Bv.side.of(sd, c, y), pc)
+
+def Bv.side.rows.ixr(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, +ix: U.SIx, +br: BRows, pc: PC) -> L.SideCol:
+  Bv.side.rows.k(~PC, ~paint, Bv.sd.r(ty, cats, n, ws, br), ty, n, ix, pc)
 
 def Bv.frame.with.k(+sd: Sd, +ty: L.Ty, +memo: L.TLMemo, +n: S.Nui, main: Maybe<&2, L.Out>) -> L.Out:
   L.Lay.frame.u(ty, memo, n, Bv.uber.out(sd), Bv.uber.top(sd), c => y => Bv.side.of(sd, c, y), main)
