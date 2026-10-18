@@ -12,6 +12,10 @@ object NativeMessages {
   fun agy_signout(tag: String): String =
     if (tag == "ja") ("サインアウト") else ("Sign out")
 
+  // approval.dismiss
+  fun approval_dismiss(tag: String): String =
+    if (tag == "ja") ("閉じる") else ("Dismiss")
+
   // bots.delete
   fun bots_delete(tag: String): String =
     if (tag == "ja") ("ボットを削除") else ("Delete bot")
@@ -111,6 +115,10 @@ object NativeMessages {
   // common.show
   fun common_show(tag: String): String =
     if (tag == "ja") ("表示") else ("Show")
+
+  // composer.model.tip
+  fun composer_model_tip(tag: String): String =
+    if (tag == "ja") ("モデルと推論の強さを選択") else ("Choose the model and effort")
 
   // composer.send
   fun composer_send(tag: String): String =
@@ -612,6 +620,74 @@ object NativeMessages {
   fun native_task_state(tag: String, arg0: String): String =
     if (tag == "ja") ((if (arg0 == "ok") "完了" else (if (arg0 == "failed") "失敗" else (if (arg0 == "stopped") "停止" else arg0)))) else ((if (arg0 == "ok") "ok" else (if (arg0 == "failed") "failed" else (if (arg0 == "stopped") "stopped" else arg0))))
 
+  // native.thread.archived
+  fun native_thread_archived(tag: String, arg0: String): String =
+    if (tag == "ja") ("アーカイブ" + arg0) else ("Archived " + arg0)
+
+  // native.thread.board
+  fun native_thread_board(tag: String): String =
+    if (tag == "ja") ("基板ビューアー") else ("Board viewer")
+
+  // native.thread.composer
+  fun native_thread_composer(tag: String): String =
+    if (tag == "ja") ("エージェントに依頼") else ("Ask the agent")
+
+  // native.thread.content
+  fun native_thread_content(tag: String): String =
+    if (tag == "ja") ("会話の内容") else ("Conversation content")
+
+  // native.thread.content.note
+  fun native_thread_content_note(tag: String): String =
+    if (tag == "ja") ("最新のメッセージをここに表示します。") else ("The latest messages will appear here.")
+
+  // native.thread.effort
+  fun native_thread_effort(tag: String): String =
+    if (tag == "ja") ("思考量") else ("Effort")
+
+  // native.thread.effort.item
+  fun native_thread_effort_item(tag: String, arg0: String): String =
+    if (tag == "ja") ("思考量：" + arg0) else ("Effort: " + arg0)
+
+  // native.thread.hub
+  fun native_thread_hub(tag: String): String =
+    if (tag == "ja") ("ハブ") else ("the hub")
+
+  // native.thread.menu
+  fun native_thread_menu(tag: String): String =
+    if (tag == "ja") ("メニュー") else ("Menu")
+
+  // native.thread.model
+  fun native_thread_model(tag: String): String =
+    if (tag == "ja") ("モデル") else ("Model")
+
+  // native.thread.model.effort
+  fun native_thread_model_effort(tag: String, arg0: String): String =
+    if (tag == "ja") ("モデル・思考量：" + arg0) else ("Model and effort: " + arg0)
+
+  // native.thread.online
+  fun native_thread_online(tag: String, arg0: String): String =
+    if (tag == "ja") ((if (arg0 == "online") "接続済み" else "接続中…")) else ((if (arg0 == "online") "Connected" else "Connecting…"))
+
+  // native.thread.provider.item
+  fun native_thread_provider_item(tag: String, arg0: String): String =
+    if (tag == "ja") ("プロバイダー：" + arg0) else ("Provider: " + arg0)
+
+  // native.thread.search.clear
+  fun native_thread_search_clear(tag: String): String =
+    if (tag == "ja") ("検索をクリア") else ("Clear search")
+
+  // native.thread.sending
+  fun native_thread_sending(tag: String): String =
+    if (tag == "ja") ("送信中…") else ("Sending…")
+
+  // native.thread.subagents
+  fun native_thread_subagents(tag: String, arg0: String): String =
+    if (tag == "ja") ("サブエージェント：" + arg0) else ("Subagents: " + arg0)
+
+  // native.thread.waiting
+  fun native_thread_waiting(tag: String, arg0: String): String =
+    if (tag == "ja") (arg0 + "を待機中…") else ("Waiting for " + arg0 + "…")
+
   // native.viewer.ground.dark
   fun native_viewer_ground_dark(tag: String): String =
     if (tag == "ja") ("背景を暗く") else ("Dark ground")
@@ -647,6 +723,10 @@ object NativeMessages {
   // native.viewer.standout
   fun native_viewer_standout(tag: String): String =
     if (tag == "ja") ("強調") else ("Stand out")
+
+  // palette.search
+  fun palette_search(tag: String): String =
+    if (tag == "ja") ("スレッドを検索") else ("Search threads")
 
   // palette.settings
   fun palette_settings(tag: String): String =
@@ -764,6 +844,22 @@ object NativeMessages {
   fun settings_tour_show(tag: String): String =
     if (tag == "ja") ("ツアーを表示") else ("Show the tour")
 
+  // sidebar.add.project
+  fun sidebar_add_project(tag: String): String =
+    if (tag == "ja") ("プロジェクトを追加") else ("Add project")
+
+  // sidebar.nothing
+  fun sidebar_nothing(tag: String): String =
+    if (tag == "ja") ("実行中の作業なし") else ("Nothing active")
+
+  // sidebar.older
+  fun sidebar_older(tag: String, arg0: String): String =
+    if (tag == "ja") ("以前のプロジェクト" + arg0 + "件") else ("Older " + arg0)
+
+  // sidebar.settled.count
+  fun sidebar_settled_count(tag: String, arg0: String): String =
+    if (tag == "ja") ("完了済み" + arg0 + "件") else ("Settled " + arg0)
+
   // teach.description
   fun teach_description(tag: String): String =
     if (tag == "ja") ("処理内容（任意）") else ("What it does (optional)")
@@ -795,6 +891,14 @@ object NativeMessages {
   // teach.steps
   fun teach_steps(tag: String, arg0: String, arg1: String, arg2: String): String =
     if (tag == "ja") (arg0 + "・" + arg1 + "ステップ") else (arg0 + " · " + arg1 + " " + (if (arg2 == "one") "step" else "steps"))
+
+  // thread.new
+  fun thread_new(tag: String): String =
+    if (tag == "ja") ("新しいスレッド") else ("New thread")
+
+  // tools.pinned
+  fun tools_pinned(tag: String): String =
+    if (tag == "ja") ("固定中") else ("Pinned")
 
   // tour.back
   fun tour_back(tag: String): String =

@@ -83,3 +83,9 @@ are complete messages; names, memory, prompts, posts, URLs and account data
 remain content. Schedule examples keep the supported English parser syntax
 in Japanese; this extraction does not introduce a Japanese schedule parser.
 The Google brand name stays unchanged. Native device visuals remain pending.
+
+Native project/thread chrome, search, model/effort controls, composer hints
+and sending states use generated messages. Folded shelf counts retain raw
+English digits and use stable selection instead of matching English labels.
+Android snackbar effects include the locale so Dismiss refreshes when it
+changes; error content remains unchanged. Native runtime/device review is pending.

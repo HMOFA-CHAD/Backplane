@@ -19,6 +19,11 @@ enum NativeMessages {
     tag == "ja" ? ("サインアウト") : ("Sign out")
   }
 
+  // approval.dismiss
+  static func approval_dismiss(_ tag: String) -> String {
+    tag == "ja" ? ("閉じる") : ("Dismiss")
+  }
+
   // bots.delete
   static func bots_delete(_ tag: String) -> String {
     tag == "ja" ? ("ボットを削除") : ("Delete bot")
@@ -142,6 +147,11 @@ enum NativeMessages {
   // common.show
   static func common_show(_ tag: String) -> String {
     tag == "ja" ? ("表示") : ("Show")
+  }
+
+  // composer.model.tip
+  static func composer_model_tip(_ tag: String) -> String {
+    tag == "ja" ? ("モデルと推論の強さを選択") : ("Choose the model and effort")
   }
 
   // composer.send
@@ -769,6 +779,91 @@ enum NativeMessages {
     tag == "ja" ? ((arg0 == "ok" ? "完了" : (arg0 == "failed" ? "失敗" : (arg0 == "stopped" ? "停止" : arg0)))) : ((arg0 == "ok" ? "ok" : (arg0 == "failed" ? "failed" : (arg0 == "stopped" ? "stopped" : arg0))))
   }
 
+  // native.thread.archived
+  static func native_thread_archived(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("アーカイブ" + arg0) : ("Archived " + arg0)
+  }
+
+  // native.thread.board
+  static func native_thread_board(_ tag: String) -> String {
+    tag == "ja" ? ("基板ビューアー") : ("Board viewer")
+  }
+
+  // native.thread.composer
+  static func native_thread_composer(_ tag: String) -> String {
+    tag == "ja" ? ("エージェントに依頼") : ("Ask the agent")
+  }
+
+  // native.thread.content
+  static func native_thread_content(_ tag: String) -> String {
+    tag == "ja" ? ("会話の内容") : ("Conversation content")
+  }
+
+  // native.thread.content.note
+  static func native_thread_content_note(_ tag: String) -> String {
+    tag == "ja" ? ("最新のメッセージをここに表示します。") : ("The latest messages will appear here.")
+  }
+
+  // native.thread.effort
+  static func native_thread_effort(_ tag: String) -> String {
+    tag == "ja" ? ("思考量") : ("Effort")
+  }
+
+  // native.thread.effort.item
+  static func native_thread_effort_item(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("思考量：" + arg0) : ("Effort: " + arg0)
+  }
+
+  // native.thread.hub
+  static func native_thread_hub(_ tag: String) -> String {
+    tag == "ja" ? ("ハブ") : ("the hub")
+  }
+
+  // native.thread.menu
+  static func native_thread_menu(_ tag: String) -> String {
+    tag == "ja" ? ("メニュー") : ("Menu")
+  }
+
+  // native.thread.model
+  static func native_thread_model(_ tag: String) -> String {
+    tag == "ja" ? ("モデル") : ("Model")
+  }
+
+  // native.thread.model.effort
+  static func native_thread_model_effort(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("モデル・思考量：" + arg0) : ("Model and effort: " + arg0)
+  }
+
+  // native.thread.online
+  static func native_thread_online(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ((arg0 == "online" ? "接続済み" : "接続中…")) : ((arg0 == "online" ? "Connected" : "Connecting…"))
+  }
+
+  // native.thread.provider.item
+  static func native_thread_provider_item(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("プロバイダー：" + arg0) : ("Provider: " + arg0)
+  }
+
+  // native.thread.search.clear
+  static func native_thread_search_clear(_ tag: String) -> String {
+    tag == "ja" ? ("検索をクリア") : ("Clear search")
+  }
+
+  // native.thread.sending
+  static func native_thread_sending(_ tag: String) -> String {
+    tag == "ja" ? ("送信中…") : ("Sending…")
+  }
+
+  // native.thread.subagents
+  static func native_thread_subagents(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("サブエージェント：" + arg0) : ("Subagents: " + arg0)
+  }
+
+  // native.thread.waiting
+  static func native_thread_waiting(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? (arg0 + "を待機中…") : ("Waiting for " + arg0 + "…")
+  }
+
   // native.viewer.ground.dark
   static func native_viewer_ground_dark(_ tag: String) -> String {
     tag == "ja" ? ("背景を暗く") : ("Dark ground")
@@ -812,6 +907,11 @@ enum NativeMessages {
   // native.viewer.standout
   static func native_viewer_standout(_ tag: String) -> String {
     tag == "ja" ? ("強調") : ("Stand out")
+  }
+
+  // palette.search
+  static func palette_search(_ tag: String) -> String {
+    tag == "ja" ? ("スレッドを検索") : ("Search threads")
   }
 
   // palette.settings
@@ -959,6 +1059,26 @@ enum NativeMessages {
     tag == "ja" ? ("ツアーを表示") : ("Show the tour")
   }
 
+  // sidebar.add.project
+  static func sidebar_add_project(_ tag: String) -> String {
+    tag == "ja" ? ("プロジェクトを追加") : ("Add project")
+  }
+
+  // sidebar.nothing
+  static func sidebar_nothing(_ tag: String) -> String {
+    tag == "ja" ? ("実行中の作業なし") : ("Nothing active")
+  }
+
+  // sidebar.older
+  static func sidebar_older(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("以前のプロジェクト" + arg0 + "件") : ("Older " + arg0)
+  }
+
+  // sidebar.settled.count
+  static func sidebar_settled_count(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("完了済み" + arg0 + "件") : ("Settled " + arg0)
+  }
+
   // teach.description
   static func teach_description(_ tag: String) -> String {
     tag == "ja" ? ("処理内容（任意）") : ("What it does (optional)")
@@ -997,6 +1117,16 @@ enum NativeMessages {
   // teach.steps
   static func teach_steps(_ tag: String, _ arg0: String, _ arg1: String, _ arg2: String) -> String {
     tag == "ja" ? (arg0 + "・" + arg1 + "ステップ") : (arg0 + " · " + arg1 + " " + (arg2 == "one" ? "step" : "steps"))
+  }
+
+  // thread.new
+  static func thread_new(_ tag: String) -> String {
+    tag == "ja" ? ("新しいスレッド") : ("New thread")
+  }
+
+  // tools.pinned
+  static func tools_pinned(_ tag: String) -> String {
+    tag == "ja" ? ("固定中") : ("Pinned")
   }
 
   // tour.back

@@ -162,10 +162,11 @@ import kotlinx.coroutines.flow.first
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun OpeningDestination(m: AppModel, s: Screen, o: Core.Opening) {
+    val lang = s.locale
     val page = m.seenPages[o.nav]
     Scaffold(topBar = {
         TopAppBar(title = { Text(o.title) }, navigationIcon = {
-            IconButton(onClick = { m.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+            IconButton(onClick = { m.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, NativeMessages.tour_back(lang)) }
         })
     }) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).clearAndSetSemantics { }) {
@@ -340,6 +341,7 @@ fun App(m: AppModel) {
 // shown ("proj-go"), the x empties it
 @Composable
 private fun SearchField(m: AppModel, f: Search, first: String?) {
+    val lang = LocalBackplaneLanguage.current
     var text by remember { mutableStateOf(f.query) }
     // what was typed here: a screen still echoing it never overwrites the field
     val typed = remember { mutableSetOf<String>() }
@@ -352,7 +354,7 @@ private fun SearchField(m: AppModel, f: Search, first: String?) {
         leadingIcon = { Icon(Icons.Filled.Search, null) },
         trailingIcon = {
             if (text.isNotEmpty()) IconButton(onClick = { text = ""; typed.clear(); m.act("proj-find-q", "") }) {
-                Icon(Icons.Filled.Close, "Clear search")
+                Icon(Icons.Filled.Close, NativeMessages.native_thread_search_clear(lang))
             }
         },
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, imeAction = ImeAction.Go),
@@ -439,9 +441,10 @@ private fun Hubs(m: AppModel, s: Screen, back: () -> Unit) {
 
 @Composable
 private fun Errors(m: AppModel, s: Screen, host: SnackbarHostState) {
-    LaunchedEffect(s.error) {
+    val lang = s.locale
+    LaunchedEffect(s.error, lang) {
         if (s.error.isNotEmpty()) {
-            val r = host.showSnackbar(s.error, actionLabel = "Dismiss", withDismissAction = false)
+            val r = host.showSnackbar(s.error, actionLabel = NativeMessages.approval_dismiss(lang), withDismissAction = false)
             if (r == SnackbarResult.ActionPerformed || r == SnackbarResult.Dismissed) m.act("dismiss")
         }
     }
@@ -475,6 +478,7 @@ private fun swipeColor(s: Swipe?): Color = when (s?.tone) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ThreadRow(m: AppModel, r: Row) {
+    val lang = LocalBackplaneLanguage.current
     var menu by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     val lead = r.lead.firstOrNull()
@@ -508,7 +512,7 @@ private fun ThreadRow(m: AppModel, r: Row) {
                 leadingContent = { StatusDot(r.state, r.status) },
                 trailingContent = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (r.pinned) Icon(Icons.Filled.PushPin, "Pinned", Modifier.size(16.dp).padding(end = 4.dp))
+                        if (r.pinned) Icon(Icons.Filled.PushPin, NativeMessages.tools_pinned(lang), Modifier.size(16.dp).padding(end = 4.dp))
                         if (r.agents.isNotEmpty()) Text(r.agents, style = MaterialTheme.typography.labelMedium, color = PhaseColor.accent)
                         else Text(r.ago, style = MaterialTheme.typography.labelMedium)
                     }
@@ -545,6 +549,7 @@ internal fun Modifier.combinedClickableCompat(onLong: (() -> Unit)? = null, onCl
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyListState = rememberLazyListState()) {
+    val lang = s.locale
     val snacks = remember { SnackbarHostState() }
     var choosing by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
@@ -554,8 +559,8 @@ internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyLis
             TopAppBar(
                 title = {
                     Column {
-                        Text("Threads")
-                        Text(if (s.online) "Connected" else "Connecting…",
+                        Text(NativeMessages.tour_title_threads(lang))
+                        Text(NativeMessages.native_thread_online(lang, if (s.online) "online" else "connecting"),
                             style = MaterialTheme.typography.labelMedium,
                             color = if (s.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
                     }
@@ -564,7 +569,7 @@ internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyLis
                     // with several hubs, the picker opens on the one chosen
                     Box {
                         IconButton(onClick = { if (s.hubs.size > 1) choosing = true else m.act("picker-open") }) {
-                            Icon(Icons.Filled.CreateNewFolder, "Add project")
+                            Icon(Icons.Filled.CreateNewFolder, NativeMessages.sidebar_add_project(lang))
                         }
                         DropdownMenu(choosing, { choosing = false }) {
                             for (h in s.hubs) DropdownMenuItem(text = { Text(h.name) }, onClick = {
@@ -573,13 +578,13 @@ internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyLis
                             })
                         }
                     }
-                    IconButton(onClick = onPair) { Icon(Icons.Filled.Link, "Hubs") }
+                    IconButton(onClick = onPair) { Icon(Icons.Filled.Link, NativeMessages.native_settings_hubs(lang)) }
                     Box {
-                        IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, "More") }
+                        IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, NativeMessages.common_more(lang)) }
                         DropdownMenu(more, { more = false }) {
-                            DropdownMenuItem(text = { Text("Search threads") }, leadingIcon = { Icon(Icons.Filled.Search, null) },
+                            DropdownMenuItem(text = { Text(NativeMessages.palette_search(lang)) }, leadingIcon = { Icon(Icons.Filled.Search, null) },
                                 onClick = { more = false; m.act("find-open", "search") })
-                            DropdownMenuItem(text = { Text("Settings") }, leadingIcon = { Icon(Icons.Filled.Settings, null) },
+                            DropdownMenuItem(text = { Text(NativeMessages.palette_settings(lang)) }, leadingIcon = { Icon(Icons.Filled.Settings, null) },
                                 onClick = { more = false; m.selectTab(Tab.Settings) })
                         }
                     }
@@ -601,7 +606,7 @@ internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyLis
                 if (s.active.isEmpty() && s.settled == null) {
                     if (s.projects.isNotEmpty() && s.search?.query.isNullOrEmpty()) item(key = "none") {
                         Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                            Text("Nothing active", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
+                            Text(NativeMessages.sidebar_nothing(lang), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
                         }
                     }
                 } else {
@@ -611,7 +616,7 @@ internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyLis
                     s.settled?.let { o ->
                         item(key = "settled") {
                             ListItem(
-                                headlineContent = { Text("Settled ${o.count}", style = MaterialTheme.typography.labelLarge) },
+                                headlineContent = { Text(NativeMessages.sidebar_settled_count(lang, o.count.toString()), style = MaterialTheme.typography.labelLarge) },
                                 trailingContent = { Icon(if (o.open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null) },
                                 modifier = Modifier.combinedClickableCompat { m.act("side-settled", "") },
                             )
@@ -631,7 +636,7 @@ internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyLis
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                             },
                             trailingContent = {
-                                IconButton(onClick = { m.act("new-thread", p.id) }) { Icon(Icons.Filled.Add, "New thread") }
+                                IconButton(onClick = { m.act("new-thread", p.id) }) { Icon(Icons.Filled.Add, NativeMessages.thread_new(lang)) }
                             },
                             modifier = Modifier.combinedClickableCompat(onLong = {
                                 if (AppSettings.haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -666,7 +671,7 @@ internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyLis
                     if (p.archived.isNotEmpty() && p.value.isNotEmpty()) {
                         item(key = "a:" + p.id) {
                             ListItem(
-                                headlineContent = { Text("Archived ${p.archived.size}", style = MaterialTheme.typography.labelLarge) },
+                                headlineContent = { Text(NativeMessages.native_thread_archived(lang, p.archived.size.toString()), style = MaterialTheme.typography.labelLarge) },
                                 trailingContent = {
                                     Icon(if (p.archOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
                                 },
@@ -681,7 +686,7 @@ internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyLis
                 s.older?.let { o ->
                     item(key = "older") {
                         ListItem(
-                            headlineContent = { Text("Older ${o.count}", style = MaterialTheme.typography.labelLarge) },
+                            headlineContent = { Text(NativeMessages.sidebar_older(lang, o.count.toString()), style = MaterialTheme.typography.labelLarge) },
                             trailingContent = { Icon(if (o.open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null) },
                             modifier = Modifier.combinedClickableCompat { m.act("side-older", "") },
                         )
@@ -721,6 +726,7 @@ private fun RowMenuSheet(m: AppModel, menu: RowMenu) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FolderPicker(m: AppModel, p: Folders) {
+    val lang = LocalBackplaneLanguage.current
     var text by remember { mutableStateOf(p.text) }
     // what was typed here: a screen still echoing it never overwrites the field
     val typed = remember { mutableSetOf<String>() }
@@ -731,8 +737,8 @@ private fun FolderPicker(m: AppModel, p: Folders) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Add project") },
-                    navigationIcon = { IconButton(onClick = { m.act("proj-close") }) { Icon(Icons.Filled.Close, "Cancel") } },
+                    title = { Text(NativeMessages.sidebar_add_project(lang)) },
+                    navigationIcon = { IconButton(onClick = { m.act("proj-close") }) { Icon(Icons.Filled.Close, NativeMessages.common_cancel(lang)) } },
                 )
             },
         ) { pad ->
@@ -773,10 +779,11 @@ private fun FolderPicker(m: AppModel, p: Folders) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MakingScreen(back: () -> Unit) {
+    val lang = LocalBackplaneLanguage.current
     Scaffold(topBar = {
         TopAppBar(
-            navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-            title = { Text("New thread") },
+            navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, NativeMessages.tour_back(lang)) } },
+            title = { Text(NativeMessages.thread_new(lang)) },
         )
     }) { pad ->
         Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -786,6 +793,7 @@ private fun MakingScreen(back: () -> Unit) {
 // a message the hub has not stored yet
 @Composable
 private fun SendingView(text: String) {
+    val lang = LocalBackplaneLanguage.current
     Column(Modifier.fillMaxWidth().alpha(0.55f), horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth()) {
@@ -794,7 +802,7 @@ private fun SendingView(text: String) {
                 Text(text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyLarge)
             }
         }
-        Text("Sending…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+        Text(NativeMessages.native_thread_sending(lang), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
     }
 }
 
@@ -802,6 +810,7 @@ private fun SendingView(text: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -> Unit)? = null) {
+    val lang = s.locale
     val snacks = remember { SnackbarHostState() }
     val list = rememberLazyListState()
     var menu by remember { mutableStateOf(false) }
@@ -853,7 +862,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
         // opaque, so the entries scrolled under it (a bot's cat and tabs) never show through
         topBar = { Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
             TopAppBar(
-                navigationIcon = { IconButton(onClick = { m.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                navigationIcon = { IconButton(onClick = { m.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, NativeMessages.tour_back(lang)) } },
                 title = {
                     Column {
                         Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -869,7 +878,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                     // they never cover the thread
                     t.subs?.let { u ->
                         TextButton(onClick = { subs = true }) {
-                            Icon(Icons.Filled.Group, "Subagents: " + u.word.ifEmpty { u.busy },
+                            Icon(Icons.Filled.Group, NativeMessages.native_thread_subagents(lang, u.word.ifEmpty { u.busy }),
                                 tint = if (u.busy.isNotEmpty()) PhaseColor.accent else MaterialTheme.colorScheme.outline)
                             Text(u.word.ifEmpty { u.busy }.takeWhile { it.isDigit() }, Modifier.padding(start = 2.dp),
                                 style = MaterialTheme.typography.labelMedium,
@@ -878,7 +887,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                     }
                     if (t.viewer.choices.isNotEmpty()) Box {
                         var boards by remember { mutableStateOf(false) }
-                        IconButton(onClick = { boards = true }) { Icon(Icons.Filled.Memory, "Board viewer") }
+                        IconButton(onClick = { boards = true }) { Icon(Icons.Filled.Memory, NativeMessages.native_thread_board(lang)) }
                         DropdownMenu(boards, { boards = false }) {
                             for (c in t.viewer.choices) DropdownMenuItem(
                                 text = { Text(c.label) },
@@ -889,7 +898,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                     for (tool in t.tools) if (tool.action == "interrupt")
                         IconButton(onClick = { m.act(tool.action) }) { Icon(Icons.Filled.Stop, tool.label) }
                     Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, NativeMessages.common_more(lang)) }
                         DropdownMenu(menu, { menu = false }) {
                             for (tool in t.tools) if (tool.action != "interrupt") DropdownMenuItem(
                                 text = { Text(tool.label) },
@@ -973,7 +982,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                         TextButton(onClick = { models = true }) {
                             Text(t.picker.label, style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.outline, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Icon(Icons.Filled.ExpandMore, "Choose the model and effort", Modifier.size(16.dp),
+                            Icon(Icons.Filled.ExpandMore, NativeMessages.composer_model_tip(lang), Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.outline)
                         }
                         DropdownMenu(models, { models = false }) {
@@ -985,7 +994,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                             if (t.picker.efforts.isNotEmpty()) {
                                 HorizontalDivider()
                                 for (c in t.picker.efforts) DropdownMenuItem(
-                                    text = { Text("Effort: ${c.label}") },
+                                    text = { Text(NativeMessages.native_thread_effort_item(lang, c.label)) },
                                     leadingIcon = { if (c.on) Icon(Icons.Filled.Check, null) else Spacer(Modifier.width(24.dp)) },
                                     onClick = { models = false; m.act("effort", c.value) },
                                 )
@@ -994,7 +1003,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                             if (t.picker.providers.isNotEmpty()) {
                                 HorizontalDivider()
                                 for (c in t.picker.providers) DropdownMenuItem(
-                                    text = { Text("Provider: ${c.label}") },
+                                    text = { Text(NativeMessages.native_thread_provider_item(lang, c.label)) },
                                     leadingIcon = { if (c.on) Icon(Icons.Filled.Check, null) else Spacer(Modifier.width(24.dp)) },
                                     onClick = { models = false; m.act("effort", c.value) },
                                 )
@@ -1408,6 +1417,7 @@ private fun PlotCard(m: AppModel, c: Card, modifier: Modifier) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ImageComposer(m: AppModel, modifier: Modifier = Modifier) {
+    val lang = LocalBackplaneLanguage.current
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val field = rememberTextFieldState(m.composer)
@@ -1442,7 +1452,7 @@ private fun ImageComposer(m: AppModel, modifier: Modifier = Modifier) {
         lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 6),
         decorator = { inner ->
             Box {
-                if (field.text.isEmpty()) Text("Ask the agent", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (field.text.isEmpty()) Text(NativeMessages.native_thread_composer(lang), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 inner()
             }
         },

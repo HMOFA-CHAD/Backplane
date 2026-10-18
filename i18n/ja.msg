@@ -1163,3 +1163,22 @@ native.bot.delete.ask = {name}を削除しますか？
 native.bot.createon = {kind, select, room {ルームを作成} other {ボットを作成}}{place, select, hub {（{hub}）} other {}}
 native.bot.memory.empty = 記憶なし
 native.bot.messages.empty = メッセージなし
+
+# Native project/thread/composer labels
+native.thread.menu = メニュー
+native.thread.search.clear = 検索をクリア
+native.thread.content = 会話の内容
+native.thread.content.note = 最新のメッセージをここに表示します。
+native.thread.model = モデル
+native.thread.effort = 思考量
+native.thread.composer = エージェントに依頼
+native.thread.model.effort = モデル・思考量：{label}
+native.thread.subagents = サブエージェント：{word}
+native.thread.board = 基板ビューアー
+native.thread.sending = 送信中…
+native.thread.waiting = {hub}を待機中…
+native.thread.hub = ハブ
+native.thread.archived = アーカイブ{count}
+native.thread.online = {state, select, online {接続済み} other {接続中…}}
+native.thread.effort.item = 思考量：{label}
+native.thread.provider.item = プロバイダー：{label}

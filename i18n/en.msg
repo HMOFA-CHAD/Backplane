@@ -1143,3 +1143,22 @@ native.bot.delete.ask = Delete {name}?
 native.bot.createon = {kind, select, room {New room} other {New bot}}{place, select, hub { on {hub}} other {}}
 native.bot.memory.empty = Nothing remembered
 native.bot.messages.empty = No messages
+
+# Native project/thread/composer labels
+native.thread.menu = Menu
+native.thread.search.clear = Clear search
+native.thread.content = Conversation content
+native.thread.content.note = The latest messages will appear here.
+native.thread.model = Model
+native.thread.effort = Effort
+native.thread.composer = Ask the agent
+native.thread.model.effort = Model and effort: {label}
+native.thread.subagents = Subagents: {word}
+native.thread.board = Board viewer
+native.thread.sending = Sending…
+native.thread.waiting = Waiting for {hub}…
+native.thread.hub = the hub
+native.thread.archived = Archived {count}
+native.thread.online = {state, select, online {Connected} other {Connecting…}}
+native.thread.effort.item = Effort: {label}
+native.thread.provider.item = Provider: {label}
