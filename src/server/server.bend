@@ -328,6 +328,27 @@ type Net is Data:
 type Cfg is Data:
   Cfg{home: String, web: String, host: String, port: U32, prompt: String, dirs: List<&2, String>, version: String, net: Net}
 
+# ---- mail perf: local wire-log length ----
+# Valid unknown JSON remains a wire line without changing State.seq.
+# Count the actual replay wire once, then only actual successful fresh lines.
+def LogCount.of(ls: List<&2, String>) -> Nat:
+  List.length(&2, String, ls)
+
+def LogCount.n(c: Cfg) -> Nat:
+  match c:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, _, _, _, bn, _, _, _, _}}: BN.Bn.wire_n(bn)
+
+def LogCount.set(c: Cfg, n: Nat) -> Cfg:
+  match c:
+    case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, br, pk, tm, mc, pv, bn, mg, lk, fc, ks}}:
+      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, br, pk, tm, mc, pv, BN.Bn.with_wire_n(bn, n), mg, lk, fc, ks}}
+
+def LogCount.init(c: Cfg, ls: List<&2, String>) -> Cfg:
+  LogCount.set(c, LogCount.of(ls))
+
+def LogCount.committed(+c: Cfg, fresh: List<&2, String>) -> Cfg:
+  LogCount.set(c, Nat.add(LogCount.n(c), List.length(&2, String, fresh)))
+
 type Client is Data:
   # look: what the client last said it shows (desk.look; core/desk.bend);
   # cr: what it was offered and has taken, and whether it still takes its
@@ -1521,8 +1542,8 @@ def Bot.dir.changed.all(cs: List<&2, M.Change>, +inbox: Chan(Msg)) -> IO(Unit):
 
 def Hub.commit.k(fd: Folded, f: File, cl: List<&2, Client>, as: List<&2, Agent>, inbox: Chan(Msg), cfg: Cfg, note: String) -> Hub & Wrote:
   match fd:
-    case Folded{st, ls, fr}:
-      (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{fr, True{}, ""})
+    case Folded{st, ls, +fr}:
+      (Hub{st, f, ls, cl, as, inbox, LogCount.committed(cfg, fr), note}, Wrote{fr, True{}, ""})
 
 def Hub.err.msg(e: U32 & String) -> String:
   (_, msg) = e
@@ -8932,13 +8953,13 @@ def Boot.go(log: Bool, +c: Client, h: Hub, +n: Nat, +id: U32) -> IO(Hub):
     case False{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       Boot.far.k(List.get(&2, FR.In, Far.mirrors(cfg), OB.Cr.fl(Boot.r(c))), Hub{st, f, ls, cl, as, inbox, cfg, note}, c, id)
 
-# the log's length is walked only when the next window is due: a chunk
-# with lines left over takes them (Boot.src), and walking a long log for
-# every 64 lines made a join quadratic (11 ms a chunk on 43k lines)
+# Window lookup uses the actual local wire length kept by successful
+# commits, not State.seq or a walk of the full shared log. Near its head,
+# every small catch-up window used to walk the entire growing log twice.
 def Boot.k.rest(empty: Bool, +c: Client, h: Hub, +id: U32) -> IO(Hub):
   match empty h:
-    case True{} Hub{st, f, +ls, cl, as, inbox, cfg, note}:
-      Boot.go(Nat.is_lt(OB.Cr.at(Boot.r(c)), List.length(&2, String, ls)), c, Hub{st, f, ls, cl, as, inbox, cfg, note}, List.length(&2, String, ls), id)
+    case True{} Hub{st, f, +ls, cl, as, inbox, +cfg, note}:
+      Boot.go(Nat.is_lt(OB.Cr.at(Boot.r(c)), LogCount.n(cfg)), c, Hub{st, f, ls, cl, as, inbox, cfg, note}, LogCount.n(cfg), id)
     case False{} _:
       Boot.go(True{}, c, h, 0n, id)
 
@@ -13994,4 +14015,5 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         +rt : K.Rt = K.Rt.set(rt0, "ipc", J.Str{""})
         +off : String <- Env.get("BACKPLANE_NO_UPDATE", "")
         +ai : String <- Env.get("APPIMAGE", "")
-        Main.opened(f, st, ls, Cfg.with_managed(Cfg.with_models(Cfg.with_bn(Cfg.with_token(Cfg.with_rt(Cfg{home, w, h, p, pr, ds, v, nt}, rt), tok), BN.Bn.with_dir(BN.Bn.empty(), BN.Bn.cache.load(bc, BO.World.peers(M.State.bots(st))))), BT.Cache.json(mc), BT.Cache.text(mc)), SV.Chan.managed(off, ai)), need, front)
+        finalCfg : Cfg = Cfg.with_managed(Cfg.with_models(Cfg.with_bn(Cfg.with_token(Cfg.with_rt(Cfg{home, w, h, p, pr, ds, v, nt}, rt), tok), BN.Bn.with_dir(BN.Bn.empty(), BN.Bn.cache.load(bc, BO.World.peers(M.State.bots(st))))), BT.Cache.json(mc), BT.Cache.text(mc)), SV.Chan.managed(off, ai))
+        Main.opened(f, st, ls, LogCount.init(finalCfg, ls), need, front)
