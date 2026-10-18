@@ -52,8 +52,17 @@ static int bp_hub_same(int fd, const char* path) {
 static void bp_hub_note(int fd, const char* line) {
   size_t n = strlen(line);
   if (ftruncate(fd, 0) == 0) {
+#ifdef __CYGWIN__
+    // Cygwin's positional-I/O handle is invalid after exec (EBADF), while
+    // the inherited descriptor still owns its flock and supports seek/write.
+    // Only startup writes this descriptor; readers open their own descriptor.
+    if (lseek(fd, 0, SEEK_SET) != 0) return;
+    ssize_t w = write(fd, line, n);
+    if (w == (ssize_t)n) w = write(fd, "\n", 1);
+#else
     ssize_t w = pwrite(fd, line, n, 0);
     if (w == (ssize_t)n) w = pwrite(fd, "\n", 1, (off_t)n);
+#endif
     (void)w;
   }
 }
