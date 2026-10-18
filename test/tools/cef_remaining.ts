@@ -102,6 +102,7 @@ try {
       try {
         await Bun.sleep(2500); // settle renderer mode and any prior cast lease
         const beforeFrames=helper.events.filter(e=>e.event==='frame').length;
+        const watchedTicks=phase==='remote-watch'?await helper.call('evaluate',{page:'bg1',expression:'frames'}):0;
         const before=usage(helper.proc.pid);const t=performance.now();
         await Bun.sleep(sampleMs);
         const after=usage(helper.proc.pid);const elapsed=(performance.now()-t)/1000;
@@ -110,6 +111,7 @@ try {
         const sample={phase,elapsedSeconds:elapsed,cpuPercent:delta/hz/elapsed*100,pssMiB:after.pssMiB,rssSumMiB:after.rssSumMiB,processes:after.processes,frames:helper.events.filter(e=>e.event==='frame').length-beforeFrames,actions,ticksByPage,errors};
         runResult.phases.push(sample);console.log(JSON.stringify({round,engine,...sample}));
         if(errors.length||actions<Math.floor(sampleMs/1000))throw new Error('agent activity/lease failed');
+        if(phase==='remote-watch'&&(ticksByPage[1].frames-watchedTicks<sampleMs/1000*20||sample.frames<sampleMs/1000*15))throw new Error('remote animation/cast cadence regressed');
       } finally {active=false;clearInterval(timer);clearInterval(agent);await until(()=>!busy,'agent command drained')}
     }
     await closeHelper();
