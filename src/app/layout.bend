@@ -2061,6 +2061,7 @@ def Picker.name.loc(+l: I.Loc, +m: String) -> String:
 
 def Picker.name(+m: String) -> String:
   Picker.name.loc(I.En{}, m)
+
 def Picker.names_w(+ty: Ty, ms: List<&2, String>) -> Nat:
   match ms:
     case Nil{}:
@@ -2783,6 +2784,7 @@ def Pane.range.loc(+l: I.Loc, +from: Nat, +shown: Nat, +n: Nat) -> String:
 
 def Pane.range(+from: Nat, +shown: Nat, +n: Nat) -> String:
   Pane.range.loc(I.En{}, from, shown, n)
+
 def Sa.fit.ok(+h: U32, +room: U32, +first: Bool) -> Bool:
   Bool.or(U32.is_le(h, room), first)
 
@@ -2982,9 +2984,9 @@ def Ask.choices.loc(+l: I.Loc, +k: String, +id: String, +o: String, +draft: Stri
         List.reverse(&2, S.Hit, Ask.opts(String.split(o, '\n'), id))),
       [S.Hit{0, 0, 0, 0, MSG.T.approval.allow(l), id ++ "|accept"}, S.Hit{0, 0, 0, 0, MSG.T.approval.session(l), id ++ "|session"}, S.Hit{0, 0, 0, 0, MSG.T.approval.deny(l), id ++ "|decline"}])))
 
-
 def Ask.choices(+k: String, +id: String, +o: String, +draft: String) -> List<&2, S.Hit>:
   Ask.choices.loc(I.En{}, k, id, o, draft)
+
 def Ask.text.lines(+ty: Ty, ls: List<&2, String>, +x0: U32, +y: U32) -> Out:
   match ls:
     case Nil{}:
@@ -3051,9 +3053,9 @@ def Ask.web.head.loc(+l: I.Loc, t: U.TAsk) -> String:
     case U.TAsk{_, _, +slug, +n, _, _, _, _, _}:
       MSG.T.teach.paused(l, slug, Nat.show(n))
 
-
 def Ask.web.head(t: U.TAsk) -> String:
   Ask.web.head.loc(I.En{}, t)
+
 def Ask.rows(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32) -> List<&2, R.Op>:
   match ls:
     case Nil{}:
@@ -3284,21 +3286,21 @@ def Set.days(+ty: Ty, +d: String, +x: U32, +y: U32) -> Out:
 def Set.model_line.loc(+l: I.Loc, +label: String, +m: String) -> String:
   Bool.pick(String, String.is_empty(m), MSG.T.settings.model.default(l, label), m ++ Bool.pick(String, String.is_empty(label), "", ": " ++ label))
 
-
 def Set.model_line(+label: String, +m: String) -> String:
   Set.model_line.loc(I.En{}, label, m)
+
 def Set.cli.loc(+l: I.Loc, +v: String, +prov: String) -> String:
   Bool.pick(String, String.is_empty(v), MSG.T.settings.provider.missing(l, prov), v)
 
-
 def Set.cli(+v: String, +prov: String) -> String:
   Set.cli.loc(I.En{}, v, prov)
+
 def Set.label.loc(+l: I.Loc, +v: String) -> String:
   Bool.pick(String, String.is_empty(v), MSG.T.common.default(l), v)
 
-
 def Set.label(+v: String) -> String:
   Set.label.loc(I.En{}, v)
+
 def Set.wraps(+ty: Ty, +v: String, +x0: U32, +x1: U32, +x: U32) -> Bool:
   Bool.and(U32.is_gt(x, x0), U32.is_gt((x + Lay.button.w(ty, Set.label.loc(Ty.loc(ty), v)) : U32), x1))
 
@@ -3349,6 +3351,7 @@ def Set.key.note.loc(+l: I.Loc, +masked: String) -> String:
 
 def Set.key.note(+masked: String) -> String:
   Set.key.note.loc(I.En{}, masked)
+
 def Vx.chips(bs: List<&2, VBtn>, +ty: Ty, +on: String, +x0: U32, +x1: U32, +x: U32, +y: U32) -> Out:
   match bs:
     case Nil{}:
@@ -3377,9 +3380,9 @@ def Vx.dev.btns(ds: List<&2, U.VDev>) -> List<&2, VBtn>:
 def Vx.devs.loc(+l: I.Loc, +u: U.Ui) -> List<&2, VBtn>:
   VBtn{MSG.T.voice.default(l), "setting", "voice.device="} <> Vx.dev.btns(U.Voice.devices(u))
 
-
 def Vx.devs(+u: U.Ui) -> List<&2, VBtn>:
   Vx.devs.loc(I.En{}, u)
+
 def Vx.term.btns(ts: List<&2, String>) -> List<&2, VBtn>:
   match ts:
     case Nil{}:
@@ -3879,6 +3882,25 @@ def Set.browser(+ty: Ty, +eng: String, +err: String, +x: U32, +w: U32, +y: U32) 
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Embedded") - 6 - Lay.button.w(ty, "Chrome") : U32), (y + 14 : U32), "Chrome", Bool.not(String.eq(eng, "cef")), "setting", "browser.engine=chrome"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Embedded") : U32), (y + 14 : U32), "Embedded", String.eq(eng, "cef"), "setting", "browser.engine=cef")])
 
+def Set.fallback.h(+ty: Ty, +n: S.Nui, +x: U32, +w: U32) -> U32:
+  (20 + Set.agy.sum(U.Fallbackv.rows(S.Nui.ui(n)), ty, x, w) : U32)
+
+def Set.fallback(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
+  +rs = U.Fallbackv.rows(S.Nui.ui(n))
+  Out.cat(Set.card(x, y, w, (Set.agy.sum(rs, ty, x, w) + 10 : U32)), Set.agy.rows(rs, ty, n, x, w, (y + 8 : U32)))
+
+# Keep the first Settings group in its own native layout call. The full
+# screen's single row expression otherwise exceeds Bend's call arity.
+def Set.threads(+ty: Ty, +st: M.State, +n: S.Nui, +x: U32, +w: U32, +b: U32) -> Out:
+  Out.all([
+    Set.head(ty, MSG.T.tour.title.threads(Ty.loc(ty)), x, (b + 76 : U32)),
+    Set.card(x, (b + 108 : U32), w, 128),
+    Set.row.r(ty, MSG.T.settings.settle(Ty.loc(ty)), MSG.T.settings.settle.note(Ty.loc(ty)), x, (b + 110 : U32), w, 190),
+    Set.days(ty, M.Setting.get(st, "settle.days", "3"), (x + w - 172 : U32), (b + 126 : U32)),
+    Set.carry(ty, M.Carry.on(st), x, w, (b + 174 : U32)),
+    Set.notify(st, ty, x, w, (b + 256 : U32)),
+    Set.fallback(ty, n, x, w, (b + 256 + Set.notify.h(st, ty, w) : U32))])
+
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +label0 = MSG.T.settings.theme.light(Ty.loc(ty))
   +label1 = MSG.T.settings.theme.dark(Ty.loc(ty))
@@ -3902,19 +3924,14 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +kh = {(40 + Kn.h(kn, ty, (w - 32 : U32)) : U32) : U32}
   # (the Browser row, then the Ordering group, then Appearance)
   +fy = {(ey + 278 + kh : U32) : U32}
-  +total = {(1196 + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
+  +total = {(1196 + Set.fallback.h(ty, n, x, w) + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
-  +b2 = {(b + 64 + Set.notify.h(st, ty, w) : U32) : U32}
+  +b2 = {(b + 64 + Set.fallback.h(ty, n, x, w) + Set.notify.h(st, ty, w) : U32) : U32}
   Out.all([
     Out{Nil{}, [Lay.hit(x0, 52, (x1 - x0 : U32), (h - 52 : U32), "set-bg", U32.show(U32.dim(total, h)))]},
     Out.hits_below(52, Out.all([
-    Set.head(ty, MSG.T.tour.title.threads(Ty.loc(ty)), x, (b + 76 : U32)),
-    Set.card(x, (b + 108 : U32), w, 128),
-    Set.row.r(ty, MSG.T.settings.settle(Ty.loc(ty)), MSG.T.settings.settle.note(Ty.loc(ty)), x, (b + 110 : U32), w, 190),
-    Set.days(ty, M.Setting.get(st, "settle.days", "3"), (x + w - 172 : U32), (b + 126 : U32)),
-    Set.carry(ty, M.Carry.on(st), x, w, (b + 174 : U32)),
-    Set.notify(st, ty, x, w, (b + 256 : U32)),
+    Set.threads(ty, st, n, x, w, b),
     Set.head(ty, MSG.T.settings.agents(Ty.loc(ty)), x, (b2 + 192 : U32)),
     Set.card(x, (b2 + 224 : U32), w, (124 + dy : U32)),
     Set.row(ty, MSG.T.settings.agents.default(Ty.loc(ty)), MSG.T.settings.agents.note(Ty.loc(ty), Set.cli.loc(Ty.loc(ty), U.Models.cli(U.Str.get(info, "models"), prov), prov)), x, (b2 + 226 : U32), w),
@@ -4193,9 +4210,9 @@ def Lay.help.loc(+l: I.Loc, +k: U32) -> String:
 type DRow is Data:
   DRow{text: String, kind: U32}
 
-
 def Lay.help(+k: U32) -> String:
   Lay.help.loc(I.En{}, k)
+
 def DRow.lines(ls: List<&2, DF.DLine>, rest: List<&2, DRow>) -> List<&2, DRow>:
   match ls:
     case Nil{}:
@@ -4517,9 +4534,9 @@ def Side.ground.if(on: Bool, +ty: Ty, +n: S.Nui, +x1: U32) -> Out:
 def Side.head.loc(+l: I.Loc, +k: U32, +f: LY.Focus) -> String:
   Bool.pick(String, LY.Lyr.on(f), MSG.T.viewer.layers.active(l, LY.Lyr.name(k, LY.Lyr.active(f))), MSG.T.viewer.layers(l))
 
-
 def Side.head(+k: U32, +f: LY.Focus) -> String:
   Side.head.loc(I.En{}, k, f)
+
 def Side.k(board: Bool, +ty: Ty, +n: S.Nui, +k: U32, +ss: List<&2, V.Seen>, +x0: U32, +x1: U32, +h: U32) -> Out:
   match board:
     case True{}:
@@ -4915,6 +4932,7 @@ def Hb.side.label.loc(+l: I.Loc, +name: String, +v: String) -> String:
 
 def Hb.side.label(+name: String, +v: String) -> String:
   Hb.side.label.loc(I.En{}, name, v)
+
 def Hb.legend.if(on: Bool, +ty: Ty, +x0: U32, +y: U32) -> Out:
   match on:
     case True{}:
@@ -5610,9 +5628,9 @@ def Pal.rows(+ty: Ty, ps: List<&2, U.PItem>, +i: Nat, +sel: Nat, +x: U32, +y: U3
 def Pal.prompt.loc(+l: I.Loc, +mode: String) -> String:
   Bool.pick(String, String.eq(mode, "search"), MSG.T.palette.search.full(l), Bool.pick(String, String.eq(mode, "files"), MSG.T.palette.file.placeholder(l), MSG.T.palette.command.placeholder(l)))
 
-
 def Pal.prompt(+mode: String) -> String:
   Pal.prompt.loc(I.En{}, mode)
+
 def Lay.palette(+ty: Ty, +u: U.Ui, +ww: U32, +hh: U32, +blink: Bool) -> Out:
   +w = {U32.min(600, (ww - 40 : U32)) : U32}
   +x = {U32.shr((ww - w : U32)) : U32}
@@ -6784,6 +6802,7 @@ def Vx.head.loc(+l: I.Loc, +state: String, +dev: String) -> String:
 
 def Vx.head(+state: String, +dev: String) -> String:
   Vx.head.loc(I.En{}, state, dev)
+
 def Vx.strip(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +y: U32) -> Out:
   +label0 = MSG.T.composer.stop(Ty.loc(ty))
   +head = Vx.head.loc(Ty.loc(ty), U.Ui.scratch(u, "@voice"), U.Ui.scratch(u, "@voice.dev"))
@@ -6807,6 +6826,7 @@ def Vx.hint.loc(+l: I.Loc, +h: String, +dev: String) -> String:
 
 def Vx.hint(+h: String, +dev: String) -> String:
   Vx.hint.loc(I.En{}, h, dev)
+
 def Vx.note(+ty: Ty, +text: String, +color: U32, +x0: U32, +x1: U32, +y: U32) -> Out:
   Out.all([
     Out.ops(List.append(&2, R.Op, Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), 36, 6, T.Th.raise(), color),
@@ -6830,6 +6850,7 @@ def Vx.ask.btns.loc(+l: I.Loc, +w: String, +g: String) -> List<&2, VBtn>:
 
 def Vx.ask.btns(+w: String, +g: String) -> List<&2, VBtn>:
   Vx.ask.btns.loc(I.En{}, w, g)
+
 def Vx.ask.k(x: VC.Unsure, +ty: Ty, +n: Nat, +x0: U32, +x1: U32, +y: U32) -> Out:
   match x:
     case VC.Unsure{+w, +g}:

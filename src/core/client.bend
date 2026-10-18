@@ -1,4 +1,5 @@
 import Base
+import ./fallback.bend as FB
 import ./title.bend as TTL
 import ./mailrun.bend as RUN
 import ./cef.bend as CF
@@ -11286,3 +11287,78 @@ def CefUI.strip(+u: Ui, +id: String) -> String:
 
 def CefUI.strip_on(+u: Ui, +id: String) -> Bool:
   CF.Cef.strip_on(Ui.info(u, "browser.engine.live"), Teach.drive(u, id))
+
+# ---- global fallback Settings: shared row model for every client ----
+def Fallbackv.state(u: Ui) -> M.State:
+  Ui.state.of(u)
+
+def Fallbackv.chain(u: Ui) -> List<&2, FB.Target>:
+  FB.Chain.of(Ui.state.of(u))
+
+def Fallbackv.btn(label: String, value: String) -> AgBtn:
+  AgBtn{label, "setting", value, False{}}
+
+def Fallbackv.order(xs: List<&2, FB.Target>, +all: List<&2, FB.Target>, +caps: J.Json, +s: M.State, +n: Nat) -> List<&2, AgRow>:
+  match xs:
+    case Nil{}: Nil{}
+    case +h <> t:
+      +key = FB.Target.key(h)
+      AgRow{Nat.show(n) ++ ". " ++ key, Bool.pick(String, FB.Caps.valid(caps, h), "", "Unavailable on this machine. Skipped during fallback."), Nil{},
+        [Fallbackv.btn("Move up", "fallback.chain=" ++ FB.Chain.show(FB.Chain.up(all, key))),
+         Fallbackv.btn("Move down", "fallback.chain=" ++ FB.Chain.show(List.reverse(&2, FB.Target, FB.Chain.up(List.reverse(&2, FB.Target, all), key)))),
+         Fallbackv.btn("Remove", "fallback.chain=" ++ FB.Chain.show(FB.Chain.remove(all, key)))]} <> Fallbackv.order(t, all, caps, s, 1n+n)
+
+def Fallbackv.provider.k(missing: Bool, +p: String, +cur: String, rest: List<&2, AgBtn>) -> List<&2, AgBtn>:
+  match missing:
+    case True{}: rest
+    case False{}: AgBtn{p, "setting", "fallback.add.provider=" ++ p, String.eq(p, cur)} <> rest
+
+def Fallbackv.providers(ps: List<&2, String>, +caps: J.Json, +cur: String) -> List<&2, AgBtn>:
+  match ps:
+    case Nil{}: Nil{}
+    case +p <> t:
+      Fallbackv.provider.k(List.is_empty(&2, J.Json, J.Json.elems(J.Json.get_obj(caps, p))), p, cur, Fallbackv.providers(t, caps, cur))
+
+def Fallbackv.models(xs: List<&2, String>, +cur: String) -> List<&2, AgBtn>:
+  match xs:
+    case Nil{}: Nil{}
+    case +m <> t: AgBtn{m, "setting", "fallback.add.model=" ++ m, String.eq(m, cur)} <> Fallbackv.models(t, cur)
+
+def Fallbackv.add.k(valid: Bool, +all: List<&2, FB.Target>, target: FB.Target) -> List<&2, AgBtn>:
+  match valid:
+    case False{}: Nil{}
+    case True{}: [Fallbackv.btn("Add to hierarchy", "fallback.chain=" ++ FB.Chain.show(List.append(&2, FB.Target, all, [target])))]
+
+def Fallbackv.add(+u: Ui, +caps: J.Json) -> List<&2, AgRow>:
+  +s = Ui.state.of(u)
+  +p = M.Setting.get(s, "fallback.add.provider", "codex")
+  +m = M.Setting.get(s, "fallback.add.model", "gpt-6.1-sol")
+  +target = {FB.Target{p, m} : FB.Target}
+  [AgRow{"Add a provider", "Choose an installed provider and model, then add it to the end.", Nil{}, Fallbackv.providers(["claude", "codex", "grok", "muse", "antigravity"], caps, p)},
+   AgRow{"Add a model", "Only installed models can be saved. Duplicate entries are not allowed.", Nil{}, Fallbackv.models(Models.list(Ui.info(u, "models"), p), m)},
+   AgRow{FB.Target.key(target), "", Nil{}, Fallbackv.add.k(Bool.and(FB.Caps.valid(caps, target), Bool.not(FB.Chain.has(Fallbackv.chain(u), FB.Target.key(target)))), Fallbackv.chain(u), target)}]
+
+def Fallbackv.outage.one(held: Bool, +scope: String, +o: J.Json) -> List<&2, AgRow>:
+  match held:
+    case False{}: Nil{}
+    case True{}: [AgRow{"Unavailable: " ++ scope, J.Json.get_str(o, "reason", "Usage limit") ++ Bool.pick(String, Nat.is_eq(J.Json.get_nat(o, "reset", 0n), 0n), ". No reset supplied; held until you clear it.", ". Eligible again after the provider's reported reset."), Nil{}, [Fallbackv.btn("Clear availability hold", "fallback.outage." ++ scope ++ "=")]}]
+
+def Fallbackv.outages(xs: List<&2, String>, +s: M.State, +now: Nat) -> List<&2, AgRow>:
+  match xs:
+    case Nil{}: Nil{}
+    case +sc <> rest: List.append(&2, AgRow, Fallbackv.outage.one(FB.Limit.active(s, sc, now), sc, FB.Limit.record(s, sc)), Fallbackv.outages(rest, s, now))
+
+def Fallbackv.scopes(xs: List<&2, FB.Target>) -> List<&2, String>:
+  match xs:
+    case Nil{}: Nil{}
+    case h <> t: FB.Target.key(h) <> Fallbackv.scopes(t)
+
+def Fallbackv.rows(+u: Ui) -> List<&2, AgRow>:
+  +s = Ui.state.of(u)
+  +caps = Maybe.default(&2, J.Json, J.Json.parse(Ui.info(u, "models")), J.Null{})
+  +all = Fallbackv.chain(u)
+  List.concat(&2, AgRow, [[AgRow{"Fallback hierarchy", "Applies to all threads and bots, including delegates, routines and mail runs. Your chosen model runs first. At a confirmed usage limit, try entries after it; if it is absent, start at the top. Never wrap or switch working threads back. Login and network failures do not change provider.", Nil{},
+    [AgBtn{"Enabled", "setting", "fallback.on=on", FB.Chain.on(s)}, AgBtn{"Disabled", "setting", "fallback.on=off", Bool.not(FB.Chain.on(s))}]}],
+    Fallbackv.order(all, all, caps, s, 1n), Fallbackv.add(u, caps),
+    [AgRow{"Fallback notifications", "One alert per outage, with an audit row in each affected thread. If the whole chain is unavailable, work pauses and asks for attention. A limit without a reset stays held until cleared here.", Nil{}, Nil{}}],
+    Fallbackv.outages(List.append(&2, String, ["claude", "codex", "grok", "muse", "antigravity"], Fallbackv.scopes(all)), s, Side.now(u))])

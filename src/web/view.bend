@@ -649,7 +649,6 @@ def View.header(+lc: I.Loc, t: M.Thread, +st: M.State, +chip: String, mini: List
             Bool.not(String.is_empty(M.Fork.source(st, id))), term, panel}, "flag", "snooze", "term-toggle", "@term-size"))),
           View.snoozes.loc(lc, picking))}]])}
 
-
 # the model menu's rows: each model's name, then what its CLI calls it,
 # in two columns (the names' as wide as the longest, --namew)
 def View.models.loc(+lc: I.Loc, ms: List<&2, String>, +cur: String, +info: String, +prov: String) -> List<&2, D.Node>:
@@ -805,7 +804,6 @@ def View.ask.btns.loc(+lc: I.Loc, +k: String, +id: String, +o: String, +draft: S
 def View.ask.btns(+k: String, +id: String, +o: String, +draft: String) -> List<&2, D.Node>:
   View.ask.btns.loc(I.En{}, k, id, o, draft)
 
-
 def View.ask.std(+lc: I.Loc, a: M.Ask, +draft: String) -> D.Node:
   match a:
     case M.Ask{+id, _, +k, +tool, +d, +o, _, _}:
@@ -813,7 +811,6 @@ def View.ask.std(+lc: I.Loc, a: M.Ask, +draft: String) -> D.Node:
         D.Dom.span("ask-head", U.Ask.head.loc(lc, k, tool, d)),
         Bool.pick(D.Node, String.eq(k, "plan"), D.El{"div", "", [D.At{"class", "body"}], D.Md.render.loc(lc, d)}, D.El{"div", "", [D.At{"class", "ask-detail"}], [D.Txt{d}]}),
         D.El{"div", "", [D.At{"class", "ask-btns"}], View.ask.btns.loc(lc, U.Ask.bkind(k, tool), id, o, draft)}]}
-
 
 # a browser task paused for help: its question, the screenshot, and the
 # person's choices (client.bend's Teach.ask)
@@ -1235,7 +1232,7 @@ def View.settings.loc(+lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, 
     D.El{"div", "", [D.At{"class", "settings"}], List.concat(&2, D.Node, [[
       View.setrow(MSG.T.settings.settle(lc), MSG.T.settings.settle.note(lc), View.days.loc(lc, M.Setting.get(st, "settle.days", "3"))),
       View.setrow(MSG.T.settings.restart(lc), MSG.T.settings.restart.note(lc), View.chips.loc(lc, ["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"))],
-      View.notify(lc, st),
+      View.notify(lc, st), View.agy.rows(U.Fallbackv.rows(u)),
       [View.setrow(MSG.T.settings.provider(lc), MSG.T.settings.agents.note(lc, Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), MSG.T.settings.provider.missing(lc, prov), U.Models.cli(U.Str.get(nf, "models"), prov))), View.chips.loc(lc, ["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider")),
       View.setrow(MSG.T.settings.model(lc), Bool.pick(String, String.is_empty(M.Setting.get(st, "agent.model", "")), MSG.T.common.default(lc), M.Setting.get(st, "agent.model", "")) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), prov, M.Setting.get(st, "agent.model", "")), View.chips.loc(lc, U.Models.menu(U.Str.get(nf, "models"), prov), M.Setting.get(st, "agent.model", ""), "agent.model")),
       View.setrow(MSG.T.settings.writing.provider(lc), MSG.T.web.settings.writing.note(lc), View.chips.loc(lc, ["claude", "codex", "grok", "muse"], U.TextGen.provider(st), "text.provider")),
@@ -2016,7 +2013,6 @@ def View.thread.p(+lc: I.Loc, u: U.Ui, t: M.Thread, pend: List<&2, String>, +att
 def View.thread.h(+lc: I.Loc, +u: U.Ui, +t: M.Thread, hd: List<&2, D.Node>) -> D.Node:
   View.thread.p(lc, u, t, U.Ui.pending(u, U.Ui.sel(u)), U.Ui.atts(u, U.Ui.sel(u)), U.Ui.uploading(u, U.Ui.sel(u)), U.Ui.flag(u, "term"), hd, D.Dom.cat(View.btw(lc, u), View.voice.loc(lc, u, U.Ui.sel(u))), View.mic.of(u, U.Ui.sel(u)), View.fab(u), View.ready(u), U.Fab.mini.tools(u), U.Hold.pill(u, M.Thread.id(t)))
 
-
 def View.thread(+lc: I.Loc, +u: U.Ui, t: M.Thread) -> D.Node:
   View.thread.h(lc, u, t, Nil{})
 
@@ -2555,7 +2551,6 @@ def View.solid.what.loc(+lc: I.Loc, on: Bool, +u: U.Ui) -> List<&2, D.Node>:
     case False{}:
       View.boards(u, MSG.T.viewer.board3d.tip(lc))
 
-
 # a model turned in 3D: host.js (solid.js) draws the hub's model (a "plot"
 # with a mesh, as the phones get) on the canvas whose data-key it carries,
 # and says in the note why there is none
@@ -2745,7 +2740,6 @@ def View.aside.k(+lc: I.Loc, i: Nat, +u: U.Ui) -> List<&2, D.Node>:
       View.review(lc, u)
     case _:
       View.plot(lc, u, List.append(&2, D.Node, View.boards(u, MSG.T.viewer.board.tip(lc)), [View.kicad.loc(lc)]))
-
 
 def View.aside.n(+kind: String) -> Nat:
   Bool.pick(Nat, String.eq(kind, "diff"), 0n, Bool.pick(Nat, String.eq(kind, "browser"), 1n, Bool.pick(Nat, String.eq(kind, "mech"), 2n,

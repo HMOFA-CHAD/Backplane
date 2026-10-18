@@ -3,6 +3,7 @@ import ./src/server/botnet.bend as MPLOG # mail perf runtime count
 # ---- native phone i18n imports ----
 import ./src/mobile/app.bend as NATIVEI18N
 # ---- end native phone i18n imports ----
+import ./src/core/fallback.bend as FALL
 import ./src/server/server.bend as MPCREDIT # mail perf
 # ---- i18n web phone imports ----
 import ./src/web/view.bend as WPH
@@ -10548,3 +10549,30 @@ law exe_app_name:
 law exe_server_exact:
   {EX.Exe.server(["/opt/other-backplane-serve"]) == False{} : Bool}
 # ---- end build-speed ----
+
+# ---- global provider fallback ----
+
+# An empty suffix cannot launch any provider, regardless of state/catalog.
+law fallback_empty_exhausted:
+  for s: M.State
+  for caps: J.Json
+  for now: Nat
+  {FALL.Chain.pick([], s, caps, now) == None{} : Maybe<&2, FALL.Target>}
+
+law fallback_never_wraps:
+  {FALL.Chain.show(FALL.Chain.suffix(FALL.Chain.parse("claude/sonnet,codex/gpt-6.1-sol"), "codex/gpt-6.1-sol")) == "" : String}
+
+law fallback_auth_is_not_quota:
+  {FALL.Error.classify("codex", "gpt-6.1-sol", J.Json.obj([J.KV{"type", J.Str{"turn.failed"}}, J.KV{"message", J.Str{"login keyring is locked"}}])) == None{} : Maybe<&2, FALL.Limit>}
+
+law fallback_unknown_reset_held:
+  {FALL.Limit.active.o(J.Json.obj([J.KV{"scope", J.Str{"claude"}}, J.KV{"reset", J.Json.nat(0n)}]), 1000n) == True{} : Bool}
+
+law fallback_reset_boundary:
+  {FALL.Limit.active.o(J.Json.obj([J.KV{"scope", J.Str{"claude"}}, J.KV{"reset", J.Json.nat(1000n)}]), 1000n) == False{} : Bool}
+
+law fallback_no_recovery_while_locked:
+  for s: M.State
+  for now: Nat
+  {H.Auth.recover(False{}, s, now) == H.Step.none() : H.Step}
+# ---- end global provider fallback ----
