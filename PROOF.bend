@@ -1,4 +1,5 @@
 import Base
+import ./src/server/botnet.bend as MPLOG # mail perf runtime count
 import ./src/server/server.bend as MPCREDIT # mail perf
 import ./src/core/schematic.bend as SC # kicad fork viewers
 import ./src/core/charter.bend as CH # mail 2c
@@ -12151,3 +12152,13 @@ def Laws.fork_footprint_legacy_at(x):
 def Laws.mail_plain_count(b, bot): {==}
 
 def Laws.mail_global_primary(): {==}
+
+def Laws.mail_log_count_set(c, n):
+  match c:
+    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n}, managed, link, freecad, ks}}:
+      {==}
+
+def Laws.mail_log_count_committed(c, fresh):
+  match c:
+    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n}, managed, link, freecad, ks}}:
+      {==}

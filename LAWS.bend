@@ -1,4 +1,5 @@
 import Base
+import ./src/server/botnet.bend as MPLOG # mail perf runtime count
 import ./src/server/server.bend as MPCREDIT # mail perf
 # ---- i18n web phone imports ----
 import ./src/web/view.bend as WPH
@@ -10510,3 +10511,13 @@ law mail_plain_count:
 law mail_global_primary:
   {ML.Box.slice(ML.Box.conv_set(ML.Box.conv_set(ML.Box.empty(), "a", "A", "pair", ["thread:x"], "", Nil{}, 1n), "b", "B", "pair", ["person"], "", Nil{}, 2n), "*", 0n, 2n)
     == [ML.Conv{"b", "B", "pair", ["person"], "", Nil{}, 2n, 2n, 0n}, ML.Conv{"a", "A", "pair", ["thread:x"], "", Nil{}, 1n, 1n, 0n}] : List<&2, ML.Conv>}
+
+law mail_log_count_set:
+  for c: MPCREDIT.Cfg
+  for n: Nat
+  {MPCREDIT.LogCount.n(MPCREDIT.LogCount.set(c, n)) == n : Nat}
+
+law mail_log_count_committed:
+  for +c: MPCREDIT.Cfg
+  for +fresh: List<&2, String>
+  {MPCREDIT.LogCount.n(MPCREDIT.LogCount.committed(c, fresh)) == Nat.add(MPCREDIT.LogCount.n(c), List.length(&2, String, fresh)) : Nat}
