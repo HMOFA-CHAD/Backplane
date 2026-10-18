@@ -4392,10 +4392,19 @@ def KIpc.pro.k(pro: Bool, absolute: Bool, +path: String) -> IO(String):
 def KIpc.pro(+path: String) -> IO(String):
   KIpc.pro.k(String.ends_with(path, ".kicad_pro"), String.starts_with(path, "/"), path)
 
+# the capabilities the hub acts on (idle-exit only from API 2)
+def KIpc.caps.of(+h: J.Json) -> List<&2, String>:
+  KSC.KS.caps.safe(KH.KH.strings(J.Json.elems(J.Json.get_obj(h, "caps"))), J.Json.get_nat(h, "api", 0n))
+
+def KIpc.caps(rt: K.Rt) -> List<&2, String>:
+  match rt:
+    case K.Rt{_, _, _, _, +h}:
+      KIpc.caps.of(h)
+
 def KIpc.env(rt: K.Rt) -> KSV.KEnv:
   match rt:
     case K.Rt{+cli, _, v, _, +h}:
-      KSV.KEnv{cli, K.Rt.root(cli), KSC.KS.caps.safe(KH.KH.strings(J.Json.elems(J.Json.get_obj(h, "caps"))), J.Json.get_nat(h, "api", 0n)), v}
+      KSV.KEnv{cli, K.Rt.root(cli), KIpc.caps.of(h), v}
 
 # why IPC cannot be used right now ("" when it can)
 def KIpc.gate(rt: K.Rt, +setting: String) -> String:
@@ -4404,11 +4413,11 @@ def KIpc.gate(rt: K.Rt, +setting: String) -> String:
       KSC.KS.gate(J.Json.get_str(h, "status", "checking"), v, J.Json.get_str(h, "why", ""), setting)
 
 # what is wrong with the request itself ("" when nothing)
-def KIpc.check(+ty: String, +path: String, +pro: String) -> String:
+def KIpc.check(+ty: String, +path: String, +pro: String, +msg: J.Json, caps: List<&2, String>) -> String:
   Bool.pick(String, String.is_empty(ty), "type is required: the protobuf command, e.g. kiapi.board.commands.GetItems",
     Bool.pick(String, Bool.not(String.starts_with(path, "/")), "path must be the absolute path of the project's .kicad_pro, .kicad_pcb or .kicad_sch",
       Bool.pick(String, String.is_empty(pro), "no KiCad project (.kicad_pro) found for " ++ path,
-        Bool.pick(String, KSC.KS.headless_refused(ty), KSC.KS.refusal(), ""))))
+        Bool.pick(String, KSC.KS.headless_refused(ty), KSC.KS.refusal(), KSC.KS.guard(ty, msg, caps)))))
 
 def KIpc.body(+o: J.Json) -> J.Json:
   J.Json.obj([J.KV{"type", J.Str{J.Json.get_str(o, "type", "")}}, J.KV{"message", J.Json.get_obj(o, "message")}])
@@ -4425,30 +4434,31 @@ def KIpc.fin.plain(ok: Bool, +o: J.Json, +reply: Chan(String), +id: String) -> I
     case False{}:
       KIpc.fail(reply, id, KIpc.err(o))
 
-def KIpc.fin.ok(status: Bool, ok: Bool, +o: J.Json, +reply: Chan(String), +id: String, +lines: String) -> IO(Unit):
+def KIpc.fin.ok(status: Bool, ok: Bool, +o: J.Json, +reply: Chan(String), +id: String, +lines: String, +argv: String, +version: String) -> IO(Unit):
   match status:
     case True{}:
-      KIpc.send(reply, id, True{}, J.Json.obj([J.KV{"server", J.Str{KSC.KS.note(lines)}}, J.KV{"servers", J.Str{lines}}, J.KV{"capabilities", J.Json.get_obj(o, "message")},
+      KIpc.send(reply, id, True{}, J.Json.obj([J.KV{"server", J.Str{KSC.KS.note(lines)}}, J.KV{"servers", J.Str{lines}}, J.KV{"argv", J.Str{argv}}, J.KV{"version", J.Str{version}}, J.KV{"capabilities", J.Json.get_obj(o, "message")},
         J.KV{"detail", J.Str{Bool.pick(String, ok, "", KIpc.err(o))}}]))
     case False{}:
       KIpc.fin.plain(ok, o, reply, id)
 
-def KIpc.fin.k(fallback: Bool, ok: Bool, +o: J.Json, +inbox: Chan(Msg), +thread: String, +reply: Chan(String), +id: String, status: Bool, +lines: String) -> IO(Unit):
+def KIpc.fin.k(fallback: Bool, ok: Bool, +o: J.Json, +inbox: Chan(Msg), +thread: String, +reply: Chan(String), +id: String, status: Bool, +lines: String, +argv: String, +version: String) -> IO(Unit):
   match fallback:
     case True{}:
       do IO<Unit>:
         KIpc.log(inbox, thread, id, J.Json.get_str(o, "why", ""))
         KIpc.fail(reply, id, J.Json.get_str(o, "error", ""))
     case False{}:
-      KIpc.fin.ok(status, ok, o, reply, id, lines)
+      KIpc.fin.ok(status, ok, o, reply, id, lines, argv, version)
 
 # the project's server is asked, and the answer goes back
-def KIpc.run(+q: Chan(KSV.KMsg), +pro: String, env: KSV.KEnv, +ty: String, msg: J.Json, status: Bool, +inbox: Chan(Msg), +thread: String, +reply: Chan(String), +id: String) -> IO(Unit):
+def KIpc.run(+q: Chan(KSV.KMsg), +pro: String, +env: KSV.KEnv, +ty: String, msg: J.Json, status: Bool, +inbox: Chan(Msg), +thread: String, +reply: Chan(String), +id: String) -> IO(Unit):
   do IO<Unit>:
     +line : String <- KSV.KServe.ask_on(q, pro, env, ty, msg)
     +lines : String <- KSV.KServe.info_on(q)
+    +argv : String <- KSV.KServe.argv_on(q, pro)
     +o : J.Json = KSV.KServe.parse(line)
-    KIpc.fin.k(J.Json.get_bool(o, "fallback", False{}), J.Json.get_bool(o, "ok", False{}), o, inbox, thread, reply, id, status, lines)
+    KIpc.fin.k(J.Json.get_bool(o, "fallback", False{}), J.Json.get_bool(o, "ok", False{}), o, inbox, thread, reply, id, status, lines, argv, KSV.KEnv.version(env))
 
 def KIpc.go.run(m: Maybe<&2, Chan(KSV.KMsg)>, +rt: K.Rt, +inbox: Chan(Msg), +thread: String, +o: J.Json, +reply: Chan(String), +pro: String) -> IO(Unit):
   match m:
@@ -4472,7 +4482,7 @@ def KIpc.go.k(fine: Bool, +plain: String, +gate: String, m: Maybe<&2, Chan(KSV.K
       KIpc.go.gate(String.is_empty(gate), gate, m, rt, inbox, thread, o, reply, pro)
 
 def KIpc.go(m: Maybe<&2, Chan(KSV.KMsg)>, +rt: K.Rt, +setting: String, +inbox: Chan(Msg), +thread: String, +o: J.Json, +reply: Chan(String), +pro: String) -> IO(Unit):
-  +plain = KIpc.check(KIpc.type(o), KIpc.path(o), pro)
+  +plain = KIpc.check(KIpc.type(o), KIpc.path(o), pro, KIpc.msg(J.Json.get_obj(KIpc.args(o), "message")), KIpc.caps(rt))
   KIpc.go.k(String.is_empty(plain), plain, KIpc.gate(rt, setting), m, rt, inbox, thread, o, reply, pro)
 
 def KIpc.job(m: Maybe<&2, Chan(KSV.KMsg)>, +rt: K.Rt, +setting: String, +inbox: Chan(Msg), +thread: String, +o: J.Json, +reply: Chan(String)) -> IO(Unit):

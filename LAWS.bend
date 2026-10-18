@@ -9911,15 +9911,15 @@ law kserve_gate_ok:
 law kserve_unavailable_names_fallback:
   {String.contains(KSL.KS.unavailable("x", "c"), "Fallback: edit the file directly") == True{} : Bool}
 
-# Backplane KiCad 10.99 with API 1 is the least that serves IPC
+# Backplane KiCad 10.99.0-bp.4 with API 2 is the least that serves IPC
 law kicad_min_version:
-  {KH.KH.min_version() == "10.99.0" : String}
+  {KH.KH.min_version() == "10.99.0-bp.4" : String}
 
 law kicad_old_runtime_is_old:
   {KH.KH.status(True{}, True{}, True{}, "10.0.6", 1n) == "old" : String}
 
 law kicad_new_runtime_is_ok:
-  {KH.KH.status(True{}, True{}, True{}, "10.99.0-bp.1", 1n) == "ok" : String}
+  {KH.KH.status(True{}, True{}, True{}, "10.99.0-bp.4", 2n) == "ok" : String}
 
 # with IPC on, agents edit through the kicad_ipc tool
 law prompt_kicad_ok_names_kicad_ipc:
@@ -10394,3 +10394,93 @@ law standin_path_first:
 law standin_merge_behind:
   {CPA.CliPath.merge(SIN.Standin.path("/f", "/b", "/usr/bin"), "/u/.local/bin:/usr/bin", ["/u/.local/bin"]) == "/f:/b:/usr/bin:/u/.local/bin" : String}
 # ---- end one-hub ----
+# ---- kicad-ipc 4 ----
+# the pin is bp.4 (API 2); the -bp.N suffix orders numerically
+law kicad4_bp1_old:
+  {KH.KH.status(True{}, True{}, True{}, "10.99.0-bp.1", 2n) == "old" : String}
+
+law kicad4_bp2_old:
+  {KH.KH.status(True{}, True{}, True{}, "10.99.0-bp.2", 2n) == "old" : String}
+
+law kicad4_bp3_old:
+  {KH.KH.status(True{}, True{}, True{}, "10.99.0-bp.3", 2n) == "old" : String}
+
+law kicad4_bp4_ok:
+  {KH.KH.status(True{}, True{}, True{}, "10.99.0-bp.4", 2n) == "ok" : String}
+
+law kicad4_bp10_ok:
+  {KH.KH.status(True{}, True{}, True{}, "10.99.0-bp.10", 2n) == "ok" : String}
+
+law kicad4_describe_part_reads_bp:
+  {KH.KH.status(True{}, True{}, True{}, "10.99.0-unknown-bp.4", 2n) == "ok" : String}
+
+law kicad4_no_suffix_is_bp0:
+  {KH.KH.status(True{}, True{}, True{}, "10.99.0", 2n) == "old" : String}
+
+law kicad4_bp3_needs_api2:
+  {KH.KH.status(True{}, True{}, True{}, "10.99.0-bp.3", 1n) == "old" : String}
+
+law kicad4_bp2_before_bp3:
+  {KH.KH.version.ge("10.99.0-bp.2", "10.99.0-bp.3") == False{} : Bool}
+
+law kicad4_bp10_after_bp3:
+  {KH.KH.version.ge("10.99.0-bp.10", "10.99.0-bp.3") == True{} : Bool}
+
+law kicad4_min_api:
+  {KH.KH.min_api() == 2n : Nat}
+
+law kicad4_pinned_version_is_min:
+  {KH.KH.min_version() == "10.99.0-bp.4" : String}
+
+law kserve4_launcher_never_real:
+  {KSL.KS.launcher("/r/bin/kicad-cli.real") == "/r/bin/kicad-cli" : String}
+
+law kserve4_launcher_kept:
+  {KSL.KS.launcher("/r/bin/kicad-cli") == "/r/bin/kicad-cli" : String}
+
+law kserve4_argv_launcher:
+  {KSL.KS.nth(KSL.KS.argv("/r/bin/kicad-cli.real", "/p/a.kicad_pro", "/d", 0, Nil{}), 0n) == "/r/bin/kicad-cli" : String}
+
+law kserve4_bare_footprint_refused:
+  {KSL.KS.guard("kiapi.common.commands.UpdateItems", J.Json.obj([J.KV{"items", J.Json.arr([J.Json.obj([J.KV{"@type", J.Str{"type.googleapis.com/kiapi.board.types.FootprintInstance"}}])])}]), Nil{}) == KSL.KS.fp.refusal() : String}
+
+law kserve4_refusal_names_full_instance:
+  {String.contains(KSL.KS.fp.refusal(), "send the full FootprintInstance from GetItems with only the fields you change") == True{} : Bool}
+
+law kserve4_full_footprint_passes:
+  {KSL.KS.guard("kiapi.common.commands.UpdateItems", J.Json.obj([J.KV{"items", J.Json.arr([J.Json.obj([J.KV{"@type", J.Str{"type.googleapis.com/kiapi.board.types.FootprintInstance"}}, J.KV{"definition", J.Json.obj(Nil{})}])])}]), Nil{}) == "" : String}
+
+law kserve4_footprint_cap_lifts:
+  {KSL.KS.guard("kiapi.common.commands.UpdateItems", J.Json.obj([J.KV{"items", J.Json.arr([J.Json.obj([J.KV{"@type", J.Str{"type.googleapis.com/kiapi.board.types.FootprintInstance"}}])])}]), ["footprint-partial-update"]) == "" : String}
+
+law kserve4_other_item_passes:
+  {KSL.KS.guard("kiapi.common.commands.UpdateItems", J.Json.obj([J.KV{"items", J.Json.arr([J.Json.obj([J.KV{"@type", J.Str{"type.googleapis.com/kiapi.board.types.Track"}}])])}]), Nil{}) == "" : String}
+
+law kserve4_other_command_passes:
+  {KSL.KS.guard("kiapi.common.commands.CreateItems", J.Json.obj([J.KV{"items", J.Json.arr([J.Json.obj([J.KV{"@type", J.Str{"type.googleapis.com/kiapi.board.types.FootprintInstance"}}])])}]), Nil{}) == "" : String}
+
+law kserve4_bare_symbol_refused:
+  {KSL.KS.guard("kiapi.common.commands.CreateItems", J.Json.obj([J.KV{"items", J.Json.arr([J.Json.obj([J.KV{"@type", J.Str{"type.googleapis.com/kiapi.schematic.types.SchematicSymbolInstance"}}])])}]), Nil{}) == KSL.KS.sym.refusal() : String}
+
+law kserve4_symbol_advice:
+  {String.contains(KSL.KS.sym.refusal(), "LoadAllLibraries") == True{} : Bool}
+
+law kserve4_symbol_with_definition_passes:
+  {KSL.KS.guard("kiapi.common.commands.CreateItems", J.Json.obj([J.KV{"items", J.Json.arr([J.Json.obj([J.KV{"@type", J.Str{"type.googleapis.com/kiapi.schematic.types.SchematicSymbolInstance"}}, J.KV{"definition", J.Json.obj(Nil{})}])])}]), Nil{}) == "" : String}
+
+law kserve4_symbol_cap_lifts:
+  {KSL.KS.guard("kiapi.common.commands.CreateItems", J.Json.obj([J.KV{"items", J.Json.arr([J.Json.obj([J.KV{"@type", J.Str{"type.googleapis.com/kiapi.schematic.types.SchematicSymbolInstance"}}])])}]), ["symbol-from-libid"]) == "" : String}
+
+law kserve4_no_items_passes:
+  {KSL.KS.guard("kiapi.common.commands.UpdateItems", J.Json.obj(Nil{}), Nil{}) == "" : String}
+
+law prompt4_kicad_ok_names_the_rules:
+  {String.contains(PM.Prompt.kicad.health("ok", "/c", "10.99.0-bp.3", "rev", "", True{}), "PlaceSymbolFromLibrary") == True{} : Bool}
+
+law kserve4_nested_symbol_library_id_refused:
+  {KSL.KS.guard("kiapi.common.commands.CreateItems", J.Json.obj([J.KV{"items", J.Json.arr([J.Json.obj([J.KV{"@type", J.Str{"type.googleapis.com/kiapi.schematic.types.SchematicSymbolInstance"}}, J.KV{"definition", J.Json.obj([J.KV{"id", J.Json.obj(Nil{})}])}])])}]), Nil{}) == KSL.KS.sym.refusal() : String}
+
+law kserve4_nested_symbol_cap_lifts:
+  {KSL.KS.guard("kiapi.common.commands.CreateItems", J.Json.obj([J.KV{"items", J.Json.arr([J.Json.obj([J.KV{"@type", J.Str{"type.googleapis.com/kiapi.schematic.types.SchematicSymbolInstance"}}, J.KV{"definition", J.Json.obj([J.KV{"id", J.Json.obj(Nil{})}])}])])}]), ["symbol-from-libid"]) == "" : String}
+
+# ---- end kicad-ipc 4 ----

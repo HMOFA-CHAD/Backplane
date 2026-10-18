@@ -12075,3 +12075,63 @@ def Laws.standin_path_first():
 def Laws.standin_merge_behind():
   {==}
 # ---- end one-hub ----
+# ---- kicad-ipc 4 ----
+def Laws.kicad4_bp1_old(): {==}
+
+def Laws.kicad4_bp2_old(): {==}
+
+def Laws.kicad4_bp3_old(): {==}
+
+def Laws.kicad4_bp4_ok(): {==}
+
+def Laws.kicad4_bp10_ok(): {==}
+
+def Laws.kicad4_describe_part_reads_bp(): {==}
+
+def Laws.kicad4_no_suffix_is_bp0(): {==}
+
+def Laws.kicad4_bp3_needs_api2(): {==}
+
+def Laws.kicad4_bp2_before_bp3(): {==}
+
+def Laws.kicad4_bp10_after_bp3(): {==}
+
+def Laws.kicad4_min_api(): {==}
+
+def Laws.kicad4_pinned_version_is_min(): {==}
+
+def Laws.kserve4_launcher_never_real(): {==}
+
+def Laws.kserve4_launcher_kept(): {==}
+
+def Laws.kserve4_argv_launcher(): {==}
+
+def Laws.kserve4_bare_footprint_refused(): {==}
+
+def Laws.kserve4_refusal_names_full_instance(): {==}
+
+def Laws.kserve4_full_footprint_passes(): {==}
+
+def Laws.kserve4_footprint_cap_lifts(): {==}
+
+def Laws.kserve4_other_item_passes(): {==}
+
+def Laws.kserve4_other_command_passes(): {==}
+
+def Laws.kserve4_bare_symbol_refused(): {==}
+
+def Laws.kserve4_symbol_advice(): {==}
+
+def Laws.kserve4_symbol_with_definition_passes(): {==}
+
+def Laws.kserve4_symbol_cap_lifts(): {==}
+
+def Laws.kserve4_no_items_passes(): {==}
+
+def Laws.prompt4_kicad_ok_names_the_rules(): {==}
+
+def Laws.kserve4_nested_symbol_library_id_refused(): {==}
+
+def Laws.kserve4_nested_symbol_cap_lifts(): {==}
+
+# ---- end kicad-ipc 4 ----
