@@ -1,4 +1,6 @@
 import Base
+import ./src/app/side_rows.bend as SR
+import ./src/app/side_row_types.bend as SRT
 import ./src/server/botnet.bend as MPLOG # mail perf runtime count
 # ---- native phone i18n imports ----
 import ./src/mobile/app.bend as NATIVEI18N
@@ -10576,3 +10578,17 @@ law fallback_no_recovery_while_locked:
   for now: Nat
   {H.Auth.recover(False{}, s, now) == H.Step.none() : H.Step}
 # ---- end global provider fallback ----
+
+# Sidebar row memos compare exact resolved inputs with the same typography.
+law sidebar_row_key_sound:
+  for a: SRT.SideRowK
+  for b: SRT.SideRowK
+  for +h: {SR.Key.same(a, b) == True{} : Bool}
+  {a == b : SRT.SideRowK}
+
+law sidebar_row_paint_exact:
+  for +ty: L.Ty
+  for +a: SRT.SideRowK
+  for +b: SRT.SideRowK
+  for h: {SR.Key.same(a, b) == True{} : Bool}
+  {SR.Key.paint(ty, a) == SR.Key.paint(ty, b) : L.Out}

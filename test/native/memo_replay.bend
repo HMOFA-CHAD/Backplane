@@ -199,7 +199,7 @@ def typing(cs: String, +ty: L.Ty, +n0: N.Nui, +tc: MM.TouchK, +ms: List<&2, MM.S
       +n = prepared(step_nui(N.Nui.event(n0, side.ev(c, Nat.mod(U32.to_nat(c), 4n)))), 0n)
       +key = MM.Sm.key(n, tc)
       +fresh = side.fresh(ty, n)
-      typing(rest, ty, n, tc, [MM.SideM{key, fresh}], Side.add(t, MM.SideM.same(key, ms), Eqh.out(MM.SideM.out(ms), fresh)))
+      typing(rest, ty, n, tc, [MM.SideM.fresh(key, fresh)], Side.add(t, MM.SideM.same(key, ms), Eqh.out(MM.SideM.out(ms), fresh)))
 
 
 # The sidebar's index brought up to date (MM.Ix.up) against Side.ix made
@@ -493,7 +493,7 @@ def sides(xs: List<&2, J.Json>, +ty: L.Ty, +n0: N.Nui, +tc: MM.TouchK, +ms: List
       +tc2 = MM.TouchK.msg(o, tc)
       +key = MM.Sm.key(n, tc2)
       +fresh = side.fresh(ty, n)
-      sides(rest, ty, n, tc2, [MM.SideM{key, fresh}], Side.add(t, MM.SideM.same(key, ms), Eqh.out(MM.SideM.out(ms), fresh)))
+      sides(rest, ty, n, tc2, [MM.SideM.fresh(key, fresh)], Side.add(t, MM.SideM.same(key, ms), Eqh.out(MM.SideM.out(ms), fresh)))
 
 # The timeline's memos as the window brings them up (only the streamed
 # reply's part while MM.Mm.tlkey holds) against memos brought up in full,
@@ -696,7 +696,7 @@ def replay(+as: List<&2, String>, +ty: L.Ty, +xs: List<&2, J.Json>, +k: Nat, +cu
     +sidebar : Side = sides(List.drop(&2, J.Json, xs, cut), ty, n3, MM.TouchK.none(), Nil{}, Side{0n, 0n, 0n})
     IO.print(Side.show(sidebar))
     exact(Side.ok(sidebar), "sidebar")
-    +typed : Side = typing("typing into the composer, and the pointer moving about", ty, n2, MM.TouchK.none(), [MM.SideM{MM.Sm.key(n2, MM.TouchK.none()), side.fresh(ty, n2)}], Side{0n, 0n, 0n})
+    +typed : Side = typing("typing into the composer, and the pointer moving about", ty, n2, MM.TouchK.none(), [MM.SideM.fresh(MM.Sm.key(n2, MM.TouchK.none()), side.fresh(ty, n2))], Side{0n, 0n, 0n})
     IO.print(Side.show(typed))
     exact(Side.ok(typed), "typed")
 

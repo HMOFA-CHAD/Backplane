@@ -6,6 +6,8 @@ import ../core/client.bend as U
 import ../core/vt.bend as VT
 import ./nui.bend as N
 import ./layout.bend as L
+import ./side_rows.bend as SR
+import ./side_row_types.bend as ST
 import ../core/emb.bend as EM
 import ../core/subs.bend as SB
 
@@ -553,21 +555,86 @@ def Sm.key(+n: N.Nui, +t: TouchK) -> String:
         ++ "|i" ++ Mm.info(Map.to_list(&2, String, nf))
 
 type SideM is Data:
-  SideM{key: String, out: L.Out}
+  SideM{key: String, out: L.Out, rows: Map<&2, ST.SideRowM>}
+
+def SideM.fresh(key: String, out: L.Out) -> SideM:
+  SideM{key, out, Map.new(&2, ST.SideRowM)}
+
+def SideM.of(ms: List<&2, SideM>) -> SideM:
+  match ms:
+    case Nil{}: SideM.fresh("", L.Out.none())
+    case m <> _: m
 
 def SideM.same(+key: String, ms: List<&2, SideM>) -> Bool:
   match ms:
     case Nil{}:
       False{}
-    case SideM{+k, _} <> _:
+    case SideM{+k, _, _} <> _:
       String.eq(k, key)
 
 def SideM.out(ms: List<&2, SideM>) -> L.Out:
   match ms:
     case Nil{}:
       L.Out.none()
-    case SideM{_, o} <> _:
+    case SideM{_, o, _} <> _:
       o
+
+def SideM.rows(ms: List<&2, SideM>) -> Map<&2, ST.SideRowM>:
+  match ms:
+    case Nil{}: Map.new(&2, ST.SideRowM)
+    case SideM{_, _, rows} <> _: rows
+
+def SideM.from(+key: String, +side: L.SideCol) -> SideM:
+  SideM{key, L.SideCol.out(side), SR.Memo.map(L.SideCol.rows(side), Map.new(&2, ST.SideRowM))}
+
+# Native typography is loaded once. Shell.paint.again drops SideM before
+# laying out after a glyph fill, so row maps never cross font generations.
+# Locale and every visible presentation input are still resolved per row.
+def SideM.context(ty: L.Ty, n: N.Nui, ix: U.SIx) -> SR.SideRowCtx:
+  match n:
+    case N.Nui{U.Ui{st, sel, _, _, _, _, now, _, _, _, _, _, _, _, _, _, _}, _, _, _, _, _, _, _, _, _, _, _, _}:
+      SR.SideRowCtx{[ty], [st], [ix], sel, now, 0n}
+
+type SidePaint is Data:
+  SidePaint{context: SR.SideRowCtx, rows: Map<&2, ST.SideRowM>}
+
+def SideM.row.one(paint: SidePaint, req: ST.SideRowReq) -> ST.SideRowStep:
+  match paint:
+    case SidePaint{ctx, rows}: SR.Row.memo(req, ctx, rows)
+
+# A single pointer keeps the native sidebar call below Bend's flattened
+# argument limit; the presentation context itself stays immutable.
+def SideM.row(paints: List<&2, SidePaint>, req: ST.SideRowReq) -> ST.SideRowStep:
+  match paints:
+    case p <> _: SideM.row.one(p, req)
+    case Nil{}: SideM.row.one(SidePaint{SR.SideRowCtx{Nil{}, Nil{}, Nil{}, "", 0n, 0n}, Map.new(&2, ST.SideRowM)}, req)
+
+def SideM.paint(ty: L.Ty, n: N.Nui, ix: U.SIx, ms: List<&2, SideM>) -> List<&2, SidePaint>:
+  [SidePaint{SideM.context(ty, n, ix), SideM.rows(ms)}]
+
+# Keep the native call's deep values boxed while preparing its painter.
+type SideInput is Data:
+  SideInput{ty: List<&2, L.Ty>, nui: List<&2, N.Nui>, index: List<&2, U.SIx>}
+
+def SideInput.ty(input: SideInput) -> L.Ty:
+  match input:
+    case SideInput{ty, _, _}: SR.Ctx.ty(ty)
+
+def SideInput.nui.of(ns: List<&2, N.Nui>) -> N.Nui:
+  match ns:
+    case n <> _: n
+    case Nil{}: N.Nui.init(U.Ui.init(0n), 1400, 900)
+
+def SideInput.nui(input: SideInput) -> N.Nui:
+  match input:
+    case SideInput{_, ns, _}: SideInput.nui.of(ns)
+
+def SideInput.index(input: SideInput) -> U.SIx:
+  match input:
+    case SideInput{_, _, ix}: SR.Ctx.index(ix)
+
+def SideInput.paint(+input: SideInput, ms: List<&2, SideM>) -> List<&2, SidePaint>:
+  SideM.paint(SideInput.ty(input), SideInput.nui(input), SideInput.index(input), ms)
 
 # The sidebar's index
 # -------------------

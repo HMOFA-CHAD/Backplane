@@ -2532,12 +2532,19 @@ def Shell.memos.k(same: Bool, +ty: L.Ty, +n: N.Nui, ms: List<&2, L.TLMemo>) -> L
 def Shell.memos.at(+key: String, +ty: L.Ty, +n: N.Nui, +wa: Aux) -> List<&2, L.TLMemo>:
   Shell.memos.k(MM.Mm.tlkey.same(key, Aux.mks(wa)), ty, n, Aux.memos(wa))
 
+def SideK.painted(key: String, +input: MM.SideInput, cats: Map<&2, CA.CatF>, wraps: Map<&2, BV.PW>, br: BV.BRows, paint: List<&2, MM.SidePaint>) -> MM.SideM:
+  MM.SideM.from(key, BV.Bv.side.rows.ixr(~(List<&2, MM.SidePaint>), ~MM.SideM.row,
+    MM.SideInput.ty(input), cats, wraps, MM.SideInput.nui(input), MM.SideInput.index(input), br, paint))
+
+def SideK.rows(key: String, +input: MM.SideInput, cats: Map<&2, CA.CatF>, wraps: Map<&2, BV.PW>, br: BV.BRows, ms: List<&2, MM.SideM>) -> MM.SideM:
+  SideK.painted(key, input, cats, wraps, br, MM.SideInput.paint(input, ms))
+
 def SideK.of(hit: Bool, +key: String, ms: List<&2, MM.SideM>, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui, +ix: U.SIx, +br: BV.BRows) -> MM.SideM:
   match hit:
     case True{}:
-      MM.SideM{key, MM.SideM.out(ms)}
+      MM.SideM.of(ms)
     case False{}:
-      MM.SideM{key, BV.Bv.side.a.ixr(ty, cats, wraps, n, ix, br)}
+      SideK.rows(key, MM.SideInput{[ty], [n], [ix]}, cats, wraps, br, ms)
 
 def SideK.go(+key: String, +ms: List<&2, MM.SideM>, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui, +ix: U.SIx, +br: BV.BRows) -> MM.SideM:
   SideK.of(MM.SideM.same(key, ms), key, ms, ty, cats, wraps, n, ix, br)
@@ -2555,12 +2562,12 @@ def Part.of(bm: Maybe<&2, L.Out>, +mm: List<&2, MM.MainM>, +tc: MM.TouchK, +ty: 
     case None{}:
       PMain{MM.Mm.main(mm, ty, tlm, n, tc)}
 
-def FrameM.join(p: Part, sd: MM.SideM, +mm: List<&2, MM.MainM>, +ty: L.Ty, +tlm: L.TLMemo, +n: N.Nui) -> FrameM:
-  match p sd:
-    case PBot{o} MM.SideM{+sk, +so}:
-      FrameM{BV.Bv.frame.given(ty, tlm, n, Some{o}, so), Nil{}, 0n, [MM.SideM{sk, so}]}
-    case PMain{MM.MainM{+k, rk, rs, +o, +d}} MM.SideM{+sk, +so}:
-      FrameM{BV.Bv.frame.given(ty, tlm, n, Some{o}, so), MM.MainM.keep(MM.MainM{k, rk, rs, o, d}), Bool.pick(Nat, Bool.and(MM.MainM.same(k, mm), Nat.is_eq(d, MM.MainM.due(mm))), 1n, 0n), [MM.SideM{sk, so}]}
+def FrameM.join(p: Part, +sd: MM.SideM, +mm: List<&2, MM.MainM>, +ty: L.Ty, +tlm: L.TLMemo, +n: N.Nui) -> FrameM:
+  match p:
+    case PBot{o}:
+      FrameM{BV.Bv.frame.given(ty, tlm, n, Some{o}, MM.SideM.out([sd])), Nil{}, 0n, [sd]}
+    case PMain{MM.MainM{+k, rk, rs, +o, +d}}:
+      FrameM{BV.Bv.frame.given(ty, tlm, n, Some{o}, MM.SideM.out([sd])), MM.MainM.keep(MM.MainM{k, rk, rs, o, d}), Bool.pick(Nat, Bool.and(MM.MainM.same(k, mm), Nat.is_eq(d, MM.MainM.due(mm))), 1n, 0n), [sd]}
 
 # the main area and the sidebar's body at once (as Lay.frame.u lays them
 # out), each from its memo when its key holds
