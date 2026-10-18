@@ -29,6 +29,131 @@ enum NativeMessages {
     tag == "ja" ? ((arg0 == 0 ? "変更なし" : "変更ファイル" + number(arg0) + "件")) : ((arg0 == 0 ? "No files changed" : (arg0 == 1 ? number(arg0) + " file changed" : number(arg0) + " files changed")))
   }
 
+  // native.common.ok
+  static func native_common_ok(_ tag: String) -> String {
+    tag == "ja" ? ("OK") : ("OK")
+  }
+
+  // native.common.title
+  static func native_common_title(_ tag: String) -> String {
+    tag == "ja" ? ("タイトル") : ("Title")
+  }
+
+  // native.hub.accessibility
+  static func native_hub_accessibility(_ tag: String, _ arg0: String, _ arg1: String) -> String {
+    tag == "ja" ? (arg0 + "：" + arg1) : (arg0 + ": " + arg1)
+  }
+
+  // native.hub.catchup
+  static func native_hub_catchup(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("同期中・" + arg0) : ("catching up, " + arg0)
+  }
+
+  // native.hub.changes
+  static func native_hub_changes(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? (arg0 + "件の変更") : (arg0 + " changes")
+  }
+
+  // native.hub.connection
+  static func native_hub_connection(_ tag: String, _ arg0: String, _ arg1: String) -> String {
+    tag == "ja" ? (arg1 + "：" + arg0) : (arg0 + " to " + arg1)
+  }
+
+  // native.hub.heard
+  static func native_hub_heard(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("最終受信：" + arg0) : ("heard " + arg0)
+  }
+
+  // native.hub.state
+  static func native_hub_state(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ((arg0 == "online" ? "接続済み" : (arg0 == "syncing" ? "同期中" : (arg0 == "offline" ? "オフライン・再接続中" : "接続中")))) : ((arg0 == "online" ? "Connected" : (arg0 == "syncing" ? "Catching up" : (arg0 == "offline" ? "Offline, retrying" : "Connecting"))))
+  }
+
+  // native.pair.action
+  static func native_pair_action(_ tag: String) -> String {
+    tag == "ja" ? ("ペアリング") : ("Pair")
+  }
+
+  // native.pair.add
+  static func native_pair_add(_ tag: String) -> String {
+    tag == "ja" ? ("ハブを追加") : ("Add hub")
+  }
+
+  // native.pair.another
+  static func native_pair_another(_ tag: String) -> String {
+    tag == "ja" ? ("別のハブとペアリング") : ("Pair another")
+  }
+
+  // native.pair.computer
+  static func native_pair_computer(_ tag: String) -> String {
+    tag == "ja" ? ("パソコンのBackplaneで「設定」→「ペアリングリンク」→「QRコード」を開きます。") : ("On your computer: Backplane, Settings, Pairing link, QR code.")
+  }
+
+  // native.pair.computer.android
+  static func native_pair_computer_android(_ tag: String) -> String {
+    tag == "ja" ? ("パソコンのBackplaneで「設定」→「ペアリングリンク」→「QRコード」を開くか、リンクを貼り付けます。") : ("On your computer: Backplane, Settings, Pairing link, QR code. Or paste the link:")
+  }
+
+  // native.pair.connect
+  static func native_pair_connect(_ tag: String) -> String {
+    tag == "ja" ? ("接続") : ("Connect")
+  }
+
+  // native.pair.instructions
+  static func native_pair_instructions(_ tag: String) -> String {
+    tag == "ja" ? ("QRコードを読み取るか、Backplaneの「設定」→「ペアリングリンク」にあるtailnetリンクを貼り付けます。") : ("Scan the code, or paste the tailnet link Backplane shows in Settings (Pairing link).")
+  }
+
+  // native.pair.paired
+  static func native_pair_paired(_ tag: String) -> String {
+    tag == "ja" ? ("ペアリング済み") : ("Paired")
+  }
+
+  // native.pair.scan
+  static func native_pair_scan(_ tag: String) -> String {
+    tag == "ja" ? ("QRコードを読み取る") : ("Scan QR code")
+  }
+
+  // native.pair.scanner.denied
+  static func native_pair_scanner_denied(_ tag: String) -> String {
+    tag == "ja" ? ("コードの読み取りにはカメラへのアクセスが必要です。システム設定で許可するか、リンクを貼り付けてください。") : ("Backplane needs the camera to read the code. Allow it in Settings, or paste the link instead.")
+  }
+
+  // native.pair.scanner.instructions
+  static func native_pair_scanner_instructions(_ tag: String) -> String {
+    tag == "ja" ? ("Backplaneの「設定」にあるQRコードにカメラを向けてください。") : ("Point the camera at the code in Backplane's Settings (QR code).")
+  }
+
+  // native.pair.scanner.invalid
+  static func native_pair_scanner_invalid(_ tag: String) -> String {
+    tag == "ja" ? ("Backplaneのペアリング用コードではありません") : ("Not a Backplane pairing code")
+  }
+
+  // native.pair.scanner.title
+  static func native_pair_scanner_title(_ tag: String) -> String {
+    tag == "ja" ? ("コードを読み取る") : ("Scan code")
+  }
+
+  // native.pair.scanner.unavailable
+  static func native_pair_scanner_unavailable(_ tag: String) -> String {
+    tag == "ja" ? ("読み取りにはGoogle Play開発者サービスが必要です。リンクを貼り付けてください") : ("The scanner needs Google Play services: paste the link instead")
+  }
+
+  // native.pair.tailnet
+  static func native_pair_tailnet(_ tag: String) -> String {
+    tag == "ja" ? ("tailnet上のハブ") : ("On your tailnet")
+  }
+
+  // native.pair.title
+  static func native_pair_title(_ tag: String) -> String {
+    tag == "ja" ? ("ハブとペアリング") : ("Pair with a hub")
+  }
+
+  // native.pair.unpair
+  static func native_pair_unpair(_ tag: String) -> String {
+    tag == "ja" ? ("ペアリング解除") : ("Unpair")
+  }
+
   // native.settings.about
   static func native_settings_about(_ tag: String) -> String {
     tag == "ja" ? ("このアプリについて") : ("About")
@@ -169,6 +294,11 @@ enum NativeMessages {
     tag == "ja" ? ("オン") : ("On")
   }
 
+  // settings.pair
+  static func settings_pair(_ tag: String) -> String {
+    tag == "ja" ? ("ペアリングリンク") : ("Pairing link")
+  }
+
   // settings.sidebar
   static func settings_sidebar(_ tag: String) -> String {
     tag == "ja" ? ("スレッド一覧") : ("Thread list")
@@ -197,6 +327,16 @@ enum NativeMessages {
   // settings.tour.show
   static func settings_tour_show(_ tag: String) -> String {
     tag == "ja" ? ("ツアーを表示") : ("Show the tour")
+  }
+
+  // tour.back
+  static func tour_back(_ tag: String) -> String {
+    tag == "ja" ? ("戻る") : ("Back")
+  }
+
+  // tour.done
+  static func tour_done(_ tag: String) -> String {
+    tag == "ja" ? ("完了") : ("Done")
   }
 
   // tour.title.bots

@@ -17,6 +17,16 @@
         precondition(NativeMessages.native_settings_notify_hub("en", "x$\"{1}") == "Notify me for is a setting on x$\"{1}.")
         precondition(NativeMessages.native_settings_notify_hub("ja", "作業PC") == "通知する内容は作業PCで設定します。")
         precondition(NativeMessages.native_settings_paired("en", "1200") == "1200 paired")
-        print("ok Swift native catalog: 17 cases")
+        precondition(NativeMessages.native_hub_state("en", "online") == "Connected")
+        precondition(NativeMessages.native_hub_state("en", "syncing") == "Catching up")
+        precondition(NativeMessages.native_hub_state("en", "offline") == "Offline, retrying")
+        precondition(NativeMessages.native_hub_state("en", "unknown") == "Connecting")
+        precondition(NativeMessages.native_hub_state("ja", "online") == "接続済み")
+        precondition(NativeMessages.native_hub_state("ja", "syncing") == "同期中")
+        precondition(NativeMessages.native_hub_state("ja", "offline") == "オフライン・再接続中")
+        precondition(NativeMessages.native_hub_state("ja", "unknown") == "接続中")
+        precondition(NativeMessages.native_hub_connection("en", "Connected", "作業PC:{state}") == "Connected to 作業PC:{state}")
+        precondition(NativeMessages.native_hub_connection("ja", "接続済み", "作業PC:{state}") == "作業PC:{state}：接続済み")
+        print("ok Swift native catalog: 27 cases")
     }
 }

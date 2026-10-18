@@ -20,6 +20,106 @@ object NativeMessages {
   fun files_changed(tag: String, arg0: ULong): String =
     if (tag == "ja") ((if (arg0 == 0uL) "変更なし" else "変更ファイル" + number(arg0) + "件")) else ((if (arg0 == 0uL) "No files changed" else (if (arg0 == 1uL) number(arg0) + " file changed" else number(arg0) + " files changed")))
 
+  // native.common.ok
+  fun native_common_ok(tag: String): String =
+    if (tag == "ja") ("OK") else ("OK")
+
+  // native.common.title
+  fun native_common_title(tag: String): String =
+    if (tag == "ja") ("タイトル") else ("Title")
+
+  // native.hub.accessibility
+  fun native_hub_accessibility(tag: String, arg0: String, arg1: String): String =
+    if (tag == "ja") (arg0 + "：" + arg1) else (arg0 + ": " + arg1)
+
+  // native.hub.catchup
+  fun native_hub_catchup(tag: String, arg0: String): String =
+    if (tag == "ja") ("同期中・" + arg0) else ("catching up, " + arg0)
+
+  // native.hub.changes
+  fun native_hub_changes(tag: String, arg0: String): String =
+    if (tag == "ja") (arg0 + "件の変更") else (arg0 + " changes")
+
+  // native.hub.connection
+  fun native_hub_connection(tag: String, arg0: String, arg1: String): String =
+    if (tag == "ja") (arg1 + "：" + arg0) else (arg0 + " to " + arg1)
+
+  // native.hub.heard
+  fun native_hub_heard(tag: String, arg0: String): String =
+    if (tag == "ja") ("最終受信：" + arg0) else ("heard " + arg0)
+
+  // native.hub.state
+  fun native_hub_state(tag: String, arg0: String): String =
+    if (tag == "ja") ((if (arg0 == "online") "接続済み" else (if (arg0 == "syncing") "同期中" else (if (arg0 == "offline") "オフライン・再接続中" else "接続中")))) else ((if (arg0 == "online") "Connected" else (if (arg0 == "syncing") "Catching up" else (if (arg0 == "offline") "Offline, retrying" else "Connecting"))))
+
+  // native.pair.action
+  fun native_pair_action(tag: String): String =
+    if (tag == "ja") ("ペアリング") else ("Pair")
+
+  // native.pair.add
+  fun native_pair_add(tag: String): String =
+    if (tag == "ja") ("ハブを追加") else ("Add hub")
+
+  // native.pair.another
+  fun native_pair_another(tag: String): String =
+    if (tag == "ja") ("別のハブとペアリング") else ("Pair another")
+
+  // native.pair.computer
+  fun native_pair_computer(tag: String): String =
+    if (tag == "ja") ("パソコンのBackplaneで「設定」→「ペアリングリンク」→「QRコード」を開きます。") else ("On your computer: Backplane, Settings, Pairing link, QR code.")
+
+  // native.pair.computer.android
+  fun native_pair_computer_android(tag: String): String =
+    if (tag == "ja") ("パソコンのBackplaneで「設定」→「ペアリングリンク」→「QRコード」を開くか、リンクを貼り付けます。") else ("On your computer: Backplane, Settings, Pairing link, QR code. Or paste the link:")
+
+  // native.pair.connect
+  fun native_pair_connect(tag: String): String =
+    if (tag == "ja") ("接続") else ("Connect")
+
+  // native.pair.instructions
+  fun native_pair_instructions(tag: String): String =
+    if (tag == "ja") ("QRコードを読み取るか、Backplaneの「設定」→「ペアリングリンク」にあるtailnetリンクを貼り付けます。") else ("Scan the code, or paste the tailnet link Backplane shows in Settings (Pairing link).")
+
+  // native.pair.paired
+  fun native_pair_paired(tag: String): String =
+    if (tag == "ja") ("ペアリング済み") else ("Paired")
+
+  // native.pair.scan
+  fun native_pair_scan(tag: String): String =
+    if (tag == "ja") ("QRコードを読み取る") else ("Scan QR code")
+
+  // native.pair.scanner.denied
+  fun native_pair_scanner_denied(tag: String): String =
+    if (tag == "ja") ("コードの読み取りにはカメラへのアクセスが必要です。システム設定で許可するか、リンクを貼り付けてください。") else ("Backplane needs the camera to read the code. Allow it in Settings, or paste the link instead.")
+
+  // native.pair.scanner.instructions
+  fun native_pair_scanner_instructions(tag: String): String =
+    if (tag == "ja") ("Backplaneの「設定」にあるQRコードにカメラを向けてください。") else ("Point the camera at the code in Backplane's Settings (QR code).")
+
+  // native.pair.scanner.invalid
+  fun native_pair_scanner_invalid(tag: String): String =
+    if (tag == "ja") ("Backplaneのペアリング用コードではありません") else ("Not a Backplane pairing code")
+
+  // native.pair.scanner.title
+  fun native_pair_scanner_title(tag: String): String =
+    if (tag == "ja") ("コードを読み取る") else ("Scan code")
+
+  // native.pair.scanner.unavailable
+  fun native_pair_scanner_unavailable(tag: String): String =
+    if (tag == "ja") ("読み取りにはGoogle Play開発者サービスが必要です。リンクを貼り付けてください") else ("The scanner needs Google Play services: paste the link instead")
+
+  // native.pair.tailnet
+  fun native_pair_tailnet(tag: String): String =
+    if (tag == "ja") ("tailnet上のハブ") else ("On your tailnet")
+
+  // native.pair.title
+  fun native_pair_title(tag: String): String =
+    if (tag == "ja") ("ハブとペアリング") else ("Pair with a hub")
+
+  // native.pair.unpair
+  fun native_pair_unpair(tag: String): String =
+    if (tag == "ja") ("ペアリング解除") else ("Unpair")
+
   // native.settings.about
   fun native_settings_about(tag: String): String =
     if (tag == "ja") ("このアプリについて") else ("About")
@@ -132,6 +232,10 @@ object NativeMessages {
   fun settings_lang_on(tag: String): String =
     if (tag == "ja") ("オン") else ("On")
 
+  // settings.pair
+  fun settings_pair(tag: String): String =
+    if (tag == "ja") ("ペアリングリンク") else ("Pairing link")
+
   // settings.sidebar
   fun settings_sidebar(tag: String): String =
     if (tag == "ja") ("スレッド一覧") else ("Thread list")
@@ -155,6 +259,14 @@ object NativeMessages {
   // settings.tour.show
   fun settings_tour_show(tag: String): String =
     if (tag == "ja") ("ツアーを表示") else ("Show the tour")
+
+  // tour.back
+  fun tour_back(tag: String): String =
+    if (tag == "ja") ("戻る") else ("Back")
+
+  // tour.done
+  fun tour_done(tag: String): String =
+    if (tag == "ja") ("完了") else ("Done")
 
   // tour.title.bots
   fun tour_title_bots(tag: String): String =

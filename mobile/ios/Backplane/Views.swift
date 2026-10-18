@@ -16,7 +16,7 @@ struct RootView: View {
 
     var body: some View {
         if model.links.isEmpty {
-            NavigationStack { PairView(link: "") { model.pair($0) } }
+            NavigationStack { PairView(tag: model.screen?.locale ?? "en", link: "") { model.pair($0) } }
         } else if let s = model.screen {
             asked(s)
                 .sheet(isPresented: findShown) {
@@ -25,7 +25,7 @@ struct RootView: View {
                 .sheet(isPresented: $pairing) {
                     NavigationStack {
                         HubsView(model: model, screen: model.screen ?? s)
-                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { pairing = false } } }
+                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(NativeMessages.tour_done(model.screen?.locale ?? s.locale ?? "en")) { pairing = false } } }
                     }
                 }
                 .sheet(isPresented: tourShown) {
@@ -67,7 +67,7 @@ struct RootView: View {
     private func stack(_ s: Screen) -> some View {
         AppTabs(model: model, screen: s, pairing: $pairing)
         .alert(s.error, isPresented: Binding(get: { !s.error.isEmpty }, set: { if !$0 { model.act("dismiss") } })) {
-            Button("OK") { model.act("dismiss") }
+            Button(NativeMessages.native_common_ok(s.locale ?? "en")) { model.act("dismiss") }
         }
         .alert(s.deleting?.title ?? "", isPresented: Binding(get: { s.deleting.map { $0.id != answered } ?? false }, set: { _ in }),
                presenting: s.deleting) { d in
@@ -83,7 +83,7 @@ struct RootView: View {
         stack(s)
             .alert(s.renaming?.title ?? "", isPresented: Binding(get: { s.renaming.map { $0.id != renamed } ?? false }, set: { _ in }),
                    presenting: s.renaming) { r in
-                TextField("Title", text: $newTitle)
+                TextField(NativeMessages.native_common_title(s.locale ?? "en"), text: $newTitle)
                 Button(r.yes) { renamed = r.id; model.act("rename-save", r.id + "\u{1f}" + newTitle) }
                 Button(r.no, role: .cancel) { renamed = r.id; model.act("rename-no") }
             }
@@ -100,6 +100,7 @@ struct RootView: View {
 }
 
 struct PairView: View {
+    let tag: String
     @State var link: String
     let done: (String) -> Void
     @State private var scanning = false
@@ -107,24 +108,24 @@ struct PairView: View {
     var body: some View {
         Form {
             Section {
-                Button { scanning = true } label: { Label("Scan QR code", systemImage: "qrcode.viewfinder") }
+                Button { scanning = true } label: { Label(NativeMessages.native_pair_scan(tag), systemImage: "qrcode.viewfinder") }
             } footer: {
-                Text("On your computer: Backplane, Settings, Pairing link, QR code.")
+                Text(NativeMessages.native_pair_computer(tag))
             }
             Section {
-                TextField("Pairing link", text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
+                TextField(NativeMessages.settings_pair(tag), text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
             } header: {
-                Text("Pairing link")
+                Text(NativeMessages.settings_pair(tag))
             } footer: {
-                Text("Scan the code, or paste the tailnet link Backplane shows in Settings (Pairing link).")
+                Text(NativeMessages.native_pair_instructions(tag))
             }
-            Button("Connect") { done(link) }.disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button(NativeMessages.native_pair_connect(tag)) { done(link) }.disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .navigationTitle("Pair with a hub")
-        .fullScreenCover(isPresented: $scanning) { ScanView { done($0) } }
+        .navigationTitle(NativeMessages.native_pair_title(tag))
+        .fullScreenCover(isPresented: $scanning) { ScanView(tag: tag) { done($0) } }
     }
 }
 
@@ -133,12 +134,13 @@ struct PairView: View {
 struct HubsView: View {
     let model: AppModel
     let screen: Screen
+    private var tag: String { screen.locale ?? "en" }
     @State private var link = ""
     @State private var scanning = false
 
     var body: some View {
         Form {
-            Section("Paired") {
+            Section(NativeMessages.native_pair_paired(tag)) {
                 ForEach(screen.hubs, id: \.key) { h in
                     let c = model.conn[h.key] ?? HubConn()
                     HStack(alignment: .firstTextBaseline) {
@@ -147,16 +149,16 @@ struct HubsView: View {
                             HStack {
                                 Text(h.name)
                                 Spacer()
-                                Text(HubDot.word(c.phase)).font(.caption).foregroundStyle(HubDot.tint(c.phase))
+                                Text(HubDot.word(c.phase, tag)).font(.caption).foregroundStyle(HubDot.tint(c.phase))
                             }
-                            Text(HubsView.detail(h, c)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            Text(HubsView.detail(h, c, tag)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         }
                     }
-                    .swipeActions { Button("Unpair", role: .destructive) { model.unpair(h.key) } }
+                    .swipeActions { Button(NativeMessages.native_pair_unpair(tag), role: .destructive) { model.unpair(h.key) } }
                 }
             }
             if !screen.found.isEmpty {
-                Section("On your tailnet") {
+                Section(NativeMessages.native_pair_tailnet(tag)) {
                     ForEach(screen.found, id: \.url) { f in
                         Button { model.pair(f.url) } label: {
                             HStack {
@@ -169,32 +171,32 @@ struct HubsView: View {
                 }
             }
             Section {
-                TextField("Pairing link", text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
+                TextField(NativeMessages.settings_pair(tag), text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
-                Button("Add hub") { model.pair(link); link = "" }.disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
-                Button { scanning = true } label: { Label("Scan QR code", systemImage: "qrcode.viewfinder") }
+                Button(NativeMessages.native_pair_add(tag)) { model.pair(link); link = "" }.disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button { scanning = true } label: { Label(NativeMessages.native_pair_scan(tag), systemImage: "qrcode.viewfinder") }
             } header: {
-                Text("Pair another")
+                Text(NativeMessages.native_pair_another(tag))
             } footer: {
-                Text("Scan the code, or paste the tailnet link Backplane shows in Settings (Pairing link).")
+                Text(NativeMessages.native_pair_instructions(tag))
             }
         }
-        .navigationTitle("Hubs")
-        .fullScreenCover(isPresented: $scanning) { ScanView { model.pair($0) } }
+        .navigationTitle(NativeMessages.native_settings_hubs(tag))
+        .fullScreenCover(isPresented: $scanning) { ScanView(tag: tag) { model.pair($0) } }
     }
 
     // host:port · version · changes held · when it last said anything
-    static func detail(_ h: HubRow, _ c: HubConn) -> String {
+    static func detail(_ h: HubRow, _ c: HubConn, _ tag: String) -> String {
         var parts = [h.key]
         if let v = h.version, !v.isEmpty { parts.append(v) }
         if c.phase == .syncing, c.bytes > 0 {
-            parts.append("catching up, " + ByteCountFormatter.string(fromByteCount: Int64(c.bytes), countStyle: .file))
+            parts.append(NativeMessages.native_hub_catchup(tag, ByteCountFormatter.string(fromByteCount: Int64(c.bytes), countStyle: .file)))
         } else if let n = h.changes, n > 0 {
-            parts.append("\(n.formatted()) changes")
+            parts.append(NativeMessages.native_hub_changes(tag, n.formatted(.number.locale(Locale(identifier: tag)))))
         }
-        if let t = c.heard { parts.append("heard " + t.formatted(.relative(presentation: .named))) }
+        if let t = c.heard { parts.append(NativeMessages.native_hub_heard(tag, t.formatted(.relative(presentation: .named).locale(Locale(identifier: tag))))) }
         return parts.joined(separator: " · ")
     }
 }
@@ -217,12 +219,12 @@ struct HubDot: View {
         }
     }
 
-    static func word(_ p: HubConn.Phase) -> String {
+    static func word(_ p: HubConn.Phase, _ tag: String) -> String {
         switch p {
-        case .online: "Connected"
-        case .syncing: "Catching up"
-        case .offline: "Offline, retrying"
-        case .connecting: "Connecting"
+        case .online: NativeMessages.native_hub_state(tag, "online")
+        case .syncing: NativeMessages.native_hub_state(tag, "syncing")
+        case .offline: NativeMessages.native_hub_state(tag, "offline")
+        case .connecting: NativeMessages.native_hub_state(tag, "connecting")
         }
     }
 }
@@ -242,7 +244,7 @@ struct HubsPill: View {
             }
             .font(.system(size: 9))
         }
-        .accessibilityLabel(hubs.map { $0.name + ": " + HubDot.word(model.conn[$0.key]?.phase ?? .connecting) }.joined(separator: ", "))
+        .accessibilityLabel(hubs.map { NativeMessages.native_hub_accessibility(model.screen?.locale ?? "en", $0.name, HubDot.word(model.conn[$0.key]?.phase ?? .connecting, model.screen?.locale ?? "en")) }.joined(separator: ", "))
     }
 }
 
@@ -384,7 +386,7 @@ struct ProjectsView: View {
                 if let h = screen.hubs.first(where: { (model.conn[$0.key]?.phase ?? .connecting) != .online }), !screen.online {
                     VStack(spacing: 12) {
                         ProgressView()
-                        Text(HubDot.word(model.conn[h.key]?.phase ?? .connecting) + " to " + h.name).foregroundStyle(.secondary)
+                        Text(NativeMessages.native_hub_connection(screen.locale ?? "en", HubDot.word(model.conn[h.key]?.phase ?? .connecting, screen.locale ?? "en"), h.name)).foregroundStyle(.secondary)
                     }
                 } else {
                     ContentUnavailableView(screen.empty, systemImage: "folder")

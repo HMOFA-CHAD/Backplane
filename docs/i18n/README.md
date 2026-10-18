@@ -53,3 +53,10 @@ the tab bar are migrated first; other native copy is still being extracted.
 Local heavy validation uses bp-admit with an honest memory/CPU reservation;
 Boat remains preferred for combined check/proof/test jobs. The earlier global
 bend-lock example above is superseded by this resource policy.
+
+Native pairing/scanner/hub connection screens also use the generated catalog,
+including connection phase selects and whole hub-detail/accessibility messages.
+They read the resolved screen locale even before a hub is paired. Native iOS
+connection relative dates and counts use that locale explicitly. OS camera
+permission descriptions and the remaining native views are separate extraction
+work; Japanese remains preview-only.
