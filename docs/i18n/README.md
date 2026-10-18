@@ -69,3 +69,10 @@ SwiftUI's built-in controls. PDF fetches retain failure kinds and HTTP codes,
 then translate during rendering; changing language does not repeat the fetch.
 Task result status uses known protocol ids and preserves unknown result text.
 File names, comments, checklists, space contents and task names remain content.
+
+Native viewer controls (layers, history/comparison, mechanical renders and
+inspector actions) use the same resolved locale context. UIKit comment pins
+include the language in their accessibility-label cache; the no-Metal label
+also updates on a language switch. Camera/render geometry stays independent
+of language. Sheet/layer/file names and agent text pass through unchanged.
+Native build/catalog checks cover these changes; device visuals remain pending.

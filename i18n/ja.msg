@@ -1110,3 +1110,23 @@ native.task.parameter = {label}（{example}）
 native.key.enter = Enter
 native.key.tab = Tab
 native.key.esc = Esc
+
+# Native viewer controls and accessibility
+native.viewer.sheet = シート
+native.viewer.others = ほかのレイヤー
+native.viewer.restore = すべて元に戻す
+native.viewer.standout = 強調
+native.viewer.parts = 部品
+native.viewer.ground.dark = 背景を暗く
+native.viewer.ground.light = 背景を明るく
+native.viewer.metal = このデバイスはMetalに対応していません。
+native.history.thread = スレッドで表示：{text}
+native.history.thread.short = スレッドで表示
+native.history.first = 最初のステップ
+native.history.previous = 前のステップ
+native.history.play = 再生
+native.history.next = 次のステップ
+native.history.last = 最後のステップ
+native.history.livefile = 現在のファイル
+native.mech.failed = レンダリング失敗：{error}
+native.review.pin = コメント{kind, select, replies {（返信{count}件）} other {}}

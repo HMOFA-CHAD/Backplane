@@ -1090,3 +1090,23 @@ native.task.parameter = {label} ({example})
 native.key.enter = Enter
 native.key.tab = Tab
 native.key.esc = Esc
+
+# Native viewer controls and accessibility
+native.viewer.sheet = Sheet
+native.viewer.others = Others
+native.viewer.restore = All back
+native.viewer.standout = Stand out
+native.viewer.parts = Parts
+native.viewer.ground.dark = Dark ground
+native.viewer.ground.light = Light ground
+native.viewer.metal = This device has no Metal.
+native.history.thread = Show in the thread: {text}
+native.history.thread.short = Show in the thread
+native.history.first = First step
+native.history.previous = Previous step
+native.history.play = Play
+native.history.next = Next step
+native.history.last = Last step
+native.history.livefile = Live file
+native.mech.failed = Rendering failed: {error}
+native.review.pin = Comment{kind, select, replies {, {count} replies} other {}}

@@ -64,6 +64,11 @@ enum NativeMessages {
     tag == "ja" ? ("実行") : ("Run")
   }
 
+  // common.show
+  static func common_show(_ tag: String) -> String {
+    tag == "ja" ? ("表示") : ("Show")
+  }
+
   // composer.send
   static func composer_send(_ tag: String) -> String {
     tag == "ja" ? ("送信") : ("Send")
@@ -77,6 +82,36 @@ enum NativeMessages {
   // files.changed
   static func files_changed(_ tag: String, _ arg0: UInt64) -> String {
     tag == "ja" ? ((arg0 == 0 ? "変更なし" : "変更ファイル" + number(arg0) + "件")) : ((arg0 == 0 ? "No files changed" : (arg0 == 1 ? number(arg0) + " file changed" : number(arg0) + " files changed")))
+  }
+
+  // history.live
+  static func history_live(_ tag: String) -> String {
+    tag == "ja" ? ("現在") : ("Live")
+  }
+
+  // history.new.label
+  static func history_new_label(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("新版：" + arg0) : ("New: " + arg0)
+  }
+
+  // history.old.label
+  static func history_old_label(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("旧版：" + arg0) : ("Old: " + arg0)
+  }
+
+  // history.pause
+  static func history_pause(_ tag: String) -> String {
+    tag == "ja" ? ("一時停止") : ("Pause")
+  }
+
+  // history.step.label
+  static func history_step_label(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("変更" + arg0) : ("Step " + arg0)
+  }
+
+  // mech.create
+  static func mech_create(_ tag: String) -> String {
+    tag == "ja" ? ("レンダリングを作成") : ("Create renders")
   }
 
   // native.browser.empty
@@ -117,6 +152,46 @@ enum NativeMessages {
   // native.file.pdf.error
   static func native_file_pdf_error(_ tag: String, _ arg0: String, _ arg1: String) -> String {
     tag == "ja" ? ((arg0 == "send" ? "ハブからPDFを取得できません（12 MBを超えている可能性があります）" : (arg0 == "http" ? "ハブの応答：" + arg1 : "このPDFは表示できません"))) : ((arg0 == "send" ? "The hub could not send this PDF (it may be over 12 MB)" : (arg0 == "http" ? "The hub answered " + arg1 : "This PDF cannot be shown here")))
+  }
+
+  // native.history.first
+  static func native_history_first(_ tag: String) -> String {
+    tag == "ja" ? ("最初のステップ") : ("First step")
+  }
+
+  // native.history.last
+  static func native_history_last(_ tag: String) -> String {
+    tag == "ja" ? ("最後のステップ") : ("Last step")
+  }
+
+  // native.history.livefile
+  static func native_history_livefile(_ tag: String) -> String {
+    tag == "ja" ? ("現在のファイル") : ("Live file")
+  }
+
+  // native.history.next
+  static func native_history_next(_ tag: String) -> String {
+    tag == "ja" ? ("次のステップ") : ("Next step")
+  }
+
+  // native.history.play
+  static func native_history_play(_ tag: String) -> String {
+    tag == "ja" ? ("再生") : ("Play")
+  }
+
+  // native.history.previous
+  static func native_history_previous(_ tag: String) -> String {
+    tag == "ja" ? ("前のステップ") : ("Previous step")
+  }
+
+  // native.history.thread
+  static func native_history_thread(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("スレッドで表示：" + arg0) : ("Show in the thread: " + arg0)
+  }
+
+  // native.history.thread.short
+  static func native_history_thread_short(_ tag: String) -> String {
+    tag == "ja" ? ("スレッドで表示") : ("Show in the thread")
   }
 
   // native.hub.accessibility
@@ -162,6 +237,11 @@ enum NativeMessages {
   // native.key.tab
   static func native_key_tab(_ tag: String) -> String {
     tag == "ja" ? ("Tab") : ("Tab")
+  }
+
+  // native.mech.failed
+  static func native_mech_failed(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("レンダリング失敗：" + arg0) : ("Rendering failed: " + arg0)
   }
 
   // native.pair.action
@@ -252,6 +332,11 @@ enum NativeMessages {
   // native.review.comment
   static func native_review_comment(_ tag: String) -> String {
     tag == "ja" ? ("コメント") : ("Comment")
+  }
+
+  // native.review.pin
+  static func native_review_pin(_ tag: String, _ arg0: String, _ arg1: String) -> String {
+    tag == "ja" ? ("コメント" + (arg0 == "replies" ? "（返信" + arg1 + "件）" : "")) : ("Comment" + (arg0 == "replies" ? ", " + arg1 + " replies" : ""))
   }
 
   // native.review.place
@@ -404,14 +489,59 @@ enum NativeMessages {
     tag == "ja" ? ((arg0 == "ok" ? "完了" : (arg0 == "failed" ? "失敗" : (arg0 == "stopped" ? "停止" : arg0)))) : ((arg0 == "ok" ? "ok" : (arg0 == "failed" ? "failed" : (arg0 == "stopped" ? "stopped" : arg0))))
   }
 
+  // native.viewer.ground.dark
+  static func native_viewer_ground_dark(_ tag: String) -> String {
+    tag == "ja" ? ("背景を暗く") : ("Dark ground")
+  }
+
+  // native.viewer.ground.light
+  static func native_viewer_ground_light(_ tag: String) -> String {
+    tag == "ja" ? ("背景を明るく") : ("Light ground")
+  }
+
+  // native.viewer.metal
+  static func native_viewer_metal(_ tag: String) -> String {
+    tag == "ja" ? ("このデバイスはMetalに対応していません。") : ("This device has no Metal.")
+  }
+
+  // native.viewer.others
+  static func native_viewer_others(_ tag: String) -> String {
+    tag == "ja" ? ("ほかのレイヤー") : ("Others")
+  }
+
+  // native.viewer.parts
+  static func native_viewer_parts(_ tag: String) -> String {
+    tag == "ja" ? ("部品") : ("Parts")
+  }
+
+  // native.viewer.restore
+  static func native_viewer_restore(_ tag: String) -> String {
+    tag == "ja" ? ("すべて元に戻す") : ("All back")
+  }
+
+  // native.viewer.sheet
+  static func native_viewer_sheet(_ tag: String) -> String {
+    tag == "ja" ? ("シート") : ("Sheet")
+  }
+
   // native.viewer.source
   static func native_viewer_source(_ tag: String) -> String {
     tag == "ja" ? ("表示元") : ("Source")
   }
 
+  // native.viewer.standout
+  static func native_viewer_standout(_ tag: String) -> String {
+    tag == "ja" ? ("強調") : ("Stand out")
+  }
+
   // palette.settings
   static func palette_settings(_ tag: String) -> String {
     tag == "ja" ? ("設定") : ("Settings")
+  }
+
+  // review.bom
+  static func review_bom(_ tag: String) -> String {
+    tag == "ja" ? ("BOM") : ("BOM")
   }
 
   // review.fails
@@ -584,8 +714,98 @@ enum NativeMessages {
     tag == "ja" ? ((arg0 == "you" ? "自分" : (arg0 == "agent" ? "エージェント" : "不明"))) : ((arg0 == "you" ? "You" : (arg0 == "agent" ? "Agent" : "Someone")))
   }
 
+  // viewer.diff
+  static func viewer_diff(_ tag: String) -> String {
+    tag == "ja" ? ("差分") : ("Diff")
+  }
+
   // viewer.files.empty
   static func viewer_files_empty(_ tag: String) -> String {
     tag == "ja" ? ("空のフォルダ") : ("This folder is empty")
+  }
+
+  // viewer.history.added
+  static func viewer_history_added(_ tag: String) -> String {
+    tag == "ja" ? ("追加") : ("Added")
+  }
+
+  // viewer.history.changed
+  static func viewer_history_changed(_ tag: String) -> String {
+    tag == "ja" ? ("変更") : ("Changed")
+  }
+
+  // viewer.history.changes
+  static func viewer_history_changes(_ tag: String) -> String {
+    tag == "ja" ? ("変更") : ("Changes")
+  }
+
+  // viewer.history.compare
+  static func viewer_history_compare(_ tag: String) -> String {
+    tag == "ja" ? ("比較") : ("Compare")
+  }
+
+  // viewer.history.compare.new
+  static func viewer_history_compare_new(_ tag: String) -> String {
+    tag == "ja" ? ("比較先（新）") : ("Compare with (new)")
+  }
+
+  // viewer.history.compare.old
+  static func viewer_history_compare_old(_ tag: String) -> String {
+    tag == "ja" ? ("比較元（旧）") : ("Compare from (old)")
+  }
+
+  // viewer.history.new
+  static func viewer_history_new(_ tag: String) -> String {
+    tag == "ja" ? ("新") : ("New")
+  }
+
+  // viewer.history.old
+  static func viewer_history_old(_ tag: String) -> String {
+    tag == "ja" ? ("旧") : ("Old")
+  }
+
+  // viewer.history.ref
+  static func viewer_history_ref(_ tag: String) -> String {
+    tag == "ja" ? ("コミット・ブランチ・タグ") : ("Commit, branch or tag")
+  }
+
+  // viewer.history.removed
+  static func viewer_history_removed(_ tag: String) -> String {
+    tag == "ja" ? ("削除") : ("Removed")
+  }
+
+  // viewer.layers
+  static func viewer_layers(_ tag: String) -> String {
+    tag == "ja" ? ("レイヤー") : ("Layers")
+  }
+
+  // viewer.layers.all
+  static func viewer_layers_all(_ tag: String) -> String {
+    tag == "ja" ? ("すべて") : ("All")
+  }
+
+  // viewer.layers.dim
+  static func viewer_layers_dim(_ tag: String) -> String {
+    tag == "ja" ? ("薄く") : ("Dim")
+  }
+
+  // viewer.layers.only
+  static func viewer_layers_only(_ tag: String) -> String {
+    tag == "ja" ? ("選択のみ") : ("Only")
+  }
+
+  // viewer.mech.renders
+  static func viewer_mech_renders(_ tag: String) -> String {
+    tag == "ja" ? ("レンダー") : ("Renders")
+  }
+
+  // viewer.mention
+  static func viewer_mention(_ tag: String) -> String {
+    tag == "ja" ? ("チャットで参照") : ("Mention in chat")
+  }
+
+  // viewer.solid
+  static func viewer_solid(_ tag: String) -> String {
+    tag == "ja" ? ("3D") : ("3D")
   }
 }
