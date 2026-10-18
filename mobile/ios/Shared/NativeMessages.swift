@@ -614,6 +614,16 @@ enum NativeMessages {
     tag == "ja" ? ("レンダリング失敗：" + arg0) : ("Rendering failed: " + arg0)
   }
 
+  // native.notify.channel.live
+  static func native_notify_channel_live(_ tag: String) -> String {
+    tag == "ja" ? ("稼働中のエージェント") : ("Agents working")
+  }
+
+  // native.notify.channel.personal
+  static func native_notify_channel_personal(_ tag: String) -> String {
+    tag == "ja" ? ("個人向け通知") : ("Personal alerts")
+  }
+
   // native.pair.action
   static func native_pair_action(_ tag: String) -> String {
     tag == "ja" ? ("ペアリング") : ("Pair")
@@ -897,6 +907,21 @@ enum NativeMessages {
   // native.settings.paired
   static func native_settings_paired(_ tag: String, _ arg0: String) -> String {
     tag == "ja" ? (arg0 + "台とペアリング済み") : (arg0 + " paired")
+  }
+
+  // native.settings.placeholder.hint
+  static func native_settings_placeholder_hint(_ tag: String) -> String {
+    tag == "ja" ? ("このハブでの設定の説明。") : ("A line of what the setting does for this hub.")
+  }
+
+  // native.settings.placeholder.name
+  static func native_settings_placeholder_name(_ tag: String) -> String {
+    tag == "ja" ? ("設定名") : ("Setting name")
+  }
+
+  // native.settings.placeholder.option
+  static func native_settings_placeholder_option(_ tag: String) -> String {
+    tag == "ja" ? ("選択肢") : ("Option")
   }
 
   // native.settings.system

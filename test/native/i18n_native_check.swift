@@ -114,6 +114,13 @@
         precondition(NativeMessages.plane_rooms_unread("en") == "Unread rooms")
         precondition(NativeMessages.native_plane_unread("en") == "Unread")
         precondition(NativeMessages.native_plane_unread("ja") == "未読")
-        print("ok Swift native catalog: 114 cases")
+        precondition(NativeMessages.native_settings_hub_named("en", "host:3787|{name} 日本語") == "Hub settings · host:3787|{name} 日本語")
+        precondition(NativeMessages.native_settings_hub_named("ja", "host:3787|{name} 日本語") == "ハブ設定 · host:3787|{name} 日本語")
+        precondition(NativeMessages.native_settings_hub_named("zz", "") == "Hub settings · ")
+        precondition(NativeMessages.native_notify_channel_personal("en") == "Personal alerts")
+        precondition(NativeMessages.native_notify_channel_personal("ja") == "個人向け通知")
+        precondition(NativeMessages.native_notify_channel_live("ja") == "稼働中のエージェント")
+        precondition(NativeMessages.native_notify_channel_live("zz") == "Agents working")
+        print("ok Swift native catalog: 121 cases")
     }
 }

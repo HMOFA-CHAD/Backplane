@@ -488,6 +488,14 @@ object NativeMessages {
   fun native_mech_failed(tag: String, arg0: String): String =
     if (tag == "ja") ("レンダリング失敗：" + arg0) else ("Rendering failed: " + arg0)
 
+  // native.notify.channel.live
+  fun native_notify_channel_live(tag: String): String =
+    if (tag == "ja") ("稼働中のエージェント") else ("Agents working")
+
+  // native.notify.channel.personal
+  fun native_notify_channel_personal(tag: String): String =
+    if (tag == "ja") ("個人向け通知") else ("Personal alerts")
+
   // native.pair.action
   fun native_pair_action(tag: String): String =
     if (tag == "ja") ("ペアリング") else ("Pair")
@@ -715,6 +723,18 @@ object NativeMessages {
   // native.settings.paired
   fun native_settings_paired(tag: String, arg0: String): String =
     if (tag == "ja") (arg0 + "台とペアリング済み") else (arg0 + " paired")
+
+  // native.settings.placeholder.hint
+  fun native_settings_placeholder_hint(tag: String): String =
+    if (tag == "ja") ("このハブでの設定の説明。") else ("A line of what the setting does for this hub.")
+
+  // native.settings.placeholder.name
+  fun native_settings_placeholder_name(tag: String): String =
+    if (tag == "ja") ("設定名") else ("Setting name")
+
+  // native.settings.placeholder.option
+  fun native_settings_placeholder_option(tag: String): String =
+    if (tag == "ja") ("選択肢") else ("Option")
 
   // native.settings.system
   fun native_settings_system(tag: String): String =

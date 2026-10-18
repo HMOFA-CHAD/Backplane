@@ -115,5 +115,12 @@ fun main() {
     check(NativeMessages.plane_rooms_unread("en") == "Unread rooms")
     check(NativeMessages.native_plane_unread("en") == "Unread")
     check(NativeMessages.native_plane_unread("ja") == "未読")
-    println("ok Kotlin native catalog: 114 cases")
+    check(NativeMessages.native_settings_hub_named("en", "host:3787|{name} 日本語") == "Hub settings · host:3787|{name} 日本語")
+    check(NativeMessages.native_settings_hub_named("ja", "host:3787|{name} 日本語") == "ハブ設定 · host:3787|{name} 日本語")
+    check(NativeMessages.native_settings_hub_named("zz", "") == "Hub settings · ")
+    check(NativeMessages.native_notify_channel_personal("en") == "Personal alerts")
+    check(NativeMessages.native_notify_channel_personal("ja") == "個人向け通知")
+    check(NativeMessages.native_notify_channel_live("ja") == "稼働中のエージェント")
+    check(NativeMessages.native_notify_channel_live("zz") == "Agents working")
+    println("ok Kotlin native catalog: 121 cases")
 }

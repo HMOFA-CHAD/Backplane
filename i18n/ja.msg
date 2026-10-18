@@ -1226,3 +1226,10 @@ native.plane.waiting = 対応待ちなし
 native.plane.more = 他{count}件
 native.plane.card = {name}、{counts}
 native.plane.unread = 未読
+
+# Native hub-settings loading and notification channels
+native.settings.placeholder.name = 設定名
+native.settings.placeholder.hint = このハブでの設定の説明。
+native.settings.placeholder.option = 選択肢
+native.notify.channel.personal = 個人向け通知
+native.notify.channel.live = 稼働中のエージェント
