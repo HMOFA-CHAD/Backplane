@@ -146,6 +146,9 @@ import ./src/core/task.bend as TSK
 import ./src/core/teach.bend as TCH
 import ./src/core/cef.bend as CEF # browser-cef
 import ./src/mobile/bots.bend as MBT
+import ./src/core/cli.bend as CLI # one-hub
+import ./src/core/onehub.bend as OHB # one-hub
+import ./src/core/standin.bend as SIN # one-hub
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -10331,3 +10334,63 @@ law webphone_count_japanese:
 law webphone_idle_japanese:
   {Nt.Note.compact.head(I18.Ja{}, 0n) == "すべてのエージェントが待機中" : String}
 # ---- end i18n web phone ----
+# ---- one-hub ----
+# The command line is strict (core/cli.bend): an unknown flag never runs a
+# hub, whatever follows it or comes before it; --help and --version never
+# run one either, and a flag without its value is refused.
+law cli_unknown_never_runs:
+  for xs: List<&2, String>
+  {CLI.Cli.runs(CLI.Cli.of("--bogus" <> xs)) == False{} : Bool}
+
+law cli_unknown_after_flags_never_runs:
+  for xs: List<&2, String>
+  {CLI.Cli.runs(CLI.Cli.of("--home" <> "/h" <> "--no-tailscale" <> "--bogus" <> xs)) == False{} : Bool}
+
+law cli_word_never_runs:
+  for xs: List<&2, String>
+  {CLI.Cli.runs(CLI.Cli.of("serve" <> xs)) == False{} : Bool}
+
+law cli_version_never_runs:
+  for xs: List<&2, String>
+  {CLI.Cli.of("--version" <> xs) == CLI.CliVersion{} : CLI.Cli}
+
+law cli_version_after_flags:
+  for xs: List<&2, String>
+  {CLI.Cli.of("--home" <> "/h" <> "--port" <> "3799" <> "--version" <> xs) == CLI.CliVersion{} : CLI.Cli}
+
+law cli_help_never_runs:
+  for xs: List<&2, String>
+  {CLI.Cli.of("--help" <> xs) == CLI.CliHelp{} : CLI.Cli}
+
+law cli_h_never_runs:
+  for xs: List<&2, String>
+  {CLI.Cli.of("-h" <> xs) == CLI.CliHelp{} : CLI.Cli}
+
+law cli_missing_value:
+  {CLI.Cli.of(["--home"]) == CLI.CliBad{"--home needs a value"} : CLI.Cli}
+
+law cli_value_not_a_flag:
+  for xs: List<&2, String>
+  {CLI.Cli.runs(CLI.Cli.of("--home" <> "--version" <> xs)) == False{} : Bool}
+
+law cli_test_hub_runs:
+  {CLI.Cli.of(["--home", "/h", "--port", "3799", "--no-tailscale", "--foreground"]) == CLI.CliRun{} : CLI.Cli}
+
+# One hub per home (core/onehub.bend): what the lock's answer means
+law onehub_ours:
+  {OHB.OneHub.got("ok") == OHB.HubOurs{} : OHB.HubGot}
+
+law onehub_held:
+  {OHB.OneHub.got("held 12 3799 flock") == OHB.HubHeld{"12", "3799"} : OHB.HubGot}
+
+law onehub_says:
+  {OHB.OneHub.says("/h", "12", "3799") == "a hub already serves /h (pid 12, port 3799)" : String}
+
+# Stand-ins (core/standin.bend) stay ahead of the login shell's PATH and
+# ~/.local/bin, where the real CLIs are
+law standin_path_first:
+  {SIN.Standin.path("/f", "/b", "/usr/bin") == "/f:/b:/usr/bin" : String}
+
+law standin_merge_behind:
+  {CPA.CliPath.merge(SIN.Standin.path("/f", "/b", "/usr/bin"), "/u/.local/bin:/usr/bin", ["/u/.local/bin"]) == "/f:/b:/usr/bin:/u/.local/bin" : String}
+# ---- end one-hub ----

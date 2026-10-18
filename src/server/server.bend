@@ -80,6 +80,10 @@ import ../core/notice.bend as NO
 import ../core/hist.bend as HI
 import ../core/emb.bend as EM
 import ./review.bend as RVS
+import ./hublock.bend as HL
+import ../core/cli.bend as CL
+import ../core/onehub.bend as OH
+import ../core/standin.bend as SI
 import ../core/cmds.bend as CM
 import ../core/errtail.bend as ER
 import ../core/keyring.bend as KR
@@ -4762,6 +4766,19 @@ def Machines.start(+inbox: Chan(Msg), +port: U32) -> IO(Unit):
 def Main.version() -> String:
   VR.Version.current()
 
+# the strict command line (core/cli.bend), the first thing both mains do:
+# go only runs the program; --help, --version and a bad flag do nothing else
+def Main.cli(c: CL.Cli, go: Unit -> IO(Unit)) -> IO(Unit):
+  match c:
+    case CL.CliRun{}:
+      go(Unit{})
+    case CL.CliHelp{}:
+      IO.print(CL.Cli.usage())
+    case CL.CliVersion{}:
+      IO.print("backplane " ++ Main.version())
+    case CL.CliBad{why}:
+      IO.die(Unit, 2, "backplane: " ++ why ++ "\n" ++ CL.Cli.usage())
+
 def Main.failed(e: U32 & String, h: Hub, addr: String) -> IO(Unit):
   (_, msg) = e
   do IO<Unit>:
@@ -5334,10 +5351,11 @@ def Path.refresh(+home: String) -> IO(Unit):
     Path.set(String.eq(cur, next), next)
 
 # which of the four CLIs are on PATH now (Antigravity's agy lives in
-# <home>/antigravity, AGX.Agx.probe, not on PATH), "claude codex " style
+# <home>/antigravity, AGX.Agx.probe, not on PATH), "claude codex " style;
+# a stand-in's block (core/standin.bend) is none
 def Models.present() -> IO(String):
   do IO<String>:
-    r : P.Ran <- P.Proc.run("sh", ["-c", "for c in claude codex grok muse; do command -v $c >/dev/null 2>&1 && printf '%s ' $c; done; true"], "/")
+    r : P.Ran <- P.Proc.run("sh", ["-c", SI.Standin.present.sh()], "/")
     return Path.out(r)
 
 # a full detection when it is due, else nothing; answers the list kept
@@ -5407,6 +5425,11 @@ def Main.prepare(+user: String, +exe: String) -> IO(Boot):
     +rt : K.Rt = K.Rt.empty()
     +fc : String <- FC.FreeCAD.find()
     return Models.boot(ks, rt, Found{"", ""}, fc)
+
+# the home and port the arguments name, before anything else is found
+# (the server binary takes the home's lock with them first)
+def Main.where(+user: String, args: List<String>) -> Cfg:
+  Main.args(args, Cfg{user ++ "/.backplane-bend", "", "127.0.0.1", 3787, "", Nil{}, "", Net{True{}, False{}, "", "", "", K.Rt.empty(), None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", "", None{}}})
 
 def Main.config(+user: String, +exe: String, args: List<String>, b: Boot) -> Cfg:
   Boot{kdir, skills, rt, ms, mt, +fc} = b
@@ -13703,25 +13726,28 @@ def Main.listened(r: Result<&1, &1, U32 & String, Listener>, h: Hub, +web: Strin
 # One hub per home
 # ----------------
 # Two hubs on one home (a window opened while `--headless` ran for the same
-# folder) each kept a state of their own over the same log: a message sent
-# in the window never reached the web or the phones, and theirs never the
-# window. A hub notes its pid and port in <home>/hub.lock as it starts; a
-# later start that finds that hub alive joins it (the window) or leaves it
-# be (`--headless`): src/app/main.bend's Start.run.
+# folder, or `backplane --version` run by hand, which once started a hub on
+# the live home) each kept a state of their own over the same log: a
+# message sent in the window never reached the web or the phones, and
+# theirs never the window. A hub holds an exclusive flock on
+# <home>/hub.lock for as long as it lives (hublock.bend, effects/hublock.c,
+# core/onehub.bend): taken before anything touches the event store, let go
+# by the kernel when the process dies, kept through a restart in place
+# (Sys.exec hands the descriptor over). The file says its pid and port
+# ("<pid> <port> flock"). A later start that finds it held joins that hub
+# (the window), or says so and ends with status 1 (`--headless`, the
+# server binary): src/app/main.bend's Start.run, src/server/main.bend.
+# A file without "flock" was written by an older hub, which held no lock:
+# it is believed while its pid is alive and runs the same program.
 
 def Lock.path(+home: String) -> String:
   home ++ "/hub.lock"
 
-# the shell's parent is this process, so $PPID is the hub's pid
-def Lock.write(+home: String, +port: U32) -> IO(Unit):
-  do IO<Unit>:
-    r : P.Ran <- P.Proc.run("sh", ["-c", "echo \"$PPID $1\" > \"$2\"", "sh", U32.show(port), Lock.path(home)], "/")
-    return Unit{}
-
-# "<pid> <port>" of another live Backplane holding the lock (the same
-# program as this one, by its process name), else ""
+# "<pid> <port>" of a live older Backplane named by the file (the same
+# program as this one, by its process name), else ""; a file a locking
+# hub wrote is left to the lock
 def Lock.find.sh() -> String:
-  "f=$1/hub.lock; [ -f \"$f\" ] || exit 0; read pid port < \"$f\"; [ -n \"$pid\" ] && [ \"$pid\" != \"$PPID\" ] || exit 0; kill -0 \"$pid\" 2>/dev/null || exit 0; [ \"$(ps -p \"$pid\" -o comm= 2>/dev/null)\" = \"$(ps -p \"$PPID\" -o comm= 2>/dev/null)\" ] && echo \"$pid $port\""
+  "f=$1/hub.lock; [ -f \"$f\" ] || exit 0; read pid port kind < \"$f\"; [ \"$kind\" = flock ] && exit 0; [ -n \"$pid\" ] && [ \"$pid\" != \"$PPID\" ] || exit 0; kill -0 \"$pid\" 2>/dev/null || exit 0; [ \"$(ps -p \"$pid\" -o comm= 2>/dev/null)\" = \"$(ps -p \"$PPID\" -o comm= 2>/dev/null)\" ] && echo \"$pid $port\""
 
 def Lock.out(r: P.Ran) -> String:
   match r:
@@ -13730,11 +13756,77 @@ def Lock.out(r: P.Ran) -> String:
     case _:
       ""
 
-def Lock.find(+home: String) -> IO(String):
+def Lock.legacy(+home: String) -> IO(String):
   IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Lock.find.sh(), "sh", home], "/"), r => IO.pure(String, Lock.out(r)))
 
+def Lock.find.k(+held: String, +home: String) -> IO(String):
+  Bool.pick(IO(String), String.is_empty(held), Lock.legacy(home), IO.pure(String, held))
+
+# "<pid> <port>" of another live hub on this home, else "" (this process's
+# own lock is none)
+def Lock.find(+home: String) -> IO(String):
+  IO.bind(String, String, HL.HubLock.held(Lock.path(home)), held => Lock.find.k(String.trim(held), home))
+
+def Lock.taken(g: OH.HubGot, +home: String) -> IO(String):
+  match g:
+    case OH.HubFail{why}:
+      IO.die(String, 1, "backplane: cannot lock " ++ home ++ ": " ++ why)
+    case OH.HubOurs{}:
+      IO.pure(String, "")
+    case OH.HubHeld{+pid, +port}:
+      IO.pure(String, OH.OneHub.line(pid, port))
+
+def Lock.take.k(free: Bool, +old: String, +home: String, +port: U32) -> IO(String):
+  match free:
+    case True{}:
+      IO.bind(String, String, HL.HubLock.take(Lock.path(home), U32.show(port)), r => Lock.taken(OH.OneHub.got(r), home))
+    case False{}:
+      IO.pure(String, old)
+
+# take the home's lock for this process: "" when it is ours (taken now,
+# again, or handed over by the exec of a restart), else "<pid> <port>" of
+# the hub that holds it; a lock that cannot be taken at all stops here
+def Lock.take(+home: String, +port: U32) -> IO(String):
+  do IO<String>:
+    mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(home)
+    +old : String <- Lock.legacy(home)
+    Lock.take.k(String.is_empty(old), old, home, port)
+
 def Lock.word(+held: String, +i: Nat) -> String:
-  Maybe.default(&2, String, List.get(&2, String, String.split(held, ' '), i), "")
+  OH.OneHub.word(held, i)
+
+# a second hub on a home ends here, before it touches the event store
+def Lock.refuse(free: Bool, +held: String, +home: String) -> IO(Unit):
+  match free:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      IO.die(Unit, 1, "backplane: " ++ OH.OneHub.says(home, Lock.word(held, 0n), Lock.word(held, 1n)))
+
+# Stand-in agents (core/standin.bend): with BACKPLANE_AGENTS=<dir> the
+# provider CLIs come from <dir> or nowhere
+def Agents.only.k(r: P.Ran, +blocks: String) -> IO(Unit):
+  match r:
+    case P.Ran{0, +dir}:
+      do IO<Unit>:
+        +cur : String <- Env.get("PATH", "")
+        H.Env.put("PATH", SI.Standin.path(String.trim(dir), blocks, cur))
+        Log.info("stand-in agents only, from " ++ String.trim(dir))
+    case P.Ran{_, +out}:
+      IO.die(Unit, 1, "backplane: " ++ String.trim(out))
+
+def Agents.only.go(none: Bool, +dir: String, +home: String) -> IO(Unit):
+  match none:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      IO.bind(P.Ran, Unit, P.Proc.run("sh", SI.Standin.args(dir, SI.Standin.blocks(home)), "/"), r => Agents.only.k(r, SI.Standin.blocks(home)))
+
+def Agents.only.of(+dir: String, +home: String) -> IO(Unit):
+  Agents.only.go(String.is_empty(dir), dir, home)
+
+def Agents.only(+home: String) -> IO(Unit):
+  IO.bind(String, Unit, Env.get("BACKPLANE_AGENTS", ""), dir => Agents.only.of(dir, home))
 
 # Browser frames
 # --------------
@@ -13800,7 +13892,6 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
   match r cfg:
     case Done{f} Cfg{+home, +web, +host, +port, +pr, +ds, +v, nt0}:
       do IO<Unit>:
-        Lock.write(home, port)
         +inbox : Chan(Msg) <- Chan.new(Msg, 4096)
         +pri : Chan(Msg) <- Chan.new(Msg, 4096)
         +tok : Chan(Unit) <- Chan.new(Unit, 32)
@@ -13868,10 +13959,13 @@ def Main.torn(r: Result<&1, &1, U32 & String, File>, +fix: String) -> IO(Result<
 # with the hub's inbox; `need` makes a taken web port fatal
 def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
   match cfg:
-    case Cfg{+home, w, h, p, pr, ds, v, nt}:
+    case Cfg{+home, w, h, +p, pr, ds, v, nt}:
       do IO<Unit>:
+        # the home's lock first: a second hub ends before the event store
+        +held : String <- Lock.take(home, p)
+        Lock.refuse(String.is_empty(held), held, home)
         H.Env.put("BACKPLANE_HOME", home)
-        mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(home)
+        Agents.only(home)
         t0 : U32 <- PS.Perf.us()
         +bs : List<&2, U32> <- Files.read(Store.path(home))
         t1 : U32 <- PS.Perf.span("boot.read", t0)

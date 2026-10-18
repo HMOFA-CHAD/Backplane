@@ -11997,3 +11997,81 @@ def Laws.webphone_count_ungrouped(): {==}
 def Laws.webphone_count_japanese(): {==}
 def Laws.webphone_idle_japanese(): {==}
 # ---- end i18n web phone ----
+# ---- one-hub ----
+def Laws.cli_unknown_never_runs(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case +h <> t:
+      {==}
+
+def Laws.cli_unknown_after_flags_never_runs(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case +h <> t:
+      {==}
+
+def Laws.cli_word_never_runs(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case +h <> t:
+      {==}
+
+def Laws.cli_version_never_runs(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case +h <> t:
+      {==}
+
+def Laws.cli_version_after_flags(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case +h <> t:
+      {==}
+
+def Laws.cli_help_never_runs(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case +h <> t:
+      {==}
+
+def Laws.cli_h_never_runs(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case +h <> t:
+      {==}
+
+def Laws.cli_missing_value():
+  {==}
+
+def Laws.cli_value_not_a_flag(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case +h <> t:
+      {==}
+
+def Laws.cli_test_hub_runs():
+  {==}
+
+def Laws.onehub_ours():
+  {==}
+
+def Laws.onehub_held():
+  {==}
+
+def Laws.onehub_says():
+  {==}
+
+def Laws.standin_path_first():
+  {==}
+
+def Laws.standin_merge_behind():
+  {==}
+# ---- end one-hub ----

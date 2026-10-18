@@ -249,7 +249,7 @@ if (!existsSync(xsock)) {
 } else say(`using the X server already on ${display}`);
 
 const env: Record<string, string> = {
-  PATH: `${fake}:/usr/local/bin:/usr/bin:/bin`,
+  BACKPLANE_AGENTS: fake, PATH: `${fake}:/usr/local/bin:/usr/bin:/bin`,
   HOME: user, USER: process.env.USER ?? "h", LANG: process.env.LANG ?? "C.UTF-8",
   DISPLAY: display, WAYLAND_DISPLAY: "", DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent",
   BACKPLANE_TRACE: trace, BACKPLANE_NO_UPDATE: "1", BACKPLANE_KEYRING_LOCKED: "0", BACKPLANE_PEERS: "", BACKPLANE_LOCK_DIR: locks,
