@@ -290,6 +290,7 @@ private struct SwipeButton: View {
 // which the screen then carries as rowMenu. Tap and long press are plain
 // gestures (not a NavigationLink) so a long press never also opens it.
 private struct ThreadRow: View {
+    @Environment(\.backplaneLanguage) private var lang
     let model: AppModel
     let row: Row
     let choose: (Swipe) -> Void
@@ -321,7 +322,7 @@ private struct ThreadRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: "Menu") { model.act("row-menu", row.id) }
+        .accessibilityAction(named: NativeMessages.native_thread_menu(lang)) { model.act("row-menu", row.id) }
         .swipeActions(edge: .leading) {
             ForEach(row.lead, id: \.self) { SwipeButton(model: model, swipe: $0, choose: choose) }
         }
@@ -332,6 +333,7 @@ private struct ThreadRow: View {
 }
 
 struct ProjectsView: View {
+    @Environment(\.backplaneLanguage) private var lang
     let model: AppModel
     let screen: Screen
     @Binding var pairing: Bool
@@ -341,11 +343,11 @@ struct ProjectsView: View {
     @State private var shutMenu: RowMenu?
 
     // a folded shelf: its name and count, a tap opens or shuts it
-    func foldRow(_ name: String, _ o: Older, _ action: String) -> some View {
+    func foldRow(_ settled: Bool, _ o: Older, _ action: String) -> some View {
         Section {
             Button { model.act(action, "") } label: {
                 HStack {
-                    Text("\(name) \(o.count)").font(.subheadline)
+                    Text(settled ? NativeMessages.sidebar_settled_count(lang, String(o.count)) : NativeMessages.sidebar_older(lang, String(o.count))).font(.subheadline)
                     Spacer()
                     Image(systemName: o.open ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
                 }
@@ -365,7 +367,7 @@ struct ProjectsView: View {
                 let rows = screen.active ?? []
                 if rows.isEmpty && screen.settled == nil {
                     if !screen.projects.isEmpty && (screen.search?.query ?? "").isEmpty {
-                        ContentUnavailableView("Nothing active", systemImage: "tray")
+                        ContentUnavailableView(NativeMessages.sidebar_nothing(lang), systemImage: "tray")
                             .listRowBackground(Color.clear)
                     }
                 } else {
@@ -373,7 +375,7 @@ struct ProjectsView: View {
                     Section {
                         ForEach(rows.filter { !($0.faded ?? false) }) { ThreadRow(model: model, row: $0) { choosing = $0 } }
                     }
-                    if let o = screen.settled { foldRow("Settled", o, "side-settled") }
+                    if let o = screen.settled { foldRow(true, o, "side-settled") }
                     let faded = rows.filter { $0.faded ?? false }
                     if !faded.isEmpty {
                         Section {
@@ -383,7 +385,7 @@ struct ProjectsView: View {
                 }
             } else {
                 ForEach(screen.projects) { p in projectSection(p) }
-                if let o = screen.older { foldRow("Older", o, "side-older") }
+                if let o = screen.older { foldRow(false, o, "side-older") }
             }
         }
         .overlay {
@@ -399,7 +401,7 @@ struct ProjectsView: View {
                 }
             }
         }
-        .navigationTitle("Threads")
+        .navigationTitle(NativeMessages.tour_title_threads(lang))
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 HubsPill(model: model, hubs: screen.hubs) { pairing = true }
@@ -410,16 +412,16 @@ struct ProjectsView: View {
                     Menu {
                         ForEach(screen.hubs, id: \.key) { h in Button(h.name) { model.act("picker-open", h.key + "|") } }
                     } label: { Image(systemName: "folder.badge.plus") }
-                    .accessibilityLabel("Add project")
+                    .accessibilityLabel(NativeMessages.sidebar_add_project(lang))
                 } else {
-                    Button { model.act("picker-open") } label: { Image(systemName: "folder.badge.plus") }.accessibilityLabel("Add project")
+                    Button { model.act("picker-open") } label: { Image(systemName: "folder.badge.plus") }.accessibilityLabel(NativeMessages.sidebar_add_project(lang))
                 }
-                Button { pairing = true } label: { Image(systemName: "link") }.accessibilityLabel("Hubs")
+                Button { pairing = true } label: { Image(systemName: "link") }.accessibilityLabel(NativeMessages.native_settings_hubs(lang))
                 Menu {
-                    Button("Search threads", systemImage: "magnifyingglass") { model.act("find-open", "search") }
-                    Button("Settings", systemImage: "gear") { model.switchTab(.settings) }
+                    Button(NativeMessages.palette_search(lang), systemImage: "magnifyingglass") { model.act("find-open", "search") }
+                    Button(NativeMessages.palette_settings(lang), systemImage: "gear") { model.switchTab(.settings) }
                 } label: { Image(systemName: "ellipsis.circle") }
-                .accessibilityLabel("More")
+                .accessibilityLabel(NativeMessages.common_more(lang))
             }
         }
         .confirmationDialog(choosing?.label ?? "", isPresented: Binding(get: { choosing != nil }, set: { if !$0 { choosing = nil } }),
@@ -433,7 +435,7 @@ struct ProjectsView: View {
             ForEach(m.items, id: \.self) { i in
                 Button(i.label, role: i.tone == "danger" ? .destructive : nil) { pick(m, i) }
             }
-            Button("Cancel", role: .cancel) {}
+            Button(NativeMessages.common_cancel(lang), role: .cancel) {}
         }
         .onChange(of: screen.rowMenu) { _, m in if m == nil { shutMenu = nil } }
         .sheet(isPresented: Binding(get: { screen.folders != nil }, set: { if !$0 { model.act("proj-close") } })) {
@@ -488,7 +490,7 @@ struct ProjectsView: View {
             if let arch = p.archived, !arch.isEmpty, let v = p.value {
                 Button { model.act("toggle-settled", v) } label: {
                     HStack {
-                        Text("Archived \(arch.count)").font(.subheadline)
+                        Text(NativeMessages.native_thread_archived(lang, String(arch.count))).font(.subheadline)
                         Spacer()
                         Image(systemName: p.archOpen == true ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.tertiary)
                     }
@@ -506,14 +508,14 @@ struct ProjectsView: View {
                 .opacity(p.quiet == true ? 0.5 : 1)
                 Spacer()
                 Button { model.act("new-thread", p.id) } label: { Image(systemName: "square.and.pencil") }
-                    .accessibilityLabel("New thread")
+                    .accessibilityLabel(NativeMessages.thread_new(lang))
             }
             .contentShape(Rectangle())
             .onLongPressGesture(minimumDuration: 0.4) {
                 Haptics.impact()
                 model.act("proj-menu", p.id)
             }
-            .accessibilityAction(named: "Menu") { model.act("proj-menu", p.id) }
+            .accessibilityAction(named: NativeMessages.native_thread_menu(lang)) { model.act("proj-menu", p.id) }
         }
     }
 }
@@ -522,6 +524,7 @@ struct ProjectsView: View {
 // typing filters the list ("proj-find-q"), return goes to the first
 // project shown ("proj-go"), the x empties it
 private struct SearchField: View {
+    @Environment(\.backplaneLanguage) private var lang
     let model: AppModel
     let search: Search
     let first: String?
@@ -545,7 +548,7 @@ private struct SearchField: View {
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
+                    .accessibilityLabel(NativeMessages.native_thread_search_clear(lang))
             }
         }
         .onAppear { text = search.query }
@@ -557,6 +560,7 @@ private struct SearchField: View {
 
 // the project picker: a path field over the listed folder's rows
 private struct FoldersSheet: View {
+    @Environment(\.backplaneLanguage) private var lang
     let model: AppModel
     let folders: Folders
     @State private var text = ""
@@ -588,10 +592,10 @@ private struct FoldersSheet: View {
                     }
                 }
             }
-            .navigationTitle("Add project")
+            .navigationTitle(NativeMessages.sidebar_add_project(lang))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { model.act("proj-close") } }
+                ToolbarItem(placement: .cancellationAction) { Button(NativeMessages.common_cancel(lang)) { model.act("proj-close") } }
             }
         }
         .onAppear { text = folders.text }
@@ -618,6 +622,7 @@ private struct FoldersSheet: View {
 // title from the list. Never another thread: the screen may still hold the
 // one before for a moment after a tap.
 struct ThreadDestination: View {
+    @Environment(\.backplaneLanguage) private var lang
     let model: AppModel
     let id: String
 
@@ -640,8 +645,8 @@ struct ThreadDestination: View {
                 }
                 ForEach(0..<6) { _ in
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Conversation content").font(.headline)
-                        Text("The latest messages will appear here.")
+                        Text(NativeMessages.native_thread_content(lang)).font(.headline)
+                        Text(NativeMessages.native_thread_content_note(lang))
                     }.redacted(reason: .placeholder)
                 }
                 Spacer()
@@ -655,7 +660,7 @@ struct ThreadDestination: View {
 
     // the row's title in the list, while nothing of the thread is known
     private var title: String {
-        if id == AppModel.making { return "New thread" }
+        if id == AppModel.making { return NativeMessages.thread_new(lang) }
         if let d = model.destination, d.nav == id { return d.title }
         for p in model.screen?.projects ?? [] {
             for r in p.threads + p.snoozed + p.settled + (p.archived ?? []) where r.id == id { return r.title }
@@ -687,6 +692,7 @@ private struct SendingBubble: View {
 }
 
 struct ThreadScreen: View {
+    @Environment(\.backplaneLanguage) private var lang
     @Bindable var model: AppModel
     let thread: ThreadView
     // the client has this thread selected (else it shows as last seen,
@@ -849,7 +855,7 @@ struct ThreadScreen: View {
             }
             HStack {
                 Menu {
-                    Section("Model") {
+                    Section(NativeMessages.native_thread_model(lang)) {
                         ForEach(thread.picker.models, id: \.value) { c in
                             Button { model.act("model", c.value) } label: {
                                 if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
@@ -857,7 +863,7 @@ struct ThreadScreen: View {
                         }
                     }
                     if !thread.picker.efforts.isEmpty {
-                        Section("Effort") {
+                        Section(NativeMessages.native_thread_effort(lang)) {
                             ForEach(thread.picker.efforts, id: \.value) { c in
                                 Button { model.act("effort", c.value) } label: {
                                     if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
@@ -866,7 +872,7 @@ struct ThreadScreen: View {
                         }
                     }
                     if let ps = thread.picker.providers, !ps.isEmpty {
-                        Section("Provider") {
+                        Section(NativeMessages.native_bot_provider(lang)) {
                             ForEach(ps, id: \.value) { c in
                                 Button { model.act("effort", c.value) } label: {
                                     if c.on { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
@@ -882,14 +888,14 @@ struct ThreadScreen: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
-                .accessibilityLabel("Model and effort: " + thread.picker.label)
+                .accessibilityLabel(NativeMessages.native_thread_model_effort(lang, thread.picker.label))
                 Spacer(minLength: 0)
             }
             .padding(.horizontal).padding(.top, 8)
             ComposerExtras(model: model, thread: thread)
             HStack(alignment: .bottom, spacing: 8) {
                 AttachButton(model: model)
-                TextField("Ask the agent", text: Binding(get: { model.composer }, set: { model.draft($0) }), axis: .vertical)
+                TextField(NativeMessages.native_thread_composer(lang), text: Binding(get: { model.composer }, set: { model.draft($0) }), axis: .vertical)
                     .lineLimit(1...6)
                     .focused($focused)
                     .padding(.horizontal, 12).padding(.vertical, 8)
@@ -927,7 +933,7 @@ struct ThreadScreen: View {
             ForEach(m.items, id: \.self) { i in
                 Button(i.label) { shutFile = m; model.act(i.action, i.value) }
             }
-            Button("Cancel", role: .cancel) {}
+            Button(NativeMessages.common_cancel(lang), role: .cancel) {}
         }
         .onChange(of: fileMenu) { _, m in if m == nil { shutFile = nil } }
         .fullScreenCover(isPresented: Binding(get: { !thread.viewer.open.isEmpty }, set: { if !$0 { model.act("view", "") } })) {
@@ -972,7 +978,7 @@ struct ThreadScreen: View {
                         }
                         .foregroundStyle(u.busy.isEmpty ? Color.secondary : PhaseColor.accent)
                     }
-                    .accessibilityLabel("Subagents: " + (u.word ?? u.busy))
+                    .accessibilityLabel(NativeMessages.native_thread_subagents(lang, u.word ?? u.busy))
                 }
                 if !thread.viewer.choices.isEmpty {
                     Menu {
@@ -982,7 +988,7 @@ struct ThreadScreen: View {
                     } label: {
                         Image(systemName: "cpu")
                     }
-                    .accessibilityLabel("Board viewer")
+                    .accessibilityLabel(NativeMessages.native_thread_board(lang))
                 }
                 ForEach(thread.tools.filter { $0.action == "interrupt" }, id: \.self) { t in
                     Button(t.label, systemImage: "stop.fill") { model.act(t.action) }
@@ -1039,9 +1045,9 @@ struct ThreadScreen: View {
 
     // what a message on its way waits for
     private var sendNote: String {
-        guard let s = model.screen else { return "Sending…" }
+        guard let s = model.screen else { return NativeMessages.native_thread_sending(lang) }
         let c = model.conn[s.hub]?.phase ?? .connecting
-        return c == .online || c == .syncing ? "Sending…" : "Waiting for " + (s.hubs.first { $0.key == s.hub }?.name ?? "the hub") + "…"
+        return c == .online || c == .syncing ? NativeMessages.native_thread_sending(lang) : NativeMessages.native_thread_waiting(lang, s.hubs.first { $0.key == s.hub }?.name ?? NativeMessages.native_thread_hub(lang))
     }
 
     // a tool's icon (core/icons.bend's name) as an SF Symbol
