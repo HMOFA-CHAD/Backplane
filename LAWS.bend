@@ -1,5 +1,8 @@
 import Base
 import ./src/server/server.bend as MPCREDIT # mail perf
+# ---- i18n web phone imports ----
+import ./src/web/view.bend as WPH
+# ---- end i18n web phone imports ----
 import ./src/core/charter.bend as CH # mail 2c
 import ./src/core/mailrun.bend as MRUN # mail 2c
 import ./src/server/mailstore.bend as MIX # mail index
@@ -10316,3 +10319,15 @@ law mail_credit_native_kept:
   for w: MPCREDIT.Wire
   for charge: Nat
   {MPCREDIT.Wire.charged(True{}, w, charge) == w : MPCREDIT.Wire}
+# ---- i18n web phone ----
+law webphone_option_english:
+  {WPH.VLabel.option(I18.En{}, "ui.theme", "dark") == "dark" : String}
+law webphone_model_name_kept:
+  {WPH.VLabel.option(I18.Ja{}, "agent.model", "dark") == "dark" : String}
+law webphone_count_ungrouped:
+  {WPH.View.sub.badge(I18.En{}, 1200n) == "1200 agents" : String}
+law webphone_count_japanese:
+  {WPH.View.sub.badge(I18.Ja{}, 1200n) == "エージェント1200件" : String}
+law webphone_idle_japanese:
+  {Nt.Note.compact.head(I18.Ja{}, 0n) == "すべてのエージェントが待機中" : String}
+# ---- end i18n web phone ----

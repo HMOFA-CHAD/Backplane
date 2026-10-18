@@ -776,7 +776,7 @@ document.addEventListener("wheel", (e) => {
 const FRAME_KEYS = { Enter: 1, Backspace: 1, Tab: 1, Escape: 1, Delete: 1, ArrowLeft: 1, ArrowRight: 1, ArrowUp: 1, ArrowDown: 1, Home: 1, End: 1, PageUp: 1, PageDown: 1 };
 document.addEventListener("keydown", (e) => {
   const el = e.target.closest?.("[data-keyto]");
-  if (!el || e.isComposing || e.metaKey) return;
+  if (!el || (e.isComposing || e.keyCode === 229) || e.metaKey) return;
   e.preventDefault();
   e.stopImmediatePropagation();
   if (e.key.length === 1 && !e.ctrlKey && !e.altKey) {
@@ -796,7 +796,7 @@ const KEYS_PAGE = App.keys_page().split(",");
 const KEYS_TERM = App.keys_term().split(",");
 
 document.addEventListener("keydown", (e) => {
-  if (e.isComposing) return;
+  if (e.isComposing || e.keyCode === 229) return;
   const field = e.target.closest?.("[data-keys]");
   const combo = (e.ctrlKey ? "ctrl+" : "") + (e.altKey ? "alt+" : "") + (e.shiftKey ? "shift+" : "") + e.key.toLowerCase();
   if ((field ? KEYS_TERM : KEYS_PAGE).includes(combo)) {
@@ -811,6 +811,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
   // up and down move the highlight in a menu the field offers (the
   // composer's completions)
   if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -840,7 +841,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   const el = e.target.closest?.("[data-enter]");
-  if (!el || e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+  if (!el || e.key !== "Enter" || e.shiftKey || (e.isComposing || e.keyCode === 229)) return;
   e.preventDefault();
   // ctrl/cmd+Enter: the element's other action (send with the other follow-up mode)
   const alt = (e.ctrlKey || e.metaKey) && el.getAttribute("data-enter-alt");
@@ -894,7 +895,7 @@ document.addEventListener("keydown", (e) => {
     tourDrop = "";
     return;
   }
-  if (e.isComposing) return;
+  if (e.isComposing || e.keyCode === 229) return;
   tourEaten.add(e.code);
   e.stopImmediatePropagation();
   if (e.ctrlKey || e.metaKey || e.altKey) { e.preventDefault(); return; }
@@ -968,7 +969,7 @@ function lbPinch() {
 
 function lbOpen(url) {
   lbClose();
-  const el = create(App.lb_node(url));
+  const el = create(App.lb_node_in(App.lang(ui), url));
   const img = el.querySelector("img");
   lb = { el, img, v: App.lb_open(), drawing: false, pointers: new Map(), pinch: null };
   img.style.visibility = "hidden"; // until loaded; lb_css then sets the whole style
