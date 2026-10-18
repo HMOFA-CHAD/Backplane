@@ -46,6 +46,7 @@ import ./src/core/semver.bend as SV
 import ./src/core/clipath.bend as CPA
 import ./src/app/nui.bend as N
 import ./src/app/bots.bend as BV
+import ./src/core/sexpr.bend as KSEX # kicad fork footprint placement
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
 import ./src/core/deploy.bend as DP
@@ -10493,3 +10494,8 @@ law fork_cache_alias:
   for id: String
   {SC.Sch.cache.name("local", id) == "local" : String}
 # ---- end kicad fork viewers ----
+# ---- kicad fork footprint placement ----
+law fork_footprint_legacy_at:
+  for x: KSEX.Sx
+  {B.Fp.at.k(True{}, x) == KSEX.Sx.get(x, "at") : KSEX.Sx}
+# ---- end kicad fork footprint placement ----
