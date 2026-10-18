@@ -35,3 +35,21 @@ Plural categories have a P prefix because Base already owns Zero.
 Byte units use 1024 and truncate tenths below 10, integers from 10.
 I18n.day's offset is eastward seconds; convert signed TzOff wall time at callers.
 Run all Bend checks/builds through work_run lock bend and the project caps.
+
+Native phone messages are selected by `i18n/native.keys`. The same generator
+emits typed, pure Swift/Kotlin functions in `mobile/ios/Shared/NativeMessages.swift`
+and Android `NativeMessages.kt`. Commit these outputs together with the catalogs;
+`--check` rejects stale native output too. Counts are UInt64/ULong; strings,
+selects and plural branches compile directly, with English fallback grammar.
+No runtime ICU parser or separate translated native table is used.
+
+Native views take the canonical `locale` tag carried in their screen. The bridge
+caches this tag from Bend's `native_locale` when device settings change; it uses
+the same normalization and preview gate as hub-backed screens. It also keeps the
+unpaired list in this language. Old cached screens omit the optional tag and
+render English until the bridge provides a fresh screen. Device Settings and
+the tab bar are migrated first; other native copy is still being extracted.
+
+Local heavy validation uses bp-admit with an honest memory/CPU reservation;
+Boat remains preferred for combined check/proof/test jobs. The earlier global
+bend-lock example above is superseded by this resource policy.

@@ -12162,3 +12162,10 @@ def Laws.mail_log_count_committed(c, fresh):
   match c:
     case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n}, managed, link, freecad, ks}}:
       {==}
+
+# ---- native phone i18n ----
+def Laws.native_language_english(): {==}
+def Laws.native_language_preview(): {==}
+def Laws.native_language_system(): {==}
+def Laws.native_language_fallback(): {==}
+# ---- end native phone i18n ----

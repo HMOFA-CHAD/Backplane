@@ -1038,3 +1038,27 @@ browser.handback.tip = 操作をエージェントに戻す
 ask.send.tip = ファイルを送信して見積もりを取得
 ask.send.none = 送信せずに閉じる
 ask.notnow = 今はしない
+
+# Native phone tabs and device Settings.
+native.tab.home = ホーム
+native.settings.system = システム
+native.settings.opens = 起動時のタブ
+native.settings.haptics = 触覚フィードバック
+native.settings.behaviour = 動作
+native.settings.behaviour.ios = プロジェクト別、または対応待ちを優先した実行状況別に表示します。自動ではメインボットがあればホーム、それ以外はスレッドを開きます。
+native.settings.behaviour.android = プロジェクト別、または対応待ちを優先した実行状況別に表示します。
+native.settings.notifications = 通知
+native.settings.notasked = 未確認
+native.settings.system.open = システム設定を開く
+native.settings.system.settings = システム設定
+native.settings.notify.hub = 通知する内容は{name}で設定します。
+native.settings.hubs = ハブ
+native.settings.hub = ハブ設定
+native.settings.hub.named = ハブ設定 · {name}
+native.settings.paired = {count}台とペアリング済み
+native.settings.kept = 保存済みの状態
+native.settings.cache.clear = キャッシュを削除
+native.settings.cache = キャッシュ
+native.settings.cache.next = 次回の起動時に各ハブの履歴を再取得します。
+native.settings.about = このアプリについて
+native.settings.cache.ask = キャッシュを削除しますか？
