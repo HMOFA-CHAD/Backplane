@@ -89,3 +89,18 @@ and sending states use generated messages. Folded shelf counts retain raw
 English digits and use stable selection instead of matching English labels.
 Android snackbar effects include the locale so Dismiss refreshes when it
 changes; error content remains unchanged. Native runtime/device review is pending.
+
+Native thread cards, copy/select menus, attachments, diff/search panels and
+terminal controls use generated messages. Complete accessibility/fold labels
+retain raw text, file names, questions and terminal titles. Android sheet
+default Close resolves in composition from the current locale; explicit labels
+are preserved. Terminal bytes, keys and metrics stay unchanged. Git, keycaps
+esc/tab and the glyph metric M are technical identifiers, kept literal.
+Device visuals/live interaction remain pending; Japanese stays preview.
+
+Catalog metadata (key and missing-translation lists) is emitted in bounded
+chunks and joined with tail calls. This avoids a JavaScript build stack
+overflow as catalogs grow, while keeping sorted keys and fallback metadata
+unchanged. The HTML-backend regression exercises 4,097 keys and a large
+missing list, checking every entry and its order. Native output and message
+lookup stay unchanged by this metadata representation.

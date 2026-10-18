@@ -21,6 +21,11 @@ def catalog(text):
 
 
 class NativeCodegen(unittest.TestCase):
+    def test_catalog_metadata_helpers_cannot_shadow_a_message(self):
+        cats = {'en': catalog('catalog.rev = Source'), 'ja': catalog('catalog.rev = 翻訳')}
+        with self.assertRaises(gen.CatalogError):
+            gen.generate(cats)
+
     def test_duplicate_native_key(self):
         with self.assertRaises(gen.CatalogError):
             gen.native_keys('common.save\ncommon.save')
