@@ -15,6 +15,12 @@ struct RootView: View {
     @State private var tourReady = false
 
     var body: some View {
+        content
+            .environment(\.backplaneLanguage, model.screen?.locale ?? "en")
+            .environment(\.locale, Locale(identifier: model.screen?.locale ?? "en"))
+    }
+
+    @ViewBuilder private var content: some View {
         if model.links.isEmpty {
             NavigationStack { PairView(tag: model.screen?.locale ?? "en", link: "") { model.pair($0) } }
         } else if let s = model.screen {

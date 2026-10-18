@@ -60,3 +60,12 @@ They read the resolved screen locale even before a hub is paired. Native iOS
 connection relative dates and counts use that locale explicitly. OS camera
 permission descriptions and the remaining native views are separate extraction
 work; Japanese remains preview-only.
+
+Native file/review/task/space controls read the same resolved tag through
+`EnvironmentValues.backplaneLanguage` on iOS and `LocalBackplaneLanguage` on
+Android, provided by the root screen. They default to English for old screens;
+all OS/override/preview policy remains in Bend. iOS also supplies that locale to
+SwiftUI's built-in controls. PDF fetches retain failure kinds and HTTP codes,
+then translate during rendering; changing language does not repeat the fetch.
+Task result status uses known protocol ids and preserves unknown result text.
+File names, comments, checklists, space contents and task names remain content.

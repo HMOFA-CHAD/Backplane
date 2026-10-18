@@ -203,7 +203,7 @@ fun App(m: AppModel) {
     var leftNew by remember { mutableStateOf(false) }
     LaunchedEffect(s?.making) { if (s?.making != true) leftNew = false }
     // a file link tapped in a message asks for its menu
-    CompositionLocalProvider(LocalFileTap provides { p: String -> m.act("file-menu", p) }) { when {
+    CompositionLocalProvider(LocalBackplaneLanguage provides (s?.locale ?: "en"), LocalFileTap provides { p: String -> m.act("file-menu", p) }) { when {
         m.links.isEmpty() -> Pair(s?.locale ?: "en", "", cancel = null) { m.pair(it) }
         s == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         pairing -> {

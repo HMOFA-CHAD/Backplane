@@ -9,9 +9,19 @@ enum NativeMessages {
     return String(result.reversed())
   }
 
+  // bots.name
+  static func bots_name(_ tag: String) -> String {
+    tag == "ja" ? ("名前") : ("Name")
+  }
+
   // bots.tab.routines
   static func bots_tab_routines(_ tag: String) -> String {
     tag == "ja" ? ("ルーティン") : ("Routines")
+  }
+
+  // browser.address
+  static func browser_address(_ tag: String) -> String {
+    tag == "ja" ? ("アドレス") : ("Address")
   }
 
   // common.cancel
@@ -24,9 +34,64 @@ enum NativeMessages {
     tag == "ja" ? ("クリア") : ("Clear")
   }
 
+  // common.close
+  static func common_close(_ tag: String) -> String {
+    tag == "ja" ? ("閉じる") : ("Close")
+  }
+
+  // common.delete
+  static func common_delete(_ tag: String) -> String {
+    tag == "ja" ? ("削除") : ("Delete")
+  }
+
+  // common.go
+  static func common_go(_ tag: String) -> String {
+    tag == "ja" ? ("移動") : ("Go")
+  }
+
+  // common.refresh
+  static func common_refresh(_ tag: String) -> String {
+    tag == "ja" ? ("更新") : ("Refresh")
+  }
+
+  // common.reload
+  static func common_reload(_ tag: String) -> String {
+    tag == "ja" ? ("再読み込み") : ("Reload")
+  }
+
+  // common.run
+  static func common_run(_ tag: String) -> String {
+    tag == "ja" ? ("実行") : ("Run")
+  }
+
+  // composer.send
+  static func composer_send(_ tag: String) -> String {
+    tag == "ja" ? ("送信") : ("Send")
+  }
+
+  // files.back.tip
+  static func files_back_tip(_ tag: String) -> String {
+    tag == "ja" ? ("フォルダに戻る") : ("Back to the folder")
+  }
+
   // files.changed
   static func files_changed(_ tag: String, _ arg0: UInt64) -> String {
     tag == "ja" ? ((arg0 == 0 ? "変更なし" : "変更ファイル" + number(arg0) + "件")) : ((arg0 == 0 ? "No files changed" : (arg0 == 1 ? number(arg0) + " file changed" : number(arg0) + " files changed")))
+  }
+
+  // native.browser.empty
+  static func native_browser_empty(_ tag: String) -> String {
+    tag == "ja" ? ("ページなし") : ("No page yet")
+  }
+
+  // native.browser.screenshot
+  static func native_browser_screenshot(_ tag: String) -> String {
+    tag == "ja" ? ("スクリーンショット") : ("Screenshot")
+  }
+
+  // native.browser.typing
+  static func native_browser_typing(_ tag: String) -> String {
+    tag == "ja" ? ("ページに入力") : ("Type into the page")
   }
 
   // native.common.ok
@@ -37,6 +102,21 @@ enum NativeMessages {
   // native.common.title
   static func native_common_title(_ tag: String) -> String {
     tag == "ja" ? ("タイトル") : ("Title")
+  }
+
+  // native.file.image.unsupported
+  static func native_file_image_unsupported(_ tag: String) -> String {
+    tag == "ja" ? ("この画像は表示できません") : ("This image cannot be shown here")
+  }
+
+  // native.file.page
+  static func native_file_page(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? (arg0 + "ページ") : ("Page " + arg0)
+  }
+
+  // native.file.pdf.error
+  static func native_file_pdf_error(_ tag: String, _ arg0: String, _ arg1: String) -> String {
+    tag == "ja" ? ((arg0 == "send" ? "ハブからPDFを取得できません（12 MBを超えている可能性があります）" : (arg0 == "http" ? "ハブの応答：" + arg1 : "このPDFは表示できません"))) : ((arg0 == "send" ? "The hub could not send this PDF (it may be over 12 MB)" : (arg0 == "http" ? "The hub answered " + arg1 : "This PDF cannot be shown here")))
   }
 
   // native.hub.accessibility
@@ -67,6 +147,21 @@ enum NativeMessages {
   // native.hub.state
   static func native_hub_state(_ tag: String, _ arg0: String) -> String {
     tag == "ja" ? ((arg0 == "online" ? "接続済み" : (arg0 == "syncing" ? "同期中" : (arg0 == "offline" ? "オフライン・再接続中" : "接続中")))) : ((arg0 == "online" ? "Connected" : (arg0 == "syncing" ? "Catching up" : (arg0 == "offline" ? "Offline, retrying" : "Connecting"))))
+  }
+
+  // native.key.enter
+  static func native_key_enter(_ tag: String) -> String {
+    tag == "ja" ? ("Enter") : ("Enter")
+  }
+
+  // native.key.esc
+  static func native_key_esc(_ tag: String) -> String {
+    tag == "ja" ? ("Esc") : ("Esc")
+  }
+
+  // native.key.tab
+  static func native_key_tab(_ tag: String) -> String {
+    tag == "ja" ? ("Tab") : ("Tab")
   }
 
   // native.pair.action
@@ -152,6 +247,26 @@ enum NativeMessages {
   // native.pair.unpair
   static func native_pair_unpair(_ tag: String) -> String {
     tag == "ja" ? ("ペアリング解除") : ("Unpair")
+  }
+
+  // native.review.comment
+  static func native_review_comment(_ tag: String) -> String {
+    tag == "ja" ? ("コメント") : ("Comment")
+  }
+
+  // native.review.place
+  static func native_review_place(_ tag: String, _ arg0: String, _ arg1: String) -> String {
+    tag == "ja" ? ("位置：" + arg0 + ", " + arg1 + " mm") : ("at " + arg0 + ", " + arg1 + " mm")
+  }
+
+  // native.review.resolved
+  static func native_review_resolved(_ tag: String) -> String {
+    tag == "ja" ? ("解決済み") : ("Resolved")
+  }
+
+  // native.review.write
+  static func native_review_write(_ tag: String) -> String {
+    tag == "ja" ? ("コメントを書く") : ("Write a note")
   }
 
   // native.settings.about
@@ -264,9 +379,79 @@ enum NativeMessages {
     tag == "ja" ? ("ホーム") : ("Home")
   }
 
+  // native.task.delete.ask
+  static func native_task_delete_ask(_ tag: String) -> String {
+    tag == "ja" ? ("このタスクを削除しますか？") : ("Delete this task?")
+  }
+
+  // native.task.note
+  static func native_task_note(_ tag: String) -> String {
+    tag == "ja" ? ("大事な点を伝える") : ("Tell it what matters")
+  }
+
+  // native.task.parameter
+  static func native_task_parameter(_ tag: String, _ arg0: String, _ arg1: String) -> String {
+    tag == "ja" ? (arg0 + "（" + arg1 + "）") : (arg0 + " (" + arg1 + ")")
+  }
+
+  // native.task.private
+  static func native_task_private(_ tag: String) -> String {
+    tag == "ja" ? ("非公開") : ("private")
+  }
+
+  // native.task.state
+  static func native_task_state(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ((arg0 == "ok" ? "完了" : (arg0 == "failed" ? "失敗" : (arg0 == "stopped" ? "停止" : arg0)))) : ((arg0 == "ok" ? "ok" : (arg0 == "failed" ? "failed" : (arg0 == "stopped" ? "stopped" : arg0))))
+  }
+
+  // native.viewer.source
+  static func native_viewer_source(_ tag: String) -> String {
+    tag == "ja" ? ("表示元") : ("Source")
+  }
+
   // palette.settings
   static func palette_settings(_ tag: String) -> String {
     tag == "ja" ? ("設定") : ("Settings")
+  }
+
+  // review.fails
+  static func review_fails(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("不合格：" + arg0) : ("Fails: " + arg0)
+  }
+
+  // review.force
+  static func review_force(_ tag: String) -> String {
+    tag == "ja" ? ("チェック失敗時もリリース") : ("Release even if checks fail")
+  }
+
+  // review.passes
+  static func review_passes(_ tag: String) -> String {
+    tag == "ja" ? ("合格") : ("Passes")
+  }
+
+  // review.publish
+  static func review_publish(_ tag: String) -> String {
+    tag == "ja" ? ("GitHubで公開") : ("Publish on GitHub")
+  }
+
+  // review.release.make
+  static func review_release_make(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("リリース" + arg0 + "を作成") : ("Make release " + arg0)
+  }
+
+  // review.reopen
+  static func review_reopen(_ tag: String) -> String {
+    tag == "ja" ? ("再開") : ("Reopen")
+  }
+
+  // review.reply
+  static func review_reply(_ tag: String) -> String {
+    tag == "ja" ? ("返信") : ("Reply")
+  }
+
+  // review.resolve
+  static func review_resolve(_ tag: String) -> String {
+    tag == "ja" ? ("解決済みにする") : ("Resolve")
   }
 
   // settings.appearance
@@ -329,6 +514,46 @@ enum NativeMessages {
     tag == "ja" ? ("ツアーを表示") : ("Show the tour")
   }
 
+  // teach.description
+  static func teach_description(_ tag: String) -> String {
+    tag == "ja" ? ("処理内容（任意）") : ("What it does (optional)")
+  }
+
+  // teach.empty
+  static func teach_empty(_ tag: String) -> String {
+    tag == "ja" ? ("タスクはまだありません。ブラウザタブかチャットで教えてください。") : ("None yet. Teach one in the Browser tab, or tell it in chat.")
+  }
+
+  // teach.name.note
+  static func teach_name_note(_ tag: String) -> String {
+    tag == "ja" ? ("名前を付けてください。毎回入力する値を指定できます。") : ("Name it. Mark a value you typed to ask for it each time the task runs.")
+  }
+
+  // teach.note.add
+  static func teach_note_add(_ tag: String) -> String {
+    tag == "ja" ? ("メモを追加") : ("Add note")
+  }
+
+  // teach.run.note
+  static func teach_run_note(_ tag: String) -> String {
+    tag == "ja" ? ("開いて実行できます。ルーティンからも実行できます。") : ("Open one to run it. A routine can run it too.")
+  }
+
+  // teach.runs
+  static func teach_runs(_ tag: String) -> String {
+    tag == "ja" ? ("最近の実行") : ("Recent runs")
+  }
+
+  // teach.save
+  static func teach_save(_ tag: String) -> String {
+    tag == "ja" ? ("このタスクを保存") : ("Save this task")
+  }
+
+  // teach.steps
+  static func teach_steps(_ tag: String, _ arg0: String, _ arg1: String, _ arg2: String) -> String {
+    tag == "ja" ? (arg0 + "・" + arg1 + "ステップ") : (arg0 + " · " + arg1 + " " + (arg2 == "one" ? "step" : "steps"))
+  }
+
   // tour.back
   static func tour_back(_ tag: String) -> String {
     tag == "ja" ? ("戻る") : ("Back")
@@ -357,5 +582,10 @@ enum NativeMessages {
   // turn.by
   static func turn_by(_ tag: String, _ arg0: String) -> String {
     tag == "ja" ? ((arg0 == "you" ? "自分" : (arg0 == "agent" ? "エージェント" : "不明"))) : ((arg0 == "you" ? "You" : (arg0 == "agent" ? "Agent" : "Someone")))
+  }
+
+  // viewer.files.empty
+  static func viewer_files_empty(_ tag: String) -> String {
+    tag == "ja" ? ("空のフォルダ") : ("This folder is empty")
   }
 }

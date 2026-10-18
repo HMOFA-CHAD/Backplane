@@ -1069,3 +1069,24 @@ native.hub.changes = {count} changes
 native.hub.heard = heard {when}
 native.hub.connection = {state} to {name}
 native.hub.accessibility = {name}: {state}
+
+# Native file, review, task and space controls.
+native.viewer.source = Source
+native.file.image.unsupported = This image cannot be shown here
+native.file.pdf.error = {kind, select, send {The hub could not send this PDF (it may be over 12 MB)} http {The hub answered {code}} other {This PDF cannot be shown here}}
+native.file.page = Page {number}
+native.review.comment = Comment
+native.review.resolved = Resolved
+native.review.write = Write a note
+native.review.place = at {x}, {y} mm
+native.browser.typing = Type into the page
+native.browser.empty = No page yet
+native.browser.screenshot = Screenshot
+native.task.private = private
+native.task.note = Tell it what matters
+native.task.delete.ask = Delete this task?
+native.task.state = {state, select, ok {ok} failed {failed} stopped {stopped} other {{state}}}
+native.task.parameter = {label} ({example})
+native.key.enter = Enter
+native.key.tab = Tab
+native.key.esc = Esc
