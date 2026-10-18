@@ -1,4 +1,5 @@
 import Base
+import ./side_row_types.bend as ST
 import ../core/title.bend as TTL
 import ../core/i18n.bend as I
 import ../core/cef.bend as CF
@@ -348,6 +349,39 @@ def Lay.row.k2(seen: Bool, +ty: Ty, +t: M.Thread, +ix: U.SIx, +st: M.State, +sel
 def Lay.row(+ty: Ty, +t: M.Thread, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
   Lay.row.k2(Lay.row.seen(c, y), ty, t, ix, st, sel, now, snoozed, c, y)
 
+# The active view
+# ---------------
+# One list of every live thread, what waits on the person first, then the
+# ones settled lately, faded (core's Active.rows). A row shows its
+# project's name where the other view shows the age.
+
+def Lay.arow.k(+ty: Ty, +on: Bool, id: String, title: String, +proj: String, +badge: String, +faded: Bool, +dot: U32, +tint: U32, +c: D.Clip, +y: U32) -> Out:
+  +pn = Ty.fit(ty, 2n, Lay.row.note(badge, proj), 96)
+  +pw = Ty.width(ty, 2n, pn)
+  Out{List.concat(&2, R.Op, [
+      Bool.pick(List<&2, R.Op>, on, List.append(&2, R.Op, Lay.round(c, 6, (y + 1 : U32), 252, 30, 6, T.Th.raise()), [D.Draw.rect(c, 6, (y + 1 : U32), 2, 30, tint, 255)]), Nil{}),
+      [D.Draw.disc(c, 19.0, U32.to_f32((y + 16 : U32)), 3.0, Bool.pick(U32, faded, T.Th.line(), dot), 255)],
+      Ty.text(ty, 0n, Ty.fit(ty, 0n, title, (252 - 32 - pw - 12 : U32)), c, 32, y, 32, Bool.pick(U32, on, T.Th.text(), Bool.pick(U32, faded, T.Th.faint(), T.Th.soft()))),
+      Ty.text(ty, 2n, pn, c, (252 - pw : U32), y, 32, Lay.row.nc(badge, Bool.pick(U32, faded, T.Th.line(), T.Th.faint())))]),
+    [Lay.hit(0, y, 264, 32, "select", id)]}
+
+def Lay.arow.on(+ty: Ty, r: U.ARow, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Out:
+  match r:
+    case U.ARow{_, _, +t, +pid, +pt, +faded}:
+      Lay.arow.k(ty, String.eq(M.Thread.id(t), sel), M.Thread.id(t), U.Label.title(st, M.Thread.id(t), TTL.Title.shown(Ty.loc(ty), U.Active.title(t))), pt, SB.Subs.badge(SB.Subs.count.ix(ix, st, M.Thread.id(t))), faded, Lay.phase(U.Side.phase.ix(ix, st, t)), BG.Badge.rgb_of(st, pid), c, y)
+
+def Lay.arow.id(r: U.ARow) -> String:
+  match r:
+    case U.ARow{_, _, t, _, _, _}:
+      M.Thread.id(t)
+
+def Lay.arow.k2(seen: Bool, +ty: Ty, r: U.ARow, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Out:
+  match seen:
+    case True{}:
+      Lay.arow.on(ty, r, ix, st, sel, c, y)
+    case False{}:
+      Out{Nil{}, [Lay.hit(0, y, 264, 32, "select", Lay.arow.id(r))]}
+
 # rows from y down; answers the output and the next y
 type Col is Data:
   Col{out: Out, y: U32}
@@ -357,42 +391,122 @@ def Lay.col.cat(o: Out, c: Col) -> Col:
     case Col{o2, y}:
       Col{Out.cat(o, o2), y}
 
-def Lay.rows(+ty: Ty, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Col:
+# The sidebar alone carries visible row memos. Other layout keeps Col.
+type SideCol is Data:
+  SideCol{out: Out, y: U32, rows: List<&2, ST.SideRowM>, hits: Nat}
+
+def SideCol.lift(c: Col) -> SideCol:
+  match c:
+    case Col{o, y}: SideCol{o, y, Nil{}, 0n}
+
+def SideCol.col(c: SideCol) -> Col:
+  match c:
+    case SideCol{o, y, _, _}: Col{o, y}
+
+def SideCol.out(c: SideCol) -> Out:
+  match c:
+    case SideCol{o, _, _, _}: o
+
+def SideCol.rows(c: SideCol) -> List<&2, ST.SideRowM>:
+  match c:
+    case SideCol{_, _, rows, _}: rows
+
+def SideCol.hits(c: SideCol) -> Nat:
+  match c:
+    case SideCol{_, _, _, hits}: hits
+
+def SideCol.row(step: ST.SideRowStep, y: U32) -> SideCol:
+  match step:
+    case ST.SideRowStep{ops, hs, rows, hits}: SideCol{Out{ops, hs}, y, rows, hits}
+
+def SideCol.cat(o: Out, c: SideCol) -> SideCol:
+  match c:
+    case SideCol{o2, y, rows, hits}: SideCol{Out.cat(o, o2), y, rows, hits}
+
+def SideCol.join(a: SideCol, b: SideCol) -> SideCol:
+  match a b:
+    case SideCol{ao, _, ar, ah} SideCol{bo, by, br, bh}:
+      SideCol{Out.cat(ao, bo), by, List.append(&2, ST.SideRowM, ar, br), Nat.add(ah, bh)}
+
+def SideCol.then(a: SideCol, k: U32 -> SideCol) -> SideCol:
+  match a:
+    case SideCol{o, +y, rows, hits}:
+      SideCol.join(SideCol{o, y, rows, hits}, k(y))
+
+def SideCol.layer(c: SideCol, k: Col -> Out) -> SideCol:
+  match c:
+    case SideCol{o, +y, rows, hits}: SideCol{k(Col{o, y}), y, rows, hits}
+
+type SideFreshCtx is Data:
+  SideFreshCtx{ty: Ty, ix: U.SIx, state: M.State, selected: String, now: Nat}
+
+def Lay.fresh.step(o: Out) -> ST.SideRowStep:
+  match o:
+    case Out{ops, hs}: ST.SideRowStep{ops, hs, Nil{}, 0n}
+
+def Lay.fresh.req(req: ST.SideRowReq, ctx: SideFreshCtx) -> ST.SideRowStep:
+  match req ctx:
+    case ST.SideProjectRow{t, sn, c, y} SideFreshCtx{ty, ix, st, sel, now}:
+      Lay.fresh.step(Lay.row(ty, t, ix, st, sel, now, sn, c, y))
+    case ST.SideActiveRow{r, +c, +y} SideFreshCtx{ty, ix, st, sel, _}:
+      Lay.fresh.step(Lay.arow.k2(Lay.row.seen(c, y), ty, r, ix, st, sel, c, y))
+
+def Lay.fresh.run(cs: List<&2, SideFreshCtx>, req: ST.SideRowReq) -> ST.SideRowStep:
+  match cs:
+    case ctx <> _: Lay.fresh.req(req, ctx)
+    case Nil{}: Lay.fresh.req(req, SideFreshCtx{Ty.none(), U.Side.ix(M.State.empty()), M.State.empty(), "", 0n})
+
+def Lay.fresh(ty: Ty, ix: U.SIx, st: M.State, sel: String, now: Nat) -> List<&2, SideFreshCtx>:
+  [SideFreshCtx{ty, ix, st, sel, now}]
+
+def Lay.rows.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match ts:
     case Nil{}:
-      Col{Out.none(), y}
-    case +t <> rest:
-      Lay.col.cat(Lay.row(ty, t, ix, st, sel, now, snoozed, c, y), Lay.rows(ty, rest, ix, st, sel, now, snoozed, c, (y + 32 : U32)))
+      SideCol{Out.none(), y, Nil{}, 0n}
+    case t <> rest:
+      SideCol.join(SideCol.row(paint(pc, ST.SideProjectRow{t, snoozed, c, y}), (y + 32 : U32)), Lay.rows.m(~PC, ~paint, ty, rest, ix, st, sel, now, snoozed, c, (y + 32 : U32), pc))
+
+def Lay.rows(+ty: Ty, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.rows.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, ts, ix, st, sel, now, snoozed, c, y, Lay.fresh(ty, ix, st, sel, now)))
 
 def Lay.col.then(a: Col, k: U32 -> Col) -> Col:
   match a:
     case Col{o, +y}:
       Lay.col.cat(o, k(y))
 
-def Lay.shelf.k(+ty: Ty, open: Bool, +key: String, +label: String, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
+def Lay.shelf.k.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, open: Bool, +key: String, +label: String, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match open:
     case True{}:
-      Lay.col.cat(Out{List.append(&2, R.Op, Lay.icon(ty, "chevron-down", c, 12, (y + 6 : U32), T.Th.dim()), Ty.text(ty, 2n, label, c, 32, y, 28, T.Th.dim())), [Lay.hit(0, y, 264, 28, "toggle-settled", key)]},
-        Lay.rows(ty, ts, ix, st, sel, now, False{}, c, (y + 28 : U32)))
+      SideCol.cat(Out{List.append(&2, R.Op, Lay.icon(ty, "chevron-down", c, 12, (y + 6 : U32), T.Th.dim()), Ty.text(ty, 2n, label, c, 32, y, 28, T.Th.dim())), [Lay.hit(0, y, 264, 28, "toggle-settled", key)]},
+        Lay.rows.m(~PC, ~paint, ty, ts, ix, st, sel, now, False{}, c, (y + 28 : U32), pc))
     case False{}:
-      Col{Out{List.append(&2, R.Op, Lay.icon(ty, "chevron-right", c, 12, (y + 6 : U32), T.Th.faint()), Ty.text(ty, 2n, label, c, 32, y, 28, T.Th.faint())), [Lay.hit(0, y, 264, 28, "toggle-settled", key)]}, (y + 28 : U32)}
+      SideCol{Out{List.append(&2, R.Op, Lay.icon(ty, "chevron-right", c, 12, (y + 6 : U32), T.Th.faint()), Ty.text(ty, 2n, label, c, 32, y, 28, T.Th.faint())), [Lay.hit(0, y, 264, 28, "toggle-settled", key)]}, (y + 28 : U32), Nil{}, 0n}
+
+def Lay.shelf.k(+ty: Ty, open: Bool, +key: String, +label: String, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.shelf.k.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, open, key, label, ts, ix, st, sel, now, c, y, Lay.fresh(ty, ix, st, sel, now)))
 
 # a collapsible shelf (Settled, Archived): its name and count, then its rows
 # when open; nothing when empty
-def Lay.shelf(+ty: Ty, open: Bool, +key: String, +name: String, st: List<&2, M.Thread>, +ix: U.SIx, +s: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
+def Lay.shelf.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, open: Bool, +key: String, +name: String, st: List<&2, M.Thread>, +ix: U.SIx, +s: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match st:
     case Nil{}:
-      Col{Out.none(), y}
+      SideCol{Out.none(), y, Nil{}, 0n}
     case +t <> +rest:
-      Lay.shelf.k(ty, open, key, name ++ " " ++ Nat.show(1n+List.length(&2, M.Thread, rest)), t <> rest, ix, s, sel, now, c, y)
+      Lay.shelf.k.m(~PC, ~paint, ty, open, key, name ++ " " ++ Nat.show(1n+List.length(&2, M.Thread, rest)), t <> rest, ix, s, sel, now, c, y, pc)
+
+def Lay.shelf(+ty: Ty, open: Bool, +key: String, +name: String, st: List<&2, M.Thread>, +ix: U.SIx, +s: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.shelf.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, open, key, name, st, ix, s, sel, now, c, y, Lay.fresh(ty, ix, s, sel, now)))
 
 # snoozed threads under a label, soonest to wake first
-def Lay.snoozed(+ty: Ty, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
+def Lay.snoozed.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match ts:
     case Nil{}:
-      Col{Out.none(), y}
+      SideCol{Out.none(), y, Nil{}, 0n}
     case +t <> +rest:
-      Lay.col.cat(Out.ops(Ty.text(ty, 2n, MSG.T.sidebar.snoozed(Ty.loc(ty)), c, 16, y, 28, T.Th.faint())), Lay.rows(ty, t <> rest, ix, st, sel, now, True{}, c, (y + 28 : U32)))
+      SideCol.cat(Out.ops(Ty.text(ty, 2n, MSG.T.sidebar.snoozed(Ty.loc(ty)), c, 16, y, 28, T.Th.faint())), Lay.rows.m(~PC, ~paint, ty, t <> rest, ix, st, sel, now, True{}, c, (y + 28 : U32), pc))
+
+def Lay.snoozed(+ty: Ty, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.snoozed.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, ts, ix, st, sel, now, c, y, Lay.fresh(ty, ix, st, sel, now)))
 
 # A project's badge editor, open under its name: the tints, then the
 # icons, each set placed by the flow in core/menu.bend (law
@@ -460,145 +574,154 @@ def Look.open(open: Bool, +ty: Ty, +st: M.State, +id: String, +rm: Bool, +c: D.C
 # hit starts past x 10, where a drag drops onto the header), its
 # + for a new thread, the editor when open, then its threads
 # (quiet: no live thread, so its name and badge are faded)
-def Lay.project(+ty: Ty, r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.project.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match r:
     case U.SRow{_, M.Project{+id, title, _, _, _}, M.Shelves{pinned, active, settled, hidden, snoozed}}:
       +fade = Bool.or(quiet, U.Label.syncing(st, id))
-      Lay.col.cat(Out.all([Out{Ty.text(ty, 2n, Ty.fit(ty, 2n, U.Label.title(st, id, title), 180), c, 38, (y + 4 : U32), 28, Bool.pick(U32, fade, T.Th.faint(), T.Th.dim())), [Lay.hit(0, y, 228, 32, "project", id)]},
+      SideCol.cat(Out.all([Out{Ty.text(ty, 2n, Ty.fit(ty, 2n, U.Label.title(st, id, title), 180), c, 38, (y + 4 : U32), 28, Bool.pick(U32, fade, T.Th.faint(), T.Th.dim())), [Lay.hit(0, y, 228, 32, "project", id)]},
           Out{Lay.icon(ty, BG.Badge.icon(st, id), c, 14, (y + 10 : U32), Bool.pick(U32, fade, T.Th.faint(), BG.Badge.rgb_of(st, id))), [Lay.hit(12, (y + 4 : U32), 24, 28, "look", id)]},
           Out{Lay.icon(ty, "plus", c, 236, (y + 10 : U32), T.Th.faint()), [Lay.hit(230, (y + 4 : U32), 28, 28, "new-thread", id)]}]),
-        Lay.col.then(Look.open(String.eq(look, id), ty, st, id, String.eq(rm, id), c, (y + 32 : U32)), y0 =>
-        Lay.col.then(Lay.rows(ty, pinned, ix, st, sel, now, False{}, c, y0), y1 =>
-          Lay.col.then(Lay.rows(ty, active, ix, st, sel, now, False{}, c, y1), y2 =>
-            Lay.col.then(Lay.snoozed(ty, snoozed, ix, st, sel, now, c, y2), y3 =>
-              Lay.col.then(Lay.shelf(ty, U.Flag.get(open, id), id, MSG.T.notify.settled(Ty.loc(ty)), settled, ix, st, sel, now, c, y3), y4 =>
-                Lay.shelf(ty, U.Flag.get(open, "arch:" ++ id), "arch:" ++ id, MSG.T.sidebar.archived(Ty.loc(ty)), M.Archive.of(hidden), ix, st, sel, now, c, y4)))))))
+        SideCol.then(SideCol.lift(Look.open(String.eq(look, id), ty, st, id, String.eq(rm, id), c, (y + 32 : U32))), y0 =>
+        SideCol.then(Lay.rows.m(~PC, ~paint, ty, pinned, ix, st, sel, now, False{}, c, y0, pc), y1 =>
+          SideCol.then(Lay.rows.m(~PC, ~paint, ty, active, ix, st, sel, now, False{}, c, y1, pc), y2 =>
+            SideCol.then(Lay.snoozed.m(~PC, ~paint, ty, snoozed, ix, st, sel, now, c, y2, pc), y3 =>
+              SideCol.then(Lay.shelf.m(~PC, ~paint, ty, U.Flag.get(open, id), id, MSG.T.notify.settled(Ty.loc(ty)), settled, ix, st, sel, now, c, y3, pc), y4 =>
+                Lay.shelf.m(~PC, ~paint, ty, U.Flag.get(open, "arch:" ++ id), "arch:" ++ id, MSG.T.sidebar.archived(Ty.loc(ty)), M.Archive.of(hidden), ix, st, sel, now, c, y4, pc)))))))
 
-def Lay.projects(+ty: Ty, rs: List<&2, U.SRow>, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.project(+ty: Ty, r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.project.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, r, quiet, open, ix, st, sel, now, look, rm, c, y, Lay.fresh(ty, ix, st, sel, now)))
+
+def Lay.projects.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, rs: List<&2, U.SRow>, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match rs:
     case Nil{}:
-      Col{Out.none(), y}
+      SideCol{Out.none(), y, Nil{}, 0n}
     case r <> t:
-      Lay.col.then(Lay.project(ty, r, quiet, open, ix, st, sel, now, look, rm, c, y), y2 => Lay.projects(ty, t, quiet, open, ix, st, sel, now, look, rm, c, (y2 + 8 : U32)))
+      SideCol.then(Lay.project.m(~PC, ~paint, ty, r, quiet, open, ix, st, sel, now, look, rm, c, y, pc), y2 => Lay.projects.m(~PC, ~paint, ty, t, quiet, open, ix, st, sel, now, look, rm, c, (y2 + 8 : U32), pc))
+
+def Lay.projects(+ty: Ty, rs: List<&2, U.SRow>, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.projects.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, rs, quiet, open, ix, st, sel, now, look, rm, c, y, Lay.fresh(ty, ix, st, sel, now)))
 
 # the older projects (quiet for Quiet.days): folded under one row at the
 # end; a search shows them in place
-def Lay.older.rows(open: Bool, +ty: Ty, rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.older.rows.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, open: Bool, +ty: Ty, rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match open:
     case True{}:
-      Lay.projects(ty, rs, True{}, op, ix, st, sel, now, look, rm, c, y)
+      Lay.projects.m(~PC, ~paint, ty, rs, True{}, op, ix, st, sel, now, look, rm, c, y, pc)
     case False{}:
-      Col{Out.none(), y}
+      SideCol{Out.none(), y, Nil{}, 0n}
 
-def Lay.older.k(searching: Bool, +ty: Ty, +rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.older.rows(open: Bool, +ty: Ty, rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.older.rows.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, open, ty, rs, op, ix, st, sel, now, look, rm, c, y, Lay.fresh(ty, ix, st, sel, now)))
+
+def Lay.older.k.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, searching: Bool, +ty: Ty, +rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match searching:
     case True{}:
-      Lay.projects(ty, rs, True{}, op, ix, st, sel, now, look, rm, c, y)
+      Lay.projects.m(~PC, ~paint, ty, rs, True{}, op, ix, st, sel, now, look, rm, c, y, pc)
     case False{}:
-      Lay.col.cat(Out{List.append(&2, R.Op, Lay.icon(ty, Bool.pick(String, U.Flag.get(op, "old-projects"), "chevron-down", "chevron-right"), c, 12, (y + 6 : U32), T.Th.faint()),
+      SideCol.cat(Out{List.append(&2, R.Op, Lay.icon(ty, Bool.pick(String, U.Flag.get(op, "old-projects"), "chevron-down", "chevron-right"), c, 12, (y + 6 : U32), T.Th.faint()),
           Ty.text(ty, 2n, MSG.T.sidebar.older(Ty.loc(ty), Nat.show(List.length(&2, U.SRow, rs))), c, 32, y, 28, T.Th.faint())), [Lay.hit(0, y, 264, 28, "side-older", "")]},
-        Lay.older.rows(U.Flag.get(op, "old-projects"), ty, rs, op, ix, st, sel, now, look, rm, c, (y + 32 : U32)))
+        Lay.older.rows.m(~PC, ~paint, U.Flag.get(op, "old-projects"), ty, rs, op, ix, st, sel, now, look, rm, c, (y + 32 : U32), pc))
 
-def Lay.older(+ty: Ty, rs: List<&2, U.SRow>, +searching: Bool, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.older.k(searching: Bool, +ty: Ty, +rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.older.k.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, searching, ty, rs, op, ix, st, sel, now, look, rm, c, y, Lay.fresh(ty, ix, st, sel, now)))
+
+def Lay.older.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, rs: List<&2, U.SRow>, +searching: Bool, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match rs:
     case Nil{}:
-      Col{Out.none(), y}
+      SideCol{Out.none(), y, Nil{}, 0n}
     case +r <> +t:
-      Lay.older.k(searching, ty, r <> t, op, ix, st, sel, now, look, rm, c, y)
+      Lay.older.k.m(~PC, ~paint, searching, ty, r <> t, op, ix, st, sel, now, look, rm, c, y, pc)
+
+def Lay.older(+ty: Ty, rs: List<&2, U.SRow>, +searching: Bool, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.older.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, rs, searching, op, ix, st, sel, now, look, rm, c, y, Lay.fresh(ty, ix, st, sel, now)))
 
 # the projects view: live projects, then the quiet ones faded, then the
 # older ones folded (core's Side.groups)
-def Lay.groups(+ty: Ty, g: U.SGroups, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.groups.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, g: U.SGroups, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match g:
     case U.SGroups{l, qs, o}:
-      Lay.col.then(Lay.projects(ty, l, False{}, op, ix, st, sel, now, look, rm, c, y), y1 =>
-        Lay.col.then(Lay.projects(ty, qs, True{}, op, ix, st, sel, now, look, rm, c, y1), y2 =>
-          Lay.older(ty, o, Bool.not(String.is_empty(q)), op, ix, st, sel, now, look, rm, c, y2)))
+      SideCol.then(Lay.projects.m(~PC, ~paint, ty, l, False{}, op, ix, st, sel, now, look, rm, c, y, pc), y1 =>
+        SideCol.then(Lay.projects.m(~PC, ~paint, ty, qs, True{}, op, ix, st, sel, now, look, rm, c, y1, pc), y2 =>
+          Lay.older.m(~PC, ~paint, ty, o, Bool.not(String.is_empty(q)), op, ix, st, sel, now, look, rm, c, y2, pc)))
 
-# The active view
-# ---------------
-# One list of every live thread, what waits on the person first, then the
-# ones settled lately, faded (core's Active.rows). A row shows its
-# project's name where the other view shows the age.
+def Lay.groups(+ty: Ty, g: U.SGroups, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.groups.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, g, q, op, ix, st, sel, now, look, rm, c, y, Lay.fresh(ty, ix, st, sel, now)))
 
-def Lay.arow.k(+ty: Ty, +on: Bool, id: String, title: String, +proj: String, +badge: String, +faded: Bool, +dot: U32, +tint: U32, +c: D.Clip, +y: U32) -> Out:
-  +pn = Ty.fit(ty, 2n, Lay.row.note(badge, proj), 96)
-  +pw = Ty.width(ty, 2n, pn)
-  Out{List.concat(&2, R.Op, [
-      Bool.pick(List<&2, R.Op>, on, List.append(&2, R.Op, Lay.round(c, 6, (y + 1 : U32), 252, 30, 6, T.Th.raise()), [D.Draw.rect(c, 6, (y + 1 : U32), 2, 30, tint, 255)]), Nil{}),
-      [D.Draw.disc(c, 19.0, U32.to_f32((y + 16 : U32)), 3.0, Bool.pick(U32, faded, T.Th.line(), dot), 255)],
-      Ty.text(ty, 0n, Ty.fit(ty, 0n, title, (252 - 32 - pw - 12 : U32)), c, 32, y, 32, Bool.pick(U32, on, T.Th.text(), Bool.pick(U32, faded, T.Th.faint(), T.Th.soft()))),
-      Ty.text(ty, 2n, pn, c, (252 - pw : U32), y, 32, Lay.row.nc(badge, Bool.pick(U32, faded, T.Th.line(), T.Th.faint())))]),
-    [Lay.hit(0, y, 264, 32, "select", id)]}
+# Active list layout
+# ------------------
 
-def Lay.arow.on(+ty: Ty, r: U.ARow, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Out:
-  match r:
-    case U.ARow{_, _, +t, +pid, +pt, +faded}:
-      Lay.arow.k(ty, String.eq(M.Thread.id(t), sel), M.Thread.id(t), U.Label.title(st, M.Thread.id(t), TTL.Title.shown(Ty.loc(ty), U.Active.title(t))), pt, SB.Subs.badge(SB.Subs.count.ix(ix, st, M.Thread.id(t))), faded, Lay.phase(U.Side.phase.ix(ix, st, t)), BG.Badge.rgb_of(st, pid), c, y)
-
-def Lay.arow.id(r: U.ARow) -> String:
-  match r:
-    case U.ARow{_, _, t, _, _, _}:
-      M.Thread.id(t)
-
-def Lay.arow.k2(seen: Bool, +ty: Ty, r: U.ARow, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Out:
-  match seen:
-    case True{}:
-      Lay.arow.on(ty, r, ix, st, sel, c, y)
-    case False{}:
-      Out{Nil{}, [Lay.hit(0, y, 264, 32, "select", Lay.arow.id(r))]}
-
-def Lay.arows(+ty: Ty, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.arows.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match rs:
     case Nil{}:
-      Col{Out.none(), y}
+      SideCol{Out.none(), y, Nil{}, 0n}
     case r <> t:
-      Lay.col.cat(Lay.arow.k2(Lay.row.seen(c, y), ty, r, ix, st, sel, c, y), Lay.arows(ty, t, ix, st, sel, c, (y + 32 : U32)))
+      SideCol.join(SideCol.row(paint(pc, ST.SideActiveRow{r, c, y}), (y + 32 : U32)), Lay.arows.m(~PC, ~paint, ty, t, ix, st, sel, c, (y + 32 : U32), pc))
+
+def Lay.arows(+ty: Ty, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.arows.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, rs, ix, st, sel, c, y, Lay.fresh(ty, ix, st, sel, 0n)))
 
 # the settled rows: folded under one "Settled N" row, shown while it is
 # open or a search is on (core's Active.open)
-def Lay.afaded.rows(open: Bool, +ty: Ty, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.afaded.rows.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, open: Bool, +ty: Ty, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match open:
     case True{}:
-      Lay.arows(ty, rs, ix, st, sel, c, y)
+      Lay.arows.m(~PC, ~paint, ty, rs, ix, st, sel, c, y, pc)
     case False{}:
-      Col{Out.none(), y}
+      SideCol{Out.none(), y, Nil{}, 0n}
 
-def Lay.afaded.k(searching: Bool, +open: Bool, +ty: Ty, +rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.afaded.rows(open: Bool, +ty: Ty, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.afaded.rows.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, open, ty, rs, ix, st, sel, c, y, Lay.fresh(ty, ix, st, sel, 0n)))
+
+def Lay.afaded.k.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, searching: Bool, +open: Bool, +ty: Ty, +rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match searching:
     case True{}:
-      Lay.arows(ty, rs, ix, st, sel, c, y)
+      Lay.arows.m(~PC, ~paint, ty, rs, ix, st, sel, c, y, pc)
     case False{}:
-      Lay.col.cat(Out{List.append(&2, R.Op, Lay.icon(ty, Bool.pick(String, open, "chevron-down", "chevron-right"), c, 12, (y + 6 : U32), T.Th.faint()),
+      SideCol.cat(Out{List.append(&2, R.Op, Lay.icon(ty, Bool.pick(String, open, "chevron-down", "chevron-right"), c, 12, (y + 6 : U32), T.Th.faint()),
           Ty.text(ty, 2n, MSG.T.sidebar.settled.count(Ty.loc(ty), Nat.show(List.length(&2, U.ARow, rs))), c, 32, y, 28, T.Th.faint())), [Lay.hit(0, y, 264, 28, "side-settled", "")]},
-        Lay.afaded.rows(open, ty, rs, ix, st, sel, c, (y + 32 : U32)))
+        Lay.afaded.rows.m(~PC, ~paint, open, ty, rs, ix, st, sel, c, (y + 32 : U32), pc))
+
+def Lay.afaded.k(searching: Bool, +open: Bool, +ty: Ty, +rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.afaded.k.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, searching, open, ty, rs, ix, st, sel, c, y, Lay.fresh(ty, ix, st, sel, 0n)))
+
+def Lay.afaded.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, rs: List<&2, U.ARow>, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
+  match rs:
+    case Nil{}:
+      SideCol{Out.none(), y, Nil{}, 0n}
+    case +r <> +t:
+      Lay.afaded.k.m(~PC, ~paint, Bool.not(String.is_empty(q)), U.Flag.get(op, "active-settled"), ty, r <> t, ix, st, sel, c, y, pc)
 
 def Lay.afaded(+ty: Ty, rs: List<&2, U.ARow>, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
-  match rs:
-    case Nil{}:
-      Col{Out.none(), y}
-    case +r <> +t:
-      Lay.afaded.k(Bool.not(String.is_empty(q)), U.Flag.get(op, "active-settled"), ty, r <> t, ix, st, sel, c, y)
+  SideCol.col(Lay.afaded.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, rs, q, op, ix, st, sel, c, y, Lay.fresh(ty, ix, st, sel, 0n)))
 
-def Lay.active.k(p: U.AParts, +ty: Ty, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.active.k.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, p: U.AParts, +ty: Ty, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match p:
     case U.AParts{l, f}:
-      Lay.col.then(Lay.arows(ty, l, ix, st, sel, c, y), y1 => Lay.afaded(ty, f, q, op, ix, st, sel, c, y1))
+      SideCol.then(Lay.arows.m(~PC, ~paint, ty, l, ix, st, sel, c, y, pc), y1 => Lay.afaded.m(~PC, ~paint, ty, f, q, op, ix, st, sel, c, y1, pc))
 
-def Lay.active(+ty: Ty, rs: List<&2, U.ARow>, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.active.k(p: U.AParts, +ty: Ty, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.active.k.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, p, ty, q, op, ix, st, sel, c, y, Lay.fresh(ty, ix, st, sel, 0n)))
+
+def Lay.active.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, rs: List<&2, U.ARow>, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match rs:
     case Nil{}:
-      Col{Out.ops(Ty.text(ty, 2n, MSG.T.sidebar.nothing(Ty.loc(ty)), c, 16, y, 32, T.Th.faint())), (y + 32 : U32)}
+      SideCol{Out.ops(Ty.text(ty, 2n, MSG.T.sidebar.nothing(Ty.loc(ty)), c, 16, y, 32, T.Th.faint())), (y + 32 : U32), Nil{}, 0n}
     case +r <> +t:
-      Lay.active.k(U.Active.parts(r <> t), ty, q, op, ix, st, sel, c, y)
+      Lay.active.k.m(~PC, ~paint, U.Active.parts(r <> t), ty, q, op, ix, st, sel, c, y, pc)
+
+def Lay.active(+ty: Ty, rs: List<&2, U.ARow>, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.active.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, rs, q, op, ix, st, sel, c, y, Lay.fresh(ty, ix, st, sel, 0n)))
 
 # the list the "sidebar.view" setting picks (only that one is laid out)
-def Lay.side.list.k(active: Bool, +ty: Ty, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.side.list.k.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, active: Bool, +ty: Ty, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32, +pc: PC) -> SideCol:
   match active:
     case True{}:
-      Lay.active(ty, U.Active.rows.ix(st, ix, now, q), q, op, ix, st, sel, c, y)
+      Lay.active.m(~PC, ~paint, ty, U.Active.rows.ix(st, ix, now, q), q, op, ix, st, sel, c, y, pc)
     case False{}:
-      Lay.groups(ty, U.Side.groups(U.Side.shown.ix(st, ix, now, q), now), q, op, ix, st, sel, now, look, rm, c, y)
+      Lay.groups.m(~PC, ~paint, ty, U.Side.groups(U.Side.shown.ix(st, ix, now, q), now), q, op, ix, st, sel, now, look, rm, c, y, pc)
+
+def Lay.side.list.k(active: Bool, +ty: Ty, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  SideCol.col(Lay.side.list.k.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, active, ty, q, op, ix, st, sel, now, look, rm, c, y, Lay.fresh(ty, ix, st, sel, now)))
 
 # (what every row asks of the whole state is gathered once a frame:
 # core's Side.ix)
@@ -841,14 +964,16 @@ def Side.most(c: Col, +sd: U32, +bottom: U32) -> Out:
     case Col{o, +y}:
       Out.cat(o, Out{Nil{}, [Lay.hit(0, 0, 0, 0, "side-most", U32.show(U32.dim((y + sd + 8 : U32), bottom)))]})
 
-def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +ix: U.SIx, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, +adding: Bool, +v: String,
-    +sd: U32, +caret: Nat, +mark: Nat, +focus: String, +path: String, +h: U32, +settings: Bool, +ms: List<&2, U.MRow>, +hint: String, +ids: List<&2, String>, +look: String, +rm: String, +q: String, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
+def Lay.sidebar.k.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, +c: D.Clip, +st: M.State, +ix: U.SIx, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, +adding: Bool, +v: String,
+    +sd: U32, +caret: Nat, +mark: Nat, +focus: String, +path: String, +h: U32, +settings: Bool, +ms: List<&2, U.MRow>, +hint: String, +ids: List<&2, String>, +look: String, +rm: String, +q: String, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col, +pc: PC) -> SideCol:
   +top = {D.Clip{0, 0, 264, 52} : D.Clip}
   +many = Nat.is_gt(List.length(&2, U.MRow, ms), 1n)
   +active = String.eq(U.Side.view(st), "active")
   +yf = {(Bool.pick(U32, adding, 96, 60) + uh : U32) : U32}
   +y0 = {(yf + 36 : U32) : U32}
-  Out.all([
+  +body = SideCol.then(Lay.side.list.k.m(~PC, ~paint, active, ty, q, open, ix, st, sel, now, look, rm,
+    D.Clip{0, y0, 264, (h - 48 : U32)}, U32.sub(y0, sd), pc), y => SideCol.lift(more(D.Clip{0, y0, 264, (h - 48 : U32)}, y)))
+  SideCol.layer(body, col => Out.all([
     Out.ops([D.Draw.rect(D.Clip.all(), 0, 0, 264, h, T.Th.panel(), 255), D.Draw.rect(D.Clip.all(), 263, 0, 1, h, T.Th.line(), 255),
       D.Draw.rect(top, 0, 51, 264, 1, T.Th.line(), 255),
       D.Draw.disc(top, 19.0, 26.0, 3.5, Bool.pick(U32, on, T.Th.ok(), T.Th.bad()), 255)]),
@@ -857,14 +982,17 @@ def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +ix: U.SIx, +sel: String, +
     Out{Lay.icon(ty, "plus", top, 234, 18, T.Th.dim()), [Lay.hit(228, 12, 28, 28, "vw-projo", "")]},
     utop,
     Lay.adding(ty, adding, uh, path, String.eq(focus, "project-path"), caret, mark),
-    Links.over(Lay.hints(hint, Side.most(Lay.col.then(Lay.side.list.k(active, ty, q, open, ix, st, sel, now, look, rm,
-      D.Clip{0, y0, 264, (h - 48 : U32)}, U32.sub(y0, sd)), more(D.Clip{0, y0, 264, (h - 48 : U32)})), sd, (h - 48 : U32)), ty, D.Clip{0, y0, 264, (h - 48 : U32)}, ids), U.Links.recent(st, now), now, D.Clip{0, y0, 264, (h - 48 : U32)}),
+    Links.over(Lay.hints(hint, Side.most(col, sd, (h - 48 : U32)), ty, D.Clip{0, y0, 264, (h - 48 : U32)}, ids), U.Links.recent(st, now), now, D.Clip{0, y0, 264, (h - 48 : U32)}),
     Lay.finding(ty, active, yf, q, focus, caret, mark),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), 0, (h - 48 : U32), 263, 48, T.Th.panel(), 255), D.Draw.rect(D.Clip.all(), 0, (h - 48 : U32), 263, 1, T.Th.line(), 255)],
         List.append(&2, R.Op, Lay.icon(ty, "settings", D.Clip.all(), 16, (h - 32 : U32), Bool.pick(U32, settings, T.Th.text(), T.Th.dim())), Ty.text(ty, 2n, MSG.T.palette.settings(Ty.loc(ty)), D.Clip.all(), 40, (h - 48 : U32), 48, Bool.pick(U32, settings, T.Th.text(), T.Th.dim())))),
       [Lay.hit(0, (h - 48 : U32), 120, 48, "flag", "settings")]},
     Mach.bar.k(many, ty, ms, h),
-    Mach.menu(ty, Bool.and(many, U.Flag.get(open, "machines")), ms, h)])
+    Mach.menu(ty, Bool.and(many, U.Flag.get(open, "machines")), ms, h)]))
+
+def Lay.sidebar.k(+ty: Ty, +c: D.Clip, +st: M.State, +ix: U.SIx, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, +adding: Bool, +v: String,
+    +sd: U32, +caret: Nat, +mark: Nat, +focus: String, +path: String, +h: U32, +settings: Bool, +ms: List<&2, U.MRow>, +hint: String, +ids: List<&2, String>, +look: String, +rm: String, +q: String, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
+  SideCol.out(Lay.sidebar.k.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, c, st, ix, sel, open, on, now, adding, v, sd, caret, mark, focus, path, h, settings, ms, hint, ids, look, rm, q, utop, uh, more, Lay.fresh(ty, ix, st, sel, now)))
 
 # Timeline
 # --------
@@ -5575,12 +5703,20 @@ def Rm.draw(+ty: Ty, +u: U.Ui, +w: U32, +h: U32) -> Out:
 
 # the sidebar's body (what Lay.sidebar.u draws but the dragged ghost and
 # the remove dialog), the part the window may keep (main.bend's memo)
-def Lay.sidebar.a.ix(+ty: Ty, +n: S.Nui, +h: U32, +ix: U.SIx, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
+def Lay.fresh.n(ty: Ty, ix: U.SIx, n: S.Nui) -> List<&2, SideFreshCtx>:
+  match n:
+    case S.Nui{U.Ui{st, sel, _, _, _, _, now, _, _, _, _, _, _, _, _, _, _}, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Lay.fresh(ty, ix, st, sel, now)
+
+def Lay.sidebar.a.ix.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: Ty, +n: S.Nui, +h: U32, +ix: U.SIx, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col, +pc: PC) -> SideCol:
   match n:
     case S.Nui{U.Ui{+st, +sel, _, _, +open, on, +now, adding, _, +v, _, _, _, +note, _, _, _}, _, _, _, _, +sd, _, +caret, +focus, +path, _, _, _}:
-      Out.all([Lay.sidebar.k(ty, D.Clip{0, 52, 264, h}, st, ix, sel, open, on, now, adding, v, sd, caret, S.Nui.mark(n), focus, path, h, U.Flag.get(open, "settings"), U.Machines.rows.loc(Ty.loc(ty), S.Nui.ui(n)),
+      SideCol.layer(Lay.sidebar.k.m(~PC, ~paint, ty, D.Clip{0, 52, 264, h}, st, ix, sel, open, on, now, adding, v, sd, caret, S.Nui.mark(n), focus, path, h, U.Flag.get(open, "settings"), U.Machines.rows.loc(Ty.loc(ty), S.Nui.ui(n)),
         U.Ui.scratch(S.Nui.ui(n), "@hint"), Lay.hint.ids(String.eq(U.Ui.scratch(S.Nui.ui(n), "@hint"), "alt"), String.eq(U.Ui.scratch(S.Nui.ui(n), "@hint"), "ctrl"), S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@look"), U.Ui.scratch(S.Nui.ui(n), "@rm"),
-        U.Ui.scratch(S.Nui.ui(n), "@f.pq"), utop, uh, more), Lay.note(ty, note, h)])
+        U.Ui.scratch(S.Nui.ui(n), "@f.pq"), utop, uh, more, pc), col => Out.cat(Lay.col.out(col), Lay.note(ty, note, h)))
+
+def Lay.sidebar.a.ix(+ty: Ty, +n: S.Nui, +h: U32, +ix: U.SIx, utop: Out, +uh: U32, more: D.Clip -> U32 -> Col) -> Out:
+  SideCol.out(Lay.sidebar.a.ix.m(~(List<&2, SideFreshCtx>), ~Lay.fresh.run, ty, n, h, ix, utop, uh, more, Lay.fresh.n(ty, ix, n)))
 
 # (the index of the state made here: the window passes the one it keeps,
 # main.bend's MM.Ix)

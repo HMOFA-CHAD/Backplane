@@ -1,4 +1,5 @@
 import Base
+import ./side_row_types.bend as ST
 import ../core/i18n.bend as I
 import ../core/msgs.bend as MSG
 import ../core/model.bend as M
@@ -1501,6 +1502,14 @@ def Bv.side.a.k(+sd: Sd, +ty: L.Ty, +n: S.Nui, +ix: U.SIx) -> L.Out:
 # (with the window's index of the state and its cats' rows of the frame)
 def Bv.side.a.ixr(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, +ix: U.SIx, +br: BRows) -> L.Out:
   Bv.side.a.k(Bv.sd.r(ty, cats, n, ws, br), ty, n, ix)
+
+# Additive row-painter hook: bot sections and the existing Col API stay
+# fresh, while the sidebar collects only the project/thread row memos.
+def Bv.side.rows.k(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +sd: Sd, +ty: L.Ty, +n: S.Nui, +ix: U.SIx, pc: PC) -> L.SideCol:
+  L.Lay.sidebar.a.ix.m(~PC, ~paint, ty, n, S.Nui.height(n), ix, Bv.uber.out(sd), Bv.uber.top(sd), c => y => Bv.side.of(sd, c, y), pc)
+
+def Bv.side.rows.ixr(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +ty: L.Ty, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, +ix: U.SIx, +br: BRows, pc: PC) -> L.SideCol:
+  Bv.side.rows.k(~PC, ~paint, Bv.sd.r(ty, cats, n, ws, br), ty, n, ix, pc)
 
 def Bv.side.a.ix(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, +ix: U.SIx) -> L.Out:
   Bv.side.a.ixr(ty, cats, ws, n, ix, BRows.of(S.Nui.ui(n)))
