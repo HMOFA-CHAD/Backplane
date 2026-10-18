@@ -380,6 +380,18 @@ object NativeMessages {
   fun native_history_thread_short(tag: String): String =
     if (tag == "ja") ("スレッドで表示") else ("Show in the thread")
 
+  // native.home.hint
+  fun native_home_hint(tag: String): String =
+    if (tag == "ja") ("メインボットが要対応の作業、実行中の作業、ボット、ルーティンをまとめて把握します。") else ("Your uberbot keeps the whole picture: what needs you, what runs, your bots and routines.")
+
+  // native.home.make
+  fun native_home_make(tag: String): String =
+    if (tag == "ja") ("メインボットを作成") else ("Make an uberbot")
+
+  // native.home.none
+  fun native_home_none(tag: String): String =
+    if (tag == "ja") ("メインボットなし") else ("No uberbot")
+
   // native.hook.copyurl
   fun native_hook_copyurl(tag: String): String =
     if (tag == "ja") ("URLをコピー") else ("Copy URL")
@@ -543,6 +555,22 @@ object NativeMessages {
   // native.pair.unpair
   fun native_pair_unpair(tag: String): String =
     if (tag == "ja") ("ペアリング解除") else ("Unpair")
+
+  // native.plane.card
+  fun native_plane_card(tag: String, arg0: String, arg1: String): String =
+    if (tag == "ja") (arg0 + "、" + arg1) else (arg0 + ", " + arg1)
+
+  // native.plane.more
+  fun native_plane_more(tag: String, arg0: String): String =
+    if (tag == "ja") ("他" + arg0 + "件") else (arg0 + " more")
+
+  // native.plane.unread
+  fun native_plane_unread(tag: String): String =
+    if (tag == "ja") ("未読") else ("Unread")
+
+  // native.plane.waiting
+  fun native_plane_waiting(tag: String): String =
+    if (tag == "ja") ("対応待ちなし") else ("Nothing waiting")
 
   // native.review.comment
   fun native_review_comment(tag: String): String =
@@ -888,6 +916,30 @@ object NativeMessages {
   fun palette_terminal(tag: String): String =
     if (tag == "ja") ("ターミナル") else ("Terminal")
 
+  // plane.bots.working
+  fun plane_bots_working(tag: String): String =
+    if (tag == "ja") ("稼働ボット") else ("Bots working")
+
+  // plane.locks
+  fun plane_locks(tag: String): String =
+    if (tag == "ja") ("ロック") else ("Locks")
+
+  // plane.need
+  fun plane_need(tag: String): String =
+    if (tag == "ja") ("対応待ち") else ("Need you")
+
+  // plane.needs
+  fun plane_needs(tag: String): String =
+    if (tag == "ja") ("要対応") else ("Needs you")
+
+  // plane.rooms.unread
+  fun plane_rooms_unread(tag: String): String =
+    if (tag == "ja") ("未読ルーム") else ("Unread rooms")
+
+  // plane.running
+  fun plane_running(tag: String): String =
+    if (tag == "ja") ("実行中") else ("Running")
+
   // queue.edit
   fun queue_edit(tag: String): String =
     if (tag == "ja") ("編集") else ("Edit")
@@ -1179,6 +1231,10 @@ object NativeMessages {
   // web.hooks.secret
   fun web_hooks_secret(tag: String): String =
     if (tag == "ja") ("シークレット（1回のみ表示）") else ("Secret, shown once")
+
+  // web.plane.idle
+  fun web_plane_idle(tag: String): String =
+    if (tag == "ja") ("待機中") else ("Idle")
 
   // web.terminal.pinned
   fun web_terminal_pinned(tag: String, arg0: String): String =

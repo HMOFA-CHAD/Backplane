@@ -1194,3 +1194,12 @@ native.key.up = Up
 native.key.down = Down
 native.key.right = Right
 native.key.keyboard = Keyboard
+
+# Native Home and Status plane
+native.home.none = No uberbot
+native.home.hint = Your uberbot keeps the whole picture: what needs you, what runs, your bots and routines.
+native.home.make = Make an uberbot
+native.plane.waiting = Nothing waiting
+native.plane.more = {count} more
+native.plane.card = {name}, {counts}
+native.plane.unread = Unread

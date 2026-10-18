@@ -104,3 +104,8 @@ overflow as catalogs grow, while keeping sorted keys and fallback metadata
 unchanged. The HTML-backend regression exercises 4,097 keys and a large
 missing list, checking every entry and its order. Native output and message
 lookup stay unchanged by this metadata representation.
+
+Native Home and Status sections resolve labels from the current screen locale.
+Idle remaining counts and uber-card accessibility use full messages with raw
+values; platform-specific English counter labels remain distinct. The proposed
+Japanese uberbot term remains メインボット pending the final linguistic review.
