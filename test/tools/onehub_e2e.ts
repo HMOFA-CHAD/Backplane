@@ -21,6 +21,8 @@
 //   bun test/tools/onehub_e2e.ts [BINARY] [WIREDIR]
 //   (BINARY defaults to build/backplane; SERVE=dist/backplane-serve also
 //   runs step 1 and the second-hub refusal against the server binary)
+//   EXPECT_SERVER=1 TEST_DISPLAY=:N also proves the server entry never
+//   loads window/font libraries, including after its in-place restart.
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -80,7 +82,7 @@ const hello = async (port: number) => {
   }
 };
 const env = (extra: Record<string, string> = {}) => ({
-  HOME: user, DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_KEYRING_LOCKED: "0", BACKPLANE_PEERS: "",
+  HOME: user, DISPLAY: process.env.TEST_DISPLAY ?? "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_KEYRING_LOCKED: "0", BACKPLANE_PEERS: "",
   BACKPLANE_GOOGLE_BAKE: "0", BACKPLANE_DEPLOY_LOCKS: join(root, "no-such.lock"), BACKPLANE_AGENTS: standins,
   PATH: `${real}:/usr/bin:/bin`, XDG_CACHE_HOME: join(user, ".cache"), TMPDIR: root, ...extra,
 });
@@ -121,10 +123,16 @@ const P1 = 3801, P2 = 3802, P3 = 3803;
 const start = (b: string, port: number) =>
   Bun.spawn([b, "--home", home, "--port", String(port), "--no-tailscale", "--foreground"], { env: env(), stdout: "ignore", stderr: Bun.file(join(root, `hub-${port}.log`)) });
 const logTail = (port: number) => { const f = join(root, `hub-${port}.log`); return existsSync(f) ? readFileSync(f, "utf8").trim().split("\n").slice(-8).join("\n") : ""; };
+const serverOnly = (pid: number, when: string) => {
+  if (process.env.EXPECT_SERVER !== "1") return;
+  const maps = readFileSync(`/proc/${pid}/maps`, "utf8");
+  check(!/libX11|libfontconfig|libfreetype/.test(maps), `${when}: server loads no window/font libraries despite DISPLAY=${process.env.TEST_DISPLAY ?? ""}`);
+};
 let a = start(bin, P1);
 let a2: ReturnType<typeof start> | undefined;
 try {
   check(!!(await until(30000, () => hello(P1))), "a hub starts on a temp home");
+  serverOnly(a.pid, "startup");
   const lockText = existsSync(join(home, "hub.lock")) ? readFileSync(join(home, "hub.lock"), "utf8").trim() : "";
   check(lockText === `${a.pid} ${P1} flock`, `hub.lock says its pid and port (${lockText})`);
   const fl = flocked(join(home, "hub.lock"));
@@ -181,6 +189,7 @@ try {
   check(!!went, "deploy.restart: the hub restarts in place");
   if (!went) console.log(logTail(P1));
   check(!!(await until(30000, () => hello(P1))), "the restarted hub answers /hello");
+  serverOnly(a.pid, "after exec");
   const after = existsSync(join(home, "hub.lock")) ? readFileSync(join(home, "hub.lock"), "utf8").trim() : "";
   check(after === `${a.pid} ${P1} flock`, `after the restart hub.lock still names the same process (${after})`);
   const fl2 = flocked(join(home, "hub.lock"));
