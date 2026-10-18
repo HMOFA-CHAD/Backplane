@@ -34,7 +34,9 @@ if (process.argv[2] === "--claude") {
       const reset = Math.floor(Date.now() / 1000) + 3600;
       emit({ type: "rate_limit_event", rate_limit_info: { status: "rejected", rateLimitType: "seven_day", resetsAt: reset } });
       emit({ type: "result", subtype: "error_during_execution", is_error: true, errors: ["Weekly limit reached"], resets_at: reset, session_id: "fake-claude" });
-      emit({ type: "command_lifecycle", command_uuid: o.uuid, state: "failed" });
+      // The protocol completes the command; is_error on its result supplies
+      // the failure verdict. "failed" is not a lifecycle state.
+      emit({ type: "command_lifecycle", command_uuid: o.uuid, state: "completed" });
     });
   });
 } else if (process.argv[2] === "--codex") {
@@ -45,7 +47,7 @@ if (process.argv[2] === "--claude") {
   log({ provider: "codex", model, prompt, args, pid: process.pid, at: Date.now(), resumed: args.includes("resume") });
   emit({ type: "thread.started", thread_id: session });
   if (model === "gpt-6.1-sol" || prompt.includes("EXHAUST_CHAIN")) {
-    emit({ type: "turn.failed", error: { code: "quota_exceeded", scope: "model", message: "model quota exhausted", resets_at: Math.floor(Date.now() / 1000) + 3600 } });
+    emit({ type: "turn.failed", error: { message: model === "gpt-6.1-sol" ? "You’ve hit your usage limit for gpt-6.1-sol. Switch to another model now." : "You’ve hit your usage limit." } });
   } else {
     emit({ type: "item.completed", item: { id: `answer-${process.pid}`, type: "agent_message", text: "Finished existing work; file already present." } });
     emit({ type: "turn.completed", usage: { input_tokens: 10, output_tokens: 5 } });
@@ -65,6 +67,7 @@ if (process.argv[2] === "--claude") {
   }
   for (const p of ["grok", "muse", "agy", "gh", "tailscale", "kicad-cli", "freecad"]) { writeFileSync(join(fake, p), "#!/bin/sh\nexit 1\n"); chmodSync(join(fake, p), 0o755); }
   writeFileSync(join(root, ".codex/models_cache.json"), JSON.stringify({ models: [{ slug: "gpt-6.1-sol" }, { slug: "test-next" }] }));
+  writeFileSync(join(home, "models.cache"), JSON.stringify({ claude: ["sonnet"], codex: ["gpt-6.1-sol", "test-next"], grok: [], muse: [], antigravity: [] }) + "\nFake installed providers\n");
   const event = ($: string, fields: object) => ({ $, ...fields, at: 1 });
   const thread = (id: string, provider = "claude", model = "sonnet") => event("ThreadCreated", { id, project: "p", title: id, env: "local", branch: "", worktree: proj, provider, model });
   const eventsPath = join(home, "events.jsonl"), agentLog = join(root, "agents.jsonl"), effect = join(root, "effect");
@@ -76,7 +79,7 @@ if (process.argv[2] === "--claude") {
   writeFileSync(agentLog, "");
   writeFileSync(eventsPath, [event("ProjectCreated", { id: "p", title: "Fallback test", root: proj }), thread("worker"), thread("bot"), thread("child"), thread("parent", "codex", "test-next"),
     event("BotSet", { id: "b", name: "Bot", thread: "bot", look: 0, persona: "" }),
-    event("ThreadLaunched", { id: "child", by: "worker", report: false }),
+    event("ThreadLaunched", { id: "child", by: "parent", report: false }),
     event("TaskDelegated", { task: "delegated-original", parent: "parent", child: "child", depth: 1, provider: "claude", model: "sonnet" }),
     thread("auth-child", "codex", "test-next"), thread("auth-mail", "codex", "test-next"),
     event("TaskDelegated", { task: "auth-task-original", parent: "parent", child: "auth-child", depth: 1, provider: "codex", model: "test-next" }),
@@ -89,6 +92,7 @@ if (process.argv[2] === "--claude") {
   const env = { ...process.env, HOME: root, BACKPLANE_AGENTS: fake, PATH: `${fake}:${process.env.PATH}`, DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_KEYRING_LOCKED: "", BACKPLANE_PEERS: "", BACKPLANE_GOOGLE_BAKE: "0", FALLBACK_AGENT_LOG: agentLog, FALLBACK_EFFECT: effect, BACKPLANE_LOCK_DIR: join(root, "locks"), BACKPLANE_DEPLOY_LOCKS: join(root, "deploy-locks") };
   let proc: ReturnType<typeof Bun.spawn> | undefined, ws: WebSocket | undefined;
   let request = 0;
+  const desktopMessages: any[] = [];
   const events = () => readFileSync(eventsPath, "utf8").trim().split("\n").filter(Boolean).map(x => JSON.parse(x));
   const launches = () => readFileSync(agentLog, "utf8").trim().split("\n").filter(Boolean).map(x => JSON.parse(x));
   const until = async (label: string, predicate: () => boolean, ms = 30000) => {
@@ -105,7 +109,12 @@ if (process.argv[2] === "--claude") {
     for (let i = 0; i < 200; i++) { try { ready = (await fetch(`http://127.0.0.1:${port}/hello`)).ok; } catch {} if (ready) break; await delay(50); }
     check(ready, "isolated hub ready");
     ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    ws.binaryType = "arraybuffer";
+    ws.onmessage = e => {
+      desktopMessages.push(JSON.parse(typeof e.data === "string" ? e.data : W.decode(new Uint8Array(e.data as ArrayBuffer))));
+    };
     await new Promise((resolve, reject) => { ws!.onopen = resolve; ws!.onerror = reject; });
+    send("desk.look", { thread: "parent", focused: false });
   };
   const stop = async () => { ws?.close(); if (proc?.exitCode === null) proc.kill("SIGTERM"); await proc?.exited; };
   try {
@@ -121,11 +130,16 @@ if (process.argv[2] === "--claude") {
     check(events().filter(e => e.$ === "ActivityLogged" && e.thread === "worker" && e.kind === "fallback").length === 2, "per-thread durable switch audit");
     const alertCount = () => events().filter(e => e.$ === "SettingSet" && e.key.startsWith("alert.") && e.value.startsWith("fallback\t")).length;
     check(alertCount() === 2, "one persistent notification per distinct outage");
+    await until("desktop/web notification delivery", () => desktopMessages.filter(m => m.t === "notify" && m.kind === "fallback").length === 2);
+    const notes = desktopMessages.filter(m => m.t === "notify" && m.kind === "fallback");
+    const firstAlert = events().find(e => e.$ === "SettingSet" && e.key === "alert.worker" && e.value.startsWith("fallback\t"));
+    check(notes[0].thread === "worker" && notes[0].body === firstAlert.value.split("\t").slice(4).join("\t"), "desktop/web wire carries exact alert body and thread deeplink");
     const claudeStarts = first.filter(l => l.provider === "claude").length;
     for (const th of ["bot", "child"]) send("turn.start", { thread: th, text: "BOT_PING", msg: `prompt-${th}` });
     await until("bot and child complete", () => ["bot", "child"].every(th => events().some(e => e.$ === "TurnChanged" && e.thread === th && e.state === "completed")));
     check(launches().filter(l => l.provider === "claude").length === claudeStarts, "cached provider outage prevents bot/delegate relaunches");
     check(alertCount() === 2, "bot/delegate switches do not produce alert storm");
+    check(desktopMessages.filter(m => m.t === "notify" && m.kind === "fallback").length === 2, "desktop/web delivery deduplicates the shared outage");
     check(events().filter(e => e.$ === "TaskDelivered" && e.task === "delegated-original").length === 1, "delegated task completes and delivers once under its original ID");
     check(!events().some(e => e.$ === "TaskStateSet" && e.task === "delegated-original" && e.state === "failed"), "quota handoff never terminally fails the delegated task");
 

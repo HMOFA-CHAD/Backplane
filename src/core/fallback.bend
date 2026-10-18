@@ -146,10 +146,10 @@ def Error.code(+c: String) -> Bool:
       Bool.or(String.eq(c, "budget_exceeded"), String.eq(c, "quota_exceeded"))))
 
 def Error.words(+s: String) -> Bool:
-  Bool.or(Bool.or(String.contains(s, "you've hit your limit"), String.contains(s, "you have hit your limit")),
+  Bool.or(String.contains(s, "hit your usage limit"), Bool.or(Bool.or(String.contains(s, "you've hit your limit"), String.contains(s, "you have hit your limit")),
     Bool.or(Bool.or(String.contains(s, "weekly limit"), String.contains(s, "usage limit reached")),
       Bool.or(Bool.or(String.contains(s, "usage limit has been reached"), String.contains(s, "insufficient quota")),
-        Bool.or(String.contains(s, "rate limit exceeded"), String.contains(s, "budget exceeded")))))
+        Bool.or(String.contains(s, "rate limit exceeded"), String.contains(s, "budget exceeded"))))))
 
 def Error.no(+s: String) -> Bool:
   Bool.or(Bool.or(String.contains(s, "authentication"), String.contains(s, "unauthorized")),
@@ -209,10 +209,17 @@ def Error.reason(+o: J.Json) -> String:
 def Error.assistant(+o: J.Json) -> Bool:
   Bool.and(String.eq(J.Json.get_str(o, "type", ""), "assistant"), String.eq(J.Json.get_str(o, "error", ""), "rate_limit"))
 
+# Codex's JSON turn.failed may carry only the displayed message. Its
+# "usage limit for <model>" form is model-specific; the bare form is account
+# capacity. An explicit protocol scope takes precedence over wording.
+def Error.account.scope(+scope: String, +o: J.Json) -> Bool:
+  Bool.and(Bool.not(String.eq(scope, "model")), Bool.or(String.eq(scope, "account"),
+    Bool.or(Bool.or(Error.rejected(o), Error.assistant(o)),
+      Bool.and(Bool.not(String.contains(String.to_lower(Error.reason(o)), "hit your usage limit for ")),
+        Bool.or(String.contains(String.to_lower(Error.reason(o)), "weekly limit"), String.contains(String.to_lower(Error.reason(o)), "usage limit"))))))
+
 def Error.scope(+p: String, m: String, +o: J.Json) -> String:
-  Bool.pick(String, Bool.or(Bool.or(Error.rejected(o), Error.assistant(o)),
-    Bool.or(String.eq(J.Json.get_str(J.Json.get_obj(o, "error"), "scope", J.Json.get_str(o, "scope", "")), "account"),
-      Bool.or(String.contains(String.to_lower(Error.reason(o)), "weekly limit"), String.contains(String.to_lower(Error.reason(o)), "usage limit")))), p, p ++ "/" ++ m)
+  Bool.pick(String, Error.account.scope(J.Json.get_str(J.Json.get_obj(o, "error"), "scope", J.Json.get_str(o, "scope", "")), o), p, p ++ "/" ++ m)
 
 def Error.classify.k(yes: Bool, p: String, m: String, +o: J.Json) -> Maybe<&2, Limit>:
   match yes:

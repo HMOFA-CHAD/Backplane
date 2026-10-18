@@ -95,6 +95,11 @@ def run_identity(r: Maybe<&2, ML.Run>) -> String:
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("weekly result is quota", quota(limit()), "True")
+    C.Check.str("Codex message-only usage limit is quota", quota("{\"type\":\"turn.failed\",\"error\":{\"message\":\"You’ve hit your usage limit. Try again later.\"}}"), "True")
+    C.Check.str("Codex ASCII usage limit is quota", quota("{\"type\":\"turn.failed\",\"error\":{\"message\":\"You've hit your usage limit for gpt-6.1-sol. Switch to another model now.\"}}"), "True")
+    C.Check.str("Codex named-model limit leaves other models available", F.Error.scope("codex", "gpt-6.1-sol", Maybe.default(&2, J.Json, J.Json.parse("{\"type\":\"turn.failed\",\"error\":{\"message\":\"You’ve hit your usage limit for gpt-6.1-sol. Switch to another model now.\"}}"), J.Null{})), "codex/gpt-6.1-sol")
+    C.Check.str("Codex account usage limit holds all models", F.Error.scope("codex", "gpt-6.1-sol", Maybe.default(&2, J.Json, J.Json.parse("{\"type\":\"turn.failed\",\"error\":{\"message\":\"You’ve hit your usage limit.\"}}"), J.Null{})), "codex")
+    C.Check.str("explicit model scope wins over limit wording", F.Error.scope("codex", "gpt-6.1-sol", Maybe.default(&2, J.Json, J.Json.parse("{\"type\":\"turn.failed\",\"error\":{\"scope\":\"model\",\"message\":\"usage limit reached\"}}"), J.Null{})), "codex/gpt-6.1-sol")
     C.Check.str("tool text is not quota", quota("{\"type\":\"assistant\",\"message\":\"weekly limit reached\"}"), "False")
     C.Check.str("network error not quota", quota("{\"type\":\"turn.failed\",\"message\":\"connection reset\"}"), "False")
     C.Check.str("keyring error not quota", quota("{\"type\":\"turn.failed\",\"message\":\"login keyring is locked\"}"), "False")
