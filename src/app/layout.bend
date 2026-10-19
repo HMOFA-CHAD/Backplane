@@ -4024,10 +4024,13 @@ def Set.order(+ty: Ty, +st: M.State, +x: U32, +w: U32, +y: U32) -> Out:
 
 # the browser engine row (core/cef.bend): Chrome apart from the window, or
 # Embedded in it; a note only when Embedded cannot run
-def Set.browser(+ty: Ty, +eng: String, +err: String, +x: U32, +w: U32, +y: U32) -> Out:
+def Set.browser.row(+ty: Ty, +eng: String, +err: String, +x: U32, +w: U32, +y: U32) -> Out:
   Out.all([Set.row.r(ty, "Browser", CF.Cef.note(err), x, Bool.pick(U32, String.is_empty(err), (y + 12 : U32), y), w, 190),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Embedded") - 6 - Lay.button.w(ty, "Chrome") : U32), (y + 14 : U32), "Chrome", Bool.not(String.eq(eng, "cef")), "setting", "browser.engine=chrome"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Embedded") : U32), (y + 14 : U32), "Embedded", String.eq(eng, "cef"), "setting", "browser.engine=cef")])
+
+def Set.browser(ty: Ty, +eng: String, err: String, live: String, x: U32, w: U32, y: U32) -> Out:
+  Set.browser.row(ty, eng, CF.Cef.reason(eng, live, err), x, w, y)
 
 def Set.fallback.h(+ty: Ty, +n: S.Nui, +x: U32, +w: U32) -> U32:
   (20 + Set.agy.sum(U.Fallbackv.rows(S.Nui.ui(n)), ty, x, w) : U32)
@@ -4115,7 +4118,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Set.row.r(ty, U.KiCad.ipc.label(Ty.loc(ty), info), U.KiCad.ipc.note(Ty.loc(ty), info), x, (b2 + 486 + dy + ey + kh : U32), w, Bool.pick(U32, U.KiCad.ipc.ready(info), Set.pairw(ty, MSG.T.settings.lang.on(Ty.loc(ty)), MSG.T.settings.lang.off(Ty.loc(ty)), 140), 0)),
     Bool.pick(Out, U.KiCad.ipc.ready(info), Set.ipc(ty, ipc, x, w, (b2 + 500 + dy + ey + kh : U32)), Out.none()),
     Set.row(ty, U.FreeCAD.label.loc(Ty.loc(ty), info), U.FreeCAD.note(Ty.loc(ty), info), x, (b2 + 546 + dy + ey + kh : U32), w),
-    Set.browser(ty, M.Setting.get(st, "browser.engine", "chrome"), U.Str.get(info, "browser.engine.err"), x, w, (b2 + 598 + dy + ey + kh : U32)),
+    Set.browser(ty, CF.Cef.requested(M.Setting.get(st, "browser.engine", CF.Cef.default())), U.Str.get(info, "browser.engine.err"), U.Str.get(info, "browser.engine.live"), x, w, (b2 + 598 + dy + ey + kh : U32)),
     Set.order(ty, st, x, w, (b2 + 674 + dy + ey + kh : U32)),
     Set.head(ty, MSG.T.settings.appearance(Ty.loc(ty)), x, (b2 + 570 + dy + fy : U32)),
     Set.card(x, (b2 + 602 + dy + fy : U32), w, 220),
