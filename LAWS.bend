@@ -1,6 +1,7 @@
 import Base
 import ./src/core/auth.bend as AUTH
 import ./src/core/http.bend as HTTPAUTH
+import ./src/core/pcb2d.bend as PCB2 # PCB viewer text
 import ./src/app/side_rows.bend as SR
 import ./src/app/side_row_types.bend as SRT
 import ./src/server/botnet.bend as MPLOG # mail perf runtime count
@@ -10664,3 +10665,14 @@ law auth_empty_remote_token_denied:
 
 law auth_cookie_prefix_denied:
   {AUTH.Auth.allowed(False{}, [HTTPAUTH.Header{"cookie", "bp_token=secret-extra"}], "/ws", "secret") == False{} : Bool}
+# ---- PCB viewer text ----
+law pcb2_hidden_text_draws_nothing:
+  for +at: B.Pt
+  for +angle: F32
+  for +x: KSEX.Sx
+  for +text: String
+  for +up: Bool
+  for +key: String
+  for +sig: U32
+  for +ctx: String
+  {PCB2.Text.visible.k(True{}, at, angle, x, text, up, key, sig, ctx) == Nil{} : List<&2, B.Item>}
