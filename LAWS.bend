@@ -10640,3 +10640,13 @@ law mail_body_kept_output:
 
 law mail_age_relative_deadline:
   {MM.BotM.age_due(160n, 101n) == 161n : Nat}
+
+# Reusing the window's exact sidebar index preserves the complete plane.
+law mail_plane_indexed_build:
+  for +u: U.Ui
+  {BV.Bv.plane.build.ix(True{}, u, U.Side.ix(U.Ui.state(u))) == BV.Bv.plane.build(True{}, u) : PLN.Plane}
+
+law mail_plane_indexed_hidden:
+  for +u: U.Ui
+  for ix: U.SIx
+  {BV.Bv.plane.build.ix(False{}, u, ix) == BV.Bv.plane.none() : PLN.Plane}

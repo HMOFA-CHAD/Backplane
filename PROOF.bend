@@ -12338,3 +12338,7 @@ def Laws.mailroom_covers_plane(p):
 def Laws.mail_body_kept_output(k, o, at, due): {==}
 
 def Laws.mail_age_relative_deadline(): {==}
+
+def Laws.mail_plane_indexed_build(u): {==}
+
+def Laws.mail_plane_indexed_hidden(u, ix): {==}
