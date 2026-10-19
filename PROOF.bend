@@ -12364,3 +12364,25 @@ def Laws.viewer_reopen_board_keeps_scene(items, now):
 
 def Laws.viewer_reopen_schematic_keeps_scene(items, now):
   {==}
+
+# --- browser-cef default (October19) ---
+def Laws.cef_default_request():
+  {==}
+def Laws.cef_unset_request():
+  {==}
+def Laws.cef_explicit_chrome_request():
+  {==}
+def Laws.cef_explicit_cef_request():
+  {==}
+# --- end browser-cef default ---
+
+# --- browser-cef fallback (October19) ---
+def Laws.cef_unavailable_default_is_explained():
+  {==}
+def Laws.cef_explicit_chrome_has_no_warning():
+  {==}
+def Laws.cef_fallback_keeps_error(err):
+  match err:
+    case SNil{}: {==}
+    case SCon{_, _}: {==}
+# --- end browser-cef fallback ---

@@ -9970,7 +9970,7 @@ def Hub.cef.reconcile.on(h: Hub, +on: Bool) -> IO(Hub):
 def Hub.cef.reconcile(h: Hub) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.cef.reconcile.on(Hub{st, f, ls, cl, as, inbox, cfg, note}, CF.Cef.engine(M.Setting.get(st, "browser.engine", "chrome"), CF.Cef.session.known(Cfg.cef(cfg)), True{}))
+      Hub.cef.reconcile.on(Hub{st, f, ls, cl, as, inbox, cfg, note}, CF.Cef.engine(CF.Cef.requested(M.Setting.get(st, "browser.engine", CF.Cef.default())), CF.Cef.session.known(Cfg.cef(cfg)), True{}))
 
 # only after the messages that can change the engine (Cef.after)
 def Hub.cef.after(go: Bool, h: Hub) -> IO(Hub):
