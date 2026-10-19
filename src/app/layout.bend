@@ -2315,11 +2315,17 @@ def Lay.picker.k(+ty: Ty, +ms: List<&2, String>, +cur: String, +info: String, +p
     Picker.rows(ty, MN.Menu.rows(shown, Nat.add(x, 6n), Nat.add(top, rel), Nat.sub(w, 12n)), List.drop(&2, String, ms, off), cur, info, prov, col),
     Out.ops(Picker.bar(Nat.is_lt(shown, n), Nat.sub(Nat.add(x, w), 4n), Nat.add(top, rel), span, off, shown, n))])
 
-def Lay.picker(open: Bool, +ty: Ty, +ms: List<&2, String>, +cur: String, +info: String, +prov: String, +x0: U32, +x1: U32, +bottom: U32, +limit: U32, +es: List<&2, String>, +effort: String, +raw: String,
-    srch: Bool, +q: String, +focus: String, +blink: Bool, +caret: Nat, +mark: Nat) -> Out:
+# (the models the search finds, at most Models.cap(), and the models info
+# cut to them for their labels: made only while the picker is open)
+def Lay.picker.s(+ty: Ty, +ms: List<&2, String>, +cur: String, +info: String, +prov: String, +x0: U32, +x1: U32, +bottom: U32, +limit: U32, +es: List<&2, String>, +effort: String, +raw: String,
+    +q: String, +focus: String, +blink: Bool, +caret: Nat, +mark: Nat) -> Out:
+  Lay.picker.k(ty, ms, cur, U.Models.view(info, prov, ms), prov, x0, x1, bottom, limit, es, effort, raw, U.Models.search(U.Models.menu(info, prov)), q, focus, blink, caret, mark)
+
+def Lay.picker(open: Bool, +ty: Ty, +cur: String, +info: String, +prov: String, +x0: U32, +x1: U32, +bottom: U32, +limit: U32, +es: List<&2, String>, +effort: String, +raw: String,
+    +q: String, +focus: String, +blink: Bool, +caret: Nat, +mark: Nat) -> Out:
   match open:
     case True{}:
-      Lay.picker.k(ty, ms, cur, info, prov, x0, x1, bottom, limit, es, effort, raw, srch, q, focus, blink, caret, mark)
+      Lay.picker.s(ty, U.Models.shown(info, prov, q), cur, info, prov, x0, x1, bottom, limit, es, effort, raw, q, focus, blink, caret, mark)
     case False{}:
       Out.none()
 
@@ -4042,6 +4048,16 @@ def Set.threads(+ty: Ty, +st: M.State, +n: S.Nui, +x: U32, +w: U32, +b: U32) -> 
     Set.notify(st, ty, x, w, (b + 256 : U32)),
     Set.fallback(ty, n, x, w, (b + 256 + Set.notify.h(st, ty, w) : U32))])
 
+# Settings' model search (the picker's field, "mq"), once the provider
+# lists many models
+def Set.find(srch: Bool, +ty: Ty, +n: S.Nui, +x: U32, +y: U32, +w: U32) -> Out:
+  match srch:
+    case True{}:
+      Lay.field.x(ty, D.Clip.all(), x, y, w, U.Ui.scratch(S.Nui.ui(n), "@f.mq"), String.eq(S.Nui.focus_of(n), S.Fld.id("mq", "", "")), S.Blink.on(n), True{}, S.Nui.caret_of(n), S.Nui.mark(n),
+        MSG.T.common.search(Ty.loc(ty)), S.Fld.id("mq", "", ""))
+    case False{}:
+      Out.none()
+
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +label0 = MSG.T.settings.theme.light(Ty.loc(ty))
   +label1 = MSG.T.settings.theme.dark(Ty.loc(ty))
@@ -4054,8 +4070,11 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +x = {(x0 + U32.shr((x1 - x0 - w : U32)) : U32) : U32}
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +ipc = M.Setting.get(st, "kicad.ipc", "on")
-  +ms = U.Models.menu(U.Str.get(info, "models"), prov)
-  +dy = {(Set.rows(ty, ms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 + 26 : U32) : U32}
+  +mi = U.Models.of(info, prov)
+  +srch = U.Models.search(U.Models.menu(mi, prov))
+  +fh = {Bool.pick(U32, srch, 38, 0) : U32}
+  +ms = U.Models.settings(mi, prov, U.Ui.scratch(S.Nui.ui(n), "@f.mq"), M.Setting.get(st, "agent.model", ""))
+  +dy = {(Set.rows(ty, ms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 + 26 + fh : U32) : U32}
   +tp = U.TextGen.provider(st)
   +tm = U.TextGen.model(st)
   +tms = U.Models.menu(U.Str.get(info, "models"), tp)
@@ -4077,8 +4096,9 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Set.card(x, (b2 + 224 : U32), w, (124 + dy : U32)),
     Set.row(ty, MSG.T.settings.agents.default(Ty.loc(ty)), MSG.T.settings.agents.note(Ty.loc(ty), Set.cli.loc(Ty.loc(ty), U.Models.cli(U.Str.get(info, "models"), prov), prov)), x, (b2 + 226 : U32), w),
     Set.chips(ty, ["claude", "codex", "grok", "muse", "antigravity", "opencode"], prov, "agent.provider", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 274 : U32)),
-    Set.chips(ty, ms, M.Setting.get(st, "agent.model", ""), "agent.model", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 308 : U32)),
-    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line.loc(Ty.loc(ty), U.Models.label_of(U.Str.get(info, "models"), prov, M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", "")), (w - 32 : U32)),
+    Set.find(srch, ty, n, (x + 16 : U32), (b2 + 308 : U32), (w - 32 : U32)),
+    Set.chips(ty, ms, M.Setting.get(st, "agent.model", ""), "agent.model", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 308 + fh : U32)),
+    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line.loc(Ty.loc(ty), U.Models.label_of(mi, prov, M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", "")), (w - 32 : U32)),
       D.Clip.all(), (x + 16 : U32), (b2 + 318 + dy : U32), 24, T.Th.dim())),
     Set.head(ty, MSG.T.settings.writing(Ty.loc(ty)), x, (b2 + 368 + dy : U32)),
     Set.card(x, (b2 + 400 + dy : U32), w, (150 + er : U32)),
@@ -6734,8 +6754,8 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
           Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
           Lay.asks(ty, asks, draft, pics, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
           Btw.card.if(Bool.not(String.is_empty(bq)), ty, bq, ba, cx0, cx1, (h - 132 - qh - eh - bh + 4 : U32)),
-          Lay.picker(picking, ty, U.Models.shown(info, pr, mq), mo, info, pr, cx0, cx1, (h - 128 - eh : U32), (60 + hy : U32), U.Chip.all(info, pr, mo), U.Effort.of(st, sel), moff,
-            U.Models.search(U.Models.menu(info, pr)), mq, focus, blink, caret, mark)])
+          Lay.picker(picking, ty, mo, info, pr, cx0, cx1, (h - 128 - eh : U32), (60 + hy : U32), U.Chip.all(info, pr, mo), U.Effort.of(st, sel), moff,
+            mq, focus, blink, caret, mark)])
       Out.cat(Out.cat(tl, TL.pill(String.is_empty(pill), ty, pill, cx0, cx1, (h - ah - qh - eh - bh - 132 : U32))), ch)
 
 # while files dragged in hover over the window, an accent ring around the
@@ -7085,7 +7105,7 @@ def Lay.thread.at.k(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: 
   match n:
     case S.Nui{U.Ui{+st, +sel, _, +live, +op, _, _, _, pa, _, _, _, _, _, +nf, _, _}, _, +h, _, _, _, +sc, +caret, +focus, +path, _, _, _}:
       Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, S.Imx.draft(n), x0, x1, h), Lay.thread.k(ty, memo, U.Ui.thread(st, sel), S.Imx.draft(n), S.Cs.held(n), st, sel, U.Str.get(live, sel), S.Imx.at(n), S.Imx.mk(n), focus, S.Blink.on(n), x0, x1, h, sc, pa, U.Flag.get(op, "term"),
-        U.Str.get(nf, "models"), U.Flag.get(op, "models"), U.Ui.pending(S.Nui.ui(n), sel), U.Ui.skills(S.Nui.ui(n)), U.Side.now(S.Nui.ui(n)),
+        U.Models.of(nf, M.Thread.provider(U.Ui.thread(st, sel))), U.Flag.get(op, "models"), U.Ui.pending(S.Nui.ui(n), sel), U.Ui.skills(S.Nui.ui(n)), U.Side.now(S.Nui.ui(n)),
         U.Ui.atts(S.Nui.ui(n), sel), U.Ui.uploading(S.Nui.ui(n), sel), path, nf, U.Ui.deleting(S.Nui.ui(n)), TSel.of(U.Ui.scratch(S.Nui.ui(n), "@ts"), sel), U.Ui.scratch(S.Nui.ui(n), "@menu.off"), U.Side.phase(st, U.Ui.thread(st, sel)), hy, Lay.more(memo, n, sel), U.Btw.question(S.Nui.ui(n)), U.Btw.reply.of(S.Nui.ui(n)),
         U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"), U.Ec.of(S.Nui.ui(n), sel), EM.Emb.focused(focus), S.Imx.runs(n), S.Hold.of(n), U.Hold.pill(S.Nui.ui(n), sel), U.Ui.scratch(S.Nui.ui(n), "@f.mq"))),
         Vx.view(ty, n, st, sel, x0, x1, h)), Lay.earlier(Lay.more(memo, n, sel)))

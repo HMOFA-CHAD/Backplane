@@ -310,10 +310,63 @@ def Ui.skip(u: Ui, n: Nat) -> Ui:
 def Seq.demo(+t: String, xs: List<&2, J.Json>) -> J.Json:
   J.Json.obj([J.KV{"t", J.Str{t}}, J.KV{"items", J.Json.arr(xs)}])
 
+# A provider with hundreds of models (opencode signed in to a few) would
+# make the models info every client parses, often per frame, many times
+# larger: its list and labels are kept apart, under "models.oc", and only
+# its picker and Settings read them (Models.of). "models" keeps its first
+# few, so it still counts as installed.
+def Info.drop.k(skip: Bool, +k: String, v: J.Json, rest: List<&2, J.KV>) -> List<&2, J.KV>:
+  match skip:
+    case True{}:
+      rest
+    case False{}:
+      J.KV{k, v} <> rest
+
+def Info.drop.go(fs: J.Json, +key: String) -> List<&2, J.KV>:
+  match fs:
+    case J.Field{+k, v, t}:
+      Info.drop.k(String.eq(k, key), k, v, Info.drop.go(t, key))
+    case _:
+      Nil{}
+
+# an object's fields but `key`'s
+def Info.drop(o: J.Json, +key: String) -> List<&2, J.KV>:
+  match o:
+    case J.Obj{fs}:
+      Info.drop.go(fs, key)
+    case _:
+      Nil{}
+
+def Info.drop.obj(+j: J.Json, +key: String) -> J.Json:
+  J.Json.obj(Info.drop(j, key))
+
+def Info.models.small.j(+j: J.Json) -> String:
+  J.Json.show(J.Json.obj(List.append(&2, J.KV, Info.drop(Info.drop.obj(j, "about"), "opencode"),
+    [J.KV{"opencode", J.Json.arr(List.take(&2, J.Json, J.Json.elems(J.Json.get_obj(j, "opencode")), 12n))},
+     J.KV{"about", J.Json.obj(List.append(&2, J.KV, Info.drop(J.Json.get_obj(j, "about"), "opencode"),
+       [J.KV{"opencode", J.Json.obj([J.KV{"cli", J.Json.get_obj(J.Json.get_obj(J.Json.get_obj(j, "about"), "opencode"), "cli")}])}]))}])))
+
+def Info.models.oc.j(+j: J.Json) -> String:
+  J.Json.show(J.Json.obj([J.KV{"opencode", J.Json.get_obj(j, "opencode")},
+    J.KV{"about", J.Json.obj([J.KV{"opencode", J.Json.get_obj(J.Json.get_obj(j, "about"), "opencode")}])}]))
+
+def Info.put.models(m: Map<&2, String>, +j: J.Json) -> Map<&2, String>:
+  Map.set(&2, String, Map.set(&2, String, m, "models", Info.models.small.j(j)), "models.oc", Info.models.oc.j(j))
+
+def Info.put.k(models: Bool, m: Map<&2, String>, +k: String, +v: String) -> Map<&2, String>:
+  match models:
+    case True{}:
+      Info.put.models(m, Maybe.default(&2, J.Json, J.Json.parse(v), J.Null{}))
+    case False{}:
+      Map.set(&2, String, m, k, v)
+
+def Info.put(m: Map<&2, String>, +k: String, +v: String) -> Map<&2, String>:
+  Info.put.k(String.eq(k, "models"), m, k, v)
+
 def Info.fields(fs: J.Json, m: Map<&2, String>) -> Map<&2, String>:
   match fs:
-    case J.Field{k, J.Str{v}, t}:
-      Info.fields(t, Map.set(&2, String, m, k, v))
+    case J.Field{+k, J.Str{+v}, t}:
+      Info.fields(t, Info.put(m, k, v))
     case J.Field{_, _, t}:
       Info.fields(t, m)
     case _:
@@ -1592,6 +1645,10 @@ def Models.strs(xs: List<&2, J.Json>) -> List<&2, String>:
       s <> Models.strs(t)
     case _ <> t:
       Models.strs(t)
+
+# the models info a provider's picker reads (opencode's is apart: Info.put)
+def Models.of(+nf: Map<&2, String>, +prov: String) -> String:
+  Str.get(nf, Bool.pick(String, String.eq(prov, "opencode"), "models.oc", "models"))
 
 def Models.list(+info: String, +provider: String) -> List<&2, String>:
   Models.strs(J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(info), J.Null{}), provider)))
@@ -4046,9 +4103,61 @@ def Models.find.k(all: Bool, +ms: List<&2, String>, +q: String, +info: String, +
 def Models.find(+ms: List<&2, String>, +q: String, +info: String, +prov: String) -> List<&2, String>:
   Models.find.k(String.is_empty(String.trim(q)), ms, q, info, prov)
 
-# what the picker lists: the provider's models, those the search finds
+# what the picker lists: the provider's models, those the search finds,
+# at most Models.cap() (the search narrows the rest), so a frame draws and
+# labels no more than that
+def Models.cap() -> Nat:
+  50n
+
 def Models.shown(+info: String, +prov: String, +q: String) -> List<&2, String>:
-  Models.find(Models.menu(info, prov), q, info, prov)
+  List.take(&2, String, Models.find(Models.menu(info, prov), q, info, prov), Models.cap())
+
+# Settings' model chips: the default, the chosen model and what the search
+# finds, a dozen at most
+def Models.with(+cur: String, +ms: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, Bool.or(String.is_empty(cur), List.contains(~String, ~String.eq, ms, cur)), ms, List.append(&2, String, ms, [cur]))
+
+def Models.settings.k(many: Bool, +info: String, +prov: String, +q: String, +cur: String) -> List<&2, String>:
+  match many:
+    case True{}:
+      Models.with(cur, List.take(&2, String, Models.find(Models.menu(info, prov), q, info, prov), 12n))
+    case False{}:
+      Models.menu(info, prov)
+
+def Models.settings(+info: String, +prov: String, +q: String, +cur: String) -> List<&2, String>:
+  Models.settings.k(Models.search(Models.menu(info, prov)), info, prov, q, cur)
+
+def Models.view.strs(ms: List<&2, String>) -> List<&2, J.Json>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case +m <> t:
+      J.Str{m} <> Models.view.strs(t)
+
+def Models.view.go(ms: List<&2, String>, +labels: J.Json) -> List<&2, J.KV>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case +m <> t:
+      J.KV{Bool.pick(String, String.is_empty(m), "default", m), J.Str{J.Json.get_str(labels, Bool.pick(String, String.is_empty(m), "default", m), "")}} <> Models.view.go(t, labels)
+
+# the models info cut to the models shown, for the picker's rows, which
+# look up each one's label in it: a few KB to read, not all of them
+def Models.view(+info: String, +prov: String, +ms: List<&2, String>) -> String:
+  J.Json.show(J.Json.obj([J.KV{prov, J.Json.arr(Models.view.strs(ms))},
+    J.KV{"about", J.Json.obj([J.KV{prov, J.Json.obj([J.KV{"labels", J.Json.obj(Models.view.go(ms, J.Json.get_obj(Models.about(info, prov), "labels")))}])}])}]))
+
+# what a phone's picker gets: opencode's models cut to those its search
+# finds (the phones draw every row they are sent); others' info as is
+def Models.phone.k(oc: Bool, +nf: Map<&2, String>, +prov: String, +q: String) -> String:
+  match oc:
+    case True{}:
+      Models.view(Models.of(nf, prov), prov, Models.shown(Models.of(nf, prov), prov, q))
+    case False{}:
+      Str.get(nf, "models")
+
+def Models.phone(+nf: Map<&2, String>, +prov: String, +q: String) -> String:
+  Models.phone.k(String.eq(prov, "opencode"), nf, prov, q)
 
 # The picker opening empties its search; on opencode it also has the hub
 # read opencode's models again (models.refresh: about a second, so a
