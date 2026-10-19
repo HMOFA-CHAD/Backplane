@@ -10741,3 +10741,28 @@ law run_model_claude_worker_default_kept:
 law run_model_codex_stale_parent_uses_cli_default:
   for uber: Bool
   {H.Run.model.pick("codex", "opus", "sonnet", uber) == "" : String}
+
+# Future worktree seeds fold digits in a bounded U32 before Git.hex8.
+# Symbolic steps pin down the decimal fold and skipped separator; concrete
+# production ids cover the Nat.read overflow and same-second distinction.
+law wt_seed_digit_step:
+  for +rest: String
+  for +acc: U32
+  {H.Wt.seed.go(SCon{'9', rest}, acc) == H.Wt.seed.go(rest, U32.add(U32.mul(acc, 10), 9)) : U32}
+
+law wt_seed_skips_separator:
+  for +rest: String
+  for +acc: U32
+  {H.Wt.seed.go(SCon{'-', rest}, acc) == H.Wt.seed.go(rest, acc) : U32}
+
+law wt_seed_legacy_small:
+  {H.Wt.seed("t100-1") == 1001n : Nat}
+
+law wt_seed_large_id:
+  {H.Wt.seed.go("t1791993305-100157", 0) == 4100190077 : U32}
+
+law wt_seed_same_second_next:
+  {H.Wt.seed.go("t1791993305-100158", 0) == 4100190078 : U32}
+
+law wt_seed_wrap:
+  {H.Wt.seed("t4294967296") == 0n : Nat}
