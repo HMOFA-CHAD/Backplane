@@ -1159,12 +1159,22 @@ def TL.link.w(+ty: Ty, p: LK.Piece) -> U32:
     case LK.PRef{l, _, _}:
       Ty.width(ty, 3n, l)
 
+# No chip resolution or measurement cache is needed to activate an explicit
+# reference. Bare ids still need object-aware rendering before activation.
+def TL.link.ref(bare: Bool, +ty: Ty, +label: String, +uri: String, +c: D.Clip, +x: U32, +y: U32, color: U32) -> Out:
+  match bare:
+    case True{}: Out.ops(Ty.text(ty, 3n, label, c, x, y, 23, color))
+    case False{}:
+      +w = Ty.width(ty, 3n, label)
+      Out{D.Draw.rect(c, x, (y + 19 : U32), w, 1, T.Th.accent(), 255) <> Ty.text(ty, 3n, label, c, x, y, 23, T.Th.accent()),
+        [Lay.hit(x, y, w, 23, "ref-go", uri)]}
+
 def TL.link.seg(+ty: Ty, p: LK.Piece, +c: D.Clip, +x: U32, +y: U32, +color: U32) -> Out:
   match p:
     case LK.PText{s}:
       Out.ops(Ty.text(ty, 3n, s, c, x, y, 23, color))
-    case LK.PRef{l, _, _}:
-      Out.ops(Ty.text(ty, 3n, l, c, x, y, 23, color))
+    case LK.PRef{l, u, bare}:
+      TL.link.ref(bare, ty, l, u, c, x, y, color)
     case LK.PLink{+l, +u}:
       Out{D.Draw.rect(c, x, (y + 19 : U32), Ty.width(ty, 3n, l), 1, T.Th.accent(), 255) <> Ty.text(ty, 3n, l, c, x, y, 23, T.Th.accent()),
         [Lay.hit(x, y, Ty.width(ty, 3n, l), 23, Bool.pick(String, LK.Link.is_web(u), "open-url", "file-open"), u)]}
