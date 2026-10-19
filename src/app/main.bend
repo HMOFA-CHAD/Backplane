@@ -2557,12 +2557,12 @@ type Part is Data:
   PBot{o: L.Out, body_hit: Nat}
   PMain{m: MM.MainM}
 
-def Part.of(bm: Maybe<&2, L.Out>, body_hit: Nat, +mm: List<&2, MM.MainM>, +tc: MM.TouchK, +ty: L.Ty, +tlm: L.TLMemo, +n: N.Nui) -> Part:
+def Part.of(bm: Maybe<&2, L.Out>, body_hit: Nat, +mm: List<&2, MM.MainM>, +tc: MM.TouchK, +ty: L.Ty, +tlm: L.TLMemo, +n: N.Nui, +inf: String) -> Part:
   match bm:
     case Some{o}:
       PBot{o, body_hit}
     case None{}:
-      PMain{MM.Mm.main(mm, ty, tlm, n, tc)}
+      PMain{MM.Mm.main.i(mm, ty, tlm, n, tc, inf)}
 
 def FrameM.join(p: Part, +sd: MM.SideM, +mm: List<&2, MM.MainM>, +ty: L.Ty, +tlm: L.TLMemo, +n: N.Nui) -> FrameM:
   match p:
@@ -2573,9 +2573,13 @@ def FrameM.join(p: Part, +sd: MM.SideM, +mm: List<&2, MM.MainM>, +ty: L.Ty, +tlm
 
 # the main area and the sidebar's body at once (as Lay.frame.u lays them
 # out), each from its memo when its key holds
-def FrameM.lay(+mm: List<&2, MM.MainM>, sm: List<&2, MM.SideM>, +tc: MM.TouchK, +ty: L.Ty, +tlm: L.TLMemo, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui, +ix: U.SIx, +br: BV.BRows) -> FrameM:
-  p sd = Part.of(BV.Bv.main.w(ty, tlm, cats, wraps, n), BV.Bv.mail.hit(wraps, n), mm, tc, ty, tlm, n) SideK.go(MM.Sm.key(n, tc), sm, ty, cats, wraps, n, ix, br)
+def FrameM.lay.i(+mm: List<&2, MM.MainM>, sm: List<&2, MM.SideM>, +tc: MM.TouchK, +ty: L.Ty, +tlm: L.TLMemo, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui, +ix: U.SIx, +br: BV.BRows, +inf: String) -> FrameM:
+  p sd = Part.of(BV.Bv.main.w(ty, tlm, cats, wraps, n), BV.Bv.mail.hit(wraps, n), mm, tc, ty, tlm, n, inf) SideK.go(MM.Sm.key.i(n, tc, inf), sm, ty, cats, wraps, n, ix, br)
   FrameM.join(p, sd, mm, ty, tlm, n)
+
+# (the info part of both memos' keys made once: MM.Mm.info.of)
+def FrameM.lay(+mm: List<&2, MM.MainM>, sm: List<&2, MM.SideM>, +tc: MM.TouchK, +ty: L.Ty, +tlm: L.TLMemo, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui, +ix: U.SIx, +br: BV.BRows) -> FrameM:
+  FrameM.lay.i(mm, sm, tc, ty, tlm, cats, wraps, n, ix, br, MM.Mm.info.of(n))
 
 def FrameM.out(f: FrameM) -> L.Out:
   match f:
