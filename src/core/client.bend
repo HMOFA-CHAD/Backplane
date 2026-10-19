@@ -356,10 +356,18 @@ def Info.put.models(+m: Map<&2, String>, +j: J.Json) -> Map<&2, String>:
   Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, m, "models", Info.models.small.j(j)), "models.oc", Info.models.oc.j(j)),
     "models.v", Nat.show(1n+Maybe.default(&2, Nat, Nat.read(Str.get(m, "models.v")), 0n)))
 
+# (a models info that is not JSON is kept as it came)
+def Info.put.m(j: Maybe<&2, J.Json>, +m: Map<&2, String>, +v: String) -> Map<&2, String>:
+  match j:
+    case Some{J.Obj{+fs}}:
+      Info.put.models(m, J.Obj{fs})
+    case _:
+      Map.set(&2, String, m, "models", v)
+
 def Info.put.k(models: Bool, +m: Map<&2, String>, +k: String, +v: String) -> Map<&2, String>:
   match models:
     case True{}:
-      Info.put.models(m, Maybe.default(&2, J.Json, J.Json.parse(v), J.Null{}))
+      Info.put.m(J.Json.parse(v), m, v)
     case False{}:
       Map.set(&2, String, m, k, v)
 
