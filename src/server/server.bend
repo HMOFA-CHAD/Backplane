@@ -5175,7 +5175,7 @@ def Conn.lock.browser(ok: Bool, s: Socket, +op: String, +len: Nat, rest: List<&2
 def Conn.route.lock(lock: Bool, s: Socket, +req: W.Request, rest: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
   match lock req:
     case True{} W.Request{_, +p, +hs}:
-      Conn.lock.browser(AUTH.Auth.browser(hs), s, String.drop(W.Http.route(p), 6n), J.Json.get_nat(J.Json.obj([J.KV{"n", J.Num{W.Http.header_of(hs, "content-length")}}]), "n", 0n), rest, inbox)
+      Conn.lock.browser(Bool.and(AUTH.Auth.browser(hs), AUTH.Auth.trusted(True{}, hs)), s, String.drop(W.Http.route(p), 6n), J.Json.get_nat(J.Json.obj([J.KV{"n", J.Num{W.Http.header_of(hs, "content-length")}}]), "n", 0n), rest, inbox)
     case False{} _:
       Conn.route.mcp.raw(Conn.is_mcp(req), s, req, rest, web, id, inbox, trusted, token)
 
