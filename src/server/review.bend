@@ -13,6 +13,8 @@ import ./gh.bend as GH
 import ../core/cad.bend as CAD
 import ../core/checks.bend as CHK
 import ../core/release.bend as REL
+import ../core/sha256.bend as SH
+import ../core/utf8.bend as U8
 
 # Design review's jobs (docs/design-review.md): what the hub asks of a
 # thread's folder for comparisons, BOMs, checks and releases (core's
@@ -254,9 +256,42 @@ def Rvc.tasks(ts: List<&2, CHK.Task>) -> List<&2, J.Json>:
     case x <> t:
       Rvc.task(x) <> Rvc.tasks(t)
 
-def Rvc.checks.out(+fs: List<&2, CHK.Finding>, +tasks: List<&2, CHK.Task>, +runs: List<&2, CHK.Run>, +g: CHK.Gate) -> String:
-  J.Json.show(J.Json.obj([J.KV{"md", J.Str{CHK.Checks.md(fs, Nil{}, runs)}}, J.KV{"gate", J.Str{CHK.Checks.gate.all(fs, tasks, runs, g)}},
-    J.KV{"line", J.Str{CHK.Checks.line(fs)}}, J.KV{"tasks", J.Json.arr(Rvc.tasks(tasks))}]))
+# A project's own checks (.backplane/checks.json's commands, run with sh)
+# run only once the person has said yes to them as they are: the hub keeps
+# the sha256 of each checks.json allowed in <home>/checks.trusted (its own
+# state, not the project's), and asks again when it changes. Until then
+# they do not run, the page shows them, the gate fails (a release waits),
+# and the report carries "pending" (the hash) and "pendrun" (the commands)
+# for the hub's question (server.bend's ChecksAsk).
+def Rvc.trusted(ls: List<&2, String>, +hash: String) -> Bool:
+  match ls:
+    case Nil{}:
+      False{}
+    case +l <> t:
+      Bool.or(String.eq(String.trim(l), hash), Rvc.trusted(t, hash))
+
+def Rvc.cmds(cs: List<&2, CHK.Custom>) -> String:
+  match cs:
+    case Nil{}:
+      ""
+    case CHK.Custom{+name, +run, _} <> t:
+      name ++ ": " ++ run ++ "\n" ++ Rvc.cmds(t)
+
+def Rvc.runs.ok(ok: Bool, cs: List<&2, CHK.Custom>, +dir: String) -> IO(List<&2, CHK.Run>):
+  match ok:
+    case True{}:
+      Rvc.runs(cs, dir, Nil{})
+    case False{}:
+      IO.pure(List<&2, CHK.Run>, Nil{})
+
+def Rvc.pending.md(ok: Bool, +cmds: String) -> String:
+  Bool.pick(String, ok, "", "**This project's own checks wait for your OK.** `.backplane/checks.json` runs these commands; Backplane asks you in the thread before it runs them:\n\n```\n" ++ cmds ++ "```\n\n")
+
+def Rvc.checks.out(+fs: List<&2, CHK.Finding>, +tasks: List<&2, CHK.Task>, +runs: List<&2, CHK.Run>, +g: CHK.Gate, +ok: Bool, +hash: String, +cmds: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"md", J.Str{Rvc.pending.md(ok, cmds) ++ CHK.Checks.md(fs, Nil{}, runs)}},
+    J.KV{"gate", J.Str{Bool.pick(String, ok, CHK.Checks.gate.all(fs, tasks, runs, g), "this project's own checks wait for your OK")}},
+    J.KV{"line", J.Str{CHK.Checks.line(fs)}}, J.KV{"tasks", J.Json.arr(Rvc.tasks(tasks))},
+    J.KV{"pending", J.Str{Bool.pick(String, ok, "", hash)}}, J.KV{"pendrun", J.Str{Bool.pick(String, ok, "", cmds)}}]))
 
 def Rvc.or(+text: String, +d: String) -> String:
   Bool.pick(String, String.is_empty(String.trim(text)), d, text)
@@ -270,10 +305,14 @@ def Rvc.checks.in(+out: String, +dir: String, +home: String, +trigger: String) -
     kc : List<&2, CHK.Finding> <- Rvc.chks(CAD.Cad.kicad.checks(), Rvc.vars(cli, pcb, sch, out), out, pcb, sch, dir, Nil{})
     ps : List<&2, BM.Part> <- Rvc.parts(sch)
     cl : String <- K.Io.text(dir ++ "/.backplane/checklist.md")
-    cj : String <- K.Io.text(dir ++ "/.backplane/checks.json")
+    +cj : String <- K.Io.text(dir ++ "/.backplane/checks.json")
     +cfg : CHK.Config = CHK.Checks.config(cj)
-    runs : List<&2, CHK.Run> <- Rvc.runs(CHK.Checks.for(Rvc.cfg(cfg), trigger), dir, Nil{})
-    return Rvc.checks.out(List.append(&2, CHK.Finding, kc, Rvc.bomf(BM.Bom.rules(ps))), CHK.Checklist.parse(Rvc.or(cl, CHK.Checklist.default())), runs, Rvc.gate(cfg))
+    +cs : List<&2, CHK.Custom> = CHK.Checks.for(Rvc.cfg(cfg), trigger)
+    +hash : String = SH.Hex.encode(SH.Sha256.hash(U8.Utf8.encode(cj)))
+    tr : String <- K.Io.text(home ++ "/checks.trusted")
+    +ok : Bool = Bool.or(List.is_empty(&2, CHK.Custom, cs), Rvc.trusted(String.lines(tr), hash))
+    runs : List<&2, CHK.Run> <- Rvc.runs.ok(ok, cs, dir)
+    return Rvc.checks.out(List.append(&2, CHK.Finding, kc, Rvc.bomf(BM.Bom.rules(ps))), CHK.Checklist.parse(Rvc.or(cl, CHK.Checklist.default())), runs, Rvc.gate(cfg), ok, hash, Rvc.cmds(cs))
 
 def Rvc.checks.done(+text: String, +tmp: String) -> IO(Unit):
   do IO<Unit>:
@@ -502,7 +541,8 @@ def RvJob.checks.k(r: P.Ran, +thread: String) -> Res:
       Res{True{}, J.Json.obj([J.KV{"report", J.Json.obj([J.KV{"thread", J.Str{thread}}, J.KV{"page", J.Str{"checks"}}, J.KV{"md", J.Str{J.Json.get_str(o, "md", "")}},
         J.KV{"err", J.Str{Bool.pick(String, String.eq(J.Json.show(o), "null"), Rvc.or(String.trim(String.take(out, 300n)), "the checks did not run"), J.Json.get_str(o, "err", ""))}},
         J.KV{"gate", J.Str{J.Json.get_str(o, "gate", "")}}, J.KV{"line", J.Str{J.Json.get_str(o, "line", "")}},
-        J.KV{"tasks", Maybe.default(&2, J.Json, J.Json.get(o, "tasks"), J.Json.arr(Nil{}))}])}])}
+        J.KV{"tasks", Maybe.default(&2, J.Json, J.Json.get(o, "tasks"), J.Json.arr(Nil{}))},
+        J.KV{"pending", J.Str{J.Json.get_str(o, "pending", "")}}, J.KV{"pendrun", J.Str{J.Json.get_str(o, "pendrun", "")}}])}])}
 
 def RvJob.checks(+thread: String, +cwd: String, +commit: String, +trigger: String, +home: String) -> IO(Res):
   Bool.pick(IO(Res), Bool.or(String.is_empty(cwd), String.starts_with(commit, "-")), IO.pure(Res, Res.err("no project folder")),

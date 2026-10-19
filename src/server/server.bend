@@ -202,6 +202,9 @@ type Msg is Data:
   ModelsFound{models: String, text: String}
   # opencode's models read again (OcJob.run): Oc.models.sh's lines
   OcFound{text: String}
+  # a project's own checks wait for the person's OK (RvJob.reply): the hub
+  # asks in the thread (Hub.checks.ask)
+  ChecksAsk{thread: String, hash: String, text: String}
   MachinesFound{machines: String}
   # the tailnet listener is up: the pairing link clients show in Settings
   LinkFound{link: String}
@@ -2534,9 +2537,9 @@ def StepJob.done(+inbox: Chan(Msg), +thread: String, +entry: String, +out: Strin
   Bool.pick(IO(Unit), String.is_empty(rec), IO.pure(Unit, Unit{}),
     StepJob.log(inbox, thread, "step:" ++ String.trim(HI.Hist.at(String.split(out, '\n'), 0n)), rec))
 
-def StepJob.run(+inbox: Chan(Msg), +thread: String, +cwd: String, +entry: String) -> IO(Unit):
+def StepJob.run(+inbox: Chan(Msg), +thread: String, +cwd: String, +entry: String, +home: String) -> IO(Unit):
   Bool.pick(IO(Unit), String.is_empty(cwd), IO.pure(Unit, Unit{}),
-    IO.bind(String, Unit, GT.Git.step.capture(cwd, thread), out => StepJob.done(inbox, thread, entry, out)))
+    IO.bind(String, Unit, GT.Git.step.capture(cwd, thread, GT.Git.step.reg(home)), out => StepJob.done(inbox, thread, entry, out)))
 
 def RefsJob.files(f: K.Files) -> List<&2, J.KV>:
   match f:
@@ -2629,7 +2632,7 @@ def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U
     case 10n:
       Mech.render(inbox, client, id, thread, cwd, a)
     case 11n:
-      StepJob.run(inbox, thread, cwd, a)
+      StepJob.run(inbox, thread, cwd, a, home)
     case 12n:
       RefsJob.run(inbox, client, id, thread, cwd)
     case 13n:
@@ -2647,10 +2650,18 @@ def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U
       GitJob.run.git(tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # design review's jobs (server/review.bend), answered as they finish
+# (a report whose project's own checks wait for the person's OK has the
+# hub ask, once: review.bend's Rvc.checks.out "pending")
+def RvJob.ask(+inbox: Chan(Msg), +rep: J.Json) -> IO(Unit):
+  Bool.pick(IO(Unit), String.is_empty(J.Json.get_str(rep, "pending", "")), IO.pure(Unit, Unit{}),
+    IO.bind(Result<&1, &1, Msg, Unit>, Unit, Chan.send(Msg, inbox, ChecksAsk{J.Json.get_str(rep, "thread", ""), J.Json.get_str(rep, "pending", ""), J.Json.get_str(rep, "pendrun", "")}), r => IO.pure(Unit, Unit{})))
+
 def RvJob.reply(r: RVS.Res, +inbox: Chan(Msg), +client: U32, +id: String) -> IO(Unit):
   match r:
     case RVS.Res{ok, +o}:
-      GitJob.reply(inbox, client, id, ok, o)
+      do IO<Unit>:
+        RvJob.ask(inbox, J.Json.get_obj(o, "report"))
+        GitJob.reply(inbox, client, id, ok, o)
 
 def GitJob.run.r(rv: Bool, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
   match rv:
@@ -8730,6 +8741,10 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +g : String = Hub.gen(st, now)
         IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.ChecksTrust{+hash}:
+      do IO<Hub>:
+        r : P.Ran <- P.Proc.run("sh", ["-c", "case $1 in *[!0-9a-f]*|'') exit 1;; esac; printf '%s\\n' \"$1\" >> \"$2\"", "sh", hash, Cfg.home(cfg) ++ "/checks.trusted"], "/")
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.ModelsRefresh{}:
       do IO<Hub>:
         IO.spawn(Unit, OcJob.run(inbox))
@@ -12867,6 +12882,22 @@ def Hub.order.ping(on: Bool, +st: M.State, +now: Nat, +thread: String, +id: Stri
     case False{}:
       []
 
+# the question for a project's own checks (review.bend's Rvc.trusted), one
+# open at a time for the same checks.json (B.Checks.asked)
+def Hub.checks.ask.k(asked: Bool, h: Hub, +thread: String, +hash: String, +text: String, +now: Nat) -> IO(Hub):
+  match asked:
+    case True{}:
+      IO.pure(Hub, h)
+    case False{}:
+      Hub.step(h, B.Step{[M.AskOpened{"checks:" ++ hash ++ ":" ++ Nat.show(now), thread, "input", "checks_ok",
+        "Run this project's own checks? .backplane/checks.json runs these commands with sh, in the project's folder:\n\n" ++ text ++ "\nAllow them only if you trust where this project came from. Then press Refresh on Checks.",
+        B.Checks.yes() ++ "\nNot now", now}], Nil{}})
+
+def Hub.checks.ask(h: Hub, +thread: String, +hash: String, +text: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.checks.ask.k(Bool.or(String.is_empty(thread), B.Checks.asked(st, hash)), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, hash, text, now)
+
 def Hub.order.note(h: Hub, +thread: String, +id: String, +text: String, +ping: String, +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
@@ -13048,6 +13079,8 @@ def Msg.kind(m: Msg) -> String:
       "models"
     case OcFound{_}:
       "models_opencode"
+    case ChecksAsk{_, _, _}:
+      "checks_ask"
     case MachinesFound{_}:
       "machines"
     case LinkFound{_}:
@@ -13864,6 +13897,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.models(h, ms, mt)
     case OcFound{text}:
       Hub.oc.found(h, text)
+    case ChecksAsk{thread, hash, text}:
+      Hub.checks.ask(h, thread, hash, text, now)
     case MachinesFound{mc}:
       Hub.dir.returned(h, mc)
     case LinkFound{lk}:
