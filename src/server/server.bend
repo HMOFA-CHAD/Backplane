@@ -1284,27 +1284,42 @@ def Conn.reader(fuel: Nat, s: Socket, buf: List<&2, U32>, +id: U32, +inbox: Chan
       Conn.scanned(Conn.scan(65536n, Scan{None{}, buf, False{}}, last, now), s, id, inbox, last, now,
         s2 => b2 => l2 => n2 => Conn.reader(f, s2, b2, id, inbox, l2, n2))
 
-def Conn.raw(r: Socket & U32, rd: Socket, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String) -> IO(Unit):
+# A client let in the legacy way (core/auth.bend's Auth.legacy: no pairing
+# token, trusted as this machine's or the owner's tailnet device) is told,
+# after its join, to pair again (info "auth.legacy", which every client
+# shows once), and it is logged. Gone with Auth.legacy.on().
+def Conn.legacy(legacy: Bool, +id: U32, +inbox: Chan(Msg)) -> IO(Unit):
+  match legacy:
+    case True{}:
+      do IO<Unit>:
+        PS.Log.warn("auth", "client " ++ U32.show(id) ++ " joined without its pairing token (legacy; asked to pair again)")
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{id, "{\"t\":\"info\",\"info\":{\"auth.legacy\":\"1\"}}"})
+        return Unit{}
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Conn.raw(r: Socket & U32, rd: Socket, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String, legacy: Bool) -> IO(Unit):
   (wr, +fd) = r
   do IO<Unit>:
     +out : Chan(Wire) <- Chan.new(Wire, 1024)
     IO.spawn(Unit, Conn.writer(Fuel.forever(), wr, out, OB.Wr.new(), id, id, inbox))
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Join{id, out, since, origin, id, fd})
+    Conn.legacy(legacy, id, inbox)
     Conn.reader(Fuel.forever(), rd, rest, id, inbox, 0n, 0n)
 
-def Conn.ws.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String) -> IO(Unit):
+def Conn.ws.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String, legacy: Bool) -> IO(Unit):
   (rd, res) = r
   match res:
     case Done{wr}:
-      IO.bind(Socket & U32, Unit, H.Sock.raw(wr), x => Conn.raw(x, rd, rest, id, inbox, since, origin))
+      IO.bind(Socket & U32, Unit, H.Sock.raw(wr), x => Conn.raw(x, rd, rest, id, inbox, since, origin, legacy))
     case Fail{_}:
       Socket.close(rd)
 
-def Conn.ws(s: Socket, key: String, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String) -> IO(Unit):
+def Conn.ws(s: Socket, key: String, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String, legacy: Bool) -> IO(Unit):
   do IO<Unit>:
     s2 : Socket <- Conn.send(s, W.Ws.accept(key))
     r : Socket & Result<&1, &1, U32 & String, Socket> <- H.Sock.dup(s2)
-    Conn.ws.dup(r, rest, id, inbox, since, origin)
+    Conn.ws.dup(r, rest, id, inbox, since, origin, legacy)
 
 def Conn.safe(+p: String) -> Bool:
   Bool.and(Bool.not(String.contains(p, "..")), String.starts_with(p, "/"))
@@ -1333,23 +1348,23 @@ def Conn.near.say(near: Bool, +id: U32, +inbox: Chan(Msg)) -> IO(Unit):
     case False{}:
       IO.pure(Unit, Unit{})
 
-def Conn.near.k(r: Socket & String, +key: String, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String) -> IO(Unit):
+def Conn.near.k(r: Socket & String, +key: String, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String, legacy: Bool) -> IO(Unit):
   (s, +ip) = r
   do IO<Unit>:
     Conn.near.say(CF.Cef.loopback(ip), id, inbox)
-    Conn.ws(s, key, rest, id, inbox, since, origin)
+    Conn.ws(s, key, rest, id, inbox, since, origin, legacy)
 
-def Conn.near(plain: Bool, s: Socket, +key: String, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String) -> IO(Unit):
+def Conn.near(plain: Bool, s: Socket, +key: String, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String, legacy: Bool) -> IO(Unit):
   match plain:
     case True{}:
-      IO.bind(Socket & String, Unit, H.Sock.peer(s), r => Conn.near.k(r, key, rest, id, inbox, since, origin))
+      IO.bind(Socket & String, Unit, H.Sock.peer(s), r => Conn.near.k(r, key, rest, id, inbox, since, origin, legacy))
     case False{}:
-      Conn.ws(s, key, rest, id, inbox, since, origin)
+      Conn.ws(s, key, rest, id, inbox, since, origin, legacy)
 
-def Conn.gate(ok: Bool, plain: Bool, s: Socket, +key: String, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String) -> IO(Unit):
+def Conn.gate(ok: Bool, plain: Bool, s: Socket, +key: String, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String, legacy: Bool) -> IO(Unit):
   match ok:
     case True{}:
-      Conn.near(plain, s, key, rest, id, inbox, since, origin)
+      Conn.near(plain, s, key, rest, id, inbox, since, origin, legacy)
     case False{}:
       Conn.finish(s, W.Http.text("401 Unauthorized", "this Backplane needs its pairing token"))
 
@@ -4970,12 +4985,17 @@ def Models.text6(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, Str
 type Found is Data:
   Found{models: String, text: String}
 
+# the app's pages are never framed by another page (clickjacking): the
+# PDFs the Files tab frames itself (/img) are not pages
+def Conn.frames(+path: String) -> String:
+  Bool.pick(String, String.starts_with(W.Http.ctype(path), "text/html"), "X-Frame-Options: DENY\r\nContent-Security-Policy: frame-ancestors 'none'\r\n", "")
+
 def Conn.served(s: Socket, +path: String, +gz: Bool, bs: List<&2, U32>) -> IO(Unit):
   match bs:
     case Nil{}:
       Conn.finish(s, W.Http.text("404 Not Found", "not found"))
     case b <> t:
-      Conn.finish(s, W.Http.response.c("200 OK", W.Http.ctype(path), b <> t, Conn.cache(path), Bool.pick(String, gz, "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n", "Vary: Accept-Encoding\r\n")))
+      Conn.finish(s, W.Http.response.c("200 OK", W.Http.ctype(path), b <> t, Conn.cache(path), Conn.frames(path) ++ Bool.pick(String, gz, "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n", "Vary: Accept-Encoding\r\n")))
 
 # a precompressed .gz beside the file when the browser takes gzip
 def Conn.gz(bs: List<&2, U32>, s: Socket, +web: String, +path: String) -> IO(Unit):
@@ -5121,7 +5141,7 @@ def Conn.route.k(ws: Bool, s: Socket, req: W.Request, rest: List<&2, U32>, +web:
   match ws req:
     case True{} W.Request{_, +p, +hs}:
       Conn.gate(Conn.allowed(trusted, hs, p, token), CF.Cef.link(W.Http.header_of(hs, "tailscale-user-login"), W.Http.header_of(hs, "origin")), s, W.Http.header_of(hs, "sec-websocket-key"), rest, id, inbox,
-        Maybe.default(&2, Nat, Nat.read(W.Http.param(p, "since")), 0n), W.Http.param(p, "origin"))
+        Maybe.default(&2, Nat, Nat.read(W.Http.param(p, "since")), 0n), W.Http.param(p, "origin"), AUTH.Auth.legacy(trusted, hs, p, token))
     case False{} W.Request{_, +p, +hs}:
       Conn.get.k(Conn.pos(["/hello", "/img", "/debug/perf", "/debug/perf.json", "/debug/log"], W.Http.route(p), 0n), s, web, p, String.contains(W.Http.header_of(hs, "accept-encoding"), "gzip"), Conn.allowed(trusted, hs, p, token))
 

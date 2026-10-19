@@ -264,29 +264,36 @@ def Link.sent(r: Socket & Result<&1, &1, U32 & String, Unit>, +inbox: Chan(S.Msg
     case Fail{_}:
       Link.unreachable(s, inbox, out)
 
-def Link.path(since: Nat, origin: String) -> String:
-  "/ws?since=" ++ Nat.show(since) ++ "&origin=" ++ origin ++ "&enc=cbor"
+# (token: the hub's pairing token, which a window on this machine reads from
+# its home: a link to another machine's hub has none yet, and is let in the
+# legacy way, by Tailscale's word)
+def Link.path(since: Nat, origin: String, +token: String) -> String:
+  "/ws?since=" ++ Nat.show(since) ++ "&origin=" ++ origin ++ "&enc=cbor" ++ Bool.pick(String, String.is_empty(token), "", "&token=" ++ token)
 
-def Link.connected(r: Result<&1, &1, U32 & String, Socket>, +url: String, since: Nat, origin: String, +inbox: Chan(S.Msg), +out: Chan(S.Wire)) -> IO(Unit):
+def Link.connected(r: Result<&1, &1, U32 & String, Socket>, +url: String, since: Nat, origin: String, +token: String, +inbox: Chan(S.Msg), +out: Chan(S.Wire)) -> IO(Unit):
   match r:
     case Done{s}:
-      IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_text(s, W.Ws.request(Link.host(url), Link.port(url), Link.path(since, origin))),
+      IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_text(s, W.Ws.request(Link.host(url), Link.port(url), Link.path(since, origin, token))),
         r2 => Link.sent(r2, inbox, out))
     case Fail{_}:
       do IO<Unit>:
         IO.spawn(Unit, Link.drain(Link.fuel(), inbox))
         Link.down(out, NT.Notice.make("nohost", Link.host(url)))
 
-def Link.joined(m: Maybe<&1, S.Msg>, +url: String, +inbox: Chan(S.Msg)) -> IO(Unit):
+def Link.joined(m: Maybe<&1, S.Msg>, +url: String, +token: String, +inbox: Chan(S.Msg)) -> IO(Unit):
   match m:
     case Some{S.Join{_, out, since, origin, _, _}}:
-      IO.bind(Result<&1, &1, U32 & String, Socket>, Unit, Link.connect(Link.host(url), Link.port(url), 5000), r => Link.connected(r, url, since, origin, inbox, out))
+      IO.bind(Result<&1, &1, U32 & String, Socket>, Unit, Link.connect(Link.host(url), Link.port(url), 5000), r => Link.connected(r, url, since, origin, token, inbox, out))
     case _:
       IO.pure(Unit, Unit{})
 
-# a link to the hub at url ("http://host:port"); join it like a hub
-def Link.start(+url: String) -> IO(Chan(S.Msg)):
+# a link to the hub at url ("http://host:port"), presenting its pairing
+# token ("" none); join it like a hub
+def Link.start.t(+url: String, +token: String) -> IO(Chan(S.Msg)):
   do IO<Chan(S.Msg)>:
     +inbox : Chan(S.Msg) <- Chan.new(S.Msg, 1024)
-    IO.spawn(Unit, IO.bind(Maybe<&1, S.Msg>, Unit, Chan.recv(S.Msg, inbox), m => Link.joined(m, url, inbox)))
+    IO.spawn(Unit, IO.bind(Maybe<&1, S.Msg>, Unit, Chan.recv(S.Msg, inbox), m => Link.joined(m, url, token, inbox)))
     return inbox
+
+def Link.start(+url: String) -> IO(Chan(S.Msg)):
+  Link.start.t(url, "")

@@ -5,9 +5,10 @@ import ./utf8.bend as U
 
 # Machines on the tailnet. Every machine the same person owns may run a
 # Backplane hub; each hub finds the others (`tailscale status --json`,
-# then a GET /hello on each online peer) and lets its owner's devices in
-# without the pairing token: Tailscale has already said who they are
-# (`tailscale whois`). Anyone else still needs the token.
+# then a GET /hello on each online peer). Every client presents the
+# pairing token; the owner's devices (Tailscale's `whois`) are still let in
+# without it for now, the legacy way (core/auth.bend's Auth.legacy), and
+# told to pair again. Anyone else needs the token.
 
 # the login that owns a node, from `tailscale whois --json <ip>`
 def Tailnet.login(+whois: String) -> String:
