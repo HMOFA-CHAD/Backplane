@@ -350,10 +350,13 @@ def Info.models.oc.j(+j: J.Json) -> String:
   J.Json.show(J.Json.obj([J.KV{"opencode", J.Json.get_obj(j, "opencode")},
     J.KV{"about", J.Json.obj([J.KV{"opencode", J.Json.get_obj(J.Json.get_obj(j, "about"), "opencode")}])}]))
 
-def Info.put.models(m: Map<&2, String>, +j: J.Json) -> Map<&2, String>:
-  Map.set(&2, String, Map.set(&2, String, m, "models", Info.models.small.j(j)), "models.oc", Info.models.oc.j(j))
+# (and "models.v" counts the times: the window's memos key on it, not on
+# the lists, tens of KB to join every frame; mm.bend's Mm.volatile)
+def Info.put.models(+m: Map<&2, String>, +j: J.Json) -> Map<&2, String>:
+  Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, m, "models", Info.models.small.j(j)), "models.oc", Info.models.oc.j(j)),
+    "models.v", Nat.show(1n+Maybe.default(&2, Nat, Nat.read(Str.get(m, "models.v")), 0n)))
 
-def Info.put.k(models: Bool, m: Map<&2, String>, +k: String, +v: String) -> Map<&2, String>:
+def Info.put.k(models: Bool, +m: Map<&2, String>, +k: String, +v: String) -> Map<&2, String>:
   match models:
     case True{}:
       Info.put.models(m, Maybe.default(&2, J.Json, J.Json.parse(v), J.Null{}))
@@ -9789,7 +9792,7 @@ def Ec.view(+ec: Ec, +st: M.State, +e: M.Entry) -> EM.EV:
 def Ec.pins(+ec: Ec, +st: M.State, +th: String) -> List<&2, EM.EV>:
   match ec:
     case Ec{_, +last, +now}:
-      EM.Emb.pins.go(M.State.mine(st, th), st, last, now)
+      EM.Emb.pins.go(M.State.terms(st, th), st, last, now)
 
 # Terminals in the chat (core/emb.bend)
 # -------------------------------------

@@ -327,7 +327,7 @@ def Emb.pins.go(es: List<&2, M.Entry>, +s: M.State, +last: Nat, +now: Nat) -> Li
 
 # a thread's pinned terminals
 def Emb.pins(+s: M.State, +th: String, +now: Nat) -> List<&2, EV>:
-  Emb.pins.go(M.State.mine(s, th), s, Emb.last_user(M.State.mine(s, th), 0n), now)
+  Emb.pins.go(M.State.terms(s, th), s, Emb.last_user(M.State.mine(s, th), 0n), now)
 
 def Emb.ekey(+e: M.Entry) -> String:
   match e:

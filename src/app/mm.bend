@@ -229,6 +229,8 @@ def Mm.flags(xs: List<&2, Sigma<&2, &2, String, _ => Bool>>) -> String:
     case (+k, +v) <> t:
       k ++ Bool.pick(String, v, "+", "-") ++ Mm.flags(t)
 
+# ("models" and "models.oc": the hub's models, tens of KB; only client.bend's
+# Info.put.models writes them, and it moves "models.v", which the keys keep)
 # (hover.at: when the hover's highlight began, for its fade-in; the
 # highlight is drawn over the whole frame, Lay.hover, so neither memo needs
 # it: in the key, each item the pointer crossed laid the open thread out
@@ -239,7 +241,7 @@ def Mm.flags(xs: List<&2, Sigma<&2, &2, String, _ => Bool>>) -> String:
 # and the performance overlay (both drawn over the whole frame), a page's
 # frames (shown only in the viewer and a bot's view: neither is kept)
 def Mm.volatile(+k: String) -> Bool:
-  Bool.or(Nat.is_lt(C.Codec.pos(["clock", "act.at", "cat.due", "cat.clock", "caret.due", "caret.at", "caret.sig", "frame.hub", "frame.late", "hover", "perf.hud", "caret.real", "hover.at"], k), 13n),
+  Bool.or(Nat.is_lt(C.Codec.pos(["clock", "act.at", "cat.due", "cat.clock", "caret.due", "caret.at", "caret.sig", "frame.hub", "frame.late", "hover", "perf.hud", "caret.real", "hover.at", "models", "models.oc"], k), 15n),
     Bool.or(String.starts_with(k, "img:shot:"), String.starts_with(k, "shot.")))
 
 def Mm.info.k(skip: Bool, +k: String, +v: String, +rest: String) -> String:
