@@ -4,6 +4,7 @@ import ../../src/server/proc.bend as P
 import ../../src/server/host.bend as H
 import ../../src/server/git.bend as G
 import ../../src/core/diff.bend as D
+import ../../src/core/hub.bend as B
 
 # Git against a scratch repository under /tmp: checkpoints (capture, diff,
 # diff against the work tree, revert), worktrees (create, rename, remove),
@@ -258,6 +259,36 @@ def thread_wt_checks(+root: String) -> IO(Bool):
     c3 : Bool <- chk("carried work stays on HEAD", hf, "False")
     return all([a1, a2, a3, a4, a5, a6, a7, a8, a9, b1, b2, b3, b4, b5, b6, b7, c1, c2, c3])
 
+# Allocate through the production thread-worktree path from real ids. An
+# existing zero-named branch/path stays intact while new ones coexist.
+def large_wt_one(+repo: String, id: String, +want: String) -> IO(Bool):
+  do IO<Bool>:
+    +p : String <- G.Git.thread_wt(repo, False{}, G.Git.branch.temp(B.Wt.seed(id)))
+    a : Bool <- chk("large id path " ++ want, p, repo ++ "/.backplane/worktrees/" ++ G.Git.slash_dash.go(want, ""))
+    b : String <- G.Git.branch(p)
+    c : Bool <- chk("large id branch", b, want)
+    return Bool.and(a, c)
+
+def large_wt_checks(+root: String) -> IO(Bool):
+  +repo = root ++ "/large"
+  do IO<Bool>:
+    s : P.Ran <- sh(root, "mkdir large && cd large && git init -q -b main && git config user.email t@t && git config user.name t && git -c commit.gpgsign=false commit -q --allow-empty -m init")
+    a : Bool <- chk("large id setup", code(s), "0")
+    +old : String <- G.Git.thread_wt(repo, False{}, "backplane/00000000")
+    b : Bool <- chk("existing zero path", old, repo ++ "/.backplane/worktrees/backplane-00000000")
+    c : Bool <- large_wt_one(repo, "t1791993305-100157", "backplane/bb1883ea")
+    d : Bool <- large_wt_one(repo, "t1792000001-103473", "backplane/2377f928")
+    e : Bool <- large_wt_one(repo, "t1792075081-125169", "backplane/335ba08c")
+    f : Bool <- large_wt_one(repo, "t1792172729-149991", "backplane/72eb8dfd")
+    g : Bool <- large_wt_one(repo, "t1791993305-100158", "backplane/e57c75ca")
+    kept : String <- G.Git.branch(old)
+    h : Bool <- chk("existing zero branch kept", kept, "backplane/00000000")
+    present : String <- exists(old)
+    i : Bool <- chk("existing zero path kept", present, "True")
+    main : String <- G.Git.branch(repo)
+    j : Bool <- chk("source branch kept", main, "main")
+    return all([a, b, c, d, e, f, g, h, i, j])
+
 def act_checks(+root: String) -> IO(Bool):
   +repo = root ++ "/repo"
   do IO<Bool>:
@@ -291,5 +322,6 @@ def main() -> IO(Unit):
     c : Bool <- worktree_checks(root)
     d : Bool <- act_checks(root)
     e : Bool <- thread_wt_checks(root)
+    f : Bool <- large_wt_checks(root)
     x : P.Ran <- P.Proc.run("rm", ["-rf", root], "")
-    finish(all([a, b, c, d, e]))
+    finish(all([a, b, c, d, e, f]))
