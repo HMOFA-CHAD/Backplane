@@ -2280,7 +2280,17 @@ def Picker.bar(more: Bool, +x: Nat, +y: Nat, +span: Nat, +off: Nat, +shown: Nat,
 # above `limit` nor wider than x0..x1: effort chips on top where the
 # provider has them, then the models, as many as fit (the wheel scrolls
 # the rest). Every place comes from core/menu.bend (laws menu_*).
-def Lay.picker.k(+ty: Ty, +ms: List<&2, String>, +cur: String, +info: String, +prov: String, +x0: U32, +x1: U32, +bottom: U32, +limit: U32, +es: List<&2, String>, +effort: String, +raw: String) -> Out:
+# the picker's search field (client.bend's Models.search), under the chips
+def Picker.find(srch: Bool, +ty: Ty, +x: Nat, +y: Nat, +w: Nat, +q: String, +focus: String, +blink: Bool, +caret: Nat, +mark: Nat) -> Out:
+  match srch:
+    case True{}:
+      Lay.field.x(ty, D.Clip.all(), Picker.px(Nat.add(x, 6n)), Picker.px(y), Picker.px(Nat.sub(w, 12n)), q, String.eq(focus, S.Fld.id("mq", "", "")), blink, True{}, caret, mark,
+        MSG.T.common.search(Ty.loc(ty)), S.Fld.id("mq", "", ""))
+    case False{}:
+      Out.none()
+
+def Lay.picker.k(+ty: Ty, +ms: List<&2, String>, +cur: String, +info: String, +prov: String, +x0: U32, +x1: U32, +bottom: U32, +limit: U32, +es: List<&2, String>, +effort: String, +raw: String,
+    +srch: Bool, +q: String, +focus: String, +blink: Bool, +caret: Nat, +mark: Nat) -> Out:
   +x = U32.to_nat(x0)
   +n = List.length(&2, String, ms)
   +cws = Picker.chip_ws(ty, es)
@@ -2288,7 +2298,8 @@ def Lay.picker.k(+ty: Ty, +ms: List<&2, String>, +cur: String, +info: String, +p
   +want = MN.Menu.max(MN.Menu.max(Nat.add(Nat.add(names, Picker.labels_w(ty, ms, info, prov)), 56n), Nat.add(Picker.line_w(cws), 12n)), 280n)
   +w = MN.Menu.width(want, U32.to_nat((x1 - x0 : U32)))
   +col = MN.Menu.col(names, Nat.sub(w, 40n))
-  +rel = MN.Flow.under(cws, 6n, Nat.sub(w, 6n), 6n, 6n, 28n, 8n)
+  +rel0 = MN.Flow.under(cws, 6n, Nat.sub(w, 6n), 6n, 6n, 28n, 8n)
+  +rel = Nat.add(rel0, Bool.pick(Nat, srch, 36n, 0n))
   +room = {Nat.sub(Nat.sub(U32.to_nat(bottom), U32.to_nat(limit)), Nat.add(rel, 6n)) : Nat}
   +shown = MN.Menu.fit(n, room)
   +span = MN.Menu.span(n, room)
@@ -2300,13 +2311,15 @@ def Lay.picker.k(+ty: Ty, +ms: List<&2, String>, +cur: String, +info: String, +p
       [Lay.hit(x0, Picker.px(top), Picker.px(w), Picker.px(hb), "menu", Nat.show(off) ++ "|" ++ Nat.show(Nat.sub(n, shown)))]},
     Out.ops(Bool.pick(List<&2, R.Op>, List.is_empty(&2, String, es), Nil{}, [D.Draw.rect(D.Clip.all(), (x0 + 1 : U32), Picker.px(Nat.sub(Nat.add(top, rel), 5n)), Picker.px(Nat.sub(w, 2n)), 1, T.Th.line(), 255)])),
     Picker.chips(ty, MN.Flow.place(cws, Nat.add(x, 6n), Nat.sub(Nat.add(x, w), 6n), Nat.add(x, 6n), Nat.add(top, 6n), 28n, 8n), es, effort, prov),
+    Picker.find(srch, ty, x, Nat.add(top, rel0), w, q, focus, blink, caret, mark),
     Picker.rows(ty, MN.Menu.rows(shown, Nat.add(x, 6n), Nat.add(top, rel), Nat.sub(w, 12n)), List.drop(&2, String, ms, off), cur, info, prov, col),
     Out.ops(Picker.bar(Nat.is_lt(shown, n), Nat.sub(Nat.add(x, w), 4n), Nat.add(top, rel), span, off, shown, n))])
 
-def Lay.picker(open: Bool, +ty: Ty, +ms: List<&2, String>, +cur: String, +info: String, +prov: String, +x0: U32, +x1: U32, +bottom: U32, +limit: U32, +es: List<&2, String>, +effort: String, +raw: String) -> Out:
+def Lay.picker(open: Bool, +ty: Ty, +ms: List<&2, String>, +cur: String, +info: String, +prov: String, +x0: U32, +x1: U32, +bottom: U32, +limit: U32, +es: List<&2, String>, +effort: String, +raw: String,
+    srch: Bool, +q: String, +focus: String, +blink: Bool, +caret: Nat, +mark: Nat) -> Out:
   match open:
     case True{}:
-      Lay.picker.k(ty, ms, cur, info, prov, x0, x1, bottom, limit, es, effort, raw)
+      Lay.picker.k(ty, ms, cur, info, prov, x0, x1, bottom, limit, es, effort, raw, srch, q, focus, blink, caret, mark)
     case False{}:
       Out.none()
 
@@ -6665,7 +6678,7 @@ def TL.pill(none: Bool, +ty: Ty, +label: String, +x0: U32, +x1: U32, +bot: U32) 
 
 def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: String, +st: M.State, +sel: String, +live: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool,
     +x0: U32, +x1: U32, +h: U32, +sc: U32, pa: Bool, term: Bool, +info: String, +picking: Bool, +pend: List<&2, String>, +rs: List<&2, U.SkillRow>, +now: Nat,
-    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String, pre: List<&2, IME.Run>, +hold: String, +pill: String) -> Out:
+    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String, pre: List<&2, IME.Run>, +hold: String, +pill: String, +mq: String) -> Out:
   match t:
     case M.Thread{id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
       +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
@@ -6721,7 +6734,8 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
           Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
           Lay.asks(ty, asks, draft, pics, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
           Btw.card.if(Bool.not(String.is_empty(bq)), ty, bq, ba, cx0, cx1, (h - 132 - qh - eh - bh + 4 : U32)),
-          Lay.picker(picking, ty, U.Models.menu(info, pr), mo, info, pr, cx0, cx1, (h - 128 - eh : U32), (60 + hy : U32), U.Chip.all(info, pr, mo), U.Effort.of(st, sel), moff)])
+          Lay.picker(picking, ty, U.Models.shown(info, pr, mq), mo, info, pr, cx0, cx1, (h - 128 - eh : U32), (60 + hy : U32), U.Chip.all(info, pr, mo), U.Effort.of(st, sel), moff,
+            U.Models.search(U.Models.menu(info, pr)), mq, focus, blink, caret, mark)])
       Out.cat(Out.cat(tl, TL.pill(String.is_empty(pill), ty, pill, cx0, cx1, (h - ah - qh - eh - bh - 132 : U32))), ch)
 
 # while files dragged in hover over the window, an accent ring around the
@@ -7073,7 +7087,7 @@ def Lay.thread.at.k(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: 
       Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, S.Imx.draft(n), x0, x1, h), Lay.thread.k(ty, memo, U.Ui.thread(st, sel), S.Imx.draft(n), S.Cs.held(n), st, sel, U.Str.get(live, sel), S.Imx.at(n), S.Imx.mk(n), focus, S.Blink.on(n), x0, x1, h, sc, pa, U.Flag.get(op, "term"),
         U.Str.get(nf, "models"), U.Flag.get(op, "models"), U.Ui.pending(S.Nui.ui(n), sel), U.Ui.skills(S.Nui.ui(n)), U.Side.now(S.Nui.ui(n)),
         U.Ui.atts(S.Nui.ui(n), sel), U.Ui.uploading(S.Nui.ui(n), sel), path, nf, U.Ui.deleting(S.Nui.ui(n)), TSel.of(U.Ui.scratch(S.Nui.ui(n), "@ts"), sel), U.Ui.scratch(S.Nui.ui(n), "@menu.off"), U.Side.phase(st, U.Ui.thread(st, sel)), hy, Lay.more(memo, n, sel), U.Btw.question(S.Nui.ui(n)), U.Btw.reply.of(S.Nui.ui(n)),
-        U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"), U.Ec.of(S.Nui.ui(n), sel), EM.Emb.focused(focus), S.Imx.runs(n), S.Hold.of(n), U.Hold.pill(S.Nui.ui(n), sel))),
+        U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"), U.Ec.of(S.Nui.ui(n), sel), EM.Emb.focused(focus), S.Imx.runs(n), S.Hold.of(n), U.Hold.pill(S.Nui.ui(n), sel), U.Ui.scratch(S.Nui.ui(n), "@f.mq"))),
         Vx.view(ty, n, st, sel, x0, x1, h)), Lay.earlier(Lay.more(memo, n, sel)))
 
 def Lay.thread.at(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32) -> Out:

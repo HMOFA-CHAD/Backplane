@@ -4012,6 +4012,70 @@ def Models.cli(+info: String, +provider: String) -> String:
 def Models.label_of(+info: String, +provider: String, +model: String) -> String:
   J.Json.get_str(J.Json.get_obj(Models.about(info, provider), "labels"), Bool.pick(String, String.is_empty(model), "default", model), "")
 
+# The model picker's search (field "mq", scratch "@f.mq"): a model shows
+# when every word of the query is in its id or its label, case aside. The
+# field shows once a provider offers more than Models.searchable() models
+# (opencode, signed in to a few providers, lists hundreds).
+def Models.searchable() -> Nat:
+  12n
+
+def Models.search(+ms: List<&2, String>) -> Bool:
+  Nat.is_gt(List.length(&2, String, ms), Models.searchable())
+
+def Models.words.all(ws: List<&2, String>, +hay: String) -> Bool:
+  match ws:
+    case Nil{}:
+      True{}
+    case +w <> t:
+      Bool.and(Bool.or(String.is_empty(w), String.contains(hay, w)), Models.words.all(t, hay))
+
+def Models.find.go(ms: List<&2, String>, +ws: List<&2, String>, +labels: J.Json) -> List<&2, String>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case +m <> t:
+      Models.menu.k(Bool.not(Models.words.all(ws, String.to_lower(m ++ " " ++ J.Json.get_str(labels, Bool.pick(String, String.is_empty(m), "default", m), "")))), m, Models.find.go(t, ws, labels))
+
+def Models.find.k(all: Bool, +ms: List<&2, String>, +q: String, +info: String, +prov: String) -> List<&2, String>:
+  match all:
+    case True{}:
+      ms
+    case False{}:
+      Models.find.go(ms, String.split(String.to_lower(String.trim(q)), ' '), J.Json.get_obj(Models.about(info, prov), "labels"))
+
+def Models.find(+ms: List<&2, String>, +q: String, +info: String, +prov: String) -> List<&2, String>:
+  Models.find.k(String.is_empty(String.trim(q)), ms, q, info, prov)
+
+# what the picker lists: the provider's models, those the search finds
+def Models.shown(+info: String, +prov: String, +q: String) -> List<&2, String>:
+  Models.find(Models.menu(info, prov), q, info, prov)
+
+# The picker opening empties its search; on opencode it also has the hub
+# read opencode's models again (models.refresh: about a second, so a
+# provider signed in to since shows its models at once)
+def Models.opened.k(open: Bool, oc: Bool, +u: Ui, cs: List<&2, Cmd>) -> Act:
+  match open oc:
+    case True{} True{}:
+      Ui.also(Ui.rpc(Ui.scratch_set(u, "@f.mq", ""), "models.refresh", Nil{}), List.append(&2, Cmd, cs, [Focus{"model-q"}]))
+    case True{} False{}:
+      Act{Ui.scratch_set(u, "@f.mq", ""), cs}
+    case False{} _:
+      Act{u, cs}
+
+# (shut, the keys go back to the composer, not a search no longer shown)
+def Models.shut.k(shut: Bool, a: Act) -> Act:
+  match shut:
+    case True{}:
+      Ui.also(a, [Focus{"composer"}])
+    case False{}:
+      a
+
+def Models.opened(+value: String, a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Models.shut.k(Bool.and(String.eq(value, "models"), Bool.not(Ui.flag(u, "models"))),
+        Models.opened.k(Bool.and(String.eq(value, "models"), Ui.flag(u, "models")), String.eq(M.Thread.provider(Ui.thread(Ui.state(u), Ui.sel(u))), "opencode"), u, cs))
+
 # Project picker
 # --------------
 # It opens on the projects: this hub's own (Enter goes to one), and those
@@ -9465,11 +9529,11 @@ def Ui.act.k(+i: Nat, +u: Ui, +value: String) -> Act:
     case 17n:
       Ui.rpc(u, "app.update", Nil{})
     case 18n:
-      Voice.flag(value, Ui.toggle_settled(u, value))
+      Models.opened(value, Voice.flag(value, Ui.toggle_settled(u, value)))
     case 19n:
       Ui.setting(u, value)
     case 20n:
-      Ui.model(u, value)
+      Ui.also(Ui.model(u, value), [Focus{"composer"}])
     case 21n:
       Ui.rpc(u, "kicad.install", Nil{})
     case 22n:

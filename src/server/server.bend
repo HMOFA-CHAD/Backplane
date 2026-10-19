@@ -200,6 +200,8 @@ type Msg is Data:
   # the headless KiCad servers' lines changed (core/kserve.bend's KS.lines)
   KiServers{text: String}
   ModelsFound{models: String, text: String}
+  # opencode's models read again (OcJob.run): Oc.models.sh's lines
+  OcFound{text: String}
   MachinesFound{machines: String}
   # the tailnet listener is up: the pairing link clients show in Settings
   LinkFound{link: String}
@@ -5260,28 +5262,6 @@ def Models.grok.go(ls: List<&2, String>) -> List<&2, String>:
     case l <> t:
       Models.grok.line(l, Models.grok.go(t))
 
-# `opencode models`: one "provider/model" a line
-def Models.oc.k(model: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
-  match model:
-    case True{}:
-      String.trim(l) <> rest
-    case False{}:
-      rest
-
-def Models.oc.go(ls: List<&2, String>) -> List<&2, String>:
-  match ls:
-    case Nil{}:
-      Nil{}
-    case +l <> t:
-      Models.oc.k(Bool.and(String.contains(l, "/"), Bool.not(String.contains(String.trim(l), " "))), l, Models.oc.go(t))
-
-def Models.oc(r: P.Ran) -> List<&2, String>:
-  match r:
-    case P.Ran{0, out}:
-      Models.oc.go(String.lines(out))
-    case _:
-      Nil{}
-
 # `grok models`: "  * grok-4.6 (default)" / "  - grok-4.5" lines
 def Models.grok(r: P.Ran) -> List<&2, String>:
   match r:
@@ -5394,6 +5374,82 @@ def About.cli(r: P.Ran) -> String:
 def About.one(+cli: String, labels: List<&2, J.KV>) -> J.Json:
   J.Json.obj([J.KV{"cli", J.Str{cli}}, J.KV{"labels", J.Json.obj(labels)}])
 
+# opencode's models: those of every provider it is signed in to, as
+# "provider/model<TAB>name" lines (`opencode models --verbose` through a
+# file: piped, its last lines were sometimes lost)
+def Oc.models.sh() -> String:
+  PT.Port.tmo() ++ "command -v opencode >/dev/null || exit 0; f=$(mktemp); tmo 30 opencode models --verbose > \"$f\" 2>/dev/null; "
+    ++ "awk '/^[A-Za-z0-9][^ ]*\\/[^ ]*$/ {slug=$0; next} /^  \"name\": \"/ && slug != \"\" {n=$0; sub(/^  \"name\": \"/, \"\", n); sub(/\",?$/, \"\", n); print slug \"\\t\" n; slug=\"\"}' \"$f\"; rm -f \"$f\""
+
+def Oc.row(+l: String) -> List<&2, String>:
+  String.split(l, '\t')
+
+def Models.oc.k(model: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
+  match model:
+    case True{}:
+      Maybe.default(&2, String, List.head(&2, String, Oc.row(l)), "") <> rest
+    case False{}:
+      rest
+
+def Models.oc.go(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Models.oc.k(String.contains(l, "/"), l, Models.oc.go(t))
+
+def Models.oc(+out: String) -> List<&2, String>:
+  Models.oc.go(String.lines(out))
+
+def About.oc.k(model: Bool, +l: String, rest: List<&2, J.KV>) -> List<&2, J.KV>:
+  match model:
+    case True{}:
+      J.KV{Maybe.default(&2, String, List.head(&2, String, Oc.row(l)), ""), J.Str{String.join(List.drop(&2, String, Oc.row(l), 1n), " ")}} <> rest
+    case False{}:
+      rest
+
+def About.oc.go(ls: List<&2, String>) -> List<&2, J.KV>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      About.oc.k(String.contains(l, "/"), l, About.oc.go(t))
+
+def About.oc(+out: String) -> List<&2, J.KV>:
+  J.KV{"default", J.Str{"opencode's configured default"}} <> About.oc.go(String.lines(out))
+
+def Oc.out(r: P.Ran) -> String:
+  match r:
+    case P.Ran{0, out}:
+      out
+    case _:
+      ""
+
+# the models info with opencode's part read again (the picker asks when it
+# opens on opencode: models.refresh); the others' parts as they were
+def Oc.patch.j(+j: J.Json, +out: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"claude", J.Json.get_obj(j, "claude")}, J.KV{"codex", J.Json.get_obj(j, "codex")}, J.KV{"grok", J.Json.get_obj(j, "grok")},
+    J.KV{"muse", J.Json.get_obj(j, "muse")}, J.KV{"antigravity", J.Json.get_obj(j, "antigravity")}, J.KV{"opencode", Models.strs(Models.oc(out))},
+    J.KV{"agy", J.Json.get_obj(j, "agy")}, J.KV{"about", J.Json.obj([J.KV{"claude", J.Json.get_obj(J.Json.get_obj(j, "about"), "claude")},
+      J.KV{"codex", J.Json.get_obj(J.Json.get_obj(j, "about"), "codex")}, J.KV{"grok", J.Json.get_obj(J.Json.get_obj(j, "about"), "grok")},
+      J.KV{"muse", J.Json.get_obj(J.Json.get_obj(j, "about"), "muse")}, J.KV{"antigravity", J.Json.get_obj(J.Json.get_obj(j, "about"), "antigravity")},
+      J.KV{"opencode", About.one(J.Json.get_str(J.Json.get_obj(J.Json.get_obj(j, "about"), "opencode"), "cli", ""), About.oc(out))}])}]))
+
+def Oc.patch(+ms: String, +out: String) -> String:
+  Oc.patch.j(Maybe.default(&2, J.Json, J.Json.parse(ms), J.Null{}), out)
+
+def OcJob.run(+inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", Oc.models.sh()], "/")
+    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, OcFound{Oc.out(r)})
+    return Unit{}
+
+def Hub.oc.found(h: Hub, +text: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.models(Hub{st, f, ls, cl, as, inbox, cfg, note}, Oc.patch(Net.models(Cfg.net(cfg)), text), Cfg.mtext(cfg))
+
+
 def Claude.about(+cli: String, +xs: List<&2, J.Json>) -> J.Json:
   Bool.pick(J.Json, List.is_empty(&2, J.Json, xs), About.one(cli, About.claude()),
     J.Json.obj([J.KV{"cli", J.Str{cli}}, J.KV{"labels", J.Json.obj(Claude.labels(xs))}, J.KV{"efforts", J.Json.obj(Claude.efforts(xs))}]))
@@ -5412,15 +5468,16 @@ def Models.detect(+user: String, +home: String) -> IO(Found):
     vg : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "tmo 10 grok --version")], "/")
     mu : P.Ran <- P.Proc.run("sh", ["-c", Muse.probe.sh()], "/")
     vm : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v muse >/dev/null && tmo 10 muse --version")], "/")
-    +oc : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v opencode >/dev/null && tmo 20 opencode models")], "/")
+    oc : P.Ran <- P.Proc.run("sh", ["-c", Oc.models.sh()], "/")
+    +ocs : String = Oc.out(oc)
     vo : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v opencode >/dev/null && tmo 10 opencode --version")], "/")
     +xs : List<&2, J.Json> = Claude.listed(pc)
     +mx : List<&2, J.Json> = Muse.catalog(mu)
     +ag : AGY.AgyInfo <- AGX.Agx.probe(AGX.Agx.root(home))
-    return Models.found(Claude.models(Main.has(cl), xs), Models.on(Main.has(cx), Models.codex(cache)), Models.grok(gk), Models.muse(mx), AGY.Agy.info.models(ag), Models.oc(oc), AGY.Agy.info.json(ag),
+    return Models.found(Claude.models(Main.has(cl), xs), Models.on(Main.has(cx), Models.codex(cache)), Models.grok(gk), Models.muse(mx), AGY.Agy.info.models(ag), Models.oc(ocs), AGY.Agy.info.json(ag),
       J.Json.obj([J.KV{"claude", Claude.about(About.cli(vc), xs)}, J.KV{"codex", About.one(About.cli(vx), About.codex(cache))}, J.KV{"grok", About.one(About.cli(vg), About.grok(gk))},
         J.KV{"muse", About.one(About.cli(vm), About.muse(mx))}, J.KV{"antigravity", AGY.Agy.info.about(ag)},
-        J.KV{"opencode", About.one(About.cli(vo), [J.KV{"default", J.Str{"opencode's configured default"}}])}]))
+        J.KV{"opencode", About.one(About.cli(vo), About.oc(ocs))}]))
 
 # The CLIs are looked for on PATH, which a launcher's or a service's hub
 # lacks the login shell's part of (nvm, volta...): before each detection the
@@ -8654,6 +8711,10 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +g : String = Hub.gen(st, now)
         IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.ModelsRefresh{}:
+      do IO<Hub>:
+        IO.spawn(Unit, OcJob.run(inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.KiCadRetry{}:
       Hub.kretry(Hub{st, f, ls, cl, as, inbox, cfg, note})
     case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.KiCadInstall{}:
@@ -12966,6 +13027,8 @@ def Msg.kind(m: Msg) -> String:
     case KiServers{_}: "kicad_servers"
     case ModelsFound{_, _}:
       "models"
+    case OcFound{_}:
+      "models_opencode"
     case MachinesFound{_}:
       "machines"
     case LinkFound{_}:
@@ -13780,6 +13843,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case KiServers{text}: Hub.kiservers(h, text)
     case ModelsFound{ms, mt}:
       Hub.models(h, ms, mt)
+    case OcFound{text}:
+      Hub.oc.found(h, text)
     case MachinesFound{mc}:
       Hub.dir.returned(h, mc)
     case LinkFound{lk}:
