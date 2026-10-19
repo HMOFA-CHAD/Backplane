@@ -7049,13 +7049,37 @@ def Run.alarm.on(on: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String) 
 def Run.alarm(+s: M.State, +now: Nat, +bot: String, +conv: String) -> List<&2, M.Change>:
   Run.alarm.on(Bool.and(Nat.is_gt(ML.Box.live_n(M.State.mail(s), bot), 6n), Bool.not(Run.recent(s, now, "mail-runs-" ++ bot))), s, now, bot, conv)
 
+# Short runs keep the bot's provider. Claude's role defaults must never
+# escape into another provider after the bot switches. Reuse the same
+# known-family compatibility policy as text-model settings; custom model
+# names remain opaque. An empty model delegates to that provider's CLI.
+def Run.model.keep(keep: Bool, model: String, fallback: String) -> String:
+  match keep:
+    case True{}: model
+    case False{}: fallback
+
+def Run.model.accept(+provider: String, +model: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(model)), AG.Text.fits(provider, model))
+
+def Run.model.default(claude: Bool, +provider: String, +parent: String, uber: Bool) -> String:
+  match claude:
+    case True{}: Bool.pick(String, uber, "opus", "sonnet")
+    case False{}: Run.model.keep(Run.model.accept(provider, parent), parent, "")
+
+def Run.model.pick(+provider: String, +parent: String, +override: String, uber: Bool) -> String:
+  Run.model.keep(Run.model.accept(provider, override), override,
+    Run.model.default(String.eq(provider, "claude"), provider, parent, uber))
+
 def Run.model(+s: M.State, +bot: String) -> String:
-  M.Setting.get(s, "run.model." ++ bot, Bool.pick(String, String.eq(M.Setting.get(s, "uber.bot", ""), bot), "opus", "sonnet"))
+  +parent = Hub.thread(s, BT.Bot.thread(BT.World.bot(M.State.bots(s), bot)))
+  Run.model.pick(Hub.provider(parent), String.trim(Turn.model(parent)), String.trim(M.Setting.get(s, "run.model." ++ bot, "")), String.eq(M.Setting.get(s, "uber.bot", ""), bot))
 
 def Run.spawn.new(+s: M.State, +now: Nat, +bot: String, +conv: String, +body: MB.Body, +th: String) -> Step:
   +b = BT.World.bot(M.State.bots(s), bot)
-  +cs = {[M.ThreadCreated{th, ML.Conv.project(MB.Body.conv(body)), BT.Bot.name(b) ++ ": " ++ ML.Conv.subject(MB.Body.conv(body)), M.Local{}, "", Hub.cwd(s, Hub.thread(s, BT.Bot.thread(b))), Hub.provider(Hub.thread(s, BT.Bot.thread(b))), Run.model(s, bot), now},
-    M.WorktreeSet{th, "", Hub.cwd(s, Hub.thread(s, BT.Bot.thread(b))), now}, M.ModesSet{th, M.Supervised{}, M.DefaultMode{}, Run.model(s, bot), now}, M.RunSet{th, bot, conv, ML.Mail.id(MB.Body.mail(body)), now}, M.SettingSet{"run.pending." ++ th, "on", now}] : List<&2, M.Change>}
+  +parent = Hub.thread(s, BT.Bot.thread(b))
+  +model = Run.model(s, bot)
+  +cs = {[M.ThreadCreated{th, ML.Conv.project(MB.Body.conv(body)), BT.Bot.name(b) ++ ": " ++ ML.Conv.subject(MB.Body.conv(body)), M.Local{}, "", Hub.cwd(s, parent), Hub.provider(parent), model, now},
+    M.WorktreeSet{th, "", Hub.cwd(s, parent), now}, M.ModesSet{th, M.Supervised{}, M.DefaultMode{}, model, now}, M.RunSet{th, bot, conv, ML.Mail.id(MB.Body.mail(body)), now}, M.SettingSet{"run.pending." ++ th, "on", now}] : List<&2, M.Change>}
   +s1 = M.State.replay(cs, s)
   Step{List.append(&2, M.Change, cs, Run.alarm(s1, now, bot, conv)), [RunStart{th, conv, MR.Run.brief(s1, bot, conv)}]}
 
