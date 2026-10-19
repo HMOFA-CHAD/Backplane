@@ -12386,3 +12386,11 @@ def Laws.cef_fallback_keeps_error(err):
     case SNil{}: {==}
     case SCon{_, _}: {==}
 # --- end browser-cef fallback ---
+
+def Laws.run_model_codex_unset_inherits(uber): {==}
+def Laws.run_model_codex_stale_claude_uses_default(parent, uber): {==}
+def Laws.run_model_codex_compatible_override_kept(parent, uber): {==}
+def Laws.run_model_muse_keeps_exact_full_selector(uber): {==}
+def Laws.run_model_claude_uber_default_kept(parent): {==}
+def Laws.run_model_claude_worker_default_kept(parent): {==}
+def Laws.run_model_codex_stale_parent_uses_cli_default(uber): {==}
