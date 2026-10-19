@@ -3343,7 +3343,7 @@ def Deploy.probe(+inbox: Chan(Msg)) -> IO(Unit):
   IO.bind(String, Unit, Env.get("BACKPLANE_DEPLOY_LOCKS", "/tmp/bp-bend.lock:/tmp/bp-wt-build.lock"), l => Deploy.probe.l(l, inbox))
 
 def Deploy.swap.sh() -> String:
-  "set -eu; src=$1; prefix=$2; [ -d \"$src\" ] || { echo \"no staged package at $src\"; exit 1; }; mkdir -p \"$prefix\"; if [ -f \"$src/cef-runtime.py\" ]; then python3 \"$src/cef-runtime.py\" install \"$src\" \"$prefix\"; fi; if [ -d \"$src/web\" ]; then rm -rf \"$prefix/web.old\"; [ -d \"$prefix/web\" ] && mv \"$prefix/web\" \"$prefix/web.old\"; mv \"$src/web\" \"$prefix/web\"; fi; for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc LICENSE; do if [ -e \"$src/$f\" ]; then mv -f \"$src/$f\" \"$prefix/$f\"; fi; done; rmdir \"$src\" 2>/dev/null || true; exit 0"
+  "set -eu; src=$1; prefix=$2; [ -d \"$src\" ] || { echo \"no staged package at $src\"; exit 1; }; mkdir -p \"$prefix\"; if [ -f \"$src/cef-runtime.py\" ]; then python3 \"$src/cef-runtime.py\" install \"$src\" \"$prefix\"; fi; if [ -d \"$src/web\" ]; then rm -rf \"$prefix/web.old\"; [ -d \"$prefix/web\" ] && mv \"$prefix/web\" \"$prefix/web.old\"; mv \"$src/web\" \"$prefix/web\"; fi; if [ -d \"$src/kistack\" ]; then rm -rf \"$prefix/kistack.old\"; [ -d \"$prefix/kistack\" ] && mv \"$prefix/kistack\" \"$prefix/kistack.old\"; mv \"$src/kistack\" \"$prefix/kistack\"; fi; for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc LICENSE; do if [ -e \"$src/$f\" ]; then mv -f \"$src/$f\" \"$prefix/$f\"; fi; done; rmdir \"$src\" 2>/dev/null || true; exit 0"
 
 def Deploy.swapped(ok: Bool, +out: String, +path: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ok:
@@ -3884,8 +3884,8 @@ def Skills.scan.k(+home: String, +cwd: String) -> IO(List<&2, AG.USkill>):
   do IO<List<&2, AG.USkill>>:
     us : List<&2, AG.USkill> <- Skills.dir(home ++ "/.claude/skills")
     ps : List<&2, AG.USkill> <- Skills.dir(cwd ++ "/.claude/skills")
-    rev : String <- K.KiStack.current(home)
-    ks : List<&2, AG.USkill> <- Skills.dir(K.KiStack.base(home) ++ "/" ++ rev ++ "/skills")
+    exe : String <- H.Sys.exe_dir()
+    ks : List<&2, AG.USkill> <- Skills.dir(K.KiStack.dir(exe) ++ "/skills")
     return AG.USkill.merge(AG.USkill.merge(us, ps), ks)
 
 # ~/.claude/skills, then <cwd>/.claude/skills (the user's win a clash),
@@ -4653,20 +4653,17 @@ def Skills.kistack.dir(+dir: String) -> IO(String & List<&2, Q.Skill>):
     ss : List<&2, Q.Skill> <- Skills.read(ds, dir ++ "/skills")
     return (dir, ss)
 
-# KiStack lives at <cache>/backplane/kistack/<revision>/skills; the newest
-# revision directory wins
-def Skills.kistack.k(m: Maybe<&2, String>, +base: String) -> IO(String & List<&2, Q.Skill>):
-  match m:
-    case Some{+rev}:
-      Skills.kistack.dir(base ++ "/" ++ rev)
-    case None{}:
+# the bundled KiStack (K.KiStack.dir), or none ("": no --plugin-dir) when
+# this build carries none
+def Skills.kistack.k(have: Bool, +dir: String) -> IO(String & List<&2, Q.Skill>):
+  match have:
+    case True{}:
+      Skills.kistack.dir(dir)
+    case False{}:
       IO.pure(String & List<&2, Q.Skill>, ("", Nil{}))
 
-def Skills.kistack(+home: String) -> IO(String & List<&2, Q.Skill>):
-  do IO<String & List<&2, Q.Skill>>:
-    +base : String = home ++ "/.cache/backplane/kistack"
-    revs : List<&2, String> <- Names.of(base)
-    Skills.kistack.k(List.last(&2, String, revs), base)
+def Skills.kistack(+dir: String) -> IO(String & List<&2, Q.Skill>):
+  IO.bind(Bool, String & List<&2, Q.Skill>, K.Io.is_file(dir ++ "/.claude-plugin/plugin.json"), have => Skills.kistack.k(have, dir))
 
 def Main.args(xs: List<String>, c: Cfg) -> Cfg:
   match xs c:
@@ -5277,7 +5274,7 @@ def Main.has(r: P.Ran) -> Bool:
     case _:
       False{}
 
-# KiStack at its pinned revision (fetched when missing), the KiCad CLI,
+# KiStack as the build bundled it (K.KiStack.dir), the KiCad CLI,
 # and which providers and models are installed
 # What each provider is: its CLI's version, and a label per model. This
 # table is only for a Claude CLI too old to answer the probe.
@@ -5570,10 +5567,7 @@ def Refresh.start(+inbox: Chan(Msg), +cfg: Cfg) -> IO(Unit):
 
 def Main.prepare(+user: String, +exe: String) -> IO(Boot):
   do IO<Boot>:
-    K.KiStack.ensure(user)
-    rev : String <- K.KiStack.current(user)
-    ks : String & List<&2, Q.Skill> <- Skills.kistack.dir(K.KiStack.base(user) ++ "/" ++ rev)
-    IO.spawn(Unit, K.KiStack.refresh(user))
+    ks : String & List<&2, Q.Skill> <- Skills.kistack(K.KiStack.dir(exe))
     +rt : K.Rt = K.Rt.empty()
     +fc : String <- FC.FreeCAD.find()
     return Models.boot(ks, rt, Found{"", ""}, fc)
@@ -5583,10 +5577,15 @@ def Main.prepare(+user: String, +exe: String) -> IO(Boot):
 def Main.where(+user: String, args: List<String>) -> Cfg:
   Main.args(args, Cfg{user ++ "/.backplane-bend", "", "127.0.0.1", 3787, "", Nil{}, "", Net{True{}, False{}, "", "", "", K.Rt.empty(), None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", "", None{}}})
 
+# the directories Claude threads get (--add-dir, --plugin-dir): the bundled
+# KiStack, none when the build carries none
+def Main.dirs(+kdir: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(kdir), Nil{}, [kdir])
+
 def Main.config(+user: String, +exe: String, args: List<String>, b: Boot) -> Cfg:
   Boot{kdir, skills, rt, ms, mt, +fc} = b
   Main.args(args, Cfg{user ++ "/.backplane-bend", exe ++ "/web", "127.0.0.1", 3787,
-    Q.Prompt.runtime("Backplane") ++ "\n\n" ++ Q.Prompt.mech(fc, exe ++ "/backplane"), [kdir], Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc, None{}}})
+    Q.Prompt.runtime("Backplane") ++ "\n\n" ++ Q.Prompt.mech(fc, exe ++ "/backplane"), Main.dirs(kdir), Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc, None{}}})
 
 def Sys.exe_dir.io() -> IO(String):
   H.Sys.exe_dir()

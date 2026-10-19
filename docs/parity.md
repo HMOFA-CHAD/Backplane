@@ -36,7 +36,7 @@ Backplane stands. Updated as features land.
   - runtime block
   - KiCad runtime, with fork IPC when the setting allows it
   - canonical project files
-  - KiStack skills, latest (a pinned fallback)
+  - KiStack skills, bundled at build time at a pinned commit (deploy/kistack.lock)
   - orchestration
   - browser tools
 - **Git:**

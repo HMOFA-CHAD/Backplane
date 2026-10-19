@@ -149,6 +149,7 @@ build_dist() {
   python3 scripts/js-native.py dist/web/chunk-*.js
   cp src/web/sw.js dist/web/sw.js
   for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
+  scripts/build-kistack.sh dist/kistack
   if [ "$(uname -s)" = Linux ]; then
     BACKPLANE_VERSION_STAMP=$ver scripts/build-app.sh src/app/main.bend dist/backplane
     # Keep the server's pathname for self-exec; its entry uses argv[0].
@@ -174,6 +175,7 @@ if [ -f "$src/cef-runtime.py" ]; then python3 "$src/cef-runtime.py" install "$sr
 rm -rf "$prefix/web.old"
 [ -d "$prefix/web" ] && mv "$prefix/web" "$prefix/web.old"
 mv "$src/web" "$prefix/web"
+if [ -d "$src/kistack" ]; then rm -rf "$prefix/kistack.old"; [ -d "$prefix/kistack" ] && mv "$prefix/kistack" "$prefix/kistack.old"; mv "$src/kistack" "$prefix/kistack"; fi
 for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc LICENSE; do
   [ -e "$src/$f" ] && mv -f "$src/$f" "$prefix/$f"
 done
@@ -202,6 +204,7 @@ stage_cef() {
 stage() {
   rm -rf build/dev-pkg && mkdir -p build/dev-pkg
   cp -R dist/web build/dev-pkg/web
+  [ -d dist/kistack ] && cp -R dist/kistack build/dev-pkg/kistack
   for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc; do
     [ -e "dist/$f" ] && cp "dist/$f" build/dev-pkg/
   done

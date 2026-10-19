@@ -41,7 +41,7 @@ if [ -n "${BACKPLANE_VERSION:-}" ]; then
 fi
 if [ "$pre" = 1 ]; then
   [ -f dist/web/index.html ] || { echo "BACKPLANE_PREBUILT: no dist/web (scripts/build.sh emit)"; exit 1; }
-  find dist -mindepth 1 -maxdepth 1 ! -name web -exec rm -rf {} +
+  find dist -mindepth 1 -maxdepth 1 ! -name web ! -name kistack -exec rm -rf {} +
 else
   rm -rf dist
   mkdir -p dist
@@ -51,6 +51,8 @@ else
   cp src/web/sw.js dist/web/sw.js
   # precompressed copies: the server sends these to browsers that take gzip
   for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
+  # KiStack's skills, pinned and checked (deploy/kistack.lock)
+  scripts/build-kistack.sh dist/kistack
 fi
 mkdir -p build
 if [ "$mode" = emit ]; then
