@@ -2721,12 +2721,56 @@ def Shell.frame.k(wait: Bool, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan
     case False{}:
       Shell.frame.draw(n, w, q, i, wa, ms)
 
+# While a join's chunks come in (U.Boot.on: the hub sends a long log a
+# chunk at a time) the window keeps its last frame instead of drawing each
+# chunk's state: the threads used to appear and go as history replayed, on
+# every start. The frame comes once the last chunk is in, or Boot.most() ms
+# after the hold began (a join that never ends cannot freeze the window;
+# a timer wakes it then). The first frame is always drawn.
+def Boot.most() -> Nat:
+  8000n
+
+def Boot.drawn(f: TI.Frames) -> Bool:
+  match f:
+    case TI.FNone{}:
+      False{}
+    case TI.FSome{_, _, _}:
+      True{}
+
+# when the hold began ("" none)
+def Boot.since(+n: N.Nui) -> String:
+  U.Ui.info(N.Nui.ui(n), "boot.held")
+
+def Boot.hold(+n: N.Nui, +drawn: Bool, +ms: Nat) -> Bool:
+  Bool.and(Bool.and(U.Boot.on(N.Nui.ui(n)), drawn),
+    Bool.or(String.is_empty(Boot.since(n)), Nat.is_lt(Nat.sub(ms, Maybe.default(&2, Nat, Nat.read(Boot.since(n)), 0n)), Boot.most())))
+
+def Boot.held.k(fresh: Bool, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +ms: Nat) -> IO(Shell):
+  match fresh:
+    case True{}:
+      do IO<Shell>:
+        IO.spawn(Unit, Timer.once(q, Boot.most()))
+        return Shell{N.Nui.with_ui(n, U.Ui.info_set(N.Nui.ui(n), "boot.held", Nat.show(ms))), w, True{}, False{}, q, i, wa}
+    case False{}:
+      IO.pure(Shell, Shell{n, w, True{}, False{}, q, i, wa})
+
+# (once the join is over, the hold's mark goes)
+def Boot.clear(+n: N.Nui) -> N.Nui:
+  Bool.pick(N.Nui, Bool.or(U.Boot.on(N.Nui.ui(n)), String.is_empty(Boot.since(n))), n, N.Nui.with_ui(n, U.Ui.info_set(N.Nui.ui(n), "boot.held", "")))
+
+def Shell.frame.h(hold: Bool, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +ms: Nat) -> IO(Shell):
+  match hold:
+    case True{}:
+      Boot.held.k(String.is_empty(Boot.since(n)), n, w, q, i, wa, ms)
+    case False{}:
+      Shell.frame.k(Hubf.wait(n, ms), Boot.clear(n), w, q, i, wa, ms)
+
 def Shell.frame(a: Shell) -> IO(Shell):
   match a:
-    case Shell{+n, w, True{}, _, q, i, wa}:
+    case Shell{+n, w, True{}, _, q, i, +wa}:
       do IO<Shell>:
         +ms : Nat <- IO.now()
-        Shell.frame.k(Hubf.wait(n, ms), n, w, q, i, wa, ms)
+        Shell.frame.h(Boot.hold(n, Boot.drawn(Aux.frames(wa)), ms), n, w, q, i, wa, ms)
     case Shell{n, w, False{}, _, q, i, wa}:
       IO.pure(Shell, Shell{n, w, False{}, False{}, q, i, wa})
 
