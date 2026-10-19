@@ -77,6 +77,9 @@ On a Mac there is no native window yet: `backplane` runs the hub and you use it 
 
 To uninstall what install.sh put in place, quit Backplane, then:
 
+For a custom installation, substitute your `BACKPLANE_PREFIX`,
+`BACKPLANE_BIN` and `XDG_DATA_HOME` paths in the commands below.
+
 ```sh
 rm -rf ~/.local/share/backplane
 rm -f ~/.local/bin/backplane ~/.local/bin/backplane-serve
