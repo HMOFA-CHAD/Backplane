@@ -3993,7 +3993,7 @@ def Effort.chips(+info: String, +provider: String, +model: String) -> List<&2, S
 # clients: a chip's value starting with "@" is a provider.
 
 def Chip.providers() -> List<&2, String>:
-  ["@claude", "@codex", "@grok", "@muse", "@antigravity"]
+  ["@claude", "@codex", "@grok", "@muse", "@antigravity", "@opencode"]
 
 def Chip.all(+info: String, +provider: String, +model: String) -> List<&2, String>:
   List.append(&2, String, Chip.providers(), Effort.chips(info, provider, model))
@@ -11257,7 +11257,7 @@ def Fallbackv.add(+u: Ui, +caps: J.Json) -> List<&2, AgRow>:
   +p = M.Setting.get(s, "fallback.add.provider", "codex")
   +m = M.Setting.get(s, "fallback.add.model", "gpt-6.1-sol")
   +target = {FB.Target{p, m} : FB.Target}
-  [AgRow{"Add a provider", "Choose an installed provider and model, then add it to the end.", Nil{}, Fallbackv.providers(["claude", "codex", "grok", "muse", "antigravity"], caps, p)},
+  [AgRow{"Add a provider", "Choose an installed provider and model, then add it to the end.", Nil{}, Fallbackv.providers(["claude", "codex", "grok", "muse", "antigravity", "opencode"], caps, p)},
    AgRow{"Add a model", "Only installed models can be saved. Duplicate entries are not allowed.", Nil{}, Fallbackv.models(Models.list(Ui.info(u, "models"), p), m)},
    AgRow{FB.Target.key(target), "", Nil{}, Fallbackv.add.k(Bool.and(FB.Caps.valid(caps, target), Bool.not(FB.Chain.has(Fallbackv.chain(u), FB.Target.key(target)))), Fallbackv.chain(u), target)}]
 
@@ -11284,7 +11284,7 @@ def Fallbackv.rows(+u: Ui) -> List<&2, AgRow>:
     [AgBtn{"Enabled", "setting", "fallback.on=on", FB.Chain.on(s)}, AgBtn{"Disabled", "setting", "fallback.on=off", Bool.not(FB.Chain.on(s))}]}],
     Fallbackv.order(all, all, caps, s, 1n), Fallbackv.add(u, caps),
     [AgRow{"Fallback notifications", "One alert per outage, with an audit row in each affected thread. If the whole chain is unavailable, work pauses and asks for attention. A limit without a reset stays held until cleared here.", Nil{}, Nil{}}],
-    Fallbackv.outages(List.append(&2, String, ["claude", "codex", "grok", "muse", "antigravity"], Fallbackv.scopes(all)), s, Side.now(u))])
+    Fallbackv.outages(List.append(&2, String, ["claude", "codex", "grok", "muse", "antigravity", "opencode"], Fallbackv.scopes(all)), s, Side.now(u))])
 
 def Mailv.put(u: Ui, m: MailvData) -> Ui:
   match u:

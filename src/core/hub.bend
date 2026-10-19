@@ -69,6 +69,8 @@ type Out is Data:
   MuseTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   # Google's Antigravity agent over ACP (core/agy.bend)
   AgyTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
+  # opencode over ACP (`opencode acp`, Grok's runner)
+  OcTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   # a turn ended: "completed", "failed", or "stopped" (Stop, archive,
   # delete: no alert, but the phones' island still hears of it)
   TurnEnded{thread: String, state: String}
@@ -429,6 +431,8 @@ def Hub.run.k(i: Nat, +thread: String, +cwd: String, +provider: String, +model: 
       [MuseTurn{thread, cwd, model, session, runtime, text}]
     case 4n:
       [AgyTurn{thread, cwd, model, session, runtime, text}]
+    case 5n:
+      [OcTurn{thread, cwd, model, session, runtime, text}]
     case _:
       [AgentStart{thread, cwd, provider, model, session, runtime, interaction}, Claude.send(thread, cwd, text, uuid)]
 
@@ -436,7 +440,7 @@ def Hub.run.k(i: Nat, +thread: String, +cwd: String, +provider: String, +model: 
 def Hub.run(t: M.Thread, +cwd: String, +text: String, +uuid: String) -> List<&2, Out>:
   match t:
     case M.Thread{+id, _, _, _, _, _, _, _, _, _, _, _, _, _, _, +provider, model, runtime, interaction, session, _}:
-      Hub.run.k(C.Codec.pos(["claude", "codex", "grok", "muse", "antigravity"], provider), id, cwd, provider, model, session, runtime, interaction, text, uuid)
+      Hub.run.k(C.Codec.pos(["claude", "codex", "grok", "muse", "antigravity", "opencode"], provider), id, cwd, provider, model, session, runtime, interaction, text, uuid)
 
 def Hub.post.go(wait: Bool, +t: M.Thread, +cwd: String, +queued: String, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   match wait:
@@ -3149,7 +3153,7 @@ def Codex.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now: 
 # Grok's and Muse's tool calls are logged before they run: their design
 # steps come at "tool.done"
 def Hub.acp_like(+p: String) -> Bool:
-  Bool.or(Bool.or(String.eq(p, "grok"), String.eq(p, "muse")), String.eq(p, "antigravity"))
+  Bool.or(Bool.or(String.eq(p, "grok"), String.eq(p, "muse")), Bool.or(String.eq(p, "antigravity"), String.eq(p, "opencode")))
 
 # the open-call outs of a Codex-like line, after its step
 def Tools.codex(acp: Bool, m: Maybe<&2, J.Json>, st: Step, +thread: String) -> Step:
@@ -7133,6 +7137,7 @@ def Run.fresh.out(o: Out) -> Out:
     case GrokTurn{t, cwd, m, _, r, text}: GrokTurn{t, cwd, m, "", r, text}
     case MuseTurn{t, cwd, m, _, r, text}: MuseTurn{t, cwd, m, "", r, text}
     case AgyTurn{t, cwd, m, _, r, text}: AgyTurn{t, cwd, m, "", r, text}
+    case OcTurn{t, cwd, m, _, r, text}: OcTurn{t, cwd, m, "", r, text}
     case other: other
 
 def Run.fresh.outs(+os: List<&2, Out>) -> List<&2, Out>:
@@ -7585,6 +7590,8 @@ def Fallback.outs.one(+o: Out, +s: M.State, +caps: J.Json, +now: Nat) -> Step:
     case MuseTurn{+th, +cwd, _, _, _, +text}:
       Fallback.attempt(s, caps, now, th, cwd, text, Hub.uuid(now, th), [o])
     case AgyTurn{+th, +cwd, _, _, _, +text}:
+      Fallback.attempt(s, caps, now, th, cwd, text, Hub.uuid(now, th), [o])
+    case OcTurn{+th, +cwd, _, _, _, +text}:
       Fallback.attempt(s, caps, now, th, cwd, text, Hub.uuid(now, th), [o])
     case _: Step.outs([o])
 
