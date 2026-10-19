@@ -7504,11 +7504,18 @@ def Hs.menu.steps() -> Nat:
   8n
 
 # the menu's rows for a side ("a" the old version, "b" the new)
+# the menu's step rows: the newest Hs.menu.steps(), newest first, as
+# taking them from every step's row gives (each row's label walks the
+# thread's entries: made for every step, a thread with a long history
+# took seconds a screen on the phones)
+def Hs.row.last(+ss: List<&2, HI.Step>, +l: I.Loc, +side: String, +es: List<&2, M.Entry>) -> List<&2, HRow>:
+  Hs.row.steps(List.drop(&2, HI.Step, ss, Nat.sub(List.length(&2, HI.Step, ss), Hs.menu.steps())), l, side, es, 1n+Nat.sub(List.length(&2, HI.Step, ss), Hs.menu.steps()), Nil{})
+
 def Hs.menu.loc(+l: I.Loc, +u: Ui, +side: String) -> List<&2, HRow>:
   +r = Hs.refs(u)
   +es = M.State.mine(Ui.state(u), Ui.sel(u))
   List.append(&2, HRow, [HRow{MSG.T.history.workingcopy(l), MSG.T.history.workingcopy.note(l), Hs.row.value(side, "", "Working copy", "", "")}],
-    List.append(&2, HRow, List.take(&2, HRow, Hs.row.steps(Hs.track(u), l, side, es, 1n, Nil{}), Hs.menu.steps()),
+    List.append(&2, HRow, Hs.row.last(Hs.track(u), l, side, es),
       Hs.row.refs(HI.Hist.refs(J.Json.get_str(r, "refs", "")), l, side, J.Json.get_str(r, "git", ""), J.Json.get_str(r, "top", ""))))
 
 def Hs.menu(+u: Ui, side: String) -> List<&2, HRow>:
@@ -8176,10 +8183,14 @@ def HBar.h(+b: HBar) -> U32:
 def Hs.fade() -> Nat:
   220n
 
+# (the track made once: each Hs.track parses every step's record)
+def Hs.bar.t(+l: I.Loc, +tr: List<&2, HI.Step>, +u: Ui) -> HBar:
+  Hs.bar.k(l, HI.Hist.nth(tr, Hs.at(u, tr)), u, Hs.n(tr), Hs.at(u, tr), M.State.mine(Ui.state(u), Ui.sel(u)))
+
 def Hs.bar.on(+l: I.Loc, on: Bool, +u: Ui) -> HBar:
   match on:
     case True{}:
-      Hs.bar.k(l, HI.Hist.nth(Hs.track(u), Hs.at(u, Hs.track(u))), u, Hs.n(Hs.track(u)), Hs.at(u, Hs.track(u)), M.State.mine(Ui.state(u), Ui.sel(u)))
+      Hs.bar.t(l, Hs.track(u), u)
     case False{}:
       HBar{False{}, 0n, 0n, "", "", "", "", False{}, False{}, False{}, "", "", ""}
 
