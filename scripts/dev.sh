@@ -213,11 +213,12 @@ stage() {
   return 0
 }
 
-# the request that queues a deploy of the package in $1 on a hub (the MCP
-# route from loopback is trusted; "deploy" is no thread, so the person asked)
+# the request that queues a deploy of the package in $1 on a hub ("deploy"
+# is no thread, so the person asked). It presents the hub's pairing token,
+# read where it runs (its home: BACKPLANE_INSTALL_HOME, ~/.backplane-bend)
 deploy_post() {
   body=$(printf '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"deploy_restart","arguments":{"stage":"%s","note":"dev.sh install"}}}' "$1")
-  printf "curl -s --max-time 10 -X POST -H 'content-type: application/json' -H 'accept: application/json' --data '%s' http://127.0.0.1:%s/mcp/deploy" "$body" "${BACKPLANE_INSTALL_PORT:-3787}"
+  printf "curl -s --max-time 10 -X POST -H 'content-type: application/json' -H 'accept: application/json' -H \"authorization: Bearer \$(cat \"%s/token\" 2>/dev/null)\" --data '%s' http://127.0.0.1:%s/mcp/deploy" "${BACKPLANE_INSTALL_HOME:-\$HOME/.backplane-bend}" "$body" "${BACKPLANE_INSTALL_PORT:-3787}"
 }
 
 hello_cmd() {
