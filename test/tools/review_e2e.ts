@@ -124,7 +124,13 @@ try {
   const none = (await ask("review.bom", { thread: th.id, a: spec(head, "ecc83-pp.kicad_sch"), b: "" }))?.result?.report;
   check(!!none && none.md.trim() === "No changes", "HEAD against the working copy: no change", none?.md);
 
-  // the design checks
+  // the design checks. The project's own (checks.json) wait for the
+  // person's OK first: nothing of theirs runs, the gate fails, the report
+  // says what would run; once its hash is in <home>/checks.trusted they run
+  const ck0 = (await ask("review.checks", { thread: th.id, commit: "", trigger: "manual" }, 120000))?.result?.report;
+  check(!!ck0 && ck0.gate.includes("wait for your OK") && ck0.md.includes("echo hi; exit 3") && !ck0.gate.includes("Custom:"), "the project's own check waits for an OK, shown, not run", JSON.stringify(ck0)?.slice(0, 300));
+  const cj = readFileSync(join(proj, ".backplane/checks.json"), "utf8");
+  writeFileSync(join(home, "checks.trusted"), new Bun.CryptoHasher("sha256").update(cj).digest("hex") + "\n");
   const t1 = Date.now();
   const ck = (await ask("review.checks", { thread: th.id, commit: "", trigger: "manual" }, 120000))?.result?.report;
   console.log(`     (checks in ${Date.now() - t1} ms)`);
