@@ -166,14 +166,17 @@ def Rvc.pcb(f: K.Files) -> String:
       pcb
 
 # a folder for the reports, and the commit's files when one is asked
+# (git archive runs the smudge filters: the repository's own are blanked,
+# git.bend's bp_safe)
 def Rvc.prep.sh() -> String:
-  String.join([
+  GT.Git.safe.sh() ++ String.join([
     "set -e",
     "t=$(mktemp -d \"${TMPDIR:-/tmp}/bp-review.XXXXXX\")",
     "if [ -n \"$2\" ]; then",
     "  cd \"$1\"",
     "  p=$(git rev-parse --show-prefix 2>/dev/null || true)",
     "  mkdir \"$t/src\"",
+    "  bp_safe",
     "  git archive --format=tar \"$2\" | tar -x -C \"$t/src\"",
     "  printf '%s\\n%s\\n' \"$t\" \"$t/src/$p\"",
     "else",
@@ -310,9 +313,11 @@ def Rvc.checks.in(+out: String, +dir: String, +home: String, +trigger: String) -
     +cs : List<&2, CHK.Custom> = CHK.Checks.for(Rvc.cfg(cfg), trigger)
     +hash : String = SH.Hex.encode(SH.Sha256.hash(U8.Utf8.encode(cj)))
     tr : String <- K.Io.text(home ++ "/checks.trusted")
+    # the OK is for the whole file (its hash), so the question shows every
+    # command in it, whatever the trigger: none is allowed unseen
     +ok : Bool = Bool.or(List.is_empty(&2, CHK.Custom, cs), Rvc.trusted(String.lines(tr), hash))
     runs : List<&2, CHK.Run> <- Rvc.runs.ok(ok, cs, dir)
-    return Rvc.checks.out(List.append(&2, CHK.Finding, kc, Rvc.bomf(BM.Bom.rules(ps))), CHK.Checklist.parse(Rvc.or(cl, CHK.Checklist.default())), runs, Rvc.gate(cfg), ok, hash, Rvc.cmds(cs))
+    return Rvc.checks.out(List.append(&2, CHK.Finding, kc, Rvc.bomf(BM.Bom.rules(ps))), CHK.Checklist.parse(Rvc.or(cl, CHK.Checklist.default())), runs, Rvc.gate(cfg), ok, hash, Rvc.cmds(Rvc.cfg(cfg)))
 
 def Rvc.checks.done(+text: String, +tmp: String) -> IO(Unit):
   do IO<Unit>:
@@ -365,9 +370,10 @@ def Rvc.write(+path: String, text: String) -> IO(Bool):
 # notes, prev}.
 
 def Rvr.prep.sh() -> String:
-  String.join([
+  GT.Git.safe.sh() ++ String.join([
     "set -e",
     "cd \"$1\"",
+    "bp_safe",
     "top=$(git rev-parse --show-toplevel)",
     "gd=$(cd \"$(git rev-parse --git-common-dir)\" && pwd)",
     "p=$(git rev-parse --show-prefix || true)",

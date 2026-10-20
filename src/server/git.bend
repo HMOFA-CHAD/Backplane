@@ -603,6 +603,35 @@ def Git.checkpoint.revert(+cwd: String, +thread_id: String, n: Nat) -> IO(String
 # hooks never run, P.Proc.run's core.hooksPath); else it is moved aside and
 # a new one made, since a folder from a zip could ship one whose config
 # runs commands on the hub's git)
+# the hub's record of the history.git folders it made (its own state)
+def Git.step.reg(+home: String) -> String:
+  home ++ "/history.trusted"
+
+# The first time a hub keeps the registry (Git.step.reg), the history of
+# each project the person already has, made by an older hub that kept no
+# registry, is recorded once if it looks like one the hub makes (a plain
+# directory, no commondir, nothing in its config beyond core's own keys).
+# After that no history.git the hub did not record is ever used: the step
+# moves it aside (Git.step.script).
+def Git.step.migrate.sh() -> String:
+  String.join([
+    "exec 2>/dev/null",
+    "reg=$1; shift",
+    "[ -e \"$reg\" ] && exit 0",
+    "ino() { stat -c '%d:%i' \"$1\" 2>/dev/null || stat -f '%d:%i' \"$1\"; }",
+    ": > \"$reg.tmp\" || exit 0",
+    "for top in \"$@\"; do",
+    "  gd=$top/.backplane/history.git",
+    "  [ -d \"$gd\" ] && [ ! -L \"$gd\" ] && [ ! -e \"$gd/commondir\" ] || continue",
+    "  l=$(git config --file \"$gd/config\" --name-only --list) || continue",
+    "  [ -z \"$(printf '%s\\n' \"$l\" | grep -v -E '^core[.](repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks|worktree)$' | grep .)\" ] || continue",
+    "  printf '%s %s\\n' \"$(ino \"$gd\")\" \"$gd\" >> \"$reg.tmp\"",
+    "done",
+    "mv \"$reg.tmp\" \"$reg\""], "\n")
+
+def Git.step.migrate(+home: String, roots: List<&2, String>) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", List.append(&2, String, ["-c", Git.step.migrate.sh(), "sh", Git.step.reg(home)], roots), "/"), _ => IO.pure(Unit, Unit{}))
+
 def Git.step.script() -> String:
   String.join([
     "exec 2>/dev/null",
@@ -619,13 +648,8 @@ def Git.step.script() -> String:
     "  [ \"$top\" = / ] || [ \"$top\" = \"$HOME\" ] && exit 0",
     "  [ -d \"$gd\" ] || [ -L \"$gd\" ] || [ -n \"$(find . -maxdepth 4 \\( -name '*.kicad_pcb' -o -name '*.kicad_sch' \\) -print | head -n 1)\" ] || exit 0",
     "  if [ -e \"$gd\" ] || [ -L \"$gd\" ]; then",
-    "    if ! { [ -n \"$reg\" ] && [ ! -L \"$gd\" ] && grep -qxF \"$(ino \"$gd\") $gd\" \"$reg\"; }; then",
-    "      bad=$(git config --file \"$gd/config\" --name-only --list | grep -v -E '^core[.](repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks|worktree)$')",
-    "      if [ -L \"$gd\" ] || [ ! -d \"$gd\" ] || [ -e \"$gd/commondir\" ] || [ -n \"$bad\" ]; then",
-    "        mv \"$gd\" \"$gd.untrusted-$(date +%s)\" || exit 0",
-    "      elif [ -n \"$reg\" ]; then",
-    "        printf '%s %s\\n' \"$(ino \"$gd\")\" \"$gd\" >> \"$reg\"",
-    "      fi",
+    "    if ! { [ -n \"$reg\" ] && [ ! -L \"$gd\" ] && [ -d \"$gd\" ] && grep -qxF \"$(ino \"$gd\") $gd\" \"$reg\"; }; then",
+    "      mv \"$gd\" \"$gd.untrusted-$(date +%s)\" || exit 0",
     "    fi",
     "  fi",
     "  export GIT_DIR=\"$gd\" GIT_WORK_TREE=\"$top\"",
@@ -676,9 +700,6 @@ def Git.step.ran(r: P.Ran) -> IO(String):
 # (reg: the hub's record of the history.git folders it made, Git.step.reg)
 def Git.step.capture(+cwd: String, +thread_id: String, +reg: String) -> IO(String):
   IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Git.step.script(), "sh", cwd, Git.b64url(thread_id), reg], "/"), Git.step.ran)
-
-def Git.step.reg(+home: String) -> String:
-  home ++ "/history.trusted"
 
 # What a file may be compared with: the git dir and top (as Git.step
 # finds them), then lines "kind\tlabel\tcommit": HEAD, the newest

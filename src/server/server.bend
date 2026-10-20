@@ -14352,6 +14352,27 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
 
 # replay the log, start the hub (and the web server), then run front
 # with the hub's inbox; `need` makes a taken web port fatal
+# the project folders the person has, for the history registry's first
+# record (git.bend's Git.step.migrate)
+def HistReg.roots.k(rm: Bool, +r: String, rest: List<&2, String>) -> List<&2, String>:
+  match rm:
+    case True{}:
+      rest
+    case False{}:
+      r <> rest
+
+def HistReg.roots.go(ps: List<&2, M.Project>) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case M.Project{_, _, +r, _, rm} <> t:
+      HistReg.roots.k(rm, r, HistReg.roots.go(t))
+
+def HistReg.roots(+st: M.State) -> List<&2, String>:
+  match st:
+    case M.State{+ps, _, _, _, _, _, _, _, _, _, _}:
+      HistReg.roots.go(Map.values(&2, M.Project, ps))
+
 def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
   match cfg:
     case Cfg{+home, w, h, +p, pr, ds, v, nt}:
@@ -14369,6 +14390,7 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         +ls : List<&2, String> = ST.Loaded.wire(ld)
         t2 : U32 <- PS.Perf.span("boot.replay", t1)
         Log.info("replayed " ++ Nat.show(List.length(&2, String, ls)) ++ " changes from " ++ Store.path(home))
+        GT.Git.step.migrate(home, HistReg.roots(st))
         f0 : Result<&1, &1, U32 & String, File> <- File.open(Store.path(home), "a")
         f : Result<&1, &1, U32 & String, File> <- Main.torn(f0, ST.Store.tail_fix(bs))
         tok : String <- Token.load(home)
