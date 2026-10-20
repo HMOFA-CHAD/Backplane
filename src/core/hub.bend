@@ -65,6 +65,9 @@ type Out is Data:
   KiCadRetry{}
   # opencode's models read again for every client (server.bend's OcJob)
   ModelsRefresh{}
+  # the person allowed a project's own checks (.backplane/checks.json) as
+  # they are: their sha256 joins <home>/checks.trusted (server.bend)
+  ChecksTrust{hash: String}
   # run one Codex turn (a process per turn; `session` resumes)
   CodexTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   GrokTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
@@ -2652,10 +2655,45 @@ def Hub.answer.open(order: Bool, +s: M.State, +now: Nat, +client: U32, +id: Stri
 # agent request gets its reply, implementing a plan leaves plan mode and
 # asks the agent to carry it out, and an order's question is answered in
 # its thread (Hub.answer.order)
+# A project's own checks wait for the person's OK (server/review.bend's
+# Rvc.trusted): the hub asks in the thread (an "input" ask, tool
+# "checks_ok", id "checks:<sha256>:<n>", server.bend's Hub.checks.ask);
+# "Run them" trusts that checks.json, anything else only closes the ask.
+def Checks.yes() -> String:
+  "Run them"
+
+def Checks.hash(+ask: String) -> String:
+  String.take(String.drop(ask, 7n), 64n)
+
+def Checks.answer.k(yes: Bool, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String) -> Step:
+  match yes:
+    case True{}:
+      Step{[M.AskClosed{ask, answer, now}], [Reply.ok(client, id), ChecksTrust{Checks.hash(ask)}]}
+    case False{}:
+      Step{[M.AskClosed{ask, answer, now}], [Reply.ok(client, id)]}
+
+def Checks.asked.go(as: List<&2, M.Ask>, +pre: String) -> Bool:
+  match as:
+    case Nil{}:
+      False{}
+    case M.Ask{+aid, _, _, _, _, _, +op, _} <> t:
+      Bool.or(Bool.and(op, String.starts_with(aid, pre)), Checks.asked.go(t, pre))
+
+# a question for these checks is open already
+def Checks.asked(+s: M.State, +hash: String) -> Bool:
+  Checks.asked.go(M.Asks.all(s), "checks:" ++ hash ++ ":")
+
+def Hub.answer.cx.t(cx: Bool, order: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String, +k: String) -> Step:
+  match cx:
+    case True{}:
+      Checks.answer.k(String.eq(String.trim(answer), Checks.yes()), now, client, id, ask, answer)
+    case False{}:
+      Hub.answer.open(order, s, now, client, id, ask, answer, th, k)
+
 def Hub.answer.k(a: M.Ask, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String) -> Step:
   match a:
     case M.Ask{_, +th, +k, +tool, _, _, True{}, _}:
-      Hub.answer.open(String.eq(tool, "order_ask"), s, now, client, id, ask, answer, th, k)
+      Hub.answer.cx.t(String.eq(tool, "checks_ok"), String.eq(tool, "order_ask"), s, now, client, id, ask, answer, th, k)
     case M.Ask{_, _, _, _, _, _, False{}, _}:
       Step.outs([Reply.ok(client, id)])
 

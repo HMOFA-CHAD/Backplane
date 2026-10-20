@@ -42,11 +42,6 @@ def KiCad.asset() -> String:
 def KiCad.sha256() -> String:
   "f60a71817d057f9dcf3faef632b2f85d06a613108dee23807c9de81aae97e0b4"
 
-# the KiStack commit to fall back on: the latest one found (KiStack.refresh)
-# is used once it is here
-def KiStack.revision() -> String:
-  "ecf16c119c7ed610f5f251c479b03884b8d98b09"
-
 def Io.bytes.done(r: File & Result<&1, &1, U32 & String, List<&2, U32>>) -> IO(List<&2, U32>):
   (f, res) = r
   do IO<List<&2, U32>>:
@@ -488,61 +483,17 @@ def Files.read.cfg(+root: String, +cfg: J.Json) -> IO(Files):
 def Files.read(+root: String) -> IO(Files):
   IO.bind(String, Files, Io.text(root ++ "/.backplane.json"), text => Files.read.cfg(root, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})))
 
-def KiStack.ensure.k(have: Bool, +dir: String) -> IO(Unit):
-  match have:
-    case True{}:
-      IO.pure(Unit, Unit{})
-    case False{}:
-      do IO<Unit>:
-        mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir)
-        r : P.Ran <- P.Proc.run("sh", ["-c", "curl -fsSL --max-time 120 \"$1\" | tar -xz -C \"$2\" --strip-components=1", "sh",
-          "https://codeload.github.com/American-Embedded/KiStack/tar.gz/" ++ KiStack.revision(), dir], "/")
-        return Unit{}
-
 # KiStack
 # -------
 
-# KiStack's latest commit, fetched off the hub's start: downloaded once,
-# checked, and named in <base>/current, which the next start uses (a start
-# never waits on the network; offline, the one there or the pinned one)
-def KiStack.base(+home: String) -> String:
-  home ++ "/.cache/backplane/kistack"
-
-def KiStack.refresh.sh() -> String:
-  "base=$1; sha=$(curl -fsSL --max-time 20 -H 'Accept: application/vnd.github.sha' https://api.github.com/repos/American-Embedded/KiStack/commits/HEAD) || exit 0; case $sha in ''|*[!0-9a-f]*) exit 0;; esac; if [ ! -f \"$base/$sha/skills/pcb/SKILL.md\" ]; then rm -rf \"$base/$sha.new\"; mkdir -p \"$base/$sha.new\"; curl -fsSL --max-time 120 \"https://codeload.github.com/American-Embedded/KiStack/tar.gz/$sha\" | tar -xz -C \"$base/$sha.new\" --strip-components=1 || exit 0; [ -f \"$base/$sha.new/skills/pcb/SKILL.md\" ] || exit 0; rm -rf \"$base/$sha\"; mv \"$base/$sha.new\" \"$base/$sha\"; fi; printf '%s\\n' \"$sha\" > \"$base/current.new\" && mv \"$base/current.new\" \"$base/current\""
-
-def KiStack.refresh(+home: String) -> IO(Unit):
-  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", KiStack.refresh.sh(), "sh", KiStack.base(home)], "/"), r => IO.pure(Unit, Unit{}))
-
-def KiStack.current.k(ok: Bool, +sha: String) -> String:
-  Bool.pick(String, Bool.and(ok, Bool.not(String.is_empty(sha))), sha, KiStack.revision())
-
-# the revision a start uses: the latest one fetched, else the pinned one
-def KiStack.current(+home: String) -> IO(String):
-  do IO<String>:
-    +sha : String <- IO.bind(String, String, Io.text(KiStack.base(home) ++ "/current"), t => IO.pure(String, String.trim(t)))
-    ok : Bool <- Io.is_file(KiStack.base(home) ++ "/" ++ sha ++ "/skills/pcb/SKILL.md")
-    return KiStack.current.k(ok, sha)
-
-# a revision directory made a Claude Code plugin named kistack (its skills
-# are already where a plugin keeps them), so every Claude thread gets them
-# as its own skills through --plugin-dir
-def KiStack.plugin.sh() -> String:
-  "[ -d \"$1/skills\" ] || exit 0; [ -f \"$1/.claude-plugin/plugin.json\" ] && exit 0; mkdir -p \"$1/.claude-plugin\" && printf '%s\\n' '{\"name\":\"kistack\",\"description\":\"KiStack KiCad skills by American Embedded\"}' > \"$1/.claude-plugin/plugin.json\""
-
-def KiStack.plugin(+dir: String) -> IO(Unit):
-  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", KiStack.plugin.sh(), "sh", dir], "/"), r => IO.pure(Unit, Unit{}))
-
-# the skills live in <cache>/backplane/kistack/<revision>/skills (shared with
-# the TypeScript Backplane); with no latest revision fetched yet, fetch the
-# pinned one when it is missing
-def KiStack.ensure(+home: String) -> IO(Unit):
-  do IO<Unit>:
-    rev : String <- KiStack.current(home)
-    +dir : String = KiStack.base(home) ++ "/" ++ rev
-    have : Bool <- Io.is_file(dir ++ "/skills/pcb/SKILL.md")
-    KiStack.ensure.k(have, dir)
-    KiStack.plugin(dir)
+# KiStack's skills come with the app: scripts/build-kistack.sh puts the
+# pinned commit's skills/ (checked against deploy/kistack.lock), its LICENSE
+# and a plugin.json of ours in <exe dir>/kistack, which every Claude thread
+# loads with --plugin-dir. The hub never fetches KiStack (it took the
+# repository's newest commit at each start, its own plugin manifest too, so
+# a hook or an .mcp.json there would have run in every Claude session).
+def KiStack.dir(+exe: String) -> String:
+  exe ++ "/kistack"
 
 def KiCad.install.k(r: P.Ran) -> String:
   match r:

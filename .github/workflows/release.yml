@@ -123,6 +123,7 @@ jobs:
           retention-days: 1
           path: |
             dist/web
+            dist/kistack
             build/cc/backplane-serve/all.c
             build/wire
 

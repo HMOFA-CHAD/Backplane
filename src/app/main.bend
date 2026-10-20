@@ -728,19 +728,19 @@ def Tie.url(t: Tie) -> String:
 def Shell.local(+n: N.Nui) -> String:
   U.Ui.info(N.Nui.ui(n), "local.hub")
 
-def Shell.hub.here(inside: Bool, +home: Chan(S.Msg), +lo: String) -> IO(Chan(S.Msg)):
+def Shell.hub.here(inside: Bool, +home: Chan(S.Msg), +lo: String, +tok: String) -> IO(Chan(S.Msg)):
   match inside:
     case True{}:
       IO.pure(Chan(S.Msg), home)
     case False{}:
-      LK.Link.start(lo)
+      LK.Link.start.t(lo, tok)
 
 # the hub to join: this machine's own (in this process, or a new link to
 # the one the window joined at start), or a link to another
-def Shell.hub(local: Bool, +home: Chan(S.Msg), +url: String, +lo: String) -> IO(Chan(S.Msg)):
+def Shell.hub(local: Bool, +home: Chan(S.Msg), +url: String, +lo: String, +tok: String) -> IO(Chan(S.Msg)):
   match local:
     case True{}:
-      Shell.hub.here(String.is_empty(lo), home, lo)
+      Shell.hub.here(String.is_empty(lo), home, lo, tok)
     case False{}:
       LK.Link.start(url)
 
@@ -748,7 +748,7 @@ def Shell.joined(+i2: Chan(S.Msg), +q: Chan(ShellMsg), +tag: String, since: Nat,
   do IO<Unit>:
     +out : Chan(S.Wire) <- Chan.new(S.Wire, 8192)
     +gen : U32 <- Fwd.gen()
-    ok : Result<&1, &1, S.Msg, Unit> <- Chan.send(S.Msg, i2, S.Join{0, out, since, origin, gen, 0})
+    ok : Result<&1, &1, S.Msg, Unit> <- Chan.send(S.Msg, i2, S.Join{0, out, since, origin, gen, 0, False{}})
     IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, tag, i2, gen, 0n))
 
 # Save the departing installed state before an input step replaces it.
@@ -772,7 +772,7 @@ def Shell.connect.k(t: Tie, a: Shell, +url: String) -> IO(Shell):
         +tag : String = url ++ "#" ++ Nat.show(n)
         +pre : String <- RW.Rvw.pre(url)
         +nu2 : N.Nui = Shell.remote.set(N.Nui.connection(nu, tag, U.HubCache.get(cache, url)), url, pre)
-        +i2 : Chan(S.Msg) <- Shell.hub(String.is_empty(url), home, url, Shell.local(nu))
+        +i2 : Chan(S.Msg) <- Shell.hub(String.is_empty(url), home, url, Shell.local(nu), U.Ui.info(N.Nui.ui(nu), "local.token"))
         Shell.joined(i2, q, tag, U.Ui.seq(N.Nui.ui(nu2)), U.Ui.info(N.Nui.ui(nu2), "origin"))
         return Shell{N.Nui.desk.reset(nu2), w, True{}, qd, q, i2, Aux{ws, ty, Tie{home, url, tag, 1n+n, [TieKeep{Map.new(&2, BM.Bitmap), Map.new(&2, Bool), cache}]}, [Kept.none()]}}
 
@@ -3062,9 +3062,9 @@ def Shell.fonts(m: Maybe<&1, L.Ty>) -> IO(L.Ty):
 # the first join: the in-process hub hands its state over (JoinHere); a
 # hub joined over a link sends its log like any other machine's
 def Shell.join.first(+inbox: Chan(S.Msg), +out: Chan(S.Wire), +lo: String, +gen: U32) -> IO(Result<&1, &1, S.Msg, Unit>):
-  Bool.pick(IO(Result<&1, &1, S.Msg, Unit>), String.is_empty(lo), Chan.send(S.Msg, inbox, S.JoinHere{0, out, gen}), Chan.send(S.Msg, inbox, S.Join{0, out, 0n, "", gen, 0}))
+  Bool.pick(IO(Result<&1, &1, S.Msg, Unit>), String.is_empty(lo), Chan.send(S.Msg, inbox, S.JoinHere{0, out, gen}), Chan.send(S.Msg, inbox, S.Join{0, out, 0n, "", gen, 0, False{}}))
 
-def Shell.twin.go(ev: Window, x: Window & U32, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String) -> IO(Unit):
+def Shell.twin.go(ev: Window, x: Window & U32, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String, +tok: String) -> IO(Unit):
   (pw, +xid) = x
   do IO<Unit>:
     +q : Chan(ShellMsg) <- Chan.new(ShellMsg, 8192)
@@ -3076,21 +3076,23 @@ def Shell.twin.go(ev: Window, x: Window & U32, +inbox: Chan(S.Msg), +drafts: Str
     IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, "#0", inbox, gen, 0n))
     got : Maybe<&1, L.Ty> <- Chan.recv(L.Ty, fq)
     ty : L.Ty <- Shell.fonts(got)
-    saved : U.Ui <- Drafts.load(U.Ui.info_set(U.Ui.init(U32.to_nat(t)), "local.hub", lo), drafts)
+    saved : U.Ui <- Drafts.load(U.Ui.info_set(U.Ui.info_set(U.Ui.init(U32.to_nat(t)), "local.hub", lo), "local.token", tok), drafts)
     seeded : U.Ui <- CefWin.start(saved, xid)
     ui : U.Ui <- Lang.start(seeded)
     a : Shell <- Shell.later(Shell{N.Nui.init(ui, 1400, 900), pw, True{}, False{}, q, inbox, Aux{Nil{}, [ty], Tie{inbox, "", "#0", 1n, TieKeep.empty()}, [Kept.none()]}})
     Shell.loop(S.Fuel.forever(), a)
 
 # the window's X id, read once (an embedded page is made its child)
-def Shell.twin(r: Window & Window, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String) -> IO(Unit):
+def Shell.twin(r: Window & Window, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String, +tok: String) -> IO(Unit):
   (ev, pw) = r
-  IO.bind(Window & U32, Unit, W.Win.xid(pw), x => Shell.twin.go(ev, x, inbox, drafts, fq, lo))
+  IO.bind(Window & U32, Unit, W.Win.xid(pw), x => Shell.twin.go(ev, x, inbox, drafts, fq, lo, tok))
 
-def Shell.opened(r: Result<&1, &1, U32 & String, Window>, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String) -> IO(Unit):
+# (tok: the joined hub's pairing token, read from its home: the link
+# presents it, and so does a later link back to it, "local.token")
+def Shell.opened(r: Result<&1, &1, U32 & String, Window>, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String, +tok: String) -> IO(Unit):
   match r:
     case Done{w}:
-      IO.bind(Window & Window, Unit, W.Win.twin(w), p => Shell.twin(p, inbox, drafts, fq, lo))
+      IO.bind(Window & Window, Unit, W.Win.twin(w), p => Shell.twin(p, inbox, drafts, fq, lo, tok))
     case Fail{e}:
       Shell.nowin(e)
 
@@ -3175,8 +3177,9 @@ def Start.join(r: Result<&1, &1, U32 & String, Window>, +held: String, +cfg: S.C
       do IO<Unit>:
         +lo : String = "http://" ++ S.Cfg.host(cfg) ++ ":" ++ S.Lock.word(held, 1n)
         IO.print("Backplane already runs for " ++ S.Cfg.home(cfg) ++ " (pid " ++ S.Lock.word(held, 0n) ++ "): the window joins it at " ++ lo)
-        i : Chan(S.Msg) <- LK.Link.start(lo)
-        Shell.opened(Done{w}, i, drafts, fq, lo)
+        +tok : String <- IO.bind(String, String, K.Io.text(S.Cfg.home(cfg) ++ "/token"), t => IO.pure(String, String.trim(t)))
+        i : Chan(S.Msg) <- LK.Link.start.t(lo, tok)
+        Shell.opened(Done{w}, i, drafts, fq, lo, tok)
     case Fail{_}:
       S.Lock.refuse(False{}, held, S.Cfg.home(cfg))
 
@@ -3186,7 +3189,7 @@ def Start.join(r: Result<&1, &1, U32 & String, Window>, +held: String, +cfg: S.C
 def Start.hub(free: Bool, headless: Bool, +held: String, +cfg: S.Cfg, r: Result<&1, &1, U32 & String, Window>, +drafts: String, +fq: Chan(L.Ty)) -> IO(Unit):
   match free headless:
     case True{} _:
-      S.Main.boot(cfg, False{}, i => Shell.opened(r, i, drafts, fq, ""))
+      S.Main.boot(cfg, False{}, i => Shell.opened(r, i, drafts, fq, "", ""))
     case False{} True{}:
       S.Lock.refuse(False{}, held, S.Cfg.home(cfg))
     case False{} False{}:

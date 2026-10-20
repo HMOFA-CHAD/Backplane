@@ -356,10 +356,18 @@ def Info.put.models(+m: Map<&2, String>, +j: J.Json) -> Map<&2, String>:
   Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, m, "models", Info.models.small.j(j)), "models.oc", Info.models.oc.j(j)),
     "models.v", Nat.show(1n+Maybe.default(&2, Nat, Nat.read(Str.get(m, "models.v")), 0n)))
 
+# (a models info that is not JSON is kept as it came)
+def Info.put.m(j: Maybe<&2, J.Json>, +m: Map<&2, String>, +v: String) -> Map<&2, String>:
+  match j:
+    case Some{J.Obj{+fs}}:
+      Info.put.models(m, J.Obj{fs})
+    case _:
+      Map.set(&2, String, m, "models", v)
+
 def Info.put.k(models: Bool, +m: Map<&2, String>, +k: String, +v: String) -> Map<&2, String>:
   match models:
     case True{}:
-      Info.put.models(m, Maybe.default(&2, J.Json, J.Json.parse(v), J.Null{}))
+      Info.put.m(J.Json.parse(v), m, v)
     case False{}:
       Map.set(&2, String, m, k, v)
 
@@ -402,7 +410,7 @@ def Local.keep.go(ks: List<&2, String>, +old: Map<&2, String>, m: Map<&2, String
 # (and the clock this client last ticked, which a folded turn's "5m ago"
 # reads)
 def Local.keep(+old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
-  Local.keep.go(["cid", "local.machine", "local.machines", "local.drafts", "local.hub", "clock", "local.fixed", "local.generation", "local.state.hub", "local.state.gen", "local.remote.url", "local.remote.pre"], old, m)
+  Local.keep.go(["cid", "local.machine", "local.machines", "local.drafts", "local.hub", "local.token", "clock", "local.fixed", "local.generation", "local.state.hub", "local.state.gen", "local.remote.url", "local.remote.pre"], old, m)
 
 # A reconnect to the same hub (the log's origin is the one this client
 # had) keeps what the person chose in each thread's viewer: its kind, path
@@ -513,12 +521,34 @@ def Ui.machine(u: Ui, +url: String) -> Act:
       Act{Ui{M.State.empty(), "", Machine.drafts(Map.keys(&2, String, dr), dr, Map.new(&2, String)), Map.new(&2, String), Map.new(&2, Bool), False{}, now, ad, False{}, "", rid, w, "", "connecting",
         Map.set(&2, String, Map.set(&2, String, Local.keep(nf, Map.new(&2, String)), "local.machine", url), "local.generation", "pending:" ++ Str.get(nf, "local.generation")), Map.new(&2, String), MailvLocal.empty()}, [Connect{url}]}
 
-def Ui.info_merge(u: Ui, o: J.Json) -> Ui:
+def Ui.info_merge.raw(u: Ui, o: J.Json) -> Ui:
   match u o:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr} J.Obj{fs}:
       Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, Machines.home(Info.fields(fs, nf)), ob, tr}
     case _ _:
       u
+
+# A hub that let this client in without its pairing token (the legacy way,
+# core/auth.bend) says so (info "auth.legacy"): the client asks the person,
+# once a connection, to pair again (the error line every client shows and
+# the person dismisses). Goes with the legacy way.
+def Legacy.warn.k(warn: Bool, u: Ui, +text: String) -> Ui:
+  match warn u:
+    case True{} Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, _, note, nf, ob, tr}:
+      Ui{st, sel, Map.set(&2, String, dr, "@auth.legacy", "1"), live, op, on, now, ad, pa, v, rid, w, text, note, nf, ob, tr}
+    case False{} _:
+      u
+
+def Legacy.warn.at(+nf: Map<&2, String>, +dr: Map<&2, String>) -> Bool:
+  Bool.and(String.eq(Str.get(nf, "auth.legacy"), "1"), Bool.not(String.eq(Str.get(dr, "@auth.legacy"), "1")))
+
+def Legacy.warn(u: Ui) -> Ui:
+  match u:
+    case Ui{st, sel, +dr, live, op, on, now, ad, pa, v, rid, w, er, note, +nf, ob, tr}:
+      Legacy.warn.k(Legacy.warn.at(nf, dr), Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, MSG.T.auth.legacy(I.I18n.of_tag(Str.get(dr, "@lang.tag"))))
+
+def Ui.info_merge(u: Ui, o: J.Json) -> Ui:
+  Legacy.warn(Ui.info_merge.raw(u, o))
 
 def Ui.base(resume: Bool, st: M.State) -> M.State:
   match resume:
