@@ -12394,3 +12394,10 @@ def Laws.run_model_muse_keeps_exact_full_selector(uber): {==}
 def Laws.run_model_claude_uber_default_kept(parent): {==}
 def Laws.run_model_claude_worker_default_kept(parent): {==}
 def Laws.run_model_codex_stale_parent_uses_cli_default(uber): {==}
+
+def Laws.wt_seed_digit_step(rest, acc): {==}
+def Laws.wt_seed_skips_separator(rest, acc): {==}
+def Laws.wt_seed_legacy_small(): {==}
+def Laws.wt_seed_large_id(): {==}
+def Laws.wt_seed_same_second_next(): {==}
+def Laws.wt_seed_wrap(): {==}

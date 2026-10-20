@@ -3128,10 +3128,28 @@ def Wt.digits(s: String) -> String:
     case SCon{Chr{+c}, t}:
       Wt.digit(Bool.and(U32.is_ge(c, 48), U32.is_le(c, 57)), c, Wt.digits(t))
 
-# a thread's temporary branch seed: its id's digits (time and sequence), so
-# two threads made in the same second get different branches
-def Wt.seed(+id: String) -> Nat:
-  Maybe.default(&2, Nat, Nat.read(Wt.digits(id)), 0n)
+# Fold decimal digits modulo 2^32, the part Git.hex8 uses. Nat.read rejects
+# the concatenated timestamp and six-digit sequence (past 2^48-1), which
+# used to turn every such id into seed zero. Keep the accumulator bounded
+# at every digit, including for ids with still longer sequences.
+def Wt.seed.step(keep: Bool, c: U32, acc: U32) -> U32:
+  match keep:
+    case True{}:
+      U32.add(U32.mul(acc, 10), U32.sub(c, 48))
+    case False{}:
+      acc
+
+def Wt.seed.go(s: String, acc: U32) -> U32:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{Chr{+c}, t}:
+      Wt.seed.go(t, Wt.seed.step(Bool.and(U32.is_ge(c, 48), U32.is_le(c, 57)), c, acc))
+
+# A future thread's temporary branch seed: its id's digits (time and
+# sequence). Existing branches and paths are kept by their saved names.
+def Wt.seed(id: String) -> Nat:
+  U32.to_nat(Wt.seed.go(id, 0))
 
 # Codex (codex exec --json)
 # -------------------------
