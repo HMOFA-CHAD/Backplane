@@ -282,7 +282,7 @@ def Link.connected(r: Result<&1, &1, U32 & String, Socket>, +url: String, since:
 
 def Link.joined(m: Maybe<&1, S.Msg>, +url: String, +token: String, +inbox: Chan(S.Msg)) -> IO(Unit):
   match m:
-    case Some{S.Join{_, out, since, origin, _, _}}:
+    case Some{S.Join{_, out, since, origin, _, _, _}}:
       IO.bind(Result<&1, &1, U32 & String, Socket>, Unit, Link.connect(Link.host(url), Link.port(url), 5000), r => Link.connected(r, url, since, origin, token, inbox, out))
     case _:
       IO.pure(Unit, Unit{})

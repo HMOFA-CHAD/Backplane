@@ -59,6 +59,23 @@ def Auth.allowed(+trusted: Bool, +hs: List<&2, H.Header>, +path: String, +token:
 def Auth.legacy(+trusted: Bool, +hs: List<&2, H.Header>, +path: String, +token: String) -> Bool:
   Bool.and(Auth.allowed(trusted, hs, path, token), Bool.not(Auth.credential(hs, path, token)))
 
+# An agent's MCP endpoint (/mcp/<seg>, server.bend's Hub.mcp_url) takes a
+# key of its own instead of the token: the token's HMAC of the segment
+# (the thread, and the process's generation), so the token stays out of
+# agents' arguments and a key opens that one thread's tools
+def Auth.mcp.key(+token: String, +seg: String) -> String:
+  SH.Hex.encode(SH.Hmac.sha256(U8.Utf8.encode(token), U8.Utf8.encode("mcp\n" ++ seg)))
+
+def Auth.mcp.keyed(+path: String, +token: String, +seg: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(token)), Auth.same(H.Http.param(path, "k"), Auth.mcp.key(token, seg)))
+
+def Auth.mcp(+trusted: Bool, +hs: List<&2, H.Header>, +path: String, +token: String, +seg: String) -> Bool:
+  Bool.or(Auth.allowed(trusted, hs, path, token), Bool.and(Auth.browser(hs), Auth.mcp.keyed(path, token, seg)))
+
+# an MCP call let in the legacy way: neither the token nor the key
+def Auth.mcp.legacy(+trusted: Bool, +hs: List<&2, H.Header>, +path: String, +token: String, +seg: String) -> Bool:
+  Bool.and(Auth.legacy(trusted, hs, path, token), Bool.not(Auth.mcp.keyed(path, token, seg)))
+
 # Pairing never inherits the localhost exemption; it proves the shared secret.
 def Auth.pair(+hs: List<&2, H.Header>, +token: String) -> Bool:
   Bool.and(Auth.browser(hs), Bool.and(Bool.not(String.is_empty(token)),
