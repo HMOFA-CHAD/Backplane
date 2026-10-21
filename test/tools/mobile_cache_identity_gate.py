@@ -36,7 +36,7 @@ def run(name,cmd,limit,count=None,proof=False,negative=False):
  finally:x['end']=time.time();save()
 try:
  verify()
- run('before-cookie-negative',['bend','test/cache_identity_before_test.bend'],180,negative=True)
+ run('before-cookie',['bend','test/cache_identity_before_test.bend'],180,1)
  run('cache-identity',['bend','test/cache_identity_test.bend'],240,30)
  run('retained-auth',['bend','test/auth_test.bend'],240,53)
  run('server-entry',['bash','-c','source scripts/bendok.sh; bend_check "$1"','entry','src/server/main.bend'],300)
