@@ -83,6 +83,9 @@ struct Block: Decodable, Hashable {
     // a link's target, and whether it is a file's (Mob.href)
     let href: String?
     let file: Bool?
+    // Explicit canonical references use ref/bare instead of an external href.
+    let ref: String?
+    let bare: Bool?
     // an ordered item's number as written
     let n: String?
 
@@ -117,6 +120,7 @@ struct Entry: Decodable, Identifiable {
     let when: String?
     // a message: when it was sent, or the turn finished (core/stamp.bend)
     let stamp: String?
+    let partial: MessagePartial?
 }
 
 // what the agent waits on the user for: an approval, a question or a
@@ -449,6 +453,11 @@ struct ModelPicker: Decodable {
     let providers: [Choice]?
 }
 
+struct ThreadPermissions: Decodable {
+    let label, current: String
+    let choices: [Choice]
+}
+
 // a message waiting in the thread's queue and its buttons (each sends
 // action with value)
 struct QButton: Decodable {
@@ -490,12 +499,16 @@ struct ThreadView: Decodable {
     // how many older entries the page leaves out ("earlier" shows more)
     let earlier: Int?
     let live: [Block]
+    let livePartial: MessagePartial?
     let working, draft, send: String
     // "interrupt" while a turn runs with nothing typed (the button is Stop)
     let sendAct: String?
     // the phase the working line's dot shows (as a row's status)
     let phase: String?
     let picker: ModelPicker
+    let permissions: ThreadPermissions?
+    // Raw event ID; rendered rows can split a message or prefix a tool fold.
+    let readingSeen: String?
     let viewer: Viewer
     // the menu under the toolbar's ellipsis, after the tools
     let menu: [Tool]?
@@ -605,6 +618,13 @@ struct HubRow: Decodable, Hashable {
     // its version, and how many of its changes this phone holds
     let version: String?
     let changes: Int?
+}
+
+struct MachineUsage: Decodable, Identifiable {
+    let key, name: String
+    let online: Bool
+    let rows: [SetRow]
+    var id: String { key }
 }
 
 struct Found: Decodable, Hashable {
@@ -772,6 +792,9 @@ struct BotView: Decodable {
     let mood, note, tab, peer, members, draft, secret, secretFor, hname, cat: String?
     let look: Int?
     let tabs: [BotTab]?
+    // The parent bar and its child panels; tab remains the selected content route.
+    let navTab: String?
+    let subtabs: [BotTab]?
     let space: SpaceModel?
     let page: SpacePageModel?
     let browser: BotBrowser?
@@ -782,6 +805,42 @@ struct BotView: Decodable {
     let hooks: [BotHook]?
     let settings: BotSettings?
     let posts: [BotPost]?
+    let mailroom: MailroomModel?
+    let mailroomLoading: Bool?
+}
+
+struct MailroomModel: Decodable {
+    let hub, machine, owner, filter, query, status: String
+    let origin: String?
+    let online, loading, searchCapped: Bool
+    let first, total: Int
+    let rows: [MailroomRow]
+    let body: MailroomBody?
+}
+
+struct MailroomRow: Decodable, Identifiable {
+    let id, subject, who, head, status, project: String
+    let at: Int
+    let unread, live: Bool
+}
+
+struct MailroomBody: Decodable {
+    let id, subject, status, windowAnchor, previousAnchor, nextAnchor: String
+    let first, total: Int
+    let messages: [MailroomMessage]
+    let remoteEarlier, loading: Bool
+    let targets: [MailroomTarget]
+    let to, draft, sendState: String
+}
+
+struct MailroomMessage: Decodable, Identifiable {
+    let id, from, who, kind, want, text, sourceURI: String
+    let at: Int
+    let lead: Bool
+}
+
+struct MailroomTarget: Decodable {
+    let address, label: String
 }
 
 struct HubIsland: Decodable {
@@ -795,6 +854,7 @@ struct Screen: Decodable {
     // hub: the one in focus (its thread is shown, its plots are drawn)
     let version, error, note, sel, empty, hub: String
     let hubs: [HubRow]
+    let usageMachines: [MachineUsage]?
     let found: [Found]
     let projects: [Project]
     // "projects" (sections) or "active" (one flat list of rows, active)
@@ -877,12 +937,35 @@ struct Resume: Decodable {
     let since, origin: String
 }
 
+struct SyncUpdate: Decodable, Sendable {
+    let hub, phase: String
+    let detail: String?
+    let mode, viewId, viewRevision: String?
+    let requestRevision: UInt32?
+    let remoteReady: Bool?
+    var thinPresenting: Bool {
+        phase == "presenting" && detail == "view-v1" && mode == "view-v1" && remoteReady == false
+            && (requestRevision ?? 0) > 0
+    }
+    var thinPresented: Bool {
+        phase == "presented" && detail == "view-v1" && mode == "view-v1" && remoteReady == true
+            && !(viewId ?? "").isEmpty && !(viewRevision ?? "").isEmpty && (requestRevision ?? 0) > 0
+    }
+}
+
 struct Out: Decodable, @unchecked Sendable {
     let screen: Screen?
     let cmds: [Cmd]
+    var screenJSON: String? = nil
+    var sync: [SyncUpdate]? = nil
+    var deadline: Double? = nil
+    var inert = false
 
     private struct Cmds: Decodable {
         let cmds: [Cmd]
+        let sync: [SyncUpdate]?
+        let deadline: Double?
+        let inert: Bool?
     }
 
     // an answer; with screen false only its commands (a newer screen follows)
@@ -891,18 +974,18 @@ struct Out: Decodable, @unchecked Sendable {
     // screen stays up, and the failure is logged with its path)
     static func decode(_ text: String, screen: Bool) -> Out? {
         let d = Data(text.utf8)
-        let cmds: [Cmd]
-        do { cmds = try JSONDecoder().decode(Cmds.self, from: d).cmds } catch {
+        let answer: Cmds
+        do { answer = try JSONDecoder().decode(Cmds.self, from: d) } catch {
             NSLog("Backplane answer unreadable: %@", String(describing: error))
             return nil
         }
-        guard screen else { return Out(screen: nil, cmds: cmds) }
+        guard screen else { return Out(screen: nil, cmds: answer.cmds, sync: answer.sync, deadline: answer.deadline, inert: answer.inert == true) }
         do {
             let s = try JSONDecoder().decode(ScreenOnly.self, from: d)
-            return Out(screen: s.screen, cmds: cmds)
+            return Out(screen: s.screen, cmds: answer.cmds, screenJSON: s.screen == nil ? nil : text, sync: answer.sync, deadline: answer.deadline, inert: answer.inert == true)
         } catch {
             NSLog("Backplane screen unreadable: %@", String(describing: error))
-            return Out(screen: nil, cmds: cmds)
+            return Out(screen: nil, cmds: answer.cmds, sync: answer.sync, deadline: answer.deadline, inert: answer.inert == true)
         }
     }
 
@@ -940,7 +1023,7 @@ extension KeyedDecodingContainer {
 // costs that field, never the whole screen (a blank app).
 extension Screen {
     private enum K: String, CodingKey {
-        case locale, online, version, error, note, sel, empty, hub, hubs, found, projects, lang, view, making, active, older, settled,
+        case locale, online, version, error, note, sel, empty, hub, hubs, usageMachines, found, projects, lang, view, making, active, older, settled,
              rowMenu, bots, rooms, uber, plane, newBot, newRoom, bot, deleting, removing, renaming, tour, search,
              folders, settings, find, island, islands, thread, theme, tabs
     }
@@ -956,6 +1039,7 @@ extension Screen {
         empty = c.lossy(.empty) ?? ""
         hub = c.lossy(.hub) ?? ""
         hubs = c.lossyList(.hubs)
+        usageMachines = c.lossyList(.usageMachines)
         found = c.lossyList(.found)
         projects = c.lossyList(.projects)
         lang = c.lossy(.lang)

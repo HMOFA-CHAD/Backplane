@@ -3,6 +3,7 @@ import ./i18n.bend as I
 import ./msgs.bend as MSG
 import ./locks.bend as LK
 import ./model.bend as M
+import ./signal.bend as SG
 import ./deploy.bend as DP
 import ./bot.bend as BT
 import ./far.bend as FR
@@ -169,6 +170,19 @@ def Plane.state(p: M.Phase) -> String:
     case M.PhIdle{}:
       "idle"
 
+# Display callers opt into the activity projection with decorated Ui/SIx.
+# Legacy callers/laws retain their Phase protocol until they opt in.
+def Plane.signal.state(+n: Nat) -> String:
+  Bool.pick(String, SG.Signal.blocked(n), "approval", Bool.pick(String, SG.Signal.active(n), "working", Bool.pick(String, Nat.is_eq(n, 4n), "settled", "idle")))
+
+def Plane.signal.pick(present: Bool, +ix: U.SIx, +st: M.State, +t: M.Thread) -> String:
+  match present:
+    case True{}: Plane.signal.state(U.Side.signal.ix(ix, t))
+    case False{}: Plane.state(U.Side.phase.ix(ix, st, t))
+
+def Plane.signal(+ix: U.SIx, +st: M.State, +t: M.Thread) -> String:
+  Plane.signal.pick(U.Side.signal.has(ix, M.Thread.id(t)), ix, st, t)
+
 # how much a state waits on the person (0: not at all)
 def Plane.rank(+s: String) -> Nat:
   Bool.pick(Nat, String.eq(s, "approval"), 8n, Bool.pick(Nat, String.eq(s, "question"), 7n, Bool.pick(Nat, String.eq(s, "failed"), 6n, 0n)))
@@ -189,7 +203,7 @@ def Plane.thread.k(+away: Bool, +id: String, +title: String, +sub: String, +mach
   PRow{"thread", id, "select", id, title, sub, machine, Bool.pick(String, away, "away", phase), at, away}
 
 def Plane.thread.t(+t: M.Thread, +at: Nat, +pt: String, +u: U.Ui, +ix: U.SIx, +st: M.State) -> PRow:
-  Plane.thread.k(U.Ui.far.away(u, M.Thread.id(t)), M.Thread.id(t), U.Active.title(t), pt, U.Ui.far.name(u, M.Thread.id(t)), Plane.asking(Plane.state(U.Side.phase.ix(ix, st, t)), ix, M.Thread.id(t)), at)
+  Plane.thread.k(U.Ui.far.away(u, M.Thread.id(t)), M.Thread.id(t), U.Active.title(t), pt, U.Ui.far.name(u, M.Thread.id(t)), Plane.asking(Plane.signal(ix, st, t), ix, M.Thread.id(t)), at)
 
 def Plane.thread(r: U.ARow, +u: U.Ui, +ix: U.SIx, +st: M.State) -> PRow:
   match r:
@@ -217,7 +231,7 @@ def Plane.bot.k(+away: Bool, +id: String, +name: String, +machine: String, +phas
   PRow{"bot", id, Bool.pick(String, uber, "uber", "bot"), Bool.pick(String, uber, "", id), name, "", machine, Bool.pick(String, away, "away", phase), at, away}
 
 def Plane.bot.t(+b: BT.Bot, +th: String, +u: U.Ui, +ix: U.SIx, +st: M.State) -> PRow:
-  Plane.bot.k(U.Ui.far.away(u, BT.Bot.id(b)), BT.Bot.id(b), BT.Bot.name(b), U.Ui.far.name(u, BT.Bot.id(b)), Plane.asking(Plane.state(U.Side.phase.ix(ix, st, U.Ui.thread(st, th))), ix, th),
+  Plane.bot.k(U.Ui.far.away(u, BT.Bot.id(b)), BT.Bot.id(b), BT.Bot.name(b), U.Ui.far.name(u, BT.Bot.id(b)), Plane.asking(Plane.signal(ix, st, U.Ui.thread(st, th)), ix, th),
     U.Active.activity(U.Ui.thread(st, th)), UB.Uber.is(st, BT.Bot.id(b)))
 
 # only a bot that has a thread, and one that is not at rest, shows here
@@ -359,6 +373,10 @@ def Plane.routine.sub(w: SC.SRow) -> String:
     case SC.SRow{+kind, _, +when, +next, _, _, _, _}:
       when ++ Bool.pick(String, Bool.or(String.is_empty(next), Bool.not(String.eq(kind, "routine"))), "", " · " ++ next)
 
+def Plane.routine.signal(+ix: U.SIx, +st: M.State, +t: M.Thread) -> Bool:
+  Bool.pick(Bool, U.Side.signal.has(ix, M.Thread.id(t)), SG.Signal.active(U.Side.signal.ix(ix, t)),
+    Nat.is_gt(Plane.sec(Plane.state(U.Side.phase.ix(ix, st, t))), 0n))
+
 def Plane.routine.k(show: Bool, run: Bool, remind: Bool, +id: String, +bot: String, +name: String, +sub: String, +machine: String, +next: Nat, away: Bool, rest: List<&2, PRow>) -> List<&2, PRow>:
   match show:
     case True{}:
@@ -368,7 +386,7 @@ def Plane.routine.k(show: Bool, run: Bool, remind: Bool, +id: String, +bot: Stri
 
 def Plane.routine.t(+l: I.Loc, +r: BT.Routine, +u: U.Ui, +ix: U.SIx, +now: Nat, rest: List<&2, PRow>) -> List<&2, PRow>:
   Plane.routine.k(Bool.and(BT.Routine.on(r), Bool.not(BT.Routine.done(r))),
-    Plane.routine.run(Nat.is_gt(Plane.sec(Plane.state(U.Side.phase.ix(ix, U.Ui.state(u), U.Ui.thread(U.Ui.state(u), BT.Bot.thread(BT.World.bot(M.State.bots(U.Ui.state(u)), BT.Routine.bot(r))))))), 0n), BT.Routine.last(r), now),
+    Plane.routine.run(Plane.routine.signal(ix, U.Ui.state(u), U.Ui.thread(U.Ui.state(u), BT.Bot.thread(BT.World.bot(M.State.bots(U.Ui.state(u)), BT.Routine.bot(r))))), BT.Routine.last(r), now),
     String.eq(BT.Routine.kind(r), "remind"), BT.Routine.id(r), BT.Routine.bot(r), BT.Routine.name(r), Plane.routine.sub(SC.Sched.row(l, U.Ui.state(u), r, now, 0n, True{})), U.Ui.far.name(u, BT.Routine.bot(r)),
     SC.Sched.next(U.Ui.state(u), r, now, 0n, True{}), U.Ui.far.away(u, BT.Routine.bot(r)), rest)
 
@@ -446,7 +464,7 @@ def Plane.thread.t.s(r: U.ARow, +state: String, +u: U.Ui, +st: M.State) -> PRow:
 def Plane.thread.st(r: U.ARow, +ix: U.SIx, +st: M.State) -> String:
   match r:
     case U.ARow{_, _, +t, _, _, _}:
-      Plane.asking(Plane.state(U.Side.phase.ix(ix, st, t)), ix, M.Thread.id(t))
+      Plane.asking(Plane.signal(ix, st, t), ix, M.Thread.id(t))
 
 def Plane.arow.at(r: U.ARow) -> Nat:
   match r:
@@ -662,10 +680,16 @@ def Plane.hot.ids(ids: List<&2, String>, m: Map<&2, Bool>) -> Map<&2, Bool>:
     case +i <> t:
       Plane.hot.ids(t, Plane.hot.put(i, m))
 
+def Plane.hot.signals(xs: List<&2, String>, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match xs:
+    case Nil{}: m
+    case +k <> rest:
+      Plane.hot.signals(rest, Plane.hot.put(Bool.pick(String, String.starts_with(k, "@signal:"), String.drop(k, 8n), k), m))
+
 def Plane.hot.sx(ix: U.SIx, m: Map<&2, Bool>) -> Map<&2, Bool>:
   match ix:
     case U.SIx{_, +as, +ks, +wk}:
-      Plane.hot.ids(Map.keys(&2, List<&2, M.Ask>, as), Plane.hot.ids(Map.keys(&2, Nat, ks), Plane.hot.ids(Map.keys(&2, Nat, wk), m)))
+      Plane.hot.ids(Map.keys(&2, List<&2, M.Ask>, as), Plane.hot.ids(Map.keys(&2, Nat, ks), Plane.hot.signals(Map.keys(&2, Nat, wk), m)))
 
 # the ids that can be need or run beyond what a thread's own turn and pending say
 def Plane.hot(+st: M.State, ix: U.SIx) -> Map<&2, Bool>:
@@ -703,7 +727,7 @@ def Plane.maybe(t: M.Thread, m: Map<&2, Bool>) -> Bool:
 def Plane.tally.t(r: Bool, +t: M.Thread, +ix: U.SIx, +st: M.State, acc: PTally) -> PTally:
   match r:
     case True{}:
-      Plane.tally.add(Plane.sec(Plane.asking(Plane.state(U.Side.phase.ix(ix, st, t)), ix, M.Thread.id(t))), acc)
+      Plane.tally.add(Plane.sec(Plane.asking(Plane.signal(ix, st, t), ix, M.Thread.id(t))), acc)
     case False{}:
       acc
 
@@ -969,7 +993,7 @@ def Plane.list.row(+state: String, +t: M.Thread, +pt: String, +u: U.Ui, rest: Li
 def Plane.list.keep(r: Bool, +t: M.Thread, +pt: String, +ix: U.SIx, +st: M.State, +u: U.Ui, rest: List<&2, PRow>) -> List<&2, PRow>:
   match r:
     case True{}:
-      Plane.list.row(Plane.asking(Plane.state(U.Side.phase.ix(ix, st, t)), ix, M.Thread.id(t)), t, pt, u, rest)
+      Plane.list.row(Plane.asking(Plane.signal(ix, st, t), ix, M.Thread.id(t)), t, pt, u, rest)
     case False{}:
       rest
 
@@ -996,3 +1020,27 @@ def Plane.list.ids(+p: Plane) -> String:
 
 def Plane.list.same(+u: U.Ui, +now: Nat) -> Bool:
   String.eq(Plane.list.ids(Plane.of.l(u, U.Side.ix(U.Ui.state(u)), U.Side.rows.ix(U.Ui.state(u), U.Side.ix(U.Ui.state(u)), now), now)), Plane.list.ids(Plane.of(u, now)))
+
+# Current visible plane, sharing the same projection as sidebar and timeline.
+# The old Phase API remains decodable/testable for older clients.
+def Plane.signals.bot(r: PRow, +u: U.Ui) -> PRow:
+  match r:
+    case PRow{k, +id, a, v, ti, sub, ma, +state, at, +away}:
+      +thread = BT.Bot.thread(BT.World.bot(M.State.bots(U.Ui.state(u)), id))
+      PRow{k, id, a, v, ti, sub, ma, Bool.pick(String, away, state, Plane.signal.state(SG.Signal.cached(U.Ui.infos(u), thread))), at, away}
+
+def Plane.signals.bots.rows(rs: List<&2, PRow>, +u: U.Ui) -> List<&2, PRow>:
+  match rs:
+    case Nil{}: Nil{}
+    case r <> rest: Plane.signals.bot(r, u) <> Plane.signals.bots.rows(rest, u)
+
+def Plane.signals.bots(p: Plane, +u: U.Ui) -> Plane:
+  match p:
+    case Plane{ne, ru, bots, ro, rt, id, n, ma, lo}:
+      Plane{ne, ru, Plane.signals.bots.rows(bots, u), ro, rt, id, n, ma, lo}
+
+def Plane.signals.with(+u: U.Ui, +now: Nat, idle: Bool) -> Plane:
+  Plane.signals.bots(Plane.of.f(u, U.Side.signals.ix(U.Side.ix(U.Ui.state(u)), u), now, idle), u)
+
+def Plane.signals.of(u: U.Ui, now: Nat, idle: Bool) -> Plane:
+  Plane.signals.with(U.Side.with_signals(u), now, idle)

@@ -2,6 +2,8 @@ import Base
 import ./host.bend as H
 import ../core/json.bend as J
 import ../core/utf8.bend as U
+import ../core/desktop-browser.bend as DB
+import ./desktop-broker.bend as DR
 
 # The browser Backplane hosts for its agents: one backplane-browser helper
 # (headless Chromium, tools/browser), started on the first request and
@@ -20,6 +22,12 @@ import ../core/utf8.bend as U
 # into the hub's {"t":"shot","bot":<owner>,"n":<n>}.
 
 type BMsg is Data:
+  BRefresh{}
+  # Private authenticated Electron channel; never an ordinary UI broadcast.
+  BRemote{client: U32, kind: String, text: String, out: Chan(String), epoch: String, lease: String, owner: String, known: Bool, drive: String, recording: Bool}
+  BPolicy{owner: String, known: Bool, drive: String, recording: Bool}
+  BDeadline{id: String}
+  BCaptureCommit{candidate: J.Json, permit: Chan(J.Json), released: Chan(Unit)}
   BCall{op: String, args: J.Json, reply: Chan(String)}
   # the engine the helper runs (core/cef.bend): the flags a restarted helper
   # starts with, the engine request, and whether to start the helper for it
@@ -274,7 +282,7 @@ def Browser.is_page_event(+o: J.Json) -> Bool:
   Bool.or(Bool.and(Browser.has_page(J.Json.get(o, "page")), Bool.or(String.eq(J.Json.get_str(o, "event", ""), "frame"),
     Bool.or(String.eq(J.Json.get_str(o, "event", ""), "record"), Bool.or(String.eq(J.Json.get_str(o, "event", ""), "navigated"),
       Bool.or(String.eq(J.Json.get_str(o, "event", ""), "load"), String.eq(J.Json.get_str(o, "event", ""), "shield-click")))))),
-    String.eq(J.Json.get_str(o, "event", ""), "engine"))
+    Bool.or(String.eq(J.Json.get_str(o, "event", ""), "tabs"), String.eq(J.Json.get_str(o, "event", ""), "engine")))
 
 # a page-frame event to the event channel, sent off the actor's thread so
 # a slow reader never holds the browser up
@@ -345,6 +353,18 @@ def Browser.engine(b: Br, +q: Chan(BMsg), av: List<&2, String>, args: J.Json, st
 
 def Browser.step(m: Maybe<&1, BMsg>, b: Br, +q: Chan(BMsg), +ev: Chan(String), k: Br -> IO(Unit)) -> IO(Unit):
   match m:
+    case Some{BRefresh{}}: k(b)
+    case Some{BRemote{_, _, _, +out, _, _, _, _, _, _}}:
+      do IO<Unit>:
+        Browser.say(out, "{\"v\":1,\"op\":\"error\",\"error\":\"desktop browser mode is disabled\"}")
+        Chan.close(String, out)
+        k(b)
+    case Some{BPolicy{_, _, _, _}}: k(b)
+    case Some{BDeadline{_}}: k(b)
+    case Some{BCaptureCommit{_, +permit, released}}:
+      do IO<Unit>:
+        sent : Result<&1, &1, J.Json, Unit> <- Chan.send(J.Json, permit, J.Null{})
+        k(b)
     case Some{BCall{op, args, reply}}:
       IO.bind(Br, Unit, Browser.call(b, q, op, args, reply), k)
     case Some{BEngine{av, args, start, reply}}:
@@ -393,6 +413,8 @@ def Browser.unpaged(fs: J.Json) -> J.Json:
   match fs:
     case J.Field{"page", _, t}:
       Browser.unpaged(t)
+    case J.Field{"__desktopActor", _, t}:
+      Browser.unpaged(t)
     case J.Field{k, v, t}:
       J.Field{k, v, Browser.unpaged(t)}
     case _:
@@ -415,6 +437,59 @@ def Browser.ask_on(+q: Chan(BMsg), +page: String, +op: String, args: J.Json) -> 
     ok : Result<&1, &1, BMsg, Unit> <- Chan.send(BMsg, q, BCall{op, Browser.paged(page, args), reply})
     m : Maybe<&1, String> <- Chan.recv(String, reply)
     return Maybe.default(&1, String, m, Browser.fail("no reply"))
+
+# Only the real preview dispatcher can stamp agent provenance; tool arguments
+# cannot override it or the owning page. The broker rechecks current drive.
+def Browser.ask_agent_on(+q: Chan(BMsg), +page: String, +op: String, args: J.Json) -> IO(String):
+  do IO<String>:
+    +reply : Chan(String) <- Chan.new(String, 1)
+    sent : Result<&1, &1, BMsg, Unit> <- Chan.send(BMsg, q, BCall{op, DB.Desktop.put(Browser.paged(page, args), "__desktopActor", J.Str{"agent"}), reply})
+    m : Maybe<&1, String> <- Chan.recv(String, reply)
+    return Maybe.default(&1, String, m, Browser.fail("no reply"))
+
+def Browser.remote_forward(m: Maybe<&1, BMsg>, +remote: Chan(DR.Message), k: Unit -> IO(Unit)) -> IO(Unit):
+  match m:
+    case Some{BRefresh{}}:
+      do IO<Unit>:
+        sent : Result<&1, &1, DR.Message, Unit> <- Chan.send(DR.Message, remote, DR.Refresh{})
+        k(Unit{})
+    case Some{BRemote{client, kind, text, out, e, l, owner, known, drive, recording}}:
+      do IO<Unit>:
+        sent : Result<&1, &1, DR.Message, Unit> <- Chan.send(DR.Message, remote, DR.Link{client, kind, text, out, e, l, owner, known, drive, recording})
+        k(Unit{})
+    case Some{BPolicy{owner, known, drive, recording}}:
+      do IO<Unit>:
+        sent : Result<&1, &1, DR.Message, Unit> <- Chan.send(DR.Message, remote, DR.Policy{owner, known, drive, recording})
+        k(Unit{})
+    case Some{BCaptureCommit{candidate, permit, released}}:
+      do IO<Unit>:
+        sent : Result<&1, &1, DR.Message, Unit> <- Chan.send(DR.Message, remote, DR.CaptureCommit{candidate, permit, released})
+        k(Unit{})
+    case Some{BCall{op, args, reply}}:
+      do IO<Unit>:
+        sent : Result<&1, &1, DR.Message, Unit> <- Chan.send(DR.Message, remote, DR.Call{op, args, reply})
+        k(Unit{})
+    case Some{BEngine{_, _, _, reply}}:
+      do IO<Unit>:
+        Browser.say(reply, Browser.fail("direct desktop browser mode cannot start a separate Chrome/CEF helper"))
+        k(Unit{})
+    case Some{_}: k(Unit{})
+    case None{}: Chan.close(DR.Message, remote)
+
+def Browser.remote_loop(fuel: Nat, +q: Chan(BMsg), +remote: Chan(DR.Message)) -> IO(Unit):
+  match fuel:
+    case 0n: Chan.close(DR.Message, remote)
+    case 1n+n:
+      IO.bind(Maybe<&1, BMsg>, Unit, Chan.recv(BMsg, q), m => Browser.remote_forward(m, remote, _ => Browser.remote_loop(n, q, remote)))
+
+def Browser.run(desktop: Bool, +q: Chan(BMsg), ev: Chan(String), b: Br, +version: String) -> IO(Unit):
+  match desktop:
+    case False{}: Browser.loop(Browser.forever(), q, ev, b)
+    case True{}:
+      do IO<Unit>:
+        +remote : Chan(DR.Message) <- Chan.new(DR.Message, 256)
+        IO.spawn(Unit, DR.Broker.loop(Browser.forever(), remote, version, ev, DR.Broker.empty()))
+        Browser.remote_loop(Browser.forever(), q, remote)
 
 # the engine the helper runs: `av` are the flags a restarted helper starts
 # with, `args` the engine request, `start` whether to start the helper for

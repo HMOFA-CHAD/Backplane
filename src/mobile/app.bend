@@ -8,6 +8,8 @@ import ./hubs.bend as H
 import ./screen.bend as S
 import ./bots.bend as MB
 import ../core/msgs.bend as MSG
+import ./session.bend as PS
+import ./thin.bend as TH
 
 # Resolve the native host's language once when device settings change. This uses
 # the same normalization and preview gate as each hub's Ui, including no hubs.
@@ -23,20 +25,6 @@ def native_locale(setting: String, os: String, preview: String) -> String:
 def init(now: Nat, +cid: String) -> H.Hubs:
   H.Hubs.init(now, cid)
 
-def hubs.keys(xs: List<&2, J.Json>) -> List<&2, String>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case x <> t:
-      J.Json.as_str(Some{x}, "") <> hubs.keys(t)
-
-# the hubs the phone is paired with, by key, as a JSON array of strings
-def hubs.k(+hs: H.Hubs, j: J.Json) -> H.Hubs:
-  H.Hubs.set(hs, hubs.keys(J.Json.elems(j)))
-
-def hubs(+hs: H.Hubs, text: String) -> H.Hubs:
-  hubs.k(hs, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))
-
 # Drafts the phone kept (keep commands, named "<hub>|<thread>"), read back
 # into the client of the hub they belong to once the hubs are known
 
@@ -47,24 +35,11 @@ def restore.one(hit: Bool, u: U.Ui, +id: String, +text: String) -> U.Ui:
     case False{}:
       u
 
-def restore.go(hs: List<&2, H.Hub>, +key: String, +id: String, +text: String) -> List<&2, H.Hub>:
-  match hs:
-    case Nil{}:
-      Nil{}
-    case H.Hub{+k, u} <> t:
-      H.Hub{k, restore.one(String.eq(k, key), u, id, text)} <> restore.go(t, key, id, text)
-
-def restore(hs: H.Hubs, +key: String, +id: String, +text: String) -> H.Hubs:
-  match hs:
-    case H.Hubs{c, n, cur, l}:
-      H.Hubs{c, n, cur, restore.go(l, key, id, text)}
-
 # the alerts a step raised, as JSON text
 def alerts(a: H.HAct) -> String:
   match a:
     case H.HAct{_, _, als}:
       J.Json.show(J.Json.arr(als))
-
 
 # a frame from hub `key` (a bot's browser frame, {"t":"shot"}, is kept as
 # info "shot.<bot>", which its Browser tab shows as n, and said seen while
@@ -94,6 +69,32 @@ def t.k(m: Maybe<&2, String>, key: String) -> String:
 
 def t(hs: H.Hubs, +key: String) -> String:
   t.k(MSG.T.plain(H.Hubs.loc(hs), key), key)
+
+def hubs.keys(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      J.Json.as_str(Some{x}, "") <> hubs.keys(t)
+
+# the hubs the phone is paired with, by key, as a JSON array of strings
+def hubs.k(+hs: H.Hubs, j: J.Json) -> H.Hubs:
+  H.Hubs.set(hs, hubs.keys(J.Json.elems(j)))
+
+def hubs(+hs: H.Hubs, text: String) -> H.Hubs:
+  hubs.k(hs, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))
+
+def restore.go(hs: List<&2, H.Hub>, +key: String, +id: String, +text: String) -> List<&2, H.Hub>:
+  match hs:
+    case Nil{}:
+      Nil{}
+    case H.Hub{+k, u} <> t:
+      H.Hub{k, restore.one(String.eq(k, key), u, id, text)} <> restore.go(t, key, id, text)
+
+def restore(hs: H.Hubs, +key: String, +id: String, +text: String) -> H.Hubs:
+  match hs:
+    case H.Hubs{c, n, cur, l}:
+      H.Hubs{c, n, cur, restore.go(l, key, id, text)}
 
 # A value of each Json constructor, for wire.js: bend 2.0.36 tags a module's
 # constructors with their file ("../core/json.Str"), so the JavaScript that
@@ -141,7 +142,6 @@ def screen_list(+hs: H.Hubs) -> J.Json:
 # The bridge also keeps device settings before the first hub is paired.
 def screen_list_in(hs: H.Hubs, tag: String) -> J.Json:
   H.Hubs.screen.fast.l(I.I18n.of_tag(tag), hs)
-
 
 def focus(+hs: H.Hubs) -> J.Json:
   H.Hubs.opened(hs)
@@ -199,6 +199,53 @@ def seq(+hs: H.Hubs, +key: String) -> String:
 def origin(+hs: H.Hubs, +key: String) -> String:
   U.Ui.info(H.Hubs.ui(hs, key), "origin")
 
+def current(hs: H.Hubs) -> String:
+  H.Hubs.cur(hs)
+
+def session(hs: H.Hubs, key: String) -> J.Json:
+  PS.Session.pack(H.Hubs.ui(hs, key))
+
+def session_reading(text: String, qualified: String, seen: String, count: Nat, away: Bool) -> J.Json:
+  TH.Session.reading(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), H.Hubs.rest(qualified), seen, count, away)
+
+def session_draft(text: String, draft: String) -> J.Json:
+  TH.Session.draft(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), draft)
+
+def session_prepare(text: String, input: String, action: String) -> J.Json:
+  TH.Session.prepare(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), Maybe.default(&2, J.Json, J.Json.parse(input), J.Null{}), action)
+
+def session_failed(key: String, input: String, action: String) -> J.Json:
+  J.Json.arr(PS.Session.failed(key, Maybe.default(&2, J.Json, J.Json.parse(input), J.Null{}), action))
+
+def session_issued(key: String, input: String, action: String) -> J.Json:
+  PS.Session.issued(key, Maybe.default(&2, J.Json, J.Json.parse(input), J.Null{}), action)
+
+def session_local(text: String, key: String, value: String) -> J.Json:
+  TH.Session.local(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), key, value)
+
+def session_reply(text: String, o: J.Json) -> J.Json:
+  TH.Session.reply(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), o)
+
+def session_adopt(hs: H.Hubs, key: String, text: String, cur: String) -> H.Hubs:
+  PS.Session.handoff(hs, key, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), cur)
+
+def session_target(hs: H.Hubs, cur: String, action: String, value: String) -> String:
+  PS.Session.target(hs, cur, action, value)
+
+def presentation(hs: H.Hubs, overlays: J.Json, cur: String) -> J.Json:
+  PS.Session.overlay(hs, overlays, cur)
+
+def session_shown_draft(shown: J.Json, session: String) -> J.Json:
+  PS.Session.shown.draft(shown, Maybe.default(&2, J.Json, J.Json.parse(session), J.Null{}))
+
+def json_array() -> J.Json:
+  J.Arr{J.End{}}
+
+def json_cons(v: J.Json, tail: J.Json) -> J.Json:
+  match tail:
+    case J.Arr{xs}: J.Arr{J.Item{v, xs}}
+    case _: J.Arr{J.Item{v, J.End{}}}
+
 # this phone, for pushes while the app sleeps: an APNs token for alerts,
 # for one Live Activity ("activity", with its thread) or for starting one
 # ("start"). Every paired hub gets it, kept in each outbox until answered.
@@ -208,3 +255,29 @@ def register(+hs: H.Hubs, platform: String, token: String, kind: String, thread:
 # the same for one hub alone (a Live Activity's token goes to its own hub)
 def register_at(+hs: H.Hubs, +hub: String, platform: String, token: String, kind: String, thread: String, env: String, bundle: String) -> H.HAct:
   H.Hubs.register.at(hs, hub, platform, token, kind, thread, env, bundle)
+
+# The bridge uses the same pure predicate for act and quiet.
+def session_mail_action(action: String, value: String) -> Bool:
+  PS.Session.mail.action(action, value)
+
+# Thin views carry display/session JSON only; no canonical fold or cache import.
+def json_parse(text: String) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})
+
+def thin_target(sessionText: String) -> J.Json:
+  TH.Target.of(json_parse(sessionText))
+
+def thin_choice(sessionText: String, action: String, value: String) -> J.Json:
+  TH.Choice(json_parse(sessionText), action, value)
+
+def thin_presentation(hs: H.Hubs, overlays: J.Json, cur: String) -> J.Json:
+  TH.Overlay.screen(hs, overlays, cur)
+
+def thin_shown_draft(shown: J.Json, sessionText: String) -> J.Json:
+  PS.Session.shown.draft(shown, json_parse(sessionText))
+
+def thin_partial(shown: J.Json, window: J.Json) -> J.Json:
+  TH.Partial.screen(shown, window)
+
+def thin_search(screenText: String, searchText: String) -> J.Json:
+  TH.Search.screen(json_parse(screenText), json_parse(searchText))

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -206,10 +207,18 @@ private fun BotHeader(m: AppModel, b: BotView, size: Dp) {
 private fun BotTabs(m: AppModel, b: BotView) {
     Column {
         BotHeader(m, b, 64.dp)
-        val i = b.tabs.indexOfFirst { it.id == b.tab }.coerceAtLeast(0)
+        val i = b.tabs.indexOfFirst { it.id == b.navTab.ifEmpty { b.tab } }.coerceAtLeast(0)
         ScrollableTabRow(selectedTabIndex = i, edgePadding = 8.dp) {
             b.tabs.forEachIndexed { j, t ->
-                Tab(selected = j == i, onClick = { m.act("bot-tab", t.id) }, text = { Text(t.label) })
+                Tab(selected = j == i, onClick = { m.act("bot-tab", t.id) }, enabled = t.id != "mail" || (m.contentReady && !b.mailroomLoading), text = { Text(t.label) })
+            }
+        }
+        if (b.subtabs.isNotEmpty()) {
+            val section = b.subtabs.indexOfFirst { it.id == b.tab }.coerceAtLeast(0)
+            ScrollableTabRow(selectedTabIndex = section, edgePadding = 8.dp) {
+                b.subtabs.forEachIndexed { j, t ->
+                    Tab(selected = j == section, onClick = { m.act("bot-tab", t.id) }, enabled = t.id != "mail" || (m.contentReady && !b.mailroomLoading), text = { Text(t.label) })
+                }
             }
         }
     }
@@ -234,6 +243,7 @@ private fun BotScreen(m: AppModel, s: Screen, b: BotView) {
     }) { pad ->
         Box(Modifier.fillMaxSize().padding(pad).imePadding()) {
             when (b.tab) {
+                "mail" -> if (b.mailroom != null) MailroomScreen(m, b.mailroom) else CircularProgressIndicator()
                 "status" -> StatusTab(m, m.plane(s))
                 "space" -> if (b.page != null) SpacePage(m, b.page) else b.space?.let { SpaceView(it) { a, v -> m.act(a, v) } }
                 "browser" -> BrowserTab(m, b)

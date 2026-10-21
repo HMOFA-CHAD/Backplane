@@ -84,6 +84,10 @@ object NativeMessages {
   fun common_delete(tag: String): String =
     if (tag == "ja") ("削除") else ("Delete")
 
+  // common.earlier
+  fun common_earlier(tag: String): String =
+    if (tag == "ja") ("前を表示") else ("Earlier")
+
   // common.finish
   fun common_finish(tag: String): String =
     if (tag == "ja") ("完了") else ("Finish")
@@ -115,6 +119,10 @@ object NativeMessages {
   // common.save
   fun common_save(tag: String): String =
     if (tag == "ja") ("保存") else ("Save")
+
+  // common.search
+  fun common_search(tag: String): String =
+    if (tag == "ja") ("検索") else ("Search")
 
   // common.show
   fun common_show(tag: String): String =
@@ -484,6 +492,50 @@ object NativeMessages {
   fun native_machine_invite_paste(tag: String): String =
     if (tag == "ja") ("招待を貼り付け") else ("Paste an invite")
 
+  // native.mailroom.accepted.unconfirmed
+  fun native_mailroom_accepted_unconfirmed(tag: String): String =
+    if (tag == "ja") ("応答あり。配信は未確認") else ("Acknowledged; delivery unconfirmed")
+
+  // native.mailroom.act
+  fun native_mailroom_act(tag: String): String =
+    if (tag == "ja") ("要対応") else ("Act")
+
+  // native.mailroom.fyi
+  fun native_mailroom_fyi(tag: String): String =
+    if (tag == "ja") ("参考") else ("FYI")
+
+  // native.mailroom.later
+  fun native_mailroom_later(tag: String): String =
+    if (tag == "ja") ("後を表示") else ("Later")
+
+  // native.mailroom.machine.offline
+  fun native_mailroom_machine_offline(tag: String): String =
+    if (tag == "ja") ("マシンはオフライン") else ("Machine offline")
+
+  // native.mailroom.open.source
+  fun native_mailroom_open_source(tag: String): String =
+    if (tag == "ja") ("送信元を開く") else ("Open source")
+
+  // native.mailroom.outcome.unknown
+  fun native_mailroom_outcome_unknown(tag: String): String =
+    if (tag == "ja") ("結果不明。再送前に確認してください") else ("Outcome unknown; check before sending again")
+
+  // native.mailroom.page
+  fun native_mailroom_page(tag: String, arg0: String, arg1: String, arg2: String): String =
+    if (tag == "ja") (arg2 + "件中" + arg0 + "–" + arg1 + "件") else (arg0 + "–" + arg1 + " of " + arg2)
+
+  // native.mailroom.recipient
+  fun native_mailroom_recipient(tag: String): String =
+    if (tag == "ja") ("宛先") else ("Recipient")
+
+  // native.mailroom.title
+  fun native_mailroom_title(tag: String): String =
+    if (tag == "ja") ("メール") else ("Mailroom")
+
+  // native.mailroom.unread.count
+  fun native_mailroom_unread_count(tag: String, arg0: String): String =
+    if (tag == "ja") ("未読" + arg0 + "件") else (arg0 + " unread")
+
   // native.mech.failed
   fun native_mech_failed(tag: String, arg0: String): String =
     if (tag == "ja") ("レンダリング失敗：" + arg0) else ("Rendering failed: " + arg0)
@@ -836,6 +888,18 @@ object NativeMessages {
   fun native_thread_hub(tag: String): String =
     if (tag == "ja") ("ハブ") else ("the hub")
 
+  // native.thread.latest
+  fun native_thread_latest(tag: String): String =
+    if (tag == "ja") ("最新") else ("Latest")
+
+  // native.thread.loading.older
+  fun native_thread_loading_older(tag: String): String =
+    if (tag == "ja") ("過去のメッセージを読み込み中…") else ("Loading older messages…")
+
+  // native.thread.loading.recent
+  fun native_thread_loading_recent(tag: String): String =
+    if (tag == "ja") ("最近のメッセージを読み込み中…") else ("Loading recent messages…")
+
   // native.thread.menu
   fun native_thread_menu(tag: String): String =
     if (tag == "ja") ("メニュー") else ("Menu")
@@ -848,9 +912,37 @@ object NativeMessages {
   fun native_thread_model_effort(tag: String, arg0: String): String =
     if (tag == "ja") ("モデル・思考量：" + arg0) else ("Model and effort: " + arg0)
 
+  // native.thread.new
+  fun native_thread_new(tag: String, arg0: String): String =
+    if (tag == "ja") ("新着" + arg0 + "件") else (arg0 + " new")
+
   // native.thread.online
   fun native_thread_online(tag: String, arg0: String): String =
     if (tag == "ja") ((if (arg0 == "online") "接続済み" else "接続中…")) else ((if (arg0 == "online") "Connected" else "Connecting…"))
+
+  // native.thread.permissions
+  fun native_thread_permissions(tag: String): String =
+    if (tag == "ja") ("権限") else ("Permissions")
+
+  // native.thread.permissions.approval
+  fun native_thread_permissions_approval(tag: String): String =
+    if (tag == "ja") ("承認が必要") else ("Approval required")
+
+  // native.thread.permissions.auto
+  fun native_thread_permissions_auto(tag: String): String =
+    if (tag == "ja") ("自動") else ("Auto")
+
+  // native.thread.permissions.current
+  fun native_thread_permissions_current(tag: String, arg0: String): String =
+    if (tag == "ja") ("権限：" + arg0) else ("Permissions: " + arg0)
+
+  // native.thread.permissions.edits
+  fun native_thread_permissions_edits(tag: String): String =
+    if (tag == "ja") ("編集を自動承認") else ("Auto-accept edits")
+
+  // native.thread.permissions.full
+  fun native_thread_permissions_full(tag: String): String =
+    if (tag == "ja") ("フルアクセス") else ("Full access")
 
   // native.thread.provider.item
   fun native_thread_provider_item(tag: String, arg0: String): String =
@@ -859,6 +951,10 @@ object NativeMessages {
   // native.thread.search.clear
   fun native_thread_search_clear(tag: String): String =
     if (tag == "ja") ("検索をクリア") else ("Clear search")
+
+  // native.thread.send.failed
+  fun native_thread_send_failed(tag: String): String =
+    if (tag == "ja") ("送信できませんでした") else ("Could not send")
 
   // native.thread.sending
   fun native_thread_sending(tag: String): String =
@@ -871,6 +967,10 @@ object NativeMessages {
   // native.thread.waiting
   fun native_thread_waiting(tag: String, arg0: String): String =
     if (tag == "ja") (arg0 + "を待機中…") else ("Waiting for " + arg0 + "…")
+
+  // native.usage.machines
+  fun native_usage_machines(tag: String): String =
+    if (tag == "ja") ("マシン別の使用量") else ("Usage by machine")
 
   // native.viewer.ground.dark
   fun native_viewer_ground_dark(tag: String): String =
@@ -1235,6 +1335,10 @@ object NativeMessages {
   // viewer.layers.only
   fun viewer_layers_only(tag: String): String =
     if (tag == "ja") ("選択のみ") else ("Only")
+
+  // viewer.loading
+  fun viewer_loading(tag: String): String =
+    if (tag == "ja") ("読み込み中…") else ("Loading…")
 
   // viewer.mech.renders
   fun viewer_mech_renders(tag: String): String =

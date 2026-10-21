@@ -143,7 +143,7 @@ def controls(ks: List<&2, String>, +out: L.Out, +web: DOM.Node, +phone: String) 
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    +u : U.Ui = U.Ui.init(0n)
+    +u : U.Ui = ui(U.Ui.act(U.Ui.init(0n), "settings-page", "threads"))
     +s : M.State = M.State.empty()
     C.Check.str("defaults", String.join(values(U.Notify.rows(s)), ","), "on,on,on,off")
     C.Check.str("SettingSet flips Needs me", String.join(values(U.Notify.rows(M.State.apply(s, M.SettingSet{"notify.needs", "off", 1n}))), ","), "off,on,on,off")

@@ -1,5 +1,6 @@
 import Base
 import ./mailrun.bend as RUN
+import ./maildisposition.bend as MD
 import ./charter.bend as CH
 import ./locks.bend as LK
 import ./json.bend as J
@@ -590,7 +591,7 @@ def Mcp.send.k(ok: Bool, +s: M.State, +now: Nat, +thread: String, +target: Strin
 
 def Mcp.names() -> List<&2, String>:
   ["orchestrator_capabilities", "delegate_task", "task_status", "task_cancel", "thread_list", "thread_read", "thread_send", "viewer_show",
-   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment", "wake_on", "wake_list", "wake_cancel", "deploy_restart", "deploy_status", "deploy_cancel", "lock_acquire", "lock_release", "lock_list", "lock_cancel", "deploy_main", "mail", "mail_list", "mail_read", "mail_search", "mail_tag", "mail_snooze", "mail_done", "decide", "escalate", "charter_set"]
+   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch", "review_comments", "review_comment", "wake_on", "wake_list", "wake_cancel", "deploy_restart", "deploy_status", "deploy_cancel", "lock_acquire", "lock_release", "lock_list", "lock_cancel", "deploy_main", "mail", "mail_list", "mail_read", "mail_search", "mail_tag", "mail_snooze", "mail_done", "decide", "escalate", "charter_set", "mail_dispose"]
 
 def Mcp.lock.acquire(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
   match ok:
@@ -919,6 +920,78 @@ def Mcp.run.call(on: Bool, +i: Nat, +s: M.State, +now: Nat, +thread: String, +a:
     case True{} 43n: Mcp.charter.got(BT.World.of_thread(M.State.bots(s), thread), s, now, a)
     case True{} _: Mcp.run.call.got(ML.Box.run_of(M.State.mail(s), thread), i, s, now, a)
 
+# The authenticated run and exact input determine every target. Receipt
+# writes are local notice bookkeeping, not approval of the work described.
+def Mcp.dispose.answer(+r: ML.Run, +input: String, +state: String) -> J.Json:
+  J.Json.obj([J.KV{"input", J.Str{input}}, J.KV{"conv", J.Str{ML.Run.conv(r)}}, J.KV{"state", J.Str{state}},
+    J.KV{"scope", J.Str{"current notice only; no work completion or permission grant"}}])
+
+def Mcp.dispose.changes(+r: ML.Run, +a: J.Json, +now: Nat) -> List<&2, M.Change>:
+  +input = J.Json.get_str(a, "input", "")
+  [MD.Disposition.receipt(r, input, J.Json.get_str(a, "mode", ""), J.Json.get_str(a, "reason", ""), now),
+   M.ActivityLogged{ML.Run.thread(r), MD.Disposition.key(ML.Run.thread(r), input), "info", "mail-disposition",
+     J.Json.get_str(a, "mode", "") ++ " notice " ++ input ++ ": " ++ J.Json.get_str(a, "reason", ""), now}]
+
+def Mcp.dispose.sender.go(ms: List<&2, ML.Mail>, +input: String, +found: String, done: Bool) -> String:
+  match ms done:
+    case _ True{}: found
+    case Nil{} False{}: ""
+    case +m <> rest False{}:
+      +hit = String.eq(ML.Mail.id(m), input)
+      Mcp.dispose.sender.go(rest, input, Bool.pick(String, hit, ML.Mail.from(m), found), hit)
+
+def Mcp.dispose.sender(ms: List<&2, ML.Mail>, input: String) -> String:
+  Mcp.dispose.sender.go(ms, input, "", False{})
+
+def Mcp.dispose.append(st: B.Step, +r: ML.Run, +a: J.Json, +now: Nat) -> Res:
+  match st:
+    case B.Step{Nil{}, B.MailAppend{line, conv, cs} <> Nil{}}:
+      Res{True{}, Mcp.dispose.answer(r, J.Json.get_str(a, "input", ""), "pending journal commit"),
+        B.Step{[M.SettingSet{MD.Disposition.pending(ML.Run.thread(r), J.Json.get_str(a, "input", "")), "on", now}],
+          [B.MailAppend{line, conv, List.append(&2, M.Change, cs, Mcp.dispose.changes(r, a, now))}]}}
+    case _: Res.fail("reply could not be prepared; notice remains unresolved")
+
+def Mcp.dispose.reply.local(local: Bool, +s: M.State, +now: Nat, +r: ML.Run, +a: J.Json, +to: String) -> Res:
+  match local:
+    case False{}: Res.fail("reply requires the current input's existing local thread or bot sender; use reviewed mail/escalate otherwise")
+    case True{}:
+      # File FYI only. Do not call Mail.send's worker inbound funnel,
+      # whose ordinary thread delivery would start a new agent turn.
+      Mcp.dispose.append(B.Mail.file.body(s, B.Mail.body(s, now,
+        ML.Origin{"thread:" ++ ML.Run.thread(r), "run-reply", J.Json.get_str(a, "input", "")}, to,
+        J.Json.get_str(a, "text", ""), B.Hub.id("mail-disposition", now, B.Hub.seq(s)), ML.Run.conv(r),
+        ML.Conv.subject(ML.Box.conv(M.State.mail(s), ML.Run.conv(r))), "fyi")), r, a, now)
+
+def Mcp.dispose.reply(+s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
+  +to = Mcp.dispose.sender(ML.Box.headers(M.State.mail(s), ML.Run.conv(r)), J.Json.get_str(a, "input", ""))
+  Mcp.dispose.reply.local(Bool.and(Bool.or(String.starts_with(to, "thread:"), String.starts_with(to, "bot:")),
+    Bool.and(Bool.not(String.contains(to, "~")), Bool.and(Bool.not(String.is_empty(B.Mail.target(s, to))), B.Hub.owns(s, B.Mail.target(s, to))))), s, now, r, a, to)
+
+def Mcp.dispose.mode(reply: Bool, +s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
+  match reply:
+    case True{}: Mcp.dispose.reply(s, now, r, a)
+    case False{}: Res{True{}, Mcp.dispose.answer(r, J.Json.get_str(a, "input", ""), "handled"), B.Step{Mcp.dispose.changes(r, a, now), Nil{}}}
+
+def Mcp.dispose.once(handled: Bool, pending: Bool, +s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
+  match handled pending:
+    case True{} _: Res.ok(Mcp.dispose.answer(r, J.Json.get_str(a, "input", ""), "already handled"))
+    case False{} True{}: Res.ok(Mcp.dispose.answer(r, J.Json.get_str(a, "input", ""), "pending or unknown journal outcome; no resend"))
+    case False{} False{}: Mcp.dispose.mode(String.eq(J.Json.get_str(a, "mode", ""), "reply"), s, now, r, a)
+
+def Mcp.dispose.valid(valid: Bool, +s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
+  match valid:
+    case False{}: Res.fail("mail_dispose requires a live mailroom run, exact current input, done/defer/reply, and reason; no other fields are allowed")
+    case True{}: Mcp.dispose.once(MD.Disposition.handled(s, r),
+      Bool.not(String.is_empty(M.Setting.get(s, MD.Disposition.pending(ML.Run.thread(r), J.Json.get_str(a, "input", "")), ""))), s, now, r, a)
+
+def Mcp.dispose.got(r: Maybe<&2, ML.Run>, +s: M.State, +now: Nat, +a: J.Json) -> Res:
+  match r:
+    case None{}: Res.fail("mail_dispose is only available in a live mailroom run")
+    case Some{+r}: Mcp.dispose.valid(Bool.and(MD.Disposition.valid(s, r, J.Json.get_str(a, "input", "")), MD.Disposition.args(a)), s, now, r, a)
+
+def Mcp.dispose(+s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
+  Mcp.dispose.got(RUN.Run.of(s, thread), s, now, a)
+
 def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +a: J.Json) -> Res:
   match i:
     case 0n:
@@ -1000,6 +1073,7 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
     case 41n: Mcp.run.call(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), i, s, now, thread, a)
     case 42n: Mcp.run.call(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), i, s, now, thread, a)
     case 43n: Mcp.run.call(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), i, s, now, thread, a)
+    case 44n: Mcp.dispose(s, now, thread, a)
     case _:
       Res.fail("unknown tool")
 
@@ -1234,11 +1308,26 @@ def Mcp.run.tools() -> List<&2, J.Json>:
    Tool.def("escalate", "Ask the front of house bot or person about something outside the charter.", [Tool.prop("to", "string", "bot or person."), Tool.prop("text", "string", "What needs deciding.")], ["to", "text"]),
    Tool.def("charter_set", "Front of house only: replace your mailroom charter.", [Tool.prop("text", "string", "The full charter."), Tool.prop("reason", "string", "Why it changed.")], ["text", "reason"])]
 
+def Mcp.dispose.tools() -> List<&2, J.Json>:
+  [Tool.def("mail_dispose", "Live Mailroom run only: durably handle ONE exact current notice. done/defer acknowledge a routine status or known hold without completing work or granting permission. reply files FYI to that input's existing local sender, without starting an agent. Pending/unknown replies are never automatically resent. Substantive decisions/escalations and external/product actions retain their existing review.",
+     [Tool.prop("input", "string", "Exact current actionable input ID from the run brief or incoming mail heading."),
+      Tool.prop("mode", "string", "done, defer, or reply. This does not mark the conversation or objective complete."),
+      Tool.prop("reason", "string", "Why this notice needs no new action, is already handled, or remains deferred. Required, up to 2000 characters."),
+      Tool.prop("text", "string", "For reply only: internal FYI text, up to 4000 characters. Target and conversation are fixed by the current input.")], ["input", "mode", "reason"])]
+
 # Keep the old advertised tool payload exactly while mail is off.
 def Mcp.tools.on(on: Bool) -> J.Json:
   match on:
     case False{}: Mcp.tools()
     case True{}: J.Json.obj([J.KV{"tools", J.Json.arr(List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(Mcp.tools(), "tools")), List.append(&2, J.Json, Mcp.mail.tools(), Mcp.run.tools())) )}])
+
+def Mcp.tools.live(live: Bool, on: Bool) -> J.Json:
+  match live:
+    case False{}: Mcp.tools.on(on)
+    case True{}: J.Json.obj([J.KV{"tools", J.Json.arr(List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(Mcp.tools.on(on), "tools")), Mcp.dispose.tools()))}])
+
+def Mcp.tools.for(+s: M.State, +thread: String) -> J.Json:
+  Mcp.tools.live(MD.Disposition.launch(s, thread), String.eq(M.Setting.get(s, "mail.on", "off"), "on"))
 
 def Mcp.method.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +version: String, +id: J.Json, +p: J.Json) -> McpOut:
   match i:
@@ -1247,7 +1336,7 @@ def Mcp.method.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Jso
         J.KV{"capabilities", J.Json.obj([J.KV{"tools", J.Json.obj(Nil{})}])},
         J.KV{"serverInfo", J.Json.obj([J.KV{"name", J.Str{"backplane"}}, J.KV{"version", J.Str{version}}])}])), B.Step.none(), ""}
     case 1n:
-      McpOut{Mcp.result(id, Mcp.tools.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"))), B.Step.none(), ""}
+      McpOut{Mcp.result(id, Mcp.tools.for(s, thread)), B.Step.none(), ""}
     case 2n:
       Mcp.call.route(String.eq(J.Json.get_str(p, "name", ""), "permission_prompt"), s, now, thread, models, id, p)
     case 3n:

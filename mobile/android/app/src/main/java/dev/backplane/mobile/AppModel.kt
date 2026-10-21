@@ -10,6 +10,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     val links get() = core.links
     val screen get() = core.screen
+    val contentReady get() = core.contentReady
+    val startup get() = core.startup
+    fun retryView(key: String, compatibility: Boolean = false) = core.retryView(key, compatibility)
+    fun moreMessage(hub: String, thread: String, entry: String, partial: MessagePartial, live: Boolean = false) = core.moreMessage(hub, thread, entry, partial, live)
     val opening get() = core.opening
     val leaving get() = core.leaving
     val seenThreads get() = core.seenThreads

@@ -131,7 +131,8 @@ private class Worker : Thread(null, null, "bend", 64L shl 20) {
 // The bridge is compiled to QuickJS bytecode once per build and kept in
 // dir: parsing and compiling 1.3 MB of JavaScript took half a second at
 // every launch.
-class Engine(private val app: android.content.Context, private val source: String, private val cid: String, private val drafts: String, private val dir: java.io.File) {
+class Engine(private val app: android.content.Context, source: () -> String, private val cid: String, private val drafts: String, private val dir: java.io.File) {
+    private val source by lazy(source)
     private val worker = Worker()
 
     private suspend fun <T> queued(person: Boolean, f: () -> T): T = suspendCoroutine { k ->
@@ -232,7 +233,7 @@ class Engine(private val app: android.content.Context, private val source: Strin
         if (stale) scheduleFlush()
         val s = if (stale) null else runCatching { raw?.let(::parseScreen) }
             .onFailure { android.util.Log.w("Backplane", "screen unreadable: $it") }.getOrNull()
-        onFlush?.invoke(Reply(s, parseCmds(o)))
+        onFlush?.invoke(Reply(s, parseCmds(o), if (s != null) JSONObject().put("screen", raw).toString() else null, parseSync(o), if (o.isNull("deadline")) null else o.optLong("deadline")))
     }
 
     private suspend fun call(expr: String, person: Boolean = false): String =
@@ -249,7 +250,8 @@ class Engine(private val app: android.content.Context, private val source: Strin
             // more frames wait behind this one
             val withheld = late != null && (worker.personWaiting || t0 - built < window ||
                 (backgroundAhead.get() > 1 && t0 - built < 1000))
-            val e = late?.invoke(withheld, owe.getAndSet(false)) ?: expr
+            val carriedOwe = if (late != null) owe.getAndSet(false) else false
+            val e = late?.invoke(withheld, carriedOwe) ?: expr
             val text = try { eval(e) } catch (t: Throwable) {
                 if (screen) ahead.decrementAndGet()
                 throw t
@@ -258,16 +260,18 @@ class Engine(private val app: android.content.Context, private val source: Strin
             if (ms > 100) android.util.Log.i("Backplane", "slow ${e.substringBefore('(')}: $ms ms")
             val remaining = if (screen) ahead.decrementAndGet() else 0
             val o = JSONObject(text)
+            val inert = o.opt("inert") == true
+            if (inert && carriedOwe) owe.set(true)
             val raw = o.optJSONObject("screen")
             val stale = raw != null && (if (person) remaining > 0 else worker.personWaiting)
             if (raw != null) {
                 if (!person) built = t0
                 owe.set(stale)
             }
-            if (withheld || stale) scheduleFlush()
+            if (!inert && (withheld || stale)) scheduleFlush()
             val s = if (stale) null else runCatching { raw?.let(::parseScreen) }
                 .onFailure { android.util.Log.w("Backplane", "screen unreadable: $it") }.getOrNull()
-            Reply(s, parseCmds(o))
+            Reply(s, parseCmds(o), if (s != null) JSONObject().put("screen", raw).toString() else null, parseSync(o), if (o.isNull("deadline")) null else o.optLong("deadline"))
         }
     }
 
@@ -280,9 +284,14 @@ class Engine(private val app: android.content.Context, private val source: Strin
     suspend fun resume(key: String) = call("Backplane.resume(${q(key)})")
     suspend fun screen() = out("Backplane.screen()", person = true)
     // a binary frame from hub key, as base64
-    suspend fun recv(key: String, data: String) =
-        out("", late = { quiet, owed -> "Backplane.recv(${q(key)}, ${q(data)}, $quiet, $owed)" })
+    suspend fun connection(key: String, epoch: String, mode: String = "") =
+        out(if (mode.isEmpty()) "Backplane.connection(${q(key)}, ${q(epoch)})" else "Backplane.connection(${q(key)}, ${q(epoch)}, ${q(mode)})", screen = false, person = true)
+    suspend fun pulse() = out("Backplane.pulse()")
+    suspend fun recv(key: String, data: String, epoch: String) =
+        out("", late = { quiet, owed -> "Backplane.recv(${q(key)}, ${q(data)}, ${q(epoch)}, $quiet, $owed)" })
     // the whole client state as text (StateStore), and the state loaded back
+    suspend fun savePresentation() = call("Backplane.savePresentation()", person = true)
+    suspend fun loadPresentation(text: String) = out("Backplane.loadPresentation(${q(text)})", screen = false, person = true)
     suspend fun save() = call("Backplane.save()")
     suspend fun load(text: String) = out("Backplane.load(${q(text)})")
 
@@ -328,7 +337,7 @@ class Engine(private val app: android.content.Context, private val source: Strin
     }
     suspend fun act(action: String, value: String) = out("Backplane.act(${q(action)}, ${q(value)})", person = true)
     suspend fun quiet(action: String, value: String) = out("Backplane.quiet(${q(action)}, ${q(value)})", screen = false, person = true)
-    suspend fun online(key: String, b: Boolean) = out("Backplane.online(${q(key)}, $b)")
+    suspend fun online(key: String, b: Boolean, epoch: String = "") = out("Backplane.online(${q(key)}, $b, ${q(epoch)})")
     // a hub marked offline with no screen of its own (after load())
     suspend fun offline(key: String) = out("Backplane.online(${q(key)}, false, true)", screen = false)
     suspend fun tick(now: Long) = out("Backplane.tick($now)")

@@ -1,0 +1,409 @@
+#!/usr/bin/env python3
+"""Configured service/web producer. Building and offline component assembly are separate."""
+import argparse
+import fcntl
+import gzip
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import shutil
+import struct
+import subprocess
+import sys
+
+VERSION = "0.12.0"
+ENDPOINT = "https://backplane.works/api/v1/events"
+TARGETS = {"linux-x64", "linux-arm64", "darwin-arm64"}
+ROOT = Path(__file__).resolve().parents[1]
+NATIVE_LOCK = Path("/tmp/bp-wt-build.lock")
+HEX = re.compile(r"[0-9a-f]{64}\Z")
+GIT = re.compile(r"[0-9a-f]{40}\Z")
+
+
+def require(ok, message):
+    if not ok:
+        raise ValueError(message)
+
+
+def digest(path):
+    h = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for part in iter(lambda: stream.read(1024 * 1024), b""):
+            h.update(part)
+    return h.hexdigest()
+
+
+def read(path):
+    return json.loads(Path(path).read_text())
+
+
+def write(path, value):
+    Path(path).write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+
+
+def reference(path):
+    path = Path(path).resolve()
+    require(path.is_file() and not path.is_symlink(), "Artifact must be a regular file")
+    return {"path": str(path), "sha256": digest(path), "bytes": path.stat().st_size}
+
+
+def local_reference(path, base):
+    return {**reference(path), "path": Path(path).resolve().relative_to(Path(base).resolve()).as_posix()}
+
+
+def bound(ref, base):
+    require(isinstance(ref, dict) and HEX.fullmatch(str(ref.get("sha256", "")))
+            and type(ref.get("bytes")) is int and ref["bytes"] >= 0, "Invalid artifact reference")
+    path = Path(base) / ref["path"]
+    require(path.is_file() and not path.is_symlink() and path.stat().st_size == ref["bytes"]
+            and digest(path) == ref["sha256"], "Artifact reference mismatch")
+    return path.resolve()
+
+
+def relative(name):
+    require(isinstance(name, str) and name and "\\" not in name and ":" not in name
+            and "\0" not in name and not name.startswith("/")
+            and all(p not in {"", ".", ".."} for p in name.split("/")), "Unsafe member path")
+    return name
+
+
+def inventory(root):
+    root = Path(root).resolve()
+    result, seen = {}, set()
+    for path in sorted(root.rglob("*")):
+        name = relative(path.relative_to(root).as_posix())
+        require(name.lower() not in seen, "Case-colliding member")
+        seen.add(name.lower())
+        require(not re.search(r"(^|/)(\.env[^/]*|token|events\.jsonl|api-keys\.json|keyring|browser-profile|electron-profile|fontconfig)(/|$)", name, re.I), "Private payload member")
+        if path.is_symlink():
+            link = os.readlink(path)
+            require(not Path(link).is_absolute() and "\\" not in link and ":" not in link,
+                    "Unsafe payload link")
+            resolved = path.resolve(strict=True)
+            require(root in resolved.parents, "Escaping payload link")
+            result[name] = {"type": "symlink", "target": link}
+        elif path.is_dir():
+            require(not path.stat().st_mode & 0o7000, "Privileged directory mode")
+        else:
+            require(path.is_file() and not path.stat().st_mode & 0o7000, "Special/privileged member")
+            require(path.suffix.lower() not in {".ttf", ".otf", ".ttc", ".woff", ".woff2"}, "Bundled font")
+            with path.open("rb") as stream:
+                require(stream.read(4) not in {b"\x00\x01\x00\x00", b"OTTO", b"wOFF", b"wOF2", b"ttcf"}, "Font-format member")
+            result[name] = {"type": "file", "sha256": digest(path), "bytes": path.stat().st_size,
+                            "mode": path.stat().st_mode & 0o777}
+    return result
+
+
+def architecture(path, target):
+    with Path(path).open("rb") as stream:
+        b = stream.read(32)
+    if target.startswith("linux-"):
+        require(len(b) >= 20 and b[:6] == b"\x7fELF\x02\x01"
+                and struct.unpack_from("<H", b, 18)[0] == (62 if target == "linux-x64" else 183),
+                "Service is not the requested ELF architecture")
+    else:
+        require(len(b) >= 12 and struct.unpack_from("<II", b) == (0xfeedfacf, 0x100000c),
+                "Service is not arm64 Mach-O")
+
+
+def identity(request):
+    release = request.get("release", {})
+    require(request.get("schema") == 1 and request.get("target") in TARGETS, "Unsupported target/schema")
+    require(release.get("version") == VERSION and release.get("tag") == "v" + VERSION
+            and release.get("channel") == "release" and GIT.fullmatch(release.get("commit", ""))
+            and GIT.fullmatch(release.get("tree", "")), "Exact stable source identity required")
+    return release
+
+
+def compile_inputs():
+    return {"version": VERSION, "versionStamp": VERSION, "telemetryChannel": "release",
+            "google": {"requested": True, "requiredInputsPresent": True},
+            "telemetry": {"requested": True, "requiredInputsPresent": True, "endpoint": ENDPOINT}}
+
+
+def configured_environment(source):
+    env = dict(source)
+    for key in ("BACKPLANE_GOOGLE_CLIENT_ID", "BACKPLANE_GOOGLE_CLIENT_SECRET"):
+        require(re.fullmatch(r"[A-Za-z0-9._-]+", env.get(key, "")), "Protected Google compile inputs missing/invalid")
+    require(env.get("BACKPLANE_TELEMETRY_URL") == ENDPOINT, "Agreed telemetry endpoint required")
+    require(re.fullmatch(r"rel-[a-z0-9-]{1,28}", env.get("BACKPLANE_TELEMETRY_KID", "")), "Release telemetry key ID required")
+    require(re.fullmatch(r"[0-9a-f]{64}", env.get("BACKPLANE_TELEMETRY_KEY", "")), "Protected telemetry key required")
+    for name in ("BACKPLANE_PREBUILT", "BACKPLANE_EMIT_ONLY", "BP_BUILD_LOCKED"):
+        env.pop(name, None)
+    env.update(BACKPLANE_VERSION=VERSION, BACKPLANE_VERSION_STAMP=VERSION,
+               BACKPLANE_GOOGLE_BAKE="1", BACKPLANE_TELEMETRY_BAKE="1",
+               BACKPLANE_TELEMETRY_CHANNEL="release", BACKPLANE_EMIT_CACHE="0",
+               BACKPLANE_OBJ_CACHE="0", BACKPLANE_CFLAGS="-O3 -gline-tables-only")
+    return env
+
+
+def git(*args):
+    return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
+
+
+def frozen(release):
+    require(git("rev-parse", "HEAD") == release["commit"]
+            and git("rev-parse", "HEAD^{tree}") == release["tree"], "Checkout differs from frozen commit/tree")
+    require(not git("status", "--porcelain", "--untracked-files=all"), "Release checkout is dirty")
+
+
+def check_tool(spec, base, command):
+    path = bound(spec, base)
+    version = subprocess.check_output([str(path), "--version"], text=True, stderr=subprocess.STDOUT).strip()
+    require(spec.get("version") and version == spec["version"], command + " version mismatch")
+    if command == "bend":
+        require(path.name == "bend", "Bend tool must have canonical executable name")
+    else:
+        require(re.search(r"clang version (?:[2-9][0-9]|19)\.", version), "Clang 19+ required")
+    return path
+
+
+def run(args, log, env, timeout=2400):
+    result = subprocess.run([str(x) for x in args], cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, close_fds=True)
+    text = result.stdout.decode(errors="replace")
+    # Build-app prints a Google client prefix. Neither it nor protected values enter public evidence.
+    text = re.sub(r"(?m)^baked Google client .*?$", "configured Google inputs supplied privately", text)
+    for name in ("BACKPLANE_GOOGLE_CLIENT_ID", "BACKPLANE_GOOGLE_CLIENT_SECRET",
+                 "BACKPLANE_TELEMETRY_KID", "BACKPLANE_TELEMETRY_KEY"):
+        if env.get(name):
+            text = text.replace(env[name], "[protected]")
+    Path(log).write_text(text)
+    require(result.returncode == 0 and not re.search(r"^(SOME PROOFS FAIL|Error:|FAIL\b)", text, re.M),
+            "Build operation failed; inspect sanitized operation log")
+    return text
+
+
+def web_manifest(root, release):
+    members = inventory(root)
+    require("index.html" in members and all(v["type"] == "file" for v in members.values()), "Invalid generated web root")
+    for name in members:
+        if Path(name).suffix in {".html", ".css", ".js"}:
+            require(name + ".gz" in members, "Missing gzip sibling")
+        if name.endswith(".gz"):
+            plain = Path(root) / name[:-3]
+            require(plain.is_file() and gzip.decompress((Path(root) / name).read_bytes()) == plain.read_bytes(),
+                    "Gzip does not match generated plain asset")
+    return {"schema": 1, "kind": "matching-generated-web", "sourceCommit": release["commit"],
+            "sourceTree": release["tree"], "entrypoint": "src/web/index.html",
+            "members": {k: {"sha256": v["sha256"], "bytes": v["bytes"]} for k, v in members.items()}}
+
+
+def new_output(path):
+    require(path.is_absolute() and not path.exists(), "Output must be a new absolute directory")
+
+
+def build(request, base, out):
+    release = identity(request)
+    require(request.get("kind") == "backplane-service-build-inputs", "Wrong build request kind")
+    actual_host = {("Linux", "x86_64"): "linux-x64", ("Linux", "aarch64"): "linux-arm64",
+                   ("Darwin", "arm64"): "darwin-arm64"}.get((platform.system(), platform.machine()))
+    require(actual_host == request["target"], "Real target host required; cross-target compilation is not supported")
+    frozen(release)
+    env = configured_environment(os.environ)
+    bend = check_tool(request["toolchain"]["bend"], base, "bend")
+    cc = check_tool(request["toolchain"]["clang"], base, "clang")
+    env.update(CC=str(cc), PATH=str(bend.parent) + os.pathsep + env.get("PATH", ""))
+    clock = subprocess.check_output(["date", "+%s%N"], env=env, text=True).strip()
+    require(re.fullmatch(r"[0-9]{19,}", clock), "Native builder requires GNU date in PATH (Darwin: coreutils gnubin)")
+    qualification_path = bound(request["sourceQualification"], base)
+    qualification = read(qualification_path)
+    require(qualification.get("schema") == 1 and qualification.get("kind") == "backplane-web-source-qualification"
+            and qualification.get("status") == "PASS" and qualification.get("commit") == release["commit"]
+            and qualification.get("tree") == release["tree"] and qualification.get("version") == VERSION,
+            "Final source qualification is not bound to release")
+    require(qualification.get("checks"), "Actual final source check logs required")
+    for ref in qualification["checks"]:
+        bound(ref, qualification_path.parent)
+    notice_path = bound(request["webNotices"], base)
+    web_notices = read(notice_path)
+    require(web_notices.get("schema") == 1 and web_notices.get("kind") == "backplane-web-source-notices"
+            and web_notices.get("sourceCommit") == release["commit"]
+            and web_notices.get("sourceTree") == release["tree"]
+            and isinstance(web_notices.get("licenses"), dict) and web_notices["licenses"],
+            "Frozen web redistribution notices required")
+    for dest, src in web_notices["licenses"].items():
+        relative(dest)
+        source_license = ROOT / relative(src)
+        require(source_license.is_file() and not source_license.is_symlink(), "License source must be frozen regular file")
+    new_output(out)
+    out.mkdir(parents=True)
+    logs = out / "logs"
+    logs.mkdir()
+    # Keep the standard native build lock through compile-header cleanup.
+    with NATIVE_LOCK.open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        env["BP_BUILD_LOCKED"] = "1"
+        try:
+            run(["bash", "-c", 'set -e; source scripts/bendok.sh; bend_check src/server/main.bend; bend_check src/web/app.bend'], logs / "entries.log", env, 600)
+            run(["scripts/build-app.sh", "src/server/main.bend", out / "backplane-serve"], logs / "native.log", env)
+        finally:
+            for name in ("bp_google.h", "bp_telemetry.h"):
+                (ROOT / "build/cc/backplane-serve" / name).unlink(missing_ok=True)
+    architecture(out / "backplane-serve", request["target"])
+    version = run([out / "backplane-serve", "--version"], logs / "version.log", env, 30).strip()
+    require(version == "backplane " + VERSION, "Compiled service did not report exact stable version")
+    frozen(release)
+    for name in ("bend", "clang"):
+        bound(request["toolchain"][name], base)
+    web = out / "web"
+    run([bend, "src/web/index.html", "-o", web], logs / "web.log", env, 900)
+    chunks = sorted(web.glob("chunk-*.js"))
+    require(chunks, "No emitted web chunks")
+    run([sys.executable, "scripts/js-unmarshal.py", "../core/client.Ui", *chunks], logs / "unmarshal.log", env)
+    run([sys.executable, "scripts/js-native.py", *chunks], logs / "native-js.log", env)
+    shutil.copyfile(ROOT / "src/web/sw.js", web / "sw.js")
+    for dest, src in web_notices["licenses"].items():
+        destination = web / dest
+        require(not destination.exists(), "License collides with generated web asset")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / src, destination)
+    notices(web, web_notices.get("packages"))
+    for path in sorted(web.rglob("*")):
+        if path.is_file() and path.suffix in {".js", ".css", ".html"}:
+            path.with_name(path.name + ".gz").write_bytes(gzip.compress(path.read_bytes(), compresslevel=9, mtime=0))
+    write(out / "WEB.json", web_manifest(web, release))
+    shutil.copyfile(ROOT / "LICENSE", out / "LICENSE.Backplane")
+    shutil.copyfile(qualification_path, out / "SOURCE-QUALIFICATION.json")
+    # Preserve the qualified logs and rebind their locations without changing their bytes.
+    copied = dict(qualification)
+    copied["checks"] = []
+    for i, ref in enumerate(qualification["checks"]):
+        dest = logs / ("source-" + str(i) + ".log")
+        shutil.copyfile(bound(ref, qualification_path.parent), dest)
+        copied["checks"].append(local_reference(dest, out))
+    write(out / "SOURCE-QUALIFICATION-BOUND.json", copied)
+    source = {"schema": 1, "kind": "backplane-service-source", "commit": release["commit"], "tree": release["tree"],
+              "entrypoint": "src/server/main.bend", "members": {name: digest(ROOT / name) for name in git("ls-files").splitlines()}}
+    write(out / "SOURCE.json", source)
+    compiler = {"version": request["toolchain"]["bend"]["version"], "sha256": request["toolchain"]["bend"]["sha256"]}
+    write(out / "WEB-EMISSION.json", {"schema": 1, "kind": "backplane-web-emission", "status": "VERIFIED", "target": "web",
+          "version": VERSION, "channel": "release", "sourceCommit": release["commit"], "sourceTree": release["tree"],
+          "entrypoint": "src/web/index.html", "webManifestSha256": digest(out / "WEB.json"), "compiler": compiler,
+          "packages": web_notices["packages"], "sourceQualification": local_reference(out / "SOURCE-QUALIFICATION-BOUND.json", out)})
+    frozen(release)
+    for name in ("bend", "clang"):
+        bound(request["toolchain"][name], base)
+    result = {"schema": 1, "status": "VERIFIED_GENUINE_SERVICE_ONLY_CONFIGURED_BUILD", "target": request["target"],
+              "entry": "src/server/main.bend", "version": VERSION, "versionStamp": VERSION, "telemetryChannel": "release",
+              "source_commit": release["commit"], "source_tree": release["tree"], "compileInputs": compile_inputs(),
+              "binary_sha256": digest(out / "backplane-serve"), "webManifestSha256": digest(out / "WEB.json"),
+              "sourceManifestSha256": digest(out / "SOURCE.json"),
+              "toolchain": {name: {key: request["toolchain"][name][key] for key in ("path", "bytes", "sha256", "version")}
+                            for name in ("bend", "clang")},
+              "logs": {p.name: local_reference(p, out) for p in sorted(logs.iterdir())},
+              "runtimeAcceptance": "PENDING", "published": False}
+    write(out / "BUILD.json", result)
+    return {"status": result["status"], "buildReceipt": reference(out / "BUILD.json"), "payload": str(out)}
+
+
+def notices(root, packages):
+    require(isinstance(packages, list) and packages, "Redistribution notices required")
+    for item in packages:
+        require(item.get("name") and item.get("version") and item.get("sourceDisposition") and item.get("licenses"), "Incomplete package notice")
+        for license in item["licenses"]:
+            require(digest(root / relative(license["path"])) == license["sha256"], "Notice mismatch")
+
+
+def runtime_closure(root, target):
+    runtime, closure = read(root / "RUNTIME.json"), read(root / "CLOSURE.json")
+    require(runtime.get("target") == target and runtime.get("inventory") and closure.get("target") == target
+            and closure.get("measured") is True and closure.get("status") == "PASS"
+            and closure.get("unresolvedMandatory") == [] and isinstance(closure.get("edges"), list), "Measured target runtime closure required")
+    for item in runtime["inventory"]:
+        path = root / relative(item["path"])
+        require(item.get("package") and item.get("version") and item.get("architecture")
+                and path.stat().st_size == item["bytes"] and digest(path) == item["sha256"], "Runtime inventory mismatch")
+    for edge in closure["edges"]:
+        require((root / relative(edge["from"])).is_file() and edge.get("kind") in {"normal", "delay", "dynamic"}
+                and edge.get("name"), "Invalid measured edge")
+        if edge.get("system") is True:
+            require(edge.get("classification") == "approved-system", "Unapproved system dependency")
+        else:
+            require((root / relative(edge["resolved"])).is_file(), "Unresolved dependency")
+    notices(root, runtime.get("packages"))
+    return runtime
+
+
+def component(request, base, out):
+    release = identity(request)
+    require(request.get("kind") == "backplane-service-component-inputs", "Wrong component request kind")
+    raw = bound(request["buildReceipt"], base)
+    build_data = read(raw)
+    source = (base / request["buildDirectory"]).resolve()
+    require(raw == source / "BUILD.json" and build_data.get("status") == "VERIFIED_GENUINE_SERVICE_ONLY_CONFIGURED_BUILD"
+            and build_data.get("target") == request["target"] and build_data.get("source_commit") == release["commit"]
+            and build_data.get("source_tree") == release["tree"] and build_data.get("version") == VERSION
+            and build_data.get("versionStamp") == VERSION and build_data.get("telemetryChannel") == "release"
+            and build_data.get("compileInputs") == compile_inputs(), "Original configured BUILD identity required")
+    require(digest(source / "backplane-serve") == build_data["binary_sha256"]
+            and digest(source / "WEB.json") == build_data["webManifestSha256"]
+            and digest(source / "SOURCE.json") == build_data["sourceManifestSha256"], "Built component changed")
+    architecture(source / "backplane-serve", request["target"])
+    require(web_manifest(source / "web", release) == read(source / "WEB.json"), "Web manifest mismatch")
+    runtime_root = (base / request["runtimeDirectory"]).resolve()
+    approval_path = bound(request["runtimeQualification"], base)
+    approval = read(approval_path)
+    require(approval.get("schema") == 1 and approval.get("kind") == "backplane-service-runtime-qualification"
+            and approval.get("status") == "PASS" and approval.get("target") == request["target"]
+            and approval.get("sourceCommit") == release["commit"] and approval.get("sourceTree") == release["tree"]
+            and approval.get("binarySha256") == build_data["binary_sha256"]
+            and approval.get("runtimeManifestSha256") == digest(runtime_root / "RUNTIME.json")
+            and approval.get("closureSha256") == digest(runtime_root / "CLOSURE.json"), "Exact measured runtime approval required")
+    expected_runtime = approval.get("members")
+    require(expected_runtime == inventory(runtime_root), "Approved runtime payload changed")
+    new_output(out)
+    payload = out / "payload"
+    payload.mkdir(parents=True)
+    for name in ("backplane-serve", "BUILD.json", "SOURCE.json", "WEB.json", "LICENSE.Backplane",
+                 "WEB-EMISSION.json", "SOURCE-QUALIFICATION.json", "SOURCE-QUALIFICATION-BOUND.json"):
+        shutil.copy2(source / name, payload / name)
+    shutil.copytree(source / "web", payload / "web")
+    shutil.copytree(source / "logs", payload / "logs")
+    for child in runtime_root.iterdir():
+        require(not (payload / child.name).exists(), "Runtime collides with built service/web")
+        if child.is_dir() and not child.is_symlink():
+            shutil.copytree(child, payload / child.name, symlinks=True)
+        else:
+            shutil.copy2(child, payload / child.name, follow_symlinks=False)
+    runtime = runtime_closure(payload, request["target"])
+    shutil.copyfile(approval_path, payload / "RUNTIME-QUALIFICATION.json")
+    result = {"schema": 1, "kind": "backplane-bend-service", "status": "VERIFIED", "target": request["target"],
+              "sourceCommit": release["commit"], "sourceTree": release["tree"], "version": VERSION, "channel": "release",
+              "genuineService": True, "entrypoint": "src/server/main.bend", "roles": {"service": "backplane-serve", "web": "web"},
+              "buildReceipt": local_reference(payload / "BUILD.json", out), "runtimeManifest": "RUNTIME.json",
+              "runtimeManifestSha256": digest(payload / "RUNTIME.json"), "closureManifest": "CLOSURE.json",
+              "closureSha256": digest(payload / "CLOSURE.json"), "packages": runtime["packages"],
+              "members": inventory(payload), "runtimeAcceptance": "PENDING", "published": False}
+    notices(payload, result["packages"])
+    write(out / "SERVICE.json", result)
+    return {"status": "VERIFIED_COMPONENT_NOT_INSTALLED", "receipt": reference(out / "SERVICE.json"), "payload": str(payload)}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("operation", choices=("describe", "build", "component"))
+    parser.add_argument("--request", type=Path)
+    parser.add_argument("--out", type=Path)
+    args = parser.parse_args()
+    if args.operation == "describe":
+        print(json.dumps({"interface": "backplane-service-release-producer-v1", "version": VERSION,
+                          "targets": sorted(TARGETS), "build": "build --request REQUEST.json --out NEW_ABS_BUILD",
+                          "component": "component --request REQUEST.json --out NEW_ABS_COMPONENT",
+                          "publication": False}, indent=2))
+        return
+    require(args.request is not None and args.out is not None, "--request and --out required")
+    request_path = args.request.resolve()
+    print(json.dumps(globals()[args.operation](read(request_path), request_path.parent, args.out), indent=2))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (ValueError, OSError, KeyError, subprocess.SubprocessError) as exc:
+        # No command/env dumps: compiler configuration is protected input.
+        print("Service producer: " + (str(exc) if isinstance(exc, ValueError) else type(exc).__name__), file=sys.stderr)
+        sys.exit(1)

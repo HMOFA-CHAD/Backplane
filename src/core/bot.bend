@@ -1147,9 +1147,16 @@ def Mem.text(m: Mem) -> String:
     case Mem{_, _, _, t, _, _, _}:
       t
 
-def Mem.score.w(+w: String, +hay: String, +text: String) -> Nat:
-  Bool.pick(Nat, Room.has(Words.stop(), w), 0n,
-    Nat.add(Bool.pick(Nat, String.contains(hay, w), 3n, 0n), Bool.pick(Nat, String.contains(text, w), 1n, 0n)))
+def Mem.score.w.k(stop: Bool, +w: String, +hay: String, +text: String) -> Nat:
+  match stop:
+    case True{}:
+      0n
+    case False{}:
+      Nat.add(Bool.pick(Nat, String.contains(hay, w), 3n, 0n), Bool.pick(Nat, String.contains(text, w), 1n, 0n))
+
+# Stop words score zero without scanning either memory string.
+def Mem.score.w(+w: String, hay: String, text: String) -> Nat:
+  Mem.score.w.k(Room.has(Words.stop(), w), w, hay, text)
 
 def Mem.score.go(qs: List<&2, String>, +hay: String, +text: String) -> Nat:
   match qs:

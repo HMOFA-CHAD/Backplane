@@ -8,7 +8,14 @@ enum Pairing {
         guard let u = socket(link), var c = URLComponents(url: u, resolvingAgainstBaseURL: false) else { return nil }
         // enc=cbor: a hub from before CBOR-only still needs asking
         c.queryItems = (c.queryItems ?? []) + [URLQueryItem(name: "since", value: since), URLQueryItem(name: "origin", value: origin),
-                                               URLQueryItem(name: "enc", value: "cbor")]
+                                               URLQueryItem(name: "enc", value: "cbor"), URLQueryItem(name: "view", value: "mobile")]
+        return c.url
+    }
+
+    static func viewSocket(_ link: String) -> URL? {
+        guard let u = socket(link), var c = URLComponents(url: u, resolvingAgainstBaseURL: false) else { return nil }
+        c.queryItems = (c.queryItems ?? []) + [URLQueryItem(name: "since", value: "0"), URLQueryItem(name: "origin", value: ""),
+            URLQueryItem(name: "enc", value: "cbor"), URLQueryItem(name: "view", value: "1"), URLQueryItem(name: "mobile", value: "1")]
         return c.url
     }
 

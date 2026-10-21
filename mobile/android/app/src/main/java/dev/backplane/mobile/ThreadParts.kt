@@ -54,6 +54,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Archive
@@ -189,28 +190,32 @@ object PhaseColor {
     val faint = Color(0xFF5C6473)
 }
 
-// a thread's dot: its phase (row.status, src/core/model.bend's Phase.name),
-// in the same colors as the desktop and web; else its turn
+// The projected activity wins over the legacy turn fallback. Waiting/queued
+// data alone never proves a worker is running.
+private fun threadStatusSignal(state: String, status: String): String = when (status) {
+    "" -> when (state) { "run" -> "active"; "fail" -> "blocked"; else -> "inactive" }
+    "blocked", "needs you", "approval", "input", "failed" -> "blocked"
+    "active", "running", "watching", "cancelling", "working", "monitoring" -> "active"
+    "settled", "done", "completed", "cancelled" -> "settled"
+    else -> "inactive"
+}
+
 @Composable
 fun StatusDot(state: String, status: String) {
     val lang = LocalBackplaneLanguage.current
-    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
-        when (status) {
-            "approval" -> Icon(Icons.Filled.PanTool, NativeMessages.native_status_approval(lang), Modifier.size(16.dp), tint = PhaseColor.warn)
-            "input" -> Icon(Icons.Filled.QuestionAnswer, NativeMessages.native_status_answer(lang), Modifier.size(16.dp), tint = PhaseColor.input)
-            // ("queued" from an older hub: nothing waits now, it is working)
-            "working", "queued" -> CircularProgressIndicator(Modifier.size(16.dp), color = PhaseColor.accent, strokeWidth = 2.dp)
-            // the turn is over, its subagents still at work ("waiting" from an older hub)
-            "monitoring", "waiting" -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = PhaseColor.waiting)
-            "failed" -> Icon(Icons.Filled.Error, NativeMessages.notify_failed(lang), Modifier.size(18.dp), tint = PhaseColor.bad)
-            "complete" -> Dot(PhaseColor.ok)
-            "stopped", "idle", "ready" -> Dot(PhaseColor.faint)
-            else -> when (state) {
-                "run" -> CircularProgressIndicator(Modifier.size(16.dp), color = PhaseColor.accent, strokeWidth = 2.dp)
-                "fail" -> Icon(Icons.Filled.Error, NativeMessages.notify_failed(lang), Modifier.size(18.dp), tint = PhaseColor.bad)
-                "stop" -> Dot(PhaseColor.warn)
-                else -> Dot(PhaseColor.faint)
-            }
+    val signal = threadStatusSignal(state, status)
+    val label = when (signal) {
+        "blocked" -> if (lang == "ja") "対応が必要です" else "Blocked: needs interaction"
+        "active" -> if (lang == "ja") "作業中" else "Working: agent or owned work active"
+        "settled" -> if (lang == "ja") "完了済み" else "Settled"
+        else -> if (lang == "ja") "非稼働・実行中の作業は未確認です" else "Inactive: no confirmed active work"
+    }
+    Box(Modifier.size(24.dp).semantics(mergeDescendants = true) { contentDescription = label }, contentAlignment = Alignment.Center) {
+        when (signal) {
+            "blocked" -> Icon(Icons.Filled.Error, null, Modifier.size(18.dp), tint = PhaseColor.bad)
+            "active" -> CircularProgressIndicator(Modifier.size(16.dp), color = PhaseColor.ok, strokeWidth = 2.dp)
+            "settled" -> Icon(Icons.Filled.CheckCircleOutline, null, Modifier.size(16.dp), tint = PhaseColor.faint)
+            else -> Icon(Icons.Filled.Pause, null, Modifier.size(16.dp), tint = PhaseColor.warn)
         }
     }
 }
@@ -447,13 +452,10 @@ fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
 }
 
 private fun subColor(state: String) = when (state) {
-    "running" -> PhaseColor.accent
-    "done", "reporting", "held" -> PhaseColor.ok
-    "watching", "launching", "waiting on", "waiting", "needs you" -> PhaseColor.accent
-    // "" is the "N done" toggle row (subs.bend's Subs.done.toggle): neutral
-    "", "starting", "queued" -> Color.Gray
-    "cancelled", "cancelling" -> PhaseColor.warn
-    else -> PhaseColor.bad
+    "active", "running", "watching", "cancelling" -> PhaseColor.ok
+    "blocked", "needs you" -> PhaseColor.bad
+    "settled", "done", "completed", "stopped", "cancelled", "" -> PhaseColor.faint
+    else -> PhaseColor.warn
 }
 
 // the subagent panel: what this thread delegated (a tap opens its thread)
@@ -478,7 +480,7 @@ fun SubsView(m: AppModel, subs: Subs) {
             }
             for (r in subs.rows) Column(Modifier.fillMaxWidth().clickable { m.act(r.act, r.value) }.padding(vertical = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(if (r.live) 8.dp else 6.dp).background(subColor(r.state)))
+                    StatusDot("", r.state)
                     Text(if (r.agent) (if (r.open) "▾" else "▸") else r.who, style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline, maxLines = 1)
                     Text(r.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)

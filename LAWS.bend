@@ -1,4 +1,13 @@
 import Base
+import ./src/core/presentation.bend as PRESENTVIEW
+import ./src/core/desktop-browser.bend as DBGUI
+import ./src/server/desktop-broker.bend as DBBROKER
+import ./src/core/maildisposition.bend as MDSP
+import ./src/core/mailcontinuity.bend as MCN
+import ./src/core/telemetry.bend as TEL
+import ./test/telemetry_cases.bend as TCF
+import ./src/core/refresh.bend as RFSH
+import ./src/core/textscale.bend as TSC
 import ./src/core/auth.bend as AUTH
 import ./src/core/http.bend as HTTPAUTH
 import ./src/core/pcb2d.bend as PCB2 # PCB viewer text
@@ -3093,6 +3102,18 @@ law google_hop_tailnet_only:
 
 law google_hop_no_path:
   {GO.Google.hop("state=" ++ GO.Google.state("n0", "https://evil.example.com/x.ts.net") ++ "&code=c", "") == "" : String}
+
+law google_hop_origin_header_injection_denied:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "http://box.ts.net:3787\r\nX-Test: injected") ++ "&code=c", "") == "" : String}
+
+law google_hop_query_header_injection_denied:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "http://box.ts.net:3787") ++ "&code=c\r\nX-Test: injected", "") == "" : String}
+
+law google_hop_wrapping_port_denied:
+  {GO.Google.hop.ok("http://box.ts.net:4294967297") == False{} : Bool}
+
+law google_hop_raw_fragment_denied:
+  {GO.Google.hop("state=" ++ GO.Google.state("n0", "http://box.ts.net:3787") ++ "&code=c#fragment", "") == "" : String}
 
 # a phone's own loopback redirect begins a sign-in (RFC 8252 7.3)
 law google_loopback_phone:
@@ -10665,6 +10686,35 @@ law auth_empty_remote_token_denied:
 
 law auth_cookie_prefix_denied:
   {AUTH.Auth.allowed(False{}, [HTTPAUTH.Header{"cookie", "bp_token=secret-extra"}], "/ws", "secret") == False{} : Bool}
+
+# The OAuth navigation envelope is separate from general connection trust.
+# These laws do not replace the pending-state and PKCE checks in Google.finish.
+law auth_oauth_post_denied:
+  for +trusted: Bool
+  for +hs: List<&2, HTTPAUTH.Header>
+  for +path: String
+  for +token: String
+  {AUTH.Auth.oauth(trusted, hs, "POST", path, token) == False{} : Bool}
+
+law auth_oauth_other_route_denied:
+  for +trusted: Bool
+  for +hs: List<&2, HTTPAUTH.Header>
+  for +token: String
+  {AUTH.Auth.oauth(trusted, hs, "GET", "/ws?token=secret", token) == False{} : Bool}
+
+law auth_oauth_foreign_origin_denied:
+  for +trusted: Bool
+  for +token: String
+  {AUTH.Auth.oauth(trusted, [HTTPAUTH.Header{"origin", "https://foreign.example"}, HTTPAUTH.Header{"host", "localhost:3787"}, HTTPAUTH.Header{"sec-fetch-mode", "navigate"}, HTTPAUTH.Header{"sec-fetch-dest", "document"}], "GET", "/oauth/google", token) == False{} : Bool}
+
+law auth_oauth_local_document_reaches_state_check:
+  for +token: String
+  {AUTH.Auth.oauth(True{}, [HTTPAUTH.Header{"host", "127.0.0.1:3787"}, HTTPAUTH.Header{"sec-fetch-site", "cross-site"}, HTTPAUTH.Header{"sec-fetch-mode", "navigate"}, HTTPAUTH.Header{"sec-fetch-dest", "document"}], "GET", "/oauth/google?state=pending&code=code", token) == True{} : Bool}
+
+law auth_oauth_document_does_not_authorize_websocket:
+  for +trusted: Bool
+  for +token: String
+  {AUTH.Auth.allowed(trusted, [HTTPAUTH.Header{"host", "127.0.0.1:3787"}, HTTPAUTH.Header{"sec-fetch-site", "cross-site"}, HTTPAUTH.Header{"sec-fetch-mode", "navigate"}, HTTPAUTH.Header{"sec-fetch-dest", "document"}], "/ws", token) == False{} : Bool}
 # ---- PCB viewer text ----
 law pcb2_hidden_text_draws_nothing:
   for +at: B.Pt
@@ -10766,3 +10816,436 @@ law wt_seed_same_second_next:
 
 law wt_seed_wrap:
   {H.Wt.seed("t4294967296") == 0n : Nat}
+
+# telemetry (wire v1, addendum 1: no client kinds)
+
+law tm_optout_no_id:
+  {Bool.or(String.contains(TCF.Cases.body(TCF.Cases.off()), TCF.Cases.id()), String.contains(TCF.Cases.body(TCF.Cases.off()), "\"id\"")) == False{} : Bool}
+law tm_unasked_no_id:
+  {List.is_empty(&2, TEL.TmEv, TEL.Tm.ready(TEL.TmState.queue(TCF.Cases.unasked()), 2n)) == True{} : Bool}
+law tm_sandbox_never:
+  for se: String
+  for tm: String
+  for dnt: String
+  for ci: String
+  for url: String
+  for kid: String
+  for key: String
+  {TEL.Tm.gate(TEL.TmEnv{True{}, se, tm, dnt, ci, url, kid, key}) == False{} : Bool}
+law tm_gate_no_key:
+  {TEL.Tm.gate(TEL.TmEnv{False{}, "", "", "", "", "http://stub", "dev-1", ""}) == False{} : Bool}
+law tm_clean_drops_path:
+  {String.contains(TCF.Cases.bad("/home/h/x"), "/home/h/x") == False{} : Bool}
+law tm_clean_drops_email:
+  {String.contains(TCF.Cases.bad("a@b.c"), "a@b.c") == False{} : Bool}
+law tm_clean_drops_name:
+  {String.contains(TCF.Cases.bad("private project"), "private project") == False{} : Bool}
+law tm_active_once_a_day:
+  {List.length(&2, TEL.TmEv, TEL.TmState.queue(TCF.Cases.twice())) == 1n : Nat}
+law tm_queue_cap:
+  {List.length(&2, TEL.TmEv, TEL.Tm.queue.limit(TCF.Cases.repeat(201n))) == 200n : Nat}
+law tm_sent_202_drops:
+  {List.is_empty(&2, TEL.TmEv, TEL.TmState.queue(TEL.Tm.sent(TCF.Cases.st([TCF.Cases.ev("install", "0.11.3", True{})]), [TCF.Cases.ev("install", "0.11.3", True{})], 202n, 0n, 2n))) == True{} : Bool}
+law tm_sent_500_keeps:
+  {Bool.and(Nat.is_eq(TEL.TmState.next(TEL.Tm.sent(TCF.Cases.st([TCF.Cases.ev("install", "0.11.3", True{})]), [TCF.Cases.ev("install", "0.11.3", True{})], 500n, 0n, 2n)), 3602n), Nat.is_eq(List.length(&2, TEL.TmEv, TEL.TmState.queue(TEL.Tm.sent(TCF.Cases.st([TCF.Cases.ev("install", "0.11.3", True{})]), [TCF.Cases.ev("install", "0.11.3", True{})], 500n, 0n, 2n))), 1n)) == True{} : Bool}
+law tm_state_roundtrip:
+  {TEL.Tm.state.parse(TEL.Tm.state.json(TCF.Cases.st([TCF.Cases.ev("install", "0.11.3", True{})]))) == TCF.Cases.st([TCF.Cases.ev("install", "0.11.3", True{})]) : TEL.TmState}
+law share_on_sets_asked:
+  {TCF.Cases.setting(U.Ui.act(U.Ui.init(1n), "share", "on"), "telemetry.asked") == "1" : String}
+law share_step_before_uber:
+  {OBD.Ob.next(OBD.Ob.share()) == OBD.Ob.uber() : Nat}
+law bug_url_only_version:
+  {TEL.Bug.url("0.11.3", "linux", "x64") == "https://github.com/i2cjak/Backplane/issues/new?body=Version%3A%200.11.3%0AOS%3A%20linux%20x64%0A%0AWhat%20happened%3A%0A" : String}
+
+law tm_reset_invalidates_worker:
+  {TEL.Tm.current(TCF.Cases.view(True{}, True{}, "0", "0.11.3", "2026-10-14", 2n), M.State.replay([M.SettingSet{"telemetry.asked", "1", 1n}, M.SettingSet{"telemetry.reset", "1", 1n}], M.State.empty())) == False{} : Bool}
+law tm_optout_invalidates_worker:
+  {TEL.Tm.current(TCF.Cases.view(True{}, True{}, "0", "0.11.3", "2026-10-14", 2n), M.State.replay([M.SettingSet{"telemetry.asked", "1", 1n}, M.SettingSet{"telemetry.share", "off", 1n}], M.State.empty())) == False{} : Bool}
+law tm_loopback_rejects_userinfo:
+  {TEL.Tm.loopback("http://127.0.0.1:80@elsewhere/api/v1/events") == False{} : Bool}
+law tm_package_nightly_channel:
+  {TEL.Tm.channel("0.12.1-nightly.20261019.1", "nightly") == "nightly" : String}
+
+law tm_new_usage_marker:
+  {U.Tour.raw(False{}, OBD.Ob.share()) == "s9" : String}
+law tm_cached_uber_step_kept:
+  {U.Tour.legacy("9", OBD.Ob.share()) == OBD.Ob.uber() : Nat}
+law tm_marked_usage_step_kept:
+  {U.Tour.legacy("s9", OBD.Ob.share()) == OBD.Ob.share() : Nat}
+# --- browser controls (CEF owner) ---
+law browser_url_hostname:
+  {CEF.Cef.url("example.com") == "https://example.com" : String}
+law browser_url_localhost:
+  {CEF.Cef.url("localhost:3787/path") == "http://localhost:3787/path" : String}
+law browser_url_explicit:
+  for +path: String
+  {CEF.Cef.url.explicit(True{}, path) == path : String}
+law browser_url_no_script:
+  {CEF.Cef.url("javascript:alert(1)") == "" : String}
+law browser_toolbar_no_eval:
+  {CEF.Cef.toolbar.allowed("evaluate") == False{} : Bool}
+law browser_toolbar_tabs_allowed:
+  {CEF.Cef.toolbar.allowed("tabs") == True{} : Bool}
+# --- end browser controls ---
+# Schematic refresh compares revisions even when size is unchanged.
+law refresh_revision_changed:
+  for +size_changed: Bool
+  {RFSH.Revision.decide(size_changed, False{}) == True{} : Bool}
+
+law refresh_size_changed:
+  for +same_revision: Bool
+  {RFSH.Revision.decide(True{}, same_revision) == True{} : Bool}
+
+law refresh_unchanged_quiet:
+  {RFSH.Revision.decide(False{}, True{}) == False{} : Bool}
+# --- browser-cef release archive (October19) ---
+law cef_release_uses_paired_archive:
+  {CEF.Cef.archive("linux-x64") == "linux-x64-cef.tar.gz" : String}
+law cef_release_arm_archive_unchanged:
+  {CEF.Cef.archive("linux-arm64") == "linux-arm64.tar.gz" : String}
+law cef_release_mac_archive_unchanged:
+  {CEF.Cef.archive("darwin-arm64") == "darwin-arm64.tar.gz" : String}
+law cef_release_old_updater_cannot_match:
+  {String.ends_with("backplane-v1-linux-x64-cef.tar.gz", "linux-x64.tar.gz") == False{} : Bool}
+# --- end browser-cef release archive ---
+
+law ix_rename_global_invalidation_retained:
+  for id: String
+  for +t: MM.TouchK
+  {MM.TouchK.g(MM.TouchK.rename(id, t)) == MM.TouchK.n(t) : Nat}
+
+law ix_rename_relationship_invalidation_retained:
+  for id: String
+  for +t: MM.TouchK
+  {MM.TouchK.r(MM.TouchK.rename(id, t)) == MM.TouchK.r(t) : Nat}
+
+law ix_old_touch_global_fallback:
+  for n: Nat
+  for +g: Nat
+  for r: Nat
+  for l: List<&2, MM.TkE>
+  {MM.TouchK.index_g(MM.TouchK{n, g, r, Map.new(&2, Nat), l}) == g : Nat}
+
+# A current exact sidebar index may supply subagent phase maps. No row
+# field, status precedence, clock, ordering or visibility is changed.
+
+law subs_phase_index_supplied_exact:
+  for +st: M.State
+  {SB.Subs.index.phase(U.Side.ix(st)) == SB.Subs.index(st) : U.SIx}
+
+law subs_children_indexed_exact:
+  for +some: Bool
+  for +ts: List<&2, M.Task>
+  for +ids: List<&2, String>
+  for +st: M.State
+  for +now: Nat
+  {SB.Subs.children.at(some, ts, ids, st, now, [U.Side.ix(st)]) == SB.Subs.children(some, ts, ids, st, now) : List<&2, SB.SubRow>}
+
+law subs_rows_indexed_exact:
+  for +st: M.State
+  for +info: Map<&2, String>
+  for +th: String
+  for +now: Nat
+  {SB.Subs.rows.ix(st, info, th, now, U.Side.ix(st)) == SB.Subs.rows(st, info, th, now) : List<&2, SB.SubRow>}
+
+# Lazy stop-word selection preserves the exact strict score for every input.
+
+law mem_score_w_strict_equivalence:
+  for +w: String
+  for +hay: String
+  for +text: String
+  {BOT.Mem.score.w(w, hay, text) == Bool.pick(Nat, BOT.Room.has(BOT.Words.stop(), w), 0n,
+    Nat.add(Bool.pick(Nat, String.contains(hay, w), 3n, 0n), Bool.pick(Nat, String.contains(text, w), 1n, 0n))) : Nat}
+
+# Future worktree seeds fold digits in a bounded U32 before Git.hex8.
+# Symbolic steps pin down the decimal fold and skipped separator; concrete
+# production ids cover the Nat.read overflow and same-second distinction.
+
+law tl_live_single_exact:
+  for +ty: L.Ty
+  for empty: Bool
+  for +ph: M.Phase
+  for +text: String
+  for +memo: L.LiveMemo
+  for +px: U32
+  {L.TL.live.single(ty, empty, ph, text, memo, px) == L.TL.live.m(ty, empty, ph, text, memo, px) : List<&2, L.TLine>}
+# Desktop/web text size is bounded, independent of device DPI, and opt-in.
+law textscale_default:
+  {TSC.Scale.read("") == 100 : U32}
+
+law textscale_invalid:
+  {TSC.Scale.read("2000") == 100 : U32}
+
+law textscale_real_font_size:
+  {TSC.Scale.px(TSC.Scale.read("150"), 14) == 21 : U32}
+
+# An observed message is not a handled request. No claim about model intent.
+law mail_continuity_read_open_unresolved:
+  {MCN.Continuity.disposed("open") == False{} : Bool}
+
+law mail_continuity_unread_unresolved:
+  {MCN.Continuity.disposed("unread") == False{} : Bool}
+
+law mail_continuity_current_escalation_once:
+  for +token: String
+  for +forwarded: String
+  for +status: String
+  {MCN.Continuity.needs(token, token, forwarded, status, False{}) == False{} : Bool}
+
+law mail_continuity_committed_reply_resolves:
+  for +token: String
+  for +escalated: String
+  for +forwarded: String
+  for +status: String
+  {MCN.Continuity.needs(token, escalated, forwarded, status, True{}) == False{} : Bool}
+
+# Permission for notice bookkeeping is not permission for underlying work.
+law mail_disposition_inactive_refused:
+  for +input: String
+  for +current: String
+  {MDSP.Disposition.matches(False{}, input, current) == False{} : Bool}
+
+law mail_disposition_ordinary_codex_unchanged:
+  {MDSP.Disposition.codex(False{}) == [] : List<&2, String>}
+
+law mail_disposition_codex_single_tool:
+  {MDSP.Disposition.codex(True{}) == ["-c", "mcp_servers.backplane.tools.mail_dispose.approval_mode=\"approve\""] : List<&2, String>}
+
+law mail_disposition_done_notice_only:
+  {MDSP.Disposition.mode("done") == True{} : Bool}
+
+law mail_disposition_defer_notice_only:
+  {MDSP.Disposition.mode("defer") == True{} : Bool}
+
+law mail_disposition_no_product_action:
+  {MDSP.Disposition.mode("deploy") == False{} : Bool}
+
+# Every production listing route retains the current thread's scoped tools.
+law mail_disposition_bot_router_scoped_tools:
+  for +s: M.State
+  for +now: Nat
+  for +thread: String
+  for +models: J.Json
+  for +version: String
+  for +dir: J.Json
+  for +extra: List<&2, J.Json>
+  for +o: J.Json
+  {BHS.Bots.mcp.k(BHS.RList{}, s, now, thread, models, version, dir, extra, o) ==
+    MC.McpOut{BHS.Bots.list.using(MC.Mcp.tools.for(s, thread), J.Json.get_obj(o, "id"), extra), H.Step.none(), ""} : MC.McpOut}
+
+law mail_disposition_plain_router_scoped_tools:
+  for +s: M.State
+  for +now: Nat
+  for +thread: String
+  for +models: J.Json
+  for +version: String
+  for +dir: J.Json
+  for +extra: List<&2, J.Json>
+  for +o: J.Json
+  {BHS.Bots.mcp.k(BHS.RPlain{}, s, now, thread, models, version, dir, extra, o) ==
+    MC.McpOut{BHS.Bots.list.plain.using(MC.Mcp.tools.for(s, thread), J.Json.get_obj(o, "id"),
+      BHS.Bots.order.tools(ORD.Order.enabled(M.Setting.get(s, "order.enabled", "off")), BHS.Bots.buy.is(s, thread))), H.Step.none(), ""} : MC.McpOut}
+
+# Human Mailroom access remains usable while agent routing is paused.
+law mail_ui_dispatch_available:
+  for +i: Nat
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +p: J.Json
+  {H.Mail.request.ui(i, s, now, client, id, p) == H.Mail.request.on(True{}, i, s, now, client, id, p) : H.Step}
+
+law mail_ui_body_read_available:
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +p: J.Json
+  {H.Mail.request.ui(1n, s, now, client, id, p) == H.Mail.read(s, now, client, id, p) : H.Step}
+
+law mail_ui_invalid_target_no_effect:
+  for +s: M.State
+  for +now: Nat
+  for +thread: String
+  for +p: J.Json
+  for +msg: String
+  {H.Mail.ui.send.valid(False{}, s, now, thread, p, msg) == H.Step.none() : H.Step}
+
+law mail_ui_owned_target_uses_mailbox:
+  for +s: M.State
+  for +now: Nat
+  for +thread: String
+  for +p: J.Json
+  for +msg: String
+  {H.Mail.ui.send.valid(True{}, s, now, thread, p, msg) == H.Mail.send.bot(BOT.World.is_bot_thread(M.State.bots(s), thread), True{}, s, now, "person", thread, p, msg) : H.Step}
+
+# Quiet human room mail preserves canonical history without waking members.
+law mail_room_invalid_request_is_error:
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +p: J.Json
+  {H.Mail.ui.request.valid(False{}, s, now, client, id, p) == H.Step.outs([H.Reply.err(client, id, "invalid mail target")]) : H.Step}
+
+law mail_room_invalid_room_is_error:
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +p: J.Json
+  for +r: BOT.Room
+  {BHS.Bots.mail.room.quiet.valid(False{}, s, now, client, id, p, r) == H.Step.outs([H.Reply.err(client, id, "invalid mail room")]) : H.Step}
+
+law mail_room_send_no_eager_events:
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +p: J.Json
+  for +room: String
+  for +subject: String
+  for +members: List<&2, String>
+  for +made: Nat
+  {H.Queue.changes(BHS.Bots.mail.room.quiet.valid(True{}, s, now, client, id, p, BOT.Room{room, subject, members, made, False{}})) == Nil{} : List<&2, M.Change>}
+
+law mail_room_set_updates_client_index:
+  for +u: U.Ui
+  for +room: String
+  for +name: String
+  for +members: String
+  for +at: Nat
+  {U.Mailv.index.update(M.RoomSet{room, name, members, at}, u) == U.Mailv.index.room(u, "room:" ++ room) : U.Ui}
+
+law mail_room_post_updates_client_index:
+  for +u: U.Ui
+  for +id: String
+  for +room: String
+  for +from: String
+  for +text: String
+  for +hop: Nat
+  for +at: Nat
+  {U.Mailv.index.update(M.RoomPosted{id, room, from, text, hop, at}, u) == U.Mailv.index.conv(u, "room:" ++ room) : U.Ui}
+
+law mail_room_post_affects_room_only:
+  for +id: String
+  for +room: String
+  for +from: String
+  for +text: String
+  for +hop: Nat
+  for +at: Nat
+  {U.Mailv.change_conv(M.RoomPosted{id, room, from, text, hop, at}) == "room:" ++ room : String}
+
+# A Room recipient is explicit and cannot alter ordinary target lists.
+law mail_room_target_nonroom_unchanged:
+  for +os: List<&2, MVW.Opt>
+  {U.Mailv.room.target.ref(None{}, os) == os : List<&2, MVW.Opt>}
+
+law mail_room_target_single_empty_option:
+  for +room: String
+  {U.Mailv.room.target.rows(Nil{}, room, False{}) == [MVW.Opt{room, "Room"}] : List<&2, MVW.Opt>}
+
+law mail_room_target_duplicate_dropped:
+  for +addr: String
+  for +label: String
+  for +rest: List<&2, MVW.Opt>
+  {U.Mailv.room.target.row(True{}, True{}, addr, label, rest) == rest : List<&2, MVW.Opt>}
+
+# Desktop Browser controls never publish private recorder or grant identities.
+law desktop_public_row_no_document:
+  for +row: J.Json
+  for index: Nat
+  {J.Json.get(DBBROKER.Broker.public_row(row, index), "documentNonce") == None{} : Maybe<&2, J.Json>}
+
+law desktop_public_row_no_lease:
+  for +row: J.Json
+  for index: Nat
+  {J.Json.get(DBBROKER.Broker.public_row(row, index), "controllerLease") == None{} : Maybe<&2, J.Json>}
+
+law desktop_public_row_no_capture:
+  for +row: J.Json
+  for index: Nat
+  {J.Json.get(DBBROKER.Broker.public_row(row, index), "captureRevision") == None{} : Maybe<&2, J.Json>}
+
+# Lost mandatory interception can retain safety close but no new code authority.
+law desktop_lost_guard_no_cdp:
+  for +b: DBBROKER.Broker
+  for +owner: String
+  {J.Json.get_obj(DBBROKER.Broker.target_payload_guard(True{}, b, owner), "cdpMethods") == J.Json.arr(Nil{}) : J.Json}
+
+law desktop_lost_guard_no_reinitialize:
+  for +b: DBBROKER.Broker
+  for +owner: String
+  {J.Json.get_obj(DBBROKER.Broker.target_payload_guard(True{}, b, owner), "initializationMethods") == J.Json.arr(Nil{}) : J.Json}
+
+law desktop_no_generic_file_assignment:
+  {DBGUI.Desktop.member(DBGUI.Desktop.methods(), "DOM.setFileInputFiles") == False{} : Bool}
+
+law desktop_no_public_interception_toggle:
+  {DBGUI.Desktop.member(DBGUI.Desktop.methods(), "Page.setInterceptFileChooserDialog") == False{} : Bool}
+
+law desktop_unknown_owner_has_no_drive:
+  for +drive: String
+  {DBGUI.Desktop.drive(False{}, drive) == "none" : String}
+
+# A desktop connection snapshots only the hub actor's current canonical identity.
+law desktop_connection_frame_bytes_unchanged:
+  for +text: String
+  for +version: String
+  for +hub: String
+  {MPCREDIT.Desktop.connection_info("frame", text, version, hub) == text : String}
+
+law desktop_connection_close_bytes_unchanged:
+  for +text: String
+  for +version: String
+  for +hub: String
+  {MPCREDIT.Desktop.connection_info("closed", text, version, hub) == text : String}
+
+# Presentation preferences never replace canonical state, bodies or writer credit.
+
+law presentation_state_kept:
+  for +u: U.Ui
+  for +p: J.Json
+  {U.Ui.state(PRESENTVIEW.Session.adopt(u, p)) == U.Ui.state(u) : M.State}
+
+law presentation_seq_kept:
+  for +u: U.Ui
+  for +p: J.Json
+  {U.Ui.seq(PRESENTVIEW.Session.adopt(u, p)) == U.Ui.seq(u) : Nat}
+
+law presentation_bodies_kept:
+  for +u: U.Ui
+  for +p: J.Json
+  {U.Mailv.cache(PRESENTVIEW.Session.adopt(u, p)) == U.Mailv.cache(u) : MVW.Cache}
+
+law presentation_history_generation_kept:
+  for +c: OB.Cr
+  for +at: Nat
+  for +more: Bool
+  for +rest: List<&2, String>
+  {OB.Cr.gen(PRESENTVIEW.Session.history_credit(c, at, more, rest)) == OB.Cr.gen(c) : U32}
+
+law presentation_history_room_kept:
+  for +c: OB.Cr
+  for +at: Nat
+  for +more: Bool
+  for +rest: List<&2, String>
+  {OB.Cr.room(PRESENTVIEW.Session.history_credit(c, at, more, rest)) == OB.Cr.room(c) : Bool}
+
+law presentation_history_over_kept:
+  for +c: OB.Cr
+  for +at: Nat
+  for +more: Bool
+  for +rest: List<&2, String>
+  {OB.Cr.over(PRESENTVIEW.Session.history_credit(c, at, more, rest)) == OB.Cr.over(c) : Bool}
+
+# Cache identity is readonly; unsupported methods and an empty secret stay closed.
+law cache_identity_post_refused:
+  for +hs: List<&2, HTTPAUTH.Header>
+  for +token: String
+  {AUTH.Auth.cache_request("POST", hs, token) == False{} : Bool}
+
+law cache_identity_empty_cookie:
+  for https: Bool
+  {AUTH.Auth.cache_cookie("", https) == "" : String}

@@ -3,6 +3,7 @@ import ./model.bend as M
 import ./mail.bend as ML
 import ./bot.bend as BT
 import ./json.bend as J
+import ./maildisposition.bend as MD
 
 # Shared lookup: runs use their owner's memory and prompt, never a FOH
 # session. Ordinary threads keep the pre-mail lookup.
@@ -76,6 +77,11 @@ def Run.asks(+xs: List<&2, M.Ask>) -> String:
 
 # 40k chars of fixed sections; bodies get 8k, newest first, then the
 # triggering mail. Each section's oldest entries are discarded first.
+def Run.disposition.got(r: Maybe<&2, ML.Run>, +s: M.State) -> String:
+  match r:
+    case None{}: ""
+    case Some{+r}: "Current actionable input: " ++ MD.Disposition.current(s, r) ++ "\nFor a routine status, duplicate notice, or already-known hold needing no new action, use mail_dispose(input, done/defer, reason). It acknowledges only that notice, never permission or completion of the underlying objective. For a local FYI reply use mode reply with text; pending/unknown is not delivery and must not be resent. Use reviewed decide/escalate/mail for substantive decisions, new actions or external targets. Reading mail or final response text is not a durable disposition. A newer incoming actionable input needs its own exact ID.\n"
+
 def Run.brief(+s: M.State, +bot: String, +conv: String) -> String:
   +c = ML.Box.conv(M.State.mail(s), conv)
   "<charter>\n" ++ ML.Box.charter(M.State.mail(s), bot) ++ "\n</charter>\n" ++
@@ -84,7 +90,8 @@ def Run.brief(+s: M.State, +bot: String, +conv: String) -> String:
   "<live_state>\n" ++ String.take(Run.asks(M.Asks.all(s)) ++ Run.state(List.reverse(&2, M.Thread, Run.threads(s))), 6000n) ++ "</live_state>\n" ++
   "<decisions>\n" ++ String.take(Run.decisions(ML.Box.decisions(M.State.mail(s), bot, 30n)), 6000n) ++ "</decisions>\n" ++
   "<conversation>\n" ++ conv ++ "\n" ++ ML.Conv.subject(c) ++ "\n" ++ String.join(ML.Conv.parts(c), ", ") ++ "\n</conversation>\n" ++
-  "You are " ++ BT.Bot.name(BT.World.bot(M.State.bots(s), bot)) ++ "'s mailroom for this conversation. Act within the charter. Record each decision with `decide`. Anything outside the charter: `escalate`. Reply in the conversation with `mail`. End your turn when done.\n"
+  "You are " ++ BT.Bot.name(BT.World.bot(M.State.bots(s), bot)) ++ "'s mailroom for this conversation. Act within the charter. Record each decision with `decide`. Anything outside the charter: `escalate`. Reply in the conversation with `mail`. End your turn when done.\n" ++
+  Run.disposition.got(ML.Box.run_of(M.State.mail(s), ML.Box.live(M.State.mail(s), bot, conv)), s)
 
 # Routing has one work action at most, irrespective of the mail source.
 type MailRunPlan is Data:

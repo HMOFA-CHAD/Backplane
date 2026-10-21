@@ -11,6 +11,10 @@ def yes(b: Bool) -> String:
 def hs(+origin: String, host: String, cookie: String) -> List<&2, H.Header>:
   [H.Header{"origin", origin}, H.Header{"host", host}, H.Header{"cookie", cookie}]
 
+def oauth(+host: String, +origin: String, +mode: String, +dest: String, proxy: String) -> List<&2, H.Header>:
+  [H.Header{"host", host}, H.Header{"origin", origin}, H.Header{"sec-fetch-site", "cross-site"},
+    H.Header{"sec-fetch-mode", mode}, H.Header{"sec-fetch-dest", dest}, H.Header{"tailscale-user-login", proxy}]
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("native loopback", yes(A.Auth.allowed(True{}, Nil{}, "/ws", "secret")), "yes")
@@ -55,3 +59,14 @@ def main() -> IO(Unit):
     C.Check.str("an MCP call with neither, from loopback: legacy", yes(A.Auth.mcp.legacy(True{}, [H.Header{"host", "127.0.0.1:3787"}], "/mcp/t1", "secret", "t1")), "yes")
     C.Check.str("a keyed MCP call: not legacy", yes(A.Auth.mcp.legacy(True{}, [H.Header{"host", "127.0.0.1:3787"}], "/mcp/t1?k=" ++ A.Auth.mcp.key("secret", "t1"), "secret", "t1")), "no")
     C.Check.str("no key without a token", yes(A.Auth.mcp(False{}, Nil{}, "/mcp/t1?k=" ++ A.Auth.mcp.key("", "t1"), "", "t1")), "no")
+    C.Check.str("Google cross-site document callback reaches state check", yes(A.Auth.oauth(True{}, oauth("127.0.0.1:3787", "", "navigate", "document", ""), "GET", "/oauth/google?state=pending&code=code", "secret")), "yes")
+    C.Check.str("Google callback keeps native compatibility", yes(A.Auth.oauth(True{}, hs("", "localhost:3787", ""), "GET", "/oauth/google?state=pending&code=code", "secret")), "yes")
+    C.Check.str("Google navigation does not authorize ordinary routes", yes(A.Auth.allowed(True{}, oauth("127.0.0.1:3787", "", "navigate", "document", ""), "/ws", "secret")), "no")
+    C.Check.str("Google gate is callback-only", yes(A.Auth.oauth(True{}, oauth("127.0.0.1:3787", "", "navigate", "document", ""), "GET", "/ws?token=secret", "secret")), "no")
+    C.Check.str("Google gate refuses POST", yes(A.Auth.oauth(True{}, oauth("127.0.0.1:3787", "", "navigate", "document", ""), "POST", "/oauth/google", "secret")), "no")
+    C.Check.str("Google gate refuses foreign Origin", yes(A.Auth.oauth(True{}, oauth("127.0.0.1:3787", "https://foreign.invalid", "navigate", "document", ""), "GET", "/oauth/google", "secret")), "no")
+    C.Check.str("Google gate refuses script fetch", yes(A.Auth.oauth(True{}, oauth("127.0.0.1:3787", "", "cors", "empty", ""), "GET", "/oauth/google", "secret")), "no")
+    C.Check.str("Google gate refuses iframe navigation", yes(A.Auth.oauth(True{}, oauth("127.0.0.1:3787", "", "navigate", "iframe", ""), "GET", "/oauth/google", "secret")), "no")
+    C.Check.str("Google gate refuses rebound Host", yes(A.Auth.oauth(True{}, oauth("foreign.invalid", "", "navigate", "document", ""), "GET", "/oauth/google", "secret")), "no")
+    C.Check.str("Google gate refuses proxy identity", yes(A.Auth.oauth(True{}, oauth("127.0.0.1:3787", "", "navigate", "document", "person"), "GET", "/oauth/google", "secret")), "no")
+    C.Check.str("Google gate requires loopback connection", yes(A.Auth.oauth(False{}, oauth("127.0.0.1:3787", "", "navigate", "document", ""), "GET", "/oauth/google", "secret")), "no")

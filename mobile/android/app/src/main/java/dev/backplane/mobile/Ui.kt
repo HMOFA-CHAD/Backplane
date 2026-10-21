@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -198,6 +199,14 @@ private fun OpeningDestination(m: AppModel, s: Screen, o: Core.Opening) {
 
 @Composable
 fun App(m: AppModel) {
+    Column(Modifier.fillMaxSize()) {
+        ViewStartupBanner(m)
+        Box(Modifier.weight(1f)) { AppContent(m) }
+    }
+}
+
+@Composable
+private fun AppContent(m: AppModel) {
     var pairing by rememberSaveable { mutableStateOf(false) }
     val s = m.screen
     // New Thread's page, left with Back before the hub made the thread
@@ -813,6 +822,11 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
     val lang = s.locale
     val snacks = remember { SnackbarHostState() }
     val list = rememberLazyListState()
+    val userDragging by list.interactionSource.collectIsDraggedAsState()
+    var pageAcceptedForDrag by remember(t.id) { mutableStateOf(true) }
+    LaunchedEffect(userDragging) {
+        if (userDragging) pageAcceptedForDrag = false
+    }
     var menu by remember { mutableStateOf(false) }
     // the subagents sheet (the top bar's button) is up
     var subs by remember { mutableStateOf(false) }
@@ -829,7 +843,7 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
     }
     Errors(m, s, snacks)
     val count = (if (t.parent != null) 1 else 0) +
-        (if (t.earlier > 0) 1 else 0) + t.entries.size + t.sending.size + (if (t.live.isNotEmpty() || t.working.isNotEmpty()) 1 else 0)
+        (if (t.earlier > 0) 1 else 0) + t.entries.size + t.sending.size + (if (t.live.isNotEmpty() || t.livePartial != null || t.working.isNotEmpty()) 1 else 0)
     LaunchedEffect(t.id, m.scrolls) { if (count > 0) list.scrollToItem(count - 1) }
     // earlier entries shown: the view goes back to the entry that was first
     var keepAt by remember { mutableStateOf<String?>(null) }
@@ -1017,8 +1031,8 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                         // a long press sends with the other follow-up mode (queue or steer);
                         // while a turn runs with nothing typed the button stops it
                         val stop = t.sendAct == "interrupt" && m.composer.isBlank()
-                        Box(Modifier.size(48.dp).combinedClickableCompat(onLong = { if (m.composer.isNotBlank()) m.act("send-alt") }) {
-                            if (stop) m.act("interrupt") else if (m.composer.isNotBlank()) m.act("send")
+                        Box(Modifier.size(48.dp).combinedClickableCompat(onLong = { if (m.contentReady && m.composer.isNotBlank()) m.act("send-alt") }) {
+                            if (m.contentReady) { if (stop) m.act("interrupt") else if (m.composer.isNotBlank()) m.act("send") }
                         }, contentAlignment = Alignment.Center) {
                             if (stop) Icon(Icons.Filled.Stop, t.send, tint = MaterialTheme.colorScheme.error)
                             else Icon(Icons.AutoMirrored.Filled.Send, t.send,
@@ -1041,8 +1055,11 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
             // the next is asked for when the person scrolls on)
             if (t.earlier > 0) item(key = "earlier:" + (t.entries.firstOrNull()?.id ?: "") + ":" + t.earlier) {
                 // only when the person scrolls here (not as the list opens)
-                LaunchedEffect(Unit) {
-                    snapshotFlow { list.isScrollInProgress }.first { it }
+                LaunchedEffect(m.contentReady, s.hub, t.id) {
+                    // Programmatic startup/jump scrolling also sets
+                    // isScrollInProgress; only a person's drag requests data.
+                    snapshotFlow { userDragging && !pageAcceptedForDrag && m.contentReady && m.screen?.hub == s.hub && m.screen?.thread?.id == t.id }.first { it }
+                    pageAcceptedForDrag = true
                     keepAt = t.entries.firstOrNull()?.id; m.act("earlier", "")
                 }
                 Spacer(Modifier.size(1.dp))
@@ -1050,20 +1067,27 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
             items(t.entries, key = { it.id }) { e ->
                 val on = lit == e.id
                 val tint by animateFloatAsState(if (on) 0.18f else 0f, tween(if (on) 150 else 2000), label = "jump")
-                Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primary.copy(alpha = tint))) {
+                Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primary.copy(alpha = tint))) {
                     if (e.kind == "emb") EmbRow(m, e, t.embs.firstOrNull { it.key == e.key })
                     else EntryRow(m, e) { u -> shown = u }
+                    e.partial?.let { PartialMessageFooter(m, s.hub, t.id, e.id, it) }
                 }
             }
             itemsIndexed(t.sending, key = { i, _ -> "sending:$i" }) { _, text -> SendingView(text) }
-            if (t.live.isNotEmpty()) item(key = "live") { Markdown(t.live) }
+            if (t.live.isNotEmpty()) item(key = "live") {
+                Column {
+                    Markdown(t.live)
+                    t.livePartial?.let { PartialMessageFooter(m, s.hub, t.id, it.id, it, live = true) }
+                }
+            }
+            else if (t.livePartial != null) item(key = "live") { PartialMessageFooter(m, s.hub, t.id, t.livePartial.id, t.livePartial, live = true) }
             else if (t.working.isNotEmpty()) item(key = "live") {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (t.state != "run") StatusDot(t.state, t.phase)
+                        StatusDot(t.state, t.phase)
                         Text(t.working, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.outline)
                     }
-                    if (t.state == "run") LinearProgressIndicator(Modifier.width(120.dp), color = PhaseColor.accent)
+                    if (t.phase == "active") LinearProgressIndicator(Modifier.width(120.dp), color = PhaseColor.ok)
                 }
             }
         }

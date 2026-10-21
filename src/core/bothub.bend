@@ -751,17 +751,29 @@ def Bots.mail.room.send(+s: M.State, +now: Nat, +from: String, +p: J.Json) -> B.
   B.Mail.options(Bots.post(s, now, Bool.pick(String, String.eq(from, "person"), "", from), B.Mail.name(s, Bool.pick(String, String.eq(from, "person"), "person", B.Mail.addr(s, from))),
     Bool.pick(String, String.eq(from, "person"), "", MC.Mcp.mail.scope(s, from)), BT.World.room(M.State.bots(s), Bots.mail.room.id(p)), J.Json.get_str(p, "text", ""), 0n), s, p)
 
+# Human room mail is a durable mailbox append only. Bots.post also fans
+# out to local/remote members and is deliberately not used by this route.
+def Bots.mail.room.quiet.valid(valid: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, r: BT.Room) -> B.Step:
+  match valid r:
+    case False{} _: B.Step.outs([B.Reply.err(client, id, "invalid mail room")])
+    case True{} BT.Room{+room, subject, members, _, _}:
+      B.Step.before(Nil{}, [B.Reply.ok(client, id)], B.Mail.room.file(s, now, "person", room, J.Json.get_str(p, "text", ""), B.Hub.id("mail", now, B.Hub.seq(s)), ML.Parts.add(M.MailRoom.parts(members), "person"), subject))
+
+def Bots.mail.room.quiet(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> B.Step:
+  +room = BT.World.room(M.State.bots(s), Bots.mail.room.id(p))
+  Bots.mail.room.quiet.valid(BT.Room.live(room), s, now, client, id, p, room)
+
 def Bots.mail.rpc(+room: Bool, +s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
   match room:
     case False{}: Bots.hub.k(Bool.and(String.eq(J.Json.get_str(o, "m", ""), "turn.start"), RF.Refs.maybe(J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""))), s, now, client, o)
-    case True{}: B.Step.before(Nil{}, [B.Reply.ok(client, J.Json.as_raw(J.Json.get(o, "id"), "0"))], Bots.mail.room.send(s, now, "person", J.Json.get_obj(o, "p")))
+    case True{}: Bots.mail.room.quiet(s, now, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), J.Json.get_obj(o, "p"))
 
 def Bots.hub.l(ledger: Bool, +s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
   match ledger:
     case True{}:
       LG.Ledger.request(s, now, client, o)
     case False{}:
-      Bots.ub(Bots.mail.rpc(Bool.and(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), Bool.and(String.eq(J.Json.get_str(o, "m", ""), "mail.send"), Bool.not(String.is_empty(Bots.mail.room.id(J.Json.get_obj(o, "p")))))), s, now, client, o), s, now)
+      Bots.ub(Bots.mail.rpc(Bool.and(String.eq(J.Json.get_str(o, "m", ""), "mail.send"), Bool.not(String.is_empty(Bots.mail.room.id(J.Json.get_obj(o, "p"))))), s, now, client, o), s, now)
 
 def Bots.hub(+s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
   Bots.hub.l(LG.Ledger.method(J.Json.get_str(o, "m", "")), s, now, client, o)
@@ -2703,13 +2715,13 @@ def Bots.mcp.ub(o: MC.McpOut, +s: M.State, +now: Nat) -> MC.McpOut:
 def Bots.mcp.k(r: Route, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +version: String, +dir: J.Json, +extra: List<&2, J.Json>, +o: J.Json) -> MC.McpOut:
   match r:
     case RList{}:
-      MC.McpOut{Bots.list.using(MC.Mcp.tools.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on")), J.Json.get_obj(o, "id"), extra), B.Step.none(), ""}
+      MC.McpOut{Bots.list.using(MC.Mcp.tools.for(s, thread), J.Json.get_obj(o, "id"), extra), B.Step.none(), ""}
     case RCall{}:
       Bots.mcp.ub(Bots.call(s, now, dir, thread, J.Json.get_obj(o, "id"), J.Json.get_obj(o, "params")), s, now)
     case RLedger{}:
       LG.Ledger.call(s, now, thread, J.Json.get_obj(o, "id"), J.Json.get_obj(o, "params"))
     case RPlain{}:
-      MC.McpOut{Bots.list.plain.using(MC.Mcp.tools.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on")), J.Json.get_obj(o, "id"),
+      MC.McpOut{Bots.list.plain.using(MC.Mcp.tools.for(s, thread), J.Json.get_obj(o, "id"),
         Bots.order.tools(OR.Order.enabled(M.Setting.get(s, "order.enabled", "off")), Bots.buy.is(s, thread))), B.Step.none(), ""}
     case RPass{}:
       MC.Mcp.handle(s, now, thread, models, version, o)

@@ -165,6 +165,10 @@ struct BotScreen: View {
     var cachedThread: ThreadView?
     var cachedPlane: PlaneModel?
 
+    private var mailWaiting: Bool {
+        MailroomAction.waiting(live: live, contentReady: model.contentReady, loading: bot.mailroomLoading == true)
+    }
+
     var body: some View {
         content
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -173,9 +177,12 @@ struct BotScreen: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 0) {
                             ForEach(bot.tabs ?? [], id: \.id) { t in
-                                let on = t.id == bot.tab
+                                let on = t.id == (bot.navTab ?? bot.tab)
                                 Button { model.act("bot-tab", t.id) } label: {
-                                    Text(t.label)
+                                    HStack(spacing: 4) {
+                                        Text(t.label)
+                                        if t.id == "mail", mailWaiting { ProgressView().controlSize(.mini) }
+                                    }
                                         .font(.subheadline.weight(on ? .semibold : .regular))
                                         .padding(.horizontal, 12).padding(.vertical, 8)
                                         .overlay(alignment: .bottom) {
@@ -183,19 +190,55 @@ struct BotScreen: View {
                                         }
                                 }
                                 .foregroundStyle(on ? .primary : .secondary)
+                                .disabled(t.id == "mail" && mailWaiting)
+                                .accessibilityIdentifier("bot.tab." + t.id)
                             }
                         }
                         .padding(.horizontal, 4)
+                    }
+                    if let sections = bot.subtabs, !sections.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 0) {
+                                ForEach(sections, id: \.id) { t in
+                                    let on = t.id == bot.tab
+                                    Button { model.act("bot-tab", t.id) } label: {
+                                        Text(t.label)
+                                            .font(.subheadline.weight(on ? .semibold : .regular))
+                                            .padding(.horizontal, 12).padding(.vertical, 8)
+                                    }
+                                    .foregroundStyle(on ? .primary : .secondary)
+                                    .disabled(t.id == "mail" && mailWaiting)
+                                    .accessibilityIdentifier("bot.section." + t.id)
+                                }
+                            }.padding(.horizontal, 4)
+                        }
                     }
                     Divider()
                 }
                 .padding(.top, 8)
                 .background(.bar)
             }
+            .toolbar {
+                if model.mailroomReturn != nil, bot.tab != "chat" {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { model.backToMailroom() } label: {
+                            Label(NativeMessages.native_mailroom_title(model.screen?.locale ?? "en"), systemImage: "chevron.left")
+                        }.accessibilityIdentifier("mailroom.return")
+                    }
+                }
+            }
     }
 
     @ViewBuilder private var content: some View {
         switch bot.tab ?? "chat" {
+        case "mail":
+            if let mailroom = bot.mailroom {
+                MailroomScreen(model: model, mailroom: mailroom)
+                    .navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
+            } else {
+                ProgressView(NativeMessages.viewer_loading(model.screen?.locale ?? "en"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         case "status":
             StatusTab(model: model, plane: live ? model.screen.flatMap { model.plane($0) } : cachedPlane).navigationTitle(bot.name).navigationBarTitleDisplayMode(.inline)
         case "space":

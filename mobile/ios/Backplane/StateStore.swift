@@ -7,27 +7,33 @@ import Foundation
 // scripts/state-key.py): a new build with the same types keeps it, one
 // with other types starts afresh rather than load a state it may not read.
 // A bridge.js without the key names it by its whole text.
-struct StateStore {
+struct StateStore: Sendable {
     private let dir: URL
     private let name: String
 
     init() {
         dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let src = (try? Data(contentsOf: Bundle.main.url(forResource: "bridge", withExtension: "js")!)) ?? Data()
-        if let key = StateStore.key(src) {
+        let source = Bundle.main.url(forResource: "bridge", withExtension: "js")!
+        let handle = try? FileHandle(forReadingFrom: source)
+        let end = (try? handle?.seekToEnd()) ?? 0
+        try? handle?.seek(toOffset: end > 256 ? end - 256 : 0)
+        let tail = (try? handle?.readToEnd()) ?? Data()
+        try? handle?.close()
+        if let key = StateStore.key(tail) {
             name = "state-\(key).json"
         } else {
             var h: UInt64 = 1469598103934665603
-            for b in src { h = (h ^ UInt64(b)) &* 1099511628211 }
+            let sourceBytes = (try? Data(contentsOf: source)) ?? Data()
+            for b in sourceBytes { h = (h ^ UInt64(b)) &* 1099511628211 }
             name = String(format: "state-%016llx.json", h)
         }
-        // states kept by earlier builds, and the frame logs of an older one
-        let fm = FileManager.default
-        for f in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] where f.hasPrefix("state-") && f != name {
-            try? fm.removeItem(at: dir.appendingPathComponent(f))
+        // Preserve incompatible state files until the replacement is safely
+        // written. A schema change must not erase the previous cache at launch.
+        if !FileManager.default.fileExists(atPath: dir.appendingPathComponent(name).path),
+           ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).contains(where: { $0.hasPrefix("state-") && $0 != name }) {
+            NSLog("Backplane state-cache miss_type_key")
         }
-        try? fm.removeItem(at: dir.appendingPathComponent("logs"))
     }
 
     // the key bridge.js ends with (globalThis.BackplaneStateKey = "…")
@@ -39,7 +45,7 @@ struct StateStore {
     }
 
     func load() -> String? {
-        guard let t = try? String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8), !t.isEmpty else { return nil }
+        guard let t = try? String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8), !t.isEmpty else { NSLog("Backplane state-cache miss_absent_or_io"); return nil }
         return t
     }
 

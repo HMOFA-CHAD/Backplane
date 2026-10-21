@@ -1,16 +1,20 @@
 import Base
+import ../core/textscale.bend as TS
+import ../core/codec.bend as C
 import ../core/title.bend as TTL
 import ../core/msgs.bend as MSG
 import ../core/kexport.bend as KEX
 import ../core/json.bend as J
 import ../core/kihealth.bend as KH
 import ../core/model.bend as M
+import ../core/signal.bend as SG
 import ../core/i18n.bend as I
 import ./dom.bend as D
 import ./icon.bend as WI
 import ../core/tools.bend as TO
 import ../core/client.bend as U
 import ../core/usage.bend as UZ
+import ../core/usage_page.bend as UP
 import ../core/attach.bend as AT
 import ../core/vt.bend as VT
 import ../core/diff.bend as DF
@@ -185,9 +189,14 @@ def View.txt(ns: List<&2, D.Node>) -> String:
     case _:
       ""
 
+# A shape and a textual status keep activity accessible without colour.
+def View.dot(+lc: I.Loc, +name: String) -> D.Node:
+  D.El{"span", "", [D.At{"class", "dot " ++ name}, D.At{"role", "img"},
+    D.At{"aria-label", SG.Signal.label.loc(lc, name)}, D.At{"title", SG.Signal.label.loc(lc, name)}], Nil{}}
+
 def View.row.k.loc(+lc: I.Loc, +id: String, +title: String, +ago: String, +badge: String, +dot: String, +sel: String, +movable: Bool) -> D.Node:
   D.El{"div", id, [D.At{"class", Bool.pick(String, String.eq(id, sel), "thread on", "thread")}, D.At{"data-value", id}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
-    D.Dom.cat([D.Dom.span("dot " ++ dot, ""), D.Dom.span("title", title)],
+    D.Dom.cat([View.dot(lc, dot), D.Dom.span("title", title)],
       D.Dom.cat(Bool.pick(List<&2, D.Node>, movable, [D.El{"span", "", [D.At{"class", "moves"}], [D.Dom.button("move", "move", id ++ "|up", MSG.T.sidebar.move.up(lc), "↑"), D.Dom.button("move", "move", id ++ "|down", MSG.T.sidebar.move.down(lc), "↓")]}], Nil{}),
         [View.note(badge, ago)]))}
 
@@ -205,7 +214,7 @@ def View.row.m(+id: String, +title: String, +ago: String, +badge: String, +dot: 
 def View.row(+lc: I.Loc, +t: M.Thread, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> D.Node:
   match t:
     case M.Thread{+id, _, +title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      View.row.m.loc(lc, id, U.Label.title(st, id, TTL.Title.shown(lc, title)), Bool.pick(String, snoozed, I.I18n.ago(lc, U.Side.until(st, id), now), I.I18n.ago(lc, now, a)), View.sub.badge(lc, SB.Subs.count.ix(ix, st, id)), M.Phase.name(U.Side.phase.ix(ix, st, t)), sel, movable)
+      View.row.m.loc(lc, id, U.Label.title(st, id, TTL.Title.shown(lc, title)), Bool.pick(String, snoozed, I.I18n.ago(lc, U.Side.until(st, id), now), I.I18n.ago(lc, now, a)), View.sub.badge(lc, SB.Subs.count.ix(ix, st, id)), SG.Signal.name(U.Side.signal.ix(ix, t)), sel, movable)
 
 def View.rows_in(+lc: I.Loc, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> List<&2, D.Node>:
   match ts:
@@ -335,7 +344,7 @@ def View.arow(+lc: I.Loc, r: U.ARow, +ix: U.SIx, +st: M.State, +sel: String) -> 
     case U.ARow{_, _, +t, +pid, +pt, +faded}:
       D.El{"div", M.Thread.id(t), [D.At{"class", Bool.pick(String, String.eq(M.Thread.id(t), sel), "thread on", Bool.pick(String, faded, "thread faded", "thread"))},
           D.At{"style", "--tint:" ++ BG.Badge.css_of(st, pid)}, D.At{"data-value", M.Thread.id(t)}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
-        [D.Dom.span("dot " ++ M.Phase.name(U.Side.phase.ix(ix, st, t)), ""), D.Dom.span("title", U.Label.title(st, M.Thread.id(t), TTL.Title.shown(lc, U.Active.title(t)))), View.note(View.sub.badge(lc, SB.Subs.count.ix(ix, st, M.Thread.id(t))), pt)]}
+        [View.dot(lc, SG.Signal.name(U.Side.signal.ix(ix, t))), D.Dom.span("title", U.Label.title(st, M.Thread.id(t), TTL.Title.shown(lc, U.Active.title(t)))), View.note(View.sub.badge(lc, SB.Subs.count.ix(ix, st, M.Thread.id(t))), pt)]}
 
 def View.arows(+lc: I.Loc, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
@@ -463,6 +472,7 @@ def View.sidebar.k(+lc: I.Loc, +ms: List<&2, U.MRow>, +ix: U.SIx, +st: M.State, 
         D.Dom.cat([D.El{"div", "", [D.At{"class", "brand"}], [
             D.Dom.span(Bool.pick(String, on, "conn on", "conn"), ""),
             D.Dom.span("name", "Backplane"), D.Dom.span("ver", v),
+            WI.WIcon.button("icon", "thin-search-open", "", "Search conversations", "search", 16, ""),
             WI.WIcon.button("icon", "proj-open", "", MSG.T.sidebar.add.project(lc), "plus", 16, "")]}],
           D.Dom.cat(uber, D.Dom.cat(View.add.loc(lc, adding), D.Dom.cat(View.find.loc(lc, String.eq(U.Side.view(st), "active"), q),
             D.Dom.cat(View.list(lc, String.eq(U.Side.view(st), "active"), q, open, ix, st, sel, now, look, rm), D.Dom.cat(bots, D.Dom.cat(View.rmenu(mi),
@@ -477,7 +487,7 @@ def View.sidebar.w(+lc: I.Loc, bots: List<&2, D.Node>, uber: List<&2, D.Node>, m
 # the sidebar's index (Side.ix: every thread and ask of the state) is made
 # once a frame, for the list and the uberbot's counts both
 def View.sidebar.x(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +ix: U.SIx) -> D.Node:
-  View.sidebar.w(lc, bots, WB.WB.uber(lc, u, ix), U.Machines.rows.loc(lc, u), U.Menu.items.loc(lc, u, True{}), ix, u)
+  View.sidebar.w(lc, bots, WB.WB.uber(lc, u, U.Side.signals.ix(ix, u)), U.Machines.rows.loc(lc, u), U.Menu.items.loc(lc, u, True{}), U.Side.signals.ix(ix, u), u)
 
 def View.sidebar.u(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui) -> D.Node:
   View.sidebar.x(lc, bots, u, U.Side.ix(U.Ui.state(u)))
@@ -554,6 +564,17 @@ def View.live.k.loc(+lc: I.Loc, empty: Bool, +ph: M.Phase, text: String, +key: S
 def View.live.k(empty: Bool, +ph: M.Phase, text: String, +key: String) -> List<&2, D.Node>:
   View.live.k.loc(I.En{}, empty, ph, text, key)
 
+def View.signal.live.loc(+lc: I.Loc, empty: Bool, +signal: Nat, text: String, +key: String) -> List<&2, D.Node>:
+  match empty:
+    case False{}:
+      [View.memo.loc(lc, key, [D.At{"fn", "live"}], text)]
+    case True{}:
+      [D.El{"div", key, [D.At{"class", "phase " ++ SG.Signal.name(signal)}],
+        [View.dot(lc, SG.Signal.name(signal)), D.Txt{SG.Signal.label(lc, signal)}]}]
+
+def View.signal.of.loc(+lc: I.Loc, +info: Map<&2, String>, +live: Map<&2, String>, +id: String) -> List<&2, D.Node>:
+  View.signal.live.loc(lc, String.is_empty(U.Str.get(live, id)), SG.Signal.cached(info, id), U.Str.get(live, id), "live:" ++ id)
+
 def View.live.of.loc(+lc: I.Loc, +st: M.State, +live: Map<&2, String>, +id: String) -> List<&2, D.Node>:
   View.live.k.loc(lc, String.is_empty(U.Str.get(live, id)), U.Side.phase(st, U.Ui.thread(st, id)), U.Str.get(live, id), "live:" ++ id)
 
@@ -569,10 +590,24 @@ def View.one(ns: List<&2, D.Node>) -> D.Node:
 
 # the selected thread's live row alone (app.bend's live: host.js redraws
 # it in place for a delta)
-def View.live.u.loc(+lc: I.Loc, u: U.Ui) -> D.Node:
+def View.live.signal.u.loc(+lc: I.Loc, u: U.Ui) -> D.Node:
   match u:
-    case U.Ui{+st, +sel, _, +live, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      View.one(View.live.of.loc(lc, st, live, sel))
+    case U.Ui{_, +sel, _, +live, _, _, _, _, _, _, _, _, _, _, +nf, _, _}:
+      View.one(View.signal.of.loc(lc, nf, live, sel))
+
+# Text deltas keep the existing incremental memo path. Derive activity only
+# when the live row actually needs to display a status.
+def View.live.u.chosen(+lc: I.Loc, empty: Bool, u: U.Ui, +sel: String, +live: Map<&2, String>) -> D.Node:
+  match empty:
+    case False{}:
+      View.memo.loc(lc, "live:" ++ sel, [D.At{"fn", "live"}], U.Str.get(live, sel))
+    case True{}:
+      View.live.signal.u.loc(lc, U.Side.with_signals(u))
+
+def View.live.u.loc(+lc: I.Loc, +u: U.Ui) -> D.Node:
+  match u:
+    case U.Ui{_, +sel, _, +live, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      View.live.u.chosen(lc, String.is_empty(U.Str.get(live, sel)), u, sel, live)
 
 def View.live.u(u: U.Ui) -> D.Node:
   View.live.u.loc(I.En{}, u)
@@ -768,13 +803,24 @@ def View.sub.stop.loc(+lc: I.Loc, +act: String, +key: String) -> List<&2, D.Node
 def View.sub.stop(+act: String, +key: String) -> List<&2, D.Node>:
   View.sub.stop.loc(I.En{}, act, key)
 
-def View.sub.k(+lc: I.Loc, r: SB.SubRow, +act: String) -> D.Node:
+def View.sub.signal.k(+lc: I.Loc, r: SB.SubRow, +act: String, +signal: String) -> D.Node:
   match r:
     case SB.SubRow{+key, +agent, +title, +who, +word, +doing, +live, +open, _, ss}:
-      D.El{"div", key, [D.At{"class", "sub " ++ word ++ Bool.pick(String, live, " live", "")}],
+      D.El{"div", key, [D.At{"class", "sub sub-signal-" ++ signal ++ " " ++ word ++ Bool.pick(String, String.eq(signal, "active"), " live", "")}],
         D.Dom.cat([D.El{"div", "", List.append(&2, D.Attr, [D.At{"class", "sub-row"}], View.sub.act(agent, open, key)),
-          [D.Dom.span("state-dot", ""), D.Dom.span("who", Bool.pick(String, agent, Bool.pick(String, open, "▾", "▸"), who)), D.Dom.span("title", TTL.Title.shown(lc, title)), D.Dom.span("state", U.StateWord.label(lc, word))]}],
+          [View.dot(lc, signal), D.Dom.span("who", Bool.pick(String, agent, Bool.pick(String, open, "▾", "▸"), who)), D.Dom.span("title", TTL.Title.shown(lc, title)), D.Dom.span("state", U.StateWord.label(lc, word))]}],
           D.Dom.cat(View.sub.stop.loc(lc, act, key), D.Dom.cat(D.Dom.when(Bool.not(String.is_empty(doing)), D.Dom.span("doing", doing)), View.sub.steps(ss))))}
+
+def View.sub.k(+lc: I.Loc, +r: SB.SubRow, +act: String) -> D.Node:
+  View.sub.signal.k(lc, r, act, SB.Subs.signal(r))
+
+def View.sub.signals(+lc: I.Loc, +r: SB.SubRow, +info: Map<&2, String>) -> D.Node:
+  View.sub.signal.k(lc, r, SB.Subs.cancel(r), SB.Subs.signal.of(info, r))
+
+def View.subs.signals.go(+lc: I.Loc, rs: List<&2, SB.SubRow>, +info: Map<&2, String>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}: Nil{}
+    case r <> rest: View.sub.signals(lc, r, info) <> View.subs.signals.go(lc, rest, info)
 
 def View.sub(+lc: I.Loc, +r: SB.SubRow) -> D.Node:
   View.sub.k(lc, r, SB.Subs.cancel(r))
@@ -794,9 +840,18 @@ def View.subs.k(+lc: I.Loc, +busy: String, +open: Bool, +th: String, +rs: List<&
       MSG.T.subagents.heading(lc, View.sub.panel(lc, rs)), Bool.pick(String, open, "chevron-down", "chevron-right"), 14)
       <> View.subs.go(lc, SB.Subs.panel.rows(open, rs))}
 
+def View.sub.signal.panel(+lc: I.Loc, +rs: List<&2, SB.SubRow>, +info: Map<&2, String>) -> String:
+  MSG.T.subagents.panel(lc, View.sub.count(SB.Subs.waiting(rs)), View.sub.count(SB.Subs.active(rs, info)), Nat.show(SB.Subs.finished_n(rs)))
+
+def View.subs.signal.k(+lc: I.Loc, +busy: String, +open: Bool, +th: String, +rs: List<&2, SB.SubRow>, +info: Map<&2, String>) -> D.Node:
+  D.El{"div", "subs", [D.At{"class", "subs" ++ Bool.pick(String, String.is_empty(busy), "", " busy") ++ Bool.pick(String, open, "", " shut")}],
+    WI.WIcon.after("subs-head", SB.Subs.panel.action(open), SB.Subs.panel.ask(open, th, rs), Bool.pick(String, open, MSG.T.subagents.hide(lc), MSG.T.subagents.show(lc)),
+      MSG.T.subagents.heading(lc, View.sub.signal.panel(lc, rs, info)), Bool.pick(String, open, "chevron-down", "chevron-right"), 14)
+      <> View.subs.signals.go(lc, SB.Subs.panel.rows(open, rs), info)}
+
 def View.subs(+lc: I.Loc, +info: Map<&2, String>, +th: String, +rs: List<&2, SB.SubRow>) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, List.is_empty(&2, SB.SubRow, rs), Nil{},
-    [View.subs.k(lc, View.sub.busy(lc, SB.Subs.live(rs)), SB.Subs.panel.open(info, th, rs), th, rs)])
+    [View.subs.signal.k(lc, View.sub.busy(lc, SB.Subs.active(rs, info)), SB.Subs.panel.open(info, th, rs), th, rs, info)])
 
 def View.parent(+st: M.State, +thread: String, +p: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, String.is_empty(p), Nil{},
@@ -1152,6 +1207,23 @@ def View.usage.rows.loc(+lc: I.Loc, rs: List<&2, UZ.URow>) -> List<&2, D.Node>:
 def View.usage.rows(rs: List<&2, UZ.URow>) -> List<&2, D.Node>:
   View.usage.rows.loc(I.En{}, rs)
 
+def View.usage.controls(cs: List<&2, UP.UpControl>) -> List<&2, D.Node>:
+  match cs:
+    case Nil{}: Nil{}
+    case UP.UpControl{+label, action, value, on} <> rest:
+      D.Dom.button(Bool.pick(String, on, "on", ""), action, value, label, label) <> View.usage.controls(rest)
+
+def View.usage.pagers(cs: List<&2, UP.UpControl>) -> List<&2, D.Node>:
+  match cs:
+    case Nil{}: Nil{}
+    case +h <> +rest: [View.setrow("Breakdown pages", "", View.usage.controls(h <> rest))]
+
+def View.usage.page(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
+  +cs = U.Usage.page.controls(u)
+  List.concat(&2, D.Node, [[View.setrow("Period", "UTC calendar boundaries", View.usage.controls(List.take(&2, UP.UpControl, cs, 2n))),
+    View.setrow("View", "", View.usage.controls(List.take(&2, UP.UpControl, List.drop(&2, UP.UpControl, cs, 2n), 3n)))],
+    View.usage.rows.loc(lc, U.Usage.page.rows(u)), View.usage.pagers(List.drop(&2, UP.UpControl, cs, 5n))])
+
 def View.tz.set(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
   [View.setrow(MSG.T.settings.zone(lc), U.Tzs.line.loc(lc, u),
     [WB.WB.input("tzname", "tzname", U.Ui.scratch(u, "@f.tzname"), "Europe/Helsinki", "tz-set"), D.Dom.button("primary", "tz-set", "", MSG.T.settings.tz.choose(lc), MSG.T.common.set(lc)),
@@ -1242,37 +1314,76 @@ def View.lang.loc(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
 def View.lang(+u: U.Ui) -> List<&2, D.Node>:
   View.lang.loc(U.Lang.loc(u), u)
 
-def View.settings.loc(+lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:
-  +prov = M.Setting.get(st, "agent.provider", "claude")
-  +ipc = M.Setting.get(st, "kicad.ipc", "on")
-  D.El{"main", "settings", [D.At{"class", "settings-view"}], [
-    D.El{"header", "", [D.At{"class", "thread-head"}], [D.Dom.span("title", MSG.T.palette.settings(lc)), D.Dom.span("meta", ""), D.Dom.button("", "flag", "settings", MSG.T.settings.close(lc), MSG.T.common.close(lc))]},
-    D.El{"div", "", [D.At{"class", "settings"}], List.concat(&2, D.Node, [[
-      View.setrow(MSG.T.settings.settle(lc), MSG.T.settings.settle.note(lc), View.days.loc(lc, M.Setting.get(st, "settle.days", "3"))),
-      View.setrow(MSG.T.settings.restart(lc), MSG.T.settings.restart.note(lc), View.chips.loc(lc, ["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"))],
-      View.notify(lc, st), View.agy.rows(U.Fallbackv.rows(u)),
-      [View.setrow(MSG.T.settings.provider(lc), MSG.T.settings.agents.note(lc, Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), MSG.T.settings.provider.missing(lc, prov), U.Models.cli(U.Str.get(nf, "models"), prov))), View.chips.loc(lc, ["claude", "codex", "grok", "muse", "antigravity", "opencode"], prov, "agent.provider")),
-      View.setrow(MSG.T.settings.model(lc), Bool.pick(String, String.is_empty(M.Setting.get(st, "agent.model", "")), MSG.T.common.default(lc), M.Setting.get(st, "agent.model", "")) ++ ": " ++ U.Models.label_of(U.Models.of(nf, prov), prov, M.Setting.get(st, "agent.model", "")),
-        D.Dom.cat(View.menu.find(lc, U.Models.search(U.Models.menu(U.Models.of(nf, prov), prov)), U.Ui.scratch(u, "@f.mq")),
-          View.chips.loc(lc, U.Models.settings(U.Models.of(nf, prov), prov, U.Ui.scratch(u, "@f.mq"), M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", ""), "agent.model"))),
-      View.setrow(MSG.T.settings.writing.provider(lc), MSG.T.web.settings.writing.note(lc), View.chips.loc(lc, ["claude", "codex", "grok", "muse"], U.TextGen.provider(st), "text.provider")),
-      View.setrow(MSG.T.web.settings.writing.model(lc), Bool.pick(String, String.is_empty(U.TextGen.model(st)), MSG.T.common.default(lc), U.TextGen.model(st)) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), U.TextGen.provider(st), U.TextGen.model(st)),
-        View.chips.loc(lc, U.Models.menu(U.Str.get(nf, "models"), U.TextGen.provider(st)), U.TextGen.model(st), "text.model")),
-      View.setrow("KiCad", U.KN.summary(nf), View.kn.path.loc(lc, u) <> View.kn.loc(lc, U.KN.of(nf, st), False{})),
-      View.setrow(U.FreeCAD.label.loc(lc, nf), U.FreeCAD.note(lc, nf), Nil{}),
-      View.setrow(U.KiCad.ipc.label(lc, nf), U.KiCad.ipc.note(lc, nf), Bool.pick(List<&2, D.Node>, U.KiCad.ipc.ready(nf), View.chips.loc(lc, ["on", "off"], ipc, "kicad.ipc"), Nil{})),
-      View.setrow(U.Fab.set.order.label(), U.Fab.set.order.note(), View.chips.loc(lc, ["on", "off"], U.Fab.set.enabled(st), "order.enabled")),
-      View.setrow(U.Fab.set.label(), U.Fab.set.note.k(U.Fab.enabled(st)), Bool.pick(List<&2, D.Node>, U.Fab.enabled(st), View.chips.loc(lc, ["on", "off"], U.Fab.set.on(st), "order.estimates"), Nil{})),
-      View.setrow(MSG.T.settings.theme(lc), MSG.T.settings.theme.note(lc), View.chips.loc(lc, ["dark", "light"], Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "light", "dark"), "ui.theme"))], View.lang.loc(lc, u), [
-      View.setrow(MSG.T.settings.sidebar(lc), MSG.T.settings.sidebar.note(lc), View.chips.loc(lc, ["projects", "active"], U.Side.view(st), "sidebar.view")),
+def View.settings.scale(vs: List<&2, String>, +cur: U32) -> List<&2, D.Node>:
+  match vs:
+    case Nil{}: Nil{}
+    case +v <> t:
+      D.Dom.button(Bool.pick(String, U32.is_eq(TS.Scale.read(v), cur), "on", ""), "setting", "ui.text_scale=" ++ v, TS.Scale.label(v), TS.Scale.label(v)) <> View.settings.scale(t, cur)
 
-      View.setrow(U.Tail.label(lc, nf), U.Tail.note(lc, nf), Nil{})],
+def View.settings.rows.k(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String, +prov: String, +ipc: String) -> List<&2, D.Node>:
+  match i:
+    case 0n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.theme(lc), MSG.T.settings.theme.note(lc), View.chips.loc(lc, ["dark", "light"], Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "light", "dark"), "ui.theme"))],
+      View.lang.loc(lc, u),
+      [View.setrow(MSG.T.settings.sidebar(lc), MSG.T.settings.sidebar.note(lc), View.chips.loc(lc, ["projects", "active"], U.Side.view(st), "sidebar.view"))],
+      [View.setrow(MSG.T.settings.textsize(lc), MSG.T.settings.textsize.note(lc), View.settings.scale(TS.Scale.options(), TS.Scale.of(st)))]])
+    case 1n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.settle(lc), MSG.T.settings.settle.note(lc), View.days.loc(lc, M.Setting.get(st, "settle.days", "3")))],
+      [View.setrow(MSG.T.settings.restart(lc), MSG.T.settings.restart.note(lc), View.chips.loc(lc, ["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"))],
+      View.notify(lc, st),
+      View.agy.rows(U.Fallbackv.rows(u))])
+    case 2n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.provider(lc), MSG.T.settings.agents.note(lc, Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), MSG.T.settings.provider.missing(lc, prov), U.Models.cli(U.Str.get(nf, "models"), prov))), View.chips.loc(lc, ["claude", "codex", "grok", "muse", "antigravity", "opencode"], prov, "agent.provider"))],
+      [View.setrow(MSG.T.settings.model(lc), Bool.pick(String, String.is_empty(M.Setting.get(st, "agent.model", "")), MSG.T.common.default(lc), M.Setting.get(st, "agent.model", "")) ++ ": " ++ U.Models.label_of(U.Models.of(nf, prov), prov, M.Setting.get(st, "agent.model", "")),
+        D.Dom.cat(View.menu.find(lc, U.Models.search(U.Models.menu(U.Models.of(nf, prov), prov)), U.Ui.scratch(u, "@f.mq")),
+          View.chips.loc(lc, U.Models.settings(U.Models.of(nf, prov), prov, U.Ui.scratch(u, "@f.mq"), M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", ""), "agent.model")))]])
+    case 3n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.writing.provider(lc), MSG.T.web.settings.writing.note(lc), View.chips.loc(lc, ["claude", "codex", "grok", "muse"], U.TextGen.provider(st), "text.provider"))],
+      [View.setrow(MSG.T.web.settings.writing.model(lc), Bool.pick(String, String.is_empty(U.TextGen.model(st)), MSG.T.common.default(lc), U.TextGen.model(st)) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), U.TextGen.provider(st), U.TextGen.model(st)),
+        View.chips.loc(lc, U.Models.menu(U.Str.get(nf, "models"), U.TextGen.provider(st)), U.TextGen.model(st), "text.model"))]])
+    case 4n: List.concat(&2, D.Node, [[View.setrow("KiCad", U.KN.summary(nf), View.kn.path.loc(lc, u) <> View.kn.loc(lc, U.KN.of(nf, st), False{}))],
+      [View.setrow(U.FreeCAD.label.loc(lc, nf), U.FreeCAD.note(lc, nf), Nil{})],
+      [View.setrow(U.KiCad.ipc.label(lc, nf), U.KiCad.ipc.note(lc, nf), Bool.pick(List<&2, D.Node>, U.KiCad.ipc.ready(nf), View.chips.loc(lc, ["on", "off"], ipc, "kicad.ipc"), Nil{}))],
+      [View.setrow(U.Fab.set.order.label(), U.Fab.set.order.note(), View.chips.loc(lc, ["on", "off"], U.Fab.set.enabled(st), "order.enabled"))],
+      [View.setrow(U.Fab.set.label(), U.Fab.set.note.k(U.Fab.enabled(st)), Bool.pick(List<&2, D.Node>, U.Fab.enabled(st), View.chips.loc(lc, ["on", "off"], U.Fab.set.on(st), "order.estimates"), Nil{}))]])
+    case 5n: List.concat(&2, D.Node, [[View.setrow(U.Tail.label(lc, nf), U.Tail.note(lc, nf), Nil{})],
       View.mates(lc, u),
       [View.setrow(MSG.T.settings.pair(lc), U.Pair.note(lc, U.Pair.link(nf)), D.Dom.cat(D.Dom.when(U.Pair.qr.ready(nf), D.Dom.button(Bool.pick(String, U.Ui.flag(u, "pairqr"), "on", ""), "flag", "pairqr", MSG.T.settings.pair.qr.tip(lc), MSG.T.settings.pair.code(lc))),
         D.Dom.when(Bool.not(String.is_empty(U.Pair.link(nf))), D.Dom.copy.loc(lc, U.Pair.link(nf)))))],
       View.pair.qr(lc, U.Ui.flag(u, "pairqr"), nf),
-      [View.setrow(MSG.T.settings.channel(lc), MSG.T.settings.channel.note(lc), View.chips.loc(lc, ["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
-      View.setrow("Backplane " ++ v, U.Update.line.w(lc, st, nf, note), View.update.btn.loc(lc, U.Update.btn(st, nf, note)))], View.voice.set.loc(lc, u, st), View.keys.set(lc, u), View.agy.rows(U.Agv.rows.loc(lc, u)), View.tz.set(lc, u), View.usage.rows.loc(lc, U.Usage.rows(u)), [View.setrow(MSG.T.settings.tour(lc), MSG.T.settings.tour.note(lc), [D.Dom.button("", "ob-open", "", MSG.T.settings.tour.again(lc), MSG.T.settings.tour.show(lc))])]])}]}
+      [View.setrow(MSG.T.settings.channel(lc), MSG.T.settings.channel.note(lc), View.chips.loc(lc, ["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel"))],
+      [View.setrow("Backplane " ++ v, U.Update.line.w(lc, st, nf, note), View.update.btn.loc(lc, U.Update.btn(st, nf, note)))]])
+    case 6n: List.concat(&2, D.Node, [View.voice.set.loc(lc, u, st)])
+    case 7n: List.concat(&2, D.Node, [View.keys.set(lc, u)])
+    case 8n: List.concat(&2, D.Node, [View.agy.rows(U.Agv.rows.loc(lc, u))])
+    case 9n: List.concat(&2, D.Node, [View.tz.set(lc, u)])
+    case 10n: View.usage.page(lc, u)
+    case 11n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.tour(lc), MSG.T.settings.tour.note(lc), [D.Dom.button("", "ob-open", "", MSG.T.settings.tour.again(lc), MSG.T.settings.tour.show(lc))])]])
+    case 12n: View.agy.rows(U.Share.rows(u))
+    case _: Nil{}
+
+def View.settings.rows(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> List<&2, D.Node>:
+  +prov = M.Setting.get(st, "agent.provider", "claude")
+  +ipc = M.Setting.get(st, "kicad.ipc", "on")
+  View.settings.rows.k(i, lc, u, st, nf, v, note, prov, ipc)
+
+def View.settings.menu(ps: List<&2, String>, +lc: I.Loc) -> List<&2, D.Node>:
+  match ps:
+    case Nil{}: Nil{}
+    case +p <> t:
+      D.Dom.button("settings-category", "settings-page", p, U.Settings.title(lc, p), U.Settings.title(lc, p) ++ " ›") <> View.settings.menu(t, lc)
+
+def View.settings.body(root: Bool, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> List<&2, D.Node>:
+  match root:
+    case True{}: View.settings.menu(U.Settings.pages(), lc)
+    case False{}: View.settings.rows(C.Codec.pos(U.Settings.pages(), U.Settings.page(u)), lc, u, st, nf, v, note)
+
+def View.settings.loc(+lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:
+  +page = U.Settings.page(u)
+  D.El{"main", "settings", [D.At{"class", "settings-view"}], [
+    D.El{"header", "", [D.At{"class", "thread-head settings-head"}], [
+      D.Dom.span("title", MSG.T.palette.settings(lc)), D.Dom.span("meta", ""),
+      D.Dom.button("", "flag", "settings", MSG.T.settings.close(lc), MSG.T.common.close(lc))]},
+    D.El{"nav", "settings-path", [D.At{"class", "settings-path"}, D.At{"aria-label", MSG.T.palette.settings(lc)}],
+      D.Dom.cat(D.Dom.when(Bool.not(String.is_empty(page)), D.Dom.button("", "settings-page", "", MSG.T.palette.settings(lc), "‹ " ++ MSG.T.palette.settings(lc))),
+        [D.El{"h2", "settings-title", [D.At{"id", "settings-title"}, D.At{"tabindex", "-1"}], [D.Txt{U.Settings.title(lc, page)}]}])},
+    D.El{"div", "settings-content", [D.At{"id", "settings-content"}, D.At{"class", "settings"}, D.At{"data-settings-page", page}], View.settings.body(String.is_empty(page), lc, u, st, nf, v, note)}]}
 
 def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:
   View.settings.loc(U.Lang.loc(u), u, st, nf, v, note)
@@ -1322,6 +1433,7 @@ def View.picker(+lc: I.Loc, open: Bool, +u: U.Ui) -> List<&2, D.Node>:
       [D.El{"div", "", [D.At{"class", "modal-back"}, D.On{"click", "proj-close"}], Nil{}},
         D.El{"div", "picker", [D.At{"class", "picker"}], D.Dom.cat([
           View.phead.loc(lc, U.Proj.browsing(u), u),
+          D.Dom.div("desktop-folder", D.Dom.when(String.eq(U.Ui.scratch(u, "@desktop"), "1"), D.Dom.button("", "desktop-folder", "", "Choose a local folder", "Choose folder…"))),
           D.El{"input", "proj", [D.At{"id", "proj"}, D.At{"placeholder", Bool.pick(String, U.Proj.browsing(u), MSG.T.picker.folder.placeholder(lc), MSG.T.picker.project.placeholder(lc))},
             D.At{"autocomplete", "off"}, D.At{"value", U.Proj.query(u)}, D.On{"input", "proj-q"}, D.At{"data-enter", "proj-enter"}], Nil{}}],
           D.Dom.cat(Bool.pick(List<&2, D.Node>, String.is_empty(U.Ui.info(u, "proj.err")), Nil{}, [D.El{"div", "", [D.At{"class", "perr"}], [D.Txt{U.Ui.info(u, "proj.err")}]}]),
@@ -2031,7 +2143,7 @@ def View.thread.p(+lc: I.Loc, u: U.Ui, t: M.Thread, pend: List<&2, String>, +att
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
           D.Dom.cat(fab, D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(lc, nf, id, SB.Subs.rows(st, nf, id, now)), View.pins.loc(lc, U.Ec.pins(U.Ec.make(U.MailvLocal.terms(tr), st, id, now), st, id), U.Ec.make(U.MailvLocal.terms(tr), st, id, now)))}], D.Dom.cat(Nil{},
           D.Dom.cat(View.paged(lc, drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(U.MailvLocal.terms(tr), st, id, now)), D.Dom.cat(View.sending.loc(lc, pend),
-            D.Dom.cat(View.live.of.loc(lc, st, live, id), View.hold.pill(pill))))))))},
+            D.Dom.cat(View.signal.of.loc(lc, nf, live, id), View.hold.pill(pill))))))))},
         View.asks.box(lc, st, id, U.Str.get(drafts, sel), nf),
         View.todos(lc, nf, id, U.Todos.shown(st, id, View.running(turn))),
         View.queued(lc, M.Queue.context(M.Queue.items(st, id)), View.running(turn))], D.Dom.cat(rd, [
@@ -2105,8 +2217,8 @@ def View.browser.strip(on: Bool, +u: U.Ui) -> List<&2, D.Node>:
   View.browser.strip.loc(I.En{}, on, u)
 
 def View.browser.loc(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
-  List.append(&2, D.Node, View.browser.strip.loc(lc, U.CefUI.strip_on(u, U.Ui.page(u)), u),
-    [WB.WB.browser.k.loc(lc, String.is_empty(U.Ui.info(u, "shot." ++ U.Ui.page(u))), U.Ui.info(u, "shot." ++ U.Ui.page(u)), U.Ui.page(u), MSG.T.browser.thread(lc))])
+  List.append(&2, D.Node, List.append(&2, D.Node, View.browser.strip.loc(lc, U.CefUI.strip_on(u, U.Ui.page(u)), u), WB.WB.browser.controls(lc, u, U.Ui.page(u))),
+    [WB.WB.browser.surface.loc(lc, u, U.Ui.page(u), MSG.T.browser.thread(lc))])
 
 # The Mechanical page (client.bend's Mpage): a chip per part, Open in 3D
 # and Refresh, the part's renders (a click opens one in the lightbox), and
@@ -2802,12 +2914,18 @@ def View.aside.if(+lc: I.Loc, open: Bool, +kind: String, +u: U.Ui) -> List<&2, D
 # stays in the dialog, and the keys go through app.bend's tour_key (Enter
 # and the right arrow next, the left arrow back, Esc skip).
 # the uberbot step's choices (client.bend's Tour.choices): one button each
+# a choice is a button, or (the policy, the issue form) a link to a new tab
+def View.tour.choice(+l: String, +a: String, +v: String) -> D.Node:
+  Bool.pick(D.Node, String.eq(a, "open-url"),
+    D.El{"a", "", [D.At{"class", "btn"}, D.At{"href", v}, D.At{"target", "_blank"}, D.At{"rel", "noopener noreferrer"}], [D.Txt{l}]},
+    D.Dom.button("", a, v, l, l))
+
 def View.tour.choices(cs: List<&2, U.TChoice>) -> List<&2, D.Node>:
   match cs:
     case Nil{}:
       Nil{}
-    case U.TChoice{+l, a, v} <> t:
-      D.Dom.button("", a, v, l, l) <> View.tour.choices(t)
+    case U.TChoice{+l, +a, +v} <> t:
+      View.tour.choice(l, a, v) <> View.tour.choices(t)
 
 def View.tour.back.loc(+lc: I.Loc, on: Bool) -> D.Node:
   match on:
@@ -2819,7 +2937,7 @@ def View.tour.back.loc(+lc: I.Loc, on: Bool) -> D.Node:
 def View.tour.back(on: Bool) -> D.Node:
   View.tour.back.loc(I.En{}, on)
 
-def View.tour.card(+lc: I.Loc, +i: Nat, +body: String, cs: List<&2, U.TChoice>, +counter: String, back: Bool) -> List<&2, D.Node>:
+def View.tour.card(+lc: I.Loc, +i: Nat, +body: String, cs: List<&2, U.TChoice>, +counter: String, back: Bool, fwd: String) -> List<&2, D.Node>:
   [D.El{"div", "", [D.At{"class", "tour-back"}], Nil{}},
     D.El{"div", "tour", [D.At{"class", "tour"}, D.At{"role", "dialog"}, D.At{"aria-modal", "true"}, D.At{"aria-labelledby", "tour-title"}], [
       D.Dom.span("count", counter),
@@ -2830,12 +2948,12 @@ def View.tour.card(+lc: I.Loc, +i: Nat, +body: String, cs: List<&2, U.TChoice>, 
         D.Dom.button("", "ob-skip", "", MSG.T.tour.end.tip(lc), MSG.T.tour.skip(lc)),
         D.Dom.span("gap", ""),
         View.tour.back.loc(lc, back),
-        D.Dom.button("primary", "ob-next", "", MSG.T.tour.next.tip(lc), OB.Ob.forward(lc, i))]}]}]
+        D.Dom.button("primary", "ob-next", "", MSG.T.tour.next.tip(lc), fwd)]}]}]
 
 def View.tour.k(+lc: I.Loc, on: Bool, +i: Nat, +u: U.Ui) -> List<&2, D.Node>:
   match on:
     case True{}:
-      View.tour.card(lc, i, U.Tour.body.loc(lc, 1n, u), U.Tour.choices(u), U.Tour.counter.loc(lc, u), U.Tour.back(u))
+      View.tour.card(lc, i, U.Tour.body.loc(lc, 1n, u), U.Tour.choices(u), U.Tour.counter.loc(lc, u), U.Tour.back(u), U.Tour.forward(u))
     case False{}:
       Nil{}
 
@@ -2856,7 +2974,7 @@ def View.tour.cls(+u: U.Ui) -> String:
 def View.page.b(+lc: I.Loc, +bv: BI.View, u: U.Ui) -> D.Node:
   match u:
     case U.Ui{+st, +sel, +d, +l, +o, +on, +now, +ad, +pa, +v, +r, +w, +e, +note, +nf, +ob, +tr}:
-      D.El{"div", "app", [D.At{"class", Bool.pick(String, pa, "app panel", "app") ++ Bool.pick(String, Bool.or(Bool.or(Bool.not(String.is_empty(sel)), U.Flag.get(o, "settings")), WB.WB.shown(bv)), " picked", "")
+      D.El{"div", "app", [D.At{"style", "--text-scale:" ++ U32.show(TS.Scale.of(st))}, D.At{"class", Bool.pick(String, pa, "app panel", "app") ++ Bool.pick(String, Bool.or(Bool.or(Bool.not(String.is_empty(sel)), U.Flag.get(o, "settings")), WB.WB.shown(bv)), " picked", "")
         ++ Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), " light", "") ++ View.tour.cls(U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr})}],
         D.Dom.cat([View.sidebar(lc, U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}),
           View.main.b(lc, U.Flag.get(o, "settings"), bv, U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}, sel, List.length(&2, M.Project, U.Ui.projects(st)))],
@@ -2864,5 +2982,8 @@ def View.page.b(+lc: I.Loc, +bv: BI.View, u: U.Ui) -> D.Node:
             D.Dom.cat(View.picker(lc, U.Flag.get(o, "proj"), U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}), D.Dom.cat(View.error(e), View.tour(lc, U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr})))))}
 
 # the page in the device's language, looked up once here and passed down
-def View.page(+u: U.Ui) -> D.Node:
+def View.page.signals(+u: U.Ui) -> D.Node:
   View.page.b(U.Lang.loc(u), BI.BU.view(u), u)
+
+def View.page(u: U.Ui) -> D.Node:
+  View.page.signals(U.Side.with_signals(u))

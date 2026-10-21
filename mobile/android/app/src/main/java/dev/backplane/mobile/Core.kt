@@ -29,10 +29,41 @@ import java.security.SecureRandom
 class Core(private val app: Application) : Application.ActivityLifecycleCallbacks {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val prefs = app.getSharedPreferences("backplane", Context.MODE_PRIVATE)
-    private val engine = Engine(app, app.assets.open("bridge.js").bufferedReader().readText(), cid(), prefs.getString("drafts", "{}") ?: "{}", app.filesDir)
+    private val bridge by lazy { app.assets.open("bridge.js").bufferedReader().readText() }
+    private val engine by lazy { Engine(app, { bridge }, cid(), prefs.getString("drafts", "{}") ?: "{}", app.filesDir) }
     private val hubs = mutableMapOf<String, Hub>()
     // the client's state, kept for the next launch (StateStore)
-    private val kept = StateStore(app.filesDir, app.assets.open("bridge.js").bufferedReader().readText())
+    private val kept by lazy { StateStore(app.filesDir, bridge) }
+    private val recentScreen = ScreenCache(java.io.File(app.filesDir, "recent-screen-v1.json")) { android.util.Log.i("Backplane", "screen-cache $it") }
+    private var cacheGeneration = 0L
+    private var cacheJob: kotlinx.coroutines.Job? = null
+    private var lastScreenJSON: String? = null
+    private val presentationStore = PresentationStore(java.io.File(app.filesDir, "view-choices-v1.json"))
+    private var presentationGeneration = 0L
+    private var pendingNav: String? = null
+    val startup = mutableStateMapOf<String, StartupPolicy>()
+    private val thinReady = mutableStateMapOf<String, Pair<Long, String>>()
+    private val thinRequests = mutableMapOf<String, ThinPresentationFence>()
+    private val legacyReady = mutableStateMapOf<String, Long>()
+    private var cachedPresentation = false
+    private var engineReady = false
+    private val epochs = mutableMapOf<String, Long>()
+    private val connected = mutableSetOf<String>()
+    private val presentationEpochs = mutableMapOf<String, Long>()
+    private val requestedFrameAt = mutableMapOf<String, Long>()
+    private val restoredAt = mutableMapOf<String, Long>()
+    private var requestDeadline: Long? = null
+    private var deadlineJob: kotlinx.coroutines.Job? = null
+    private val earlyActions = mutableListOf<Pair<String, String>>()
+    private val localDrafts = mutableMapOf<String, String>()
+    val contentReady get(): Boolean {
+        val current = screen ?: return false
+        if (!engineReady || cachedPresentation) return false
+        if (startup[current.hub] == StartupPolicy.COMPATIBILITY_CHOSEN) return current.hub in connected && legacyReady[current.hub] == epochs[current.hub]
+        val mark = thinReady[current.hub] ?: return false
+        return current.hub in connected && mark.first == epochs[current.hub] &&
+            mark.second == (pendingNav ?: opening?.nav ?: nav(current))
+    }
     // something changed since the state was last kept
     private var dirty = false
     // the hub whose plots are drawn: frames from any other are dropped
@@ -90,6 +121,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         openedIn = nav to dest
         tab = dest
         val rig = cat.ifEmpty { screen?.bots?.firstOrNull { it.nav == nav }?.cat ?: screen?.uber?.takeIf { it.nav == nav }?.cat ?: "" }
+        pendingNav = nav
         opening = Opening(nav, title, rig, kind)
         firstMs = android.os.SystemClock.elapsedRealtime() - tapAt
         dispatch(action, value)
@@ -121,6 +153,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
 
     // the thread list's view, for Bend to draw (the device's own choice)
     private suspend fun languageLocal() {
+        apply(engine.local("mailroom-renderer", "android-v1"))
         apply(engine.local("lang-preview", if (AppSettings.langPreview) "1" else ""))
         apply(engine.local("lang", AppSettings.lang))
         apply(engine.local("lang-os", android.os.LocaleList.getDefault()[0].toLanguageTag()))
@@ -143,12 +176,15 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
 
     // App settings, Cache: the kept state's size, and forgetting it (the next
     // launch fetches each hub's log again; nothing is kept again before)
-    fun cacheSize(): Long = kept.size() + (if (kept.settingsFile.exists()) kept.settingsFile.length() else 0L)
+    fun cacheSize(): Long = recentScreen.size() + kept.size() + (if (settingsFile.exists()) settingsFile.length() else 0L)
 
     fun clearCache() {
         cleared = true
+        retireScreenCache()
+        presentationGeneration += 1
+        presentationStore.clear(presentationGeneration)
         kept.clear()
-        kept.settingsFile.delete()
+        settingsFile.delete()
         hubSettings.clear()
     }
 
@@ -156,12 +192,14 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         if (cleared) return
         val o = JSONObject()
         for ((k, v) in hubSettings) o.put(k, settingsJson(v))
-        val f = kept.settingsFile
+        val f = settingsFile
         scope.launch(Dispatchers.IO) { runCatching { f.writeText(o.toString()) } }
     }
 
+    private val settingsFile get() = java.io.File(app.filesDir, "hub-settings.json")
+
     private fun loadHubSettings() {
-        val f = kept.settingsFile
+        val f = settingsFile
         runCatching {
             val o = JSONObject(f.readText())
             for (k in o.keys()) hubSettings[k] = parseSettings(o.getJSONObject(k))
@@ -206,7 +244,21 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
 
     init {
         AppSettings.init(app)
-        loadHubSettings()
+        val cached = recentScreen.load(links, cid())
+        if (cached != null) runCatching { parseScreen(cached) }.onSuccess { saved ->
+            screen = saved
+            cachedPresentation = true
+            composer = runCatching { JSONObject(prefs.getString("drafts", "{}") ?: "{}").optString(saved.sel) }.getOrDefault("")
+            lastUber = saved.uber
+            lastPlane = saved.plane
+            val nav = nav(saved)
+            if (nav.isNotEmpty()) {
+                tab = destination(saved, nav)
+                saved.thread?.let { remember(nav, it, seenThreads, threadOrder) }
+                saved.bot?.let { remember(nav, it, seenBots, botOrder) }
+                remember(nav, saved, seenPages, pageOrder)
+            }
+        }.onFailure { android.util.Log.i("Backplane", "screen-cache miss_native_decode") }
         engine.onFlush = { out -> scope.launch { apply(out) } }
         app.registerActivityLifecycleCallbacks(this)
         // a changed zone is reported at once (hubs keep it for routines and reminders)
@@ -219,6 +271,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         val t0 = android.os.SystemClock.elapsedRealtime()
         fun since() = android.os.SystemClock.elapsedRealtime() - t0
         scope.launch {
+            loadHubSettings()
             apply(engine.screen())
             apply(engine.local("view", AppSettings.threadList))
             languageLocal()
@@ -231,29 +284,23 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
                 keep()
             }
         }
-        // the state kept at the last launch first: the screen shows at once,
-        // and each hub then sends only what came since
         scope.launch {
-            if (kept.has()) {
-                android.util.Log.i("Backplane", "state ${kept.path.length()} bytes")
-                apply(engine.loadFrom(kept.path))
-                apply(engine.local("view", AppSettings.threadList))
-                languageLocal()
-                android.util.Log.i("Backplane", "state loaded ${since()} ms")
-                for (l in links) Pairing.key(l)?.let { apply(engine.offline(it)) }
+            val paired = links.toList()
+            withContext(Dispatchers.IO) { presentationStore.load(paired, cid()) }?.takeIf { paired == links }?.let {
+                apply(engine.loadPresentation(it))
             }
+            engineReady = true
             connect()
         }
-        // the engine started over (Engine.onReset): every socket anew, from
-        // the kept state as at launch
         engine.onReset = {
             scope.launch {
                 for (h in hubs.values) h.stop()
                 hubs.clear()
-                if (kept.has()) {
-                    apply(engine.loadFrom(kept.path))
-                    for (l in links) Pairing.key(l)?.let { apply(engine.offline(it)) }
-                }
+                connected.clear()
+                thinReady.clear()
+                presentationEpochs.clear()
+                val paired = links.toList()
+                withContext(Dispatchers.IO) { presentationStore.load(paired, cid()) }?.takeIf { paired == links }?.let { apply(engine.loadPresentation(it)) }
                 connect()
             }
         }
@@ -262,11 +309,31 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     // the state written down when it changed (the app may be stopped at any
     // time once in the background)
     private fun keep() {
-        if (!dirty || cleared) return
+        lastScreenJSON?.takeIf { !cleared }?.let { text ->
+            val generation = cacheGeneration
+            val paired = links.toList()
+            val profile = cid()
+            scope.launch(Dispatchers.IO) { recentScreen.save(text, paired, profile, generation) }
+        }
+        if (!dirty || cleared || !engineReady) return
         dirty = false
         scope.launch {
-            if (engine.saveTo(kept.tmp)) kept.commit()
+            presentationGeneration += 1
+            val generation = presentationGeneration
+            val paired = links.toList()
+            val text = engine.savePresentation()
+            if (generation == presentationGeneration && paired == links)
+                withContext(Dispatchers.IO) { presentationStore.save(text, paired, cid(), generation) }
         }
+    }
+
+    private fun retireScreenCache() {
+        cacheJob?.cancel()
+        lastScreenJSON = null
+        cacheGeneration += 1
+        recentScreen.clear(cacheGeneration)
+        presentationGeneration += 1
+        presentationStore.clear(presentationGeneration)
     }
 
     // this install's client id: 8 hex digits, made once
@@ -291,12 +358,27 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     fun pair(text: String) {
         val l = text.trim()
         val k = Pairing.key(l) ?: return
+        retireScreenCache()
+        hubs.remove(k)?.stop()
+        epochs[k] = (epochs[k] ?: 0L) + 1
+        connected.remove(k)
+        presentationEpochs.remove(k)
+        thinReady.remove(k)
+        legacyReady.remove(k)
+        startup[k] = StartupPolicy.DISCOVERING
         links = links.filter { Pairing.key(it) != k } + l
         save()
         connect()
     }
 
     fun unpair(key: String) {
+        retireScreenCache()
+        startup.remove(key)
+        thinReady.remove(key)
+        legacyReady.remove(key)
+        epochs[key] = (epochs[key] ?: 0L) + 1
+        connected.remove(key)
+        presentationEpochs.remove(key)
         links = links.filter { Pairing.key(it) != key }
         save()
         connect()
@@ -315,13 +397,54 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         }
     }
 
+    fun retryView(key: String, compatibility: Boolean = false) {
+        if (links.none { Pairing.key(it) == key } || startup[key] != StartupPolicy.COMPATIBILITY_REQUIRED) return
+        hubs.remove(key)?.stop()
+        thinReady.remove(key)
+        presentationEpochs.remove(key)
+        startup[key] = if (compatibility) StartupPolicy.COMPATIBILITY_CHOSEN else StartupPolicy.DISCOVERING
+        connect()
+    }
+
     private fun open(key: String, link: String) {
         val base = Pairing.socket(link) ?: return
         hubs[key] = Hub(scope,
-            url = { Pairing.resume(base, engine.resume(key)) },
+            url = {
+                val epoch = (epochs[key] ?: 0L) + 1
+                epochs[key] = epoch
+                connected.remove(key)
+                presentationEpochs.remove(key)
+                requestedFrameAt.remove(key)
+                thinReady.remove(key)
+                legacyReady.remove(key)
+                if (startup[key] == StartupPolicy.COMPATIBILITY_CHOSEN) {
+                    apply(engine.connection(key, epoch.toString()))
+                    Pairing.resume(base, engine.resume(key))
+                } else {
+                    startup[key] = StartupPolicy.DISCOVERING
+                    val supported = ViewCapability.discover(link)
+                    if (link !in links || epochs[key] != epoch) null
+                    else if (!supported) {
+                        startup[key] = StartupPolicy.COMPATIBILITY_REQUIRED
+                        android.util.Log.i("Backplane", "view capability_required")
+                        null
+                    } else {
+                        startup[key] = StartupPolicy.THIN
+                        apply(engine.connection(key, epoch.toString(), "view-v1"))
+                        val pending = earlyActions.lastOrNull { it.second.startsWith("$key|") || (it.second.isEmpty() && screen?.hub == key) }
+                        if (pending != null) {
+                            earlyActions.remove(pending)
+                            apply(engine.act(pending.first, pending.second))
+                        } else if (screen?.hub == key) apply(engine.act("select", screen?.sel.orEmpty()))
+                        Pairing.viewSocket(link)
+                    }
+                }
+            },
             onOpen = {
                 if (shownHub == key) plots.reset()
-                scope.launch { apply(engine.online(key, true)) }
+                connected.add(key)
+                val epoch = epochs[key] ?: 0L
+                scope.launch { apply(engine.online(key, true, epoch.toString())) }
                 // where the person is: every hub keeps the phone's zone (routines follow it)
                 act("tz-report", java.time.ZoneId.systemDefault().id)
             },
@@ -329,17 +452,84 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
             // client, and only the hub in focus draws
             onMessage = { b ->
                 if (PlotStore.isPlot(b)) { if (shownHub == key) plots.receive(b) }
-                else scope.launch {
-                    dirty = true
-                    apply(engine.recv(key, Base64.encodeToString(b, Base64.NO_WRAP)))
+                else {
+                    val epoch = epochs[key] ?: 0L
+                    scope.launch {
+                        dirty = true
+                        val out = engine.recv(key, Base64.encodeToString(b, Base64.NO_WRAP), epoch.toString())
+                        if (epochs[key] != epoch || key !in connected || links.none { Pairing.key(it) == key }) return@launch
+                        for (update in out.sync.filter { it.hub == key }) {
+                            val thin = startup[key] == StartupPolicy.THIN
+                            observeThinPresenting(update, epoch)
+                            val presented = thin && currentThinReply(update, epoch)
+                            if (!thin && update.phase == "live") legacyReady[key] = epoch
+                            if (presented) {
+                                val wanted = pendingNav ?: opening?.nav ?: earlyActions.lastOrNull { it.first == "select" }?.second ?: (if (cachedPresentation) screen?.let { nav(it) } else null) ?: out.screen?.let { nav(it) } ?: screen?.let { nav(it) }.orEmpty()
+                                thinReady[key] = epoch to wanted
+                            }
+                            if (presented || (!thin && (update.phase == "presented" || update.phase == "live"))) presentationEpochs[key] = epoch
+                            if (update.phase == "recent" || update.phase == "failed") presentationEpochs.remove(key)
+                        }
+                        apply(out)
+                        if (startup[key] == StartupPolicy.COMPATIBILITY_CHOSEN && cachedPresentation && screen?.hub == key && restoredAt[key] != epoch &&
+                            out.sync.any { it.hub == key && (it.phase == "recent" || it.phase == "live") }) {
+                            restoredAt[key] = epoch
+                            val selection = earlyActions.lastOrNull { it.first == "select" }?.second ?: screen?.sel.orEmpty()
+                            val selected = engine.act("select", selection)
+                            if (epochs[key] == epoch && key in connected) apply(selected)
+                        }
+                        if (cachedPresentation && presentationEpochs[key] == epoch && out.screen == null && requestedFrameAt[key] != epoch) {
+                            requestedFrameAt[key] = epoch
+                            val current = engine.screen()
+                            if (epochs[key] == epoch && key in connected) apply(current)
+                        }
+                    }
                 }
             },
-            onClose = { scope.launch { apply(engine.online(key, false)) } },
+            onClose = {
+                connected.remove(key)
+                legacyReady.remove(key)
+                thinReady.remove(key)
+                presentationEpochs.remove(key)
+                val epoch = epochs[key] ?: 0L
+                scope.launch { apply(engine.online(key, false, epoch.toString())) }
+            },
         ).also { it.start() }
     }
 
     private fun dispatch(action: String, value: String) {
-        scope.launch { apply(engine.act(action, value)) }
+        if (action == "select" && (value.isEmpty() || links.any { value.startsWith((Pairing.key(it) ?: "") + "|") })) pendingNav = value
+        if (action == "select" || action in setOf("bot", "room", "remote", "uber", "uber-bot")) retireScreenCache()
+        if (!contentReady) {
+            if (action in setOf("select", "bot", "room", "remote", "uber", "uber-bot")) {
+                earlyActions.removeAll { it.first == action }
+                val targetHub = links.mapNotNull { Pairing.key(it) }.firstOrNull { value.startsWith("$it|") } ?: screen?.hub
+                val configured = startup[targetHub] in setOf(StartupPolicy.THIN, StartupPolicy.COMPATIBILITY_CHOSEN)
+                if (engineReady && configured) scope.launch {
+                    val out = engine.act(action, value)
+                    apply(out)
+                    dirty = true
+                    keep()
+                } else earlyActions.add(action to value)
+            }
+            return
+        }
+        val navigation = action == "select" || action in setOf("bot", "room", "remote", "uber", "uber-bot")
+        scope.launch {
+            val out = engine.act(action, value)
+            apply(out)
+            if (navigation) { dirty = true; keep() }
+        }
+    }
+
+    fun moreMessage(hub: String, thread: String, entry: String, partial: MessagePartial, live: Boolean = false) {
+        if (!contentReady || startup[hub] != StartupPolicy.THIN || !partial.canRequest || entry.isEmpty()) return
+        val current = screen ?: return
+        val shown = current.thread ?: return
+        if (current.hub != hub || shown.id != thread) return
+        val actual = if (live) shown.livePartial else shown.entries.firstOrNull { it.id == entry }?.partial
+        if (actual != partial || (live && actual?.id != entry)) return
+        act("thin-message-more", JSONObject().put("entryId", entry).put("cursor", partial.cursor).toString())
     }
 
     fun act(action: String, value: String = "") {
@@ -366,6 +556,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     // out, and the screen waits for the answer, so fast typing never
     // queues a screen per key
     fun quiet(action: String, value: String) {
+        if (!contentReady) return
         scope.launch { apply(engine.quiet(action, value)) }
     }
 
@@ -425,6 +616,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     // a bot form's field ("bfield"), typed: Bend keeps it without a new
     // screen, the field on screen already shows it
     fun field(name: String, text: String) {
+        if (!contentReady) return
         scope.launch { apply(engine.quiet("bfield", name + "\u001f" + text)) }
     }
 
@@ -447,6 +639,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     // the file as the body (no base64, no pieces through the engine); the
     // hub's answer goes back as "attach-end", as an attach.put's would
     fun attach(data: ByteArray, name: String) {
+        if (!contentReady) return
         if (data.isEmpty()) return
         val s = screen ?: return
         // the hub's own id: over several hubs the screen names it "<hub>|<id>"
@@ -484,6 +677,11 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
 
     fun draft(text: String) {
         composer = text
+        if (!contentReady) {
+            val sel = screen?.sel.orEmpty()
+            if (sel.isNotEmpty()) { localDrafts[sel] = text; keep(sel, text) }
+            return
+        }
         typing += 1
         scope.launch {
             val out = engine.quiet("draft", text)
@@ -492,9 +690,68 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         }
     }
 
+    private fun observeThinPresenting(update: SyncUpdate, epoch: Long) {
+        if (startup[update.hub] != StartupPolicy.THIN || !update.thinPresenting || epochs[update.hub] != epoch) return
+        if (thinRequests.getOrPut(update.hub) { ThinPresentationFence() }.observe(update, epoch)) {
+            thinReady.remove(update.hub)
+            presentationEpochs.remove(update.hub)
+            requestedFrameAt.remove(update.hub)
+        }
+    }
+
+    private fun currentThinReply(update: SyncUpdate, epoch: Long) = update.thinPresented &&
+        thinRequests[update.hub]?.accepts(epoch, update.requestRevision) == true
+
     private fun apply(out: Reply) {
-        out.screen?.let { next ->
-            if (typing == 0) composer = next.thread?.draft ?: ""
+        for (update in out.sync) observeThinPresenting(update, epochs[update.hub] ?: 0L)
+        // Expiry reaches apply through pulse, outside a received frame. It
+        // can retire a marker but cannot establish a new connection's one.
+        for (update in out.sync) if (update.phase == "recent" || update.phase == "failed") {
+            presentationEpochs.remove(update.hub)
+            requestedFrameAt.remove(update.hub)
+            thinReady.remove(update.hub)
+            thinRequests[update.hub]?.invalidate()
+            legacyReady.remove(update.hub)
+        }
+        if (out.deadline != requestDeadline) {
+            requestDeadline = out.deadline
+            deadlineJob?.cancel()
+            out.deadline?.let { deadline -> deadlineJob = scope.launch {
+                delay(maxOf(0L, deadline - System.currentTimeMillis()) + 10)
+                if (requestDeadline == deadline) apply(engine.pulse())
+            } }
+        }
+        val expected = pendingNav ?: opening?.nav ?: earlyActions.lastOrNull { it.first == "select" }?.second ?: screen?.let { nav(it) }.orEmpty()
+        val fresh = out.screen?.let { next ->
+            (next.hub == screen?.hub || opening != null || earlyActions.any { it.first == "select" }) &&
+                nav(next) == expected && next.hub in connected &&
+                presentationEpochs[next.hub] == epochs[next.hub]
+        } == true
+        out.screen?.takeIf { next ->
+            val thinFresh = startup[next.hub] != StartupPolicy.THIN || thinReady[next.hub]?.let {
+                it.first == epochs[next.hub] && it.second == nav(next) && (pendingNav == null || pendingNav == nav(next)) && (opening == null || opening?.nav == nav(next)) &&
+                    out.sync.none { update -> update.hub == next.hub && update.phase in setOf("presented", "presenting") && !currentThinReply(update, it.first) }
+            } == true
+            (next.hub.isEmpty() || links.any { link -> Pairing.key(link) == next.hub }) && (!cachedPresentation || fresh) && thinFresh
+        }?.let { next ->
+            cachedPresentation = false
+            if (pendingNav == nav(next)) pendingNav = null
+            out.screenJSON?.takeIf { !cleared && (opening == null || opening?.nav == nav(next)) }?.let { raw ->
+                lastScreenJSON = raw
+                cacheGeneration += 1
+                val generation = cacheGeneration
+                val text = lastScreenJSON!!
+                val paired = links.toList()
+                val profile = cid()
+                cacheJob?.cancel()
+                cacheJob = scope.launch {
+                    delay(300)
+                    dirty = true
+                    keep()
+                    withContext(Dispatchers.IO) { recentScreen.save(text, paired, profile, generation) }
+                }
+            }
+            if (typing == 0) composer = localDrafts[next.sel] ?: next.thread?.draft ?: ""
             val was = screen?.sel
             val wasNav = screen?.let { nav(it) } ?: ""
             // Channel IDs and preferences persist; only their displayed names follow locale.
@@ -506,7 +763,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
             if (!started0) {
                 started0 = true
                 AppSettings.migrate(next.theme, next.view)
-                tab = Tab.entries.firstOrNull { it.name == AppSettings.defaultTab && it != Tab.Settings } ?: if (next.uber == null) Tab.Threads else Tab.Home
+                if (nav.isEmpty()) tab = Tab.entries.firstOrNull { it.name == AppSettings.defaultTab && it != Tab.Settings } ?: if (next.uber == null) Tab.Threads else Tab.Home
                 scope.launch { apply(engine.local("view", AppSettings.threadList)); languageLocal() }
             }
             next.settings?.let { st -> if (next.hub.isNotEmpty() && hubSettings[next.hub] != st) { hubSettings[next.hub] = st; keepHubSettings() } }
@@ -528,8 +785,16 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
                 shownHub = next.hub
                 plots.reset()
             }
-            if (foreground && next.sel.isNotEmpty() && next.sel != was) Notes.clear(app, next.sel)
-            LiveService.sync(app, next.island, foreground)
+            if (contentReady && foreground && next.sel.isNotEmpty() && next.sel != was) Notes.clear(app, next.sel)
+            if (contentReady) LiveService.sync(app, next.island, foreground)
+        }
+        if (contentReady) screen?.sel?.let { sel -> localDrafts.remove(sel)?.let { text ->
+            scope.launch { apply(engine.quiet("draft", text)) }
+        } }
+        if (contentReady && out.screen != null && earlyActions.isNotEmpty()) {
+            val actions = earlyActions.toList()
+            earlyActions.clear()
+            for ((action, value) in actions) dispatch(action, value)
         }
         for (c in out.cmds) when (c.type) {
             "send" -> hubs[c.hub]?.send(Base64.decode(c.data, Base64.DEFAULT))
@@ -575,12 +840,12 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
 
     override fun onActivityStarted(activity: Activity) {
         started += 1
-        screen?.sel?.let { if (it.isNotEmpty()) Notes.clear(app, it) }
+        if (contentReady) screen?.sel?.let { if (it.isNotEmpty()) Notes.clear(app, it) }
     }
 
     // being in front is when the live service may start
     override fun onActivityResumed(activity: Activity) {
-        screen?.let { LiveService.sync(app, it.island, true) }
+        if (contentReady) screen?.let { LiveService.sync(app, it.island, true) }
     }
 
     override fun onActivityStopped(activity: Activity) {

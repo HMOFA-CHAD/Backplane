@@ -378,10 +378,15 @@ def BU.tabs.of(+id: String) -> List<&2, String>:
 def BU.tabs.mail(+id: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, FR.Fr.is(id), BU.tabs.of(id), ["chat", "mail", "space", "browser", "tasks", "memory", "routines", "hooks", "settings"])
 
+# The Uberbot bar on clients with Mailroom. Keep the historical dispatch
+# table above stable: persisted panel keys and remote bots still use it.
+def BU.nav.tabs() -> List<&2, String>:
+  ["chat", "mail", "space", "browser", "memory", "routines", "settings"]
+
 # Renderer capabilities apply only to local bots. Remote headers retain
 # their shared table directly, including for an abstract client.
 def BU.tabs.local(+u: U.Ui, +id: String) -> List<&2, String>:
-  Bool.pick(List<&2, String>, U.Mailv.enabled(u), Bool.pick(List<&2, String>, UB.Uber.is(U.Ui.state(u), id), ["mail", "status", "chat", "space", "browser", "tasks", "memory", "routines", "hooks", "settings"], BU.tabs.mail(id)), Bool.pick(List<&2, String>, UB.Uber.is(U.Ui.state(u), id), "status" <> BU.tabs.of(id), BU.tabs.of(id)))
+  Bool.pick(List<&2, String>, U.Mailv.enabled(u), Bool.pick(List<&2, String>, UB.Uber.is(U.Ui.state(u), id), BU.nav.tabs(), BU.tabs.mail(id)), Bool.pick(List<&2, String>, UB.Uber.is(U.Ui.state(u), id), "status" <> BU.tabs.of(id), BU.tabs.of(id)))
 
 def BU.tabs.routed(remote: Bool, +u: U.Ui, +id: String) -> List<&2, String>:
   match remote:
@@ -413,6 +418,34 @@ def BU.tab.has(ts: List<&2, String>, +t: String) -> Bool:
     case x <> r:
       Bool.or(String.eq(x, t), BU.tab.has(r, t))
 
+# Only the folded Uberbot bar has Mailroom without a top-level Tasks.
+def BU.nav.folded(+ts: List<&2, String>) -> Bool:
+  Bool.and(BU.tab.has(ts, "mail"), Bool.not(BU.tab.has(ts, "tasks")))
+
+def BU.nav.parent.k(folded: Bool, +t: String) -> String:
+  match folded:
+    case False{}: t
+    case True{}:
+      Bool.pick(String, String.eq(t, "status"), "mail", Bool.pick(String, String.eq(t, "tasks"), "browser", Bool.pick(String, String.eq(t, "hooks"), "settings", t)))
+
+def BU.nav.parent(ts: List<&2, String>, t: String) -> String:
+  BU.nav.parent.k(BU.nav.folded(ts), t)
+
+def BU.nav.sections.k(folded: Bool, +parent: String) -> List<&2, String>:
+  match folded:
+    case False{}: Nil{}
+    case True{}:
+      Bool.pick(List<&2, String>, String.eq(parent, "mail"), ["mail", "status"],
+        Bool.pick(List<&2, String>, String.eq(parent, "browser"), ["browser", "tasks"],
+          Bool.pick(List<&2, String>, String.eq(parent, "settings"), ["settings", "hooks"], Nil{})))
+
+def BU.nav.sections(+ts: List<&2, String>, +t: String) -> List<&2, String>:
+  BU.nav.sections.k(BU.nav.folded(ts), BU.nav.parent(ts, t))
+
+# Accept the old panel key through its visible parent; do not rewrite it.
+def BU.nav.accept(+ts: List<&2, String>, +t: String) -> Bool:
+  BU.tab.has(ts, BU.nav.parent(ts, t))
+
 # the bot's tab ("chat" until one is picked)
 def BU.tab(+u: U.Ui) -> String:
   Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@btab")), "chat", U.Ui.scratch(u, "@btab"))
@@ -428,7 +461,7 @@ def BU.tab.default(+u: U.Ui, +id: String) -> String:
 
 def BU.tab.of(+u: U.Ui, +id: String) -> String:
   Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@btab")), BU.tab.default(u, id),
-    Bool.pick(String, BU.tab.has(BU.tabs.for(u, id), BU.tab(u)), BU.tab(u), BU.tab.default(u, id)))
+    Bool.pick(String, BU.nav.accept(BU.tabs.for(u, id), BU.tab(u)), BU.tab(u), BU.tab.default(u, id)))
 
 def BU.space.none(paged: Bool, +name: String) -> SP.Space:
   match paged:

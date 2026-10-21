@@ -84,3 +84,16 @@ path plus a new alternate, and an occupied path with no new socket.
 When the pinned managed install is absent, discovery retains other installed versions as newest-first fallbacks.
 An old install therefore reports old and offers Update; the pinned directory appearing invalidates the health cache
 and takes precedence.
+
+The Settings installer selects a package from the hub machine's OS and
+architecture, including when the client is a phone or another computer.
+Linux x86-64 keeps the pinned bp.4 runtime; Windows x86-64 (Cygwin) and
+macOS Apple Silicon install the published bp.6 packages. There is currently
+no managed Linux ARM64 or Intel macOS package, so those hubs offer a runtime
+path instead. The install action uses the same catalog as the backend.
+
+Downloads must match both the release checksum list and the compiled digest.
+The installer checks the archive format and runtime layout in a staging
+folder before moving it into the managed runtime directory. It refuses to
+overwrite an existing version, preserving that directory on failure; an
+existing separately installed compatible runtime can be selected by path.

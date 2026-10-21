@@ -1243,3 +1243,32 @@ native.notify.channel.live = 稼働中のエージェント
 # iOS system camera permission purpose
 native.permission.camera = コンピューターに表示されたペアリングコードを読み取り、接続します。
 auth.legacy = この端末はペアリングキーなしで接続しています。今後のバージョンではキーが必要になります。この端末でBackplaneの設定にあるペアリングリンクを開くか、QRコードを読み取って追加してください。
+
+settings.textsize = 文字サイズ
+settings.textsize.note = 文字とコントロールの配置を調整します。端末のディスプレイスケーリングとは別の設定です。
+settings.privacy = プライバシー
+
+# Native phone controls and Mailroom.
+native.usage.machines = マシン別の使用量
+native.thread.latest = 最新
+native.thread.new = 新着{n}件
+native.thread.permissions = 権限
+native.thread.permissions.current = 権限：{mode}
+native.thread.permissions.approval = 承認が必要
+native.thread.permissions.edits = 編集を自動承認
+native.thread.permissions.auto = 自動
+native.thread.permissions.full = フルアクセス
+native.thread.loading.recent = 最近のメッセージを読み込み中…
+native.thread.loading.older = 過去のメッセージを読み込み中…
+native.thread.send.failed = 送信できませんでした
+native.mailroom.title = メール
+native.mailroom.act = 要対応
+native.mailroom.fyi = 参考
+native.mailroom.later = 後を表示
+native.mailroom.recipient = 宛先
+native.mailroom.accepted.unconfirmed = 応答あり。配信は未確認
+native.mailroom.outcome.unknown = 結果不明。再送前に確認してください
+native.mailroom.open.source = 送信元を開く
+native.mailroom.machine.offline = マシンはオフライン
+native.mailroom.page = {total}件中{first}–{last}件
+native.mailroom.unread.count = 未読{count}件
