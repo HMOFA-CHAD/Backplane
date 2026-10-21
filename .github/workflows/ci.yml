@@ -48,7 +48,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bend
-      - run: scripts/check.sh proof
+      # The proof reads only PROOF.bend's imports (scripts/bend-closure.py),
+      # bend and the gate's scripts. When a run already proved exactly those
+      # (any branch, any commit), its record is in the cache and the proof
+      # is not run again; any change to them is another key, so it runs.
+      - id: key
+        run: |
+          k=$(BP_KEY_ROOTS=PROOF.bend scripts/inputs-key.sh gate:proof scripts/check.sh scripts/bendok.sh scripts/bend-closure.py scripts/inputs-key.sh) || k=""
+          echo "key=$k" >> "$GITHUB_OUTPUT"
+          echo "proof inputs: ${k:-<none: the proof runs>}"
+      - id: seen
+        if: steps.key.outputs.key != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: .proof-ok
+          key: proof-ok-${{ steps.key.outputs.key }}
+          lookup-only: true
+      - if: steps.seen.outputs.cache-hit == 'true'
+        run: echo "PROOF.bend proved before on these exact inputs (proof-ok-${{ steps.key.outputs.key }})"
+      - if: steps.seen.outputs.cache-hit != 'true'
+        run: scripts/check.sh proof
+      - if: steps.seen.outputs.cache-hit != 'true' && steps.key.outputs.key != ''
+        run: echo "${{ steps.key.outputs.key }}" > .proof-ok
+      - if: steps.seen.outputs.cache-hit != 'true' && steps.key.outputs.key != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .proof-ok
+          key: proof-ok-${{ steps.key.outputs.key }}
 
   # Kept as the single gate other jobs depend on; it passes when both
   # halves above pass, so the check and the proof run in parallel on

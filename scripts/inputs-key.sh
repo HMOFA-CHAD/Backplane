@@ -12,6 +12,9 @@
 #     .bend-test.*), which exist only while they run; ignored files are not
 #     inputs (no program imports from build/ or dist/);
 #   - the files named, and the tag that names what the key is for.
+# With BP_KEY_ROOTS="A.bend B.bend", the checkout's files are only those the
+# roots read (their imports, transitively; scripts/bend-closure.py), so a
+# change elsewhere leaves the key as it was.
 # It fails closed: any step that cannot read what it must (no git checkout,
 # no bend, a tracked file missing, a file it cannot hash) prints nothing and
 # exits 1, so nothing is reused.
@@ -38,8 +41,17 @@ for f in "$@"; do
   printf 'named %s\n' "$f" >>"$tmp" || exit 1
   sha256sum "$f" >>"$tmp" || exit 1
 done
-git ls-files -z --cached --others --exclude-standard -- '*.bend' '*.c' '*.h' '*.js' \
-  ':(exclude).bend-check.*' ':(exclude).bend-test.*' >"$tmp.l" || exit 1
-sort -z "$tmp.l" -o "$tmp.l" || exit 1
+if [ -n "${BP_KEY_ROOTS:-}" ]; then
+  # only what those programs read (scripts/bend-closure.py), not the whole
+  # checkout: a key for a gate over these roots alone
+  printf 'roots %s\n' "$BP_KEY_ROOTS" >>"$tmp" || exit 1
+  # shellcheck disable=SC2086
+  python3 scripts/bend-closure.py $BP_KEY_ROOTS | tr '\n' '\0' >"$tmp.l" || exit 1
+  [ -s "$tmp.l" ] || exit 1
+else
+  git ls-files -z --cached --others --exclude-standard -- '*.bend' '*.c' '*.h' '*.js' \
+    ':(exclude).bend-check.*' ':(exclude).bend-test.*' >"$tmp.l" || exit 1
+fi
+LC_ALL=C sort -z "$tmp.l" -o "$tmp.l" || exit 1
 xargs -0 -r sha256sum <"$tmp.l" >>"$tmp" || exit 1
 sha256sum <"$tmp" | cut -c1-40
