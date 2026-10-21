@@ -48,9 +48,20 @@ function inventory(root,target){
   }
  }}walk(root);return result;
 }
+function membershipExpectation(members,target,platform=process.platform){
+ if(target!=='windows-x64'||platform!=='win32')return members;
+ // Native Windows reports writable/read-only regular files as 0666/0444.
+ // Original POSIX modes stay in their source receipts; only this comparison
+ // projects the owner-write bit into the representation NTFS exposes to Node.
+ return Object.fromEntries(Object.entries(members).map(([name,v])=>{
+  check(v&&v.type==='file','Windows symlink/reparse payload');
+  check(Number.isInteger(v.mode)&&v.mode>=0&&v.mode<=0o777,'Invalid/privileged declared payload mode');
+  return [name,{...v,mode:(v.mode&0o200)?0o666:0o444}];
+ }));
+}
 function membership(root,members,target){
  check(members&&typeof members==='object'&&!Array.isArray(members),'Missing payload inventory');
- const actual=inventory(root,target);check(canonical(actual)===canonical(members),'Payload membership/hash/mode mismatch');return actual;
+ const actual=inventory(root,target);check(canonical(actual)===canonical(membershipExpectation(members,target)),'Payload membership/hash/mode mismatch');return actual;
 }
 function identity(r,release,target,kind){
  check(r&&r.schema===1&&r.kind===kind&&r.status==='VERIFIED','Unverified component receipt');
@@ -237,4 +248,4 @@ function main(argv){
  else fail('Unknown operation; use describe');console.log(JSON.stringify(result));
 }
 if(require.main===module){try{main(process.argv.slice(2));}catch(e){console.error('Desktop producer: '+e.message);process.exitCode=1;}}
-module.exports={stage,archive,inspectStage,inventory,contentDigest,architecture,validateRequest,generatedWeb,reference,readReference,json,write,sha,digest,canonical,runPython,payload,identity,TARGETS};
+module.exports={stage,archive,inspectStage,inventory,membershipExpectation,contentDigest,architecture,validateRequest,generatedWeb,reference,readReference,json,write,sha,digest,canonical,runPython,payload,identity,TARGETS};
