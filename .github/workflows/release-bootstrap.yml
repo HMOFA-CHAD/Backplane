@@ -1,0 +1,202 @@
+name: Configured release producer bootstrap (artifact only)
+
+# First producer run: no fictitious prior successful artifact run is required.
+# The large-memory executor emits C without secrets. Here each target compiles
+# exact hash-bound C with protected inputs, one C lane, never a Bend emission.
+# No push/tag trigger, publication, install, runner registration or write token.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Full root-frozen source commit containing these producers
+        type: string
+        required: true
+      operation:
+        type: choice
+        options: [unix-native, windows-native, android]
+        required: true
+      packet_url:
+        description: Temporary HTTPS URL of public source-bound inputs (no credentials)
+        type: string
+        required: true
+      packet_sha256:
+        description: Independently selected SHA256 of the entire input tar.gz
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: release-bootstrap-${{ inputs.ref }}-${{ inputs.operation }}
+  cancel-in-progress: false
+
+env:
+  BACKPLANE_FROZEN_COMMIT: ${{ inputs.ref }}
+  BACKPLANE_VERSION: v0.12.0
+  BACKPLANE_VERSION_STAMP: '0.12.0'
+  BACKPLANE_TELEMETRY_CHANNEL: release
+
+jobs:
+  unix-native:
+    if: inputs.operation == 'unix-native'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin-arm64
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Require matching workflow and frozen source; fetch verified public C packet
+        env:
+          WORKFLOW_SHA: ${{ github.sha }}
+          PACKET_URL: ${{ inputs.packet_url }}
+          PACKET_SHA: ${{ inputs.packet_sha256 }}
+        shell: bash
+        run: |
+          test "$WORKFLOW_SHA" = "$BACKPLANE_FROZEN_COMMIT"
+          python3 scripts/release-bootstrap.py fetch --source "$BACKPLANE_FROZEN_COMMIT" --operation unix-native --url "$PACKET_URL" --sha256 "$PACKET_SHA" --directory "$RUNNER_TEMP/release-inputs"
+      - name: Select native compiler without administrator changes (no Bend)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install llvm@21 coreutils
+            echo "$(brew --prefix llvm@21)/bin" >> "$GITHUB_PATH"
+            echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+          else
+            compiler=''
+            for candidate in clang-21 clang-20 clang-19 /usr/lib/llvm-21/bin/clang /usr/lib/llvm-20/bin/clang /usr/lib/llvm-19/bin/clang; do
+              if command -v "$candidate" >/dev/null 2>&1; then compiler="$(command -v "$candidate")"; break; fi
+            done
+            test -n "$compiler" || { echo 'Hosted runner has no installed clang19+; no administrator command attempted' >&2; exit 1; }
+            echo "BACKPLANE_BOOTSTRAP_CLANG=$compiler" >> "$GITHUB_ENV"
+          fi
+      - name: Compile exact portable C with configured protected release inputs
+        shell: bash
+        env:
+          BACKPLANE_GOOGLE_BAKE: '1'
+          BACKPLANE_GOOGLE_CLIENT_ID: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_ID }}
+          BACKPLANE_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_SECRET }}
+          BACKPLANE_TELEMETRY_BAKE: '1'
+          BACKPLANE_TELEMETRY_URL: https://backplane.works/api/v1/events
+          BACKPLANE_TELEMETRY_KID: ${{ secrets.BACKPLANE_TELEMETRY_KID }}
+          BACKPLANE_TELEMETRY_KEY: ${{ secrets.BACKPLANE_TELEMETRY_KEY }}
+          BACKPLANE_JOBS: '1'
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = macOS ]; then compiler="$(command -v clang)"; else compiler="$BACKPLANE_BOOTSTRAP_CLANG"; fi
+          python3 scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation unix-native --target "$TARGET" --clang "$compiler" --directory "$RUNNER_TEMP/release-inputs"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: configured-service-${{ matrix.target }}
+          path: build/bootstrap-native/
+          if-no-files-found: warn
+          retention-days: 14
+
+  windows-native:
+    if: inputs.operation == 'windows-native'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      BACKPLANE_CYGWIN_ROOT: ${{ github.workspace }}\..\backplane-cygwin
+      BACKPLANE_JOBS: '1'
+    steps:
+      - name: Keep producer shell source LF
+        shell: pwsh
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Require matching workflow and frozen source; fetch Windows owner's packet
+        shell: pwsh
+        env:
+          WORKFLOW_SHA: ${{ github.sha }}
+          PACKET_URL: ${{ inputs.packet_url }}
+          PACKET_SHA: ${{ inputs.packet_sha256 }}
+        run: |
+          if ($env:WORKFLOW_SHA -cne $env:BACKPLANE_FROZEN_COMMIT) { throw 'Workflow/source mismatch' }
+          python scripts/release-bootstrap.py fetch --source $env:BACKPLANE_FROZEN_COMMIT --operation windows-native --url $env:PACKET_URL --sha256 $env:PACKET_SHA --directory "$env:RUNNER_TEMP/release-inputs"
+          if ($LASTEXITCODE -ne 0) { throw 'Public Windows packet refused' }
+          ./scripts/setup-windows.ps1 -Root $env:BACKPLANE_CYGWIN_ROOT -BuildTools
+          if ($LASTEXITCODE -ne 0) { throw 'Native environment setup failed' }
+      - name: Compile with existing protected inputs; preserve owner runtime checks
+        shell: pwsh
+        env:
+          BACKPLANE_GOOGLE_BAKE: '1'
+          BACKPLANE_GOOGLE_CLIENT_ID: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_ID }}
+          BACKPLANE_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_SECRET }}
+          BACKPLANE_TELEMETRY_BAKE: '1'
+          BACKPLANE_TELEMETRY_URL: https://backplane.works/api/v1/events
+          BACKPLANE_TELEMETRY_KID: ${{ secrets.BACKPLANE_TELEMETRY_KID }}
+          BACKPLANE_TELEMETRY_KEY: ${{ secrets.BACKPLANE_TELEMETRY_KEY }}
+        run: |
+          $bin = Join-Path $env:BACKPLANE_CYGWIN_ROOT 'bin'
+          $env:PATH = $bin + ';' + $env:PATH
+          $workspace = & (Join-Path $bin 'cygpath.exe') -u $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw 'Source path mapping failed' }
+          $packet = & (Join-Path $bin 'cygpath.exe') -u "$env:RUNNER_TEMP/release-inputs"
+          if ($LASTEXITCODE -ne 0) { throw 'Packet path mapping failed' }
+          & (Join-Path $bin 'bash.exe') --login -c 'cd "$1" && python3 scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation windows-native --directory "$2"' -- $workspace $packet
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: configured-windows-service
+          path: |
+            build/windows-service-native/backplane-serve.exe
+            build/windows-service-native/unsigned-service.exe
+            build/windows-service-native/COMPILE.json
+            build/windows-service-native/inputs/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  android:
+    if: inputs.operation == 'android'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Require matching source; fetch actual native-owner inputs and qualified bridge
+        shell: bash
+        env:
+          WORKFLOW_SHA: ${{ github.sha }}
+          PACKET_URL: ${{ inputs.packet_url }}
+          PACKET_SHA: ${{ inputs.packet_sha256 }}
+        run: |
+          test "$WORKFLOW_SHA" = "$BACKPLANE_FROZEN_COMMIT"
+          python3 scripts/release-bootstrap.py fetch --source "$BACKPLANE_FROZEN_COMMIT" --operation android --url "$PACKET_URL" --sha256 "$PACKET_SHA" --directory "$RUNNER_TEMP/release-inputs"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Produce signed Release APK and AAB through the native owner's exact producer
+        shell: bash
+        env:
+          BACKPLANE_ANDROID_KEYSTORE_BASE64: ${{ secrets.BACKPLANE_ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.BACKPLANE_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEY_PASSWORD }}
+        run: |
+          python3 scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation android --directory "$RUNNER_TEMP/release-inputs"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: configured-android-release
+          path: build/bootstrap-android/
+          if-no-files-found: warn
+          retention-days: 14

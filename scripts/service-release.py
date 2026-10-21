@@ -140,6 +140,17 @@ def configured_environment(source):
     return env
 
 
+def emission_environment(source):
+    # Emission never consumes protected compile inputs, including inherited ones.
+    env = {k: v for k, v in source.items()
+           if not k.startswith(("BACKPLANE_GOOGLE_", "BACKPLANE_TELEMETRY_"))
+           and k not in {"BACKPLANE_PREBUILT", "BACKPLANE_EMIT_ONLY", "BP_BUILD_LOCKED"}}
+    env.update(BACKPLANE_VERSION=VERSION, BACKPLANE_VERSION_STAMP=VERSION,
+               BACKPLANE_GOOGLE_BAKE="0", BACKPLANE_TELEMETRY_BAKE="0",
+               BACKPLANE_EMIT_CACHE="0", BACKPLANE_OBJ_CACHE="0", BACKPLANE_EMIT_ONLY="1")
+    return env
+
+
 def git(*args):
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
 
@@ -196,20 +207,61 @@ def new_output(path):
     require(path.is_absolute() and not path.exists(), "Output must be a new absolute directory")
 
 
-def build(request, base, out):
+def emission_packet(request, base, release):
+    receipt_path = bound(request["emissionReceipt"], base)
+    packet = (base / request["emissionDirectory"]).resolve()
+    r = read(receipt_path)
+    require(receipt_path == packet / "EMISSION.json" and r.get("schema") == 1
+            and r.get("kind") == "backplane-service-c-emission"
+            and r.get("status") == "VERIFIED_PORTABLE_C_EMISSION_ONLY"
+            and r.get("target") == "portable-c" and request["target"] in r.get("nativeTargets", [])
+            and r.get("sourceCommit") == release["commit"] and r.get("sourceTree") == release["tree"]
+            and r.get("version") == VERSION and r.get("versionStamp") == VERSION
+            and r.get("channel") == "release" and r.get("entrypoint") == "src/server/main.bend",
+            "Portable C packet identity does not match native request")
+    require(r.get("emissionInputs") == {"googleBake": False, "telemetryBake": False, "protectedInputsForwarded": False},
+            "Secret-free emission witness required")
+    actual = inventory(packet)
+    actual.pop("EMISSION.json", None)
+    require(actual == r.get("members"), "Portable emission packet membership changed")
+    require(bound(r["cArtifact"], packet) == packet / "all.c", "Wrong portable C artifact")
+    source = read(packet / "SOURCE.json")
+    require(digest(packet / "SOURCE.json") == r["sourceManifestSha256"]
+            and source.get("commit") == release["commit"] and source.get("tree") == release["tree"]
+            and source.get("entrypoint") == "src/server/main.bend", "Portable C source provenance mismatch")
+    require(source.get("members") == {n: digest(ROOT / n) for n in git("ls-files").splitlines()},
+            "Native checkout source bytes differ from portable C source")
+    require(digest(packet / "WEB.json") == r["webManifestSha256"]
+            and web_manifest(packet / "web", release) == read(packet / "WEB.json"), "Portable matching web changed")
+    require(isinstance(r.get("compiler"), dict) and HEX.fullmatch(str(r["compiler"].get("sha256", "")))
+            and r["compiler"].get("version"), "Missing emitter Bend identity")
+    qualification = read(bound(r["sourceQualification"], packet))
+    require(qualification.get("kind") == "backplane-web-source-qualification" and qualification.get("status") == "PASS"
+            and qualification.get("commit") == release["commit"] and qualification.get("tree") == release["tree"]
+            and qualification.get("version") == VERSION and qualification.get("checks"), "Portable source qualification mismatch")
+    for ref in qualification["checks"]:
+        bound(ref, packet)
+    return packet, r
+
+
+def build(request, base, out, phase="build"):
     release = identity(request)
-    require(request.get("kind") == "backplane-service-build-inputs", "Wrong build request kind")
+    expected_kind = "backplane-service-native-inputs" if phase == "native" else "backplane-service-build-inputs"
+    require(request.get("kind") == expected_kind, "Wrong build request kind")
     actual_host = {("Linux", "x86_64"): "linux-x64", ("Linux", "aarch64"): "linux-arm64",
                    ("Darwin", "arm64"): "darwin-arm64"}.get((platform.system(), platform.machine()))
-    require(actual_host == request["target"], "Real target host required; cross-target compilation is not supported")
+    require(phase == "emit" or actual_host == request["target"], "Real target host required; cross-target compilation is not supported")
     frozen(release)
-    env = configured_environment(os.environ)
-    bend = check_tool(request["toolchain"]["bend"], base, "bend")
+    env = emission_environment(os.environ) if phase == "emit" else configured_environment(os.environ)
+    bend = None if phase == "native" else check_tool(request["toolchain"]["bend"], base, "bend")
     cc = check_tool(request["toolchain"]["clang"], base, "clang")
-    env.update(CC=str(cc), PATH=str(bend.parent) + os.pathsep + env.get("PATH", ""))
+    env.update(CC=str(cc), PATH=(str(bend.parent) + os.pathsep if bend else "") + env.get("PATH", ""))
     clock = subprocess.check_output(["date", "+%s%N"], env=env, text=True).strip()
     require(re.fullmatch(r"[0-9]{19,}", clock), "Native builder requires GNU date in PATH (Darwin: coreutils gnubin)")
-    qualification_path = bound(request["sourceQualification"], base)
+    packet, emitted = emission_packet(request, base, release) if phase == "native" else (None, None)
+    if phase == "native":
+        env.update(BACKPLANE_PREBUILT="1", BACKPLANE_JOBS="1")
+    qualification_path = packet / "SOURCE-QUALIFICATION-BOUND.json" if packet else bound(request["sourceQualification"], base)
     qualification = read(qualification_path)
     require(qualification.get("schema") == 1 and qualification.get("kind") == "backplane-web-source-qualification"
             and qualification.get("status") == "PASS" and qualification.get("commit") == release["commit"]
@@ -218,7 +270,7 @@ def build(request, base, out):
     require(qualification.get("checks"), "Actual final source check logs required")
     for ref in qualification["checks"]:
         bound(ref, qualification_path.parent)
-    notice_path = bound(request["webNotices"], base)
+    notice_path = packet / "WEB-NOTICES.json" if packet else bound(request["webNotices"], base)
     web_notices = read(notice_path)
     require(web_notices.get("schema") == 1 and web_notices.get("kind") == "backplane-web-source-notices"
             and web_notices.get("sourceCommit") == release["commit"]
@@ -232,42 +284,64 @@ def build(request, base, out):
     new_output(out)
     out.mkdir(parents=True)
     logs = out / "logs"
-    logs.mkdir()
+    if packet:
+        shutil.copytree(packet / "logs", logs)
+    else:
+        logs.mkdir()
     # Keep the standard native build lock through compile-header cleanup.
     with NATIVE_LOCK.open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         env["BP_BUILD_LOCKED"] = "1"
         try:
-            run(["bash", "-c", 'set -e; source scripts/bendok.sh; bend_check src/server/main.bend; bend_check src/web/app.bend'], logs / "entries.log", env, 600)
-            run(["scripts/build-app.sh", "src/server/main.bend", out / "backplane-serve"], logs / "native.log", env)
+            if packet:
+                work = ROOT / "build/cc/backplane-serve"
+                work.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(packet / "all.c", work / "all.c")
+                require(digest(work / "all.c") == emitted["cArtifact"]["sha256"], "Copied portable C changed")
+            else:
+                run(["bash", "-c", 'set -e; source scripts/bendok.sh; bend_check src/server/main.bend; bend_check src/web/app.bend'], logs / "entries.log", env, 600)
+            native_log = run(["scripts/build-app.sh", "src/server/main.bend", out / "backplane-serve"],
+                             logs / ("c-emission.log" if phase == "emit" else "native.log"), env)
+            if phase == "emit":
+                shutil.copyfile(ROOT / "build/cc/backplane-serve/all.c", out / "all.c")
+            if packet:
+                require("prebuilt build/cc/backplane-serve/all.c" in native_log
+                        and digest(work / "all.c") == emitted["cArtifact"]["sha256"], "Native builder did not consume exact approved C")
         finally:
             for name in ("bp_google.h", "bp_telemetry.h"):
                 (ROOT / "build/cc/backplane-serve" / name).unlink(missing_ok=True)
-    architecture(out / "backplane-serve", request["target"])
-    version = run([out / "backplane-serve", "--version"], logs / "version.log", env, 30).strip()
-    require(version == "backplane " + VERSION, "Compiled service did not report exact stable version")
+    if phase != "emit":
+        architecture(out / "backplane-serve", request["target"])
+        version = run([out / "backplane-serve", "--version"], logs / "version.log", env, 30).strip()
+        require(version == "backplane " + VERSION, "Compiled service did not report exact stable version")
     frozen(release)
-    for name in ("bend", "clang"):
+    tool_names = ("clang",) if packet else ("bend", "clang")
+    for name in tool_names:
         bound(request["toolchain"][name], base)
     web = out / "web"
-    run([bend, "src/web/index.html", "-o", web], logs / "web.log", env, 900)
-    chunks = sorted(web.glob("chunk-*.js"))
-    require(chunks, "No emitted web chunks")
-    run([sys.executable, "scripts/js-unmarshal.py", "../core/client.Ui", *chunks], logs / "unmarshal.log", env)
-    run([sys.executable, "scripts/js-native.py", *chunks], logs / "native-js.log", env)
-    shutil.copyfile(ROOT / "src/web/sw.js", web / "sw.js")
-    for dest, src in web_notices["licenses"].items():
-        destination = web / dest
-        require(not destination.exists(), "License collides with generated web asset")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / src, destination)
+    if packet:
+        shutil.copytree(packet / "web", web)
+    else:
+        run([bend, "src/web/index.html", "-o", web], logs / "web.log", env, 900)
+        chunks = sorted(web.glob("chunk-*.js"))
+        require(chunks, "No emitted web chunks")
+        run([sys.executable, "scripts/js-unmarshal.py", "../core/client.Ui", *chunks], logs / "unmarshal.log", env)
+        run([sys.executable, "scripts/js-native.py", *chunks], logs / "native-js.log", env)
+        shutil.copyfile(ROOT / "src/web/sw.js", web / "sw.js")
+        for dest, src in web_notices["licenses"].items():
+            destination = web / dest
+            require(not destination.exists(), "License collides with generated web asset")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / src, destination)
     notices(web, web_notices.get("packages"))
-    for path in sorted(web.rglob("*")):
+    for path in ([] if packet else sorted(web.rglob("*"))):
         if path.is_file() and path.suffix in {".js", ".css", ".html"}:
             path.with_name(path.name + ".gz").write_bytes(gzip.compress(path.read_bytes(), compresslevel=9, mtime=0))
     write(out / "WEB.json", web_manifest(web, release))
+    write(out / "WEB-NOTICES.json", web_notices)
     shutil.copyfile(ROOT / "LICENSE", out / "LICENSE.Backplane")
-    shutil.copyfile(qualification_path, out / "SOURCE-QUALIFICATION.json")
+    shutil.copyfile(packet / "SOURCE-QUALIFICATION.json" if packet else qualification_path,
+                    out / "SOURCE-QUALIFICATION.json")
     # Preserve the qualified logs and rebind their locations without changing their bytes.
     copied = dict(qualification)
     copied["checks"] = []
@@ -279,25 +353,51 @@ def build(request, base, out):
     source = {"schema": 1, "kind": "backplane-service-source", "commit": release["commit"], "tree": release["tree"],
               "entrypoint": "src/server/main.bend", "members": {name: digest(ROOT / name) for name in git("ls-files").splitlines()}}
     write(out / "SOURCE.json", source)
-    compiler = {"version": request["toolchain"]["bend"]["version"], "sha256": request["toolchain"]["bend"]["sha256"]}
+    compiler = emitted["compiler"] if packet else {"version": request["toolchain"]["bend"]["version"], "sha256": request["toolchain"]["bend"]["sha256"]}
     write(out / "WEB-EMISSION.json", {"schema": 1, "kind": "backplane-web-emission", "status": "VERIFIED", "target": "web",
           "version": VERSION, "channel": "release", "sourceCommit": release["commit"], "sourceTree": release["tree"],
           "entrypoint": "src/web/index.html", "webManifestSha256": digest(out / "WEB.json"), "compiler": compiler,
           "packages": web_notices["packages"], "sourceQualification": local_reference(out / "SOURCE-QUALIFICATION-BOUND.json", out)})
     frozen(release)
-    for name in ("bend", "clang"):
+    for name in tool_names:
         bound(request["toolchain"][name], base)
+    if phase == "emit":
+        result = {"schema": 1, "kind": "backplane-service-c-emission", "status": "VERIFIED_PORTABLE_C_EMISSION_ONLY",
+                  "target": "portable-c", "nativeTargets": sorted(TARGETS), "version": VERSION,
+                  "versionStamp": VERSION, "channel": "release", "sourceCommit": release["commit"], "sourceTree": release["tree"],
+                  "entrypoint": "src/server/main.bend", "compiler": compiler, "cArtifact": local_reference(out / "all.c", out),
+                  "sourceManifestSha256": digest(out / "SOURCE.json"), "webManifestSha256": digest(out / "WEB.json"),
+                  "sourceQualification": local_reference(out / "SOURCE-QUALIFICATION-BOUND.json", out),
+                  "emissionInputs": {"googleBake": False, "telemetryBake": False, "protectedInputsForwarded": False},
+                  "members": inventory(out), "nativeCompilation": False, "configuredBuild": False, "published": False}
+        write(out / "EMISSION.json", result)
+        return {"status": result["status"], "emissionReceipt": reference(out / "EMISSION.json"), "payload": str(out)}
+    if packet:
+        # Revalidate the complete immutable producer packet after native consumption.
+        emission_packet(request, base, release)
     result = {"schema": 1, "status": "VERIFIED_GENUINE_SERVICE_ONLY_CONFIGURED_BUILD", "target": request["target"],
               "entry": "src/server/main.bend", "version": VERSION, "versionStamp": VERSION, "telemetryChannel": "release",
               "source_commit": release["commit"], "source_tree": release["tree"], "compileInputs": compile_inputs(),
               "binary_sha256": digest(out / "backplane-serve"), "webManifestSha256": digest(out / "WEB.json"),
               "sourceManifestSha256": digest(out / "SOURCE.json"),
               "toolchain": {name: {key: request["toolchain"][name][key] for key in ("path", "bytes", "sha256", "version")}
-                            for name in ("bend", "clang")},
+                            for name in tool_names},
               "logs": {p.name: local_reference(p, out) for p in sorted(logs.iterdir())},
               "runtimeAcceptance": "PENDING", "published": False}
+    if packet:
+        result["portableEmission"] = {"receiptSha256": request["emissionReceipt"]["sha256"],
+                                      "cSha256": emitted["cArtifact"]["sha256"], "compiler": compiler,
+                                      "nativeCompilerLanes": 1}
     write(out / "BUILD.json", result)
     return {"status": result["status"], "buildReceipt": reference(out / "BUILD.json"), "payload": str(out)}
+
+
+def emit(request, base, out):
+    return build(request, base, out, phase="emit")
+
+
+def native(request, base, out):
+    return build(request, base, out, phase="native")
 
 
 def notices(root, packages):
@@ -385,13 +485,15 @@ def component(request, base, out):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("describe", "build", "component"))
+    parser.add_argument("operation", choices=("describe", "emit", "native", "build", "component"))
     parser.add_argument("--request", type=Path)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
     if args.operation == "describe":
         print(json.dumps({"interface": "backplane-service-release-producer-v1", "version": VERSION,
                           "targets": sorted(TARGETS), "build": "build --request REQUEST.json --out NEW_ABS_BUILD",
+                          "emit": "emit --request REQUEST.json --out NEW_ABS_PACKET",
+                          "native": "native --request REQUEST.json --out NEW_ABS_BUILD",
                           "component": "component --request REQUEST.json --out NEW_ABS_COMPONENT",
                           "publication": False}, indent=2))
         return

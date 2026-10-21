@@ -1445,12 +1445,20 @@ private fun ImageComposer(m: AppModel, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val field = rememberTextFieldState(m.composer)
+    var forwardedDraft by remember { mutableStateOf(m.composer) }
     LaunchedEffect(m.composer) {
-        if (field.text.toString() != m.composer) field.setTextAndPlaceCursorAtEnd(m.composer)
+        val incoming = m.composer
+        if (incoming != forwardedDraft) {
+            forwardedDraft = incoming
+            if (field.text.toString() != incoming) field.setTextAndPlaceCursorAtEnd(incoming)
+        }
     }
     LaunchedEffect(field) {
         snapshotFlow { field.text.toString() }.collect { text ->
-            if (text != m.composer) m.draft(text)
+            if (text != m.composer) {
+                forwardedDraft = text
+                m.draft(text)
+            }
         }
     }
     val receiver = remember(m, ctx, scope) {

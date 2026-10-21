@@ -173,9 +173,9 @@ jobs:
         if: inputs.operation == 'android-artifacts'
         env:
           BACKPLANE_ANDROID_KEYSTORE_BASE64: ${{ secrets.BACKPLANE_ANDROID_KEYSTORE_BASE64 }}
-          BACKPLANE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEYSTORE_PASSWORD }}
-          BACKPLANE_ANDROID_KEY_ALIAS: ${{ secrets.BACKPLANE_ANDROID_KEY_ALIAS }}
-          BACKPLANE_ANDROID_KEY_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.BACKPLANE_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEY_PASSWORD }}
         run: |
           python3 scripts/build-android-artifacts.py --inputs build/release-inputs/android-release-inputs.json --source "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/android-release"
       - uses: actions/upload-artifact@v4
