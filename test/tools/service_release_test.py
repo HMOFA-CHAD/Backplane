@@ -324,7 +324,7 @@ class ProducerTests(unittest.TestCase):
                 (web / "index.html").write_text("fixture")
                 (web / "chunk-0.js").write_text("// fixture")
             elif args[-1] == "--version":
-                return "backplane 0.12.0\n"
+                return ("backplane-render" if args[0].endswith("backplane-render") else "backplane") + " 0.12.0\n"
             return ""
 
         with patch.object(S, "ROOT", source), patch.object(S, "NATIVE_LOCK", self.root / "native.lock"), \
@@ -371,7 +371,7 @@ class ProducerTests(unittest.TestCase):
         emitted, _, _ = self.mocked_build(phase="emit", outname="packet")
         request = self.native_request(emitted)
         out, calls, _ = self.mocked_build(phase="native", request=request, outname="native")
-        self.assertEqual(len(calls), 3)  # the server and renderer native builds + the server's --version only
+        self.assertEqual(len(calls), 4)  # the server and renderer native builds + each one's --version only
         self.assertEqual([c[1] for c in calls[:2]], ["src/server/main.bend", "src/render/main.bend"])
         self.assertFalse(any("src/web/index.html" in c or "bend_check" in " ".join(c) for c in calls))
         built = S.read(out / "BUILD.json")

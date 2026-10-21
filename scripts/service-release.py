@@ -342,6 +342,8 @@ def build(request, base, out, phase="build"):
         architecture(out / "backplane-render", request["target"])
         version = run([out / "backplane-serve", "--version"], logs / "version.log", env, 30).strip()
         require(version == "backplane " + VERSION, "Compiled service did not report exact stable version")
+        render_version = run([out / "backplane-render", "--version"], logs / "render-version.log", env, 30).strip()
+        require(render_version == "backplane-render " + VERSION, "Compiled renderer did not report exact stable version")
     frozen(release)
     tool_names = ("clang",) if packet else ("bend", "clang")
     for name in tool_names:
