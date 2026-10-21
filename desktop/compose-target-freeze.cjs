@@ -2,7 +2,7 @@
 // Root-authorized deterministic artifact binding; no acceptance or product IO.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const p=require('./produce-release.cjs');
-const POLICY='2376fa34e8ba5c786b23056392cd35730ce5a2c4c09982868cd7db89dcd510dd';
+const POLICY='fc3aba8aa6e58fabf0f91cd995bd6485f8e35215bb2f1dfa7dc642e4e4c8a335';
 const WINDOWS='1c12bd80b6f994ecd0d68d06b8ada98e1958de725d33f6380da3c0243ad099e3';
 const ref=file=>({path:path.resolve(file),sha256:p.digest(file),bytes:fs.statSync(file).size});
 function options(argv){const keys=['--policy','--components','--service','--out'];assert.equal(argv.length,8,'Use '+keys.join(', '));const a={};for(let i=0;i<8;i+=2){assert(keys.includes(argv[i])&&!a[argv[i]],'Unknown/duplicate option');assert(path.isAbsolute(argv[i+1]),'Absolute paths required');a[argv[i]]=argv[i+1];}return a;}
@@ -31,7 +31,7 @@ function compose(a){
       assert.equal(p.digest(path.join(service.payload.directory,'EXECUTION-HELPER.py')),policy.tooling.serviceComponentProducerSha256,'Configured native helper differs from root policy');assert.equal(p.digest(path.join(service.payload.directory,'runtime-evidence/SERVICE-RUNTIME-PRODUCER.py')),executionTooling.serviceRuntimeFactorySha256,'Runtime factory differs from root policy');
     }
     const pins={shellReceiptSha256:shell.receipt.sha256,electronReceiptSha256:electron.receipt.sha256,...(target==='windows-x64'?{serviceArchiveSha256:service.archive.sha256}:{serviceReceiptSha256:service.receipt.sha256}),webManifestSha256:p.digest(web)};
-    const freeze={schema:1,kind:'backplane-release-freeze',status:'FROZEN',...components.release,sourceDateEpoch:policy.sourceDateEpoch,electronVersion:policy.electronVersion,compileInputs:policy.compileInputs,components:{[target]:pins},signingPolicy:{[target]:allowed.signingPolicy},lifecyclePolicy:{[target]:allowed.lifecyclePolicy},rootStagingDisposition:{sha256:POLICY,bytes:fs.statSync(a['--policy']).size},executionTooling,scope:'Root-authorized source/artifact staging freeze for this target only. Actual desktop/sandbox/runtime acceptance remains pending.',published:false};
+    const freeze={schema:1,kind:'backplane-release-freeze',status:'FROZEN',...components.release,sourceDateEpoch:policy.sourceDateEpoch,electronVersion:policy.electronVersion,compileInputs:policy.compileInputs,components:{[target]:pins},signingPolicy:{[target]:allowed.signingPolicy},lifecyclePolicy:{[target]:allowed.lifecyclePolicy},rootStagingDisposition:{sha256:POLICY,bytes:fs.statSync(a['--policy']).size},...(allowed.windowsShellSource?{windowsShellSource:allowed.windowsShellSource}:{}),executionTooling,scope:'Root-authorized source/artifact staging freeze for this target only. Actual desktop/sandbox/runtime acceptance remains pending.',published:false};
     const candidate=path.join(temp,'freeze.json');p.write(candidate,freeze);
     const request=path.join(temp,'request.json');p.write(request,{schema:1,kind:'backplane-electron-release-inputs',target,release:{...components.release,freezeReceipt:ref(candidate)},shell,electron,service});
     // Reuse actual producer validation: configured stable original BUILD, full

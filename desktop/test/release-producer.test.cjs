@@ -7,9 +7,9 @@ function put(p,value,mode=0o644){fs.mkdirSync(path.dirname(p),{recursive:true});
 const write=(p,o)=>put(p,JSON.stringify(o,null,2)+'\n');
 const ref=p=>({path:p,sha256:hash(p),bytes:fs.statSync(p).size});
 function binary(target){const b=Buffer.alloc(512);if(target.startsWith('linux')){b.write('7f454c46','hex');b[4]=2;b[5]=1;b.writeUInt16LE(target==='linux-x64'?62:183,18);}else if(target==='darwin-arm64'){b.writeUInt32LE(0xfeedfacf);b.writeUInt32LE(0x100000c,4);}else{b.write('MZ');b.writeUInt32LE(128,60);b.write('PE\0\0',128);b.writeUInt16LE(0x8664,132);}return b;}
-function fixture(t,target='linux-x64',resident=false){
+function fixture(t,target='linux-x64',resident=false,releaseSource={}){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'bp-producer-offline-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
- const release={version:'0.12.0',tag:'v0.12.0',channel:'release',commit:'a'.repeat(40),tree:'b'.repeat(40)};
+ const release={version:'0.12.0',tag:'v0.12.0',channel:'release',commit:releaseSource.commit||'a'.repeat(40),tree:releaseSource.tree||'b'.repeat(40)};
  const identity=kind=>({schema:1,kind,status:'VERIFIED',target,sourceCommit:release.commit,sourceTree:release.tree,version:release.version,channel:'release'});
  const notice=(dir,name)=>{put(path.join(dir,'LICENSE.'+name),'SYNTHETIC OFFLINE LICENSE '+name);return{name,version:'fixture',sourceDisposition:'Synthetic test only; no redistribution or platform qualification',licenses:[{path:'LICENSE.'+name,sha256:hash(path.join(dir,'LICENSE.'+name))}]};};
  const shell=path.join(root,'shell'),electron=path.join(root,'electron'),service=path.join(root,'service');
@@ -138,4 +138,16 @@ test('resident-service lifecycle works on non-Windows targets and never override
   const f=fixture(t,target,true),dir=path.join(f.root,'stage');producer.stage(f.requestPath,dir);assert.equal(producer.archive(dir,evidence(f,dir),path.join(f.root,'dist')).target,target);
  }
  const f=fixture(t,'windows-x64',true);f.freeze.signingPolicy[f.target]='required';f.refresh();const dir=path.join(f.root,'stage');producer.stage(f.requestPath,dir);assert.throws(()=>producer.archive(dir,evidence(f,dir),path.join(f.root,'dist')),/Signing/);
+});
+
+test('exact Windows launcher successor preserves original native/vendor source and package provenance',t=>{
+ const base={commit:'8147b68dbc9bcddad7e3b51ae7768ed9eb211ecc',tree:'37c64023d084bca7f209db9d14a84f59d365f696'},f=fixture(t,'windows-x64',true,base);
+ const successor=producer.WINDOWS_SHELL_SOURCE,source=fs.readFileSync(path.join(__dirname,'../service.cjs'));
+ put(path.join(f.shell,'service.cjs'),source);assert.equal(hash(path.join(f.shell,'service.cjs')),successor.serviceSha256);
+ Object.assign(f.shellReceipt,{sourceCommit:successor.commit,sourceTree:successor.tree,sourceFiles:{'desktop/service.cjs':successor.serviceSha256},members:producer.inventory(f.shell,f.target)});
+ f.request.shell.receipt=ref(write(path.join(f.root,'shell.json'),f.shellReceipt));f.freeze.components[f.target].shellReceiptSha256=f.request.shell.receipt.sha256;f.freeze.windowsShellSource=successor;f.refresh();
+ const dir=path.join(f.root,'stage');producer.stage(f.requestPath,dir);
+ const staged=JSON.parse(fs.readFileSync(path.join(dir,'STAGE.json')));assert.deepEqual(staged.windowsShellSource,successor);assert.equal(staged.release.commit,base.commit);
+ const result=producer.archive(dir,evidence(f,dir),path.join(f.root,'dist')),desktop=JSON.parse(fs.readFileSync(result.desktopReceipt));assert.deepEqual(desktop.windowsShellSource,successor);
+ const prov=path.join(path.dirname(result.desktopReceipt),'PROVENANCE');assert.equal(JSON.parse(fs.readFileSync(path.join(prov,'shell.json'))).sourceCommit,successor.commit);assert.equal(JSON.parse(fs.readFileSync(path.join(prov,'electron.json'))).sourceCommit,base.commit);
 });

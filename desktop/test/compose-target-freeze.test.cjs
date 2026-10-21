@@ -6,5 +6,5 @@ test('freeze composition cannot receive relative or duplicate artifact paths',()
 });
 test('untrusted staging policy is rejected before artifact composition',()=>{
   assert.throws(()=>a.policyIdentity({}, {},'0'.repeat(64)),/Untrusted root/);
-  assert.throws(()=>a.policyIdentity({kind:'wrong'}, {},'2376fa34e8ba5c786b23056392cd35730ce5a2c4c09982868cd7db89dcd510dd'));
+  assert.throws(()=>a.policyIdentity({kind:'wrong'}, {},'fc3aba8aa6e58fabf0f91cd995bd6485f8e35215bb2f1dfa7dc642e4e4c8a335'));
 });
