@@ -236,7 +236,7 @@ def emit(args):
     with c.open('rb') as src, (stage / 'service.c.gz').open('wb') as dest:
         with gzip.GzipFile(filename='', mode='wb', fileobj=dest, mtime=0) as compressed:
             shutil.copyfileobj(src, compressed)
-    subprocess.run(['bash', '-c', '. scripts/bendok.sh; bend_check src/web/index.html'],
+    subprocess.run(['bash', '-c', '. scripts/bendok.sh; bend_check src/web/app.bend'],
                    cwd=ROOT, env=env, check=True)
     subprocess.run(['bend', 'src/web/index.html', '-o', str(stage / 'web')],
                    cwd=ROOT, env=env, check=True)
