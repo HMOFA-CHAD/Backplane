@@ -35,9 +35,20 @@ RETAINED_COMPONENT_SOURCE = ("920c5a399dc7880bb3c6518239844570f116b3c7",
                              "02b851c54fff33a28e9d1cc60298f6527b78dd32")
 
 
-def target_gates(surface):
+def deferred_gates(tag):
+    if tag != "v0.12.0":
+        return {}
+    return {"telemetry-privacy": {
+        "state": "deferred-by-explicit-user-order",
+        "requiredForThisPublication": False,
+        "accepted": False,
+        "reason": "2026-10-21: user halted telemetry work and validation to ship 0.12.0",
+    }}
+
+
+def target_gates(surface, tag):
     gates = COMMON_GATES | ({"package-identity"} if surface != "web" else set())
-    return gates | ({"os-sandbox"} if surface == "desktop" else set())
+    return (gates | ({"os-sandbox"} if surface == "desktop" else set())) - set(deferred_gates(tag))
 
 
 def version_identity(tag):
@@ -59,9 +70,10 @@ def coverage_plan(source, tag):
     return {
         "schema": 1, "kind": "backplane-release-coverage",
         "sourceCommit": source, "tag": tag, "version": version, "channel": channel,
+        "deferredGates": deferred_gates(tag),
         "files": {},
         "targets": {name: {"surface": surface, "state": "pending", "artifacts": [],
-                           "gates": {gate: None for gate in sorted(target_gates(surface))}}
+                           "gates": {gate: None for gate in sorted(target_gates(surface, tag))}}
                     for name, surface in RELEASE_TARGETS.items()},
         "scope": "Artifact and owner-receipt bindings only; root reviews actual gate scope and alone publishes. No builds or product acceptance from this template.",
     }
@@ -100,6 +112,8 @@ def verify_coverage(directory, manifest, source, tag):
             manifest.get("tag"), manifest.get("version"), manifest.get("channel")) != (
             1, "backplane-release-coverage", source, tag, version, channel):
         raise ValueError("coverage source/version/channel mismatch")
+    if manifest.get("deferredGates", {}) != deferred_gates(tag):
+        raise ValueError("coverage deferral does not match explicit user release scope")
     targets, files = manifest.get("targets"), manifest.get("files")
     if not isinstance(targets, dict) or set(targets) != set(RELEASE_TARGETS):
         raise ValueError("coverage requires every desktop, web and mobile target exactly once")
@@ -119,7 +133,7 @@ def verify_coverage(directory, manifest, source, tag):
                 or not all(isinstance(a, str) for a in artifacts)
                 or len(set(artifacts)) != len(artifacts)):
             raise ValueError("target requires explicit, unique artifact references: " + name)
-        if not isinstance(gates, dict) or set(gates) != target_gates(surface):
+        if not isinstance(gates, dict) or set(gates) != target_gates(surface, tag):
             raise ValueError("target gate coverage incomplete: " + name)
         for reference in artifacts:
             if (reference not in files or files[reference]["kind"] != "asset"

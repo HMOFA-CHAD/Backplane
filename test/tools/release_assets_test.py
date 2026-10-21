@@ -481,6 +481,19 @@ class CoverageTests(unittest.TestCase):
         self.verify()
         self.assertIn("root reviews actual gate scope", self.manifest["scope"])
 
+    def test_telemetry_deferral_is_limited_to_explicit_user_release(self):
+        plan = assets.coverage_plan(SHA, "v0.12.0")
+        self.assertIs(plan["deferredGates"]["telemetry-privacy"]["accepted"], False)
+        self.assertTrue(all("telemetry-privacy" not in row["gates"] for row in plan["targets"].values()))
+        future = assets.coverage_plan(SHA, "v0.12.1")
+        self.assertEqual(future["deferredGates"], {})
+        self.assertTrue(all("telemetry-privacy" in row["gates"] for row in future["targets"].values()))
+
+    def test_deferred_telemetry_cannot_be_relabelled_as_accepted(self):
+        self.manifest["deferredGates"]["telemetry-privacy"]["accepted"] = True
+        with self.assertRaisesRegex(ValueError, "deferral"):
+            self.verify()
+
     def test_linux_only_cannot_complete_release(self):
         for name, row in self.manifest["targets"].items():
             if name != "linux-x64":
@@ -507,7 +520,7 @@ class CoverageTests(unittest.TestCase):
                 self.manifest[field] = original
 
     def test_sandbox_and_privacy_receipts_required(self):
-        for target, gate in [("linux-x64", "os-sandbox"), ("web", "telemetry-privacy"),
+        for target, gate in [("linux-x64", "os-sandbox"), ("web", "auth-security"),
                              ("ios", "product-parity")]:
             with self.subTest(target=target, gate=gate):
                 original = self.manifest["targets"][target]["gates"].pop(gate)
