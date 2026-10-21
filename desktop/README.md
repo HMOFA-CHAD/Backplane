@@ -47,3 +47,7 @@ BACKPLANE_HOME=/absolute/isolated/home /absolute/new-stage/backplane-electron
 The stage includes the pinned Electron distribution and its notices, a strict shell file list, the index's emitted web assets, and the approved service. Its member hashes are in `MANIFEST.json`; `runtime/resources/backplane-service/BUILD.json` binds the service greeting version and optional source tree. It contains no user home, profile, fonts or experiments. Root selects the production home and performs the final install/rollback; this tool only assembles a new directory.
 
 The minimal Mailroom packet preserves the existing Browser baseline. Direct Browser guests and full desktop parity are separate work. Quiet Mailroom acceptance requires the successor that separates human mailbox RPCs from `mail.on`; the old service cannot prove it. Never enable live automation to bypass that dependency. The smoke defaults to automation OFF and requires an exact `BACKPLANE_SERVICE_VERSION` for a successor.
+
+The stable four-target artifact producer and standalone web adapter are callable;
+see [RELEASE-PRODUCER.md](RELEASE-PRODUCER.md) for exact inputs, commands and
+qualification boundaries. Local stage-linux.cjs remains a review tool.

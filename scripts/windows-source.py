@@ -2,6 +2,10 @@
 """Bind Windows emitted inputs to one clean source revision and version."""
 from pathlib import Path
 import hashlib,json,os,subprocess,sys
+if sys.argv[1:2] == ['--service']:
+    from runpy import run_path
+    run_path(str(Path(__file__).with_name('windows-service.py')))['main'](sys.argv[2:])
+    raise SystemExit(0)
 
 root=Path(__file__).resolve().parent.parent
 directory=root/'build/windows-emitted'

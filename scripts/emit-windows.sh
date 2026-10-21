@@ -2,6 +2,11 @@
 # The pinned Bend compiler emits portable C; Windows compiles it natively.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+if [[ ${1:-} == --service ]]; then
+  shift
+  exec python3 scripts/windows-service.py emit "$@"
+fi
+[[ $# == 0 ]] || { echo 'usage: emit-windows.sh [--service --out DIR]' >&2; exit 2; }
 export BACKPLANE_LOW_MEM=1 BACKPLANE_JOBS=1 BACKPLANE_EMIT_ONLY=1
 export BACKPLANE_GOOGLE_BAKE=0 BP_BUILD_LOCKED=1
 if [[ -n ${BACKPLANE_VERSION:-} ]]; then

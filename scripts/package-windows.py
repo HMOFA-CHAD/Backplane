@@ -3,6 +3,9 @@
 from pathlib import Path
 import hashlib, json, re, sys, zipfile
 from runpy import run_path
+if sys.argv[1:2] == ['--service']:
+    run_path(str(Path(__file__).with_name('windows-service.py')))['main'](['package', *sys.argv[2:]])
+    raise SystemExit(0)
 
 root = Path(__file__).resolve().parent.parent
 version = sys.argv[1]

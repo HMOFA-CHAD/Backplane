@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+if [[ ${1:-} == --service ]]; then
+  shift
+  exec python3 scripts/windows-service.py native "$@"
+fi
+[[ $# == 0 ]] || { echo 'usage: ci-windows.sh [--service --inputs ARCHIVE --sha256 SHA --runtime-payload DIR --runtime-manifest-sha256 SHA --out DIR]' >&2; exit 2; }
 export PATH=/usr/bin:/bin:$PATH LC_ALL=C.UTF-8
 export BACKPLANE_JOBS=${BACKPLANE_JOBS:-2} BACKPLANE_UNITS=32
 mkdir -p build/windows-input dist

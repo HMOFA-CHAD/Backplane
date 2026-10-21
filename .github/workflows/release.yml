@@ -1,274 +1,234 @@
-name: Release candidate (build only)
+name: Electron release candidate (artifact only)
 
-# Publication is deliberately not a workflow side effect. Bub publishes the
-# accepted downloaded bundle after native/content/auth/telemetry gates pass.
+# No push/tag trigger, install, store upload, gh release or write permission.
+# Root selects each frozen artifact/producer operation and alone publishes.
 on:
   workflow_dispatch:
     inputs:
-      telemetry_url:
-        description: Approved endpoint for the frozen candidate native compile
-        type: string
-        default: https://backplane.works/api/v1/events
+      operation:
+        description: Stage, preserve qualified archives, or collect all seven target packages
+        type: choice
+        options: [collect, stage-desktop, archive-desktop, android-artifacts, web-artifacts]
+        default: collect
+      target:
+        description: Desktop producer target; ignored by collect
+        type: choice
+        options: [linux-x64, linux-arm64, darwin-arm64, windows-x64]
+        default: linux-x64
       ref:
-        description: Full frozen source commit (40 hex characters)
+        description: Full accepted frozen source commit
         required: true
         type: string
       version:
-        description: Full package tag, e.g. v0.11.2 (no tag is created)
+        description: Exact stable tag spelling; this workflow creates no tag
         required: true
-        default: v0.11.2
+        default: v0.12.0
+        type: string
+      producer_run_id:
+        description: Completed successful run containing owner-produced package artifacts
+        required: true
+        type: string
+      producer_artifact_ids:
+        description: Comma-separated immutable artifact IDs in that run
+        required: true
+        type: string
+      inputs_sha256:
+        description: Root-reviewed SHA256 of input index, desktop request, or desktop acceptance
+        required: true
+        type: string
+      telemetry_url:
+        description: Future producer compile endpoint; not a key or runtime override
+        default: https://backplane.works/api/v1/events
         type: string
   workflow_call:
     inputs:
-      telemetry_url:
-        description: Approved endpoint for the frozen candidate native compile
+      operation:
         type: string
-        default: https://backplane.works/api/v1/events
+        default: collect
+      target:
+        type: string
+        default: linux-x64
       ref:
         required: true
         type: string
       version:
         required: true
+        type: string
+      producer_run_id:
+        default: ''
+        type: string
+      producer_artifact_ids:
+        default: ''
+        type: string
+      inputs_sha256:
+        default: ''
+        type: string
+      telemetry_url:
+        default: https://backplane.works/api/v1/events
         type: string
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
-  candidate:
-    name: Validate frozen inputs
+  candidate-assets:
+    name: Frozen artifact orchestration; no publication
+    # This is supplied-artifact assembly, never target service execution.
+    # Signing and actual platform gates happen with their native owners.
     runs-on: ubuntu-24.04
-    outputs:
-      commit: ${{ steps.identity.outputs.commit }}
-      tag: ${{ steps.identity.outputs.tag }}
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 45
+    env:
+      SOURCE_COMMIT: ${{ inputs.ref }}
+      RELEASE_TAG: ${{ inputs.version }}
+      PRODUCER_RUN: ${{ inputs.producer_run_id }}
+      PRODUCER_IDS: ${{ inputs.producer_artifact_ids }}
+      INPUTS_SHA256: ${{ inputs.inputs_sha256 }}
+      WORKFLOW_COMMIT: ${{ github.sha }}
+      OPERATION: ${{ inputs.operation }}
+      DESKTOP_TARGET: ${{ inputs.target }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
-      - name: Require exact source and full version
-        id: identity
+          persist-credentials: false
+      - name: Require exact frozen workflow, source and producer run
         env:
-          SOURCE_COMMIT: ${{ inputs.ref }}
-          RELEASE_TAG: ${{ inputs.version }}
-          WORKFLOW_COMMIT: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'CHECK'
-          import os, re, runpy, subprocess
+          import json, os, re, runpy, subprocess
           from pathlib import Path
-          commit, tag = os.environ['SOURCE_COMMIT'], os.environ['RELEASE_TAG']
-          if not re.fullmatch(r'[0-9a-f]{40}', commit):
-              raise SystemExit('candidate requires a full source commit')
+          e = os.environ
+          commit, tag = e['SOURCE_COMMIT'], e['RELEASE_TAG']
           runpy.run_path('scripts/release-assets.py')['identity'](commit, tag)
-          actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-          if actual != commit or os.environ['WORKFLOW_COMMIT'] != commit:
-              raise SystemExit('workflow and checkout must match the frozen source')
-          with Path(os.environ['GITHUB_OUTPUT']).open('a') as out:
-              out.write(f'commit={commit}\ntag={tag}\n')
+          if tag != 'v0.12.0':
+              raise SystemExit('this stable preparation targets v0.12.0 only')
+          if e['WORKFLOW_COMMIT'] != commit or subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip() != commit:
+              raise SystemExit('workflow and checkout must equal frozen source')
+          if not re.fullmatch(r'[1-9][0-9]*', e['PRODUCER_RUN']) or not re.fullmatch(r'[1-9][0-9]*(,[1-9][0-9]*)*', e['PRODUCER_IDS']):
+              raise SystemExit('root-selected producer run and artifact IDs required')
+          if e['OPERATION'] not in ('collect','stage-desktop','archive-desktop','android-artifacts','web-artifacts') or e['DESKTOP_TARGET'] not in ('linux-x64','linux-arm64','darwin-arm64','windows-x64'):
+              raise SystemExit('unsupported producer operation or target')
+          if e['OPERATION'] in ('stage-desktop','archive-desktop') and not Path('desktop/produce-release.cjs').is_file():
+              raise SystemExit('desktop owner callable producer is not integrated')
+          required = {'android-artifacts':'scripts/build-android-artifacts.py', 'web-artifacts':'desktop/produce-web-release.cjs'}
+          if e['OPERATION'] in required and not Path(required[e['OPERATION']]).is_file():
+              raise SystemExit('target owner callable producer is not integrated')
+          ids = e['PRODUCER_IDS'].split(',')
+          if len(ids) != len(set(ids)) or not re.fullmatch(r'[0-9a-f]{64}', e['INPUTS_SHA256']):
+              raise SystemExit('unique artifact IDs and input-index digest required')
+          run = json.loads(subprocess.check_output(['gh','api',f"repos/{e['GITHUB_REPOSITORY']}/actions/runs/{e['PRODUCER_RUN']}"]))
+          if (run.get('head_sha'), run.get('status'), run.get('conclusion')) != (commit, 'completed', 'success'):
+              raise SystemExit('producer run must be successful and match frozen source')
+          for artifact_id in ids:
+              item = json.loads(subprocess.check_output(['gh','api',f"repos/{e['GITHUB_REPOSITORY']}/actions/artifacts/{artifact_id}"]))
+              if item.get('expired') or str(item.get('workflow_run',{}).get('id')) != e['PRODUCER_RUN']:
+                  raise SystemExit('artifact expired or belongs to another run')
           CHECK
-      - name: Reject missing or mismatched release bake inputs before builds
-        env:
-          BACKPLANE_GOOGLE_BAKE: "1"
-          BACKPLANE_GOOGLE_CLIENT_ID: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_ID }}
-          BACKPLANE_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_SECRET }}
-          BACKPLANE_TELEMETRY_BAKE: "1"
-          BACKPLANE_TELEMETRY_URL: ${{ inputs.telemetry_url }}
-          BACKPLANE_TELEMETRY_KID: ${{ secrets.BACKPLANE_TELEMETRY_KID }}
-          BACKPLANE_TELEMETRY_KEY: ${{ secrets.BACKPLANE_TELEMETRY_KEY }}
-          SOURCE_COMMIT: ${{ steps.identity.outputs.commit }}
-          RELEASE_TAG: ${{ steps.identity.outputs.tag }}
-        run: python3 scripts/release-assets.py check-bake --source "$SOURCE_COMMIT" --tag "$RELEASE_TAG"
-
-  windows:
-    needs: [candidate]
-    name: Windows
-    uses: ./.github/workflows/windows.yml
-    secrets: inherit
-    with:
-      ref: ${{ needs.candidate.outputs.commit }}
-      version: ${{ needs.candidate.outputs.tag }}
-      telemetry_url: ${{ inputs.telemetry_url }}
-
-  laws:
-    needs: [candidate]
-    name: Check and prove
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.candidate.outputs.commit }}
-      - uses: ./.github/actions/setup-bend
-      - run: scripts/check.sh
-
-  build:
-    needs: [candidate]
-    name: Build ${{ matrix.target }}
-    # beside "laws"; candidate assembly needs both
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - { target: linux-x64,    os: ubuntu-24.04 }
-          - { target: linux-arm64,  os: ubuntu-24.04-arm }
-          # darwin-arm64 is the two jobs below
-    runs-on: ${{ matrix.os }}
-    env:
-      TAG: ${{ needs.candidate.outputs.tag }}
-      BACKPLANE_CEF_RELEASE: ${{ matrix.target == 'linux-x64' && '1' || '0' }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.candidate.outputs.commit }}
-      - uses: ./.github/actions/setup-bend
-      - uses: oven-sh/setup-bun@v2
-      - name: Swap for the compile
-        # bend's emit of the app takes 16-22 GB; the Linux runners have 16, so
-        # without swap it can be killed. (The clang compiles no longer need
-        # it: scripts/build-app.sh cuts the C into 16 units of about 2.5 GB.)
-        if: runner.os == 'Linux'
-        # the swap file goes on /mnt when the runner has it, and never takes
-        # more than the free space less 8 GB (a full disk kills the runner)
-        run: |
-          dir=/; [ -d /mnt ] && dir=/mnt
-          df -h / /mnt || true
-          free_gb=$(df -BG --output=avail "$dir" | tail -1 | tr -dc 0-9)
-          size=$(( free_gb - 8 )); [ "$size" -gt 16 ] && size=16
-          if [ "$size" -ge 2 ]; then
-            sudo fallocate -l "${size}G" "$dir/swap-build"
-            sudo chmod 600 "$dir/swap-build"
-            sudo mkswap "$dir/swap-build"
-            sudo swapon "$dir/swap-build"
-          else
-            echo "only ${free_gb} GB free on $dir: no swap"
-          fi
-          free -h
-      - name: Install clang 19 and X11 headers
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-19 libx11-dev cmake ninja-build
-          if [ "${{ matrix.target }}" = linux-x64 ]; then
-            sudo apt-get install -y xvfb libxtst6 libnss3 libatk-bridge2.0-0t64 libcups2t64 libasound2t64
-          fi
-          sudo ln -sf /usr/bin/clang-19 /usr/local/bin/clang
-      - name: Object cache
-        # the compiled C units, by hash of their text (scripts/cc-unit.sh): an
-        # unchanged unit is not compiled again. Never holds the Google client
-        # (a unit that includes it is not cached).
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/backplane-bend/obj
-          key: objs-${{ matrix.target }}-${{ needs.candidate.outputs.tag }}
-          restore-keys: objs-${{ matrix.target }}-
-      - run: BACKPLANE_VERSION="$TAG" scripts/build.sh
-        env:
-          BACKPLANE_SKIP_CHECK: "1" # the laws job checks every file; candidate assembly needs it
-          # the Google client "Connect Google" signs in with (scripts/build-app.sh)
-          BACKPLANE_GOOGLE_BAKE: "1"
-          BACKPLANE_GOOGLE_CLIENT_ID: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_ID }}
-          BACKPLANE_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_SECRET }}
-          BACKPLANE_TELEMETRY_BAKE: "1"
-          BACKPLANE_TELEMETRY_URL: ${{ inputs.telemetry_url }}
-          BACKPLANE_TELEMETRY_KID: ${{ secrets.BACKPLANE_TELEMETRY_KID }}
-          BACKPLANE_TELEMETRY_KEY: ${{ secrets.BACKPLANE_TELEMETRY_KEY }}
-      - run: scripts/smoke.sh
-      - name: Native CEF popup acceptance
-        if: matrix.target == 'linux-x64'
-        # Retain263's mandatory functional gate. Software Xvfb does not certify FPS.
-        # Current official runtime fails this gate; no fallback or waiver here.
-        run: BACKPLANE_CEF_NO_GPU=1 BACKPLANE_CEF="$PWD/dist/browser-runtime/cef/backplane-cef" BACKPLANE_BROWSER="$PWD/dist/backplane-browser" bun tools/browser/test/popup-cef.ts
-      - run: scripts/package.sh "$TAG" "${{ matrix.target }}"
-      - run: scripts/package-linux.sh "$TAG" "${{ matrix.target }}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: backplane-${{ matrix.target }}
-          path: |
-            dist/backplane-*.tar.gz
-            dist/backplane-*.AppImage
-            dist/backplane_*.deb
-
-  # macOS: the hub and web UI as `backplane` (no X11, so no window). bend's
-  # emit of the server takes over 8 GB, which a macOS runner (7 GB) spends
-  # hours swapping through, and its C is the same on every platform: a
-  # Linux runner emits it with the web client, the Mac compiles it.
-  emit-darwin:
-    needs: [candidate]
-    name: Emit darwin-arm64
-    runs-on: ubuntu-24.04
-    env:
-      TAG: ${{ needs.candidate.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.candidate.outputs.commit }}
-      - uses: ./.github/actions/setup-bend
-      - run: BACKPLANE_VERSION="$TAG" BACKPLANE_SKIP_CHECK=1 scripts/build.sh emit
-      - uses: actions/upload-artifact@v4
-        with:
-          name: darwin-arm64-emitted
-          retention-days: 1
-          path: |
-            dist/web
-            dist/kistack
-            build/cc/backplane-serve/all.c
-            build/wire
-
-  build-darwin:
-    name: Build darwin-arm64
-    needs: [candidate, emit-darwin]
-    runs-on: macos-15
-    env:
-      TAG: ${{ needs.candidate.outputs.tag }}
-      BACKPLANE_PREBUILT: "1"
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.candidate.outputs.commit }}
-      - uses: ./.github/actions/setup-bend
-      - uses: oven-sh/setup-bun@v2
       - uses: actions/download-artifact@v4
         with:
-          name: darwin-arm64-emitted
-          path: .
-      - run: clang --version
-      - run: BACKPLANE_VERSION="$TAG" scripts/build.sh
-        env:
-          BACKPLANE_GOOGLE_BAKE: "1"
-          BACKPLANE_GOOGLE_CLIENT_ID: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_ID }}
-          BACKPLANE_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_SECRET }}
-          BACKPLANE_TELEMETRY_BAKE: "1"
-          BACKPLANE_TELEMETRY_URL: ${{ inputs.telemetry_url }}
-          BACKPLANE_TELEMETRY_KID: ${{ secrets.BACKPLANE_TELEMETRY_KID }}
-          BACKPLANE_TELEMETRY_KEY: ${{ secrets.BACKPLANE_TELEMETRY_KEY }}
-      - run: scripts/smoke.sh
-      - run: scripts/package.sh "$TAG" darwin-arm64
-      - uses: actions/upload-artifact@v4
-        with:
-          name: backplane-darwin-arm64
-          path: dist/backplane-*.tar.gz
-
-  candidate-assets:
-    name: Preserve candidate assets (not publication)
-    needs: [candidate, laws, build, build-darwin, windows]
-    runs-on: ubuntu-24.04
-    env:
-      SOURCE_COMMIT: ${{ needs.candidate.outputs.commit }}
-      RELEASE_TAG: ${{ needs.candidate.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.candidate.outputs.commit }}
-      - uses: actions/download-artifact@v4
-        with:
-          path: out
-          pattern: backplane-*
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.producer_run_id }}
+          artifact-ids: ${{ inputs.producer_artifact_ids }}
           merge-multiple: true
-      - name: Hash and bind the exact candidate files
+          path: build/release-inputs
+      - name: Bind reviewed input index before parsing packages
         run: |
-          python3 scripts/release-assets.py collect --directory out --source "$SOURCE_COMMIT" --tag "$RELEASE_TAG" --require-cef
-          python3 scripts/release-assets.py verify --directory out --source "$SOURCE_COMMIT" --tag "$RELEASE_TAG" --require-cef
+          python3 - <<'CHECK'
+          import hashlib, os
+          from pathlib import Path
+          names = {'collect':'release-inputs.json', 'stage-desktop':'desktop-release-request.json', 'archive-desktop':'desktop-release-acceptance.json', 'android-artifacts':'android-release-inputs.json', 'web-artifacts':'web-release-request.json'}
+          p = Path('build/release-inputs') / names[os.environ['OPERATION']]
+          if p.is_symlink() or hashlib.sha256(p.read_bytes()).hexdigest() != os.environ['INPUTS_SHA256']:
+              raise SystemExit('producer input index differs from root-reviewed bytes')
+          if os.environ['OPERATION'] == 'collect':
+              import json, subprocess
+              r = json.loads(p.read_bytes())
+              if r.get('sourceTree') != subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip():
+                  raise SystemExit('input index tree differs from frozen checkout')
+          CHECK
+      - uses: actions/setup-node@v4
+        if: inputs.operation == 'stage-desktop' || inputs.operation == 'archive-desktop' || inputs.operation == 'web-artifacts'
+        with:
+          node-version: '22'
+      - name: Stage explicit target inputs through the desktop owner's producer
+        if: inputs.operation == 'stage-desktop'
+        run: |
+          node desktop/produce-release.cjs stage --request build/release-inputs/desktop-release-request.json --output "$GITHUB_WORKSPACE/build/desktop-stage-upload/desktop-stage"
+      - name: Archive only the signed and target-qualified final payload
+        if: inputs.operation == 'archive-desktop'
+        run: |
+          node desktop/produce-release.cjs archive --stage build/release-inputs/desktop-stage --acceptance build/release-inputs/desktop-release-acceptance.json --output "$GITHUB_WORKSPACE/build/desktop-dist"
+      - uses: actions/setup-java@v4
+        if: inputs.operation == 'android-artifacts'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Produce configured Android Release artifacts without installation or store upload
+        if: inputs.operation == 'android-artifacts'
+        env:
+          BACKPLANE_ANDROID_KEYSTORE_BASE64: ${{ secrets.BACKPLANE_ANDROID_KEYSTORE_BASE64 }}
+          BACKPLANE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEYSTORE_PASSWORD }}
+          BACKPLANE_ANDROID_KEY_ALIAS: ${{ secrets.BACKPLANE_ANDROID_KEY_ALIAS }}
+          BACKPLANE_ANDROID_KEY_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEY_PASSWORD }}
+        run: |
+          python3 scripts/build-android-artifacts.py --inputs build/release-inputs/android-release-inputs.json --source "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/android-release"
       - uses: actions/upload-artifact@v4
+        if: inputs.operation == 'android-artifacts'
+        with:
+          name: android-release-artifacts
+          path: |
+            build/android-release/*.apk
+            build/android-release/*.aab
+            build/android-release/*.receipt.json
+            build/android-release/receipt.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Standalone frozen generated-web producer (no service/helper build)
+        if: inputs.operation == 'web-artifacts'
+        run: |
+          node desktop/produce-web-release.cjs archive --request build/release-inputs/web-release-request.json --output "$GITHUB_WORKSPACE/build/web-release"
+      - uses: actions/upload-artifact@v4
+        if: inputs.operation == 'web-artifacts'
+        with:
+          name: web-release-artifacts
+          path: build/web-release/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Collect exact Electron, web, Android and iOS packages
+        if: inputs.operation == 'collect'
+        run: |
+          python3 scripts/release-assets.py collect --directory build/release-inputs --manifest build/release-inputs/release-inputs.json --source "$SOURCE_COMMIT" --tag "$RELEASE_TAG"
+          python3 scripts/release-assets.py verify --directory build/release-inputs --source "$SOURCE_COMMIT" --tag "$RELEASE_TAG" --run-id "$GITHUB_RUN_ID"
+      - uses: actions/upload-artifact@v4
+        if: inputs.operation == 'stage-desktop'
+        with:
+          name: desktop-stage-${{ inputs.target }}-unqualified
+          path: build/desktop-stage-upload/
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: inputs.operation == 'archive-desktop'
+        with:
+          name: desktop-release-${{ inputs.target }}
+          path: |
+            build/desktop-dist/*.tar.gz
+            build/desktop-dist/*.zip
+            build/desktop-dist/*.sha256
+            build/desktop-dist/*/DESKTOP.json
+            build/desktop-dist/*/MANIFEST.json
+            build/desktop-dist/*/NOTICES.json
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: inputs.operation == 'collect'
         with:
           name: release-candidate-assets
-          path: out/*
+          path: build/release-inputs/*
           if-no-files-found: error
           retention-days: 14

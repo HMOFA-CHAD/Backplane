@@ -4,6 +4,31 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Release inputs are explicit. Debug builds keep their integration defaults.
+val releaseVersion = providers.environmentVariable("BACKPLANE_ANDROID_VERSION_NAME").orNull
+val releaseCodeText = providers.environmentVariable("BACKPLANE_ANDROID_VERSION_CODE").orNull
+val releaseCode = releaseCodeText?.toIntOrNull()
+require(releaseVersion == null || releaseVersion.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?"))) {
+    "BACKPLANE_ANDROID_VERSION_NAME must be an explicit version"
+}
+require(releaseCodeText == null || (releaseCode != null && releaseCode in 1..2100000000)) {
+    "BACKPLANE_ANDROID_VERSION_CODE must be a positive Android version code"
+}
+val releaseStorePath = providers.environmentVariable("BACKPLANE_ANDROID_KEYSTORE_PATH").orNull
+val releaseStorePassword = providers.environmentVariable("KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("KEY_PASSWORD").orNull
+val releaseConfigured = !releaseVersion.isNullOrBlank() && releaseCode != null &&
+    !releaseStorePath.isNullOrBlank() && !releaseStorePassword.isNullOrBlank() &&
+    !releaseKeyAlias.isNullOrBlank() && !releaseKeyPassword.isNullOrBlank()
+
+gradle.taskGraph.whenReady {
+    if (allTasks.any { it.project.path == project.path && it.name.contains("Release") }) {
+        require(releaseConfigured) { "Release requires explicit version, counter and configured signing inputs" }
+        require(file(releaseStorePath!!).isFile) { "Configured release keystore file is unavailable" }
+    }
+}
+
 android {
     namespace = "dev.backplane.mobile"
     compileSdk = 35
@@ -12,15 +37,21 @@ android {
         applicationId = "dev.backplane.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = releaseCode ?: 1
+        versionName = releaseVersion ?: "0.1.0"
     }
 
+    val configuredRelease = if (releaseConfigured) signingConfigs.create("configuredRelease") {
+        storeFile = file(releaseStorePath!!)
+        storePassword = releaseStorePassword
+        keyAlias = releaseKeyAlias
+        keyPassword = releaseKeyPassword
+    } else null
     buildTypes {
         release {
             isMinifyEnabled = false
-            // signed with the debug key until a release key exists
-            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            signingConfig = configuredRelease
         }
     }
     compileOptions {

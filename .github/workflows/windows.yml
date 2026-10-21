@@ -1,143 +1,185 @@
-name: Windows build
+name: Windows Bend service producer (artifact only)
 
+# Heavy portable C emission runs with the Windows owner on an admitted >=20GiB
+# Boat/native host, never on this stock CI runner. Root then selects native or
+# package against exact frozen emitted artifacts. Native uses one C compile lane.
+# Native saves compiler output; root selects truthful unsigned-portable policy
+# or existing approved signing. No certificate purchase or signing is implied.
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        type: string
+        required: true
+        description: Full frozen source commit containing the accepted producer
+      version:
+        type: string
+        default: v0.12.0
+        required: true
+      operation:
+        type: choice
+        options: [native, package]
+        default: native
+      request_run_id:
+        type: string
+        default: ''
+        description: Completed root-selected input-artifact run; native/package only
+      request_artifact_id:
+        type: string
+        default: ''
+      request_sha256:
+        type: string
+        default: ''
+        description: Reviewed windows-service-request.json digest
       telemetry_url:
-        description: Approved endpoint for the frozen candidate native compile
         type: string
         default: https://backplane.works/api/v1/events
-      ref:
-        description: Full frozen source commit (40 hex characters)
-        type: string
-        required: true
-      version:
-        description: Full package version, e.g. v0.11.2
-        type: string
-        required: true
-        default: v0.11.2
   workflow_call:
     inputs:
+      ref:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      operation:
+        type: string
+        default: native
+      request_run_id:
+        type: string
+        default: ''
+      request_artifact_id:
+        type: string
+        default: ''
+      request_sha256:
+        type: string
+        default: ''
       telemetry_url:
-        description: Approved endpoint for the frozen candidate native compile
         type: string
         default: https://backplane.works/api/v1/events
-      ref:
-        description: Source ref (the caller's commit when empty)
-        type: string
-        default: ''
-      version:
-        description: Release version (a CI commit label when empty)
-        type: string
-        default: ''
 
 permissions:
   contents: read
+  actions: read
+
+env:
+  BACKPLANE_FROZEN_COMMIT: ${{ inputs.ref }}
+  BACKPLANE_VERSION: ${{ inputs.version }}
+  BACKPLANE_VERSION_STAMP: '0.12.0'
+  BACKPLANE_TELEMETRY_CHANNEL: release
 
 jobs:
-  emit:
-    name: Emit windows-x64
+  identity:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    outputs:
-      commit: ${{ steps.source.outputs.commit }}
-    env:
-      BACKPLANE_VERSION: ${{ inputs.version }}
-      BUN_JSC_forceRAMSize: '4294967296'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.sha }}
-      - name: Validate standalone release dispatch
-        if: github.event_name == 'workflow_dispatch' && contains(github.workflow_ref, '/.github/workflows/windows.yml@')
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Require actual frozen source and implemented service entrypoint
         env:
-          SOURCE_COMMIT: ${{ inputs.ref }}
-          RELEASE_TAG: ${{ inputs.version }}
           WORKFLOW_COMMIT: ${{ github.sha }}
+          OPERATION: ${{ inputs.operation }}
         run: |
           python3 - <<'CHECK'
-          import os, re, runpy, subprocess
-          commit, tag = os.environ['SOURCE_COMMIT'], os.environ['RELEASE_TAG']
-          if not re.fullmatch(r'[0-9a-f]{40}', commit):
-              raise SystemExit('dispatch requires a full frozen commit')
-          runpy.run_path('scripts/release-assets.py')['identity'](commit, tag)
-          if subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() != commit or os.environ['WORKFLOW_COMMIT'] != commit:
-              raise SystemExit('workflow and checkout must match the frozen source')
+          import os, runpy, subprocess
+          from pathlib import Path
+          e = os.environ
+          runpy.run_path('scripts/release-assets.py')['identity'](e['BACKPLANE_FROZEN_COMMIT'], e['BACKPLANE_VERSION'])
+          if e['BACKPLANE_VERSION'] != 'v0.12.0' or e['OPERATION'] not in ('native','package'):
+              raise SystemExit('explicit 0.12.0 service operation required')
+          if e['WORKFLOW_COMMIT'] != e['BACKPLANE_FROZEN_COMMIT'] or subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip() != e['BACKPLANE_FROZEN_COMMIT']:
+              raise SystemExit('workflow and checkout must match frozen source')
+          if not Path('scripts/windows-service.py').is_file():
+              raise SystemExit('Windows owner service producer is not integrated')
           CHECK
-      - name: Freeze source commit for native checkout
-        id: source
-        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/setup-bend
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.4.3'
-      - run: scripts/emit-windows.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-x64-emitted
-          retention-days: 1
-          compression-level: 0
-          if-no-files-found: error
-          path: |
-            build/windows-emitted/
-            build/windows-helpers/
-            dist/web/
 
-  build:
-    name: Build and test windows-x64
-    needs: [emit]
+  native-or-package:
+    needs: [identity]
     runs-on: windows-2022
     timeout-minutes: 75
     env:
-      BACKPLANE_VERSION: ${{ inputs.version }}
-      BACKPLANE_JOBS: '2'
       BACKPLANE_CYGWIN_ROOT: ${{ github.workspace }}\..\backplane-cygwin
+      BACKPLANE_JOBS: '1'
+      BP_OPERATION: ${{ inputs.operation }}
+      BP_REQUEST_SHA256: ${{ inputs.request_sha256 }}
     steps:
-      - name: Keep shell sources as LF
+      - name: Keep checked-in shell sources as LF
         shell: pwsh
         run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.emit.outputs.commit }}
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Check root-selected input artifact provenance
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BP_REQUEST_RUN: ${{ inputs.request_run_id }}
+          BP_REQUEST_ARTIFACT: ${{ inputs.request_artifact_id }}
+        run: |
+          if ($env:BP_REQUEST_RUN -notmatch '^[1-9][0-9]*$' -or $env:BP_REQUEST_ARTIFACT -notmatch '^[1-9][0-9]*$' -or $env:BP_REQUEST_SHA256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Reviewed request run/artifact/digest required' }
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:BP_REQUEST_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -cne $env:BACKPLANE_FROZEN_COMMIT -or $run.status -ne 'completed' -or $run.conclusion -ne 'success') { throw 'Input run source/result mismatch' }
+          $artifact = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:BP_REQUEST_ARTIFACT" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $artifact.expired -or [string]$artifact.workflow_run.id -ne $env:BP_REQUEST_RUN) { throw 'Input artifact provenance mismatch' }
       - uses: actions/download-artifact@v4
         with:
-          name: windows-x64-emitted
-          path: .
-      - name: Install native Cygwin compiler and runtime
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.request_run_id }}
+          artifact-ids: ${{ inputs.request_artifact_id }}
+          path: build/windows-request
+      - name: Bind request and set up Windows owner's native compiler environment
         shell: pwsh
-        run: ./scripts/setup-windows.ps1 -Root $env:BACKPLANE_CYGWIN_ROOT -BuildTools
-      - name: Install real Windows provider CLIs (no login)
+        run: |
+          $request = 'build/windows-request/windows-service-request.json'
+          if ((Get-FileHash -LiteralPath $request -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:BP_REQUEST_SHA256) { throw 'Request bytes differ from reviewed digest' }
+          ./scripts/setup-windows.ps1 -Root $env:BACKPLANE_CYGWIN_ROOT -BuildTools
+          if ($LASTEXITCODE -ne 0) { throw 'Windows producer environment failed' }
+      - name: Native configured compile only; private inputs never enter artifacts
+        if: inputs.operation == 'native'
         shell: pwsh
-        run: ./scripts/install-windows-providers.ps1
-      - name: Compile, native smoke tests and Windows package
         env:
-          BACKPLANE_GOOGLE_BAKE: "1"
+          BACKPLANE_GOOGLE_BAKE: '1'
           BACKPLANE_GOOGLE_CLIENT_ID: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_ID }}
           BACKPLANE_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_SECRET }}
-          BACKPLANE_RELEASE_SOURCE: ${{ needs.emit.outputs.commit }}
-          BACKPLANE_TELEMETRY_BAKE: ${{ inputs.version != '' && '1' || '0' }}
+          BACKPLANE_TELEMETRY_BAKE: '1'
           BACKPLANE_TELEMETRY_URL: ${{ inputs.telemetry_url }}
           BACKPLANE_TELEMETRY_KID: ${{ secrets.BACKPLANE_TELEMETRY_KID }}
           BACKPLANE_TELEMETRY_KEY: ${{ secrets.BACKPLANE_TELEMETRY_KEY }}
+        run: |
+          $bin = Join-Path $env:BACKPLANE_CYGWIN_ROOT 'bin'
+          $env:PATH = $bin + ';' + $env:PATH
+          $workspace = & (Join-Path $bin 'cygpath.exe') -u $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw 'Cygwin path mapping failed' }
+          & (Join-Path $bin 'bash.exe') --login -c 'cd "$1" && python3 scripts/release-assets.py check-bake --source "$BACKPLANE_FROZEN_COMMIT" --tag "$BACKPLANE_VERSION" && python3 scripts/windows-release-request.py native build/windows-request/windows-service-request.json' -- $workspace
+          exit $LASTEXITCODE
+      - name: Package according to root portable/signing and resident lifecycle policy
+        if: inputs.operation == 'package'
         shell: pwsh
         run: |
           $bin = Join-Path $env:BACKPLANE_CYGWIN_ROOT 'bin'
           $env:PATH = $bin + ';' + $env:PATH
-          if ($env:BACKPLANE_TELEMETRY_BAKE -eq '1') {
-            $bake = & (Join-Path $bin 'cygpath.exe') -u "$env:GITHUB_WORKSPACE/scripts/release-assets.py"
-            if ($LASTEXITCODE -ne 0) { throw 'Bake check path conversion failed' }
-            & (Join-Path $bin 'bash.exe') --login -c 'python3 "$1" check-bake --source "$2" --tag "$3"' -- $bake $env:BACKPLANE_RELEASE_SOURCE $env:BACKPLANE_VERSION
-            if ($LASTEXITCODE -ne 0) { throw 'Release bake input check failed' }
-          }
-          $script = & (Join-Path $bin 'cygpath.exe') -u "$env:GITHUB_WORKSPACE/scripts/ci-windows.sh"
-          if ($LASTEXITCODE -ne 0) { throw 'Cygwin path conversion failed' }
-          & (Join-Path $bin 'bash.exe') --login $script
+          $workspace = & (Join-Path $bin 'cygpath.exe') -u $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw 'Cygwin path mapping failed' }
+          & (Join-Path $bin 'bash.exe') --login -c 'cd "$1" && python3 scripts/windows-release-request.py package build/windows-request/windows-service-request.json' -- $workspace
           exit $LASTEXITCODE
       - uses: actions/upload-artifact@v4
+        if: inputs.operation == 'native'
         with:
-          name: backplane-windows-x64
-          retention-days: 7
-          if-no-files-found: error
+          name: windows-service-native-for-signing
           path: |
-            dist/backplane-*-windows-x64.zip
-            dist/backplane-*-windows-x64.zip.sha256
+            build/windows-service-native/backplane-serve.exe
+            build/windows-service-native/unsigned-service.exe
+            build/windows-service-native/COMPILE.json
+            build/windows-service-native/inputs/**
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: inputs.operation == 'package'
+        with:
+          name: windows-service-resources
+          path: build/windows-service-resources/*
+          if-no-files-found: error
+          retention-days: 7

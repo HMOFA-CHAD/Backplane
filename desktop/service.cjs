@@ -53,9 +53,11 @@ async function servicePort(home) {
   catch (error) { if (error.code !== 'EADDRINUSE') throw error;return freePort(); }
 }
 class Service {
-  constructor({ home, binary, web, expectedVersion }) {
+  constructor({ home, binary, web, expectedVersion, residentService = false }) {
     if (!path.isAbsolute(home)) throw new Error('BACKPLANE_HOME must be absolute');
     this.home = path.resolve(home); this.binary = binary; this.web = web; this.expectedVersion = expectedVersion;
+    if (typeof residentService !== 'boolean') throw new Error('Invalid resident service policy');
+    this.residentService = residentService;
     this.child = null;
   }
   async discover() {
@@ -86,14 +88,14 @@ class Service {
         if (existing) return this.connection = existing;
         break;
       } catch (error) {
-        if (!['ERR_SERVICE_BUSY', 'TimeoutError'].includes(error.code ?? error.name) || Date.now() >= deadline) throw error;
+        if ((error.name !== 'TimeoutError' && !['ERR_SERVICE_BUSY', 'TimeoutError'].includes(error.code ?? error.name)) || Date.now() >= deadline) throw error;
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
     if (!this.binary || !path.isAbsolute(this.binary) || !this.web || !path.isAbsolute(this.web)) throw new Error('Set absolute BACKPLANE_SERVICE and BACKPLANE_WEB paths');
     const port = await servicePort(this.home);
     const args = ['--home', this.home, '--port', String(port), '--host', '127.0.0.1', '--web', this.web, '--foreground', '--no-tailscale'];
-    this.child = spawn(this.binary, args, { stdio: ['ignore', 'ignore', 'ignore'], env: { ...process.env, BACKPLANE_HOME: this.home }, windowsHide: true, detached: true });
+    this.child = spawn(this.binary, args, { stdio: ['ignore', 'ignore', 'ignore'], env: { ...process.env, BACKPLANE_HOME: this.home, ...(this.residentService ? { BACKPLANE_NO_UPDATE: '1' } : {}) }, windowsHide: true, detached: true });
     this.child.unref();
     let failure;
     this.child.once('error', () => { failure = new Error('Cannot start the packaged service'); });
@@ -109,7 +111,7 @@ class Service {
           return this.connection = connection;
         }
       } catch (error) {
-        if (!['ECONNREFUSED', 'ENOENT', 'ERR_SERVICE_LOCK', 'ERR_SERVICE_BUSY', 'TimeoutError'].includes(error.cause?.code ?? error.code ?? error.name) && error.message !== 'fetch failed') throw error;
+        if (error.name !== 'TimeoutError' && !['ECONNREFUSED', 'ENOENT', 'ERR_SERVICE_LOCK', 'ERR_SERVICE_BUSY', 'TimeoutError'].includes(error.cause?.code ?? error.code ?? error.name) && error.message !== 'fetch failed') throw error;
       }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
