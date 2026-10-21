@@ -1,7 +1,9 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const net = require('node:net');
-const { spawn } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const runFile = promisify(execFile);
 const { createHash } = require('node:crypto');
 
 // /hello is the existing service's small CBOR map. Do not pull the domain
@@ -52,6 +54,41 @@ async function servicePort(home) {
   try { return await freePort(preferredPort(home)); }
   catch (error) { if (error.code !== 'EADDRINUSE') throw error;return freePort(); }
 }
+// Node owns native Windows paths and child handles; only the Cygwin service's
+// argv/environment crosses into POSIX paths. Never use a PATH-resolved helper.
+async function launchPaths({ home, binary, web, env, platform = process.platform, run = runFile }) {
+  if (platform !== 'win32') return { home, web, env };
+  const absolute = value => typeof value === 'string' && !/[\0\r\n]/.test(value) &&
+    (/^[A-Za-z]:[\\/]/.test(value) || /^\\\\[^\\/]+[\\/][^\\/]+/.test(value));
+  if (![home, binary, web].every(absolute)) throw new Error('Windows service paths must be fully qualified native paths');
+  const runtimeBin = path.win32.join(path.win32.dirname(binary), 'runtime', 'bin');
+  const helper = path.win32.join(runtimeBin, 'cygpath.exe');
+  const childEnv = { ...env, LC_ALL: 'C.UTF-8' };
+  const systemRootKey = Object.keys(env).find(k => k.toLowerCase() === 'systemroot');
+  const systemRoot = systemRootKey && env[systemRootKey];
+  if (!absolute(systemRoot)) throw new Error('Windows SystemRoot must be native and absolute');
+  if (runtimeBin.includes(';') || systemRoot.includes(';')) throw new Error('Windows runtime loader paths cannot contain a PATH separator');
+  // Closed loader lookup: no ambient provider/Cygwin PATH or inherited cwd.
+  for (const k of Object.keys(childEnv)) if (k.toLowerCase() === 'path') delete childEnv[k];
+  childEnv.PATH = [runtimeBin, path.win32.join(systemRoot, 'System32'), systemRoot].join(';');
+  const convert = async value => {
+    if (!absolute(value)) throw new Error('Windows service path environment must be native and absolute');
+    let result;
+    try {
+      result = await run(helper, ['-a', '-u', '--', value], {
+        env: { ...childEnv, LC_ALL: 'C.UTF-8' }, encoding: 'utf8', timeout: 5000,
+        maxBuffer: 65536, windowsHide: true, shell: false, cwd: runtimeBin,
+      });
+    } catch { throw new Error('Cannot map paths with the packaged Windows runtime'); }
+    const mapped = result.stdout.replace(/\r?\n$/, '');
+    if (!mapped.startsWith('/') || /[\0\r\n]/.test(mapped)) throw new Error('Invalid packaged Windows path conversion');
+    return mapped;
+  };
+  const posixHome = await convert(home), posixWeb = await convert(web);
+  childEnv.BACKPLANE_HOME = posixHome;
+  for (const key of ['BACKPLANE_AGENTS', 'BACKPLANE_LOCK_DIR']) if (childEnv[key]) childEnv[key] = await convert(childEnv[key]);
+  return { home: posixHome, web: posixWeb, env: childEnv, cwd: runtimeBin };
+}
 class Service {
   constructor({ home, binary, web, expectedVersion, residentService = false }) {
     if (!path.isAbsolute(home)) throw new Error('BACKPLANE_HOME must be absolute');
@@ -94,8 +131,10 @@ class Service {
     }
     if (!this.binary || !path.isAbsolute(this.binary) || !this.web || !path.isAbsolute(this.web)) throw new Error('Set absolute BACKPLANE_SERVICE and BACKPLANE_WEB paths');
     const port = await servicePort(this.home);
-    const args = ['--home', this.home, '--port', String(port), '--host', '127.0.0.1', '--web', this.web, '--foreground', '--no-tailscale'];
-    this.child = spawn(this.binary, args, { stdio: ['ignore', 'ignore', 'ignore'], env: { ...process.env, BACKPLANE_HOME: this.home, ...(this.residentService ? { BACKPLANE_NO_UPDATE: '1' } : {}) }, windowsHide: true, detached: true });
+    const launch = await launchPaths({ home: this.home, binary: this.binary, web: this.web,
+      env: { ...process.env, BACKPLANE_HOME: this.home, ...(this.residentService ? { BACKPLANE_NO_UPDATE: '1' } : {}) } });
+    const args = ['--home', launch.home, '--port', String(port), '--host', '127.0.0.1', '--web', launch.web, '--foreground', '--no-tailscale'];
+    this.child = spawn(this.binary, args, { stdio: ['ignore', 'ignore', 'ignore'], env: launch.env, ...(launch.cwd ? { cwd: launch.cwd } : {}), windowsHide: true, detached: true });
     this.child.unref();
     let failure;
     this.child.once('error', () => { failure = new Error('Cannot start the packaged service'); });
@@ -131,4 +170,4 @@ class Service {
     this.child = null;
   }
 }
-module.exports = { Service, hello, lockLine, preferredPort, servicePort };
+module.exports = { Service, hello, lockLine, preferredPort, servicePort, launchPaths };
