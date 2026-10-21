@@ -55,15 +55,20 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - name: Require matching workflow and frozen source; fetch verified public C packet
+      - name: Check out trusted workflow tools separately from frozen product
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: build/bootstrap-tools
+          persist-credentials: false
+      - name: Record workflow tools separately; require frozen product source; fetch verified public C packet
         env:
           WORKFLOW_SHA: ${{ github.sha }}
           PACKET_URL: ${{ inputs.packet_url }}
           PACKET_SHA: ${{ inputs.packet_sha256 }}
         shell: bash
         run: |
-          test "$WORKFLOW_SHA" = "$BACKPLANE_FROZEN_COMMIT"
-          python3 scripts/release-bootstrap.py fetch --source "$BACKPLANE_FROZEN_COMMIT" --operation unix-native --url "$PACKET_URL" --sha256 "$PACKET_SHA" --directory "$RUNNER_TEMP/release-inputs"
+          python3 build/bootstrap-tools/scripts/release-bootstrap.py fetch --source "$BACKPLANE_FROZEN_COMMIT" --operation unix-native --url "$PACKET_URL" --sha256 "$PACKET_SHA" --directory "$RUNNER_TEMP/release-inputs"
       - name: Select native compiler without administrator changes (no Bend)
         shell: bash
         run: |
@@ -77,7 +82,9 @@ jobs:
             for candidate in clang-21 clang-20 clang-19 /usr/lib/llvm-21/bin/clang /usr/lib/llvm-20/bin/clang /usr/lib/llvm-19/bin/clang; do
               if command -v "$candidate" >/dev/null 2>&1; then compiler="$(command -v "$candidate")"; break; fi
             done
-            test -n "$compiler" || { echo 'Hosted runner has no installed clang19+; no administrator command attempted' >&2; exit 1; }
+            if [ -z "$compiler" ]; then
+              compiler="$(python3 build/bootstrap-tools/scripts/release-llvm.py --target '${{ matrix.target }}' --out "$RUNNER_TEMP/backplane-llvm21")"
+            fi
             echo "BACKPLANE_BOOTSTRAP_CLANG=$compiler" >> "$GITHUB_ENV"
           fi
       - name: Compile exact portable C with configured protected release inputs
@@ -95,12 +102,15 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$RUNNER_OS" = macOS ]; then compiler="$(command -v clang)"; else compiler="$BACKPLANE_BOOTSTRAP_CLANG"; fi
-          python3 scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation unix-native --target "$TARGET" --clang "$compiler" --directory "$RUNNER_TEMP/release-inputs"
+          python3 build/bootstrap-tools/scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation unix-native --target "$TARGET" --clang "$compiler" --directory "$RUNNER_TEMP/release-inputs"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: configured-service-${{ matrix.target }}
-          path: build/bootstrap-native/
+          path: |
+            build/bootstrap-native/
+            build/bootstrap-execution.json
+            ${{ runner.temp }}/backplane-llvm21/LLVM-PROVENANCE.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -119,15 +129,20 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - name: Require matching workflow and frozen source; fetch Windows owner's packet
+      - name: Check out trusted workflow tools separately from frozen product
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: build/bootstrap-tools
+          persist-credentials: false
+      - name: Record workflow tools separately; require frozen product source; fetch Windows owner's packet
         shell: pwsh
         env:
           WORKFLOW_SHA: ${{ github.sha }}
           PACKET_URL: ${{ inputs.packet_url }}
           PACKET_SHA: ${{ inputs.packet_sha256 }}
         run: |
-          if ($env:WORKFLOW_SHA -cne $env:BACKPLANE_FROZEN_COMMIT) { throw 'Workflow/source mismatch' }
-          python scripts/release-bootstrap.py fetch --source $env:BACKPLANE_FROZEN_COMMIT --operation windows-native --url $env:PACKET_URL --sha256 $env:PACKET_SHA --directory "$env:RUNNER_TEMP/release-inputs"
+          python build/bootstrap-tools/scripts/release-bootstrap.py fetch --source $env:BACKPLANE_FROZEN_COMMIT --operation windows-native --url $env:PACKET_URL --sha256 $env:PACKET_SHA --directory "$env:RUNNER_TEMP/release-inputs"
           if ($LASTEXITCODE -ne 0) { throw 'Public Windows packet refused' }
           ./scripts/setup-windows.ps1 -Root $env:BACKPLANE_CYGWIN_ROOT -BuildTools
           if ($LASTEXITCODE -ne 0) { throw 'Native environment setup failed' }
@@ -148,13 +163,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Source path mapping failed' }
           $packet = & (Join-Path $bin 'cygpath.exe') -u "$env:RUNNER_TEMP/release-inputs"
           if ($LASTEXITCODE -ne 0) { throw 'Packet path mapping failed' }
-          & (Join-Path $bin 'bash.exe') --login -c 'cd "$1" && python3 scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation windows-native --directory "$2"' -- $workspace $packet
+          & (Join-Path $bin 'bash.exe') --login -c 'cd "$1" && python3 build/bootstrap-tools/scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation windows-native --directory "$2"' -- $workspace $packet
           exit $LASTEXITCODE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: configured-windows-service
           path: |
+            build/bootstrap-execution.json
             build/windows-service-native/backplane-serve.exe
             build/windows-service-native/unsigned-service.exe
             build/windows-service-native/COMPILE.json
@@ -171,15 +187,20 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - name: Require matching source; fetch actual native-owner inputs and qualified bridge
+      - name: Check out trusted workflow tools separately from frozen product
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: build/bootstrap-tools
+          persist-credentials: false
+      - name: Require frozen product source; fetch actual native-owner inputs and qualified bridge
         shell: bash
         env:
           WORKFLOW_SHA: ${{ github.sha }}
           PACKET_URL: ${{ inputs.packet_url }}
           PACKET_SHA: ${{ inputs.packet_sha256 }}
         run: |
-          test "$WORKFLOW_SHA" = "$BACKPLANE_FROZEN_COMMIT"
-          python3 scripts/release-bootstrap.py fetch --source "$BACKPLANE_FROZEN_COMMIT" --operation android --url "$PACKET_URL" --sha256 "$PACKET_SHA" --directory "$RUNNER_TEMP/release-inputs"
+          python3 build/bootstrap-tools/scripts/release-bootstrap.py fetch --source "$BACKPLANE_FROZEN_COMMIT" --operation android --url "$PACKET_URL" --sha256 "$PACKET_SHA" --directory "$RUNNER_TEMP/release-inputs"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -192,11 +213,13 @@ jobs:
           KEY_ALIAS: ${{ secrets.BACKPLANE_ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEY_PASSWORD }}
         run: |
-          python3 scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation android --directory "$RUNNER_TEMP/release-inputs"
+          python3 build/bootstrap-tools/scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation android --directory "$RUNNER_TEMP/release-inputs"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: configured-android-release
-          path: build/bootstrap-android/
+          path: |
+            build/bootstrap-android/
+            build/bootstrap-execution.json
           if-no-files-found: warn
           retention-days: 14

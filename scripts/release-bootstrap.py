@@ -53,6 +53,24 @@ def source_identity(source, checkout):
     return git('rev-parse', 'HEAD^{tree}')
 
 
+def record_execution(checkout, source, tree):
+    metadata = Path(__file__).resolve().parents[1]
+    workflow = subprocess.check_output(['git', '-C', str(metadata), 'rev-parse', 'HEAD'], text=True).strip()
+    expected = os.environ.get('GITHUB_SHA')
+    need(not expected or expected == workflow, 'workflow tool checkout differs from actual workflow SHA')
+    record = {'schema': 1, 'kind': 'backplane-bootstrap-execution', 'productSourceCommit': source,
+              'productSourceTree': tree, 'workflowSourceCommit': workflow,
+              'helperSha256': sha(Path(__file__).resolve()), 'version': VERSION,
+              'channel': 'release', 'configuredBuildAccepted': False}
+    p = checkout / 'build/bootstrap-execution.json'
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if p.exists():
+        need(json.loads(p.read_text()) == record, 'bootstrap execution provenance changed')
+    else:
+        p.write_text(json.dumps(record, indent=2) + '\n')
+    return record
+
+
 def inventory(directory):
     result = {}
     folded = set()
@@ -173,7 +191,7 @@ def run(directory, operation, target, source, checkout, compiler=None):
         request = directory.parent / ('native-' + target + '.json')
         need(not request.exists(), 'inspect existing native request before retry')
         request.write_text(json.dumps(r, indent=2) + '\n')
-        command = [sys.executable, 'scripts/service-release.py', 'native', '--request', str(request), '--out', str(checkout / 'build/bootstrap-native')]
+        command = [sys.executable, str(Path(__file__).resolve().with_name('service-release.py')), 'native', '--source-root', str(checkout), '--request', str(request), '--out', str(checkout / 'build/bootstrap-native')]
     elif operation == 'windows-native':
         command = [sys.executable, 'scripts/windows-release-request.py', 'native', str(directory / 'windows-service-request.json')]
     else:
@@ -201,6 +219,7 @@ def main():
     a.checkout = a.checkout.resolve()
     a.directory = a.directory.resolve()
     tree = source_identity(a.source, a.checkout)
+    if a.command != 'pack': record_execution(a.checkout, a.source, tree)
     if a.command == 'pack': print(json.dumps(pack(a.directory, a.out.resolve(), a.source, tree, a.operation)))
     elif a.command == 'fetch':
         fetch(a.url, a.sha256, a.directory, a.source, tree, a.operation)

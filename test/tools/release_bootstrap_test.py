@@ -98,7 +98,8 @@ class BootstrapTest(unittest.TestCase):
         with patch.object(b,'source_identity',return_value=TREE), patch.object(b,'tool',return_value={'path':'/cc'}), patch.object(b.subprocess,'run') as run:
             b.run(dest,'unix-native','linux-arm64',SOURCE,ROOT,'/cc')
             args=run.call_args.args[0]
-            self.assertEqual(args[1:3],['scripts/service-release.py','native'])
+            self.assertEqual(args[1:3],[str(ROOT/'scripts/service-release.py'),'native'])
+            self.assertEqual(args[3:5],['--source-root',str(ROOT)])
             request=json.loads((dest.parent/'native-linux-arm64.json').read_text())
             self.assertEqual(request['target'],'linux-arm64')
             self.assertEqual(request['emissionReceipt']['sha256'],b.sha(dest/'emission/EMISSION.json'))
@@ -114,6 +115,16 @@ class BootstrapTest(unittest.TestCase):
                                ('KEY_PASSWORD','BACKPLANE_ANDROID_KEY_PASSWORD')]:
                 self.assertIn(key+': ${{ secrets.'+secret+' }}',text)
                 self.assertNotIn('          '+secret+':',text)
+
+    def test_execution_records_distinct_metadata_and_product_identity(self):
+        with patch.object(b.subprocess,'check_output',return_value='d'*40+'\n'), patch.dict(b.os.environ, {'GITHUB_SHA':'d'*40}):
+            r=b.record_execution(self.root,SOURCE,TREE)
+            self.assertEqual(r['workflowSourceCommit'],'d'*40)
+            self.assertEqual(r['productSourceCommit'],SOURCE)
+            self.assertFalse(r['configuredBuildAccepted'])
+            self.assertEqual(b.record_execution(self.root,SOURCE,TREE),r)
+        with patch.object(b.subprocess,'check_output',return_value='e'*40+'\n'), patch.dict(b.os.environ, {'GITHUB_SHA':'d'*40}), self.assertRaises(ValueError):
+            b.record_execution(self.root,SOURCE,TREE)
 
     def test_https_without_credentials_only(self):
         for url in ('http://example.com/x','https://user:pass@example.com/x','https://example.com:8443/x','https://example.com/x#fragment'):

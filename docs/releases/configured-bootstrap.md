@@ -55,9 +55,13 @@ gh workflow run release-bootstrap.yml --repo i2cjak/Backplane \
   -f packet_url="$PUBLIC_PACKET_URL" -f packet_sha256="$PACKET_SHA256"
 ```
 
-`--ref main` selects the merged workflow; its actual `github.sha` must equal
-the frozen full SHA, so a moved branch fails closed. GitHub dispatch selects a
-branch or tag; no release tag is created to launch validation.
+`--ref main` selects the trusted workflow metadata, which can be a later
+metadata-only commit than the frozen product. Both commits and the actual helper
+hash are recorded in `bootstrap-execution.json`. A second checkout under ignored
+`build/bootstrap-tools/` holds those tools. The packet and all product/source/C
+checks continue to bind the exact frozen product commit/tree; no app is rebuilt
+or relabelled merely to change the pipeline. GitHub dispatch selects a branch or
+tag; no release tag is created to obtain validation artifacts.
 
 Use `operation=windows-native` and `operation=android` for their respective
 packets. Independent jobs can run concurrently; a concurrency group prevents
@@ -70,7 +74,13 @@ introduced. It requires HTTPS and an independently supplied SHA, rejects unsafe
 archive entries and verifies the full source envelope. The only commands run
 are producers in the checked-out source. Generated native requests bind the
 actual installed compiler path/hash/version. Unix native uses one C lane, and
-never requires Bend on that runner. Mac uses LLVM21/coreutils in the ephemeral user environment; Linux selects an already-installed clang19+ without administrator commands; the compile header generators clean their own private files.
+never requires Bend on that runner. Linux selects an installed Clang19+ or extracts the official LLVM21.1.8
+compiler into a fresh user prefix, using the SHA256 subject from the official
+release's per-asset JSONL. No sudo/admin command or LLVM build occurs. Only the
+compiler, its required LLVM libraries and compiler resource headers are retained;
+the large archive is removed after extraction. Mac uses user-space Homebrew LLVM
+and coreutils. `LLVM-PROVENANCE.json` records the exact downloaded and executed
+tool identities; the compile header generators clean their own private files.
 
 Artifacts contain actual configured raw build receipts/binaries/web, or signed
 Release APK/AAB and native receipts. Upload on failure preserves scoped producer

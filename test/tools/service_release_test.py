@@ -120,6 +120,15 @@ class ProducerTests(unittest.TestCase):
                 S.build(req, self.root, self.root / "out")
             run.assert_not_called()
 
+    def test_bend_uses_version_command_clang_uses_version_flag(self):
+        for name, command, output in [("bend", "version", "2.0.36"), ("clang", "--version", "clang version 21.1.0")]:
+            tool = self.root / name
+            tool.write_text("fixture tool")
+            spec = {**S.reference(tool), "version": output}
+            with patch.object(S.subprocess, "check_output", return_value=output) as invoke:
+                self.assertEqual(S.check_tool(spec, self.root, name), tool)
+                invoke.assert_called_once_with([str(tool), command], text=True, stderr=S.subprocess.STDOUT)
+
     def test_elf_and_macho_architecture(self):
         p = self.root / "native"
         for machine, target in [(62, "linux-x64"), (183, "linux-arm64")]:
