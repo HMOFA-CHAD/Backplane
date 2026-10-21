@@ -6,7 +6,10 @@ if [[ ${1:-} == --service ]]; then
   shift
   exec python3 scripts/windows-service.py emit "$@"
 fi
-[[ $# == 0 ]] || { echo 'usage: emit-windows.sh [--service --out DIR]' >&2; exit 2; }
+# The native window app (src/app/main.bend) is no longer built: Windows ships
+# the Electron app over backplane-serve.exe, emitted by windows-service.py.
+echo 'emit-windows.sh: the native window app is no longer built; use emit-windows.sh --service --out DIR' >&2
+exit 2
 export BACKPLANE_LOW_MEM=1 BACKPLANE_JOBS=1 BACKPLANE_EMIT_ONLY=1
 export BACKPLANE_GOOGLE_BAKE=0 BP_BUILD_LOCKED=1
 if [[ -n ${BACKPLANE_VERSION:-} ]]; then
