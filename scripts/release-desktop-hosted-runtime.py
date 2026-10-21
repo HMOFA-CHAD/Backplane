@@ -21,7 +21,8 @@ POLICY = '0146a1527cd121ed04c8f36052ba0f31232176e56910387cb84f0dc97d7c4ef2'
 SMOKE = '0d268b94bf2b5b6b8722e5a17a01fe13447cb4f034de363ca75566b4449297b6'
 PRODUCER = 'f2ead45db28612c7f744a1b4da453f6b861f2a6e5ad0f8a8363caec016a2fb89'
 IO = 'b449d3a77f320ea865924637c662c5de80f74093232188160844837f3a3f6489'
-BINARIES = {'linux-x64': '9d48859d2cf2d096d63a1d365f077a045255cd5ea15a2b892ed77d23c09ace1e',
+BINARIES = {'linux-arm64': '9accaca97d8ce7507550a1ee5e9acf93fb32aa3c73412301c59f79fb34ac4081',
+            'linux-x64': '9d48859d2cf2d096d63a1d365f077a045255cd5ea15a2b892ed77d23c09ace1e',
             'darwin-arm64': '2d7bdcab9b4217e697e3dfecff87cf34574d180440b868e63fddb75c684aef2a'}
 
 
@@ -55,10 +56,10 @@ def fetch(url, expected, dest, limit):
 
 
 def preflight(target, out):
-    actual = {('Linux', 'x86_64'): 'linux-x64', ('Darwin', 'arm64'): 'darwin-arm64'}.get(
+    actual = {('Linux', 'x86_64'): 'linux-x64', ('Linux', 'aarch64'): 'linux-arm64', ('Darwin', 'arm64'): 'darwin-arm64'}.get(
         (platform.system(), platform.machine()))
     require(actual == target, 'Matching native host required')
-    if target == 'linux-x64':
+    if target.startswith('linux-'):
         version = platform.libc_ver()
         require(version[0] == 'glibc' and tuple(map(int, version[1].split('.'))) >= (2, 38),
                 'Original service requires GLIBC 2.38 or newer')
@@ -141,7 +142,7 @@ def run(args):
     write(args.out/'EXECUTION.json', execution)
     evidence = args.out/'evidence'
     argv = [node, str(source/'desktop/test/release-smoke.cjs'), '--stage', str(stage), '--out', str(evidence)]
-    if args.target == 'linux-x64':
+    if args.target.startswith('linux-'):
         argv = ['/usr/bin/xvfb-run', '--auto-servernum', '--server-args=-screen 0 1280x900x24 -nolisten tcp', *argv]
     with (args.out/'smoke.stdout').open('wb') as stdout, (args.out/'smoke.stderr').open('wb') as stderr:
         child = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL, stdout=stdout,
