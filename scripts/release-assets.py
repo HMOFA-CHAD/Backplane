@@ -259,15 +259,40 @@ class Package:
         if any(name.startswith(link + "/") for link in self.links for name in self.entries):
             raise ValueError("archive member traverses a symlink parent")
         for name in self.links:
-            seen = set()
-            current = name
-            while current in self.links:
-                if current in seen:
-                    raise ValueError("archive symlink cycle")
-                seen.add(current)
-                current = posixpath.normpath(posixpath.join(posixpath.dirname(current), self.links[current]))
+            current = self.link_destination(name)
             if current not in self.entries and not any(x.startswith(current + "/") for x in self.entries):
                 raise ValueError("archive symlink target absent")
+
+    def link_destination(self, name):
+        # Framework links often name a file below a linked directory, such as
+        # Versions/Current/Foo with Current -> A. Walk components in filesystem
+        # order so links are followed before a subsequent '..' is interpreted.
+        root = name.split("/")[0]
+        pending = name.split("/")[::-1]
+        resolved = []
+        traversals = 0
+        while pending:
+            part = pending.pop()
+            if part in ("", "."):
+                continue
+            if part == "..":
+                if len(resolved) <= 1:
+                    raise ValueError("archive symlink escapes package root")
+                resolved.pop()
+                continue
+            resolved.append(part)
+            current = "/".join(resolved)
+            if resolved[0] != root:
+                raise ValueError("archive symlink escapes package root")
+            if current in self.links:
+                traversals += 1
+                if traversals > 40:
+                    raise ValueError("archive symlink cycle or depth limit")
+                resolved.pop()
+                pending.extend(self.links[current].split("/")[::-1])
+        current = "/".join(resolved)
+        safe_name(current)
+        return current
 
     def close(self):
         if self.handle:
