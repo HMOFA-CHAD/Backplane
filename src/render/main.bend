@@ -39,7 +39,15 @@ def Args.version(xs: List<&2, String>) -> Bool:
 def start(+xs: List<&2, String>) -> IO(Unit):
   start.v(Args.version(xs), xs)
 
+# IO.args() starts with the program's own path
+def Args.rest(xs: List<String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case _ <> t:
+      Args.copy(t)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
-    start(Args.copy(args))
+    start(Args.rest(args))
