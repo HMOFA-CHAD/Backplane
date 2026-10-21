@@ -244,6 +244,29 @@ def emission_packet(request, base, release):
     return packet, r
 
 
+def license_sources(web_notices, packet=None):
+    tracked = set(git("ls-files").splitlines())
+    declared = {}
+    for package in web_notices.get("packages", []):
+        for ref in package.get("licenses", []):
+            dest, h = relative(ref["path"]), ref.get("sha256", "")
+            require(HEX.fullmatch(h) and declared.get(dest, h) == h, "Conflicting license hash")
+            declared[dest] = h
+    require(set(declared) == set(web_notices["licenses"]), "License inventory differs from packages")
+    for dest, src in web_notices["licenses"].items():
+        relative(dest)
+        relative(src)
+        # The packet has already passed its complete member/WEB hash checks.
+        # External public notices are emission inputs, not native checkout files.
+        source = packet / "web" / dest if packet else ROOT / src
+        require(source.is_file() and not source.is_symlink() and digest(source) == declared[dest],
+                "License content differs from declared package")
+        if packet and src in tracked:
+            frozen_source = ROOT / src
+            require(frozen_source.is_file() and not frozen_source.is_symlink()
+                    and digest(frozen_source) == declared[dest], "Tracked license source changed")
+
+
 def build(request, base, out, phase="build"):
     release = identity(request)
     expected_kind = "backplane-service-native-inputs" if phase == "native" else "backplane-service-build-inputs"
@@ -277,10 +300,7 @@ def build(request, base, out, phase="build"):
             and web_notices.get("sourceTree") == release["tree"]
             and isinstance(web_notices.get("licenses"), dict) and web_notices["licenses"],
             "Frozen web redistribution notices required")
-    for dest, src in web_notices["licenses"].items():
-        relative(dest)
-        source_license = ROOT / relative(src)
-        require(source_license.is_file() and not source_license.is_symlink(), "License source must be frozen regular file")
+    license_sources(web_notices, packet)
     new_output(out)
     out.mkdir(parents=True)
     logs = out / "logs"

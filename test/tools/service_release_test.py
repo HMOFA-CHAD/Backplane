@@ -389,6 +389,36 @@ class ProducerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "source bytes"):
                 S.emission_packet(request, self.root, self.release)
 
+    def test_packet_external_notice_needs_no_emitter_checkout_file(self):
+        web = self.root / "packet/web"
+        web.mkdir(parents=True)
+        (web / "LICENSE.Bend").write_text("public external license")
+        metadata = {"licenses": {"LICENSE.Bend": "build/release-notice-inputs/Bend.txt"},
+                    "packages": [{"licenses": [{"path": "LICENSE.Bend", "sha256": S.digest(web / "LICENSE.Bend")}]}]}
+        with patch.object(S, "ROOT", self.root / "absent-native-checkout"), patch.object(S, "git", return_value="LICENSE"):
+            S.license_sources(metadata, self.root / "packet")
+            with self.assertRaisesRegex(ValueError, "License content"):
+                S.license_sources(metadata)
+            (web / "LICENSE.Bend").write_text("changed")
+            with self.assertRaisesRegex(ValueError, "License content"):
+                S.license_sources(metadata, self.root / "packet")
+
+    def test_packet_tracked_notice_still_requires_exact_checkout_bytes(self):
+        web = self.root / "packet/web"
+        web.mkdir(parents=True)
+        (web / "LICENSE.Backplane").write_text("original")
+        (self.root / "LICENSE").write_text("changed")
+        metadata = {"licenses": {"LICENSE.Backplane": "LICENSE"}, "packages": [{"licenses": [
+                    {"path": "LICENSE.Backplane", "sha256": S.digest(web / "LICENSE.Backplane")}]}]}
+        with patch.object(S, "ROOT", self.root), patch.object(S, "git", return_value="LICENSE"):
+            with self.assertRaisesRegex(ValueError, "Tracked license"):
+                S.license_sources(metadata, self.root / "packet")
+            (self.root / "LICENSE").write_text("original")
+            S.license_sources(metadata, self.root / "packet")
+            metadata["packages"][0]["licenses"][0]["sha256"] = "0" * 64
+            with self.assertRaisesRegex(ValueError, "License content"):
+                S.license_sources(metadata, self.root / "packet")
+
     def test_native_requires_protected_configuration_before_consumption(self):
         packet, _, _ = self.mocked_build(phase="emit", outname="packet")
         request = self.native_request(packet)

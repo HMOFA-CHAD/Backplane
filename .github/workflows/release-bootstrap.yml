@@ -13,16 +13,18 @@ on:
         required: true
       operation:
         type: choice
-        options: [unix-native, windows-native, android]
+        options: [unix-native, windows-native, android, android-signing-info]
         required: true
       packet_url:
-        description: Temporary HTTPS URL of public source-bound inputs (no credentials)
+        description: Public source-bound input URL; unused for android-signing-info
         type: string
-        required: true
+        required: false
+        default: ''
       packet_sha256:
-        description: Independently selected SHA256 of the entire input tar.gz
+        description: Trusted input SHA256; unused for android-signing-info
         type: string
-        required: true
+        required: false
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -222,4 +224,32 @@ jobs:
             build/bootstrap-android/
             build/bootstrap-execution.json
           if-no-files-found: warn
+          retention-days: 14
+
+  android-signing-info:
+    if: inputs.operation == 'android-signing-info'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Export only configured keystore public certificate identity
+        shell: bash
+        env:
+          BACKPLANE_ANDROID_KEYSTORE_BASE64: ${{ secrets.BACKPLANE_ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.BACKPLANE_ANDROID_KEY_ALIAS }}
+        run: |
+          python3 scripts/android-signing-info.py --source "$BACKPLANE_FROZEN_COMMIT" --out "$RUNNER_TEMP/android-public-signer.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-configured-public-signer
+          path: ${{ runner.temp }}/android-public-signer.json
+          if-no-files-found: error
           retention-days: 14
