@@ -47,30 +47,13 @@ def Tm.has(xs: List<&2, String>, +s: String) -> Bool:
     case Nil{}: False{}
     case h <> t: Bool.or(String.eq(h, s), Tm.has(t, s))
 
-def Tm.num.max() -> Nat:
-  Nat.add(Nat.mul(65536n, 4294967295n), 65535n)
-
-def Tm.num.step(valid: Bool, n: Nat, digit: Nat) -> Maybe<&2, Nat>:
-  match valid:
-    case False{}: None{}
-    case True{}: Some{Nat.add(Nat.mul(n, 10n), digit)}
-
-def Tm.num.char(valid: Bool, c: U32, +n: Nat) -> Maybe<&2, Nat>:
-  match valid:
-    case False{}: None{}
-    case True{}:
-      +digit = U32.to_nat((c - 48 : U32))
-      +limit = Tm.num.max()
-      Tm.num.step(Bool.or(Nat.is_lt(n, Nat.div(limit, 10n)), Bool.and(Nat.is_eq(n, Nat.div(limit, 10n)), Nat.is_le(digit, Nat.mod(limit, 10n)))), n, digit)
-
-def Tm.num.scan(s: String, value: Maybe<&2, Nat>) -> Maybe<&2, Nat>:
-  match s value:
-    case _ None{}: None{}
-    case SNil{} Some{n}: Some{n}
-    case SCon{Chr{+c}, t} Some{n}: Tm.num.scan(t, Tm.num.char(Bool.and(U32.is_ge(c, 48), U32.is_le(c, 57)), c, n))
-
-def Tm.num.go(s: String, n: Nat) -> Nat:
-  Maybe.default(&2, Nat, Tm.num.scan(s, Some{n}), 0n)
+# Called only after Tm.num.checked validates the complete normalized decimal.
+# Keep the large native bound as text: constructing/dividing it per digit makes
+# the mathematical checker normalize an enormous Nat even for Tm.num("1").
+def Tm.num.go(s: String, +n: Nat) -> Nat:
+  match s:
+    case SNil{}: n
+    case SCon{Chr{+c}, t}: Tm.num.go(t, Nat.add(Nat.mul(n, 10n), U32.to_nat((c - 48 : U32))))
 
 def Tm.digits(s: String) -> Bool:
   match s:
@@ -80,8 +63,35 @@ def Tm.digits(s: String) -> Bool:
 def Tm.number(+s: String) -> Bool:
   Bool.and(Bool.not(String.is_empty(s)), Tm.digits(s))
 
-def Tm.num(+s: String) -> Nat:
-  Tm.num.go(s, 0n)
+def Tm.num.order(pair: (String & String) & Cmp) -> Bool:
+  ((_, _), cmp) = pair
+  Cmp.is_le(cmp)
+
+def Tm.num.length(short: Bool, exact: Bool, s: String) -> Bool:
+  match short exact:
+    case True{} _: True{}
+    case False{} False{}: False{}
+    case False{} True{}: Tm.num.order(String.cmp(s, "281474976710655"))
+
+def Tm.num.within(+s: String) -> Bool:
+  +n = String.length(s)
+  Tm.num.length(Nat.is_lt(n, 15n), Nat.is_eq(n, 15n), s)
+
+def Tm.num.checked(valid: Bool, s: String) -> Nat:
+  match valid:
+    case False{}: 0n
+    case True{}: Tm.num.go(s, 0n)
+
+def Tm.num.decimal(+s: String) -> Nat:
+  Tm.num.checked(Bool.and(Tm.number(s), Tm.num.within(s)), s)
+
+def Tm.num.trim(s: String) -> String:
+  match s:
+    case SCon{Chr{48}, t}: Tm.num.trim(t)
+    case _: s
+
+def Tm.num(s: String) -> Nat:
+  Tm.num.decimal(Tm.num.trim(s))
 
 def Tm.hex(s: String) -> Bool:
   match s:
