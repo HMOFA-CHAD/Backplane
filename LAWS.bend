@@ -9635,6 +9635,12 @@ law ship_covered_joins_build:
   {SHP.Ship.more(SHP.Ship.asked(SHP.Ship.demo.building(), "t2", "building")) == False{} : Bool}
 
 # deploy.follow is off unless set "on"
+# follow deploys are coalesced: a restart costs the hub about two minutes
+# of not answering, so a following hub looks at origin/main once in every
+# 30 minutes (and a look takes the newest)
+law ship_follow_every_30_minutes:
+  {SHP.Ship.every() == 1800n : Nat}
+
 law ship_follow_off_default:
   {SHP.Ship.follow.on("") == False{} : Bool}
 

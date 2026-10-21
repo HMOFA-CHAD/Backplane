@@ -80,9 +80,21 @@ Settings (all off or empty by default):
   Resource policy lives there, never in the hub. Empty means
   `systemd-run --user --scope -q --` when the user's systemd answers, else
   nothing.
-- `deploy.follow`: `on` makes the hub read origin/main once every 5 minutes
+- `deploy.follow`: `on` makes the hub read origin/main once every 30 minutes
   (the minute's tick, when nothing is under way) and deploy when it moved.
-  Off, it does no work at all.
+  A restart costs about two minutes of the hub not answering (the log's
+  replay), so follow deploys are coalesced: at most one in 30 minutes, always
+  of the newest main (law `ship_follow_every_30_minutes`). Off, it does no
+  work at all.
+
+A main-track install whose desktop app requires an exact release version
+(the 0.12 Electron app checks the service reports exactly `0.12.0`) builds
+the service alone, stamped with that release, by putting the environment in
+`deploy.wrap`, e.g.
+`env BACKPLANE_DEV_SERVICE_ONLY=1 BACKPLANE_VERSION_STAMP=0.12.0 ~/Documents/i2cjak/bp-coord/bin/bp-admit.sh --mem 14 --cores 4 --`.
+Every build stamps the commit it was made from beside the version
+(`BACKPLANE_COMMIT_STAMP`, `scripts/dev.sh` sets it), and `GET /hello`
+answers it as `"commit"`, so builds with the same version are told apart.
 
 What happens:
 

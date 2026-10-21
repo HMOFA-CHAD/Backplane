@@ -122,6 +122,11 @@ def Hello.answer(v: String) -> List<&2, U32>:
 def Hello.answer.b(v: String, +busy: Nat) -> List<&2, U32>:
   CB.Cbor.encode(J.Json.obj([J.KV{"backplane", J.Str{v}}, J.KV{"busy", J.Json.nat(busy)}]))
 
+# the same with the commit the build was made from (core/version.bend's
+# Version.commit: a main-track build reports the release version beside it)
+def Hello.answer.c(v: String, +busy: Nat, c: String) -> List<&2, U32>:
+  CB.Cbor.encode(J.Json.obj([J.KV{"backplane", J.Str{v}}, J.KV{"busy", J.Json.nat(busy)}, J.KV{"commit", J.Str{c}}]))
+
 def Hello.byte(+w: String, +rest: List<&2, U32>) -> List<&2, U32>:
   Bool.pick(List<&2, U32>, String.is_empty(w), rest, U32.from_nat(Maybe.default(&2, Nat, Nat.read(w), 0n)) <> rest)
 

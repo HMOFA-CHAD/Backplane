@@ -282,9 +282,14 @@ def Ship.told(+sh: Ship) -> List<&2, String>:
 def Ship.follow.on(+v: String) -> Bool:
   String.eq(v, "on")
 
-# how often a following hub reads origin/main (seconds)
+# how often a following hub reads origin/main (seconds): every 30 minutes.
+# A restart costs the hub about two minutes of not answering (the log's
+# replay), so follow deploys are coalesced: a build starts only from a look,
+# a look takes the newest origin/main, and there is at most one look, so at
+# most one follow deploy, in each 30 minutes; a burst of merges is one
+# restart (the person's choice, 2026-10-21)
 def Ship.every() -> Nat:
-  300n
+  1800n
 
 # the minute's tick that looks: one in every Ship.every() seconds
 def Ship.due(+now: Nat) -> Bool:

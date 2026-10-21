@@ -92,4 +92,28 @@ rc, _, err = run(img.c([h, t]), v)
 check("a literal sharing cells of the body is refused", rc != 0 and "shared" in err, err)
 rc, out, _ = run(base, "0.1.0-dev")
 check("the default version leaves it as it is", rc == 0 and out == base)
+# the commit slot (Version.commit.slot): its own terminator, next to the version slot
+CTERM = "~@BPCOMMITSLOT"
+def cslot(c):
+    return c + "~" * (40 - len(c)) + CTERM
+def runc(text, sha):
+    with tempfile.NamedTemporaryFile("w", suffix=".c", delete=False) as f:
+        f.write(text)
+    r = subprocess.run([sys.executable, tool, f.name, sha, "commit"], capture_output=True, text=True)
+    out = open(f.name).read()
+    os.unlink(f.name)
+    return r.returncode, out, r.stderr
+sha = "6e42a2ffa82bd671a0802b9ff9c03e140bd910f2"
+_, cbase = emitted(others + [slot("0.1.0-dev"), cslot("unknown")])
+_, cwant = emitted(others + [slot("0.1.0-dev"), cslot(sha)])
+rc, cout, err = runc(cbase, sha)
+check("stamps the commit slot", rc == 0 and [x.strip() for x in cout.split(",")] != [x.strip() for x in cbase.split(",")] and "STAT_OFF" in cout, err)
+rc2, cout2, err = run(cout, v)
+check("then the version slot beside it", rc2 == 0, err)
+rc, _, err = runc(cbase, "not-a-sha")
+check("a commit that is not 40 hex is refused", rc != 0 and "40-hex" in err, err)
+rc, _, err = runc(base, sha)
+check("no commit slot is refused", rc != 0, err)
+rc, again, err = runc(cout, sha)
+check("stamping the same commit again is a no-op", rc == 0 and again == cout, err)
 sys.exit(fail)

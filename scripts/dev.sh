@@ -164,7 +164,7 @@ build_dist() {
   cp src/web/sw.js dist/web/sw.js
   for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
   # no window binary (scripts/build.sh): the hub and the launcher
-  BACKPLANE_VERSION_STAMP=$ver scripts/build-app.sh src/server/main.bend dist/backplane-serve
+  BACKPLANE_VERSION_STAMP=$ver BACKPLANE_COMMIT_STAMP=$(git rev-parse HEAD) scripts/build-app.sh src/server/main.bend dist/backplane-serve
   cp deploy/backplane-launch.sh dist/backplane && chmod 755 dist/backplane
   if [ "$service_only" = 1 ]; then
     say "built $ver"

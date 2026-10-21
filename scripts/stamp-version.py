@@ -5,6 +5,9 @@
 # scripts/build-app.sh can reuse it (BACKPLANE_EMIT_CACHE).
 #
 #   scripts/stamp-version.py build/cc/backplane/all.c 0.11.2-dev.20261015.1222
+#   scripts/stamp-version.py build/cc/backplane/all.c <40-hex sha> commit
+#     the commit slot (Version.commit.slot) the same way: a git sha, or
+#     nothing stamped ("unknown")
 #
 # A string literal is a chain of cells in STAT_IMG: two words each, the
 # character's code (`<n>ull`) and the rest (`term_ctr(CID_SCON, STAT_OFF + k)`,
@@ -24,6 +27,13 @@ BODY = 40
 FILL = "~"
 TERM = "~@BPVERSIONSLOT"
 DEFAULT = "0.1.0-dev"
+if len(sys.argv) > 3 and sys.argv[3] == "commit":
+    TERM = "~@BPCOMMITSLOT"
+    DEFAULT = "unknown"
+    if not re.fullmatch(r"[0-9a-f]{40}", sys.argv[2]):
+        sys.exit("stamp-version: %r is not a 40-hex commit" % sys.argv[2])
+elif len(sys.argv) > 3:
+    sys.exit("stamp-version: unknown slot %r" % sys.argv[3])
 
 def slot(ver):
     return ver + FILL * (BODY - len(ver)) + TERM
@@ -95,7 +105,7 @@ want, have = slot(ver), slot(DEFAULT)
 if want == have:
     if len(find(have)) == 1:
         sys.exit(0)
-    sys.exit("stamp-version: found the version slot %d times" % len(find(have)))
+    sys.exit("stamp-version: found the %s slot %d times" % (TERM, len(find(have))))
 slots = find(have)
 if not slots:
     if len(find(want)) == 1:

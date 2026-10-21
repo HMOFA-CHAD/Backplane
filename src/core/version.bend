@@ -13,3 +13,14 @@ def Version.slot() -> String:
 
 def Version.current() -> String:
   Maybe.default(&2, String, List.head(&2, String, String.split(Version.slot(), '~')), "")
+
+# The commit the build was made from, in a slot of its own the same way
+# (scripts/stamp-version.py FILE SHA commit, run by scripts/build-app.sh with
+# BACKPLANE_COMMIT_STAMP): a main-track build reports its version as the
+# release the installed desktop app requires, and its commit beside it (GET
+# /hello's "commit"). Unstamped it reads "unknown".
+def Version.commit.slot() -> String:
+  "unknown~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~@BPCOMMITSLOT"
+
+def Version.commit() -> String:
+  Maybe.default(&2, String, List.head(&2, String, String.split(Version.commit.slot(), '~')), "")

@@ -5215,7 +5215,7 @@ def Ship.tick.k(go: Bool) -> Step:
       Step.none()
 
 # the minute's tick: with deploy.follow on (off by default) and nothing
-# under way, origin/main is read once every 5 minutes
+# under way, origin/main is read once every 30 minutes (SH.Ship.every)
 def Ship.tick(+s: M.State, +now: Nat) -> Step:
   Ship.tick.k(Bool.and(Ship.follow(s), Bool.and(Bool.not(String.is_empty(Ship.repo(s))), Bool.and(Bool.not(Ship.busy.s(s)), SH.Ship.due(now)))))
 
