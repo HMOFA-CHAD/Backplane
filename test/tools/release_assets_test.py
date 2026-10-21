@@ -9,6 +9,7 @@ import tarfile
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("release_assets", ROOT / "scripts/release-assets.py")
@@ -201,6 +202,89 @@ class CandidateTests(unittest.TestCase):
 
     def collect(self):
         self.save(); assets.collect(self.root, SHA, TAG, self.manifest)
+
+    def mixed_sources(self):
+        source, tree = assets.CORRECTED_SERVICE_SOURCE
+        self.inputs.update(sourceCommit=source, sourceTree=tree)
+        with patch.dict(globals(), SHA=source, TREE=tree):
+            for target in assets.RELEASE_TARGETS:
+                self.target(target)
+        old_source, old_tree = assets.RETAINED_COMPONENT_SOURCE
+        with patch.dict(globals(), SHA=old_source, TREE=old_tree):
+            for target in ('android', 'ios', 'web'):
+                self.target(target)
+                self.inputs['targets'][target]['componentSource'] = {'commit': old_source, 'tree': old_tree}
+        receipt = self.root/'root-component-provenance.json'
+        receipt.write_bytes((ROOT/'test/fixtures/release-component-provenance-0.12.0.json').read_bytes())
+        self.inputs['componentProvenanceDisposition'] = self.binding(receipt)
+        return source, tree
+
+    def test_root_authorized_mixed_sources_preserve_actual_receipts_and_pending_gates(self):
+        source, tree = self.mixed_sources()
+        before = {p.name: p.read_bytes() for p in self.root.glob('*.producer.json')}
+        self.save(); assets.collect(self.root, source, TAG, self.manifest)
+        assets.verify(self.root, source, TAG)
+        result = json.loads((self.root/'release-assets.json').read_bytes())
+        self.assertEqual((result['sourceCommit'], result['sourceTree']), (source, tree))
+        for target in ('android', 'ios', 'web'):
+            self.assertEqual(result['componentSources'][target], self.inputs['targets'][target]['componentSource'])
+        for target in ('linux-x64', 'linux-arm64', 'darwin-arm64', 'windows-x64'):
+            self.assertEqual(result['componentSources'][target], {'commit': source, 'tree': tree})
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.root.glob('*.producer.json')})
+        coverage = json.loads((self.root/'release-coverage.json').read_bytes())
+        self.assertTrue(all(x['state'] == 'pending' for x in coverage['targets'].values()))
+        with self.assertRaises(ValueError): assets.verify_coverage(self.root, coverage, source, TAG)
+
+    def test_mixed_source_override_requires_exact_root_receipt_and_tuple(self):
+        source, tree = self.mixed_sources()
+        original = self.inputs.pop('componentProvenanceDisposition')
+        with self.assertRaisesRegex(ValueError, 'pinned root'): assets.verify_inputs(self.root, self.inputs, source, TAG)
+        self.inputs['componentProvenanceDisposition'] = original
+        receipt = self.root/original['path']; receipt.write_bytes(receipt.read_bytes()+b' ')
+        self.inputs['componentProvenanceDisposition'] = self.binding(receipt)
+        with self.assertRaisesRegex(ValueError, 'unapproved component'): assets.verify_inputs(self.root, self.inputs, source, TAG)
+
+    def test_disposition_does_not_allow_desktop_or_arbitrary_historical_source(self):
+        source, tree = self.mixed_sources()
+        row = self.inputs['targets']['linux-x64']
+        row['componentSource'] = dict(zip(('commit', 'tree'), assets.RETAINED_COMPONENT_SOURCE))
+        with self.assertRaisesRegex(ValueError, 'not authorized'): assets.verify_inputs(self.root, self.inputs, source, TAG)
+        del row['componentSource']
+        self.inputs['targets']['android']['componentSource']['commit'] = 'c'*40
+        with self.assertRaisesRegex(ValueError, 'not authorized'): assets.verify_inputs(self.root, self.inputs, source, TAG)
+
+    def test_retained_archive_is_not_relabelled_without_explicit_scope(self):
+        source, tree = self.mixed_sources()
+        del self.inputs['targets']['ios']['componentSource']
+        with self.assertRaisesRegex(ValueError, 'source/version/channel'): assets.verify_inputs(self.root, self.inputs, source, TAG)
+
+    def test_android_variants_cannot_override_the_approved_component_source(self):
+        source, tree = self.mixed_sources()
+        self.inputs['targets']['android']['variants'][0]['componentSource'] = {'commit': source, 'tree': tree}
+        with self.assertRaisesRegex(ValueError, 'variants must share'): assets.verify_inputs(self.root, self.inputs, source, TAG)
+
+    def test_collected_component_provenance_cannot_be_changed(self):
+        source, tree = self.mixed_sources()
+        self.save(); assets.collect(self.root, source, TAG, self.manifest)
+        manifest = self.root/'release-assets.json'; output = json.loads(manifest.read_bytes())
+        output['componentSources']['android'] = {'commit': source, 'tree': tree}
+        manifest.write_bytes(encoded(output))
+        with self.assertRaisesRegex(ValueError, 'component source scopes changed'): assets.verify(self.root, source, TAG)
+
+    def test_signed_android_aab_is_a_public_asset_alongside_apk(self):
+        self.collect()
+        result = json.loads((self.root/'release-assets.json').read_bytes())
+        row = self.inputs['targets']['android']
+        self.assertIn(row['archive']['path'], result['publicAssets'])
+        self.assertIn(row['variants'][0]['archive']['path'], result['publicAssets'])
+        self.assertEqual(len(result['publicAssets']), 8)
+
+    def test_public_asset_inventory_cannot_omit_signed_aab(self):
+        self.collect()
+        manifest = self.root/'release-assets.json'; result = json.loads(manifest.read_bytes())
+        result['publicAssets'].remove(self.inputs['targets']['android']['variants'][0]['archive']['path'])
+        manifest.write_bytes(encoded(result))
+        with self.assertRaisesRegex(ValueError, 'primary and variant'): assets.verify(self.root, SHA, TAG)
 
     def test_seven_package_fixture_collect_verify_all_acceptance_stays_pending(self):
         self.collect(); assets.verify(self.root, SHA, TAG)

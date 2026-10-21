@@ -26,6 +26,14 @@ RELEASE_TARGETS = {
 COMMON_GATES = {"runtime", "auth-security", "product-parity",
                 "response-content", "telemetry-privacy"}
 
+# Root accepted these specific component source scopes after the server-only
+# telemetry repair. This is not an arbitrary source override or runtime waiver.
+COMPONENT_DISPOSITION_SHA256 = "4068bc31c62be4482a18c61d7b971e1057226312cb5ee4016e486305682cbaaf"
+CORRECTED_SERVICE_SOURCE = ("9b573871d5e37bc2575c59576ad9cc8196bb34e7",
+                            "b3ca462f89d0d244d93915c78a8bda9a4f98f892")
+RETAINED_COMPONENT_SOURCE = ("920c5a399dc7880bb3c6518239844570f116b3c7",
+                             "02b851c54fff33a28e9d1cc60298f6527b78dd32")
+
 
 def target_gates(surface):
     gates = COMMON_GATES | ({"package-identity"} if surface != "web" else set())
@@ -639,6 +647,35 @@ def verify_windows_members(package, build_path, source, tree, tag):
     verify_web(package, dict(web, root=root + "/web"), source, tree)
 
 
+def component_sources(directory, inputs, source, tree, tag):
+    scopes = {target: {"commit": source, "tree": tree} for target in RELEASE_TARGETS}
+    binding = inputs.get("componentProvenanceDisposition")
+    declared = {t: row["componentSource"] for t, row in inputs["targets"].items()
+                if isinstance(row, dict) and "componentSource" in row}
+    if binding is None:
+        if declared:
+            raise ValueError("component source scopes require pinned root disposition")
+        return scopes, set()
+    name = file_binding(directory, binding)
+    if (binding["sha256"] != COMPONENT_DISPOSITION_SHA256
+            or (source, tree) != CORRECTED_SERVICE_SOURCE or tag != "v0.12.0"):
+        raise ValueError("unapproved component provenance disposition")
+    disposition = load_json((directory / name).read_bytes())
+    if (disposition.get("schema"), disposition.get("kind"), disposition.get("status"),
+            disposition.get("release"), disposition.get("correctedServiceSource")) != (
+            1, "backplane-root-component-provenance-disposition",
+            "SOURCE_SCOPES_ACCEPTED_RUNTIME_GATES_REMAIN", "v0.12.0",
+            {"commit": source, "tree": tree}):
+        raise ValueError("root component provenance source mismatch")
+    allowed = {"android", "ios", "web"}
+    retained = dict(zip(("commit", "tree"), RETAINED_COMPONENT_SOURCE))
+    for target, scope in declared.items():
+        if target not in allowed or scope != retained:
+            raise ValueError("component source scope not authorized: " + target)
+        scopes[target] = scope
+    return scopes, {name}
+
+
 def verify_inputs(directory, inputs, source, tag):
     version, channel = identity(source, tag)
     if (inputs.get("schema"), inputs.get("kind"), inputs.get("sourceCommit"), inputs.get("tag"),
@@ -652,20 +689,23 @@ def verify_inputs(directory, inputs, source, tag):
     rows = inputs.get("targets", {})
     if set(rows) != set(RELEASE_TARGETS):
         raise ValueError("all four desktops, web, Android and iOS packages required")
-    used = set()
+    scopes, used = component_sources(directory, inputs, source, tree, tag)
     for target, row in rows.items():
         if not isinstance(row, dict):
             raise ValueError("target producer archive and receipt required")
-        refs = verify_target(directory, target, row, source, tree, tag)
+        component = scopes[target]
+        refs = verify_target(directory, target, row, component["commit"], component["tree"], tag)
         if target == "android":
             main = load_json((directory / row["receipt"]["path"]).read_bytes())
             variants = row.get("variants", [])
             if main.get("target") != "android-apk" or not isinstance(variants, list) or len(variants) != 1:
                 raise ValueError("Android requires main APK and same-build AAB variant")
             variant = variants[0]
+            if "componentSource" in variant:
+                raise ValueError("Android variants must share their target component source")
             if variant.get("expectedSignerSha256") != row.get("expectedSignerSha256"):
                 raise ValueError("Android APK/AAB approved signer differs")
-            extra = verify_target(directory, target, variant, source, tree, tag)
+            extra = verify_target(directory, target, variant, component["commit"], component["tree"], tag)
             other = load_json((directory / variant["receipt"]["path"]).read_bytes())
             if (other.get("target") != "android-aab" or other.get("buildNumber") != main.get("buildNumber")
                     or other.get("bridgeSha256") != main.get("bridgeSha256") or extra & refs):
@@ -704,6 +744,11 @@ def candidate_members(directory):
     return found
 
 
+def public_archives(inputs):
+    return [row["archive"]["path"] for target in RELEASE_TARGETS
+            for row in [inputs["targets"][target], *inputs["targets"][target].get("variants", [])]]
+
+
 def collect(directory, source, tag, manifest, **unused):
     inputs = load_json(manifest.read_bytes())
     files = verify_inputs(directory, inputs, source, tag)
@@ -715,8 +760,9 @@ def collect(directory, source, tag, manifest, **unused):
     version, channel = identity(source, tag)
     output = {"schema": 2, "kind": "backplane-electron-candidate", "sourceCommit": source,
               "sourceTree": inputs["sourceTree"], "tag": tag, "version": version, "channel": channel,
+              "componentSources": component_sources(directory, inputs, source, inputs["sourceTree"], tag)[0],
               "buildRunId": os.environ.get("GITHUB_RUN_ID"),
-              "publicAssets": [inputs["targets"][t]["archive"]["path"] for t in RELEASE_TARGETS],
+              "publicAssets": public_archives(inputs),
               "files": {n: {"sha256": digest(directory / n), "bytes": (directory / n).stat().st_size} for n in sorted(files)},
               "productAcceptance": "PENDING all seven target-scoped owner gates; root alone publishes"}
     for name in ("release-assets.json", "SHA256SUMS", "release-coverage.json"):
@@ -739,10 +785,12 @@ def verify(directory, source, tag, run_id=None):
         raise ValueError("candidate collection run mismatch")
     inputs = load_json((directory / "release-inputs.json").read_bytes())
     names = verify_inputs(directory, inputs, source, tag) | {"release-inputs.json"}
+    if manifest.get("componentSources") != component_sources(directory, inputs, source, inputs["sourceTree"], tag)[0]:
+        raise ValueError("candidate component source scopes changed")
     if manifest.get("sourceTree") != inputs["sourceTree"] or set(manifest.get("files", {})) != names:
         raise ValueError("candidate inventory/source tree mismatch")
-    if manifest.get("publicAssets") != [inputs["targets"][t]["archive"]["path"] for t in RELEASE_TARGETS]:
-        raise ValueError("public asset list must include every target primary package")
+    if manifest.get("publicAssets") != public_archives(inputs):
+        raise ValueError("public asset list must include every target primary and variant package")
     for n in names:
         if manifest["files"][n] != {"sha256": digest(directory / n), "bytes": (directory / n).stat().st_size}:
             raise ValueError("candidate bytes changed after collection")
