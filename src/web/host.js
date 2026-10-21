@@ -22,6 +22,7 @@ import { ThinHost } from "./thin-host.js";
 import { ThinMailDraft, mailReplyField } from "./mail-drafts.js";
 import { ThinViews, viewCapability } from "./thin.js";
 import * as Wire from "./wire.js";
+import { openDraw } from "./draw.js";
 import { T, is, learnJson, learnDom } from "./wire.js";
 
 // the constructors' tags as this bundle names them (wire.js)
@@ -830,6 +831,18 @@ document.addEventListener("change", (e) => {
   (async () => {
     for (const f of files) await upload(el.getAttribute("data-attach"), f);
   })();
+});
+
+// The draw board (draw.js): the composer's [data-draw] button opens it, its
+// words on the button (data-draw-*), and the picture it saves is attached
+// to the next message the way a picked file is
+document.addEventListener("click", (e) => {
+  const el = e.target.closest?.("[data-draw]");
+  if (!el) return;
+  e.preventDefault();
+  const d = el.dataset;
+  openDraw({ title: d.drawTitle, hint: d.drawHint, save: d.drawSave, cancel: d.drawCancel, length: d.drawLength },
+    (file) => upload(el.getAttribute("data-draw"), file));
 });
 
 // Drops: files dragged onto a [data-drop] area go to its action, the way
