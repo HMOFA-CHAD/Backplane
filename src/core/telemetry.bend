@@ -47,10 +47,30 @@ def Tm.has(xs: List<&2, String>, +s: String) -> Bool:
     case Nil{}: False{}
     case h <> t: Bool.or(String.eq(h, s), Tm.has(t, s))
 
-def Tm.num.go(s: String, +n: Nat) -> Nat:
-  match s:
-    case SNil{}: n
-    case SCon{Chr{+c}, t}: Tm.num.go(t, Nat.add(Nat.mul(n, 10n), U32.to_nat((c - 48 : U32))))
+def Tm.num.max() -> Nat:
+  Nat.add(Nat.mul(65536n, 4294967295n), 65535n)
+
+def Tm.num.step(valid: Bool, n: Nat, digit: Nat) -> Maybe<&2, Nat>:
+  match valid:
+    case False{}: None{}
+    case True{}: Some{Nat.add(Nat.mul(n, 10n), digit)}
+
+def Tm.num.char(valid: Bool, c: U32, +n: Nat) -> Maybe<&2, Nat>:
+  match valid:
+    case False{}: None{}
+    case True{}:
+      +digit = U32.to_nat((c - 48 : U32))
+      +limit = Tm.num.max()
+      Tm.num.step(Bool.or(Nat.is_lt(n, Nat.div(limit, 10n)), Bool.and(Nat.is_eq(n, Nat.div(limit, 10n)), Nat.is_le(digit, Nat.mod(limit, 10n)))), n, digit)
+
+def Tm.num.scan(s: String, value: Maybe<&2, Nat>) -> Maybe<&2, Nat>:
+  match s value:
+    case _ None{}: None{}
+    case SNil{} Some{n}: Some{n}
+    case SCon{Chr{+c}, t} Some{n}: Tm.num.scan(t, Tm.num.char(Bool.and(U32.is_ge(c, 48), U32.is_le(c, 57)), c, n))
+
+def Tm.num.go(s: String, n: Nat) -> Nat:
+  Maybe.default(&2, Nat, Tm.num.scan(s, Some{n}), 0n)
 
 def Tm.digits(s: String) -> Bool:
   match s:
@@ -61,7 +81,7 @@ def Tm.number(+s: String) -> Bool:
   Bool.and(Bool.not(String.is_empty(s)), Tm.digits(s))
 
 def Tm.num(+s: String) -> Nat:
-  Bool.pick(Nat, Tm.number(s), Tm.num.go(s, 0n), 0n)
+  Tm.num.go(s, 0n)
 
 def Tm.hex(s: String) -> Bool:
   match s:
@@ -131,8 +151,13 @@ def Tm.loopback.parts(xs: List<&2, String>) -> Bool:
       Bool.and(Tm.number(port), Bool.and(Nat.is_gt(Tm.num(port), 0n), Nat.is_le(Tm.num(port), 65535n)))
     case _: False{}
 
+def Tm.loopback.prefix(valid: Bool, url: String) -> Bool:
+  match valid:
+    case False{}: False{}
+    case True{}: Tm.loopback.parts(String.split(String.drop(url, 17n), '/'))
+
 def Tm.loopback(+url: String) -> Bool:
-  Bool.and(String.starts_with(url, "http://127.0.0.1:"), Tm.loopback.parts(String.split(String.drop(url, 17n), '/')))
+  Tm.loopback.prefix(String.starts_with(url, "http://127.0.0.1:"), url)
 
 def Tm.config.ok(test: String, +url: String, +kid: String, +key: String, +channel: String) -> Bool:
   Bool.and(Tm.hex.n(key, 64n), Bool.and(Bool.or(String.starts_with(kid, "dev-"), String.starts_with(kid, "rel-")),

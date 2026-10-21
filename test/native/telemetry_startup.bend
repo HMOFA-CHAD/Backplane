@@ -1,0 +1,36 @@
+import Base
+import ../../src/core/telemetry.bend as T
+import ../check.bend as C
+
+def check(name: String, ok: Bool) -> IO(Unit):
+  C.Check.str(name, Bool.pick(String, ok, "yes", "no"), "yes")
+
+def key() -> String:
+  "0000000000000000000000000000000000000000000000000000000000000000"
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    check("production HTTPS configured tuple evaluates without native overflow", T.Tm.config.ok("", "https://backplane.works/api/v1/events", "rel-fixture", key(), "release"))
+    check("production HTTPS never classifies as loopback", Bool.not(T.Tm.loopback("https://backplane.works/api/v1/events")))
+    check("another HTTPS endpoint still refused", Bool.not(T.Tm.config.ok("", "https://example.invalid/api/v1/events", "rel-fixture", key(), "release")))
+    check("valid loopback test tuple preserved", T.Tm.config.ok("1", "http://127.0.0.1:4567/api/v1/events", "dev-fixture", key(), "dev"))
+    check("production cannot use loopback endpoint", Bool.not(T.Tm.config.ok("", "http://127.0.0.1:4567/api/v1/events", "rel-fixture", key(), "release")))
+    check("port lower boundary", T.Tm.loopback("http://127.0.0.1:1/api/v1/events"))
+    check("port upper boundary", T.Tm.loopback("http://127.0.0.1:65535/api/v1/events"))
+    check("zero port refused", Bool.not(T.Tm.loopback("http://127.0.0.1:0/api/v1/events")))
+    check("oversized port refused", Bool.not(T.Tm.loopback("http://127.0.0.1:65536/api/v1/events")))
+    check("negative port refused", Bool.not(T.Tm.loopback("http://127.0.0.1:-1/api/v1/events")))
+    check("nondigit port refused", Bool.not(T.Tm.loopback("http://127.0.0.1:.works/api/v1/events")))
+    check("Unicode port refused", Bool.not(T.Tm.loopback("http://127.0.0.1:日本語/api/v1/events")))
+    check("very long digit port refused", Bool.not(T.Tm.loopback("http://127.0.0.1:999999999999999999999999999999/api/v1/events")))
+    check("foreign host refused", Bool.not(T.Tm.loopback("http://127.0.0.2:4567/api/v1/events")))
+    check("wrong path refused", Bool.not(T.Tm.loopback("http://127.0.0.1:4567/api/v1/events/extra")))
+    C.Check.str("invalid decimal returns zero without unsafe subtraction", Nat.show(T.Tm.num(".works")), "0")
+    C.Check.str("empty decimal stays zero", Nat.show(T.Tm.num("")), "0")
+    C.Check.str("valid epoch seconds preserved", Nat.show(T.Tm.num("1792592831")), "1792592831")
+    C.Check.str("valid retry interval preserved", Nat.show(T.Tm.num("7200")), "7200")
+    C.Check.str("native maximum accepted", Nat.show(T.Tm.num("281474976710655")), "281474976710655")
+    C.Check.str("native maximum plus one refused", Nat.show(T.Tm.num("281474976710656")), "0")
+    C.Check.str("JS safe integer above native limit refused", Nat.show(T.Tm.num("9007199254740991")), "0")
+    C.Check.str("long leading zero representation preserved", Nat.show(T.Tm.num("0000000000000000000000000001")), "1")
+    check("missing key still refused", Bool.not(T.Tm.config.ok("", "https://backplane.works/api/v1/events", "rel-fixture", "", "release")))
