@@ -10809,9 +10809,9 @@ def Hub.thin.message_kind(live: Bool, h: Hub, +client: U32, +o: J.Json, +c: Clie
     case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       +stream = TLIVE.Stream.get(Cfg.thin.streams(cfg), thread)
       Hub.thin.live_message_cursor(TV.LiveMessage.start(stream, J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg)), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, stream, thread)
-    case False{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+    case False{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.thin.message_read(TV.Message.read(Cfg.thin(cfg), thread, J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg),
-        THIN.Index.page(Cfg.thin(cfg), thread, ThinContext.anchor(Client.thin.context(c)), 32n)), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now)
+        THIN.Index.page(Cfg.thin(cfg), thread, ThinContext.anchor(Client.thin.context(c)), 32n), st), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now)
 
 def Hub.thin.message(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) -> IO(Hub):
   match h:

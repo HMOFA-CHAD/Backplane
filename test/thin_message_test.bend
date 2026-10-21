@@ -31,7 +31,7 @@ def version(r: V.MessageRead) -> Nat:
     case V.MessageRead{_, row, _}: T.Row.n(row)
 
 def read(+p: J.Json) -> V.MessageRead:
-  V.Message.read(index(), "a", p, "epoch", ["1"])
+  V.Message.read(index(), "a", p, "epoch", ["1"], M.State.empty())
 
 def check(name: String, b: Bool) -> IO(Unit):
   C.Check.str(name, Bool.pick(String, b, "yes", "no"), "yes")
@@ -49,7 +49,7 @@ def main() -> IO(Unit):
     C.Check.str("explicit cursor retains immutable version", Nat.show(version(read(request("long", cursor())))), "1")
     C.Check.str("cursor starts after visible scalar-safe block", Nat.show(offset(read(request("long", cursor())))), "1")
     C.Check.str("known continuation accepted", code(read(request("long", cursor()))), "")
-    C.Check.str("unseen initial id does not scan history", code(V.Message.read(index(), "a", request("long", ""), "epoch", Nil{})), "NOT_FOUND")
+    C.Check.str("unseen initial id does not scan history", code(V.Message.read(index(), "a", request("long", ""), "epoch", Nil{}, M.State.empty())), "NOT_FOUND")
     C.Check.str("foreign body refused despite valid indexed ordinal", code(read(request("other", W.Cursor.write("epoch", target(), "message:2", 1n)))), "STALE_CURSOR")
     C.Check.str("entry id cannot change under original cursor", code(read(request("other", cursor()))), "STALE_CURSOR")
     C.Check.str("another target cannot borrow cursor", code(read(V.Obj.put(request("long", cursor()), "target", V.Target.json("thread", "b")))), "STALE_CURSOR")
@@ -62,7 +62,7 @@ def main() -> IO(Unit):
     C.Check.str("malformed cursor refused", code(read(request("long", "broken"))), "STALE_CURSOR")
     C.Check.str("overlong cursor bounded before parsing", code(read(request("long", String.repeat("x", 1025n)))), "LIMIT")
     C.Check.str("missing initial entry refused", code(read(request("absent", ""))), "NOT_FOUND")
-    C.Check.str("foreign initial entry refused", code(V.Message.read(index(), "a", request("other", ""), "epoch", ["2"])), "NOT_FOUND")
+    C.Check.str("foreign initial entry refused", code(V.Message.read(index(), "a", request("other", ""), "epoch", ["2"], M.State.empty())), "NOT_FOUND")
     C.Check.str("continuation keeps last exact Unicode scalar", J.Json.get_str(J.Json.get_obj(V.Message.result(T.Index.row(index(), 1n), 1n, request("long", cursor()), "epoch"), "message"), "text", ""), "😀")
     C.Check.str("empty window cannot wrap to latest page", Bool.pick(String, J.Json.get_bool(V.Page.window(index(), "a", request("long", ""), "epoch", Nil{}), "hasMore", True{}), "yes", "no"), "no")
     C.Check.str("empty window has no older cursor", J.Json.get_str(V.Page.window(index(), "a", request("long", ""), "epoch", Nil{}), "older", "invalid"), "")
