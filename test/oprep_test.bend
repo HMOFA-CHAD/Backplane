@@ -2,6 +2,7 @@ import Base
 import ./check.bend as C
 import ../src/core/hub.bend as H
 import ../src/core/model.bend as M
+import ../src/core/mcp.bend as MC
 
 # Operational reports to the uberbot (hub.bend's Operational.*): a launched
 # thread's report, a task's result, watched work's end and a wake for the
@@ -78,6 +79,14 @@ def work(+on: Bool) -> H.Step:
 def torn() -> M.State:
   M.State.replay(List.append(&2, M.Change, cs(finish(True{})), undelivered(pending(os(finish(True{}))))), task(True{}))
 
+# t1's thread_send to t0 (auto mode)
+def send(+on: Bool) -> H.Step:
+  MC.Mcp.send.m(True{}, task(on), 9n, "t1", "t0", "status: merged #200", "")
+
+# a deploy's report to t0
+def deploy(+on: Bool) -> H.Step:
+  H.Lr.send(task(on), 9n, "deploy", "t0", "deploy_main: built and staged")
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("task result to the uberbot: no Chat message", Nat.show(posts(cs(finish(True{})), "t0")), "0")
@@ -92,4 +101,8 @@ def main() -> IO(Unit):
     C.Check.str("a wake for another thread: sent as before", Nat.show(H.Lr.count(cs(wake(False{})), "tb")) ++ "/" ++ Nat.show(appends(os(wake(False{})))), "1/0")
     C.Check.str("watched work of the uberbot: no Chat message", Nat.show(posts(cs(work(True{})), "tw")), "0")
     C.Check.str("watched work of the uberbot: filed, starts no turn", Nat.show(appends(os(work(True{})))) ++ "/" ++ Nat.show(running(cs(work(True{})), "tw")), "1/0")
+    C.Check.str("a thread's thread_send to the uberbot: no Chat message", Nat.show(posts(cs(send(True{})), "t0")), "0")
+    C.Check.str("a thread's thread_send to the uberbot: filed, starts no turn", Nat.show(appends(os(send(True{})))) ++ "/" ++ Nat.show(running(cs(send(True{})), "t0")), "1/0")
+    C.Check.str("thread_send to another thread: delivered as before", Nat.show(posts(cs(send(False{})), "t0")) ++ "/" ++ Nat.show(appends(os(send(False{})))), "1/0")
+    C.Check.str("a deploy's report to the uberbot: filed, not in Chat", Nat.show(appends(os(deploy(True{})))) ++ "/" ++ Nat.show(posts(cs(deploy(True{})), "t0")), "1/0")
     C.Check.str("watched work of another thread: told as before", Nat.show(posts(cs(work(False{})), "tw")) ++ "/" ++ Nat.show(appends(os(work(False{})))), "1/0")

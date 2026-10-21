@@ -151,7 +151,8 @@ def Fm.plane.name(+name: String) -> String:
 
 # A launched thread's report from the machine it runs on, for its launcher
 # here (hub.bend's Lr.far.*): posted once per key, so a line the other
-# machine sends again posts nothing more (law launch_far_once)
+# machine sends again posts nothing more (law launch_far_once); for the
+# uberbot's own thread it is filed in its Mailroom (Operational.inbox)
 def Fm.report.k(here: Bool, had: Bool, +s: M.State, +now: Nat, +from: String, +to: String, +key: String, +text: String) -> MC.Res:
   match here had:
     case False{} _:
@@ -159,7 +160,7 @@ def Fm.report.k(here: Bool, had: Bool, +s: M.State, +now: Nat, +from: String, +t
     case True{} True{}:
       MC.Res.ok(J.Json.obj([J.KV{"threadId", J.Str{to}}, J.KV{"state", J.Str{"had it"}}]))
     case True{} False{}:
-      MC.Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{to}}, J.KV{"state", J.Str{"sent"}}]), B.Hub.inbox.from(s, now, from, to, M.User{}, text, B.Lr.msg(from, key))}
+      MC.Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{to}}, J.KV{"state", J.Str{"sent"}}]), B.Operational.inbox(s, now, "launch", from, to, M.User{}, text, B.Lr.msg(from, key), Nil{})}
 
 def Fm.report(+s: M.State, +now: Nat, +from: String, +to: String, +key: String, +text: String) -> MC.Res:
   Fm.report.k(B.Lr.exists(s, to), B.Hub.has_msg(M.State.mine(s, to), B.Lr.msg(from, key)), s, now, from, to, key, text)

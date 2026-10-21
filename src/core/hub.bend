@@ -2615,8 +2615,10 @@ def Mail.file(+s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String,
 # Operational reports to the uberbot
 # ----------------------------------
 # A launched thread's report (Lr.send.here), a delegated task's result,
-# watched work's outcome and a wake addressed to the uberbot's own thread
-# are filed in its Mailroom, never posted in its Chat (the person's). The
+# watched work's outcome, a wake addressed to the uberbot's own thread and
+# another thread's thread_send to it (mcp.bend's Mcp.send.m) are filed in
+# its Mailroom, never posted in its Chat: that is the person's, their
+# messages and the uberbot's answers. The
 # producer chooses this path by what it is, never by the text. Filing is
 # the durable MailAppend: the body is written, then its header and the
 # producer's own acknowledgements (TaskDelivered...) commit together, so a
@@ -2642,10 +2644,14 @@ def Operational.file.k(has: Bool, +s: M.State, +body: MB.Body, +after: List<&2, 
     case True{}: Step{after, Nil{}}
     case False{}: Operational.after(Mail.file.body(s, body), after)
 
-def Operational.file(+s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String, +after: List<&2, M.Change>) -> Step:
+# want: "fyi", or "" for the kind's own (a thread's direct message asks)
+def Operational.mail(+s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String, +want: String, +after: List<&2, M.Change>) -> Step:
   +addr = Mail.addr(s, Operational.owner(s, to))
   Operational.file.k(ML.Box.has(M.State.mail(s), msg), s,
-    Mail.body(s, now, o, addr, text, msg, ML.Mail.route(o, addr), Mail.subject(String.eq(ML.Origin.kind(o), "launch"), s, o, addr), "fyi"), after)
+    Mail.body(s, now, o, addr, text, msg, ML.Mail.route(o, addr), Mail.subject(String.eq(ML.Origin.kind(o), "launch"), s, o, addr), want), after)
+
+def Operational.file(+s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String, +after: List<&2, M.Change>) -> Step:
+  Operational.mail(s, now, o, to, text, msg, "fyi", after)
 
 def Mail.compose(+s: M.State, +now: Nat, +from: String, +to: String, +text: String, +msg: String, +conv: String, +subject: String, +want: String) -> Step:
   +o = {ML.Origin{from, "thread", ""} : ML.Origin}
@@ -3619,7 +3625,7 @@ def Task.demo(busy: Bool) -> M.State:
 def Lr.loops() -> Nat:
   20n
 
-# how much of the last reply a note carries
+# how much of the last reply a wake's summary carries (Wake.thread.text)
 def Lr.cut() -> Nat:
   1500n
 
@@ -3726,19 +3732,74 @@ def Lr.word(+e: Nat, +reply: String) -> String:
     case _:
       "was interrupted"
 
-def Lr.body(long: Bool, +reply: String, +id: String) -> String:
-  match long:
-    case True{}:
-      String.take(reply, Lr.cut()) ++ "…\n\n(cut short: thread_read " ++ id ++ " for the rest)"
-    case False{}:
-      reply
-
 def Lr.head(+id: String, +title: String) -> String:
   "[Backplane] Launched thread \"" ++ title ++ "\" (" ++ id ++ ")"
 
-# the note for a turn's end: the state and the last reply, cut to Lr.cut()
+# the note for a turn's end: the state and the last reply, whole (the row
+# is the report: a client folds a long one and opens the rest from it;
+# before, it kept Lr.cut() and a thread_read hint, so "read rest" had
+# nothing more to show)
 def Lr.note(+id: String, +title: String, +word: String, +reply: String) -> String:
-  Lr.head(id, title) ++ " " ++ word ++ Bool.pick(String, String.is_empty(String.trim(reply)), ".", ":\n\n" ++ Lr.body(Nat.is_gt(String.length(reply), Lr.cut()), reply, id))
+  Lr.head(id, title) ++ " " ++ word ++ Bool.pick(String, String.is_empty(String.trim(reply)), ".", ":\n\n" ++ reply)
+
+# Reports stored before they were kept whole: the reply's first Lr.cut()
+# characters, then this tail. Lr.whole gives such a row back whole, for a
+# reader that opens the rest of it (thin-view's Message.read).
+def Lr.cut.tail(+th: String) -> String:
+  "…\n\n(cut short: thread_read " ++ th ++ " for the rest)"
+
+def Lr.upto.k(keep: Bool, +e: M.Entry, +rest: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match keep:
+    case True{}: e <> rest
+    case False{}: rest
+
+def Lr.entry.at(+e: M.Entry) -> Nat:
+  match e:
+    case M.Msg{_, _, _, _, +at}: at
+    case M.Act{_, _, _, _, _, +at}: at
+
+# the thread's entries up to a time, in their order
+def Lr.upto(es: List<&2, M.Entry>, +at: Nat) -> List<&2, M.Entry>:
+  match es:
+    case Nil{}: Nil{}
+    case +e <> +t: Lr.upto.k(Nat.is_le(Lr.entry.at(e), at), e, Lr.upto(t, at))
+
+def Lr.whole.k(ok: Bool, +text: String, +head: String, +reply: String) -> String:
+  match ok:
+    case True{}: head ++ reply
+    case False{}: text
+
+# the head before the reply is a report's own: its opening, the source
+# thread, then one of Lr.word's words and the colon (the title between may
+# be anything the thread was called then)
+def Lr.whole.word(+head: String, +th: String, +word: String) -> Bool:
+  String.ends_with(head, " (" ++ th ++ ") " ++ word ++ ":\n\n")
+
+def Lr.whole.head(+head: String, +th: String) -> Bool:
+  Bool.and(String.starts_with(head, "[Backplane] Launched thread \""),
+    Bool.or(Bool.or(Lr.whole.word(head, th, "completed"), Lr.whole.word(head, th, "failed")),
+      Bool.or(Lr.whole.word(head, th, "was interrupted"), Lr.whole.word(head, th, "finished its turn and waits for an answer"))))
+
+# body: the row without the tail; reply: what the report was made from
+def Lr.whole.got(+text: String, +th: String, +body: String, +reply: String) -> String:
+  +cut = String.take(reply, Lr.cut())
+  +head = String.take(body, Nat.sub(String.length(body), String.length(cut)))
+  Lr.whole.k(Bool.and(Nat.is_gt(String.length(reply), Lr.cut()), Bool.and(String.ends_with(body, cut), Lr.whole.head(head, th))), text, head, reply)
+
+def Lr.whole.cut(cut: Bool, +st: M.State, +th: String, +text: String, +at: Nat) -> String:
+  match cut:
+    case True{}:
+      Lr.whole.got(text, th, String.take(text, Nat.sub(String.length(text), String.length(Lr.cut.tail(th)))), Lr.reply(Answer.of(Lr.upto(M.State.mine(st, th), at), th)))
+    case False{}: text
+
+# A report row (id, text, at) stored cut short, whole: its launched thread
+# is the id's link (Lr.msg: never the hint in the text), its reply is read
+# as Lr.end.c read it then (Answer.of over the thread's entries up to the
+# report), and it is used only when the row is exactly that reply's old
+# cut form under a report's own head (Lr.whole.head); any other row, or one
+# that does not match, is left as it is.
+def Lr.whole(+st: M.State, +id: String, +text: String, +at: Nat) -> String:
+  Lr.whole.cut(Bool.and(Lr.is(id), Bool.and(Bool.not(String.is_empty(M.Link.from(id))), String.ends_with(text, Lr.cut.tail(M.Link.from(id))))), st, M.Link.from(id), text, at)
 
 # the note for an ask: the thread waits on the person
 def Lr.ask.note(+id: String, +title: String, +ask: String) -> String:
@@ -4085,10 +4146,15 @@ def Task.finish.w(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
     case Step{+cs, os}:
       Task.finish.w.e(Task.ended.last(cs, thread), s, now, thread, cs, os)
 
+# what a note through Lr.send is, for the Mailroom: a deploy's report, a
+# lock's grant, else a launched thread's report
+def Lr.kind(+thread: String) -> String:
+  Bool.pick(String, String.eq(thread, "deploy"), "deploy", Bool.pick(String, String.starts_with(thread, "lock:"), "lock", "launch"))
+
 def Lr.send.here(ok: Bool, +s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
   match ok:
     case True{}:
-      Operational.inbox(s, now, "launch", thread, to, M.User{}, text, Lr.msg(thread, Hub.id("r", now, Hub.seq(s))), Nil{})
+      Operational.inbox(s, now, Lr.kind(thread), thread, to, M.User{}, text, Lr.msg(thread, Hub.id("r", now, Hub.seq(s))), Nil{})
     case False{}:
       Step.none()
 

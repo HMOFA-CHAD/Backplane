@@ -92,7 +92,7 @@ test('actual host message callback updates inline presentation without creating 
   const { ThinContinuations } = await setup(), c = new ThinContinuations();c.bind('h', detail(['a']));let renders = 0;
   const source = fs.readFileSync(require('node:path').join(__dirname, '../../src/web/host.js'), 'utf8');
   const callback = source.slice(source.indexOf('function showThinMessage(message)'), source.indexOf('function stopThin()'));
-  const show = vm.runInNewContext('(' + callback + ')', { viewMode: 'view-v1', thinContinuations: c, later() { renders++; }, resultPanel() { throw Error('No modal'); } });
+  const show = vm.runInNewContext('(' + callback + ')', { viewMode: 'view-v1', thinContinuations: c, later() { renders++; }, showViewStatus() {}, resultPanel() { throw Error('No modal'); } });
   show({ id: 'a', version: '1', text: 'explicit response', hasMore: false });assert.equal(renders, 1);assert.equal(c.readers.get('a').text, 'explicit response');
   show({ id: 'a', version: '0', text: 'stale', hasMore: false });assert.equal(renders, 1);
 });

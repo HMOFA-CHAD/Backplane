@@ -1562,7 +1562,8 @@ function showThinSearch(search) {
 }
 function showThinMessage(message) {
   if (viewMode === "view-v1") {
-    if (thinContinuations.accept(message)) later();
+    if (thinContinuations.accept(message)) { showViewStatus("");later(); }
+    else showViewStatus("Message continuation is unavailable; reopen it explicitly");
     return;
   }
   const { panel } = resultPanel(message.complete ? "Message" : "Partial message");
@@ -1656,6 +1657,7 @@ async function startThin() {
       fieldsChanged: (name, text) => { if (name === "mrreply") thinMailDraft.edit(text);later(); },
       operationScope: (action, value) => action === "mail-send" ? thinMailDraft.scope(true) : action === "bfield" && value.startsWith("mrreply\u001f") ? thinMailDraft.scope() : undefined,
       blocked: () => showViewStatus("Wait for the current conversation to connect."),
+      warning: message => showViewStatus(message),
       search: showThinSearch, message: showThinMessage,
       view: (node, detail) => {
         if (!current()) return;

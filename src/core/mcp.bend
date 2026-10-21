@@ -574,12 +574,23 @@ def Mcp.interrupt.k(ok: Bool, run: Bool, +s: M.State, +now: Nat, +target: String
 
 # a message to another thread with a follow-up mode; auto is the inbox
 # (it never interrupts, law inbox_never_interrupts)
-def Mcp.send.m(auto: Bool, +s: M.State, +now: Nat, +thread: String, +target: String, +text: String, +mode: String) -> B.Step:
+def Mcp.send.chat(auto: Bool, +s: M.State, +now: Nat, +thread: String, +target: String, +text: String, +mode: String) -> B.Step:
   match auto:
     case True{}:
       B.Hub.inbox(s, now, thread, target, M.User{}, text)
     case False{}:
       B.Mail.funnel(B.Hub.post.mode(mode, s, now, target, M.Link.id(thread, B.Hub.id("m", now, B.Hub.seq(s))), M.User{}, text), s, now, ML.Origin{B.Mail.addr(s, thread), "thread", ""}, B.Mail.addr(s, target), text, M.Link.id(thread, B.Hub.id("m", now, B.Hub.seq(s))))
+
+# a thread's message to the uberbot's own thread is filed in its Mailroom
+# (hub.bend's Operational.mail), not posted in its Chat with the person;
+# to any other thread it is delivered as before
+def Mcp.send.to(uber: Bool, auto: Bool, +s: M.State, +now: Nat, +thread: String, +target: String, +text: String, +mode: String) -> B.Step:
+  match uber:
+    case True{}: B.Operational.mail(s, now, ML.Origin{B.Mail.addr(s, thread), "thread", ""}, target, text, M.Link.id(thread, B.Hub.id("m", now, B.Hub.seq(s))), "", Nil{})
+    case False{}: Mcp.send.chat(auto, s, now, thread, target, text, mode)
+
+def Mcp.send.m(auto: Bool, +s: M.State, +now: Nat, +thread: String, +target: String, +text: String, +mode: String) -> B.Step:
+  Mcp.send.to(Bool.and(B.Operational.is(s, target), Bool.not(String.eq(thread, target))), auto, s, now, thread, target, text, mode)
 
 def Mcp.send.k(ok: Bool, +s: M.State, +now: Nat, +thread: String, +target: String, +text: String, +mode: String) -> Res:
   match ok:
