@@ -71,7 +71,7 @@ async function main(args){
   const originalEnv=process.env;process.env=env;
   const service=new Service({home,binary,web:path.join(resources,'backplane-service/web'),expectedVersion:'0.12.0',residentService:true});
   let app,page,second,error,phase='prepare',serviceIdentity,sandbox,uiPid,origin;
-  const facts={checks:[],errors:[],scope:'Minimal actual matching-host stable stage startup/discovery/auth, renderer OS sandbox, current content, reconnect, single instance, telemetry Off controls and resident close. No Send/provider/scale/390/native-phone/IME/Browser parity or telemetry-upload claim.'};
+  const facts={checks:[],errors:[],deferredByUser:['telemetry-privacy','telemetry-consent','telemetry-ingestion'],scope:'Minimal actual matching-host stable stage startup/discovery/auth, renderer OS sandbox, current content, reconnect, single instance and resident close. Telemetry validation DEFERRED by user, not PASS. No Send/provider/scale/390/native-phone/IME/Browser parity or telemetry-upload claim.'};
   const save=()=>write(path.join(out,'result.json'),{...facts,status:error||facts.cleanupError||facts.cleanup?.portClosed===false?'FAIL':phase==='done'?'PASS':'INCOMPLETE',phase,error:error?.message,home,target:s.target,version:'0.12.0',commit:s.release.commit,tree:s.release.tree,stage:inspected,fixture:ref(__filename),serviceIdentity,sandbox,uiPid});
   const step=name=>{phase=name;save();console.log('phase '+name);};
   const record=name=>{facts.checks.push(name);save();};
@@ -105,9 +105,6 @@ async function main(args){
     step('websocket-reconnect');const opened=await page.evaluate(()=>{const n=__releaseSockets.opened;__releaseDisconnect();return n;});
     await page.waitForFunction(n=>__releaseSockets.closed>0&&__releaseSockets.opened>n&&document.documentElement.dataset.backplaneRemoteReady==='true',opened,{timeout:20000});await current();
     await page.reload({waitUntil:'domcontentloaded'});await ready();await current();record('real socket reconnect and reload restore current content');
-    step('telemetry-consent-controls');await page.locator('[data-on-click="flag"][data-value="settings"]').first().click();await page.locator('[data-on-click="settings-page"][data-value="privacy"]').click();
-    const off=page.locator('[data-on-click="share"][data-value="off"]');await off.waitFor();assert((await off.getAttribute('class')||'').split(/\s+/).includes('on'),'Telemetry Off must be displayed selected');
-    assert(await page.locator('[data-on-click="share"][data-value="on"]').isVisible());assert(await page.locator('[data-on-click="open-url"][data-value="https://backplane.works/privacy"]').isVisible());await page.screenshot({path:path.join(out,'consent-off.png')});record('actual Off consent state, On choice and privacy link visible; no enable/upload');
     const menu=await app.evaluate(({Menu})=>{const labels=[];const walk=items=>{for(const i of items){labels.push(i.label||'');if(i.submenu)walk(i.submenu.items);}};walk(Menu.getApplicationMenu()?.items||[]);return labels;});assert(!menu.some(v=>/stop service|restart service|update service/i.test(v)));record('no unsupported managed-stop/update menu advertised');
     step('window-close-resident');const closed=page.waitForEvent('close');await app.evaluate(({BrowserWindow})=>{setTimeout(()=>BrowserWindow.getAllWindows()[0].close(),25);return true;});await bounded(closed,'window close',5000);await app.close();app=null;
     assert.equal(nativeIdentity(service.child).birth,serviceIdentity.birth);assert(await service.discover(),'Closing UI terminated service');record('window close leaves exact captured backend resident');
