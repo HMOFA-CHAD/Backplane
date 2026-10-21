@@ -7,6 +7,8 @@ The only payload execution is the newly compiled service's `--version` check.
 
 ```sh
 python3 scripts/service-release.py describe
+python3 scripts/service-release.py emit --request /absolute/emit.json --out /absolute/new-packet
+python3 scripts/service-release.py native --request /absolute/native.json --out /absolute/new-build
 python3 scripts/service-release.py build --request /absolute/request.json --out /absolute/new-build
 python3 scripts/service-release.py component --request /absolute/component.json --out /absolute/new-component
 uv run --offline --no-project python test/tools/service_release_test.py
@@ -28,6 +30,70 @@ rehash after use. Clang 19+ and GNU date are required by the existing native
 builder; on Darwin use the provisioned LLVM and coreutils `gnubin` PATH.
 Source check receipts must already refer to this same commit
 and tree; this producer does not manufacture a whole-proof pass.
+
+For small native runners, use the **emit → native** path. Run only `emit` on
+the admitted large-memory Boat executor. It accepts the build request below,
+but needs no protected configuration and does not require its target host to
+match the eventual native target. It removes all inherited Google/telemetry
+inputs from the child environment and sets both bakes to 0. It runs the real
+server entry checks and `scripts/build-app.sh` with `BACKPLANE_EMIT_ONLY=1`,
+then emits/postprocesses the matching web once. It never invokes a C compiler
+or executes a native payload. The existing builder still queries the pinned
+Clang version; the emitter request therefore includes both tool identities.
+Its standard native lock protects the shared C work directory.
+
+The portable output is `all.c`, source and web manifests, source qualification,
+web notices, web emission evidence, logs, `web/`, and `EMISSION.json`.
+EMISSION is schema1 `backplane-service-c-emission`,
+`status:VERIFIED_PORTABLE_C_EMISSION_ONLY`, `target:portable-c`, with supported
+`nativeTargets`, frozen `sourceCommit`/`sourceTree`, version/stamp/channel,
+`entrypoint:src/server/main.bend`, pinned Bend `compiler`, exact relative
+`cArtifact`, complete packet `members`, source/web manifest hashes and source
+qualification reference. `emissionInputs` records both bakes false and no
+protected input forwarding. It never claims a configured native BUILD pass.
+Keep this packet and its independently pinned receipt intact during transfer.
+
+The protected native host uses this request instead:
+
+```json
+{
+  "schema": 1,
+  "kind": "backplane-service-native-inputs",
+  "target": "darwin-arm64",
+  "release": {
+    "version": "0.12.0", "tag": "v0.12.0", "channel": "release",
+    "commit": "FULL_FINAL_COMMIT", "tree": "FULL_FINAL_TREE"
+  },
+  "toolchain": {
+    "clang": {"path": "/absolute/clang", "sha256": "ACTUAL_SHA256", "bytes": 0, "version": "EXACT_VERSION_OUTPUT"}
+  },
+  "emissionReceipt": {"path": "/absolute/packet/EMISSION.json", "sha256": "ACTUAL_SHA256", "bytes": 0},
+  "emissionDirectory": "/absolute/packet"
+}
+```
+
+`native` requires the actual target host, clean identical committed checkout,
+protected bake inputs below, and pinned native Clang. It does not need Bend
+installed and never invokes it. Before compilation it verifies the supplied
+receipt hash, every packet member, C hash, source commit/tree and **every source
+file's actual bytes**, matching WEB1/gzip and qualified log references.
+Only then, under the standard native lock, does it copy the approved C into
+the builder work directory and enable its internal `BACKPLANE_PREBUILT=1`.
+It requires the builder's explicit prebuilt branch receipt and unchanged C
+hash afterward. Ambient PREBUILT overrides never select or authorize input.
+The version stamper's existing same-version behavior is a no-op, verified by
+that unchanged C hash. The exact source-bound C can feed each supported target.
+
+This stage forces `BACKPLANE_JOBS=1`, including on a protected GitHub runner,
+so the large Bend emit is never attempted there. The target performs the
+real bake-header generation and C compilation with its protected Google and
+telemetry inputs, followed by the actual binary architecture/version check.
+It copies the already-qualified web bytes and source evidence without another
+emission. Raw configured BUILD records `portableEmission` receipt/C hashes,
+emitter compiler and one native compiler lane, while retaining the unchanged
+public compile witness consumed by the desktop producer. Only this successful
+native stage can claim a configured native build. An unresolved target executor,
+protected key provisioning or measured dependency remains a failed prerequisite.
 
 A build request has this shape (all artifact references use actual values):
 
@@ -68,10 +134,12 @@ Protected configuration is passed only through the build environment:
 * `BACKPLANE_TELEMETRY_KID` matching `rel-[a-z0-9-]{1,28}`;
 * `BACKPLANE_TELEMETRY_KEY`, 64 lowercase hex characters.
 
-Missing configuration fails before compilation. The wrapper sets both bakes to
+Missing configuration fails before compilation in `build` and `native`; it is
+deliberately absent from `emit`. The configured stages set both bakes to
 1, version and stamp to `0.12.0`, telemetry channel to `release`, and Clang flags
-to `-O3 -gline-tables-only`. Prebuilt overrides and emission/object cache reuse
-are disabled. Do not echo protected values or retain generated configuration
+to `-O3 -gline-tables-only`. Ambient prebuilt overrides and emission/object cache
+reuse are disabled; only `native` enables the builder's internal prebuilt path
+after checking the pinned emission packet. Do not echo protected values or retain generated configuration
 headers. Public BUILD contains only the agreed boolean configuration witness
 and public endpoint; it contains no credential values or credential hashes.
 The existing build log's Google client prefix is removed before log persistence.

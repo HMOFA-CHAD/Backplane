@@ -253,13 +253,13 @@ class ProducerTests(unittest.TestCase):
         self.assertNotIn("test-...", log.read_text())
         self.assertNotIn("test-secret", log.read_text())
 
-    def test_build_calls_only_server_and_production_web_then_writes_witness(self):
+    def mocked_build(self, phase="build", request=None, outname="actual-output"):
         source = self.root / "source"
-        source.mkdir()
+        source.mkdir(exist_ok=True)
         (source / "LICENSE").write_text("fixture license")
-        (source / "src/web").mkdir(parents=True)
+        (source / "src/web").mkdir(parents=True, exist_ok=True)
         (source / "src/web/sw.js").write_text("// fixture worker")
-        (source / "build/cc/backplane-serve").mkdir(parents=True)
+        (source / "build/cc/backplane-serve").mkdir(parents=True, exist_ok=True)
         for name in ("bp_google.h", "bp_telemetry.h"):
             (source / "build/cc/backplane-serve" / name).write_text("private fixture input")
         for name in ("bend", "clang"):
@@ -272,10 +272,10 @@ class ProducerTests(unittest.TestCase):
             "sourceCommit": self.release["commit"], "sourceTree": self.release["tree"], "licenses": {"LICENSE.Backplane": "LICENSE"},
             "packages": [{"name": "fixture", "version": "1", "sourceDisposition": "fixture", "licenses": [
                 {"path": "LICENSE.Backplane", "sha256": S.digest(source / "LICENSE")}]}]})
-        req = {"schema": 1, "kind": "backplane-service-build-inputs", "target": "linux-x64", "release": self.release,
+        req = request or {"schema": 1, "kind": "backplane-service-build-inputs", "target": "linux-x64", "release": self.release,
                "toolchain": {name: {**S.reference(self.root / name), "version": "fixture"} for name in ("bend", "clang")},
                "sourceQualification": S.reference(self.root / "qualification.json"), "webNotices": S.reference(self.root / "notices.json")}
-        out, calls = self.root / "actual-output", []
+        out, calls = self.root / outname, []
 
         def fake_run(args, log, env, timeout=2400):
             args = [str(a) for a in args]
@@ -283,7 +283,21 @@ class ProducerTests(unittest.TestCase):
             Path(log).write_text("offline mock operation\n")
             if args[0] == "scripts/build-app.sh":
                 self.assertEqual(args[1], "src/server/main.bend")
+                if env.get("BACKPLANE_EMIT_ONLY") == "1":
+                    self.assertEqual(env["BACKPLANE_GOOGLE_BAKE"], "0")
+                    self.assertEqual(env["BACKPLANE_TELEMETRY_BAKE"], "0")
+                    for key in self.env:
+                        self.assertNotIn(key, env)
+                    (source / "build/cc/backplane-serve/all.c").write_text("// offline portable C fixture\n")
+                    return "build/cc/backplane-serve/all.c\n"
                 self.elf(Path(args[2]))
+                if env.get("BACKPLANE_PREBUILT") == "1":
+                    self.assertEqual(env["BACKPLANE_JOBS"], "1")
+                    self.assertEqual(env["BACKPLANE_GOOGLE_BAKE"], "1")
+                    self.assertEqual(env["BACKPLANE_TELEMETRY_BAKE"], "1")
+                    text = "prebuilt build/cc/backplane-serve/all.c\n"
+                    Path(log).write_text(text)
+                    return text
             elif "src/web/index.html" in args:
                 web = Path(args[-1])
                 web.mkdir()
@@ -300,13 +314,80 @@ class ProducerTests(unittest.TestCase):
              patch.object(S, "git", return_value="LICENSE"), patch.object(S, "run", side_effect=fake_run), \
              patch.object(S.platform, "system", return_value="Linux"), patch.object(S.platform, "machine", return_value="x86_64"), \
              patch.object(S.fcntl, "flock"):
-            result = S.build(req, self.root, out)
+            result = S.build(req, self.root, out, phase=phase)
+        return out, calls, req
+
+    def test_build_calls_only_server_and_production_web_then_writes_witness(self):
+        out, calls, req = self.mocked_build()
         self.assertEqual(len([c for c in calls if c[0] == "scripts/build-app.sh"]), 1)
         self.assertFalse(any("src/app/main.bend" in c for c in calls))
         self.assertEqual(S.read(out / "BUILD.json")["compileInputs"], S.compile_inputs())
         self.assertEqual(S.read(out / "WEB.json"), S.web_manifest(out / "web", self.release))
         self.assertEqual(S.read(out / "WEB-EMISSION.json")["sourceCommit"], self.release["commit"])
-        self.assertFalse(any((source / "build/cc/backplane-serve" / n).exists() for n in ("bp_google.h", "bp_telemetry.h")))
+        self.assertFalse(any((self.root / "source/build/cc/backplane-serve" / n).exists() for n in ("bp_google.h", "bp_telemetry.h")))
+
+    def test_secretless_emit_has_no_native_binary_or_bake_witness(self):
+        self.env = {}
+        out, calls, req = self.mocked_build(phase="emit")
+        emitted = S.read(out / "EMISSION.json")
+        self.assertFalse((out / "BUILD.json").exists())
+        self.assertFalse((out / "backplane-serve").exists())
+        self.assertFalse(emitted["nativeCompilation"])
+        self.assertFalse(emitted["configuredBuild"])
+        self.assertEqual(emitted["nativeTargets"], sorted(S.TARGETS))
+        self.assertEqual(S.bound(emitted["cArtifact"], out), out / "all.c")
+        self.assertFalse(any("--version" in c for c in calls))
+
+    def native_request(self, emitted):
+        return {"schema": 1, "kind": "backplane-service-native-inputs", "target": "linux-x64", "release": self.release,
+                "toolchain": {"clang": {**S.reference(self.root / "clang"), "version": "fixture"}},
+                "emissionReceipt": S.reference(emitted / "EMISSION.json"), "emissionDirectory": str(emitted)}
+
+    def test_bound_native_split_never_emits_bend_or_web_and_uses_one_cc_lane(self):
+        emitted, _, _ = self.mocked_build(phase="emit", outname="packet")
+        request = self.native_request(emitted)
+        out, calls, _ = self.mocked_build(phase="native", request=request, outname="native")
+        self.assertEqual(len(calls), 2)  # existing native builder + actual binary --version only
+        self.assertEqual(calls[0][0], "scripts/build-app.sh")
+        self.assertFalse(any("src/web/index.html" in c or "bend_check" in " ".join(c) for c in calls))
+        built = S.read(out / "BUILD.json")
+        self.assertEqual(built["compileInputs"], S.compile_inputs())
+        self.assertEqual(built["portableEmission"]["receiptSha256"], request["emissionReceipt"]["sha256"])
+        self.assertEqual(built["portableEmission"]["cSha256"], S.digest(emitted / "all.c"))
+        self.assertEqual(S.read(out / "WEB.json"), S.read(emitted / "WEB.json"))
+
+    def test_emit_strips_inherited_protected_configuration(self):
+        out, _, _ = self.mocked_build(phase="emit")
+        text = (out / "EMISSION.json").read_text()
+        for value in self.env.values():
+            self.assertNotIn(value, text)
+
+    def test_native_rejects_unbound_changed_c_before_compiler(self):
+        packet, _, _ = self.mocked_build(phase="emit", outname="packet")
+        request = self.native_request(packet)
+        (packet / "all.c").write_text("// changed C")
+        with patch.object(S, "ROOT", self.root / "source"), patch.object(S, "git", return_value="LICENSE"):
+            with self.assertRaisesRegex(ValueError, "membership changed"):
+                S.emission_packet(request, self.root, self.release)
+
+    def test_native_rejects_foreign_commit_and_source_bytes(self):
+        packet, _, _ = self.mocked_build(phase="emit", outname="packet")
+        request = self.native_request(packet)
+        with patch.object(S, "ROOT", self.root / "source"), patch.object(S, "git", return_value="LICENSE"):
+            with self.assertRaisesRegex(ValueError, "identity"):
+                S.emission_packet(request, self.root, {**self.release, "commit": "c" * 40})
+            (self.root / "source/LICENSE").write_text("changed source")
+            with self.assertRaisesRegex(ValueError, "source bytes"):
+                S.emission_packet(request, self.root, self.release)
+
+    def test_native_requires_protected_configuration_before_consumption(self):
+        packet, _, _ = self.mocked_build(phase="emit", outname="packet")
+        request = self.native_request(packet)
+        with patch.object(S, "frozen"), patch.dict(os.environ, {}, clear=True), patch.object(S, "run") as run, \
+             patch.object(S.platform, "system", return_value="Linux"), patch.object(S.platform, "machine", return_value="x86_64"):
+            with self.assertRaisesRegex(ValueError, "Google"):
+                S.native(request, self.root, self.root / "native")
+            run.assert_not_called()
 
 
 if __name__ == "__main__":
