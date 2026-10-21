@@ -163,7 +163,7 @@ def frozen(release):
 
 def check_tool(spec, base, command):
     path = bound(spec, base)
-    version = subprocess.check_output([str(path), "--version"], text=True, stderr=subprocess.STDOUT).strip()
+    version = subprocess.check_output([str(path), "version" if command == "bend" else "--version"], text=True, stderr=subprocess.STDOUT).strip()
     require(spec.get("version") and version == spec["version"], command + " version mismatch")
     if command == "bend":
         require(path.name == "bend", "Bend tool must have canonical executable name")
@@ -318,6 +318,7 @@ def build(request, base, out, phase="build"):
     tool_names = ("clang",) if packet else ("bend", "clang")
     for name in tool_names:
         bound(request["toolchain"][name], base)
+    shutil.copyfile(Path(__file__), out / "EXECUTION-HELPER.py")
     web = out / "web"
     if packet:
         shutil.copytree(packet / "web", web)
@@ -370,6 +371,7 @@ def build(request, base, out, phase="build"):
                   "sourceQualification": local_reference(out / "SOURCE-QUALIFICATION-BOUND.json", out),
                   "emissionInputs": {"googleBake": False, "telemetryBake": False, "protectedInputsForwarded": False},
                   "members": inventory(out), "nativeCompilation": False, "configuredBuild": False, "published": False}
+        result["executionHelper"] = local_reference(out / "EXECUTION-HELPER.py", out)
         write(out / "EMISSION.json", result)
         return {"status": result["status"], "emissionReceipt": reference(out / "EMISSION.json"), "payload": str(out)}
     if packet:
@@ -384,6 +386,7 @@ def build(request, base, out, phase="build"):
                             for name in tool_names},
               "logs": {p.name: local_reference(p, out) for p in sorted(logs.iterdir())},
               "runtimeAcceptance": "PENDING", "published": False}
+    result["executionHelper"] = local_reference(out / "EXECUTION-HELPER.py", out)
     if packet:
         result["portableEmission"] = {"receiptSha256": request["emissionReceipt"]["sha256"],
                                       "cSha256": emitted["cArtifact"]["sha256"], "compiler": compiler,
@@ -461,6 +464,10 @@ def component(request, base, out):
     for name in ("backplane-serve", "BUILD.json", "SOURCE.json", "WEB.json", "LICENSE.Backplane",
                  "WEB-EMISSION.json", "SOURCE-QUALIFICATION.json", "SOURCE-QUALIFICATION-BOUND.json"):
         shutil.copy2(source / name, payload / name)
+    if "executionHelper" in build_data:
+        helper = bound(build_data["executionHelper"], source)
+        require(helper == source / "EXECUTION-HELPER.py", "Execution helper provenance path mismatch")
+        shutil.copy2(helper, payload / "EXECUTION-HELPER.py")
     shutil.copytree(source / "web", payload / "web")
     shutil.copytree(source / "logs", payload / "logs")
     for child in runtime_root.iterdir():
@@ -484,11 +491,17 @@ def component(request, base, out):
 
 
 def main():
+    global ROOT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("describe", "emit", "native", "build", "component"))
     parser.add_argument("--request", type=Path)
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--source-root", type=Path,
+                        help="Explicit frozen product checkout when executing a separately pinned helper")
     args = parser.parse_args()
+    if args.source_root is not None:
+        ROOT = args.source_root.resolve(strict=True)
+        require(ROOT.is_dir(), "Product source root must be a directory")
     if args.operation == "describe":
         print(json.dumps({"interface": "backplane-service-release-producer-v1", "version": VERSION,
                           "targets": sorted(TARGETS), "build": "build --request REQUEST.json --out NEW_ABS_BUILD",

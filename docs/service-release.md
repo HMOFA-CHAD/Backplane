@@ -25,11 +25,21 @@ header cleanup. Ordinary UI close and resident-service lifecycle are independent
 The checkout must be clean at the final committed release identity. Inputs and
 outputs should live outside the checkout or in an ignored build directory.
 The wrapper checks commit/tree and cleanliness before and after emission. Both
-tool executables are pinned by hash, size and exact `--version` output, and
+tool executables are pinned by hash, size and exact version output (`bend version`
+and `clang --version`), and
 rehash after use. Clang 19+ and GNU date are required by the existing native
 builder; on Darwin use the provisioned LLVM and coreutils `gnubin` PATH.
 Source check receipts must already refer to this same commit
 and tree; this producer does not manufacture a whole-proof pass.
+
+A separately pinned execution helper may use `--source-root ABS_FROZEN_CHECKOUT`
+to operate on an unchanged product freeze. The same clean commit/tree and full
+source-byte checks still apply. This permits an execution-tool correction without
+changing or falsely relabelling product source. EMISSION/BUILD explicitly record
+the actual helper hash and copy its exact bytes as `EXECUTION-HELPER.py`; component
+assembly retains that provenance. The release coordinator must bind the helper
+artifact independently from the product commit. This is not a Bend shim or an
+unbound prebuilt-C override.
 
 For small native runners, use the **emit → native** path. Run only `emit` on
 the admitted large-memory Boat executor. It accepts the build request below,

@@ -204,7 +204,7 @@ def compiler_pin():
                     need(sha(exe) == sha(installed), 'active Bend launcher mismatch')
                 checked += 1
     need(checked > 1, 'Bend archive compiler payload missing')
-    reported = subprocess.check_output([str(exe), '--version'], text=True).strip()
+    reported = subprocess.check_output([str(exe), 'version'], text=True).strip()
     need(re.search(r'(?<![0-9.])' + re.escape(version) + r'(?![0-9.])', reported),
          'Bend compiler version mismatch')
     return {'version': version, 'archiveSha256': expected, 'executableSha256': sha(exe)}
