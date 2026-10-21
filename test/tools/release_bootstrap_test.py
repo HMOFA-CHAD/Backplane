@@ -46,6 +46,27 @@ class BootstrapTest(unittest.TestCase):
         for args in [('c'*40, TREE, 'unix-native'), (SOURCE, 'c'*40, 'unix-native'), (SOURCE, TREE, 'android')]:
             with self.subTest(args=args), self.assertRaises(ValueError): b.verify(dest, *args)
 
+    def test_round_trip_preserves_receipt_bound_regular_file_modes(self):
+        modes = (0o600, 0o640, 0o644, 0o664, 0o700, 0o755, 0o775)
+        for mode in modes:
+            member = self.inputs / ('mode-' + oct(mode))
+            member.write_bytes(b'public mode-bound artifact')
+            member.chmod(mode)
+        dest = self.unpack()
+        for mode in modes:
+            member = dest / ('mode-' + oct(mode))
+            self.assertEqual(member.stat().st_mode & 0o777, mode)
+
+    def test_privileged_or_world_writable_tar_mode_refused_before_extraction(self):
+        for mode in (0o4755, 0o2644, 0o1644, 0o666):
+            archive = self.root / (oct(mode) + '.tar.gz')
+            with tarfile.open(archive, 'w:gz') as tar:
+                member = tarfile.TarInfo('public'); member.mode = mode; member.size = 1
+                tar.addfile(member, io.BytesIO(b'x'))
+            dest = self.root / oct(mode)
+            with self.subTest(mode=mode), self.assertRaises(ValueError): b.extract(archive, dest)
+            self.assertFalse(dest.exists())
+
     def test_changed_missing_extra_bytes_refused(self):
         dest = self.unpack()
         c = dest / 'emission/all.c'
