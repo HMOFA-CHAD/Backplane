@@ -16,9 +16,10 @@ import urllib.request
 
 SOURCE = '8147b68dbc9bcddad7e3b51ae7768ed9eb211ecc'
 TREE = '37c64023d084bca7f209db9d14a84f59d365f696'
-SOURCE_PACKET = '43241fdafe1268a82301caff6a6f0370adfd4b6b10172b28df8d1c91b2c4a168'
-POLICY = '0146a1527cd121ed04c8f36052ba0f31232176e56910387cb84f0dc97d7c4ef2'
-SMOKE = '0d268b94bf2b5b6b8722e5a17a01fe13447cb4f034de363ca75566b4449297b6'
+SOURCE_PACKET = '979f95ec71e95386590750e5155b510e2d60ba46c70572f2bed9850bcdf88247'
+POLICY = '0aa04259b61b66bb2e1f0ccb755eae2d0c8e31ab05c685eef7e4d7de641e02cf'
+SMOKE = '6cd4e1904f1b34923e96d6bcc172d4875d2b2264795a9e429ede196ec12aa8d9'
+POST_SMOKE = 'a2561951c7b9d9a8a269862c8db7be5e899c749a4e8a92156b862ccf409da72d'
 PRODUCER = 'f2ead45db28612c7f744a1b4da453f6b861f2a6e5ad0f8a8363caec016a2fb89'
 IO = 'b449d3a77f320ea865924637c662c5de80f74093232188160844837f3a3f6489'
 BINARIES = {'linux-arm64': '9accaca97d8ce7507550a1ee5e9acf93fb32aa3c73412301c59f79fb34ac4081',
@@ -118,13 +119,23 @@ def run(args):
             and (staged['target'], staged['release']['commit'], staged['release']['tree'],
                  staged['release']['version'], staged['release']['channel']) ==
             (args.target, SOURCE, TREE, '0.12.0', 'release'), 'Actual original stage identity mismatch')
+    policy = json.loads((source/'root-policy.json').read_text())
+    freeze = json.loads((stage/'PROVENANCE/freeze.json').read_text())
+    original_disposition = freeze['rootStagingDisposition']['sha256']
+    if original_disposition != POLICY:
+        supersession = policy['runtimeToolSupersession']
+        permitted = supersession['preservedStages'].get(args.target, {})
+        require(original_disposition == supersession['previousStagingDispositionSha256']
+                and permitted.get('stageReceiptSha256') == sha(stage/'STAGE.json')
+                and permitted.get('payloadManifestSha256') == staged['payloadManifestSha256'],
+                'Existing stage not bound by root execution-tool supersession')
     binaries = [p for p in stage.rglob('backplane-serve') if p.is_file()]
     require(len(binaries) == 1 and sha(binaries[0]) == BINARIES[args.target], 'Original configured binary changed')
     packages = list(extracted['tools'].rglob('playwright-core/package.json'))
     require(len(packages) == 1 and json.loads(packages[0].read_text())['version'] == '1.64.1',
             'Exact Playwright 1.64.1 required')
     acceptance = extracted['acceptance']/'acceptance-tools/archive-after-smoke.cjs'
-    require(sha(acceptance) == request['acceptanceTools']['entrySha256'], 'Actual acceptance adapter changed')
+    require(sha(acceptance) == request['acceptanceTools']['entrySha256'] == POST_SMOKE, 'Actual acceptance adapter changed')
     env = {k:v for k,v in os.environ.items() if not re.search(
         r'TOKEN|API_KEY|SECRET|PASSWORD|CREDENTIAL|AUTH_COOKIE', k)
         and not k.startswith(('LD_', 'DYLD_', 'BACKPLANE_GOOGLE_', 'BACKPLANE_TELEMETRY_'))}
@@ -137,7 +148,8 @@ def run(args):
                  'metadataCommit': os.environ.get('GITHUB_SHA'), 'helperSha256': sha(__file__),
                  'requestSha256': args.request_sha256, 'stageReceiptSha256': sha(stage/'STAGE.json'),
                  'originalBinarySha256': sha(binaries[0]), 'smokeSha256': SMOKE,
-                 'canonicalPolicySha256': POLICY, 'telemetryValidation': 'DEFERRED_BY_USER',
+                 'canonicalPolicySha256': POLICY, 'stageOriginalDispositionSha256': original_disposition,
+                 'reconnectMode': 'explicit-retry', 'telemetryValidation': 'DEFERRED_BY_USER',
                  'telemetryRuntimeOptOut': True, 'compilerInvoked': False, 'published': False}
     write(args.out/'EXECUTION.json', execution)
     evidence = args.out/'evidence'

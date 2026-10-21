@@ -71,7 +71,7 @@ async function main(args){
   const originalEnv=process.env;process.env=env;
   const service=new Service({home,binary,web:path.join(resources,'backplane-service/web'),expectedVersion:'0.12.0',residentService:true});
   let app,page,second,error,phase='prepare',serviceIdentity,sandbox,uiPid,origin;
-  const facts={checks:[],errors:[],deferredByUser:['telemetry-privacy','telemetry-consent','telemetry-ingestion'],scope:'Minimal actual matching-host stable stage startup/discovery/auth, renderer OS sandbox, current content, reconnect, single instance and resident close. Telemetry validation DEFERRED by user, not PASS. No Send/provider/scale/390/native-phone/IME/Browser parity or telemetry-upload claim.'};
+  const facts={checks:[],errors:[],reconnectMode:'explicit-retry',deferredByUser:['telemetry-privacy','telemetry-consent','telemetry-ingestion'],scope:'Minimal actual matching-host stable stage startup/discovery/auth, renderer OS sandbox, current content, explicit Retry connection, single instance and resident close. Telemetry validation DEFERRED by user, not PASS. No Send/provider/scale/390/native-phone/IME/Browser parity or telemetry-upload claim.'};
   const save=()=>write(path.join(out,'result.json'),{...facts,status:error||facts.cleanupError||facts.cleanup?.portClosed===false?'FAIL':phase==='done'?'PASS':'INCOMPLETE',phase,error:error?.message,home,target:s.target,version:'0.12.0',commit:s.release.commit,tree:s.release.tree,stage:inspected,fixture:ref(__filename),serviceIdentity,sandbox,uiPid});
   const step=name=>{phase=name;save();console.log('phase '+name);};
   const record=name=>{facts.checks.push(name);save();};
@@ -86,7 +86,7 @@ async function main(args){
     assert.equal((await fetch(origin+'/auth/pair',{method:'POST',headers:{Authorization:'Bearer '+token,Origin:'https://foreign.invalid'},signal:AbortSignal.timeout(3000)})).status,401);
     record('wrong credential and foreign-origin pairing refused');
     step('packaged-window');app=await _electron.launch({executablePath:executable,args:[],chromiumSandbox:true,env,timeout:30000});uiPid=app.process().pid;
-    await app.context().addInitScript(()=>{const sockets=new Set(),c=globalThis.__releaseSockets={opened:0,closed:0};const WS=WebSocket;globalThis.WebSocket=class extends WS{constructor(...args){super(...args);sockets.add(this);this.addEventListener('open',()=>c.opened++);this.addEventListener('close',()=>{c.closed++;sockets.delete(this);});}};globalThis.__releaseDisconnect=()=>{for(const s of sockets)s.close();};});
+    await app.context().addInitScript(()=>{const sockets=new Set(),c=globalThis.__releaseSockets={opened:0,closed:0,messages:0};const WS=WebSocket;globalThis.WebSocket=class extends WS{constructor(...args){super(...args);sockets.add(this);this.addEventListener('open',()=>c.opened++);this.addEventListener('message',()=>c.messages++);this.addEventListener('close',()=>{c.closed++;sockets.delete(this);});}};globalThis.__releaseDisconnect=()=>{for(const s of sockets)s.close();};});
     page=await app.firstWindow();page.setDefaultTimeout(15000);page.on('pageerror',e=>facts.errors.push(e.message));await ready();
     // A very fast initial page may predate addInitScript. A normal reload installs
     // the same socket observer used by the retained accepted probe, before JS.
@@ -102,8 +102,10 @@ async function main(args){
     write(path.join(out,'sandbox.json'),sandbox);record('actual renderer OS sandbox');
     step('single-instance');second=spawn(executable,[],{env,stdio:'ignore',windowsHide:true});const secondPid=second.pid;assert.equal(await exitOf(second,'second-instance exit'),0);
     const windows=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length);assert.equal(windows,1);assert.equal(app.process().pid,uiPid);assert.equal(nativeIdentity(service.child).birth,serviceIdentity.birth);write(path.join(out,'single-instance.json'),{secondPid,secondExit:second.exitCode,windowCount:windows,originalUiPid:uiPid});record('second launcher joins single resident UI/service');
-    step('websocket-reconnect');const opened=await page.evaluate(()=>{const n=__releaseSockets.opened;__releaseDisconnect();return n;});
-    await page.waitForFunction(n=>__releaseSockets.closed>0&&__releaseSockets.opened>n&&document.documentElement.dataset.backplaneRemoteReady==='true',opened,{timeout:20000});await current();
+    step('websocket-reconnect');const opened=await page.evaluate(()=>{const n={opened:__releaseSockets.opened,messages:__releaseSockets.messages};__releaseDisconnect();return n;});
+    await page.waitForFunction(()=>__releaseSockets.closed>0&&document.documentElement.dataset.backplaneRemoteReady!=='true',null,{timeout:5000});
+    await page.getByRole('button',{name:'Retry connection',exact:true}).click({timeout:5000});
+    await page.waitForFunction(n=>__releaseSockets.opened>n.opened&&__releaseSockets.messages>n.messages&&document.documentElement.dataset.backplaneRemoteReady==='true',opened,{timeout:20000});await current();
     await page.reload({waitUntil:'domcontentloaded'});await ready();await current();record('real socket reconnect and reload restore current content');
     const menu=await app.evaluate(({Menu})=>{const labels=[];const walk=items=>{for(const i of items){labels.push(i.label||'');if(i.submenu)walk(i.submenu.items);}};walk(Menu.getApplicationMenu()?.items||[]);return labels;});assert(!menu.some(v=>/stop service|restart service|update service/i.test(v)));record('no unsupported managed-stop/update menu advertised');
     step('window-close-resident');const closed=page.waitForEvent('close');await app.evaluate(({BrowserWindow})=>{setTimeout(()=>BrowserWindow.getAllWindows()[0].close(),25);return true;});await bounded(closed,'window close',5000);await app.close();app=null;
