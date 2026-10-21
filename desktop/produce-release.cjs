@@ -69,7 +69,7 @@ function identity(r,release,target,kind){
 }
 // One root-authorized Windows launcher successor; backend and vendor identities
 // remain the original release source. This is not a general source override.
-const WINDOWS_SHELL_SOURCE={commit:'c27f8f6b6cc8563579601ff3655d0422f9c22a55',tree:'293a9d322e83c3a2ad4c4e564b5c00a9376b05ec',serviceSha256:'73a6683da4247e32ddaa5f06ed8c9a8934d38419ade05511ecf35065f386fc2a'};
+const WINDOWS_SHELL_SOURCE={commit:'7b9df017299b93cf75abdfbbfa20fa613c6e91a2',tree:'78ed3ddabe4ec2254fb3dcb48e7f6568a8f4ffc6',serviceSha256:'2064b10f19218f3eb2761d20471c8a77af624afe1f7b432dd4f46700bbeb0c95'};
 function shellIdentity(r,release,target,freeze){
  const successor=freeze.windowsShellSource;
  if(!successor)return identity(r,release,target,'backplane-electron-shell');
