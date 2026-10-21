@@ -1,5 +1,4 @@
 import Base
-import ../server/server.bend as S
 import ../server/kicad.bend as K
 import ../server/proc.bend as P
 import ../core/glb.bend as G
