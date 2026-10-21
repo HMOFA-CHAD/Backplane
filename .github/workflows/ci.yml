@@ -12,6 +12,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read # scripts/emit-fetch.sh reads other runs' emits
 
 jobs:
   windows:
@@ -169,6 +170,27 @@ jobs:
         env:
           BACKPLANE_SKIP_CHECK: "1" # the laws job checks every file
           BACKPLANE_JOBS: "2" # leave memory headroom for the larger native units
+          # an emit of these exact inputs that another run made is fetched
+          # instead of made again (scripts/emit-fetch.sh)
+          GH_TOKEN: ${{ github.token }}
+      # this run's own emit, for any later build of the same inputs (another
+      # run, deploy_main, a release): scripts/emit-fetch.sh takes it by key
+      - id: emit
+        run: |
+          f=build/cc/backplane-serve/emit.key
+          if [ -f "$f" ] && [ "$(cut -d' ' -f2 "$f")" = fresh ]; then
+            k=$(cut -d' ' -f1 "$f")
+            mkdir -p build/emit-share
+            cp "$HOME/.cache/backplane-bend/emit/$k.c" "$HOME/.cache/backplane-bend/emit/$k.ok" build/emit-share/
+            echo "key=$k" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.emit.outputs.key != '' && matrix.target == 'linux-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: emit-${{ steps.emit.outputs.key }}
+          path: build/emit-share/
+          retention-days: 14
+          compression-level: 6
       - run: scripts/smoke.sh
       - uses: actions/upload-artifact@v4
         with:
