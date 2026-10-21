@@ -195,7 +195,8 @@ def run(directory, operation, target, source, checkout, compiler=None):
     elif operation == 'windows-native':
         command = [sys.executable, 'scripts/windows-release-request.py', 'native', str(directory / 'windows-service-request.json')]
     else:
-        command = [sys.executable, 'scripts/build-android-artifacts.py', '--inputs', str(directory / 'android-release-inputs.json'), '--source', str(checkout), '--output', str(checkout / 'build/bootstrap-android')]
+        helper = Path(__file__).resolve().with_name('build-android-artifacts.py')
+        command = [sys.executable, str(helper), '--execution-helper-sha256', sha(helper), '--inputs', str(directory / 'android-release-inputs.json'), '--source', str(checkout), '--output', str(checkout / 'build/bootstrap-android')]
     subprocess.run(command, cwd=checkout, check=True)
 
 

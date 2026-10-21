@@ -107,6 +107,23 @@ class BootstrapTest(unittest.TestCase):
         with patch.object(b,'source_identity',return_value=TREE), self.assertRaises(ValueError):
             b.run(dest,'unix-native','windows-x64',SOURCE,ROOT,'/cc')
 
+    def test_android_executes_separately_pinned_metadata_without_mutating_packet(self):
+        request=self.inputs/'android-release-inputs.json'
+        request.write_text(json.dumps({'sourceCommit':SOURCE,'sourceTree':TREE}))
+        original=request.read_bytes()
+        archive=self.root/'android.tar.gz'
+        b.pack(self.inputs,archive,SOURCE,TREE,'android')
+        dest=self.root/'android-inputs'; b.extract(archive,dest)
+        product=self.root/'separate frozen product'
+        with patch.object(b,'source_identity',return_value=TREE), patch.object(b.subprocess,'run') as run:
+            b.run(dest,'android',None,SOURCE,product)
+            args=run.call_args.args[0]
+            helper=ROOT/'scripts/build-android-artifacts.py'
+            self.assertEqual(args[1:4],[str(helper),'--execution-helper-sha256',b.sha(helper)])
+            self.assertEqual(args[args.index('--source')+1],str(product))
+            self.assertEqual((dest/'android-release-inputs.json').read_bytes(),original)
+            self.assertEqual(run.call_args.kwargs['cwd'],product)
+
     def test_existing_and_bootstrap_android_use_real_producer_secret_names(self):
         for name in ('release.yml', 'release-bootstrap.yml'):
             text=(ROOT/'.github/workflows'/name).read_text()
