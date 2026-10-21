@@ -225,7 +225,6 @@ def emission_packet(request, base, release):
     actual.pop("EMISSION.json", None)
     require(actual == r.get("members"), "Portable emission packet membership changed")
     require(bound(r["cArtifact"], packet) == packet / "all.c", "Wrong portable C artifact")
-    require(bound(r["renderCArtifact"], packet) == packet / "render.c", "Wrong portable render C artifact")
     source = read(packet / "SOURCE.json")
     require(digest(packet / "SOURCE.json") == r["sourceManifestSha256"]
             and source.get("commit") == release["commit"] and source.get("tree") == release["tree"]
@@ -314,36 +313,27 @@ def build(request, base, out, phase="build"):
         fcntl.flock(lock, fcntl.LOCK_EX)
         env["BP_BUILD_LOCKED"] = "1"
         try:
-            # the hub and the part renderer (src/render/main.bend, backplane-render)
-            # from the same source, the same way
-            roots = (("src/server/main.bend", "backplane-serve", "all.c", "cArtifact", ""),
-                     ("src/render/main.bend", "backplane-render", "render.c", "renderCArtifact", "render-"))
-            if not packet:
-                run(["bash", "-c", 'set -e; source scripts/bendok.sh; bend_check src/server/main.bend; bend_check src/render/main.bend; bend_check src/web/app.bend'], logs / "entries.log", env, 600)
-            for entry, binary, cname, field, prefix in roots:
-                work = ROOT / "build/cc" / binary
-                if packet:
-                    work.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(packet / cname, work / "all.c")
-                    require(digest(work / "all.c") == emitted[field]["sha256"], "Copied portable C changed")
-                native_log = run(["scripts/build-app.sh", entry, out / binary],
-                                 logs / (prefix + ("c-emission.log" if phase == "emit" else "native.log")), env)
-                if phase == "emit":
-                    shutil.copyfile(work / "all.c", out / cname)
-                if packet:
-                    require("prebuilt build/cc/" + binary + "/all.c" in native_log
-                            and digest(work / "all.c") == emitted[field]["sha256"], "Native builder did not consume exact approved C")
+            if packet:
+                work = ROOT / "build/cc/backplane-serve"
+                work.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(packet / "all.c", work / "all.c")
+                require(digest(work / "all.c") == emitted["cArtifact"]["sha256"], "Copied portable C changed")
+            else:
+                run(["bash", "-c", 'set -e; source scripts/bendok.sh; bend_check src/server/main.bend; bend_check src/web/app.bend'], logs / "entries.log", env, 600)
+            native_log = run(["scripts/build-app.sh", "src/server/main.bend", out / "backplane-serve"],
+                             logs / ("c-emission.log" if phase == "emit" else "native.log"), env)
+            if phase == "emit":
+                shutil.copyfile(ROOT / "build/cc/backplane-serve/all.c", out / "all.c")
+            if packet:
+                require("prebuilt build/cc/backplane-serve/all.c" in native_log
+                        and digest(work / "all.c") == emitted["cArtifact"]["sha256"], "Native builder did not consume exact approved C")
         finally:
-            for binary in ("backplane-serve", "backplane-render"):
-                for name in ("bp_google.h", "bp_telemetry.h"):
-                    (ROOT / "build/cc" / binary / name).unlink(missing_ok=True)
+            for name in ("bp_google.h", "bp_telemetry.h"):
+                (ROOT / "build/cc/backplane-serve" / name).unlink(missing_ok=True)
     if phase != "emit":
         architecture(out / "backplane-serve", request["target"])
-        architecture(out / "backplane-render", request["target"])
         version = run([out / "backplane-serve", "--version"], logs / "version.log", env, 30).strip()
         require(version == "backplane " + VERSION, "Compiled service did not report exact stable version")
-        render_version = run([out / "backplane-render", "--version"], logs / "render-version.log", env, 30).strip()
-        require(render_version == "backplane-render " + VERSION, "Compiled renderer did not report exact stable version")
     frozen(release)
     tool_names = ("clang",) if packet else ("bend", "clang")
     for name in tool_names:
@@ -397,7 +387,6 @@ def build(request, base, out, phase="build"):
                   "target": "portable-c", "nativeTargets": sorted(TARGETS), "version": VERSION,
                   "versionStamp": VERSION, "channel": "release", "sourceCommit": release["commit"], "sourceTree": release["tree"],
                   "entrypoint": "src/server/main.bend", "compiler": compiler, "cArtifact": local_reference(out / "all.c", out),
-                  "renderEntrypoint": "src/render/main.bend", "renderCArtifact": local_reference(out / "render.c", out),
                   "sourceManifestSha256": digest(out / "SOURCE.json"), "webManifestSha256": digest(out / "WEB.json"),
                   "sourceQualification": local_reference(out / "SOURCE-QUALIFICATION-BOUND.json", out),
                   "emissionInputs": {"googleBake": False, "telemetryBake": False, "protectedInputsForwarded": False},
@@ -413,7 +402,6 @@ def build(request, base, out, phase="build"):
               "source_commit": release["commit"], "source_tree": release["tree"], "compileInputs": compile_inputs(),
               "binary_sha256": digest(out / "backplane-serve"), "webManifestSha256": digest(out / "WEB.json"),
               "sourceManifestSha256": digest(out / "SOURCE.json"),
-              "renderEntry": "src/render/main.bend", "render_sha256": digest(out / "backplane-render"),
               "toolchain": {name: {key: request["toolchain"][name][key] for key in ("path", "bytes", "sha256", "version")}
                             for name in tool_names},
               "logs": {p.name: local_reference(p, out) for p in sorted(logs.iterdir())},
@@ -421,8 +409,7 @@ def build(request, base, out, phase="build"):
     result["executionHelper"] = local_reference(out / "EXECUTION-HELPER.py", out)
     if packet:
         result["portableEmission"] = {"receiptSha256": request["emissionReceipt"]["sha256"],
-                                      "cSha256": emitted["cArtifact"]["sha256"],
-                                      "renderCSha256": emitted["renderCArtifact"]["sha256"], "compiler": compiler,
+                                      "cSha256": emitted["cArtifact"]["sha256"], "compiler": compiler,
                                       "nativeCompilerLanes": 1}
     write(out / "BUILD.json", result)
     return {"status": result["status"], "buildReceipt": reference(out / "BUILD.json"), "payload": str(out)}
@@ -479,8 +466,6 @@ def component(request, base, out):
             and digest(source / "WEB.json") == build_data["webManifestSha256"]
             and digest(source / "SOURCE.json") == build_data["sourceManifestSha256"], "Built component changed")
     architecture(source / "backplane-serve", request["target"])
-    require(digest(source / "backplane-render") == build_data.get("render_sha256"), "Built renderer changed")
-    architecture(source / "backplane-render", request["target"])
     require(web_manifest(source / "web", release) == read(source / "WEB.json"), "Web manifest mismatch")
     runtime_root = (base / request["runtimeDirectory"]).resolve()
     approval_path = bound(request["runtimeQualification"], base)
@@ -496,7 +481,7 @@ def component(request, base, out):
     new_output(out)
     payload = out / "payload"
     payload.mkdir(parents=True)
-    for name in ("backplane-serve", "backplane-render", "BUILD.json", "SOURCE.json", "WEB.json", "LICENSE.Backplane",
+    for name in ("backplane-serve", "BUILD.json", "SOURCE.json", "WEB.json", "LICENSE.Backplane",
                  "WEB-EMISSION.json", "SOURCE-QUALIFICATION.json", "SOURCE-QUALIFICATION-BOUND.json"):
         shutil.copy2(source / name, payload / name)
     if "executionHelper" in build_data:
@@ -515,7 +500,7 @@ def component(request, base, out):
     shutil.copyfile(approval_path, payload / "RUNTIME-QUALIFICATION.json")
     result = {"schema": 1, "kind": "backplane-bend-service", "status": "VERIFIED", "target": request["target"],
               "sourceCommit": release["commit"], "sourceTree": release["tree"], "version": VERSION, "channel": "release",
-              "genuineService": True, "entrypoint": "src/server/main.bend", "roles": {"service": "backplane-serve", "render": "backplane-render", "web": "web"},
+              "genuineService": True, "entrypoint": "src/server/main.bend", "roles": {"service": "backplane-serve", "web": "web"},
               "buildReceipt": local_reference(payload / "BUILD.json", out), "runtimeManifest": "RUNTIME.json",
               "runtimeManifestSha256": digest(payload / "RUNTIME.json"), "closureManifest": "CLOSURE.json",
               "closureSha256": digest(payload / "CLOSURE.json"), "packages": runtime["packages"],

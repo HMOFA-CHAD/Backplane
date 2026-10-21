@@ -23,7 +23,6 @@ import zipfile
 TOOLS_ROOT = Path(__file__).resolve().parent.parent
 ROOT = TOOLS_ROOT
 ENTRY = 'src/server/main.bend'
-RENDER_ENTRY = 'src/render/main.bend'
 TELEMETRY_ENDPOINT = 'https://backplane.works/api/v1/events'
 INPUT_ARCHIVE = 'backplane-windows-service-inputs.tar.gz'
 RESOURCE_ARCHIVE = 'backplane-windows-service-resources.zip'
@@ -122,7 +121,7 @@ def inventory(directory, exclude=(), portable=False):
         folded.add(name.casefold())
         if name not in exclude:
             data = path.read_bytes()
-            if not (portable and name in ('service.c.gz', 'render.c.gz')):
+            if not (portable and name == 'service.c.gz'):
                 allowed(name, data)
             result[name] = {'sha256': digest(data), 'bytes': len(data)}
     return result
@@ -163,15 +162,12 @@ def check_inputs(directory):
          and all(re.fullmatch('[0-9a-f]{64}', pin.get(n, '')) for n in ('archiveSha256', 'executableSha256')),
          'source compiler provenance missing')
     actual = inventory(directory, ('SOURCE.json',), portable=True)
-    need(set(actual) == {'service.c.gz', 'render.c.gz', 'WEB.json'} | {'web/' + n for n in web['members']},
+    need(set(actual) == {'service.c.gz', 'WEB.json'} | {'web/' + n for n in web['members']},
          'undeclared portable input')
     need(source['inputs_sha256'] == {n: v['sha256'] for n, v in actual.items()},
          'portable input digest mismatch')
     need(source['service_c_sha256'] == digest(gzip.decompress((directory / 'service.c.gz').read_bytes())),
          'uncompressed service C mismatch')
-    need(source.get('render_entrypoint') == RENDER_ENTRY, 'standalone render entrypoint required')
-    need(source.get('render_c_sha256') == digest(gzip.decompress((directory / 'render.c.gz').read_bytes())),
-         'uncompressed render C mismatch')
     need(source['web_manifest_sha256'] == sha(directory / 'WEB.json'), 'web receipt mismatch')
     need(web.get('schema') == 1 and web.get('kind') == 'matching-generated-web'
          and web.get('entrypoint') == 'src/web/index.html'
@@ -235,16 +231,12 @@ def emit(args):
     env.update(BACKPLANE_GOOGLE_BAKE='0', BACKPLANE_TELEMETRY_BAKE='0',
                BACKPLANE_EMIT_ONLY='1', BACKPLANE_LOW_MEM='1',
                BACKPLANE_JOBS='1', BACKPLANE_VERSION_STAMP=source['versionStamp'])
-    emitted = {}
-    for entry, basename, name in ((ENTRY, 'backplane-service-emission.exe', 'service'),
-                                  (RENDER_ENTRY, 'backplane-render-emission.exe', 'render')):
-        subprocess.run(['bash', 'scripts/build-app.sh', entry, 'build/' + basename],
-                       cwd=ROOT, env=env, check=True)
-        c = ROOT / 'build/cc' / basename / 'all.c'
-        with c.open('rb') as src, (stage / (name + '.c.gz')).open('wb') as dest:
-            with gzip.GzipFile(filename='', mode='wb', fileobj=dest, mtime=0) as compressed:
-                shutil.copyfileobj(src, compressed)
-        emitted[name] = sha(c)
+    subprocess.run(['bash', 'scripts/build-app.sh', ENTRY, 'build/backplane-service-emission.exe'],
+                   cwd=ROOT, env=env, check=True)
+    c = ROOT / 'build/cc/backplane-service-emission.exe/all.c'
+    with c.open('rb') as src, (stage / 'service.c.gz').open('wb') as dest:
+        with gzip.GzipFile(filename='', mode='wb', fileobj=dest, mtime=0) as compressed:
+            shutil.copyfileobj(src, compressed)
     subprocess.run(['bash', '-c', '. scripts/bendok.sh; bend_check src/web/app.bend'],
                    cwd=ROOT, env=env, check=True)
     subprocess.run(['bend', 'src/web/index.html', '-o', str(stage / 'web')],
@@ -264,8 +256,7 @@ def emit(args):
           'entrypoint': 'src/web/index.html', 'members': inventory(stage / 'web')})
     source.update(schema=3, kind='windows-service-emission', bend=pin,
                   inputs_sha256={n: v['sha256'] for n, v in inventory(stage, portable=True).items()},
-                  service_c_sha256=emitted['service'], render_entrypoint=RENDER_ENTRY,
-                  render_c_sha256=emitted['render'], web_manifest_sha256=sha(stage / 'WEB.json'))
+                  service_c_sha256=sha(c), web_manifest_sha256=sha(stage / 'WEB.json'))
     write(stage / 'SOURCE.json', source)
     check_inputs(stage)
     archive = out / INPUT_ARCHIVE
@@ -528,35 +519,25 @@ def native(args):
          'native flags outside nonsecret service allowlist')
     out = Path(args.out).resolve()
     source = import_inputs(args.inputs, args.sha256, out / 'inputs')
+    with gzip.open(out / 'inputs/service.c.gz', 'rb') as src, (out / 'service.c').open('wb') as dest:
+        shutil.copyfileobj(src, dest)
     env = dict(os.environ, BACKPLANE_VERSION_STAMP=source['versionStamp'], BACKPLANE_CFLAGS=flags,
                BP_WIN_SOURCE_ROOT=str(ROOT))
-    for name, basename in (('service', 'backplane-serve'), ('render', 'backplane-render')):
-        with gzip.open(out / ('inputs/' + name + '.c.gz'), 'rb') as src, (out / (name + '.c')).open('wb') as dest:
-            shutil.copyfileobj(src, dest)
-        subprocess.run(['bash', str(TOOLS_ROOT / 'scripts/build-windows.sh'), str(out / (name + '.c')),
-                        str(out / (basename + '.exe'))], cwd=ROOT, env=env, check=True)
-        need(execution_tools_identity() == execution, 'execution tools changed during native compile')
-        identity()
-    # Both exact emitted roots pass through the same pinned platform adapter.
-    for name, basename in (('service', 'backplane-serve'), ('render', 'backplane-render')):
-        adapted = out / (basename + '.cc/runtime.c')
-        adapter = load(adapted.with_name('RUNTIME-ADAPTER.json'))
-        need(adapter == {'schema': 1,
-             'adapterSha256': execution['toolsSha256']['scripts/windows-runtime.py'],
-             'sourceCsha256': source[name + '_c_sha256'], 'transformedCsha256': sha(adapted)},
-             'actual ' + name + ' runtime adapter/C witness mismatch')
-        execution['runtimeAdapter' if name == 'service' else 'renderRuntimeAdapter'] = adapter
+    subprocess.run(['bash', str(TOOLS_ROOT / 'scripts/build-windows.sh'), str(out / 'service.c'),
+                    str(out / 'backplane-serve.exe')], cwd=ROOT, env=env, check=True)
+    need(execution_tools_identity() == execution, 'execution tools changed during native compile')
+    identity()
+    adapted = out / 'backplane-serve.cc/runtime.c'
+    adapter = load(adapted.with_name('RUNTIME-ADAPTER.json'))
+    need(adapter == {'schema': 1,
+         'adapterSha256': execution['toolsSha256']['scripts/windows-runtime.py'],
+         'sourceCsha256': source['service_c_sha256'], 'transformedCsha256': sha(adapted)},
+         'actual runtime adapter/C witness mismatch')
+    execution['runtimeAdapter'] = adapter
     binary = pe((out / 'backplane-serve.exe').read_bytes())
-    renderer = pe((out / 'backplane-render.exe').read_bytes())
-    render_version = subprocess.check_output([str(out / 'backplane-render.exe'), '--version'],
-                                             cwd=out, env=env, text=True, timeout=15).strip()
-    need(render_version == 'backplane-render ' + source['version'], 'native renderer version/stamp mismatch')
     shutil.copyfile(out / 'backplane-serve.exe', out / 'unsigned-service.exe')
-    shutil.copyfile(out / 'backplane-render.exe', out / 'unsigned-render.exe')
     write(out / 'COMPILE.json', {'schema': 1, 'sourceReceiptSha256': sha(out / 'inputs/SOURCE.json'),
-          'unsignedServiceSha256': binary['sha256'], 'unsignedRenderSha256': renderer['sha256'],
-          'renderEntrypoint': RENDER_ENTRY, 'renderCsha256': source['render_c_sha256'],
-          'renderVersion': render_version, 'producerExecution': execution,
+          'unsignedServiceSha256': binary['sha256'], 'producerExecution': execution,
           'runtimeManifestSha256': args.runtime_manifest_sha256,
           'compiler': {'version': reported.splitlines()[0],
                        'target': target, 'sha256': sha(compiler), 'flags': flags},
@@ -565,12 +546,11 @@ def native(args):
     print(out / 'COMPILE.json')
 
 
-def signing(service, payload, compile_receipt, policy, thumbprint,
-            unsigned_name='unsigned-service.exe', receipt_key='unsignedServiceSha256'):
-    unsigned = service.with_name(unsigned_name)
-    need(sha(unsigned) == compile_receipt[receipt_key], 'unsigned service receipt mismatch')
+def signing(service, payload, compile_receipt, policy, thumbprint):
+    unsigned = service.with_name('unsigned-service.exe')
+    need(sha(unsigned) == compile_receipt['unsignedServiceSha256'], 'unsigned service receipt mismatch')
     if policy in ('unsigned-internal', 'unsigned-portable-allowed'):
-        need(sha(service) == compile_receipt[receipt_key], 'compiled service changed')
+        need(sha(service) == compile_receipt['unsignedServiceSha256'], 'compiled service changed')
         return {'policy': policy, 'signed': False, 'publicEligible': False,
                 'validation': ('root-portable-policy-runtime-gates-pending'
                                if policy == 'unsigned-portable-allowed' else 'not-signed')}
@@ -593,7 +573,7 @@ def signing(service, payload, compile_receipt, policy, thumbprint,
     command = ('$s=Get-AuthenticodeSignature -LiteralPath $env:BP_SERVICE_SIGN_FILE;'
                '@{status=[string]$s.Status;thumbprint=[string]$s.SignerCertificate.Thumbprint}'
                '|ConvertTo-Json -Compress')
-    for name, path in [(service.name, service), *payload]:
+    for name, path in [('backplane-serve.exe', service), *payload]:
         cygpath = Path(sys.executable).resolve().parent / 'cygpath.exe'
         need(cygpath.is_file(), 'compiler-runtime cygpath unavailable for signature observation')
         native_path = subprocess.check_output([str(cygpath), '-w', str(path)], text=True).strip()
@@ -643,17 +623,9 @@ def package(args):
     runtime = runtime_payload(args.runtime_payload, args.runtime_manifest_sha256)
     payload = Path(args.runtime_payload)
     service = native_dir / 'backplane-serve.exe'
-    render = native_dir / 'backplane-render.exe'
-    need(compile_info.get('renderEntrypoint') == RENDER_ENTRY
-         and compile_info.get('renderCsha256') == source['render_c_sha256']
-         and compile_info.get('renderVersion') == 'backplane-render ' + source['version'],
-         'compile/render source mismatch')
-    render_signed = signing(render, [], compile_info, args.signing_policy, args.signing_thumbprint,
-                            'unsigned-render.exe', 'unsignedRenderSha256')
     signed = signing(service, [(n, payload / n) for n in runtime.get('helpers', {}).values()],
                      compile_info, args.signing_policy, args.signing_thumbprint)
     files = {'backplane-serve.exe': service.read_bytes(),
-             'backplane-render.exe': render.read_bytes(),
              'SOURCE.json': (native_dir / 'inputs/SOURCE.json').read_bytes(),
              'WEB.json': (native_dir / 'inputs/WEB.json').read_bytes(),
              'LICENSE.Backplane': (ROOT / 'LICENSE').read_bytes(),
@@ -683,17 +655,12 @@ def package(args):
              'webManifestSha256': digest(files['WEB.json']),
              'runtimeManifestSha256': digest(files['RUNTIME.json']),
              'closureSha256': digest(files['CLOSURE.json']),
-             'roles': {'service': 'backplane-serve.exe', 'render': 'backplane-render.exe',
-                       'runtimeBin': 'runtime/bin',
+             'roles': {'service': 'backplane-serve.exe', 'runtimeBin': 'runtime/bin',
                        'web': 'web', 'helpers': runtime.get('helpers', {})},
              'sha256': {n: digest(b) for n, b in files.items()},
              'sizes': {n: len(b) for n, b in files.items()}, 'pe': closed['binaries'],
              'compiler': compile_info['compiler'], 'compileInputs': compile_info['compileInputs'],
              'unsignedServiceSha256': compile_info['unsignedServiceSha256'],
-             'unsignedRenderSha256': compile_info['unsignedRenderSha256'],
-             'renderEntrypoint': RENDER_ENTRY, 'renderCsha256': source['render_c_sha256'],
-             'renderSha256': digest(files['backplane-render.exe']), 'renderSigning': render_signed,
-             'renderVersion': compile_info['renderVersion'],
              'producerExecution': compile_info['producerExecution'],
              'signing': signed, 'managedControl': control,
              'validation': {'staticClosure': 'complete', 'cleanWindowsProduct': 'pending',
@@ -761,28 +728,6 @@ def verify_resources(archive, expected):
          and re.fullmatch('[0-9a-f]{64}', adapter.get('transformedCsha256', ''))
          and adapter.get('adapterSha256') == execution.get('toolsSha256', {}).get('scripts/windows-runtime.py'),
          'resource execution tools/adapter provenance missing')
-    render_adapter = execution.get('renderRuntimeAdapter', {})
-    need(source.get('render_entrypoint') == RENDER_ENTRY
-         and build.get('renderEntrypoint') == RENDER_ENTRY
-         and build.get('renderVersion') == 'backplane-render ' + source['version']
-         and build.get('renderCsha256') == source.get('render_c_sha256')
-         and render_adapter.get('schema') == 1
-         and render_adapter.get('sourceCsha256') == source.get('render_c_sha256')
-         and re.fullmatch('[0-9a-f]{64}', render_adapter.get('transformedCsha256', ''))
-         and render_adapter.get('adapterSha256') == execution.get('toolsSha256', {}).get('scripts/windows-runtime.py'),
-         'resource render source/adapter provenance missing')
-    need('backplane-render.exe' in files
-         and build.get('renderSha256') == digest(files['backplane-render.exe']), 'resource renderer digest mismatch')
-    render_signing = build.get('renderSigning', {})
-    need(render_signing.get('policy') in ('unsigned-internal', 'unsigned-portable-allowed', 'authenticode')
-         and render_signing.get('policy') == build['signing'].get('policy'), 'renderer signing policy mismatch')
-    if render_signing['policy'] in ('unsigned-internal', 'unsigned-portable-allowed'):
-        need(render_signing.get('signed') is False
-             and build.get('unsignedRenderSha256') == digest(files['backplane-render.exe']),
-             'unsigned renderer changed')
-    else:
-        need(render_signing.get('files', {}).get('backplane-render.exe', {}).get('sha256')
-             == digest(files['backplane-render.exe']), 'signed renderer identity mismatch')
     other = {n: b for n, b in files.items() if n != 'BUILD.json'}
     need(build['sha256'] == {n: digest(b) for n, b in other.items()}
          and build['sizes'] == {n: len(b) for n, b in other.items()}, 'resource member manifest mismatch')
@@ -793,13 +738,12 @@ def verify_resources(archive, expected):
     need(web.get('schema') == 1 and web.get('sourceCommit') == source['commit']
          and web.get('sourceTree') == source['tree'] and 'index.html' in web['members'], 'web source mismatch')
     required = {'BUILD.json', 'SOURCE.json', 'WEB.json', 'RUNTIME.json', 'CLOSURE.json',
-                'LICENSE.Backplane', 'backplane-serve.exe', 'backplane-render.exe'}
+                'LICENSE.Backplane', 'backplane-serve.exe'}
     if 'MANAGED-CONTROL.json' in files:
         required.add('MANAGED-CONTROL.json')
     need(set(files) == required | set(runtime['members']) | {'web/' + n for n in web['members']},
          'undeclared resource member')
-    need(build['roles'] == {'service': 'backplane-serve.exe', 'render': 'backplane-render.exe',
-                           'runtimeBin': 'runtime/bin',
+    need(build['roles'] == {'service': 'backplane-serve.exe', 'runtimeBin': 'runtime/bin',
                            'web': 'web', 'helpers': runtime.get('helpers', {})}, 'resource role mismatch')
     for name, item in runtime['members'].items():
         need(digest(files[name]) == item['sha256'] and len(files[name]) == item['bytes'],

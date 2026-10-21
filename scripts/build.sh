@@ -1,7 +1,6 @@
 #!/bin/sh
 # Build into dist/:
 #   dist/backplane-serve  the hub and web server (src/server/main.bend)
-#   dist/backplane-render a part's views as PNG files (src/render/main.bend)
 #   dist/backplane        the launcher: the desktop app when installed, else
 #                         the hub (deploy/backplane-launch.sh)
 #   dist/web/             the web client (for other devices)
@@ -29,7 +28,7 @@ mode=${1:-all}
 pre=${BACKPLANE_PREBUILT:-}
 # CI's "laws" job (scripts/check.sh) has already checked every file, these
 # three roots included: BACKPLANE_SKIP_CHECK=1 does not do it again
-[ "$pre" = 1 ] || [ "${BACKPLANE_SKIP_CHECK:-}" = 1 ] || for f in src/web/app.bend src/server/main.bend src/render/main.bend; do
+[ "$pre" = 1 ] || [ "${BACKPLANE_SKIP_CHECK:-}" = 1 ] || for f in src/web/app.bend src/server/main.bend; do
   bend_check "$f" || exit 1
 done
 if [ -n "${BACKPLANE_X11:-}" ]; then
@@ -59,7 +58,6 @@ fi
 mkdir -p build
 if [ "$mode" = emit ]; then
   BACKPLANE_EMIT_ONLY=1 scripts/build-app.sh src/server/main.bend dist/backplane-serve
-  BACKPLANE_EMIT_ONLY=1 scripts/build-app.sh src/render/main.bend dist/backplane-render
   rm -rf build/wire
   bend test/wire/index.html -o build/wire > /dev/null
   exit 0
@@ -69,7 +67,6 @@ fi
 # binary (src/app/main.bend) is no longer built: past Bend's 65,536
 # function IDs, and the desktop UI is the Electron app over the hub
 scripts/build-app.sh src/server/main.bend dist/backplane-serve
-scripts/build-app.sh src/render/main.bend dist/backplane-render
 cp deploy/backplane-launch.sh dist/backplane
 chmod 755 dist/backplane
 # the host helpers (Bun): the agents' browser, STEP -> GLB for the 3D

@@ -2,7 +2,7 @@
   "status": "SOURCE_IMPLEMENTATION_COMMAND_CONTRACT_NATIVE_AND_PRODUCT_VALIDATION_PENDING",
   "stableTarget": "0.12.0/v0.12.0/release; old1c12 interface and0.11.2 artifacts preserved, never relabeled",
   "interface": "backplane-windows-service-resources-v1",
-  "compatibility": "Invoking without --service retains historical app producers. Explicit --service requires genuine server/main and standalone render/main portable roots; SOURCE3/BUILD3 reject app or service-only receipts. Workflow commands are unchanged; the Windows desktop consumer now requires the render role.",
+  "compatibility": "Invoking without --service retains historical app producers. Explicit --service selects the new genuine server/main boundary; SOURCE3/BUILD3 reject SOURCE2 app receipts. No workflow/desktop changes in this patch.",
   "workingDirectory": "Same clean root-selected frozen source checkout for all phases; these commands are not an execution grant",
   "commonEnvironment": {
     "BACKPLANE_FROZEN_COMMIT": "Full actual40-hex clean Git commit selected by root, not a tree/short/dev identity",
@@ -32,11 +32,9 @@
       "build/windows-service-portable/backplane-windows-service-inputs.tar.gz.sha256",
       "build/windows-service-portable/SOURCE.json",
       "build/windows-service-portable/windows-service-inputs/SOURCE.json",
-      "build/windows-service-portable/windows-service-inputs/WEB.json",
-      "build/windows-service-portable/windows-service-inputs/service.c.gz",
-      "build/windows-service-portable/windows-service-inputs/render.c.gz"
+      "build/windows-service-portable/windows-service-inputs/WEB.json"
     ],
-    "boundary": "Fresh output only. Explicit src/server/main.bend and src/render/main.bend roots emitted sequentially through build-app.sh from the same frozen checkout, with matching checked/postprocessed web. Private Google/telemetry values removed and both BAKE flags zero in portable children. No keys/headers in archives."
+    "boundary": "Output directory must not exist. Explicit actual src/server/main.bend emit through build-app.sh; matching checked/postprocessed web; no helper build by inference. Private Google/telemetry env values removed and both BAKE flags zero in portable child environment. No keys/headers in archives."
   },
   "verifyPortableInputs": {
     "argv": [
@@ -47,7 +45,7 @@
       "--directory",
       "build/windows-service-portable/windows-service-inputs"
     ],
-    "checks": "Clean checkout/full freeze/version/stamp/channel, SOURCE3 service plus exact render entry, both compressed/uncompressed C digests and WEB1 membership. Service-only/app inputs are refused."
+    "checks": "Actual clean checkout+full freeze+version/stamp/channel, SOURCE3 service entry, exact compressed/uncompressed C and WEB1 membership/hashes; no app receipt fallback"
   },
   "nativeCompile": {
     "host": "Root-authorized admitted Windows Cygwin executor, clang19+; not the Electron top-level launcher",
@@ -82,8 +80,6 @@
     "outputs": [
       "build/windows-service-native/backplane-serve.exe",
       "build/windows-service-native/unsigned-service.exe",
-      "build/windows-service-native/backplane-render.exe",
-      "build/windows-service-native/unsigned-render.exe",
       "build/windows-service-native/COMPILE.json",
       "build/windows-service-native/inputs/"
     ],
@@ -125,7 +121,7 @@
   "signing": {
     "owner": "Root-approved protected native signer/orchestration; Windows producer verifies, never provisions certificates",
     "requiredDecision": "Root release freeze chooses authenticode or unsigned-portable-allowed. Unsigned portable packaging preserves exact compiled bytes and records signed:false; final runtime, sandbox and resident lifecycle gates remain required.",
-    "order": "Compile preserves unsigned-service.exe and unsigned-render.exe references. If the root selects Authenticode, sign backplane-serve.exe and backplane-render.exe before packaging; explicit runtime helpers must already be signed before approving their runtime digest. Never mutate either unsigned reference.",
+    "order": "Compile emits unsigned-service.exe reference and service PE. Authorized signer signs backplane-serve.exe before packaging; explicit sibling helper binaries must already be signed before their runtime payload digest is approved. Never mutate unsigned-service.exe.",
     "verification": "authenticode packaging checks unchanged unsigned content except PE checksum/security table and certificate append, then actual Windows Get-AuthenticodeSignature Valid plus approved thumbprint for service and owned helper roles. This verifies signatures only, not public/product readiness.",
     "internalOnlyAlternative": "--signing-policy unsigned-internal requires unchanged compiled bytes and records publicEligible=false; cannot satisfy final signed release gates or be relabeled public.",
     "portableAlternative": "--signing-policy unsigned-portable-allowed is available only through the explicit root portable release policy; no certificate is required. It does not itself mark the payload publicEligible or runtime accepted."
@@ -203,37 +199,5 @@
     "Root-approved signing identity/provisioner and final signing/timestamp/helper policy; unsigned internal output is not public release readiness",
     "Actual clean-Windows service+Electron path/ownership/runtime/auth/default-baked-ingestion acceptance; managed stop remains unsupported until its complete inventory/observer protocol is implemented"
   ],
-  "sourceValidation": "Bounded offline tests use synthetic metadata and PE headers, including a temporary fixture ZIP removed with its temp directory. No actual emission/compiler/app/product package/VM/CI/probe executed. Actual producer commands above remain unexecuted until grants.",
-  "standaloneRender": {
-    "entrypoint": "src/render/main.bend",
-    "portableInput": "windows-service-inputs/render.c.gz",
-    "sourceFields": [
-      "render_entrypoint",
-      "render_c_sha256"
-    ],
-    "nativeOutputs": [
-      "backplane-render.exe",
-      "unsigned-render.exe"
-    ],
-    "compileFields": [
-      "renderEntrypoint",
-      "renderCsha256",
-      "unsignedRenderSha256",
-      "producerExecution.renderRuntimeAdapter",
-      "renderVersion"
-    ],
-    "resourceRole": {
-      "render": "backplane-render.exe"
-    },
-    "buildFields": [
-      "renderEntrypoint",
-      "renderCsha256",
-      "renderSha256",
-      "unsignedRenderSha256",
-      "renderSigning",
-      "renderVersion"
-    ],
-    "boundary": "Same frozen source and compiler as service; compile exact retained render C sequentially through the same Windows adapter. Both unsigned reference bytes are preserved. Renderer PE participates in actual architecture/import/closure scanning and signing policy. Sibling backplane-render.exe is required in service resources; no old service-only input fallback, app/window rebuild or runtime-acceptance claim.",
-    "nativeVersionCheck": "Actual newly compiled backplane-render.exe --version must print exactly backplane-render <SOURCE.version> before COMPILE is written; 15-second bounded invocation. Wrong stamp or unsupported CLI fails the compile gate."
-  }
+  "sourceValidation": "Bounded offline tests use synthetic metadata and PE headers, including a temporary fixture ZIP removed with its temp directory. No actual emission/compiler/app/product package/VM/CI/probe executed. Actual producer commands above remain unexecuted until grants."
 }

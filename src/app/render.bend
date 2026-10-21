@@ -1,4 +1,5 @@
 import Base
+import ../server/server.bend as S
 import ../server/kicad.bend as K
 import ../server/proc.bend as P
 import ../core/glb.bend as G
@@ -8,7 +9,7 @@ import ../gfx/mesh.bend as MS
 import ../gfx/draw.bend as D
 import ./parts3.bend as PT
 
-# `backplane-render MODEL [--size WxH]`: a part's standard views as PNG
+# `backplane --render MODEL [--size WxH]`: a part's standard views as PNG
 # files, for agents to check their work and the Mechanical page to show.
 # A STEP is converted once (the models cache, as a board's parts are) and
 # stood Z up; a GLB is read as it is. Each view (core/mech.bend's
@@ -60,7 +61,7 @@ def Render.said(ok: Bool, +out: String) -> IO(Unit):
     case True{}:
       IO.print(out)
     case False{}:
-      IO.print_err("backplane-render: could not write " ++ out)
+      IO.print_err("backplane --render: could not write " ++ out)
 
 def Render.view(vs: List<&2, MC.MView>, +m: MS.Model, +c: MS.Cam, +model: String, +w: U32, +h: U32) -> IO(Unit):
   match vs:
@@ -86,7 +87,7 @@ def Render.tris(+step: Bool, bs: List<&2, U32>) -> List<&2, G.Tri3>:
 def Render.go.k(none: Bool, +model: String, +glb: String, +w: U32, +h: U32) -> IO(Unit):
   match none:
     case True{}:
-      IO.print_err("backplane-render: could not mesh " ++ model ++ " (a STEP or GLB file; a large STEP needs FreeCAD installed). Nothing was drawn.")
+      IO.print_err("backplane --render: could not mesh " ++ model ++ " (a STEP or GLB file; a large STEP needs FreeCAD installed). Nothing was drawn.")
     case False{}:
       do IO<Unit>:
         bs : List<&2, U32> <- K.Io.bytes(glb)
@@ -119,7 +120,7 @@ def Render.run(+model: String, +size: String) -> IO(Unit):
     Render.go(path, glb, Render.num(size, 0n, 800), Render.num(size, 1n, 600))
 
 def Render.usage() -> IO(Unit):
-  IO.die(Unit, 2, "usage: backplane-render MODEL.step [MORE.step ...] [--size WxH]  (writes renders/<name>.<view>.png beside each)")
+  IO.die(Unit, 2, "usage: backplane --render MODEL.step [MORE.step ...] [--size WxH]  (writes renders/<name>.<view>.png beside each)")
 
 # the models named (every argument but --size and its value)
 def Render.keep(drop: Bool, +a: String, acc: List<&2, String>) -> List<&2, String>:

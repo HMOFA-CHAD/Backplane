@@ -10,7 +10,7 @@ set -eu
 cd "$(dirname "$0")/.."
 ver=$1 plat=$2
 src="dist/pkg/backplane-$plat"
-[ -x "$src/backplane-serve" ] && [ -x "$src/backplane-render" ] || { echo "run scripts/package.sh $ver $plat first"; exit 1; }
+[ -x "$src/backplane-serve" ] || { echo "run scripts/package.sh $ver $plat first"; exit 1; }
 case $plat in
   linux-x64) arch=x86_64 deb=amd64 ;;
   linux-arm64) arch=aarch64 deb=arm64 ;;
@@ -20,7 +20,7 @@ esac
 v=${ver#v}
 dv=$(printf '%s' "$v" | tr '-' '~')
 # the newest glibc the binaries ask for
-objects="$src/backplane-serve $src/backplane-render"
+objects="$src/backplane-serve"
 cef_deps=
 if [ "$plat" = linux-x64 ]; then
   [ -f "$src/browser-runtime/cef/libcef.so" ] || { echo 'Linux x64 package is missing CEF' >&2; exit 1; }
@@ -63,7 +63,7 @@ root="$work/deb"
 mkdir -p "$root/opt" "$root/usr/bin" "$root/usr/share/applications" "$root/usr/share/icons/hicolor/scalable/apps"
 cp -R "$src" "$root/opt/backplane"
 [ -e "$root/opt/backplane/backplane" ] || ln -s backplane-serve "$root/opt/backplane/backplane"
-for b in backplane backplane-serve backplane-render; do
+for b in backplane backplane-serve; do
   printf '#!/bin/sh\nBACKPLANE_NO_UPDATE=1 exec /opt/backplane/%s "$@"\n' "$b" > "$root/usr/bin/$b"
   chmod 755 "$root/usr/bin/$b"
 done

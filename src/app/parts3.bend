@@ -1,4 +1,5 @@
 import Base
+import ../server/server.bend as S
 import ../server/host.bend as H
 import ../server/kicad.bend as K
 import ../server/proc.bend as P
@@ -11,30 +12,17 @@ import ../core/pcb3d.bend as P3
 # board written out once, and each file converted by backplane-step2glb
 # into a cache keyed by its path, size and time.
 
-def Parts.env.or(r: Result<&1, &1, U32 & String, String>, d: String) -> String:
-  match r:
-    case Done{+v}:
-      Bool.pick(String, String.is_empty(v), d, v)
-    case Fail{_}:
-      d
-
-# an environment variable, d when unset or empty
-def Parts.env(name: String, d: String) -> IO(String):
-  do IO<String>:
-    r : Result<&1, &1, U32 & String, String> <- IO.get_env(name)
-    return Parts.env.or(r, d)
-
 def Parts.step2glb() -> IO(String):
   do IO<String>:
-    +d : String <- H.Sys.exe_dir()
+    +d : String <- S.Sys.exe_dir.io()
     ok : Bool <- K.Io.is_file(d ++ "/backplane-step2glb")
     return Bool.pick(String, ok, d ++ "/backplane-step2glb", "backplane-step2glb")
 
 # where converted models are kept
 def Parts.cache() -> IO(String):
   do IO<String>:
-    +home : String <- Parts.env("HOME", "/tmp")
-    xdg : String <- Parts.env("XDG_CACHE_HOME", home ++ "/.cache")
+    +home : String <- S.Env.get("HOME", "/tmp")
+    xdg : String <- S.Env.get("XDG_CACHE_HOME", home ++ "/.cache")
     return xdg ++ "/backplane-bend/models"
 
 def Parts.lib.k(ok: Bool, +c: String, k: IO(String)) -> IO(String):
@@ -53,7 +41,7 @@ def Parts.lib.go(cs: List<&2, String>) -> IO(String):
       IO.bind(Result<&1, &1, U32 & String, U32 & U32 & U32>, String, H.FS.stat(c), r => Parts.lib.k(Result.is_done(&1, &1, U32 & String, U32 & U32 & U32, r), c, Parts.lib.go(t)))
 
 def Parts.var(+name: String, +lib: String) -> IO(P3.KV):
-  IO.bind(String, P3.KV, Parts.env(name, lib), v => IO.pure(P3.KV, P3.KV{name, v}))
+  IO.bind(String, P3.KV, S.Env.get(name, lib), v => IO.pure(P3.KV, P3.KV{name, v}))
 
 # the path variables a model path may use
 def Parts.vars(+dir: String) -> IO(List<&2, P3.KV>):
