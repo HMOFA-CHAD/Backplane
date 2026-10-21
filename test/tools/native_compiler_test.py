@@ -94,6 +94,8 @@ console.log('ok native ID table bounds');
         subprocess.run([self.bun, "--eval", probe], check=True, timeout=60)
 
     def test_native_term_bits_and_original_small_id_layout(self) -> None:
+        # CI runs this guard before the build creates its output directory.
+        (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
             root = Path(tmp)
             program = root / "tiny.bend"
