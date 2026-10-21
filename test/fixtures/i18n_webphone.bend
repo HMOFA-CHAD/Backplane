@@ -26,6 +26,10 @@ def Fixture.thread(tag: String) -> U.Ui:
 def Fixture.settings(tag: String) -> U.Ui:
   Fixture.go(Fixture.thread(tag), "flag", "settings")
 
+# Settings opens a category menu; a page is chosen from it
+def Fixture.settings.page(tag: String, page: String) -> U.Ui:
+  Fixture.go(Fixture.settings(tag), "settings-page", page)
+
 def Fixture.menu(tag: String) -> U.Ui:
   Fixture.go(Fixture.thread(tag), "row-menu", "t43")
 
