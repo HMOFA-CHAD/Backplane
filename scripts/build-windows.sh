@@ -30,7 +30,10 @@ import hashlib,json,sys
 from pathlib import Path
 def sha(path):
     with Path(path).open('rb') as stream:
-        return hashlib.file_digest(stream,'sha256').hexdigest()
+        digest = hashlib.sha256()
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+        return digest.hexdigest()
 value = {'schema': 1, 'adapterSha256': sha(sys.argv[1]),
          'sourceCsha256': sha(sys.argv[2]), 'transformedCsha256': sha(sys.argv[3])}
 Path(sys.argv[4]).write_text(json.dumps(value,sort_keys=True,indent=2)+'\n',encoding='utf-8')
