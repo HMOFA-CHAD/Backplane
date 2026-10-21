@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "kind": "backplane-root-component-provenance-disposition",
+  "release": "v0.12.0",
+  "status": "SOURCE_SCOPES_ACCEPTED_RUNTIME_GATES_REMAIN",
+  "correctedServiceSource": {
+    "commit": "9b573871d5e37bc2575c59576ad9cc8196bb34e7",
+    "tree": "b3ca462f89d0d244d93915c78a8bda9a4f98f892"
+  },
+  "preservedComponents": {
+    "ios": "Original920 native55/bridge109 signedIPA f232 and accepted ReleaseSIM source runtime1492. Do not claim successor build or whole imported-source equivalence.",
+    "android": "Original920 native55/bridge109 signedAPK995e/AAB03a4 staticPASS2c9e. Actual final APK runtime against corrected service remains mandatory.",
+    "standaloneWeb": "Original920 archive9481 source-qualified only; actual standalone runtime/privacy remains mandatory."
+  },
+  "reachabilityNote": {
+    "path": "/home/h/Documents/i2cjak/bp-fixes/telemetry-startup-920/build/telemetry-startup/reachability-01/note.json",
+    "sha256": "f27d12776683b734d404f11fa9a38892e288540bd6e3e8e0483850a144d5c938",
+    "scope": "Static call/import assessment only. Entire core telemetry module hash changed; no emitted-byte equivalence asserted."
+  },
+  "desktopAssembly": "Reuse official vendor bytes/notices and proven unchanged20shell leaf bytes. New assembly must bind actual corrected service/source and actual payload, preserve priorcomponent origin; no oldsource or runtime receipt relabel.",
+  "publicationAccepted": false,
+  "noGenericApprovalCheckpoint": true,
+  "at": 1792593544.944039
+}
