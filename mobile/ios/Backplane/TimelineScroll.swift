@@ -248,6 +248,7 @@ final class TimelineController<Content: View>: UIViewController, UIScrollViewDel
         }
     }
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        earlierGate.beginDrag()
         following = false
         capture(frames())
     }

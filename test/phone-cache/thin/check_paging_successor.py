@@ -11,6 +11,7 @@ model = (ios/'AppModel.swift').read_text()
 engine = (ios/'Engine.swift').read_text()
 assert 'earlierGate.configure(enabled: enabled)' in scroll
 assert 'earlierGate.request(earlier, perform: loadEarlier)' in scroll
+assert 'earlierGate.beginDrag()' in scroll.split('func scrollViewWillBeginDragging',1)[1].split('func scrollViewDidScroll',1)[0]
 assert 'initialized, top < 400, earlier > 0, !following' in scroll
 assert 'guard !correcting, scroll.isDragging || scroll.isDecelerating else { return }' in scroll
 assert 'loadEarlier: { live && model.loadEarlier(thread.id) }' in views
@@ -23,5 +24,7 @@ assert 'Backplane.recv(${q(key)}, ${q(data)}, ${q(epoch)}, $quiet, $owed)' in ke
 assert 'if (inert && carriedOwe) owe.set(true)' in kengine
 ui = (android/'Ui.kt').read_text()
 assert 'LaunchedEffect(m.contentReady, s.hub, t.id)' in ui
-assert 'snapshotFlow { userDragging && m.contentReady && m.screen?.hub == s.hub && m.screen?.thread?.id == t.id }.first { it }' in ui
+assert 'snapshotFlow { userDragging && !pageAcceptedForDrag && m.contentReady && m.screen?.hub == s.hub && m.screen?.thread?.id == t.id }.first { it }' in ui
+assert 'if (userDragging) pageAcceptedForDrag = false' in ui
+assert 'pageAcceptedForDrag = true\n                    keepAt' in ui
 print('PASS native source boundaries: strict current-ready real gesture, decline-safe gate, owed preservation, tagged Android epoch; not app/runtime acceptance')

@@ -823,6 +823,10 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
     val snacks = remember { SnackbarHostState() }
     val list = rememberLazyListState()
     val userDragging by list.interactionSource.collectIsDraggedAsState()
+    var pageAcceptedForDrag by remember(t.id) { mutableStateOf(true) }
+    LaunchedEffect(userDragging) {
+        if (userDragging) pageAcceptedForDrag = false
+    }
     var menu by remember { mutableStateOf(false) }
     // the subagents sheet (the top bar's button) is up
     var subs by remember { mutableStateOf(false) }
@@ -1054,7 +1058,8 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                 LaunchedEffect(m.contentReady, s.hub, t.id) {
                     // Programmatic startup/jump scrolling also sets
                     // isScrollInProgress; only a person's drag requests data.
-                    snapshotFlow { userDragging && m.contentReady && m.screen?.hub == s.hub && m.screen?.thread?.id == t.id }.first { it }
+                    snapshotFlow { userDragging && !pageAcceptedForDrag && m.contentReady && m.screen?.hub == s.hub && m.screen?.thread?.id == t.id }.first { it }
+                    pageAcceptedForDrag = true
                     keepAt = t.entries.firstOrNull()?.id; m.act("earlier", "")
                 }
                 Spacer(Modifier.size(1.dp))
