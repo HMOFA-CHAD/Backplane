@@ -165,10 +165,10 @@ function validateRequest(request,temp){
   check(shell.receipt.features.windowsNativePathMapping===true,'Shell lacks Windows startup path mapping');
  }else{
   service=payload(request.service,temp,'service');check(pins.serviceReceiptSha256===service.ref.sha256,'Service not in freeze');identity(service.receipt,release,target,'backplane-bend-service');
-  check(service.receipt.genuineService===true&&service.receipt.entrypoint==='src/server/main.bend'&&service.receipt.roles?.service==='backplane-serve'&&service.receipt.roles.web==='web','Not a genuine service entry');
+  check(service.receipt.genuineService===true&&service.receipt.entrypoint==='src/server/main.bend'&&service.receipt.roles?.service==='backplane-serve'&&service.receipt.roles.render==='backplane-render'&&service.receipt.roles.web==='web','Not a genuine service entry');
   const build=readReference(service.receipt.buildReceipt);check(/^VERIFIED_GENUINE/.test(build.status)&&build.target===target&&build.entry==='src/server/main.bend'&&build.version===VERSION&&build.source_tree===release.tree&&build.source_commit===release.commit&&build.binary_sha256===digest(path.join(service.root,'backplane-serve')),'Missing genuine target build provenance');
   check(digest(path.join(service.root,'BUILD.json'))===service.receipt.buildReceipt.sha256,'Packaged BUILD must preserve the actual genuine build receipt');configuredService(build,freeze);
-  membership(service.root,service.receipt.members,target);closure(service.root,service.receipt,target);notices(service.root,service.receipt);architecture(path.join(service.root,'backplane-serve'),target);
+  membership(service.root,service.receipt.members,target);closure(service.root,service.receipt,target);notices(service.root,service.receipt);architecture(path.join(service.root,'backplane-serve'),target);architecture(path.join(service.root,'backplane-render'),target);
  }
  check(pins.webManifestSha256===digest(path.join(service.root,'WEB.json')),'Matching web not in release freeze');generatedWeb(path.join(service.root,'web'),json(path.join(service.root,'WEB.json')),release);
  if(freeze.lifecyclePolicy?.[target]){check(residentPolicy(freeze.lifecyclePolicy[target]),'Unknown/incomplete lifecycle policy');check(shell.receipt.features.managedStop===false&&shell.receipt.features.managedUpdate===false,'Resident shell advertises unsupported stop/update');}

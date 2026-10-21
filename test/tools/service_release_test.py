@@ -45,6 +45,7 @@ class ProducerTests(unittest.TestCase):
         web.mkdir(parents=True)
         runtime.mkdir()
         self.elf(build / "backplane-serve")
+        self.elf(build / "backplane-render")
         (web / "index.html").write_text("<p>Unicode 日本語</p>")
         (web / "index.html.gz").write_bytes(gzip.compress((web / "index.html").read_bytes(), mtime=0))
         (web / "LICENSE.Backplane").write_text("fixture license")
@@ -61,7 +62,7 @@ class ProducerTests(unittest.TestCase):
             "source_commit": self.release["commit"], "source_tree": self.release["tree"], "version": S.VERSION,
             "versionStamp": S.VERSION, "telemetryChannel": "release", "compileInputs": S.compile_inputs(),
             "binary_sha256": S.digest(build / "backplane-serve"), "webManifestSha256": S.digest(build / "WEB.json"),
-            "sourceManifestSha256": S.digest(build / "SOURCE.json")})
+            "sourceManifestSha256": S.digest(build / "SOURCE.json"), "render_sha256": S.digest(build / "backplane-render")})
         (runtime / "lib").mkdir()
         (runtime / "lib/libfixture.so").write_bytes(b"fixture-runtime-not-executable")
         (runtime / "LICENSE.fixture").write_text("fixture license")
@@ -200,9 +201,17 @@ class ProducerTests(unittest.TestCase):
         self.assertEqual((out / "payload/BUILD.json").read_bytes(), original)
         receipt = S.read(out / "SERVICE.json")
         self.assertEqual(receipt["members"], S.inventory(out / "payload"))
+        self.assertEqual(receipt["roles"]["render"], "backplane-render")
+        self.assertIn("backplane-render", receipt["members"])
         self.assertEqual(receipt["kind"], "backplane-bend-service")
         self.assertEqual(receipt["runtimeAcceptance"], "PENDING")
         self.assertFalse(receipt["published"])
+
+    def test_component_refuses_a_changed_renderer(self):
+        req = self.fixture()
+        (self.root / "build/backplane-render").write_bytes(b"\x7fELF\x02\x01changed")
+        with self.assertRaises(ValueError):
+            S.component(req, self.root, self.root / "component")
 
     def test_dev_build_cannot_be_relabelled(self):
         req = self.fixture()
@@ -268,9 +277,10 @@ class ProducerTests(unittest.TestCase):
         (source / "LICENSE").write_text("fixture license")
         (source / "src/web").mkdir(parents=True, exist_ok=True)
         (source / "src/web/sw.js").write_text("// fixture worker")
-        (source / "build/cc/backplane-serve").mkdir(parents=True, exist_ok=True)
-        for name in ("bp_google.h", "bp_telemetry.h"):
-            (source / "build/cc/backplane-serve" / name).write_text("private fixture input")
+        for binary in ("backplane-serve", "backplane-render"):
+            (source / "build/cc" / binary).mkdir(parents=True, exist_ok=True)
+            for name in ("bp_google.h", "bp_telemetry.h"):
+                (source / "build/cc" / binary / name).write_text("private fixture input")
         for name in ("bend", "clang"):
             (self.root / name).write_text("fixture tool")
         check_log = self.root / "source.log"
@@ -291,20 +301,21 @@ class ProducerTests(unittest.TestCase):
             calls.append(args)
             Path(log).write_text("offline mock operation\n")
             if args[0] == "scripts/build-app.sh":
-                self.assertEqual(args[1], "src/server/main.bend")
+                binary = {"src/server/main.bend": "backplane-serve", "src/render/main.bend": "backplane-render"}[args[1]]
+                self.assertEqual(Path(args[2]).name, binary)
                 if env.get("BACKPLANE_EMIT_ONLY") == "1":
                     self.assertEqual(env["BACKPLANE_GOOGLE_BAKE"], "0")
                     self.assertEqual(env["BACKPLANE_TELEMETRY_BAKE"], "0")
                     for key in self.env:
                         self.assertNotIn(key, env)
-                    (source / "build/cc/backplane-serve/all.c").write_text("// offline portable C fixture\n")
-                    return "build/cc/backplane-serve/all.c\n"
+                    (source / "build/cc" / binary / "all.c").write_text("// offline portable C fixture: " + binary + "\n")
+                    return "build/cc/" + binary + "/all.c\n"
                 self.elf(Path(args[2]))
                 if env.get("BACKPLANE_PREBUILT") == "1":
                     self.assertEqual(env["BACKPLANE_JOBS"], "1")
                     self.assertEqual(env["BACKPLANE_GOOGLE_BAKE"], "1")
                     self.assertEqual(env["BACKPLANE_TELEMETRY_BAKE"], "1")
-                    text = "prebuilt build/cc/backplane-serve/all.c\n"
+                    text = "prebuilt build/cc/" + binary + "/all.c\n"
                     Path(log).write_text(text)
                     return text
             elif "src/web/index.html" in args:
@@ -328,12 +339,14 @@ class ProducerTests(unittest.TestCase):
 
     def test_build_calls_only_server_and_production_web_then_writes_witness(self):
         out, calls, req = self.mocked_build()
-        self.assertEqual(len([c for c in calls if c[0] == "scripts/build-app.sh"]), 1)
+        self.assertEqual([c[1] for c in calls if c[0] == "scripts/build-app.sh"], ["src/server/main.bend", "src/render/main.bend"])
+        self.assertEqual(S.read(out / "BUILD.json")["render_sha256"], S.digest(out / "backplane-render"))
         self.assertFalse(any("src/app/main.bend" in c for c in calls))
         self.assertEqual(S.read(out / "BUILD.json")["compileInputs"], S.compile_inputs())
         self.assertEqual(S.read(out / "WEB.json"), S.web_manifest(out / "web", self.release))
         self.assertEqual(S.read(out / "WEB-EMISSION.json")["sourceCommit"], self.release["commit"])
-        self.assertFalse(any((self.root / "source/build/cc/backplane-serve" / n).exists() for n in ("bp_google.h", "bp_telemetry.h")))
+        self.assertFalse(any((self.root / "source/build/cc" / b / n).exists() for b in ("backplane-serve", "backplane-render")
+                             for n in ("bp_google.h", "bp_telemetry.h")))
 
     def test_secretless_emit_has_no_native_binary_or_bake_witness(self):
         self.env = {}
@@ -345,6 +358,8 @@ class ProducerTests(unittest.TestCase):
         self.assertFalse(emitted["configuredBuild"])
         self.assertEqual(emitted["nativeTargets"], sorted(S.TARGETS))
         self.assertEqual(S.bound(emitted["cArtifact"], out), out / "all.c")
+        self.assertEqual(S.bound(emitted["renderCArtifact"], out), out / "render.c")
+        self.assertFalse((out / "backplane-render").exists())
         self.assertFalse(any("--version" in c for c in calls))
 
     def native_request(self, emitted):
@@ -356,13 +371,14 @@ class ProducerTests(unittest.TestCase):
         emitted, _, _ = self.mocked_build(phase="emit", outname="packet")
         request = self.native_request(emitted)
         out, calls, _ = self.mocked_build(phase="native", request=request, outname="native")
-        self.assertEqual(len(calls), 2)  # existing native builder + actual binary --version only
-        self.assertEqual(calls[0][0], "scripts/build-app.sh")
+        self.assertEqual(len(calls), 3)  # the server and renderer native builds + the server's --version only
+        self.assertEqual([c[1] for c in calls[:2]], ["src/server/main.bend", "src/render/main.bend"])
         self.assertFalse(any("src/web/index.html" in c or "bend_check" in " ".join(c) for c in calls))
         built = S.read(out / "BUILD.json")
         self.assertEqual(built["compileInputs"], S.compile_inputs())
         self.assertEqual(built["portableEmission"]["receiptSha256"], request["emissionReceipt"]["sha256"])
         self.assertEqual(built["portableEmission"]["cSha256"], S.digest(emitted / "all.c"))
+        self.assertEqual(built["portableEmission"]["renderCSha256"], S.digest(emitted / "render.c"))
         self.assertEqual(S.read(out / "WEB.json"), S.read(emitted / "WEB.json"))
 
     def test_emit_strips_inherited_protected_configuration(self):
