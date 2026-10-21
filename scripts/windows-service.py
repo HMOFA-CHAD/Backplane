@@ -421,7 +421,7 @@ def check_runtime(receipt, actual):
 
 
 def closure(files, runtime):
-    binaries = {n: pe(data) for n, data in files.items()
+    binaries = {n: pe(data) for n, data in sorted(files.items())
                 if data[:2] == b'MZ' or n.lower().endswith(('.exe', '.dll'))}
     dlls = {}
     for name in binaries:
