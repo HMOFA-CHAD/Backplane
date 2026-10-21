@@ -170,7 +170,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Source path mapping failed' }
           $packet = & (Join-Path $bin 'cygpath.exe') -u "$env:RUNNER_TEMP/release-inputs"
           if ($LASTEXITCODE -ne 0) { throw 'Packet path mapping failed' }
-          & (Join-Path $bin 'bash.exe') --login -c 'cd "$1" && python3 build/bootstrap-tools/scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation windows-native --directory "$2"' -- $workspace $packet
+          & (Join-Path $bin 'bash.exe') --login -c 'cd "$1" && env GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$1" GIT_CONFIG_KEY_1=safe.directory GIT_CONFIG_VALUE_1="$1/build/bootstrap-tools" python3 build/bootstrap-tools/scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation windows-native --directory "$2"' -- $workspace $packet
           exit $LASTEXITCODE
       - uses: actions/upload-artifact@v4
         if: always()
