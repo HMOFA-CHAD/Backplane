@@ -28,6 +28,18 @@ function requestSession(session, action, target) {
     ...(route ? { route } : {}) };
 }
 
+// Bend's generic presentation pack intentionally omits the thin bot route.
+// Local non-navigation edits keep the validated tab the person already chose;
+// an actual selection change must not borrow that route.
+export function preservePresentationRoute(before, after) {
+  const route = compactRoute(before?.route);
+  return route && after?.sel === before.sel ? { ...after, route } : after;
+}
+export function presentationTarget(session) {
+  const route = compactRoute(session?.route);
+  return route ? { kind: 'bot', id: route.bot } : session?.sel ? { kind: 'thread', id: session.sel } : { kind: 'recent', id: '' };
+}
+
 // Renderer session/draft and effect adapter. Views is the shared ThinViews;
 // it alone validates transport identity, generations, targets and RPC ids.
 export class ThinHost {
