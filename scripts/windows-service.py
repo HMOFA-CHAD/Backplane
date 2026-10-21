@@ -20,7 +20,8 @@ import tarfile
 import tempfile
 import zipfile
 
-ROOT = Path(__file__).resolve().parent.parent
+TOOLS_ROOT = Path(__file__).resolve().parent.parent
+ROOT = TOOLS_ROOT
 ENTRY = 'src/server/main.bend'
 TELEMETRY_ENDPOINT = 'https://backplane.works/api/v1/events'
 INPUT_ARCHIVE = 'backplane-windows-service-inputs.tar.gz'
@@ -483,9 +484,25 @@ def bake_inputs():
     return result
 
 
+def execution_tools_identity():
+    # Product identity is checked independently by identity(). The metadata
+    # checkout must also be clean, and its actual tools are named explicitly.
+    def tool_git(*args):
+        return subprocess.check_output(['git', *args], cwd=TOOLS_ROOT, text=True).strip()
+    need(not tool_git('status', '--porcelain'), 'execution tool checkout must be clean')
+    return {'schema': 1, 'metadataCommit': tool_git('rev-parse', 'HEAD'),
+            'metadataTree': tool_git('rev-parse', 'HEAD^{tree}'),
+            'toolsSha256': {name: sha(TOOLS_ROOT / name) for name in (
+                'scripts/release-bootstrap.py', 'scripts/windows-release-request.py',
+                'scripts/windows-service.py', 'scripts/build-windows.sh', 'scripts/windows-runtime.py')},
+            'productToolsSha256': {name: sha(ROOT / name) for name in (
+                'scripts/google-header.py', 'scripts/telemetry-header.py', 'scripts/cc-split.py')}}
+
+
 def native(args):
     need(sys.platform == 'cygwin', 'native service compile requires Windows Cygwin')
     identity()
+    execution = execution_tools_identity()
     need(not Path(args.out).exists(), 'native output directory must be fresh')
     runtime_payload(args.runtime_payload, args.runtime_manifest_sha256)
     bakes = bake_inputs()
@@ -504,13 +521,23 @@ def native(args):
     source = import_inputs(args.inputs, args.sha256, out / 'inputs')
     with gzip.open(out / 'inputs/service.c.gz', 'rb') as src, (out / 'service.c').open('wb') as dest:
         shutil.copyfileobj(src, dest)
-    env = dict(os.environ, BACKPLANE_VERSION_STAMP=source['versionStamp'], BACKPLANE_CFLAGS=flags)
-    subprocess.run(['bash', 'scripts/build-windows.sh', str(out / 'service.c'),
+    env = dict(os.environ, BACKPLANE_VERSION_STAMP=source['versionStamp'], BACKPLANE_CFLAGS=flags,
+               BP_WIN_SOURCE_ROOT=str(ROOT))
+    subprocess.run(['bash', str(TOOLS_ROOT / 'scripts/build-windows.sh'), str(out / 'service.c'),
                     str(out / 'backplane-serve.exe')], cwd=ROOT, env=env, check=True)
+    need(execution_tools_identity() == execution, 'execution tools changed during native compile')
+    identity()
+    adapted = out / 'backplane-serve.cc/runtime.c'
+    adapter = load(adapted.with_name('RUNTIME-ADAPTER.json'))
+    need(adapter == {'schema': 1,
+         'adapterSha256': execution['toolsSha256']['scripts/windows-runtime.py'],
+         'sourceCsha256': source['service_c_sha256'], 'transformedCsha256': sha(adapted)},
+         'actual runtime adapter/C witness mismatch')
+    execution['runtimeAdapter'] = adapter
     binary = pe((out / 'backplane-serve.exe').read_bytes())
     shutil.copyfile(out / 'backplane-serve.exe', out / 'unsigned-service.exe')
     write(out / 'COMPILE.json', {'schema': 1, 'sourceReceiptSha256': sha(out / 'inputs/SOURCE.json'),
-          'unsignedServiceSha256': binary['sha256'],
+          'unsignedServiceSha256': binary['sha256'], 'producerExecution': execution,
           'runtimeManifestSha256': args.runtime_manifest_sha256,
           'compiler': {'version': reported.splitlines()[0],
                        'target': target, 'sha256': sha(compiler), 'flags': flags},
@@ -634,6 +661,7 @@ def package(args):
              'sizes': {n: len(b) for n, b in files.items()}, 'pe': closed['binaries'],
              'compiler': compile_info['compiler'], 'compileInputs': compile_info['compileInputs'],
              'unsignedServiceSha256': compile_info['unsignedServiceSha256'],
+             'producerExecution': compile_info['producerExecution'],
              'signing': signed, 'managedControl': control,
              'validation': {'staticClosure': 'complete', 'cleanWindowsProduct': 'pending',
                             'bakedIngestion': 'pending', 'lifecycle': 'pending', 'publication': 'not-authorized'}}
@@ -692,6 +720,14 @@ def verify_resources(archive, expected):
         'google': {'requested': True, 'requiredInputsPresent': True},
         'telemetry': {'requested': True, 'requiredInputsPresent': True, 'endpoint': TELEMETRY_ENDPOINT}},
         'resource protected compile/source tuple mismatch')
+    execution = build.get('producerExecution', {})
+    adapter = execution.get('runtimeAdapter', {})
+    need(execution.get('schema') == 1 and all(re.fullmatch('[0-9a-f]{40}', execution.get(n, ''))
+         for n in ('metadataCommit', 'metadataTree')) and adapter.get('schema') == 1
+         and adapter.get('sourceCsha256') == source['service_c_sha256']
+         and re.fullmatch('[0-9a-f]{64}', adapter.get('transformedCsha256', ''))
+         and adapter.get('adapterSha256') == execution.get('toolsSha256', {}).get('scripts/windows-runtime.py'),
+         'resource execution tools/adapter provenance missing')
     other = {n: b for n, b in files.items() if n != 'BUILD.json'}
     need(build['sha256'] == {n: digest(b) for n, b in other.items()}
          and build['sizes'] == {n: len(b) for n, b in other.items()}, 'resource member manifest mismatch')

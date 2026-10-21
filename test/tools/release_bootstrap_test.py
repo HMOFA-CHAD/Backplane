@@ -107,6 +107,18 @@ class BootstrapTest(unittest.TestCase):
         with patch.object(b,'source_identity',return_value=TREE), self.assertRaises(ValueError):
             b.run(dest,'unix-native','windows-x64',SOURCE,ROOT,'/cc')
 
+    def test_windows_executes_metadata_request_from_separate_frozen_checkout(self):
+        request=self.inputs/'windows-service-request.json'
+        request.write_text(json.dumps({'sourceCommit':SOURCE,'sourceTree':TREE}))
+        archive=self.root/'windows.tar.gz'
+        b.pack(self.inputs,archive,SOURCE,TREE,'windows-native')
+        dest=self.root/'windows-inputs'; b.extract(archive,dest)
+        product=self.root/'separate frozen product'
+        with patch.object(b,'source_identity',return_value=TREE), patch.object(b.subprocess,'run') as run:
+            b.run(dest,'windows-native',None,SOURCE,product)
+            self.assertEqual(run.call_args.args[0],[b.sys.executable,str(ROOT/'scripts/windows-release-request.py'),'native',str(dest/'windows-service-request.json')])
+            self.assertEqual(run.call_args.kwargs['cwd'],product)
+
     def test_android_executes_separately_pinned_metadata_without_mutating_packet(self):
         request=self.inputs/'android-release-inputs.json'
         request.write_text(json.dumps({'sourceCommit':SOURCE,'sourceTree':TREE}))

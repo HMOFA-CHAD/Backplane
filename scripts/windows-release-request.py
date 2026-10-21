@@ -2,6 +2,7 @@
 """Workflow adapter for the Windows owner's service producer; never publishes."""
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -73,9 +74,16 @@ def main():
     command = plan(request.parent, json.loads(request.read_text()), a.operation, source, version)
     # Cygwin/native platform, clean source, configured headers, recursive PE
     # closure and raw SOURCE3/BUILD3 acceptance belong to windows-service.py.
-    producer = (['bash', 'scripts/ci-windows.sh', '--service'] if a.operation == 'native' else
-                [sys.executable, 'scripts/package-windows.py', '--service'])
-    subprocess.run([*producer, *command[1:]], check=True)
+    # Execute the pinned metadata producer; its ROOT still identifies the
+    # untouched product checkout. Packet files remain data, never executable.
+    path = Path(__file__).resolve().with_name('windows-service.py')
+    spec = importlib.util.spec_from_file_location('windows_service_execution', path)
+    producer = importlib.util.module_from_spec(spec)
+    # Keep the pinned metadata checkout byte-clean when importing its helper.
+    sys.dont_write_bytecode = True
+    spec.loader.exec_module(producer)
+    producer.ROOT = Path.cwd().resolve()
+    producer.main(command)
 
 
 if __name__ == '__main__':

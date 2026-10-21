@@ -4,6 +4,8 @@ import hashlib
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch, Mock
 
 ROOT=Path(__file__).resolve().parents[2]
 spec=importlib.util.spec_from_file_location('request', ROOT/'scripts/windows-release-request.py')
@@ -22,6 +24,24 @@ class RequestTests(unittest.TestCase):
     def test_native_is_argument_array_without_config_values(self):
         command=self.plan();self.assertEqual(command[0],'native');self.assertNotIn('shell',command)
         self.assertEqual(command[-1],'build/windows-service-native')
+    def test_actual_metadata_import_preserves_separate_product_root(self):
+        row=self.root/'request.json'
+        import json
+        row.write_text(json.dumps(self.row))
+        module=SimpleNamespace(main=Mock())
+        loader=Mock()
+        spec=SimpleNamespace(loader=loader)
+        original=request.sys.dont_write_bytecode
+        try:
+            with patch.object(request.sys,'argv',['request','native',str(row)]), patch.dict(request.os.environ,{'BACKPLANE_FROZEN_COMMIT':'a'*40,'BACKPLANE_VERSION':'0.12.0'}), patch.object(request.Path,'cwd',return_value=self.root), patch.object(request.importlib.util,'spec_from_file_location',return_value=spec) as locate, patch.object(request.importlib.util,'module_from_spec',return_value=module):
+                request.main()
+                self.assertEqual(locate.call_args.args[1],ROOT/'scripts/windows-service.py')
+                self.assertEqual(module.ROOT,self.root)
+                loader.exec_module.assert_called_once_with(module)
+                self.assertTrue(request.sys.dont_write_bytecode)
+                self.assertEqual(module.main.call_args.args[0],self.plan())
+        finally:
+            request.sys.dont_write_bytecode=original
     def test_mismatched_source_version_operation_refused(self):
         for key,value in [('version','0.11.2'),('sourceCommit','b'*40),('operation','package'),('channel','dev')]:
             old=self.row[key];self.row[key]=value

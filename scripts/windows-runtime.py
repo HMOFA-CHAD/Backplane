@@ -33,4 +33,39 @@ if random_call in text:
 """ + random_call + "\n#endif")
     text = text.replace("#include <sys/random.h>\n#endif",
                         "#include <sys/random.h>\n#elif defined(__CYGWIN__)\n#include <windows.h>\n#include <bcrypt.h>\n#endif")
+# Base 2.0.36 uses glibc's closefrom spawn action for process.run. Cygwin
+# lacks that extension. Its fixed hard RLIMIT_NOFILE/OPEN_MAX covers every
+# possible descriptor, so queue supported close actions for the entire range,
+# including holes and descriptors opened after action preparation. Do not
+# enumerate currently-open descriptors: other IO workers may open more.
+process_close = "    p->code = posix_spawn_file_actions_addclosefrom_np(&actions, 3);"
+process_marker = "static void process_call(IoWork* w) {"
+if process_close in text:
+    if text.count(process_close) != 1 or text.count(process_marker) != 1:
+        sys.exit("windows-runtime: pinned Bend process closefrom changed")
+    close_helper = r"""#ifdef __CYGWIN__
+#include <spawn.h>
+#include <sys/resource.h>
+#include <limits.h>
+#include <errno.h>
+static int bp_cygwin_spawn_addclosefrom(posix_spawn_file_actions_t *actions,
+                                       int from) {
+  struct rlimit limit;
+  if (from < 0) return EBADF;
+  if (getrlimit(RLIMIT_NOFILE, &limit) != 0) return errno;
+  // Cygwin's descriptor table cannot grow beyond OPEN_MAX. Reject a runtime
+  // whose hard bound differs from the headers, rather than leak descriptors.
+  if (limit.rlim_max != (rlim_t)OPEN_MAX) return ENOTSUP;
+  for (int fd = from; fd < OPEN_MAX; ++fd) {
+    int code = posix_spawn_file_actions_addclose(actions, fd);
+    if (code != 0) return code;
+  }
+  return 0;
+}
+#endif
+"""
+    text = text.replace(process_marker, close_helper + "\n" + process_marker)
+    text = text.replace(process_close, "#ifdef __CYGWIN__\n"
+                        "    p->code = bp_cygwin_spawn_addclosefrom(&actions, 3);\n"
+                        "#else\n" + process_close + "\n#endif")
 output.write_text(text)
