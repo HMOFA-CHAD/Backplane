@@ -105,12 +105,17 @@ jobs:
           set -euo pipefail
           if [ "$RUNNER_OS" = macOS ]; then compiler="$(command -v clang)"; else compiler="$BACKPLANE_BOOTSTRAP_CLANG"; fi
           python3 build/bootstrap-tools/scripts/release-bootstrap.py run --source "$BACKPLANE_FROZEN_COMMIT" --operation unix-native --target "$TARGET" --clang "$compiler" --directory "$RUNNER_TEMP/release-inputs"
+      - name: Measure matching-host system ABI and assemble genuine service component
+        shell: bash
+        run: |
+          python3 build/bootstrap-tools/scripts/service-runtime.py --source-root "$GITHUB_WORKSPACE" --build "$GITHUB_WORKSPACE/build/bootstrap-native" --producer "$GITHUB_WORKSPACE/build/bootstrap-tools/scripts/service-release.py" --producer-sha256 b6350f66cee22adaca71f52f52105a8a6dbdb3fe2b6ba48b95d6e66e65ef3cc7 --out "$GITHUB_WORKSPACE/build/bootstrap-service"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: configured-service-${{ matrix.target }}
           path: |
             build/bootstrap-native/
+            build/bootstrap-service/
             build/bootstrap-execution.json
             ${{ runner.temp }}/backplane-llvm21/LLVM-PROVENANCE.json
           if-no-files-found: warn

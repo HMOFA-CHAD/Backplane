@@ -1,0 +1,72 @@
+# Unix service runtime preparation
+
+Run this on the same native Linux x64, Linux ARM64 or Apple ARM64 host after the
+configured native build succeeds. It performs no compile, emission, server
+startup, UI test, install or publication. It takes the original BUILD and
+generates the missing runtime/component inputs for `service-release.component`.
+
+```sh
+python3 /absolute/trusted-tools/scripts/service-runtime.py \
+  --source-root "$GITHUB_WORKSPACE" \
+  --build "$GITHUB_WORKSPACE/build/bootstrap-native" \
+  --producer /absolute/trusted-tools/scripts/service-release.py \
+  --producer-sha256 ACTUAL_APPROVED_HELPER_SHA256 \
+  --out "$GITHUB_WORKSPACE/build/bootstrap-service"
+```
+
+The release coordinator pins the runtime script and the component producer
+separately from the frozen product. The command imports only the hash-checked
+producer. Both actual helper files are retained as component provenance. The
+product checkout must still match the original BUILD commit/tree and all SOURCE
+members; its Git status must be clean. Original BUILD bytes remain unchanged.
+
+Outputs under the new absolute output directory are:
+
+* `runtime/`: measured `RUNTIME.json`, `CLOSURE.json`, command/tool hashes and raw
+  command logs, OS dependency inventory, actual measurement helper and notices;
+* `RUNTIME-QUALIFICATION.json`: hash-bound measured dynamic ABI closure;
+* `COMPONENT-REQUEST.json`: generated input to the existing component function;
+* `component/SERVICE.json` and `component/payload/`: the actual service component
+  for desktop staging;
+* `RESULT.json`: component output references and both helper identities.
+
+Give the desktop stage producer `component/SERVICE.json` as its service receipt
+and `component/payload/` as its service payload. Include the entire output in
+the native job's artifact upload. Linux ARM64 can immediately stage and smoke
+that component on the same ARM64 runner. There is no new request template to
+fill and no private input is needed after native compilation.
+
+Linux measurement runs the actual ELF interpreter's `--list`, reads the service
+and every resolved system library's dynamic table, checks their architectures,
+and records the complete transitive graph, actual library hashes/sizes and OS
+identity. The approved policy is the host glibc ABI: libc, libm, libpthread,
+libdl, librt and the matching ld-linux interpreter in standard system directories.
+Unresolved libraries, foreign directories, unknown dependencies, RPATH/RUNPATH,
+loader injection tags and imported runtime-loading APIs fail preparation.
+
+macOS measurement records actual `otool -L/-l`, undefined symbols and `sw_vers`.
+It requires the Apple libSystem umbrella ABI and `/usr/lib/dyld`, refuses foreign
+libraries/search paths/secondary loading commands and runtime-loading imports,
+then confirms libSystem through actual host dyld and checks its in-memory arm64
+header. Apple shared-cache images may have no standalone file: no fictitious
+file hash is assigned. The Apple-owned umbrella/shared-cache closure is an
+explicit approved-system boundary, not a supplied third-party runtime bundle.
+
+No OS library is redistributed. Nonempty runtime inventory contains the actual
+measurement/provenance files, clearly named as evidence rather than libraries;
+`systemDependencies` records measured host libraries separately. Notices retain
+the product MIT license and explain the host-system/source disposition. Any
+future supplied third-party library or newly imported runtime loading API needs
+its own measured closure, notices and source; this script refuses that case.
+
+Qualification here is limited to the measured native dynamic ABI. External CLI
+tools, optional CAD/browser helpers and installed product workflows are not
+qualified by this command. `runtimeAcceptance:PENDING` and `published:false`
+remain explicit; the desktop owner performs actual stage/startup/auth/reconnect,
+OS enforcement and UI acceptance afterward.
+
+Offline parser controls:
+
+```sh
+uv run --offline --no-project python test/tools/service_runtime_test.py
+```
