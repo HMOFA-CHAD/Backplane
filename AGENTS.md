@@ -103,11 +103,20 @@ When using Bend:
 
 ```sh
 scripts/check.sh      # --check-only every .bend file, then bend PROOF.bend
-scripts/test.sh       # run every test/*_test.bend (JS target, via bun)
+scripts/test.sh       # run standalone IO tests and matching test/tools/*.mjs drivers
 scripts/build.sh      # native server binary + web bundle into dist/
 scripts/build-app.sh src/app/main.bend build/backplane   # one native binary, compiled in parallel
 dist/backplane        # run it (opens http://127.0.0.1:3787)
 ```
+
+`scripts/test.sh` uses the same bounded stack settings as `scripts/check.sh`.
+For `test/NAME_test.bend`, a matching `test/tools/NAME.mjs` driver receives the
+emitted module's absolute path. A file with an IO `main` and a driver runs both;
+emission alone is never a passing test. The intentionally red
+`cache_identity_before_test.bend` belongs only to its dedicated negative-control
+gate (`test/tools/mobile_cache_identity_gate.py`), not the positive suite.
+`python3 -m unittest discover -s test/tools -p test_runner_test.py` verifies
+dispatch, sharding and failure propagation without a Bend installation.
 
 Trying a branch without CI or a release (use this, not a release, whenever the user wants to see or try a change):
 - `scripts/dev.sh` builds the app and web client into `build/dev` (about 5 min) and runs them beside the installed Backplane: port 3788, home `~/.backplane-dev`, no tailnet, no self-update. It never touches `~/.backplane-bend`. Its window opens next to the user's. `scripts/dev.sh run --no-build` runs the last build again. For a headless check: `DISPLAY= BACKPLANE_DEV_HOME=$(mktemp -d) scripts/dev.sh run --no-build &`, capture the PID, probe `127.0.0.1:3788`, kill that PID.
@@ -119,6 +128,13 @@ Releases: `scripts/package.sh` makes the tarball the updater and install.sh use 
 Native builds go through `scripts/build-app.sh`: bend emits the C, `scripts/cc-split.py` splits it into units, and clang compiles them at nice 19 on cores 0-3 (`BACKPLANE_JOBS`, `BACKPLANE_CPUS`), one build at a time machine-wide (`/tmp/bp-wt-build.lock`). About 2 minutes instead of 4+, and far less memory than one 30 MB file. Never run a bare `bend src/app/main.bend -o ...` on a machine someone is using.
 
 Native builds need clang 19+ and X11 headers (`libx11-dev`). Without root, `~/.local/bin/clang` may be a `zig cc` shim, and `BACKPLANE_X11=~/.local/x11` points the build at headers extracted from the .deb.
+
+Native C emission also needs Python 3.12+, Bun (CI pins 1.4.3) and `patch`.
+`scripts/native-compiler.py` caches checksum-pinned Bend 2.0.36 source with
+`patches/bend-native-ids.patch`; the installed Bend still checks/proves and
+emits JavaScript. The patch extends function IDs to 20 bits while retaining
+16-bit constructor IDs and 40-bit heap locations. See [CI repair and native
+compiler provenance](docs/ci.md) for the bounds, validation and offline setup.
 
 Performance: every process keeps counters (`docs/perf.md`). ctrl+shift+h in the window shows the overlay, `curl -s 127.0.0.1:3787/debug/perf` gives the table, `BACKPLANE_TRACE=/tmp/t.json` writes a Perfetto trace, `BACKPLANE_LOG=debug` and `BACKPLANE_SLOW_MS=50` log more.
 

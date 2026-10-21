@@ -85,10 +85,10 @@ def bot(v: String) -> M.State:
   M.State.apply(agent_state(v), M.BotSet{"b", "Kit", "t", 0n, "", 0n})
 
 def window(+u: U.Ui) -> String:
-  hits(L.Lay.settings(L.Ty.none(), U.Ui.state(u), N.Nui.init(u, 1400, 10000), Map.new(&2, String), "test", "", 264, 1400, 10000, 0))
+  hits(L.Lay.settings(L.Ty.none(), U.Ui.state(u), N.Nui.init(U.Act.ui(U.Settings.go(u, "appearance")), 1400, 10000), Map.new(&2, String), "test", "", 264, 1400, 10000, 0))
 
 def web(+u: U.Ui) -> String:
-  dom.todo(3000n, [V.View.settings(u, U.Ui.state(u), Map.new(&2, String), "test", "")], "")
+  dom.todo(3000n, [V.View.settings(U.Act.ui(U.Settings.go(u, "appearance")), U.Ui.state(u), Map.new(&2, String), "test", "")], "")
 
 def sends(cs: List<&2, U.Cmd>) -> String:
   match cs:

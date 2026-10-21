@@ -140,6 +140,7 @@ def main() -> IO(Unit):
     # notify.bend's Note.fresh
     C.Check.str("a working hub's thread is on the island", island(tick(busy(), 1000n)), "1")
     C.Check.str("a hub just gone takes its threads off the island", island(unheard(1001n)), "0")
+    C.Check.str("an offline hub does not advertise active work", island(unheard(11799n)), "0")
     C.Check.str("a hub quiet three hours leaves the island", island(unheard(11800n)), "0")
     C.Check.str("it comes back when the hub answers", island(H.Hubs.after(H.Hubs.online(unheard(50000n), "box:3787", True{}))), "1")
     C.Check.str("a hub never heard and away shows nothing", island(tick(H.Hubs.after(H.Hubs.online(busy(), "box:3787", False{})), 20000n)), "0")

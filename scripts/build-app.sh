@@ -95,6 +95,13 @@ if [ -n "$BP_OBJ_CACHE" ] && [ -d "$BP_OBJ_CACHE" ]; then
 fi
 work="build/cc/$(basename "$out")"
 mkdir -p "$work"
+# Keep the emitting compiler's receipt beside its C. A receiving host can
+# verify and compile transferred C without installing Bun or downloading Bend.
+if [ "${BACKPLANE_PREBUILT:-}" = 1 ] && [ -f "$work/all.c" ]; then
+  python3 scripts/native-compiler.py --verify-metadata "$work/compiler"
+else
+  python3 scripts/native-compiler.py --prepare --metadata "$work/compiler" >/dev/null
+fi
 # stage clocks (ms) and peak RSS (KB) via /usr/bin/time when it is there
 now_ms() { echo $(( $(date +%s%N) / 1000000 )); }
 rss_cmd() {
@@ -111,7 +118,10 @@ rm -f "$work/emit.rss"
 # BACKPLANE_PREBUILT=1 compiles the one already there
 # the emit's key (see BACKPLANE_EMIT_CACHE): "" when it cannot be made
 emit_key() {
-  scripts/inputs-key.sh "emit:$src" scripts/build-app.sh scripts/cc-split.py scripts/inputs-key.sh 2>/dev/null || true
+  # Native emission is source-pinned separately from the installed checker.
+  # Include its patch, launcher and actual Bun executable in the cache identity.
+  bun=$(command -v bun) || return
+  scripts/inputs-key.sh "emit:$src" scripts/build-app.sh scripts/cc-split.py scripts/inputs-key.sh scripts/native-compiler.py patches/bend-native-ids.patch "$bun" 2>/dev/null || true
 }
 EMIT_CACHE=${BACKPLANE_EMIT_CACHE-${XDG_CACHE_HOME:-$HOME/.cache}/backplane-bend/emit}
 [ "$EMIT_CACHE" = 0 ] && EMIT_CACHE=""
@@ -131,7 +141,7 @@ else
   rm -f "$work/all.c"
   # (bend picks what it writes by the name's ending: .c is the C; any other
   # name would compile the whole program to a binary there)
-  rss_cmd "$work/emit.rss" nice -n 19 $pin bend "$src" -o "$work/all.tmp.c" >/dev/null
+  rss_cmd "$work/emit.rss" nice -n 19 $pin python3 scripts/native-compiler.py "$src" -o "$work/all.tmp.c" >/dev/null
   mv "$work/all.tmp.c" "$work/all.c"
   # kept only if nothing it read changed while it ran
   if [ -n "$ekey" ] && [ "$(emit_key)" != "$ekey" ]; then

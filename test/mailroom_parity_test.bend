@@ -48,6 +48,8 @@ def main() -> IO(Unit):
     check(PT.ui([M.SettingSet{"deploy.row", "waiting", 199999n}]))
     C.Check.str("local tabs after Chat", String.join(BU.BU.tabs.mail("b1"), ","), "chat,mail,space,browser,tasks,memory,routines,hooks,settings")
     C.Check.str("far tabs unchanged", String.join(BU.BU.tabs.of("link~bot"), ","), "chat,space,memory,routines")
+    C.Check.str("uber top-level tabs", String.join(BU.BU.tabs.for(ui(), "b1"), ","), "chat,mail,space,browser,memory,routines,settings")
+    C.Check.str("uber status nested under mail", String.join(BU.BU.nav.sections(BU.BU.tabs.for(ui(), "b1"), "mail"), ","), "mail,status")
     C.Check.str("uber first tabs", String.join(List.take(&2, String, BU.BU.tabs.for(ui(), "b1"), 2n), ","), "chat,mail")
     C.Check.str("uber defaults to chat (the person's choice; Mailroom is picked explicitly)", BU.BU.tab.dflt(ui(), "b1"), "chat")
     C.Check.str("bot opened by its thread resolves its Mailroom owner", U.Mailv.owner(U.Bots.sel.set(U.Ui.scratch_set(ui(), "@bot", ""), "bt1")), "b1")

@@ -56,17 +56,24 @@ else
   scripts/build-kistack.sh dist/kistack
 fi
 mkdir -p build
+compiler_notices() {
+  python3 scripts/native-compiler.py --verify-metadata "$1/compiler"
+  mkdir -p dist/licenses/bend
+  cp "$1/compiler/LICENSE" "$1/compiler/bend-native-ids.patch" \
+    "$1/compiler/native-compiler.json" dist/licenses/bend/
+}
 if [ "$mode" = emit ]; then
   BACKPLANE_EMIT_ONLY=1 scripts/build-app.sh src/server/main.bend dist/backplane-serve
+  compiler_notices build/cc/backplane-serve
   rm -rf build/wire
   bend test/wire/index.html -o build/wire > /dev/null
   exit 0
 fi
 # native binaries compile split in parallel, at low priority
-# (scripts/build-app.sh; BACKPLANE_JOBS caps the compiles). The window
-# binary (src/app/main.bend) is no longer built: past Bend's 65,536
-# function IDs, and the desktop UI is the Electron app over the hub
+# (scripts/build-app.sh; BACKPLANE_JOBS caps the compiles). The desktop UI
+# is the Electron app over the hub; the package carries its launcher.
 scripts/build-app.sh src/server/main.bend dist/backplane-serve
+compiler_notices build/cc/backplane-serve
 cp deploy/backplane-launch.sh dist/backplane
 chmod 755 dist/backplane
 # the host helpers (Bun): the agents' browser, STEP -> GLB for the 3D
