@@ -455,9 +455,11 @@ def BU.tab(+u: U.Ui) -> String:
 def BU.tab.dflt(+u: U.Ui, +id: String) -> String:
   "chat"
 
-# the tab shown: the one picked, when this bot has it, else its chat
+# the tab shown: the one picked, when this bot has it, else its chat; a
+# client without the Mailroom (the phones) opens the uberbot on its Status,
+# its plane of what needs the person and what runs
 def BU.tab.default(+u: U.Ui, +id: String) -> String:
-  BU.tab.dflt(u, id)
+  Bool.pick(String, U.Mailv.enabled(u), BU.tab.dflt(u, id), Bool.pick(String, UB.Uber.is(U.Ui.state(u), id), "status", "chat"))
 
 def BU.tab.of(+u: U.Ui, +id: String) -> String:
   Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@btab")), BU.tab.default(u, id),
