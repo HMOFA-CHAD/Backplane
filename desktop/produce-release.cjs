@@ -67,6 +67,17 @@ function identity(r,release,target,kind){
  check(r&&r.schema===1&&r.kind===kind&&r.status==='VERIFIED','Unverified component receipt');
  check(r.target===target&&r.sourceCommit===release.commit&&r.sourceTree===release.tree&&r.version===VERSION&&r.channel==='release','Component source/version/target mismatch');
 }
+// One root-authorized Windows launcher successor; backend and vendor identities
+// remain the original release source. This is not a general source override.
+const WINDOWS_SHELL_SOURCE={commit:'c27f8f6b6cc8563579601ff3655d0422f9c22a55',tree:'293a9d322e83c3a2ad4c4e564b5c00a9376b05ec',serviceSha256:'73a6683da4247e32ddaa5f06ed8c9a8934d38419ade05511ecf35065f386fc2a'};
+function shellIdentity(r,release,target,freeze){
+ const successor=freeze.windowsShellSource;
+ if(!successor)return identity(r,release,target,'backplane-electron-shell');
+ check(target==='windows-x64'&&release.commit==='8147b68dbc9bcddad7e3b51ae7768ed9eb211ecc'&&release.tree==='37c64023d084bca7f209db9d14a84f59d365f696','Windows shell successor has wrong release/target');
+ check(canonical(successor)===canonical(WINDOWS_SHELL_SOURCE),'Unapproved Windows shell source successor');
+ identity(r,{...release,commit:successor.commit,tree:successor.tree},target,'backplane-electron-shell');
+ check(r.sourceFiles?.['desktop/service.cjs']===successor.serviceSha256&&r.members?.['service.cjs']?.type==='file'&&r.members['service.cjs'].sha256===successor.serviceSha256,'Windows shell launch source/payload mismatch');
+}
 function architecture(file,target){
  const f=fs.openSync(file,'r'),b=Buffer.alloc(512);let n;try{n=fs.readSync(f,b,0,b.length,0);}finally{fs.closeSync(f);}
  if(target.startsWith('linux-'))check(n>=20&&b.subarray(0,4).toString('hex')==='7f454c46'&&b[4]===2&&b[5]===1&&b.readUInt16LE(18)===(target==='linux-x64'?62:183),'Wrong ELF target');
@@ -139,7 +150,7 @@ function validateRequest(request,temp){
  const freeze=readReference(release.freezeReceipt);check(freeze.schema===1&&freeze.kind==='backplane-release-freeze'&&freeze.status==='FROZEN'&&['version','tag','channel','commit','tree'].every(k=>freeze[k]===release[k])&&Number.isSafeInteger(freeze.sourceDateEpoch)&&freeze.sourceDateEpoch>=315532800&&freeze.sourceDateEpoch<=4354819199,'Frozen source identity mismatch');
  const pins=freeze.components?.[target];check(pins,'Target missing from release freeze');
  const shell=payload(request.shell,temp,'shell'),electron=payload(request.electron,temp,'electron');
- check(pins.shellReceiptSha256===shell.ref.sha256&&pins.electronReceiptSha256===electron.ref.sha256,'Shell/Electron not in freeze');identity(shell.receipt,release,target,'backplane-electron-shell');identity(electron.receipt,release,target,'backplane-electron-runtime');
+ check(pins.shellReceiptSha256===shell.ref.sha256&&pins.electronReceiptSha256===electron.ref.sha256,'Shell/Electron not in freeze');shellIdentity(shell.receipt,release,target,freeze);identity(electron.receipt,release,target,'backplane-electron-runtime');
  membership(shell.root,shell.receipt.members,target);membership(electron.root,electron.receipt.members,target);
  check(electron.receipt.electronVersion===ELECTRON,'Wrong Electron version');check(shell.receipt.electronVersion===ELECTRON,'Shell Electron pin mismatch');
  const pkg=json(path.join(shell.root,'package.json'));check(pkg.version===VERSION&&pkg.main==='main.cjs'&&pkg.name==='backplane-desktop','Packaged shell version/entry mismatch');
@@ -164,7 +175,7 @@ function validateRequest(request,temp){
  check(freeze.signingPolicy?.[target]&&['required','unsigned-portable-allowed'].includes(freeze.signingPolicy[target]),'Missing target signing policy');
  return{request,target,release,freeze,shell,electron,service};
 }
-function copy(source,dest){fs.mkdirSync(path.dirname(dest),{recursive:true});fs.cpSync(source,dest,{recursive:true,dereference:false,verbatimSymlinks:true,errorOnExist:true,force:false});}
+function copy(source,dest,preserveModes=false){fs.mkdirSync(path.dirname(dest),{recursive:true});fs.cpSync(source,dest,{recursive:true,dereference:false,verbatimSymlinks:true,errorOnExist:true,force:false,...(preserveModes?{filter:()=>true}:{})});}
 function publicReference(ref,name){return{path:'PROVENANCE/'+name,sha256:ref.sha256,bytes:ref.bytes};}
 function content(stage,target){const all=inventory(stage,target);for(const n of Object.keys(all))if(['STAGE.json','DESKTOP.json','MANIFEST.json'].includes(n)||n.startsWith('PROVENANCE/'))delete all[n];return all;}
 function contentDigest(members){return sha(Buffer.from(canonical(members)));}
@@ -205,7 +216,7 @@ function stage(requestFile,output){
    for(const p of packages){const licenses=p.licenses.map(n=>({...n,path:part==='electron'&&target==='darwin-arm64'?(n.path.startsWith('Electron.app/')?'Backplane.app/'+n.path.slice(13):'NOTICES/electron/'+n.path):prefix+n.path}));noticesManifest.packages.push({...p,component:part,licenses});}
   }write(path.join(output,'NOTICES.json'),noticesManifest);notices(output,noticesManifest);
   const signable=electron.receipt.signablePaths||[];check(Array.isArray(signable)&&signable.every(n=>electron.receipt.members[n]?.type==='file'),'Invalid runtime signing paths');for(const n of signable)architecture(inside(electron.root,n),target);
-  const record={schema:1,kind:'backplane-electron-desktop-stage',status:'STAGED_UNQUALIFIED',target,release:{...release,freezeReceipt:refs.freeze},electronVersion:ELECTRON,serviceVersion:VERSION,shellVersion:VERSION,entrypoint:t.executable,backendEntrypoint:'src/server/main.bend',components:refs,webManifestSha256:digest(path.join(service.root,'WEB.json')),noticesManifestSha256:digest(path.join(output,'NOTICES.json')),sourceDateEpoch:freeze.sourceDateEpoch,signingPolicy:freeze.signingPolicy[target],...(freeze.lifecyclePolicy?.[target]?{lifecyclePolicy:freeze.lifecyclePolicy[target]}:{}),signablePaths:signable.map(n=>target.startsWith('linux-')?'runtime/'+(n==='electron'?'backplane-desktop':n):target==='windows-x64'?(n==='electron.exe'?'Backplane.exe':n):n.replace(/^Electron\.app\//,'Backplane.app/').replace('/MacOS/Electron','/MacOS/Backplane'))};
+  const record={schema:1,kind:'backplane-electron-desktop-stage',status:'STAGED_UNQUALIFIED',target,release:{...release,freezeReceipt:refs.freeze},electronVersion:ELECTRON,serviceVersion:VERSION,shellVersion:VERSION,entrypoint:t.executable,backendEntrypoint:'src/server/main.bend',components:refs,...(freeze.windowsShellSource?{windowsShellSource:freeze.windowsShellSource}:{}),webManifestSha256:digest(path.join(service.root,'WEB.json')),noticesManifestSha256:digest(path.join(output,'NOTICES.json')),sourceDateEpoch:freeze.sourceDateEpoch,signingPolicy:freeze.signingPolicy[target],...(freeze.lifecyclePolicy?.[target]?{lifecyclePolicy:freeze.lifecyclePolicy[target]}:{}),signablePaths:signable.map(n=>target.startsWith('linux-')?'runtime/'+(n==='electron'?'backplane-desktop':n):target==='windows-x64'?(n==='electron.exe'?'Backplane.exe':n):n.replace(/^Electron\.app\//,'Backplane.app/').replace('/MacOS/Electron','/MacOS/Backplane'))};
   // signable is receipt metadata, not part of the exact filesystem inventory.
   record.members=content(output,target);record.payloadManifestSha256=contentDigest(record.members);write(path.join(output,'STAGE.json'),record);
   return{status:record.status,target,stage:output,stageReceiptSha256:digest(path.join(output,'STAGE.json')),payloadManifestSha256:record.payloadManifestSha256,releaseQualified:false};
@@ -218,7 +229,7 @@ function archive(stageDir,acceptanceFile,output){
  check(!fs.existsSync(path.join(stageDir,'DESKTOP.json'))&&!fs.existsSync(path.join(stageDir,'MANIFEST.json')),'Stage contains conflicting package receipts');
  check(s.entrypoint===TARGETS[s.target].executable,'Wrong target launch path');architecture(inside(stageDir,s.entrypoint),s.target);
  const sourceFiles=Object.values(s.components).filter(r=>r.path).map(r=>r.path.slice('PROVENANCE/'.length)).sort();check(fs.readdirSync(path.join(stageDir,'PROVENANCE')).sort().join('\n')===sourceFiles.join('\n'),'Unexpected provenance payload');
- const frozen=readReference({...s.components.freeze,path:inside(stageDir,s.components.freeze.path)});check(canonical(s.lifecyclePolicy??null)===canonical(frozen.lifecyclePolicy?.[s.target]??null),'Lifecycle policy must match root freeze');check(s.signingPolicy===frozen.signingPolicy?.[s.target],'Signing policy must match root freeze');
+ const frozen=readReference({...s.components.freeze,path:inside(stageDir,s.components.freeze.path)});check(canonical(s.windowsShellSource??null)===canonical(frozen.windowsShellSource??null),'Windows shell provenance must match root freeze');shellIdentity(readReference({...s.components.shell,path:inside(stageDir,s.components.shell.path)}),s.release,s.target,frozen);check(canonical(s.lifecyclePolicy??null)===canonical(frozen.lifecyclePolicy?.[s.target]??null),'Lifecycle policy must match root freeze');check(s.signingPolicy===frozen.signingPolicy?.[s.target],'Signing policy must match root freeze');
  const proofs={};for(const k of ['signing','sandbox','lifecycle','runtimeAcceptance']){
   const ref=a[k],r=readReference(ref);check(r.schema===1&&r.status==='PASS'&&r.target===s.target&&r.version===VERSION&&r.commit===s.release.commit&&r.tree===s.release.tree&&r.payloadManifestSha256===payloadHash&&r.freezeReceiptSha256===s.release.freezeReceipt.sha256,'Missing/wrong-target/pending '+k+' evidence');proofs[k]={ref,receipt:r};
  }
@@ -233,9 +244,9 @@ function archive(stageDir,acceptanceFile,output){
  for(const n of changed){const signature=s.target==='darwin-arm64'&&/^Backplane\.app\/(?:.*\/)?_CodeSignature\/[^/]+$/.test(n);check(signature||s.signablePaths.includes(n),'Unexpected post-stage payload mutation');check(actual[n]?.type==='file'&&(signature||s.members[n]?.type==='file'),'Signing cannot remove files or add links');if(!signature){check(actual[n].mode===s.members[n].mode,'Signing changed executable mode');architecture(inside(stageDir,n),s.target);}check(!n.startsWith(TARGETS[s.target].resources+'/app/')&&!n.startsWith(TARGETS[s.target].resources+'/backplane-service/'),'Signed mutation cannot rewrite app/service/web');}
  check(changed.length===0||proofs.signing.receipt.signed,'Unsigned payload changed after staging');
  for(const [name,ref]of Object.entries(s.components))if(ref.path)reference({...ref,path:inside(stageDir,ref.path)});
- const finalRoot=path.join(output,TARGETS[s.target].root);fs.mkdirSync(output,{recursive:true});copy(stageDir,finalRoot);fs.unlinkSync(path.join(finalRoot,'STAGE.json'));check(contentDigest(content(finalRoot,s.target))===payloadHash,'Payload changed while archiving');
+ const finalRoot=path.join(output,TARGETS[s.target].root);fs.mkdirSync(output,{recursive:true});copy(stageDir,finalRoot,true);fs.unlinkSync(path.join(finalRoot,'STAGE.json'));check(contentDigest(content(finalRoot,s.target))===payloadHash,'Payload changed while archiving');
  const evidence={};for(const [k,v]of Object.entries(proofs)){const n='PROVENANCE/'+k+'.json';fs.copyFileSync(reference(v.ref),inside(finalRoot,n));evidence[k]={...publicReference(v.ref,k+'.json'),status:'PASS'};}
- const desktop={schema:1,kind:'backplane-electron-desktop-package',target:s.target,release:s.release,entrypoint:{launcher:s.entrypoint,backend:'src/server/main.bend'},...(s.lifecyclePolicy?{lifecyclePolicy:s.lifecyclePolicy}:{}),components:s.components,electronVersion:ELECTRON,serviceVersion:VERSION,shellVersion:VERSION,webManifestSha256:s.webManifestSha256,noticesManifestSha256:s.noticesManifestSha256,...evidence,payloadManifestSha256:payloadHash,members:inventory(finalRoot,s.target)};write(path.join(finalRoot,'DESKTOP.json'),desktop);write(path.join(finalRoot,'MANIFEST.json'),{schema:1,kind:'backplane-electron-package-members',target:s.target,files:inventory(finalRoot,s.target)});
+ const desktop={schema:1,kind:'backplane-electron-desktop-package',target:s.target,release:s.release,entrypoint:{launcher:s.entrypoint,backend:'src/server/main.bend'},...(s.lifecyclePolicy?{lifecyclePolicy:s.lifecyclePolicy}:{}),components:s.components,...(s.windowsShellSource?{windowsShellSource:s.windowsShellSource}:{}),electronVersion:ELECTRON,serviceVersion:VERSION,shellVersion:VERSION,webManifestSha256:s.webManifestSha256,noticesManifestSha256:s.noticesManifestSha256,...evidence,payloadManifestSha256:payloadHash,members:inventory(finalRoot,s.target)};write(path.join(finalRoot,'DESKTOP.json'),desktop);write(path.join(finalRoot,'MANIFEST.json'),{schema:1,kind:'backplane-electron-package-members',target:s.target,files:inventory(finalRoot,s.target)});
  const name='backplane-v'+VERSION+'-'+s.target+TARGETS[s.target].suffix,filename=path.join(output,name);runPython(['archive',finalRoot,filename,TARGETS[s.target].root+'/',String(s.sourceDateEpoch)]);fs.writeFileSync(filename+'.sha256',digest(filename)+'  '+name+'\n');return{status:'ASSEMBLED_FROM_BOUND_TARGET_ACCEPTANCE',target:s.target,archive:filename,sha256:digest(filename),desktopReceipt:path.join(finalRoot,'DESKTOP.json'),desktopReceiptSha256:digest(path.join(finalRoot,'DESKTOP.json')),published:false};
 }
 function inspectStage(dir){const s=json(path.join(dir,'STAGE.json'));check(s.kind==='backplane-electron-desktop-stage'&&TARGETS[s.target],'Invalid stage');return{status:'INSPECTED_NOT_QUALIFIED',target:s.target,version:s.release.version,stageReceiptSha256:digest(path.join(dir,'STAGE.json')),payloadManifestSha256:contentDigest(content(dir,s.target))};}
@@ -248,4 +259,4 @@ function main(argv){
  else fail('Unknown operation; use describe');console.log(JSON.stringify(result));
 }
 if(require.main===module){try{main(process.argv.slice(2));}catch(e){console.error('Desktop producer: '+e.message);process.exitCode=1;}}
-module.exports={stage,archive,inspectStage,inventory,membershipExpectation,contentDigest,architecture,validateRequest,generatedWeb,reference,readReference,json,write,sha,digest,canonical,runPython,payload,identity,TARGETS};
+module.exports={stage,archive,inspectStage,inventory,membershipExpectation,contentDigest,architecture,validateRequest,generatedWeb,reference,readReference,json,write,sha,digest,canonical,runPython,payload,identity,shellIdentity,WINDOWS_SHELL_SOURCE,TARGETS};
