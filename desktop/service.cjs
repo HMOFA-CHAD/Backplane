@@ -56,7 +56,7 @@ async function servicePort(home) {
 }
 // Node owns native Windows paths and child handles; only the Cygwin service's
 // argv/environment crosses into POSIX paths. Never use a PATH-resolved helper.
-async function launchPaths({ home, binary, web, env, platform = process.platform, run = runFile }) {
+async function launchPaths({ home, binary, web, env, platform = process.platform, run = runFile, files = fs }) {
   if (platform !== 'win32') return { home, web, env };
   const absolute = value => typeof value === 'string' && !/[\0\r\n]/.test(value) &&
     (/^[A-Za-z]:[\\/]/.test(value) || /^\\\\[^\\/]+[\\/][^\\/]+/.test(value));
@@ -71,6 +71,18 @@ async function launchPaths({ home, binary, web, env, platform = process.platform
   // Closed loader lookup: no ambient provider/Cygwin PATH or inherited cwd.
   for (const k of Object.keys(childEnv)) if (k.toLowerCase() === 'path') delete childEnv[k];
   childEnv.PATH = [runtimeBin, path.win32.join(systemRoot, 'System32'), systemRoot].join(';');
+  // Cygwin bash checks literal /tmp even when TMPDIR is set. ZIP payloads
+  // omit empty directories, so recreate this owned portable-runtime scaffold
+  // before the first helper can emit a warning into a shell protocol reply.
+  const runtimeTmp = path.win32.join(path.win32.dirname(runtimeBin), 'tmp');
+  try {
+    await files.mkdir(runtimeTmp, { recursive: true, mode: 0o700 });
+    const st = await files.lstat(runtimeTmp);
+    if (!st.isDirectory() || st.isSymbolicLink()) throw new Error('Not a real directory');
+    await files.access(runtimeTmp, fs.constants.W_OK);
+  } catch {
+    throw Object.assign(new Error('Packaged Windows runtime/tmp must be a writable real directory'), { code: 'ERR_WINDOWS_RUNTIME_TMP' });
+  }
   const convert = async value => {
     if (!absolute(value)) throw new Error('Windows service path environment must be native and absolute');
     let result;
