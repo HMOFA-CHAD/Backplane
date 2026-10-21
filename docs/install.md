@@ -18,7 +18,7 @@ For a custom installation, substitute your `BACKPLANE_PREFIX`,
 
 ```sh
 rm -rf ~/.local/share/backplane
-rm -f ~/.local/bin/backplane ~/.local/bin/backplane-serve
+rm -f ~/.local/bin/backplane ~/.local/bin/backplane-serve ~/.local/bin/backplane-render
 rm -f ~/.local/share/applications/backplane.desktop \
   ~/.local/share/icons/hicolor/scalable/apps/backplane-desktop.svg \
   ~/.local/share/icons/hicolor/256x256/apps/backplane-desktop.png

@@ -2559,7 +2559,7 @@ def Mech.list(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cw
   IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Mech.cmd()], cwd), r => Mech.sent(r, inbox, client, id, thread, cwd))
 
 # a part's renders, drawn on request (mech.render: the Mech page's
-# Create renders): `backplane --render` beside this program, in the
+# Create renders): `backplane-render` beside this program, in the
 # project, then the parts listed again; the answer is a listing that also
 # names what was rendered and why it failed ("" when it did not)
 def Mech.said(r: P.Ran) -> String:
@@ -2578,7 +2578,7 @@ def Mech.rendered(+err: String, l: P.Ran, +inbox: Chan(Msg), +client: U32, +id: 
 def Mech.render(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +path: String) -> IO(Unit):
   do IO<Unit>:
     exe : String <- H.Sys.exe_dir()
-    r : P.Ran <- P.Proc.run(exe ++ "/backplane", ["--render", path], cwd)
+    r : P.Ran <- P.Proc.run(exe ++ "/backplane-render", [path], cwd)
     l : P.Ran <- P.Proc.run("sh", ["-c", Mech.cmd()], cwd)
     Mech.rendered(Mech.said(r), l, inbox, client, id, thread, cwd, path)
 
@@ -3549,7 +3549,7 @@ def Deploy.probe(+inbox: Chan(Msg)) -> IO(Unit):
   IO.bind(String, Unit, Env.get("BACKPLANE_DEPLOY_LOCKS", "/tmp/bp-bend.lock:/tmp/bp-wt-build.lock"), l => Deploy.probe.l(l, inbox))
 
 def Deploy.swap.sh() -> String:
-  "set -eu; src=$1; prefix=$2; [ -d \"$src\" ] || { echo \"no staged package at $src\"; exit 1; }; mkdir -p \"$prefix\"; if [ -f \"$src/cef-runtime.py\" ]; then python3 \"$src/cef-runtime.py\" install \"$src\" \"$prefix\"; fi; if [ -d \"$src/web\" ]; then rm -rf \"$prefix/web.old\"; [ -d \"$prefix/web\" ] && mv \"$prefix/web\" \"$prefix/web.old\"; mv \"$src/web\" \"$prefix/web\"; fi; if [ -d \"$src/kistack\" ]; then rm -rf \"$prefix/kistack.old\"; [ -d \"$prefix/kistack\" ] && mv \"$prefix/kistack\" \"$prefix/kistack.old\"; mv \"$src/kistack\" \"$prefix/kistack\"; fi; for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc LICENSE; do if [ -e \"$src/$f\" ]; then mv -f \"$src/$f\" \"$prefix/$f\"; fi; done; rmdir \"$src\" 2>/dev/null || true; exit 0"
+  "set -eu; src=$1; prefix=$2; [ -d \"$src\" ] || { echo \"no staged package at $src\"; exit 1; }; mkdir -p \"$prefix\"; if [ -f \"$src/cef-runtime.py\" ]; then python3 \"$src/cef-runtime.py\" install \"$src\" \"$prefix\"; fi; if [ -d \"$src/web\" ]; then rm -rf \"$prefix/web.old\"; [ -d \"$prefix/web\" ] && mv \"$prefix/web\" \"$prefix/web.old\"; mv \"$src/web\" \"$prefix/web\"; fi; if [ -d \"$src/kistack\" ]; then rm -rf \"$prefix/kistack.old\"; [ -d \"$prefix/kistack\" ] && mv \"$prefix/kistack\" \"$prefix/kistack.old\"; mv \"$src/kistack\" \"$prefix/kistack\"; fi; for f in backplane backplane-serve backplane-render backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc LICENSE; do if [ -e \"$src/$f\" ]; then mv -f \"$src/$f\" \"$prefix/$f\"; fi; done; rmdir \"$src\" 2>/dev/null || true; exit 0"
 
 def Deploy.swapped(ok: Bool, +out: String, +path: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ok:
@@ -5832,7 +5832,7 @@ def Main.dirs(+kdir: String) -> List<&2, String>:
 def Main.config(+user: String, +exe: String, args: List<String>, b: Boot) -> Cfg:
   Boot{kdir, skills, rt, ms, mt, +fc} = b
   Main.args(args, Cfg{user ++ "/.backplane-bend", exe ++ "/web", "127.0.0.1", 3787,
-    Q.Prompt.runtime("Backplane") ++ "\n\n" ++ Q.Prompt.mech(fc, exe ++ "/backplane"), Main.dirs(kdir), Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc, None{}}, TI.Tio.empty(False{}), Nil{}})
+    Q.Prompt.runtime("Backplane") ++ "\n\n" ++ Q.Prompt.mech(fc, exe ++ "/backplane-render"), Main.dirs(kdir), Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc, None{}}, TI.Tio.empty(False{}), Nil{}})
 
 def Sys.exe_dir.io() -> IO(String):
   H.Sys.exe_dir()

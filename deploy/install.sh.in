@@ -54,6 +54,7 @@ tar -xzf "$tmp/$name" -C "$tmp"
 sh "$tmp/backplane-$os-$arch/install-release.sh" "$tmp/backplane-$os-$arch" "$prefix"
 ln -sf "$prefix/backplane" "$bin/backplane"
 ln -sf "$prefix/backplane-serve" "$bin/backplane-serve"
+ln -sf "$prefix/backplane-render" "$bin/backplane-render"
 # the applications menu entry and its icon (BACKPLANE_NO_DESKTOP=1 skips
 # them); Exec names the link itself, since a desktop session's PATH often
 # lacks ~/.local/bin
