@@ -2,7 +2,7 @@
 // Root-authorized deterministic artifact binding; no acceptance or product IO.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const p=require('./produce-release.cjs');
-const POLICY='c1b1f1be2e6baf3a4fe719e05eb4dd01aaa160ed67dacaf3c85e6e60779221d9';
+const POLICY='185234c540dccc217a197b2a3f8b0001cb5bf01c2b1651a16b04e73ab6796b24';
 const WINDOWS='1c12bd80b6f994ecd0d68d06b8ada98e1958de725d33f6380da3c0243ad099e3';
 const ref=file=>({path:path.resolve(file),sha256:p.digest(file),bytes:fs.statSync(file).size});
 function options(argv){const keys=['--policy','--components','--service','--out'];assert.equal(argv.length,8,'Use '+keys.join(', '));const a={};for(let i=0;i<8;i+=2){assert(keys.includes(argv[i])&&!a[argv[i]],'Unknown/duplicate option');assert(path.isAbsolute(argv[i+1]),'Absolute paths required');a[argv[i]]=argv[i+1];}return a;}
