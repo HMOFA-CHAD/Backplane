@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build a Bend program to a native binary in parallel, gently.
 #
-#   scripts/build-app.sh src/app/main.bend build/backplane
+#   scripts/build-app.sh src/server/main.bend build/backplane-serve
 #
 # `bend X -o bin` compiles one ~30 MB C file on one core (minutes, ~20 GB).
 # Here bend emits the C, scripts/cc-split.py deals it into units, and clang
@@ -58,6 +58,14 @@ if [ -z "${BP_BUILD_LOCKED:-}" ] && command -v flock >/dev/null 2>&1 && ! held; 
 fi
 src=$1
 out=$2
+# The native window app is no longer built (the desktop is the Electron app
+# over backplane-serve): its root is past Bend's 65,536 function IDs and the
+# user asked that nothing build it
+case $src in
+  src/app/main.bend|./src/app/main.bend|*/src/app/main.bend)
+    echo "build-app.sh: src/app/main.bend (the native window app) is no longer built; build src/server/main.bend" >&2
+    exit 2 ;;
+esac
 cd "$(dirname "$0")/.."
 low=${BACKPLANE_LOW_MEM:-0}
 [ "$low" = 1 ] && jobs=${BACKPLANE_JOBS:-1} || jobs=${BACKPLANE_JOBS:-4}
