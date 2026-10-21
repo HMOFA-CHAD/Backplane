@@ -2382,7 +2382,7 @@ def Hubs.opened.on(u: U.Ui) -> Bool:
 def Hubs.opened.j(+lc: I.Loc, focus: Bool, +k: String, +u: U.Ui) -> J.Json:
   match focus:
     case True{}:
-      J.Json.obj([J.KV{"online", J.Json.bool(Hubs.opened.on(u))}, J.KV{"thread", Q.all(S.Mob.focus.thread.r(lc, True{}, u, U.Ui.sel(u), False{}), k)}])
+      J.Json.obj([J.KV{"online", J.Json.bool(Hubs.opened.on(u))}, J.KV{"thread", Q.all(S.Mob.focus.thread.r(lc, True{}, U.Side.with_signals(u), U.Ui.sel(u), False{}), k)}])
     case False{}:
       J.Json.obj([J.KV{"online", J.Json.bool(Hubs.opened.on(u))}])
 

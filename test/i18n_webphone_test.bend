@@ -38,8 +38,8 @@ def seen(+s: String, +literal: String) -> String:
 def web(tag: String) -> String:
   words(W.View.page(F.Fixture.thread(tag)))
 
-def settings(tag: String) -> String:
-  words(W.View.page(F.Fixture.settings(tag)))
+def settings(tag: String, page: String) -> String:
+  words(W.View.page(U.Act.ui(U.Settings.go(F.Fixture.settings(tag), page))))
 
 def menu(tag: String) -> String:
   words(W.View.page(F.Fixture.menu(tag)))
@@ -60,7 +60,7 @@ def project(tag: String) -> J.Json:
   first(J.Json.elems(J.Json.get_obj(screen(tag), "projects")))
 
 def phone.settings(tag: String) -> String:
-  J.Json.show(J.Json.get_obj(S.Mob.screen(F.Fixture.settings(tag)), "settings"))
+  J.Json.show(J.Json.get_obj(S.Mob.screen(U.Act.ui(U.Settings.go(F.Fixture.settings(tag), "threads"))), "settings"))
 
 def phone.plane(tag: String) -> String:
   J.Json.show(J.Json.get_obj(H.Hubs.screen(H.Hubs{"c", 200n, "test:3820", [H.Hub{"test:3820", U.Ui.fold([M.SettingSet{"machine.id", "test-machine", 109n}, M.UberSet{"b43", "u43", 110n}], F.Fixture.ui(tag))}]}), "plane"))
@@ -76,8 +76,8 @@ def model.picker() -> J.Json:
 def main() -> IO(Unit):
   +en = web("en")
   +ja = web("ja")
-  +se = settings("en")
-  +sj = settings("ja")
+  +se = settings("en", "agents")
+  +sj = settings("ja", "agents")
   do IO<Unit>:
     C.Check.str("web sidebar en", seen(en, "Add project"), "Add project")
     C.Check.str("web sidebar ja", seen(ja, "プロジェクトを追加"), "プロジェクトを追加")
@@ -87,8 +87,8 @@ def main() -> IO(Unit):
     C.Check.str("web composer ja", seen(ja, "何でも質問：@bot、>thread、%project、#room、$skill、/btw"), "何でも質問：@bot、>thread、%project、#room、$skill、/btw")
     C.Check.str("web Settings en", seen(se, "Provider for new threads"), "Provider for new threads")
     C.Check.str("web Settings ja", seen(sj, "新しいスレッドのプロバイダー"), "新しいスレッドのプロバイダー")
-    C.Check.str("web voice en", seen(se, "OpenAI API key"), "OpenAI API key")
-    C.Check.str("web voice ja", seen(sj, "OpenAI APIキー"), "OpenAI APIキー")
+    C.Check.str("web voice en", seen(settings("en", "voice"), "OpenAI API key"), "OpenAI API key")
+    C.Check.str("web voice ja", seen(settings("ja", "voice"), "OpenAI APIキー"), "OpenAI APIキー")
     C.Check.str("web menus en", seen(menu("en"), "Copy link"), "Copy link")
     C.Check.str("web menus ja", seen(menu("ja"), "リンクをコピー"), "リンクをコピー")
     C.Check.str("web bot en", seen(bot("en"), "Routines"), "Routines")

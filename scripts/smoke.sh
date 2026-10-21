@@ -12,7 +12,9 @@ fi
 run() {
   bin=$1 port=$2
   home=$(mktemp -d)
-  "$bin" --web dist/web --home "$home" --port "$port" > "$home/out.log" 2>&1 &
+  mkdir "$home/agents"
+  BACKPLANE_AGENTS="$home/agents" BACKPLANE_PEERS= \
+    "$bin" --foreground --no-tailscale --web dist/web --home "$home" --port "$port" > "$home/out.log" 2>&1 &
   pid=$!
   trap 'kill $pid 2>/dev/null || true' EXIT
   i=0
@@ -22,6 +24,7 @@ run() {
   done
   bun test/smoke.ts "$port" "$home" build/wire
   kill $pid
+  wait "$pid" 2>/dev/null || true
   trap - EXIT
   # a scratch thread's `git init` (the hub's child, not stopped with it)
   # may still be writing its folder: try again once it is done

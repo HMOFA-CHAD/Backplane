@@ -3,7 +3,9 @@
 # script fails when any FAIL appears or a test exits non-zero.
 #
 # Tests now run in parallel (TEST_JOBS at a time), each exactly as
-# before: the same `bend TEST` invocation, and the same strict
+# before: standalone IO tests use `bend TEST`, and fixtures with a matching
+# test/tools/NAME.mjs driver are emitted and exercised by that driver. A
+# file with both an IO main and a driver runs both. Keep the same strict
 # per-test verdict applied to its full output (a test must exit 0,
 # print at least one "^ok " line, print no "^Error:" line, and print
 # no "^FAIL" line). Outputs are collected per test and replayed in
@@ -24,6 +26,10 @@
 set -eu
 cd "$(dirname "$0")/.."
 export BEND_NO_TELEMETRY=1
+# Use the same bounded checker/runtime stack as check.sh. Tests exercise
+# large wire payloads and real render trees, beyond Bun's default stack.
+ulimit -s 1048576 2>/dev/null || true
+export BUN_JSC_maxPerThreadStackUsage=${BUN_JSC_maxPerThreadStackUsage:-536870912}
 
 cores=$(nproc 2>/dev/null || echo 4)
 jobs=${TEST_JOBS:-$(( cores / 4 ))}
@@ -31,7 +37,12 @@ if [ "$jobs" -lt 1 ]; then jobs=1; fi
 if [ "$jobs" -gt 6 ]; then jobs=6; fi
 
 all_tests=""
-for t in test/*_test.bend; do all_tests="$all_tests $t"; done
+for t in test/*_test.bend; do
+  # Deliberately red control used by mobile_cache_identity_gate.py, which
+  # verifies its exact failure. It is not a passing regression program.
+  [ "$t" = test/cache_identity_before_test.bend ] && continue
+  all_tests="$all_tests $t"
+done
 
 tests=$all_tests
 if [ "${TEST_SHARD_COUNT:-1}" -gt 1 ]; then
@@ -65,7 +76,19 @@ for t in $tests; do
   fi
   ( s=$(now_ms)
     rc=0
-    BUN_JSC_forceRAMSize=4294967296 nice -n 19 bend "$t" >"$work/$i.out" 2>&1 || rc=$?
+    driver="test/tools/$(basename "$t" _test.bend).mjs"
+    (
+      export BUN_JSC_forceRAMSize=4294967296
+      if [ -f "$driver" ]; then
+        if grep -q '^def main(' "$t"; then
+          nice -n 19 bend "$t" || exit $?
+        fi
+        nice -n 19 bend "$t" -o "$work/$i.mjs" || exit $?
+        nice -n 19 bun "$driver" "$PWD/$work/$i.mjs"
+      else
+        nice -n 19 bend "$t"
+      fi
+    ) >"$work/$i.out" 2>&1 || rc=$?
     echo $rc >"$work/$i.rc"
     e=$(now_ms)
     echo $(( e - s )) >"$work/$i.dur" ) &

@@ -55,8 +55,15 @@ else
   scripts/build-kistack.sh dist/kistack
 fi
 mkdir -p build
+compiler_notices() {
+  python3 scripts/native-compiler.py --verify-metadata "$1/compiler"
+  mkdir -p dist/licenses/bend
+  cp "$1/compiler/LICENSE" "$1/compiler/bend-native-ids.patch" \
+    "$1/compiler/native-compiler.json" dist/licenses/bend/
+}
 if [ "$mode" = emit ]; then
   BACKPLANE_EMIT_ONLY=1 scripts/build-app.sh src/server/main.bend dist/backplane-serve
+  compiler_notices build/cc/backplane-serve
   rm -rf build/wire
   bend test/wire/index.html -o build/wire > /dev/null
   exit 0
@@ -69,16 +76,20 @@ fi
 # it only where a window can open
 if [ "$(uname -s)" = Linux ]; then
   scripts/build-app.sh src/app/main.bend dist/backplane
+  native_work=build/cc/backplane
   # argv[0] selects the original server entry; no second Bend emit/compile.
   # Copy, rather than symlink: self-exec must keep the server's pathname.
   cp dist/backplane dist/backplane-serve
 elif [ "$(uname -s)" = Darwin ]; then
   scripts/build-app.sh src/server/main.bend dist/backplane-serve
+  native_work=build/cc/backplane-serve
   cp dist/backplane-serve dist/backplane
 else
   scripts/build-app.sh src/server/main.bend dist/backplane-serve
   scripts/build-app.sh src/app/main.bend dist/backplane
+  native_work=build/cc/backplane
 fi
+compiler_notices "$native_work"
 cp dist/backplane build/backplane
 # the host helpers (Bun): the agents' browser, STEP -> GLB for the 3D
 # viewer and speech to text for dictation; the app runs without them, so a machine without bun skips them
