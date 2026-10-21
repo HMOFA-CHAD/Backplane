@@ -11,7 +11,7 @@ on:
         required: true
       target:
         type: choice
-        options: [both, linux-x64, darwin-arm64]
+        options: [both, linux-x64, linux-arm64, darwin-arm64]
         default: both
         required: true
 
@@ -28,7 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         target: ${{ fromJSON(inputs.target == 'both' && '["linux-x64","darwin-arm64"]' || format('["{0}"]', inputs.target)) }}
-    runs-on: ${{ matrix.target == 'linux-x64' && 'ubuntu-24.04' || 'macos-14' }}
+    runs-on: ${{ matrix.target == 'linux-x64' && 'ubuntu-24.04' || matrix.target == 'linux-arm64' && 'ubuntu-24.04-arm' || 'macos-14' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
