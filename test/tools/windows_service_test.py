@@ -43,6 +43,20 @@ def fixture_pe(dependency=None):
 
 
 class Metadata(unittest.TestCase):
+    def test_explicit_unsigned_portable_preserves_compiled_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            service = Path(temporary) / 'backplane-serve.exe'
+            unsigned = service.with_name('unsigned-service.exe')
+            service.write_bytes(fixture_pe());unsigned.write_bytes(service.read_bytes())
+            receipt = {'unsignedServiceSha256': api.sha(unsigned)}
+            result = api.signing(service, [], receipt, 'unsigned-portable-allowed', None)
+            self.assertFalse(result['signed'])
+            self.assertFalse(result['publicEligible'])
+            self.assertEqual(result['validation'], 'root-portable-policy-runtime-gates-pending')
+            service.write_bytes(service.read_bytes() + b'changed')
+            with self.assertRaises(ValueError):
+                api.signing(service, [], receipt, 'unsigned-portable-allowed', None)
+
     def test_paths_and_application_fonts(self):
         for name in ('../x', 'x\\y', 'x:stream', 'a/CON.txt', 'a.', 'a\nfile'):
             with self.subTest(name=name), self.assertRaises(ValueError):

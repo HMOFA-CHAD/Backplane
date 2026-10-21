@@ -522,9 +522,11 @@ def native(args):
 def signing(service, payload, compile_receipt, policy, thumbprint):
     unsigned = service.with_name('unsigned-service.exe')
     need(sha(unsigned) == compile_receipt['unsignedServiceSha256'], 'unsigned service receipt mismatch')
-    if policy == 'unsigned-internal':
+    if policy in ('unsigned-internal', 'unsigned-portable-allowed'):
         need(sha(service) == compile_receipt['unsignedServiceSha256'], 'compiled service changed')
-        return {'policy': policy, 'publicEligible': False, 'validation': 'not-signed'}
+        return {'policy': policy, 'signed': False, 'publicEligible': False,
+                'validation': ('root-portable-policy-runtime-gates-pending'
+                               if policy == 'unsigned-portable-allowed' else 'not-signed')}
     need(sys.platform == 'cygwin' and re.fullmatch('[0-9A-Fa-f]{40}', thumbprint or ''),
          'Authenticode requires Windows and approved certificate thumbprint')
     original, signed = bytearray(unsigned.read_bytes()), bytearray(service.read_bytes())
@@ -740,7 +742,7 @@ def main(argv=None):
     p = sub.add_parser('package')
     p.add_argument('--native-dir', required=True); p.add_argument('--runtime-payload', required=True)
     p.add_argument('--runtime-manifest-sha256', required=True); p.add_argument('--out', required=True)
-    p.add_argument('--signing-policy', required=True, choices=('unsigned-internal', 'authenticode'))
+    p.add_argument('--signing-policy', required=True, choices=('unsigned-internal', 'unsigned-portable-allowed', 'authenticode'))
     p.add_argument('--signing-thumbprint')
     p.add_argument('--managed-control-receipt'); p.add_argument('--managed-control-sha256')
     p = sub.add_parser('verify-resources')
