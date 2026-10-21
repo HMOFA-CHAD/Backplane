@@ -18,7 +18,8 @@ import { FrontendStartup, validatePresentation } from "./startup.js";
 import { FocusedCache, FocusedView, captureFocused, cacheIdentity, mergeFocused, scopeKey } from "./focused-cache.js";
 import { refreshCacheIdentity } from "./cache-identity.js";
 import { discoverViews } from "./thin-discovery.js";
-import { ThinHost } from "./thin-host.js";
+import { ThinHost, preservePresentationRoute, presentationTarget } from "./thin-host.js";
+import { ThinContinuations } from "./thin-continuations.js";
 import { ThinMailDraft, mailReplyField } from "./mail-drafts.js";
 import { ThinViews, viewCapability } from "./thin.js";
 import * as Wire from "./wire.js";
@@ -284,6 +285,7 @@ try {
   if (selected) ui = App.presentation_select(ui, selected);
 } catch {}
 let socket = null;
+const thinContinuations = new ThinContinuations();
 let frontend = null, frontendNode = null, wantFrontend = true, fallbackIntent = null;
 let viewMode = "discovering", remoteReady = false, remoteEpoch = "", thinSession = null;
 let pairingAccepted = false;
@@ -473,7 +475,7 @@ function render() {
   queued = false;
   const tl = document.getElementById("timeline");
   const t0 = PERF ? pnow() : 0;
-  const page = frontendNode ? App.presentation_overlay(frontendNode, presentationJson(currentSession()))
+  const page = frontendNode ? thinContinuations.project(App.presentation_overlay(frontendNode, presentationJson(currentSession())), expand)
     : focusedNode || App.view(canonicalBoot ? ui : App.presentation_wait(ui));
   const t1 = PERF ? pnow() : 0;
   patch(root, { $: T.El, tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: page, tail: { $: "Nil" } } });
@@ -1453,7 +1455,10 @@ function jsonValue(j, key) {
   return { $: T.Null };
 }
 const presentationJson = value => App.presentation_json(JSON.stringify(value));
-const choosePresentation = (session, action, value) => Wire.plain(App.presentation_choice(action, presentationJson(session), value));
+const choosePresentation = (session, action, value) => {
+  const chosen = Wire.plain(App.presentation_choice(action, presentationJson(session), value));
+  return action === "draft" ? preservePresentationRoute(session, chosen) : chosen;
+};
 function localPresentation(action, value, session) {
   if (action === "select") {
     ui = App.presentation_select(ui, value);
@@ -1542,6 +1547,10 @@ function showThinSearch(search) {
   query.focus();
 }
 function showThinMessage(message) {
+  if (viewMode === "view-v1") {
+    if (thinContinuations.accept(message)) later();
+    return;
+  }
   const { panel } = resultPanel(message.complete ? "Message" : "Partial message");
   const text = document.createElement("pre");text.textContent = message.text;text.style.cssText = "white-space:pre-wrap;overflow:auto;min-height:0;padding:12px";panel.append(text);
   if (!message.fromStart || message.hasMore) {
@@ -1555,6 +1564,7 @@ function showThinMessage(message) {
 }
 function stopThin() {
   checkpointFocused();
+  thinContinuations.clear();
   thinAttempt++;clearInterval(thinExpiry);clearTimeout(thinGreetingTimer);clearTimeout(thinDraftTimer);clearTimeout(thinFieldTimer);
   const previous = thin;thin = null;
   const s = thinSocket;thinSocket = null;
@@ -1597,16 +1607,18 @@ async function startThin() {
     if (!Number.isSafeInteger(next) || next < 2 ** 47 || next >= 2 ** 48 - 1) throw Error("Invalid view counter");
     thin = new ThinHost({
       hub: location.origin, cid, now: () => performance.now(), session: currentSession,
-      target: session => session.sel ? { kind: "thread", id: session.sel } : { kind: "recent", id: "" },
+      target: presentationTarget,
       counter: value => localStorage.setItem("backplane-view-request-id", String(value)),
       send: request => {
         if (!current() || s.readyState !== 1) throw Error("View connection closed");
         trace("send", { id: request.id, method: request.m });
         s.send(fromList(App.wire_out(JSON.stringify(request))));
       },
-      choice: choosePresentation, prepare: (session, input, action) => Wire.plain(App.presentation_prepare(presentationJson(session), presentationJson(input), action)),
+      choice: choosePresentation, prepare: (session, input, action) => preservePresentationRoute(
+        action === "send" || action === "send-alt" ? input : session,
+        Wire.plain(App.presentation_prepare(presentationJson(session), presentationJson(input), action))),
       selection: (target, session) => {
-        thinMailDraft.clear();
+        thinMailDraft.clear();thinContinuations.clear();
         if (target.kind === "thread") { ui = App.presentation_select(ui, target.id);void restoreFocused(); }
         else { focusedRequestedKey = null;focusedView.invalidate(); }
       },
@@ -1621,7 +1633,7 @@ async function startThin() {
         }
         later();
       },
-      ack: (session, reply) => Wire.plain(App.presentation_reply(presentationJson(session), presentationJson(reply))),
+      ack: (session, reply) => preservePresentationRoute(session, Wire.plain(App.presentation_reply(presentationJson(session), presentationJson(reply)))),
       decode: shown => App.presentation_node(presentationJson(shown)),
       command: command => presentationCommand(command),
       anchor: () => { const tl = document.getElementById("timeline"), a = tl && anchorOf(tl);return { id: a?.id || "", offset: Math.max(0, Math.round(a ? tl.getBoundingClientRect().top - a.off : 0)) }; },
@@ -1636,6 +1648,7 @@ async function startThin() {
         const field = mailReplyField(detail.shown);
         const accepted = field === undefined ? undefined : thinMailDraft.matches(detail.mailDraftContext, detail.epoch) ? thin.fieldValue("mrreply", field) : field;
         thinMailDraft.bind(detail.mailDraftContext, detail.epoch, accepted);
+        thinContinuations.bind(location.origin, detail);
         focusedView.remote(detail.epoch);remoteEpoch = detail.epoch;frontendNode = node;
         trace("thin-view", { entries: detail.window?.ids?.length || 0 });later();
       },
