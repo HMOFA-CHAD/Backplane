@@ -14,6 +14,19 @@ permissions:
   contents: read
 
 jobs:
+  windows:
+    name: Windows producer guards
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check Windows resource and request guards
+        run: |
+          python3 -m unittest discover -s test/tools -p windows_service_test.py
+          python3 -m unittest discover -s test/tools -p windows_release_request_test.py
+
   desktop-install:
     name: Linux desktop installer
     runs-on: ubuntu-24.04
