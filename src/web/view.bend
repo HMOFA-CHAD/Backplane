@@ -1788,6 +1788,13 @@ def View.pending.loc(+lc: I.Loc, ps: List<&2, String>) -> List<&2, D.Node>:
       D.El{"button", "", [D.At{"class", Bool.pick(String, AT.Att.image(p), "chip image", "chip")}, D.At{"title", MSG.T.composer.detach(lc, p)}, D.At{"data-value", p}, D.On{"click", "detach"}],
         [D.Txt{AT.Att.label(p) ++ " ×"}]} <> View.pending.loc(lc, t)
 
+# the draw board's button, beside Attach: host.js opens the board (draw.js)
+# with these words, and its picture is attached as a picked file is
+def View.draw.loc(+lc: I.Loc) -> D.Node:
+  D.El{"button", "", [D.At{"class", "attach draw"}, D.At{"type", "button"}, D.At{"title", MSG.T.composer.draw.tip(lc)}, D.At{"data-draw", "attach"},
+    D.At{"data-draw-title", MSG.T.draw.title(lc)}, D.At{"data-draw-hint", MSG.T.draw.hint(lc)}, D.At{"data-draw-save", MSG.T.draw.save(lc)},
+    D.At{"data-draw-cancel", MSG.T.draw.cancel(lc)}, D.At{"data-draw-length", MSG.T.draw.length(lc)}], [WI.WIcon.svg("square-pen", 16)]}
+
 # what the next message attaches (and what is still uploading)
 
 def View.pending(ps: List<&2, String>) -> List<&2, D.Node>:
@@ -1919,6 +1926,7 @@ def View.composer.loc(+lc: I.Loc, +draft: String, +send: String, +act: String, +
       D.At{"data-enter", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "send", "skill")}, D.At{"data-enter-alt", "send-alt"}, D.At{"data-tab", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill")}, D.At{"data-arrows", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-move")}, D.At{"data-esc", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-close")}, D.At{"data-paste", "attach"}], Nil{}},
     D.El{"div", "", [D.At{"class", "composer-foot"}], [
       WI.WIcon.after("model-chip", "flag", "models", MSG.T.composer.model.tip(lc), VLabel.effort.label(lc, label, effort) ++ ctx, "chevron-down", 14),
+      View.draw.loc(lc),
       D.El{"label", "", [D.At{"class", "attach"}, D.At{"title", MSG.T.composer.attach.tip(lc)}], [WI.WIcon.svg("paperclip", 16),
         D.El{"input", "attach-file", [D.At{"type", "file"}, D.At{"multiple", ""}, D.At{"data-attach", "attach"}], Nil{}}]},
       D.El{"span", "", [D.At{"class", "foot-end"}], [View.mic.loc(lc, mic),

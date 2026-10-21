@@ -821,3 +821,16 @@ html:lang(ja) { line-break: strict; word-break: normal; }
 html:lang(ja) :is(.body, .set-label, .set-note, .bot-note, .ask-head, .ask-detail, .tour-body, .fm-note, .secret-line, .item-text) { overflow-wrap: anywhere; }
 html:lang(ja) :is(.set-text, .set-ctl) { min-width: 0; }
 .model-menu .find { padding: 2px 2px 8px; border-bottom: none; }
+
+/* the draw board (draw.js) and its button beside Attach */
+.composer-foot .attach.draw { margin-right: 6px; font: inherit; }
+.composer-foot .attach.draw + .attach { margin-left: 0; }
+.draw-back { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.draw-box { background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; padding: 12px; max-width: 100%; max-height: 100%; }
+.draw-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.draw-hint { color: var(--dim); font-size: 12px; }
+.draw-paper { position: relative; line-height: 0; }
+.draw-paper canvas { width: min(960px, calc(100vw - 58px), calc((100vh - 150px) * 1.6)); aspect-ratio: 960 / 600; background: #fff; touch-action: none; cursor: crosshair; display: block; }
+.draw-len { position: absolute; transform: translate(-50%, -50%); width: 9em; line-height: normal; padding: 3px 6px; font: inherit; font-size: 13px; background: var(--raise); color: var(--text); border: 1px solid var(--accent); }
+.draw-foot { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.draw-swatch { width: 18px; height: 18px; margin-right: auto; border: 1px solid var(--line); }
