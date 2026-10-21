@@ -1,11 +1,11 @@
 'use strict';
 // Root-authorized deterministic artifact binding; no acceptance or product IO.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
-const p=require('./produce-release.cjs');
-const POLICY='3231c3ccb14b4139af2a05fa0419060011d34588f56b09a3c37e8c029c5f4e6a';
+const p=require('./produce-release.cjs'),browserOverlay=require('./selected-browser.cjs');
+const POLICY='fee94f08b3ce7d909a1265d9f33820ea816887703e940ca0d7a57374f9509314';
 const WINDOWS='1c12bd80b6f994ecd0d68d06b8ada98e1958de725d33f6380da3c0243ad099e3';
 const ref=file=>({path:path.resolve(file),sha256:p.digest(file),bytes:fs.statSync(file).size});
-function options(argv){const keys=['--policy','--components','--service','--out'];assert.equal(argv.length,8,'Use '+keys.join(', '));const a={};for(let i=0;i<8;i+=2){assert(keys.includes(argv[i])&&!a[argv[i]],'Unknown/duplicate option');assert(path.isAbsolute(argv[i+1]),'Absolute paths required');a[argv[i]]=argv[i+1];}return a;}
+function options(argv){const keys=['--policy','--components','--service','--out'],optional='--selected-browser';assert([8,10].includes(argv.length),'Use '+keys.join(', '));const a={};for(let i=0;i<argv.length;i+=2){assert((keys.includes(argv[i])||argv[i]===optional)&&!a[argv[i]],'Unknown/duplicate option');assert(path.isAbsolute(argv[i+1]),'Absolute paths required');a[argv[i]]=argv[i+1];}assert(keys.every(k=>a[k]),'Missing required option');return a;}
 function policyIdentity(policy,components,policySha){
   assert.equal(policySha,POLICY,'Untrusted root disposition');assert.equal(policy.kind,'backplane-root-staging-disposition');assert.equal(policy.status,'AUTHORIZED_STAGING_POLICY_PENDING_ACTUAL_SERVICE_BINDINGS');
   assert.equal(components.kind,'backplane-desktop-prepared-components');assert(p.TARGETS[components.target]);
@@ -31,15 +31,18 @@ function compose(a){
       assert.equal(p.digest(path.join(service.payload.directory,'EXECUTION-HELPER.py')),policy.tooling.serviceComponentProducerSha256,'Configured native helper differs from root policy');assert.equal(p.digest(path.join(service.payload.directory,'runtime-evidence/SERVICE-RUNTIME-PRODUCER.py')),executionTooling.serviceRuntimeFactorySha256,'Runtime factory differs from root policy');
     }
     const pins={shellReceiptSha256:shell.receipt.sha256,electronReceiptSha256:electron.receipt.sha256,...(target==='windows-x64'?{serviceArchiveSha256:service.archive.sha256}:{serviceReceiptSha256:service.receipt.sha256}),webManifestSha256:p.digest(web)};
-    const freeze={schema:1,kind:'backplane-release-freeze',status:'FROZEN',...components.release,sourceDateEpoch:policy.sourceDateEpoch,electronVersion:policy.electronVersion,compileInputs:policy.compileInputs,components:{[target]:pins},signingPolicy:{[target]:allowed.signingPolicy},lifecyclePolicy:{[target]:allowed.lifecyclePolicy},rootStagingDisposition:{sha256:POLICY,bytes:fs.statSync(a['--policy']).size},...(allowed.windowsShellSource?{windowsShellSource:allowed.windowsShellSource}:{}),executionTooling,scope:'Root-authorized source/artifact staging freeze for this target only. Actual desktop/sandbox/runtime acceptance remains pending.',published:false};
+    const selectedBrowser=a['--selected-browser']?browserOverlay.input(a['--selected-browser'],p,ref(a['--policy'])):null;
+    assert(Boolean(selectedBrowser)===Boolean(allowed.selectedBrowser),'Root selected browser/input must both be present');
+    if(selectedBrowser){browserOverlay.nativeServicePin(allowed,target,pins);assert.equal(allowed.selectedBrowser.resourceWebManifestSha256,pins.webManifestSha256,'Root must retain original resourceWeb');pins.selectedBrowserReceiptSha256=allowed.selectedBrowser.receipt.sha256;}
+    const freeze={schema:1,kind:'backplane-release-freeze',status:'FROZEN',...components.release,sourceDateEpoch:policy.sourceDateEpoch,electronVersion:policy.electronVersion,compileInputs:policy.compileInputs,components:{[target]:pins},signingPolicy:{[target]:allowed.signingPolicy},lifecyclePolicy:{[target]:allowed.lifecyclePolicy},rootStagingDisposition:{sha256:POLICY,bytes:fs.statSync(a['--policy']).size},...(allowed.windowsShellSource?{windowsShellSource:allowed.windowsShellSource}:{}),executionTooling,...(selectedBrowser?{selectedBrowser:allowed.selectedBrowser,resourceWeb:{[target]:{sourceCommit:components.release.commit,sourceTree:components.release.tree,webManifestSha256:pins.webManifestSha256}}}:{}),scope:'Root-authorized source/artifact staging freeze for this target only. Actual desktop/sandbox/runtime acceptance remains pending.',published:false};
     const candidate=path.join(temp,'freeze.json');p.write(candidate,freeze);
-    const request=path.join(temp,'request.json');p.write(request,{schema:1,kind:'backplane-electron-release-inputs',target,release:{...components.release,freezeReceipt:ref(candidate)},shell,electron,service});
+    const request=path.join(temp,'request.json');p.write(request,{schema:1,kind:'backplane-electron-release-inputs',target,release:{...components.release,freezeReceipt:ref(candidate)},shell,electron,service,...(selectedBrowser?{selectedBrowser}:{})});
     // Reuse actual producer validation: configured stable original BUILD, full
     // membership/architecture/closure/notices, matching web+gzip and exact policy.
     p.validateRequest(p.json(request),temp);
     fs.copyFileSync(candidate,out,fs.constants.COPYFILE_EXCL);return {target,status:'FROZEN_ACTUAL_ARTIFACT_BINDINGS_NOT_RUNTIME_ACCEPTANCE',freeze:ref(out),components:pins,published:false};
   }finally{fs.rmSync(temp,{recursive:true,force:true});}
 }
-function main(argv){if(argv.length===1&&argv[0]==='--help'){console.log('node desktop/compose-target-freeze.cjs --policy ABS_ROOT_DISPOSITION --components ABS_PREPARED_COMPONENT_INPUTS --service ABS_SERVICE_JSON_OR_WINDOWS_ZIP --out NEW_ABS_FREEZE_JSON\nPins authorized actual artifact bytes after existing complete stager validation. No runtime or acceptance claim.');return;}console.log(JSON.stringify(compose(options(argv)),null,2));}
-module.exports={options,policyIdentity};
+function main(argv){if(argv.length===1&&argv[0]==='--help'){console.log('node desktop/compose-target-freeze.cjs --policy ABS_ROOT_DISPOSITION --components ABS_PREPARED_COMPONENT_INPUTS --service ABS_SERVICE_JSON_OR_WINDOWS_ZIP --out NEW_ABS_FREEZE_JSON [--selected-browser ABS_BROWSER_INPUT_JSON]\nPins authorized actual artifact bytes after existing complete stager validation. No runtime or acceptance claim.');return;}console.log(JSON.stringify(compose(options(argv)),null,2));}
+module.exports={options,policyIdentity,compose};
 if(require.main===module)try{main(process.argv.slice(2));}catch(e){console.error('Target freeze: '+e.message);process.exitCode=1;}
