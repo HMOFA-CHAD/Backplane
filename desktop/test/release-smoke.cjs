@@ -37,7 +37,22 @@ function nativeIdentity(child){
   return JSON.parse(text);
 }
 async function bounded(p,label,ms=15000){let timer;try{return await Promise.race([p,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('Timed out: '+label)),ms))]);}finally{clearTimeout(timer);}}
-async function exitOf(child,label){if(child.exitCode!==null)return child.exitCode;return bounded(new Promise((resolve,reject)=>{child.once('exit',resolve);child.once('error',reject);}),label,10000);}
+async function exitOf(child,label){if(child.exitCode!==null||child.signalCode!==null)return child.exitCode;return bounded(new Promise((resolve,reject)=>{child.once('exit',resolve);child.once('error',reject);}),label,10000);}
+// Inspect the actual window's named Electron session; Playwright's default CDP
+// context is not the app's persist:backplane-ui cookie store. Never return values.
+async function windowAuthWitness({BrowserWindow,session},origin){
+  const windows=BrowserWindow.getAllWindows().filter(w=>{try{return new URL(w.webContents.getURL()).origin===origin;}catch{return false;}});
+  if(windows.length!==1)return {matchingWindows:windows.length,uiPartition:false,cookieCount:0,httpOnly:false};
+  const ses=windows[0].webContents.session,cookies=await ses.cookies.get({url:origin,name:'bp_token'});
+  return {matchingWindows:1,uiPartition:ses===session.fromPartition('persist:backplane-ui'),cookieCount:cookies.length,httpOnly:cookies.length===1&&cookies[0].httpOnly===true};
+}
+function childAlive(child){return !!child&&child.exitCode===null&&child.signalCode===null;}
+async function cleanupOwnedUi(app,child){
+  let error;
+  try{await bounded(app.close(),'owned UI cleanup',5000);if(childAlive(child))await exitOf(child,'owned UI exit');}
+  catch(e){error=e.message;if(childAlive(child)){child.kill('SIGTERM');try{await exitOf(child,'captured UI fallback exit');}catch(f){error+='; '+f.message;}}}
+  return {closed:!childAlive(child),error};
+}
 function argumentsFor(argv){
   if(argv.length===1&&argv[0]==='--help')return null;
   assert.equal(argv.length,4,'Use --stage ABS_STAGE --out NEW_ABS_EVIDENCE');
@@ -70,7 +85,7 @@ async function main(args){
   // Exact shipped Service owns the native child handle. UI then discovers and authenticates to it.
   const originalEnv=process.env;process.env=env;
   const service=new Service({home,binary,web:path.join(resources,'backplane-service/web'),expectedVersion:'0.12.0',residentService:true});
-  let app,page,second,error,phase='prepare',serviceIdentity,sandbox,uiPid,origin;
+  let app,uiChild,page,second,error,phase='prepare',serviceIdentity,sandbox,uiPid,origin;
   const facts={checks:[],errors:[],reconnectMode:'explicit-retry',deferredByUser:['telemetry-privacy','telemetry-consent','telemetry-ingestion'],scope:'Minimal actual matching-host stable stage startup/discovery/auth, renderer OS sandbox, current content, explicit Retry connection, single instance and resident close. Telemetry validation DEFERRED by user, not PASS. No Send/provider/scale/390/native-phone/IME/Browser parity or telemetry-upload claim.'};
   const save=()=>write(path.join(out,'result.json'),{...facts,status:error||facts.cleanupError||facts.cleanup?.portClosed===false?'FAIL':phase==='done'?'PASS':'INCOMPLETE',phase,error:error?.message,home,target:s.target,version:'0.12.0',commit:s.release.commit,tree:s.release.tree,stage:inspected,fixture:ref(__filename),serviceIdentity,sandbox,uiPid});
   const step=name=>{phase=name;save();console.log('phase '+name);};
@@ -85,7 +100,7 @@ async function main(args){
     assert.equal((await fetch(origin+'/auth/pair',{method:'POST',headers:{Authorization:'Bearer '+bad},signal:AbortSignal.timeout(3000)})).status,401);
     assert.equal((await fetch(origin+'/auth/pair',{method:'POST',headers:{Authorization:'Bearer '+token,Origin:'https://foreign.invalid'},signal:AbortSignal.timeout(3000)})).status,401);
     record('wrong credential and foreign-origin pairing refused');
-    step('packaged-window');app=await _electron.launch({executablePath:executable,args:[],chromiumSandbox:true,env,timeout:30000});uiPid=app.process().pid;
+    step('packaged-window');app=await _electron.launch({executablePath:executable,args:[],chromiumSandbox:true,env,timeout:30000});uiChild=app.process();uiPid=uiChild.pid;
     await app.context().addInitScript(()=>{const sockets=new Set(),c=globalThis.__releaseSockets={opened:0,closed:0,messages:0};const WS=WebSocket;globalThis.WebSocket=class extends WS{constructor(...args){super(...args);sockets.add(this);this.addEventListener('open',()=>c.opened++);this.addEventListener('message',()=>c.messages++);this.addEventListener('close',()=>{c.closed++;sockets.delete(this);});}};globalThis.__releaseDisconnect=()=>{for(const s of sockets)s.close();};});
     page=await app.firstWindow();page.setDefaultTimeout(15000);page.on('pageerror',e=>facts.errors.push(e.message));await ready();
     // A very fast initial page may predate addInitScript. A normal reload installs
@@ -93,7 +108,9 @@ async function main(args){
     await page.reload({waitUntil:'domcontentloaded'});await ready();await current();
     assert.deepEqual(await page.evaluate(()=>({node:typeof require,process:typeof process})),{node:'undefined',process:'undefined'});
     const versions=await page.evaluate(()=>backplaneDesktop.version());assert.equal(versions.service,'0.12.0');assert.equal(versions.electron,'44.9.2');
-    const cookie=(await app.context().cookies(origin)).find(c=>c.name==='bp_token');assert(cookie?.httpOnly,'Authenticated session cookie must be HttpOnly');assert(!await page.evaluate(()=>document.cookie.includes('bp_token=')));
+    facts.authSession=await app.evaluate(windowAuthWitness,origin);save();
+    assert.equal(facts.authSession.matchingWindows,1,'Expected one authenticated app window');assert.equal(facts.authSession.uiPartition,true,'Wrong app session partition');
+    assert.equal(facts.authSession.cookieCount,1,'Authenticated app session cookie missing/ambiguous');assert.equal(facts.authSession.httpOnly,true,'Authenticated app session cookie must be HttpOnly');assert(!await page.evaluate(()=>document.cookie.includes('bp_token=')));
     await page.screenshot({path:path.join(out,'current.png')});record('actual Unicode current DOM, exact versions, authenticated isolated preload');
     step('actual-renderer-sandbox');const runtime=await app.evaluate(({app,BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0],wc=w.webContents,p=wc.getLastWebPreferences(),pid=wc.getOSProcessId(),m=app.getAppMetrics().find(m=>m.pid===pid);return {platform:process.platform,arch:process.arch,mainPid:process.pid,rendererPid:pid,argv:process.argv,prefs:{sandbox:p.sandbox,nodeIntegration:p.nodeIntegration,contextIsolation:p.contextIsolation},metric:m?{pid:m.pid,type:m.type,sandboxed:m.sandboxed,integrityLevel:m.integrityLevel}:null};});
     assert(!runtime.argv.some(a=>['--no-sandbox','--disable-seccomp-filter-sandbox','--disable-namespace-sandbox','--disable-gpu-sandbox'].includes(a)));
@@ -101,7 +118,7 @@ async function main(args){
     if(process.platform==='linux')sandbox={...runtime,kernel:linuxSandbox(runtime.rendererPid,runtime.mainPid)};else{assert.equal(runtime.metric?.sandboxed,true,'Actual renderer is not sandboxed on OS level');sandbox=runtime;}
     write(path.join(out,'sandbox.json'),sandbox);record('actual renderer OS sandbox');
     step('single-instance');second=spawn(executable,[],{env,stdio:'ignore',windowsHide:true});const secondPid=second.pid;assert.equal(await exitOf(second,'second-instance exit'),0);
-    const windows=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length);assert.equal(windows,1);assert.equal(app.process().pid,uiPid);assert.equal(nativeIdentity(service.child).birth,serviceIdentity.birth);write(path.join(out,'single-instance.json'),{secondPid,secondExit:second.exitCode,windowCount:windows,originalUiPid:uiPid});record('second launcher joins single resident UI/service');
+    const windows=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length);assert.equal(windows,1);assert.equal(uiChild.pid,uiPid);assert.equal(nativeIdentity(service.child).birth,serviceIdentity.birth);write(path.join(out,'single-instance.json'),{secondPid,secondExit:second.exitCode,windowCount:windows,originalUiPid:uiPid});record('second launcher joins single resident UI/service');
     step('websocket-reconnect');const opened=await page.evaluate(()=>{const n={opened:__releaseSockets.opened,messages:__releaseSockets.messages};__releaseDisconnect();return n;});
     await page.waitForFunction(()=>__releaseSockets.closed>0&&document.documentElement.dataset.backplaneRemoteReady!=='true',null,{timeout:5000});
     await page.getByRole('button',{name:'Retry connection',exact:true}).click({timeout:5000});
@@ -113,14 +130,14 @@ async function main(args){
     facts.journal=journalCheck(prefix,fs.readFileSync(path.join(home,'events.jsonl')));assert.equal(facts.errors.length,0,facts.errors.join('\n'));step('done');
   }catch(e){error=e;process.exitCode=1;if(page&&!page.isClosed())await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});console.error(e.message);}
   finally{
-    if(second&&second.exitCode===null)second.kill();if(app)await bounded(app.close(),'owned UI cleanup',5000).catch(e=>{facts.cleanupError=e.message;process.exitCode=1;app.process().kill('SIGTERM');});
+    if(childAlive(second))second.kill();if(app){const uiCleanup=await cleanupOwnedUi(app,uiChild);if(uiCleanup.error){facts.cleanupError=uiCleanup.error;process.exitCode=1;}}
     // Test cleanup only: retained native ChildProcess handle, never lock-file PID.
     const child=service.child;if(child&&child.exitCode===null){child.kill('SIGTERM');await exitOf(child,'owned test-service cleanup').catch(e=>{facts.cleanupError=e.message;process.exitCode=1;});}
-    facts.cleanup={nativeChildPid:child?.pid,nativeChildExit:child?.exitCode,signal:child?.signalCode,uiClosed:!app||app.process().exitCode!==null||app.process().signalCode!==null};
+    facts.cleanup={nativeChildPid:child?.pid,nativeChildExit:child?.exitCode,signal:child?.signalCode,uiClosed:!childAlive(uiChild)};
     if(child&&child.exitCode===null&&child.signalCode===null){facts.cleanupError='Captured test service is still alive';process.exitCode=1;}
     if(origin){try{await fetch(origin+'/hello',{signal:AbortSignal.timeout(1500)});facts.cleanup.portClosed=false;process.exitCode=1;}catch{facts.cleanup.portClosed=true;}}
     process.env=originalEnv;save();
   }
 }
-module.exports={hostTarget,journalCheck,linuxSandbox,argumentsFor};
+module.exports={hostTarget,journalCheck,linuxSandbox,argumentsFor,windowAuthWitness,childAlive,cleanupOwnedUi};
 if(require.main===module)main(process.argv.slice(2)).catch(e=>{console.error(e.message);process.exitCode=1;});

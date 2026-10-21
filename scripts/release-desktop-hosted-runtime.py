@@ -16,10 +16,10 @@ import urllib.request
 
 SOURCE = '8147b68dbc9bcddad7e3b51ae7768ed9eb211ecc'
 TREE = '37c64023d084bca7f209db9d14a84f59d365f696'
-SOURCE_PACKET = '979f95ec71e95386590750e5155b510e2d60ba46c70572f2bed9850bcdf88247'
-POLICY = '0aa04259b61b66bb2e1f0ccb755eae2d0c8e31ab05c685eef7e4d7de641e02cf'
-SMOKE = '6cd4e1904f1b34923e96d6bcc172d4875d2b2264795a9e429ede196ec12aa8d9'
-POST_SMOKE = 'a2561951c7b9d9a8a269862c8db7be5e899c749a4e8a92156b862ccf409da72d'
+SOURCE_PACKET = '840c92d2e05c9d9138d99f01be0eec0a4fd1417b741a3fc620c98a3cdb38027c'
+POLICY = '2376fa34e8ba5c786b23056392cd35730ce5a2c4c09982868cd7db89dcd510dd'
+SMOKE = '0a026809d53f474118c435c674b378f9b4701fe0f958691937989a33de17be70'
+POST_SMOKE = '36893e1fe935a3a43f06ac42234864ee3441bc688003daa5e0221ff3f950536d'
 PRODUCER = 'f2ead45db28612c7f744a1b4da453f6b861f2a6e5ad0f8a8363caec016a2fb89'
 IO = 'b449d3a77f320ea865924637c662c5de80f74093232188160844837f3a3f6489'
 BINARIES = {'linux-arm64': '9accaca97d8ce7507550a1ee5e9acf93fb32aa3c73412301c59f79fb34ac4081',
@@ -125,7 +125,7 @@ def run(args):
     if original_disposition != POLICY:
         supersession = policy['runtimeToolSupersession']
         permitted = supersession['preservedStages'].get(args.target, {})
-        require(original_disposition == supersession['previousStagingDispositionSha256']
+        require(original_disposition == permitted.get('stagingDispositionSha256')
                 and permitted.get('stageReceiptSha256') == sha(stage/'STAGE.json')
                 and permitted.get('payloadManifestSha256') == staged['payloadManifestSha256'],
                 'Existing stage not bound by root execution-tool supersession')

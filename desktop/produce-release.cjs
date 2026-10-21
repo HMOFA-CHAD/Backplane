@@ -183,7 +183,7 @@ function stage(requestFile,output){
   const resources=inside(output,t.resources);fs.mkdirSync(resources,{recursive:true});check(!fs.existsSync(path.join(resources,'app'))&&!fs.existsSync(path.join(resources,'backplane-service')),'Runtime contains conflicting product resources');
   copy(shell.root,path.join(resources,'app'));copy(service.root,path.join(resources,'backplane-service'));
   membership(path.join(resources,'app'),shell.receipt.members,target);membership(path.join(resources,'backplane-service'),service.validatedMembers||service.receipt.members,target);
-  for(const [n,expected]of Object.entries(electron.receipt.members)){
+  for(const [n,expected]of Object.entries(membershipExpectation(electron.receipt.members,target))){
    if(target==='darwin-arm64'&&n==='Electron.app/Contents/Info.plist')continue;
    const mapped=target.startsWith('linux-')?'runtime/'+(n==='electron'?'backplane-desktop':n):target==='windows-x64'?(n==='electron.exe'?'Backplane.exe':n):n.startsWith('Electron.app/')?'Backplane.app/'+n.slice(13).replace(/^Contents\/MacOS\/Electron$/,'Contents/MacOS/Backplane'):'NOTICES/electron/'+n;
    const dest=inside(output,mapped),st=fs.lstatSync(dest);
