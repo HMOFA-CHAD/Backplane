@@ -793,16 +793,33 @@ function inputValue(el) {
 // Files: each goes whole as the body of one POST /attach to the hub (the
 // pairing cookie carries the token); "attach-up" and "attach-end" tell
 // app.bend it started and what the hub answered, and it decides the rest
-async function upload(action, file) {
+function uploadScope() {
+  const controller = viewMode === "compatibility" ? null : thin;
+  return { mode: viewMode, controller,
+    thread: viewMode === "compatibility" ? App.sel(ui) : currentSession().sel,
+    target: controller?.target, epoch: controller?.epoch,
+    viewId: controller?.client.links.get(controller.hub)?.viewId };
+}
+async function uploadFiles(action, files, scope = uploadScope()) {
+  for (const file of files) await upload(action, file, scope);
+}
+async function upload(action, file, scope = uploadScope()) {
   const key = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, "0")).join("");
   const name = file.name || "pasted." + ((file.type || "").split("/")[1] || "bin");
   if (file.size === 0) return;
-  const uploadController = viewMode === "compatibility" ? null : thin;
-  const thread = viewMode === "compatibility" ? App.sel(ui) : currentSession().sel;
+  const { controller: uploadController, thread } = scope;
+  const current = () => viewMode === scope.mode && (uploadController
+    ? thin === uploadController && uploadController.ready && currentSession().sel === thread && uploadController.epoch === scope.epoch
+      && uploadController.target?.kind === scope.target?.kind && uploadController.target?.id === scope.target?.id
+      && uploadController.client.links.get(uploadController.hub)?.viewId === scope.viewId
+    : App.sel(ui) === thread);
+  if (!thread || !current()) return;
   if (viewMode !== "compatibility") {
     if (!remoteReady || !uploadController || !await uploadController.perform("attach-up", JSON.stringify({ name, size: file.size }))) return;
   } else dispatch("attach-up", JSON.stringify({ name, size: file.size }));
-  if (App.uploading(ui, thread) !== name) return;
+  // Admission is owned by the actual actor response. The renderer's separate
+  // local App never received attach-up on this path and cannot approve it.
+  if (!current() || (uploadController ? uploadController.session.drafts["@att.up:" + thread] : App.uploading(ui, thread)) !== name) return;
   const q = new URLSearchParams({ thread, key, name });
   let answer = "";
   try {
@@ -812,16 +829,18 @@ async function upload(action, file) {
   } catch {
     answer = JSON.stringify({ text: "the upload did not reach the hub", thread, upload: true });
   }
-  if (uploadController && (thin !== uploadController || viewMode !== "view-v1")) return;
+  if (!current()) return;
   if (viewMode === "compatibility") dispatch("attach-end", answer);
   else if (thin === uploadController) {
     // The HTTP body and completion stay bound to the original chosen thread,
     // even if the person selects another thread while the upload travels.
     let completed;try { completed = JSON.parse(answer); } catch { return; }
     if (completed.thread !== thread) return;
-    const r = App.act(ui, "attach-end", answer);ui = r.ui;run(r.cmds);
-    thin.adoptLocalSession(Wire.plain(App.presentation(ui)));
-    thin.update();later();
+    // Finish through the same live actor, not a renderer snapshot that the
+    // server correctly refuses as attachment authority. The HTTP result's
+    // original thread and exact view fence keep any later selection/draft out
+    // of this completion. A retired view never retargets it into a new actor.
+    await uploadController.perform("attach-end", answer);
   }
 }
 
@@ -830,9 +849,7 @@ document.addEventListener("change", (e) => {
   if (!el || !el.files) return;
   const files = [...el.files];
   el.value = "";
-  (async () => {
-    for (const f of files) await upload(el.getAttribute("data-attach"), f);
-  })();
+  void uploadFiles(el.getAttribute("data-attach"), files);
 });
 
 // The draw board (draw.js): the composer's [data-draw] button opens it, its
@@ -843,8 +860,9 @@ document.addEventListener("click", (e) => {
   if (!el) return;
   e.preventDefault();
   const d = el.dataset;
+  const scope = uploadScope();
   openDraw({ title: d.drawTitle, hint: d.drawHint, save: d.drawSave, cancel: d.drawCancel, length: d.drawLength },
-    (file) => upload(el.getAttribute("data-draw"), file));
+    (file) => upload(el.getAttribute("data-draw"), file, scope));
 });
 
 // Drops: files dragged onto a [data-drop] area go to its action, the way
@@ -880,9 +898,7 @@ document.addEventListener("drop", (e) => {
   dropHover(null);
   const files = [...(e.dataTransfer.files || [])];
   if (!el || files.length === 0) return;
-  (async () => {
-    for (const f of files) await upload(el.getAttribute("data-drop"), f);
-  })();
+  void uploadFiles(el.getAttribute("data-drop"), files);
 });
 
 // Row drags: a [data-drag] element dropped on a [data-drag-to] one with the
@@ -940,9 +956,7 @@ document.addEventListener("paste", (e) => {
   }
   if (!el || files.length === 0) return;
   e.preventDefault();
-  (async () => {
-    for (const f of files) await upload(el.getAttribute("data-paste"), f);
-  })();
+  void uploadFiles(el.getAttribute("data-paste"), files);
 });
 
 // text typed into a key field without a key event (a phone keyboard)

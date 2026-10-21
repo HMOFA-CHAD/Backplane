@@ -10634,7 +10634,7 @@ law mailroom_tab_after_chat:
 law mailroom_uber_default:
   for +u: U.Ui
   for +id: String
-  {BU.BU.tab.dflt(u, id) == Bool.pick(String, UBR.Uber.is(U.Ui.state(u), id), "mail", "chat") : String}
+  {BU.BU.tab.dflt(u, id) == "chat" : String}
 
 law mailroom_run_collapsed_default:
   for +now: Nat

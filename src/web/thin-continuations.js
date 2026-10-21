@@ -52,8 +52,7 @@ export class ThinContinuations {
         const c = control(n);if (c) controls.set(c, [...controls.get(c) || [], n]);
         for (const k of items(n.kids)) scan(k);
       };scan(node);
-      const fallback = [], fallbackIds = new Set();
-      const readerNodes = (id, button, activity, unmatched) => {
+      const readerNodes = (id, button, activity) => {
         const reader = this.readers.get(id), out = [];
         if (reader) out.push(element('pre', 'thin-text:' + id, { class: 'thin-message-text',
           style: 'white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%',
@@ -64,7 +63,7 @@ export class ThinContinuations {
           // original empty cursor for the first explicit request only.
           const attrs = reader ? items(button.attrs).map(a => is(a, 'At') && a.name === 'data-value'
             ? { ...a, value: JSON.stringify({ entryId: id, cursor: reader.cursor }) } : a) : items(button.attrs);
-          out.push(label({ ...button, attrs: list(attrs) }, wording + (unmatched ? ' (' + id + ')' : ''), 'thin-more:' + id));
+          out.push(label({ ...button, attrs: list(attrs) }, wording, 'thin-more:' + id));
         }
         return out;
       };
@@ -72,16 +71,16 @@ export class ThinContinuations {
         if (!is(n, 'El')) return n;
         const id = control(n);
         if (id) {
-          if ((rows.get(id)?.length !== 1 || controls.get(id)?.length !== 1) && !fallbackIds.has(id)) {
-            fallbackIds.add(id);fallback.push(...readerNodes(id, n, false, true));
-          }
+          // Folded or otherwise absent entries expose their reader only when
+          // their own unique row is shown. Never add an orphan footer panel
+          // or guess another row; issued partial metadata remains untouched.
           return null;
         }
         let kids = items(n.kids).map(rewrite).filter(Boolean);
         const row = attr(n, 'data-id'), button = controls.get(row);
         if (rows.get(row)?.length === 1 && rows.get(row)[0] === n && button?.length === 1) {
           const reader = this.readers.get(row), activity = classes(n).includes('act');
-          const extra = readerNodes(row, button[0], activity, false);
+          const extra = readerNodes(row, button[0], activity);
           if (reader && !activity) kids = [...extra, ...kids.filter(k => !is(k, 'El') || !classes(k).includes('body'))];
           else kids.push(...extra);
         }
@@ -92,11 +91,7 @@ export class ThinContinuations {
         }
         return { ...n, kids: list(kids) };
       };
-      const result = rewrite(node);
-      if (fallback.length) result.kids = list([...items(result.kids), element('details', 'thin-unmatched', {}, [
-        element('summary', '', {}, [text('Additional message text')]), ...fallback
-      ])]);
-      return result;
+      return rewrite(node);
     };
     return walk(root, n => attr(n, 'id') === 'timeline' ? timeline(n) : n);
   }

@@ -40,15 +40,18 @@ test('RED generic server footer groups indistinguishable More controls; GREEN at
   assert.equal(kids(p.result).filter(n => n.tag === 'button').length, 0);assert.equal(JSON.stringify(p.original), p.frozen);
   for (const memoValue of p.cache.values()) assert.equal(controls(memoValue).length, 0);
 });
-test('folded and outgoing-link entries retain explicit exact-ID fallback without guessed row association', async () => {
+test('folded and outgoing entries add no orphan Additional message text panel; unfolding restores exact-row reader', async () => {
   const p = await project(timeline([el('button', '', [{ event: 'click', action: 'select' }, at('data-value', 'other-thread')], [txt('outgoing')]), button('hidden'), button('linked')]), ['hidden', 'linked']);
-  const fallback = all(p.result).find(n => n.tag === 'details');assert(fallback);assert.equal(controls(fallback).length, 2);
-  assert.match(textOf(fallback), /\(hidden\)/);assert.match(textOf(fallback), /\(linked\)/);
+  assert.equal(all(p.result).find(n => n.tag === 'details'), undefined);assert.equal(controls(p.result).length, 0);
+  assert(!textOf(p.result).includes('Additional message text'));
   assert.equal(kids(p.result)[0].kids.head.text, 'outgoing');
+  const shown = p.c.project(p.node(timeline([memo('hidden'), button('hidden'), button('linked')])), p.expand);
+  const row = all(shown).find(n => attrs(n)['data-id'] === 'hidden');assert.equal(controls(row).length, 1);assert.equal(controls(shown).length, 1);
+  assert.equal(p.c.partial.size, 2);assert.equal(p.c.readers.size, 0);
 });
-test('ambiguous repeated rows never receive continuation; duplicate controls retain only one fallback', async () => {
+test('ambiguous repeated rows and duplicate controls never create an orphan reader or extra-text panel', async () => {
   const p = await project(timeline([memo('a'), memo('a'), button('a'), button('a')]), ['a']);
-  assert.equal(controls(p.result).length, 1);assert(all(p.result).some(n => n.tag === 'details'));
+  assert.equal(controls(p.result).length, 0);assert(!all(p.result).some(n => n.tag === 'details'));assert.equal(p.c.partial.size, 1);
 });
 test('earlier history is separately labelled and no longer inherits hidden one-pixel class', async () => {
   const p = await project(timeline([el('button', '', [at('class', 'earlier'), { event: 'click', action: 'view-page' }, at('data-value', '')], [txt('More')])]), []);

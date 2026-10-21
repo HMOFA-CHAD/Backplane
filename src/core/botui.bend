@@ -450,14 +450,14 @@ def BU.nav.accept(+ts: List<&2, String>, +t: String) -> Bool:
 def BU.tab(+u: U.Ui) -> String:
   Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@btab")), "chat", U.Ui.scratch(u, "@btab"))
 
-# the tab when none is picked (or the one picked is not the bot's): the
-# uberbot's status, else chat
+# No selected tab opens Chat, including the person's main bot. Mailroom and
+# Status remain explicit choices and an already selected valid tab is kept.
 def BU.tab.dflt(+u: U.Ui, +id: String) -> String:
-  Bool.pick(String, UB.Uber.is(U.Ui.state(u), id), "mail", "chat")
+  "chat"
 
 # the tab shown: the one picked, when this bot has it, else its chat
 def BU.tab.default(+u: U.Ui, +id: String) -> String:
-  Bool.pick(String, U.Mailv.enabled(u), BU.tab.dflt(u, id), Bool.pick(String, UB.Uber.is(U.Ui.state(u), id), "status", "chat"))
+  BU.tab.dflt(u, id)
 
 def BU.tab.of(+u: U.Ui, +id: String) -> String:
   Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@btab")), BU.tab.default(u, id),
