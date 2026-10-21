@@ -28,9 +28,9 @@ COMMON_GATES = {"runtime", "auth-security", "product-parity",
 
 # Root accepted these specific component source scopes after the server-only
 # telemetry repair. This is not an arbitrary source override or runtime waiver.
-COMPONENT_DISPOSITION_SHA256 = "4068bc31c62be4482a18c61d7b971e1057226312cb5ee4016e486305682cbaaf"
-CORRECTED_SERVICE_SOURCE = ("9b573871d5e37bc2575c59576ad9cc8196bb34e7",
-                            "b3ca462f89d0d244d93915c78a8bda9a4f98f892")
+COMPONENT_DISPOSITION_SHA256 = "10961e9bfa190b09cec6b79ee5028e5ba9657ed5ef54513ecc20007c4d104b29"
+CORRECTED_SERVICE_SOURCE = ("8147b68dbc9bcddad7e3b51ae7768ed9eb211ecc",
+                            "37c64023d084bca7f209db9d14a84f59d365f696")
 RETAINED_COMPONENT_SOURCE = ("920c5a399dc7880bb3c6518239844570f116b3c7",
                              "02b851c54fff33a28e9d1cc60298f6527b78dd32")
 
