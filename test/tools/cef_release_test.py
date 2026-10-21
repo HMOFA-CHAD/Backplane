@@ -30,7 +30,7 @@ class PublicRelease(unittest.TestCase):
         shutil.copytree(SOURCE / 'assets/icon', self.repo / 'assets/icon', dirs_exist_ok=True)
         (self.repo / 'LICENSE').write_text('App license fixture')
         (self.repo / 'dist/web/index.html').write_text('web-first')
-        for file in ('backplane', 'backplane-serve'):
+        for file in ('backplane', 'backplane-serve', 'backplane-render'):
             shutil.copy2('/bin/true', self.repo / 'dist' / file)
         self.prefix = self.root / 'prefix'
         self.home = self.repo / 'home'

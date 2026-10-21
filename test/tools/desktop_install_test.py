@@ -26,7 +26,8 @@ class DesktopInstallTest(unittest.TestCase):
         (package / "web").mkdir()
         (package / "web" / "index.html").write_text("fixture\n")
         executable = '#!/bin/sh\nprintf "%s\\n" "$0" "$@" > "$DESKTOP_LAUNCH_RECORD"\n'
-        for name in ["backplane", "backplane-serve"]:
+        # backplane is the launcher (deploy/backplane-launch.sh); a stub stands in
+        for name in ["backplane", "backplane-serve", "backplane-render"]:
             path = package / name
             path.write_text(executable)
             path.chmod(0o755)
