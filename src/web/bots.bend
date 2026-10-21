@@ -1,11 +1,14 @@
 import Base
+import ../core/json.bend as J
 import ../core/msgs.bend as MSG
 import ../core/model.bend as M
+import ../core/signal.bend as SG
 import ../core/i18n.bend as I
 import ./dom.bend as D
 import ./icon.bend as WI
 import ./cat.bend as WC
 import ./space.bend as WS
+import ./mailroom.bend as WM
 import ../core/client.bend as U
 import ../core/bot.bend as BT
 import ../core/botui.bend as BI
@@ -220,7 +223,7 @@ def WB.tabs.go(+lc: I.Loc, ts: List<&2, String>, +cur: String) -> List<&2, D.Nod
 
 # the tabs a bot has (BU.head), the one shown on
 def WB.tabs(+lc: I.Loc, +hd: BI.Head) -> D.Node:
-  D.El{"nav", "", [D.At{"class", "bot-tabs"}], WB.tabs.go(lc, BI.Head.tabs(hd), BI.Head.tab(hd))}
+  D.El{"nav", "", [D.At{"class", "bot-tabs"}], WB.tabs.go(lc, BI.Head.tabs(hd), BI.BU.nav.parent(BI.Head.tabs(hd), BI.Head.tab(hd)))}
 
 # Browser: the bot's page, a frame the hub serves (the pairing cookie
 # carries the token, as for /img); n changes with each "shot" message.
@@ -253,12 +256,48 @@ def WB.browser.k.loc(+lc: I.Loc, none: Bool, +n: String, +id: String, +name: Str
 def WB.browser.k(none: Bool, +n: String, +id: String, +name: String) -> D.Node:
   WB.browser.k.loc(I.En{}, none, n, id, name)
 
+# The local Electron guest paints directly in this measured DOM rectangle.
+# Main/service own its actual tab and input authority; DOM claims grant neither.
+def WB.browser.surface.k(direct: Bool, +lc: I.Loc, +u: U.Ui, +id: String, +name: String) -> D.Node:
+  match direct:
+    case True{}:
+      D.El{"div", "desktop-browser:" ++ id, [D.At{"class", "desktop-browser"}, D.At{"data-desktop-browser-owner", id}, D.At{"aria-label", MSG.T.browser.owner(lc, name)}],
+        [D.El{"span", "desktop-browser-status:" ++ id, [D.At{"class", "desktop-browser-status"}, D.At{"role", "status"}, D.At{"aria-live", "polite"}], [D.Txt{"Connecting Browser…"}]},
+         D.El{"button", "desktop-browser-reconnect:" ++ id, [D.At{"type", "button"}, D.At{"data-desktop-browser-reconnect", ""}, D.At{"hidden", ""}], [D.Txt{"Reconnect Browser"}]}]}
+    case False{}:
+      WB.browser.in.loc(lc, U.Teach.input(u, id), String.is_empty(U.Ui.info(u, "shot." ++ id)), U.Ui.info(u, "shot." ++ id), id, name)
+
+def WB.browser.surface.ready(provisional: Bool, lc: I.Loc, +u: U.Ui, id: String, name: String) -> D.Node:
+  match provisional:
+    case True{}: D.El{"div", "browser-loading", [D.At{"role", "status"}], [D.Txt{MSG.T.viewer.loading(lc)}]}
+    case False{}: WB.browser.surface.k(String.eq(U.Ui.scratch(u, "@desktop.browser"), "1"), lc, u, id, name)
+
+def WB.browser.surface.loc(+lc: I.Loc, +u: U.Ui, +id: String, +name: String) -> D.Node:
+  WB.browser.surface.ready(String.eq(U.Ui.scratch(u, "@presentation"), "1"), lc, u, id, name)
+
 def WB.tbtns(bs: List<&2, U.TBtn>) -> List<&2, D.Node>:
   match bs:
     case Nil{}:
       Nil{}
     case U.TBtn{+label, +action, +value, +primary} <> t:
       D.Dom.button(Bool.pick(String, primary, "primary", ""), action, value, label, label) <> WB.tbtns(t)
+
+def WB.browser.tabs(ts: List<&2, J.Json>) -> List<&2, D.Node>:
+  match ts:
+    case Nil{}: Nil{}
+    case +tab <> rest:
+      +title = J.Json.get_str(tab, "title", "")
+      WB.div(Bool.pick(String, J.Json.get_bool(tab, "active", False{}), "browser-tab on", "browser-tab"), [
+        D.Dom.button("browser-tab-title", "br-select", J.Json.get_str(tab, "id", ""), J.Json.get_str(tab, "url", ""),
+          Bool.pick(String, String.is_empty(title), J.Json.get_str(tab, "url", "New tab"), title)),
+        D.Dom.button("", "br-close", J.Json.get_str(tab, "id", ""), "Close tab", "×")]) <> WB.browser.tabs(rest)
+
+def WB.browser.controls(+lc: I.Loc, +u: U.Ui, +page: String) -> List<&2, D.Node>:
+  [WB.div("browser-tabs", List.append(&2, D.Node, WB.browser.tabs(U.Browse.tabs(u, page)), [D.Dom.button("", "br-new", "", "New tab", "+")])),
+   WB.div("browser-address", [D.Dom.button("", "br-back", "", MSG.T.tour.back(lc), "←"),
+    D.Dom.button("", "br-forward", "", "Forward", "→"), D.Dom.button("", "br-reload", "", MSG.T.common.reload(lc), "↻"),
+    WB.input("browser-address:" ++ page, U.Browse.field(page), U.Browse.address(u, page), MSG.T.browser.address(lc), "br-go"),
+    D.Dom.button("", "br-go", "", MSG.T.common.go(lc), MSG.T.common.go(lc))])]
 
 def WB.urlbar.loc(+lc: I.Loc, +u: U.Ui) -> D.Node:
   WB.div("bform row", [D.Dom.button("", "bb-back", "", MSG.T.tour.back(lc), MSG.T.tour.back(lc)), D.Dom.button("", "bb-reload", "", MSG.T.common.reload(lc), MSG.T.common.reload(lc)),
@@ -282,7 +321,7 @@ def WB.strip.k.loc(+lc: I.Loc, s: U.TStrip, +u: U.Ui, +input: Bool) -> D.Node:
       WB.div("tk-strip mode" ++ Nat.show(mode), D.Dom.cat([WB.div("tk-head", [D.Dom.span("tk-title", title),
           D.Dom.span("tk-meta", Bool.pick(String, rec, clock ++ " · " ++ Nat.show(steps) ++ Bool.pick(String, Nat.is_eq(steps, 1n), " step", " steps"), "")),
           WB.div("tk-btns", WB.tbtns(bs))])],
-        D.Dom.cat(D.Dom.when(input, WB.urlbar.loc(lc, u)), D.Dom.when(rec, WB.notebar.loc(lc, u)))))
+        D.Dom.when(rec, WB.notebar.loc(lc, u))))
 
 # one recorded step in the save sheet: its typed value is a chip that makes
 # it a parameter (a secret has none), named in a field once marked
@@ -326,8 +365,8 @@ def WB.browser.m(+lc: I.Loc, sheet: Bool, +u: U.Ui, +b: BT.Bot) -> D.Node:
     case False{}:
       +id = BT.Bot.id(b)
       +input = {U.Teach.input(u, id) : Bool}
-      WB.div("tk-live", [WB.strip.k.loc(lc, U.Teach.strip.loc(lc, u, id), u, input),
-        WB.browser.in.loc(lc, input, String.is_empty(U.Ui.info(u, "shot." ++ id)), U.Ui.info(u, "shot." ++ id), id, BT.Bot.name(b))])
+      WB.div("tk-live", List.append(&2, D.Node, WB.strip.k.loc(lc, U.Teach.strip.loc(lc, u, id), u, input) <> WB.browser.controls(lc, u, id),
+        [WB.browser.surface.loc(lc, u, id, BT.Bot.name(b))]))
 
 def WB.browser(+lc: I.Loc, +u: U.Ui, +b: BT.Bot) -> D.Node:
   WB.browser.m(lc, Nat.is_eq(U.Teach.mode(u, BT.Bot.id(b)), 2n), u, b)
@@ -892,15 +931,33 @@ def WB.pago.loc(+lc: I.Loc, +kind: String, +now: Nat, +at: Nat) -> String:
 def WB.pago(+kind: String, +now: Nat, +at: Nat) -> String:
   WB.pago.loc(I.En{}, kind, now, at)
 
+def WB.pactivity(+state: String) -> String:
+  Bool.pick(String, Bool.or(String.eq(state, "approval"), Bool.or(String.eq(state, "question"), String.eq(state, "failed"))), "blocked",
+    Bool.pick(String, String.eq(state, "working"), "active", Bool.pick(String, String.eq(state, "settled"), "settled", "inactive")))
+
+def WB.pmark.signal(+lc: I.Loc, +state: String) -> D.Node:
+  D.El{"span", "", [D.At{"class", "dot " ++ WB.pactivity(state)}, D.At{"role", "img"},
+    D.At{"aria-label", SG.Signal.label.loc(lc, WB.pactivity(state))}, D.At{"title", SG.Signal.label.loc(lc, WB.pactivity(state))}], Nil{}}
+
+def WB.pmark.activity(+state: String) -> Bool:
+  Bool.or(Bool.or(String.eq(state, "approval"), String.eq(state, "question")),
+    Bool.or(Bool.or(String.eq(state, "failed"), String.eq(state, "working")),
+      Bool.or(Bool.or(String.eq(state, "idle"), String.eq(state, "finished")), Bool.or(String.eq(state, "settled"), String.eq(state, "waiting")))))
+
+def WB.pmark.loc(+lc: I.Loc, +state: String) -> D.Node:
+  Bool.pick(D.Node, String.eq(state, "reminder"), D.El{"span", "", [D.At{"class", "pbell"}], [WI.WIcon.svg("bell", 12)]},
+    Bool.pick(D.Node, WB.pmark.activity(state), WB.pmark.signal(lc, state),
+      D.El{"span", "", [D.At{"class", WB.pdot(state)}, D.At{"role", "img"}, D.At{"aria-label", state}], Nil{}}))
+
 def WB.pmark(+state: String) -> D.Node:
-  Bool.pick(D.Node, String.eq(state, "reminder"), D.El{"span", "", [D.At{"class", "pbell"}], [WI.WIcon.svg("bell", 12)]}, D.Dom.span(WB.pdot(state), ""))
+  WB.pmark.loc(I.En{}, state)
 
 # one row: a button for what a click sends (act, val), a fixed height
 def WB.prow(+lc: I.Loc, r: PL.PRow, +now: Nat) -> D.Node:
   match r:
     case PL.PRow{+kind, +id, +act, +val, +title, +sub, +machine, +state, +at, away}:
       D.El{"button", kind ++ ":" ++ id, [D.At{"class", Bool.pick(String, away, "plane-row away", "plane-row")}, D.At{"title", title}, D.At{"data-value", val}, D.On{"click", act}],
-        [WB.pmark(state), D.Dom.span("title", PL.Plane.title.shown(lc, kind, title)), D.Dom.span("sub", sub), D.Dom.span("mach", machine), D.Dom.span("ago", WB.pago.loc(lc, kind, now, at))]}
+        [WB.pmark.loc(lc, state), D.Dom.span("title", PL.Plane.title.shown(lc, kind, title)), D.Dom.span("sub", sub), D.Dom.span("mach", machine), D.Dom.span("ago", WB.pago.loc(lc, kind, now, at))]}
 
 def WB.prows(+lc: I.Loc, rs: List<&2, PL.PRow>, +now: Nat) -> List<&2, D.Node>:
   match rs:
@@ -971,7 +1028,7 @@ def WB.plane.k(+lc: I.Loc, +p: PL.Plane, +h: PL.PHome, +now: Nat) -> D.Node:
 
 # the Status tab's body
 def WB.plane(+lc: I.Loc, +u: U.Ui) -> D.Node:
-  WB.plane.k(lc, PL.Plane.of(u, U.Side.now(u)), PL.Plane.home(u), U.Side.now(u))
+  WB.plane.k(lc, PL.Plane.signals.of(u, U.Side.now(u), True{}), PL.Plane.home(u), U.Side.now(u))
 
 # a tab's body: Status here, the others in WB.body; only the one shown is built
 def WB.main.k(+lc: I.Loc, status: Bool, +u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:
@@ -981,7 +1038,7 @@ def WB.main.k(+lc: I.Loc, status: Bool, +u: U.Ui, +b: BT.Bot, +tab: String) -> D
     case False{}:
       WB.body(lc, u, b, tab)
 
-def WB.main(+lc: I.Loc, +u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:
+def WB.main.other(+lc: I.Loc, +u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:
   WB.main.k(lc, String.eq(tab, "status"), u, b, tab)
 
 # Rooms and bots elsewhere
@@ -1081,3 +1138,28 @@ def WB.remote.h(+lc: I.Loc, +u: U.Ui, +id: String, +hd: BI.Head) -> D.Node:
 
 def WB.remote(+lc: I.Loc, +u: U.Ui, +id: String) -> D.Node:
   WB.remote.h(lc, u, id, BI.BU.head(u, BI.VRemote{id}))
+
+# Mailroom capability is enabled only now that this client draws Mailv.
+def WB.mail.presentation(provisional: Bool, +lc: I.Loc, u: U.Ui) -> D.Node:
+  match provisional:
+    case True{}: D.El{"div", "mailroom", [D.At{"id", "mailroom"}, D.At{"role", "status"}], [D.Txt{MSG.T.viewer.loading(lc)}]}
+    case False{}: WM.WM.page(u)
+
+def WB.main.mail(mail: Bool, +lc: I.Loc, +u: U.Ui, b: BT.Bot, tab: String) -> D.Node:
+  match mail:
+    case True{}: WB.mail.presentation(String.eq(U.Ui.scratch(u, "@presentation"), "1"), lc, u)
+    case False{}: WB.main.other(lc, u, b, tab)
+
+# Keep child routes and their existing authority guards inside the parent.
+# Only the selected panel is built.
+def WB.main.nested(ts: List<&2, String>, +lc: I.Loc, +u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:
+  match ts:
+    case Nil{}:
+      WB.main.mail(String.eq(tab, "mail"), lc, u, b, tab)
+    case +h <> +rest:
+      D.El{"div", "bot-parent:" ++ BI.BU.nav.parent(BI.BU.tabs.for(u, BT.Bot.id(b)), tab), [D.At{"class", "bot-body"}], [
+        D.El{"nav", "bot-subtabs", [D.At{"class", "bot-tabs"}, D.At{"aria-label", BI.BU.tab.label(lc, BI.BU.nav.parent(BI.BU.tabs.for(u, BT.Bot.id(b)), tab))}], WB.tabs.go(lc, h <> rest, tab)},
+        WB.main.mail(String.eq(tab, "mail"), lc, u, b, tab)]}
+
+def WB.main(+lc: I.Loc, +u: U.Ui, +b: BT.Bot, +tab: String) -> D.Node:
+  WB.main.nested(BI.BU.nav.sections(BI.BU.tabs.for(u, BT.Bot.id(b)), tab), lc, u, b, tab)

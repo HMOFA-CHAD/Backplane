@@ -14,9 +14,10 @@ class StateStore(private val root: File, bridge: String) {
         ?: "state-%08x-%d.json".format(bridge.hashCode(), bridge.length))
 
     init {
-        // states kept by earlier builds, and the frame logs of an older one
-        root.listFiles { f -> f.name.startsWith("state-") && f.name != file.name }?.forEach { it.delete() }
-        File(root, "logs").deleteRecursively()
+        // A type-key miss must not erase the prior build's state before a
+        // replacement has been saved. The screen cache is independent of it.
+        if (!file.exists() && root.listFiles { f -> f.name.startsWith("state-") && f.name != file.name }?.isNotEmpty() == true)
+            android.util.Log.i("Backplane", "state-cache miss_type_key")
     }
 
     // (never read whole into this process: Engine.loadFrom streams it)

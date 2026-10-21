@@ -130,10 +130,15 @@ def Prompt.runtime(harness: String) -> String:
 
 # FreeCAD's GUI program, beside its console one (macOS keeps it in the
 # app bundle's MacOS folder)
-def Prompt.mech.gui(+fc: String) -> String:
+def Prompt.mech.gui.posix(+fc: String) -> String:
   Bool.pick(String, String.ends_with(fc, "/Resources/bin/freecadcmd"), String.take(fc, Nat.sub(String.length(fc), 25n)) ++ "/MacOS/FreeCAD",
     Bool.pick(String, String.ends_with(fc, "freecadcmd"), String.take(fc, Nat.sub(String.length(fc), 10n)) ++ "freecad",
       Bool.pick(String, String.ends_with(fc, "FreeCADCmd"), String.take(fc, Nat.sub(String.length(fc), 10n)) ++ "FreeCAD", fc)))
+
+# Portable Windows installs keep the GUI beside FreeCADCmd.exe.
+def Prompt.mech.gui(+fc: String) -> String:
+  Bool.pick(String, Bool.or(String.ends_with(fc, "FreeCADCmd.exe"), String.ends_with(fc, "freecadcmd.exe")),
+    String.take(fc, Nat.sub(String.length(fc), 14n)) ++ "FreeCAD.exe", Prompt.mech.gui.posix(fc))
 
 # Mechanical work: FreeCAD for the modelling (its GUI run offscreen when
 # colours matter), and Backplane's own renderer for the pictures. Parts
@@ -281,8 +286,9 @@ def Claude.dirs(ds: List<&2, String>) -> List<&2, String>:
     case d <> t:
       "--add-dir" <> d <> Claude.dirs(t)
 
-# each KiStack revision directory loaded as a plugin (the hub writes its
-# manifest, KiStack.plugin), so its skills are Claude's own `kistack:<name>`
+# the bundled KiStack loaded as a plugin (its manifest is ours, written at
+# build time by scripts/build-kistack.sh), so its skills are Claude's own
+# `kistack:<name>`
 def Claude.plugins(ds: List<&2, String>) -> List<&2, String>:
   match ds:
     case Nil{}:

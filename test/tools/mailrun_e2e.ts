@@ -1,5 +1,7 @@
 // Isolated mailrun integration. A stand-in Claude calls thread_send,
 // then the spawned run decides and escalates through real MCP HTTP.
+// MAILRUN_FALLBACK_E2E=1 models provider-side tool rejection before MCP:
+// the run can only return its final failure report. The hub must surface it.
 // No copied user log, registrations, tokens, peers or live hub access.
 import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,12 +34,15 @@ async function agent() {
       emit({ type: "command_lifecycle", command_uuid: o.uuid, state: "queued" });
       emit({ type: "command_lifecycle", command_uuid: o.uuid, state: "started" });
       if (text.includes("MAILRUN_E2E_SEND")) await tool("thread_send", { threadId: "foh", text: "Please choose a board colour" });
-      if (text.includes("<charter>")) {
+      const denied = text.includes("<charter>") && process.env.MAILRUN_FALLBACK_E2E === "1";
+      if (denied) appendFileSync(process.env.MAILRUN_AGENT_LOG!, JSON.stringify({ pid: process.pid, deniedBeforeMcp: ["decide", "escalate", "mail"] }) + "\n");
+      if (text.includes("<charter>") && !denied) {
         await tool("decide", { text: "Use blue", reason: "Known preference" });
         await tool("escalate", { to: "bot", text: "Confirm blue" });
       }
-      emit({ type: "assistant", message: { id: `m${process.pid}-${call}`, role: "assistant", content: [{ type: "text", text: "Done" }] }, parent_tool_use_id: null });
-      emit({ type: "result", subtype: "success", is_error: false, num_turns: 1, result: "Done", usage: {} });
+      const final = denied ? "Automatic approval rejected decide, escalate and mail; policy never. Nothing was recorded or sent." : "Done";
+      emit({ type: "assistant", message: { id: `m${process.pid}-${call}`, role: "assistant", content: [{ type: "text", text: final }] }, parent_tool_use_id: null });
+      emit({ type: "result", subtype: "success", is_error: false, num_turns: 1, result: final, usage: {} });
       emit({ type: "command_lifecycle", command_uuid: o.uuid, state: "completed" });
     }).catch((e) => { appendFileSync(process.env.MAILRUN_AGENT_LOG!, String(e) + "\n"); process.exit(1); });
   });
@@ -76,15 +81,20 @@ if (process.argv[2] === "--agent") { await agent(); } else {
     ws.send(W.encode(JSON.stringify({ id: 1, m: "turn.start", p: { thread: "worker", text: "MAILRUN_E2E_SEND", msg: "person-start" } })));
     const events = () => readFileSync(logPath, "utf8").trim().split("\n").map((x) => JSON.parse(x));
     check(await until(() => events().some((e) => e.$ === "RunSet"), 30000), "thread_send spawns a run");
-    check(await until(() => events().some((e) => e.$ === "ActivityLogged" && e.kind === "escalation")), "run escalates through MCP");
-    await until(() => events().some((e) => e.$ === "DecisionLogged"));
+    const fallback = process.env.MAILRUN_FALLBACK_E2E === "1";
+    check(await until(() => events().some((e) => e.$ === "ActivityLogged" && e.kind === "escalation")), fallback ? "hub surfaces unresolved run without an agent tool call" : "run escalates through MCP");
+    if (!fallback) await until(() => events().some((e) => e.$ === "DecisionLogged"));
     await sleep(800);
     const es = events(), run = es.find((e) => e.$ === "RunSet");
     check(!!run && es.some((e) => e.$ === "MessagePosted" && e.thread === run.thread && e.text.includes("<charter>") && e.text.includes("Please choose a board colour")), "first turn contains brief and triggering mail");
     check(es.filter((e) => e.$ === "ActivityLogged" && e.thread === "foh" && e.kind === "escalation").length === 1, "FOH gets exactly one escalation row");
     const inbound = es.filter((e) => e.$ === "MessagePosted" && e.thread === "foh" && e.role !== "assistant");
     check(inbound.length === 1 && inbound[0].role === "system" && inbound[0].text.startsWith("[mailroom escalation from "), "FOH contains only the escalation inbound line");
-    check(es.some((e) => e.$ === "DecisionLogged" && e.run === run?.thread && e.text === "Use blue"), "run decision durably logged");
+    if (fallback) {
+      check(!es.some((e) => e.$ === "DecisionLogged" && e.run === run?.thread), "denied decision is not claimed as committed");
+      check(inbound[0]?.text.includes("policy never") && inbound[0]?.text.includes("Actionable input:"), "owner receives actual failure and pending input identity");
+      check(es.some((e) => e.$ === "SettingSet" && e.key === `run.forwarded.${run?.thread}`), "fallback disposition is durable");
+    } else check(es.some((e) => e.$ === "DecisionLogged" && e.run === run?.thread && e.text === "Use blue"), "run decision durably logged");
     const agentRows = readFileSync(agentLog, "utf8").trim().split("\n").map((x) => { try { return JSON.parse(x); } catch { return {}; } });
     const first = agentRows.find((e: any) => e.prompt?.includes("<charter>"));
     const launch = agentRows.find((e: any) => e.pid === first?.pid && e.args);

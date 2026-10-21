@@ -1,4 +1,8 @@
 import Base
+import ./test/mobile_loading_proof.bend as PRESENTPROOF
+import ./src/core/mailcontinuity.bend as MCN
+import ./test/mem_score_lazy_proof.bend as MSCORE
+import ./src/core/refresh.bend as RFSH
 import ./src/core/auth.bend as AUTH
 import ./src/core/http.bend as HTTPAUTH
 import ./src/core/pcb2d.bend as PCB2 # PCB viewer text
@@ -5410,6 +5414,18 @@ def Laws.google_hop_tailnet_only():
   {==}
 
 def Laws.google_hop_no_path():
+  {==}
+
+def Laws.google_hop_origin_header_injection_denied():
+  {==}
+
+def Laws.google_hop_query_header_injection_denied():
+  {==}
+
+def Laws.google_hop_wrapping_port_denied():
+  {==}
+
+def Laws.google_hop_raw_fragment_denied():
   {==}
 
 def Laws.google_loopback_phone():
@@ -12162,12 +12178,12 @@ def Laws.mail_global_primary(): {==}
 
 def Laws.mail_log_count_set(c, n):
   match c:
-    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n}, managed, link, freecad, ks}}:
+    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n}, managed, link, freecad, ks}, telemetry, views}:
       {==}
 
 def Laws.mail_log_count_committed(c, fresh):
   match c:
-    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n}, managed, link, freecad, ks}}:
+    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n}, managed, link, freecad, ks}, telemetry, views}:
       {==}
 
 # ---- native phone i18n ----
@@ -12354,6 +12370,21 @@ def Laws.auth_empty_remote_token_denied():
 def Laws.auth_cookie_prefix_denied():
   {==}
 
+def Laws.auth_oauth_post_denied(trusted, hs, path, token):
+  {==}
+
+def Laws.auth_oauth_other_route_denied(trusted, hs, token):
+  {==}
+
+def Laws.auth_oauth_foreign_origin_denied(trusted, token):
+  {==}
+
+def Laws.auth_oauth_local_document_reaches_state_check(token):
+  {==}
+
+def Laws.auth_oauth_document_does_not_authorize_websocket(trusted, token):
+  {==}
+
 # ---- PCB viewer text ----
 def Laws.pcb2_hidden_text_draws_nothing(at, angle, x, text, up, key, sig, ctx):
   {==}
@@ -12401,3 +12432,175 @@ def Laws.wt_seed_legacy_small(): {==}
 def Laws.wt_seed_large_id(): {==}
 def Laws.wt_seed_same_second_next(): {==}
 def Laws.wt_seed_wrap(): {==}
+# telemetry
+
+def Laws.tm_optout_no_id():
+  {==}
+def Laws.tm_unasked_no_id():
+  {==}
+def Laws.tm_sandbox_never(se, tm, dnt, ci, url, kid, key):
+  {==}
+def Laws.tm_gate_no_key():
+  {==}
+def Laws.tm_clean_drops_path():
+  {==}
+def Laws.tm_clean_drops_email():
+  {==}
+def Laws.tm_clean_drops_name():
+  {==}
+def Laws.tm_active_once_a_day():
+  {==}
+def Laws.tm_queue_cap():
+  {==}
+def Laws.tm_sent_202_drops():
+  {==}
+def Laws.tm_sent_500_keeps():
+  {==}
+def Laws.tm_state_roundtrip():
+  {==}
+def Laws.share_on_sets_asked():
+  {==}
+def Laws.share_step_before_uber():
+  {==}
+def Laws.bug_url_only_version():
+  {==}
+
+def Laws.tm_reset_invalidates_worker():
+  {==}
+def Laws.tm_optout_invalidates_worker():
+  {==}
+def Laws.tm_loopback_rejects_userinfo():
+  {==}
+def Laws.tm_package_nightly_channel():
+  {==}
+
+def Laws.tm_new_usage_marker():
+  {==}
+def Laws.tm_cached_uber_step_kept():
+  {==}
+def Laws.tm_marked_usage_step_kept():
+  {==}
+# --- browser controls (CEF owner) ---
+def Laws.browser_url_hostname(): {==}
+def Laws.browser_url_localhost(): {==}
+def Laws.browser_url_explicit(path): {==}
+def Laws.browser_url_no_script(): {==}
+def Laws.browser_toolbar_no_eval(): {==}
+def Laws.browser_toolbar_tabs_allowed(): {==}
+# --- end browser controls ---
+
+def Laws.refresh_revision_changed(size_changed):
+  match size_changed:
+    case True{}: {==}
+    case False{}: {==}
+
+def Laws.refresh_size_changed(same_revision):
+  match same_revision:
+    case True{}: {==}
+    case False{}: {==}
+
+def Laws.refresh_unchanged_quiet(): {==}
+# --- browser-cef release archive (October19) ---
+def Laws.cef_release_uses_paired_archive(): {==}
+def Laws.cef_release_arm_archive_unchanged(): {==}
+def Laws.cef_release_mac_archive_unchanged(): {==}
+def Laws.cef_release_old_updater_cannot_match(): {==}
+# --- end browser-cef release archive ---
+
+def Laws.ix_rename_global_invalidation_retained(id, t):
+  match t:
+    case MM.TouchK{n, g, r, m, l}: {==}
+
+def Laws.ix_rename_relationship_invalidation_retained(id, t):
+  match t:
+    case MM.TouchK{n, g, r, m, l}: {==}
+
+def Laws.ix_old_touch_global_fallback(n, g, r, l):
+  {==}
+
+def Laws.subs_phase_index_supplied_exact(st):
+  {==}
+
+def Laws.subs_children_indexed_exact(some, ts, ids, st, now):
+  match some:
+    case False{}: {==}
+    case True{}: {==}
+
+def Laws.subs_rows_indexed_exact(st, info, th, now):
+  +ts = U.Tasks.of(st, th)
+  +ids = M.Launch.of(st, th)
+  +some = Bool.or(Bool.not(List.is_empty(&2, M.Task, ts)), Bool.not(List.is_empty(&2, String, ids)))
+  Equal.cong(List<&2, SB.SubRow>, List<&2, SB.SubRow>,
+    rs => SB.Subs.group(List.concat(&2, SB.SubRow, [rs, SB.Subs.wakes(st, th), SB.Subs.locks.go(M.Locks.names(st), st, th), SB.Subs.agents(st, info, th, now)]), info, th),
+    SB.Subs.children.at(some, ts, ids, st, now, [U.Side.ix(st)]),
+    SB.Subs.children(some, ts, ids, st, now),
+    Laws.subs_children_indexed_exact(some, ts, ids, st, now))
+
+def Laws.mem_score_w_strict_equivalence(w, hay, text):
+  MSCORE.strict_equivalence(w, hay, text)
+
+def Laws.tl_live_single_exact(ty, empty, ph, text, memo, px):
+  match empty:
+    case False{}: {==}
+    case True{}: {==}
+
+def Laws.textscale_default(): {==}
+def Laws.textscale_invalid(): {==}
+def Laws.textscale_real_font_size(): {==}
+
+def Laws.mail_continuity_read_open_unresolved(): {==}
+def Laws.mail_continuity_unread_unresolved(): {==}
+def Laws.mail_continuity_current_escalation_once(token, forwarded, status):
+  %Equal.sym(Bool, String.eq(token, token), True{}, Laws.string_eq_refl(token)) : {Bool.and(Bool.not(MCN.Continuity.disposed(status)), Bool.and(Bool.not(_), Bool.not(String.eq(token, forwarded)))) == False{} : Bool}
+  and_false_r(Bool.not(MCN.Continuity.disposed(status)))
+def Laws.mail_continuity_committed_reply_resolves(token, escalated, forwarded, status): {==}
+
+def Laws.mail_disposition_inactive_refused(input, current): {==}
+def Laws.mail_disposition_ordinary_codex_unchanged(): {==}
+def Laws.mail_disposition_codex_single_tool(): {==}
+def Laws.mail_disposition_done_notice_only(): {==}
+def Laws.mail_disposition_defer_notice_only(): {==}
+def Laws.mail_disposition_no_product_action(): {==}
+
+def Laws.mail_disposition_bot_router_scoped_tools(s, now, thread, models, version, dir, extra, o): {==}
+def Laws.mail_disposition_plain_router_scoped_tools(s, now, thread, models, version, dir, extra, o): {==}
+
+def Laws.mail_ui_dispatch_available(i, s, now, client, id, p): {==}
+def Laws.mail_ui_body_read_available(s, now, client, id, p): {==}
+def Laws.mail_ui_invalid_target_no_effect(s, now, thread, p, msg): {==}
+def Laws.mail_ui_owned_target_uses_mailbox(s, now, thread, p, msg): {==}
+
+def Laws.mail_room_invalid_request_is_error(s, now, client, id, p): {==}
+def Laws.mail_room_invalid_room_is_error(s, now, client, id, p, r): {==}
+def Laws.mail_room_send_no_eager_events(s, now, client, id, p, room, subject, members, made): {==}
+def Laws.mail_room_set_updates_client_index(u, room, name, members, at): {==}
+def Laws.mail_room_post_updates_client_index(u, id, room, from, text, hop, at): {==}
+def Laws.mail_room_post_affects_room_only(id, room, from, text, hop, at): {==}
+
+def Laws.mail_room_target_nonroom_unchanged(os): {==}
+def Laws.mail_room_target_single_empty_option(room): {==}
+def Laws.mail_room_target_duplicate_dropped(addr, label, rest): {==}
+
+def Laws.desktop_public_row_no_document(row, index): {==}
+def Laws.desktop_public_row_no_lease(row, index): {==}
+def Laws.desktop_public_row_no_capture(row, index): {==}
+def Laws.desktop_lost_guard_no_cdp(b, owner): {==}
+def Laws.desktop_lost_guard_no_reinitialize(b, owner): {==}
+def Laws.desktop_no_generic_file_assignment(): {==}
+def Laws.desktop_no_public_interception_toggle(): {==}
+def Laws.desktop_unknown_owner_has_no_drive(drive): {==}
+
+def Laws.desktop_connection_frame_bytes_unchanged(text, version, hub): {==}
+def Laws.desktop_connection_close_bytes_unchanged(text, version, hub): {==}
+
+# The focused universal presentation/credit proofs are reused unchanged.
+
+def Laws.presentation_state_kept(u, p): PRESENTPROOF.state_kept(u, p)
+def Laws.presentation_seq_kept(u, p): PRESENTPROOF.seq_kept(u, p)
+def Laws.presentation_bodies_kept(u, p): PRESENTPROOF.bodies_kept(u, p)
+def Laws.presentation_history_generation_kept(c, at, more, rest): PRESENTPROOF.credit_generation_kept(c, at, more, rest)
+def Laws.presentation_history_room_kept(c, at, more, rest): PRESENTPROOF.credit_room_kept(c, at, more, rest)
+def Laws.presentation_history_over_kept(c, at, more, rest): PRESENTPROOF.credit_over_kept(c, at, more, rest)
+
+def Laws.cache_identity_post_refused(hs, token): {==}
+def Laws.cache_identity_empty_cookie(https): {==}

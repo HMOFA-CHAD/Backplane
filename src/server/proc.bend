@@ -63,6 +63,18 @@ def Proc.run.k(r: Result<&1, &1, U32 & String, U32 & Socket>) -> IO(Ran):
     case Done{started}:
       Proc.collect(started)
 
+# Every command the hub runs for itself, and any git under it, takes git
+# settings that win over a project's own .git/config: no fsmonitor command,
+# no hooks, no pager (a folder from a zip could ship a .git, or a
+# .backplane/history.git, whose config runs commands on the hub's git).
+# git.bend's Git.safe.sh also blanks the filters a repository defines
+# itself, and the hub's diffs take --no-ext-diff --no-textconv (an empty
+# diff.external is a command too). Agents' own git is theirs: their
+# processes start elsewhere (H.Proc.spawn).
+def Proc.git.env() -> List<&2, String>:
+  ["GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=core.fsmonitor", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_KEY_1=core.hooksPath", "GIT_CONFIG_VALUE_1=/dev/null",
+   "GIT_CONFIG_KEY_2=core.pager", "GIT_CONFIG_VALUE_2=cat", "GIT_PAGER=cat"]
+
 # run cmd with args in cwd; stdout and stderr together, stdin closed
 def Proc.run(cmd: String, args: List<&2, String>, cwd: String) -> IO(Ran):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Ran, H.Proc.spawn(cmd, args, cwd, 1), Proc.run.k)
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Ran, H.Proc.spawn("env", List.append(&2, String, Proc.git.env(), cmd <> args), cwd, 1), Proc.run.k)

@@ -11,7 +11,30 @@ import UIKit
 final class AppModel {
     private let engine = Engine()
     // the client's state, kept for the next launch (StateStore)
-    private let kept = StateStore()
+    @ObservationIgnored private lazy var kept = StateStore()
+    @ObservationIgnored private let recentScreen = ScreenCache()
+    @ObservationIgnored private let presentationStore = PresentationStore()
+    @ObservationIgnored private var presentationGeneration: UInt64 = 0
+    private(set) var startup: [String: StartupPolicy] = [:]
+    @ObservationIgnored private var thinReady: [String: (epoch: UInt64, nav: String)] = [:]
+    @ObservationIgnored private var thinRequests: [String: ThinPresentationFence] = [:]
+    @ObservationIgnored private var cachedPresentation = false
+    @ObservationIgnored private var cachedReadiness = PresentationReadiness()
+    @ObservationIgnored private var cacheGeneration: UInt64 = 0
+    @ObservationIgnored private var cacheTask: Task<Void, Never>?
+    @ObservationIgnored private var lastScreenJSON: String?
+    @ObservationIgnored private var earlyActions: [(String, String)] = []
+    @ObservationIgnored private var localDrafts: [String: String] = [:]
+    @ObservationIgnored private var restoredAt: [String: UInt64] = [:]
+    @ObservationIgnored private var wantsUsage = false
+    @ObservationIgnored private var readingPages: [String: (seen: String, count: Int, away: Bool)] = [:]
+    var contentReady: Bool {
+        guard ready, !cachedPresentation, let screen else { return false }
+        if startup[screen.hub] == .compatibilityChosen { return conn[screen.hub]?.phase == .online && conn[screen.hub]?.stage == "live" }
+        guard let mark = thinReady[screen.hub], mark.epoch == conn[screen.hub]?.epoch,
+              conn[screen.hub]?.phase == .online else { return false }
+        return mark.nav == (awaitedNav ?? Self.nav(screen))
+    }
     // something changed since the state was last kept
     @ObservationIgnored private var dirty = false
     @ObservationIgnored private var hubs: [String: Hub] = [:]
@@ -48,7 +71,9 @@ final class AppModel {
     // and pages first), and how many more screens it waits
     @ObservationIgnored private var jumping: (id: String, left: Int)?
     // each hub's socket as this phone sees it (HubsView, the list's pill)
-    private(set) var conn: [String: HubConn] = [:]
+    let conn = HubConnections()
+    private(set) var sendFailure: String?
+    @ObservationIgnored private var requestDeadline: Double?
     // the last screen of each thread shown, by its id: a thread tapped
     // again shows at once while its fresh screen is made
     private(set) var seen: [String: ThreadView] = [:]
@@ -73,6 +98,8 @@ final class AppModel {
     // at once as sending, dropped when the answer (with its own sending
     // row) is on screen
     private(set) var outgoing: [Outgoing] = []
+    private(set) var mailroomReturn: MailroomReturnContext?
+    @ObservationIgnored private var mailroomPositions: [MailroomPositionKey: TimelinePosition] = [:]
     // the navigation stack's path: moved at once by a tap or a swipe back,
     // and by the screen only when its selection changes, so a screen that
     // answers an older action never pulls a thread back open
@@ -162,6 +189,26 @@ final class AppModel {
         #if DEBUG
         if let l = ProcessInfo.processInfo.environment["BACKPLANE_LINK"] { links = l.split(separator: " ").map(String.init) }
         #endif
+        let cachedData = recentScreen.load(links: links, profile: Self.cid)
+        let cachedScreen = cachedData.flatMap { try? JSONDecoder().decode(Screen.self, from: $0) }
+        if cachedData != nil, cachedScreen == nil { NSLog("Backplane screen-cache miss_native_decode") }
+        if let cached = cachedScreen {
+            screen = cached
+            cachedPresentation = true
+            let drafts = (try? JSONSerialization.jsonObject(with: Data((UserDefaults.standard.string(forKey: "drafts") ?? "{}").utf8))) as? [String: String] ?? [:]
+            composer = drafts[cached.sel] ?? ""
+            lastUber = cached.uber
+            lastPlane = cached.plane
+            if let thread = cached.thread, !cached.sel.isEmpty { remember(cached.sel, thread) }
+            let nav = Self.nav(cached)
+            if !nav.isEmpty {
+                tab = destination(cached, nav)
+                stacks[tab] = [nav]
+                shownSel = nav
+                if let bot = cached.bot { rememberBot(nav, bot) }
+            } else if let tab = AppTab(rawValue: settings.defaultTab), tab != .settings { self.tab = tab }
+            else { tab = cached.uber == nil ? .threads : .home }
+        }
         notifier.open = { [weak self] id in self?.act("select", id) }
         NotificationCenter.default.addObserver(forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main) { [weak self] _ in
             self?.act("tz-report", TimeZone.current.identifier)
@@ -173,19 +220,16 @@ final class AppModel {
             }
         }
         notifier.viewing = { [weak self] id in self?.active == true && self?.tab != .settings && self?.screen?.sel == id }
-        if let d = try? Data(contentsOf: kept.settingsFile), let m = try? JSONDecoder().decode([String: Settings].self, from: d) { hubSettings = m }
+        if let d = try? Data(contentsOf: Self.settingsFile), let m = try? JSONDecoder().decode([String: Settings].self, from: d) { hubSettings = m }
         let e = engine
         Task {
             apply(await e.start(Self.cid, UserDefaults.standard.string(forKey: "drafts") ?? "{}"))
             apply(await e.local("view", settings.threadList))
             await languageLocal(e)
-            // the state kept at the last launch: the screen shows at once, and
-            // each hub then sends only what came since
-            if let text = kept.load() {
-                apply(await e.load(text))
-                apply(await e.local("view", settings.threadList))
-                await languageLocal(e)
-                for l in links { if let k = Pairing.key(l) { apply(await e.offline(k)) } }
+            // Bounded choices only; a miss never opens the canonical StateStore.
+            let paired = links, profile = Self.cid, store = presentationStore
+            if let text = await Task.detached(priority: .userInitiated, operation: { store.load(links: paired, profile: profile) }).value, paired == links {
+                apply(await e.loadPresentation(text))
             }
             ready = true
             island = IslandController { [weak self] kind, token, hub in self?.register(kind, token, hub: hub) }
@@ -210,6 +254,13 @@ final class AppModel {
     func pair(_ text: String) {
         let l = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let k = Pairing.key(l) else { return }
+        retireScreenCache()
+        hubs.removeValue(forKey: k)?.stop()
+        thinReady[k] = nil
+        cachedReadiness.retire(k)
+        startup[k] = .discovering
+        conn[k, default: HubConn()].epoch += 1
+        conn[k, default: HubConn()].phase = .offline
         links = links.filter { Pairing.key($0) != k } + [l]
         save()
         notifier.setUp()
@@ -217,6 +268,12 @@ final class AppModel {
     }
 
     func unpair(_ key: String) {
+        cachedReadiness.retire(key)
+        thinReady[key] = nil
+        startup[key] = nil
+        mailroomPositions = mailroomPositions.filter { $0.key.hub != key }
+        if mailroomReturn?.hub == key { mailroomReturn = nil }
+        retireScreenCache()
         links = links.filter { Pairing.key($0) != key }
         save()
         connect()
@@ -253,6 +310,9 @@ final class AppModel {
             if let k = Pairing.key(l), keyed[k] == nil { keyed[k] = l; keys.append(k) }
         }
         for (k, h) in hubs where keyed[k] == nil {
+            cachedReadiness.retire(k)
+            conn[k, default: HubConn()].phase = .offline
+            conn[k, default: HubConn()].epoch += 1
             h.stop()
             hubs[k] = nil
         }
@@ -262,6 +322,10 @@ final class AppModel {
             apply(await e.hubs(keys))
             apply(await e.local("view", settings.threadList))
             await languageLocal(e)
+            apply(await e.local("usage", wantsUsage ? "1" : ""))
+            for (thread, page) in readingPages {
+                apply(await e.reading(thread, seen: page.seen, count: page.count, away: page.away))
+            }
             for (k, l) in keyed where hubs[k] == nil { open(k, l) }
             // a hub paired later learns this phone's push tokens too
             if fresh {
@@ -273,17 +337,44 @@ final class AppModel {
 
     private func open(_ key: String, _ link: String) {
         let e = engine
-        let h = Hub(url: {
-                let r = try? JSONDecoder().decode(Resume.self, from: Data(await e.resume(key).utf8))
-                return Pairing.socket(link, since: r?.since ?? "0", origin: r?.origin ?? "")
+        let h = Hub(url: { [weak self] in
+                guard let self else { return nil }
+                let epoch = String(self.conn[key]?.epoch ?? 0)
+                if self.startup[key] == .compatibilityChosen {
+                    self.apply(await e.connection(key, epoch))
+                    let r = try? JSONDecoder().decode(Resume.self, from: Data(await e.resume(key).utf8))
+                    return Pairing.socket(link, since: r?.since ?? "0", origin: r?.origin ?? "")
+                }
+                self.startup[key] = .discovering
+                let supported = await ViewCapability.discover(link)
+                guard self.links.contains(link), self.conn[key]?.epoch == UInt64(epoch) else { return nil }
+                guard supported else {
+                    self.startup[key] = .compatibilityRequired
+                    self.conn[key, default: HubConn()].phase = .offline
+                    NSLog("Backplane view capability_required")
+                    return nil
+                }
+                self.startup[key] = .thin
+                self.apply(await e.connection(key, epoch, mode: "view-v1"))
+                if let pending = self.earlyActions.last(where: { $0.0 != "tz-report" && ($0.1.hasPrefix(key + "|") || ($0.1.isEmpty && self.screen?.hub == key)) }) {
+                    self.earlyActions.removeAll { $0.0 == pending.0 && $0.1 == pending.1 }
+                    self.apply(await e.act(pending.0, pending.1))
+                } else if let cached = self.screen, cached.hub == key {
+                    self.apply(await e.act("select", cached.sel))
+                }
+                return Pairing.viewSocket(link)
             },
             onConnecting: { [weak self] in
+                self?.cachedReadiness.retire(key)
+                self?.thinReady[key] = nil
                 self?.conn[key, default: HubConn()].phase = .connecting
+                self?.conn[key, default: HubConn()].epoch += 1
             },
             onOpen: { [weak self] in
                 if self?.shownHub == key { self?.plots.reset() }
                 self?.conn[key, default: HubConn()].phase = .syncing
-                self?.run { await $0.online(key, true) }
+                let epoch = String(self?.conn[key]?.epoch ?? 0)
+                self?.run { await $0.online(key, true, epoch: epoch) }
                 // where the person is: every hub keeps the phone's zone (routines follow it)
                 self?.act("tz-report", TimeZone.current.identifier)
             },
@@ -297,8 +388,11 @@ final class AppModel {
                 }
             },
             onClose: { [weak self] in
+                self?.cachedReadiness.retire(key)
+                self?.thinReady[key] = nil
                 self?.conn[key, default: HubConn()].phase = .offline
-                self?.run { await $0.online(key, false) }
+                let epoch = String(self?.conn[key]?.epoch ?? 0)
+                self?.run { await $0.online(key, false, epoch: epoch) }
             })
         hubs[key] = h
         h.start()
@@ -307,16 +401,42 @@ final class AppModel {
     // a frame from hub key: the first after a connect carries what this
     // phone missed, and the hub is up to date once it is folded in
     private func received(_ key: String, _ d: Data) {
+        guard hubs[key] != nil, links.contains(where: { Pairing.key($0) == key }) else { return }
         dirty = true
-        var c = conn[key, default: HubConn()]
-        c.heard = Date()
-        let catching = c.phase != .online
-        if catching { c.bytes = d.count }
-        conn[key] = c
+        conn.received(key, bytes: d.count, at: Date())
         let e = engine
+        let person = e.priorityFrame(d)
+        let epoch = conn[key]?.epoch ?? 0
         Task {
-            apply(await e.recv(key, d.base64EncodedString()))
-            if catching, conn[key]?.phase == .syncing { conn[key]?.phase = .online }
+            let result = await e.recv(key, d.base64EncodedString(), epoch: String(epoch), person: person)
+            guard hubs[key] != nil, links.contains(where: { Pairing.key($0) == key }), conn[key]?.epoch == epoch else { return }
+            for update in result?.sync ?? [] where update.hub == key {
+                let thin = startup[key] == .thin
+                observeThinPresenting(update, epoch: epoch)
+                let presented = thin && currentThinReply(update, epoch: epoch)
+                if presented {
+                    let nav = awaitedNav ?? (cachedPresentation ? screen.map(Self.nav) : nil) ?? result?.screen.map(Self.nav) ?? screen.map(Self.nav) ?? ""
+                    thinReady[key] = (epoch, nav)
+                }
+                if cachedPresentation, !thin || presented {
+                    cachedReadiness.observe(hub: key, epoch: epoch, phase: update.phase)
+                }
+            }
+            let needsFrame = cachedPresentation && result?.screen == nil && cachedReadiness.requestFrame { key in
+                guard hubs[key] != nil, links.contains(where: { Pairing.key($0) == key }),
+                      let status = conn[key], status.phase != .offline, status.phase != .connecting else { return nil }
+                return status.epoch
+            }
+            apply(result)
+            if startup[key] == .compatibilityChosen, cachedPresentation, screen?.hub == key, restoredAt[key] != epoch,
+               result?.sync?.contains(where: { $0.hub == key && ($0.phase == "recent" || $0.phase == "live") }) == true {
+                restoredAt[key] = epoch
+                let selection = earlyActions.last(where: { $0.0 == "select" })?.1 ?? screen?.sel ?? ""
+                let selected = await e.act("select", selection)
+                guard conn[key]?.epoch == epoch, hubs[key] != nil else { return }
+                apply(selected)
+            }
+            if needsFrame { run { await $0.screen() } }
         }
     }
 
@@ -332,8 +452,104 @@ final class AppModel {
             if let u = URL(string: value), u.scheme == "https" || u.scheme == "http" { UIApplication.shared.open(u) }
             return
         }
+        if action == "select" {
+            if value.isEmpty || links.contains(where: { value.hasPrefix((Pairing.key($0) ?? "") + "|") }) {
+                awaitedNav = value
+                awaitedAt = Date()
+            }
+        }
+        if action == "select" || Self.opens.contains(action) { retireScreenCache() }
+        if !contentReady {
+            guard ["select", "bot", "room", "remote", "uber", "uber-bot", "tz-report"].contains(action) else { return }
+            earlyActions.removeAll { $0.0 == action }
+            let targetHub = links.compactMap(Pairing.key).first { value.hasPrefix($0 + "|") } ?? screen?.hub
+            let configured = targetHub.map { startup[$0] == .thin || startup[$0] == .compatibilityChosen } ?? false
+            if ready, configured, action != "tz-report" {
+                let e = engine
+                Task {
+                    let out = await e.act(action, value)
+                    apply(out)
+                    dirty = true
+                    keep()
+                }
+            } else {
+                earlyActions.append((action, value))
+            }
+            return
+        }
         if Self.opens.contains(action) { tapped = value }
-        run { await $0.act(action, value) }
+        let navigation = action == "select" || Self.opens.contains(action)
+        let e = engine
+        Task {
+            let out = await e.act(action, value)
+            apply(out)
+            if navigation { dirty = true; keep() }
+        }
+    }
+
+    // Synchronous acceptance for the real-drag latch. An inert cached page
+    // may remain readable while its current presentation is being refreshed.
+    func loadEarlier(_ thread: String) -> Bool {
+        guard contentReady, screen?.thread?.id == thread else { return false }
+        act("earlier", "")
+        return true
+    }
+
+    func moreMessage(hub: String, thread: String, entry: String, partial: MessagePartial, live: Bool = false) {
+        guard contentReady, startup[hub] == .thin, partial.canRequest, !entry.isEmpty,
+              let current = screen, current.hub == hub, let shown = current.thread, shown.id == thread else { return }
+        let actual = live ? shown.livePartial : shown.entries.first(where: { $0.id == entry })?.partial
+        guard actual == partial, !live || actual?.id == entry,
+              let data = try? JSONSerialization.data(withJSONObject: ["entryId": entry, "cursor": partial.cursor]),
+              let value = String(data: data, encoding: .utf8) else { return }
+        act("thin-message-more", value)
+    }
+
+    func mailroom(_ mailroom: MailroomModel, _ action: String, _ value: String = "",
+                  draft: String? = nil, recipient: String? = nil, quiet: Bool = false) {
+        guard contentReady, links.contains(where: { Pairing.key($0) == mailroom.hub }) else { return }
+        let request = MailroomAction.request(mailroom, action, value, draft: draft, recipient: recipient)
+        guard !request.isEmpty else { return }
+        run { engine in
+            if quiet { return await engine.quiet("mailroom-action", request) }
+            return await engine.act("mailroom-action", request)
+        }
+    }
+
+    func mailroomPosition(_ mailroom: MailroomModel, conversation: String) -> TimelinePosition {
+        let list: MailroomListWindow? = conversation.isEmpty
+            ? MailroomListWindow(filter: mailroom.filter, query: mailroom.query, first: mailroom.first) : nil
+        let key = MailroomPositionKey(hub: mailroom.hub, origin: mailroom.origin ?? "",
+                                      owner: mailroom.owner, conversation: conversation, list: list)
+        if let position = mailroomPositions[key] { return position }
+        // A list window change starts at its own beginning. Retain only the
+        // current list window for this owner; conversation/source-return
+        // anchors and other owners keep their existing positions.
+        mailroomPositions = mailroomPositions.filter { old, _ in
+            if old.hub == key.hub && old.origin != key.origin { return false }
+            if list != nil && old.hub == key.hub && old.origin == key.origin &&
+                old.owner == key.owner && old.conversation.isEmpty { return old.list == list }
+            return true
+        }
+        let position = TimelinePosition()
+        mailroomPositions[key] = position
+        return position
+    }
+
+    func openMailroomSource(_ mailroom: MailroomModel, uri: String) {
+        guard contentReady, let url = URL(string: uri), !uri.isEmpty else { return }
+        if open(url, sourceHub: mailroom.hub) {
+            mailroomReturn = MailroomReturnContext(hub: mailroom.hub, owner: mailroom.owner)
+        }
+    }
+
+    func backToMailroom() {
+        guard let back = mailroomReturn,
+              links.contains(where: { Pairing.key($0) == back.hub }) else { return }
+        // Existing bot navigation restores that hub's Mailv conversation and
+        // filter; its owner-qualified native position survives view recreation.
+        mailroomReturn = nil
+        act("uber-bot", back.hub + "|" + back.owner + "|mail")
     }
 
     // where the hub in focus serves a path ("/img?path=…"), with its token
@@ -346,6 +562,7 @@ final class AppModel {
     // the file as the body (no base64, no pieces through the engine); the
     // hub's answer goes back as "attach-end", as an attach.put's would
     func attach(_ data: Data, name: String) {
+        guard contentReady else { return }
         guard !data.isEmpty, let s = screen, let named = s.thread?.id,
               let l = links.first(where: { Pairing.key($0) == s.hub }) ?? links.first else { return }
         // the hub's own id: over several hubs the screen names it "<hub>|<id>"
@@ -370,7 +587,7 @@ final class AppModel {
             }
             let answered = (try? JSONSerialization.jsonObject(with: Data(answer.utf8))) is [String: Any]
             if !answered {
-                let o: [String: Any] = ["text": "the upload did not reach the hub", "thread": thread, "upload": true]
+                let o: [String: Any] = ["uiError": "upload.network", "thread": thread, "upload": true]
                 answer = (try? JSONSerialization.data(withJSONObject: o)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
             }
             act("attach-end", answer)
@@ -512,6 +729,7 @@ final class AppModel {
     // a bot form's field ("bfield"), typed: Bend keeps it without a new
     // screen, the field on screen already shows it
     func field(_ name: String, _ text: String) {
+        guard contentReady else { return }
         run { await $0.quiet("bfield", name + "\u{1f}" + text) }
     }
 
@@ -596,6 +814,8 @@ final class AppModel {
     // composer empties; the client's answer carries it on (its own sending
     // row, then the hub's message)
     func send(_ action: String = "send") {
+        guard contentReady else { return }
+        sendFailure = nil
         let text = composer.trimmingCharacters(in: .whitespacesAndNewlines)
         let thread = screen?.thread?.id ?? ""
         if !text.isEmpty { outgoing.append(Outgoing(thread: thread, text: text)) }
@@ -611,6 +831,11 @@ final class AppModel {
 
     func draft(_ text: String) {
         composer = text
+        if !contentReady, let sel = screen?.sel, !sel.isEmpty {
+            localDrafts[sel] = text
+            Self.keep(sel, text)
+            return
+        }
         typing += 1
         let e = engine
         Task {
@@ -620,48 +845,91 @@ final class AppModel {
         }
     }
 
-    // a URL the app was opened with: a pairing link, or a thread to show
-    func open(_ url: URL) {
-        guard url.scheme == "backplane" else { return }
-        if url.host == "open" {
-            let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            let id = q.first { $0.name == "thread" }?.value ?? ""
-            // (an older Live Activity's "pick=1" opens the app as it was)
-            if !id.isEmpty { act("select", id) }
-        } else if url.host != "google" {
-            // (backplane://google ends a Google sign-in: GoogleLoop)
-            pair(url.absoluteString)
+    // Both external URL entry and links tapped in a message use shared Bend
+    // reference resolution, with the message's hub kept outside the URI.
+    @discardableResult
+    func open(_ url: URL, sourceHub: String? = nil) -> Bool {
+        switch InternalURLRoute.route(url) {
+        case let .reference(uri, origin):
+            act("ref-open", InternalURLRoute.request(uri, origin: origin, sourceHub: sourceHub))
+            return true
+        case let .pair(link):
+            pair(link)
+            return true
+        case .ignored: return true
+        case .external: return false
         }
+    }
+
+    private func retireScreenCache() {
+        cacheTask?.cancel()
+        lastScreenJSON = nil
+        cacheGeneration += 1
+        recentScreen.clear(through: cacheGeneration)
+        presentationGeneration += 1
+        presentationStore.clear(through: presentationGeneration)
     }
 
     // the state written down when it changed (the app may be ended at any
     // time once in the background)
     func keep() {
+        if let text = lastScreenJSON, !cleared {
+            let generation = cacheGeneration, links = self.links, profile = Self.cid, store = recentScreen
+            Task.detached(priority: .utility) { store.save(text, links: links, profile: profile, generation: generation) }
+        }
         guard dirty, ready, !cleared else { return }
         dirty = false
-        let e = engine, k = kept
-        Task { k.save(await e.save()) }
+        let e = engine
+        presentationGeneration += 1
+        let generation = presentationGeneration, paired = links, profile = Self.cid, store = presentationStore
+        Task {
+            let text = await e.savePresentation()
+            guard generation == presentationGeneration, paired == links else { return }
+            await Task.detached(priority: .utility) { store.save(text, links: paired, profile: profile, generation: generation) }.value
+        }
+    }
+
+    private static var settingsFile: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("hub-settings.json")
+    }
+
+    func retryView(_ key: String, compatibility: Bool = false) {
+        guard links.contains(where: { Pairing.key($0) == key }), startup[key] == .compatibilityRequired else { return }
+        hubs.removeValue(forKey: key)?.stop()
+        thinReady[key] = nil
+        cachedReadiness.retire(key)
+        startup[key] = compatibility ? .compatibilityChosen : .discovering
+        connect()
     }
 
     // the hub settings page's rows, kept as JSON beside the state
     private func keepHubSettings() {
         guard !cleared, let d = try? JSONEncoder().encode(hubSettings) else { return }
-        try? d.write(to: kept.settingsFile, options: .atomic)
+        try? d.write(to: Self.settingsFile, options: .atomic)
     }
 
     // App settings, Cache: the kept state's size, and forgetting it (the next
     // launch fetches each hub's log again; nothing is written again before)
-    func cacheSize() -> Int { kept.size() + ((try? Data(contentsOf: kept.settingsFile).count) ?? 0) }
+    func cacheSize() -> Int { kept.size() + recentScreen.size() + ((try? Data(contentsOf: Self.settingsFile).count) ?? 0) }
 
     func clearCache() {
+        mailroomPositions.removeAll()
+        mailroomReturn = nil
         cleared = true
+        cacheTask?.cancel()
+        lastScreenJSON = nil
+        cacheGeneration += 1
+        recentScreen.clear(through: cacheGeneration)
+        presentationGeneration += 1
+        presentationStore.clear(through: presentationGeneration)
         kept.clear()
-        try? FileManager.default.removeItem(at: kept.settingsFile)
+        try? FileManager.default.removeItem(at: Self.settingsFile)
         hubSettings = [:]
     }
 
     // the thread list's view, for Bend to draw (the device's own choice)
     private func languageLocal(_ e: Engine) async {
+        apply(await e.local("mailroom-renderer", "ios-v1"))
         apply(await e.local("lang-preview", settings.langPreview ? "1" : ""))
         apply(await e.local("lang", settings.lang))
         apply(await e.local("lang-os", Locale.preferredLanguages.first ?? ""))
@@ -672,6 +940,21 @@ final class AppModel {
         Task { await languageLocal(engine) }
     }
 
+    func hold(_ away: Bool, thread: ThreadView) {
+        let page = readingPages[thread.id]
+        let seen = away && page?.away == true ? page!.seen : (thread.readingSeen ?? "-")
+        let count = away && page?.away == true ? page!.count : thread.entries.count
+        readingPages[thread.id] = (seen, count, away)
+        guard ready else { return }
+        run { await $0.reading(thread.id, seen: seen, count: count, away: away) }
+    }
+
+    func usage(_ visible: Bool) {
+        wantsUsage = visible
+        guard ready else { return }
+        run { await $0.local("usage", visible ? "1" : "") }
+    }
+
     func threadList(_ v: String) {
         settings.threadList = v
         run { await $0.local("view", v) }
@@ -680,7 +963,22 @@ final class AppModel {
     func foreground(_ yes: Bool) {
         active = yes
         if !yes { keep() }
-        if yes, let s = screen { island?.show(s.islands ?? [], foreground: true) }
+        if yes, contentReady, let s = screen { island?.show(s.islands ?? [], foreground: true) }
+    }
+
+    private func observeThinPresenting(_ update: SyncUpdate, epoch: UInt64) {
+        guard startup[update.hub] == .thin, update.thinPresenting,
+              conn[update.hub]?.epoch == epoch else { return }
+        var fence = thinRequests[update.hub, default: ThinPresentationFence()]
+        if fence.observe(update, epoch: epoch) {
+            thinReady[update.hub] = nil
+            cachedReadiness.retire(update.hub)
+        }
+        thinRequests[update.hub] = fence
+    }
+
+    private func currentThinReply(_ update: SyncUpdate, epoch: UInt64) -> Bool {
+        update.thinPresented && thinRequests[update.hub]?.accepts(epoch: epoch, revision: update.requestRevision!) == true
     }
 
     private func apply(_ out: Out?, sent: String? = nil) {
@@ -688,9 +986,75 @@ final class AppModel {
             if let t = sent, let i = outgoing.firstIndex(where: { $0.text == t }) { outgoing.remove(at: i) }
             return
         }
-        if let s = o.screen {
-            if typing == 0 { composer = s.thread?.draft ?? "" }
+        for update in o.sync ?? [] {
+            let epoch = conn[update.hub]?.epoch ?? 0
+            observeThinPresenting(update, epoch: epoch)
+            if startup[update.hub] == .thin {
+                if update.phase == "presented", !currentThinReply(update, epoch: epoch) { continue }
+                if update.phase == "presenting",
+                   (!update.thinPresenting || thinRequests[update.hub]?.accepts(epoch: epoch, revision: update.requestRevision ?? 0) != true || thinReady[update.hub] != nil) { continue }
+            }
+            // Timed expiry can reach apply through pulse, outside received.
+            // It may retire a marker, but cannot establish new freshness.
+            if update.phase == "recent" || update.phase == "failed" {
+                cachedReadiness.retire(update.hub)
+                thinReady[update.hub] = nil
+                thinRequests[update.hub]?.invalidate()
+            }
+            var status = conn[update.hub, default: HubConn()]
+            status.stage = update.phase
+            status.detail = update.detail
+            if (startup[update.hub] == .thin && currentThinReply(update, epoch: epoch)) || (startup[update.hub] == .compatibilityChosen && update.phase == "live") { status.phase = .online }
+            else if update.phase == "failed" { status.phase = .offline }
+            else { status.phase = .syncing }
+            if conn[update.hub] != status { conn[update.hub] = status }
+        }
+        if requestDeadline != o.deadline {
+            requestDeadline = o.deadline
+            if let deadline = o.deadline {
+                let delay = max(0, deadline / 1000 - Date().timeIntervalSince1970) + 0.01
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(delay))
+                    guard let self, self.requestDeadline == deadline else { return }
+                    self.apply(await self.engine.pulse())
+                }
+            }
+        }
+        let fresh = o.sync?.contains { $0.hub == screen?.hub && ($0.phase == "presented" || $0.phase == "live") } == true
+        let cacheFresh = cachedReadiness.accepts { key in
+            guard let current = screen, let next = o.screen,
+                  key == next.hub,
+                  Self.nav(next) == (awaitedNav ?? Self.nav(current)),
+                  (awaitedNav != nil || key == current.hub),
+                  hubs[key] != nil, links.contains(where: { Pairing.key($0) == key }),
+                  let status = conn[key], status.phase != .offline, status.phase != .connecting else { return nil }
+            return status.epoch
+        }
+        let thinFresh = o.screen.map { next in
+            guard startup[next.hub] == .thin else { return true }
+            guard let mark = thinReady[next.hub], mark.epoch == conn[next.hub]?.epoch else { return false }
+            guard !(o.sync ?? []).contains(where: { $0.hub == next.hub && ($0.phase == "presented" || $0.phase == "presenting") && !currentThinReply($0, epoch: mark.epoch) }) else { return false }
+            return mark.nav == Self.nav(next) && (awaitedNav == nil || awaitedNav == Self.nav(next))
+        } ?? false
+        if let s = o.screen, s.hub.isEmpty || links.contains(where: { Pairing.key($0) == s.hub }),
+           (!cachedPresentation || cacheFresh), thinFresh {
+            cachedPresentation = false
+            cachedReadiness.clear()
+            if typing == 0 { composer = localDrafts[s.sel] ?? s.thread?.draft ?? "" }
             screen = s
+            if let text = o.screenJSON, !cleared, awaitedNav == nil || awaitedNav == Self.nav(s) {
+                lastScreenJSON = text
+                cacheGeneration += 1
+                let generation = cacheGeneration, links = self.links, profile = Self.cid, store = recentScreen
+                cacheTask?.cancel()
+                cacheTask = Task {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard !Task.isCancelled else { return }
+                    self.dirty = true
+                    self.keep()
+                    await Task.detached(priority: .utility) { store.save(text, links: links, profile: profile, generation: generation) }.value
+                }
+            }
             let label = s.lang?.rows.first?.label
             if label != langLabel { langLabel = label; refreshTexts() }
             if s.uber == nil { lastUber = nil; lastPlane = nil } else if s.plane != nil { lastUber = s.uber; lastPlane = s.plane }
@@ -702,7 +1066,9 @@ final class AppModel {
             if !started {
                 started = true
                 settings.migrate(theme: s.theme, view: s.view)
-                if let t = AppTab(rawValue: settings.defaultTab), t != .settings { tab = t } else { tab = s.uber == nil ? .threads : .home }
+                if Self.nav(s).isEmpty, path.isEmpty {
+                    if let t = AppTab(rawValue: settings.defaultTab), t != .settings { tab = t } else { tab = s.uber == nil ? .threads : .home }
+                }
                 if !sentView { sentView = true; run { await $0.local("view", AppSettings.shared.threadList) } }
             }
             if let st = s.settings, !s.hub.isEmpty, hubSettings[s.hub] != st { hubSettings[s.hub] = st; keepHubSettings() }
@@ -742,7 +1108,7 @@ final class AppModel {
                 shownMaking = making
                 if making { path = [Self.making] } else if path == [Self.making] { path = nav.isEmpty ? [] : [nav] }
             }
-            island?.show(s.islands ?? [], foreground: active)
+            if contentReady { island?.show(s.islands ?? [], foreground: active) }
             #if DEBUG
             if let id = opening, let row = s.projects.lazy.flatMap(\.threads).first(where: { $0.id == id || $0.id.hasSuffix("|" + id) }) {
                 opening = nil
@@ -809,7 +1175,7 @@ final class AppModel {
             }
             #endif
         }
-        if let t = sent, let i = outgoing.firstIndex(where: { $0.text == t }) { outgoing.remove(at: i) }
+        if o.screen != nil, let t = sent, let i = outgoing.firstIndex(where: { $0.text == t }) { outgoing.remove(at: i) }
         for c in o.cmds {
             switch c.type {
             case "send": if let d = Data(base64Encoded: c.data ?? "") { hubs[c.hub ?? ""]?.send(d) }
@@ -826,10 +1192,28 @@ final class AppModel {
                 }
             case "jump": if let id = c.id, !id.isEmpty { jumping = (id, 4) }
             case "keep": Self.keep(c.thread ?? "", c.text ?? "")
+            case "send-issued":
+                if let i = outgoing.firstIndex(where: { $0.thread == c.thread && $0.text == c.text }) { outgoing.remove(at: i) }
+            case "send-failed":
+                if let i = outgoing.firstIndex(where: { $0.thread == c.thread && $0.text == c.text }) { outgoing.remove(at: i) }
+                let thread = c.thread ?? "", text = c.text ?? ""
+                sendFailure = thread
+                if screen?.thread?.id != thread || composer.isEmpty {
+                    Self.keep(thread, text)
+                    if screen?.thread?.id == thread { composer = text }
+                }
             // while asleep the hub's push carries the alert instead
             case "notify": if active { notifier.post(thread: c.thread ?? "", key: c.key ?? "", title: c.title ?? "", body: c.body ?? "") }
             default: break
             }
+        }
+        if contentReady, let sel = screen?.sel, let text = localDrafts.removeValue(forKey: sel) {
+            run { await $0.quiet("draft", text) }
+        }
+        if fresh || cacheFresh, contentReady, !earlyActions.isEmpty {
+            let actions = earlyActions
+            earlyActions.removeAll()
+            for (action, value) in actions { act(action, value) }
         }
         if let j = jumping, let t = screen?.thread {
             if let e = t.entries.first(where: { $0.id == j.id || $0.id.hasSuffix("|" + j.id) }) {
@@ -845,16 +1229,6 @@ final class AppModel {
 struct Jump: Equatable {
     let id: String
     let n: Int
-}
-
-// a hub's socket: connecting (or trying again), offline between tries,
-// syncing while what it missed comes in and is folded, then online
-struct HubConn: Equatable {
-    enum Phase { case connecting, offline, syncing, online }
-    var phase: Phase = .connecting
-    var heard: Date?
-    // the size of the frame that caught this phone up
-    var bytes = 0
 }
 
 struct Outgoing: Identifiable, Equatable {

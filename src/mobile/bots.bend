@@ -11,6 +11,7 @@ import ../core/cron.bend as CR
 import ../core/sched.bend as SC
 import ../core/cat.bend as CT
 import ./space.bend as MS
+import ./mailroom.bend as MML
 import ../core/task.bend as TK
 
 # Bots on the phones (docs/bots.md): the cats in the list with their
@@ -140,12 +141,21 @@ def MBots.rnew(+u: U.Ui) -> J.Json:
 # A bot's tabs
 # ------------
 
+# Native Mailroom copy is device-local; other tab labels retain shared logic.
+def MBots.tab.label.k(mail: Bool, lc: I.Loc, t: String) -> String:
+  match mail:
+    case True{}: MSG.T.native.mailroom.title(lc)
+    case False{}: B.BU.tab.label(lc, t)
+
+def MBots.tab.label(lc: I.Loc, +t: String) -> String:
+  MBots.tab.label.k(String.eq(t, "mail"), lc, t)
+
 def MBots.tabs(+lc: I.Loc, ts: List<&2, String>) -> List<&2, J.Json>:
   match ts:
     case Nil{}:
       Nil{}
     case +t <> r:
-      J.Json.obj([J.KV{"id", J.Json.str(t)}, J.KV{"label", J.Json.str(B.BU.tab.label(lc, t))}]) <> MBots.tabs(lc, r)
+      J.Json.obj([J.KV{"id", J.Json.str(t)}, J.KV{"label", J.Json.str(MBots.tab.label(lc, t))}]) <> MBots.tabs(lc, r)
 
 def MBots.mem.loc(+lc: I.Loc, m: BT.Mem, +now: Nat) -> J.Json:
   match m:
@@ -428,12 +438,20 @@ def MBots.head(+lc: I.Loc, +hd: B.Head) -> List<&2, J.KV>:
   [J.KV{"title", J.Json.str(B.Head.title(hd))}, J.KV{"mood", J.Json.str(B.Head.mood(hd))},
    J.KV{"note", J.Json.str(B.Head.note(hd))}, J.KV{"look", J.Json.nat(B.Head.look(hd))}, J.KV{"cat", MBots.cat(B.Head.look(hd), B.Head.mood(hd))},
    J.KV{"tab", J.Json.str(B.Head.tab(hd))}, J.KV{"tabs", J.Json.arr(MBots.tabs(lc, B.Head.tabs(hd)))},
+   J.KV{"navTab", J.Json.str(B.BU.nav.parent(B.Head.tabs(hd), B.Head.tab(hd)))},
+   J.KV{"subtabs", J.Json.arr(MBots.tabs(lc, B.BU.nav.sections(B.Head.tabs(hd), B.Head.tab(hd))))},
    J.KV{"edit", J.Json.bool(B.Head.owns(hd))}]
+
+# Mailroom is explicit: adding it must not shift any legacy tab index.
+def MBots.tab.mail(on: Bool, +lc: I.Loc, +u: U.Ui, b: BT.Bot, +id: String, +persona: String, +hd: B.Head) -> List<&2, J.KV>:
+  match on:
+    case True{}: [J.KV{"mailroom", MML.MMail.model(u)}]
+    case False{}: MBots.tab.k(lc, C.Codec.pos(B.BU.tabs(), B.Head.tab(hd)), u, b, id, persona, U.Side.now(u))
 
 def MBots.bot.m(+lc: I.Loc, +u: U.Ui, b: BT.Bot, +id: String, +name: String, +persona: String, +hd: B.Head) -> J.Json:
   J.Json.obj(List.append(&2, J.KV,
     [J.KV{"kind", J.Json.str("bot")}, J.KV{"id", J.Json.str(id)}, J.KV{"name", J.Json.str(name)}],
-    List.append(&2, J.KV, MBots.head(lc, hd), MBots.tab.k(lc, C.Codec.pos(B.BU.tabs(), B.Head.tab(hd)), u, b, id, persona, U.Side.now(u)))))
+    List.append(&2, J.KV, MBots.head(lc, hd), MBots.tab.mail(String.eq(B.Head.tab(hd), "mail"), lc, u, b, id, persona, hd))))
 
 def MBots.bot(+lc: I.Loc, +u: U.Ui, b: BT.Bot) -> J.Json:
   match b:

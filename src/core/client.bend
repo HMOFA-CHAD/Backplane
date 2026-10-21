@@ -14,7 +14,9 @@ import ./deploy.bend as DP
 import ./live.bend as LV
 import ./json.bend as J
 import ./model.bend as M
+import ./signal.bend as SG
 import ./usage.bend as UZ
+import ./usage_page.bend as UP
 import ./codec.bend as C
 import ./vt.bend as VT
 import ./emb.bend as EM
@@ -42,6 +44,7 @@ import ./agy.bend as AGY
 import ./diff.bend as DF
 import ./fm.bend as FM
 import ./onboard.bend as OB
+import ./telemetry.bend as TLM
 import ./layers.bend as LY
 import ./slash.bend as SL
 import ./uber.bend as UB
@@ -356,10 +359,18 @@ def Info.put.models(+m: Map<&2, String>, +j: J.Json) -> Map<&2, String>:
   Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, m, "models", Info.models.small.j(j)), "models.oc", Info.models.oc.j(j)),
     "models.v", Nat.show(1n+Maybe.default(&2, Nat, Nat.read(Str.get(m, "models.v")), 0n)))
 
+# (a models info that is not JSON is kept as it came)
+def Info.put.m(j: Maybe<&2, J.Json>, +m: Map<&2, String>, +v: String) -> Map<&2, String>:
+  match j:
+    case Some{J.Obj{+fs}}:
+      Info.put.models(m, J.Obj{fs})
+    case _:
+      Map.set(&2, String, m, "models", v)
+
 def Info.put.k(models: Bool, +m: Map<&2, String>, +k: String, +v: String) -> Map<&2, String>:
   match models:
     case True{}:
-      Info.put.models(m, Maybe.default(&2, J.Json, J.Json.parse(v), J.Null{}))
+      Info.put.m(J.Json.parse(v), m, v)
     case False{}:
       Map.set(&2, String, m, k, v)
 
@@ -402,7 +413,7 @@ def Local.keep.go(ks: List<&2, String>, +old: Map<&2, String>, m: Map<&2, String
 # (and the clock this client last ticked, which a folded turn's "5m ago"
 # reads)
 def Local.keep(+old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
-  Local.keep.go(["cid", "local.machine", "local.machines", "local.drafts", "local.hub", "clock", "local.fixed", "local.generation", "local.state.hub", "local.state.gen", "local.remote.url", "local.remote.pre"], old, m)
+  Local.keep.go(["cid", "local.machine", "local.machines", "local.drafts", "local.hub", "local.token", "clock", "local.fixed", "local.generation", "local.state.hub", "local.state.gen", "local.remote.url", "local.remote.pre"], old, m)
 
 # A reconnect to the same hub (the log's origin is the one this client
 # had) keeps what the person chose in each thread's viewer: its kind, path
@@ -513,12 +524,34 @@ def Ui.machine(u: Ui, +url: String) -> Act:
       Act{Ui{M.State.empty(), "", Machine.drafts(Map.keys(&2, String, dr), dr, Map.new(&2, String)), Map.new(&2, String), Map.new(&2, Bool), False{}, now, ad, False{}, "", rid, w, "", "connecting",
         Map.set(&2, String, Map.set(&2, String, Local.keep(nf, Map.new(&2, String)), "local.machine", url), "local.generation", "pending:" ++ Str.get(nf, "local.generation")), Map.new(&2, String), MailvLocal.empty()}, [Connect{url}]}
 
-def Ui.info_merge(u: Ui, o: J.Json) -> Ui:
+def Ui.info_merge.raw(u: Ui, o: J.Json) -> Ui:
   match u o:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr} J.Obj{fs}:
       Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, Machines.home(Info.fields(fs, nf)), ob, tr}
     case _ _:
       u
+
+# A hub that let this client in without its pairing token (the legacy way,
+# core/auth.bend) says so (info "auth.legacy"): the client asks the person,
+# once a connection, to pair again (the error line every client shows and
+# the person dismisses). Goes with the legacy way.
+def Legacy.warn.k(warn: Bool, u: Ui, +text: String) -> Ui:
+  match warn u:
+    case True{} Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, _, note, nf, ob, tr}:
+      Ui{st, sel, Map.set(&2, String, dr, "@auth.legacy", "1"), live, op, on, now, ad, pa, v, rid, w, text, note, nf, ob, tr}
+    case False{} _:
+      u
+
+def Legacy.warn.at(+nf: Map<&2, String>, +dr: Map<&2, String>) -> Bool:
+  Bool.and(String.eq(Str.get(nf, "auth.legacy"), "1"), Bool.not(String.eq(Str.get(dr, "@auth.legacy"), "1")))
+
+def Legacy.warn(u: Ui) -> Ui:
+  match u:
+    case Ui{st, sel, +dr, live, op, on, now, ad, pa, v, rid, w, er, note, +nf, ob, tr}:
+      Legacy.warn.k(Legacy.warn.at(nf, dr), Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, MSG.T.auth.legacy(I.I18n.of_tag(Str.get(dr, "@lang.tag"))))
+
+def Ui.info_merge(u: Ui, o: J.Json) -> Ui:
+  Legacy.warn(Ui.info_merge.raw(u, o))
 
 def Ui.base(resume: Bool, st: M.State) -> M.State:
   match resume:
@@ -9589,8 +9622,52 @@ def RefNav.act(i: Nat, +u: Ui, +value: String) -> Act:
     case 3n: Act{u, [Copy{value}]}
     case _: RefNav.copy.web(R.Ref.parse(value), u)
 
+# Settings navigation is client-local; choosing a page never persists a setting.
+def Settings.pages() -> List<&2, String>:
+  ["appearance", "threads", "agents", "writing", "cad", "network", "voice", "keys", "antigravity", "timezone", "usage", "about", "privacy"]
+
+def Settings.phone.pages() -> List<&2, String>:
+  ["appearance", "threads", "agents", "cad", "network", "keys", "antigravity", "timezone", "usage", "about", "privacy"]
+
+def Settings.known(ps: List<&2, String>, +page: String) -> Bool:
+  match ps:
+    case Nil{}: False{}
+    case +p <> t: Bool.or(String.eq(p, page), Settings.known(t, page))
+
+def Settings.clean(+page: String) -> String:
+  Bool.pick(String, Settings.known(Settings.pages(), page), page, "")
+
+def Settings.page(+u: Ui) -> String:
+  Settings.clean(Ui.scratch(u, "@settings.page"))
+
+def Settings.label(i: Nat, +l: I.Loc) -> String:
+  match i:
+    case 0n: MSG.T.settings.appearance(l)
+    case 1n: MSG.T.tour.title.threads(l)
+    case 2n: MSG.T.settings.agents(l)
+    case 3n: MSG.T.settings.writing(l)
+    case 4n: MSG.T.settings.cad(l)
+    case 5n: MSG.T.settings.network(l)
+    case 6n: MSG.T.settings.voice(l)
+    case 7n: MSG.T.settings.keys(l)
+    case 8n: "Antigravity"
+    case 9n: MSG.T.settings.zone(l)
+    case 10n: MSG.T.settings.usage(l)
+    case 12n: MSG.T.settings.privacy(l)
+    case _: MSG.T.settings.tour(l)
+
+def Settings.title(+l: I.Loc, +page: String) -> String:
+  Bool.pick(String, String.is_empty(page), MSG.T.palette.settings(l), Settings.label(C.Codec.pos(Settings.pages(), page), l))
+
+def Settings.go(+u: Ui, +page: String) -> Act:
+  Act{Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.flag_off(u, "pairqr"), "@settings.page", Settings.clean(page)), "@set.sc", "0"), "@set.focus", ""), [Focus{""}]}
+
+def Settings.focus(a: Act, id: String) -> Act:
+  match a:
+    case Act{u, _}: Act{u, [Focus{id}]}
+
 def KN.path(+u: Ui) -> Act:
-  Act{Ui.scratch_set(Ui.scratch_set(Ui.flag_on(u, "settings"), "@f.kpath", M.Setting.get(Ui.state.of(u), "kicad.path", "")), "@set.sc", "850"), [Focus{"kicad-path"}]}
+  Settings.focus(Settings.go(Ui.scratch_set(Ui.flag_on(u, "settings"), "@f.kpath", M.Setting.get(Ui.state.of(u), "kicad.path", "")), "cad"), "kicad-path")
 
 def KN.save(+u: Ui) -> Act:
   Ui.setting(u, "kicad.path=" ++ Ui.scratch(u, "@f.kpath"))
@@ -9952,6 +10029,60 @@ def Tour.done(+st: M.State) -> Bool:
 def Tour.ready(+u: Ui) -> Bool:
   Bool.and(Bool.and(Nat.is_gt(Ui.seq(u), 0n), String.eq(Ui.scratch(u, "@sync"), "1")), String.is_empty(Ui.scratch(u, "@boot")))
 
+# Anonymous usage counts (Settings, the tour's "Anonymous usage" step;
+# core/telemetry.bend, docs/telemetry.md). The hub-held settings: telemetry.share
+# ("on", "off"; unset is on), telemetry.asked ("1" once the person answered
+# or touched the row), telemetry.reset (a counter: a new id), and, written by
+# the hub, telemetry.live ("1" when this build can send at all) and
+# hub.platform (e.g. "linux-x64", for the bug report link). The install id
+# is never shown or sent to a client.
+def Share.on(+st: M.State) -> Bool:
+  TLM.Tm.share(st)
+
+def Share.asked(+st: M.State) -> Bool:
+  TLM.Tm.asked(st)
+
+def Share.live(+u: Ui) -> Bool:
+  String.eq(Ui.info(u, "telemetry.live"), "1")
+
+# the question is worth asking (a build that can send) and not yet answered
+def Share.pending(+u: Ui) -> Bool:
+  Bool.and(Share.live(u), Bool.not(Share.asked(Ui.state.of(u))))
+
+def Share.privacy() -> String:
+  "https://backplane.works/privacy"
+
+def Share.note() -> String:
+  "A random id, the version and OS, once a day. Nothing else."
+
+# the note ends with the install id the hub reported (info telemetry.id), which
+# the privacy page asks people to quote when they ask for their data to go
+def Share.note.id(+id: String) -> String:
+  Bool.pick(String, String.is_empty(id), Share.note(), Share.note() ++ " Install id: " ++ id)
+
+def Share.title() -> String:
+  "Usage"
+
+def Share.ver(u: Ui) -> String:
+  match u:
+    case Ui{_, _, _, _, _, _, _, _, _, v, _, _, _, _, _, _, _}:
+      v
+
+# the issue form with the version, OS and architecture the hub reported
+def Share.bug(+u: Ui) -> String:
+  TLM.Bug.url(Share.ver(u), Ui.info(u, "os"), Ui.info(u, "arch"))
+
+def Share.rows.k(+on: Bool, +bug: String, +note: String) -> List<&2, AgRow>:
+  [AgRow{"Share anonymous usage", note, Nil{}, [AgBtn{"On", "share", "on", on}, AgBtn{"Off", "share", "off", Bool.not(on)}, AgBtn{"Reset id", "share-reset", "", False{}},
+    AgBtn{"Privacy", "open-url", Share.privacy(), False{}}, AgBtn{"Report an issue", "open-url", bug, False{}}]}]
+
+# the Settings section, drawn by every client as it draws Antigravity's rows
+def Share.id(+u: Ui) -> String:
+  Bool.pick(String, Share.on(Ui.state.of(u)), Ui.info(u, "telemetry.id"), "")
+
+def Share.rows(+u: Ui) -> List<&2, AgRow>:
+  Share.rows.k(Share.on(Ui.state.of(u)), Share.bug(u), Share.note.id(Share.id(u)))
+
 # The uberbot step alone: an install that finished the tour before it had
 # that step (or demoted its uberbot) is asked once more, until the step has
 # been answered (the hub setting "onboard.uber": Done, Skip or a choice, in
@@ -9960,17 +10091,32 @@ def Tour.ready(+u: Ui) -> Bool:
 def Tour.answered(+st: M.State) -> Bool:
   String.eq(M.Setting.get(st, "onboard.uber", ""), "1")
 
-def Tour.single.k(+st: M.State, +raw: String) -> Bool:
-  Bool.and(Bool.and(Tour.done(st), Bool.not(Tour.answered(st))), Bool.and(String.is_empty(UB.Uber.bot(st)), Bool.not(OB.Ob.manual(raw))))
+def Tour.uber.due(+st: M.State) -> Bool:
+  Bool.and(Bool.not(Tour.answered(st)), String.is_empty(UB.Uber.bot(st)))
+
+# Steps asked alone, once each, for an install that finished the tour before
+# they existed: the usage question first (while this build can send), then
+# the uberbot
+def Tour.single.k(+st: M.State, +raw: String, pending: Bool) -> Bool:
+  Bool.and(Bool.and(Tour.done(st), Bool.not(OB.Ob.manual(raw))), Bool.or(Tour.uber.due(st), pending))
 
 def Tour.single(+u: Ui) -> Bool:
-  Bool.and(Tour.ready(u), Tour.single.k(Ui.state.of(u), Ui.scratch(u, "@tour")))
+  Bool.and(Tour.ready(u), Tour.single.k(Ui.state.of(u), Ui.scratch(u, "@tour"), Share.pending(u)))
 
-def Tour.at.k(+i: Nat, up: Bool) -> Nat:
-  Bool.pick(Nat, Bool.and(Nat.is_eq(i, OB.Ob.count()), up), OB.Ob.uber(), i)
+def Tour.at.k(+i: Nat, up: Bool, share: Bool) -> Nat:
+  Bool.pick(Nat, Bool.and(Nat.is_eq(i, OB.Ob.count()), up), Bool.pick(Nat, share, OB.Ob.share(), OB.Ob.uber()), i)
+
+# Step 9 used to be the uberbot. A cached old tour keeps that meaning;
+# newly reached usage steps carry an explicit s marker (m still means manual).
+def Tour.legacy(+raw: String, +i: Nat) -> Nat:
+  Bool.pick(Nat, Bool.and(Nat.is_eq(i, OB.Ob.share()), Bool.not(String.contains(raw, "s"))), OB.Ob.uber(), i)
 
 def Tour.at(+u: Ui) -> Nat:
-  Tour.at.k(OB.Ob.at(Tour.ready(u), Tour.done(Ui.state(u)), Ui.scratch(u, "@tour")), Tour.single(u))
+  Tour.at.k(Tour.legacy(Ui.scratch(u, "@tour"), OB.Ob.at(Tour.ready(u), Tour.done(Ui.state.of(u)), Ui.scratch(u, "@tour"))), Tour.single(u), Share.pending(u))
+
+# the forward button: a step asked alone is answered with Done
+def Tour.forward(+u: Ui) -> String:
+  Bool.pick(String, Tour.single(u), "Done", OB.Ob.forward(Lang.loc(u), Tour.at(u)))
 
 # what the card says: no "10 of 10" for a step asked alone
 def Tour.counter.loc(+l: I.Loc, +u: Ui) -> String:
@@ -10060,12 +10206,35 @@ def Tour.choices.on(+l: I.Loc, on: Bool, +u: Ui) -> List<&2, TChoice>:
     case False{}:
       Nil{}
 
+# The first step and the usage step asked alone offer the bug report link;
+# the usage step answers or reads the policy ("open-url" never moves the tour)
+def Tour.report(+u: Ui) -> TChoice:
+  TChoice{"Report an issue", "open-url", Share.bug(u)}
+
+def Tour.share.choices(single: Bool, +u: Ui) -> List<&2, TChoice>:
+  List.append(&2, TChoice, [TChoice{"Keep sharing", "share", "on"}, TChoice{"Opt out", "share", "off"}, TChoice{"Privacy policy", "open-url", Share.privacy()}],
+    Bool.pick(List<&2, TChoice>, single, [Tour.report(u)], Nil{}))
+
+def Tour.choices.at(i: Nat, single: Bool, +u: Ui) -> List<&2, TChoice>:
+  match i:
+    case 0n:
+      [Tour.report(u)]
+    case 9n:
+      Tour.share.choices(single, u)
+    case 10n:
+      Tour.choices.k(Lang.loc(u), Tour.uber.case(u), Ui.state.of(u))
+    case _:
+      Nil{}
+
 def Tour.choices(+u: Ui) -> List<&2, TChoice>:
-  Tour.choices.on(Lang.loc(u), Nat.is_eq(Tour.at(u), OB.Ob.uber()), u)
+  Tour.choices.at(Tour.at(u), Tour.single(u), u)
+
+def Tour.body.k(alone: Bool, +words: String) -> String:
+  Bool.pick(String, alone, words ++ " " ++ OB.Ob.beta(), words)
 
 # the step's words for a kind of client (0 window, 1 web, 2 phone)
 def Tour.body.loc(+l: I.Loc, +k: Nat, +u: Ui) -> String:
-  OB.Ob.body.uber(l, k, Tour.days(u), Tour.uber.case(u), Tour.uber.name(u), Tour.at(u))
+  Tour.body.k(Bool.and(Tour.single(u), Nat.is_eq(Tour.at(u), OB.Ob.share())), OB.Ob.body.uber(l, k, Tour.days(u), Tour.uber.case(u), Tour.uber.name(u), Tour.at(u)))
 
 def Tour.body(k: Nat, +u: Ui) -> String:
   Tour.body.loc(Lang.loc(u), k, u)
@@ -10125,10 +10294,13 @@ def Tour.finish(+u: Ui) -> Act:
   Tour.leave(Tour.finish.both(Ui.setting(Ui.scratch_set(u, "@tour", ""), "onboard.done=1")), Tour.focus(u))
 
 # to step i (by hand or not as the tour was), or (past the last) the end
+def Tour.raw(manual: Bool, +i: Nat) -> String:
+  Bool.pick(String, manual, "m", "") ++ Bool.pick(String, Nat.is_eq(i, OB.Ob.share()), "s", "") ++ Nat.show(i)
+
 def Tour.go.k(live: Bool, +i: Nat, +u: Ui) -> Act:
   match live:
     case True{}:
-      Act{Ui.scratch_set(Ui.scratch_set(u, "@tour", OB.Ob.raw(OB.Ob.manual(Ui.scratch(u, "@tour")), i)), "@tour.sc", ""), Nil{}}
+      Act{Ui.scratch_set(Ui.scratch_set(u, "@tour", Tour.raw(OB.Ob.manual(Ui.scratch(u, "@tour")), i)), "@tour.sc", ""), Nil{}}
     case False{}:
       Tour.finish(u)
 
@@ -10170,8 +10342,78 @@ def Tour.act.on(on: Bool, +u: Ui, +action: String) -> Act:
     case False{}:
       Tour.act.k(Bool.pick(Nat, String.eq(action, "ob-open"), 3n, 9n), u)
 
-def Tour.act(+u: Ui, +action: String) -> Act:
+def Tour.act.base(+u: Ui, +action: String) -> Act:
   Tour.act.on(Tour.on(u), u, action)
+
+# Anonymous usage: the choices, Settings' row and the tour's usage step
+# set telemetry.share and telemetry.asked together ("share on|off"); Next
+# or Skip on the step set telemetry.asked too (keeping the default, sharing).
+# On the step, a choice moves on (asked alone: the card closes); "share-reset"
+# makes a new id and "open-url" is the client's own and never gets here.
+def Share.then(a: Act) -> Act:
+  match a:
+    case Act{u, cs}:
+      Tour.finish.cat(Ui.setting(u, "telemetry.asked=1"), cs)
+
+def Share.val(+v: String) -> String:
+  Bool.pick(String, String.eq(v, "off"), "off", "on")
+
+def Share.set(+u: Ui, +value: String) -> Act:
+  Share.then(Ui.setting(Ui.info_set(u, "telemetry.id", ""), "telemetry.share=" ++ Share.val(value)))
+
+def Share.close(a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Tour.leave(Act{Ui.scratch_set(u, "@tour", ""), cs}, Tour.focus(u))
+
+def Share.step(single: Bool, a: Act) -> Act:
+  match single:
+    case True{}:
+      Share.close(a)
+    case False{}:
+      match a:
+        case Act{u, cs}:
+          Tour.finish.cat(Tour.go(OB.Ob.next(OB.Ob.share()), u), cs)
+
+def Share.act.k(onstep: Bool, single: Bool, +u: Ui, +value: String) -> Act:
+  match onstep:
+    case True{}:
+      Share.step(single, Share.set(u, value))
+    case False{}:
+      Share.set(u, value)
+
+def Share.act(+u: Ui, +value: String) -> Act:
+  Share.act.k(Nat.is_eq(Tour.at(u), OB.Ob.share()), Tour.single(u), u, value)
+
+def Share.reset(+u: Ui) -> Act:
+  Share.then(Ui.setting(Ui.info_set(u, "telemetry.id", ""), "telemetry.reset=" ++ Nat.show(Nat.add(OB.Ob.num(M.Setting.get(Ui.state.of(u), "telemetry.reset", ""), 0n), 1n))))
+
+def Share.route(isshare: Bool, +u: Ui, +value: String) -> Act:
+  match isshare:
+    case True{}:
+      Share.act(u, value)
+    case False{}:
+      Share.reset(u)
+
+def Share.is(+action: String) -> Bool:
+  Bool.or(String.eq(action, "share"), String.eq(action, "share-reset"))
+
+def Tour.act.q(single: Bool, +u: Ui, +action: String) -> Act:
+  match single:
+    case True{}:
+      Share.close(Share.then(Act{u, Nil{}}))
+    case False{}:
+      Share.then(Tour.act.base(u, action))
+
+def Tour.act.m(moves: Bool, single: Bool, +u: Ui, +action: String) -> Act:
+  match moves:
+    case True{}:
+      Tour.act.q(single, u, action)
+    case False{}:
+      Tour.act.base(u, action)
+
+def Tour.act(+u: Ui, +action: String) -> Act:
+  Tour.act.m(Bool.and(Nat.is_eq(Tour.at(u), OB.Ob.share()), Bool.or(String.eq(action, "ob-next"), String.eq(action, "ob-skip"))), Tour.single(u), u, action)
 
 # The uberbot (core/uber.bend, docs/uber.md): "uber" shows its Status tab,
 # "uber-promote <bot>" and "uber-demote" ask the hub (bots.uber), which backs
@@ -10882,10 +11124,15 @@ def KX.act.k(action: String, +u: Ui, +th: String) -> Act:
 def KX.act(+u: Ui, action: String, +value: String) -> Act:
   KX.act.k(action, Ui.scratch_set(u, "@menu", ""), Bool.pick(String, String.is_empty(value), Ui.sel(u), value))
 
+def Ui.act.share(share: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match share:
+    case True{}: Share.route(String.eq(action, "share"), u, value)
+    case False{}: Ui.act.u(Nat.is_lt(C.Codec.pos(["uber-promote", "uber-new"], action), 2n), u, action, value)
+
 def Ui.act.kx(kx: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match kx:
     case True{}: KX.act(u, action, value)
-    case False{}: Ui.act.u(Nat.is_lt(C.Codec.pos(["uber-promote", "uber-new"], action), 2n), u, action, value)
+    case False{}: Ui.act.share(Share.is(action), u, action, value)
 
 # (design review's "rv-" actions route before the rest: Rv.act)
 def Ui.act.r(rv: Bool, +u: Ui, +action: String, +value: String) -> Act:
@@ -10902,6 +11149,65 @@ def Ui.act.g(agy: Bool, +u: Ui, +action: String, +value: String) -> Act:
       Agv.act(u, action, value)
     case False{}:
       Ui.act.r(String.starts_with(action, "rv-"), u, action, value)
+
+# Browser chrome belongs to the same owner as its native page/remote frame.
+def Browse.owner(+u: Ui) -> String:
+  Ui.shown.page(u)
+
+def Browse.data(+u: Ui, +page: String) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(Ui.info(u, "browser.tabs." ++ page)), J.Null{})
+
+def Browse.tabs(+u: Ui, +page: String) -> List<&2, J.Json>:
+  J.Json.elems(J.Json.get_obj(Browse.data(u, page), "tabs"))
+
+def Browse.url(+u: Ui, +page: String) -> String:
+  J.Json.get_str(Browse.data(u, page), "url", "")
+
+def Browse.field(+page: String) -> String:
+  "brurl:" ++ page
+
+def Browse.address(+u: Ui, +page: String) -> String:
+  Bool.pick(String, String.eq(Ui.scratch(u, "@browse.edit"), Browse.field(page)), Bots.field(u, Browse.field(page)), Browse.url(u, page))
+
+def Browse.edit(+u: Ui, +page: String) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(u, "@f." ++ Browse.field(page), Browse.address(u, page)), "@browse.edit", Browse.field(page))
+
+def Browse.send(+u: Ui, +op: String, ps: List<&2, J.KV>) -> Act:
+  Teach.browser(Ui.scratch_set(u, "@browse.edit", ""), Browse.owner(u), "toolbar", J.KV{"command", J.Str{op}} <> ps)
+
+def Browse.nav.k(empty: Bool, +u: Ui, +url: String) -> Act:
+  match empty:
+    case True{}: Act{Ui.update(u, J.Json.obj([J.KV{"error", J.Str{"Enter an http(s) address, hostname, or local host:port."}}])), Nil{}}
+    case False{}: Browse.send(u, "navigate", [J.KV{"url", J.Str{url}}])
+
+def Browse.nav(+u: Ui) -> Act:
+  +url = CF.Cef.url(Browse.address(u, Browse.owner(u)))
+  Browse.nav.k(String.is_empty(url), u, url)
+
+def Browse.offset.k(+at: Nat, +count: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_lt(at, count), at, Nat.sub(count, 1n))
+
+def Browse.offset(+u: Ui, +page: String) -> Nat:
+  Browse.offset.k(M.Switch.num(Ui.scratch(u, "@browse.tabs." ++ page), 0n), List.length(&2, J.Json, Browse.tabs(u, page)))
+
+def Browse.move(+u: Ui, +next: Bool) -> Act:
+  +page = Browse.owner(u)
+  +at = Browse.offset(u, page)
+  Act{Ui.scratch_set(u, "@browse.tabs." ++ page, Nat.show(Bool.pick(Nat, next,
+    Bool.pick(Nat, Nat.is_lt(1n+at, List.length(&2, J.Json, Browse.tabs(u, page))), 1n+at, at), Nat.sub(at, 1n)))), Nil{}}
+
+def Browse.act.k(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n: Browse.nav(u)
+    case 1n: Browse.send(u, "back", Nil{})
+    case 2n: Browse.send(u, "forward", Nil{})
+    case 3n: Browse.send(u, "reload", Nil{})
+    case 4n: Browse.send(Ui.scratch_set(u, "@browse.tabs." ++ Browse.owner(u), Nat.show(List.length(&2, J.Json, Browse.tabs(u, Browse.owner(u))))), "tabs", [J.KV{"new", J.Flag{True{}}}])
+    case 5n: Browse.send(u, "tabs", [J.KV{"selectId", J.Str{value}}])
+    case 6n: Browse.send(u, "tabs", [J.KV{"closeId", J.Str{value}}])
+    case 7n: Browse.move(u, False{})
+    case 8n: Browse.move(u, True{})
+    case _: Act{u, Nil{}}
 
 # (browser tasks' "tk-" and "bb-" actions: Teach.act)
 def Ui.act.tk(tk: Bool, +u: Ui, +action: String, +value: String) -> Act:
@@ -10985,12 +11291,55 @@ def Usage.rows(+u: Ui) -> List<&2, UZ.URow>:
     UZ.Tk.rows(Ui.state.of(u), Ui.threads(Ui.state.of(u)), Ui.projects(Ui.state.of(u)), Side.now(u)), UZ.Bj.rows(Ui.state.of(u), Ui.info(u, "boat.usage"), Side.now(u))])
 
 # a thread's Boat chip opens Settings (Usage is in it), as its button does
+def Usage.page.period(+u: Ui) -> String:
+  UP.Up.period(Ui.scratch(u, "@usage.period"))
+
+def Usage.page.metric(+u: Ui) -> String:
+  UP.Up.metric(Ui.scratch(u, "@usage.metric"))
+
+def Usage.page.index(+u: Ui, +name: String) -> Nat:
+  M.Switch.num(Ui.scratch(u, "@usage." ++ name ++ "Page"), 0n)
+
+def Usage.page.controls.more(month: Bool, +u: Ui) -> List<&2, UP.UpControl>:
+  match month:
+    case True{}: UP.Up.pages(Ui.state.of(u), Ui.projects(Ui.state.of(u)), Side.now(u), Usage.page.index(u, "model"), Usage.page.index(u, "project"))
+    case False{}: Nil{}
+
+def Usage.page.controls(+u: Ui) -> List<&2, UP.UpControl>:
+  List.append(&2, UP.UpControl, UP.Up.controls(Usage.page.period(u), Usage.page.metric(u)),
+    Usage.page.controls.more(Bool.and(String.eq(Usage.page.period(u), "month"), Bool.not(String.eq(Usage.page.metric(u), "limits"))), u))
+
+def Usage.page.extra(limits: Bool, +u: Ui) -> List<&2, UZ.URow>:
+  match limits:
+    case True{}: List.append(&2, UZ.URow, UZ.Use.rows(Ui.state.of(u), Ui.threads(Ui.state.of(u))), UZ.Bj.rows(Ui.state.of(u), Ui.info(u, "boat.usage"), Side.now(u)))
+    case False{}: Nil{}
+
+def Usage.page.connection(u: Ui) -> String:
+  match u:
+    case Ui{_, _, _, _, _, on, _, _, _, _, _, _, _, _, _, _, _}:
+      Bool.pick(String, on, "Connected", "Disconnected / cached; readings may be stale")
+
+def Usage.page.owner(+u: Ui) -> UZ.URow:
+  +self = J.Json.get_obj(UZ.Bj.parse(Ui.info(u, "machines")), "self")
+  UZ.URow{"Machine", J.Json.get_str(self, "name", "Identity unavailable") ++ " · " ++ Usage.page.connection(u), ""}
+
+# Dedicated Usage page. The legacy Usage.rows remains available unchanged.
+def Usage.page.rows(+u: Ui) -> List<&2, UZ.URow>:
+  Usage.page.owner(u) <> List.append(&2, UZ.URow, UP.Up.rows(Ui.state.of(u), Ui.projects(Ui.state.of(u)), Side.now(u), Usage.page.period(u), Usage.page.metric(u), Usage.page.index(u, "model"), Usage.page.index(u, "project")),
+    Usage.page.extra(String.eq(Usage.page.metric(u), "limits"), u))
+
+def Usage.page.choose(+u: Ui, +key: String, value: String) -> Act:
+  Act{Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, key, value), "@usage.modelPage", "0"), "@usage.projectPage", "0"), Nil{}}
+
+def Usage.page.turn(+u: Ui, +name: String, +value: String) -> Act:
+  Act{Ui.scratch_set(u, "@usage." ++ name ++ "Page", Nat.show(Bool.pick(Nat, String.eq(value, "next"), Nat.add(Usage.page.index(u, name), 1n), Nat.sub(Usage.page.index(u, name), 1n)))), Nil{}}
+
 def Usage.open(open: Bool, +u: Ui) -> Act:
   match open:
     case True{}:
-      Act{u, Nil{}}
+      Settings.go(u, "usage")
     case False{}:
-      Voice.flag("settings", Act{Ui.flag_on(u, "settings"), Nil{}})
+      Voice.flag("settings", Settings.go(Ui.flag_on(u, "settings"), "usage"))
 
 # (Settings > Usage's "usage-refresh": Boat's CLI read again now;
 # "usage-open": a thread's Boat chip)
@@ -11000,6 +11349,14 @@ def Ui.act.us(i: Nat, +u: Ui, +action: String, +value: String) -> Act:
       Usage.ask(Act{u, Nil{}}, "refresh")
     case 1n:
       Usage.open(Ui.flag(u, "settings"), u)
+    case 2n:
+      Usage.page.choose(u, "@usage.period", UP.Up.period(value))
+    case 3n:
+      Usage.page.choose(u, "@usage.metric", UP.Up.metric(value))
+    case 4n:
+      Usage.page.turn(u, "model", value)
+    case 5n:
+      Usage.page.turn(u, "project", value)
     case _:
       Ui.act.s(String.eq(action, "skill-close"), u, action, value)
 
@@ -11009,7 +11366,7 @@ def Ui.act.fab(fab: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case True{}:
       Fab.act(u, action, value)
     case False{}:
-      Ui.act.us(C.Codec.pos(["usage-refresh", "usage-open"], action), u, action, value)
+      Ui.act.us(C.Codec.pos(["usage-refresh", "usage-open", "usage-period", "usage-metric", "usage-model-page", "usage-project-page"], action), u, action, value)
 
 def Ui.act.z(tz: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match tz:
@@ -11558,6 +11915,8 @@ def Mailv.chip(+u: Ui, +v: String) -> Ui:
 
 def Mailv.change_conv(c: M.Change) -> String:
   match c:
+    case M.RoomSet{id, _, _, _}: "room:" ++ id
+    case M.RoomPosted{_, room, _, _, _, _}: "room:" ++ room
     case M.ConvSet{i, _, _, _, _, _, _}: i
     case M.MailPosted{_, i, _, _, _, _, _, _, _, _}: i
     case M.MailMarked{_, i, _, _, _, _}: i
@@ -11597,10 +11956,37 @@ def Mailv.live_targets(rs: List<&2, ML.Run>, +conv: String) -> List<&2, String>:
     case +r <> t:
       MV.Mv.cons_if(Bool.and(ML.Run.live(r), String.eq(ML.Run.conv(r), conv)), "thread:" ++ ML.Run.thread(r), Mailv.live_targets(t, conv))
 
+# A room mailbox has an explicit file-only Room recipient in addition to
+# its existing members/live runs. Keep existing option order and selection.
+def Mailv.room.target.end(found: Bool, room: String) -> List<&2, MV.Opt>:
+  match found:
+    case True{}: Nil{}
+    case False{}: [MV.Opt{room, "Room"}]
+
+def Mailv.room.target.row(same: Bool, found: Bool, +addr: String, label: String, rest: List<&2, MV.Opt>) -> List<&2, MV.Opt>:
+  match same found:
+    case False{} _: MV.Opt{addr, label} <> rest
+    case True{} False{}: MV.Opt{addr, "Room"} <> rest
+    case True{} True{}: rest
+
+def Mailv.room.target.rows(os: List<&2, MV.Opt>, +room: String, +found: Bool) -> List<&2, MV.Opt>:
+  match os:
+    case Nil{}: Mailv.room.target.end(found, room)
+    case MV.Opt{+addr, label} <> t:
+      Mailv.room.target.row(String.eq(addr, room), found, addr, label, Mailv.room.target.rows(t, room, Bool.or(found, String.eq(addr, room))))
+
+def Mailv.room.target.ref(ref: Maybe<&2, R.Ref>, os: List<&2, MV.Opt>) -> List<&2, MV.Opt>:
+  match ref:
+    case Some{R.Ref{"room", id <> Nil{}, _}}: Mailv.room.target.rows(os, R.Ref.addr(R.Ref.room(id)), False{})
+    case _: os
+
+def Mailv.room.targets(conv: String, os: List<&2, MV.Opt>) -> List<&2, MV.Opt>:
+  Mailv.room.target.ref(R.Ref.of_addr(conv), os)
+
 def Mailv.read.put(+m: MailvData, +c: MV.Cache, +conv: String, +names: Map<&2, String>, +live: List<&2, String>) -> MailvData:
   match m:
     case MailvData{_, f, _, _, r, n, ix}:
-      MailvData{c, f, MV.Mv.bubbles(MV.Mv.read_of(c, conv), names), MV.Mv.targets(MV.Read.parts(MV.Mv.read_of(c, conv)), live, names), 1n+r, n, ix}
+      MailvData{c, f, MV.Mv.bubbles(MV.Mv.read_of(c, conv), names), Mailv.room.targets(MV.Read.id(MV.Mv.read_of(c, conv)), MV.Mv.targets(MV.Read.parts(MV.Mv.read_of(c, conv)), live, names)), 1n+r, n, ix}
 
 def Mailv.list.put(m: MailvData, c: MV.Cache) -> MailvData:
   match m:
@@ -11631,8 +12017,14 @@ def Mailv.send.ok(ok: Bool, +u: Ui, +to: String, +text: String) -> Act:
 
 # Reading marks a conversation, but a mark must never trigger another
 # read. Only a newly filed body refreshes the open conversation.
+def Mailv.see.room.body(off: Bool, +u: Ui, +room: String) -> Ui:
+  match off:
+    case False{}: u
+    case True{}: Ui.scratch_set(u, "@mr.read.dirty", Bool.pick(String, String.eq(Ui.scratch(u, "@mr.conv"), "room:" ++ room), "1", Ui.scratch(u, "@mr.read.dirty")))
+
 def Mailv.see.body(c: M.Change, +u: Ui) -> Ui:
   match c:
+    case M.RoomPosted{_, room, _, _, _, _}: Mailv.see.room.body(Bool.not(String.eq(M.Setting.get(Ui.state(u), "mail.on", "off"), "on")), u, room)
     case M.MailPosted{_, +conv, _, _, _, _, _, _, _, _}:
       Ui.scratch_set(u, "@mr.read.dirty", Bool.pick(String, String.eq(Ui.scratch(u, "@mr.conv"), conv), "1", Ui.scratch(u, "@mr.read.dirty")))
     case _: u
@@ -11809,8 +12201,38 @@ def Mailv.index.conv(+u: Ui, +id: String) -> Ui:
   +want = ML.Mail.wanted(ML.Box.newest(box, id))
   Mailv.put(u, Mailv.index.set(Mailv.data(u), Mailv.index.finish(Mailv.index.parts(ML.Conv.parts(cv), Mailv.index.markorders(Mailv.index.pair(Mailv.index.pair(ix, "*", "", want, old, cv), "*", ML.Conv.project(cv), want, old, cv), "*", box, old, cv), box, old, cv), cv)))
 
+# RoomSet may replace membership. Clear only this room's old participant
+# entries before rebuilding its indexed projection from the canonical box.
+def Mailv.index.room.keys(ks: List<&2, String>, +ix: MailvIndex, +bot: String, +old: ML.Conv) -> MailvIndex:
+  match ks:
+    case Nil{}: ix
+    case +k <> t: Mailv.index.room.keys(t, Mailv.index.tree(False{}, Mailv.index.tree(False{}, ix, Mailv.index.key(bot, k, ""), old, old), Mailv.index.key(bot, k, ML.Conv.project(old)), old, old), bot, old)
+
+def Mailv.index.room.count(+ix: MailvIndex, +bot: String, +old: ML.Conv) -> MailvIndex:
+  +ns = Mailv.index.act(ix)
+  +key = "conv:" ++ Nat.show(String.length(bot)) ++ ":" ++ bot ++ ML.Conv.id(old)
+  +was = ML.Get.nat(ns, key)
+  Mailv.index.count.put(ix, Map.set(&2, Nat, Map.set(&2, Nat, Map.set(&2, Nat, ns, key, 0n), "bot:" ++ bot, Nat.sub(ML.Get.nat(ns, "bot:" ++ bot), was)), "total", Nat.sub(ML.Get.nat(ns, "total"), was)))
+
+def Mailv.index.room.part(bot: Bool, +ix: MailvIndex, +addr: String, +old: ML.Conv) -> MailvIndex:
+  match bot:
+    case False{}: ix
+    case True{}: Mailv.index.room.count(Mailv.index.room.keys(["", "act", "fyi", "unread", "snoozed", "done"], ix, String.drop(addr, 4n), old), String.drop(addr, 4n), old)
+
+def Mailv.index.room.parts(ps: List<&2, String>, ix: MailvIndex, +old: ML.Conv) -> MailvIndex:
+  match ps:
+    case Nil{}: ix
+    case +p <> t: Mailv.index.room.parts(t, Mailv.index.room.part(String.starts_with(p, "bot:"), ix, p, old), old)
+
+def Mailv.index.room(+u: Ui, +id: String) -> Ui:
+  +ix = Mailv.index(u)
+  +old = Mailv.index.old(ix, id)
+  Mailv.index.conv(Mailv.put(u, Mailv.index.set(Mailv.data(u), Mailv.index.room.parts(ML.Conv.parts(old), ix, old))), id)
+
 def Mailv.index.update(c: M.Change, u: Ui) -> Ui:
   match c:
+    case M.RoomSet{id, _, _, _}: Mailv.index.room(u, "room:" ++ id)
+    case M.RoomPosted{_, room, _, _, _, _}: Mailv.index.conv(u, "room:" ++ room)
     case M.ConvSet{+id, _, _, _, _, _, _}: Mailv.index.conv(u, id)
     case M.MailPosted{_, +id, _, _, _, _, _, _, _, _}: Mailv.index.conv(u, id)
     case M.MailMarked{_, +id, _, _, _, _}: Mailv.index.conv(u, id)
@@ -11842,8 +12264,16 @@ def Mailv.origin(c: M.Change, +u: Ui) -> Ui:
     case M.MessageFrom{_, _, _, _, _, _}: Mailv.put(u, Mailv.bump(Mailv.data(u)))
     case _: u
 
+def Mailv.see.room.members(c: M.Change, +u: Ui) -> Ui:
+  match c:
+    case M.RoomSet{id, _, _, _}:
+      +conv = "room:" ++ id
+      +old = Mailv.index.old(Mailv.index(u), conv)
+      Mailv.see.k(ML.Parts.has(ML.Conv.parts(old), "bot:" ++ Mailv.bot(u), False{}), u, conv)
+    case _: u
+
 def Mailv.see(+u: Ui, +c: M.Change) -> Ui:
-  Mailv.plane_seen(Mailv.plane_event(c), Mailv.origin(c, Mailv.index.update(c, Mailv.see.body(c, Mailv.see.mail(Bool.not(String.is_empty(Mailv.change_conv(c))), u, Mailv.change_conv(c))))))
+  Mailv.plane_seen(Mailv.plane_event(c), Mailv.origin(c, Mailv.index.update(c, Mailv.see.body(c, Mailv.see.room.members(c, Mailv.see.mail(Bool.not(String.is_empty(Mailv.change_conv(c))), u, Mailv.change_conv(c)))))))
 
 def Ui.fold(cs: List<&2, M.Change>, u: Ui) -> Ui:
   match cs u:
@@ -12057,10 +12487,16 @@ def Mailv.sync.read(need: Bool, +u: Ui, cs: List<&2, Cmd>) -> Act:
     case False{}:
       Mailv.sync.search(Bool.and(String.is_empty(Ui.scratch(u, "@mr.find")), Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@f.mrsearch"))), Bool.or(Bool.not(String.eq(Ui.scratch(u, "@mr.q"), Ui.scratch(u, "@f.mrsearch"))), Bool.not(String.eq(Ui.scratch(u, "@mr.qkey"), Mailv.key(u)))))), u, cs)
 
+# Bind presentation immediately to the selected conversation's cache.
+# A failed/absent read must not leave another room's body or recipients up.
+def Mailv.open.bind(+u: Ui, +conv: String) -> Ui:
+  +selected = Ui.scratch_set(Ui.scratch_set(u, "@mr.conv", conv), "@mr.to", "")
+  Mailv.put(selected, Mailv.read.put(Mailv.data(selected), Mailv.cache(selected), conv, ML.Box.names(M.State.mail(Ui.state(selected))), Mailv.live_targets(Map.values(&2, ML.Run, ML.Box.runs(M.State.mail(Ui.state(selected)))), conv)))
+
 def Mailv.action(i: Nat, +u: Ui, +v: String) -> Act:
   match i:
     case 0n: Act{Mailv.filter.set(u, v), Nil{}}
-    case 1n: Mailv.read(Ui.scratch_set(Ui.scratch_set(u, "@mr.conv", v), "@mr.to", ""), "")
+    case 1n: Mailv.read(Mailv.open.bind(u, v), "")
     case 2n: Mailv.read(u, Mailv.before(u))
     case 3n:
       Mailv.send.ok(Bool.and(Bool.not(String.is_empty(String.trim(Ui.scratch(u, "@f.mrreply")))), Bool.not(String.is_empty(Ui.scratch(u, "@mr.to")))), u, Ui.scratch(u, "@mr.to"), Ui.scratch(u, "@f.mrreply"))
@@ -12097,8 +12533,49 @@ def Mailv.sync(a: Act) -> Act:
 def Ui.desk(+u: Ui, +focused: Bool, +now: Nat) -> Act:
   Mailv.sync(Ui.desk.k(DK.Desk.due(Ui.scratch(u, "@desk"), Ui.scratch(u, "@desk.at"), Ui.sel(u), focused, now), u, Ui.sel(u), focused, now))
 
+def Browse.dispatch(browser: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match browser:
+    case True{}: Browse.act.k(C.Codec.pos(["br-go", "br-back", "br-forward", "br-reload", "br-new", "br-select", "br-close", "br-prev", "br-next"], action), u, value)
+    case False{}: Mailv.dispatch(String.starts_with(action, "mail-"), u, action, value)
+
+def Browse.field.change(edit: Bool, +u: Ui, +value: String) -> Ui:
+  match edit:
+    case True{}: Ui.scratch_set(u, "@browse.edit", Maybe.default(&2, String, List.head(&2, String, String.split(value, '\u{1f}')), ""))
+    case False{}: u
+
+def Settings.dispatch(nav: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match nav:
+    case True{}: Settings.go(u, value)
+    case False{}: Mailv.sync(Ui.cast.now(u, Browse.dispatch(String.starts_with(action, "br-"),
+        Browse.field.change(Bool.and(String.eq(action, "bfield"), String.starts_with(value, "brurl:")), u, value), action, value)))
+
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Mailv.sync(Ui.cast.now(u, Mailv.dispatch(String.starts_with(action, "mail-"), u, action, value)))
+  Settings.dispatch(String.eq(action, "settings-page"), u, action, value)
 
 def Ui.recv_act(u: Ui, +o: J.Json) -> Act:
   Mailv.sync(Ui.recv_act.s(String.eq(J.Json.get_str(o, "t", ""), "shot"), u, o))
+
+# Display-only activity for this frame. Never merge this decorated Ui back
+# into the client: the next frame derives fresh signals from current state.
+def Side.with_signals(u: Ui) -> Ui:
+  match u:
+    case Ui{+st, se, dr, li, op, +on, now, ad, pa, ve, ri, wa, er, no, nf, ob, tr}:
+      Ui{st, se, dr, li, op, on, now, ad, pa, ve, ri, wa, er, no, SG.Signal.cache(on, SG.Signal.index(st), nf), ob, tr}
+
+def Side.signal(+u: Ui, t: M.Thread) -> Nat:
+  SG.Signal.cached(Ui.infos(u), M.Thread.id(t))
+
+# Only the presentation's local copy of SIx is decorated. Side.ix and its
+# native incremental cache retain their original counts and shape.
+def Side.signals.ix(ix: SIx, +u: Ui) -> SIx:
+  match ix:
+    case SIx{by, asks, kids, work}:
+      SIx{by, asks, kids, SG.Signal.cache.work(Ui.infos(u), work)}
+
+def Side.signal.ix(+ix: SIx, t: M.Thread) -> Nat:
+  SIx.work(ix, SG.Signal.key(M.Thread.id(t)))
+
+def Side.signal.has(+ix: SIx, +id: String) -> Bool:
+  match ix:
+    case SIx{_, _, _, work}:
+      SG.Signal.has(work, SG.Signal.key(id))

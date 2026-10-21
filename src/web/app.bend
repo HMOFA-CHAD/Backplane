@@ -9,6 +9,9 @@ import ../core/cbor.bend as C
 import ../core/attach.bend as AT
 import ../core/lightbox.bend as LB
 import ../core/desk.bend as DK
+import ./mail-actions.bend as MA
+import ./presentation.bend as P
+import ../core/presentation.bend as PS
 import ./cat.bend as WC
 import ../core/onboard.bend as OB
 
@@ -20,8 +23,15 @@ def lang(u: U.Ui) -> String:
 def lang_preview(u: U.Ui) -> U.Ui:
   U.Ui.scratch_set(u, "@lang.preview", "1")
 
+def stamp(u: U.Ui) -> U.Ui:
+  U.Ui.info_set(u, "local.mailroom", "on")
+
+def ready(a: U.Act) -> U.Act:
+  match a:
+    case U.Act{u, cs}: U.Mailv.sync(U.Act{stamp(u), cs})
+
 def init(now: Nat, cid: String) -> U.Ui:
-  U.Ui.set_cid(U.Ui.init(now), cid)
+  stamp(U.Ui.set_cid(U.Ui.init(now), cid))
 
 # a draft this browser kept (Keep commands), read back at start
 def restore(u: U.Ui, id: String, text: String) -> U.Ui:
@@ -58,7 +68,7 @@ def recv.note(note: Bool, u: U.Ui, +o: J.Json) -> U.Act:
 # (the viewer asks the hub for its board, schematic or model when the
 # source on screen changes)
 def recv(u: U.Ui, +o: J.Json) -> U.Act:
-  U.Solid.sync(recv.note(String.eq(J.Json.get_str(o, "t", ""), "plotnote"), u, o))
+  MA.MA.after(U.Solid.sync(ready(recv.note(String.eq(J.Json.get_str(o, "t", ""), "plotnote"), MA.MA.recv(u, o), o))))
 
 # a bot's cat for an <img data-cat="<look>:<mood>:<px>"> (host.js keeps
 # each answer)
@@ -93,8 +103,33 @@ def Rv.focus(on: Bool, a: U.Act) -> U.Act:
     case False{} +x:
       x
 
-def act(u: U.Ui, +action: String, value: String) -> U.Act:
+def act.other(u: U.Ui, +action: String, value: String) -> U.Act:
   U.Solid.sync(Rv.focus(Bool.or(String.eq(action, "view-layer-pick"), String.eq(action, "view-layer-mode")), U.Ui.act(u, action, value)))
+
+def act.page(page: Bool, u: U.Ui, action: String, value: String) -> U.Act:
+  match page:
+    case True{}: U.Mailv.sync(U.Act{U.Ui.info_set(u, "pane:mr", value), Nil{}})
+    case False{}: act.other(u, action, value)
+
+def act.browser(browser: Bool, +u: U.Ui, +action: String, value: String) -> U.Act:
+  match browser:
+    case True{}: U.Teach.act.k(U.Keys.pos(U.Teach.actions(), action), u, U.Browse.owner(u), value)
+    case False{}: act.page(String.eq(action, "web-mail-page"), u, action, value)
+
+def act.project(project: Bool, u: U.Ui, +action: String, value: String) -> U.Act:
+  match project:
+    case True{}: U.Ui.act(u, "mail-filter", "project=" ++ value)
+    case False{}: act.page(String.eq(action, "web-mail-page"), u, action, value)
+
+def act.mail(i: Nat, u: U.Ui, +action: String, value: String) -> U.Act:
+  match i:
+    case 0n: MA.MA.action(0n, u, value)
+    case 1n: MA.MA.action(1n, u, value)
+    case 2n: MA.MA.action(2n, u, value)
+    case _: act.project(String.eq(action, "web-mail-project"), u, action, value)
+
+def act(u: U.Ui, +action: String, value: String) -> U.Act:
+  act.mail(U.Keys.pos(["mail-send", "mail-open", "mail-mark"], action), stamp(u), action, value)
 
 # a timeline gap px from its end is at the end and follows; further up it
 # holds what is read (client.bend's Hold; host.js's held)
@@ -102,15 +137,87 @@ def hold_at_end(gap: Nat) -> Bool:
   U.Hold.at_end(gap)
 
 def view(u: U.Ui) -> D.Node:
-  V.View.page(u)
+  V.View.page(stamp(u))
+
+# Optional early presentation uses exactly the normal keyed view. These
+# exports move renderer data only; they cannot install a Ui or mark it synced.
+def presentation_view(u: U.Ui) -> J.Json:
+  P.Node.write(view(u))
+
+def presentation_node(json: J.Json) -> D.Node:
+  P.Node.read(json)
+
+# Only the shared allowlisted presentation choices cross the final handoff.
+# State, live text, replay origin/cursor and typed caches stay with this Ui.
+def presentation(u: U.Ui) -> J.Json:
+  PS.Session.pack(u)
+
+def presentation_handoff(u: U.Ui, session: J.Json) -> U.Ui:
+  U.Ui.scratch_set(PS.Session.adopt(u, session), "@presentation", "")
+
+def presentation_reply(session: J.Json, reply: J.Json) -> J.Json:
+  PS.Session.reply(session, reply)
+
+def presentation_json(text: String) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})
+
+def presentation_choice(action: String, session: J.Json, value: String) -> J.Json:
+  match action:
+    case "select": PS.Session.pack(U.Ui.select.k(PS.Session.adopt(U.Ui.init(0n), session), value))
+    case "draft": PS.Session.draft(session, value)
+    case _: session
+
+def presentation_prepare(session: J.Json, input: J.Json, action: String) -> J.Json:
+  PS.Session.prepare(session, input, action)
+
+def presentation_select(u: U.Ui, id: String) -> U.Ui:
+  U.Ui.select.k(u, id)
+
+def presentation_perform(+u: U.Ui, input: J.Json, +action: String, value: String) -> U.Act:
+  act(presentation_handoff(u, PS.Session.prepare(presentation(u), input, action)), action, value)
+
+def presentation_allowed(action: String) -> Bool:
+  match action:
+    case "select": True{}
+    case "draft": True{}
+    case "send": True{}
+    case "send-alt": True{}
+    case "fold": True{}
+    case "subs-open": True{}
+    case "subs-shut": True{}
+    case "skill-close": True{}
+    case _: False{}
+
+def presentation_wait(u: U.Ui) -> U.Ui:
+  U.Ui.scratch_set(u, "@presentation", "1")
+
+def presentation_blocked(+u: U.Ui) -> U.Ui:
+  U.Ui.error_set(u, MSG.T.viewer.loading(U.Lang.loc(u)))
+
+# A corrupt cache is discarded explicitly. A fresh recipient owns the empty
+# origin/cursor/live/body stores; only allowlisted UI choices cross back.
+def presentation_reset(+u: U.Ui, now: Nat, cid: String) -> U.Ui:
+  presentation_handoff(init(now, cid), presentation(u))
+
+def presentation_overlay(node: D.Node, +session: J.Json) -> D.Node:
+  P.Node.draft(node, J.Json.get_str(J.Json.get_obj(session, "drafts"), J.Json.get_str(session, "sel", ""), ""))
 
 # this page is a desk (core/desk.bend): host.js calls this after input,
 # focus and visibility changes; it answers the desk.look to send, when due
 def desk(u: U.Ui, focused: Bool, now: Nat) -> U.Act:
-  U.Ui.desk(u, focused, now)
+  U.Ui.desk(stamp(u), focused, now)
 
-def online(u: U.Ui, b: Bool) -> U.Ui:
-  U.Ui.online(u, b)
+def synced(u: U.Ui) -> Bool:
+  U.Tour.ready(u)
+
+def desktop(u: U.Ui) -> U.Ui:
+  U.Ui.scratch_set(u, "@desktop", "1")
+
+def desktop_browser(u: U.Ui) -> U.Ui:
+  U.Ui.scratch_set(u, "@desktop.browser", "1")
+
+def online(u: U.Ui, +b: Bool) -> U.Ui:
+  U.Ui.online(MA.MA.online(u, b), b)
 
 # whether a link last heard from at `last` (ms) is dead at `now`: the hub
 # sends a heartbeat every 15 s (core/desk.bend's Alive)
@@ -283,3 +390,36 @@ def solid_waiting(tag: String, +seconds: Nat) -> String:
 
 def solid_stats(tag: String, size: String, triangles: String, waited: String, built: String, delayed: Bool) -> String:
   MSG.T.viewer.solid.stats(I.I18n.of_tag(tag), size, triangles, Bool.pick(String, delayed, "yes", "no"), waited, built)
+
+# The host persists only this conversation's draft/receipt, never commands.
+def mail_identity(+u: U.Ui) -> String:
+  Bool.pick(String, String.is_empty(U.Ui.scratch(u, "@mr.conv")), "", MA.MA.key(u))
+
+def mail_snapshot(u: U.Ui) -> String:
+  MA.MA.snapshot(u)
+
+def mail_restore(u: U.Ui, text: String) -> U.Ui:
+  MA.MA.restore(u, text)
+
+
+# Local draft bookkeeping for the current authenticated thin projection.
+# This changes no read model, online/sync flag, outbox, cache body or command.
+# Only the Mailroom reply field is supported; settings/password fields cannot
+# enter this helper or the existing conversation-local snapshot policy.
+def mail_local_context_if(valid: Bool, +u: U.Ui, +context: J.Json) -> U.Ui:
+  match valid:
+    case False{}: U.Ui.scratch_set(u, "@mr.conv", "")
+    case True{}:
+      U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.info_set(U.Ui.scratch_set(u, "@bot", J.Json.get_str(context, "owner", "")), "origin", J.Json.get_str(context, "origin", "")),
+        "@mr.conv", J.Json.get_str(context, "conv", "")), "@mr.to", J.Json.get_str(context, "recipient", ""))
+
+def mail_local_context(+u: U.Ui, +context: J.Json) -> U.Ui:
+  mail_local_context_if(Bool.and(String.eq(J.Json.get_str(context, "kind", ""), "mail-draft"),
+    Bool.and(Bool.not(String.is_empty(J.Json.get_str(context, "owner", ""))), Bool.and(Bool.not(String.is_empty(J.Json.get_str(context, "origin", ""))),
+      Bool.not(String.is_empty(J.Json.get_str(context, "conv", "")))))), u, context)
+
+def mail_local_field(u: U.Ui, text: String) -> U.Ui:
+  U.Ui.scratch_set(u, "@f.mrreply", text)
+
+def mail_local_text(u: U.Ui) -> String:
+  U.Ui.scratch(u, "@f.mrreply")

@@ -18,6 +18,10 @@ import ../core/plane.bend as PL
 import ./plane.bend as MPL
 import ./bots.bend as MB
 import ./tabs.bend as MT
+import ./permissions.bend as PM
+import ../core/ref.bend as R
+import ../core/refview.bend as RE
+import ../web/mail-actions.bend as MA
 
 # The phone keeps every hub it paired with connected at once, each with
 # its own client (Ui). A hub's key is its socket's host:port, which the
@@ -148,14 +152,14 @@ type QN is Data:
 
 def Q.names() -> List<&2, QN>:
   [QN{"sel", 2n}, QN{"thread", 2n}, QN{"entries", 1n}, QN{"live", 1n}, QN{"viewer", 1n}, QN{"blocks", 1n}, QN{"bot", 1n},
-    QN{"picker", 1n}, QN{"folders", 1n}, QN{"find", 1n}, QN{"asks", 1n}, QN{"attaching", 1n}, QN{"menu", 1n}, QN{"diff", 1n},
+    QN{"picker", 1n}, QN{"permissions", 1n}, QN{"folders", 1n}, QN{"find", 1n}, QN{"asks", 1n}, QN{"attaching", 1n}, QN{"menu", 1n}, QN{"diff", 1n},
     QN{"term", 1n}, QN{"skills", 1n}, QN{"settings", 1n}, QN{"newBot", 1n}, QN{"newRoom", 1n}, QN{"plane", 1n}]
 
 def Q.hash(+a: U32, +b: U32) -> U32:
   U32.and(U32.shrn(((a * 29 : U32) + b : U32), 2n), 31)
 
 def Q.bit(+a: U32, +b: U32) -> Bool:
-  U32.is_eq(U32.and(U32.shrn(3100017358, U32.to_nat(Q.hash(a, b))), 1), 1)
+  U32.is_eq(U32.and(U32.shrn(3100017390, U32.to_nat(Q.hash(a, b))), 1), 1)
 
 # whether a key could be one of the names (never false for one of them:
 # law q_may_names)
@@ -266,6 +270,14 @@ def One.find(files: Bool, +u: U.Ui, +mode: String) -> U.Act:
     case False{}:
       U.Act{U.Palette.open(u, mode), Nil{}}
 
+# Reuse the current durable-body/one-shot guard; phone sends are never outbox retries.
+def One.mail.core(i: Nat, +u: U.Ui, action: String, value: String) -> U.Act:
+  match i:
+    case 0n: U.Mailv.sync(MA.MA.send(u))
+    case 1n: U.Mailv.sync(MA.MA.open(u, value))
+    case 2n: U.Mailv.sync(MA.MA.mark(u, value))
+    case _: PM.Permissions.act(u, action, value)
+
 # the design history's actions run with the phone's board or schematic as
 # the client's view (VW.View.hist.act)
 def One.act.rest(hist: Bool, +u: U.Ui, +action: String, +value: String) -> U.Act:
@@ -273,7 +285,7 @@ def One.act.rest(hist: Bool, +u: U.Ui, +action: String, +value: String) -> U.Act
     case True{}:
       VW.View.hist.act(u, action, value)
     case False{}:
-      VW.View.sync(U.Ui.act(u, action, value))
+      VW.View.sync(One.mail.core(C.Codec.pos(["mail-send", "mail-open", "mail-mark"], action), u, action, value))
 
 # The hub's settings page of the Settings tab: "on" opens Settings (the flag
 # "settings") and "off" shuts it, each only when it is not so already (a
@@ -342,8 +354,33 @@ def One.act.k(i: Nat, +u: U.Ui, +action: String, +value: String) -> U.Act:
       One.act.rest(Bool.or(Bool.or(String.starts_with(action, "hist-"), String.starts_with(action, "cmp")), String.starts_with(action, "rv-")), u, action, value)
 
 # (and the board's file asked for, to pin its comments: client.bend's Rc.sync)
+# Mailroom viewport intents are rows/IDs, never display pixels. Reuse sync.
+def One.mail.window(body: Bool, +u: U.Ui, +value: String) -> U.Act:
+  match body:
+    case False{}: U.Mailv.sync(U.Act{U.Ui.info_set(u, "pane:mr", Nat.show(M.Switch.num(value, 0n))), Nil{}})
+    case True{}: U.Mailv.sync(U.Act{U.Ui.scratch_set(u, "@mr.mobile.anchor", value), Nil{}})
+
+# Send the tap's exact payload without replacing a newer retained draft.
+def One.mail.send.restore(a: U.Act, draft: String, recipient: String) -> U.Act:
+  match a:
+    case U.Act{u, cs}: U.Act{U.Ui.scratch_set(U.Ui.scratch_set(u, "@f.mrreply", draft), "@mr.to", recipient), cs}
+
+def One.mail.send(+u: U.Ui, +j: J.Json) -> U.Act:
+  # Capture the tap without overwriting a newer retained edit.
+  +draft = U.Ui.scratch(u, "@f.mrreply")
+  +recipient = U.Ui.scratch(u, "@mr.to")
+  One.mail.send.restore(U.Mailv.sync(MA.MA.send(U.Ui.scratch_set(U.Ui.scratch_set(u, "@mr.to", J.Json.get_str(j, "recipient", "")), "@f.mrreply", J.Json.get_str(j, "draft", "")))), draft, recipient)
+
+
+def One.act.mail(i: Nat, +u: U.Ui, +action: String, +value: String) -> U.Act:
+  match i:
+    case 0n: One.mail.window(False{}, u, value)
+    case 1n: One.mail.window(True{}, u, value)
+    case 2n: One.mail.send(u, Maybe.default(&2, J.Json, J.Json.parse(value), J.Null{}))
+    case _: One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders", "fm", "fm-cd", "fm-up", "fm-open", "fm-page", "view-layer-pick", "view-layer-mode", "hub-settings"], action), u, action, value)
+
 def One.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
-  U.Rc.sync.of(One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders", "fm", "fm-cd", "fm-up", "fm-open", "fm-page", "view-layer-pick", "view-layer-mode", "hub-settings"], action), u, action, value))
+  U.Rc.sync.of(One.act.mail(C.Codec.pos(["mail-window", "mail-body-window", "mailroom-send"], action), u, action, value))
 
 # what a step does to one hub's client
 type Op is Data:
@@ -369,7 +406,7 @@ def Did.alerts(d: Did) -> List<&2, J.Json>:
 def One.got.seen(a: U.Act) -> U.Act:
   match a:
     case U.Act{u, cmds}:
-      U.Act{PK.MPick.seen(S.Mob.imgs.seen(u)), cmds}
+      U.Act{PK.MPick.seen(S.Mob.imgs.seen(MA.MA.reconcile(u))), cmds}
 
 # a frame from the hub, and the alerts it raised
 # (streamed text ends no turn: it raises none, and nothing is compared;
@@ -422,14 +459,14 @@ def One.seen(+u: U.Ui, +o: J.Json) -> List<&2, N.Seen>:
 def One.got.d(delta: Bool, +u: U.Ui, +o: J.Json) -> Did:
   match delta:
     case True{}:
-      Did{One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))), Nil{}}
+      Did{One.got.seen(VW.View.far(o, U.Ui.recv_act(MA.MA.recv(VW.View.sheets(VW.View.picked(u, o), o), o), o))), Nil{}}
     case False{}:
-      One.got.b(U.Boot.on(u), One.seen(u, o), One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))))
+      One.got.b(U.Boot.on(u), One.seen(u, o), One.got.seen(VW.View.far(o, U.Ui.recv_act(MA.MA.recv(VW.View.sheets(VW.View.picked(u, o), o), o), o))))
 
 # the same comparing every thread (the spec One.got.d keeps to: law
 # alerts_ids_same)
 def One.got.all(+u: U.Ui, +o: J.Json) -> Did:
-  One.got.b(U.Boot.on(u), N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))))
+  One.got.b(U.Boot.on(u), N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(VW.View.far(o, U.Ui.recv_act(MA.MA.recv(VW.View.sheets(VW.View.picked(u, o), o), o), o))))
 
 def One.got(+u: U.Ui, +o: J.Json) -> Did:
   One.got.d(String.eq(J.Json.get_str(o, "t", ""), "delta"), u, o)
@@ -475,13 +512,13 @@ def One.pol.seen.k(changes: Bool, +u: U.Ui, +o: J.Json) -> List<&2, N.RSeen>:
 def One.pol.d(delta: Bool, +u: U.Ui, +o: J.Json) -> Did:
   match delta:
     case True{}:
-      Did{One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))), Nil{}}
+      Did{One.got.seen(VW.View.far(o, U.Ui.recv_act(MA.MA.recv(VW.View.sheets(VW.View.picked(u, o), o), o), o))), Nil{}}
     case False{}:
-      One.pol.b(U.Boot.on(u), One.pol.seen.k(String.eq(J.Json.get_str(o, "t", ""), "changes"), u, o), One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))))
+      One.pol.b(U.Boot.on(u), One.pol.seen.k(String.eq(J.Json.get_str(o, "t", ""), "changes"), u, o), One.got.seen(VW.View.far(o, U.Ui.recv_act(MA.MA.recv(VW.View.sheets(VW.View.picked(u, o), o), o), o))))
 
 # the same comparing every thread (law policy_phone_ids_same)
 def One.pol.all(+u: U.Ui, +o: J.Json) -> Did:
-  One.pol.b(U.Boot.on(u), N.Note.rseen(U.Ui.threads(S.Mob.st(u)), S.Mob.st(u)), One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))))
+  One.pol.b(U.Boot.on(u), N.Note.rseen(U.Ui.threads(S.Mob.st(u)), S.Mob.st(u)), One.got.seen(VW.View.far(o, U.Ui.recv_act(MA.MA.recv(VW.View.sheets(VW.View.picked(u, o), o), o), o))))
 
 # frames that fold nothing into a thread: streamed text, a heartbeat, a
 # streamed reply's end. They raise no alert and nothing is compared for
@@ -499,8 +536,8 @@ def One.run(op: Op, +u: U.Ui) -> Did:
       Did{One.act(u, a, v), Nil{}}
     case Got{+o}:
       One.pol(u, o)
-    case On{b}:
-      Did{VW.View.online(S.Mob.heard.set(u), b), Nil{}}
+    case On{+b}:
+      Did{VW.View.online(MA.MA.online(S.Mob.heard.set(u), b), b), Nil{}}
     case Tick{now}:
       Did{U.Act{S.Mob.heard.set(U.Ui.tick(u, now)), Nil{}}, Nil{}}
     case Reg{p, t, k, th, e, b}:
@@ -697,6 +734,7 @@ def Hubs.local.ui(k: Nat, +u: U.Ui, key: String, +value: String) -> U.Ui:
     case 0n: U.Lang.apply(u, value, U.Ui.scratch(u, "@lang.os"))
     case 1n: U.Lang.apply(u, U.Lang.choice(u), value)
     case 2n: U.Lang.apply(U.Ui.scratch_set(u, "@lang.preview", value), U.Lang.choice(u), U.Ui.scratch(u, "@lang.os"))
+    case 3n: U.Ui.info_set(u, "local.mailroom", Bool.pick(String, Bool.or(String.eq(value, "ios-v1"), String.eq(value, "android-v1")), "on", ""))
     case _: U.Ui.scratch_set(u, "@local." ++ key, value)
 
 def Hubs.local.go(hs: List<&2, Hub>, +key: String, +value: String) -> List<&2, Hub>:
@@ -704,7 +742,7 @@ def Hubs.local.go(hs: List<&2, Hub>, +key: String, +value: String) -> List<&2, H
     case Nil{}:
       Nil{}
     case Hub{+k, u} <> t:
-      Hub{k, Hubs.local.ui(C.Codec.pos(["lang", "lang-os", "lang-preview"], key), u, key, value)} <> Hubs.local.go(t, key, value)
+      Hub{k, Hubs.local.ui(C.Codec.pos(["lang", "lang-os", "lang-preview", "mailroom-renderer"], key), u, key, value)} <> Hubs.local.go(t, key, value)
 
 def Hubs.local(hs: Hubs, +key: String, +value: String) -> Hubs:
   match hs:
@@ -890,8 +928,28 @@ def Hubs.act.r(routed: Bool, +hs: Hubs, +action: String, +value: String) -> HAct
     case False{}:
       Hubs.act.k(hs, Hubs.cur(hs), False{}, action, value)
 
+# Usage controls are local to the named machine. An obsolete qualified
+# machine key must never fall through and change the focused machine.
+def Hubs.usage.action(+action: String) -> Bool:
+  Nat.is_lt(C.Codec.pos(["usage-period", "usage-metric", "usage-model-page", "usage-project-page"], action), 4n)
+
+def Hubs.usage.target(known: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
+  match known:
+    case True{}: Hubs.act.k(hs, Hubs.cur(hs), True{}, action, value)
+    case False{}: HAct{hs, Nil{}, Nil{}}
+
+def Hubs.usage.qualified(qualified: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
+  match qualified:
+    case True{}: Hubs.usage.target(Hubs.has(Hubs.list(hs), Hubs.key_of(value)), hs, action, value)
+    case False{}: Hubs.act.k(hs, Hubs.cur(hs), False{}, action, value)
+
+def Hubs.usage.dispatch(usage: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
+  match usage:
+    case True{}: Hubs.usage.qualified(String.contains(value, "|"), hs, action, value)
+    case False{}: Hubs.act.r(Bool.or(String.eq(action, "usage-refresh"), Nat.is_lt(Hubs.routed(action), Hubs.routes())), hs, action, value)
+
 def Hubs.act.one(+hs: Hubs, +action: String, +value: String) -> HAct:
-  Hubs.act.r(Nat.is_lt(Hubs.routed(action), Hubs.routes()), hs, action, value)
+  Hubs.usage.dispatch(Hubs.usage.action(action), hs, action, value)
 
 def Hubs.act.then(a: HAct, b: HAct) -> HAct:
   match a b:
@@ -908,9 +966,112 @@ def Hubs.act.go.k(go: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
     case False{}:
       Hubs.act.one(hs, action, value)
 
+# Internal links carry their containing message's hub separately from the URI.
+# Never remove a remote link~id prefix or reinterpret a URI as a pairing URL.
+def RefOpen.found(m: Maybe<&2, RE.Card>) -> Bool:
+  match m:
+    case Some{_}: True{}
+    case None{}: False{}
+
+def RefOpen.resolves.kind(+u: U.Ui, +r: R.Ref) -> Bool:
+  match r:
+    case R.Ref{k, _, _}:
+      Bool.and(R.Ref.has(["thread", "bot", "room", "project", "machine", "routine", "file", "work", "task", "pr", "mailroom"], k), RefOpen.found(RE.Card.of(U.Ui.state(u), r)))
+
+def RefOpen.resolves(+u: U.Ui, r: R.Ref) -> Bool:
+  RefOpen.resolves.kind(u, r)
+
+def RefOpen.first(+found: String, key: String, resolves: Bool) -> String:
+  match found resolves:
+    case SNil{} True{}: key
+    case _ _: found
+
+def RefOpen.owner(hs: List<&2, Hub>, +r: R.Ref, found: String) -> String:
+  match hs:
+    case Nil{}: found
+    case Hub{+key, +u} <> rest:
+      RefOpen.owner(rest, r, RefOpen.first(found, key, RefOpen.resolves(u, r)))
+
+def RefOpen.go.known(known: Bool, +hs: Hubs, +key: String, +r: R.Ref) -> HAct:
+  match known:
+    case False{}: HAct{hs, Nil{}, Nil{}}
+    case True{}:
+      Hubs.focus(Bool.not(String.eq(Hubs.cur(hs), key)), hs, key, Do{"ref-go", R.Ref.uri(r)})
+
+def RefOpen.go(+hs: Hubs, +key: String, +r: R.Ref) -> HAct:
+  RefOpen.go.known(Bool.and(Hubs.has(Hubs.list(hs), key), RefOpen.resolves(Hubs.ui(hs, key), r)), hs, key, r)
+
+def RefOpen.external(here: Bool, +hs: Hubs, +r: R.Ref) -> HAct:
+  match here:
+    case True{}: RefOpen.go(hs, Hubs.cur(hs), r)
+    case False{}: RefOpen.go(hs, RefOpen.owner(Hubs.list(hs), r, ""), r)
+
+def RefOpen.context(+hs: Hubs, +key: String, +r: R.Ref) -> HAct:
+  match key:
+    case SNil{}: RefOpen.external(RefOpen.resolves(Hubs.ui(hs, Hubs.cur(hs)), r), hs, r)
+    case _: RefOpen.go(hs, key, r)
+
+def RefOpen.parsed(m: Maybe<&2, R.Ref>, hs: Hubs, key: String) -> HAct:
+  match m:
+    case None{}: HAct{hs, Nil{}, Nil{}}
+    case Some{r}: RefOpen.context(hs, key, r)
+
+def RefOpen.json(+hs: Hubs, +j: J.Json) -> HAct:
+  RefOpen.parsed(R.Ref.parse(J.Json.get_str(j, "uri", "")), hs, J.Json.get_str(j, "hub", ""))
+
+def RefOpen.act(+hs: Hubs, value: String) -> HAct:
+  RefOpen.json(hs, Maybe.default(&2, J.Json, J.Json.parse(value), J.Null{}))
+
 # going to a found project shuts the search on every hub, then goes
+def Hubs.act.ref(internal: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
+  match internal:
+    case True{}: RefOpen.act(hs, value)
+    case False{}: Hubs.act.go.k(String.eq(action, "proj-go"), hs, action, value)
+
+# This envelope carries the hub separately from all opaque protocol values.
+# In particular a conversation ID may itself contain the route separator.
+def Hubs.mail.allowed(+action: String, +value: String) -> Bool:
+  Bool.or(Nat.is_lt(C.Codec.pos(["mail-open", "mail-more", "mail-close", "mail-search", "mail-filter", "mail-to", "mail-send", "mail-mark", "mail-window", "mail-body-window"], action), 10n),
+    Bool.and(String.eq(action, "bfield"), String.starts_with(value, "mrreply" ++ SCon{Chr{31}, SNil{}})))
+
+def Hubs.mail.apply(valid: Bool, +hs: Hubs, +key: String, action: String, value: String) -> HAct:
+  match valid:
+    case False{}: HAct{hs, Nil{}, Nil{}}
+    case True{}: Hubs.step(hs, False{}, key, Do{action, value})
+
+def Hubs.mail.action(send: Bool, j: J.Json) -> String:
+  match send:
+    case True{}: "mailroom-send"
+    case False{}: J.Json.get_str(j, "action", "")
+
+def Hubs.mail.value(send: Bool, +j: J.Json) -> String:
+  match send:
+    case True{}: J.Json.show(J.Json.obj([J.KV{"recipient", J.Str{J.Json.get_str(j, "recipient", "")}}, J.KV{"draft", J.Str{J.Json.get_str(j, "draft", "")}}]))
+    case False{}: J.Json.get_str(j, "value", "")
+
+def Hubs.mail.context(+hs: Hubs, +j: J.Json, +key: String, +u: U.Ui) -> HAct:
+  Hubs.mail.apply(Bool.and(U.Mailv.shown(u), Bool.and(
+    String.eq(U.Mailv.owner(u), J.Json.get_str(j, "owner", "")),
+    String.eq(U.Ui.scratch(u, "@mr.conv"), J.Json.get_str(j, "conversation", "")))),
+    hs, key, Hubs.mail.action(String.eq(J.Json.get_str(j, "action", ""), "mail-send"), j),
+    Hubs.mail.value(String.eq(J.Json.get_str(j, "action", ""), "mail-send"), j))
+
+def Hubs.mail.known(known: Bool, +hs: Hubs, +j: J.Json, +key: String) -> HAct:
+  match known:
+    case False{}: HAct{hs, Nil{}, Nil{}}
+    case True{}: Hubs.mail.context(hs, j, key, Hubs.ui(hs, key))
+
+def Hubs.mail.request(+hs: Hubs, +j: J.Json) -> HAct:
+  Hubs.mail.known(Bool.and(Hubs.has(Hubs.list(hs), J.Json.get_str(j, "hub", "")),
+    Hubs.mail.allowed(J.Json.get_str(j, "action", ""), J.Json.get_str(j, "value", ""))), hs, j, J.Json.get_str(j, "hub", ""))
+
+def Hubs.act.mail(mail: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
+  match mail:
+    case True{}: Hubs.mail.request(hs, Maybe.default(&2, J.Json, J.Json.parse(value), J.Null{}))
+    case False{}: Hubs.act.ref(String.eq(action, "ref-open"), hs, action, value)
+
 def Hubs.act(+hs: Hubs, +action: String, +value: String) -> HAct:
-  Hubs.act.go.k(String.eq(action, "proj-go"), hs, action, value)
+  Hubs.act.mail(String.eq(action, "mailroom-action"), hs, action, value)
 
 def Hubs.self(+u: U.Ui) -> String:
   J.Json.get_str(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(U.Ui.info(u, "machines")), J.Null{}), "self"), "name", "")
@@ -1016,9 +1177,9 @@ def Hubs.pl.fill.n(+lc: I.Loc, +fs: J.Json, +u: U.Ui, +k: String) -> J.Json:
 def Hubs.pl.fill.l(+lc: I.Loc, lite: Bool, +fs: J.Json, +u: U.Ui, +k: String, +idle: Bool, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
   match lite:
     case True{}:
-      Hubs.pl.fill.p(lc, PL.Plane.of.l(u, ix, rows, S.Mob.now(u)), fs, u, k)
+      Hubs.pl.fill.p(lc, PL.Plane.signals.of(u, S.Mob.now(u), False{}), fs, u, k)
     case False{}:
-      Hubs.pl.fill.p(lc, PL.Plane.of.f(u, ix, S.Mob.now(u), idle), fs, u, k)
+      Hubs.pl.fill.p(lc, PL.Plane.signals.of(u, S.Mob.now(u), idle), fs, u, k)
 
 def Hubs.pl.fill.w(+lc: I.Loc, want: Bool, +fs: J.Json, +u: U.Ui, +k: String, +idle: Bool, +lite: Bool, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
   match want:
@@ -1087,8 +1248,58 @@ type Shown is Data:
 # reads those from the hub in focus only)
 # (the index of the state and the sidebar's rows are made once and shared by
 # the screen and the plane)
+# Usage is requested by the device only while its usage page is visible.
+# No per-thread usage scan is added to chat/streaming screens.
+def Hubs.usage.rows(+lc: I.Loc, on: Bool, +u: U.Ui) -> List<&2, J.Json>:
+  match on:
+    case True{}:
+      S.Mob.usage.page(lc, u)
+    case False{}:
+      Nil{}
+
+def Hubs.usage.put(j: J.Json, rows: List<&2, J.Json>) -> J.Json:
+  match j:
+    case J.Obj{fs}:
+      J.Obj{J.Field{"machineUsage", J.Json.arr(rows), fs}}
+    case x:
+      x
+
+# Bot JSON is opaque to Q.all. Add the owner only to the nested native
+# Mailroom projection, leaving every other field and raw protocol ID alone.
+def Hubs.mail.online(u: U.Ui) -> Bool:
+  match u:
+    case U.Ui{_, _, _, _, _, on, _, _, _, _, _, _, _, _, _, _, _}: on
+
+def Hubs.mail.owner.attach(found: Bool, +key: String, +machine: String, +online: Bool, j: J.Json) -> J.Json:
+  match found j:
+    case True{} J.Obj{fields}: J.Obj{J.Field{"hub", J.Str{key}, J.Field{"machine", J.Str{machine}, J.Field{"online", J.Flag{online}, fields}}}}
+    case _ x: x
+
+def Hubs.mail.owner.bot.fields(+key: String, +machine: String, +online: Bool, fs: J.Json) -> J.Json:
+  match fs:
+    case J.Field{+name, value, tail}:
+      J.Field{name, Hubs.mail.owner.attach(String.eq(name, "mailroom"), key, machine, online, value), Hubs.mail.owner.bot.fields(key, machine, online, tail)}
+    case x: x
+
+def Hubs.mail.owner.bot(found: Bool, +key: String, +machine: String, +online: Bool, j: J.Json) -> J.Json:
+  match found j:
+    case True{} J.Obj{fields}: J.Obj{Hubs.mail.owner.bot.fields(key, machine, online, fields)}
+    case _ x: x
+
+def Hubs.mail.owner.fields(+key: String, +machine: String, +online: Bool, fs: J.Json) -> J.Json:
+  match fs:
+    case J.Field{+name, value, tail}:
+      J.Field{name, Hubs.mail.owner.bot(String.eq(name, "bot"), key, machine, online, value), Hubs.mail.owner.fields(key, machine, online, tail)}
+    case x: x
+
+def Hubs.mail.owner(+key: String, +machine: String, +online: Bool, j: J.Json) -> J.Json:
+  match j:
+    case J.Obj{fields}: J.Obj{Hubs.mail.owner.fields(key, machine, online, fields)}
+    case x: x
+
 def Hubs.shown.r(+lc: I.Loc, +k: String, +u: U.Ui, +cur: String, +any: Bool, +want: Bool, +idle: Bool, +lite: Bool, +ix: U.SIx, +rows: List<&2, U.SRow>) -> J.Json:
-  Hubs.tabs.put(Hubs.pl.fill(lc, any, want, Q.all(S.Mob.screen.ixr(lc, String.eq(k, cur), u, ix, rows), k), u, k, idle, lite, ix, rows), MT.MTab.json(lc, u, ix, rows))
+  Hubs.usage.put(Hubs.tabs.put(Hubs.pl.fill(lc, any, want, Hubs.mail.owner(k, Hubs.name(k, u), Hubs.mail.online(u), Q.all(S.Mob.screen.ixr(lc, String.eq(k, cur), u, ix, rows), k)), u, k, idle, lite, ix, rows), MT.MTab.json(lc, u, ix, rows)),
+    Hubs.usage.rows(lc, String.eq(U.Ui.scratch(u, "@local.usage"), "1"), u))
 
 def Hubs.shown.ix(+lc: I.Loc, +k: String, +u: U.Ui, +cur: String, +any: Bool, +want: Bool, +idle: Bool, +lite: Bool, +ix: U.SIx) -> J.Json:
   Hubs.shown.r(lc, k, u, cur, any, want, idle, lite, ix, U.Side.rows.ix(U.Ui.state(u), ix, S.Mob.now(u)))
@@ -1502,6 +1713,20 @@ def Hubs.rows(ss: List<&2, Shown>) -> List<&2, J.Json>:
     case Shown{+k, +n, +j} <> t:
       J.Json.obj([J.KV{"key", J.Json.str(k)}, J.KV{"name", J.Json.str(n)}, J.KV{"online", J.Json.bool(J.Json.get_bool(j, "online", False{}))},
         J.KV{"version", J.Json.str(J.Json.get_str(j, "version", ""))}, J.KV{"changes", J.Json.nat(J.Json.get_nat(j, "seq", 0n))}]) <> Hubs.rows(t)
+
+# Keep each paired machine's identity even when it is offline or has the
+# same display name as another. Actions stay qualified to the owning hub.
+def Hubs.usage.machine(+k: String, +name: String, +j: J.Json) -> J.Json:
+  J.Json.obj([J.KV{"key", J.Str{k}}, J.KV{"name", J.Str{name}},
+    J.KV{"online", J.Json.bool(J.Json.get_bool(j, "online", False{}))},
+    J.KV{"rows", J.Json.arr(J.Json.elems(J.Json.get_obj(j, "machineUsage")))}])
+
+def Hubs.usage.machines(ss: List<&2, Shown>) -> List<&2, J.Json>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case Shown{k, name, j} <> t:
+      Hubs.usage.machine(k, name, j) <> Hubs.usage.machines(t)
 
 # the host:port of a hub's url (http://host:3787 -> host:3787)
 def Hubs.auth(+url: String) -> String:
@@ -2070,6 +2295,7 @@ def Hubs.screen.p.loc(+lc: I.Loc, +pl: MPL.MUber, +ss: List<&2, Shown>, +cur: St
     J.KV{"bot", Hubs.origin.focus(ss, cur, "bot")},
     J.KV{"hub", J.Json.str(cur)},
     J.KV{"hubs", J.Json.arr(Hubs.rows(ss))},
+    J.KV{"usageMachines", J.Json.arr(Hubs.usage.machines(ss))},
     J.KV{"found", J.Json.arr(Hubs.found(list))},
     J.KV{"tabs", Hubs.tabs(ss, list, Nat.is_gt(List.length(&2, Shown, ss), 1n))}]))
 
@@ -2188,3 +2414,57 @@ def Island.demo() -> M.State:
     M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "claude", "", 1n}, M.ThreadCreated{"t2", "p1", "y", M.Local{}, "", "", "claude", "", 1n},
     M.TurnChanged{"t1", M.Running{}, 2n}, M.ActivityLogged{"t1", "a1", "info", "tool", "ran ls", 3n},
     M.MessagePosted{"t2", M.Link.id("t1", "m1"), M.User{}, "hello", 4n}, M.ActivityLogged{"t2", "a2", "info", "edit", "wrote", 5n}], M.State.empty())
+
+# A recent server presentation has no recipient-local Mailv cache. Advertise
+# the supported native tab, visibly loading, until canonical replay finishes.
+# Never synthesize mailbox data or enable writes from that presentation.
+def Hubs.mail.loading.has(ts: List<&2, J.Json>) -> Bool:
+  match ts:
+    case Nil{}: False{}
+    case +t <> r: Bool.or(String.eq(J.Json.get_str(t, "id", ""), "mail"), Hubs.mail.loading.has(r))
+
+def Hubs.mail.loading.tabs.k(has: Bool, ts: List<&2, J.Json>, label: String) -> J.Json:
+  match has:
+    case True{}: J.Json.arr(ts)
+    case False{}: J.Json.arr(List.append(&2, J.Json, ts, [J.Json.obj([J.KV{"id", J.Str{"mail"}}, J.KV{"label", J.Str{label}}])]))
+
+def Hubs.mail.loading.tabs(+j: J.Json, label: String) -> J.Json:
+  Hubs.mail.loading.tabs.k(Hubs.mail.loading.has(J.Json.elems(j)), J.Json.elems(j), label)
+
+def Hubs.mail.loading.item(drop: Bool, tab: Bool, key: String, value: J.Json, tail: J.Json, label: String) -> J.Json:
+  match drop tab:
+    case True{} _: tail
+    case False{} True{}: J.Field{key, Hubs.mail.loading.tabs(value, label), tail}
+    case False{} False{}: J.Field{key, value, tail}
+
+def Hubs.mail.loading.bot.fields(+label: String, fs: J.Json) -> J.Json:
+  match fs:
+    case J.Field{+key, value, tail}:
+      Hubs.mail.loading.item(Bool.or(String.eq(key, "mailroom"), String.eq(key, "mailroomLoading")), String.eq(key, "tabs"), key, value, Hubs.mail.loading.bot.fields(label, tail), label)
+    case x: x
+
+def Hubs.mail.loading.bot.k(enabled: Bool, label: String, j: J.Json) -> J.Json:
+  match enabled j:
+    case True{} J.Obj{fields}:
+      J.Obj{J.Field{"mailroomLoading", J.Flag{True{}}, J.Field{"mailroom", J.Null{}, Hubs.mail.loading.bot.fields(label, fields)}}}
+    case _ x: x
+
+def Hubs.mail.loading.bot(+u: U.Ui, +j: J.Json) -> J.Json:
+  Hubs.mail.loading.bot.k(Bool.and(U.Mailv.enabled(u), Bool.and(String.eq(J.Json.get_str(j, "kind", ""), "bot"),
+    Bool.not(FR.Fr.is(J.Json.get_str(j, "id", ""))))), MSG.T.native.mailroom.title(U.Lang.loc(u)), j)
+
+def Hubs.mail.loading.child(bot: Bool, u: U.Ui, j: J.Json) -> J.Json:
+  match bot:
+    case True{}: Hubs.mail.loading.bot(u, j)
+    case False{}: j
+
+def Hubs.mail.loading.fields(+u: U.Ui, fs: J.Json) -> J.Json:
+  match fs:
+    case J.Field{+key, value, tail}:
+      J.Field{key, Hubs.mail.loading.child(String.eq(key, "bot"), u, value), Hubs.mail.loading.fields(u, tail)}
+    case x: x
+
+def Hubs.mail.loading(+u: U.Ui, j: J.Json) -> J.Json:
+  match j:
+    case J.Obj{fields}: J.Obj{Hubs.mail.loading.fields(u, fields)}
+    case x: x

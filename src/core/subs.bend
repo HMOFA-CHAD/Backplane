@@ -1,6 +1,7 @@
 import Base
 import ./locks.bend as LK
 import ./model.bend as M
+import ./signal.bend as SG
 import ./fold.bend as FO
 import ./client.bend as U
 import ./diff.bend as DF
@@ -600,18 +601,39 @@ def Subs.group(+rs: List<&2, SubRow>, +info: Map<&2, String>, +th: String) -> Li
   +done = Subs.partition(rs, True{})
   List.concat(&2, SubRow, [Subs.current(rs, 0n), Subs.current(rs, 1n), Subs.current(rs, 2n), Subs.finish(Bool.not(List.is_empty(&2, SubRow, done)), info, th, done)])
 
-def Subs.children(some: Bool, +ts: List<&2, M.Task>, +ids: List<&2, String>, +st: M.State, +now: Nat) -> List<&2, SubRow>:
+# Project rows do not participate in child phases. A supplied sidebar index
+# contributes exactly the same asks, children and watched-work maps.
+def Subs.index.phase(ix: U.SIx) -> U.SIx:
+  match ix:
+    case U.SIx{_, asks, kids, work}:
+      U.SIx{Map.new(&2, List<&2, M.Thread>), asks, kids, work}
+
+def Subs.index.given(ixs: List<&2, U.SIx>, +st: M.State) -> U.SIx:
+  match ixs:
+    case Nil{}: Subs.index(st)
+    case ix <> _: Subs.index.phase(ix)
+
+def Subs.children.at(some: Bool, +ts: List<&2, M.Task>, +ids: List<&2, String>, +st: M.State, +now: Nat, +ixs: List<&2, U.SIx>) -> List<&2, SubRow>:
   match some:
     case False{}:
       Nil{}
     case True{}:
-      +ix = Subs.index(st)
+      +ix = Subs.index.given(ixs, st)
       List.append(&2, SubRow, Subs.tasks(ts, st, now, ix), Subs.launch.go(List.reverse(&2, String, ids), st, now, ix))
 
-def Subs.rows(+st: M.State, +info: Map<&2, String>, +th: String, +now: Nat) -> List<&2, SubRow>:
+def Subs.children(some: Bool, +ts: List<&2, M.Task>, +ids: List<&2, String>, +st: M.State, +now: Nat) -> List<&2, SubRow>:
+  Subs.children.at(some, ts, ids, st, now, Nil{})
+
+def Subs.rows.at(+st: M.State, +info: Map<&2, String>, +th: String, +now: Nat, +ixs: List<&2, U.SIx>) -> List<&2, SubRow>:
   +ts = U.Tasks.of(st, th)
   +ids = M.Launch.of(st, th)
-  Subs.group(List.concat(&2, SubRow, [Subs.children(Bool.or(Bool.not(List.is_empty(&2, M.Task, ts)), Bool.not(List.is_empty(&2, String, ids))), ts, ids, st, now), Subs.wakes(st, th), Subs.locks.go(M.Locks.names(st), st, th), Subs.agents(st, info, th, now)]), info, th)
+  Subs.group(List.concat(&2, SubRow, [Subs.children.at(Bool.or(Bool.not(List.is_empty(&2, M.Task, ts)), Bool.not(List.is_empty(&2, String, ids))), ts, ids, st, now, ixs), Subs.wakes(st, th), Subs.locks.go(M.Locks.names(st), st, th), Subs.agents(st, info, th, now)]), info, th)
+
+def Subs.rows.ix(+st: M.State, +info: Map<&2, String>, +th: String, +now: Nat, ix: U.SIx) -> List<&2, SubRow>:
+  Subs.rows.at(st, info, th, now, [ix])
+
+def Subs.rows(+st: M.State, +info: Map<&2, String>, +th: String, +now: Nat) -> List<&2, SubRow>:
+  Subs.rows.at(st, info, th, now, Nil{})
 
 def Subs.live(rs: List<&2, SubRow>) -> Nat:
   match rs:
@@ -757,3 +779,30 @@ def Subs.badge(+n: Nat) -> String:
 # a step as a row shows it: the tool, or "" for what it wrote
 def Subs.step.label(+kind: String) -> String:
   Bool.pick(String, String.eq(kind, "say"), "", kind)
+
+# Display activity only. Keep the raw live/action flags for cancellation,
+# delivery, folding and history compatibility; they include queued/reporting.
+def Subs.signal(r: SubRow) -> String:
+  match r:
+    case SubRow{+key, _, _, +who, +word, _, _, _, _, _}:
+      Bool.pick(String, String.starts_with(key, "subs.done:"), "settled",
+        Bool.pick(String, String.eq(word, "needs you"), "blocked",
+          Bool.pick(String, Bool.or(String.eq(who, "lock"), String.eq(who, "wake")), "inactive",
+            Bool.pick(String, Bool.or(String.eq(word, "running"), Bool.or(String.starts_with(word, "watching"), String.eq(word, "cancelling"))), "active",
+              Bool.pick(String, Bool.or(Subs.finished(word), String.eq(word, "settled")), "settled", "inactive")))))
+
+def Subs.signal.connected(+info: Map<&2, String>) -> Bool:
+  Bool.not(String.eq(U.Str.get(info, "@signal.online"), "0"))
+
+def Subs.signal.of(+info: Map<&2, String>, +r: SubRow) -> String:
+  match r:
+    case SubRow{+key, agent, _, _, _, _, _, _, _, _}:
+      Bool.pick(String, agent,
+        Bool.pick(String, Bool.and(String.eq(Subs.signal(r), "active"), Bool.not(Subs.signal.connected(info))), "inactive", Subs.signal(r)),
+        SG.Signal.name(SG.Signal.cached(info, key)))
+
+def Subs.active(rs: List<&2, SubRow>, +info: Map<&2, String>) -> Nat:
+  match rs:
+    case Nil{}: 0n
+    case r <> rest:
+      Nat.add(Bool.pick(Nat, String.eq(Subs.signal.of(info, r), "active"), 1n, 0n), Subs.active(rest, info))

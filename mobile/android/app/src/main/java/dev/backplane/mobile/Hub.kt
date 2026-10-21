@@ -34,10 +34,15 @@ object Pairing {
         if (!s.contains("://")) s = "http://$s"
         val u = Uri.parse(s)
         val host = u.host ?: return null
-        val token = Regex("token=([0-9a-f]+)").find(u.fragment ?: u.query ?: "")?.groupValues?.get(1)
+        val token = Regex("token=([0-9a-f]+)").find((u.fragment ?: "") + "&" + (u.query ?: ""))?.groupValues?.get(1)
         val scheme = if (u.scheme == "https") "wss" else "ws"
         val port = if (u.port > 0) ":${u.port}" else ""
         return "$scheme://$host$port/ws" + (token?.let { "?token=$it" } ?: "")
+    }
+
+    fun viewSocket(link: String): String? = socket(link)?.let {
+        Uri.parse(it).buildUpon().appendQueryParameter("since", "0").appendQueryParameter("origin", "")
+            .appendQueryParameter("enc", "cbor").appendQueryParameter("view", "1").appendQueryParameter("mobile", "1").build().toString()
     }
 
     // an HTTP address on the hub (its token along, unless token is false)
@@ -65,6 +70,8 @@ object Pairing {
             .appendQueryParameter("origin", r.optString("origin", ""))
             // a hub from before CBOR-only still needs asking
             .appendQueryParameter("enc", "cbor")
+            // The matching bridge understands Recent; old hubs ignore this hint.
+            .appendQueryParameter("mobile", "1")
             .build().toString()
     }
 }

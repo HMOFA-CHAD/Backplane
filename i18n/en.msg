@@ -1213,3 +1213,33 @@ native.notify.channel.live = Agents working
 
 # iOS system camera permission purpose
 native.permission.camera = Backplane reads the pairing code your computer shows, to connect to it.
+auth.legacy = This device connected without its pairing key, which a later version will require. Open the pairing link from Backplane's Settings on this device (or scan its QR code) to add it.
+
+settings.textsize = Text size
+settings.textsize.note = Text and controls reflow together. Device display scaling remains separate.
+settings.privacy = Privacy
+
+# Native phone controls and Mailroom.
+native.usage.machines = Usage by machine
+native.thread.latest = Latest
+native.thread.new = {n} new
+native.thread.permissions = Permissions
+native.thread.permissions.current = Permissions: {mode}
+native.thread.permissions.approval = Approval required
+native.thread.permissions.edits = Auto-accept edits
+native.thread.permissions.auto = Auto
+native.thread.permissions.full = Full access
+native.thread.loading.recent = Loading recent messages…
+native.thread.loading.older = Loading older messages…
+native.thread.send.failed = Could not send
+native.mailroom.title = Mailroom
+native.mailroom.act = Act
+native.mailroom.fyi = FYI
+native.mailroom.later = Later
+native.mailroom.recipient = Recipient
+native.mailroom.accepted.unconfirmed = Acknowledged; delivery unconfirmed
+native.mailroom.outcome.unknown = Outcome unknown; check before sending again
+native.mailroom.open.source = Open source
+native.mailroom.machine.offline = Machine offline
+native.mailroom.page = {first}–{last} of {total}
+native.mailroom.unread.count = {count} unread

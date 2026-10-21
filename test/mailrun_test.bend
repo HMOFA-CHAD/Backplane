@@ -58,6 +58,12 @@ def alarmcount(+cs: List<&2, M.Change>) -> Nat:
     case M.ActivityLogged{_, _, _, "escalation", _, _} <> +t: 1n+alarmcount(t)
     case _ <> +t: alarmcount(t)
 
+def mailappends(os: List<&2, H.Out>) -> Nat:
+  match os:
+    case Nil{}: 0n
+    case H.MailAppend{_, _, _} <> rest: 1n+mailappends(rest)
+    case _ <> rest: mailappends(rest)
+
 def seven() -> M.State:
   M.State.replay([M.RunSet{"r1", "beta", "c1", "m1", 1n}, M.RunSet{"r2", "beta", "c2", "m2", 1n}, M.RunSet{"r3", "beta", "c3", "m3", 1n}, M.RunSet{"r4", "beta", "c4", "m4", 1n}, M.RunSet{"r5", "beta", "c5", "m5", 1n}, M.RunSet{"r6", "beta", "c6", "m6", 1n}, M.RunSet{"r7", "beta", "c7", "m7", 1n}], base())
 
@@ -117,7 +123,7 @@ def main() -> IO(Unit):
     C.Check.str("soft alarm next hour", Nat.show(alarmcount(H.Run.alarm(M.State.replay(alarms, seven()), 3700n, "beta", "conv"))), "1")
     C.Check.str("restart never carries run", Bool.show(H.Carry.will(live, th)), "False")
     C.Check.str("restart ends old run", Nat.show(ML.Box.live_n(M.State.mail(M.State.replay(H.Queue.changes(H.Run.recover(live, 20n, Nil{}, H.Step.none())), live)), "beta")), "0")
-    C.Check.str("restart writes system mail", Nat.show(List.length(&2, H.Out, H.Step.outs_of(H.Run.recover(live, 20n, Nil{}, H.Step.none())))), "1")
+    C.Check.str("restart writes system mail", Nat.show(mailappends(H.Step.outs_of(H.Run.recover(live, 20n, Nil{}, H.Step.none())))), "1")
     risky("cd /tmp; git push origin main && echo done")
     risky("cd /tmp & git push")
     risky("gh pr merge 1")

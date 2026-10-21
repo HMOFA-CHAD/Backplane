@@ -1834,10 +1834,64 @@ def Google.hop.plain(+rest: String) -> Bool:
   Bool.not(Bool.or(String.contains(rest, "/"), Bool.or(String.contains(rest, "@"),
     Bool.or(String.contains(rest, "?"), Bool.or(String.contains(rest, "#"), String.contains(rest, "\\"))))))
 
+# A forwarded state is untrusted input until the destination checks PKCE.
+# Accept only DNS labels and an optional decimal TCP port; in particular,
+# neither the decoded origin nor the raw query may inject response headers.
+def Google.hop.label.chars(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      True{}
+    case SCon{Chr{+x}, t}:
+      Bool.and(Bool.or(Bool.and(U32.is_ge(x, 97), U32.is_le(x, 122)), Bool.or(
+        Bool.and(U32.is_ge(x, 48), U32.is_le(x, 57)), U32.is_eq(x, 45))), Google.hop.label.chars(t))
+
+def Google.hop.labels(xs: List<&2, String>) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case +h <> t:
+      Bool.and(Bool.not(String.is_empty(h)), Bool.and(Google.hop.label.chars(h), Bool.and(
+        Bool.not(Bool.or(String.starts_with(h, "-"), String.ends_with(h, "-"))), Google.hop.labels(t))))
+
+def Google.hop.host.safe(+host: String) -> Bool:
+  Bool.and(String.ends_with(String.to_lower(host), ".ts.net"),
+    Google.hop.labels(String.split(String.to_lower(host), '.')))
+
+def Google.hop.port.chars(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      True{}
+    case SCon{Chr{+x}, t}:
+      Bool.and(Bool.and(U32.is_ge(x, 48), U32.is_le(x, 57)), Google.hop.port.chars(t))
+
+def Google.hop.port.range(p: Maybe<&2, U32>) -> Bool:
+  match p:
+    case None{}:
+      False{}
+    case Some{+n}:
+      Bool.and(U32.is_gt(n, 0), U32.is_le(n, 65535))
+
+def Google.hop.authority(parts: List<&2, String>) -> Bool:
+  match parts:
+    case +host <> Nil{}:
+      Google.hop.host.safe(host)
+    case +host <> +port <> Nil{}:
+      Bool.and(Google.hop.host.safe(host), Bool.and(Bool.and(Bool.not(String.is_empty(port)), Nat.is_le(String.length(port), 5n)), Bool.and(
+        Google.hop.port.chars(port), Google.hop.port.range(U32.read(port)))))
+    case _:
+      False{}
+
+def Google.hop.query.safe(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      True{}
+    case SCon{Chr{+x}, t}:
+      Bool.and(Bool.and(Bool.and(U32.is_ge(x, 33), U32.is_le(x, 126)), Bool.not(U32.is_eq(x, 35))), Google.hop.query.safe(t))
+
 # a hub the browser may be sent to: a machine on a tailnet
 # (http(s)://<name>.ts.net[:port], nothing after)
 def Google.hop.ok(+url: String) -> Bool:
-  Bool.and(String.ends_with(Google.hop.host(Google.hop.rest(url)), ".ts.net"), Google.hop.plain(Google.hop.rest(url)))
+  Google.hop.authority(String.split(Google.hop.rest(url), ':'))
 
 def Google.hop.k(go: Bool, +home: String, +query: String) -> String:
   match go:
@@ -1851,8 +1905,8 @@ def Google.hop.k(go: Bool, +home: String, +query: String) -> String:
 # the hub its state names, on the tailnet, and only once (hop=1); "" to
 # finish here
 def Google.hop(+query: String, +mine: String) -> String:
-  Google.hop.k(Bool.and(Bool.not(String.eq(Url.param(query, "state"), mine)),
-      Bool.and(Bool.not(String.eq(Url.param(query, "hop"), "1")), Google.hop.ok(Google.state.home(Url.param(query, "state"))))),
+  Google.hop.k(Bool.and(Google.hop.query.safe(query), Bool.and(Bool.not(String.eq(Url.param(query, "state"), mine)),
+      Bool.and(Bool.not(String.eq(Url.param(query, "hop"), "1")), Google.hop.ok(Google.state.home(Url.param(query, "state")))))),
     Google.state.home(Url.param(query, "state")), query)
 
 # A phone's own sign-in (RFC 8252 7.3): the app listens on a loopback port

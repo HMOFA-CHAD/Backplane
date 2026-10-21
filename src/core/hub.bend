@@ -1,5 +1,7 @@
 import Base
 import ./mailrun.bend as MR
+import ./mailcontinuity.bend as MCN
+import ./maildisposition.bend as MD
 import ./mail.bend as ML
 import ./mailbody.bend as MB
 import ./ref.bend as REF
@@ -65,6 +67,9 @@ type Out is Data:
   KiCadRetry{}
   # opencode's models read again for every client (server.bend's OcJob)
   ModelsRefresh{}
+  # the person allowed a project's own checks (.backplane/checks.json) as
+  # they are: their sha256 joins <home>/checks.trusted (server.bend)
+  ChecksTrust{hash: String}
   # run one Codex turn (a process per turn; `session` resumes)
   CodexTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   GrokTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
@@ -2652,10 +2657,45 @@ def Hub.answer.open(order: Bool, +s: M.State, +now: Nat, +client: U32, +id: Stri
 # agent request gets its reply, implementing a plan leaves plan mode and
 # asks the agent to carry it out, and an order's question is answered in
 # its thread (Hub.answer.order)
+# A project's own checks wait for the person's OK (server/review.bend's
+# Rvc.trusted): the hub asks in the thread (an "input" ask, tool
+# "checks_ok", id "checks:<sha256>:<n>", server.bend's Hub.checks.ask);
+# "Run them" trusts that checks.json, anything else only closes the ask.
+def Checks.yes() -> String:
+  "Run them"
+
+def Checks.hash(+ask: String) -> String:
+  String.take(String.drop(ask, 7n), 64n)
+
+def Checks.answer.k(yes: Bool, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String) -> Step:
+  match yes:
+    case True{}:
+      Step{[M.AskClosed{ask, answer, now}], [Reply.ok(client, id), ChecksTrust{Checks.hash(ask)}]}
+    case False{}:
+      Step{[M.AskClosed{ask, answer, now}], [Reply.ok(client, id)]}
+
+def Checks.asked.go(as: List<&2, M.Ask>, +pre: String) -> Bool:
+  match as:
+    case Nil{}:
+      False{}
+    case M.Ask{+aid, _, _, _, _, _, +op, _} <> t:
+      Bool.or(Bool.and(op, String.starts_with(aid, pre)), Checks.asked.go(t, pre))
+
+# a question for these checks is open already
+def Checks.asked(+s: M.State, +hash: String) -> Bool:
+  Checks.asked.go(M.Asks.all(s), "checks:" ++ hash ++ ":")
+
+def Hub.answer.cx.t(cx: Bool, order: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String, +k: String) -> Step:
+  match cx:
+    case True{}:
+      Checks.answer.k(String.eq(String.trim(answer), Checks.yes()), now, client, id, ask, answer)
+    case False{}:
+      Hub.answer.open(order, s, now, client, id, ask, answer, th, k)
+
 def Hub.answer.k(a: M.Ask, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String) -> Step:
   match a:
     case M.Ask{_, +th, +k, +tool, _, _, True{}, _}:
-      Hub.answer.open(String.eq(tool, "order_ask"), s, now, client, id, ask, answer, th, k)
+      Hub.answer.cx.t(String.eq(tool, "checks_ok"), String.eq(tool, "order_ask"), s, now, client, id, ask, answer, th, k)
     case M.Ask{_, _, _, _, _, _, False{}, _}:
       Step.outs([Reply.ok(client, id)])
 
@@ -3848,6 +3888,28 @@ def Mail.send(+s: M.State, +now: Nat, +from: String, +p: J.Json) -> Step:
   +thread = Mail.target(s, J.Json.get_str(p, "to", ""))
   Mail.send.valid(Hub.owns(s, thread), s, now, from, thread, p, Hub.id("mail", now, Hub.seq(s)))
 
+# Human socket requests are already authenticated by Conn.allowed. Mailbox
+# usability is independent of the hidden-agent routing switch. Bot targets
+# always use the durable mailbox path, including while automation is off.
+def Mail.ui.send.valid(ok: Bool, +s: M.State, +now: Nat, +thread: String, +p: J.Json, +msg: String) -> Step:
+  match ok:
+    case False{}: Step.none()
+    case True{}: Mail.send.bot(BT.World.is_bot_thread(M.State.bots(s), thread), True{}, s, now, "person", thread, p, msg)
+
+def Mail.ui.send(+s: M.State, +now: Nat, +p: J.Json) -> Step:
+  +thread = Mail.target(s, J.Json.get_str(p, "to", ""))
+  Mail.ui.send.valid(Hub.owns(s, thread), s, now, thread, p, Hub.id("mail", now, Hub.seq(s)))
+
+# Authentication is already checked by the socket. Never ACK an invalid
+# human target as though a durable append had been scheduled.
+def Mail.ui.request.valid(ok: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
+  match ok:
+    case False{}: Step.outs([Reply.err(client, id, "invalid mail target")])
+    case True{}: Step.before(Nil{}, [Reply.ok(client, id)], Mail.ui.send(s, now, p))
+
+def Mail.ui.request(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
+  Mail.ui.request.valid(Hub.owns(s, Mail.target(s, J.Json.get_str(p, "to", ""))), s, now, client, id, p)
+
 def Mail.request.on(+on: Bool, +i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
   match on i:
     case False{} _: Step.outs([Reply.err(client, id, "mail is off")])
@@ -3856,7 +3918,12 @@ def Mail.request.on(+on: Bool, +i: Nat, +s: M.State, +now: Nat, +client: U32, +i
     case True{} 2n: Step.outs([Reply.data(client, id, Mail.find(s, p))])
     case True{} 3n: Mail.request.mark(Mail.mark.valid(J.Json.get_str(p, "status", "")), s, now, client, id, p)
     case True{} 4n: Step.reply(client, id, Mail.tag(now, p))
-    case True{} _: Step.before(Nil{}, [Reply.ok(client, id)], Mail.send(s, now, "person", p))
+    case True{} _: Mail.ui.request(s, now, client, id, p)
+
+# This entrypoint is for authenticated client RPCs only. MCP continues to
+# use Mcp.mail.call's existing mail.on + caller-scope checks.
+def Mail.request.ui(+i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
+  Mail.request.on(True{}, i, s, now, client, id, p)
 
 def Mail.tee.on(+on: Bool, +st: Step, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
   match on:
@@ -6222,12 +6289,111 @@ def Rec.but(ids: List<&2, String>, +kept: List<&2, String>) -> List<&2, String>:
 def Hub.recover.k(+s: M.State, +now: Nat, +kept: List<&2, String>) -> Step:
   Rec.step(Rec.lost(Rec.but(Rec.ids(Rec.threads(s)), kept), Rec.repair(Rec.turns(Rec.but(Rec.ids(Rec.threads(s)), kept), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), s, now), s, now), now))
 
+def Run.row(+s: M.State, +now: Nat, +bot: String, +conv: String, +text: String) -> M.Change:
+  M.ActivityLogged{BT.Bot.thread(BT.World.bot(M.State.bots(s), bot)), Hub.id("esc", now, Hub.seq(s)), "info", "escalation", text ++ " · " ++ REF.Ref.uri(REF.Ref.conv(conv)), now}
+
+def Run.recent(+s: M.State, +now: Nat, +key: String) -> Bool:
+  +j = Maybe.default(&2, J.Json, J.Json.parse(M.Setting.get(s, "told." ++ key, "")), J.Null{})
+  Bool.and(Nat.is_gt(J.Json.get_nat(j, "at", 0n), 0n), Nat.is_lt(Nat.sub(now, J.Json.get_nat(j, "at", 0n)), 3600n))
+
+def Run.told(+now: Nat, +key: String, +bot: String, +text: String) -> List<&2, M.Change>:
+  TLD.Told.mark.set(key, now, key, text, "alert", bot)
+
+def Run.person(on: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String, +text: String) -> Step:
+  match on:
+    case False{}: Step.none()
+    case True{}:
+      +th = BT.Bot.thread(BT.World.bot(M.State.bots(s), bot))
+      Step{List.append(&2, M.Change, NO.Policy.ask(s, now, th, "Mailroom escalation", text ++ " · " ++ REF.Ref.uri(REF.Ref.conv(conv))), Run.told(now, "mail-person-" ++ bot ++ "-" ++ conv, bot, text)), [Alerted{th}]}
+
+def Run.person.ready(+s: M.State, +now: Nat, +bot: String, +conv: String) -> Bool:
+  Bool.and(NO.Policy.on(s, "needs"), Bool.not(Run.recent(s, now, "mail-person-" ++ bot ++ "-" ++ conv)))
+
+def Run.escalate.to(person: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String, +text: String) -> Step:
+  match person:
+    case True{}: Run.person(Run.person.ready(s, now, bot, conv), s, now, bot, conv, text)
+    case False{}:
+      +th = BT.Bot.thread(BT.World.bot(M.State.bots(s), bot))
+      +msg = Hub.id("esc", now, Hub.seq(s))
+      Origin.step(Hub.deliver(Hub.running(Hub.thread(s, th)), M.Worktree.pending(Hub.thread(s, th), now), s, now, th, msg, M.System{}, "[mailroom escalation from " ++ conv ++ "] " ++ text), th, msg, ML.Origin{"mailroom:" ++ conv, "escalation", conv}, now)
+
+def Run.input(+s: M.State, +r: ML.Run) -> String:
+  MCN.Continuity.latest(ML.Box.headers(M.State.mail(s), ML.Run.conv(r)), ML.Run.bot(r), ML.Run.mail(r))
+
+def Run.escalated(+s: M.State, +r: ML.Run, +now: Nat) -> M.Change:
+  M.SettingSet{"run.escalated." ++ ML.Run.thread(r), Run.input(s, r), now}
+
+def Run.escalation.mark.got(r: Maybe<&2, ML.Run>, +s: M.State, +now: Nat, delivered: Bool) -> List<&2, M.Change>:
+  match r delivered:
+    case Some{+r} True{}: [Run.escalated(s, r, now)]
+    case _ _: Nil{}
+
+def Run.escalation.mark(+s: M.State, +now: Nat, +bot: String, +conv: String, +to: String) -> List<&2, M.Change>:
+  Run.escalation.mark.got(ML.Box.run_of(M.State.mail(s), ML.Box.live(M.State.mail(s), bot, conv)), s, now,
+    Bool.or(Bool.not(String.eq(to, "person")), Run.person.ready(s, now, bot, conv)))
+
+def Run.escalate(+s: M.State, +now: Nat, +bot: String, +conv: String, +to: String, +text: String) -> Step:
+  Step.before(Run.row(s, now, bot, conv, text) <> Run.escalation.mark(s, now, bot, conv, to), Nil{}, Run.escalate.to(String.eq(to, "person"), s, now, bot, conv, text))
+
+# Independent of agent-side tool approval: an actionable mail run cannot
+# finish silently when its reply/escalation tools were denied or failed.
+# This is a report to its own bot, not permission to perform the action.
+def Run.unresolved.note(+s: M.State, +r: ML.Run) -> String:
+  "Mailroom run " ++ ML.Run.thread(r) ++ " ended without a committed reply, deferral, completion or escalation. The request remains unresolved; review it and respond in the conversation. Do not repeat completed actions.\n" ++
+  "Conversation: " ++ ML.Run.conv(r) ++ "\nActionable input: " ++ Run.input(s, r) ++ "\nRun's last response (not evidence of completion):\n" ++ String.take(Task.last(s, ML.Run.thread(r)), 4000n)
+
+def Run.unresolved.send(send: Bool, +s: M.State, +now: Nat, +r: ML.Run) -> Step:
+  match send:
+    case False{}: Step.none()
+    case True{}:
+      Step.before([M.SettingSet{"run.forwarded." ++ ML.Run.thread(r), Run.input(s, r), now}], Nil{},
+        Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), "bot", Run.unresolved.note(s, r)))
+
+def Run.unresolved(+s: M.State, +now: Nat, +r: ML.Run) -> Step:
+  Run.unresolved.send(Bool.and(Bool.not(MD.Disposition.handled(s, r)), MCN.Continuity.needs(Run.input(s, r), M.Setting.get(s, "run.escalated." ++ ML.Run.thread(r), ""),
+    M.Setting.get(s, "run.forwarded." ++ ML.Run.thread(r), ""), ML.Mark.status(ML.Box.mark_of(M.State.mail(s), ML.Run.bot(r), ML.Run.conv(r))),
+    MCN.Continuity.replied(ML.Box.headers(M.State.mail(s), ML.Run.conv(r)), ML.Run.bot(r), ML.Run.thread(r)))), s, now, r)
+
+def Run.ended.live(live: Bool, +r: ML.Run, +before: M.State, +now: Nat, +st: Step) -> Step:
+  match live:
+    case False{}: st
+    case True{}: Step.cat(st, Run.unresolved(M.State.replay(Queue.changes(st), before), now, r))
+
+def Run.ended.got(r: Maybe<&2, ML.Run>, +before: M.State, +now: Nat, +st: Step) -> Step:
+  match r:
+    case None{}: st
+    case Some{+r}:
+      Run.ended.live(ML.Run.live(r), r, before, now, st)
+
+def Run.after.go(cs: List<&2, M.Change>, +before: M.State, +now: Nat, st: Step) -> Step:
+  match cs:
+    case Nil{}: st
+    case M.TurnChanged{+th, M.Completed{}, _} <> rest:
+      Run.after.go(rest, before, now, Run.ended.got(ML.Box.run_of(M.State.mail(before), th), before, now, st))
+    case M.TurnChanged{+th, M.Failed{}, _} <> rest:
+      Run.after.go(rest, before, now, Run.ended.got(ML.Box.run_of(M.State.mail(before), th), before, now, st))
+    case _ <> rest: Run.after.go(rest, before, now, st)
+
+def Run.after.on(on: Bool, +before: M.State, +now: Nat, +st: Step) -> Step:
+  match on:
+    case False{}: st
+    case True{}: Run.after.go(Queue.changes(st), before, now, st)
+
+def Run.after(+before: M.State, now: Nat, st: Step) -> Step:
+  Run.after.on(String.eq(M.Setting.get(before, "mail.on", "off"), "on"), before, now, st)
+
+def Run.recover.report(on: Bool, +s: M.State, +now: Nat, +r: ML.Run, +st: Step) -> Step:
+  match on:
+    case False{}: st
+    case True{}: Step.cat(st, Run.unresolved(M.State.replay(Queue.changes(st), s), now, r))
+
 def Run.recover.one(go: Bool, +s: M.State, +now: Nat, +r: ML.Run) -> Step:
   match go:
     case False{}: Step.none()
     case True{}:
-      Step.before([M.TurnChanged{ML.Run.thread(r), M.Interrupted{}, now}, M.ThreadSettled{ML.Run.thread(r), False{}, now}], Nil{},
-        Mail.file(s, now, ML.Origin{"backplane", "system", "system:" ++ ML.Run.bot(r)}, "bot:" ++ ML.Run.bot(r), "run " ++ ML.Run.thread(r) ++ " was cut off by a restart", Hub.id("run-restart-" ++ ML.Run.thread(r), now, Hub.seq(s))))
+      Run.recover.report(M.Carry.on(s), s, now, r,
+        Step.before([M.TurnChanged{ML.Run.thread(r), M.Interrupted{}, now}, M.ThreadSettled{ML.Run.thread(r), False{}, now}], Nil{},
+          Mail.file(s, now, ML.Origin{"backplane", "system", "system:" ++ ML.Run.bot(r)}, "bot:" ++ ML.Run.bot(r), "run " ++ ML.Run.thread(r) ++ " was cut off by a restart", Hub.id("run-restart-" ++ ML.Run.thread(r), now, Hub.seq(s)))))
 
 def Run.recover.all(+rs: List<&2, ML.Run>, +s: M.State, +now: Nat, +kept: List<&2, String>, +st: Step) -> Step:
   match rs:
@@ -7029,34 +7195,6 @@ def Mail.options(st: Step, s: M.State, p: J.Json) -> Step:
 # ---- mail 2c ----
 # These operations never call the inbound funnel: escalation is the only
 # mail path allowed to post into a bot's front of house.
-def Run.row(+s: M.State, +now: Nat, +bot: String, +conv: String, +text: String) -> M.Change:
-  M.ActivityLogged{BT.Bot.thread(BT.World.bot(M.State.bots(s), bot)), Hub.id("esc", now, Hub.seq(s)), "info", "escalation", text ++ " · " ++ REF.Ref.uri(REF.Ref.conv(conv)), now}
-
-def Run.recent(+s: M.State, +now: Nat, +key: String) -> Bool:
-  +j = Maybe.default(&2, J.Json, J.Json.parse(M.Setting.get(s, "told." ++ key, "")), J.Null{})
-  Bool.and(Nat.is_gt(J.Json.get_nat(j, "at", 0n), 0n), Nat.is_lt(Nat.sub(now, J.Json.get_nat(j, "at", 0n)), 3600n))
-
-def Run.told(+now: Nat, +key: String, +bot: String, +text: String) -> List<&2, M.Change>:
-  TLD.Told.mark.set(key, now, key, text, "alert", bot)
-
-def Run.person(on: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String, +text: String) -> Step:
-  match on:
-    case False{}: Step.none()
-    case True{}:
-      +th = BT.Bot.thread(BT.World.bot(M.State.bots(s), bot))
-      Step{List.append(&2, M.Change, NO.Policy.ask(s, now, th, "Mailroom escalation", text ++ " · " ++ REF.Ref.uri(REF.Ref.conv(conv))), Run.told(now, "mail-person-" ++ bot ++ "-" ++ conv, bot, text)), [Alerted{th}]}
-
-def Run.escalate.to(person: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String, +text: String) -> Step:
-  match person:
-    case True{}: Run.person(Bool.and(NO.Policy.on(s, "needs"), Bool.not(Run.recent(s, now, "mail-person-" ++ bot ++ "-" ++ conv))), s, now, bot, conv, text)
-    case False{}:
-      +th = BT.Bot.thread(BT.World.bot(M.State.bots(s), bot))
-      +msg = Hub.id("esc", now, Hub.seq(s))
-      Origin.step(Hub.deliver(Hub.running(Hub.thread(s, th)), M.Worktree.pending(Hub.thread(s, th), now), s, now, th, msg, M.System{}, "[mailroom escalation from " ++ conv ++ "] " ++ text), th, msg, ML.Origin{"mailroom:" ++ conv, "escalation", conv}, now)
-
-def Run.escalate(+s: M.State, +now: Nat, +bot: String, +conv: String, +to: String, +text: String) -> Step:
-  Step.before([Run.row(s, now, bot, conv, text)], Nil{}, Run.escalate.to(String.eq(to, "person"), s, now, bot, conv, text))
-
 def Run.alarm.on(on: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String) -> List<&2, M.Change>:
   match on:
     case False{}: Nil{}
@@ -7104,7 +7242,7 @@ def Run.spawn.new(+s: M.State, +now: Nat, +bot: String, +conv: String, +body: MB
 def Run.deliver.ready(+s: M.State, +now: Nat, +th: String, +body: MB.Body) -> Step:
   +m = MB.Body.mail(body)
   Origin.step(Hub.deliver(Hub.running(Hub.thread(s, th)), M.Worktree.pending(Hub.thread(s, th), now), s, now, th, ML.Mail.id(m), M.User{},
-    "[mail " ++ ML.Mail.conv(m) ++ " · " ++ ML.Mail.kind(m) ++ " from " ++ Mail.name(s, ML.Mail.from(m)) ++ "]\n" ++ MB.Body.text(body)), th, ML.Mail.id(m), ML.Origin{ML.Mail.from(m), ML.Mail.kind(m), ML.Mail.conv(m)}, now)
+    "[mail " ++ ML.Mail.conv(m) ++ " · " ++ ML.Mail.kind(m) ++ " from " ++ Mail.name(s, ML.Mail.from(m)) ++ "]\nCurrent actionable input: " ++ ML.Mail.id(m) ++ "\n" ++ MB.Body.text(body)), th, ML.Mail.id(m), ML.Origin{ML.Mail.from(m), ML.Mail.kind(m), ML.Mail.conv(m)}, now)
 
 # Server has loaded the last 20 bodies, newest first. Keep the most
 # recent text first so a character cap discards the oldest mail first.
@@ -7116,7 +7254,7 @@ def Run.bodies(+bs: List<&2, MB.Body>) -> String:
 def Run.deliver.pending(pending: Bool, +s: M.State, +now: Nat, +th: String, +body: MB.Body) -> Step:
   match pending:
     case False{}: Run.deliver.ready(s, now, th, body)
-    case True{}: Step{[M.MessagePosted{th, ML.Mail.id(MB.Body.mail(body)), M.User{}, MB.Body.text(body), now}, M.MessageFrom{th, ML.Mail.id(MB.Body.mail(body)), ML.Mail.from(MB.Body.mail(body)), ML.Mail.kind(MB.Body.mail(body)), ML.Mail.conv(MB.Body.mail(body)), now}], Nil{}}
+    case True{}: Step{[M.MessagePosted{th, ML.Mail.id(MB.Body.mail(body)), M.User{}, "Current actionable input: " ++ ML.Mail.id(MB.Body.mail(body)) ++ "\n" ++ MB.Body.text(body), now}, M.MessageFrom{th, ML.Mail.id(MB.Body.mail(body)), ML.Mail.from(MB.Body.mail(body)), ML.Mail.kind(MB.Body.mail(body)), ML.Mail.conv(MB.Body.mail(body)), now}], Nil{}}
 
 def Run.deliver(+s: M.State, +now: Nat, +th: String, +body: MB.Body) -> Step:
   Run.deliver.pending(String.eq(M.Setting.get(s, "run.pending." ++ th, ""), "on"), s, now, th, body)
@@ -7466,12 +7604,12 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
       Step.before(Nil{}, [Reply.ok(client, id)], Deploy.cancel(s, now))
     case 36n:
       Step.outs([Reply.data(client, id, DP.Deploy.status(s))])
-    case 40n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 0n, s, now, client, id, p)
-    case 41n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 1n, s, now, client, id, p)
-    case 42n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 2n, s, now, client, id, p)
-    case 43n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 3n, s, now, client, id, p)
-    case 44n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 4n, s, now, client, id, p)
-    case 45n: Mail.request.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), 5n, s, now, client, id, p)
+    case 40n: Mail.request.ui(0n, s, now, client, id, p)
+    case 41n: Mail.request.ui(1n, s, now, client, id, p)
+    case 42n: Mail.request.ui(2n, s, now, client, id, p)
+    case 43n: Mail.request.ui(3n, s, now, client, id, p)
+    case 44n: Mail.request.ui(4n, s, now, client, id, p)
+    case 45n: Mail.request.ui(5n, s, now, client, id, p)
     case 46n:
       Buy.look(s, client, id, J.Json.get_str(p, "thread", ""), "fab", "")
     case 47n:

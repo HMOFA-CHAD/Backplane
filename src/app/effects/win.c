@@ -1468,9 +1468,116 @@ static void* win_lane(void* arg) {
   return NULL;
 }
 
+// Conversion jobs borrow the frame only until this synchronous dispatch ends.
+// Reuse conversion threads instead of creating and joining up to seven on
+// every changed frame. The existing lane partition and pixel walk stay exact.
+typedef struct {
+  pthread_t thread;
+  u32 lane;
+  int attempted, started;
+} WinFillWorker;
+
+static struct {
+  pthread_mutex_t turn, lock;
+  pthread_cond_t ready, done;
+  unsigned long generation;
+  u32 active, pending;
+  int stopping, exit_registered;
+  WinLane jobs[8];
+  WinFillWorker workers[8];
+} win_fill_pool = {
+  .turn = PTHREAD_MUTEX_INITIALIZER,
+  .lock = PTHREAD_MUTEX_INITIALIZER,
+  .ready = PTHREAD_COND_INITIALIZER,
+  .done = PTHREAD_COND_INITIALIZER
+};
+
+static void* win_fill_worker(void* arg) {
+  WinFillWorker* worker = arg;
+  unsigned long seen = 0;
+  pthread_mutex_lock(&win_fill_pool.lock);
+  for (;;) {
+    while (!win_fill_pool.stopping && seen == win_fill_pool.generation) {
+      pthread_cond_wait(&win_fill_pool.ready, &win_fill_pool.lock);
+    }
+    if (win_fill_pool.stopping) break;
+    seen = win_fill_pool.generation;
+    if (worker->lane >= win_fill_pool.active) continue;
+    WinLane job = win_fill_pool.jobs[worker->lane];
+    pthread_mutex_unlock(&win_fill_pool.lock);
+    win_lane(&job);
+    pthread_mutex_lock(&win_fill_pool.lock);
+    if (--win_fill_pool.pending == 0) pthread_cond_signal(&win_fill_pool.done);
+  }
+  pthread_mutex_unlock(&win_fill_pool.lock);
+  return NULL;
+}
+
+static void win_fill_workers_stop(void) {
+  pthread_mutex_lock(&win_fill_pool.turn);
+  pthread_mutex_lock(&win_fill_pool.lock);
+  win_fill_pool.stopping = 1;
+  pthread_cond_broadcast(&win_fill_pool.ready);
+  pthread_mutex_unlock(&win_fill_pool.lock);
+  for (u32 k = 1; k < 8; ++k) {
+    if (win_fill_pool.workers[k].started) {
+      pthread_join(win_fill_pool.workers[k].thread, NULL);
+    }
+    win_fill_pool.workers[k].started = 0;
+    win_fill_pool.workers[k].attempted = 0;
+  }
+  pthread_mutex_lock(&win_fill_pool.lock);
+  memset(win_fill_pool.jobs, 0, sizeof win_fill_pool.jobs);
+  win_fill_pool.active = win_fill_pool.pending = 0;
+  win_fill_pool.generation = 0;
+  win_fill_pool.stopping = 0;
+  pthread_mutex_unlock(&win_fill_pool.lock);
+  pthread_mutex_unlock(&win_fill_pool.turn);
+}
+
+static void win_fill_dispatch(WinLane* jobs, u32 lanes) {
+  pthread_mutex_lock(&win_fill_pool.turn);
+  if (!win_fill_pool.exit_registered) {
+    if (atexit(win_fill_workers_stop) != 0) {
+      for (u32 k = 0; k < lanes; ++k) win_lane(&jobs[k]);
+      pthread_mutex_unlock(&win_fill_pool.turn);
+      return;
+    }
+    win_fill_pool.exit_registered = 1;
+  }
+  pthread_mutex_lock(&win_fill_pool.lock);
+  win_fill_pool.active = lanes;
+  win_fill_pool.pending = 0;
+  for (u32 k = 1; k < lanes; ++k) {
+    WinFillWorker* worker = &win_fill_pool.workers[k];
+    if (!worker->attempted) {
+      worker->attempted = 1;
+      worker->lane = k;
+      worker->started = pthread_create(&worker->thread, NULL, win_fill_worker, worker) == 0;
+    }
+    win_fill_pool.jobs[k] = jobs[k];
+    if (worker->started) ++win_fill_pool.pending;
+  }
+  ++win_fill_pool.generation;
+  pthread_cond_broadcast(&win_fill_pool.ready);
+  pthread_mutex_unlock(&win_fill_pool.lock);
+  win_lane(&jobs[0]);
+  for (u32 k = 1; k < lanes; ++k) {
+    if (!win_fill_pool.workers[k].started) win_lane(&jobs[k]);
+  }
+  pthread_mutex_lock(&win_fill_pool.lock);
+  while (win_fill_pool.pending) {
+    pthread_cond_wait(&win_fill_pool.done, &win_fill_pool.lock);
+  }
+  memset(win_fill_pool.jobs, 0, sizeof win_fill_pool.jobs);
+  win_fill_pool.active = 0;
+  pthread_mutex_unlock(&win_fill_pool.lock);
+  pthread_mutex_unlock(&win_fill_pool.turn);
+}
+
 // win_fill_diff over the frame, the large changes split over threads
 static void win_fill_par(u64* H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Term t, Term old, u32 n) {
-  static WinPart parts[WIN_PAR_MAX];
+  WinPart parts[WIN_PAR_MAX];
   u32 np = win_parts(H, w, h, t, old, 0, 0, n, parts, 0);
   u32 lanes = np / 4;
   if (np >= WIN_PAR_MAX || lanes < 2) {
@@ -1483,25 +1590,166 @@ static void win_fill_par(u64* H, u32* pix, u32 w, u32 h, u8* dirty, u32 dw, Term
     }
     return;
   }
-  if (lanes > 8) {
-    lanes = 8;
+  if (lanes > 8) lanes = 8;
+  WinLane jobs[8];
+  for (u32 k = 0; k < lanes; ++k) {
+    jobs[k] = (WinLane){ H, pix, w, h, dw, dirty, parts, np, lanes, k };
   }
-  WinLane ls[8];
-  pthread_t th[8];
-  int ok[8];
-  for (u32 k = 0; k < lanes; k += 1) {
-    ls[k] = (WinLane){ H, pix, w, h, dw, dirty, parts, np, lanes, k };
-    ok[k] = k == 0 ? 0 : pthread_create(&th[k], NULL, win_lane, &ls[k]) == 0;
+  win_fill_dispatch(jobs, lanes);
+}
+
+// Frame identity diagnostics (opt-in). This hashes the actual filled RGB
+// buffer, never model state. XFlush is recorded separately from presentation;
+// only an independent X-server/compositor observer can establish the latter.
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <stdatomic.h>
+
+typedef struct {
+  uint64_t frame, drawn_us, hash_us;
+  char sha256[65];
+} WinFrameSample;
+
+static _Atomic int win_frame_record_state;
+static pthread_mutex_t win_frame_record_lock = PTHREAD_MUTEX_INITIALIZER;
+static FILE* win_frame_record_file;
+static void* win_frame_record_lib;
+static void* win_frame_record_ctx;
+static unsigned char* win_frame_record_rgb;
+static u32 win_frame_record_x, win_frame_record_y, win_frame_record_w, win_frame_record_h;
+static char win_frame_record_region[64];
+static uint64_t win_frame_record_serial;
+static void* (*win_frame_ctx_new)(void);
+static void (*win_frame_ctx_free)(void*);
+static const void* (*win_frame_sha256)(void);
+static int (*win_frame_digest_init)(void*, const void*, void*);
+static int (*win_frame_digest_update)(void*, const void*, size_t);
+static int (*win_frame_digest_final)(void*, unsigned char*, unsigned*);
+
+static void win_frame_record_close(void) {
+  if (win_frame_record_file) fclose(win_frame_record_file);
+  if (win_frame_record_ctx) win_frame_ctx_free(win_frame_record_ctx);
+  if (win_frame_record_lib) dlclose(win_frame_record_lib);
+  free(win_frame_record_rgb);
+  win_frame_record_file = NULL; win_frame_record_ctx = NULL;
+  win_frame_record_lib = NULL; win_frame_record_rgb = NULL;
+  atomic_store(&win_frame_record_state, -1);
+}
+
+static int win_frame_number(const char** cursor, u32* out, char end) {
+  const char* p = *cursor;
+  if (*p < '0' || *p > '9') return 0;
+  unsigned long value = 0;
+  do {
+    value = value * 10 + (unsigned)(*p++ - '0');
+    if (value > 16384) return 0;
+  } while (*p >= '0' && *p <= '9');
+  if (*p != end) return 0;
+  *out = (u32)value; *cursor = end ? p + 1 : p;
+  return 1;
+}
+
+static int win_frame_record_init(void) {
+  const char* path = getenv("BACKPLANE_FRAME_RECORD");
+  if (!path || !*path) { atomic_store(&win_frame_record_state, -1); return 1; }
+  const char* p = getenv("BACKPLANE_FRAME_ROI");
+  if (!p) return 0;
+  size_t n = strspn(p, "abcdefghijklmnopqrstuvwxyz0123456789-_");
+  if (!n || n >= sizeof win_frame_record_region || p[n] != ':') return 0;
+  memcpy(win_frame_record_region, p, n); win_frame_record_region[n] = 0; p += n + 1;
+  if (!win_frame_number(&p, &win_frame_record_x, ':')
+      || !win_frame_number(&p, &win_frame_record_y, ':')
+      || !win_frame_number(&p, &win_frame_record_w, ':')
+      || !win_frame_number(&p, &win_frame_record_h, 0)
+      || !win_frame_record_w || !win_frame_record_h
+      || (uint64_t)win_frame_record_w * win_frame_record_h > 16000000) return 0;
+  win_frame_record_lib = dlopen("libcrypto.so.3", RTLD_NOW | RTLD_LOCAL);
+  if (!win_frame_record_lib) win_frame_record_lib = dlopen("libcrypto.so", RTLD_NOW | RTLD_LOCAL);
+  if (!win_frame_record_lib) return 0;
+#define FRAME_SYMBOL(name, field) \
+  do { void* symbol = dlsym(win_frame_record_lib, name); \
+    _Static_assert(sizeof field == sizeof symbol, "function pointer size"); \
+    memcpy(&field, &symbol, sizeof field); if (!field) return 0; } while (0)
+  FRAME_SYMBOL("EVP_MD_CTX_new", win_frame_ctx_new);
+  FRAME_SYMBOL("EVP_MD_CTX_free", win_frame_ctx_free);
+  FRAME_SYMBOL("EVP_sha256", win_frame_sha256);
+  FRAME_SYMBOL("EVP_DigestInit_ex", win_frame_digest_init);
+  FRAME_SYMBOL("EVP_DigestUpdate", win_frame_digest_update);
+  FRAME_SYMBOL("EVP_DigestFinal_ex", win_frame_digest_final);
+#undef FRAME_SYMBOL
+  win_frame_record_ctx = win_frame_ctx_new();
+  win_frame_record_rgb = malloc((size_t)win_frame_record_w * win_frame_record_h * 3);
+  if (!win_frame_record_ctx || !win_frame_record_rgb) return 0;
+  int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600);
+  if (fd < 0) return 0;
+  struct stat st;
+  if (fstat(fd, &st) || !S_ISREG(st.st_mode)) { close(fd); return 0; }
+  win_frame_record_file = fdopen(fd, "a");
+  if (!win_frame_record_file) { close(fd); return 0; }
+  if (atexit(win_frame_record_close)) return 0;
+  atomic_store(&win_frame_record_state, 1);
+  return 1;
+}
+
+static WinFrameSample win_frame_record_before(const u32* pix, u32 width, u32 height) {
+  WinFrameSample sample = {0};
+  if (atomic_load(&win_frame_record_state) < 0) return sample;
+  pthread_mutex_lock(&win_frame_record_lock);
+  if (!atomic_load(&win_frame_record_state) && !win_frame_record_init()) {
+    fprintf(stderr, "frame record unavailable: invalid configuration or sink\n");
+    win_frame_record_close();
   }
-  win_lane(&ls[0]);
-  for (u32 k = 1; k < lanes; k += 1) {
-    if (ok[k]) {
-      pthread_join(th[k], NULL);
+  if (atomic_load(&win_frame_record_state) > 0) {
+    if (win_frame_record_x > width || win_frame_record_y > height
+        || win_frame_record_w > width - win_frame_record_x
+        || win_frame_record_h > height - win_frame_record_y) {
+      fprintf(stderr, "frame record unavailable: ROI outside frame\n");
+      win_frame_record_close();
     } else {
-      win_lane(&ls[k]);
+      uint64_t start = win_us();
+      for (u32 y = 0; y < win_frame_record_h; ++y) {
+        for (u32 x = 0; x < win_frame_record_w; ++x) {
+          u32 pixel = pix[(size_t)(win_frame_record_y + y) * width + win_frame_record_x + x];
+          size_t at = ((size_t)y * win_frame_record_w + x) * 3;
+          win_frame_record_rgb[at] = (pixel >> 16) & 255;
+          win_frame_record_rgb[at + 1] = (pixel >> 8) & 255;
+          win_frame_record_rgb[at + 2] = pixel & 255;
+        }
+      }
+      unsigned char digest[32]; unsigned size = 0;
+      if (win_frame_digest_init(win_frame_record_ctx, win_frame_sha256(), NULL) != 1
+          || win_frame_digest_update(win_frame_record_ctx, win_frame_record_rgb,
+              (size_t)win_frame_record_w * win_frame_record_h * 3) != 1
+          || win_frame_digest_final(win_frame_record_ctx, digest, &size) != 1 || size != 32) {
+        fprintf(stderr, "frame record unavailable: SHA256 failed\n"); win_frame_record_close();
+      } else {
+        sample.frame = ++win_frame_record_serial; sample.drawn_us = win_us();
+        sample.hash_us = sample.drawn_us - start;
+        for (unsigned i = 0; i < 32; ++i) snprintf(sample.sha256 + i * 2, 3, "%02x", digest[i]);
+      }
     }
   }
+  pthread_mutex_unlock(&win_frame_record_lock);
+  return sample;
 }
+
+static void win_frame_record_after(WinFrameSample sample, unsigned long window, uint64_t flush_return_us) {
+  if (!sample.frame) return;
+  pthread_mutex_lock(&win_frame_record_lock);
+  if (atomic_load(&win_frame_record_state) > 0) {
+    int ok = fprintf(win_frame_record_file,
+      "{\"kind\":\"drawn-rgb\",\"pid\":%ld,\"window\":%lu,\"frame\":%llu,\"drawn_us\":%llu,\"flush_return_us\":%llu,\"hash_us\":%llu,"
+      "\"region\":\"%s\",\"x\":%u,\"y\":%u,\"width\":%u,\"height\":%u,\"pixel_sha256\":\"%s\",\"presentation_verified\":false}\n",
+      (long)getpid(), window, (unsigned long long)sample.frame, (unsigned long long)sample.drawn_us,
+      (unsigned long long)flush_return_us, (unsigned long long)sample.hash_us, win_frame_record_region,
+      win_frame_record_x, win_frame_record_y, win_frame_record_w, win_frame_record_h, sample.sha256);
+    if (ok < 0 || fflush(win_frame_record_file)) {
+      fprintf(stderr, "frame record unavailable: sink write failed\n"); win_frame_record_close();
+    }
+  }
+  pthread_mutex_unlock(&win_frame_record_lock);
+}
+// End frame identity diagnostics.
 
 // BACKPLANE_SNAP=<path>: every presented frame is also written there as
 // a PPM (tests and bug reports; off unless set)
@@ -1556,6 +1804,7 @@ static void win_show_image(Env e, AppWin* a, Term image, Term old, int has_old) 
   }
   a->stale = !has_old;
   uint64_t tc = win_us();
+  WinFrameSample frame_sample = win_frame_record_before((u32*)a->img->data, a->w, a->h);
   win_put_rects = 0;
   win_put_px = 0;
   if (whole) {
@@ -1571,6 +1820,7 @@ static void win_show_image(Env e, AppWin* a, Term image, Term old, int has_old) 
   x_XFlush(a->dpy);
   win_nudge(a);
   uint64_t te = win_us();
+  win_frame_record_after(frame_sample, a->win, te);
   win_snap(a);
   // ui.win.*: the wait for pending effects, the buffer filled from the
   // image, the rectangles put, the flush (us); rects and kpx per frame

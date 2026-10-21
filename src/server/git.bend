@@ -15,12 +15,20 @@ import ./kicad.bend as K
 # Running git
 # -----------
 
-def Git.run(cwd: String, args: List<&2, String>) -> IO(P.Ran):
-  P.Proc.run("git", args, cwd)
+# bp_safe: the filters the repository (or its worktree, or a file its
+# config includes) defines itself are blanked for the hub's git (an empty
+# filter is none); the person's own (global, system: git-lfs) stay.
+# P.Proc.run already turns fsmonitor, hooks and pagers off, and the hub's
+# diffs take --no-ext-diff --no-textconv. Reading config runs nothing.
+def Git.safe.sh() -> String:
+  "bp_safe() { n=${GIT_CONFIG_COUNT:-0}; ks=$(git config --show-scope --name-only --get-regexp '^filter[.].*[.](clean|smudge|process)$' 2>/dev/null | awk -F '\t' '$1 == \"local\" || $1 == \"worktree\" { print $2 }'); o=$IFS; IFS='\n'; for k in $ks; do export \"GIT_CONFIG_KEY_$n=$k\" \"GIT_CONFIG_VALUE_$n=\"; n=$((n+1)); done; IFS=$o; export GIT_CONFIG_COUNT=$n; }; "
 
-# git with a private index file (GIT_INDEX_FILE), through env(1)
+def Git.run(cwd: String, args: List<&2, String>) -> IO(P.Ran):
+  P.Proc.run("sh", List.append(&2, String, ["-c", Git.safe.sh() ++ "bp_safe; exec git \"$@\"", "sh"], args), cwd)
+
+# git with a private index file (GIT_INDEX_FILE)
 def Git.run.idx(cwd: String, idx: String, args: List<&2, String>) -> IO(P.Ran):
-  P.Proc.run("env", ("GIT_INDEX_FILE=" ++ idx) <> "git" <> args, cwd)
+  P.Proc.run("sh", List.append(&2, String, ["-c", Git.safe.sh() ++ "bp_safe; GIT_INDEX_FILE=$0 exec git \"$@\"", idx], args), cwd)
 
 def Git.is_error(+s: String) -> Bool:
   String.starts_with(s, "error: ")
@@ -404,7 +412,7 @@ def Git.exclude(+cwd: String) -> IO(String):
 # KiCad's own droppings (backups, locks, autosaves, the footprint cache)
 # stay behind.
 def Git.carry.sh() -> String:
-  "cd \"$1\" || exit 1; git ls-files -z -m -o --exclude-standard | grep -zv -e '-backups/' -e '\\.lck$' -e 'fp-info-cache$' -e '_autosave-' | tar -c --null -T - -f - 2>/dev/null | tar -x -f - -C \"$2\" 2>/dev/null; git ls-files -z -d | (cd \"$2\" && xargs -0 -r rm -f --); exit 0"
+  Git.safe.sh() ++ "cd \"$1\" || exit 1; bp_safe; git ls-files -z -m -o --exclude-standard | grep -zv -e '-backups/' -e '\\.lck$' -e 'fp-info-cache$' -e '_autosave-' | tar -c --null -T - -f - 2>/dev/null | tar -x -f - -C \"$2\" 2>/dev/null; git ls-files -z -d | (cd \"$2\" && xargs -0 -r rm -f --); exit 0"
 
 def Git.carry(+top: String, +path: String) -> IO(String):
   Git.seq(P.Proc.run("sh", ["-c", Git.carry.sh(), "sh", top, path], top), _ => Git.done(""))
@@ -422,7 +430,7 @@ def Git.thread_wt.carry(carry: Bool, +top: String, +path: String, +cwd: String) 
 # folder's uncommitted work is carried over (it belongs on the HEAD it was
 # made against; copied onto a newer tree it would undo upstream's edits).
 def Git.upstream.sh() -> String:
-  "[ \"$1\" = 1 ] && git ls-files -m -o -d --exclude-standard | grep -v -e '-backups/' -e '\\.lck$' -e 'fp-info-cache$' -e '_autosave-' | grep -q . && exit 0; git remote get-url origin >/dev/null 2>&1 || exit 0; b=$(git symbolic-ref -q --short refs/remotes/origin/HEAD); b=${b:-origin/main}; t=; command -v timeout >/dev/null 2>&1 && t='timeout 30'; GIT_TERMINAL_PROMPT=0 $t git fetch -q origin \"${b#origin/}\" </dev/null >/dev/null 2>&1; git rev-parse -q --verify \"refs/remotes/$b\" >/dev/null && printf %s \"$b\"; exit 0"
+  Git.safe.sh() ++ "bp_safe; [ \"$1\" = 1 ] && git ls-files -m -o -d --exclude-standard | grep -v -e '-backups/' -e '\\.lck$' -e 'fp-info-cache$' -e '_autosave-' | grep -q . && exit 0; git remote get-url origin >/dev/null 2>&1 || exit 0; b=$(git symbolic-ref -q --short refs/remotes/origin/HEAD); b=${b:-origin/main}; t=; command -v timeout >/dev/null 2>&1 && t='timeout 30'; GIT_TERMINAL_PROMPT=0 $t git fetch -q origin \"${b#origin/}\" </dev/null >/dev/null 2>&1; git rev-parse -q --verify \"refs/remotes/$b\" >/dev/null && printf %s \"$b\"; exit 0"
 
 def Git.upstream.of(r: P.Ran) -> String:
   match r:
@@ -543,7 +551,7 @@ def Git.checkpoint.capture(+cwd: String, +thread_id: String, +n: Nat) -> IO(Stri
       Git.capture.k(cwd, Git.checkpoint.ref(thread_id, n), tree, prev, "backplane checkpoint " ++ thread_id ++ " turn " ++ Nat.show(n))))
 
 def Git.diff.args(a: String, b: String) -> List<&2, String>:
-  ["-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", "-M", a, b, "--"]
+  ["-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "-M", a, b, "--"]
 
 # unified diff text from checkpoint a to checkpoint b ("" when equal)
 def Git.checkpoint.diff(cwd: String, +thread_id: String, +from_n: Nat, +to_n: Nat) -> IO(String):
@@ -588,11 +596,49 @@ def Git.checkpoint.revert(+cwd: String, +thread_id: String, n: Nat) -> IO(String
 # the tool call is reported, while the agent goes on: two quick edits may
 # land in one step, and a turn's first may race the agent's first edit.
 
+# (a history.git is used only when the hub made it: $3, a file in the
+# hub's home, keeps each one it made by device and inode, "<dev:ino> <dir>".
+# One not there is taken on only while it is harmless (plain core settings,
+# no includes, not a link or a linked worktree: one an older hub made; its
+# hooks never run, P.Proc.run's core.hooksPath); else it is moved aside and
+# a new one made, since a folder from a zip could ship one whose config
+# runs commands on the hub's git)
+# the hub's record of the history.git folders it made (its own state)
+def Git.step.reg(+home: String) -> String:
+  home ++ "/history.trusted"
+
+# The first time a hub keeps the registry (Git.step.reg), the history of
+# each project the person already has, made by an older hub that kept no
+# registry, is recorded once if it looks like one the hub makes (a plain
+# directory, no commondir, nothing in its config beyond core's own keys).
+# After that no history.git the hub did not record is ever used: the step
+# moves it aside (Git.step.script).
+def Git.step.migrate.sh() -> String:
+  String.join([
+    "exec 2>/dev/null",
+    "reg=$1; shift",
+    "[ -e \"$reg\" ] && exit 0",
+    "ino() { stat -c '%d:%i' \"$1\" 2>/dev/null || stat -f '%d:%i' \"$1\"; }",
+    ": > \"$reg.tmp\" || exit 0",
+    "for top in \"$@\"; do",
+    "  gd=$top/.backplane/history.git",
+    "  [ -d \"$gd\" ] && [ ! -L \"$gd\" ] && [ ! -e \"$gd/commondir\" ] || continue",
+    "  l=$(git config --file \"$gd/config\" --name-only --list) || continue",
+    "  [ -z \"$(printf '%s\\n' \"$l\" | grep -v -E '^core[.](repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks|worktree)$' | grep .)\" ] || continue",
+    "  printf '%s %s\\n' \"$(ino \"$gd\")\" \"$gd\" >> \"$reg.tmp\"",
+    "done",
+    "mv \"$reg.tmp\" \"$reg\""], "\n")
+
+def Git.step.migrate(+home: String, roots: List<&2, String>) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", List.append(&2, String, ["-c", Git.step.migrate.sh(), "sh", Git.step.reg(home)], roots), "/"), _ => IO.pure(Unit, Unit{}))
+
 def Git.step.script() -> String:
   String.join([
     "exec 2>/dev/null",
+    Git.safe.sh(),
     "cd \"$1\" || exit 0",
-    "name=$2",
+    "name=$2; reg=$3",
+    "ino() { stat -c '%d:%i' \"$1\" 2>/dev/null || stat -f '%d:%i' \"$1\"; }",
     "if top=$(git rev-parse --show-toplevel) && [ -n \"$top\" ]; then",
     "  gd=$(cd \"$(git rev-parse --git-common-dir)\" && pwd) || exit 0",
     "  pd=$(git rev-parse --absolute-git-dir) || exit 0",
@@ -600,13 +646,20 @@ def Git.step.script() -> String:
     "else",
     "  top=$(pwd); gd=$top/.backplane/history.git; pd=$gd; shadow=1",
     "  [ \"$top\" = / ] || [ \"$top\" = \"$HOME\" ] && exit 0",
-    "  [ -d \"$gd\" ] || [ -n \"$(find . -maxdepth 4 \\( -name '*.kicad_pcb' -o -name '*.kicad_sch' \\) -print | head -n 1)\" ] || exit 0",
+    "  [ -d \"$gd\" ] || [ -L \"$gd\" ] || [ -n \"$(find . -maxdepth 4 \\( -name '*.kicad_pcb' -o -name '*.kicad_sch' \\) -print | head -n 1)\" ] || exit 0",
+    "  if [ -e \"$gd\" ] || [ -L \"$gd\" ]; then",
+    "    if ! { [ -n \"$reg\" ] && [ ! -L \"$gd\" ] && [ -d \"$gd\" ] && grep -qxF \"$(ino \"$gd\") $gd\" \"$reg\"; }; then",
+    "      mv \"$gd\" \"$gd.untrusted-$(date +%s)\" || exit 0",
+    "    fi",
+    "  fi",
     "  export GIT_DIR=\"$gd\" GIT_WORK_TREE=\"$top\"",
     "  if [ ! -d \"$gd\" ]; then",
     "    mkdir -p \"$top/.backplane\" && git init -q >/dev/null || exit 0",
     "    printf '/.backplane/\\n' >> \"$gd/info/exclude\"",
+    "    [ -n \"$reg\" ] && printf '%s %s\\n' \"$(ino \"$gd\")\" \"$gd\" >> \"$reg\"",
     "  fi",
     "fi",
+    "bp_safe",
     "ref=refs/backplane/checkpoints/$name/steps",
     "spec='*.kicad_[ps]c[bh]'",
     "[ -n \"$shadow\" ] || git rev-parse -q --verify \"$ref\" >/dev/null || [ -n \"$(git ls-files -- \"$spec\" | head -n 1)\" ] || [ -n \"$(find . -maxdepth 4 \\( -name '*.kicad_pcb' -o -name '*.kicad_sch' \\) -not -path './.backplane/*' -print | head -n 1)\" ] || exit 0",
@@ -644,8 +697,9 @@ def Git.step.ran(r: P.Ran) -> IO(String):
       IO.pure(String, "")
 
 # a step of the thread's KiCad files in cwd: the script's output, or ""
-def Git.step.capture(+cwd: String, +thread_id: String) -> IO(String):
-  IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Git.step.script(), "sh", cwd, Git.b64url(thread_id)], "/"), Git.step.ran)
+# (reg: the hub's record of the history.git folders it made, Git.step.reg)
+def Git.step.capture(+cwd: String, +thread_id: String, +reg: String) -> IO(String):
+  IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Git.step.script(), "sh", cwd, Git.b64url(thread_id), reg], "/"), Git.step.ran)
 
 # What a file may be compared with: the git dir and top (as Git.step
 # finds them), then lines "kind\tlabel\tcommit": HEAD, the newest
@@ -751,7 +805,7 @@ def Git.message(+m: String) -> String:
 
 def Git.step.commit(+cwd: String, msg: String) -> IO(String):
   Git.label("commit", Git.seq(Git.run(cwd, ["add", "-A"]), _ =>
-    IO.bind(P.Ran, String, Git.run(cwd, ["diff", "--cached", "--quiet"]), r => Git.commit.k(cwd, r, Git.message(msg)))))
+    IO.bind(P.Ran, String, Git.run(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--cached", "--quiet"]), r => Git.commit.k(cwd, r, Git.message(msg)))))
 
 def Git.push.go(has_up: Bool, +cwd: String, +b: String) -> IO(String):
   match has_up:

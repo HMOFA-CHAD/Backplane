@@ -149,6 +149,7 @@ build_dist() {
   python3 scripts/js-native.py dist/web/chunk-*.js
   cp src/web/sw.js dist/web/sw.js
   for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
+  scripts/build-kistack.sh dist/kistack
   if [ "$(uname -s)" = Linux ]; then
     BACKPLANE_VERSION_STAMP=$ver scripts/build-app.sh src/app/main.bend dist/backplane
     # Keep the server's pathname for self-exec; its entry uses argv[0].
@@ -174,6 +175,7 @@ if [ -f "$src/cef-runtime.py" ]; then python3 "$src/cef-runtime.py" install "$sr
 rm -rf "$prefix/web.old"
 [ -d "$prefix/web" ] && mv "$prefix/web" "$prefix/web.old"
 mv "$src/web" "$prefix/web"
+if [ -d "$src/kistack" ]; then rm -rf "$prefix/kistack.old"; [ -d "$prefix/kistack" ] && mv "$prefix/kistack" "$prefix/kistack.old"; mv "$src/kistack" "$prefix/kistack"; fi
 for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc LICENSE; do
   [ -e "$src/$f" ] && mv -f "$src/$f" "$prefix/$f"
 done
@@ -202,6 +204,7 @@ stage_cef() {
 stage() {
   rm -rf build/dev-pkg && mkdir -p build/dev-pkg
   cp -R dist/web build/dev-pkg/web
+  [ -d dist/kistack ] && cp -R dist/kistack build/dev-pkg/kistack
   for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc; do
     [ -e "dist/$f" ] && cp "dist/$f" build/dev-pkg/
   done
@@ -210,11 +213,12 @@ stage() {
   return 0
 }
 
-# the request that queues a deploy of the package in $1 on a hub (the MCP
-# route from loopback is trusted; "deploy" is no thread, so the person asked)
+# the request that queues a deploy of the package in $1 on a hub ("deploy"
+# is no thread, so the person asked). It presents the hub's pairing token,
+# read where it runs (its home: BACKPLANE_INSTALL_HOME, ~/.backplane-bend)
 deploy_post() {
   body=$(printf '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"deploy_restart","arguments":{"stage":"%s","note":"dev.sh install"}}}' "$1")
-  printf "curl -s --max-time 10 -X POST -H 'content-type: application/json' -H 'accept: application/json' --data '%s' http://127.0.0.1:%s/mcp/deploy" "$body" "${BACKPLANE_INSTALL_PORT:-3787}"
+  printf "curl -s --max-time 10 -X POST -H 'content-type: application/json' -H 'accept: application/json' -H \"authorization: Bearer \$(cat \"%s/token\" 2>/dev/null)\" --data '%s' http://127.0.0.1:%s/mcp/deploy" "${BACKPLANE_INSTALL_HOME:-\$HOME/.backplane-bend}" "$body" "${BACKPLANE_INSTALL_PORT:-3787}"
 }
 
 hello_cmd() {

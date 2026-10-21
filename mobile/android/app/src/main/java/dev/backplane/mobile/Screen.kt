@@ -95,6 +95,7 @@ data class Entry(
     val attachments: List<Chip> = emptyList(), val images: List<Shot> = emptyList(),
     val open: Boolean = false, val value: String = "", val key: String = "", val at: String = "",
     val stamp: String = "",
+    val partial: MessagePartial? = null,
 )
 
 // what the agent waits on the user for: an approval, a question or a
@@ -320,6 +321,7 @@ data class ThreadView(
     val embs: List<Emb> = emptyList(),
     // the phase the working line's dot shows (as a row's status)
     val phase: String = "",
+    val livePartial: MessagePartial? = null,
     // the thread's Boat chip ("Boat · large · running"; "" for none), a tap opens Settings
     val boat: String = "",
 )
@@ -410,6 +412,8 @@ data class BotView(
     // the name as shown: "Kit · desk" for a bot on a linked machine
     val title: String,
     val tasks: BotTasks? = null,
+    val navTab: String = "", val subtabs: List<BotTab> = emptyList(),
+    val mailroom: MailroomModel? = null, val mailroomLoading: Boolean = false,
 )
 
 // hub: the one in focus (its thread is shown, its plots are drawn)
@@ -456,7 +460,20 @@ data class Cmd(
 
 // an answer from the engine: its screen (none from a quiet call, or when a
 // newer one follows) and its commands
-data class Reply(val screen: Screen?, val cmds: List<Cmd>)
+data class SyncUpdate(val hub: String, val phase: String, val detail: String = "", val mode: String = "",
+    val viewId: String = "", val viewRevision: String = "", val requestRevision: Long = 0, val remoteReady: Boolean? = null) {
+    val thinPresenting get() = phase == "presenting" && detail == "view-v1" && mode == "view-v1" && remoteReady == false &&
+        requestRevision in 1..4294967295L
+    val thinPresented get() = phase == "presented" && detail == "view-v1" && mode == "view-v1" && remoteReady == true &&
+        viewId.isNotEmpty() && viewRevision.isNotEmpty() && requestRevision in 1..4294967295L
+}
+data class Reply(val screen: Screen?, val cmds: List<Cmd>, val screenJSON: String? = null,
+                 val sync: List<SyncUpdate> = emptyList(), val deadline: Long? = null)
+
+fun parseSync(o: JSONObject): List<SyncUpdate> {
+    val rows = o.optJSONArray("sync") ?: return emptyList()
+    return (0 until rows.length()).map { rows.getJSONObject(it).let { row -> SyncUpdate(row.optString("hub"), row.optString("phase"), row.opt("detail") as? String ?: "", row.opt("mode") as? String ?: "", row.opt("viewId") as? String ?: "", row.opt("viewRevision") as? String ?: "", (row.opt("requestRevision").takeIf { it is Int || it is Long } as? Number)?.toLong() ?: 0, row.opt("remoteReady") as? Boolean) } }
+}
 
 private fun <T> JSONArray?.map(f: (JSONObject) -> T): List<T> =
     if (this == null) emptyList() else (0 until length()).map { f(getJSONObject(it)) }
@@ -487,7 +504,7 @@ private fun entry(o: JSONObject) = Entry(
     chips(o.optJSONArray("attachments")),
     o.optJSONArray("images").map { Shot(it.optString("path"), it.optString("url")) },
     o.optBoolean("open"), o.optString("value"), o.optString("key"), o.optString("when"),
-    o.optString("stamp"),
+    o.optString("stamp"), o.optJSONObject("partial")?.let(::messagePartial),
 )
 
 private fun tool(o: JSONObject) = Tool(
@@ -540,6 +557,7 @@ private fun thread(o: JSONObject) = threadOf(o).copy(
             it.optBoolean("live"), it.optBoolean("pinned"), it.optString("restart"), it.optJSONObject("term")?.let(::term))
     },
     phase = o.optString("phase"),
+    livePartial = o.optJSONObject("livePartial")?.let(::messagePartial),
     boat = o.optString("boat"),
 )
 
@@ -685,6 +703,10 @@ private fun botView(o: JSONObject) = BotView(
     },
     o.optString("title", o.optString("name")),
     o.optJSONObject("tasks")?.let(::botTasks),
+    mailroom = o.optJSONObject("mailroom")?.let(::mailroomModel),
+    mailroomLoading = o.optBoolean("mailroomLoading"),
+    navTab = o.optString("navTab", o.optString("tab", "chat")),
+    subtabs = o.optJSONArray("subtabs").map { BotTab(it.optString("id"), it.optString("label")) },
 )
 
 fun parseScreen(o: JSONObject) = Screen(

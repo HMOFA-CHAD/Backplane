@@ -12,6 +12,15 @@ import { pairBrowser } from "./auth.js";
 const pairingReady = pairBrowser({ location, history, storage: localStorage, fetch: window.fetch.bind(window) }).catch(() => false);
 import * as Solid from "./solid.js";
 import * as Plot2d from "./plot2d.js";
+import { installDesktopBrowser } from "./desktop-browser.js";
+import { restoreCache } from "./replay.js";
+import { FrontendStartup, validatePresentation } from "./startup.js";
+import { FocusedCache, FocusedView, captureFocused, cacheIdentity, mergeFocused, scopeKey } from "./focused-cache.js";
+import { refreshCacheIdentity } from "./cache-identity.js";
+import { discoverViews } from "./thin-discovery.js";
+import { ThinHost } from "./thin-host.js";
+import { ThinMailDraft, mailReplyField } from "./mail-drafts.js";
+import { ThinViews, viewCapability } from "./thin.js";
 import * as Wire from "./wire.js";
 import { T, is, learnJson, learnDom } from "./wire.js";
 
@@ -68,11 +77,15 @@ function catUri(name) {
 
 function setAttrs(el, oldAttrs, attrs) {
   const seen = new Set();
+  // Read the new attributes, not an old/recycled element's field owner.
+  let field = null;
+  for (const a of each(attrs)) if (is(a, "At") && a.name === "data-bfield") field = a.value;
   for (const a of each(attrs)) {
     if (is(a, "At")) {
       seen.add(a.name);
       if (a.name === "value") {
-        if (el.value !== a.value) el.value = a.value;
+        const value = field !== null && viewMode === "view-v1" && frontendNode ? thin?.fieldValue(field, thinMailDraft.fieldValue(field, a.value)) ?? a.value : a.value;
+        if (el.value !== value) el.value = value;
       } else if (el.getAttribute(a.name) !== a.value) {
         el.setAttribute(a.name, a.value);
         if (a.name === "data-cat") el.src = catUri(a.value);
@@ -197,6 +210,10 @@ function patch(el, v) {
 // ms, pushed onto its arrays. Nothing is timed otherwise.
 const PERF = globalThis.__bpPerf || null;
 const pnow = () => performance.now();
+function trace(phase, detail = {}) {
+  if (PERF?.trace) PERF.trace.push({ phase, ms: pnow(), epochMs: performance.timeOrigin + pnow(), ...detail });
+}
+let canonicalBoot = false;
 
 // Loop
 // ----
@@ -223,6 +240,11 @@ const KEYS = listOf(App.cbor_keys());
 const WORDS = listOf(App.cbor_words());
 
 let ui = App.page(App.init(now(), cid), location.origin);
+if (window.backplaneDesktop) ui = App.desktop(ui);
+if (window.backplaneDesktop?.browser) ui = App.desktop_browser(ui);
+const desktopBrowser = installDesktopBrowser({bridge:window.backplaneDesktop?.browser,
+  isReady:()=>(canonicalBoot||remoteReady)&&socket?.readyState===1,
+  onTakeover:owner=>dispatch("tk-takeover",owner)});
 const forcedLang = new URLSearchParams(location.search).get("lang");
 if (forcedLang === "ja" || forcedLang === "en") ui = App.lang_preview(ui);
 ui = App.act(ui, "lang", forcedLang === "ja" || forcedLang === "en" ? forcedLang : (localStorage.getItem("backplane-lang") || "auto")).ui;
@@ -256,7 +278,70 @@ function restoreSubs() {
   } catch {}
 }
 restoreSubs();
+try {
+  const selected = localStorage.getItem("backplane-selected");
+  if (selected) ui = App.presentation_select(ui, selected);
+} catch {}
 let socket = null;
+let frontend = null, frontendNode = null, wantFrontend = true, fallbackIntent = null;
+let viewMode = "discovering", remoteReady = false, remoteEpoch = "", thinSession = null;
+let pairingAccepted = false;
+let focusedNode = null, focusedAtEnd = true, focusedSaveTimer = 0;
+let focusedRequestedKey = null;
+let thin = null, thinSocket = null, thinAttempt = 0, thinExpiry = 0, thinGreetingTimer = 0, thinDraftTimer = 0, thinFieldTimer = 0;
+const focusedStore = new FocusedCache({ indexedDB, report: (state, reason) => trace("focused-cache", { state, reason }) });
+function currentSession() { return thinSession || frontend?.session || fallbackIntent?.session || Wire.plain(App.presentation(ui)); }
+function focusedScope() {
+  return { origin: location.origin, cid, identity: cacheIdentity(document.cookie), bundle: import.meta.url,
+    language: App.lang(ui), selected: currentSession().sel };
+}
+const focusedView = new FocusedView({
+  cache: focusedStore, scope: focusedScope,
+  hide: () => { focusedNode = null; later(); },
+  view: record => {
+    if (canonicalBoot || remoteReady) return;
+    const shell = Wire.plain(App.presentation_view(App.presentation_wait(ui)));
+    focusedNode = App.presentation_node(presentationJson(mergeFocused(shell, record)));
+    focusedAtEnd = record.atEnd;
+    trace("focused-view");later();
+  },
+});
+function checkpointFocused() {
+  clearTimeout(focusedSaveTimer);focusedSaveTimer = 0;
+  if (!canonicalBoot && !remoteReady) return;
+  const main = document.querySelector("main.thread-view"), timeline = main?.querySelector("#timeline");
+  const title = main?.querySelector(".thread-head .title");
+  const app = document.querySelector(".app");
+  if (!main || !timeline || !title || !app) return;
+  const record = captureFocused({ main, timeline, title, scope: focusedScope(), epoch: remoteReady ? remoteEpoch : App.origin(ui),
+    shellAttrs: [{ name: "class", value: app.className }, { name: "style", value: app.getAttribute("style") || "" }] });
+  if (record) void focusedView.save(record).catch(() => trace("focused-cache", { state: "unavailable", reason: "write error" }));
+}
+function saveFocusedSoon() {
+  if (!focusedSaveTimer && (canonicalBoot || remoteReady)) focusedSaveTimer = setTimeout(checkpointFocused, 150);
+}
+function restoreFocused(force = false) {
+  const key = scopeKey(focusedScope());
+  if (!force && focusedRequestedKey === key) return Promise.resolve();
+  focusedRequestedKey = key;
+  return focusedView.restore().catch(() => trace("focused-cache", { state: "unavailable", reason: "read error" }));
+}
+async function refreshFocusedIdentity() {
+  const before = cacheIdentity(document.cookie);
+  const result = await refreshCacheIdentity({ fetch: window.fetch.bind(window), readCookie: () => document.cookie,
+    writeCookie: value => { document.cookie = value; }, protocol: location.protocol });
+  trace("cache-identity", { state: result.state });
+  if (result.state === "denied") {
+    stopThin();viewMode = "read-only";focusedView.invalidate();
+    showViewStatus("Pairing is required to reconnect.");later();return;
+  }
+  if (before !== cacheIdentity(document.cookie) || result.state === "denied" || result.state === "invalid") {
+    focusedView.invalidate();
+    if (!canonicalBoot && !remoteReady) void restoreFocused();
+    else saveFocusedSoon();
+  }
+}
+let cacheReady = false;
 let queued = false;
 let scroll = false;
 let focus = null;
@@ -308,6 +393,7 @@ function holdFix(tl) {
 }
 // tell the client once each way; the thread is the one the view was away in
 function holdSay(now) {
+  if (focusedNode && !frontendNode) return;
   if (now === away) return;
   const was = away;
   away = now;
@@ -315,6 +401,7 @@ function holdSay(now) {
 }
 // the person scrolled the timeline: the end follows, elsewhere holds
 function holdRead(tl) {
+  if (focusedNode && !frontendNode) return;
   if (!tl || tl.id !== "timeline") return;
   if (tl.scrollTop === fixedAt) return;
   // Shrinking content can clamp scrollTop and queue a scroll event before
@@ -340,16 +427,70 @@ function holdWatch(tl) {
 }
 document.addEventListener("scroll", (e) => holdRead(e.target), true);
 
+const thinMailDraft = new ThinMailDraft({
+  identity: () => cacheIdentity(document.cookie),
+  context: context => { ui = App.mail_local_context(ui, presentationJson(context)); },
+  key: () => App.mail_identity(ui),
+  field: text => { ui = App.mail_local_field(ui, text); },
+  snapshot: () => App.mail_snapshot(ui),
+  // Extract only the draft text. The decoder's offline/outbox Ui is never adopted.
+  restoreText: saved => App.mail_local_text(App.mail_restore(ui, saved)),
+  read: key => localStorage.getItem(key), write: (key, text) => localStorage.setItem(key, text),
+});
+let mailStorageKey = "";
+function mailCheckpoint() {
+  if (viewMode !== "compatibility") { thinMailDraft.checkpoint();return; }
+  const key = App.mail_identity(ui);
+  if (!key) { mailStorageKey = ""; return; }
+  try {
+    if (key !== mailStorageKey) {
+      const saved = localStorage.getItem("backplane-mail:" + key);
+      if (saved) ui = App.mail_restore(ui, saved);
+      mailStorageKey = key;
+    }
+    localStorage.setItem("backplane-mail:" + key, App.mail_snapshot(ui));
+  } catch {} // Storage failure never sends or discards a captured message.
+}
+function mailAnchor() {
+  const el = document.querySelector('.mail-messages');
+  if (!el) return null;
+  const box = el.getBoundingClientRect();
+  const row = [...el.children].find(row => row.getBoundingClientRect().bottom > box.top);
+  return { conv: el.dataset.conv, end: el.scrollHeight-el.scrollTop-el.clientHeight < 48,
+    id: row?.dataset.mailId, offset: row ? row.getBoundingClientRect().top-box.top : 0 };
+}
+function mailRestore(anchor) {
+  const el = document.querySelector('.mail-messages');
+  if (!el) return;
+  if (!anchor || anchor.conv !== el.dataset.conv || anchor.end) { el.scrollTop = el.scrollHeight; return; }
+  const row = [...el.children].find(row => row.dataset.mailId === anchor.id);
+  if (row) el.scrollTop += row.getBoundingClientRect().top-el.getBoundingClientRect().top-anchor.offset;
+}
 function render() {
+  mailCheckpoint();
+  const mail = mailAnchor();
   queued = false;
   const tl = document.getElementById("timeline");
   const t0 = PERF ? pnow() : 0;
-  const page = App.view(ui);
+  const page = frontendNode ? App.presentation_overlay(frontendNode, presentationJson(currentSession()))
+    : focusedNode || App.view(canonicalBoot ? ui : App.presentation_wait(ui));
   const t1 = PERF ? pnow() : 0;
   patch(root, { $: T.El, tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: page, tail: { $: "Nil" } } });
   if (PERF) PERF.render.push([t1 - t0, pnow() - t1]);
+  if (canonicalBoot) {
+    document.documentElement.dataset.backplaneReady = "true";
+    document.documentElement.dataset.backplaneSeq = App.seq(ui);
+  }
+  document.documentElement.dataset.backplaneMode = viewMode;
+  document.documentElement.dataset.backplaneRemoteReady = String(remoteReady);
+  document.documentElement.dataset.backplaneCached = String(!!focusedNode && !frontendNode);
+  trace("dom", { seq: App.seq(ui) });
+  if (PERF?.trace) requestAnimationFrame(() => trace("paint", { seq: App.seq(ui) }));
+  mailRestore(mail);
+  desktopBrowser.sync();
   memoSweep();
   const tl2 = document.getElementById("timeline");
+  if (focusedNode && !frontendNode && tl !== tl2 && focusedAtEnd && tl2) tl2.scrollTop = tl2.scrollHeight;
   // another timeline (or a send, a new thread: ScrollEnd) starts at its end
   if (scroll || tl !== tl2) {
     held = null;
@@ -381,6 +522,8 @@ function render() {
     focus = null;
   }
   tourSync();
+  settingsSync();
+  saveFocusedSoon();
 }
 
 function later() {
@@ -408,6 +551,8 @@ function laterPart() {
     const a = document.getElementById("asks");
     if (a && a.__v) patch(a, App.asks(ui));
     if (PERF) PERF.part.push(pnow() - t0);
+    trace("dom-part", { seq: App.seq(ui) });
+    if (PERF?.trace) requestAnimationFrame(() => trace("paint-part", { seq: App.seq(ui) }));
   });
 }
 
@@ -451,7 +596,10 @@ function copy(text) {
 function run(cmds) {
   for (const c of each(cmds)) {
     if (is(c, "Send")) {
-      if (socket && socket.readyState === 1) socket.send(fromList(App.wire_out(c.text)));
+      if (socket && socket.readyState === 1) {
+        if (PERF?.trace) { const request = JSON.parse(c.text); trace("send", { id: request.id, method: request.m, queuedBytes: socket.bufferedAmount }); }
+        socket.send(fromList(App.wire_out(c.text)));
+      }
     } else if (is(c, "Copy")) {
       copy(c.text);
     } else if (is(c, "Focus")) {
@@ -490,6 +638,7 @@ function run(cmds) {
 // used last.
 
 function deskCheck() {
+  if (!canonicalBoot) return;
   const focused = document.visibilityState === "visible" && document.hasFocus();
   const r = App.desk(ui, focused, now());
   ui = r.ui;
@@ -522,10 +671,60 @@ function notify(c) {
 // run an action; answers whether it did anything (a key it did nothing
 // with stays the browser's)
 function dispatch(action, value, timer) {
+  if (action === "thin-search-open") {
+    if (viewMode === "view-v1" && thin?.ready) showThinSearch({ query: "", rows: [], cursor: "", hasMore: false });
+    else showViewStatus("Search requires the current conversation connection.");
+    return true;
+  }
+  if (viewMode !== "compatibility") {
+    if (action === "select" || action === "draft") {
+      if (thin) return thin.request(action, value);
+      thinSession = choosePresentation(currentSession(), action, value);
+      localPresentation(action, value, thinSession);
+      return true;
+    }
+    if (thin?.ready) {
+      if (action === "earlier" || action === "view-page") return thin.page();
+      if (action === "thin-search") return thin.search(value);
+      if (action === "thin-message-more") {
+        try { const input = JSON.parse(value);return thin.message(input.entryId, input.cursor); } catch { return true; }
+      }
+      if (action === "thin-cancel") return thin.cancel(Number(value));
+      if (action === "mail-send" && thinMailDraft.needsSubmit()) {
+        const field = document.getElementById("mail-reply");
+        if (!field || !thin.request("bfield", "mrreply\u001f" + field.value)) return true;
+      }
+      if (action === "hold-away" || action === "hold-end") return true;
+      return thin.request(action, value);
+    }
+    if (!timer) showViewStatus("Saved conversation is read-only until connected.");
+    return true;
+  }
+  if (!canonicalBoot) {
+    if (frontend?.request(action, value)) return true;
+    if (action === "draft" || action === "select") {
+      const session = fallbackIntent?.session || Wire.plain(App.presentation(ui));
+      const chosen = choosePresentation(session, action, value);
+      const choices = fallbackIntent?.choices || [];
+      const revision = choices.reduce((n, c) => Math.max(n, c.revision), 0) + 1;
+      fallbackIntent = { session: chosen, operations: fallbackIntent?.operations || [], choices: [...choices, { action, value, revision }] };
+      localPresentation(action, value, chosen);
+      return true;
+    }
+    if (!timer) { ui = App.presentation_blocked(ui); frontendNode = null; later(); }
+    return true;
+  }
+  if (action === "desktop-folder" && window.backplaneDesktop) {
+    window.backplaneDesktop.chooseFolder().then(folder => { if (folder) dispatch("proj-cd", folder); });
+    return true;
+  }
   const t0 = PERF ? pnow() : 0;
+  trace("input", { action });
   const r = App.act(ui, action, value);
   if (PERF) PERF.act.push([pnow() - t0, action]);
   ui = r.ui;
+  if (action === "select") try { localStorage.setItem("backplane-selected", value); } catch {}
+  mailCheckpoint();
   if (action === "lang" || action === "lang-os") document.documentElement.lang = App.lang(ui);
   if (action === "subs-shut" || action === "subs-open") {
     try {
@@ -539,6 +738,7 @@ function dispatch(action, value, timer) {
   // a timer is not the person: only their input keeps this desk in use
   if (!timer) deskCheck();
   if (action === "draft") laterPart();
+  else if (action === "bfield" && value.startsWith("mrreply\u001f")) trace("dom-input-native", { action });
   else later();
   return did;
 }
@@ -594,8 +794,11 @@ async function upload(action, file) {
   const key = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, "0")).join("");
   const name = file.name || "pasted." + ((file.type || "").split("/")[1] || "bin");
   if (file.size === 0) return;
-  const thread = App.sel(ui);
-  dispatch("attach-up", JSON.stringify({ name, size: file.size }));
+  const uploadController = viewMode === "compatibility" ? null : thin;
+  const thread = viewMode === "compatibility" ? App.sel(ui) : currentSession().sel;
+  if (viewMode !== "compatibility") {
+    if (!remoteReady || !uploadController || !await uploadController.perform("attach-up", JSON.stringify({ name, size: file.size }))) return;
+  } else dispatch("attach-up", JSON.stringify({ name, size: file.size }));
   if (App.uploading(ui, thread) !== name) return;
   const q = new URLSearchParams({ thread, key, name });
   let answer = "";
@@ -606,7 +809,17 @@ async function upload(action, file) {
   } catch {
     answer = JSON.stringify({ text: "the upload did not reach the hub", thread, upload: true });
   }
-  dispatch("attach-end", answer);
+  if (uploadController && (thin !== uploadController || viewMode !== "view-v1")) return;
+  if (viewMode === "compatibility") dispatch("attach-end", answer);
+  else if (thin === uploadController) {
+    // The HTTP body and completion stay bound to the original chosen thread,
+    // even if the person selects another thread while the upload travels.
+    let completed;try { completed = JSON.parse(answer); } catch { return; }
+    if (completed.thread !== thread) return;
+    const r = App.act(ui, "attach-end", answer);ui = r.ui;run(r.cmds);
+    thin.adoptLocalSession(Wire.plain(App.presentation(ui)));
+    thin.update();later();
+  }
 }
 
 document.addEventListener("change", (e) => {
@@ -962,6 +1175,7 @@ function lbClose() {
   if (!lb) return;
   lb.el.remove();
   lb = null;
+  desktopBrowser.sync();
 }
 
 function lbPinch() {
@@ -1026,6 +1240,7 @@ function lbOpen(url) {
     if (e.target.closest("[data-lb-close]")) lbClose();
   });
   document.body.appendChild(el);
+  desktopBrowser.sync();
   document.activeElement?.blur?.();
   if (img.complete) lbDraw();
 }
@@ -1039,13 +1254,33 @@ document.addEventListener("click", (e) => {
 // the timeline scrolled within two screens of its top while earlier
 // entries are left out (view.bend's mark): ask for them, once a render
 function earlierCheck(tl) {
+  if (viewMode !== "compatibility" && (!olderGestureUntil || performance.now() > olderGestureUntil)) return;
   if (earlierAsked || !(tl instanceof Element) || tl.id !== "timeline") return;
   const mark = tl.querySelector("[data-earlier]");
   if (!mark || tl.scrollTop > tl.clientHeight * 2) return;
   earlierAsked = true;
+  olderGestureUntil = 0;
   dispatch("earlier", mark.getAttribute("data-earlier") ?? "");
 }
 document.addEventListener("scroll", (e) => earlierCheck(e.target), true);
+let olderGestureUntil = 0, olderTouchY = null;
+function noteOlderGesture(e) {
+  if (!e.isTrusted) return;
+  const tl = e.target.closest?.("#timeline");
+  if (!tl && !(e.type === "keydown" && e.target === document.body)) return;
+  let older = false;
+  if (e.type === "wheel") older = e.deltaY < 0 && !e.ctrlKey;
+  else if (e.type === "touchstart") olderTouchY = e.touches[0]?.clientY ?? null;
+  else if (e.type === "touchmove") {
+    const y = e.touches[0]?.clientY;
+    older = typeof y === "number" && typeof olderTouchY === "number" && y > olderTouchY;
+    olderTouchY = y ?? null;
+  } else if (e.type === "pointerdown") {
+    older = e.button === 0 && tl.scrollHeight > tl.clientHeight && e.clientX >= tl.getBoundingClientRect().right - 16;
+  } else if (e.type === "keydown") older = ["PageUp", "Home", "ArrowUp"].includes(e.key) && !e.target.isContentEditable;
+  if (older) olderGestureUntil = performance.now() + 1200;
+}
+for (const event of ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"]) document.addEventListener(event, noteOlderGesture, { capture: true, passive: true });
 
 document.addEventListener("click", (e) => {
   if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -1132,18 +1367,31 @@ let backoff = 250;
 // (since 0: a new page, or another log at the hub) clears what was kept.
 const FRAMES = "frames";
 let db = null;
-const opened = new Promise((done) => {
+let opened = null;
+function openCompatibilityCache() {
+  if (opened) return opened;
+  return opened = new Promise((done) => {
+  const identity = cacheIdentity(document.cookie);
+  if (!identity) { done(); return; }
+  let settled = false;
+  const finish = database => {
+    if (settled) { database?.close(); return; }
+    settled = true;clearTimeout(timer);db = database || null;done();
+  };
+  const timer = setTimeout(() => finish(null), 1500);
   try {
-    const r = indexedDB.open("backplane-log", 1);
+    // Old unpartitioned read models are retained, but never hydrated under a
+    // different or absent credential tag, even in explicit compatibility.
+    const r = indexedDB.open("backplane-log-v2:" + identity, 1);
     r.onupgradeneeded = () => r.result.createObjectStore(FRAMES, { autoIncrement: true });
-    r.onsuccess = () => { db = r.result; done(); };
-    r.onerror = () => done();
-    r.onblocked = () => done();
+    r.onsuccess = () => finish(r.result);
+    r.onerror = () => finish(null);
+    r.onblocked = () => finish(null);
   } catch {
-    done();
+    finish(null);
   }
 });
-try { localStorage.removeItem("backplane-log"); } catch {} // the copy kept before
+}
 
 // the number in field k of a frame's top object, as Bend's Json holds it
 function field(j, k) {
@@ -1161,49 +1409,327 @@ function keep(kind, j, bytes) {
   } catch {}
 }
 
-// the kept frames, folded in order before the page first connects
-const restored = opened.then(() => new Promise((done) => {
-  if (!db) return done();
-  try {
+// Cache folding and the optional view may overlap; canonical frame application
+// may not. Even a timed-out cache loop must stop before its cursor is used.
+let restored = Promise.resolve(), compatibilityRestore = null;
+function restoreCompatibilityCache() {
+  if (compatibilityRestore) return compatibilityRestore;
+  return compatibilityRestore = restoreCache(async () => {
+  await openCompatibilityCache();
+  if (!db) return [];
+  return new Promise((resolve, reject) => {
     const r = db.transaction(FRAMES, "readonly").objectStore(FRAMES).getAll();
-    r.onsuccess = () => {
-      try {
-        for (const buf of r.result ?? []) ui = App.recv(ui, Wire.cbor(new Uint8Array(buf), KEYS, WORDS)).ui;
-        restoreSubs();
-        // a saved log is not this connection's: the hub's own log says when
-        if ((r.result ?? []).length) ui = App.unsync(ui);
-      } catch {}
-      done();
-    };
-    r.onerror = () => done();
-  } catch {
-    done();
+    r.onsuccess = () => { trace("cache-replay-start", { frames: (r.result ?? []).length }); resolve(r.result ?? []); };
+    r.onerror = () => reject(r.error || Error("Cache read failed"));
+  });
+}, buf => {
+  const frame = Wire.cbor(new Uint8Array(buf), KEYS, WORDS);
+  if (!["log", "changes"].includes(App.kind(frame))) throw Error("Invalid cached frame");
+  ui = App.recv(ui, frame).ui;
+}, { onYield: frames => trace("cache-replay-yield", { frames }) }).then(result => {
+  if (result.error) ui = App.presentation_reset(ui, now(), cid);
+  ui = App.unsync(ui);
+  try { restoreSubs(); } catch {}
+  cacheReady = true;
+  trace("cache-replay-end", { seq: App.seq(ui), applied: result.applied, reset: !!result.error });
+});
+}
+
+function jsonValue(j, key) {
+  for (let f = j?.fields; f && is(f, "Field"); f = f.tail) if (f.key === key) return f.value;
+  return { $: T.Null };
+}
+const presentationJson = value => App.presentation_json(JSON.stringify(value));
+const choosePresentation = (session, action, value) => Wire.plain(App.presentation_choice(action, presentationJson(session), value));
+function localPresentation(action, value, session) {
+  if (action === "select") {
+    ui = App.presentation_select(ui, value);
+    try { localStorage.setItem("backplane-selected", value); } catch {}
+    frontendNode = null;
+    remoteReady = false;
+    void restoreFocused();
+    later();
+  } else if (action === "draft") {
+    ui = App.restore(ui, session.sel, value);
+    try {
+      if (value) localStorage.setItem(DRAFT + session.sel, value);
+      else localStorage.removeItem(DRAFT + session.sel);
+    } catch {}
   }
-}));
+}
+function adoptPresentation(session) { ui = App.presentation_handoff(ui, presentationJson(session)); }
+function performPresentation(operation) {
+  const r = App.presentation_perform(ui, presentationJson(operation.input), operation.action, operation.value);
+  ui = r.ui;
+  run(r.cmds);
+}
+function presentationCommand(command) {
+  const tag = { send: "Send", copy: "Copy", focus: "Focus", scroll: "ScrollEnd", connect: "Connect",
+    keep: "Keep", notify: "Notify", later: "Later", jump: "Jump" }[command.type];
+  if (!tag) throw Error("Unknown presentation command");
+  run({ $: "Con", head: { ...command, $: tag }, tail: { $: "Nil" } });
+}
+
+// Shared thin transport -> platform IO and the existing normal Bend renderer.
+// Neither this path nor its error/retry state touches canonical history.
+function showViewStatus(message) {
+  let box = document.getElementById("view-connection");
+  if (!box) {
+    box = document.createElement("aside");box.id = "view-connection";box.setAttribute("role", "status");
+    box.style.cssText = "position:fixed;bottom:0;left:0;right:0;z-index:30;display:flex;flex-wrap:wrap;gap:8px;padding:8px;background:var(--panel);border-top:1px solid var(--line)";
+    const text = document.createElement("span");text.id = "view-connection-text";box.append(text);
+    for (const [label, action] of [["Retry connection", () => startThin()], ["Full sync (compatibility)", chooseCompatibility]]) {
+      const button = document.createElement("button");button.type = "button";button.textContent = label;button.addEventListener("click", action);box.append(button);
+    }
+    document.body.append(box);
+  }
+  box.hidden = !message;
+  box.style.display = message ? "flex" : "none";
+  document.getElementById("view-connection-text").textContent = message;
+}
+function resultPanel(title) {
+  document.getElementById("thin-result")?.remove();
+  const shade = document.createElement("div");shade.id = "thin-result";shade.className = "shade";
+  const panel = document.createElement("section");panel.className = "picker";
+  panel.setAttribute("role", "dialog");panel.setAttribute("aria-modal", "true");panel.setAttribute("aria-label", title);
+  const before = document.activeElement;
+  const close = () => { shade.remove();root.inert = false;before?.focus?.();desktopBrowser.sync(); };
+  const heading = document.createElement("div");heading.className = "tools";
+  const label = document.createElement("span");label.textContent = title;heading.append(label);
+  const button = document.createElement("button");button.type = "button";button.textContent = "×";button.setAttribute("aria-label", "Close");button.addEventListener("click", close);heading.append(button);
+  panel.append(heading);shade.append(panel);document.body.append(shade);root.inert = true;
+  shade.addEventListener("click", e => { if (e.target === shade) close(); });
+  shade.addEventListener("keydown", e => {
+    if (e.key === "Escape") { e.preventDefault();e.stopPropagation();close(); }
+    if (e.key === "Tab") {
+      const focusable = [...panel.querySelectorAll("button,input")].filter(e => !e.disabled && !e.hidden);
+      const at = focusable.indexOf(document.activeElement), next = (at + (e.shiftKey ? focusable.length - 1 : 1)) % focusable.length;
+      e.preventDefault();focusable[next]?.focus();
+    }
+  });
+  button.focus();desktopBrowser.sync();return { panel, close };
+}
+function showThinSearch(search) {
+  const { panel, close } = resultPanel("Search");
+  const query = document.createElement("input");query.type = "search";query.value = search.query;query.setAttribute("aria-label", "Search conversations");
+  query.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.isComposing) { e.preventDefault();thin?.search(query.value); }
+  });panel.append(query);
+  const rows = document.createElement("div");rows.style.cssText = "overflow:auto;min-height:0;display:flex;flex-direction:column";
+  for (const row of search.rows) {
+    const button = document.createElement("button");button.type = "button";button.className = "row";
+    button.textContent = row.text + (row.partial ? " …" : "");
+    button.addEventListener("click", () => { close();dispatch("select", row.thread); });rows.append(button);
+  }
+  panel.append(rows);
+  if (search.hasMore && search.cursor) {
+    const more = document.createElement("button");more.type = "button";more.textContent = "More results";
+    more.addEventListener("click", () => thin?.search(search.query, search.cursor));panel.append(more);
+  }
+  query.focus();
+}
+function showThinMessage(message) {
+  const { panel } = resultPanel(message.complete ? "Message" : "Partial message");
+  const text = document.createElement("pre");text.textContent = message.text;text.style.cssText = "white-space:pre-wrap;overflow:auto;min-height:0;padding:12px";panel.append(text);
+  if (!message.fromStart || message.hasMore) {
+    const restart = document.createElement("button");restart.type = "button";restart.textContent = "Read from start";
+    restart.addEventListener("click", () => thin?.messageFromStart(message.id));panel.append(restart);
+  }
+  if (message.hasMore) {
+    const more = document.createElement("button");more.type = "button";more.textContent = "More text";
+    more.addEventListener("click", () => thin?.message(message.id, message.cursor));panel.append(more);
+  }
+}
+function stopThin() {
+  checkpointFocused();
+  thinAttempt++;clearInterval(thinExpiry);clearTimeout(thinGreetingTimer);clearTimeout(thinDraftTimer);clearTimeout(thinFieldTimer);
+  const previous = thin;thin = null;
+  const s = thinSocket;thinSocket = null;
+  if (socket === s) socket = null;
+  if (s) { s.onclose = null;s.onmessage = null;try { s.close(); } catch {} }
+  if (previous) previous.disconnect();
+  remoteReady = false;frontendNode = null;desktopBrowser.hide();Plot2d.reset();Solid.reset();
+}
+async function startThin() {
+  if (!pairingAccepted) return;
+  if (viewMode === "compatibility") return;
+  stopThin();const attempt = thinAttempt;
+  viewMode = "discovering";
+  showViewStatus("Connecting…");later();
+  const capability = await discoverViews({ fetch: window.fetch.bind(window), validate: viewCapability });
+  if (attempt !== thinAttempt || viewMode === "compatibility") return;
+  if (!capability.supported) {
+    viewMode = "read-only";showViewStatus("Connection unavailable. Saved conversation is read-only.");later();return;
+  }
+  viewMode = "view-v1";
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const s = new WebSocket(`${proto}//${location.host}/ws?view=1&frontend=1&enc=cbor&since=0&origin=`);
+  thinSocket = s;s.binaryType = "arraybuffer";
+  let ended = false;
+  const current = () => !ended && attempt === thinAttempt && viewMode === "view-v1";
+  const fail = message => {
+    if (!current()) return;
+    checkpointFocused();remoteReady = false;frontendNode = null;desktopBrowser.hide();Plot2d.reset();Solid.reset();
+    showViewStatus(message);void restoreFocused(true);later();
+  };
+  const disconnect = () => {
+    if (!current()) return;
+    fail("Disconnected. Saved conversation is read-only.");ended = true;
+    clearTimeout(thinGreetingTimer);clearInterval(thinExpiry);clearTimeout(thinDraftTimer);clearTimeout(thinFieldTimer);
+    thin?.disconnect();if (socket === s) socket = null;
+  };
+  try {
+    const saved = localStorage.getItem("backplane-view-request-id");
+    const next = saved === null ? 2 ** 47 : /^(0|[1-9][0-9]*)$/.test(saved) ? Number(saved) : NaN;
+    if (!Number.isSafeInteger(next) || next < 2 ** 47 || next >= 2 ** 48 - 1) throw Error("Invalid view counter");
+    thin = new ThinHost({
+      hub: location.origin, cid, now: () => performance.now(), session: currentSession,
+      target: session => session.sel ? { kind: "thread", id: session.sel } : { kind: "recent", id: "" },
+      counter: value => localStorage.setItem("backplane-view-request-id", String(value)),
+      send: request => {
+        if (!current() || s.readyState !== 1) throw Error("View connection closed");
+        trace("send", { id: request.id, method: request.m });
+        s.send(fromList(App.wire_out(JSON.stringify(request))));
+      },
+      choice: choosePresentation, prepare: (session, input, action) => Wire.plain(App.presentation_prepare(presentationJson(session), presentationJson(input), action)),
+      selection: (target, session) => {
+        thinMailDraft.clear();
+        if (target.kind === "thread") { ui = App.presentation_select(ui, target.id);void restoreFocused(); }
+        else { focusedRequestedKey = null;focusedView.invalidate(); }
+      },
+      local: localPresentation,
+      sessionChanged: (session, detail) => {
+        thinSession = session;
+        if (detail?.remote) {
+          // Only live response choices cross this boundary. State and applied
+          // cursor stay in the fresh unsynced recipient, never in a picture.
+          ui = App.unsync(App.presentation_handoff(ui, presentationJson(session)));
+          document.documentElement.lang = App.lang(ui);
+        }
+        later();
+      },
+      ack: (session, reply) => Wire.plain(App.presentation_reply(presentationJson(session), presentationJson(reply))),
+      decode: shown => App.presentation_node(presentationJson(shown)),
+      command: command => presentationCommand(command),
+      anchor: () => { const tl = document.getElementById("timeline"), a = tl && anchorOf(tl);return { id: a?.id || "", offset: Math.max(0, Math.round(a ? tl.getBoundingClientRect().top - a.off : 0)) }; },
+      draftRefresh: refresh => { clearTimeout(thinDraftTimer);thinDraftTimer = setTimeout(() => { if (current()) refresh(); }, 75); },
+      fieldRefresh: refresh => { clearTimeout(thinFieldTimer);thinFieldTimer = setTimeout(() => { if (current()) refresh(); }, 75); },
+      fieldsChanged: (name, text) => { if (name === "mrreply") thinMailDraft.edit(text);later(); },
+      operationScope: (action, value) => action === "mail-send" ? thinMailDraft.scope(true) : action === "bfield" && value.startsWith("mrreply\u001f") ? thinMailDraft.scope() : undefined,
+      blocked: () => showViewStatus("Wait for the current conversation to connect."),
+      search: showThinSearch, message: showThinMessage,
+      view: (node, detail) => {
+        if (!current()) return;
+        const field = mailReplyField(detail.shown);
+        const accepted = field === undefined ? undefined : thinMailDraft.matches(detail.mailDraftContext, detail.epoch) ? thin.fieldValue("mrreply", field) : field;
+        thinMailDraft.bind(detail.mailDraftContext, detail.epoch, accepted);
+        focusedView.remote(detail.epoch);remoteEpoch = detail.epoch;frontendNode = node;
+        trace("thin-view", { entries: detail.window?.ids?.length || 0 });later();
+      },
+      state: state => {
+        if (!current()) return;
+        remoteReady = state.remoteReady === true;
+        if (!remoteReady) { frontendNode = null;desktopBrowser.hide(); }
+        if (state.phase === "error") fail("Conversation unavailable. Your draft is kept; retry explicitly.");
+        else if (remoteReady) showViewStatus("");
+        later();
+      },
+    }, ThinViews, next);
+  } catch { disconnect();try { s.close(); } catch {}return; }
+  s.onopen = () => {
+    if (!current()) return;
+    socket = s;heard = BigInt(Date.now());
+  };
+  s.onmessage = event => {
+    if (!current() || typeof event.data === "string") return;
+    heard = BigInt(Date.now());
+    const bytes = new Uint8Array(event.data);
+    if (Solid.isPlot(bytes)) {
+      const o = Solid.cbor(bytes), at = { bytes: bytes.length, t: performance.now() };
+      const key = typeof o?.key === "string" ? o.key : "";
+      if (["2|", "3|", "4|"].some(prefix => key.startsWith(prefix))) Solid.got(o, at);
+      else if (o) Plot2d.got(o, at);
+      return;
+    }
+    if (bytes.byteLength > 262144) { disconnect();try { s.close(); } catch {}return; }
+    try {
+      const j = Wire.cbor(bytes, KEYS, WORDS), envelope = Wire.plain(j);
+      if (envelope.t === "view") { clearTimeout(thinGreetingTimer);thin.greeting(envelope); }
+      else if (!thin.receive(envelope) && envelope.t === "reply" && Number.isSafeInteger(envelope.id) && envelope.id < 2 ** 47) thin.ack(envelope);
+      // A thin socket never folds log/changes/info into canonical Ui.
+    } catch { disconnect();try { s.close(); } catch {} }
+  };
+  s.onclose = disconnect;s.onerror = disconnect;
+  s.dead = () => { disconnect();try { s.close(); } catch {} };
+  // Include the HTTP Upgrade/connect phase in the greeting deadline.
+  thinGreetingTimer = setTimeout(() => { fail("No current view reply. Retry connection.");disconnect();try { s.close(); } catch {} }, 2000);
+  thinExpiry = setInterval(() => { if (current()) thin.expire(); }, 250);
+}
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const q = new URLSearchParams();
   q.set("since", App.seq(ui));
   q.set("origin", App.origin(ui));
-  q.set("enc", "cbor"); // a hub before CBOR-only still needs asking
+  q.set("enc", "cbor");
+  if (wantFrontend) q.set("frontend", "1");
+  const optIn = wantFrontend;
   const s = new WebSocket(`${proto}//${location.host}/ws?${q}`);
   s.binaryType = "arraybuffer";
+  let lost = false, remembered = false, bufferedBytes = 0;
+  const buffered = [];
+  const remember = pending => {
+    if (remembered || (!front.generation && !front.changed)) return;
+    remembered = true;
+    fallbackIntent = pending;
+  };
+  const front = new FrontendStartup({
+    cid: () => cid,
+    session: () => {
+      try { return fallbackIntent?.session || Wire.plain(App.presentation(ui)); }
+      catch { return { sel: "", drafts: {}, rid: null }; } // rejected; never a replacement Ui
+    },
+    cursor: () => ({ since: Number(App.seq(ui)), origin: App.origin(ui) }),
+    send: request => {
+      if (lost || s.readyState !== 1) throw Error("Startup connection closed");
+      s.send(fromList(App.wire_out(JSON.stringify(request))));
+    },
+    allowed: action => App.presentation_allowed(action),
+    blocked: () => { ui = App.presentation_blocked(ui); frontendNode = null; later(); },
+    choice: choosePresentation,
+    local: localPresentation,
+    prepare: (session, input, action) => Wire.plain(App.presentation_prepare(presentationJson(session), presentationJson(input), action)),
+    ack: (session, reply) => Wire.plain(App.presentation_reply(presentationJson(session), presentationJson(reply))),
+    decode: (result, opaque) => {
+      validatePresentation(result);
+      return App.presentation_node(jsonValue(jsonValue(opaque, "result"), "view"));
+    },
+    view: node => { frontendNode = node; trace("frontend-view"); later(); },
+    hide: () => { frontendNode = null; later(); },
+    command: presentationCommand,
+    adopt: adoptPresentation,
+    perform: performPresentation,
+    legacy: (_reason, pending) => {
+      remember(pending);
+      wantFrontend = false;
+      trace("frontend-fallback", { reason: _reason });
+      try { s.close(); } catch { gone(); }
+    },
+  });
+  front.inherit(fallbackIntent);
+  fallbackIntent = null;
+  frontend = front;
   s.onopen = () => {
     socket = s;
     heard = BigInt(Date.now());
     backoff = 250;
-    ui = App.online(ui, true);
+    ui = App.unsync(App.online(ui, true));
+    if (optIn) front.opened();
+    startHistory();
     later();
   };
-  s.onmessage = (e) => {
+  function receive(bytes, j, decodeMs = 0) {
     const t0 = PERF ? pnow() : 0;
-    heard = BigInt(Date.now());
-    // the hub sends only binary CBOR frames
-    if (typeof e.data === "string") return;
-    // plots go straight to the viewers, not through Bend: a 3D model
-    // ("2|", "3|" or "4|...") to solid.js, a board or schematic to plot2d.js
-    const bytes = new Uint8Array(e.data);
     if (Solid.isPlot(bytes)) {
       const at = { bytes: bytes.length, t: performance.now() };
       const o = Solid.cbor(bytes);
@@ -1212,49 +1738,101 @@ function connect() {
       else if (o) Plot2d.got(o, at);
       return;
     }
-    // decoded here, straight into Bend's Json tree (wire.js): Bend's own
-    // decoder walked a list cell per byte, most of a long log's load
-    const j = Wire.cbor(bytes, KEYS, WORDS);
-    // only the log and its changes are kept; what the message changes on
-    // the page (app.bend's part) is drawn: nothing, the streaming row, or
-    // the page
+    j ||= Wire.cbor(bytes, KEYS, WORDS);
     const t = App.kind(j);
+    trace("receive", { kind: t, id: field(j, "id"), bytes: bytes.length });
+    if (t === "reply") front.ack(Wire.plain(j));
     const part = App.part(ui, j);
     keep(t, j, bytes);
     const r = App.recv(ui, j);
     ui = r.ui;
+    const wasCanonical = canonicalBoot;
+    canonicalBoot = App.synced(ui);
+    const becameCanonical = canonicalBoot && !wasCanonical;
+    if (canonicalBoot && !front.closed) front.end();
+    if (canonicalBoot && fallbackIntent) {
+      const intent = fallbackIntent;
+      fallbackIntent = null;
+      adoptPresentation(intent.session);
+      for (const operation of intent.operations) {
+        performPresentation(operation);
+        for (const choice of intent.choices || []) if (choice.revision > operation.revision)
+          adoptPresentation(choosePresentation(Wire.plain(App.presentation(ui)), choice.action, choice.value));
+      }
+    }
     if (t === "log" && Number(field(j, "since") ?? 0) === 0) restoreSubs();
     let acts = false;
-    for (const _ of each(r.cmds)) {
-      acts = true;
-      break;
-    }
+    for (const _ of each(r.cmds)) { acts = true; break; }
     run(r.cmds);
-    if (acts || part === "page") later();
+    if (acts || part === "page" || becameCanonical) later();
     else if (part === "live") laterLive();
-    if (PERF) PERF.msg.push([pnow() - t0, t, part ? 1 : 0]);
+    if (PERF) PERF.msg.push([decodeMs + pnow() - t0, t, part ? 1 : 0]);
+  }
+  s.onmessage = e => {
+    if (lost || s.readyState !== 1) return;
+    heard = BigInt(Date.now());
+    if (typeof e.data === "string") return;
+    const t0 = PERF ? pnow() : 0;
+    const bytes = new Uint8Array(e.data);
+    const plot = Solid.isPlot(bytes);
+    const j = plot ? null : Wire.cbor(bytes, KEYS, WORDS);
+    const t = j ? App.kind(j) : "";
+    const decodeMs = PERF ? pnow() - t0 : 0;
+    if (t === "frontend") {
+      front.greeting(Wire.plain(j));
+      trace("frontend-receive", { kind: t, bytes: bytes.length });
+      if (PERF) PERF.msg.push([pnow() - t0, t, 1]);
+      return;
+    }
+    if (t === "reply") {
+      const id = jsonValue(j, "id");
+      const number = is(id, "Num") ? Number(id.raw) : null;
+      if (front.owns(number)) {
+        front.reply(Wire.plain(j), j);
+        trace("frontend-receive", { kind: "screen-or-history", bytes: bytes.length });
+        if (PERF) PERF.msg.push([pnow() - t0, "frontend-reply", 1]);
+        return;
+      }
+    }
+    if (t === "log" || t === "changes") front.canonicalFrame();
+    if (!cacheReady) {
+      bufferedBytes += bytes.length;
+      if (bufferedBytes > 4194304) { front.legacy("startup frame backlog"); return; }
+      buffered.push({ bytes, j, decodeMs });
+      return;
+    }
+    receive(bytes, j, decodeMs);
   };
-  let lost = false;
+  function startHistory() {
+    if (lost || s.readyState !== 1) return;
+    if (!cacheReady) return;
+    front.ready();
+    for (const frame of buffered.splice(0)) {
+      if (lost || s.readyState !== 1) break;
+      receive(frame.bytes, frame.j, frame.decodeMs);
+    }
+    bufferedBytes = 0;
+  }
+  restored.then(startHistory);
   const gone = () => {
     if (lost) return;
     lost = true;
+    if (!canonicalBoot) remember(front.pending());
+    front.close();
     if (socket === s) socket = null;
-    // a new connection holds no plots
+    desktopBrowser.hide();
     Plot2d.reset();
     Solid.reset();
-    ui = App.online(ui, false);
+    ui = App.unsync(App.online(ui, false));
+    canonicalBoot = false;
+    delete document.documentElement.dataset.backplaneReady;
     later();
-    setTimeout(connect, backoff);
+    const retry = backoff;
+    restored.then(() => setTimeout(connect, retry));
     backoff = Math.min(backoff * 2, 5000);
   };
   s.onclose = gone;
-  // a half-open link shows no close: the hub's heartbeat (every 15 s) not
-  // arriving for 40 s ends it here (Alive.due)
-  s.dead = () => {
-    s.onmessage = null;
-    try { s.close(); } catch {}
-    gone();
-  };
+  s.dead = () => { s.onmessage = null; try { s.close(); } catch {} gone(); };
 }
 
 // when a frame (a heartbeat included) last arrived, in ms
@@ -1269,12 +1847,52 @@ setInterval(() => {
 }, 30000);
 
 render();
-Promise.all([restored, pairingReady]).then(() => {
-  render();
-  connect();
+// Normal startup negotiates a bounded view; only an explicit human choice
+// below may load a canonical cache or open a legacy history socket.
+function chooseCompatibility() {
+  if (!pairingAccepted) return;
+  if (viewMode === "compatibility") return;
+  stopThin();
+  viewMode = "compatibility";remoteReady = false;remoteEpoch = "";
+  thinSession = null;wantFrontend = false;
+  restored = restoreCompatibilityCache();
+  restored.then(() => { render();connect(); });
+}
+pairingReady.then(paired => {
+  pairingAccepted = paired === true;
+  if (!pairingAccepted) {
+    viewMode = "read-only";focusedView.invalidate();showViewStatus("Pairing failed. Reopen the pairing link.");return;
+  }
+  // Neither IO path awaits the other: a blocked IndexedDB request cannot
+  // delay capability discovery or the first selected network view.
+  void restoreFocused();
+  void refreshFocusedIdentity();
+  startThin();
 });
+window.addEventListener("pagehide", checkpointFocused);
 
 // the app shell works offline where the browser allows it (HTTPS or localhost)
 if ("serviceWorker" in navigator && window.isSecureContext) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
+
+// A category change starts at its heading; Back restores its category button.
+let settingsPage = null;
+function settingsSync() {
+  const content = document.getElementById("settings-content");
+  if (!content) { settingsPage = null; return; }
+  const page = content.dataset.settingsPage;
+  if (page === settingsPage) return;
+  const previous = settingsPage;
+  settingsPage = page;
+  content.scrollTop = 0;
+  const target = page ? document.getElementById("settings-title") :
+    content.querySelector(`[data-value="${CSS.escape(previous || "appearance")}"]`) || content.querySelector("button");
+  target?.focus();
+}
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape" || !document.getElementById("settings-content")) return;
+  if (e.target.matches("input, textarea, select")) { e.target.blur(); }
+  else { dispatch(settingsPage ? "settings-page" : "flag", settingsPage ? "" : "settings"); }
+  e.preventDefault(); e.stopImmediatePropagation();
+}, true);

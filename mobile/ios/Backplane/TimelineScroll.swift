@@ -1,0 +1,285 @@
+import SwiftUI
+import Observation
+import UIKit
+
+// Entry identity and its distance from the top are retained together. UIKit
+// performs the correction in layout, including intrinsic-height changes that
+// don't produce a new Bend screen (images, expanded cards and the keyboard).
+@MainActor @Observable
+final class TimelinePosition {
+    private(set) var following = true
+    private(set) var unread = 0
+    @ObservationIgnored var latest: (() -> Void)?
+    @ObservationIgnored var jump: ((String) -> Void)?
+    @ObservationIgnored fileprivate var beginning: (() -> Void)?
+    // Kept by the owning navigation context, without observing frame changes.
+    // A controller may disappear while a linked source is open.
+    @ObservationIgnored fileprivate var viewport: TimelineViewport?
+
+    fileprivate func report(following: Bool, unread: Int) {
+        if self.following != following { self.following = following }
+        if self.unread != unread { self.unread = unread }
+    }
+
+    func resetToStart(firstID: String? = nil) {
+        viewport = nil
+        if let firstID { jump?(firstID) }
+        else { beginning?() }
+    }
+}
+
+fileprivate struct TimelineViewport {
+    let following: Bool
+    let unread: Int
+    let anchor: (id: String, offset: CGFloat)?
+    let retained: [(id: String, offset: CGFloat)]
+}
+
+struct TimelineScroll<Content: View>: UIViewControllerRepresentable {
+    let position: TimelinePosition
+    let ids: [String]
+    let earlier: Int
+    let loadEarlier: () -> Bool
+    var earlierEnabled = true
+    var startsAtLatest = true
+    @ViewBuilder let content: () -> Content
+
+    func makeUIViewController(context: Context) -> TimelineController<Content> {
+        TimelineController(position: position, startsAtLatest: startsAtLatest, content: content())
+    }
+
+    func updateUIViewController(_ controller: TimelineController<Content>, context: Context) {
+        controller.configure(ids: ids, earlier: earlier, enabled: earlierEnabled, loadEarlier: loadEarlier, content: content())
+    }
+}
+
+struct TimelineMarker: UIViewRepresentable {
+    let id: String
+    func makeUIView(context: Context) -> TimelineMark { TimelineMark(id: id) }
+    func updateUIView(_ view: TimelineMark, context: Context) { view.entryID = id }
+}
+
+final class TimelineMark: UIView {
+    var entryID: String
+    init(id: String) { entryID = id; super.init(frame: .zero); isUserInteractionEnabled = false }
+    required init?(coder: NSCoder) { fatalError("init(coder:)") }
+}
+
+private final class TimelineHost<Content: View>: UIHostingController<Content> {
+    var laidOut: (() -> Void)?
+    override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); laidOut?() }
+}
+
+final class TimelineController<Content: View>: UIViewController, UIScrollViewDelegate {
+    let scroll = UIScrollView()
+    private let host: TimelineHost<Content>
+    private let position: TimelinePosition
+    private var anchor: (id: String, offset: CGFloat)?
+    private var retained: [(id: String, offset: CGFloat)] = []
+    private var pendingJump: String?
+    private var following = true
+    private var unread = 0
+    private var ids: [String] = []
+    private var earlier = 0
+    private var earlierGate = EarlierPageGate()
+    private var loadEarlier: (() -> Bool)?
+    private var correcting = false
+    private var reportPending = false
+    private var initialized = false
+    private var awaitingBeginning = false
+
+    init(position: TimelinePosition, startsAtLatest: Bool = true, content: Content) {
+        self.position = position
+        awaitingBeginning = !startsAtLatest && position.viewport?.anchor == nil &&
+            position.viewport?.following != true
+        if let kept = position.viewport {
+            following = kept.following
+            unread = kept.unread
+            anchor = kept.anchor
+            retained = kept.retained
+        } else {
+            following = startsAtLatest
+        }
+        host = TimelineHost(rootView: content)
+        super.init(nibName: nil, bundle: nil)
+        position.latest = { [weak self] in self?.showLatest() }
+        position.jump = { [weak self] id in self?.show(id) }
+        position.beginning = { [weak self] in self?.showBeginning() }
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:)") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        scroll.backgroundColor = .clear
+        scroll.delegate = self
+        scroll.alwaysBounceVertical = true
+        scroll.keyboardDismissMode = .interactive
+        scroll.accessibilityIdentifier = "thread.timeline"
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scroll)
+        addChild(host)
+        host.view.backgroundColor = .clear
+        host.sizingOptions = .intrinsicContentSize
+        host.safeAreaRegions = []
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(host.view)
+        host.didMove(toParent: self)
+        NSLayoutConstraint.activate([
+            scroll.topAnchor.constraint(equalTo: view.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            host.view.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            host.view.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            host.view.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            host.view.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor)
+        ])
+        host.laidOut = { [weak self] in self?.reconcile() }
+    }
+
+    func configure(ids next: [String], earlier: Int, enabled: Bool, loadEarlier: @escaping () -> Bool, content: Content) {
+        // Count only entries appended after the old tail, never history prepends.
+        if !following, let last = ids.last, let at = next.firstIndex(of: last) {
+            unread += next.distance(from: next.index(after: at), to: next.endIndex)
+        }
+        ids = next
+        self.earlier = earlier
+        earlierGate.configure(enabled: enabled)
+        self.loadEarlier = loadEarlier
+        host.rootView = content
+        view.setNeedsLayout()
+        report()
+    }
+
+    override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); reconcile() }
+
+    private func marks(_ view: UIView) -> [TimelineMark] {
+        if let mark = view as? TimelineMark { return [mark] }
+        return view.subviews.flatMap { marks($0) }
+    }
+    private func frames() -> [(String, CGRect)] {
+        marks(host.view).map { ($0.entryID, $0.convert($0.bounds, to: scroll)) }
+            .sorted { $0.1.minY < $1.1.minY }
+    }
+    private var top: CGFloat { scroll.contentOffset.y + scroll.adjustedContentInset.top }
+    private var viewportTop: CGFloat {
+        scroll.convert(CGPoint(x: 0, y: top), to: view.window).y
+    }
+    private var end: CGFloat {
+        max(-scroll.adjustedContentInset.top,
+            scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom - scroll.contentInset.bottom)
+    }
+    private func capture(_ rows: [(String, CGRect)]) {
+        if let first = rows.first(where: { $0.1.maxY > top + 0.5 }) {
+            anchor = (first.0, first.1.minY - top + viewportTop)
+            // A folded/removed anchor can fall back to the next surviving
+            // visible entry at its own old screen position.
+            retained = rows.filter { $0.1.maxY > top && $0.1.minY < top + scroll.bounds.height }
+                .map { ($0.0, $0.1.minY - top + viewportTop) }
+        }
+    }
+    private func setOffset(_ y: CGFloat) {
+        // While reading an anchor near the end, allow bottom padding rather
+        // than clamping it upward when a keyboard or a tool card shrinks.
+        let needed = max(0, y - end)
+        if abs(scroll.contentInset.bottom - needed) > 0.25 { scroll.contentInset.bottom = needed }
+        let target = max(-scroll.adjustedContentInset.top, y)
+        if abs(scroll.contentOffset.y - target) > 0.25 {
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: target), animated: false)
+        }
+    }
+    private func reconcile() {
+        guard isViewLoaded, view.window != nil, scroll.bounds.height > 0, !correcting else { return }
+        correcting = true
+        defer { correcting = false }
+        let rows = frames()
+        guard !rows.isEmpty else { return }
+        if awaitingBeginning {
+            // A hosting view can expose its new markers while its bounds
+            // still describe the previous empty layout. Capturing that
+            // intermediate geometry turns centering into a retained offset.
+            // A fresh list starts only after its configured first row is
+            // laid out inside the hosting bounds. Existing reading anchors
+            // never enter this initial-start branch.
+            guard rows.first?.0 == ids.first, host.view.bounds.height > 0,
+                  rows.allSatisfy({ $0.1.minY >= -0.5 &&
+                      $0.1.maxY <= host.view.bounds.height + 0.5 }) else { return }
+            awaitingBeginning = false
+            setOffset(-scroll.adjustedContentInset.top)
+            capture(rows)
+            initialized = true
+            report()
+            return
+        }
+        if let id = pendingJump, let row = rows.first(where: { $0.0 == id }) {
+            setOffset(row.1.minY - scroll.adjustedContentInset.top)
+            pendingJump = nil
+            following = false
+            capture(rows)
+        } else if following {
+            if scroll.contentInset.bottom != 0 { scroll.contentInset.bottom = 0 }
+            if abs(scroll.contentOffset.y - end) > 0.25 {
+                scroll.setContentOffset(CGPoint(x: 0, y: end), animated: false)
+            }
+            capture(rows)
+        } else if let held = anchor, let row = rows.first(where: { $0.0 == held.id }) {
+            setOffset(row.1.minY - held.offset + viewportTop - scroll.adjustedContentInset.top)
+        } else if let kept = retained.first(where: { old in rows.contains { $0.0 == old.id } }),
+                  let row = rows.first(where: { $0.0 == kept.id }) {
+            anchor = kept
+            setOffset(row.1.minY - kept.offset + viewportTop - scroll.adjustedContentInset.top)
+        } else {
+            capture(rows)
+        }
+        initialized = true
+        report()
+    }
+    private func report() {
+        position.viewport = TimelineViewport(following: following, unread: unread,
+                                             anchor: anchor, retained: retained)
+        guard !reportPending else { return }
+        reportPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.reportPending = false
+            self.position.report(following: self.following, unread: self.unread)
+        }
+    }
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        following = false
+        capture(frames())
+    }
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard !correcting, scroll.isDragging || scroll.isDecelerating else { return }
+        capture(frames())
+        following = abs(end - scroll.contentOffset.y) <= 2
+        if following { unread = 0 }
+        report()
+        // Only a real drag/fling can request another page. Layout, restored
+        // anchors, keyboard changes and programmatic search jumps must not.
+        if initialized, top < 400, earlier > 0, !following, let loadEarlier {
+            earlierGate.request(earlier, perform: loadEarlier)
+        }
+    }
+    private func showLatest() {
+        awaitingBeginning = false
+        following = true
+        unread = 0
+        anchor = nil
+        pendingJump = nil
+        reconcile()
+    }
+    private func showBeginning() {
+        awaitingBeginning = false
+        following = false
+        unread = 0
+        anchor = nil
+        retained = []
+        pendingJump = nil
+        setOffset(-scroll.adjustedContentInset.top)
+        reconcile()
+    }
+    private func show(_ id: String) { awaitingBeginning = false; pendingJump = id; reconcile() }
+}

@@ -5,6 +5,7 @@ import ../core/json.bend as J
 import ../core/utf8.bend as U
 import ../core/kihealth.bend as KH
 import ../core/port.bend as PORT
+import ../core/kicad_install.bend as KI
 
 # KiCad on this machine: which kicad-cli to use (the Backplane KiCad fork,
 # with IPC, when present), a project's canonical files, and the KiStack
@@ -23,29 +24,31 @@ type Files is Data:
 def KiCad.missing() -> String:
   "KiCad is not installed on this machine (no kicad-cli): get it from kicad.org/download or its package manager"
 
+# Convert filesystem arguments at the native tool boundary. Other arguments
+# (flags, commands and model text) retain their bytes; POSIX is unchanged.
+def KiCad.native_args(args: List<&2, String>) -> IO(List<&2, String>):
+  match args:
+    case Nil{}: IO.pure(List<&2, String>, Nil{})
+    case h <> t:
+      do IO<List<&2, String>>:
+        head : String <- H.Sys.native_path(h)
+        tail : List<&2, String> <- KiCad.native_args(t)
+        return head <> tail
+
+def KiCad.run.k(empty: Bool, cli: String, args: List<&2, String>) -> IO(P.Ran):
+  match empty:
+    case True{}: IO.pure(P.Ran, P.Ran{127, KiCad.missing()})
+    case False{}:
+      do IO<P.Ran>:
+        native : List<&2, String> <- KiCad.native_args(args)
+        P.Proc.run(cli, native, "/")
+
 # a KiCad command's result, or KiCad.missing() without a kicad-cli
 def KiCad.run(+cli: String, args: List<&2, String>) -> IO(P.Ran):
-  Bool.pick(IO(P.Ran), String.is_empty(cli), IO.pure(P.Ran, P.Ran{127, KiCad.missing()}), P.Proc.run(cli, args, "/"))
+  KiCad.run.k(String.is_empty(cli), cli, args)
 
 def KiCad.version() -> String:
   "10.99.0-bp.4"
-
-# the release that carries it and the archive in it (its compression is
-# whatever tar reads: .gz here; change the name when the release differs)
-def KiCad.release() -> String:
-  "backplane-kicad-v10.99.0-bp.4"
-
-def KiCad.asset() -> String:
-  "backplane-kicad-linux-x86_64-" ++ KiCad.version() ++ ".tar.gz"
-
-# Published bp.4 runtime digest, verified by FORK against SHA256SUMS and GitHub.
-def KiCad.sha256() -> String:
-  "f60a71817d057f9dcf3faef632b2f85d06a613108dee23807c9de81aae97e0b4"
-
-# the KiStack commit to fall back on: the latest one found (KiStack.refresh)
-# is used once it is here
-def KiStack.revision() -> String:
-  "ecf16c119c7ed610f5f251c479b03884b8d98b09"
 
 def Io.bytes.done(r: File & Result<&1, &1, U32 & String, List<&2, U32>>) -> IO(List<&2, U32>):
   (f, res) = r
@@ -152,13 +155,21 @@ def Rt.empty() -> Rt:
 # A CLI path or runtime root. Missing explicit roots stay explicit.
 def Rt.candidate(+p: String) -> String:
   Bool.pick(String, String.ends_with(p, ".app"), p ++ "/Contents/MacOS/kicad-cli",
-    Bool.pick(String, String.ends_with(p, "kicad-cli"), p, p ++ "/bin/kicad-cli"))
+    Bool.pick(String, Bool.or(String.ends_with(p, "kicad-cli"), String.ends_with(p, "kicad-cli.exe")), p, p ++ "/bin/kicad-cli"))
 
-def Rt.root(+cli: String) -> String:
+def Rt.root.stem(+cli: String) -> String:
   Bool.pick(String, String.ends_with(cli, "/Contents/MacOS/kicad-cli"),
     String.take(cli, Nat.sub(String.length(cli), String.length("/Contents/MacOS/kicad-cli"))),
     Bool.pick(String, String.ends_with(cli, "/bin/kicad-cli"), String.take(cli, Nat.sub(String.length(cli), String.length("/bin/kicad-cli"))),
       String.take(cli, Nat.sub(String.length(cli), 1n+String.length(Maybe.default(&2, String, List.last(&2, String, String.split(cli, '/')), cli))))))
+
+
+# Windows runtime metadata is beside bin/, including when the CLI has .exe.
+def Rt.root.normal(+cli: String) -> String:
+  Rt.root.stem(Bool.pick(String, String.ends_with(cli, ".exe"), String.take(cli, Nat.sub(String.length(cli), 4n)), cli))
+
+def Rt.root(cli: String) -> String:
+  Rt.root.normal(String.join(String.split(cli, '\\'), "/"))
 
 def Rt.env(name: String) -> IO(String):
   do IO<String>:
@@ -195,14 +206,14 @@ def Rt.installed.paths(ns: List<&2, String>, +data: String) -> List<&2, KCandida
 def Rt.installed(ns: List<&2, String>, data: String) -> List<&2, KCandidate>:
   Rt.installed.paths(List.sort(~String, ~Rt.installed.before, List.filter(~String, ~Rt.installed.keep, ns)), data)
 
-def Rt.candidates(+setting: String, +root: String, +explicit: String, +exe: String, +data: String, +user: String, +path: String, mac: Bool, older: List<&2, KCandidate>) -> List<&2, KCandidate>:
+def Rt.candidates(+setting: String, +root: String, +explicit: String, +exe: String, +data: String, +user: String, +path: String, +platform: String, older: List<&2, KCandidate>) -> List<&2, KCandidate>:
   List.concat(&2, KCandidate, [
     Bool.pick(List<&2, KCandidate>, String.is_empty(setting), Nil{}, [KCandidate{setting, "setting"}]),
     Bool.pick(List<&2, KCandidate>, String.is_empty(root), Nil{}, [KCandidate{root, "env"}]),
     Bool.pick(List<&2, KCandidate>, String.is_empty(explicit), Nil{}, [KCandidate{explicit, "env"}]),
-    [KCandidate{exe ++ "/kicad/bin/kicad-cli", "bundled"}, KCandidate{data ++ "/kicad/" ++ KiCad.version() ++ "/bin/kicad-cli", "installed"}],
+    [KCandidate{exe ++ "/kicad/bin/kicad-cli", "bundled"}, KCandidate{data ++ "/kicad/" ++ KI.Install.installed(KI.Install.platform(platform)), "installed"}],
     older,
-    Bool.pick(List<&2, KCandidate>, mac, [KCandidate{"/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli", "app"}, KCandidate{user ++ "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli", "app"}], Nil{}),
+    Bool.pick(List<&2, KCandidate>, String.starts_with(platform, "Darwin"), [KCandidate{"/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli", "app"}, KCandidate{user ++ "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli", "app"}], Nil{}),
     Rt.paths(String.split(path, ':')), [KCandidate{"/usr/bin/kicad-cli", "system"}, KCandidate{"/usr/local/bin/kicad-cli", "system"}]])
 
 def Rt.platform(r: P.Ran) -> String:
@@ -226,7 +237,7 @@ def Rt.list(+setting: String, +explicit: String, +exe: String, +data: String) ->
     path : String <- Rt.env("PATH")
     os : P.Ran <- P.Proc.run("uname", ["-sm"], "/")
     installed : List<&2, String> <- Io.names(data ++ "/kicad")
-    return Rt.candidates(setting2, root, explicit2, exe, data, user, path, String.starts_with(Rt.platform(os), "Darwin"), Rt.installed(installed, data))
+    return Rt.candidates(setting2, root, explicit2, exe, data, user, path, Rt.platform(os), Rt.installed(installed, data))
 
 def Rt.stamp.k(r: Result<&1, &1, U32 & String, U32 & U32 & U32>) -> String:
   match r:
@@ -373,7 +384,7 @@ def Rt.save(+home: String, +rt: Rt) -> IO(Unit):
 
 def Rt.refresh.k(check: Bool, +home: String, +setting: String, +stamp: String, +cs: List<&2, KCandidate>, can: Bool, +last: Rt) -> IO(Rt):
   match check:
-    case False{}: IO.pure(Rt, last)
+    case False{}: IO.pure(Rt, Rt.set(last, "can_install", J.Flag{can}))
     case True{}:
       do IO<Rt>:
         rt : Rt <- Rt.choose(cs)
@@ -387,7 +398,7 @@ def Rt.refresh(+home: String, +setting: String, +exe: String, force: Bool, +last
     +cs : List<&2, KCandidate> <- Rt.list(setting, explicit, exe, home)
     +stamp : String <- Rt.stamps(Rt.watch(cs, Rt.cli(last)))
     os : P.Ran <- P.Proc.run("uname", ["-sm"], "/")
-    Rt.refresh.k(Bool.or(force, Bool.or(String.eq(Rt.status(last), "checking"), Bool.not(String.eq(J.Json.get_str(Rt.health(last), "stamp", ""), stamp)))), home, setting, stamp, cs, String.eq(Rt.platform(os), "Linux x86_64"), last)
+    Rt.refresh.k(Bool.or(force, Bool.or(String.eq(Rt.status(last), "checking"), Bool.not(String.eq(J.Json.get_str(Rt.health(last), "stamp", ""), stamp)))), home, setting, stamp, cs, KI.Install.available(KI.Install.platform(Rt.platform(os))), last)
 
 # Project files
 # -------------
@@ -488,61 +499,17 @@ def Files.read.cfg(+root: String, +cfg: J.Json) -> IO(Files):
 def Files.read(+root: String) -> IO(Files):
   IO.bind(String, Files, Io.text(root ++ "/.backplane.json"), text => Files.read.cfg(root, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})))
 
-def KiStack.ensure.k(have: Bool, +dir: String) -> IO(Unit):
-  match have:
-    case True{}:
-      IO.pure(Unit, Unit{})
-    case False{}:
-      do IO<Unit>:
-        mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir)
-        r : P.Ran <- P.Proc.run("sh", ["-c", "curl -fsSL --max-time 120 \"$1\" | tar -xz -C \"$2\" --strip-components=1", "sh",
-          "https://codeload.github.com/American-Embedded/KiStack/tar.gz/" ++ KiStack.revision(), dir], "/")
-        return Unit{}
-
 # KiStack
 # -------
 
-# KiStack's latest commit, fetched off the hub's start: downloaded once,
-# checked, and named in <base>/current, which the next start uses (a start
-# never waits on the network; offline, the one there or the pinned one)
-def KiStack.base(+home: String) -> String:
-  home ++ "/.cache/backplane/kistack"
-
-def KiStack.refresh.sh() -> String:
-  "base=$1; sha=$(curl -fsSL --max-time 20 -H 'Accept: application/vnd.github.sha' https://api.github.com/repos/American-Embedded/KiStack/commits/HEAD) || exit 0; case $sha in ''|*[!0-9a-f]*) exit 0;; esac; if [ ! -f \"$base/$sha/skills/pcb/SKILL.md\" ]; then rm -rf \"$base/$sha.new\"; mkdir -p \"$base/$sha.new\"; curl -fsSL --max-time 120 \"https://codeload.github.com/American-Embedded/KiStack/tar.gz/$sha\" | tar -xz -C \"$base/$sha.new\" --strip-components=1 || exit 0; [ -f \"$base/$sha.new/skills/pcb/SKILL.md\" ] || exit 0; rm -rf \"$base/$sha\"; mv \"$base/$sha.new\" \"$base/$sha\"; fi; printf '%s\\n' \"$sha\" > \"$base/current.new\" && mv \"$base/current.new\" \"$base/current\""
-
-def KiStack.refresh(+home: String) -> IO(Unit):
-  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", KiStack.refresh.sh(), "sh", KiStack.base(home)], "/"), r => IO.pure(Unit, Unit{}))
-
-def KiStack.current.k(ok: Bool, +sha: String) -> String:
-  Bool.pick(String, Bool.and(ok, Bool.not(String.is_empty(sha))), sha, KiStack.revision())
-
-# the revision a start uses: the latest one fetched, else the pinned one
-def KiStack.current(+home: String) -> IO(String):
-  do IO<String>:
-    +sha : String <- IO.bind(String, String, Io.text(KiStack.base(home) ++ "/current"), t => IO.pure(String, String.trim(t)))
-    ok : Bool <- Io.is_file(KiStack.base(home) ++ "/" ++ sha ++ "/skills/pcb/SKILL.md")
-    return KiStack.current.k(ok, sha)
-
-# a revision directory made a Claude Code plugin named kistack (its skills
-# are already where a plugin keeps them), so every Claude thread gets them
-# as its own skills through --plugin-dir
-def KiStack.plugin.sh() -> String:
-  "[ -d \"$1/skills\" ] || exit 0; [ -f \"$1/.claude-plugin/plugin.json\" ] && exit 0; mkdir -p \"$1/.claude-plugin\" && printf '%s\\n' '{\"name\":\"kistack\",\"description\":\"KiStack KiCad skills by American Embedded\"}' > \"$1/.claude-plugin/plugin.json\""
-
-def KiStack.plugin(+dir: String) -> IO(Unit):
-  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", KiStack.plugin.sh(), "sh", dir], "/"), r => IO.pure(Unit, Unit{}))
-
-# the skills live in <cache>/backplane/kistack/<revision>/skills (shared with
-# the TypeScript Backplane); with no latest revision fetched yet, fetch the
-# pinned one when it is missing
-def KiStack.ensure(+home: String) -> IO(Unit):
-  do IO<Unit>:
-    rev : String <- KiStack.current(home)
-    +dir : String = KiStack.base(home) ++ "/" ++ rev
-    have : Bool <- Io.is_file(dir ++ "/skills/pcb/SKILL.md")
-    KiStack.ensure.k(have, dir)
-    KiStack.plugin(dir)
+# KiStack's skills come with the app: scripts/build-kistack.sh puts the
+# pinned commit's skills/ (checked against deploy/kistack.lock), its LICENSE
+# and a plugin.json of ours in <exe dir>/kistack, which every Claude thread
+# loads with --plugin-dir. The hub never fetches KiStack (it took the
+# repository's newest commit at each start, its own plugin manifest too, so
+# a hook or an .mcp.json there would have run in every Claude session).
+def KiStack.dir(+exe: String) -> String:
+  exe ++ "/kistack"
 
 def KiCad.install.k(r: P.Ran) -> String:
   match r:
@@ -554,18 +521,21 @@ def KiCad.install.k(r: P.Ran) -> String:
 # The fork, installed on request
 # ------------------------------
 
-# download Backplane KiCad for linux-x86_64, check it against the release's
-# SHA256SUMS, unpack into <data>/kicad/<version>; answers "" or an error
+# The backend and can_install use the same catalog. Unsupported hosts fail
+# before directory creation, download, or extraction. Stage before promotion.
+def KiCad.install.on(p: Maybe<&2, KI.Package>, data: String) -> IO(String):
+  match p:
+    case None{}:
+      IO.pure(String, "No published Backplane KiCad package for this hub OS and architecture; set a compatible runtime path")
+    case Some{KI.Package{platform, version, release, asset, sha, format, cli}}:
+      do IO<String>:
+        r : P.Ran <- P.Proc.run("sh", ["-c", KI.Install.script(), "sh", data ++ "/kicad", platform, version, release, asset, sha, format, cli], "/")
+        return KiCad.install.k(r)
+
 def KiCad.install(+data: String) -> IO(String):
   do IO<String>:
-    +dir : String = data ++ "/kicad/" ++ KiCad.version()
-    +name : String = KiCad.asset()
-    +base : String = "https://github.com/i2cjak/Backplane_KiCad/releases/download/" ++ KiCad.release() ++ "/"
-    mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir)
-    r : P.Ran <- P.Proc.run("sh", ["-c",
-      "set -e; cd \"$1\"; curl -fsSL -o pkg.tgz \"$2$3\"; curl -fsSL -o SUMS \"$2SHA256SUMS\"; want=$(awk -v n=\"$3\" '$2 == n || $2 == \"./\" n { print $1 }' SUMS); got=$(sha256sum pkg.tgz | cut -d' ' -f1); [ \"$want\" = \"$got\" ] && [ \"$got\" = \"$4\" ] || { echo checksum mismatch; exit 1; }; tar -xf pkg.tgz --strip-components=1; rm pkg.tgz SUMS",
-      "sh", dir, base, name, KiCad.sha256()], "/")
-    return KiCad.install.k(r)
+    os : P.Ran <- P.Proc.run("uname", ["-sm"], "/")
+    KiCad.install.on(KI.Install.platform(Rt.platform(os)), data)
 
 # Opening a project
 # -----------------

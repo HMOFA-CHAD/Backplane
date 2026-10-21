@@ -559,7 +559,7 @@ def Bv.lines(ls: List<&2, String>, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32, +col
     case Nil{}:
       Nil{}
     case l <> t:
-      List.append(&2, R.Op, L.Ty.text(ty, 3n, l, c, x, y, 22, color), Bv.lines(t, ty, c, x, (y + 22 : U32), color))
+      List.append(&2, R.Op, L.Ty.text(ty, 3n, l, c, x, y, L.Ty.px(ty, 22), color), Bv.lines(t, ty, c, x, (y + L.Ty.px(ty, 22) : U32), color))
 
 def Bv.nl(+ls: List<&2, String>) -> U32:
   U32.from_nat(List.length(&2, String, ls))
@@ -584,14 +584,14 @@ def Bv.mem(+ty: L.Ty, m: BT.Mem, +own: Bool, +c: D.Clip, +x: U32, +w: U32, +y: U
       +fw = {Bool.pick(U32, own, L.Lay.button.w(ty, label0), 0) : U32}
       +ls = L.Ty.wrap(ty, 3n, text, (w - 24 : U32))
       +th = {Bool.pick(U32, String.is_empty(tags), 0, 20) : U32}
-      +h = {(48 + Bv.nl(ls) * 22 + th : U32) : U32}
+      +h = {(48 + Bv.nl(ls) * L.Ty.px(ty, 22) + th : U32) : U32}
       L.Col{L.Out.all([
           L.Out.ops(L.Lay.box(c, x, y, w, h, 0, T.Th.panel(), T.Th.line())),
           L.Out.ops(L.Ty.text(ty, 0n, L.Ty.fit(ty, 0n, key, L.U32.dim(w, (kw + fw + 48 : U32))), c, (x + 12 : U32), (y + 6 : U32), 28, T.Th.text())),
           L.Out.ops(L.Ty.text(ty, 2n, kind, c, (x + w - fw - 20 - kw : U32), (y + 6 : U32), 28, T.Th.accent())),
           Bv.when(own, F.Fm.button(ty, c, (x + w - fw - 8 : U32), (y + 6 : U32), label0, T.Th.soft(), "mem-forget", key)),
           L.Out.ops(Bv.lines(ls, ty, c, (x + 12 : U32), (y + 38 : U32), T.Th.soft())),
-          Bv.faint(ty, c, tags, (x + 12 : U32), (w - 24 : U32), (y + 40 + Bv.nl(ls) * 22 : U32))]),
+          Bv.faint(ty, c, tags, (x + 12 : U32), (w - 24 : U32), (y + 40 + Bv.nl(ls) * L.Ty.px(ty, 22) : U32))]),
         (y + h + 8 : U32)}
 
 def Bv.mems(ms: List<&2, BT.Mem>, +ty: L.Ty, +own: Bool, +c: D.Clip, +x: U32, +w: U32, +y: U32) -> L.Col:
@@ -888,7 +888,7 @@ def Bv.gsig(editing: Bool, +ty: L.Ty, +f: F.FS, +e: String, +c: D.Clip, +x: U32,
       L.Col{L.Out.none(), y}
     case True{}:
       +label0 = MSG.T.common.save(L.Ty.loc(ty))
-      +ah = F.Fm.area.h(3n)
+      +ah = F.Fm.area.h.at(3n, ty)
       L.Col{L.Out.all([
           F.Fm.area(ty, f, c, x, y, w, 3n, "gsig", "google", "", MSG.T.google.signature.placeholder(L.Ty.loc(ty), e)),
           F.Fm.button(ty, c, x, (y + ah + 6 : U32), label0, T.Th.accent(), "google", "sig-save"),
@@ -978,13 +978,12 @@ def Bv.strip.k(s: U.TStrip, +ty: L.Ty, +f: F.FS, +input: Bool, +c: D.Clip, +x: U
     case U.TStrip{+mode, +title, +clock, +steps, bs}:
       +rec = {Nat.is_eq(mode, 1n) : Bool}
       +meta = {Bool.pick(String, rec, MSG.T.teach.steps(L.Ty.loc(ty), clock, Nat.show(steps), Bool.pick(String, Nat.is_eq(steps, 1n), "one", "other")), "") : String}
-      +ub = {Bool.pick(U32, input, 40, 0) : U32}
+      +ub = {0 : U32}
       +nb = {Bool.pick(U32, rec, 40, 0) : U32}
       L.Col{L.Out.all([
           L.Out.ops(L.Ty.text(ty, 1n, title, c, x, y, 30, T.Th.accent())),
           L.Out.ops(L.Ty.text(ty, 2n, meta, c, (x + L.Ty.width(ty, 1n, title) + 12 : U32), y, 30, T.Th.faint())),
           Bv.tbtns(List.reverse(&2, U.TBtn, bs), ty, c, y, (x + w : U32)),
-          Bv.when(input, Bv.urlbar(ty, f, c, x, w, (y + 40 : U32))),
           Bv.when(rec, Bv.row2(ty, f, "tknote", "tk-note", MSG.T.teach.note.placeholder(L.Ty.loc(ty)), MSG.T.teach.note.add(L.Ty.loc(ty)), "", c, x, w, (y + 40 + ub : U32)))]),
         (y + 44 + ub + nb : U32)}
 
@@ -994,7 +993,8 @@ def Bv.live(+ty: L.Ty, +f: F.FS, +b: BT.Bot, +x0: U32, +x1: U32, +top: U32, +h: 
   +id = BT.Bot.id(b)
   +input = {U.Teach.input(u, id) : Bool}
   L.Lay.col.out(L.Lay.col.then(Bv.strip.k(U.Teach.strip.loc(L.Ty.loc(ty), u, id), ty, f, input, D.Clip.all(), (x0 + 24 : U32), (x1 - x0 - 48 : U32), top), +y2 =>
-    L.Col{L.Lay.page.in(ty, u, id, MSG.T.bots.page.empty(L.Ty.loc(ty), BT.Bot.name(b)), x0, x1, y2, h, input), y2}))
+    L.Col{L.Out.cat(L.Page.controls(ty, u, F.FS.focus(f), F.FS.blink(f), F.FS.caret(f), F.FS.mark(f), id, x0, x1, y2),
+      L.Lay.page.in(ty, u, id, MSG.T.bots.page.empty(L.Ty.loc(ty), BT.Bot.name(b)), x0, x1, (y2 + 80 : U32), h, input)), y2}))
 
 # one recorded step in the save sheet: what it did, its typed value as a
 # chip (a secret shows none: it is never kept), and once marked a parameter
@@ -1313,16 +1313,22 @@ def Bv.posts.l(ps: List<&2, BT.Post>, +ws: Map<&2, PW>, +ty: L.Ty, +u: U.Ui, +no
     case BT.Post{+id, _, +from, +text, _, +at} <> t:
       PostL{id, BU.BU.member(u, from), I.I18n.ago(L.Ty.loc(ty), now, at), Bv.wrap(ws, ty, id, text, w)} <> Bv.posts.l(t, ws, ty, u, now, w)
 
-def Bv.posts.h(ps: List<&2, PostL>, +acc: U32) -> U32:
+def Bv.posts.h.at(ps: List<&2, PostL>, +ty: L.Ty, +acc: U32) -> U32:
   match ps:
     case Nil{}:
       acc
     case PostL{_, _, _, +ls} <> t:
-      Bv.posts.h(t, (acc + 36 + Bv.nl(ls) * 22 : U32))
+      Bv.posts.h.at(t, ty, (acc + 36 + Bv.nl(ls) * L.Ty.px(ty, 22) : U32))
 
 # a post's height: its name line, its lines, and the gap under it
+def Bv.posts.h(ps: List<&2, PostL>, +acc: U32) -> U32:
+  Bv.posts.h.at(ps, L.Ty.none(), acc)
+
+def Bv.post.h.at(+ls: List<&2, String>, +ty: L.Ty) -> U32:
+  (36 + Bv.nl(ls) * L.Ty.px(ty, 22) : U32)
+
 def Bv.post.h(+ls: List<&2, String>) -> U32:
-  (36 + Bv.nl(ls) * 22 : U32)
+  Bv.post.h.at(ls, L.Ty.none())
 
 # a post on screen: its name, when, its lines, and a line region of no
 # width (never clicked; its y says how far the posts slid since the last
@@ -1334,7 +1340,7 @@ def Bv.post.draw(on: Bool, +ty: L.Ty, +id: String, +from: String, +when: String,
           L.Ty.text(ty, 0n, from, c, x, y, 24, Bool.pick(U32, String.eq(from, "you"), T.Th.soft(), T.Th.accent())),
           L.Ty.text(ty, 2n, when, c, (x + L.Ty.width(ty, 0n, from) + 10 : U32), y, 24, T.Th.faint()),
           Bv.lines(ls, ty, c, x, (y + 24 : U32), T.Th.text())]),
-        [L.Lay.hit(x, y, 0, Bv.post.h(ls), "chat-line", id)]}
+        [L.Lay.hit(x, y, 0, Bv.post.h.at(ls, ty), "chat-line", id)]}
     case False{}:
       L.Out.none()
 
@@ -1346,9 +1352,9 @@ def Bv.posts.draw(ps: List<&2, PostL>, +ty: L.Ty, +c: D.Clip, +x: U32, +y: U32, 
     case Nil{}:
       L.Out.none()
     case PostL{+id, +from, +when, +ls} <> t:
-      +h = U32.to_nat(Bv.post.h(ls))
+      +h = U32.to_nat(Bv.post.h.at(ls, ty))
       L.Out.cat(Bv.post.draw(Bool.and(Nat.is_gt(Nat.add(Nat.add(oy, h), 16n), lo), Nat.is_lt(oy, Nat.add(hi, 16n))), ty, id, from, when, ls, c, x, y),
-        Bv.posts.draw(t, ty, c, x, (y + Bv.post.h(ls) : U32), Nat.add(oy, h), lo, hi))
+        Bv.posts.draw(t, ty, c, x, (y + Bv.post.h.at(ls, ty) : U32), Nat.add(oy, h), lo, hi))
 
 def Bv.chat.off(+u: U.Ui) -> U32:
   Maybe.default(&2, U32, U32.read(U.Ui.scratch(u, "@chat.sc")), 0)
@@ -1360,7 +1366,7 @@ def Bv.chat(+ty: L.Ty, +ws: Map<&2, PW>, ps: List<&2, BT.Post>, +u: U.Ui, +empty
   +w = Bv.pane.w(x0, x1)
   +x = Bv.pane.x(x0, x1)
   +pl = Bv.posts.l(ps, ws, ty, u, U.Side.now(u), w)
-  +total = Bv.posts.h(pl, 0)
+  +total = Bv.posts.h.at(pl, ty, 0)
   +view = {L.U32.dim(bottom, (top + 16 : U32)) : U32}
   +most = L.U32.dim(total, view)
   +off = U32.min(Bv.chat.off(u), most)
@@ -1569,10 +1575,10 @@ def Bv.mail.got(p: PW, +ws: Map<&2, PW>, +ty: L.Ty, +n: S.Nui) -> L.Out:
 def Bv.mail.out(+ws: Map<&2, PW>, +ty: L.Ty, +n: S.Nui) -> L.Out:
   Bv.mail.got(Bv.plane.snd(Map.get(PW, PW{False{}, "", Nil{}}, ws, "@mail.pane")), ws, ty, n)
 
-def Bv.bot.k(k: Nat, +ty: L.Ty, +memo: L.TLMemo, +ws: Map<&2, PW>, +n: S.Nui, +b: BT.Bot, +x0: U32, +x1: U32) -> L.Out:
+def Bv.bot.k.ix(k: Nat, +ty: L.Ty, +memo: L.TLMemo, +ws: Map<&2, PW>, +n: S.Nui, +b: BT.Bot, +x0: U32, +x1: U32, +ixs: List<&2, U.SIx>) -> L.Out:
   match k:
     case 0n:
-      L.Out.hits_below(Bv.hy(), L.Lay.thread.at(ty, memo, n, x0, x1, (Bv.hy() - 52 : U32)))
+      L.Out.hits_below(Bv.hy(), L.Lay.thread.at.ix(ty, memo, n, x0, x1, (Bv.hy() - 52 : U32), ixs))
     case 1n:
       Bv.mail.out(ws, ty, n)
     case 3n:
@@ -1588,44 +1594,56 @@ def Bv.bot.k(k: Nat, +ty: L.Ty, +memo: L.TLMemo, +ws: Map<&2, PW>, +n: S.Nui, +b
       Bv.pane(Bv.pane.k(j, ty, F.Fm.fs(n), b, D.Clip{x0, Bv.hy(), x1, S.Nui.height(n)}, Bv.pane.x(x0, x1), Bv.pane.w(x0, x1), (top - off : U32)),
         x0, x1, Bv.hy(), off, S.Nui.height(n))
 
+def Bv.bot.k(k: Nat, +ty: L.Ty, +memo: L.TLMemo, +ws: Map<&2, PW>, +n: S.Nui, +b: BT.Bot, +x0: U32, +x1: U32) -> L.Out:
+  Bv.bot.k.ix(k, ty, memo, ws, n, b, x0, x1, Nil{})
 # a bot, here or mirrored from a linked machine: its header, then the tab
 # BU.head picks (the tabs it has)
-def Bv.bot.h(+ty: L.Ty, +memo: L.TLMemo, +ws: Map<&2, PW>, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +hd: BU.Head, +x0: U32, +x1: U32) -> L.Out:
+def Bv.bot.h.ix(+ty: L.Ty, +memo: L.TLMemo, +ws: Map<&2, PW>, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +hd: BU.Head, +x0: U32, +x1: U32, +ixs: List<&2, U.SIx>) -> L.Out:
   +u = S.Nui.ui(n)
   +st = U.Ui.state(u)
   +th = BT.Bot.thread(b)
-  L.Out.cat(Bv.bot.k(Bv.tab.n(BU.Head.tab(hd)), ty, memo, ws, n, b, x0, x1),
+  L.Out.cat(Bv.bot.k.ix(Bv.tab.n(BU.Head.tab(hd)), ty, memo, ws, n, b, x0, x1, ixs),
     Bv.header(ty, cats, u, S.Nui.ms_of(n), hd, " · " ++ M.Thread.provider(U.Ui.thread(st, th)),
       Bv.stop(Bv.busy(U.Side.status(st, U.Ui.thread(st, th))), ty, Bv.right(BU.Head.viewer(hd), ty, x1)), x0, x1))
 
-def Bv.bot(+ty: L.Ty, +memo: L.TLMemo, +ws: Map<&2, PW>, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +x0: U32, +x1: U32) -> L.Out:
-  Bv.bot.h(ty, memo, ws, cats, n, b, BU.BU.head.bot(S.Nui.ui(n), b), x0, x1)
+def Bv.bot.h(+ty: L.Ty, +memo: L.TLMemo, +ws: Map<&2, PW>, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +hd: BU.Head, +x0: U32, +x1: U32) -> L.Out:
+  Bv.bot.h.ix(ty, memo, ws, cats, n, b, hd, x0, x1, Nil{})
+def Bv.bot.ix(+ty: L.Ty, +memo: L.TLMemo, +ws: Map<&2, PW>, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +x0: U32, +x1: U32, +ixs: List<&2, U.SIx>) -> L.Out:
+  Bv.bot.h.ix(ty, memo, ws, cats, n, b, BU.BU.head.bot(S.Nui.ui(n), b), x0, x1, ixs)
 
+def Bv.bot(+ty: L.Ty, +memo: L.TLMemo, +ws: Map<&2, PW>, +cats: Map<&2, CA.CatF>, +n: S.Nui, +b: BT.Bot, +x0: U32, +x1: U32) -> L.Out:
+  Bv.bot.ix(ty, memo, ws, cats, n, b, x0, x1, Nil{})
 # The main area and the frame
 # ---------------------------
 
-def Bv.view(v: BU.View, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, +x1: U32) -> Maybe<&2, L.Out>:
+def Bv.view.ix(v: BU.View, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, +x1: U32, +ixs: List<&2, U.SIx>) -> Maybe<&2, L.Out>:
   match v:
     case BU.VThread{}:
       None{}
     case BU.VBot{b}:
-      Some{Bv.bot(ty, memo, ws, cats, n, b, 264, x1)}
+      Some{Bv.bot.ix(ty, memo, ws, cats, n, b, 264, x1, ixs)}
     case BU.VRoom{r}:
       Some{Bv.room(ty, ws, n, r, 264, x1)}
     case BU.VRemote{+id}:
       Some{Bv.remote(ty, ws, cats, n, id, 264, x1)}
 
-def Bv.main.k(settings: Bool, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> Maybe<&2, L.Out>:
+def Bv.view(v: BU.View, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, +x1: U32) -> Maybe<&2, L.Out>:
+  Bv.view.ix(v, ty, memo, cats, ws, n, x1, Nil{})
+def Bv.main.k.ix(settings: Bool, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, +ixs: List<&2, U.SIx>) -> Maybe<&2, L.Out>:
   match settings:
     case True{}:
       None{}
     case False{}:
-      Bv.view(BU.BU.view(S.Nui.ui(n)), ty, memo, cats, ws, L.Lay.shrink(n, L.Lay.term_h(n)), L.Lay.x1(n))
+      Bv.view.ix(BU.BU.view(S.Nui.ui(n)), ty, memo, cats, ws, L.Lay.shrink(n, L.Lay.term_h(n)), L.Lay.x1(n), ixs)
 
+def Bv.main.k(settings: Bool, +ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> Maybe<&2, L.Out>:
+  Bv.main.k.ix(settings, ty, memo, cats, ws, n, Nil{})
 # a bot's, room's or remote bot's main area (None: the usual one)
-def Bv.main.w(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> Maybe<&2, L.Out>:
-  Bv.main.k(U.Ui.flag(S.Nui.ui(n), "settings"), ty, memo, cats, ws, n)
+def Bv.main.w.ix(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui, +ixs: List<&2, U.SIx>) -> Maybe<&2, L.Out>:
+  Bv.main.k.ix(U.Ui.flag(S.Nui.ui(n), "settings"), ty, memo, cats, ws, n, ixs)
 
+def Bv.main.w(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +ws: Map<&2, PW>, +n: S.Nui) -> Maybe<&2, L.Out>:
+  Bv.main.w.ix(ty, memo, cats, ws, n, Nil{})
 def Bv.main(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: S.Nui) -> Maybe<&2, L.Out>:
   Bv.main.w(ty, memo, cats, Bv.wraps.none(), n)
 

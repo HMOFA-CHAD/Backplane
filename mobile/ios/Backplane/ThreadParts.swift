@@ -16,36 +16,45 @@ enum PhaseColor {
     static let input = rgb(0xb48cff), queued = rgb(0x4fc1c9), waiting = rgb(0xe07bd0), faint = rgb(0x5c6473)
 }
 
-// a thread's dot: its phase (row.status, src/core/model.bend's Phase.name),
-// in the same colors as the desktop and web; else its turn
+// Current activity wins over the legacy turn fallback. A queued/waiting
+// presentation from an older hub is inactive, never proof of a worker.
+private func threadStatusSignal(_ state: String, _ status: String?) -> String {
+    switch status ?? "" {
+    case "": return state == "run" ? "active" : state == "fail" ? "blocked" : "inactive"
+    case "blocked", "needs you", "approval", "input", "failed": return "blocked"
+    case "active", "running", "watching", "cancelling", "working", "monitoring": return "active"
+    case "settled", "done", "completed", "cancelled": return "settled"
+    default: return "inactive"
+    }
+}
+
 struct StatusDot: View {
     let state: String
     let status: String?
+    @Environment(\.backplaneLanguage) private var lang
 
-    private func dot(_ c: Color) -> some View {
-        Circle().fill(c).frame(width: 7, height: 7)
+    private var signal: String { threadStatusSignal(state, status) }
+
+    private var label: String {
+        switch signal {
+        case "blocked": return lang == "ja" ? "対応が必要です" : "Blocked: needs interaction"
+        case "active": return lang == "ja" ? "作業中" : "Working: agent or owned work active"
+        case "settled": return lang == "ja" ? "完了済み" : "Settled"
+        default: return lang == "ja" ? "非稼働・実行中の作業は未確認です" : "Inactive: no confirmed active work"
+        }
     }
 
     var body: some View {
-        switch status ?? "" {
-        case "approval": Image(systemName: "hand.raised.fill").foregroundStyle(PhaseColor.warn).font(.caption)
-        case "input": Image(systemName: "questionmark.bubble.fill").foregroundStyle(PhaseColor.input).font(.caption)
-        // ("queued" from an older hub: nothing waits now, it is working)
-        case "working", "queued": ProgressView().controlSize(.mini).tint(PhaseColor.accent)
-        // the turn is over, its subagents still at work ("waiting" from an older hub)
-        case "monitoring", "waiting": Image(systemName: "arrow.triangle.branch").foregroundStyle(PhaseColor.waiting).font(.caption)
-                .symbolEffect(.pulse)
-        case "failed": Image(systemName: "exclamationmark.circle.fill").foregroundStyle(PhaseColor.bad)
-        case "complete": dot(PhaseColor.ok)
-        case "stopped", "idle", "ready": dot(PhaseColor.faint)
-        default:
-            switch state {
-            case "run": ProgressView().controlSize(.mini).tint(PhaseColor.accent)
-            case "fail": Image(systemName: "exclamationmark.circle.fill").foregroundStyle(PhaseColor.bad)
-            case "stop": Image(systemName: "stop.circle").foregroundStyle(PhaseColor.warn)
-            default: dot(PhaseColor.faint)
+        Group {
+            switch signal {
+            case "blocked": Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(PhaseColor.bad).font(.caption)
+            case "active": ProgressView().controlSize(.mini).tint(PhaseColor.ok)
+            case "settled": Image(systemName: "checkmark.circle.fill").foregroundStyle(PhaseColor.faint).font(.caption)
+            default: Image(systemName: "pause.circle.fill").foregroundStyle(PhaseColor.warn).font(.caption)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
     }
 }
 
@@ -70,7 +79,7 @@ struct Thumb: View {
                 default: ProgressView().frame(width: 80, height: 60)
                 }
             }
-            .frame(maxWidth: 260, maxHeight: 200, alignment: .leading)
+            .frame(width: 260, height: 200, alignment: .leading)
             .clipShape(.rect(cornerRadius: 6))
             .onTapGesture { show(Shown(url: u)) }
             .accessibilityAddTraits(.isButton)
@@ -288,13 +297,10 @@ struct EntryRow: View {
 
 private func subColor(_ state: String) -> Color {
     switch state {
-    case "running": PhaseColor.accent
-    case "done", "reporting", "held": PhaseColor.ok
-    case "watching", "launching", "waiting on", "waiting", "needs you": PhaseColor.accent
-    // "" is the "N done" toggle row (subs.bend's Subs.done.toggle): neutral
-    case "", "starting", "queued": PhaseColor.faint
-    case "cancelled", "cancelling": PhaseColor.warn
-    default: PhaseColor.bad
+    case "active", "running", "watching", "cancelling": PhaseColor.ok
+    case "blocked", "needs you": PhaseColor.bad
+    case "settled", "done", "completed", "stopped", "cancelled", "": PhaseColor.faint
+    default: PhaseColor.warn
     }
 }
 
@@ -327,7 +333,7 @@ struct SubsView: View {
                         Button { model.act(r.act, r.value) } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 8) {
-                                    Rectangle().fill(subColor(r.state)).frame(width: r.live ? 8 : 6, height: r.live ? 8 : 6)
+                                    StatusDot(state: "", status: r.state)
                                     Text(r.agent ? (r.open ? "▾" : "▸") : r.who).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                                     Text(r.title).lineLimit(1)
                                     Spacer(minLength: 0)

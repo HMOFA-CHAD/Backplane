@@ -109,6 +109,11 @@ enum NativeMessages {
     tag == "ja" ? ("削除") : ("Delete")
   }
 
+  // common.earlier
+  static func common_earlier(_ tag: String) -> String {
+    tag == "ja" ? ("前を表示") : ("Earlier")
+  }
+
   // common.finish
   static func common_finish(_ tag: String) -> String {
     tag == "ja" ? ("完了") : ("Finish")
@@ -147,6 +152,11 @@ enum NativeMessages {
   // common.save
   static func common_save(_ tag: String) -> String {
     tag == "ja" ? ("保存") : ("Save")
+  }
+
+  // common.search
+  static func common_search(_ tag: String) -> String {
+    tag == "ja" ? ("検索") : ("Search")
   }
 
   // common.show
@@ -609,6 +619,61 @@ enum NativeMessages {
     tag == "ja" ? ("招待を貼り付け") : ("Paste an invite")
   }
 
+  // native.mailroom.accepted.unconfirmed
+  static func native_mailroom_accepted_unconfirmed(_ tag: String) -> String {
+    tag == "ja" ? ("応答あり。配信は未確認") : ("Acknowledged; delivery unconfirmed")
+  }
+
+  // native.mailroom.act
+  static func native_mailroom_act(_ tag: String) -> String {
+    tag == "ja" ? ("要対応") : ("Act")
+  }
+
+  // native.mailroom.fyi
+  static func native_mailroom_fyi(_ tag: String) -> String {
+    tag == "ja" ? ("参考") : ("FYI")
+  }
+
+  // native.mailroom.later
+  static func native_mailroom_later(_ tag: String) -> String {
+    tag == "ja" ? ("後を表示") : ("Later")
+  }
+
+  // native.mailroom.machine.offline
+  static func native_mailroom_machine_offline(_ tag: String) -> String {
+    tag == "ja" ? ("マシンはオフライン") : ("Machine offline")
+  }
+
+  // native.mailroom.open.source
+  static func native_mailroom_open_source(_ tag: String) -> String {
+    tag == "ja" ? ("送信元を開く") : ("Open source")
+  }
+
+  // native.mailroom.outcome.unknown
+  static func native_mailroom_outcome_unknown(_ tag: String) -> String {
+    tag == "ja" ? ("結果不明。再送前に確認してください") : ("Outcome unknown; check before sending again")
+  }
+
+  // native.mailroom.page
+  static func native_mailroom_page(_ tag: String, _ arg0: String, _ arg1: String, _ arg2: String) -> String {
+    tag == "ja" ? (arg2 + "件中" + arg0 + "–" + arg1 + "件") : (arg0 + "–" + arg1 + " of " + arg2)
+  }
+
+  // native.mailroom.recipient
+  static func native_mailroom_recipient(_ tag: String) -> String {
+    tag == "ja" ? ("宛先") : ("Recipient")
+  }
+
+  // native.mailroom.title
+  static func native_mailroom_title(_ tag: String) -> String {
+    tag == "ja" ? ("メール") : ("Mailroom")
+  }
+
+  // native.mailroom.unread.count
+  static func native_mailroom_unread_count(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("未読" + arg0 + "件") : (arg0 + " unread")
+  }
+
   // native.mech.failed
   static func native_mech_failed(_ tag: String, _ arg0: String) -> String {
     tag == "ja" ? ("レンダリング失敗：" + arg0) : ("Rendering failed: " + arg0)
@@ -1049,6 +1114,21 @@ enum NativeMessages {
     tag == "ja" ? ("ハブ") : ("the hub")
   }
 
+  // native.thread.latest
+  static func native_thread_latest(_ tag: String) -> String {
+    tag == "ja" ? ("最新") : ("Latest")
+  }
+
+  // native.thread.loading.older
+  static func native_thread_loading_older(_ tag: String) -> String {
+    tag == "ja" ? ("過去のメッセージを読み込み中…") : ("Loading older messages…")
+  }
+
+  // native.thread.loading.recent
+  static func native_thread_loading_recent(_ tag: String) -> String {
+    tag == "ja" ? ("最近のメッセージを読み込み中…") : ("Loading recent messages…")
+  }
+
   // native.thread.menu
   static func native_thread_menu(_ tag: String) -> String {
     tag == "ja" ? ("メニュー") : ("Menu")
@@ -1064,9 +1144,44 @@ enum NativeMessages {
     tag == "ja" ? ("モデル・思考量：" + arg0) : ("Model and effort: " + arg0)
   }
 
+  // native.thread.new
+  static func native_thread_new(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("新着" + arg0 + "件") : (arg0 + " new")
+  }
+
   // native.thread.online
   static func native_thread_online(_ tag: String, _ arg0: String) -> String {
     tag == "ja" ? ((arg0 == "online" ? "接続済み" : "接続中…")) : ((arg0 == "online" ? "Connected" : "Connecting…"))
+  }
+
+  // native.thread.permissions
+  static func native_thread_permissions(_ tag: String) -> String {
+    tag == "ja" ? ("権限") : ("Permissions")
+  }
+
+  // native.thread.permissions.approval
+  static func native_thread_permissions_approval(_ tag: String) -> String {
+    tag == "ja" ? ("承認が必要") : ("Approval required")
+  }
+
+  // native.thread.permissions.auto
+  static func native_thread_permissions_auto(_ tag: String) -> String {
+    tag == "ja" ? ("自動") : ("Auto")
+  }
+
+  // native.thread.permissions.current
+  static func native_thread_permissions_current(_ tag: String, _ arg0: String) -> String {
+    tag == "ja" ? ("権限：" + arg0) : ("Permissions: " + arg0)
+  }
+
+  // native.thread.permissions.edits
+  static func native_thread_permissions_edits(_ tag: String) -> String {
+    tag == "ja" ? ("編集を自動承認") : ("Auto-accept edits")
+  }
+
+  // native.thread.permissions.full
+  static func native_thread_permissions_full(_ tag: String) -> String {
+    tag == "ja" ? ("フルアクセス") : ("Full access")
   }
 
   // native.thread.provider.item
@@ -1077,6 +1192,11 @@ enum NativeMessages {
   // native.thread.search.clear
   static func native_thread_search_clear(_ tag: String) -> String {
     tag == "ja" ? ("検索をクリア") : ("Clear search")
+  }
+
+  // native.thread.send.failed
+  static func native_thread_send_failed(_ tag: String) -> String {
+    tag == "ja" ? ("送信できませんでした") : ("Could not send")
   }
 
   // native.thread.sending
@@ -1092,6 +1212,11 @@ enum NativeMessages {
   // native.thread.waiting
   static func native_thread_waiting(_ tag: String, _ arg0: String) -> String {
     tag == "ja" ? (arg0 + "を待機中…") : ("Waiting for " + arg0 + "…")
+  }
+
+  // native.usage.machines
+  static func native_usage_machines(_ tag: String) -> String {
+    tag == "ja" ? ("マシン別の使用量") : ("Usage by machine")
   }
 
   // native.viewer.ground.dark
@@ -1547,6 +1672,11 @@ enum NativeMessages {
   // viewer.layers.only
   static func viewer_layers_only(_ tag: String) -> String {
     tag == "ja" ? ("選択のみ") : ("Only")
+  }
+
+  // viewer.loading
+  static func viewer_loading(_ tag: String) -> String {
+    tag == "ja" ? ("読み込み中…") : ("Loading…")
   }
 
   // viewer.mech.renders

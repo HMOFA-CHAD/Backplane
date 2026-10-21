@@ -1,4 +1,7 @@
 import Base
+import ../server/telemetry.bend as TIO
+import ../core/refresh.bend as RF
+import ../core/textscale.bend as TS
 import ../core/msgs.bend as MSG
 import ../core/winnote.bend as NT
 import ../core/i18n.bend as I18
@@ -728,19 +731,19 @@ def Tie.url(t: Tie) -> String:
 def Shell.local(+n: N.Nui) -> String:
   U.Ui.info(N.Nui.ui(n), "local.hub")
 
-def Shell.hub.here(inside: Bool, +home: Chan(S.Msg), +lo: String) -> IO(Chan(S.Msg)):
+def Shell.hub.here(inside: Bool, +home: Chan(S.Msg), +lo: String, +tok: String) -> IO(Chan(S.Msg)):
   match inside:
     case True{}:
       IO.pure(Chan(S.Msg), home)
     case False{}:
-      LK.Link.start(lo)
+      LK.Link.start.t(lo, tok)
 
 # the hub to join: this machine's own (in this process, or a new link to
 # the one the window joined at start), or a link to another
-def Shell.hub(local: Bool, +home: Chan(S.Msg), +url: String, +lo: String) -> IO(Chan(S.Msg)):
+def Shell.hub(local: Bool, +home: Chan(S.Msg), +url: String, +lo: String, +tok: String) -> IO(Chan(S.Msg)):
   match local:
     case True{}:
-      Shell.hub.here(String.is_empty(lo), home, lo)
+      Shell.hub.here(String.is_empty(lo), home, lo, tok)
     case False{}:
       LK.Link.start(url)
 
@@ -748,7 +751,7 @@ def Shell.joined(+i2: Chan(S.Msg), +q: Chan(ShellMsg), +tag: String, since: Nat,
   do IO<Unit>:
     +out : Chan(S.Wire) <- Chan.new(S.Wire, 8192)
     +gen : U32 <- Fwd.gen()
-    ok : Result<&1, &1, S.Msg, Unit> <- Chan.send(S.Msg, i2, S.Join{0, out, since, origin, gen, 0})
+    ok : Result<&1, &1, S.Msg, Unit> <- Chan.send(S.Msg, i2, S.Join{0, out, since, origin, gen, 0, False{}})
     IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, tag, i2, gen, 0n))
 
 # Save the departing installed state before an input step replaces it.
@@ -772,7 +775,7 @@ def Shell.connect.k(t: Tie, a: Shell, +url: String) -> IO(Shell):
         +tag : String = url ++ "#" ++ Nat.show(n)
         +pre : String <- RW.Rvw.pre(url)
         +nu2 : N.Nui = Shell.remote.set(N.Nui.connection(nu, tag, U.HubCache.get(cache, url)), url, pre)
-        +i2 : Chan(S.Msg) <- Shell.hub(String.is_empty(url), home, url, Shell.local(nu))
+        +i2 : Chan(S.Msg) <- Shell.hub(String.is_empty(url), home, url, Shell.local(nu), U.Ui.info(N.Nui.ui(nu), "local.token"))
         Shell.joined(i2, q, tag, U.Ui.seq(N.Nui.ui(nu2)), U.Ui.info(N.Nui.ui(nu2), "origin"))
         return Shell{N.Nui.desk.reset(nu2), w, True{}, qd, q, i2, Aux{ws, ty, Tie{home, url, tag, 1n+n, [TieKeep{Map.new(&2, BM.Bitmap), Map.new(&2, Bool), cache}]}, [Kept.none()]}}
 
@@ -1726,7 +1729,7 @@ def Watch.stat(r: Result<&1, &1, U32 & String, U32 & U32 & U32>) -> U32 & U32:
     case Fail{_}:
       (0, 0)
 
-def Watch.step.k(changed: Bool, re: Nat, +s2: U32, +m2: U32, +key: String, +path: String, +q: Chan(ShellMsg), k: U32 -> U32 -> Nat -> IO(Unit)) -> IO(Unit):
+def Watch.step.k(changed: Bool, re: Nat, +s2: U32, +m2: String, +key: String, +path: String, +q: Chan(ShellMsg), k: U32 -> String -> Nat -> IO(Unit)) -> IO(Unit):
   match changed re:
     case True{} _:
       do IO<Unit>:
@@ -1741,21 +1744,21 @@ def Watch.step.k(changed: Bool, re: Nat, +s2: U32, +m2: U32, +key: String, +path
     case False{} 0n:
       k(s2, m2, 0n)
 
-def Watch.step(sm: U32 & U32, +sz: U32, +mt: U32, re: Nat, +key: String, +path: String, +q: Chan(ShellMsg), k: U32 -> U32 -> Nat -> IO(Unit)) -> IO(Unit):
+def Watch.step(sm: U32 & String, +sz: U32, +mt: String, re: Nat, +key: String, +path: String, +q: Chan(ShellMsg), k: U32 -> String -> Nat -> IO(Unit)) -> IO(Unit):
   (+s2, +m2) = sm
-  Watch.step.k(Bool.or(U32.is_ne(s2, sz), U32.is_ne(m2, mt)), re, s2, m2, key, path, q, k)
+  Watch.step.k(RF.Revision.changed(s2, m2, sz, mt), re, s2, m2, key, path, q, k)
 
-# every 150 ms: a changed size or mtime re-reads the file; one more read
-# ~1 s after a change catches a second save within the same second (a 3D
+# every 150 ms: schematic revisions retain subsecond times and identity.
+# Keep the delayed reread for coarse filesystems/other source kinds (a 3D
 # model re-exports only on a change: exports take seconds)
-def Watch.loop(fuel: Nat, +key: String, +path: String, +sz: U32, +mt: U32, re: Nat, +q: Chan(ShellMsg)) -> IO(Unit):
+def Watch.loop(fuel: Nat, +key: String, +path: String, +sz: U32, +mt: String, re: Nat, +q: Chan(ShellMsg)) -> IO(Unit):
   match fuel:
     case 0n:
       IO.pure(Unit, Unit{})
     case 1n+f:
       do IO<Unit>:
         IO.sleep(150)
-        st : U32 & U32 <- PV.Pv.stamp.of(path)
+        st : U32 & String <- PV.Pv.stamp.of(path)
         Watch.step(st, sz, mt, Bool.pick(Nat, U32.is_eq(Src.kind(key), 2), 0n, re), key, path, q, s2 => m2 => r2 => Watch.loop(f, key, path, s2, m2, r2, q))
 
 def Watch.none(+key: String) -> String:
@@ -1768,7 +1771,7 @@ def Watch.go.k(none: Bool, once: Bool, +key: String, +path: String, +q: Chan(She
     case False{} True{}:
       Watch.read(path, key, q)
     case False{} False{}:
-      Bool.pick(IO(Unit), PV.Pv.stamp.fixed(path), Watch.read(path, key, q), Watch.loop(S.Fuel.forever(), key, path, 0, 0, 0n, q))
+      Bool.pick(IO(Unit), PV.Pv.stamp.fixed(path), Watch.read(path, key, q), Watch.loop(S.Fuel.forever(), key, path, 0, "", 0n, q))
 
 # (the Browser tab, source kind 3, watches no file: its frames come as
 # images, shot:<page>:<n>, which the layout asks for; the raw frame file it
@@ -2497,10 +2500,49 @@ def Lay.ops(o: L.Out) -> List<&2, R.Op>:
     case L.Out{os, _}:
       os
 
-def Aux.with_ty(a: Aux, t: L.Ty) -> Aux:
+# Keep one font set per allowed size. Glyph fills replace just that size;
+# repeated preference changes never exhaust FreeType's finite face table.
+def Types.drop.k(same: Bool, t: L.Ty, rest: List<&2, L.Ty>) -> List<&2, L.Ty>:
+  match same:
+    case True{}: rest
+    case False{}: t <> rest
+
+def Types.drop(xs: List<&2, L.Ty>, +pct: U32) -> List<&2, L.Ty>:
+  match xs:
+    case Nil{}: Nil{}
+    case +t <> rest:
+      Types.drop.k(U32.is_eq(L.Ty.pct(t), pct), t, Types.drop(rest, pct))
+
+def Aux.with_ty(a: Aux, +t: L.Ty) -> Aux:
   match a:
-    case Aux{ws, _, ti, k}:
-      Aux{ws, [t], ti, k}
+    case Aux{ws, ts, ti, k}:
+      Aux{ws, t <> Types.drop(ts, L.Ty.pct(t)), ti, k}
+
+def Types.find.k(same: Bool, t: L.Ty, rest: Maybe<&2, L.Ty>) -> Maybe<&2, L.Ty>:
+  match same:
+    case True{}: Some{t}
+    case False{}: rest
+
+def Types.find(xs: List<&2, L.Ty>, +pct: U32) -> Maybe<&2, L.Ty>:
+  match xs:
+    case Nil{}: None{}
+    case +t <> rest:
+      Types.find.k(U32.is_eq(L.Ty.pct(t), pct), t, Types.find(rest, pct))
+
+def Types.load(found: Maybe<&2, L.Ty>, +pct: U32) -> IO(L.Ty):
+  match found:
+    case Some{t}: IO.pure(L.Ty, t)
+    case None{}: L.Ty.load.pct(pct)
+
+def Aux.type_at(a: Aux, +pct: U32) -> IO(L.Ty):
+  match a:
+    case Aux{_, ts, _, _}: Types.load(Types.find(ts, pct), pct)
+
+# Every cached layout owns the font metrics it was made with. A change
+# invalidates all thread, row, bot wrapping and raster caches together.
+def Aux.retype(+a: Aux, +t: L.Ty) -> Aux:
+  Aux.with_frames(Aux.with_front(Aux.with_sm(Aux.with_mm(Aux.with_wraps(Aux.with_mks(Aux.with_memos(Aux.with_ty(a, t), Nil{}), Nil{}), BV.Bv.wraps.none()), Nil{}), Nil{}), Nil{}), TI.FNone{})
+
 
 # Match before calling Lay.memos: a hidden timeline does no wrapping.
 def Shell.memos(visible: Bool, ty: L.Ty, n: N.Nui, ms: List<&2, L.TLMemo>) -> List<&2, L.TLMemo>:
@@ -2574,7 +2616,7 @@ def FrameM.join(p: Part, +sd: MM.SideM, +mm: List<&2, MM.MainM>, +ty: L.Ty, +tlm
 # the main area and the sidebar's body at once (as Lay.frame.u lays them
 # out), each from its memo when its key holds
 def FrameM.lay.i(+mm: List<&2, MM.MainM>, sm: List<&2, MM.SideM>, +tc: MM.TouchK, +ty: L.Ty, +tlm: L.TLMemo, +cats: Map<&2, CA.CatF>, +wraps: Map<&2, BV.PW>, +n: N.Nui, +ix: U.SIx, +br: BV.BRows, +inf: String) -> FrameM:
-  p sd = Part.of(BV.Bv.main.w(ty, tlm, cats, wraps, n), BV.Bv.mail.hit(wraps, n), mm, tc, ty, tlm, n, inf) SideK.go(MM.Sm.key.i(n, tc, inf), sm, ty, cats, wraps, n, ix, br)
+  p sd = Part.of(BV.Bv.main.w.ix(ty, tlm, cats, wraps, n, [ix]), BV.Bv.mail.hit(wraps, n), mm, tc, ty, tlm, n, inf) SideK.go(MM.Sm.key.i(n, tc, inf), sm, ty, cats, wraps, n, ix, br)
   FrameM.join(p, sd, mm, ty, tlm, n)
 
 # (the info part of both memos' keys made once: MM.Mm.info.of)
@@ -2649,7 +2691,7 @@ def Shell.paint.m(+memos: List<&2, L.TLMemo>, +oh: List<&2, N.Hit>, +n: N.Nui, w
 # the timeline's memo is brought up to this frame first; layout draws from
 # it. Each step is timed: ui.memo, ui.layout, then ui.raster and
 # ui.present as the frame goes out
-def Shell.paint.go(+oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
+def Shell.paint.typed(+oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
   do IO<Shell>:
     +t0 : U32 <- PS.Perf.us()
     +wl : Aux = Aux.with_ty(wa, L.Ty.with_loc(Aux.ty(wa), U.Lang.loc(N.Nui.ui(n))))
@@ -2660,6 +2702,24 @@ def Shell.paint.go(+oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg
     PS.Perf.add("ui.ix.n", U32.from_nat(Nat.mod(ixn, 1000000n)))
     +t1 : U32 <- PS.Perf.lap("ui.memo", t0)
     Shell.paint.m(memos, oh, n, w, q, i, Aux.with_touch(Aux.with_mks(Aux.with_ixs(wl, [ixk]), [mk]), MM.TouchK.consumed(Aux.touch(wl), [MM.IxK.n(ixk)])), epoch, ms, t0, t1)
+
+# Reflow before painting a newly selected text size. Selection's row/x
+# anchors belong to the old wrapping; the composer's character offsets stay.
+def TextSize.nui(+n: N.Nui) -> N.Nui:
+  N.Sel.put(N.Nui.with_ui(n, U.Ui.scratch_set(U.Ui.scratch_set(N.Nui.ui(n), "@tl.at", ""), "@cgoal", "")), "", "")
+
+def Shell.paint.retyped(ty: L.Ty, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
+  Shell.paint.typed(Nil{}, TextSize.nui(n), w, q, i, Aux.retype(wa, ty), epoch, ms)
+
+def Shell.paint.size(same: Bool, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
+  match same:
+    case True{}:
+      Shell.paint.typed(oh, n, w, q, i, wa, epoch, ms)
+    case False{}:
+      IO.bind(L.Ty, Shell, Aux.type_at(wa, TS.Scale.of(U.Ui.state(N.Nui.ui(n)))), ty => Shell.paint.retyped(ty, oh, n, w, q, i, wa, epoch, ms))
+
+def Shell.paint.go(+oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
+  Shell.paint.size(U32.is_eq(L.Ty.pct(Aux.ty(wa)), TS.Scale.of(U.Ui.state(N.Nui.ui(n)))), oh, n, w, q, i, wa, epoch, ms)
 
 def Shell.paint.k(+n0: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux, +epoch: Nat, +ms: Nat) -> IO(Shell):
   match n0:
@@ -3062,9 +3122,9 @@ def Shell.fonts(m: Maybe<&1, L.Ty>) -> IO(L.Ty):
 # the first join: the in-process hub hands its state over (JoinHere); a
 # hub joined over a link sends its log like any other machine's
 def Shell.join.first(+inbox: Chan(S.Msg), +out: Chan(S.Wire), +lo: String, +gen: U32) -> IO(Result<&1, &1, S.Msg, Unit>):
-  Bool.pick(IO(Result<&1, &1, S.Msg, Unit>), String.is_empty(lo), Chan.send(S.Msg, inbox, S.JoinHere{0, out, gen}), Chan.send(S.Msg, inbox, S.Join{0, out, 0n, "", gen, 0}))
+  Bool.pick(IO(Result<&1, &1, S.Msg, Unit>), String.is_empty(lo), Chan.send(S.Msg, inbox, S.JoinHere{0, out, gen}), Chan.send(S.Msg, inbox, S.Join{0, out, 0n, "", gen, 0, False{}}))
 
-def Shell.twin.go(ev: Window, x: Window & U32, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String) -> IO(Unit):
+def Shell.twin.go(ev: Window, x: Window & U32, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String, +tok: String) -> IO(Unit):
   (pw, +xid) = x
   do IO<Unit>:
     +q : Chan(ShellMsg) <- Chan.new(ShellMsg, 8192)
@@ -3076,21 +3136,23 @@ def Shell.twin.go(ev: Window, x: Window & U32, +inbox: Chan(S.Msg), +drafts: Str
     IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, "#0", inbox, gen, 0n))
     got : Maybe<&1, L.Ty> <- Chan.recv(L.Ty, fq)
     ty : L.Ty <- Shell.fonts(got)
-    saved : U.Ui <- Drafts.load(U.Ui.info_set(U.Ui.init(U32.to_nat(t)), "local.hub", lo), drafts)
+    saved : U.Ui <- Drafts.load(U.Ui.info_set(U.Ui.info_set(U.Ui.init(U32.to_nat(t)), "local.hub", lo), "local.token", tok), drafts)
     seeded : U.Ui <- CefWin.start(saved, xid)
     ui : U.Ui <- Lang.start(seeded)
     a : Shell <- Shell.later(Shell{N.Nui.init(ui, 1400, 900), pw, True{}, False{}, q, inbox, Aux{Nil{}, [ty], Tie{inbox, "", "#0", 1n, TieKeep.empty()}, [Kept.none()]}})
     Shell.loop(S.Fuel.forever(), a)
 
 # the window's X id, read once (an embedded page is made its child)
-def Shell.twin(r: Window & Window, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String) -> IO(Unit):
+def Shell.twin(r: Window & Window, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String, +tok: String) -> IO(Unit):
   (ev, pw) = r
-  IO.bind(Window & U32, Unit, W.Win.xid(pw), x => Shell.twin.go(ev, x, inbox, drafts, fq, lo))
+  IO.bind(Window & U32, Unit, W.Win.xid(pw), x => Shell.twin.go(ev, x, inbox, drafts, fq, lo, tok))
 
-def Shell.opened(r: Result<&1, &1, U32 & String, Window>, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String) -> IO(Unit):
+# (tok: the joined hub's pairing token, read from its home: the link
+# presents it, and so does a later link back to it, "local.token")
+def Shell.opened(r: Result<&1, &1, U32 & String, Window>, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String, +tok: String) -> IO(Unit):
   match r:
     case Done{w}:
-      IO.bind(Window & Window, Unit, W.Win.twin(w), p => Shell.twin(p, inbox, drafts, fq, lo))
+      IO.bind(Window & Window, Unit, W.Win.twin(w), p => Shell.twin(p, inbox, drafts, fq, lo, tok))
     case Fail{e}:
       Shell.nowin(e)
 
@@ -3175,8 +3237,9 @@ def Start.join(r: Result<&1, &1, U32 & String, Window>, +held: String, +cfg: S.C
       do IO<Unit>:
         +lo : String = "http://" ++ S.Cfg.host(cfg) ++ ":" ++ S.Lock.word(held, 1n)
         IO.print("Backplane already runs for " ++ S.Cfg.home(cfg) ++ " (pid " ++ S.Lock.word(held, 0n) ++ "): the window joins it at " ++ lo)
-        i : Chan(S.Msg) <- LK.Link.start(lo)
-        Shell.opened(Done{w}, i, drafts, fq, lo)
+        +tok : String <- IO.bind(String, String, K.Io.text(S.Cfg.home(cfg) ++ "/token"), t => IO.pure(String, String.trim(t)))
+        i : Chan(S.Msg) <- LK.Link.start.t(lo, tok)
+        Shell.opened(Done{w}, i, drafts, fq, lo, tok)
     case Fail{_}:
       S.Lock.refuse(False{}, held, S.Cfg.home(cfg))
 
@@ -3186,7 +3249,7 @@ def Start.join(r: Result<&1, &1, U32 & String, Window>, +held: String, +cfg: S.C
 def Start.hub(free: Bool, headless: Bool, +held: String, +cfg: S.Cfg, r: Result<&1, &1, U32 & String, Window>, +drafts: String, +fq: Chan(L.Ty)) -> IO(Unit):
   match free headless:
     case True{} _:
-      S.Main.boot(cfg, False{}, i => Shell.opened(r, i, drafts, fq, ""))
+      S.Main.boot(cfg, False{}, i => Shell.opened(r, i, drafts, fq, "", ""))
     case False{} True{}:
       S.Lock.refuse(False{}, held, S.Cfg.home(cfg))
     case False{} False{}:
@@ -3234,7 +3297,7 @@ def start(args: List<String>) -> IO(Unit):
 def main.go(u: Unit) -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
-    RVC.Rvc.main(args, a2 => PV.Pv.main(a2, a => start(a)))
+    RVC.Rvc.main(args, a2 => TIO.Tio.main(a2, a0 => PV.Pv.main(a0, a => start(a))))
 
 # (`--plot KIND FILE` is the hub's own board reader, src/server/plot.bend;
 # `--review bom OLD NEW` design review's, src/server/review.bend)

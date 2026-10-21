@@ -1,4 +1,5 @@
 import Base
+import ../core/textscale.bend as TS
 import ./side_row_types.bend as ST
 import ../core/title.bend as TTL
 import ../core/i18n.bend as I
@@ -142,6 +143,20 @@ def Theme.ground(+flip: U32) -> U32:
 # and the device language the frame's text is built in (set once a frame)
 type Ty is Data:
   Ty{cache: Map<&2, X.TG>, ui: X.Face, bold: X.Face, meta: X.Face, body: X.Face, code: X.Face, loc: I.Loc}
+  TyScaled{pct: U32, inner: Ty, fixed: X.Face}
+
+def Ty.pct(t: Ty) -> U32:
+  match t:
+    case TyScaled{pct, _, _}: pct
+    case _: 100
+
+def Ty.px(t: Ty, +px: U32) -> U32:
+  match t:
+    case TyScaled{pct, _, _}: TS.Scale.px(pct, px)
+    case _: px
+
+def Ty.tag(+t: Ty, +loc: String) -> String:
+  Bool.pick(String, U32.is_eq(Ty.pct(t), 100), loc, loc ++ "/text=" ++ U32.show(Ty.pct(t)))
 
 # a type with only the bitmap font (never used: Aux keeps the real one)
 def Ty.none() -> Ty:
@@ -150,34 +165,48 @@ def Ty.none() -> Ty:
 # the type with glyphs added to its cache (the faces' ASCII tables stay)
 def Ty.with_cache(t: Ty, c: Map<&2, X.TG>) -> Ty:
   match t:
+    case TyScaled{pct, inner, fixed}:
+      TyScaled{pct, Ty.with_cache(inner, c), fixed}
     case Ty{_, ui, bold, meta, body, code, loc}:
       Ty{c, ui, bold, meta, body, code, loc}
 
 # the type with the frame's language
 def Ty.with_loc(t: Ty, +l: I.Loc) -> Ty:
   match t:
+    case TyScaled{pct, inner, fixed}:
+      TyScaled{pct, Ty.with_loc(inner, l), fixed}
     case Ty{c, ui, bold, meta, body, code, _}:
       Ty{c, ui, bold, meta, body, code, l}
 
 def Ty.loc(t: Ty) -> I.Loc:
   match t:
+    case TyScaled{_, inner, _}:
+      Ty.loc(inner)
     case Ty{_, _, _, _, _, _, l}:
       l
 
 # a frame's missing glyphs fetched (X.Text.wants); the next layout draws them
 def Ty.fill(t: Ty, ws: List<&2, X.Want>) -> IO(Ty):
   match t:
+    case TyScaled{+pct, inner, +fixed}:
+      IO.bind(Ty, Ty, Ty.fill(inner, ws), t2 => IO.pure(Ty, TyScaled{pct, t2, fixed}))
     case Ty{c, ui, bold, meta, body, code, loc}:
       IO.bind(Map<&2, X.TG>, Ty, X.Text.fill(ws, c), c2 => IO.pure(Ty, Ty{c2, ui, bold, meta, body, code, loc}))
 
 def Ty.cache(t: Ty) -> Map<&2, X.TG>:
   match t:
+    case TyScaled{_, inner, _}:
+      Ty.cache(inner)
     case Ty{c, _, _, _, _, _, _}:
       c
 
 # 0 interface 14px, 1 bold, 2 meta 12px, 3 chat body 14px, 4 code 13px
 def Ty.face(t: Ty, k: Nat) -> X.Face:
   match t k:
+    case TyScaled{_, _, fixed} 5n:
+      fixed
+    case TyScaled{_, inner, _} _:
+      Ty.face(inner, k)
     case Ty{_, f, _, _, _, _, _} 0n:
       f
     case Ty{_, _, f, _, _, _, _} 1n:
@@ -219,14 +248,23 @@ def Ty.fonts.warm(fs: List<&2, X.Face>, c: Map<&2, X.TG>) -> IO(Map<&2, X.TG>):
     case +f <> t:
       IO.bind(Map<&2, X.TG>, Map<&2, X.TG>, X.Text.warm(c, f), c2 => IO.bind(Map<&2, X.TG>, Map<&2, X.TG>, X.Text.ensure(c2, f, "▾▸←−×"), c3 => Ty.fonts.warm(t, c3)))
 
-def Ty.load() -> IO(Ty):
+def Ty.scaled(default: Bool, +pct: U32, inner: Ty, fixed: X.Face) -> Ty:
+  match default:
+    case True{}: inner
+    case False{}: TyScaled{pct, inner, fixed}
+
+def Ty.load.pct(+pct: U32) -> IO(Ty):
   do IO<Ty>:
-    +ui : X.Face <- X.Text.face(Ty.fonts.ui(), 14)
-    +bold : X.Face <- X.Text.face(Ty.fonts.bold(), 14)
-    +meta : X.Face <- X.Text.face(Ty.fonts.ui(), 12)
-    +code : X.Face <- X.Text.face(Ty.fonts.code(), 13)
-    +c : Map<&2, X.TG> <- Ty.fonts.warm([ui, bold, meta, code], Map.new(&2, X.TG))
-    return Ty{IC.Ico.warm(c, 16), X.Face.tabled(ui, c), X.Face.tabled(bold, c), X.Face.tabled(meta, c), X.Face.tabled(ui, c), X.Face.tabled(code, c), I.En{}}
+    +ui : X.Face <- X.Text.face(Ty.fonts.ui(), TS.Scale.px(pct, 14))
+    +bold : X.Face <- X.Text.face(Ty.fonts.bold(), TS.Scale.px(pct, 14))
+    +meta : X.Face <- X.Text.face(Ty.fonts.ui(), TS.Scale.px(pct, 12))
+    +code : X.Face <- X.Text.face(Ty.fonts.code(), TS.Scale.px(pct, 13))
+    +fixed : X.Face <- X.Text.face(Ty.fonts.code(), 13)
+    +c : Map<&2, X.TG> <- Ty.fonts.warm([ui, bold, meta, code, fixed], Map.new(&2, X.TG))
+    return Ty.scaled(U32.is_eq(pct, 100), pct, Ty{IC.Ico.warm(c, 16), X.Face.tabled(ui, c), X.Face.tabled(bold, c), X.Face.tabled(meta, c), X.Face.tabled(ui, c), X.Face.tabled(code, c), I.En{}}, X.Face.tabled(fixed, c))
+
+def Ty.load() -> IO(Ty):
+  Ty.load.pct(100)
 
 # Shapes
 # ------
@@ -1074,6 +1112,11 @@ def TL.h.k(k: Nat) -> U32:
 def TL.h(+kind: U32) -> U32:
   TL.h.k(U32.to_nat(kind))
 
+# Images and embedded terminal strips have their own pixel geometry.
+# Text rows and whitespace grow together; boundaries stay zero height.
+def TL.h.s(+kind: U32, +pct: U32) -> U32:
+  Bool.pick(U32, Bool.or(U32.is_eq(kind, 12), U32.is_eq(kind, 23)), TL.h(kind), TS.Scale.px(pct, TL.h(kind)))
+
 # the text of a node list, markup dropped
 def Nd.plain(ns: List<&2, N.Node>) -> String:
   match ns:
@@ -1163,21 +1206,21 @@ def TL.link.w(+ty: Ty, p: LK.Piece) -> U32:
 # reference. Bare ids still need object-aware rendering before activation.
 def TL.link.ref(bare: Bool, +ty: Ty, +label: String, +uri: String, +c: D.Clip, +x: U32, +y: U32, color: U32) -> Out:
   match bare:
-    case True{}: Out.ops(Ty.text(ty, 3n, label, c, x, y, 23, color))
+    case True{}: Out.ops(Ty.text(ty, 3n, label, c, x, y, Ty.px(ty, 23), color))
     case False{}:
       +w = Ty.width(ty, 3n, label)
-      Out{D.Draw.rect(c, x, (y + 19 : U32), w, 1, T.Th.accent(), 255) <> Ty.text(ty, 3n, label, c, x, y, 23, T.Th.accent()),
-        [Lay.hit(x, y, w, 23, "ref-go", uri)]}
+      Out{D.Draw.rect(c, x, (y + Ty.px(ty, 19) : U32), w, 1, T.Th.accent(), 255) <> Ty.text(ty, 3n, label, c, x, y, Ty.px(ty, 23), T.Th.accent()),
+        [Lay.hit(x, y, w, Ty.px(ty, 23), "ref-go", uri)]}
 
 def TL.link.seg(+ty: Ty, p: LK.Piece, +c: D.Clip, +x: U32, +y: U32, +color: U32) -> Out:
   match p:
     case LK.PText{s}:
-      Out.ops(Ty.text(ty, 3n, s, c, x, y, 23, color))
+      Out.ops(Ty.text(ty, 3n, s, c, x, y, Ty.px(ty, 23), color))
     case LK.PRef{l, u, bare}:
       TL.link.ref(bare, ty, l, u, c, x, y, color)
     case LK.PLink{+l, +u}:
-      Out{D.Draw.rect(c, x, (y + 19 : U32), Ty.width(ty, 3n, l), 1, T.Th.accent(), 255) <> Ty.text(ty, 3n, l, c, x, y, 23, T.Th.accent()),
-        [Lay.hit(x, y, Ty.width(ty, 3n, l), 23, Bool.pick(String, LK.Link.is_web(u), "open-url", "file-open"), u)]}
+      Out{D.Draw.rect(c, x, (y + Ty.px(ty, 19) : U32), Ty.width(ty, 3n, l), 1, T.Th.accent(), 255) <> Ty.text(ty, 3n, l, c, x, y, Ty.px(ty, 23), T.Th.accent()),
+        [Lay.hit(x, y, Ty.width(ty, 3n, l), Ty.px(ty, 23), Bool.pick(String, LK.Link.is_web(u), "open-url", "file-open"), u)]}
 
 def TL.link.segs(ps: List<&2, LK.Piece>, +ty: Ty, +c: D.Clip, +x: U32, +y: U32, +color: U32) -> Out:
   match ps:
@@ -1413,7 +1456,7 @@ def TL.table(+ty: Ty, ns: List<&2, N.Node>, +px: U32) -> List<&2, TLine>:
 def TL.cells.draw(cs: List<&2, String>, ws: String, +ty: Ty, +c: D.Clip, +x: U32, +y: U32, +h: U32, +color: U32) -> List<&2, R.Op>:
   match cs ws:
     case +s <> ct SCon{Chr{+w}, wt}:
-      List.append(&2, R.Op, D.Draw.rect(c, x, y, 1, h, T.Th.line(), 255) <> Ty.text(ty, 3n, Ty.fit(ty, 3n, s, U32.dim(w, 16)), c, (x + 8 : U32), (y + h - 23 : U32), 23, color),
+      List.append(&2, R.Op, D.Draw.rect(c, x, y, 1, h, T.Th.line(), 255) <> Ty.text(ty, 3n, Ty.fit(ty, 3n, s, U32.dim(w, 16)), c, (x + 8 : U32), (y + h - Ty.px(ty, 23) : U32), Ty.px(ty, 23), color),
         TL.cells.draw(ct, wt, ty, c, (x + w : U32), y, h, color))
     case _ _:
       [D.Draw.rect(c, x, y, 1, h, T.Th.line(), 255)]
@@ -1421,9 +1464,9 @@ def TL.cells.draw(cs: List<&2, String>, ws: String, +ty: Ty, +c: D.Clip, +x: U32
 def TL.trow.draw(+ty: Ty, +first: Bool, +text: String, +color: U32, +enc: String, +bw: U32, +c: D.Clip, +x0: U32, +y: U32) -> Out:
   match enc:
     case SCon{Chr{+flag}, ws}:
-      Out.ops(List.concat(&2, R.Op, [Bool.pick(List<&2, R.Op>, U32.is_eq(flag, 1), [D.Draw.rect(c, x0, y, bw, Bool.pick(U32, first, 26, 23), T.Th.raise(), 255)], Nil{}),
+      Out.ops(List.concat(&2, R.Op, [Bool.pick(List<&2, R.Op>, U32.is_eq(flag, 1), [D.Draw.rect(c, x0, y, bw, Ty.px(ty, Bool.pick(U32, first, 26, 23)), T.Th.raise(), 255)], Nil{}),
         Bool.pick(List<&2, R.Op>, first, [D.Draw.rect(c, x0, y, bw, 1, T.Th.line(), 255)], Nil{}),
-        TL.cells.draw(String.split(text, '\t'), ws, ty, c, x0, y, Bool.pick(U32, first, 26, 23), color)]))
+        TL.cells.draw(String.split(text, '\t'), ws, ty, c, x0, y, Ty.px(ty, Bool.pick(U32, first, 26, 23)), color)]))
     case SNil{}:
       Out.none()
 
@@ -1582,12 +1625,15 @@ def TL.newest(es: List<&2, M.Entry>, +th: String, +since: Nat, st: NW) -> List<&
     case +e <> t NW{1n+k, acc}:
       TL.newest(t, th, since, TL.newest.cut(Nat.is_lt(Nat.add(TL.at_of(e), 3600n), since), TL.newest.step(TL.mine.or(String.eq(TL.thread_of(e), th), e, th), e, NW{1n+k, acc})))
 
-def TL.height(ls: List<&2, TLine>, +acc: U32) -> U32:
+def TL.height.s(ls: List<&2, TLine>, +pct: U32, +acc: U32) -> U32:
   match ls:
     case Nil{}:
       acc
     case TLine{_, _, +k, _, _} <> t:
-      TL.height(t, (acc + TL.h(k) : U32))
+      TL.height.s(t, pct, (acc + TL.h.s(k, pct) : U32))
+
+def TL.height(ls: List<&2, TLine>, +acc: U32) -> U32:
+  TL.height.s(ls, 100, acc)
 
 def TL.copy(+ty: Ty, +c: D.Clip, +x1: U32, +y: U32, +lh: U32, +copy: String) -> Out:
   +label0 = MSG.T.common.copy(Ty.loc(ty))
@@ -1663,7 +1709,7 @@ def TL.img.draw(loading: Bool, +ty: Ty, +text: String, +color: U32, +path: Strin
 # starts again; a pinned one leaves a row (26) and is drawn at the top.
 
 def Ew.cw(+ty: Ty) -> U32:
-  U32.max(Ty.width(ty, 4n, "0"), 1)
+  U32.max(Ty.width(ty, 5n, "0"), 1)
 
 def Ew.w(+ty: Ty, +cols: U32, +x0: U32, +x1: U32) -> U32:
   U32.min((cols * Ew.cw(ty) + 24 : U32), (x1 - x0 : U32))
@@ -1681,53 +1727,53 @@ def Ew.head(+ty: Ty, +text: String, +color: U32, +key: String, +cols: U32, +c: D
 def TL.draw.k(+ty: Ty, k: Nat, +text: String, +color: U32, +copy: String, +bw: U32, +c: D.Clip, +x0: U32, +x1: U32, +y: U32) -> Out:
   match k:
     case 1n:
-      Out.ops(List.concat(&2, R.Op, [[D.Draw.rect(c, x0, y, (x1 - x0 : U32), 21, T.Th.code(), 255)], TL.sides(c, x0, x1, y, 21),
-        Ty.text(ty, 4n, text, c, (x0 + 14 : U32), y, 21, color)]))
+      Out.ops(List.concat(&2, R.Op, [[D.Draw.rect(c, x0, y, (x1 - x0 : U32), Ty.px(ty, 21), T.Th.code(), 255)], TL.sides(c, x0, x1, y, Ty.px(ty, 21)),
+        Ty.text(ty, 4n, text, c, (x0 + 14 : U32), y, Ty.px(ty, 21), color)]))
     case 8n:
-      Out.cat(Out.ops(List.concat(&2, R.Op, [[D.Draw.rect(c, x0, y, (x1 - x0 : U32), 32, T.Th.code(), 255), D.Draw.rect(c, x0, y, (x1 - x0 : U32), 1, T.Th.line(), 255),
-          D.Draw.rect(c, x0, (y + 31 : U32), (x1 - x0 : U32), 1, T.Th.line(), 255)], TL.sides(c, x0, x1, y, 32),
-          Ty.text(ty, 2n, text, c, (x0 + 14 : U32), y, 32, color)])),
-        TL.copy(ty, c, x1, y, 32, copy))
+      Out.cat(Out.ops(List.concat(&2, R.Op, [[D.Draw.rect(c, x0, y, (x1 - x0 : U32), Ty.px(ty, 32), T.Th.code(), 255), D.Draw.rect(c, x0, y, (x1 - x0 : U32), 1, T.Th.line(), 255),
+          D.Draw.rect(c, x0, (y + Ty.px(ty, 31) : U32), (x1 - x0 : U32), 1, T.Th.line(), 255)], TL.sides(c, x0, x1, y, Ty.px(ty, 32)),
+          Ty.text(ty, 2n, text, c, (x0 + 14 : U32), y, Ty.px(ty, 32), color)])),
+        TL.copy(ty, c, x1, y, Ty.px(ty, 32), copy))
     case 9n:
-      Out.ops(List.concat(&2, R.Op, [[D.Draw.rect(c, x0, y, (x1 - x0 : U32), 9, T.Th.code(), 255), D.Draw.rect(c, x0, (y + 9 : U32), (x1 - x0 : U32), 1, T.Th.line(), 255)],
-        TL.sides(c, x0, x1, y, 10)]))
+      Out.ops(List.concat(&2, R.Op, [[D.Draw.rect(c, x0, y, (x1 - x0 : U32), Ty.px(ty, 9), T.Th.code(), 255), D.Draw.rect(c, x0, (y + Ty.px(ty, 9) : U32), (x1 - x0 : U32), 1, T.Th.line(), 255)],
+        TL.sides(c, x0, x1, y, Ty.px(ty, 10))]))
     case 2n:
-      Out.cat(Out.ops(D.Draw.rect(c, (x1 - bw : U32), y, bw, 23, T.Th.raise(), 255) <> Ty.text(ty, 3n, text, c, (x1 - bw + 20 : U32), y, 23, color)),
-        Bool.pick(Out, String.is_empty(copy), Out.none(), Out{Nil{}, [Lay.hit((x1 - bw : U32), y, bw, 23, "copy", copy)]}))
+      Out.cat(Out.ops(D.Draw.rect(c, (x1 - bw : U32), y, bw, Ty.px(ty, 23), T.Th.raise(), 255) <> Ty.text(ty, 3n, text, c, (x1 - bw + 20 : U32), y, Ty.px(ty, 23), color)),
+        Bool.pick(Out, String.is_empty(copy), Out.none(), Out{Nil{}, [Lay.hit((x1 - bw : U32), y, bw, Ty.px(ty, 23), "copy", copy)]}))
     case 6n:
-      Out.ops([D.Draw.rect(c, (x1 - bw : U32), y, bw, 10, T.Th.raise(), 255)])
+      Out.ops([D.Draw.rect(c, (x1 - bw : U32), y, bw, Ty.px(ty, 10), T.Th.raise(), 255)])
     case 7n:
-      Out.cat(Out.ops(Ty.text(ty, 2n, text, c, x0, y, 22, T.Th.faint())), TL.copy(ty, c, x1, y, 22, copy))
+      Out.cat(Out.ops(Ty.text(ty, 2n, text, c, x0, y, Ty.px(ty, 22), T.Th.faint())), TL.copy(ty, c, x1, y, Ty.px(ty, 22), copy))
     case 29n:
       Out.none()
     case 28n:
-      Out.ops(Ty.text(ty, 2n, text, c, (x1 - Ty.width(ty, 2n, text) - 4 : U32), y, 20, T.Th.faint()))
+      Out.ops(Ty.text(ty, 2n, text, c, (x1 - Ty.width(ty, 2n, text) - 4 : U32), y, Ty.px(ty, 20), T.Th.faint()))
     case 4n:
       Out.none()
     case 3n:
-      Out.ops(Ty.text(ty, 2n, text, c, x0, y, 22, color))
+      Out.ops(Ty.text(ty, 2n, text, c, x0, y, Ty.px(ty, 22), color))
     case 10n:
-      Out{List.append(&2, R.Op, [D.Draw.rect(c, x0, (y + 4 : U32), 2, 16, color, 255)], Ty.text(ty, 2n, text, c, (x0 + 10 : U32), y, 24, color)),
-        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 12 : U32), 24, "select", copy)]}
+      Out{List.append(&2, R.Op, [D.Draw.rect(c, x0, (y + Ty.px(ty, 4) : U32), 2, Ty.px(ty, 16), color, 255)], Ty.text(ty, 2n, text, c, (x0 + 10 : U32), y, Ty.px(ty, 24), color)),
+        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 12 : U32), Ty.px(ty, 24), "select", copy)]}
     case 11n:
-      Out{Ty.text(ty, 2n, text, c, (x1 - Ty.width(ty, 2n, text) : U32), y, 22, color), [Lay.hit((x1 - Ty.width(ty, 2n, text) : U32), y, Ty.width(ty, 2n, text), 22, "select", copy)]}
+      Out{Ty.text(ty, 2n, text, c, (x1 - Ty.width(ty, 2n, text) : U32), y, Ty.px(ty, 22), color), [Lay.hit((x1 - Ty.width(ty, 2n, text) : U32), y, Ty.width(ty, 2n, text), Ty.px(ty, 22), "select", copy)]}
     case 13n:
       TL.link.segs(LK.Link.cut(text, LK.Link.dec(copy)), ty, c, x0, y, color)
     case 12n:
       TL.img.draw(U32.is_eq(bw, 4096), ty, text, color, copy, bw, c, x0, y)
     case 14n:
-      Out{List.append(&2, R.Op, Lay.icon(ty, Bool.pick(String, U32.is_eq(bw, 1), "chevron-down", "chevron-right"), c, x0, (y + 4 : U32), color),
-          Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, 24, color)),
-        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), 24, "fold", copy)]}
+      Out{List.append(&2, R.Op, Lay.icon(ty, Bool.pick(String, U32.is_eq(bw, 1), "chevron-down", "chevron-right"), c, x0, (y + Ty.px(ty, 4) : U32), color),
+          Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, Ty.px(ty, 24), color)),
+        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), Ty.px(ty, 24), "fold", copy)]}
     case 5n:
-      Out.ops(Ty.text(ty, 1n, text, c, x0, y, 28, color))
+      Out.ops(Ty.text(ty, 1n, text, c, x0, y, Ty.px(ty, 28), color))
     case 15n:
-      Out.ops(D.Draw.disc(c, U32.to_f32((x0 + 4 : U32)), U32.to_f32((y + 11 : U32)), 3.0, color, 255) <> Ty.text(ty, 2n, text, c, (x0 + 14 : U32), y, 22, T.Th.faint()))
+      Out.ops(D.Draw.disc(c, U32.to_f32((x0 + 4 : U32)), U32.to_f32((y + Ty.px(ty, 11) : U32)), 3.0, color, 255) <> Ty.text(ty, 2n, text, c, (x0 + 14 : U32), y, Ty.px(ty, 22), T.Th.faint()))
     case 16n:
-      Out{List.append(&2, R.Op, Lay.icon(ty, "history", c, x0, (y + 4 : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, 24, color)),
-        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), 24, "hist-show", copy)]}
+      Out{List.append(&2, R.Op, Lay.icon(ty, "history", c, x0, (y + Ty.px(ty, 4) : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, Ty.px(ty, 24), color)),
+        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), Ty.px(ty, 24), "hist-show", copy)]}
     case 17n:
-      Out.ops([D.Draw.rect(c, x0, (y + 3 : U32), (x1 - x0 : U32), 2, T.Th.accent(), 255)])
+      Out.ops([D.Draw.rect(c, x0, (y + Ty.px(ty, 3) : U32), (x1 - x0 : U32), Ty.px(ty, 2), T.Th.accent(), 255)])
     case 18n:
       TL.trow.draw(ty, True{}, text, color, copy, bw, c, x0, y)
     case 19n:
@@ -1735,23 +1781,23 @@ def TL.draw.k(+ty: Ty, k: Nat, +text: String, +color: U32, +copy: String, +bw: U
     case 20n:
       Out.ops([D.Draw.rect(c, x0, y, bw, 1, color, 255)])
     case 21n:
-      Out.ops([D.Draw.rect(c, x0, (y + 8 : U32), (x1 - x0 : U32), 1, color, 255)])
+      Out.ops([D.Draw.rect(c, x0, (y + Ty.px(ty, 8) : U32), (x1 - x0 : U32), 1, color, 255)])
     case 22n:
-      Out.ops(D.Draw.rect(c, x0, y, 2, 23, T.Th.line(), 255) <> Ty.text(ty, 3n, text, c, (x0 + 12 : U32), y, 23, color))
+      Out.ops(D.Draw.rect(c, x0, y, 2, Ty.px(ty, 23), T.Th.line(), 255) <> Ty.text(ty, 3n, text, c, (x0 + 12 : U32), y, Ty.px(ty, 23), color))
     case 23n:
       Ew.row(ty, text, color, copy, bw, c, x0, x1, y)
     case 24n:
       Ew.head(ty, text, color, copy, bw, c, x0, x1, y)
     case 25n:
-      Out{List.append(&2, R.Op, Lay.icon(ty, "play", c, x0, (y + 5 : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, 26, color)),
-        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), 26, "emb-restart", copy)]}
+      Out{List.append(&2, R.Op, Lay.icon(ty, "play", c, x0, (y + Ty.px(ty, 5) : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, Ty.px(ty, 26), color)),
+        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), Ty.px(ty, 26), "emb-restart", copy)]}
     case 26n:
-      Out{List.append(&2, R.Op, Lay.icon(ty, "pin", c, x0, (y + 5 : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, 26, color)),
-        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), 26, "emb-pin", copy)]}
+      Out{List.append(&2, R.Op, Lay.icon(ty, "pin", c, x0, (y + Ty.px(ty, 5) : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, Ty.px(ty, 26), color)),
+        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), Ty.px(ty, 26), "emb-pin", copy)]}
     case 27n:
-      Out.ops(List.append(&2, R.Op, Lay.icon(ty, "bell", c, x0, (y + 4 : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, 24, color)))
+      Out.ops(List.append(&2, R.Op, Lay.icon(ty, "bell", c, x0, (y + Ty.px(ty, 4) : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, Ty.px(ty, 24), color)))
     case _:
-      Out.ops(Ty.text(ty, 3n, text, c, x0, y, 23, color))
+      Out.ops(Ty.text(ty, 3n, text, c, x0, y, Ty.px(ty, 23), color))
 
 def TL.draw(+ty: Ty, l: TLine, +c: D.Clip, +x0: U32, +x1: U32, +y: U32) -> Out:
   match l:
@@ -1843,7 +1889,7 @@ def TL.sel.last(+sel: TSel, +i: Nat) -> Bool:
 def TL.sel.box(+ty: Ty, +c: D.Clip, +k: Nat, +text: String, +tx: U32, +a: Nat, +b: Nat, +more: Bool, +y: U32) -> List<&2, R.Op>:
   +x0 = {(tx + Ty.width(ty, TL.face(k), String.take(text, a)) : U32) : U32}
   +x1 = {(tx + Ty.width(ty, TL.face(k), String.take(text, b)) + Bool.pick(U32, more, 6, 0) : U32) : U32}
-  Bool.pick(List<&2, R.Op>, U32.is_gt(x1, x0), [D.Draw.rect(c, x0, (y + 2 : U32), (x1 - x0 : U32), (TL.h(U32.from_nat(k)) - 4 : U32), T.Th.accent(), 70)], Nil{})
+  Bool.pick(List<&2, R.Op>, U32.is_gt(x1, x0), [D.Draw.rect(c, x0, (y + Ty.px(ty, 2) : U32), (x1 - x0 : U32), (TL.h.s(U32.from_nat(k), Ty.pct(ty)) - 4 : U32), T.Th.accent(), 70)], Nil{})
 
 def TL.sel.draw.k(on: Bool, +ty: Ty, +sel: TSel, +i: Nat, +k: Nat, +text: String, +tx: U32, +c: D.Clip, +y: U32) -> List<&2, R.Op>:
   match on:
@@ -1898,9 +1944,9 @@ def TL.draw_all(+ty: Ty, ls: List<&2, TLine>, more: Bool, +c: D.Clip, +x0: U32, 
     case TLine{_, _, 29, _, _} <> +rest True{}:
       TL.draw_all(ty, rest, TL.more(rest, y, y1), c, x0, x1, y, y1, 1n+i, sel)
     case TLine{+t, +co, +k, +cp, +bw} <> +rest True{}:
-      Out.all([Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), TL.h(k), "tl-line", Nat.show(i))]}, TL.draw(ty, TLine{t, co, k, cp, bw}, c, x0, x1, y),
+      Out.all([Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), TL.h.s(k, Ty.pct(ty)), "tl-line", Nat.show(i))]}, TL.draw(ty, TLine{t, co, k, cp, bw}, c, x0, x1, y),
         TL.sel.draw(ty, sel, i, TLine{t, co, k, cp, bw}, c, x0, x1, y),
-        TL.draw_all(ty, rest, TL.more(rest, (y + TL.h(k) : U32), y1), c, x0, x1, (y + TL.h(k) : U32), y1, 1n+i, sel)])
+        TL.draw_all(ty, rest, TL.more(rest, (y + TL.h.s(k, Ty.pct(ty)) : U32), y1), c, x0, x1, (y + TL.h.s(k, Ty.pct(ty)) : U32), y1, 1n+i, sel)])
     case _ _:
       Out.none()
 
@@ -2003,6 +2049,18 @@ def TL.live.cat(+ty: Ty, lm: LiveMemo, +ns: List<&2, N.Node>, +px: U32) -> List<
       TL.live.cat.k(a, ls, TL.blocks(ty, ns, px), TL.live.any(ns))
     case LiveLocal{_, _, _, a, ls}:
       TL.live.cat.k(a, ls, TL.blocks(ty, ns, px), TL.live.any(ns))
+
+# Compute the split offset once; retain the original memo and renderer rules.
+# This helper adds no cache entry, key, retained full text, or text limit.
+def TL.live.split.once(+ty: Ty, lm: LiveMemo, +text: String, +px: U32, +at: Nat) -> List<&2, TLine>:
+  TL.live.cat(ty, TL.live.get(ty, lm, U.Live.head.k(text, at), px), N.Md.render(U.Live.rest.k(text, at)), px)
+
+def TL.live.single(+ty: Ty, empty: Bool, +ph: M.Phase, +text: String, lm: LiveMemo, +px: U32) -> List<&2, TLine>:
+  match empty:
+    case False{}:
+      TL.live.split.once(ty, lm, text, px, U.Live.at(text))
+    case True{}:
+      TL.phase.k(String.is_empty(M.Phase.label(ph)), M.Phase.label(ph), Lay.phase(ph))
 
 # the reply streaming in, else the phase; the settled prefix from the memo
 def TL.live.m(+ty: Ty, empty: Bool, +ph: M.Phase, +text: String, lm: LiveMemo, +px: U32) -> List<&2, TLine>:
@@ -2190,7 +2248,7 @@ def Lay.lines(+ty: Ty, ls: List<&2, String>, +c: D.Clip, +x: U32, +y: U32) -> Ou
     case Nil{}:
       Out.none()
     case l <> t:
-      Out.cat(Out.ops(Ty.text(ty, 3n, l, c, x, y, 23, T.Th.text())), Lay.lines(ty, t, c, x, (y + 23 : U32)))
+      Out.cat(Out.ops(Ty.text(ty, 3n, l, c, x, y, Ty.px(ty, 23), T.Th.text())), Lay.lines(ty, t, c, x, (y + Ty.px(ty, 23) : U32)))
 
 def Picker.name.loc(+l: I.Loc, +m: String) -> String:
   Bool.pick(String, String.is_empty(m), MSG.T.common.default(l), m)
@@ -2382,8 +2440,8 @@ def Comp.sel.go(ls: List<&2, String>, +ty: Ty, +j: Nat, +rlo: Nat, +xlo: U32, +r
       +a = {Bool.pick(U32, Nat.is_eq(j, rlo), xlo, 0) : U32}
       +b = {Bool.pick(U32, Nat.is_eq(j, rhi), xhi, (Ty.width(ty, 3n, l) + 6 : U32)) : U32}
       List.append(&2, R.Op, Bool.pick(List<&2, R.Op>, Bool.and(Bool.and(Nat.is_ge(j, rlo), Nat.is_le(j, rhi)), U32.is_gt(b, a)),
-        [D.Draw.rect(D.Clip.all(), (x + a : U32), y, (b - a : U32), 20, T.Th.sel(), 255)], Nil{}),
-        Comp.sel.go(t, ty, 1n+j, rlo, xlo, rhi, xhi, x, (y + 23 : U32)))
+        [D.Draw.rect(D.Clip.all(), (x + a : U32), y, (b - a : U32), Ty.px(ty, 20), T.Th.sel(), 255)], Nil{}),
+        Comp.sel.go(t, ty, 1n+j, rlo, xlo, rhi, xhi, x, (y + Ty.px(ty, 23) : U32)))
 
 def Comp.sel(on: Bool, +ty: Ty, +shown: List<&2, String>, +top: Nat, +draft: String, +ss: List<&2, Nat>, +lo: Nat, +hi: Nat, +x: U32, +y: U32) -> Out:
   match on:
@@ -2402,7 +2460,7 @@ def Comp.span.go(ls: List<&2, String>, +ty: Ty, +j: Nat, +rlo: Nat, +xlo: U32, +
       +b = {Bool.pick(U32, Nat.is_eq(j, rhi), xhi, (Ty.width(ty, 3n, l) + 6 : U32)) : U32}
       List.append(&2, R.Op, Bool.pick(List<&2, R.Op>, Bool.and(Bool.and(Nat.is_ge(j, rlo), Nat.is_le(j, rhi)), U32.is_gt(b, a)),
         [D.Draw.rect(D.Clip.all(), (x + a : U32), (y + dy : U32), (b - a : U32), hh, color, 255)], Nil{}),
-        Comp.span.go(t, ty, 1n+j, rlo, xlo, rhi, xhi, x, (y + 23 : U32), dy, hh, color))
+        Comp.span.go(t, ty, 1n+j, rlo, xlo, rhi, xhi, x, (y + Ty.px(ty, 23) : U32), dy, hh, color))
 
 # what the input method is composing (core/ime.bend's runs, positions in
 # the shown draft): the clause being converted behind the text like a
@@ -2413,13 +2471,16 @@ def Comp.pre(pre: List<&2, IME.Run>, +ty: Ty, +shown: List<&2, String>, +top: Na
       Out.none()
     case IME.Run{+lo, +hi, +hot} <> t:
       Out.cat(Out.cat(
-        Out.when(hot, Out.ops(Comp.span.go(shown, ty, top, Comp.row(ss, lo), Comp.x(ty, draft, ss, lo), Comp.row(ss, hi), Comp.x(ty, draft, ss, hi), x, y, 0, 20, T.Th.sel()))),
-        Out.ops(Comp.span.go(shown, ty, top, Comp.row(ss, lo), Comp.x(ty, draft, ss, lo), Comp.row(ss, hi), Comp.x(ty, draft, ss, hi), x, y, 19, 1, T.Th.text()))),
+        Out.when(hot, Out.ops(Comp.span.go(shown, ty, top, Comp.row(ss, lo), Comp.x(ty, draft, ss, lo), Comp.row(ss, hi), Comp.x(ty, draft, ss, hi), x, y, 0, Ty.px(ty, 20), T.Th.sel()))),
+        Out.ops(Comp.span.go(shown, ty, top, Comp.row(ss, lo), Comp.x(ty, draft, ss, lo), Comp.row(ss, hi), Comp.x(ty, draft, ss, hi), x, y, Ty.px(ty, 19), 1, T.Th.text()))),
         Comp.pre(t, ty, shown, top, draft, ss, x, y))
 
 # how much taller than two lines the composer is for n wrapped lines
+def Comp.eh.s(+n: Nat, +ty: Ty) -> U32:
+  (U32.from_nat(S.Cs.rows(n)) * Ty.px(ty, 23) - U32.min(46, (U32.from_nat(S.Cs.rows(n)) * Ty.px(ty, 23) : U32)) : U32)
+
 def Comp.eh(+n: Nat) -> U32:
-  (U32.from_nat(Nat.sub(S.Cs.rows(n), 2n)) * 23 : U32)
+  Comp.eh.s(n, Ty.none())
 
 # the draft wrapped as the composer shows it, cw wide
 def Comp.wrap(+ty: Ty, +draft: String, +cw: U32) -> List<&2, String>:
@@ -2459,7 +2520,7 @@ def Lay.composer(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String, 
   +tw = {(x1 - x0 - 40 : U32) : U32}
   +n = List.length(&2, String, ls)
   +v = S.Cs.rows(n)
-  +eh = Comp.eh(n)
+  +eh = Comp.eh.s(n, ty)
   +ss = ED.Edit.starts(ls, draft)
   +crow = Comp.row(ss, caret)
   +top = S.Cs.top(held, n, crow)
@@ -2473,11 +2534,11 @@ def Lay.composer(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String, 
     Comp.sel(Bool.and(focused, Bool.not(Nat.is_eq(caret, mark))), ty, shown, top, draft, ss, ED.Edit.lo(caret, mark), ED.Edit.hi(caret, mark), (x0 + 16 : U32), (y + 12 : U32)),
     Comp.pre(pre, ty, shown, top, draft, ss, (x0 + 16 : U32), (y + 12 : U32)),
     Bool.pick(Out, String.is_empty(draft),
-      Out.ops(Ty.text(ty, 3n, Ty.fit(ty, 3n, MSG.T.composer.placeholder(Ty.loc(ty)), tw), D.Clip.all(), (x0 + 16 : U32), (y + 10 : U32), 23, T.Th.faint())),
+      Out.ops(Ty.text(ty, 3n, Ty.fit(ty, 3n, MSG.T.composer.placeholder(Ty.loc(ty)), tw), D.Clip.all(), (x0 + 16 : U32), (y + 10 : U32), Ty.px(ty, 23), T.Th.faint())),
       Lay.lines(ty, shown, D.Clip{(x0 + 1 : U32), (y + 1 : U32), (x1 - 1 : U32), (y + 60 + eh : U32)}, (x0 + 16 : U32), (y + 10 : U32))),
-    Bool.pick(Out, Bool.and(focused, Bool.and(Nat.is_ge(crow, top), Nat.is_lt(row, v))), Out.ops([D.Draw.caret(D.Clip.all(), (x0 + 16 + cx : U32), (y + 14 + (U32.from_nat(row) * 23 : U32) : U32), 1, 16, T.Th.accent(), 255, blink)]), Out.none()),
-    Bool.pick(Out, Bool.and(focused, Bool.and(Nat.is_ge(crow, top), Nat.is_lt(row, v))), Out{Nil{}, [Lay.hit((x0 + 16 + cx : U32), (y + 14 + (U32.from_nat(row) * 23 : U32) : U32), 1, 18, "ime-spot", "")]}, Out.none()),
-    Comp.bar(Nat.is_gt(n, v), n, v, top, (x1 - 12 : U32), (y + 12 : U32), (U32.from_nat(v) * 23 - 4 : U32)),
+    Bool.pick(Out, Bool.and(focused, Bool.and(Nat.is_ge(crow, top), Nat.is_lt(row, v))), Out.ops([D.Draw.caret(D.Clip.all(), (x0 + 16 + cx : U32), (y + 14 + (U32.from_nat(row) * Ty.px(ty, 23) : U32) : U32), 1, Ty.px(ty, 16), T.Th.accent(), 255, blink)]), Out.none()),
+    Bool.pick(Out, Bool.and(focused, Bool.and(Nat.is_ge(crow, top), Nat.is_lt(row, v))), Out{Nil{}, [Lay.hit((x0 + 16 + cx : U32), (y + 14 + (U32.from_nat(row) * Ty.px(ty, 23) : U32) : U32), 1, Ty.px(ty, 18), "ime-spot", "")]}, Out.none()),
+    Comp.bar(Nat.is_gt(n, v), n, v, top, (x1 - 12 : U32), (y + 12 : U32), (U32.from_nat(v) * Ty.px(ty, 23) - 4 : U32)),
     Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), (64 + eh : U32), "focus", "composer"), Lay.hit(0, 0, 0, 0, "cs", Nat.show(top) ++ "," ++ Nat.show(Nat.sub(n, v)))]},
     Out{List.append(&2, R.Op, Ty.text(ty, 2n, models, D.Clip.all(), (x0 + 16 : U32), fy, 28, T.Th.dim()), Lay.icon(ty, "chevron-down", D.Clip.all(), (x0 + 22 + Ty.width(ty, 2n, models) : U32), (fy + 6 : U32), T.Th.dim())), [Lay.hit((x0 + 8 : U32), fy, (Ty.width(ty, 2n, models) + 38 : U32), 28, "flag", "models")]},
     Lay.button(ty, D.Clip.all(), Comp.send_x(ty, x1, send), fy, send, Bool.pick(U32, String.eq(act, "interrupt"), T.Th.bad(), T.Th.accent()), act, ""),
@@ -2529,7 +2590,7 @@ def Comp.vert(up: Bool, +ty: Ty, +draft: String, +ls: List<&2, String>, +ss: Lis
 def Comp.under(h: S.Hit, +ty: Ty, +ls: List<&2, String>, +ss: List<&2, Nat>, +top: Nat, +x: U32, +y: U32) -> Nat:
   match h:
     case S.Hit{+x0, +y0, _, _, _, _}:
-      +r = Nat.add(top, U32.to_nat((U32.dim(y, (y0 + 10 : U32)) / 23 : U32)))
+      +r = Nat.add(top, U32.to_nat((U32.dim(y, (y0 + 10 : U32)) / Ty.px(ty, 23) : U32)))
       Comp.at(ty, ls, ss, Bool.pick(Nat, Nat.is_ge(r, List.length(&2, String, ls)), Nat.sub(List.length(&2, String, ls), 1n), r), U32.dim(x, (x0 + 16 : U32)))
 
 # the caret at c with the selection's other end at m; kept is the goal
@@ -2603,62 +2664,83 @@ def Comp.pend(+ty: Ty, s: S.Step) -> S.Step:
       S.Step{Comp.pend.k(String.is_empty(U.Ui.scratch(S.Nui.ui(n), "@cq")), ty, n, U.Ui.scratch(S.Nui.ui(n), "@cq")), cs, d}
 
 # whether the head line ends above top (it is out of view)
-def TL.above(ls: List<&2, TLine>, +y: U32, +top: U32) -> Bool:
+def TL.above.s(ls: List<&2, TLine>, +pct: U32, +y: U32, +top: U32) -> Bool:
   match ls:
     case TLine{_, _, +k, _, _} <> _:
-      U32.is_lt((y + TL.h(k) : U32), top)
+      U32.is_lt((y + TL.h.s(k, pct) : U32), top)
     case Nil{}:
       False{}
 
 # the lines from the first one that reaches the view
-def Lay.skip(ls: List<&2, TLine>, above: Bool, +y: U32, +top: U32) -> List<&2, TLine>:
+def TL.above(ls: List<&2, TLine>, +y: U32, +top: U32) -> Bool:
+  TL.above.s(ls, 100, y, top)
+
+def Lay.skip.s(ls: List<&2, TLine>, +pct: U32, above: Bool, +y: U32, +top: U32) -> List<&2, TLine>:
   match ls above:
     case TLine{_, _, +k, _, _} <> +rest True{}:
-      Lay.skip(rest, TL.above(rest, (y + TL.h(k) : U32), top), (y + TL.h(k) : U32), top)
+      Lay.skip.s(rest, pct, TL.above.s(rest, pct, (y + TL.h.s(k, pct) : U32), top), (y + TL.h.s(k, pct) : U32), top)
     case _ _:
       ls
 
-def Lay.skip_y(ls: List<&2, TLine>, +y: U32, +top: U32) -> U32:
+def Lay.skip(ls: List<&2, TLine>, above: Bool, +y: U32, +top: U32) -> List<&2, TLine>:
+  Lay.skip.s(ls, 100, above, y, top)
+
+def Lay.skip_y.s(ls: List<&2, TLine>, +pct: U32, +y: U32, +top: U32) -> U32:
   match ls:
     case Nil{}:
       y
     case TLine{_, _, +k, _, _} <> rest:
-      Bool.pick(U32, U32.is_lt((y + TL.h(k) : U32), top), Lay.skip_y(rest, (y + TL.h(k) : U32), top), y)
+      Bool.pick(U32, U32.is_lt((y + TL.h.s(k, pct) : U32), top), Lay.skip_y.s(rest, pct, (y + TL.h.s(k, pct) : U32), top), y)
 
 # the timeline sits between top and the composer, pinned to the bottom;
 # sc scrolls up into history
 # the lines from the first one still (partly) below `off` pixels, and how
 # many pixels the skipped lines took
-def TL.drop.more(ls: List<&2, TLine>, +acc: U32, +off: U32) -> Bool:
+def Lay.skip_y(ls: List<&2, TLine>, +y: U32, +top: U32) -> U32:
+  Lay.skip_y.s(ls, 100, y, top)
+
+def TL.drop.more.s(ls: List<&2, TLine>, +pct: U32, +acc: U32, +off: U32) -> Bool:
   match ls:
     case TLine{_, _, +k, _, _} <> _:
-      U32.is_le((acc + TL.h(k) : U32), off)
+      U32.is_le((acc + TL.h.s(k, pct) : U32), off)
     case Nil{}:
       False{}
 
-def TL.drop(ls: List<&2, TLine>, more: Bool, +acc: U32, +off: U32) -> List<&2, TLine>:
+def TL.drop.more(ls: List<&2, TLine>, +acc: U32, +off: U32) -> Bool:
+  TL.drop.more.s(ls, 100, acc, off)
+
+def TL.drop.s(ls: List<&2, TLine>, +pct: U32, more: Bool, +acc: U32, +off: U32) -> List<&2, TLine>:
   match ls more:
     case TLine{_, _, +k, _, _} <> +rest True{}:
-      TL.drop(rest, TL.drop.more(rest, (acc + TL.h(k) : U32), off), (acc + TL.h(k) : U32), off)
+      TL.drop.s(rest, pct, TL.drop.more.s(rest, pct, (acc + TL.h.s(k, pct) : U32), off), (acc + TL.h.s(k, pct) : U32), off)
     case _ _:
       ls
 
-def TL.drop.acc(ls: List<&2, TLine>, more: Bool, +acc: U32, +off: U32) -> U32:
+def TL.drop(ls: List<&2, TLine>, more: Bool, +acc: U32, +off: U32) -> List<&2, TLine>:
+  TL.drop.s(ls, 100, more, acc, off)
+
+def TL.drop.acc.s(ls: List<&2, TLine>, +pct: U32, more: Bool, +acc: U32, +off: U32) -> U32:
   match ls more:
     case TLine{_, _, +k, _, _} <> +rest True{}:
-      TL.drop.acc(rest, TL.drop.more(rest, (acc + TL.h(k) : U32), off), (acc + TL.h(k) : U32), off)
+      TL.drop.acc.s(rest, pct, TL.drop.more.s(rest, pct, (acc + TL.h.s(k, pct) : U32), off), (acc + TL.h.s(k, pct) : U32), off)
     case _ _:
       acc
 
 # how far down the lines the jump's rule is (the whole height when none)
-def TL.mark.y(ls: List<&2, TLine>, +acc: U32) -> U32:
+def TL.drop.acc(ls: List<&2, TLine>, more: Bool, +acc: U32, +off: U32) -> U32:
+  TL.drop.acc.s(ls, 100, more, acc, off)
+
+def TL.mark.y.s(ls: List<&2, TLine>, +pct: U32, +acc: U32) -> U32:
   match ls:
     case Nil{}:
       acc
     case TLine{_, _, +k, _, _} <> t:
-      Bool.pick(U32, U32.is_eq(k, 17), acc, TL.mark.y(t, (acc + TL.h(k) : U32)))
+      Bool.pick(U32, U32.is_eq(k, 17), acc, TL.mark.y.s(t, pct, (acc + TL.h.s(k, pct) : U32)))
 
 # the scroll that puts the rule a little under the top of the view
+def TL.mark.y(ls: List<&2, TLine>, +acc: U32) -> U32:
+  TL.mark.y.s(ls, 100, acc)
+
 def TL.jump.sc(+y: U32, +over: U32) -> U32:
   U32.dim(over, U32.min(U32.dim(y, 24), over))
 
@@ -2694,16 +2776,19 @@ def TL.hold.off(+hold: String, +sc: U32, +off: U32, +top: U32, +over: U32) -> U3
 
 # First entry with pixels below off. Keep its content-coordinate top as
 # well as its id; offsets can be deep inside a tall message.
-def TL.hold.head(ls: List<&2, TLine>, stop: Bool, +off: U32, +acc: U32, +id: String, +y: U32) -> String:
+def TL.hold.head.s(ls: List<&2, TLine>, +pct: U32, stop: Bool, +off: U32, +acc: U32, +id: String, +y: U32) -> String:
   match ls stop:
     case _ True{}:
       id ++ "|" ++ U32.show(y)
     case Nil{} False{}:
       id ++ "|" ++ U32.show(y)
     case TLine{_, _, 29, cp, _} <> t False{}:
-      TL.hold.head(t, False{}, off, acc, cp, acc)
+      TL.hold.head.s(t, pct, False{}, off, acc, cp, acc)
     case TLine{_, _, +k, _, _} <> t False{}:
-      TL.hold.head(t, U32.is_gt((acc + TL.h(k) : U32), off), off, (acc + TL.h(k) : U32), id, y)
+      TL.hold.head.s(t, pct, U32.is_gt((acc + TL.h.s(k, pct) : U32), off), off, (acc + TL.h.s(k, pct) : U32), id, y)
+
+def TL.hold.head(ls: List<&2, TLine>, stop: Bool, +off: U32, +acc: U32, +id: String, +y: U32) -> String:
+  TL.hold.head.s(ls, 100, stop, off, acc, id, y)
 
 def TL.hold.matches(ls: List<&2, TLine>, +id: String) -> Bool:
   match ls:
@@ -2713,16 +2798,19 @@ def TL.hold.matches(ls: List<&2, TLine>, +id: String) -> Bool:
       False{}
 
 # Find the old boundary, stopping at once when it is found.
-def TL.hold.find(ls: List<&2, TLine>, hit: Bool, +id: String, +acc: U32) -> Maybe<&2, U32>:
+def TL.hold.find.s(ls: List<&2, TLine>, +pct: U32, hit: Bool, +id: String, +acc: U32) -> Maybe<&2, U32>:
   match ls hit:
     case _ True{}:
       Some{acc}
     case Nil{} False{}:
       None{}
     case TLine{_, _, +k, _, _} <> +t False{}:
-      TL.hold.find(t, TL.hold.matches(t, id), id, (acc + TL.h(k) : U32))
+      TL.hold.find.s(t, pct, TL.hold.matches(t, id), id, (acc + TL.h.s(k, pct) : U32))
 
 # Move the entry's offset with both its content top and the panel top.
+def TL.hold.find(ls: List<&2, TLine>, hit: Bool, +id: String, +acc: U32) -> Maybe<&2, U32>:
+  TL.hold.find.s(ls, 100, hit, id, acc)
+
 def TL.hold.move(+off: Nat, +y0: Nat, +y1: Nat, +t0: Nat, +t1: Nat, +over: Nat) -> Nat:
   U.Hold.off(Nat.add(Nat.sub(off, y0), y1), t0, t1, over)
 
@@ -2733,10 +2821,10 @@ def TL.hold.place(at: Maybe<&2, U32>, +hold: String, +top: U32, +over: U32, fall
     case None{}:
       fallback
 
-def TL.hold.entry(still: Bool, +ls: List<&2, TLine>, +hold: String, +top: U32, +over: U32, off: U32) -> U32:
+def TL.hold.entry.s(still: Bool, +pct: U32, +ls: List<&2, TLine>, +hold: String, +top: U32, +over: U32, off: U32) -> U32:
   match still:
     case True{}:
-      TL.hold.place(TL.hold.find(ls, TL.hold.matches(ls, TL.hold.at(hold, 4n)), TL.hold.at(hold, 4n), 0), hold, top, over, off)
+      TL.hold.place(TL.hold.find.s(ls, pct, TL.hold.matches(ls, TL.hold.at(hold, 4n)), TL.hold.at(hold, 4n), 0), hold, top, over, off)
     case False{}:
       off
 
@@ -2745,19 +2833,22 @@ def TL.hold.entry(still: Bool, +ls: List<&2, TLine>, +hold: String, +top: U32, +
 # above the view (never negative: all arithmetic stays unsigned-safe).
 # hold: the last frame's place for this thread ("" none); first: the
 # page's first entry
+def TL.hold.entry(still: Bool, +ls: List<&2, TLine>, +hold: String, +top: U32, +over: U32, off: U32) -> U32:
+  TL.hold.entry.s(still, 100, ls, hold, top, over, off)
+
 def Lay.timeline(+ty: Ty, +ls: List<&2, TLine>, +x0: U32, +x1: U32, +top: U32, +h: U32, +sc: U32, +sel: TSel, +hold: String, +first: String, chrome: Out) -> Out:
   +bot = {(h - 132 : U32) : U32}
   +view = {U32.dim(bot, (top + 16 : U32)) : U32}
-  +total = TL.height(ls, 0)
+  +total = TL.height.s(ls, Ty.pct(ty), 0)
   +over = {U32.dim(total, view) : U32}
-  +off = TL.hold.entry(Bool.and(U32.is_ne(sc, 0), String.eq(TL.hold.at(hold, 0n), U32.show(sc))), ls, hold, top, over, TL.hold.off(hold, sc, U32.dim(over, U32.min(sc, over)), top, over))
+  +off = TL.hold.entry.s(Bool.and(U32.is_ne(sc, 0), String.eq(TL.hold.at(hold, 0n), U32.show(sc))), Ty.pct(ty), ls, hold, top, over, TL.hold.off(hold, sc, U32.dim(over, U32.min(sc, over)), top, over))
   +sc2 = {Bool.pick(U32, U32.is_eq(sc, 0), 0, (over - off : U32)) : U32}
-  +rest = TL.drop(ls, TL.drop.more(ls, 0, off), 0, off)
-  +acc = TL.drop.acc(ls, TL.drop.more(ls, 0, off), 0, off)
+  +rest = TL.drop.s(ls, Ty.pct(ty), TL.drop.more.s(ls, Ty.pct(ty), 0, off), 0, off)
+  +acc = TL.drop.acc.s(ls, Ty.pct(ty), TL.drop.more.s(ls, Ty.pct(ty), 0, off), 0, off)
   +ry = {((top + 16 + acc : U32) - off : U32) : U32}
   Out.all([TL.draw_all(ty, rest, TL.more(rest, ry, bot), D.Clip{x0, top, x1, bot}, x0, x1, ry, bot,
     Nat.sub(List.length(&2, TLine, ls), List.length(&2, TLine, rest)), sel), TL.sel.hit(ty, ls, sel, x0, x1), chrome,
-    Out{Nil{}, [Lay.hit(0, 0, 0, 0, "tl-at", U32.show(sc2) ++ "|" ++ U32.show(off) ++ "|" ++ U32.show(top) ++ "|" ++ first ++ "|" ++ TL.hold.head(ls, False{}, off, 0, "", 0)), Lay.hit(0, 0, 0, 0, "tl-most", U32.show(over)), Lay.hit(0, 0, 0, 0, "tl-jump", U32.show(TL.jump.sc(TL.mark.y(ls, 0), over))), Lay.hit(0, 0, 0, 0, "tl-clip", U32.show(x0) ++ "," ++ U32.show(top) ++ "," ++ U32.show(x1) ++ "," ++ U32.show(bot))]}])
+    Out{Nil{}, [Lay.hit(0, 0, 0, 0, "tl-at", U32.show(sc2) ++ "|" ++ U32.show(off) ++ "|" ++ U32.show(top) ++ "|" ++ first ++ "|" ++ TL.hold.head.s(ls, Ty.pct(ty), False{}, off, 0, "", 0)), Lay.hit(0, 0, 0, 0, "tl-most", U32.show(over)), Lay.hit(0, 0, 0, 0, "tl-jump", U32.show(TL.jump.sc(TL.mark.y.s(ls, Ty.pct(ty), 0), over))), Lay.hit(0, 0, 0, 0, "tl-clip", U32.show(x0) ++ "," ++ U32.show(top) ++ "," ++ U32.show(x1) ++ "," ++ U32.show(bot))]}])
 
 # Terminals over the thread
 # -------------------------
@@ -3060,18 +3151,21 @@ def Ask.shown(+n: Nat) -> Nat:
 def Ask.off(+off: Nat, +n: Nat, +show: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_gt(Nat.add(off, show), n), Nat.sub(n, show), off)
 
-def Ask.h.k(approval: Bool, +n: Nat) -> U32:
+def Ask.h.at(approval: Bool, +ty: Ty, +n: Nat) -> U32:
   match approval:
     case True{}:
-      (54 + (U32.from_nat(Ask.shown(n)) * 21 : U32) : U32)
+      (54 + (U32.from_nat(Ask.shown(n)) * Ty.px(ty, 21) : U32) : U32)
     case False{}:
       76
+
+def Ask.h.k(approval: Bool, +n: Nat) -> U32:
+  Ask.h.at(approval, Ty.none(), n)
 
 def Ask.std.h(+ty: Ty, a: M.Ask, +px: U32) -> U32:
   match a:
     case M.Ask{_, _, +k, _, +d, _, _, _}:
-      Bool.pick(U32, String.eq(k, "plan"), (U32.from_nat(List.length(&2, String, Ask.plan_lines(ty, d, px))) * 21 + 76 : U32),
-        Ask.h.k(String.eq(k, "approval"), List.length(&2, String, Ask.lines(ty, k, d, px))))
+      Bool.pick(U32, String.eq(k, "plan"), (U32.from_nat(List.length(&2, String, Ask.plan_lines(ty, d, px))) * Ty.px(ty, 21) + 76 : U32),
+        Ask.h.at(String.eq(k, "approval"), ty, List.length(&2, String, Ask.lines(ty, k, d, px))))
 
 # a paused browser task: its head, the question (at most four lines), the
 # screenshot and a row of buttons
@@ -3085,11 +3179,14 @@ def Ask.web.shot(t: U.TAsk) -> String:
     case U.TAsk{_, _, _, _, _, _, _, +shot, _}:
       shot
 
+def Ask.web.h.at(+ls: Nat, +ty: Ty, +shot: String) -> U32:
+  (U32.from_nat(ls) * Ty.px(ty, 22) + 78 + Bool.pick(U32, String.is_empty(shot), 0, 160) : U32)
+
 def Ask.web.h.k(+ls: Nat, +shot: String) -> U32:
-  (U32.from_nat(ls) * 22 + 78 + Bool.pick(U32, String.is_empty(shot), 0, 160) : U32)
+  Ask.web.h.at(ls, Ty.none(), shot)
 
 def Ask.web.h(+ty: Ty, +t: U.TAsk, +px: U32) -> U32:
-  Ask.web.h.k(List.length(&2, String, Ask.web.lines(ty, t, px)), Ask.web.shot(t))
+  Ask.web.h.at(List.length(&2, String, Ask.web.lines(ty, t, px)), ty, Ask.web.shot(t))
 
 def Ask.h.w(web: Bool, +ty: Ty, a: M.Ask, +nf: Map<&2, String>, +px: U32) -> U32:
   match web:
@@ -3130,7 +3227,7 @@ def Lay.plan.lines(+ty: Ty, ls: List<&2, String>, +x0: U32, +y: U32) -> Out:
     case Nil{}:
       Out.none()
     case l <> t:
-      Out.cat(Out.ops(Ty.text(ty, 3n, l, D.Clip.all(), (x0 + 14 : U32), y, 21, T.Th.soft())), Lay.plan.lines(ty, t, x0, (y + 21 : U32)))
+      Out.cat(Out.ops(Ty.text(ty, 3n, l, D.Clip.all(), (x0 + 14 : U32), y, Ty.px(ty, 21), T.Th.soft())), Lay.plan.lines(ty, t, x0, (y + Ty.px(ty, 21) : U32)))
 
 # the buttons of an ask, right to left
 def Ask.choices.loc(+l: I.Loc, +k: String, +id: String, +o: String, +draft: String) -> List<&2, S.Hit>:
@@ -3149,7 +3246,7 @@ def Ask.text.lines(+ty: Ty, ls: List<&2, String>, +x0: U32, +y: U32) -> Out:
     case Nil{}:
       Out.none()
     case l <> t:
-      Out.cat(Out.ops(Ty.text(ty, 4n, l, D.Clip.all(), (x0 + 14 : U32), y, 21, T.Th.text())), Ask.text.lines(ty, t, x0, (y + 21 : U32)))
+      Out.cat(Out.ops(Ty.text(ty, 4n, l, D.Clip.all(), (x0 + 14 : U32), y, Ty.px(ty, 21), T.Th.text())), Ask.text.lines(ty, t, x0, (y + Ty.px(ty, 21) : U32)))
 
 # the detail of an approval, from its first line shown
 def Ask.detail(+ty: Ty, +id: String, ls: List<&2, String>, +n: Nat, +show: Nat, +off: Nat, +x0: U32, +x1: U32, +y: U32, +h: U32) -> Out:
@@ -3218,17 +3315,17 @@ def Ask.rows(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32) -> List<&2, R.Op>:
     case Nil{}:
       Nil{}
     case l <> t:
-      List.append(&2, R.Op, Ty.text(ty, 3n, l, D.Clip.all(), x, y, 22, T.Th.text()), Ask.rows(t, ty, x, (y + 22 : U32)))
+      List.append(&2, R.Op, Ty.text(ty, 3n, l, D.Clip.all(), x, y, Ty.px(ty, 22), T.Th.text()), Ask.rows(t, ty, x, (y + Ty.px(ty, 22) : U32)))
 
 def Ask.web.card.k(+t: U.TAsk, +ty: Ty, +nf: Map<&2, String>, +x0: U32, +x1: U32, +y: U32) -> Out:
   +ls = {Ask.web.lines(ty, t, (x1 - x0 - 28 : U32)) : List<&2, String>}
   +shot = {Ask.web.shot(t) : String}
   +h = {Ask.web.h(ty, t, (x1 - x0 - 32 : U32)) : U32}
   +ly = {(y + 28 : U32) : U32}
-  +sy = {(ly + U32.from_nat(List.length(&2, String, ls)) * 22 + 4 : U32) : U32}
+  +sy = {(ly + U32.from_nat(List.length(&2, String, ls)) * Ty.px(ty, 22) + 4 : U32) : U32}
   Out.all([
     Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), h, 0, T.Th.panel(), T.Th.warn())),
-    Out.ops(Ty.text(ty, 2n, Ask.web.head.loc(Ty.loc(ty), t), D.Clip.all(), (x0 + 14 : U32), (y + 4 : U32), 22, T.Th.warn())),
+    Out.ops(Ty.text(ty, 2n, Ask.web.head.loc(Ty.loc(ty), t), D.Clip.all(), (x0 + 14 : U32), (y + 4 : U32), Ty.px(ty, 22), T.Th.warn())),
     Out.ops(Ask.rows(ls, ty, (x0 + 14 : U32), ly)),
     Out.when(Bool.not(String.is_empty(shot)), Lay.thumb(ty, Lay.tshot(U.Str.get(nf, "listen"), shot), U.Str.get(nf, "img:" ++ Lay.tshot(U.Str.get(nf, "listen"), shot)), (x0 + 14 : U32), sy, (x1 - x0 - 28 : U32), 148)),
     Ask.tbtns(Ask.web.btns(t), ty, (y + h - 36 : U32), (x1 - 12 : U32))])
@@ -3262,12 +3359,12 @@ def Btw.lines(+ty: Ty, +a: String, +w: U32) -> List<&2, String>:
 
 # the card's height with its gap below (0 with no question)
 def Btw.h(+ty: Ty, +q: String, +a: String, +w: U32) -> U32:
-  Bool.pick(U32, String.is_empty(q), 0, (48 + (U32.from_nat(List.length(&2, String, Btw.lines(ty, a, w))) * 20 : U32) : U32))
+  Bool.pick(U32, String.is_empty(q), 0, (48 + (U32.from_nat(List.length(&2, String, Btw.lines(ty, a, w))) * Ty.px(ty, 23) : U32) : U32))
 
 def Btw.card(+ty: Ty, +q: String, +a: String, +x0: U32, +x1: U32, +y: U32) -> Out:
   +ls = Btw.lines(ty, a, (x1 - x0 : U32))
   Out.all([
-    Out.ops(List.concat(&2, R.Op, [Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), (40 + (U32.from_nat(List.length(&2, String, ls)) * 20 : U32) : U32), 0, T.Th.raise(), T.Th.line()),
+    Out.ops(List.concat(&2, R.Op, [Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), (40 + (U32.from_nat(List.length(&2, String, ls)) * Ty.px(ty, 23) : U32) : U32), 0, T.Th.raise(), T.Th.line()),
       Ty.text(ty, 2n, Ty.fit(ty, 2n, "btw · " ++ q, (x1 - x0 - 64 : U32)), D.Clip.all(), (x0 + 16 : U32), (y + 6 : U32), 24, T.Th.dim())])),
     Lay.lines(ty, ls, D.Clip.all(), (x0 + 16 : U32), (y + 30 : U32)),
     Lay.ibutton(ty, D.Clip.all(), (x1 - 34 : U32), (y + 4 : U32), "x", T.Th.soft(), "btw-close", "")])
@@ -3371,7 +3468,7 @@ def Kn.h(n: Maybe<&2, KH.KNote>, +ty: Ty, +w: U32) -> U32:
   match n:
     case None{}: 0
     case Some{KH.KNote{_, title, body, _}}:
-      (70 + U32.from_nat(List.length(&2, String, Ty.wrap(ty, 1n, title, U32.dim(w, 64)))) * 24 + U32.from_nat(List.length(&2, String, Ty.wrap(ty, 2n, body, U32.dim(w, 32)))) * 20 : U32)
+      (70 + U32.from_nat(List.length(&2, String, Ty.wrap(ty, 1n, title, U32.dim(w, 64)))) * Ty.px(ty, 24) + U32.from_nat(List.length(&2, String, Ty.wrap(ty, 2n, body, U32.dim(w, 32)))) * Ty.px(ty, 20) : U32)
 
 def Kn.lines(ls: List<&2, String>, +ty: Ty, +face: Nat, +x: U32, +y: U32, +lh: U32, +color: U32) -> List<&2, R.Op>:
   match ls:
@@ -4071,94 +4168,323 @@ def Set.find(srch: Bool, +ty: Ty, +n: S.Nui, +x: U32, +y: U32, +w: U32) -> Out:
     case False{}:
       Out.none()
 
-def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
-  +label0 = MSG.T.settings.theme.light(Ty.loc(ty))
-  +label1 = MSG.T.settings.theme.dark(Ty.loc(ty))
-  +label2 = MSG.T.settings.sidebar.active(Ty.loc(ty))
-  +label3 = MSG.T.tour.title.projects(Ty.loc(ty))
-  +label4 = MSG.T.settings.channel.nightly(Ty.loc(ty))
-  +label5 = MSG.T.settings.channel.stable(Ty.loc(ty))
-  +label6 = MSG.T.common.close(Ty.loc(ty))
-  +w = {U32.min((x1 - x0 - 64 : U32), 720) : U32}
-  +x = {(x0 + U32.shr((x1 - x0 - w : U32)) : U32) : U32}
+# Anonymous usage (client.bend's Share.rows): On/Off, Reset id, Privacy and
+# Report an issue, drawn as Antigravity's rows are
+def Set.share.h(+ty: Ty, +n: S.Nui, +x: U32, +w: U32) -> U32:
+  (52 + Set.agy.sum(U.Share.rows(S.Nui.ui(n)), ty, x, w) : U32)
+
+def Set.share(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
+  +rs = U.Share.rows(S.Nui.ui(n))
+  Out.all([
+    Set.head(ty, U.Share.title(), x, y),
+    Set.card(x, (y + 32 : U32), w, (Set.agy.sum(rs, ty, x, w) + 10 : U32)),
+    Set.agy.rows(rs, ty, n, x, w, (y + 38 : U32))])
+
+def Set.page.threads(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+
+  Out.all([
+    Set.threads(ty, st, n, x, w, (y - 76 : U32))])
+
+def Set.page.threads.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+
+  (200 + Set.notify.h(st, ty, w) + Set.fallback.h(ty, n, x, w) : U32)
+
+def Set.page.agents(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
   +prov = M.Setting.get(st, "agent.provider", "claude")
-  +ipc = M.Setting.get(st, "kicad.ipc", "on")
   +mi = U.Models.of(info, prov)
   +srch = U.Models.search(U.Models.menu(mi, prov))
   +fh = {Bool.pick(U32, srch, 38, 0) : U32}
   +ms = U.Models.settings(mi, prov, U.Ui.scratch(S.Nui.ui(n), "@f.mq"), M.Setting.get(st, "agent.model", ""))
   +dy = {(Set.rows(ty, ms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 + 26 + fh : U32) : U32}
+  +pr = (Set.rows(ty, ["claude", "codex", "grok", "muse", "antigravity", "opencode"], (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32)
+  Out.all([
+    Set.head(ty, MSG.T.settings.agents(Ty.loc(ty)), x, (y : U32)),
+    Set.card(x, (y + 32 : U32), w, (124 + dy + pr : U32)),
+    Set.row(ty, MSG.T.settings.agents.default(Ty.loc(ty)), MSG.T.settings.agents.note(Ty.loc(ty), Set.cli.loc(Ty.loc(ty), U.Models.cli(U.Str.get(info, "models"), prov), prov)), x, (y + 34 : U32), w),
+    Set.chips(ty, ["claude", "codex", "grok", "muse", "antigravity", "opencode"], prov, "agent.provider", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (y + 82 : U32)),
+    Set.find(srch, ty, n, (x + 16 : U32), (y + 116 + pr : U32), (w - 32 : U32)),
+    Set.chips(ty, ms, M.Setting.get(st, "agent.model", ""), "agent.model", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (y + 116 + fh + pr : U32)),
+    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line.loc(Ty.loc(ty), U.Models.label_of(mi, prov, M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", "")), (w - 32 : U32)),
+      D.Clip.all(), (x + 16 : U32), (y + 126 + dy + pr : U32), 24, T.Th.dim()))])
+
+def Set.page.agents.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+  +prov = M.Setting.get(st, "agent.provider", "claude")
+  +mi = U.Models.of(info, prov)
+  +srch = U.Models.search(U.Models.menu(mi, prov))
+  +fh = {Bool.pick(U32, srch, 38, 0) : U32}
+  +ms = U.Models.settings(mi, prov, U.Ui.scratch(S.Nui.ui(n), "@f.mq"), M.Setting.get(st, "agent.model", ""))
+  +dy = {(Set.rows(ty, ms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 + 26 + fh : U32) : U32}
+  +pr = (Set.rows(ty, ["claude", "codex", "grok", "muse", "antigravity", "opencode"], (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32)
+  (176 + dy + pr : U32)
+
+def Set.page.writing(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
   +tp = U.TextGen.provider(st)
   +tm = U.TextGen.model(st)
   +tms = U.Models.menu(U.Str.get(info, "models"), tp)
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
+  +pr = (Set.rows(ty, ["claude", "codex", "grok", "muse"], (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32)
+  Out.all([
+    Set.head(ty, MSG.T.settings.writing(Ty.loc(ty)), x, (y : U32)),
+    Set.card(x, (y + 32 : U32), w, (150 + er + pr : U32)),
+    Set.row(ty, MSG.T.settings.writing.model(Ty.loc(ty)), MSG.T.settings.writing.note(Ty.loc(ty)), x, (y + 34 : U32), w),
+    Set.chips(ty, ["claude", "codex", "grok", "muse"], tp, "text.provider", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (y + 82 : U32)),
+    Set.chips(ty, tms, tm, "text.model", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (y + 116 + pr : U32)),
+    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line.loc(Ty.loc(ty), U.Models.label_of(U.Str.get(info, "models"), tp, tm), tm), (w - 32 : U32)),
+      D.Clip.all(), (x + 16 : U32), (y + 152 + er + pr : U32), 24, T.Th.dim()))])
+
+def Set.page.writing.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+  +tp = U.TextGen.provider(st)
+  +tms = U.Models.menu(U.Str.get(info, "models"), tp)
+  +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
+  +pr = (Set.rows(ty, ["claude", "codex", "grok", "muse"], (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32)
+  (ey + pr : U32)
+
+def Set.page.cad(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+  +ipc = M.Setting.get(st, "kicad.ipc", "on")
   +kn = U.KN.of(info, st)
   +kh = {(40 + Kn.h(kn, ty, (w - 32 : U32)) : U32) : U32}
-  # (the Browser row, then the Ordering group, then Appearance)
-  +fy = {(ey + 278 + kh : U32) : U32}
-  +total = {(1196 + Set.fallback.h(ty, n, x, w) + Set.notify.h(st, ty, w) + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 132 : U32) : U32}
-  +off = {U32.min(raw, U32.dim(total, h)) : U32}
-  +b = {(0 - off : U32) : U32}
-  +b2 = {(b + 64 + Set.fallback.h(ty, n, x, w) + Set.notify.h(st, ty, w) : U32) : U32}
   Out.all([
-    Out{Nil{}, [Lay.hit(x0, 52, (x1 - x0 : U32), (h - 52 : U32), "set-bg", U32.show(U32.dim(total, h)))]},
-    Out.hits_below(52, Out.all([
-    Set.threads(ty, st, n, x, w, b),
-    Set.head(ty, MSG.T.settings.agents(Ty.loc(ty)), x, (b2 + 192 : U32)),
-    Set.card(x, (b2 + 224 : U32), w, (124 + dy : U32)),
-    Set.row(ty, MSG.T.settings.agents.default(Ty.loc(ty)), MSG.T.settings.agents.note(Ty.loc(ty), Set.cli.loc(Ty.loc(ty), U.Models.cli(U.Str.get(info, "models"), prov), prov)), x, (b2 + 226 : U32), w),
-    Set.chips(ty, ["claude", "codex", "grok", "muse", "antigravity", "opencode"], prov, "agent.provider", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 274 : U32)),
-    Set.find(srch, ty, n, (x + 16 : U32), (b2 + 308 : U32), (w - 32 : U32)),
-    Set.chips(ty, ms, M.Setting.get(st, "agent.model", ""), "agent.model", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 308 + fh : U32)),
-    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line.loc(Ty.loc(ty), U.Models.label_of(mi, prov, M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", "")), (w - 32 : U32)),
-      D.Clip.all(), (x + 16 : U32), (b2 + 318 + dy : U32), 24, T.Th.dim())),
-    Set.head(ty, MSG.T.settings.writing(Ty.loc(ty)), x, (b2 + 368 + dy : U32)),
-    Set.card(x, (b2 + 400 + dy : U32), w, (150 + er : U32)),
-    Set.row(ty, MSG.T.settings.writing.model(Ty.loc(ty)), MSG.T.settings.writing.note(Ty.loc(ty)), x, (b2 + 402 + dy : U32), w),
-    Set.chips(ty, ["claude", "codex", "grok", "muse"], tp, "text.provider", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 450 + dy : U32)),
-    Set.chips(ty, tms, tm, "text.model", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 484 + dy : U32)),
-    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line.loc(Ty.loc(ty), U.Models.label_of(U.Str.get(info, "models"), tp, tm), tm), (w - 32 : U32)),
-      D.Clip.all(), (x + 16 : U32), (b2 + 520 + dy + er : U32), 24, T.Th.dim())),
-    Set.head(ty, MSG.T.settings.cad(Ty.loc(ty)), x, (b2 + 368 + dy + ey : U32)),
-    Set.card(x, (b2 + 400 + dy + ey : U32), w, (252 + kh : U32)),
-    Set.row(ty, "KiCad", U.KN.summary(info), x, (b2 + 402 + dy + ey : U32), w),
-    Kn.path(ty, n, (x + 16 : U32), (b2 + 450 + dy + ey : U32), (w - 32 : U32)),
-    Kn.draw(kn, False{}, ty, (x + 16 : U32), (b2 + 490 + dy + ey : U32), (w - 32 : U32)),
-    Set.row.r(ty, U.KiCad.ipc.label(Ty.loc(ty), info), U.KiCad.ipc.note(Ty.loc(ty), info), x, (b2 + 486 + dy + ey + kh : U32), w, Bool.pick(U32, U.KiCad.ipc.ready(info), Set.pairw(ty, MSG.T.settings.lang.on(Ty.loc(ty)), MSG.T.settings.lang.off(Ty.loc(ty)), 140), 0)),
-    Bool.pick(Out, U.KiCad.ipc.ready(info), Set.ipc(ty, ipc, x, w, (b2 + 500 + dy + ey + kh : U32)), Out.none()),
-    Set.row(ty, U.FreeCAD.label.loc(Ty.loc(ty), info), U.FreeCAD.note(Ty.loc(ty), info), x, (b2 + 546 + dy + ey + kh : U32), w),
-    Set.browser(ty, CF.Cef.requested(M.Setting.get(st, "browser.engine", CF.Cef.default())), U.Str.get(info, "browser.engine.err"), U.Str.get(info, "browser.engine.live"), x, w, (b2 + 598 + dy + ey + kh : U32)),
-    Set.order(ty, st, x, w, (b2 + 674 + dy + ey + kh : U32)),
-    Set.head(ty, MSG.T.settings.appearance(Ty.loc(ty)), x, (b2 + 570 + dy + fy : U32)),
-    Set.card(x, (b2 + 602 + dy + fy : U32), w, 220),
-    Set.row.r(ty, MSG.T.settings.theme(Ty.loc(ty)), MSG.T.settings.theme.note(Ty.loc(ty)), x, (b2 + 604 + dy + fy : U32), w, Set.pairw(ty, label0, label1, 150)),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label0) - 6 - Lay.button.w(ty, label1) : U32), (b2 + 618 + dy + fy : U32), label1, Bool.not(String.eq(M.Setting.get(st, "ui.theme", ""), "light")), "setting", "ui.theme=dark"),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label0) : U32), (b2 + 618 + dy + fy : U32), label0, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "setting", "ui.theme=light"),
-    Set.lang(ty, S.Nui.ui(n), x, w, (b2 + 656 + dy + fy : U32)),
-    Set.row.r(ty, MSG.T.settings.sidebar(Ty.loc(ty)), MSG.T.settings.sidebar.note(Ty.loc(ty)), x, (b2 + 760 + dy + fy : U32), w, Set.pairw(ty, label2, label3, 190)),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label2) - 6 - Lay.button.w(ty, label3) : U32), (b2 + 774 + dy + fy : U32), label3, Bool.not(String.eq(U.Side.view(st), "active")), "setting", "sidebar.view=projects"),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label2) : U32), (b2 + 774 + dy + fy : U32), label2, String.eq(U.Side.view(st), "active"), "setting", "sidebar.view=active"),
-    Set.head(ty, MSG.T.settings.network(Ty.loc(ty)), x, (b2 + 846 + dy + fy : U32)),
-    Set.card(x, (b2 + 878 + dy + fy : U32), w, 216),
-    Set.row(ty, U.Tail.label(Ty.loc(ty), info), U.Tail.note(Ty.loc(ty), info), x, (b2 + 880 + dy + fy : U32), w),
-    Set.pair(ty, info, Pq.on(n), x, w, (b2 + 932 + dy + fy : U32)),
-    Set.row.r(ty, "Backplane " ++ v, U.Update.line.w(Ty.loc(ty), st, info, note), x, (b2 + 984 + dy + fy : U32), w, U32.max(150, (Lay.button.w(ty, Set.update.label(U.Update.btn(st, info, note), Ty.loc(ty))) + 22 : U32))),
-    Set.update.btn(U.Update.btn(st, info, note), ty, x, w, (b2 + 994 + dy + fy : U32)),
-    Set.row.r(ty, MSG.T.settings.channel(Ty.loc(ty)), MSG.T.settings.channel.note(Ty.loc(ty)), x, (b2 + 1036 + dy + fy : U32), w, Set.pairw(ty, label4, label5, 190)),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label4) - 6 - Lay.button.w(ty, label5) : U32), (b2 + 1050 + dy + fy : U32), label5, Bool.not(String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly")), "setting", "update.channel=stable"),
-    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label4) : U32), (b2 + 1050 + dy + fy : U32), label4, String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly"), "setting", "update.channel=nightly"),
-    Set.voice(ty, st, n, x, w, (b2 + 1114 + dy + fy : U32)),
-    Set.mates(ty, n, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) : U32)),
-    Set.keys(ty, n, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) : U32)),
-    Set.agy(ty, n, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + 16 : U32)),
-    Set.tz(ty, n, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + 16 : U32)),
-    Set.usage(ty, n, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + 16 : U32)),
-    Set.tour(ty, x, w, (b2 + 1114 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + Set.agy.h(ty, n, x, w) + Set.tz.h() + Set.usage.h(n) + 16 : U32))])),
-    Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 51, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255)],
-      Ty.text(ty, 0n, MSG.T.palette.settings(Ty.loc(ty)), D.Clip.all(), (x0 + 24 : U32), 0, 52, T.Th.text())), Nil{}},
-    Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, label6) : U32), 12, label6, T.Th.soft(), "flag", "settings"),
-    Pq.over(Pq.on(n), ty, info, x0, x1, h)])
+    Set.head(ty, MSG.T.settings.cad(Ty.loc(ty)), x, (y : U32)),
+    Set.card(x, (y + 32 : U32), w, (252 + kh : U32)),
+    Set.row(ty, "KiCad", U.KN.summary(info), x, (y + 34 : U32), w),
+    Kn.path(ty, n, (x + 16 : U32), (y + 82 : U32), (w - 32 : U32)),
+    Kn.draw(kn, False{}, ty, (x + 16 : U32), (y + 122 : U32), (w - 32 : U32)),
+    Set.row.r(ty, U.KiCad.ipc.label(Ty.loc(ty), info), U.KiCad.ipc.note(Ty.loc(ty), info), x, (y + 118 + kh : U32), w, Bool.pick(U32, U.KiCad.ipc.ready(info), Set.pairw(ty, MSG.T.settings.lang.on(Ty.loc(ty)), MSG.T.settings.lang.off(Ty.loc(ty)), 140), 0)),
+    Bool.pick(Out, U.KiCad.ipc.ready(info), Set.ipc(ty, ipc, x, w, (y + 132 + kh : U32)), Out.none()),
+    Set.row(ty, U.FreeCAD.label.loc(Ty.loc(ty), info), U.FreeCAD.note(Ty.loc(ty), info), x, (y + 178 + kh : U32), w),
+    Set.browser(ty, CF.Cef.requested(M.Setting.get(st, "browser.engine", CF.Cef.default())), U.Str.get(info, "browser.engine.err"), U.Str.get(info, "browser.engine.live"), x, w, (y + 230 + kh : U32)),
+    Set.order(ty, st, x, w, (y + 306 + kh : U32))])
+
+def Set.page.cad.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+  +kn = U.KN.of(info, st)
+  +kh = {(40 + Kn.h(kn, ty, (w - 32 : U32)) : U32) : U32}
+  (500 + kh : U32)
+
+def Set.scale.btns(vs: List<&2, String>) -> List<&2, VBtn>:
+  match vs:
+    case Nil{}: Nil{}
+    case +v <> t: VBtn{TS.Scale.label(v), "setting", "ui.text_scale=" ++ v} <> Set.scale.btns(t)
+
+def Set.scale.h(+ty: Ty, +x: U32, +w: U32) -> U32:
+  (100 + Vx.chips.rows(Set.scale.btns(TS.Scale.options()), ty, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32)
+
+def Set.scale(+ty: Ty, +st: M.State, +x: U32, +w: U32, +y: U32) -> Out:
+  Out.all([Set.card(x, y, w, (Set.scale.h(ty, x, w) - 16 : U32)),
+    Set.row(ty, MSG.T.settings.textsize(Ty.loc(ty)), MSG.T.settings.textsize.note(Ty.loc(ty)), x, (y + 4 : U32), w),
+    Vx.chips(Set.scale.btns(TS.Scale.options()), ty, "ui.text_scale=" ++ U32.show(TS.Scale.of(st)), (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (y + 52 : U32))])
+
+def Set.page.appearance(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+  +label0 = MSG.T.settings.theme.light(Ty.loc(ty))
+  +label1 = MSG.T.settings.theme.dark(Ty.loc(ty))
+  +label2 = MSG.T.settings.sidebar.active(Ty.loc(ty))
+  +label3 = MSG.T.tour.title.projects(Ty.loc(ty))
+  Out.all([
+    Set.head(ty, MSG.T.settings.appearance(Ty.loc(ty)), x, (y : U32)),
+    Set.card(x, (y + 32 : U32), w, 220),
+    Set.row.r(ty, MSG.T.settings.theme(Ty.loc(ty)), MSG.T.settings.theme.note(Ty.loc(ty)), x, (y + 34 : U32), w, Set.pairw(ty, label0, label1, 150)),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label0) - 6 - Lay.button.w(ty, label1) : U32), (y + 48 : U32), label1, Bool.not(String.eq(M.Setting.get(st, "ui.theme", ""), "light")), "setting", "ui.theme=dark"),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label0) : U32), (y + 48 : U32), label0, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "setting", "ui.theme=light"),
+    Set.lang(ty, S.Nui.ui(n), x, w, (y + 86 : U32)),
+    Set.row.r(ty, MSG.T.settings.sidebar(Ty.loc(ty)), MSG.T.settings.sidebar.note(Ty.loc(ty)), x, (y + 190 : U32), w, Set.pairw(ty, label2, label3, 190)),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label2) - 6 - Lay.button.w(ty, label3) : U32), (y + 204 : U32), label3, Bool.not(String.eq(U.Side.view(st), "active")), "setting", "sidebar.view=projects"),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label2) : U32), (y + 204 : U32), label2, String.eq(U.Side.view(st), "active"), "setting", "sidebar.view=active"),
+    Set.scale(ty, st, x, w, (y + 268 : U32))])
+
+def Set.page.appearance.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+
+  (268 + Set.scale.h(ty, x, w) : U32)
+
+def Set.page.network(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+  +label4 = MSG.T.settings.channel.nightly(Ty.loc(ty))
+  +label5 = MSG.T.settings.channel.stable(Ty.loc(ty))
+  Out.all([
+    Set.head(ty, MSG.T.settings.network(Ty.loc(ty)), x, (y : U32)),
+    Set.card(x, (y + 32 : U32), w, 216),
+    Set.row(ty, U.Tail.label(Ty.loc(ty), info), U.Tail.note(Ty.loc(ty), info), x, (y + 34 : U32), w),
+    Set.pair(ty, info, Pq.on(n), x, w, (y + 86 : U32)),
+    Set.row.r(ty, "Backplane " ++ v, U.Update.line.w(Ty.loc(ty), st, info, note), x, (y + 138 : U32), w, U32.max(150, (Lay.button.w(ty, Set.update.label(U.Update.btn(st, info, note), Ty.loc(ty))) + 22 : U32))),
+    Set.update.btn(U.Update.btn(st, info, note), ty, x, w, (y + 148 : U32)),
+    Set.row.r(ty, MSG.T.settings.channel(Ty.loc(ty)), MSG.T.settings.channel.note(Ty.loc(ty)), x, (y + 190 : U32), w, Set.pairw(ty, label4, label5, 190)),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label4) - 6 - Lay.button.w(ty, label5) : U32), (y + 204 : U32), label5, Bool.not(String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly")), "setting", "update.channel=stable"),
+    Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, label4) : U32), (y + 204 : U32), label4, String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly"), "setting", "update.channel=nightly")])
+
+def Set.page.network.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+
+  268
+
+def Set.page.voice(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+
+  Out.all([
+    Set.voice(ty, st, n, x, w, (y : U32))])
+
+def Set.page.voice.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+
+  Set.voice.h(ty, n, x, w)
+
+def Set.page.mates(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+
+  Out.all([
+    Set.mates(ty, n, x, w, (y : U32))])
+
+def Set.page.mates.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+
+  Set.mates.h(n)
+
+def Set.page.keys(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+
+  Out.all([
+    Set.keys(ty, n, x, w, (y : U32))])
+
+def Set.page.keys.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+
+  Set.keys.h(n)
+
+def Set.page.antigravity(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+
+  Out.all([
+    Set.agy(ty, n, x, w, (y : U32))])
+
+def Set.page.antigravity.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+
+  Set.agy.h(ty, n, x, w)
+
+def Set.page.timezone(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+
+  Out.all([
+    Set.tz(ty, n, x, w, (y : U32))])
+
+def Set.page.timezone.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+
+  Set.tz.h()
+
+def Set.page.usage(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+
+  Out.all([
+    Set.usage(ty, n, x, w, (y : U32))])
+
+def Set.page.usage.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+
+  Set.usage.h(n)
+
+def Set.page.about(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+
+  Out.all([
+    Set.tour(ty, x, w, (y : U32))])
+
+def Set.page.about.h(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+
+  132
+
+def Set.page.h(i: Nat, +ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+  match i:
+    case 0n: Set.page.appearance.h(ty, st, n, info, v, note, x, w)
+    case 1n: Set.page.threads.h(ty, st, n, info, v, note, x, w)
+    case 2n: Set.page.agents.h(ty, st, n, info, v, note, x, w)
+    case 3n: Set.page.writing.h(ty, st, n, info, v, note, x, w)
+    case 4n: Set.page.cad.h(ty, st, n, info, v, note, x, w)
+    case 5n: (Set.page.network.h(ty, st, n, info, v, note, x, w) + Set.page.mates.h(ty, st, n, info, v, note, x, w) : U32)
+    case 6n: Set.page.voice.h(ty, st, n, info, v, note, x, w)
+    case 7n: Set.page.keys.h(ty, st, n, info, v, note, x, w)
+    case 8n: Set.page.antigravity.h(ty, st, n, info, v, note, x, w)
+    case 9n: Set.page.timezone.h(ty, st, n, info, v, note, x, w)
+    case 10n: Set.page.usage.h(ty, st, n, info, v, note, x, w)
+    case 11n: Set.page.about.h(ty, st, n, info, v, note, x, w)
+    case 12n: Set.share.h(ty, n, x, w)
+    case _: 0
+
+def Set.page.draw(i: Nat, +ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+  match i:
+    case 0n: Set.page.appearance(ty, st, n, info, v, note, x, w, y)
+    case 1n: Set.page.threads(ty, st, n, info, v, note, x, w, y)
+    case 2n: Set.page.agents(ty, st, n, info, v, note, x, w, y)
+    case 3n: Set.page.writing(ty, st, n, info, v, note, x, w, y)
+    case 4n: Set.page.cad(ty, st, n, info, v, note, x, w, y)
+    case 5n: Out.cat(Set.page.network(ty, st, n, info, v, note, x, w, y), Set.page.mates(ty, st, n, info, v, note, x, w, (y + Set.page.network.h(ty, st, n, info, v, note, x, w) : U32)))
+    case 6n: Set.page.voice(ty, st, n, info, v, note, x, w, y)
+    case 7n: Set.page.keys(ty, st, n, info, v, note, x, w, y)
+    case 8n: Set.page.antigravity(ty, st, n, info, v, note, x, w, y)
+    case 9n: Set.page.timezone(ty, st, n, info, v, note, x, w, y)
+    case 10n: Set.page.usage(ty, st, n, info, v, note, x, w, y)
+    case 11n: Set.page.about(ty, st, n, info, v, note, x, w, y)
+    case 12n: Set.share(ty, n, x, w, y)
+    case _: Out.none()
+
+def Set.menu.rh(+ty: Ty, +page: String, +w: U32) -> U32:
+  (24 + U32.from_nat(List.length(&2, String, Ty.wrap(ty, 1n, U.Settings.title(Ty.loc(ty), page), U32.dim(w, 64)))) * 24 : U32)
+
+def Set.menu.h(ps: List<&2, String>, +ty: Ty, +w: U32) -> U32:
+  match ps:
+    case Nil{}: 16
+    case +p <> t: (Set.menu.rh(ty, p, w) + 8 + Set.menu.h(t, ty, w) : U32)
+
+def Set.menu(ps: List<&2, String>, +ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
+  match ps:
+    case Nil{}: Out.none()
+    case +p <> t:
+      +rh = Set.menu.rh(ty, p, w)
+      Out.all([Set.card(x, y, w, rh),
+        Out.ops(Kn.lines(Ty.wrap(ty, 1n, U.Settings.title(Ty.loc(ty), p), U32.dim(w, 64)), ty, 1n, (x + 16 : U32), (y + 12 : U32), 24, T.Th.text())),
+        Out.ops(Ty.text(ty, 1n, "›", D.Clip.all(), (x + w - 28 : U32), y, rh, T.Th.dim())),
+        Out{Nil{}, [Lay.hit(x, y, w, rh, "settings-page", p)]},
+        Set.menu(t, ty, x, w, (y + rh + 8 : U32))])
+
+def Set.body(root: Bool, +i: Nat, +ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32, +y: U32) -> Out:
+  match root:
+    case True{}: Set.menu(U.Settings.pages(), ty, x, w, y)
+    case False{}: Set.page.draw(i, ty, st, n, info, v, note, x, w, y)
+
+def Set.height(root: Bool, +i: Nat, +ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x: U32, +w: U32) -> U32:
+  match root:
+    case True{}: Set.menu.h(U.Settings.pages(), ty, w)
+    case False{}: Set.page.h(i, ty, st, n, info, v, note, x, w)
+
+def Set.back(root: Bool, +ty: Ty, +x: U32) -> Out:
+  match root:
+    case True{}: Out.none()
+    case False{}: Lay.button(ty, D.Clip.all(), x, 48, "‹ " ++ MSG.T.palette.settings(Ty.loc(ty)), T.Th.soft(), "settings-page", "")
+
+def Set.focus.one(h: S.Hit, +id: String) -> List<&2, R.Op>:
+  match h:
+    case S.Hit{+x0, +y0, +x1, +y1, +a, +v}:
+      Bool.pick(List<&2, R.Op>, String.eq(a ++ "\t" ++ v, id),
+        [D.Draw.rect(D.Clip.all(), x0, y0, (x1 - x0 : U32), 2, T.Th.accent(), 255), D.Draw.rect(D.Clip.all(), x0, (y1 - 2 : U32), (x1 - x0 : U32), 2, T.Th.accent(), 255), D.Draw.rect(D.Clip.all(), x0, y0, 2, (y1 - y0 : U32), T.Th.accent(), 255), D.Draw.rect(D.Clip.all(), (x1 - 2 : U32), y0, 2, (y1 - y0 : U32), T.Th.accent(), 255)], Nil{})
+
+def Set.focus.ops(hs: List<&2, S.Hit>, +id: String) -> List<&2, R.Op>:
+  match hs:
+    case Nil{}: Nil{}
+    case h <> t: List.append(&2, R.Op, Set.focus.one(h, id), Set.focus.ops(t, id))
+
+def Set.focus(o: Out, +id: String) -> Out:
+  match o:
+    case Out{os, +hs}: Out{List.append(&2, R.Op, os, Set.focus.ops(hs, id)), hs}
+
+def Set.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
+  +page = U.Settings.page(S.Nui.ui(n))
+  +root = String.is_empty(page)
+  +i = CC.Codec.pos(U.Settings.pages(), page)
+  +w = U32.min(U32.dim((x1 - x0 : U32), 32), 720)
+  +x = (x0 + U32.shr((x1 - x0 - w : U32)) : U32)
+  +top = {88 : U32}
+  +total = Set.height(root, i, ty, st, n, info, v, note, x, w)
+  +most = U32.dim((total + top : U32), h)
+  +off = U32.min(raw, most)
+  +close = MSG.T.common.close(Ty.loc(ty))
+  Set.focus(Out.all([
+    Out{[D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), h, T.Th.bg(), 255)], [Lay.hit(x0, 0, (x1 - x0 : U32), h, "set-bg", U32.show(most))]},
+    Out{Nil{}, [Lay.hit(x0, top, (x1 - x0 : U32), U32.dim(h, top), "set-bg", U32.show(most))]},
+    Out.hits_below(top, Set.body(root, i, ty, st, n, info, v, note, x, w, (top - off : U32))),
+    Out.ops([D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), top, T.Th.bg(), 255)]),
+    Out.ops(Ty.text(ty, 0n, Ty.fit(ty, 0n, Bool.pick(String, root, MSG.T.palette.settings(Ty.loc(ty)), U.Settings.title(Ty.loc(ty), page)), U32.dim(w, (Lay.button.w(ty, close) + 16 : U32))), D.Clip.all(), x, 0, 44, T.Th.text())),
+    Set.back(root, ty, x),
+    Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, close) : U32), 12, close, T.Th.soft(), "flag", "settings"),
+    Pq.over(Pq.on(n), ty, info, x0, x1, h)]), U.Ui.scratch(S.Nui.ui(n), "@set.focus"))
+
+# A narrow settings pane uses the window so controls still have room after
+# display scaling. The ordinary desktop keeps the project sidebar visible.
+def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
+  Set.settings(ty, st, n, info, v, note, Bool.pick(U32, U32.is_lt(U32.dim(x1, x0), 560), 0, x0), x1, h, raw)
+
 
 # Terminal
 # --------
@@ -4179,7 +4505,7 @@ def Term.runs(+ty: Ty, rs: List<&2, VT.VRun>, +cw: U32, +c: D.Clip, +x: U32, +y:
       +w = {(Term.cells(t, 0) * cw : U32) : U32}
       List.concat(&2, R.Op, [
         Bool.pick(List<&2, R.Op>, U32.is_eq(bg, VT.Vt.bg()), Nil{}, [D.Draw.rect(c, x, y, w, 18, bg, 255)]),
-        Ty.text(ty, Bool.pick(Nat, bold, 1n, 4n), t, c, x, y, 18, fg),
+        Ty.text(ty, Bool.pick(Nat, Bool.and(bold, U32.is_eq(Ty.pct(ty), 100)), 1n, 5n), t, c, x, y, 18, fg),
         Term.runs(ty, rest, cw, c, (x + w : U32), y)])
 
 def Term.lines(+ty: Ty, ls: List<&2, VT.VLine>, +cw: U32, +c: D.Clip, +x: U32, +y: U32) -> List<&2, R.Op>:
@@ -4242,7 +4568,7 @@ def Lay.pins(+ty: Ty, +ec: U.Ec, vs: List<&2, EM.EV>, +x0: U32, +x1: U32, +y: U3
 
 # the thread's terminal (ctrl+j), a shell in the thread's directory
 def Lay.term(+ty: Ty, +v: VT.Vt, +x0: U32, +x1: U32, +y0: U32, +h: U32, +focused: Bool, +blink: Bool) -> Out:
-  +cw = {U32.max(Ty.width(ty, 4n, "0"), 1) : U32}
+  +cw = {U32.max(Ty.width(ty, 5n, "0"), 1) : U32}
   +c = {D.Clip{x0, (y0 + 28 : U32), x1, h} : D.Clip}
   Out.all([
     Out.ops([D.Draw.rect(D.Clip.all(), x0, y0, (x1 - x0 : U32), (h - y0 : U32), VT.Vt.bg(), 255),
@@ -4838,12 +5164,50 @@ def Page.strip(on: Bool, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32) -> Out:
         Page.back(Bool.not(String.is_empty(U.Teach.drive(u, U.Ui.page(u)))), ty, u, x1))
     case False{}: Out.none()
 
+# Always-visible browser chrome; the native child starts below both rows.
+def Page.tab.label(+tab: J.Json) -> String:
+  +title = J.Json.get_str(tab, "title", "")
+  Bool.pick(String, String.is_empty(title), J.Json.get_str(tab, "url", "New tab"), title)
+
+def Page.tabs(ts: List<&2, J.Json>, +ty: Ty, +x: U32, +y: U32, +w: U32) -> Out:
+  match ts:
+    case Nil{}: Out.none()
+    case +tab <> rest:
+      +id = J.Json.get_str(tab, "id", "")
+      Out.cat(Out.all([
+        Out.ops([D.Draw.rect(D.Clip.all(), x, y, w, 32, Bool.pick(U32, J.Json.get_bool(tab, "active", False{}), T.Th.sel(), T.Th.panel()), 255)]),
+        Out{Ty.text(ty, 2n, Ty.fit(ty, 2n, Page.tab.label(tab), U32.dim(w, 38)), D.Clip.all(), (x + 8 : U32), y, 32, T.Th.text()),
+          [Lay.hit(x, y, U32.dim(w, 28), 32, "br-select", id)]},
+        Lay.ibutton(ty, D.Clip.all(), (x + U32.dim(w, 28) : U32), y, "x", T.Th.dim(), "br-close", id)]),
+        Page.tabs(rest, ty, (x + w + 2 : U32), y, w))
+
+def Page.controls(+ty: Ty, +u: U.Ui, +focus: String, +blink: Bool, +caret: Nat, +mark: Nat, +page: String, +x0: U32, +x1: U32, +top: U32) -> Out:
+  +c = D.Clip.all()
+  +w = U32.dim((x1 - x0 : U32), 112)
+  +cap = U32.max(1, (w / 160 : U32))
+  +tw = U32.min(190, (w / cap : U32))
+  +field = S.Fld.id(U.Browse.field(page), "br-go", "")
+  Out.all([
+    Out.ops([D.Draw.rect(c, x0, top, (x1 - x0 : U32), 80, T.Th.panel(), 255)]),
+    Lay.ibutton(ty, c, (x0 + 4 : U32), (top + 2 : U32), "chevron-left", T.Th.dim(), "br-prev", ""),
+    Page.tabs(List.take(&2, J.Json, List.drop(&2, J.Json, U.Browse.tabs(u, page), U.Browse.offset(u, page)), U32.to_nat(cap)), ty, (x0 + 36 : U32), (top + 2 : U32), U32.dim(tw, 2)),
+    Lay.ibutton(ty, c, (x1 - 68 : U32), (top + 2 : U32), "chevron-right", T.Th.dim(), "br-next", ""),
+    Lay.ibutton(ty, c, (x1 - 34 : U32), (top + 2 : U32), "plus", T.Th.text(), "br-new", ""),
+    Lay.ibutton(ty, c, (x0 + 4 : U32), (top + 42 : U32), "chevron-left", T.Th.text(), "br-back", ""),
+    Lay.ibutton(ty, c, (x0 + 38 : U32), (top + 42 : U32), "chevron-right", T.Th.text(), "br-forward", ""),
+    Lay.ibutton(ty, c, (x0 + 72 : U32), (top + 42 : U32), "repeat", T.Th.text(), "br-reload", ""),
+    Lay.field(ty, c, (x0 + 110 : U32), (top + 40 : U32), U32.dim((x1 - x0 : U32), 166), U.Browse.address(u, page), String.eq(focus, field), blink, caret, mark, MSG.T.browser.address(Ty.loc(ty)), field),
+    Lay.button(ty, c, (x1 - 50 : U32), (top + 40 : U32), MSG.T.common.go(Ty.loc(ty)), T.Th.text(), "br-go", "")])
+
 # the Browser tab: the selected thread's own page
-def Lay.page.if(on: Bool, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+def Lay.page.if(on: Bool, +ty: Ty, +n: S.Nui, +x0: U32, +x1: U32, +h: U32) -> Out:
   match on:
     case True{}:
-      Out.cat(Page.strip(U.CefUI.strip_on(u, U.Ui.page(u)), ty, u, x0, x1),
-        Lay.page(ty, u, U.Ui.page(u), MSG.T.viewer.page.empty(Ty.loc(ty)), x0, x1, Bool.pick(U32, U.CefUI.strip_on(u, U.Ui.page(u)), 96, 52), h))
+      +u = S.Nui.ui(n)
+      +top = Bool.pick(U32, U.CefUI.strip_on(u, U.Ui.page(u)), 96, 52)
+      Out.all([Page.strip(U.CefUI.strip_on(u, U.Ui.page(u)), ty, u, x0, x1),
+        Page.controls(ty, u, S.Nui.focus_of(n), S.Blink.on(n), S.Nui.caret_of(n), S.Nui.mark(n), U.Ui.page(u), x0, x1, top),
+        Lay.page.in(ty, u, U.Ui.page(u), MSG.T.viewer.page.empty(Ty.loc(ty)), x0, x1, (top + 80 : U32), h, False{})])
     case False{}:
       Out.none()
 
@@ -5346,7 +5710,7 @@ def Rpw.draw(ls: List<&2, TLine>, more: Bool, +ty: Ty, +c: D.Clip, +x0: U32, +x1
   match ls more:
     case TLine{+t, +co, +k, +cp, +bw} <> +rest True{}:
       Out.cat(TL.draw(ty, TLine{t, co, k, cp, bw}, c, x0, x1, y),
-        Rpw.draw(rest, TL.more(rest, (y + TL.h(k) : U32), y1), ty, c, x0, x1, (y + TL.h(k) : U32), y1))
+        Rpw.draw(rest, TL.more(rest, (y + TL.h.s(k, Ty.pct(ty)) : U32), y1), ty, c, x0, x1, (y + TL.h.s(k, Ty.pct(ty)) : U32), y1))
     case _ _:
       Out.none()
 
@@ -5416,7 +5780,7 @@ def Rcw.lines(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32, +color: U32) -> L
     case Nil{}:
       Nil{}
     case l <> t:
-      List.append(&2, R.Op, Ty.text(ty, 2n, l, D.Clip.all(), x, y, 20, color), Rcw.lines(t, ty, x, (y + 20 : U32), color))
+      List.append(&2, R.Op, Ty.text(ty, 2n, l, D.Clip.all(), x, y, Ty.px(ty, 20), color), Rcw.lines(t, ty, x, (y + Ty.px(ty, 20) : U32), color))
 
 def Rcw.take(ls: List<&2, String>, +n: Nat) -> List<&2, String>:
   match ls n:
@@ -5441,10 +5805,10 @@ def Rcw.open.k(+ty: Ty, +n: S.Nui, o: U.RcOpen, +x0: U32, +x1: U32, +y1: U32) ->
       +tw = {U32.dim(cw, 24) : U32}
       +ls = {Rcw.take(List.append(&2, String, Ty.wrap(ty, 2n, text, tw), Rcw.reps(reps, ty, tw)), 12n) : List<&2, String>}
       +nl = {U32.from_nat(List.length(&2, String, ls)) : U32}
-      +ch = {(122 + nl * 20 : U32) : U32}
+      +ch = {(122 + nl * Ty.px(ty, 20) : U32) : U32}
       +cx = {(x0 + 12 : U32) : U32}
       +cy = {U32.max(62, U32.dim(y1, (ch + 8 : U32))) : U32}
-      +fy = {(cy + 40 + nl * 20 + 8 : U32) : U32}
+      +fy = {(cy + 40 + nl * Ty.px(ty, 20) + 8 : U32) : U32}
       +fid = {S.Fld.id("rcreply", "rv-reply-send", "") : String}
       Out.all([Rcw.card(cx, cy, cw, ch),
         Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, MSG.T.review.comment.meta(Ty.loc(ty), by, place, Bool.pick(String, res, "resolved", "open")), U32.dim(tw, 24)), D.Clip.all(), (cx + 12 : U32), (cy + 6 : U32), 24, T.Th.dim())),
@@ -5590,7 +5954,7 @@ def Rlw.lines(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32, +color: U32) -> O
     case Nil{}:
       Out.none()
     case +l <> t:
-      Out.cat(Out.ops(Ty.text(ty, 2n, l, D.Clip.all(), x, y, 24, color)), Rlw.lines(t, ty, x, (y + 24 : U32), color))
+      Out.cat(Out.ops(Ty.text(ty, 2n, l, D.Clip.all(), x, y, Ty.px(ty, 24), color)), Rlw.lines(t, ty, x, (y + Ty.px(ty, 24) : U32), color))
 
 def Rlw.toggle(+ty: Ty, +x: U32, +y: U32, +on: Bool, +label: String, action: String) -> Out:
   Out{List.append(&2, R.Op, Rcw.box(x, y, on), Ty.text(ty, 2n, label, D.Clip.all(), (x + 26 : U32), (y - 4 : U32), 24, T.Th.text())),
@@ -5660,7 +6024,7 @@ def Lay.viewer.b(+ty: Ty, +n: S.Nui, +b: U.HBar, +x0: U32, +x1: U32, +h: U32) ->
     Lay.mech.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 5), ty, S.Nui.ui(n), x0, x1, h),
     Lay.viewer.vw(ty, S.Nui.vw(n), U.Ui.draft_text(S.Nui.ui(n)), U.Ui.view_get(S.Nui.ui(n), "diff"), U.Mpage.onpart(S.Nui.ui(n)), x0, x1, (h - Hb.h(b) : U32)),
     Mech.bar.if(U.Mpage.onpart(S.Nui.ui(n)), ty, S.Nui.ui(n), x0, x1),
-    Lay.page.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 3), ty, S.Nui.ui(n), x0, x1, h),
+    Lay.page.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 3), ty, n, x0, x1, h),
     Side.k(U32.is_lt(S.Vw.kind(S.Nui.vw(n)), 2), ty, n, S.Vw.kind(S.Nui.vw(n)), Lay.scene(n), x0, x1, (h - Hb.h(b) : U32)),
     Side.ground.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 2), ty, n, x1),
     Hb.draw(ty, n, S.Nui.ui(n), b, Lay.scene(n), x0, x1, h),
@@ -6565,7 +6929,7 @@ def Lay.attach_field(+ty: Ty, on: Bool, +path: String, +caret: Nat, +mark: Nat, 
 # the composer with its attachments
 def Lay.composer.a(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool, +x0: U32, +x1: U32, +h: U32, +send: String, +act: String, +models: String,
     +rs: List<&2, U.SkillRow>, +atts: List<&2, String>, +up: String, +path: String, pre: List<&2, IME.Run>) -> Out:
-  +y = {(h - 120 - Comp.eh(List.length(&2, String, ls)) : U32) : U32}
+  +y = {(h - 120 - Comp.eh.s(List.length(&2, String, ls), ty) : U32) : U32}
   +fy = Comp.foot(h)
   +ml = Comp.models(ty, models, x0, x1, send)
   Out.all([
@@ -6605,15 +6969,15 @@ def Fab.h(shown: Bool, open: Bool, +ty: Ty, +intent: String, +px: U32) -> U32:
     case True{} False{}:
       44
     case True{} True{}:
-      (44 + U32.from_nat(List.length(&2, String, Fab.lines(ty, intent, px))) * 20 + 10 : U32)
+      (44 + U32.from_nat(List.length(&2, String, Fab.lines(ty, intent, px))) * Ty.px(ty, 20) + 10 : U32)
 
 def Fab.rows(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32) -> List<&2, R.Op>:
   match ls:
     case Nil{}:
       Nil{}
     case +l <> t:
-      List.append(&2, R.Op, Ty.text(ty, 2n, l, D.Clip.all(), x, y, 20, Bool.pick(U32, String.starts_with(l, "#"), T.Th.faint(), T.Th.text())),
-        Fab.rows(t, ty, x, (y + 20 : U32)))
+      List.append(&2, R.Op, Ty.text(ty, 2n, l, D.Clip.all(), x, y, Ty.px(ty, 20), Bool.pick(U32, String.starts_with(l, "#"), T.Th.faint(), T.Th.text())),
+        Fab.rows(t, ty, x, (y + Ty.px(ty, 20) : U32)))
 
 def Fab.buy.w(+ty: Ty, +buy: String) -> U32:
   Bool.pick(U32, String.is_empty(buy), 0, (Lay.button.w(ty, buy) + 6 : U32))
@@ -6709,9 +7073,9 @@ def TL.pill(none: Bool, +ty: Ty, +label: String, +x0: U32, +x1: U32, +bot: U32) 
           Ty.text(ty, 2n, label, D.Clip.all(), (x + 12 : U32), y, 28, T.Th.text())),
         [Lay.hit(x, y, w, 28, "vw-bottom", "")]}
 
-def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: String, +st: M.State, +sel: String, +live: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool,
+def Lay.thread.k.ix(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: String, +st: M.State, +sel: String, +live: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool,
     +x0: U32, +x1: U32, +h: U32, +sc: U32, pa: Bool, term: Bool, +info: String, +picking: Bool, +pend: List<&2, String>, +rs: List<&2, U.SkillRow>, +now: Nat,
-    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String, pre: List<&2, IME.Run>, +hold: String, +pill: String, +mq: String) -> Out:
+    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String, pre: List<&2, IME.Run>, +hold: String, +pill: String, +mq: String, +ixs: List<&2, U.SIx>) -> Out:
   match t:
     case M.Thread{id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
       +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
@@ -6721,7 +7085,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +kx = U.KX.note(pics, sel)
       +kxh = Kn.h(kx, ty, cw)
       +kh = (Kn.h(kn, ty, cw) + kxh : U32)
-      +ts = SB.Subs.rows(st, pics, sel, now)
+      +ts = SB.Subs.rows.at(st, pics, sel, now, ixs)
       +sopen = SB.Subs.panel.open(pics, sel, ts)
       +soff = Pane.clamp(Pane.off(pics, "subs:" ++ sel), List.length(&2, SB.SubRow, SB.Subs.panel.rows(sopen, ts)))
       +svis = Subs.vis(ts, sopen, soff, h)
@@ -6746,13 +7110,13 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       # the composer grows by eh, and all above it moves up
       +ls = Comp.wrap(ty, draft, cw)
       # (and by the Ready to order bar's height when it shows: it sits right above)
-      +eh = {(Comp.eh(List.length(&2, String, ls)) + Ready.h(Ready.line(st, pics, sel, Lay.running(turn))) : U32) : U32}
+      +eh = {(Comp.eh.s(List.length(&2, String, ls), ty) + Ready.h(Ready.line(st, pics, sel, Lay.running(turn))) : U32) : U32}
       +stop = U.Follow.stop(Lay.running(turn), draft, atts)
       +bh = Btw.h(ty, bq, ba, cw)
       # the timeline and what sits around it are laid out at once
       tl ch = Lay.timeline(ty,
         List.concat(&2, TLine, [TL.memo.shown.loc(ty, memo, st, sel, cw, pics), TL.sending(ty, pend, cw),
-          TL.live.m(ty, String.is_empty(live), ph, live, TL.memo.lv(memo), cw)]),
+          TL.live.single(ty, String.is_empty(live), ph, live, TL.memo.lv(memo), cw)]),
         cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, hold, TL.memo.first(memo), Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, sel, now), U.Fab.mini.tools.of(st, pics, sel, Lay.running(turn)), x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
           Kn.draw(kx, False{}, ty, cx0, (52 + hy : U32), cw),
           Kn.draw(kn, True{}, ty, cx0, (52 + hy + kxh : U32), cw),
@@ -6771,6 +7135,11 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
             mq, focus, blink, caret, mark)])
       Out.cat(Out.cat(tl, TL.pill(String.is_empty(pill), ty, pill, cx0, cx1, (h - ah - qh - eh - bh - 132 : U32))), ch)
 
+def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: String, +st: M.State, +sel: String, +live: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool,
+    +x0: U32, +x1: U32, +h: U32, +sc: U32, pa: Bool, term: Bool, +info: String, +picking: Bool, +pend: List<&2, String>, +rs: List<&2, U.SkillRow>, +now: Nat,
+    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String, pre: List<&2, IME.Run>, +hold: String, +pill: String, +mq: String) -> Out:
+  Lay.thread.k.ix(ty, memo, t, draft, held, st, sel, live, caret, mark, focus, blink, x0, x1, h, sc, pa, term, info, picking, pend, rs, now, atts, up, path, pics, del, tsel, moff, ph, hy, more, bq, ba, ren, rtext, ec, fkey, pre, hold, pill, mq, Nil{})
+
 # while files dragged in hover over the window, an accent ring around the
 # composer (placed as Lay.thread.k places it) shows where they drop
 def Lay.drop_mark(on: Bool, +ty: Ty, +draft: String, +x0: U32, +x1: U32, +h: U32) -> Out:
@@ -6778,7 +7147,7 @@ def Lay.drop_mark(on: Bool, +ty: Ty, +draft: String, +x0: U32, +x1: U32, +h: U32
     case True{}:
       +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
       +cx0 = {(x0 + U32.shr((x1 - x0 - cw : U32)) - 5 : U32) : U32}
-      +eh = Comp.eh(List.length(&2, String, Comp.wrap(ty, draft, cw)))
+      +eh = Comp.eh.s(List.length(&2, String, Comp.wrap(ty, draft, cw)), ty)
       +y = {(h - 125 - eh : U32) : U32}
       Out.ops([D.Draw.rect(D.Clip.all(), cx0, y, (cw + 10 : U32), 2, T.Th.accent(), 255),
         D.Draw.rect(D.Clip.all(), cx0, (y + 108 + eh : U32), (cw + 10 : U32), 2, T.Th.accent(), 255),
@@ -6939,7 +7308,7 @@ def Lay.memo.local(+tag: String, +ty: Ty, +n: S.Nui, +prev: TLMemo) -> TLMemo:
     TL.live.local(tag, TL.live.get(ty, TL.memo.lv(prev), U.Live.head(U.Ui.live.of(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n)))), Lay.tl.px(n))))
 
 def Lay.memo(+ty: Ty, +n: S.Nui, prev: TLMemo) -> TLMemo:
-  Lay.memo.local(TL.locale(S.Nui.ui(n)), ty, n, TL.memo.locale(TL.locale(S.Nui.ui(n)), prev))
+  Lay.memo.local(Ty.tag(ty, TL.locale(S.Nui.ui(n))), ty, n, TL.memo.locale(Ty.tag(ty, TL.locale(S.Nui.ui(n))), prev))
 
 # the memos brought up to this frame: the open thread's in front, from the
 # one kept for it
@@ -7107,24 +7476,30 @@ def Vx.view.k(+ty: Ty, +n: S.Nui, +u: U.Ui, +sel: String, +cx0: U32, +cx1: U32, 
 def Vx.view(+ty: Ty, +n: S.Nui, +st: M.State, +sel: String, +x0: U32, +x1: U32, +h: U32) -> Out:
   +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
   +cx0 = {(x0 + U32.shr((x1 - x0 - cw : U32)) : U32) : U32}
-  +eh = Comp.eh(List.length(&2, String, Comp.wrap(ty, S.Imx.draft(n), cw)))
+  +eh = Comp.eh.s(List.length(&2, String, Comp.wrap(ty, S.Imx.draft(n), cw)), ty)
   Vx.view.k(ty, n, S.Nui.ui(n), sel, cx0, (cx0 + cw : U32), (h - 120 - eh : U32), Comp.foot(h), Vx.send(Ty.loc(ty), U.Ui.thread(st, sel), st, sel, U.Ui.draft_text(S.Nui.ui(n)), U.Ui.atts(S.Nui.ui(n), sel)))
 
 # the page is full: a thread with more entries than one page shows
 def Lay.more(+memo: TLMemo, +n: S.Nui, +sel: String) -> Bool:
   Nat.is_ge(TL.memo.size(memo), U.Page.shown(S.Nui.ui(n), sel))
 
-def Lay.thread.at.k(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32) -> Out:
+def Lay.thread.at.k.ix(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32, +ixs: List<&2, U.SIx>) -> Out:
   match n:
     case S.Nui{U.Ui{+st, +sel, _, +live, +op, _, _, _, pa, _, _, _, _, _, +nf, _, _}, _, +h, _, _, _, +sc, +caret, +focus, +path, _, _, _}:
-      Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, S.Imx.draft(n), x0, x1, h), Lay.thread.k(ty, memo, U.Ui.thread(st, sel), S.Imx.draft(n), S.Cs.held(n), st, sel, U.Str.get(live, sel), S.Imx.at(n), S.Imx.mk(n), focus, S.Blink.on(n), x0, x1, h, sc, pa, U.Flag.get(op, "term"),
+      Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, S.Imx.draft(n), x0, x1, h), Lay.thread.k.ix(ty, memo, U.Ui.thread(st, sel), S.Imx.draft(n), S.Cs.held(n), st, sel, U.Str.get(live, sel), S.Imx.at(n), S.Imx.mk(n), focus, S.Blink.on(n), x0, x1, h, sc, pa, U.Flag.get(op, "term"),
         U.Models.of(nf, M.Thread.provider(U.Ui.thread(st, sel))), U.Flag.get(op, "models"), U.Ui.pending(S.Nui.ui(n), sel), U.Ui.skills(S.Nui.ui(n)), U.Side.now(S.Nui.ui(n)),
         U.Ui.atts(S.Nui.ui(n), sel), U.Ui.uploading(S.Nui.ui(n), sel), path, nf, U.Ui.deleting(S.Nui.ui(n)), TSel.of(U.Ui.scratch(S.Nui.ui(n), "@ts"), sel), U.Ui.scratch(S.Nui.ui(n), "@menu.off"), U.Side.phase(st, U.Ui.thread(st, sel)), hy, Lay.more(memo, n, sel), U.Btw.question(S.Nui.ui(n)), U.Btw.reply.of(S.Nui.ui(n)),
-        U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"), U.Ec.of(S.Nui.ui(n), sel), EM.Emb.focused(focus), S.Imx.runs(n), S.Hold.of(n), U.Hold.pill(S.Nui.ui(n), sel), U.Ui.scratch(S.Nui.ui(n), "@f.mq"))),
+        U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"), U.Ec.of(S.Nui.ui(n), sel), EM.Emb.focused(focus), S.Imx.runs(n), S.Hold.of(n), U.Hold.pill(S.Nui.ui(n), sel), U.Ui.scratch(S.Nui.ui(n), "@f.mq"), ixs)),
         Vx.view(ty, n, st, sel, x0, x1, h)), Lay.earlier(Lay.more(memo, n, sel)))
 
+def Lay.thread.at.ix(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32, +ixs: List<&2, U.SIx>) -> Out:
+  Ew.over(ty, Lay.thread.at.k.ix(ty, memo, n, x0, x1, hy, ixs), U.Ec.of(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n))), EM.Emb.focused(S.Nui.focus_of(n)), S.Blink.on(n))
+
+def Lay.thread.at.k(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32) -> Out:
+  Lay.thread.at.k.ix(ty, memo, n, x0, x1, hy, Nil{})
+
 def Lay.thread.at(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32) -> Out:
-  Ew.over(ty, Lay.thread.at.k(ty, memo, n, x0, x1, hy), U.Ec.of(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n))), EM.Emb.focused(S.Nui.focus_of(n)), S.Blink.on(n))
+  Lay.thread.at.ix(ty, memo, n, x0, x1, hy, Nil{})
 
 # the thread view with its header at the top
 def Lay.thread(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32) -> Out:
@@ -7218,6 +7593,10 @@ def Tour.choices(cs: List<&2, U.TChoice>, +ty: Ty, +x: U32, +y: U32) -> Out:
     case U.TChoice{l, a, v} <> t:
       Out.cat(Lay.button(ty, D.Clip.all(), x, y, l, T.Th.accent(), a, v), Tour.choices(t, ty, x, (y + 34 : U32)))
 
+# the forward button's words (named apart so the card's layout stays small)
+def Lay.tour.nb(+n: S.Nui) -> String:
+  U.Tour.forward(S.Nui.ui(n))
+
 def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
   +label0 = MSG.T.tour.skip(Ty.loc(ty))
   +u = S.Nui.ui(n)
@@ -7243,7 +7622,7 @@ def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
   +by = {(cy + ch - 44 : U32) : U32}
   +bt = {(cy + top : U32) : U32}
   +off = {U32.min(U32.from_nat(Maybe.default(&2, Nat, Nat.read(U.Ui.scratch(u, "@tour.sc")), 0n)), U32.dim(nl, nv)) : U32}
-  +nb = OB.Ob.forward(Ty.loc(ty), i)
+  +nb = U.Tour.forward(u)
   +nx = {(cx + cw - 16 - Lay.button.w(ty, nb) : U32) : U32}
   Out.all([
     Out{Tour.dim(Tour.rect(g, hh, Lay.x1(n)), ww, hh), [Lay.hit(0, 0, ww, hh, "", "")]},

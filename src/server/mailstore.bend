@@ -1020,3 +1020,34 @@ def MI.read.page(+home: String, +conv: String, +before: String, +n: Nat) -> IO(S
 
 def MailStore.read(+home: String, +conv: String, before: String, +n: Nat) -> IO(StoreResult<List<&2, MB.Body>>):
   MI.read.page(home, conv, before, n)
+
+# Header-directed room paging may name legacy IDs absent from the journal.
+# Reuse the existing collision-checked index for an exact file-backed ID.
+def MI.exact.found(+pos: U32, +idx: String, +path: String, +conv: String, +id: String) -> IO(StoreResult<MB.Body>):
+  match pos:
+    case 0: MI.bad(MB.Body, path, "mail body unavailable: " ++ id)
+    case +pos: MI.bind(MIndexRow, MB.Body, MI.row(idx, pos), row => MI.body(path, conv, row))
+
+def MI.exact.state(st: MIndex, +idx: String, +path: String, +conv: String, +id: String) -> IO(StoreResult<MB.Body>):
+  match st:
+    case MIndex{+end, _, 0}:
+      +hash = MI.key(id)
+      MI.bind(U32, MB.Body, MI.head(idx, hash), head =>
+        MI.bind(U32, MB.Body, MI.find(1n+U32.to_nat(end), idx, path, conv, id, hash, head, end), pos => MI.exact.found(pos, idx, path, conv, id)))
+    case _: MI.bad(MB.Body, idx, "conflicting duplicate mail id")
+
+def MI.exact.retry(r: StoreResult<MB.Body>, +idx: String, +path: String, +conv: String, +id: String, +size: U32) -> IO(StoreResult<MB.Body>):
+  match r:
+    case Stored{body}: MI.pure(MB.Body, body)
+    case _: MI.bind(MIndex, MB.Body, MI.build(idx, path, conv, size), st => MI.exact.state(st, idx, path, conv, id))
+
+def MI.exact.ready(st: MIndex, +idx: String, +path: String, +conv: String, +id: String, +size: U32) -> IO(StoreResult<MB.Body>):
+  do IO<StoreResult<MB.Body>>:
+    r : StoreResult<MB.Body> <- MI.exact.state(st, idx, path, conv, id)
+    MI.exact.retry(r, idx, path, conv, id, size)
+
+def MailStore.exact(+home: String, +conv: String, +id: String) -> IO(StoreResult<MB.Body>):
+  +idx = MI.path(home, conv)
+  +path = MB.Body.path(home, conv)
+  MI.bind(U32, MB.Body, MI.size(path), +size =>
+    MI.bind(MIndex, MB.Body, MI.ensure(idx, path, conv, size), st => MI.exact.ready(st, idx, path, conv, id, size)))
