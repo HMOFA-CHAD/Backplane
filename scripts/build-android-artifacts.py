@@ -40,7 +40,7 @@ def pinned_file(spec, base):
     return path.resolve()
 
 
-def validate(config, source, base):
+def validate(config, source, base, execution_helper_sha256=None):
     require(config.get('schema') == 1, 'Unsupported artifact input schema')
     release = config.get('release', '')
     require(re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', release), 'Explicit stable release required')
@@ -67,7 +67,13 @@ def validate(config, source, base):
                 'Generated or local file in frozen source closure')
         f = source / name
         require(f.is_file() and not f.is_symlink() and sha(f) == digest, 'Frozen source hash mismatch')
-    require(sha(Path(__file__)) == files['scripts/build-android-artifacts.py'], 'Producer is not the pinned source')
+    actual_helper = sha(Path(__file__))
+    if execution_helper_sha256 is None:
+        require(actual_helper == files['scripts/build-android-artifacts.py'], 'Producer is not the pinned source')
+    else:
+        require(isinstance(execution_helper_sha256, str) and
+                re.fullmatch(r'[0-9a-f]{64}', execution_helper_sha256) and
+                actual_helper == execution_helper_sha256, 'Execution helper differs from explicit pin')
     bridge = pinned_file(config.get('bridge'), base)
     qualification = pinned_file(config.get('bridge_qualification'), base)
     q = json.loads(qualification.read_text())
@@ -102,9 +108,11 @@ def check_manifest(xml, version, code):
 
 
 def certificate_hashes(text):
-    # apksigner and keytool render the same public SHA256 with different spacing.
+    # apksigner --verbose also prints a public-key digest, which is not the certificate.
+    # keytool prints the certificate fingerprint on its own indented SHA256 line.
     return {re.sub(r'[^0-9a-f]', '', match.lower()) for match in
-            re.findall(r'(?:SHA-?256(?: digest)?):\s*([0-9A-Fa-f:]{64,95})', text)}
+            re.findall(r'(?m)^\s*(?:Signer #[0-9]+ certificate SHA-256 digest:|SHA256:)'
+                       r'[ \t]*([0-9A-Fa-f:]{64,95})[ \t]*$', text)}
 
 
 def check_embedded(path, member, digest):
@@ -145,9 +153,9 @@ def target_package(config, path, kind, bridge_sha):
                         'signatureVerified': True, 'debuggable': False}}
 
 
-def build(config_path, source, output):
+def build(config_path, source, output, execution_helper_sha256=None):
     config = json.loads(config_path.read_text())
-    bridge, qualification, prequalification, bundletool = validate(config, source, config_path.parent)
+    bridge, qualification, prequalification, bundletool = validate(config, source, config_path.parent, execution_helper_sha256)
     require(not output.exists(), 'Output exists; inspect its receipt before another attempt')
     sdk = Path(os.environ.get('ANDROID_HOME', '')).resolve()
     java = Path(os.environ.get('JAVA_HOME', '')).resolve()
@@ -172,6 +180,9 @@ def build(config_path, source, output):
                'sourceCommit': config['sourceCommit'], 'sourceTree': config['sourceTree'],
                'version': config['release'][1:], 'channel': config['channel'],
                'inputs_sha256': sha(config_path), 'producer_sha256': sha(Path(__file__)),
+               'source_producer_sha256': config['source_files']['scripts/build-android-artifacts.py'],
+               'execution_helper_sha256': sha(Path(__file__)),
+               'execution_helper_override': execution_helper_sha256 is not None,
                'bridge_sha256': sha(bridge), 'qualification_sha256': sha(qualification),
                'source_prequalification_sha256': sha(prequalification), 'source_files': config['source_files'],
                'artifact_runtime_accepted': False,
@@ -227,7 +238,7 @@ def build(config_path, source, output):
             check_embedded(apk, 'assets/bridge.js', sha(bridge))
             check_embedded(aab, 'base/assets/bridge.js', sha(bridge))
             # Recheck frozen source and build prequalification before exposing artifacts.
-            validate(config, source, config_path.parent)
+            validate(config, source, config_path.parent, execution_helper_sha256)
             verify_source_git(config, source)
             receipt['artifacts'] = {}
             for kind, path in [('apk', apk), ('aab', aab)]:
@@ -253,8 +264,9 @@ if __name__ == '__main__':
     parser.add_argument('--inputs', type=Path, required=True)
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--execution-helper-sha256', help='Explicit separately reviewed metadata helper pin; frozen source pins remain required')
     args = parser.parse_args()
     try:
-        build(args.inputs.resolve(), args.source.resolve(), args.output.resolve())
+        build(args.inputs.resolve(), args.source.resolve(), args.output.resolve(), args.execution_helper_sha256)
     except (InputError, subprocess.TimeoutExpired):
         raise SystemExit('Artifact producer failed; no publication was performed. Inspect validated inputs or producer.log.') from None
