@@ -2612,6 +2612,41 @@ def Mail.body(+s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String,
 def Mail.file(+s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
   Mail.file.body(s, Mail.body(s, now, o, to, text, msg, ML.Mail.route(o, to), Mail.subject(String.eq(ML.Origin.kind(o), "launch"), s, o, to), ""))
 
+# Operational reports to the uberbot
+# ----------------------------------
+# A launched thread's report (Lr.send.here), a delegated task's result,
+# watched work's outcome and a wake addressed to the uberbot's own thread
+# are filed in its Mailroom, never posted in its Chat (the person's). The
+# producer chooses this path by what it is, never by the text. Filing is
+# the durable MailAppend: the body is written, then its header and the
+# producer's own acknowledgements (TaskDelivered...) commit together, so a
+# report is never marked delivered before it is filed; with the header
+# already there (recovered after a crash) only the acknowledgements commit.
+# Filing alone starts nothing: with mail.on off nothing is routed after it
+# (Mail.route), and the mail is fyi. Everything else, and every thread that
+# is not the uberbot's, keeps Hub.inbox.from.
+def Operational.owner(+s: M.State, +to: String) -> String:
+  Bool.pick(String, UBS.Ub.chat.is(s, to), Mail.or(UBS.Ub.chat(s), to), to)
+
+def Operational.is(+s: M.State, +to: String) -> Bool:
+  Bool.and(UBS.Ub.chat.is(s, to), Bool.not(FR.Fr.is(Operational.owner(s, to))))
+
+# the producer's acknowledgements, committed with the header
+def Operational.after(st: Step, +after: List<&2, M.Change>) -> Step:
+  match st:
+    case Step{cs, MailAppend{l, c, ch} <> Nil{}}: Step{cs, [MailAppend{l, c, List.append(&2, M.Change, ch, after)}]}
+    case Step{cs, os}: Step{List.append(&2, M.Change, cs, after), os}
+
+def Operational.file.k(has: Bool, +s: M.State, +body: MB.Body, +after: List<&2, M.Change>) -> Step:
+  match has:
+    case True{}: Step{after, Nil{}}
+    case False{}: Operational.after(Mail.file.body(s, body), after)
+
+def Operational.file(+s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String, +after: List<&2, M.Change>) -> Step:
+  +addr = Mail.addr(s, Operational.owner(s, to))
+  Operational.file.k(ML.Box.has(M.State.mail(s), msg), s,
+    Mail.body(s, now, o, addr, text, msg, ML.Mail.route(o, addr), Mail.subject(String.eq(ML.Origin.kind(o), "launch"), s, o, addr), "fyi"), after)
+
 def Mail.compose(+s: M.State, +now: Nat, +from: String, +to: String, +text: String, +msg: String, +conv: String, +subject: String, +want: String) -> Step:
   +o = {ML.Origin{from, "thread", ""} : ML.Origin}
   +cid = Mail.or(conv, ML.Mail.route(o, to))
@@ -3978,6 +4013,17 @@ def Mail.inbound(+st: Step, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, 
 def Hub.inbox.from(+s: M.State, +now: Nat, +from: String, +to: String, +role: M.Role, +text: String, +msg: String) -> Step:
   Mail.inbound(Hub.inbox.id(s, now, from, to, role, text, msg), s, now, ML.Mail.classify(M.Link.from(msg), msg, Origin.system(role), text), to, text, msg)
 
+# a report from a typed producer (kind "launch" or "task"): to the
+# uberbot's thread it is filed; to any other thread it is posted as before,
+# with the producer's acknowledgements after it
+def Operational.inbox.k(owned: Bool, +s: M.State, +now: Nat, +kind: String, +from: String, +to: String, role: M.Role, +text: String, +msg: String, +after: List<&2, M.Change>) -> Step:
+  match owned:
+    case True{}: Operational.file(s, now, ML.Origin{Mail.addr(s, from), kind, ""}, to, text, msg, after)
+    case False{}: Step.after(Hub.inbox.from(s, now, from, to, role, text, msg), after)
+
+def Operational.inbox(+s: M.State, +now: Nat, +kind: String, +from: String, +to: String, role: M.Role, +text: String, +msg: String, +after: List<&2, M.Change>) -> Step:
+  Operational.inbox.k(Operational.is(s, to), s, now, kind, from, to, role, text, msg, after)
+
 def Hub.inbox(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String) -> Step:
   Hub.inbox.from(s, now, from, to, role, text, M.Link.id(from, Hub.id("m", now, Hub.seq(s))))
 
@@ -3987,8 +4033,8 @@ def Hub.inbox(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, 
 def Task.finish.go(deliver: Bool, +s: M.State, +now: Nat, +id: String, +thread: String, +parent: String, +provider: String, +model: String, +word: String, st: M.TaskState, +summary: String, cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
   match deliver:
     case True{}:
-      Step.after(Step.before(List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}]), os,
-        Hub.inbox.from(s, now, thread, parent, M.System{}, Task.note(id, provider, model, word, summary), Task.msg(thread, id))), [M.TaskDelivered{id, now}])
+      Step.before(List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}]), os,
+        Operational.inbox(s, now, "task", thread, parent, M.System{}, Task.note(id, provider, model, word, summary), Task.msg(thread, id), [M.TaskDelivered{id, now}]))
     case False{}:
       Step{List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}]), os}
 
@@ -4042,7 +4088,7 @@ def Task.finish.w(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
 def Lr.send.here(ok: Bool, +s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> Step:
   match ok:
     case True{}:
-      Hub.inbox.from(s, now, thread, to, M.User{}, text, Lr.msg(thread, Hub.id("r", now, Hub.seq(s))))
+      Operational.inbox(s, now, "launch", thread, to, M.User{}, text, Lr.msg(thread, Hub.id("r", now, Hub.seq(s))), Nil{})
     case False{}:
       Step.none()
 
@@ -4104,8 +4150,8 @@ def Task.cancel.user(t: M.Task, +s: M.State, +now: Nat) -> Step:
   match t:
     case M.Task{+id, +parent, +child, _, +st, _, _, +provider, +model}:
       Bool.pick(Step, M.TaskState.terminal(st), Step.none(),
-        Step.after(Step.before([M.TaskStateSet{id, M.TaskCancelled{}, "cancelled by the user", now}, M.TurnChanged{child, M.Interrupted{}, now}], [AgentStop{child}],
-          Hub.inbox.from(s, now, child, parent, M.System{}, Task.note(id, provider, model, "cancelled by the user", ""), Task.msg(child, id))), [M.TaskDelivered{id, now}]))
+        Step.before([M.TaskStateSet{id, M.TaskCancelled{}, "cancelled by the user", now}, M.TurnChanged{child, M.Interrupted{}, now}], [AgentStop{child}],
+          Operational.inbox(s, now, "task", child, parent, M.System{}, Task.note(id, provider, model, "cancelled by the user", ""), Task.msg(child, id), [M.TaskDelivered{id, now}])))
 
 def Ride.after.one(+s: M.State, +now: Nat, +th: String, st: Step) -> Step:
   match st:
@@ -4150,13 +4196,29 @@ def Lr.tell.k(on: Bool, +s: M.State, +now: Nat, +thread: String, +from: String, 
 # the thread whose call made the step, "" for an agent's own line or the
 # person)
 # harness-coord: wakes. A matching step sends one message through Lr.send.
+# A wake the uberbot asked for (wake_on) is filed in its Mailroom, and,
+# since it asked to be woken, rides into its running turn or starts the
+# next with it (Ride.start): no Chat message either way. Any other
+# thread's wake is sent as before (Lr.send).
+def Wake.ride(+s: M.State, +now: Nat, +by: String, +msg: String, +text: String) -> Step:
+  +cs = {[M.SettingSet{RD.Ride.key(by), RD.Ride.add(Ride.of(s, by), msg, text), now}] : List<&2, M.Change>}
+  Step.cat(Step{cs, Nil{}}, Ride.start(M.State.replay(cs, s), now, by))
+
+def Wake.send(owned: Bool, +s: M.State, +now: Nat, +from: String, +by: String, +ref: String, +text: String) -> Step:
+  match owned:
+    case False{}: Lr.send(s, now, from, by, text)
+    case True{}:
+      +msg = "wake:" ++ ref ++ ":" ++ Hub.id("w", now, Hub.seq(s))
+      Step.cat(Operational.file(s, now, ML.Origin{Mail.addr(s, from), "wake", ref}, by, text, msg, Nil{}), Wake.ride(s, now, by, msg, text))
+
 def Wake.fire.k(fresh: Bool, +s: M.State, +now: Nat, +id: String, +key: String, +events: List<&2, String>, +text: String) -> Step:
   match fresh:
     case False{}:
       Step.none()
     case True{}:
       +o = WK.Wake.get(s, id)
-      Step.before(WK.Wake.mark(id, key, J.Json.get_bool(o, "once", True{}), now), Nil{}, Lr.send(s, now, Bool.pick(String, String.eq(J.Json.get_str(o, "kind", ""), "thread"), J.Json.get_str(o, "target", ""), J.Json.get_str(o, "by", "")), J.Json.get_str(o, "by", ""), WK.Wake.note(o, text, events)))
+      Step.before(WK.Wake.mark(id, key, J.Json.get_bool(o, "once", True{}), now), Nil{},
+        Wake.send(Operational.is(s, J.Json.get_str(o, "by", "")), s, now, Bool.pick(String, String.eq(J.Json.get_str(o, "kind", ""), "thread"), J.Json.get_str(o, "target", ""), J.Json.get_str(o, "by", "")), J.Json.get_str(o, "by", ""), id ++ ":" ++ key, WK.Wake.note(o, text, events)))
 
 def Wake.thread.end.key(cs: List<&2, M.Change>, +th: String) -> String:
   match cs:
@@ -4482,10 +4544,17 @@ def Watch.word(+status: String, cancelling: Bool) -> String:
 def Watch.text(+note: String, +word: String, +detail: String) -> String:
   "[Backplane] Watched work \"" ++ note ++ "\" ended: " ++ word ++ Bool.pick(String, String.is_empty(detail), "", "\n" ++ detail)
 
+# watched work of the uberbot's own thread is filed (Operational.file);
+# any other thread is told in its chat as before
+def Watch.tell.to(owned: Bool, +s: M.State, +now: Nat, +th: String, +text: String) -> Step:
+  match owned:
+    case True{}: Operational.file(s, now, ML.Origin{"backplane", "system", "work"}, th, text, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))), Nil{})
+    case False{}: Lost.note(s, now, th, text)
+
 def Watch.tell.k(live: Bool, +s: M.State, +now: Nat, +th: String, +text: String) -> Step:
   match live:
     case True{}:
-      Lost.note(s, now, th, text)
+      Watch.tell.to(Operational.is(s, th), s, now, th, text)
     case False{}:
       Step.none()
 
@@ -6050,12 +6119,20 @@ def Task.repair.has(has: Bool, wake: Bool, +s: M.State, +now: Nat, +id: String, 
     case False{} _:
       Step.after(Hub.inbox.from(s, now, child, parent, M.System{}, text, Task.msg(child, id)), [M.TaskDelivered{id, now}])
 
-def Task.repair.k(due: Bool, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +text: String) -> Step:
-  match due:
-    case True{}:
+# a report owed to the uberbot's thread is filed again (idempotent: a
+# filed one commits only its TaskDelivered); any other is posted as before
+def Task.repair.to(owned: Bool, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +text: String) -> Step:
+  match owned:
+    case True{}: Operational.file(s, now, ML.Origin{Mail.addr(s, child), "task", ""}, parent, text, Task.msg(child, id), [M.TaskDelivered{id, now}])
+    case False{}:
       Task.repair.has(Task.holds(M.State.mine(s, parent), Task.msg(child, id)),
         Bool.and(Bool.not(Hub.running(Hub.thread(s, parent))), Bool.and(Task.newest(M.State.mine(s, parent), Task.msg(child, id)), Bool.not(M.Queue.waiting(s, parent)))),
         s, now, id, parent, child, text)
+
+def Task.repair.k(due: Bool, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +text: String) -> Step:
+  match due:
+    case True{}:
+      Task.repair.to(Operational.is(s, parent), s, now, id, parent, child, text)
     case False{}:
       Step.none()
 
@@ -7803,3 +7880,32 @@ def Fallback.validated(ok: Bool, +s: M.State, caps: J.Json, now: Nat, step: Step
 
 def Fallback.validate(+s: M.State, +caps: J.Json, now: Nat, +step: Step) -> Step:
   Fallback.validated(Fallback.settings.ok(Queue.changes(step), s, caps), s, caps, now, step)
+
+# Operational reports, for the laws (oprep_*; test/oprep_test.bend): a task
+# of t1 for t0, t0 the bot "bu"'s thread, made the uberbot when `on`
+def Operational.demo(+on: Bool) -> M.State:
+  +s = {M.State.apply(Task.demo(False{}), M.BotSet{"bu", "Bub", "t0", 0n, "", 1n}) : M.State}
+  Bool.pick(M.State, on, M.State.apply(s, M.SettingSet{"uber.bot", "bu", 1n}), s)
+
+def Operational.demo.finish(+on: Bool) -> Step:
+  Task.finish(Operational.demo(on), 9n, "t1", Step{[M.TurnChanged{"t1", M.Completed{}, 9n}], Nil{}})
+
+# messages posted in th, and TaskDelivered among the changes
+def Operational.posts(+cs: List<&2, M.Change>, +th: String) -> Nat:
+  match cs:
+    case Nil{}: 0n
+    case M.MessagePosted{+t, _, _, _, _} <> +rest: Nat.add(Bool.pick(Nat, String.eq(t, th), 1n, 0n), Operational.posts(rest, th))
+    case _ <> +rest: Operational.posts(rest, th)
+
+def Operational.delivered(+cs: List<&2, M.Change>) -> Nat:
+  match cs:
+    case Nil{}: 0n
+    case M.TaskDelivered{_, _} <> +t: 1n+Operational.delivered(t)
+    case _ <> +t: Operational.delivered(t)
+
+# the changes a filing commits after its body is written
+def Operational.pending(+os: List<&2, Out>) -> List<&2, M.Change>:
+  match os:
+    case Nil{}: Nil{}
+    case MailAppend{_, _, +cs} <> +t: List.append(&2, M.Change, cs, Operational.pending(t))
+    case _ <> +t: Operational.pending(t)
