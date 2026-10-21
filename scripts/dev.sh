@@ -24,6 +24,9 @@
 #   scripts/dev.sh stage DIR       build the package (as install does) into DIR
 #                                  and stop: no install, no hub asked. The
 #                                  hub's deploy_main runs this (docs/deploy.md)
+#   BACKPLANE_DEV_SERVICE_ONLY=1 scripts/dev.sh stage DIR
+#                                  stage only the genuine server + matching web
+#                                  and LICENSE; no native GUI/optional helpers
 #
 # The dev run keeps to itself: its own home (BACKPLANE_DEV_HOME, default
 # ~/.backplane-dev, never ~/.backplane-bend), port 3788 (BACKPLANE_DEV_PORT),
@@ -37,6 +40,7 @@
 # 0.10.1-dev.20260925.2130: newer than the release it came after, older than
 # the next one, so the updater replaces it with the next real release (or a
 # later nightly) and never with an older one.
+# A nonempty caller BACKPLANE_VERSION_STAMP overrides that generated stamp.
 set -eu
 cd "$(dirname "$0")/.."
 . scripts/bendok.sh
@@ -47,6 +51,8 @@ prefix=${BACKPLANE_PREFIX:-$HOME/.local/share/backplane}
 dev=build/dev
 port=${BACKPLANE_DEV_PORT:-3788}
 home=${BACKPLANE_DEV_HOME:-$HOME/.backplane-dev}
+# Opt-in belongs only to stage; run/web/install retain their existing modes.
+service_only=0
 
 say() { printf '\033[1mdev:\033[0m %s\n' "$*"; }
 
@@ -120,6 +126,10 @@ run() {
 }
 
 stamp() {
+  if [ -n "${BACKPLANE_VERSION_STAMP:-}" ]; then
+    printf '%s\n' "$BACKPLANE_VERSION_STAMP"
+    return 0
+  fi
   # the highest full release, whether or not this branch contains it
   git fetch -q --tags 2>/dev/null || true
   last=$(git tag --list 'v[0-9]*' --sort=-v:refname | grep -v -- - | head -n 1)
@@ -141,7 +151,9 @@ build_dist() {
   if scripts/verified.sh has check; then
     say "checked already: check.sh passed on these exact inputs"
   else
-    for f in src/web/app.bend src/server/main.bend src/app/main.bend; do check "$f"; done
+    roots="src/web/app.bend src/server/main.bend"
+    [ "$service_only" = 1 ] || roots="$roots src/app/main.bend"
+    for f in $roots; do check "$f"; done
   fi
   rm -rf dist && mkdir -p dist
   bend src/web/index.html -o dist/web >/dev/null
@@ -149,6 +161,11 @@ build_dist() {
   python3 scripts/js-native.py dist/web/chunk-*.js
   cp src/web/sw.js dist/web/sw.js
   for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
+  if [ "$service_only" = 1 ]; then
+    BACKPLANE_VERSION_STAMP=$ver scripts/build-app.sh src/server/main.bend dist/backplane-serve
+    say "built $ver"
+    return 0
+  fi
   scripts/build-kistack.sh dist/kistack
   if [ "$(uname -s)" = Linux ]; then
     BACKPLANE_VERSION_STAMP=$ver scripts/build-app.sh src/app/main.bend dist/backplane
@@ -204,6 +221,11 @@ stage_cef() {
 stage() {
   rm -rf build/dev-pkg && mkdir -p build/dev-pkg
   cp -R dist/web build/dev-pkg/web
+  if [ "$service_only" = 1 ]; then
+    cp dist/backplane-serve build/dev-pkg/
+    [ -e LICENSE ] && cp LICENSE build/dev-pkg/
+    return 0
+  fi
   [ -d dist/kistack ] && cp -R dist/kistack build/dev-pkg/kistack
   for f in backplane backplane-serve backplane-browser backplane-browser.stamp backplane-step2glb backplane-voice backplane-kipc; do
     [ -e "dist/$f" ] && cp "dist/$f" build/dev-pkg/
@@ -292,6 +314,10 @@ case ${1:-run} in
     if [ "${1:-}" = --force ]; then force=1; shift; fi
     if [ -n "${1:-}" ]; then install_remote "$1"; else install_local; fi ;;
   stage)
+    case ${BACKPLANE_DEV_SERVICE_ONLY:-0} in
+      0|1) service_only=${BACKPLANE_DEV_SERVICE_ONLY:-0} ;;
+      *) say "BACKPLANE_DEV_SERVICE_ONLY must be 0 or 1"; exit 1 ;;
+    esac
     [ -n "${2:-}" ] || { say "usage: scripts/dev.sh stage DIR"; exit 1; }
     build_dist
     stage
