@@ -183,8 +183,13 @@ class Metadata(unittest.TestCase):
             service = root/'native/backplane-serve.exe'
             service.write_bytes(fixture_pe('cygwin1.dll'))
             (root/'native/unsigned-service.exe').write_bytes(service.read_bytes())
+            execution = {'schema': 1, 'metadataCommit': '5'*40, 'metadataTree': '6'*40,
+                'toolsSha256': {'scripts/windows-runtime.py': '7'*64},
+                'runtimeAdapter': {'schema': 1, 'adapterSha256': '7'*64,
+                    'sourceCsha256': source['service_c_sha256'], 'transformedCsha256': '8'*64}}
             api.write(root/'native/COMPILE.json', dict(schema=1,
                 sourceReceiptSha256=api.sha(inputs/'SOURCE.json'), unsignedServiceSha256=api.sha(service),
+                producerExecution=execution,
                 runtimeManifestSha256=api.sha(payload/'RUNTIME.json'), compiler={'fixture': True},
                 compileInputs={'version': '0.11.2', 'versionStamp': '0.11.2', 'telemetryChannel': 'release',
                     'google': {'requested': True, 'requiredInputsPresent': True},
@@ -199,6 +204,7 @@ class Metadata(unittest.TestCase):
                 archive = root/'out'/api.RESOURCE_ARCHIVE
                 with zipfile.ZipFile(archive) as z:
                     build = json.loads(z.read('backplane-service/BUILD.json'))
+                    self.assertEqual(build['producerExecution'], execution)
                     self.assertFalse(build['signing']['publicEligible'])
                     self.assertEqual(build['managedControl']['status'], 'UNSUPPORTED')
                     entries = {n: z.read(n) for n in z.namelist()}

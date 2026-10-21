@@ -8,7 +8,8 @@ case $(uname -s) in CYGWIN_NT-*) ;; *) echo 'build-windows: run inside Windows C
 [ $# = 2 ] || { echo 'usage: build-windows.sh INPUT.c OUTPUT.exe' >&2; exit 2; }
 input=$(realpath "$1")
 out=$(realpath -m "$2")
-root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+tools=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+root=${BP_WIN_SOURCE_ROOT:-$tools}
 work="${out%.exe}.cc"
 mkdir -p "$work"
 BP_WIN_TELEMETRY_HEADER="$work/bp_telemetry.h"
@@ -21,7 +22,22 @@ export BP_WIN_GOOGLE_HEADER
 cc=${CC:-clang}
 jobs=${BACKPLANE_JOBS:-1}
 units=${BACKPLANE_UNITS:-16}
-python3 "$root/scripts/windows-runtime.py" "$input" "$work/runtime.c"
+python3 "$tools/scripts/windows-runtime.py" "$input" "$work/runtime.c"
+# Bind the actual adapter output before any compiler starts. No private header
+# contents, paths or hashes enter this public execution witness.
+python3 - "$tools/scripts/windows-runtime.py" "$input" "$work/runtime.c" "$work/RUNTIME-ADAPTER.json" <<'PY_WITNESS'
+import hashlib,json,sys
+from pathlib import Path
+def sha(path):
+    with Path(path).open('rb') as stream:
+        digest = hashlib.sha256()
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+        return digest.hexdigest()
+value = {'schema': 1, 'adapterSha256': sha(sys.argv[1]),
+         'sourceCsha256': sha(sys.argv[2]), 'transformedCsha256': sha(sys.argv[3])}
+Path(sys.argv[4]).write_text(json.dumps(value,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+PY_WITNESS
 python3 "$root/scripts/cc-split.py" "$work/runtime.c" "$work" "$units"
 # One compiler by default keeps Windows and the host desktop responsive.
 export BP_WIN_CC="$cc" BP_WIN_FLAGS="${BACKPLANE_CFLAGS:--O2}" BP_WIN_INCLUDE="$root/src/server/effects"

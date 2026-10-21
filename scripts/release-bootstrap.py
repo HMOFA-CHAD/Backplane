@@ -193,7 +193,7 @@ def run(directory, operation, target, source, checkout, compiler=None):
         request.write_text(json.dumps(r, indent=2) + '\n')
         command = [sys.executable, str(Path(__file__).resolve().with_name('service-release.py')), 'native', '--source-root', str(checkout), '--request', str(request), '--out', str(checkout / 'build/bootstrap-native')]
     elif operation == 'windows-native':
-        command = [sys.executable, 'scripts/windows-release-request.py', 'native', str(directory / 'windows-service-request.json')]
+        command = [sys.executable, str(Path(__file__).resolve().with_name('windows-release-request.py')), 'native', str(directory / 'windows-service-request.json')]
     else:
         helper = Path(__file__).resolve().with_name('build-android-artifacts.py')
         command = [sys.executable, str(helper), '--execution-helper-sha256', sha(helper), '--inputs', str(directory / 'android-release-inputs.json'), '--source', str(checkout), '--output', str(checkout / 'build/bootstrap-android')]
