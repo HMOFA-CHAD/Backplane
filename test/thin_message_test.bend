@@ -36,6 +36,12 @@ def read(+p: J.Json) -> V.MessageRead:
 def check(name: String, b: Bool) -> IO(Unit):
   C.Check.str(name, Bool.pick(String, b, "yes", "no"), "yes")
 
+# Build the boundary payload without String.repeat's stack frame per byte.
+def boundary_text(n: Nat, acc: String) -> String:
+  match n:
+    case 0n: acc
+    case 1n+p: boundary_text(p, SCon{'x', acc})
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("visible exact entry may request first chunk", code(read(request("long", ""))), "")
@@ -78,5 +84,5 @@ def main() -> IO(Unit):
     check("delimiters only query refused", Bool.not(V.Query.valid("--- , .")))
     check("ordinary invalidation fits tiny budget", W.Wire.within(J.Json.show(W.Wire.changed("7", "epoch", 99n, "v1", target())), 1024n))
     check("oversized invalidation target fails budget", Bool.not(W.Wire.within(J.Json.show(W.Wire.changed("7", "epoch", 99n, "v1", V.Target.json("thread", String.repeat("x", 1024n)))), 1024n)))
-    check("normal request maximum allowed", W.Wire.within(String.repeat("x", 262144n), 262144n))
-    check("one byte beyond request maximum refused", Bool.not(W.Wire.within(String.repeat("x", 262145n), 262144n)))
+    check("normal request maximum allowed", W.Wire.within(boundary_text(262144n, ""), 262144n))
+    check("one byte beyond request maximum refused", Bool.not(W.Wire.within(boundary_text(262145n, ""), 262144n)))

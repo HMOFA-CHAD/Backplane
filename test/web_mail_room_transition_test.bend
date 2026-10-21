@@ -1,4 +1,6 @@
 import Base
+import ./check.bend as C
+import ./web_mail_room_nodes.bend as W
 import ../src/core/client.bend as U
 import ../src/core/model.bend as M
 import ../src/core/json.bend as J
@@ -72,3 +74,48 @@ def scenario_state(+k: Nat) -> U.Ui:
 
 def scenario(k: Nat) -> D.Node:
   WM.WM.page(scenario_state(k))
+
+# The checks of test/tools/web_mail_room_transition.mjs, run here so
+# scripts/test.sh runs them too. Bodies and recipients are sorted, "|"-joined.
+def bodies(n: D.Node) -> String:
+  W.Wn.class_texts(n, "mail-text")
+
+def targets(n: D.Node) -> String:
+  W.Wn.act_values(n, "mail-to")
+
+def read_hint(n: D.Node) -> String:
+  W.Wn.key_text(n, "mail-read-status")
+
+def failed_b(k: Nat, +label: String) -> IO(Unit):
+  do IO<Unit>:
+    +s : D.Node = scenario(k)
+    C.Check.str(label ++ " has no A body under B", bodies(s), "")
+    C.Check.str(label ++ " has no A recipient under B", targets(s), "")
+    C.Check.str(label ++ " preserves exact B error", W.Wn.key_text(s, "mail-error"), "B body unavailable")
+    C.Check.str(label ++ " exposes actual alert role", W.Wn.key_attr(s, "mail-error", "role"), "alert")
+    C.Check.str(label ++ " renders read-failure hint", read_hint(s), "Messages could not be loaded. See the mail error above.")
+
+def cached_b(+s: D.Node, +label: String) -> IO(Unit):
+  do IO<Unit>:
+    C.Check.str(label ++ " retains only B body", bodies(s), "B cached body")
+    C.Check.str(label ++ " retains only B/member/Room recipients", targets(s), "bot:bub|bot:member-b|room:B")
+    C.Check.str(label ++ " does not replace cached text with empty hint", read_hint(s), "")
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    +pending : D.Node = scenario(0n)
+    C.Check.str("B before RPC has no cached A body", bodies(pending), "")
+    C.Check.str("B before RPC has no cached A recipient", targets(pending), "")
+    C.Check.str("B before RPC renders loading", read_hint(pending), "Loading message bodies…")
+    failed_b(1n, "A success then B failure")
+    failed_b(2n, "B failure then A success")
+    failed_b(5n, "B failure then stale A error")
+    failed_b(6n, "stale A error then B failure")
+    +refresh : D.Node = scenario(3n)
+    cached_b(refresh, "cached B refresh failure")
+    C.Check.str("cached B refresh failure retains backend error alert", W.Wn.key_text(refresh, "mail-error"), "B body unavailable")
+    cached_b(scenario(7n), "cached B pending refresh")
+    +a : D.Node = scenario(4n)
+    C.Check.str("reopen A restores its exact cached bodies", bodies(a), "A cached body|A late body")
+    C.Check.str("reopen A restores its own recipients", targets(a), "bot:bub|bot:member-a|room:A")
+    C.Check.str("B error does not leak into reopened A", W.Wn.key_text(a, "mail-error"), "")

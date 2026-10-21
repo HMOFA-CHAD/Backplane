@@ -134,11 +134,12 @@ def main() -> IO(Unit):
     C.Check.str("streamed text alerts nothing", Nat.show(alerts(H.Hubs.recv(busy(), "box:3787", delta("t2")))), "0")
     C.Check.str("connecting raises no old alerts", Nat.show(alerts(H.Hubs.recv(H.Hubs.set(H.Hubs.init(0n, "c"), ["box:3787"]), "box:3787",
       log([M.ProjectCreated{"p2", "Box", "/box", 50n}, M.ThreadCreated{"t2", "p2", "Two", M.Local{}, "", "", "claude", "", 100n}, M.TurnChanged{"t2", M.Completed{}, 120n}], "")))), "0")
-    # a hub the phone no longer reaches keeps its last state, but its
-    # running threads leave the island once it has been quiet as long as
-    # the hub's own island holds (notify.bend's Note.fresh)
+    # a hub the phone no longer reaches keeps its last state, but an
+    # offline hub cannot claim current work: its running threads leave the
+    # island at once (core/signal.bend's Signal.visible), not after
+    # notify.bend's Note.fresh
     C.Check.str("a working hub's thread is on the island", island(tick(busy(), 1000n)), "1")
-    C.Check.str("a hub just gone keeps its threads there", island(unheard(11799n)), "1")
+    C.Check.str("a hub just gone takes its threads off the island", island(unheard(1001n)), "0")
     C.Check.str("a hub quiet three hours leaves the island", island(unheard(11800n)), "0")
     C.Check.str("it comes back when the hub answers", island(H.Hubs.after(H.Hubs.online(unheard(50000n), "box:3787", True{}))), "1")
     C.Check.str("a hub never heard and away shows nothing", island(tick(H.Hubs.after(H.Hubs.online(busy(), "box:3787", False{})), 20000n)), "0")

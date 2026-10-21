@@ -31,6 +31,10 @@ def preview() -> U.Ui:
 def ja() -> U.Ui:
   U.Lang.apply(preview(), "auto", "ja-JP")
 
+# Settings opens a category menu (bb783cc13); the language rows are on Appearance
+def appearance() -> U.Ui:
+  ui(U.Ui.act(ja(), "settings-page", "appearance"))
+
 def offered(xs: List<&2, String>) -> String:
   String.join(xs, ",")
 
@@ -119,8 +123,8 @@ def main() -> IO(Unit):
     C.Check.str("hub one", phone(phones(), "one"), "ja")
     C.Check.str("hub two", phone(phones(), "two"), "ja")
     C.Check.str("later hub", phone(H.Hubs.set(phones(), ["one", "two", "three"]), "three"), "ja")
-    C.Check.str("window Settings has offered chips", contains(window(ja()), "lang=ja;"), "yes")
-    C.Check.str("web Settings has localized row", contains(web(ja()), "エージェントも選択した言語で応答"), "yes")
+    C.Check.str("window Settings has offered chips", contains(window(appearance()), "lang=ja;"), "yes")
+    C.Check.str("web Settings has localized row", contains(web(appearance()), "エージェントも選択した言語で応答"), "yes")
     C.Check.str("loc reads only resolved tag", I.I18n.tag(U.Lang.loc(U.Ui.scratch_set(ja(), "@lang.os", "en"))), "ja")
     C.Check.str("language action sends no RPC", sent(U.Ui.act(ja(), "lang", "en")), "")
     C.Check.str("OS action sends no RPC", sent(U.Ui.act(ja(), "lang-os", "en")), "")
