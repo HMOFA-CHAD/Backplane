@@ -44,6 +44,15 @@ libdl, librt and the matching ld-linux interpreter in standard system directorie
 Unresolved libraries, foreign directories, unknown dependencies, RPATH/RUNPATH,
 loader injection tags and imported runtime-loading APIs fail preparation.
 
+The loader listing now captures a fixed `LD_DEBUG=files` diagnostic on stderr
+from that same measurement invocation, separately from its stdout listing.
+A leading address-only row is accepted only when the exact executable's unique
+file-labelled link-map block binds that address to its base, dynamic segment,
+entry point, program-header address and count. No address-only row is treated
+as a library or ignored by shape alone; unknown, repeated, nonleading or
+unbound rows fail. Both streams and the fixed diagnostic environment override
+are retained. This is loader inspection, not service startup or UI acceptance.
+
 macOS measurement records actual `otool -L/-l`, undefined symbols and `sw_vers`.
 It requires the Apple libSystem umbrella ABI and `/usr/lib/dyld`, refuses foreign
 libraries/search paths/secondary loading commands and runtime-loading imports,

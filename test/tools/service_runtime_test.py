@@ -13,6 +13,69 @@ spec.loader.exec_module(R)
 
 
 class RuntimeTests(unittest.TestCase):
+    PROGRAM = ('Entry point 0x18b22c0\nThere are 9 program headers, starting at offset 64\n'
+        ' PHDR 0x000040 0x0000000000000040 0x40\n'
+        ' LOAD 0x000000 0x0000000000000000 0x0\n'
+        ' DYNAMIC 0x587fda0 0x000000000587fda0 0x587fda0\n')
+    ARM_LIST = ('\t (0x0000ff9b5c8e0000)\n'
+        '\tlinux-vdso.so.1 (0x0000ff9b622ac000)\n'
+        '\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ff9b5c830000)\n'
+        '\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ff9b5c670000)\n'
+        '\t/lib/ld-linux-aarch64.so.1 (0x0000ff9b62270000)\n')
+
+    def debug(self, binary):
+        # Synthetic glibc diagnostic with preserved ARM program-header offsets.
+        base = 0xff9b5c8e0000
+        return (f' 42: file={binary} [0];  generating link map\n'
+            f' 42:   dynamic: 0x{base+0x587fda0:016x}  base: 0x{base:016x}   size: 0x0000000005980000\n'
+            f' 42:     entry: 0x{base+0x18b22c0:016x}  phdr: 0x{base+0x40:016x}  phnum:   9\n\n')
+
+    def test_actual_arm_row_requires_same_invocation_main_binding(self):
+        with self.assertRaises(ValueError):
+            R.elf_resolved(self.ARM_LIST)
+        with tempfile.TemporaryDirectory() as d:
+            binary = Path(d)/'backplane-serve'
+            binary.write_bytes(b'parser-model-only')
+            bound = R.elf_main_mapping(self.debug(binary), binary, self.PROGRAM)
+            got = R.elf_resolved(self.ARM_LIST, bound)
+            self.assertEqual(set(got), {'libm.so.6', 'libc.so.6', 'ld-linux-aarch64.so.1'})
+            self.assertEqual(bound['sha256'], R.sha(binary))
+
+    def test_main_binding_requires_exact_file_and_all_headers(self):
+        with tempfile.TemporaryDirectory() as d:
+            binary = Path(d)/'backplane-serve'
+            binary.write_bytes(b'parser-model-only')
+            debug = self.debug(binary)
+            cases = [debug.replace(str(binary), '/foreign'), debug+debug,
+                debug.replace('phnum:   9', 'phnum:   8'),
+                debug.replace('0x0000ff9b6215fda0', '0x0000ff9b6215fda1'),
+                debug.replace('0x0000ff9b5e1922c0', '0x0000ff9b5e1922c1'),
+                debug.replace('0x0000ff9b5c8e0040', '0x0000ff9b5c8e0041'),
+                debug.replace(' 42:     entry:', ' 43:     entry:'), '']
+            for text in cases:
+                with self.subTest(text=text), self.assertRaises(ValueError):
+                    R.elf_main_mapping(text, binary, self.PROGRAM)
+
+    def test_bound_main_does_not_allow_other_anonymous_or_bad_dependencies(self):
+        bound = {'mapStart': '0xff9b5c8e0000'}
+        for text in [self.ARM_LIST.replace('5c8e0000', '5c8e0001'),
+            self.ARM_LIST+self.ARM_LIST.splitlines()[0]+'\n',
+            'linux-vdso.so.1 (0x1)\n'+self.ARM_LIST,
+            self.ARM_LIST+'libx.so => not found\n', self.ARM_LIST+'unexpected\n',
+            self.ARM_LIST+' /foreign/ld-linux-aarch64.so.1 (0x2)\n']:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                R.elf_resolved(text, bound)
+
+    def test_loader_diagnostic_is_fixed_and_retains_separate_streams(self):
+        with tempfile.TemporaryDirectory() as d:
+            c = R.Capture(Path(d))
+            result = R.subprocess.CompletedProcess([], 0, b'list', b'diagnostic')
+            with patch.object(R.subprocess, 'run', return_value=result) as run:
+                self.assertEqual(c.elf_list(Path('/usr/bin/true'), Path('/exact/binary')), ('list', 'diagnostic'))
+                self.assertEqual(run.call_args.args[0], ['/usr/bin/true', '--list', '/exact/binary'])
+                self.assertEqual({k:v for k,v in run.call_args.kwargs['env'].items() if k.startswith('LD_')}, {'LD_DEBUG':'files'})
+            self.assertEqual((Path(d)/c.calls[0]['stderrLog']).read_text(), 'diagnostic')
+
     def test_native_host_tuple_is_exact(self):
         for system, machine, target in [('Linux', 'x86_64', 'linux-x64'), ('Linux', 'aarch64', 'linux-arm64'),
                                         ('Darwin', 'arm64', 'darwin-arm64'), ('Linux', 'armv7l', None)]:
