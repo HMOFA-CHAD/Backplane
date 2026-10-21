@@ -57,6 +57,97 @@ class Metadata(unittest.TestCase):
             with self.assertRaises(ValueError):
                 api.signing(service, [], receipt, 'unsigned-portable-allowed', None)
 
+    def test_native_builds_exact_both_roots_and_refuses_partial_compile(self):
+        for failure in ('none', 'compile', 'version'):
+            fail_render = failure == 'compile'
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary);out = root/'native';calls = []
+                source = {'versionStamp':'0.12.0', 'version':'0.12.0', 'telemetry_channel':'release',
+                          'service_c_sha256':api.digest(b'service fixture'),
+                          'render_c_sha256':api.digest(b'render fixture')}
+                execution = {'schema':1, 'metadataCommit':'1'*40, 'metadataTree':'2'*40,
+                             'toolsSha256':{'scripts/windows-runtime.py':'3'*64}}
+                def inputs(archive, expected, destination):
+                    destination.mkdir(parents=True)
+                    for name in ('service','render'):
+                        (destination/(name+'.c.gz')).write_bytes(gzip.compress((name+' fixture').encode()))
+                    api.write(destination/'SOURCE.json', source)
+                    return source
+                def run(command, **kwargs):
+                    c,exe = map(Path,command[-2:]);name = c.stem;calls.append(name)
+                    self.assertEqual(c.read_bytes(), (name+' fixture').encode())
+                    self.assertEqual(command[1],str(api.TOOLS_ROOT/'scripts/build-windows.sh'))
+                    if fail_render and name=='render':raise api.subprocess.CalledProcessError(1,command)
+                    exe.write_bytes(fixture_pe() + name.encode())
+                    adapted=exe.with_suffix('.cc')/'runtime.c';adapted.parent.mkdir()
+                    adapted.write_bytes(b'adapted '+c.read_bytes())
+                    api.write(adapted.with_name('RUNTIME-ADAPTER.json'),{'schema':1,
+                        'adapterSha256':'3'*64,'sourceCsha256':source[name+'_c_sha256'],
+                        'transformedCsha256':api.sha(adapted)})
+                args=SimpleNamespace(out=out,runtime_payload=root/'runtime',runtime_manifest_sha256='4'*64,
+                                     inputs=root/'inputs.tar.gz',sha256='5'*64)
+                with patch.object(api.sys,'platform','cygwin'),patch.object(api,'identity'),\
+                     patch.object(api,'runtime_payload'),patch.object(api,'bake_inputs',return_value={}),\
+                     patch.object(api,'execution_tools_identity',side_effect=lambda:json.loads(json.dumps(execution))),\
+                     patch.object(api,'import_inputs',side_effect=inputs),\
+                     patch.dict(api.os.environ,{'CC':sys.executable,'BACKPLANE_CFLAGS':'-O2'}),\
+                     patch.object(api.subprocess,'run',side_effect=run),\
+                     patch.object(api.subprocess,'check_output',side_effect=['x86_64-pc-cygwin','clang version 22.1.8','backplane-render '+('wrong' if failure == 'version' else '0.12.0')]):
+                    if fail_render:
+                        with self.assertRaises(api.subprocess.CalledProcessError):api.native(args)
+                        self.assertFalse((out/'COMPILE.json').exists())
+                    elif failure == 'version':
+                        with self.assertRaisesRegex(ValueError, 'renderer version'):api.native(args)
+                        self.assertFalse((out/'COMPILE.json').exists())
+                    else:
+                        api.native(args);receipt=api.load(out/'COMPILE.json')
+                        self.assertEqual(receipt['renderCsha256'],source['render_c_sha256'])
+                        self.assertEqual(receipt['renderEntrypoint'],api.RENDER_ENTRY)
+                        self.assertEqual(receipt['renderVersion'],'backplane-render 0.12.0')
+                        self.assertEqual(receipt['unsignedRenderSha256'],api.sha(out/'backplane-render.exe'))
+                        self.assertEqual(api.sha(out/'unsigned-render.exe'),api.sha(out/'backplane-render.exe'))
+                        self.assertEqual(receipt['producerExecution']['renderRuntimeAdapter']['sourceCsha256'],source['render_c_sha256'])
+                        self.assertNotEqual(receipt['unsignedRenderSha256'],receipt['unsignedServiceSha256'])
+                self.assertEqual(calls,['service','render'])
+
+    def test_emit_binds_distinct_service_and_render_entrypoints(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'src/web').mkdir(parents=True);(root/'src/web/sw.js').write_text('// fixture')
+            calls=[]
+            ident=dict(commit='1'*40,tree='2'*40,entrypoint=api.ENTRY,target='windows-x64',
+                       version='0.12.0',versionTag='v0.12.0',versionStamp='0.12.0',telemetry_channel='release')
+            def run(command, **kwargs):
+                if command[:2]==['bash','scripts/build-app.sh']:
+                    calls.append(command[2]);p=root/'build/cc'/Path(command[3]).name/'all.c'
+                    p.parent.mkdir(parents=True);p.write_text('C fixture for '+command[2])
+                elif command[:2]==['bend','src/web/index.html']:
+                    web=Path(command[-1]);web.mkdir();(web/'index.html').write_text('<html>fixture</html>')
+                    (web/'chunk-fixture.js').write_text('// fixture')
+            with patch.object(api,'ROOT',root),patch.object(api,'identity',side_effect=lambda:dict(ident)),\
+                 patch.object(api,'compiler_pin',return_value={'version':'metadata-only','archiveSha256':'3'*64,'executableSha256':'4'*64}),\
+                 patch.object(api.subprocess,'run',side_effect=run):
+                api.emit(SimpleNamespace(out=root/'out'))
+                source=api.check_inputs(root/'out/windows-service-inputs')
+                self.assertEqual(source['render_entrypoint'],api.RENDER_ENTRY)
+                self.assertEqual(source['render_c_sha256'],api.digest(('C fixture for '+api.RENDER_ENTRY).encode()))
+                self.assertNotEqual(source['render_c_sha256'],source['service_c_sha256'])
+                with api.tarfile.open(root/'out'/api.INPUT_ARCHIVE) as tar:
+                    self.assertIn('windows-service-inputs/render.c.gz',tar.getnames())
+            self.assertEqual(calls,[api.ENTRY,api.RENDER_ENTRY])
+
+    def test_renderer_authenticode_uses_own_unsigned_reference_and_filename(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);service=root/'backplane-render.exe';original=fixture_pe()
+            unsigned=root/'unsigned-render.exe';unsigned.write_bytes(original)
+            signed=bytearray(original)+b'fixture-certificate';struct.pack_into('<II',signed,152+112+4*8,len(original),19)
+            service.write_bytes(signed);(root/'cygpath.exe').write_bytes(b'fixture only')
+            with patch.object(api.sys,'platform','cygwin'),patch.object(api.sys,'executable',str(root/'python.exe')),\
+                 patch.object(api.subprocess,'check_output',side_effect=['C:\\fixture\\backplane-render.exe',json.dumps({'status':'Valid','thumbprint':'A'*40})]):
+                result=api.signing(service,[],{'unsignedRenderSha256':api.sha(unsigned)},'authenticode','A'*40,
+                                   'unsigned-render.exe','unsignedRenderSha256')
+            self.assertEqual(result['policy'],'authenticode')
+            self.assertEqual(result['files']['backplane-render.exe']['sha256'],api.sha(service))
+
     def test_paths_and_application_fonts(self):
         for name in ('../x', 'x\\y', 'x:stream', 'a/CON.txt', 'a.', 'a\nfile'):
             with self.subTest(name=name), self.assertRaises(ValueError):
@@ -88,6 +179,7 @@ class Metadata(unittest.TestCase):
             (directory / 'web/index.html').write_text('<html>metadata fixture</html>')
             (directory / 'web/index.html.gz').write_bytes(gzip.compress(b'<html>metadata fixture</html>'))
             (directory / 'service.c.gz').write_bytes(gzip.compress(b'/* not an emitted program */'))
+            (directory / 'render.c.gz').write_bytes(gzip.compress(b'/* renderer fixture */'))
             ident = dict(commit='1'*40, tree='2'*40, entrypoint=api.ENTRY,
                          target='windows-x64', version='0.11.2', versionTag='v0.11.2',
                          versionStamp='0.11.2', telemetry_channel='release')
@@ -97,11 +189,24 @@ class Metadata(unittest.TestCase):
             source = dict(ident, schema=3, kind='windows-service-emission',
                 inputs_sha256={n: x['sha256'] for n, x in api.inventory(directory, portable=True).items()},
                 service_c_sha256=api.digest(b'/* not an emitted program */'),
+                render_entrypoint=api.RENDER_ENTRY, render_c_sha256=api.digest(b'/* renderer fixture */'),
                 web_manifest_sha256=api.sha(directory / 'WEB.json'),
                 bend={'version': 'metadata-only', 'archiveSha256': '3'*64, 'executableSha256': '4'*64})
             api.write(directory / 'SOURCE.json', source)
             with patch.object(api, 'identity', return_value=ident):
                 self.assertEqual(api.check_inputs(directory)['entrypoint'], api.ENTRY)
+                original_render = (directory/'render.c.gz').read_bytes()
+                (directory/'render.c.gz').unlink()
+                with self.assertRaises(ValueError): api.check_inputs(directory)
+                (directory/'render.c.gz').write_bytes(original_render)
+                source['render_entrypoint'] = api.ENTRY
+                api.write(directory/'SOURCE.json', source)
+                with self.assertRaisesRegex(ValueError, 'render entrypoint'): api.check_inputs(directory)
+                source['render_entrypoint'] = api.RENDER_ENTRY
+                source['render_c_sha256'] = '0'*64
+                api.write(directory/'SOURCE.json', source)
+                with self.assertRaisesRegex(ValueError, 'render C'): api.check_inputs(directory)
+                source['render_c_sha256'] = api.digest(b'/* renderer fixture */')
                 source['entrypoint'] = 'src/app/main.bend'
                 api.write(directory / 'SOURCE.json', source)
                 with self.assertRaises(ValueError): api.check_inputs(directory)
@@ -158,6 +263,7 @@ class Metadata(unittest.TestCase):
             (inputs/'web/index.html').write_text('metadata fixture')
             (inputs/'web/index.html.gz').write_bytes(gzip.compress(b'metadata fixture'))
             (inputs/'service.c.gz').write_bytes(gzip.compress(b'fixture, not emitted C'))
+            (inputs/'render.c.gz').write_bytes(gzip.compress(b'render fixture, not emitted C'))
             ident = dict(commit='1'*40, tree='2'*40, entrypoint=api.ENTRY,
                          target='windows-x64', version='0.11.2', versionTag='v0.11.2',
                          versionStamp='0.11.2', telemetry_channel='release')
@@ -167,6 +273,7 @@ class Metadata(unittest.TestCase):
             source = dict(ident, schema=3, kind='windows-service-emission',
                 inputs_sha256={n: x['sha256'] for n, x in api.inventory(inputs, portable=True).items()},
                 service_c_sha256=api.digest(b'fixture, not emitted C'),
+                render_entrypoint=api.RENDER_ENTRY, render_c_sha256=api.digest(b'render fixture, not emitted C'),
                 web_manifest_sha256=api.sha(inputs/'WEB.json'),
                 bend={'version': 'metadata-only', 'archiveSha256': '3'*64, 'executableSha256': '4'*64})
             api.write(inputs/'SOURCE.json', source)
@@ -183,12 +290,19 @@ class Metadata(unittest.TestCase):
             service = root/'native/backplane-serve.exe'
             service.write_bytes(fixture_pe('cygwin1.dll'))
             (root/'native/unsigned-service.exe').write_bytes(service.read_bytes())
+            renderer = root/'native/backplane-render.exe'
+            renderer.write_bytes(fixture_pe('cygwin1.dll') + b'render')
+            (root/'native/unsigned-render.exe').write_bytes(renderer.read_bytes())
             execution = {'schema': 1, 'metadataCommit': '5'*40, 'metadataTree': '6'*40,
                 'toolsSha256': {'scripts/windows-runtime.py': '7'*64},
                 'runtimeAdapter': {'schema': 1, 'adapterSha256': '7'*64,
-                    'sourceCsha256': source['service_c_sha256'], 'transformedCsha256': '8'*64}}
+                    'sourceCsha256': source['service_c_sha256'], 'transformedCsha256': '8'*64},
+                'renderRuntimeAdapter': {'schema': 1, 'adapterSha256': '7'*64,
+                    'sourceCsha256': source['render_c_sha256'], 'transformedCsha256': '9'*64}}
             api.write(root/'native/COMPILE.json', dict(schema=1,
                 sourceReceiptSha256=api.sha(inputs/'SOURCE.json'), unsignedServiceSha256=api.sha(service),
+                unsignedRenderSha256=api.sha(renderer), renderEntrypoint=api.RENDER_ENTRY,
+                renderCsha256=source['render_c_sha256'], renderVersion='backplane-render '+source['version'],
                 producerExecution=execution,
                 runtimeManifestSha256=api.sha(payload/'RUNTIME.json'), compiler={'fixture': True},
                 compileInputs={'version': '0.11.2', 'versionStamp': '0.11.2', 'telemetryChannel': 'release',
@@ -205,10 +319,25 @@ class Metadata(unittest.TestCase):
                 with zipfile.ZipFile(archive) as z:
                     build = json.loads(z.read('backplane-service/BUILD.json'))
                     self.assertEqual(build['producerExecution'], execution)
+                    self.assertEqual(build['roles']['render'], 'backplane-render.exe')
+                    self.assertEqual(build['renderSha256'], api.sha(renderer))
+                    self.assertIn('backplane-render.exe', build['pe'])
                     self.assertFalse(build['signing']['publicEligible'])
                     self.assertEqual(build['managedControl']['status'], 'UNSUPPORTED')
                     entries = {n: z.read(n) for n in z.namelist()}
                 with self.assertRaises(ValueError): api.verify_resources(archive, '0'*64)
+                render_entries = dict(entries)
+                render_entries['backplane-service/backplane-render.exe'] += b'substituted'
+                changed_build = dict(build)
+                changed_build['sha256'] = dict(build['sha256'])
+                changed_build['sizes'] = dict(build['sizes'])
+                changed_build['sha256']['backplane-render.exe'] = api.digest(render_entries['backplane-service/backplane-render.exe'])
+                changed_build['sizes']['backplane-render.exe'] = len(render_entries['backplane-service/backplane-render.exe'])
+                render_entries['backplane-service/BUILD.json'] = json.dumps(changed_build).encode()
+                with zipfile.ZipFile(root/'bad-render.zip', 'w') as z:
+                    for n, b in render_entries.items(): z.writestr(n, b)
+                with self.assertRaisesRegex(ValueError, 'renderer digest'):
+                    api.verify_resources(root/'bad-render.zip', api.sha(root/'bad-render.zip'))
                 entries['backplane-service/web/index.html'] = b'tampered'
                 bad = root/'bad.zip'
                 with zipfile.ZipFile(bad, 'w') as z:
