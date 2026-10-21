@@ -58,11 +58,11 @@ def ids(xs: List<&2, J.Json>) -> String:
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("exact Uberbot bar", strs(B.BU.tabs.for(ui("chat"), "b")), "chat;mail;space;browser;memory;routines;settings;")
-    C.Check.str("existing Mailroom default retained", B.BU.tab.of(ui(""), "b"), "mail")
+    C.Check.str("no tab picked opens Chat (the person's choice)", B.BU.tab.of(ui(""), "b"), "chat")
     C.Check.str("selected Status route retained", B.BU.tab.of(ui("status"), "b"), "status")
     C.Check.str("selected Tasks route retained", B.BU.tab.of(ui("tasks"), "b"), "tasks")
     C.Check.str("selected Webhooks route retained", B.BU.tab.of(ui("hooks"), "b"), "hooks")
-    C.Check.str("unknown selection has sensible default", B.BU.tab.of(ui("unknown"), "b"), "mail")
+    C.Check.str("unknown selection has sensible default", B.BU.tab.of(ui("unknown"), "b"), "chat")
     C.Check.str("Status under Mailroom", strs(B.BU.nav.sections(B.BU.tabs.for(ui("status"), "b"), "status")), "mail;status;")
     C.Check.str("Tasks under Browser", strs(B.BU.nav.sections(B.BU.tabs.for(ui("tasks"), "b"), "tasks")), "browser;tasks;")
     C.Check.str("Webhooks under Settings", strs(B.BU.nav.sections(B.BU.tabs.for(ui("hooks"), "b"), "hooks")), "settings;hooks;")

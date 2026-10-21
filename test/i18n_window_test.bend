@@ -81,8 +81,12 @@ def captions.tools(ts: List<&2, TO.Tool>) -> String:
     case Nil{}: ""
     case TO.Tool{_, l, _, _, _, _, _, _} <> t: l ++ "|" ++ captions.tools(t)
 
-def settings(page: String) -> L.Out:
-  L.Lay.settings(ty(I.Ja{}), state(), N.Nui.init(U.Act.ui(U.Settings.go(ui.of(ja()), page)), 1400, 10000), Map.new(&2, String), "test", "", 264, 1400, 10000, 0)
+def settings() -> L.Out:
+  L.Lay.settings(ty(I.Ja{}), state(), N.Nui.init(ui.of(ja()), 1400, 10000), Map.new(&2, String), "test", "", 264, 1400, 10000, 0)
+
+# Settings opens a category menu; the thread card is on its Threads page
+def settings.threads() -> L.Out:
+  L.Lay.settings(ty(I.Ja{}), state(), N.Nui.init(U.Act.ui(U.Ui.act(ui.of(ja()), "settings-page", "threads")), 1400, 10000), Map.new(&2, String), "test", "", 264, 1400, 10000, 0)
 
 def thread() -> L.Out:
   +font = ty(I.Ja{})
@@ -148,9 +152,9 @@ def main() -> IO(Unit):
     C.Check.str("voice ja", L.Vx.head.loc(I.Ja{}, "live", "mic"), MSG.T.voice.listening(I.Ja{}, "named", "mic"))
     C.Check.str("provider en", L.Set.cli("", "codex"), "codex is not installed")
     C.Check.str("provider ja", L.Set.cli.loc(I.Ja{}, "", "codex"), MSG.T.settings.provider.missing(I.Ja{}, "codex"))
-    C.Check.str("settings draws Japanese", has(text(settings("")), MSG.T.settings.voice(I.Ja{})), "True")
-    C.Check.str("settings draws thread card", has(text(settings("threads")), MSG.T.settings.settle(I.Ja{})), "True")
-    C.Check.str("settings hit retained", Bool.show(U32.is_gt(right.go(hits(settings("threads")), "setting", "restart.continue=off"), 0)), "True")
+    C.Check.str("settings draws Japanese", has(text(settings()), MSG.T.settings.voice(I.Ja{})), "True")
+    C.Check.str("settings draws thread card", has(text(settings.threads()), MSG.T.settings.settle(I.Ja{})), "True")
+    C.Check.str("settings hit retained", Bool.show(U32.is_gt(right.go(hits(settings.threads()), "setting", "restart.continue=off"), 0)), "True")
     C.Check.str("right aligned Japanese chip", U32.show(right.go(hits(L.Set.carry(ty(I.Ja{}), True{}, 300, 700, 100)), "setting", "restart.continue=off")), "984")
     C.Check.str("IPC chips right aligned", U32.show(right.go(hits(L.Set.ipc(ty(I.Ja{}), "on", 300, 700, 100)), "setting", "kicad.ipc=off")), "984")
     C.Check.str("thread title retained", has(text(thread()), "A person's title"), "True")

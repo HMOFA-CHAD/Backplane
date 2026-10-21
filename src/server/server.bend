@@ -2558,16 +2558,11 @@ def Mech.sent(r: P.Ran, +inbox: Chan(Msg), +client: U32, +id: String, +thread: S
 def Mech.list(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String) -> IO(Unit):
   IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Mech.cmd()], cwd), r => Mech.sent(r, inbox, client, id, thread, cwd))
 
-# a part's renders, drawn on request (mech.render: the Mech page's
-# Create renders): `backplane --render` beside this program, in the
-# project, then the parts listed again; the answer is a listing that also
-# names what was rendered and why it failed ("" when it did not)
-def Mech.said(r: P.Ran) -> String:
-  match r:
-    case P.Ran{0, _}:
-      ""
-    case P.Ran{_, out}:
-      String.take(String.trim(out), 300n)
+# a part's renders on request (mech.render: the Mech page's Create
+# renders). This build has no renderer (no native binary ships), so the
+# answer is the parts listed again with the reason, never a silent failure
+def Mech.unavailable() -> String:
+  "Part renders are not available in this build. The 3D view still shows the part."
 
 def Mech.rendered(+err: String, l: P.Ran, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +path: String) -> IO(Unit):
   match l:
@@ -2577,10 +2572,8 @@ def Mech.rendered(+err: String, l: P.Ran, +inbox: Chan(Msg), +client: U32, +id: 
 
 def Mech.render(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +path: String) -> IO(Unit):
   do IO<Unit>:
-    exe : String <- H.Sys.exe_dir()
-    r : P.Ran <- P.Proc.run(exe ++ "/backplane", ["--render", path], cwd)
     l : P.Ran <- P.Proc.run("sh", ["-c", Mech.cmd()], cwd)
-    Mech.rendered(Mech.said(r), l, inbox, client, id, thread, cwd, path)
+    Mech.rendered(Mech.unavailable(), l, inbox, client, id, thread, cwd, path)
 
 def Snooze.tz(r: P.Ran) -> String:
   match r:
@@ -5832,7 +5825,7 @@ def Main.dirs(+kdir: String) -> List<&2, String>:
 def Main.config(+user: String, +exe: String, args: List<String>, b: Boot) -> Cfg:
   Boot{kdir, skills, rt, ms, mt, +fc} = b
   Main.args(args, Cfg{user ++ "/.backplane-bend", exe ++ "/web", "127.0.0.1", 3787,
-    Q.Prompt.runtime("Backplane") ++ "\n\n" ++ Q.Prompt.mech(fc, exe ++ "/backplane"), Main.dirs(kdir), Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc, None{}}, TI.Tio.empty(False{}), Nil{}})
+    Q.Prompt.runtime("Backplane") ++ "\n\n" ++ Q.Prompt.mech(fc), Main.dirs(kdir), Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc, None{}}, TI.Tio.empty(False{}), Nil{}})
 
 def Sys.exe_dir.io() -> IO(String):
   H.Sys.exe_dir()
@@ -10816,9 +10809,9 @@ def Hub.thin.message_kind(live: Bool, h: Hub, +client: U32, +o: J.Json, +c: Clie
     case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       +stream = TLIVE.Stream.get(Cfg.thin.streams(cfg), thread)
       Hub.thin.live_message_cursor(TV.LiveMessage.start(stream, J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg)), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, stream, thread)
-    case False{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+    case False{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.thin.message_read(TV.Message.read(Cfg.thin(cfg), thread, J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg),
-        THIN.Index.page(Cfg.thin(cfg), thread, ThinContext.anchor(Client.thin.context(c)), 32n)), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now)
+        THIN.Index.page(Cfg.thin(cfg), thread, ThinContext.anchor(Client.thin.context(c)), 32n), st), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now)
 
 def Hub.thin.message(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) -> IO(Hub):
   match h:

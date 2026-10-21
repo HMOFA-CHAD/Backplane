@@ -10634,7 +10634,7 @@ law mailroom_tab_after_chat:
 law mailroom_uber_default:
   for +u: U.Ui
   for +id: String
-  {BU.BU.tab.dflt(u, id) == Bool.pick(String, UBR.Uber.is(U.Ui.state(u), id), "mail", "chat") : String}
+  {BU.BU.tab.dflt(u, id) == "chat" : String}
 
 law mailroom_run_collapsed_default:
   for +now: Nat
@@ -11249,3 +11249,18 @@ law cache_identity_post_refused:
 law cache_identity_empty_cookie:
   for https: Bool
   {AUTH.Auth.cache_cookie("", https) == "" : String}
+
+# --- operational reports to the uberbot (oprep_*) ---
+# a task's result for the uberbot's thread is filed in its Mailroom, not
+# posted in its Chat (hub.bend's Operational.*)
+law oprep_task_not_in_chat:
+  {H.Operational.posts(H.Queue.changes(H.Operational.demo.finish(True{})), "t0") == 0n : Nat}
+
+# it is marked delivered only with its filed header, never before
+law oprep_task_delivered_with_filing:
+  {Nat.add(Nat.mul(H.Operational.delivered(H.Queue.changes(H.Operational.demo.finish(True{}))), 10n),
+    H.Operational.delivered(H.Operational.pending(H.Step.outs_of(H.Operational.demo.finish(True{}))))) == 1n : Nat}
+
+# any other thread is told in its chat, as before
+law oprep_other_thread_unchanged:
+  {H.Operational.posts(H.Queue.changes(H.Operational.demo.finish(False{})), "t0") == 1n : Nat}

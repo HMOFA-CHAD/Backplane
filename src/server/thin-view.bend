@@ -6,6 +6,7 @@ import ../core/botui.bend as BI
 import ../core/client.bend as U
 import ../core/presentation.bend as P
 import ../core/thin.bend as T
+import ../core/hub.bend as HB
 import ../core/thin-live.bend as TL
 import ../mobile/thin.bend as MT
 import ../web/dom.bend as D
@@ -397,6 +398,22 @@ def Message.result(+row: T.Row, +start: Nat, +p: J.Json, +epoch: String) -> J.Js
     J.KV{"hasMore", J.Flag{Nat.is_lt(next, n)}}, J.KV{"complete", J.Flag{Nat.is_ge(next, n)}},
     J.KV{"cursor", J.Str{Bool.pick(String, Nat.is_lt(next, n), W.Cursor.write(epoch, J.Json.get_obj(p, "target"), "message:" ++ Nat.show(T.Row.n(row)), next), "")}}])}])
 
+# A launched thread's report stored cut short (before reports were kept
+# whole) reads whole: hub.bend's Lr.whole checks the row is exactly the old
+# cut form of the reply its id links to; any other row is read as stored.
+def Message.whole.k(+row: T.Row, +text: String) -> T.Row:
+  match row:
+    case T.Row{+n, +e, +terms, +blocks}:
+      Bool.pick(T.Row, String.eq(text, T.Entry.text(e)), T.Row{n, e, terms, blocks}, T.Row{n, T.Entry.with_text(e, text), terms, T.Blocks.of(text)})
+
+def Message.whole.e(+st: M.State, +row: T.Row, +e: M.Entry) -> T.Row:
+  match e:
+    case M.Msg{+id, _, _, +text, +at}: Message.whole.k(row, HB.Lr.whole(st, id, text, at))
+    case _: row
+
+def Message.whole(+st: M.State, +row: T.Row) -> T.Row:
+  Message.whole.e(st, row, T.Row.entry(row))
+
 # A chunk is scoped to the selected thread and exact immutable row version.
 # Empty cursors may only resolve one of the at-most-32 visible rows. Continued
 # chunks use their immutable ordinal, never a full event or transcript scan.
@@ -435,32 +452,33 @@ def Message.continued( +offset: Maybe<&2, Nat>, +row: T.Row, +thread: String, +i
     case None{}: MessageRead{"STALE_CURSOR", row, 0n}
     case Some{+at}: Message.offset(Bool.and(Message.owns(row, thread, id), Bool.and(Nat.is_gt(at, 0n), Nat.is_lt(at, T.Blocks.n(T.Row.blocks(row))))), row, at)
 
-def Message.ordinal( +ordinal: Maybe<&2, Nat>, +index: T.Index, +thread: String, +p: J.Json, +epoch: String) -> MessageRead:
+def Message.ordinal( +ordinal: Maybe<&2, Nat>, +index: T.Index, +thread: String, +p: J.Json, +epoch: String, +st: M.State) -> MessageRead:
   match ordinal:
     case None{}: MessageRead{"STALE_CURSOR", T.Row.blank(), 0n}
-    case Some{+n}: Message.continued(W.Cursor.read(J.Json.get_str(p, "cursor", ""), epoch, J.Json.get_obj(p, "target"), "message:" ++ Nat.show(n)), T.Index.row(index, n), thread, J.Json.get_str(p, "entryId", ""))
+    case Some{+n}: Message.continued(W.Cursor.read(J.Json.get_str(p, "cursor", ""), epoch, J.Json.get_obj(p, "target"), "message:" ++ Nat.show(n)), Message.whole(st, T.Index.row(index, n)), thread, J.Json.get_str(p, "entryId", ""))
 
-def Message.cursor_query( +valid: Bool, +query: String, +index: T.Index, +thread: String, +p: J.Json, +epoch: String) -> MessageRead:
+def Message.cursor_query( +valid: Bool, +query: String, +index: T.Index, +thread: String, +p: J.Json, +epoch: String, +st: M.State) -> MessageRead:
   match valid:
     case False{}: MessageRead{"STALE_CURSOR", T.Row.blank(), 0n}
-    case True{}: Message.ordinal(P.Session.nat(String.drop(query, 8n), P.Session.nat.max()), index, thread, p, epoch)
+    case True{}: Message.ordinal(P.Session.nat(String.drop(query, 8n), P.Session.nat.max()), index, thread, p, epoch, st)
 
-def Message.cursor_short( +valid: Bool, +index: T.Index, +thread: String, +p: J.Json, +epoch: String) -> MessageRead:
+def Message.cursor_short( +valid: Bool, +index: T.Index, +thread: String, +p: J.Json, +epoch: String, +st: M.State) -> MessageRead:
   match valid:
     case False{}: MessageRead{"LIMIT", T.Row.blank(), 0n}
     case True{}:
       +query = J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(J.Json.get_str(p, "cursor", "")), J.Null{}), "query", "")
-      Message.cursor_query(String.starts_with(query, "message:"), query, index, thread, p, epoch)
+      Message.cursor_query(String.starts_with(query, "message:"), query, index, thread, p, epoch, st)
 
-def Message.read_empty( +empty: Bool, +index: T.Index, +thread: String, +p: J.Json, +epoch: String, +rows: List<&2, String>) -> MessageRead:
+def Message.read_empty( +empty: Bool, +index: T.Index, +thread: String, +p: J.Json, +epoch: String, +rows: List<&2, String>, +st: M.State) -> MessageRead:
   match empty:
     case True{}:
-      +row = Message.find(rows, index, thread, J.Json.get_str(p, "entryId", ""), T.Row.blank())
+      +row = Message.whole(st, Message.find(rows, index, thread, J.Json.get_str(p, "entryId", ""), T.Row.blank()))
       Message.initial(Message.owns(row, thread, J.Json.get_str(p, "entryId", "")), row)
-    case False{}: Message.cursor_short(W.Wire.within(J.Json.get_str(p, "cursor", ""), 1024n), index, thread, p, epoch)
+    case False{}: Message.cursor_short(W.Wire.within(J.Json.get_str(p, "cursor", ""), 1024n), index, thread, p, epoch, st)
 
-def Message.read( +index: T.Index, +thread: String, +p: J.Json, +epoch: String, +rows: List<&2, String>) -> MessageRead:
-  Message.read_empty(String.is_empty(J.Json.get_str(p, "cursor", "")), index, thread, p, epoch, rows)
+# st: the read model, for a report stored cut short (Message.whole)
+def Message.read( +index: T.Index, +thread: String, +p: J.Json, +epoch: String, +rows: List<&2, String>, +st: M.State) -> MessageRead:
+  Message.read_empty(String.is_empty(J.Json.get_str(p, "cursor", "")), index, thread, p, epoch, rows, st)
 
 # Query validation never silently drops a >64-codepoint token. Such a query
 # cannot be reinterpreted as a less restrictive conjunction of other tokens.

@@ -45,7 +45,7 @@ def main() -> IO(Unit):
     check("bot preference cannot attach to thread", Bool.not(V.Route.valid(V.Route.json("b", "browser"), V.Target.json("thread", "b"))))
     check("unknown route rejected", Bool.not(V.Route.valid(V.Route.json("b", "unknown"), target())))
     check("extra field rejected", Bool.not(V.Route.valid(V.Obj.put(V.Route.json("b", "browser"), "token", J.Str{"x"}), target())))
-    C.Check.str("unsupported route normalizes through canonical default", tab("unknown"), "mail")
+    C.Check.str("unsupported route normalizes through canonical default", tab("unknown"), "chat")
     C.Check.str("absent native renderer cannot enable typed Mailroom", U.Ui.info(current(V.Obj.put(request("mail"), "nativeRenderer", J.Str{"unknown"})), "local.mailroom"), "")
     C.Check.str("Android exact declared renderer supported", U.Ui.info(current(V.Obj.put(request("mail"), "nativeRenderer", J.Str{"android-v1"})), "local.mailroom"), "on")
     C.Check.str("iOS exact declared renderer supported", U.Ui.info(current(request("mail")), "local.mailroom"), "on")

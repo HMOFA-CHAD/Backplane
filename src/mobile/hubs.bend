@@ -2378,7 +2378,9 @@ def Hubs.opened.on(u: U.Ui) -> Bool:
 
 # what Hubs.screen's "thread" reads of a hub's screen (Hubs.origin.focus):
 # whether it is online, and for the hub in focus its open thread, its ids
-# made the hub's (Q.all)
+# made the hub's (Q.all). The thread reads the frame's activity signals,
+# as the whole screen's does (screen.bend's Mob.screen.ixr), or its phase
+# says inactive while the whole screen says working or blocked.
 def Hubs.opened.j(+lc: I.Loc, focus: Bool, +k: String, +u: U.Ui) -> J.Json:
   match focus:
     case True{}:

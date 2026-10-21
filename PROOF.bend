@@ -12604,3 +12604,7 @@ def Laws.presentation_history_over_kept(c, at, more, rest): PRESENTPROOF.credit_
 
 def Laws.cache_identity_post_refused(hs, token): {==}
 def Laws.cache_identity_empty_cookie(https): {==}
+
+def Laws.oprep_task_not_in_chat(): {==}
+def Laws.oprep_task_delivered_with_filing(): {==}
+def Laws.oprep_other_thread_unchanged(): {==}

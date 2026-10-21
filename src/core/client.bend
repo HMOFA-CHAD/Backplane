@@ -9100,11 +9100,12 @@ def Timeline.visible(settings: Bool, selected: Bool, thread: Bool) -> Bool:
 def Bots.chat.is(+st: M.State, +id: String, +th: String, +sel: String) -> Bool:
   Bool.or(String.eq(th, sel), Bool.and(UB.Uber.is(st, id), US.Ub.chat.is(st, sel)))
 
-# (the uberbot with no tab picked shows its Status, not its chat)
+# No explicit bot tab is Chat, including the main bot. An explicitly picked
+# operational tab still leaves its conversation timeline inactive.
 def Timeline.bot(m: Maybe<&2, BT.Bot>, +u: Ui) -> Bool:
   match m:
     case Some{BT.Bot{+bid, _, +th, _, _, _, _}}:
-      Bool.or(Bool.not(Bots.chat.is(Ui.state.of(u), bid, th, Ui.sel(u))), Bool.or(Bool.and(String.is_empty(Ui.scratch(u, "@btab")), Bool.not(UB.Uber.is(Ui.state.of(u), bid))), String.eq(Ui.scratch(u, "@btab"), "chat")))
+      Bool.or(Bool.not(Bots.chat.is(Ui.state.of(u), bid, th, Ui.sel(u))), Bool.or(String.is_empty(Ui.scratch(u, "@btab")), String.eq(Ui.scratch(u, "@btab"), "chat")))
     case None{}:
       True{}
 
@@ -10415,15 +10416,17 @@ def Tour.act.m(moves: Bool, single: Bool, +u: Ui, +action: String) -> Act:
 def Tour.act(+u: Ui, +action: String) -> Act:
   Tour.act.m(Bool.and(Nat.is_eq(Tour.at(u), OB.Ob.share()), Bool.or(String.eq(action, "ob-next"), String.eq(action, "ob-skip"))), Tour.single(u), u, action)
 
-# The uberbot (core/uber.bend, docs/uber.md): "uber" shows its Status tab,
-# "uber-promote <bot>" and "uber-demote" ask the hub (bots.uber), which backs
-# the bot up before it logs the promotion. Routed ahead of the action table.
+# The uberbot (core/uber.bend, docs/uber.md): "uber" opens its Chat tab on a
+# client with the Mailroom (Mailv.enabled, "local.mailroom"), else its
+# Status (the phones' plane); "uber-promote <bot>" and "uber-demote" ask the
+# hub (bots.uber), which backs the bot up before it logs the promotion.
+# Routed ahead of the action table.
 def Uber.show.k(none: Bool, +u: Ui, +id: String) -> Act:
   match none:
     case True{}:
       Act{u, Nil{}}
     case False{}:
-      Bots.select(Ui.scratch_set(u, "@btab", "status"), id)
+      Bots.select(Ui.scratch_set(u, "@btab", Bool.pick(String, String.eq(Ui.info(u, "local.mailroom"), "on"), "chat", "status")), id)
 
 def Uber.show(+u: Ui) -> Act:
   Uber.show.k(String.is_empty(UB.Uber.bot(Ui.state.of(u))), u, UB.Uber.bot(Ui.state.of(u)))
