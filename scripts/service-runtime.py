@@ -38,20 +38,35 @@ class Capture:
         self.root, self.calls = root, []
 
     def __call__(self, argv):
+        return self.run(argv)
+
+    def elf_list(self, loader, binary):
+        # Fixed measurement-only diagnostic, never caller-provided LD_* values.
+        return self.run([loader, '--list', binary], loader_files=True)
+
+    def run(self, argv, loader_files=False):
         # No inherited loader injection, protected bake variables or user tool config.
         env = {k: v for k, v in os.environ.items() if not k.startswith(
             ('LD_', 'DYLD_', 'BACKPLANE_GOOGLE_', 'BACKPLANE_TELEMETRY_'))}
         env.update(LC_ALL='C', LANG='C')
+        if loader_files:
+            env['LD_DEBUG'] = 'files'
         p = Path(argv[0]).resolve(strict=True)
         result = subprocess.run([str(x) for x in argv], stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, timeout=30, close_fds=True)
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE if loader_files else subprocess.STDOUT,
+            env=env, timeout=30, close_fds=True)
         text = result.stdout.decode('utf-8', errors='strict')
         name = 'operation-' + str(len(self.calls)) + '.log'
         (self.root/name).write_text(text)
         self.calls.append({'argv': [str(x) for x in argv], 'exit': result.returncode,
             'tool': {'path': str(p), 'sha256': sha(p), 'bytes': p.stat().st_size}, 'log': name})
+        if loader_files:
+            debug = result.stderr.decode('utf-8', errors='strict')
+            debug_name = name.removesuffix('.log') + '-loader-files.log'
+            (self.root/debug_name).write_text(debug)
+            self.calls[-1].update(environmentOverrides={'LD_DEBUG': 'files'}, stderrLog=debug_name)
         require(result.returncode == 0, 'Dependency measurement failed: ' + name)
-        return text
+        return (text, debug) if loader_files else text
 
 
 def elf_needed(text):
@@ -60,11 +75,46 @@ def elf_needed(text):
     return re.findall(r'\(NEEDED\).*?\[([^\]]+)\]', text)
 
 
-def elf_resolved(text):
+def elf_main_mapping(debug, binary, program):
+    # rtld prints a file-labelled link-map block before clearing the main name.
+    # Bind its base/dynamic/entry/phdr to this exact executable's program headers.
+    pattern = (r'^\s*([0-9]+):\s+file=' + re.escape(str(binary))
+        + r' \[0\];\s+generating link map\n'
+        r'\s*\1:\s+dynamic: (0x[0-9a-f]+)\s+base: (0x[0-9a-f]+)\s+size: (0x[0-9a-f]+)\n'
+        r'\s*\1:\s+entry: (0x[0-9a-f]+)\s+phdr: (0x[0-9a-f]+)\s+phnum:\s+([0-9]+)\s*$')
+    maps = re.findall(pattern, debug, re.M)
+    require(len(maps) == 1, 'Unnamed ELF mapping lacks unique exact executable diagnostic')
+    _, dynamic, base, size, entry, phdr, count = maps[0]
+    dynamic, base, size, entry, phdr = [int(x, 16) for x in (dynamic, base, size, entry, phdr)]
+    def one(pattern):
+        matches = re.findall(pattern, program, re.M)
+        require(len(matches) == 1, 'Executable program header binding ambiguous')
+        return matches[0]
+    dynamic_vaddr = int(one(r'^\s*DYNAMIC\s+0x[0-9a-f]+\s+(0x[0-9a-f]+)\s'), 16)
+    phdr_vaddr = int(one(r'^\s*PHDR\s+0x[0-9a-f]+\s+(0x[0-9a-f]+)\s'), 16)
+    first_load = re.findall(r'^\s*LOAD\s+(0x[0-9a-f]+)\s+(0x[0-9a-f]+)\s', program, re.M)
+    require(first_load and tuple(int(x, 16) for x in first_load[0]) == (0, 0),
+            'Unnamed main mapping requires zero-origin executable LOAD')
+    require(base > 0 and size > 0 and dynamic == base + dynamic_vaddr
+        and entry == base + int(one(r'^Entry point (0x[0-9a-f]+)$'), 16)
+        and phdr == base + phdr_vaddr
+        and int(count) == int(one(r'^There are ([0-9]+) program headers,')),
+        'Unnamed ELF mapping does not bind executable program headers')
+    return {'path': str(binary), 'sha256': sha(binary), 'mapStart': hex(base),
+        'binding': 'Same --list invocation LD_DEBUG=files exact file, base/dynamic/entry/phdr/phnum',
+        'classification': 'measured-main-executable-not-dependency'}
+
+
+def elf_resolved(text, main_mapping=None):
     result = {}
-    for line in text.splitlines():
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for index, line in enumerate(lines):
         line = line.strip()
-        if not line:
+        anonymous = re.fullmatch(r'\(0x([0-9a-f]+)\)', line)
+        if anonymous:
+            require(index == 0 and main_mapping is not None
+                and int(anonymous[1], 16) == int(main_mapping['mapStart'], 16),
+                'Unbound or misplaced unnamed ELF mapping')
             continue
         if re.fullmatch(r'linux-vdso\.so\.1 \(0x[0-9a-f]+\)', line):
             continue  # kernel virtual mapping; not a library file
@@ -75,6 +125,7 @@ def elf_resolved(text):
             continue
         m = re.fullmatch(r'(/[^ ]+) \(0x[0-9a-f]+\)', line)
         require(m is not None, 'Unresolved or unexpected ELF loader output')
+        require(Path(m[1]).name not in result, 'Duplicate loader resolution')
         result[Path(m[1]).name] = m[1]
     return result
 
@@ -91,7 +142,9 @@ def linux_measure(binary, target, capture):
     require(len(interpreters) == 1 and Path(interpreters[0]).name == loader_name, 'Unexpected ELF interpreter')
     loader = Path(interpreters[0])
     require(loader.is_absolute() and str(loader.resolve()).startswith(('/usr/lib/', '/lib/')), 'Foreign ELF interpreter')
-    resolved = elf_resolved(capture([loader, '--list', binary]))
+    listed, debug = capture.elf_list(loader, binary)
+    main_mapping = elf_main_mapping(debug, binary, program) if re.search(r'^\s*\(0x[0-9a-f]+\)\s*$', listed, re.M) else None
+    resolved = elf_resolved(listed, main_mapping)
     loader_version = capture([loader, '--version'])
     approved = {'libc.so.6', 'libm.so.6', 'libpthread.so.0', 'libdl.so.2', 'librt.so.1', loader_name}
     require(resolved and set(resolved) <= approved and loader_name in resolved, 'Non-system dependency requires supplied runtime qualification')
@@ -118,6 +171,7 @@ def linux_measure(binary, target, capture):
     edges.append({'from': 'backplane-serve', 'name': loader_name, 'resolvedSystemPath': str(loader), 'interpreter': True})
     os_release = Path('/etc/os-release').read_text()
     return {'platform': 'Linux', 'release': platform.release(), 'osRelease': os_release, 'loaderVersion': loader_version,
+        'mainExecutableMapping': main_mapping,
         'systemLibraries': nodes, 'dependencyGraph': edges, 'runtimeLoaderImports': [],
         'kernelVirtualDso': 'OS-owned linux-vdso.so.1; no redistributable file',
         'sourceDisposition': 'Host distribution C-library package; system libraries are not copied or redistributed.'}
