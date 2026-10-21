@@ -138,6 +138,7 @@ def extract(archive, output):
         for m in members:
             relative(m.name)
             need(m.isfile() and not m.issparse(), 'only regular packet files are allowed')
+            need(not m.mode & 0o7002, 'privileged or world-writable packet mode refused')
             need(m.name.casefold() not in names, 'duplicate packet member')
             names.add(m.name.casefold())
             total += m.size
@@ -148,7 +149,8 @@ def extract(archive, output):
             p.parent.mkdir(parents=True, exist_ok=True)
             with tar.extractfile(m) as src, p.open('xb') as dst:
                 shutil.copyfileobj(src, dst)
-            p.chmod(0o755 if m.mode & 0o111 else 0o644)
+            # Producer receipts bind modes as well as bytes (local emits use 0664).
+            p.chmod(m.mode & 0o777)
 
 
 def fetch(url, expected, output, source, tree, operation):
