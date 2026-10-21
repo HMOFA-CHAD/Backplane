@@ -31,6 +31,13 @@ COMMON_GATES = {"runtime", "auth-security", "product-parity",
 COMPONENT_DISPOSITION_SHA256 = "10961e9bfa190b09cec6b79ee5028e5ba9657ed5ef54513ecc20007c4d104b29"
 CORRECTED_SERVICE_SOURCE = ("8147b68dbc9bcddad7e3b51ae7768ed9eb211ecc",
                             "37c64023d084bca7f209db9d14a84f59d365f696")
+BROWSER_DISPOSITION_SHA256 = "02939bb0ba7e6e7975e1c199b9e4394d8871f5b7fb8e6a95d5c25fbf9d09720e"
+# Exact root-owned browser-overlay policy; a claimed opaque hash is insufficient.
+SELECTED_BROWSER_STAGING_DISPOSITION_SHA256 = "fee94f08b3ce7d909a1265d9f33820ea816887703e940ca0d7a57374f9509314"
+SELECTED_BROWSER_SOURCE = ("a8844dba0626c491101508b632050c338083daa9",
+                           "297f732988e715d9913eff2de4435c5b290bcf22")
+SELECTED_BROWSER_MANIFEST = {"sha256": "ca23fead7805ef8e4c386b17aa2d06b1a9caaff4ad121fd9ddf2b045274ec3cc", "bytes": 2027}
+SELECTED_WEB_ARCHIVE = {"sha256": "12a76c49dda3995dee6b2690b9cc62de761824b8cacc44d20bca97bd85d5f5e8", "bytes": 1436883}
 RETAINED_COMPONENT_SOURCE = ("920c5a399dc7880bb3c6518239844570f116b3c7",
                              "02b851c54fff33a28e9d1cc60298f6527b78dd32")
 
@@ -405,7 +412,7 @@ def require_signing(receipt, target, expected_signer=None):
         raise ValueError("mobile debug/old native version cannot be relabeled")
 
 
-def desktop_acceptance(package, root, receipt, target, source, tree, version):
+def desktop_acceptance(package, root, receipt, target, source, tree, version, *, payload_inventory=None):
     freeze_ref = receipt.get("release", {}).get("freezeReceipt", {})
     freeze_path = safe_name(freeze_ref.get("path"))
     freeze = package.read(root + "/" + freeze_path)
@@ -454,15 +461,330 @@ def desktop_acceptance(package, root, receipt, target, source, tree, version):
     if proofs["runtimeAcceptance"].get("scope") != "desktop-release":
         raise ValueError("local synthetic runtime cannot qualify desktop release")
     payload = {}
-    for name, item in package.inventory().items():
+    for name, item in (package.inventory() if payload_inventory is None else payload_inventory).items():
         n = name[len(root) + 1:]
         if n in {"DESKTOP.json", "MANIFEST.json", "STAGE.json"} or n.startswith("PROVENANCE/"):
             continue
         payload[n] = ({"type": "symlink", "target": item["symlink"]} if "symlink" in item else
-                      dict(item, type="file", mode=package.mode(name)))
+                      dict(item, type="file", mode=package.mode(name) if payload_inventory is None else item["mode"]))
     actual = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
     if actual != receipt.get("payloadManifestSha256"):
         raise ValueError("actual desktop payload differs from accepted payload")
+
+
+def packaged_reference(package, root, ref):
+    if (not isinstance(ref, dict) or not isinstance(ref.get("sha256"), str)
+            or not re.fullmatch(r"[a-f0-9]{64}", ref["sha256"])
+            or type(ref.get("bytes")) is not int or ref["bytes"] <= 0):
+        raise ValueError("invalid packaged reference")
+    raw = package.read(root + "/" + safe_name(ref.get("path")))
+    if hashlib.sha256(raw).hexdigest() != ref["sha256"] or len(raw) != ref["bytes"]:
+        raise ValueError("packaged reference changed")
+    return load_json(raw)
+
+
+def same_reference(left, right):
+    return (isinstance(left, dict) and isinstance(right, dict)
+            and all(left.get(k) == right.get(k) for k in ("sha256", "bytes")))
+
+
+def payload_members(members):
+    return {n: v for n, v in members.items()
+            if n not in {"STAGE.json", "DESKTOP.json", "MANIFEST.json"} and not n.startswith("PROVENANCE/")}
+
+
+def content_digest(members):
+    return hashlib.sha256(json.dumps(members, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+
+
+def original_resource_web(package, root, service_root, receipt, source, tree, tag):
+    """Check original resource inventory, substituting only its declared old web hashes.
+
+    Old web bytes are deliberately absent in an overlay. Their original manifest
+    must still match original BUILD/SERVICE; every non-web member stays exact.
+    This never asserts that old browser bytes are the installed browser.
+    """
+    raw = package.read(service_root + "/WEB.json")
+    original = load_json(raw)
+    sha = hashlib.sha256(raw).hexdigest()
+    if receipt.get("resourceWeb") != {"sourceCommit": source, "sourceTree": tree, "webManifestSha256": sha}:
+        raise ValueError("original resourceWeb identity changed")
+    if (original.get("schema"), original.get("kind"), original.get("sourceCommit"),
+            original.get("sourceTree"), original.get("entrypoint")) != (
+            1, "matching-generated-web", source, tree, "src/web/index.html"):
+        raise ValueError("original resource web source changed")
+    old = original.get("members", {})
+    if not isinstance(old, dict) or "index.html" not in old:
+        raise ValueError("missing original resource web manifest")
+    for name, member in old.items():
+        safe_name(name)
+        if (set(member) != {"sha256", "bytes"} or type(member["bytes"]) is not int
+                or member["bytes"] <= 0 or not re.fullmatch(r"[a-f0-9]{64}", member["sha256"])):
+            raise ValueError("invalid original resource web member")
+    if receipt["target"] == "windows-x64":
+        verify_windows_members(package, service_root + "/BUILD.json", source, tree, tag, original_web=original)
+        build = packaged_reference(package, root, receipt["components"]["service"])
+        if build != load_json(package.read(service_root + "/BUILD.json")):
+            raise ValueError("original Windows native BUILD differs from provenance")
+    else:
+        service = packaged_reference(package, root, receipt["components"]["service"])
+        if (service.get("kind"), service.get("status"), service.get("sourceCommit"),
+                service.get("sourceTree"), service.get("target"), service.get("entrypoint"),
+                service.get("genuineService")) != (
+                "backplane-bend-service", "VERIFIED", source, tree, receipt["target"], "src/server/main.bend", True):
+            raise ValueError("original native SERVICE identity changed")
+        declared = service.get("members", {})
+        actual = {n[len(service_root) + 1:]: v for n, v in package.inventory().items()
+                  if n.startswith(service_root + "/") and not n.startswith(service_root + "/web/")}
+        old_declared = {n[4:]: {k: v.get(k) for k in ("sha256", "bytes")}
+                        for n, v in declared.items() if n.startswith("web/")}
+        if old_declared != old:
+            raise ValueError("original SERVICE web differs from resource manifest")
+        native_declared = {n: v for n, v in declared.items() if not n.startswith("web/")}
+        expected = {n: ({"symlink": v.get("target")} if v.get("type") == "symlink"
+                        else {k: v.get(k) for k in ("sha256", "bytes")}) for n, v in native_declared.items()}
+        if actual != expected:
+            raise ValueError("original native SERVICE closure changed")
+        for n, v in native_declared.items():
+            if v.get("type") == "file" and v.get("mode") != package.mode(service_root + "/" + n):
+                raise ValueError("original native resource mode changed")
+        build = packaged_reference(package, root, receipt["components"]["serviceBuild"])
+        if (build != load_json(package.read(service_root + "/BUILD.json"))
+                or not same_reference(service.get("buildReceipt"), receipt["components"]["serviceBuild"])):
+            raise ValueError("original native BUILD differs from SERVICE provenance")
+
+
+# Shared with the selected-browser producer/fixture; archive bounds, not new UI gates.
+BROWSER_EVIDENCE_PREFIX = "PROVENANCE/selected-browser-evidence/"
+BROWSER_EVIDENCE_FILE_LIMIT = 8 * 1024 * 1024
+BROWSER_EVIDENCE_TOTAL_LIMIT = 32 * 1024 * 1024
+BROWSER_EVIDENCE_COUNT_LIMIT = 16
+
+
+def selected_browser_evidence(package, root, evidence):
+    if not isinstance(evidence, list) or not 1 <= len(evidence) <= BROWSER_EVIDENCE_COUNT_LIMIT:
+        raise ValueError("selected browser evidence count outside bounds")
+    expected, folded, total = set(), set(), 0
+    for ref in evidence:
+        if not isinstance(ref, dict):
+            raise ValueError("selected browser raw evidence reference invalid")
+        name = safe_name(ref.get("path"))
+        if not name.startswith(BROWSER_EVIDENCE_PREFIX):
+            raise ValueError("selected browser evidence outside fixed namespace")
+        basename = name[len(BROWSER_EVIDENCE_PREFIX):]
+        if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", basename)
+                or ".." in basename):
+            raise ValueError("selected browser evidence filename invalid")
+        if name.casefold() in folded:
+            raise ValueError("duplicate or case-colliding selected browser evidence")
+        folded.add(name.casefold())
+        if (not isinstance(ref.get("sha256"), str) or not re.fullmatch(r"[a-f0-9]{64}", ref["sha256"])
+                or type(ref.get("bytes")) is not int or not 1 <= ref["bytes"] <= BROWSER_EVIDENCE_FILE_LIMIT):
+            raise ValueError("selected browser evidence hash/size outside bounds")
+        total += ref["bytes"]
+        if total > BROWSER_EVIDENCE_TOTAL_LIMIT:
+            raise ValueError("selected browser evidence total bytes outside bounds")
+        full = root + "/" + name
+        entry = package.entries.get(full)
+        regular = (entry.isfile() if isinstance(entry, tarfile.TarInfo) else
+                   not entry.is_dir() and (entry.external_attr >> 16) & 0o170000 == 0o100000
+                   if isinstance(entry, zipfile.ZipInfo) else False)
+        parents = ["/".join(full.split("/")[:i]) for i in range(1, len(full.split("/")))]
+        if (not regular or full in package.links or any(n in package.links or n in package.entries for n in parents)):
+            raise ValueError("selected browser evidence must be a regular file without indirect parents")
+        # Never resolve a host path or rewrite the immutable runtime envelope.
+        raw = package.read(full, BROWSER_EVIDENCE_FILE_LIMIT)
+        if len(raw) != ref["bytes"] or hashlib.sha256(raw).hexdigest() != ref["sha256"]:
+            raise ValueError("selected browser raw evidence bytes changed")
+        expected.add(full)
+    actual = {n for n in package.entries if n.startswith(root + "/" + BROWSER_EVIDENCE_PREFIX)}
+    if actual != expected:
+        raise ValueError("selected browser evidence namespace has unreferenced or missing files")
+    return expected
+
+
+def selected_browser(package, root, service_root, receipt, target, version):
+    selected = receipt["selectedBrowser"]
+    freeze_ref = receipt.get("release", {}).get("freezeReceipt", {})
+    freeze = packaged_reference(package, root, freeze_ref)
+    pin = freeze.get("selectedBrowser", {})
+    disposition = selected.get("rootStagingDisposition", {})
+    if (not SELECTED_BROWSER_STAGING_DISPOSITION_SHA256
+            or disposition.get("sha256") != SELECTED_BROWSER_STAGING_DISPOSITION_SHA256
+            or disposition != freeze.get("rootStagingDisposition") or type(disposition.get("bytes")) is not int
+            or disposition["bytes"] <= 0):
+        raise ValueError("selected browser requires exact root staging disposition")
+    if (freeze.get("schema"), freeze.get("kind"), freeze.get("status"), freeze.get("commit"), freeze.get("tree")) != (
+            1, "backplane-release-freeze", "FROZEN", *CORRECTED_SERVICE_SOURCE):
+        raise ValueError("selected browser native freeze changed")
+    descriptor = dict(pin, rootStagingDisposition=disposition)
+    if selected != descriptor or selected.get("mode") != "generated-web-subtree-only":
+        raise ValueError("selected browser stage/freeze selection differs")
+    if (selected.get("sourceCommit"), selected.get("sourceTree")) != SELECTED_BROWSER_SOURCE:
+        raise ValueError("unapproved selected browser source")
+    resource = receipt["resourceWeb"]
+    if (selected.get("resourceWebManifestSha256") != resource["webManifestSha256"]
+            or freeze.get("resourceWeb", {}).get(target) != resource
+            or freeze.get("components", {}).get(target, {}).get("webManifestSha256") != resource["webManifestSha256"]):
+        raise ValueError("selected browser changed original resourceWeb binding")
+    policy_ref = receipt.get("components", {}).get("rootStagingDisposition")
+    policy = packaged_reference(package, root, policy_ref)
+    allowed = policy.get("targets", {}).get(target, {})
+    release = receipt.get("release", {})
+    if (not same_reference(policy_ref, disposition)
+            or policy.get("kind") != "backplane-root-staging-disposition"
+            or policy.get("status") != "AUTHORIZED_STAGING_POLICY_PENDING_ACTUAL_SERVICE_BINDINGS"
+            or policy.get("publicationOwner") != "root" or policy.get("electronVersion") != "44.9.2"
+            or any(policy.get(k) != release.get(k) for k in ("version", "tag", "channel", "commit", "tree"))
+            or allowed.get("selectedBrowser") != pin
+            or allowed.get("signingPolicy") != freeze.get("signingPolicy", {}).get(target)
+            or allowed.get("lifecyclePolicy") != freeze.get("lifecyclePolicy", {}).get(target)
+            or allowed.get("windowsShellSource") != freeze.get("windowsShellSource")
+            or policy.get("compileInputs") != freeze.get("compileInputs")
+            or policy.get("compileInputs") != load_json(package.read(service_root + "/BUILD.json")).get("compileInputs")):
+        raise ValueError("actual root policy does not authorize this native/browser freeze")
+    pins = freeze.get("components", {}).get(target, {})
+    service_key = "serviceArchiveSha256" if target == "windows-x64" else "serviceReceiptSha256"
+    service_ref = receipt.get("components", {}).get("windowsResourceArchive" if target == "windows-x64" else "service", {})
+    if (not allowed.get(service_key) or allowed[service_key] != pins.get(service_key)
+            or allowed[service_key] != service_ref.get("sha256")):
+        raise ValueError("actual root policy original native service/archive mismatch")
+    for name in ("shell", "electron"):
+        if allowed.get(name + "ReceiptSha256") != receipt.get("components", {}).get(name, {}).get("sha256"):
+            raise ValueError("actual root policy native component mismatch")
+    stage = packaged_reference(package, root, receipt.get("stageReceipt"))
+    if (receipt["stageReceipt"]["sha256"] != receipt.get("stageReceiptSha256")
+            or stage.get("kind") != "backplane-electron-desktop-stage" or stage.get("target") != target
+            or stage.get("payloadManifestSha256") != receipt.get("payloadManifestSha256")
+            or stage.get("selectedBrowser") != selected or stage.get("resourceWeb") != resource
+            or stage.get("release") != receipt.get("release") or stage.get("components") != receipt.get("components")):
+        raise ValueError("original current browser stage receipt changed")
+    refs = receipt.get("components", {})
+    browser = packaged_reference(package, root, refs.get("selectedBrowser"))
+    manifest = packaged_reference(package, root, refs.get("selectedBrowserWeb"))
+    if (not same_reference(refs["selectedBrowser"], selected.get("receipt"))
+            or refs["selectedBrowserWeb"]["sha256"] != SELECTED_BROWSER_MANIFEST["sha256"]
+            or refs["selectedBrowserWeb"]["bytes"] != SELECTED_BROWSER_MANIFEST["bytes"]
+            or selected.get("webManifestSha256") != SELECTED_BROWSER_MANIFEST["sha256"]
+            or receipt.get("webManifestSha256") != SELECTED_BROWSER_MANIFEST["sha256"]
+            or freeze["components"][target].get("selectedBrowserReceiptSha256") != refs["selectedBrowser"]["sha256"]):
+        raise ValueError("selected browser receipt/manifest pin changed")
+    if (browser.get("schema"), browser.get("kind"), browser.get("status"), browser.get("version"),
+            browser.get("channel"), browser.get("sourceCommit"), browser.get("sourceTree"),
+            browser.get("entrypoint"), browser.get("webManifest"), browser.get("webRoot"),
+            browser.get("webManifestSha256")) != (
+            1, "backplane-selected-browser", "VERIFIED", version, "release", *SELECTED_BROWSER_SOURCE,
+            "src/web/index.html", "WEB.json", "web", SELECTED_BROWSER_MANIFEST["sha256"]):
+        raise ValueError("selected browser component identity changed")
+    # Exact installed files and gzip remain independently checked from the archive.
+    verify_web(package, dict(manifest, root=service_root + "/web"), *SELECTED_BROWSER_SOURCE)
+    declared = browser.get("members", {})
+    expected = {"WEB.json": SELECTED_BROWSER_MANIFEST,
+                **{"web/" + n: v for n, v in manifest.get("members", {}).items()}}
+    if ({n: {k: v.get(k) for k in ("sha256", "bytes")} for n, v in declared.items()} != expected
+            or any(v.get("type") != "file" for v in declared.values())):
+        raise ValueError("selected browser component member inventory changed")
+    for n in manifest["members"]:
+        if re.search(r"\.(exe|dll|so|dylib|node)$", n, re.I):
+            raise ValueError("native member in selected browser")
+        raw = package.read(service_root + "/web/" + n, 32 * 1024 * 1024)
+        if raw.startswith((b"MZ", b"\x7fELF", bytes.fromhex("cffaedfe"), bytes.fromhex("cefaedfe"), bytes.fromhex("cafebabe"))):
+            raise ValueError("native format in selected browser")
+    packages = browser.get("packages")
+    if not isinstance(packages, list) or not packages:
+        raise ValueError("selected browser notices missing")
+    for part in packages:
+        if not isinstance(part.get("licenses"), list) or not part["licenses"]:
+            raise ValueError("selected browser license missing")
+        for license in part["licenses"]:
+            raw = package.read(service_root + "/web/" + safe_name(license.get("path")))
+            if not raw or hashlib.sha256(raw).hexdigest() != license.get("sha256"):
+                raise ValueError("selected browser license changed")
+    ref = (receipt.get("acceptance", {}).get("selectedBrowserRuntime")
+           if receipt.get("acceptance") else receipt.get("selectedBrowserRuntime"))
+    runtime = packaged_reference(package, root, ref)
+    if ref.get("status") != "PASS":
+        raise ValueError("selected browser runtime reference remains pending")
+    if (runtime.get("schema"), runtime.get("kind"), runtime.get("scope"), runtime.get("status"),
+            runtime.get("target"), runtime.get("version"), runtime.get("sourceCommit"), runtime.get("sourceTree")) != (
+            1, "desktop-selected-browser-runtime", "same-target-selected-browser", "PASS", target, version, *SELECTED_BROWSER_SOURCE):
+        raise ValueError("fresh same-target selected browser runtime required")
+    if (runtime.get("payloadManifestSha256") != receipt.get("payloadManifestSha256")
+            or runtime.get("freezeReceiptSha256") != freeze_ref["sha256"]
+            or runtime.get("stageReceiptSha256") != receipt.get("stageReceiptSha256")
+            or not re.fullmatch(r"[a-f0-9]{64}", str(receipt.get("stageReceiptSha256", "")))
+            or runtime.get("selectedBrowserReceiptSha256") != refs["selectedBrowser"]["sha256"]
+            or runtime.get("webManifestSha256") != SELECTED_BROWSER_MANIFEST["sha256"]):
+        raise ValueError("browser runtime must bind current stage/payload/freeze/browser")
+    if any(runtime.get("checks", {}).get(k) is not True for k in (
+            "authenticatedOrigin", "newAssetsLoaded", "routeRetention", "draftRetention", "inlineBoundedMore", "explicitRetry")):
+        raise ValueError("selected browser runtime behavior incomplete")
+    sandbox = runtime.get("rendererSandbox", {})
+    flags = sandbox.get("flags")
+    if (sandbox.get("processType") != "renderer" or sandbox.get("osEnforced") is not True
+            or not isinstance(flags, list) or any(not isinstance(f, str) or f.split("=")[0] in {
+                "--no-sandbox", "--disable-sandbox", "--disable-setuid-sandbox", "--disable-seccomp-filter-sandbox", "--disable-namespace-sandbox", "--disable-gpu-sandbox"} for f in flags)):
+        raise ValueError("selected browser actual renderer OS sandbox required")
+    selected_browser_evidence(package, root, runtime.get("evidence"))
+
+
+def composite_acceptance(package, root, resources, receipt, target, source, tree, version):
+    acceptance = receipt["acceptance"]
+    if (target not in {"darwin-arm64", "windows-x64"}
+            or acceptance.get("kind") != "desktop-browser-composite"
+            or acceptance.get("scope") != "retained-native-baseline+selected-browser"
+            or any(k in receipt for k in ("signing", "sandbox", "lifecycle", "runtimeAcceptance"))):
+        raise ValueError("only Mac/Windows explicit composite may inherit native baseline proofs")
+    baseline = acceptance.get("baseline", {})
+    old = packaged_reference(package, root, baseline.get("desktop"))
+    old_freeze = packaged_reference(package, root, baseline.get("freeze"))
+    current_freeze = packaged_reference(package, root, receipt["release"]["freezeReceipt"])
+    if (baseline["desktop"]["sha256"] != current_freeze["selectedBrowser"].get("baselineDesktopReceiptSha256")
+            or acceptance.get("baselineDesktopSha256") != baseline["desktop"]["sha256"]
+            or old.get("schema") != 1 or old.get("kind") != "backplane-electron-desktop-package"
+            or old.get("target") != target or old.get("selectedBrowser") or old.get("acceptance")
+            or old.get("release", {}).get("commit") != source or old["release"].get("tree") != tree
+            or old["release"].get("version") != version
+            or not same_reference(old.get("components", {}).get("freeze"), baseline["freeze"])):
+        raise ValueError("original accepted desktop lineage differs from root pin")
+    if (old_freeze.get("signingPolicy", {}).get(target) != current_freeze.get("signingPolicy", {}).get(target)
+            or old.get("lifecyclePolicy") != receipt.get("lifecyclePolicy")
+            or old.get("windowsShellSource") != receipt.get("windowsShellSource")):
+        raise ValueError("composite changed native policies/source")
+    immutable = {k: v for k, v in old.get("components", {}).items()
+                 if k in {"shell", "electron", "service", "serviceBuild", "windowsResourceArchive"}}
+    if acceptance.get("immutableComponents") != immutable or acceptance.get("selectedBrowser") != receipt["selectedBrowser"]:
+        raise ValueError("composite immutable component lineage changed")
+    for key, ref in immutable.items():
+        if not same_reference(ref, receipt.get("components", {}).get(key)):
+            raise ValueError("composite original component changed")
+    old_members = payload_members(old.get("members", {}))
+    if (content_digest(old_members) != old.get("payloadManifestSha256")
+            or acceptance.get("baselinePayloadManifestSha256") != old["payloadManifestSha256"]
+            or acceptance.get("baselineFreezeReceiptSha256") != baseline["freeze"]["sha256"]):
+        raise ValueError("baseline payload/freeze digest changed")
+    current = {n[len(root) + 1:]: ({"type": "symlink", "target": v["symlink"]} if "symlink" in v
+               else dict(v, type="file", mode=package.mode(n))) for n, v in package.inventory().items()}
+    current = payload_members(current)
+    web = resources[len(root) + 1:] + "/backplane-service/web/"
+    nonweb = lambda members: {n: v for n, v in members.items() if not n.startswith(web)}
+    if nonweb(old_members) != nonweb(current):
+        raise ValueError("composite changed non-web payload bytes/modes")
+    if content_digest(current) != receipt.get("payloadManifestSha256"):
+        raise ValueError("composite actual current payload differs")
+    # Relocate references only in memory. Original proof JSON and old DESKTOP
+    # remain byte-exact, and keep their original payload and freeze identities.
+    projected = dict(old, release=dict(old["release"], freezeReceipt=baseline["freeze"]))
+    baseline_inventory = {}
+    for n, v in old_members.items():
+        baseline_inventory[root + "/" + n] = ({"symlink": v["target"]} if v.get("type") == "symlink"
+                                             else {k: v[k] for k in ("sha256", "bytes", "mode")})
+    for key in ("signing", "sandbox", "lifecycle", "runtimeAcceptance"):
+        ref = baseline.get("proofs", {}).get(key)
+        if not same_reference(ref, old.get(key)) or ref.get("status") != "PASS":
+            raise ValueError("baseline proof reference differs from original desktop")
+        projected[key] = ref
+    desktop_acceptance(package, root, projected, target, source, tree, version, payload_inventory=baseline_inventory)
 
 
 def verify_web(package, web, source, tree):
@@ -492,7 +814,7 @@ def verify_web(package, web, source, tree):
     return root
 
 
-def verify_target(directory, target, row, source, tree, tag):
+def verify_target(directory, target, row, source, tree, tag, *, browser_required=False):
     version, channel = identity(source, tag)
     archive_name = file_binding(directory, row.get("archive"))
     receipt_name = file_binding(directory, row.get("receipt"))
@@ -549,11 +871,24 @@ def verify_target(directory, target, row, source, tree, tag):
             if (build.get("commit", build.get("source_commit")), build.get("tree", build.get("source_tree"))) != (source, tree):
                 raise ValueError("service build source mismatch")
             web_data = package.read(service_root + "/WEB.json")
-            if hashlib.sha256(web_data).hexdigest() != receipt.get("webManifestSha256"):
-                raise ValueError("desktop web receipt changed")
-            verify_web(package, dict(load_json(web_data), root=service_root + "/web"), source, tree)
+            selected = receipt.get("selectedBrowser")
+            if browser_required and not selected:
+                raise ValueError("root disposition requires selected browser on every desktop")
+            if selected and not browser_required:
+                raise ValueError("selected desktop browser requires new root component disposition")
+            if selected:
+                # Validate original native resource receipts before selecting new web.
+                original_resource_web(package, root, service_root, receipt, source, tree, tag)
+                selected_browser(package, root, service_root, receipt, target, version)
+            else:
+                if receipt.get("resourceWeb") or receipt.get("acceptance") or receipt.get("selectedBrowserRuntime"):
+                    raise ValueError("unexpected browser lineage without selected browser")
+                if hashlib.sha256(web_data).hexdigest() != receipt.get("webManifestSha256"):
+                    raise ValueError("desktop web receipt changed")
+                verify_web(package, dict(load_json(web_data), root=service_root + "/web"), source, tree)
             if target == "windows-x64":
-                verify_windows_members(package, service_root + "/BUILD.json", source, tree, tag)
+                if not selected:
+                    verify_windows_members(package, service_root + "/BUILD.json", source, tree, tag)
                 control = build.get("managedControl", {})
                 resident = {"mode": "resident-service", "managedStop": False, "managedUpdate": False}
                 if receipt.get("lifecyclePolicy") == resident:
@@ -567,7 +902,10 @@ def verify_target(directory, target, row, source, tree, tag):
                     data = package.read(service_root + "/" + name)
                     if hashlib.sha256(data).hexdigest() != control["validationReceiptSha256"]:
                         raise ValueError("Windows managed-control acceptance changed")
-            desktop_acceptance(package, root, receipt, target, source, tree, version)
+            if selected and receipt.get("acceptance"):
+                composite_acceptance(package, root, resources, receipt, target, source, tree, version)
+            else:
+                desktop_acceptance(package, root, receipt, target, source, tree, version)
         else:
             if (receipt.get("schema"), receipt.get("kind"), receipt.get("target"),
                     receipt.get("sourceCommit"), receipt.get("sourceTree"), receipt.get("version"),
@@ -654,7 +992,7 @@ def member_map_matches(declared, inventory, root, excluded, package=None):
     return actual == normalized
 
 
-def verify_windows_members(package, build_path, source, tree, tag):
+def verify_windows_members(package, build_path, source, tree, tag, *, original_web=None):
     version, channel = identity(source, tag)
     build = load_json(package.read(build_path))
     root = posixpath.dirname(build_path)
@@ -678,12 +1016,16 @@ def verify_windows_members(package, build_path, source, tree, tag):
     configured_service(build, version, channel)
     inventory = package.inventory()
     actual = {p[len(root) + 1:]: x for p, x in inventory.items() if p.startswith(root + "/") and p != build_path}
+    if original_web is not None:
+        actual = {p: x for p, x in actual.items() if not p.startswith("web/")}
+        actual.update({"web/" + n: v for n, v in original_web["members"].items()})
     if (build.get("sha256") != {p: x.get("sha256") for p, x in actual.items()}
             or build.get("sizes") != {p: x.get("bytes") for p, x in actual.items()}):
         raise ValueError("Windows service resource closure mismatch")
     if build.get("roles", {}).get("service") != "backplane-serve.exe":
         raise ValueError("Windows service role mismatch")
-    verify_web(package, dict(web, root=root + "/web"), source, tree)
+    if original_web is None:
+        verify_web(package, dict(web, root=root + "/web"), source, tree)
 
 
 def component_sources(directory, inputs, source, tree, tag):
@@ -696,7 +1038,7 @@ def component_sources(directory, inputs, source, tree, tag):
             raise ValueError("component source scopes require pinned root disposition")
         return scopes, set()
     name = file_binding(directory, binding)
-    if (binding["sha256"] != COMPONENT_DISPOSITION_SHA256
+    if (binding["sha256"] not in {COMPONENT_DISPOSITION_SHA256, BROWSER_DISPOSITION_SHA256}
             or (source, tree) != CORRECTED_SERVICE_SOURCE or tag != "v0.12.0"):
         raise ValueError("unapproved component provenance disposition")
     disposition = load_json((directory / name).read_bytes())
@@ -706,6 +1048,19 @@ def component_sources(directory, inputs, source, tree, tag):
             "SOURCE_SCOPES_ACCEPTED_RUNTIME_GATES_REMAIN", "v0.12.0",
             {"commit": source, "tree": tree}):
         raise ValueError("root component provenance source mismatch")
+    if binding["sha256"] == BROWSER_DISPOSITION_SHA256:
+        expected = {t: dict(zip(("commit", "tree"),
+                    SELECTED_BROWSER_SOURCE if t == "web" else
+                    RETAINED_COMPONENT_SOURCE if t in {"android", "ios"} else CORRECTED_SERVICE_SOURCE))
+                    for t in RELEASE_TARGETS}
+        if (disposition.get("targetComponentSources") != expected
+                or declared != expected
+                or disposition.get("selectedBrowserSource") != expected["web"]
+                or disposition.get("selectedBrowserManifest") != SELECTED_BROWSER_MANIFEST
+                or disposition.get("selectedBrowserWebArchive") != SELECTED_WEB_ARCHIVE
+                or disposition.get("desktopSelectedBrowserRequired") != [t for t, surface in RELEASE_TARGETS.items() if surface == "desktop"]):
+            raise ValueError("exact browser disposition roles and all seven source scopes required")
+        return expected, {name}
     allowed = {"android", "ios", "web"}
     retained = dict(zip(("commit", "tree"), RETAINED_COMPONENT_SOURCE))
     for target, scope in declared.items():
@@ -733,7 +1088,11 @@ def verify_inputs(directory, inputs, source, tag):
         if not isinstance(row, dict):
             raise ValueError("target producer archive and receipt required")
         component = scopes[target]
-        refs = verify_target(directory, target, row, component["commit"], component["tree"], tag)
+        browser_policy = inputs.get("componentProvenanceDisposition", {}).get("sha256") == BROWSER_DISPOSITION_SHA256
+        if browser_policy and target == "web" and {k: row.get("archive", {}).get(k) for k in ("sha256", "bytes")} != SELECTED_WEB_ARCHIVE:
+            raise ValueError("standalone browser archive differs from root selection")
+        refs = verify_target(directory, target, row, component["commit"], component["tree"], tag,
+                             browser_required=browser_policy and RELEASE_TARGETS[target] == "desktop")
         if target == "android":
             main = load_json((directory / row["receipt"]["path"]).read_bytes())
             variants = row.get("variants", [])

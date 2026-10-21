@@ -47,6 +47,9 @@
               "$ref": "#/$defs/windowsService"
             }
           ]
+        },
+        "selectedBrowser": {
+          "$ref": "#/$defs/selectedBrowser"
         }
       },
       "additionalProperties": false
@@ -130,6 +133,94 @@
         },
         "runtimeAcceptance": {
           "$ref": "#/$defs/artifact"
+        },
+        "selectedBrowserRuntime": {
+          "$ref": "#/$defs/artifact"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema",
+        "kind",
+        "scope",
+        "target",
+        "stageReceiptSha256",
+        "payloadManifestSha256",
+        "baseline",
+        "selectedBrowserRuntime"
+      ],
+      "properties": {
+        "schema": {
+          "const": 1
+        },
+        "target": {
+          "enum": [
+            "linux-x64",
+            "linux-arm64",
+            "darwin-arm64",
+            "windows-x64"
+          ]
+        },
+        "stageReceiptSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "payloadManifestSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "kind": {
+          "const": "backplane-desktop-browser-composite-acceptance"
+        },
+        "scope": {
+          "const": "retained-native-baseline+selected-browser"
+        },
+        "selectedBrowserRuntime": {
+          "$ref": "#/$defs/artifact"
+        },
+        "baseline": {
+          "type": "object",
+          "required": [
+            "desktop",
+            "freeze",
+            "proofs"
+          ],
+          "properties": {
+            "desktop": {
+              "$ref": "#/$defs/artifact"
+            },
+            "freeze": {
+              "$ref": "#/$defs/artifact"
+            },
+            "proofs": {
+              "type": "object",
+              "required": [
+                "signing",
+                "sandbox",
+                "lifecycle",
+                "runtimeAcceptance"
+              ],
+              "properties": {
+                "signing": {
+                  "$ref": "#/$defs/artifact"
+                },
+                "sandbox": {
+                  "$ref": "#/$defs/artifact"
+                },
+                "lifecycle": {
+                  "$ref": "#/$defs/artifact"
+                },
+                "runtimeAcceptance": {
+                  "$ref": "#/$defs/artifact"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -322,8 +413,32 @@
           "additionalProperties": {
             "$ref": "#/$defs/residentLifecyclePolicy"
           }
+        },
+        "selectedBrowser": {
+          "type": "object",
+          "description": "Optional exact root-pinned generated-web-only successor; CLI requires both-or-neither request, exact source/receipt/manifest/root disposition, and preserves original native/resource web receipts."
         }
       }
+    },
+    "selectedBrowser": {
+      "type": "object",
+      "required": [
+        "receipt",
+        "payload",
+        "rootDisposition"
+      ],
+      "properties": {
+        "receipt": {
+          "$ref": "#/$defs/artifact"
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        },
+        "rootDisposition": {
+          "$ref": "#/$defs/artifact"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }
