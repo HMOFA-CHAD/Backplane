@@ -64,8 +64,10 @@ jobs:
           curl --proto '=https' --tlsv1.2 -fsSL -o tools.tar.gz "$TOOLS_URL"
           [ "$(sum stage.tar.gz)" = "$STAGE_SHA" ] || { echo "stage sha256 mismatch"; exit 1; }
           [ "$(sum tools.tar.gz)" = "$TOOLS_SHA" ] || { echo "tools sha256 mismatch"; exit 1; }
-          tar -xzf stage.tar.gz
-          tar -xzf tools.tar.gz
+          # -p: keep the stage's recorded modes (the runner's umask 022 would turn its
+          # 0664 files into 0644, and the stage's payload manifest would differ)
+          tar -xpzf stage.tar.gz
+          tar -xpzf tools.tar.gz
           [ "$(sum tools/desktop/test/release-smoke.cjs)" = "$SMOKE_SHA" ] || { echo "release-smoke.cjs is not the frozen one"; exit 1; }
           python3 -c "import json,sys; s=json.load(open('stage/STAGE.json')); assert s['target']==sys.argv[1], s['target']; print('stage', s['target'], s['release']['version'], s['release']['commit'])" "$TARGET"
           (cd tools/desktop && npm ci --ignore-scripts --no-audit --no-fund)
