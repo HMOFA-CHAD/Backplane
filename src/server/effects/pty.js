@@ -258,7 +258,8 @@ function bp_pty_class() {
 // as host.js's (each effect file has its own scope): Bun's backend where
 // the runtime runs on Bun's loop, and the children it started by pid
 function bp_pty_bun() {
-  return process.platform === "win32" || process.env.BACKPLANE_JS_PROC === "bun";
+  return (process.platform === "win32" || process.env.BACKPLANE_JS_PROC === "bun")
+    && globalThis.BP_H?.Stream !== undefined;
 }
 
 function bp_pty_procs() {

@@ -376,7 +376,8 @@ function host_child_stack(spawn) {
 // backend below stays for the old loop (BACKPLANE_JS_LOOP=sync, POSIX).
 // Chosen at each call: effect files load in no fixed order.
 function bp_proc_bun() {
-  return process.platform === "win32" || process.env.BACKPLANE_JS_PROC === "bun";
+  return (process.platform === "win32" || process.env.BACKPLANE_JS_PROC === "bun")
+    && globalThis.BP_H?.Stream !== undefined;
 }
 
 // On POSIX the libc spawn stays (a real socketpair end: an exec in place
