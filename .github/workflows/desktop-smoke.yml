@@ -107,6 +107,18 @@ jobs:
           else
             node tools/desktop/test/release-smoke.cjs --stage "$W/stage" --out "$W/evidence-$TARGET"
           fi
+      - name: Keep the smoke homes' logs (on failure; no secrets live there)
+        if: failure()
+        shell: bash
+        run: |
+          set -u
+          # the smoke's temporary homes: the hub's own log, its events and the app's logs
+          find /tmp "${TMPDIR:-/tmp}" -maxdepth 1 -name 'Backplane smoke*' -type d 2>/dev/null | sort -u | while IFS= read -r d; do
+            n=$(basename "$d" | tr ' ' '_')
+            mkdir -p "$W/homes/$n"
+            find "$d" -maxdepth 3 -type f \( -name '*.log' -o -name '*.jsonl' -o -name '*.txt' -o -name 'hub.lock' \) -size -20M -exec cp --parents {} "$W/homes/$n/" \; 2>/dev/null || true
+          done
+          ls -R "$W/homes" 2>/dev/null | head -50 || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -116,5 +128,6 @@ jobs:
             smoke/codesign.txt
             smoke/stage-resealed.tar.gz
             smoke/stage-resealed.sha256
+            smoke/homes/
           if-no-files-found: warn
           retention-days: 30
