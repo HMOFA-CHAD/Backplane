@@ -132,8 +132,8 @@ try {
   if (process.env.E2E_HOLD) await sleep(Number(process.env.E2E_HOLD));
   const wt: any = await until(10000, () => seen.find((x) => x.$ === "WorktreeSet" && x.id === G && x.worktree));
   // advisory: main's C hub records no WorktreeSet here either (J1, 2026-10-21)
-  const made = run(["git", "worktree", "list"], proj);
-  check(String(made.stdout).includes("/.backplane/worktrees/"), "git makes a worktree for the thread (Proc.run)");
+  const wts = run(["git", "worktree", "list"], proj);
+  check(String(wts.stdout).includes("/.backplane/worktrees/"), "git makes a worktree for the thread (Proc.run)");
   console.log(`     WorktreeSet recorded: ${!!wt} (advisory, as C)`);
 
   const tok = read(join(home, "token")).trim();
