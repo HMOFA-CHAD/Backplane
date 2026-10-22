@@ -773,7 +773,8 @@ function env_put(name, value) {
   if (typeof process !== "undefined" && process.env && name.length > 0
     && !name.includes("\0") && !value.includes("\0")) {
     process.env[name] = value;
-    try {
+    // Windows has no libc copy to keep (Bun's own environment is the one)
+    if (process.platform !== "win32") try {
       host_libc().setenv(host_libc().ptr(host_cstr(name)), host_libc().ptr(host_cstr(value)), 1);
     } catch (_) {
     }
@@ -800,7 +801,9 @@ function host_exe() {
 // The directory holding the running binary ("" when unknown).
 function sys_exe_dir() {
   const raw = host_exe();
-  const at = raw.lastIndexOf("/");
+  // a Windows path ends its folder with either separator
+  const at = Math.max(raw.lastIndexOf("/"),
+    process.platform === "win32" ? raw.lastIndexOf("\\") : -1);
   return at < 0 ? "" : raw.slice(0, at);
 }
 
