@@ -611,7 +611,9 @@ function bp_recv_with(socket, max, k, read, at) {
   return go();
 }
 
-// sends all of b; a full handle parks (until at, or for good)
+// sends all of b; a full handle parks (until at, or for good). make turns
+// the unsent rest into what Base's TCP.send* fails and waits with; host.bend's
+// Sock.send_* pass null: their failure is the errno alone
 function bp_send_with(socket, b, k, make, at) {
   const h = BP_H.get(socket);
   let off = 0;
@@ -627,7 +629,8 @@ function bp_send_with(socket, b, k, make, at) {
         return undefined;
       }
       if (n < 0) {
-        return io_tup(socket, io_ready(at, io_fail(-n, make(part, part.length))));
+        return io_tup(socket, io_ready(at, make === null ? io_fail(-n)
+          : io_fail(-n, make(part, part.length))));
       }
       off += n;
     }
@@ -751,9 +754,9 @@ function bp_host(old) {
     ["Sock.send_bytes", () => (s, d, k) => {
       const b = io_unlist(d);
       return b === null ? io_tup(s, io_fail(BP_ERRNO.EINVAL))
-        : bp_send_with(s, b, k, io_list);
+        : bp_send_with(s, b, k, null);
     }],
-    ["Sock.send_text", () => (s, t, k) => bp_send_with(s, io_bytes(t), k, io_text)],
+    ["Sock.send_text", () => (s, t, k) => bp_send_with(s, io_bytes(t), k, null)],
     ["Sock.send_until", () => (s, d, ms, k) => {
       const b = io_unlist(d);
       return b === null ? io_tup(s, io_fail(BP_ERRNO.EINVAL))
