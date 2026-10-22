@@ -1,4 +1,9 @@
 #!/bin/sh
+# MANUAL / BENCH RUN ONLY: never part of scripts/test.sh or CI. On a real
+# log one phase holds the whole folded state (the full fold peaked at
+# 15.3 GB on the 351,525-line copy; build 11.2 GB, hot 4.6 GB): run it
+# under bp-admit with --mem 16 or more, on a COPY of a home only. It starts
+# no hub (it only folds and reads store.db), so no work or agent can run.
 # S3's hot-boot equivalence on a copy of a real home, one folded state per
 # process (a real log's state is many GB on the JS runtime):
 #   test/tools/snap_equiv.sh HOME [CUT...]     CUT: bytes or "50%" (default 100%)
