@@ -322,7 +322,9 @@ def locks(+dir: String) -> IO(Unit):
     C.Check.str("Guard.take by another holder", Bool.show(g2), "False")
     g3 : String <- sh.out("flock -n " ++ dir ++ "/bp-jst.lock true; echo $?")
     C.Check.str("guard holds the flock", g3, "1")
-    fds : String <- sh.out("ls /proc/$$/fd | tr '\\n' ' '")
+    # listed with no pipe of the shell's own open (ls in a pipeline raced
+    # the shell closing its end of it: a stray 3 on CI)
+    fds : String <- sh.out("f=$(mktemp); ls /proc/$$/fd > \"$f\"; tr '\\n' ' ' < \"$f\"; rm -f \"$f\"")
     C.Check.str("a child gets only 0-2 (no lock, socket or Bun descriptor)", fds, "0 1 2")
     sp : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("cat", ["/proc/self/status"], "", 0)
     +sig : String <- spawned.ran(sp)
@@ -456,7 +458,7 @@ def after.mode(+dir: String) -> IO(Unit):
     +cat : U32 = Maybe.default(&2, U32, U32.read(pidt), 0)
     s : Result<&1, &1, U32 & String, Socket> <- A.Adopt.take(pid)
     echo : String <- after.sock(s)
-    fds : String <- sh.out("ls /proc/$$/fd | tr '\\n' ' '")
+    fds : String <- sh.out("f=$(mktemp); ls /proc/$$/fd > \"$f\"; tr '\\n' ' ' < \"$f\"; rm -f \"$f\"")
     w : U32 <- H.Proc.wait(cat)
     IO.print("after lock=" ++ l ++ " agent=" ++ echo ++ " fds=" ++ fds ++ " child=" ++ Bool.show(Bool.not(U32.is_eq(w, 255))))
 
