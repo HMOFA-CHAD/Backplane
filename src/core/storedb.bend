@@ -39,7 +39,7 @@ type RK is Data:
 # bumped on any change to the tables or to a record's columns or json
 # (a different number in meta.codec: the store is made again)
 def Sdb.codec() -> Nat:
-  1n
+  2n
 
 def Sdb.schema() -> String:
   String.join([
@@ -73,8 +73,8 @@ def Sdb.schema() -> String:
     "CREATE TABLE IF NOT EXISTS room(id TEXT PRIMARY KEY, name TEXT, deleted INTEGER, json TEXT)",
     "CREATE TABLE IF NOT EXISTS routine(id TEXT PRIMARY KEY, bot TEXT, on_ INTEGER, deleted INTEGER, json TEXT)",
     "CREATE INDEX IF NOT EXISTS routine_bot ON routine(bot)",
-    "CREATE TABLE IF NOT EXISTS conv(id TEXT PRIMARY KEY, kind TEXT, project TEXT, last INTEGER, json TEXT)",
-    "CREATE TABLE IF NOT EXISTS mark(k TEXT PRIMARY KEY, bot TEXT, conv TEXT, json TEXT)",
+    "CREATE TABLE IF NOT EXISTS conv(id TEXT PRIMARY KEY, kind TEXT, project TEXT, last INTEGER, want TEXT, parts TEXT, json TEXT)",
+    "CREATE TABLE IF NOT EXISTS mark(k TEXT PRIMARY KEY, bot TEXT, conv TEXT, status TEXT, json TEXT)",
     "CREATE INDEX IF NOT EXISTS mark_bot ON mark(bot)",
     "CREATE TABLE IF NOT EXISTS obj(domain TEXT, key TEXT, json TEXT, PRIMARY KEY(domain, key)) WITHOUT ROWID"
   ], ";\n") ++ ";"
@@ -111,9 +111,9 @@ def Sdb.cols.k(i: Nat) -> List<&2, String>:
     case 13n:
       ["id", "bot", "on_", "deleted", "json"]
     case 14n:
-      ["id", "kind", "project", "last", "json"]
+      ["id", "kind", "project", "last", "want", "parts", "json"]
     case 15n:
-      ["k", "bot", "conv", "json"]
+      ["k", "bot", "conv", "status", "json"]
     case _:
       ["domain", "key", "json"]
 
@@ -299,16 +299,18 @@ def Row.hops(+bot: String, h: BT.Hops) -> Op:
     case BT.Hops{n, w, hd}:
       Row.obj("hops", bot, J.Json.obj([J.KV{"now", C.Codec.nat(n)}, J.KV{"wait", C.Codec.nat(w)}, J.KV{"held", J.Flag{hd}}]))
 
-def Row.conv(c: ML.Conv) -> Op:
+# a conversation, with what its newest mail wants and its members as one
+# text ("bot:a bot:b person"), for the mail views' queries
+def Row.conv(+b: ML.Box, c: ML.Conv) -> Op:
   match c:
-    case ML.Conv{+id, s, +k, ps, +pj, tg, m, +l, n}:
-      Put{"conv", [id, k, pj, S.n(l), S.j([J.KV{"id", J.Str{id}}, J.KV{"subject", J.Str{s}}, J.KV{"kind", J.Str{k}}, J.KV{"parts", S.strs(ps)},
+    case ML.Conv{+id, s, +k, +ps, +pj, tg, m, +l, n}:
+      Put{"conv", [id, k, pj, S.n(l), ML.Mail.wanted(ML.Box.newest(b, id)), String.join(ps, " "), S.j([J.KV{"id", J.Str{id}}, J.KV{"subject", J.Str{s}}, J.KV{"kind", J.Str{k}}, J.KV{"parts", S.strs(ps)},
         J.KV{"project", J.Str{pj}}, J.KV{"tags", S.strs(tg)}, J.KV{"made", C.Codec.nat(m)}, J.KV{"last", C.Codec.nat(l)}, J.KV{"n", C.Codec.nat(n)}])]}
 
 def Row.mark(+key: String, m: ML.Mark) -> Op:
   match m:
-    case ML.Mark{+b, +c, s, sn, u, tg}:
-      Put{"mark", [key, b, c, S.j([J.KV{"bot", J.Str{b}}, J.KV{"conv", J.Str{c}}, J.KV{"status", J.Str{s}}, J.KV{"seen", C.Codec.nat(sn)},
+    case ML.Mark{+b, +c, +s, sn, u, tg}:
+      Put{"mark", [key, b, c, s, S.j([J.KV{"bot", J.Str{b}}, J.KV{"conv", J.Str{c}}, J.KV{"status", J.Str{s}}, J.KV{"seen", C.Codec.nat(sn)},
         J.KV{"until", C.Codec.nat(u)}, J.KV{"tags", S.strs(tg)}])]}
 
 def Row.run(r: ML.Run) -> Op:
@@ -502,7 +504,7 @@ def Row.world.k(i: Nat, +w: BT.World, +k: String) -> Op:
 def Row.mail.k(i: Nat, +b: ML.Box, +k: String) -> Op:
   match i:
     case 0n:
-      Row.or(ML.Conv, Row.conv, "conv", [k], Get(ML.Conv, ML.Box.convs(b), k))
+      Row.or(ML.Conv, c => Row.conv(b, c), "conv", [k], Get(ML.Conv, ML.Box.convs(b), k))
     case 1n:
       Row.or(ML.Mark, m => Row.mark(k, m), "mark", [k], Get(ML.Mark, ML.Box.marks(b), k))
     case 2n:
@@ -1173,12 +1175,12 @@ def Dump.d18(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>) -> List<&2, Op>:
     case (k, v) <> t:
       Row.obj("talk", k, C.Codec.nat(v)) <> Dump.d18(t)
 
-def Dump.d19(xs: List<&2, Sigma<&2, &2, String, _ => ML.Conv>>) -> List<&2, Op>:
+def Dump.d19(xs: List<&2, Sigma<&2, &2, String, _ => ML.Conv>>, +b: ML.Box) -> List<&2, Op>:
   match xs:
     case Nil{}:
       Nil{}
     case (_, v) <> t:
-      Row.conv(v) <> Dump.d19(t)
+      Row.conv(b, v) <> Dump.d19(t, b)
 
 def Dump.d20(xs: List<&2, Sigma<&2, &2, String, _ => ML.Mark>>) -> List<&2, Op>:
   match xs:
@@ -1253,7 +1255,7 @@ def Dump.ops(+s: M.State) -> List<&2, Op>:
     Dump.d16(Map.to_list(&2, String, W.skills(w))),
     Dump.d17(Map.to_list(&2, BT.Hops, W.hops(w))),
     Dump.d18(Map.to_list(&2, Nat, W.talk(w))),
-    Dump.d19(Map.to_list(&2, ML.Conv, ML.Box.convs(b))),
+    Dump.d19(Map.to_list(&2, ML.Conv, ML.Box.convs(b)), b),
     Dump.d20(Map.to_list(&2, ML.Mark, ML.Box.marks(b))),
     Dump.d21(Map.to_list(&2, ML.Run, ML.Box.runs(b))),
     Dump.d22(Map.to_list(&2, ML.Origin, ML.Box.origins(b))),
