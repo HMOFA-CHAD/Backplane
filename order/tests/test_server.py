@@ -179,3 +179,18 @@ def test_pilot_says_no_card_is_charged(monkeypatch):
     assert "4242 4242 4242 4242" in config.PILOT_NOTE and len(config.PILOT_NOTE) <= 1200
     monkeypatch.setattr(config, "PILOT", False)
     assert "not charged" not in pages.done("paid") and "**Pilot:**" not in pricing.markdown(q)
+
+
+def test_ship_to_must_be_a_country():
+    sent = {"main/gerbers.zip": b"x"}
+    for code, says in (("EU", "European Union"), ("UK", "GB"), ("XX", "not a country")):
+        m = manifest(sent)
+        m["ship_to"] = code
+        try:
+            package.check_manifest(m)
+            raise AssertionError(f"{code} passed as a country")
+        except package.Bad as e:
+            assert says in str(e) and "ask which country" in str(e), str(e)
+    m = manifest(sent)
+    m["ship_to"] = "GR"
+    assert package.check_manifest(m)["ship_to"] == "GR"
