@@ -4,7 +4,9 @@ import ../../src/server/stobuild.bend as S
 
 # HOME/store.db made from HOME/events.jsonl, streamed a chunk at a time
 # (src/server/stobuild.bend). JS only: bend test/native/store_build.bend
-# HOME [CHUNK_BYTES]. Never run it on a live home.
+# HOME [CHUNK_BYTES]. Never run it on a live home. Run it with the stack
+# scripts/test.sh gives Bun (BUN_JSC_maxPerThreadStackUsage=536870912):
+# a long message's facts recurse deeper than Bun's default allows.
 
 def Main.chunk(xs: List<String>) -> U32:
   match xs:
