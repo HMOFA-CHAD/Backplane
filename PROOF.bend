@@ -12763,3 +12763,10 @@ def Laws.copy_file_open_told(): {==}
 def Laws.pair_msg_kept(): {==}
 def Laws.pair_msg_other_link(): {==}
 def Laws.pair_msg_no_link_qr(): {==}
+# ---- F1: far feed slices ----
+def Laws.far_feed_sliced(): {==}
+def Laws.far_feed_sliced_one(): {==}
+def Laws.far_feed_sliced_big(): {==}
+def Laws.far_fact_shared(): {==}
+def Laws.far_fact_private(): {==}
+# ---- end F1 feed ----

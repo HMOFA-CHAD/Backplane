@@ -11530,3 +11530,22 @@ law pair_msg_other_link:
 # no link, no QR code
 law pair_msg_no_link_qr:
   {MPCREDIT.Info.qr("") == "" : String}
+# ---- F1: the far feed made a slice at a time (far.bend Fr.feed.some) ----
+# folding every slice of 2 lines is the feed made from the whole log at once
+law far_feed_sliced:
+  {FR.Fr.feed.sliced(20n, FR.Fr.feed.start(FR.Fr.feed.demo.lines()), 2n, FR.Fr.feed.demo.st()) == FR.Fr.feed.full(FR.Fr.feed.demo.lines(), FR.Fr.feed.demo.st()) : FR.Feed}
+
+# and so are slices of one line, and one slice bigger than the log
+law far_feed_sliced_one:
+  {FR.Fr.feed.sliced(20n, FR.Fr.feed.start(FR.Fr.feed.demo.lines()), 1n, FR.Fr.feed.demo.st()) == FR.Fr.feed.full(FR.Fr.feed.demo.lines(), FR.Fr.feed.demo.st()) : FR.Feed}
+
+law far_feed_sliced_big:
+  {FR.Fr.feed.sliced(20n, FR.Fr.feed.start(FR.Fr.feed.demo.lines()), 500n, FR.Fr.feed.demo.st()) == FR.Fr.feed.full(FR.Fr.feed.demo.lines(), FR.Fr.feed.demo.st()) : FR.Feed}
+
+# a store row for a shared line, none for a private one
+law far_fact_shared:
+  {FR.Fr.fact(FR.Fr.feed.demo.st(), M.ThreadRenamed{"t1", "x", 9n}, 8n) == [FR.Fact{8n, "p1"}] : List<&2, FR.Fact>}
+
+law far_fact_private:
+  {FR.Fr.fact(FR.Fr.feed.demo.st(), M.SettingSet{"k", "v", 9n}, 8n) == Nil{} : List<&2, FR.Fact>}
+# ---- end F1 feed ----
