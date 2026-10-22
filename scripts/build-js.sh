@@ -120,7 +120,10 @@ if [ "${BACKPLANE_GOOGLE_BAKE:-1}" != 0 ]; then
 else
   BACKPLANE_GOOGLE_BAKE=0 python3 scripts/google-header.py "$work/baked-g.js"
 fi
-(umask 077; cat "$work/baked-t.js" "$work/baked-g.js" >"$work/baked.js"; cat "$work/baked.js" "$work/stamped.js" >"$work/bin.js")
+# the stack prelude first (scripts/js-stack-prelude.js: a 4 GiB stack and
+# Bun's matching JS stack bound, set by executing itself once), then the
+# baked values, then the program
+(umask 077; cat "$work/baked-t.js" "$work/baked-g.js" >"$work/baked.js"; cat scripts/js-stack-prelude.js "$work/baked.js" "$work/stamped.js" >"$work/bin.js")
 rm -f "$work/baked-t.js" "$work/baked-g.js"
 grep -q '"BACKPLANE_GOOGLE_CLIENT_ID": "[^"]' "$work/baked.js" && echo "baked Google client"
 grep -q '"BACKPLANE_TELEMETRY_KEY": "[^"]' "$work/baked.js" && echo "baked telemetry"
