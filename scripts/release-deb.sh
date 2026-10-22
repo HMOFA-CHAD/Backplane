@@ -34,6 +34,9 @@ mkdir -p "$root/opt" "$root/usr/bin" "$root/usr/share/applications" "$root/usr/s
 tar -xzf "$classic" -C "$work"
 [ -x "$work/backplane-$plat/backplane-serve" ] || { echo "release-deb: $classic has no backplane-$plat/backplane-serve" >&2; exit 1; }
 mv "$work/backplane-$plat" "$root/opt/backplane"
+# the classic package carries the app too (for updaters); the .deb takes the
+# desktop archive's, the one the release's runtime check ran
+rm -rf "$root/opt/backplane/desktop"
 mkdir "$work/desktop"
 tar -xzf "$desktop" -C "$work/desktop"
 [ -f "$work/desktop/backplane-$plat/runtime/chrome-sandbox" ] || { echo "release-deb: $desktop has no backplane-$plat/runtime/chrome-sandbox" >&2; exit 1; }
