@@ -112,9 +112,12 @@ function adopt_keep(thread, pid, socket) {
   bp_inherited_drop(pid);
   // a Bun handle (loop.js's BP_H) or a Windows hub has no descriptor to
   // keep through an exec: the process is recorded alone, as adopt_note's
-  const bare = process.platform === "win32" || globalThis.BP_H?.is(socket);
+  // (a handle over a real descriptor, BP_H.fromFd's, keeps that one)
+  const h = globalThis.BP_H?.get(socket);
+  const fd = h === undefined ? socket : h.fd;
+  const bare = process.platform === "win32" || fd === undefined;
   const c = bare ? null : bp_adopt_libc();
-  const got = bare ? -1 : c.fcntl(socket, c.mac ? 67 : 1030, 3);
+  const got = bare ? -1 : c.fcntl(fd, c.mac ? 67 : 1030, 3);
   if (pid > 1) {
     bp_adopt.list.unshift({ thread, pid, ident: bp_adopt_id(pid), fd: got });
   } else if (got > 2) {
