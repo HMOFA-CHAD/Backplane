@@ -1381,3 +1381,12 @@ def Demo.lines(cs: List<&2, M.Change>, +i: Nat) -> List<&2, LL>:
 
 def Demo.log() -> List<&2, LL>:
   Demo.lines(Demo.changes(), 0n)
+
+# a few changes for laws the checker normalizes (the wide demo above is
+# for test/storedb_test.bend: normalizing it takes the checker minutes)
+def Demo.small() -> List<&2, M.Change>:
+  [M.ThreadCreated{"t1", "p1", "A", M.Local{}, "", "", "claude", "", 1n}, M.MessagePosted{"t1", "m1", M.User{}, "hi", 2n},
+   M.SettingSet{"a", "1", 3n}, M.SettingSet{"a", "", 4n}, M.ThreadPinned{"t1", True{}, 5n}]
+
+def Demo.small.log() -> List<&2, LL>:
+  Demo.lines(Demo.small(), 0n)
