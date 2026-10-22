@@ -28,7 +28,7 @@ function host_libc() {
       + " posix_spawn_file_actions_addopen:pipiu>i"
       + " posix_spawnattr_init:p>i posix_spawnattr_destroy:p>i"
       + " posix_spawnattr_setflags:ph>i posix_spawnattr_setsigdefault:pp>i"
-      + " posix_spawnattr_setsigmask:pp>i sigemptyset:p>i sigaddset:pi>i")).symbols;
+      + " posix_spawnattr_setsigmask:pp>i sigemptyset:p>i sigaddset:pi>i sigfillset:p>i")).symbols;
     const opt = (one) => {
       try {
         return Object.values(ffi.dlopen(lib, spec(one)).symbols)[0];
@@ -421,8 +421,7 @@ function host_self(argv) {
 // joins it to stdout, 2 inherits ours, 3 goes to a file read back by
 // Proc.errtail. Answers (pid, socket). As host.c, plus: the child gets
 // only 0-2 (Bun opens descriptors without close-on-exec), and starts with
-// the signals Bun ignores (SIGPIPE, SIGXFSZ) at their defaults and none
-// blocked.
+// every signal at its default and none blocked.
 function proc_spawn(cmd, args, cwd, err) {
   const c = host_libc();
   const sys = io_sys();
@@ -474,9 +473,9 @@ function proc_spawn(cmd, args, cwd, err) {
       c.posix_spawn_file_actions_addclose(c.ptr(fa), fd);
     }
   }
-  c.sigemptyset(c.ptr(set));
-  c.sigaddset(c.ptr(set), 13);
-  c.sigaddset(c.ptr(set), 25);
+  // every signal at its default (a hub started from a background job
+  // ignores SIGINT and SIGQUIT, and Bun ignores SIGPIPE and SIGXFSZ)
+  c.sigfillset(c.ptr(set));
   c.posix_spawnattr_setsigdefault(c.ptr(at), c.ptr(set));
   c.sigemptyset(c.ptr(set));
   c.posix_spawnattr_setsigmask(c.ptr(at), c.ptr(set));
