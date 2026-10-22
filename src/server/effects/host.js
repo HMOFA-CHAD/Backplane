@@ -392,8 +392,12 @@ function bp_proc_class() {
     if (this.full) {
       return -globalThis.BP_H.ERRNO.EAGAIN;
     }
+    // at most 64 KiB at a time, and none while Bun still holds the last:
+    // the sink takes everything it is given, so a send to a child that
+    // does not read waits here, as a full socketpair makes it wait in C
+    const c = b.subarray(0, 65536);
     try {
-      this.sink.write(b);
+      this.sink.write(c);
       const f = this.sink.flush();
       if (f && typeof f.then === "function") {
         this.full = true;
@@ -409,7 +413,7 @@ function bp_proc_class() {
     } catch (e) {
       return -globalThis.BP_H.ERRNO.EPIPE;
     }
-    return b.length;
+    return c.length;
   }
   shutdown(how) {
     if (how !== 1) {
