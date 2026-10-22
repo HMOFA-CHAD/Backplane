@@ -348,6 +348,120 @@ class BpTcp extends BpStream {
   }
 }
 
+// A real descriptor (POSIX: a socketpair end a child got, a pty master)
+// read and written through Bun's own streams, so nothing polls it, while
+// the descriptor itself stays ours: h.fd is what an exec keeps (adopt.js)
+// or Sock.raw duplicates. Reads are pulled only while the inbox is below
+// HI; a write is taken whole and the handle is full until Bun flushed it.
+class BpFd extends BpStream {
+  constructor(fd, kind) {
+    super(kind ?? "fd");
+    this.fd = fd;
+    this.full = false;
+    this.wshut = false;
+    this.gone = false;
+    this.w = null;
+    this.r = Bun.file(fd).stream().getReader();
+    this.pull();
+  }
+  async pull() {
+    try {
+      for (;;) {
+        if (this.paused) {
+          await new Promise((res) => {
+            this.unpause = res;
+          });
+          continue;
+        }
+        const { done, value } = await this.r.read();
+        if (done || this.gone) {
+          break;
+        }
+        this.feed(value);
+      }
+      this.finish(0);
+    } catch (e) {
+      // a pty whose other side closed reads EIO: the end of the stream
+      this.finish(bp_errno(e) === BP_ERRNO.EIO ? 0 : bp_errno(e));
+    }
+  }
+  pause() {
+  }
+  resume() {
+    const f = this.unpause;
+    this.unpause = null;
+    f?.();
+  }
+  writable() {
+    return !this.full || this.gone || this.err !== 0;
+  }
+  write(b) {
+    if (this.err !== 0) {
+      return -this.err;
+    }
+    if (this.gone || this.wshut) {
+      return -BP_ERRNO.EPIPE;
+    }
+    if (this.full) {
+      return -BP_ERRNO.EAGAIN;
+    }
+    this.w ??= Bun.file(this.fd).writer();
+    this.w.write(b.slice());
+    const f = this.w.flush();
+    if (f instanceof Promise) {
+      this.full = true;
+      f.then(() => {
+        this.full = false;
+        this.wake(true);
+      }, (e) => {
+        this.err = bp_errno(e);
+        this.wakeAll();
+      });
+    }
+    return b.length;
+  }
+  shutdown(how) {
+    if (how !== 1) {
+      this.shutRead();
+    }
+    if (how !== 0 && !this.wshut) {
+      this.wshut = true;
+      bp_fd_shutdown(this.fd, 1);
+    }
+    this.wake(true);
+  }
+  close() {
+    if (!this.gone) {
+      this.gone = true;
+      this.rshut = true;
+      this.q = [];
+      this.r.cancel().catch(() => {});
+      require("fs").closeSync(this.fd);
+    }
+    this.wakeAll();
+  }
+  abort() {
+    if (!this.gone) {
+      bp_fd_shutdown(this.fd, 2);
+    }
+    this.close();
+  }
+}
+
+// shutdown(2) on a socket descriptor (POSIX only: BpFd is never made on
+// Windows)
+function bp_fd_shutdown(fd, how) {
+  try {
+    globalThis.BP_SHUT ??= require("bun:ffi").dlopen(process.platform === "darwin"
+      ? "libSystem.dylib" : "libc.so.6",
+      { shutdown: { args: ["i32", "i32"], returns: "i32" } }).symbols;
+    globalThis.BP_SHUT.shutdown(fd, how);
+  } catch (_) {
+  }
+}
+BP_H.Fd = BpFd;
+BP_H.fromFd = (fd, kind) => BP_H.add(new BpFd(fd, kind));
+
 // one set of callbacks for every Bun socket, accepted or connected
 const BP_SOCK = {
   open(s) {
@@ -638,8 +752,11 @@ function bp_host(old) {
     ["Sock.peer", () => (s) => io_tup(s, BP_H.get(s)?.peer() ?? "")],
     ["Sock.shutdown", () => (s) => (BP_H.get(s)?.shutdown(1), s)],
     ["Sock.shut_read", () => (s) => (BP_H.get(s)?.shutdown(0), s)],
-    // a handle has no raw descriptor to hand a child
-    ["Sock.raw", () => (s) => io_tup(s, 0)],
+    // a duplicate of the handle's descriptor, 0 when it has none (Bun's)
+    ["Sock.raw", () => (s) => {
+      const fd = BP_H.get(s)?.fd;
+      return io_tup(s, fd === undefined ? 0 : io_sys().fcntl(fd, process.platform === "darwin" ? 67 : 1030, 3));
+    }],
     ["Fd.shut", () => (s) => {
       const h = BP_H.get(s);
       if (h !== undefined) {
