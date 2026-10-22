@@ -54,7 +54,7 @@ def Touch.any(t: Touch) -> Bool:
 def Touch.own(t: Touch, +th: String) -> Bool:
   match t:
     case Touch{all, ts}:
-      Bool.or(all, Bool.and(Bool.not(String.is_empty(th)), Touch.member(ts, th, False{})))
+      Bool.or(all, Bool.and(Touch.member(ts, th, False{}), Bool.not(String.is_empty(th))))
 
 def Touch.level.k(own: Bool, any: Bool) -> Nat:
   match own any:

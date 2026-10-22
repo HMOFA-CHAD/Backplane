@@ -15052,6 +15052,165 @@ def Hub.join(h: Hub, +client: U32, +out: Chan(Wire), +since: Nat, +origin: Strin
       +s0 = Bool.pick(Nat, Bool.and(String.eq(origin, o), Nat.is_le(since, n)), since, 0n)
       Hub.join.k(n, s0, OB.Join.window(ls, n, s0), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, out, o, gen, sock, legacy, now)
 
+type ThinReadJob is Data:
+  ThinReadJob{client: U32, gen: U32, view: String, target: J.Json, text: String}
+
+type ThinDrained is Data:
+  ThinDrained{clients: List<&2, Client>, jobs: List<&2, ThinReadJob>, dirty: Bool}
+
+def ThinRead.jobs(cs: List<&2, J.Json>, +client: U32, +gen: U32, +view: String, +target: J.Json) -> List<&2, ThinReadJob>:
+  match cs:
+    case Nil{}: Nil{}
+    case c <> tail: ThinReadJob{client, gen, view, target, J.Json.get_str(c, "text", "")} <> ThinRead.jobs(tail, client, gen, view, target)
+
+def Client.thin.drain(+c: Client) -> ThinDrained:
+  match c:
+    case Client{+id, out, look, +cr, sock, legacy, ThinStart{mode, ThinContext{hub, cid, +target, +view, revision, anchor, +actor <> _, control} <> _} <> _}:
+      ThinDrained{[Client{id, out, look, cr, sock, legacy, [ThinStart{mode, [ThinContext{hub, cid, target, view, revision, anchor, [TA.Actor.clean(actor)], control}]}]}],
+        ThinRead.jobs(TA.Actor.queued(actor), id, OB.Cr.gen(cr), view, target), TA.Actor.dirty(actor)}
+    case _: ThinDrained{[c], Nil{}, False{}}
+
+def ThinDrained.append(a: ThinDrained, b: ThinDrained) -> ThinDrained:
+  match a b:
+    case ThinDrained{ac, ar, ad} ThinDrained{bc, br, bd}: ThinDrained{List.append(&2, Client, ac, bc), List.append(&2, ThinReadJob, ar, br), Bool.or(ad, bd)}
+
+def Clients.thin.drain(cs: List<&2, Client>) -> ThinDrained:
+  match cs:
+    case Nil{}: ThinDrained{Nil{}, Nil{}, False{}}
+    case c <> tail: ThinDrained.append(Client.thin.drain(c), Clients.thin.drain(tail))
+
+def ThinRead.post(jobs: List<&2, ThinReadJob>, +inbox: Chan(Msg)) -> IO(Unit):
+  match jobs:
+    case Nil{}: IO.pure(Unit, Unit{})
+    case ThinReadJob{client, gen, view, target, text} <> tail:
+      do IO<Unit>:
+        Self.post(inbox, ThinRead{client, gen, view, target, text})
+        ThinRead.post(tail, inbox)
+
+def Cfg.thin.dirty(dirty: Bool, cfg: Cfg) -> Cfg:
+  match dirty:
+    case False{}: cfg
+    case True{}: Cfg.thin.bump(cfg)
+
+def Hub.thin.drained(result: ThinDrained, h: Hub) -> IO(Hub):
+  match result h:
+    case ThinDrained{cl, jobs, dirty} Hub{st, f, ls, _, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        ThinRead.post(jobs, inbox)
+        return Hub{st, f, ls, cl, as, inbox, Cfg.thin.dirty(dirty, cfg), note}
+
+def Hub.thin.drain(h: Hub) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, +cl, as, inbox, cfg, note}: Hub.thin.drained(Clients.thin.drain(cl), Hub{st, f, ls, cl, as, inbox, cfg, note})
+
+# Only an actual projection revision change emits this small notification.
+# The client coalesces update requests; pages/search/chunks stay gesture-only.
+def Wire.thin.notice_fits(fits: Bool, c: Client, +text: String) -> IO(Maybe<&2, Client>):
+  match fits:
+    case True{}: Wire.offer(c, WText{text}, Wire.text.charge(text))
+    case False{}: Wire.offer(c, WClose{}, 0n)
+
+def Wire.thin.notice_ready(ready: Bool, +c: Client, +epoch: String, +revision: Nat) -> IO(Maybe<&2, Client>):
+  match ready:
+    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
+    case True{}:
+      +context = Client.thin.context(c)
+      +text = J.Json.show(TVW.Wire.changed(U32.show(OB.Cr.gen(Boot.r(c))), epoch, revision, ThinContext.view(context), ThinContext.target(context)))
+      Wire.thin.notice_fits(TVW.Wire.within(text, 1024n), c, text)
+
+def Wire.thin.notice_alive(alive: Bool, +c: Client, epoch: String, revision: Nat) -> IO(Maybe<&2, Client>):
+  match alive:
+    case False{}: Wire.offer(c, WClose{}, 0n)
+    case True{}: Wire.thin.notice_ready(Bool.not(String.is_empty(ThinContext.view(Client.thin.context(c)))), c, epoch, revision)
+
+def Wire.thin.notice_one(thin: Bool, c: Client, epoch: String, +revision: Nat) -> IO(Maybe<&2, Client>):
+  match thin:
+    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
+    case True{}: Wire.thin.notice_alive(Nat.is_lt(revision, PRESENT.Session.nat.max()), c, epoch, revision)
+
+# Paced notices (core/thin-pace.bend): each thin view is told what this
+# step touched of its own thread at once, anything else at most every
+# Pace.soft() ms; what it is owed waits for the flush timer (ThinFlush).
+type ThinNoticed is Data:
+  ThinNoticed{clients: List<&2, Client>, paces: Map<&2, TPACE.Pace>, wait: Nat}
+
+def ThinNoticed.add(+one: Maybe<&2, Client>, +key: String, +pace: TPACE.Pace, +wait: Nat, rest: ThinNoticed) -> ThinNoticed:
+  match rest:
+    case ThinNoticed{cs, ps, w}:
+      ThinNoticed{Clients.add(one, cs), Map.set(&2, TPACE.Pace, ps, key, pace), TPACE.Wait.min(wait, w)}
+
+def ThinNoticed.keep(+one: Maybe<&2, Client>, rest: ThinNoticed) -> ThinNoticed:
+  match rest:
+    case ThinNoticed{cs, ps, w}:
+      ThinNoticed{Clients.add(one, cs), ps, w}
+
+def Wire.thin.paced.send(+send: Bool, +c: Client, +epoch: String, +revision: Nat) -> IO(Maybe<&2, Client>):
+  match send:
+    case True{}: Wire.thin.notice_one(True{}, c, epoch, revision)
+    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
+
+def Wire.thin.paced.one(+paced: TPACE.Paced, +c: Client, +epoch: String, +revision: Nat, +key: String, rest: ThinNoticed) -> IO(ThinNoticed):
+  do IO<ThinNoticed>:
+    one : Maybe<&2, Client> <- Wire.thin.paced.send(TPACE.Paced.send(paced), c, epoch, revision)
+    return ThinNoticed.add(one, key, TPACE.Paced.pace(paced), TPACE.Paced.wait(paced), rest)
+
+def Wire.thin.paced.thin(+thin: Bool, +c: Client, +st: M.State, +touch: TPACE.Touch, +ps: Map<&2, TPACE.Pace>, +now: Nat, +epoch: String, +revision: Nat, rest: ThinNoticed) -> IO(ThinNoticed):
+  match thin:
+    case False{}: IO.pure(ThinNoticed, ThinNoticed.keep(Some{c}, rest))
+    case True{}:
+      +key = U32.show(Client.id(c))
+      Wire.thin.paced.one(TPACE.Pace.step(TPACE.Pace.of(ps, key), now, TPACE.Touch.level(touch, TV.Target.thread(st, ThinContext.target(Client.thin.context(c))))), c, epoch, revision, key, rest)
+
+def Wire.thin.paced(clients: List<&2, Client>, +st: M.State, +touch: TPACE.Touch, +ps: Map<&2, TPACE.Pace>, +now: Nat, +epoch: String, +revision: Nat) -> IO(ThinNoticed):
+  match clients:
+    case Nil{}: IO.pure(ThinNoticed, ThinNoticed{Nil{}, Map.new(&2, TPACE.Pace), 0n})
+    case +c <> tail:
+      do IO<ThinNoticed>:
+        rest : ThinNoticed <- Wire.thin.paced(tail, st, touch, ps, now, epoch, revision)
+        Wire.thin.paced.thin(Client.thin(c), c, st, touch, ps, now, epoch, revision, rest)
+
+def Cfg.thin.with_notes(+cfg: Cfg, notes: TPACE.Notes) -> Cfg:
+  Cfg.with_thin_cache(cfg, ThinCache{Cfg.thin(cfg), Cfg.thin.epoch(cfg), Cfg.thin.revision(cfg), Cfg.thin.streams(cfg), Cfg.thin.mail(cfg), notes})
+
+def Hub.thin.timer(+want: Bool, +inbox: Chan(Msg), +wait: Nat) -> IO(Unit):
+  match want:
+    case True{}: IO.spawn(Unit, Self.post.wait(inbox, ThinFlush{}, U32.from_nat(wait)))
+    case False{}: IO.pure(Unit, Unit{})
+
+def Hub.thin.noticed(r: ThinNoticed, h: Hub, +now: Nat) -> IO(Hub):
+  match r h:
+    case ThinNoticed{cl2, ps, +wait} Hub{st, f, ls, _, as, +inbox, +cfg, note}:
+      +flush = TPACE.Notes.flush(Cfg.thin.notes(cfg))
+      +want = TPACE.Notes.timer(flush, now, wait)
+      do IO<Hub>:
+        Hub.thin.timer(want, inbox, wait)
+        return Hub{st, f, ls, cl2, as, inbox, Cfg.thin.with_notes(cfg, TPACE.Notes{TPACE.Touch.none(), ps, Bool.pick(Nat, want, Nat.add(now, wait), flush)}), note}
+
+# tell the thin views what this step touched (now: ms)
+def Hub.thin.notify(h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        r : ThinNoticed <- Wire.thin.paced(cl, st, TPACE.Notes.touched(Cfg.thin.notes(cfg)), TPACE.Notes.paces(Cfg.thin.notes(cfg)), now, Cfg.thin.epoch(cfg), Cfg.thin.revision(cfg))
+        Hub.thin.noticed(r, Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
+
+def Hub.thin.invalidate_if(changed: Bool, h: Hub, +now: Nat) -> IO(Hub):
+  match changed:
+    case False{}: IO.pure(Hub, h)
+    case True{}: Hub.thin.notify(h, now)
+
+def Hub.thin.invalidate(before: Nat, h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.thin.invalidate_if(Bool.or(Bool.not(Nat.is_eq(before, Cfg.thin.revision(cfg))), Nat.is_eq(Cfg.thin.revision(cfg), PRESENT.Session.nat.max())), Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
+
+# the flush timer fired: what views are owed and due is told now (its time
+# cleared first, so a wait still owed sets the timer again)
+def Hub.thin.flush(h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.thin.notify(Hub{st, f, ls, cl, as, inbox, Cfg.thin.with_notes(cfg, TPACE.Notes{TPACE.Notes.touched(Cfg.thin.notes(cfg)), TPACE.Notes.paces(Cfg.thin.notes(cfg)), 0n}), note}, now)
+
 def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
   match m:
     case LockProbe{name, holder, n}:
@@ -15253,165 +15412,6 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     # unwrapped by Hub.got, never nested
     case Bulk{_}:
       IO.pure(Hub, h)
-
-type ThinReadJob is Data:
-  ThinReadJob{client: U32, gen: U32, view: String, target: J.Json, text: String}
-
-type ThinDrained is Data:
-  ThinDrained{clients: List<&2, Client>, jobs: List<&2, ThinReadJob>, dirty: Bool}
-
-def ThinRead.jobs(cs: List<&2, J.Json>, +client: U32, +gen: U32, +view: String, +target: J.Json) -> List<&2, ThinReadJob>:
-  match cs:
-    case Nil{}: Nil{}
-    case c <> tail: ThinReadJob{client, gen, view, target, J.Json.get_str(c, "text", "")} <> ThinRead.jobs(tail, client, gen, view, target)
-
-def Client.thin.drain(+c: Client) -> ThinDrained:
-  match c:
-    case Client{+id, out, look, +cr, sock, legacy, ThinStart{mode, ThinContext{hub, cid, +target, +view, revision, anchor, +actor <> _, control} <> _} <> _}:
-      ThinDrained{[Client{id, out, look, cr, sock, legacy, [ThinStart{mode, [ThinContext{hub, cid, target, view, revision, anchor, [TA.Actor.clean(actor)], control}]}]}],
-        ThinRead.jobs(TA.Actor.queued(actor), id, OB.Cr.gen(cr), view, target), TA.Actor.dirty(actor)}
-    case _: ThinDrained{[c], Nil{}, False{}}
-
-def ThinDrained.append(a: ThinDrained, b: ThinDrained) -> ThinDrained:
-  match a b:
-    case ThinDrained{ac, ar, ad} ThinDrained{bc, br, bd}: ThinDrained{List.append(&2, Client, ac, bc), List.append(&2, ThinReadJob, ar, br), Bool.or(ad, bd)}
-
-def Clients.thin.drain(cs: List<&2, Client>) -> ThinDrained:
-  match cs:
-    case Nil{}: ThinDrained{Nil{}, Nil{}, False{}}
-    case c <> tail: ThinDrained.append(Client.thin.drain(c), Clients.thin.drain(tail))
-
-def ThinRead.post(jobs: List<&2, ThinReadJob>, +inbox: Chan(Msg)) -> IO(Unit):
-  match jobs:
-    case Nil{}: IO.pure(Unit, Unit{})
-    case ThinReadJob{client, gen, view, target, text} <> tail:
-      do IO<Unit>:
-        Self.post(inbox, ThinRead{client, gen, view, target, text})
-        ThinRead.post(tail, inbox)
-
-def Cfg.thin.dirty(dirty: Bool, cfg: Cfg) -> Cfg:
-  match dirty:
-    case False{}: cfg
-    case True{}: Cfg.thin.bump(cfg)
-
-def Hub.thin.drained(result: ThinDrained, h: Hub) -> IO(Hub):
-  match result h:
-    case ThinDrained{cl, jobs, dirty} Hub{st, f, ls, _, as, +inbox, cfg, note}:
-      do IO<Hub>:
-        ThinRead.post(jobs, inbox)
-        return Hub{st, f, ls, cl, as, inbox, Cfg.thin.dirty(dirty, cfg), note}
-
-def Hub.thin.drain(h: Hub) -> IO(Hub):
-  match h:
-    case Hub{st, f, ls, +cl, as, inbox, cfg, note}: Hub.thin.drained(Clients.thin.drain(cl), Hub{st, f, ls, cl, as, inbox, cfg, note})
-
-# Only an actual projection revision change emits this small notification.
-# The client coalesces update requests; pages/search/chunks stay gesture-only.
-def Wire.thin.notice_fits(fits: Bool, c: Client, +text: String) -> IO(Maybe<&2, Client>):
-  match fits:
-    case True{}: Wire.offer(c, WText{text}, Wire.text.charge(text))
-    case False{}: Wire.offer(c, WClose{}, 0n)
-
-def Wire.thin.notice_ready(ready: Bool, +c: Client, +epoch: String, +revision: Nat) -> IO(Maybe<&2, Client>):
-  match ready:
-    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
-    case True{}:
-      +context = Client.thin.context(c)
-      +text = J.Json.show(TVW.Wire.changed(U32.show(OB.Cr.gen(Boot.r(c))), epoch, revision, ThinContext.view(context), ThinContext.target(context)))
-      Wire.thin.notice_fits(TVW.Wire.within(text, 1024n), c, text)
-
-def Wire.thin.notice_alive(alive: Bool, +c: Client, epoch: String, revision: Nat) -> IO(Maybe<&2, Client>):
-  match alive:
-    case False{}: Wire.offer(c, WClose{}, 0n)
-    case True{}: Wire.thin.notice_ready(Bool.not(String.is_empty(ThinContext.view(Client.thin.context(c)))), c, epoch, revision)
-
-def Wire.thin.notice_one(thin: Bool, c: Client, epoch: String, +revision: Nat) -> IO(Maybe<&2, Client>):
-  match thin:
-    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
-    case True{}: Wire.thin.notice_alive(Nat.is_lt(revision, PRESENT.Session.nat.max()), c, epoch, revision)
-
-# Paced notices (core/thin-pace.bend): each thin view is told what this
-# step touched of its own thread at once, anything else at most every
-# Pace.soft() ms; what it is owed waits for the flush timer (ThinFlush).
-type ThinNoticed is Data:
-  ThinNoticed{clients: List<&2, Client>, paces: Map<&2, TPACE.Pace>, wait: Nat}
-
-def ThinNoticed.add(+one: Maybe<&2, Client>, +key: String, +pace: TPACE.Pace, +wait: Nat, rest: ThinNoticed) -> ThinNoticed:
-  match rest:
-    case ThinNoticed{cs, ps, w}:
-      ThinNoticed{Clients.add(one, cs), Map.set(&2, TPACE.Pace, ps, key, pace), TPACE.Wait.min(wait, w)}
-
-def ThinNoticed.keep(+one: Maybe<&2, Client>, rest: ThinNoticed) -> ThinNoticed:
-  match rest:
-    case ThinNoticed{cs, ps, w}:
-      ThinNoticed{Clients.add(one, cs), ps, w}
-
-def Wire.thin.paced.send(+send: Bool, +c: Client, +epoch: String, +revision: Nat) -> IO(Maybe<&2, Client>):
-  match send:
-    case True{}: Wire.thin.notice_one(True{}, c, epoch, revision)
-    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
-
-def Wire.thin.paced.one(+paced: TPACE.Paced, +c: Client, +epoch: String, +revision: Nat, +key: String, rest: ThinNoticed) -> IO(ThinNoticed):
-  do IO<ThinNoticed>:
-    one : Maybe<&2, Client> <- Wire.thin.paced.send(TPACE.Paced.send(paced), c, epoch, revision)
-    return ThinNoticed.add(one, key, TPACE.Paced.pace(paced), TPACE.Paced.wait(paced), rest)
-
-def Wire.thin.paced.thin(+thin: Bool, +c: Client, +st: M.State, +touch: TPACE.Touch, +ps: Map<&2, TPACE.Pace>, +now: Nat, +epoch: String, +revision: Nat, rest: ThinNoticed) -> IO(ThinNoticed):
-  match thin:
-    case False{}: IO.pure(ThinNoticed, ThinNoticed.keep(Some{c}, rest))
-    case True{}:
-      +key = U32.show(Client.id(c))
-      Wire.thin.paced.one(TPACE.Pace.step(TPACE.Pace.of(ps, key), now, TPACE.Touch.level(touch, TV.Target.thread(st, ThinContext.target(Client.thin.context(c))))), c, epoch, revision, key, rest)
-
-def Wire.thin.paced(clients: List<&2, Client>, +st: M.State, +touch: TPACE.Touch, +ps: Map<&2, TPACE.Pace>, +now: Nat, +epoch: String, +revision: Nat) -> IO(ThinNoticed):
-  match clients:
-    case Nil{}: IO.pure(ThinNoticed, ThinNoticed{Nil{}, Map.new(&2, TPACE.Pace), 0n})
-    case +c <> tail:
-      do IO<ThinNoticed>:
-        rest : ThinNoticed <- Wire.thin.paced(tail, st, touch, ps, now, epoch, revision)
-        Wire.thin.paced.thin(Client.thin(c), c, st, touch, ps, now, epoch, revision, rest)
-
-def Cfg.thin.with_notes(+cfg: Cfg, notes: TPACE.Notes) -> Cfg:
-  Cfg.with_thin_cache(cfg, ThinCache{Cfg.thin(cfg), Cfg.thin.epoch(cfg), Cfg.thin.revision(cfg), Cfg.thin.streams(cfg), Cfg.thin.mail(cfg), notes})
-
-def Hub.thin.timer(+want: Bool, +inbox: Chan(Msg), +wait: Nat) -> IO(Unit):
-  match want:
-    case True{}: IO.spawn(Unit, Self.post.wait(inbox, ThinFlush{}, U32.from_nat(wait)))
-    case False{}: IO.pure(Unit, Unit{})
-
-def Hub.thin.noticed(r: ThinNoticed, h: Hub, +now: Nat) -> IO(Hub):
-  match r h:
-    case ThinNoticed{cl2, ps, +wait} Hub{st, f, ls, _, as, +inbox, +cfg, note}:
-      +flush = TPACE.Notes.flush(Cfg.thin.notes(cfg))
-      +want = TPACE.Notes.timer(flush, now, wait)
-      do IO<Hub>:
-        Hub.thin.timer(want, inbox, wait)
-        return Hub{st, f, ls, cl2, as, inbox, Cfg.thin.with_notes(cfg, TPACE.Notes{TPACE.Touch.none(), ps, Bool.pick(Nat, want, Nat.add(now, wait), flush)}), note}
-
-# tell the thin views what this step touched (now: ms)
-def Hub.thin.notify(h: Hub, +now: Nat) -> IO(Hub):
-  match h:
-    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      do IO<Hub>:
-        r : ThinNoticed <- Wire.thin.paced(cl, st, TPACE.Notes.touched(Cfg.thin.notes(cfg)), TPACE.Notes.paces(Cfg.thin.notes(cfg)), now, Cfg.thin.epoch(cfg), Cfg.thin.revision(cfg))
-        Hub.thin.noticed(r, Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
-
-def Hub.thin.invalidate_if(changed: Bool, h: Hub, +now: Nat) -> IO(Hub):
-  match changed:
-    case False{}: IO.pure(Hub, h)
-    case True{}: Hub.thin.notify(h, now)
-
-def Hub.thin.invalidate(before: Nat, h: Hub, +now: Nat) -> IO(Hub):
-  match h:
-    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.thin.invalidate_if(Bool.or(Bool.not(Nat.is_eq(before, Cfg.thin.revision(cfg))), Nat.is_eq(Cfg.thin.revision(cfg), PRESENT.Session.nat.max())), Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
-
-# the flush timer fired: what views are owed and due is told now (its time
-# cleared first, so a wait still owed sets the timer again)
-def Hub.thin.flush(h: Hub, +now: Nat) -> IO(Hub):
-  match h:
-    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.thin.notify(Hub{st, f, ls, cl, as, inbox, Cfg.thin.with_notes(cfg, TPACE.Notes{TPACE.Notes.touched(Cfg.thin.notes(cfg)), TPACE.Notes.paces(Cfg.thin.notes(cfg)), 0n}), note}, now)
 
 def Hub.thin.snapshot(h: Hub) -> Nat & Hub:
   match h:
