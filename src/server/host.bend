@@ -7,12 +7,14 @@ def Clock.epoch() -> IO(U32):
   import "./effects/host.c"
   import "./effects/host.js"
 
-# The event log read in one go: first the text that closes off a torn
-# tail ("\n" when the last byte is not one, else ""), then its whole
-# lines; exactly core/store.bend's Store.read.of over the file's bytes
-# (test/evlog_read_test.bend), without a List cell per byte (252M of them
-# on a real log, the JS hub's 25 GB). A file that cannot be read is [""].
-def EvLog.read(path: String) -> IO(List<&2, String>):
+# The event log from byte offset off (decimal text; "0" for all of it,
+# a line's start for a tail) to its end, read in one go: the text that
+# closes off a torn tail, the offset past the last whole line, then the
+# whole lines; exactly core/store.bend's Store.read.from over the bytes
+# from off (test/evlog_read_test.bend), without a List cell per byte (252M
+# of them on a real log, the JS hub's 25 GB). A file that cannot be read,
+# or an offset at or past its end, is ["", off].
+def EvLog.read_from(path: String, off: String) -> IO(List<&2, String>):
   import "./effects/evlog.c"
   import "./effects/evlog.js"
 

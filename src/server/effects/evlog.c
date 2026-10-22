@@ -1,12 +1,14 @@
-// EvLog.read (host.bend): the tail's fix, then the event log's lines as Strings, straight from
-// its bytes, decoded as core/utf8.bend's Utf8.decode does (U+FFFD for each
-// byte that starts no character, the code point of an overlong form, U+FFFD
-// for a surrogate or past U+10FFFF), so the hub's start reads the same lines
-// it read through Files.read and Store.lines.
+// EvLog.read_from (host.bend): the event log from a byte offset, as
+// [tail's fix, offset past the last whole line, lines...], the lines
+// decoded as core/utf8.bend's Utf8.decode does (U+FFFD for each byte that
+// starts no character, the code point of an overlong form, U+FFFD for a
+// surrogate or past U+10FFFF): what core/store.bend's Store.read.from says.
 
-#ifdef CID(EvLog.read)
+#ifdef CID(EvLog.read_from)
 
 #include <fcntl.h>
+#include <inttypes.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -60,7 +62,8 @@ static Term evlog_str(Env e, const uint32_t* cs, u64 n) {
   return s;
 }
 
-static uint8_t* evlog_slurp(const char* path, u64* size) {
+// the bytes from off to the end (NULL when the file cannot be read)
+static uint8_t* evlog_slurp(const char* path, uint64_t off, u64* size) {
   int fd = open(path, O_RDONLY | O_CLOEXEC);
   if (fd < 0) {
     return NULL;
@@ -70,7 +73,8 @@ static uint8_t* evlog_slurp(const char* path, u64* size) {
     close(fd);
     return NULL;
   }
-  u64 cap = st.st_size > 0 ? (u64)st.st_size : 0, got = 0;
+  u64 all = st.st_size > 0 ? (u64)st.st_size : 0;
+  u64 cap = all > off ? all - off : 0, got = 0;
   uint8_t* b = malloc(cap + 1);
   while (b != NULL) {
     if (got == cap) {
@@ -78,7 +82,7 @@ static uint8_t* evlog_slurp(const char* path, u64* size) {
       if (nb == NULL) { free(b); b = NULL; break; }
       b = nb; cap = cap * 2 + 4096;
     }
-    ssize_t r = read(fd, b + got, cap - got);
+    ssize_t r = pread(fd, b + got, cap - got, (off_t)(off + got));
     if (r < 0 && errno == EINTR) continue;
     if (r <= 0) break;
     got += (u64)r;
@@ -88,20 +92,34 @@ static uint8_t* evlog_slurp(const char* path, u64* size) {
   return b;
 }
 
-Term evlog_read_run(Env e, Term* f, IoWork* w) {
-  u64 n = 0, size = 0;
+static Term evlog_num(Env e, uint64_t v) {
+  char buf[32];
+  int n = snprintf(buf, sizeof buf, "%" PRIu64, v);
+  return io_str(e, buf, (u64)n);
+}
+
+Term evlog_read_from_run(Env e, Term* f, IoWork* w) {
+  u64 n = 0, m = 0, size = 0;
   char* path = io_cstr(e, f[0], &n);
-  uint8_t* b = io_nul(path, n) ? NULL : evlog_slurp(path, &size);
+  char* offs = io_cstr(e, f[1], &m);
+  uint64_t off = 0;
+  for (u64 i = 0; i < m && offs[i] >= '0' && offs[i] <= '9'; i += 1) {
+    off = off * 10 + (uint64_t)(offs[i] - '0');
+  }
+  free(offs);
+  uint8_t* b = io_nul(path, n) ? NULL : evlog_slurp(path, off, &size);
   free(path);
   Term xs = term_pak(CID(Nil), 0);
   if (b == NULL || size == 0) {
     free(b);
+    xs = io_node(e, CID(Con), evlog_num(e, off), xs);
     return io_node(e, CID(Con), term_pak(CID(SNil), 0), xs);
   }
   int torn = b[size - 1] != 10;
   // the whole lines, last first, so the list is built from its end
   u64 end = size;
   while (end > 0 && b[end - 1] != 10) end -= 1;
+  u64 whole = end;
   uint32_t* cs = malloc(sizeof(uint32_t) * (end + 1));
   while (end > 0) {
     u64 stop = end - 1, start = stop;
@@ -112,11 +130,12 @@ Term evlog_read_run(Env e, Term* f, IoWork* w) {
   }
   free(cs);
   free(b);
+  xs = io_node(e, CID(Con), evlog_num(e, off + whole), xs);
   return io_node(e, CID(Con), torn ? io_str(e, "\n", 1) : term_pak(CID(SNil), 0), xs);
 }
 
-static void __attribute__((constructor)) evlog_read_use(void) {
-  io_eff(CID(EvLog.read), evlog_read_run);
+static void __attribute__((constructor)) evlog_read_from_use(void) {
+  io_eff(CID(EvLog.read_from), evlog_read_from_run);
 }
 
 #endif

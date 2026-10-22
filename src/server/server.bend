@@ -15478,7 +15478,7 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         t0 : U32 <- PS.Perf.us()
         # the lines straight from the file (no List cell per byte, which
         # was most of the JS hub's memory), then only the lines are kept
-        +rd : List<&2, String> <- H.EvLog.read(Store.path(home))
+        +rd : List<&2, String> <- H.EvLog.read_from(Store.path(home), "0")
         t1 : U32 <- PS.Perf.span("boot.read", t0)
         +torn : String = ST.Store.read.tail(rd)
         +ld : ST.Loaded = ST.Store.load(ST.Store.read.body(rd), ST.Loaded{M.State.empty(), Nil{}})
