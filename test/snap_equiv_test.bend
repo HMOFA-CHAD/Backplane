@@ -157,8 +157,8 @@ def Demo.cuts(ks: List<&2, Nat>, +ls: List<&2, String>) -> List<&2, Nat>:
       Q.Bytes.at(ls, k, 0n) <> Demo.cuts(t, ls)
 
 # one log through store.db at each cut: no record or window may differ;
-# refused: the cuts Hot.load must refuse (a torn fragment before
-# applied_off, by design)
+# refused: the cuts Hot.load must refuse (none: a torn fragment before
+# applied_off is skipped as the store skipped it)
 def store.db(+name: String, +cs: List<&2, M.Change>, +cuts: List<&2, Nat>, +refused: Nat) -> IO(Unit):
   do IO<Unit>:
     +ls : List<&2, String> = Demo.text(cs)
@@ -184,5 +184,5 @@ def main() -> IO(Unit):
     at(52n)
     at(60n)
     at(List.length(&2, S.LL, S.Demo.log()))
-    store.db("demo", S.Demo.changes(), [0n, 1n, 30n, 52n, 60n, List.length(&2, M.Change, S.Demo.changes()), List.length(&2, S.LL, S.Demo.log())], 1n)
-    store.db("demo, threads open", Demo.live(), [0n, 3n, 10n, 30n, 50n, List.length(&2, M.Change, Demo.live()), Nat.add(List.length(&2, M.Change, Demo.live()), 2n)], 1n)
+    store.db("demo", S.Demo.changes(), [0n, 1n, 30n, 52n, 60n, List.length(&2, M.Change, S.Demo.changes()), List.length(&2, S.LL, S.Demo.log())], 0n)
+    store.db("demo, threads open", Demo.live(), [0n, 3n, 10n, 30n, 50n, List.length(&2, M.Change, Demo.live()), Nat.add(List.length(&2, M.Change, Demo.live()), 2n)], 0n)
