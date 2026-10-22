@@ -72,4 +72,11 @@ for f, s in srcs.items():
     # (a module's imports may come after it: they are hoisted)
     s = HELPERS + s
     open(f, "w", encoding="utf-8").write(s)
+# each swap must have landed exactly once (a shape that matched but was not
+# rewritten, or rewritten twice, stops the build too)
+outs = "".join(open(f, encoding="utf-8").read() for f in files)
+for name, call in (("String.cmp", "snd:{$:__bpOrd("), ("Map.bit.go", "snd:__bpBit("), ("String.split", "return __bpSplit(")):
+    n = outs.count(call)
+    if n != 1:
+        sys.exit(f"js-native: {name}'s native body is in the output {n} times, not once")
 print("js-native: String.cmp, Map.bit.go and String.split are native")
