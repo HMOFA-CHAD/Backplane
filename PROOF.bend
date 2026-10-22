@@ -12758,3 +12758,11 @@ def Laws.copy_refuses_net(): {==}
 def Laws.copy_off_refuses_none(cmd, args): {==}
 def Laws.adopt_copy_none(rec, hand): {==}
 def Laws.copy_file_open_told(): {==}
+
+# ---- F1: far feed slices ----
+def Laws.far_feed_sliced(): {==}
+def Laws.far_feed_sliced_one(): {==}
+def Laws.far_feed_sliced_big(): {==}
+def Laws.far_fact_shared(): {==}
+def Laws.far_fact_private(): {==}
+# ---- end F1 feed ----

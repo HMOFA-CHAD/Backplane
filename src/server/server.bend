@@ -7895,9 +7895,22 @@ def Far.mcp.job(+id: J.Json, +link: String, +body: String, +home: String, +url: 
     ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, FM.Fm.answer(id, link, Far.code(r), Far.body(r)))
     return Unit{}
 
-# this hub's shared lines, made from its log (newest first)
+# this hub's shared lines, made from its log (newest first) a slice at a
+# time: the JS hub runs every job on its one fiber, so the job gives it
+# back between slices (the whole log at once held the hub for 30 s)
+def Far.feed.run(fuel: Nat, p: FR.FeedPart, +st: M.State, +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel p:
+    case _ FR.FeedPart{Nil{}, _, acc}:
+      Far.send(inbox, FarFeed{FR.Fr.feed.done(acc), ""})
+    case 0n FR.FeedPart{_, _, acc}:
+      Far.send(inbox, FarFeed{FR.Fr.feed.done(acc), ""})
+    case 1n+k FR.FeedPart{+l <> +t, +n, acc}:
+      do IO<Unit>:
+        IO.sleep(1)
+        Far.feed.run(k, FR.Fr.feed.some(l <> t, FR.Fr.feed.slice(), n, st, acc), st, inbox)
+
 def Far.feed.job(+ls: List<&2, String>, +st: M.State, +inbox: Chan(Msg)) -> IO(Unit):
-  Far.send(inbox, FarFeed{FR.Fr.feed.full(ls, st), ""})
+  Far.feed.run(1000000000n, FR.Fr.feed.start(ls), st, inbox)
 
 # a mirror kept on disk, read back
 def Far.load.job(+link: String, +name: String, +home: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -8603,7 +8616,6 @@ def Far.start(h: Hub) -> IO(Hub):
   match h:
     case Hub{+st, f, +ls, cl, as, +inbox, +cfg, note}:
       do IO<Hub>:
-        IO.spawn(Unit, Far.feed.job(ls, st, inbox))
         Far.start.go(Far.live(BO.World.peers(M.State.bots(st))), Cfg.home(cfg), inbox)
         return Far.start.epoch(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), ls, M.State.seq(st))
 
@@ -12241,6 +12253,27 @@ def Hub.far.push.in(ok: Bool, m: Maybe<&2, J.Json>, h: Hub, +peer: String, +repl
     case False{} _:
       Hub.answer(h, reply, W.Http.text("403 Forbidden", "threads are shared with the owner's own machines"))
 
+# The feed is made when a linked machine first asks for it, never at
+# start (FR.Fh.feed.ask): that ask starts the job, and it and every other
+# until the job is done are told "not ready", so the machine pulls again.
+def Far.feed.asked.set(p: FR.Fh & Hub) -> Hub:
+  (fh, h) = p
+  Far.with(h, FR.Fh.feed.ask(fh))
+
+def Far.feed.want.k(asked: Bool, h: Hub) -> IO(Hub):
+  match asked h:
+    case True{} _:
+      IO.pure(Hub, h)
+    case False{} Hub{+st, f, +ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Far.feed.job(ls, st, inbox))
+        return Far.feed.asked.set(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}))
+
+def Far.feed.want(h: Hub) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Far.feed.want.k(FR.Fh.feed.asked(BN.Bn.far(Cfg.bn(cfg))), Hub{st, f, ls, cl, as, inbox, cfg, note})
+
 def Far.log.go(m: Maybe<&2, List<&2, FR.Line>>, h: Hub, +since: Nat, +epoch: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
   match m h:
     case Some{+fs} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
@@ -12249,7 +12282,7 @@ def Far.log.go(m: Maybe<&2, List<&2, FR.Line>>, h: Hub, +since: Nat, +epoch: Str
       Hub.answer(Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, Bot.json("200 OK", FR.Fr.log.json(from, FR.Fr.catalog(st, FR.Fh.lasts(BN.Bn.far(Cfg.bn(cfg)))),
         FR.Fr.with.epoch(FR.Page.json(FR.Fr.page(fs, from, M.State.seq(st), 400000n)), own))))
     case None{} _:
-      Hub.answer(h, reply, W.Http.text("503 Service Unavailable", "not ready"))
+      IO.bind(Hub, Hub, Far.feed.want(h), h2 => Hub.answer(h2, reply, W.Http.text("503 Service Unavailable", "not ready")))
 
 def Far.log.k(r: Maybe<&2, List<&2, FR.Line>> & Hub, +since: Nat, +epoch: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
   (m, h) = r
