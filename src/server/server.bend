@@ -559,14 +559,6 @@ def Store.lines.k(r: U.Lines & List<&2, String>) -> List<&2, String>:
 def Store.lines(bs: List<&2, U32>) -> List<&2, String>:
   Store.lines.k(U.Lines.feed(U.Lines.new(), bs))
 
-def EvLog.lines(r: List<&2, String> & String) -> List<&2, String>:
-  (ls, _) = r
-  ls
-
-def EvLog.tail(r: List<&2, String> & String) -> String:
-  (_, t) = r
-  t
-
 def Store.path(+home: String) -> String:
   home ++ "/events.jsonl"
 
@@ -15486,10 +15478,10 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         t0 : U32 <- PS.Perf.us()
         # the lines straight from the file (no List cell per byte, which
         # was most of the JS hub's memory), then only the lines are kept
-        +rd : List<&2, String> & String <- H.EvLog.read(Store.path(home))
+        +rd : List<&2, String> <- H.EvLog.read(Store.path(home))
         t1 : U32 <- PS.Perf.span("boot.read", t0)
-        +torn : String = EvLog.tail(rd)
-        +ld : ST.Loaded = ST.Store.load(EvLog.lines(rd), ST.Loaded{M.State.empty(), Nil{}})
+        +torn : String = ST.Store.read.tail(rd)
+        +ld : ST.Loaded = ST.Store.load(ST.Store.read.body(rd), ST.Loaded{M.State.empty(), Nil{}})
         +st : M.State = ST.Loaded.st(ld)
         +ls : List<&2, String> = ST.Loaded.wire(ld)
         t2 : U32 <- PS.Perf.span("boot.replay", t1)

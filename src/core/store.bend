@@ -116,16 +116,33 @@ def Store.tail_fix(bs: List<&2, U32>) -> String:
     case +b <> t:
       Bool.pick(String, U32.is_eq(Store.last.go(t, b), 10), "", "\n")
 
-# What the hub's EvLog.read effect answers for a log of these bytes (its
-# whole lines, as utf8.bend's Lines and Utf8.decode read them, and the text
-# that closes off a torn tail), made by the effect without a List cell per
+# What the hub's EvLog.read effect answers for a log of these bytes (the
+# text that closes off a torn tail, then its whole lines, as utf8.bend's
+# Lines and Utf8.decode read them), made by the effect without a List cell per
 # byte (test/evlog_read_test.bend compares the two)
+# (the tail's fix first, then the lines: one List, so it can be kept)
 def Store.read.lines(r: UT.Lines & List<&2, String>) -> List<&2, String>:
   (_, ls) = r
   ls
 
-def Store.read.of(+bs: List<&2, U32>) -> List<&2, String> & String:
-  (Store.read.lines(UT.Lines.feed(UT.Lines.new(), bs)), Store.tail_fix(bs))
+def Store.read.of(+bs: List<&2, U32>) -> List<&2, String>:
+  Store.tail_fix(bs) <> Store.read.lines(UT.Lines.feed(UT.Lines.new(), bs))
+
+# the lines of what Store.read.of answers
+def Store.read.body(r: List<&2, String>) -> List<&2, String>:
+  match r:
+    case Nil{}:
+      Nil{}
+    case _ <> ls:
+      ls
+
+# the tail's fix of what Store.read.of answers
+def Store.read.tail(r: List<&2, String>) -> String:
+  match r:
+    case Nil{}:
+      ""
+    case t <> _:
+      t
 
 # a failed write may have left a cut line: the log is closed off with a
 # newline before anything else is written, and the failure says when that

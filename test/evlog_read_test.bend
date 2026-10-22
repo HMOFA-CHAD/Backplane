@@ -27,9 +27,8 @@ def show.lines.go(ls: List<&2, String>, acc: String) -> String:
     case l <> t:
       show.lines.go(t, acc ++ "[" ++ show.cps.go(l, "") ++ "]")
 
-def show.read(r: List<&2, String> & String) -> String:
-  (ls, tail) = r
-  show.lines.go(ls, "") ++ " tail " ++ show.cps.go(tail, "")
+def show.read(+r: List<&2, String>) -> String:
+  show.lines.go(ST.Store.read.body(r), "") ++ " tail " ++ show.cps.go(ST.Store.read.tail(r), "")
 
 type Case is Data:
   Case{name: String, bytes: List<&2, U32>}
@@ -68,7 +67,7 @@ def fixture(+path: String, +bs: List<&2, U32>) -> IO(Unit):
 def case.read(name: String, +bs: List<&2, U32>, +path: String) -> IO(Unit):
   do IO<Unit>:
     fixture(path, bs)
-    got : List<&2, String> & String <- H.EvLog.read(path)
+    got : List<&2, String> <- H.EvLog.read(path)
     C.Check.str("read " ++ name, show.read(got), show.read(ST.Store.read.of(bs)))
 
 def case.run(c: Case, +path: String) -> IO(Unit):
@@ -99,9 +98,8 @@ def long.go(+n: Nat, acc: String) -> String:
     case 1n+k:
       long.go(k, SCon{Chr{Bool.pick(U32, Nat.is_eq(Nat.mod(k, 8n), 0n), 32, 65)}, acc})
 
-def count(ls: List<&2, String> & String) -> Nat:
-  (xs, _) = ls
-  ST.Store.size(xs)
+def count(r: List<&2, String>) -> Nat:
+  ST.Store.size(ST.Store.read.body(r))
 
 def has(r: Map<&2, Bool> & Bool) -> String:
   (_, b) = r
@@ -118,10 +116,10 @@ def main() -> IO(Unit):
     +n : U32 = Result.default(&1, &1, U32 & String, U32, r, 0)
     +path : String = tmp ++ "/evlog-test-" ++ U32.show(n) ++ ".jsonl"
     all(cases(), path)
-    nf : List<&2, String> & String <- H.EvLog.read(tmp ++ "/evlog-test-none-" ++ U32.show(n))
+    nf : List<&2, String> <- H.EvLog.read(tmp ++ "/evlog-test-none-" ++ U32.show(n))
     C.Check.str("a missing file", show.read(nf), " tail ")
     fixture(path, many.go(500000n, []))
-    big : List<&2, String> & String <- H.EvLog.read(path)
+    big : List<&2, String> <- H.EvLog.read(path)
     C.Check.str("500k lines counted in a tail call", Nat.show(count(big)), "500000")
     IO.bind(Result<&1, &1, U32 & String, Unit>, Unit, H.FS.remove(path), gone)
     C.Check.str("a 500k-letter message indexed", has(Map.has(&2, Bool, TH.Words.of(long.go(500000n, "")), "aaaaaaa")), "True")

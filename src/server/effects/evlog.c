@@ -1,4 +1,4 @@
-// EvLog.read (host.bend): the event log's lines as Strings, straight from
+// EvLog.read (host.bend): the tail's fix, then the event log's lines as Strings, straight from
 // its bytes, decoded as core/utf8.bend's Utf8.decode does (U+FFFD for each
 // byte that starts no character, the code point of an overlong form, U+FFFD
 // for a surrogate or past U+10FFFF), so the hub's start reads the same lines
@@ -96,7 +96,7 @@ Term evlog_read_run(Env e, Term* f, IoWork* w) {
   Term xs = term_pak(CID(Nil), 0);
   if (b == NULL || size == 0) {
     free(b);
-    return io_tup(e, xs, term_pak(CID(SNil), 0));
+    return io_node(e, CID(Con), term_pak(CID(SNil), 0), xs);
   }
   int torn = b[size - 1] != 10;
   // the whole lines, last first, so the list is built from its end
@@ -112,7 +112,7 @@ Term evlog_read_run(Env e, Term* f, IoWork* w) {
   }
   free(cs);
   free(b);
-  return io_tup(e, xs, torn ? io_str(e, "\n", 1) : term_pak(CID(SNil), 0));
+  return io_node(e, CID(Con), torn ? io_str(e, "\n", 1) : term_pak(CID(SNil), 0), xs);
 }
 
 static void __attribute__((constructor)) evlog_read_use(void) {

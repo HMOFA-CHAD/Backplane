@@ -1,4 +1,4 @@
-// EvLog.read (host.bend), as evlog.c: the event log's whole lines as
+// EvLog.read (host.bend), as evlog.c: the tail's fix, then the event log's whole lines as
 // Strings from one Buffer, never a List cell per byte. A line that is
 // well-formed UTF-8 goes through TextDecoder (fatal, so anything it accepts
 // decodes alike in core/utf8.bend's Utf8.decode); any other line is decoded
@@ -48,10 +48,10 @@ function evlog_read(path) {
   try {
     b = require("fs").readFileSync(path);
   } catch (_) {
-    return io_tup({ $: "Nil" }, "");
+    return { $: "Con", head: "", tail: { $: "Nil" } };
   }
   const n = b.length;
-  if (n === 0) return io_tup({ $: "Nil" }, "");
+  if (n === 0) return { $: "Con", head: "", tail: { $: "Nil" } };
   const td = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
   let end = n;
   while (end > 0 && b[end - 1] !== 10) end -= 1;
@@ -62,7 +62,7 @@ function evlog_read(path) {
     xs = { $: "Con", head: evlog_line(td, b, start, stop), tail: xs };
     end = start;
   }
-  return io_tup(xs, b[n - 1] === 10 ? "" : "\n");
+  return { $: "Con", head: b[n - 1] === 10 ? "" : "\n", tail: xs };
 }
 
 io_eff(CID(EvLog.read), evlog_read);
