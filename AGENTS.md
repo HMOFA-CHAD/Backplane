@@ -131,7 +131,9 @@ Native builds need clang 19+ and X11 headers (`libx11-dev`). Without root, `~/.l
 
 Native C emission also needs Python 3.12+, Bun (CI pins 1.4.3) and `patch`.
 `scripts/native-compiler.py` caches checksum-pinned Bend 2.0.36 source with
-`patches/bend-native-ids.patch`; the installed Bend still checks/proves and
+`patches/bend-native-ids.patch` then `patches/bend-fast-emit.patch` (replays
+a def's emission when nothing it read changed; byte-identical C, about twice
+as fast, checked by `test/tools/native_compiler_test.py`); the installed Bend still checks/proves and
 emits JavaScript. The patch extends function IDs to 20 bits while retaining
 16-bit constructor IDs and 40-bit heap locations. See [CI repair and native
 compiler provenance](docs/ci.md) for the bounds, validation and offline setup.
