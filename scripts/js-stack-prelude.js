@@ -9,13 +9,19 @@
 // unlimited soft limit makes JSC bound itself small again). So when either
 // is short, the hub raises the soft limit to 4 GiB, sets the variable and
 // executes itself again, once (BACKPLANE_STACK_SET marks the second run).
+// It is the first code in the binary: nothing (the hub lock, a socket, an
+// adopted agent) is open yet. With the limit and the variable already set
+// (the service's LimitSTACK, an exec in place) it does nothing; with only the
+// limit set it still executes once, as JSC reads the variable only at
+// start. The hub's own children (--plot, --review, --telemetry-pow) raise
+// theirs the same way: they parse large files too.
 // Stack pages are only committed when touched. Children are started with
 // 8 MiB again (host.js's host_child_stack). Sys.exec in place keeps both, so
 // a restart does not repeat this.
 //
 // Only a compiled hub on Linux or macOS (process.argv[1] under /$bunfs/):
 // `bun serve.js` and the tests run as they are. macOS's hard stack limit is
-// usually 64 MiB, below 4 GiB: there the hub runs on as it is. Anything
+// usually 64 MiB, below 4 GiB: there it takes what the hard limit allows. Anything
 // failing (no ffi, setrlimit or execve refused) runs on, never exits.
 (() => {
   try {
@@ -41,18 +47,20 @@
     }
     const soft = lim[0];
     const hard = lim[1];
+    // 4 GiB, or as much as the hard limit allows (said once, by the hub
+    // itself, not by its --plot, --review... children)
+    const goal = hard !== inf && hard < want ? hard : want;
+    if (goal < want && !/^--(plot|review|render|telemetry-pow)/.test(String(process.argv[2] ?? ""))) {
+      require("fs").writeSync(2, "backplane: the stack is held to " + Number(goal >> 10n)
+        + " KiB by its hard limit (below 4 GiB): deep work on large data may overflow it\n");
+    }
     const jsc = process.env.BUN_JSC_maxPerThreadStackUsage;
-    const short = soft === inf || soft < want;
+    const short = soft === inf || soft < goal;
     if (!short && jsc) {
       return;
     }
-    if (short) {
-      if (hard !== inf && hard < want) {
-        return;
-      }
-      if (lib.setrlimit(3, ffi.ptr(new BigUint64Array([want, hard]))) !== 0) {
-        return;
-      }
+    if (short && lib.setrlimit(3, ffi.ptr(new BigUint64Array([goal, hard]))) !== 0) {
+      return;
     }
     if (!jsc) {
       process.env.BUN_JSC_maxPerThreadStackUsage = "4000000000";

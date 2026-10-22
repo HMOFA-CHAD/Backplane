@@ -55,8 +55,10 @@ try {
   }
   check(up, "the hub serves /hello");
   const limits = readFileSync(`/proc/${hub.pid}/limits`, "utf8");
-  const soft = /Max stack size\s+(\S+)/.exec(limits)?.[1];
-  check(soft === "4294967296", "the hub runs with a 4 GiB soft stack limit (same pid)", soft);
+  const [, soft, hard] = /Max stack size\s+(\S+)\s+(\S+)/.exec(limits) ?? [];
+  // 4 GiB, or the hard limit where that is less (Boat: 1 GiB)
+  const goal = hard === "unlimited" || Number(hard) >= 4294967296 ? "4294967296" : hard;
+  check(soft === goal, "the hub runs with a 4 GiB soft stack limit, or its hard limit (same pid)", `${soft} of ${hard}`);
   const env = readFileSync(`/proc/${hub.pid}/environ`, "utf8").split("\0");
   check(env.includes("BUN_JSC_maxPerThreadStackUsage=4000000000"), "and with Bun's JS stack bound set");
   const stackFile = join(root, "claude.stack");

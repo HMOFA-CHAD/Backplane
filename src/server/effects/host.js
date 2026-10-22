@@ -197,7 +197,16 @@ function sock_save(socket, path, n, k) {
 }
 
 // Sends all of b; a full socket parks until writable (never a spin), as
-// host.c's host_send_more does.
+// host.c's host_send_more does. A parked send also tries again each second:
+// the loop waits with select(), which never reports a socketpair whose
+// connection was shut (Fd.shut) as writable (only POLLHUP, which C's poll
+// sees), so the send would wait for the peer to exit; the retry fails with
+// EPIPE at once.
+function host_park_out(socket, k, go, until) {
+  const tick = performance.now() + 1000;
+  io_park_on(socket, true, k, go, until === undefined ? tick : Math.min(until, tick));
+}
+
 function host_send(socket, b, k) {
   const sys = io_sys();
   const again = sys.mac ? 35 : 11;
@@ -208,7 +217,7 @@ function host_send(socket, b, k) {
       if (n < 0) {
         const code = sys.errno();
         if (code === again) {
-          io_park_on(socket, true, k, go);
+          host_park_out(socket, k, go);
           return undefined;
         }
         return io_tup(socket, io_fail(code));
@@ -254,7 +263,7 @@ function sock_send_until(socket, data, ms, k) {
       if (n < 0) {
         const code = sys.errno();
         if (code === again && performance.now() < until) {
-          io_park_on(socket, true, k, go, until);
+          host_park_out(socket, k, go, until);
           return undefined;
         }
         host_libc().shutdown(socket, 2);
