@@ -11506,3 +11506,14 @@ law copy_off_refuses_none:
   for +cmd: String
   for +args: List<&2, String>
   {JCNET.Copy.refused(False{}, cmd, args) == False{} : Bool}
+
+# a copy takes over or stops none of the agents its home's records name
+law adopt_copy_none:
+  for +rec: String
+  for +hand: String
+  {MPCREDIT.Adopt.copy.entries(True{}, rec, hand) == [] : List<&2, AD.AEntry>}
+
+# and opens no file on the machine (file.open is git job "open"): the
+# client is told
+law copy_file_open_told:
+  {JCOPY.Copy.outs(True{}, [H.Git{3, "9", "open", "", "/", "/x", "open"}]) == [H.Reply.err(3, "9", "a hub on a copied log (BACKPLANE_COPY=1) runs no git that writes")] : List<&2, H.Out>}

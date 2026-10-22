@@ -11624,6 +11624,15 @@ def Hub.adopt.es(+es: List<&2, AD.AEntry>, h: Hub, +allow: Bool, +now: Nat) -> I
     +nows : List<&2, String> <- Adopt.idents(es)
     Hub.adopt.all(AD.Adopt.decide(es, nows, allow), h, now)
 
+# the agents a hub takes over or stops at boot: none for a hub on a copied
+# log, whose records name the real hub's agents (law adopt_copy_none)
+def Adopt.copy.entries(copy: Bool, +rec: String, +hand: String) -> List<&2, AD.AEntry>:
+  match copy:
+    case True{}:
+      Nil{}
+    case False{}:
+      AD.Adopt.entries(rec, hand)
+
 def Hub.adopt(h: Hub, +now: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
@@ -11634,7 +11643,8 @@ def Hub.adopt(h: Hub, +now: Nat) -> IO(Hub):
         rm : Result<&1, &1, U32 & String, Unit> <- H.FS.remove(Adopt.home.hand(home))
         AIO.Adopt.record(Adopt.home.record(home))
         +off : String <- Env.get("BACKPLANE_ADOPT", "")
-        Hub.adopt.es(AD.Adopt.entries(rec, hand), Hub{st, f, ls, cl, as, inbox, cfg, note}, Bool.not(String.eq(off, "0")), now)
+        copy : Bool <- P.Proc.copy()
+        Hub.adopt.es(Adopt.copy.entries(copy, rec, hand), Hub{st, f, ls, cl, as, inbox, cfg, note}, Bool.not(String.eq(off, "0")), now)
 
 def Hub.mail.recover.on(+on: Bool, h: Hub) -> IO(Hub):
   match on h:

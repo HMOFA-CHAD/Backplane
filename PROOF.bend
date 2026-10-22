@@ -12756,3 +12756,5 @@ def Laws.copy_keeps_inside(): {==}
 def Laws.copy_git_write_told(): {==}
 def Laws.copy_refuses_net(): {==}
 def Laws.copy_off_refuses_none(cmd, args): {==}
+def Laws.adopt_copy_none(rec, hand): {==}
+def Laws.copy_file_open_told(): {==}
