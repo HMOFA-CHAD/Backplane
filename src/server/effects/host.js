@@ -11,6 +11,7 @@ function host_libc() {
       dup: { args: ["i32"], returns: "i32" },
       shutdown: { args: ["i32", "i32"], returns: "i32" },
       close: { args: ["i32"], returns: "i32" },
+      write: { args: ["i32", "ptr", "u64"], returns: "i64" },
     }).symbols;
   }
   return globalThis.BACKPLANE_LIBC;
@@ -32,12 +33,34 @@ function host_list(xs) {
   return out;
 }
 
+// Socket handles may also wrap a pty master (see pty.js): recv and send
+// answer ENOTSOCK there, so they fall back to read and write. A pty whose
+// other side has closed reads EIO, which means end of stream.
+function host_read(sys, fd, p, n) {
+  let r = Number(sys.recv(fd, p, n, 0));
+  if (r < 0 && sys.errno() === (sys.mac ? 38 : 88)) {
+    r = Number(sys.read(fd, p, n));
+    if (r < 0 && sys.errno() === 5) {
+      r = 0;
+    }
+  }
+  return r;
+}
+
+function host_write(sys, fd, p, n) {
+  let r = Number(sys.send(fd, p, n, 0x4000));
+  if (r < 0 && sys.errno() === (sys.mac ? 38 : 88)) {
+    r = Number(host_libc().write(fd, p, n));
+  }
+  return r;
+}
+
 function sock_recv_bytes(socket, max, k) {
   const sys = io_sys();
   const b = new Uint8Array(Math.max(Number(max), 1));
   const again = sys.mac ? 35 : 11;
   const go = () => {
-    const n = Number(sys.recv(socket, sys.ptr(b), b.length, 0));
+    const n = host_read(sys, socket, sys.ptr(b), b.length);
     if (n < 0) {
       const code = sys.errno();
       if (code === again) {
@@ -93,7 +116,7 @@ function host_send(socket, b) {
   const sys = io_sys();
   let at = 0;
   while (at < b.length) {
-    const n = Number(sys.send(socket, sys.ptr(b.subarray(at)), BigInt(b.length - at), 0x4000));
+    const n = host_write(sys, socket, sys.ptr(b.subarray(at)), BigInt(b.length - at));
     if (n < 0) {
       const code = sys.errno();
       if (code === (sys.mac ? 35 : 11)) {
@@ -176,8 +199,38 @@ function proc_spawn(cmd, args, cwd, err) {
   return io_fail(38);
 }
 
-function proc_wait(pid) {
-  return 255;
+// The exit code (128 + signal when killed), once the child ends; 255 when
+// it is not our child. The loop must not block, so the wait parks: on a
+// pidfd (Linux 5.3+) that turns readable at exit, else on a 50 ms timer.
+function proc_wait(pid, k) {
+  const ffi = require("bun:ffi");
+  const mac = process.platform === "darwin";
+  if (globalThis.BACKPLANE_WAIT === undefined) {
+    globalThis.BACKPLANE_WAIT = ffi.dlopen(mac ? "libSystem.dylib" : "libc.so.6", {
+      waitpid: { args: ["i32", "ptr", "i32"], returns: "i32" },
+      ...(mac ? {} : { syscall: { args: ["i64", "i64", "i64"], returns: "i64" } }),
+    }).symbols;
+  }
+  const lib = globalThis.BACKPLANE_WAIT;
+  const sys = io_sys();
+  const st = new Int32Array(1);
+  const pfd = mac ? -1 : Number(lib.syscall(434, Number(pid), 0));
+  const go = () => {
+    const r = lib.waitpid(Number(pid), ffi.ptr(st), 1); // WNOHANG
+    if (r < 0 && sys.errno() === 4) {
+      return go();
+    }
+    if (r === 0) {
+      io_park_on(pfd >= 0 ? pfd : undefined, false, k, go, pfd >= 0 ? undefined : performance.now() + 50);
+      return undefined;
+    }
+    if (pfd >= 0) {
+      sys.close(pfd);
+    }
+    const s = st[0];
+    return r < 0 ? 255 : (s & 0x7f) === 0 ? (s >> 8) & 0xff : 128 + (s & 0x7f);
+  };
+  return go();
 }
 
 function proc_errtail(pid) {
@@ -215,7 +268,8 @@ function fd_close(fd) {
 
 function proc_kill(pid, sig) {
   try {
-    process.kill(pid, sig);
+    // signed, as kill(2) reads it: a negated pid is a process group
+    process.kill(Number(pid) | 0, sig);
   } catch (e) {
   }
   return { $: "Unit" };
