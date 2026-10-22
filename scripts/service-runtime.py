@@ -40,6 +40,8 @@ APISET = re.compile(r'(api|ext)-ms-win-[a-z0-9.-]+\.dll\Z')
 # Apple system libraries Bun links against; all live in the dyld shared cache.
 APPLE_SYSTEM = {'/usr/lib/libSystem.B.dylib', '/usr/lib/libc++.1.dylib',
                 '/usr/lib/libicucore.A.dylib', '/usr/lib/libresolv.9.dylib'}
+# TODO (fast-hub L1/J4): measure these from the running service on each
+# target instead of declaring them (docs/service-runtime.md).
 # What the JS service may dlopen through bun:ffi, per platform. The Bend JS
 # runtime (pinned bend) and the server's effects (src/**/*.js, checked by
 # ffi_libraries) open the C library and nothing else.
