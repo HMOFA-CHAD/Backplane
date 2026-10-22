@@ -11567,3 +11567,11 @@ law locks_idle_held_not:
 # Step.none() from Locks.after.one
 law locks_after_idle_none:
   {H.Locks.after.one(M.State.replay([M.LockChanged{"bend", LCK.Lock.empty(), 1n}], M.State.empty()), M.State.replay([M.LockChanged{"bend", LCK.Lock.empty(), 1n}], M.State.empty()), 5n, "bend") == H.Step.none() : H.Step}
+# --- J2: the sign-in wait asked again only when the log moved ---
+# (Hub.auth.beat: a settings lookup per thread at every beat was most of an
+# idle JS hub's CPU)
+law auth_beat_kept:
+  {MPCREDIT.Auth.kept("1 1", M.State.empty()) == True{} : Bool}
+
+law auth_beat_asked:
+  {MPCREDIT.Auth.kept("7 1", M.State.empty()) == False{} : Bool}
