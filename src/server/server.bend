@@ -15192,7 +15192,7 @@ def Hub.thin.notify(h: Hub, +now: Nat) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
         r : ThinNoticed <- Wire.thin.paced(cl, st, TPACE.Notes.touched(Cfg.thin.notes(cfg)), TPACE.Notes.paces(Cfg.thin.notes(cfg)), now, Cfg.thin.epoch(cfg), Cfg.thin.revision(cfg))
-        Hub.thin.noticed(r, Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
+        Hub.thin.noticed(r, Hub{st, f, ls, Nil{}, as, inbox, cfg, note}, now)
 
 def Hub.thin.invalidate_if(changed: Bool, h: Hub, +now: Nat) -> IO(Hub):
   match changed:
