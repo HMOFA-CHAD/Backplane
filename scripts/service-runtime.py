@@ -145,14 +145,23 @@ def elf_main_mapping(debug, binary, program):
     dynamic_vaddr = int(one(r'^\s*DYNAMIC\s+0x[0-9a-f]+\s+(0x[0-9a-f]+)\s'), 16)
     phdr_vaddr = int(one(r'^\s*PHDR\s+0x[0-9a-f]+\s+(0x[0-9a-f]+)\s'), 16)
     first_load = re.findall(r'^\s*LOAD\s+(0x[0-9a-f]+)\s+(0x[0-9a-f]+)\s', program, re.M)
-    require(first_load and tuple(int(x, 16) for x in first_load[0]) == (0, 0),
-            'Unnamed main mapping requires zero-origin executable LOAD')
-    require(base > 0 and size > 0 and dynamic == base + dynamic_vaddr
+    kind = one(r'^Elf file type is (EXEC|DYN) ')
+    # a position-independent executable (DYN) is mapped at base, its first
+    # LOAD at vaddr 0; a fixed-address one (EXEC, as bun's Linux builds are)
+    # has base 0 and its segments at their own addresses (aarch64 bun: the
+    # first LOAD at 0x200000), so the same binding holds with base 0
+    require(first_load and int(first_load[0][0], 16) == 0
+            and (int(first_load[0][1], 16) == 0 if kind == 'DYN' else True),
+            'Unnamed main mapping requires the executable LOAD at file offset 0 (and vaddr 0 for a PIE)')
+    require((base > 0 if kind == 'DYN' else base == 0) and size > 0 and dynamic == base + dynamic_vaddr
         and entry == base + int(one(r'^Entry point (0x[0-9a-f]+)$'), 16)
         and phdr == base + phdr_vaddr
         and int(count) == int(one(r'^There are ([0-9]+) program headers,')),
         'Unnamed ELF mapping does not bind executable program headers')
-    return {'path': str(binary), 'sha256': sha(binary), 'mapStart': hex(base),
+    # the unnamed row shows the link map's address: base for a PIE; for a
+    # fixed-address executable glibc's l_addr (0), or its first LOAD
+    starts = [hex(base)] if kind == 'DYN' else [hex(base), hex(int(first_load[0][1], 16))]
+    return {'path': str(binary), 'sha256': sha(binary), 'mapStart': hex(base), 'mapStarts': starts, 'elfType': kind,
         'binding': 'Same --list invocation LD_DEBUG=files exact file, base/dynamic/entry/phdr/phnum',
         'classification': 'measured-main-executable-not-dependency'}
 
@@ -165,7 +174,7 @@ def elf_resolved(text, main_mapping=None):
         anonymous = re.fullmatch(r'\(0x([0-9a-f]+)\)', line)
         if anonymous:
             require(index == 0 and main_mapping is not None
-                and int(anonymous[1], 16) == int(main_mapping['mapStart'], 16),
+                and int(anonymous[1], 16) in [int(x, 16) for x in main_mapping.get('mapStarts', [main_mapping['mapStart']])],
                 'Unbound or misplaced unnamed ELF mapping')
             continue
         if re.fullmatch(r'linux-vdso\.so\.1 \(0x[0-9a-f]+\)', line):
