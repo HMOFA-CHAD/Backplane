@@ -320,6 +320,42 @@ function sock_shutdown(socket) {
 // Proc
 // ====
 
+// A child starts with a soft stack limit of 8 MiB at most. The hub runs with
+// a large one (LimitSTACK=4G: Bun's JS stack is bounded by it, and Bend's
+// deep walks need it), which children would inherit, and glibc sizes every
+// thread's stack from it: each agent's threads would reserve gigabytes.
+// The soft limit is lowered around the spawn and put back; the hub's own
+// stack is untouched (lowering a limit unmaps nothing, and the loop runs
+// spawns from a shallow stack). Hard limit unchanged.
+function host_child_stack(spawn) {
+  let lib;
+  try {
+    lib = globalThis.BACKPLANE_RLIMIT ?? (globalThis.BACKPLANE_RLIMIT = require("bun:ffi").dlopen(
+      process.platform === "darwin" ? "libSystem.dylib" : "libc.so.6", {
+        getrlimit: { args: ["i32", "ptr"], returns: "i32" },
+        setrlimit: { args: ["i32", "ptr"], returns: "i32" },
+      }).symbols);
+  } catch (_) {
+    return spawn();
+  }
+  const ptr = require("bun:ffi").ptr;
+  const was = new BigUint64Array(2);
+  const want = 8n << 20n;
+  // RLIMIT_STACK is 3 on Linux and macOS; RLIM_INFINITY is all ones
+  if (lib.getrlimit(3, ptr(was)) !== 0 || was[0] <= want) {
+    return spawn();
+  }
+  const low = new BigUint64Array([want, was[1]]);
+  const lowered = lib.setrlimit(3, ptr(low)) === 0;
+  try {
+    return spawn();
+  } finally {
+    if (lowered) {
+      lib.setrlimit(3, ptr(was));
+    }
+  }
+}
+
 // Where an agent's stderr goes (err 3): ${BACKPLANE_ERR_DIR:-${TMPDIR:-/tmp}/backplane-err-<uid>}/<pid>.err
 function host_err_dir() {
   const d = process.env.BACKPLANE_ERR_DIR;
@@ -503,8 +539,8 @@ function proc_spawn(cmd, args, cwd, err) {
   c.posix_spawnattr_setsigmask(c.ptr(at), c.ptr(set));
   c.posix_spawnattr_setflags(c.ptr(at), 0x04 | 0x08 | (c.mac ? 0x4000 : 0));
   if (code === 0) {
-    code = c.posix_spawnp(c.ptr(pid), c.ptr(v.bufs[0]), c.ptr(fa), c.ptr(at),
-      c.ptr(v.vec), c.ptr(env.vec));
+    code = host_child_stack(() => c.posix_spawnp(c.ptr(pid), c.ptr(v.bufs[0]), c.ptr(fa), c.ptr(at),
+      c.ptr(v.vec), c.ptr(env.vec)));
   }
   c.posix_spawn_file_actions_destroy(c.ptr(fa));
   c.posix_spawnattr_destroy(c.ptr(at));
