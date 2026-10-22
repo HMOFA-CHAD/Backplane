@@ -194,7 +194,7 @@ def Hot.add.cold(m: Map<&2, List<&2, List<&2, String>>>, cold: List<&2, List<&2,
 # the open threads' entries and run inputs, onto the records
 def Hot.read.open(+h: String, +ids: String, m: Map<&2, List<&2, List<&2, String>>>) -> IO(SN.SRows):
   do IO<SN.SRows>:
-    es : List<&2, List<&2, String>> <- D.Db.query(h, Hot.q.window(), [ids, "#" ++ Nat.show(Hot.window())], Hot.big())
+    es : List<&2, List<&2, String>> <- D.Db.query.t(h, Hot.q.window(), [D.DbText{ids}, D.Db.nat(Hot.window())], Hot.big())
     cold : List<&2, List<&2, String>> <- D.Db.query(h, Hot.q.cold(), [ids], Hot.big())
     return SN.SRows{Hot.put(Hot.add.cold(m, cold), "entry", es)}
 
