@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Run the pinned Bend native emitter with Backplane's bounded ID patch.
+"""Run the pinned Bend native emitter with Backplane's reviewed patches.
 
-The ordinary installed Bend still owns checking, proofs and JavaScript. Only
-C emission uses this source copy; its Apache-2.0 license is retained in cache.
+The bounded ID patch widens function IDs; the fast-emit patch replays a def's
+trace instead of re-emitting it when nothing it read can differ, and must emit
+byte-identical C. The ordinary installed Bend still owns checking, proofs and
+JavaScript. Only C emission uses this source copy; its Apache-2.0 license is
+retained in cache.
 """
 
 import argparse
@@ -24,6 +27,9 @@ SOURCE_URL = f"https://codeload.github.com/bendlang/bend/tar.gz/refs/tags/v{VERS
 SOURCE_SHA256 = "cbcd6f4b75897a05065872efac9b8d43595a467118331461eb1b92429b9e1689"
 COMP_SHA256 = "4e5ee824d2624eb8eb3ba408fd99671239e72759371e562f1a83d50bb614649a"
 PATCH = ROOT / "patches/bend-native-ids.patch"
+FAST_PATCH = ROOT / "patches/bend-fast-emit.patch"
+# applied in this order; the emitted C must equal that of PATCHES[:1] alone
+PATCHES = (PATCH, FAST_PATCH)
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 
 
@@ -37,6 +43,14 @@ def files(root: Path) -> dict[str, str]:
     """Identify every retained compiler, Base, effect and license input."""
     return {str(p.relative_to(root)): digest(p) for p in sorted(root.rglob("*"))
             if p.is_file() and p.name != "native-compiler.json"}
+
+
+def patches_digest(patches: tuple[Path, ...]) -> str:
+    """Identify an ordered patch series; one patch keeps its own digest."""
+    hashes = [digest(p) for p in patches]
+    if len(hashes) == 1:
+        return hashes[0]
+    return hashlib.sha256("\n".join(hashes).encode()).hexdigest()
 
 
 def valid(root: Path, patch_hash: str) -> bool:
@@ -63,9 +77,10 @@ def download(path: Path) -> None:
         raise ValueError("Bend source archive SHA-256 mismatch")
 
 
-def prepare(cache: Path, archive: Path | None = None) -> Path:
-    """Atomically stage verified upstream source plus the reviewed patch."""
-    patch_hash = digest(PATCH)
+def prepare(cache: Path, archive: Path | None = None,
+            patches: tuple[Path, ...] = PATCHES) -> Path:
+    """Atomically stage verified upstream source plus the reviewed patches."""
+    patch_hash = patches_digest(patches)
     target = cache / f"{VERSION}-{patch_hash[:16]}"
     if valid(target, patch_hash):
         return target
@@ -90,8 +105,9 @@ def prepare(cache: Path, archive: Path | None = None) -> Path:
         tree = stage / f"bend-{VERSION}"
         if digest(tree / "bend2/comp.ts") != COMP_SHA256:
             raise ValueError("Bend emitter does not match the pinned source")
-        subprocess.run(["patch", "-t", "-N", "-F", "0", "-p1",
-                        "-i", str(PATCH)], cwd=tree, check=True, stdout=sys.stderr)
+        for one in patches:
+            subprocess.run(["patch", "-t", "-N", "-F", "0", "-p1",
+                            "-i", str(one)], cwd=tree, check=True, stdout=sys.stderr)
         receipt = {"version": VERSION, "source": SOURCE_SHA256,
                    "patch": patch_hash, "files": files(tree)}
         (tree / "native-compiler.json").write_text(json.dumps(receipt, sort_keys=True) + "\n")
@@ -104,12 +120,14 @@ def prepare(cache: Path, archive: Path | None = None) -> Path:
 
 
 def metadata(tree: Path, out: Path, bun: str) -> None:
-    """Retain native toolchain identity, upstream license and local patch."""
+    """Retain native toolchain identity, upstream license and local patches."""
     out.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(tree / "LICENSE", out / "LICENSE")
-    shutil.copyfile(PATCH, out / PATCH.name)
+    for one in PATCHES:
+        shutil.copyfile(one, out / one.name)
     record = {"bend": VERSION, "source_url": SOURCE_URL,
               "source_sha256": SOURCE_SHA256, "patch_sha256": digest(PATCH),
+              "fast_emit_patch_sha256": digest(FAST_PATCH),
               "license_sha256": digest(tree / "LICENSE"),
               "bun": subprocess.check_output([bun, "--version"], text=True).strip(),
               "bun_sha256": digest(Path(bun)), "function_id_bits": 20,
@@ -122,11 +140,13 @@ def verify_metadata(out: Path) -> None:
     record = json.loads((out / "native-compiler.json").read_text())
     expected = {"bend": VERSION, "source_url": SOURCE_URL,
                 "source_sha256": SOURCE_SHA256, "patch_sha256": digest(PATCH),
+                "fast_emit_patch_sha256": digest(FAST_PATCH),
                 "function_id_bits": 20, "constructor_id_bits": 16,
                 "heap_location_bits": 40}
     if (any(record.get(k) != value for k, value in expected.items())
             or record.get("license_sha256") != digest(out / "LICENSE")
-            or digest(out / PATCH.name) != digest(PATCH)):
+            or any(not (out / one.name).is_file()
+                   or digest(out / one.name) != digest(one) for one in PATCHES)):
         raise ValueError(f"prebuilt native compiler provenance mismatch: {out}")
 
 
@@ -154,7 +174,8 @@ def main() -> None:
     if args.prepare:
         print(tree)
         return
-    print(f"native emitter: Bend {VERSION}, 20-bit function IDs, patch {digest(PATCH)[:16]}",
+    print(f"native emitter: Bend {VERSION}, 20-bit function IDs, fast emit,"
+          f" patches {patches_digest(PATCHES)[:16]}",
           file=sys.stderr)
     os.execv(bun, [bun, str(tree / "bend2/main.ts"), args.source, "-o", args.output])
 
