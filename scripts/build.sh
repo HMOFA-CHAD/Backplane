@@ -44,6 +44,8 @@ webrc=0
 wait "$webpid" || webrc=$?
 [ "$webrc" = 0 ] || { cat build/web-dist.log >&2; echo "build.sh: the web client did not build" >&2; exit 1; }
 [ "$hubrc" = 0 ] || { echo "build.sh: the hub did not build" >&2; exit 1; }
+# Bun's and Bend's notices, which the hub ships with (scripts/js-licenses.sh)
+scripts/js-licenses.sh dist/licenses
 # KiStack's skills, pinned and checked (deploy/kistack.lock)
 scripts/build-kistack.sh dist/kistack
 # The desktop UI is the Electron app over the hub; the package carries its
