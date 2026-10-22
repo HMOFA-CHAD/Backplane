@@ -678,6 +678,21 @@ function notify(c) {
 
 // run an action; answers whether it did anything (a key it did nothing
 // with stays the browser's)
+// A thread's ordering card (client.bend's Fab.sync) is asked for after an
+// action; opening a thread in the thin view is no action, so its Ready to
+// order bar and Buy it never came. A thread shown asks with "fab-look" (an
+// action that changes nothing): at once when it is new here, then at most
+// every 20 s while views of it arrive, so a turn's new fab files show.
+// Fab.sync itself asks the hub only when the thread's state moved.
+const fabLooked = new Map();
+function fabLook(target) {
+  if (target?.kind !== "thread" || !target.id || !thin?.ready) return;
+  const now = Date.now(), last = fabLooked.get(target.id) || 0;
+  if (now - last < 20000) return;
+  fabLooked.set(target.id, now);
+  setTimeout(() => { if (thin?.ready) thin.request("fab-look", ""); }, 0);
+}
+
 function dispatch(action, value, timer) {
   if (action === "thin-search-open") {
     if (viewMode === "view-v1" && thin?.ready) showThinSearch({ query: "", rows: [], cursor: "", hasMore: false });
@@ -1690,6 +1705,7 @@ async function startThin(again = false) {
         thinContinuations.bind(location.origin, detail);
         focusedView.remote(detail.epoch);remoteEpoch = detail.epoch;frontendNode = node;
         trace("thin-view", { entries: detail.window?.ids?.length || 0 });later();
+        fabLook(detail.target);
       },
       state: state => {
         if (!current()) return;
