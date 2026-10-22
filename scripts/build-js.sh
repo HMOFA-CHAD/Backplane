@@ -93,7 +93,7 @@ fi
 # minified shape, so the emit is minified (names kept) first.
 "$bun" build --minify-whitespace --minify-syntax --keep-names --target=bun \
   "$work/stamped.js" --outfile "$work/native.js" >/dev/null
-python3 scripts/js-native.py "$work/native.js" >/dev/null
+python3 scripts/js-native.py --server "$work/native.js" >/dev/null
 mv -f "$work/native.js" "$work/stamped.js"
 # the baked prelude, then the program: one file for bun to compile
 # removed on every way out: done, a failure (set -e) or a signal

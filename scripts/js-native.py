@@ -15,8 +15,16 @@ defs with the same answers computed natively:
   `ci` at offset `off` (0 is "there is such a char"; else bit 31-(off-1)),
   false past the key's end
 
+- `List.length(xs)`: a loop (Base's is one stack frame per cell: the hub's
+  Http.response.c measured a multi-MB body that way and overflowed the JS
+  hub's stack the moment the desktop app loaded the web client)
+
 Each is found by its shape and must be found exactly once, else the build
 stops (a new Bend that emits them otherwise needs this looked at again).
+With --server (scripts/build-js.sh: one bundle) that holds for every def;
+for the web client's chunks (no flag) String.cmp and Map.bit.go must be
+found exactly once and the others at most once (a chunk set need not use
+them).
 `bun test/tools/js_native_test.ts` checks both against Base's definitions.
 
   scripts/js-native.py dist/web/chunk-*.js
@@ -44,19 +52,28 @@ BIT = re.compile(
     r'function (' + I + r')\((' + I + r'),(' + I + r'),(' + I + r')\)\{(?=if\(\2===""\)return\{\$:"Tuple",fst:"",snd:!1\};else\{let ' + I + r'=\2\.codePointAt\(0\)>65535\?\2\.slice\(0,2\):\2\[0\],' + I + r'=\2\.codePointAt\(0\)>65535\?\2\.slice\(2\):\2\.slice\(1\);if\(\3===0\))'
 )
 
-files = sys.argv[1:]
+# List.length: function F(xs){if(xs.$==="Nil")return 0;else{let t=xs.tail;return nat_chk(F(t)+1)}}
+LEN = re.compile(
+    r'function (' + I + r')\((' + I + r')\)\{if\(\2\.\$==="Nil"\)return 0;else\{let (' + I + r')=\2\.tail;return (nat_chk)\(\1\(\3\)\+1\)\}\}'
+)
+
+args = sys.argv[1:]
+server = "--server" in args
+files = [a for a in args if a != "--server"]
 srcs = {f: open(f, encoding="utf-8").read() for f in files}
-for name, rx in (("String.cmp", CMP), ("Map.bit.go", BIT)):
+for name, rx, required in (("String.cmp", CMP, True), ("Map.bit.go", BIT, True), ("List.length", LEN, server)):
     n = sum(len(rx.findall(s)) for s in srcs.values())
-    if n != 1:
+    if n != 1 and (required or n > 1):
         sys.exit(f"js-native: {name} found {n} times, not once")
 for f, s in srcs.items():
-    hit = CMP.search(s) or BIT.search(s)
+    hit = CMP.search(s) or BIT.search(s) or LEN.search(s)
     if not hit:
         continue
+    # one pass down the list; nat_chk once (the count only grows)
+    s = LEN.sub(lambda m: 'function %s(%s){let n=0;for(let x=%s;x.$!=="Nil";x=x.tail)n++;return %s(n)}' % (m.group(1), m.group(2), m.group(2), m.group(4)), s)
     s = CMP.sub(lambda m: m.group(0) + 'return{$:"Tuple",fst:{$:"Tuple",fst:%s,snd:%s},snd:{$:__bpOrd(%s,%s)}};' % (m.group(2), m.group(3), m.group(2), m.group(3)), s)
     s = BIT.sub(lambda m: m.group(0) + 'return{$:"Tuple",fst:%s,snd:__bpBit(%s,%s,%s)};' % (m.group(2), m.group(2), m.group(3), m.group(4)), s)
     # (a module's imports may come after it: they are hoisted)
     s = HELPERS + s
     open(f, "w", encoding="utf-8").write(s)
-print("js-native: String.cmp and Map.bit.go are native")
+print("js-native: String.cmp, Map.bit.go and List.length are native")
