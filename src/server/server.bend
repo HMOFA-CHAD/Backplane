@@ -11219,10 +11219,20 @@ def Hub.rpc.thin_cap(thin: Bool, h: Hub, +client: U32, +text: String, +now: Nat)
     case True{}: Hub.rpc.thin_short(TVW.Wire.within(text, 262144n), h, client, text, now)
     case False{}: Hub.rpc.parse(h, client, text, now)
 
+# A request from no connected client is dropped (a client that left),
+# except client 0: the hub's own jobs (GitJob.say: a thread's worktree, its
+# notes; a dead push token) and the in-process window send theirs as 0, and
+# a headless hub has no client 0. Dropping those lost every new thread's
+# worktree, so its first turn never started (far_e2e on a headless hub).
+def Hub.rpc.own(own: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
+  match own:
+    case True{}: Hub.rpc.thin_cap(False{}, h, client, text, now)
+    case False{}: IO.pure(Hub, h)
+
 def Hub.rpc.client(c: Maybe<&2, Client>, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   match c:
     case Some{c}: Hub.rpc.thin_cap(Client.thin(c), h, client, text, now)
-    case None{}: IO.pure(Hub, h)
+    case None{}: Hub.rpc.own(U32.is_eq(client, 0), h, client, text, now)
 
 def Hub.rpc(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   match h:
