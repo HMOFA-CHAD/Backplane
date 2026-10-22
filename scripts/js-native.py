@@ -19,8 +19,16 @@ defs with the same answers computed natively:
   19,000 characters overflowed the hub's stack at a codex turn, and the
   server splits large text in hundreds of places)
 
+- `List.length(xs)`: a loop (Base's is one stack frame per cell: the hub's
+  Http.response.c measured a multi-MB body that way and overflowed the JS
+  hub's stack the moment the desktop app loaded the web client)
+
 Each is found by its shape and must be found exactly once, else the build
 stops (a new Bend that emits them otherwise needs this looked at again).
+With --server (scripts/build-js.sh: one bundle) that holds for every def;
+for the web client's chunks (no flag) String.cmp and Map.bit.go must be
+found exactly once and the others at most once (a chunk set need not use
+them).
 `bun test/tools/js_native_test.ts` checks both against Base's definitions.
 
   scripts/js-native.py dist/web/chunk-*.js
@@ -56,27 +64,40 @@ SPLIT = re.compile(
     r'function (' + I + r')\((' + I + r'),(' + I + r')\)\{(?=if\(\2===""\)return\{\$:"Con",head:"",tail:\{\$:"Nil"\}\};else\{let ' + I + r'=\2\.codePointAt\(0\)>65535\?\2\.slice\(0,2\):\2\[0\],)'
 )
 
-files = sys.argv[1:]
+# List.length: function F(xs){if(xs.$==="Nil")return 0;else{let t=xs.tail;return nat_chk(F(t)+1)}}
+LEN = re.compile(
+    r'function (' + I + r')\((' + I + r')\)\{if\(\2\.\$==="Nil"\)return 0;else\{let (' + I + r')=\2\.tail;return (nat_chk)\(\1\(\3\)\+1\)\}\}'
+)
+
+args = sys.argv[1:]
+server = "--server" in args
+files = [a for a in args if a != "--server"]
 srcs = {f: open(f, encoding="utf-8").read() for f in files}
-for name, rx in (("String.cmp", CMP), ("Map.bit.go", BIT), ("String.split", SPLIT)):
+found = {}
+for name, rx, required in (("String.cmp", CMP, True), ("Map.bit.go", BIT, True),
+                           ("String.split", SPLIT, server), ("List.length", LEN, server)):
     n = sum(len(rx.findall(s)) for s in srcs.values())
-    if n != 1:
+    if n != 1 and (required or n > 1):
         sys.exit(f"js-native: {name} found {n} times, not once")
+    found[name] = n
 for f, s in srcs.items():
-    hit = CMP.search(s) or BIT.search(s) or SPLIT.search(s)
+    hit = CMP.search(s) or BIT.search(s) or SPLIT.search(s) or LEN.search(s)
     if not hit:
         continue
+    # one pass down the list; nat_chk once (the count only grows)
+    s = LEN.sub(lambda m: 'function %s(%s){let n=0;for(let x=%s;x.$!=="Nil";x=x.tail)n++;return %s(n)}' % (m.group(1), m.group(2), m.group(2), m.group(4)), s)
     s = CMP.sub(lambda m: m.group(0) + 'return{$:"Tuple",fst:{$:"Tuple",fst:%s,snd:%s},snd:{$:__bpOrd(%s,%s)}};' % (m.group(2), m.group(3), m.group(2), m.group(3)), s)
     s = BIT.sub(lambda m: m.group(0) + 'return{$:"Tuple",fst:%s,snd:__bpBit(%s,%s,%s)};' % (m.group(2), m.group(2), m.group(3), m.group(4)), s)
     s = SPLIT.sub(lambda m: m.group(0) + 'return __bpSplit(%s,%s);' % (m.group(2), m.group(3)), s)
     # (a module's imports may come after it: they are hoisted)
     s = HELPERS + s
     open(f, "w", encoding="utf-8").write(s)
-# each swap must have landed exactly once (a shape that matched but was not
-# rewritten, or rewritten twice, stops the build too)
+# each swap must have landed as often as its shape was found (a shape that
+# matched but was not rewritten, or rewritten twice, stops the build too)
 outs = "".join(open(f, encoding="utf-8").read() for f in files)
-for name, call in (("String.cmp", "snd:{$:__bpOrd("), ("Map.bit.go", "snd:__bpBit("), ("String.split", "return __bpSplit(")):
+for name, call in (("String.cmp", "snd:{$:__bpOrd("), ("Map.bit.go", "snd:__bpBit("),
+                   ("String.split", "return __bpSplit("), ("List.length", 'x.$!=="Nil";x=x.tail)n++;return ')):
     n = outs.count(call)
-    if n != 1:
-        sys.exit(f"js-native: {name}'s native body is in the output {n} times, not once")
-print("js-native: String.cmp, Map.bit.go and String.split are native")
+    if n != found[name]:
+        sys.exit(f"js-native: {name}'s native body is in the output {n} times, not {found[name]}")
+print("js-native: " + ", ".join(k for k, v in found.items() if v) + " are native")
