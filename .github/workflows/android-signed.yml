@@ -95,8 +95,14 @@ jobs:
           # version
           "$bt/aapt2" dump badging "$apk" | grep -m1 "^package:" > "$RUNNER_TEMP/apk-badging.txt"
           grep -q "versionCode='$VERSION_CODE'" "$RUNNER_TEMP/apk-badging.txt" && grep -q "versionName='$VERSION'" "$RUNNER_TEMP/apk-badging.txt" || fail "apk version: $(cat "$RUNNER_TEMP/apk-badging.txt")"
-          "$bt/aapt2" dump xmltree --file base/manifest/AndroidManifest.xml "$aab" > "$RUNNER_TEMP/aab-manifest.txt"
-          grep -q "versionCode.*=$VERSION_CODE" "$RUNNER_TEMP/aab-manifest.txt" && grep -q "versionName.*=\"$VERSION\"" "$RUNNER_TEMP/aab-manifest.txt" || fail "aab version: $(grep -i version "$RUNNER_TEMP/aab-manifest.txt" | head -3)"
+          # an aab's manifest is protobuf, which aapt2 cannot read: bundletool, pinned
+          bt_jar="$RUNNER_TEMP/bundletool.jar"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$bt_jar" https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
+          echo "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  $bt_jar" | sha256sum -c - >/dev/null || fail "bundletool checksum"
+          got=$(java -jar "$bt_jar" dump manifest --bundle="$aab" --xpath=/manifest/@android:versionCode | tr -d '[:space:]')
+          [ "$got" = "$VERSION_CODE" ] || fail "aab versionCode $got, want $VERSION_CODE"
+          got=$(java -jar "$bt_jar" dump manifest --bundle="$aab" --xpath=/manifest/@android:versionName | tr -d '[:space:]')
+          [ "$got" = "$VERSION" ] || fail "aab versionName $got, want $VERSION"
           # the bridge inside both is the one built here
           got=$(unzip -p "$apk" assets/bridge.js | sha256sum | cut -d' ' -f1); [ "$got" = "$want_bridge" ] || fail "apk bridge $got, want $want_bridge"
           got=$(unzip -p "$aab" base/assets/bridge.js | sha256sum | cut -d' ' -f1); [ "$got" = "$want_bridge" ] || fail "aab bridge $got, want $want_bridge"
