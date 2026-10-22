@@ -326,7 +326,7 @@ function bp_procs() {
 }
 
 function bp_proc_errno(e) {
-  return typeof bp_errno === "function" ? bp_errno(e) : Math.abs(e?.errno ?? 5);
+  return globalThis.BP_H?.errno ? globalThis.BP_H.errno(e) : Math.abs(e?.errno ?? 5);
 }
 
 // a child's stdio as one handle; open counts the streams still feeding it.
@@ -335,7 +335,7 @@ function bp_proc_class() {
   if (globalThis.BP_PROC_CLASS !== undefined) {
     return globalThis.BP_PROC_CLASS;
   }
-  globalThis.BP_PROC_CLASS = class BpProc extends BpStream {
+  globalThis.BP_PROC_CLASS = class BpProc extends globalThis.BP_H.Stream {
   constructor(child, streams) {
     super("proc");
     this.child = child;
@@ -387,10 +387,10 @@ function bp_proc_class() {
   }
   write(b) {
     if (this.wshut || this.sink === null || this.sink === undefined) {
-      return -BP_ERRNO.EPIPE;
+      return -globalThis.BP_H.ERRNO.EPIPE;
     }
     if (this.full) {
-      return -BP_ERRNO.EAGAIN;
+      return -globalThis.BP_H.ERRNO.EAGAIN;
     }
     try {
       this.sink.write(b);
@@ -407,7 +407,7 @@ function bp_proc_class() {
         });
       }
     } catch (e) {
-      return -BP_ERRNO.EPIPE;
+      return -globalThis.BP_H.ERRNO.EPIPE;
     }
     return b.length;
   }
@@ -455,7 +455,7 @@ function bp_proc_spawn(cmd, args, cwd, err) {
   if (cwd !== "") {
     try {
       if (!fs.statSync(cwd).isDirectory()) {
-        return io_fail(BP_ERRNO.ENOTDIR);
+        return io_fail(globalThis.BP_H.ERRNO.ENOTDIR);
       }
     } catch (e) {
       return io_fail(bp_proc_errno(e));
@@ -509,7 +509,7 @@ function bp_proc_spawn(cmd, args, cwd, err) {
   }
   const h = new (bp_proc_class())(child, err === 1 ? [child.stdout, child.stderr] : [child.stdout]);
   bp_procs().set(child.pid >>> 0, child);
-  return io_done(io_tup(child.pid >>> 0, BP_H.add(h)));
+  return io_done(io_tup(child.pid >>> 0, globalThis.BP_H.add(h)));
 }
 
 // the code Proc.wait answers for a child that ended: its exit code, 128 +
