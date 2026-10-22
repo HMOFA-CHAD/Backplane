@@ -2,7 +2,7 @@
 # A release's .deb, from its classic package and desktop app (nothing is
 # compiled or relabelled here):
 #
-#   scripts/release-deb.sh v0.12.0 OUT linux-x64|linux-arm64 CLASSIC_TAR DESKTOP_TAR
+#   scripts/release-deb.sh v0.12.1 OUT linux-x64|linux-arm64 CLASSIC_TAR DESKTOP_TAR
 #
 # /opt/backplane holds the classic layout (backplane, backplane-serve, web/)
 # and the desktop app in desktop/, where the launcher finds it; /usr/bin has
