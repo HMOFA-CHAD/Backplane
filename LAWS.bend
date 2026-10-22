@@ -11549,3 +11549,12 @@ law far_fact_shared:
 law far_fact_private:
   {FR.Fr.fact(FR.Fr.feed.demo.st(), M.SettingSet{"k", "v", 9n}, 8n) == Nil{} : List<&2, FR.Fact>}
 # ---- end F1 feed ----
+
+# --- J2: the sign-in wait asked again only when the log moved ---
+# (Hub.auth.beat: a settings lookup per thread at every beat was most of an
+# idle JS hub's CPU)
+law auth_beat_kept:
+  {MPCREDIT.Auth.kept("1 1", M.State.empty()) == True{} : Bool}
+
+law auth_beat_asked:
+  {MPCREDIT.Auth.kept("7 1", M.State.empty()) == False{} : Bool}
