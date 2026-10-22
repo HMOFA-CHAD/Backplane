@@ -3,8 +3,8 @@ name: Desktop release smoke (evidence only)
 # The launch-and-connect smoke of one staged desktop target, on that target's
 # own hosted runner, with the OS sandbox on. The stage and the smoke tools come
 # from HTTPS URLs pinned by sha256 (a release's hand-off, docs/release-desktop.md);
-# the stage's bytes are not changed, except macOS's ad-hoc re-seal of the .app,
-# which archive-after-smoke checks. Uploads the evidence folder as it is, pass
+# the stage's bytes are not changed (macOS's ad-hoc re-seal of the .app only
+# with reseal: true, which the smoke's payload guard refuses today). Uploads the evidence folder as it is, pass
 # or fail. Dispatch only: contents: read, no secrets, no publish, tag or push.
 on:
   workflow_dispatch:
@@ -29,6 +29,10 @@ on:
         description: sha256 of tools/desktop/test/release-smoke.cjs (the one the freeze names)
         type: string
         required: true
+      reseal:
+        description: macOS only, re-seal the .app ad hoc first. Off for 0.12.x (unsigned-portable-allowed, as 0.12.0); the smoke's payload guard refuses a re-sealed stage
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -84,8 +88,8 @@ jobs:
           sudo apparmor_parser --replace "$RUNNER_TEMP/backplane-userns.profile"
           unshare --user --map-root-user /bin/true
           sudo apt-get install -y -q xvfb >/dev/null
-      - name: Re-seal the .app ad hoc (macOS)
-        if: startsWith(inputs.target, 'darwin-')
+      - name: Re-seal the .app ad hoc (macOS, only when asked)
+        if: startsWith(inputs.target, 'darwin-') && inputs.reseal
         shell: bash
         run: |
           set -euo pipefail
