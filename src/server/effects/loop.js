@@ -264,6 +264,11 @@ class BpStream extends BpHandle {
   }
 }
 
+// effect files are each their own scope: others reach these through BP_H
+BP_H.Stream = BpStream;
+BP_H.ERRNO = BP_ERRNO;
+BP_H.errno = bp_errno;
+
 // TCP
 // ===
 
