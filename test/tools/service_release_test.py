@@ -56,6 +56,9 @@ class ProducerTests(unittest.TestCase):
         service = build / S.service_name(target)
         self.pe(service) if target == "windows-x64" else self.elf(service)
         (web / "index.html").write_text("<p>Unicode 日本語</p>")
+        for sub, name in (("bun", "LICENSE.md"), ("bend", "LICENSE")):
+            (build / "licenses" / sub).mkdir(parents=True)
+            (build / "licenses" / sub / name).write_text("fixture notice")
         (web / "index.html.gz").write_bytes(gzip.compress((web / "index.html").read_bytes(), mtime=0))
         (web / "LICENSE.Backplane").write_text("fixture license")
         (build / "LICENSE.Backplane").write_text("fixture license")
@@ -365,6 +368,12 @@ class ProducerTests(unittest.TestCase):
             args = [str(a) for a in args]
             calls.append(args)
             Path(log).write_text("offline mock operation\n")
+            if args[0] == "scripts/js-licenses.sh":
+                self.assertEqual(env["BACKPLANE_LICENSES_STRICT"], "1")
+                for sub, name in (("bun", "LICENSE.md"), ("bend", "LICENSE")):
+                    (Path(args[1]) / sub).mkdir(parents=True, exist_ok=True)
+                    (Path(args[1]) / sub / name).write_text("fixture notice")
+                return ""
             if args[0] == "scripts/build-js.sh":
                 self.assertEqual(args[1], "src/server/main.bend")
                 self.assertEqual(args[2], str(out / "backplane-serve"))
@@ -401,7 +410,7 @@ class ProducerTests(unittest.TestCase):
 
     def test_js_calls_only_server_and_production_web_then_writes_witness(self):
         out, calls, req = self.mocked_build()
-        self.assertEqual([c[0] for c in calls if c[0].startswith("scripts/")], ["scripts/build-js.sh"])
+        self.assertEqual([c[0] for c in calls if c[0].startswith("scripts/")], ["scripts/build-js.sh", "scripts/js-licenses.sh"])
         self.assertFalse(any("src/app/main.bend" in c for c in calls))
         build = S.read(out / "BUILD.json")
         self.assertEqual(build["compileInputs"], S.compile_inputs())
@@ -415,7 +424,7 @@ class ProducerTests(unittest.TestCase):
         # an x64 host makes the arm64 service: bun links the JS onto the
         # arm64 runtime pinned in the request; nothing runs it here
         out, calls, req = self.mocked_build(request=self.js_request(), outname="js-output")
-        self.assertEqual([c[0] for c in calls if c[0].startswith("scripts/")], ["scripts/build-js.sh"])
+        self.assertEqual([c[0] for c in calls if c[0].startswith("scripts/")], ["scripts/build-js.sh", "scripts/js-licenses.sh"])
         self.assertFalse(any(c[-1] == "--version" for c in calls))
         build = S.read(out / "BUILD.json")
         self.assertEqual(build["serviceRuntime"], "bun")

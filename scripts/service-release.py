@@ -309,6 +309,11 @@ def js(request, base, out):
     write(out / "WEB.json", web_manifest(web, release))
     write(out / "WEB-NOTICES.json", web_notices)
     shutil.copyfile(ROOT / "LICENSE", out / "LICENSE.Backplane")
+    # Bun's (MIT; JavaScriptCore/WebKit LGPL-2, tinycc LGPL-2.1) and Bend's
+    # (Apache-2.0) notices, pinned to the toolchain's Bun version
+    run(["scripts/js-licenses.sh", out / "licenses"], logs / "licenses.log", dict(env, BACKPLANE_LICENSES_STRICT="1"))
+    require((out / "licenses/bun/LICENSE.md").is_file() and (out / "licenses/bend/LICENSE").is_file(),
+            "Bun and Bend notices required")
     shutil.copyfile(qualification_path, out / "SOURCE-QUALIFICATION.json")
     # Preserve the qualified logs and rebind their locations without changing their bytes.
     copied = dict(qualification)
@@ -414,6 +419,9 @@ def component(request, base, out):
         shutil.copy2(helper, payload / "EXECUTION-HELPER.py")
     shutil.copytree(source / "web", payload / "web")
     shutil.copytree(source / "logs", payload / "logs")
+    require((source / "licenses/bun/LICENSE.md").is_file() and (source / "licenses/bend/LICENSE").is_file(),
+            "Built service lacks its Bun and Bend notices")
+    shutil.copytree(source / "licenses", payload / "licenses")
     for child in runtime_root.iterdir():
         require(not (payload / child.name).exists(), "Runtime collides with built service/web")
         if child.is_dir() and not child.is_symlink():

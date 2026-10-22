@@ -542,6 +542,9 @@ def original_resource_web(package, root, service_root, receipt, source, tree, ta
     if actual != expected:
         raise ValueError("original native SERVICE closure changed")
     # A Windows ZIP carries no POSIX modes; the desktop producer checks them where they exist.
+    # TODO (fast-hub J4): with the Win32 JS runtime, bring back the Windows
+    # service member closure check the C producer had (verify_windows_members)
+    # for packages without a selected browser.
     if receipt["target"] != "windows-x64":
         for n, v in native_declared.items():
             if v.get("type") == "file" and v.get("mode") != package.mode(service_root + "/" + n):
