@@ -303,7 +303,7 @@ def Hot.lined(same: Bool, +h: String, +home: String, +rows: SN.SRows, ls: List<&
 
 def Hot.read(+h: String, +home: String, +m: Map<&2, String>, +size: U32) -> IO(Hot):
   do IO<Hot>:
-    recs : Map<&2, List<&2, List<&2, String>>> <- Hot.read.recs(h)
+    +recs : Map<&2, List<&2, List<&2, String>>> <- Hot.read.recs(h)
     +ids : String = Hot.ids(SN.SRows{recs})
     +rows : SN.SRows <- Hot.read.open(h, ids, recs)
     +seq : Nat = SN.Snap.num(Hot.get(m, "applied_seq"), 0n)
