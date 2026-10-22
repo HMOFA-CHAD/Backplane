@@ -966,7 +966,7 @@ def Wire.all.legacy.k2(kind: Nat, booting: Bool, +c: Client, +a: All, +text: Str
 # a thin (view) client takes no broadcast but the heartbeat (kind 3): it
 # hears its own view's changes, and the heartbeat tells it the link lives
 # (without it an idle page took a healthy link for dead after Alive.limit)
-def Wire.all.thin.k(kind: Nat, c: Client, text: String, bs: List<&2, U32>, n: Nat) -> IO(Maybe<&2, Client>):
+def Wire.all.thin.k(kind: Nat, +c: Client, +text: String, +bs: List<&2, U32>, +n: Nat) -> IO(Maybe<&2, Client>):
   match kind:
     case 3n: Wire.all.as(Wire.native(c), c, text, bs, n)
     case _: IO.pure(Maybe<&2, Client>, Some{c})
