@@ -8,9 +8,10 @@
 # reads, the same on every machine for the same sources and bend release).
 # CI's Build job uploads its emit as the artifact "emit-KEY": KEY.c and
 # KEY.ok (the C's size), as build-app.sh keeps them in its emit cache. Only
-# artifacts of runs on this repository's own branches are taken (a fork's
-# pull request runs its own workflow and could name any artifact), and only
-# whole: the size in KEY.ok must match.
+# artifacts from push runs on this repository's main branch are taken.
+# Even a same-repository PR can edit its workflow and upload arbitrary C
+# under a main input key. Deploys and releases build main; PR, dispatch and
+# other branch artifacts are not trusted. The size in KEY.ok must match too.
 # Needs gh (signed in, or GH_TOKEN/GITHUB_TOKEN with actions:read).
 # BACKPLANE_EMIT_REMOTE=0 turns it off.
 set -u
@@ -26,10 +27,17 @@ if [ -z "$repo" ]; then
   [ -n "$repo" ] || exit 1
 fi
 rid=$(timeout 20 gh api "repos/$repo" --jq .id 2>/dev/null) || exit 1
-# the newest unexpired artifact of that name made in this repository
-aid=$(timeout 20 gh api "repos/$repo/actions/artifacts?name=emit-$key&per_page=20" \
-  --jq "[.artifacts[] | select(.expired == false and .workflow_run.head_repository_id == $rid and .workflow_run.repository_id == $rid)][0].id // empty" 2>/dev/null) || exit 1
-[ -n "$aid" ] || exit 1
+# The newest unexpired artifact from main, then verify its producer event
+# before downloading any C. Missing metadata or an API failure fails closed.
+producer=$(timeout 20 gh api "repos/$repo/actions/artifacts?name=emit-$key&per_page=20" \
+  --jq "[.artifacts[] | select(.expired == false and .workflow_run.head_repository_id == $rid and .workflow_run.repository_id == $rid and .workflow_run.head_branch == \"main\")][0] | select(. != null) | \"\(.id) \(.workflow_run.id)\"" 2>/dev/null) || exit 1
+IFS=' ' read -r aid run <<EOF
+$producer
+EOF
+case $aid in ''|*[!0-9]*) exit 1 ;; esac
+case $run in ''|*[!0-9]*) exit 1 ;; esac
+event=$(timeout 20 gh api "repos/$repo/actions/runs/$run" --jq .event 2>/dev/null) || exit 1
+[ "$event" = push ] || exit 1
 tmp=$(mktemp -d "${out%/*}/.emit-fetch.XXXXXX") || exit 1
 trap 'rm -rf "$tmp"' 0 1 2 15
 timeout 300 gh api "repos/$repo/actions/artifacts/$aid/zip" >"$tmp/a.zip" 2>/dev/null || exit 1
