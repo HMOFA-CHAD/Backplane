@@ -80,11 +80,12 @@ Settings (all off or empty by default):
   Resource policy lives there, never in the hub. Empty means
   `systemd-run --user --scope -q --` when the user's systemd answers, else
   nothing.
-- `deploy.follow`: `on` makes the hub read origin/main once every 30 minutes
-  (the minute's tick, when nothing is under way) and deploy when it moved.
-  A restart costs about two minutes of the hub not answering (the log's
-  replay), so follow deploys are coalesced: at most one in 30 minutes, always
-  of the newest main (law `ship_follow_every_30_minutes`). Off, it does no
+- `deploy.follow`: `on` makes the hub read origin/main on every minute's
+  tick (when nothing is under way) and deploy when it moved: for a
+  development install that tracks main. Merges coalesce only while a build
+  runs: the first tick after it takes the newest main (law
+  `ship_follow_every_minute`). Each deploy restarts the hub (about two
+  minutes of it not answering while it replays its log). Off, it does no
   work at all.
 
 A main-track install whose desktop app requires an exact release version
