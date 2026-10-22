@@ -12,6 +12,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val screen get() = core.screen
     val contentReady get() = core.contentReady
     val startup get() = core.startup
+    // the hub's socket is up (for a screen that says online)
+    fun linkUp(hub: String) = hub.isEmpty() || core.linkUp[hub] != false
     fun retryView(key: String, compatibility: Boolean = false) = core.retryView(key, compatibility)
     fun moreMessage(hub: String, thread: String, entry: String, partial: MessagePartial, live: Boolean = false) = core.moreMessage(hub, thread, entry, partial, live)
     val opening get() = core.opening
