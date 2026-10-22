@@ -149,19 +149,25 @@ def Q.words.json(ts: List<&2, Sigma<&2, &2, String, _ => Bool>>) -> List<&2, J.J
 # first of equals), from each term's count in the query's order
 def Q.base.go(ts: List<&2, Sigma<&2, &2, String, _ => Bool>>, ns: List<&2, Nat>, +best: String, +n: Nat) -> String:
   match ts ns:
-    case ((w, _) <> t) (+k <> r): Q.base.go(t, r, Bool.pick(String, Nat.is_lt(k, n), w, best), Bool.pick(Nat, Nat.is_lt(k, n), k, n))
-    case _ _: best
+    case Nil{} _: best
+    case _ Nil{}: best
+    case (+w, _) <> t +k <> r: Q.base.go(t, r, Bool.pick(String, Nat.is_lt(k, n), w, best), Bool.pick(Nat, Nat.is_lt(k, n), k, n))
+
+def Q.base.first(ns: List<&2, Nat>, +w: String, t: List<&2, Sigma<&2, &2, String, _ => Bool>>) -> String:
+  match ns:
+    case +k <> r: Q.base.go(t, r, w, k)
+    case Nil{}: ""
 
 def Q.base(ts: List<&2, Sigma<&2, &2, String, _ => Bool>>, ns: List<&2, Nat>) -> String:
-  match ts ns:
-    case ((w, _) <> t) (+k <> r): Q.base.go(t, r, w, k)
-    case _ _: ""
+  match ts:
+    case (+w, _) <> t: Q.base.first(ns, w, t)
+    case Nil{}: ""
 
 # the candidates as the posting order and an index of their rows
 def Q.order(rs: List<&2, T.Row>, o: ML.Order) -> ML.Order:
   match rs:
     case Nil{}: o
-    case r <> t: Q.order(t, ML.Order.put(o, T.Row.n(r), Nat.show(T.Row.n(r))))
+    case +r <> t: Q.order(t, ML.Order.put(o, T.Row.n(r), Nat.show(T.Row.n(r))))
 
 def Q.cands(rs: List<&2, T.Row>, i: T.Index) -> T.Index:
   match rs:

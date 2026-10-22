@@ -99,8 +99,12 @@ def Mq.sources.put(have: Bool, +id: String, text: String, m: Map<&2, String>) ->
     case True{}: m
     case False{}: Map.set(&2, String, m, id, text)
 
+def Mq.has.k(p: Map<&2, String> & Bool) -> Bool:
+  (_, b) = p
+  b
+
 def Mq.sources(xs: List<&2, List<&2, String>>, +m: Map<&2, String>) -> Map<&2, String>:
   match xs:
     case Nil{}: m
-    case (+id <> text <> _) <> t: Mq.sources(t, Mq.sources.put(ML.Get.has(Map.has(&2, String, m, id)), id, text, m))
+    case (+id <> text <> _) <> t: Mq.sources(t, Mq.sources.put(Mq.has.k(Map.has(&2, String, m, id)), id, text, m))
     case _ <> t: Mq.sources(t, m)

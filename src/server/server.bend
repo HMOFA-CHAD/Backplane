@@ -8952,16 +8952,36 @@ def MailJob.room.selected(page: Maybe<&2, RH.RoomPage>, +home: String, +s: M.Sta
     case Some{RH.RoomPage{+headers, more}}:
       MailJob.room.bodies(headers, home, s, ML.Box.conv(M.State.mail(s), conv), bot, RH.RoomHistory.sources(s, conv, headers), more, Nil{})
 
-def MailJob.page.kind(room: Bool, +home: String, +s: M.State, +conv: String, +bot: String, +before: String, +n: Nat) -> IO(MST.StoreResult<J.Json>):
-  match room:
+# A room's page from the store (server/thinstore.bend's Ms.*): the headers
+# after the cursor and the posts' texts, by query, as RH.RoomHistory reads
+# them from the box and the world
+def MailJob.room.stored(page: Maybe<&2, RH.RoomPage>, +h: String, +home: String, +s: M.State, +conv: String, +bot: String) -> IO(MST.StoreResult<J.Json>):
+  match page:
+    case None{}: IO.pure(MST.StoreResult<J.Json>, MST.StoreError{conv, "unknown room conversation or mail cursor"})
+    case Some{RH.RoomPage{+headers, more}}:
+      do IO<MST.StoreResult<J.Json>>:
+        texts : Map<&2, String> <- TSTO.Ms.room.sources(h, conv, headers)
+        MailJob.room.bodies(headers, home, s, ML.Box.conv(M.State.mail(s), conv), bot, texts, more, Nil{})
+
+def MailJob.room.kind(memory: Bool, +h: String, +home: String, +s: M.State, +conv: String, +bot: String, +before: String, +n: Nat) -> IO(MST.StoreResult<J.Json>):
+  match memory:
     case True{}: MailJob.room.selected(RH.RoomHistory.page(s, conv, before, n), home, s, conv, bot)
+    case False{}:
+      do IO<MST.StoreResult<J.Json>>:
+        page : Maybe<&2, RH.RoomPage> <- TSTO.Ms.room.page(h, conv, before, n)
+        MailJob.room.stored(page, h, home, s, conv, bot)
+
+def MailJob.page.kind(room: Bool, +h: String, +home: String, +s: M.State, +conv: String, +bot: String, +before: String, +n: Nat) -> IO(MST.StoreResult<J.Json>):
+  match room:
+    case True{}: MailJob.room.kind(String.is_empty(h), h, home, s, conv, bot, before, n)
     case False{}:
       do IO<MST.StoreResult<J.Json>>:
         r : MST.StoreResult<List<&2, MB.Body>> <- MST.MailStore.read(home, conv, before, n)
         MailJob.page.result(r, home, s, conv, bot, n)
 
-def MailJob.page(+home: String, +s: M.State, +conv: String, +bot: String, +before: String, +n: Nat) -> IO(MST.StoreResult<J.Json>):
-  MailJob.page.kind(String.starts_with(conv, "room:"), home, s, conv, bot, before, n)
+# h: the store's handle ("": read the box in memory)
+def MailJob.page(+h: String, +home: String, +s: M.State, +conv: String, +bot: String, +before: String, +n: Nat) -> IO(MST.StoreResult<J.Json>):
+  MailJob.page.kind(String.starts_with(conv, "room:"), h, home, s, conv, bot, before, n)
 
 def MailJob.read.reply(+r: MST.StoreResult<J.Json>, +client: U32, +id: String) -> B.Out:
   match r:
@@ -8997,7 +9017,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       MailJob.append.parsed(MB.Body.parse(line), Cfg.home(cfg), changes, Hub{st, f, ls, cl, as, inbox, cfg, note})
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note} B.MailRead{+client, +id, conv, before, n}:
       do IO<Hub>:
-        r : MST.StoreResult<J.Json> <- MailJob.page(Cfg.home(cfg), st, conv, "*", before, n)
+        r : MST.StoreResult<J.Json> <- MailJob.page(Cfg.thin.store(cfg), Cfg.home(cfg), st, conv, "*", before, n)
         cl2 : List<&2, Client> <- Wire.to(cl, client, MailJob.read.text(MailJob.read.reply(r, client, id)))
         return Hub{st, f, ls, cl2, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.Send{+client, +text}:
@@ -11145,7 +11165,7 @@ def Hub.mail.mcp.read(h: Hub, +cs: List<&2, M.Change>, +conv: String, +before: S
   match h:
     case Hub{+st, f, +ls, +cl, +as, +inbox, +cfg, +note}:
       do IO<Hub>:
-        r : MST.StoreResult<J.Json> <- MailJob.page(Cfg.home(cfg), st, conv, "*", before, n)
+        r : MST.StoreResult<J.Json> <- MailJob.page(Cfg.thin.store(cfg), Cfg.home(cfg), st, conv, "*", before, n)
         IO.bind(Hub & Bool, Hub, Hub.step.ok(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{cs, Nil{}}), got => Hub.mcp.after(got, "", body, MailJob.mcp.json(r, J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id")), reply))
 
 def Hub.mcp.k(o: MC.McpOut, h: Hub, +reply: Chan(String), +body: String) -> IO(Hub):
