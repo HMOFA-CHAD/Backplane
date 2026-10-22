@@ -809,7 +809,6 @@ def Wire.charged(native: Bool, w: Wire, n: Nat) -> Wire:
     case False{} WText{t}: WCharged{t, n}
     case False{} WCharged{t, _}: WCharged{t, n}
     case False{} WJson{j, _}: WJson{j, n}
-    case True{} WJson{j, _}: WText{J.Json.show(j)}
     case _ _: w
 
 def Wire.offer.k(c: Client, w: Wire, +n: Nat) -> IO(Maybe<&2, Client>):
