@@ -342,6 +342,13 @@ function sock_shutdown(socket) {
     if (!require("fs").statSync(bin).isDirectory()) {
       return;
     }
+    // runtime\ is the Cygwin root: its /tmp is runtime\tmp, which bash
+    // checks and a ZIP does not keep empty (service.cjs makes it too, for a
+    // hub the app starts; this is for one started any other way)
+    try {
+      require("fs").mkdirSync(path.join(path.dirname(process.execPath), "runtime", "tmp"), { recursive: true });
+    } catch (_) {
+    }
     const key = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
     const was = process.env[key] ?? "";
     if (!was.toLowerCase().split(";").includes(bin.toLowerCase())) {
