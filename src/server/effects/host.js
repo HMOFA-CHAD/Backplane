@@ -326,6 +326,31 @@ function sock_shutdown(socket) {
   return socket;
 }
 
+// Windows: the package's own POSIX runtime (portable Cygwin: sh.exe, bash.exe,
+// env.exe, cygwin1.dll) sits in runtime\bin beside the hub's executable
+// (resources\backplane-service\runtime\bin). It goes first on the hub's PATH
+// at load, however the hub was started (the app, a shortcut, a shell), so
+// Proc.run's sh/env, the default SHELL (/bin/bash, bp_win_cmd) and every
+// child's environment find it. Nothing changes when it is not there.
+(() => {
+  if (process.platform !== "win32") {
+    return;
+  }
+  try {
+    const path = require("path");
+    const bin = path.join(path.dirname(process.execPath), "runtime", "bin");
+    if (!require("fs").statSync(bin).isDirectory()) {
+      return;
+    }
+    const key = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+    const was = process.env[key] ?? "";
+    if (!was.toLowerCase().split(";").includes(bin.toLowerCase())) {
+      process.env[key] = was === "" ? bin : bin + ";" + was;
+    }
+  } catch (_) {
+  }
+})();
+
 // Proc
 // ====
 
