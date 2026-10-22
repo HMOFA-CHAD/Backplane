@@ -11528,5 +11528,5 @@ law pair_msg_other_link:
   {MPCREDIT.Hub.pair_msg.from("r1\n{m}", "") == MPCREDIT.Hub.pair_msg.of("") : String}
 
 # no link, no QR code
-law pair_qr_none:
+law pair_msg_no_link_qr:
   {MPCREDIT.Info.qr("") == "" : String}

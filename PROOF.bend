@@ -12762,4 +12762,4 @@ def Laws.copy_file_open_told(): {==}
 # --- J2: the pairing message made once per link, not per join ---
 def Laws.pair_msg_kept(): {==}
 def Laws.pair_msg_other_link(): {==}
-def Laws.pair_qr_none(): {==}
+def Laws.pair_msg_no_link_qr(): {==}
