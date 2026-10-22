@@ -360,23 +360,60 @@ function bp_conpty(argv, cwd, env, cols, rows) {
   const need = new BigUint64Array(1);
   k.InitializeProcThreadAttributeList(null, 1, 0, ptr(need));
   const list = new Uint8Array(Number(need[0]) + 64);
-  const pcv = new BigUint64Array([hpc[0]]);
   // STARTUPINFOEXW: STARTUPINFOW (104 bytes on x64) then the list pointer
   const si = new Uint8Array(112);
   const pi = new Uint8Array(24);
-  new DataView(si.buffer).setUint32(0, 112, true);
-  // STARTF_USESTDHANDLES with null std handles (offsets 80, 88, 96): left
-  // unset, a child of a process whose own stdio is redirected (the hub, a
-  // service) inherits those handles and never writes to the pseudoconsole
-  new DataView(si.buffer).setUint32(60, 0x100, true);
+  const sv = new DataView(si.buffer);
+  sv.setUint32(0, 112, true);
+  // A parent whose own stdio is redirected (the hub, a service) passes those
+  // handles on unless STARTF_USESTDHANDLES says otherwise: the child then
+  // wrote to them and the pseudoconsole saw nothing (session 7: cmd's and
+  // bash's echo on the probe's own stdout). With the flag and null handles
+  // the child takes the console's (node-pty's ConPTY does the same). Session
+  // 6's crash with it came with a wrong attribute value (no console at all).
+  // BACKPLANE_CONPTY_STDHANDLES=invalid passes INVALID_HANDLE_VALUE, =none
+  // leaves the flag off, to compare on a machine.
+  const how = process.env.BACKPLANE_CONPTY_STDHANDLES || "null";
+  if (how !== "none") {
+    sv.setUint32(60, 0x100, true);
+    if (how === "invalid") {
+      for (const off of [80, 88, 96]) {
+        sv.setBigUint64(off, 0xffffffffffffffffn, true);
+      }
+    }
+  }
+  dbg("std handles", how);
   if (!k.InitializeProcThreadAttributeList(ptr(list), 1, 0, ptr(need))
-    || !k.UpdateProcThreadAttribute(ptr(list), 0, 0x00020016n, ptr(pcv), 8n, null, null)) {
+    // the attribute's value is the HPCON itself (not a pointer to it): passed
+    // a pointer, the child got no pseudoconsole and its output went nowhere
+    || !k.UpdateProcThreadAttribute(ptr(list), 0, 0x00020016n, pc, 8n, null, null)) {
     k.ClosePseudoConsole(pc);
     throw fail("ProcThreadAttribute");
   }
   new DataView(si.buffer).setBigUint64(104, BigInt(ptr(list)), true);
   const line = bp_wide(argv.map(bp_win_quote).join(" "));
-  const block = Buffer.from(Object.entries(env).map(([n, v]) => n + "=" + v + "\0").join("") + "\0", "utf16le");
+  // the environment as Windows wants it: one entry per name (names are
+  // case-insensitive), sorted, with SystemRoot and windir (DLL initialization
+  // fails without them: 0xC0000142) and the program's folder first on PATH
+  // (Cygwin's programs find cygwin1.dll there)
+  const names = new Map();
+  for (const [n, v] of Object.entries(env)) {
+    if (n !== "" && !n.includes("=") && v !== undefined) {
+      names.set(n.toUpperCase(), [n, String(v)]);
+    }
+  }
+  const root = process.env.SystemRoot || process.env.SYSTEMROOT || process.env.windir || "C:\\Windows";
+  if (!names.has("SYSTEMROOT")) names.set("SYSTEMROOT", ["SystemRoot", root]);
+  if (!names.has("WINDIR")) names.set("WINDIR", ["windir", root]);
+  const at = argv[0].lastIndexOf("\\");
+  if (at > 0) {
+    const dir = argv[0].slice(0, at);
+    const path = names.get("PATH");
+    names.set("PATH", [path ? path[0] : "Path", path ? dir + ";" + path[1] : dir]);
+  }
+  const lines = [...names.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([, [n, v]]) => n + "=" + v + "\0");
+  const block = Buffer.from(lines.join("") + "\0", "utf16le");
+  dbg("env", lines.length, "names; SystemRoot", JSON.stringify(names.get("SYSTEMROOT")?.[1] ?? ""));
   const dir = cwd === "" ? null : bp_wide(cwd);
   // EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT
   const ok = k.CreateProcessW(null, ptr(line), null, null, 0, 0x00080000 | 0x00000400,
@@ -474,6 +511,13 @@ function bp_conpty_wire(child, h) {
 // ("/bin/bash", the hub's default SHELL; "/bin/sh") is the program of that
 // name on PATH outside the system's folders: the Windows package ships its
 // runtime's bin (bash.exe, sh.exe) there. Anything else is left as it is.
+// PATH by any case of its name: Windows keeps it as "Path", and the
+// environment object need not match names case-insensitively
+function bp_pty_path() {
+  const key = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH");
+  return key === undefined ? "" : String(process.env[key] ?? "");
+}
+
 function bp_pty_win_cmd(cmd) {
   if (process.platform !== "win32" || !cmd.startsWith("/") || require("fs").existsSync(cmd)) {
     return cmd;
@@ -487,7 +531,7 @@ function bp_pty_win_cmd(cmd) {
   // distribution; the package's runtime bin has the real one
   const sys = String(process.env.SystemRoot || process.env.windir || "C:\\Windows").toLowerCase();
   const fs = require("fs");
-  for (const dir of String(process.env.PATH ?? "").split(";")) {
+  for (const dir of bp_pty_path().split(";")) {
     if (dir === "" || dir.toLowerCase().startsWith(sys) || /\\windowsapps\\?$/i.test(dir)) {
       continue;
     }
@@ -511,7 +555,10 @@ function bp_pty_spawn(cmd, args, cwd, cols, rows) {
   if (cmd === "" || argv.some((a) => a.includes("\0")) || cwd.includes("\0")) {
     return io_fail(process.platform === "darwin" ? 92 : 84);
   }
-  if (Bun.which(cmd, { PATH: process.env.PATH ?? "" }) === null
+  if (process.env.BACKPLANE_DEBUG_CONPTY === "1") {
+    require("fs").writeSync(2, "pty: " + JSON.stringify(cmd) + " -> " + JSON.stringify(Bun.which(cmd, { PATH: bp_pty_path() })) + " (PATH " + bp_pty_path() + ")\n");
+  }
+  if (Bun.which(cmd, { PATH: bp_pty_path() }) === null
     && !((cmd.includes("/") || cmd.includes("\\")) && fs.existsSync(cmd))) {
     return io_fail(globalThis.BP_H.ERRNO.ENOENT);
   }
@@ -537,7 +584,7 @@ function bp_pty_spawn(cmd, args, cwd, cols, rows) {
   let child;
   try {
     child = process.platform === "win32"
-      ? bp_conpty_wire(bp_conpty([Bun.which(cmd, { PATH: process.env.PATH ?? "" }) ?? cmd, ...args], cwd, env,
+      ? bp_conpty_wire(bp_conpty([Bun.which(cmd, { PATH: bp_pty_path() }) ?? cmd, ...args], cwd, env,
         bp_pty_size(Number(cols), 80), bp_pty_size(Number(rows), 24)), h)
       : Bun.spawn(argv, {
       cwd: cwd === "" ? undefined : cwd,
