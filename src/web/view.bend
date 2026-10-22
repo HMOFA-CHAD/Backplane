@@ -1371,9 +1371,31 @@ def View.settings.menu(ps: List<&2, String>, +lc: I.Loc) -> List<&2, D.Node>:
     case +p <> t:
       D.Dom.button("settings-category", "settings-page", p, U.Settings.title(lc, p), U.Settings.title(lc, p) ++ " ›") <> View.settings.menu(t, lc)
 
+# the menu with Settings' search over it (client.bend's Settings.found): the
+# pages it finds, each with the rows that matched; Enter opens the first
+def View.settings.find.btn(+lc: I.Loc, +p: String, +hint: String) -> D.Node:
+  D.Dom.button("settings-category", "settings-page", p, U.Settings.title(lc, p), U.Settings.title(lc, p) ++ " ›" ++ Bool.pick(String, String.is_empty(hint), "", "   " ++ hint))
+
+def View.settings.found(ps: List<&2, String>, +lc: I.Loc, +q: String) -> List<&2, D.Node>:
+  match ps:
+    case Nil{}: Nil{}
+    case +p <> t: View.settings.find.btn(lc, p, U.Settings.hint(lc, p, q)) <> View.settings.found(t, lc, q)
+
+def View.settings.none(none: Bool, +lc: I.Loc) -> List<&2, D.Node>:
+  match none:
+    case True{}: [D.El{"p", "", [D.At{"class", "set-about"}], [D.Txt{MSG.T.settings.search.none(lc)}]}]
+    case False{}: Nil{}
+
+def View.settings.root(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
+  +q = U.Settings.q(u)
+  +ps = U.Settings.found(U.Settings.menu.pages(), lc, q)
+  D.El{"input", "settings-find", [D.At{"id", "settings-find"}, D.At{"class", "field set-find"}, D.At{"placeholder", MSG.T.settings.search(lc)}, D.At{"autocomplete", "off"},
+    D.At{"spellcheck", "false"}, D.At{"value", U.Ui.scratch(u, "@f.setq")}, D.At{"data-bfield", "setq"}, D.On{"input", "bfield"}, D.At{"data-enter", "settings-page"}, D.At{"data-value", "?"}], Nil{}}
+    <> List.append(&2, D.Node, View.settings.none(List.is_empty(&2, String, ps), lc), View.settings.found(ps, lc, q))
+
 def View.settings.body(root: Bool, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> List<&2, D.Node>:
   match root:
-    case True{}: View.settings.menu(U.Settings.menu.pages(), lc)
+    case True{}: View.settings.root(lc, u)
     case False{}: View.settings.rows(C.Codec.pos(U.Settings.pages(), U.Settings.page(u)), lc, u, st, nf, v, note)
 
 def View.settings.loc(+lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:
