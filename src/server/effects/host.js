@@ -326,6 +326,38 @@ function sock_shutdown(socket) {
   return socket;
 }
 
+// Windows: the package's own POSIX runtime (portable Cygwin: sh.exe, bash.exe,
+// env.exe, cygwin1.dll) sits in runtime\bin beside the hub's executable
+// (resources\backplane-service\runtime\bin). It goes first on the hub's PATH
+// at load, however the hub was started (the app, a shortcut, a shell), so
+// Proc.run's sh/env, the default SHELL (/bin/bash, bp_win_cmd) and every
+// child's environment find it. Nothing changes when it is not there.
+(() => {
+  if (process.platform !== "win32") {
+    return;
+  }
+  try {
+    const path = require("path");
+    const bin = path.join(path.dirname(process.execPath), "runtime", "bin");
+    if (!require("fs").statSync(bin).isDirectory()) {
+      return;
+    }
+    // runtime\ is the Cygwin root: its /tmp is runtime\tmp, which bash
+    // checks and a ZIP does not keep empty (service.cjs makes it too, for a
+    // hub the app starts; this is for one started any other way)
+    try {
+      require("fs").mkdirSync(path.join(path.dirname(process.execPath), "runtime", "tmp"), { recursive: true });
+    } catch (_) {
+    }
+    const key = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+    const was = process.env[key] ?? "";
+    if (!was.toLowerCase().split(";").includes(bin.toLowerCase())) {
+      process.env[key] = was === "" ? bin : bin + ";" + was;
+    }
+  } catch (_) {
+  }
+})();
+
 // Proc
 // ====
 
@@ -453,143 +485,114 @@ function bp_proc_class() {
   if (globalThis.BP_PROC_CLASS !== undefined) {
     return globalThis.BP_PROC_CLASS;
   }
+  // node:child_process's streams, not Bun.spawn's FileSink: a FileSink write
+  // to a stdin the child closed never fails to the caller (Bun prints the
+  // EPIPE later, flush answers 0, the send reads as sent) and, on Windows,
+  // its held flush never settles (the hub's loop ended as a deadlock). A
+  // node Writable reports it to the write's callback.
   globalThis.BP_PROC_CLASS = class BpProc extends globalThis.BP_H.Stream {
-  constructor(child, streams) {
-    super("proc");
-    this.child = child;
-    this.sink = child.stdin;
-    this.wshut = false;
-    this.full = false;
-    this.readers = streams.filter((x) => x !== null && x !== undefined).map((x) => x.getReader());
-    this.open = this.readers.length;
-    this.stop = false;
-    this.idle = [];
-    if (this.open === 0) {
-      this.finish(0);
-    }
-    for (const r of this.readers) {
-      this.pump(r);
-    }
-  }
-  pump(r) {
-    if (this.paused) {
-      this.idle.push(r);
-      return;
-    }
-    r.read().then(({ value, done }) => {
-      if (done || this.stop) {
-        this.ended();
-        return;
+    constructor(child, streams) {
+      super("proc");
+      this.child = child;
+      this.sink = child.stdin;
+      this.wshut = false;
+      this.full = false;
+      this.streams = streams.filter((x) => x !== null && x !== undefined);
+      this.open = this.streams.length;
+      if (this.open === 0) {
+        this.finish(0);
       }
-      this.feed(value);
-      this.pump(r);
-    }, () => this.ended());
-  }
-  ended() {
-    this.open -= 1;
-    if (this.open === 0) {
-      this.finish(0);
+      for (const r of this.streams) {
+        r.on("data", (d) => this.feed(new Uint8Array(d.buffer, d.byteOffset, d.byteLength)));
+        r.once("end", () => this.ended());
+        r.once("error", () => this.ended());
+      }
+      if (this.sink) {
+        this.sink.on("error", () => this.broken());
+      }
     }
-  }
-  pause() {
-  }
-  resume() {
-    const rs = this.idle;
-    this.idle = [];
-    for (const r of rs) {
-      this.pump(r);
+    ended() {
+      this.open -= 1;
+      if (this.open === 0) {
+        this.finish(0);
+      }
     }
-  }
-  writable() {
-    return !this.full || this.wshut;
-  }
-  write(b) {
-    if (this.wshut || this.sink === null || this.sink === undefined) {
-      return -globalThis.BP_H.ERRNO.EPIPE;
+    broken() {
+      this.wshut = true;
+      this.full = false;
+      this.wake(true);
     }
-    if (this.full) {
-      return -globalThis.BP_H.ERRNO.EAGAIN;
+    pause() {
+      for (const r of this.streams) {
+        r.pause();
+      }
     }
-    // at most 64 KiB at a time, and none while Bun still holds the last:
-    // the sink takes everything it is given, so a send to a child that
-    // does not read waits here, as a full socketpair makes it wait in C
-    const c = b.subarray(0, 65536);
-    try {
-      this.sink.write(c);
-      const f = this.sink.flush();
-      if (f && typeof f.then === "function") {
+    resume() {
+      for (const r of this.streams) {
+        r.resume();
+      }
+    }
+    writable() {
+      return !this.full || this.wshut;
+    }
+    // at most 64 KiB at a time, none while the stream holds more than its
+    // high-water mark (it says so by write answering false; drain clears it):
+    // a send to a child that does not read waits, as a full socketpair makes
+    // it wait in C; a write that fails (EPIPE) fails the send
+    write(b) {
+      if (this.wshut || !this.sink) {
+        return -globalThis.BP_H.ERRNO.EPIPE;
+      }
+      if (this.full) {
+        return -globalThis.BP_H.ERRNO.EAGAIN;
+      }
+      const c = Buffer.from(b.subarray(0, 65536));
+      let ok;
+      try {
+        ok = this.sink.write(c, (e) => {
+          if (e) {
+            this.broken();
+          }
+        });
+      } catch (_) {
+        this.broken();
+        return -globalThis.BP_H.ERRNO.EPIPE;
+      }
+      if (!ok) {
         this.full = true;
-        this.watch();
-        f.then(() => {
+        this.sink.once("drain", () => {
           this.full = false;
-          this.wake(true);
-        }, () => {
-          this.full = false;
-          this.wshut = true;
           this.wake(true);
         });
       }
-    } catch (e) {
-      this.wshut = true;
-      return -globalThis.BP_H.ERRNO.EPIPE;
+      return c.length;
     }
-    return c.length;
-  }
-  // While a write is held back: a pending flush does not keep Bun's loop
-  // alive, and on Windows one to a stdin the child closed never settles
-  // (the run ended as a deadlock). A ref'd check every 250 ms keeps it alive
-  // and fails the write once the child is gone or its stdin refuses bytes.
-  watch() {
-    if (this.timer) {
-      return;
-    }
-    this.timer = setInterval(() => {
-      let gone = this.child.exitCode !== null || (this.child.signalCode ?? null) !== null;
-      if (!gone && this.full) {
+    shutdown(how) {
+      if (how !== 1) {
+        this.shutRead();
+      }
+      if (how !== 0 && !this.wshut) {
+        this.wshut = true;
         try {
-          this.sink.write(new Uint8Array(0));
+          this.sink?.end();
         } catch (_) {
-          gone = true;
         }
       }
-      if (gone || !this.full || this.wshut) {
-        clearInterval(this.timer);
-        this.timer = null;
-        if (gone && this.full) {
-          this.full = false;
-          this.wshut = true;
-          this.wake(true);
+      this.wake(true);
+    }
+    close() {
+      this.shutdown(2);
+      for (const r of this.streams) {
+        try {
+          r.destroy();
+        } catch (_) {
         }
       }
-    }, 250);
-  }
-  shutdown(how) {
-    if (how !== 1) {
-      this.shutRead();
+      this.wakeAll();
     }
-    if (how !== 0 && !this.wshut) {
-      this.wshut = true;
-      try {
-        this.sink?.end();
-      } catch (_) {
-      }
+    abort() {
+      this.close();
     }
-    this.wake(true);
-  }
-  close() {
-    this.shutdown(2);
-    this.stop = true;
-    for (const r of this.readers) {
-      try {
-        r.cancel().catch(() => {});
-      } catch (_) {
-      }
-    }
-    this.wakeAll();
-  }
-  abort() {
-    this.close();
-  }
   };
   return globalThis.BP_PROC_CLASS;
 }
@@ -648,7 +651,22 @@ function bp_proc_spawn(cmd, args, cwd, err) {
       return io_fail(bp_proc_errno(e));
     }
   }
+  const env = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && k !== "" && !k.includes("=")) {
+      env[k] = v;
+    }
+  }
+  // node reports a missing program later, as an event: found here first, so
+  // Proc.spawn fails at once with ENOENT as posix_spawnp does
+  const named = /[\\/]/.test(argv[0]);
+  const found = named ? (fs.existsSync(argv[0]) ? argv[0] : null)
+    : Bun.which(argv[0], { PATH: env.PATH ?? env.Path ?? "", cwd: cwd === "" ? undefined : cwd });
+  if (found === null) {
+    return io_fail(globalThis.BP_H.ERRNO.ENOENT);
+  }
   let tmp = null;
+  let errfd = null;
   let stderr = "ignore";
   if (err === 1) {
     stderr = "pipe";
@@ -663,31 +681,45 @@ function bp_proc_spawn(cmd, args, cwd, err) {
     g.seq += 1;
     tmp = dir + "/spawn." + process.pid + "." + g.seq;
     try {
-      fs.writeFileSync(tmp, "", { mode: 0o600 });
-      stderr = Bun.file(tmp);
+      errfd = fs.openSync(tmp, "w", 0o600);
+      stderr = errfd;
     } catch (_) {
       tmp = null;
     }
   }
-  const env = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && k !== "" && !k.includes("=")) {
-      env[k] = v;
-    }
-  }
   let child;
   try {
-    child = Bun.spawn(argv, { cwd: cwd === "" ? undefined : cwd, env,
-      stdin: "pipe", stdout: "pipe", stderr });
+    child = require("node:child_process").spawn(found, argv.slice(1), {
+      cwd: cwd === "" ? undefined : cwd, env, argv0: argv[0],
+      stdio: ["pipe", "pipe", stderr], windowsHide: true });
   } catch (e) {
+    child = null;
     if (tmp !== null) {
       try {
         fs.unlinkSync(tmp);
       } catch (_) {
       }
     }
+    if (errfd !== null) {
+      fs.closeSync(errfd);
+    }
     return io_fail(bp_proc_errno(e));
   }
+  if (errfd !== null) {
+    fs.closeSync(errfd);
+  }
+  if (child.pid === undefined) {
+    if (tmp !== null) {
+      try {
+        fs.unlinkSync(tmp);
+      } catch (_) {
+      }
+    }
+    child.once("error", () => {});
+    return io_fail(globalThis.BP_H.ERRNO.ENOENT);
+  }
+  child.once("error", () => {});
+  child.exited = new Promise((res) => child.once("exit", () => res(child.exitCode)));
   if (tmp !== null) {
     try {
       fs.renameSync(tmp, host_err_path(child.pid));

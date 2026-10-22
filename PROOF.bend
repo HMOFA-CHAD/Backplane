@@ -12185,12 +12185,12 @@ def Laws.mail_global_primary(): {==}
 
 def Laws.mail_log_count_set(c, n):
   match c:
-    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n}, managed, link, freecad, ks}, telemetry, views}:
+    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n, pair}, managed, link, freecad, ks}, telemetry, views}:
       {==}
 
 def Laws.mail_log_count_committed(c, fresh):
   match c:
-    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n}, managed, link, freecad, ks}, telemetry, views}:
+    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n, pair}, managed, link, freecad, ks}, telemetry, views}:
       {==}
 
 # ---- native phone i18n ----
@@ -12759,6 +12759,10 @@ def Laws.copy_off_refuses_none(cmd, args): {==}
 def Laws.adopt_copy_none(rec, hand): {==}
 def Laws.copy_file_open_told(): {==}
 
+# --- J2: the pairing message made once per link, not per join ---
+def Laws.pair_msg_kept(): {==}
+def Laws.pair_msg_other_link(): {==}
+def Laws.pair_msg_no_link_qr(): {==}
 # ---- F1: far feed slices ----
 def Laws.far_feed_sliced(): {==}
 def Laws.far_feed_sliced_one(): {==}
