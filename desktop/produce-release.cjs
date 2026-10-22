@@ -202,6 +202,17 @@ function stage(requestFile,output){
    const dest=inside(output,mapped),st=fs.lstatSync(dest);
    if(expected.type==='symlink')check(st.isSymbolicLink()&&fs.readlinkSync(dest)===expected.target,'Copied runtime link changed');else check(st.isFile()&&digest(dest)===expected.sha256&&st.size===expected.bytes&&(st.mode&0o777)===expected.mode,'Copied runtime bytes/mode changed');
   }
+  // Brand the assembled runtime only after verifying upstream bytes, before signing.
+  // Older frozen shell receipts without these assets retain their existing contract.
+  if(target==='darwin-arm64'&&fs.existsSync(path.join(shell.root,'backplane.icns'))){
+   copy(path.join(shell.root,'backplane.icns'),path.join(output,'Backplane.app/Contents/Resources/Backplane.icns'));
+   runPython(['plist-icon',path.join(output,'Backplane.app/Contents/Info.plist'),'Backplane.icns']);
+  }
+  if(target==='windows-x64'&&fs.existsSync(path.join(shell.root,'backplane.ico'))){
+   const brand=path.join(__dirname,'brand-windows.py');
+   const r=require('node:child_process').spawnSync(process.env.PYTHON||'python3',[brand,inside(output,t.executable),path.join(shell.root,'backplane.ico')],{encoding:'utf8'});
+   check(r.status===0,'Windows icon resource update failed: '+r.stderr);
+  }
   const build={serviceVersion:VERSION,electronVersion:ELECTRON,sourceTree:release.tree,sourceCommit:release.commit,...(freeze.lifecyclePolicy?.[target]?{lifecyclePolicy:freeze.lifecyclePolicy[target]}:{}),qualification:'staged only; post-assembly signing/sandbox/lifecycle/runtime evidence required'};
   check(!fs.existsSync(path.join(resources,'DESKTOP-BUILD.json')),'Conflicting desktop resource metadata');
   // The service's BUILD.json is immutable; Electron's own build configuration is separate.

@@ -300,6 +300,19 @@ fun Thumb(m: AppModel, path: String, show: (String) -> Unit) {
     }
 }
 
+// A composer preview is decorative; its enclosing button removes the file.
+@Composable
+private fun PendingThumb(m: AppModel, path: String) {
+    val url = m.web(path) ?: return
+    Box(Modifier.size(96.dp, 72.dp), contentAlignment = Alignment.Center) {
+        when (val image = hubImage(url, 192)) {
+            null -> CircularProgressIndicator(Modifier.size(18.dp))
+            Got.Failed -> Icon(Icons.Filled.BrokenImage, "Preview unavailable")
+            is Got.Ok -> Image(image.b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        }
+    }
+}
+
 // how many dialogs the app shows on its own, outside the screen model (a
 // picture opened large, a diff sheet, a confirmation): the first-run tour
 // waits until there are none. Each one calls Overlaid() while it is shown.
@@ -591,7 +604,7 @@ fun ComposerExtras(m: AppModel, t: ThreadView) {
             color = MaterialTheme.colorScheme.surfaceVariant) {
             Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Icon(if (c.image) Icons.Filled.Image else Icons.Filled.Description, null, Modifier.size(14.dp))
+                if (c.image) PendingThumb(m, c.url) else Icon(Icons.Filled.Description, null, Modifier.size(14.dp))
                 Text(c.label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
                 Icon(Icons.Filled.Close, NativeMessages.native_composer_remove(lang, c.label), Modifier.size(14.dp))
             }

@@ -1,4 +1,5 @@
 import Base
+import ./mailtriage.bend as TRI
 import ./mailrun.bend as RUN
 import ./maildisposition.bend as MD
 import ./charter.bend as CH
@@ -192,8 +193,13 @@ def Mcp.project_of(t: M.Thread) -> String:
 
 # whether the thread is a bot's (bot.bend): a bot works for the person
 # across all their projects, where any other thread stays in its own
+def Mcp.owner.got(b: Maybe<&2, BT.Bot>) -> Bool:
+  match b:
+    case Some{_}: True{}
+    case None{}: False{}
+
 def Mcp.bot(+s: M.State, +thread: String) -> Bool:
-  BT.World.is_bot_thread(M.State.bots(s), thread)
+  Mcp.owner.got(RUN.Run.bot(s, thread))
 
 def Mcp.same_project(+s: M.State, +a: String, +b: String) -> Bool:
   Bool.or(Mcp.bot(s, a), String.eq(Mcp.project_of(B.Hub.thread(s, a)), Mcp.project_of(B.Hub.thread(s, b))))
@@ -703,11 +709,38 @@ def Mcp.wake.error(+s: M.State, +by: String, +kind: String, +target: String, +ev
   Bool.pick(String, Bool.not(String.is_empty(error)), error,
     Bool.pick(String, Bool.and(String.eq(kind, "thread"), Bool.not(B.Hub.owns(s, target))), "no such local target thread", ""))
 
+def Mcp.wake.existing.k(hit: Bool, id: String, rest: String) -> String:
+  match hit:
+    case True{}: id
+    case False{}: rest
+
+def Mcp.wake.existing(ids: List<&2, String>, +s: M.State, +by: String, +kind: String, +target: String, +events: List<&2, String>) -> String:
+  match ids:
+    case Nil{}: ""
+    case +id <> t:
+      +o = WK.Wake.get(s, id)
+      Mcp.wake.existing.k(Bool.and(String.eq(J.Json.get_str(o, "by", ""), by), String.eq(String.join(WK.Wake.events(o), ","), String.join(events, ","))), id, Mcp.wake.existing(t, s, by, kind, target, events))
+
+def Mcp.wake.reuse(+existing: String, +s: M.State, +now: Nat, +by: String, +a: J.Json, +events: List<&2, String>) -> Res:
+  match existing:
+    case SNil{}: Mcp.wake.on.k(Mcp.wake.error(s, by, J.Json.get_str(a, "kind", ""), J.Json.get_str(a, "target", ""), events), s, now, by, a, events)
+    case SCon{+c, +t}: Res{True{}, J.Json.obj([J.KV{"id", J.Str{SCon{c, t}}}, J.KV{"existing", J.Flag{True{}}}]), B.Step.none()}
+
+def Mcp.wake.plan(covered: Bool, +s: M.State, +now: Nat, +by: String, +a: J.Json, +kind: String, +target: String, +events: List<&2, String>) -> Res:
+  match covered:
+    case True{}: Res.ok(J.Json.obj([J.KV{"id", J.Str{"launch:" ++ target}}, J.KV{"existing", J.Flag{True{}}}, J.KV{"delivery", J.Str{"existing launched-thread report pipeline; no extra subscription"}}]))
+    case False{}: Mcp.wake.reuse(Mcp.wake.existing(WK.Wake.on(s, kind, target), s, by, kind, target, events), s, now, by, a, events)
+
+def Mcp.wake.checked(error: String, +s: M.State, +now: Nat, +by: String, +a: J.Json, +kind: String, +target: String, +events: List<&2, String>) -> Res:
+  match error:
+    case SNil{}: Mcp.wake.plan(Bool.and(String.eq(kind, "thread"), Bool.and(B.Operational.is(s, by), Bool.and(M.Launch.reports(s, target), String.eq(M.Launch.by(s, target), by)))), s, now, by, a, kind, target, events)
+    case SCon{+c, +t}: Res.fail(SCon{c, t})
+
 def Mcp.wake.on(+s: M.State, +now: Nat, +by: String, +a: J.Json) -> Res:
   +kind = J.Json.get_str(a, "kind", "")
   +target = J.Json.get_str(a, "target", "")
   +events = Mcp.wake.events(a, kind)
-  Mcp.wake.on.k(Mcp.wake.error(s, by, kind, target, events), s, now, by, a, events)
+  Mcp.wake.checked(Mcp.wake.error(s, by, kind, target, events), s, now, by, a, kind, target, events)
 
 def Mcp.wake.cancel.k(ok: Bool, +now: Nat, +id: String) -> Res:
   match ok:
@@ -869,8 +902,10 @@ def Mcp.mail.call.on(+ok: Bool, +i: Nat, +s: M.State, +now: Nat, +thread: String
     case True{} 39n: Mcp.mail.change(s, now, thread, a, True{})
     case True{} _: Mcp.mail.change(s, now, thread, a, False{})
 
+# with mail.on off the uberbot (its chat and its runs) still lists and
+# reads its mail (mail_list 35, mail_read 36)
 def Mcp.mail.call(+i: Nat, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
-  Mcp.mail.call.on(Bool.and(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), Bool.or(ML.Parts.has(["34", "35", "37"], Nat.show(i), False{}), Mcp.mail.allowed(s, thread, J.Json.get_str(a, "conv", "")))), i, s, now, thread, a)
+  Mcp.mail.call.on(Bool.and(Bool.or(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), Bool.and(Mcp.mail.uber(s, thread), ML.Parts.has(["35", "36"], Nat.show(i), False{}))), Bool.or(ML.Parts.has(["34", "35", "37"], Nat.show(i), False{}), Mcp.mail.allowed(s, thread, J.Json.get_str(a, "conv", "")))), i, s, now, thread, a)
 
 # deploy_main (core/ship.bend, hub.bend's Ship.*). The server reads
 # origin/main first (server.bend's Ship.look) and answers through Mcp.ship;
@@ -908,13 +943,13 @@ def Mcp.run.decide(+s: M.State, +now: Nat, +r: ML.Run, +text: String, +reason: S
 
 def Mcp.run.escalate(ok: Bool, +s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
   match ok:
-    case False{}: Res.fail("to must be bot or person")
-    case True{}: Res{True{}, J.Json.obj([J.KV{"ok", J.Flag{True{}}}]), B.Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), J.Json.get_str(a, "to", "bot"), J.Json.get_str(a, "text", ""))}
+    case False{}: Res.fail("to must be bot or person; coordinator triage must supply the exact current input ID")
+    case True{}: Res{True{}, J.Json.obj([J.KV{"ok", J.Flag{True{}}}]), B.Run.escalate.topic(Bool.and(TRI.Triage.owner(s, ML.Run.bot(r)), Bool.not(String.is_empty(J.Json.get_str(a, "key", "")))), s, now, ML.Run.bot(r), ML.Run.conv(r), J.Json.get_str(a, "to", "bot"), J.Json.get_str(a, "text", ""), J.Json.get_str(a, "key", ""))}
 
 def Mcp.run.call.got(r: Maybe<&2, ML.Run>, +i: Nat, +s: M.State, +now: Nat, +a: J.Json) -> Res:
   match r i:
     case Some{+r} 41n: Res{True{}, J.Json.obj([J.KV{"ok", J.Flag{True{}}}]), Mcp.run.decide(s, now, r, J.Json.get_str(a, "text", ""), J.Json.get_str(a, "reason", ""))}
-    case Some{+r} 42n: Mcp.run.escalate(ML.Parts.has(["bot", "person"], J.Json.get_str(a, "to", ""), False{}), s, now, r, a)
+    case Some{+r} 42n: Mcp.run.escalate(Bool.and(ML.Parts.has(["bot", "person"], J.Json.get_str(a, "to", ""), False{}), Bool.or(Bool.not(TRI.Triage.owner(s, ML.Run.bot(r))), Bool.and(Bool.not(String.is_empty(J.Json.get_str(a, "input", ""))), String.eq(J.Json.get_str(a, "input", ""), MD.Disposition.current(s, r))))), s, now, r, a)
     case _ _: Res.fail("This tool is only available in a mailroom run")
 
 def Mcp.charter.got(b: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +a: J.Json) -> Res:
@@ -924,6 +959,10 @@ def Mcp.charter.got(b: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +a: J.Json) ->
       Res{True{}, J.Json.obj([J.KV{"ok", J.Flag{True{}}}]), B.Step{[M.CharterSet{BT.Bot.id(b), J.Json.get_str(a, "text", ""), "bot", now},
         M.ActivityLogged{BT.Bot.thread(b), B.Hub.id("charter", now, B.Hub.seq(s)), "info", "charter", J.Json.get_str(a, "reason", ""), now}],
         [B.CharterWrite{B.Hub.cwd(s, B.Hub.thread(s, BT.Bot.thread(b))) ++ "/CHARTER.md", J.Json.get_str(a, "text", "")}]}}
+
+# decide and escalate: with mail.on, or in the uberbot's own private run
+def Mcp.run.on(+s: M.State, +thread: String) -> Bool:
+  Bool.or(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), Bool.and(Mcp.mail.uber(s, thread), RUN.Run.is(s, thread)))
 
 def Mcp.run.call(on: Bool, +i: Nat, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
   match on i:
@@ -978,10 +1017,16 @@ def Mcp.dispose.reply(+s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
   Mcp.dispose.reply.local(Bool.and(Bool.or(String.starts_with(to, "thread:"), String.starts_with(to, "bot:")),
     Bool.and(Bool.not(String.contains(to, "~")), Bool.and(Bool.not(String.is_empty(B.Mail.target(s, to))), B.Hub.owns(s, B.Mail.target(s, to))))), s, now, r, a, to)
 
+def Mcp.dispose.record(+s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
+  +cs = Mcp.dispose.changes(r, a, now)
+  +after = M.State.replay(cs, s)
+  +next = MD.Disposition.current(after, r)
+  Res{True{}, J.Json.obj([J.KV{"input", J.Str{J.Json.get_str(a, "input", "")}}, J.KV{"conv", J.Str{ML.Run.conv(r)}}, J.KV{"state", J.Str{"handled"}}, J.KV{"scope", J.Str{"current notice only; no work completion or permission grant"}}, J.KV{"next_input", J.Str{next}}]), B.Step{cs, Nil{}}}
+
 def Mcp.dispose.mode(reply: Bool, +s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
   match reply:
     case True{}: Mcp.dispose.reply(s, now, r, a)
-    case False{}: Res{True{}, Mcp.dispose.answer(r, J.Json.get_str(a, "input", ""), "handled"), B.Step{Mcp.dispose.changes(r, a, now), Nil{}}}
+    case False{}: Mcp.dispose.record(s, now, r, a)
 
 def Mcp.dispose.once(handled: Bool, pending: Bool, +s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
   match handled pending:
@@ -992,13 +1037,13 @@ def Mcp.dispose.once(handled: Bool, pending: Bool, +s: M.State, +now: Nat, +r: M
 def Mcp.dispose.valid(valid: Bool, +s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
   match valid:
     case False{}: Res.fail("mail_dispose requires a live mailroom run, exact current input, done/defer/reply, and reason; no other fields are allowed")
-    case True{}: Mcp.dispose.once(MD.Disposition.handled(s, r),
+    case True{}: Mcp.dispose.once(Bool.not(String.is_empty(M.Setting.get(s, MD.Disposition.key(ML.Run.thread(r), J.Json.get_str(a, "input", "")), ""))),
       Bool.not(String.is_empty(M.Setting.get(s, MD.Disposition.pending(ML.Run.thread(r), J.Json.get_str(a, "input", "")), ""))), s, now, r, a)
 
 def Mcp.dispose.got(r: Maybe<&2, ML.Run>, +s: M.State, +now: Nat, +a: J.Json) -> Res:
   match r:
     case None{}: Res.fail("mail_dispose is only available in a live mailroom run")
-    case Some{+r}: Mcp.dispose.valid(Bool.and(MD.Disposition.valid(s, r, J.Json.get_str(a, "input", "")), MD.Disposition.args(a)), s, now, r, a)
+    case Some{+r}: Mcp.dispose.valid(Bool.and(Bool.or(MD.Disposition.valid(s, r, J.Json.get_str(a, "input", "")), Bool.and(TRI.Triage.owner(s, ML.Run.bot(r)), Bool.and(MD.Disposition.live(s, r), Bool.not(String.is_empty(M.Setting.get(s, MD.Disposition.key(ML.Run.thread(r), J.Json.get_str(a, "input", "")), "")))))), Bool.and(MD.Disposition.args(a), Bool.not(Bool.and(TRI.Triage.owner(s, ML.Run.bot(r)), TRI.Triage.ask.mail(ML.Box.headers(M.State.mail(s), ML.Run.conv(r)), s, J.Json.get_str(a, "input", "")))))), s, now, r, a)
 
 def Mcp.dispose(+s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
   Mcp.dispose.got(RUN.Run.of(s, thread), s, now, a)
@@ -1081,8 +1126,8 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
     case 38n: Mcp.mail.call(i, s, now, thread, a)
     case 39n: Mcp.mail.call(i, s, now, thread, a)
     case 40n: Mcp.mail.call(i, s, now, thread, a)
-    case 41n: Mcp.run.call(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), i, s, now, thread, a)
-    case 42n: Mcp.run.call(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), i, s, now, thread, a)
+    case 41n: Mcp.run.call(Mcp.run.on(s, thread), i, s, now, thread, a)
+    case 42n: Mcp.run.call(Mcp.run.on(s, thread), i, s, now, thread, a)
     case 43n: Mcp.run.call(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), i, s, now, thread, a)
     case 44n: Mcp.dispose(s, now, thread, a)
     case _:
@@ -1316,7 +1361,7 @@ def Res.good(r: Res) -> Bool:
 # ---- mail 2c ----
 def Mcp.run.tools() -> List<&2, J.Json>:
   [Tool.def("decide", "Record a decision and its reason in this run's conversation.", [Tool.prop("text", "string", "The decision."), Tool.prop("reason", "string", "Why.")], ["text", "reason"]),
-   Tool.def("escalate", "Ask the front of house bot or person about something outside the charter.", [Tool.prop("to", "string", "bot or person."), Tool.prop("text", "string", "What needs deciding.")], ["to", "text"]),
+   Tool.def("escalate", "Privately ask the owning coordinator about a decision, blocker, meaningful completion or uncertain result. Coordinator triage routes even person requests through the owner, never directly alerts. Supply exact input in a coordinator run. key correlates the same exact event/version across reports, rooms and wakes; use a new key for a new result.", [Tool.prop("to", "string", "bot or person."), Tool.prop("text", "string", "Contextual assessment and actionable source links."), Tool.prop("input", "string", "Exact current input ID; required for coordinator triage."), Tool.prop("key", "string", "Stable exact event/version, e.g. source ask ID, thread turn ID or artifact commit; not a broad topic.")], ["to", "text"]),
    Tool.def("charter_set", "Front of house only: replace your mailroom charter.", [Tool.prop("text", "string", "The full charter."), Tool.prop("reason", "string", "Why it changed.")], ["text", "reason"])]
 
 def Mcp.dispose.tools() -> List<&2, J.Json>:
@@ -1332,13 +1377,48 @@ def Mcp.tools.on(on: Bool) -> J.Json:
     case False{}: Mcp.tools()
     case True{}: J.Json.obj([J.KV{"tools", J.Json.arr(List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(Mcp.tools(), "tools")), List.append(&2, J.Json, Mcp.mail.tools(), Mcp.run.tools())) )}])
 
+def Mcp.context.tools() -> List<&2, J.Json>:
+  [Tool.def("mail_context", "Read your coordinator's full stored conversation history, including older context beyond the brief. Owner identity is fixed by this live run; no target argument is accepted. With query, search text; before pages older rows by seq; use next from the result. Read-only; never acknowledges mail or answers approvals.",
+    [Tool.prop("query", "string", "Text to find, or empty for recent history."), Tool.prop("before", "integer", "Read rows before this seq; zero means newest.")], Nil{})]
+
 def Mcp.tools.live(live: Bool, on: Bool) -> J.Json:
   match live:
     case False{}: Mcp.tools.on(on)
-    case True{}: J.Json.obj([J.KV{"tools", J.Json.arr(List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(Mcp.tools.on(on), "tools")), Mcp.dispose.tools()))}])
+    case True{}: J.Json.obj([J.KV{"tools", J.Json.arr(List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(Mcp.tools.on(on), "tools")), List.append(&2, J.Json, Mcp.dispose.tools(), Mcp.context.tools())))}])
+
+def Mcp.tools.named.k(keep: Bool, +t: J.Json, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match keep:
+    case True{}: t <> rest
+    case False{}: rest
+
+# the tools named, from a list of tool definitions, in its order
+def Mcp.tools.named(ts: List<&2, J.Json>, +names: List<&2, String>) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}: Nil{}
+    case +t <> +rest: Mcp.tools.named.k(ML.Parts.has(names, J.Json.get_str(t, "name", ""), False{}), t, Mcp.tools.named(rest, names))
+
+def Mcp.run.tools.named() -> List<&2, J.Json>:
+  Mcp.tools.named(Mcp.run.tools(), ["decide", "escalate"])
+
+# the uberbot with mail.on off: mail_list and mail_read, and in its private
+# runs decide and escalate (how a run tells the person), then mail_dispose
+def Mcp.tools.uber.run(run: Bool) -> List<&2, J.Json>:
+  match run:
+    case True{}: List.append(&2, J.Json, Mcp.tools.named(Mcp.mail.tools(), ["mail_list", "mail_read"]), Mcp.run.tools.named())
+    case False{}: Mcp.tools.named(Mcp.mail.tools(), ["mail_list", "mail_read"])
+
+def Mcp.tools.uber(+s: M.State, +thread: String) -> J.Json:
+  +base = J.Json.elems(J.Json.get_obj(Mcp.tools(), "tools"))
+  +extra = List.append(&2, J.Json, Mcp.tools.uber.run(RUN.Run.is(s, thread)), Bool.pick(List<&2, J.Json>, MD.Disposition.launch(s, thread), List.append(&2, J.Json, Mcp.dispose.tools(), Mcp.context.tools()), Nil{}))
+  J.Json.obj([J.KV{"tools", J.Json.arr(List.append(&2, J.Json, base, extra))}])
+
+def Mcp.tools.pick(uber: Bool, +s: M.State, +thread: String) -> J.Json:
+  match uber:
+    case True{}: Mcp.tools.uber(s, thread)
+    case False{}: Mcp.tools.live(MD.Disposition.launch(s, thread), String.eq(M.Setting.get(s, "mail.on", "off"), "on"))
 
 def Mcp.tools.for(+s: M.State, +thread: String) -> J.Json:
-  Mcp.tools.live(MD.Disposition.launch(s, thread), String.eq(M.Setting.get(s, "mail.on", "off"), "on"))
+  Mcp.tools.pick(Bool.and(Bool.not(String.eq(M.Setting.get(s, "mail.on", "off"), "on")), Mcp.mail.uber(s, thread)), s, thread)
 
 def Mcp.method.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +version: String, +id: J.Json, +p: J.Json) -> McpOut:
   match i:

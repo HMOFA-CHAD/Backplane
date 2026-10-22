@@ -97,7 +97,7 @@ def main() -> IO(Unit):
     C.Check.str("a filed report torn before TaskDelivered: repair commits only it", Nat.show(delivered(cs(H.Task.repair(torn(), 10n)))) ++ "/" ++ Nat.show(appends(os(H.Task.repair(torn(), 10n)))), "1/0")
     C.Check.str("a wake the uberbot asked for: no Chat message", Nat.show(posts(cs(wake(True{})), "tb")), "0")
     C.Check.str("a wake the uberbot asked for: filed", Nat.show(appends(os(wake(True{})))), "1")
-    C.Check.str("a wake the uberbot asked for: rides into a turn it starts", Nat.show(running(cs(wake(True{})), "tb")), "1")
+    C.Check.str("a wake the uberbot asked for: triage before coordinator wake", Nat.show(running(cs(wake(True{})), "tb")), "0")
     C.Check.str("a wake for another thread: sent as before", Nat.show(H.Lr.count(cs(wake(False{})), "tb")) ++ "/" ++ Nat.show(appends(os(wake(False{})))), "1/0")
     C.Check.str("watched work of the uberbot: no Chat message", Nat.show(posts(cs(work(True{})), "tw")), "0")
     C.Check.str("watched work of the uberbot: filed, starts no turn", Nat.show(appends(os(work(True{})))) ++ "/" ++ Nat.show(running(cs(work(True{})), "tw")), "1/0")

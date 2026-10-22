@@ -1,4 +1,5 @@
 import Base
+import ./mailtriage.bend as TRI
 import ./model.bend as M
 import ./bot.bend as BT
 import ./far.bend as FR
@@ -341,8 +342,13 @@ def Notice.of.k(m: Maybe<&2, BT.Bot>, +s: M.State, +thread: String, +failed: Boo
 
 # what one ended turn tells the person: kind "" (nothing), "done" or
 # "fail", and the key its alert replaces others under
+def Notice.of.managed(managed: Bool, +s: M.State, +thread: String, +failed: Bool, local: Bool) -> Notice:
+  match managed:
+    case True{}: Notice{"", ""}
+    case False{}: Notice.of.k(BT.World.of_thread(M.State.bots(s), thread), s, thread, failed, local)
+
 def Notice.of(+s: M.State, +thread: String, +failed: Bool, local: Bool) -> Notice:
-  Notice.of.k(BT.World.of_thread(M.State.bots(s), thread), s, thread, failed, local)
+  Notice.of.managed(TRI.Triage.managed(s, thread), s, thread, failed, local)
 
 # Messages waiting behind this turn are not its trigger. Legacy Notice.of
 # retains its rule; bot enforcement reads this queued-aware version.
@@ -668,8 +674,13 @@ def Policy.end.p(p: Per, +post: M.State, +now: Nat, +thread: String, +state: Str
 
 # what a turn's end records (post: the state after the step; state:
 # completed, failed, interrupted or stopped): zero or one setting
+def Policy.end.managed(managed: Bool, +post: M.State, +now: Nat, +thread: String, +state: String) -> List<&2, M.Change>:
+  match managed:
+    case True{}: Nil{}
+    case False{}: Policy.end.p(Policy.person(post, thread), post, now, thread, state)
+
 def Policy.end(+post: M.State, +now: Nat, +thread: String, +state: String) -> List<&2, M.Change>:
-  Policy.end.p(Policy.person(post, thread), post, now, thread, state)
+  Policy.end.managed(TRI.Triage.managed(post, thread), post, now, thread, state)
 
 # what an ask's alert says: a paused browser task (core/teach.bend's pause,
 # tool task_pause) its one-line question, an order's question or approval
@@ -694,8 +705,13 @@ def Policy.ask.k(on: Bool, +post: M.State, +now: Nat, +thread: String, +tool: St
       [Alert.set(post, now, thread, "", "", Alert.memory(post, thread), "")]
 
 # an ask opened for the person
+def Policy.ask.managed(managed: Bool, +post: M.State, +now: Nat, +thread: String, +tool: String, +detail: String) -> List<&2, M.Change>:
+  match managed:
+    case True{}: Nil{}
+    case False{}: Policy.ask.k(Policy.on(post, "needs"), post, now, thread, tool, detail)
+
 def Policy.ask(+post: M.State, +now: Nat, +thread: String, +tool: String, +detail: String) -> List<&2, M.Change>:
-  Policy.ask.k(Policy.on(post, "needs"), post, now, thread, tool, detail)
+  Policy.ask.managed(TRI.Triage.managed(post, thread), post, now, thread, tool, detail)
 
 def Policy.merged.m(+pid: String, +old: String) -> String:
   Bool.pick(String, String.is_empty(pid), old, pid)

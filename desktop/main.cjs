@@ -1,5 +1,7 @@
 const electron = require('electron');
 const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } = electron;
+const { installShortcuts, applicationMenu } = require('./window.cjs');
+const { iconPath } = require('./branding.cjs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const os = require('node:os');
@@ -18,6 +20,7 @@ if (!home || !path.isAbsolute(home)) throw new Error('Set an absolute, isolated 
 if (!app.isPackaged && path.resolve(home) === path.join(os.homedir(), '.backplane-bend')) throw new Error('Development Electron must use an isolated BACKPLANE_HOME');
 app.setPath('userData', path.join(home, 'electron-profile'));
 app.setName('Backplane');
+if (process.platform === 'linux') app.setDesktopName?.('backplane.desktop');
 const resourceRoot = path.join(process.resourcesPath, 'backplane-service');
 const desktopBuild = path.join(process.resourcesPath, 'DESKTOP-BUILD.json');
 const build = app.isPackaged ? require(fs.existsSync(desktopBuild) ? desktopBuild : path.join(resourceRoot, 'BUILD.json')) : {};
@@ -126,23 +129,17 @@ function start() {
   });
   ipcMain.handle('desktop:browser-hide',event=>{if(!trusted(event)||!directBrowser)throw new Error('Invalid Browser sender');desktopBrowser?.hide();return true;});
   ipcMain.handle('desktop:browser-reconnect',async event=>{if(!trusted(event)||!directBrowser)throw new Error('Invalid Browser sender');await connectBrowser(ses);return desktopBrowser?.state()??{phase:'error',message:'Browser unavailable'};});
-  const edit=(label,operation,accelerator)=>({label,accelerator,click:()=>{
-    const focused=electron.webContents.getFocusedWebContents();
-    if(focused===window?.webContents)focused[operation]();else if(directBrowser)desktopBrowser?.edit(operation);
-  }});
-  const shellZoom=delta=>{const contents=window?.webContents;if(contents&&!contents.isDestroyed())contents.setZoomLevel(delta===null?0:Math.max(-5,Math.min(8,contents.getZoomLevel()+delta)));};
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
-    { label: 'File', submenu: [{ role: 'close' }, { role: 'quit' }] },
-    {label:'Edit',submenu:[edit('Undo','undo','CommandOrControl+Z'),edit('Redo','redo','CommandOrControl+Shift+Z'),{type:'separator'},edit('Cut','cut','CommandOrControl+X'),edit('Copy','copy','CommandOrControl+C'),edit('Paste','paste','CommandOrControl+V'),edit('Select all','selectAll','CommandOrControl+A')]},
-    { label: 'View', submenu: [{label:'Address bar',accelerator:'CommandOrControl+L',click:()=>{window?.webContents.focus();window?.webContents.send('desktop:browser-focus-address',{});}},{label:'Reload interface',accelerator:'CommandOrControl+R',click:()=>window?.webContents.reload()},{label:'Reload interface without cache',accelerator:'CommandOrControl+Shift+R',click:()=>window?.webContents.reloadIgnoringCache()},{label:'Interface developer tools',accelerator:'CommandOrControl+Shift+I',click:()=>window?.webContents.toggleDevTools()},{type:'separator'},{label:'Actual size',accelerator:'CommandOrControl+0',click:()=>shellZoom(null)},{label:'Zoom in',accelerator:'CommandOrControl+Plus',click:()=>shellZoom(0.5)},{label:'Zoom out',accelerator:'CommandOrControl+-',click:()=>shellZoom(-0.5)},{ role: 'togglefullscreen' }] }, { role: 'windowMenu' },
-  ]));
+  Menu.setApplicationMenu(applicationMenu(Menu, process.platform));
+  app.setAppUserModelId?.('works.backplane.desktop');
+  if (process.platform === 'darwin') app.dock?.setIcon(iconPath());
   void createWindow(ses).then(() => connect(ses)); // Show before any service/history work.
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) void createWindow(ses).then(() => connect(ses)); });
 }
 function createWindow(ses) {
-  window = new BrowserWindow({ width: 1400, height: 940, minWidth: 360, minHeight: 480, title: 'Backplane', backgroundColor: '#111410', show: false,
+  window = new BrowserWindow({ width: 1400, height: 940, minWidth: 360, minHeight: 480, title: 'Backplane', icon: iconPath(), backgroundColor: '#111410', show: false,
     webPreferences: { session: ses, preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, spellcheck: true,additionalArguments:directBrowser?['--backplane-direct-browser=1']:[] } });
+  window.setMenuBarVisibility(false);
+  installShortcuts(window, electron, () => directBrowser ? desktopBrowser : null);
   const shown = new Promise(resolve => window.once('ready-to-show', () => { firstVisibleAtMs ??= Date.now(); window.show(); resolve(); }));
   window.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
   window.webContents.on('will-navigate', (event, url) => { if (url !== startupURL && new URL(url).origin !== origin) { event.preventDefault(); external(url); } });

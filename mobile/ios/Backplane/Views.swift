@@ -418,9 +418,10 @@ struct ProjectsView: View {
                     Button { model.act("picker-open") } label: { Image(systemName: "folder.badge.plus") }.accessibilityLabel(NativeMessages.sidebar_add_project(lang))
                 }
                 Button { pairing = true } label: { Image(systemName: "link") }.accessibilityLabel(NativeMessages.native_settings_hubs(lang))
+                Button { model.switchTab(.settings) } label: { Image(systemName: "gear") }
+                    .accessibilityLabel(NativeMessages.palette_settings(lang))
                 Menu {
                     Button(NativeMessages.palette_search(lang), systemImage: "magnifyingglass") { model.act("find-open", "search") }
-                    Button(NativeMessages.palette_settings(lang), systemImage: "gear") { model.switchTab(.settings) }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .accessibilityLabel(NativeMessages.common_more(lang))
             }

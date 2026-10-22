@@ -71,9 +71,9 @@ export function captureFocused({ main, timeline, title, scope, epoch, shellAttrs
   for (const row of [...rows].reverse()) { const n = copyDOM(row, budget, atEnd, stream(row)); if (n) kids.unshift(n); }
   const snapshot = { format: 1, key, ...scope, epoch, savedAt: now, atEnd, partial: rows.some(stream), clipped: budget.clipped, rows: kids.length,
     shellAttrs: shellAttrs.filter(a => a.name === 'class' || a.name === 'style' && /^--text-scale:\s*\d+;?$/.test(a.value)),
-    main: { type: 'element', tag: 'main', key: 'cached-main', attrs: [{ name: 'class', value: 'thread-view' }, { name: 'aria-busy', value: 'true' }], kids: [
+    main: { type: 'element', tag: 'main', key: 'thread', attrs: [{ name: 'class', value: 'thread-view' }, { name: 'aria-busy', value: 'true' }], kids: [
       { type: 'element', tag: 'header', key: '', attrs: [{ name: 'class', value: 'thread-head' }], kids: heading ? [heading] : [] },
-      { type: 'element', tag: 'div', key: 'cached-timeline', attrs: [{ name: 'class', value: 'timeline' }, { name: 'id', value: 'timeline' }], kids }] } };
+      { type: 'element', tag: 'div', key: 'timeline', attrs: [{ name: 'class', value: 'timeline' }, { name: 'id', value: 'timeline' }], kids }] } };
   return encoder.encode(JSON.stringify(snapshot)).length <= VIEW_LIMIT ? snapshot : null;
 }
 export function validFocused(record, scope) {
@@ -96,7 +96,7 @@ export function validFocused(record, scope) {
 }
 export function mergeFocused(shell, record) {
   if (shell.type !== 'element') return shell;
-  if (shell.tag === 'main') return record.main;
+  if (shell.tag === 'main') return { ...shell, attrs: [...shell.attrs.filter(a => a.name !== 'aria-busy'), {name:'aria-busy', value:'true'}], kids: [...record.main.kids, ...shell.kids.filter(n => n.type === 'element' && n.attrs?.some(a => a.name === 'class' && a.value.split(/\s+/).includes('composer')))] };
   return { ...shell, attrs: shell.key === 'app' && record.shellAttrs.length ? record.shellAttrs : shell.attrs, kids: shell.kids.map(n => mergeFocused(n, record)) };
 }
 export class FocusedCache {

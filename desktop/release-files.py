@@ -145,6 +145,12 @@ if __name__ == '__main__':
         extract(Path(args[0]), Path(args[1]))
     elif op == 'archive':
         archive(Path(args[0]), Path(args[1]), args[2], int(args[3]))
+    elif op == 'plist-icon':
+        import plistlib
+        p = Path(args[0])
+        data = plistlib.loads(p.read_bytes())
+        data['CFBundleIconFile'] = args[1]
+        p.write_bytes(plistlib.dumps(data))
     elif op == 'plist':
         plist(*args)
     else:

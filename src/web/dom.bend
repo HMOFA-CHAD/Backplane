@@ -57,6 +57,7 @@ type Inl is Data:
   IBold{acc: String}
   IBoldStar{acc: String}
   IEm{acc: String}
+  ILabel{acc: String}
 
 type Glyph is Data:
   KTick{}
@@ -150,8 +151,25 @@ def Md.bold(acc: String) -> Node:
 def Md.em(acc: String) -> Node:
   El{"em", "", Nil{}, [Txt{String.reverse(acc)}]}
 
-def Md.istep(st: Inl, k: Glyph, c: Char, out: List<&2, Node>) -> Inl & List<&2, Node>:
+# A label is one link token, even when it contains emphasis. Splitting it
+# at ** before Link.pieces runs left the actual [**title**](backplane://...)
+# in Bub Chat as literal fragments. Code spans still take precedence.
+def Md.label.start(open: Bool, acc: String, c: Char, out: List<&2, Node>) -> Inl & List<&2, Node>:
+  match open:
+    case True{}: (ILabel{SCon{c, acc}}, out)
+    case False{}: (IText{SCon{c, acc}}, out)
+
+def Md.label.end(close: Bool, acc: String, c: Char, out: List<&2, Node>) -> Inl & List<&2, Node>:
+  match close:
+    case True{}: (IText{SCon{c, acc}}, out)
+    case False{}: (ILabel{SCon{c, acc}}, out)
+
+def Md.istep(st: Inl, k: Glyph, +c: Char, out: List<&2, Node>) -> Inl & List<&2, Node>:
   match st k:
+    case IText{acc} KOther{}:
+      Md.label.start(Char.is_eq(c, '['), acc, c, out)
+    case ILabel{acc} _:
+      Md.label.end(Char.is_eq(c, ']'), acc, c, out)
     case IText{acc} KTick{}:
       (ICode{SNil{}}, Md.text(acc, out))
     case IText{acc} KStar{}:
@@ -188,6 +206,8 @@ def Md.istep.pair(+c: Char, r: Inl & List<&2, Node>) -> Inl & List<&2, Node>:
 def Md.ifin(r: Inl & List<&2, Node>) -> List<&2, Node>:
   (st, out) = r
   match st:
+    case ILabel{acc}:
+      List.reverse(&2, Node, Md.text(acc, out))
     case IText{acc}:
       List.reverse(&2, Node, Md.text(acc, out))
     case IStar{acc}:
@@ -208,9 +228,26 @@ def Md.igo(s: String, r: Inl & List<&2, Node>) -> List<&2, Node>:
     case SCon{+c, t}:
       Md.igo(t, Md.istep.pair(c, r))
 
+# Label emphasis uses the same inline parser; nested anchors are flattened.
+def Md.label.nodes(ns: List<&2, Node>) -> List<&2, Node>:
+  match ns:
+    case Nil{}: Nil{}
+    case Txt{s} <> t: Txt{s} <> Md.label.nodes(t)
+    case El{"a", _, _, kids} <> t:
+      List.append(&2, Node, Md.label.nodes(kids), Md.label.nodes(t))
+    case El{tag, k, as, kids} <> t:
+      El{tag, k, as, Md.label.nodes(kids)} <> Md.label.nodes(t)
+
+def Md.labels(ns: List<&2, Node>) -> List<&2, Node>:
+  match ns:
+    case Nil{}: Nil{}
+    case El{"a", k, as, Txt{label} <> Nil{}} <> t:
+      El{"a", k, as, Md.label.nodes(Md.igo(label, (IText{SNil{}}, Nil{})))} <> Md.labels(t)
+    case n <> t: n <> Md.labels(t)
+
 # inline nodes of one line or paragraph
 def Md.inline(s: String) -> List<&2, Node>:
-  Md.igo(s, (IText{SNil{}}, Nil{}))
+  Md.labels(Md.igo(s, (IText{SNil{}}, Nil{})))
 
 # Blocks
 # ------

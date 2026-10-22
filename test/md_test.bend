@@ -22,6 +22,10 @@ def shows(ns: List<&2, D.Node>) -> String:
 
 def main() -> IO(Unit):
   do IO<Unit>:
+    C.Check.str("Backplane polish exact thread link", shows(D.Md.render("[Backplane polish — fast local testing, faster CI, icons and app chrome](backplane://thread/t1792700806-414704)")), "<p><a class=ref href=backplane://thread/t1792700806-414704 data-ref=backplane://thread/t1792700806-414704 data-bare=0 data-value=backplane://thread/t1792700806-414704 onclick=ref-go>Backplane polish — fast local testing, faster CI, icons and app chrome</a></p>")
+    C.Check.str("formatted thread label stays a link", shows(D.Md.render("[**Backplane polish**](backplane://thread/t1792700806-414704)")), "<p><a class=ref href=backplane://thread/t1792700806-414704 data-ref=backplane://thread/t1792700806-414704 data-bare=0 data-value=backplane://thread/t1792700806-414704 onclick=ref-go><strong>Backplane polish</strong></a></p>")
+    C.Check.str("link inside code stays literal", shows(D.Md.render("`[title](backplane://thread/t1)`")), "<p><code>[title](backplane://thread/t1)</code></p>")
+    C.Check.str("unsafe scheme stays literal", shows(D.Md.render("[unsafe](javascript:alert(1))")), "<p>[unsafe](javascript:alert(1))</p>")
     C.Check.str("para", shows(D.Md.render("hello **bold** and `code`")), "<p>hello <strong>bold</strong> and <code>code</code></p>")
     C.Check.str("fence", shows(D.Md.render("a\n```js\nx = 1\n```\nb")), "<p>a</p><div class=codeblock><button class=copy title=Copy data-value=x = 1 onclick=copy>Copy</button><pre><code>x = 1</code></pre></div><p>b</p>")
     C.Check.str("list", shows(D.Md.render("# T\n- one\n- two")), "<h3>T</h3><ul><li>one</li><li>two</li></ul>")

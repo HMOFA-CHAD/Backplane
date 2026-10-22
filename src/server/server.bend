@@ -1,4 +1,5 @@
 import Base
+import ./mailcontext.bend as MCTX
 import ./telemetry.bend as TI
 import ./telemetry-ui.bend as TUI
 import ../core/telemetry.bend as TLM
@@ -156,6 +157,7 @@ type Wire is Data:
 type Msg is Data:
   Desktop{client: U32, kind: String, text: String, out: Chan(String), epoch: String, lease: String}
   MailRouted{body: MB.Body}
+  MailFailed{body: MB.Body, reason: String}
   RunReady{thread: String, head: String, bodies: List<&2, MB.Body>}
   # n: how many probes since the lock was asked for (the guard is tried
   # each 100 ms; who holds it outside is asked every LockJob.every())
@@ -3445,7 +3447,7 @@ def Hub.prompt.base(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, fs: 
   String.join([Cfg.prompt(cfg),
     Hub.prompt.kicad(Cfg.rt(cfg), Bool.not(String.eq(M.Setting.get(st, "kicad.ipc", "on"), "off"))),
     Hub.prompt.files(cwd, fs),
-    Q.Prompt.orchestration(M.Task.may_delegate(B.Task.depth(st, thread)), Cfg.mtext(cfg)), Q.Prompt.background(), OR.Order.prompt.project.k(OR.Order.enabled(M.Setting.get(st, "order.enabled", "off")))], "\n\n") ++ Bool.pick(String, String.is_empty(keys), "", "\n\n" ++ keys) ++ Hub.prompt.machines(cfg) ++ BH.Bots.prompt.k(RUN.Run.bot(st, thread), st, Cfg.home(cfg)) ++ Hub.prompt.buy(st, thread)
+    Q.Prompt.orchestration(M.Task.may_delegate(B.Task.depth(st, thread)), Cfg.mtext(cfg)), Q.Prompt.background(), OR.Order.prompt.project.k(OR.Order.enabled(M.Setting.get(st, "order.enabled", "off")))], "\n\n") ++ Bool.pick(String, String.is_empty(keys), "", "\n\n" ++ keys) ++ Hub.prompt.machines(cfg) ++ BH.Bots.prompt.for(st, thread, Cfg.home(cfg)) ++ Hub.prompt.buy(st, thread)
 
 def Hub.prompt(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, fs: K.Files, +keys: String) -> String:
   Q.Prompt.lang.add(Hub.prompt.base(cfg, st, thread, cwd, fs, keys), M.Setting.get(st, "agent.lang", "off"))
@@ -9017,22 +9019,33 @@ def MailJob.routed(h: Hub, +body: MB.Body) -> IO(Hub):
 def MailJob.route(h: Hub, cs: List<&2, M.Change>, fresh: List<&2, String>, from: Nat, body: MB.Body) -> IO(Hub):
   IO.bind(Hub, Hub, Far.push(h, cs, fresh, from), h2 => MailJob.routed(h2, body))
 
+def Hub.write_fail.note(+err: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"t", J.Str{"update"}}, J.KV{"error", J.Str{"log write failed: " ++ err}}]))
+
+def MailJob.delivery.failed(h: Hub, +body: MB.Body, +reason: String) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        MailJob.failed(reason)
+        Self.post(inbox, MailFailed{body, reason})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
 def MailJob.append.committed(r: Hub & Wrote, +cs: List<&2, M.Change>, +from: Nat, +body: MB.Body) -> IO(Hub):
   (h, w) = r
   match w:
     case Wrote{+fresh, True{}, _}:
       IO.bind(Hub, Hub, Hub.announce((h, fresh)), h2 => MailJob.route(h2, cs, fresh, from, body))
-    case Wrote{_, False{}, err}:
+    case Wrote{_, False{}, +err}:
       do IO<Hub>:
         PS.Log.error("mail", "header commit failed: " ++ err)
         PS.Perf.add("hub.write_fail", 1)
-        return h
+        Hub.note(h, Hub.write_fail.note(err))
 
 def MailJob.append.result(r: MST.StoreResult<Bool>, +changes: List<&2, M.Change>, +from: Nat, +body: MB.Body, h: Hub) -> IO(Hub):
   match r:
     case MST.Stored{_}: IO.bind(Hub & Wrote, Hub, Hub.commit.w(changes, h), got => MailJob.append.committed(got, changes, from, body))
-    case MST.Missing{path}: MailJob.append.failed(h, "append missing: " ++ path)
-    case MST.StoreError{path, reason}: MailJob.append.failed(h, path ++ ": " ++ reason)
+    case MST.Missing{path}: MailJob.delivery.failed(h, body, "append missing: " ++ path)
+    case MST.StoreError{path, reason}: MailJob.delivery.failed(h, body, path ++ ": " ++ reason)
 
 def MailJob.append.fresh(seen: Bool, +body: MB.Body, home: String, changes: List<&2, M.Change>, from: Nat, h: Hub) -> IO(Hub):
   match seen:
@@ -9152,7 +9165,7 @@ def MailJob.read.text(out: B.Out) -> String:
 def RunJob.start(r: MST.StoreResult<List<&2, MB.Body>>, +inbox: Chan(Msg), +s: M.State, +now: Nat, +th: String, +head: String) -> IO(Unit):
   match r:
     case MST.Stored{bs}: Self.post(inbox, RunReady{th, head, bs})
-    case MST.Missing{_}: Self.post(inbox, RunReady{th, head, Nil{}})
+    case MST.Missing{path}: Self.post(inbox, Commit{[M.ActivityLogged{th, B.Hub.id("run-read", now, M.State.seq(s)), "error", "mail", "triggering mail body unavailable: " ++ path, now}, M.TurnChanged{th, M.Failed{}, now}, M.ThreadSettled{th, False{}, now}]})
     case MST.StoreError{+path, +err}: Self.post(inbox, Commit{[M.ActivityLogged{th, B.Hub.id("run-read", now, M.State.seq(s)), "error", "mail", path ++ ": " ++ err, now}, M.TurnChanged{th, M.Failed{}, now}, M.ThreadSettled{th, False{}, now}]})
 
 def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
@@ -9663,9 +9676,6 @@ def Hub.announce.far(r: Hub & List<&2, String>, cs: List<&2, M.Change>, +from: N
   (h, +fresh) = r
   IO.bind(Hub, Hub, Hub.announce((h, fresh)), h2 => Far.push(h2, cs, fresh, from))
 
-def Hub.write_fail.note(+err: String) -> String:
-  J.Json.show(J.Json.obj([J.KV{"t", J.Str{"update"}}, J.KV{"error", J.Str{"log write failed: " ++ err}}]))
-
 # a step touched the uberbot's log, or promoted a bot
 def Uber.touched.op(+n: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_eq(n, 1n), 1n, 2n)
@@ -9832,9 +9842,9 @@ def Hub.step.fallback.done(held: List<Hub>, states: List<&2, M.State>, step: B.S
     case h <> hs st <> ss: Hub.step.wakes(step, st, h)
     case _ _: IO.die(Hub & Bool, 1, "missing fallback step context")
 
-def Hub.step.fallback.fold(states: List<&2, M.State>, caps: J.Json, now: Nat, step: B.Step, held: List<Hub>) -> IO(Hub & Bool):
+def Hub.step.fallback.fold(states: List<&2, M.State>, caps: J.Json, +now: Nat, step: B.Step, held: List<Hub>) -> IO(Hub & Bool):
   match states:
-    case +st <> rest: Hub.step.fallback.done(held, [st], B.Fallback.validate(st, caps, now, step))
+    case +st <> rest: Hub.step.fallback.done(held, [st], B.Run.fallback(st, now, B.Fallback.validate(st, caps, now, step)))
     case Nil{}: IO.die(Hub & Bool, 1, "missing fallback state")
 
 def Hub.step.fallback.models(h: Hub) -> String & List<Hub>:
@@ -14350,8 +14360,27 @@ def Hub.mcp.p(+o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(St
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.mcp.f(FM.Fm.plan.o(o, st, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg))), thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, body, reply, now)
 
+def MailContext.call(+store: String, +ls: List<&2, String>, +st: M.State, +thread: String, +o: J.Json, +reply: Chan(String)) -> IO(Unit):
+  do IO<Unit>:
+    +owner : String = MCTX.Context.owner(st, thread)
+    +a : J.Json = J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments")
+    +r : J.Json <- MCTX.Context.read(Bool.and(Bool.not(String.is_empty(owner)), MCTX.Context.args(a)), store, owner, a, ls)
+    sent : Result<&1, &1, String, Unit> <- Chan.send(String, reply, MC.Mcp.result(J.Json.get_obj(o, "id"), MC.Mcp.content(Bool.not(Maybe.is_some(&2, J.Json, J.Json.get(r, "error"))), r)))
+    return Unit{}
+
+def Hub.mcp.context(is_context: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match is_context h:
+    case True{} Hub{+st, f, +ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, MailContext.call(Cfg.thin.store(cfg), ls, st, thread, o, reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case False{} _: Hub.mcp.p(o, h, thread, body, reply, now)
+
+def Hub.mcp.parsed(+o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  Hub.mcp.context(Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "mail_context")), h, thread, o, body, reply, now)
+
 def Hub.mcp(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
-  Hub.mcp.p(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), h, thread, body, reply, now)
+  Hub.mcp.parsed(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), h, thread, body, reply, now)
 
 def Msg.kind(m: Msg) -> String:
   match m:
@@ -14457,6 +14486,7 @@ def Msg.kind(m: Msg) -> String:
     case Reexec{_, _}:
       "reexec"
     case MailRouted{_}: "mail-route"
+    case MailFailed{_, _}: "mail-failed"
     case RunReady{_, _, _}: "run-ready"
     case Commit{_}:
       "commit"
@@ -15017,6 +15047,10 @@ def Hub.lock.http.valid(valid: Bool, h: Hub, +op: String, +a: J.Json, +reply: Ch
 def Hub.lock.http(h: Hub, +op: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   +a = Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})
   Hub.lock.http.valid(Bool.and(LCK.Lock.name.valid(J.Json.get_str(a, "name", "")), Bool.and(String.starts_with(J.Json.get_str(a, "holder", ""), "pid:"), M.Launch.has(["acquire", "renew", "release", "cancel", "status"], op))), h, op, a, reply, now)
+
+def Hub.mail.failed(h: Hub, +body: MB.Body, +reason: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}: Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Mail.failure(st, now, body, reason))
 
 def Hub.mail.routed(h: Hub, body: MB.Body, +now: Nat) -> IO(Hub):
   match h:
@@ -15729,6 +15763,7 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case LinkFound{lk}:
       Hub.link(h, lk)
     case MailRouted{body}: Hub.mail.routed(h, body, now)
+    case MailFailed{body, reason}: Hub.mail.failed(h, body, reason, now)
     case RunReady{thread, head, bs}: Hub.run.ready(h, thread, head, bs, now)
     case Commit{cs}:
       Hub.step(h, B.Step{cs, Nil{}})

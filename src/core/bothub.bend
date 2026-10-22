@@ -1,4 +1,5 @@
 import Base
+import ./mailtriage.bend as TRI
 import ./i18n.bend as I18N
 import ./mailrun.bend as RUN
 import ./cef.bend as CF
@@ -256,7 +257,7 @@ def Bots.wake.room.on(on: Bool, +s: M.State, +now: Nat, +from: String, +bot: BT.
 
 # Room member wakes preserve delivery/provenance, but the room owns filing.
 def Bots.wake.room(+s: M.State, +now: Nat, +from: String, +bot: BT.Bot, +msg: String, +text: String, +hop: Nat) -> B.Step:
-  Bots.wake.room.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), s, now, from, bot, msg, text, hop)
+  Bots.wake.room.on(Bool.or(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), TRI.Triage.owner(s, BT.Bot.id(bot))), s, now, from, bot, msg, text, hop)
 
 # wake a bot with a message at a conversation depth
 def Bots.wake(+s: M.State, +now: Nat, +from: String, +bot: BT.Bot, +msg: String, +text: String, +hop: Nat) -> B.Step:
@@ -269,7 +270,7 @@ def Bots.wake.origin.on(+on: Bool, +s: M.State, +now: Nat, +from: String, +bot: 
       B.Step.before([M.BotWoke{BT.Bot.id(bot), hop, now}], Nil{}, B.Mail.funnel(Bots.inbox.raw(s, now, from, BT.Bot.thread(bot), msg, text), s, now, o, B.Mail.addr(s, BT.Bot.thread(bot)), text, Bots.msg.id(from, msg)))
 
 def Bots.wake.origin(+s: M.State, +now: Nat, +from: String, +bot: BT.Bot, +msg: String, +text: String, +hop: Nat, +o: ML.Origin) -> B.Step:
-  Bots.wake.origin.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), s, now, from, bot, msg, text, hop, o)
+  Bots.wake.origin.on(Bool.or(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), TRI.Triage.owner(s, BT.Bot.id(bot))), s, now, from, bot, msg, text, hop, o)
 
 # a post's step wakes bots only while its hop is within the bound; a held
 # one (BT.Hop.held) wakes no one (law bot_held_wakes_none)
@@ -2612,8 +2613,18 @@ def Bots.call.bot(m: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +dir: J.Json, +n
       MR.fail("only bots have this tool")
 
 # one tools/call of a bot tool from the agent of `thread`
+def Bots.call.notice(r: Maybe<&2, ML.Run>, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> MC.Res:
+  match r:
+    case Some{+r}: MR.step(MR.said("escalated privately to the coordinator; no direct person alert"), B.Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), "bot", J.Json.get_str(a, "text", "")))
+    case None{}: MR.step(MR.said("queued for coordinator triage; no direct person alert"), B.Operational.mail(s, now, ML.Origin{B.Mail.addr(s, thread), "bot", ""}, TRI.Triage.thread(s), J.Json.get_str(a, "reason", "") ++ ": " ++ J.Json.get_str(a, "text", ""), B.Hub.id("bot-notice", now, B.Hub.seq(s)), "act", Nil{}))
+
+def Bots.call.scoped(relay: Bool, +s: M.State, +now: Nat, +dir: J.Json, +thread: String, +p: J.Json) -> MC.Res:
+  match relay:
+    case True{}: Bots.call.notice(RUN.Run.of(s, thread), s, now, thread, J.Json.get_obj(p, "arguments"))
+    case False{}: Bots.call.bot(RUN.Run.bot(s, thread), s, now, dir, J.Json.get_str(p, "name", ""), J.Json.get_obj(p, "arguments"))
+
 def Bots.call(+s: M.State, +now: Nat, +dir: J.Json, +thread: String, +id: J.Json, +p: J.Json) -> MC.McpOut:
-  MC.Mcp.reply(id, Bots.call.bot(RUN.Run.bot(s, thread), s, now, dir, J.Json.get_str(p, "name", ""), J.Json.get_obj(p, "arguments")))
+  MC.Mcp.reply(id, Bots.call.scoped(Bool.and(TRI.Triage.managed(s, thread), String.eq(J.Json.get_str(p, "name", ""), "notify_person")), s, now, dir, thread, p))
 
 # tools/list for a bot's agent: Backplane's tools and the bots' own
 def Bots.list(+id: J.Json, +extra: List<&2, J.Json>) -> String:
@@ -2750,7 +2761,7 @@ def Bots.mcp(+s: M.State, +now: Nat, +thread: String, +models: J.Json, +version:
 def Bots.prompt.uber(yes: Bool) -> String:
   Bool.pick(String, yes, "\n# You are the uberbot\n\nThe person made you their main interface across all their projects, machines and bots: they come to you first. " ++
     "machine_list shows their machines; thread_list, thread_launch and thread_send reach threads on any of them; bot_send reaches the bots here and name@machine; plane_read lists what waits on them and what runs. " ++
-    "Keep track of what runs where and what waits on them, and answer for it.\n", "")
+    "Keep track of what runs where and what waits on them, and answer for it. Worker reports are private mailroom input. Only triaged escalations wake you. Write a fresh, contextual status in THIS original conversation with actionable thread/project/bot/room links; never paste raw reports or source messages here. Resolve coordination yourself within existing authority; retain actual asks and approvals at their source. Surface meaningful completions, blockers and decisions once; consult told_check and record the topic with told_mark after telling the person. Routine FYI and unchanged holds stay quiet. Do not create wake subscriptions for launched-thread reports: those already use the single mailroom pipeline.\n", "")
 
 def Bots.prompt.k(m: Maybe<&2, BT.Bot>, +s: M.State, +home: String) -> String:
   match m:
@@ -2787,8 +2798,25 @@ def Bots.prompt.k(m: Maybe<&2, BT.Bot>, +s: M.State, +home: String) -> String:
       ""
 
 # the bot part of a thread's system prompt ("" for a thread that is not a bot)
+# The run borrows its owner's memory identity and tools, never the
+# owner's conversational role. A persona saying "be the primary interface"
+# must not override the private triage charter in the system prompt.
+def Bots.prompt.assessments(owner: Bool, +s: M.State) -> String:
+  match owner:
+    case False{}: ""
+    case True{}: "\n<recent_private_triage_assessments>\nThese are durable queued assessments, not proof of work completion, authorization, or that the person was told. Consult told_check and source history before repeating an update. They remain available even if your earlier turn failed.\n" ++ TRI.Triage.audit(TRI.Triage.settings(s), 8n, s, UB.Uber.bot(s)) ++ "</recent_private_triage_assessments>\n"
+
+def Bots.prompt.scoped(run: Bool, +s: M.State, +thread: String, +home: String) -> String:
+  match run:
+    case False{}: Bots.prompt.k(RUN.Run.bot(s, thread), s, home) ++ Bots.prompt.assessments(String.eq(thread, TRI.Triage.thread(s)), s)
+    case True{}:
+      "\n# Private coordinator mailroom\n\nYou are a private triage agent acting for the owning coordinator, not the person's conversational interface and not a separate owner. Your bot identity, durable memory, room memberships and project access belong to that coordinator. Its original conversation is " ++ RMAIL.Ref.uri(RMAIL.Ref.thread(TRI.Triage.thread(s))) ++ ". Use mail_context for its full stored history and memory_recall/list for its durable memory. Assess reports with that context and the charter. Routine FYI and unchanged holds receive a durable mail_dispose receipt. Meaningful completions, decisions, blockers, real asks/approvals and unknown outcomes use escalate with the exact input ID and a stable exact-event/version key. Even person escalations go privately through the coordinator. It writes its own contextual user update in the original conversation; never paste raw worker output or notify the person yourself. Do not claim authorization, answer approvals, resume holds or mark a private assessment as already told to the person. Coordinate in existing threads/rooms within authority, preserving provenance and source links. End only after every pending input is disposed or escalated; an unsuccessful final response is not a receipt.\n"
+
+def Bots.prompt.for(+s: M.State, +thread: String, +home: String) -> String:
+  Bots.prompt.scoped(TRI.Triage.is(s, thread), s, thread, home)
+
 def Bots.prompt(+s: M.State, +thread: String, +home: String) -> String:
-  LP.Prompt.lang.add(Bots.prompt.k(RUN.Run.bot(s, thread), s, home), M.Setting.get(s, "agent.lang", "off"))
+  LP.Prompt.lang.add(Bots.prompt.for(s, thread, home), M.Setting.get(s, "agent.lang", "off"))
 
 def Bots.turn.b(+block: String, +text: String) -> String:
   Bool.pick(String, String.is_empty(block), text, block ++ "\n\n" ++ text)

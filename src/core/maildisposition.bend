@@ -3,6 +3,20 @@ import ./model.bend as M
 import ./mail.bend as ML
 import ./mailcontinuity.bend as MC
 import ./json.bend as J
+import ./mailtriage.bend as TRI
+
+def Runs.on(+s: M.State, +bot: String) -> Bool:
+  Bool.or(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), TRI.Triage.owner(s, bot))
+
+def Runs.keep(on: Bool, r: ML.Run) -> Maybe<&2, ML.Run>:
+  match on:
+    case True{}: Some{r}
+    case False{}: None{}
+
+def Runs.gate(+s: M.State, r: Maybe<&2, ML.Run>) -> Maybe<&2, ML.Run>:
+  match r:
+    case Some{+r}: Runs.keep(Runs.on(s, ML.Run.bot(r)), r)
+    case None{}: None{}
 
 # A disposition settles ONE received notice, never the underlying work,
 # conversation status, permission, provider, or notification policy.
@@ -12,11 +26,16 @@ def Disposition.key(+thread: String, +input: String) -> String:
 def Disposition.pending(+thread: String, +input: String) -> String:
   "run.disposition.pending." ++ J.Json.show(J.Json.arr([J.Str{thread}, J.Str{input}]))
 
+def Disposition.current.k(triage: Bool, +s: M.State, +r: ML.Run) -> String:
+  match triage:
+    case True{}: TRI.Triage.current(s, r)
+    case False{}: MC.Continuity.latest(ML.Box.headers(M.State.mail(s), ML.Run.conv(r)), ML.Run.bot(r), ML.Run.mail(r))
+
 def Disposition.current(+s: M.State, +r: ML.Run) -> String:
-  MC.Continuity.latest(ML.Box.headers(M.State.mail(s), ML.Run.conv(r)), ML.Run.bot(r), ML.Run.mail(r))
+  Disposition.current.k(TRI.Triage.owner(s, ML.Run.bot(r)), s, r)
 
 def Disposition.handled(+s: M.State, +r: ML.Run) -> Bool:
-  Bool.not(String.is_empty(M.Setting.get(s, Disposition.key(ML.Run.thread(r), Disposition.current(s, r)), "")))
+  Bool.or(Bool.and(TRI.Triage.owner(s, ML.Run.bot(r)), String.is_empty(Disposition.current(s, r))), Bool.not(String.is_empty(M.Setting.get(s, Disposition.key(ML.Run.thread(r), Disposition.current(s, r)), ""))))
 
 def Disposition.running(t: M.TurnState) -> Bool:
   match t:
@@ -24,7 +43,7 @@ def Disposition.running(t: M.TurnState) -> Bool:
     case _: False{}
 
 def Disposition.live(+s: M.State, +r: ML.Run) -> Bool:
-  Bool.and(String.eq(M.Setting.get(s, "mail.on", "off"), "on"),
+  Bool.and(Runs.on(s, ML.Run.bot(r)),
     Bool.and(ML.Run.live(r), Disposition.running(M.Thread.turn(M.State.thread.get(s, ML.Run.thread(r))))))
 
 def Disposition.matches(live: Bool, +input: String, +current: String) -> Bool:

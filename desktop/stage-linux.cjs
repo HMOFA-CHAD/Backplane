@@ -9,19 +9,22 @@ assert(version && /^[\w.+-]+$/.test(version), 'Provide the exact audited service
 assert(!fs.existsSync(output), 'Stage output must be new');
 assert.equal(path.basename(service), 'backplane-serve');
 assert(fs.statSync(service).isFile());
-const electronDist = path.join(__dirname, 'node_modules/electron/dist');
+const electronDist = process.env.BACKPLANE_ELECTRON_DIST || path.join(__dirname, 'node_modules/electron/dist');
 const electronVersion = require('./node_modules/electron/package.json').version;
 assert.equal(electronVersion, '44.9.2');
 fs.mkdirSync(output, {recursive:true});
-fs.cpSync(electronDist, path.join(output,'runtime'), {recursive:true});
+fs.cpSync(electronDist, path.join(output,'runtime'), {recursive:true,verbatimSymlinks:true,filter:source=>!['resources/app','resources/backplane-service','resources/DESKTOP-BUILD.json'].some(p=>{const rel=path.relative(electronDist,source);return rel===p||rel.startsWith(p+path.sep);})});
 // Electron's packaged-state check uses the executable basename.
-fs.renameSync(path.join(output,'runtime/electron'),path.join(output,'runtime/backplane-desktop'));
+if(fs.existsSync(path.join(output,'runtime/electron'))) fs.renameSync(path.join(output,'runtime/electron'),path.join(output,'runtime/backplane-desktop'));
+assert(fs.existsSync(path.join(output,'runtime/backplane-desktop')));
+assert.equal(fs.readFileSync(path.join(electronDist,'version'),'utf8').trim(),electronVersion);
 const resourceRoot=path.join(output,'runtime/resources/backplane-service');
 const appRoot=path.join(output,'runtime/resources/app');
+fs.rmSync(resourceRoot,{recursive:true,force:true});fs.rmSync(appRoot,{recursive:true,force:true});
+fs.rmSync(path.join(output,'runtime/resources/DESKTOP-BUILD.json'),{force:true});
 fs.mkdirSync(resourceRoot,{recursive:true});fs.mkdirSync(appRoot,{recursive:true});
-const appFiles=['package.json','main.cjs','preload.cjs','service.cjs','startup.html','startup.css','startup.js'];
+const appFiles=require('./prepare-components.cjs').appFiles(__dirname);
 const directBrowser=process.env.BACKPLANE_DESKTOP_BROWSER==='1';
-if(directBrowser)appFiles.push('browser-controller.cjs','browser-actions.cjs','browser-dom.cjs','browser-channel.cjs','browser-envelope.cjs','browser-wire.cjs','browser-leases.cjs','browser-documents.cjs','browser-dispatch.cjs','browser-guest.cjs','browser-recording-preload.cjs','browser-surface.cjs','browser-shield.html');
 for(const file of appFiles) fs.copyFileSync(path.join(__dirname,file),path.join(appRoot,file));
 if(directBrowser){
   const wsRoot=path.dirname(require.resolve('ws/package.json'));assert.equal(require(path.join(wsRoot,'package.json')).version,'8.22.0');
@@ -57,7 +60,7 @@ if(process.env.BACKPLANE_DESKTOP_RESIDENT==='1'){
 }
 fs.writeFileSync(path.join(output,'backplane-electron'),'#!/bin/sh\nset -eu\n: "${BACKPLANE_HOME:?Set the explicit absolute Backplane home selected for this stage}"\nBACKPLANE_STAGE_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$BACKPLANE_STAGE_ROOT/runtime/backplane-desktop" "$@"\n',{mode:0o755});
 const hashes={};
-function inventory(dir){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())inventory(file);else if(entry.isSymbolicLink())throw Error('Stage symlinks are not supported');else{assert(!/\.(?:ttf|otf|woff2?)$/i.test(file),'No font files in stage');hashes[path.relative(output,file)]=crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');}}}
+function inventory(dir){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())inventory(file);else if(entry.isSymbolicLink()){assert.equal(path.relative(output,file),'runtime/chrome-sandbox','Only the existing OS sandbox helper may be shared');const st=fs.statSync(file);assert(st.isFile()&&st.uid===0&&st.gid===0&&(st.mode&0o7777)===0o4755,'Existing OS sandbox helper must be root:root mode 4755');hashes[path.relative(output,file)]={symlink:fs.readlinkSync(file),sha256:crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')};}else{assert(!/\.(?:ttf|otf|woff2?)$/i.test(file),'No font files in stage');hashes[path.relative(output,file)]=crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');}}}
 inventory(output);
 fs.writeFileSync(path.join(output,'MANIFEST.json'),JSON.stringify({build,files:hashes},null,2)+'\n');
 console.log(JSON.stringify({stage:output,files:Object.keys(hashes).length,webAssets:seen.size,build}));

@@ -24,6 +24,7 @@ import { ThinMailDraft, mailReplyField } from "./mail-drafts.js";
 import { ThinViews, viewCapability } from "./thin.js";
 import * as Wire from "./wire.js";
 import { openDraw } from "./draw.js";
+import { ViewTransition, loadingShell } from "./view-transition.js";
 import { T, is, learnJson, learnDom } from "./wire.js";
 
 // the constructors' tags as this bundle names them (wire.js)
@@ -51,6 +52,10 @@ function* each(list) {
 // ---------
 
 const EVENTS = ["click", "input", "contextmenu"];
+window.backplaneDesktop?.onFocusAddress?.(() => {
+  const address = document.querySelector('[data-bfield^="brurl:"]');
+  if (address) { address.focus();address.select(); }
+});
 
 // icons (src/web/icon.bend) are inline SVG, which needs its namespace
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -293,6 +298,8 @@ const thinContinuations = new ThinContinuations();
 let frontend = null, frontendNode = null, wantFrontend = true, fallbackIntent = null;
 let viewMode = "discovering", remoteReady = false, remoteEpoch = "", thinSession = null;
 let pairingAccepted = false;
+const transitionViews = new ViewTransition();
+let transitionNode = null, transitionShell = null, transitionTitle = "", transitionTitleTarget = "", transitionPosition = null;
 let focusedNode = null, focusedAtEnd = true, focusedSaveTimer = 0;
 let focusedRequestedKey = null;
 let thin = null, thinSocket = null, thinAttempt = 0, thinExpiry = 0, thinGreetingTimer = 0, thinDraftTimer = 0, thinFieldTimer = 0;
@@ -301,6 +308,19 @@ function currentSession() { return thinSession || frontend?.session || fallbackI
 function focusedScope() {
   return { origin: location.origin, cid, identity: cacheIdentity(document.cookie), bundle: import.meta.url,
     language: App.lang(ui), selected: currentSession().sel };
+}
+function transitionScope(target = presentationTarget(currentSession())) {
+  return { origin: location.origin, identity: cacheIdentity(document.cookie), language: App.lang(ui),
+    epoch: thin?.epoch || remoteEpoch, target, selected:currentSession().sel, settings:currentSession().open?.settings===true, route: currentSession().route || null };
+}
+function restoreTransition(target) {
+  const shown = transitionViews.get(transitionScope(target));
+  transitionPosition = transitionViews.position(transitionScope(target)) || {atEnd:true};
+  const title = transitionTitleTarget === target.kind + ":" + target.id ? transitionTitle : target.id;
+  const waiting = Wire.plain(App.presentation_view(App.presentation_wait(ui)));
+  transitionNode = shown ? App.presentation_node(presentationJson(shown)) : transitionShell
+    ? App.presentation_node(presentationJson(loadingShell(transitionShell, waiting, title || target.id))) : null;
+  return !!shown;
 }
 const focusedView = new FocusedView({
   cache: focusedStore, scope: focusedScope,
@@ -319,7 +339,7 @@ function checkpointFocused() {
   const main = document.querySelector("main.thread-view"), timeline = main?.querySelector("#timeline");
   const title = main?.querySelector(".thread-head .title");
   const app = document.querySelector(".app");
-  if (!main || !timeline || !title || !app) return;
+  if (!main || !timeline || !title || !app || main.dataset.thread !== focusedScope().selected) return;
   const record = captureFocused({ main, timeline, title, scope: focusedScope(), epoch: remoteReady ? remoteEpoch : App.origin(ui),
     shellAttrs: [{ name: "class", value: app.className }, { name: "style", value: app.getAttribute("style") || "" }] });
   if (record) void focusedView.save(record).catch(() => trace("focused-cache", { state: "unavailable", reason: "write error" }));
@@ -343,7 +363,7 @@ async function refreshFocusedIdentity() {
     showViewStatus("Pairing is required to reconnect.");later();return;
   }
   if (before !== cacheIdentity(document.cookie) || result.state === "denied" || result.state === "invalid") {
-    focusedView.invalidate();
+    transitionViews.clear();transitionNode = null;transitionShell = null;focusedView.invalidate();
     if (!canonicalBoot && !remoteReady) void restoreFocused();
     else saveFocusedSoon();
   }
@@ -480,7 +500,7 @@ function render() {
   const tl = document.getElementById("timeline");
   const t0 = PERF ? pnow() : 0;
   const page = frontendNode ? thinContinuations.project(App.presentation_overlay(frontendNode, presentationJson(currentSession())), expand)
-    : focusedNode || App.view(canonicalBoot ? ui : App.presentation_wait(ui));
+    : transitionNode ? App.presentation_overlay(transitionNode, presentationJson(currentSession())) : focusedNode || App.view(canonicalBoot ? ui : App.presentation_wait(ui));
   const t1 = PERF ? pnow() : 0;
   patch(root, { $: T.El, tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: page, tail: { $: "Nil" } } });
   if (PERF) PERF.render.push([t1 - t0, pnow() - t1]);
@@ -490,7 +510,7 @@ function render() {
   }
   document.documentElement.dataset.backplaneMode = viewMode;
   document.documentElement.dataset.backplaneRemoteReady = String(remoteReady);
-  document.documentElement.dataset.backplaneCached = String(!!focusedNode && !frontendNode);
+  document.documentElement.dataset.backplaneCached = String(!!(focusedNode || transitionNode) && !frontendNode);
   trace("dom", { seq: App.seq(ui) });
   if (PERF?.trace) requestAnimationFrame(() => trace("paint", { seq: App.seq(ui) }));
   mailRestore(mail);
@@ -503,6 +523,17 @@ function render() {
     held = null;
     holdSay("");
   }
+  if (transitionPosition && tl2) {
+    const position = transitionPosition;transitionPosition = null;
+    tl2.scrollTop = position.atEnd ? tl2.scrollHeight : position.top || 0;
+    const anchor = position.anchor && tl2.querySelector(`[data-id="${CSS.escape(position.anchor)}"]`);
+    if (!position.atEnd && anchor) {
+      tl2.scrollTop += anchor.getBoundingClientRect().top - tl2.getBoundingClientRect().top - position.offset;
+      held = {id:position.anchor, off:anchor.getBoundingClientRect().top};
+    } else held = null;
+    fixedAt = tl2.scrollTop;
+  }
+  if (viewMode === "view-v1") document.querySelector("main")?.setAttribute("aria-busy", String(!remoteReady));
   holdFix(tl2);
   holdWatch(tl2);
   scroll = false;
@@ -694,6 +725,17 @@ function fabLook(target) {
 }
 
 function dispatch(action, value, timer) {
+  if (["select", "ref-go", "ref-back", "ref-fwd", "bot", "bot-tab", "remote"].includes(action)) {
+    checkpointFocused();
+    const timeline = document.getElementById("timeline");
+    if (remoteReady && timeline) {
+      const anchor = anchorOf(timeline);
+      transitionViews.savePosition(transitionScope(), {top:timeline.scrollTop, atEnd:holdEnd(timeline),
+        anchor:anchor?.id || "", offset:anchor ? anchor.off - timeline.getBoundingClientRect().top : 0});
+    }
+    transitionTitleTarget = action === "select" ? "thread:" + value : "";
+    if (action === "select") transitionTitle = document.querySelector(`[data-on-click="select"][data-value="${CSS.escape(value)}"] .title`)?.textContent || "";
+  }
   if (action === "thin-search-open") {
     if (viewMode === "view-v1" && thin?.ready) showThinSearch({ query: "", rows: [], cursor: "", hasMore: false });
     else showViewStatus("Search requires the current conversation connection.");
@@ -955,6 +997,11 @@ document.addEventListener("drop", (e) => {
 // name first: "<key>\t..."
 const forKey = (el) => (el.getAttribute("data-for") ? el.getAttribute("data-for") + "\t" : "");
 
+document.addEventListener("error", e => {
+  if (e.target.matches?.("img.attachment-preview")) {
+    e.target.classList.add("failed");e.target.parentElement.setAttribute("title", "Image preview unavailable; remove the attachment and try again.");
+  }
+}, true);
 document.addEventListener("paste", (e) => {
   const cd = e.clipboardData;
   if (!cd) return;
@@ -1421,7 +1468,7 @@ function localPresentation(action, value, session) {
     try { localStorage.setItem("backplane-selected", value); } catch {}
     frontendNode = null;
     remoteReady = false;
-    void restoreFocused();
+    if (!restoreTransition(presentationTarget(session))) void restoreFocused();
     later();
   } else if (action === "draft") {
     ui = App.restore(ui, session.sel, value);
@@ -1674,6 +1721,7 @@ async function startThin(again = false) {
         thinMailDraft.clear();thinContinuations.clear();
         if (target.kind === "thread") { ui = App.presentation_select(ui, target.id);void restoreFocused(); }
         else { focusedRequestedKey = null;focusedView.invalidate(); }
+        restoreTransition(target);
       },
       local: localPresentation,
       sessionChanged: (session, detail) => {
@@ -1703,7 +1751,9 @@ async function startThin(again = false) {
         const accepted = field === undefined ? undefined : thinMailDraft.matches(detail.mailDraftContext, detail.epoch) ? thin.fieldValue("mrreply", field) : field;
         thinMailDraft.bind(detail.mailDraftContext, detail.epoch, accepted);
         thinContinuations.bind(location.origin, detail);
-        focusedView.remote(detail.epoch);remoteEpoch = detail.epoch;frontendNode = node;
+        if (!remoteReady) transitionPosition = transitionViews.position(transitionScope(detail.target)) || {atEnd:true};
+        focusedView.remote(detail.epoch);remoteEpoch = detail.epoch;frontendNode = node;transitionNode = null;
+        transitionShell = detail.shown;transitionViews.put(transitionScope(detail.target), detail.shown);
         trace("thin-view", { entries: detail.window?.ids?.length || 0 });later();
         fabLook(detail.target);
       },

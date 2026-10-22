@@ -588,14 +588,13 @@ internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyLis
                             })
                         }
                     }
+                    IconButton(onClick = { m.selectTab(Tab.Settings) }) { Icon(Icons.Filled.Settings, NativeMessages.palette_settings(lang)) }
                     IconButton(onClick = onPair) { Icon(Icons.Filled.Link, NativeMessages.native_settings_hubs(lang)) }
                     Box {
                         IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, NativeMessages.common_more(lang)) }
                         DropdownMenu(more, { more = false }) {
                             DropdownMenuItem(text = { Text(NativeMessages.palette_search(lang)) }, leadingIcon = { Icon(Icons.Filled.Search, null) },
                                 onClick = { more = false; m.act("find-open", "search") })
-                            DropdownMenuItem(text = { Text(NativeMessages.palette_settings(lang)) }, leadingIcon = { Icon(Icons.Filled.Settings, null) },
-                                onClick = { more = false; m.selectTab(Tab.Settings) })
                         }
                     }
                 },
