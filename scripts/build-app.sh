@@ -133,7 +133,7 @@ emit_key() {
   # Native emission is source-pinned separately from the installed checker.
   # Include its patch, launcher and actual Bun executable in the cache identity.
   bun=$(command -v bun) || return
-  scripts/inputs-key.sh "emit:$src" scripts/build-app.sh scripts/cc-split.py scripts/inputs-key.sh scripts/native-compiler.py patches/bend-native-ids.patch "$bun" 2>/dev/null || true
+  scripts/inputs-key.sh "emit:$src" scripts/build-app.sh scripts/cc-split.py scripts/inputs-key.sh scripts/native-compiler.py patches/bend-native-ids.patch patches/bend-fast-emit.patch "$bun" 2>/dev/null || true
 }
 EMIT_CACHE=${BACKPLANE_EMIT_CACHE-${XDG_CACHE_HOME:-$HOME/.cache}/backplane-bend/emit}
 [ "$EMIT_CACHE" = 0 ] && EMIT_CACHE=""

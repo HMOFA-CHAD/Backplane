@@ -19,7 +19,8 @@ The native app exceeded the upstream emitter's function-ID limit: the failing
 source generated 69,676 segments against a maximum of 65,536 identifiers.
 Extra swap and splitting the emitted C cannot change that limit. Native builds
 therefore use `scripts/native-compiler.py`, which stages an isolated copy of
-the upstream compiler with `patches/bend-native-ids.patch`. It does not replace
+the upstream compiler with `patches/bend-native-ids.patch` (and the fast-emit
+patch below). It does not replace
 the installed Bend or alter the checker, proof kernel, Base or JS emitter.
 
 The patch uses four previously unused bits in the native term's tag field:
@@ -36,12 +37,30 @@ Small identifiers retain their original bit representation. Constructor and
 function table limits are checked separately; overflow still fails explicitly.
 Terms are process-local runtime values, not persisted event or wire formats.
 
+A second patch, `patches/bend-fast-emit.patch`, is applied after the ID patch.
+The upstream `compile_book` emits every def again on each of its passes until
+the book's facts settle. The patch records, per def, the facts it read absent
+and each step it took in the per-pass tables, and on a later pass replays that
+trace instead of emitting the def again when every read still holds (else the
+replay is undone and the def is emitted afresh). It changes speed only: the
+emitted C must be byte-identical to the ID patch alone. Validated before
+landing on the server root (both SHA-256
+`88017016c66ca479b4036d8d69ad81f5aff9c11b5ee7c71cc06461bf9b6e4596`) and on
+all 734 of Bend's own tests that produce C; the server's emit went from 531 s
+to 250 s on 4 cores, at about 1.1 GB more peak memory. `BEND_EMIT_LOG=1` prints
+each pass's emitted and replayed counts. `native_compiler_test.py` builds both
+compilers from the cached source and fails if a small program's C differs, so
+drift is caught in CI.
+
 The source is [Bend v2.0.36](https://github.com/bendlang/bend/tree/v2.0.36),
 licensed under Apache-2.0. The archive is pinned to SHA-256
 `cbcd6f4b75897a05065872efac9b8d43595a467118331461eb1b92429b9e1689`,
 and the unmodified emitter to
 `4e5ee824d2624eb8eb3ba408fd99671239e72759371e562f1a83d50bb614649a`.
-Patch application requires exact context. The cache receipt hashes every
+Patch application requires exact context; the patches apply in order and the
+cache directory is keyed by their combined digest (a reference tree with the ID
+patch alone, which the test builds, is cached beside it). The cache receipt
+hashes every
 retained source/effect/license file and rejects a changed or incomplete cache.
 It lives under `$XDG_CACHE_HOME/backplane-bend/compiler` (default
 `~/.cache/backplane-bend/compiler`). A cold setup downloads at most 128 MiB
@@ -54,10 +73,10 @@ python3 scripts/native-compiler.py --prepare
 Native builds require Python 3.12+, Bun and `patch`, in addition to the existing
 clang 19+ and host headers. The C emit cache includes the launcher, patch and
 actual Bun executable in its input identity. `scripts/build.sh` retains the
-upstream license, patch and compiler/Bun identities under `dist/licenses/bend`;
+upstream license, both patches and compiler/Bun identities under `dist/licenses/bend`;
 `scripts/package.sh` includes that directory in its archive.
 
-Split builds retain the same receipt, license and patch beside the emitted C
+Split builds retain the same receipt, license and patches beside the emitted C
 in `build/cc/NAME/compiler`. Transfer this directory together with `all.c`
 and the web bundle for `BACKPLANE_PREBUILT=1`. The receiving host verifies the
 pinned provenance and packages the original emitter's identity without needing
@@ -77,5 +96,6 @@ scripts/smoke.sh
 The native guard executes the actual ID allocation code at both limits,
 compiles an oracle from the actual emitted term operations, checks high IDs,
 heap/reference-count separation and the original small-ID ABI, and compiles
-and runs a complete small CPU program. The full builds and smoke tests remain
+and runs a complete small CPU program, and emits one small program with the
+fast-emit and the ID-only compiler and compares the bytes. The full builds and smoke tests remain
 required: a packing oracle alone does not validate the complete application.

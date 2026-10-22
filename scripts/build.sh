@@ -59,7 +59,7 @@ mkdir -p build
 compiler_notices() {
   python3 scripts/native-compiler.py --verify-metadata "$1/compiler"
   mkdir -p dist/licenses/bend
-  cp "$1/compiler/LICENSE" "$1/compiler/bend-native-ids.patch" \
+  cp "$1/compiler/LICENSE" "$1/compiler/bend-native-ids.patch" "$1/compiler/bend-fast-emit.patch" \
     "$1/compiler/native-compiler.json" dist/licenses/bend/
 }
 if [ "$mode" = emit ]; then
