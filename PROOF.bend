@@ -1,4 +1,7 @@
 import Base
+import ./src/core/thin.bend as THINL # S3 lazy thin index
+import ./src/server/thin-mail.bend as TMAILL # S3 lazy mail cache
+import ./src/core/storedb.bend as SDB # S1 indexed store
 import ./test/mobile_loading_proof.bend as PRESENTPROOF
 import ./src/core/mailcontinuity.bend as MCN
 import ./test/mem_score_lazy_proof.bend as MSCORE
@@ -86,6 +89,7 @@ import ./src/core/hier.bend as HI
 
 import ./src/core/boot.bend as BT
 import ./src/core/store.bend as ST
+import ./src/core/thin.bend as JTHIN # J2: JS stack
 import ./src/core/sign.bend as SG
 import ./src/core/cron.bend as CR
 import ./src/core/google.bend as GO
@@ -12610,3 +12614,85 @@ def Laws.cache_identity_empty_cookie(https): {==}
 def Laws.oprep_task_not_in_chat(): {==}
 def Laws.oprep_task_delivered_with_filing(): {==}
 def Laws.oprep_other_thread_unchanged(): {==}
+
+# --- J2: walks the JS hub makes over a whole log, in tail calls ---
+
+def Laws.store_size_go_succ(ls, n):
+  match ls:
+    case Nil{}:
+      {==}
+    case _ <> t:
+      Laws.store_size_go_succ(t, 1n+n)
+
+def Laws.store_size_is_length(ls):
+  match ls:
+    case Nil{}:
+      {==}
+    case _ <> t:
+      %Equal.sym(Nat, ST.Store.size.go(t, 1n+0n), 1n+ST.Store.size.go(t, 0n), Laws.store_size_go_succ(t, 0n)) : {_ == 1n+List.length(&2, String, t) : Nat}
+      %Laws.store_size_is_length(t) : {1n+ST.Store.size.go(t, 0n) == 1n+_ : Nat}
+      {==}
+
+def Laws.thin_words_lower_each(s, ws):
+  match s ws:
+    case SNil{} JTHIN.WordState{w, n, ts}:
+      {==}
+    case SCon{Chr{+x}, t} JTHIN.WordState{w, n, ts}:
+      Laws.thin_words_lower_each(t, JTHIN.Words.step(JTHIN.Word.char(U32.add(x, U32.mul(Bool.to_u32(Char.is_upper(Chr{x})), 32))), U32.add(x, U32.mul(Bool.to_u32(Char.is_upper(Chr{x})), 32)), w, n, ts))
+# ---- S1 indexed store ----
+def Laws.sdb_replay_append(a, b, m):
+  match a:
+    case Nil{}:
+      {==}
+    case h <> t:
+      Laws.sdb_replay_append(t, b, SDB.Mat.step(m, h))
+
+def Laws.sdb_eq_fold_small():
+  {==}
+
+def Laws.sdb_entries_mine_small():
+  {==}
+# ---- end S1 indexed store ----
+
+# ---- S3: the thin index and the mail cache on demand (fast-hub) ----
+def Laws.thin_changes_append(a, b, i):
+  match a:
+    case Nil{}:
+      {==}
+    case h <> t:
+      Laws.thin_changes_append(t, b, THINL.Index.change(i, h))
+
+def Laws.thin_lazy_of(st): {==}
+
+def Laws.thin_lazy_changes(cs, l):
+  match l:
+    case THINL.Built{i}:
+      {==}
+    case THINL.Later{st, done}:
+      Laws.thin_changes_append(done, cs, THINL.Index.of(st))
+
+def Laws.thin_lazy_warm(l):
+  match l:
+    case THINL.Built{i}:
+      {==}
+    case THINL.Later{st, done}:
+      {==}
+
+def Laws.thin_mail_replay_append(a, b, c):
+  match a:
+    case Nil{}:
+      {==}
+    case TMAILL.Pending{cs, st} <> t:
+      Laws.thin_mail_replay_append(t, b, TMAILL.Cache.committed(cs, st, c))
+
+def Laws.thin_mail_lazy_of(st): {==}
+
+def Laws.thin_mail_lazy_committed(cs, st, l):
+  match l:
+    case TMAILL.Built{c}:
+      {==}
+    case TMAILL.Later{base, done}:
+      Laws.thin_mail_replay_append(done, [TMAILL.Pending{cs, st}], TMAILL.Cache.of(base))
+
+def Laws.thin_mail_lazy_warm(st, done): {==}
+# ---- end S3 ----

@@ -28,6 +28,11 @@
 #                                  stage only the hub, the launcher, the
 #                                  matching web and LICENSE; no KiStack,
 #                                  helpers or CEF
+#   BACKPLANE_SKIP_CHECK=1           stage without type-checking (a follow
+#                                  deploy of main: CI checked it)
+#
+# The hub is built for Bun's JS runtime (scripts/build-js.sh: about 45 s to
+# emit, nothing when the server's sources are as last time).
 #
 # The dev run keeps to itself: its own home (BACKPLANE_DEV_HOME, default
 # ~/.backplane-dev, never ~/.backplane-bend), port 3788 (BACKPLANE_DEV_PORT),
@@ -46,8 +51,6 @@ set -eu
 cd "$(dirname "$0")/.."
 . scripts/bendok.sh
 export PATH="$HOME/.bend/bin:$HOME/.bun/bin:$PATH"
-# 4 clang jobs at -O3 passed 28 GB here; 2 stay near 12 GB
-export BACKPLANE_JOBS=${BACKPLANE_JOBS:-2}
 prefix=${BACKPLANE_PREFIX:-$HOME/.local/share/backplane}
 dev=build/dev
 port=${BACKPLANE_DEV_PORT:-3788}
@@ -108,7 +111,7 @@ build_browser() {
 # the hub and the launcher (no window binary: scripts/build.sh)
 build_app() {
   check src/server/main.bend
-  scripts/build-app.sh src/server/main.bend "$dev/backplane-serve.new"
+  scripts/build-js.sh src/server/main.bend "$dev/backplane-serve.new"
   mv -f "$dev/backplane-serve.new" "$dev/backplane-serve"
   cp deploy/backplane-launch.sh "$dev/backplane.new" && chmod 755 "$dev/backplane.new"
   mv -f "$dev/backplane.new" "$dev/backplane"
@@ -142,9 +145,46 @@ stamp() {
   echo "${core%.*}.$(( ${core##*.} + 1 ))-dev.$(date +%Y%m%d.%H%M)"
 }
 
+# the web client into dist/web, kept as a tarball under scripts/web-key.sh
+# (BACKPLANE_WEB_CACHE, default ~/.cache/backplane-bend/web; 0 = none;
+# three kept): a deploy that leaves the web alone unpacks the last one
+build_web_dist() {
+  wcache=${BACKPLANE_WEB_CACHE-${XDG_CACHE_HOME:-$HOME/.cache}/backplane-bend/web}
+  [ "$wcache" = 0 ] && wcache=""
+  wkey=""
+  [ -n "$wcache" ] && wkey=$(scripts/web-key.sh 2>/dev/null || true)
+  if [ -n "$wkey" ] && [ -f "$wcache/$wkey.tar" ] && mkdir -p dist/web && tar -xf "$wcache/$wkey.tar" -C dist/web; then
+    touch "$wcache/$wkey.tar"
+    say "web client reused ($wkey)"
+    return 0
+  fi
+  rm -rf dist/web
+  bend src/web/index.html -o dist/web >/dev/null
+  python3 scripts/js-unmarshal.py ../core/client.Ui dist/web/chunk-*.js
+  python3 scripts/js-native.py dist/web/chunk-*.js
+  cp src/web/sw.js dist/web/sw.js
+  for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
+  # kept only if nothing it read changed while it was built
+  if [ -n "$wkey" ] && [ "$(scripts/web-key.sh 2>/dev/null || true)" = "$wkey" ]; then
+    mkdir -p "$wcache"
+    tar -cf "$wcache/$wkey.tar.$$" -C dist/web . && mv -f "$wcache/$wkey.tar.$$" "$wcache/$wkey.tar"
+    ls -t "$wcache"/*.tar 2>/dev/null | tail -n +4 | while read -r old; do rm -f "$old"; done
+  fi
+}
+
+# the memory this build may use in GB: BACKPLANE_MEM_GB, else the cap of
+# the cgroup it runs in (bp-admit's MemoryMax), else 12
+mem_budget() {
+  cgmax=""
+  cgp=$(cut -d: -f3 /proc/self/cgroup 2>/dev/null | head -n1)
+  [ -n "$cgp" ] && [ -r "/sys/fs/cgroup$cgp/memory.max" ] && cgmax=$(cat "/sys/fs/cgroup$cgp/memory.max")
+  case $cgmax in ""|max|*[!0-9]*) cgmax="" ;; *) cgmax=$(( cgmax / 1073741824 )) ;; esac
+  echo "${BACKPLANE_MEM_GB:-${cgmax:-12}}"
+}
+
 # the app, the server, the web client and the voice helper into dist/,
-# stamped with the version (in the emitted C, BACKPLANE_VERSION_STAMP: the
-# source is never rewritten). The browser helper is
+# stamped with the version (in a copy of the emitted JS,
+# BACKPLANE_VERSION_STAMP: the source is never rewritten). The browser helper is
 # built only when tools/browser changed since the installed one
 # (build_browser); the step2glb helper is not rebuilt (scripts/build.sh
 # builds both for releases)
@@ -152,19 +192,34 @@ build_dist() {
   ver=$(stamp)
   # scripts/check.sh's full pass on exactly these inputs covers these three
   # (scripts/verified.sh); else they are checked here
-  if scripts/verified.sh has check; then
+  if [ "${BACKPLANE_SKIP_CHECK:-}" = 1 ]; then
+    # a follow deploy of main: CI checked it before the merge
+    say "not checked here (BACKPLANE_SKIP_CHECK=1)"
+  elif scripts/verified.sh has check; then
     say "checked already: check.sh passed on these exact inputs"
   else
     for f in src/web/app.bend src/server/main.bend; do check "$f"; done
   fi
   rm -rf dist && mkdir -p dist
-  bend src/web/index.html -o dist/web >/dev/null
-  python3 scripts/js-unmarshal.py ../core/client.Ui dist/web/chunk-*.js
-  python3 scripts/js-native.py dist/web/chunk-*.js
-  cp src/web/sw.js dist/web/sw.js
-  for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
-  # no window binary (scripts/build.sh): the hub and the launcher
-  BACKPLANE_VERSION_STAMP=$ver BACKPLANE_COMMIT_STAMP=$(git rev-parse HEAD) scripts/build-app.sh src/server/main.bend dist/backplane-serve
+  # no window binary (scripts/build.sh): the hub on Bun's JS runtime
+  # (scripts/build-js.sh: about 50 s and 8 GB to emit) and the launcher.
+  # The web client (about 19 s, 7 GB) is built beside it when the budget
+  # holds both (15 GB: measured 14.8 together), else after it
+  if [ "$(mem_budget)" -lt 15 ]; then
+    say "the hub, then the web (a $(mem_budget) GB budget)"
+    BACKPLANE_VERSION_STAMP=$ver BACKPLANE_COMMIT_STAMP=$(git rev-parse HEAD) scripts/build-js.sh src/server/main.bend dist/backplane-serve
+    build_web_dist
+  else
+    mkdir -p build
+    build_web_dist > build/web-dist.log 2>&1 &
+    webpid=$!
+    hubrc=0
+    BACKPLANE_VERSION_STAMP=$ver BACKPLANE_COMMIT_STAMP=$(git rev-parse HEAD) scripts/build-js.sh src/server/main.bend dist/backplane-serve || hubrc=$?
+    webrc=0
+    wait "$webpid" || webrc=$?
+    [ "$webrc" = 0 ] || { cat build/web-dist.log >&2; say "the web client did not build"; exit 1; }
+    [ "$hubrc" = 0 ] || { say "the hub did not build"; exit 1; }
+  fi
   cp deploy/backplane-launch.sh dist/backplane && chmod 755 dist/backplane
   if [ "$service_only" = 1 ]; then
     say "built $ver"
@@ -217,6 +272,8 @@ stage_cef() {
 stage() {
   rm -rf build/dev-pkg && mkdir -p build/dev-pkg
   cp -R dist/web build/dev-pkg/web
+  # the hub ships Bun's and Bend's notices (scripts/js-licenses.sh)
+  scripts/js-licenses.sh build/dev-pkg/licenses
   if [ "$service_only" = 1 ]; then
     cp dist/backplane dist/backplane-serve build/dev-pkg/
     [ -e LICENSE ] && cp LICENSE build/dev-pkg/

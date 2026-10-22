@@ -110,13 +110,30 @@ def Words.step(letter: Bool, c: U32, w: String, +n: Nat, ts: Map<&2, Bool>) -> W
     case True{}: Words.letter(Nat.is_lt(n, 64n), c, w, n, ts)
     case False{}: WordState{"", 0n, Words.put(Bool.and(Nat.is_gt(n, 0n), Nat.is_le(n, 64n)), ts, w)}
 
+def Words.code(c: Char) -> U32:
+  match c:
+    case Chr{u}: u
+
+def Words.at(+c: U32, w: String, +n: Nat, ts: Map<&2, Bool>) -> WordState:
+  Words.step(Word.char(c), c, w, n, ts)
+
+# the walk over a String already lowered whole: what Words.go does
+# (law thin_words_lower_each)
+def Words.go.whole(s: String, ws: WordState) -> Map<&2, Bool>:
+  match s ws:
+    case SNil{} WordState{w, +n, ts}: Words.put(Bool.and(Nat.is_gt(n, 0n), Nat.is_le(n, 64n)), ts, w)
+    case SCon{Chr{+c}, tail} WordState{w, n, ts}: Words.go.whole(tail, Words.step(Word.char(c), c, w, n, ts))
+
+# each character lowered as it is read: String.to_lower builds its result
+# outside its recursive call, so on the JS target a long message overflowed
+# the stack while the index was built at start-up
 def Words.go(s: String, ws: WordState) -> Map<&2, Bool>:
   match s ws:
     case SNil{} WordState{w, +n, ts}: Words.put(Bool.and(Nat.is_gt(n, 0n), Nat.is_le(n, 64n)), ts, w)
-    case SCon{Chr{+c}, tail} WordState{w, n, ts}: Words.go(tail, Words.step(Word.char(c), c, w, n, ts))
+    case SCon{h, tail} WordState{w, n, ts}: Words.go(tail, Words.at(Words.code(Char.to_lower(h)), w, n, ts))
 
 def Words.of(s: String) -> Map<&2, Bool>:
-  Words.go(String.to_lower(s), WordState{"", 0n, Map.new(&2, Bool)})
+  Words.go(s, WordState{"", 0n, Map.new(&2, Bool)})
 
 def Orders.get.k(p: Map<&2, ML.Order> & ML.Order) -> ML.Order:
   (_, o) = p
@@ -326,3 +343,45 @@ def Page.entries(ids: List<&2, String>, +i: Index, acc: List<&2, M.Entry>) -> Li
   match ids:
     case Nil{}: List.reverse(&2, M.Entry, acc)
     case id <> tail: Page.entries(tail, i, Row.preview(Index.row.k(Map.get(Row, Row.blank(), Index.rows(i), id))) <> acc)
+
+# ---- the index on demand ----
+# Building the index walks every entry's text (words, postings, blocks): a
+# minute on a big log, so the hub must not do it before it listens. Later
+# keeps the state the hub booted with and the changes committed since, in
+# order; Lazy.force builds from them the index the eager boot (Index.of)
+# followed by each commit (Index.changes) would have held (laws
+# thin_lazy_*). A store can stand behind Lazy later.
+type Lazy is Data:
+  Built{index: Index}
+  Later{st: M.State, done: List<&2, M.Change>}
+
+def Lazy.of(st: M.State) -> Lazy:
+  Later{st, Nil{}}
+
+def Lazy.changes(cs: List<&2, M.Change>, l: Lazy) -> Lazy:
+  match l:
+    case Built{i}: Built{Index.changes(cs, i)}
+    case Later{st, done}: Later{st, List.append(&2, M.Change, done, cs)}
+
+def Lazy.force(l: Lazy) -> Index:
+  match l:
+    case Built{i}: i
+    case Later{st, done}: Index.changes(done, Index.of(st))
+
+def Lazy.ready(l: Lazy) -> Bool:
+  match l:
+    case Built{_}: True{}
+    case Later{_, _}: False{}
+
+# the state a background build starts from (Lazy.warm takes its result)
+def Lazy.base(l: Lazy) -> M.State:
+  match l:
+    case Built{_}: M.State.empty()
+    case Later{st, _}: st
+
+# `i` is Index.of(Lazy.base(l)), built away from the hub: the commits it
+# missed are applied on arrival; an index already built is kept
+def Lazy.warm(i: Index, l: Lazy) -> Lazy:
+  match l:
+    case Built{b}: Built{b}
+    case Later{_, done}: Built{Index.changes(done, i)}

@@ -1,4 +1,7 @@
 import Base
+import ./src/core/thin.bend as THINL # S3 lazy thin index
+import ./src/server/thin-mail.bend as TMAILL # S3 lazy mail cache
+import ./src/core/storedb.bend as SDB # S1 indexed store
 import ./src/core/presentation.bend as PRESENTVIEW
 import ./src/core/desktop-browser.bend as DBGUI
 import ./src/server/desktop-broker.bend as DBBROKER
@@ -172,6 +175,7 @@ import ./src/mobile/bots.bend as MBT
 import ./src/core/cli.bend as CLI # one-hub
 import ./src/core/onehub.bend as OHB # one-hub
 import ./src/core/standin.bend as SIN # one-hub
+import ./src/core/thin.bend as JTHIN # J2: JS stack
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -11271,3 +11275,95 @@ law oprep_task_delivered_with_filing:
 # any other thread is told in its chat, as before
 law oprep_other_thread_unchanged:
   {H.Operational.posts(H.Queue.changes(H.Operational.demo.finish(False{})), "t0") == 1n : Nat}
+
+# --- J2: walks the JS hub makes over a whole log, in tail calls ---
+# Bend's JS target turns only tail self-calls into loops, and Bun's stack
+# holds about 67k frames: Base's List.length and String.to_lower overflowed
+# it at boot on a long log (353k lines) or a long message.
+
+# Store.size counts as List.length does
+law store_size_go_succ:
+  for +ls: List<&2, String>
+  for +n: Nat
+  {ST.Store.size.go(ls, 1n+n) == 1n+ST.Store.size.go(ls, n) : Nat}
+
+law store_size_is_length:
+  for +ls: List<&2, String>
+  {ST.Store.size(ls) == List.length(&2, String, ls) : Nat}
+
+# the index's words, lowered a character at a time, are those of the
+# message lowered whole
+law thin_words_lower_each:
+  for +s: String
+  for +ws: JTHIN.WordState
+  {JTHIN.Words.go(s, ws) == JTHIN.Words.go.whole(String.to_lower(s), ws) : Map<&2, Bool>}
+# ---- S1 indexed store (store.db, src/core/storedb.bend) ----
+# The store is made from the log one line at a time and can be made again
+# from any point: after a then b it is the store after a with b applied
+# (a rebuild and the incremental store agree; boot from applied_off is a
+# rebuild's tail).
+law sdb_replay_append:
+  for a: List<&2, SDB.LL>
+  for b: List<&2, SDB.LL>
+  for m: SDB.Mat
+  {SDB.Mat.replay(List.append(&2, SDB.LL, a, b), m) == SDB.Mat.replay(b, SDB.Mat.replay(a, m)) : SDB.Mat}
+
+# store after events == fold(events): the records written change by
+# change are every record of the folded state (test/storedb_test.bend
+# checks a log with most kinds of change)
+law sdb_eq_fold_small:
+  {SDB.Mat.recs(SDB.Mat.replay(SDB.Demo.small.log(), SDB.Mat.empty())) == SDB.Tab.dump(M.State.replay(SDB.Demo.small(), M.State.empty())) : Map<&2, String>}
+
+# a thread's entry rows are what M.State.mine files for it
+law sdb_entries_mine_small:
+  {SDB.Tab.mine(SDB.Mat.facts(SDB.Mat.replay(SDB.Demo.small.log(), SDB.Mat.empty())), "t1") == M.State.mine(M.State.replay(SDB.Demo.small(), M.State.empty()), "t1") : List<&2, M.Entry>}
+# ---- end S1 indexed store ----
+
+# ---- S3: the thin index and the mail cache on demand (fast-hub) ----
+# The hub builds both after it listens (THIN.Lazy, TMAIL.Lazy): what it
+# answers once they are built is what the eager boot would have held.
+
+# the index fed two runs of changes is the index fed them one after the other
+law thin_changes_append:
+  for a: List<&2, M.Change>
+  for +b: List<&2, M.Change>
+  for +i: THINL.Index
+  {THINL.Index.changes(List.append(&2, M.Change, a, b), i) == THINL.Index.changes(b, THINL.Index.changes(a, i)) : THINL.Index}
+
+# an index not built yet is the boot's index
+law thin_lazy_of:
+  for st: M.State
+  {THINL.Lazy.force(THINL.Lazy.of(st)) == THINL.Index.of(st) : THINL.Index}
+
+# a commit while it is not built is the commit applied to the eager index
+law thin_lazy_changes:
+  for +cs: List<&2, M.Change>
+  for l: THINL.Lazy
+  {THINL.Lazy.force(THINL.Lazy.changes(cs, l)) == THINL.Index.changes(cs, THINL.Lazy.force(l)) : THINL.Index}
+
+# the index built away from the hub, taken with the commits it missed
+law thin_lazy_warm:
+  for l: THINL.Lazy
+  {THINL.Lazy.force(THINL.Lazy.warm(THINL.Index.of(THINL.Lazy.base(l)), l)) == THINL.Lazy.force(l) : THINL.Index}
+
+law thin_mail_replay_append:
+  for a: List<&2, TMAILL.Pending>
+  for +b: List<&2, TMAILL.Pending>
+  for +c: TMAILL.Cache
+  {TMAILL.Lazy.replay(List.append(&2, TMAILL.Pending, a, b), c) == TMAILL.Lazy.replay(b, TMAILL.Lazy.replay(a, c)) : TMAILL.Cache}
+
+law thin_mail_lazy_of:
+  for st: M.State
+  {TMAILL.Lazy.force(TMAILL.Lazy.of(st)) == TMAILL.Cache.of(st) : TMAILL.Cache}
+
+law thin_mail_lazy_committed:
+  for +cs: List<&2, M.Change>
+  for +st: M.State
+  for l: TMAILL.Lazy
+  {TMAILL.Lazy.force(TMAILL.Lazy.committed(cs, st, l)) == TMAILL.Cache.committed(cs, st, TMAILL.Lazy.force(l)) : TMAILL.Cache}
+
+law thin_mail_lazy_warm:
+  for +st: M.State
+  for +done: List<&2, TMAILL.Pending>
+  {TMAILL.Lazy.force(TMAILL.Lazy.warm(TMAILL.Cache.of(st), TMAILL.Later{st, done})) == TMAILL.Lazy.force(TMAILL.Later{st, done}) : TMAILL.Cache}
+# ---- end S3 ----
