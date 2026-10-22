@@ -15422,7 +15422,7 @@ def Main.listened(r: Result<&1, &1, U32 & String, Listener>, h: Hub, +web: Strin
 
 # the headless KiCad servers' lines, to the hub
 
-def Main.opened(r: Result<&1, &1, U32 & String, File>, +st: M.State, ls: List<&2, String>, cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
+def Main.opened(r: Result<&1, &1, U32 & String, File>, +st: M.State, ls: List<&2, String>, cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit), t0: U32) -> IO(Unit):
   match r cfg:
     case Done{f} Cfg{+home, +web, +host, +port, +pr, +ds, +v, nt0, +tcfg, +views}:
       do IO<Unit>:
@@ -15457,11 +15457,14 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, +st: M.State, ls: List<&2
         IO.spawn(Unit, PV.Pv.loop(Fuel.forever(), vq, PV.Pv.empty(), vo, home ++ "/plot"))
         IO.spawn(Unit, Plot.fwd(Fuel.forever(), vo, inbox))
         +nt : Net = Net.with_ks(Net.with_pv(Net.with_tm(Net.with_pk(Net.with_br(nt0, bq), pq), tq), vq), kq)
+        t1 : U32 <- PS.Perf.span("boot.helpers", t0)
         # the agents a restart in place handed off are kept before anything
         # else can reach the hub (adopt.bend); recovery then leaves them be
         +now : Nat <- Now.nat()
         h0 : Hub <- Hub.adopt(Hub{st, f, ls, Nil{}, Nil{}, inbox, Cfg{home, web, host, port, pr, ds, v, nt, tcfg, views}, ""}, now)
+        t2 : U32 <- PS.Perf.span("boot.adopt", t1)
         l : Result<&1, &1, U32 & String, Listener> <- H.Net.listen(host, port)
+        t3 : U32 <- PS.Perf.span("boot.listen", t2)
         Main.listened(l, h0, web, pri, host ++ ":" ++ U32.show(port), need, Cfg{home, web, host, port, pr, ds, v, nt, tcfg, views}, tok, front)
     case Fail{e} _:
       Main.nolog(e)
@@ -15490,10 +15493,24 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         +mc : String <- Files.text(Models.cache(home))
         +bc : String <- BN.Bf.text(BN.Bn.cache(home))
         exe : String <- H.Sys.exe_dir()
+        t3 : U32 <- PS.Perf.span("boot.files", t2)
         rt0 : K.Rt <- K.Rt.boot(home, M.Setting.get(st, "kicad.path", ""), exe)
+        t4 : U32 <- PS.Perf.span("boot.kicad", t3)
         +rt : K.Rt = K.Rt.set(rt0, "ipc", J.Str{""})
         +off : String <- Env.get("BACKPLANE_NO_UPDATE", "")
         +ai : String <- Env.get("APPIMAGE", "")
         +tc : List<&2, TI.TmCfg> <- TI.Tio.config(TI.Tio.sb(tcfg))
         finalCfg : Cfg = Cfg.with_managed(Cfg.with_models(Cfg.with_bn(Cfg.with_token(Cfg.with_rt(Cfg{home, w, h, p, pr, ds, v, nt, tc, views}, rt), tok), BN.Bn.with_dir(BN.Bn.empty(), BN.Bn.cache.load(bc, BO.World.peers(M.State.bots(st))))), BT.Cache.json(mc), BT.Cache.text(mc)), SV.Chan.managed(off, ai))
-        Main.opened(f, st, ls, Cfg.with_thin_cache(LogCount.init(finalCfg, ls), ThinCache{THIN.Index.of(st), Bool.pick(String, List.is_empty(&2, String, ls), "", Hub.origin(ls)), 1n, Map.new(&2, TLIVE.Stream), TMAIL.Cache.of(st)}), need, front)
+        +cfg1 : Cfg = LogCount.init(finalCfg, ls)
+        Log.info("log count " ++ Nat.show(LogCount.n(cfg1)))
+        t5 : U32 <- PS.Perf.span("boot.cfg", t4)
+        +ti : THIN.Index = THIN.Index.of(st)
+        Log.info("thin index " ++ Nat.show(THIN.Index.n(ti)) ++ " rows")
+        t6 : U32 <- PS.Perf.span("boot.thin", t5)
+        +tmc : TMAIL.Cache = TMAIL.Cache.of(st)
+        Log.info("mail cache at " ++ Nat.show(TMAIL.Cache.revision(tmc)))
+        t7 : U32 <- PS.Perf.span("boot.mail", t6)
+        +org : String = Bool.pick(String, List.is_empty(&2, String, ls), "", Hub.origin(ls))
+        Log.info("origin " ++ org)
+        t8 : U32 <- PS.Perf.span("boot.origin", t7)
+        Main.opened(f, st, ls, Cfg.with_thin_cache(cfg1, ThinCache{ti, org, 1n, Map.new(&2, TLIVE.Stream), tmc}), need, front, t8)
