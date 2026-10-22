@@ -125,7 +125,11 @@ jobs:
           ref: ${{ github.sha }}
           path: build/bootstrap-tools
           persist-credentials: false
+      # Linux measures with the runner's own python3 (Ubuntu 24.04: 3.12):
+      # setup-python puts LD_LIBRARY_PATH in the job's environment, and the
+      # measurement refuses an ambient loader override
       - uses: actions/setup-python@v5
+        if: runner.os != 'Linux'
         with:
           python-version: '3.12'
       - uses: actions/download-artifact@v4
@@ -147,7 +151,8 @@ jobs:
         shell: bash
         run: |
           chmod 755 build/bootstrap-js/${{ matrix.service }}
-          python build/bootstrap-tools/scripts/service-runtime.py --source-root "$GITHUB_WORKSPACE" --build "$GITHUB_WORKSPACE/build/bootstrap-js" --producer "$GITHUB_WORKSPACE/build/bootstrap-tools/scripts/service-release.py" --producer-sha256 5bae5529c78178f92f5e4dc76f0816d867ec1828180f8a7a69a88cc05e6b0029 --out "$GITHUB_WORKSPACE/build/bootstrap-service"
+          py=python; [ "$RUNNER_OS" = Linux ] && py=/usr/bin/python3
+          "$py" build/bootstrap-tools/scripts/service-runtime.py --source-root "$GITHUB_WORKSPACE" --build "$GITHUB_WORKSPACE/build/bootstrap-js" --producer "$GITHUB_WORKSPACE/build/bootstrap-tools/scripts/service-release.py" --producer-sha256 5bae5529c78178f92f5e4dc76f0816d867ec1828180f8a7a69a88cc05e6b0029 --out "$GITHUB_WORKSPACE/build/bootstrap-service"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

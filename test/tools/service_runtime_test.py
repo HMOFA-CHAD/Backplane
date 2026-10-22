@@ -160,6 +160,26 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             R.loader_imports(' UND dlmopen@GLIBC_2.3.4\n', [{'name': 'libc.so.6'}])
 
+    def test_ffi_libraries_named_anywhere_in_the_file(self):
+        # an effect picks its library into a variable: the literals in the
+        # file declare it, and kernel32.dll is the Windows system library
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); (root / 'src').mkdir()
+            (root / 'src/e.js').write_text(
+                'const lib = mac ? "/usr/lib/libSystem.B.dylib" : "libc.so.6";\n'
+                'const c = ffi.dlopen(lib, { flock: {} });\n'
+                'const k = ffi.dlopen("kernel32.dll", { CreateFileW: {} });\n')
+            files = ['src/e.js']
+            self.assertEqual([x['name'] for x in R.ffi_libraries(root, files, 'linux-x64')], ['libc.so.6'])
+            self.assertIn('/usr/lib/libSystem.B.dylib', [x['name'] for x in R.ffi_libraries(root, files, 'darwin-arm64')])
+            self.assertEqual([x['name'] for x in R.ffi_libraries(root, files, 'windows-x64')], ['kernel32.dll'])
+            (root / 'src/f.js').write_text('const n = pick(); ffi.dlopen(n, { a: {} });\n')
+            with self.assertRaises(ValueError):
+                R.ffi_libraries(root, ['src/f.js'], 'linux-x64')
+            (root / 'src/g.js').write_text('ffi.dlopen("user32.dll", { a: {} });\n')
+            with self.assertRaises(ValueError):
+                R.ffi_libraries(root, ['src/g.js'], 'windows-x64')
+
     def test_ffi_libraries_from_sources(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

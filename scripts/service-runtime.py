@@ -45,7 +45,7 @@ APPLE_SYSTEM = {'/usr/lib/libSystem.B.dylib', '/usr/lib/libc++.1.dylib',
 # What the JS service may dlopen through bun:ffi, per platform. The Bend JS
 # runtime (pinned bend) and the server's effects (src/**/*.js, checked by
 # ffi_libraries) open the C library and nothing else.
-FFI_APPROVED = {'linux': {'libc.so.6'}, 'darwin': {'libSystem.dylib', '/usr/lib/libSystem.B.dylib'}, 'windows': set()}
+FFI_APPROVED = {'linux': {'libc.so.6'}, 'darwin': {'libSystem.dylib', '/usr/lib/libSystem.B.dylib'}, 'windows': {'kernel32.dll'}}
 BEND_RUNTIME_FFI = {'linux': ['libc.so.6'], 'darwin': ['libSystem.dylib'], 'windows': []}
 
 
@@ -60,22 +60,25 @@ def family(target):
 
 
 def ffi_libraries(root, files, target):
-    # Every dlopen in the service's JS sources must name its libraries as
-    # literals; those for this platform must be approved system libraries.
+    # A service JS source that calls dlopen declares the libraries it may open
+    # as string literals in the file (an effect picks one per platform into a
+    # variable, `ffi.dlopen(lib, ...)`); a file that calls dlopen and names
+    # none is refused, and those named for this platform must be approved
+    # system libraries.
     found = {}
     for name in files:
         if not (name.startswith('src/') and name.endswith('.js')):
             continue
         text = (Path(root)/name).read_text(errors='strict')
-        for call in re.finditer(r'\bdlopen\(([^{}]*?),\s*\{', text):
-            # the libraries named as literals (a platform test's own strings are not)
-            names = [n for n in re.findall(r'["\']([^"\']+)["\']', call[1])
-                     if re.search(r'\.(?:so(?:\.[0-9]+)*|dylib|dll)\Z', n)]
-            require(names, 'Dynamic load of an undeclared library: ' + name)
-            for lib in names:
-                kind = 'linux' if '.so' in lib else 'darwin' if lib.endswith('.dylib') else 'windows'
-                if kind == family(target):
-                    found.setdefault(lib, set()).add(name)
+        if not re.search(r'\bdlopen\(', text):
+            continue
+        names = sorted({n for n in re.findall(r'["\']([^"\'\s]+)["\']', text)
+                        if re.search(r'\.(?:so(?:\.[0-9]+)*|dylib|dll)\Z', n)})
+        require(names, 'Dynamic load of an undeclared library: ' + name)
+        for lib in names:
+            kind = 'linux' if re.search(r'\.so(?:\.[0-9]+)*\Z', lib) else 'darwin' if lib.endswith('.dylib') else 'windows'
+            if kind == family(target):
+                found.setdefault(lib, set()).add(name)
     for lib in BEND_RUNTIME_FFI[family(target)]:
         found.setdefault(lib, set()).add('Bend JS runtime (pinned bend)')
     require(set(found) <= FFI_APPROVED[family(target)], 'Unapproved dynamically loaded library')
