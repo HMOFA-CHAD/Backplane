@@ -171,8 +171,120 @@ function pty_open_fds() {
   return out;
 }
 
+// Terminals on Bun's own APIs
+// ---------------------------
+// Where the runtime runs on Bun's event loop (host.js's bp_proc_bun), the
+// shell starts with Bun.spawn's terminal option (openpty on POSIX, ConPTY on
+// Windows): a session leader with the terminal as its controlling one, as
+// pty.c makes it. The master is a BP_H handle (a BpStream): reading the
+// terminal's output, writing its input, closing it hangs the terminal up.
+
+// Made at first use: loop.js's BpStream may load after this file.
+function bp_pty_class() {
+  if (globalThis.BP_PTY_CLASS !== undefined) {
+    return globalThis.BP_PTY_CLASS;
+  }
+  globalThis.BP_PTY_CLASS = class BpPty extends BpStream {
+    constructor() {
+      super("pty");
+      this.t = null;
+    }
+    // a terminal takes every byte (what it cannot pass on yet it holds and
+    // sends on as the program reads: Bun 1.3's write answers only the part
+    // that went at once, and its drain callback does not fire), so a write
+    // never waits: a terminal's input is what the person types or pastes
+    write(b) {
+      if (this.t === null || this.t.closed) {
+        return -BP_ERRNO.EIO;
+      }
+      this.t.write(b);
+      return b.length;
+    }
+    // a pty has no half close (a program is sent ^D), as pty.c
+    shutdown(how) {
+      if (how !== 1) {
+        this.shutRead();
+      }
+    }
+    close() {
+      this.rshut = true;
+      this.q = [];
+      this.qsize = 0;
+      try {
+        this.t?.close();
+      } catch (_) {
+      }
+      this.wakeAll();
+    }
+    resize(cols, rows) {
+      try {
+        this.t?.resize(cols, rows);
+      } catch (_) {
+      }
+    }
+  };
+  return globalThis.BP_PTY_CLASS;
+}
+
+function bp_pty_size(n, d) {
+  return n > 0 && n < 65536 ? n : d;
+}
+
+function bp_pty_spawn(cmd, args, cwd, cols, rows) {
+  const fs = require("fs");
+  const argv = [cmd, ...args];
+  if (cmd === "" || argv.some((a) => a.includes("\0")) || cwd.includes("\0")) {
+    return io_fail(host_eilseq());
+  }
+  if (Bun.which(cmd, { PATH: process.env.PATH ?? "" }) === null
+    && !(cmd.includes("/") && fs.existsSync(cmd))) {
+    return io_fail(BP_ERRNO.ENOENT);
+  }
+  if (cwd !== "") {
+    try {
+      if (!fs.statSync(cwd).isDirectory()) {
+        return io_fail(BP_ERRNO.ENOTDIR);
+      }
+    } catch (e) {
+      return io_fail(bp_proc_errno(e));
+    }
+  }
+  const env = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && k !== "" && !k.includes("=") && k !== "TERM"
+      && k !== "COLORTERM" && k !== "LINES" && k !== "COLUMNS") {
+      env[k] = v;
+    }
+  }
+  env.TERM = "xterm-256color";
+  env.COLORTERM = "truecolor";
+  const h = new (bp_pty_class())();
+  let child;
+  try {
+    child = Bun.spawn(argv, {
+      cwd: cwd === "" ? undefined : cwd,
+      env,
+      terminal: {
+        cols: bp_pty_size(Number(cols), 80),
+        rows: bp_pty_size(Number(rows), 24),
+        name: "xterm-256color",
+        data: (_, d) => h.feed(d),
+        exit: () => h.finish(0),
+      },
+    });
+  } catch (e) {
+    return io_fail(bp_proc_errno(e));
+  }
+  h.t = child.terminal;
+  bp_procs().set(child.pid >>> 0, child);
+  return io_done(io_tup(child.pid >>> 0, BP_H.add(h)));
+}
+
 // Answers (pid, master socket).
 function pty_spawn(cmd, args, cwd, cols, rows) {
+  if (bp_proc_bun()) {
+    return bp_pty_spawn(cmd, host_list_js(args), cwd, cols, rows);
+  }
   const p = pty_lib();
   const sys = io_sys();
   const argv = [cmd];
@@ -293,6 +405,10 @@ function pty_spawn(cmd, args, cwd, cols, rows) {
 
 // a new window size; the kernel sends the child SIGWINCH
 function pty_resize(socket, cols, rows) {
+  if (typeof BP_H !== "undefined" && BP_H.is(socket)) {
+    BP_H.get(socket)?.resize?.(bp_pty_size(Number(cols), 80), bp_pty_size(Number(rows), 24));
+    return socket;
+  }
   pty_size(Number(socket), Number(cols), Number(rows));
   return socket;
 }
