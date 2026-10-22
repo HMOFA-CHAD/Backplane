@@ -1,4 +1,5 @@
 import Base
+import ./src/core/cbor.bend as CBR1 # fast hub R1
 import ./src/core/presentation.bend as PRESENTVIEW
 import ./src/core/desktop-browser.bend as DBGUI
 import ./src/server/desktop-broker.bend as DBBROKER
@@ -11271,3 +11272,9 @@ law oprep_task_delivered_with_filing:
 # any other thread is told in its chat, as before
 law oprep_other_thread_unchanged:
   {H.Operational.posts(H.Queue.changes(H.Operational.demo.finish(False{})), "t0") == 1n : Nat}
+
+# --- fast hub R1: frames encoded without a scan per string (cbor_*) ---
+# the encoder's search trees hold exactly the append-only dictionaries: a
+# lookup in a tree answers what Cbor.find answers in its list
+law cbor_trees_exact:
+  {Bool.and(CBR1.CTree.ok(CBR1.Cbor.keys(), CBR1.Cbor.keys.tree()), CBR1.CTree.ok(CBR1.Cbor.words(), CBR1.Cbor.words.tree())) == True{} : Bool}

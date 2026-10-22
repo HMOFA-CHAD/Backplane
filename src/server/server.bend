@@ -144,6 +144,9 @@ type Wire is Data:
   # a message made of a log's lines: head, the lines joined by ",", tail;
   # put together by the writer, off the hub (a join's chunk)
   WItems{head: String, plain: String, split: String, items: List<&2, String>, tail: String, ends: Bool}
+  # a message as its JSON tree with its charge (a thin view's reply): the
+  # writer encodes the tree, never printing and parsing it again
+  WJson{json: J.Json, charge: Nat}
 
 type Msg is Data:
   Desktop{client: U32, kind: String, text: String, out: Chan(String), epoch: String, lease: String}
@@ -763,6 +766,8 @@ def Wire.charged(native: Bool, w: Wire, n: Nat) -> Wire:
   match native w:
     case False{} WText{t}: WCharged{t, n}
     case False{} WCharged{t, _}: WCharged{t, n}
+    case False{} WJson{j, _}: WJson{j, n}
+    case True{} WJson{j, _}: WText{J.Json.show(j)}
     case _ _: w
 
 def Wire.offer.k(c: Client, w: Wire, +n: Nat) -> IO(Maybe<&2, Client>):
@@ -860,8 +865,8 @@ def Wire.to(+cs: List<&2, Client>, +id: U32, +text: String) -> IO(List<&2, Clien
 # A thin control reply/notification already has validated correlation and
 # cannot settle an ordinary request. Do not parse its rendered tree again
 # through the ordinary reply actor hook.
-def Wire.to.view(+cs: List<&2, Client>, +id: U32, +text: String) -> IO(List<&2, Client>):
-  Wire.to.go(cs, id, WText{text}, Wire.text.charge(text), False{}, text)
+def Wire.to.view(+cs: List<&2, Client>, +id: U32, +j: J.Json, +size: Nat) -> IO(List<&2, Client>):
+  Wire.to.go(cs, id, WJson{j, size}, size, False{}, "")
 
 def Wire.to.raw(+cs: List<&2, Client>, +id: U32, w: Wire, +n: Nat) -> IO(List<&2, Client>):
   Wire.to.go(cs, id, w, n, False{}, "")
@@ -1289,6 +1294,9 @@ def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat
       k(s, 0n)
     case Some{WItems{hd, pl, sp, xs, tl, ends}}:
       Conn.out.items(s, hd, pl, sp, xs, tl, ends, out, k)
+    case Some{WJson{j, charge}}:
+      +bs = W.Ws.encode(2, CB.Cbor.encode(j))
+      Conn.out(s, bs, out, s2 => Conn.written(s2, List.length(&2, U32, bs), charge, k))
     case None{}:
       Socket.close(s)
 
@@ -10703,22 +10711,23 @@ def Cfg.telemetry.ui_action(+st: M.State, cfg: Cfg, +o: J.Json, delivered: Bool,
       Cfg{h, w, ho, p, pr, ds, v, nt, TUI.Human.mark(True{}, delivered, st,
         J.Json.get_str(o, "m", ""), J.Json.get_str(J.Json.get_obj(o, "p"), "action", ""), tm, now), views}
 
-def Hub.thin.deliver(+fits: Bool, h: Hub, +client: U32, +o: J.Json, +text: String, +c: Client, +context: ThinContext, +now: Nat) -> IO(Hub):
+def Hub.thin.deliver(+fits: Bool, h: Hub, +client: U32, +o: J.Json, +answer: J.Json, +size: Nat, +c: Client, +context: ThinContext, +now: Nat) -> IO(Hub):
   match fits h:
     case False{} _: Hub.thin.error(h, client, o, "LIMIT")
     case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       do IO<Hub>:
-        +cl2 : List<&2, Client> <- Wire.to.view(Clients.swap(cl, client, Some{Client.thin.with(c, context)}), client, text)
+        +cl2 : List<&2, Client> <- Wire.to.view(Clients.swap(cl, client, Some{Client.thin.with(c, context)}), client, answer, size)
         return Hub{st, f, ls, cl2, as, inbox, Cfg.telemetry.ui_action(st, cfg, o, Maybe.is_some(&2, Client, Clients.get(cl2, client)), now), note}
 
 def Hub.thin.respond(h: Hub, +client: U32, +o: J.Json, +result: J.Json, +c: Client, +context: ThinContext, +now: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       +p = J.Json.get_obj(o, "p")
-      +answer = J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{})}, J.KV{"ok", J.Flag{True{}}},
+      +answer = (J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{})}, J.KV{"ok", J.Flag{True{}}},
         J.KV{"result", Hub.thin.result(result, p, ThinContext.view(context), Bool.pick(String, String.eq(Client.thin.mode(c), "view-web"), "web", "mobile"), Cfg.thin.revision(cfg))}]))
-      Hub.thin.deliver(TVW.Wire.within(answer, Bool.pick(Nat, String.eq(J.Json.get_str(o, "m", ""), "view.search"), 65536n, 262144n)),
-        Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, answer, c, context, now)
+      +size = J.Json.bytes(answer)
+      Hub.thin.deliver(Nat.is_le(size, Bool.pick(Nat, String.eq(J.Json.get_str(o, "m", ""), "view.search"), 65536n, 262144n)),
+        Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, answer, size, c, context, now)
 
 def Hub.thin.cursor.empty(+empty: Bool, +text: String, +epoch: String, +target: J.Json, +query: String) -> Maybe<&2, Nat>:
   match empty:
