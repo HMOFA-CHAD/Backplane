@@ -360,23 +360,41 @@ function bp_conpty(argv, cwd, env, cols, rows) {
   const need = new BigUint64Array(1);
   k.InitializeProcThreadAttributeList(null, 1, 0, ptr(need));
   const list = new Uint8Array(Number(need[0]) + 64);
-  const pcv = new BigUint64Array([hpc[0]]);
   // STARTUPINFOEXW: STARTUPINFOW (104 bytes on x64) then the list pointer
   const si = new Uint8Array(112);
   const pi = new Uint8Array(24);
   new DataView(si.buffer).setUint32(0, 112, true);
-  // STARTF_USESTDHANDLES with null std handles (offsets 80, 88, 96): left
-  // unset, a child of a process whose own stdio is redirected (the hub, a
-  // service) inherits those handles and never writes to the pseudoconsole
-  new DataView(si.buffer).setUint32(60, 0x100, true);
   if (!k.InitializeProcThreadAttributeList(ptr(list), 1, 0, ptr(need))
-    || !k.UpdateProcThreadAttribute(ptr(list), 0, 0x00020016n, ptr(pcv), 8n, null, null)) {
+    // the attribute's value is the HPCON itself (not a pointer to it): passed
+    // a pointer, the child got no pseudoconsole and its output went nowhere
+    || !k.UpdateProcThreadAttribute(ptr(list), 0, 0x00020016n, pc, 8n, null, null)) {
     k.ClosePseudoConsole(pc);
     throw fail("ProcThreadAttribute");
   }
   new DataView(si.buffer).setBigUint64(104, BigInt(ptr(list)), true);
   const line = bp_wide(argv.map(bp_win_quote).join(" "));
-  const block = Buffer.from(Object.entries(env).map(([n, v]) => n + "=" + v + "\0").join("") + "\0", "utf16le");
+  // the environment as Windows wants it: one entry per name (names are
+  // case-insensitive), sorted, with SystemRoot and windir (DLL initialization
+  // fails without them: 0xC0000142) and the program's folder first on PATH
+  // (Cygwin's programs find cygwin1.dll there)
+  const names = new Map();
+  for (const [n, v] of Object.entries(env)) {
+    if (n !== "" && !n.includes("=") && v !== undefined) {
+      names.set(n.toUpperCase(), [n, String(v)]);
+    }
+  }
+  const root = process.env.SystemRoot || process.env.SYSTEMROOT || process.env.windir || "C:\\Windows";
+  if (!names.has("SYSTEMROOT")) names.set("SYSTEMROOT", ["SystemRoot", root]);
+  if (!names.has("WINDIR")) names.set("WINDIR", ["windir", root]);
+  const at = argv[0].lastIndexOf("\\");
+  if (at > 0) {
+    const dir = argv[0].slice(0, at);
+    const path = names.get("PATH");
+    names.set("PATH", [path ? path[0] : "Path", path ? dir + ";" + path[1] : dir]);
+  }
+  const lines = [...names.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([, [n, v]]) => n + "=" + v + "\0");
+  const block = Buffer.from(lines.join("") + "\0", "utf16le");
+  dbg("env", lines.length, "names; SystemRoot", JSON.stringify(names.get("SYSTEMROOT")?.[1] ?? ""));
   const dir = cwd === "" ? null : bp_wide(cwd);
   // EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT
   const ok = k.CreateProcessW(null, ptr(line), null, null, 0, 0x00080000 | 0x00000400,
