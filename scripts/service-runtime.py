@@ -45,7 +45,7 @@ APPLE_SYSTEM = {'/usr/lib/libSystem.B.dylib', '/usr/lib/libc++.1.dylib',
 # What the JS service may dlopen through bun:ffi, per platform. The Bend JS
 # runtime (pinned bend) and the server's effects (src/**/*.js, checked by
 # ffi_libraries) open the C library and nothing else.
-FFI_APPROVED = {'linux': {'libc.so.6'}, 'darwin': {'libSystem.dylib', '/usr/lib/libSystem.B.dylib'}, 'windows': set()}
+FFI_APPROVED = {'linux': {'libc.so.6'}, 'darwin': {'libSystem.dylib', '/usr/lib/libSystem.B.dylib'}, 'windows': {'kernel32.dll'}}
 BEND_RUNTIME_FFI = {'linux': ['libc.so.6'], 'darwin': ['libSystem.dylib'], 'windows': []}
 
 
@@ -60,22 +60,25 @@ def family(target):
 
 
 def ffi_libraries(root, files, target):
-    # Every dlopen in the service's JS sources must name its libraries as
-    # literals; those for this platform must be approved system libraries.
+    # A service JS source that calls dlopen declares the libraries it may open
+    # as string literals in the file (an effect picks one per platform into a
+    # variable, `ffi.dlopen(lib, ...)`); a file that calls dlopen and names
+    # none is refused, and those named for this platform must be approved
+    # system libraries.
     found = {}
     for name in files:
         if not (name.startswith('src/') and name.endswith('.js')):
             continue
         text = (Path(root)/name).read_text(errors='strict')
-        for call in re.finditer(r'\bdlopen\(([^{}]*?),\s*\{', text):
-            # the libraries named as literals (a platform test's own strings are not)
-            names = [n for n in re.findall(r'["\']([^"\']+)["\']', call[1])
-                     if re.search(r'\.(?:so(?:\.[0-9]+)*|dylib|dll)\Z', n)]
-            require(names, 'Dynamic load of an undeclared library: ' + name)
-            for lib in names:
-                kind = 'linux' if '.so' in lib else 'darwin' if lib.endswith('.dylib') else 'windows'
-                if kind == family(target):
-                    found.setdefault(lib, set()).add(name)
+        if not re.search(r'\bdlopen\(', text):
+            continue
+        names = sorted({n for n in re.findall(r'["\']([^"\'\s]+)["\']', text)
+                        if re.search(r'\.(?:so(?:\.[0-9]+)*|dylib|dll)\Z', n)})
+        require(names, 'Dynamic load of an undeclared library: ' + name)
+        for lib in names:
+            kind = 'linux' if re.search(r'\.so(?:\.[0-9]+)*\Z', lib) else 'darwin' if lib.endswith('.dylib') else 'windows'
+            if kind == family(target):
+                found.setdefault(lib, set()).add(name)
     for lib in BEND_RUNTIME_FFI[family(target)]:
         found.setdefault(lib, set()).add('Bend JS runtime (pinned bend)')
     require(set(found) <= FFI_APPROVED[family(target)], 'Unapproved dynamically loaded library')
@@ -142,14 +145,23 @@ def elf_main_mapping(debug, binary, program):
     dynamic_vaddr = int(one(r'^\s*DYNAMIC\s+0x[0-9a-f]+\s+(0x[0-9a-f]+)\s'), 16)
     phdr_vaddr = int(one(r'^\s*PHDR\s+0x[0-9a-f]+\s+(0x[0-9a-f]+)\s'), 16)
     first_load = re.findall(r'^\s*LOAD\s+(0x[0-9a-f]+)\s+(0x[0-9a-f]+)\s', program, re.M)
-    require(first_load and tuple(int(x, 16) for x in first_load[0]) == (0, 0),
-            'Unnamed main mapping requires zero-origin executable LOAD')
-    require(base > 0 and size > 0 and dynamic == base + dynamic_vaddr
+    kind = one(r'^Elf file type is (EXEC|DYN) ')
+    # a position-independent executable (DYN) is mapped at base, its first
+    # LOAD at vaddr 0; a fixed-address one (EXEC, as bun's Linux builds are)
+    # has base 0 and its segments at their own addresses (aarch64 bun: the
+    # first LOAD at 0x200000), so the same binding holds with base 0
+    require(first_load and int(first_load[0][0], 16) == 0
+            and (int(first_load[0][1], 16) == 0 if kind == 'DYN' else True),
+            'Unnamed main mapping requires the executable LOAD at file offset 0 (and vaddr 0 for a PIE)')
+    require((base > 0 if kind == 'DYN' else base == 0) and size > 0 and dynamic == base + dynamic_vaddr
         and entry == base + int(one(r'^Entry point (0x[0-9a-f]+)$'), 16)
         and phdr == base + phdr_vaddr
         and int(count) == int(one(r'^There are ([0-9]+) program headers,')),
         'Unnamed ELF mapping does not bind executable program headers')
-    return {'path': str(binary), 'sha256': sha(binary), 'mapStart': hex(base),
+    # the unnamed row shows the link map's address: base for a PIE; for a
+    # fixed-address executable glibc's l_addr (0), or its first LOAD
+    starts = [hex(base)] if kind == 'DYN' else [hex(base), hex(int(first_load[0][1], 16))]
+    return {'path': str(binary), 'sha256': sha(binary), 'mapStart': hex(base), 'mapStarts': starts, 'elfType': kind,
         'binding': 'Same --list invocation LD_DEBUG=files exact file, base/dynamic/entry/phdr/phnum',
         'classification': 'measured-main-executable-not-dependency'}
 
@@ -162,7 +174,7 @@ def elf_resolved(text, main_mapping=None):
         anonymous = re.fullmatch(r'\(0x([0-9a-f]+)\)', line)
         if anonymous:
             require(index == 0 and main_mapping is not None
-                and int(anonymous[1], 16) == int(main_mapping['mapStart'], 16),
+                and int(anonymous[1], 16) in [int(x, 16) for x in main_mapping.get('mapStarts', [main_mapping['mapStart']])],
                 'Unbound or misplaced unnamed ELF mapping')
             continue
         if re.fullmatch(r'linux-vdso\.so\.1 \(0x[0-9a-f]+\)', line):

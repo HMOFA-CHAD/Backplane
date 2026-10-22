@@ -46,7 +46,8 @@ def pe_image(imports=(), delay=(), machine=0x8664):
 
 
 class RuntimeTests(unittest.TestCase):
-    PROGRAM = ('Entry point 0x18b22c0\nThere are 9 program headers, starting at offset 64\n'
+    PROGRAM = ('Elf file type is DYN (Position-Independent Executable file)\n'
+        'Entry point 0x18b22c0\nThere are 9 program headers, starting at offset 64\n'
         ' PHDR 0x000040 0x0000000000000040 0x40\n'
         ' LOAD 0x000000 0x0000000000000000 0x0\n'
         ' DYNAMIC 0x587fda0 0x000000000587fda0 0x587fda0\n')
@@ -73,6 +74,39 @@ class RuntimeTests(unittest.TestCase):
             got = R.elf_resolved(self.ARM_LIST, bound)
             self.assertEqual(set(got), {'libm.so.6', 'libc.so.6', 'ld-linux-aarch64.so.1'})
             self.assertEqual(bound['sha256'], R.sha(binary))
+
+    # bun's linux-arm64 build: a fixed-address executable (EXEC), its first
+    # LOAD at offset 0 and vaddr 0x200000, base 0 in the link map
+    EXEC_PROGRAM = ('Elf file type is EXEC (Executable file)\n'
+        'Entry point 0x2a68700\nThere are 9 program headers, starting at offset 64\n'
+        ' PHDR 0x000040 0x0000000000200040 0x0000000000200040 0x0001f8 0x0001f8 R 0x8\n'
+        ' LOAD 0x000000 0x0000000000200000 0x0000000000200000 0x26df620 0x26df620 R 0x10000\n'
+        ' LOAD 0x26e8700 0x0000000002a68700 0x0000000002a68700 0x3931300 0x3931300 R E 0x10000\n'
+        ' DYNAMIC 0x60a8000 0x0000000006438000 0x0000000006438000 0x0001f0 0x0001f0 RW 0x8\n')
+
+    def exec_debug(self, binary, base=0):
+        return (f' 42: file={binary} [0];  generating link map\n'
+            f' 42:   dynamic: 0x{base+0x6438000:016x}  base: 0x{base:016x}   size: 0x0000000006320000\n'
+            f' 42:     entry: 0x{base+0x2a68700:016x}  phdr: 0x{base+0x200040:016x}  phnum:   9\n\n')
+
+    def test_fixed_address_executable_binds_with_base_zero(self):
+        with tempfile.TemporaryDirectory() as d:
+            binary = Path(d)/'backplane-serve'
+            binary.write_bytes(b'parser-model-only')
+            bound = R.elf_main_mapping(self.exec_debug(binary), binary, self.EXEC_PROGRAM)
+            self.assertEqual(bound['elfType'], 'EXEC')
+            for row in ('0x0000000000000000', '0x0000000000200000'):
+                listed = self.ARM_LIST.replace('0x0000ff9b5c8e0000', row)
+                self.assertIn('libc.so.6', R.elf_resolved(listed, bound))
+            with self.assertRaises(ValueError):
+                R.elf_resolved(self.ARM_LIST.replace('0x0000ff9b5c8e0000', '0x0000000000300000'), bound)
+            # an EXEC mapped anywhere but its own addresses, or a PIE read as one, fails
+            with self.assertRaises(ValueError):
+                R.elf_main_mapping(self.exec_debug(binary, 0x1000), binary, self.EXEC_PROGRAM)
+            with self.assertRaises(ValueError):
+                R.elf_main_mapping(self.exec_debug(binary), binary, self.EXEC_PROGRAM.replace('EXEC (Executable file)', 'DYN (Position-Independent Executable file)'))
+            with self.assertRaises(ValueError):
+                R.elf_main_mapping(self.exec_debug(binary), binary, self.EXEC_PROGRAM.replace('Elf file type is EXEC (Executable file)\n', ''))
 
     def test_main_binding_requires_exact_file_and_all_headers(self):
         with tempfile.TemporaryDirectory() as d:
@@ -159,6 +193,26 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(R.loader_imports(symbols, [{'name': 'libc.so.6'}]), ['dlopen', 'dlsym'])
         with self.assertRaises(ValueError):
             R.loader_imports(' UND dlmopen@GLIBC_2.3.4\n', [{'name': 'libc.so.6'}])
+
+    def test_ffi_libraries_named_anywhere_in_the_file(self):
+        # an effect picks its library into a variable: the literals in the
+        # file declare it, and kernel32.dll is the Windows system library
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); (root / 'src').mkdir()
+            (root / 'src/e.js').write_text(
+                'const lib = mac ? "/usr/lib/libSystem.B.dylib" : "libc.so.6";\n'
+                'const c = ffi.dlopen(lib, { flock: {} });\n'
+                'const k = ffi.dlopen("kernel32.dll", { CreateFileW: {} });\n')
+            files = ['src/e.js']
+            self.assertEqual([x['name'] for x in R.ffi_libraries(root, files, 'linux-x64')], ['libc.so.6'])
+            self.assertIn('/usr/lib/libSystem.B.dylib', [x['name'] for x in R.ffi_libraries(root, files, 'darwin-arm64')])
+            self.assertEqual([x['name'] for x in R.ffi_libraries(root, files, 'windows-x64')], ['kernel32.dll'])
+            (root / 'src/f.js').write_text('const n = pick(); ffi.dlopen(n, { a: {} });\n')
+            with self.assertRaises(ValueError):
+                R.ffi_libraries(root, ['src/f.js'], 'linux-x64')
+            (root / 'src/g.js').write_text('ffi.dlopen("user32.dll", { a: {} });\n')
+            with self.assertRaises(ValueError):
+                R.ffi_libraries(root, ['src/g.js'], 'windows-x64')
 
     def test_ffi_libraries_from_sources(self):
         with tempfile.TemporaryDirectory() as d:
