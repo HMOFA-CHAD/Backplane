@@ -16,9 +16,9 @@ import ./db.bend as D
 # entries (Stb.strip after every chunk): the one step that reads them,
 # ProviderSet's Switch.count, is given a counter of each thread's own
 # entries instead (M.State.switch.c). After the last line every record of
-# the final state is written (SDB.Dump.ops), with the counters as
-# obj('count', <thread>, n) and the meta rows. Numbering is SDB.Mat.step's:
-# a line that is not JSON takes its bytes but no number, a line no change
+# the final state is written (SDB.Dump.ops) with the meta rows; the
+# counters are not (nothing would keep them current on commit). Numbering
+# is SDB.Mat.step's: a line that is not JSON takes its bytes but no number, a line no change
 # decodes from gets a line row (wire "") and is not folded; a trailing
 # fragment with no newline is left for the hub (it never reads one either).
 
@@ -186,15 +186,8 @@ def Acc.off(a: Acc) -> Nat:
     case Acc{_, _, _, off, _, _, _, _}:
       off
 
-# The end: every record, the counters and meta
+# The end: every record and meta
 # --------------------------------------------
-
-def Stb.counts(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>) -> List<&2, SDB.Op>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case (k, n) <> t:
-      SDB.Put{"obj", ["count", k, Nat.show(n)]} <> Stb.counts(t)
 
 def Stb.meta.sql(+k: String, v: String) -> List<&2, String>:
   ["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", k, v]
@@ -202,8 +195,8 @@ def Stb.meta.sql(+k: String, v: String) -> List<&2, String>:
 # the statements written after the last line
 def Stb.end(a: Acc) -> List<&2, List<&2, String>>:
   match a:
-    case Acc{+st, cnt, +seq, +off, +ord, _, id, origin}:
-      List.append(&2, List<&2, String>, List.reverse(&2, List<&2, String>, Stb.sqls(Stb.counts(Map.to_list(&2, Nat, cnt)), Stb.sqls(SDB.Dump.ops(st), Nil{}))), [
+    case Acc{+st, _, +seq, +off, +ord, _, id, origin}:
+      List.append(&2, List<&2, String>, List.reverse(&2, List<&2, String>, Stb.sqls(SDB.Dump.ops(st), Nil{})), [
         Stb.meta.sql("schema", "1"),
         Stb.meta.sql("codec", Nat.show(SDB.Sdb.codec())),
         Stb.meta.sql("applied_seq", Nat.show(seq)),
@@ -221,6 +214,11 @@ def Acc.ord(a: Acc) -> Nat:
   match a:
     case Acc{_, _, _, _, ord, _, _, _}:
       ord
+
+def Acc.cnt(a: Acc) -> Map<&2, Nat>:
+  match a:
+    case Acc{_, cnt, _, _, _, _, _, _}:
+      cnt
 
 def Acc.st(a: Acc) -> M.State:
   match a:
