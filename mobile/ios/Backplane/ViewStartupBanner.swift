@@ -22,3 +22,4 @@ struct ViewStartupBanner: View {
         }
     }
 }
+
