@@ -3,6 +3,7 @@ import ../src/core/vt.bend as V
 import ../src/core/utf8.bend as U
 import ../src/server/host.bend as H
 import ../src/server/pty.bend as P
+import ../src/server/jsloop.bend as LP
 
 # Real shells on a real pty under the JS runtime (pty.js, host.js's
 # recv/send fallback and Proc.wait), read into the emulator. Prints ok /
@@ -367,6 +368,23 @@ def case.full(r: Result<&1, &1, U32 & String, U32 & Socket>) -> IO(U32):
     case Fail{e}:
       fail("pty full", e)
 
+# the shell starts with a soft stack limit of 8 MiB at most (the hub's may
+# be far larger), or the hub's own when that is less
+def case.stack.k(started: U32 & Socket) -> IO(U32):
+  (+pid, s) = started
+  do IO<U32>:
+    +v : V.Vt <- Rd.all(s, 80, 24)
+    code : U32 <- H.Proc.wait(pid)
+    a : U32 <- check.has("pty stack limit", screen(v), "stack-ok")
+    return a
+
+def case.stack(r: Result<&1, &1, U32 & String, U32 & Socket>) -> IO(U32):
+  match r:
+    case Done{started}:
+      case.stack.k(started)
+    case Fail{e}:
+      fail("pty stack", e)
+
 def done.k(ok: Bool, +n: U32) -> IO(Unit):
   match ok:
     case True{}:
@@ -379,6 +397,9 @@ def done(+n: U32) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
+    # the runtime's loop (loop.js) is part of the program, as in the hub:
+    # on Windows nothing spawns without it
+    rt : String <- LP.Rt.loop()
     a : U32 <- IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, U32, P.Pty.spawn("sh", [], "", 80, 24), case.shell)
     b : U32 <- IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, U32, P.Pty.spawn("sh", ["-c", "stty size; read x; stty size"], "", 80, 24), case.size)
     c : U32 <- IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, U32, P.Pty.spawn("sh", ["-c", "echo $TERM; echo $COLORTERM; echo $LINES$COLUMNS; pwd; [ -t 0 ] && printf tty; : </dev/tty && echo ' ctty'; echo $(ls /dev/fd/)"], "/tmp", 80, 24), case.env)
@@ -387,4 +408,5 @@ def main() -> IO(Unit):
     f : U32 <- IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, U32, P.Pty.spawn("sh", ["-c", "true"], "/definitely/not/a/dir", 80, 24), case.badcwd)
     g : U32 <- IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, U32, P.Pty.spawn("sh", ["-c", "echo up; sleep 30; echo done"], "", 80, 24), case.hup)
     h : U32 <- IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, U32, P.Pty.spawn("sh", ["-c", "stty raw -echo; sleep 1; head -c 20000 | wc -c"], "", 80, 24), case.full)
-    done((a + b + c + d + e + f + g + h : U32))
+    i : U32 <- IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, U32, P.Pty.spawn("sh", ["-c", "c=$(ulimit -s); p=$(awk '/Max stack size/{print $4}' /proc/$PPID/limits); if [ \"$p\" = unlimited ] || [ \"$p\" -gt 8388608 ]; then w=8192; else w=$((p/1024)); fi; [ \"$c\" = \"$w\" ] && echo stack-ok || echo \"child $c hub $p\""], "", 80, 24), case.stack)
+    done((a + b + c + d + e + f + g + h + i : U32))
