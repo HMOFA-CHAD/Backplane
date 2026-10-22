@@ -11171,10 +11171,25 @@ def Hub.thin.answer(ws: List<&2, ThinWait>, h: Hub) -> IO(Hub):
         h2 : Hub <- Hub.thin.rpc.now(h, client, o, now)
         Hub.thin.answer(tail, h2)
 
-def Hub.thin.warmed(h: Hub, i: THIN.Index, m: TMAIL.Cache) -> IO(Hub):
+def Mem.settled.k(none: Bool, +line: String) -> IO(Unit):
+  match none:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      Log.info(line)
+
+def Mem.settled(+line: String) -> IO(Unit):
+  Mem.settled.k(String.is_empty(line), line)
+
+def Hub.thin.warmed.k(h: Hub, i: THIN.Index, m: TMAIL.Cache) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.thin.answer(List.reverse(&2, ThinWait, Cfg.thin.waiting(cfg)), Hub{st, f, ls, cl, as, inbox, Cfg.thin.warm(cfg, i, m), note})
+
+# the boot's thin index arrived: the JS heap is settled once (H.Mem.settle,
+# until store mode keeps the index small), then the waiting reads answered
+def Hub.thin.warmed(h: Hub, i: THIN.Index, m: TMAIL.Cache) -> IO(Hub):
+  IO.bind(String, Hub, H.Mem.settle(), line => IO.bind(Unit, Hub, Mem.settled(line), _ => Hub.thin.warmed.k(h, i, m)))
 
 def Hub.thin.read_guard(valid: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   match valid:
