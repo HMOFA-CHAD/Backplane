@@ -2,7 +2,7 @@
 # The classic packages and install.sh of a release, from what it already
 # built (nothing is compiled or relabelled here):
 #
-#   scripts/release-classic.sh v0.12.0 OUT \
+#   scripts/release-classic.sh v0.12.1 OUT \
 #     linux-x64 SERVICE_PAYLOAD DESKTOP_ARCHIVE [linux-arm64 ... darwin-arm64 ...]
 #
 # SERVICE_PAYLOAD is the accepted service component's payload/ (its
