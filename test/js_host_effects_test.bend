@@ -276,9 +276,21 @@ def hup.k(r: Result<&1, &1, U32 & String, U32 & Socket>, +rt: String) -> IO(Unit
     case Done{started}:
       hup.go(started, rt)
 
+# on Windows a child's stdin hang-up reaches the send as the pipe write's
+# own failure (node's child_process), not a readiness wake: the sync
+# loop's bound applies
+def hup.rt(win: Result<&1, &1, U32 & String, String>, +rt: String) -> String:
+  match win:
+    case Done{os}:
+      Bool.pick(String, String.eq(os, "Windows_NT"), "windows", rt)
+    case Fail{_}:
+      rt
+
 def hup() -> IO(Unit):
   do IO<Unit>:
-    +rt : String <- LP.Rt.loop()
+    rt0 : String <- LP.Rt.loop()
+    os : Result<&1, &1, U32 & String, String> <- IO.get_env("OS")
+    +rt : String = hup.rt(os, rt0)
     r : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("sh", ["-c", "sleep 0.3; exec 0<&- 1>&-; sleep 5"], "", 0)
     hup.k(r, rt)
 
