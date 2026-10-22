@@ -352,11 +352,6 @@ final class AppModel {
         let h = Hub(url: { [weak self] in
                 guard let self else { return Hub.Next.stop }
                 let epoch = String(self.conn[key]?.epoch ?? 0)
-                if self.startup[key] == .compatibilityChosen {
-                    self.apply(await e.connection(key, epoch))
-                    let r = try? JSONDecoder().decode(Resume.self, from: Data(await e.resume(key).utf8))
-                    return Pairing.socket(link, since: r?.since ?? "0", origin: r?.origin ?? "").map { Hub.Next.go($0) } ?? Hub.Next.stop
-                }
                 self.startup[key] = .discovering
                 let found = await ViewCapability.find(link)
                 guard self.links.contains(link), self.conn[key]?.epoch == UInt64(epoch) else { return .stop }
@@ -908,12 +903,12 @@ final class AppModel {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("hub-settings.json")
     }
 
-    func retryView(_ key: String, compatibility: Bool = false) {
+    func retryView(_ key: String) {
         guard links.contains(where: { Pairing.key($0) == key }), startup[key] == .compatibilityRequired else { return }
         hubs.removeValue(forKey: key)?.stop()
         thinReady[key] = nil
         cachedReadiness.retire(key)
-        startup[key] = compatibility ? .compatibilityChosen : .discovering
+        startup[key] = .discovering
         connect()
     }
 

@@ -417,12 +417,12 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         }
     }
 
-    fun retryView(key: String, compatibility: Boolean = false) {
+    fun retryView(key: String) {
         if (links.none { Pairing.key(it) == key } || startup[key] != StartupPolicy.COMPATIBILITY_REQUIRED) return
         hubs.remove(key)?.stop()
         thinReady.remove(key)
         presentationEpochs.remove(key)
-        startup[key] = if (compatibility) StartupPolicy.COMPATIBILITY_CHOSEN else StartupPolicy.DISCOVERING
+        startup[key] = StartupPolicy.DISCOVERING
         connect()
     }
 
@@ -437,10 +437,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
                 requestedFrameAt.remove(key)
                 thinReady.remove(key)
                 legacyReady.remove(key)
-                if (startup[key] == StartupPolicy.COMPATIBILITY_CHOSEN) {
-                    apply(engine.connection(key, epoch.toString()))
-                    Next.Go(Pairing.resume(base, engine.resume(key)))
-                } else {
+                run {
                     startup[key] = StartupPolicy.DISCOVERING
                     val found = ViewCapability.find(link)
                     if (link !in links || epochs[key] != epoch) Next.Stop

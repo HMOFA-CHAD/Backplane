@@ -60,20 +60,6 @@ object Pairing {
         val host = u.host ?: return null
         return if (u.port > 0) "$host:${u.port}" else host
     }
-
-    // the socket address for a (re)connect: the client's resume point
-    // ({"since", "origin"} from Backplane.resume()) as query parameters
-    fun resume(socket: String, resume: String): String {
-        val r = JSONObject(resume)
-        return Uri.parse(socket).buildUpon()
-            .appendQueryParameter("since", r.optString("since", "0"))
-            .appendQueryParameter("origin", r.optString("origin", ""))
-            // a hub from before CBOR-only still needs asking
-            .appendQueryParameter("enc", "cbor")
-            // The matching bridge understands Recent; old hubs ignore this hint.
-            .appendQueryParameter("mobile", "1")
-            .build().toString()
-    }
 }
 
 // A socket that tells a dead link by TCP keepalive: probed after 15 s with
