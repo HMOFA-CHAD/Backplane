@@ -122,7 +122,7 @@ def procs(+dir: String) -> IO(Unit):
   do IO<Unit>:
     r1 : P.Ran <- sh("echo hi; exit 3")
     C.Check.str("run status and output", ran.show(r1), "3:hi")
-    r2 : P.Ran <- P.Proc.run("pwd", [], dir)
+    +r2 : P.Ran <- P.Proc.run("pwd", [], dir)
     # the folder's own path, whatever is in front of it (Cygwin's pwd on
     # Windows says /cygdrive/c/tmp/... for /tmp/...)
     C.Check.str("run in cwd", Bool.show(Bool.and(String.starts_with(ran.show(r2), "0:"), String.ends_with(ran.show(r2), String.drop(dir, 4n)))), "True")
