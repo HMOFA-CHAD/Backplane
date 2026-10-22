@@ -158,7 +158,7 @@ def hot.refused(+what: String, +codec: String, +id: String) -> IO(Unit):
   do IO<Unit>:
     +dir : String <- home(30n, codec, id)
     +hot : HB.Hot <- HB.Hot.load(dir)
-    C.Check.str(what ++ ": refused", Bool.show(HB.Hot.ok(hot)), "false")
+    C.Check.str(what ++ ": refused", Bool.show(HB.Hot.ok(hot)), "False")
     IO.print("  (" ++ HB.Hot.why(hot) ++ ")")
     rm : Result<&1, &1, U32 & String, U32 & (String & String)> <- Process.run("rm", ["-rf", dir], "", 4096, 10000)
     return Unit{}
