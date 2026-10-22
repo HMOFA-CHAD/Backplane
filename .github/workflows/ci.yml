@@ -148,7 +148,10 @@ jobs:
             BACKPLANE_JS_TARGET=$t scripts/build-js.sh src/server/main.bend dist-js/$t/backplane-serve
           done
           ls -l dist-js/*/
-      - run: scripts/js-smoke.sh dist-js/linux-x64/backplane-serve
+      # the web client the hub serves (test/smoke.ts loads its page)
+      - name: Web client
+        run: bend src/web/index.html -o build/web > /dev/null
+      - run: scripts/js-smoke.sh dist-js/linux-x64/backplane-serve build/web
       - name: Bake and release producer
         run: |
           bun test/tools/js_bake_test.ts
@@ -158,7 +161,7 @@ jobs:
       - name: Full smoke
         run: |
           bend test/wire/index.html -o build/wire > /dev/null
-          BACKPLANE_SMOKE_FULL=1 scripts/js-smoke.sh dist-js/linux-x64/backplane-serve
+          BACKPLANE_SMOKE_FULL=1 scripts/js-smoke.sh dist-js/linux-x64/backplane-serve build/web
       - uses: actions/upload-artifact@v4
         with:
           name: backplane-serve-js
