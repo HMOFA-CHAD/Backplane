@@ -11572,3 +11572,11 @@ law locks_after_idle_none:
 # every step): the empty lock exactly as Locks.fold writes it
 law locks_idle_text_exact:
   {M.Locks.idle.text() == J.Json.show(LCK.Lock.json(LCK.Lock.empty())) : String}
+# --- J2: the sign-in wait asked again only when the log moved ---
+# (Hub.auth.beat: a settings lookup per thread at every beat was most of an
+# idle JS hub's CPU)
+law auth_beat_kept:
+  {MPCREDIT.Auth.kept("1 1", M.State.empty()) == True{} : Bool}
+
+law auth_beat_asked:
+  {MPCREDIT.Auth.kept("7 1", M.State.empty()) == False{} : Bool}
