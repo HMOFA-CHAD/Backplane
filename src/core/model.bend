@@ -1704,7 +1704,7 @@ def Locks.get(s: State, +name: String) -> LK.NamedLock:
 # idle, and every step and every sidebar row read each one (laws
 # locks_idle_*).
 def Locks.idle.text() -> String:
-  J.Json.show(LK.Lock.json(LK.Lock.empty()))
+  "{\"holder\":null,\"waiters\":[],\"ready\":false}"
 
 def Locks.idle.k(+t: String) -> Bool:
   Bool.or(String.is_empty(t), String.eq(t, Locks.idle.text()))

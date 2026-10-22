@@ -11567,3 +11567,8 @@ law locks_idle_held_not:
 # Step.none() from Locks.after.one
 law locks_after_idle_none:
   {H.Locks.after.one(M.State.replay([M.LockChanged{"bend", LCK.Lock.empty(), 1n}], M.State.empty()), M.State.replay([M.LockChanged{"bend", LCK.Lock.empty(), 1n}], M.State.empty()), 5n, "bend") == H.Step.none() : H.Step}
+
+# the idle lock's text, written out (Locks.idle reads it for every lock on
+# every step): the empty lock exactly as Locks.fold writes it
+law locks_idle_text_exact:
+  {M.Locks.idle.text() == J.Json.show(LCK.Lock.json(LCK.Lock.empty())) : String}

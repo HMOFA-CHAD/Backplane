@@ -12774,3 +12774,4 @@ def Laws.locks_idle_never_set(): {==}
 def Laws.locks_idle_released(): {==}
 def Laws.locks_idle_held_not(): {==}
 def Laws.locks_after_idle_none(): {==}
+def Laws.locks_idle_text_exact(): {==}
