@@ -15629,7 +15629,7 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         # store.db's records and the log's tail (hotboot.bend), or the
         # whole log replayed when there is no usable store
         +bt : HB.Hot <- Boot.state(home)
-        t1 : U32 <- PS.Perf.span("boot.replay", t0)
+        t2 : U32 <- PS.Perf.span("boot.replay", t0)
         +torn : String = HB.Hot.torn(bt)
         +st : M.State = HB.Hot.st(bt)
         +ls : List<&2, String> = HB.Hot.ls(bt)
