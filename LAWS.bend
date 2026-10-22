@@ -11276,6 +11276,49 @@ law oprep_task_delivered_with_filing:
 law oprep_other_thread_unchanged:
   {H.Operational.posts(H.Queue.changes(H.Operational.demo.finish(False{})), "t0") == 1n : Nat}
 
+# --- J2: walks the JS hub makes over a whole log, in tail calls ---
+# Bend's JS target turns only tail self-calls into loops, and Bun's stack
+# holds about 67k frames: Base's List.length and String.to_lower overflowed
+# it at boot on a long log (353k lines) or a long message.
+
+# Store.size counts as List.length does
+law store_size_go_succ:
+  for +ls: List<&2, String>
+  for +n: Nat
+  {ST.Store.size.go(ls, 1n+n) == 1n+ST.Store.size.go(ls, n) : Nat}
+
+law store_size_is_length:
+  for +ls: List<&2, String>
+  {ST.Store.size(ls) == List.length(&2, String, ls) : Nat}
+
+# the index's words, lowered a character at a time, are those of the
+# message lowered whole
+law thin_words_lower_each:
+  for +s: String
+  for +ws: JTHIN.WordState
+  {JTHIN.Words.go(s, ws) == JTHIN.Words.go.whole(String.to_lower(s), ws) : Map<&2, Bool>}
+# ---- S1 indexed store (store.db, src/core/storedb.bend) ----
+# The store is made from the log one line at a time and can be made again
+# from any point: after a then b it is the store after a with b applied
+# (a rebuild and the incremental store agree; boot from applied_off is a
+# rebuild's tail).
+law sdb_replay_append:
+  for a: List<&2, SDB.LL>
+  for b: List<&2, SDB.LL>
+  for m: SDB.Mat
+  {SDB.Mat.replay(List.append(&2, SDB.LL, a, b), m) == SDB.Mat.replay(b, SDB.Mat.replay(a, m)) : SDB.Mat}
+
+# store after events == fold(events): the records written change by
+# change are every record of the folded state (test/storedb_test.bend
+# checks a log with most kinds of change)
+law sdb_eq_fold_small:
+  {SDB.Mat.recs(SDB.Mat.replay(SDB.Demo.small.log(), SDB.Mat.empty())) == SDB.Tab.dump(M.State.replay(SDB.Demo.small(), M.State.empty())) : Map<&2, String>}
+
+# a thread's entry rows are what M.State.mine files for it
+law sdb_entries_mine_small:
+  {SDB.Tab.mine(SDB.Mat.facts(SDB.Mat.replay(SDB.Demo.small.log(), SDB.Mat.empty())), "t1") == M.State.mine(M.State.replay(SDB.Demo.small(), M.State.empty()), "t1") : List<&2, M.Entry>}
+# ---- end S1 indexed store ----
+
 # ---- S3: the thin index and the mail cache on demand (fast-hub) ----
 # The hub builds both after it listens (THIN.Lazy, TMAIL.Lazy): what it
 # answers once they are built is what the eager boot would have held.
@@ -11324,45 +11367,3 @@ law thin_mail_lazy_warm:
   for +done: List<&2, TMAILL.Pending>
   {TMAILL.Lazy.force(TMAILL.Lazy.warm(TMAILL.Cache.of(st), TMAILL.Later{st, done})) == TMAILL.Lazy.force(TMAILL.Later{st, done}) : TMAILL.Cache}
 # ---- end S3 ----
-# --- J2: walks the JS hub makes over a whole log, in tail calls ---
-# Bend's JS target turns only tail self-calls into loops, and Bun's stack
-# holds about 67k frames: Base's List.length and String.to_lower overflowed
-# it at boot on a long log (353k lines) or a long message.
-
-# Store.size counts as List.length does
-law store_size_go_succ:
-  for +ls: List<&2, String>
-  for +n: Nat
-  {ST.Store.size.go(ls, 1n+n) == 1n+ST.Store.size.go(ls, n) : Nat}
-
-law store_size_is_length:
-  for +ls: List<&2, String>
-  {ST.Store.size(ls) == List.length(&2, String, ls) : Nat}
-
-# the index's words, lowered a character at a time, are those of the
-# message lowered whole
-law thin_words_lower_each:
-  for +s: String
-  for +ws: JTHIN.WordState
-  {JTHIN.Words.go(s, ws) == JTHIN.Words.go.whole(String.to_lower(s), ws) : Map<&2, Bool>}
-# ---- S1 indexed store (store.db, src/core/storedb.bend) ----
-# The store is made from the log one line at a time and can be made again
-# from any point: after a then b it is the store after a with b applied
-# (a rebuild and the incremental store agree; boot from applied_off is a
-# rebuild's tail).
-law sdb_replay_append:
-  for a: List<&2, SDB.LL>
-  for b: List<&2, SDB.LL>
-  for m: SDB.Mat
-  {SDB.Mat.replay(List.append(&2, SDB.LL, a, b), m) == SDB.Mat.replay(b, SDB.Mat.replay(a, m)) : SDB.Mat}
-
-# store after events == fold(events): the records written change by
-# change are every record of the folded state (test/storedb_test.bend
-# checks a log with most kinds of change)
-law sdb_eq_fold_small:
-  {SDB.Mat.recs(SDB.Mat.replay(SDB.Demo.small.log(), SDB.Mat.empty())) == SDB.Tab.dump(M.State.replay(SDB.Demo.small(), M.State.empty())) : Map<&2, String>}
-
-# a thread's entry rows are what M.State.mine files for it
-law sdb_entries_mine_small:
-  {SDB.Tab.mine(SDB.Mat.facts(SDB.Mat.replay(SDB.Demo.small.log(), SDB.Mat.empty())), "t1") == M.State.mine(M.State.replay(SDB.Demo.small(), M.State.empty()), "t1") : List<&2, M.Entry>}
-# ---- end S1 indexed store ----

@@ -12615,8 +12615,6 @@ def Laws.oprep_task_not_in_chat(): {==}
 def Laws.oprep_task_delivered_with_filing(): {==}
 def Laws.oprep_other_thread_unchanged(): {==}
 
-# ---- S3: the thin index and the mail cache on demand (fast-hub) ----
-def Laws.thin_changes_append(a, b, i):
 # --- J2: walks the JS hub makes over a whole log, in tail calls ---
 
 def Laws.store_size_go_succ(ls, n):
@@ -12643,6 +12641,21 @@ def Laws.thin_words_lower_each(s, ws):
       Laws.thin_words_lower_each(t, JTHIN.Words.step(JTHIN.Word.char(U32.add(x, U32.mul(Bool.to_u32(Char.is_upper(Chr{x})), 32))), U32.add(x, U32.mul(Bool.to_u32(Char.is_upper(Chr{x})), 32)), w, n, ts))
 # ---- S1 indexed store ----
 def Laws.sdb_replay_append(a, b, m):
+  match a:
+    case Nil{}:
+      {==}
+    case h <> t:
+      Laws.sdb_replay_append(t, b, SDB.Mat.step(m, h))
+
+def Laws.sdb_eq_fold_small():
+  {==}
+
+def Laws.sdb_entries_mine_small():
+  {==}
+# ---- end S1 indexed store ----
+
+# ---- S3: the thin index and the mail cache on demand (fast-hub) ----
+def Laws.thin_changes_append(a, b, i):
   match a:
     case Nil{}:
       {==}
@@ -12683,11 +12696,3 @@ def Laws.thin_mail_lazy_committed(cs, st, l):
 
 def Laws.thin_mail_lazy_warm(st, done): {==}
 # ---- end S3 ----
-      Laws.sdb_replay_append(t, b, SDB.Mat.step(m, h))
-
-def Laws.sdb_eq_fold_small():
-  {==}
-
-def Laws.sdb_entries_mine_small():
-  {==}
-# ---- end S1 indexed store ----
