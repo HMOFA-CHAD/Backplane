@@ -188,6 +188,20 @@ def K.got(r: Map<&2, String> & String) -> String:
   (_, v) = r
   v
 
+# a equals b, every step a tail call (Base's String.eq keeps a frame per
+# character: a 35 MB setting faulted the comparison on the real log)
+def K.same.go(a: String, b: String, ok: Bool) -> Bool:
+  match a b:
+    case SNil{} SNil{}:
+      ok
+    case SCon{Chr{x}, xt} SCon{Chr{y}, yt}:
+      K.same.go(xt, yt, Bool.and(ok, U32.is_eq(x, y)))
+    case _ _:
+      False{}
+
+def K.same(a: String, b: String) -> Bool:
+  K.same.go(a, b, True{})
+
 def K.absent() -> String:
   "\u{0}absent"
 
@@ -202,7 +216,7 @@ def K.dump.k(gone: Bool, same: Bool, +k: String, +want: String, +got: String, d:
       d
 
 def K.dump.one(+k: String, +want: String, +got: String, d: KDiff) -> KDiff:
-  K.dump.k(String.eq(got, K.absent()), String.eq(got, want), k, want, got, d)
+  K.dump.k(K.same(got, K.absent()), K.same(got, want), k, want, got, d)
 
 def K.dump.go(xs: List<&2, Sigma<&2, &2, String, _ => String>>, +recs: Map<&2, String>, d: KDiff) -> KDiff:
   match xs:
@@ -224,7 +238,7 @@ def K.extra.go(xs: List<&2, Sigma<&2, &2, String, _ => String>>, +dump: Map<&2, 
     case Nil{}:
       d
     case (+k, +v) <> t:
-      K.extra.go(t, dump, K.extra.k(String.eq(K.got(Map.get(String, K.absent(), dump, k)), K.absent()), k, v, d))
+      K.extra.go(t, dump, K.extra.k(K.same(K.got(Map.get(String, K.absent(), dump, k)), K.absent()), k, v, d))
 
 def K.diff(+recs: Map<&2, String>, +dump: Map<&2, String>) -> KDiff:
   K.extra.go(Map.to_list(&2, String, recs), dump, K.dump.go(Map.to_list(&2, String, dump), recs, KDiff{0n, 0n, 0n, Nil{}, Nil{}, Nil{}}))
