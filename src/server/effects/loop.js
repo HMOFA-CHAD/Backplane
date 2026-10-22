@@ -25,11 +25,12 @@
 //   reaches the effect it always did.
 // - Base File.read*, Process.run and errno text without libc.
 //
-// BACKPLANE_JS_LOOP=sync keeps the old loop and effects (POSIX only), to
-// bisect. globalThis.BEND_ASYNC says which one runs.
+// On Linux and macOS the old loop stays the default until L1's load gate
+// passes on this one; BACKPLANE_JS_LOOP=bun turns it on there. Windows has
+// no old loop and always runs this one. globalThis.BEND_ASYNC says which.
 
 const BP_WIN = process.platform === "win32";
-const BP_ASYNC = BP_WIN || process.env.BACKPLANE_JS_LOOP !== "sync";
+const BP_ASYNC = BP_WIN || process.env.BACKPLANE_JS_LOOP === "bun";
 const BP_BASE = 0x100000;
 const bp_sync_wait = io_wait;
 const bp_sync_park = io_park_on;
