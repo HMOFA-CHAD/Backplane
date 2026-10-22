@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# Stamp the build's version into the C bend emitted, in place of the slot
+# Stamp the build's version into the JS bend emitted, in place of the slot
 # src/core/version.bend holds (Version.slot), so the version is no input of
-# the emit: one tree emits the same C whatever version it is built as, and
-# scripts/build-app.sh can reuse it (BACKPLANE_EMIT_CACHE).
+# the emit: one tree emits the same JS whatever version it is built as, and
+# scripts/build-js.sh can reuse it (BACKPLANE_EMIT_CACHE).
 #
-#   scripts/stamp-version.py build/cc/backplane/all.c 0.11.2-dev.20261015.1222
-#   scripts/stamp-version.py build/cc/backplane/all.c <40-hex sha> commit
+#   scripts/stamp-version.py build/js/backplane-serve/stamped.js 0.11.2-dev.20261015.1222
+#   scripts/stamp-version.py build/js/backplane-serve/stamped.js <40-hex sha> commit
+#   (a .js file, the dev service's emit, has each slot as one literal)
 #     the commit slot (Version.commit.slot) the same way: a git sha, or
 #     nothing stamped ("unknown")
 #
@@ -43,6 +44,17 @@ if FILL in ver or "@" in ver or len(ver) > BODY or not ver.isprintable() or not 
     sys.exit("stamp-version: %r does not fit the slot" % ver)
 
 text = open(path).read()
+if path.endswith(".js"):
+    # the JS bend emitted (the dev service): the slot is one string
+    # literal; stamped (or stamped before with this version) exactly once
+    lits = re.findall(r'"([^"\\]*' + re.escape(TERM) + r')"', text)
+    if len(lits) != 1:
+        sys.exit("stamp-version: %d slots ending %s in %s, want one" % (len(lits), TERM, path))
+    text = text.replace('"' + lits[0] + '"', '"' + slot(ver) + '"')
+    tmp = path + ".stamp"
+    open(tmp, "w").write(text)
+    os.replace(tmp, path)
+    sys.exit(0)
 head = "CONSTV u64 STAT_IMG[] = {"
 i0 = text.find(head)
 if i0 < 0 or text.count(head) != 1:

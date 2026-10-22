@@ -1,4 +1,9 @@
 import Base
+import ./src/core/cbor.bend as CBR1 # fast hub R1
+import ./src/core/thin-pace.bend as TPR1 # fast hub R1
+import ./src/core/thin.bend as THINL # S3 lazy thin index
+import ./src/server/thin-mail.bend as TMAILL # S3 lazy mail cache
+import ./src/core/storedb.bend as SDB # S1 indexed store
 import ./src/core/presentation.bend as PRESENTVIEW
 import ./src/core/desktop-browser.bend as DBGUI
 import ./src/server/desktop-broker.bend as DBBROKER
@@ -70,6 +75,8 @@ import ./src/app/cats.bend as VCAT
 import ./src/core/sexpr.bend as KSEX # kicad fork footprint placement
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
+import ./src/core/copy.bend as JCOPY # J2: BACKPLANE_COPY
+import ./src/core/copynet.bend as JCNET # J2: BACKPLANE_COPY
 import ./src/core/deploy.bend as DP
 import ./src/core/ship.bend as SHP # deploy main
 import ./src/core/cmds.bend as CM
@@ -172,6 +179,7 @@ import ./src/mobile/bots.bend as MBT
 import ./src/core/cli.bend as CLI # one-hub
 import ./src/core/onehub.bend as OHB # one-hub
 import ./src/core/standin.bend as SIN # one-hub
+import ./src/core/thin.bend as JTHIN # J2: JS stack
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -11271,3 +11279,304 @@ law oprep_task_delivered_with_filing:
 # any other thread is told in its chat, as before
 law oprep_other_thread_unchanged:
   {H.Operational.posts(H.Queue.changes(H.Operational.demo.finish(False{})), "t0") == 1n : Nat}
+
+# --- fast hub R1: frames encoded without a scan per string (cbor_*) ---
+# the encoder's search trees hold exactly the append-only dictionaries: a
+# lookup in a tree answers what Cbor.find answers in its list
+law cbor_trees_exact:
+  {Bool.and(CBR1.CTree.ok(CBR1.Cbor.keys(), CBR1.Cbor.keys.tree()), CBR1.CTree.ok(CBR1.Cbor.words(), CBR1.Cbor.words.tree())) == True{} : Bool}
+
+# --- fast hub R1: thin view notices paced (thin_pace_*) ---
+# a delta or change to a view's own thread is its urgent level; another
+# thread's is the soft level; "*" (anything not clearly one thread's) is
+# urgent for every view; nothing touched is nothing
+law thin_pace_own_urgent:
+  {TPR1.Touch.level(TPR1.Touch.add(TPR1.Touch.none(), "t1"), "t1") == 2n : Nat}
+
+law thin_pace_other_soft:
+  {TPR1.Touch.level(TPR1.Touch.add(TPR1.Touch.none(), "t1"), "t2") == 1n : Nat}
+
+law thin_pace_all_urgent:
+  {TPR1.Touch.level(TPR1.Touch.add(TPR1.Touch.none(), "*"), "t2") == 2n : Nat}
+
+law thin_pace_none_quiet:
+  for th: String
+  {TPR1.Touch.level(TPR1.Touch.none(), th) == 0n : Nat}
+
+# a view of no thread (recent, a room) hears thread changes as soft
+law thin_pace_no_thread_soft:
+  {TPR1.Touch.level(TPR1.Touch.add(TPR1.Touch.none(), "t1"), "") == 1n : Nat}
+
+# its own thread is told at once once the urgent gap has passed
+law thin_pace_own_sends:
+  {TPR1.Paced.send(TPR1.Pace.step(TPR1.Pace{1000n, 0n}, Nat.add(1000n, TPR1.Pace.urgent()), 2n)) == True{} : Bool}
+
+# another thread's change within the soft gap is owed, not dropped, and its
+# wait is what is left of the gap
+law thin_pace_soft_owed:
+  {TPR1.Pace.step(TPR1.Pace{1000n, 0n}, 1100n, 1n) == TPR1.Paced{False{}, TPR1.Pace{1000n, 1n}, 400n} : TPR1.Paced}
+
+# the flush timer tells an owed view once due, and then it owes nothing
+law thin_pace_flush_sends:
+  {TPR1.Pace.step(TPR1.Pace{1000n, 1n}, 1500n, 0n) == TPR1.Paced{True{}, TPR1.Pace{1500n, 0n}, 0n} : TPR1.Paced}
+
+# an urgent change raises what a view owes, never lowers it
+law thin_pace_owed_raised:
+  {TPR1.Pace.step(TPR1.Pace{1000n, 1n}, 1010n, 2n) == TPR1.Paced{False{}, TPR1.Pace{1000n, 2n}, Nat.sub(TPR1.Pace.urgent(), 10n)} : TPR1.Paced}
+
+# a view owed nothing and touched by nothing is never told
+law thin_pace_quiet:
+  for last: Nat
+  for now: Nat
+  {TPR1.Paced.send(TPR1.Pace.step(TPR1.Pace{last, 0n}, now, 0n)) == False{} : Bool}
+# --- J2: walks the JS hub makes over a whole log, in tail calls ---
+# Bend's JS target turns only tail self-calls into loops, and Bun's stack
+# holds about 67k frames: Base's List.length and String.to_lower overflowed
+# it at boot on a long log (353k lines) or a long message.
+
+# Store.size counts as List.length does
+law store_size_go_succ:
+  for +ls: List<&2, String>
+  for +n: Nat
+  {ST.Store.size.go(ls, 1n+n) == 1n+ST.Store.size.go(ls, n) : Nat}
+
+law store_size_is_length:
+  for +ls: List<&2, String>
+  {ST.Store.size(ls) == List.length(&2, String, ls) : Nat}
+
+# the index's words, lowered a character at a time, are those of the
+# message lowered whole
+law thin_words_lower_each:
+  for +s: String
+  for +ws: JTHIN.WordState
+  {JTHIN.Words.go(s, ws) == JTHIN.Words.go.whole(String.to_lower(s), ws) : Map<&2, Bool>}
+# ---- S1 indexed store (store.db, src/core/storedb.bend) ----
+# The store is made from the log one line at a time and can be made again
+# from any point: after a then b it is the store after a with b applied
+# (a rebuild and the incremental store agree; boot from applied_off is a
+# rebuild's tail).
+law sdb_replay_append:
+  for a: List<&2, SDB.LL>
+  for b: List<&2, SDB.LL>
+  for m: SDB.Mat
+  {SDB.Mat.replay(List.append(&2, SDB.LL, a, b), m) == SDB.Mat.replay(b, SDB.Mat.replay(a, m)) : SDB.Mat}
+
+# store after events == fold(events): the records written change by
+# change are every record of the folded state (test/storedb_test.bend
+# checks a log with most kinds of change)
+law sdb_eq_fold_small:
+  {SDB.Mat.recs(SDB.Mat.replay(SDB.Demo.small.log(), SDB.Mat.empty())) == SDB.Tab.dump(M.State.replay(SDB.Demo.small(), M.State.empty())) : Map<&2, String>}
+
+# a thread's entry rows are what M.State.mine files for it
+law sdb_entries_mine_small:
+  {SDB.Tab.mine(SDB.Mat.facts(SDB.Mat.replay(SDB.Demo.small.log(), SDB.Mat.empty())), "t1") == M.State.mine(M.State.replay(SDB.Demo.small(), M.State.empty()), "t1") : List<&2, M.Entry>}
+# ---- end S1 indexed store ----
+
+# ---- S3: the thin index and the mail cache on demand (fast-hub) ----
+# The hub builds both after it listens (THIN.Lazy, TMAIL.Lazy): what it
+# answers once they are built is what the eager boot would have held.
+
+# the index fed two runs of changes is the index fed them one after the other
+law thin_changes_append:
+  for a: List<&2, M.Change>
+  for +b: List<&2, M.Change>
+  for +i: THINL.Index
+  {THINL.Index.changes(List.append(&2, M.Change, a, b), i) == THINL.Index.changes(b, THINL.Index.changes(a, i)) : THINL.Index}
+
+# an index not built yet is the boot's index
+law thin_lazy_of:
+  for st: M.State
+  {THINL.Lazy.force(THINL.Lazy.of(st)) == THINL.Index.of(st) : THINL.Index}
+
+# a commit while it is not built is the commit applied to the eager index
+law thin_lazy_changes:
+  for +cs: List<&2, M.Change>
+  for l: THINL.Lazy
+  {THINL.Lazy.force(THINL.Lazy.changes(cs, l)) == THINL.Index.changes(cs, THINL.Lazy.force(l)) : THINL.Index}
+
+# the index built away from the hub, taken with the commits it missed
+law thin_lazy_warm:
+  for l: THINL.Lazy
+  {THINL.Lazy.force(THINL.Lazy.warm(THINL.Index.of(THINL.Lazy.base(l)), l)) == THINL.Lazy.force(l) : THINL.Index}
+
+law thin_mail_replay_append:
+  for a: List<&2, TMAILL.Pending>
+  for +b: List<&2, TMAILL.Pending>
+  for +c: TMAILL.Cache
+  {TMAILL.Lazy.replay(List.append(&2, TMAILL.Pending, a, b), c) == TMAILL.Lazy.replay(b, TMAILL.Lazy.replay(a, c)) : TMAILL.Cache}
+
+law thin_mail_lazy_of:
+  for st: M.State
+  {TMAILL.Lazy.force(TMAILL.Lazy.of(st)) == TMAILL.Cache.of(st) : TMAILL.Cache}
+
+law thin_mail_lazy_committed:
+  for +cs: List<&2, M.Change>
+  for +st: M.State
+  for l: TMAILL.Lazy
+  {TMAILL.Lazy.force(TMAILL.Lazy.committed(cs, st, l)) == TMAILL.Cache.committed(cs, st, TMAILL.Lazy.force(l)) : TMAILL.Cache}
+
+law thin_mail_lazy_warm:
+  for +st: M.State
+  for +done: List<&2, TMAILL.Pending>
+  {TMAILL.Lazy.force(TMAILL.Lazy.warm(TMAILL.Cache.of(st), TMAILL.Later{st, done})) == TMAILL.Lazy.force(TMAILL.Later{st, done}) : TMAILL.Cache}
+# ---- end S3 ----
+
+# --- J2: HTTP and WebSocket bodies counted and unmasked in tail calls ---
+# (Base's List.length and a per-byte non-tail unmask keep a frame per byte:
+# the JS target overflowed on bodies and frames of a few hundred KB)
+law http_count_go_succ:
+  for +bs: List<&2, U32>
+  for +n: Nat
+  {WS.Http.count.go(bs, 1n+n) == 1n+WS.Http.count.go(bs, n) : Nat}
+
+law http_count_is_length:
+  for +bs: List<&2, U32>
+  {WS.Http.count(bs) == List.length(&2, U32, bs) : Nat}
+
+law ws_unmask_go:
+  for +bs: List<&2, U32>
+  for +key: List<&2, U32>
+  for +i: Nat
+  for +acc: List<&2, U32>
+  {WS.Ws.unmask.go(bs, key, i, acc) == List.reverse.go(&2, U32, WS.Ws.unmask(bs, key, i), acc) : List<&2, U32>}
+
+law ws_unmask_take_go:
+  for +bs: List<&2, U32>
+  for +n: Nat
+  for +key: List<&2, U32>
+  for +i: Nat
+  for +acc: List<&2, U32>
+  {WS.Ws.unmask.take.go(bs, n, key, i, acc) == List.reverse.go(&2, U32, WS.Ws.unmask(List.take(&2, U32, bs, n), key, i), acc) : List<&2, U32>}
+
+# --- J2: a hub on a copied log (BACKPLANE_COPY=1) acts on nothing outside ---
+# Its watch scripts are none (no launch, check, stop or intent shell: every
+# watch reads as gone, nothing the log names is signalled)
+law watch_copy_launch_none:
+  for +home: String
+  for +id: String
+  for +cwd: String
+  for +target: String
+  {MPCREDIT.Watch.launch.argv(True{}, home, id, cwd, target) == [] : List<&2, String>}
+
+law watch_copy_check_none:
+  for +kind: String
+  for +target: String
+  for +ident: String
+  for +home: String
+  for +id: String
+  {MPCREDIT.Watch.check.argv(True{}, kind, target, ident, home, id) == [] : List<&2, String>}
+
+law watch_copy_stop_none:
+  for +kind: String
+  for +target: String
+  for +ident: String
+  for +home: String
+  for +id: String
+  {MPCREDIT.Watch.stop.argv(True{}, kind, target, ident, home, id) == [] : List<&2, String>}
+
+law watch_copy_intent_none:
+  for +home: String
+  for +id: String
+  {MPCREDIT.Watch.intent.argv(True{}, home, id) == [] : List<&2, String>}
+
+# a hub that is no copy runs every out it made
+law copy_off_runs_all:
+  for +os: List<&2, H.Out>
+  {JCOPY.Copy.outs(False{}, os) == os : List<&2, H.Out>}
+
+# a copy drops deploys, restarts, updates, far reports, pushes, watch stops,
+# named locks, git that writes and bot effects outside its home
+law copy_drops_outside:
+  {JCOPY.Copy.outs(True{}, [H.DeployGo{"s"}, H.ShipRun{"c"}, H.ShipNext{"w"}, H.DeployProbe{}, H.Restart{}, H.Upgrade{}, H.UpgradeForce{}, H.LaunchFar{}, H.Alerted{"t"}, H.IslandSync{},
+    H.WatchStop{"t", "w", "pid", "1", "x"}, H.LockGuard{"n", "", "t"}, H.Git{0, "", "step", "t", "/c", "", ""}, H.BotFx{"send", "a", "b", "c"}, H.BotReply{"t", "to", "x", ""}]) == [] : List<&2, H.Out>}
+
+# and keeps what stays in the hub: replies, reading git, its home's folders
+law copy_keeps_inside:
+  {JCOPY.Copy.outs(True{}, [H.Send{1, "x"}, H.Git{3, "9", "diff", "t", "/c", "", ""}, H.BotFx{"scratch", "a", "", ""}]) == [H.Send{1, "x"}, H.Git{3, "9", "diff", "t", "/c", "", ""}, H.BotFx{"scratch", "a", "", ""}] : List<&2, H.Out>}
+
+# a client that asked for git that writes is told, not left waiting
+law copy_git_write_told:
+  {JCOPY.Copy.outs(True{}, [H.Git{3, "9", "act", "t", "/c", "", ""}]) == [H.Reply.err(3, "9", "a hub on a copied log (BACKPLANE_COPY=1) runs no git that writes")] : List<&2, H.Out>}
+
+# no network command from a copy; every command from a hub that is no copy
+law copy_refuses_net:
+  {Bool.and(Bool.and(JCNET.Copy.refused(True{}, "curl", []), JCNET.Copy.refused(True{}, "git", ["push", "origin"])), Bool.not(JCNET.Copy.refused(True{}, "git", ["status"]))) == True{} : Bool}
+
+law copy_off_refuses_none:
+  for +cmd: String
+  for +args: List<&2, String>
+  {JCNET.Copy.refused(False{}, cmd, args) == False{} : Bool}
+
+# a copy takes over or stops none of the agents its home's records name
+law adopt_copy_none:
+  for +rec: String
+  for +hand: String
+  {MPCREDIT.Adopt.copy.entries(True{}, rec, hand) == [] : List<&2, AD.AEntry>}
+
+# and opens no file on the machine (file.open is git job "open"): the
+# client is told
+law copy_file_open_told:
+  {JCOPY.Copy.outs(True{}, [H.Git{3, "9", "open", "", "/", "/x", "open"}]) == [H.Reply.err(3, "9", "a hub on a copied log (BACKPLANE_COPY=1) runs no git that writes")] : List<&2, H.Out>}
+
+# --- J2: the pairing message made once per link, not per join ---
+# (its QR code took ~2 s on the JS target, for every client that joined)
+law pair_msg_kept:
+  {MPCREDIT.Hub.pair_msg.from("r1\n{m}", "r1") == "{m}" : String}
+
+# a message kept for another link is not used
+law pair_msg_other_link:
+  {MPCREDIT.Hub.pair_msg.from("r1\n{m}", "") == MPCREDIT.Hub.pair_msg.of("") : String}
+
+# no link, no QR code
+law pair_msg_no_link_qr:
+  {MPCREDIT.Info.qr("") == "" : String}
+# ---- F1: the far feed made a slice at a time (far.bend Fr.feed.some) ----
+# folding every slice of 2 lines is the feed made from the whole log at once
+law far_feed_sliced:
+  {FR.Fr.feed.sliced(20n, FR.Fr.feed.start(FR.Fr.feed.demo.lines()), 2n, FR.Fr.feed.demo.st()) == FR.Fr.feed.full(FR.Fr.feed.demo.lines(), FR.Fr.feed.demo.st()) : FR.Feed}
+
+# and so are slices of one line, and one slice bigger than the log
+law far_feed_sliced_one:
+  {FR.Fr.feed.sliced(20n, FR.Fr.feed.start(FR.Fr.feed.demo.lines()), 1n, FR.Fr.feed.demo.st()) == FR.Fr.feed.full(FR.Fr.feed.demo.lines(), FR.Fr.feed.demo.st()) : FR.Feed}
+
+law far_feed_sliced_big:
+  {FR.Fr.feed.sliced(20n, FR.Fr.feed.start(FR.Fr.feed.demo.lines()), 500n, FR.Fr.feed.demo.st()) == FR.Fr.feed.full(FR.Fr.feed.demo.lines(), FR.Fr.feed.demo.st()) : FR.Feed}
+
+# a store row for a shared line, none for a private one
+law far_fact_shared:
+  {FR.Fr.fact(FR.Fr.feed.demo.st(), M.ThreadRenamed{"t1", "x", 9n}, 8n) == [FR.Fact{8n, "p1"}] : List<&2, FR.Fact>}
+
+law far_fact_private:
+  {FR.Fr.fact(FR.Fr.feed.demo.st(), M.SettingSet{"k", "v", 9n}, 8n) == Nil{} : List<&2, FR.Fact>}
+# ---- end F1 feed ----
+
+# --- fast hub R1: per-frame reads that do not grow with the log (locks_idle_*) ---
+# a lock never set, and a lock released, are idle (M.Locks.idle: read from
+# the setting's text, not parsed)
+law locks_idle_never_set:
+  {M.Locks.idle(M.State.empty(), "bend") == True{} : Bool}
+
+law locks_idle_released:
+  {M.Locks.idle(M.State.replay([M.LockChanged{"bend", LCK.Lock.empty(), 1n}], M.State.empty()), "bend") == True{} : Bool}
+
+# a lock that is held is not idle
+law locks_idle_held_not:
+  {M.Locks.idle(M.State.replay([M.LockChanged{"bend", LCK.Lock.promote([LCK.LockParty{"t1", "thread", "t1", "", 1n, 0n}]), 1n}], M.State.empty()), "bend") == False{} : Bool}
+
+# what Locks.after skips: an idle lock that the step does not touch answers
+# Step.none() from Locks.after.one
+law locks_after_idle_none:
+  {H.Locks.after.one(M.State.replay([M.LockChanged{"bend", LCK.Lock.empty(), 1n}], M.State.empty()), M.State.replay([M.LockChanged{"bend", LCK.Lock.empty(), 1n}], M.State.empty()), 5n, "bend") == H.Step.none() : H.Step}
+
+# the idle lock's text, written out (Locks.idle reads it for every lock on
+# every step): the empty lock exactly as Locks.fold writes it
+law locks_idle_text_exact:
+  {M.Locks.idle.text() == J.Json.show(LCK.Lock.json(LCK.Lock.empty())) : String}
+# --- J2: the sign-in wait asked again only when the log moved ---
+# (Hub.auth.beat: a settings lookup per thread at every beat was most of an
+# idle JS hub's CPU)
+law auth_beat_kept:
+  {MPCREDIT.Auth.kept("1 1", M.State.empty()) == True{} : Bool}
+
+law auth_beat_asked:
+  {MPCREDIT.Auth.kept("7 1", M.State.empty()) == False{} : Bool}

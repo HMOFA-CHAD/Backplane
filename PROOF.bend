@@ -1,4 +1,7 @@
 import Base
+import ./src/core/thin.bend as THINL # S3 lazy thin index
+import ./src/server/thin-mail.bend as TMAILL # S3 lazy mail cache
+import ./src/core/storedb.bend as SDB # S1 indexed store
 import ./test/mobile_loading_proof.bend as PRESENTPROOF
 import ./src/core/mailcontinuity.bend as MCN
 import ./test/mem_score_lazy_proof.bend as MSCORE
@@ -86,6 +89,7 @@ import ./src/core/hier.bend as HI
 
 import ./src/core/boot.bend as BT
 import ./src/core/store.bend as ST
+import ./src/core/thin.bend as JTHIN # J2: JS stack
 import ./src/core/sign.bend as SG
 import ./src/core/cron.bend as CR
 import ./src/core/google.bend as GO
@@ -12017,6 +12021,7 @@ def Laws.mail_credit_native_kept(w, charge):
     case MPCREDIT.WClose{}: {==}
     case MPCREDIT.WState{_, _}: {==}
     case MPCREDIT.WItems{_, _, _, _, _, _}: {==}
+    case MPCREDIT.WJson{_, _}: {==}
 # ---- i18n web phone ----
 def Laws.webphone_option_english(): {==}
 def Laws.webphone_model_name_kept(): {==}
@@ -12180,12 +12185,12 @@ def Laws.mail_global_primary(): {==}
 
 def Laws.mail_log_count_set(c, n):
   match c:
-    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n}, managed, link, freecad, ks}, telemetry, views}:
+    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n, pair, auth}, managed, link, freecad, ks}, telemetry, views}:
       {==}
 
 def Laws.mail_log_count_committed(c, fresh):
   match c:
-    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n}, managed, link, freecad, ks}, telemetry, views}:
+    case MPCREDIT.Cfg{home, web, host, port, prompt, dirs, version, MPCREDIT.Net{tailnet, https, token, models, mtext, rt, br, pk, tm, machines, pv, MPLOG.Bn{dir, seen, work, far, live, broken, fl, tools, tch, cef, wire_n, pair, auth}, managed, link, freecad, ks}, telemetry, views}:
       {==}
 
 # ---- native phone i18n ----
@@ -12610,3 +12615,167 @@ def Laws.cache_identity_empty_cookie(https): {==}
 def Laws.oprep_task_not_in_chat(): {==}
 def Laws.oprep_task_delivered_with_filing(): {==}
 def Laws.oprep_other_thread_unchanged(): {==}
+
+def Laws.cbor_trees_exact(): {==}
+def Laws.thin_pace_own_urgent(): {==}
+def Laws.thin_pace_other_soft(): {==}
+def Laws.thin_pace_all_urgent(): {==}
+def Laws.thin_pace_none_quiet(th): {==}
+def Laws.thin_pace_no_thread_soft(): {==}
+def Laws.thin_pace_own_sends(): {==}
+def Laws.thin_pace_soft_owed(): {==}
+def Laws.thin_pace_flush_sends(): {==}
+def Laws.thin_pace_owed_raised(): {==}
+def Laws.thin_pace_quiet(last, now): {==}
+# --- J2: walks the JS hub makes over a whole log, in tail calls ---
+
+def Laws.store_size_go_succ(ls, n):
+  match ls:
+    case Nil{}:
+      {==}
+    case _ <> t:
+      Laws.store_size_go_succ(t, 1n+n)
+
+def Laws.store_size_is_length(ls):
+  match ls:
+    case Nil{}:
+      {==}
+    case _ <> t:
+      %Equal.sym(Nat, ST.Store.size.go(t, 1n+0n), 1n+ST.Store.size.go(t, 0n), Laws.store_size_go_succ(t, 0n)) : {_ == 1n+List.length(&2, String, t) : Nat}
+      %Laws.store_size_is_length(t) : {1n+ST.Store.size.go(t, 0n) == 1n+_ : Nat}
+      {==}
+
+def Laws.thin_words_lower_each(s, ws):
+  match s ws:
+    case SNil{} JTHIN.WordState{w, n, ts}:
+      {==}
+    case SCon{Chr{+x}, t} JTHIN.WordState{w, n, ts}:
+      Laws.thin_words_lower_each(t, JTHIN.Words.step(JTHIN.Word.char(U32.add(x, U32.mul(Bool.to_u32(Char.is_upper(Chr{x})), 32))), U32.add(x, U32.mul(Bool.to_u32(Char.is_upper(Chr{x})), 32)), w, n, ts))
+# ---- S1 indexed store ----
+def Laws.sdb_replay_append(a, b, m):
+  match a:
+    case Nil{}:
+      {==}
+    case h <> t:
+      Laws.sdb_replay_append(t, b, SDB.Mat.step(m, h))
+
+def Laws.sdb_eq_fold_small():
+  {==}
+
+def Laws.sdb_entries_mine_small():
+  {==}
+# ---- end S1 indexed store ----
+
+# ---- S3: the thin index and the mail cache on demand (fast-hub) ----
+def Laws.thin_changes_append(a, b, i):
+  match a:
+    case Nil{}:
+      {==}
+    case h <> t:
+      Laws.thin_changes_append(t, b, THINL.Index.change(i, h))
+
+def Laws.thin_lazy_of(st): {==}
+
+def Laws.thin_lazy_changes(cs, l):
+  match l:
+    case THINL.Built{i}:
+      {==}
+    case THINL.Later{st, done}:
+      Laws.thin_changes_append(done, cs, THINL.Index.of(st))
+
+def Laws.thin_lazy_warm(l):
+  match l:
+    case THINL.Built{i}:
+      {==}
+    case THINL.Later{st, done}:
+      {==}
+
+def Laws.thin_mail_replay_append(a, b, c):
+  match a:
+    case Nil{}:
+      {==}
+    case TMAILL.Pending{cs, st} <> t:
+      Laws.thin_mail_replay_append(t, b, TMAILL.Cache.committed(cs, st, c))
+
+def Laws.thin_mail_lazy_of(st): {==}
+
+def Laws.thin_mail_lazy_committed(cs, st, l):
+  match l:
+    case TMAILL.Built{c}:
+      {==}
+    case TMAILL.Later{base, done}:
+      Laws.thin_mail_replay_append(done, [TMAILL.Pending{cs, st}], TMAILL.Cache.of(base))
+
+def Laws.thin_mail_lazy_warm(st, done): {==}
+# ---- end S3 ----
+
+# --- J2: HTTP and WebSocket bodies counted and unmasked in tail calls ---
+
+def Laws.http_count_go_succ(bs, n):
+  match bs:
+    case Nil{}:
+      {==}
+    case _ <> t:
+      Laws.http_count_go_succ(t, 1n+n)
+
+def Laws.http_count_is_length(bs):
+  match bs:
+    case Nil{}:
+      {==}
+    case _ <> t:
+      %Equal.sym(Nat, HTTPAUTH.Http.count.go(t, 1n+0n), 1n+HTTPAUTH.Http.count.go(t, 0n), Laws.http_count_go_succ(t, 0n)) : {_ == 1n+List.length(&2, U32, t) : Nat}
+      %Laws.http_count_is_length(t) : {1n+HTTPAUTH.Http.count.go(t, 0n) == 1n+_ : Nat}
+      {==}
+
+def Laws.ws_unmask_go(bs, key, i, acc):
+  match bs:
+    case Nil{}:
+      {==}
+    case x <> t:
+      Laws.ws_unmask_go(t, key, 1n+i, HTTPAUTH.Ws.unmask.k(x, key, i) <> acc)
+
+def Laws.ws_unmask_take_go(bs, n, key, i, acc):
+  match bs n:
+    case Nil{} _:
+      {==}
+    case _ <> _ 0n:
+      {==}
+    case x <> t 1n+m:
+      Laws.ws_unmask_take_go(t, m, key, 1n+i, HTTPAUTH.Ws.unmask.k(x, key, i) <> acc)
+
+
+# --- J2: a hub on a copied log (BACKPLANE_COPY=1) acts on nothing outside ---
+
+def Laws.watch_copy_launch_none(home, id, cwd, target): {==}
+def Laws.watch_copy_check_none(kind, target, ident, home, id): {==}
+def Laws.watch_copy_stop_none(kind, target, ident, home, id): {==}
+def Laws.watch_copy_intent_none(home, id): {==}
+def Laws.copy_off_runs_all(os): {==}
+def Laws.copy_drops_outside(): {==}
+def Laws.copy_keeps_inside(): {==}
+def Laws.copy_git_write_told(): {==}
+def Laws.copy_refuses_net(): {==}
+def Laws.copy_off_refuses_none(cmd, args): {==}
+def Laws.adopt_copy_none(rec, hand): {==}
+def Laws.copy_file_open_told(): {==}
+
+# --- J2: the pairing message made once per link, not per join ---
+def Laws.pair_msg_kept(): {==}
+def Laws.pair_msg_other_link(): {==}
+def Laws.pair_msg_no_link_qr(): {==}
+# ---- F1: far feed slices ----
+def Laws.far_feed_sliced(): {==}
+def Laws.far_feed_sliced_one(): {==}
+def Laws.far_feed_sliced_big(): {==}
+def Laws.far_fact_shared(): {==}
+def Laws.far_fact_private(): {==}
+# ---- end F1 feed ----
+def Laws.locks_idle_never_set(): {==}
+def Laws.locks_idle_released(): {==}
+def Laws.locks_idle_held_not(): {==}
+def Laws.locks_after_idle_none(): {==}
+def Laws.locks_idle_text_exact(): {==}
+
+# --- J2: the sign-in wait asked again only when the log moved ---
+def Laws.auth_beat_kept(): {==}
+def Laws.auth_beat_asked(): {==}
