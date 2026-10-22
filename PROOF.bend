@@ -11335,7 +11335,7 @@ def Laws.ship_told_next_cleared(sh, state, commit):
 def Laws.ship_covered_joins_build():
   {==}
 
-def Laws.ship_follow_every_30_minutes(): {==}
+def Laws.ship_follow_every_minute(): {==}
 
 def Laws.ship_follow_off_default():
   {==}
