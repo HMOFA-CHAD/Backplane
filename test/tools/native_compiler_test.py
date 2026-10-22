@@ -1,4 +1,5 @@
-"""Check the actual patched emitter's ID bounds and native term ABI."""
+"""Check the actual patched emitter's ID bounds, native term ABI and that the
+fast-emit patch emits the same C as the ID patch alone."""
 
 import importlib.util
 import json
@@ -30,9 +31,14 @@ class NativeCompilerTest(unittest.TestCase):
             raise RuntimeError("native compiler tests require Bun and clang")
         cache = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache")))
         cls.tree = COMPILER.prepare(cache / "backplane-bend/compiler")
+        # the reference: the same pinned source with the ID patch alone
+        cls.ref = COMPILER.prepare(cache / "backplane-bend/compiler", patches=(COMPILER.PATCH,))
 
     def test_cache_rejects_corruption_and_bad_archive(self) -> None:
-        patch_hash = COMPILER.digest(COMPILER.PATCH)
+        patch_hash = COMPILER.patches_digest(COMPILER.PATCHES)
+        self.assertNotEqual(self.tree, self.ref)
+        self.assertTrue(COMPILER.valid(self.ref, COMPILER.digest(COMPILER.PATCH)))
+        self.assertFalse(COMPILER.valid(self.ref, patch_hash))
         self.assertTrue(COMPILER.valid(self.tree, patch_hash))
         with patch.object(COMPILER, "download", side_effect=AssertionError("network")):
             self.assertEqual(COMPILER.prepare(self.tree.parent), self.tree)
@@ -52,10 +58,12 @@ class NativeCompilerTest(unittest.TestCase):
             out = Path(tmp)
             COMPILER.metadata(self.tree, out, self.bun)
             self.assertEqual((out / "LICENSE").read_bytes(), (self.tree / "LICENSE").read_bytes())
-            self.assertEqual((out / COMPILER.PATCH.name).read_bytes(), COMPILER.PATCH.read_bytes())
+            for one in COMPILER.PATCHES:
+                self.assertEqual((out / one.name).read_bytes(), one.read_bytes())
             record = json.loads((out / "native-compiler.json").read_text())
             self.assertEqual(record["source_sha256"], COMPILER.SOURCE_SHA256)
             self.assertEqual(record["patch_sha256"], COMPILER.digest(COMPILER.PATCH))
+            self.assertEqual(record["fast_emit_patch_sha256"], COMPILER.digest(COMPILER.FAST_PATCH))
             self.assertEqual(record["bun_sha256"], COMPILER.digest(Path(self.bun)))
             self.assertEqual(record["function_id_bits"], 20)
             COMPILER.verify_metadata(out)
@@ -67,6 +75,55 @@ class NativeCompilerTest(unittest.TestCase):
             (out / "native-compiler.json").write_text(json.dumps(record))
             with self.assertRaisesRegex(ValueError, "provenance mismatch"):
                 COMPILER.verify_metadata(out)
+            COMPILER.metadata(self.tree, out, self.bun)
+            (out / COMPILER.FAST_PATCH.name).unlink()
+            with self.assertRaisesRegex(ValueError, "provenance mismatch"):
+                COMPILER.verify_metadata(out)
+
+    def test_fast_emit_matches_id_patch_alone(self) -> None:
+        # The fast-emit patch only replays passes it proves cannot differ:
+        # any drift in the emitted C is a bug in it. Several defs, a type,
+        # recursion, a match and a closure give its replay something to do.
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
+            root = Path(tmp)
+            program = root / "drift.bend"
+            program.write_text("""import Base
+
+type Shape is Data:
+  Dot{}
+  Box{w: U32, h: U32}
+
+def area(s: Shape) -> U32:
+  match s:
+    case Dot{}:
+      0
+    case Box{w, h}:
+      (w * h : U32)
+
+def sum(xs: List<&1, Shape>) -> U32:
+  match xs:
+    case []:
+      0
+    case h <> t:
+      (area(h) + sum(t) : U32)
+
+def apply(f: U32 -> U32, x: U32) -> U32:
+  f(x)
+
+def main() -> IO(Unit):
+  IO.print(U32.show(apply(x => (x + sum([Dot{}, Box{2, 3}, Box{4, 5}]) : U32), 1)))
+""")
+            outs = {}
+            for name, tree in (("fast", self.tree), ("ref", self.ref)):
+                emitted = root / f"{name}.c"
+                subprocess.run([self.bun, str(tree / "bend2/main.ts"), str(program),
+                                "-o", str(emitted)], check=True, timeout=120)
+                outs[name] = emitted.read_bytes()
+            self.assertGreater(len(outs["ref"]), 0)
+            self.assertEqual(COMPILER.hashlib.sha256(outs["fast"]).hexdigest(),
+                             COMPILER.hashlib.sha256(outs["ref"]).hexdigest(),
+                             "fast-emit C differs from the ID patch alone")
 
     def test_constructor_and_function_identifier_bounds(self) -> None:
         source = (self.tree / "bend2/comp.ts").read_text()
