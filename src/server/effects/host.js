@@ -28,7 +28,7 @@ function host_libc() {
       + " posix_spawn_file_actions_addopen:pipiu>i"
       + " posix_spawnattr_init:p>i posix_spawnattr_destroy:p>i"
       + " posix_spawnattr_setflags:ph>i posix_spawnattr_setsigdefault:pp>i"
-      + " posix_spawnattr_setsigmask:pp>i sigemptyset:p>i sigaddset:pi>i")).symbols;
+      + " posix_spawnattr_setsigmask:pp>i sigemptyset:p>i sigaddset:pi>i sigfillset:p>i")).symbols;
     const opt = (one) => {
       try {
         return Object.values(ffi.dlopen(lib, spec(one)).symbols)[0];
@@ -168,10 +168,24 @@ function sock_save(socket, path, n, k) {
         return undefined;
       }
       if (got <= 0) {
+        const code = got === 0 ? 32 : sys.errno();
         fs.closeSync(out);
-        return io_tup(socket, io_fail(got === 0 ? 32 : sys.errno()));
+        return io_tup(socket, io_fail(code));
       }
-      fs.writeSync(out, b.subarray(0, got));
+      // a write that fails (a full disk) is the save's failure, as in C,
+      // never a throw out of the loop
+      try {
+        let at = 0;
+        while (at < got) {
+          at += fs.writeSync(out, b.subarray(at, got));
+        }
+      } catch (err) {
+        try {
+          fs.closeSync(out);
+        } catch (_) {
+        }
+        return io_tup(socket, io_fail(host_errno(err)));
+      }
       left -= got;
     }
     fs.closeSync(out);
@@ -362,12 +376,15 @@ function host_err_open() {
   }
 }
 
-// The descriptors open in this process above 2 (Bun's own included).
+// The descriptors open in this process above 2 (Bun's own included). The
+// listing names the descriptor that read it, closed by now: only those
+// still open are kept (on macOS a close action on a closed one fails the
+// whole posix_spawn with EBADF).
 function host_fds() {
   const fs = require("fs");
   try {
     return fs.readdirSync(process.platform === "darwin" ? "/dev/fd" : "/proc/self/fd")
-      .map(Number).filter((fd) => fd > 2);
+      .map(Number).filter((fd) => fd > 2 && io_sys().fcntl(fd, 1, 0) >= 0);
   } catch (_) {
     return [];
   }
@@ -421,8 +438,7 @@ function host_self(argv) {
 // joins it to stdout, 2 inherits ours, 3 goes to a file read back by
 // Proc.errtail. Answers (pid, socket). As host.c, plus: the child gets
 // only 0-2 (Bun opens descriptors without close-on-exec), and starts with
-// the signals Bun ignores (SIGPIPE, SIGXFSZ) at their defaults and none
-// blocked.
+// every signal at its default and none blocked.
 function proc_spawn(cmd, args, cwd, err) {
   const c = host_libc();
   const sys = io_sys();
@@ -467,20 +483,25 @@ function proc_spawn(cmd, args, cwd, err) {
   }
   // the child keeps only the copies on 0-2: left open, a process it puts
   // in the background would hold the pipe, and the caller never sees EOF
-  if (c.addclosefrom !== undefined) {
+  // (macOS: POSIX_SPAWN_CLOEXEC_DEFAULT below; a close action there on a
+  // descriptor the child does not inherit, Bun's kqueue, fails the spawn)
+  if (c.mac) {
+  } else if (c.addclosefrom !== undefined) {
     c.addclosefrom(c.ptr(fa), 3);
   } else {
     for (const fd of host_fds()) {
       c.posix_spawn_file_actions_addclose(c.ptr(fa), fd);
     }
   }
-  c.sigemptyset(c.ptr(set));
-  c.sigaddset(c.ptr(set), 13);
-  c.sigaddset(c.ptr(set), 25);
+  // every signal at its default (a hub started from a background job
+  // ignores SIGINT and SIGQUIT, and Bun ignores SIGPIPE and SIGXFSZ). This
+  // differs from host.c, which resets only SIGPIPE: agents run under
+  // systemd and must answer the signals the hub and their own tools send
+  c.sigfillset(c.ptr(set));
   c.posix_spawnattr_setsigdefault(c.ptr(at), c.ptr(set));
   c.sigemptyset(c.ptr(set));
   c.posix_spawnattr_setsigmask(c.ptr(at), c.ptr(set));
-  c.posix_spawnattr_setflags(c.ptr(at), 0x04 | 0x08);
+  c.posix_spawnattr_setflags(c.ptr(at), 0x04 | 0x08 | (c.mac ? 0x4000 : 0));
   if (code === 0) {
     code = c.posix_spawnp(c.ptr(pid), c.ptr(v.bufs[0]), c.ptr(fa), c.ptr(at),
       c.ptr(v.vec), c.ptr(env.vec));
