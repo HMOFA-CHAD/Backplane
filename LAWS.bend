@@ -9417,6 +9417,11 @@ law tool_summary_question:
 law order_off_says_where:
   {String.contains(ORD.Order.prompt.project.k(False{}), "Settings → Ordering") == True{} : Bool}
 
+# with ordering on, an agent is told ordering goes through Buy it and never
+# through a manufacturer's website
+law order_on_says_buy_it:
+  {Bool.and(String.contains(ORD.Order.prompt.project.k(True{}), "presses Buy it"), String.contains(ORD.Order.prompt.project.k(True{}), "Never order yourself")) == True{} : Bool}
+
 # ---- i18n lang ----
 law lang_default_auto:
   {U.Lang.resolve("", "en_US.UTF-8", False{}) == "en" : String}

@@ -85,8 +85,12 @@ def Session.read.flags(j: J.Json, acc: Map<&2, Bool>) -> Map<&2, Bool>:
 # Only presentation fields may cross the handoff. In particular the saved
 # origin, connection generation, live-buffer revisions and replay flags stay
 # with the canonical client, even if a late response carries older values.
+# what a session keeps of its info between requests: folds, form fields,
+# and a thread's ordering card from its fab.look reply (fab.ready:<t>,
+# fab.buy:<t>, fab.line:<t>...); without those the Ready to order bar and
+# the header's Buy it never showed in a thin view
 def Session.info.key(+k: String) -> Bool:
-  Bool.or(String.starts_with(k, "fold:"), Bool.or(String.starts_with(k, "subs:"), String.starts_with(k, "@f.")))
+  Bool.or(String.starts_with(k, "fold:"), Bool.or(String.starts_with(k, "subs:"), Bool.or(String.starts_with(k, "@f."), String.starts_with(k, "fab."))))
 
 def Session.info.put(keep: Bool, acc: Map<&2, String>, k: String, v: String) -> Map<&2, String>:
   match keep:
