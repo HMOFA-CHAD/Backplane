@@ -152,7 +152,7 @@ jobs:
         run: |
           chmod 755 build/bootstrap-js/${{ matrix.service }}
           py=python; [ "$RUNNER_OS" = Linux ] && py=/usr/bin/python3
-          "$py" build/bootstrap-tools/scripts/service-runtime.py --source-root "$GITHUB_WORKSPACE" --build "$GITHUB_WORKSPACE/build/bootstrap-js" --producer "$GITHUB_WORKSPACE/build/bootstrap-tools/scripts/service-release.py" --producer-sha256 5bae5529c78178f92f5e4dc76f0816d867ec1828180f8a7a69a88cc05e6b0029 --out "$GITHUB_WORKSPACE/build/bootstrap-service"
+          "$py" build/bootstrap-tools/scripts/service-runtime.py --source-root "$GITHUB_WORKSPACE" --build "$GITHUB_WORKSPACE/build/bootstrap-js" --producer "$GITHUB_WORKSPACE/build/bootstrap-tools/scripts/service-release.py" --producer-sha256 e8b52fb537d587c2946c9e893e193a7e967fe9ebe0088390dd7b8eec15656058 --out "$GITHUB_WORKSPACE/build/bootstrap-service"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
