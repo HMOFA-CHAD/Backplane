@@ -1743,8 +1743,16 @@ def Info.kicad(rt: K.Rt) -> List<&2, J.KV>:
        J.KV{"kicad.ipc.servers", J.Str{J.Json.get_str(h, "ipc", "")}}]
 
 # the pairing link as a QR code's rows (core/qr.bend), for Settings
+def Info.qr.k(none: Bool, +lk: String) -> String:
+  match none:
+    case True{}:
+      ""
+    case False{}:
+      QR.Qr.text(QR.Qr.link(lk))
+
+# the pairing link's QR code; none for no link
 def Info.qr(+lk: String) -> String:
-  QR.Qr.text(QR.Qr.link(lk))
+  Info.qr.k(String.is_empty(lk), lk)
 
 # the tailnet side as clients are told it ("tailscale"): off (the flag),
 # checking (no answer yet), unavailable, or reachable
@@ -1772,10 +1780,26 @@ def Hub.info(c: Cfg) -> J.Json:
 # the pairing link (the tailnet address and the token) and its QR code: not
 # in the info every client hears, but told only to clients that came with
 # the token (Hub.join.k, Wire.pair), never to one let in the legacy way
+# the pairing message for a link report (its QR code is made here: ~2 s on
+# the JS target, so Cfg.with_link keeps it in Bn and joins reuse it)
+def Hub.pair_msg.of(+lk: String) -> String:
+  "{\"t\":\"info\",\"info\":" ++ J.Json.show(J.Json.obj([J.KV{"pair", J.Str{TN.Tailnet.report.link(lk)}}, J.KV{"pair.qr", J.Str{Info.qr(TN.Tailnet.report.link(lk))}}])) ++ "}"
+
+def Hub.pair_msg.k(hit: Bool, +kept: String, +lk: String) -> String:
+  match hit:
+    case True{}:
+      String.drop(kept, 1n+String.length(lk))
+    case False{}:
+      Hub.pair_msg.of(lk)
+
+# the message kept for this link, else made (law pair_msg_kept)
+def Hub.pair_msg.from(+kept: String, +lk: String) -> String:
+  Hub.pair_msg.k(String.starts_with(kept, lk ++ "\n"), kept, lk)
+
 def Hub.pair_msg(c: Cfg) -> String:
   match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, _, _, _, _, _, +lk, _, _}, _, +views}:
-      "{\"t\":\"info\",\"info\":" ++ J.Json.show(J.Json.obj([J.KV{"pair", J.Str{TN.Tailnet.report.link(lk)}}, J.KV{"pair.qr", J.Str{Info.qr(TN.Tailnet.report.link(lk))}}])) ++ "}"
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, _, _, _, bnx, _, +lk, _, _}, _, +views}:
+      Hub.pair_msg.from(BN.Bn.pair(bnx), lk)
 
 # A link change is handled after it has been stored, through the inbox,
 # so both sides of an invite refresh immediately (revokes prune rows).
@@ -4907,10 +4931,11 @@ def Cfg.with_machines(c: Cfg, +mc: String) -> Cfg:
     case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, _, pvx, bnx, mgd, lk, fc, ksx}, +tcfg, +views}:
       Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}, tcfg, views}
 
+# a new pairing link, its message made once and kept for every join
 def Cfg.with_link(c: Cfg, +lk: String) -> Cfg:
   match c:
     case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, _, fc, ksx}, +tcfg, +views}:
-      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}, tcfg, views}
+      Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, BN.Bn.with_pair(bnx, lk ++ "\n" ++ Hub.pair_msg.of(lk)), mgd, lk, fc, ksx}, tcfg, views}
 
 # the tailnet listener is up: every client hears the pairing link. Each
 # one either is the owner's own device or came in with the token already,

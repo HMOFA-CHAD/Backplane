@@ -12758,3 +12758,8 @@ def Laws.copy_refuses_net(): {==}
 def Laws.copy_off_refuses_none(cmd, args): {==}
 def Laws.adopt_copy_none(rec, hand): {==}
 def Laws.copy_file_open_told(): {==}
+
+# --- J2: the pairing message made once per link, not per join ---
+def Laws.pair_msg_kept(): {==}
+def Laws.pair_msg_other_link(): {==}
+def Laws.pair_qr_none(): {==}

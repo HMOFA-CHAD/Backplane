@@ -11517,3 +11517,16 @@ law adopt_copy_none:
 # client is told
 law copy_file_open_told:
   {JCOPY.Copy.outs(True{}, [H.Git{3, "9", "open", "", "/", "/x", "open"}]) == [H.Reply.err(3, "9", "a hub on a copied log (BACKPLANE_COPY=1) runs no git that writes")] : List<&2, H.Out>}
+
+# --- J2: the pairing message made once per link, not per join ---
+# (its QR code took ~2 s on the JS target, for every client that joined)
+law pair_msg_kept:
+  {MPCREDIT.Hub.pair_msg.from("r1\n{m}", "r1") == "{m}" : String}
+
+# a message kept for another link is not used
+law pair_msg_other_link:
+  {MPCREDIT.Hub.pair_msg.from("r1\n{m}", "") == MPCREDIT.Hub.pair_msg.of("") : String}
+
+# no link, no QR code
+law pair_qr_none:
+  {MPCREDIT.Info.qr("") == "" : String}
