@@ -1,4 +1,5 @@
 import Base
+import ./src/core/storedb.bend as SDB # S1 indexed store
 import ./test/mobile_loading_proof.bend as PRESENTPROOF
 import ./src/core/mailcontinuity.bend as MCN
 import ./test/mem_score_lazy_proof.bend as MSCORE
@@ -12610,3 +12611,18 @@ def Laws.cache_identity_empty_cookie(https): {==}
 def Laws.oprep_task_not_in_chat(): {==}
 def Laws.oprep_task_delivered_with_filing(): {==}
 def Laws.oprep_other_thread_unchanged(): {==}
+
+# ---- S1 indexed store ----
+def Laws.sdb_replay_append(a, b, m):
+  match a:
+    case Nil{}:
+      {==}
+    case h <> t:
+      Laws.sdb_replay_append(t, b, SDB.Mat.step(m, h))
+
+def Laws.sdb_eq_fold_small():
+  {==}
+
+def Laws.sdb_entries_mine_small():
+  {==}
+# ---- end S1 indexed store ----
