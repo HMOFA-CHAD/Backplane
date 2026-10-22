@@ -331,6 +331,12 @@ function bp_wide(s) {
 
 function bp_conpty(argv, cwd, env, cols, rows) {
   const { k, ptr, read } = bp_conpty_lib();
+  // BACKPLANE_DEBUG_CONPTY=1: what the console and the process did, to
+  // stderr (creation results, the first reads, the exit)
+  const dbg = process.env.BACKPLANE_DEBUG_CONPTY === "1"
+    ? (...a) => { try { require("fs").writeSync(2, "conpty: " + a.join(" ") + "\n"); } catch (_) {} }
+    : () => {};
+  dbg("argv", JSON.stringify(argv), "cwd", JSON.stringify(cwd), "size", cols + "x" + rows);
   const handle = (b) => read.ptr(ptr(b), 0);
   const inR = new BigUint64Array(1), inW = new BigUint64Array(1);
   const outR = new BigUint64Array(1), outW = new BigUint64Array(1);
@@ -341,6 +347,7 @@ function bp_conpty(argv, cwd, env, cols, rows) {
   const size = (rows & 0xffff) << 16 | (cols & 0xffff);
   const hpc = new BigUint64Array(1);
   const hr = k.CreatePseudoConsole(size >>> 0, handle(inR), handle(outW), 0, ptr(hpc));
+  dbg("CreatePseudoConsole hr", hr >>> 0, "hpc", String(hpc[0]));
   // the console holds its own copies: ours of its ends go
   k.CloseHandle(handle(inR));
   k.CloseHandle(handle(outW));
@@ -358,6 +365,10 @@ function bp_conpty(argv, cwd, env, cols, rows) {
   const si = new Uint8Array(112);
   const pi = new Uint8Array(24);
   new DataView(si.buffer).setUint32(0, 112, true);
+  // STARTF_USESTDHANDLES with null std handles (offsets 80, 88, 96): left
+  // unset, a child of a process whose own stdio is redirected (the hub, a
+  // service) inherits those handles and never writes to the pseudoconsole
+  new DataView(si.buffer).setUint32(60, 0x100, true);
   if (!k.InitializeProcThreadAttributeList(ptr(list), 1, 0, ptr(need))
     || !k.UpdateProcThreadAttribute(ptr(list), 0, 0x00020016n, ptr(pcv), 8n, null, null)) {
     k.ClosePseudoConsole(pc);
@@ -371,6 +382,7 @@ function bp_conpty(argv, cwd, env, cols, rows) {
   const ok = k.CreateProcessW(null, ptr(line), null, null, 0, 0x00080000 | 0x00000400,
     ptr(block), dir === null ? null : ptr(dir), ptr(si), ptr(pi));
   k.DeleteProcThreadAttributeList(ptr(list));
+  dbg("CreateProcessW", ok, ok ? "" : "error " + k.GetLastError());
   if (!ok) {
     const e = k.GetLastError();
     k.ClosePseudoConsole(pc);
@@ -382,6 +394,8 @@ function bp_conpty(argv, cwd, env, cols, rows) {
   const proc = read.ptr(ptr(pi), 0);
   k.CloseHandle(read.ptr(ptr(pi), 8));
   const pid = pv.getUint32(16, true);
+  dbg("pid", pid);
+  let reads = 0;
   const term = { closed: false, data: null, exit: null };
   const child = { pid, terminal: term, exitCode: null, signalCode: null };
   let done;
@@ -403,10 +417,15 @@ function bp_conpty(argv, cwd, env, cols, rows) {
       if (!k.ReadFile(handle(outR), ptr(buf), Math.min(avail[0], buf.length), ptr(n), null) || n[0] === 0) {
         break;
       }
+      if (reads < 20) {
+        reads += 1;
+        dbg("read", n[0], "bytes:", JSON.stringify(Buffer.from(buf.slice(0, Math.min(n[0], 80))).toString("latin1")));
+      }
       term.data?.(term, buf.slice(0, n[0]));
     }
     if (child.exitCode === null && k.GetExitCodeProcess(proc, ptr(code)) && code[0] !== 259) {
       child.exitCode = code[0] & 0xff;
+      dbg("exit", code[0], "after", reads, "reads");
       hang();
     }
     if (child.exitCode !== null && !(k.PeekNamedPipe(handle(outR), null, 0, null, ptr(avail), null) && avail[0] > 0)) {
@@ -453,14 +472,36 @@ function bp_conpty_wire(child, h) {
 
 // On Windows a command named by an absolute POSIX path that is not there
 // ("/bin/bash", the hub's default SHELL; "/bin/sh") is the program of that
-// name on PATH: the Windows package ships its runtime's bin (bash.exe,
-// sh.exe) there. Anything else is left as it is.
+// name on PATH outside the system's folders: the Windows package ships its
+// runtime's bin (bash.exe, sh.exe) there. Anything else is left as it is.
 function bp_pty_win_cmd(cmd) {
   if (process.platform !== "win32" || !cmd.startsWith("/") || require("fs").existsSync(cmd)) {
     return cmd;
   }
   const base = cmd.slice(cmd.lastIndexOf("/") + 1);
-  return base === "" ? cmd : Bun.which(base, { PATH: process.env.PATH ?? "" }) ?? cmd;
+  if (base === "") {
+    return cmd;
+  }
+  // PATH in order, skipping the system's own folders: C:\Windows\System32
+  // has bash.exe, WSL's launcher, which exits at once (66) without a
+  // distribution; the package's runtime bin has the real one
+  const sys = String(process.env.SystemRoot || process.env.windir || "C:\\Windows").toLowerCase();
+  const fs = require("fs");
+  for (const dir of String(process.env.PATH ?? "").split(";")) {
+    if (dir === "" || dir.toLowerCase().startsWith(sys) || /\\windowsapps\\?$/i.test(dir)) {
+      continue;
+    }
+    for (const name of [base + ".exe", base]) {
+      const full = dir.replace(/[\\/]$/, "") + "\\" + name;
+      try {
+        if (fs.statSync(full).isFile()) {
+          return full;
+        }
+      } catch (_) {
+      }
+    }
+  }
+  return cmd;
 }
 
 function bp_pty_spawn(cmd, args, cwd, cols, rows) {
