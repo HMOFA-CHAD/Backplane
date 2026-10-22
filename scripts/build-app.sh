@@ -27,6 +27,8 @@
 #                     emits are kept (a finished emit, renamed into place);
 #                     the C holds no credential (the baked Google client is
 #                     a header made after, never part of it). Three are kept.
+#                     On a miss, an emit CI made of the same key is fetched
+#                     (scripts/emit-fetch.sh; BACKPLANE_EMIT_REMOTE=0: never)
 #   BACKPLANE_VERSION_STAMP  the version this build reports (Version.current),
 #                     written into the emitted C (scripts/stamp-version.py);
 #                     unset, it reads 0.1.0-dev
@@ -147,6 +149,14 @@ elif [ -n "$ekey" ] && [ -f "$EMIT_CACHE/$ekey.c" ] && [ -f "$EMIT_CACHE/$ekey.o
   cp "$EMIT_CACHE/$ekey.c" "$work/all.tmp.c" && mv "$work/all.tmp.c" "$work/all.c"
   touch "$EMIT_CACHE/$ekey.c" "$EMIT_CACHE/$ekey.ok"
   emit_how=reused
+elif [ -n "$ekey" ] && scripts/emit-fetch.sh "$ekey" "$work/all.tmp.c"; then
+  # CI already emitted exactly these inputs (scripts/emit-fetch.sh): kept
+  # here too, as an emit made here would be
+  mv "$work/all.tmp.c" "$work/all.c"
+  mkdir -p "$EMIT_CACHE"
+  cp "$work/all.c" "$EMIT_CACHE/$ekey.c.$$" && mv "$EMIT_CACHE/$ekey.c.$$" "$EMIT_CACHE/$ekey.c" \
+    && wc -c <"$EMIT_CACHE/$ekey.c" | tr -d ' ' >"$EMIT_CACHE/$ekey.ok.$$" && mv "$EMIT_CACHE/$ekey.ok.$$" "$EMIT_CACHE/$ekey.ok"
+  emit_how=fetched
 else
   rm -f "$work/all.c"
   # (bend picks what it writes by the name's ending: .c is the C; any other
@@ -167,6 +177,9 @@ else
   fi
 fi
 t_emit=$(now_ms)
+# the key this emit is kept under, for CI to share it (emit-fetch.sh)
+rm -f "$work/emit.key"
+[ -n "$ekey" ] && [ -f "$EMIT_CACHE/$ekey.ok" ] && printf '%s %s\n' "$ekey" "$emit_how" >"$work/emit.key"
 # the version (BACKPLANE_VERSION_STAMP) goes into the emitted C, not into
 # the source: the kept emit stays the same for every version
 if [ -n "${BACKPLANE_VERSION_STAMP:-}" ]; then
