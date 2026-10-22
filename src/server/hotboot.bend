@@ -312,12 +312,16 @@ def Hot.missed.k(yes: Bool, +id: String, acc: List<&2, J.Json>) -> List<&2, J.Js
     case False{}:
       acc
 
+def Hot.has(p: Map<&2, Bool> & Bool) -> Bool:
+  (_, b) = p
+  b
+
 def Hot.missed(ts: List<&2, M.Thread>, +had: Map<&2, Bool>, acc: List<&2, J.Json>) -> List<&2, J.Json>:
   match ts:
     case Nil{}:
       acc
     case +t <> rest:
-      Hot.missed(rest, had, Hot.missed.k(Bool.and(Hot.open(t), Bool.not(Map.has(&2, Bool, had, M.Thread.id(t)))), M.Thread.id(t), acc))
+      Hot.missed(rest, had, Hot.missed.k(Bool.and(Hot.open(t), Bool.not(Hot.has(Map.has(&2, Bool, had, M.Thread.id(t))))), M.Thread.id(t), acc))
 
 def Hot.str(x: J.Json) -> String:
   match x:
