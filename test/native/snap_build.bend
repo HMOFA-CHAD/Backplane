@@ -138,7 +138,7 @@ def Chunk() -> Nat:
 def Write.ok.k(fine: Bool, +r: String, +what: String) -> IO(Unit):
   match fine:
     case True{}:
-      IO.pure(Unit, ())
+      IO.pure(Unit, Unit{})
     case False{}:
       IO.die(Unit, 1, "snap_build: " ++ what ++ ": " ++ r)
 
