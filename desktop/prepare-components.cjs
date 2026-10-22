@@ -47,6 +47,7 @@ function appFiles(desktop) {
     const file = path.join(desktop, name);
     check(fs.existsSync(file) && fs.statSync(file).isFile(), 'The app references a missing file: desktop/' + name);
     seen.add(name);
+    if (/\.(?:png|ico|icns)$/.test(name)) continue;
     const text = fs.readFileSync(file, 'utf8');
     const refs = [...text.matchAll(/require\(\s*['"]\.\/([^'"]+)['"]\s*\)/g), ...text.matchAll(/__dirname\s*,\s*['"]([^'"]+)['"]/g),
       ...(name.endsWith('.html') ? text.matchAll(/(?:src|href)=["']\.?\/?([\w.-]+\.(?:js|css|cjs))["']/g) : [])].map(m => m[1]);

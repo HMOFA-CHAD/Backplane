@@ -88,8 +88,8 @@ export class ThinHost {
     for (const operation of this.actions) operation.settled?.(false);
     this.actions = [];this.fields.clear();
     this.messages.clear();this.target = target;
-    this.api.selection?.(target, this.session);
     this.ready = false;this.window = null;this.api.state({ phase: 'loading', remoteReady: false });
+    this.api.selection?.(target, this.session);
     return this.flush(this.client.select(this.hub, target, requestSession(this.session, false, target), this.api.cid), { selection: true });
   }
   request(action, value, settled) {

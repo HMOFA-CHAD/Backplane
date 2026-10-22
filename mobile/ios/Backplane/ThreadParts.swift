@@ -527,7 +527,14 @@ struct ComposerExtras: View {
                 HStack(spacing: 6) {
                     ForEach(atts, id: \.self) { c in
                         Button { model.act("detach", c.path) } label: {
-                            Label(c.label, systemImage: c.image ? "photo" : "doc").lineLimit(1)
+                            if c.image, let url = model.web(c.url) {
+                                AsyncImage(url: url) { phase in
+                                    if let image = phase.image { image.resizable().scaledToFit() }
+                                    else if phase.error != nil { Image(systemName: "photo").accessibilityLabel("Preview unavailable") }
+                                    else { ProgressView() }
+                                }.frame(width: 96, height: 72).accessibilityHidden(true)
+                            }
+                            Text(c.label).lineLimit(1)
                             Image(systemName: "xmark").font(.caption2)
                         }
                         .buttonStyle(.bordered)

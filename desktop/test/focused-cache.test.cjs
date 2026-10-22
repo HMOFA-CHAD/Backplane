@@ -42,7 +42,7 @@ test('cookie marker accepts one exact public hex tag and no duplicates or creden
 });
 test('merge replaces only the displayed main and leaves the fresh shell state untouched',async()=>{
  const {m,record}=await picture();const shell={type:'element',tag:'div',key:'app',attrs:[{name:'class',value:'app'}],kids:[{type:'element',tag:'main',key:'',attrs:[],kids:[]}]};
- const fresh=JSON.stringify(shell),merged=m.mergeFocused(shell,record);assert.equal(JSON.stringify(shell),fresh);assert.equal(merged.kids[0],record.main);assert.equal(merged.attrs[0].value,'app picked');
+ const fresh=JSON.stringify(shell),merged=m.mergeFocused(shell,record);assert.equal(JSON.stringify(shell),fresh);assert.deepEqual(merged.kids[0].kids,record.main.kids);assert.equal(merged.kids[0].attrs.at(-1).value,'true');assert.equal(merged.attrs[0].value,'app picked');
  assert.equal(m.mergeFocused(shell,{...record,shellAttrs:[]}).attrs[0].value,'app');
 });
 test('bounded capture excludes noncommitted rows even when they are the most recent',async()=>{

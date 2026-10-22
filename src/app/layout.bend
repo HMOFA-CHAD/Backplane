@@ -1016,15 +1016,13 @@ def Lay.sidebar.k.m(~PC: Data, ~paint: PC -> ST.SideRowReq -> ST.SideRowStep, +t
       D.Draw.rect(top, 0, 51, 264, 1, T.Th.line(), 255),
       D.Draw.disc(top, 19.0, 26.0, 3.5, Bool.pick(U32, on, T.Th.ok(), T.Th.bad()), 255)]),
     Out.ops(List.append(&2, R.Op, Ty.text(ty, 1n, "Backplane", top, 30, 0, 52, T.Th.text()),
-      Ty.text(ty, 2n, Ty.fit(ty, 2n, "v" ++ v, (158 - U32.min(Ty.width(ty, 1n, "Backplane"), 158) : U32)), top, (30 + Ty.width(ty, 1n, "Backplane") + 8 : U32), 0, 52, T.Th.faint()))),
+      Ty.text(ty, 2n, Ty.fit(ty, 2n, "v" ++ v, (128 - U32.min(Ty.width(ty, 1n, "Backplane"), 128) : U32)), top, (30 + Ty.width(ty, 1n, "Backplane") + 8 : U32), 0, 52, T.Th.faint()))),
     Out{Lay.icon(ty, "plus", top, 234, 18, T.Th.dim()), [Lay.hit(228, 12, 28, 28, "vw-projo", "")]},
     utop,
     Lay.adding(ty, adding, uh, path, String.eq(focus, "project-path"), caret, mark),
     Links.over(Lay.hints(hint, Side.most(col, sd, (h - 48 : U32)), ty, D.Clip{0, y0, 264, (h - 48 : U32)}, ids), U.Links.recent(st, now), now, D.Clip{0, y0, 264, (h - 48 : U32)}),
     Lay.finding(ty, active, yf, q, focus, caret, mark),
-    Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), 0, (h - 48 : U32), 263, 48, T.Th.panel(), 255), D.Draw.rect(D.Clip.all(), 0, (h - 48 : U32), 263, 1, T.Th.line(), 255)],
-        List.append(&2, R.Op, Lay.icon(ty, "settings", D.Clip.all(), 16, (h - 32 : U32), Bool.pick(U32, settings, T.Th.text(), T.Th.dim())), Ty.text(ty, 2n, MSG.T.palette.settings(Ty.loc(ty)), D.Clip.all(), 40, (h - 48 : U32), 48, Bool.pick(U32, settings, T.Th.text(), T.Th.dim())))),
-      [Lay.hit(0, (h - 48 : U32), 120, 48, "flag", "settings")]},
+    Out{Lay.icon(ty, "settings", top, 204, 18, Bool.pick(U32, settings, T.Th.text(), T.Th.dim())), [Lay.hit(194, 4, 36, 44, "flag", "settings")]},
     Mach.bar.k(many, ty, ms, h),
     Mach.menu(ty, Bool.and(many, U.Flag.get(open, "machines")), ms, h)]))
 

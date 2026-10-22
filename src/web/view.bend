@@ -461,7 +461,7 @@ def View.mlist(open: Bool, rs: List<&2, U.MRow>) -> List<&2, D.Node>:
 def View.machines.loc(+lc: I.Loc, many: Bool, +open: Bool, +rs: List<&2, U.MRow>) -> List<&2, D.Node>:
   match many:
     case True{}:
-      List.append(&2, D.Node, View.mlist(open, rs), [WI.WIcon.button("machine-pick", "flag", "machines", MSG.T.sidebar.machine(lc), "chevron-up", 14, U.Machines.current(rs))])
+      List.append(&2, D.Node, View.mlist(open, rs), [WI.WIcon.button("machine-pick", "flag", "machines", MSG.T.sidebar.machine(lc), "chevron-down", 14, U.Machines.current(rs))])
     case False{}:
       Nil{}
 
@@ -474,11 +474,12 @@ def View.sidebar.k(+lc: I.Loc, +ms: List<&2, U.MRow>, +ix: U.SIx, +st: M.State, 
             D.Dom.span(Bool.pick(String, on, "conn on", "conn"), ""),
             D.Dom.span("name", "Backplane"), D.Dom.span("ver", v),
             WI.WIcon.button("icon", "thin-search-open", "", "Search conversations", "search", 16, ""),
-            WI.WIcon.button("icon", "proj-open", "", MSG.T.sidebar.add.project(lc), "plus", 16, "")]}],
+            WI.WIcon.button("icon", "proj-open", "", MSG.T.sidebar.add.project(lc), "plus", 16, "")]},
+          D.El{"div", "", [D.At{"class", "sidebar-tools"}], WI.WIcon.button("settings-link", "flag", "settings", MSG.T.palette.settings(lc), "settings", 16, MSG.T.palette.settings(lc))
+              <> View.machines.loc(lc, Nat.is_gt(List.length(&2, U.MRow, ms), 1n), U.Flag.get(open, "machines"), ms)}],
           D.Dom.cat(uber, D.Dom.cat(View.add.loc(lc, adding), D.Dom.cat(View.find.loc(lc, String.eq(U.Side.view(st), "active"), q),
             D.Dom.cat(View.list(lc, String.eq(U.Side.view(st), "active"), q, open, ix, st, sel, now, look, rm), D.Dom.cat(bots, D.Dom.cat(View.rmenu(mi),
-            [D.El{"div", "", [D.At{"class", "foot"}], WI.WIcon.button("settings-link", "flag", "settings", MSG.T.palette.settings(lc), "settings", 16, MSG.T.palette.settings(lc))
-              <> View.machines.loc(lc, Nat.is_gt(List.length(&2, U.MRow, ms), 1n), U.Flag.get(open, "machines"), ms)}])))))))}
+Nil{})))))))}
 
 def View.sidebar.w(+lc: I.Loc, bots: List<&2, D.Node>, uber: List<&2, D.Node>, ms: List<&2, U.MRow>, mi: List<&2, U.MItem>, +ix: U.SIx, u: U.Ui) -> D.Node:
   match u:
@@ -1916,13 +1917,20 @@ def View.diff.loc(+lc: I.Loc, +text: String) -> List<&2, D.Node>:
 def View.diff(+text: String) -> List<&2, D.Node>:
   View.diff.loc(I.En{}, text)
 
+def View.pending.image(image: Bool, +p: String) -> List<&2, D.Node>:
+  match image:
+    case True{}:
+      [D.El{"img", "", [D.At{"class", "attachment-preview"}, D.At{"src", IM.Img.url(p)}, D.At{"alt", AT.Att.label(p)}, D.At{"width", "96"}, D.At{"height", "72"}], Nil{}}]
+    case False{}:
+      Nil{}
+
 def View.pending.loc(+lc: I.Loc, ps: List<&2, String>) -> List<&2, D.Node>:
   match ps:
     case Nil{}:
       Nil{}
     case +p <> t:
       D.El{"button", "", [D.At{"class", Bool.pick(String, AT.Att.image(p), "chip image", "chip")}, D.At{"title", MSG.T.composer.detach(lc, p)}, D.At{"data-value", p}, D.On{"click", "detach"}],
-        [D.Txt{AT.Att.label(p) ++ " ×"}]} <> View.pending.loc(lc, t)
+        D.Dom.cat(View.pending.image(AT.Att.image(p), p), [D.Txt{AT.Att.label(p) ++ " ×"}])} <> View.pending.loc(lc, t)
 
 # the draw board's button, beside Attach: host.js opens the board (draw.js)
 # with these words, and its picture is attached as a picked file is
@@ -2167,7 +2175,7 @@ def View.thread.p(+lc: I.Loc, u: U.Ui, t: M.Thread, pend: List<&2, String>, +att
     case U.Ui{+st, +sel, +drafts, +live, +op, _, +now, _, panel, _, _, _, _, _, +nf, _, +tr} M.Thread{+id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
       +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
       D.El{"main", "thread", [D.At{"class", Bool.pick(String, term, "thread-view with-term", "thread-view") ++ Bool.pick(String, U.Flag.get(op, "drop"), " dropping", "")},
-        D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
+        D.At{"data-thread", id}, D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
         View.top(lc, hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, id, now), mini, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), D.Dom.cat(D.Dom.cat(View.kx.note(U.KX.note(nf, sel), nf, sel), View.kn.loc(lc, U.KN.thread(nf, st, sel), True{})), D.Dom.cat([
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
           D.Dom.cat(fab, D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.thread.subs(lc, st, nf, id, now), View.pins.loc(lc, U.Ec.pins(U.Ec.make(U.MailvLocal.terms(tr), st, id, now), st, id), U.Ec.make(U.MailvLocal.terms(tr), st, id, now)))}], D.Dom.cat(Nil{},
