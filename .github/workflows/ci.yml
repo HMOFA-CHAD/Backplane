@@ -154,9 +154,8 @@ jobs:
           bun test/tools/js_bake_test.ts
           python3 test/tools/service_release_test.py
       # the whole of test/smoke.ts (threads, agents) as scripts/smoke.sh runs
-      # it for C; it needs the JS processes (fast-hub J1) and is not yet a gate
-      - name: Full smoke (not yet a gate)
-        continue-on-error: true
+      # it for C, over the JS processes (fast-hub J1)
+      - name: Full smoke
         run: |
           bend test/wire/index.html -o build/wire > /dev/null
           BACKPLANE_SMOKE_FULL=1 scripts/js-smoke.sh dist-js/linux-x64/backplane-serve

@@ -57,7 +57,7 @@ The `js` job (`.github/workflows/ci.yml`) does the following:
 - emits the hub once, with the emit cached by its key;
 - builds linux-x64, linux-arm64, darwin-x64, darwin-arm64 and windows-x64;
 - smoke-tests the Linux binary;
-- runs the full `test/smoke.ts`, which does not gate until the JS processes land;
+- runs the full `test/smoke.ts`;
 - runs the bake and producer tests;
 - uploads `backplane-serve-js`.
 
