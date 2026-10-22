@@ -17,7 +17,7 @@ spec.loader.exec_module(local)
 
 def inputs():
     files = subprocess.check_output(['git','ls-files','--cached','--others','--exclude-standard'],cwd=ROOT,text=True).splitlines()
-    named = sorted(f for f in files if f.startswith(('scripts/', 'test/tools/', 'desktop/', 'src/mobile/', 'deploy/')) or f in ['test/smoke.ts','test/wire/index.html','test/wire/wire.js','LICENSE'])
+    named = sorted(f for f in files if f.startswith(('scripts/', 'test/tools/', 'desktop/', 'src/mobile/', 'src/web/', 'deploy/')) or f in ['test/smoke.ts','test/wire/index.html','test/wire/wire.js','LICENSE'])
     key = subprocess.check_output(['scripts/inputs-key.sh','local-runtime-v1',*named],cwd=ROOT,text=True,
         env={**os.environ,'BP_KEY_ROOTS':'src/server/main.bend src/mobile/app.bend test/wire/wire.bend'}).strip()
     versions = [subprocess.check_output(cmd,text=True).strip() for cmd in [['bun','--revision'],['node','--version']]]

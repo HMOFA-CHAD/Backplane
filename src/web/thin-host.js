@@ -50,7 +50,7 @@ export class ThinHost {
     const rid = this.session.rid;
     if (!Number.isSafeInteger(rid) || rid < 0 || rid >= 2 ** 47) throw Error('Invalid ordinary request counter');
     this.session.rid = Math.max(rid, Date.now());
-    this.localRevision = 0;this.drafts = new Map();this.draftChanges = new Map();this.fields = new Map();this.pending = new Map();this.actions = [];this.active = null;
+    this.localRevision = 0;this.selectionRevision = 0;this.drafts = new Map();this.draftChanges = new Map();this.fields = new Map();this.pending = new Map();this.actions = [];this.active = null;
     this.messages = new MessageParts();this.ordinary = new Map();
     this.client = new Views({ now: api.now,
       send: (_hub, request) => ({ type: 'request', request: request.p.session ? { ...request,
@@ -83,6 +83,7 @@ export class ThinHost {
     this.select(this.api.target(this.session));
   }
   select(target) {
+    this.selectionRevision++;
     // Unstarted intentions from another view never acquire the new target.
     // The already travelling action keeps its independent original lifetime.
     for (const operation of this.actions) operation.settled?.(false);
@@ -169,7 +170,7 @@ export class ThinHost {
     const input = this.api.prepare(this.session, operation.input, operation.action);
     const result = this.client.request(this.hub, 'view.action', { session: requestSession(input, true, this.target), action: operation.action, value: operation.value });
     this.active = result.id || null;
-    this.flush(result, { revision: operation.revision, operation });
+    this.flush(result, { revision: operation.revision, operation, selection: this.selectionRevision });
   }
   page() {
     if (!this.ready || !this.window?.older) return false;
@@ -245,10 +246,13 @@ export class ThinHost {
       else this.api.warning?.('Old action reply rejected');
       this.pump(true);return true;
     }
+    // Background reads may retire this reply's picture, but cannot cancel the
+    // person's navigation. Only an actual selection change retires its target.
+    const navigation = !!r.nextTarget && result.method === 'view.action' && metadata?.operation && metadata.selection === this.selectionRevision;
     let responseSession = r.session;
     for (const ack of metadata?.acks || []) responseSession = this.api.ack(responseSession, ack);
     this.session.rid = Math.max(this.session.rid, responseSession.rid);
-    if (result.current) {
+    if (result.current || navigation) {
       const drafts = { ...responseSession.drafts, ...this.session.drafts };
       if (result.method === 'view.action') for (const [key, text] of Object.entries(responseSession.drafts)) {
         if (key === responseSession.sel || key.startsWith('@')) Object.defineProperty(drafts, key, { value: text, enumerable: true, writable: true, configurable: true });
@@ -287,7 +291,7 @@ export class ThinHost {
     }
     this.api.sessionChanged(this.session, { remote: true });
     metadata?.operation?.settled?.(result.current && result.remoteReady && !r.nextTarget);
-    if (result.current && r.nextTarget) { this.select(r.nextTarget);return true; }
+    if ((result.current || navigation) && r.nextTarget) { this.select(r.nextTarget);return true; }
     if (result.current && result.remoteReady) {
       const partial = new Map(result.window.partial.map(row => [row.id, row]));
       for (const previous of this.window?.partial || []) {
