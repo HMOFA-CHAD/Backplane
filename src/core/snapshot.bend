@@ -673,3 +673,43 @@ def Snap.boot(m: SDB.Mat, tail: List<&2, M.Change>) -> M.State:
       +rows = Snap.rows(fs, rs)
       +s0 = Snap.state(rows)
       Snap.replay(tail, s0, Snap.counts(rows), s0)
+
+# Records for the round-trip laws (snap_*_rt): every field away from its
+# default, a text with a quote, a newline and a non-ASCII letter
+# ---------------------------------------------------------------------
+
+def Snap.demo.text() -> String:
+  "a \"q\"\nü"
+
+def Snap.demo.project() -> M.Project:
+  M.Project{"p1", Snap.demo.text(), "/r", 7n, True{}}
+
+def Snap.demo.thread() -> M.Thread:
+  M.Thread{"t1", "p1", Snap.demo.text(), 1n, 2n, M.Running{}, 3n, True{}, M.ForcedSettled{}, 4n, 5n, True{}, M.Worktree{}, "br", "/w", "codex", "gpt", M.AcceptEdits{}, M.PlanMode{}, "se", True{}}
+
+def Snap.demo.task() -> M.Task:
+  M.Task{"k1", "t1", "t2", 2n, M.TaskFailed{}, Snap.demo.text(), True{}, "claude", "opus"}
+
+def Snap.demo.ask() -> M.Ask:
+  M.Ask{"a1", "t1", "input", "Bash", Snap.demo.text(), "yes\nno", True{}, "yes"}
+
+def Snap.demo.queue() -> List<&2, M.QItem>:
+  [M.QItem{"q1", Snap.demo.text()}, M.QItem{"q2", ""}]
+
+def Snap.demo.room() -> BT.Room:
+  BT.Room{"r1", "Room", ["b1", "x@peer"], 3n, True{}}
+
+def Snap.demo.routine() -> BT.Routine:
+  BT.Routine{"ro1", "b1", "n", "0 9 * * *", Snap.demo.text(), True{}, 5n, 6n, False{}, 7n, "UTC", "person", True{}, 8n}
+
+def Snap.demo.conv() -> ML.Conv:
+  ML.Conv{"c1", Snap.demo.text(), "pair", ["bot:b1", "person"], "p1", ["x", "y"], 1n, 2n, 3n}
+
+def Snap.demo.mark() -> ML.Mark:
+  ML.Mark{"b1", "c1", "snoozed", 4n, 9n, ["t"]}
+
+def Snap.demo.run() -> ML.Run:
+  ML.Run{"t1", "b1", "c1", "m1", 5n, True{}}
+
+def Snap.demo.decisions() -> List<&2, ML.Decision>:
+  [ML.Decision{"d1", "b1", "c1", "t1", Snap.demo.text(), "why", 3n}]
