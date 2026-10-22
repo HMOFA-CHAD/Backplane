@@ -362,6 +362,9 @@ class BpFd extends BpStream {
     this.wshut = false;
     this.gone = false;
     this.timer = undefined;
+    // the last write's failure: a read's (this.err, ECONNRESET when the
+    // peer left unread bytes) is not what a send meets (EPIPE)
+    this.werr = 0;
     // Bun reads a descriptor through its own poller only when it is
     // non-blocking: a blocking pty master was read synchronously and froze
     // the loop at the first quiet moment (a socketpair end is set too)
@@ -398,11 +401,11 @@ class BpFd extends BpStream {
     f?.();
   }
   writable() {
-    return !this.full || this.gone || this.err !== 0;
+    return !this.full || this.gone || this.werr !== 0;
   }
   write(b) {
-    if (this.err !== 0) {
-      return -this.err;
+    if (this.werr !== 0) {
+      return -this.werr;
     }
     if (this.gone || this.wshut) {
       return -BP_ERRNO.EPIPE;
@@ -427,9 +430,9 @@ class BpFd extends BpStream {
       return n;
     }
     // a pty whose other side closed answers EIO: the end, as EPIPE
-    this.err = n === -BP_ERRNO.EIO ? BP_ERRNO.EPIPE : -n;
-    this.wakeAll();
-    return -this.err;
+    this.werr = n === -BP_ERRNO.EIO ? BP_ERRNO.EPIPE : -n;
+    this.wake(true);
+    return -this.werr;
   }
   retry(ms) {
     if (this.timer !== undefined) {
@@ -437,7 +440,7 @@ class BpFd extends BpStream {
     }
     this.timer = setTimeout(() => {
       this.timer = undefined;
-      if (this.gone || this.err !== 0) {
+      if (this.gone || this.werr !== 0) {
         this.full = false;
         this.wakeAll();
         return;
@@ -450,13 +453,22 @@ class BpFd extends BpStream {
       this.wake(true);
     }, ms);
   }
-  // whether the kernel takes more now: poll(POLLOUT) with no wait
+  // whether a write should be tried now: poll(POLLOUT) with no wait, a
+  // hang-up or an error counting too (the write then meets EPIPE)
   room() {
     const set = new Int16Array(4);
     new Int32Array(set.buffer)[0] = this.fd;
     set[2] = 4;
+    // POLLOUT 4 | POLLERR 8 | POLLHUP 16 | POLLNVAL 32
     return bp_fd_libc().poll(require("bun:ffi").ptr(set), 1, 0) > 0
-      && (set[3] & 4) !== 0;
+      && (set[3] & (4 | 8 | 16 | 32)) !== 0;
+  }
+  // the reader saw the end: a parked writer tries again at once (the peer
+  // gone, its write fails EPIPE now rather than at the next retry)
+  finish(err) {
+    super.finish(err);
+    this.full = false;
+    this.wake(true);
   }
   // f once what was written has gone: write(2) put it in the kernel already
   after(f) {
