@@ -12743,3 +12743,26 @@ def Laws.ws_unmask_take_go(bs, n, key, i, acc):
     case x <> t 1n+m:
       Laws.ws_unmask_take_go(t, m, key, 1n+i, HTTPAUTH.Ws.unmask.k(x, key, i) <> acc)
 
+
+# --- J2: a hub on a copied log (BACKPLANE_COPY=1) acts on nothing outside ---
+
+def Laws.watch_copy_launch_none(home, id, cwd, target): {==}
+def Laws.watch_copy_check_none(kind, target, ident, home, id): {==}
+def Laws.watch_copy_stop_none(kind, target, ident, home, id): {==}
+def Laws.watch_copy_intent_none(home, id): {==}
+def Laws.copy_off_runs_all(os): {==}
+def Laws.copy_drops_outside(): {==}
+def Laws.copy_keeps_inside(): {==}
+def Laws.copy_git_write_told(): {==}
+def Laws.copy_refuses_net(): {==}
+def Laws.copy_off_refuses_none(cmd, args): {==}
+def Laws.adopt_copy_none(rec, hand): {==}
+def Laws.copy_file_open_told(): {==}
+
+# ---- F1: far feed slices ----
+def Laws.far_feed_sliced(): {==}
+def Laws.far_feed_sliced_one(): {==}
+def Laws.far_feed_sliced_big(): {==}
+def Laws.far_fact_shared(): {==}
+def Laws.far_fact_private(): {==}
+# ---- end F1 feed ----
