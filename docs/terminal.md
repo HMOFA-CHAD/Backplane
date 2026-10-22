@@ -32,7 +32,7 @@ Pty.resize(s: Socket, cols: U32, rows: U32) -> IO(Socket)
   `/usr/bin/perl`, which takes fd 0 with TIOCSCTTY and execs the program.
   Linux needs glibc 2.29+ (`addchdir_np`); 2.34+ closes our other fds with
   `addclosefrom_np`. `host.js`'s `Proc.wait` parks on a pidfd (Linux) or a
-  50 ms timer, so the loop never blocks. Windows waits for J4's Win32
+  20 ms timer, so the loop never blocks. Windows waits for J4's Win32
   runtime. Test: `bend test/js_pty_test.bend`.
 
 `host.js`'s `Sock.recv_bytes`/`send_bytes` fall back from `recv`/`send` to
