@@ -311,6 +311,60 @@ def case.badcwd(r: Result<&1, &1, U32 & String, U32 & Socket>) -> IO(U32):
     case Fail{e}:
       case.badcwd.code(e)
 
+# a big write to a program that does not read yet: whether the send parks
+# until it reads (libc) or the terminal holds the rest (Bun), the loop never
+# spins on it (other work runs on time) and the program reads every byte
+def full.tick(c: Chan(Nat)) -> IO(Unit):
+  do IO<Unit>:
+    IO.sleep(300)
+    t : Nat <- IO.now()
+    r : Result<&1, &1, Nat, Unit> <- Chan.send(Nat, c, t)
+    return Unit{}
+
+def full.sent(r: Socket & Result<&1, &1, U32 & String, Unit>) -> Bool:
+  (_, res) = r
+  match res:
+    case Done{_}:
+      True{}
+    case Fail{_}:
+      False{}
+
+def full.at(m: Maybe<&1, Nat>) -> Nat:
+  match m:
+    case Some{t}:
+      t
+    case None{}:
+      4000000000n
+
+def case.full.more(+r: Socket & Result<&1, &1, U32 & String, Unit>, +t0: Nat, c: Chan(Nat), +pid: U32) -> IO(U32):
+  do IO<U32>:
+    t1 : Nat <- IO.now()
+    m : Maybe<&1, Nat> <- Chan.recv(Nat, c)
+    +tick : Nat = full.at(m)
+    +v : V.Vt <- Rd.all(sent(r), 80, 24)
+    code : U32 <- H.Proc.wait(pid)
+    a : U32 <- check("pty full send", Bool.show(full.sent(r)), "True")
+    d : U32 <- check("pty full: other work ran on time meanwhile", Bool.show(Nat.is_lt(Nat.sub(tick, t0), 700n)), "True")
+    e : U32 <- check.has("pty full: the program read every byte", screen(v), "200000")
+    f : U32 <- check("pty full exit", U32.show(code), "0")
+    return (a + d + e + f : U32)
+
+def case.full.k(started: U32 & Socket) -> IO(U32):
+  (+pid, s) = started
+  do IO<U32>:
+    c : Chan(Nat) <- Chan.new(Nat, 1)
+    IO.spawn(Unit, full.tick(c))
+    +t0 : Nat <- IO.now()
+    +r : Socket & Result<&1, &1, U32 & String, Unit> <- H.Sock.send_bytes(s, List.replicate(U32, 200000n, 97))
+    case.full.more(r, t0, c, pid)
+
+def case.full(r: Result<&1, &1, U32 & String, U32 & Socket>) -> IO(U32):
+  match r:
+    case Done{started}:
+      case.full.k(started)
+    case Fail{e}:
+      fail("pty full", e)
+
 def done.k(ok: Bool, +n: U32) -> IO(Unit):
   match ok:
     case True{}:
@@ -330,4 +384,5 @@ def main() -> IO(Unit):
     e : U32 <- IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, U32, P.Pty.spawn("definitely-not-a-command", [], "", 80, 24), case.missing)
     f : U32 <- IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, U32, P.Pty.spawn("sh", ["-c", "true"], "/definitely/not/a/dir", 80, 24), case.badcwd)
     g : U32 <- IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, U32, P.Pty.spawn("sh", ["-c", "echo up; sleep 30; echo done"], "", 80, 24), case.hup)
-    done((a + b + c + d + e + f + g : U32))
+    h : U32 <- IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, U32, P.Pty.spawn("sh", ["-c", "stty raw -echo; sleep 1; head -c 200000 | wc -c"], "", 80, 24), case.full)
+    done((a + b + c + d + e + f + g + h : U32))
