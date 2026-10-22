@@ -72,14 +72,26 @@ def Bytes.drop(n: Nat, xs: List<&2, U32>) -> List<&2, U32>:
     case _ Nil{}:
       Nil{}
 
-def Bytes.take(n: Nat, xs: List<&2, U32>) -> List<&2, U32>:
+# (in tail calls, then turned round once: the JS hub has no frame to spare
+# per byte, and a 160 MB model's bytes overflowed its stack)
+def Bytes.rev(xs: List<&2, U32>, acc: List<&2, U32>) -> List<&2, U32>:
+  match xs:
+    case Nil{}:
+      acc
+    case x <> t:
+      Bytes.rev(t, x <> acc)
+
+def Bytes.take.go(n: Nat, xs: List<&2, U32>, acc: List<&2, U32>) -> List<&2, U32>:
   match n xs:
     case 0n _:
-      Nil{}
+      Bytes.rev(acc, Nil{})
     case 1n+p x <> t:
-      x <> Bytes.take(p, t)
+      Bytes.take.go(p, t, x <> acc)
     case _ Nil{}:
-      Nil{}
+      Bytes.rev(acc, Nil{})
+
+def Bytes.take(n: Nat, xs: List<&2, U32>) -> List<&2, U32>:
+  Bytes.take.go(n, xs, Nil{})
 
 def Bytes.word(+a: U32, +b: U32, +c: U32, +d: U32) -> U32:
   U32.or(U32.or(a, U32.shln(b, 8n)), U32.or(U32.shln(c, 16n), U32.shln(d, 24n)))
@@ -106,12 +118,44 @@ def Bytes.u8(xs: List<&2, U32>) -> U32:
     case _:
       0
 
-def Words.bytes(ws: List<&2, U32>) -> List<&2, U32>:
+# Long lists are built in tail calls and turned round once (Lr.*): the JS
+# hub has no stack frame to spare per byte, vertex or triangle, and a
+# 160 MB model overflowed it ("bend: memory fault").
+# xs pushed onto acc one at a time: Lr.onto([c, b, a], acc) is a, b, c, acc...
+def Lr.onto(-A: Data, xs: List<&2, A>, acc: List<&2, A>) -> List<&2, A>:
+  match xs:
+    case Nil{}:
+      acc
+    case x <> t:
+      Lr.onto(A, t, x <> acc)
+
+def Lr.rev(-A: Data, xs: List<&2, A>) -> List<&2, A>:
+  Lr.onto(A, xs, Nil{})
+
+# a list's length, in tail calls (Base's List.length is not)
+def Lr.len.go(-A: Data, xs: List<&2, A>, n: Nat) -> Nat:
+  match xs:
+    case Nil{}:
+      n
+    case _ <> t:
+      Lr.len.go(A, t, Nat.add(n, 1n))
+
+def Lr.len(-A: Data, xs: List<&2, A>) -> Nat:
+  Lr.len.go(A, xs, 0n)
+
+# xs ++ ys, in tail calls
+def Lr.cat(-A: Data, xs: List<&2, A>, ys: List<&2, A>) -> List<&2, A>:
+  Lr.onto(A, Lr.rev(A, xs), ys)
+
+def Words.bytes.go(ws: List<&2, U32>, acc: List<&2, U32>) -> List<&2, U32>:
   match ws:
     case Nil{}:
-      Nil{}
+      Lr.rev(U32, acc)
     case +w <> t:
-      U32.and(w, 255) <> U32.and(U32.shrn(w, 8n), 255) <> U32.and(U32.shrn(w, 16n), 255) <> U32.shrn(w, 24n) <> Words.bytes(t)
+      Words.bytes.go(t, U32.shrn(w, 24n) <> U32.and(U32.shrn(w, 16n), 255) <> U32.and(U32.shrn(w, 8n), 255) <> U32.and(w, 255) <> acc)
+
+def Words.bytes(ws: List<&2, U32>) -> List<&2, U32>:
+  Words.bytes.go(ws, Nil{})
 
 # the float whose IEEE 754 bits these are
 def Glb.f32(u: U32) -> F32:
@@ -126,21 +170,27 @@ def Glb.f32(u: U32) -> F32:
 def Tab.depth(+n: U32) -> Nat:
   1n+U32.log2((U32.max(n, 2) - 1 : U32))
 
-def Tab.leaves(-A: Data, xs: List<&2, A>) -> List<&2, Tab<A>>:
+def Tab.leaves.go(-A: Data, xs: List<&2, A>, acc: List<&2, Tab<A>>) -> List<&2, Tab<A>>:
   match xs:
     case Nil{}:
-      Nil{}
+      Lr.rev(Tab<A>, acc)
     case x <> t:
-      TLeaf{x} <> Tab.leaves(A, t)
+      Tab.leaves.go(A, t, TLeaf{x} <> acc)
 
-def Tab.pairs(-A: Data, ts: List<&2, Tab<A>>) -> List<&2, Tab<A>>:
+def Tab.leaves(-A: Data, xs: List<&2, A>) -> List<&2, Tab<A>>:
+  Tab.leaves.go(A, xs, Nil{})
+
+def Tab.pairs.go(-A: Data, ts: List<&2, Tab<A>>, acc: List<&2, Tab<A>>) -> List<&2, Tab<A>>:
   match ts:
     case a <> b <> t:
-      TNode{a, b} <> Tab.pairs(A, t)
+      Tab.pairs.go(A, t, TNode{a, b} <> acc)
     case a <> Nil{}:
-      [TNode{a, TNil{}}]
+      Lr.rev(Tab<A>, TNode{a, TNil{}} <> acc)
     case Nil{}:
-      Nil{}
+      Lr.rev(Tab<A>, acc)
+
+def Tab.pairs(-A: Data, ts: List<&2, Tab<A>>) -> List<&2, Tab<A>>:
+  Tab.pairs.go(A, ts, Nil{})
 
 def Tab.up(-A: Data, d: Nat, ts: List<&2, Tab<A>>) -> Tab<A>:
   match d ts:
@@ -178,7 +228,7 @@ def Tab.at(-A: Data, +d: Nat, t: Tab<A>, +i: U32, dv: A) -> A:
   Tab.go(A, d, t, Tab.bit(i, Nat.sub(d, 1n)), i, dv)
 
 def Tbl.of(+xs: List<&2, J.Json>) -> Tbl:
-  +d = Tab.depth(U32.from_nat(List.length(&2, J.Json, xs)))
+  +d = Tab.depth(U32.from_nat(Lr.len(J.Json, xs)))
   Tbl{d, Tab.of(J.Json, d, xs)}
 
 def Tbl.at(tb: Tbl, +i: U32) -> J.Json:
@@ -187,12 +237,15 @@ def Tbl.at(tb: Tbl, +i: U32) -> J.Json:
       Tab.at(J.Json, d, t, i, J.Null{})
 
 # n words from little-endian bytes, as tree leaves
-def Bin.leaves(n: Nat, xs: List<&2, U32>) -> List<&2, Tab<U32>>:
+def Bin.leaves.go(n: Nat, xs: List<&2, U32>, acc: List<&2, Tab<U32>>) -> List<&2, Tab<U32>>:
   match n xs:
     case 1n+p a <> b <> c <> d <> t:
-      TLeaf{Bytes.word(a, b, c, d)} <> Bin.leaves(p, t)
+      Bin.leaves.go(p, t, TLeaf{Bytes.word(a, b, c, d)} <> acc)
     case _ _:
-      Nil{}
+      Lr.rev(Tab<U32>, acc)
+
+def Bin.leaves(n: Nat, xs: List<&2, U32>) -> List<&2, Tab<U32>>:
+  Bin.leaves.go(n, xs, Nil{})
 
 # the BIN chunk (len bytes at the head of xs)
 def Bin.of(+len: U32, xs: List<&2, U32>) -> Bin:
@@ -387,21 +440,27 @@ def Acc.bytes(a: Acc, +b: Bin) -> List<&2, U32>:
       Bin.slice(b, start, len)
 
 # n float32 vec3s every `skip` + 12 bytes, moved by m
-def Pos.go(n: Nat, +bs: List<&2, U32>, +skip: Nat, +m: M4) -> List<&2, V3>:
+def Pos.go.k(n: Nat, +bs: List<&2, U32>, +skip: Nat, +m: M4, acc: List<&2, V3>) -> List<&2, V3>:
   match n:
     case 0n:
-      Nil{}
+      Lr.rev(V3, acc)
     case 1n+p:
-      M4.app(m, Glb.f32(Bytes.u32(bs)), Glb.f32(Bytes.u32(Bytes.drop(4n, bs))), Glb.f32(Bytes.u32(Bytes.drop(8n, bs))))
-        <> Pos.go(p, Bytes.drop(Nat.add(12n, skip), bs), skip, m)
+      Pos.go.k(p, Bytes.drop(Nat.add(12n, skip), bs), skip, m,
+        M4.app(m, Glb.f32(Bytes.u32(bs)), Glb.f32(Bytes.u32(Bytes.drop(4n, bs))), Glb.f32(Bytes.u32(Bytes.drop(8n, bs)))) <> acc)
+
+def Pos.go(n: Nat, +bs: List<&2, U32>, +skip: Nat, +m: M4) -> List<&2, V3>:
+  Pos.go.k(n, bs, skip, m, Nil{})
 
 # the same from aligned words: n vec3s every `skip` + 3 words
-def Pos.words(n: Nat, ws: List<&2, U32>, +skip: Nat, +m: M4) -> List<&2, V3>:
+def Pos.words.go(n: Nat, ws: List<&2, U32>, +skip: Nat, +m: M4, acc: List<&2, V3>) -> List<&2, V3>:
   match n ws:
     case 1n+p x <> y <> z <> t:
-      M4.app(m, Glb.f32(x), Glb.f32(y), Glb.f32(z)) <> Pos.words(p, Bytes.drop(skip, t), skip, m)
+      Pos.words.go(p, Bytes.drop(skip, t), skip, m, M4.app(m, Glb.f32(x), Glb.f32(y), Glb.f32(z)) <> acc)
     case _ _:
-      Nil{}
+      Lr.rev(V3, acc)
+
+def Pos.words(n: Nat, ws: List<&2, U32>, +skip: Nat, +m: M4) -> List<&2, V3>:
+  Pos.words.go(n, ws, skip, m, Nil{})
 
 def Pos.pick(aligned: Bool, +a: Acc, +b: Bin, +m: M4) -> List<&2, V3>:
   match aligned a:
@@ -428,20 +487,26 @@ def Idx.one(one: Bool, two: Bool, +bs: List<&2, U32>) -> U32:
     case _ _:
       Bytes.u32(bs)
 
-def Idx.go(n: Nat, +bs: List<&2, U32>, +size: U32, +stride: Nat) -> List<&2, U32>:
+def Idx.go.k(n: Nat, +bs: List<&2, U32>, +size: U32, +stride: Nat, acc: List<&2, U32>) -> List<&2, U32>:
   match n:
     case 0n:
-      Nil{}
+      Lr.rev(U32, acc)
     case 1n+p:
-      Idx.one(U32.is_eq(size, 1), U32.is_eq(size, 2), bs) <> Idx.go(p, Bytes.drop(stride, bs), size, stride)
+      Idx.go.k(p, Bytes.drop(stride, bs), size, stride, Idx.one(U32.is_eq(size, 1), U32.is_eq(size, 2), bs) <> acc)
+
+def Idx.go(n: Nat, +bs: List<&2, U32>, +size: U32, +stride: Nat) -> List<&2, U32>:
+  Idx.go.k(n, bs, size, stride, Nil{})
 
 # little-endian halves of words
-def Words.halves(ws: List<&2, U32>) -> List<&2, U32>:
+def Words.halves.go(ws: List<&2, U32>, acc: List<&2, U32>) -> List<&2, U32>:
   match ws:
     case Nil{}:
-      Nil{}
+      Lr.rev(U32, acc)
     case +w <> t:
-      U32.and(w, 65535) <> U32.shrn(w, 16n) <> Words.halves(t)
+      Words.halves.go(t, U32.shrn(w, 16n) <> U32.and(w, 65535) <> acc)
+
+def Words.halves(ws: List<&2, U32>) -> List<&2, U32>:
+  Words.halves.go(ws, Nil{})
 
 # tightly packed u16 or u32 indices at an aligned start read as words
 def Idx.fast(two: Bool, four: Bool, +a: Acc, +b: Bin) -> List<&2, U32>:
@@ -494,23 +559,31 @@ def Tri.mk(a: V3, b: V3, c: V3, +col: U32) -> Tri3:
     case V3{ax, ay, az} V3{bx, by, bz} V3{cx, cy, cz}:
       Tri3{ax, ay, az, bx, by, bz, cx, cy, cz, col}
 
-def Tri.idx(ix: List<&2, U32>, +vs: Tab<V3>, +d: Nat, +col: U32, acc: List<&2, Tri3>) -> List<&2, Tri3>:
+# (the triangles go in front of acc, in order: kept reversed in r, then
+# pushed onto acc)
+def Tri.idx.go(ix: List<&2, U32>, +vs: Tab<V3>, +d: Nat, +col: U32, r: List<&2, Tri3>, acc: List<&2, Tri3>) -> List<&2, Tri3>:
   match ix:
     case a <> b <> c <> t:
       +o = {V3{0.0, 0.0, 0.0} : V3}
-      Tri.mk(Tab.at(V3, d, vs, a, o), Tab.at(V3, d, vs, b, o), Tab.at(V3, d, vs, c, o), col) <> Tri.idx(t, vs, d, col, acc)
+      Tri.idx.go(t, vs, d, col, Tri.mk(Tab.at(V3, d, vs, a, o), Tab.at(V3, d, vs, b, o), Tab.at(V3, d, vs, c, o), col) <> r, acc)
     case _:
-      acc
+      Lr.onto(Tri3, r, acc)
 
-def Tri.seq(vs: List<&2, V3>, +col: U32, acc: List<&2, Tri3>) -> List<&2, Tri3>:
+def Tri.idx(ix: List<&2, U32>, +vs: Tab<V3>, +d: Nat, +col: U32, acc: List<&2, Tri3>) -> List<&2, Tri3>:
+  Tri.idx.go(ix, vs, d, col, Nil{}, acc)
+
+def Tri.seq.go(vs: List<&2, V3>, +col: U32, r: List<&2, Tri3>, acc: List<&2, Tri3>) -> List<&2, Tri3>:
   match vs:
     case a <> b <> c <> t:
-      Tri.mk(a, b, c, col) <> Tri.seq(t, col, acc)
+      Tri.seq.go(t, col, Tri.mk(a, b, c, col) <> r, acc)
     case _:
-      acc
+      Lr.onto(Tri3, r, acc)
+
+def Tri.seq(vs: List<&2, V3>, +col: U32, acc: List<&2, Tri3>) -> List<&2, Tri3>:
+  Tri.seq.go(vs, col, Nil{}, acc)
 
 def Tri.indexed(+vs: List<&2, V3>, +ix: List<&2, U32>, +col: U32, acc: List<&2, Tri3>) -> List<&2, Tri3>:
-  +d = Tab.depth(U32.from_nat(List.length(&2, V3, vs)))
+  +d = Tab.depth(U32.from_nat(Lr.len(V3, vs)))
   Tri.idx(ix, Tab.of(V3, d, vs), d, col, acc)
 
 def Prim.go(idx: Maybe<&2, J.Json>, +vs: List<&2, V3>, +g: Gltf, +col: U32, acc: List<&2, Tri3>) -> List<&2, Tri3>:
@@ -678,7 +751,7 @@ def Job.flat(js: List<&2, Job>) -> List<&2, PJob>:
 def Job.cat(n: Nat, ls: List<&2, List<&2, Tri3>>) -> List<&2, Tri3>:
   match n ls:
     case 1n+p l <> t:
-      List.append(&2, Tri3, l, Job.cat(p, t))
+      Lr.cat(Tri3, l, Job.cat(p, t))
     case _ _:
       Nil{}
 
@@ -697,19 +770,19 @@ def Job.group(js: List<&2, Job>, +ls: List<&2, List<&2, Tri3>>) -> List<&2, Part
     case Nil{}:
       Nil{}
     case Job{name, _, +ps} <> t:
-      +k = List.length(&2, J.Json, ps)
+      +k = Lr.len(J.Json, ps)
       Part{name, Job.cat(k, ls)} <> Job.group(t, Job.skip(k, ls))
 
 # the parts: every primitive of every job decoded at once (split evenly by
 # primitive, not by node, so one heavy node does not hold up a core)
 def Job.all(+js: List<&2, Job>, +g: Gltf) -> List<&2, Part>:
   +ps = Job.flat(js)
-  +d = Tab.depth(U32.from_nat(List.length(&2, PJob, ps)))
+  +d = Tab.depth(U32.from_nat(Lr.len(PJob, ps)))
   Job.group(js, Rope.lists(PJob.par(d, Tab.of(PJob, d, ps), g), Nil{}))
 
 def Glb.scene(+j: J.Json, +g: Gltf) -> Mesh:
   +roots = Glb.u32s(Tbl.at(Tbl.of(J.Json.elems(J.Json.get_obj(j, "scenes"))), J.Json.get_u32(j, "scene", 0)), "nodes")
-  +fuel = Nat.add(Nat.mul(List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(j, "nodes"))), 2n), 16n)
+  +fuel = Nat.add(Nat.mul(Lr.len(J.Json, J.Json.elems(J.Json.get_obj(j, "nodes"))), 2n), 16n)
   Mesh{Job.all(List.reverse(&2, Job, Walk.go(fuel, Walk.roots(roots), g, Nil{})), g)}
 
 def Glb.load(m: Maybe<&2, J.Json>, +bin: Bin) -> Mesh:
@@ -754,7 +827,7 @@ def Mesh.flat(ps: List<&2, Part>) -> List<&2, Tri3>:
     case Nil{}:
       Nil{}
     case Part{_, ts} <> t:
-      List.append(&2, Tri3, ts, Mesh.flat(t))
+      Lr.cat(Tri3, ts, Mesh.flat(t))
 
 # every triangle, in scene order
 def Mesh.tris(m: Mesh) -> List<&2, Tri3>:

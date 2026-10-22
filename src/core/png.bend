@@ -46,6 +46,25 @@ def Png.adler(bs: List<&2, U32>) -> U32:
 # Bytes
 # -----
 
+# Base's List.append and List.length are not tail calls: a detailed
+# render's IDAT is long enough to overflow the stack with them
+def Png.onto(xs: List<&2, U32>, acc: List<&2, U32>) -> List<&2, U32>:
+  match xs:
+    case Nil{}:
+      acc
+    case +x <> t:
+      Png.onto(t, x <> acc)
+
+def Png.cat(+xs: List<&2, U32>, ys: List<&2, U32>) -> List<&2, U32>:
+  Png.onto(Png.onto(xs, Nil{}), ys)
+
+def Png.len.go(xs: List<&2, U32>, n: Nat) -> Nat:
+  match xs:
+    case Nil{}:
+      n
+    case _ <> t:
+      Png.len.go(t, Nat.add(n, 1n))
+
 def Png.be32(+x: U32) -> List<&2, U32>:
   [U32.and(U32.shrn(x, 24n), 255), U32.and(U32.shrn(x, 16n), 255), U32.and(U32.shrn(x, 8n), 255), U32.and(x, 255)]
 
@@ -58,8 +77,8 @@ def Png.ascii(s: String) -> List<&2, U32>:
 
 # a chunk: length, type, data, and the CRC of type and data
 def Png.chunk(+ty: String, +data: List<&2, U32>) -> List<&2, U32>:
-  List.append(&2, U32, Png.be32(U32.from_nat(List.length(&2, U32, data))),
-    List.append(&2, U32, Png.ascii(ty), List.append(&2, U32, data, Png.be32(Png.crc(List.append(&2, U32, Png.ascii(ty), data))))))
+  Png.cat(Png.be32(U32.from_nat(Png.len.go(data, 0n))),
+    Png.cat(Png.ascii(ty), Png.cat(data, Png.be32(Png.crc(Png.cat(Png.ascii(ty), data))))))
 
 # Filtering
 # ---------
@@ -238,13 +257,13 @@ def Png.deflate(bs: List<&2, U32>) -> List<&2, U32>:
 
 # zlib: header (deflate, 32K window, no preset), data, Adler-32
 def Png.zlib(+bs: List<&2, U32>) -> List<&2, U32>:
-  120 <> 1 <> List.append(&2, U32, Png.deflate(bs), Png.be32(Png.adler(bs)))
+  120 <> 1 <> Png.cat(Png.deflate(bs), Png.be32(Png.adler(bs)))
 
 # The file
 # --------
 
 # w x h pixels of 8-bit RGB, row by row, as a PNG file's bytes
 def Png.rgb(bs: List<&2, U32>, +w: U32, +h: U32) -> List<&2, U32>:
-  List.append(&2, U32, [137, 80, 78, 71, 13, 10, 26, 10],
-    List.append(&2, U32, Png.chunk("IHDR", List.append(&2, U32, Png.be32(w), List.append(&2, U32, Png.be32(h), [8, 2, 0, 0, 0]))),
-      List.append(&2, U32, Png.chunk("IDAT", Png.zlib(Png.sub(bs, w))), Png.chunk("IEND", Nil{}))))
+  Png.cat([137, 80, 78, 71, 13, 10, 26, 10],
+    Png.cat(Png.chunk("IHDR", Png.cat(Png.be32(w), Png.cat(Png.be32(h), [8, 2, 0, 0, 0]))),
+      Png.cat(Png.chunk("IDAT", Png.zlib(Png.sub(bs, w))), Png.chunk("IEND", Nil{}))))

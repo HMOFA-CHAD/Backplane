@@ -292,7 +292,7 @@ def MTree.up(d: Nat, ts: List<&2, MTree>) -> MTree:
       MTree.up(p, MTree.pairs(ts))
 
 def MTree.of(+cs: List<&2, Chunk>) -> MTree:
-  MTree.up(G.Tab.depth(U32.from_nat(List.length(&2, Chunk, cs))), MTree.leaves(cs))
+  MTree.up(G.Tab.depth(U32.from_nat(G.Lr.len(Chunk, cs))), MTree.leaves(cs))
 
 def Model.none() -> Model:
   Model{0n, Box3.empty(), Nil{}, TNone{}, 0n}
@@ -304,7 +304,7 @@ def Model.add.k(+n: Nat, +box: Box3, +cs: List<&2, Chunk>, +last: Nat) -> Model:
 def Model.add(m: Model, +ts: List<&2, G.Tri3>, +born: Nat) -> Model:
   match m:
     case Model{+n, box, cs, _, +last}:
-      Model.add.k(Nat.add(n, List.length(&2, G.Tri3, ts)), Box3.go(ts, box), Chunk.cut(ts, 1024n, born, Nil{}, cs),
+      Model.add.k(Nat.add(n, G.Lr.len(G.Tri3, ts)), Box3.go(ts, box), Chunk.cut(ts, 1024n, born, Nil{}, cs),
         Bool.pick(Nat, Nat.is_ge(born, last), born, last))
 
 def Model.of(+ts: List<&2, G.Tri3>) -> Model:
@@ -884,13 +884,18 @@ def Q4.put(+t: STri, +qx: U32, +qy: U32, +h: U32, q: Q4) -> Q4:
       Q4{Q4.keep(STri.meets(t, qx, qy, h), t, a), Q4.keep(STri.meets(t, mx, qy, h), t, b),
         Q4.keep(STri.meets(t, qx, my, h), t, c), Q4.keep(STri.meets(t, mx, my, h), t, d)}
 
-# the triangles that reach each quadrant of the 2h square at (qx, qy)
-def Q4.go(ts: List<&2, STri>, +qx: U32, +qy: U32, +h: U32) -> Q4:
+def Q4.go.r(ts: List<&2, STri>, +qx: U32, +qy: U32, +h: U32, q: Q4) -> Q4:
   match ts:
     case Nil{}:
-      Q4{Nil{}, Nil{}, Nil{}, Nil{}}
+      q
     case +t <> r:
-      Q4.put(t, qx, qy, h, Q4.go(r, qx, qy, h))
+      Q4.go.r(r, qx, qy, h, Q4.put(t, qx, qy, h, q))
+
+# the triangles that reach each quadrant of the 2h square at (qx, qy), in
+# their order (put from the last, in tail calls: a big assembly's screen
+# holds more triangles than the stack has frames)
+def Q4.go(ts: List<&2, STri>, +qx: U32, +qy: U32, +h: U32) -> Q4:
+  Q4.go.r(G.Lr.rev(STri, ts), qx, qy, h, Q4{Nil{}, Nil{}, Nil{}, Nil{}})
 
 # a quadrant split of the triangles and of the face image, together
 def Four.with(q: Q4, f: Image, k: List<&2, STri> -> List<&2, STri> -> List<&2, STri> -> List<&2, STri> -> Image -> Image -> Image -> Image -> Image) -> Image:
