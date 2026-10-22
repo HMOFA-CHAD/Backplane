@@ -56,12 +56,19 @@ def B.off(b: B) -> Nat:
     case B{_, _, o, _, _}:
       o
 
+def Ops.keep(term: Bool, o: S.Op, acc: List<&2, List<&2, String>>) -> List<&2, List<&2, String>>:
+  match term:
+    case True{}:
+      acc
+    case False{}:
+      S.Sql.of(o) <> acc
+
 def Ops.sql(os: List<&2, S.Op>, acc: List<&2, List<&2, String>>) -> List<&2, List<&2, String>>:
   match os:
     case Nil{}:
       acc
     case S.Put{+t, cols} <> rest:
-      Ops.sql(rest, Bool.pick(List<&2, List<&2, String>>, String.eq(t, "term"), acc, S.Sql.of(S.Put{t, cols}) <> acc))
+      Ops.sql(rest, Ops.keep(String.eq(t, "term"), S.Put{t, cols}, acc))
     case o <> rest:
       Ops.sql(rest, S.Sql.of(o) <> acc)
 
@@ -196,7 +203,7 @@ def Build.finish(b: B, +h: String) -> IO(Unit):
           ["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", "applied_seq", Nat.show(seq)], ["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", "applied_off", Nat.show(off)],
           ["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", "build", "snap_build"]])
         Write.ok(m, "meta")
-        D.Db.close(h)
+        cl : String <- D.Db.close(h)
         IO.print("store.db: " ++ Nat.show(seq) ++ " lines, applied_off " ++ Nat.show(off) ++ ", state seq " ++ Nat.show(M.State.seq(st)))
 
 def Args.copy(xs: List<String>) -> List<&2, String>:

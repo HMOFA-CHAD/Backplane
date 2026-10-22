@@ -291,12 +291,12 @@ def Hot.lined(same: Bool, +h: String, +home: String, +rows: SN.SRows, ls: List<&
   match same:
     case False{}:
       do IO<Hot>:
-        D.Db.close(h)
+        cl : String <- D.Db.close(h)
         return Hot.no("the log's lines before applied_off are not the store's " ++ Nat.show(seq))
     case True{}:
       do IO<Hot>:
         reps : List<&2, List<&2, String>> <- D.Db.query(h, "SELECT seq, wire FROM line WHERE wire <> '' ORDER BY seq DESC", [], Hot.big())
-        D.Db.close(h)
+        cl : String <- D.Db.close(h)
         +s0 : M.State = SN.Snap.state(rows)
         +rd : List<&2, String> <- H.EvLog.read_from(Hot.log(home), U32.show(off))
         return Hot.loaded(SN.Snap.tail(ST.Store.read.body(rd), s0, SN.Snap.counts(rows), ST.Loaded{s0, Wire.of(ls, reps, seq)}), ST.Store.read.tail(rd))
@@ -343,7 +343,7 @@ def Hot.checked.k(fine: Bool, +why: String, +h: String, +home: String, +m: Map<&
       Hot.read(h, home, m, size)
     case False{}:
       do IO<Hot>:
-        D.Db.close(h)
+        cl : String <- D.Db.close(h)
         return Hot.no(why)
 
 def Hot.checked(+why: String, +h: String, +home: String, +m: Map<&2, String>, +size: U32) -> IO(Hot):
