@@ -106,7 +106,7 @@ def pages.n(ns: List<&2, Nat>, +h: String, +st: M.State, +conv: String, +before:
     case +n <> t:
       do IO<Acc>:
         +want : Maybe<&2, RH.RoomPage> = RH.RoomHistory.page(st, conv, before, n)
-        got : Maybe<&2, RH.RoomPage> <- TS.Ms.room.page(h, conv, before, n)
+        +got : Maybe<&2, RH.RoomPage> <- TS.Ms.room.page(h, conv, before, n)
         +a : Acc = Acc.see(acc, "page " ++ conv ++ " after " ++ before ++ " n " ++ Nat.show(n), show.page(got), show.page(want))
         pages.n(t, h, st, conv, before, a)
 
@@ -130,12 +130,12 @@ def convs(cs: List<&2, String>, +h: String, +st: M.State, +acc: Acc) -> IO(Acc):
     case +conv <> t:
       do IO<Acc>:
         +box : ML.Box = M.State.mail(st)
-        hs : List<&2, ML.Mail> <- TS.Ms.headers(h, conv, "", 1000n)
+        +hs : List<&2, ML.Mail> <- TS.Ms.headers(h, conv, "", 1000n)
         +a1 : Acc = Acc.see(acc, "headers " ++ conv, show.mails(hs), show.mails(ML.Box.headers(box, conv)))
-        nw : ML.Mail <- TS.Ms.newest(h, conv)
+        +nw : ML.Mail <- TS.Ms.newest(h, conv)
         +a2 : Acc = Acc.see(a1, "newest " ++ conv, show.mail(nw), show.mail(ML.Box.newest(box, conv)))
         a3 : Acc <- pages("" <> "nope" <> ids(ML.Box.headers(box, conv)), h, st, conv, a2)
-        src : Map<&2, String> <- TS.Ms.room.sources(h, conv, ML.Box.headers(box, conv))
+        +src : Map<&2, String> <- TS.Ms.room.sources(h, conv, ML.Box.headers(box, conv))
         +a4 : Acc = Acc.see(a3, "sources " ++ conv, show.texts(Map.to_list(&2, String, src)), show.texts(Map.to_list(&2, String, RH.RoomHistory.sources(st, conv, ML.Box.headers(box, conv)))))
         convs(t, h, st, a4)
 
@@ -144,7 +144,7 @@ def has(xs: List<&2, String>, +h: String, +st: M.State, +acc: Acc) -> IO(Acc):
     case Nil{}: IO.pure(Acc, acc)
     case +id <> t:
       do IO<Acc>:
-        got : Bool <- TS.Ms.has(h, id)
+        +got : Bool <- TS.Ms.has(h, id)
         has(t, h, st, Acc.see(acc, "has " ++ id, Bool.pick(String, got, "yes", "no"), Bool.pick(String, ML.Box.has(M.State.mail(st), id), "yes", "no")))
 
 def main() -> IO(Unit):

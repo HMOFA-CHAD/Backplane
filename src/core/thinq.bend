@@ -17,9 +17,9 @@ import ./thin.bend as T
 # them. Ordinals are entry.ord (the insertion count, T.Row.n); since ord
 # grows with seq, "ord < X" is "seq < the seq of the first ord >= X".
 
-# the largest integer SQLite binds: "no bound"
+# "no bound": 2^47, past any ordinal (the runtime's Nat stops at 2^48)
 def Q.top() -> Nat:
-  Nat.sub(Nat.mul(Nat.mul(2147483648n, 2147483648n), 2n), 1n)
+  Nat.mul(65536n, 2147483648n)
 
 def Q.n(+n: Nat) -> String:
   "#" ++ Nat.show(n)
@@ -33,7 +33,7 @@ def Q.before(+before: Nat) -> Nat:
 
 # the seq of the first entry at or after an ordinal (none: no bound)
 def Q.sql.seq_at() -> String:
-  "SELECT coalesce((SELECT seq FROM entry WHERE ord >= ?1 ORDER BY ord LIMIT 1), 9223372036854775807)"
+  "SELECT coalesce((SELECT seq FROM entry WHERE ord >= ?1 ORDER BY ord LIMIT 1), 140737488355328)"
 
 def Q.cols.prefix() -> String:
   "seq, ord, id, thread, src, kind, role, akind, substr(text, 1, 513) AS text, at"

@@ -136,9 +136,9 @@ def pages.th(+n: Nat, +i: T.Index, +r: T.Index, +h: String, +th: String, +acc: A
     case 0n: IO.pure(Acc, acc)
     case 1n+k:
       do IO<Acc>:
-        +before : Nat = Bool.pick(Nat, Nat.is_eq(k, 0n), 0n, k)
+        +before : Nat = Nat.add(Nat.mul(k, 5n), Nat.mod(k, 3n))
         +want : String = show.page(i, th, T.Index.page(i, th, before, 32n))
-        pg : TS.Page <- TS.Ts.page(h, th, before, 32n, r)
+        +pg : TS.Page <- TS.Ts.page(h, th, before, 32n, r)
         pages.th(k, i, r, h, th, Acc.see(acc, th ++ " before " ++ Nat.show(before), show.page(TS.Page.index(pg), th, TS.Page.ids(pg)), want))
 
 def pages(ths: List<&2, String>, +i: T.Index, +r: T.Index, +h: String, +acc: Acc) -> IO(Acc):
@@ -146,7 +146,7 @@ def pages(ths: List<&2, String>, +i: T.Index, +r: T.Index, +h: String, +acc: Acc
     case Nil{}: IO.pure(Acc, acc)
     case +th <> t:
       do IO<Acc>:
-        a : Acc <- pages.th(Nat.add(entries(), 3n), i, r, h, th, acc)
+        +a : Acc <- pages.th(36n, i, r, h, th, acc)
         pages(t, i, r, h, a)
 
 # Message reads
@@ -162,13 +162,13 @@ def show.read(+r: V.MessageRead, +p: J.Json) -> String:
 
 def read.store(+h: String, +th: String, +anchor: Nat, +p: J.Json, +r: T.Index, +st: M.State) -> IO(String):
   do IO<String>:
-    pg : TS.Page <- TS.Ts.page(h, th, anchor, 32n, r)
-    whole : TS.Page <- TS.Ts.whole(h, th, TS.Ts.cursor.ord(p), J.Json.get_str(p, "entryId", ""), pg)
+    +pg : TS.Page <- TS.Ts.page(h, th, anchor, 32n, r)
+    +whole : TS.Page <- TS.Ts.whole(h, th, TS.Ts.cursor.ord(p), J.Json.get_str(p, "entryId", ""), pg)
     return show.read(V.Message.read(TS.Page.index(whole), th, p, "ep", TS.Page.ids(pg), st), p)
 
 def read.one(+h: String, +th: String, +anchor: Nat, +p: J.Json, +i: T.Index, +r: T.Index, +st: M.State, +acc: Acc) -> IO(Acc):
   do IO<Acc>:
-    got : String <- read.store(h, th, anchor, p, r, st)
+    +got : String <- read.store(h, th, anchor, p, r, st)
     return Acc.see(acc, th ++ " @" ++ Nat.show(anchor) ++ " " ++ J.Json.show(p), got, show.read(V.Message.read(i, th, p, "ep", T.Index.page(i, th, anchor, 32n), st), p))
 
 # every row of the page (and a foreign id), first read and continued
@@ -178,9 +178,9 @@ def reads.ids(ids: List<&2, String>, +h: String, +th: String, +anchor: Nat, +i: 
     case +o <> t:
       do IO<Acc>:
         +id : String = M.Idx.id(T.Row.entry(T.Index.row(i, V.Page.number(o))))
-        a1 : Acc <- read.one(h, th, anchor, read.p(th, id, ""), i, r, st, acc)
-        a2 : Acc <- read.one(h, th, anchor, read.p(th, id, W.Cursor.write("ep", V.Target.json("thread", th), "message:" ++ o, 1n)), i, r, st, a1)
-        a3 : Acc <- read.one(h, th, anchor, read.p(th, id, W.Cursor.write("ep", V.Target.json("thread", th), "message:" ++ o, 2n)), i, r, st, a2)
+        +a1 : Acc <- read.one(h, th, anchor, read.p(th, id, ""), i, r, st, acc)
+        +a2 : Acc <- read.one(h, th, anchor, read.p(th, id, W.Cursor.write("ep", V.Target.json("thread", th), "message:" ++ o, 1n)), i, r, st, a1)
+        +a3 : Acc <- read.one(h, th, anchor, read.p(th, id, W.Cursor.write("ep", V.Target.json("thread", th), "message:" ++ o, 2n)), i, r, st, a2)
         reads.ids(t, h, th, anchor, i, r, st, a3)
 
 def reads.at(anchors: List<&2, Nat>, +h: String, +th: String, +i: T.Index, +r: T.Index, +st: M.State, +acc: Acc) -> IO(Acc):
@@ -188,7 +188,7 @@ def reads.at(anchors: List<&2, Nat>, +h: String, +th: String, +i: T.Index, +r: T
     case Nil{}: IO.pure(Acc, acc)
     case +a <> t:
       do IO<Acc>:
-        a1 : Acc <- reads.ids(T.Index.page(i, th, a, 32n), h, th, a, i, r, st, acc)
+        +a1 : Acc <- reads.ids(T.Index.page(i, th, a, 32n), h, th, a, i, r, st, acc)
         reads.at(t, h, th, i, r, st, a1)
 
 def reads(ths: List<&2, String>, +anchors: List<&2, Nat>, +h: String, +i: T.Index, +r: T.Index, +st: M.State, +acc: Acc) -> IO(Acc):
@@ -196,7 +196,7 @@ def reads(ths: List<&2, String>, +anchors: List<&2, Nat>, +h: String, +i: T.Inde
     case Nil{}: IO.pure(Acc, acc)
     case +th <> t:
       do IO<Acc>:
-        a : Acc <- reads.at(anchors, h, th, i, r, st, acc)
+        +a : Acc <- reads.at(anchors, h, th, i, r, st, acc)
         reads(t, anchors, h, i, r, st, a)
 
 # Search
@@ -211,29 +211,25 @@ def search.next(+sp: T.SearchPage) -> Nat:
     case _: 0n
 
 # one query's pages, following the cursor until there are no more
-def search.chain(+fuel: Nat, +h: String, +q: String, +th: String, +before: Nat, +i: T.Index, +acc: Acc) -> IO(Acc):
-  match fuel:
-    case 0n: IO.pure(Acc, acc)
-    case 1n+f:
+def search.chain(+fuel: Nat, go: Bool, +h: String, +q: String, +th: String, +before: Nat, +i: T.Index, +acc: Acc) -> IO(Acc):
+  match fuel go:
+    case 0n _: IO.pure(Acc, acc)
+    case _ False{}: IO.pure(Acc, acc)
+    case 1n+f True{}:
       do IO<Acc>:
         +want : T.SearchPage = T.Index.search(i, q, th, before)
-        got : TS.Found <- TS.Ts.search(h, q, th, before)
+        +got : TS.Found <- TS.Ts.search(h, q, th, before)
         +a : Acc = Acc.see(acc, "search " ++ q ++ " in " ++ th ++ " before " ++ Nat.show(before),
           J.Json.show(V.Search.result(TS.Found.page(got), TS.Found.index(got), search.p(th, q), "ep")), J.Json.show(V.Search.result(want, i, search.p(th, q), "ep")))
-        search.more(Nat.is_gt(search.next(want), 0n), f, h, q, th, search.next(want), i, a)
-
-def search.more(go: Bool, +fuel: Nat, +h: String, +q: String, +th: String, +before: Nat, +i: T.Index, +acc: Acc) -> IO(Acc):
-  match go:
-    case False{}: IO.pure(Acc, acc)
-    case True{}: search.chain(fuel, h, q, th, before, i, acc)
+        search.chain(f, Nat.is_gt(search.next(want), 0n), h, q, th, search.next(want), i, a)
 
 def searches.th(ths: List<&2, String>, +h: String, +q: String, +i: T.Index, +acc: Acc) -> IO(Acc):
   match ths:
     case Nil{}: IO.pure(Acc, acc)
     case +th <> t:
       do IO<Acc>:
-        a : Acc <- search.chain(30n, h, q, th, 0n, i, acc)
-        a2 : Acc <- search.chain(3n, h, q, th, 77n, i, a)
+        +a : Acc <- search.chain(30n, True{}, h, q, th, 0n, i, acc)
+        +a2 : Acc <- search.chain(3n, True{}, h, q, th, 77n, i, a)
         searches.th(t, h, q, i, a2)
 
 def searches(qs: List<&2, String>, +ths: List<&2, String>, +h: String, +i: T.Index, +acc: Acc) -> IO(Acc):
@@ -241,7 +237,7 @@ def searches(qs: List<&2, String>, +ths: List<&2, String>, +h: String, +i: T.Ind
     case Nil{}: IO.pure(Acc, acc)
     case +q <> t:
       do IO<Acc>:
-        a : Acc <- searches.th(ths, h, q, i, acc)
+        +a : Acc <- searches.th(ths, h, q, i, acc)
         searches(t, ths, h, i, a)
 
 def main() -> IO(Unit):
@@ -258,14 +254,14 @@ def main() -> IO(Unit):
     +st : M.State = state()
     +i : T.Index = T.Index.of(st)
     C.Check.str("the index holds every entry", Nat.show(T.Index.n(i)), Nat.show(entries()))
-    r : T.Index <- TS.Ts.recent(h, st)
+    +r : T.Index <- TS.Ts.recent(h, st)
     C.Check.str("recent threads", String.join(T.Index.recent(r), ","), String.join(T.Index.recent(i), ","))
     +ths : List<&2, String> = ["ta", "tb", "tc", "td", "", "zz"]
-    a1 : Acc <- pages(ths, i, r, h, Acc{0n, 0n, ""})
+    +a1 : Acc <- pages(ths, i, r, h, Acc{0n, 0n, ""})
     Acc.report("every page of every thread at every anchor", a1)
-    a2 : Acc <- reads(["ta", "tb", "tc"], [0n, 100n, 40n], h, i, r, st, Acc{0n, 0n, ""})
+    +a2 : Acc <- reads(["ta", "tb", "tc"], [0n, 100n, 40n], h, i, r, st, Acc{0n, 0n, ""})
     Acc.report("message reads, first and continued", a2)
-    a3 : Acc <- searches(["common", "alpha", "beta alpha", "日本語", "absent", "", "COMMON n13", "common absent", "n7", "üüü"], ["ta", "tc", "", "zz"], h, i, Acc{0n, 0n, ""})
+    +a3 : Acc <- searches(["common", "alpha", "beta alpha", "日本語", "absent", "", "COMMON n13", "common absent", "n7", "üüü"], ["ta", "tc", "", "zz"], h, i, Acc{0n, 0n, ""})
     Acc.report("search pages and their cursors", a3)
     cl : String <- D.Db.close(h)
     rm : Result<&1, &1, U32 & String, U32 & (String & String)> <- Process.run("rm", ["-rf", dir], "", 4096, 10000)
