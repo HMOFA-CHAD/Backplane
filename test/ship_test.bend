@@ -51,6 +51,12 @@ def phase(+s: M.State) -> String:
 def round(c: M.Change) -> String:
   J.Json.show(K.Change.encode(Maybe.default(&2, M.Change, K.Change.decode(K.Change.encode(c)), M.QueueTaken{"x", 0n})))
 
+# the looks a following hub makes on k minute ticks from `at`
+def looks(k: Nat, +s: M.State, +at: Nat) -> Nat:
+  match k:
+    case 0n: 0n
+    case 1n+r: Nat.add(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.tick(s, at))), looks(r, s, Nat.add(at, 60n)))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +idle : M.State = H.Ship.demo("")
@@ -121,11 +127,12 @@ def main() -> IO(Unit):
     C.Check.str("after its restart c1 is live", phase(lv) ++ " " ++ SH.Ship.live(H.Ship.get(lv)) ++ " [" ++ SH.Ship.staged(H.Ship.get(lv)) ++ "]", "live c1 []")
     C.Check.str("live covers it", res.state(MC.Mcp.ship(lv, 52n, "t1", J.Json.obj(Nil{}), look("c1", ""))), "skipped")
     # follow: off by default, a look every 5 minutes when on
-    C.Check.str("follow off: no look", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.tick(idle, 600n)))), "0")
+    C.Check.str("follow off: no look", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.tick(idle, 1800n)))), "0")
     +on : M.State = again(idle, H.Step{[M.SettingSet{"deploy.follow", "on", 3n}], Nil{}})
-    C.Check.str("follow on: a look when due", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.tick(on, 600n)))), "1")
-    C.Check.str("follow on: none between", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.tick(on, 660n)))), "0")
-    C.Check.str("follow on: none during a build", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.tick(again(s1, H.Step{[M.SettingSet{"deploy.follow", "on", 3n}], Nil{}}), 600n)))), "0")
+    C.Check.str("follow on: a look when due", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.tick(on, 1800n)))), "1")
+    C.Check.str("follow on: none between", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.tick(on, 1860n)))), "0")
+    C.Check.str("follow on: one look in every 30 minutes of minute ticks", Nat.show(looks(30n, on, 1800n)) ++ "/" ++ Nat.show(looks(30n, on, 1830n)), "1/1")
+    C.Check.str("follow on: none during a build", Nat.show(H.Ship.demo.nexts(H.Ship.demo.outs(H.Ship.tick(again(s1, H.Step{[M.SettingSet{"deploy.follow", "on", 3n}], Nil{}}), 1800n)))), "0")
     C.Check.str("follow: a new commit builds", Nat.show(H.Ship.demo.builds(H.Ship.newest(on, 601n, "follow", look("c9", "")))), "1")
     C.Check.str("follow: a covered one does nothing", Nat.show(List.length(&2, M.Change, cs(H.Ship.newest(lv, 601n, "follow", look("c1", ""))))), "0")
     # the deploy check does not wait for a build (it runs in a scope of its

@@ -30,6 +30,8 @@
 #   BACKPLANE_VERSION_STAMP  the version this build reports (Version.current),
 #                     written into the emitted C (scripts/stamp-version.py);
 #                     unset, it reads 0.1.0-dev
+#   BACKPLANE_COMMIT_STAMP  the commit it reports (Version.commit, a 40-hex
+#                     sha) the same way; unset, it reads "unknown"
 # Each build prints one "stages:" line and keeps it in build/cc/<out>/stages.txt:
 # wall seconds per stage (emit, split, cc, link), the object cache's hits and
 # misses, the emit's peak RSS (bend alone), the largest single compiler's peak
@@ -169,6 +171,11 @@ t_emit=$(now_ms)
 # the source: the kept emit stays the same for every version
 if [ -n "${BACKPLANE_VERSION_STAMP:-}" ]; then
   python3 scripts/stamp-version.py "$work/all.c" "$BACKPLANE_VERSION_STAMP"
+fi
+# and the commit it was made from (BACKPLANE_COMMIT_STAMP, a 40-hex sha:
+# Version.commit, GET /hello's "commit"), the same way
+if [ -n "${BACKPLANE_COMMIT_STAMP:-}" ]; then
+  python3 scripts/stamp-version.py "$work/all.c" "$BACKPLANE_COMMIT_STAMP" commit
 fi
 [ "${BACKPLANE_EMIT_ONLY:-}" = 1 ] && { echo "$work/all.c"; exit 0; }
 n=$(nice -n 19 python3 scripts/cc-split.py "$work/all.c" "$work" "$units")
