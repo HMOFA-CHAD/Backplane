@@ -361,8 +361,11 @@ class BpFd extends BpStream {
     this.full = false;
     this.wshut = false;
     this.gone = false;
-    this.w = null;
-    this.flushing = null;
+    this.timer = undefined;
+    // Bun reads a descriptor through its own poller only when it is
+    // non-blocking: a blocking pty master was read synchronously and froze
+    // the loop at the first quiet moment (a socketpair end is set too)
+    bp_fd_nonblock(fd);
     this.r = Bun.file(fd).stream().getReader();
     this.pull();
   }
@@ -407,40 +410,57 @@ class BpFd extends BpStream {
     if (this.full) {
       return -BP_ERRNO.EAGAIN;
     }
-    // at most 64 KiB, and none while Bun still holds the last: a send to a
-    // reader that does not read waits (as a full socket makes it wait), and
-    // what it sent is all there before a shutdown or close (below)
+    // write(2) on our non-blocking end, at most 64 KiB at a time. Never
+    // Bun's FileSink: a writer on a descriptor Bun also reads made it
+    // blocking again, and the reader then froze the loop in a tty read. A
+    // full descriptor (EAGAIN) is tried again on a timer, 2 ms doubling to
+    // 50, only while a write waits; the bytes taken are in the kernel, so a
+    // shutdown or close after this loses none.
     const c = b.subarray(0, 65536);
-    try {
-      this.w ??= Bun.file(this.fd).writer();
-      this.w.write(c.slice());
-      const f = this.w.flush();
-      if (f instanceof Promise) {
-        this.full = true;
-        this.flushing = f.then(() => {
-          this.full = false;
-          this.flushing = null;
-          this.wake(true);
-        }, (e) => {
-          this.full = false;
-          this.flushing = null;
-          this.err = bp_errno(e);
-          this.wakeAll();
-        });
-      }
-    } catch (e) {
-      this.err = bp_errno(e);
-      return -this.err;
+    const n = bp_fd_write(this.fd, c);
+    if (n >= 0) {
+      return n > 0 ? n : -BP_ERRNO.EAGAIN;
     }
-    return c.length;
+    if (n === -BP_ERRNO.EAGAIN) {
+      this.full = true;
+      this.retry(2);
+      return n;
+    }
+    // a pty whose other side closed answers EIO: the end, as EPIPE
+    this.err = n === -BP_ERRNO.EIO ? BP_ERRNO.EPIPE : -n;
+    this.wakeAll();
+    return -this.err;
   }
-  // f once what was written has gone (at once when nothing waits)
-  after(f) {
-    if (this.flushing) {
-      this.flushing.then(f, f);
-    } else {
-      f();
+  retry(ms) {
+    if (this.timer !== undefined) {
+      return;
     }
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      if (this.gone || this.err !== 0) {
+        this.full = false;
+        this.wakeAll();
+        return;
+      }
+      if (!this.room()) {
+        this.retry(Math.min(ms * 2, 50));
+        return;
+      }
+      this.full = false;
+      this.wake(true);
+    }, ms);
+  }
+  // whether the kernel takes more now: poll(POLLOUT) with no wait
+  room() {
+    const set = new Int16Array(4);
+    new Int32Array(set.buffer)[0] = this.fd;
+    set[2] = 4;
+    return bp_fd_libc().poll(require("bun:ffi").ptr(set), 1, 0) > 0
+      && (set[3] & 4) !== 0;
+  }
+  // f once what was written has gone: write(2) put it in the kernel already
+  after(f) {
+    f();
   }
   shutdown(how) {
     if (how !== 1) {
@@ -476,14 +496,48 @@ class BpFd extends BpStream {
   }
 }
 
+// fcntl through libc, bound once (POSIX only: BpFd is never made on Windows)
+function bp_fd_libc() {
+  const mac = process.platform === "darwin";
+  const vari = mac && process.arch === "arm64";
+  globalThis.BP_FDC ??= require("bun:ffi").dlopen(mac ? "libSystem.dylib" : "libc.so.6", {
+    shutdown: { args: ["i32", "i32"], returns: "i32" },
+    write: { args: ["i32", "ptr", "u64"], returns: "i64" },
+    poll: { args: ["ptr", "u32", "i32"], returns: "i32" },
+    [mac ? "__error" : "__errno_location"]: { args: [], returns: "ptr" },
+    fcntl: { args: vari ? ["i32", "i32", "i32", "i32", "i32", "i32", "i32", "i32", "i32"]
+      : ["i32", "i32", "i32"], returns: "i32" },
+  }).symbols;
+  const c = globalThis.BP_FDC;
+  return { shutdown: c.shutdown, write: c.write, poll: c.poll, errno: () => require("bun:ffi").read.i32(c[mac ? "__error" : "__errno_location"](), 0),
+    fcntl: (fd, cmd, arg) => vari ? c.fcntl(fd, cmd, 0, 0, 0, 0, 0, 0, arg) : c.fcntl(fd, cmd, arg) };
+}
+
+// write(2): the bytes taken, or -errno
+function bp_fd_write(fd, b) {
+  const c = bp_fd_libc();
+  if (b.length === 0) {
+    return 0;
+  }
+  const n = Number(c.write(fd, require("bun:ffi").ptr(b), b.length));
+  return n >= 0 ? n : -c.errno();
+}
+
+// O_NONBLOCK on our end (F_GETFL 3, F_SETFL 4; O_NONBLOCK 0x800, 4 on macOS)
+function bp_fd_nonblock(fd) {
+  const c = bp_fd_libc();
+  const flag = process.platform === "darwin" ? 4 : 0x800;
+  const fl = c.fcntl(fd, 3, 0);
+  if (fl >= 0 && (fl & flag) === 0) {
+    c.fcntl(fd, 4, fl | flag);
+  }
+}
+
 // shutdown(2) on a socket descriptor (POSIX only: BpFd is never made on
 // Windows)
 function bp_fd_shutdown(fd, how) {
   try {
-    globalThis.BP_SHUT ??= require("bun:ffi").dlopen(process.platform === "darwin"
-      ? "libSystem.dylib" : "libc.so.6",
-      { shutdown: { args: ["i32", "i32"], returns: "i32" } }).symbols;
-    globalThis.BP_SHUT.shutdown(fd, how);
+    bp_fd_libc().shutdown(fd, how);
   } catch (_) {
   }
 }
