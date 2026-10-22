@@ -1601,9 +1601,28 @@ def Mob.settings.menu(ps: List<&2, String>, +lc: I.Loc) -> List<&2, J.Json>:
     case +p <> t:
       Mob.set.row(U.Settings.title(lc, p), "", [Mob.set.btn(U.Settings.title(lc, p) ++ " ›", "settings-page", p, False{})]) <> Mob.settings.menu(t, lc)
 
+# the menu under Settings' search (client.bend's Settings.found): the pages
+# it finds, each noting the rows that matched
+def Mob.settings.found(ps: List<&2, String>, +lc: I.Loc, +q: String) -> List<&2, J.Json>:
+  match ps:
+    case Nil{}: Nil{}
+    case +p <> t:
+      Mob.set.row(U.Settings.title(lc, p), U.Settings.hint(lc, p, q), [Mob.set.btn(U.Settings.title(lc, p) ++ " ›", "settings-page", p, False{})]) <> Mob.settings.found(t, lc, q)
+
+def Mob.settings.none(none: Bool, +lc: I.Loc) -> List<&2, J.Json>:
+  match none:
+    case True{}: [Mob.set.row(MSG.T.settings.search.none(lc), "", Nil{})]
+    case False{}: Nil{}
+
+def Mob.settings.root(+lc: I.Loc, +u: U.Ui) -> List<&2, J.Json>:
+  +q = U.Settings.q(u)
+  +ps = U.Settings.found(U.Settings.phone.pages(), lc, q)
+  Mob.set.row.f(MSG.T.settings.search(lc), "", [Mob.set.field("setq", MSG.T.settings.search(lc), False{}, U.Ui.scratch(u, "@f.setq"))], Nil{})
+    <> List.append(&2, J.Json, Mob.settings.none(List.is_empty(&2, String, ps), lc), Mob.settings.found(ps, lc, q))
+
 def Mob.settings.body(root: Bool, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String, +more: List<&2, J.Json>) -> List<&2, J.Json>:
   match root:
-    case True{}: Mob.settings.menu(U.Settings.phone.pages(), lc)
+    case True{}: Mob.settings.root(lc, u)
     case False{}:
       List.append(&2, J.Json, [Mob.set.row(U.Settings.title(lc, U.Settings.page(u)), "", [Mob.set.btn("‹ " ++ MSG.T.palette.settings(lc), "settings-page", "", False{})])],
         Mob.settings.rows.k(C.Codec.pos(U.Settings.pages(), U.Settings.page(u)), lc, u, st, nf, v, note, more, M.Setting.get(st, "agent.provider", "claude"), U.Str.get(nf, "models"), M.Setting.get(st, "agent.model", "")))

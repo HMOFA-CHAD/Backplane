@@ -9671,6 +9671,79 @@ def Settings.label(i: Nat, +l: I.Loc) -> String:
 def Settings.title(+l: I.Loc, +page: String) -> String:
   Bool.pick(String, String.is_empty(page), MSG.T.palette.settings(l), Settings.label(C.Codec.pos(Settings.pages(), page), l))
 
+# Settings' search (the field "setq", "@f.setq"): a page is found when its
+# title, a row on it or a word about it holds the query, whatever the case;
+# an empty query finds every page. Its hint names the rows that matched.
+def Settings.q(+u: Ui) -> String:
+  String.to_lower(String.trim(Ui.scratch(u, "@f.setq")))
+
+# the rows a page shows, as named on it
+def Settings.rows.of(i: Nat, +l: I.Loc) -> List<&2, String>:
+  match i:
+    case 0n: [MSG.T.settings.theme(l), MSG.T.settings.lang(l), MSG.T.settings.sidebar(l), MSG.T.settings.textsize(l)]
+    case 1n: [MSG.T.settings.settle(l), MSG.T.settings.restart(l)]
+    case 2n: [MSG.T.settings.provider(l), MSG.T.settings.model(l)]
+    case 3n: [MSG.T.settings.writing.provider(l)]
+    case 4n: ["KiCad", "FreeCAD", "KiCad IPC"]
+    case 5n: ["Tailscale", MSG.T.settings.pair(l), MSG.T.settings.channel(l)]
+    case 11n: [MSG.T.settings.tour(l)]
+    case 13n: [Fab.set.order.label(), Fab.set.label()]
+    case _: Nil{}
+
+# words about a page that its rows do not say
+def Settings.words(i: Nat) -> String:
+  match i:
+    case 0n: "appearance dark light theme font text size zoom scale language sidebar"
+    case 1n: "threads settle restart continue notifications alerts notify"
+    case 2n: "agents provider model claude codex grok opencode muse effort"
+    case 3n: "writing titles summaries text model"
+    case 4n: "cad kicad freecad ipc path schematic board"
+    case 5n: "network tailscale tailnet pairing pair phone qr machines sync update channel nightly stable version"
+    case 6n: "voice microphone dictation transcribe speech openai"
+    case 7n: "keys api secrets tokens environment"
+    case 8n: "antigravity google gemini sign in"
+    case 9n: "timezone time zone clock"
+    case 10n: "usage limits tokens cost"
+    case 11n: "about tour help version"
+    case 12n: "privacy share data"
+    case 13n: "ordering order buy fab manufacturing quote price estimates stripe payment checkout fee"
+    case _: ""
+
+def Settings.has(+text: String, +q: String) -> Bool:
+  String.contains(String.to_lower(text), q)
+
+def Settings.rows.hit.k(hit: Bool, +x: String, rest: List<&2, String>) -> List<&2, String>:
+  match hit:
+    case True{}: x <> rest
+    case False{}: rest
+
+def Settings.rows.hit(xs: List<&2, String>, +q: String) -> List<&2, String>:
+  match xs:
+    case Nil{}: Nil{}
+    case +x <> t: Settings.rows.hit.k(Settings.has(x, q), x, Settings.rows.hit(t, q))
+
+# the rows of a page the query names, for its hint ("" when none)
+def Settings.hint(+l: I.Loc, +page: String, +q: String) -> String:
+  Bool.pick(String, String.is_empty(q), "", String.join(Settings.rows.hit(Settings.rows.of(C.Codec.pos(Settings.pages(), page), l), q), " · "))
+
+def Settings.hit(+l: I.Loc, +page: String, +q: String) -> Bool:
+  Bool.or(String.is_empty(q), Bool.or(Settings.has(Settings.title(l, page), q),
+    Bool.or(Settings.has(Settings.words(C.Codec.pos(Settings.pages(), page)), q), Bool.not(String.is_empty(Settings.hint(l, page, q))))))
+
+def Settings.found.k(hit: Bool, +p: String, rest: List<&2, String>) -> List<&2, String>:
+  match hit:
+    case True{}: p <> rest
+    case False{}: rest
+
+# the pages of a menu the query finds, in the menu's order
+def Settings.found(ps: List<&2, String>, +l: I.Loc, +q: String) -> List<&2, String>:
+  match ps:
+    case Nil{}: Nil{}
+    case +p <> t: Settings.found.k(Settings.hit(l, p, q), p, Settings.found(t, l, q))
+
+def Settings.loc(+u: Ui) -> I.Loc:
+  I.I18n.of_tag(Ui.scratch(u, "@lang.tag"))
+
 def Settings.go(+u: Ui, +page: String) -> Act:
   Act{Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.flag_off(u, "pairqr"), "@settings.page", Settings.clean(page)), "@set.sc", "0"), "@set.focus", ""), [Focus{""}]}
 
@@ -12557,9 +12630,19 @@ def Browse.field.change(edit: Bool, +u: Ui, +value: String) -> Ui:
     case True{}: Ui.scratch_set(u, "@browse.edit", Maybe.default(&2, String, List.head(&2, String, String.split(value, '\u{1f}')), ""))
     case False{}: u
 
+# "settings-page" opens a page; its value "?" (Enter in the search) opens
+# the first page the search finds, or stays put when it finds none
+def Settings.nav.first(ps: List<&2, String>, +u: Ui) -> Act:
+  match ps:
+    case Nil{}: Act{u, Nil{}}
+    case +p <> _: Settings.go(u, p)
+
+def Settings.nav(+u: Ui, +value: String) -> Act:
+  Bool.pick(Act, String.eq(value, "?"), Settings.nav.first(Settings.found(Settings.menu.pages(), Settings.loc(u), Settings.q(u)), u), Settings.go(u, value))
+
 def Settings.dispatch(nav: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match nav:
-    case True{}: Settings.go(u, value)
+    case True{}: Settings.nav(u, value)
     case False{}: Mailv.sync(Ui.cast.now(u, Browse.dispatch(String.starts_with(action, "br-"),
         Browse.field.change(Bool.and(String.eq(action, "bfield"), String.starts_with(value, "brurl:")), u, value), action, value)))
 
