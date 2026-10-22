@@ -1,6 +1,6 @@
 import Base
 
-# Which loop runs the program: "c" natively; on the JS target "bun" when
+# Which loop runs the program: "bun" when
 # effects/loop.js put the runtime on Bun's event loop (sockets, processes
 # and timers through Bun's APIs, so a Windows build serves: always on
 # Windows, under BACKPLANE_JS_LOOP=bun elsewhere), else "sync" (the
@@ -8,5 +8,4 @@ import Base
 # Every main asks it first: loop.js is bundled only when a def it backs is
 # reached.
 def Rt.loop() -> IO(String):
-  import "./effects/loop.c"
   import "./effects/loop.js"
