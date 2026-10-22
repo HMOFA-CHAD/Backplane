@@ -5,8 +5,9 @@ volume and box from its STEP, a flat pattern from its DXF. What the client
 said is only used where the files cannot tell (finish, colour, material,
 bends) and a difference is reported as a warning.
 
-The person sees four lines and a total: manufacturing, shipping, duties and
-taxes, and our fee (FEE of everything, FEE_CNC of CNC parts).
+The person sees three lines and a total: manufacturing, shipping, and duties
+and taxes. Our fee (FEE of everything, FEE_CNC of CNC parts) is part of the
+manufacturing line, not a line of its own; shipping and taxes show at cost.
 """
 import re
 import datetime
@@ -180,13 +181,13 @@ def price(manifest, measured):
         problems.append(ship["problem"])
     ddp = bool(ship.get("ddp"))
     tax = duties.estimate(country, goods, ship.get("price", 0.0), len(parts_out), ddp)
+    # the fee is folded into the manufacturing line (the same amount as when
+    # it was a line of its own, so the total does not change)
     fee = config.FEE * (mfg + ship["price"] + tax) + config.FEE_CNC * cnc
     lines = [
-        {"label": "Manufacturing", "amount": round(goods, 2), "detail": made_of(parts_out)},
+        {"label": "Manufacturing", "amount": round(goods + fee, 2), "detail": made_of(parts_out)},
         {"label": "Shipping", "amount": round(ship["price"], 2), "detail": neutral(", ".join(x for x in (ship.get("method"), ship.get("days")) if x))},
         {"label": "Duties & taxes", "amount": round(tax, 2), "detail": duties.note(country, ddp)},
-        {"label": "Service & price-assurance fee", "amount": round(fee, 2),
-         "detail": f"{config.FEE:.0%}" + (f", {config.FEE_CNC:.0%} on CNC parts" if cnc else "")},
     ]
     total = round(sum(ln["amount"] for ln in lines), 2)
     q = {"title": manifest.get("title") or "", "country": country, "country_name": duties.name(country),

@@ -2685,12 +2685,17 @@ def Hub.answer.plan(impl: Bool, +s: M.State, +now: Nat, +client: U32, +id: Strin
 # person's answer is posted in its thread as their message, which starts
 # (or queues) the agent's turn however long they took; a dismissal only
 # closes it (laws order_ask_*)
+# a buy thread's question dismissed: said in the thread as the person's
+# message, so its agent hears it (silence left the thread waiting)
+def Order.skipped() -> String:
+  "I skipped this question."
+
 def Hub.answer.order(said: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String) -> Step:
   match said:
     case True{}:
       Step.before([M.AskClosed{ask, answer, now}], [Reply.ok(client, id)], Hub.post(s, now, th, Hub.id("m", now, Hub.seq(s)), M.User{}, String.trim(answer)))
     case False{}:
-      Step{[M.AskClosed{ask, answer, now}], [Reply.ok(client, id)]}
+      Step.before([M.AskClosed{ask, answer, now}], [Reply.ok(client, id)], Hub.post(s, now, th, Hub.id("m", now, Hub.seq(s)), M.User{}, Order.skipped()))
 
 def Hub.answer.open(order: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String, +k: String) -> Step:
   match order:

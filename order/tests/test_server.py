@@ -93,7 +93,10 @@ def test_quote_from_files_with_assembly():
         quote = q["quote"]
         part = quote["parts"][0]
         assert "20×15 mm" in part["summary"] and part["assembled"] == 2
-        assert [ln["label"] for ln in quote["lines"]] == ["Manufacturing", "Shipping", "Duties & taxes", "Service & price-assurance fee"]
+        # the fee is inside Manufacturing, never a line of its own
+        assert [ln["label"] for ln in quote["lines"]] == ["Manufacturing", "Shipping", "Duties & taxes"]
+        cost = sum(pl["amount"] for pl in quote.get("part_lines", []))
+        assert quote["lines"][0]["amount"] > cost, "Manufacturing carries the fee on top of the fab's cost"
         assert abs(sum(ln["amount"] for ln in quote["lines"]) - quote["total"]) < 0.01
         assert "part_lines" not in quote  # what each part costs stays with us
         assert quote["pay_label"].startswith("Buy now · $") and "Your quote" in quote["markdown"]
@@ -176,3 +179,18 @@ def test_pilot_says_no_card_is_charged(monkeypatch):
     assert "4242 4242 4242 4242" in config.PILOT_NOTE and len(config.PILOT_NOTE) <= 1200
     monkeypatch.setattr(config, "PILOT", False)
     assert "not charged" not in pages.done("paid") and "**Pilot:**" not in pricing.markdown(q)
+
+
+def test_ship_to_must_be_a_country():
+    sent = {"main/gerbers.zip": b"x"}
+    for code, says in (("EU", "European Union"), ("UK", "GB"), ("XX", "not a country")):
+        m = manifest(sent)
+        m["ship_to"] = code
+        try:
+            package.check_manifest(m)
+            raise AssertionError(f"{code} passed as a country")
+        except package.Bad as e:
+            assert says in str(e) and "ask which country" in str(e), str(e)
+    m = manifest(sent)
+    m["ship_to"] = "GR"
+    assert package.check_manifest(m)["ship_to"] == "GR"

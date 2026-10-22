@@ -1340,9 +1340,7 @@ def View.settings.rows.k(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2
         View.chips.loc(lc, U.Models.menu(U.Str.get(nf, "models"), U.TextGen.provider(st)), U.TextGen.model(st), "text.model"))]])
     case 4n: List.concat(&2, D.Node, [[View.setrow("KiCad", U.KN.summary(nf), View.kn.path.loc(lc, u) <> View.kn.loc(lc, U.KN.of(nf, st), False{}))],
       [View.setrow(U.FreeCAD.label.loc(lc, nf), U.FreeCAD.note(lc, nf), Nil{})],
-      [View.setrow(U.KiCad.ipc.label(lc, nf), U.KiCad.ipc.note(lc, nf), Bool.pick(List<&2, D.Node>, U.KiCad.ipc.ready(nf), View.chips.loc(lc, ["on", "off"], ipc, "kicad.ipc"), Nil{}))],
-      [View.setrow(U.Fab.set.order.label(), U.Fab.set.order.note(), View.chips.loc(lc, ["on", "off"], U.Fab.set.enabled(st), "order.enabled"))],
-      [View.setrow(U.Fab.set.label(), U.Fab.set.note.k(U.Fab.enabled(st)), Bool.pick(List<&2, D.Node>, U.Fab.enabled(st), View.chips.loc(lc, ["on", "off"], U.Fab.set.on(st), "order.estimates"), Nil{}))]])
+      [View.setrow(U.KiCad.ipc.label(lc, nf), U.KiCad.ipc.note(lc, nf), Bool.pick(List<&2, D.Node>, U.KiCad.ipc.ready(nf), View.chips.loc(lc, ["on", "off"], ipc, "kicad.ipc"), Nil{}))]])
     case 5n: List.concat(&2, D.Node, [[View.setrow(U.Tail.label(lc, nf), U.Tail.note(lc, nf), Nil{})],
       View.mates(lc, u),
       [View.setrow(MSG.T.settings.pair(lc), U.Pair.note(lc, U.Pair.link(nf)), D.Dom.cat(D.Dom.when(U.Pair.qr.ready(nf), D.Dom.button(Bool.pick(String, U.Ui.flag(u, "pairqr"), "on", ""), "flag", "pairqr", MSG.T.settings.pair.qr.tip(lc), MSG.T.settings.pair.code(lc))),
@@ -1357,6 +1355,9 @@ def View.settings.rows.k(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2
     case 10n: View.usage.page(lc, u)
     case 11n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.tour(lc), MSG.T.settings.tour.note(lc), [D.Dom.button("", "ob-open", "", MSG.T.settings.tour.again(lc), MSG.T.settings.tour.show(lc))])]])
     case 12n: View.agy.rows(U.Share.rows(u))
+    case 13n: List.concat(&2, D.Node, [[D.El{"p", "", [D.At{"class", "set-about"}], [D.Txt{U.Fab.set.about()}]}],
+      [View.setrow(U.Fab.set.order.label(), U.Fab.set.order.note(), View.chips.loc(lc, ["on", "off"], U.Fab.set.enabled(st), "order.enabled"))],
+      [View.setrow(U.Fab.set.label(), U.Fab.set.note.k(U.Fab.enabled(st)), Bool.pick(List<&2, D.Node>, U.Fab.enabled(st), View.chips.loc(lc, ["on", "off"], U.Fab.set.on(st), "order.estimates"), Nil{}))]])
     case _: Nil{}
 
 def View.settings.rows(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> List<&2, D.Node>:
@@ -1372,7 +1373,7 @@ def View.settings.menu(ps: List<&2, String>, +lc: I.Loc) -> List<&2, D.Node>:
 
 def View.settings.body(root: Bool, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> List<&2, D.Node>:
   match root:
-    case True{}: View.settings.menu(U.Settings.pages(), lc)
+    case True{}: View.settings.menu(U.Settings.menu.pages(), lc)
     case False{}: View.settings.rows(C.Codec.pos(U.Settings.pages(), U.Settings.page(u)), lc, u, st, nf, v, note)
 
 def View.settings.loc(+lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:

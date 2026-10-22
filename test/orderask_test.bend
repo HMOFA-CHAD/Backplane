@@ -5,8 +5,8 @@ import ../src/core/hub.bend as H
 
 # An order's question (order_ask) parks nothing: the person's answer is
 # posted in the buy thread as their message, however long they took, and a
-# dismissal only closes it (hub.bend's Hub.answer.order). A Stop leaves it
-# open (Retire.hit).
+# dismissal closes it and says so as their message, so the agent hears it
+# (hub.bend's Hub.answer.order). A Stop leaves it open (Retire.hit).
 
 def log(+turn: M.TurnState) -> List<&2, M.Change>:
   [M.ProjectCreated{"p1", "lamp", "/tmp/lamp", 1n},
@@ -39,5 +39,6 @@ def main() -> IO(Unit):
     C.Check.str("a choice is posted as the person's message", Bool.show(String.contains(answered(M.Completed{}, "Fix them first"), "user@t1:Fix them first")), "True")
     C.Check.str("and the question closes", Bool.show(String.contains(answered(M.Completed{}, "Fix them first"), "closed:a3")), "True")
     C.Check.str("a typed answer is posted as it was typed", Bool.show(String.contains(answered(M.Completed{}, "  Use PLA please "), "user@t1:Use PLA please")), "True")
-    C.Check.str("a dismissal only closes it", answered(M.Completed{}, ""), "closed:a3 ")
+    C.Check.str("a dismissal closes it", Bool.show(String.contains(answered(M.Completed{}, ""), "closed:a3")), "True")
+    C.Check.str("and tells the agent it was skipped", Bool.show(String.contains(answered(M.Completed{}, ""), "user@t1:" ++ H.Order.skipped())), "True")
     C.Check.str("a Stop leaves it open", open(H.Retire.after(st(M.Running{}), H.Hub.interrupt(st(M.Running{}), 9n, 0, "r", "t1"))), "1")

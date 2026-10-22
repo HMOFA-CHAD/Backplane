@@ -898,3 +898,6 @@ html:lang(ja) :is(.set-text, .set-ctl) { min-width: 0; }
 .draw-len { position: absolute; transform: translate(-50%, -50%); width: 9em; line-height: normal; padding: 3px 6px; font: inherit; font-size: 13px; background: var(--raise); color: var(--text); border: 1px solid var(--accent); }
 .draw-foot { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
 .draw-swatch { width: 18px; height: 18px; margin-right: auto; border: 1px solid var(--line); }
+
+/* Settings' Ordering page: how ordering works, above its switches */
+.set-about { margin: 0 0 12px; color: var(--dim); line-height: 1.55; max-width: 68ch; font-size: calc(13px * var(--text-scale, 100) / 100); }

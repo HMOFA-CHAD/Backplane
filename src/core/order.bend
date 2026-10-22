@@ -60,7 +60,7 @@ def Order.prompt.buy() -> String:
   "<backplane_buy>This thread orders the project's parts; the person pressed Buy it. Be brief: short messages, a small table at most, no walls of text. Steps:\n"
   ++ "1. Read `.backplane/intent.md` and every `*.fab.json` (find . -name '*.fab.json' -not -path './extra/*' -not -path './mfg/*'). If a board or part to order has none yet, write it first, measured as the project's instructions say, and say so in a line. In one short message, list what would be ordered (part, what it is, quantity).\n"
   ++ "2. Call the backplane tool `order_review` with action \"gate\". When the review is current and passed it says so: go on. Otherwise Backplane itself tells the person where the review stands (the issues as a list, with the link to `.backplane/review.md`) and asks them; end your turn, and their answer comes as their next message: \"Review for manufacturing\": call delegate_task with the prompt \"Review this project for manufacturing.\" (the task works in this thread's folder, on the very files to be ordered, and its result comes back here), say in one line that it runs as a task of this thread and the order goes on when it's done, and end your turn; when its result comes, call the gate again. \"Fix them first\": delegate_task again with the exact changes `.backplane/review.md` asks for (in this folder, so the order gets them), and once that is done the review once more, then the gate. \"Order without a review\" or \"Order anyway\": go on. Export nothing until the gate passes or the person says to order anyway. Never review or change the design yourself here; this thread only orders.\n"
-  ++ "3. Ask only what is missing, one question at a time with the backplane tool `order_ask` (it never waits: end your turn after each, and the answer comes as the person's next message) so the person can tap the answers (two to four short choices, the likely one first): the country it ships to (two-letter code), quantities, and for each board whether it comes assembled or bare. When an earlier order's `mfg/*/manifest.json` exists, offer its answers first (its ship_to, quantities and assembly) and skip what still holds. Boards come in at least 5 and assembly starts at 2 boards (any number up to the quantity). Bare boards can come with a BOM they order parts with themselves (by manufacturer part number at any distributor).\n"
+  ++ "3. Ask only what is missing, one question at a time with the backplane tool `order_ask` (it never waits: end your turn after each, and the answer comes as the person's next message) so the person can tap the answers (two to four short choices, the likely one first): quantities, and for each board whether it comes assembled or bare. Where it ships is not a choice: ask it in plain words in your reply, with no `order_ask` and no options (\"Which country should it ship to?\"), and the person types it; use that country's two-letter ISO code as ship_to. A region (EU, Europe, Asia) is not a country: ask which country. When an earlier order's `mfg/*/manifest.json` exists, offer its answers first (its quantities and assembly as choices; its country by name, asking whether it ships there again) and skip what still holds. Boards come in at least 5 and assembly starts at 2 boards (any number up to the quantity). Bare boards can come with a BOM they order parts with themselves (by manufacturer part number at any distributor).\n"
   ++ "4. Export from the saved files (a fix made through `kicad_ipc` counts once saved with SaveDocument) into `mfg/<YYYYMMDD-HHMM>/`: for each board `<name>/gerbers/` (kicad-cli pcb export gerbers, and kicad-cli pcb export drill with Excellon, mm, PTH and NPTH in separate files, into the same folder), and when it is assembled `<name>/bom.csv` (columns Designator, Quantity, Value, Footprint, MPN, Manufacturer, and LCSC when known; one line per part number) and `<name>/positions.csv` (kicad-cli pcb export pos --format csv --units mm --side both; columns Designator, Mid X, Mid Y, Rotation, Layer); for each mechanical part `<name>/<name>.step`, and for sheet metal also its flat pattern `<name>/<name>.dxf`. Then write `manifest.json` there: {\"spec\": 1, \"title\": \"<the project, in words>\", \"ship_to\": \"US\", \"parts\": [{\"name\" (its fab.json name, e.g. Main board), \"kind\", \"qty\", \"options\", \"features\" (sheet metal: its bends), \"files\": {\"gerbers\": \"<name>/gerbers\", \"bom\", \"positions\"} or {\"step\", \"dxf\"}, \"assemble\": <boards to assemble, 0 for bare>}], \"files\": {\"<path from the folder>\": \"<sha256>\"}}, listing every file (sha256sum).\n"
   ++ "5. Call the backplane tool `order_quote` with the folder (`mfg/<...>`) and end your turn: Backplane shows the person every file it would send and asks them first. Once they send, it posts the quote with its Buy now link (it opens Stripe) in this thread and you get a message with its total; do not repeat its table. Say in a line or two what it covers, and if it lists problems, what fixes each.\n"
   ++ "Only order_quote ever sends anything: never upload files or contact a manufacturer yourself. The person never deals with the fab: there is no fab website, account or preview for them, so never ask them to check anything there; check what can be checked here (the exported files, the positions file, the renders) and say what you checked. Prices are estimates until paid; the person can always take the mfg folder to any manufacturer themselves. Never name the manufacturer.</backplane_buy>"
@@ -379,6 +379,19 @@ def Order.ask.detail(+dir: String, +m: J.Json, +ps: List<&2, String>) -> String:
     ++ "Ships to " ++ J.Json.get_str(m, "ship_to", "?") ++ " · " ++ String.join(Order.ask.parts(J.Json.elems(J.Json.get_obj(m, "parts"))), ", ") ++ "\n"
     ++ Order.ask.files(ps, 40n)
 
+# whether a quote can be paid: worked out and nothing to fix
+def Order.payable(+q: J.Json) -> Bool:
+  Bool.and(String.eq(J.Json.get_str(q, "status", ""), "ready"), List.is_empty(&2, J.Json, J.Json.elems(J.Json.get_obj(J.Json.get_obj(q, "quote"), "problems"))))
+
+# what the agent is told the thread shows: the Buy now link only when the
+# quote can be paid; otherwise there is none, and the agent says why
+def Order.said.note(pay: Bool) -> String:
+  match pay:
+    case True{}:
+      "Backplane posted the quote with its Buy now link in this thread; do not repeat its table."
+    case False{}:
+      "Backplane posted the quote in this thread with NO Buy now link: it cannot be paid until its problems are fixed. Do not say a link is there. Tell the person each problem in plain words and what fixes it (for a destination that cannot be priced, ask for another country), then make a new quote."
+
 # what the agent hears back (never the token or the Buy now link)
 def Order.said(+q: J.Json) -> String:
   J.Json.show(J.Json.obj([J.KV{"status", J.Str{J.Json.get_str(q, "status", "")}},
@@ -387,11 +400,7 @@ def Order.said(+q: J.Json) -> String:
     J.KV{"problems", Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(q, "quote"), "problems"), J.Json.arr(Nil{}))},
     J.KV{"warnings", Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(q, "quote"), "warnings"), J.Json.arr(Nil{}))},
     J.KV{"order", J.Json.get_obj(q, "order")},
-    J.KV{"note", J.Str{"Backplane posted the quote with its Buy now link in this thread; do not repeat its table."}}]))
-
-# whether a quote can be paid: worked out and nothing to fix
-def Order.payable(+q: J.Json) -> Bool:
-  Bool.and(String.eq(J.Json.get_str(q, "status", ""), "ready"), List.is_empty(&2, J.Json, J.Json.elems(J.Json.get_obj(J.Json.get_obj(q, "quote"), "problems"))))
+    J.KV{"note", J.Str{Order.said.note(Order.payable(q))}}]))
 
 # An order's progress, said once each in the buy thread
 def Order.status.text.k(i: Nat, +tracking: String) -> String:
