@@ -12,7 +12,7 @@
 // No download, compile, payload execution, staging, signing or publication.
 //
 //   node desktop/prepare-components.cjs --source ABS_FROZEN_CHECKOUT --vendor ABS_VENDOR \
-//     --out NEW_ABS_DIR [--targets linux-x64,windows-x64]
+//     --out NEW_ABS_DIR [--targets linux-x64,windows-x64] [--direct-browser off]
 // ABS_VENDOR holds <target>/{payload/, ELECTRON.json[, UPSTREAM.json]} (0.12.0's retained
 // components). The checkout must be clean at its commit with desktop/node_modules/ws
 // installed (npm ci --ignore-scripts).
@@ -25,10 +25,11 @@ const ref = file => ({path: file, sha256: p.digest(file), bytes: fs.statSync(fil
 function args(argv) {
   const a = {};
   for (let i = 0; i < argv.length; i += 2) {
-    check(['--source', '--vendor', '--out', '--targets'].includes(argv[i]) && !(argv[i] in a) && argv[i + 1], 'Use --source --vendor --out [--targets]');
+    check(['--source', '--vendor', '--out', '--targets', '--direct-browser'].includes(argv[i]) && !(argv[i] in a) && argv[i + 1], 'Use --source --vendor --out [--targets] [--direct-browser on|off]');
     a[argv[i]] = argv[i + 1];
   }
   for (const k of ['--source', '--vendor', '--out']) check(a[k] && path.isAbsolute(a[k]), k + ' must be an absolute path');
+  check(['on', 'off', undefined].includes(a['--direct-browser']), '--direct-browser is on or off');
   return a;
 }
 
@@ -77,7 +78,10 @@ function prepare(a) {
   const wsRoot = path.join(desktop, 'node_modules/ws');
   check(JSON.parse(fs.readFileSync(path.join(wsRoot, 'package.json'))).version === WS, 'desktop/node_modules/ws must be ' + WS + ' (npm ci --ignore-scripts)');
   check(!fs.existsSync(out), 'Output exists');
-  const files = appFiles(desktop), feats = features(desktop);
+  // --direct-browser off: the shell claims no in-app browser, so the
+  // producer writes no desktopBrowser into DESKTOP-BUILD.json and main.cjs
+  // starts without it (the files stay: main.cjs requires them either way)
+  const files = appFiles(desktop), feats = {...features(desktop), ...(a['--direct-browser'] === 'off' ? {directBrowser: false} : {})};
   const targets = (a['--targets'] || Object.keys(p.TARGETS).join(',')).split(',');
   for (const t of targets) check(p.TARGETS[t], 'Unknown target ' + t);
   const release = {version, tag: 'v' + version, channel: 'release', commit, tree};
