@@ -83,8 +83,22 @@ fi
 if [ -n "${BACKPLANE_COMMIT_STAMP:-}" ]; then
   python3 scripts/stamp-version.py "$work/stamped.js" "$BACKPLANE_COMMIT_STAMP" commit
 fi
+# Base's String.cmp and Map.bit.go swapped for native ones, as for the web
+# (scripts/js-native.py): Base's String.cmp is not a tail call, and on long
+# strings it overflowed the hub's stack (fast-hub J2: a memory fault right
+# after project.add on an empty home). js-native.py finds them by the
+# minified shape, so the emit is minified (names kept) first.
+"$bun" build --minify-whitespace --minify-syntax --keep-names --target=bun \
+  "$work/stamped.js" --outfile "$work/native.js" >/dev/null
+python3 scripts/js-native.py "$work/native.js" >/dev/null
+mv -f "$work/native.js" "$work/stamped.js"
 # the baked prelude, then the program: one file for bun to compile
-trap 'rm -f "$work/baked.js" "$work/bin.js"' EXIT
+# removed on every way out: done, a failure (set -e) or a signal
+unbake() { rm -f "$work/baked.js" "$work/bin.js" "$work/baked-t.js" "$work/baked-g.js"; }
+trap unbake EXIT
+trap 'unbake; exit 129' HUP
+trap 'unbake; exit 130' INT
+trap 'unbake; exit 143' TERM
 rm -f "$work/baked.js" "$work/bin.js"
 python3 scripts/telemetry-header.py "$work/baked-t.js"
 # the baked Google client, read from .env without running it (build-app.sh)
@@ -119,13 +133,14 @@ case $target in windows-*) out="${out%.exe}.exe" ;; esac
 rt=""
 [ -n "${BACKPLANE_JS_BUN_RUNTIME:-}" ] && rt="--compile-executable-path=$BACKPLANE_JS_BUN_RUNTIME"
 mkdir -p "$(dirname "$out")"
-# --minify: smaller and starts sooner (scripts/js-smoke.sh checks the
-# result). The hub never reads a .env, bunfig.toml or tsconfig of the folder
-# it starts in: those are a project's, not its configuration.
-"$bun" build --compile --minify --no-compile-autoload-dotenv --no-compile-autoload-bunfig \
+# whitespace and syntax minified, names kept: a crash's stack names Bend's
+# defs and the effects. The hub never reads a .env, bunfig.toml or tsconfig
+# of the folder it starts in: those are a project's, not its configuration.
+"$bun" build --compile --minify-whitespace --minify-syntax --keep-names \
+  --no-compile-autoload-dotenv --no-compile-autoload-bunfig \
   $tflag $rt "$work/bin.js" --outfile "$out.tmp" >/dev/null
 case $target in windows-*) mv -f "$out.tmp.exe" "$out" 2>/dev/null || mv -f "$out.tmp" "$out" ;; *) mv -f "$out.tmp" "$out" ;; esac
-rm -f "$work/baked.js" "$work/bin.js"
+unbake
 t3=$(now_ms)
 sec() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.1f", (b - a) / 1000 }'; }
 rss=$(grep -E '^[0-9]+$' "$work/emit.rss" 2>/dev/null | tail -n1 || true)

@@ -147,13 +147,41 @@ stamp() {
   echo "${core%.*}.$(( ${core##*.} + 1 ))-dev.$(date +%Y%m%d.%H%M)"
 }
 
-# the web client into dist/web
+# the web client into dist/web, kept as a tarball under scripts/web-key.sh
+# (BACKPLANE_WEB_CACHE, default ~/.cache/backplane-bend/web; 0 = none;
+# three kept): a deploy that leaves the web alone unpacks the last one
 build_web_dist() {
+  wcache=${BACKPLANE_WEB_CACHE-${XDG_CACHE_HOME:-$HOME/.cache}/backplane-bend/web}
+  [ "$wcache" = 0 ] && wcache=""
+  wkey=""
+  [ -n "$wcache" ] && wkey=$(scripts/web-key.sh 2>/dev/null || true)
+  if [ -n "$wkey" ] && [ -f "$wcache/$wkey.tar" ] && mkdir -p dist/web && tar -xf "$wcache/$wkey.tar" -C dist/web; then
+    touch "$wcache/$wkey.tar"
+    say "web client reused ($wkey)"
+    return 0
+  fi
+  rm -rf dist/web
   bend src/web/index.html -o dist/web >/dev/null
   python3 scripts/js-unmarshal.py ../core/client.Ui dist/web/chunk-*.js
   python3 scripts/js-native.py dist/web/chunk-*.js
   cp src/web/sw.js dist/web/sw.js
   for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
+  # kept only if nothing it read changed while it was built
+  if [ -n "$wkey" ] && [ "$(scripts/web-key.sh 2>/dev/null || true)" = "$wkey" ]; then
+    mkdir -p "$wcache"
+    tar -cf "$wcache/$wkey.tar.$$" -C dist/web . && mv -f "$wcache/$wkey.tar.$$" "$wcache/$wkey.tar"
+    ls -t "$wcache"/*.tar 2>/dev/null | tail -n +4 | while read -r old; do rm -f "$old"; done
+  fi
+}
+
+# the memory this build may use in GB: BACKPLANE_MEM_GB, else the cap of
+# the cgroup it runs in (bp-admit's MemoryMax), else 12 (as build-app.sh)
+mem_budget() {
+  cgmax=""
+  cgp=$(cut -d: -f3 /proc/self/cgroup 2>/dev/null | head -n1)
+  [ -n "$cgp" ] && [ -r "/sys/fs/cgroup$cgp/memory.max" ] && cgmax=$(cat "/sys/fs/cgroup$cgp/memory.max")
+  case $cgmax in ""|max|*[!0-9]*) cgmax="" ;; *) cgmax=$(( cgmax / 1073741824 )) ;; esac
+  echo "${BACKPLANE_MEM_GB:-${cgmax:-12}}"
 }
 
 # the app, the server, the web client and the voice helper into dist/,
@@ -177,9 +205,14 @@ build_dist() {
   rm -rf dist && mkdir -p dist
   # no window binary (scripts/build.sh): the hub and the launcher; the dev
   # service runs on Bun's JS runtime when BACKPLANE_DEV_SERVICE_JS=1
-  # (scripts/build-js.sh: about 45 s to emit, against minutes of C), and
-  # then the web client (about 19 s) is built beside it, not before it
-  if [ "$service_js" = 1 ]; then
+  # (scripts/build-js.sh: about 50 s and 8 GB to emit, against minutes of
+  # C). The web client (about 19 s, 7 GB) is built beside it when the
+  # budget holds both (15 GB: measured 14.8 together), else after it
+  if [ "$service_js" = 1 ] && [ "$(mem_budget)" -lt 15 ]; then
+    say "the hub, then the web (a $(mem_budget) GB budget)"
+    BACKPLANE_VERSION_STAMP=$ver BACKPLANE_COMMIT_STAMP=$(git rev-parse HEAD) scripts/build-js.sh src/server/main.bend dist/backplane-serve
+    build_web_dist
+  elif [ "$service_js" = 1 ]; then
     mkdir -p build
     build_web_dist > build/web-dist.log 2>&1 &
     webpid=$!

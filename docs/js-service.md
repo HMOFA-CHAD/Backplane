@@ -32,8 +32,9 @@ Every target cross-builds from one Linux machine, each in under a second once th
 
 - **Emit.** About 45-50 s, 8 GB peak at bend's 4 GiB heap hint. The emit is kept in `~/.cache/backplane-bend/emit-js` under `scripts/build-js.sh --key SRC`, the hash of only what bend reads for that root (`BP_KEY_ROOTS`). A change that leaves the server alone reuses the last emit.
 - **Stamp.** The version and commit go into a copy of the emit (`scripts/stamp-version.py`, which also handles `.js` files).
+- **Native strings.** The emit is minified with names kept, and `scripts/js-native.py` then swaps Base's `String.cmp` and `Map.bit.go` for native ones, as for the web client. Base's `String.cmp` is not a tail call: on long strings it overflowed the hub's stack. The build stops if either swap isn't found exactly once.
 - **Bake.** A release's Google client and telemetry credentials go into a private prelude: `scripts/google-header.py` and `scripts/telemetry-header.py` write `.js` when asked for it. The prelude is compiled in and deleted afterwards, so the emitted and kept JS never hold credentials. The JS twins `effects/google.js` and `effects/telemetry.js` read `globalThis.BACKPLANE_BAKED`. Test: `bun test/tools/js_bake_test.ts`.
-- **Compile.** The compile uses `--minify` and turns off Bun's `.env`, `bunfig.toml` and tsconfig autoload, so the hub never reads a project's `.env`.
+- **Compile.** The compile minifies whitespace and syntax but keeps names (`--keep-names`), so a field crash's stack still names Bend's defs and the effects. It also turns off Bun's `.env` and `bunfig.toml` autoload, which is on by default, so the hub never reads a project's `.env`.
 
 ## Releases and the desktop app
 
