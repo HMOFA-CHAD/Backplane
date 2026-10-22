@@ -80,7 +80,8 @@ def warm.k(cold: Bool, m: Map<&2, String>, +k: String, +v: String) -> Map<&2, St
     case False{}:
       Map.set(&2, String, m, k, v)
 
-# the records a hot boot holds: the full replay's but the cold settings
+# records but the cold settings (a hot boot holds those only when the tail
+# set them, or for an open thread)
 def warm.go(xs: List<&2, Sigma<&2, &2, String, _ => String>>, m: Map<&2, String>) -> Map<&2, String>:
   match xs:
     case Nil{}:
@@ -148,7 +149,7 @@ def hot.loads(+n: Nat) -> IO(Unit):
     +dir : String <- home(n, Nat.show(S.Sdb.codec()), log.id())
     +hot : HB.Hot <- HB.Hot.load(dir)
     C.Check.str("cut " ++ Nat.show(n) ++ ": used", HB.Hot.why(hot), "")
-    C.Check.str("cut " ++ Nat.show(n) ++ ": records", dump(S.Tab.dump(HB.Hot.st(hot))), want())
+    C.Check.str("cut " ++ Nat.show(n) ++ ": records", dump(warm.go(Map.to_list(&2, String, S.Tab.dump(HB.Hot.st(hot))), Map.new(&2, String))), want())
     C.Check.str("cut " ++ Nat.show(n) ++ ": wire lines", String.join(HB.Hot.ls(hot), "\n"), String.join(ST.Loaded.wire(full()), "\n"))
     C.Check.str("cut " ++ Nat.show(n) ++ ": seq", Nat.show(M.State.seq(HB.Hot.st(hot))), Nat.show(M.State.seq(ST.Loaded.st(full()))))
     rm : Result<&1, &1, U32 & String, U32 & (String & String)> <- Process.run("rm", ["-rf", dir], "", 4096, 10000)
