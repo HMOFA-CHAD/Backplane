@@ -141,7 +141,7 @@ def Dump.sql(os: List<&2, S.Op>, acc: List<&2, List<&2, String>>) -> List<&2, Li
     case o <> t:
       Dump.sql(t, S.Sql.of(o) <> acc)
 
-def Build.finish(b: B, +h: String) -> IO(Unit):
+def Build.finish(b: B, +h: String, +id: String) -> IO(Unit):
   match b:
     case B{+st, +seq, +off, _, _}:
       do IO<Unit>:
@@ -149,7 +149,7 @@ def Build.finish(b: B, +h: String) -> IO(Unit):
         Write.ok(w, "records")
         m : String <- D.Db.script(h, [["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", "schema", "1"], ["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", "codec", Nat.show(S.Sdb.codec())],
           ["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", "applied_seq", Nat.show(seq)], ["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", "applied_off", Nat.show(off)],
-          ["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", "build", "snap_build"]])
+          ["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", "build", "snap_build"], ["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", "log_id", id]])
         Write.ok(m, "meta")
         closed : String <- D.Db.close(h)
         IO.print("store.db: " ++ Nat.show(seq) ++ " lines, applied_off " ++ Nat.show(off) ++ ", state seq " ++ Nat.show(M.State.seq(st)))
@@ -325,8 +325,10 @@ def Build.store(+home: String, +end: Nat) -> IO(Unit):
     +h : String = String.drop(o, 3n)
     s : String <- D.Db.exec(h, S.Sdb.schema())
     Write.ok(s, "schema")
+    hd : List<&2, U32> <- Rd.at(path, 0, 4096)
+    +id : String = S.Sdb.log_id(hd)
     b : B <- Build.loop(1000000n, h, path, end, size, B{M.State.empty(), 0n, 0n, 1n, Nil{}})
-    Build.finish(b, h)
+    Build.finish(b, h, id)
 
 def Cmp.kind(+h: String, +v: String, +k: String) -> Nat:
   Bool.pick(Nat, String.eq(h, Absent()), Bool.pick(Nat, Key.cold(k), 2n, 1n), Bool.pick(Nat, Same(h, v), 0n, 4n))

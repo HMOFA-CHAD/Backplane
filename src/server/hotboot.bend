@@ -20,8 +20,9 @@ import ./host.bend as H
 # replays the log as before.
 
 # lines of the file between two byte offsets, newest first, empty ones
-# left out (effects/hotboot.js)
-def Hot.lines(path: String, from: U32, to: U32) -> IO(List<&2, String>):
+# and those starting in a skipped range left out (skips: [a1, b1, ...],
+# decimal, a <= start < b; effects/hotboot.js)
+def Hot.lines(path: String, from: U32, to: U32, skips: List<&2, String>) -> IO(List<&2, String>):
   import "./effects/hotboot.js"
 
 # what a boot starts from: the read model, the lines clients may see
@@ -194,12 +195,27 @@ def Hot.add.cold(m: Map<&2, List<&2, List<&2, String>>>, cold: List<&2, List<&2,
 # the open threads' entries and run inputs, onto the records
 def Hot.read.open(+h: String, +ids: String, m: Map<&2, List<&2, List<&2, String>>>) -> IO(SN.SRows):
   do IO<SN.SRows>:
-    es : List<&2, List<&2, String>> <- D.Db.query(h, Hot.q.window(), [ids, "#" ++ Nat.show(Hot.window())], Hot.big())
+    es : List<&2, List<&2, String>> <- D.Db.query.t(h, Hot.q.window(), [D.DbText{ids}, D.Db.nat(Hot.window())], Hot.big())
     cold : List<&2, List<&2, String>> <- D.Db.query(h, Hot.q.cold(), [ids], Hot.big())
     return SN.SRows{Hot.put(Hot.add.cold(m, cold), "entry", es)}
 
 # Lines
 # -----
+# The byte ranges before applied_off the store numbered no line in (a torn
+# fragment that never parsed, empty lines): the gaps between its line rows
+# and after the last one. The lines left are the store's, in its order.
+
+def Hot.q.gaps() -> String:
+  "SELECT pe, off FROM (SELECT off, lag(off + len + 1, 1, 0) OVER (ORDER BY seq) AS pe FROM line) WHERE off > pe"
+    ++ " UNION ALL SELECT coalesce(max(off + len + 1), 0), ?1 FROM line HAVING coalesce(max(off + len + 1), 0) < ?1"
+
+def Hot.gaps(rows: List<&2, List<&2, String>>) -> List<&2, String>:
+  match rows:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      SN.Snap.col(r, 0n) <> SN.Snap.col(r, 1n) <> Hot.gaps(t)
+
 # Hub `ls` for now (S1's lines-by-offset replaces it): the lines before
 # applied_off read outside Bend, each a line clients saw. The store's line
 # table numbers only lines that parse; when the non-empty lines are not
@@ -262,13 +278,20 @@ def Hot.exists(path: String) -> IO(Bool):
 # Loading
 # -------
 
-def Hot.ids.rows(rows: List<&2, List<&2, String>>, +acc: List<&2, J.Json>) -> List<&2, J.Json>:
+def Hot.ids.put(yes: Bool, id: String, acc: List<&2, J.Json>) -> List<&2, J.Json>:
+  match yes:
+    case True{}:
+      J.Str{id} <> acc
+    case False{}:
+      acc
+
+def Hot.ids.rows(rows: List<&2, List<&2, String>>, acc: List<&2, J.Json>) -> List<&2, J.Json>:
   match rows:
     case Nil{}:
       acc
     case +r <> t:
       +th = SN.Snap.thread(SN.Snap.last(r))
-      Hot.ids.rows(t, Bool.pick(List<&2, J.Json>, Hot.open(th), J.Str{M.Thread.id(th)} <> acc, acc))
+      Hot.ids.rows(t, Hot.ids.put(Hot.open(th), M.Thread.id(th), acc))
 
 # the open threads' ids, from the thread rows, as a JSON array
 def Hot.ids(+rs: SN.SRows) -> String:
@@ -284,12 +307,12 @@ def Hot.lined(same: Bool, +h: String, +home: String, +rows: SN.SRows, ls: List<&
   match same:
     case False{}:
       do IO<Hot>:
-        closed : String <- D.Db.close(h)
+        cl : String <- D.Db.close(h)
         return Hot.no("the log's lines before applied_off are not the store's " ++ Nat.show(seq))
     case True{}:
       do IO<Hot>:
         reps : List<&2, List<&2, String>> <- D.Db.query(h, "SELECT seq, wire FROM line WHERE wire <> '' ORDER BY seq DESC", [], Hot.big())
-        closed : String <- D.Db.close(h)
+        cl : String <- D.Db.close(h)
         +s0 : M.State = SN.Snap.state(rows)
         +rd : List<&2, String> <- H.EvLog.read_from(Hot.log(home), U32.show(off))
         return Hot.loaded(SN.Snap.tail(ST.Store.read.body(rd), s0, SN.Snap.counts(rows), ST.Loaded{s0, Wire.of(ls, reps, seq)}), ST.Store.read.tail(rd))
@@ -301,14 +324,35 @@ def Hot.read(+h: String, +home: String, +m: Map<&2, String>, +size: U32) -> IO(H
     +rows : SN.SRows <- Hot.read.open(h, ids, recs)
     +seq : Nat = SN.Snap.num(Hot.get(m, "applied_seq"), 0n)
     +off : U32 = U32.from_nat(SN.Snap.num(Hot.get(m, "applied_off"), 0n))
-    +ls : List<&2, String> <- Hot.lines(Hot.log(home), 0, off)
+    gaps : List<&2, List<&2, String>> <- D.Db.query.t(h, Hot.q.gaps(), [D.DbInt{U32.show(off)}], Hot.big())
+    +ls : List<&2, String> <- Hot.lines(Hot.log(home), 0, off, Hot.gaps(gaps))
     Hot.lined(Nat.is_eq(List.length(&2, String, ls), seq), h, home, rows, ls, seq, off, size)
 
-# why the store and the log do not go together ("": they do)
-def Hot.check(+m: Map<&2, String>, +size: U32) -> String:
+# why the store and the log do not go together ("": they do): its meta,
+# the log's identity (SDB.Sdb.log_id: a store made from another log), and
+# a log shorter than the store has read
+def Hot.check(+m: Map<&2, String>, +size: U32, +id: String) -> String:
   +why = Hot.stale(m)
   Bool.pick(String, String.is_empty(why),
-    Bool.pick(String, Nat.is_gt(SN.Snap.num(Hot.get(m, "applied_off"), 0n), U32.to_nat(size)), "the log is shorter than store.db's applied_off", ""), why)
+    Bool.pick(String, Bool.not(String.eq(Hot.get(m, "log_id"), id)), "store.db's log_id " ++ Hot.get(m, "log_id") ++ " is not the log's " ++ id,
+      Bool.pick(String, Nat.is_gt(SN.Snap.num(Hot.get(m, "applied_off"), 0n), U32.to_nat(size)), "the log is shorter than store.db's applied_off", "")), why)
+
+def Hot.head.done(r: File & Result<&1, &1, U32 & String, List<&2, U32>>) -> IO(List<&2, U32>):
+  (f, res) = r
+  do IO<List<&2, U32>>:
+    File.close(f)
+    return Result.default(&1, &1, U32 & String, List<&2, U32>, res, Nil{})
+
+def Hot.head.k(r: Result<&1, &1, U32 & String, File>) -> IO(List<&2, U32>):
+  match r:
+    case Done{f}:
+      IO.bind(File & Result<&1, &1, U32 & String, List<&2, U32>>, List<&2, U32>, File.read_at(f, 0, 4096), Hot.head.done)
+    case Fail{_}:
+      IO.pure(List<&2, U32>, Nil{})
+
+# the log's first 4096 bytes (its identity's)
+def Hot.head(path: String) -> IO(List<&2, U32>):
+  IO.bind(Result<&1, &1, U32 & String, File>, List<&2, U32>, File.open(path, "r"), Hot.head.k)
 
 def Hot.checked.k(fine: Bool, +why: String, +h: String, +home: String, +m: Map<&2, String>, +size: U32) -> IO(Hot):
   match fine:
@@ -316,7 +360,7 @@ def Hot.checked.k(fine: Bool, +why: String, +h: String, +home: String, +m: Map<&
       Hot.read(h, home, m, size)
     case False{}:
       do IO<Hot>:
-        closed : String <- D.Db.close(h)
+        cl : String <- D.Db.close(h)
         return Hot.no(why)
 
 def Hot.checked(+why: String, +h: String, +home: String, +m: Map<&2, String>, +size: U32) -> IO(Hot):
@@ -331,7 +375,8 @@ def Hot.opened(ok: Bool, +h: String, +o: String, +home: String) -> IO(Hot):
         meta : List<&2, List<&2, String>> <- D.Db.query(h, "SELECT k, v FROM meta", [], 1000)
         +m : Map<&2, String> = Hot.meta.go(meta, Map.new(&2, String))
         +size : U32 <- Hot.size(Hot.log(home))
-        Hot.checked(Hot.check(m, size), h, home, m, size)
+        hd : List<&2, U32> <- Hot.head(Hot.log(home))
+        Hot.checked(Hot.check(m, size, SDB.Sdb.log_id(hd)), h, home, m, size)
 
 def Hot.load.k(there: Bool, +home: String) -> IO(Hot):
   match there:

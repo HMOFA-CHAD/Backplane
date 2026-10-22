@@ -7,6 +7,7 @@ import ./mail.bend as ML
 import ./ubop.bend as UO
 import ./thin.bend as THIN
 import ./locks.bend as LK
+import ./sha1.bend as SH
 
 # The indexed store (store.db, docs: bp-coord/store/S1-SCHEMA.md)
 # ---------------------------------------------------------------
@@ -39,7 +40,7 @@ type RK is Data:
 # bumped on any change to the tables or to a record's columns or json
 # (a different number in meta.codec: the store is made again)
 def Sdb.codec() -> Nat:
-  3n
+  4n
 
 def Sdb.schema() -> String:
   String.join([
@@ -134,24 +135,43 @@ def Tab.keyn(+t: String) -> Nat:
 def Sdb.fact(+t: String) -> Bool:
   Bool.or(Bool.or(String.eq(t, "line"), String.eq(t, "entry")), Bool.or(Bool.or(String.eq(t, "term"), String.eq(t, "post")), String.eq(t, "mail")))
 
-# one "?" per column
+# Parameters
+# ----------
+# D.Db binds a parameter that reads "#<digits>" as an integer, so a value
+# written as it is would lose a person's "#42" (a title, a setting, a
+# message) to the number 42. Every value goes as "v" ++ value and the
+# statement takes substr(?, 2): no parameter ever starts with '#'. Numbers
+# go as plain digits and the INTEGER columns' affinity stores them as
+# integers (law-free, checked by test/storedb_test.bend and the commit e2e).
+
+def Sql.p() -> String:
+  "substr(?, 2)"
+
+def Sql.vals(xs: List<&2, String>, acc: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      List.reverse(&2, String, acc)
+    case x <> t:
+      Sql.vals(t, ("v" ++ x) <> acc)
+
+# one parameter per column
 def Sql.marks(cs: List<&2, String>) -> String:
   match cs:
     case Nil{}:
       ""
     case _ <> Nil{}:
-      "?"
+      Sql.p()
     case _ <> t:
-      "?, " ++ Sql.marks(t)
+      Sql.p() ++ ", " ++ Sql.marks(t)
 
 def Sql.eqs(xs: List<&2, String>) -> String:
   match xs:
     case Nil{}:
       ""
     case x <> Nil{}:
-      x ++ " = ?"
+      x ++ " = " ++ Sql.p()
     case x <> t:
-      x ++ " = ? AND " ++ Sql.eqs(t)
+      x ++ " = " ++ Sql.p() ++ " AND " ++ Sql.eqs(t)
 
 def Sql.put.k(fact: Bool, +t: String, +cs: List<&2, String>) -> String:
   match fact:
@@ -160,27 +180,28 @@ def Sql.put.k(fact: Bool, +t: String, +cs: List<&2, String>) -> String:
     case False{}:
       "INSERT OR REPLACE INTO " ++ t ++ "(" ++ String.join(cs, ", ") ++ ") VALUES (" ++ Sql.marks(cs) ++ ")"
 
-# an op as a statement and its parameters (S2's D.Db: "#<digits>" binds an
-# integer, anything else text). The SQL depends on the table alone.
+# an op as a statement and its parameters (each "v" ++ value, Sql.p). The
+# SQL depends on the table alone.
 def Sql.of(o: Op) -> List<&2, String>:
   match o:
     case Put{+t, cols}:
-      Sql.put.k(Sdb.fact(t), t, Sdb.cols(t)) <> cols
+      Sql.put.k(Sdb.fact(t), t, Sdb.cols(t)) <> Sql.vals(cols, Nil{})
     case Del{+t, key}:
-      ("DELETE FROM " ++ t ++ " WHERE " ++ Sql.eqs(List.take(&2, String, Sdb.cols(t), Tab.keyn(t)))) <> key
+      ("DELETE FROM " ++ t ++ " WHERE " ++ Sql.eqs(List.take(&2, String, Sdb.cols(t), Tab.keyn(t)))) <> Sql.vals(key, Nil{})
 
 # Columns
 # -------
 
+# a number as its column holds it (plain digits: Sql.p)
 def S.n(+n: Nat) -> String:
-  "#" ++ Nat.show(n)
+  Nat.show(n)
 
 def S.b(b: Bool) -> String:
   match b:
     case True{}:
-      "#1"
+      "1"
     case False{}:
-      "#0"
+      "0"
 
 def S.j(kvs: List<&2, J.KV>) -> String:
   J.Json.show(J.Json.obj(kvs))
@@ -621,6 +642,12 @@ def K.bot.marks(ps: List<&2, String>, +conv: String, acc: List<&2, RK>) -> List<
 def K.conv(+post: M.State, +conv: String) -> List<&2, RK>:
   RK{"conv", conv} <> K.bot.marks(ML.Conv.parts(ML.Box.conv(M.State.mail(post), conv)), conv, Nil{})
 
+# a conversation whose members may change (ML.Box.conv_set: a joining bot
+# gets an open mark, one that left loses its mark): the marks of its
+# members before and after (found missing by the copy harness, F1)
+def K.conv.both(+pre: M.State, +post: M.State, +conv: String) -> List<&2, RK>:
+  List.append(&2, RK, K.conv(post, conv), K.conv(pre, conv))
+
 def K.tokens(+pre: M.State, +th: String, +pv: String, +mo: String, +at: Nat) -> List<&2, RK>:
   +x = M.Tok.pre(pre)
   +pm = pv ++ "|" ++ Bool.pick(String, String.is_empty(mo), "default", mo)
@@ -745,7 +772,7 @@ def Sdb.keys(+pre: M.State, +post: M.State, c: M.Change) -> List<&2, RK>:
     case M.BotDeleted{+id, _}:
       RK{"bot", id} <> K.names(pre, id)
     case M.RoomSet{+id, _, _, _}:
-      [RK{"room", id}, RK{"conv", "room:" ++ id}]
+      RK{"room", id} <> K.conv.both(pre, post, "room:" ++ id)
     case M.RoomDeleted{+id, _}:
       [RK{"room", id}]
     case M.RoomPosted{_, +room, +from, _, _, _}:
@@ -801,7 +828,7 @@ def Sdb.keys(+pre: M.State, +post: M.State, c: M.Change) -> List<&2, RK>:
     case M.MessageFrom{+th, +msg, _, _, _, _}:
       [RK{"origin", th ++ "/" ++ msg}]
     case M.ConvSet{+id, _, _, _, _, _, _}:
-      [RK{"conv", id}]
+      K.conv.both(pre, post, id)
     case M.MailPosted{_, +conv, _, _, _, _, _, _, _, _}:
       K.conv(post, conv)
     case M.MailMarked{+bot, +conv, _, _, _, _}:
@@ -1281,7 +1308,7 @@ def Tab.entry.k(msg: Bool, id: String, th: String, r: String, ak: String, text: 
 def Tab.entry.of(cs: List<&2, String>) -> M.Entry:
   match cs:
     case _ <> _ <> id <> th <> _ <> +k <> r <> ak <> text <> at <> Nil{}:
-      Tab.entry.k(String.eq(k, "msg"), id, th, r, ak, text, M.Switch.num(String.drop(at, 1n), 0n))
+      Tab.entry.k(String.eq(k, "msg"), id, th, r, ak, text, M.Switch.num(at, 0n))
     case _:
       M.Act{"", "", "", "", "", 0n}
 
@@ -1337,6 +1364,59 @@ def Tab.entries(fs: Map<&2, String>) -> List<&2, String>:
 def Tab.mine(fs: Map<&2, String>, +th: String) -> List<&2, M.Entry>:
   Tab.mine.go(Tab.entries(fs), th, Nil{})
 
+# A log's identity
+# ----------------
+# store.db belongs to one log: meta log_id is "sha1:" and the hex SHA-1 of
+# the log's first line (its bytes before the first newline, at most 4096),
+# "" for an empty log. The build and the hub's open both use this one
+# definition; a store whose log_id differs from its log's is made again.
+
+def Id.upto.t(nl: Bool, t: List<&2, U32>) -> List<&2, U32>:
+  match nl:
+    case True{}:
+      Nil{}
+    case False{}:
+      t
+
+def Id.upto.x(nl: Bool, +x: U32, acc: List<&2, U32>) -> List<&2, U32>:
+  match nl:
+    case True{}:
+      acc
+    case False{}:
+      x <> acc
+
+# the bytes before the first newline, at most n of them
+def Id.upto(n: Nat, bs: List<&2, U32>, acc: List<&2, U32>) -> List<&2, U32>:
+  match n bs:
+    case _ Nil{}:
+      List.reverse(&2, U32, acc)
+    case 0n +x <> +t:
+      List.reverse(&2, U32, acc)
+    case 1n+k +x <> +t:
+      Id.upto(k, Id.upto.t(U32.is_eq(x, 10), t), Id.upto.x(U32.is_eq(x, 10), x, acc))
+
+def Id.nib(+x: U32) -> String:
+  String.take(String.drop("0123456789abcdef", U32.to_nat(x)), 1n)
+
+# (a digest: 20 bytes, so no deeper than that)
+def Id.hex(bs: List<&2, U32>) -> String:
+  match bs:
+    case Nil{}:
+      ""
+    case +b <> t:
+      Id.nib(U32.shrn(b, 4n)) ++ Id.nib(U32.and(b, 15)) ++ Id.hex(t)
+
+def Id.k(bs: List<&2, U32>) -> String:
+  match bs:
+    case Nil{}:
+      ""
+    case +b <> t:
+      "sha1:" ++ Id.hex(SH.Sha1.hash(b <> t))
+
+# the identity of a log whose file starts with these bytes
+def Sdb.log_id(bs: List<&2, U32>) -> String:
+  Id.k(Id.upto(4096n, bs, Nil{}))
+
 # A demo log for the laws
 # -----------------------
 # One of most kinds of change, so every domain is written incrementally and
@@ -1353,7 +1433,9 @@ def Demo.changes() -> List<&2, M.Change>:
    M.AskOpened{"a1", "t1", "approval", "Bash", "rm", "yes,no", 10n}, M.AskClosed{"a1", "yes", 11n},
    M.TaskDelegated{"k1", "t1", "t2", 1n, "claude", "opus", 11n}, M.TaskStateSet{"k1", M.TaskDone{}, "ok", 12n}, M.TaskDelivered{"k1", 12n},
    M.ThreadSnoozed{"t2", 99n, 12n}, M.ProjectOrdered{"p1", "80", 12n}, M.ThreadRenamed{"t2", "Bee", 13n}, M.ThreadPinned{"t2", True{}, 13n},
-   M.BotSet{"b1", "Bub", "t2", 1n, "kind", 14n}, M.RoomSet{"r1", "Room", "b1", 14n}, M.RoomPosted{"rp1", "r1", "b1", "hey room", 0n, 15n},
+   M.BotSet{"b1", "Bub", "t2", 1n, "kind", 14n}, M.RoomSet{"r1", "Room", "b1", 14n},
+   M.BotSet{"b2", "Two", "t1", 1n, "", 14n}, M.RoomSet{"r2", "Quiet", "b1\nb2", 14n}, M.RoomSet{"r2", "Quiet", "b1", 15n},
+   M.ConvSet{"c2", "S2", "pair", "bot:b2\nperson", "p1", "", 15n}, M.ConvSet{"c2", "S2", "pair", "person", "p1", "", 16n}, M.RoomPosted{"rp1", "r1", "b1", "hey room", 0n, 15n},
    M.HookSet{"h1", "b1", "gh", False{}, 15n}, M.HookHit{"h1", 16n},
    M.RoutineSet{"ro1", "b1", "daily", "0 9 * * *", "go", True{}, 16n}, M.RoutineFired{"ro1", 17n}, M.RoutinePlan{"ro1", 0n, "person", "", 17n},
    M.MemorySaved{"b1", "k", "note", "remember", "", 17n}, M.MemorySaved{"b1", "k2", "note", "gone", "", 17n}, M.MemoryForgot{"b1", "k2", 18n},
