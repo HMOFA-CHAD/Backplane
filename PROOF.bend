@@ -12766,3 +12766,7 @@ def Laws.far_feed_sliced_big(): {==}
 def Laws.far_fact_shared(): {==}
 def Laws.far_fact_private(): {==}
 # ---- end F1 feed ----
+def Laws.locks_idle_never_set(): {==}
+def Laws.locks_idle_released(): {==}
+def Laws.locks_idle_held_not(): {==}
+def Laws.locks_after_idle_none(): {==}
