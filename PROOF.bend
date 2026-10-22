@@ -12612,3 +12612,13 @@ def Laws.oprep_task_delivered_with_filing(): {==}
 def Laws.oprep_other_thread_unchanged(): {==}
 
 def Laws.cbor_trees_exact(): {==}
+def Laws.thin_pace_own_urgent(): {==}
+def Laws.thin_pace_other_soft(): {==}
+def Laws.thin_pace_all_urgent(): {==}
+def Laws.thin_pace_none_quiet(th): {==}
+def Laws.thin_pace_no_thread_soft(): {==}
+def Laws.thin_pace_own_sends(): {==}
+def Laws.thin_pace_soft_owed(): {==}
+def Laws.thin_pace_flush_sends(): {==}
+def Laws.thin_pace_owed_raised(): {==}
+def Laws.thin_pace_quiet(last, now): {==}

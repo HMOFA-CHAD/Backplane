@@ -45,6 +45,7 @@ import ../core/cbor.bend as CB
 import ../mobile/session.bend as MSE
 import ./thin-view.bend as TV
 import ./thin-actor.bend as TA
+import ../core/thin-pace.bend as TPACE
 import ./thin-mail.bend as TMAIL
 import ../core/thin.bend as THIN
 import ../core/thin-live.bend as TLIVE
@@ -196,6 +197,8 @@ type Msg is Data:
   ClaudeFail{thread: String, gen: String, msg: String}
   # every 15 s: a heartbeat for every client (Alive.due)
   Heart{}
+  # thin views are owed a view.changed now due (core/thin-pace.bend)
+  ThinFlush{}
   Push{client: U32, text: String}
   # a message for one client, already CBOR
   PushBin{client: U32, cbor: List<&2, U32>}
@@ -358,13 +361,13 @@ type Net is Data:
   Net{tailnet: Bool, https: Bool, token: String, models: String, mtext: String, rt: K.Rt, br: Maybe<&2, Chan(BR.BMsg)>, pk: Maybe<&2, Chan(PK.PMsg)>, tm: Maybe<&2, Chan(TM.TMsg)>, machines: String, pv: Maybe<&2, Chan(PV.PMsg)>, bn: BN.Bn, managed: Bool, link: String, freecad: String, ks: Maybe<&2, Chan(KSV.KMsg)>}
 
 type ThinCache is Data:
-  ThinCache{index: THIN.Index, epoch: String, revision: Nat, streams: Map<&2, TLIVE.Stream>, mail: TMAIL.Cache}
+  ThinCache{index: THIN.Index, epoch: String, revision: Nat, streams: Map<&2, TLIVE.Stream>, mail: TMAIL.Cache, notes: TPACE.Notes}
 
 type Cfg is Data:
   Cfg{home: String, web: String, host: String, port: U32, prompt: String, dirs: List<&2, String>, version: String, net: Net, telemetry: List<&2, TI.TmCfg>, views: List<&2, ThinCache>}
 
 def ThinCache.first(xs: List<&2, ThinCache>) -> ThinCache:
-  Maybe.default(&2, ThinCache, List.head(&2, ThinCache, xs), ThinCache{THIN.Index.empty(), "0", 0n, Map.new(&2, TLIVE.Stream), TMAIL.Cache.empty()})
+  Maybe.default(&2, ThinCache, List.head(&2, ThinCache, xs), ThinCache{THIN.Index.empty(), "0", 0n, Map.new(&2, TLIVE.Stream), TMAIL.Cache.empty(), TPACE.Notes.empty()})
 
 def Cfg.thin.cache(cfg: Cfg) -> ThinCache:
   match cfg:
@@ -372,23 +375,30 @@ def Cfg.thin.cache(cfg: Cfg) -> ThinCache:
 
 def ThinCache.index(c: ThinCache) -> THIN.Index:
   match c:
-    case ThinCache{i, _, _, _, _}: i
+    case ThinCache{i, _, _, _, _, _}: i
 
 def ThinCache.epoch(c: ThinCache) -> String:
   match c:
-    case ThinCache{_, e, _, _, _}: e
+    case ThinCache{_, e, _, _, _, _}: e
 
 def ThinCache.revision(c: ThinCache) -> Nat:
   match c:
-    case ThinCache{_, _, n, _, _}: n
+    case ThinCache{_, _, n, _, _, _}: n
 
 def ThinCache.streams(cache: ThinCache) -> Map<&2, TLIVE.Stream>:
   match cache:
-    case ThinCache{_, _, _, streams, _}: streams
+    case ThinCache{_, _, _, streams, _, _}: streams
 
 def ThinCache.mail(cache: ThinCache) -> TMAIL.Cache:
   match cache:
-    case ThinCache{_, _, _, _, mail}: mail
+    case ThinCache{_, _, _, _, mail, _}: mail
+
+def ThinCache.notes(cache: ThinCache) -> TPACE.Notes:
+  match cache:
+    case ThinCache{_, _, _, _, _, notes}: notes
+
+def Cfg.thin.notes(cfg: Cfg) -> TPACE.Notes:
+  ThinCache.notes(Cfg.thin.cache(cfg))
 
 def Cfg.thin.mail(cfg: Cfg) -> TMAIL.Cache:
   ThinCache.mail(Cfg.thin.cache(cfg))
@@ -413,7 +423,7 @@ def Cfg.thin.next(+n: Nat) -> Nat:
   Nat.add(n, Bool.pick(Nat, Nat.is_lt(n, PRESENT.Session.nat.max()), 1n, 0n))
 
 def Cfg.with_thin(+cfg: Cfg, index: THIN.Index) -> Cfg:
-  Cfg.with_thin_cache(cfg, ThinCache{index, Cfg.thin.epoch(cfg), Cfg.thin.next(Cfg.thin.revision(cfg)), Cfg.thin.streams(cfg), Cfg.thin.mail(cfg)})
+  Cfg.with_thin_cache(cfg, ThinCache{index, Cfg.thin.epoch(cfg), Cfg.thin.next(Cfg.thin.revision(cfg)), Cfg.thin.streams(cfg), Cfg.thin.mail(cfg), TPACE.Notes.touch(Cfg.thin.notes(cfg), "*")})
 
 def Cfg.thin.bump(+cfg: Cfg) -> Cfg:
   Cfg.with_thin(cfg, Cfg.thin(cfg))
@@ -424,7 +434,7 @@ def Cfg.thin.first_epoch(changes: List<&2, M.Change>, old: String) -> String:
     case _ _: old
 
 def Cfg.thin.committed(+cfg: Cfg, +changes: List<&2, M.Change>, st: M.State) -> Cfg:
-  Cfg.with_thin_cache(cfg, ThinCache{THIN.Index.changes(changes, Cfg.thin(cfg)), Cfg.thin.first_epoch(changes, Cfg.thin.epoch(cfg)), Cfg.thin.next(Cfg.thin.revision(cfg)), Cfg.thin.streams(cfg), TMAIL.Cache.committed(changes, st, Cfg.thin.mail(cfg))})
+  Cfg.with_thin_cache(cfg, ThinCache{THIN.Index.changes(changes, Cfg.thin(cfg)), Cfg.thin.first_epoch(changes, Cfg.thin.epoch(cfg)), Cfg.thin.next(Cfg.thin.revision(cfg)), Cfg.thin.streams(cfg), TMAIL.Cache.committed(changes, st, Cfg.thin.mail(cfg)), TPACE.Notes.changes(Cfg.thin.notes(cfg), changes)})
 
 # ---- mail perf: local wire-log length ----
 # Valid unknown JSON remains a wire line without changing State.seq.
@@ -6154,14 +6164,15 @@ def Cfg.tch(c: Cfg) -> TE.TeachSt:
 def Cfg.with_tch(+c: Cfg, t: TE.TeachSt) -> Cfg:
   Cfg.with_bn(c, BN.Bn.with_tch(Cfg.bn(c), t))
 
-def Cfg.thin.live(+cfg: Cfg, streams: Map<&2, TLIVE.Stream>) -> Cfg:
-  Cfg.with_thin_cache(cfg, ThinCache{Cfg.thin(cfg), Cfg.thin.epoch(cfg), Cfg.thin.next(Cfg.thin.revision(cfg)), streams, Cfg.thin.mail(cfg)})
+# th: the thread whose stream changed ("*": any of them)
+def Cfg.thin.live(+cfg: Cfg, streams: Map<&2, TLIVE.Stream>, +th: String) -> Cfg:
+  Cfg.with_thin_cache(cfg, ThinCache{Cfg.thin(cfg), Cfg.thin.epoch(cfg), Cfg.thin.next(Cfg.thin.revision(cfg)), streams, Cfg.thin.mail(cfg), TPACE.Notes.touch(Cfg.thin.notes(cfg), th)})
 
 def Live.with(+cfg: Cfg, +lv: List<&2, LV.Buf>) -> Cfg:
-  Cfg.thin.live(Cfg.with_bn(cfg, BN.Bn.with_live(Cfg.bn(cfg), lv)), TLIVE.Streams.snapshot(lv, Cfg.thin.next(Cfg.thin.revision(cfg)), Map.new(&2, TLIVE.Stream)))
+  Cfg.thin.live(Cfg.with_bn(cfg, BN.Bn.with_live(Cfg.bn(cfg), lv)), TLIVE.Streams.snapshot(lv, Cfg.thin.next(Cfg.thin.revision(cfg)), Map.new(&2, TLIVE.Stream)), "*")
 
 def Live.with_delta(+cfg: Cfg, +lv: List<&2, LV.Buf>, +thread: String, text: String) -> Cfg:
-  Cfg.thin.live(Cfg.with_bn(cfg, BN.Bn.with_live(Cfg.bn(cfg), lv)), TLIVE.Streams.delta(Cfg.thin.streams(cfg), lv, thread, text, Cfg.thin.next(Cfg.thin.revision(cfg))))
+  Cfg.thin.live(Cfg.with_bn(cfg, BN.Bn.with_live(Cfg.bn(cfg), lv)), TLIVE.Streams.delta(Cfg.thin.streams(cfg), lv, thread, text, Cfg.thin.next(Cfg.thin.revision(cfg))), thread)
 
 # the tool calls open now (core/deploy.bend's Open.*), kept in memory only:
 # after a restart there are none, which is right, the old processes are gone
@@ -14034,6 +14045,8 @@ def Msg.kind(m: Msg) -> String:
       "tick"
     case Heart{}:
       "heart"
+    case ThinFlush{}:
+      "thin_flush"
     case AutoView{_, _}:
       "auto_view"
     case ClaudePid{_, _, _}:
@@ -15111,6 +15124,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.telemetry.done(h, gen, view, id, now)
     case Tick{}:
       Hub.tick(h, now)
+    case ThinFlush{}:
+      IO.bind(Nat, Hub, IO.now(), ms => Hub.thin.flush(h, ms))
     case Heart{}:
       IO.bind(Hub, Hub, IO.bind(Hub, Hub, IO.bind(Hub, Hub, Hub.step(h, B.Step.none()), h1 => Hub.broadcast(h1, DK.Alive.frame())), h2 => Hub.uber.beat(h2, now)), h3 => Hub.deploy_poll(h3, now))
     case AutoView{thread, fs}:
@@ -15315,27 +15330,88 @@ def Wire.thin.notice_one(thin: Bool, c: Client, epoch: String, +revision: Nat) -
     case False{}: IO.pure(Maybe<&2, Client>, Some{c})
     case True{}: Wire.thin.notice_alive(Nat.is_lt(revision, PRESENT.Session.nat.max()), c, epoch, revision)
 
-def Wire.thin.notices(clients: List<&2, Client>, +epoch: String, +revision: Nat) -> IO(List<&2, Client>):
+# Paced notices (core/thin-pace.bend): each thin view is told what this
+# step touched of its own thread at once, anything else at most every
+# Pace.soft() ms; what it is owed waits for the flush timer (ThinFlush).
+type ThinNoticed is Data:
+  ThinNoticed{clients: List<&2, Client>, paces: Map<&2, TPACE.Pace>, wait: Nat}
+
+def ThinNoticed.add(+one: Maybe<&2, Client>, +key: String, +pace: TPACE.Pace, +wait: Nat, rest: ThinNoticed) -> ThinNoticed:
+  match rest:
+    case ThinNoticed{cs, ps, w}:
+      ThinNoticed{Clients.add(one, cs), Map.set(&2, TPACE.Pace, ps, key, pace), TPACE.Wait.min(wait, w)}
+
+def ThinNoticed.keep(+one: Maybe<&2, Client>, rest: ThinNoticed) -> ThinNoticed:
+  match rest:
+    case ThinNoticed{cs, ps, w}:
+      ThinNoticed{Clients.add(one, cs), ps, w}
+
+def Wire.thin.paced.send(+send: Bool, +c: Client, +epoch: String, +revision: Nat) -> IO(Maybe<&2, Client>):
+  match send:
+    case True{}: Wire.thin.notice_one(True{}, c, epoch, revision)
+    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
+
+def Wire.thin.paced.one(+paced: TPACE.Paced, +c: Client, +epoch: String, +revision: Nat, +key: String, rest: ThinNoticed) -> IO(ThinNoticed):
+  do IO<ThinNoticed>:
+    one : Maybe<&2, Client> <- Wire.thin.paced.send(TPACE.Paced.send(paced), c, epoch, revision)
+    return ThinNoticed.add(one, key, TPACE.Paced.pace(paced), TPACE.Paced.wait(paced), rest)
+
+def Wire.thin.paced.thin(+thin: Bool, +c: Client, +st: M.State, +touch: TPACE.Touch, +ps: Map<&2, TPACE.Pace>, +now: Nat, +epoch: String, +revision: Nat, rest: ThinNoticed) -> IO(ThinNoticed):
+  match thin:
+    case False{}: IO.pure(ThinNoticed, ThinNoticed.keep(Some{c}, rest))
+    case True{}:
+      +key = U32.show(Client.id(c))
+      Wire.thin.paced.one(TPACE.Pace.step(TPACE.Pace.of(ps, key), now, TPACE.Touch.level(touch, TV.Target.thread(st, ThinContext.target(Client.thin.context(c))))), c, epoch, revision, key, rest)
+
+def Wire.thin.paced(clients: List<&2, Client>, +st: M.State, +touch: TPACE.Touch, +ps: Map<&2, TPACE.Pace>, +now: Nat, +epoch: String, +revision: Nat) -> IO(ThinNoticed):
   match clients:
-    case Nil{}: IO.pure(List<&2, Client>, Nil{})
+    case Nil{}: IO.pure(ThinNoticed, ThinNoticed{Nil{}, Map.new(&2, TPACE.Pace), 0n})
     case +c <> tail:
-      do IO<List<&2, Client>>:
-        one : Maybe<&2, Client> <- Wire.thin.notice_one(Client.thin(c), c, epoch, revision)
-        rest : List<&2, Client> <- Wire.thin.notices(tail, epoch, revision)
-        return Clients.add(one, rest)
+      do IO<ThinNoticed>:
+        rest : ThinNoticed <- Wire.thin.paced(tail, st, touch, ps, now, epoch, revision)
+        Wire.thin.paced.thin(Client.thin(c), c, st, touch, ps, now, epoch, revision, rest)
 
-def Hub.thin.invalidate_if(changed: Bool, h: Hub) -> IO(Hub):
-  match changed h:
-    case False{} _: IO.pure(Hub, h)
-    case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+def Cfg.thin.with_notes(+cfg: Cfg, notes: TPACE.Notes) -> Cfg:
+  Cfg.with_thin_cache(cfg, ThinCache{Cfg.thin(cfg), Cfg.thin.epoch(cfg), Cfg.thin.revision(cfg), Cfg.thin.streams(cfg), Cfg.thin.mail(cfg), notes})
+
+def Hub.thin.timer(+want: Bool, +inbox: Chan(Msg), +wait: Nat) -> IO(Unit):
+  match want:
+    case True{}: IO.spawn(Unit, Self.post.wait(inbox, ThinFlush{}, U32.from_nat(wait)))
+    case False{}: IO.pure(Unit, Unit{})
+
+def Hub.thin.noticed(r: ThinNoticed, h: Hub, +now: Nat) -> IO(Hub):
+  match r h:
+    case ThinNoticed{cl2, ps, +wait} Hub{st, f, ls, _, as, +inbox, +cfg, note}:
+      +flush = TPACE.Notes.flush(Cfg.thin.notes(cfg))
+      +want = TPACE.Notes.timer(flush, now, wait)
       do IO<Hub>:
-        cl2 : List<&2, Client> <- Wire.thin.notices(cl, Cfg.thin.epoch(cfg), Cfg.thin.revision(cfg))
-        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+        Hub.thin.timer(want, inbox, wait)
+        return Hub{st, f, ls, cl2, as, inbox, Cfg.thin.with_notes(cfg, TPACE.Notes{TPACE.Touch.none(), ps, Bool.pick(Nat, want, Nat.add(now, wait), flush)}), note}
 
-def Hub.thin.invalidate(before: Nat, h: Hub) -> IO(Hub):
+# tell the thin views what this step touched (now: ms)
+def Hub.thin.notify(h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        r : ThinNoticed <- Wire.thin.paced(cl, st, TPACE.Notes.touched(Cfg.thin.notes(cfg)), TPACE.Notes.paces(Cfg.thin.notes(cfg)), now, Cfg.thin.epoch(cfg), Cfg.thin.revision(cfg))
+        Hub.thin.noticed(r, Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
+
+def Hub.thin.invalidate_if(changed: Bool, h: Hub, +now: Nat) -> IO(Hub):
+  match changed:
+    case False{}: IO.pure(Hub, h)
+    case True{}: Hub.thin.notify(h, now)
+
+def Hub.thin.invalidate(before: Nat, h: Hub, +now: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.thin.invalidate_if(Bool.or(Bool.not(Nat.is_eq(before, Cfg.thin.revision(cfg))), Nat.is_eq(Cfg.thin.revision(cfg), PRESENT.Session.nat.max())), Hub{st, f, ls, cl, as, inbox, cfg, note})
+      Hub.thin.invalidate_if(Bool.or(Bool.not(Nat.is_eq(before, Cfg.thin.revision(cfg))), Nat.is_eq(Cfg.thin.revision(cfg), PRESENT.Session.nat.max())), Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
+
+# the flush timer fired: what views are owed and due is told now (its time
+# cleared first, so a wait still owed sets the timer again)
+def Hub.thin.flush(h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.thin.notify(Hub{st, f, ls, cl, as, inbox, Cfg.thin.with_notes(cfg, TPACE.Notes{TPACE.Notes.touched(Cfg.thin.notes(cfg)), TPACE.Notes.paces(Cfg.thin.notes(cfg)), 0n}), note}, now)
 
 def Hub.thin.snapshot(h: Hub) -> Nat & Hub:
   match h:
@@ -15350,7 +15426,8 @@ def Hub.got.one_at(+msg: Msg, snapshot: Nat & Hub, k: Hub -> IO(Unit)) -> IO(Uni
     h1 : Hub <- Hub.handle(h, msg, now)
     h2 : Hub <- Hub.cef.after(CF.Cef.after(Msg.kind(msg)), h1)
     h2a : Hub <- Hub.thin.drain(h2)
-    h3 : Hub <- Hub.thin.invalidate(before, h2a)
+    ms : Nat <- IO.now()
+    h3 : Hub <- Hub.thin.invalidate(before, h2a, ms)
     t1 : U32 <- PS.Perf.lap("hub." ++ Msg.kind(msg), t0)
     k(h3)
 
@@ -15505,4 +15582,4 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         +ai : String <- Env.get("APPIMAGE", "")
         +tc : List<&2, TI.TmCfg> <- TI.Tio.config(TI.Tio.sb(tcfg))
         finalCfg : Cfg = Cfg.with_managed(Cfg.with_models(Cfg.with_bn(Cfg.with_token(Cfg.with_rt(Cfg{home, w, h, p, pr, ds, v, nt, tc, views}, rt), tok), BN.Bn.with_dir(BN.Bn.empty(), BN.Bn.cache.load(bc, BO.World.peers(M.State.bots(st))))), BT.Cache.json(mc), BT.Cache.text(mc)), SV.Chan.managed(off, ai))
-        Main.opened(f, st, ls, Cfg.with_thin_cache(LogCount.init(finalCfg, ls), ThinCache{THIN.Index.of(st), Bool.pick(String, List.is_empty(&2, String, ls), "", Hub.origin(ls)), 1n, Map.new(&2, TLIVE.Stream), TMAIL.Cache.of(st)}), need, front)
+        Main.opened(f, st, ls, Cfg.with_thin_cache(LogCount.init(finalCfg, ls), ThinCache{THIN.Index.of(st), Bool.pick(String, List.is_empty(&2, String, ls), "", Hub.origin(ls)), 1n, Map.new(&2, TLIVE.Stream), TMAIL.Cache.of(st), TPACE.Notes.empty()}), need, front)
