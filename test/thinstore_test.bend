@@ -20,17 +20,23 @@ import ../src/server/db.bend as D
 # A log
 # -----
 
-def th.of(+i: Nat) -> String:
-  match Nat.mod(i, 3n):
+def th.of.k(+r: Nat, +i: Nat) -> String:
+  match r:
     case 0n: "ta"
     case 1n: "tb"
     case _: "tc"
 
-def th.other(+i: Nat) -> String:
-  match Nat.mod(i, 3n):
+def th.of(+i: Nat) -> String:
+  th.of.k(Nat.mod(i, 3n), i)
+
+def th.other.k(+r: Nat, +i: Nat) -> String:
+  match r:
     case 0n: "tb"
     case 1n: "tc"
     case _: "ta"
+
+def th.other(+i: Nat) -> String:
+  th.other.k(Nat.mod(i, 3n), i)
 
 def word.if(on: Bool, w: String) -> String:
   Bool.pick(String, on, w ++ " ", "")
@@ -42,13 +48,16 @@ def text.of(+i: Nat) -> String:
 def id.of(+i: Nat) -> String:
   Bool.pick(String, Nat.is_eq(Nat.mod(i, 13n), 0n), "dup", "e" ++ Nat.show(i))
 
-def change.of(+i: Nat) -> M.Change:
-  match Nat.mod(i, 5n):
+def change.of.k(+r: Nat, +i: Nat) -> M.Change:
+  match r:
     case 0n: M.MessagePosted{th.of(i), id.of(i), M.User{}, text.of(i), Nat.mod(Nat.mul(i, 7n), 50n)}
     case 1n: M.MessagePosted{th.of(i), id.of(i), M.Assistant{}, text.of(i), i}
     case 2n: M.ActivityLogged{th.of(i), id.of(i), "tool", "Bash", text.of(i), i}
     case 3n: M.MessagePosted{th.other(i), M.Link.id(th.of(i), Nat.show(i)), M.User{}, text.of(i), Nat.mod(Nat.mul(i, 3n), 40n)}
     case _: M.Reminded{"r" ++ Nat.show(i), "b1", th.of(i), text.of(i), i}
+
+def change.of(+i: Nat) -> M.Change:
+  change.of.k(Nat.mod(i, 5n), i)
 
 def changes.go(+n: Nat, acc: List<&2, M.Change>) -> List<&2, M.Change>:
   match n:

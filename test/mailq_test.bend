@@ -15,12 +15,15 @@ import ../src/server/db.bend as D
 # the room's post texts, and whether an id was seen. The store is S1's
 # pure materializer (S.Mat) written to SQLite.
 
-def conv.of(+i: Nat) -> String:
-  match Nat.mod(i, 4n):
+def conv.of.k(+r: Nat, +i: Nat) -> String:
+  match r:
     case 0n: "c1"
     case 1n: "c2"
     case 2n: "c1"
     case _: "c3"
+
+def conv.of(+i: Nat) -> String:
+  conv.of.k(Nat.mod(i, 4n), i)
 
 # times that go back and forth, so some headers arrive late
 def at.of(+i: Nat) -> Nat:
