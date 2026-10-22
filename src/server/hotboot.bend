@@ -324,7 +324,7 @@ def Hot.read(+h: String, +home: String, +m: Map<&2, String>, +size: U32) -> IO(H
     +rows : SN.SRows <- Hot.read.open(h, ids, recs)
     +seq : Nat = SN.Snap.num(Hot.get(m, "applied_seq"), 0n)
     +off : U32 = U32.from_nat(SN.Snap.num(Hot.get(m, "applied_off"), 0n))
-    gaps : List<&2, List<&2, String>> <- D.Db.query(h, Hot.q.gaps(), ["#" ++ U32.show(off)], Hot.big())
+    gaps : List<&2, List<&2, String>> <- D.Db.query.t(h, Hot.q.gaps(), [D.DbInt{U32.show(off)}], Hot.big())
     +ls : List<&2, String> <- Hot.lines(Hot.log(home), 0, off, Hot.gaps(gaps))
     Hot.lined(Nat.is_eq(List.length(&2, String, ls), seq), h, home, rows, ls, seq, off, size)
 
