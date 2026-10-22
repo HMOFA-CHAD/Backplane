@@ -35,7 +35,8 @@ function main(argv) {
   assert.equal(r.fixture.sha256, freeze.executionTooling?.nativeSmokeSha256, 'The smoke is not the one the release freeze names');
   assert.equal(stage.signingPolicy, 'unsigned-portable-allowed');
   assert.deepEqual(stage.lifecyclePolicy, {mode: 'resident-service', managedStop: false, managedUpdate: false});
-  assert.equal(r.reconnectMode, 'explicit-retry'); assert.deepEqual(r.errors, []);
+  // the client reconnects by itself now ('automatic'); 0.12.0's smoke drove Retry
+  assert(['automatic', 'explicit-retry'].includes(r.reconnectMode), 'Unknown reconnect mode'); assert.deepEqual(r.errors, []);
   assert.deepEqual(r.authSession, {matchingWindows: 1, uiPartition: true, cookieCount: 1, httpOnly: true}, 'Missing the named-window HttpOnly cookie witness');
   assert.deepEqual([...r.checks].sort(), [...REQUIRED].sort(), 'Missing or unexpected essential checks');
   assert(r.journal?.prefixExact && r.journal.noSendOrAgentTurn && r.journal.mailOff && r.journal.telemetryOff, 'Missing the no-send isolation journal witness');
@@ -66,7 +67,7 @@ function main(argv) {
       closePreservesService: true, shutdown: 'unsupported', managedStopAdvertised: false, managedUpdateAdvertised: false,
       ...(stage.target === 'windows-x64' ? {nativeToPosixPaths: service.nativePathWithSpacesAndUnicode.includes('日本語') && service.nativePathWithSpacesAndUnicode.includes(' ')} : {})},
     runtimeAcceptance: {kind: 'desktop-runtime-acceptance', scope: 'desktop-release',
-      acceptanceScope: 'Essential matching-native-host startup/auth/current-content/sandbox/single-instance/explicit Retry reconnect/normal-close-resident only. No full UI parity, telemetry, Send/provider, scale, IME or device qualification.',
+      acceptanceScope: 'Essential matching-native-host startup/auth/current-content/sandbox/single-instance/socket reconnect (' + r.reconnectMode + ')/normal-close-resident only. No full UI parity, telemetry, Send/provider, scale, IME or device qualification.',
       checks: r.checks}};
   const acceptance = {schema: 1, kind: 'backplane-desktop-target-acceptance', target: stage.target, stageReceiptSha256: inspected.stageReceiptSha256, payloadManifestSha256: inspected.payloadManifestSha256};
   for (const [k, v] of Object.entries(proofs)) { const f = path.join(a['--out'], k + '.json'); write(f, {...common, ...v}); acceptance[k] = {path: f, ...pin(f)}; }
