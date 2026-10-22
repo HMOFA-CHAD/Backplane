@@ -9,6 +9,7 @@ import ../src/server/castio.bend as K
 import ../src/server/perf.bend as F
 import ../src/core/exe.bend as EX
 import ../src/core/utf8.bend as U
+import ../src/server/jsloop.bend as LP
 
 # The server's host effects on the target the test runs on (JS through
 # bun under `bend test/js_host_effects_test.bend`, or native): children
@@ -513,6 +514,8 @@ def main.k(+mode: String, +dir: String) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
+    rt : String <- LP.Rt.loop()
+    IO.print_err("loop " ++ rt)
     raw : List<String> <- IO.args()
     +args : List<&2, String> = copy(raw)
     main.k(arg(args, 1n), arg(args, 2n))
