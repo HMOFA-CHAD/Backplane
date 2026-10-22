@@ -362,6 +362,7 @@ class BpFd extends BpStream {
     this.wshut = false;
     this.gone = false;
     this.w = null;
+    this.flushing = null;
     this.r = Bun.file(fd).stream().getReader();
     this.pull();
   }
@@ -406,20 +407,40 @@ class BpFd extends BpStream {
     if (this.full) {
       return -BP_ERRNO.EAGAIN;
     }
-    this.w ??= Bun.file(this.fd).writer();
-    this.w.write(b.slice());
-    const f = this.w.flush();
-    if (f instanceof Promise) {
-      this.full = true;
-      f.then(() => {
-        this.full = false;
-        this.wake(true);
-      }, (e) => {
-        this.err = bp_errno(e);
-        this.wakeAll();
-      });
+    // at most 64 KiB, and none while Bun still holds the last: a send to a
+    // reader that does not read waits (as a full socket makes it wait), and
+    // what it sent is all there before a shutdown or close (below)
+    const c = b.subarray(0, 65536);
+    try {
+      this.w ??= Bun.file(this.fd).writer();
+      this.w.write(c.slice());
+      const f = this.w.flush();
+      if (f instanceof Promise) {
+        this.full = true;
+        this.flushing = f.then(() => {
+          this.full = false;
+          this.flushing = null;
+          this.wake(true);
+        }, (e) => {
+          this.full = false;
+          this.flushing = null;
+          this.err = bp_errno(e);
+          this.wakeAll();
+        });
+      }
+    } catch (e) {
+      this.err = bp_errno(e);
+      return -this.err;
     }
-    return b.length;
+    return c.length;
+  }
+  // f once what was written has gone (at once when nothing waits)
+  after(f) {
+    if (this.flushing) {
+      this.flushing.then(f, f);
+    } else {
+      f();
+    }
   }
   shutdown(how) {
     if (how !== 1) {
@@ -427,7 +448,7 @@ class BpFd extends BpStream {
     }
     if (how !== 0 && !this.wshut) {
       this.wshut = true;
-      bp_fd_shutdown(this.fd, 1);
+      this.after(() => bp_fd_shutdown(this.fd, 1));
     }
     this.wake(true);
   }
@@ -437,7 +458,13 @@ class BpFd extends BpStream {
       this.rshut = true;
       this.q = [];
       this.r.cancel().catch(() => {});
-      require("fs").closeSync(this.fd);
+      const fd = this.fd;
+      this.after(() => {
+        try {
+          require("fs").closeSync(fd);
+        } catch (_) {
+        }
+      });
     }
     this.wakeAll();
   }
@@ -753,9 +780,15 @@ function bp_host(old) {
     ["Sock.peer", () => (s) => io_tup(s, BP_H.get(s)?.peer() ?? "")],
     ["Sock.shutdown", () => (s) => (BP_H.get(s)?.shutdown(1), s)],
     ["Sock.shut_read", () => (s) => (BP_H.get(s)?.shutdown(0), s)],
-    // a duplicate of the handle's descriptor, 0 when it has none (Bun's)
+    // a duplicate of the handle's descriptor; a handle over no descriptor (a Bun socket, a Bun.spawn child) answers
+    // another id on itself, so Fd.shut can still cut it (abort) from outside
+    // its writer: that is how the hub drops a client whose writer waits
     ["Sock.raw", () => (s) => {
-      const fd = BP_H.get(s)?.fd;
+      const h = BP_H.get(s);
+      if (h !== undefined && h.fd === undefined) {
+        return io_tup(s, BP_H.dup(s));
+      }
+      const fd = h?.fd;
       return io_tup(s, fd === undefined ? 0 : io_sys().fcntl(fd, process.platform === "darwin" ? 67 : 1030, 3));
     }],
     ["Fd.shut", () => (s) => {
