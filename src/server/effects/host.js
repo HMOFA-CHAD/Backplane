@@ -568,7 +568,20 @@ function bp_proc_class() {
 // host.c: 0 discards stderr, 1 joins it to stdout, 2 inherits ours, 3
 // writes it to the file Proc.errtail reads. The environment is ours
 // (Env.put writes process.env).
+// On Windows a command named by an absolute POSIX path that is not there
+// ("/bin/bash", the hub's default SHELL; "/bin/sh") is the program of that
+// name on PATH: the Windows package ships its runtime's bin (bash.exe,
+// sh.exe) there. Anything else is left as it is.
+function bp_win_cmd(cmd) {
+  if (process.platform !== "win32" || !cmd.startsWith("/") || require("fs").existsSync(cmd)) {
+    return cmd;
+  }
+  const base = cmd.slice(cmd.lastIndexOf("/") + 1);
+  return base === "" ? cmd : Bun.which(base, { PATH: process.env.PATH ?? "" }) ?? cmd;
+}
+
 function bp_proc_spawn(cmd, args, cwd, err) {
+  cmd = bp_win_cmd(cmd);
   const fs = require("fs");
   const argv = host_self([cmd, ...args]);
   if (argv.some((a) => a.includes("\0")) || cwd.includes("\0")) {
@@ -819,6 +832,11 @@ function proc_spawn(cmd, args, cwd, err) {
   if (bp_proc_bun()) {
     return bp_proc_spawn(cmd, host_list_js(args), cwd, Number(err));
   }
+  // Windows without the Bun loop's handles (loop.js not in the program):
+  // nothing to spawn with, never a libc call
+  if (process.platform === "win32") {
+    return io_fail(38);
+  }
   const c = host_libc();
   const sys = io_sys();
   const argv = host_self([cmd, ...host_list_js(args)]);
@@ -1021,6 +1039,11 @@ function proc_wait(pid, k) {
   if (bp_proc_bun() && bp_procs().has(pid >>> 0)) {
     return bp_proc_wait(pid, k);
   }
+  // Windows has no libc: a pid not ours (or already waited for) reads 255,
+  // as waitpid's ECHILD does in C
+  if (process.platform === "win32") {
+    return 255;
+  }
   if (bp_loop_bun()) {
     return bp_chld_wait(pid >>> 0, k);
   }
@@ -1032,6 +1055,9 @@ function proc_wait(pid, k) {
 function proc_exited(pid) {
   if (bp_proc_bun() && bp_procs().has(pid >>> 0)) {
     return bp_proc_exited(pid);
+  }
+  if (process.platform === "win32") {
+    return 255;
   }
   const c = host_libc();
   const si = new Uint8Array(256);
