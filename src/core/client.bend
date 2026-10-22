@@ -6101,6 +6101,10 @@ def Fab.set.order.label() -> String:
 def Fab.set.order.note() -> String:
   "Order boards and parts from Backplane. Off: no prices or uploads."
 
+# Settings' Ordering page opens with how ordering works
+def Fab.set.about() -> String:
+  "With Ordering on, a project whose design is ready shows Buy it: in the Ready to order bar above the composer, or in the thread's header. Buy it opens a buy thread. Its agent checks that every board and part is ready, asks you anything missing (quantities, finishes, where to ship), exports the manufacturing files into the project's mfg/ folder and sends them to Backplane's order server, which measures them and prices the exact order: manufacturing (boards, assembly, components and parts, with Backplane's fee included), shipping, and duties and taxes. The quote shows in the thread, and nothing is charged until you press Buy now and pay on Stripe's checkout page. A quote holds for 3 days. Prices are estimates: if the real cost turns out higher, you are asked before anything more is charged and can have a full refund instead; if it is lower, the difference is refunded. Once paid, the thread shows the order's progress (placed, shipped, tracking). With Ordering off, nothing about your projects leaves this machine for ordering. Price estimates add a rough \"from $X\" to Buy it, worked out from each part's size and options without sending any files."
+
 def Fab.set.label() -> String:
   "Price estimates"
 
@@ -9624,11 +9628,17 @@ def RefNav.act(i: Nat, +u: Ui, +value: String) -> Act:
     case _: RefNav.copy.web(R.Ref.parse(value), u)
 
 # Settings navigation is client-local; choosing a page never persists a setting.
+# (a page's place here is its number in every client's rows: a new page
+# goes at the end; the menus list them in their own order below)
 def Settings.pages() -> List<&2, String>:
-  ["appearance", "threads", "agents", "writing", "cad", "network", "voice", "keys", "antigravity", "timezone", "usage", "about", "privacy"]
+  ["appearance", "threads", "agents", "writing", "cad", "network", "voice", "keys", "antigravity", "timezone", "usage", "about", "privacy", "ordering"]
+
+# the order the desktop and web menus list the pages in
+def Settings.menu.pages() -> List<&2, String>:
+  ["appearance", "threads", "agents", "writing", "cad", "ordering", "network", "voice", "keys", "antigravity", "timezone", "usage", "about", "privacy"]
 
 def Settings.phone.pages() -> List<&2, String>:
-  ["appearance", "threads", "agents", "cad", "network", "keys", "antigravity", "timezone", "usage", "about", "privacy"]
+  ["appearance", "threads", "agents", "cad", "ordering", "network", "keys", "antigravity", "timezone", "usage", "about", "privacy"]
 
 def Settings.known(ps: List<&2, String>, +page: String) -> Bool:
   match ps:
@@ -9655,6 +9665,7 @@ def Settings.label(i: Nat, +l: I.Loc) -> String:
     case 9n: MSG.T.settings.zone(l)
     case 10n: MSG.T.settings.usage(l)
     case 12n: MSG.T.settings.privacy(l)
+    case 13n: Fab.set.order.label()
     case _: MSG.T.settings.tour(l)
 
 def Settings.title(+l: I.Loc, +page: String) -> String:

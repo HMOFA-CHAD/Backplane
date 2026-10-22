@@ -1576,8 +1576,6 @@ def Mob.settings.rows.k(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2,
       Mob.kn(U.KN.of(nf, st)),
       [Mob.set.row(U.FreeCAD.label.loc(lc, nf), U.FreeCAD.note(lc, nf), Nil{})],
       [Mob.set.row(U.KiCad.ipc.label(lc, nf), U.KiCad.ipc.note(lc, nf), Bool.pick(List<&2, J.Json>, U.KiCad.ipc.ready(nf), Mob.set.chips.loc(lc, ["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{}))],
-      [Mob.set.row(U.Fab.set.order.label(), U.Fab.set.order.note(), Mob.set.chips.loc(lc, ["on", "off"], U.Fab.set.enabled(st), "order.enabled"))],
-      [Mob.set.row(U.Fab.set.label(), U.Fab.set.note.k(U.Fab.enabled(st)), Bool.pick(List<&2, J.Json>, U.Fab.enabled(st), Mob.set.chips.loc(lc, ["on", "off"], U.Fab.set.on(st), "order.estimates"), Nil{}))],
       Mob.kx.settings(u)])
     case 5n: List.concat(&2, J.Json, [[Mob.set.row(U.Tail.label(lc, nf), U.Tail.note(lc, nf), Nil{})],
       Mob.mates(lc, u),
@@ -1592,6 +1590,9 @@ def Mob.settings.rows.k(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2,
     case 11n: List.concat(&2, J.Json, [[Mob.set.row.l(MSG.T.settings.tour(lc), MSG.T.settings.tour.note(lc), [Mob.set.btn(MSG.T.settings.tour.show(lc), "ob-open", "", False{})])],
       more])
     case 12n: Mob.agy.rows(U.Share.rows(u))
+    case 13n: List.concat(&2, J.Json, [[Mob.set.row("How it works", U.Fab.set.about(), Nil{})],
+      [Mob.set.row(U.Fab.set.order.label(), U.Fab.set.order.note(), Mob.set.chips.loc(lc, ["on", "off"], U.Fab.set.enabled(st), "order.enabled"))],
+      [Mob.set.row(U.Fab.set.label(), U.Fab.set.note.k(U.Fab.enabled(st)), Bool.pick(List<&2, J.Json>, U.Fab.enabled(st), Mob.set.chips.loc(lc, ["on", "off"], U.Fab.set.on(st), "order.estimates"), Nil{}))]])
     case _: Nil{}
 
 def Mob.settings.menu(ps: List<&2, String>, +lc: I.Loc) -> List<&2, J.Json>:

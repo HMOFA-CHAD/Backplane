@@ -93,7 +93,10 @@ def test_quote_from_files_with_assembly():
         quote = q["quote"]
         part = quote["parts"][0]
         assert "20×15 mm" in part["summary"] and part["assembled"] == 2
-        assert [ln["label"] for ln in quote["lines"]] == ["Manufacturing", "Shipping", "Duties & taxes", "Service & price-assurance fee"]
+        # the fee is inside Manufacturing, never a line of its own
+        assert [ln["label"] for ln in quote["lines"]] == ["Manufacturing", "Shipping", "Duties & taxes"]
+        cost = sum(pl["amount"] for pl in quote.get("part_lines", []))
+        assert quote["lines"][0]["amount"] > cost, "Manufacturing carries the fee on top of the fab's cost"
         assert abs(sum(ln["amount"] for ln in quote["lines"]) - quote["total"]) < 0.01
         assert "part_lines" not in quote  # what each part costs stays with us
         assert quote["pay_label"].startswith("Buy now · $") and "Your quote" in quote["markdown"]

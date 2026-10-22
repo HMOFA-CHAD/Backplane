@@ -28,7 +28,7 @@ The person sees four lines and a total:
 - manufacturing;
 - shipping (the cheapest duty-paid express);
 - duties and taxes (`duties.py`);
-- the service and price-assurance fee: `FAB_FEE` (10%), and `FAB_FEE_CNC` (20%) on CNC parts.
+- the service and price-assurance fee: `FAB_FEE` (10%), and `FAB_FEE_CNC` (20%) on CNC parts, folded into the quote's Manufacturing line (no separate fee line).
 
 Components come from the fab's own stock first: fab code or MPN, its attrition and
 minimums. Mouser is used for the rest, marked up by `FAB_SOURCED_MARKUP` for the fab's
