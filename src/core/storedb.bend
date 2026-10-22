@@ -39,7 +39,7 @@ type RK is Data:
 # bumped on any change to the tables or to a record's columns or json
 # (a different number in meta.codec: the store is made again)
 def Sdb.codec() -> Nat:
-  2n
+  3n
 
 def Sdb.schema() -> String:
   String.join([
@@ -76,6 +76,8 @@ def Sdb.schema() -> String:
     "CREATE TABLE IF NOT EXISTS conv(id TEXT PRIMARY KEY, kind TEXT, project TEXT, last INTEGER, want TEXT, parts TEXT, json TEXT)",
     "CREATE TABLE IF NOT EXISTS mark(k TEXT PRIMARY KEY, bot TEXT, conv TEXT, status TEXT, json TEXT)",
     "CREATE INDEX IF NOT EXISTS mark_bot ON mark(bot)",
+    "CREATE TABLE IF NOT EXISTS far_line(seq INTEGER PRIMARY KEY, scope TEXT)",
+    "CREATE INDEX IF NOT EXISTS far_line_scope ON far_line(scope, seq)",
     "CREATE TABLE IF NOT EXISTS obj(domain TEXT, key TEXT, json TEXT, PRIMARY KEY(domain, key)) WITHOUT ROWID"
   ], ";\n") ++ ";"
 
