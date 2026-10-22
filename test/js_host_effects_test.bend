@@ -515,7 +515,6 @@ def main.k(+mode: String, +dir: String) -> IO(Unit):
 def main() -> IO(Unit):
   do IO<Unit>:
     rt : String <- LP.Rt.loop()
-    IO.print_err("loop " ++ rt)
     raw : List<String> <- IO.args()
     +args : List<&2, String> = copy(raw)
     main.k(arg(args, 1n), arg(args, 2n))
