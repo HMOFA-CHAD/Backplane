@@ -391,9 +391,14 @@ function bp_loop_bun() {
 // Proc.wait on Bun's loop: the waited pids, reaped (waitpid WNOHANG) at
 // each SIGCHLD, which Bun delivers to process.on (several exits may share
 // one signal: every pending pid is tried). Bun reaps only its own children.
+// Under the sync loop the signal never fires (Bun's loop does not turn):
+// there Proc.wait parks on a pidfd as before.
 function bp_chld() {
   if (globalThis.BP_CHLD === undefined) {
-    const g = { want: new Map() };
+    // a signal listener and a pending Promise do not keep Bun's loop alive:
+    // while any pid is waited for, a timer does (sweeping once a second
+    // too, should a signal be missed)
+    const g = { want: new Map(), timer: null };
     g.sweep = () => {
       for (const [pid, done] of g.want) {
         const code = host_reap(pid);
@@ -403,6 +408,12 @@ function bp_chld() {
             f(code);
           }
         }
+      }
+      if (g.want.size === 0 && g.timer !== null) {
+        clearInterval(g.timer);
+        g.timer = null;
+      } else if (g.want.size > 0 && g.timer === null) {
+        g.timer = setInterval(g.sweep, 1000);
       }
     };
     process.on("SIGCHLD", g.sweep);
