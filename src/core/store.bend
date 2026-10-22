@@ -2,6 +2,7 @@ import Base
 import ./json.bend as J
 import ./model.bend as M
 import ./codec.bend as C
+import ./utf8.bend as UT
 
 # The event log read at start-up in one pass: each line is parsed once,
 # folded into the read model and kept (as clients may see it) for the
@@ -44,6 +45,19 @@ def Store.load(ls: List<&2, String>, a: Loaded) -> Loaded:
       a
     case +l <> t:
       Store.load(t, Store.step(J.Json.parse(l), l, a))
+
+# How many lines a log holds: List.length, counted in a tail call. Base's
+# List.length adds after its recursive call, so on the JS target a log of
+# a few hundred thousand lines overflows the stack (law store_size_is_length).
+def Store.size.go(ls: List<&2, String>, n: Nat) -> Nat:
+  match ls:
+    case Nil{}:
+      n
+    case _ <> t:
+      Store.size.go(t, 1n+n)
+
+def Store.size(ls: List<&2, String>) -> Nat:
+  Store.size.go(ls, 0n)
 
 # The log's changes in order (what Store.load folds; for the laws)
 # ----------------------------------------------------------------
@@ -101,6 +115,17 @@ def Store.tail_fix(bs: List<&2, U32>) -> String:
       ""
     case +b <> t:
       Bool.pick(String, U32.is_eq(Store.last.go(t, b), 10), "", "\n")
+
+# What the hub's EvLog.read effect answers for a log of these bytes (its
+# whole lines, as utf8.bend's Lines and Utf8.decode read them, and the text
+# that closes off a torn tail), made by the effect without a List cell per
+# byte (test/evlog_read_test.bend compares the two)
+def Store.read.lines(r: UT.Lines & List<&2, String>) -> List<&2, String>:
+  (_, ls) = r
+  ls
+
+def Store.read.of(+bs: List<&2, U32>) -> List<&2, String> & String:
+  (Store.read.lines(UT.Lines.feed(UT.Lines.new(), bs)), Store.tail_fix(bs))
 
 # a failed write may have left a cut line: the log is closed off with a
 # newline before anything else is written, and the failure says when that
