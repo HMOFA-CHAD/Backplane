@@ -3,6 +3,9 @@ import ../core/json.bend as J
 import ../core/model.bend as M
 import ../core/thin.bend as T
 import ../core/thinq.bend as Q
+import ../core/mail.bend as ML
+import ../core/mailq.bend as MQ
+import ../core/mailroom_history.bend as RH
 import ../core/presentation.bend as P
 import ./db.bend as D
 
@@ -112,3 +115,60 @@ def Ts.recent(h: String, +st: M.State) -> IO(T.Index):
   do IO<T.Index>:
     xs : List<&2, List<&2, String>> <- D.Db.query(h, Q.sql.recent(), Nil{}, 4294967295)
     return Q.recent(xs, st)
+
+# The mail box's headers from the store (core/mailq.bend)
+# --------------------------------------------------------
+
+# Box.newest(box, conv)
+def Ms.newest(h: String, +conv: String) -> IO(ML.Mail):
+  do IO<ML.Mail>:
+    xs : List<&2, List<&2, String>> <- D.Db.query(h, MQ.Mq.sql.newest(), [conv], 1)
+    return MQ.Mq.first(xs)
+
+# the header with this id in the conversation (Mail.id "" when none)
+def Ms.one(h: String, +conv: String, +id: String) -> IO(ML.Mail):
+  do IO<ML.Mail>:
+    xs : List<&2, List<&2, String>> <- D.Db.query(h, MQ.Mq.sql.one(), [conv, id], 1)
+    return MQ.Mq.first(xs)
+
+# Box.has(box, id)
+def Ms.has(h: String, +id: String) -> IO(Bool):
+  do IO<Bool>:
+    xs : List<&2, List<&2, String>> <- D.Db.query(h, MQ.Mq.sql.has(), [id], 1)
+    return Nat.is_gt(MQ.Mq.count(xs), 0n)
+
+# Box.headers(box, conv) after the header `after` ("": from the head), at
+# most n, in the box's order
+def Ms.headers(h: String, +conv: String, +after: String, +n: Nat) -> IO(List<&2, ML.Mail>):
+  do IO<List<&2, ML.Mail>>:
+    xs : List<&2, List<&2, String>> <- D.Db.query(h, MQ.Mq.sql.page(), [conv, after, Q.n(n)], U32.from_nat(n))
+    return MQ.Mq.mails(xs)
+
+def Ms.known(h: String, +sql: String, +ps: List<&2, String>) -> IO(Bool):
+  do IO<Bool>:
+    xs : List<&2, List<&2, String>> <- D.Db.query(h, sql, ps, 1)
+    return Nat.is_gt(MQ.Mq.count(xs), 0n)
+
+def Ms.cursor(empty: Bool, h: String, +conv: String, +before: String) -> IO(Bool):
+  match empty:
+    case True{}: IO.pure(Bool, True{})
+    case False{}: Ms.known(h, "SELECT count(*) FROM mail WHERE conv = ?1 AND id = ?2", [conv, before])
+
+# RH.RoomHistory.page over the store
+def Ms.room.page(h: String, +conv: String, +before: String, +n: Nat) -> IO(Maybe<&2, RH.RoomPage>):
+  do IO<Maybe<&2, RH.RoomPage>>:
+    +known : Bool <- Ms.known(h, MQ.Mq.sql.conv(), [conv])
+    +at : Bool <- Ms.cursor(String.is_empty(before), h, conv, before)
+    xs : List<&2, List<&2, String>> <- D.Db.query(h, MQ.Mq.sql.page(), [conv, before, Q.n(Nat.add(MQ.Mq.cap(n), 1n))], U32.from_nat(Nat.add(MQ.Mq.cap(n), 1n)))
+    return MQ.Mq.page(known, at, xs, n)
+
+def Ms.ids(ms: List<&2, ML.Mail>) -> List<&2, J.Json>:
+  match ms:
+    case Nil{}: Nil{}
+    case m <> t: J.Str{ML.Mail.id(m)} <> Ms.ids(t)
+
+# RH.RoomHistory.sources over the store's posts
+def Ms.room.sources(h: String, +conv: String, ms: List<&2, ML.Mail>) -> IO(Map<&2, String>):
+  do IO<Map<&2, String>>:
+    xs : List<&2, List<&2, String>> <- D.Db.query(h, MQ.Mq.sql.sources(), [String.drop(conv, 5n), J.Json.show(J.Json.arr(Ms.ids(ms)))], 4294967295)
+    return MQ.Mq.sources(xs, Map.new(&2, String))
