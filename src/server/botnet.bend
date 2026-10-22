@@ -529,9 +529,17 @@ def Bn.call.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, +input: Strin
     case Fail{_}:
       IO.pure(P.Ran, P.Ran{127, ""})
 
-# curl with its headers on stdin (-H @-); stderr dropped
+def Bn.curl.go(copy: Bool, +args: List<&2, String>, +headers: String) -> IO(P.Ran):
+  match copy:
+    case True{}:
+      IO.pure(P.Ran, P.Ran{126, ""})
+    case False{}:
+      IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, P.Ran, H.Proc.spawn("curl", args, "/", 0), r => Bn.call.spawned(r, headers))
+
+# curl with its headers on stdin (-H @-); stderr dropped; none from a hub
+# on a copied log (core/copy.bend)
 def Bn.curl(+args: List<&2, String>, +headers: String) -> IO(P.Ran):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, P.Ran, H.Proc.spawn("curl", args, "/", 0), r => Bn.call.spawned(r, headers))
+  IO.bind(Bool, P.Ran, P.Proc.copy(), copy => Bn.curl.go(copy, args, headers))
 
 def Bn.headers(+peer: String, +now: Nat, +sig: String) -> String:
   "X-Backplane-Peer: " ++ peer ++ "\nX-Backplane-Timestamp: " ++ Nat.show(now) ++ "\nX-Backplane-Signature: " ++ sig ++ "\nContent-Type: application/json\n"

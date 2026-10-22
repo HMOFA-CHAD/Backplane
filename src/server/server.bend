@@ -125,6 +125,8 @@ import ../core/task.bend as TKS
 import ../core/teach.bend as TE
 import ../core/usage.bend as UZ
 import ./thinstore.bend as TSTO
+import ../core/copy.bend as CP # BACKPLANE_COPY
+import ../core/copynet.bend as CN
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -7534,6 +7536,16 @@ def Hub.term_read(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String)) -> 
 def Watch.dir(+home: String, +id: String) -> String:
   home ++ "/work/" ++ id
 
+# The shell each watch script runs as; none for a hub on a copied log
+# (BACKPLANE_COPY=1): it never launches, re-launches or signals anything
+# the log names, and every watch reads as gone (laws watch_copy_*)
+def Watch.argv.k(copy: Bool, xs: List<&2, String>) -> List<&2, String>:
+  match copy:
+    case True{}:
+      Nil{}
+    case False{}:
+      xs
+
 def Watch.launch.sh() -> String:
   "d=$1; c=$2; cmd=$3\npid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nmkdir -p \"$d\" || { echo gone; exit 0; }\n[ -e \"$d/cancel\" ] && { echo gone; exit 0; }\n[ -e \"$d/code\" ] && { echo running; exit 0; }\nif [ -e \"$d/started\" ]; then { [ -e \"$d/out\" ] || [ -e \"$d/how\" ]; } && { echo running; exit 0; }; fi\nprintf '%s\\n' \"$cmd\" > \"$d/cmd\"\n{ printf ': > \"%s/out\"\\n' \"$d\"; printf 'cd \"%s\" || exit 127\\n' \"$c\"; printf '[ -e \"%s/cancel\" ] && exit 143\\n' \"$d\"; printf 'sh \"%s/cmd\" > \"%s/out\" 2>&1\\n' \"$d\" \"$d\"; printf 'echo $? > \"%s/code.tmp\" && mv \"%s/code.tmp\" \"%s/code\"\\n' \"$d\" \"$d\" \"$d\"; } > \"$d/run.sh\"\n: > \"$d/started\"\nif command -v setsid >/dev/null 2>&1; then setsid nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nelse perl -MPOSIX -e 'POSIX::setsid(); exec {$ARGV[0]} @ARGV or exit 127' nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nfi\necho $! > \"$d/pid\"\npid_id $! > \"$d/pidid\"\necho pid > \"$d/how\"\necho running\n"
 
@@ -7545,6 +7557,26 @@ def Watch.stop.sh() -> String:
 
 def Watch.tail.sh() -> String:
   "d=$1; [ -e \"$d/out\" ] && tail -c 2048 \"$d/out\"; true\n"
+
+def Watch.launch.argv(copy: Bool, +home: String, +id: String, +cwd: String, +target: String) -> List<&2, String>:
+  Watch.argv.k(copy, ["-c", Watch.launch.sh(), "sh", Watch.dir(home, id), cwd, target])
+
+def Watch.check.argv(copy: Bool, +kind: String, +target: String, +ident: String, +home: String, +id: String) -> List<&2, String>:
+  Watch.argv.k(copy, ["-c", Watch.check.sh(), "sh", kind, target, ident, Watch.dir(home, id)])
+
+def Watch.stop.argv(copy: Bool, +kind: String, +target: String, +ident: String, +home: String, +id: String) -> List<&2, String>:
+  Watch.argv.k(copy, ["-c", Watch.stop.sh(), "sh", kind, target, ident, Watch.dir(home, id)])
+
+def Watch.intent.argv(copy: Bool, +home: String, +id: String) -> List<&2, String>:
+  Watch.argv.k(copy, ["-c", "mkdir -p \"$1\" && : > \"$1/intent\"", "sh", Watch.dir(home, id)])
+
+# a watch script run: none (no argv) answers "gone"
+def Watch.sh(argv: List<&2, String>) -> IO(P.Ran):
+  match argv:
+    case Nil{}:
+      IO.pure(P.Ran, P.Ran{0, "gone"})
+    case +a <> t:
+      P.Proc.run("sh", a <> t, "/")
 
 def Watch.lines(+out: String) -> List<&2, String>:
   M.Bg.lines(out)
@@ -7632,8 +7664,8 @@ def Watch.tick(late: Bool, +locked: Bool, +ident: String, +home: String, +thread
         Watch.report(inbox, thread, id, kind, "timeout", Watch.dir(home, id))
         Watch.timeout.next(locked, ident, k)
     case False{}:
-      IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Watch.check.sh(), "sh", kind, target, ident, Watch.dir(home, id)], "/"),
-        r => Watch.got(r, ident, thread, id, kind, Watch.dir(home, id), inbox, k))
+      IO.bind(Bool, Unit, P.Proc.copy(), copy => IO.bind(P.Ran, Unit, Watch.sh(Watch.check.argv(copy, kind, target, ident, home, id)),
+        r => Watch.got(r, ident, thread, id, kind, Watch.dir(home, id), inbox, k)))
 
 # the watcher: a check every 2 s until the work ends, its deadline passes,
 # or it is no longer watched
@@ -7652,10 +7684,17 @@ def Watch.launched(r: P.Ran, +thread: String, +id: String, +inbox: Chan(Msg)) ->
         ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, WatchLaunched{thread, id})
         return Unit{}
 
+def Watch.start.k(argv: List<&2, String>, +thread: String, +id: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match argv:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case +a <> t:
+      IO.bind(P.Ran, Unit, P.Proc.run("sh", a <> t, "/"), r => Watch.launched(r, thread, id, inbox))
+
 def Watch.start(run: Bool, +home: String, +thread: String, +id: String, +target: String, +cwd: String, +inbox: Chan(Msg)) -> IO(Unit):
   match run:
     case True{}:
-      IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Watch.launch.sh(), "sh", Watch.dir(home, id), cwd, target], "/"), r => Watch.launched(r, thread, id, inbox))
+      IO.bind(Bool, Unit, P.Proc.copy(), copy => Watch.start.k(Watch.launch.argv(copy, home, id, cwd, target), thread, id, inbox))
     case False{}:
       IO.pure(Unit, Unit{})
 
@@ -7696,7 +7735,8 @@ def Watch.intent(locked: Bool, +home: String, +id: String) -> IO(Unit):
   match locked:
     case True{}:
       do IO<Unit>:
-        r : P.Ran <- P.Proc.run("sh", ["-c", "mkdir -p \"$1\" && : > \"$1/intent\"", "sh", Watch.dir(home, id)], "/")
+        copy : Bool <- P.Proc.copy()
+        r : P.Ran <- Watch.sh(Watch.intent.argv(copy, home, id))
         return Unit{}
     case False{}:
       IO.pure(Unit, Unit{})
@@ -7708,7 +7748,8 @@ def Watch.job(+locked: Bool, +home: String, +thread: String, +id: String, +kind:
 
 def Watch.stop.job(+home: String, +id: String, +kind: String, +target: String, +ident: String) -> IO(Unit):
   do IO<Unit>:
-    r : P.Ran <- P.Proc.run("sh", ["-c", Watch.stop.sh(), "sh", kind, target, ident, Watch.dir(home, id)], "/")
+    copy : Bool <- P.Proc.copy()
+    r : P.Ran <- Watch.sh(Watch.stop.argv(copy, kind, target, ident, home, id))
     return Unit{}
 
 # Threads elsewhere (far.bend, docs/bots.md)
@@ -7971,10 +8012,22 @@ def Far.lasts.k(p: FR.Fh & Hub, cs: List<&2, M.Change>, +from: Nat, +st: M.State
   (fh, h) = p
   Far.with(h, FR.Fh.lasts.add(fh, cs, from, st))
 
-def Far.push(h: Hub, +cs: List<&2, M.Change>, +fresh: List<&2, String>, +from: Nat) -> IO(Hub):
+def Far.push.real(h: Hub, +cs: List<&2, M.Change>, +fresh: List<&2, String>, +from: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Far.push.lines(FR.Fr.feed.add(cs, List.reverse(&2, String, fresh), from, st, Nil{}), Far.history.first(Nat.is_eq(from, 0n), Far.fh(Far.lasts.k(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), cs, from, st)), fresh), from, M.State.seq(st))
+
+def Far.push.c(copy: Bool, h: Hub, +cs: List<&2, M.Change>, +fresh: List<&2, String>, +from: Nat) -> IO(Hub):
+  match copy:
+    case True{}:
+      IO.pure(Hub, h)
+    case False{}:
+      Far.push.real(h, cs, fresh, from)
+
+# a commit's shared changes to the owner's other machines; none from a hub
+# on a copied log
+def Far.push(h: Hub, +cs: List<&2, M.Change>, +fresh: List<&2, String>, +from: Nat) -> IO(Hub):
+  IO.bind(Bool, Hub, P.Proc.copy(), copy => Far.push.c(copy, h, cs, fresh, from))
 
 # where retained work for a link may go now: its address while it is one
 # of the owner's machines with sync on (Far.own.id), else nowhere ("": a
@@ -9273,12 +9326,17 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         Bot.fx(C.Codec.pos(["home", "gone", "hook", "unhook", "send", "invite", "join", "unpeer", "google", "token", "retoken", "untoken", "voice", "scratch", "scratch-gone", "uber", "uber-home", "zone", "task-file", "task-gone"], kind), st, inbox, cfg, a, b, c)
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
-def Hub.outs(os: List<&2, B.Out>, h: Hub) -> IO(Hub):
+def Hub.outs.go(os: List<&2, B.Out>, h: Hub) -> IO(Hub):
   match os:
     case Nil{}:
       IO.pure(Hub, h)
     case o <> t:
-      IO.bind(Hub, Hub, Hub.out(h, o), h2 => Hub.outs(t, h2))
+      IO.bind(Hub, Hub, Hub.out(h, o), h2 => Hub.outs.go(t, h2))
+
+# a step's outs, run in order; a hub on a copied log runs none that act
+# outside its home (core/copy.bend's Copy.outs)
+def Hub.outs(os: List<&2, B.Out>, h: Hub) -> IO(Hub):
+  IO.bind(Bool, Hub, P.Proc.copy(), copy => Hub.outs.go(CP.Copy.outs(copy, os), h))
 
 # the window in this process: every mirror, whole
 def Far.join.here(ms: List<&2, FR.In>, m: Maybe<&2, Client>) -> IO(Maybe<&2, Client>):
@@ -11358,10 +11416,24 @@ def Hub.mcp.ship(go: Bool, h: Hub, +thread: String, +body: String, +reply: Chan(
 def Hub.mcp.ship.is(+body: String) -> Bool:
   String.eq(J.Json.get_str(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "params"), "name", ""), "deploy_main")
 
-def Hub.mcp.hub(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+def Hub.mcp.hub.go(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.mcp.ship(Bool.and(Hub.mcp.ship.is(body), Bool.not(String.is_empty(B.Ship.repo(st)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, body, reply, now)
+
+# deploy_main and deploy_restart on a hub on a copied log: refused
+def Hub.mcp.deploy.is(+body: String) -> Bool:
+  CN.Copy.has(["deploy_main", "deploy_restart"], J.Json.get_str(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "params"), "name", ""))
+
+def Hub.mcp.hub.c(refuse: Bool, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match refuse:
+    case True{}:
+      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id"), J.Null{}), MC.Res.fail("a hub on a copied log (BACKPLANE_COPY=1) does not deploy or restart")), h, reply, "")
+    case False{}:
+      Hub.mcp.hub.go(h, thread, body, reply, now)
+
+def Hub.mcp.hub(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  IO.bind(Bool, Hub, P.Proc.copy(), copy => Hub.mcp.hub.c(Bool.and(copy, Hub.mcp.deploy.is(body)), h, thread, body, reply, now))
 
 # the approved folder, resolved: added (or found) and the tool answered
 def Hub.newproj.made(h: Hub, +root: String, +name: String, +id: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
@@ -14999,8 +15071,21 @@ def Agents.only.go(none: Bool, +dir: String, +home: String) -> IO(Unit):
 def Agents.only.of(+dir: String, +home: String) -> IO(Unit):
   Agents.only.go(String.is_empty(dir), dir, home)
 
+# a hub on a copied log runs agents only as stand-in blocks: with no
+# BACKPLANE_AGENTS, an empty folder of its own (every CLI blocked)
+def Agents.only.copy(copy: Bool, +dir: String, +home: String) -> IO(Unit):
+  match copy:
+    case True{}:
+      do IO<Unit>:
+        Log.info(CP.Copy.note())
+        +d : String = Bool.pick(String, String.is_empty(dir), home ++ "/copy-agents", dir)
+        made : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(d)
+        Agents.only.of(d, home)
+    case False{}:
+      Agents.only.of(dir, home)
+
 def Agents.only(+home: String) -> IO(Unit):
-  IO.bind(String, Unit, Env.get("BACKPLANE_AGENTS", ""), dir => Agents.only.of(dir, home))
+  IO.bind(String, Unit, Env.get("BACKPLANE_AGENTS", ""), dir => IO.bind(Bool, Unit, P.Proc.copy(), copy => Agents.only.copy(copy, dir, home)))
 
 def Lock.path(+home: String) -> String:
   home ++ "/hub.lock"
