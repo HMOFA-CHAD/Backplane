@@ -363,7 +363,7 @@ def Hot.again(none: Bool, +h: String, +ids: List<&2, J.Json>, +more: List<&2, J.
         return Hot.loaded(Hot.fold(rows, body, ls, reps, seq), torn)
 
 # the lines add up: fold the tail onto the records
-def Hot.lined(same: Bool, +h: String, +home: String, +ids: List<&2, J.Json>, +recs: Map<&2, List<&2, List<&2, String>>>, +rows: SN.SRows, ls: List<&2, String>, +seq: Nat, +off: U32, +size: U32) -> IO(Hot):
+def Hot.lined(same: Bool, +h: String, +home: String, +ids: List<&2, J.Json>, +recs: Map<&2, List<&2, List<&2, String>>>, +rows: SN.SRows, +ls: List<&2, String>, +seq: Nat, +off: U32, +size: U32) -> IO(Hot):
   match same:
     case False{}:
       do IO<Hot>:
