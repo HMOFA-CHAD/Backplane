@@ -1186,7 +1186,8 @@ function env_put(name, value) {
   if (typeof process !== "undefined" && process.env && name.length > 0
     && !name.includes("\0") && !value.includes("\0")) {
     process.env[name] = value;
-    try {
+    // Windows has no libc copy to keep (Bun's own environment is the one)
+    if (process.platform !== "win32") try {
       host_libc().setenv(host_libc().ptr(host_cstr(name)), host_libc().ptr(host_cstr(value)), 1);
     } catch (_) {
     }
