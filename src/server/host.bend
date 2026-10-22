@@ -107,7 +107,6 @@ def Proc.kill(pid: U32, sig: U32) -> IO(Unit):
 
 # whether a child has exited, without reaping it (the reader's wait does):
 # its exit code (128 + signal when killed), or 4294967295 while it runs.
-# The JS host starts no processes, so there it is always running.
 def Proc.exited(pid: U32) -> IO(U32):
   import "./effects/host.c"
   import "./effects/host.js"
