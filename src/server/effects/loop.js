@@ -15,9 +15,10 @@
 //   is k's value (undefined: then parked k again).
 // - io_park_on(fd, out, k, more, at) keeps its meaning. A handle id
 //   (>= BP_BASE, see BP_H below) parks on the handle's readiness; a real
-//   descriptor (POSIX only) parks as before and is polled with a 0-timeout
-//   select between turns, or the old blocking select when nothing waits on
-//   Bun. Deadlines are timers.
+//   descriptor (POSIX only) parks as before and is polled with poll()
+//   between turns, or a blocking poll() when nothing waits on Bun (a
+//   hang-up wakes a parked writer, which select() missed). Deadlines are
+//   timers.
 // - BP_H: Bun-backed handles (TCP from Bun.listen/Bun.connect here; proc,
 //   pty and relay kinds from other effect files) behind one interface, so
 //   the Base TCP/Socket/Listener effects and host.bend's Sock/Fd/Net
@@ -25,13 +26,13 @@
 //   reaches the effect it always did.
 // - Base File.read*, Process.run and errno text without libc.
 //
-// BACKPLANE_JS_LOOP=sync keeps the old loop and effects (POSIX only), to
-// bisect. globalThis.BEND_ASYNC says which one runs.
+// On Linux and macOS the old loop stays the default until L1's load gate
+// passes on this one; BACKPLANE_JS_LOOP=bun turns it on there. Windows has
+// no old loop and always runs this one. globalThis.BEND_ASYNC says which.
 
 const BP_WIN = process.platform === "win32";
-const BP_ASYNC = BP_WIN || process.env.BACKPLANE_JS_LOOP !== "sync";
+const BP_ASYNC = BP_WIN || process.env.BACKPLANE_JS_LOOP === "bun";
 const BP_BASE = 0x100000;
-const bp_sync_wait = io_wait;
 const bp_sync_park = io_park_on;
 const bp_sync_strerror = io_strerror;
 globalThis.BEND_ASYNC = BP_ASYNC;
@@ -779,7 +780,6 @@ function bp_host(old) {
     ["Sock.peer", () => (s) => io_tup(s, BP_H.get(s)?.peer() ?? "")],
     ["Sock.shutdown", () => (s) => (BP_H.get(s)?.shutdown(1), s)],
     ["Sock.shut_read", () => (s) => (BP_H.get(s)?.shutdown(0), s)],
-    // a duplicate of the handle's descriptor, 0 when it has none (Bun's)
     // a handle answers another id on itself (its only use is the hub's
     // Fd.shut/Fd.close of a client from outside its writer), so Fd.shut
     // aborts the handle: a raw dup of a BpFd's descriptor, shut, left Bun's
@@ -981,11 +981,53 @@ if (BP_ASYNC) {
   };
 }
 
-// Runs what is due without waiting: descriptors through a 0-timeout
-// select (POSIX), deadlines by the clock.
+// Descriptor waits through poll(), not the runtime's select(): select puts
+// a unix socket whose peer hung up (POLLHUP alone) in neither set, so a
+// send parked on a full socketpair slept until the child exited. A
+// hang-up, an error or a closed descriptor is ready both ways: the
+// computation's retry then meets EPIPE/EBADF at once. ms: -1 waits for
+// good, 0 not at all. Deadlines are due by the clock.
+function bp_poll(io, ms) {
+  globalThis.BP_POLL ??= require("bun:ffi").dlopen(process.platform === "darwin"
+    ? "libSystem.dylib" : "libc.so.6",
+    { poll: { args: ["ptr", "u32", "i32"], returns: "i32" } }).symbols;
+  const fds = io.waits.filter((w) => w.fd !== undefined);
+  // struct pollfd: int fd; short events; short revents
+  const set = new Int16Array(4 * fds.length);
+  const view = new Int32Array(set.buffer);
+  fds.forEach((w, i) => {
+    view[2 * i] = w.fd;
+    // POLLIN 1, POLLOUT 4
+    set[4 * i + 2] = w.out ? 4 : 1;
+  });
+  const n = fds.length === 0 ? 0
+    : globalThis.BP_POLL.poll(require("bun:ffi").ptr(set), fds.length, ms);
+  const ready = new Set();
+  if (n > 0) {
+    fds.forEach((w, i) => {
+      // the asked event, or POLLERR 8 | POLLHUP 16 | POLLNVAL 32
+      if (set[4 * i + 3] & (set[4 * i + 2] | 8 | 16 | 32)) {
+        ready.add(w);
+      }
+    });
+  }
+  const now = performance.now();
+  const due = (w) => ready.has(w) || w.at !== undefined && w.at <= now;
+  const todo = io.waits;
+  io.waits = todo.filter((w) => !due(w));
+  for (const w of todo.filter(due)) {
+    const x = w.more();
+    if (x !== undefined) {
+      io_push(w.k, x, false);
+    }
+  }
+}
+
+// Runs what is due without waiting: descriptors through poll() (POSIX),
+// deadlines by the clock.
 function bp_due(io) {
   if (io.waits.some((w) => w.fd !== undefined)) {
-    bp_sync_wait(io, false);
+    bp_poll(io, 0);
     return;
   }
   const now = performance.now();
@@ -1000,12 +1042,13 @@ function bp_due(io) {
 
 // Awaits Bun until a park settles or the nearest deadline; while
 // descriptors wait too, polls them every tick (1 ms, doubling to 8 while
-// idle). With nothing parked on Bun, descriptors alone block in select as
-// the old loop did.
+// idle). With nothing parked on Bun, descriptors alone block in poll().
 async function bp_idle(io) {
   const fds = io.waits.some((w) => w.fd !== undefined);
   if (fds && io.pend === 0) {
-    bp_sync_wait(io, true);
+    const soon = io.waits.reduce((m, w) => Math.min(m, w.at ?? Infinity), Infinity);
+    bp_poll(io, soon === Infinity ? -1
+      : Math.max(0, Math.ceil(soon - performance.now())));
     return;
   }
   const soon = io.waits.reduce((m, w) => Math.min(m, w.at ?? Infinity), Infinity);
