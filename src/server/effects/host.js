@@ -376,7 +376,54 @@ function host_child_stack(spawn) {
 // backend below stays for the old loop (BACKPLANE_JS_LOOP=sync, POSIX).
 // Chosen at each call: effect files load in no fixed order.
 function bp_proc_bun() {
-  return process.platform === "win32" || globalThis.BEND_ASYNC === true;
+  return process.platform === "win32" || process.env.BACKPLANE_JS_PROC === "bun";
+}
+
+// On POSIX the libc spawn stays (a real socketpair end: an exec in place
+// keeps it, adopt.js hands it on); on Bun's loop that end is a BP_H handle
+// over the descriptor (loop.js's BpFd: read and written through Bun's own
+// streams, nothing polled), and Proc.wait waits on SIGCHLD.
+function bp_loop_bun() {
+  return globalThis.BEND_ASYNC === true && globalThis.BP_H?.fromFd !== undefined;
+}
+
+// Proc.wait on Bun's loop: the waited pids, reaped (waitpid WNOHANG) at
+// each SIGCHLD, which Bun delivers to process.on (several exits may share
+// one signal: every pending pid is tried). Bun reaps only its own children.
+function bp_chld() {
+  if (globalThis.BP_CHLD === undefined) {
+    const g = { want: new Map() };
+    g.sweep = () => {
+      for (const [pid, done] of g.want) {
+        const code = host_reap(pid);
+        if (code !== undefined) {
+          g.want.delete(pid);
+          for (const f of done) {
+            f(code);
+          }
+        }
+      }
+    };
+    process.on("SIGCHLD", g.sweep);
+    globalThis.BP_CHLD = g;
+  }
+  return globalThis.BP_CHLD;
+}
+
+function bp_chld_wait(pid, k) {
+  const now = host_reap(pid);
+  if (now !== undefined) {
+    return now;
+  }
+  const g = bp_chld();
+  const p = new Promise((res) => {
+    const list = g.want.get(pid) ?? [];
+    list.push(res);
+    g.want.set(pid, list);
+  });
+  // an exit between the reap above and the listener: tried once more
+  g.sweep();
+  return io_park_promise(p, k, (code) => code);
 }
 
 // the children Bun started, by pid, until Proc.wait has answered
@@ -847,7 +894,7 @@ function proc_spawn(cmd, args, cwd, err) {
   }
   sys.fcntl(sv[0], 4, sys.fcntl(sv[0], 3, 0) | (c.mac ? 4 : 0x800));
   sys.fcntl(sv[0], 2, 1);
-  return io_done(io_tup(pid[0] >>> 0, sv[0]));
+  return io_done(io_tup(pid[0] >>> 0, bp_loop_bun() ? globalThis.BP_H.fromFd(sv[0], "proc") : sv[0]));
 }
 
 // The last 2048 bytes a process started with err 3 wrote to stderr ("" when
@@ -959,8 +1006,11 @@ function host_wait_then(pid, k, done) {
 
 // The exit code (128 + signal when killed), once the child ends.
 function proc_wait(pid, k) {
-  if (bp_proc_bun()) {
+  if (bp_proc_bun() && bp_procs().has(pid >>> 0)) {
     return bp_proc_wait(pid, k);
+  }
+  if (bp_loop_bun()) {
+    return bp_chld_wait(pid >>> 0, k);
   }
   return host_wait_then(pid, k, (code) => code);
 }
@@ -968,7 +1018,7 @@ function proc_wait(pid, k) {
 // Proc.exited: the exit code of a child that has exited (left unreaped:
 // WNOWAIT), 4294967295 while it runs; one already reaped reads 255.
 function proc_exited(pid) {
-  if (bp_proc_bun()) {
+  if (bp_proc_bun() && bp_procs().has(pid >>> 0)) {
     return bp_proc_exited(pid);
   }
   const c = host_libc();
@@ -988,7 +1038,7 @@ function proc_exited(pid) {
 }
 
 function proc_kill(pid, sig) {
-  if (bp_proc_bun()) {
+  if (process.platform === "win32") {
     bp_proc_kill(pid, sig);
     return { $: "Unit" };
   }

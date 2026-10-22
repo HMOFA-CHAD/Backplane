@@ -258,7 +258,7 @@ function bp_pty_class() {
 // as host.js's (each effect file has its own scope): Bun's backend where
 // the runtime runs on Bun's loop, and the children it started by pid
 function bp_pty_bun() {
-  return process.platform === "win32" || globalThis.BEND_ASYNC === true;
+  return process.platform === "win32" || process.env.BACKPLANE_JS_PROC === "bun";
 }
 
 function bp_pty_procs() {
@@ -627,13 +627,21 @@ function pty_spawn(cmd, args, cwd, cols, rows) {
     return fail(code);
   }
   sys.fcntl(m, 4, sys.fcntl(m, 3, 0) | p.O_NONBLOCK); // F_SETFL
-  return io_done(io_tup(pid[0] >>> 0, m));
+  // on Bun's loop the master is a handle over the descriptor (loop.js's
+  // BpFd: EIO reads as the end), its fd kept for Pty.resize
+  const bun = globalThis.BEND_ASYNC === true && globalThis.BP_H?.fromFd !== undefined;
+  return io_done(io_tup(pid[0] >>> 0, bun ? globalThis.BP_H.fromFd(m, "pty") : m));
 }
 
 // a new window size; the kernel sends the child SIGWINCH
 function pty_resize(socket, cols, rows) {
   if (globalThis.BP_H !== undefined && globalThis.BP_H.is(socket)) {
-    globalThis.BP_H.get(socket)?.resize?.(bp_pty_size(Number(cols), 80), bp_pty_size(Number(rows), 24));
+    const h = globalThis.BP_H.get(socket);
+    if (h?.fd !== undefined) {
+      pty_size(h.fd, Number(cols), Number(rows));
+    } else {
+      h?.resize?.(bp_pty_size(Number(cols), 80), bp_pty_size(Number(rows), 24));
+    }
     return socket;
   }
   pty_size(Number(socket), Number(cols), Number(rows));
