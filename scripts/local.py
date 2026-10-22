@@ -73,8 +73,12 @@ def runtime(given):
 
 def phone_bridge(env):
     named = ['scripts/build-mobile.sh','scripts/bridge-native.py','scripts/js-unmarshal.py','scripts/state-key.py','src/mobile/index.html','src/mobile/bridge.js']
+    # The HTML bundle also reads JS imports shared with the browser; Bend's
+    # import closure alone does not follow those JavaScript module edges.
+    named += sorted(str(p.relative_to(ROOT)) for folder in ['src/web','src/mobile'] for p in (ROOT/folder).glob('*.js'))
+    bun = subprocess.check_output(['bun','--revision'],cwd=ROOT,text=True,env=env).strip()
     def key():
-        return subprocess.check_output(['scripts/inputs-key.sh','local-phone-bridge-v1',*named], cwd=ROOT,
+        return subprocess.check_output(['scripts/inputs-key.sh','local-phone-bridge-v2:'+bun,*sorted(set(named))], cwd=ROOT,
             env={**env,'BP_KEY_ROOTS':'src/mobile/app.bend'}, text=True).strip()
     before = key()
     cache = Path(os.environ.get('XDG_CACHE_HOME',Path.home()/'.cache'))/'backplane-bend/phone-bridge'/before

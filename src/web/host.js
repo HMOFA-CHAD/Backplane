@@ -725,7 +725,7 @@ function fabLook(target) {
 }
 
 function dispatch(action, value, timer) {
-  if (["select", "ref-go", "ref-back", "ref-fwd", "bot", "bot-tab", "remote"].includes(action)) {
+  if (["select", "ref-go", "ref-back", "ref-fwd", "bot", "bot-tab", "uber", "uber-bot", "remote"].includes(action)) {
     checkpointFocused();
     const timeline = document.getElementById("timeline");
     if (remoteReady && timeline) {
