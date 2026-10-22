@@ -1,4 +1,6 @@
 import Base
+import ./mailtriage.bend as TRI
+import ./uber.bend as UB
 import ./mailrun.bend as MR
 import ./mailcontinuity.bend as MCN
 import ./maildisposition.bend as MD
@@ -2629,9 +2631,9 @@ def Mail.file(+s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String,
 # producer's own acknowledgements (TaskDelivered...) commit together, so a
 # report is never marked delivered before it is filed; with the header
 # already there (recovered after a crash) only the acknowledgements commit.
-# Filing alone starts nothing: with mail.on off nothing is routed after it
-# (Mail.route), and the mail is fyi. Everything else, and every thread that
-# is not the uberbot's, keeps Hub.inbox.from.
+# Filing commits before routing. The promoted owner's FYI and act mail
+# both enter private triage, including with generic automation off. Other
+# threads retain their existing delivery policy.
 def Operational.owner(+s: M.State, +to: String) -> String:
   Bool.pick(String, UBS.Ub.chat.is(s, to), Mail.or(UBS.Ub.chat(s), to), to)
 
@@ -4052,7 +4054,7 @@ def Mail.room.on(+on: Bool, +st: Step, +s: M.State, +now: Nat, +from: String, +r
     case True{}: Step.cat(st, Mail.room.file(s, now, from, room, text, msg, parts, subject))
 
 def Mail.room(+st: Step, +s: M.State, +now: Nat, +from: String, +room: String, +text: String, +msg: String, +parts: List<&2, String>, +subject: String) -> Step:
-  Mail.room.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), st, s, now, from, room, text, msg, parts, subject)
+  Mail.room.on(Bool.or(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), ML.Parts.has(parts, "bot:" ++ UB.Uber.bot(s), False{})), st, s, now, from, room, text, msg, parts, subject)
 
 # Discard the old FOH-delivery step while retaining independent room and
 # wake bookkeeping. Calls that wrap the funnel retain their own changes.
@@ -4074,8 +4076,13 @@ def Mail.funnel.bot(bot: Bool, +st: Step, +s: M.State, +now: Nat, +o: ML.Origin,
 
 # Keep Mail.tee's existing delivery-preservation law. All production
 # inbound sources pass this switch, before the tee writes their body.
+def Mail.funnel.owner(owned: Bool, +st: Step, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
+  match owned:
+    case True{}: Step.cat(Mail.foh(st), Mail.file(s, now, o, to, text, msg))
+    case False{}: Mail.funnel.bot(Bool.and(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), Bool.and(String.starts_with(to, "bot:"), Bool.not(String.eq(ML.Origin.kind(o), "person")))), st, s, now, o, to, text, msg)
+
 def Mail.funnel(+st: Step, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
-  Mail.funnel.bot(Bool.and(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), Bool.and(String.starts_with(to, "bot:"), Bool.not(String.eq(ML.Origin.kind(o), "person")))), st, s, now, o, to, text, msg)
+  Mail.funnel.owner(Bool.and(String.eq(to, "bot:" ++ UB.Uber.bot(s)), Bool.not(String.eq(ML.Origin.kind(o), "person"))), st, s, now, o, to, text, msg)
 
 def Mail.inbound(+st: Step, +s: M.State, +now: Nat, +o: ML.Origin, +to: String, +text: String, +msg: String) -> Step:
   Mail.funnel(Origin.step(st, to, msg, o, now), s, now, o, Mail.addr(s, to), text, msg)
@@ -4206,10 +4213,15 @@ def Lr.what.e(none: Bool, +e: Nat, +s: M.State, +now: Nat, +thread: String, +by:
     case False{}:
       Lr.end.k(Bool.or(Bool.and(Nat.is_eq(e, 1n), Nat.is_gt(M.Work.busy(s, thread), 0n)), Bool.and(Bool.not(FR.Fr.is(to)), Lr.said(M.State.mine(s, thread), thread, to))), s, now, thread, by, to, e)
 
+def Lr.ask.send(coordinated: Bool, +s: M.State, +now: Nat, +thread: String, +to: String, +ask: String) -> Step:
+  match coordinated:
+    case True{}: Step.none()
+    case False{}: Lr.send(s, now, thread, to, Lr.ask.note(thread, Lr.title(Hub.thread(s, thread)), ask))
+
 def Lr.what(asked: Bool, +ask: String, +e: Nat, +s: M.State, +now: Nat, +thread: String, +by: String, +to: String) -> Step:
   match asked:
     case True{}:
-      Lr.send(s, now, thread, to, Lr.ask.note(thread, Lr.title(Hub.thread(s, thread)), ask))
+      Lr.ask.send(Operational.is(s, to), s, now, thread, to, ask)
     case False{}:
       Lr.what.e(Nat.is_eq(e, 0n), e, s, now, thread, by, to)
 
@@ -4273,9 +4285,8 @@ def Lr.tell.k(on: Bool, +s: M.State, +now: Nat, +thread: String, +from: String, 
 # person)
 # harness-coord: wakes. A matching step sends one message through Lr.send.
 # A wake the uberbot asked for (wake_on) is filed in its Mailroom, and,
-# since it asked to be woken, rides into its running turn or starts the
-# next with it (Ride.start): no Chat message either way. Any other
-# thread's wake is sent as before (Lr.send).
+# enters the same private triage pipeline as launched reports. Only a
+# triaged escalation uses the ride; other threads keep Lr.send.
 def Wake.ride(+s: M.State, +now: Nat, +by: String, +msg: String, +text: String) -> Step:
   +cs = {[M.SettingSet{RD.Ride.key(by), RD.Ride.add(Ride.of(s, by), msg, text), now}] : List<&2, M.Change>}
   Step.cat(Step{cs, Nil{}}, Ride.start(M.State.replay(cs, s), now, by))
@@ -4284,8 +4295,8 @@ def Wake.send(owned: Bool, +s: M.State, +now: Nat, +from: String, +by: String, +
   match owned:
     case False{}: Lr.send(s, now, from, by, text)
     case True{}:
-      +msg = "wake:" ++ ref ++ ":" ++ Hub.id("w", now, Hub.seq(s))
-      Step.cat(Operational.file(s, now, ML.Origin{Mail.addr(s, from), "wake", ref}, by, text, msg, Nil{}), Wake.ride(s, now, by, msg, text))
+      +msg = "wake:" ++ ref
+      Operational.file(s, now, ML.Origin{Mail.addr(s, from), "wake", ref}, by, text, msg, Nil{})
 
 def Wake.fire.k(fresh: Bool, +s: M.State, +now: Nat, +id: String, +key: String, +events: List<&2, String>, +text: String) -> Step:
   match fresh:
@@ -4294,7 +4305,7 @@ def Wake.fire.k(fresh: Bool, +s: M.State, +now: Nat, +id: String, +key: String, 
     case True{}:
       +o = WK.Wake.get(s, id)
       Step.before(WK.Wake.mark(id, key, J.Json.get_bool(o, "once", True{}), now), Nil{},
-        Wake.send(Operational.is(s, J.Json.get_str(o, "by", "")), s, now, Bool.pick(String, String.eq(J.Json.get_str(o, "kind", ""), "thread"), J.Json.get_str(o, "target", ""), J.Json.get_str(o, "by", "")), J.Json.get_str(o, "by", ""), id ++ ":" ++ key, WK.Wake.note(o, text, events)))
+        Wake.send(Operational.is(s, J.Json.get_str(o, "by", "")), s, now, Bool.pick(String, String.eq(J.Json.get_str(o, "kind", ""), "thread"), J.Json.get_str(o, "target", ""), J.Json.get_str(o, "by", "")), J.Json.get_str(o, "by", ""), J.Json.get_str(o, "kind", "") ++ ":" ++ J.Json.get_str(o, "target", "") ++ ":" ++ key, WK.Wake.note(o, text, events)))
 
 def Wake.thread.end.key(cs: List<&2, M.Change>, +th: String) -> String:
   match cs:
@@ -4383,11 +4394,30 @@ def Wake.deliver(ids: List<&2, String>, +s: M.State, +now: Nat, +key: String, +e
     case id <> t:
       Wake.deliver(t, s, now, key, events, text, Step.cat(st, Wake.fire(M.State.replay(Queue.changes(st), s), now, id, key, events, text)))
 
-def Wake.thread.fire(+s: M.State, +now: Nat, +id: String, +signals: List<&2, WK.WakeSignal>, +text: String) -> Step:
+def Wake.thread.fire.normal(+s: M.State, +now: Nat, +id: String, +signals: List<&2, WK.WakeSignal>, +text: String) -> Step:
   +matches = WK.Wake.signal.unseen(signals, s, id, WK.Wake.events(WK.Wake.get(s, id)))
   +events = WK.Wake.signal.events(matches)
   +st = Wake.fire.k(Bool.and(Nat.is_gt(List.length(&2, String, events), 0n), Bool.and(Hub.owns(s, J.Json.get_str(WK.Wake.get(s, id), "by", "")), Lost.live(Hub.thread(s, J.Json.get_str(WK.Wake.get(s, id), "by", ""))))), s, now, id, String.join(WK.Wake.signal.keys(matches), "|"), events, text)
   Step.before(Bool.pick(List<&2, M.Change>, Nat.is_gt(List.length(&2, M.Change, Queue.changes(st)), 0n), WK.Wake.signal.mark(matches, id, now), Nil{}), Nil{}, st)
+
+def Wake.thread.covered.mark(hit: Bool, +matches: List<&2, WK.WakeSignal>, +id: String, +o: J.Json, +now: Nat) -> Step:
+  match hit:
+    case False{}: Step.none()
+    case True{}: Step{List.append(&2, M.Change, WK.Wake.signal.mark(matches, id, now), WK.Wake.mark(id, String.join(WK.Wake.signal.keys(matches), "|"), J.Json.get_bool(o, "once", True{}), now)), Nil{}}
+
+def Wake.thread.fire.covered(covered: Bool, +s: M.State, +now: Nat, +id: String, +signals: List<&2, WK.WakeSignal>, +text: String) -> Step:
+  match covered:
+    case False{}: Wake.thread.fire.normal(s, now, id, signals, text)
+    case True{}:
+      +o = WK.Wake.get(s, id)
+      +matches = WK.Wake.signal.unseen(signals, s, id, WK.Wake.events(o))
+      Wake.thread.covered.mark(Bool.not(List.is_empty(&2, WK.WakeSignal, matches)), matches, id, o, now)
+
+def Wake.thread.fire(+s: M.State, +now: Nat, +id: String, +signals: List<&2, WK.WakeSignal>, +text: String) -> Step:
+  +o = WK.Wake.get(s, id)
+  +by = J.Json.get_str(o, "by", "")
+  +target = J.Json.get_str(o, "target", "")
+  Wake.thread.fire.covered(Bool.and(Operational.is(s, by), Bool.and(M.Launch.reports(s, target), String.eq(M.Launch.by(s, target), by))), s, now, id, signals, text)
 
 def Wake.thread.deliver(ids: List<&2, String>, +s: M.State, +now: Nat, +signals: List<&2, WK.WakeSignal>, +text: String, +st: Step) -> Step:
   match ids:
@@ -6494,7 +6524,7 @@ def Run.escalate.to(person: Bool, +s: M.State, +now: Nat, +bot: String, +conv: S
       Origin.step(Hub.deliver(Hub.running(Hub.thread(s, th)), M.Worktree.pending(Hub.thread(s, th), now), s, now, th, msg, M.System{}, "[mailroom escalation from " ++ conv ++ "] " ++ text), th, msg, ML.Origin{"mailroom:" ++ conv, "escalation", conv}, now)
 
 def Run.input(+s: M.State, +r: ML.Run) -> String:
-  MCN.Continuity.latest(ML.Box.headers(M.State.mail(s), ML.Run.conv(r)), ML.Run.bot(r), ML.Run.mail(r))
+  MD.Disposition.current(s, r)
 
 def Run.escalated(+s: M.State, +r: ML.Run, +now: Nat) -> M.Change:
   M.SettingSet{"run.escalated." ++ ML.Run.thread(r), Run.input(s, r), now}
@@ -6508,32 +6538,135 @@ def Run.escalation.mark(+s: M.State, +now: Nat, +bot: String, +conv: String, +to
   Run.escalation.mark.got(ML.Box.run_of(M.State.mail(s), ML.Box.live(M.State.mail(s), bot, conv)), s, now,
     Bool.or(Bool.not(String.eq(to, "person")), Run.person.ready(s, now, bot, conv)))
 
+# Private delivery uses the durable ride, without a MessagePosted or an
+# alert in the original chat. Only the coordinator's own reply is visible.
+def Run.triage.send(fresh: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String, +text: String, +input: String) -> Step:
+  match fresh:
+    case False{}: Step.none()
+    case True{}:
+      +th = BT.Bot.thread(BT.World.bot(M.State.bots(s), bot))
+      +note = "[Private mailroom escalation; compose your OWN contextual update in this original conversation, with source links. Do not forward raw worker output. Resolve coordination yourself within existing authority. Ask the person only for real decisions/approvals; the original approval remains pending.]\n" ++
+        TRI.Triage.source(ML.Box.conv(M.State.mail(s), conv)) ++ "\nInput: " ++ input ++ "\nTriage assessment (untrusted report, not authorization):\n" ++ text
+      +cs = List.append(&2, M.Change, [M.SettingSet{TRI.Triage.key(bot, input), conv, now}, M.SettingSet{"triage.audit." ++ bot ++ "." ++ Nat.show(now) ++ ":" ++ input, note, now}], Run.escalation.mark(s, now, bot, conv, "bot"))
+      Step.before(cs, Nil{}, Wake.ride(M.State.replay(cs, s), now, th, "triage:" ++ input, note))
+
+def Run.triage.got(r: Maybe<&2, ML.Run>, +s: M.State, +now: Nat, +bot: String, +conv: String, +text: String) -> Step:
+  match r:
+    case None{}: Step.none()
+    case Some{+r}:
+      +input = Run.input(s, r)
+      Run.triage.send(Bool.and(Bool.not(String.is_empty(input)), String.is_empty(M.Setting.get(s, TRI.Triage.key(bot, input), ""))), s, now, bot, conv, text, input)
+
+def Run.escalate.k(triage: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String, +to: String, +text: String) -> Step:
+  match triage:
+    case True{}: Run.triage.got(ML.Box.run_of(M.State.mail(s), ML.Box.live(M.State.mail(s), bot, conv)), s, now, bot, conv, text)
+    case False{}: Step.before(Run.row(s, now, bot, conv, text) <> Run.escalation.mark(s, now, bot, conv, to), Nil{}, Run.escalate.to(String.eq(to, "person"), s, now, bot, conv, text))
+
+def Run.escalate.topic.fresh(fresh: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String, +to: String, +text: String, +input: String, +topic: String) -> Step:
+  match fresh:
+    case True{}: Step.before([M.SettingSet{topic, input, now}], Nil{}, Run.escalate.k(True{}, s, now, bot, conv, to, text))
+    case False{}: Step{List.append(&2, M.Change, [M.SettingSet{TRI.Triage.key(bot, input), "duplicate:" ++ topic, now}], Run.escalation.mark(s, now, bot, conv, "bot")), Nil{}}
+
+# A model can correlate the same exact event/version reported by a room,
+# direct worker report or launch result. Scope the key to the owner; it
+# records queued delivery, never that the person was already told.
+def Run.escalate.topic.got(r: Maybe<&2, ML.Run>, +s: M.State, +now: Nat, +bot: String, +conv: String, +to: String, +text: String, +key: String) -> Step:
+  match r:
+    case None{}: Step.none()
+    case Some{+r}:
+      +input = Run.input(s, r)
+      +topic = "triage.event." ++ J.Json.show(J.Json.arr([J.Str{bot}, J.Str{String.take(key, 200n)}]))
+      Run.escalate.topic.fresh(String.is_empty(M.Setting.get(s, topic, "")), s, now, bot, conv, to, text, input, topic)
+
+def Run.escalate.topic(keyed: Bool, +s: M.State, +now: Nat, +bot: String, +conv: String, +to: String, +text: String, +key: String) -> Step:
+  match keyed:
+    case False{}: Run.escalate.k(TRI.Triage.owner(s, bot), s, now, bot, conv, to, text)
+    case True{}: Run.escalate.topic.got(ML.Box.run_of(M.State.mail(s), ML.Box.live(M.State.mail(s), bot, conv)), s, now, bot, conv, to, text, key)
+
 def Run.escalate(+s: M.State, +now: Nat, +bot: String, +conv: String, +to: String, +text: String) -> Step:
-  Step.before(Run.row(s, now, bot, conv, text) <> Run.escalation.mark(s, now, bot, conv, to), Nil{}, Run.escalate.to(String.eq(to, "person"), s, now, bot, conv, text))
+  Run.escalate.k(TRI.Triage.owner(s, bot), s, now, bot, conv, to, text)
 
 # Independent of agent-side tool approval: an actionable mail run cannot
 # finish silently when its reply/escalation tools were denied or failed.
 # This is a report to its own bot, not permission to perform the action.
+def Run.unresolved.error(es: List<&2, M.Entry>) -> String:
+  match es:
+    case Nil{}: ""
+    case M.Act{_, _, "error", _, text, _} <> _: text
+    case _ <> t: Run.unresolved.error(t)
+
 def Run.unresolved.note(+s: M.State, +r: ML.Run) -> String:
   "Mailroom run " ++ ML.Run.thread(r) ++ " ended without a committed reply, deferral, completion or escalation. The request remains unresolved; review it and respond in the conversation. Do not repeat completed actions.\n" ++
-  "Conversation: " ++ ML.Run.conv(r) ++ "\nActionable input: " ++ Run.input(s, r) ++ "\nRun's last response (not evidence of completion):\n" ++ String.take(Task.last(s, ML.Run.thread(r)), 4000n)
+  "Run: " ++ REF.Ref.uri(REF.Ref.thread(ML.Run.thread(r))) ++ "\nFailure detail: " ++ String.take(Run.unresolved.error(M.State.mine(s, ML.Run.thread(r))), 2000n) ++ "\nConversation: " ++ ML.Run.conv(r) ++ "\nActionable input: " ++ Run.input(s, r) ++ "\nRun's last response (not evidence of completion):\n" ++ String.take(Task.last(s, ML.Run.thread(r)), 4000n)
+
+# The journal could not accept a report. Surface an explicit delivery
+# failure through the private durable ride, without acknowledging a body
+# or producer result that was never committed. Source history stays put.
+def Mail.failure.owner(owned: Bool, +s: M.State, +now: Nat, +body: MB.Body, +bot: String, +reason: String) -> Step:
+  match owned:
+    case False{}: Step.none()
+    case True{}:
+      +input = "delivery-failed:" ++ ML.Mail.id(MB.Body.mail(body))
+      Run.triage.send(String.is_empty(M.Setting.get(s, TRI.Triage.key(bot, input), "")), s, now, bot, ML.Mail.conv(MB.Body.mail(body)),
+        "Internal mail delivery FAILED; do not claim this report was filed or handled. Review the original source; its work/approval is unchanged. Do not repeat source actions.\n" ++ TRI.Triage.source(MB.Body.conv(body)) ++ "\nFailure: " ++ reason, input)
+
+def Mail.failure.got(to: Maybe<&2, REF.Ref>, +s: M.State, +now: Nat, +body: MB.Body, +reason: String) -> Step:
+  match to:
+    case Some{REF.Ref{"bot", +bot <> _, _}}: Mail.failure.owner(TRI.Triage.owner(s, bot), s, now, body, bot, reason)
+    case _: Step.none()
+
+def Mail.failure(+s: M.State, +now: Nat, +body: MB.Body, +reason: String) -> Step:
+  Mail.failure.got(REF.Ref.of_addr(ML.Mail.to(MB.Body.mail(body))), s, now, body, reason)
+
+def Run.unresolved.forward(triage: Bool, +s: M.State, +now: Nat, +r: ML.Run) -> Step:
+  match triage:
+    case True{}:
+      +input = Run.input(s, r)
+      Step.before([M.SettingSet{"run.forwarded." ++ ML.Run.thread(r), input, now}], Nil{},
+        Run.triage.send(String.is_empty(M.Setting.get(s, TRI.Triage.key(ML.Run.bot(r), input), "")), s, now, ML.Run.bot(r), ML.Run.conv(r), Run.unresolved.note(s, r), input))
+    case False{}:
+      Step.before([M.SettingSet{"run.forwarded." ++ ML.Run.thread(r), Run.input(s, r), now}], Nil{},
+        Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), "bot", Run.unresolved.note(s, r)))
 
 def Run.unresolved.send(send: Bool, +s: M.State, +now: Nat, +r: ML.Run) -> Step:
   match send:
     case False{}: Step.none()
     case True{}:
-      Step.before([M.SettingSet{"run.forwarded." ++ ML.Run.thread(r), Run.input(s, r), now}], Nil{},
-        Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), "bot", Run.unresolved.note(s, r)))
+      Run.unresolved.forward(TRI.Triage.owner(s, ML.Run.bot(r)), s, now, r)
+
+def Run.unresolved.status(+s: M.State, +r: ML.Run) -> String:
+  Bool.pick(String, TRI.Triage.ask.mail(ML.Box.headers(M.State.mail(s), ML.Run.conv(r)), s, Run.input(s, r)), "", ML.Mark.status(ML.Box.mark_of(M.State.mail(s), ML.Run.bot(r), ML.Run.conv(r))))
 
 def Run.unresolved(+s: M.State, +now: Nat, +r: ML.Run) -> Step:
   Run.unresolved.send(Bool.and(Bool.not(MD.Disposition.handled(s, r)), MCN.Continuity.needs(Run.input(s, r), M.Setting.get(s, "run.escalated." ++ ML.Run.thread(r), ""),
-    M.Setting.get(s, "run.forwarded." ++ ML.Run.thread(r), ""), ML.Mark.status(ML.Box.mark_of(M.State.mail(s), ML.Run.bot(r), ML.Run.conv(r))),
-    MCN.Continuity.replied(ML.Box.headers(M.State.mail(s), ML.Run.conv(r)), ML.Run.bot(r), ML.Run.thread(r)))), s, now, r)
+    M.Setting.get(s, "run.forwarded." ++ ML.Run.thread(r), ""), Run.unresolved.status(s, r),
+    Bool.and(Bool.not(TRI.Triage.owner(s, ML.Run.bot(r))), MCN.Continuity.replied(ML.Box.headers(M.State.mail(s), ML.Run.conv(r)), ML.Run.bot(r), ML.Run.thread(r))))), s, now, r)
+
+# Failed/unknown triage forwards EVERY pending input, oldest first. Each
+# receipt advances current; replay sees the durable per-input markers.
+def Run.unresolved.all.go(headers: List<&2, ML.Mail>, +s: M.State, +now: Nat, +r: ML.Run, +st: Step) -> Step:
+  match headers:
+    case Nil{}: st
+    case _ <> t: Run.unresolved.all.go(t, s, now, r, Step.cat(st, Run.unresolved(M.State.replay(Queue.changes(st), s), now, r)))
+
+def Run.quiet.finished(completed: M.TurnState, +s: M.State, +now: Nat, +r: ML.Run) -> List<&2, M.Change>:
+  match completed:
+    case M.Completed{}: Bool.pick(List<&2, M.Change>, Bool.and(String.is_empty(MD.Disposition.current(s, r)), Bool.not(String.is_empty(M.Setting.get(s, MD.Disposition.key(ML.Run.thread(r), ML.Run.mail(r)), "")))), [M.MailMarked{ML.Run.bot(r), ML.Run.conv(r), "done", ML.Conv.last(ML.Box.conv(M.State.mail(s), ML.Run.conv(r))), 0n, now}], Nil{})
+    case _: Nil{}
+
+def Run.ended.quiet(+s: M.State, +now: Nat, +r: ML.Run, +st: Step) -> Step:
+  +post = M.State.replay(Queue.changes(st), s)
+  Step.after(st, Run.quiet.finished(M.Thread.turn(Hub.thread(post, ML.Run.thread(r))), post, now, r))
+
+def Run.ended.pending(triage: Bool, +r: ML.Run, +before: M.State, +now: Nat, +st: Step) -> Step:
+  match triage:
+    case False{}: Step.cat(st, Run.unresolved(M.State.replay(Queue.changes(st), before), now, r))
+    case True{}: Run.ended.quiet(before, now, r, Run.unresolved.all.go(ML.Box.headers(M.State.mail(before), ML.Run.conv(r)), before, now, r, st))
 
 def Run.ended.live(live: Bool, +r: ML.Run, +before: M.State, +now: Nat, +st: Step) -> Step:
   match live:
     case False{}: st
-    case True{}: Step.cat(st, Run.unresolved(M.State.replay(Queue.changes(st), before), now, r))
+    case True{}: Run.ended.pending(TRI.Triage.owner(before, ML.Run.bot(r)), r, before, now, st)
 
 def Run.ended.got(r: Maybe<&2, ML.Run>, +before: M.State, +now: Nat, +st: Step) -> Step:
   match r:
@@ -6541,14 +6674,51 @@ def Run.ended.got(r: Maybe<&2, ML.Run>, +before: M.State, +now: Nat, +st: Step) 
     case Some{+r}:
       Run.ended.live(ML.Run.live(r), r, before, now, st)
 
-def Run.after.go(cs: List<&2, M.Change>, +before: M.State, +now: Nat, st: Step) -> Step:
+# An actual approval/question remains open at its source. No ask is
+# copied, answered or converted into a permission in the coordinator.
+def Triage.ask.got(run: Maybe<&2, ML.Run>, +s: M.State, +now: Nat, +th: String, +ask: String, +tool: String, +detail: String) -> Step:
+  match run:
+    case Some{+r}: Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), "bot", "Triage needs a real approval/answer: " ++ tool ++ " " ++ detail ++ "\nSource: " ++ REF.Ref.uri(REF.Ref.thread(th)) ++ "\nApproval/ask ID: " ++ ask ++ ". It remains pending; no authorization was granted.")
+    case None{}: Operational.mail(s, now, ML.Origin{Mail.addr(s, th), "ask", ask}, TRI.Triage.thread(s), "Actual pending ask " ++ ask ++ ": " ++ tool ++ " " ++ detail ++ "\nSource: " ++ REF.Ref.uri(REF.Ref.thread(th)) ++ "\nThe real approval remains at its source and must be answered by the person.", "triage-ask:" ++ ask, "act", Nil{})
+
+def Triage.ask(managed: Bool, +s: M.State, +now: Nat, +th: String, +ask: String, +tool: String, +detail: String) -> Step:
+  match managed:
+    case False{}: Step.none()
+    case True{}: Triage.ask.got(MR.Run.of(s, th), s, now, th, ask, tool, detail)
+
+# Other bots' final reports also enter the one pipeline. Launched workers
+# already report through Lr, and private runs never report themselves.
+def Triage.bot.end(report: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  match report:
+    case False{}: Step.none()
+    case True{}: Operational.file(s, now, ML.Origin{Mail.addr(s, th), "bot", ""}, TRI.Triage.thread(s), "Bot report from " ++ REF.Ref.uri(REF.Ref.thread(th)) ++ ":\n" ++ Task.last(s, th), "triage-bot:" ++ th ++ ":" ++ Nat.show(now), Nil{})
+
+def Triage.ended(+before: M.State, +now: Nat, +th: String, +st: Step) -> Step:
+  +s = M.State.replay(Queue.changes(st), before)
+  Step.cat(Run.ended.got(MD.Runs.gate(before, ML.Box.run_of(M.State.mail(before), th)), before, now, st), Triage.bot.end(Bool.and(TRI.Triage.managed(before, th), Bool.and(BT.World.is_bot_thread(M.State.bots(before), th), Bool.not(MR.Run.is(before, th)))), s, now, th))
+
+def Run.after.go(cs: List<&2, M.Change>, +before: M.State, +now: Nat, +st: Step) -> Step:
   match cs:
     case Nil{}: st
     case M.TurnChanged{+th, M.Completed{}, _} <> rest:
-      Run.after.go(rest, before, now, Run.ended.got(ML.Box.run_of(M.State.mail(before), th), before, now, st))
+      Run.after.go(rest, before, now, Triage.ended(before, now, th, st))
     case M.TurnChanged{+th, M.Failed{}, _} <> rest:
-      Run.after.go(rest, before, now, Run.ended.got(ML.Box.run_of(M.State.mail(before), th), before, now, st))
+      Run.after.go(rest, before, now, Triage.ended(before, now, th, st))
+    case M.AskOpened{+ask, +th, _, +tool, +detail, _, _} <> rest:
+      Run.after.go(rest, before, now, Step.cat(st, Triage.ask(TRI.Triage.managed(before, th), M.State.replay(Queue.changes(st), before), now, th, ask, tool, detail)))
+    case M.ActivityLogged{+th, _, _, "fallback-blocked", _, _} <> rest:
+      Run.after.go(rest, before, now, Run.ended.got(MD.Runs.gate(before, ML.Box.run_of(M.State.mail(before), th)), before, now, st))
     case _ <> rest: Run.after.go(rest, before, now, st)
+
+def Run.fallback.go(cs: List<&2, M.Change>, +before: M.State, +now: Nat, +st: Step) -> Step:
+  match cs:
+    case Nil{}: st
+    case M.ActivityLogged{+th, _, _, "fallback-blocked", _, _} <> t:
+      Run.fallback.go(t, before, now, Run.ended.got(MD.Runs.gate(before, ML.Box.run_of(M.State.mail(before), th)), before, now, st))
+    case _ <> t: Run.fallback.go(t, before, now, st)
+
+def Run.fallback(+before: M.State, +now: Nat, +st: Step) -> Step:
+  Run.fallback.go(Queue.changes(st), before, now, st)
 
 def Run.after.on(on: Bool, +before: M.State, +now: Nat, +st: Step) -> Step:
   match on:
@@ -6556,7 +6726,7 @@ def Run.after.on(on: Bool, +before: M.State, +now: Nat, +st: Step) -> Step:
     case True{}: Run.after.go(Queue.changes(st), before, now, st)
 
 def Run.after(+before: M.State, now: Nat, st: Step) -> Step:
-  Run.after.on(String.eq(M.Setting.get(before, "mail.on", "off"), "on"), before, now, st)
+  Run.after.on(Bool.or(String.eq(M.Setting.get(before, "mail.on", "off"), "on"), Bool.not(String.is_empty(UB.Uber.bot(before)))), before, now, st)
 
 def Run.recover.report(on: Bool, +s: M.State, +now: Nat, +r: ML.Run, +st: Step) -> Step:
   match on:
@@ -6574,7 +6744,7 @@ def Run.recover.one(go: Bool, +s: M.State, +now: Nat, +r: ML.Run) -> Step:
 def Run.recover.all(+rs: List<&2, ML.Run>, +s: M.State, +now: Nat, +kept: List<&2, String>, +st: Step) -> Step:
   match rs:
     case Nil{}: st
-    case +r <> +t: Run.recover.all(t, s, now, kept, Step.cat(st, Run.recover.one(Bool.and(ML.Run.live(r), Bool.not(AD.Adopt.in(kept, ML.Run.thread(r)))), M.State.replay(Queue.changes(st), s), now, r)))
+    case +r <> +t: Run.recover.all(t, s, now, kept, Step.cat(st, Run.recover.one(Bool.and(MD.Runs.on(s, ML.Run.bot(r)), Bool.and(ML.Run.live(r), Bool.not(AD.Adopt.in(kept, ML.Run.thread(r))))), M.State.replay(Queue.changes(st), s), now, r)))
 
 def Run.recover.on(on: Bool, +s: M.State, +now: Nat, +kept: List<&2, String>, +st: Step) -> Step:
   match on:
@@ -6582,7 +6752,7 @@ def Run.recover.on(on: Bool, +s: M.State, +now: Nat, +kept: List<&2, String>, +s
     case True{}: Run.recover.all(Map.values(&2, ML.Run, ML.Box.runs(M.State.mail(s))), s, now, kept, st)
 
 def Run.recover(+s: M.State, +now: Nat, +kept: List<&2, String>, +st: Step) -> Step:
-  Run.recover.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), s, now, kept, st)
+  Run.recover.on(Bool.or(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), Bool.not(String.is_empty(UB.Uber.bot(s)))), s, now, kept, st)
 
 # (and every watched work still open is watched again: Watch.rearm)
 # kept: the threads whose agent process the restart kept (adopted): their
@@ -7402,18 +7572,34 @@ def Run.model.pick(+provider: String, +parent: String, +override: String, uber: 
   Run.model.keep(Run.model.accept(provider, override), override,
     Run.model.default(String.eq(provider, "claude"), provider, parent, uber))
 
+def Run.provider(+s: M.State, +bot: String) -> String:
+  Run.model.keep(TRI.Triage.owner(s, bot), String.trim(M.Setting.get(s, "run.provider." ++ bot, AG.Text.provider(s))), Hub.provider(Hub.thread(s, BT.Bot.thread(BT.World.bot(M.State.bots(s), bot)))))
+
+def Run.triage.model(on: Bool, +s: M.State, +bot: String, old: String) -> String:
+  match on:
+    case False{}: old
+    case True{}:
+      +p = Run.provider(s, bot)
+      +configured = String.trim(M.Setting.get(s, "run.model." ++ bot, ""))
+      Run.model.keep(Run.model.accept(p, configured), configured, Run.model.keep(String.eq(p, AG.Text.provider(s)), AG.Text.model(s), ""))
+
 def Run.model(+s: M.State, +bot: String) -> String:
   +parent = Hub.thread(s, BT.Bot.thread(BT.World.bot(M.State.bots(s), bot)))
-  Run.model.pick(Hub.provider(parent), String.trim(Turn.model(parent)), String.trim(M.Setting.get(s, "run.model." ++ bot, "")), String.eq(M.Setting.get(s, "uber.bot", ""), bot))
+  Run.triage.model(TRI.Triage.owner(s, bot), s, bot, Run.model.pick(Hub.provider(parent), String.trim(Turn.model(parent)), String.trim(M.Setting.get(s, "run.model." ++ bot, "")), String.eq(M.Setting.get(s, "uber.bot", ""), bot)))
 
 def Run.spawn.new(+s: M.State, +now: Nat, +bot: String, +conv: String, +body: MB.Body, +th: String) -> Step:
   +b = BT.World.bot(M.State.bots(s), bot)
   +parent = Hub.thread(s, BT.Bot.thread(b))
   +model = Run.model(s, bot)
-  +cs = {[M.ThreadCreated{th, ML.Conv.project(MB.Body.conv(body)), BT.Bot.name(b) ++ ": " ++ ML.Conv.subject(MB.Body.conv(body)), M.Local{}, "", Hub.cwd(s, parent), Hub.provider(parent), model, now},
+  +cs = {[M.ThreadCreated{th, ML.Conv.project(MB.Body.conv(body)), BT.Bot.name(b) ++ ": " ++ ML.Conv.subject(MB.Body.conv(body)), M.Local{}, "", Hub.cwd(s, parent), Run.provider(s, bot), model, now},
     M.WorktreeSet{th, "", Hub.cwd(s, parent), now}, M.ModesSet{th, M.Supervised{}, M.DefaultMode{}, model, now}, M.RunSet{th, bot, conv, ML.Mail.id(MB.Body.mail(body)), now}, M.SettingSet{"run.pending." ++ th, "on", now}] : List<&2, M.Change>}
   +s1 = M.State.replay(cs, s)
   Step{List.append(&2, M.Change, cs, Run.alarm(s1, now, bot, conv)), [RunStart{th, conv, MR.Run.brief(s1, bot, conv)}]}
+
+def Run.deliver.current(r: Maybe<&2, ML.Run>, +s: M.State, fallback: String) -> String:
+  match r:
+    case None{}: fallback
+    case Some{r}: MD.Disposition.current(s, r)
 
 def Run.deliver.ready(+s: M.State, +now: Nat, +th: String, +body: MB.Body) -> Step:
   +m = MB.Body.mail(body)
@@ -7430,7 +7616,7 @@ def Run.bodies(+bs: List<&2, MB.Body>) -> String:
 def Run.deliver.pending(pending: Bool, +s: M.State, +now: Nat, +th: String, +body: MB.Body) -> Step:
   match pending:
     case False{}: Run.deliver.ready(s, now, th, body)
-    case True{}: Step{[M.MessagePosted{th, ML.Mail.id(MB.Body.mail(body)), M.User{}, "Current actionable input: " ++ ML.Mail.id(MB.Body.mail(body)) ++ "\n" ++ MB.Body.text(body), now}, M.MessageFrom{th, ML.Mail.id(MB.Body.mail(body)), ML.Mail.from(MB.Body.mail(body)), ML.Mail.kind(MB.Body.mail(body)), ML.Mail.conv(MB.Body.mail(body)), now}], Nil{}}
+    case True{}: Step{[M.MessagePosted{th, ML.Mail.id(MB.Body.mail(body)), M.User{}, "Received input: " ++ ML.Mail.id(MB.Body.mail(body)) ++ "\nCurrent actionable input: " ++ Run.deliver.current(MR.Run.of(s, th), s, ML.Mail.id(MB.Body.mail(body))) ++ "\n" ++ MB.Body.text(body), now}, M.MessageFrom{th, ML.Mail.id(MB.Body.mail(body)), ML.Mail.from(MB.Body.mail(body)), ML.Mail.kind(MB.Body.mail(body)), ML.Mail.conv(MB.Body.mail(body)), now}], Nil{}}
 
 def Run.deliver(+s: M.State, +now: Nat, +th: String, +body: MB.Body) -> Step:
   Run.deliver.pending(String.eq(M.Setting.get(s, "run.pending." ++ th, ""), "on"), s, now, th, body)
@@ -7456,12 +7642,12 @@ def Mail.route_bot.plan(p: MR.MailRunPlan, +s: M.State, +now: Nat, +body: MB.Bod
     case MR.IntoRun{live}: Run.deliver(s, now, live, body)
 
 def Mail.route_bot(+s: M.State, +now: Nat, +body: MB.Body, +bot: String) -> Step:
-  Mail.route_bot.plan(MR.Run.plan(ML.Mail.wanted(MB.Body.mail(body)), ML.Box.live(M.State.mail(s), bot, ML.Mail.conv(MB.Body.mail(body)))), s, now, body, bot)
+  Mail.route_bot.plan(MR.Run.plan(Bool.pick(String, Bool.and(TRI.Triage.owner(s, bot), TRI.Triage.inbound(MB.Body.mail(body), bot)), "act", ML.Mail.wanted(MB.Body.mail(body))), ML.Box.live(M.State.mail(s), bot, ML.Mail.conv(MB.Body.mail(body)))), s, now, body, bot)
 
 def Mail.route.part(r: Maybe<&2, REF.Ref>, +s: M.State, +now: Nat, +body: MB.Body) -> Step:
   match r:
     case Some{REF.Ref{"bot", +bot <> _, _}}:
-      Mail.route_bot.want(Bool.and(Bool.not(String.eq(ML.Mail.from(MB.Body.mail(body)), "bot:" ++ bot)), Bool.or(String.eq(ML.Mail.wanted(MB.Body.mail(body)), "act"), String.contains(MB.Body.text(body), "@" ++ BT.Bot.name(BT.World.bot(M.State.bots(s), bot))))), s, now, body, bot)
+      Mail.route_bot.want(Bool.and(MD.Runs.on(s, bot), Bool.and(Bool.not(String.eq(ML.Mail.from(MB.Body.mail(body)), "bot:" ++ bot)), Bool.or(TRI.Triage.owner(s, bot), Bool.or(String.eq(ML.Mail.wanted(MB.Body.mail(body)), "act"), String.contains(MB.Body.text(body), "@" ++ BT.Bot.name(BT.World.bot(M.State.bots(s), bot))))))), s, now, body, bot)
     case _: Step.none()
 
 # The journal commits first. This pure router is called once, only after
@@ -7510,9 +7696,15 @@ def Run.fresh(st: Step) -> Step:
 def Run.start(+s: M.State, +now: Nat, +th: String, +head: String, +bs: List<&2, MB.Body>) -> Step:
   Run.fresh(Step.before([M.SettingSet{"run.pending." ++ th, "", now}], Nil{}, Hub.post(s, now, th, Hub.id("brief", now, Hub.seq(s)), M.User{}, head ++ String.take(Run.pending.text(M.State.mine(s, th)), 2000n) ++ "\n<mail_history newest-first>\n" ++ String.take(Run.bodies(bs), 8000n) ++ "\n</mail_history>")))
 
+def Mail.route.triage(r: Maybe<&2, REF.Ref>, +s: M.State, +now: Nat, +body: MB.Body) -> Step:
+  match r:
+    case Some{REF.Ref{"bot", +bot <> _, _}}: Mail.route_bot.want(Bool.and(TRI.Triage.owner(s, bot), TRI.Triage.inbound(MB.Body.mail(body), bot)), s, now, body, bot)
+    case Some{REF.Ref{"room", _, _}}: Mail.route.parts(ML.Conv.parts(MB.Body.conv(body)), s, now, body, Step.none())
+    case _: Step.none()
+
 def Mail.route.on(on: Bool, +s: M.State, +now: Nat, +body: MB.Body) -> Step:
   match on:
-    case False{}: Step.none()
+    case False{}: Mail.route.triage(REF.Ref.of_addr(ML.Mail.to(MB.Body.mail(body))), s, now, body)
     case True{}: Mail.route.enabled(s, now, body)
 
 def Mail.route(+s: M.State, +now: Nat, +body: MB.Body) -> Step:

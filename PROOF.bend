@@ -12782,3 +12782,6 @@ def Laws.locks_idle_text_exact(): {==}
 # --- J2: the sign-in wait asked again only when the log moved ---
 def Laws.auth_beat_kept(): {==}
 def Laws.auth_beat_asked(): {==}
+
+def Laws.triage_duplicate_delivery_quiet(s, now, bot, conv, text, input): {==}
+def Laws.triage_unknown_run_quiet(s, now, bot, conv, text): {==}

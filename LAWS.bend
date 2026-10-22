@@ -11585,3 +11585,22 @@ law auth_beat_kept:
 
 law auth_beat_asked:
   {MPCREDIT.Auth.kept("7 1", M.State.empty()) == False{} : Bool}
+
+# Private coordinator triage: a delivered input cannot wake its owner
+# again, and missing authenticated run identity grants no delivery.
+law triage_duplicate_delivery_quiet:
+  for s: M.State
+  for now: Nat
+  for bot: String
+  for conv: String
+  for text: String
+  for input: String
+  {H.Run.triage.send(False{}, s, now, bot, conv, text, input) == H.Step.none() : H.Step}
+
+law triage_unknown_run_quiet:
+  for s: M.State
+  for now: Nat
+  for bot: String
+  for conv: String
+  for text: String
+  {H.Run.triage.got(None{}, s, now, bot, conv, text) == H.Step.none() : H.Step}

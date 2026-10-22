@@ -1,4 +1,5 @@
 import Base
+import ../src/core/agent.bend as AG
 import ./check.bend as C
 import ../src/core/model.bend as M
 import ../src/core/hub.bend as H
@@ -7,7 +8,7 @@ import ../src/core/mailbody.bend as MB
 
 def base(+provider: String, +model: String, uber: Bool) -> M.State:
   M.State.replay([M.ThreadCreated{"foh", "", "Beta", M.Local{}, "", "/tmp/mail-model", provider, model, 1n},
-    M.BotSet{"beta", "Beta", "foh", 0n, "", 1n}, M.SettingSet{"mail.on", "on", 1n},
+    M.BotSet{"beta", "Beta", "foh", 0n, "", 1n}, M.SettingSet{"mail.on", "on", 1n}, M.SettingSet{"text.provider", provider, 1n}, M.SettingSet{"text.model", AG.Text.light(provider), 1n},
     M.SettingSet{"uber.bot", Bool.pick(String, uber, "beta", ""), 1n}], M.State.empty())
 
 def override(s: M.State, model: String) -> M.State:
@@ -79,26 +80,26 @@ def live_preserved() -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    check("codex uber unset", base("codex", "gpt-6.1-sol", True{}), "codex", "gpt-6.1-sol")
+    check("codex uber unset", base("codex", "gpt-6.1-sol", True{}), "codex", "gpt-6-luna")
     check("codex worker unset", base("codex", "gpt-6.1-sol", False{}), "codex", "gpt-6.1-sol")
-    check("codex stale opus", override(base("codex", "gpt-6.1-sol", True{}), "opus"), "codex", "gpt-6.1-sol")
+    check("codex stale opus", override(base("codex", "gpt-6.1-sol", True{}), "opus"), "codex", "gpt-6-luna")
     check("codex stale sonnet", override(base("codex", "gpt-6.1-sol", False{}), "sonnet"), "codex", "gpt-6.1-sol")
-    check("codex stale muse", override(base("codex", "gpt-6.1-sol", True{}), "muse-wonder-full-1.0"), "codex", "gpt-6.1-sol")
+    check("codex stale muse", override(base("codex", "gpt-6.1-sol", True{}), "muse-wonder-full-1.0"), "codex", "gpt-6-luna")
     check("codex explicit", override(base("codex", "gpt-6.1-sol", True{}), "gpt-6-astra"), "codex", "gpt-6-astra")
-    check("codex blank", override(base("codex", "gpt-6.1-sol", True{}), "  "), "codex", "gpt-6.1-sol")
+    check("codex blank", override(base("codex", "gpt-6.1-sol", True{}), "  "), "codex", "gpt-6-luna")
     check("codex unknown custom", override(base("codex", "gpt-6.1-sol", True{}), "local-custom"), "codex", "local-custom")
-    check("codex parent stale", base("codex", "opus", True{}), "codex", "")
-    check("codex parent empty", base("codex", "", True{}), "codex", "")
-    check("muse uber exact full", base("muse", "muse-wonder-full-1.0", True{}), "muse", "muse-wonder-full-1.0")
+    check("codex parent stale", base("codex", "opus", True{}), "codex", "gpt-6-luna")
+    check("codex parent empty", base("codex", "", True{}), "codex", "gpt-6-luna")
+    check("muse uber inherits text model", base("muse", "muse-wonder-full-1.0", True{}), "muse", "muse-spark-1.3")
     check("muse worker unset", base("muse", "muse-wonder-1.0", False{}), "muse", "muse-wonder-1.0")
-    check("muse stale opus", override(base("muse", "muse-wonder-full-1.0", True{}), "opus"), "muse", "muse-wonder-full-1.0")
-    check("muse stale codex", override(base("muse", "muse-wonder-full-1.0", True{}), "gpt-6.1-sol"), "muse", "muse-wonder-full-1.0")
+    check("muse stale opus", override(base("muse", "muse-wonder-full-1.0", True{}), "opus"), "muse", "muse-spark-1.3")
+    check("muse stale codex", override(base("muse", "muse-wonder-full-1.0", True{}), "gpt-6.1-sol"), "muse", "muse-spark-1.3")
     check("muse explicit", override(base("muse", "muse-wonder-full-1.0", True{}), "muse-spark-1.3"), "muse", "muse-spark-1.3")
     check("muse whitespace", override(base("muse", "muse-wonder-full-1.0", True{}), " muse-wonder-full-1.0 "), "muse", "muse-wonder-full-1.0")
     check("muse parent stale", base("muse", "sonnet", False{}), "muse", "")
-    check("claude uber keeps opus", base("claude", "claude-opus-5-5", True{}), "claude", "opus")
+    check("claude uber inherits light model", base("claude", "claude-opus-5-5", True{}), "claude", "haiku")
     check("claude worker keeps sonnet", base("claude", "opus", False{}), "claude", "sonnet")
     check("claude stale codex", override(base("claude", "opus", False{}), "gpt-6.1-sol"), "claude", "sonnet")
-    check("claude stale muse", override(base("claude", "opus", True{}), "muse-wonder-full-1.0"), "claude", "opus")
+    check("claude stale muse", override(base("claude", "opus", True{}), "muse-wonder-full-1.0"), "claude", "haiku")
     check("claude explicit", override(base("claude", "opus", False{}), "claude-opus-5-5"), "claude", "claude-opus-5-5")
     live_preserved()

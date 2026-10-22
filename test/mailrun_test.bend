@@ -1,4 +1,5 @@
 import Base
+import ../src/core/agent.bend as AG
 import ./check.bend as C
 import ../src/core/hub.bend as H
 import ../src/core/model.bend as M
@@ -91,7 +92,7 @@ def main() -> IO(Unit):
     C.Check.str("FOH clean", Nat.show(posts(H.Queue.changes(route(base(), "act", "m1")), "foh")), "0")
     C.Check.str("spawn uses home", H.Hub.cwd(s, H.Hub.thread(s, th)), "/tmp/mailrun/beta")
     C.Check.str("default model", H.Run.model(s, "beta"), "sonnet")
-    C.Check.str("uber model", H.Run.model(M.State.apply(s, M.SettingSet{"uber.bot", "beta", 2n}), "beta"), "opus")
+    C.Check.str("uber triage inherits app text model", H.Run.model(M.State.apply(s, M.SettingSet{"uber.bot", "beta", 2n}), "beta"), AG.Text.model(s))
     +start : H.Step = H.Run.start(s, 11n, th, head(H.Step.outs_of(route(base(), "act", "m1"))), [body("act", "m1")])
     C.Check.str("fresh first session", starts(H.Step.outs_of(start)), "start:")
     +live : M.State = M.State.replay(H.Queue.changes(start), s)

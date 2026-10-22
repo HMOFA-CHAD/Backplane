@@ -4,6 +4,7 @@ import ./mail.bend as ML
 import ./bot.bend as BT
 import ./json.bend as J
 import ./maildisposition.bend as MD
+import ./mailtriage.bend as TRI
 
 # Shared lookup: runs use their owner's memory and prompt, never a FOH
 # session. Ordinary threads keep the pre-mail lookup.
@@ -18,7 +19,7 @@ def Run.of.on(on: Bool, +s: M.State, +thread: String) -> Maybe<&2, ML.Run>:
     case True{}: ML.Box.run_of(M.State.mail(s), thread)
 
 def Run.of(+s: M.State, +thread: String) -> Maybe<&2, ML.Run>:
-  Run.of.on(String.eq(M.Setting.get(s, "mail.on", "off"), "on"), s, thread)
+  MD.Runs.gate(s, ML.Box.run_of(M.State.mail(s), thread))
 
 def Run.bot(+s: M.State, +thread: String) -> Maybe<&2, BT.Bot>:
   Run.bot.got(Run.of(s, thread), s, thread)
@@ -90,6 +91,7 @@ def Run.brief(+s: M.State, +bot: String, +conv: String) -> String:
   "<live_state>\n" ++ String.take(Run.asks(M.Asks.all(s)) ++ Run.state(List.reverse(&2, M.Thread, Run.threads(s))), 6000n) ++ "</live_state>\n" ++
   "<decisions>\n" ++ String.take(Run.decisions(ML.Box.decisions(M.State.mail(s), bot, 30n)), 6000n) ++ "</decisions>\n" ++
   "<conversation>\n" ++ conv ++ "\n" ++ ML.Conv.subject(c) ++ "\n" ++ String.join(ML.Conv.parts(c), ", ") ++ "\n</conversation>\n" ++
+  TRI.Triage.brief(TRI.Triage.owner(s, bot), s, bot) ++
   "You are " ++ BT.Bot.name(BT.World.bot(M.State.bots(s), bot)) ++ "'s mailroom for this conversation. Act within the charter. Record each decision with `decide`. Anything outside the charter: `escalate`. Reply in the conversation with `mail`. End your turn when done.\n" ++
   Run.disposition.got(ML.Box.run_of(M.State.mail(s), ML.Box.live(M.State.mail(s), bot, conv)), s)
 
