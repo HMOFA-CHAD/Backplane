@@ -1,4 +1,5 @@
 import Base
+import ./src/core/storedb.bend as SDB # S1 indexed store
 import ./test/mobile_loading_proof.bend as PRESENTPROOF
 import ./src/core/mailcontinuity.bend as MCN
 import ./test/mem_score_lazy_proof.bend as MSCORE
@@ -12636,3 +12637,17 @@ def Laws.thin_words_lower_each(s, ws):
       {==}
     case SCon{Chr{+x}, t} JTHIN.WordState{w, n, ts}:
       Laws.thin_words_lower_each(t, JTHIN.Words.step(JTHIN.Word.char(U32.add(x, U32.mul(Bool.to_u32(Char.is_upper(Chr{x})), 32))), U32.add(x, U32.mul(Bool.to_u32(Char.is_upper(Chr{x})), 32)), w, n, ts))
+# ---- S1 indexed store ----
+def Laws.sdb_replay_append(a, b, m):
+  match a:
+    case Nil{}:
+      {==}
+    case h <> t:
+      Laws.sdb_replay_append(t, b, SDB.Mat.step(m, h))
+
+def Laws.sdb_eq_fold_small():
+  {==}
+
+def Laws.sdb_entries_mine_small():
+  {==}
+# ---- end S1 indexed store ----
