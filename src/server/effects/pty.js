@@ -358,6 +358,10 @@ function bp_conpty(argv, cwd, env, cols, rows) {
   const si = new Uint8Array(112);
   const pi = new Uint8Array(24);
   new DataView(si.buffer).setUint32(0, 112, true);
+  // STARTF_USESTDHANDLES with null std handles (offsets 80, 88, 96): left
+  // unset, a child of a process whose own stdio is redirected (the hub, a
+  // service) inherits those handles and never writes to the pseudoconsole
+  new DataView(si.buffer).setUint32(60, 0x100, true);
   if (!k.InitializeProcThreadAttributeList(ptr(list), 1, 0, ptr(need))
     || !k.UpdateProcThreadAttribute(ptr(list), 0, 0x00020016n, ptr(pcv), 8n, null, null)) {
     k.ClosePseudoConsole(pc);
@@ -453,14 +457,36 @@ function bp_conpty_wire(child, h) {
 
 // On Windows a command named by an absolute POSIX path that is not there
 // ("/bin/bash", the hub's default SHELL; "/bin/sh") is the program of that
-// name on PATH: the Windows package ships its runtime's bin (bash.exe,
-// sh.exe) there. Anything else is left as it is.
+// name on PATH outside the system's folders: the Windows package ships its
+// runtime's bin (bash.exe, sh.exe) there. Anything else is left as it is.
 function bp_pty_win_cmd(cmd) {
   if (process.platform !== "win32" || !cmd.startsWith("/") || require("fs").existsSync(cmd)) {
     return cmd;
   }
   const base = cmd.slice(cmd.lastIndexOf("/") + 1);
-  return base === "" ? cmd : Bun.which(base, { PATH: process.env.PATH ?? "" }) ?? cmd;
+  if (base === "") {
+    return cmd;
+  }
+  // PATH in order, skipping the system's own folders: C:\Windows\System32
+  // has bash.exe, WSL's launcher, which exits at once (66) without a
+  // distribution; the package's runtime bin has the real one
+  const sys = String(process.env.SystemRoot || process.env.windir || "C:\\Windows").toLowerCase();
+  const fs = require("fs");
+  for (const dir of String(process.env.PATH ?? "").split(";")) {
+    if (dir === "" || dir.toLowerCase().startsWith(sys) || /\\windowsapps\\?$/i.test(dir)) {
+      continue;
+    }
+    for (const name of [base + ".exe", base]) {
+      const full = dir.replace(/[\\/]$/, "") + "\\" + name;
+      try {
+        if (fs.statSync(full).isFile()) {
+          return full;
+        }
+      } catch (_) {
+      }
+    }
+  }
+  return cmd;
 }
 
 function bp_pty_spawn(cmd, args, cwd, cols, rows) {

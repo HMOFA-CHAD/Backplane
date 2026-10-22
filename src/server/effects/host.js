@@ -519,6 +519,7 @@ function bp_proc_class() {
       const f = this.sink.flush();
       if (f && typeof f.then === "function") {
         this.full = true;
+        this.watch();
         f.then(() => {
           this.full = false;
           this.wake(true);
@@ -529,9 +530,38 @@ function bp_proc_class() {
         });
       }
     } catch (e) {
+      this.wshut = true;
       return -globalThis.BP_H.ERRNO.EPIPE;
     }
     return c.length;
+  }
+  // While a write is held back: a pending flush does not keep Bun's loop
+  // alive, and on Windows one to a stdin the child closed never settles
+  // (the run ended as a deadlock). A ref'd check every 250 ms keeps it alive
+  // and fails the write once the child is gone or its stdin refuses bytes.
+  watch() {
+    if (this.timer) {
+      return;
+    }
+    this.timer = setInterval(() => {
+      let gone = this.child.exitCode !== null || (this.child.signalCode ?? null) !== null;
+      if (!gone && this.full) {
+        try {
+          this.sink.write(new Uint8Array(0));
+        } catch (_) {
+          gone = true;
+        }
+      }
+      if (gone || !this.full || this.wshut) {
+        clearInterval(this.timer);
+        this.timer = null;
+        if (gone && this.full) {
+          this.full = false;
+          this.wshut = true;
+          this.wake(true);
+        }
+      }
+    }, 250);
   }
   shutdown(how) {
     if (how !== 1) {
@@ -570,14 +600,36 @@ function bp_proc_class() {
 // (Env.put writes process.env).
 // On Windows a command named by an absolute POSIX path that is not there
 // ("/bin/bash", the hub's default SHELL; "/bin/sh") is the program of that
-// name on PATH: the Windows package ships its runtime's bin (bash.exe,
-// sh.exe) there. Anything else is left as it is.
+// name on PATH outside the system's folders: the Windows package ships its
+// runtime's bin (bash.exe, sh.exe) there. Anything else is left as it is.
 function bp_win_cmd(cmd) {
   if (process.platform !== "win32" || !cmd.startsWith("/") || require("fs").existsSync(cmd)) {
     return cmd;
   }
   const base = cmd.slice(cmd.lastIndexOf("/") + 1);
-  return base === "" ? cmd : Bun.which(base, { PATH: process.env.PATH ?? "" }) ?? cmd;
+  if (base === "") {
+    return cmd;
+  }
+  // PATH in order, skipping the system's own folders: C:\Windows\System32
+  // has bash.exe, WSL's launcher, which exits at once (66) without a
+  // distribution; the package's runtime bin has the real one
+  const sys = String(process.env.SystemRoot || process.env.windir || "C:\\Windows").toLowerCase();
+  const fs = require("fs");
+  for (const dir of String(process.env.PATH ?? "").split(";")) {
+    if (dir === "" || dir.toLowerCase().startsWith(sys) || /\\windowsapps\\?$/i.test(dir)) {
+      continue;
+    }
+    for (const name of [base + ".exe", base]) {
+      const full = dir.replace(/[\\/]$/, "") + "\\" + name;
+      try {
+        if (fs.statSync(full).isFile()) {
+          return full;
+        }
+      } catch (_) {
+      }
+    }
+  }
+  return cmd;
 }
 
 function bp_proc_spawn(cmd, args, cwd, err) {
