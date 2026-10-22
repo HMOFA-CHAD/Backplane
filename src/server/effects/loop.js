@@ -1203,17 +1203,31 @@ async function bp_run(m) {
   }
 }
 
+// A program runs either from its emitted file (io_exit(main, show) at its
+// end) or inside `bend x.bend`, which calls io_run(main) and keeps the
+// number it answers as process.exitCode, then lets the process end when
+// nothing is left. Both start bp_run and exit with its code when it ends;
+// io_run answers 0 at once (Bun's pending work keeps the process up until
+// then, and a run nothing can finish ends at beforeExit as a deadlock).
+function bp_start(main) {
+  bp_run(main).then((code) => process.exit(code), (e) => {
+    io_errs(e instanceof RangeError
+      ? "bend: memory fault (machine stack overflow?)" : String(e));
+    process.exit(1);
+  });
+}
+
 if (BP_ASYNC) {
   const sync_exit = io_exit;
   io_exit = function (main, show) {
     if (show !== null) {
       return sync_exit(main, show);
     }
-    bp_run(main).then((code) => process.exit(code), (e) => {
-      io_errs(e instanceof RangeError
-        ? "bend: memory fault (machine stack overflow?)" : String(e));
-      process.exit(1);
-    });
+    bp_start(main);
+  };
+  io_run = function (main) {
+    bp_start(main);
+    return 0;
   };
 }
 
