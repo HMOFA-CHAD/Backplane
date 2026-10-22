@@ -1247,20 +1247,20 @@ def Conn.put(s: Socket, +bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> Nat -
 # a join chunk's frames (OB.Items.texts: each within the byte bound), put
 # out one by one; to the writer's count they are one frame of no bytes, as
 # the hub offered it (it charged none)
-# the wire's dictionaries as host.c's send_cbor takes them
+# the wire's dictionaries as host.js's send_cbor takes them
 def Conn.keys() -> String:
   String.join(CB.Cbor.keys(), "\n")
 
 def Conn.words() -> String:
   String.join(CB.Cbor.words(), "\n")
 
-# a chunk's frame out: its CBOR made and sent in C (H.Sock.send_cbor, the
+# a chunk's frame out: its CBOR made and sent in the host (H.Sock.send_cbor, the
 # same bytes as W.Ws.cbor): Bend's encoder sent a long log's join at ~1.5 MB/s
 def Conn.out.cbor(s: Socket, +t: String, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
   IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_cbor(s, t, Conn.keys(), Conn.words(), Conn.deadline()), r => Conn.sent.k(r, out, k))
 
 # a join frame's lines out as OB.Items.texts.s splits them, each frame's
-# CBOR: measured, joined, encoded and sent in C (H.Sock.send_items, the same
+# CBOR: measured, joined, encoded and sent in the host (H.Sock.send_items, the same
 # bytes, test/native/cbor_frame_test.bend)
 def Conn.out.items(s: Socket, +hd: String, +pl: String, +sp: String, +xs: List<&2, String>, +tl: String, +ends: Bool, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
   IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit,
@@ -10990,7 +10990,7 @@ def Hub.tick(h: Hub, +now: Nat) -> IO(Hub):
         PS.Perf.set("hub.changes", U32.from_nat(List.length(&2, String, ls)))
         PS.Perf.set("hub.busy", U32.from_nat(M.Work.threads(st)))
         # children the last exec handed over that ended meanwhile are waited
-        # for (effects/adopt.c), so none stays a zombie
+        # for (effects/adopt.js), so none stays a zombie
         left : U32 <- AIO.Adopt.reap()
         PS.Perf.set("hub.inherited", left)
         Self.post(inbox, KProbe{False{}})
@@ -11236,7 +11236,7 @@ def Hub.recover.stale(h: Hub, +now: Nat) -> IO(Hub):
 # Agents kept through a restart in place (core/adopt.bend)
 # --------------------------------------------------------
 # Before the exec the hub writes the handoff (each Claude agent's
-# generation, key and ledger; effects/adopt.c keeps the descriptors on
+# generation, key and ledger; effects/adopt.js keeps the descriptors on
 # their sockets open across the exec). At start, before recovery, each
 # recorded process is adopted, stopped or left (AD.Adopt.decide); an
 # adopted one is read and written as a freshly started one is, and
@@ -14860,7 +14860,7 @@ def Lock.out(r: P.Ran) -> String:
 # the live home) each kept a state of their own over the same log: a
 # message sent in the window never reached the web or the phones, and
 # theirs never the window. A hub holds an exclusive flock on
-# <home>/hub.lock for as long as it lives (hublock.bend, effects/hublock.c,
+# <home>/hub.lock for as long as it lives (hublock.bend, effects/hublock.js,
 # core/onehub.bend): taken before anything touches the event store, let go
 # by the kernel when the process dies, kept through a restart in place
 # (Sys.exec hands the descriptor over). The file says its pid and port

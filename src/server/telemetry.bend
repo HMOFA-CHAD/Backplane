@@ -16,15 +16,12 @@ type TmCfg is Data:
   TmCfg{enabled: Bool, sandbox: Bool, url: String, kid: String, key: String, os: String, arch: String, day_secs: Nat, busy: Nat, id: String, channel: String, human: Nat}
 
 def Tf.baked(name: String) -> IO(String):
-  import "./effects/telemetry.c"
   import "./effects/telemetry.js"
 
 def Tf.platform() -> IO(String):
-  import "./effects/telemetry.c"
   import "./effects/telemetry.js"
 
 def Tf.pow(id: String) -> IO(String):
-  import "./effects/telemetry.c"
   import "./effects/telemetry.js"
 
 def Tio.empty(sb: Bool) -> List<&2, TmCfg>:
