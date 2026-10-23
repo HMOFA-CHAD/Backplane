@@ -27,7 +27,7 @@ def screenshot(noisy: Bool) -> U.Ui:
     M.MessagePosted{"bub-chat", "real-before", M.Assistant{}, "Real preceding assistant message.", 1792772545n} <>
     List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, noisy, empty.rows(), Nil{}),
       [M.MessagePosted{"bub-chat", "real-after", M.Assistant{}, "Real following assistant message.", 1792773210n}]))
-  U.Act.ui(U.Uber.show(U.Ui.online(U.Ui.fold(es, U.Ui.init(1792773600n)), True{})))
+  U.Act.ui(U.Uber.show(U.Ui.info_set(U.Ui.online(U.Ui.fold(es, U.Ui.init(1792773600n)), True{}), "local.mailroom", "on")))
 
 def saturated() -> U.Ui:
   U.Ui.fold(O.empty.posts(96n, Nil{}), R.bot())
