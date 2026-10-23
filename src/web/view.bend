@@ -549,7 +549,7 @@ def View.machines.loc(+lc: I.Loc, many: Bool, +open: Bool, +rs: List<&2, U.MRow>
 def View.machines(many: Bool, +open: Bool, +rs: List<&2, U.MRow>) -> List<&2, D.Node>:
   View.machines.loc(I.En{}, many, open, rs)
 
-def View.sidebar.k(+lc: I.Loc, +ms: List<&2, U.MRow>, +ix: U.SIx, +st: M.State, +sel: String, +open: Map<&2, Bool>, +on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, mi: List<&2, U.MItem>, bots: List<&2, D.Node>, uber: List<&2, D.Node>) -> D.Node:
+def View.sidebar.body(+lc: I.Loc, +ms: List<&2, U.MRow>, +ix: U.SIx, +st: M.State, +sel: String, +open: Map<&2, Bool>, +on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, mi: List<&2, U.MItem>, bots: List<&2, D.Node>, uber: List<&2, D.Node>, items: List<&2, D.Node>) -> D.Node:
   D.El{"aside", "sidebar", [D.At{"class", "sidebar"}],
         D.Dom.cat([D.El{"div", "", [D.At{"class", "brand"}], [
             D.El{"span", "", [D.At{"class", "brand-mark"}], [D.El{"span", "", [D.At{"class", Bool.pick(String, on, "conn on", "conn")},
@@ -561,8 +561,12 @@ def View.sidebar.k(+lc: I.Loc, +ms: List<&2, U.MRow>, +ix: U.SIx, +st: M.State, 
           D.El{"div", "", [D.At{"class", "sidebar-tools"}], WI.WIcon.button("settings-link", "flag", "settings", MSG.T.palette.settings(lc), "settings", 16, MSG.T.palette.settings(lc))
               <> View.machines.loc(lc, Nat.is_gt(List.length(&2, U.MRow, ms), 1n), U.Flag.get(open, "machines"), ms)}],
           D.Dom.cat(uber, D.Dom.cat(View.add.loc(lc, adding), D.Dom.cat(View.find.loc(lc, String.eq(U.Side.view(st), "active"), q),
-            D.Dom.cat(View.list(lc, String.eq(U.Side.view(st), "active"), q, open, ix, st, sel, now, look, rm), D.Dom.cat(bots, D.Dom.cat(View.rmenu(mi),
+            D.Dom.cat(items, D.Dom.cat(bots, D.Dom.cat(View.rmenu(mi),
 Nil{})))))))}
+
+def View.sidebar.k(+lc: I.Loc, +ms: List<&2, U.MRow>, +ix: U.SIx, +st: M.State, +sel: String, +open: Map<&2, Bool>, +on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, mi: List<&2, U.MItem>, bots: List<&2, D.Node>, uber: List<&2, D.Node>) -> D.Node:
+  View.sidebar.body(lc, ms, ix, st, sel, open, on, now, adding, v, look, rm, q, mi, bots, uber,
+    View.list(lc, String.eq(U.Side.view(st), "active"), q, open, ix, st, sel, now, look, rm))
 
 def View.sidebar.w(+lc: I.Loc, bots: List<&2, D.Node>, uber: List<&2, D.Node>, ms: List<&2, U.MRow>, mi: List<&2, U.MItem>, +ix: U.SIx, u: U.Ui) -> D.Node:
   match u:
@@ -581,8 +585,40 @@ def View.sidebar.keys(n: D.Node, projects: List<&2, String>, threads: List<&2, S
          D.At{"data-shortcut-threads", J.Json.show(J.Json.arr(U.Side.strs(List.take(&2, String, threads, 9n))))}]), kids}
     case D.Txt{text}: D.Txt{text}
 
-def View.sidebar.frame(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, +signals: U.SIx) -> D.Node:
-  View.sidebar.keys(View.sidebar.w(lc, bots, WB.WB.uber(lc, u, signals), U.Machines.rows.loc(lc, u), U.Menu.items.loc(lc, u, True{}), signals, u), U.Side.projects.ix(u, plain), U.Side.here.ix(u, plain))
+# One project/shelf projection per frame. SIx signal decoration changes only
+# work metadata; Side.shown.ix reads the unchanged project-thread index.
+# Keep the original helpers above as the independent rendering oracle.
+def View.list.projected(+lc: I.Loc, active: Bool, +rows: List<&2, U.SRow>, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+  match active:
+    case True{}: View.list(lc, True{}, q, open, ix, st, sel, now, look, rm)
+    case False{}:
+      List.append(&2, D.Node, View.groups(lc, U.Side.groups(rows, now), q, open, ix, st, sel, now, look, rm), View.history(lc, q, open, ix, st, sel, now))
+
+def View.sidebar.projected(+lc: I.Loc, bots: List<&2, D.Node>, uber: List<&2, D.Node>, ms: List<&2, U.MRow>, mi: List<&2, U.MItem>, +ix: U.SIx, u: U.Ui, rows: List<&2, U.SRow>) -> D.Node:
+  match u:
+    case U.Ui{+st, +sel, +d, _, +open, +on, +now, +adding, _, +v, _, _, _, _, _, _, _}:
+      View.sidebar.body(lc, ms, ix, st, sel, open, on, now, adding, v, U.Str.get(d, "@look"), U.Str.get(d, "@rm"), U.Find.q(open, d), mi, bots, uber,
+        View.list.projected(lc, String.eq(U.Side.view(st), "active"), rows, U.Find.q(open, d), open, ix, st, sel, now, U.Str.get(d, "@look"), U.Str.get(d, "@rm")))
+
+def View.sidebar.threads.kind(active: Bool, +u: U.Ui, ix: U.SIx, rows: List<&2, U.SRow>) -> List<&2, String>:
+  match active:
+    case True{}: U.Side.here.kind(True{}, u, ix, U.Side.cur(u))
+    case False{}: U.Side.visible.tree(U.Side.only(rows, U.Side.cur(u)), U.Side.open(u), U.Ui.state(u), U.Ui.sel(u))
+
+def View.sidebar.threads(+u: U.Ui, ix: U.SIx, rows: List<&2, U.SRow>) -> List<&2, String>:
+  List.append(&2, String, View.sidebar.threads.kind(String.eq(U.Side.view(U.Ui.state(u)), "active"), u, ix, rows),
+    U.Side.in_project(U.Side.when(Bool.or(U.Ui.flag(u, "conversation-history"), Bool.not(String.is_empty(U.Ui.scratch(u, "@f.pq")))),
+      U.Side.legacy.ids(ST.Legacy.threads(U.Ui.state(u)), U.Ui.scratch(u, "@f.pq"))), U.Ui.state(u), U.Side.cur(u)))
+
+def View.sidebar.frame.rows(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, +signals: U.SIx, +rows: List<&2, U.SRow>, +unfolded: List<&2, U.SRow>) -> D.Node:
+  View.sidebar.keys(View.sidebar.projected(lc, bots, WB.WB.uber(lc, u, signals), U.Machines.rows.loc(lc, u), U.Menu.items.loc(lc, u, True{}), signals, u, rows),
+    U.Side.pids(unfolded), View.sidebar.threads(u, plain, unfolded))
+
+def View.sidebar.frame.shown(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, signals: U.SIx, +rows: List<&2, U.SRow>) -> D.Node:
+  View.sidebar.frame.rows(lc, bots, u, plain, signals, rows, U.Side.unfolded(rows, U.Side.open(u), U.Ui.scratch(u, "@f.pq"), U.Side.now(u)))
+
+def View.sidebar.frame(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, signals: U.SIx) -> D.Node:
+  View.sidebar.frame.shown(lc, bots, u, plain, signals, U.Side.shown.ix(U.Ui.state(u), plain, U.Side.now(u), U.Ui.scratch(u, "@f.pq")))
 
 def View.sidebar.x(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +ix: U.SIx) -> D.Node:
   View.sidebar.frame(lc, bots, u, ix, U.Side.signals.ix(ix, u))
