@@ -86,7 +86,8 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   const initial=await inspect(id);
   await tool('preview_type',{ref:refFor(snapshot.value,'textbox','Shared entry'),text:'bot typed',clear:true});
   await tool('preview_click',{ref:refFor(snapshot.value,'button','Count locally')});
-  check('bot ref input reaches the visible native document',(await inspect(id)).entry==='bot typed'&&(await inspect(id)).count===1);
+  const afterBotInput=await inspect(id);fs.writeFileSync(path.join(out,'ref-input-observation.json'),JSON.stringify({state:afterBotInput,expectedEntry:'bot typed',expectedCount:1},null,2));
+  check('bot ref input reaches the visible native document',afterBotInput.entry==='bot typed'&&afterBotInput.count===1);
   await tool('preview_scroll',{selector:'#scroller',dy:300});
   check('bot scroll uses actual native page',(await tool('preview_evaluate',{expression:'document.querySelector("#scroller").scrollTop'})).value>0);
   await tool('preview_wait_for',{text:'Entry: bot typed'});

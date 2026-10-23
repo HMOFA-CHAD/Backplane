@@ -7,6 +7,7 @@ import ../core/client.bend as U
 import ../core/presentation.bend as P
 import ../core/thin.bend as T
 import ../core/hub.bend as HB
+import ../core/subs.bend as SB
 import ../core/thin-live.bend as TL
 import ../mobile/thin.bend as MT
 import ../web/dom.bend as D
@@ -148,11 +149,16 @@ def State.window.rows(ids: List<&2, String>, +st: M.State, +index: T.Index, acc:
     case Nil{}: acc
     case id <> tail: State.window.rows(tail, st, index, T.Row.preview(Message.whole(st, T.Index.row.k(Map.get(T.Row, T.Row.blank(), T.Index.rows(index), id)))) <> acc)
 
+# Auxiliary steps belong only to this selected conversation. Keep their
+# existing bounded window in original order, without importing another body.
+def State.window.subs(+st: M.State, +target: J.Json) -> List<&2, M.Entry>:
+  List.reverse(&2, M.Entry, List.take(&2, M.Entry, M.State.mine(st, M.Bg.log(Target.thread(st, target))), SB.Subs.window()))
+
 def State.window(+st: M.State, +index: T.Index, +target: J.Json, +rows: List<&2, String>) -> M.State:
-  # The sidebar needs every project/thread's metadata, not just the recent24.
-  # Message history remains limited to the explicitly selected entry window.
+  # Metadata feeds the sidebar; selected conversation history and its own
+  # agent steps feed the timeline and inspector independently.
   State.window.add(State.window.rows(rows, st, index, Nil{}),
-    State.window.empty(st, Threads.get(st)))
+    State.window.add(State.window.subs(st, target), State.window.empty(st, Threads.get(st))))
 
 # A route restores only transient selection. The normal bot tab policy
 # decides whether that content route is still available for this exact bot.

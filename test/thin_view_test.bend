@@ -50,6 +50,14 @@ def main() -> IO(Unit):
     C.Check.str("missing target refused before rendering", yes(V.Target.exists(st, V.Target.json("thread", "foreign"))), "no")
     C.Check.str("bounded window contains only selected entries", Nat.show(List.length(&2, M.Entry, M.State.entries.all(V.State.window(st, i, target(), ["1"])))), "1")
     C.Check.str("window never mutates authoritative state", Nat.show(List.length(&2, M.Entry, M.State.entries.all(st))), "1")
+    +subs : M.State = M.State.apply(M.State.apply(M.State.apply(st,
+      M.ActivityLogged{"@sub:a", "own-start", "own", "start:subagent", "Layout and connector review", 3n}),
+      M.ActivityLogged{"@sub:a", "own-end", "own", "end", "done", 4n}),
+      M.ActivityLogged{"@sub:other", "foreign-start", "foreign", "start:subagent", "Other private agent", 5n})
+    +sw : M.State = V.State.window(subs, T.Index.of(subs), target(), ["1"])
+    C.Check.str("inspector keeps own selected agent start", Bool.show(has.text(M.State.mine(sw, "@sub:a"), "Layout and connector review")), "True")
+    C.Check.str("inspector keeps original newest first order", T.Entry.text(Maybe.default(&2, M.Entry, List.head(&2, M.Entry, M.State.mine(sw, "@sub:a")), M.Act{"", "", "", "", "", 0n})), "done")
+    C.Check.str("inspector never imports another agent log", Nat.show(List.length(&2, M.Entry, M.State.mine(sw, "@sub:other"))), "0")
     +cat : M.State = M.State.apply(M.State.apply(M.State.apply(M.State.apply(catalog(32n, st), M.ThreadArchived{"t1", True{}, 40n}), M.ProjectRemoved{"p2", 41n}), M.ProjectCreated{"empty", "Empty project", "/tmp/empty", 42n}), M.MessagePosted{"t1", "secret", M.Assistant{}, "unselected body stays outside window", 43n})
     +windowed : M.State = V.State.window(cat, T.Index.of(cat), target(), ["1"])
     C.Check.str("selected window keeps projects beyond the recent24", Nat.show(List.length(&2, M.Project, U.Ui.projects(windowed))), "33")
