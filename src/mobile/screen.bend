@@ -261,11 +261,23 @@ def Mob.anchor.step(root: Bool, anchors: List<&2, U.ARow>, fallback: U.ARow) -> 
     case True{} a <> rest: (rest, a)
     case _ xs: (xs, fallback)
 
+# The same parameter projections as the web tree: Bend forbids matching
+# a computed pair at the call site.
+def Mob.anchor.next(pair: List<&2, U.ARow> & U.ARow) -> List<&2, U.ARow>:
+  (next, _) = pair
+  next
+
+def Mob.anchor.current(pair: List<&2, U.ARow> & U.ARow) -> U.ARow:
+  (_, current) = pair
+  current
+
 def Mob.atrows(rs: List<&2, ST.TRow>, +lc: I.Loc, anchors: List<&2, U.ARow>, anchor: U.ARow, +ix: U.SIx, +st: M.State, +now: Nat) -> List<&2, J.Json>:
   match rs:
     case Nil{}: Nil{}
     case +r <> rest:
-      (next, +a) = Mob.anchor.step(Mob.trow.root(r), anchors, anchor)
+      +step = Mob.anchor.step(Mob.trow.root(r), anchors, anchor)
+      next = Mob.anchor.next(step)
+      +a = Mob.anchor.current(step)
       Mob.atrow(lc, r, a, ix, st, now) <> Mob.atrows(rest, lc, next, a, ix, st, now)
 
 # Active search reveals matching descendants without changing saved expansion.
