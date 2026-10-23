@@ -8,7 +8,7 @@ for(const name of ['claude','codex','grok','muse','agy','opencode'])fs.writeFile
 const at=Math.floor(Date.now()/1000),events=[];
 for(let p=0;p<12;p++)events.push({$:'ProjectCreated',id:'p'+p,title:'Synthetic project '+p,root:cwd,at:at+p});
 for(let i=0;i<120;i++)events.push({$:'ThreadCreated',id:i===0?'self':'t'+i,project:'p'+i%12,title:'Synthetic thread '+i,env:'local',branch:'',worktree:cwd,provider:'codex',model:'',at:at+i});
-events.push({$:'ThreadParentSet',thread:'t12',parent:'self',at:at+121},{$:'ThreadParentSet',thread:'t24',parent:'t12',at:at+122},{$:'SettingSet',key:'thread.tree.self',value:'0',at:at+123});
+events.push({$:'ThreadParentSet',id:'t12',parent:'self',at:at+121},{$:'ThreadParentSet',id:'t24',parent:'t12',at:at+122},{$:'SettingSet',key:'thread.tree.self',value:'0',at:at+123});
 for(const key of ['restart.continue','mail.on','telemetry.share','onboard.done'])events.push({$:'SettingSet',key,value:key==='onboard.done'?'1':'off',at});
 fs.writeFileSync(home+'/events.jsonl',events.map(JSON.stringify).join('\n')+'\n');
 const env={...process.env,BACKPLANE_HOME:home,BACKPLANE_AGENTS:agents,BACKPLANE_COPY:'1',BACKPLANE_TELEMETRY:'off',BACKPLANE_NO_UPDATE:'1',BACKPLANE_PEERS:'',BACKPLANE_LOCK_DIR:home+'/locks',BACKPLANE_DESKTOP_BROWSER:'1'};Object.assign(process.env,env);
@@ -24,7 +24,7 @@ async function timed(name,click,wait){const t=await page.evaluate(()=>performanc
  await state(false);
  const initial=await parent.locator('svg').evaluate(el=>({width:el.getAttribute('width'),height:el.getAttribute('height'),path:el.querySelector('path').getAttribute('d'),hidden:el.getAttribute('aria-hidden')}));
  assert.deepEqual({width:initial.width,height:initial.height,hidden:initial.hidden},{width:'14',height:'14',hidden:'true'});
- const shared=await page.evaluate(()=>{const xs=[...document.querySelectorAll('.thread-expander[aria-expanded="false"] svg')];return {count:xs.length,shared:xs.length>1&&xs.every(x=>x.__v===xs[0].__v)}});assert(shared.count>1&&shared.shared,'fixed closed glyph must share the actual production memo value');checks.push('all repeated closed glyphs share one production memo value and exact14px SVG');
+ const shared=await page.evaluate(()=>{const xs=[...document.querySelectorAll('.thread-expander[aria-expanded="false"] svg')];return {count:xs.length,shared:xs.length>1&&!!xs[0].__v&&xs.every(x=>x.__v===xs[0].__v)}});assert(shared.count>1&&shared.shared,'fixed closed glyph must share the actual production memo value');checks.push('all repeated closed glyphs share one production memo value and exact14px SVG');
  await parent.click();await state(true);await page.locator('.thread-tree-row [data-on-click="select"][data-value="t12"]').first().waitFor({state:'visible'});
  const opened=await parent.locator('svg path').getAttribute('d');assert.notEqual(opened,initial.path);assert.equal(await page.locator('#composer').inputValue(),'Synthetic 日本語 draft');checks.push('ordinary server action refreshes hierarchy, accessible state and glyph without changing draft');
  await parent.press('Space');await state(false);assert.equal(await parent.locator('svg path').getAttribute('d'),initial.path);await page.locator('.thread-tree-row [data-on-click="select"][data-value="t12"]').waitFor({state:'hidden'});checks.push('keyboard collapse reuses closed picture while children disappear');
