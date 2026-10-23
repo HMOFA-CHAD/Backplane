@@ -52,6 +52,9 @@ const CONNECTION_BUNDLE = bundleOf(import.meta.url);
 const THEME = "backplane-theme";
 let themeNow = "";
 try { themeNow = localStorage.getItem(THEME) || ""; } catch {}
+// the desktop window keeps the same word for its cold start (desktop/main.cjs)
+let desktopTheme = window.backplaneDesktop?.theme || "";
+if (!themeNow) themeNow = desktopTheme;
 function themeDocument() {
   document.documentElement.classList.toggle("light", themeNow === "light");
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeNow === "light" ? "#fafaf8" : "#111410");
@@ -59,6 +62,7 @@ function themeDocument() {
 themeDocument();
 function themeSeen(app) {
   const theme = !app ? "" : app.classList.contains("light") ? "light" : "dark";
+  if (theme && theme !== desktopTheme && window.backplaneDesktop?.themeSeen) { desktopTheme = theme;window.backplaneDesktop.themeSeen(theme); }
   if (!theme || theme === themeNow) return;
   themeNow = theme;themeDocument();
   try { localStorage.setItem(THEME, theme); } catch {}

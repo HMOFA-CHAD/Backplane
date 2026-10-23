@@ -63,15 +63,15 @@ test('a never-seen thread loading shell and a cold focused picture take the curr
 
 // The authority itself, from host.js's own source: seeded before any frame,
 // moved only by an authoritative frame, never by a retained picture.
-function authority(stored){
+function authority(stored,desktop){
  const source=fs.readFileSync(path.resolve(__dirname,'../../src/web/host.js'),'utf8');
  const a=source.indexOf('const THEME = '),b=source.indexOf('const themed = ',a);assert(a>0&&b>a);
  const store=new Map(stored?[['backplane-theme',stored]]:[]),root=new Set(),meta={content:'#111410',setAttribute(k,v){this[k]=v;}};
- const ctx={localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v)},
+ const sent=[],ctx={window:desktop?{backplaneDesktop:{theme:desktop,themeSeen:t=>sent.push(t)}}:{},localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v)},
   document:{documentElement:{classList:{toggle:(c,on)=>on?root.add(c):root.delete(c)}},querySelector:()=>meta}};
  vm.createContext(ctx);vm.runInContext(source.slice(a,source.indexOf('\n',b))+'\nthis.seen=themeSeen;this.now=()=>themeNow;',ctx);
  const app=t=>({classList:{contains:c=>c==='light'&&t==='light'}});
- return{ctx,store,root,meta,app};
+ return{ctx,store,root,meta,app,sent};
 }
 test('the first paint has the last authoritative theme, and a frame order moves it both ways',()=>{
  const cold=authority('light');assert(cold.root.has('light'));assert.equal(cold.meta.content,'#fafaf8');assert.equal(cold.ctx.now(),'light');
@@ -90,4 +90,17 @@ test('host.js shows every retained or waiting picture through the theme, and lea
  assert.match(source,/if \(frontendNode \|\| canonicalBoot && App\.synced\(ui\)\) themeSeen\(root\.querySelector\("\.app"\)\);/);
  // the seed runs before the first render
  assert(source.indexOf('themeDocument();')<source.indexOf('function render()'));
+});
+test('in the desktop window the page starts from the theme main kept and tells main only what authoritative frames painted',()=>{
+ // the page's own word wins; with none, the window's
+ const kept=authority('',"light");assert.equal(kept.ctx.now(),'light');assert(kept.root.has('light'));assert.deepEqual(kept.sent,[]);
+ const own=authority('dark','light');assert.equal(own.ctx.now(),'dark');assert(!own.root.has('light'));
+ // a frame equal to what main has sends nothing; a change is sent once; no app root sends nothing
+ kept.ctx.seen(kept.app('light'));assert.deepEqual(kept.sent,[]);
+ kept.ctx.seen(kept.app('dark'));kept.ctx.seen(kept.app('dark'));kept.ctx.seen(null);assert.deepEqual(kept.sent,['dark']);
+ kept.ctx.seen(kept.app('light'));assert.deepEqual(kept.sent,['dark','light']);
+ // main's word older than the page's (an upgrade, another profile's page): the first authoritative frame corrects it
+ own.ctx.seen(own.app('dark'));assert.deepEqual(own.sent,['dark']);
+ // a plain browser has no desktop bridge and sends nothing
+ const web=authority('light');web.ctx.seen(web.app('dark'));assert.deepEqual(web.sent,[]);
 });

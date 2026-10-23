@@ -52,6 +52,22 @@ function senderIsWindow(event) {
 function trusted(event) {
   try { return senderIsWindow(event) && origin && new URL(event.senderFrame.url).origin === origin; } catch { return false; }
 }
+// The theme the hub's page last painted (host.js themeSeen), one word in
+// this home's profile, so a cold window, the startup page and the page's
+// first frame already have it. Nothing is read from or sent to the page but
+// "light" or "dark"; with no word kept it is the hub's own default, dark.
+const themeFile = path.join(app.getPath('userData'), 'theme');
+let theme = 'dark';
+try { if (fs.readFileSync(themeFile, 'utf8') === 'light') theme = 'light'; } catch {}
+const themeBackground = () => theme === 'light' ? '#fafaf8' : '#111410';
+ipcMain.on('desktop:theme', (event, value) => {
+  if (!trusted(event) || (value !== 'light' && value !== 'dark') || value === theme) return;
+  theme = value;window.setBackgroundColor(themeBackground());
+  try { fs.writeFileSync(themeFile + '.tmp', theme);fs.renameSync(themeFile + '.tmp', themeFile); } catch {}
+});
+ipcMain.on('desktop:theme-now', event => {
+  event.returnValue = senderIsWindow(event) && (event.senderFrame.url === startupURL || trusted(event)) ? theme : 'dark';
+});
 ipcMain.on('desktop:terminal-focus', (event, active) => {
   if (trusted(event) && typeof active === 'boolean') terminalFocused = active;
 });
@@ -153,7 +169,7 @@ function start() {
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) void createWindow(ses).then(() => connect(ses)); });
 }
 function createWindow(ses) {
-  window = new BrowserWindow({ width: 1400, height: 940, minWidth: 360, minHeight: 480, title: 'Backplane', icon: iconPath(), backgroundColor: '#111410', show: false,
+  window = new BrowserWindow({ width: 1400, height: 940, minWidth: 360, minHeight: 480, title: 'Backplane', icon: iconPath(), backgroundColor: themeBackground(), show: false,
     webPreferences: { session: ses, preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, spellcheck: true,additionalArguments:rendererBrowser?['--backplane-direct-browser=1']:[] } });
   window.webContents.on('console-message', (details, _level, legacyMessage) => {
     // Only our main frame, fixed-prefix and schema-sanitized records reach disk.
