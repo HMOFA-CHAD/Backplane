@@ -56,7 +56,7 @@ export class ThinHost {
     if (!Number.isSafeInteger(rid) || rid < 0 || rid >= 2 ** 47) throw Error('Invalid ordinary request counter');
     this.session.rid = Math.max(rid, Date.now());
     this.viewerRevision = 0;this.localRevision = 0;this.selectionRevision = 0;this.drafts = new Map();this.draftChanges = new Map();this.fields = new Map();this.pending = new Map();this.actions = [];this.active = null;
-    this.messages = new MessageParts();this.ordinary = new Map();
+    this.messages = new MessageParts();this.ordinary = new Map();this.refreshScheduled = null;
     this.client = new Views({ now: api.now,
       send: (_hub, request) => ({ type: 'request', request: request.p.session ? { ...request,
         p: { ...request.p, session: requestSession(request.p.session, request.m === 'view.action', request.p.target) } } : request }),
@@ -88,6 +88,7 @@ export class ThinHost {
     this.select(this.api.target(this.session));
   }
   select(target) {
+    this.refreshScheduled = null;
     this.viewerRevision++;this.api.viewerChoice?.(null);
     this.selectionRevision++;
     // Unstarted intentions from another view never acquire the new target.
@@ -249,6 +250,23 @@ export class ThinHost {
     // the pre-click flags, even for an otherwise side-effect-free menu toggle.
     return !!this.pending.get(this.active)?.operation || this.actions.length > 0;
   }
+  refreshSoon() {
+    if (!this.api.deferRefresh) return this.update();
+    const link = this.client.links.get(this.hub);
+    if (!this.ready || !link || this.refreshScheduled) return false;
+    const ticket = { selection: this.selectionRevision, viewId: link.viewId, link };
+    this.refreshScheduled = ticket;
+    this.api.deferRefresh(() => {
+      if (this.refreshScheduled !== ticket) return;
+      this.refreshScheduled = null;
+      if (!this.ready || ticket.selection !== this.selectionRevision ||
+          this.client.links.get(this.hub) !== ticket.link || ticket.link.viewId !== ticket.viewId) return;
+      // An intervening action may already cover the notification. Otherwise
+      // update retains every existing active/queued-action ownership guard.
+      if (ticket.link.invalidated || ticket.link.readInvalidated) this.update();
+    });
+    return true;
+  }
   update() {
     if (!this.ready) return false;
     const link = this.client.links.get(this.hub);
@@ -260,7 +278,12 @@ export class ThinHost {
   }
   receive(envelope) {
     if (envelope?.t === 'view.changed') {
-      if (this.ready) this.flush(this.client.changed(this.hub, envelope, requestSession(this.session, false, this.target), this.api.anchor(), this.refreshPending() || this.composerPending() || this.threadChildPending() || this.terminalPending() || this.viewerPending() || this.botTabPending()));
+      if (this.ready) {
+        const result = this.client.changed(this.hub, envelope, requestSession(this.session, false, this.target), this.api.anchor(),
+          !!this.api.deferRefresh || this.refreshPending() || this.composerPending() || this.threadChildPending() || this.terminalPending() || this.viewerPending() || this.botTabPending());
+        this.flush(result);
+        if (this.api.deferRefresh && result.coalesced) this.refreshSoon();
+      }
       return true;
     }
     if (envelope?.t !== 'reply') return false;
@@ -284,7 +307,7 @@ export class ThinHost {
           catch { this.api.warning?.('Message continuation is unavailable; reopen it explicitly'); }
         } else this.api.cancelled?.(r.cancelled);
       }
-      if (result.refreshDue) this.update();
+      if (result.refreshDue) this.refreshSoon();
       return true; // query results neither replace shown nor establish readiness
     }
     // Validate the entire normal renderer tree and every ordinary command
@@ -362,7 +385,7 @@ export class ThinHost {
     } else if (result.current) this.fail('Current view is not ready');
     // Send queued navigation before a background read can snapshot its old route.
     this.pump(true);
-    if (result.refreshDue) this.update();
+    if (result.refreshDue) this.refreshSoon();
     return true;
   }
   ack(envelope) {
@@ -413,12 +436,14 @@ export class ThinHost {
     return !!metadata && !!link && metadata.wireRevision === link.revision && metadata.target?.kind === link.target?.kind && metadata.target?.id === link.target?.id;
   }
   fail(reason) {
+    this.refreshScheduled = null;
     this.api.viewerChoice?.(null);
     for (const metadata of this.pending.values()) metadata.operation?.settled?.(false);
     for (const operation of this.actions) operation.settled?.(false);
     this.ready = false;this.api.state({ phase: 'error', remoteReady: false, reason });
   }
   disconnect() {
+    this.refreshScheduled = null;
     this.api.viewerChoice?.(null);
     for (const metadata of this.pending.values()) metadata.operation?.settled?.(false);
     for (const operation of this.actions) operation.settled?.(false);

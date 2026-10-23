@@ -447,3 +447,39 @@ test('local UI intentions: earlier in-flight read cannot trigger a stale read ov
  assert.equal(f.sent.at(-1).m,'view.update');assert.equal(f.sent.at(-1).p.session.open.models,true);
  assert.equal(f.sent.filter(r=>r.m==='view.action').length,1,'no action retries');
 });
+
+test('refresh launch: notifications coalesce into one bounded scheduled read',async()=>{
+ const scheduled=[],f=await fixture({deferRefresh:fn=>scheduled.push(fn)});f.open();
+ const e={t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'2'};
+ f.host.receive(e);f.host.receive({...e,viewRevision:'3'});assert.equal(scheduled.length,1);assert.equal(f.sent.length,1);
+ scheduled.shift()();assert.equal(f.sent.length,2);assert.equal(f.sent.at(-1).m,'view.update');
+ f.host.receive(f.reply(undefined,{viewRevision:'3'}));assert.equal(f.sent.length,2);
+});
+test('refresh launch: immediate click outranks unsent notification read and settles once',async()=>{
+ const scheduled=[],f=await fixture({deferRefresh:fn=>scheduled.push(fn)});f.open();
+ f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'2'});
+ f.host.request('flag','settings');const action=f.sent.at(-1);assert.equal(action.m,'view.action');assert.equal(f.sent.length,2);scheduled.shift()();assert.equal(f.sent.length,2);
+ const r=f.reply(action,{viewRevision:'2',session:{...action.p.session,open:{settings:true}}});f.host.receive(r);assert.equal(f.host.receive(r),false);assert.equal(f.sent.length,2);assert.equal(f.getSession().open.settings,true);
+});
+test('refresh launch: uncovered revision still refreshes accepted action session and latest draft',async()=>{
+ const scheduled=[],f=await fixture({deferRefresh:fn=>scheduled.push(fn)});f.open();f.host.request('flag','settings');const action=f.sent.at(-1);
+ f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'3'});
+ f.host.request('draft','new local 日本語');f.host.receive(f.reply(action,{viewRevision:'2',session:{...action.p.session,open:{settings:true}}}));assert.equal(f.sent.length,2);
+ scheduled.shift()();const update=f.sent.at(-1);assert.equal(update.m,'view.update');assert.equal(update.p.session.open.settings,true);assert.equal(update.p.session.drafts.A,'new local 日本語');
+ f.host.receive(f.reply(update,{viewRevision:'3'}));assert.equal(f.sent.length,3);
+});
+test('refresh launch: selection and disconnect retire scheduled callbacks without request replay',async()=>{
+ for(const change of ['select','disconnect']){const scheduled=[],f=await fixture({deferRefresh:fn=>scheduled.push(fn)});f.open();f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'2'});
+ if(change==='select'){f.host.request('select','B');f.host.receive(f.reply());}else f.host.disconnect();
+ const count=f.sent.length;scheduled.shift()();assert.equal(f.sent.length,count);}
+});
+test('refresh launch: malformed foreign and covered notifications schedule nothing',async()=>{
+ const scheduled=[],f=await fixture({deferRefresh:fn=>scheduled.push(fn)});f.open();const e={t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'1'};
+ for(const value of [e,{...e,epoch:'foreign',viewRevision:'2'},{...e,viewId:'old',viewRevision:'2'},{...e,viewRevision:'bad'}])f.host.receive(value);
+ assert.equal(scheduled.length,0);assert.equal(f.sent.length,1);assert.equal(f.host.ready,true);
+});
+test('refresh launch: compact input does not consume scheduled output invalidation',async()=>{
+ const scheduled=[],f=await fixture({deferRefresh:fn=>scheduled.push(fn),modelMenuReady:()=>true});f.open();f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'2'});
+ f.host.request('flag','models');const action=f.sent.at(-1),r=f.reply(action,{modelMenuInput:true,viewRevision:'2',session:{...action.p.session,open:{models:true}}});delete r.result.shown;delete r.result.window;f.host.receive(r);
+ scheduled.shift()();assert.equal(f.sent.at(-1).m,'view.update');assert.equal(f.sent.at(-1).p.session.open.models,true);assert.equal(f.host.ready,true);
+});

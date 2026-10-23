@@ -1763,6 +1763,9 @@ async function startThin(again = false, reason = "initial") {
       decode: shown => App.presentation_node(presentationJson(shown)),
       command: command => presentationCommand(command),
       anchor: () => { const tl = document.getElementById("timeline"), a = tl && anchorOf(tl);return { id: a?.id || "", offset: Math.max(0, Math.round(a ? tl.getBoundingClientRect().top - a.off : 0)) }; },
+      // Give an immediately following user action priority over an unsent
+      // notification read. Timer is bounded and works while the page is hidden.
+      deferRefresh: refresh => setTimeout(() => { if (current()) refresh(); }, 16),
       draftRefresh: refresh => { clearTimeout(thinDraftTimer);thinDraftTimer = setTimeout(() => { if (current()) refresh(); }, 75); },
       fieldRefresh: refresh => { clearTimeout(thinFieldTimer);thinFieldTimer = setTimeout(() => { if (current()) refresh(); }, 75); },
       fieldsChanged: (name, text) => { if (name === "mrreply") thinMailDraft.edit(text);later(); },
