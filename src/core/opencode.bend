@@ -440,3 +440,47 @@ def Ocm.cli(+version: String, +out: String) -> String:
 def Ocm.about(+version: String, +out: String) -> J.Json:
   J.Json.obj([J.KV{"cli", J.Str{Ocm.cli(version, out)}}, J.KV{"version", J.Str{version}}, J.KV{"labels", J.Json.obj(Ocm.labels(out))},
     J.KV{"error", J.Str{Bool.pick(String, String.is_empty(version), "", Ocm.problem(out))}}])
+
+# A refresh (models.refresh, when the picker opens on opencode) reads
+# opencode's models again into the hub's models info: opencode's list and
+# about.opencode are replaced, every other key (and every other provider's
+# about) kept as it was, whichever providers there are
+
+def Ocm.strs(xs: List<&2, String>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      J.Str{x} <> Ocm.strs(t)
+
+def Ocm.keep.k(skip: Bool, +k: String, v: J.Json, rest: List<&2, J.KV>) -> List<&2, J.KV>:
+  match skip:
+    case True{}:
+      rest
+    case False{}:
+      J.KV{k, v} <> rest
+
+def Ocm.keep.go(fs: J.Json, +drop: List<&2, String>) -> List<&2, J.KV>:
+  match fs:
+    case J.Field{+k, v, t}:
+      Ocm.keep.k(List.contains(~String, ~String.eq, drop, k), k, v, Ocm.keep.go(t, drop))
+    case _:
+      Nil{}
+
+# an object's fields but those named in drop
+def Ocm.keep(o: J.Json, +drop: List<&2, String>) -> List<&2, J.KV>:
+  match o:
+    case J.Obj{fs}:
+      Ocm.keep.go(fs, drop)
+    case _:
+      Nil{}
+
+# the CLI's version a refresh starts from ("cli" before "version" was kept)
+def Ocm.version(+a: J.Json) -> String:
+  J.Json.get_str(a, "version", J.Json.get_str(a, "cli", ""))
+
+def Ocm.patch(+j: J.Json, +out: String) -> J.Json:
+  J.Json.obj(List.append(&2, J.KV, Ocm.keep(j, ["opencode", "about"]),
+    [J.KV{"opencode", J.Json.arr(Ocm.strs(Ocm.models(out)))},
+     J.KV{"about", J.Json.obj(List.append(&2, J.KV, Ocm.keep(J.Json.get_obj(j, "about"), ["opencode"]),
+       [J.KV{"opencode", Ocm.about(Ocm.version(J.Json.get_obj(J.Json.get_obj(j, "about"), "opencode")), out)}]))}]))

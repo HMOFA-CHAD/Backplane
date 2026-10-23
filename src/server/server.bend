@@ -5836,19 +5836,11 @@ def Oc.out(r: P.Ran) -> String:
     case P.Ran{c, _}:
       "!exit " ++ U32.show(c) ++ "\tthe listing script failed\n"
 
-# the CLI's version a refresh starts from ("cli" before "version" was kept)
-def Oc.version(+a: J.Json) -> String:
-  J.Json.get_str(a, "version", J.Json.get_str(a, "cli", ""))
-
 # the models info with opencode's part read again (the picker asks when it
-# opens on opencode: models.refresh); the others' parts as they were
+# opens on opencode: models.refresh); every other key as it was
+# (opencode.bend's Ocm.patch)
 def Oc.patch.j(+j: J.Json, +out: String) -> String:
-  J.Json.show(J.Json.obj([J.KV{"claude", J.Json.get_obj(j, "claude")}, J.KV{"codex", J.Json.get_obj(j, "codex")}, J.KV{"grok", J.Json.get_obj(j, "grok")},
-    J.KV{"muse", J.Json.get_obj(j, "muse")}, J.KV{"antigravity", J.Json.get_obj(j, "antigravity")}, J.KV{"opencode", Models.strs(Models.oc(out))},
-    J.KV{"agy", J.Json.get_obj(j, "agy")}, J.KV{"about", J.Json.obj([J.KV{"claude", J.Json.get_obj(J.Json.get_obj(j, "about"), "claude")},
-      J.KV{"codex", J.Json.get_obj(J.Json.get_obj(j, "about"), "codex")}, J.KV{"grok", J.Json.get_obj(J.Json.get_obj(j, "about"), "grok")},
-      J.KV{"muse", J.Json.get_obj(J.Json.get_obj(j, "about"), "muse")}, J.KV{"antigravity", J.Json.get_obj(J.Json.get_obj(j, "about"), "antigravity")},
-      J.KV{"opencode", OCM.Ocm.about(Oc.version(J.Json.get_obj(J.Json.get_obj(j, "about"), "opencode")), out)}])}]))
+  J.Json.show(OCM.Ocm.patch(j, out))
 
 def Oc.patch(+ms: String, +out: String) -> String:
   Oc.patch.j(Maybe.default(&2, J.Json, J.Json.parse(ms), J.Null{}), out)
