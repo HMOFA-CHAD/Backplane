@@ -12793,3 +12793,9 @@ def Laws.oc_tool_names_target(): {==}
 def Laws.oc_tool_command_once(): {==}
 def Laws.oc_notice_kind(): {==}
 def Laws.oc_notice_info(s, th, now): {==}
+
+# --- opencode: model listing says why it is empty ---
+def Laws.oc_models_usage_none(): {==}
+def Laws.oc_models_failed_says(): {==}
+def Laws.oc_models_empty_says(): {==}
+def Laws.oc_models_missing_quiet(): {==}

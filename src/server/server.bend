@@ -37,6 +37,7 @@ import ./desktop-transport.bend as DT
 import ../core/desktop-browser.bend as DB
 import ../core/acp.bend as AC
 import ../core/msp.bend as MS
+import ../core/opencode.bend as OCM
 import ../core/agy.bend as AGY
 import ./agyio.bend as AGX
 import ./mailstore.bend as MST
@@ -5810,56 +5811,32 @@ def About.cli(r: P.Ran) -> String:
 def About.one(+cli: String, labels: List<&2, J.KV>) -> J.Json:
   J.Json.obj([J.KV{"cli", J.Str{cli}}, J.KV{"labels", J.Json.obj(labels)}])
 
-# opencode's models: those of every provider it is signed in to, as
-# "provider/model<TAB>name" lines (`opencode models --verbose` through a
-# file: piped, its last lines were sometimes lost)
+# opencode's models: those of every provider it is signed in to, one
+# "provider/model" a line (`opencode models`; opencode 2 has no --verbose
+# and fails with its usage when given it), through a file (piped, its last
+# lines were sometimes lost); then why listing failed and the sign-ins
+# `opencode auth list` shows, read by core/opencode.bend's Ocm.*
 def Oc.models.sh() -> String:
-  PT.Port.tmo() ++ "command -v opencode >/dev/null || exit 0; f=$(mktemp); tmo 30 opencode models --verbose > \"$f\" 2>/dev/null; "
-    ++ "awk '/^[A-Za-z0-9][^ ]*\\/[^ ]*$/ {slug=$0; next} /^  \"name\": \"/ && slug != \"\" {n=$0; sub(/^  \"name\": \"/, \"\", n); sub(/\",?$/, \"\", n); print slug \"\\t\" n; slug=\"\"}' \"$f\"; rm -f \"$f\""
-
-def Oc.row(+l: String) -> List<&2, String>:
-  String.split(l, '\t')
-
-def Models.oc.k(model: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
-  match model:
-    case True{}:
-      Maybe.default(&2, String, List.head(&2, String, Oc.row(l)), "") <> rest
-    case False{}:
-      rest
-
-def Models.oc.go(ls: List<&2, String>) -> List<&2, String>:
-  match ls:
-    case Nil{}:
-      Nil{}
-    case +l <> t:
-      Models.oc.k(String.contains(l, "/"), l, Models.oc.go(t))
+  PT.Port.tmo() ++ "command -v opencode >/dev/null || exit 0; f=$(mktemp); e=$(mktemp); tmo 30 opencode models > \"$f\" 2> \"$e\"; c=$?; "
+    ++ "grep -E '^[A-Za-z0-9][^ ]*/[^ ]*$' \"$f\"; "
+    ++ "[ \"$c\" -eq 0 ] || printf '!exit %s\\t%s\\n' \"$c\" \"$(grep -v '^[[:space:]]*$' \"$e\" | tail -n 1 | sed 's/^[[:space:]]*//' | tr -d '\\t' | cut -c1-200)\"; "
+    ++ "tmo 15 opencode auth list 2>/dev/null | awk -F '  +' '{sub(/[[:space:]]+$/, \"\")} NF >= 3 && $NF == \"stored\" {printf \"!auth\\t%s\\t%s\\n\", $1, $2}'; "
+    ++ "rm -f \"$f\" \"$e\"; exit 0"
 
 def Models.oc(+out: String) -> List<&2, String>:
-  Models.oc.go(String.lines(out))
+  OCM.Ocm.models(out)
 
-def About.oc.k(model: Bool, +l: String, rest: List<&2, J.KV>) -> List<&2, J.KV>:
-  match model:
-    case True{}:
-      J.KV{Maybe.default(&2, String, List.head(&2, String, Oc.row(l)), ""), J.Str{String.join(List.drop(&2, String, Oc.row(l), 1n), " ")}} <> rest
-    case False{}:
-      rest
-
-def About.oc.go(ls: List<&2, String>) -> List<&2, J.KV>:
-  match ls:
-    case Nil{}:
-      Nil{}
-    case +l <> t:
-      About.oc.k(String.contains(l, "/"), l, About.oc.go(t))
-
-def About.oc(+out: String) -> List<&2, J.KV>:
-  J.KV{"default", J.Str{"opencode's configured default"}} <> About.oc.go(String.lines(out))
-
+# (a script that itself failed says so: not an empty list that worked)
 def Oc.out(r: P.Ran) -> String:
   match r:
     case P.Ran{0, out}:
       out
-    case _:
-      ""
+    case P.Ran{c, _}:
+      "!exit " ++ U32.show(c) ++ "\tthe listing script failed\n"
+
+# the CLI's version a refresh starts from ("cli" before "version" was kept)
+def Oc.version(+a: J.Json) -> String:
+  J.Json.get_str(a, "version", J.Json.get_str(a, "cli", ""))
 
 # the models info with opencode's part read again (the picker asks when it
 # opens on opencode: models.refresh); the others' parts as they were
@@ -5869,7 +5846,7 @@ def Oc.patch.j(+j: J.Json, +out: String) -> String:
     J.KV{"agy", J.Json.get_obj(j, "agy")}, J.KV{"about", J.Json.obj([J.KV{"claude", J.Json.get_obj(J.Json.get_obj(j, "about"), "claude")},
       J.KV{"codex", J.Json.get_obj(J.Json.get_obj(j, "about"), "codex")}, J.KV{"grok", J.Json.get_obj(J.Json.get_obj(j, "about"), "grok")},
       J.KV{"muse", J.Json.get_obj(J.Json.get_obj(j, "about"), "muse")}, J.KV{"antigravity", J.Json.get_obj(J.Json.get_obj(j, "about"), "antigravity")},
-      J.KV{"opencode", About.one(J.Json.get_str(J.Json.get_obj(J.Json.get_obj(j, "about"), "opencode"), "cli", ""), About.oc(out))}])}]))
+      J.KV{"opencode", OCM.Ocm.about(Oc.version(J.Json.get_obj(J.Json.get_obj(j, "about"), "opencode")), out)}])}]))
 
 def Oc.patch(+ms: String, +out: String) -> String:
   Oc.patch.j(Maybe.default(&2, J.Json, J.Json.parse(ms), J.Null{}), out)
@@ -5912,7 +5889,7 @@ def Models.detect(+user: String, +home: String) -> IO(Found):
     return Models.found(Claude.models(Main.has(cl), xs), Models.on(Main.has(cx), Models.codex(cache)), Models.grok(gk), Models.muse(mx), AGY.Agy.info.models(ag), Models.oc(ocs), AGY.Agy.info.json(ag),
       J.Json.obj([J.KV{"claude", Claude.about(About.cli(vc), xs)}, J.KV{"codex", About.one(About.cli(vx), About.codex(cache))}, J.KV{"grok", About.one(About.cli(vg), About.grok(gk))},
         J.KV{"muse", About.one(About.cli(vm), About.muse(mx))}, J.KV{"antigravity", AGY.Agy.info.about(ag)},
-        J.KV{"opencode", About.one(About.cli(vo), About.oc(ocs))}]))
+        J.KV{"opencode", OCM.Ocm.about(About.cli(vo), ocs)}]))
 
 # The CLIs are looked for on PATH, which a launcher's or a service's hub
 # lacks the login shell's part of (nvm, volta...): before each detection the

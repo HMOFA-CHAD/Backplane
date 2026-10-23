@@ -74,9 +74,14 @@ def Ocp.saw(a: AC.Acp, +id: String) -> AC.Acp:
 def Ocp.signin(+low: String) -> Bool:
   Bool.or(Bool.or(String.contains(low, "auth"), String.contains(low, "login")), Bool.or(String.contains(low, "no models are available"), String.contains(low, "api key")))
 
+# (a provider that refused the model's sign-in is not opencode's own: an
+# expired OAuth sign-in does it, and with no model picked opencode's
+# configured default agent chose the model)
 def Ocp.hint.k(+low: String, +msg: String) -> String:
   Bool.pick(String, String.contains(low, "model not found"), msg ++ " (pick another opencode model in the composer)",
-    Bool.pick(String, Ocp.signin(low), msg ++ " (sign in once with `opencode auth login`)", msg))
+    Bool.pick(String, String.contains(low, "provider authentication required"),
+      msg ++ " (the model's provider refused opencode's sign-in, as an expired OAuth sign-in does: run `opencode auth login` for that provider; with no model picked, opencode's configured default agent chose it)",
+      Bool.pick(String, Ocp.signin(low), msg ++ " (sign in once with `opencode auth login`)", msg)))
 
 # the reason, and how to fix it when that is known
 def Ocp.hint(+msg: String) -> String:
@@ -249,3 +254,138 @@ def Ocp.line.parsed(m: Maybe<&2, J.Json>, +a: AC.Acp, +t: AC.AcpTurn) -> AC.AcpO
 # one line from opencode
 def Ocp.line(+a: AC.Acp, +t: AC.AcpTurn, line: String) -> AC.AcpOut:
   Ocp.line.parsed(J.Json.parse(line), a, t)
+
+# Models (Settings and the picker)
+# --------------------------------
+# The hub's Oc.models.sh writes, one per line: each model opencode lists
+# (`opencode models`, "provider/model"; opencode 2 has no --verbose, the
+# flag that once gave names, and fails with its usage when given it), then
+# "!exit <code>\t<its last error line>" when listing failed, then
+# "!auth\t<provider>\t<method>" for each sign-in `opencode auth list`
+# shows (names and methods only: a token never leaves opencode). What it
+# says is the CLI line Settings shows for opencode on every client: a list
+# that failed or is empty says why, never as an empty list that worked.
+
+def Ocm.cols(+l: String) -> List<&2, String>:
+  String.split(l, '\t')
+
+def Ocm.id(+l: String) -> String:
+  Maybe.default(&2, String, List.head(&2, String, Ocm.cols(l)), "")
+
+def Ocm.rest(+l: String) -> String:
+  String.join(List.drop(&2, String, Ocm.cols(l), 1n), " ")
+
+# a model line: "provider/model", a name after a tab allowed
+def Ocm.model(+l: String) -> Bool:
+  Bool.and(Bool.not(String.starts_with(l, "!")), Bool.and(String.contains(Ocm.id(l), "/"), Bool.not(String.contains(Ocm.id(l), " "))))
+
+def Ocm.models.k(ok: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
+  match ok:
+    case True{}:
+      Ocm.id(l) <> rest
+    case False{}:
+      rest
+
+def Ocm.models.go(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Ocm.models.k(Ocm.model(l), l, Ocm.models.go(t))
+
+def Ocm.models(+out: String) -> List<&2, String>:
+  Ocm.models.go(String.lines(out))
+
+def Ocm.labels.k(ok: Bool, +l: String, rest: List<&2, J.KV>) -> List<&2, J.KV>:
+  match ok:
+    case True{}:
+      J.KV{Ocm.id(l), J.Str{Ocm.rest(l)}} <> rest
+    case False{}:
+      rest
+
+def Ocm.labels.go(ls: List<&2, String>) -> List<&2, J.KV>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Ocm.labels.k(Bool.and(Ocm.model(l), Bool.not(String.is_empty(Ocm.rest(l)))), l, Ocm.labels.go(t))
+
+# a label per model that has a name ("default" is opencode's own choice)
+def Ocm.labels(+out: String) -> List<&2, J.KV>:
+  J.KV{"default", J.Str{"opencode's configured default"}} <> Ocm.labels.go(String.lines(out))
+
+# the "!exit" line, "" when listing worked
+def Ocm.failed(ls: List<&2, String>) -> String:
+  match ls:
+    case Nil{}:
+      ""
+    case +l <> t:
+      Bool.pick(String, String.starts_with(l, "!exit "), l, Ocm.failed(t))
+
+def Ocm.timed(+c: String) -> Bool:
+  Bool.or(String.eq(c, "124"), Bool.or(String.eq(c, "137"), String.eq(c, "143")))
+
+def Ocm.why.k(timed: Bool, +c: String, +said: String) -> String:
+  match timed:
+    case True{}:
+      "timed out listing models"
+    case False{}:
+      "could not list models (`opencode models` exited " ++ c ++ Bool.pick(String, String.is_empty(said), "", ": " ++ said) ++ ")"
+
+# why listing failed, from "!exit <code>\t<said>"
+def Ocm.why(+f: String) -> String:
+  Ocm.why.k(Ocm.timed(Ocm.id(String.drop(f, 6n))), Ocm.id(String.drop(f, 6n)), String.trim(Ocm.rest(String.drop(f, 6n))))
+
+def Ocm.auth.k(ok: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
+  match ok:
+    case True{}:
+      (Ocm.id(String.drop(l, 6n)) ++ Bool.pick(String, String.is_empty(Ocm.rest(String.drop(l, 6n))), "", " (" ++ Ocm.rest(String.drop(l, 6n)) ++ ")")) <> rest
+    case False{}:
+      rest
+
+def Ocm.auth.go(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Ocm.auth.k(String.starts_with(l, "!auth\t"), l, Ocm.auth.go(t))
+
+# the sign-ins opencode keeps, "OpenAI (OAuth)" each (kept is not valid:
+# an expired one shows here and fails its turns)
+def Ocm.auth(+out: String) -> List<&2, String>:
+  Ocm.auth.go(String.lines(out))
+
+def Ocm.count(+n: Nat) -> String:
+  Nat.show(n) ++ Bool.pick(String, String.eq(Nat.show(n), "1"), " model", " models")
+
+def Ocm.signed(+xs: List<&2, String>) -> String:
+  Bool.pick(String, List.is_empty(&2, String, xs), "no sign-ins", "sign-ins: " ++ String.join(xs, ", "))
+
+def Ocm.listed.k(none: Bool, +n: Nat, +xs: List<&2, String>) -> String:
+  match none:
+    case True{}:
+      "lists no models: sign in with `opencode auth login`"
+    case False{}:
+      Ocm.count(n) ++ " · " ++ Ocm.signed(xs)
+
+def Ocm.state.k(+f: String, +n: Nat, +xs: List<&2, String>) -> String:
+  Bool.pick(String, String.is_empty(f), Ocm.listed.k(Bool.not(Nat.is_gt(n, 0n)), n, xs), Ocm.why(f))
+
+# what Settings says after the version: the models and sign-ins, or why
+# there are none
+def Ocm.state(+out: String) -> String:
+  Ocm.state.k(Ocm.failed(String.lines(out)), List.length(&2, String, Ocm.models(out)), Ocm.auth(out))
+
+# the problem alone ("" when models were listed)
+def Ocm.problem(+out: String) -> String:
+  Bool.pick(String, Nat.is_gt(List.length(&2, String, Ocm.models(out)), 0n), "", Ocm.state(out))
+
+# about.opencode: "cli" is the line Settings shows ("" when opencode is not
+# installed: Settings says so), "version" the CLI's own (a refresh starts
+# from it), "error" why no model can be picked
+def Ocm.cli(+version: String, +out: String) -> String:
+  Bool.pick(String, String.is_empty(version), "", version ++ " · " ++ Ocm.state(out))
+
+def Ocm.about(+version: String, +out: String) -> J.Json:
+  J.Json.obj([J.KV{"cli", J.Str{Ocm.cli(version, out)}}, J.KV{"version", J.Str{version}}, J.KV{"labels", J.Json.obj(Ocm.labels(out))},
+    J.KV{"error", J.Str{Bool.pick(String, String.is_empty(version), "", Ocm.problem(out))}}])
