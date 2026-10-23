@@ -12791,3 +12791,5 @@ def Laws.oc_lost_session(): {==}
 def Laws.oc_other_folder_session(): {==}
 def Laws.oc_tool_names_target(): {==}
 def Laws.oc_tool_command_once(): {==}
+def Laws.oc_notice_kind(): {==}
+def Laws.oc_notice_info(s, th, now): {==}

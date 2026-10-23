@@ -9,7 +9,9 @@ import ./acp.bend as AC
 #   2.1 offers it), which does not replay the whole conversation as
 #   session/load did on every turn; a session opencode no longer has, or
 #   one made in another folder, opens afresh (7) with Backplane's
-#   instructions first;
+#   instructions first, and the person is told once ("notice", an info
+#   row: the new session has none of the earlier conversation); nothing
+#   else falls back;
 # - a tool call starts before its input is known (tool_call names only
 #   the tool, a shell's reads "bash"): it is logged once, at its first
 #   tool_call_update, named by what it does (the command, the file, the
@@ -98,6 +100,23 @@ def Ocp.fail(a: AC.Acp, +msg: String) -> AC.AcpOut:
 def Ocp.opened(fresh: Bool, a: AC.Acp, +t: AC.AcpTurn, +sid: String) -> AC.AcpOut:
   AC.AcpOut{Ocp.with_sid(a, sid), [AC.Acp.say.k(fresh, t, sid)], [AC.Acp.event("thread.started", [J.KV{"thread_id", J.Str{sid}}])], Nil{}}
 
+# what the person is told once a lost session was replaced: the agent
+# starts without the earlier conversation (Backplane's history is kept)
+def Ocp.renewed.msg(+old: String) -> String:
+  "opencode could not resume its session " ++ old ++ ", so it started a new one without the earlier conversation. This thread's history in Backplane is kept."
+
+def Ocp.notice(+msg: String) -> String:
+  AC.Acp.event("notice", [J.KV{"message", J.Str{msg}}])
+
+# the fresh session that replaced a lost one: opened as any, and said
+def Ocp.renewed.k(o: AC.AcpOut, +old: String) -> AC.AcpOut:
+  match o:
+    case AC.AcpOut{a, send, emit, asks}:
+      AC.AcpOut{a, send, List.append(&2, String, emit, [Ocp.notice(Ocp.renewed.msg(old))]), asks}
+
+def Ocp.renewed(a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
+  Ocp.renewed.k(Ocp.opened(True{}, a, t, J.Json.get_str(J.Json.get_obj(o, "result"), "sessionId", "")), AC.Acp.session(t))
+
 # session/new answers its id; session/resume none (the thread's own)
 def Ocp.answered(a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
   Ocp.opened(String.is_empty(AC.Acp.session(t)), a, t, J.Json.get_str(J.Json.get_obj(o, "result"), "sessionId", AC.Acp.session(t)))
@@ -120,7 +139,7 @@ def Ocp.reply.k(i: Nat, ok: Bool, a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.A
     case 2n False{}:
       Ocp.reopen(Bool.and(Bool.not(String.is_empty(AC.Acp.session(t))), Ocp.lost(Ocp.error(o))), a, t, o)
     case 7n True{}:
-      Ocp.opened(True{}, a, t, J.Json.get_str(J.Json.get_obj(o, "result"), "sessionId", ""))
+      Ocp.renewed(a, t, o)
     case 3n True{}:
       AC.Acp.finished(a)
     case _ False{}:

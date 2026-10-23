@@ -11620,3 +11620,14 @@ law oc_tool_names_target:
 
 law oc_tool_command_once:
   {OC.Ocp.say.k("ls -la src", "src") == "ls -la src" : String}
+
+# a provider's notice is an info row for the person: never the agent's
+# reply and never a failure (opencode's renewed session)
+law oc_notice_kind:
+  {H.Codex.kind("notice") == 7n : Nat}
+
+law oc_notice_info:
+  for s: M.State
+  for th: String
+  for now: Nat
+  {H.Codex.line.k(7n, s, th, now, J.Json.obj([J.KV{"message", J.Str{"m"}}])) == H.Step{[M.ActivityLogged{th, H.Hub.id("n", now, H.Hub.seq(s)), "info", "session", "m", now}], Nil{}} : H.Step}

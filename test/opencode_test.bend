@@ -19,6 +19,11 @@ def outs(o: A.AcpOut) -> String:
     case A.AcpOut{_, send, emit, _}:
       String.join(List.append(&2, String, send, emit), " | ")
 
+def emits(o: A.AcpOut) -> String:
+  match o:
+    case A.AcpOut{_, _, emit, _}:
+      String.join(emit, " | ")
+
 def asks(o: A.AcpOut) -> String:
   match o:
     case A.AcpOut{_, _, _, ks}:
@@ -59,6 +64,7 @@ def main() -> IO(Unit):
   +olost = O.Ocp.line(a0, old, "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32602,\"message\":\"session not found: S0\"}}")
   +ocwd = O.Ocp.line(a0, old, "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32602,\"message\":\"session S0 does not belong to cwd: /tmp/p\"}}")
   +onew = O.Ocp.line(a0, old, "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"sessionId\":\"S2\"}}")
+  +onewfail = O.Ocp.line(a0, old, "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32000,\"message\":\"No models are available\"}}")
   +oboom = O.Ocp.line(a0, old, "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32603,\"message\":\"boom\"}}")
   +onf = O.Ocp.line(a0, turn(""), "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32602,\"message\":\"session not found: S0\"}}")
   +oauth = O.Ocp.line(a0, old, "{\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-32000,\"message\":\"Authentication required\"}}")
@@ -90,6 +96,11 @@ def main() -> IO(Unit):
     C.Check.str("oc renewed instructions", has(outs(onew), "<backplane_instructions>\\nRULES"), "yes")
     C.Check.str("oc renewed started", has(outs(onew), "{\"type\":\"thread.started\",\"thread_id\":\"S2\"}"), "yes")
     C.Check.str("oc resume error fails", outs(oboom), "{\"type\":\"turn.failed\",\"message\":\"boom\"}")
+    C.Check.str("oc resumed no notice", has(outs(or2), "\"type\":\"notice\""), "no")
+    C.Check.str("oc renewing no notice yet", emits(olost), "")
+    C.Check.str("oc renewed one notice", emits(onew), "{\"type\":\"thread.started\",\"thread_id\":\"S2\"} | {\"type\":\"notice\",\"message\":\"opencode could not resume its session S0, so it started a new one without the earlier conversation. This thread's history in Backplane is kept.\"}")
+    C.Check.str("oc renew failed no notice", emits(onewfail), "{\"type\":\"turn.failed\",\"message\":\"No models are available (sign in once with `opencode auth login`)\"}")
+    C.Check.str("oc resume error no notice", has(outs(oboom), "\"type\":\"notice\""), "no")
     C.Check.str("oc resume error ends", done(st(oboom)), "done")
     C.Check.str("oc fresh not renewed", method(outs(onf)), "")
     C.Check.str("oc auth hint", outs(oauth), "{\"type\":\"turn.failed\",\"message\":\"Authentication required (sign in once with `opencode auth login`)\"}")
