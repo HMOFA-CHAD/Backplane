@@ -227,7 +227,7 @@ def View.tree.expander(+id: String, +expanded: Bool, +count: Nat) -> D.Node:
   D.El{"button", "tree-toggle:" ++ id, [D.At{"class", "thread-expander"}, D.At{"type", "button"},
     D.At{"aria-expanded", Bool.pick(String, expanded, "true", "false")}, D.At{"aria-label", Bool.pick(String, expanded, "Collapse subthreads", "Expand subthreads") ++ " (" ++ Nat.show(count) ++ ")"},
     D.At{"title", Bool.pick(String, expanded, "Collapse subthreads", "Expand subthreads") ++ " · " ++ Nat.show(count)}, D.At{"data-value", id}, D.On{"click", "thread-tree"}],
-    [WI.WIcon.svg(Bool.pick(String, expanded, "chevron-down", "chevron-right"), 14)]}
+    [WI.WIcon.tree(expanded)]}
 
 def View.tree.create(show: Bool, +id: String, +depth: Nat) -> List<&2, D.Node>:
   match show:
@@ -1964,10 +1964,16 @@ def View.make.f.loc(+lc: I.Loc, msg: Bool, +fn: String, +k: String, +as: List<&2
 def View.make.f(msg: Bool, +fn: String, +k: String, +as: List<&2, D.Attr>, +text: String) -> D.Node:
   View.make.f.loc(I.En{}, msg, fn, k, as, text)
 
+def View.make.icon(icon: Bool, +k: String, +as: List<&2, D.Attr>, ks: List<&2, D.Node>) -> D.Node:
+  match icon:
+    case True{}: WI.WIcon.tree.make(k)
+    case False{}:
+      View.make.f.loc(I.I18n.of_tag(View.attr(as, "lang")), String.eq(View.attr(as, "fn"), "msg"), View.attr(as, "fn"), k, as, View.txt(ks))
+
 def View.make(n: D.Node) -> D.Node:
   match n:
     case D.El{_, +k, +as, +ks}:
-      View.make.f.loc(I.I18n.of_tag(View.attr(as, "lang")), String.eq(View.attr(as, "fn"), "msg"), View.attr(as, "fn"), k, as, View.txt(ks))
+      View.make.icon(String.eq(View.attr(as, "fn"), "tree-icon"), k, as, ks)
     case D.Txt{t}:
       D.Txt{t}
 
