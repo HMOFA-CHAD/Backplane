@@ -57,6 +57,15 @@ def created() -> M.State:
 
 def main() -> IO(Unit):
   do IO<Unit>:
+    C.Check.str("root traversal keeps nested archive and cycle fallbacks", String.join([
+      ST.Tree.root(expanded(), "grandchild"),
+      ST.Tree.root(M.State.apply(expanded(), M.ThreadArchived{"parent", True{}, 30n}), "grandchild"),
+      ST.Tree.root(M.State.apply(expanded(), M.ThreadParentSet{"parent", "grandchild", 30n}), "grandchild")], ","), "parent,child,grandchild")
+    C.Check.str("root dedup preserves first occurrence and prior shelf roots", ids(ST.Tree.roots.go([
+      M.State.thread.get(expanded(), "child"), M.State.thread.get(expanded(), "parent"),
+      M.State.thread.get(expanded(), "grandchild"), M.State.thread.get(expanded(), "other")], expanded(), ["other"])), "parent")
+    C.Check.str("multi-project search forest keeps root order and children", String.join(ST.Tree.row_ids(ST.Tree.rows_search(expanded(), [
+      M.State.thread.get(expanded(), "other"), M.State.thread.get(expanded(), "parent")], "", "search")), ","), "other,parent,child,grandchild")
     C.Check.str("collapsed children have one visible anchor", visible(base()), "parent")
     C.Check.str("expanded hierarchy has each ID once", visible(expanded()), "parent,child,grandchild")
     C.Check.str("deep link reveals initially unconfigured ancestors", String.join(ST.Tree.row_ids(ST.Tree.rows(base(), [M.State.thread.get(base(), "parent")], "grandchild")), ","), "parent,child,grandchild")
