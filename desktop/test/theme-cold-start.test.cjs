@@ -59,7 +59,7 @@ test('the word is answered to the startup page and the trusted page of the curre
 function preload({word,early}){
  const sent=[],syncs=[],exposed={},classes=new Set();let html=early?{classList:{toggle:(c,on)=>on?classes.add(c):classes.delete(c)}}:null,observer=null;
  const document={get documentElement(){return html;}};
- class MutationObserver{constructor(f){this.f=f;observer=this;}observe(t,o){assert.equal(t,document);assert.deepEqual(o,{childList:true});}disconnect(){this.off=true;}}
+ class MutationObserver{constructor(f){this.f=f;observer=this;}observe(t,o){assert.equal(t,document);assert.deepEqual(Object.keys(o),['childList']);assert.equal(o.childList,true);}disconnect(){this.off=true;}}
  const electron={contextBridge:{exposeInMainWorld:(k,v)=>exposed[k]=v},ipcRenderer:{sendSync:n=>{syncs.push(n);return word;},send:(n,v)=>sent.push([n,v]),invoke(){},on(){},removeListener(){}}};
  const ctx={require:m=>{assert.equal(m,'electron');return electron;},process:{argv:[]},document,MutationObserver,TypeError,Object,String};
  vm.createContext(ctx);vm.runInContext(source('preload.cjs'),ctx);
