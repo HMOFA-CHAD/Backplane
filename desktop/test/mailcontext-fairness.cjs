@@ -6,7 +6,7 @@ const [candidate,baseline,out]=process.argv.slice(2);
 if(!candidate||!baseline||!out)throw Error('candidate all.js, baseline all.js and receipt required');
 function compiled(file){
   const source=fs.readFileSync(file,'utf8'),defs=new Map();
-  for(const m of source.matchAll(/^function ([\w$]+)\([^\n]*\) \{[\s\S]*?^\}/gm))defs.set(m[1],m[0]);
+  for(const m of source.matchAll(/^function ([\w$]+)\([^\n]*\) \{[\s\S]*?^\}$/gm))defs.set(m[1],m[0]);
   const root=[...defs.keys()].find(x=>x.endsWith('mailcontext$058Context$read$'));
   assert(root,'use the actual emitted history reader');
   const wanted=new Set();function visit(name){if(wanted.has(name))return;wanted.add(name);
