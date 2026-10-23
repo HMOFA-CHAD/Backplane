@@ -216,6 +216,12 @@ export class ThinHost {
   viewerPending() {
     return !!this.pending.get(this.active)?.operation?.viewer || this.actions.some(op => op.viewer);
   }
+  terminalPending() {
+    const changesWorkspace = op => op && (op.action.startsWith('ws-') ||
+      ['term-toggle', 'term-key', 'term-paste'].includes(op.action) ||
+      op.action === 'bfield' && op.value.startsWith('wspalette\u001f'));
+    return changesWorkspace(this.pending.get(this.active)?.operation) || this.actions.some(changesWorkspace);
+  }
   refreshPending() {
     const op = this.pending.get(this.active)?.operation;
     return this.uploadPending() || op?.action === 'settings-page' || (op?.action === 'flag' && op.value === 'settings');
@@ -226,12 +232,12 @@ export class ThinHost {
     // Keep upload receipts and Settings navigation visible before refreshing.
     // A newer read otherwise retires a same-target navigation reply, making
     // the person repeat the click. Refresh with its accepted session instead.
-    if (this.refreshPending() || this.viewerPending() || this.botTabPending()) { link.invalidated = true;return true; }
+    if (this.refreshPending() || this.terminalPending() || this.viewerPending() || this.botTabPending()) { link.invalidated = true;return true; }
     return this.flush(this.client.request(this.hub, 'view.update', { session: requestSession(this.session, false, this.target), anchor: this.api.anchor(), viewRevision: link.viewRevision }));
   }
   receive(envelope) {
     if (envelope?.t === 'view.changed') {
-      if (this.ready) this.flush(this.client.changed(this.hub, envelope, requestSession(this.session, false, this.target), this.api.anchor(), this.refreshPending() || this.viewerPending() || this.botTabPending()));
+      if (this.ready) this.flush(this.client.changed(this.hub, envelope, requestSession(this.session, false, this.target), this.api.anchor(), this.refreshPending() || this.terminalPending() || this.viewerPending() || this.botTabPending()));
       return true;
     }
     if (envelope?.t !== 'reply') return false;

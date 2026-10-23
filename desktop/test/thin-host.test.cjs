@@ -305,3 +305,21 @@ test('settings navigation keeps submenu on first click during background invalid
  assert.equal(f.sent.filter(r=>r.m==='view.action'&&r.p.action==='settings-page').length,1,'one click sends one navigation');
  assert.equal(f.sent.at(-1).m,'view.update');
 });
+
+
+test('workspace actions adopt their choices before shell/background invalidation refreshes',async()=>{
+ for(const [action,value,open] of [['term-toggle','100x24',{term:true}],['ws-key','term',{term:true}],['ws-palette-open','',{palette:true}],['bfield','wspalette\x1fterminal',{palette:true}]]) {
+  const f=await fixture({prepare:s=>s});f.open();let accepted;
+  f.host.request(action,value,yes=>accepted=yes);
+  if(action==='bfield')f.flushFields();
+  const request=f.sent.at(-1),link=f.host.client.links.get(f.api.hub),count=f.sent.length;
+  f.host.update();
+  f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:link.viewId,target:link.target,viewRevision:'2'});
+  assert.equal(f.sent.length,count,'no refresh can retire the travelling '+action);
+  f.host.receive(f.reply(request,{session:{...f.getSession(),open,drafts:{...f.getSession().drafts,'@terminal.owner':'A'}},shown:{type:'text',text:'Workspace accepted'}}));
+  assert.equal(accepted,true);assert.equal(f.views.at(-1).n.text,'Workspace accepted');
+  const refresh=f.sent.at(-1);assert.equal(refresh.m,'view.update');assert.deepEqual(refresh.p.session.open,open);
+  assert(!Object.hasOwn(refresh.p.session.drafts,'@terminal.owner'),'terminal owner remains actor-private on requests');
+  f.host.receive(f.reply(refresh));assert.deepEqual(f.getSession().open,open);
+ }
+});

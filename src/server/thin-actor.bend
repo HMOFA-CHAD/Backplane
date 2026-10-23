@@ -129,10 +129,10 @@ def Actor.merge( +fresh: U.Ui, +old: U.Ui, +same: Bool, +thread: String, +presen
 def Actor.make(+u: U.Ui, +view: String, +target: J.Json) -> Actor:
   Actor{u, view, target, Map.new(&2, String), Nil{}, False{}, Nil{}}
 
-def Actor.resolve(+u: U.Ui) -> U.Ui:
+def Actor.resolve(u: U.Ui, previous: String) -> U.Ui:
   # The creation ACK may precede the actor's refreshed canonical state.
   # Resolve its retained, destination-bound want after installing that state.
-  U.Ui.reselect(U.Ui.sel.of(u), U.Bots.wanted(u))
+  U.Ui.reselect(previous, U.Bots.wanted(u))
 
 def Actor.refresh( +xs: List<&2, Actor>, +web: Bool, +st: M.State, +info: J.Json, +live: J.Json, +now: Nat, +p: J.Json, +view: String) -> Actor:
   match xs:
@@ -142,7 +142,7 @@ def Actor.refresh( +xs: List<&2, Actor>, +web: Bool, +st: M.State, +info: J.Json
       +thread = V.Target.thread(st, J.Json.get_obj(p, "target"))
       +fresh = V.Session.current(web, st, info, live, now, input)
       +same = Bool.and(String.eq(oldView, view), W.Target.same(target, J.Json.get_obj(p, "target")))
-      Actor{V.Session.renderer(web, Actor.resolve(U.Ui.info_merge(Actor.merge(fresh, old, same, thread, Maybe.is_some(&2, J.Json, J.Json.get(J.Json.get_obj(J.Json.get_obj(input, "session"), "drafts"), thread))), info)), p),
+      Actor{V.Session.renderer(web, Actor.resolve(U.Ui.info_merge(Actor.merge(fresh, old, same, thread, Maybe.is_some(&2, J.Json, J.Json.get(J.Json.get_obj(J.Json.get_obj(input, "session"), "drafts"), thread))), info), thread), p),
         view, J.Json.get_obj(p, "target"), Bool.pick(Map<&2, String>, same, pending, Map.new(&2, String)), Bool.pick(List<&2, J.Json>, same, reads, Nil{}), dirty, Nil{}}
 
 # The hub's canonical projection is shared; each actor keeps its own pages,
