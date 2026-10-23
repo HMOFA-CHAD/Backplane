@@ -39,7 +39,14 @@ document.querySelector('#form').addEventListener('submit',e=>{e.preventDefault()
 async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherThreadId,out}){
  assert(app&&page&&origin&&token&&threadId&&out,'use the integrator\'s isolated running Electron fixture');
  fs.mkdirSync(out,{recursive:true});
+ const fromTakeover=process.env.BROWSER_CONTINUE_TAKEOVER==='1';
+ const retainedPrefix=fromTakeover?JSON.parse(fs.readFileSync(process.env.BROWSER_PREFIX_RECEIPT,'utf8')):null;
+ const prefixChecks=['native snapshot carries actual page and PNG','visible sandboxed WebContentsView, no iframe','bot ref input reaches the visible native document','bot scroll uses actual native page'];
+ if(retainedPrefix)assert(prefixChecks.every(name=>retainedPrefix.checks.includes(name)),'continuation requires actual retained native prefix');
+ const retained=retainedPrefix?{receipt:process.env.BROWSER_PREFIX_RECEIPT,checks:prefixChecks}:null;
  const site=await controlledBrowserPage(),checks=[];
+ let guestId=null,phase='setup';
+ const ownership={native:[],renderer:[]};
  let requestId=1000;
  const check=(name,condition)=>{assert(condition,name);checks.push(name);};
  async function tool(name,args={},owner=threadId,allowError=false){
@@ -80,10 +87,11 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await tool('preview_open',{url:site.origin+'/one'});
   await page.locator(`[data-bfield="brurl:${threadId}"]`).waitFor();
   let snapshot=(await tool('preview_snapshot',{screenshot:true}));
-  check('native snapshot carries actual page and PNG',snapshot.value.title==='Shared Browser one'&&snapshot.images.length===1);
-  const views=await native();assert.equal(views.length,1);const id=views[0].id;
-  check('visible sandboxed WebContentsView, no iframe',views[0].visible&&views[0].bounds.width>100&&views[0].bounds.height>80&&views[0].preferences.sandbox&&views[0].preferences.contextIsolation&&!views[0].preferences.nodeIntegration&&await page.locator('iframe').count()===0);
+  if(!fromTakeover)check('native snapshot carries actual page and PNG',snapshot.value.title==='Shared Browser one'&&snapshot.images.length===1);
+  const views=await native();assert.equal(views.length,1);const id=views[0].id;guestId=id;
+  if(!fromTakeover)check('visible sandboxed WebContentsView, no iframe',views[0].visible&&views[0].bounds.width>100&&views[0].bounds.height>80&&views[0].preferences.sandbox&&views[0].preferences.contextIsolation&&!views[0].preferences.nodeIntegration&&await page.locator('iframe').count()===0);
   const initial=await inspect(id);
+  if(!fromTakeover){
   const refInput={initial};
   await app.evaluate(({webContents},id)=>{
    const wc=webContents.fromId(id),probe={events:[]};wc.__sharedBrowserProbe=probe;
@@ -104,16 +112,41 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await tool('preview_scroll',{selector:'#scroller',dy:300});
   check('bot scroll uses actual native page',(await tool('preview_evaluate',{expression:'document.querySelector("#scroller").scrollTop'})).value>0);
   await tool('preview_wait_for',{text:'Entry: bot typed'});
+  }
+  const beforeHuman=await inspect(id);
+  phase='takeover';
+  await page.evaluate(()=>{
+   const probe={events:[]};window.__sharedBrowserTakeover=probe;
+   probe.off=window.backplaneDesktop.browser.onTakeover(value=>{if(probe.events.length<20)probe.events.push({owner:value.owner,at:Date.now(),remoteReady:document.documentElement.dataset.backplaneRemoteReady});});
+  });
   // Native input goes to the ACTUAL topmost shield in the same window. It
   // consumes the click; only canonical Teach takeover unlocks the guest.
-  await app.evaluate(({BrowserWindow})=>{
+  ownership.nativeBefore=await app.evaluate(async({BrowserWindow,webContents})=>{
    const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed()),shield=w.contentView.children.find(v=>v.getVisible()&&v.webContents?.getURL().endsWith('/browser-shield.html'));
    if(!shield)throw Error('Actual Browser shield missing');
+   if(w.contentView.children.at(-1)!==shield)throw Error('Actual Browser shield is not topmost');
+   const probe={events:[],beforeWindowFocused:w.isFocused(),focusedId:webContents.getFocusedWebContents()?.id??null};w.__sharedBrowserOwnership=probe;
+   shield.webContents.on('before-mouse-event',(event,input)=>{if(probe.events.length<20)probe.events.push({type:input?.type,button:input?.button,prevented:event.defaultPrevented===true,windowFocused:w.isFocused()});});
+   // sendInputEvent requires a focused containing BrowserWindow. This is a
+   // fixture prerequisite only; no product focus/ownership guard is changed.
+   // https://www.electronjs.org/docs/latest/api/web-contents#contentssendinputeventinputevent
+   if(!w.isFocused())await new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{w.removeListener('focus',done);reject(Error('Fixture BrowserWindow did not focus'));},2000);
+    function done(){clearTimeout(timer);w.removeListener('focus',done);resolve();}
+    w.once('focus',done);w.focus();if(w.isFocused())done();
+   });
+   probe.dispatchWindowFocused=w.isFocused();
    shield.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,x:20,y:20});
    shield.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,x:20,y:20});
+   return probe;
   });
   await page.locator(`[data-on-click="tk-handback"][data-value="${threadId}"]`).waitFor();
-  check('takeover consumes its click',(await inspect(id)).count===1);
+  fs.writeFileSync(path.join(out,'takeover-observation.json'),JSON.stringify({
+   native:await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>!w.isDestroyed())?.__sharedBrowserOwnership),
+   renderer:await page.evaluate(()=>({events:window.__sharedBrowserTakeover?.events||[],remoteReady:document.documentElement.dataset.backplaneRemoteReady,strip:document.querySelector('.desktop-browser-drive')?.textContent}))
+  },null,2)+'\n');
+  check('takeover consumes its click',(await inspect(id)).count===beforeHuman.count);
+  phase='human';
   check('bot click refused while human owns page',(await tool('preview_click',{selector:'#count'},threadId,true)).isError===true);
   check('bot evaluation refused while human owns page',(await tool('preview_evaluate',{expression:'window.fixtureState.count++'},threadId,true)).isError===true);
   await humanClick(id,'#entry');
@@ -124,11 +157,13 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   },id);
   await humanClick(id,'#count');
   const human=await inspect(id);
-  check('trusted native human input changes SAME document',human.document===initial.document&&human.entry==='human typed'&&human.count===2&&human.trustedClicks===2&&human.trustedInputs>0);
+  check('trusted native human input changes SAME document',human.document===initial.document&&human.entry==='human typed'&&human.count===beforeHuman.count+1&&human.trustedClicks===beforeHuman.trustedClicks+1&&human.trustedInputs>beforeHuman.trustedInputs);
+  phase='handback';
   await page.locator(`[data-on-click="tk-handback"][data-value="${threadId}"]`).click();
   await page.locator(`[data-on-click="tk-takeover"][data-value="${threadId}"]`).waitFor();
   snapshot=await tool('preview_snapshot');
-  check('handback snapshot sees actual human edits',snapshot.value.visibleText.includes('Entry: human typed')&&snapshot.value.visibleText.includes('Count: 2'));
+  check('handback snapshot sees actual human edits',snapshot.value.visibleText.includes('Entry: human typed')&&snapshot.value.visibleText.includes('Count: '+(beforeHuman.count+1)));
+  phase='remaining-browser';
   await tool('preview_click',{locator:'role=button[name="Count locally"]'});
   await tool('preview_type',{locator:'role=textbox[name="Form entry"]',text:'local only',clear:true});
   await tool('preview_press',{key:'Enter'});
@@ -176,10 +211,18 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await page.screenshot({path:path.join(out,'shared-browser-chrome.png')});
   const pixels=await app.evaluate(async({webContents},id)=>(await webContents.fromId(id).capturePage()).toPNG().toString('base64'),id);
   fs.writeFileSync(path.join(out,'shared-browser-guest.png'),Buffer.from(pixels,'base64'));
-  const receipt={status:'PASS',checks,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
+  const receipt={status:'PASS',checks,retainedPrefix:retained,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
   fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify(receipt,null,2)+'\n');
   return receipt;
- }catch(error){fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;}
+ }catch(error){
+  // Retain this exact failure boundary before another helper changes the UI.
+  try{ownership.renderer=await page.evaluate(()=>({events:window.__sharedBrowserTakeover?.events||[],remoteReady:document.documentElement.dataset.backplaneRemoteReady,thread:document.querySelector('main')?.dataset.thread,strip:document.querySelector('.desktop-browser-drive')?.textContent,controls:[...document.querySelectorAll('.desktop-browser-drive [data-on-click]')].map(n=>({action:n.dataset.onClick,value:n.dataset.value})),status:document.querySelector('.desktop-browser-status')?.textContent}));}catch(e){ownership.rendererError=e.message;}
+  try{ownership.native=await app.evaluate(({BrowserWindow,webContents},id)=>{const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed());return{probe:w?.__sharedBrowserOwnership,windowFocused:w?.isFocused(),focusedId:webContents.getFocusedWebContents()?.id??null,views:w?.contentView.children.filter(v=>v.webContents).map(v=>({id:v.webContents.id,url:v.webContents.getURL(),visible:v.getVisible(),bounds:v.getBounds(),guest:v.webContents.id===id}))};},guestId);}catch(e){ownership.nativeError=e.message;}
+  if(phase==='takeover')try{const probe=await tool('preview_snapshot',{},threadId,true);ownership.canonicalSnapshotProbe={isError:probe.isError,text:probe.content?.find(c=>c.type==='text')?.text?.slice(0,400)};}catch(e){ownership.canonicalProbeError=e.message;}
+  try{fs.writeFileSync(path.join(out,'browser-failure.html'),await page.content());await page.screenshot({path:path.join(out,'browser-failure.png')});}catch(e){ownership.captureError=e.message;}
+  fs.writeFileSync(path.join(out,'ownership-observation.json'),JSON.stringify({phase,ownership},null,2)+'\n');
+  fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
+ }
  finally{await site.close();}
 }
 module.exports={controlledBrowserPage,runSharedBrowserAcceptance};

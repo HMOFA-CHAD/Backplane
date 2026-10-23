@@ -23,6 +23,10 @@ async function runHierarchyAcceptance({page,home,threadId='review',child,out}){
   assert(home.startsWith(os.tmpdir()+path.sep),'never use a live profile');
   fs.mkdirSync(out,{recursive:true});
   const checks=[],created=[],running=[];
+  const resumeCreation=process.env.HIERARCHY_CONTINUE_CREATE==='1';
+  const retained=resumeCreation?JSON.parse(fs.readFileSync(process.env.HIERARCHY_PREFIX_RECEIPT,'utf8')):null;
+  if(retained)assert(retained.checks.includes('two captured agents run without moving projects or faking parent activity'));
+  const retainedEvidence=retained?{receipt:process.env.HIERARCHY_PREFIX_RECEIPT,checks:retained.checks}:null;
   const record=name=>{checks.push(name);fs.writeFileSync(path.join(out,'PROGRESS.json'),JSON.stringify({checks,created},null,2));};
   const log=()=>fs.readFileSync(path.join(home,'events.jsonl'),'utf8').trim().split('\n').flatMap(line=>{try{return [JSON.parse(line)];}catch{return [];}});
   const ready=async id=>page.waitForFunction(id=>document.querySelector('main')?.dataset.thread===id&&document.documentElement.dataset.backplaneRemoteReady==='true',id);
@@ -34,7 +38,7 @@ async function runHierarchyAcceptance({page,home,threadId='review',child,out}){
   const snapshot=async name=>{const file=path.join(out,name+'.png');await page.screenshot({path:file});return file;};
   try{
     await page.setViewportSize({width:1440,height:960});await select(threadId);
-    assert.equal(await row(ids.child).count(),1);assert.equal(await row(ids.grandchild).count(),1);
+    if(!resumeCreation){assert.equal(await row(ids.child).count(),1);assert.equal(await row(ids.grandchild).count(),1);
     assert.equal(await page.locator('.sidebar section.project[data-drag-to="scratch"]').count(),0);
     record('normal child/grandchild appear once; Scratch is absent from projects');
     const before=await order(),parentSignal=await signal();
@@ -49,6 +53,7 @@ async function runHierarchyAcceptance({page,home,threadId='review',child,out}){
     for(const id of running.splice(0)){
       await select(id);await page.locator('.thread-workbar [data-on-click="interrupt"]').click();
       await page.locator('.thread-workbar [data-on-click="interrupt"]').waitFor({state:'hidden'});
+    }
     }
     await select(threadId);
     await page.locator('.subthreads-control [data-on-click="thread-child"][data-value="'+threadId+'"]').click();
@@ -84,7 +89,7 @@ async function runHierarchyAcceptance({page,home,threadId='review',child,out}){
     assert(await page.locator('.sidebar').evaluate(el=>el.scrollWidth<=el.clientWidth),'390px hierarchy has no sidebar overflow');
     await snapshot('hierarchy-mobile390');
     record('real desktop and 390px renders; no document/sidebar horizontal overflow');
-    fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({state:'passed',checks,created,history:ids.history},null,2));
+    fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({state:'passed',checks,created,retainedEvidence,history:ids.history},null,2));
     return {checks,created,out};
   }catch(error){fs.writeFileSync(path.join(out,'FAIL.json'),JSON.stringify({state:'failed',checks,created,error:error.stack},null,2));await page.screenshot({path:path.join(out,'failure.png'),timeout:3000}).catch(()=>{});fs.writeFileSync(path.join(out,'failure.html'),await page.content().catch(()=>''));throw error;
   }finally{
