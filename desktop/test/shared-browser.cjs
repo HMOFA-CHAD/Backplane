@@ -65,7 +65,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   return w.contentView.children.filter(v=>v.webContents&&!v.webContents.isDestroyed()).map(v=>({id:v.webContents.id,url:v.webContents.getURL(),visible:v.getVisible(),bounds:v.getBounds(),
    preferences:{sandbox:v.webContents.getLastWebPreferences().sandbox,nodeIntegration:v.webContents.getLastWebPreferences().nodeIntegration,contextIsolation:v.webContents.getLastWebPreferences().contextIsolation}})).filter(v=>v.url.startsWith(siteOrigin));
  },site.origin);
- const inspect=async id=>app.evaluate(({webContents},id)=>webContents.fromId(id).executeJavaScript(`JSON.stringify({...fixtureState,entry:document.querySelector('#entry').value,profile:localStorage.fixtureProfile,tab:sessionStorage.fixtureTab})`).then(JSON.parse),id);
+ const inspect=async id=>app.evaluate(({webContents},id)=>webContents.fromId(id).executeJavaScript(`JSON.stringify({...fixtureState,entry:document.querySelector('#entry').value,active:document.activeElement?.id,hasFocus:document.hasFocus(),profile:localStorage.fixtureProfile,tab:sessionStorage.fixtureTab})`).then(JSON.parse),id);
  const humanClick=async(id,selector)=>app.evaluate(async({webContents},{id,selector})=>{
   const wc=webContents.fromId(id),point=await wc.executeJavaScript(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`);
   wc.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});wc.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
@@ -84,10 +84,23 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   const views=await native();assert.equal(views.length,1);const id=views[0].id;
   check('visible sandboxed WebContentsView, no iframe',views[0].visible&&views[0].bounds.width>100&&views[0].bounds.height>80&&views[0].preferences.sandbox&&views[0].preferences.contextIsolation&&!views[0].preferences.nodeIntegration&&await page.locator('iframe').count()===0);
   const initial=await inspect(id);
+  const refInput={initial};
+  await app.evaluate(({webContents},id)=>{
+   const wc=webContents.fromId(id),probe={events:[]};wc.__sharedBrowserProbe=probe;
+   const record=(name,event,input)=>{if(probe.events.length<50)probe.events.push({event:name,type:input?.type||'',prevented:event?.defaultPrevented===true,focusedId:webContents.getFocusedWebContents()?.id??null});};
+   for(const name of ['before-input-event','before-mouse-event','focus','blur'])wc.on(name,(event,input)=>record(name,event,input));
+  },id);
   await tool('preview_type',{ref:refFor(snapshot.value,'textbox','Shared entry'),text:'bot typed',clear:true});
+  refInput.afterType=await inspect(id);
   await tool('preview_click',{ref:refFor(snapshot.value,'button','Count locally')});
-  const afterBotInput=await inspect(id);fs.writeFileSync(path.join(out,'ref-input-observation.json'),JSON.stringify({state:afterBotInput,expectedEntry:'bot typed',expectedCount:1},null,2));
-  check('bot ref input reaches the visible native document',afterBotInput.entry==='bot typed'&&afterBotInput.count===1);
+  refInput.afterClick=await inspect(id);
+  refInput.inputEvents=await app.evaluate(({webContents},id)=>webContents.fromId(id).__sharedBrowserProbe.events,id);
+  // Observe a later renderer turn without repeating any input.
+  await app.evaluate(async({webContents},id)=>webContents.fromId(id).executeJavaScript('new Promise(resolve=>setTimeout(()=>resolve(true),150))'),id);
+  refInput.settled=await inspect(id);
+  refInput.settledInputEvents=await app.evaluate(({webContents},id)=>webContents.fromId(id).__sharedBrowserProbe.events,id);
+  fs.writeFileSync(path.join(out,'ref-input-observation.json'),JSON.stringify({state:refInput.settled,observations:refInput,expectedEntry:'bot typed',expectedCount:1},null,2));
+  check('bot ref input reaches the visible native document',refInput.settled.entry==='bot typed'&&refInput.settled.count===1);
   await tool('preview_scroll',{selector:'#scroller',dy:300});
   check('bot scroll uses actual native page',(await tool('preview_evaluate',{expression:'document.querySelector("#scroller").scrollTop'})).value>0);
   await tool('preview_wait_for',{text:'Entry: bot typed'});
