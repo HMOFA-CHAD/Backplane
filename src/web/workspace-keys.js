@@ -9,6 +9,11 @@ export function workspaceShortcut(event, platform = '') {
       (event.code === 'Backquote' || key === '`' || key === '~')) return ['ws-key', 'term'];
   if (command && !event.shiftKey && !event.altKey && key === 'j') return ['ws-key', 'term'];
   const editor = event.target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[data-keys],[data-keyto]');
+  // The requested bare backtick works from the composer/workspace. Keep
+  // literal backticks available in shells and other text fields.
+  if (key === '`' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey &&
+      (!editor || (editor.tagName === 'TEXTAREA' && editor.id === 'composer' &&
+        !editor.hasAttribute?.('data-keys') && !editor.hasAttribute?.('data-keyto')))) return ['ws-key', 'term'];
   if (editor) return null;
   if (command && !event.altKey && event.shiftKey) {
     if (key === 'u') return ['ws-key', 'uber'];
