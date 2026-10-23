@@ -1506,7 +1506,8 @@ def Worktree.kept(t: Thread) -> Bool:
 
 def Worktree.waits.kept(+s: State, t: Thread, +now: Nat) -> Bool:
   Thread{+id, _, _, _, _, _, _, _, _, _, _, _, en, _, +wt, _, _, _, _, _, _} = t
-  Worktree.pending.k(en, wt, Worktree.again.at(s, id), now)
+  +ask = {Worktree.again.at(s, id) : Nat}
+  Bool.and(Nat.is_gt(ask, 0n), Worktree.pending.k(en, wt, ask, now))
 
 def Worktree.waits.k(kept: Bool, +s: State, +t: Thread, +now: Nat) -> Bool:
   match kept:
