@@ -582,6 +582,12 @@ struct SetField: Codable, Hashable {
     let value: String
 }
 
+struct UsageDay: Codable, Hashable {
+    let date, reading: String
+    let known: Bool
+    let fraction: Int
+}
+
 struct SetRow: Codable, Hashable {
     let label, note: String
     let buttons: [SetButton]
@@ -589,6 +595,7 @@ struct SetRow: Codable, Hashable {
     // the pairing code's rows ("1" dark) while it is shown, and what to do with it
     let qr: [String]?
     let qrnote: String?
+    var chart: [UsageDay]? = nil
     // about this device, not the hub: App settings has it, the hub's page skips it
     let local: Bool?
     // notif-policy's "Notify me for": drawn in App settings' Notifications section, not on the hub's page

@@ -53,6 +53,9 @@ let app, page; const errors = [], frames = [], start = performance.now();
   await page.waitForFunction(() => document.querySelector('.memory-range')?.textContent === '1–24 / 300');
   await cats(); await page.screenshot({ path: path.join(out, 'memory-desktop.png') });
   const keys = new Set();
+  const reused = process.env.MEMORY_CAT_RESUME ? JSON.parse(fs.readFileSync(process.env.MEMORY_CAT_RESUME)) : null;
+  if (reused) { assert.equal(reused.source, info.commit); assert.equal(reused.stage, stage); }
+  if (!reused) {
   for (let p = 0; p < 13; p++) {
     const end = Math.min((p + 1) * 24, 300), range = `${p * 24 + 1}–${end} / 300`;
     await page.waitForFunction(range => document.querySelector('.memory-range')?.textContent === range, range);
@@ -86,6 +89,7 @@ let app, page; const errors = [], frames = [], start = performance.now();
   if (!await mem.count()) await tab('settings');
   await tab('memory');
   await page.waitForFunction(() => document.querySelectorAll('.item-key').length === 24);
+  }
   // Refuse a single read-only paging request locally, exercising fail(state).
   await page.evaluate(() => {
     const socket = window.__memorySockets.at(-1), send = socket.send;
@@ -93,7 +97,7 @@ let app, page; const errors = [], frames = [], start = performance.now();
   });
   await page.locator('nav.memory-pages button').filter({ hasText: /^More$/ }).click();
   await page.waitForFunction(() => document.documentElement.dataset.backplaneRemoteReady === 'false');
-  await cats(); assert.equal(await page.locator('.sidebar section.project').count(), 1);
+  await cats(); assert.equal(await page.locator('.sidebar section.project[data-drag-to="fixture"]').count(), 1);
   await page.screenshot({ path: path.join(out, 'failure-keeps-cat.png') });
   await page.getByRole('button', { name: 'Retry now', exact: true }).click(); await ready(); await cats();
   if (!await mem.count()) await tab('settings');
@@ -106,7 +110,7 @@ let app, page; const errors = [], frames = [], start = performance.now();
   assert.deepEqual(errors, []); assert(Math.max(...frames) <= 262144);
   const trace = await page.evaluate(() => window.__bpPerf.trace.filter(x => ['thin-disconnect', 'thin-error'].includes(x.phase)));
   const result = { state: 'passed', seconds: (performance.now() - start) / 1000, source: info.commit, version: info.version,
-    memories: keys.size, pageSize: 24, maxFrameBytes: Math.max(...frames), healthyWakeKeptSocket: true, actualDisconnectRecovered: true,
+    memories: reused ? reused.passedBeforeFailure.memories : keys.size, reusedReceipt: process.env.MEMORY_CAT_RESUME || null, pageSize: 24, maxFrameBytes: Math.max(...frames), healthyWakeKeptSocket: true, actualDisconnectRecovered: true,
     failureKeptSidebarCat: true, transitions: ['memory pages', 'reconnect', 'request failure', 'retry', 'mobile', 'chat', 'settings', 'memory'], errors, trace, home, out };
   fs.writeFileSync(path.join(out, 'RESULT.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (e) {

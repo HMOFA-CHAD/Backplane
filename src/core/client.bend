@@ -17,6 +17,7 @@ import ./model.bend as M
 import ./signal.bend as SG
 import ./usage.bend as UZ
 import ./usage_page.bend as UP
+import ./usage_graph.bend as UG
 import ./codec.bend as C
 import ./vt.bend as VT
 import ./emb.bend as EM
@@ -11384,6 +11385,12 @@ def Usage.page.period(+u: Ui) -> String:
 def Usage.page.metric(+u: Ui) -> String:
   UP.Up.metric(Ui.scratch(u, "@usage.metric"))
 
+def Usage.page.providers(+u: Ui) -> List<&2, String>:
+  UG.Ug.enabled(Ui.info(u, "models"))
+
+def Usage.page.provider(+u: Ui) -> String:
+  UG.Ug.selected(Usage.page.providers(u), Ui.scratch(u, "@usage.provider"))
+
 def Usage.page.index(+u: Ui, +name: String) -> Nat:
   M.Switch.num(Ui.scratch(u, "@usage." ++ name ++ "Page"), 0n)
 
@@ -11444,6 +11451,8 @@ def Ui.act.us(i: Nat, +u: Ui, +action: String, +value: String) -> Act:
       Usage.page.turn(u, "model", value)
     case 5n:
       Usage.page.turn(u, "project", value)
+    case 6n:
+      Usage.page.choose(u, "@usage.provider", UG.Ug.selected(Usage.page.providers(u), value))
     case _:
       Ui.act.s(String.eq(action, "skill-close"), u, action, value)
 
@@ -11453,7 +11462,7 @@ def Ui.act.fab(fab: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case True{}:
       Fab.act(u, action, value)
     case False{}:
-      Ui.act.us(C.Codec.pos(["usage-refresh", "usage-open", "usage-period", "usage-metric", "usage-model-page", "usage-project-page"], action), u, action, value)
+      Ui.act.us(C.Codec.pos(["usage-refresh", "usage-open", "usage-period", "usage-metric", "usage-model-page", "usage-project-page", "usage-provider"], action), u, action, value)
 
 def Ui.act.z(tz: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match tz:

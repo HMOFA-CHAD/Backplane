@@ -1550,7 +1550,8 @@ def State.usage(+s: State, +th: String, +used: Nat, +window: Nat) -> State:
 # reported a cost): per thread tok.t.<thread>, per UTC day tok.d.<YYYY-MM-DD>,
 # per month tok.m.<YYYY-MM>, per month and model tok.mm.<YYYY-MM>|<provider>|<model>
 # (that month's models, a line each, in tok.ml.<YYYY-MM>), per project and
-# month tok.p.<project>|<YYYY-MM>. tok.since is the first turn counted
+# month tok.p.<project>|<YYYY-MM>. Daily dimensions: dv.<day>|<provider>
+# and dp.<day>|<project>; daily.since marks their first accepted turn. tok.since is the first turn counted
 # (nothing before it was recorded); tok.key.<thread> and tok.basis.<thread>
 # are the hub's: the last turn's key (a line seen again is not counted
 # twice) and the provider's running totals it took the turn's share from.
@@ -1629,7 +1630,11 @@ def Tok.project(t: Thread) -> String:
 def State.tokens.k(+s: State, +x: String, +th: String, +pj: String, +pm: String, +i: Nat, +r: Nat, +w: Nat, +o: Nat, +t: Nat, +c: Nat, +ck: Bool, +kk: Bool, +key: String, +basis: String, +at: Nat) -> State:
   +s1 = Tok.sum(Tok.sum(Tok.sum(s, x ++ "t." ++ th, i, r, w, o, t, c, ck, kk), x ++ "d." ++ Tok.day(at), i, r, w, o, t, c, ck, kk), x ++ "m." ++ Tok.month(at), i, r, w, o, t, c, ck, kk)
   +s2 = Tok.sum(Tok.sum(s1, x ++ "mm." ++ Tok.month(at) ++ "|" ++ pm, i, r, w, o, t, c, ck, kk), x ++ "p." ++ pj ++ "|" ++ Tok.month(at), i, r, w, o, t, c, ck, kk)
-  +s3 = State.setting(s2, x ++ "ml." ++ Tok.month(at), Tok.once(Setting.get(s2, x ++ "ml." ++ Tok.month(at), ""), pm))
+  # Additive daily dimensions use the same accepted turn and epoch as totals.
+  # Existing persisted totals are never split or estimated retrospectively.
+  +sd = Tok.sum(Tok.sum(s2, x ++ "dv." ++ Tok.day(at) ++ "|" ++ Maybe.default(&2, String, List.head(&2, String, String.split(pm, '|')), ""), i, r, w, o, t, c, ck, kk), x ++ "dp." ++ Tok.day(at) ++ "|" ++ pj, i, r, w, o, t, c, ck, kk)
+  +ss = State.setting(sd, x ++ "daily.since", Bool.pick(String, String.is_empty(Setting.get(sd, x ++ "daily.since", "")), Nat.show(at), Setting.get(sd, x ++ "daily.since", "")))
+  +s3 = State.setting(ss, x ++ "ml." ++ Tok.month(at), Tok.once(Setting.get(s2, x ++ "ml." ++ Tok.month(at), ""), pm))
   +s4 = State.setting(s3, x ++ "since", Bool.pick(String, String.is_empty(Setting.get(s3, x ++ "since", "")), Nat.show(at), Setting.get(s3, x ++ "since", "")))
   State.setting(State.setting(s4, "tok.key." ++ th, key), "tok.basis." ++ th, basis)
 

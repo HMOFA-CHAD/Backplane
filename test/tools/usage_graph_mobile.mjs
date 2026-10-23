@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+const lib=(await import(pathToFileURL(process.argv[2]).href)).default;
+const rows=JSON.parse(lib.native());
+const chart=rows.find(r=>r.chart)?.chart;
+assert.equal(chart.length,18,'native graph follows UTC period');
+assert.equal(chart[0].known,false,'missing native day remains unknown');
+assert.equal(chart.find(d=>d.date==='2026-10-15').reading.startsWith('100 recorded tokens'),true,'native reading uses actual provider rollup');
+assert.equal(chart.find(d=>d.date==='2026-10-16').fraction,10000,'native bar scale uses maximum recorded day');
+assert.deepEqual(rows.find(r=>r.label==='Provider').buttons.map(b=>b.label),['claude','codex','grok'],'native provider controls follow availability');
+assert.equal(lib.scope(),'claude/codex','native control changes only named machine');
+assert.equal(lib.missing_scope(),'claude','obsolete machine cannot change focused machine');
+console.log('ok native usage chart payload, UTC, availability and machine isolation (7 checks; no native binary build)');

@@ -10,6 +10,7 @@ import ../core/model.bend as M
 import ../core/signal.bend as SG
 import ../core/i18n.bend as I
 import ./dom.bend as D
+import ./usage-page.bend as UV
 import ./icon.bend as WI
 import ../core/tools.bend as TO
 import ../core/client.bend as U
@@ -1223,10 +1224,7 @@ def View.usage.pagers(cs: List<&2, UP.UpControl>) -> List<&2, D.Node>:
     case +h <> +rest: [View.setrow("Breakdown pages", "", View.usage.controls(h <> rest))]
 
 def View.usage.page(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
-  +cs = U.Usage.page.controls(u)
-  List.concat(&2, D.Node, [[View.setrow("Period", "UTC calendar boundaries", View.usage.controls(List.take(&2, UP.UpControl, cs, 2n))),
-    View.setrow("View", "", View.usage.controls(List.take(&2, UP.UpControl, List.drop(&2, UP.UpControl, cs, 2n), 3n)))],
-    View.usage.rows.loc(lc, U.Usage.page.rows(u)), View.usage.pagers(List.drop(&2, UP.UpControl, cs, 5n))])
+  UV.Uv.page(lc, u)
 
 def View.tz.set(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
   [View.setrow(MSG.T.settings.zone(lc), U.Tzs.line.loc(lc, u),
