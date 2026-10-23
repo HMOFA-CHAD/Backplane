@@ -977,8 +977,14 @@ function bp_wake() {
 // the run as any effect's does
 function bp_resume(k, more) {
   const resume = (_) => {
+    const began = performance.now();
     const x = more();
-    return x === undefined ? undefined : k(x);
+    const read = performance.now();
+    bp_loop_slow(globalThis.BEND_IO, "effect", "runtime.resume.more", began, read, undefined, undefined, more);
+    if (x === undefined) return undefined;
+    const op = k(x);
+    bp_loop_slow(globalThis.BEND_IO, "continuation", "runtime.resume.continuation", read, performance.now(), x, op, k);
+    return op;
   };
   // The wrapper otherwise hides the compiled continuation from a slow
   // dispatch record. This is the same k already captured by its closure.
