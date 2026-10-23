@@ -203,6 +203,9 @@ def build(args):
                    BACKPLANE_SERVICE_VERSION=record['version'], BACKPLANE_LOCAL_STAGE=str(stage))
         run(['node', 'desktop/test/local-ui.cjs'], env=env)
         timings['smoke_seconds'] = round(time.monotonic()-t, 3)
+        t = time.monotonic()
+        run(['node','desktop/test/bub-links.cjs'],env=env)
+        timings['bub_links_seconds'] = round(time.monotonic()-t,3)
         record['smoked'] = True
         (stage / 'LOCAL.json').write_text(json.dumps(record, indent=2)+'\n')
         # Same serial controller, after the shared build and UI acceptance.
