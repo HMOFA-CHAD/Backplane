@@ -2,7 +2,7 @@
 // never decoded, copied or retained; diagnostics contain fixed enums only.
 const TYPES = new Set(['reply','view','hb','view.changed','plot','term','shot','info','log','changes','delta']);
 export function frameSummary(bytes, keys, words) {
-  const end = Math.min(bytes.length, 1024);
+  const end = Math.min(bytes.length, 256);
   let at = 0, type = 'unknown', id;
   const byte = () => { if (at >= end) throw Error('header boundary');return bytes[at++]; };
   const argument = ai => {
