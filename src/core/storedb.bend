@@ -706,6 +706,8 @@ def Sdb.keys(+pre: M.State, +post: M.State, c: M.Change) -> List<&2, RK>:
       [RK{"thread", id}]
     case M.ThreadUnsettled{+id, _}:
       [RK{"thread", id}]
+    case M.ThreadWoke{+id, _}:
+      [RK{"thread", id}]
     case M.ThreadArchived{+id, _, _}:
       [RK{"thread", id}]
     case M.ThreadPinned{+id, _, _}:

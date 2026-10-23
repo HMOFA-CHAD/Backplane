@@ -38,6 +38,16 @@ def cli(+version: String, +out: String) -> String:
 def err(+version: String, +out: String) -> String:
   J.Json.get_str(U.Models.about(oc(version, out), "opencode"), "error", "?")
 
+# a hub models info as it stands, with providers this file knows nothing of
+def before() -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse("{\"claude\":[\"opus\"],\"pi\":[\"pi/a\"],\"omp\":[\"omp/b\"],\"opencode\":[\"old/x\"],\"about\":{\"claude\":{\"cli\":\"2.1\"},\"pi\":{\"cli\":\"pi 1\"},\"omp\":{\"cli\":\"omp 2\"},\"opencode\":{\"cli\":\"opencode v2.1.4 · 1 model · no sign-ins\",\"version\":\"opencode v2.1.4\"}}}"), J.Null{})
+
+def after(+out: String) -> J.Json:
+  O.Ocm.patch(before(), out)
+
+def strs.of(+j: J.Json, +k: String) -> String:
+  J.Json.show(J.Json.get_obj(j, k))
+
 def main() -> IO(Unit):
   +ver = {"opencode v2.1.4" : String}
   +usage = {"DESCRIPTION\n  List all available models\n\nUSAGE\n  opencode models [flags]\n\nFLAGS\n  --standalone       Run with a private server instead of the background service\n" : String}
@@ -64,5 +74,15 @@ def main() -> IO(Unit):
     C.Check.str("ocm not installed no error", err("", ""), "")
     C.Check.str("ocm version kept", J.Json.get_str(O.Ocm.about(ver, fail), "version", ""), "opencode v2.1.4")
     C.Check.str("ocm other providers untouched", String.join(U.Models.list(U.Str.get(nf(ver, fail), "models"), "claude"), ","), "opus")
+    C.Check.str("ocm refresh keeps pi", strs.of(after(v2()), "pi"), "[\"pi/a\"]")
+    C.Check.str("ocm refresh keeps omp", strs.of(after(v2()), "omp"), "[\"omp/b\"]")
+    C.Check.str("ocm refresh keeps claude", strs.of(after(v2()), "claude"), "[\"opus\"]")
+    C.Check.str("ocm refresh keeps about pi", J.Json.get_str(J.Json.get_obj(J.Json.get_obj(after(v2()), "about"), "pi"), "cli", ""), "pi 1")
+    C.Check.str("ocm refresh keeps about omp", J.Json.get_str(J.Json.get_obj(J.Json.get_obj(after(v2()), "about"), "omp"), "cli", ""), "omp 2")
+    C.Check.str("ocm refresh replaces list", strs.of(after(v2()), "opencode"), "[\"openai/gpt-5.6-fast\",\"xai/grok-4.5\",\"cerebras/gpt-oss-120b\"]")
+    C.Check.str("ocm refresh replaces about", J.Json.get_str(J.Json.get_obj(J.Json.get_obj(after(v2()), "about"), "opencode"), "cli", ""), "opencode v2.1.4 · 3 models · sign-ins: Cerebras (API key), OpenAI (OAuth)")
+    C.Check.str("ocm refresh failed says", J.Json.get_str(J.Json.get_obj(J.Json.get_obj(after(fail), "about"), "opencode"), "cli", ""), "opencode v2.1.4 · could not list models (`opencode models` exited 1: Unrecognized flag: --verbose in command opencode models)")
+    C.Check.str("ocp quota hint", O.Ocp.hint("Internal error: Upstream request failed: Insufficient account funds"),
+      "Internal error: Upstream request failed: Insufficient account funds (the model's provider refused for its account's balance or quota: top it up, or pick another opencode model in the composer)")
     C.Check.str("ocp provider auth hint", O.Ocp.hint("Authentication required: provider authentication required"),
       "Authentication required: provider authentication required (the model's provider refused opencode's sign-in, as an expired OAuth sign-in does: run `opencode auth login` for that provider; with no model picked, opencode's configured default agent chose it)")

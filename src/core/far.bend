@@ -116,6 +116,8 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.ThreadSettled{Fr.id(l, id), manual, at}}
     case M.ThreadUnsettled{+id, at}:
       Some{M.ThreadUnsettled{Fr.id(l, id), at}}
+    case M.ThreadWoke{+id, at}:
+      Some{M.ThreadWoke{Fr.id(l, id), at}}
     case M.ThreadArchived{+id, b, at}:
       Some{M.ThreadArchived{Fr.id(l, id), b, at}}
     case M.ThreadPinned{+id, b, at}:
@@ -271,6 +273,8 @@ def Fr.shared(+s: M.State, c: M.Change) -> Bool:
       Fr.thread.shared(s, id)
     case M.ThreadUnsettled{+id, _}:
       Fr.thread.shared(s, id)
+    case M.ThreadWoke{+id, _}:
+      Fr.thread.shared(s, id)
     case M.ThreadArchived{+id, _, _}:
       Fr.thread.shared(s, id)
     case M.ThreadPinned{+id, _, _}:
@@ -386,6 +390,8 @@ def Fr.scope(+s: M.State, c: M.Change) -> String:
     case M.ThreadSettled{+id, _, _}:
       Fr.scope.th(s, id)
     case M.ThreadUnsettled{+id, _}:
+      Fr.scope.th(s, id)
+    case M.ThreadWoke{+id, _}:
       Fr.scope.th(s, id)
     case M.ThreadArchived{+id, _, _}:
       Fr.scope.th(s, id)

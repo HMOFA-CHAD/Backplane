@@ -301,6 +301,8 @@ def Change.encode(c: M.Change) -> J.Json:
       Change.obj("WakeDropped", [J.KV{"id", J.Str{id}}, J.KV{"at", Codec.nat(at)}])
     case M.ThreadParentSet{id, parent, at}:
       Change.obj("ThreadParentSet", [J.KV{"id", J.Str{id}}, J.KV{"parent", J.Str{parent}}, J.KV{"at", Codec.nat(at)}])
+    case M.ThreadWoke{id, at}:
+      Change.obj("ThreadWoke", [J.KV{"id", J.Str{id}}, J.KV{"at", Codec.nat(at)}])
     case M.ThreadLaunched{id, by, report, at}:
       Change.obj("ThreadLaunched", [J.KV{"id", J.Str{id}}, J.KV{"by", J.Str{by}}, J.KV{"report", J.Flag{report}}, J.KV{"at", Codec.nat(at)}])
     case M.RoutinePlan{id, once, tz, kind, at}:
@@ -337,7 +339,7 @@ def Change.encode(c: M.Change) -> J.Json:
       Change.obj("DeployBuilt", [J.KV{"commit", J.Str{commit}}, J.KV{"state", J.Str{state}}, J.KV{"version", J.Str{version}}, J.KV{"detail", J.Str{detail}}, J.KV{"at", Codec.nat(at)}])
 
 def Change.tags() -> List<&2, String>:
-  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet", "WorkSet", "UberSet", "UberOp", "ThreadLaunched", "WakeSet", "WakeDropped", "LockChanged", "RoutinePlan", "RoutineSlot", "RoutineDone", "Reminded", "TaskSet", "TaskDeleted", "MessageFrom", "ConvSet", "MailPosted", "MailMarked", "MailTagged", "RunSet", "CharterSet", "DecisionLogged", "TurnUsage", "DeployAsked", "DeployBuilt", "ThreadParentSet"]
+  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet", "WorkSet", "UberSet", "UberOp", "ThreadLaunched", "WakeSet", "WakeDropped", "LockChanged", "RoutinePlan", "RoutineSlot", "RoutineDone", "Reminded", "TaskSet", "TaskDeleted", "MessageFrom", "ConvSet", "MailPosted", "MailMarked", "MailTagged", "RunSet", "CharterSet", "DecisionLogged", "TurnUsage", "DeployAsked", "DeployBuilt", "ThreadParentSet", "ThreadWoke"]
 
 def Codec.wake.events(xs: List<&2, J.Json>) -> List<&2, String>:
   match xs:
@@ -510,6 +512,8 @@ def Change.decode.k(i: Nat, +o: J.Json) -> Maybe<&2, M.Change>:
       Some{M.DeployAsked{J.Json.get_str(o, "by", ""), J.Json.get_str(o, "note", ""), J.Json.get_str(o, "commit", ""), J.Json.get_str(o, "cover", ""), J.Json.get_nat(o, "at", 0n)}}
     case 80n:
       Some{M.ThreadParentSet{J.Json.get_str(o, "id", ""), J.Json.get_str(o, "parent", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 81n:
+      Some{M.ThreadWoke{J.Json.get_str(o, "id", ""), J.Json.get_nat(o, "at", 0n)}}
     case 79n:
       Some{M.DeployBuilt{J.Json.get_str(o, "commit", ""), J.Json.get_str(o, "state", ""), J.Json.get_str(o, "version", ""), J.Json.get_str(o, "detail", ""), J.Json.get_nat(o, "at", 0n)}}
     case _:
@@ -659,6 +663,8 @@ def Change.wire(c: M.Change) -> J.Json:
       Change.encode(M.WakeDropped{id, at})
     case M.ThreadParentSet{id, parent, at}:
       Change.encode(M.ThreadParentSet{id, parent, at})
+    case M.ThreadWoke{id, at}:
+      Change.encode(M.ThreadWoke{id, at})
     case M.ThreadLaunched{id, by, report, at}:
       Change.encode(M.ThreadLaunched{id, by, report, at})
     case M.RoutinePlan{id, once, tz, kind, at}:

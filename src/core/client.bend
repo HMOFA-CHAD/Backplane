@@ -11612,6 +11612,8 @@ def Touch.raw(c: M.Change) -> List<&2, String>:
       [id]
     case M.ThreadUnsettled{+id, _}:
       [id]
+    case M.ThreadWoke{+id, _}:
+      [id]
     case M.ThreadArchived{+id, _, _}:
       [id]
     case M.ThreadPinned{+id, _, _}:

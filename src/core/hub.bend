@@ -6001,21 +6001,6 @@ def Step.join(a: Step, b: Step) -> Step:
     case Step{cs, os}:
       Step.before(cs, os, b)
 
-# every thread that should settle now, settled (a snoozed one never is);
-# gh asked about due merges; worktrees put away long enough removed;
-# stranded worktree waits run. Legacy conversations never expire.
-# (nothing settles, expires or loses its worktree while it waits on work:
-# M.Work.busy, the children counted once for all threads)
-def Hub.tick.k(+s: M.State, +now: Nat, +kids: Map<&2, Nat>) -> Step:
-  match s:
-    case M.State{ps, +ts, _, _, _, _, _, _, _, _, _}:
-      Step.before(Hub.settle.go(Map.values(&2, M.Thread, ts), M.State.navs(s), kids, s, now, Hub.settle.window(s)),
-        List.append(&2, Out, Merge.asks(Map.values(&2, M.Project, ps), Map.values(&2, M.Thread, ts), s), Drop.asks(Map.values(&2, M.Thread, ts), kids, s, now, Hub.wt.window(s))),
-        Wt.stale(Map.values(&2, M.Thread, ts), s, now))
-
-def Hub.tick(+s: M.State, +now: Nat) -> Step:
-  Step.join(Step.join(Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now)), Step.cat(Lr.far.tick(s), Wake.poll(s))), Step.cat(Deploy.tick(s, now), Ship.tick(s, now)))
-
 # Asks keep their thread busy
 # ---------------------------
 # A thread with an open ask (an approval, a question, a plan) waits on the
@@ -6056,6 +6041,214 @@ def Pend.go(cs: List<&2, M.Change>, +before: M.State, +after: M.State) -> List<&
 # a step's changes with the pending counts they move
 def Pend.fix(+s: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
   List.append(&2, M.Change, cs, Pend.go(cs, s, M.State.replay(cs, s)))
+
+# Settling by work
+# ----------------
+# Every step passes through here before it is stored (the server's
+# Hub.step.go, after the pending counts): a thread the step leaves done
+# settles, and one it sets working again wakes (model.bend's Lifecycle.*,
+# laws life_*). Only the threads a change can move are asked, each once,
+# stamped with that change's time; a step that names none costs no replay.
+# The tick (Shelve.tick) asks every thread, for state no step corrected.
+
+type SvAt is Data:
+  SvAt{thread: String, at: Nat}
+
+def Shelve.watch(hit: Bool, +k: String, +at: Nat) -> List<&2, SvAt>:
+  match hit:
+    case True{}:
+      [SvAt{String.drop(k, 6n), at}]
+    case False{}:
+      Nil{}
+
+def Shelve.user(r: M.Role, +th: String, +at: Nat) -> List<&2, SvAt>:
+  match r:
+    case M.User{}:
+      [SvAt{th, at}]
+    case _:
+      Nil{}
+
+# the threads whose work a change can move (pre: the state before it, for
+# a task's parent)
+def Shelve.names(+pre: M.State, c: M.Change) -> List<&2, SvAt>:
+  match c:
+    case M.TurnChanged{+th, _, +at}:
+      [SvAt{th, at}]
+    case M.MessagePosted{+th, _, r, _, +at}:
+      Shelve.user(r, th, at)
+    case M.PendingChanged{+th, _, +at}:
+      [SvAt{th, at}]
+    case M.WorkSet{+th, _, _, +at}:
+      [SvAt{th, at}]
+    case M.TurnQueued{+th, _, _, +at}:
+      [SvAt{th, at}]
+    case M.QueueTaken{+th, +at}:
+      [SvAt{th, at}]
+    case M.QueueTakenOne{+th, _, +at}:
+      [SvAt{th, at}]
+    case M.QueueRemoved{+th, _, +at}:
+      [SvAt{th, at}]
+    case M.TaskDelegated{_, +p, +ch, _, _, _, +at}:
+      [SvAt{p, at}, SvAt{ch, at}]
+    case M.TaskStateSet{+k, _, _, +at}:
+      [SvAt{M.Lifecycle.task.parent(pre, k), at}]
+    case M.SettingSet{+k, _, +at}:
+      Shelve.watch(String.starts_with(k, "watch."), k, at)
+    case _:
+      Nil{}
+
+def Shelve.has(xs: List<&2, SvAt>, +th: String) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case SvAt{+t, _} <> r:
+      Bool.or(String.eq(t, th), Shelve.has(r, th))
+
+def Shelve.add.k(skip: Bool, +t: String, +at: Nat, +acc: List<&2, SvAt>) -> List<&2, SvAt>:
+  match skip:
+    case True{}:
+      acc
+    case False{}:
+      SvAt{t, at} <> acc
+
+def Shelve.add(ys: List<&2, SvAt>, +acc: List<&2, SvAt>) -> List<&2, SvAt>:
+  match ys:
+    case Nil{}:
+      acc
+    case SvAt{+t, +at} <> r:
+      Shelve.add(r, Shelve.add.k(Bool.or(String.is_empty(t), Shelve.has(acc, t)), t, at, acc))
+
+# every thread the changes name, once (the first change's time)
+def Shelve.ats(cs: List<&2, M.Change>, +pre: M.State, +acc: List<&2, SvAt>) -> List<&2, SvAt>:
+  match cs:
+    case Nil{}:
+      acc
+    case +c <> r:
+      Shelve.ats(r, pre, Shelve.add(Shelve.names(pre, c), acc))
+
+def Shelve.fresh.u(r: M.Role, +t: String, +th: String) -> Bool:
+  match r:
+    case M.User{}:
+      String.eq(t, th)
+    case _:
+      False{}
+
+# whether the step brings the thread new input: a message for it (not the
+# agent's own) or one queued for it (Lifecycle.wake.fresh)
+def Shelve.fresh(cs: List<&2, M.Change>, +th: String) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case M.MessagePosted{+t, _, r, _, _} <> rest:
+      Bool.or(Shelve.fresh.u(r, t, th), Shelve.fresh(rest, th))
+    case M.TurnQueued{+t, _, _, _} <> rest:
+      Bool.or(String.eq(t, th), Shelve.fresh(rest, th))
+    case _ <> rest:
+      Shelve.fresh(rest, th)
+
+def Shelve.one.k(wake: Bool, done: Bool, +th: String, +at: Nat, +t: M.Thread, rest: List<&2, M.Change>) -> List<&2, M.Change>:
+  match wake done:
+    case True{} _:
+      M.ThreadWoke{th, at} <> rest
+    case False{} True{}:
+      M.ThreadSettled{th, False{}, M.Lifecycle.at(t, at)} <> rest
+    case False{} False{}:
+      rest
+
+def Shelve.wake.k(+was: Bool, +now: Bool, fresh: Bool, +post: M.State, +th: String) -> Bool:
+  Bool.or(M.Lifecycle.wake.k(was, now, M.Shelf.of(M.State.thread.get(post, th)), M.Lifecycle.override(M.State.thread.get(post, th))),
+    M.Lifecycle.wake.fresh(fresh, now, M.Shelf.of(M.State.thread.get(post, th))))
+
+# woken: it started working, or new input came while it works (fresh)
+def Shelve.wake(+pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, Nat>, +th: String, fresh: Bool) -> Bool:
+  Shelve.wake.k(M.Lifecycle.working(k0, pre, M.State.thread.get(pre, th)), M.Lifecycle.working(k1, post, M.State.thread.get(post, th)), fresh, post, th)
+
+def Shelve.one(+cs: List<&2, M.Change>, +pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, Nat>, +navs: Map<&2, M.Nav>, +th: String, +at: Nat, rest: List<&2, M.Change>) -> List<&2, M.Change>:
+  Shelve.one.k(Shelve.wake(pre, post, k0, k1, th, Shelve.fresh(cs, th)), M.Lifecycle.done(k1, post, M.State.thread.get(post, th), M.Snooze.on(at, M.Nav.until(M.Nav.get(navs, th)))),
+    th, at, M.State.thread.get(post, th), rest)
+
+def Shelve.go(xs: List<&2, SvAt>, +cs: List<&2, M.Change>, +pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, Nat>, +navs: Map<&2, M.Nav>) -> List<&2, M.Change>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case SvAt{+th, +at} <> r:
+      Shelve.one(cs, pre, post, k0, k1, navs, th, at, Shelve.go(r, cs, pre, post, k0, k1, navs))
+
+def Shelve.step.post(xs: List<&2, SvAt>, +cs: List<&2, M.Change>, +pre: M.State, +post: M.State) -> List<&2, M.Change>:
+  Shelve.go(xs, cs, pre, post, M.Work.kids.map(pre), M.Work.kids.map(post), M.State.navs(post))
+
+def Shelve.step.k(xs: List<&2, SvAt>, +pre: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> +r:
+      Shelve.step.post(x <> r, cs, pre, M.State.replay(cs, pre))
+
+# the settles and wakes a step's changes call for (pre: the state before it)
+def Shelve.step(+pre: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  Shelve.step.k(Shelve.ats(cs, pre, Nil{}), pre, cs)
+
+def Shelve.fix.k(+s: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  List.append(&2, M.Change, cs, Shelve.step(s, cs))
+
+# a step's changes with the pending counts they move (Pend.fix), then the
+# settles and wakes they call for
+def Shelve.fix(+s: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  Shelve.fix.k(s, Pend.fix(s, cs))
+
+# the laws' example: a project with one thread whose turn runs (started by
+# a message at 2), with more of its log after
+def Shelve.demo(cs: List<&2, M.Change>) -> M.State:
+  M.State.replay(List.append(&2, M.Change, [M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "claude", "", 1n},
+    M.MessagePosted{"t1", "m1", M.User{}, "go", 2n}, M.TurnChanged{"t1", M.Running{}, 2n}], cs), M.State.empty())
+
+def Shelve.tick.k(wake: Bool, done: Bool, +t: M.Thread, +now: Nat, rest: List<&2, M.Change>) -> List<&2, M.Change>:
+  match wake done:
+    case True{} _:
+      M.ThreadWoke{M.Thread.id(t), now} <> rest
+    case False{} True{}:
+      M.ThreadSettled{M.Thread.id(t), False{}, M.Lifecycle.at(t, now)} <> rest
+    case False{} False{}:
+      rest
+
+# every thread's settle or wake that no step made: a settled thread that
+# works (Lifecycle.stale) wakes, a done one settles (Lifecycle.done). This
+# is what corrects a log written before the rule, or after a restart
+def Shelve.tick(ts: List<&2, M.Thread>, +navs: Map<&2, M.Nav>, +kids: Map<&2, Nat>, +s: M.State, +now: Nat) -> List<&2, M.Change>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> rest:
+      Shelve.tick.k(M.Lifecycle.stale(kids, s, t), M.Lifecycle.done(kids, s, t, M.Snooze.on(now, M.Nav.until(M.Nav.get(navs, M.Thread.id(t))))), t, now,
+        Shelve.tick(rest, navs, kids, s, now))
+
+def Shelve.threads(+s: M.State) -> List<&2, M.Thread>:
+  match s:
+    case M.State{_, +ts, _, _, _, _, _, _, _, _, _}:
+      Map.values(&2, M.Thread, ts)
+
+def Shelve.tick.post(+post: M.State, +now: Nat, +kids: Map<&2, Nat>) -> List<&2, M.Change>:
+  Shelve.tick(Shelve.threads(post), M.State.navs(post), kids, post, now)
+
+# the tick's settles (Hub.settle.go, by inactivity) and then, on the state
+# after them, the settles and wakes by work, so no thread settles twice
+def Shelve.after(+cs: List<&2, M.Change>, +s: M.State, +now: Nat, +kids: Map<&2, Nat>) -> List<&2, M.Change>:
+  List.append(&2, M.Change, cs, Shelve.tick.post(M.State.replay(cs, s), now, kids))
+
+# every thread that should settle now, settled (a snoozed one never is);
+# gh asked about due merges; worktrees put away long enough removed;
+# stranded worktree waits run. Legacy conversations never expire.
+# (nothing settles, expires or loses its worktree while it waits on work:
+# M.Work.busy, the children counted once for all threads)
+def Hub.tick.k(+s: M.State, +now: Nat, +kids: Map<&2, Nat>) -> Step:
+  match s:
+    case M.State{ps, +ts, _, _, _, _, _, _, _, _, _}:
+      Step.before(Shelve.after(Hub.settle.go(Map.values(&2, M.Thread, ts), M.State.navs(s), kids, s, now, Hub.settle.window(s)), s, now, kids),
+        List.append(&2, Out, Merge.asks(Map.values(&2, M.Project, ps), Map.values(&2, M.Thread, ts), s), Drop.asks(Map.values(&2, M.Thread, ts), kids, s, now, Hub.wt.window(s))),
+        Wt.stale(Map.values(&2, M.Thread, ts), s, now))
+
+def Hub.tick(+s: M.State, +now: Nat) -> Step:
+  Step.join(Step.join(Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now)), Step.cat(Lr.far.tick(s), Wake.poll(s))), Step.cat(Deploy.tick(s, now), Ship.tick(s, now)))
 
 # A commit's lines
 # ----------------
