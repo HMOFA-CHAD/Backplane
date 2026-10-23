@@ -132,16 +132,23 @@ class Service {
     this.residentService = residentService;
     this.child = null;
   }
-  async discover() {
+  async discover({ browserReconnectOrigin } = {}) {
+    // Only an explicit Browser reconnect may rebind the version. It stays on
+    // the already selected service origin and authenticates this home's token;
+    // ordinary startup discovery retains the packaged-version hard gate.
+    const reconnect = browserReconnectOrigin !== undefined;
+    if (reconnect && (!this.connection || browserReconnectOrigin !== this.connection.origin)) throw new Error('Browser reconnect does not match the selected service');
     let line;
     try { line = await fs.readFile(path.join(this.home, 'hub.lock'), 'utf8'); }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
     const lock = lockLine(line);
     const origin = `http://127.0.0.1:${lock.port}`;
+    // Check before either greeting or credentials can reach a different port.
+    if (reconnect && origin !== browserReconnectOrigin) throw new Error('Selected Browser service origin changed');
     let info;
     try { info = await greeting(origin); }
     catch (error) { if (error.cause?.code === 'ECONNREFUSED') return null; throw error; }
-    if (this.expectedVersion && info.backplane !== this.expectedVersion) throw new Error('Service version differs from the packaged version');
+    if (!reconnect && this.expectedVersion && info.backplane !== this.expectedVersion) throw new Error('Service version differs from the packaged version');
     // Authenticating with this home's credential binds the discovered endpoint
     // to the selected home. The legacy lock PID is POSIX (including Cygwin),
     // never a Node/Win32 process identity and never a target for signalling.
