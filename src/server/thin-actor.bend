@@ -95,7 +95,8 @@ def Actor.safe_input(+st: M.State, +p: J.Json) -> J.Json:
     J.Json.obj(P.Session.strings(Map.to_list(&2, String, Actor.prefs(Map.to_list(&2, String, P.Session.read.strings(J.Json.get_obj(session, "info"), Map.new(&2, String))), Map.new(&2, String)))))))
 
 def Actor.scope.keep(+key: String) -> Bool:
-  Bool.not(Bool.or(String.starts_with(key, "@f."), String.starts_with(key, "@mr.")))
+  Bool.not(Bool.or(Bool.or(String.starts_with(key, "@f."), String.starts_with(key, "@mr.")),
+    Nat.is_lt(U.Keys.pos(["@want.new", "@want.new.at", "@thread.want", "@bot.want", "@want.hub", "@want.gen", "@made.far"], key), 7n)))
 
 def Actor.scope.clear( +xs: List<&2, Sigma<&2, &2, String, _ => String>>, +dr: Map<&2, String>) -> Map<&2, String>:
   match xs:
@@ -118,12 +119,20 @@ def Actor.draft.merge(+clean: Map<&2, String>, +dr: Map<&2, String>, +thread: St
 
 def Actor.merge( +fresh: U.Ui, +old: U.Ui, +same: Bool, +thread: String, +present: Bool) -> U.Ui:
   match fresh old:
-    case U.Ui{st, sel, clean, live, open, on, now, adding, panel, version, +rid2, want, _, _, nf2, _, _} U.Ui{_, _, dr, _, _, _, _, _, _, _, +rid, _, error, note, nf, outbox, stores}:
-      U.Ui{st, sel, Actor.draft.merge(clean, Actor.scope.drafts(same, dr), thread, present), live, open, on, now, adding, panel, version,
+    case U.Ui{st, +sel, clean, live, open, on, now, adding, panel, version, +rid2, want, _, _, nf2, _, _} U.Ui{_, oldSel, dr, _, _, _, _, _, _, _, +rid, _, error, note, nf, outbox, stores}:
+      # A correlated creation reply can select its new thread between renders.
+      # The same view still requests its parent until nextTarget reaches it.
+      # A different view or target remains an explicit navigation boundary.
+      U.Ui{st, Bool.pick(String, same, oldSel, sel), Actor.draft.merge(clean, Actor.scope.drafts(same, dr), thread, present), live, open, on, now, adding, panel, version,
         M.Time.max(rid, rid2), want, error, note, Actor.prefs(Map.to_list(&2, String, nf2), nf), outbox, stores}
 
 def Actor.make(+u: U.Ui, +view: String, +target: J.Json) -> Actor:
   Actor{u, view, target, Map.new(&2, String), Nil{}, False{}, Nil{}}
+
+def Actor.resolve(+u: U.Ui) -> U.Ui:
+  # The creation ACK may precede the actor's refreshed canonical state.
+  # Resolve its retained, destination-bound want after installing that state.
+  U.Ui.reselect(U.Ui.sel.of(u), U.Bots.wanted(u))
 
 def Actor.refresh( +xs: List<&2, Actor>, +web: Bool, +st: M.State, +info: J.Json, +live: J.Json, +now: Nat, +p: J.Json, +view: String) -> Actor:
   match xs:
@@ -133,7 +142,7 @@ def Actor.refresh( +xs: List<&2, Actor>, +web: Bool, +st: M.State, +info: J.Json
       +thread = V.Target.thread(st, J.Json.get_obj(p, "target"))
       +fresh = V.Session.current(web, st, info, live, now, input)
       +same = Bool.and(String.eq(oldView, view), W.Target.same(target, J.Json.get_obj(p, "target")))
-      Actor{V.Session.renderer(web, U.Ui.info_merge(Actor.merge(fresh, old, same, thread, Maybe.is_some(&2, J.Json, J.Json.get(J.Json.get_obj(J.Json.get_obj(input, "session"), "drafts"), thread))), info), p),
+      Actor{V.Session.renderer(web, Actor.resolve(U.Ui.info_merge(Actor.merge(fresh, old, same, thread, Maybe.is_some(&2, J.Json, J.Json.get(J.Json.get_obj(J.Json.get_obj(input, "session"), "drafts"), thread))), info)), p),
         view, J.Json.get_obj(p, "target"), Bool.pick(Map<&2, String>, same, pending, Map.new(&2, String)), Bool.pick(List<&2, J.Json>, same, reads, Nil{}), dirty, Nil{}}
 
 # The hub's canonical projection is shared; each actor keeps its own pages,

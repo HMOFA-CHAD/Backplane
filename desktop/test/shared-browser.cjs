@@ -99,8 +99,8 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await app.evaluate(async({webContents},id)=>webContents.fromId(id).executeJavaScript('new Promise(resolve=>setTimeout(()=>resolve(true),150))'),id);
   refInput.settled=await inspect(id);
   refInput.settledInputEvents=await app.evaluate(({webContents},id)=>webContents.fromId(id).__sharedBrowserProbe.events,id);
-  fs.writeFileSync(path.join(out,'ref-input-observation.json'),JSON.stringify({state:refInput.settled,observations:refInput,expectedEntry:'bot typed',expectedCount:1},null,2));
-  check('bot ref input reaches the visible native document',refInput.settled.entry==='bot typed'&&refInput.settled.count===1);
+  fs.writeFileSync(path.join(out,'ref-input-observation.json'),JSON.stringify({state:refInput.afterClick,observations:refInput,expectedEntry:'bot typed',expectedCount:1},null,2));
+  check('bot ref input reaches the visible native document',refInput.afterClick.entry==='bot typed'&&refInput.afterClick.count===1);
   await tool('preview_scroll',{selector:'#scroller',dy:300});
   check('bot scroll uses actual native page',(await tool('preview_evaluate',{expression:'document.querySelector("#scroller").scrollTop'})).value>0);
   await tool('preview_wait_for',{text:'Entry: bot typed'});
