@@ -27,6 +27,9 @@ const resourceRoot = path.join(process.resourcesPath, 'backplane-service');
 const desktopBuild = path.join(process.resourcesPath, 'DESKTOP-BUILD.json');
 const build = app.isPackaged ? require(fs.existsSync(desktopBuild) ? desktopBuild : path.join(resourceRoot, 'BUILD.json')) : {};
 const directBrowser=build.desktopBrowser?.protocol===1||(!app.isPackaged&&process.env.BACKPLANE_DESKTOP_BROWSER==='1');
+// A local increment can retain the existing native Browser service while
+// withholding its newer cooperative renderer interface until qualified.
+const rendererBrowser=directBrowser&&build.desktopBrowser?.rendererBridge!==false;
 if(directBrowser)process.env.BACKPLANE_DESKTOP_BROWSER='1';
 // Main/home lifetime, including window/controller replacement. No reset API.
 const browserUnknown=createBrowserUnknownState();
@@ -151,7 +154,7 @@ function start() {
 }
 function createWindow(ses) {
   window = new BrowserWindow({ width: 1400, height: 940, minWidth: 360, minHeight: 480, title: 'Backplane', icon: iconPath(), backgroundColor: '#111410', show: false,
-    webPreferences: { session: ses, preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, spellcheck: true,additionalArguments:directBrowser?['--backplane-direct-browser=1']:[] } });
+    webPreferences: { session: ses, preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, spellcheck: true,additionalArguments:rendererBrowser?['--backplane-direct-browser=1']:[] } });
   window.webContents.on('console-message', (details, _level, legacyMessage) => {
     // Only our main frame, fixed-prefix and schema-sanitized records reach disk.
     if (!details.frame || details.frame === window.webContents.mainFrame) connectionLog.capture(details.message ?? legacyMessage);
