@@ -877,12 +877,13 @@ def View.menu.open(+lc: I.Loc, +ms: List<&2, String>, +mi: String, +cur: String,
 def View.menu.shown(+lc: I.Loc, +ms: List<&2, String>, +info: String, +cur: String, +prov: String, +es: List<&2, String>, +effort: String, +q: String) -> List<&2, D.Node>:
   View.menu.open(lc, ms, U.Models.view(info, prov, ms), cur, prov, es, effort, q, U.Models.search(U.Models.menu(info, prov)))
 
-def View.menu.loc(+lc: I.Loc, open: Bool, ms: List<&2, String>, +cur: String, +info: String, +prov: String, +es: List<&2, String>, +effort: String, +q: String, srch: Bool) -> List<&2, D.Node>:
-  match open:
-    case True{}:
-      View.menu.shown(lc, U.Models.shown(info, prov, q), info, cur, prov, es, effort, q)
-    case False{}:
-      Nil{}
+def View.menu.loc(+lc: I.Loc, +open: Bool, ms: List<&2, String>, +cur: String, +info: String, +prov: String, +es: List<&2, String>, +effort: String, +q: String, srch: Bool) -> List<&2, D.Node>:
+  # Keep only the existing bounded model rows ready in the authenticated tree.
+  # Opening can paint immediately; choosing still takes the ordinary hub path.
+  +query = Bool.pick(String, open, q, "")
+  [D.El{"div", "model-layer", [D.At{"class", "model-layer"}, D.At{"data-local-models", "1"},
+    D.At{"style", Bool.pick(String, open, "display:contents", "display:none")}, D.At{"aria-hidden", Bool.pick(String, open, "false", "true")}],
+    View.menu.shown(lc, U.Models.shown(info, prov, query), info, cur, prov, es, effort, query)}]
 
 # the skills a `$` being typed may complete to, or the bots, threads,
 # projects and rooms a `@`, `>`, `%` or `#` may (the arrow keys move the

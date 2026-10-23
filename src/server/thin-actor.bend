@@ -315,10 +315,23 @@ def Actor.reply(+a: Actor, +web: Bool, +key: String, +o: J.Json) -> Actor:
       Actor.reply_if(Bool.and(String.eq(J.Json.get_str(o, "t", ""), "reply"), String.eq(Actor.pending_scope(pending, id), Actor.scope(target))),
         Actor{u, view, target, Map.del(&2, String, pending, id), reads, dirty, memo}, web, key, o)
 
+# Targeted job info belongs to this connection's server-owned Ui. It does
+# not settle a request, enqueue commands or become client-supplied state.
+def Actor.info(a: Actor, o: J.Json) -> Actor:
+  match a:
+    case Actor{u, view, target, pending, reads, _, _}:
+      Actor{U.Ui.info_merge(u, J.Json.get_obj(o, "info")), view, target, pending, reads, True{}, Nil{}}
+
+# A thin socket receives rendered views, not raw info notifications. The
+# server folds those privately and sends its normal bounded invalidation.
+def Message.on_wire(+o: J.Json) -> Bool:
+  Bool.not(String.eq(J.Json.get_str(o, "t", ""), "info"))
+
 def Actor.message.kind(kind: String, a: Actor, web: Bool, key: String, o: J.Json) -> Actor:
   match kind:
     case "term": Actor.terminal(a, web, key, o)
     case "reply": Actor.reply(a, web, key, o)
+    case "info": Actor.info(a, o)
     case _: a
 
 def Actor.message(a: Actor, web: Bool, key: String, +o: J.Json) -> Actor:

@@ -245,10 +245,6 @@ def Bj.due(+old: String, force: Bool, +now: Nat) -> Bool:
   Bool.or(Nat.is_eq(Bj.nat(Bj.parse(old), "at"), 0n),
     Nat.is_ge(Nat.sub(now, Bj.nat(Bj.parse(old), "at")), Bool.pick(Nat, force, Bj.again(), Bj.every())))
 
-# what clients get (info "boat.usage"): the cache and the job status
-def Bj.info(+cache: String, +status: String) -> String:
-  J.Json.show(J.Json.obj([J.KV{"cache", Bj.parse(cache)}, J.KV{"status", Bj.parse(status)}]))
-
 # Rows
 # ----
 
@@ -407,6 +403,38 @@ def Bj.jobs.k(keep: Bool, +st: M.State, +j: J.Json, +now: Nat, rest: List<&2, UR
 # which jobs: 0 those that need a look, 1 those running
 def Bj.wants(+mode: Nat, +s: String) -> Bool:
   Bool.pick(Bool, Nat.is_eq(mode, 0n), Bj.warn(s), Bj.shown(s))
+
+# Usage displays aggregate spend and open/warning jobs. The runner's closed
+# job ledger and job command/log metadata never belong in a UI response.
+# Keep all warnings and all open rows, so the existing running-row cap and
+# its exact remaining count still describe the same jobs.
+def Bj.view.field(m: Maybe<&2, J.Json>, key: String, rest: List<&2, J.KV>) -> List<&2, J.KV>:
+  match m:
+    case None{}: rest
+    case Some{v}: J.KV{key, v} <> rest
+
+def Bj.view.fields(keys: List<&2, String>, +o: J.Json) -> List<&2, J.KV>:
+  match keys:
+    case Nil{}: Nil{}
+    case +key <> tail: Bj.view.field(J.Json.get(o, key), key, Bj.view.fields(tail, o))
+
+def Bj.view.job(keep: Bool, j: J.Json, rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match keep:
+    case False{}: rest
+    case True{}: J.Json.obj(Bj.view.fields(["state", "size", "thread", "machine", "why", "runtime_s", "started_at", "reserved_cs"], j)) <> rest
+
+def Bj.view.jobs.go(js: List<&2, J.Json>, acc: List<&2, J.Json>) -> List<&2, J.Json>:
+  match js:
+    case Nil{}: List.reverse(&2, J.Json, acc)
+    case +j <> tail: Bj.view.jobs.go(tail, Bj.view.job(Bool.or(Bj.warn(J.Json.get_str(j, "state", "")), Bj.shown(J.Json.get_str(j, "state", ""))), j, acc))
+
+def Bj.view.status(+s: J.Json) -> J.Json:
+  J.Json.obj(List.append(&2, J.KV, Bj.view.fields(["rate", "account", "budget", "ambiguous", "unresolved", "running", "orphans", "month", "generated_at", "today"], s),
+    [J.KV{"jobs", J.Json.arr(Bj.view.jobs.go(J.Json.elems(J.Json.get_obj(s, "jobs")), Nil{}))}]))
+
+# This projection does not change the local status/ledger or account cache.
+def Bj.info(+cache: String, +status: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"cache", Bj.parse(cache)}, J.KV{"status", Bj.view.status(Bj.parse(status))}]))
 
 def Bj.jobs(js: List<&2, J.Json>, +mode: Nat, +st: M.State, +now: Nat) -> List<&2, URow>:
   match js:
