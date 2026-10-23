@@ -21,7 +21,9 @@ uberbot's Chat tab. The restored project/thread bindings come from
 (`b276a5afb`): `Alt+1…9` projects, `Ctrl+1…9` threads in the current
 project, `Ctrl+Shift+[` / `]` previous/next visible thread, without wrapping.
 They follow the sidebar's actual order and expansion state. Navigation
-leaves input editors, IME composition and PTYs alone; the explicit palette
+leaves input editors, IME composition and PTYs alone. Press Escape to leave
+the composer after closing its completions, then use the navigation chords;
+the unsent draft stays intact. The explicit palette
 and terminal-toggle chords remain available there. On macOS, Command is
 the page's primary modifier. The old Pin chord `Ctrl+Shift+P` now opens
 the requested palette; Pin/Unpin remain commands and toolbar actions.
