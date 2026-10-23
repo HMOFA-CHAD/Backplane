@@ -530,13 +530,15 @@ def WB.memory.paged(+lc: I.Loc, +ms: List<&2, BT.Mem>, +own: Bool, +now: Nat, +b
   WB.div("memory-view", [WB.memory.k.loc(lc, List.take(&2, BT.Mem, List.drop(&2, BT.Mem, ms, Nat.mul(page, WB.memory.size())), WB.memory.size()), own, now),
     WB.memory.pages(lc, bot, page, List.length(&2, BT.Mem, ms))])
 
-def WB.memory.loc(+lc: I.Loc, +u: U.Ui, +b: BT.Bot) -> D.Node:
-  +ms = BI.BU.mems(u, BT.Bot.id(b))
+def WB.memory.loc.k(+lc: I.Loc, +u: U.Ui, +b: BT.Bot, ms: List<&2, BT.Mem>) -> D.Node:
   match ms:
     case Nil{}: WB.memory.k.loc(lc, Nil{}, BI.BU.owns(BT.Bot.id(b)), U.Side.now(u))
     case +m <> +tail:
       WB.memory.paged(lc, m <> tail, BI.BU.owns(BT.Bot.id(b)), U.Side.now(u), BT.Bot.id(b),
         WB.memory.page(u, BT.Bot.id(b), List.length(&2, BT.Mem, m <> tail)))
+
+def WB.memory.loc(+lc: I.Loc, +u: U.Ui, +b: BT.Bot) -> D.Node:
+  WB.memory.loc.k(lc, u, b, BI.BU.mems(u, BT.Bot.id(b)))
 
 # Routines
 
