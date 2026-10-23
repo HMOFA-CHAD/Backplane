@@ -39,6 +39,13 @@ test('model menu compact: deferred output refresh follows ACK and queued Setting
  assert.equal(f.sent.at(-1).m,'view.action');assert.equal(f.sent.at(-1).p.value,'settings');assert.equal(f.sent.filter(x=>x.m==='view.update').length,0);
  f.host.receive(f.reply());assert.equal(f.sent.at(-1).m,'view.update');
 });
+test('refresh coverage host: one Settings action picture satisfies its earlier invalidation',async()=>{
+ const f=await fixture();f.open();f.host.request('flag','settings');const req=f.sent.at(-1);f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'2'});
+ f.host.receive(f.reply(req,{viewRevision:'2'}));assert.equal(f.sent.length,2);f.host.request('settings-page','appearance');assert.equal(f.sent.at(-1).m,'view.action');assert.equal(f.sent.at(-1).p.action,'settings-page');
+});
+test('refresh coverage host: draft refresh remains explicit across a covered action picture',async()=>{
+ const f=await fixture({draftRefresh:fn=>fn()});f.open();f.host.request('flag','settings');const req=f.sent.at(-1);f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'2'});f.host.request('draft','new local draft');f.host.receive(f.reply(req,{viewRevision:'2'}));assert.equal(f.sent.at(-1).m,'view.update');assert.equal(f.sent.at(-1).p.session.drafts.A,'new local draft');assert.equal(f.getSession().drafts.A,'new local draft');
+});
 test('greeting alone is not ready; matching current result renders without any canonical history request',async()=>{
  const f=await fixture();f.host.greeting(f.greeting);assert.equal(f.host.ready,false);assert.equal(f.sent.length,1);assert.equal(f.sent[0].m,'view.open');
  f.host.receive(f.reply());assert.equal(f.host.ready,true);assert.equal(f.views.length,1);assert(f.sent.every(x=>x.m.startsWith('view.')));
