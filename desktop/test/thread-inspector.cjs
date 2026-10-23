@@ -25,7 +25,12 @@ for(const [call,title,end]of [['layout','Layout and connector review','done'],['
 }
 events.push(...require('./thread-hierarchy.cjs').hierarchyEvents({at,home,project,threadId:tid}));
 fs.writeFileSync(path.join(home,'events.jsonl'),events.map(JSON.stringify).join('\n')+'\n');
-Object.assign(process.env,{BACKPLANE_AGENTS:agents,BACKPLANE_COPY:'1',BACKPLANE_NO_UPDATE:'1',BACKPLANE_TELEMETRY:'off',BACKPLANE_PEERS:'',BACKPLANE_LOCK_DIR:path.join(home,'locks'),BACKPLANE_DESKTOP_BROWSER:'1'});
+// This newly generated temp-home Browser fixture is not a copied user log.
+// Copy mode intentionally drops B.Teach before TeachReq, so it cannot qualify
+// takeover/handback. Only this explicit Browser-only suffix uses normal mode;
+// stand-in agents, loopback/no-tailnet service, mail/telemetry off still apply.
+const controlledBrowserOnly=process.env.INSPECTOR_HELPERS_ONLY==='1'&&process.env.BATCH_BROWSER==='1'&&process.env.BATCH_HIERARCHY==='0'&&process.env.BROWSER_CONTINUE_TAKEOVER==='1';
+Object.assign(process.env,{BACKPLANE_AGENTS:agents,BACKPLANE_COPY:controlledBrowserOnly?'0':'1',BACKPLANE_NO_UPDATE:'1',BACKPLANE_TELEMETRY:'off',BACKPLANE_PEERS:'',BACKPLANE_LOCK_DIR:path.join(home,'locks'),BACKPLANE_DESKTOP_BROWSER:'1'});
 const binary=path.join(stage,'payload/backplane-serve'),web=path.join(stage,'payload/web'),service=new Service({home,binary,web,expectedVersion:info.version});
 const continueChild=process.env.INSPECTOR_CONTINUE_CHILD==='1';
 const retained=continueChild?{
@@ -51,7 +56,7 @@ let app,page;const errors=[],timings=[],checks=[];
   if(process.env.BATCH_BROWSER==='1'){try{helpers.browser=await require('./shared-browser.cjs').runSharedBrowserAcceptance({app,page,origin:connection.origin,token:await service.token(),threadId:tid,otherThreadId:'empty',out:path.join(out,'shared-browser')});}catch(e){helperFailed=true;helpers.browser={state:'failed',error:e.message};}}
   if(process.env.BATCH_HIERARCHY==='1'){try{const close=page.locator('#viewer [data-on-click=\"panel\"],.workspace-bar .viewer-close');if(await close.count())await close.first().click();helpers.hierarchy=await require('./thread-hierarchy.cjs').runHierarchyAcceptance({app,page,service,home,project,threadId:tid,child,out:path.join(out,'hierarchy')});}catch(e){helperFailed=true;helpers.hierarchy={state:'failed',error:e.message};}}
   assert.equal(errors.length,0,errors.join('\n'));
-  fs.writeFileSync(path.join(out,'HELPERS-RESULT.json'),JSON.stringify({state:helperFailed?'failed':'passed',scope:'selected runtime helpers only',inspector:'NOT RUN',source:info.commit,version:info.version,stage,home,helpers,errors},null,2));
+  fs.writeFileSync(path.join(out,'HELPERS-RESULT.json'),JSON.stringify({state:helperFailed?'failed':'passed',scope:'selected runtime helpers only',inspector:'NOT RUN',source:info.commit,version:info.version,stage,home,fixtureMode:{controlledBrowserOnly,copy:process.env.BACKPLANE_COPY},helpers,errors},null,2));
   console.log(JSON.stringify({out,scope:'selected runtime helpers only',inspector:'NOT RUN',helpers}));if(helperFailed)process.exitCode=1;return;
  }
  const head=page.locator('.subs-head');if((await head.getAttribute('data-on-click'))==='subs-open')await head.click();await page.locator('.sub-row').first().waitFor();
