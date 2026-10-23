@@ -46,7 +46,8 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
  const retained=retainedPrefix?{receipt:process.env.BROWSER_PREFIX_RECEIPT,checks:prefixChecks}:null;
  const site=await controlledBrowserPage(),checks=[];
  let guestId=null,phase='setup';
- const ownership={native:[],renderer:[]};
+ const ownership={native:[],renderer:[]},wire={frames:[],decodeErrors:0};
+ let wireTap;
  let requestId=1000;
  const check=(name,condition)=>{assert(condition,name);checks.push(name);};
  async function tool(name,args={},owner=threadId,allowError=false){
@@ -82,6 +83,21 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   const ref=/\[ref=(e\d+)\]/.exec(line||'')?.[1];assert(ref,`snapshot ref for ${role} ${name}`);return ref;
  };
  try{
+  const {cbor,plain}=await import('../../src/web/wire.js');
+  const codec=fs.readFileSync(path.join(__dirname,'../../src/core/cbor.bend'),'utf8');
+  const dictionary=name=>JSON.parse(new RegExp('def Cbor\\.'+name+'\\(\\) -> List<&2, String>:\\s*(\\[[\\s\\S]*?\\])\\n').exec(codec)[1]);
+  const keys=dictionary('keys'),words=dictionary('words');wireTap=await page.context().newCDPSession(page);
+  const record=(direction,e)=>{try{
+   const f=e.response,o=f.opcode===2?plain(cbor(Buffer.from(f.payloadData,'base64'),keys,words)):f.opcode===1?JSON.parse(f.payloadData):null;
+   if(!o||typeof o!=='object'){wire.decodeErrors++;return;}
+   if(!['view.open','view.action','view.update','bots.browser'].includes(o.m)&&!['reply','view.changed'].includes(o.t))return;
+   const p=o.p||{},r=o.result||{};let takeover=false,handback=false;
+   const visit=n=>{if(!n||typeof n!=='object')return;for(const a of n.attrs||[])if(a.name==='data-on-click'){takeover||=a.value==='tk-takeover';handback||=a.value==='tk-handback';}for(const k of n.kids||[])visit(k);};visit(r.shown);
+   const methods=(r.cmds||[]).filter(c=>c.type==='send').map(c=>{try{const rpc=JSON.parse(c.text);return{method:rpc.m,...(rpc.m==='bots.browser'?{ownerMatches:rpc.p?.bot===threadId,op:rpc.p?.op}:{})};}catch{return{invalid:true};}});
+   if(wire.frames.length>=128)wire.frames.shift();
+   wire.frames.push({direction,id:o.id,type:o.t,method:o.m,action:p.action,ownerMatches:o.m==='bots.browser'?p.bot===threadId:['tk-takeover','tk-handback'].includes(p.action)?p.value===threadId:undefined,op:o.m==='bots.browser'?p.op:undefined,ok:o.ok,errorCode:typeof o.error==='object'?o.error?.code:undefined,requestRevision:p.requestRevision??r.requestRevision,viewRevision:o.viewRevision??r.viewRevision,takeover,handback,methods});
+  }catch{wire.decodeErrors++;}};
+  wireTap.on('Network.webSocketFrameSent',e=>record('sent',e));wireTap.on('Network.webSocketFrameReceived',e=>record('received',e));await wireTap.send('Network.enable');
   await page.waitForFunction(async()=>window.backplaneDesktop?.browser&&(await window.backplaneDesktop.browser.state()).phase==='ready');
   await select(threadId);
   await tool('preview_open',{url:site.origin+'/one'});
@@ -220,9 +236,21 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   try{ownership.native=await app.evaluate(({BrowserWindow,webContents},id)=>{const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed());return{probe:w?.__sharedBrowserOwnership,windowFocused:w?.isFocused(),focusedId:webContents.getFocusedWebContents()?.id??null,views:w?.contentView.children.filter(v=>v.webContents).map(v=>({id:v.webContents.id,url:v.webContents.getURL(),visible:v.getVisible(),bounds:v.getBounds(),guest:v.webContents.id===id}))};},guestId);}catch(e){ownership.nativeError=e.message;}
   if(phase==='takeover')try{const probe=await tool('preview_snapshot',{},threadId,true);ownership.canonicalSnapshotProbe={isError:probe.isError,text:probe.content?.find(c=>c.type==='text')?.text?.slice(0,400)};}catch(e){ownership.canonicalProbeError=e.message;}
   try{fs.writeFileSync(path.join(out,'browser-failure.html'),await page.content());await page.screenshot({path:path.join(out,'browser-failure.png')});}catch(e){ownership.captureError=e.message;}
+  // Preserve the failed native attempt before one alternate visible-control
+  // diagnostic. Its outcome cannot turn the original failure into a PASS.
+  if(phase==='takeover'){
+   ownership.wireAtNativeFailure=wire.frames.length;
+   try{
+    const ui=page.locator(`[data-on-click="tk-takeover"][data-value="${threadId}"]`);
+    await ui.click({timeout:2000});
+    await page.locator(`[data-on-click="tk-handback"][data-value="${threadId}"]`).waitFor({timeout:5000});
+    ownership.alternateUiTakeover={handback:true};
+   }catch(e){ownership.alternateUiTakeover={handback:false,error:e.message};}
+  }
+  fs.writeFileSync(path.join(out,'ownership-wire.json'),JSON.stringify(wire,null,2)+'\n');
   fs.writeFileSync(path.join(out,'ownership-observation.json'),JSON.stringify({phase,ownership},null,2)+'\n');
   fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
  }
- finally{await site.close();}
+ finally{if(wireTap)await wireTap.detach().catch(()=>{});await site.close();}
 }
 module.exports={controlledBrowserPage,runSharedBrowserAcceptance};

@@ -338,3 +338,17 @@ test('workspace actions adopt their choices before shell/background invalidation
   f.host.receive(f.reply(refresh));assert.deepEqual(f.getSession().open,open);
  }
 });
+
+for (const queued of [false, true]) test('legacy subthread picker defers refresh while '+(queued?'queued':'active'),async()=>{
+ for (const mode of ['update','changed']) {
+  const f=await fixture();f.open();if(queued)f.host.request('noop','');
+  f.host.request('thread-child','A');const sent=f.sent.length;
+  if(mode==='update')f.host.update();
+  else f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'2'});
+  assert.equal(f.sent.length,sent,'old closed-picker session must not overtake the route action');
+  if(queued){f.host.receive(f.reply());assert.equal(f.sent.at(-1).m,'view.action');assert.equal(f.sent.at(-1).p.action,'thread-child');}
+  f.host.receive(f.reply(undefined,{session:{sel:'A',drafts:{A:'original 日本語'},rid:20,open:{proj:true}}}));
+  assert.equal(f.getSession().open.proj,true);assert.equal(f.sent.at(-1).m,'view.update');assert.equal(f.sent.at(-1).p.session.open.proj,true);
+  f.host.receive(f.reply());assert.equal(f.getSession().open.proj,true);assert.equal(f.host.ready,true);assert.equal(f.commands.length,0);
+ }
+});

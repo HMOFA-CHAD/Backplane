@@ -24,8 +24,9 @@ async function runHierarchyAcceptance({page,home,threadId='review',child,out}){
   fs.mkdirSync(out,{recursive:true});
   const checks=[],created=[],running=[];
   const resumeCreation=process.env.HIERARCHY_CONTINUE_CREATE==='1';
-  const retained=resumeCreation?JSON.parse(fs.readFileSync(process.env.HIERARCHY_PREFIX_RECEIPT,'utf8')):null;
-  if(retained)assert(retained.checks.includes('two captured agents run without moving projects or faking parent activity'));
+  const resumeRoute=process.env.HIERARCHY_CONTINUE_ROUTE==='1';
+  const retained=(resumeCreation||resumeRoute)?JSON.parse(fs.readFileSync(process.env.HIERARCHY_PREFIX_RECEIPT,'utf8')):null;
+  if(retained)assert(retained.checks.includes(resumeRoute?'Space collapses and Enter expands without selecting another thread or losing focus':'two captured agents run without moving projects or faking parent activity'));
   const retainedEvidence=retained?{receipt:process.env.HIERARCHY_PREFIX_RECEIPT,checks:retained.checks}:null;
   const record=name=>{checks.push(name);fs.writeFileSync(path.join(out,'PROGRESS.json'),JSON.stringify({checks,created},null,2));};
   const log=()=>fs.readFileSync(path.join(home,'events.jsonl'),'utf8').trim().split('\n').flatMap(line=>{try{return [JSON.parse(line)];}catch{return [];}});
@@ -38,7 +39,7 @@ async function runHierarchyAcceptance({page,home,threadId='review',child,out}){
   const snapshot=async name=>{const file=path.join(out,name+'.png');await page.screenshot({path:file});return file;};
   try{
     await page.setViewportSize({width:1440,height:960});await select(threadId);
-    if(!resumeCreation){assert.equal(await row(ids.child).count(),1);assert.equal(await row(ids.grandchild).count(),1);
+    if(!resumeCreation&&!resumeRoute){assert.equal(await row(ids.child).count(),1);assert.equal(await row(ids.grandchild).count(),1);
     assert.equal(await page.locator('.sidebar section.project[data-drag-to="scratch"]').count(),0);
     record('normal child/grandchild appear once; Scratch is absent from projects');
     const before=await order(),parentSignal=await signal();
@@ -55,7 +56,7 @@ async function runHierarchyAcceptance({page,home,threadId='review',child,out}){
       await page.locator('.thread-workbar [data-on-click="interrupt"]').waitFor({state:'hidden'});
     }
     }
-    await select(threadId);
+    if(!resumeRoute){await select(threadId);
     await page.locator('.subthreads-control [data-on-click="thread-child"][data-value="'+threadId+'"]').click();
     await page.waitForFunction(id=>{const now=document.querySelector('main')?.dataset.thread;return now&&now!==id&&document.documentElement.dataset.backplaneRemoteReady==='true';},threadId);
     const made=await page.locator('main').getAttribute('data-thread');created.push(made);await row(made).waitFor();
@@ -70,7 +71,24 @@ async function runHierarchyAcceptance({page,home,threadId='review',child,out}){
     assert(await toggle(threadId).evaluate(el=>el===document.activeElement),'collapse retains keyboard focus');
     await page.keyboard.press('Enter');await row(made).waitFor();
     assert(await toggle(threadId).evaluate(el=>el===document.activeElement));
-    record('Space collapses and Enter expands without selecting another thread or losing focus');
+    record('Space collapses and Enter expands without selecting another thread or losing focus');}
+    const routeWire=[];let routeCdp,routeDecodeErrors=0;
+    try{
+      const {cbor,plain}=await import('../../src/web/wire.js');
+      const source=fs.readFileSync(path.join(__dirname,'../../src/core/cbor.bend'),'utf8');
+      const dict=name=>JSON.parse(new RegExp('def Cbor\\.'+name+'\\(\\) -> List<&2, String>:\\s*(\\[[\\s\\S]*?\\])\\n').exec(source)[1]);
+      const keys=dict('keys'),words=dict('words');
+      routeCdp=await page.context().newCDPSession(page);await routeCdp.send('Network.enable');
+      for(const direction of ['Sent','Received'])routeCdp.on('Network.webSocketFrame'+direction,event=>{try{
+        const frame=event.response;if(frame.opcode!==1&&frame.opcode!==2)return;
+        const x=frame.opcode===2?plain(cbor(Buffer.from(frame.payloadData,'base64'),keys,words)):JSON.parse(frame.payloadData),r=x?.result,p=x?.p;
+        if(!x||!['view.open','view.action','view.update','fs.list','fs.find'].includes(x.m)&&!['reply','view.changed'].includes(x.t))return;
+        routeWire.push({direction,id:x.id,t:x.t,method:x.m,action:p?.action,value:p?.action==='thread-child'?p.value:undefined,target:p?.target||r?.target,requestRevision:p?.requestRevision??r?.requestRevision,viewId:p?.viewId||r?.viewId,open:p?.session?.open||r?.session?.open,remoteReady:r?.remoteReady,picker:r?.shown?JSON.stringify(r.shown).includes('picker'):undefined});
+        if(routeWire.length>128)routeWire.shift();
+      }catch{routeDecodeErrors++;}});
+    }catch{routeDecodeErrors++;}
+    const routeEvidence=async()=>{fs.writeFileSync(path.join(out,'ROUTE-WIRE.json'),JSON.stringify({frames:routeWire,decodeErrors:routeDecodeErrors,ui:await page.evaluate(()=>({thread:document.querySelector('main')?.dataset.thread,ready:document.documentElement.dataset.backplaneRemoteReady,busy:document.querySelector('main')?.getAttribute('aria-busy'),picker:!!document.querySelector('.picker')})).catch(()=>null)},null,2));};
+    try{
     await page.locator('[data-on-click="thread-history"]').click();await select(ids.history);
     assert((await page.locator('main').innerText()).includes('Original legacy conversation identity and history preserved.'));
     const beforeRoute=log(),nCreated=beforeRoute.filter(e=>e.$==='ThreadCreated').length,nParent=beforeRoute.filter(e=>e.$==='ThreadParentSet').length;
@@ -83,6 +101,7 @@ async function runHierarchyAcceptance({page,home,threadId='review',child,out}){
     const afterRoute=log();assert.equal(afterRoute.filter(e=>e.$==='ThreadCreated').length,nCreated);assert.equal(afterRoute.filter(e=>e.$==='ThreadParentSet').length,nParent);
     assert.equal(afterRoute.filter(e=>e.$==='ThreadDeleted'&&e.id===ids.history).length,0);
     record('legacy action routes through existing project selection without creation, deletion or parent changes');
+    }finally{await routeEvidence();await routeCdp?.detach().catch(()=>{});}
     await select(threadId);await snapshot('hierarchy-desktop');
     await page.setViewportSize({width:390,height:844});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'390px document has no overflow');
