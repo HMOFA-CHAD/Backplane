@@ -8,12 +8,12 @@ import ../src/core/i18n.bend as I
 
 law launch_once:
   {P.Plane.need.states(P.Plane.demo.launch(), 200000n) == "l=question,f=failed" : String}
-def Laws.launch_once():
+def launch_once():
   {==}
 
 law split_words:
   {P.Plane.counts.of(I.En{}, 3n, 2n, 1n) == "1 need you · 2 failed · 1 running" : String}
-def Laws.split_words():
+def split_words():
   {==}
 
 def bool.word(b: Bool) -> String:
