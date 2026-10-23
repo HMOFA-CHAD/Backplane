@@ -30,6 +30,18 @@ function adoptIdleBrowserGrant({leases,tabs,preparing,acknowledgedRevisions},tar
  tab.revision=grant.revision;acknowledgedRevisions.set(target.owner,grant.revision);return true;
 }
 
+// Settle previously queued registry work before this command can change the
+// native document. Its original target/revision must still be current after
+// the await; a later policy or generation cannot supply replacement authority.
+async function settleBrowserCallRegistry({drain,leases,acknowledgedRevisions},tab,payload){
+ await drain(payload.owner);
+ const grant=leases.targetGrantOf(payload.target);
+ if(!grant||grant.revision!==payload.grantRevision||
+   !same(tab.target,payload.target)||!same(tab.ackTarget,payload.target)||
+   acknowledgedRevisions.get(payload.owner)!==payload.grantRevision)
+  throw Object.assign(new Error('Browser registry changed before command dispatch'),{dispatched:false});
+}
+
 // Private main-only controller. Renderer intents contain owner+geometry only;
 // a service browser.prepare/call and its exact live grant authorize all work.
 function createDesktopBrowserController({electron,window,appSession,origin,version,token,
@@ -318,6 +330,7 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
     if(!active||!same(ref(active),p.target))throw Object.assign(new Error('New Browser root is not the actual selected guest'),{dispatched:false});
     tab.activeCall.initialSelection=false;
    }
+   await settleBrowserCallRegistry({drain,leases,acknowledgedRevisions},tab,p);
    result=await executeCall({payload:p,metadata:observe,list:()=>manager.list(p.owner),
     command:(method,params={})=>dispatch.invoke({id:nonce(),target:p.target,revision:p.grantRevision,operation:'cdp',method,params}),
     invoke:(operation,params={})=>dispatch.invoke({id:nonce(),target:p.target,revision:p.grantRevision,operation,params}),
@@ -421,4 +434,4 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
  }
  return Object.freeze({start,present,hide,close,edit,state:()=>Object.freeze({...state}),isClosed:()=>closed});
 }
-module.exports={createDesktopBrowserController,MAX_SEQUENCE,adoptIdleBrowserGrant};
+module.exports={createDesktopBrowserController,MAX_SEQUENCE,adoptIdleBrowserGrant,settleBrowserCallRegistry};
