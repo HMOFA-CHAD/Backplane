@@ -3,9 +3,10 @@ if(process.env.BP_AGENT_UI_ISOLATED!=='1')throw Error('Run agent UI fixtures thr
 // is toggled and the person goes tb→ta→tb, in both directions, at 1400 and
 // 390 px. Never connect to the live user home.
 // BACKPLANE_LOCAL_STAGE=<stage> node desktop/test/theme-stream.cjs
-// The agent is the deterministic Claude stand-in (stream-agent.cjs: 120 text
-// deltas 50 ms apart, each naming its index and the stream's start). Every
-// animation frame and class/child mutation after the toggle's own frame is
+// The agent is a deterministic Claude stand-in (theme-agent.cjs: streams like
+// stream-agent.cjs, 120 text deltas 50 ms apart, each naming its index and the
+// stream's start; THEME-ASK opens a real ask through permission_prompt).
+// Every animation frame and class/child mutation after the toggle's own frame is
 // sampled: the page's theme (app root, <html>, body background), and on tb the
 // reply's newest index and stream, and the Stop control. Separate from
 // theme-flash.cjs, whose checks it does not repeat.
@@ -15,19 +16,20 @@ const stage=path.resolve(process.env.BACKPLANE_LOCAL_STAGE),info=JSON.parse(fs.r
 const out=process.env.THEME_STREAM_OUT||path.join(stage,'theme-stream-'+Date.now());fs.mkdirSync(out,{recursive:true});
 const home=fs.mkdtempSync(path.join(os.tmpdir(),'bp-theme-stream-')),agents=path.join(home,'agents'),root=path.join(home,'board');fs.mkdirSync(agents);fs.mkdirSync(root);
 for(const name of ['codex','grok','muse','agy','opencode'])fs.writeFileSync(path.join(agents,name),'#!/bin/sh\nexit 127\n',{mode:0o755});
-fs.writeFileSync(path.join(agents,'claude'),'#!/bin/sh\nexec '+JSON.stringify(process.execPath)+' '+JSON.stringify(path.join(__dirname,'stream-agent.cjs'))+' "$@"\n',{mode:0o755});
+fs.writeFileSync(path.join(agents,'claude'),'#!/bin/sh\nexec '+JSON.stringify(process.execPath)+' '+JSON.stringify(path.join(__dirname,'theme-agent.cjs'))+' "$@"\n',{mode:0o755});
 const at=Math.floor(Date.now()/1000),events=[],ev=($,fields)=>events.push({$,...fields,at});
 ev('ProjectCreated',{id:'board',title:'Board',root});
-ev('ThreadCreated',{id:'ta',title:'Thread ta',project:'board',env:'local',branch:'',worktree:root,provider:'codex',model:''});
+ev('ThreadCreated',{id:'ta',title:'Thread ta',project:'board',env:'local',branch:'',worktree:root,provider:'claude',model:'sonnet'});
 ev('ThreadCreated',{id:'tb',title:'Thread tb',project:'board',env:'local',branch:'',worktree:root,provider:'claude',model:'sonnet'});
 for(let i=0;i<20;i++)ev('MessagePosted',{thread:'ta',msg:'ta-m'+i,role:i%2?'assistant':'user',text:'ta message '+i+' 日本語 '+'x'.repeat(120)});
-// a real ask in ta: its controls must be there whenever ta is the hub's view
-ev('AskOpened',{id:'theme-ask',thread:'ta',kind:'approval',tool:'Read',detail:'Fixture approval: read the board',options:''});
+// No ask is seeded: the hub's start closes asks left open in the log (AskClosed
+// with an empty answer), which is recovery, not a loss. ta's ask is opened
+// after start by the stand-in's own permission_prompt call (theme-agent.cjs).
 for(const [key,value] of [['restart.continue','off'],['mail.on','off'],['telemetry.share','off'],['onboard.done','1'],['ui.theme','dark']])ev('SettingSet',{key,value});
 fs.writeFileSync(home+'/events.jsonl',events.map(JSON.stringify).join('\n')+'\n');
 const env={...process.env,BACKPLANE_HOME:home,BACKPLANE_AGENTS:agents,BACKPLANE_COPY:'1',BACKPLANE_TELEMETRY:'off',BACKPLANE_NO_UPDATE:'1',BACKPLANE_PEERS:'',BACKPLANE_LOCK_DIR:home+'/locks',BP_AGENT_TRACE:path.join(home,'agent-trace.jsonl'),SHELL:'/bin/sh'};Object.assign(process.env,env);
 const binary=stage+'/payload/backplane-serve',web=stage+'/payload/web',service=new Service({home,binary,web,expectedVersion:info.version});
-let app,page,views,step='startup';const checks=[],rounds=[],trail=[],BODY={dark:'rgb(13, 15, 18)',light:'rgb(250, 250, 248)'};
+let app,page,views,askId='',step='startup';const checks=[],rounds=[],trail=[],BODY={dark:'rgb(13, 15, 18)',light:'rgb(250, 250, 248)'};
 async function ready(id){await page.waitForFunction(id=>document.documentElement.dataset.backplaneRemoteReady==='true'&&document.querySelector('main[data-thread]')?.dataset.thread===id&&document.documentElement.dataset.backplaneCached!=='true',id);}
 const settle=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
 async function go(id,narrow){
@@ -65,7 +67,7 @@ async function round(n,theme,width,draft){
  step='toggle-'+name;await choose(theme,narrow);await ready('tb');
  await arm(theme);
  step='switch-'+name;await go('ta',narrow);
- const ask=await page.evaluate(()=>[...document.querySelectorAll('main[data-thread="ta"] [data-on-click="answer"]')].filter(b=>b.getAttribute('data-value')?.startsWith('theme-ask|')&&!b.disabled).length);
+ const ask=await page.evaluate(id=>[...document.querySelectorAll('main[data-thread="ta"] [data-on-click="answer"]')].filter(b=>b.getAttribute('data-value')?.startsWith(id+'|')&&!b.disabled).length,askId);
  const taDraft=await page.locator('#composer').inputValue();
  await go('tb',narrow);const back=await live();
  const r=await collect();const all=[...r.frames,...r.mutations].sort((a,b)=>a.t-b.t);
@@ -102,6 +104,12 @@ async function round(n,theme,width,draft){
  views=await watchViews(page);
  const skip=page.locator('[data-on-click="ob-skip"]');if(await skip.count())await skip.click();
  step='load';await go('tb',false);await go('ta',false);
+ // a genuine ask in ta, opened now by the stand-in through the hub's permission_prompt
+ step='ask';await page.locator('#composer').fill('THEME-ASK read the board');await page.locator('#composer').press('Enter');
+ await page.waitForFunction(()=>[...document.querySelectorAll('main[data-thread="ta"] [data-on-click="answer"]')].some(b=>!b.disabled&&/\|/.test(b.getAttribute('data-value')||'')),null,{timeout:20000});
+ askId=await page.evaluate(()=>[...document.querySelectorAll('main[data-thread="ta"] [data-on-click="answer"]')].map(b=>b.getAttribute('data-value')).find(v=>v?.includes('|')).split('|')[0]);
+ const opened=fs.readFileSync(home+'/events.jsonl','utf8').trim().split('\n').map(JSON.parse).filter(e=>e.$==='AskOpened'&&e.thread==='ta');
+ assert(opened.some(e=>e.id===askId),'ta\'s ask is the one the stand-in opened after start');checks.push('ta has a real ask opened after start ('+askId+')');
  // ta's draft: an IME composition, committed, then typed
  step='draft';const cdp=await page.context().newCDPSession(page);await page.locator('#composer').click();
  await cdp.send('Input.imeSetComposition',{text:'にほん',selectionStart:3,selectionEnd:3});await cdp.send('Input.insertText',{text:'日本'});await page.keyboard.type(' draft');
