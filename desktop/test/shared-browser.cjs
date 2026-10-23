@@ -42,6 +42,11 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
  const fromTakeover=process.env.BROWSER_CONTINUE_TAKEOVER==='1';
  const fromHuman=process.env.BROWSER_CONTINUE_HUMAN==='1';
  const fromHandback=process.env.BROWSER_CONTINUE_HANDBACK==='1';
+ const fromHistory=process.env.BROWSER_CONTINUE_HISTORY==='1';
+ const historyPrefixChecks=['handback snapshot sees actual human edits','role locator and Enter submit locally','navigation keeps actual guest identity','old document refs refused','refusal does not break fresh snapshots'];
+ const historyPrefixReceipt=fromHistory?process.env.BROWSER_HISTORY_PREFIX_RECEIPT:null;
+ if(fromHistory){assert(fromHandback,'history suffix retains prior ownership/input receipts');const receipt=JSON.parse(fs.readFileSync(historyPrefixReceipt,'utf8'));assert(historyPrefixChecks.every(name=>receipt.checks.includes(name)),'history suffix requires actual five passed handback/navigation checks');}
+ const retainedHistory=fromHistory?{receipt:historyPrefixReceipt,checks:historyPrefixChecks}:null;
  const inputPrefixChecks=['native human character keydowns pass ownership guard after Select All','trusted native human input changes SAME document'];
  const inputPrefixReceipt=fromHandback?process.env.BROWSER_INPUT_PREFIX_RECEIPT:null;
  if(fromHandback){
@@ -63,6 +68,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
  const site=await controlledBrowserPage(),checks=[];
  let guestId=null,phase='setup';
  const ownership={native:[],renderer:[]},wire={frames:[],decodeErrors:0};
+ const historyObservation={};
  let wireTap;
  let requestId=1000;
  const check=(name,condition)=>{assert(condition,name);checks.push(name);};
@@ -98,6 +104,16 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   const wc=webContents.fromId(id),point=await wc.executeJavaScript(`(()=>{const element=document.querySelector(${JSON.stringify(selector)}),r=element.getBoundingClientRect(),x=Math.round(r.x+r.width/2),y=Math.round(r.y+r.height/2);if(x<0||y<0||x>=innerWidth||y>=innerHeight||!element.contains(document.elementFromPoint(x,y)))throw Error('Fixture human target is outside visible guest viewport');return{x,y}})()`);
   wc.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});wc.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
  },{id,selector});
+ const historyNative=()=>app.evaluate(({BrowserWindow,webContents},id)=>{
+  const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed()),wc=webContents.fromId(id);
+  const current={window:w?{content:w.getContentBounds(),focused:w.isFocused()}:null,guestAlive:!!wc&&!wc.isDestroyed(),events:w?.__sharedBrowserHistory?.events||[]};
+  if(current.guestAlive)Object.assign(current,{url:wc.getURL(),title:wc.getTitle(),focused:wc.isFocused(),loading:wc.isLoadingMainFrame(),zoom:wc.getZoomFactor(),history:wc.navigationHistory.getAllEntries(),index:wc.navigationHistory.getActiveIndex(),canBack:wc.navigationHistory.canGoBack(),canForward:wc.navigationHistory.canGoForward()});
+  return current;
+ },guestId);
+ async function saveHistory(label){historyObservation[label]=await historyNative();historyObservation.wire=wire.frames.slice(-40);fs.writeFileSync(path.join(out,'history-observation.json'),JSON.stringify(historyObservation,null,2)+'\n');}
+ const waitNativeHistory=suffix=>app.evaluate(async({webContents},{id,suffix})=>new Promise(resolve=>{
+  const start=Date.now();function observe(){const wc=webContents.fromId(id);if(!wc||wc.isDestroyed()){resolve(false);return;}if(wc.getURL().endsWith(suffix)&&!wc.isLoadingMainFrame()){resolve(true);return;}if(Date.now()-start>=4000){resolve(false);return;}setTimeout(observe,16);}observe();
+ }),{id:guestId,suffix});
  const refFor=(snapshot,role,name)=>{
   const line=snapshot.outline.split('\n').find(line=>line.includes('- '+role+' '+JSON.stringify(name)));
   const ref=/\[ref=(e\d+)\]/.exec(line||'')?.[1];assert(ref,`snapshot ref for ${role} ${name}`);return ref;
@@ -115,7 +131,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
    const visit=n=>{if(!n||typeof n!=='object')return;for(const a of n.attrs||[])if(a.name==='data-on-click'){takeover||=a.value==='tk-takeover';handback||=a.value==='tk-handback';}for(const k of n.kids||[])visit(k);};visit(r.shown);
    const methods=(r.cmds||[]).filter(c=>c.type==='send').map(c=>{try{const rpc=JSON.parse(c.text);return{method:rpc.m,...(rpc.m==='bots.browser'?{ownerMatches:rpc.p?.bot===threadId,op:rpc.p?.op}:{})};}catch{return{invalid:true};}});
    if(wire.frames.length>=128)wire.frames.shift();
-   wire.frames.push({direction,id:o.id,type:o.t,method:o.m,action:p.action,ownerMatches:o.m==='bots.browser'?p.bot===threadId:['tk-takeover','tk-handback'].includes(p.action)?p.value===threadId:undefined,op:o.m==='bots.browser'?p.op:undefined,ok:o.ok,errorCode:typeof o.error==='object'?o.error?.code:undefined,requestRevision:p.requestRevision??r.requestRevision,viewRevision:o.viewRevision??r.viewRevision,takeover,handback,methods});
+   wire.frames.push({direction,id:o.id,type:o.t,method:o.m,action:p.action,ownerMatches:o.m==='bots.browser'?p.bot===threadId:['tk-takeover','tk-handback'].includes(p.action)?p.value===threadId:undefined,op:o.m==='bots.browser'?p.op:undefined,ok:o.ok,errorCode:typeof o.error==='object'?o.error?.code:undefined,errorText:typeof o.error==='string'?o.error.slice(0,400):undefined,command:o.m==='bots.browser'?p.command:undefined,requestRevision:p.requestRevision??r.requestRevision,viewRevision:o.viewRevision??r.viewRevision,takeover,handback,methods});
   }catch{wire.decodeErrors++;}};
   wireTap.on('Network.webSocketFrameSent',e=>record('sent',e));wireTap.on('Network.webSocketFrameReceived',e=>record('received',e));await wireTap.send('Network.enable');
   await page.waitForFunction(async()=>window.backplaneDesktop?.browser&&(await window.backplaneDesktop.browser.state()).phase==='ready');
@@ -167,6 +183,12 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   check('bot scroll uses actual native page',(await tool('preview_evaluate',{expression:'document.querySelector("#scroller").scrollTop'})).value>0);
   await tool('preview_wait_for',{text:'Entry: bot typed'});
   }
+  if(fromHistory){
+   // Fresh native document/history setup only. The retained human, handback,
+   // form and stale-ref acceptance checks are not replayed.
+   await tool('preview_navigate',{url:site.origin+'/two',readiness:'domContentLoaded'});
+   await tool('preview_wait_for',{url:'/two',text:'Shared Browser two'});
+  }else{
   const beforeHuman=await inspect(id);
   phase='takeover';
   await page.evaluate(()=>{
@@ -280,11 +302,24 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   check('navigation keeps actual guest identity',(await native()).some(v=>v.id===id&&v.url.endsWith('/two')));
   check('old document refs refused',(await tool('preview_click',{ref:refFor(snapshot.value,'button','Count locally')},threadId,true)).isError===true);
   check('refusal does not break fresh snapshots',(await tool('preview_snapshot')).value.title==='Shared Browser two');
+  }
+  phase='history';
   // UI address/history/reload use the same service intent pipeline.
+  await app.evaluate(({BrowserWindow,webContents},id)=>{
+   const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed()),wc=webContents.fromId(id),probe={events:[]};w.__sharedBrowserHistory=probe;
+   for(const name of ['will-navigate','did-start-navigation','did-navigate','did-navigate-in-page','dom-ready','did-finish-load','did-fail-load','render-process-gone','destroyed'])wc.on(name,()=>{if(probe.events.length<80)probe.events.push({event:name,at:Date.now(),destroyed:wc.isDestroyed(),url:wc.isDestroyed()?null:wc.getURL()});});
+   wc.debugger.on('detach',(_event,reason)=>{if(probe.events.length<80)probe.events.push({event:'debugger-detach',reason,at:Date.now()});});
+  },id);
+  await saveHistory('beforeBack');
   await page.locator('[data-on-click="br-back"]').first().click();
+  const backReady=await waitNativeHistory('/one');await saveHistory('afterBack');
+  check('toolbar Back navigates SAME actual guest',backReady);
   await page.waitForFunction(async()=>document.querySelector('.browser-tab.on')?.textContent.includes('one'));
   await page.locator('[data-on-click="br-forward"]').first().click();
+  const forwardReady=await waitNativeHistory('/two');await saveHistory('afterForward');
+  check('toolbar Forward navigates SAME actual guest',forwardReady);
   await page.waitForFunction(()=>document.querySelector('.browser-tab.on')?.textContent.includes('two'));
+  phase='remaining-browser';
   await page.locator('[data-on-click="br-reload"]').first().click();
   await page.reload();
   await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true');
@@ -318,10 +353,11 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await page.screenshot({path:path.join(out,'shared-browser-chrome.png')});
   const pixels=await app.evaluate(async({webContents},id)=>(await webContents.fromId(id).capturePage()).toPNG().toString('base64'),id);
   fs.writeFileSync(path.join(out,'shared-browser-guest.png'),Buffer.from(pixels,'base64'));
-  const receipt={status:'PASS',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
+  const receipt={status:'PASS',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
   fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify(receipt,null,2)+'\n');
   return receipt;
  }catch(error){
+  if(phase==='history'||phase==='remaining-browser')try{await saveHistory('failure');}catch(e){historyObservation.captureError=e.message;fs.writeFileSync(path.join(out,'history-observation.json'),JSON.stringify(historyObservation,null,2)+'\n');}
   // Retain this exact failure boundary before another helper changes the UI.
   try{ownership.renderer=await page.evaluate(()=>({events:window.__sharedBrowserTakeover?.events||[],remoteReady:document.documentElement.dataset.backplaneRemoteReady,thread:document.querySelector('main')?.dataset.thread,strip:document.querySelector('.desktop-browser-drive')?.textContent,controls:[...document.querySelectorAll('.desktop-browser-drive [data-on-click]')].map(n=>({action:n.dataset.onClick,value:n.dataset.value})),status:document.querySelector('.desktop-browser-status')?.textContent}));}catch(e){ownership.rendererError=e.message;}
   try{ownership.native=await app.evaluate(({BrowserWindow,webContents},id)=>{const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed());return{probe:w?.__sharedBrowserOwnership,windowFocused:w?.isFocused(),focusedId:webContents.getFocusedWebContents()?.id??null,views:w?.contentView.children.filter(v=>v.webContents).map(v=>({id:v.webContents.id,url:v.webContents.getURL(),visible:v.getVisible(),bounds:v.getBounds(),guest:v.webContents.id===id}))};},guestId);}catch(e){ownership.nativeError=e.message;}
@@ -340,7 +376,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   }
   fs.writeFileSync(path.join(out,'ownership-wire.json'),JSON.stringify(wire,null,2)+'\n');
   fs.writeFileSync(path.join(out,'ownership-observation.json'),JSON.stringify({phase,ownership},null,2)+'\n');
-  fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
+  fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
  }
  finally{if(wireTap)await wireTap.detach().catch(()=>{});await site.close();}
 }
