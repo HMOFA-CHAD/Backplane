@@ -34,6 +34,19 @@ let app,page;const errors=[],timings=[],checks=[];
  const skip=page.locator('[data-on-click="ob-skip"]');if(await skip.count()){await skip.click();await page.locator('.tour-back').waitFor({state:'hidden'});}
  const select=async id=>{await page.locator(`.sidebar [data-on-click="select"][data-value="${id}"]`).first().click();await page.waitForFunction(id=>document.querySelector('main')?.dataset.thread===id&&document.documentElement.dataset.backplaneRemoteReady==='true',id);};
  await select(tid);await page.setViewportSize({width:1440,height:960});
+ // Helper-only continuation reuses this exact stage and Electron fixture.
+ // It deliberately does not turn skipped inspector checks into a PASS.
+ if(process.env.INSPECTOR_HELPERS_ONLY==='1'){
+  assert(!baseline,'helper acceptance requires the combined candidate');
+  assert(process.env.BATCH_BROWSER==='1'||process.env.BATCH_HIERARCHY==='1','choose at least one pending helper');
+  const helpers={};
+  let helperFailed=false;
+  if(process.env.BATCH_BROWSER==='1'){try{helpers.browser=await require('./shared-browser.cjs').runSharedBrowserAcceptance({app,page,origin:connection.origin,token:await service.token(),threadId:tid,otherThreadId:'empty',out:path.join(out,'shared-browser')});}catch(e){helperFailed=true;helpers.browser={state:'failed',error:e.message};}}
+  if(process.env.BATCH_HIERARCHY==='1'){try{const close=page.locator('#viewer [data-on-click=\"panel\"],.workspace-bar .viewer-close');if(await close.count())await close.first().click();helpers.hierarchy=await require('./thread-hierarchy.cjs').runHierarchyAcceptance({app,page,service,home,project,threadId:tid,child,out:path.join(out,'hierarchy')});}catch(e){helperFailed=true;helpers.hierarchy={state:'failed',error:e.message};}}
+  assert.equal(errors.length,0,errors.join('\n'));
+  fs.writeFileSync(path.join(out,'HELPERS-RESULT.json'),JSON.stringify({state:helperFailed?'failed':'passed',scope:'selected runtime helpers only',inspector:'NOT RUN',source:info.commit,version:info.version,stage,home,helpers,errors},null,2));
+  console.log(JSON.stringify({out,scope:'selected runtime helpers only',inspector:'NOT RUN',helpers}));if(helperFailed)process.exitCode=1;return;
+ }
  const head=page.locator('.subs-head');if((await head.getAttribute('data-on-click'))==='subs-open')await head.click();await page.locator('.sub-row').first().waitFor();
  const finished=page.locator('.sub-row[data-value*="subs.done:"]');if(await finished.count())await finished.click();
  await page.locator('.sub-row').filter({hasText:'Layout and connector review'}).click();await page.locator('.sub-step').first().waitFor();
