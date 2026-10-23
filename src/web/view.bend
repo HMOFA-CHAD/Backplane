@@ -380,16 +380,25 @@ def View.atree.card(+lc: I.Loc, +t: M.Thread, anchor: U.ARow, +ix: U.SIx, +st: M
   match anchor:
     case U.ARow{_, _, _, pid, pt, faded}: View.arow(lc, U.ARow{0n, 0n, t, pid, pt, faded}, ix, st, sel)
 
+def View.atree.next(step: List<&2, U.ARow> & U.ARow) -> List<&2, U.ARow>:
+  (next, _) = step
+  next
+
+def View.atree.anchor(step: List<&2, U.ARow> & U.ARow) -> U.ARow:
+  (_, at) = step
+  at
+
 def View.atree.rows(rs: List<&2, ST.TRow>, +lc: I.Loc, anchors: List<&2, U.ARow>, anchor: U.ARow, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
     case Nil{}: Nil{}
     case ST.TRow{+t, +depth, +expanded, +children} <> rest:
       +id = M.Thread.id(t)
       +indent = Bool.pick(Nat, Nat.is_gt(depth, 4n), 4n, depth)
-      (next, +at) = View.atree.step(Nat.is_eq(depth, 0n), anchors, anchor)
+      +step = View.atree.step(Nat.is_eq(depth, 0n), anchors, anchor)
+      +at = View.atree.anchor(step)
       List.concat(&2, D.Node, [[D.El{"div", "tree:" ++ id, [D.At{"class", "thread-tree-row"}, D.At{"style", "--depth:" ++ Nat.show(indent)}],
         [View.tree.expander(id, expanded, children), View.atree.card(lc, t, at, ix, st, sel)]}],
-        View.tree.create(Bool.and(expanded, U.ThreadTree.can_create(st, id)), id, indent), View.atree.rows(rest, lc, next, at, ix, st, sel)])
+        View.tree.create(Bool.and(expanded, U.ThreadTree.can_create(st, id)), id, indent), View.atree.rows(rest, lc, View.atree.next(step), at, ix, st, sel)])
 
 def View.arows(+lc: I.Loc, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +q: String) -> List<&2, D.Node>:
   match rs:
