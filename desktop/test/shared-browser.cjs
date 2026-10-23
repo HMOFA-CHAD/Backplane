@@ -40,6 +40,11 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
  assert(app&&page&&origin&&token&&threadId&&out,'use the integrator\'s isolated running Electron fixture');
  fs.mkdirSync(out,{recursive:true});
  const fromTakeover=process.env.BROWSER_CONTINUE_TAKEOVER==='1';
+ const fromHuman=process.env.BROWSER_CONTINUE_HUMAN==='1';
+ const humanPrefixChecks=['takeover consumes its click','bot click refused while human owns page','bot evaluation refused while human owns page'];
+ const humanPrefixReceipt=fromHuman?process.env.BROWSER_HUMAN_PREFIX_RECEIPT:null;
+ if(fromHuman){assert(fromTakeover,'human suffix also retains original native prefix');const receipt=JSON.parse(fs.readFileSync(humanPrefixReceipt,'utf8'));assert(humanPrefixChecks.every(name=>receipt.checks.includes(name)),'human suffix requires actual takeover/refusal prefix');}
+ const retainedHuman=fromHuman?{receipt:humanPrefixReceipt,checks:humanPrefixChecks}:null;
  const retainedPrefix=fromTakeover?JSON.parse(fs.readFileSync(process.env.BROWSER_PREFIX_RECEIPT,'utf8')):null;
  const prefixChecks=['native snapshot carries actual page and PNG','visible sandboxed WebContentsView, no iframe','bot ref input reaches the visible native document','bot scroll uses actual native page'];
  if(retainedPrefix)assert(prefixChecks.every(name=>retainedPrefix.checks.includes(name)),'continuation requires actual retained native prefix');
@@ -161,18 +166,54 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
    native:await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>!w.isDestroyed())?.__sharedBrowserOwnership),
    renderer:await page.evaluate(()=>({events:window.__sharedBrowserTakeover?.events||[],remoteReady:document.documentElement.dataset.backplaneRemoteReady,strip:document.querySelector('.desktop-browser-drive')?.textContent}))
   },null,2)+'\n');
-  check('takeover consumes its click',(await inspect(id)).count===beforeHuman.count);
+  if(!fromHuman)check('takeover consumes its click',(await inspect(id)).count===beforeHuman.count);
   phase='human';
-  check('bot click refused while human owns page',(await tool('preview_click',{selector:'#count'},threadId,true)).isError===true);
-  check('bot evaluation refused while human owns page',(await tool('preview_evaluate',{expression:'window.fixtureState.count++'},threadId,true)).isError===true);
+  if(!fromHuman)check('bot click refused while human owns page',(await tool('preview_click',{selector:'#count'},threadId,true)).isError===true);
+  if(!fromHuman)check('bot evaluation refused while human owns page',(await tool('preview_evaluate',{expression:'window.fixtureState.count++'},threadId,true)).isError===true);
+  // The renderer's person strip and main's native grant travel separately.
+  // Wait for the actual guest presentation with its shield removed; no input
+  // is sent until the native authority transition is visible.
+  await app.evaluate(async({BrowserWindow},{id})=>new Promise((resolve,reject)=>{
+   const start=Date.now();function observe(){
+    const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed()),views=w?.contentView.children||[];
+    if(views.some(v=>v.webContents?.id===id&&v.getVisible())&&!views.some(v=>v.getVisible()&&v.webContents?.getURL().endsWith('/browser-shield.html'))){resolve();return;}
+    if(Date.now()-start>=4000){reject(Error('Native human presentation did not become ready'));return;}setTimeout(observe,16);
+   }observe();
+  }),{id});
+  const humanInput={initial,beforeHuman};
+  const saveHuman=()=>fs.writeFileSync(path.join(out,'human-input-observation.json'),JSON.stringify(humanInput,null,2)+'\n');
+  // Native input is sent once. Main's sendInputEvent returning is not an
+  // acknowledgement that Chromium's renderer has processed that input.
+  await app.evaluate(({webContents},id)=>{
+   const wc=webContents.fromId(id),probe={events:[]};wc.__sharedBrowserHuman=probe;
+   for(const name of ['before-input-event','before-mouse-event'])wc.on(name,(event,input)=>{if(probe.events.length<64)probe.events.push({event:name,type:input?.type,button:input?.button,prevented:event.defaultPrevented===true});});
+  },id);
+  saveHuman();
   await humanClick(id,'#entry');
+  humanInput.afterEntryClick=await inspect(id);saveHuman();
   await app.evaluate(({webContents},id)=>{
    const wc=webContents.fromId(id);wc.focus();
    wc.sendInputEvent({type:'keyDown',keyCode:'A',modifiers:[process.platform==='darwin'?'meta':'control']});wc.sendInputEvent({type:'keyUp',keyCode:'A',modifiers:[process.platform==='darwin'?'meta':'control']});
    for(const keyCode of 'human typed')wc.sendInputEvent({type:'char',keyCode});
   },id);
+  humanInput.afterTyping=await inspect(id);saveHuman();
   await humanClick(id,'#count');
+  humanInput.immediate=await inspect(id);
+  const matchesHuman=value=>value.document===initial.document&&value.entry==='human typed'&&value.count===beforeHuman.count+1&&value.trustedClicks===beforeHuman.trustedClicks+1&&value.trustedInputs>beforeHuman.trustedInputs;
+  humanInput.immediatePredicate=matchesHuman(humanInput.immediate);saveHuman();
+  // Bounded read-only observation; no click, key, script event or input retry.
+  // Keep the immediate result separately even if renderer settlement differs.
+  humanInput.processing=await app.evaluate(async({webContents},{id,expectedCount})=>webContents.fromId(id).executeJavaScript(`new Promise(resolve=>{
+   const started=performance.now();
+   function observe(){
+    const ready=document.querySelector('#entry').value==='human typed'&&fixtureState.count===${expectedCount};
+    if(ready||performance.now()-started>=4000){resolve({ready,elapsedMs:performance.now()-started});return;}
+    setTimeout(observe,16);
+   }observe();
+  })`),{id,expectedCount:beforeHuman.count+1});
   const human=await inspect(id);
+  humanInput.human=human;humanInput.settledPredicate=matchesHuman(human);
+  humanInput.native=await app.evaluate(({webContents},id)=>webContents.fromId(id).__sharedBrowserHuman,id);saveHuman();
   check('trusted native human input changes SAME document',human.document===initial.document&&human.entry==='human typed'&&human.count===beforeHuman.count+1&&human.trustedClicks===beforeHuman.trustedClicks+1&&human.trustedInputs>beforeHuman.trustedInputs);
   phase='handback';
   await page.locator(`[data-on-click="tk-handback"][data-value="${threadId}"]`).click();
@@ -227,7 +268,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await page.screenshot({path:path.join(out,'shared-browser-chrome.png')});
   const pixels=await app.evaluate(async({webContents},id)=>(await webContents.fromId(id).capturePage()).toPNG().toString('base64'),id);
   fs.writeFileSync(path.join(out,'shared-browser-guest.png'),Buffer.from(pixels,'base64'));
-  const receipt={status:'PASS',checks,retainedPrefix:retained,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
+  const receipt={status:'PASS',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
   fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify(receipt,null,2)+'\n');
   return receipt;
  }catch(error){
@@ -249,7 +290,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   }
   fs.writeFileSync(path.join(out,'ownership-wire.json'),JSON.stringify(wire,null,2)+'\n');
   fs.writeFileSync(path.join(out,'ownership-observation.json'),JSON.stringify({phase,ownership},null,2)+'\n');
-  fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
+  fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
  }
  finally{if(wireTap)await wireTap.detach().catch(()=>{});await site.close();}
 }
