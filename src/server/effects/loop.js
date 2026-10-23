@@ -1277,7 +1277,7 @@ async function bp_run(m) {
         break;
       }
       const kont = op.kont;
-      op = kont(x);
+      op = op.kont(x);
       const continued = performance.now();
       bp_loop_slow(io, "continuation", effect, ran, continued, x, op, kont);
       if (op !== undefined && continued >= slice) {
