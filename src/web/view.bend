@@ -468,10 +468,12 @@ def View.machines.loc(+lc: I.Loc, many: Bool, +open: Bool, +rs: List<&2, U.MRow>
 def View.machines(many: Bool, +open: Bool, +rs: List<&2, U.MRow>) -> List<&2, D.Node>:
   View.machines.loc(I.En{}, many, open, rs)
 
-def View.sidebar.k(+lc: I.Loc, +ms: List<&2, U.MRow>, +ix: U.SIx, +st: M.State, +sel: String, +open: Map<&2, Bool>, on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, mi: List<&2, U.MItem>, bots: List<&2, D.Node>, uber: List<&2, D.Node>) -> D.Node:
+def View.sidebar.k(+lc: I.Loc, +ms: List<&2, U.MRow>, +ix: U.SIx, +st: M.State, +sel: String, +open: Map<&2, Bool>, +on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, mi: List<&2, U.MItem>, bots: List<&2, D.Node>, uber: List<&2, D.Node>) -> D.Node:
   D.El{"aside", "sidebar", [D.At{"class", "sidebar"}],
         D.Dom.cat([D.El{"div", "", [D.At{"class", "brand"}], [
-            D.Dom.span(Bool.pick(String, on, "conn on", "conn"), ""),
+            D.El{"span", "", [D.At{"class", "brand-mark"}], [D.El{"span", "", [D.At{"class", Bool.pick(String, on, "conn on", "conn")},
+              D.At{"role", "img"}, D.At{"title", MSG.T.native.hub.state(lc, Bool.pick(String, on, "online", "offline"))},
+              D.At{"aria-label", MSG.T.native.hub.state(lc, Bool.pick(String, on, "online", "offline"))}], Nil{}}]},
             D.Dom.span("name", "Backplane"), D.Dom.span("ver", v),
             WI.WIcon.button("icon", "thin-search-open", "", "Search conversations", "search", 16, ""),
             WI.WIcon.button("icon", "proj-open", "", MSG.T.sidebar.add.project(lc), "plus", 16, "")]},

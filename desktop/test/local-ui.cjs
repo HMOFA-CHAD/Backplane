@@ -37,6 +37,13 @@ let app,page;const errors=[],observations=[],traffic=[],start=performance.now();
   page.on('request',r=>{if(r.url().includes('/attach?'))record('upload',r.url());});
   page.on('response',r=>{if(r.url().includes('/attach?'))record('uploaded',{url:r.url(),status:r.status()});});
   await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true',{timeout:30000});
+  const brand=page.locator('.brand-mark');
+  assert.equal(await brand.count(),1);
+  const brandBox=await brand.boundingBox();assert.equal(brandBox.width,24);assert.equal(brandBox.height,24);
+  assert(brandBox.x<(await page.locator('.brand .name').boundingBox()).x);
+  const indicator=brand.locator('.conn');assert.equal(await indicator.getAttribute('role'),'img');
+  assert.equal(await indicator.getAttribute('aria-label'),'Connected');
+  await brand.evaluate(async el=>{const url=getComputedStyle(el).backgroundImage.slice(5,-2);const img=new Image();img.src=url;await img.decode();if(!img.naturalWidth)throw Error('Official header logo failed to load');});
   const chrome=await app.evaluate(({Menu,BrowserWindow})=>({menu:Menu.getApplicationMenu(),visible:BrowserWindow.getAllWindows()[0].isMenuBarVisible()}));
   assert.equal(chrome.menu,null);assert.equal(chrome.visible,false);
   if(process.platform==='linux'&&process.env.DISPLAY&&fs.existsSync('/usr/bin/xprop')){
