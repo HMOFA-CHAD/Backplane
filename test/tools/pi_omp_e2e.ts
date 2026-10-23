@@ -29,9 +29,18 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-const [bin = "build/backplane", wire = "build/wire"] = process.argv.slice(2);
-for (const f of readdirSync(wire).filter((f) => f.endsWith(".js"))) (0, eval)(readFileSync(`${wire}/${f}`, "utf8"));
-const W = (globalThis as any).Wire;
+import { cbor, plain } from "../../src/web/wire.js";
+import { encode } from "./ios_test_cbor.ts";
+const [bin = "build/backplane"] = process.argv.slice(2);
+const codecSource=readFileSync(resolve("src/core/cbor.bend"),"utf8");
+const dict=(name: string)=>JSON.parse(new RegExp("def Cbor\\."+name+"\\(\\) -> List<&2, String>:\\s*(\\[[\\s\\S]*?\\])\\n").exec(codecSource)![1]);
+const keys=dict("keys"),words=dict("words");
+const W={encode(text: string){const bytes:number[]=[];encode(JSON.parse(text),bytes);return Uint8Array.from(bytes);},decode(bytes:Uint8Array){return JSON.stringify(plain(cbor(bytes,keys,words)));}};
+const out=process.env.PI_OMP_OUT;
+if(!out)throw Error("PI_OMP_OUT is required for durable qualification");
+mkdirSync(out,{recursive:true});
+const checks:string[]=[];
+let ws:WebSocket|undefined;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const realPi = process.env.REAL_PI ?? Bun.which("pi") ?? "";
 
@@ -52,7 +61,7 @@ const home = join(root, "home");
 const proj = join(root, "proj");
 mkdirSync(proj);
 mkdirSync(home);
-writeFileSync(join(home, "events.jsonl"), "");
+writeFileSync(join(home, "events.jsonl"), ["mail.on","restart.continue","telemetry.share"].map(key=>JSON.stringify({$:"SettingSet",key,value:"off",at:Math.floor(Date.now()/1000)})).join("\n")+"\n");
 
 // the stand-in model: "run please" asks for bash once, "slow" waits, else an echo
 const calls: any[] = [];
@@ -101,15 +110,16 @@ const olines = () => (existsSync(omplog) ? readFileSync(omplog, "utf8").split("\
 let fail = 0;
 const check = (ok: boolean, what: string) => {
   console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
-  if (!ok) fail++;
+  if (!ok) {fail++;throw Error(what);}
+  checks.push(what);
 };
 
 const port = freePort();
 const proc = Bun.spawn([resolve(bin), "--home", home, "--port", String(port), "--no-tailscale", "--foreground"], {
-  env: { ...process.env, DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_KEYRING_LOCKED: "0", BACKPLANE_PEERS: "", BACKPLANE_GOOGLE_BAKE: "0",
+  env: { ...process.env, DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_KEYRING_LOCKED: "0", BACKPLANE_PEERS: "", BACKPLANE_GOOGLE_BAKE: "0", BACKPLANE_COPY:"1", BACKPLANE_TELEMETRY:"off", BACKPLANE_LOCK_DIR:join(home,"locks"),
     OMP_LOG: omplog, OMP_STATE: join(root, "omp-sessions"), BACKPLANE_AGENTS: fake, PATH: `${fake}:${process.env.PATH}` },
-  stdout: "ignore",
-  stderr: "ignore",
+  stdout: Bun.file(join(out,"service.stdout.log")),
+  stderr: Bun.file(join(out,"service.stderr.log")),
 });
 try {
   for (let i = 0; i < 200; i++) {
@@ -118,7 +128,9 @@ try {
   }
   const seen: any[] = [];
   const info: Record<string, string> = {};
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  const token=readFileSync(join(home,"token"),"utf8").trim();
+  if(!/^[0-9a-f]{32}$/.test(token))throw Error("Invalid isolated service credential");
+  ws = new WebSocket(`ws://127.0.0.1:${port}/ws`,{headers:{Authorization:"Bearer "+token}});
   ws.binaryType = "arraybuffer";
   ws.onmessage = (e) => {
     let o: any = null;
@@ -126,7 +138,7 @@ try {
     for (const c of o?.items ?? []) seen.push(c);
     if (o?.info) Object.assign(info, o.info);
   };
-  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  await new Promise((r, j) => {const timer=setTimeout(()=>j(Error("Authenticated isolated WebSocket deadline")),5000); ws!.onopen=()=>{clearTimeout(timer);r(true)};ws!.onerror=()=>{clearTimeout(timer);j(Error("Authenticated isolated WebSocket error"))}; });
   let id = 0;
   const send = (m: string, p: object) => { ws.send(W.encode(JSON.stringify({ id: ++id, m, p }))); return id; };
   const models = () => { try { return JSON.parse(info.models ?? "{}"); } catch { return {}; } };
@@ -139,6 +151,7 @@ try {
 
   send("project.add", { path: proj });
   const pc = await until(10000, () => seen.find((x) => x.$ === "ProjectCreated" && x.root === proj) ?? seen.find((x) => x.$ === "ProjectCreated" && x.id !== "scratch"));
+  if(!pc)throw Error("Synthetic project was not created");
   const thread = async (provider: string, model: string) => {
     const n = seen.filter((x) => x.$ === "ThreadCreated" && x.provider === provider).length;
     send("thread.create", { project: pc.id, title: provider, env: "local", provider, model });
@@ -149,7 +162,7 @@ try {
   };
 
   // ---------------- Pi ----------------
-  if (!realPi) console.log("SKIP pi: no real pi (set REAL_PI or put pi on PATH)");
+  if (!realPi) throw Error("Real Pi unavailable; Pi runtime remains unverified");
   else {
     await until(60000, () => (models().pi ?? []).length > 0 ? true : undefined);
     check((models().pi ?? []).includes("standin/fake-1"), `pi models: listed (${JSON.stringify(models().pi)})`);
@@ -269,7 +282,12 @@ try {
   await ended(ot, 7);
   check(acts(ot).filter((s) => s.includes("Oh My Pi could not resume its session")).length === 1 && turns(ot).at(-1) === "completed", "omp lost: renewed, said once, completes");
 
+  writeFileSync(join(out,"RESULT.json"),JSON.stringify({state:"passed",source:process.env.PI_OMP_SOURCE,checks,realPi:true,ompStandin:true,scope:"Actual service runner with real Pi against an isolated local model and OMP ACP stand-in. No user profile, credentials, real model provider or GUI."},null,2)+"\n");
+} catch(e:any) {
+  writeFileSync(join(out,"FAIL.json"),JSON.stringify({state:"failed",source:process.env.PI_OMP_SOURCE,checks,error:e.stack,home:root,scope:"Isolated synthetic runner; completed prefix retained; no real provider or user UI"},null,2)+"\n");
+  console.error(e.stack);fail++;
 } finally {
+  ws?.close();
   proc.kill();
   await proc.exited;
   model.stop(true);

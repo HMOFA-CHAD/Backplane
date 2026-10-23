@@ -181,7 +181,7 @@ def Omp.reopen(renew: Bool, a: AC.Acp, +t: OmpTurn, +o: J.Json) -> AC.AcpOut:
     case False{}:
       Omp.fail(a, Omp.error(o))
 
-def Omp.reply.k(i: Nat, ok: Bool, a: AC.Acp, +t: OmpTurn, +o: J.Json) -> AC.AcpOut:
+def Omp.reply.k(i: Nat, ok: Bool, +a: AC.Acp, +t: OmpTurn, +o: J.Json) -> AC.AcpOut:
   match i ok:
     case 1n True{}:
       AC.AcpOut{a, [Omp.open(Omp.acp(t))], Nil{}, Nil{}}
