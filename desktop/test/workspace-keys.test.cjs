@@ -27,3 +27,54 @@ test('Electron passes shell control keys to a focused PTY and keeps terminal cli
   assert.equal(prevented, 0);assert.deepEqual(calls, []);
   press('c', true);press('v', true);assert.equal(prevented, 2);assert.deepEqual(calls, ['copy', 'paste']);
 });
+
+// Exercise the installed capture listener and the focus transition, not only
+// the chord normalizer: Escape must release navigation without losing a draft.
+function composerHarness(installWorkspaceKeys) {
+  let listener;
+  const actions = [], doc = { querySelector: () => null, activeElement: null,
+    addEventListener: (name, callback) => { assert.equal(name, 'keydown'); listener = callback; } };
+  const body = { tagName: 'BODY', closest: () => null };
+  const composer = { tagName: 'TEXTAREA', id: 'composer', value: 'unsent draft', completion: '',
+    closest: () => composer, getAttribute: () => composer.completion,
+    blur: () => { doc.activeElement = body; } };
+  doc.activeElement = composer;
+  installWorkspaceKeys({ dispatch: (...action) => actions.push(action), document: doc, platform: 'Linux' });
+  const press = (key, fields = {}) => {
+    const input = event(key, { target: doc.activeElement, defaultPrevented: false,
+      preventDefault() { this.defaultPrevented = true; }, stopImmediatePropagation() {}, ...fields });
+    listener(input); return input;
+  };
+  return { doc, composer, body, actions, press };
+}
+
+test('composer Escape restores focus-free navigation and preserves the unsent draft', async () => {
+  const { installWorkspaceKeys } = await import('../../src/web/workspace-keys.js');
+  const h = composerHarness(installWorkspaceKeys);
+  h.press('2', { ctrlKey: true });
+  assert.deepEqual(h.actions, []);
+  assert.equal(h.press('Escape').defaultPrevented, true);
+  assert.equal(h.doc.activeElement, h.body);
+  assert.equal(h.composer.value, 'unsent draft');
+  h.press('2', { ctrlKey: true });
+  assert.deepEqual(h.actions, [['ws-key', 'ctrl+2']]);
+});
+
+test('composer Escape leaves completion, IME and PTY input ownership intact', async () => {
+  const { installWorkspaceKeys } = await import('../../src/web/workspace-keys.js');
+  const h = composerHarness(installWorkspaceKeys);
+  h.composer.completion = 'skill-close';
+  assert.equal(h.press('Escape').defaultPrevented, false);
+  assert.equal(h.doc.activeElement, h.composer);
+  h.composer.completion = '';
+  for (const fields of [{ isComposing: true }, { keyCode: 229 }, { ctrlKey: true }]) {
+    assert.equal(h.press('Escape', fields).defaultPrevented, false);
+    assert.equal(h.doc.activeElement, h.composer);
+  }
+  const pty = { tagName: 'TEXTAREA', id: 'term', closest: () => pty, getAttribute: () => '',
+    blur: () => assert.fail('PTY Escape must reach its shell') };
+  h.doc.activeElement = pty;
+  assert.equal(h.press('Escape').defaultPrevented, false);
+  assert.equal(h.doc.activeElement, pty);
+  assert.deepEqual(h.actions, []);
+});

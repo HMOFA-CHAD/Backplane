@@ -44,6 +44,13 @@ export function installWorkspaceKeys({ dispatch, document: doc = document, platf
         return;
       }
     }
+    // Match the native composer: Escape leaves it once completions are closed.
+    // Keep editor navigation guarded until focus has actually left the field.
+    if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey &&
+        event.target?.tagName === 'TEXTAREA' && event.target.id === 'composer' &&
+        !event.target.getAttribute?.('data-esc')) {
+      event.preventDefault(); event.stopImmediatePropagation(); event.target.blur(); return;
+    }
     const action = workspaceShortcut(event, platform);
     if (!action) return;
     event.preventDefault(); event.stopImmediatePropagation();
