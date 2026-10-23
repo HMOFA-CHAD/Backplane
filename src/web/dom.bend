@@ -145,11 +145,36 @@ def Md.code.k(path: Bool, +s: String) -> Node:
 def Md.code(+acc: String) -> Node:
   Md.code.k(LK.Link.is_path(String.reverse(acc)), String.reverse(acc))
 
+# Emphasis can contain links and code. Reuse the safe link parser for text
+# runs without recursively entering the enclosing emphasis state machine.
+type Emphasis is Data:
+  Emphasis{code: Bool, acc: String, out: List<&2, Node>}
+
+def Md.emphasis.step(tick: Bool, code: Bool, +c: Char, acc: String, out: List<&2, Node>) -> Emphasis:
+  match tick code:
+    case True{} True{}: Emphasis{False{}, SNil{}, Md.code(acc) <> out}
+    case True{} False{}: Emphasis{True{}, SNil{}, Md.text(acc, out)}
+    case False{} _: Emphasis{code, SCon{c, acc}, out}
+
+def Md.emphasis.end(code: Bool, acc: String, out: List<&2, Node>) -> List<&2, Node>:
+  match code:
+    case True{}: List.reverse(&2, Node, Md.text(String.append(acc, "`"), out))
+    case False{}: List.reverse(&2, Node, Md.text(acc, out))
+
+def Md.emphasis.go(s: String, st: Emphasis) -> List<&2, Node>:
+  match s st:
+    case SNil{} Emphasis{code, acc, out}: Md.emphasis.end(code, acc, out)
+    case SCon{+c, t} Emphasis{code, acc, out}:
+      Md.emphasis.go(t, Md.emphasis.step(Char.is_eq(c, '`'), code, c, acc, out))
+
+def Md.emphasis(acc: String) -> List<&2, Node>:
+  Md.emphasis.go(String.reverse(acc), Emphasis{False{}, SNil{}, Nil{}})
+
 def Md.bold(acc: String) -> Node:
-  El{"strong", "", Nil{}, [Txt{String.reverse(acc)}]}
+  El{"strong", "", Nil{}, Md.emphasis(acc)}
 
 def Md.em(acc: String) -> Node:
-  El{"em", "", Nil{}, [Txt{String.reverse(acc)}]}
+  El{"em", "", Nil{}, Md.emphasis(acc)}
 
 # A label is one link token, even when it contains emphasis. Splitting it
 # at ** before Link.pieces runs left the actual [**title**](backplane://...)
