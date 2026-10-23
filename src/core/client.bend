@@ -12093,6 +12093,36 @@ def Side.of(+u: Ui, +pid: String) -> List<&2, String>:
 def Side.here(+u: Ui) -> List<&2, String>:
   Side.of(u, Side.cur(u))
 
+# Modifier hints reuse the frame's existing index. Only the selected
+# project's forest can contribute Ctrl digits: parent links cannot cross
+# projects, so unrelated forests need not be expanded and discarded.
+def Side.projects.ix(u: Ui, +ix: SIx) -> List<&2, String>:
+  match u:
+    case Ui{+st, _, +dr, _, +op, _, +now, _, _, _, _, _, _, _, _, _, _}:
+      Side.pids(Side.unfolded(Side.shown.ix(st, ix, now, Find.q(op, dr)), op, Find.q(op, dr), now))
+
+def Side.active.project(rs: List<&2, ARow>, +pid: String) -> List<&2, ARow>:
+  match rs:
+    case Nil{}: Nil{}
+    case ARow{rank, at, t, +project, title, faded} <> rest:
+      Active.keep(String.eq(project, pid), ARow{rank, at, t, project, title, faded}, Side.active.project(rest, pid))
+
+def Side.here.kind(active: Bool, +u: Ui, +ix: SIx, +pid: String) -> List<&2, String>:
+  match active:
+    case True{}:
+      +q = Ui.scratch(u, "@f.pq")
+      ST.Tree.row_ids(ST.Tree.rows_search(Ui.state(u), Active.root_threads(Side.active.project(
+        Active.folded(Active.open(Side.open(u), q), Active.parts(Active.rows.ix(Ui.state(u), ix, Side.now(u), q))), pid)), Ui.sel(u), q))
+    case False{}:
+      match u:
+        case Ui{+st, +sel, +dr, _, +op, _, +now, _, _, _, _, _, _, _, _, _, _}:
+          Side.visible.tree(Side.only(Side.unfolded(Side.shown.ix(st, ix, now, Find.q(op, dr)), op, Find.q(op, dr), now), pid), op, st, sel)
+
+def Side.here.ix(+u: Ui, +ix: SIx) -> List<&2, String>:
+  List.append(&2, String, Side.here.kind(String.eq(Side.view(Ui.state(u)), "active"), u, ix, Side.cur(u)),
+    Side.in_project(Side.when(Bool.or(Ui.flag(u, "conversation-history"), Bool.not(String.is_empty(Ui.scratch(u, "@f.pq")))),
+      Side.legacy.ids(ST.Legacy.threads(Ui.state(u)), Ui.scratch(u, "@f.pq"))), Ui.state(u), Side.cur(u)))
+
 def Uber.chat.k(none: Bool, +u: Ui, id: String) -> Act:
   match none:
     case True{}: Uber.new(u)

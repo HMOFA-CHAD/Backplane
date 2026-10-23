@@ -581,8 +581,11 @@ def View.sidebar.keys(n: D.Node, projects: List<&2, String>, threads: List<&2, S
          D.At{"data-shortcut-threads", J.Json.show(J.Json.arr(U.Side.strs(List.take(&2, String, threads, 9n))))}]), kids}
     case D.Txt{text}: D.Txt{text}
 
+def View.sidebar.frame(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, +signals: U.SIx) -> D.Node:
+  View.sidebar.keys(View.sidebar.w(lc, bots, WB.WB.uber(lc, u, signals), U.Machines.rows.loc(lc, u), U.Menu.items.loc(lc, u, True{}), signals, u), U.Side.projects.ix(u, plain), U.Side.here.ix(u, plain))
+
 def View.sidebar.x(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +ix: U.SIx) -> D.Node:
-  View.sidebar.keys(View.sidebar.w(lc, bots, WB.WB.uber(lc, u, U.Side.signals.ix(ix, u)), U.Machines.rows.loc(lc, u), U.Menu.items.loc(lc, u, True{}), U.Side.signals.ix(ix, u), u), U.Side.projects(u), U.Side.here(u))
+  View.sidebar.frame(lc, bots, u, ix, U.Side.signals.ix(ix, u))
 
 def View.sidebar.u(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui) -> D.Node:
   View.sidebar.x(lc, bots, u, U.Side.ix(U.Ui.state(u)))

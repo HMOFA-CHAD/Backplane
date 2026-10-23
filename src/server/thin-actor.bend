@@ -263,11 +263,47 @@ def TerminalInput.result(a: V.ActResult) -> J.Json:
     case V.ActResult{+u, cs}: J.Json.obj([J.KV{"terminalInput", J.Flag{True{}}}, J.KV{"terminalOwner", J.Str{U.Ui.scratch(u, "@terminal.owner")}},
       J.KV{"remoteReady", J.Flag{True{}}}, J.KV{"session", V.Route.pack(u)}, J.KV{"cmds", J.Json.arr(cs)}])
 
-def Actor.render.result(input: Bool, +updated: Actor, +action: V.ActResult, web: Bool, st: M.State, index: T.Index, p: J.Json,
+# The normal actor still toggles the model menu and owns any refresh/focus
+# command. A web client with its unfiltered server rows already drawn may
+# acknowledge that UI-only transition without rebuilding the sidebar/history.
+def ModelMenu.request(+web: Bool, +p: J.Json) -> Bool:
+  Bool.and(web, Bool.and(J.Json.get_bool(p, "modelMenuInput", False{}),
+    Bool.and(String.eq(J.Json.get_str(p, "action", ""), "flag"), String.eq(J.Json.get_str(p, "value", ""), "models"))))
+
+def ModelMenu.command(+c: J.Json) -> Bool:
+  +rpc = Actor.rpc(c)
+  Bool.or(Bool.and(String.eq(J.Json.get_str(c, "type", ""), "focus"),
+    Bool.or(String.eq(J.Json.get_str(c, "id", ""), "composer"), String.eq(J.Json.get_str(c, "id", ""), "model-q"))),
+    Bool.and(String.eq(J.Json.get_str(c, "type", ""), "send"), Bool.and(String.eq(J.Json.get_str(rpc, "m", ""), "models.refresh"),
+      String.eq(J.Json.show(J.Json.get_obj(rpc, "p")), "{}"))))
+
+def ModelMenu.commands(cs: List<&2, J.Json>) -> Bool:
+  match cs:
+    case Nil{}: True{}
+    case +c <> rest: Bool.and(ModelMenu.command(c), ModelMenu.commands(rest))
+
+def ModelMenu.allowed(+web: Bool, +p: J.Json, a: V.ActResult) -> Bool:
+  match a:
+    case V.ActResult{+u, +cs}: Bool.and(ModelMenu.request(web, p), Bool.and(
+      W.Target.same(V.Target.after(u), J.Json.get_obj(p, "target")),
+      Bool.and(Nat.is_le(List.length(&2, J.Json, cs), 2n), ModelMenu.commands(cs))))
+
+def ModelMenu.result(a: V.ActResult) -> J.Json:
+  match a:
+    case V.ActResult{+u, cs}: J.Json.obj([J.KV{"modelMenuInput", J.Flag{True{}}}, J.KV{"remoteReady", J.Flag{True{}}},
+      J.KV{"session", V.Route.pack(u)}, J.KV{"cmds", J.Json.arr(cs)}])
+
+def Actor.render.picture(menu: Bool, +updated: Actor, +action: V.ActResult, web: Bool, st: M.State, index: T.Index, p: J.Json,
+    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:
+  match menu:
+    case True{}: Rendered{updated, ModelMenu.result(action)}
+    case False{}: Rendered{updated, V.Obj.put(V.Render.acted_live(action, web, st, index, p, epoch, now, rows, stream), "mailDraftContext", Actor.mail_context(Actor.ui(updated)))}
+
+def Actor.render.result(input: Bool, +updated: Actor, +action: V.ActResult, +web: Bool, st: M.State, index: T.Index, +p: J.Json,
     epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:
   match input:
     case True{}: Rendered{updated, TerminalInput.result(action)}
-    case False{}: Rendered{updated, V.Obj.put(V.Render.acted_live(action, web, st, index, p, epoch, now, rows, stream), "mailDraftContext", Actor.mail_context(Actor.ui(updated)))}
+    case False{}: Actor.render.picture(ModelMenu.allowed(web, p, action), updated, action, web, st, index, p, epoch, now, rows, stream)
 
 def Actor.render(+a: Actor, +web: Bool, +st: M.State, +index: T.Index, +p: J.Json, +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream) -> Rendered:
   +ready = Actor.mail_ready(Actor.origin(a, epoch))
@@ -406,7 +442,12 @@ def Memo.reply(ms: List<&2, Memo>, +update: Bool, +key: String, +clock: Nat, +we
       Memo.reply.k(Bool.and(update, Bool.and(String.eq(k, key), Bool.and(Nat.is_ge(clock, at), Bool.and(Nat.is_lt(Nat.sub(clock, at), 1000n),
         Bool.and(Nat.is_gt(TL.Stream.size(stream), 0n), Bool.or(Bool.and(partial, S.Splice.partial(stream)), Bool.and(Bool.not(partial), Bool.not(S.Splice.partial(stream))))))))), res, web, stream, thread, epoch, target, lc)
 
-# a full render remembered for the next ones (clock: ms)
+def Rendered.remember.picture(menu: Bool, +a: Actor, +res: J.Json, +key: String, +clock: Nat, +stream: TL.Stream) -> Rendered:
+  match menu:
+    case True{}: Rendered{a, res}
+    case False{}: Rendered{Actor.remember(a, Memo{key, clock, S.Splice.partial(stream), res}), res}
+
+# A compact menu ACK is not a reusable conversation picture.
 def Rendered.remember(r: Rendered, +key: String, +clock: Nat, +stream: TL.Stream) -> Rendered:
   match r:
-    case Rendered{+a, +res}: Rendered{Actor.remember(a, Memo{key, clock, S.Splice.partial(stream), res}), res}
+    case Rendered{+a, +res}: Rendered.remember.picture(J.Json.get_bool(res, "modelMenuInput", False{}), a, res, key, clock, stream)

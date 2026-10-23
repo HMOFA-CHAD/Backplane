@@ -3,6 +3,7 @@ import { validateThinResult, MessageParts } from './thin-results.js';
 import { compactRoute, utf8Bytes } from './thin.js';
 import { viewerChoice } from './viewer-feedback.js';
 import { terminalInputRequest } from './terminal-input.js';
+import { modelMenuRequest } from './model-menu-input.js';
 
 const clone = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -180,7 +181,8 @@ export class ThinHost {
     }
     const input = this.api.prepare(this.session, operation.input, operation.action);
     const result = this.client.request(this.hub, 'view.action', { session: requestSession(input, true, this.target), action: operation.action, value: operation.value,
-      ...terminalInputRequest(operation.action, operation.input) });
+      ...terminalInputRequest(operation.action, operation.input),
+      ...modelMenuRequest(operation.action, operation.value, this.api.modelMenuReady?.() === true) });
     this.active = result.id || null;
     this.flush(result, { viewerRevision: operation.viewerRevision ?? this.viewerRevision, revision: operation.revision, operation, selection: this.selectionRevision });
   }
