@@ -106,8 +106,8 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
  },{id,selector});
  const historyNative=()=>app.evaluate(({BrowserWindow,webContents},id)=>{
   const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed()),wc=webContents.fromId(id);
-  const current={window:w?{content:w.getContentBounds(),focused:w.isFocused()}:null,guestAlive:!!wc&&!wc.isDestroyed(),events:w?.__sharedBrowserHistory?.events||[]};
-  if(current.guestAlive)Object.assign(current,{url:wc.getURL(),title:wc.getTitle(),focused:wc.isFocused(),loading:wc.isLoadingMainFrame(),zoom:wc.getZoomFactor(),history:wc.navigationHistory.getAllEntries(),index:wc.navigationHistory.getActiveIndex(),canBack:wc.navigationHistory.canGoBack(),canForward:wc.navigationHistory.canGoForward()});
+  const current={window:w?{content:w.getContentBounds(),focused:w.isFocused()}:null,guestAlive:!!wc&&!wc.isDestroyed(),events:w?.__sharedBrowserHistory?.events||[],privateFrames:w?.__sharedBrowserPrivateHistory?.frames||[]};
+  if(current.guestAlive)Object.assign(current,{url:wc.getURL(),title:wc.getTitle(),focused:wc.isFocused(),loading:wc.isLoadingMainFrame(),zoom:wc.getZoomFactor(),history:wc.navigationHistory.getAllEntries().map(({url,title})=>({url,title})),index:wc.navigationHistory.getActiveIndex(),canBack:wc.navigationHistory.canGoBack(),canForward:wc.navigationHistory.canGoForward()});
   return current;
  },guestId);
  async function saveHistory(label){historyObservation[label]=await historyNative();historyObservation.wire=wire.frames.slice(-40);fs.writeFileSync(path.join(out,'history-observation.json'),JSON.stringify(historyObservation,null,2)+'\n');}
@@ -310,6 +310,25 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
    for(const name of ['will-navigate','did-start-navigation','did-navigate','did-navigate-in-page','dom-ready','did-finish-load','did-fail-load','render-process-gone','destroyed'])wc.on(name,()=>{if(probe.events.length<80)probe.events.push({event:name,at:Date.now(),destroyed:wc.isDestroyed(),url:wc.isDestroyed()?null:wc.getURL()});});
    wc.debugger.on('detach',(_event,reason)=>{if(probe.events.length<80)probe.events.push({event:'debugger-detach',reason,at:Date.now()});});
   },id);
+  if(fromHistory)await app.evaluate(({app,BrowserWindow})=>{
+   // Observe only this existing private transport in the isolated fixture.
+   // Forward every original call/argument unchanged. No authority, endpoint,
+   // payload or product file is modified; never retain tokens/body/opaque state.
+   const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed()),probe={frames:[]};w.__sharedBrowserPrivateHistory=probe;
+   const {createRequire}=process.getBuiltinModule('module'),load=createRequire(app.getAppPath()+'/main.cjs'),WS=load('ws');
+   const proto=WS.prototype,send=proto.send,emit=proto.emit,terminate=proto.terminate;
+   const target=value=>value&&typeof value==='object'?{owner:value.owner,tabId:value.tabId,generation:value.generation}:null;
+   const add=value=>{if(probe.frames.length>=128)probe.frames.shift();probe.frames.push({at:Date.now(),...value});};
+   const isPrivate=socket=>{try{return new URL(socket.url).pathname==='/desktop/browser/v1';}catch{return false;}};
+   const record=(socket,direction,data)=>{try{
+    if(!isPrivate(socket))return;
+    const m=JSON.parse(typeof data==='string'?data:data.toString('utf8')),p=m.payload||{};
+    add({direction,op:m.op,id:m.id,serverSequence:m.serverSequence,clientSequence:m.clientSequence,owner:p.owner,revision:p.revision,grantRevision:p.grantRevision,resultRevision:p.resultRevision,target:target(p.target),fromTarget:target(p.fromTarget),dispatchTarget:target(p.dispatchTarget),operation:p.op,drive:p.drive,scope:p.scope,reply:p.reply?{ok:p.reply.ok,dispatched:p.reply.dispatched,error:typeof p.reply.error==='string'?p.reply.error.slice(0,400):undefined}:undefined,ok:p.ok,error:typeof p.error==='string'?p.error.slice(0,400):undefined,event:p.event?{type:p.event.type,owner:p.event.owner,tabId:p.event.tabId,generation:p.event.generation}:undefined});
+   }catch{add({direction,decodeError:true});}};
+   proto.send=function(data,...args){record(this,'sent',data);return send.call(this,data,...args);};
+   proto.emit=function(name,...args){if(name==='message')record(this,'received',args[0]);return emit.call(this,name,...args);};
+   proto.terminate=function(...args){if(isPrivate(this))add({direction:'terminate',stack:new Error('Fixture private Browser termination boundary').stack.split('\n').slice(0,12).join('\n')});return terminate.apply(this,args);};
+  });
   await saveHistory('beforeBack');
   await page.locator('[data-on-click="br-back"]').first().click();
   const backReady=await waitNativeHistory('/one');await saveHistory('afterBack');
