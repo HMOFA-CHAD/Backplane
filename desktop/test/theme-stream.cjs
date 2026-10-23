@@ -9,7 +9,7 @@
 // reply's newest index and stream, and the Stop control. Separate from
 // theme-flash.cjs, whose checks it does not repeat.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
-const {_electron}=require('playwright-core'),{Service}=require('../service.cjs');
+const {_electron}=require('playwright-core'),{Service}=require('../service.cjs'),{watchViews,chooseTheme}=require('./theme-wire.cjs');
 const stage=path.resolve(process.env.BACKPLANE_LOCAL_STAGE),info=JSON.parse(fs.readFileSync(stage+'/LOCAL.json'));
 const out=process.env.THEME_STREAM_OUT||path.join(stage,'theme-stream-'+Date.now());fs.mkdirSync(out,{recursive:true});
 const home=fs.mkdtempSync(path.join(os.tmpdir(),'bp-theme-stream-')),agents=path.join(home,'agents'),root=path.join(home,'board');fs.mkdirSync(agents);fs.mkdirSync(root);
@@ -26,24 +26,15 @@ for(const [key,value] of [['restart.continue','off'],['mail.on','off'],['telemet
 fs.writeFileSync(home+'/events.jsonl',events.map(JSON.stringify).join('\n')+'\n');
 const env={...process.env,BACKPLANE_HOME:home,BACKPLANE_AGENTS:agents,BACKPLANE_COPY:'1',BACKPLANE_TELEMETRY:'off',BACKPLANE_NO_UPDATE:'1',BACKPLANE_PEERS:'',BACKPLANE_LOCK_DIR:home+'/locks',BP_AGENT_TRACE:path.join(home,'agent-trace.jsonl'),SHELL:'/bin/sh'};Object.assign(process.env,env);
 const binary=stage+'/payload/backplane-serve',web=stage+'/payload/web',service=new Service({home,binary,web,expectedVersion:info.version});
-let app,page,step='startup';const checks=[],rounds=[],BODY={dark:'rgb(13, 15, 18)',light:'rgb(250, 250, 248)'};
+let app,page,views,step='startup';const checks=[],rounds=[],trail=[],BODY={dark:'rgb(13, 15, 18)',light:'rgb(250, 250, 248)'};
 async function ready(id){await page.waitForFunction(id=>document.documentElement.dataset.backplaneRemoteReady==='true'&&document.querySelector('main[data-thread]')?.dataset.thread===id&&document.documentElement.dataset.backplaneCached!=='true',id);}
 const settle=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
 async function go(id,narrow){
  if(narrow&&await page.locator('.thread-head .back').first().isVisible())await page.locator('.thread-head .back').first().click();
  await page.locator(`.sidebar [data-on-click="select"][data-value="${id}"]`).first().click();await ready(id);await settle();
 }
-async function choose(theme,narrow){
- if(narrow&&await page.locator('.thread-head .back').first().isVisible())await page.locator('.thread-head .back').first().click();
- await page.locator('.sidebar [data-on-click="flag"][data-value="settings"]').click();
- // Settings remembers its last category: the overview's Appearance link is there only on a first open
- const chip=page.locator(`[data-on-click="setting"][data-value="ui.theme=${theme}"]`).first(),link=page.locator('[data-on-click="settings-page"][data-value="appearance"]').first();
- await page.waitForFunction(theme=>!!document.querySelector(`[data-on-click="setting"][data-value="ui.theme=${theme}"]`)||!!document.querySelector('[data-on-click="settings-page"][data-value="appearance"]'),theme);
- if(!await chip.count())await link.click();
- await chip.click();
- await page.waitForFunction(theme=>document.querySelector('.app')?.classList.contains('light')===(theme==='light'),theme);
- await page.locator('.settings-view [data-on-click="flag"][data-value="settings"]').click();
-}
+// one theme change, ONE Close, each on its own reply and connected view (theme-wire.cjs)
+async function choose(theme,narrow){await chooseTheme(page,views,trail,theme,{narrow});}
 // what one frame shows; the reply is read by its stand-in's own markers, so a
 // stamp or footer in the row cannot confuse it
 const arm=expect=>page.evaluate(expect=>{
@@ -107,6 +98,7 @@ async function round(n,theme,width,draft){
 (async()=>{try{
  await service.start();app=await _electron.launch({executablePath:stage+'/desktop/runtime/backplane-desktop',env:{...env,BACKPLANE_SERVICE:binary,BACKPLANE_WEB:web,BACKPLANE_SERVICE_VERSION:info.version}});
  page=await app.firstWindow();page.setDefaultTimeout(15000);await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true');
+ views=await watchViews(page);
  const skip=page.locator('[data-on-click="ob-skip"]');if(await skip.count())await skip.click();
  step='load';await go('tb',false);await go('ta',false);
  // ta's draft: an IME composition, committed, then typed
@@ -122,9 +114,9 @@ async function round(n,theme,width,draft){
  assert(rounds.some(x=>x.cachedFrames>0),'no switch showed a retained picture');checks.push('retained pictures were on screen in '+rounds.filter(x=>x.cachedFrames).length+' of '+rounds.length+' rounds');
  step='no-send';assert(!fs.readFileSync(home+'/events.jsonl','utf8').trim().split('\n').map(JSON.parse).some(e=>e.$==='MessagePosted'&&e.thread==='ta'&&e.text?.includes('draft')));checks.push('the ta draft stayed a draft');
  await page.screenshot({path:out+'/after.png'});
- const r={state:'passed',source:info.commit,stage,checks,rounds,liveProfileTouched:false,
+ const r={state:'passed',source:info.commit,stage,checks,rounds,trail,wire:views.log,wireOver:views.over(),liveProfileTouched:false,
   limits:['Frames are sampled at requestAnimationFrame and at every class, child and text mutation under #root; a compositor-only frame between them is not observable from the page.',
    'The stand-in streams for about 6 s per reply; a round whose stream ended before the switches fails as not exercised rather than passing.']};
  fs.writeFileSync(out+'/RESULT.json',JSON.stringify(r,null,2)+'\n');console.log(JSON.stringify({state:r.state,source:r.source,checks,rounds:rounds.map(x=>[x.theme,x.width,x.before,x.leftAt,x.back,x.liveAtReturn,x.cachedFrames,x.ask,x.draftKept])}));
-}catch(e){fs.writeFileSync(out+'/FAIL.json',JSON.stringify({state:'failed',source:info.commit,stage,home,step,checks,rounds,error:e.stack},null,2)+'\n');if(page)await page.screenshot({path:out+'/failure.png'}).catch(()=>{});console.error(e.stack);process.exitCode=1;}
+}catch(e){fs.writeFileSync(out+'/FAIL.json',JSON.stringify({state:'failed',source:info.commit,stage,home,step,checks,rounds,trail,finding:trail.find(t=>t.finding)?.finding||'',wire:views?.log.slice(-120)||[],error:e.stack},null,2)+'\n');if(page)await page.screenshot({path:out+'/failure.png'}).catch(()=>{});console.error(e.stack);process.exitCode=1;}
 finally{if(app)await app.close();await service.stop();}})();

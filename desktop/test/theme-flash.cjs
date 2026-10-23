@@ -5,7 +5,7 @@
 // the app root, the page and the main pane actually have; a MutationObserver
 // also records every app-root class the DOM ever held between frames.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
-const {_electron}=require('playwright-core'),{Service}=require('../service.cjs');
+const {_electron}=require('playwright-core'),{Service}=require('../service.cjs'),{watchViews,chooseTheme}=require('./theme-wire.cjs');
 const stage=path.resolve(process.env.BACKPLANE_LOCAL_STAGE),info=JSON.parse(fs.readFileSync(stage+'/LOCAL.json'));
 const out=process.env.THEME_FLASH_OUT||path.join(stage,'theme-flash-'+Date.now());fs.mkdirSync(out,{recursive:true});
 const home=fs.mkdtempSync(path.join(os.tmpdir(),'bp-theme-flash-')),agents=path.join(home,'agents'),root=path.join(home,'board');fs.mkdirSync(agents);fs.mkdirSync(root);
@@ -19,7 +19,7 @@ for(const [key,value] of [['restart.continue','off'],['mail.on','off'],['telemet
 fs.writeFileSync(home+'/events.jsonl',events.map(JSON.stringify).join('\n')+'\n');
 const env={...process.env,BACKPLANE_HOME:home,BACKPLANE_AGENTS:agents,BACKPLANE_COPY:'1',BACKPLANE_TELEMETRY:'off',BACKPLANE_NO_UPDATE:'1',BACKPLANE_PEERS:'',BACKPLANE_LOCK_DIR:home+'/locks',SHELL:'/bin/sh'};Object.assign(process.env,env);
 const binary=stage+'/payload/backplane-serve',web=stage+'/payload/web',service=new Service({home,binary,web,expectedVersion:info.version});
-let app,page,step='startup';const checks=[],rounds=[];
+let app,page,views,step='startup';const checks=[],rounds=[],trail=[];
 async function ready(id){await page.waitForFunction(id=>document.documentElement.dataset.backplaneRemoteReady==='true'&&document.querySelector('main[data-thread]')?.dataset.thread===id&&document.documentElement.dataset.backplaneCached!=='true',id);}
 // the recorder: started before the click, so the click's own frame is in it
 const arm=expect=>page.evaluate(expect=>{
@@ -34,16 +34,8 @@ const collect=()=>page.evaluate(()=>{const r=window.__theme;r.stop=true;r.mo.dis
 // the canonical colours of each theme's main pane and page (style.css)
 let colours={};
 async function learn(theme){colours[theme]=await page.evaluate(()=>({bg:getComputedStyle(document.querySelector('main')).backgroundColor,body:getComputedStyle(document.body).backgroundColor}));}
-async function choose(theme){
- await page.locator('.sidebar [data-on-click="flag"][data-value="settings"]').click();
- // Settings keeps its category. On later opens Appearance is already the
- // page, so its overview link is absent; wait for either real boundary.
- await page.waitForFunction(()=>document.querySelector('[data-on-click="settings-page"][data-value="appearance"]')||document.querySelector('[data-on-click="setting"][data-value^="ui.theme="]'));
- const appearance=page.locator('[data-on-click="settings-page"][data-value="appearance"]').first();if(await appearance.count())await appearance.click();
- await page.locator(`[data-on-click="setting"][data-value="ui.theme=${theme}"]`).first().click();
- await page.waitForFunction(theme=>document.querySelector('.app')?.classList.contains('light')===(theme==='light'),theme);
- await page.locator('.settings-view [data-on-click="flag"][data-value="settings"]').click();
-}
+// one theme change, ONE Close, each on its own reply and connected view (theme-wire.cjs)
+async function choose(theme){await chooseTheme(page,views,trail,theme);}
 async function go(id,narrow){
  // at 390 px the sidebar is shut while a thread shows: the header's back button opens it
  if(narrow&&await page.locator('.thread-head .back').first().isVisible())await page.locator('.thread-head .back').first().click();
@@ -65,6 +57,7 @@ async function size(w,h){await app.evaluate(({BrowserWindow},[w,h])=>{const win=
 (async()=>{try{
  await service.start();app=await _electron.launch({executablePath:stage+'/desktop/runtime/backplane-desktop',env:{...env,BACKPLANE_SERVICE:binary,BACKPLANE_WEB:web,BACKPLANE_SERVICE_VERSION:info.version}});
  page=await app.firstWindow();page.setDefaultTimeout(15000);await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true');
+ views=await watchViews(page);
  const skip=page.locator('[data-on-click="ob-skip"]');if(await skip.count())await skip.click();
  step='load-dark';for(const id of threads)await go(id,false);await learn('dark');
  step='draft';await go('ta',false);
@@ -92,8 +85,8 @@ async function size(w,h){await app.evaluate(({BrowserWindow},[w,h])=>{const win=
  assert(rounds.reduce((n,x)=>n+x.cachedFrames,0)>0,'no switch showed a retained picture: the case was not exercised');checks.push('retained pictures were shown in '+rounds.filter(x=>x.cachedFrames).length+' of '+rounds.length+' switches');
  step='no-send';assert(!fs.readFileSync(home+'/events.jsonl','utf8').trim().split('\n').map(JSON.parse).some(e=>e.$==='MessagePosted'&&e.text?.includes('draft')));checks.push('the draft stayed a draft');
  await page.screenshot({path:out+'/after.png'});
- const r={state:'passed',source:info.commit,stage,checks,colours,rounds,liveProfileTouched:false,
+ const r={state:'passed',source:info.commit,stage,checks,colours,rounds,trail,wire:views.log,wireOver:views.over(),liveProfileTouched:false,
   limits:['Frames are sampled at requestAnimationFrame and every class mutation; a compositor-only frame between them is not observable from the page.']};
  fs.writeFileSync(out+'/RESULT.json',JSON.stringify(r,null,2)+'\n');console.log(JSON.stringify({state:r.state,source:r.source,checks,rounds:rounds.map(x=>[x.theme,x.width,x.thread,x.frames,x.cachedFrames,x.bad.length])}));
-}catch(e){fs.writeFileSync(out+'/FAIL.json',JSON.stringify({state:'failed',source:info.commit,stage,home,step,checks,colours,rounds,error:e.stack},null,2)+'\n');if(page)await page.screenshot({path:out+'/failure.png'}).catch(()=>{});console.error(e.stack);process.exitCode=1;}
+}catch(e){fs.writeFileSync(out+'/FAIL.json',JSON.stringify({state:'failed',source:info.commit,stage,home,step,checks,colours,rounds,trail,finding:trail.find(t=>t.finding)?.finding||'',wire:views?.log.slice(-120)||[],error:e.stack},null,2)+'\n');if(page)await page.screenshot({path:out+'/failure.png'}).catch(()=>{});console.error(e.stack);process.exitCode=1;}
 finally{if(app)await app.close();await service.stop();}})();
