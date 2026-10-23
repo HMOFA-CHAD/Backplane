@@ -1,7 +1,11 @@
 # Terminal
 
 The Electron desktop opens a floating interactive PTY with the Terminal
-button, `Ctrl+J`, or `Super+grave` / `Super+~` while Backplane has focus.
+button, the unmodified backtick key, `Ctrl+J`, or `Super+grave` / `Super+~` while
+Backplane has focus. Plain backtick toggles from the workspace or composer
+and is consumed there; holding it does not toggle repeatedly. In the PTY
+and other text fields, backtick types normally; use `Ctrl+J` to toggle there.
+Shifted tilde and IME composition keep their normal input behavior.
 The Linux desktop/compositor may reserve the Super chord; Backplane does
 not change system shortcuts. Commands → Floating terminal here is the
 same action. The panel displays its thread and working directory, stays

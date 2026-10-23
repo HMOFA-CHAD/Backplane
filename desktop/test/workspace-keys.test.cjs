@@ -78,3 +78,35 @@ test('composer Escape leaves completion, IME and PTY input ownership intact', as
   assert.equal(h.doc.activeElement, pty);
   assert.deepEqual(h.actions, []);
 });
+
+
+test('bare backtick toggles once per press from composer/workspace without inserting text', async () => {
+  const { installWorkspaceKeys } = await import('../../src/web/workspace-keys.js');
+  const h = composerHarness(installWorkspaceKeys);
+  assert.equal(h.press('`', { code: 'Backquote' }).defaultPrevented, true);
+  assert.equal(h.composer.value, 'unsent draft');
+  assert.equal(h.doc.activeElement, h.composer);
+  assert.deepEqual(h.actions, [['ws-key', 'term']]);
+  assert.equal(h.press('`', { code: 'Backquote', repeat: true }).defaultPrevented, true);
+  assert.deepEqual(h.actions, [['ws-key', 'term']]);
+  h.doc.activeElement = h.body;
+  assert.equal(h.press('`', { code: 'Backquote' }).defaultPrevented, true);
+  assert.deepEqual(h.actions, [['ws-key', 'term'], ['ws-key', 'term']]);
+});
+
+test('bare backtick preserves shell/text input, tilde, composition and other modifiers', async () => {
+  const { installWorkspaceKeys } = await import('../../src/web/workspace-keys.js');
+  const h = composerHarness(installWorkspaceKeys);
+  for (const fields of [{ isComposing: true }, { keyCode: 229 }, { getModifierState: () => true },
+    { shiftKey: true }, { ctrlKey: true }, { altKey: true }]) {
+    assert.equal(h.press('`', { code: 'Backquote', ...fields }).defaultPrevented, false);
+  }
+  assert.equal(h.press('~', { code: 'Backquote', shiftKey: true }).defaultPrevented, false);
+  assert.equal(h.press('Dead', { code: 'Backquote' }).defaultPrevented, false);
+  for (const [tagName, id] of [['TEXTAREA', 'term'], ['INPUT', 'search'], ['INPUT', 'password'], ['DIV', 'editor']]) {
+    const field = { tagName, id, closest: () => field };
+    h.doc.activeElement = field;
+    assert.equal(h.press('`', { code: 'Backquote' }).defaultPrevented, false);
+  }
+  assert.deepEqual(h.actions, []);
+});
