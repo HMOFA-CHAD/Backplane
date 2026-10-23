@@ -50,6 +50,14 @@ def Actor.prefs( +xs: List<&2, Sigma<&2, &2, String, _ => String>>, +prefs: Map<
     case Nil{}: prefs
     case (+key, value) <> tail: Actor.prefs(tail, Actor.pref.put(Actor.pref.key(key), prefs, key, value))
 
+# Browser ownership is canonical, not an actor preference. Teach.info omits
+# an idle owner after handback; discard cached drive keys before installing
+# the current canonical info, while retaining all unrelated actor state.
+def Actor.info.current( +xs: List<&2, Sigma<&2, &2, String, _ => String>>, +info: Map<&2, String>) -> Map<&2, String>:
+  match xs:
+    case Nil{}: info
+    case (+key, value) <> tail: Actor.info.current(tail, Actor.pref.put(Bool.not(String.starts_with(key, "drive.")), info, key, value))
+
 def Actor.draft.value( +value: Maybe<&2, J.Json>, +thread: String) -> J.Json:
   match value:
     case Some{J.Str{+text}}: V.Obj.put(J.Json.obj(Nil{}), thread, J.Str{text})
@@ -124,7 +132,7 @@ def Actor.merge( +fresh: U.Ui, +old: U.Ui, +same: Bool, +thread: String, +presen
       # The same view still requests its parent until nextTarget reaches it.
       # A different view or target remains an explicit navigation boundary.
       U.Ui{st, Bool.pick(String, same, oldSel, sel), Actor.draft.merge(clean, Actor.scope.drafts(same, dr), thread, present), live, open, on, now, adding, panel, version,
-        M.Time.max(rid, rid2), want, error, note, Actor.prefs(Map.to_list(&2, String, nf2), nf), outbox, stores}
+        M.Time.max(rid, rid2), want, error, note, Actor.prefs(Map.to_list(&2, String, nf2), Actor.info.current(Map.to_list(&2, String, nf), Map.new(&2, String))), outbox, stores}
 
 def Actor.make(+u: U.Ui, +view: String, +target: J.Json) -> Actor:
   Actor{u, view, target, Map.new(&2, String), Nil{}, False{}, Nil{}}
