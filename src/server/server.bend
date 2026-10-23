@@ -879,21 +879,37 @@ def Wire.text.k(native: Bool, c: Client, +text: String) -> IO(Maybe<&2, Client>)
     case False{}:
       Wire.offer(c, WText{text}, Wire.text.charge(text))
 
-def Client.thin.reply_actors(xs: List<&2, TA.Actor>, web: Bool, key: String, text: String) -> List<&2, TA.Actor>:
+def Client.thin.reply_actors(xs: List<&2, TA.Actor>, web: Bool, key: String, +o: J.Json) -> List<&2, TA.Actor>:
   match xs:
     case Nil{}: Nil{}
-    case actor <> _: [TA.Actor.message(actor, web, key, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))]
+    case actor <> _: [TA.Actor.message(actor, web, key, o)]
 
-def Client.thin.reply(c: Client, +text: String) -> Client:
+def Client.thin.message(c: Client, +o: J.Json) -> Client:
   match c:
     case Client{id, out, look, cr, sock, legacy, ThinStart{+mode, ThinContext{+hub, cid, target, view, revision, anchor, actors, control} <> _} <> _}:
       Client{id, out, look, cr, sock, legacy, [ThinStart{mode, [ThinContext{hub, cid, target, view, revision, anchor,
-        Client.thin.reply_actors(actors, String.eq(mode, "view-web"), hub, text), control}]}]}
+        Client.thin.reply_actors(actors, String.eq(mode, "view-web"), hub, o), control}]}]}
     case _: c
+
+def Client.thin.reply(c: Client, +text: String) -> Client:
+  Client.thin.message(c, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))
+
+def Wire.text.thin.send(send: Bool, +c: Client, text: String) -> IO(Maybe<&2, Client>):
+  match send:
+    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
+    case True{}: Wire.text.k(Wire.native(c), c, text)
+
+def Wire.text.thin(+c: Client, +o: J.Json, text: String) -> IO(Maybe<&2, Client>):
+  Wire.text.thin.send(TA.Message.on_wire(o), Client.thin.message(c, o), text)
+
+def Wire.text.route(thin: Bool, +c: Client, +text: String) -> IO(Maybe<&2, Client>):
+  match thin:
+    case True{}: Wire.text.thin(c, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), text)
+    case False{}: Wire.text.k(Wire.native(c), c, text)
 
 # a message (JSON text) for one client
 def Wire.text(+c: Client, +text: String) -> IO(Maybe<&2, Client>):
-  Wire.text.k(Wire.native(c), Client.thin.reply(c, text), text)
+  Wire.text.route(Client.thin(c), c, text)
 
 def Wire.text.m(m: Maybe<&2, Client>, +text: String) -> IO(Maybe<&2, Client>):
   match m:
