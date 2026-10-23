@@ -61,7 +61,7 @@ def legacy.children(xs: List<&2, D.Node>, +entries: List<&2, D.Node>) -> List<&2
 
 def legacy.screenshot() -> J.Json:
   +u = screenshot(True{})
-  +entries = O.before() <> List.append(&2, M.Entry, O.screenshot.empty(), [O.after()])
+  +entries : List<&2, M.Entry> = O.before() <> List.append(&2, M.Entry, O.screenshot.empty(), [O.after()])
   P.Node.write(D.Dom.div("snapshot", V.View.expand(legacy.children([A.view(u)], V.View.entries.shown(U.Lang.loc(u), entries, U.Ui.state(u), "bub-chat", U.Ui.infos(u), False{}, U.Ec.none())))))
 
 def main() -> IO(Unit):
