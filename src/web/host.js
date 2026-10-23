@@ -1748,7 +1748,7 @@ async function startThin(again = false, reason = "initial") {
           ui = App.unsync(App.presentation_handoff(ui, presentationJson(session)));
           document.documentElement.lang = App.lang(ui);
         }
-        later();
+        if (!detail?.inputOnly) later();
       },
       ack: (session, reply) => preservePresentationRoute(session, Wire.plain(App.presentation_reply(presentationJson(session), presentationJson(reply)))),
       decode: shown => App.presentation_node(presentationJson(shown)),

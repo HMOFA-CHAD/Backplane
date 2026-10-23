@@ -1,3 +1,5 @@
+import { terminalInputReply } from './terminal-input.js';
+
 // Bounded view transport shared by the web and native bridge. Product actions
 // and rendering remain in Bend. No canonical replay is initiated here.
 export const VIEW_VERSION = 1;
@@ -193,6 +195,10 @@ export class ThinViews {
     // Commands are not display authority: an old action's one matching reply
     // still settles that action, without replacing a newer selected view.
     if (r.cmds.length > 32 || r.cmds.some(x => !viewCommand(x, hub))) return { failed: 'invalid view command', id: e.id, method: c.method, retry: false, cmds: [] };
+    const inputOnly = Object.hasOwn(r, 'terminalInput');
+    if (inputOnly && (c.method !== 'view.action' || l.greeting.renderer !== 'web' || !terminalInputReply(r, c.input))) {
+      return { failed: 'invalid terminal input reply', id: e.id, method: c.method, retry: false, cmds: [] };
+    }
     if (this.api.validateResult && this.api.validateResult(r, c.input) !== true) return { failed: 'invalid view presentation', id: e.id, method: c.method, retry: false, cmds: [] };
     const cmds = c.method === 'view.action' ? r.cmds.map(x => this.api.command(snapshot(x), c.input)) : [];
     const presentation = ['view.open', 'view.page', 'view.update', 'view.action'].includes(c.method);
@@ -200,7 +206,7 @@ export class ThinViews {
     if (displayed) {
       l.viewId = r.viewId; l.viewRevision = r.viewRevision; l.shown = r.shown;
     }
-    return { id: e.id, method: c.method, current, remoteReady: displayed,
+    return { id: e.id, method: c.method, current, inputOnly, remoteReady: displayed || current && inputOnly && record(l.shown),
       shown: displayed ? r.shown : null, session: current && presentation ? r.session : null,
       window: displayed ? r.window : null, result: r, cmds,
       refreshDue: (current || (l.viewId === c.viewId && sameTarget(l.target, c.target))) && !l.updatePending && l.invalidated };

@@ -217,11 +217,57 @@ def Actor.mail_context_if( +shown: Bool, +u: U.Ui) -> J.Json:
 def Actor.mail_context(+u: U.Ui) -> J.Json:
   Actor.mail_context_if(Bool.and(U.Mailv.shown(u), Bool.not(String.is_empty(U.Ui.scratch(u, "@mr.conv")))), u)
 
+# Typing in the floating terminal does not change the conversation picture.
+# An explicit web opt-in receives only the normal actor-generated command and
+# session ACK. Old clients keep the full reply. Keys/pastes are still encoded
+# by A.act with this connection's VT modes, never by JavaScript.
+def TerminalInput.request(+web: Bool, +p: J.Json) -> Bool:
+  Bool.and(web, Bool.and(J.Json.get_bool(p, "terminalInput", False{}),
+    Bool.or(String.eq(J.Json.get_str(p, "action", ""), "term-key"), String.eq(J.Json.get_str(p, "action", ""), "term-paste"))))
+
+def TerminalInput.owner(+u: U.Ui, +p: J.Json) -> Bool:
+  +owner = U.Ui.scratch(u, "@terminal.owner")
+  Bool.and(U.Ui.flag(u, "term"), Bool.and(Bool.not(String.is_empty(owner)),
+    String.eq(owner, J.Json.get_str(p, "terminalOwner", ""))))
+
+# A queued input captured for another owner must not type into a new shell.
+def TerminalInput.run(guarded: Bool, owned: Bool, web: Bool, u: U.Ui, p: J.Json, now: Nat) -> V.ActResult:
+  match guarded owned:
+    case True{} False{}: V.ActResult{u, Nil{}}
+    case _ _: V.Action.run(web, u, p, now)
+
+def TerminalInput.command(+command: J.Json, +owner: String) -> Bool:
+  +rpc = Actor.rpc(command)
+  Bool.and(String.eq(J.Json.get_str(command, "type", ""), "send"),
+    Bool.and(String.eq(J.Json.get_str(rpc, "m", ""), "term.input"), String.eq(J.Json.get_str(J.Json.get_obj(rpc, "p"), "thread", ""), owner)))
+
+def TerminalInput.commands(cs: List<&2, J.Json>, owner: String) -> Bool:
+  match cs:
+    case Nil{}: True{}
+    case c <> Nil{}: TerminalInput.command(c, owner)
+    case _: False{}
+
+def TerminalInput.allowed(+web: Bool, +p: J.Json, a: V.ActResult) -> Bool:
+  match a:
+    case V.ActResult{+u, cs}: Bool.and(TerminalInput.request(web, p), Bool.and(TerminalInput.owner(u, p),
+      Bool.and(W.Target.same(V.Target.after(u), J.Json.get_obj(p, "target")), TerminalInput.commands(cs, J.Json.get_str(p, "terminalOwner", "")))))
+
+def TerminalInput.result(a: V.ActResult) -> J.Json:
+  match a:
+    case V.ActResult{+u, cs}: J.Json.obj([J.KV{"terminalInput", J.Flag{True{}}}, J.KV{"terminalOwner", J.Str{U.Ui.scratch(u, "@terminal.owner")}},
+      J.KV{"remoteReady", J.Flag{True{}}}, J.KV{"session", V.Route.pack(u)}, J.KV{"cmds", J.Json.arr(cs)}])
+
+def Actor.render.result(input: Bool, +updated: Actor, +action: V.ActResult, web: Bool, st: M.State, index: T.Index, p: J.Json,
+    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:
+  match input:
+    case True{}: Rendered{updated, TerminalInput.result(action)}
+    case False{}: Rendered{updated, V.Obj.put(V.Render.acted_live(action, web, st, index, p, epoch, now, rows, stream), "mailDraftContext", Actor.mail_context(Actor.ui(updated)))}
+
 def Actor.render(+a: Actor, +web: Bool, +st: M.State, +index: T.Index, +p: J.Json, +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream) -> Rendered:
   +ready = Actor.mail_ready(Actor.origin(a, epoch))
-  +action = V.Action.run(web, Actor.ui(ready), p, now)
+  +action = TerminalInput.run(TerminalInput.request(web, p), TerminalInput.owner(Actor.ui(ready), p), web, Actor.ui(ready), p, now)
   +updated = Actor.accept(ready, action, False{})
-  Rendered{updated, V.Obj.put(V.Render.acted_live(action, web, st, index, p, epoch, now, rows, stream), "mailDraftContext", Actor.mail_context(Actor.ui(updated)))}
+  Actor.render.result(TerminalInput.allowed(web, p, action), updated, action, web, st, index, p, epoch, now, rows, stream)
 
 def Actor.pending_scope( +pending: Map<&2, String>, +id: String) -> String:
   U.Str.get(pending, id)

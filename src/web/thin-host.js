@@ -2,6 +2,7 @@ import { validatePresentation } from './startup.js';
 import { validateThinResult, MessageParts } from './thin-results.js';
 import { compactRoute, utf8Bytes } from './thin.js';
 import { viewerChoice } from './viewer-feedback.js';
+import { terminalInputRequest } from './terminal-input.js';
 
 const clone = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -176,7 +177,8 @@ export class ThinHost {
       operation.settled?.(false);this.api.warning?.('Conversation changed before the action was sent');this.pump(flushFields);return;
     }
     const input = this.api.prepare(this.session, operation.input, operation.action);
-    const result = this.client.request(this.hub, 'view.action', { session: requestSession(input, true, this.target), action: operation.action, value: operation.value });
+    const result = this.client.request(this.hub, 'view.action', { session: requestSession(input, true, this.target), action: operation.action, value: operation.value,
+      ...terminalInputRequest(operation.action, operation.input) });
     this.active = result.id || null;
     this.flush(result, { viewerRevision: operation.viewerRevision ?? this.viewerRevision, revision: operation.revision, operation, selection: this.selectionRevision });
   }
@@ -275,9 +277,9 @@ export class ThinHost {
     // before the first effect. The shared callbacks above remain pure.
     let node;
     try {
-      this.validatePresentation({ session: r.session, view: r.nextTarget ? { type: 'text', text: '' } : r.shown, cmds: r.cmds });
+      this.validatePresentation({ session: r.session, view: r.nextTarget || result.inputOnly ? { type: 'text', text: '' } : r.shown, cmds: r.cmds });
       if (r.session.rid >= 2 ** 47) throw Error('Ordinary counter overlaps view namespace');
-      if (!r.nextTarget && (metadata?.viewerRevision ?? 0) === this.viewerRevision) node = this.api.decode(r.shown, r, metadata?.input);
+      if (!r.nextTarget && !result.inputOnly && (metadata?.viewerRevision ?? 0) === this.viewerRevision) node = this.api.decode(r.shown, r, metadata?.input);
     } catch {
       metadata?.operation?.settled?.(false);
       if (this.abortField(metadata) || result.current) this.fail('Invalid rendered view');
@@ -327,10 +329,13 @@ export class ThinHost {
     if (result.current) for (const [name, field] of this.fields) {
       if (field.acknowledged && field.revision <= (metadata?.revision ?? -1)) this.fields.delete(name);
     }
-    this.api.sessionChanged(this.session, { remote: true });
+    this.api.sessionChanged(this.session, { remote: true, inputOnly: result.inputOnly });
     metadata?.operation?.settled?.(result.current && result.remoteReady && !r.nextTarget);
     if ((result.current || navigation) && r.nextTarget) { this.select(r.nextTarget);return true; }
-    if (result.current && result.remoteReady) {
+    if (result.current && result.remoteReady && result.inputOnly) {
+      // Input ACKs settle the existing queue without redrawing the conversation
+      // or consuming a pending output invalidation. Output still owns its view.
+    } else if (result.current && result.remoteReady) {
       const partial = new Map(result.window.partial.map(row => [row.id, row]));
       for (const previous of this.window?.partial || []) {
         const current = partial.get(previous.id);
