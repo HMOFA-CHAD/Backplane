@@ -139,7 +139,7 @@ def Grant.current(g: Grant, epoch: String, controller: String, target: Target, r
 def Desktop.methods() -> List<&2, String>:
   ["DOM.getDocument", "DOM.describeNode", "DOM.querySelector", "DOM.querySelectorAll", "DOM.resolveNode", "DOM.getBoxModel", "DOM.focus",
     "Accessibility.getFullAXTree", "Accessibility.getPartialAXTree", "Runtime.evaluate", "Runtime.callFunctionOn", "Runtime.getProperties", "Runtime.releaseObject", "Runtime.releaseObjectGroup",
-    "Page.navigate", "Page.reload", "Page.stopLoading", "Page.getNavigationHistory", "Page.navigateToHistoryEntry", "Page.getLayoutMetrics",
+    "Page.navigate", "Page.reload", "Page.stopLoading", "Page.getNavigationHistory", "Page.navigateToHistoryEntry", "Page.getLayoutMetrics", "Page.captureScreenshot",
     "Input.dispatchMouseEvent", "Input.dispatchKeyEvent", "Input.insertText", "Input.imeSetComposition"]
 
 def Desktop.member(xs: List<&2, String>, +s: String) -> Bool:

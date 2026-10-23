@@ -1,6 +1,7 @@
 import { validatePresentation } from './startup.js';
 import { validateThinResult, MessageParts } from './thin-results.js';
 import { compactRoute, utf8Bytes } from './thin.js';
+import { viewerChoice } from './viewer-feedback.js';
 
 const clone = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -14,7 +15,7 @@ function choices(value, accept) {
 }
 function requestSession(session, action, target) {
   const drafts = {}, local = object(session.drafts) ? session.drafts : {};
-  for (const key of ['@lang', '@lang.os', '@lang.tag', '@lang.preview']) {
+  for (const key of ['@lang', '@lang.os', '@lang.tag', '@lang.preview', '@desktop.browser']) {
     if (typeof local[key] === 'string' && utf8Bytes(local[key]) <= 128) drafts[key] = local[key];
   }
   if (action && session.sel && !session.sel.startsWith('@') && Object.hasOwn(local, session.sel) && typeof local[session.sel] === 'string') {
@@ -50,7 +51,7 @@ export class ThinHost {
     const rid = this.session.rid;
     if (!Number.isSafeInteger(rid) || rid < 0 || rid >= 2 ** 47) throw Error('Invalid ordinary request counter');
     this.session.rid = Math.max(rid, Date.now());
-    this.localRevision = 0;this.selectionRevision = 0;this.drafts = new Map();this.draftChanges = new Map();this.fields = new Map();this.pending = new Map();this.actions = [];this.active = null;
+    this.viewerRevision = 0;this.localRevision = 0;this.selectionRevision = 0;this.drafts = new Map();this.draftChanges = new Map();this.fields = new Map();this.pending = new Map();this.actions = [];this.active = null;
     this.messages = new MessageParts();this.ordinary = new Map();
     this.client = new Views({ now: api.now,
       send: (_hub, request) => ({ type: 'request', request: request.p.session ? { ...request,
@@ -63,7 +64,7 @@ export class ThinHost {
     if (!result || result.failed) { this.fail(result?.failed || 'View unavailable');return false; }
     if (result.id) {
       const request = result.cmds.find(c => c.type === 'request')?.request;
-      this.pending.set(result.id, { revision: this.localRevision, target: request?.p.target, wireRevision: request?.p.requestRevision, input: request?.p, acks: [], ...metadata });
+      this.pending.set(result.id, { viewerRevision: this.viewerRevision, revision: this.localRevision, target: request?.p.target, wireRevision: request?.p.requestRevision, input: request?.p, acks: [], ...metadata });
     }
     try {
       for (const item of result.cmds || []) {
@@ -83,6 +84,7 @@ export class ThinHost {
     this.select(this.api.target(this.session));
   }
   select(target) {
+    this.viewerRevision++;this.api.viewerChoice?.(null);
     this.selectionRevision++;
     // Unstarted intentions from another view never acquire the new target.
     // The already travelling action keeps its independent original lifetime.
@@ -129,7 +131,13 @@ export class ThinHost {
       else this.pump(true);
       return true;
     }
+    const viewer = viewerChoice(action, value);
+    if (viewer) {
+      const tail = this.actions.at(-1);
+      if (tail?.viewer) { this.actions.pop();tail.settled?.(false); }
+    }
     if (this.actions.length >= 7) { settled?.(false);this.api.blocked();return true; }
+    if (viewer) { this.viewerRevision++;this.api.viewerChoice?.({ action, value }); }
     if (action === 'send' || action === 'send-alt' || action === 'mail-send') {
       const active = this.pending.get(this.active)?.operation;
       const draftRevision = action === 'mail-send' ? this.localRevision : this.drafts.get(this.session.sel)?.revision || 0;
@@ -138,7 +146,7 @@ export class ThinHost {
         settled?.(false);this.api.blocked();return true;
       }
     }
-    this.actions.push({ action, value, input: clone(this.session), revision: this.localRevision, settled, scope: this.api.operationScope?.(action, value) });
+    this.actions.push({ action, value, viewer, viewerRevision: this.viewerRevision, input: clone(this.session), revision: this.localRevision, settled, scope: this.api.operationScope?.(action, value) });
     this.pump(true);return true;
   }
   fieldValue(name, fallback) {
@@ -170,7 +178,7 @@ export class ThinHost {
     const input = this.api.prepare(this.session, operation.input, operation.action);
     const result = this.client.request(this.hub, 'view.action', { session: requestSession(input, true, this.target), action: operation.action, value: operation.value });
     this.active = result.id || null;
-    this.flush(result, { revision: operation.revision, operation, selection: this.selectionRevision });
+    this.flush(result, { viewerRevision: operation.viewerRevision ?? this.viewerRevision, revision: operation.revision, operation, selection: this.selectionRevision });
   }
   page() {
     if (!this.ready || !this.window?.older) return false;
@@ -202,17 +210,37 @@ export class ThinHost {
   uploadPending() {
     return ['attach-up', 'attach-end'].includes(this.pending.get(this.active)?.operation?.action);
   }
+  botTabPending() {
+    return this.pending.get(this.active)?.operation?.action === 'bot-tab' || this.actions.some(op => op.action === 'bot-tab');
+  }
+  viewerPending() {
+    return !!this.pending.get(this.active)?.operation?.viewer || this.actions.some(op => op.viewer);
+  }
+  terminalPending() {
+    const changesWorkspace = op => op && (op.action.startsWith('ws-') ||
+      ['term-toggle', 'term-key', 'term-paste'].includes(op.action) ||
+      op.action === 'bfield' && op.value.startsWith('wspalette\u001f'));
+    return changesWorkspace(this.pending.get(this.active)?.operation) || this.actions.some(changesWorkspace);
+  }
+  threadChildPending() {
+    return this.pending.get(this.active)?.operation?.action === 'thread-child' || this.actions.some(op => op.action === 'thread-child');
+  }
+  refreshPending() {
+    const op = this.pending.get(this.active)?.operation;
+    return this.uploadPending() || op?.action === 'settings-page' || (op?.action === 'flag' && op.value === 'settings');
+  }
   update() {
     if (!this.ready) return false;
     const link = this.client.links.get(this.hub);
-    // A background refresh must not retire an upload's admission/completion
-    // receipt. Refresh once that upload action has settled.
-    if (this.uploadPending()) { link.invalidated = true;return true; }
+    // Keep upload receipts and Settings navigation visible before refreshing.
+    // A newer read otherwise retires a same-target navigation reply, making
+    // the person repeat the click. Refresh with its accepted session instead.
+    if (this.refreshPending() || this.threadChildPending() || this.terminalPending() || this.viewerPending() || this.botTabPending()) { link.invalidated = true;return true; }
     return this.flush(this.client.request(this.hub, 'view.update', { session: requestSession(this.session, false, this.target), anchor: this.api.anchor(), viewRevision: link.viewRevision }));
   }
   receive(envelope) {
     if (envelope?.t === 'view.changed') {
-      if (this.ready) this.flush(this.client.changed(this.hub, envelope, requestSession(this.session, false, this.target), this.api.anchor(), this.uploadPending()));
+      if (this.ready) this.flush(this.client.changed(this.hub, envelope, requestSession(this.session, false, this.target), this.api.anchor(), this.refreshPending() || this.threadChildPending() || this.terminalPending() || this.viewerPending() || this.botTabPending()));
       return true;
     }
     if (envelope?.t !== 'reply') return false;
@@ -245,7 +273,7 @@ export class ThinHost {
     try {
       this.validatePresentation({ session: r.session, view: r.nextTarget ? { type: 'text', text: '' } : r.shown, cmds: r.cmds });
       if (r.session.rid >= 2 ** 47) throw Error('Ordinary counter overlaps view namespace');
-      if (!r.nextTarget) node = this.api.decode(r.shown, r, metadata?.input);
+      if (!r.nextTarget && (metadata?.viewerRevision ?? 0) === this.viewerRevision) node = this.api.decode(r.shown, r, metadata?.input);
     } catch {
       metadata?.operation?.settled?.(false);
       if (this.abortField(metadata) || result.current) this.fail('Invalid rendered view');
@@ -305,11 +333,14 @@ export class ThinHost {
         if (!current || current.version !== previous.version) this.messages.reset(previous.id);
       }
       this.ready = true;this.window = result.window;
-      this.api.view(node, { epoch: this.epoch, target: r.target, window: result.window, shown: r.shown, mailDraftContext: r.mailDraftContext });
+      if ((metadata?.viewerRevision ?? 0) === this.viewerRevision) this.api.view(node, { epoch: this.epoch, target: r.target, window: result.window, shown: r.shown, mailDraftContext: r.mailDraftContext });
+      if ((metadata?.viewerRevision ?? 0) === this.viewerRevision) this.api.viewerChoice?.(null);
       this.api.state({ phase: 'presented', remoteReady: true, requestRevision: r.requestRevision, viewRevision: r.viewRevision, viewId: r.viewId });
     } else if (result.current) this.fail('Current view is not ready');
+    // Send queued navigation before a background read can snapshot its old route.
+    this.pump(true);
     if (result.refreshDue) this.update();
-    this.pump(true);return true;
+    return true;
   }
   ack(envelope) {
     const original = this.ordinary.get(envelope.id);
@@ -359,11 +390,13 @@ export class ThinHost {
     return !!metadata && !!link && metadata.wireRevision === link.revision && metadata.target?.kind === link.target?.kind && metadata.target?.id === link.target?.id;
   }
   fail(reason) {
+    this.api.viewerChoice?.(null);
     for (const metadata of this.pending.values()) metadata.operation?.settled?.(false);
     for (const operation of this.actions) operation.settled?.(false);
     this.ready = false;this.api.state({ phase: 'error', remoteReady: false, reason });
   }
   disconnect() {
+    this.api.viewerChoice?.(null);
     for (const metadata of this.pending.values()) metadata.operation?.settled?.(false);
     for (const operation of this.actions) operation.settled?.(false);
     this.client.disconnect(this.hub);this.pending.clear();this.actions = [];this.active = null;

@@ -25,6 +25,11 @@ struct Row: Decodable, Identifiable, Hashable {
     let faded: Bool?
     // "2 agents" while subagents work for it, shown where the age goes
     let agents: String?
+    // Visible hierarchy; native indentation is capped at four levels.
+    let depth: Int?
+    let expanded: Bool?
+    let children: Int?
+    let canChild: Bool?
 }
 
 struct Project: Decodable, Identifiable {
@@ -490,6 +495,7 @@ struct ThreadView: Decodable {
     // the thread's Boat chip ("Boat · large · running"; "" for none), a tap opens Settings
     let boat: String?
     let tools: [Tool]
+    let canChild: Bool?
     let entries: [Entry]
     // sent, not yet stored by the hub; and a message waiting for this turn
     let sending: [String]
@@ -870,6 +876,8 @@ struct Screen: Decodable {
     // a thread this phone asked for is still to come (its page opens at once)
     let making: Bool?
     let active: [Row]?
+    // Legacy conversations remain selectable outside project sections.
+    let legacy: [Row]?
     let older: Older?
     let settled: Older?
     let rowMenu: RowMenu?

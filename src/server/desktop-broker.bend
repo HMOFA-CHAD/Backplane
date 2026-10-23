@@ -352,14 +352,20 @@ def Broker.result_predispatch(+p: J.Json) -> Bool:
   +reply = J.Json.get_obj(p, "reply")
   Bool.and(Bool.not(J.Json.get_bool(reply, "ok", False{})), Bool.not(J.Json.get_bool(reply, "dispatched", True{})))
 
-def Broker.command_result_current_live(+b: Broker, +owner: String, +p: J.Json, +command: J.Json) -> Bool:
-  Bool.and(J.Json.get_bool(command, "valid", False{}), Bool.and(Broker.target_same(b, p),
-    Bool.and(J.Json.get_bool(Broker.target(b, owner), "ready", False{}), Bool.and(Bool.not(J.Json.get_bool(Broker.target(b, owner), "retired", False{})),
+# Outcome identity may advance only through an already correlated native
+# generation event. A finite dispatch receipt does not claim document ready.
+def Broker.command_result_current_scope(+b: Broker, +owner: String, +p: J.Json, +command: J.Json) -> Bool:
+  Bool.and(J.Json.get_bool(command, "valid", False{}),
+    Bool.and(Broker.target_same(b, p),
+    Bool.and(Bool.not(J.Json.get_bool(Broker.target(b, owner), "retired", False{})),
     Bool.and(Nat.is_eq(J.Json.get_nat(command, "expectedRevision", 0n), J.Json.get_nat(Broker.owner(b, owner), "revision", 1n)),
     Bool.and(Nat.is_eq(J.Json.get_nat(p, "resultRevision", 0n), J.Json.get_nat(command, "expectedRevision", 1n)),
     Bool.and(D.Target.eq(D.Target.decode(J.Json.get_obj(command, "expectedTarget")), D.Target.decode(J.Json.get_obj(p, "target"))),
-      Bool.and(String.eq(J.Json.get_str(Broker.target(b, owner), "tabId", ""), J.Json.get_str(J.Json.get_obj(p, "target"), "tabId", "")),
-        String.eq(J.Json.get_str(Broker.owner(b, owner), "activeTabId", J.Json.get_str(Broker.owner(b, owner), "tabId", "")), J.Json.get_str(J.Json.get_obj(p, "target"), "tabId", ""))))))))))
+    Bool.and(String.eq(J.Json.get_str(Broker.target(b, owner), "tabId", ""), J.Json.get_str(J.Json.get_obj(p, "target"), "tabId", "")),
+    String.eq(J.Json.get_str(Broker.owner(b, owner), "activeTabId", J.Json.get_str(Broker.owner(b, owner), "tabId", "")), J.Json.get_str(J.Json.get_obj(p, "target"), "tabId", "")))))))))
+
+def Broker.command_result_current_live(+b: Broker, +owner: String, +p: J.Json, +command: J.Json) -> Bool:
+  Bool.and(J.Json.get_bool(Broker.target(b, owner), "ready", False{}), Broker.command_result_current_scope(b, owner, p, command))
 
 def Broker.result_receipt_action(op: String) -> Bool:
   D.Desktop.member(["back", "forward", "reload"], op)
@@ -370,14 +376,12 @@ def Broker.command_dispatch_receipt(+b: Broker, +owner: String, +p: J.Json, +com
   +receipt = J.Json.get_obj(J.Json.get_obj(p, "reply"), "result")
   Bool.and(Broker.result_receipt_action(J.Json.get_str(command, "op", "")),
     Bool.and(J.Json.get_bool(J.Json.get_obj(p, "reply"), "ok", False{}),
-    Bool.and(J.Json.get_bool(receipt, "dispatched", False{}), Bool.and(Bool.not(J.Json.get_bool(receipt, "loadComplete", True{})),
+    Bool.and(J.Json.get_bool(receipt, "dispatched", False{}),
+    Bool.and(Bool.not(J.Json.get_bool(receipt, "loadComplete", True{})),
     Bool.and(String.eq(J.Json.get_str(receipt, "action", ""), J.Json.get_str(command, "op", "-")),
     Bool.and(D.Target.valid(J.Json.get_obj(receipt, "target")),
     Bool.and(D.Target.eq(D.Target.decode(J.Json.get_obj(receipt, "target")), D.Target.decode(J.Json.get_obj(command, "originalTarget"))),
-    Bool.and(D.Target.eq(D.Target.decode(J.Json.get_obj(p, "target")), D.Target.decode(J.Json.get_obj(command, "originalTarget"))),
-    Bool.and(Nat.is_eq(J.Json.get_nat(p, "resultRevision", 0n), J.Json.get_nat(command, "originalRevision", 1n)),
-    Bool.and(J.Json.get_bool(command, "valid", False{}),
-      Nat.is_eq(J.Json.get_nat(command, "expectedRevision", 0n), J.Json.get_nat(Broker.owner(b, owner), "revision", 1n))))))))))))
+    Broker.command_result_current_scope(b, owner, p, command))))))))
 
 def Broker.command_predispatch(+p: J.Json, +command: J.Json) -> Bool:
   Bool.and(Broker.result_predispatch(p), Bool.and(D.Target.valid(J.Json.get_obj(p, "target")),

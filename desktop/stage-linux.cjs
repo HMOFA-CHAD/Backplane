@@ -25,6 +25,7 @@ fs.rmSync(path.join(output,'runtime/resources/DESKTOP-BUILD.json'),{force:true})
 fs.mkdirSync(resourceRoot,{recursive:true});fs.mkdirSync(appRoot,{recursive:true});
 const appFiles=require('./prepare-components.cjs').appFiles(__dirname);
 const directBrowser=process.env.BACKPLANE_DESKTOP_BROWSER==='1';
+const rendererBridge=process.env.BACKPLANE_DESKTOP_BROWSER_UI!=='0';
 for(const file of appFiles) fs.copyFileSync(path.join(__dirname,file),path.join(appRoot,file));
 if(directBrowser){
   const wsRoot=path.dirname(require.resolve('ws/package.json'));assert.equal(require(path.join(wsRoot,'package.json')).version,'8.22.0');
@@ -43,7 +44,7 @@ const license=path.resolve(__dirname,'../LICENSE');if(fs.existsSync(license))fs.
 const build={serviceVersion:version,electronVersion,sourceTree:process.env.BACKPLANE_SOURCE_TREE||null,qualification:'local Linux review stage; root alone installs; Windows/macOS unqualified'};
 if(directBrowser){
   const sha=file=>crypto.createHash('sha256').update(fs.readFileSync(path.join(appRoot,file))).digest('hex');
-  build.desktopBrowser={protocol:1,guestManagerSha256:sha('browser-guest.cjs'),preloadSha256:sha('browser-recording-preload.cjs'),recorderSourceSha256:'2e4b03765cc4ae6595e32048555ffe27e750994a85c18b89027064f3c0c15350',subframePreload:true,popupPreloadVerified:false};
+  build.desktopBrowser={protocol:1,rendererBridge,guestManagerSha256:sha('browser-guest.cjs'),preloadSha256:sha('browser-recording-preload.cjs'),recorderSourceSha256:'2e4b03765cc4ae6595e32048555ffe27e750994a85c18b89027064f3c0c15350',subframePreload:true,popupPreloadVerified:false};
 }
 fs.writeFileSync(path.join(resourceRoot,'BUILD.json'),JSON.stringify(build,null,2)+'\n');
 // BACKPLANE_DESKTOP_RESIDENT=1: the app attaches to the resident hub of its
@@ -55,7 +56,7 @@ if(process.env.BACKPLANE_DESKTOP_RESIDENT==='1'){
   const desktop={serviceVersion:version,electronVersion,sourceTree:process.env.BACKPLANE_SOURCE_TREE||null,sourceCommit:process.env.BACKPLANE_SOURCE_COMMIT||null,
     lifecyclePolicy:{mode:'resident-service',managedStop:false,managedUpdate:false},
     qualification:'local Linux stage (stage-linux.cjs); resident service; unsigned'};
-  if(directBrowser)desktop.desktopBrowser={protocol:1,guestManagerSha256:sha('browser-guest.cjs'),preloadSha256:sha('browser-recording-preload.cjs')};
+  if(directBrowser)desktop.desktopBrowser={protocol:1,rendererBridge,guestManagerSha256:sha('browser-guest.cjs'),preloadSha256:sha('browser-recording-preload.cjs')};
   fs.writeFileSync(path.join(output,'runtime/resources/DESKTOP-BUILD.json'),JSON.stringify(desktop,null,2)+'\n');
 }
 fs.writeFileSync(path.join(output,'backplane-electron'),'#!/bin/sh\nset -eu\n: "${BACKPLANE_HOME:?Set the explicit absolute Backplane home selected for this stage}"\nBACKPLANE_STAGE_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$BACKPLANE_STAGE_ROOT/runtime/backplane-desktop" "$@"\n',{mode:0o755});

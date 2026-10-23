@@ -79,11 +79,11 @@ def main() -> IO(Unit):
       "New thread|Diff: what this thread changed|Terminal|Attach a file|Commit & push|Open pull request|Revert thread|Settle thread|Pin thread|Archive thread|Unarchive thread|Delete thread|Snooze 1 hour|Snooze until tomorrow 9:00|Snooze 1 week|Unsnooze|Search threads|Find file|Viewer: board, schematic, 3D, Mech, files, diff, browser|Open in KiCad|Open in KiCad 10 (exported copy)|Settings|Update Backplane|")
     C.Check.str("palette ja filter", first(U.Palette.filter(U.Palette.actions(I.Ja{}, "p"), "ターミナル")), "ターミナル")
     C.Check.str("row menu en", mlabels(U.Menu.thread(I.En{}, state(), 10n, "t1-1", False{})),
-      "Pin|Rename|Settle|Snooze 1 hour|Snooze until tomorrow|Snooze 1 week|Archive|Delete|Copy link|")
+      "New subthread|Pin|Rename|Settle|Snooze 1 hour|Snooze until tomorrow|Snooze 1 week|Archive|Delete|Copy link|")
     C.Check.str("row menu ja", mlabels(U.Menu.thread(I.Ja{}, state(), 10n, "t1-1", False{})),
-      "ピン留め|名前を変更|完了|1時間スヌーズ|明日までスヌーズ|1週間スヌーズ|アーカイブ|削除|リンクをコピー|")
+      "New subthread|ピン留め|名前を変更|完了|1時間スヌーズ|明日までスヌーズ|1週間スヌーズ|アーカイブ|削除|リンクをコピー|")
     C.Check.str("row menu armed en", mlabels(U.Menu.thread(I.En{}, state(), 10n, "t1-1", True{})),
-      "Pin|Rename|Settle|Snooze 1 hour|Snooze until tomorrow|Snooze 1 week|Archive|Click again to delete|Copy link|")
+      "New subthread|Pin|Rename|Settle|Snooze 1 hour|Snooze until tomorrow|Snooze 1 week|Archive|Click again to delete|Copy link|")
     C.Check.str("project menu en", mlabels(U.Menu.project(I.En{}, "p1-1", False{}, True{})), "New thread|Colour and icon|Remove project|Copy link|")
     C.Check.str("project menu ja", mlabels(U.Menu.project(I.Ja{}, "p1-1", True{}, True{})), "新しいスレッド|色とアイコン|もう一度クリックで削除|リンクをコピー|")
     C.Check.str("file menu en", mlabels(U.Menu.file("a")), "Open|Show in folder|Copy path|")
@@ -122,7 +122,7 @@ def main() -> IO(Unit):
     C.Check.str("tour title ja", OB.Ob.title(I.Ja{}, 0n), "Backplaneへようこそ")
     C.Check.str("tour body en", OB.Ob.body(I.En{}, 2n, "7", 0n), "A short tour of what is where. Skip it any time; More, Settings shows it again. Backplane is in beta. If something breaks or looks wrong, please report it.")
     C.Check.str("tour body ja", OB.Ob.body(I.Ja{}, 0n, "7", 2n), "スレッドは、プロジェクトで作業するエージェントとの会話です。Gitプロジェクトでは既定で別々のワークツリーを使い、Gitがない場合やローカルモードでは、スレッドはプロジェクトのフォルダを共有します。ツールの呼び出しは1行にまとめられ、委任した作業はサブエージェントの下に表示されます。")
-    C.Check.str("tour days", OB.Ob.body(I.Ja{}, 0n, "9", 1n), MSG.T.tour.body.projects.desktop(I.Ja{}, "9"))
+    C.Check.str("tour days", OB.Ob.body(I.Ja{}, 0n, "9", 1n), MSG.T.tour.body.projects.desktop(I.Ja{}))
     C.Check.str("tour buttons", OB.Ob.forward(I.En{}, 10n) ++ OB.Ob.forward(I.Ja{}, 3n) ++ OB.Ob.counter(I.En{}, 2n) ++ OB.Ob.counter(I.Ja{}, 2n), "Done次へ3 of 113／11")
     C.Check.str("tour sound", Bool.show(OB.Ob.sound()), "True")
     C.Check.str("plane counts en", PL.Plane.counts.join(PL.Plane.counts.need(I.En{}, 3n), PL.Plane.counts.run(I.En{}, 2n)), "3 need you · 2 running")

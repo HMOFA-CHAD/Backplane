@@ -882,7 +882,7 @@ def Wire.text.k(native: Bool, c: Client, +text: String) -> IO(Maybe<&2, Client>)
 def Client.thin.reply_actors(xs: List<&2, TA.Actor>, web: Bool, key: String, text: String) -> List<&2, TA.Actor>:
   match xs:
     case Nil{}: Nil{}
-    case actor <> _: [TA.Actor.reply(actor, web, key, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))]
+    case actor <> _: [TA.Actor.message(actor, web, key, Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))]
 
 def Client.thin.reply(c: Client, +text: String) -> Client:
   match c:
@@ -1045,12 +1045,15 @@ def Wire.all.legacy.k2(kind: Nat, booting: Bool, +c: Client, +a: All, +text: Str
     case _ False{}:
       Wire.all.as(Wire.native(c), c, text, bs, n)
 
-# a thin (view) client takes no broadcast but the heartbeat (kind 3): it
-# hears its own view's changes, and the heartbeat tells it the link lives
+# A thin client folds terminal output privately; other broadcasts stay off
+# its wire except the heartbeat (kind 3). Terminal changes invalidate its
+# normal bounded view, so the renderer also sees shell startup failures.
+# It hears its own view's changes, and the heartbeat tells it the link lives
 # (without it an idle page took a healthy link for dead after Alive.limit)
 def Wire.all.thin.k(kind: Nat, +c: Client, +text: String, +bs: List<&2, U32>, +n: Nat) -> IO(Maybe<&2, Client>):
   match kind:
     case 3n: Wire.all.as(Wire.native(c), c, text, bs, n)
+    case 0n: IO.pure(Maybe<&2, Client>, Some{Client.thin.reply(c, text)})
     case _: IO.pure(Maybe<&2, Client>, Some{c})
 
 def Wire.all.thin(thin: Bool, kind: Nat, booting: Bool, c: Client, a: All, text: String, bs: List<&2, U32>, n: Nat) -> IO(Maybe<&2, Client>):
@@ -10444,9 +10447,26 @@ def Hub.cef.seen.o(h: Hub, +o: J.Json) -> IO(Hub):
       Hub.cef.seen.k(Bool.and(Cef.page.ok(st, J.Json.get_str(o, "page", "")), Bool.not(CF.Cef.pages.has(CF.Cef.session.pages(Cfg.cef(cfg)), J.Json.get_str(o, "page", "")))),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, J.Json.get_str(o, "page", ""))
 
+# Inventory is canonical state, not just a legacy broadcast. Thin clients
+# consume Hub.info and discard info broadcasts; reconnects need it there too.
+def Cfg.browser.tabs.changed(changed: Bool, +cfg: Cfg, +o: J.Json) -> Cfg:
+  match changed:
+    case False{}: Cfg.with_cef(cfg, CF.Cef.session.tabs_set(Cfg.cef(cfg), o))
+    case True{}:
+      +current = Cfg.with_cef(cfg, CF.Cef.session.tabs_set(Cfg.cef(cfg), o))
+      Cfg.thin.live(current, Cfg.thin.streams(current), J.Json.get_str(o, "page", ""))
+
+def Cfg.browser.tabs(+cfg: Cfg, +o: J.Json) -> Cfg:
+  Cfg.browser.tabs.changed(CF.Cef.session.tabs_changed(Cfg.cef(cfg), o), cfg, o)
+
+def Hub.browser.tabs.current(h: Hub, +o: J.Json) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.broadcast(Hub{st, f, ls, cl, as, inbox, Cfg.browser.tabs(cfg, o), note}, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"info"}},
+        J.KV{"info", J.Json.obj([J.KV{"browser.tabs." ++ J.Json.get_str(o, "page", ""), J.Str{J.Json.show(o)}}])}])))
+
 def Hub.browser.tabs(h: Hub, +o: J.Json) -> IO(Hub):
-  IO.bind(Hub, Hub, Hub.cef.seen.o(h, o), h2 => Hub.broadcast(h2, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"info"}},
-    J.KV{"info", J.Json.obj([J.KV{"browser.tabs." ++ J.Json.get_str(o, "page", ""), J.Str{J.Json.show(o)}}])}]))))
+  IO.bind(Hub, Hub, Hub.cef.seen.o(h, o), h2 => Hub.browser.tabs.current(h2, o))
 
 def Hub.browser_ev.c(i: Nat, h: Hub, +o: J.Json) -> IO(Hub):
   match i:
@@ -11662,11 +11682,11 @@ def Hub.recover.carry(h: Hub, +before: M.State, +now: Nat) -> IO(Hub):
 def Hub.recover.go(h: Hub, st: B.Step, before: M.State, +now: Nat) -> IO(Hub):
   IO.bind(Hub, Hub, Hub.step(h, st), h2 => Hub.recover.carry(h2, before, now))
 
-# (and the Scratch project is made the first time, M.Scratch.ensure)
+# Existing legacy chat storage is preserved; new hubs create no Scratch project.
 def Hub.recover.k(h: Hub, +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, +as, inbox, +cfg, note}:
-      Hub.recover.go(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step.before(M.Scratch.ensure(st, Cfg.home(cfg) ++ "/scratch", now), Nil{}, B.Hub.recover.a(st, now, Agents.threads(as))), st, now)
+      Hub.recover.go(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.recover.a(st, now, Agents.threads(as)), st, now)
 
 # (and threads elsewhere start: Far.start)
 def Hub.recover.stale(h: Hub, +now: Nat) -> IO(Hub):

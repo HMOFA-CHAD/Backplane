@@ -371,7 +371,6 @@ def One.mail.send(+u: U.Ui, +j: J.Json) -> U.Act:
   +recipient = U.Ui.scratch(u, "@mr.to")
   One.mail.send.restore(U.Mailv.sync(MA.MA.send(U.Ui.scratch_set(U.Ui.scratch_set(u, "@mr.to", J.Json.get_str(j, "recipient", "")), "@f.mrreply", J.Json.get_str(j, "draft", "")))), draft, recipient)
 
-
 def One.act.mail(i: Nat, +u: U.Ui, +action: String, +value: String) -> U.Act:
   match i:
     case 0n: One.mail.window(False{}, u, value)
@@ -653,7 +652,6 @@ def Hubs.first(hs: List<&2, Hub>) -> String:
     case h <> _:
       Hub.key(h)
 
-
 def Hubs.set.k(+cid: String, +now: Nat, +cur: String, +hs: List<&2, Hub>) -> Hubs:
   Hubs{cid, now, Bool.pick(String, Hubs.has(hs, cur), cur, Hubs.first(hs)), hs}
 
@@ -772,13 +770,13 @@ def Hubs.register.at(hs: Hubs, +key: String, p: String, t: String, k: String, th
 def Hubs.routed(+action: String) -> Nat:
   C.Codec.pos(["select", "new-thread", "picker-open", "bot", "room", "remote", "uber", "uber-bot", "bot-new", "room-new", "proj-go", "hub-settings",
     "row-settle", "row-unsettle", "row-snooze", "row-delete", "toggle-settled", "add-project", "proj-remove",
-    "row-menu", "proj-menu", "row-pin", "row-unpin", "row-archive", "row-unarchive", "hist-tick", "row-rename", "rename-save", "uber-promote", "uber-home", "fab-open", "fab-edit", "buy", "fab-hide", "fab-show", "deploy-cancel"], action)
+    "row-menu", "proj-menu", "row-pin", "row-unpin", "row-archive", "row-unarchive", "hist-tick", "row-rename", "rename-save", "uber-promote", "uber-home", "fab-open", "fab-edit", "buy", "fab-hide", "fab-show", "deploy-cancel", "thread-tree", "thread-child", "thread-detach"], action)
 
 def Hubs.moves() -> Nat:
   12n
 
 def Hubs.routes() -> Nat:
-  35n
+  39n
 
 # answers to what any hub may be showing (its error, a delete or remove
 # to confirm); the project search is every hub's at once, since the list
@@ -836,7 +834,7 @@ def Hubs.focus(move: Bool, hs: Hubs, +key: String, +op: Op) -> HAct:
 def Hubs.act.k(+hs: Hubs, +cur: String, known: Bool, +action: String, +value: String) -> HAct:
   match known:
     case True{}:
-      Hubs.focus(Bool.and(Nat.is_lt(Hubs.routed(action), Hubs.moves()), Bool.not(String.eq(Hubs.key_of(value), cur))), hs, Hubs.key_of(value), Do{action, Hubs.rest(value)})
+      Hubs.focus(Bool.and(Bool.or(Nat.is_lt(Hubs.routed(action), Hubs.moves()), String.eq(action, "thread-child")), Bool.not(String.eq(Hubs.key_of(value), cur))), hs, Hubs.key_of(value), Do{action, Hubs.rest(value)})
     case False{}:
       Hubs.focus(False{}, hs, cur, Do{action, value})
 
@@ -1580,8 +1578,48 @@ def Hubs.active.all(ss: List<&2, Shown>, +many: Bool) -> List<&2, J.Json>:
       List.append(&2, J.Json, Hubs.origin.rows(J.Json.elems(J.Json.get_obj(j, "active")), many, name,
         J.Json.get_bool(j, "online", False{})), Hubs.active.all(t, many))
 
+# Sorting flattened rows independently tears children away from their
+# parent. Group each depth-zero root and its visible descendants, order
+# those groups by the existing root comparator, then flatten them again.
+type ATree is Data:
+  ATree{head: J.Json, rev: List<&2, J.Json>}
+
+def Hubs.tree.add(root: Bool, +row: J.Json, acc: List<&2, ATree>) -> List<&2, ATree>:
+  match root acc:
+    case False{} ATree{head, rev} <> rest:
+      ATree{head, row <> rev} <> rest
+    case _ trees:
+      ATree{row, [row]} <> trees
+
+def Hubs.trees(rs: List<&2, J.Json>, acc: List<&2, ATree>) -> List<&2, ATree>:
+  match rs:
+    case Nil{}: List.reverse(&2, ATree, acc)
+    case +r <> rest:
+      Hubs.trees(rest, Hubs.tree.add(Nat.is_eq(J.Json.get_nat(r, "depth", 0n), 0n), r, acc))
+
+def Hubs.tree.before(a: ATree, b: ATree) -> Bool:
+  match a b:
+    case ATree{ha, _} ATree{hb, _}:
+      Hubs.arow.before(ha, hb)
+
+def Hubs.trees.rows(ts: List<&2, ATree>) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}: Nil{}
+    case ATree{_, rev} <> rest:
+      List.append(&2, J.Json, List.reverse(&2, J.Json, rev), Hubs.trees.rows(rest))
+
 def Hubs.active(+ss: List<&2, Shown>) -> List<&2, J.Json>:
-  List.sort(~J.Json, ~Hubs.arow.before, Hubs.active.all(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)))
+  Hubs.trees.rows(List.sort(~ATree, ~Hubs.tree.before,
+    Hubs.trees(Hubs.active.all(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)), Nil{})))
+
+# History is outside projects, with the original qualified thread ids.
+# Add origin captions exactly as active rows do when several hubs report.
+def Hubs.legacy.all(ss: List<&2, Shown>, +many: Bool) -> List<&2, J.Json>:
+  match ss:
+    case Nil{}: Nil{}
+    case Shown{_, +name, +j} <> rest:
+      List.append(&2, J.Json, Hubs.origin.rows(J.Json.elems(J.Json.get_obj(j, "legacy")), many, name,
+        J.Json.get_bool(j, "online", False{})), Hubs.legacy.all(rest, many))
 
 # every hub's list at k (bots, rooms), named by machine when there are several
 def Hubs.all(ss: List<&2, Shown>, +k: String, +many: Bool) -> List<&2, J.Json>:
@@ -2275,6 +2313,7 @@ def Hubs.screen.p.loc(+lc: I.Loc, +pl: MPL.MUber, +ss: List<&2, Shown>, +cur: St
     J.KV{"settled", Hubs.older(ss, "settled")},
     J.KV{"view", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "view", "projects"))},
     J.KV{"active", J.Json.arr(Hubs.active(ss))},
+    J.KV{"legacy", J.Json.arr(Hubs.legacy.all(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},
     J.KV{"rowMenu", Hubs.first_obj(ss, "rowMenu")},
     J.KV{"deleting", Hubs.first_obj(ss, "deleting")},
     J.KV{"renaming", Hubs.first_obj(ss, "renaming")},

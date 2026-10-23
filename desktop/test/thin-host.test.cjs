@@ -90,6 +90,21 @@ test('current normal-action nextTarget settles commands then opens a fresh bot v
  const count=f.views.length;f.host.receive(response);assert.equal(f.views.length,count);assert.equal(f.host.ready,false);assert.equal(f.sent.at(-1).m,'view.open');assert.deepEqual(f.sent.at(-1).p.target,{kind:'bot',id:'bot-B'});
  f.host.receive(f.reply());assert.equal(f.host.ready,true);assert.equal(f.views.length,count+1);
 });
+test('creation ACK update opens the child without repeating creation or fabricating readiness',async()=>{
+ const f=await fixture();f.open();f.host.request('thread-child','A');
+ f.host.receive(f.reply(undefined,{session:{sel:'A',drafts:{A:'original 日本語'},rid:34},cmds:[{type:'send',text:JSON.stringify({id:33,m:'thread.create',p:{project:'p',parent:'A'}})}]}));
+ f.host.ack({t:'reply',id:33,ok:true,thread:'child'});f.host.update();const update=f.sent.at(-1);assert.equal(update.m,'view.update');
+ const response=f.reply(update,{nextTarget:{kind:'thread',id:'child'},remoteReady:false,session:{sel:'child',drafts:{A:'original 日本語'},rid:34}});delete response.result.shown;
+ const count=f.views.length;f.host.receive(response);assert.equal(f.commands.filter(c=>c.type==='send').length,1);assert.equal(f.views.length,count);assert.equal(f.host.ready,false);
+ assert.equal(f.sent.at(-1).m,'view.open');assert.deepEqual(f.sent.at(-1).p.target,{kind:'thread',id:'child'});
+ f.host.receive(f.reply());assert.equal(f.host.ready,true);assert.equal(f.getSession().sel,'child');
+});
+test('creation ACK update cannot redirect a newer explicit selection',async()=>{
+ const f=await fixture();f.open();f.host.update();const update=f.sent.at(-1);
+ f.host.request('select','B');f.host.receive(f.reply());
+ const response=f.reply(update,{nextTarget:{kind:'thread',id:'child'},remoteReady:false,session:{sel:'child',drafts:{},rid:34}});delete response.result.shown;
+ const sent=f.sent.length,shown=f.views.length;f.host.receive(response);assert.equal(f.sent.length,sent);assert.equal(f.views.length,shown);assert.equal(f.getSession().sel,'B');assert.equal(f.host.ready,true);
+});
 test('an obsolete action nextTarget cannot navigate away from the newer selected thread',async()=>{
  const f=await fixture();f.open();f.host.request('bot-open','bot-C');const action=f.sent.at(-1);f.host.request('select','B');f.host.receive(f.reply());
  const response=f.reply(action,{nextTarget:{kind:'bot',id:'bot-C'},remoteReady:false});delete response.result.shown;const count=f.sent.length;f.host.receive(response);assert.equal(f.sent.length,count);assert.equal(f.getSession().sel,'B');assert.equal(f.host.ready,true);
@@ -274,5 +289,66 @@ test('request privacy: read views send only language and bounded choices; action
    g.host.page();g.host.receive(g.reply(undefined,{session:{...g.sent.at(-1).p.session,drafts:{A:'stale actor'},outbox:{}}}));assert.equal(g.getSession().drafts.A,saved,'read cannot replace initial saved/empty');
    g.host.request('send','');const sent=g.sent.at(-1);assert.deepEqual(sent.p.session.drafts,{A:saved});assert.deepEqual(sent.p.session.outbox,{});
    g.host.receive(g.reply(sent,{session:{...sent.p.session,drafts:{A:'selected domain result',B:'foreign replacement'}}}));assert.equal(g.getSession().drafts.A,'selected domain result');assert.equal(g.getSession().drafts.B,'other local');assert.deepEqual(g.getSession().outbox,{'44':'local pending'});
+ }
+});
+
+test('settings navigation keeps its first click when background refresh races opening Settings',async()=>{
+ const f=await fixture({prepare:s=>s});f.open();
+ let accepted;
+ f.host.request('flag','settings',yes=>accepted=yes);
+ const action=f.sent.at(-1),link=f.host.client.links.get(f.api.hub);
+ f.host.update();
+ f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:link.viewId,target:link.target,viewRevision:'2'});
+ assert.equal(f.sent.length,2,'refresh waits for Settings open result instead of retiring it');
+ f.host.receive(f.reply(action,{session:{...f.getSession(),open:{settings:true}},shown:{type:'text',text:'Settings categories'}}));
+ assert.equal(accepted,true,'the first click is accepted');
+ assert.equal(f.views.at(-1).n.text,'Settings categories');
+ assert.equal(f.sent.at(-1).m,'view.update','one deferred refresh follows the accepted result');
+ assert.equal(f.sent.at(-1).p.session.open.settings,true,'refresh uses opened Settings state');
+});
+
+test('settings navigation keeps submenu on first click during background invalidation',async()=>{
+ const f=await fixture({session:()=>({sel:'A',rid:1,drafts:{A:''},open:{settings:true}}),prepare:s=>s});f.open();
+ let accepted;
+ f.host.request('settings-page','appearance',yes=>accepted=yes);
+ const action=f.sent.at(-1),link=f.host.client.links.get(f.api.hub);
+ f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:link.viewId,target:link.target,viewRevision:'2'});
+ assert.equal(f.sent.length,2,'background invalidation cannot overtake submenu navigation');
+ f.host.receive(f.reply(action,{session:{...f.getSession(),drafts:{...f.getSession().drafts,'@settings.page':'appearance'}},shown:{type:'text',text:'Appearance controls'}}));
+ assert.equal(accepted,true);
+ assert.equal(f.views.at(-1).n.text,'Appearance controls');
+ assert.equal(f.sent.filter(r=>r.m==='view.action'&&r.p.action==='settings-page').length,1,'one click sends one navigation');
+ assert.equal(f.sent.at(-1).m,'view.update');
+});
+
+
+test('workspace actions adopt their choices before shell/background invalidation refreshes',async()=>{
+ for(const [action,value,open] of [['term-toggle','100x24',{term:true}],['ws-key','term',{term:true}],['ws-palette-open','',{palette:true}],['bfield','wspalette\x1fterminal',{palette:true}]]) {
+  const f=await fixture({prepare:s=>s});f.open();let accepted;
+  f.host.request(action,value,yes=>accepted=yes);
+  if(action==='bfield')f.flushFields();
+  const request=f.sent.at(-1),link=f.host.client.links.get(f.api.hub),count=f.sent.length;
+  f.host.update();
+  f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:link.viewId,target:link.target,viewRevision:'2'});
+  assert.equal(f.sent.length,count,'no refresh can retire the travelling '+action);
+  f.host.receive(f.reply(request,{session:{...f.getSession(),open,drafts:{...f.getSession().drafts,'@terminal.owner':'A'}},shown:{type:'text',text:'Workspace accepted'}}));
+  assert.equal(accepted,true);assert.equal(f.views.at(-1).n.text,'Workspace accepted');
+  const refresh=f.sent.at(-1);assert.equal(refresh.m,'view.update');assert.deepEqual(refresh.p.session.open,open);
+  assert(!Object.hasOwn(refresh.p.session.drafts,'@terminal.owner'),'terminal owner remains actor-private on requests');
+  f.host.receive(f.reply(refresh));assert.deepEqual(f.getSession().open,open);
+ }
+});
+
+for (const queued of [false, true]) test('legacy subthread picker defers refresh while '+(queued?'queued':'active'),async()=>{
+ for (const mode of ['update','changed']) {
+  const f=await fixture();f.open();if(queued)f.host.request('noop','');
+  f.host.request('thread-child','A');const sent=f.sent.length;
+  if(mode==='update')f.host.update();
+  else f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'2'});
+  assert.equal(f.sent.length,sent,'old closed-picker session must not overtake the route action');
+  if(queued){f.host.receive(f.reply());assert.equal(f.sent.at(-1).m,'view.action');assert.equal(f.sent.at(-1).p.action,'thread-child');}
+  f.host.receive(f.reply(undefined,{session:{sel:'A',drafts:{A:'original 日本語'},rid:20,open:{proj:true}}}));
+  assert.equal(f.getSession().open.proj,true);assert.equal(f.sent.at(-1).m,'view.update');assert.equal(f.sent.at(-1).p.session.open.proj,true);
+  f.host.receive(f.reply());assert.equal(f.getSession().open.proj,true);assert.equal(f.host.ready,true);assert.equal(f.commands.length,0);
  }
 });

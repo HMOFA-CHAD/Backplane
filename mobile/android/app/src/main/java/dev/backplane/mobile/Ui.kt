@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Link
@@ -486,7 +487,7 @@ private fun swipeColor(s: Swipe?): Color = when (s?.tone) {
 // springs back: what happens to the thread comes with the next screen.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ThreadRow(m: AppModel, r: Row) {
+private fun ThreadRow(m: AppModel, r: Row, hierarchy: Boolean = true) {
     val lang = LocalBackplaneLanguage.current
     var menu by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
@@ -513,25 +514,50 @@ private fun ThreadRow(m: AppModel, r: Row) {
                 }
             },
         ) {
-            ListItem(
-                headlineContent = { Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                supportingContent = if (r.project.isEmpty()) null else {
-                    { Text(r.project, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                },
-                leadingContent = { StatusDot(r.state, r.status) },
-                trailingContent = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (r.pinned) Icon(Icons.Filled.PushPin, NativeMessages.tools_pinned(lang), Modifier.size(16.dp).padding(end = 4.dp))
-                        if (r.agents.isNotEmpty()) Text(r.agents, style = MaterialTheme.typography.labelMedium, color = PhaseColor.accent)
-                        else Text(r.ago, style = MaterialTheme.typography.labelMedium)
-                    }
-                },
-                // a long press asks for the row's menu (the screen's rowMenu)
-                modifier = Modifier.alpha(if (r.faded) 0.45f else 1f).combinedClickableCompat(onLong = {
-                    if (AppSettings.haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    m.act("row-menu", r.id)
-                }) { m.open(r.id, "select", r.id, r.title) },
-            )
+            Column(
+                Modifier.fillMaxWidth().padding(start = (r.depth.coerceIn(0, 4) * 12).dp)
+                    .alpha(if (r.faded) 0.45f else 1f),
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    // This button is a sibling of the selectable row, so its
+                    // click cannot select/open the thread or invoke its menu.
+                    if (hierarchy && (r.children > 0 || r.canChild)) IconButton(
+                        onClick = { m.act("thread-tree", r.id) },
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(if (r.expanded) Icons.Filled.ExpandMore else Icons.Filled.ChevronRight,
+                            (if (r.expanded) "Collapse subthreads of " else "Expand subthreads of ") + r.title)
+                    } else Spacer(Modifier.width(40.dp))
+                    ListItem(
+                        headlineContent = { Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        supportingContent = if (r.project.isEmpty()) null else {
+                            { Text(r.project, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        },
+                        leadingContent = { StatusDot(r.state, r.status) },
+                        trailingContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(max = 88.dp)) {
+                                if (r.pinned) Icon(Icons.Filled.PushPin, NativeMessages.tools_pinned(lang), Modifier.size(16.dp).padding(end = 4.dp))
+                                if (r.agents.isNotEmpty()) Text(r.agents, style = MaterialTheme.typography.labelMedium, color = PhaseColor.accent,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                else Text(r.ago, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        },
+                        // a long press asks for the row's menu (the screen's rowMenu)
+                        modifier = Modifier.weight(1f).combinedClickableCompat(onLong = {
+                            if (AppSettings.haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            m.act("row-menu", r.id)
+                        }) { m.open(r.id, "select", r.id, r.title) },
+                    )
+                }
+                if (hierarchy && r.expanded && r.canChild) TextButton(
+                    onClick = { m.act("thread-child", r.id) },
+                    modifier = Modifier.padding(start = 56.dp),
+                ) {
+                    Icon(Icons.Filled.Add, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("New subthread", style = MaterialTheme.typography.labelMedium)
+                }
+            }
         }
         Box(Modifier.align(Alignment.TopEnd)) {
             DropdownMenu(menu, { menu = false }) {
@@ -602,7 +628,7 @@ internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyLis
         },
         snackbarHost = { SnackbarHost(snacks) },
     ) { pad ->
-        if (s.projects.isEmpty()) {
+        if (s.projects.isEmpty() && s.legacy.isEmpty() && s.active.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
                 Text(s.empty, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
             }
@@ -702,6 +728,12 @@ internal fun Projects(m: AppModel, s: Screen, onPair: () -> Unit, state: LazyLis
                     }
                     item(key = "d:older") { HorizontalDivider() }
                 }
+            }
+            if (s.legacy.isNotEmpty()) {
+                item(key = "legacy:header") {
+                    ListItem(headlineContent = { Text("Conversation history", style = MaterialTheme.typography.labelLarge) })
+                }
+                items(s.legacy, key = { "legacy:" + it.id }) { ThreadRow(m, it, hierarchy = false) }
             }
         }
     }
@@ -914,6 +946,11 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, NativeMessages.common_more(lang)) }
                         DropdownMenu(menu, { menu = false }) {
+                            if (t.canChild) DropdownMenuItem(
+                                text = { Text("New subthread") },
+                                leadingIcon = { Icon(Icons.Filled.Add, null) },
+                                onClick = { menu = false; m.act("thread-child", t.id) },
+                            )
                             for (tool in t.tools) if (tool.action != "interrupt") DropdownMenuItem(
                                 text = { Text(tool.label) },
                                 leadingIcon = {

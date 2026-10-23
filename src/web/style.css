@@ -130,6 +130,33 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .thread-head .title.rename { cursor: text; }
 .thread-head .title.rename:hover { text-decoration: underline dotted var(--faint); }
 .thread-head .title-box .field { width: min(420px, 50vw); }
+.thread-head .thread-controls { width: 100%; margin-left: 0; gap: 6px; }
+.thread-controls .control-label { color: var(--faint); font-size: calc(11px * var(--text-scale, 100) / 100); }
+.thread-controls .control-label:not(:first-child) { margin-left: 12px; }
+.thread-head .thread-controls button.tool.gap { margin-left: 0; }
+.thread-head .thread-controls button.tool.gap::before { display: none; }
+.workspace-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex: none; }
+.workspace-bar button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; background: none; border-color: transparent; color: var(--dim); }
+.workspace-bar button.on { color: var(--accent); border-color: var(--line); background: var(--raise); }
+.workspace-bar button:hover { color: var(--text); background: var(--raise); }
+.thread-workbar { display: flex; align-items: center; gap: 8px; padding: 6px 16px; min-height: 38px; border-bottom: 1px solid var(--line); font-size: calc(12px * var(--text-scale, 100) / 100); color: var(--dim); flex: none; }
+.thread-workbar .work-state { flex: 1; }
+.thread-workbar .danger { color: var(--bad); border-color: var(--bad); display: inline-flex; gap: 6px; align-items: center; }
+.workspace-feedback { margin-left: auto; color: var(--accent); font-size: calc(12px * var(--text-scale, 100) / 100); }
+.viewer-pending { position: absolute; inset: 0; background: var(--view); z-index: 3; display: grid; place-content: center; padding: 20px; color: var(--dim); text-align: center; pointer-events: none; }
+.viewer-pending:empty { display: none; }
+.viewer[data-viewer-pending] > :not(.viewer-tabs,.viewer-split,.viewer-pending) { visibility: hidden; }
+.workspace-bar [data-viewer-pending], .viewer-tabs [data-viewer-pending] { color: var(--accent); border-color: var(--accent); }
+.workspace-bar:has([data-viewer-pending]) .on:not([data-viewer-pending]), .viewer-tabs:has([data-viewer-pending]) .on:not([data-viewer-pending]) { color: var(--dim); background: none; border-color: transparent; }
+.viewer > .viewer-tabs { display: none; }
+@media (max-width: 760px) {
+  .workspace-bar { padding: 6px 10px; gap: 2px; }
+  .workspace-bar button { min-height: 36px; padding: 5px 7px; }
+  .thread-head .thread-controls { gap: 4px; overflow: visible; }
+  .thread-controls button { min-height: 32px; }
+  .thread-workbar { padding-left: 10px; padding-right: 10px; }
+  .viewer > .viewer-tabs { display: flex; position: relative; z-index: 4; }
+}
 .timeline { flex: 1; overflow-y: auto; overflow-anchor: none; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
 /* away from the end with something new below (client.bend's Hold.pill) */
 .hold-pill { position: sticky; bottom: 8px; align-self: center; z-index: 4; flex: none; background: var(--raise); color: var(--text); border: 1px solid var(--accent); border-radius: 0; padding: 4px 12px; font-size: calc(13px * var(--text-scale, 100) / 100); cursor: pointer; }
@@ -201,33 +228,46 @@ button.fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowra
 .composer .skills .desc { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer textarea:focus, .add input:focus { outline: none; border-color: var(--accent); }
 .thread-view.dropping .composer { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--raise); }
-.subs { border: 1px solid var(--line); background: var(--panel); max-width: 860px; position: sticky; top: 0; z-index: 2; max-height: 30vh; overflow-y: auto; overscroll-behavior: contain; }
-.subs.busy { border-color: var(--accent); }
-.subs-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 10px; color: var(--faint); font-size: calc(11px * var(--text-scale, 100) / 100); background: none; border: 0; text-align: left; cursor: pointer; }
-.subs-head:hover { color: var(--text); }
-.subs-head .icon, .subs-head svg { margin-left: auto; }
-/* done and folded: one quiet line that scrolls with the thread */
-.subs.shut { position: static; max-height: none; overflow: visible; background: none; }
-.subs.busy .subs-head { color: var(--text); }
-.subs-head .busy { color: var(--accent); }
-.sub-row { display: flex; gap: 10px; align-items: center; padding: 5px 10px; cursor: pointer; }
+/* Subagent inspector: part of the thread, with its own bounded scroll area. */
+.thread-view > .subs { flex: none; min-width: 0; border-bottom: 1px solid var(--line); background: var(--panel); }
+.subs-head { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 8px 16px; color: var(--dim); font-size: calc(12px * var(--text-scale, 100) / 100); background: none; border: 0; text-align: left; cursor: pointer; }
+.subs-head:hover { background: var(--raise); color: var(--text); }
+.subs-label { color: var(--text); font-weight: 600; }
+.subs.busy .subs-label { color: var(--accent); }
+.subs-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subs-head svg { flex: none; margin-left: auto; }
+.subs-body { max-height: min(32vh, 300px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border-top: 1px solid var(--line); }
+.subs.shut .subs-body { display: none; }
+.sub { min-width: 0; border-bottom: 1px solid var(--line); }
+.sub:last-child { border-bottom: 0; }
+.sub-row { display: flex; gap: 10px; align-items: center; width: 100%; min-height: 40px; padding: 8px 16px; cursor: pointer; text-align: left; border: 0; background: none; }
+.subs-head:focus-visible, .sub-row:focus-visible, .sub-stop:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .sub-row:hover { background: var(--raise); }
 .sub .state-dot { width: 6px; height: 6px; background: var(--faint); flex: none; }
 .sub.running .state-dot { background: var(--accent); width: 8px; height: 8px; }
 .sub.held .state-dot, .sub.done .state-dot, .sub.reporting .state-dot { background: var(--ok); }
 .sub.watching .state-dot, .sub.launching .state-dot, .sub.waiting .state-dot { background: var(--accent); } .sub.cancelling .state-dot { background: var(--warn); }
-.sub-stop { margin: 0 10px 4px 32px; font-size: calc(12px * var(--text-scale, 100) / 100); }
+.sub-stop { margin: 0 16px 8px 32px; font-size: calc(12px * var(--text-scale, 100) / 100); }
 .sub.failed .state-dot, .sub.stopped .state-dot, .sub.killed .state-dot { background: var(--bad); } .sub.cancelled .state-dot { background: var(--warn); }
-.sub .who { color: var(--dim); font-size: calc(12px * var(--text-scale, 100) / 100); flex: none; }
-.sub .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub .who { color: var(--dim); font-size: calc(12px * var(--text-scale, 100) / 100); flex: none; max-width: 25%; overflow: hidden; text-overflow: ellipsis; }
+.sub .title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .sub.live .title { color: var(--text); }
-.sub .state { color: var(--dim); font-size: calc(12px * var(--text-scale, 100) / 100); }
+.sub .state { color: var(--dim); font-size: calc(12px * var(--text-scale, 100) / 100); flex: none; max-width: 30%; overflow-wrap: anywhere; }
 .sub.running .state { color: var(--accent); } .sub.done .state { color: var(--ok); } .sub.failed .state { color: var(--bad); }
-.sub .doing { display: block; padding: 0 10px 4px 32px; color: var(--accent); font-size: calc(12px * var(--text-scale, 100) / 100); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sub-step { display: flex; gap: 8px; padding: 1px 10px 1px 32px; font-size: calc(12px * var(--text-scale, 100) / 100); color: var(--dim); white-space: nowrap; }
-.sub-step .kind { color: var(--faint); flex: none; }
-.sub-step .text { overflow: hidden; text-overflow: ellipsis; }
-.sub:last-child .sub-step:last-child { padding-bottom: 6px; }
+.sub .doing { display: block; padding: 0 16px 8px 32px; color: var(--accent); font-size: calc(12px * var(--text-scale, 100) / 100); overflow-wrap: anywhere; }
+.sub-step { display: flex; gap: 12px; padding: 4px 16px 4px 32px; font: calc(12px * var(--text-scale, 100) / 100)/1.5 var(--mono); color: var(--dim); }
+.sub-step .kind { color: var(--faint); flex: none; width: 8ch; overflow-wrap: anywhere; }
+.sub-step .text { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.sub-step:last-child { padding-bottom: 12px; }
+.sub-empty { display: block; padding: 0 16px 12px 32px; color: var(--dim); font-size: calc(12px * var(--text-scale, 100) / 100); }
+@media (max-width: 760px) {
+  .subs-head, .sub-row { min-height: 44px; padding-left: 10px; padding-right: 10px; }
+  .subs-body { max-height: 28dvh; }
+  .sub-row { gap: 8px; }
+  .sub .who { max-width: 22%; }
+  .sub-step { gap: 8px; padding-left: 24px; padding-right: 10px; }
+  .sub-step .kind { width: 6ch; }
+}
 .ago.agents { color: var(--accent); }
 .parent { align-self: flex-start; background: none; border: 0; color: var(--accent); padding: 0; }
 .settings-link { display: block; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); color: var(--dim); padding: 12px; margin-top: 16px; }
@@ -342,6 +382,27 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 
 /* Terminal */
 .term-pane { flex: none; height: 40vh; display: flex; flex-direction: column; border-top: 1px solid var(--line); min-height: 0; }
+
+/* A persistent, nonmodal PTY window; presentation never contains shell bytes. */
+.workspace-root { display: contents; }
+.floating-terminal { position: fixed; z-index: 60; left: max(16px, calc(50vw - 400px)); top: max(80px, calc(50vh - 210px)); width: min(800px, calc(100vw - 32px)); height: min(420px, calc(100dvh - 100px)); min-width: 220px; min-height: 160px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); display: flex; flex-direction: column; resize: both; overflow: hidden; border: 1px solid var(--accent); background: var(--bg); box-shadow: 0 12px 44px #0009; }
+.floating-terminal-handle { display: flex; align-items: center; gap: 12px; padding: 6px 10px; cursor: move; touch-action: none; user-select: none; background: var(--panel, var(--bg)); border-bottom: 1px solid var(--line); }
+.floating-terminal-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.floating-terminal-path { flex: none; padding: 4px 10px; font: 11px/16px var(--mono); opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.floating-terminal .term-pane { flex: 1; height: auto; border: 0; }
+.floating-terminal .term-head { display: none; }
+.floating-terminal footer { flex: none; padding: 4px 10px; font-size: 10px; opacity: .65; }
+.workspace-palette-backdrop { position: fixed; inset: 0; z-index: 100; background: #0009; display: flex; align-items: flex-start; justify-content: center; padding: min(15vh, 100px) 12px 12px; }
+.workspace-palette { width: min(660px, 100%); max-height: calc(100dvh - 130px); min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--accent); background: var(--bg); box-shadow: 0 12px 50px #000a; }
+.workspace-palette header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; }
+.workspace-palette input { flex: none; margin: 0 10px 8px; width: calc(100% - 20px); font-size: 16px; }
+#workspace-commands { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.workspace-command { display: block; width: 100%; text-align: left; padding: 9px 12px; border: 0; border-top: 1px solid var(--line); border-radius: 0; white-space: normal; }
+.workspace-command.on, .workspace-command:focus { background: var(--accent); color: var(--bg); outline: none; }
+.workspace-palette footer { flex: none; padding: 8px 12px; font-size: 11px; border-top: 1px solid var(--line); }
+.workspace-palette footer p { margin: 6px 0; }
+.workspace-empty { display: block; padding: 16px; opacity: .65; }
+@media (max-width: 600px) { .workspace-palette-backdrop { padding-top: 30px; } .workspace-palette { max-height: calc(100dvh - 48px); } .floating-terminal footer { font-size: 9px; } }
 .term-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px 2px 12px; color: var(--faint); font-size: calc(12px * var(--text-scale, 100) / 100); }
 .screen { position: relative; flex: 1; overflow: auto; padding: 4px 12px; font: 12px/17px var(--mono); white-space: pre; min-height: 0; }
 .screen .tl { height: 17px; }
@@ -486,7 +547,7 @@ button.icon { display: inline-flex; align-items: center; justify-content: center
 .bots { margin-top: 12px; padding: 8px 0 4px; border-top: 1px solid var(--line); }
 .bots-head { cursor: default; padding-top: 6px; }
 .cat { flex: none; display: block; image-rendering: auto; }
-.cat.away { opacity: 0.5; }
+.cat.cat-mood-away { opacity: 0.5; }
 .bot-row { display: flex; align-items: center; gap: 8px; padding: 3px 12px; cursor: pointer; }
 .bot-row:hover { background: var(--raise); }
 .bot-row.on { background: var(--raise); box-shadow: inset 2px 0 var(--accent); }
@@ -951,3 +1012,37 @@ html:lang(ja) :is(.set-text, .set-ctl) { min-width: 0; }
   .usage-project-line { display: block; }
   .usage-project-tokens { display: block; }
 }
+
+/* Settings categories: stable icon slots, distinct groups and readable hints. */
+.settings-intro { margin: 0; color: var(--dim); }
+.settings-group { margin-top: 12px; min-width: 0; }
+.settings-group h3 { margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: .9em; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; }
+.settings-grid .settings-category { display: flex; align-items: center; gap: 12px; min-height: 88px; padding: 12px; background: var(--panel); }
+.settings-category-icon { display: flex; align-items: center; justify-content: center; flex: 0 0 36px; height: 36px; border: 1px solid var(--line); color: var(--accent); }
+.settings-category-copy { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 4px; }
+.settings-category-title { font-weight: 600; color: var(--text); }
+.settings-category-note { font-size: .92em; line-height: 1.4; color: var(--dim); }
+.settings-category > .ico { flex: 0 0 16px; color: var(--faint); }
+.settings-category:hover, .settings-category:focus-visible { background: var(--raise); border-color: var(--accent); }
+.settings-context { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; color: var(--dim); }
+.settings-context > .ico { color: var(--accent); flex-shrink: 0; }
+.settings-context p { margin: 0; }
+@media (max-width: 560px) {
+  .settings-grid { grid-template-columns: minmax(0, 1fr); }
+  .settings-grid .settings-category { min-height: 80px; }
+}
+/* A conversation tree remains readable on a narrow sidebar. */
+.thread-tree-row { display:grid; grid-template-columns:24px minmax(0,1fr); align-items:center; min-width:0; margin-left:calc(var(--depth,0)*12px); }
+.thread-tree-row > .thread, .thread-tree-row > bp-memo { min-width:0; width:100%; }
+.thread-tree-row .thread { margin:0; min-width:0; }
+.thread-tree-row .thread .title { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.thread-expander { display:grid; place-items:center; padding:0; width:24px; min-width:24px; min-height:32px; border:0; background:transparent; color:var(--dim); cursor:pointer; }
+.thread-expander:hover { background:var(--raise); color:var(--text); }
+.thread-expander:focus-visible, .thread-create button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.thread-create { margin-left:calc(24px + var(--depth,0)*12px); min-width:0; }
+.thread-create button { border:0; padding:6px 8px; font-size:11px; color:var(--dim); background:transparent; text-align:left; max-width:100%; }
+.conversation-history { border-top:1px solid var(--line); margin-top:8px; min-width:0; }
+.subthreads-control { padding:4px 12px; display:flex; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--line); }
+.subthreads-control button { font-size:11px; padding:4px 8px; }
+@media (max-width:600px) { .thread-expander { min-height:40px; } .thread-create button { min-height:36px; } }

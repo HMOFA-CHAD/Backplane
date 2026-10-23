@@ -406,30 +406,15 @@ threads): a thread's when a turn ends, at most every ten minutes
 newest threads (`summary.<project>`). A bot's is its thread's; before its
 first turn the menu shows its persona's first line.
 
-## Scratch and giving a thread away
+## Conversation history and subthreads
 
-Not every conversation belongs to a project. Scratch (a project every hub
-makes for itself, at `<home>/scratch`) holds throwaway threads: the `+` on
-its sidebar row starts one, and each works in a folder of its own
-(`<home>/scratch/<thread>`). They are ephemeral: one left alone for the
-`scratch.days` setting (default 7) is deleted with its folder at the next
-tick. Pin one to keep it.
+Chat with the uberbot for conversations outside a project. New hubs no longer create a Scratch project, and previous chats are never automatically expired. Existing IDs, folders, history, project mappings and links stay intact. Open these conversations from Conversation history in the sidebar or search.
 
-To take a conversation somewhere, type `/give` in its composer with the
-references it goes to and, if you like, a note (the send button reads
-"Give"):
+A project conversation can create a visible subthread from its dropdown, its row menu, or New subthread in its workspace. These are ordinary conversations with their own identity, history and activity. Their saved parent link is independent of delegated subagents and launch reports. Expand or collapse each row to show its children; expansion is saved on the hub. Move to top level removes only that link. Archiving or deleting a parent keeps its live children visible at the top level; restoring the parent restores their saved hierarchy. Archived children stay in the project's Archived shelf. No existing worker threads are automatically reparented.
 
-| names | what happens |
-|---|---|
-| `>slug` | the conversation is queued into that thread, ahead of its next message (like a fork brought back) |
-| `%slug` | a new thread in that project starts with it queued (like a fork) |
-| `@name` | the bot is woken with it |
+Project drag ordering remains saved. Projects without a chosen order use creation time and ID, so activity updates change status in place. Live, quiet and older shelves retain their existing meaning.
 
-`/give >pcb-rev-b %enclosure keep the connector choice` hands one scratch
-conversation to a thread and to a new thread in another project at once;
-several scratch threads given to one thread gather there. The thread it came
-from logs where it went and stays where it is. `/give` works in every
-thread, not only scratch ones (bothub.bend's `Give`, laws `give_*`).
+`/give` still hands conversation context to named threads, projects and bots. It does not move the source conversation or change its parent.
 
 ## Machines and people
 

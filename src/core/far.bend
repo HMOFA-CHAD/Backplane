@@ -184,6 +184,8 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.SpacePageSet{Fr.id(l, bot), html, at}}
     case M.WorkSet{+thread, kind, rows, at}:
       Some{M.WorkSet{Fr.id(l, thread), kind, rows, at}}
+    case M.ThreadParentSet{+id, +parent, at}:
+      Some{M.ThreadParentSet{Fr.id(l, id), Fr.opt(l, parent), at}}
     case M.ThreadLaunched{+id, +by, report, at}:
       Some{M.ThreadLaunched{Fr.id(l, id), Fr.sender(l, by), report, at}}
     case _:
@@ -337,6 +339,8 @@ def Fr.shared(+s: M.State, c: M.Change) -> Bool:
       True{}
     case M.WorkSet{+thread, _, _, _}:
       Fr.thread.shared(s, thread)
+    case M.ThreadParentSet{+id, _, _}:
+      Fr.thread.shared(s, id)
     case M.ThreadLaunched{+id, _, _, _}:
       Fr.thread.shared(s, id)
     case _:
@@ -421,6 +425,8 @@ def Fr.scope(+s: M.State, c: M.Change) -> String:
       Fr.scope.th(s, thread)
     case M.WorkSet{+thread, _, _, _}:
       Fr.scope.th(s, thread)
+    case M.ThreadParentSet{+id, _, _}:
+      Fr.scope.th(s, id)
     case M.ThreadLaunched{+id, _, _, _}:
       Fr.scope.th(s, id)
     case _:
@@ -871,7 +877,7 @@ def Fr.ext(bw: List<&2, M.Ext>, +prefix: String) -> List<&2, M.Ext>:
 # the settings a link's things leave behind: the work their threads had
 # (WorkSet's bg.<link>~... and watch.<link>~...); the rest stay
 def Fr.settings(+sg: Map<&2, String>, +prefix: String) -> Map<&2, String>:
-  Fr.map(String, Fr.map(String, sg, "bg." ++ prefix), "watch." ++ prefix)
+  Fr.map(String, Fr.map(String, Fr.map(String, sg, "bg." ++ prefix), "watch." ++ prefix), "thread.parent." ++ prefix)
 
 def Fr.forget.spec(s: M.State, +link: String) -> M.State:
   match s:
@@ -1130,7 +1136,7 @@ def Fr.methods() -> List<&2, String>:
   ["turn.start", "turn.interrupt", "ask.answer", "queue.move", "queue.remove", "queue.resume", "queue.steer", "queue.edit",
    "thread.settle", "thread.unsettle", "thread.back", "thread.rename", "thread.btw", "thread.modes", "thread.provider", "thread.effort", "bots.space", "bots.routine_run",
    "thread.create", "thread.fork", "thread.archive", "thread.unarchive", "thread.pin", "thread.unpin",
-   "project.add", "project.new", "project.remove", "fs.list", "fs.mkdir", "fs.find"]
+   "project.add", "project.new", "project.remove", "fs.list", "fs.mkdir", "fs.find", "thread.detach"]
 
 def Fr.may.go(ms: List<&2, String>, +m: String) -> Bool:
   match ms:

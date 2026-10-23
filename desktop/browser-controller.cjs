@@ -19,6 +19,29 @@ const hex=value=>typeof value==='string'&&/^[a-f0-9]{32}$/.test(value);
 const snapshot=value=>decodeBrowserMessage(encodeBrowserMessage(value));
 const same=(a,b)=>targetKey(a)===targetKey(b);
 
+// A canonical policy change renews the idle guest's lifecycle authority too.
+// Never rebase preparation, unacknowledged navigation or any owner's running
+// command: those retain their original correlated execution/acknowledgement.
+function adoptIdleBrowserGrant({leases,tabs,preparing,acknowledgedRevisions},target){
+ const tab=tabs.get(tabKey(target)),grant=leases.targetGrantOf(target);
+ if(!grant||!tab?.offered||!tab.creationCompleted||tab.prep||preparing.has(target.owner)||
+   !same(tab.target,target)||!same(tab.ackTarget,target)||grant.revision<tab.revision||
+   [...tabs.values()].some(item=>item.target.owner===target.owner&&item.activeCall))return false;
+ tab.revision=grant.revision;acknowledgedRevisions.set(target.owner,grant.revision);return true;
+}
+
+// Settle previously queued registry work before this command can change the
+// native document. Its original target/revision must still be current after
+// the await; a later policy or generation cannot supply replacement authority.
+async function settleBrowserCallRegistry({drain,leases,acknowledgedRevisions},tab,payload){
+ await drain(payload.owner);
+ const grant=leases.targetGrantOf(payload.target);
+ if(!grant||grant.revision!==payload.grantRevision||
+   !same(tab.target,payload.target)||!same(tab.ackTarget,payload.target)||
+   acknowledgedRevisions.get(payload.owner)!==payload.grantRevision)
+  throw Object.assign(new Error('Browser registry changed before command dispatch'),{dispatched:false});
+}
+
 // Private main-only controller. Renderer intents contain owner+geometry only;
 // a service browser.prepare/call and its exact live grant authorize all work.
 function createDesktopBrowserController({electron,window,appSession,origin,version,token,
@@ -111,7 +134,7 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
     const prep=preparing.get(target.owner);
     if(!prep||prep.createId!==event.createId||prep.tab)throw new Error('Uncorrelated local Browser creation');
     lifecycle('created',event);leases.consumeCreate(target.owner,event.createId);
-    const tab={target,ackTarget:target,createId:event.createId,creationCompleted:false,prep,offered:false,revision:null,lastGrantedRevision:null,tail:Promise.resolve(),queued:0,url:'about:blank',title:'',active:true,navigation:0,loaded:-1,console:[],activeCall:null};
+    const tab={target,ackTarget:target,createId:event.createId,creationCompleted:false,prep,offered:false,revision:null,lastGrantedRevision:null,tail:Promise.resolve(),queued:0,url:'about:blank',title:'',active:true,navigation:0,domReady:-1,loaded:-1,console:[],activeCall:null};
     tabs.set(key,tab);prep.tab=tab;
     // Creation establishes registry identity only. prepareGuest enables
     // capture after the own recorder proof and initialization grant exist.
@@ -136,7 +159,7 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
     const observedAction=tab.activeCall,observedPrep=tab.prep;
     lifecycle(event.type,event);tab.target=target;
     if(event.type==='generation'){
-     tab.loaded=-1;
+     tab.loaded=-1;tab.domReady=-1;
      if(tab.offered)void append(tab,async()=>{
       if(observedPrep&&!phaseCurrent(observedPrep))return;
       if(!same(tab.ackTarget,priorTarget))throw new Error('Browser generation did not follow its acknowledged predecessor');
@@ -181,6 +204,10 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
    }
    if(event.type==='navigated'){tab.url=String(event.url||'');tab.navigation++;if(tab.offered)write('guest.event',{event});wake();return;}
    if(event.type==='load-state'){
+    if(event.nativeEvent==='dom-ready'&&event.mainDocumentReady===true&&event.document&&same(tab.target,target)){
+     const own=documents.mainProof(target);
+     if(event.document.documentNonce===own.documentNonce&&event.document.webContentsId===own.webContentsId)tab.domReady=target.generation;
+    }
     if(event.nativeEvent==='did-finish-load'&&event.finishObserved===true&&event.mainDocumentReady===true&&event.document&&same(tab.target,target)){
      const own=documents.mainProof(target);
      if(event.document?.documentNonce===own.documentNonce&&event.document?.webContentsId===own.webContentsId)tab.loaded=target.generation;
@@ -303,12 +330,16 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
     if(!active||!same(ref(active),p.target))throw Object.assign(new Error('New Browser root is not the actual selected guest'),{dispatched:false});
     tab.activeCall.initialSelection=false;
    }
+   await settleBrowserCallRegistry({drain,leases,acknowledgedRevisions},tab,p);
    result=await executeCall({payload:p,metadata:observe,list:()=>manager.list(p.owner),
     command:(method,params={})=>dispatch.invoke({id:nonce(),target:p.target,revision:p.grantRevision,operation:'cdp',method,params}),
     invoke:(operation,params={})=>dispatch.invoke({id:nonce(),target:p.target,revision:p.grantRevision,operation,params}),
     record:on=>{currentGrant(p.target,p.grantRevision);if(unknownState.has(p.owner))throw new Error('Browser owner outcome unresolved');return manager.setRecording(p.target,on);},
     waitNavigation:async({before,readiness='load',timeoutMs=15000})=>{
-     await wait(()=>tab.navigation>before&&(readiness!=='load'||tab.loaded===tab.target.generation),timeoutMs);await tab.tail;
+     await wait(()=>{
+      if(tab.navigation<=before||(readiness==='load'&&tab.loaded!==tab.target.generation)||(readiness==='domContentLoaded'&&tab.domReady!==tab.target.generation))return false;
+      try{return documents.mainProof(tab.target);}catch{return false;}
+     },timeoutMs);await tab.tail;
      documents.mainProof(tab.target);return observe();
     },navigation:tab.navigation,grant:leases.targetGrantOf(p.target)});
    await drain(p.owner);
@@ -325,7 +356,7 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
   if(!identity){
    validateBrowserHello(message,{requestId:helloId,expectedVersion:version});serverSequence=message.serverSequence;
    identity={serviceEpoch:message.serviceEpoch,controllerLease:message.controllerLease};leases.establish(identity.serviceEpoch,identity.controllerLease);leases.receiveSequence(serverSequence);
-   manager=managerFactory({electron,window,appSession,trustedOrigins:[origin],recorder,popupPolicy:()=>false,prepareGuest,onEvent,authorize:value=>{
+   manager=managerFactory({electron,window,appSession,trustedOrigins:[origin],recorder,popupPolicy:()=>false,prepareGuest,onEvent,agentInputProtected:target=>surface?.guards(target)===true,authorize:value=>{
     const local=typeof value.tabId==='string'?tabs.get(tabKey(value)):null;
     if(local?.guardLost&&!['hide','close','list'].includes(value.operation))return false;
     if(value.initialization){
@@ -348,7 +379,10 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
   validateBrowserEnvelope(message,{...identity,lastSequence:serverSequence});serverSequence=message.serverSequence;leases.receiveSequence(serverSequence);
   const p=message.payload;
   if(message.op==='owner.grant'){owners.set(p.owner,leases.ownerGrant(p));}
-  else if(message.op==='target.grant'){leases.targetGrant(p);const tab=tabs.get(tabKey(p.target));if(tab)tab.lastGrantedRevision=p.revision;}
+  else if(message.op==='target.grant'){
+   leases.targetGrant(p);const tab=tabs.get(tabKey(p.target));if(tab)tab.lastGrantedRevision=p.revision;
+   adoptIdleBrowserGrant({leases,tabs,preparing,acknowledgedRevisions},p.target);
+  }
   else if(message.op==='recording.grant'){leases.recordingGrant(p);}
   else if(message.op==='grant.revoke'){
    leases.revoke(p);manager.reconcileInput();refreshPresentation();
@@ -374,10 +408,10 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
  }
  async function present({owner,bounds}){
   desired={owner,bounds};
-  if(closed||!identity)return{shown:false,message:'Browser connection unavailable'};
+  if(closed||!identity)return{shown:false,phase:closed?'error':'connecting',message:'Browser connection unavailable'};
   if(!leases.authorize({owner,tabId:null,operation:'list'}))await rpc('owner.request',{owner},{expected:'owner.grant'});
   if(desired?.owner!==owner)return{shown:false,message:'Browser selection changed'};
-  try{return surface.present(desired);}catch{return{shown:false,message:'Open a page with the address bar.'};}
+  try{const result=surface.present(desired);return result.shown?result:{...result,message:'Open a page with the address bar.'};}catch{return{shown:false,message:'Open a page with the address bar.'};}
  }
  function hide(){desired=null;surface?.hide();}
  function edit(operation){
@@ -400,4 +434,4 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
  }
  return Object.freeze({start,present,hide,close,edit,state:()=>Object.freeze({...state}),isClosed:()=>closed});
 }
-module.exports={createDesktopBrowserController,MAX_SEQUENCE};
+module.exports={createDesktopBrowserController,MAX_SEQUENCE,adoptIdleBrowserGrant,settleBrowserCallRegistry};

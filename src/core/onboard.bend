@@ -6,7 +6,7 @@ import ./msgs.bend as MSG
 # a short list of steps, each a title, a few sentences and the part of the
 # screen it is about, and the moves between them. Pure: the text depends on
 # the client's kind (`k`: 0 window, 1 web, 2 phone, where the controls
-# differ) and on the hub's Scratch lifetime in days.
+# differ). Casual conversations go to the person's uberbot.
 #
 # The client keeps which step is on screen as text (client.bend's Tour.*):
 # "" (the tour came up by itself, at the first step), digits (it came up by
@@ -92,7 +92,7 @@ def Ob.phone(+k: Nat) -> Bool:
   Nat.is_eq(k, 2n)
 
 # the words of a step. Every claim here is checked against the code (see
-# docs in AGENTS.md): Scratch's lifetime is the "scratch.days" setting;
+# docs in AGENTS.md): legacy conversations are retained;
 # threads in a git project get their own worktree unless asked for the
 # folder ("local", Hub.env.of); Settings shows whether each agent program is
 # found, not whether it is signed in; the API keys' file is the hub user's,
@@ -119,7 +119,7 @@ def Ob.body.share() -> String:
   "Backplane counts installs and how many people use it: a random install id, the version and OS, once a day. Nothing else: no projects, files, prompts, names or address. If you opt out, installs and updates are still counted, without the id. Change it any time in Settings."
 
 def Ob.body.s1(+l: I.Loc, +k: Nat, +d: String) -> String:
-  Bool.pick(String, Ob.phone(k), MSG.T.tour.body.projects.phone(l, d), MSG.T.tour.body.projects.desktop(l, d))
+  Bool.pick(String, Ob.phone(k), MSG.T.tour.body.projects.phone(l), MSG.T.tour.body.projects.desktop(l))
 
 def Ob.body.s2(+l: I.Loc) -> String:
   MSG.T.tour.body.threads(l)

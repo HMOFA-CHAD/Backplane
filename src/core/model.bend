@@ -263,6 +263,8 @@ type Change is Data:
   # whether its turn ends, asks and failures go back to `by` (Launch below).
   # Again later with the same `by`: the report choice changes (thread_update)
   ThreadLaunched{id: String, by: String, report: Bool, at: Nat}
+  # Visible conversation hierarchy, independent of delegated work.
+  ThreadParentSet{id: String, parent: String, at: Nat}
   WakeSet{id: String, by: String, kind: String, target: String, events: List<&2, String>, once: Bool, note: String, at: Nat}
   WakeDropped{id: String, at: Nat}
   LockChanged{name: String, lock: LK.NamedLock, at: Nat}
@@ -2175,6 +2177,8 @@ def State.apply.go(s: State, e: Change) -> State:
       State.uberop(s, uid, origin, n, stamp, op, at)
     case ThreadLaunched{+id, +by, report, _}:
       Launch.fold(s, id, by, report)
+    case ThreadParentSet{id, parent, _}:
+      State.setting(s, "thread.parent." ++ id, parent)
     case WakeSet{id, by, kind, target, events, once, note, at}:
       Wake.fold(s, id, by, kind, target, events, once, note, at)
     case WakeDropped{id, _}:

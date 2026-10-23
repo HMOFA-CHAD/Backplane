@@ -4,11 +4,16 @@ const {targetKey}=require('./browser-wire.cjs');
 const refused=message=>Object.assign(new Error(message),{dispatched:false});
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const BUTTONS={left:1,right:2,middle:4};
-function normalizeURL(value){const raw=String(value||'').trim();if(!raw)throw refused('Browser URL required');return /^[a-z][a-z0-9+.-]*:/i.test(raw)?raw:'https://'+raw;}
+function normalizeURL(value){
+ const raw=String(value||'').trim();if(!raw)throw refused('Browser URL required');
+ if(/^[a-z][a-z0-9+.-]*:/i.test(raw)&&!/^[^/]+:\d+(\/|$)/.test(raw))return raw;
+ const host=raw.startsWith('[')?raw.slice(0,raw.indexOf(']')+1):raw.split(/[/:?#]/)[0].toLowerCase();
+ return (['localhost','127.0.0.1','[::1]','0.0.0.0'].includes(host)||host.endsWith('.localhost')?'http://':'https://')+raw;
+}
 function createBrowserActions(){
  const references=new Map(),pressed=new Map();
  return async function execute(c){
-  const {op,args:a,target}=c.payload,key=targetKey(target),timeout=Math.max(1,Math.min(14000,Number(a.timeoutMs)||14000));
+  const {op,args:a,target}=c.payload,key=targetKey(target),timeout=Math.max(1,Math.min(14000,Number(a.timeoutMs)||14000)),deadline=Date.now()+timeout;
   const status=()=>{const m=c.metadata();return{page:target.owner,url:m.url,title:m.title,loading:m.loading,tabs:c.list().map((t,index)=>({id:t.tabId,index,url:t.url,title:t.title,active:t.active})),engine:'electron'};};
   const command=async(method,params)=>{const answer=await c.command(method,params);return answer.result;};
   const evaluate=async(expression,returnByValue=true)=>{
@@ -21,11 +26,34 @@ function createBrowserActions(){
     const backendNodeId=references.get(key)?.get(String(a.ref));if(!backendNodeId)throw refused('Unknown or stale Browser reference; take a new snapshot');
     return (await command('DOM.resolveNode',{backendNodeId})).object?.objectId;
    }
-   let selector=a.selector,locator=a.locator;
-   if(locator){if(String(locator).startsWith('css='))selector=String(locator).slice(4);else if(!/^[a-z-]+=/.test(String(locator)))selector=String(locator);else throw refused('This Browser locator engine is not yet supported; use a snapshot reference or CSS selector');}
-   if(!selector)return null;
-   const start=Date.now();
-   do{const value=await evaluate('document.querySelector('+JSON.stringify(String(selector))+')',false);if(value?.objectId)return value.objectId;if(Date.now()-start>=timeout)break;await pause(75);}while(true);
+   let selector=a.selector,locator=a.locator,role=null,text=null;
+   if(locator){
+    const source=String(locator);
+    if(source.startsWith('css='))selector=source.slice(4);
+    else if(source.startsWith('text=')){const raw=source.slice(5);text={value:raw,exact:false};if(/^(["']).*\1$/.test(raw))text={value:raw.slice(1,-1),exact:true};}
+    else if(source.startsWith('role=')){
+     const match=/^role=([\w-]+)(?:\[name=(?:"([^"\\]*)"|'([^'\\]*)')\])?$/.exec(source);
+     if(!match)throw refused('Use role=button[name="Name"], text=Text, CSS, or a snapshot reference');
+     role={name:match[1],label:match[2]??match[3]};
+    }else if(!/^[a-z-]+=/.test(source))selector=source;
+    else throw refused('Unsupported Browser locator engine; use a snapshot reference or CSS selector');
+   }
+   if(!selector&&!role&&!text)return null;
+   do{
+    if(role){
+     const ax=await command('Accessibility.getFullAXTree',{});
+     const node=(ax.nodes||[]).find(n=>!n.ignored&&n.role?.value===role.name&&(role.label===undefined||String(n.name?.value||'')===role.label)&&n.backendDOMNodeId);
+     if(node)return (await command('DOM.resolveNode',{backendNodeId:node.backendDOMNodeId})).object?.objectId;
+    }else{
+     const expression=text?'('+function(t){
+      const normalize=s=>String(s||'').replace(/\s+/g,' ').trim();
+      const matches=e=>{const s=normalize(e.innerText||e.value);return t.exact?s===normalize(t.value):s.includes(normalize(t.value));};
+      return [...document.querySelectorAll('body *')].find(e=>!['SCRIPT','STYLE','NOSCRIPT'].includes(e.tagName)&&e.getClientRects().length&&matches(e)&&![...e.children].some(matches))||null;
+     }.toString()+')('+JSON.stringify(text)+')':'document.querySelector('+JSON.stringify(String(selector))+')';
+     const value=await evaluate(expression,false);if(value?.objectId)return value.objectId;
+    }
+    if(Date.now()>=deadline)break;await pause(75);
+   }while(true);
    throw refused('Browser target was not found');
   }
   async function useObject(fn){const id=await object();if(!id)throw refused('Browser target required');try{return await fn(id);}finally{void command('Runtime.releaseObject',{objectId:id}).catch(()=>{});}}
@@ -49,7 +77,7 @@ function createBrowserActions(){
     if(!a.url&&op==='open')return status();
     const url=normalizeURL(a.url),before=c.navigation;
     if(c.grant.operations.includes('navigate'))await c.invoke('navigate',{url});else await command('Page.navigate',{url});
-    await c.waitNavigation({before,readiness:a.readiness==='none'?'commit':'load',timeoutMs:timeout});return status();
+    await c.waitNavigation({before,readiness:a.readiness==='none'?'commit':a.readiness==='domContentLoaded'?'domContentLoaded':'load',timeoutMs:timeout});return status();
    }
    case 'back':case 'forward':case 'reload':{
     if(c.grant.operations.includes('navigate'))return c.invoke(op==='reload'?'reload':'history',op==='reload'?{}:{direction:op});
@@ -64,13 +92,19 @@ function createBrowserActions(){
     const tabs=c.list();return{page:target.owner,active:tabs.findIndex(t=>t.active),tabs:tabs.map((t,index)=>({id:t.tabId,index,url:t.url,title:t.title,active:t.active}))};
    }
    case 'snapshot':{
-    if(a.screenshot)throw refused('Direct-guest snapshot images require the explicit capture adapter');
     const page=await evaluate(SNAPSHOT_SCRIPT),ax=await command('Accessibility.getFullAXTree',{}),refs=new Map(),lines=[];
     for(const node of ax.nodes||[]){if(node.ignored)continue;const role=String(node.role?.value||''),name=String(node.name?.value||'').slice(0,300);if(!role||role==='generic')continue;
      const id=node.backendDOMNodeId;if(Number.isSafeInteger(id)&&id>0)refs.set('e'+id,id);
      lines.push('- '+role+(name?' '+JSON.stringify(name):'')+(id?' [ref=e'+id+']':''));if(lines.length>=600)break;
     }
-    references.set(key,refs);const meta=c.metadata();return{url:meta.url,title:meta.title,...page,outline:lines.join('\n'),console:meta.console.slice(-50)};
+    references.set(key,refs);const meta=c.metadata();
+    let screenshot;
+    if(a.screenshot){
+     const capture=await command('Page.captureScreenshot',{format:'png',captureBeyondViewport:false}),metrics=await command('Page.getLayoutMetrics',{}),v=metrics.cssVisualViewport||metrics.visualViewport;
+     if(typeof capture.data!=='string'||capture.data.length>700000)throw refused('Browser screenshot exceeds the private image limit; request a text snapshot');
+     screenshot={mimeType:'image/png',data:capture.data,width:Math.round(v.clientWidth),height:Math.round(v.clientHeight)};
+    }
+    return{url:meta.url,title:meta.title,...page,outline:lines.join('\n'),console:meta.console.slice(-50),...(screenshot?{screenshot}:{})};
    }
    case 'text':{
     const full=a.selector||a.locator||a.ref?await useObject(id=>onObject(id,'function(){return this.innerText||"";}')):await evaluate(TEXT_SCRIPT);
@@ -100,7 +134,9 @@ function createBrowserActions(){
     const modifiers=mods.reduce((v,m)=>v|({Alt:1,Control:2,Meta:4,Shift:8}[m]),0),virtual={Enter:13,Tab:9,Escape:27,Backspace:8,Delete:46,ArrowLeft:37,ArrowUp:38,ArrowRight:39,ArrowDown:40,Home:36,End:35,PageUp:33,PageDown:34};
     if(keyName.length===1&&!modifiers){await command('Input.insertText',{text:keyName});return{};}
     const windowsVirtualKeyCode=virtual[keyName]??(keyName.length===1?keyName.toUpperCase().charCodeAt(0):0);if(!windowsVirtualKeyCode)throw refused('Unsupported Browser key');
-    const params={key:keyName,modifiers,windowsVirtualKeyCode};await command('Input.dispatchKeyEvent',{type:'rawKeyDown',...params});await command('Input.dispatchKeyEvent',{type:'keyUp',...params});return{};
+    const params={key:keyName,modifiers,windowsVirtualKeyCode};
+    await command('Input.dispatchKeyEvent',{type:'keyDown',...params,...(keyName==='Enter'?{text:'\r',unmodifiedText:'\r'}:{})});
+    await command('Input.dispatchKeyEvent',{type:'keyUp',...params});return{};
    }
    case 'scroll':{
     const dx=Number(a.dx??a.deltaX??0),dy=Number(a.dy??a.deltaY??0);if(!Number.isFinite(dx)||!Number.isFinite(dy))throw refused('Invalid Browser wheel delta');

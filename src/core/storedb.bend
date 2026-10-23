@@ -805,6 +805,8 @@ def Sdb.keys(+pre: M.State, +post: M.State, c: M.Change) -> List<&2, RK>:
       [K.set("uber.bot"), K.set("uber.uid")]
     case M.UberOp{+uid, +origin, +n, _, +op, _}:
       K.uber(pre, uid, origin, n, op)
+    case M.ThreadParentSet{+id, _, _}:
+      [K.set("thread.parent." ++ id)]
     case M.ThreadLaunched{+id, +by, _, _}:
       [K.set(M.Launch.key(id)), K.set(M.Launch.list.key(by))]
     case M.WakeSet{+id, +by, +kind, +target, _, _, _, _}:

@@ -13,6 +13,7 @@ import ../web/mail-actions.bend as MA
 import ../mobile/hubs.bend as H
 import ./thin-splice.bend as S
 import ../core/i18n.bend as I
+import ../core/emb.bend as E
 
 # Private, connection-owned UI state. It never enters a client snapshot or
 # persisted event. Keep it behind a List in the connection context so the
@@ -49,6 +50,14 @@ def Actor.prefs( +xs: List<&2, Sigma<&2, &2, String, _ => String>>, +prefs: Map<
     case Nil{}: prefs
     case (+key, value) <> tail: Actor.prefs(tail, Actor.pref.put(Actor.pref.key(key), prefs, key, value))
 
+# Browser ownership is canonical, not an actor preference. Teach.info omits
+# an idle owner after handback; discard cached drive keys before installing
+# the current canonical info, while retaining all unrelated actor state.
+def Actor.info.current( +xs: List<&2, Sigma<&2, &2, String, _ => String>>, +info: Map<&2, String>) -> Map<&2, String>:
+  match xs:
+    case Nil{}: info
+    case (+key, value) <> tail: Actor.info.current(tail, Actor.pref.put(Bool.not(String.starts_with(key, "drive.")), info, key, value))
+
 def Actor.draft.value( +value: Maybe<&2, J.Json>, +thread: String) -> J.Json:
   match value:
     case Some{J.Str{+text}}: V.Obj.put(J.Json.obj(Nil{}), thread, J.Str{text})
@@ -60,7 +69,7 @@ def Actor.draft.safe( +valid: Bool, +thread: String, +drafts: J.Json) -> J.Json:
     case True{}: Actor.draft.value(J.Json.get(drafts, thread), thread)
 
 def Actor.local.key(+key: String) -> Bool:
-  Nat.is_lt(U.Keys.pos(["@lang", "@lang.os", "@lang.tag", "@lang.preview", "@local.view", "@local.usage"], key), 6n)
+  Nat.is_lt(U.Keys.pos(["@lang", "@lang.os", "@lang.tag", "@lang.preview", "@local.view", "@local.usage", "@desktop.browser"], key), 7n)
 
 def Actor.local.bounded(valid: Bool, key: String, text: String, out: J.Json) -> J.Json:
   match valid:
@@ -89,12 +98,13 @@ def Actor.local.copy(xs: List<&2, Sigma<&2, &2, String, _ => String>>, dr: Map<&
 def Actor.safe_input(+st: M.State, +p: J.Json) -> J.Json:
   +thread = V.Target.thread(st, J.Json.get_obj(p, "target"))
   +session = J.Json.get_obj(p, "session")
-  +drafts = Actor.local.input(["@lang", "@lang.os", "@lang.tag", "@lang.preview", "@local.view", "@local.usage"], J.Json.get_obj(session, "drafts"), Actor.draft.safe(Bool.and(Bool.not(String.is_empty(thread)), Bool.not(String.starts_with(thread, "@"))), thread, J.Json.get_obj(session, "drafts")))
+  +drafts = Actor.local.input(["@lang", "@lang.os", "@lang.tag", "@lang.preview", "@local.view", "@local.usage", "@desktop.browser"], J.Json.get_obj(session, "drafts"), Actor.draft.safe(Bool.and(Bool.not(String.is_empty(thread)), Bool.not(String.starts_with(thread, "@"))), thread, J.Json.get_obj(session, "drafts")))
   V.Obj.put(p, "session", V.Obj.put(V.Obj.put(V.Obj.put(session, "drafts", drafts), "outbox", J.Json.obj(Nil{})), "info",
     J.Json.obj(P.Session.strings(Map.to_list(&2, String, Actor.prefs(Map.to_list(&2, String, P.Session.read.strings(J.Json.get_obj(session, "info"), Map.new(&2, String))), Map.new(&2, String)))))))
 
 def Actor.scope.keep(+key: String) -> Bool:
-  Bool.not(Bool.or(String.starts_with(key, "@f."), String.starts_with(key, "@mr.")))
+  Bool.not(Bool.or(Bool.or(String.starts_with(key, "@f."), String.starts_with(key, "@mr.")),
+    Nat.is_lt(U.Keys.pos(["@want.new", "@want.new.at", "@thread.want", "@bot.want", "@want.hub", "@want.gen", "@made.far"], key), 7n)))
 
 def Actor.scope.clear( +xs: List<&2, Sigma<&2, &2, String, _ => String>>, +dr: Map<&2, String>) -> Map<&2, String>:
   match xs:
@@ -117,12 +127,20 @@ def Actor.draft.merge(+clean: Map<&2, String>, +dr: Map<&2, String>, +thread: St
 
 def Actor.merge( +fresh: U.Ui, +old: U.Ui, +same: Bool, +thread: String, +present: Bool) -> U.Ui:
   match fresh old:
-    case U.Ui{st, sel, clean, live, open, on, now, adding, panel, version, +rid2, want, _, _, nf2, _, _} U.Ui{_, _, dr, _, _, _, _, _, _, _, +rid, _, error, note, nf, outbox, stores}:
-      U.Ui{st, sel, Actor.draft.merge(clean, Actor.scope.drafts(same, dr), thread, present), live, open, on, now, adding, panel, version,
-        M.Time.max(rid, rid2), want, error, note, Actor.prefs(Map.to_list(&2, String, nf2), nf), outbox, stores}
+    case U.Ui{st, +sel, clean, live, open, on, now, adding, panel, version, +rid2, want, _, _, nf2, _, _} U.Ui{_, oldSel, dr, _, _, _, _, _, _, _, +rid, _, error, note, nf, outbox, stores}:
+      # A correlated creation reply can select its new thread between renders.
+      # The same view still requests its parent until nextTarget reaches it.
+      # A different view or target remains an explicit navigation boundary.
+      U.Ui{st, Bool.pick(String, same, oldSel, sel), Actor.draft.merge(clean, Actor.scope.drafts(same, dr), thread, present), live, open, on, now, adding, panel, version,
+        M.Time.max(rid, rid2), want, error, note, Actor.prefs(Map.to_list(&2, String, nf2), Actor.info.current(Map.to_list(&2, String, nf), Map.new(&2, String))), outbox, stores}
 
 def Actor.make(+u: U.Ui, +view: String, +target: J.Json) -> Actor:
   Actor{u, view, target, Map.new(&2, String), Nil{}, False{}, Nil{}}
+
+def Actor.resolve(u: U.Ui, previous: String) -> U.Ui:
+  # The creation ACK may precede the actor's refreshed canonical state.
+  # Resolve its retained, destination-bound want after installing that state.
+  U.Ui.reselect(previous, U.Bots.wanted(u))
 
 def Actor.refresh( +xs: List<&2, Actor>, +web: Bool, +st: M.State, +info: J.Json, +live: J.Json, +now: Nat, +p: J.Json, +view: String) -> Actor:
   match xs:
@@ -132,7 +150,7 @@ def Actor.refresh( +xs: List<&2, Actor>, +web: Bool, +st: M.State, +info: J.Json
       +thread = V.Target.thread(st, J.Json.get_obj(p, "target"))
       +fresh = V.Session.current(web, st, info, live, now, input)
       +same = Bool.and(String.eq(oldView, view), W.Target.same(target, J.Json.get_obj(p, "target")))
-      Actor{V.Session.renderer(web, U.Ui.info_merge(Actor.merge(fresh, old, same, thread, Maybe.is_some(&2, J.Json, J.Json.get(J.Json.get_obj(J.Json.get_obj(input, "session"), "drafts"), thread))), info), p),
+      Actor{V.Session.renderer(web, Actor.resolve(U.Ui.info_merge(Actor.merge(fresh, old, same, thread, Maybe.is_some(&2, J.Json, J.Json.get(J.Json.get_obj(J.Json.get_obj(input, "session"), "drafts"), thread))), info), thread), p),
         view, J.Json.get_obj(p, "target"), Bool.pick(Map<&2, String>, same, pending, Map.new(&2, String)), Bool.pick(List<&2, J.Json>, same, reads, Nil{}), dirty, Nil{}}
 
 # The hub's canonical projection is shared; each actor keeps its own pages,
@@ -152,6 +170,11 @@ def Actor.read_only(+command: J.Json) -> Bool:
   +request = Actor.rpc(command)
   Bool.and(String.eq(J.Json.get_str(command, "type", ""), "send"), Bool.or(String.eq(J.Json.get_str(request, "m", ""), "mail.list"), Bool.or(String.eq(J.Json.get_str(request, "m", ""), "mail.read"), String.eq(J.Json.get_str(request, "m", ""), "mail.find"))))
 
+# Terminal device replies are generated by the emulator, never by renderer
+# input. They travel through the same incarnation-bound job queue as reads.
+def Actor.followup(+command: J.Json) -> Bool:
+  Bool.or(Actor.read_only(command), Bool.and(String.eq(J.Json.get_str(command, "type", ""), "send"), String.eq(J.Json.get_str(Actor.rpc(command), "m", ""), "term.input")))
+
 def Actor.pending_put( +send: Bool, +command: J.Json, +pending: Map<&2, String>, +scope: String) -> Map<&2, String>:
   match send:
     case False{}: pending
@@ -170,7 +193,7 @@ def Actor.read_add( +read: Bool, +c: J.Json, +tail: List<&2, J.Json>) -> List<&2
 def Actor.reads( +cs: List<&2, J.Json>, +acc: List<&2, J.Json>) -> List<&2, J.Json>:
   match cs:
     case Nil{}: List.reverse(&2, J.Json, acc)
-    case +c <> tail: Actor.reads(tail, Actor.read_add(Actor.read_only(c), c, acc))
+    case +c <> tail: Actor.reads(tail, Actor.read_add(Actor.followup(c), c, acc))
 
 def Actor.accept( +a: Actor, +r: V.ActResult, +queue: Bool) -> Actor:
   match a r:
@@ -221,12 +244,33 @@ def Actor.reply_if( +owned: Bool, +a: Actor, +web: Bool, +key: String, +o: J.Jso
     case False{}: a
     case True{}: Actor.mark_dirty(Actor.accept(a, Actor.receive(web, Actor.ui(a), key, Actor.now(Actor.ui(a)), o), True{}))
 
+# Terminal bytes belong in the connection-owned Ui, just like RPC replies.
+# Only its selected thread (including that thread's inline terminals) and
+# the retained floating terminal owner may update it. Bytes and errors
+# never enter the persisted event log.
+def Actor.terminal(+a: Actor, +web: Bool, +key: String, +o: J.Json) -> Actor:
+  +thread = V.Target.thread(U.Ui.state(Actor.ui(a)), V.Target.after(Actor.ui(a)))
+  +source = J.Json.get_str(o, "thread", "")
+  +floating = U.Ui.scratch(Actor.ui(a), "@terminal.owner")
+  Actor.reply_if(Bool.and(String.eq(J.Json.get_str(o, "t", ""), "term"), Bool.or(
+    Bool.and(Bool.not(String.is_empty(thread)), Bool.or(String.eq(source, thread), String.starts_with(source, E.Emb.key(thread, "")))),
+    Bool.and(Bool.not(String.is_empty(floating)), String.eq(source, floating)))), a, web, key, o)
+
 def Actor.reply(+a: Actor, +web: Bool, +key: String, +o: J.Json) -> Actor:
   match a:
     case Actor{u, view, +target, +pending, reads, dirty, memo}:
       +id = J.Json.as_raw(J.Json.get(o, "id"), "")
       Actor.reply_if(Bool.and(String.eq(J.Json.get_str(o, "t", ""), "reply"), String.eq(Actor.pending_scope(pending, id), Actor.scope(target))),
         Actor{u, view, target, Map.del(&2, String, pending, id), reads, dirty, memo}, web, key, o)
+
+def Actor.message.kind(kind: String, a: Actor, web: Bool, key: String, o: J.Json) -> Actor:
+  match kind:
+    case "term": Actor.terminal(a, web, key, o)
+    case "reply": Actor.reply(a, web, key, o)
+    case _: a
+
+def Actor.message(a: Actor, web: Bool, key: String, +o: J.Json) -> Actor:
+  Actor.message.kind(J.Json.get_str(o, "t", ""), a, web, key, o)
 
 def Actor.clean( +a: Actor) -> Actor:
   match a:
@@ -248,7 +292,7 @@ def Actor.capacity( +a: Actor) -> Bool:
 # and view that produced it. Equal RPC ids on another socket grant nothing.
 def Job.valid(+actualClient: U32, +jobClient: U32, +actualGen: U32, +jobGen: U32, +actualView: String, +jobView: String, +actualTarget: J.Json, +jobTarget: J.Json, +command: J.Json) -> Bool:
   Bool.and(U32.is_eq(actualClient, jobClient), Bool.and(U32.is_eq(actualGen, jobGen), Bool.and(String.eq(actualView, jobView),
-    Bool.and(W.Target.same(actualTarget, jobTarget), Actor.read_only(command)))))
+    Bool.and(W.Target.same(actualTarget, jobTarget), Actor.followup(command)))))
 
 def Control.fresh(+id: Nat, +last: Nat) -> Bool:
   Bool.and(Nat.is_gt(id, Nat.mul(65536n, 2147483648n)), Bool.and(Nat.is_le(id, P.Session.nat.max()), Nat.is_gt(id, last)))
