@@ -69,11 +69,22 @@ def Context.result(xs: List<&2, List<&2, String>>, +owner: String) -> J.Json:
 # complete, newest first. Count every wire line, as store.db does, so the
 # same seq cursor works after a later stored boot. Never use this path for
 # a stored boot's partial in-memory history.
+def Context.log.query(empty: Bool, +o: J.Json, query: String) -> Bool:
+  match empty:
+    case True{}: True{}
+    case False{}: String.contains(String.to_lower(J.Json.get_str(o, "text", "")), query)
+
+def Context.log.scoped(keep: Bool, o: J.Json, +query: String) -> Bool:
+  match keep:
+    case False{}: False{}
+    case True{}: Context.log.query(String.is_empty(query), o, query)
+
 def Context.log.match(+o: J.Json, +owner: String, +query: String, +before: Nat, +seq: Nat) -> Bool:
-  Bool.and(String.eq(J.Json.get_str(o, "$", ""), "MessagePosted"),
+  # Bool.and/or evaluate their arguments. Keep unrelated and unqueried
+  # message bodies out of case conversion, rather than doing it eagerly.
+  Context.log.scoped(Bool.and(String.eq(J.Json.get_str(o, "$", ""), "MessagePosted"),
     Bool.and(String.eq(J.Json.get_str(o, "thread", ""), owner),
-      Bool.and(Bool.or(Nat.is_eq(before, 0n), Nat.is_lt(seq, before)),
-        Bool.or(String.is_empty(query), String.contains(String.to_lower(J.Json.get_str(o, "text", "")), query)))))
+      Bool.or(Nat.is_eq(before, 0n), Nat.is_lt(seq, before)))), o, query)
 
 def Context.log.rows(ls: List<&2, String>, +owner: String, +query: String, +before: Nat, +seq: Nat, limit: Nat, +acc: List<&2, List<&2, String>>) -> List<&2, List<&2, String>>:
   match ls limit:
@@ -85,9 +96,54 @@ def Context.log.rows(ls: List<&2, String>, +owner: String, +query: String, +befo
       +row = {[Nat.show(seq), J.Json.get_str(o, "msg", ""), J.Json.get_str(o, "role", ""), J.Json.get_str(o, "text", ""), Nat.show(J.Json.get_nat(o, "at", 0n))] : List<&2, String>}
       Context.log.rows(t, owner, query, before, Nat.sub(seq, 1n), Nat.sub(limit, Bool.pick(Nat, keep, 1n, 0n)), Bool.pick(List<&2, List<&2, String>>, keep, row <> acc, acc))
 
+# A spawned IO task still runs pure work synchronously on the shared loop.
+# Never parse the whole global wire log before giving sockets/timers a turn.
+# Keep the exact remaining log, global seq cursor and rows; no scan limit
+# truncates history or changes the 20+1 lookahead used by Context.result.
+type LogScan is Data:
+  LogScan{lines: List<&2, String>, seq: Nat, remaining: Nat, rows: List<&2, List<&2, String>>}
+
+def Context.log.quantum() -> Nat:
+  32n
+
+def Context.log.keep(keep: Bool, +o: J.Json, lines: List<&2, String>, +seq: Nat, remaining: Nat, rows: List<&2, List<&2, String>>) -> LogScan:
+  match keep:
+    case False{}: LogScan{lines, Nat.sub(seq, 1n), remaining, rows}
+    case True{}: LogScan{lines, Nat.sub(seq, 1n), Nat.sub(remaining, 1n),
+      [Nat.show(seq), J.Json.get_str(o, "msg", ""), J.Json.get_str(o, "role", ""), J.Json.get_str(o, "text", ""), Nat.show(J.Json.get_nat(o, "at", 0n))] <> rows}
+
+def Context.log.step(fuel: Nat, scan: LogScan, +owner: String, +query: String, +before: Nat) -> LogScan:
+  match fuel scan:
+    case 0n s: s
+    case 1n+n LogScan{Nil{}, seq, remaining, rows}: LogScan{Nil{}, seq, remaining, rows}
+    case 1n+n LogScan{lines, seq, 0n, rows}: LogScan{lines, seq, 0n, rows}
+    case 1n+n LogScan{l <> tail, +seq, remaining, rows}:
+      +o = Maybe.default(&2, J.Json, J.Json.parse(l), J.Null{})
+      Context.log.step(n, Context.log.keep(Context.log.match(o, owner, query, before, seq), o, tail, seq, remaining, rows), owner, query, before)
+
+def Context.log.after(scan: LogScan, owner: String, k: LogScan -> IO(J.Json)) -> IO(J.Json):
+  match scan:
+    case LogScan{Nil{}, _, _, rows}: IO.pure(J.Json, Context.result(List.reverse(&2, List<&2, String>, rows), owner))
+    case LogScan{_, _, 0n, rows}: IO.pure(J.Json, Context.result(List.reverse(&2, List<&2, String>, rows), owner))
+    case s:
+      do IO<J.Json>:
+        IO.sleep(0)
+        k(s)
+
+def Context.log.run(fuel: Nat, scan: LogScan, +owner: String, +query: String, +before: Nat) -> IO(J.Json):
+  match fuel:
+    # One plus the number of wire lines is more than the possible batches.
+    # An invalid internal caller fails closed rather than claiming a page.
+    case 0n: IO.pure(J.Json, Context.result.k(True{}, Nil{}, owner))
+    case 1n+n:
+      Context.log.after(Context.log.step(Context.log.quantum(), scan, owner, query, before), owner,
+        s => Context.log.run(n, s, owner, query, before))
+
 def Context.read.source(stored: Bool, +h: String, +owner: String, +a: J.Json, +ls: List<&2, String>) -> IO(J.Json):
   match stored:
-    case False{}: IO.pure(J.Json, Context.result(Context.log.rows(ls, owner, String.to_lower(String.take(J.Json.get_str(a, "query", ""), 200n)), J.Json.get_nat(a, "before", 0n), ST.Store.size(ls), 21n, Nil{}), owner))
+    case False{}:
+      +size = ST.Store.size(ls)
+      Context.log.run(1n+size, LogScan{ls, size, 21n, Nil{}}, owner, String.to_lower(String.take(J.Json.get_str(a, "query", ""), 200n)), J.Json.get_nat(a, "before", 0n))
     case True{}:
       do IO<J.Json>:
         xs : List<&2, List<&2, String>> <- D.Db.query.t(h, Context.sql(), [D.DbText{owner}, D.DbInt{Nat.show(J.Json.get_nat(a, "before", 0n))}, D.DbText{String.take(J.Json.get_str(a, "query", ""), 200n)}], 21)
