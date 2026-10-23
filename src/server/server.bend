@@ -50,6 +50,7 @@ import ./thin-actor.bend as TA
 import ../core/thin-pace.bend as TPACE
 import ./thin-mail.bend as TMAIL
 import ../core/thin.bend as THIN
+import ../core/thin-chat.bend as TCHAT
 import ../core/thin-live.bend as TLIVE
 import ../core/thin-wire.bend as TVW
 import ../core/presentation.bend as PRESENT
@@ -11115,10 +11116,12 @@ def Hub.thin.rendered(rendered: TA.Rendered, h: Hub, +client: U32, +o: J.Json, +
 
 # A thread's page and the index the renderers read it from: the whole
 # index's, or (with a store) a page index of just its rows (TSTO.Ts.page)
-def Hub.thin.fetch(memory: Bool, +cfg: Cfg, +thread: String, +anchor: Nat) -> IO(TSTO.Page):
+def Hub.thin.fetch(memory: Bool, +cfg: Cfg, +hide: Bool, +thread: String, +anchor: Nat) -> IO(TSTO.Page):
   match memory:
-    case True{}: IO.pure(TSTO.Page, TSTO.Page{Cfg.thin(cfg), THIN.Index.page(Cfg.thin(cfg), thread, anchor, 32n)})
-    case False{}: TSTO.Ts.page(Cfg.thin.store(cfg), thread, anchor, 32n, Cfg.thin(cfg))
+    case True{}:
+      +i = TCHAT.Chat.index(hide, Cfg.thin(cfg), thread, anchor, 32n)
+      IO.pure(TSTO.Page, TSTO.Page{i, THIN.Index.page(i, thread, anchor, 32n)})
+    case False{}: TSTO.Ts.page.chat(hide, Cfg.thin.store(cfg), thread, anchor, 32n, Cfg.thin(cfg))
 
 def Hub.thin.render.page(+pg: TSTO.Page, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +p: J.Json, +key: String, +ms: Nat) -> IO(Hub):
   match h:
@@ -11134,7 +11137,7 @@ def Hub.thin.render.full(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
-        +pg : TSTO.Page <- Hub.thin.fetch(String.is_empty(Cfg.thin.store(cfg)), cfg, TV.Target.thread(st, J.Json.get_obj(p, "target")), anchor)
+        +pg : TSTO.Page <- Hub.thin.fetch(String.is_empty(Cfg.thin.store(cfg)), cfg, TCHAT.Chat.enabled(st, TV.Target.thread(st, J.Json.get_obj(p, "target"))), TV.Target.thread(st, J.Json.get_obj(p, "target")), anchor)
         Hub.thin.render.page(pg, Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, context, p, key, ms)
 
 # a view.update whose render memo still holds (thin-actor.bend's
@@ -11216,7 +11219,8 @@ def Hub.thin.message_kind(live: Bool, h: Hub, +client: U32, +o: J.Json, +c: Clie
     case False{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       +p = J.Json.get_obj(o, "p")
       do IO<Hub>:
-        +pg : TSTO.Page <- Hub.thin.fetch(String.is_empty(Cfg.thin.store(cfg)), cfg, thread, ThinContext.anchor(Client.thin.context(c)))
+        # A direct source read keeps operational receipts accessible.
+        +pg : TSTO.Page <- Hub.thin.fetch(String.is_empty(Cfg.thin.store(cfg)), cfg, False{}, thread, ThinContext.anchor(Client.thin.context(c)))
         +whole : TSTO.Page <- Hub.thin.whole(String.is_empty(Cfg.thin.store(cfg)), cfg, thread, p, pg)
         Hub.thin.message_read(TV.Message.read(TSTO.Page.index(whole), thread, p, Cfg.thin.epoch(cfg), TSTO.Page.ids(pg), st), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now)
 
