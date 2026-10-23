@@ -15,10 +15,11 @@ import ./json.bend as J
 type AcpTurn is Data:
   AcpTurn{cwd: String, mcp: String, prompt: String, text: String, session: String, ask: Bool}
 
-# the session id once known, the reply text so far, and whether the turn
-# has ended (the runner then stops the process)
+# the session id once known, the reply text so far, whether the turn has
+# ended (the runner then stops the process), and the tool calls already
+# logged ("\n<id>\n" each; opencode's, whose input comes after the call)
 type Acp is Data:
-  Acp{sid: String, buf: String, done: Bool}
+  Acp{sid: String, buf: String, done: Bool, seen: String}
 
 # lines to write to the agent, lines to report to the hub, and permission
 # requests for the user (each answered later, through the hub's asks)
@@ -26,7 +27,7 @@ type AcpOut is Data:
   AcpOut{acp: Acp, send: List<&2, String>, emit: List<&2, String>, asks: List<&2, String>}
 
 def Acp.new() -> Acp:
-  Acp{"", "", False{}}
+  Acp{"", "", False{}, ""}
 
 def Acp.rpc(+id: Nat, +method: String, params: J.Json) -> String:
   J.Json.show(J.Json.obj([J.KV{"jsonrpc", J.Str{"2.0"}}, J.KV{"id", J.Num{Nat.show(id)}}, J.KV{"method", J.Str{method}}, J.KV{"params", params}]))
@@ -82,21 +83,21 @@ def Acp.hint(+msg: String) -> String:
 
 def Acp.fail(a: Acp, +msg: String) -> AcpOut:
   match a:
-    case Acp{s, b, _}:
-      AcpOut{Acp{s, b, True{}}, Nil{}, [Acp.failed(Acp.hint(msg))], Nil{}}
+    case Acp{s, b, _, k}:
+      AcpOut{Acp{s, b, True{}, k}, Nil{}, [Acp.failed(Acp.hint(msg))], Nil{}}
 
 # Replies to our requests (by id)
 # -------------------------------
 
 def Acp.opened(a: Acp, +t: AcpTurn, +sid: String) -> AcpOut:
   match a:
-    case Acp{_, b, d}:
-      AcpOut{Acp{sid, b, d}, [Acp.say.k(String.is_empty(Acp.session(t)), t, sid)], [Acp.event("thread.started", [J.KV{"thread_id", J.Str{sid}}])], Nil{}}
+    case Acp{_, b, d, k}:
+      AcpOut{Acp{sid, b, d, k}, [Acp.say.k(String.is_empty(Acp.session(t)), t, sid)], [Acp.event("thread.started", [J.KV{"thread_id", J.Str{sid}}])], Nil{}}
 
 def Acp.finished(a: Acp) -> AcpOut:
   match a:
-    case Acp{s, +b, _}:
-      AcpOut{Acp{s, b, True{}}, Nil{},
+    case Acp{s, +b, _, k}:
+      AcpOut{Acp{s, b, True{}, k}, Nil{},
         List.append(&2, String, Bool.pick(List<&2, String>, String.is_empty(b), Nil{}, [Acp.event("item.completed", [J.KV{"item", J.Json.obj([J.KV{"type", J.Str{"agent_message"}}, J.KV{"text", J.Str{b}}])}])]),
           [Acp.event("turn.completed", Nil{})]), Nil{}}
 
@@ -135,8 +136,8 @@ def Acp.plan(es: List<&2, J.Json>) -> List<&2, J.Json>:
 
 def Acp.update.k(i: Nat, a: Acp, +u: J.Json) -> AcpOut:
   match i a:
-    case 0n Acp{s, b, d}:
-      AcpOut{Acp{s, b ++ J.Json.get_str(J.Json.get_obj(u, "content"), "text", ""), d}, Nil{},
+    case 0n Acp{s, b, d, k}:
+      AcpOut{Acp{s, b ++ J.Json.get_str(J.Json.get_obj(u, "content"), "text", ""), d, k}, Nil{},
         [Acp.event("item.delta", [J.KV{"text", J.Str{J.Json.get_str(J.Json.get_obj(u, "content"), "text", "")}}])], Nil{}}
     case 1n _:
       AcpOut{a, Nil{}, [Acp.event("item.completed", [J.KV{"item", J.Json.obj([J.KV{"type", J.Str{"command_execution"}}, J.KV{"id", J.Str{J.Json.get_str(u, "toolCallId", "")}},
@@ -177,7 +178,7 @@ def Acp.pos(xs: List<&2, String>, +x: String, +i: Nat) -> Nat:
 
 def Acp.open_now(a: Acp) -> Bool:
   match a:
-    case Acp{s, _, _}:
+    case Acp{s, _, _, _}:
       Bool.not(String.is_empty(s))
 
 # session/load replays the old conversation as updates before it answers:
@@ -283,7 +284,7 @@ def Acp.tool(+params: J.Json) -> String:
   Acp.or(J.Json.get_str(J.Json.get_obj(params, "toolCall"), "kind", ""), J.Json.get_str(J.Json.get_obj(params, "toolCall"), "title", "tool"))
 
 def Acp.detail.k(+tc: J.Json, +raw: J.Json) -> String:
-  Acp.or(J.Json.get_str(raw, "command", J.Json.get_str(raw, "path", J.Json.get_str(raw, "file_path", ""))),
+  Acp.or(J.Json.get_str(raw, "command", J.Json.get_str(raw, "path", J.Json.get_str(raw, "file_path", J.Json.get_str(raw, "filePath", "")))),
     Acp.or(J.Json.get_str(tc, "title", ""), String.take(J.Json.show(raw), 400n)))
 
 def Acp.detail(+params: J.Json) -> String:

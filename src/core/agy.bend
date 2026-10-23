@@ -322,18 +322,18 @@ def Agy.set_model(+id: Nat, +sid: String, +model: String) -> String:
 
 def Agy.sid(a: AC.Acp) -> String:
   match a:
-    case AC.Acp{s, _, _}:
+    case AC.Acp{s, _, _, _}:
       s
 
 def Agy.with_sid(a: AC.Acp, +sid: String) -> AC.Acp:
   match a:
-    case AC.Acp{_, b, d}:
-      AC.Acp{sid, b, d}
+    case AC.Acp{_, b, d, k}:
+      AC.Acp{sid, b, d, k}
 
 def Agy.ended(a: AC.Acp) -> AC.Acp:
   match a:
-    case AC.Acp{s, b, _}:
-      AC.Acp{s, b, True{}}
+    case AC.Acp{s, b, _, k}:
+      AC.Acp{s, b, True{}, k}
 
 # the turn fails: the reason, and how to fix a sign-in
 def Agy.hint(+msg: String) -> String:

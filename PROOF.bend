@@ -12785,3 +12785,9 @@ def Laws.auth_beat_asked(): {==}
 
 def Laws.triage_duplicate_delivery_quiet(s, now, bot, conv, text, input): {==}
 def Laws.triage_unknown_run_quiet(s, now, bot, conv, text): {==}
+
+# --- opencode: lost sessions renewed, tool calls named ---
+def Laws.oc_lost_session(): {==}
+def Laws.oc_other_folder_session(): {==}
+def Laws.oc_tool_names_target(): {==}
+def Laws.oc_tool_command_once(): {==}

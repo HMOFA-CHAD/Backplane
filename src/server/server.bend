@@ -3117,7 +3117,7 @@ def Grok.acp(o: AC.AcpOut) -> AC.Acp:
 
 def Grok.done(a: AC.Acp) -> Bool:
   match a:
-    case AC.Acp{_, _, d}:
+    case AC.Acp{_, _, d, _}:
       d
 
 def Grok.answered(m: Maybe<&1, String>, +input: Chan(String)) -> IO(Unit):

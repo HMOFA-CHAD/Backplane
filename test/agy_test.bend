@@ -45,7 +45,7 @@ def emits(r: Run) -> String:
 
 def done(r: Run) -> String:
   match r:
-    case Run{A.Acp{_, _, True{}}, _, _}:
+    case Run{A.Acp{_, _, True{}, _}, _, _}:
       "done"
     case Run{_, _, _}:
       "open"
