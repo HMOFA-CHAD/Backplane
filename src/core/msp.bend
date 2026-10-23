@@ -3,6 +3,8 @@ import ./json.bend as J
 import ./acp.bend as AC
 import ./agy.bend as AG
 import ./opencode.bend as OC
+import ./pi.bend as PI
+import ./omp.bend as OP
 
 # Muse Code over MSP (the Muse Session Protocol: JSON-RPC over stdio,
 # `muse serve`), one process per turn: initialize, the initialized note,
@@ -378,7 +380,9 @@ def Msp.mode.k(i: Nat) -> String:
 # Grok over ACP, Muse over MSP, Google's Antigravity agent over ACP
 # (agy.bend, through its runner script) or opencode over ACP (through
 # `env`, its config in OPENCODE_CONFIG_CONTENT; its own resume, tool
-# calls and failures in opencode.bend): the same process
+# calls and failures in opencode.bend), Pi over its own RPC (pi.bend,
+# through `env`: its MCP endpoint and approval mode go to Backplane's
+# extension) or Oh My Pi over its own ACP (omp.bend): the same process
 # handling, its own lines, command and words.
 
 type Proto is Data:
@@ -386,6 +390,8 @@ type Proto is Data:
   PMsp{t: MspTurn}
   PAgy{t: AG.AgyTurn}
   POc{t: OC.OcpTurn}
+  PPi{t: AC.AcpTurn}
+  POmp{t: OP.OmpTurn}
 
 def Proto.line(a: AC.Acp, +p: Proto, line: String) -> AC.AcpOut:
   match p:
@@ -397,6 +403,10 @@ def Proto.line(a: AC.Acp, +p: Proto, line: String) -> AC.AcpOut:
       AG.Agy.line(a, t, line)
     case POc{t}:
       OC.Ocp.line(a, t, line)
+    case PPi{t}:
+      PI.Pi.line(a, t, line)
+    case POmp{t}:
+      OP.Omp.line(a, t, line)
 
 def Proto.init(p: Proto) -> String:
   match p:
@@ -408,6 +418,10 @@ def Proto.init(p: Proto) -> String:
       AG.Agy.init()
     case POc{_}:
       AC.Acp.init()
+    case PPi{_}:
+      PI.Pi.init()
+    case POmp{_}:
+      OP.Omp.init()
 
 # the program it runs (Antigravity's runner is a script, agy.bend)
 def Proto.cmd(p: Proto) -> String:
@@ -420,6 +434,10 @@ def Proto.cmd(p: Proto) -> String:
       "sh"
     case POc{_}:
       "env"
+    case PPi{_}:
+      "env"
+    case POmp{_}:
+      "omp"
 
 # its name in what the person reads
 def Proto.name(p: Proto) -> String:
@@ -432,6 +450,10 @@ def Proto.name(p: Proto) -> String:
       "antigravity"
     case POc{_}:
       "opencode"
+    case PPi{_}:
+      "pi"
+    case POmp{_}:
+      "omp"
 
 def Proto.install(p: Proto) -> String:
   match p:
@@ -443,6 +465,10 @@ def Proto.install(p: Proto) -> String:
       "Install it under Settings › Antigravity."
     case POc{_}:
       "Install opencode (https://opencode.ai), then sign in with `opencode auth login`."
+    case PPi{_}:
+      "Install Pi (https://pi.dev), then sign in: run `pi` and use /login."
+    case POmp{_}:
+      "Install Oh My Pi (https://github.com/can1357/oh-my-pi), then sign in: run `omp` and use /login."
 
 # why a process that ended before its turn did may have
 def Proto.gone(p: Proto) -> String:
@@ -455,3 +481,7 @@ def Proto.gone(p: Proto) -> String:
       "antigravity exited before the turn ended (is it installed and signed in? see Settings › Antigravity)"
     case POc{_}:
       "opencode exited before the turn ended (is it signed in? run `opencode auth login`)"
+    case PPi{_}:
+      "pi exited before the turn ended (is it signed in? run `pi` and use /login)"
+    case POmp{_}:
+      "omp exited before the turn ended (is it signed in? run `omp` and use /login)"

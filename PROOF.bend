@@ -12894,3 +12894,23 @@ def Laws.oc_models_usage_none(): {==}
 def Laws.oc_models_failed_says(): {==}
 def Laws.oc_models_empty_says(): {==}
 def Laws.oc_models_missing_quiet(): {==}
+# --- Pi and Oh My Pi: turns, stop, supervision, dialogs, effort ---
+def Laws.pi_run_turn(th, cwd, m, s, r, i, t, u): {==}
+def Laws.omp_run_turn(th, cwd, m, s, r, i, t, u): {==}
+def Laws.interrupt_pi_stops(th, r): {==}
+def Laws.interrupt_omp_stops(th, r): {==}
+def Laws.pi_acp_like(): {==}
+def Laws.omp_acp_like(): {==}
+def Laws.pi_mode_supervised_asks(): {==}
+def Laws.pi_mode_accept_edits(): {==}
+def Laws.pi_mode_full_allows(): {==}
+def Laws.omp_mode_supervised_asks(): {==}
+def Laws.omp_mode_accept_edits(): {==}
+def Laws.omp_mode_full_allows(): {==}
+def Laws.pi_session_kept(th, g): {==}
+def Laws.dialog_decline_denies(): {==}
+def Laws.dialog_dismissed_denies(): {==}
+def Laws.dialog_session_allows(): {==}
+def Laws.pi_effort_flag(): {==}
+def Laws.pi_effort_unknown_default(): {==}
+

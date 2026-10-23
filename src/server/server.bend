@@ -38,6 +38,8 @@ import ../core/desktop-browser.bend as DB
 import ../core/acp.bend as AC
 import ../core/msp.bend as MS
 import ../core/opencode.bend as OCM
+import ../core/pi.bend as PI
+import ../core/omp.bend as OP
 import ../core/agy.bend as AGY
 import ./agyio.bend as AGX
 import ./mailstore.bend as MST
@@ -4537,6 +4539,79 @@ def Oc.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String
     Grok.run(Oc.args(r, model),
       MS.POc{OCM.OcpTurn{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("opencode", text, ss), session, Grok.asks(r)}, model}}, cwd, thread, gen, inbox)
 
+# Pi: `pi --mode rpc` under `env`. Backplane's extension (PI.Pi.ext,
+# written to <home>/pi/backplane.js before each turn) reads the thread's
+# Backplane MCP endpoint and approval mode from the environment; the
+# instructions go with --append-system-prompt, the session with
+# --session-id (Backplane's id; Pi makes it in the thread's folder when
+# absent), the model ("provider/id") with --model, the effort with
+# --thinking. Pi's own sign-in, settings and sessions (~/.pi/agent) are
+# used as they are.
+def PiRun.mode(r: M.RuntimeMode) -> String:
+  match r:
+    case M.Supervised{}:
+      PI.Pi.mode.k(0n)
+    case M.AcceptEdits{}:
+      PI.Pi.mode.k(1n)
+    case M.AutoMode{}:
+      PI.Pi.mode.k(2n)
+    case M.FullAccess{}:
+      PI.Pi.mode.k(3n)
+
+# "" or "default": the agent's own default model
+def PiRun.model(+m: String) -> String:
+  Bool.pick(String, String.eq(m, "default"), "", m)
+
+def PiRun.ext(+home: String) -> String:
+  home ++ "/pi/backplane.js"
+
+# the extension written whole and moved into place (turns of several
+# threads may start at once)
+def PiRun.write(+home: String) -> IO(P.Ran):
+  P.Proc.run("sh", ["-c", "mkdir -p \"$1\" && printf '%s' \"$2\" > \"$1/.backplane.js.$$\" && mv -f \"$1/.backplane.js.$$\" \"$1/backplane.js\"", "sh", home ++ "/pi", PI.Pi.ext()], "/")
+
+def PiRun.args(+mcp: String, +mode: String, +sid: String, +ext: String, +prompt: String, +model: String, +effort: String) -> List<&2, String>:
+  List.concat(&2, String, [["BACKPLANE_PI_MCP=" ++ mcp, "BACKPLANE_PI_MODE=" ++ mode, "pi", "--mode", "rpc", "--session-id", sid, "-e", ext, "--append-system-prompt", prompt],
+    Codex.opt("--model", PiRun.model(model)), AG.Effort.args("pi", effort)])
+
+# one Pi turn: Grok's runner over Pi's RPC (core/pi.bend)
+def PiRun.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
+    +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
+    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    w : P.Ran <- PiRun.write(Cfg.home(cfg))
+    Grok.run(PiRun.args(Hub.mcp_url.g(cfg, thread, gen), PiRun.mode(r), PI.Pi.session(session, thread, gen), PiRun.ext(Cfg.home(cfg)),
+        Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), model, Hub.effort_of(st, thread)),
+      MS.PPi{AC.AcpTurn{cwd, "", "", AG.Mention.expand("pi", text, ss), session, Grok.asks(r)}}, cwd, thread, gen, inbox)
+
+# Oh My Pi: `omp acp` with its approval mode; the instructions go with
+# --append-system-prompt; the model and thinking level are set over ACP
+# (core/omp.bend). omp's own sign-in, settings and sessions (~/.omp) are
+# used as they are.
+def OmpRun.mode(r: M.RuntimeMode) -> String:
+  match r:
+    case M.Supervised{}:
+      OP.Omp.mode.k(0n)
+    case M.AcceptEdits{}:
+      OP.Omp.mode.k(1n)
+    case M.AutoMode{}:
+      OP.Omp.mode.k(2n)
+    case M.FullAccess{}:
+      OP.Omp.mode.k(3n)
+
+def OmpRun.args(+mode: String, +prompt: String) -> List<&2, String>:
+  ["acp", "--approval-mode", mode, "--append-system-prompt", prompt]
+
+# one Oh My Pi turn: Grok's runner over omp's ACP
+def OmpRun.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
+    +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
+    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    Grok.run(OmpRun.args(OmpRun.mode(r), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss)),
+      MS.POmp{OP.OmpTurn{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), "", AG.Mention.expand("omp", text, ss), session, Grok.asks(r)}, PiRun.model(model), AG.Effort.of("omp", Hub.effort_of(st, thread))}}, cwd, thread, gen, inbox)
+
 # one Muse turn: Grok's runner over MSP; the turn's gen makes its command
 # ids (Muse refuses one it has seen)
 def Muse.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -5396,6 +5471,9 @@ def Models.text5(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, Str
 def Models.text6(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, +ag: List<&2, String>, +oc: List<&2, String>) -> String:
   Models.join(Models.text5(cl, cx, gk, ms, ag), Models.line("opencode", oc))
 
+def Models.text8(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, +ag: List<&2, String>, +oc: List<&2, String>, +pi: List<&2, String>, +om: List<&2, String>) -> String:
+  Models.join(Models.join(Models.text6(cl, cx, gk, ms, ag, oc), Models.line("pi", pi)), Models.line("omp", om))
+
 # what the providers offer: the models JSON clients read, and a line for
 # the agents' prompt
 type Found is Data:
@@ -5673,10 +5751,10 @@ def Refresh.found(fd: Found, +inbox: Chan(Msg), +cache: String, +last: String) -
       Refresh.news(BT.Models.news(ms, last), ms, mt, inbox, cache, last)
 
 # (Antigravity's "agy": what is installed and its accounts, AGY.Agy.info.json)
-def Models.found(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, +ag: List<&2, String>, +oc: List<&2, String>, agy: J.Json, about: J.Json) -> Found:
+def Models.found(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, +ag: List<&2, String>, +oc: List<&2, String>, +pi: List<&2, String>, +om: List<&2, String>, agy: J.Json, about: J.Json) -> Found:
   Found{J.Json.show(J.Json.obj([J.KV{"claude", Models.strs(cl)}, J.KV{"codex", Models.strs(cx)}, J.KV{"grok", Models.strs(gk)}, J.KV{"muse", Models.strs(ms)}, J.KV{"antigravity", Models.strs(ag)},
-    J.KV{"opencode", Models.strs(oc)}, J.KV{"agy", agy}, J.KV{"about", about}])),
-    Models.text6(cl, cx, gk, ms, ag, oc)}
+    J.KV{"opencode", Models.strs(oc)}, J.KV{"pi", Models.strs(pi)}, J.KV{"omp", Models.strs(om)}, J.KV{"agy", agy}, J.KV{"about", about}])),
+    Models.text8(cl, cx, gk, ms, ag, oc, pi, om)}
 
 def Models.boot(ks: String & List<&2, Q.Skill>, +rt: K.Rt, fd: Found, +fc: String, +me: String) -> Boot:
   (kdir, skills) = ks
@@ -5860,6 +5938,100 @@ def Claude.about(+cli: String, +xs: List<&2, J.Json>) -> J.Json:
   Bool.pick(J.Json, List.is_empty(&2, J.Json, xs), About.one(cli, About.claude()),
     J.Json.obj([J.KV{"cli", J.Str{cli}}, J.KV{"labels", J.Json.obj(Claude.labels(xs))}, J.KV{"efforts", J.Json.obj(Claude.efforts(xs))}]))
 
+# Pi's models: `pi --list-models` (offline: the catalog Pi already has),
+# a row per model it can use ("provider model context max-out thinking
+# images"), here "provider/model<TAB>yes|no"; efforts off..high for those
+# that think (Pi offers xhigh and max only on some, which its list does
+# not say)
+def PiRun.models.sh() -> String:
+  PT.Port.tmo() ++ "command -v pi >/dev/null || exit 0; PI_OFFLINE=1 tmo 30 pi --list-models 2>/dev/null | awk 'NR > 1 && NF >= 6 {print $1 \"/\" $2 \"\\t\" $5}'"
+
+def PiRun.out(r: P.Ran) -> String:
+  match r:
+    case P.Ran{0, out}:
+      out
+    case _:
+      ""
+
+def PiRun.row(+l: String) -> List<&2, String>:
+  String.split(l, '\t')
+
+def PiRun.id(+l: String) -> String:
+  Maybe.default(&2, String, List.head(&2, String, PiRun.row(l)), "")
+
+def PiRun.models.k(ok: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
+  match ok:
+    case True{}:
+      PiRun.id(l) <> rest
+    case False{}:
+      rest
+
+def PiRun.models(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      PiRun.models.k(String.contains(l, "/"), l, PiRun.models(t))
+
+def PiRun.thinks() -> J.Json:
+  J.Json.arr([J.Str{"off"}, J.Str{"minimal"}, J.Str{"low"}, J.Str{"medium"}, J.Str{"high"}])
+
+def PiRun.efforts.k(ok: Bool, +l: String, rest: List<&2, J.KV>) -> List<&2, J.KV>:
+  match ok:
+    case True{}:
+      J.KV{PiRun.id(l), Bool.pick(J.Json, String.eq(Maybe.default(&2, String, List.head(&2, String, List.drop(&2, String, PiRun.row(l), 1n)), ""), "yes"), PiRun.thinks(), J.Json.arr(Nil{}))} <> rest
+    case False{}:
+      rest
+
+def PiRun.efforts(ls: List<&2, String>) -> List<&2, J.KV>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      PiRun.efforts.k(String.contains(l, "/"), l, PiRun.efforts(t))
+
+def PiRun.about(+cli: String, +out: String) -> J.Json:
+  J.Json.obj([J.KV{"cli", J.Str{cli}}, J.KV{"labels", J.Json.obj([J.KV{"default", J.Str{"Pi's configured default"}}])},
+    J.KV{"efforts", J.Json.obj(J.KV{"default", PiRun.thinks()} <> PiRun.efforts(String.lines(out)))}])
+
+# Oh My Pi's models: `omp models --json` (only those it has credentials
+# for, or that need none), each with its selector "provider/id", its name
+# and the thinking levels it takes (null: none); its sessions also take
+# off and auto
+def OmpRun.models.sh() -> String:
+  PT.Port.tmo() ++ "command -v omp >/dev/null || exit 0; tmo 30 omp models --json 2>/dev/null"
+
+def OmpRun.list(+out: String) -> List<&2, J.Json>:
+  J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(out), J.Null{}), "models"))
+
+def OmpRun.ids(xs: List<&2, J.Json>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +o <> t:
+      J.Json.get_str(o, "selector", "") <> OmpRun.ids(t)
+
+def OmpRun.labels(xs: List<&2, J.Json>) -> List<&2, J.KV>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +o <> t:
+      J.KV{J.Json.get_str(o, "selector", ""), J.Str{J.Json.get_str(o, "name", "") ++ " · " ++ J.Json.get_str(o, "selector", "")}} <> OmpRun.labels(t)
+
+def OmpRun.thinking(+th: J.Json) -> J.Json:
+  Bool.pick(J.Json, String.eq(J.Json.show(th), "null"), J.Json.arr(Nil{}), J.Json.arr(J.Str{"off"} <> J.Str{"auto"} <> J.Json.elems(th)))
+
+def OmpRun.efforts(xs: List<&2, J.Json>) -> List<&2, J.KV>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +o <> t:
+      J.KV{J.Json.get_str(o, "selector", ""), OmpRun.thinking(J.Json.get_obj(o, "thinking"))} <> OmpRun.efforts(t)
+
+def OmpRun.about(+cli: String, +xs: List<&2, J.Json>) -> J.Json:
+  J.Json.obj([J.KV{"cli", J.Str{cli}}, J.KV{"labels", J.Json.obj(J.KV{"default", J.Str{"Oh My Pi's configured default"}} <> OmpRun.labels(xs))},
+    J.KV{"efforts", J.Json.obj(J.KV{"default", J.Json.arr([J.Str{"off"}, J.Str{"auto"}, J.Str{"minimal"}, J.Str{"low"}, J.Str{"medium"}, J.Str{"high"}])} <> OmpRun.efforts(xs))}])
+
 # which providers are installed and what models they offer (at start, and
 # again every Models.every() ms: new models appear without a restart)
 def Models.detect(+user: String, +home: String) -> IO(Found):
@@ -5877,13 +6049,19 @@ def Models.detect(+user: String, +home: String) -> IO(Found):
     oc : P.Ran <- P.Proc.run("sh", ["-c", Oc.models.sh()], "/")
     +ocs : String = Oc.out(oc)
     vo : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v opencode >/dev/null && tmo 10 opencode --version")], "/")
+    pr : P.Ran <- P.Proc.run("sh", ["-c", PiRun.models.sh()], "/")
+    +pis : String = PiRun.out(pr)
+    vp : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v pi >/dev/null && tmo 10 pi --version")], "/")
+    om : P.Ran <- P.Proc.run("sh", ["-c", OmpRun.models.sh()], "/")
+    +oms : List<&2, J.Json> = OmpRun.list(PiRun.out(om))
+    vq : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v omp >/dev/null && tmo 10 omp --version")], "/")
     +xs : List<&2, J.Json> = Claude.listed(pc)
     +mx : List<&2, J.Json> = Muse.catalog(mu)
     +ag : AGY.AgyInfo <- AGX.Agx.probe(AGX.Agx.root(home))
-    return Models.found(Claude.models(Main.has(cl), xs), Models.on(Main.has(cx), Models.codex(cache)), Models.grok(gk), Models.muse(mx), AGY.Agy.info.models(ag), Models.oc(ocs), AGY.Agy.info.json(ag),
+    return Models.found(Claude.models(Main.has(cl), xs), Models.on(Main.has(cx), Models.codex(cache)), Models.grok(gk), Models.muse(mx), AGY.Agy.info.models(ag), Models.oc(ocs), PiRun.models(String.lines(pis)), OmpRun.ids(oms), AGY.Agy.info.json(ag),
       J.Json.obj([J.KV{"claude", Claude.about(About.cli(vc), xs)}, J.KV{"codex", About.one(About.cli(vx), About.codex(cache))}, J.KV{"grok", About.one(About.cli(vg), About.grok(gk))},
         J.KV{"muse", About.one(About.cli(vm), About.muse(mx))}, J.KV{"antigravity", AGY.Agy.info.about(ag)},
-        J.KV{"opencode", OCM.Ocm.about(About.cli(vo), ocs)}]))
+        J.KV{"opencode", OCM.Ocm.about(About.cli(vo), ocs)}, J.KV{"pi", PiRun.about(About.cli(vp), pis)}, J.KV{"omp", OmpRun.about(About.cli(vq), oms)}]))
 
 # The CLIs are looked for on PATH, which a launcher's or a service's hub
 # lacks the login shell's part of (nvm, volta...): before each detection the
@@ -9329,6 +9507,20 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +t2 : String = Far.turn(cfg, st, now, thread, text)
         +g : String = Hub.gen(st, now)
         IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Oc.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
+        Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.PiTurn{+thread, +cwd, +model, +session, r, +text}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        +t2 : String = Far.turn(cfg, st, now, thread, text)
+        +g : String = Hub.gen(st, now)
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => PiRun.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
+        Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.OmpTurn{+thread, +cwd, +model, +session, r, +text}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        +t2 : String = Far.turn(cfg, st, now, thread, text)
+        +g : String = Hub.gen(st, now)
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => OmpRun.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.LockGuard{+name, old, +holder}:
       do IO<Hub>:
