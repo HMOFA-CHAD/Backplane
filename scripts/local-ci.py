@@ -123,12 +123,15 @@ def execute_phase(name, roots, files, cmd, folder):
     history_name = name+(':full' if os.environ.get('TEST_FULL')=='1' else ':fast') if name=='tests' else name
     cap = math.ceil(history[history_name]*1.2/1073741824) if history_name in history else defaults[name]
     local = None
+    warm = False
     if name == 'build-smoke':
         module = importlib.util.spec_from_file_location('local_build', ROOT/'scripts/local.py')
         local = importlib.util.module_from_spec(module);module.loader.exec_module(local)
-        # Verified emit + bridge caches omit both large compilers. Web codegen
-        # can still run serially here: measured 4.81 GiB plus20% fits6 GiB.
-        if local.warm_build(os.environ): cap = 6
+        # Emit and bridge reuse omit those compilers. Web can still be cold:
+        # the latest local web pass reached6GiB aggregate. Keep20% margin,
+        # and track warm measurements separately from the cold server peak.
+        warm = local.warm_build(os.environ)
+        if warm: cap = math.ceil(history.get('build-smoke:warm',6*1073741824)*1.2/1073741824)
     forced = name in os.environ.get('BP_LOCAL_CI_BOAT','').split(',')
     rc, data = (75,{}) if forced else local_phase(name,cmd,folder,max(2,cap))
     if (rc in [75,-15,-9,137,143] and not data.get('seconds')):
@@ -155,6 +158,7 @@ def execute_phase(name, roots, files, cmd, folder):
         observed = data['peak_rss_kib']*1024 + 64*1024*1024
     if rc == 0 and observed:
         history[history_name] = max(history.get(history_name,0),observed)
+        if warm: history['build-smoke:warm'] = max(history.get('build-smoke:warm',6*1073741824),observed)
         temp = peaks.with_suffix('.tmp');temp.write_text(json.dumps(history));temp.replace(peaks)
     return rc,data
 
