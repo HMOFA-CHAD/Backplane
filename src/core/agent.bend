@@ -275,7 +275,9 @@ def Mention.expand(+provider: String, +text: String, +ss: List<&2, USkill>) -> S
 # ----------------
 # Per thread, in the settings map under effort.<thread>; "" is the
 # provider's default. Claude: --effort; Codex: model_reasoning_effort;
-# Grok: --reasoning-effort; Muse: turn/start's reasoningEffort (msp.bend).
+# Grok: --reasoning-effort; Muse: turn/start's reasoningEffort (msp.bend);
+# Pi: --thinking; Oh My Pi: the session's "thinking" option (omp.bend).
+# Which levels a model takes comes with the models (about.efforts).
 
 def Effort.key(+thread: String) -> String:
   "effort." ++ thread
@@ -284,7 +286,9 @@ def Effort.levels(+provider: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, String.eq(provider, "claude"), ["low", "medium", "high", "xhigh", "max"],
     Bool.pick(List<&2, String>, String.eq(provider, "codex"), ["low", "medium", "high", "xhigh"],
       Bool.pick(List<&2, String>, String.eq(provider, "grok"), ["low", "medium", "high"],
-        Bool.pick(List<&2, String>, String.eq(provider, "muse"), ["minimal", "low", "medium", "high", "xhigh", "max"], Nil{}))))
+        Bool.pick(List<&2, String>, String.eq(provider, "muse"), ["minimal", "low", "medium", "high", "xhigh", "max"],
+          Bool.pick(List<&2, String>, String.eq(provider, "pi"), ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+            Bool.pick(List<&2, String>, String.eq(provider, "omp"), ["off", "auto", "minimal", "low", "medium", "high", "xhigh", "max"], Nil{}))))))
 
 def Effort.in(xs: List<&2, String>, +e: String) -> Bool:
   match xs:
@@ -320,6 +324,8 @@ def Effort.args.k(i: Nat, +e: String) -> List<&2, String>:
       ["-c", "model_reasoning_effort=\"" ++ e ++ "\""]
     case 2n:
       ["--reasoning-effort", e]
+    case 4n:
+      ["--thinking", e]
     case _:
       Nil{}
 
@@ -333,7 +339,7 @@ def Effort.pos(xs: List<&2, String>, +x: String, +i: Nat) -> Nat:
 # the flags that set a provider's effort (none for its default)
 def Effort.args(+provider: String, +e: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, String.is_empty(Effort.of(provider, e)), Nil{},
-    Effort.args.k(Effort.pos(["claude", "codex", "grok", "muse"], provider, 0n), Effort.of(provider, e)))
+    Effort.args.k(Effort.pos(["claude", "codex", "grok", "muse", "pi"], provider, 0n), Effort.of(provider, e)))
 
 # One-shot writing: thread titles, branch names and commit messages
 # -----------------------------------------------------------------

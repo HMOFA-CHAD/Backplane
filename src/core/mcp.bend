@@ -13,6 +13,7 @@ import ./deploy.bend as DP
 import ./ship.bend as SH
 import ./acp.bend as AC
 import ./msp.bend as MS
+import ./dialog.bend as DL
 import ./handoff.bend as HD
 import ./bot.bend as BT
 import ./emb.bend as EM
@@ -781,7 +782,7 @@ def Mcp.tools() -> J.Json:
     Tool.def("delegate_task",
       "Delegate one task to a child agent of THIS thread, on any provider/model (see orchestrator_capabilities). The child sees only `prompt` (no conversation history) and works in this thread's directory. Its result arrives in this thread as a message when it finishes, so end your turn instead of polling; use task_status only when you need it mid-turn. Delegation is limited in depth; children of children are allowed up to the limit.",
       [Tool.prop("prompt", "string", "The complete task for the child, with every detail it needs."),
-       Tool.prop("provider", "string", "claude, codex, grok, muse or antigravity (default: this thread's)."),
+       Tool.prop("provider", "string", "claude, codex, grok, muse, antigravity, opencode, pi or omp (default: this thread's)."),
        Tool.prop("model", "string", "Model for the child (default: this thread's)."),
        Tool.prop("title", "string", "Short title for the child thread."),
        Tool.prop("project", "string", "Bots only, and required for them: the project's name or id (project_list); the child is a thread of its own there that the person can follow.")], ["prompt"]),
@@ -798,7 +799,7 @@ def Mcp.tools() -> J.Json:
       [Tool.prop("threadId", "string", "The thread."), Tool.prop("text", "string", "The message.")], ["threadId", "text"]),
     Tool.def("thread_launch", "Start a new top-level thread in this project, or in `project` (not a child of this one: the user sees it in the sidebar like their own) with a first message, on any provider/model. Bots must name the project. Answers its threadId. Its reports come to you by themselves, as a message that wakes you: each time its turn ends (completed, failed or interrupted, with its last reply), and at once when it asks the person something; so end your turn instead of polling, and answer it with thread_send. report false launches it without reports; thread_update turns them off or on later. With `machine`, it starts on that other machine of the person's, in its project named by `project` (machine_list).",
       [Tool.prop("prompt", "string", "The first message, complete."), Tool.prop("title", "string", "A short title (default: from the prompt)."), Tool.prop("report", "boolean", "Whether its turn ends and asks are reported to you (default true)."),
-       Tool.prop("provider", "string", "claude, codex, grok, muse or antigravity (default: the user's default)."), Tool.prop("model", "string", "Model (default: the provider's default)."),
+       Tool.prop("provider", "string", "claude, codex, grok, muse, antigravity, opencode, pi or omp (default: the user's default)."), Tool.prop("model", "string", "Model (default: the provider's default)."),
        Tool.prop("project", "string", "The project's name or id (default: this thread's; bots must give one); on another machine its <link>~<id> from machine_list."),
        Tool.prop("machine", "string", "Start it on another machine of the person's, in its project of that name (machine_list).")], ["prompt"]),
     Tool.def("thread_update", "Rename a thread in this project (this one by default), or with no title have its title written again from its first message. With report (and no title), turn the reports of a thread you launched off (false) or on again (true).",
@@ -1254,14 +1255,16 @@ def Mcp.permission.reply.acp(i: Nat, +o: J.Json, +body: String, +answer: String)
       AC.Acp.permit.answer(body, answer)
     case 1n:
       MS.Msp.decide(body, answer)
+    case 2n:
+      DL.Dlg.reply(body, answer)
     case _:
       Mcp.permission.reply.k(o, answer)
 
 # the parked reply for a request body, once the user answered: an MCP
-# permission_prompt result, the ACP response to a Grok request, or Muse's
-# approval/decide
+# permission_prompt result, the ACP response to a Grok request, Muse's
+# approval/decide, or a Pi or Oh My Pi dialog's answer (bp/ask)
 def Mcp.permission.reply(+body: String, +answer: String) -> String:
-  Mcp.permission.reply.acp(C.Codec.pos(["session/request_permission", "approval/request"], J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "method", "")),
+  Mcp.permission.reply.acp(C.Codec.pos(["session/request_permission", "approval/request", "bp/ask"], J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "method", "")),
     Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), body, answer)
 
 def Mcp.reply(+id: J.Json, r: Res) -> McpOut:
@@ -1320,6 +1323,31 @@ def Muse.permit.k(ok: Bool, +ask: String, +now: Nat, +thread: String, +o: J.Json
 def Muse.permit(+s: M.State, +now: Nat, +thread: String, +o: J.Json) -> McpOut:
   Muse.permit.k(Perm.session_ok(M.Asks.all(s), thread, MS.Msp.tool(J.Json.get_obj(o, "params"))), B.Hub.id("q", now, B.Hub.seq(s)), now, thread, o,
     MS.Msp.tool(J.Json.get_obj(o, "params")))
+
+# Pi's and Oh My Pi's dialogs
+# ---------------------------
+# Their runners hand dialog.bend's envelope here (method bp/ask). An
+# approval is Grok's: a tool already allowed for the session in this
+# thread is allowed again at once, else an approval ask parks the request.
+# A question opens an input ask with its choices. Either way the answer
+# goes back as the agent's own line (DL.Dlg.reply).
+
+def Bp.approve(ok: Bool, +ask: String, +now: Nat, +thread: String, +o: J.Json, +p: J.Json) -> McpOut:
+  match ok:
+    case True{}:
+      McpOut{DL.Dlg.reply(J.Json.show(o), "accept"), B.Step.none(), ""}
+    case False{}:
+      McpOut{"", B.Step{[M.AskOpened{ask, thread, "approval", DL.Dlg.tool(p), DL.Dlg.detail(p), "", now}], Nil{}}, ask}
+
+def Bp.permit.k(approval: Bool, +ask: String, +s: M.State, +now: Nat, +thread: String, +o: J.Json, +p: J.Json) -> McpOut:
+  match approval:
+    case True{}:
+      Bp.approve(Perm.session_ok(M.Asks.all(s), thread, DL.Dlg.tool(p)), ask, now, thread, o, p)
+    case False{}:
+      McpOut{"", B.Step{[M.AskOpened{ask, thread, "input", DL.Dlg.tool(p), DL.Dlg.detail(p), DL.Dlg.options(p), now}], Nil{}}, ask}
+
+def Bp.permit(+s: M.State, +now: Nat, +thread: String, +o: J.Json) -> McpOut:
+  Bp.permit.k(DL.Dlg.approval(J.Json.get_obj(o, "params")), B.Hub.id("q", now, B.Hub.seq(s)), s, now, thread, o, J.Json.get_obj(o, "params"))
 
 # Waiting (thread_wait)
 # --------------------
@@ -1451,12 +1479,14 @@ def Mcp.handle.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Jso
       Grok.permit(s, now, thread, o)
     case 1n:
       Muse.permit(s, now, thread, o)
+    case 2n:
+      Bp.permit(s, now, thread, o)
     case _:
       Mcp.method.k(Mcp.method.pos(J.Json.get_str(o, "method", "")), s, now, thread, models, version, J.Json.get_obj(o, "id"), J.Json.get_obj(o, "params"))
 
 # one JSON-RPC message from an agent of `thread` ("" reply: a notification)
 def Mcp.handle(+s: M.State, +now: Nat, +thread: String, +models: J.Json, +version: String, +o: J.Json) -> McpOut:
-  Mcp.handle.k(C.Codec.pos(["session/request_permission", "approval/request"], J.Json.get_str(o, "method", "")), s, now, thread, models, version, o)
+  Mcp.handle.k(C.Codec.pos(["session/request_permission", "approval/request", "bp/ask"], J.Json.get_str(o, "method", "")), s, now, thread, models, version, o)
 
 def Mcp.text.k(m: Maybe<&2, J.Json>, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +version: String) -> McpOut:
   match m:

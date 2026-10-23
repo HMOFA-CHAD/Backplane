@@ -12,7 +12,7 @@ def Ug.enabled.go(ps: List<&2, String>, +caps: J.Json) -> List<&2, String>:
       List.append(&2, String, Bool.pick(List<&2, String>, List.is_empty(&2, J.Json, J.Json.elems(J.Json.get_obj(caps, p))), Nil{}, [p]), Ug.enabled.go(rest, caps))
 
 def Ug.enabled(info: String) -> List<&2, String>:
-  Ug.enabled.go(["claude", "codex", "grok", "muse", "antigravity", "opencode"], Maybe.default(&2, J.Json, J.Json.parse(info), J.Null{}))
+  Ug.enabled.go(["claude", "codex", "grok", "muse", "antigravity", "opencode", "pi", "omp"], Maybe.default(&2, J.Json, J.Json.parse(info), J.Null{}))
 
 def Ug.selected(+ps: List<&2, String>, +wanted: String) -> String:
   Bool.pick(String, M.Tok.has(ps, wanted), wanted, Maybe.default(&2, String, List.head(&2, String, ps), ""))
