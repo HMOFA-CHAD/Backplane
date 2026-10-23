@@ -69,7 +69,7 @@ async function size(w,h){await app.evaluate(({BrowserWindow},[w,h])=>{const win=
  const cdp=await page.context().newCDPSession(page);await page.locator('#composer').click();
  await cdp.send('Input.imeSetComposition',{text:'にほん',selectionStart:3,selectionEnd:3});await cdp.send('Input.insertText',{text:'日本'});await page.keyboard.type(' draft');
  const draft=await page.locator('#composer').inputValue();assert(draft.endsWith('日本 draft'),draft);
- step='light';await choose('light');await go('ta',false);await learn('light');assert.notEqual(colours.light.bg,colours.dark.bg);
+ step='light';await choose('light');await go('ta',false);await learn('light');assert.notEqual(colours.light.body,colours.dark.body);
  for(const [theme,next] of [['light','dark'],['dark','light']]){
   step='switch-'+theme+'-1400';await round(theme,1400,['tb','tc','ta','tc','tb']);
   await go('ta',false);assert.equal(await page.locator('#composer').inputValue(),draft,'draft kept after '+theme+' switches');
