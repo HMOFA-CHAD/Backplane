@@ -46,6 +46,11 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
  const fromProjection=process.env.BROWSER_CONTINUE_PROJECTION==='1';
  const fromReload=process.env.BROWSER_CONTINUE_RELOAD==='1';
  const fromTabs=process.env.BROWSER_CONTINUE_TABS==='1';
+ const fromClose=process.env.BROWSER_CONTINUE_CLOSE==='1';
+ const selectionChecks=['tab selection restores exact original guest'];
+ const selectionReceipt=fromClose?process.env.BROWSER_SELECTION_PREFIX_RECEIPT:null;
+ if(fromClose){assert(fromTabs,'close suffix retains all prior native/input/reload receipts');const receipt=JSON.parse(fs.readFileSync(selectionReceipt,'utf8'));assert(selectionChecks.every(name=>receipt.checks.includes(name)),'close suffix requires actual original-guest selection pass');}
+ const retainedSelection=fromClose?{receipt:selectionReceipt,checks:selectionChecks}:null;
  const reloadChecks=['toolbar Reload completes in SAME actual guest','Browser reopen after renderer reload restores canonical chrome','Browser reopen after renderer reload re-presents existing guest','profile and tab storage retained across navigation/reload','guest session cookie retained','new tab is a distinct visible native guest'];
  const reloadReceipt=fromTabs?process.env.BROWSER_RELOAD_PREFIX_RECEIPT:null;
  if(fromTabs){assert(fromReload,'tabs suffix retains all prior prefixes');const receipt=JSON.parse(fs.readFileSync(reloadReceipt,'utf8'));assert(reloadChecks.every(name=>receipt.checks.includes(name)),'tabs suffix requires actual six reload/storage/newtab passes');}
@@ -441,7 +446,8 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await saveTabs('afterSelectRpc',{selectRpc});
   await page.waitForFunction(tab=>document.querySelector('.browser-tab.on [data-on-click="br-select"]')?.dataset.value===tab,originalTab,{timeout:4000});
   const selected=await waitPresented(id);await saveTabs('afterSelect',{selectRpc,presentation:selected});
-  check('tab selection restores exact original guest',selected.ok&&(await native()).find(v=>v.id===id)?.visible===true);
+  if(fromClose)assert(selected.ok,'fresh setup selects the original guest before closing its inactive sibling');
+  if(!fromClose)check('tab selection restores exact original guest',selected.ok&&(await native()).find(v=>v.id===id)?.visible===true);
   const [closeRpc]=await Promise.all([toolbarReply('tabs'),page.locator(`[data-on-click="br-close"][data-value="${newTab}"]`).click()]);
   await saveTabs('afterCloseRpc',{closeRpc});
   await page.waitForFunction(tab=>document.querySelectorAll('[data-on-click="br-select"]').length===1&&document.querySelector('.browser-tab.on [data-on-click="br-select"]')?.dataset.value===tab,originalTab,{timeout:4000});
@@ -459,7 +465,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await page.screenshot({path:path.join(out,'shared-browser-chrome.png')});
   const pixels=await app.evaluate(async({webContents},id)=>(await webContents.fromId(id).capturePage()).toPNG().toString('base64'),id);
   fs.writeFileSync(path.join(out,'shared-browser-guest.png'),Buffer.from(pixels,'base64'));
-  const receipt={status:'PASS',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,retainedNativeHistory,retainedChrome,retainedReload,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
+  const receipt={status:'PASS',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,retainedNativeHistory,retainedChrome,retainedReload,retainedSelection,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
   fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify(receipt,null,2)+'\n');
   return receipt;
  }catch(error){
@@ -483,7 +489,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   }
   fs.writeFileSync(path.join(out,'ownership-wire.json'),JSON.stringify(wire,null,2)+'\n');
   fs.writeFileSync(path.join(out,'ownership-observation.json'),JSON.stringify({phase,ownership},null,2)+'\n');
-  fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,retainedNativeHistory,retainedChrome,retainedReload,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
+  fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,retainedNativeHistory,retainedChrome,retainedReload,retainedSelection,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
  }
  finally{if(wireTap)await wireTap.detach().catch(()=>{});await site.close();}
 }

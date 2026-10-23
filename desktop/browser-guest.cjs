@@ -689,6 +689,10 @@ function createBrowserGuestManager({
     wc.on('destroyed', () => retire(tab, false));
     wc.debugger.on('detach', () => {
       tab.debuggerOwned = false;
+      // retire() marks the exact tab closed before asking Chromium to close.
+      // Its trailing detach is not a second lifecycle retirement. A live
+      // guest's unexpected detach still follows the guard-loss path below.
+      if (tab.closed) return;
       loseFileGuard(tab, 'debugger-detached');
       // Lost bindings/init scripts require a deliberate recorder re-preparation
       // by the integration. The detach event must not be treated as Teach-ready.
