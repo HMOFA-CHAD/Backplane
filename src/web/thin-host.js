@@ -14,12 +14,14 @@ function choices(value, accept) {
   }
   return out;
 }
-function requestSession(session, action, target) {
+// Reference suggestions are projected by the hub from this selected draft.
+// Every view request keeps the same current-thread-only privacy boundary.
+function requestSession(session, _action, target) {
   const drafts = {}, local = object(session.drafts) ? session.drafts : {};
   for (const key of ['@lang', '@lang.os', '@lang.tag', '@lang.preview', '@desktop.browser']) {
     if (typeof local[key] === 'string' && utf8Bytes(local[key]) <= 128) drafts[key] = local[key];
   }
-  if (action && session.sel && !session.sel.startsWith('@') && Object.hasOwn(local, session.sel) && typeof local[session.sel] === 'string') {
+  if (session.sel && !session.sel.startsWith('@') && Object.hasOwn(local, session.sel) && typeof local[session.sel] === 'string') {
     Object.defineProperty(drafts, session.sel, { value: local[session.sel], enumerable: true });
   }
   const route = compactRoute(session.route, target);
@@ -228,6 +230,10 @@ export class ThinHost {
       op.action === 'bfield' && op.value.startsWith('wspalette\u001f'));
     return changesWorkspace(this.pending.get(this.active)?.operation) || this.actions.some(changesWorkspace);
   }
+  composerPending() {
+    const changesMenu = op => op && ['skill', 'skill-move', 'skill-close'].includes(op.action);
+    return changesMenu(this.pending.get(this.active)?.operation) || this.actions.some(changesMenu);
+  }
   threadChildPending() {
     return this.pending.get(this.active)?.operation?.action === 'thread-child' || this.actions.some(op => op.action === 'thread-child');
   }
@@ -241,12 +247,12 @@ export class ThinHost {
     // Keep upload receipts and Settings navigation visible before refreshing.
     // A newer read otherwise retires a same-target navigation reply, making
     // the person repeat the click. Refresh with its accepted session instead.
-    if (this.refreshPending() || this.threadChildPending() || this.terminalPending() || this.viewerPending() || this.botTabPending()) { link.invalidated = true;return true; }
+    if (this.refreshPending() || this.composerPending() || this.threadChildPending() || this.terminalPending() || this.viewerPending() || this.botTabPending()) { link.invalidated = true;return true; }
     return this.flush(this.client.request(this.hub, 'view.update', { session: requestSession(this.session, false, this.target), anchor: this.api.anchor(), viewRevision: link.viewRevision }));
   }
   receive(envelope) {
     if (envelope?.t === 'view.changed') {
-      if (this.ready) this.flush(this.client.changed(this.hub, envelope, requestSession(this.session, false, this.target), this.api.anchor(), this.refreshPending() || this.threadChildPending() || this.terminalPending() || this.viewerPending() || this.botTabPending()));
+      if (this.ready) this.flush(this.client.changed(this.hub, envelope, requestSession(this.session, false, this.target), this.api.anchor(), this.refreshPending() || this.composerPending() || this.threadChildPending() || this.terminalPending() || this.viewerPending() || this.botTabPending()));
       return true;
     }
     if (envelope?.t !== 'reply') return false;
