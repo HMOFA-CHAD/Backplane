@@ -24,6 +24,11 @@ def emits(o: A.AcpOut) -> String:
     case A.AcpOut{_, _, emit, _}:
       String.join(emit, " | ")
 
+def sends(o: A.AcpOut) -> String:
+  match o:
+    case A.AcpOut{_, send, _, _}:
+      String.join(send, " | ")
+
 def asks(o: A.AcpOut) -> String:
   match o:
     case A.AcpOut{_, _, _, ks}:
@@ -84,7 +89,7 @@ def main() -> IO(Unit):
     C.Check.str("oc resume method", method(outs(or1)), "session/resume")
     C.Check.str("oc resume keeps session", has(outs(or1), "\"sessionId\":\"S0\""), "yes")
     C.Check.str("oc new method", method(outs(on1)), "session/new")
-    C.Check.str("oc resumed prompt", method(outs(or2)), "session/prompt")
+    C.Check.str("oc resumed prompt", method(sends(or2)), "session/prompt")
     C.Check.str("oc resumed no instructions", has(outs(or2), "<backplane_instructions>"), "no")
     C.Check.str("oc resumed started", has(outs(or2), "{\"type\":\"thread.started\",\"thread_id\":\"S0\"}"), "yes")
     C.Check.str("oc new instructions", has(outs(on2), "<backplane_instructions>\\nRULES"), "yes")
