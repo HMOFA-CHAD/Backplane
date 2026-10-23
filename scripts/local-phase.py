@@ -111,11 +111,14 @@ def boat(encoded):
         import importlib.util
         module = importlib.util.spec_from_file_location('local_build', ROOT/'scripts/local.py')
         local = importlib.util.module_from_spec(module); module.loader.exec_module(local)
-        key = local.phone_bridge(os.environ.copy())
-        import shutil
-        shutil.copy2(ROOT/'mobile/build/assets/bridge.js', folder/'bridge.js')
+        emit_key = subprocess.check_output(['scripts/build-js.sh','--key','src/server/main.bend'],text=True).strip()
+        shutil.copy2(ROOT/'build/js/backplane-serve/all.js',folder/'emit.js')
         meta = {'commit':spec['commit'], 'version':spec['version'], 'files':local.payload_hashes(folder),
-                'phone_bridge_key':key, 'bridge_sha256':local.digest(folder/'bridge.js')}
+                'emit_key':emit_key,'emit_sha256':local.digest(folder/'emit.js')}
+        if spec.get('bridge_needed',True):
+            key = local.phone_bridge(os.environ.copy())
+            shutil.copy2(ROOT/'mobile/build/assets/bridge.js', folder/'bridge.js')
+            meta.update(phone_bridge_key=key,bridge_sha256=local.digest(folder/'bridge.js'))
         (folder/'REMOTE.json').write_text(json.dumps(meta,indent=2)+'\n')
         for p in [ROOT/'build/js/backplane-serve/metrics.json', ROOT/'build/web-metrics.json']:
             if p.is_file(): shutil.copy2(p,folder/p.name)
