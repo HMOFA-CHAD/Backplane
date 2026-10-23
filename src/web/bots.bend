@@ -280,7 +280,7 @@ def WB.browser.surface.k(direct: Bool, +lc: I.Loc, +u: U.Ui, +id: String, +name:
     case False{}:
       WB.browser.in.loc(lc, U.Teach.input(u, id), String.is_empty(U.Ui.info(u, "shot." ++ id)), U.Ui.info(u, "shot." ++ id), id, name)
 
-def WB.browser.surface.ready(provisional: Bool, lc: I.Loc, +u: U.Ui, id: String, name: String) -> D.Node:
+def WB.browser.surface.ready(provisional: Bool, lc: I.Loc, +u: U.Ui, +id: String, name: String) -> D.Node:
   match provisional:
     case True{}: D.El{"div", "browser-loading", [D.At{"role", "status"}], [D.Txt{MSG.T.viewer.loading(lc)}]}
     case False{}: WB.browser.surface.k(WB.browser.direct(u, id), lc, u, id, name)
