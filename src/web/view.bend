@@ -380,13 +380,20 @@ def View.atree.card(+lc: I.Loc, +t: M.Thread, anchor: U.ARow, +ix: U.SIx, +st: M
   match anchor:
     case U.ARow{_, _, _, pid, pt, faded}: View.arow(lc, U.ARow{0n, 0n, t, pid, pt, faded}, ix, st, sel)
 
-def View.atree.next(step: List<&2, U.ARow> & U.ARow) -> List<&2, U.ARow>:
-  (next, _) = step
-  next
+type ATreeStep is Data:
+  ATreeStep{next: List<&2, U.ARow>, anchor: U.ARow}
 
-def View.atree.anchor(step: List<&2, U.ARow> & U.ARow) -> U.ARow:
-  (_, at) = step
-  at
+def View.atree.data(pair: List<&2, U.ARow> & U.ARow) -> ATreeStep:
+  (next, anchor) = pair
+  ATreeStep{next, anchor}
+
+def View.atree.next(step: ATreeStep) -> List<&2, U.ARow>:
+  match step:
+    case ATreeStep{next, _}: next
+
+def View.atree.anchor(step: ATreeStep) -> U.ARow:
+  match step:
+    case ATreeStep{_, anchor}: anchor
 
 def View.atree.rows(rs: List<&2, ST.TRow>, +lc: I.Loc, anchors: List<&2, U.ARow>, anchor: U.ARow, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
@@ -394,7 +401,7 @@ def View.atree.rows(rs: List<&2, ST.TRow>, +lc: I.Loc, anchors: List<&2, U.ARow>
     case ST.TRow{+t, +depth, +expanded, +children} <> rest:
       +id = M.Thread.id(t)
       +indent = Bool.pick(Nat, Nat.is_gt(depth, 4n), 4n, depth)
-      +step = View.atree.step(Nat.is_eq(depth, 0n), anchors, anchor)
+      +step = View.atree.data(View.atree.step(Nat.is_eq(depth, 0n), anchors, anchor))
       +at = View.atree.anchor(step)
       List.concat(&2, D.Node, [[D.El{"div", "tree:" ++ id, [D.At{"class", "thread-tree-row"}, D.At{"style", "--depth:" ++ Nat.show(indent)}],
         [View.tree.expander(id, expanded, children), View.atree.card(lc, t, at, ix, st, sel)]}],
