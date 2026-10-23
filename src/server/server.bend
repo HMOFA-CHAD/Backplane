@@ -2693,11 +2693,16 @@ def Mech.sent(r: P.Ran, +inbox: Chan(Msg), +client: U32, +id: String, +thread: S
 def Mech.list(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String) -> IO(Unit):
   IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Mech.cmd()], cwd), r => Mech.sent(r, inbox, client, id, thread, cwd))
 
-# a part's renders on request (mech.render: the Mech page's Create
-# renders). This build has no renderer (no native binary ships), so the
-# answer is the parts listed again with the reason, never a silent failure
-def Mech.unavailable() -> String:
-  "Part renders are not available in this build. The 3D view still shows the part."
+# a part's renders, drawn on request (mech.render: the Mech page's Create
+# renders): this program as a `--render` child (render.bend), in the
+# project, then the parts listed again; the answer is a listing that also
+# names what was rendered and why it failed ("" when it did not)
+def Mech.said(r: P.Ran) -> String:
+  match r:
+    case P.Ran{0, _}:
+      ""
+    case P.Ran{_, out}:
+      String.take(String.trim(out), 300n)
 
 def Mech.rendered(+err: String, l: P.Ran, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +path: String) -> IO(Unit):
   match l:
@@ -2707,8 +2712,10 @@ def Mech.rendered(+err: String, l: P.Ran, +inbox: Chan(Msg), +client: U32, +id: 
 
 def Mech.render(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +path: String) -> IO(Unit):
   do IO<Unit>:
+    exe : String <- H.Sys.exe_path()
+    r : P.Ran <- P.Proc.run(EX.Exe.child(exe), ["--render", path], cwd)
     l : P.Ran <- P.Proc.run("sh", ["-c", Mech.cmd()], cwd)
-    Mech.rendered(Mech.unavailable(), l, inbox, client, id, thread, cwd, path)
+    Mech.rendered(Mech.said(r), l, inbox, client, id, thread, cwd, path)
 
 def Snooze.tz(r: P.Ran) -> String:
   match r:
@@ -5216,7 +5223,7 @@ def Main.nolog(e: U32 & String) -> IO(Unit):
 
 # what the machine offers, found once at start
 type Boot is Data:
-  Boot{kdir: String, skills: List<&2, Q.Skill>, rt: K.Rt, models: String, mtext: String, freecad: String}
+  Boot{kdir: String, skills: List<&2, Q.Skill>, rt: K.Rt, models: String, mtext: String, freecad: String, me: String}
 
 def Models.strs.go(xs: List<&2, String>) -> List<&2, J.Json>:
   match xs:
@@ -5613,11 +5620,11 @@ def Models.found(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, Str
     J.KV{"opencode", Models.strs(oc)}, J.KV{"agy", agy}, J.KV{"about", about}])),
     Models.text6(cl, cx, gk, ms, ag, oc)}
 
-def Models.boot(ks: String & List<&2, Q.Skill>, +rt: K.Rt, fd: Found, +fc: String) -> Boot:
+def Models.boot(ks: String & List<&2, Q.Skill>, +rt: K.Rt, fd: Found, +fc: String, +me: String) -> Boot:
   (kdir, skills) = ks
   match fd:
     case Found{ms, mt}:
-      Boot{kdir, skills, rt, ms, mt, fc}
+      Boot{kdir, skills, rt, ms, mt, fc, me}
 
 def Models.grok.k(bullet: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
   match bullet:
@@ -5946,7 +5953,8 @@ def Main.prepare(+user: String, +exe: String) -> IO(Boot):
     ks : String & List<&2, Q.Skill> <- Skills.kistack(K.KiStack.dir(exe))
     +rt : K.Rt = K.Rt.empty()
     +fc : String <- FC.FreeCAD.find()
-    return Models.boot(ks, rt, Found{"", ""}, fc)
+    +me : String <- H.Sys.exe_path()
+    return Models.boot(ks, rt, Found{"", ""}, fc, EX.Exe.path(me))
 
 # the home and port the arguments name, before anything else is found
 # (the server binary takes the home's lock with them first)
@@ -5959,9 +5967,9 @@ def Main.dirs(+kdir: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, String.is_empty(kdir), Nil{}, [kdir])
 
 def Main.config(+user: String, +exe: String, args: List<String>, b: Boot) -> Cfg:
-  Boot{kdir, skills, rt, ms, mt, +fc} = b
+  Boot{kdir, skills, rt, ms, mt, +fc, +me} = b
   Main.args(args, Cfg{user ++ "/.backplane-bend", exe ++ "/web", "127.0.0.1", 3787,
-    Q.Prompt.runtime("Backplane") ++ "\n\n" ++ Q.Prompt.mech(fc), Main.dirs(kdir), Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc, None{}}, TI.Tio.empty(False{}), Nil{}})
+    Q.Prompt.runtime("Backplane") ++ "\n\n" ++ Q.Prompt.mech(fc, me), Main.dirs(kdir), Main.version(), Net{True{}, False{}, "", ms, mt, rt, None{}, None{}, None{}, "", None{}, BN.Bn.empty(), False{}, "", fc, None{}}, TI.Tio.empty(False{}), Nil{}})
 
 def Sys.exe_dir.io() -> IO(String):
   H.Sys.exe_dir()
