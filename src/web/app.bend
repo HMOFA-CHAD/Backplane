@@ -14,6 +14,7 @@ import ./presentation.bend as P
 import ../core/presentation.bend as PS
 import ./cat.bend as WC
 import ../core/onboard.bend as OB
+import ./workspace.bend as WS
 
 # What host.js calls. Everything the page decides happens behind these.
 
@@ -128,16 +129,21 @@ def act.mail(i: Nat, u: U.Ui, +action: String, value: String) -> U.Act:
     case 2n: MA.MA.action(2n, u, value)
     case _: act.project(String.eq(action, "web-mail-project"), u, action, value)
 
-def act(u: U.Ui, +action: String, value: String) -> U.Act:
-  act.mail(U.Keys.pos(["mail-send", "mail-open", "mail-mark"], action), stamp(u), action, value)
+def act.workspace(workspace: Bool, u: U.Ui, +action: String, value: String) -> U.Act:
+  match workspace:
+    case True{}: U.Solid.sync(WS.WS.act(action, stamp(u), value))
+    case False{}: act.mail(U.Keys.pos(["mail-send", "mail-open", "mail-mark"], action), stamp(u), action, value)
+
+def act(u: U.Ui, +action: String, +value: String) -> U.Act:
+  act.workspace(Bool.or(WS.WS.handles(action), Bool.and(String.eq(action, "bfield"), String.starts_with(value, "wspalette\u{1f}"))), u, action, value)
 
 # a timeline gap px from its end is at the end and follows; further up it
 # holds what is read (client.bend's Hold; host.js's held)
 def hold_at_end(gap: Nat) -> Bool:
   U.Hold.at_end(gap)
 
-def view(u: U.Ui) -> D.Node:
-  V.View.page(stamp(u))
+def view(+u: U.Ui) -> D.Node:
+  WS.WS.view(u, V.View.page(stamp(u)), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
 
 # Optional early presentation uses exactly the normal keyed view. These
 # exports move renderer data only; they cannot install a Ui or mark it synced.

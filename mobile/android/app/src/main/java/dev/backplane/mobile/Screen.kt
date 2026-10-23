@@ -20,6 +20,9 @@ data class Row(
     val project: String = "", val faded: Boolean = false,
     // "2 agents" while subagents work for it, shown where the age goes
     val agents: String = "",
+    // Visible hierarchy; native indentation is capped at four levels.
+    val depth: Int = 0, val expanded: Boolean = false, val children: Int = 0,
+    val canChild: Boolean = false,
 )
 
 // machine: the hub it is on, named when the phone has several
@@ -325,6 +328,7 @@ data class ThreadView(
     val livePartial: MessagePartial? = null,
     // the thread's Boat chip ("Boat · large · running"; "" for none), a tap opens Settings
     val boat: String = "",
+    val canChild: Boolean = false,
 )
 
 data class Btw(val q: String, val a: String)
@@ -443,6 +447,8 @@ data class Screen(
     val uber: UberCard? = null, val plane: PlaneModel? = null,
     val tabs: Tabs = Tabs(),
     val locale: String = "en",
+    // Legacy conversations remain selectable outside project sections.
+    val legacy: List<Row> = emptyList(),
 )
 
 data class Cmd(
@@ -494,6 +500,7 @@ private fun row(o: JSONObject) = Row(
     o.optString("id"), o.optString("title"), o.optString("state"), o.optString("ago"), o.optBoolean("pinned"),
     o.optJSONArray("lead").map(::swipe), o.optJSONArray("trail").map(::swipe), o.optString("status"),
     o.optString("project"), o.optBoolean("faded"), o.optString("agents"),
+    o.optInt("depth"), o.optBoolean("expanded"), o.optInt("children"), o.optBoolean("canChild"),
 )
 
 private fun chips(a: JSONArray?) =
@@ -575,6 +582,7 @@ private fun threadOf(o: JSONObject) = ThreadView(
     },
     o.optJSONObject("todos")?.let { td -> Todos(td.optString("head"), td.optJSONArray("lines").map { TodoLine(it.optString("text"), it.optString("status")) },
         td.optBoolean("open", true), td.optString("toggle"), td.optString("more"), td.optString("moreValue")) },
+    canChild = o.optBoolean("canChild"),
 )
 
 private fun choices(a: JSONArray?) = a.map { Choice(it.optString("label"), it.optString("value"), it.optBoolean("on")) }
@@ -762,6 +770,7 @@ fun parseScreen(o: JSONObject) = Screen(
     uber = o.optJSONObject("uber")?.let(::parseUber),
     plane = o.optJSONObject("plane")?.let(::parsePlane),
     active = o.optJSONArray("active").map(::row),
+    legacy = o.optJSONArray("legacy").map(::row),
     older = o.optJSONObject("older")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
     settled = o.optJSONObject("settled")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
     rowMenu = o.optJSONObject("rowMenu")?.let { mn ->

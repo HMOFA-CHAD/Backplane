@@ -7,7 +7,15 @@
 
 import App from "./app.bend";
 import { installUsageTabs } from "./usage-tabs.js";
+import { installWorkspaceKeys } from "./workspace-keys.js";
+import { installFloatingTerminal } from "./floating-terminal.js";
 installUsageTabs();
+import { installSubagentInspector } from "./subagent-inspector.js";
+installSubagentInspector();
+import { installViewerFeedback } from "./viewer-feedback.js";
+const viewerFeedback = installViewerFeedback();
+installWorkspaceKeys({ dispatch });
+installFloatingTerminal({ dispatch });
 import { ConnectionLog } from "./connection-log.js";
 import { pairBrowser } from "./auth.js";
 
@@ -1108,18 +1116,9 @@ document.addEventListener("keydown", (e) => {
 
 // keys: the page's own shortcuts (app.bend lists them), then a key field
 // (the terminal) gets every key as "<key>\t<mods>"
-const KEYS_PAGE = App.keys_page().split(",");
-const KEYS_TERM = App.keys_term().split(",");
-
 document.addEventListener("keydown", (e) => {
-  if (e.isComposing || e.keyCode === 229) return;
+  if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || e.metaKey) return;
   const field = e.target.closest?.("[data-keys]");
-  const combo = (e.ctrlKey ? "ctrl+" : "") + (e.altKey ? "alt+" : "") + (e.shiftKey ? "shift+" : "") + e.key.toLowerCase();
-  if ((field ? KEYS_TERM : KEYS_PAGE).includes(combo)) {
-    e.preventDefault();
-    dispatch("key", combo + "\t" + termSize());
-    return;
-  }
   if (field) {
     const mods = (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 4 : 0) | (e.altKey ? 8 : 0);
     if (dispatch(field.getAttribute("data-keys"), forKey(field) + e.key + "\t" + mods)) e.preventDefault();
@@ -1757,6 +1756,7 @@ async function startThin(again = false, reason = "initial") {
       fieldsChanged: (name, text) => { if (name === "mrreply") thinMailDraft.edit(text);later(); },
       operationScope: (action, value) => action === "mail-send" ? thinMailDraft.scope(true) : action === "bfield" && value.startsWith("mrreply\u001f") ? thinMailDraft.scope() : undefined,
       blocked: () => showViewStatus("Wait for the current conversation to connect."),
+      viewerChoice: choice => viewerFeedback.choice(choice),
       warning: message => showViewStatus(message),
       search: showThinSearch, message: showThinMessage,
       view: (node, detail) => {

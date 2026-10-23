@@ -3,7 +3,7 @@
 export function installDesktopBrowser({bridge,root=document,isReady=()=>true,onTakeover=()=>{}}={}) {
   if(!bridge)return Object.freeze({sync(){},hide(){},dispose(){}});
   const doc=root.ownerDocument||root,win=doc.defaultView;
-  let current=null,signature='',ticket=0,raf=0,disposed=false;
+  let current=null,signature='',ticket=0,raf=0,disposed=false,stateRevision=0;
   let state={phase:'connecting',message:'Connecting Browser…'};
   const ownerOf=node=>node?.getAttribute('data-desktop-browser-owner');
   const observers=[];
@@ -24,7 +24,7 @@ export function installDesktopBrowser({bridge,root=document,isReady=()=>true,onT
     if(!isReady()||doc.hidden||!node||typeof owner!=='string'||!owner.length||owner.length>512){hide();return;}
     const style=win.getComputedStyle(node),r=node.getBoundingClientRect();
     const x=Math.max(0,r.left),y=Math.max(0,r.top),right=Math.min(win.innerWidth,r.right),bottom=Math.min(win.innerHeight,r.bottom);
-    const blocked=root.querySelector('.modal-back,.shade,.lightbox,.model-menu,.rowmenu,.picker,.hist-menu,[data-lb-close],[aria-modal="true"]');
+    const blocked=root.querySelector('.modal-back,.shade,.lightbox,.model-menu,.rowmenu,.picker,.hist-menu,.floating-terminal,[data-lb-close],[aria-modal="true"]');
     if(style.visibility==='hidden'||style.display==='none'||right-x<1||bottom-y<1||blocked){hide();return;}
     if(current!==node){resize.disconnect();current=node;resize.observe(node);signature='';}
     status(node);
@@ -34,7 +34,7 @@ export function installDesktopBrowser({bridge,root=document,isReady=()=>true,onT
     // clamps to its content bounds. DPR/roles/target IDs from DOM grant nothing.
     void Promise.resolve(bridge.present({owner,bounds})).then(result=>{
       if(disposed||stamp!==ticket||current!==node)return;
-      if(result?.shown!==true){state={owner,phase:result?.phase==='error'?'error':'connecting',message:result?.message||'Connecting Browser…'};status(node);}
+      state=result?.shown===true?{owner,phase:'ready',message:''}:{owner,phase:result?.phase==='error'?'error':'connecting',message:result?.message||'Open a page with the address bar.'};status(node);
     }).catch(()=>{if(stamp===ticket){state={owner,phase:'error',message:'Browser unavailable'};status(node);}});
   }
   function sync(){if(!disposed&&!raf)raf=win.requestAnimationFrame(measure);}
@@ -47,7 +47,11 @@ export function installDesktopBrowser({bridge,root=document,isReady=()=>true,onT
     void Promise.resolve(bridge.reconnect()).then(value=>{state=value;signature='';if(current)status(current);sync();}).catch(()=>{state={phase:'error',message:'Browser unavailable'};if(current)status(current);});
   });
   if(win.visualViewport){listen(win.visualViewport,'resize',sync);listen(win.visualViewport,'scroll',sync);}
-  if(bridge.onState)observers.push(bridge.onState(value=>{state=value;signature='';if(current)status(current);sync();}));
+  const receiveState=value=>{if(disposed||!value)return;stateRevision++;state=value;signature='';if(current)status(current);sync();};
+  if(bridge.onState)observers.push(bridge.onState(receiveState));
+  // Main may already be ready (or unavailable) before this renderer loads.
+  // An event that arrives during the query always wins over its older answer.
+  if(bridge.state){const revision=stateRevision;void Promise.resolve(bridge.state()).then(value=>{if(revision===stateRevision)receiveState(value);}).catch(()=>{if(revision===stateRevision)receiveState({phase:'error',message:'Browser unavailable'});});}
   if(bridge.onTakeover)observers.push(bridge.onTakeover(value=>{
     if(!disposed&&current&&value?.owner===ownerOf(current)&&isReady())onTakeover(value.owner);
   }));

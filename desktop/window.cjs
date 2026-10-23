@@ -5,7 +5,7 @@ function applicationMenu(Menu, platform) {
     {type:'separator'}, {role:'quit'}
   ]}]) : null;
 }
-function installShortcuts(window, electron, browser = () => null, platform = process.platform) {
+function installShortcuts(window, electron, browser = () => null, platform = process.platform, terminalFocus = () => false) {
   const bind = contents => contents.on('before-input-event', (event, input) => {
     if (contents !== window.webContents && contents.getOwnerBrowserWindow?.() !== window) return;
     if (input.type !== 'keyDown' || input.alt || input.isComposing) return;
@@ -14,6 +14,14 @@ function installShortcuts(window, electron, browser = () => null, platform = pro
     const command = platform === 'darwin' ? input.meta && !input.control : input.control && !input.meta;
     if (!command && key !== 'f11') return;
     const focused = electron.webContents.getFocusedWebContents();
+    // A PTY owns Ctrl+C/A/Z/...; copying/pasting uses Ctrl+Shift+C/V on
+    // Linux/Windows. macOS's Command editing shortcuts remain native.
+    if (platform !== 'darwin' && command && focused === window.webContents && terminalFocus()) {
+      if (command && input.shift && (key === 'c' || key === 'v')) {
+        event.preventDefault(); focused[key === 'c' ? 'copy' : 'paste']();
+      }
+      return;
+    }
     const edit = {z:input.shift?'redo':'undo', y:'redo', x:'cut', c:'copy', v:'paste', a:'selectAll'}[key];
     if (command && edit) {
       event.preventDefault();

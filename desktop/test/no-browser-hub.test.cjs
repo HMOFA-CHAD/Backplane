@@ -23,7 +23,7 @@ function harness(hang=false){
     fetch:async url=>({ok:url.endsWith('/auth/pair')})};
   const electron={app:{isPackaged:false,setPath(){},setName(){},requestSingleInstanceLock:()=>true,on(){},quit(){},whenReady:()=>whenReady},
     BrowserWindow,Menu:{setApplicationMenu(){},buildFromTemplate:x=>x},dialog:{showErrorBox:(a,b)=>calls.errors.push(b)},
-    ipcMain:{handle:(ch,f)=>calls.handlers.set(ch,f)},session:{fromPartition:()=>ses},shell:{},webContents:{getFocusedWebContents:()=>null}};
+    ipcMain:{handle:(ch,f)=>calls.handlers.set(ch,f),on(){}},session:{fromPartition:()=>ses},shell:{},webContents:{getFocusedWebContents:()=>null}};
   class Service{async start(){return{origin:'http://127.0.0.1:1',version:'fixture'};}async token(){return'a'.repeat(32);}}
   // the hub has no /desktop/browser/v1: the controller's start fails and it closes
   const controller={createDesktopBrowserController:({onState})=>{calls.controllers++;let closed=false,state={phase:'connecting'};

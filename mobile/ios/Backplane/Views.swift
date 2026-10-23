@@ -294,36 +294,73 @@ private struct ThreadRow: View {
     @Environment(\.backplaneLanguage) private var lang
     let model: AppModel
     let row: Row
+    var hierarchy = true
     let choose: (Swipe) -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            StatusDot(state: row.state, status: row.status).frame(width: 18)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(row.title).lineLimit(1)
-                if let p = row.project, !p.isEmpty {
-                    Text(p).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                if hierarchy && ((row.children ?? 0) > 0 || row.canChild == true) {
+                    Button { model.act("thread-tree", row.id) } label: {
+                        Image(systemName: row.expanded == true ? "chevron.down" : "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .frame(width: 32, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel((row.expanded == true ? "Collapse subthreads of " : "Expand subthreads of ") + row.title)
+                    .accessibilityValue(String(row.children ?? 0) + " subthreads")
+                    .accessibilityIdentifier("thread.tree." + row.id)
+                } else {
+                    Color.clear.frame(width: 32, height: 1).accessibilityHidden(true)
                 }
+                // Only this sibling area selects/opens the row. A chevron tap
+                // never enters the thread or fires its long-press menu.
+                HStack(spacing: 10) {
+                    StatusDot(state: row.state, status: row.status).frame(width: 18)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(row.title).lineLimit(1)
+                        if let p = row.project, !p.isEmpty {
+                            Text(p).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+                    if row.pinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary) }
+                    if let n = row.agents, !n.isEmpty {
+                        Text(n).font(.caption).foregroundStyle(PhaseColor.accent).lineLimit(1)
+                            .frame(maxWidth: 80, alignment: .trailing)
+                    } else {
+                        Text(row.ago).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            .frame(maxWidth: 72, alignment: .trailing)
+                    }
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { model.open(nav: row.id, action: "select", value: row.id, title: row.title) }
+                .onLongPressGesture(minimumDuration: 0.4) {
+                    Haptics.impact()
+                    model.act("row-menu", row.id)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(named: NativeMessages.native_thread_menu(lang)) { model.act("row-menu", row.id) }
             }
-            Spacer()
-            if row.pinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary) }
-            if let n = row.agents, !n.isEmpty {
-                Text(n).font(.caption).foregroundStyle(PhaseColor.accent)
-            } else {
-                Text(row.ago).font(.caption).foregroundStyle(.secondary)
+            if hierarchy && row.expanded == true && row.canChild == true {
+                Button { model.act("thread-child", row.id) } label: {
+                    Label("New subthread", systemImage: "plus")
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .padding(.leading, 60)
+                .accessibilityIdentifier("thread.child.row." + row.id)
             }
-            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
         }
-        .contentShape(Rectangle())
+        .padding(.leading, CGFloat(min(max(row.depth ?? 0, 0), 4) * 12))
         .opacity(row.faded == true ? 0.45 : 1)
-        .onTapGesture { model.open(nav: row.id, action: "select", value: row.id, title: row.title) }
-        .onLongPressGesture(minimumDuration: 0.4) {
-            Haptics.impact()
-            model.act("row-menu", row.id)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: NativeMessages.native_thread_menu(lang)) { model.act("row-menu", row.id) }
         .swipeActions(edge: .leading) {
             ForEach(row.lead, id: \.self) { SwipeButton(model: model, swipe: $0, choose: choose) }
         }
@@ -388,9 +425,14 @@ struct ProjectsView: View {
                 ForEach(screen.projects) { p in projectSection(p) }
                 if let o = screen.older { foldRow(false, o, "side-older") }
             }
+            if let legacy = screen.legacy, !legacy.isEmpty {
+                Section("Conversation history") {
+                    ForEach(legacy) { ThreadRow(model: model, row: $0, hierarchy: false) { choosing = $0 } }
+                }
+            }
         }
         .overlay {
-            if screen.projects.isEmpty {
+            if screen.projects.isEmpty && (screen.legacy ?? []).isEmpty && (screen.active ?? []).isEmpty {
                 // a hub still catching up has not said what there is yet
                 if let h = screen.hubs.first(where: { (model.conn[$0.key]?.phase ?? .connecting) != .online }), !screen.online {
                     VStack(spacing: 12) {
@@ -1047,6 +1089,10 @@ struct ThreadScreen: View {
                     Button(t.label, systemImage: "stop.fill") { model.act(t.action) }
                 }
                 Menu {
+                    if thread.canChild == true {
+                        Button("New subthread", systemImage: "plus.bubble") { model.act("thread-child", thread.id) }
+                            .accessibilityIdentifier("thread.child." + thread.id)
+                    }
                     ForEach(thread.tools.filter { $0.action != "interrupt" }, id: \.self) { t in
                         Button { model.act(t.action, t.value ?? "") } label: {
                             Label(t.label, systemImage: t.on ? "checkmark" : Self.icon(t.icon))

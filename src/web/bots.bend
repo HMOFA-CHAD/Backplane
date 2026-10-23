@@ -259,6 +259,18 @@ def WB.browser.k(none: Bool, +n: String, +id: String, +name: String) -> D.Node:
 
 # The local Electron guest paints directly in this measured DOM rectangle.
 # Main/service own its actual tab and input authority; DOM claims grant neither.
+def WB.browser.direct(+u: U.Ui, +id: String) -> Bool:
+  Bool.and(String.eq(U.Ui.scratch(u, "@desktop.browser"), "1"),
+    Bool.and(String.is_empty(U.Ui.info(u, "local.remote.url")), Bool.not(String.contains(id, "~"))))
+
+def WB.browser.drive.loc(+lc: I.Loc, +u: U.Ui, +id: String) -> D.Node:
+  +person = Bool.not(String.is_empty(U.Teach.drive(u, id)))
+  WB.div("tk-strip desktop-browser-drive", [
+    D.Dom.span("", Bool.pick(String, person, "You drive", "Agent drives · click the page to take over")),
+    D.Dom.button("", Bool.pick(String, person, "tk-handback", "tk-takeover"), id,
+      Bool.pick(String, person, MSG.T.teach.handback(lc), MSG.T.teach.takeover(lc)),
+      Bool.pick(String, person, MSG.T.teach.handback(lc), MSG.T.teach.takeover(lc)))])
+
 def WB.browser.surface.k(direct: Bool, +lc: I.Loc, +u: U.Ui, +id: String, +name: String) -> D.Node:
   match direct:
     case True{}:
@@ -271,7 +283,7 @@ def WB.browser.surface.k(direct: Bool, +lc: I.Loc, +u: U.Ui, +id: String, +name:
 def WB.browser.surface.ready(provisional: Bool, lc: I.Loc, +u: U.Ui, id: String, name: String) -> D.Node:
   match provisional:
     case True{}: D.El{"div", "browser-loading", [D.At{"role", "status"}], [D.Txt{MSG.T.viewer.loading(lc)}]}
-    case False{}: WB.browser.surface.k(String.eq(U.Ui.scratch(u, "@desktop.browser"), "1"), lc, u, id, name)
+    case False{}: WB.browser.surface.k(WB.browser.direct(u, id), lc, u, id, name)
 
 def WB.browser.surface.loc(+lc: I.Loc, +u: U.Ui, +id: String, +name: String) -> D.Node:
   WB.browser.surface.ready(String.eq(U.Ui.scratch(u, "@presentation"), "1"), lc, u, id, name)

@@ -210,6 +210,13 @@ def Term.add(m: Maybe<&2, Term>, ts: List<&2, Term>) -> List<&2, Term>:
       ts
 
 # a new shell unless the thread has one (then it only takes the new size)
+def Term.opened(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: String, +cols: U32, +rows: U32, +shell: String, +cwd: String,
+    +q: Chan(TMsg), +out: Chan(TOut)) -> IO(Maybe<&2, Term>):
+  match r:
+    case Done{started}: Term.spawned.ok(started, thread, cols, rows, q, out)
+    case Fail{(code, msg)}:
+      Term.spawned.fail((code, shell ++ " in " ++ cwd ++ ": " ++ msg ++ ". Check SHELL and that the thread folder exists."), thread, q, out)
+
 def Term.open(has: Bool, +ts: List<&2, Term>, +thread: String, +cwd: String, +cols: U32, +rows: U32, +shell: String, +q: Chan(TMsg),
     +out: Chan(TOut)) -> IO(List<&2, Term>):
   match has:
@@ -217,7 +224,7 @@ def Term.open(has: Bool, +ts: List<&2, Term>, +thread: String, +cwd: String, +co
       IO.bind(Unit, List<&2, Term>, Term.send(ts, thread, [255, 254, cols, rows]), u => IO.pure(List<&2, Term>, ts))
     case False{}:
       IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, List<&2, Term>, PT.Pty.spawn(shell, ["-l"], cwd, cols, rows),
-        r => IO.bind(Maybe<&2, Term>, List<&2, Term>, Term.spawned(r, thread, cols, rows, q, out), m => IO.pure(List<&2, Term>, Term.add(m, ts))))
+        r => IO.bind(Maybe<&2, Term>, List<&2, Term>, Term.opened(r, thread, cols, rows, shell, cwd, q, out), m => IO.pure(List<&2, Term>, Term.add(m, ts))))
 
 # Terminals in the chat
 # ---------------------

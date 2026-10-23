@@ -1,4 +1,5 @@
 import Base
+import ../core/subthreads.bend as ST
 import ../core/textscale.bend as TS
 import ../core/codec.bend as C
 import ../core/title.bend as TTL
@@ -11,6 +12,7 @@ import ../core/signal.bend as SG
 import ../core/i18n.bend as I
 import ./dom.bend as D
 import ./usage-page.bend as UV
+import ./settings-menu.bend as SM
 import ./icon.bend as WI
 import ../core/tools.bend as TO
 import ../core/client.bend as U
@@ -218,12 +220,33 @@ def View.row(+lc: I.Loc, +t: M.Thread, +ix: U.SIx, +st: M.State, +sel: String, +
     case M.Thread{+id, _, +title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       View.row.m.loc(lc, id, U.Label.title(st, id, TTL.Title.shown(lc, title)), Bool.pick(String, snoozed, I.I18n.ago(lc, U.Side.until(st, id), now), I.I18n.ago(lc, now, a)), View.sub.badge(lc, SB.Subs.count.ix(ix, st, id)), SG.Signal.name(U.Side.signal.ix(ix, t)), sel, movable)
 
+# Expanders are separate buttons beside the selection target: keyboard
+# activation never opens a thread accidentally, and every row has one.
+def View.tree.expander(+id: String, +expanded: Bool, +count: Nat) -> D.Node:
+  D.El{"button", "tree-toggle:" ++ id, [D.At{"class", "thread-expander"}, D.At{"type", "button"},
+    D.At{"aria-expanded", Bool.pick(String, expanded, "true", "false")}, D.At{"aria-label", Bool.pick(String, expanded, "Collapse subthreads", "Expand subthreads") ++ " (" ++ Nat.show(count) ++ ")"},
+    D.At{"title", Bool.pick(String, expanded, "Collapse subthreads", "Expand subthreads") ++ " · " ++ Nat.show(count)}, D.At{"data-value", id}, D.On{"click", "thread-tree"}],
+    [WI.WIcon.svg(Bool.pick(String, expanded, "chevron-down", "chevron-right"), 14)]}
+
+def View.tree.create(show: Bool, +id: String, +depth: Nat) -> List<&2, D.Node>:
+  match show:
+    case True{}:
+      [D.El{"div", "tree-create:" ++ id, [D.At{"class", "thread-create"}, D.At{"style", "--depth:" ++ Nat.show(depth)}],
+        [D.Dom.button("", "thread-child", id, "Create a conversation beneath this thread", "+ New subthread")]}]
+    case False{}: Nil{}
+
+def View.tree.rows(+lc: I.Loc, rs: List<&2, ST.TRow>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +movable: Bool) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}: Nil{}
+    case ST.TRow{+t, +depth, +expanded, +children} <> rest:
+      +id = M.Thread.id(t)
+      +indent = Bool.pick(Nat, Nat.is_gt(depth, 4n), 4n, depth)
+      List.concat(&2, D.Node, [[D.El{"div", "tree:" ++ id, [D.At{"class", "thread-tree-row"}, D.At{"style", "--depth:" ++ Nat.show(indent)}],
+        [View.tree.expander(id, expanded, children), View.row(lc, t, ix, st, sel, now, Bool.and(movable, Nat.is_eq(depth, 0n)), M.Snooze.on(now, U.Side.until(st, id)))]}],
+        View.tree.create(Bool.and(expanded, U.ThreadTree.can_create(st, id)), id, indent), View.tree.rows(lc, rest, ix, st, sel, now, movable)])
+
 def View.rows_in(+lc: I.Loc, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> List<&2, D.Node>:
-  match ts:
-    case Nil{}:
-      Nil{}
-    case +t <> rest:
-      View.row(lc, t, ix, st, sel, now, movable, snoozed) <> View.rows_in(lc, rest, ix, st, sel, now, movable, snoozed)
+  View.tree.rows(lc, ST.Tree.rows(st, ts, sel), ix, st, sel, now, movable)
 
 def View.rows_of(+lc: I.Loc, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
   View.rows_in(lc, ts, ix, st, sel, now, False{}, False{})
@@ -348,17 +371,36 @@ def View.arow(+lc: I.Loc, r: U.ARow, +ix: U.SIx, +st: M.State, +sel: String) -> 
           D.At{"style", "--tint:" ++ BG.Badge.css_of(st, pid)}, D.At{"data-value", M.Thread.id(t)}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
         [View.dot(lc, SG.Signal.name(U.Side.signal.ix(ix, t))), D.Dom.span("title", U.Label.title(st, M.Thread.id(t), TTL.Title.shown(lc, U.Active.title(t)))), View.note(View.sub.badge(lc, SB.Subs.count.ix(ix, st, M.Thread.id(t))), pt)]}
 
-def View.arows(+lc: I.Loc, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
-  match rs:
-    case Nil{}:
-      Nil{}
-    case r <> t:
-      View.arow(lc, r, ix, st, sel) <> View.arows(lc, t, ix, st, sel)
+def View.atree.step(root: Bool, anchors: List<&2, U.ARow>, fallback: U.ARow) -> List<&2, U.ARow> & U.ARow:
+  match root anchors:
+    case True{} a <> rest: (rest, a)
+    case _ xs: (xs, fallback)
 
-def View.afaded.open(+lc: I.Loc, on: Bool, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
+def View.atree.card(+lc: I.Loc, +t: M.Thread, anchor: U.ARow, +ix: U.SIx, +st: M.State, +sel: String) -> D.Node:
+  match anchor:
+    case U.ARow{_, _, _, pid, pt, faded}: View.arow(lc, U.ARow{0n, 0n, t, pid, pt, faded}, ix, st, sel)
+
+def View.atree.rows(rs: List<&2, ST.TRow>, +lc: I.Loc, anchors: List<&2, U.ARow>, anchor: U.ARow, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}: Nil{}
+    case ST.TRow{+t, +depth, +expanded, +children} <> rest:
+      +id = M.Thread.id(t)
+      +indent = Bool.pick(Nat, Nat.is_gt(depth, 4n), 4n, depth)
+      (next, +at) = View.atree.step(Nat.is_eq(depth, 0n), anchors, anchor)
+      List.concat(&2, D.Node, [[D.El{"div", "tree:" ++ id, [D.At{"class", "thread-tree-row"}, D.At{"style", "--depth:" ++ Nat.show(indent)}],
+        [View.tree.expander(id, expanded, children), View.atree.card(lc, t, at, ix, st, sel)]}],
+        View.tree.create(Bool.and(expanded, U.ThreadTree.can_create(st, id)), id, indent), View.atree.rows(rest, lc, next, at, ix, st, sel)])
+
+def View.arows(+lc: I.Loc, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +q: String) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}: Nil{}
+    case +r <> +rest:
+      View.atree.rows(ST.Tree.rows_search(st, U.Active.root_threads(r <> rest), sel, q), lc, r <> rest, r, ix, st, sel)
+
+def View.afaded.open(+lc: I.Loc, on: Bool, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +q: String) -> List<&2, D.Node>:
   match on:
     case True{}:
-      View.arows(lc, rs, ix, st, sel)
+      View.arows(lc, rs, ix, st, sel, q)
     case False{}:
       Nil{}
 
@@ -367,11 +409,11 @@ def View.afaded.open(+lc: I.Loc, on: Bool, rs: List<&2, U.ARow>, +ix: U.SIx, +st
 def View.afaded.k(+lc: I.Loc, searching: Bool, +open: Bool, +n: Nat, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match searching:
     case True{}:
-      View.arows(lc, rs, ix, st, sel)
+      View.arows(lc, rs, ix, st, sel, "search")
     case False{}:
       WI.WIcon.button(Bool.pick(String, open, "shelf older open", "shelf older"), "side-settled", "", MSG.T.sidebar.settled.note(lc),
           Bool.pick(String, open, "chevron-down", "chevron-right"), 14, MSG.T.sidebar.settled.count(lc, Nat.show(n)))
-        <> View.afaded.open(lc, open, rs, ix, st, sel)
+        <> View.afaded.open(lc, open, rs, ix, st, sel, "")
 
 def View.afaded(+lc: I.Loc, rs: List<&2, U.ARow>, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
@@ -383,7 +425,7 @@ def View.afaded(+lc: I.Loc, rs: List<&2, U.ARow>, +q: String, +open: Map<&2, Boo
 def View.active.k(+lc: I.Loc, p: U.AParts, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match p:
     case U.AParts{l, f}:
-      [D.El{"section", "", [D.At{"class", "project active"}], List.append(&2, D.Node, View.arows(lc, l, ix, st, sel), View.afaded(lc, f, q, open, ix, st, sel))}]
+      [D.El{"section", "", [D.At{"class", "project active"}], List.append(&2, D.Node, View.arows(lc, l, ix, st, sel, q), View.afaded(lc, f, q, open, ix, st, sel))}]
 
 def View.active(+lc: I.Loc, rs: List<&2, U.ARow>, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
@@ -401,8 +443,30 @@ def View.list.k(+lc: I.Loc, active: Bool, +q: String, +open: Map<&2, Bool>, +ix:
       View.groups(lc, U.Side.groups(U.Side.shown.ix(st, ix, now, q), now), q, open, ix, st, sel, now, look, rm)
 
 # (what every row asks of the whole state is gathered once: core's Side.ix)
+def View.history.rows(+lc: I.Loc, ts: List<&2, M.Thread>, +q: String, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
+  match ts:
+    case Nil{}: Nil{}
+    case +t <> rest:
+      D.Dom.cat(D.Dom.when(Bool.or(String.is_empty(q), U.Palette.hit(q, U.Active.title(t))), View.row(lc, t, ix, st, sel, now, False{}, False{})), View.history.rows(lc, rest, q, ix, st, sel, now))
+
+def View.history.open(show: Bool, +lc: I.Loc, ts: List<&2, M.Thread>, q: String, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
+  match show:
+    case True{}: View.history.rows(lc, ts, q, ix, st, sel, now)
+    case False{}: Nil{}
+
+def View.history.k(ts: List<&2, M.Thread>, +lc: I.Loc, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
+  match ts:
+    case Nil{}: Nil{}
+    case +t <> +rest:
+      [D.El{"section", "conversation-history", [D.At{"class", "conversation-history"}],
+        WI.WIcon.button("shelf", "thread-history", "", "Previous conversations", Bool.pick(String, U.Flag.get(open, "conversation-history"), "chevron-down", "chevron-right"), 14, "Conversation history") <>
+          View.history.open(Bool.or(U.Flag.get(open, "conversation-history"), Bool.not(String.is_empty(q))), lc, t <> rest, q, ix, st, sel, now)}]
+
+def View.history(+lc: I.Loc, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
+  View.history.k(ST.Legacy.threads(st), lc, q, open, ix, st, sel, now)
+
 def View.list(+lc: I.Loc, active: Bool, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
-  View.list.k(lc, active, q, open, ix, st, sel, now, look, rm)
+  List.append(&2, D.Node, View.list.k(lc, active, q, open, ix, st, sel, now, look, rm), View.history(lc, q, open, ix, st, sel, now))
 
 # the search, always at the top of the list
 def View.find.loc(+lc: I.Loc, +active: Bool, +q: String) -> List<&2, D.Node>:
@@ -676,6 +740,33 @@ def View.boat.chip.loc(+lc: I.Loc, +chip: String) -> List<&2, D.Node>:
 def View.boat.chip(+chip: String) -> List<&2, D.Node>:
   View.boat.chip.loc(I.En{}, chip)
 
+# Header actions stay flat: thread management, direct snooze choices, then
+# workspace destinations. Stop lives with the actual work state below them.
+def View.header.tool.label(lc: I.Loc, +action: String, label: String) -> String:
+  match lc:
+    case I.En{}:
+      Bool.pick(String, String.eq(action, "settle"), "Mark settled", Bool.pick(String, String.eq(action, "unsettle"), "Mark active", Bool.pick(String, String.eq(action, "snooze"), "Wake thread", label)))
+    case I.Ja{}:
+      Bool.pick(String, String.eq(action, "settle"), "完了にする", Bool.pick(String, String.eq(action, "unsettle"), "アクティブにする", Bool.pick(String, String.eq(action, "snooze"), "スレッドを再開", label)))
+
+def View.header.tool(+lc: I.Loc, t: TO.Tool) -> D.Node:
+  match t:
+    case TO.Tool{i, l, tip, +a, v, on, dg, gap}:
+      View.tool(TO.Tool{i, View.header.tool.label(lc, a, l), tip, a, v, on, dg, gap})
+
+def View.header.tools(+lc: I.Loc, ts: List<&2, TO.Tool>) -> List<&2, D.Node>:
+  match ts:
+    case Nil{}: Nil{}
+    case +t <> rest:
+      match t:
+        case TO.Tool{_, _, _, +a, _, _, _, _}:
+          D.Dom.cat(D.Dom.when(Bool.not(Bool.or(String.eq(a, "panel"), Bool.or(String.eq(a, "term-toggle"), String.eq(a, "flag")))), View.header.tool(lc, t)), View.header.tools(lc, rest))
+
+def View.group.label(lc: I.Loc, snooze: Bool) -> String:
+  match lc:
+    case I.En{}: Bool.pick(String, snooze, "Snooze thread", "Thread")
+    case I.Ja{}: Bool.pick(String, snooze, "スヌーズ", "スレッド")
+
 def View.header(+lc: I.Loc, t: M.Thread, +st: M.State, +chip: String, mini: List<&2, TO.Tool>, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, del: Bool, +ren: String, +rtext: String) -> D.Node:
   match t:
     case M.Thread{+id, +p, title, _, _, turn, _, archived, override, +sa, +ua, pinned, _, +branch, _, _, model, _, _, _, _}:
@@ -684,10 +775,10 @@ def View.header(+lc: I.Loc, t: M.Thread, +st: M.State, +chip: String, mini: List
         D.El{"span", "", [D.At{"class", "badge"}], [WI.WIcon.svg(BG.Badge.icon(st, p), 16)]},
         D.El{"div", "", [D.At{"class", "title-box"}], View.title.k.loc(lc, String.eq(ren, id), id, U.Label.title(st, id, TTL.Title.shown(lc, title)), rtext)},
         D.Dom.span("meta", Bool.pick(String, String.is_empty(branch), "", branch))], View.boat.chip.loc(lc, chip), [
-        D.El{"div", "", [D.At{"class", "tools"}], List.append(&2, D.Node,
-          View.tools(List.append(&2, TO.Tool, mini, TO.Tools.head.loc(lc, TO.Head{View.running(turn), TO.Tools.settled(override, Nat.is_gt(sa, ua)), pinned, snoozed, archived, del,
+        D.El{"div", "", [D.At{"class", "tools thread-controls"}], D.Dom.span("control-label", View.group.label(lc, False{})) <> List.append(&2, D.Node,
+          View.header.tools(lc, List.append(&2, TO.Tool, mini, TO.Tools.head.loc(lc, TO.Head{False{}, TO.Tools.settled(override, Nat.is_gt(sa, ua)), pinned, snoozed, archived, del,
             Bool.not(String.is_empty(M.Fork.source(st, id))), term, panel}, "flag", "snooze", "term-toggle", "@term-size"))),
-          View.snoozes.loc(lc, picking))}]])}
+          D.Dom.span("control-label", View.group.label(lc, True{})) <> List.take(&2, D.Node, View.snoozes.loc(lc, True{}), 3n))}]])}
 
 # the model menu's rows: each model's name, then what its CLI calls it,
 # in two columns (the names' as wide as the longest, --namew)
@@ -778,9 +869,8 @@ def View.skills(+rs: List<&2, U.SkillRow>) -> List<&2, D.Node>:
 # ---------
 
 
-# the panel over the timeline (core/subs.bend has the rows), held at the
-# top while the timeline scrolls; a task's row opens its thread, a
-# subagent's opens or shuts its steps
+# A dock below the thread header, outside the conversation's scroll area.
+# A task opens its thread; an agent opens its recent steps in this dock.
 
 def View.sub.step(s: SB.SubStep) -> D.Node:
   match s:
@@ -797,7 +887,7 @@ def View.sub.steps(ss: List<&2, SB.SubStep>) -> List<&2, D.Node>:
 def View.sub.act(agent: Bool, +open: Bool, +key: String) -> List<&2, D.Attr>:
   match agent:
     case True{}:
-      [D.At{"data-value", SB.Subs.ask(open, key)}, D.On{"click", "fold"}]
+      [D.At{"aria-expanded", Bool.pick(String, open, "true", "false")}, D.At{"data-value", SB.Subs.ask(open, key)}, D.On{"click", "fold"}]
     case False{}:
       [D.At{"data-value", key}, D.On{"click", "select"}]
 
@@ -808,13 +898,22 @@ def View.sub.stop.loc(+lc: I.Loc, +act: String, +key: String) -> List<&2, D.Node
 def View.sub.stop(+act: String, +key: String) -> List<&2, D.Node>:
   View.sub.stop.loc(I.En{}, act, key)
 
+def View.sub.empty.loc(lc: I.Loc) -> String:
+  match lc:
+    case I.En{}: "No steps reported yet."
+    case I.Ja{}: "まだ手順が報告されていません。"
+
+def View.sub.detail(+lc: I.Loc, +agent: Bool, +open: Bool, +key: String, +ss: List<&2, SB.SubStep>) -> List<&2, D.Node>:
+  Bool.pick(List<&2, D.Node>, Bool.and(agent, Bool.and(open, Bool.and(Bool.not(String.starts_with(key, "subs.done:")), List.is_empty(&2, SB.SubStep, ss)))),
+    [D.Dom.span("sub-empty", View.sub.empty.loc(lc))], View.sub.steps(ss))
+
 def View.sub.signal.k(+lc: I.Loc, r: SB.SubRow, +act: String, +signal: String) -> D.Node:
   match r:
     case SB.SubRow{+key, +agent, +title, +who, +word, +doing, +live, +open, _, ss}:
       D.El{"div", key, [D.At{"class", "sub sub-signal-" ++ signal ++ " " ++ word ++ Bool.pick(String, String.eq(signal, "active"), " live", "")}],
-        D.Dom.cat([D.El{"div", "", List.append(&2, D.Attr, [D.At{"class", "sub-row"}], View.sub.act(agent, open, key)),
+        D.Dom.cat([D.El{"button", "", List.append(&2, D.Attr, [D.At{"class", "sub-row"}, D.At{"type", "button"}], View.sub.act(agent, open, key)),
           [View.dot(lc, signal), D.Dom.span("who", Bool.pick(String, agent, Bool.pick(String, open, "▾", "▸"), who)), D.Dom.span("title", TTL.Title.shown(lc, title)), D.Dom.span("state", U.StateWord.label(lc, word))]}],
-          D.Dom.cat(View.sub.stop.loc(lc, act, key), D.Dom.cat(D.Dom.when(Bool.not(String.is_empty(doing)), D.Dom.span("doing", doing)), View.sub.steps(ss))))}
+          D.Dom.cat(View.sub.stop.loc(lc, act, key), D.Dom.cat(D.Dom.when(Bool.not(String.is_empty(doing)), D.Dom.span("doing", doing)), View.sub.detail(lc, agent, open, key, ss))))}
 
 def View.sub.k(+lc: I.Loc, +r: SB.SubRow, +act: String) -> D.Node:
   View.sub.signal.k(lc, r, act, SB.Subs.signal(r))
@@ -837,26 +936,41 @@ def View.subs.go(+lc: I.Loc, rs: List<&2, SB.SubRow>) -> List<&2, D.Node>:
     case r <> rest:
       View.sub(lc, r) <> View.subs.go(lc, rest)
 
-# the subagent viewer: what this thread delegated and the agent's own. Its
-# head opens and shuts it; done, it folds to the head (subs.bend's panel)
+# Shared head and scroll body keep the dock's controls available as rows grow.
+def View.subs.head(+lc: I.Loc, +open: Bool, +th: String, +rs: List<&2, SB.SubRow>, word: String) -> D.Node:
+  D.El{"button", "subs-head", [D.At{"class", "subs-head"}, D.At{"type", "button"},
+    D.At{"aria-expanded", Bool.pick(String, open, "true", "false")}, D.At{"aria-controls", "subagent-rows"},
+    D.At{"data-value", SB.Subs.panel.ask(open, th, rs)}, D.On{"click", SB.Subs.panel.action(open)},
+    D.At{"title", Bool.pick(String, open, MSG.T.subagents.hide(lc), MSG.T.subagents.show(lc))}],
+    [D.Dom.span("subs-label", MSG.T.thread.subagents(lc)), D.Dom.span("subs-summary", word), WI.WIcon.svg(Bool.pick(String, open, "chevron-down", "chevron-right"), 14)]}
+
+def View.subs.body(open: Bool, rows: List<&2, D.Node>) -> D.Node:
+  D.El{"div", "subagent-rows", [D.At{"id", "subagent-rows"}, D.At{"class", "subs-body"}], Bool.pick(List<&2, D.Node>, open, rows, Nil{})}
+
+# The head opens and shuts the dock; done, it folds to the head.
 def View.subs.k(+lc: I.Loc, +busy: String, +open: Bool, +th: String, +rs: List<&2, SB.SubRow>) -> D.Node:
-  D.El{"div", "subs", [D.At{"class", "subs" ++ Bool.pick(String, String.is_empty(busy), "", " busy") ++ Bool.pick(String, open, "", " shut")}],
-    WI.WIcon.after("subs-head", SB.Subs.panel.action(open), SB.Subs.panel.ask(open, th, rs), Bool.pick(String, open, MSG.T.subagents.hide(lc), MSG.T.subagents.show(lc)),
-      MSG.T.subagents.heading(lc, View.sub.panel(lc, rs)), Bool.pick(String, open, "chevron-down", "chevron-right"), 14)
-      <> View.subs.go(lc, SB.Subs.panel.rows(open, rs))}
+  D.El{"section", "subs", [D.At{"aria-label", MSG.T.thread.subagents(lc)}, D.At{"class", "subs" ++ Bool.pick(String, String.is_empty(busy), "", " busy") ++ Bool.pick(String, open, "", " shut")}],
+    [View.subs.head(lc, open, th, rs, View.sub.panel(lc, rs)), View.subs.body(open, View.subs.go(lc, SB.Subs.panel.rows(open, rs)))]}
 
 def View.sub.signal.panel(+lc: I.Loc, +rs: List<&2, SB.SubRow>, +info: Map<&2, String>) -> String:
   MSG.T.subagents.panel(lc, View.sub.count(SB.Subs.waiting(rs)), View.sub.count(SB.Subs.active(rs, info)), Nat.show(SB.Subs.finished_n(rs)))
 
 def View.subs.signal.k(+lc: I.Loc, +busy: String, +open: Bool, +th: String, +rs: List<&2, SB.SubRow>, +info: Map<&2, String>) -> D.Node:
-  D.El{"div", "subs", [D.At{"class", "subs" ++ Bool.pick(String, String.is_empty(busy), "", " busy") ++ Bool.pick(String, open, "", " shut")}],
-    WI.WIcon.after("subs-head", SB.Subs.panel.action(open), SB.Subs.panel.ask(open, th, rs), Bool.pick(String, open, MSG.T.subagents.hide(lc), MSG.T.subagents.show(lc)),
-      MSG.T.subagents.heading(lc, View.sub.signal.panel(lc, rs, info)), Bool.pick(String, open, "chevron-down", "chevron-right"), 14)
-      <> View.subs.signals.go(lc, SB.Subs.panel.rows(open, rs), info)}
+  D.El{"section", "subs", [D.At{"aria-label", MSG.T.thread.subagents(lc)}, D.At{"class", "subs" ++ Bool.pick(String, String.is_empty(busy), "", " busy") ++ Bool.pick(String, open, "", " shut")}],
+    [View.subs.head(lc, open, th, rs, View.sub.signal.panel(lc, rs, info)), View.subs.body(open, View.subs.signals.go(lc, SB.Subs.panel.rows(open, rs), info))]}
 
 def View.subs(+lc: I.Loc, +info: Map<&2, String>, +th: String, +rs: List<&2, SB.SubRow>) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, List.is_empty(&2, SB.SubRow, rs), Nil{},
     [View.subs.signal.k(lc, View.sub.busy(lc, SB.Subs.active(rs, info)), SB.Subs.panel.open(info, th, rs), th, rs, info)])
+
+def View.subthreads.if(show: Bool, id: String) -> List<&2, D.Node>:
+  match show:
+    case True{}: [D.El{"div", "subthreads-control", [D.At{"class", "subthreads-control"}], [D.Dom.button("", "thread-child", id, "Create a visible conversation beneath this thread", "+ New subthread")]}]
+    case False{}: Nil{}
+
+# The workspace's per-thread creation control, separate from Subagents.
+def View.subthreads(+lc: I.Loc, +st: M.State, +id: String) -> List<&2, D.Node>:
+  View.subthreads.if(U.ThreadTree.can_create(st, id), id)
 
 def View.parent(+st: M.State, +thread: String, +p: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, String.is_empty(p), Nil{},
@@ -1370,12 +1484,12 @@ def View.settings.menu(ps: List<&2, String>, +lc: I.Loc) -> List<&2, D.Node>:
   match ps:
     case Nil{}: Nil{}
     case +p <> t:
-      D.Dom.button("settings-category", "settings-page", p, U.Settings.title(lc, p), U.Settings.title(lc, p) ++ " ›") <> View.settings.menu(t, lc)
+      SM.Menu.card(lc, p, "") <> View.settings.menu(t, lc)
 
 # the menu with Settings' search over it (client.bend's Settings.found): the
 # pages it finds, each with the rows that matched; Enter opens the first
 def View.settings.find.btn(+lc: I.Loc, +p: String, +hint: String) -> D.Node:
-  D.Dom.button("settings-category", "settings-page", p, U.Settings.title(lc, p), U.Settings.title(lc, p) ++ " ›" ++ Bool.pick(String, String.is_empty(hint), "", "   " ++ hint))
+  SM.Menu.card(lc, p, hint)
 
 def View.settings.found(ps: List<&2, String>, +lc: I.Loc, +q: String) -> List<&2, D.Node>:
   match ps:
@@ -1388,16 +1502,12 @@ def View.settings.none(none: Bool, +lc: I.Loc) -> List<&2, D.Node>:
     case False{}: Nil{}
 
 def View.settings.root(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
-  +q = U.Settings.q(u)
-  +ps = U.Settings.found(U.Settings.menu.pages(), lc, q)
-  D.El{"input", "settings-find", [D.At{"id", "settings-find"}, D.At{"class", "field set-find"}, D.At{"placeholder", MSG.T.settings.search(lc)}, D.At{"autocomplete", "off"},
-    D.At{"spellcheck", "false"}, D.At{"value", U.Ui.scratch(u, "@f.setq")}, D.At{"data-bfield", "setq"}, D.On{"input", "bfield"}, D.At{"data-enter", "settings-page"}, D.At{"data-value", "?"}], Nil{}}
-    <> List.append(&2, D.Node, View.settings.none(List.is_empty(&2, String, ps), lc), View.settings.found(ps, lc, q))
+  SM.Menu.root(lc, u)
 
 def View.settings.body(root: Bool, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> List<&2, D.Node>:
   match root:
     case True{}: View.settings.root(lc, u)
-    case False{}: View.settings.rows(C.Codec.pos(U.Settings.pages(), U.Settings.page(u)), lc, u, st, nf, v, note)
+    case False{}: List.append(&2, D.Node, SM.Menu.context(lc, U.Settings.page(u)), View.settings.rows(C.Codec.pos(U.Settings.pages(), U.Settings.page(u)), lc, u, st, nf, v, note))
 
 def View.settings.loc(+lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:
   +page = U.Settings.page(u)
@@ -2170,22 +2280,66 @@ def View.hold.pill(+label: String) -> List<&2, D.Node>:
 def View.thread.subs(+lc: I.Loc, +st: M.State, +nf: Map<&2, String>, +id: String, now: Nat) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, US.Ub.chat.is(st, id), Nil{}, View.subs(lc, nf, id, SB.Subs.rows(st, nf, id, now)))
 
+def View.tab(+cur: String, +kind: String, +action: String, +value: String, +title: String, +label: String) -> D.Node:
+  D.El{"button", "", [D.At{"class", Bool.pick(String, String.eq(cur, kind), "tab on", "tab")}, D.At{"type", "button"},
+    D.At{"aria-current", Bool.pick(String, String.eq(cur, kind), "page", "false")}, D.At{"data-value", value}, D.At{"title", title}, D.On{"click", action}], [D.Txt{label}]}
+
+def View.destinations(+lc: I.Loc, +cur: String) -> List<&2, D.Node>:
+  [
+    View.tab(cur, "board", "view-kind", "board", MSG.T.viewer.board.tip(lc), MSG.T.viewer.board(lc)),
+    View.tab(cur, "schematic", "view-kind", "schematic", MSG.T.viewer.schematic.tip(lc), MSG.T.viewer.schematic(lc)),
+    View.tab(cur, "3d", "view-kind", "3d", MSG.T.viewer.parts3d.tip(lc), "3D"),
+    View.tab(cur, "mech", "mech", "", MSG.T.viewer.mech.tip(lc), MSG.T.viewer.mech(lc)),
+    View.tab(cur, "files", "fm", "", MSG.T.viewer.files.tip(lc), MSG.T.viewer.files(lc)),
+    View.tab(cur, "diff", "diff", "", MSG.T.viewer.diff.tip(lc), MSG.T.viewer.diff(lc)),
+    View.tab(cur, "review", "rv-page", "bom", MSG.T.viewer.review.tip(lc), MSG.T.viewer.review(lc)),
+    View.tab(cur, "browser", "view-kind", "browser", MSG.T.viewer.browser.tip(lc), MSG.T.bots.tab.browser(lc))]
+
+def View.tabs.loc(+lc: I.Loc, +cur: String) -> D.Node:
+  D.El{"nav", "", [D.At{"class", "viewer-tabs"}, D.At{"aria-label", MSG.T.thread.viewer(lc)}],
+    List.append(&2, D.Node, View.destinations(lc, cur), [WI.WIcon.button("icon", "panel", "", MSG.T.viewer.close(lc), "x", 16, "")])}
+
+def View.commands.label(lc: I.Loc) -> String:
+  match lc:
+    case I.En{}: "Commands"
+    case I.Ja{}: "コマンド"
+
+def View.workspace(+lc: I.Loc, +cur: String, +panel: Bool, term: Bool) -> D.Node:
+  D.El{"nav", "workspace", [D.At{"class", "workspace-bar"}, D.At{"data-loading", MSG.T.viewer.loading(lc)}, D.At{"aria-label", MSG.T.thread.viewer(lc)}],
+    View.tool(TO.Tools.term.loc(lc, term, "term-toggle", "@term-size")) <>
+    D.Dom.button("commands", "ws-palette-open", "", "Command palette · Ctrl+Shift+P / Cmd+Shift+P", View.commands.label(lc)) <>
+    List.append(&2, D.Node, View.destinations(lc, Bool.pick(String, panel, cur, "")),
+      List.append(&2, D.Node, D.Dom.when(panel, D.Dom.button("viewer-close", "panel", "", MSG.T.viewer.close(lc), MSG.T.viewer.close(lc))), [D.El{"span", "viewer-feedback", [D.At{"class", "workspace-feedback"}, D.At{"role", "status"}], Nil{}}]))}
+
+def View.work.label(lc: I.Loc) -> String:
+  match lc:
+    case I.En{}: "Work"
+    case I.Ja{}: "作業"
+
+def View.workbar(+lc: I.Loc, +info: Map<&2, String>, +id: String, running: Bool) -> D.Node:
+  +signal = SG.Signal.cached(info, id)
+  D.El{"div", "workbar", [D.At{"class", "thread-workbar"}, D.At{"role", "group"}, D.At{"aria-label", View.work.label(lc)}],
+    List.append(&2, D.Node, [View.dot(lc, SG.Signal.name(signal)), D.Dom.span("work-state", SG.Signal.label(lc, signal))], View.tools(TO.Tools.stop.loc(lc, running)))}
+
+def View.tabs(+cur: String) -> D.Node:
+  View.tabs.loc(I.En{}, cur)
+
 def View.thread.p(+lc: I.Loc, u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, String>, +up: String, +term: Bool, hd: List<&2, D.Node>, vo: List<&2, D.Node>, +mic: String, fab: List<&2, D.Node>, rd: List<&2, D.Node>, mini: List<&2, TO.Tool>, +pill: String) -> D.Node:
   match u t:
-    case U.Ui{+st, +sel, +drafts, +live, +op, _, +now, _, panel, _, _, _, _, _, +nf, _, +tr} M.Thread{+id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
+    case U.Ui{+st, +sel, +drafts, +live, +op, _, +now, _, +panel, _, _, _, _, _, +nf, _, +tr} M.Thread{+id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
       +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
       D.El{"main", "thread", [D.At{"class", Bool.pick(String, term, "thread-view with-term", "thread-view") ++ Bool.pick(String, U.Flag.get(op, "drop"), " dropping", "")},
         D.At{"data-thread", id}, D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
-        View.top(lc, hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, id, now), mini, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), D.Dom.cat(D.Dom.cat(View.kx.note(U.KX.note(nf, sel), nf, sel), View.kn.loc(lc, U.KN.thread(nf, st, sel), True{})), D.Dom.cat([
+        View.top(lc, hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, id, now), mini, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), D.Dom.cat(D.Dom.cat(View.kx.note(U.KX.note(nf, sel), nf, sel), View.kn.loc(lc, U.KN.thread(nf, st, sel), True{})), D.Dom.cat(D.Dom.cat([View.workspace(lc, U.Fm.tab(U.Str.get(nf, "view.kind:" ++ id)), panel, term), View.workbar(lc, nf, id, View.running(turn))], D.Dom.cat(View.subthreads(lc, st, id), D.Dom.cat(View.thread.subs(lc, st, nf, id, now), [
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
-          D.Dom.cat(fab, D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.thread.subs(lc, st, nf, id, now), View.pins.loc(lc, U.Ec.pins(U.Ec.make(U.MailvLocal.terms(tr), st, id, now), st, id), U.Ec.make(U.MailvLocal.terms(tr), st, id, now)))}], D.Dom.cat(Nil{},
+          D.Dom.cat(fab, D.Dom.cat(View.parent(st, id, U.Tasks.up(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], View.pins.loc(lc, U.Ec.pins(U.Ec.make(U.MailvLocal.terms(tr), st, id, now), st, id), U.Ec.make(U.MailvLocal.terms(tr), st, id, now))}], D.Dom.cat(Nil{},
           D.Dom.cat(View.paged(lc, drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(U.MailvLocal.terms(tr), st, id, now)), D.Dom.cat(View.sending.loc(lc, pend),
             D.Dom.cat(View.signal.of.loc(lc, nf, live, id), View.hold.pill(pill))))))))},
         View.asks.box(lc, st, id, U.Str.get(drafts, sel), nf),
         View.todos(lc, nf, id, U.Todos.shown(st, id, View.running(turn))),
-        View.queued(lc, M.Queue.context(M.Queue.items(st, id)), View.running(turn))], D.Dom.cat(rd, [
+        View.queued(lc, M.Queue.context(M.Queue.items(st, id)), View.running(turn))])), D.Dom.cat(rd, [
         View.composer.t(lc, st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)])))),
-        D.Dom.when(term, View.term.loc(lc, U.Term.get(U.MailvLocal.terms(tr), id))))}
+        Nil{}))}
 
 def View.thread.h(+lc: I.Loc, +u: U.Ui, +t: M.Thread, hd: List<&2, D.Node>) -> D.Node:
   View.thread.p(lc, u, t, U.Ui.pending(u, U.Ui.sel(u)), U.Ui.atts(u, U.Ui.sel(u)), U.Ui.uploading(u, U.Ui.sel(u)), U.Ui.flag(u, "term"), hd, D.Dom.cat(View.btw(lc, u), View.voice.loc(lc, u, U.Ui.sel(u))), View.mic.of(u, U.Ui.sel(u)), View.fab(u), View.ready(u), U.Fab.mini.tools(u), U.Hold.pill(u, M.Thread.id(t)))
@@ -2254,7 +2408,8 @@ def View.browser.strip(on: Bool, +u: U.Ui) -> List<&2, D.Node>:
   View.browser.strip.loc(I.En{}, on, u)
 
 def View.browser.loc(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
-  List.append(&2, D.Node, List.append(&2, D.Node, View.browser.strip.loc(lc, U.CefUI.strip_on(u, U.Ui.page(u)), u), WB.WB.browser.controls(lc, u, U.Ui.page(u))),
+  List.append(&2, D.Node, List.append(&2, D.Node,
+    Bool.pick(List<&2, D.Node>, WB.WB.browser.direct(u, U.Ui.page(u)), [WB.WB.browser.drive.loc(lc, u, U.Ui.page(u))], View.browser.strip.loc(lc, U.CefUI.strip_on(u, U.Ui.page(u)), u)), WB.WB.browser.controls(lc, u, U.Ui.page(u))),
     [WB.WB.browser.surface.loc(lc, u, U.Ui.page(u), MSG.T.browser.thread(lc))])
 
 # The Mechanical page (client.bend's Mpage): a chip per part, Open in 3D
@@ -2747,27 +2902,9 @@ def View.solid.loc(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
 def View.solid(+u: U.Ui) -> List<&2, D.Node>:
   View.solid.loc(I.En{}, u)
 
-def View.tab(+cur: String, +kind: String, +action: String, +value: String, +title: String, +label: String) -> D.Node:
-  D.Dom.button(Bool.pick(String, String.eq(cur, kind), "tab on", "tab"), action, value, title, label)
-
-def View.tabs.loc(+lc: I.Loc, +cur: String) -> D.Node:
-  D.El{"nav", "", [D.At{"class", "viewer-tabs"}], [
-    View.tab(cur, "board", "view-kind", "board", MSG.T.viewer.board.tip(lc), MSG.T.viewer.board(lc)),
-    View.tab(cur, "schematic", "view-kind", "schematic", MSG.T.viewer.schematic.tip(lc), MSG.T.viewer.schematic(lc)),
-    View.tab(cur, "3d", "view-kind", "3d", MSG.T.viewer.parts3d.tip(lc), "3D"),
-    View.tab(cur, "mech", "mech", "", MSG.T.viewer.mech.tip(lc), MSG.T.viewer.mech(lc)),
-    View.tab(cur, "files", "fm", "", MSG.T.viewer.files.tip(lc), MSG.T.viewer.files(lc)),
-    View.tab(cur, "diff", "diff", "", MSG.T.viewer.diff.tip(lc), MSG.T.viewer.diff(lc)),
-    View.tab(cur, "review", "rv-page", "bom", MSG.T.viewer.review.tip(lc), MSG.T.viewer.review(lc)),
-    View.tab(cur, "browser", "view-kind", "browser", MSG.T.viewer.browser.tip(lc), MSG.T.bots.tab.browser(lc)),
-    D.El{"span", "", [D.At{"class", "grow"}], Nil{}},
-    WI.WIcon.button("icon", "panel", "", MSG.T.viewer.close(lc), "x", 16, "")]}
-
 # The Files tab (client.bend's Fm): where the folder is, then its folders
 # and files; a file the viewer can open is a button, any other is listed
 
-def View.tabs(+cur: String) -> D.Node:
-  View.tabs.loc(I.En{}, cur)
 
 def View.fm.trail.loc(+lc: I.Loc, ps: List<&2, U.PItem>) -> List<&2, D.Node>:
   match ps:

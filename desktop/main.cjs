@@ -37,6 +37,7 @@ const launchedAtMs = Date.now();
 let window, origin, connection, serviceReadyAtMs, firstVisibleAtMs, connecting;
 let desktopBrowser;
 let quitting = false;
+let terminalFocused = false;
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => { window?.show(); if (window?.isMinimized()) window.restore(); window?.focus(); });
@@ -48,6 +49,9 @@ function senderIsWindow(event) {
 function trusted(event) {
   try { return senderIsWindow(event) && origin && new URL(event.senderFrame.url).origin === origin; } catch { return false; }
 }
+ipcMain.on('desktop:terminal-focus', (event, active) => {
+  if (trusted(event) && typeof active === 'boolean') terminalFocused = active;
+});
 function external(url) {
   try { const parsed = new URL(url); if (['https:', 'http:', 'mailto:'].includes(parsed.protocol) && !parsed.username && !parsed.password) void shell.openExternal(parsed.href); } catch {}
 }
@@ -82,16 +86,21 @@ function connectBrowser(ses){
 }
 async function startBrowser(ses){
   if(desktopBrowser&&!desktopBrowser.isClosed())return;
+  const browserWindow=window;
   const guestPath=path.join(__dirname,'browser-guest.cjs'),preloadPath=path.join(__dirname,'browser-recording-preload.cjs');
   const hash=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   const config=build.desktopBrowser||{};
-  desktopBrowser=createDesktopBrowserController({electron,window,appSession:ses,origin,version:connection.version,token:await service.token(),
+  const token=await service.token();
+  if(quitting||window!==browserWindow||browserWindow.isDestroyed())return;
+  const controller=createDesktopBrowserController({electron,window:browserWindow,appSession:ses,origin,version:connection.version,token,
     guestManagerSha256:config.guestManagerSha256||hash(guestPath),
     recorder:{preloadPath,preloadSha256:config.preloadSha256||hash(preloadPath),recorderSourceSha256:'2e4b03765cc4ae6595e32048555ffe27e750994a85c18b89027064f3c0c15350',subframePreload:true,popupPreloadVerified:false},
     unknownState:browserUnknown,executeCall:createBrowserActions(),
-    onState:value=>{if(window&&!window.isDestroyed())window.webContents.send('desktop:browser-state',value);},
-    onTakeover:value=>{if(window&&!window.isDestroyed())window.webContents.send('desktop:browser-takeover',value);}});
-  await desktopBrowser.start();
+    onState:value=>{if(window===browserWindow&&!browserWindow.isDestroyed())browserWindow.webContents.send('desktop:browser-state',value);},
+    onTakeover:value=>{if(window===browserWindow&&!browserWindow.isDestroyed())browserWindow.webContents.send('desktop:browser-takeover',value);}});
+  desktopBrowser=controller;
+  await controller.start();
+  if(window!==browserWindow||browserWindow.isDestroyed())controller.close();
 }
 function start() {
   const ses = session.fromPartition('persist:backplane-ui');
@@ -127,9 +136,12 @@ function start() {
     const width=Math.min(box.width-x,Math.round(value.bounds.width*zoom)),height=Math.min(box.height-y,Math.round(value.bounds.height*zoom));
     if(!desktopBrowser||desktopBrowser.isClosed())return{shown:false,phase:'error',message:'Browser unavailable'};
     if(width<1||height<1){desktopBrowser.hide();return{shown:false,message:'Browser panel is hidden'};}
-    return desktopBrowser.present({owner:value.owner,bounds:{x,y,width,height}}).then(result=>({shown:result.shown===true,...(result.message?{message:result.message}:{} )}));
+    return desktopBrowser.present({owner:value.owner,bounds:{x,y,width,height}}).then(result=>({shown:result.shown===true,...(result.message?{message:result.message}:{}),...(result.phase?{phase:result.phase}:{})}));
   });
   ipcMain.handle('desktop:browser-hide',event=>{if(!trusted(event)||!directBrowser)throw new Error('Invalid Browser sender');desktopBrowser?.hide();return true;});
+  // Reloaded renderers subscribe after main may already have become ready or
+  // failed. Query the current state instead of depending on a one-shot event.
+  ipcMain.handle('desktop:browser-state',event=>{if(!trusted(event)||!directBrowser)throw new Error('Invalid Browser sender');return desktopBrowser?.state()??{phase:'connecting',message:'Connecting Browser…'};});
   ipcMain.handle('desktop:browser-reconnect',async event=>{if(!trusted(event)||!directBrowser)throw new Error('Invalid Browser sender');await connectBrowser(ses);return desktopBrowser?.state()??{phase:'error',message:'Browser unavailable'};});
   Menu.setApplicationMenu(applicationMenu(Menu, process.platform));
   app.setAppUserModelId?.('works.backplane.desktop');
@@ -145,7 +157,9 @@ function createWindow(ses) {
     if (!details.frame || details.frame === window.webContents.mainFrame) connectionLog.capture(details.message ?? legacyMessage);
   });
   window.setMenuBarVisibility(false);
-  installShortcuts(window, electron, () => directBrowser ? desktopBrowser : null);
+  installShortcuts(window, electron, () => directBrowser ? desktopBrowser : null, process.platform, () => terminalFocused);
+  window.webContents.on('did-start-navigation', () => { terminalFocused = false; });
+  window.webContents.on('blur', () => { terminalFocused = false; });
   const shown = new Promise(resolve => window.once('ready-to-show', () => { firstVisibleAtMs ??= Date.now(); window.show(); resolve(); }));
   window.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
   window.webContents.on('will-navigate', (event, url) => { if (url !== startupURL && new URL(url).origin !== origin) { event.preventDefault(); external(url); } });

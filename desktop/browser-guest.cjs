@@ -98,6 +98,7 @@ const CDP_METHODS = new Set([
   'Runtime.addBinding', 'Runtime.removeBinding',
   'Page.enable', 'Page.navigate', 'Page.reload', 'Page.stopLoading',
   'Page.getNavigationHistory', 'Page.navigateToHistoryEntry', 'Page.getLayoutMetrics',
+  'Page.captureScreenshot',
   'Page.addScriptToEvaluateOnNewDocument', 'Page.removeScriptToEvaluateOnNewDocument',
   'Page.handleJavaScriptDialog',
   'Input.dispatchMouseEvent', 'Input.dispatchKeyEvent', 'Input.insertText',
@@ -107,7 +108,11 @@ const SESSION_OWNERS = new WeakSet();
 const RECORDER_SOURCE_SHA256 = '2e4b03765cc4ae6595e32048555ffe27e750994a85c18b89027064f3c0c15350';
 const STEP_KEYS = new Set(['click', 'type', 'select', 'press', 'submit']);
 const TARGET_KEYS = ['role', 'name', 'label', 'placeholder', 'text', 'testid', 'css', 'nth', 'near', 'tag', 'type'];
-const NAVIGATION_METHODS = new Set(['Page.navigate', 'Page.reload', 'Page.navigateToHistoryEntry']);
+// Native input may commit a link/form navigation before its CDP reply. The
+// original fence still authorizes dispatch; returning its receipt does not
+// authorize any command in the new document.
+const NAVIGATION_METHODS = new Set(['Page.navigate', 'Page.reload', 'Page.navigateToHistoryEntry',
+  'Input.dispatchMouseEvent', 'Input.dispatchKeyEvent', 'Input.insertText', 'Input.imeSetComposition']);
 const PREPARATION_METHODS = new Set(['Runtime.enable', 'Runtime.addBinding', 'Runtime.removeBinding',
   'Page.enable', 'Page.addScriptToEvaluateOnNewDocument', 'Page.removeScriptToEvaluateOnNewDocument']);
 
@@ -663,6 +668,7 @@ function createBrowserGuestManager({
     wc.on('preload-error', () => { if (recorderConfig) recorderFailure(tab, 'PRELOAD_ERROR'); });
     wc.on('dom-ready', () => {
       if (recorderConfig && !documentReady(tab)) recorderFailure(tab, 'DOCUMENT_NOT_READY');
+      observeLoad(tab, 'dom-ready');
     });
     wc.on('destroyed', () => retire(tab, false));
     wc.debugger.on('detach', () => {

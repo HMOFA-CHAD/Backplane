@@ -10,6 +10,7 @@ function createBrowserSurface({electron, window, manager, authorize, onTakeover,
   shieldSession.setPermissionRequestHandler((_wc,_permission,callback)=>callback(false));
   shieldSession.setPermissionCheckHandler(()=>false);
   const shield=new electron.WebContentsView({webPreferences:{session:shieldSession,preload:'',nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,webviewTag:false,navigateOnDragDrop:false}});
+  shield.setBackgroundColor('rgba(0,0,0,0)');
   shield.setVisible(false);
   const shieldURL=require('node:url').pathToFileURL(path.join(__dirname,'browser-shield.html')).href;
   shield.webContents.setWindowOpenHandler(()=>({action:'deny'}));
@@ -56,7 +57,14 @@ function createBrowserSurface({electron, window, manager, authorize, onTakeover,
       const tab=manager.list(target.owner).find(tab=>tab.active&&tab.tabId===target.tabId&&tab.generation===target.generation);
       if(!tab)throw new Error('Stale Browser surface');
       manager.reconcileInput();
-      if(inputAllowed(target))removeShield();else cover();
+      if(inputAllowed(target)){
+        const took=covered;
+        removeShield();
+        // The takeover click is consumed by the shield. Focus only after the
+        // service grants human input, once, so later lease renewals cannot
+        // steal focus from the address bar or composer.
+        if(took)manager.focus(target);
+      }else cover();
     }catch(error){
       // An expired or replaced lease must not leave an old interactive view.
       hide();onError(error);

@@ -276,3 +276,32 @@ test('request privacy: read views send only language and bounded choices; action
    g.host.receive(g.reply(sent,{session:{...sent.p.session,drafts:{A:'selected domain result',B:'foreign replacement'}}}));assert.equal(g.getSession().drafts.A,'selected domain result');assert.equal(g.getSession().drafts.B,'other local');assert.deepEqual(g.getSession().outbox,{'44':'local pending'});
  }
 });
+
+test('settings navigation keeps its first click when background refresh races opening Settings',async()=>{
+ const f=await fixture({prepare:s=>s});f.open();
+ let accepted;
+ f.host.request('flag','settings',yes=>accepted=yes);
+ const action=f.sent.at(-1),link=f.host.client.links.get(f.api.hub);
+ f.host.update();
+ f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:link.viewId,target:link.target,viewRevision:'2'});
+ assert.equal(f.sent.length,2,'refresh waits for Settings open result instead of retiring it');
+ f.host.receive(f.reply(action,{session:{...f.getSession(),open:{settings:true}},shown:{type:'text',text:'Settings categories'}}));
+ assert.equal(accepted,true,'the first click is accepted');
+ assert.equal(f.views.at(-1).n.text,'Settings categories');
+ assert.equal(f.sent.at(-1).m,'view.update','one deferred refresh follows the accepted result');
+ assert.equal(f.sent.at(-1).p.session.open.settings,true,'refresh uses opened Settings state');
+});
+
+test('settings navigation keeps submenu on first click during background invalidation',async()=>{
+ const f=await fixture({session:()=>({sel:'A',rid:1,drafts:{A:''},open:{settings:true}}),prepare:s=>s});f.open();
+ let accepted;
+ f.host.request('settings-page','appearance',yes=>accepted=yes);
+ const action=f.sent.at(-1),link=f.host.client.links.get(f.api.hub);
+ f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:link.viewId,target:link.target,viewRevision:'2'});
+ assert.equal(f.sent.length,2,'background invalidation cannot overtake submenu navigation');
+ f.host.receive(f.reply(action,{session:{...f.getSession(),drafts:{...f.getSession().drafts,'@settings.page':'appearance'}},shown:{type:'text',text:'Appearance controls'}}));
+ assert.equal(accepted,true);
+ assert.equal(f.views.at(-1).n.text,'Appearance controls');
+ assert.equal(f.sent.filter(r=>r.m==='view.action'&&r.p.action==='settings-page').length,1,'one click sends one navigation');
+ assert.equal(f.sent.at(-1).m,'view.update');
+});

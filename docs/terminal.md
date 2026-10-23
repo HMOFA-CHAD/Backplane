@@ -1,5 +1,31 @@
 # Terminal
 
+The Electron desktop opens a floating interactive PTY with the Terminal
+button, `Ctrl+J`, or `Super+grave` / `Super+~` while Backplane has focus.
+The Linux desktop/compositor may reserve the Super chord; Backplane does
+not change system shortcuts. Commands → Floating terminal here is the
+same action. The panel displays its thread and working directory, stays
+attached to that shell while navigating, and can be moved and resized.
+Hide preserves the shell; `exit` ends it. Reopening from the same thread
+reuses a running shell; opening from another thread uses that thread's
+shell and directory. Shell-start failures display the shell and folder
+to check. `Ctrl+C/A/Z/R` reach the PTY; `Ctrl+Shift+C/V` are its clipboard
+shortcuts on Linux/Windows.
+
+The desktop command palette is `Ctrl+Shift+P` (`Cmd+Shift+P` on macOS),
+with the old `Ctrl+K` entry also available outside editors. It searches
+commands, threads and projects and uses the existing action handlers,
+including their Delete/Remove confirmations. `Ctrl+Shift+U` opens the
+uberbot's Chat tab. The restored project/thread bindings come from
+`src/app/nui.bend` (`9059c8681`) and the original palette/parity keymap
+(`b276a5afb`): `Alt+1…9` projects, `Ctrl+1…9` threads in the current
+project, `Ctrl+Shift+[` / `]` previous/next visible thread, without wrapping.
+They follow the sidebar's actual order and expansion state. Navigation
+leaves input editors, IME composition and PTYs alone; the explicit palette
+and terminal-toggle chords remain available there. On macOS, Command is
+the page's primary modifier. The old Pin chord `Ctrl+Shift+P` now opens
+the requested palette; Pin/Unpin remain commands and toolbar actions.
+
 The integrated terminal (T3Code's per-thread panel on mod+j) is two pieces:
 a pty effect that runs a shell, and a pure emulator that turns its output
 into styled rows. The app and hub wire them together.

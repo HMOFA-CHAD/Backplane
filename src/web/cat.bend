@@ -18,7 +18,7 @@ def WCat.name(+look: Nat, +mood: String, +px: U32) -> String:
 
 # the cat, px square
 def WCat.img(+look: Nat, +mood: String, +px: U32) -> D.Node:
-  D.El{"img", "cat:" ++ WCat.name(look, mood, px), [D.At{"class", "cat " ++ mood}, D.At{"data-cat", WCat.name(look, mood, px)},
+  D.El{"img", "cat:" ++ WCat.name(look, mood, px), [D.At{"class", "cat cat-mood-" ++ mood}, D.At{"data-cat", WCat.name(look, mood, px)},
     D.At{"width", U32.show(px)}, D.At{"height", U32.show(px)}, D.At{"alt", ""}, D.At{"draggable", "false"}], Nil{}}
 
 def WCat.uri.k(ps: List<&2, String>) -> String:

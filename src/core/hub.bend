@@ -1,4 +1,5 @@
 import Base
+import ./subthreads.bend as ST
 import ./mailtriage.bend as TRI
 import ./runlife.bend as RL
 import ./uber.bend as UB
@@ -542,7 +543,7 @@ def Hub.new.outs(scratch: Bool, +th: String, +root: String, +mode: String) -> Li
     case False{}:
       Hub.env.outs(Hub.env.of(mode), th, root, mode)
 
-def Hub.thread_create(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
+def Hub.thread_create.base(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
   +project = J.Json.get_str(p, "project", "")
   +title = J.Json.get_str(p, "title", "New thread")
   +env = J.Json.get_str(p, "env", M.Setting.get(s, "thread.env", "auto"))
@@ -551,6 +552,30 @@ def Hub.thread_create(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.J
     Hub.new.env(M.Scratch.is(project), env), "", Hub.new.wt(M.Scratch.is(project), Hub.project.root(Hub.project(s, project)), th), J.Json.get_str(p, "provider", M.Setting.get(s, "agent.provider", "claude")),
     J.Json.get_str(p, "model", M.Setting.get(s, "agent.model", "")), now}],
     Reply.made(client, id, th) <> Hub.new.outs(M.Scratch.is(project), th, Hub.project.root(Hub.project(s, project)), env)}
+
+# A new visible child is a normal thread. Parent links are never inferred
+# from worker launches, delegated tasks or forks of older conversations.
+def Hub.thread_create.link(+parent: String, +th: String, +now: Nat, step: Step) -> Step:
+  match step:
+    case Step{cs, os}:
+      Step{List.append(&2, M.Change, cs, [M.ThreadParentSet{th, parent, now}, M.SettingSet{ST.Tree.open_key(parent), "1", now}]), os}
+
+def Hub.thread_create.child(ok: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +parent: String) -> Step:
+  match ok:
+    case False{}: Step{Nil{}, [Reply.err(client, id, "Subthread parent must be an existing conversation in the same project (maximum depth 64).") ]}
+    case True{}:
+      Hub.thread_create.link(parent, Hub.id("t", now, Hub.seq(s)), now, Hub.thread_create.base(s, now, client, id, p))
+
+def Hub.thread_create.kind(child: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +parent: String) -> Step:
+  match child:
+    case False{}: Hub.thread_create.base(s, now, client, id, p)
+    case True{}:
+      Hub.thread_create.child(Bool.and(ST.Tree.alive(Hub.thread(s, parent)), Bool.and(
+        String.eq(ST.Tree.project(Hub.thread(s, parent)), J.Json.get_str(p, "project", "")),
+        ST.Tree.chain(63n, s, ST.Tree.raw(s, parent), parent))), s, now, client, id, p, parent)
+
+def Hub.thread_create(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> Step:
+  Hub.thread_create.kind(Bool.not(String.is_empty(J.Json.get_str(p, "parent", ""))), s, now, client, id, p, J.Json.get_str(p, "parent", ""))
 
 # the project's first thread, made as thread.create would, after it
 def Hub.project_add.thread(+s: M.State, +now: Nat, +client: U32, +id: String, +pid: String, +made: M.Change) -> Step:
@@ -1108,7 +1133,7 @@ def Hub.methods() -> List<&2, String>:
    "thread.pin", "thread.unpin", "thread.rename", "thread.delete", "kicad.watch", "thread.modes", "app.update", "setting.set", "kicad.install",
    "ask.answer", "device.register", "device.drop", "kicad.info", "queue.resume",
    "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel", "wake.cancel", "deploy.restart", "deploy.cancel", "deploy.status", "lock.release", "lock.cancel", "kicad.retry", "mail.list", "mail.read", "mail.find", "mail.mark", "mail.tag", "mail.send",
-   "fab.look", "fab.intent", "order.buy", "models.refresh"]
+   "fab.look", "fab.intent", "order.buy", "models.refresh", "thread.detach"]
 
 # Agent output (Claude stream-json)
 # ---------------------------------
@@ -5974,7 +5999,7 @@ def Step.join(a: Step, b: Step) -> Step:
 
 # every thread that should settle now, settled (a snoozed one never is);
 # gh asked about due merges; worktrees put away long enough removed;
-# stranded worktree waits run; expired scratch threads deleted
+# stranded worktree waits run. Legacy conversations never expire.
 # (nothing settles, expires or loses its worktree while it waits on work:
 # M.Work.busy, the children counted once for all threads)
 def Hub.tick.k(+s: M.State, +now: Nat, +kids: Map<&2, Nat>) -> Step:
@@ -5982,7 +6007,7 @@ def Hub.tick.k(+s: M.State, +now: Nat, +kids: Map<&2, Nat>) -> Step:
     case M.State{ps, +ts, _, _, _, _, _, _, _, _, _}:
       Step.before(Hub.settle.go(Map.values(&2, M.Thread, ts), M.State.navs(s), kids, s, now, Hub.settle.window(s)),
         List.append(&2, Out, Merge.asks(Map.values(&2, M.Project, ps), Map.values(&2, M.Thread, ts), s), Drop.asks(Map.values(&2, M.Thread, ts), kids, s, now, Hub.wt.window(s))),
-        Step.join(Wt.stale(Map.values(&2, M.Thread, ts), s, now), Scratch.sweep(Map.values(&2, M.Thread, ts), kids, s, now, M.Scratch.window(s))))
+        Wt.stale(Map.values(&2, M.Thread, ts), s, now))
 
 def Hub.tick(+s: M.State, +now: Nat) -> Step:
   Step.join(Step.join(Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now)), Step.cat(Lr.far.tick(s), Wake.poll(s))), Step.cat(Deploy.tick(s, now), Ship.tick(s, now)))
@@ -6057,6 +6082,8 @@ def Commit.line.ok(+c: M.Change) -> Bool:
 # (laws busy_*); anything not listed here counts as moving it.
 def Busy.inert(c: M.Change) -> Bool:
   match c:
+    case M.ThreadParentSet{_, _, _}:
+      True{}
     case M.MessagePosted{_, _, _, _, _}:
       True{}
     case M.ActivityLogged{_, _, _, _, _, _}:
@@ -8099,6 +8126,8 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
     # the model picker opened on opencode: its models read again (about a second)
     case 49n:
       Step.outs([Reply.ok(client, id), ModelsRefresh{}])
+    case 50n:
+      Step.reply(client, id, [M.ThreadParentSet{J.Json.get_str(p, "thread", ""), "", now}])
     case _:
       Hub.more(C.Codec.pos(Hub.methods.git(), m), s, now, client, id, p, m)
 

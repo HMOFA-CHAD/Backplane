@@ -122,7 +122,7 @@ def main() -> IO(Unit):
     C.Check.str("tour title ja", OB.Ob.title(I.Ja{}, 0n), "Backplaneへようこそ")
     C.Check.str("tour body en", OB.Ob.body(I.En{}, 2n, "7", 0n), "A short tour of what is where. Skip it any time; More, Settings shows it again. Backplane is in beta. If something breaks or looks wrong, please report it.")
     C.Check.str("tour body ja", OB.Ob.body(I.Ja{}, 0n, "7", 2n), "スレッドは、プロジェクトで作業するエージェントとの会話です。Gitプロジェクトでは既定で別々のワークツリーを使い、Gitがない場合やローカルモードでは、スレッドはプロジェクトのフォルダを共有します。ツールの呼び出しは1行にまとめられ、委任した作業はサブエージェントの下に表示されます。")
-    C.Check.str("tour days", OB.Ob.body(I.Ja{}, 0n, "9", 1n), MSG.T.tour.body.projects.desktop(I.Ja{}, "9"))
+    C.Check.str("tour days", OB.Ob.body(I.Ja{}, 0n, "9", 1n), MSG.T.tour.body.projects.desktop(I.Ja{}))
     C.Check.str("tour buttons", OB.Ob.forward(I.En{}, 10n) ++ OB.Ob.forward(I.Ja{}, 3n) ++ OB.Ob.counter(I.En{}, 2n) ++ OB.Ob.counter(I.Ja{}, 2n), "Done次へ3 of 113／11")
     C.Check.str("tour sound", Bool.show(OB.Ob.sound()), "True")
     C.Check.str("plane counts en", PL.Plane.counts.join(PL.Plane.counts.need(I.En{}, 3n), PL.Plane.counts.run(I.En{}, 2n)), "3 need you · 2 running")
