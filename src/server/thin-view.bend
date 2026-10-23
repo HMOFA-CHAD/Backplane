@@ -12,6 +12,7 @@ import ../core/thin-live.bend as TL
 import ../mobile/thin.bend as MT
 import ../web/dom.bend as D
 import ../web/presentation.bend as WP
+import ../web/sidebar-slot.bend as SS
 import ../core/msgs.bend as MSG
 import ../core/thin-wire.bend as W
 import ../core/mail.bend as ML
@@ -347,6 +348,26 @@ def Render.timeline(node: D.Node, before: List<&2, D.Node>, after: List<&2, D.No
 
 def Render.web(+u: U.Ui, +window: J.Json) -> J.Json:
   WP.Node.write(Render.timeline(A.view(u), Render.older(J.Json.get_bool(window, "hasMore", False{}), u), Partial.buttons(J.Json.elems(J.Json.get_obj(window, "partial")), u)))
+
+def Render.web.cached.checked(valid: Bool, shown: J.Json, sidebar: J.Json, u: U.Ui, window: J.Json) -> J.Json:
+  match valid:
+    case True{}: SS.Slot.replace(shown, sidebar)
+    case False{}: Render.web(u, window)
+
+def Render.web.cached(+u: U.Ui, +window: J.Json, +sidebar: J.Json) -> J.Json:
+  match sidebar:
+    case J.Null{}: Render.web(u, window)
+    case _:
+      +shown = WP.Node.write(Render.timeline(A.view_sidebar(u, True{}), Render.older(J.Json.get_bool(window, "hasMore", False{}), u), Partial.buttons(J.Json.elems(J.Json.get_obj(window, "partial")), u)))
+      Render.web.cached.checked(Bool.and(Nat.is_eq(SS.Slot.count(shown), 1n), SS.Slot.is(sidebar, "aside")), shown, sidebar, u, window)
+
+# A normal complete reply with a server-owned, unchanged sidebar region.
+# Its session, window, commands, timeline and all other regions remain fresh.
+def Render.web.prepared(+a: ActResult, prepared: U.Ui, +window: J.Json, sidebar: J.Json) -> J.Json:
+  match a:
+    case ActResult{+u, cmds}:
+      Obj.put(Obj.put(Obj.put(Obj.put(J.Json.obj([J.KV{"shown", Render.web.cached(prepared, window, sidebar)}]),
+        "remoteReady", J.Flag{True{}}), "session", Route.pack(u)), "cmds", J.Json.arr(cmds)), "window", window)
 
 def Render.native_thread( +th: J.Json, +window: J.Json) -> J.Json:
   match th:

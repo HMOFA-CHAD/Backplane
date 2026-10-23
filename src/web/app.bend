@@ -142,8 +142,11 @@ def act(u: U.Ui, +action: String, +value: String) -> U.Act:
 def hold_at_end(gap: Nat) -> Bool:
   U.Hold.at_end(gap)
 
+def view_sidebar(+u: U.Ui, reuse: Bool) -> D.Node:
+  WS.WS.view(u, V.View.page.sidebar(stamp(u), reuse), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
+
 def view(+u: U.Ui) -> D.Node:
-  WS.WS.view(u, V.View.page(stamp(u)), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
+  view_sidebar(u, False{})
 
 # Optional early presentation uses exactly the normal keyed view. These
 # exports move renderer data only; they cannot install a Ui or mark it synced.
