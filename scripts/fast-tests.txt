@@ -1,0 +1,9 @@
+# Required fast regression gate. Full legacy suite: TEST_FULL=1 scripts/test.sh.
+test/mailtriage_test.bend
+test/mailrun_test.bend
+test/mailrun_model_test.bend
+test/maildisposition_test.bend
+test/maildisposition_routing_test.bend
+test/mailcontinuity_test.bend
+test/mailboot_test.bend
+test/r1_copy_test.bend

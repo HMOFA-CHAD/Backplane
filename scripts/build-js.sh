@@ -56,18 +56,14 @@ if [ -n "$EMIT_CACHE" ]; then
   key=$(emit_key "$src" 2>/dev/null || true)
 fi
 how=fresh
-rm -f "$work/emit.rss"
+rm -f "$work/emit.rss" "$work/emit.resources.json" "$work/stamp.resources.json" "$work/compile.resources.json"
 if [ -n "$key" ] && [ -f "$EMIT_CACHE/$key.js" ] && [ -f "$EMIT_CACHE/$key.js.ok" ] \
     && [ "$(cat "$EMIT_CACHE/$key.js.ok")" = "$(wc -c <"$EMIT_CACHE/$key.js" | tr -d ' ')" ]; then
   cp "$EMIT_CACHE/$key.js" "$work/all.tmp.js" && mv "$work/all.tmp.js" "$work/all.js"
   touch "$EMIT_CACHE/$key.js" "$EMIT_CACHE/$key.js.ok"
   how=reused
 else
-  if [ -x /usr/bin/time ]; then
-    /usr/bin/time -f %M -o "$work/emit.rss" nice -n 19 bend "$src" -o "$work/all.tmp.js" >/dev/null
-  else
-    nice -n 19 bend "$src" -o "$work/all.tmp.js" >/dev/null
-  fi
+  python3 scripts/local-phase.py --record "$work/emit.resources.json" -- nice -n 19 bend "$src" -o "$work/all.tmp.js" >/dev/null
   mv "$work/all.tmp.js" "$work/all.js"
   # kept only if nothing it read changed while it ran
   if [ -n "$key" ] && [ "$(emit_key "$src" 2>/dev/null || true)" = "$key" ]; then
@@ -91,7 +87,7 @@ fi
 # strings it overflowed the hub's stack (fast-hub J2: a memory fault right
 # after project.add on an empty home). js-native.py finds them by the
 # minified shape, so the emit is minified (names kept) first.
-"$bun" build --minify-whitespace --minify-syntax --keep-names --target=bun \
+python3 scripts/local-phase.py --record "$work/stamp.resources.json" -- "$bun" build --minify-whitespace --minify-syntax --keep-names --target=bun \
   "$work/stamped.js" --outfile "$work/native.js" >/dev/null
 python3 scripts/js-native.py --server "$work/native.js" >/dev/null
 mv -f "$work/native.js" "$work/stamped.js"
@@ -143,12 +139,28 @@ mkdir -p "$(dirname "$out")"
 # whitespace and syntax minified, names kept: a crash's stack names Bend's
 # defs and the effects. The hub never reads a .env, bunfig.toml or tsconfig
 # of the folder it starts in: those are a project's, not its configuration.
-"$bun" build --compile --minify-whitespace --minify-syntax --keep-names \
+python3 scripts/local-phase.py --record "$work/compile.resources.json" -- "$bun" build --compile --minify-whitespace --minify-syntax --keep-names \
   --no-compile-autoload-dotenv --no-compile-autoload-bunfig \
   $tflag $rt "$work/bin.js" --outfile "$out.tmp" >/dev/null
 case $target in windows-*) mv -f "$out.tmp.exe" "$out" 2>/dev/null || mv -f "$out.tmp" "$out" ;; *) mv -f "$out.tmp" "$out" ;; esac
 unbake
 t3=$(now_ms)
+python3 - "$work" "$how" "$t0" "$t1" "$t2" "$t3" <<'PY'
+import json,sys
+from pathlib import Path
+folder=Path(sys.argv[1]);times=list(map(int,sys.argv[3:]))
+def peak(name):
+    try:return json.loads((folder/(name+'.resources.json')).read_text())['peak_rss_kib']
+    except (OSError,ValueError):return None
+phases=[]
+for i,n in enumerate(['emit','stamp','compile']):
+    try:details=json.loads((folder/(n+'.resources.json')).read_text())
+    except (OSError,ValueError):details={}
+    phases.append({**details,'phase':n,'stage_seconds':round((times[i+1]-times[i])/1000,3),'peak_rss_kib':peak(n),
+                   'state':sys.argv[2] if n=='emit' else 'executed'})
+(folder/'metrics.json').write_text(json.dumps({'phases':phases,'rss_measurement':'maximum process RSS; emit includes compiler parsing/checking/codegen, compile embeds Bun runtime (no C link)'},indent=2)+'\n')
+if peak('emit') is not None:(folder/'emit.rss').write_text(str(peak('emit')))
+PY
 sec() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.1f", (b - a) / 1000 }'; }
 rss=$(grep -E '^[0-9]+$' "$work/emit.rss" 2>/dev/null | tail -n1 || true)
 peak=$( [ -n "$rss" ] && awk -v k="$rss" 'BEGIN { printf "%.2fG", k / 1048576 }' || printf -- - )

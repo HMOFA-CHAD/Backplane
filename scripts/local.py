@@ -22,6 +22,10 @@ def run(argv, **kwargs):
     return subprocess.run(list(map(str, argv)), cwd=ROOT, check=True, **kwargs)
 
 
+def profiled(argv, record, **kwargs):
+    return run([sys.executable,'scripts/local-phase.py','--record',record,'--',*argv],**kwargs)
+
+
 def digest(p):
     return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
@@ -71,7 +75,7 @@ def runtime(given):
     raise SystemExit('Supply --runtime DIR containing the pinned Electron 44.9.2 runtime')
 
 
-def phone_bridge(env):
+def phone_bridge(env, prepared=None):
     named = ['scripts/build-mobile.sh','scripts/bridge-native.py','scripts/js-unmarshal.py','scripts/state-key.py','src/mobile/index.html','src/mobile/bridge.js']
     # The HTML bundle also reads JS imports shared with the browser; Bend's
     # import closure alone does not follow those JavaScript module edges.
@@ -84,6 +88,13 @@ def phone_bridge(env):
     cache = Path(os.environ.get('XDG_CACHE_HOME',Path.home()/'.cache'))/'backplane-bend/phone-bridge'/before
     receipt = cache.with_suffix('.ok')
     bridge = ROOT/'mobile/build/assets/bridge.js'
+    if prepared:
+        meta = json.loads((prepared/'REMOTE.json').read_text())
+        if meta['phone_bridge_key'] != before or digest(prepared/'bridge.js') != meta['bridge_sha256']:
+            raise SystemExit('Transferred bridge input/hash mismatch')
+        cache.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(prepared/'bridge.js',cache)
+        receipt.write_text(digest(cache))
     valid = cache.is_file() and receipt.is_file() and receipt.read_text().strip() == digest(cache)
     if valid:
         bridge.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(cache,bridge)
@@ -102,6 +113,7 @@ def build(args):
     stage = ROOT / 'build/local' / time.strftime('%Y%m%d-%H%M%S')
     stage.mkdir(parents=True, exist_ok=False)
     timings = {}
+    measurements = stage/'measurements';measurements.mkdir()
     env = {**os.environ, 'PYTHONDONTWRITEBYTECODE':'1', 'BEND_NO_TELEMETRY': '1', 'BACKPLANE_TELEMETRY_BAKE': '0',
            'BACKPLANE_TELEMETRY': 'off', 'BACKPLANE_GOOGLE_BAKE': '0', 'BACKPLANE_NO_UPDATE': '1',
            'BACKPLANE_SKIP_CHECK': '1', 'BACKPLANE_DEV_SERVICE_ONLY': '1', 'BACKPLANE_MEM_GB': '12'}
@@ -111,15 +123,27 @@ def build(args):
     env['BACKPLANE_VERSION_STAMP'] = next_version + '-dev.local.' + sha[:9] + '.' + format(int(time.time()), 'x')
     if len(env['BACKPLANE_VERSION_STAMP']) > 40: raise SystemExit('Local version exceeds the compiler stamp slot')
     t = time.monotonic()
-    run(['scripts/dev.sh', 'stage', stage / 'payload'], env=env)
+    prepared = args.payload.resolve() if args.payload else None
+    if prepared:
+        remote = json.loads((prepared/'REMOTE.json').read_text())
+        if remote['commit'] != sha or payload_hashes(prepared) != remote['files']:
+            raise SystemExit('Transferred payload source/hash mismatch')
+        env['BACKPLANE_VERSION_STAMP'] = remote['version']
+        shutil.copytree(prepared/'payload',stage/'payload',symlinks=True)
+        for name in ['metrics.json','web-metrics.json','phase.json']:
+            if (prepared/name).is_file(): shutil.copy2(prepared/name,measurements/('boat-'+name))
+    else:
+        profiled(['scripts/dev.sh', 'stage', stage / 'payload'], measurements/'service-web.json',env=env)
+        for source,name in [(ROOT/'build/js/backplane-serve/metrics.json','codegen-compile.json'),(ROOT/'build/web-metrics.json','web.json')]:
+            if source.is_file():shutil.copy2(source,measurements/name)
     timings['service_web_seconds'] = round(time.monotonic()-t, 3)
     t = time.monotonic()
     dependencies()
     # Only dependencies, never Electron downloads or an OS sandbox-policy change.
     env.update(BACKPLANE_ELECTRON_DIST=str(runtime(args.runtime)), BACKPLANE_DESKTOP_RESIDENT='1',
                BACKPLANE_DESKTOP_BROWSER='1', BACKPLANE_SOURCE_COMMIT=sha)
-    run(['node', 'desktop/stage-linux.cjs', stage / 'payload/backplane-serve',
-         stage / 'payload/web', env['BACKPLANE_VERSION_STAMP'], stage / 'desktop'], env=env)
+    profiled(['node', 'desktop/stage-linux.cjs', stage / 'payload/backplane-serve',
+         stage / 'payload/web', env['BACKPLANE_VERSION_STAMP'], stage / 'desktop'], measurements/'desktop-packaging.json',env=env)
     timings['desktop_seconds'] = round(time.monotonic()-t, 3)
     record = {'stage': str(stage), 'commit': sha, 'version': env['BACKPLANE_VERSION_STAMP'],
               'service_sha256': digest(stage / 'payload/backplane-serve'), 'timings': timings,
@@ -128,7 +152,7 @@ def build(args):
     (stage / 'LOCAL.json').write_text(json.dumps(record, indent=2)+'\n')
     if args.smoke:
         t = time.monotonic()
-        record['phone_bridge_key'] = phone_bridge(env)
+        record['phone_bridge_key'] = phone_bridge(env,prepared)
         timings['phone_bridge_seconds'] = round(time.monotonic()-t, 3)
         sdk = Path(env.get('ANDROID_HOME') or '/opt/android-sdk')
         if (sdk/'platforms/android-35/android.jar').is_file():
@@ -250,14 +274,16 @@ def main():
     sub.add_parser('deps')
     b = sub.add_parser('build');b.add_argument('--runtime');b.add_argument('--smoke', action='store_true')
     b.add_argument('--admitted', action='store_true', help=argparse.SUPPRESS)
+    b.add_argument('--payload',type=Path,help=argparse.SUPPRESS)
     for cmd in ['preview','apply','activate','rollback']:
         s = sub.add_parser(cmd);s.add_argument('stage', type=Path)
     a = p.parse_args();os.chdir(ROOT)
     if a.command == 'deps': dependencies();return 0
     if a.command == 'build':
-        if not a.admitted and not os.environ.get('BP_LOCAL_CI_LOCK_FD'):
-            admit = os.environ.get('BP_ADMIT', str(Path.home()/'Documents/i2cjak/bp-coord/bin/bp-admit.sh'))
-            return subprocess.call([admit, '--mem','12','--cores','2','--',sys.executable,str(Path(__file__).resolve()), *sys.argv[1:], '--admitted'])
+        if not a.admitted and not os.environ.get('BP_LOCAL_CI_PHASE'):
+            command = [sys.executable,'scripts/local-ci.py','--build-only']
+            if a.runtime:command += ['--runtime',a.runtime]
+            return subprocess.call(command,cwd=ROOT)
         build(a);return 0
     stage = a.stage.resolve()
     if a.command == 'apply': apply(stage)

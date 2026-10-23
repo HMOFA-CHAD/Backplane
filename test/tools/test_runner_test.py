@@ -57,6 +57,7 @@ class TestRunnerTest(unittest.TestCase):
         self.env = dict(os.environ, PATH=f"{self.root / 'bin'}:{os.environ['PATH']}",
                         TEST_JOBS="2")
         for key in ("TEST_SHARD", "TEST_SHARD_COUNT", "TEST_TIMINGS_OUT",
+                    "TEST_FULL", "TEST_FILES",
                     "BUN_JSC_maxPerThreadStackUsage"):
             self.env.pop(key, None)
 
@@ -131,6 +132,21 @@ class TestRunnerTest(unittest.TestCase):
         calls = self.calls()
         self.assertEqual(sum(row[0] == "bend" for row in calls), 5)
         self.assertEqual(sum(row[0] == "bun" for row in calls), 1)
+
+    def test_default_runs_only_required_set_and_full_is_explicit(self) -> None:
+        self.program('a'); self.program('b')
+        (self.root/'scripts/fast-tests.txt').write_text('test/a_test.bend\n')
+        self.assertEqual(self.run_suite().returncode,0)
+        self.assertEqual([row[1] for row in self.calls()],[['test/a_test.bend']])
+        (self.root/'calls.jsonl').unlink()
+        self.assertEqual(self.run_suite(TEST_FULL='1').returncode,0)
+        self.assertEqual(len(self.calls()),2)
+
+    def test_bad_required_selection_fails_before_executing(self) -> None:
+        self.program('a')
+        (self.root/'scripts/fast-tests.txt').write_text('test/missing_test.bend\n')
+        self.assertEqual(self.run_suite().returncode,2)
+        self.assertFalse((self.root/'calls.jsonl').exists())
 
 
 if __name__ == "__main__":
