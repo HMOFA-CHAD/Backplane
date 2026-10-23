@@ -214,7 +214,11 @@ export class ThinHost {
     return this.pending.get(this.active)?.operation?.action === 'bot-tab' || this.actions.some(op => op.action === 'bot-tab');
   }
   viewerPending() {
-    return !!this.pending.get(this.active)?.operation?.viewer || this.actions.some(op => op.viewer);
+    // A panel toggle is ordered once, just like a destination click. Refresh
+    // must adopt its open/closed result before snapshotting the old panel.
+    // Keep it out of viewerChoice: consecutive toggles must never coalesce.
+    const changesViewer = op => !!op?.viewer || op?.action === 'panel';
+    return changesViewer(this.pending.get(this.active)?.operation) || this.actions.some(changesViewer);
   }
   terminalPending() {
     const changesWorkspace = op => op && (op.action.startsWith('ws-') ||
