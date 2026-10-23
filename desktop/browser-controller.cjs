@@ -19,6 +19,17 @@ const hex=value=>typeof value==='string'&&/^[a-f0-9]{32}$/.test(value);
 const snapshot=value=>decodeBrowserMessage(encodeBrowserMessage(value));
 const same=(a,b)=>targetKey(a)===targetKey(b);
 
+// A canonical policy change renews the idle guest's lifecycle authority too.
+// Never rebase preparation, unacknowledged navigation or any owner's running
+// command: those retain their original correlated execution/acknowledgement.
+function adoptIdleBrowserGrant({leases,tabs,preparing,acknowledgedRevisions},target){
+ const tab=tabs.get(tabKey(target)),grant=leases.targetGrantOf(target);
+ if(!grant||!tab?.offered||!tab.creationCompleted||tab.prep||preparing.has(target.owner)||
+   !same(tab.target,target)||!same(tab.ackTarget,target)||grant.revision<tab.revision||
+   [...tabs.values()].some(item=>item.target.owner===target.owner&&item.activeCall))return false;
+ tab.revision=grant.revision;acknowledgedRevisions.set(target.owner,grant.revision);return true;
+}
+
 // Private main-only controller. Renderer intents contain owner+geometry only;
 // a service browser.prepare/call and its exact live grant authorize all work.
 function createDesktopBrowserController({electron,window,appSession,origin,version,token,
@@ -355,7 +366,10 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
   validateBrowserEnvelope(message,{...identity,lastSequence:serverSequence});serverSequence=message.serverSequence;leases.receiveSequence(serverSequence);
   const p=message.payload;
   if(message.op==='owner.grant'){owners.set(p.owner,leases.ownerGrant(p));}
-  else if(message.op==='target.grant'){leases.targetGrant(p);const tab=tabs.get(tabKey(p.target));if(tab)tab.lastGrantedRevision=p.revision;}
+  else if(message.op==='target.grant'){
+   leases.targetGrant(p);const tab=tabs.get(tabKey(p.target));if(tab)tab.lastGrantedRevision=p.revision;
+   adoptIdleBrowserGrant({leases,tabs,preparing,acknowledgedRevisions},p.target);
+  }
   else if(message.op==='recording.grant'){leases.recordingGrant(p);}
   else if(message.op==='grant.revoke'){
    leases.revoke(p);manager.reconcileInput();refreshPresentation();
@@ -407,4 +421,4 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
  }
  return Object.freeze({start,present,hide,close,edit,state:()=>Object.freeze({...state}),isClosed:()=>closed});
 }
-module.exports={createDesktopBrowserController,MAX_SEQUENCE};
+module.exports={createDesktopBrowserController,MAX_SEQUENCE,adoptIdleBrowserGrant};
